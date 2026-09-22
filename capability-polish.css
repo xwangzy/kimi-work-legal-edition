@@ -1,0 +1,110 @@
+/* Scoped to capability and project surfaces; the home and task workspaces stay independent. */
+.connections-v2 .page-head { margin-bottom: 22px; }
+.connections-v2 .page-head h1 { color: #262d37; font-weight: 600; }
+.connections-v2 .page-head p { color: #616c7a; font-size: 13px; }
+.connections-v2 .connection-overview {
+  padding: 15px 20px;
+  margin-bottom: 22px;
+  background: #f7f9fc;
+  border-color: #e3e8ef;
+  border-radius: 10px;
+}
+.connections-v2 .connection-overview > div { gap: 12px; }
+.connections-v2 .connection-overview-icon { width: 34px; height: 34px; border-radius: 8px; background: #edf2f9; color: #5c789f; }
+.connections-v2 .connection-overview-icon .ico { width: 19px; height: 19px; }
+.connections-v2 .connection-overview b { font-size: 14px; color: #3f5068; font-weight: 600; }
+.connections-v2 .connection-overview p { font-size: 12px; color: #687689; margin-top: 3px; }
+.connections-v2 .connection-overview > .pill { color: #546c91; font-size: 11px; }
+.connections-v2 .connection-toolbar { gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.connections-v2 .filter-pills { gap: 4px; }
+.connections-v2 .filter-pills button { color: #616c7a; font-size: 13px; padding: 7px 11px; }
+.connections-v2 .filter-pills button.active { color: #355d97; background: #edf2fa; }
+.connections-v2 .connection-toolbar .search-box { min-height: 36px; max-width: 260px; border-color: #dbe1e9; }
+.connections-v2 .search-box input { font-size: 13px; color: #293544; min-width: 0; }
+.connections-v2 .search-box input::placeholder { color: #768191; }
+.connections-v2 .connector-grid { gap: 16px; align-items: stretch; }
+.connections-v2 .connector-card { display: flex; flex-direction: column; padding: 20px 20px 0; border-color: #e2e7ee; border-radius: 12px; box-shadow: 0 2px 5px #23324b03; }
+.connections-v2 .connector-card:hover { border-color: #b6c7df; box-shadow: 0 5px 18px #24395209; }
+.connections-v2 .connector-icon { width: 35px; height: 35px; }
+.connections-v2 .connector-card h2 { font-size: 16px; font-weight: 600; color: #29323e; line-height: 1.55; margin-top: 16px; }
+.connections-v2 .connector-card > p { color: #606d7e; font-size: 13px; line-height: 1.8; min-height: 46px; }
+.connections-v2 .connector-card .pill { font-size: 11px; }
+.connections-v2 .connector-meta { font-size: 11px; margin: 16px 0; gap: 6px; color: #6d7a8d; }
+.connections-v2 .connector-meta span { padding: 3px 7px; background: #f5f7fa; }
+.connections-v2 .connector-card footer { margin-top: auto; padding: 12px 0; min-height: 55px; }
+.connections-v2 .connector-card footer > .small { font-size: 11px; color: #6c7889; }
+.connections-v2 .connector-card footer .btn { font-size: 12px; color: #365982; border-color: #dfe6ef; padding: 5px 10px; }
+.connections-v2 .connection-disclosure { color: #717e90; font-size: 12px; line-height: 1.85; margin-top: 20px; }
+.connections-v2 .connection-activity { margin-top: 28px; border-color: #e7ebf0; }
+.connections-v2 .connection-activity .section-header { margin-bottom: 13px; }
+.connections-v2 .connection-activity .section-header h2 { font-size: 16px; color: #344257; }
+.connections-v2 .connection-activity > .small { font-size: 12px; color: #738093; }
+.connections-v2 .connection-event { font-size: 12px; color: #6a788c; padding: 13px 0; }
+.connections-v2 .connection-event b { font-weight: 500; color: #43546c; }
+.connections-v2 .connection-event time { font-size: 11px; color: #798598; }
+.connector-config .config-intro { font-size: 14px; color: #627186; }
+.connector-config .field label { color: #53657c; font-size: 13px; }
+.connector-config .field small { color: #738093; font-size: 11px; line-height: 1.8; }
+.connector-config .input { font-size: 13px; }
+.connector-config .config-heading h3 { color: #40526a; font-size: 14px; }
+.connector-config .config-heading > span { color: #748094; font-size: 11px; }
+.connector-config .tool-checks b { color: #4b5e77; font-size: 13px; }
+.connector-config .tool-checks code { color: #728096; font-size: 11px; }
+.connector-config .connection-test-result { color: #687a91; font-size: 12px; }
+.connector-config .connection-test-result.passed { color: #456f5d; }
+.connector-config .advanced-config { color: #67798f; font-size: 12px; }
+.connector-config .advanced-config p { font-size: 12px !important; color: #728095; line-height: 1.9; }
+
+/* Project-only selectors preserve the wide contract, matrix and evidence workspaces. */
+.legal-shell .content:has(> .project-list) .page-head p,
+.legal-shell .content:has(> .project-topline) .page-head p { color: #637080; font-size: 13px; }
+.legal-shell .project-list { gap: 16px; }
+.legal-shell .project-card { padding: 22px; border: 1px solid #e2e7ee; border-radius: 12px; transition: border-color .15s, box-shadow .15s; }
+.legal-shell .project-card:hover { border-color: #b6c7df; box-shadow: 0 5px 18px #24395209; }
+.legal-shell .project-card .folder { margin-bottom: 17px; }
+.legal-shell .project-card h2 { color: #2b3544; font-size: 17px; line-height: 1.65; }
+.legal-shell .project-card p { color: #6b788a; font-size: 12px; line-height: 1.8; margin-bottom: 22px; }
+.legal-shell .project-card .pill { font-size: 11px; }
+.legal-shell .project-card footer { color: #67768a; margin-top: 20px; padding-top: 15px; font-size: 12px; }
+.legal-shell .project-topline { padding: 13px 16px; background: #f7f9fc; border: 1px solid #e7ecf2; border-radius: 9px; gap: 14px; }
+.legal-shell .project-topline .small { color: #6f7d90; font-size: 12px; }
+.legal-shell .project-topline .link-btn { margin-left: auto; font-size: 12px; }
+.legal-shell .project-add-toolbar { padding-bottom: 16px; margin-bottom: 0; border-bottom: 1px solid #edf0f4; }
+.legal-shell .project-add-toolbar .small { color: #778397; font-size: 12px; }
+.legal-shell .content:has(> .project-topline) .file-row h3,
+.legal-shell .content:has(> .panel .project-add-toolbar) .file-row h3 { font-size: 14px; color: #35465e; }
+.legal-shell .content:has(> .project-topline) .file-row p,
+.legal-shell .content:has(> .panel .project-add-toolbar) .file-row p { font-size: 12px; color: #788497; }
+.legal-shell .content:has(> .project-list) > .help-foot { color: #758296; font-size: 12px; line-height: 1.9; }
+
+@media (max-width: 1180px) {
+  .connections-v2 .connector-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .connections-v2 .connection-toolbar .search-box { max-width: 260px; }
+}
+@media (max-width: 650px) {
+  .connections-v2 .page-head { margin-bottom: 20px; gap: 16px; }
+  .connections-v2 .page-head h1 { font-size: 25px; line-height: 1.5; }
+  .connections-v2 .page-head p { font-size: 13px; }
+  .connections-v2 .connection-overview { padding: 14px 15px; margin-bottom: 18px; }
+  .connections-v2 .connection-overview > div { gap: 11px; }
+  .connections-v2 .connection-overview b { font-size: 14px; }
+  .connections-v2 .connection-overview p { font-size: 12px; line-height: 1.8; }
+  .connections-v2 .connection-toolbar { gap: 12px; margin-bottom: 16px; }
+  .connections-v2 .filter-pills button { padding: 6px 9px; font-size: 12px; }
+  .connections-v2 .connection-toolbar .search-box { max-width: none; width: 100%; min-height: 39px; }
+  .connections-v2 .connector-grid { grid-template-columns: 1fr; gap: 12px; }
+  .connections-v2 .connector-card { padding: 18px 18px 0; }
+  .connections-v2 .connector-card > p { min-height: 0; }
+  .connections-v2 .connection-disclosure { font-size: 11px; }
+  .connections-v2 .connection-event { gap: 7px 10px; }
+  .connections-v2 .connection-event time { width: 100%; margin-left: 15px; }
+  .connections-v2 .connection-activity .section-header { gap: 8px; flex-wrap: wrap; }
+  .connections-v2 .connection-activity .section-header .btn { padding-left: 0; }
+  .connector-config .tool-checks { padding: 0 10px; }
+  .connector-config .tool-checks code { overflow-wrap: anywhere; }
+  .legal-shell .project-list { grid-template-columns: 1fr; gap: 12px; }
+  .legal-shell .project-card { padding: 20px; }
+  .legal-shell .project-topline { padding: 12px 14px; gap: 10px; flex-wrap: wrap; }
+  .legal-shell .project-topline .link-btn { margin-left: 0; }
+  .legal-shell .project-add-toolbar { justify-content: flex-start; flex-wrap: wrap; gap: 8px; }
+}

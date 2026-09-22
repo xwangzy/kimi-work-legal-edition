@@ -1,0 +1,981 @@
+<title>Kimi Work 法律版调研</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --paper:#fbfbfd; --surface:#ffffff; --surface-2:#f3f4f8; --surface-3:#eceef4;
+  --line:#e2e4ec; --line-strong:#c6cad8;
+  --text:#191c28; --text-2:#4b5167; --text-3:#7b8298;
+  --indigo:#2f3d6b; --indigo-ink:#212c50; --indigo-soft:#e9ecf6;
+  --mineral:#2c6a61; --mineral-soft:#e2eeeb;
+  --cinnabar:#a5382b; --cinnabar-soft:#f8e9e6;
+  --amber:#8a6212; --amber-soft:#f8f1dc;
+  --shadow:0 1px 2px rgba(25,28,40,.05), 0 8px 24px -12px rgba(25,28,40,.14);
+  --sans:"Noto Sans SC",-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  --serif:"Noto Serif SC",Georgia,"Songti SC","SimSun",serif;
+  --mono:"JetBrains Mono","SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0d0f15; --surface:#151823; --surface-2:#1c2030; --surface-3:#242939;
+    --line:#272c3c; --line-strong:#3b4257;
+    --text:#e9ebf1; --text-2:#a7adc1; --text-3:#757c93;
+    --indigo:#93a6de; --indigo-ink:#b3c0ea; --indigo-soft:#1c2340;
+    --mineral:#6dbaac; --mineral-soft:#14302c;
+    --cinnabar:#e28472; --cinnabar-soft:#2f1a16;
+    --amber:#d6ab55; --amber-soft:#2a2314;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0d0f15; --surface:#151823; --surface-2:#1c2030; --surface-3:#242939;
+  --line:#272c3c; --line-strong:#3b4257;
+  --text:#e9ebf1; --text-2:#a7adc1; --text-3:#757c93;
+  --indigo:#93a6de; --indigo-ink:#b3c0ea; --indigo-soft:#1c2340;
+  --mineral:#6dbaac; --mineral-soft:#14302c;
+  --cinnabar:#e28472; --cinnabar-soft:#2f1a16;
+  --amber:#d6ab55; --amber-soft:#2a2314;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--text);
+  font-family:var(--sans); font-size:15px; line-height:1.75;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1240px; margin:0 auto; padding-inline:20px; padding-block:0}
+/* ---------- masthead ---------- */
+header.mast{border-bottom:1px solid var(--line); background:var(--surface)}
+.mast-in{max-width:1240px;margin:0 auto;padding-inline:20px;padding-block:44px 36px}
+.kicker{
+  font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--text-3); margin:0 0 18px;
+}
+h1{
+  font-family:var(--serif); font-weight:700; font-size:clamp(30px,5.2vw,46px);
+  line-height:1.22; margin:0 0 16px; letter-spacing:-.01em; text-wrap:balance; max-width:20ch;
+}
+.standfirst{font-size:17px; line-height:1.7; color:var(--text-2); max-width:60ch; margin:0}
+.meta-row{
+  display:flex; flex-wrap:wrap; gap:8px 28px; margin-top:26px;
+  padding-top:20px; border-top:1px solid var(--line);
+  font-size:12.5px; color:var(--text-3); font-family:var(--mono);
+}
+.meta-row b{color:var(--text-2); font-weight:600}
+/* ---------- layout ---------- */
+.shell{display:grid; grid-template-columns:216px minmax(0,1fr); gap:52px; align-items:start; padding-block:44px 72px}
+nav.toc{position:sticky; top:24px; font-size:13px}
+nav.toc h2{
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--text-3); margin:0 0 12px; font-weight:600;
+}
+nav.toc ol{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:1px}
+nav.toc a{
+  display:grid; grid-template-columns:24px 1fr; gap:6px; align-items:baseline;
+  color:var(--text-2); text-decoration:none; padding:5px 8px; border-radius:3px; line-height:1.45;
+}
+nav.toc a:hover{background:var(--surface-2); color:var(--text)}
+nav.toc a span{font-family:var(--mono); font-size:11px; color:var(--text-3)}
+main{min-width:0; max-width:none}
+section{scroll-margin-top:20px; margin-bottom:60px}
+section > *{max-width:74ch}
+section > .full, section > figure, section > .tablewrap{max-width:none}
+h2.sec{
+  font-family:var(--serif); font-size:25px; font-weight:700; line-height:1.3;
+  margin:0 0 6px; letter-spacing:-.005em; text-wrap:balance;
+}
+.sec-no{
+  font-family:var(--mono); font-size:11px; letter-spacing:.14em; color:var(--indigo);
+  display:block; margin-bottom:10px; font-weight:600;
+}
+.sec-lede{color:var(--text-2); font-size:15.5px; margin:0 0 26px; padding-bottom:22px; border-bottom:1px solid var(--line)}
+h3{font-family:var(--serif); font-size:18px; font-weight:600; line-height:1.45; margin:34px 0 10px; text-wrap:balance}
+h4{font-size:14px; font-weight:700; margin:24px 0 8px; color:var(--text)}
+p{margin:0 0 14px}
+ul,ol{margin:0 0 14px; padding-left:1.3em}
+li{margin-bottom:6px}
+strong{font-weight:700}
+a{color:var(--indigo); text-decoration:underline; text-underline-offset:2px; text-decoration-thickness:1px}
+a:focus-visible,button:focus-visible{outline:2px solid var(--indigo); outline-offset:2px}
+code,.num{font-family:var(--mono); font-size:.9em; font-variant-numeric:tabular-nums}
+code{background:var(--surface-2); padding:1px 5px; border-radius:3px; color:var(--text-2)}
+/* ---------- evidence grade chips ---------- */
+.g{
+  display:inline-block; font-family:var(--mono); font-size:10px; font-weight:600;
+  letter-spacing:.06em; padding:1px 5px; border-radius:2px; vertical-align:1px;
+  white-space:nowrap; margin-left:3px;
+}
+.g1{background:var(--mineral-soft); color:var(--mineral)}
+.g2{background:var(--indigo-soft); color:var(--indigo)}
+.g3{background:var(--amber-soft); color:var(--amber)}
+.g4{background:var(--cinnabar-soft); color:var(--cinnabar)}
+/* ---------- callouts ---------- */
+.note{
+  background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--indigo);
+  padding:16px 18px; margin:22px 0; border-radius:0 4px 4px 0;
+}
+.note.red{border-left-color:var(--cinnabar)}
+.note.green{border-left-color:var(--mineral)}
+.note.amber{border-left-color:var(--amber)}
+.note > :last-child{margin-bottom:0}
+.note-h{
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--text-3); margin:0 0 8px; font-weight:600;
+}
+.note.red .note-h{color:var(--cinnabar)}
+.note.green .note-h{color:var(--mineral)}
+.note.amber .note-h{color:var(--amber)}
+blockquote{
+  margin:18px 0; padding:0 0 0 18px; border-left:2px solid var(--line-strong);
+  color:var(--text-2); font-style:normal;
+}
+blockquote p:last-child{margin-bottom:0}
+blockquote cite{display:block; margin-top:8px; font-size:12.5px; color:var(--text-3); font-style:normal; font-family:var(--mono)}
+/* ---------- findings list (exec summary) ---------- */
+.findings{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:0; max-width:none}
+.findings li{
+  display:grid; grid-template-columns:34px minmax(0,1fr); gap:16px;
+  padding:18px 0; border-bottom:1px solid var(--line); margin:0;
+}
+.findings li:first-child{border-top:1px solid var(--line)}
+.findings .fno{
+  font-family:var(--mono); font-size:12px; font-weight:600; color:var(--indigo);
+  padding-top:2px; font-variant-numeric:tabular-nums;
+}
+.findings h4{margin:0 0 4px; font-size:15px; font-weight:700; line-height:1.5}
+.findings p{margin:0; color:var(--text-2); font-size:14.5px; max-width:72ch}
+/* ---------- tables ---------- */
+.tablewrap{overflow-x:auto; margin:20px 0; border:1px solid var(--line); border-radius:4px; background:var(--surface)}
+table{border-collapse:collapse; width:100%; font-size:13.5px; min-width:480px}
+caption{
+  text-align:left; padding:12px 16px; font-size:12px; color:var(--text-3);
+  font-family:var(--mono); letter-spacing:.04em; border-bottom:1px solid var(--line); background:var(--surface-2);
+}
+th,td{padding:9px 14px; text-align:left; vertical-align:top; border-bottom:1px solid var(--line)}
+thead th{
+  font-size:11.5px; font-family:var(--mono); letter-spacing:.05em; text-transform:uppercase;
+  color:var(--text-3); font-weight:600; background:var(--surface-2); white-space:nowrap;
+}
+tbody tr:last-child td{border-bottom:none}
+td.n,th.n{text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap}
+tbody tr:hover{background:var(--surface-2)}
+.hl{color:var(--cinnabar); font-weight:600}
+.hl-g{color:var(--mineral); font-weight:600}
+/* ---------- bar comparison ---------- */
+.bars{margin:20px 0; border:1px solid var(--line); border-radius:4px; background:var(--surface); overflow:hidden}
+.bars-h{padding:12px 16px; border-bottom:1px solid var(--line); background:var(--surface-2)}
+.bars-h b{font-size:13px}
+.bars-h span{font-size:11.5px; color:var(--text-3); font-family:var(--mono); display:block; margin-top:2px}
+.bars-body{padding:14px 16px; display:flex; flex-direction:column; gap:13px}
+.bar-row{display:grid; grid-template-columns:minmax(88px,120px) minmax(0,1fr); gap:14px; align-items:center}
+.bar-lab{font-size:13px; color:var(--text-2); line-height:1.3}
+.bar-track{display:flex; flex-direction:column; gap:4px}
+.bar-pair{display:grid; grid-template-columns:minmax(0,1fr) 46px; gap:10px; align-items:center}
+.bar{height:9px; border-radius:1px; background:var(--line)}
+.bar i{display:block; height:100%; border-radius:1px}
+.bar-val{font-family:var(--mono); font-size:11.5px; font-variant-numeric:tabular-nums; color:var(--text-2); text-align:right}
+.legend{display:flex; gap:16px; flex-wrap:wrap; padding:0 16px 14px; font-size:11.5px; color:var(--text-3); font-family:var(--mono)}
+.legend i{display:inline-block; width:10px; height:10px; border-radius:1px; margin-right:5px; vertical-align:-1px}
+/* ---------- compare grid ---------- */
+.cols{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:4px; overflow:hidden; margin:22px 0}
+.cols > div{background:var(--surface); padding:16px 18px}
+.cols h4{margin:0 0 8px; font-size:13.5px; display:flex; align-items:baseline; gap:8px}
+.cols h4 em{font-family:var(--mono); font-size:10px; font-style:normal; letter-spacing:.1em; color:var(--text-3); text-transform:uppercase}
+.cols p{margin:0; font-size:13.5px; color:var(--text-2); line-height:1.65}
+.cols ul{margin:0; padding-left:1.15em; font-size:13.5px; color:var(--text-2)}
+/* ---------- do / dont ---------- */
+.dd{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:18px; margin:22px 0}
+.dd > div{border:1px solid var(--line); border-radius:4px; padding:16px 18px; background:var(--surface)}
+.dd .yes{border-top:2px solid var(--mineral)}
+.dd .no{border-top:2px solid var(--cinnabar)}
+.dd h4{margin:0 0 10px; font-size:13px; font-family:var(--mono); letter-spacing:.1em; text-transform:uppercase}
+.dd .yes h4{color:var(--mineral)}
+.dd .no h4{color:var(--cinnabar)}
+.dd ul{margin:0; padding-left:1.15em; font-size:13.5px}
+.dd li{color:var(--text-2)}
+.dd li b{color:var(--text)}
+/* ---------- stat strip ---------- */
+.stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:4px; overflow:hidden; margin:22px 0}
+.stats > div{background:var(--surface); padding:15px 16px}
+.stats .v{font-family:var(--mono); font-size:21px; font-weight:600; color:var(--indigo-ink); line-height:1.2; font-variant-numeric:tabular-nums}
+.stats .k{font-size:12px; color:var(--text-3); margin-top:5px; line-height:1.45}
+/* ---------- decision cards ---------- */
+.decisions{display:flex; flex-direction:column; gap:16px; margin:22px 0; max-width:none}
+.dec{border:1px solid var(--line); border-radius:4px; background:var(--surface); overflow:hidden}
+.dec-h{padding:13px 18px; background:var(--surface-2); border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:baseline; flex-wrap:wrap}
+.dec-h b{font-size:14.5px}
+.dec-h em{font-family:var(--mono); font-size:10.5px; font-style:normal; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3)}
+.dec-b{padding:15px 18px; display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:18px}
+.dec-b > div > span{font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3); display:block; margin-bottom:5px}
+.dec-b p{margin:0; font-size:13.5px; color:var(--text-2); line-height:1.65}
+.dec-rec{padding:12px 18px; border-top:1px solid var(--line); background:var(--indigo-soft); font-size:13.5px}
+.dec-rec b{color:var(--indigo-ink)}
+/* ---------- gap list ---------- */
+.gaps{list-style:none; padding:0; margin:18px 0; font-size:14px; max-width:none}
+.gaps li{padding:10px 0 10px 26px; border-bottom:1px solid var(--line); position:relative; color:var(--text-2); margin:0}
+.gaps li::before{content:"?"; position:absolute; left:0; top:10px; font-family:var(--mono); font-weight:600; color:var(--cinnabar); font-size:13px}
+.gaps li b{color:var(--text)}
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--line); background:var(--surface); padding-block:32px; margin-top:20px}
+footer .wrap{font-size:12.5px; color:var(--text-3); font-family:var(--mono); line-height:1.8}
+.legend-key{display:flex; flex-wrap:wrap; gap:10px 18px; margin-bottom:16px}
+/* ---------- responsive ---------- */
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr; gap:0; padding-block:28px 56px}
+  nav.toc{position:static; margin-bottom:34px; padding-bottom:24px; border-bottom:1px solid var(--line)}
+  nav.toc ol{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:2px}
+  section > *{max-width:none}
+}
+@media (max-width:520px){
+  body{font-size:14.5px}
+  .mast-in{padding-block:32px 26px}
+  .findings li{grid-template-columns:26px minmax(0,1fr); gap:10px}
+  .bar-row{grid-template-columns:1fr; gap:6px}
+  .meta-row{gap:6px 16px; font-size:11.5px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+</style>
+
+<header class="mast">
+  <div class="mast-in">
+    <p class="kicker">中软国际 · AI 产品研发 · 立项前调研</p>
+    <h1>Kimi Work 法律行业发行版调研</h1>
+    <p class="standfirst">面向律师的行业发行版，在动手做 demo 之前需要先确认的六件事：底座能承接什么、标杆在做什么、国内真实竞争与价格如何、谁会付钱、合规红线在哪、以及哪些功能是真需求哪些是照搬美国的伪需求。</p>
+    <div class="meta-row">
+      <span><b>调研口径</b> 8 路并行联网调研 + 一手文档核验</span>
+      <span><b>数据截止</b> 2026-09-14</span>
+      <span><b>状态</b> 待确认后进入 demo 设计</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap shell">
+
+<nav class="toc" aria-label="目录">
+  <h2>目录</h2>
+  <ol>
+    <li><a href="#s0"><span>00</span>十条判断</a></li>
+    <li><a href="#s1"><span>01</span>底座能力边界</a></li>
+    <li><a href="#s2"><span>02</span>Harvey 与 K3</a></li>
+    <li><a href="#s3"><span>03</span>海外三类物种</a></li>
+    <li><a href="#s4"><span>04</span>国内竞争与数据</a></li>
+    <li><a href="#s5"><span>05</span>谁来付钱</a></li>
+    <li><a href="#s6"><span>06</span>合规即产品</a></li>
+    <li><a href="#s7"><span>07</span>真需求与伪需求</a></li>
+    <li><a href="#s8"><span>08</span>交互范式</a></li>
+    <li><a href="#s9"><span>09</span>三个待决问题</a></li>
+    <li><a href="#s10"><span>10</span>数据空白</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ============ 00 ============ -->
+<section id="s0">
+  <span class="sec-no">00 — Executive</span>
+  <h2 class="sec">十条判断</h2>
+  <p class="sec-lede">如果只看一页，看这一页。每条后面标注了证据等级，图例见页脚。</p>
+
+  <ol class="findings">
+    <li><span class="fno">01</span><div>
+      <h4>Harvey 自研的法律模型 Tenet，底座就是 Kimi K3<span class="g g1">一手</span></h4>
+      <p>Harvey 官方技术博客原文：「Harvey Tenet is a Kimi K3 base that we post-trained together with Fireworks research for long-horizon legal work.」一家估值 155 亿美元、拿下 75+ 家 Am Law 100 律所的公司，在可选任何前沿闭源模型的情况下选了 Kimi K3，并做到 LAB Contracts 榜单 SOTA。这是本项目对内立项、对外提案、与月之暗面谈判时最有力的一句话。</p>
+    </div></li>
+    <li><span class="fno">02</span><div>
+      <h4>Kimi Work 是桌面端本地 Agent，不是 Web SaaS —— 这在法律行业是结构性利好<span class="g g1">一手</span></h4>
+      <p>它能挂载本地文件夹、用 WebBridge 驱动律师自己已登录的浏览器、跑本地 Cron、调度最多 300 个子 Agent。而上海律协与宁夏律协的 AI 指引都<b>明确「鼓励本地化部署」</b>，并禁止把未脱敏的司法文书交给非本地部署的 AI。底座形态恰好落在合规刚需上。</p>
+    </div></li>
+    <li><span class="fno">03</span><div>
+      <h4>WebBridge 可以绕开中国法律 AI 最大的数据壁垒<span class="g g2">交叉</span></h4>
+      <p>裁判文书网上网量从 2020 年 2,300 万份掉到 2023 年 300 多万份，人民法院案例库对外只开放 5,000 余件。自建判例库已无可能。但 WebBridge 能复用律所<b>已经付费订阅</b>的北大法宝／威科账号，用律师本人的浏览器会话检索——这是绕开数据授权与成本的现成路径，也是我目前看到最有价值的差异化切入点。</p>
+    </div></li>
+    <li><span class="fno">04</span><div>
+      <h4>对标对象应该是日本的 LegalOn，不是 Harvey<span class="g g2">交叉</span></h4>
+      <p>Harvey 的叙事建立在英美判例法体系上。LegalOn 在同为大陆法系的日本走通的路径——<b>律师手写 playbook（135+ 套）+ 合同审查 + Word 插件 + 本国法域垄断后再出海</b>——做到日本 25% 上市公司渗透、本土 Fortune 500 覆盖 87%，可复制性远高于 Harvey。</p>
+    </div></li>
+    <li><span class="fno">05</span><div>
+      <h4>提成制决定了「向律所卖软件」在结构上是难做的生意<span class="g g2">交叉</span></h4>
+      <p>中国律所主流提成制，律师拿 70%，部分达 80–90%，律所留存要先覆盖房租行政社保，IT 排最后；而年度预算需过合伙人会议，周期以季度计。<b>律所层面几乎没有可支配预算，采购权实际下沉到团队和个人。</b>4.5 万家律所里百人所只有 633 家。</p>
+    </div></li>
+    <li><span class="fno">06</span><div>
+      <h4>律协集采是已被反复验证的分销通路，且解决了上面那个死结<span class="g g1">一手</span></h4>
+      <p>上海律协集中采买 17 款产品供会员免费试用、青岛律协×威科、安徽律协×法信、海南律协×iCourt AlphaGPT、徐汇区律工委统采、全国律协×启信宝。它同时化解了「个人付费能力弱」和「律所决策链长」，且律协背书直接回应了 83% 律师「要基于权威法律资源的可信工具」的诉求。</p>
+    </div></li>
+    <li><span class="fno">07</span><div>
+      <h4>Token 成本与市场价锚之间存在数量级鸿沟，这才是行业版做不起来的真正原因<span class="g g1">一手</span></h4>
+      <p>K3 官方输出价 ¥100／百万 token，是 K2.6 的近 4 倍。按 agentic 法律工作流测算单席位年 token 成本 ¥1.1 万起、重度 ¥2–3 万；而智合 AI 的公开定价是 <b>¥698／年全功能不限次</b>。模型路由与上下文缓存不是技术优化，是毛利管理工具。</p>
+    </div></li>
+    <li><span class="fno">08</span><div>
+      <h4>中国律师付钱买的是「能直接交出去的东西」，不是「帮我思考」<span class="g g2">交叉</span></h4>
+      <p>产品的评价标准不是「回答得对不对」，而是「下载下来能不能直接用」。智合把合同审查输出做成四档文件（修订版简洁／修订版详细／纯净版／审查意见书）就是这个逻辑。<b>刑事阅卷、要素式起诉状、文件脱敏、工商穿透</b>这些中国独有场景，美国产品里根本不存在。</p>
+    </div></li>
+    <li><span class="fno">09</span><div>
+      <h4>幻觉在中国已经形成完整的司法责任闭环，「可溯源」从卖点变成上线底线<span class="g g1">一手</span></h4>
+      <p>北京通州法院判决书点名批评律师提交 AI 杜撰案例，该案 2025 年 12 月入选人民法院案例库，裁判要旨明确情节较重可参照《民诉法》第 114 条罚款、拘留；最高法 2026 年 9 月 7 日发布涉 AI 审理意见。这既抬高了护城河，也<b>把采购从效率议题变成风险议题，拉长决策周期</b>。</p>
+    </div></li>
+    <li><span class="fno">10</span><div>
+      <h4>市场规模要诚实：这是一门体面的细分软件生意，不是百亿级平台机会<span class="g g3">测算</span></h4>
+      <p>自下而上按席位法测算，<b>TAM 约 30–60 亿元／年，SAM 约 5–8 亿元／年，三年 SOM 约 5,000 万–1.5 亿 ARR</b>。业内常引用的「4,500 亿 × 10% 智能化投入 = 450 亿」是无实证支撑的投资叙事，尽调会被拆穿。</p>
+    </div></li>
+  </ol>
+</section>
+
+<!-- ============ 01 ============ -->
+<section id="s1">
+  <span class="sec-no">01 — Foundation</span>
+  <h2 class="sec">底座：Kimi Work 能承接什么，不能承接什么</h2>
+  <p class="sec-lede">这一节纠正了一个可能的默认假设：Kimi Work 不是一个可以直接换皮的 Web 工作台。</p>
+
+  <p>Kimi Work 于 2026 年 6 月 3 日上线，目前仍为 Beta，形态是 <b>macOS（Apple 芯片，12+）／Windows 10+ 桌面客户端</b>，客户端内分 Work 与 Chat 两种模式。对应企业层的是 <b>Kimi Business</b> 席位订阅，Kimi Work 包含在其中。<span class="g g1">一手</span></p>
+
+  <h3>Work 模式的信息架构</h3>
+  <p>左侧栏八个入口，官方顺序为：<code>新建任务 · 看板 · 插件 · 技能 · 定时任务 · WebBridge · 项目 · 对话</code>。输入框内 <code>/</code> 唤起技能、<code>@</code> 添加上下文、<code>+</code> 上传文件／选插件／选技能／选「目标」。操作权限三档：默认／手动允许／全部。</p>
+
+  <div class="stats">
+    <div><div class="v">300</div><div class="k">Agent Swarm 子 Agent 上限，单任务 4000+ 次工具调用</div></div>
+    <div><div class="v">24h</div><div class="k">目标模式最长自主循环时长</div></div>
+    <div><div class="v">128K</div><div class="k">Agent 模式实际可用上下文，非 K3 的 1M</div></div>
+    <div><div class="v">2 / 20</div><div class="k">看板数量上限 / 每板小组件上限</div></div>
+  </div>
+
+  <h3>四个可直接承接行业化的扩展点</h3>
+  <div class="cols">
+    <div>
+      <h4>技能 Skill <em>行业发行版最自然的落地形态</em></h4>
+      <p>含 SKILL.md 的目录加 scripts／references／assets，渐进式披露加载，可由对话或上传文档生成。法律 Skill 包可直接对应审查 playbook、文书模板、检索方法论。</p>
+    </div>
+    <div>
+      <h4>小组件 Widget <em>生成式 UI</em></h4>
+      <p>模型在对话中即时生成的可交互页面，可绑定定时任务成为 Live Widget 自动刷新。对应案件时间线、合同风险看板、诉讼期限倒计时。</p>
+    </div>
+    <div>
+      <h4>看板 Dashboard <em>持久视图</em></h4>
+      <p>小组件容器，支持拖拽、缩放、批注，可固定到桌面。最多 2 个板、每板 20 个组件——这个配额对律所场景偏紧，需向月之暗面确认能否放宽。</p>
+    </div>
+    <div>
+      <h4>插件中心 <em>已内置法律数据源</em></h4>
+      <p>= Skills + MCP + Agents + Hooks + Commands + System Prompt，有 Plugin Builder。<b>已内置天眼查与华宇元典</b>，办公侧已支持钉钉、飞书、<b>WPS</b>。</p>
+    </div>
+  </div>
+
+  <div class="note green">
+    <p class="note-h">为什么这个形态对法律行业是结构性利好</p>
+    <p>律师采购 AI 最大的两个拦路虎，恰好都被本地优先形态绕开了。其一，《律师法》第三十八条的保密义务让「把客户案卷上传到第三方云」在合规评审时极难过关，而本地挂载可以做到<b>案卷不出本机</b>。其二，判例数据版权与成本极重，而 WebBridge 通过 Chrome DevTools Protocol 驱动律师真实浏览器、复用登录态，官方承诺「所有执行都在本地完成，登录态和网页内容不会离开你的设备」——这意味着可以直接用律所已订阅的北大法宝／威科账号检索。</p>
+  </div>
+
+  <h3>必须正视的能力缺口</h3>
+  <p>底座在「Agent 执行能力」维度领先，但在「企业 IT 治理」维度明显落后国际对手一个身位。以下项目穷尽检索后<b>无任何公开信息</b>，做方案时必须算作中软国际的自建工作量，不能假设底座已有：</p>
+  <div class="tablewrap">
+    <table>
+      <caption>Kimi Business 与国际企业级 AI 的治理能力差距<span class="g g4">查不到</span></caption>
+      <thead><tr><th>能力</th><th>Kimi Business</th><th>ChatGPT Enterprise / Claude Enterprise</th><th>对法律行业的影响</th></tr></thead>
+      <tbody>
+        <tr><td>SSO / SAML / SCIM</td><td class="hl">无公开信息</td><td>有</td><td>大所与央国企 IT 评审的硬门槛</td></tr>
+        <tr><td>审计日志</td><td class="hl">无公开信息</td><td>有</td><td>上海律协第十七条直接要求记录输入、输出与修改过程</td></tr>
+        <tr><td>SOC2 / ISO 27001 / 等保</td><td class="hl">无（仅有国内算法备案）</td><td>有</td><td>供应商筛选门槛</td></tr>
+        <tr><td>私有化部署</td><td class="hl">官方明确暂不提供</td><td>—</td><td>K3 为 2.8T 参数，一体机方案硬件门槛远超律所承受力</td></tr>
+        <tr><td>团队共享知识库</td><td class="hl">无</td><td>有</td><td>官方明确「项目不是知识库」且无共享无协作</td></tr>
+        <tr><td>数据不用于训练</td><td class="hl-g">企业版已承诺</td><td>有</td><td>—</td></tr>
+        <tr><td>算法备案</td><td class="hl-g">已完成，数据存境内</td><td>不适用</td><td>调用已备案模型的应用只需属地网信办登记</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note-h" style="margin-top:-6px">这个缺口同时是中软国际作为集成商的增值位置——治理层正是 IT 服务商最擅长补的那一块。</p>
+</section>
+
+<!-- ============ 02 ============ -->
+<section id="s2">
+  <span class="sec-no">02 — Benchmark</span>
+  <h2 class="sec">Harvey：标杆拆解，以及它选了 Kimi K3 这件事</h2>
+  <p class="sec-lede">Harvey 值得学的不是模型，是把 AI 输出变成可审计团队工作产物的那一整套产品细节。</p>
+
+  <h3>先说那条最重要的发现</h3>
+  <p>Harvey 于 2026 年 8 月 20 日发布首个自研法律专用模型 <b>Harvey Tenet</b>。官方技术博客原句已核实：</p>
+  <blockquote>
+    <p>Harvey Tenet is a <b>Kimi K3 base</b> that we post-trained together with Fireworks research for long-horizon legal work.</p>
+    <cite>harvey.ai/blog/post-training-update-harvey-tenet　经 The Legal Wire 第二源交叉印证</cite>
+  </blockquote>
+  <p>训练配置：与 Fireworks 合作，GSPO 异步强化学习加 rank-64 LoRA（覆盖约 50 万专家张量）；约 <b>150 张 NVIDIA B300 训练 2 个月</b>；数据为合成数据、公开法律数据与<b>律师标注的人类专家数据</b>（经 Mercor、Snorkel 招募律师构建），构建约 <b>1,750 个 agentic 法律任务环境</b>，明确声明未使用任何客户数据。效果上相较 K3 基座，LAB 全通过率 +9 个百分点，LAB Contracts 达 SOTA，并购尽调的 criteria pass rate 从 43.8% 提升到 60.1%。<span class="g g1">一手</span></p>
+
+  <div class="note green">
+    <p class="note-h">这一条对项目的三重价值</p>
+    <p><b>对外背书。</b>不需要我们论证「Kimi 适不适合做法律」，Harvey 已经用 155 亿美元估值和 SOTA 成绩论证完了。<br>
+    <b>技术路线确认。</b>不要自己从零训法律大模型，正确路径是 K3 基座加领域后训练，且月之暗面在登月计划中已承诺推进国产算力适配。<br>
+    <b>真壁垒的定位。</b>Harvey 真正的资产是那 1,750 个由执业律师标注的 agentic 法律任务环境，不是模型本身。这个数据资产在中国法域下必须重建，而且应该现在就开始——它比任何功能开发都更值得优先投入。</p>
+  </div>
+
+  <h3>Harvey 的信息架构演进</h3>
+  <p>2024 年左导航为 <code>客户-案件号 | Assistant | Research | Vault | Workflows | History | Library</code>；2026 年变为 <code>Agents | Vault | Knowledge | Spaces | Command Center | Contract Intelligence | Mobile | Ecosystem | Memory</code>。这是从 chat-first 到 agent-first 加 context-first 的范式切换。</p>
+  <p>一个值得注意的细节：2024 年版把<b>客户-案件号（Client-Matter Number）放在左导航第一位</b>，每次查询强制关联，用于利益冲突墙、计费归因与数据隔离。中国律所同样有案号体系，但几乎没有 AI 产品去挂钩——这是一个现成的机会点。</p>
+
+  <h3>Review Table：最值得复刻的交互原语</h3>
+  <p>结构是<b>行等于文档、列等于问题、单元格等于带引用的答案</b>。真正值得抄的不是表格本身，是配套的那一整套：</p>
+  <ul>
+    <li>列可配置数据类型（摘要／日期／货币／<b>逐字引用</b>／是否），且系统主动建议类型</li>
+    <li><b>三色旗标分诊</b>：红等于 deal-breaker、橙等于谈判点、黄等于标准条款，形成风险视觉地图</li>
+    <li>单元格点开显示：摘要 + 合同原文精确语句 + <b>句级引用</b> + <b>reasoning 字段</b>（文档说了什么／模型如何理解／为何得出该结论）</li>
+    <li>协作三件套：指派、评论、标记已核验，加 Cell Lock 与状态侧滑面板</li>
+    <li>可对表格本身再提问，且答案会纳入团队打的旗标与评论等元数据</li>
+  </ul>
+  <p>一键抽取模板的公开召回率：并购协议 27 字段 99.66%、股权购买协议 32 字段 98.13%、租约 24 字段 97.20%。<span class="g g1">一手</span></p>
+
+  <div class="note">
+    <p class="note-h">一个几乎不依赖模型能力的产品级发现</p>
+    <p>Harvey 在 2026 年重写审阅算法时，把引用粒度从「单元格级」下沉到<b>「句子级」</b>，并新增显式 reasoning 字段。结果是盲评偏好度提升 <b>4 倍</b>，复杂文档场景下达 <b>7 倍</b>。这几乎完全是产品设计的收益，不是更强的模型带来的。国内产品的引用大多还停留在「给个文件名」的水平——这是最容易拉开差距的地方。</p>
+  </div>
+
+  <h3>人在回路的三道闸</h3>
+  <p>执行前 <b>Preview &amp; Approval</b>（可查看并修改 agent 的计划）、执行中 <b>Nudges</b>（需要人类判断时主动提醒）、全程 <b>Auditability</b>（每条结论带引用、每步留日志）。Word 中的建议一律以 tracked changes 呈现，<b>nothing applied automatically</b>。官方 slogan 是「Delegate the Work. Own the Judgment.」</p>
+
+  <h3>组织结构：最难复制也最容易被忽视的部分</h3>
+  <p>Harvey <b>约 20% 的员工是律师</b>（联合创始人 Reddit AMA 确认），并把「Legal Engineer」做成正式工程岗，要求 JD 学位加 3 年顶级律所执业经验，按<b>法域 × 专业领域 × 城市</b>三维细分招聘。产品细节的密度来自组织里有足够多真正执业过的人。</p>
+
+  <div class="note amber">
+    <p class="note-h">买方与用户的断层（这条在中国同样成立）</p>
+    <p>Reddit 上被反复引用的一句用户原话：「the associates hated Harvey, but the partners went with it because they think it's magic.」第三方部署分析也指出，合伙人系统性地是<b>错误的访谈对象</b>——真正被自动化的工作流改进发生在助理与律师助理层面。中国律所同样是主任／合伙人买单、实习律师和授薪律师使用，必须做双轨调研与双轨价值叙事：给合伙人算钱，给一线律师减按键。</p>
+  </div>
+</section>
+
+<!-- ============ 03 ============ -->
+<section id="s3">
+  <span class="sec-no">03 — Landscape</span>
+  <h2 class="sec">海外全景：三类物种，三种护城河</h2>
+  <p class="sec-lede">这个赛道在 2025–2026 年完成了第一次洗牌，有人跑出来了，也有人死了。</p>
+
+  <div class="cols">
+    <div>
+      <h4>平台型 <em>Platform</em></h4>
+      <p>Harvey、Legora、CoCounsel、Lexis+ with Protégé。覆盖检索加审查加起草加工作流编排，ACV 从 3 万到数百万美元。护城河分两种：<b>内容型</b>（Westlaw、Shepard's，不可复制但迭代慢）与<b>交互型</b>（Tabular Review、Workflows，可复制但有时间差）。</p>
+    </div>
+    <div>
+      <h4>点工具 <em>Point Solution</em></h4>
+      <p>Spellbook、Definely、Clearbrief、Midpage、Paxton。价格低一到两个数量级，常与平台型共存。生存法则：<b>要么解决 LLM 解决不了的确定性问题，要么绑定 LLM 拿不到的数据或信任资产。</b></p>
+    </div>
+    <div>
+      <h4>垂直闭环 <em>Full-Stack</em></h4>
+      <p>EvenUp、Eve、Garfield AI。不卖工具卖结果，定价单位是案件或动作。<b>单位经济最健康</b>：EvenUp 2,000+ 家 PI 律所、每周 1 万案件、20 亿美元估值，护城河是和解金额数据飞轮。</p>
+    </div>
+  </div>
+
+  <div class="note red">
+    <p class="note-h">一个必须避开的死亡区</p>
+    <p><b>Robin AI 已经死了。</b>英国明星合同 AI，2025 年一轮 5,000 万美元融资谈崩，英国税务海关总署发出清盘呈请，托管业务贱卖给 Scissero，<b>2026 年 1 月微软把它的技术团队整建制挖走去做 Word 原生法律 AI</b>。死因很清楚：纯 Word 插件做通用合同审查，无内容壁垒、无规模、无垂直闭环，且正对着微软的枪口。<br><br>这意味着「做个 Word／WPS 插件帮律师审合同」这个最直觉的切入点，恰恰是最危险的。同赛道的 Spellbook 靠 4,000 家客户的分母优势活着，并拿了 4,000 万美元债务融资去做并购——它判断赛道已进入整合期。</p>
+  </div>
+
+  <h3>VLAIR 独立评测：哪些能力可以承诺，哪些必须留人工</h3>
+  <p>Vals AI 用 Am Law 100 律所真实工作构建的基准，是目前唯一一份独立法律 AI 评测，设有<b>人类律师无 AI 辅助基线</b>。</p>
+
+  <div class="bars">
+    <div class="bars-h"><b>VLAIR 第一轮（2025-02）：最佳 AI vs 人类律师基线</b><span>分值为任务通过率，越高越好</span></div>
+    <div class="bars-body">
+      <div class="bar-row"><div class="bar-lab">文档问答</div><div class="bar-track">
+        <div class="bar-pair"><div class="bar"><i style="width:94.8%;background:var(--mineral)"></i></div><div class="bar-val">94.8</div></div>
+        <div class="bar-pair"><div class="bar"><i style="width:70.1%;background:var(--line-strong)"></i></div><div class="bar-val">70.1</div></div>
+      </div></div>
+      <div class="bar-row"><div class="bar-lab">笔录分析</div><div class="bar-track">
+        <div class="bar-pair"><div class="bar"><i style="width:77.8%;background:var(--mineral)"></i></div><div class="bar-val">77.8</div></div>
+        <div class="bar-pair"><div class="bar"><i style="width:53.7%;background:var(--line-strong)"></i></div><div class="bar-val">53.7</div></div>
+      </div></div>
+      <div class="bar-row"><div class="bar-lab">文档摘要</div><div class="bar-track">
+        <div class="bar-pair"><div class="bar"><i style="width:77.2%;background:var(--mineral)"></i></div><div class="bar-val">77.2</div></div>
+        <div class="bar-pair"><div class="bar"><i style="width:50.3%;background:var(--line-strong)"></i></div><div class="bar-val">50.3</div></div>
+      </div></div>
+      <div class="bar-row"><div class="bar-lab">数据抽取</div><div class="bar-track">
+        <div class="bar-pair"><div class="bar"><i style="width:75.1%;background:var(--mineral)"></i></div><div class="bar-val">75.1</div></div>
+        <div class="bar-pair"><div class="bar"><i style="width:71.1%;background:var(--line-strong)"></i></div><div class="bar-val">71.1</div></div>
+      </div></div>
+      <div class="bar-row"><div class="bar-lab">时间线生成</div><div class="bar-track">
+        <div class="bar-pair"><div class="bar"><i style="width:80.2%;background:var(--indigo)"></i></div><div class="bar-val">80.2</div></div>
+        <div class="bar-pair"><div class="bar"><i style="width:80.2%;background:var(--line-strong)"></i></div><div class="bar-val">80.2</div></div>
+      </div></div>
+      <div class="bar-row"><div class="bar-lab"><b>红线审阅</b></div><div class="bar-track">
+        <div class="bar-pair"><div class="bar"><i style="width:65.0%;background:var(--cinnabar)"></i></div><div class="bar-val">65.0</div></div>
+        <div class="bar-pair"><div class="bar"><i style="width:79.7%;background:var(--line-strong)"></i></div><div class="bar-val">79.7</div></div>
+      </div></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--mineral)"></i>AI 胜出</span>
+      <span><i style="background:var(--indigo)"></i>打平</span>
+      <span><i style="background:var(--cinnabar)"></i>人类胜出</span>
+      <span><i style="background:var(--line-strong)"></i>人类律师基线</span>
+    </div>
+  </div>
+
+  <p>第二轮（2025-10）专测法律检索，结论对整个行业更有杀伤力：人类律师 71%，Alexi 80%，Counsel Stack 81%，Midpage 79%，而<b>通用 ChatGPT 拿到 80%</b>。专业法律 AI 唯一的领先项是「权威性」76% 对 70%。<span class="g g1">一手</span></p>
+
+  <div class="note">
+    <p class="note-h">两条产品约束</p>
+    <p>其一，<b>红线审阅是人类唯一大幅领先的任务</b>（79.7% 对 65.0%）。合同改条款必须设计成「AI 提建议、人逐条确认」，任何宣称「自动谈判」的功能都要准备好承担责任风险。<br>
+    其二，<b>纯检索能力的护城河已被通用大模型抹平</b>，剩余差异全部来自专有数据库的访问权。这再次印证了 WebBridge 复用律所已订阅数据库这条路的战略价值。</p>
+  </div>
+
+  <h3>定价单位的六种形态</h3>
+  <div class="tablewrap">
+    <table>
+      <caption>海外法律 AI 定价模式对照<span class="g g3">多为第三方估算</span></caption>
+      <thead><tr><th>模式</th><th>代表</th><th class="n">价格</th><th>适用条件</th></tr></thead>
+      <tbody>
+        <tr><td>per seat／年 + 最低席位</td><td>Harvey</td><td class="n">$1,200／席／月<br>20–50 席起</td><td>强制放大 ACV，筛掉小客户，代价是中型所被挡在门外</td></tr>
+        <tr><td>per seat／年</td><td>Legora</td><td class="n">$3,000／席／年起<br>10 席起</td><td>单席价低于 Harvey，在中型所有价格优势</td></tr>
+        <tr><td>内容捆绑加价</td><td>CoCounsel</td><td class="n">$4,500 / 6,600 / 9,000<br>／用户／年</td><td>Westlaw 存量客户切换成本近乎为零</td></tr>
+        <tr><td>基础席位 + 模块加购</td><td>LegalOn</td><td class="n">$550／月起<br>模块另计</td><td>价格歧视能力最强，降低首单门槛</td></tr>
+        <tr><td><b>按案件</b></td><td>EvenUp</td><td class="n">按 case 计价</td><td>客户自身按风险代理收费时，per seat 是错的定价单位</td></tr>
+        <tr><td><b>按动作</b></td><td>Garfield AI</td><td class="n">£2 催告函<br>£7.50 诉前函</td><td>仅在完全取代人工服务时成立</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>一个值得利用的行业惯例：调研 20 家厂商，<b>只有 6 家公布价格</b>，其余全部导流到销售通话。Vaquill 的评测直言厂商是「在销售过程中摸清预算后才定价」。<b>透明定价本身就是差异化武器</b>——Paxton 公开 $499／月把销售周期从几周压到几分钟。</p>
+</section>
+
+<!-- ============ 04 ============ -->
+<section id="s4">
+  <span class="sec-no">04 — China</span>
+  <h2 class="sec">国内现实：竞争、数据与价格</h2>
+  <p class="sec-lede">国内和海外是两个不同的游戏，价格差两到三个数量级，数据在冻结，而最好的技术团队已经跑了。</p>
+
+  <h3>智合 AI：点名对标对象的完整拆解</h3>
+  <p>主体上海之合网络科技，2014 年成立。创始人洪祖运是华东政法硕士，<b>曾在众达（Jones Day）香港办公室做 7 年知识产权律师</b>——不是技术出身，是「行业关系加内容加媒体」出身。2026 年 8 月完成数千万元 A 轮，达泰资本领投，上海闵行金融投资（属地国资）跟投。</p>
+  <p>3.0 架构为<b>法律智能本体 + Skill 中心 + 数字法务</b>。技能覆盖 AI 搜法、AI 类案、法律研究、合同审查、合同起草、超级文件助手、极简尽调、法律翻译（含术语库）、文件脱敏、企业查询、法律计算器、刑事阅卷、律师推荐。合同审查单份限 100M、10 万字。</p>
+
+  <div class="note">
+    <p class="note-h">从前端代码逆向出的白标渠道架构（其他公开报道没有的一手发现）</p>
+    <p><code>grandall.zhiexa.com</code> 是<b>国浩律师事务所专属实例</b>；域名含 <code>mxf</code> 时页面标题改为「<b>闵晓法</b>」，即上海闵行区司法／律协白标；含 <code>zcounsel</code> 时改为「Z-Counsel」，面向企业与涉外，且「法律研究」改称「法律咨询」；<code>peixun.zhiexa.com</code> 是律协培训站；用户标签含「大成」时弹出「大成律师专属服务」并<b>把付费墙宽度从 623px 改为 300px</b>——说明大成渠道用户走的是另一套商业化路径。<br><br>归纳出的四层渠道模型：C 端自然增长、律所批量采购、<b>律协／司法局白标</b>、企业法务。再叠加智拾网 2,000+ 门课程作为流量入口——<b>先卖培训进所，再卖工具</b>，这是国内最有效的 to 律所打法。</p>
+  </div>
+
+  <h3>价格：两个必须放在一起看的数字</h3>
+  <div class="tablewrap">
+    <table>
+      <caption>通义法睿完整价目表（阿里云官方）—— 全调研最有价值的定价锚点<span class="g g1">一手</span></caption>
+      <thead><tr><th>档位</th><th class="n">年费</th><th class="n">额度</th><th>按量单价</th></tr></thead>
+      <tbody>
+        <tr><td>体验版</td><td class="n">免费</td><td class="n">3 份／月</td><td rowspan="5" style="vertical-align:middle">合同审查 <b>¥4／页</b><br>法律咨询 <b>¥0.7／次</b><br>案例检索 <b>¥0.8／次</b><br>法规检索 <b>¥0.3／次</b></td></tr>
+        <tr><td>基础版</td><td class="n">¥10,000</td><td class="n">17 份／月</td></tr>
+        <tr><td>标准版</td><td class="n">¥100,000</td><td class="n">250 份／月</td></tr>
+        <tr><td>专业版</td><td class="n">¥250,000</td><td class="n">400 份／月</td></tr>
+        <tr><td>旗舰版</td><td class="n">¥800,000</td><td class="n">1,800 份／月</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note red">
+    <p class="note-h">把两个数字放在一起</p>
+    <p>按通义法睿的按量单价推算，一个重度用户（每天 10 次法律研究加每月 5 份 30 页合同）的月成本约 <b>¥810</b>。<br>
+    而<b>智合 AI 卖 ¥698／年，宣称全功能不限次</b>。<br><br>
+    这中间的差额只有两种解释：要么在烧钱补贴，要么隐藏配额远比宣传严格。前端代码里已经出现「该模块的额度已用完」的文案，指向后者。<b>任何「不限次」的定价承诺在这个赛道都不可持续</b>——这是我们定价时必须规避的陷阱。</p>
+  </div>
+
+  <h3>付费意愿的三层断崖</h3>
+  <div class="tablewrap">
+    <table>
+      <caption>国内法律 AI 价格锚点全汇总</caption>
+      <thead><tr><th>层级</th><th>谁付钱</th><th class="n">年支出</th><th>已核实案例</th></tr></thead>
+      <tbody>
+        <tr><td><b>L0</b> 不付钱</td><td>大多数执业律师</td><td class="n">¥0</td><td>律协集采已买单；DeepSeek／豆包／百度法行宝／通义法睿 C 端全部免费</td></tr>
+        <tr><td><b>L1</b> 个人小额</td><td>主动型律师</td><td class="n">¥500–3,000</td><td>智合 698、智拾 998、幂律吾律 988、聚法 699、北大法宝与无讼 3,600、Alpha 约 5,222（推算）</td></tr>
+        <tr><td><b>L2</b> 机构采购</td><td>律所／法务部／高校／律协</td><td class="n">¥4 万–50 万</td><td>北大法宝 4–22 万、威科云南大学 49.97 万、Alpha 江苏大学 90 账号 47 万、通义法睿 1–80 万</td></tr>
+        <tr><td><b>L3</b> 政府工程</td><td>法院／检察院</td><td class="n">¥25 万–270 万+</td><td>山西高院元典智库 V3.0 270 万；杭州拱墅检察院大模型一体机 24.82 万</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><b>¥3,600 是中国法律工具个人年费的心理天花板</b>（北大法宝与无讼同价）。而 Harvey 的估算席位价是每席 10 万–25 万美元——这是两到三个数量级的差距，任何把 Harvey 商业模式直接搬到中国的尝试都会失败。</p>
+
+  <h3>数据壁垒已经翻转</h3>
+  <div class="stats">
+    <div><div class="v">2,300 万</div><div class="k">2020 年裁判文书网上网量（份）</div></div>
+    <div><div class="v">300 多万</div><div class="k">2023 年上网量，三年降幅逾 85%</div></div>
+    <div><div class="v">5,000 余</div><div class="k">人民法院案例库对外开放件数</div></div>
+    <div><div class="v">1.4–1.8 亿</div><div class="k">各商业库宣称的存量文书篇数</div></div>
+  </div>
+  <p>2024 年 1 月上线的全国法院裁判文书库<b>仅支持四级法院干警在内部专网查询</b>。这意味着：谁在 2021 年前囤到了存量文书谁就有护城河，今天再想从零建库已不可能；但老玩家的数据也在贬值，三年后所有商业案例库的「最新案例」都会停留在 2021 年。</p>
+  <p>值得注意的两个动作：<b>北大法宝已开放 MCP 语义检索服务</b>，把自己卖成「给别人的 AI 当数据源」，这是聪明的防守，也为我们提供了买数据而非建数据的现成通路；<b>法信</b>（人民法院出版社，3.2 亿篇、3.67 万亿字语料）是唯一能合法完整拿到法院全量数据的机构，它一旦对外开放 API，所有商业案例库的估值会被重估——这是全行业最大的不确定性。</p>
+
+  <div class="note amber">
+    <p class="note-h">一个值得警惕的负面信号</p>
+    <p><b>秘塔科技逃离了法律赛道。</b>它 2019 年靠法律翻译打进「中国各大顶尖律师事务所、仲裁中心」，是这个行业技术最好的团队之一。但它把重心彻底转向了通用搜索 metaso.cn，MetaLaw 现在「面向境外法域，中文法律法规和裁判文书覆盖有限」。<br>
+    同期，<b>无讼</b>创始人蒋勇 2021 年去世后案例库事实上已废，<b>律呗</b>域名变成停放页，<b>律蜻蜓</b>被盗版影视站占用，<b>法狗狗</b>转型去做通用文档 AI。第一代法律科技创业公司基本全灭。</p>
+  </div>
+</section>
+
+<!-- ============ 05 ============ -->
+<section id="s5">
+  <span class="sec-no">05 — Buyer</span>
+  <h2 class="sec">谁来付钱：决策链与首批客户</h2>
+  <p class="sec-lede">在中国，「向律所卖软件」在结构上是一门难做的生意。理解这一点比理解产品更重要。</p>
+
+  <div class="stats">
+    <div><div class="v">83 万</div><div class="k">执业律师总数（2025-09 司法部）</div></div>
+    <div><div class="v">4.5 万</div><div class="k">律师事务所总数</div></div>
+    <div><div class="v">633</div><div class="k">百人所数量，占全部律所 1.4%</div></div>
+    <div><div class="v">25.3%</div><div class="k">个人所占比</div></div>
+  </div>
+
+  <h3>提成制这个结构性约束</h3>
+  <p>中国律所主流是提成制：律师拿 70%，部分所达 80–90%，律所留存的 10–30% 要先覆盖房租、行政、社保、品牌，IT 排在最后。而律所章程范本规定年度预算由主任提案、<b>经合伙人会议审议通过</b>，决策周期以季度计。</p>
+  <p>结论：<b>提成制下律所层面几乎没有可支配预算，采购权实际下沉到团队负责人和律师个人。</b>真正的钱包分散在五处——团队负责人、律师个人、少数一体化大所的管委会、律协／司法局的集采预算、企业法务的公司 IT 预算。</p>
+
+  <h3>律协集采：被验证过的解法</h3>
+  <div class="tablewrap">
+    <table>
+      <caption>已发生的律协／司法局集采案例<span class="g g1">一手</span></caption>
+      <thead><tr><th>主体</th><th>标的</th><th>时间</th></tr></thead>
+      <tbody>
+        <tr><td>上海市律协</td><td>法律科技产品大赛 <b>17 款产品集中采买</b>，律师经律协 App 免费试用</td><td>2024</td></tr>
+        <tr><td>上海徐汇区律工委</td><td>区司法局推动，统一采购 AI 产品向全区律所免费开放</td><td>2024-12</td></tr>
+        <tr><td>青岛市律协</td><td>与威科集团签约，集中采购威科先行法律信息库</td><td>2025-08</td></tr>
+        <tr><td>安徽省律协</td><td>为全省律师统一采购法信法律数据检索服务</td><td>2023-03</td></tr>
+        <tr><td>海南省律协</td><td>联合 iCourt 推 AlphaGPT 试用与会员优惠采购；此前已购北大法宝 V6 与启信宝</td><td>2026-09</td></tr>
+        <tr><td>中华全国律协</td><td>集中采买启信宝等供律师免费使用</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>这条通路一次性化解了「单个律师付费能力弱」与「单个律所决策链长」两个死结。而且律协背书直接回应了 LexisNexis 调研里那个关键数字——<b>83% 的中国律师倾向「基于权威法律资源、专业可信赖的 AI 工具」</b>。在中国市场，律协背书是最便宜的权威性。</p>
+
+  <h3>使用渗透率已近饱和，瓶颈在信任与付费</h3>
+  <div class="bars">
+    <div class="bars-h"><b>LexisNexis 中国内地连续调研</b><span>2025 年 n=404，2026 年 n=411</span></div>
+    <div class="bars-body">
+      <div class="bar-row"><div class="bar-lab">已应用生成式 AI</div><div class="bar-track">
+        <div class="bar-pair"><div class="bar"><i style="width:68%;background:var(--line-strong)"></i></div><div class="bar-val">68%</div></div>
+        <div class="bar-pair"><div class="bar"><i style="width:88%;background:var(--indigo)"></i></div><div class="bar-val">88%</div></div>
+      </div></div>
+      <div class="bar-row"><div class="bar-lab">使用通用或专业法律 AI</div><div class="bar-track">
+        <div class="bar-pair"><div class="bar"><i style="width:99%;background:var(--mineral)"></i></div><div class="bar-val">99%</div></div>
+      </div></div>
+      <div class="bar-row"><div class="bar-lab"><b>其中用专业法律 AI</b></div><div class="bar-track">
+        <div class="bar-pair"><div class="bar"><i style="width:54%;background:var(--amber)"></i></div><div class="bar-val">54%</div></div>
+      </div></div>
+      <div class="bar-row"><div class="bar-lab">担忧内容准确性</div><div class="bar-track">
+        <div class="bar-pair"><div class="bar"><i style="width:80%;background:var(--cinnabar)"></i></div><div class="bar-val">80%</div></div>
+      </div></div>
+      <div class="bar-row"><div class="bar-lab">担忧数据安全</div><div class="bar-track">
+        <div class="bar-pair"><div class="bar"><i style="width:77%;background:var(--cinnabar)"></i></div><div class="bar-val">77%</div></div>
+      </div></div>
+      <div class="bar-row"><div class="bar-lab">要求权威法律资源</div><div class="bar-track">
+        <div class="bar-pair"><div class="bar"><i style="width:83%;background:var(--indigo)"></i></div><div class="bar-val">83%</div></div>
+      </div></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--line-strong)"></i>2024</span>
+      <span><i style="background:var(--indigo)"></i>2025／2026</span>
+      <span><i style="background:var(--mineral)"></i>总渗透</span>
+      <span><i style="background:var(--amber)"></i>专业工具缺口</span>
+      <span><i style="background:var(--cinnabar)"></i>顾虑</span>
+    </div>
+  </div>
+  <p><b>99% 对 54% 的缺口就是市场空间</b>：律师已经在用 AI 了，只是用的还是通用大模型。而 80% 与 77% 这两个顾虑数字，直接定义了产品的三个必须项——可溯源引用、数据不外流、权威语料。</p>
+
+  <h3>首批客户优先级</h3>
+  <div class="tablewrap">
+    <table>
+      <caption>按出单速度排序</caption>
+      <thead><tr><th>优先级</th><th>客户</th><th>理由</th><th class="n">周期</th></tr></thead>
+      <tbody>
+        <tr><td class="hl-g">P1</td><td>省市级律协／区律工委／司法局</td><td>已被威科、iCourt、法信验证；单笔 50–300 万；一次覆盖数千至数万律师；预算来自会费或财政，不受提成制约束</td><td class="n">3–6 月</td></tr>
+        <tr><td class="hl-g">P2</td><td>央国企／金融机构法务部</td><td>与中软国际登月计划首期能源电力客户重叠，可搭车进场；预算走信息化条线；<b>触发《暂行办法》第二条第三款企业内部应用豁免，合规成本最低</b></td><td class="n">3–6 月</td></tr>
+        <tr><td>P3</td><td>281 人以上单体规模所</td><td>有管委会、公共积累、知识管理或法律科技委员会、品牌动机与合规压力。最佳切入点是云南澜湄、植德这类已有内部技术叙事的所</td><td class="n">9–18 月</td></tr>
+        <tr><td class="hl">不建议</td><td>4 万余家中小所的所级采购</td><td>无所级预算，但决策链一样长</td><td class="n">—</td></tr>
+        <tr><td class="hl">不建议</td><td>法院／检察院</td><td>华宇、通达海、中科软、讯飞的存量地盘，投标有既往业绩硬门槛，且政府侧买的是信息化工程不是 AI 产品</td><td class="n">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note red">
+    <p class="note-h">一个需要向内部核实的关键假设</p>
+    <p>两路独立调研均<b>未检索到中软国际在法院、检察院、司法局、政法委的任何中标或交付案例</b>。中软国际官网七大行业解决方案为能源电力、金融、制造、交通、城市、医疗、教育，<b>不含政法或法律行业</b>。其政府侧能力集中在「政务」而非「政法」，而这两个口子在中国的采购体系、评审专家库、集成商生态是完全分离的。<br><br>如果原本设想借中软国际的政法行业关系做渠道，这个假设在公开信息层面不成立。中软的真实价值应该落在交付集成能力、政企客户面、以及信创与等保经验上。<b>这一条请向内部核实后再定 GTM。</b></p>
+  </div>
+</section>
+
+<!-- ============ 06 ============ -->
+<section id="s6">
+  <span class="sec-no">06 — Compliance</span>
+  <h2 class="sec">合规即产品：把红线做成功能与卖点</h2>
+  <p class="sec-lede">律协指引实际上已经替我们写好了销售话术和功能清单。</p>
+
+  <h3>律协指引：从法条到功能需求</h3>
+  <div class="tablewrap">
+    <table>
+      <caption>上海市律协《律师提供居（村）法律顾问服务 AI 工具使用指引（2025）（试行）》<span class="g g1">一手</span></caption>
+      <thead><tr><th>条款</th><th>原文要点</th><th>对应的产品功能</th></tr></thead>
+      <tbody>
+        <tr><td class="n">第十二条</td><td><b>鼓励</b>律所、律师通过 AI 工具的<b>本地化部署</b>加强对当事人隐私、个人信息、商业秘密的保护</td><td class="hl-g">直接印在销售材料上——本地优先形态是合规刚需，不是技术选项</td></tr>
+        <tr><td class="n">第十五条（三）</td><td>生物识别、特定身份、医疗健康、金融账户等敏感个人信息，<b>即便有当事人同意，也不宜向部署在云端的 AI 工具提供</b></td><td>脱敏引擎；敏感信息本地处理路由</td></tr>
+        <tr><td class="n">第二十九条</td><td>禁止将未脱敏的判决书裁定书、身份证产权证、聊天记录视频照片提供给<b>非本地化部署</b>的 AI 工具</td><td>上传前自动脱敏检查与阻断</td></tr>
+        <tr><td class="n">第十六条</td><td>应通过官方数据库或权威检索平台<b>交叉验证</b> AI 引用法条或案例的真实性、有效性与时效性</td><td class="hl-g">引用校验器 + 一键核验按钮</td></tr>
+        <tr><td class="n">第十七条</td><td>应记录 AI 使用情况，<b>包括输入信息、生成结果、审查修改过程</b>，妥善保存以便核查追溯</td><td class="hl-g">全程审计留痕——竞品普遍缺失，是现成的差异化</td></tr>
+        <tr><td class="n">第六／十三条</td><td>律师不应轻信和过分依赖，未尽合理审核义务可能承担法律责任；<b>律师应对交付的服务成果负责</b></td><td>强制人工复核环节与责任转移节点留痕</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>宁夏律协 2026 年 3 月的指引同样确立「鼓励私有化部署、公有云使用前须严格评估并脱敏、律师必须独立审查验证、<b>律师是最终责任人且 AI 使用过错责任不可转移</b>」。司法部与全国律协层面<b>暂无</b>全国统一强制规范——规则供给目前在地方律协，上海是事实上的标准制定者。</p>
+
+  <h3>四条不可违反的硬约束</h3>
+  <div class="decisions">
+    <div class="dec">
+      <div class="dec-h"><b>K3 License 的产品形态决定许可成本</b><em>§2 §4 §5</em></div>
+      <div class="dec-b">
+        <div><span>规则</span><p>§2 把 MaaS 定义为「让第三方对输入、参数或训练数据行使有意义的控制」，并<b>明确排除「模型能力仅嵌入特定功能的终端产品」</b>。§4 另给两个豁免：纯内部使用，以及通过<b>认证推理伙伴</b>访问。§5 为全面免责。</p></div>
+        <div><span>含义</span><p>一个法律行业 SaaS 或私有化产品<b>不构成 MaaS</b>，即使收入超 2,000 万美元也不触发单独签约义务。但若做成「律所可自由调参、自行微调、开放通用 API」的平台，就掉进 MaaS 定义。</p></div>
+      </div>
+      <div class="dec-rec"><b>行动：</b>架构设计要主动避开 MaaS 定义；谈判时优先争取「认证推理伙伴」名分；因 §5 全面免责，SLA 与责任必须靠商务合同另行约定，不能依赖 License。</div>
+    </div>
+
+    <div class="dec">
+      <div class="dec-h"><b>Token 成本与市场价锚倒挂</b><em>毛利管理</em></div>
+      <div class="dec-b">
+        <div><span>数字</span><p>K3 输出 ¥100／百万 token，是 K2.6（¥27）的近 4 倍。单席位年 token 成本 ¥1.1 万起，重度 ¥2–3 万；市场价锚 ¥698／年。</p></div>
+        <div><span>含义</span><p>绝不能做个人律师订阅制。必须卖机构、按席位包加用量封顶。缓存命中输入价 ¥2 是未命中 ¥20 的十分之一。</p></div>
+      </div>
+      <div class="dec-rec"><b>行动：</b>默认走 K2.6／K2.7，仅高价值任务路由到 K3，成本降至四分之一。<b>模型路由与上下文缓存是毛利管理工具，不是技术优化。</b>同时必须向月之暗面争取阶梯折扣与 12 个月价格保护。</div>
+    </div>
+
+    <div class="dec">
+      <div class="dec-h"><b>PIPL 第二十一条「不得转委托」</b><em>最易踩的雷</em></div>
+      <div class="dec-b">
+        <div><span>规则</span><p>「未经个人信息处理者同意，受托人不得转委托他人处理个人信息。」</p></div>
+        <div><span>含义</span><p>中软国际作为律所的受托人，再把请求转发给月之暗面 API，<b>构成转委托</b>。这是绝大多数「大模型加行业版」项目最容易忽略的合规缺口。</p></div>
+      </div>
+      <div class="dec-rec"><b>行动：</b>DPA 中必须列明月之暗面为次级受托人并取得客户明示同意。同时 PIPL 第五十五条的个人信息保护影响评估是强制动作（处理敏感个人信息与委托处理两项都会触发），报告留存不少于三年——建议把 PIA 模板做成产品交付物之一。</div>
+    </div>
+
+    <div class="dec">
+      <div class="dec-h"><b>内容标识与文书交付的冲突</b><em>需要产品设计化解</em></div>
+      <div class="dec-b">
+        <div><span>规则</span><p>《人工智能生成合成内容标识办法》第四条：提供下载、复制、导出功能时，应确保<b>文件中含有满足要求的显式标识</b>。</p></div>
+        <div><span>含义</span><p>但律师向法院提交带「本文由 AI 生成」标识的文书，在实务中会带来尴尬甚至不利后果。</p></div>
+      </div>
+      <div class="dec-rec"><b>行动：</b>产品必须区分<b>草稿态（带标识）</b>与<b>律师定稿承责后（可去除标识）</b>两种流程，并在协议中明确责任转移节点。这同时呼应 Spellbook 的心理学设计——接受后的修订以律师本人名义呈现，AI 隐身、律师署名。</div>
+    </div>
+  </div>
+
+  <div class="note green">
+    <p class="note-h">合规最低成本路径</p>
+    <p>《生成式人工智能服务管理暂行办法》第二条第三款：<b>未向境内公众提供服务的企业内部应用，不适用本办法。</b>这意味着首发形态走「部署在客户内网或专属云、只供该机构员工使用」的路径，<b>没有网信备案义务</b>。若面向公众，则由于调用的是已备案的 Kimi 模型，只需向属地网信办办理「应用登记」，并在产品页公示模型名称与备案号。</p>
+  </div>
+</section>
+
+<!-- ============ 07 ============ -->
+<section id="s7">
+  <span class="sec-no">07 — Requirements</span>
+  <h2 class="sec">真需求与伪需求</h2>
+  <p class="sec-lede">中国律师愿意付钱的是「能直接交出去的东西」。产品的评价标准不是回答得对不对，而是下载下来能不能直接用。</p>
+
+  <div class="dd">
+    <div class="yes">
+      <h4>中国特有的真刚需</h4>
+      <ul>
+        <li><b>合同审查（带审查立场与多档输出）</b>——中国律师要把成果直接交给客户，客户要的是能直接用的 Word。智合做成修订版简洁／修订版详细／纯净版／审查意见书四档文件</li>
+        <li><b>刑事阅卷与证据链梳理</b>——中国刑辩律师面对几十本纸质或扫描卷宗。<b>美国没有这个场景，是中国法律 AI 最深的护城河之一</b></li>
+        <li><b>要素式起诉状与标准格式文书</b>——最高法自 2025 年 1 月 1 日起在 11 类民事案件推行要素式文书，发布 67 类官方样式，可直接对齐</li>
+        <li><b>类案检索报告一键生成</b>——最高法《类案检索指导意见》规定四类情形应当检索并制作报告归档，这是法定动作</li>
+        <li><b>文件脱敏</b>——律协指引第二十九条的直接产物</li>
+        <li><b>企业查询与工商穿透</b>——尽调、财产线索查控是中国律师日常高频，而美国律师有专门 investigator 不做这个</li>
+        <li><b>法律翻译带术语库</b>——涉外刚需，且是海外产品的明显空白，仅 Legora 与 LegalOn 认真做</li>
+      </ul>
+    </div>
+    <div class="no">
+      <h4>照搬美国的伪需求</h4>
+      <ul>
+        <li><b>计费工时优化</b>——中国大量业务是风险代理与打包价，工时不是核算单位</li>
+        <li><b>E-Discovery 电子取证审阅</b>——中国没有美国式 Discovery 制度，<b>这个流程根本不存在</b></li>
+        <li><b>Deposition 证言管理</b>——中国没有庭外取证制度</li>
+        <li><b>判决结果预测与法官画像</b>——<b>政治敏感</b>。最高法明确「人主机辅」，公开做法官裁判倾向预测有极大合规风险</li>
+        <li><b>Matter Management 作为独立产品</b>——只有规模所需要，且 Alpha 已占位，卖不动独立 SaaS</li>
+        <li><b>纯对话式 C 端法律咨询</b>——已被百度法行宝、通义法睿 C 端、DeepSeek 免费化，<b>商业上已死亡</b></li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>技术路线的两条硬结论</h3>
+  <p>LexEval（NeurIPS 2024，23 任务 14,150 题，目前最大中文法律评测集）的分维度数据给出了两条不可回避的约束：<span class="g g1">一手</span></p>
+  <div class="bars">
+    <div class="bars-h"><b>GPT-4 在 LexEval 六个维度上的表现</b><span>总分 52.1%，与 Qwen-14B-Chat 的 50.2% 接近</span></div>
+    <div class="bars-body">
+      <div class="bar-row"><div class="bar-lab">理解</div><div class="bar-track"><div class="bar-pair"><div class="bar"><i style="width:75.2%;background:var(--mineral)"></i></div><div class="bar-val">75.2</div></div></div></div>
+      <div class="bar-row"><div class="bar-lab">逻辑推理</div><div class="bar-track"><div class="bar-pair"><div class="bar"><i style="width:65.8%;background:var(--mineral)"></i></div><div class="bar-val">65.8</div></div></div></div>
+      <div class="bar-row"><div class="bar-lab">伦理</div><div class="bar-track"><div class="bar-pair"><div class="bar"><i style="width:65.4%;background:var(--mineral)"></i></div><div class="bar-val">65.4</div></div></div></div>
+      <div class="bar-row"><div class="bar-lab">判别</div><div class="bar-track"><div class="bar-pair"><div class="bar"><i style="width:34.0%;background:var(--amber)"></i></div><div class="bar-val">34.0</div></div></div></div>
+      <div class="bar-row"><div class="bar-lab"><b>记忆（法条）</b></div><div class="bar-track"><div class="bar-pair"><div class="bar"><i style="width:25.3%;background:var(--cinnabar)"></i></div><div class="bar-val">25.3</div></div></div></div>
+      <div class="bar-row"><div class="bar-lab"><b>生成</b></div><div class="bar-track"><div class="bar-pair"><div class="bar"><i style="width:23.9%;background:var(--cinnabar)"></i></div><div class="bar-val">23.9</div></div></div></div>
+    </div>
+  </div>
+  <ol>
+    <li><b>法条绝不能靠模型参数记忆，必须 RAG。</b>记忆维度仅 25.3%，是六个维度里最差的。这是中文法律 AI 架构的第一性原理。</li>
+    <li><b>文书生成必须走「模板加要素填充」，不能纯生成。</b>生成维度仅 23.9%。</li>
+  </ol>
+  <p>另外，LexEval 与 LawBench 两个基准一致观察到<b>法律专用模型未能跑赢通用模型</b>。ROI 在检索质量与产品工程，不在基座微调。唯一值得投的是法律域 embedding 与 reranker 的对比学习微调。</p>
+
+  <blockquote>
+    <p>AI 贡献度的比例变化：早期是「模型 60%，工作流 40%」；到现在变成「<b>模型 20%，工作流和场景设计 80%</b>」。</p>
+    <cite>幂律智能 CTO 张惟师</cite>
+  </blockquote>
+
+  <h3>幻觉控制：三层防线</h3>
+  <ol>
+    <li><b>生成时。</b>结构化输出强制每个论断挂非空引用；闭卷禁止；引用粒度到 chunk（条文号或判决书段落号）。</li>
+    <li><b>生成后独立校验。</b>校验器必须独立于生成器且用确定性或判别式方法——Clearbrief 明确声明其引用校验使用 classic AI 而非生成式 AI，理由是「校验工具本身不能引入幻觉」，这个架构决策应当照搬。四道校验：存在性、支持性、时效性、语境。</li>
+    <li><b>产品化审计。</b>参照 Clearbrief 的 Cite Check Report，生成可下载的 PDF 审计报告。<b>在中国，律所需要的不只是少犯错，而是能证明自己检查过。</b></li>
+  </ol>
+
+  <div class="note green">
+    <p class="note-h">一个成本极低、价值极高的确定性功能</p>
+    <p>北京通州法院在处理律师提交 AI 虚假案例的案件时指出，<b>AI 编造的案号呈现明显规律性特征</b>——常用「12345」「1234」「111」这类连续整数或重复数字。这意味着拦截编造案号根本不需要大模型：<b>案号格式校验 + 法院代字白名单 + 序号异常模式检测 + 权威库存在性校验</b>，四条确定性规则组合即可拦截绝大多数编造案号，应做成默认开启的硬拦截。</p>
+  </div>
+</section>
+
+<!-- ============ 08 ============ -->
+<section id="s8">
+  <span class="sec-no">08 — Interface</span>
+  <h2 class="sec">交互范式：demo 的设计依据</h2>
+  <p class="sec-lede">四家头部产品在没有互相抄的情况下收敛到了同一个界面结构。</p>
+
+  <h3>三种主界面范式，不是三选一而是一个闭环</h3>
+  <div class="cols">
+    <div>
+      <h4>对话流 <em>Chat-first</em></h4>
+      <p>适合开放、一次性、探索性的问题。劣势是不可复用、不可审计、不可协作。判据：如果用户的下一步动作是「把这个结果整理进一张表或一份报告」，那 chat 就是错的范式。</p>
+    </div>
+    <div>
+      <h4>工作流 <em>Task-first</em></h4>
+      <p>适合重复、有标准流程、需要留痕的任务。<b>这是律所愿意付高价的根本原因</b>——对话式是「AI 帮我」，工作流式是「AI 执行我们所的标准」。判据：这个任务一年会做超过 20 次吗。</p>
+    </div>
+    <div>
+      <h4>表格矩阵 <em>Batch-first</em></h4>
+      <p>行等于文档、列等于问题、格等于带引用的答案。适合多文档乘多问题。Hebbia 的精辟概括：<b>「加一列」本质上就是「派一个 agent 任务」</b>，把 agent 调度伪装成电子表格操作。</p>
+    </div>
+  </div>
+  <p>Harvey 已经跑通了三条转换路径：对话可一键生成 Review Table、表格单元格可反向追问、自然语言可生成工作流草稿。<b>demo 不应选一个范式，而应展示同一批数据的三种形态之间的转换。</b></p>
+
+  <h3>把 AI 输出升格为工作产物的临界设计</h3>
+  <p>Legora 的协作层是这个赛道最值得抄的部分：单元格、行、列<b>三个层级都能评论</b>，加上 <b>Mark as Reviewed</b>（人工核验状态）、<b>Lock Cells</b>（防止 AI 重跑覆盖人工修正）、Review Mode 与实时协同。</p>
+  <p>本质洞察是：AI 抽取的结果<b>不是终点，是起点</b>。没有锁定与已审标记，这张表就只是个一次性输出，不能作为团队交付物。</p>
+
+  <h3>引用设计：四层递进的验证链</h3>
+  <div class="tablewrap">
+    <table>
+      <caption>四种呈现方式必须组合，构成递进的信任建立过程</caption>
+      <thead><tr><th>层级</th><th>形态</th><th>回答的问题</th><th class="n">成本</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>行内角标 chip</td><td>是否有据</td><td class="n">0 秒</td></tr>
+        <tr><td>2</td><td>悬停预览卡</td><td>证据够不够</td><td class="n">0.3 秒</td></tr>
+        <tr><td>3</td><td>右侧来源面板</td><td>证据全不全</td><td class="n">1 秒</td></tr>
+        <tr><td>4</td><td>点击跳转加原文高亮</td><td>对不对</td><td class="n">2 秒</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>中文法律场景还有三个英美产品没有的维度，正是我们的差异化空间：引用必须带<b>时效性状态</b>（<code>《民法典》第585条 [现行有效]</code> 对比 <code>《合同法》第114条 [已废止]</code>，后者橙色加删除线）；<b>效力层级</b>要在 chip 上可见（法律、行政法规、司法解释、部门规章、地方性法规、指导性案例、公报案例、普通案例）；<b>法条原文</b>与<b>裁判观点</b>要用不同颜色区分，前者是权威后者是参考。</p>
+
+  <h3>修订建议卡的三层结构</h3>
+  <p>Ironclad 的设计是本次调研中最可直接复用的组件规格：<b>原文 + AI 建议（diff 高亮）+ 触发该建议的 playbook 规则（含首选立场与可退让至）+ 接受／修改／拒绝三个动作</b>。「为什么给这个建议」比「建议是什么」更重要，这是法律 AI 与通用 AI 的分水岭。</p>
+  <p>七个必须做对的细节：修改必须就地编辑而非弹窗；接受后卡片折叠为一行并保留撤销；全局状态条常驻；<b>键盘优先</b>（J／K 切换、A 接受、R 拒绝）；按风险等级排序可切文档顺序；<b>修订模式与批注模式的切换开关要放在最显眼处</b>（这涉及「我敢不敢让 AI 碰我的文档」）；接受后落地为原生 tracked change。</p>
+
+  <h3>信任信号：不要显示置信度数字</h3>
+  <div class="dd">
+    <div class="yes">
+      <h4>推荐</h4>
+      <ul>
+        <li>「基于 3 份文档中的 <b>5 处明确表述</b>」——客观、可点击核验</li>
+        <li>「仅 1 处间接表述支持」加橙色底</li>
+        <li>「未在文档中找到相关约定」加灰色空态</li>
+        <li>显式展示<b>拦截了什么</b>（智合的「幻觉防火墙」是最值得借用的中文信任组件命名）</li>
+      </ul>
+    </div>
+    <div class="no">
+      <h4>避免</h4>
+      <ul>
+        <li>「<b>置信度 87%</b>」——大模型自评置信度未经校准，会被律师当成可依赖的量化指标，一旦出错虚假精确会放大信任崩塌</li>
+        <li>整体置信度进度条</li>
+        <li>「零幻觉」式营销——斯坦福 RegLab 已实测 Lexis+ AI 幻觉率逾 17%、Westlaw AI-AR 逾 34%，这类宣称会被公开打脸</li>
+        <li>登录时的一次性弹窗免责声明与页脚固定声明（律师第二天就看不见了）</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>两条容易做错的视觉决策</h3>
+  <p><b>双密度。</b>AI 输出是被「阅读」的连续文本，需要 16px／1.75 的舒适密度；表格是被「扫描」的数据，需要 13px／1.6 的紧凑密度。同一个产品里两种密度并存，不能全局统一。</p>
+  <p><b>深色模式要做三档而非两档。</b>浅色／自动／深色，且深色时<b>文档阅读区保持浅色</b>。PDF 是原生白底的，深色 UI 里嵌白底 PDF 会非常刺眼，而打印与导出永远是浅色。正确形态是「外壳深色加文档纸张浅色」，模拟暗房里看白纸。</p>
+  <p>另外，中文检索<b>必须保留结构化筛选器</b>。Alpha 的五步检索——自然语言描述案情、叠加结构化条件（案由／地域／法院层级／标的额区间／审理程序）、语义扩展、排序、一键生成可视化报告——与 Harvey 的纯对话是两种范式，目前没有任何产品把两者融合好。这是一个明确的空位。</p>
+</section>
+
+<!-- ============ 09 ============ -->
+<section id="s9">
+  <span class="sec-no">09 — Decisions</span>
+  <h2 class="sec">三个需要你拍板的问题</h2>
+  <p class="sec-lede">这三个选择会决定 demo 长什么样，所以放在设计之前。</p>
+
+  <div class="decisions">
+    <div class="dec">
+      <div class="dec-h"><b>问题一：主界面形态走哪条路</b><em>决定 demo 的骨架</em></div>
+      <div class="dec-b">
+        <div><span>选项 A · 桌面端原生</span><p>直接在 Kimi Work 客户端内做法律 Skill 包加法律看板，最大化利用本地形态的合规优势，但受制于底座的 UI 框架与 2 个看板／20 个组件的配额。</p></div>
+        <div><span>选项 B · 独立工作台</span><p>基于 AllMeta 自建 Web 工作台，Kimi Work 作为本地执行引擎，UI 完全自主，但会失去「案卷不出本机」的部分叙事，且工作量大得多。</p></div>
+        <div><span>选项 C · 双形态</span><p>Web 工作台负责协作、知识库、管理后台（补底座治理缺口），桌面客户端负责涉密文件的本地处理。分工清晰但要做两套。</p></div>
+      </div>
+      <div class="dec-rec"><b>我的建议是 C，但 demo 先只做 Web 工作台那一半。</b>理由：底座的治理缺口（无 SSO、无审计、无团队知识库、无协作）恰好是中软国际最擅长补的，也是律所与央国企 IT 评审的硬门槛；而本地形态的合规叙事可以在 demo 里用一个「本地处理」的状态标识来表达，不必真的做出客户端。</div>
+    </div>
+
+    <div class="dec">
+      <div class="dec-h"><b>问题二：首批切入哪个客户</b><em>决定 demo 演示的场景</em></div>
+      <div class="dec-b">
+        <div><span>选项 A · 央国企法务部</span><p>与登月计划首期能源电力客户重叠可搭车；预算走信息化条线；触发企业内部应用豁免，合规成本最低；合同审查是刚需中的刚需。</p></div>
+        <div><span>选项 B · 省市律协集采</span><p>已被威科、iCourt、法信验证；一单覆盖数千至数万律师；律协背书解决信任问题。但采购金额常被压到「会员福利」定位。</p></div>
+        <div><span>选项 C · 规模所私有化</span><p>客单价最高、品牌背书最强，但决策需过合伙人会议，周期 9–18 个月，且头部所倾向自研。</p></div>
+      </div>
+      <div class="dec-rec"><b>我的建议是 A 打头、B 紧随。</b>央国企法务部是这个市场里唯一有「正常 B2B 采购流程」的买家，且与中软国际既有客户重叠度最高；律协集采则用来换取覆盖率与权威背书。demo 应该以「企业法务的合同审查与合规检索」为主场景，而不是「律师的类案检索」。</div>
+    </div>
+
+    <div class="dec">
+      <div class="dec-h"><b>问题三：数据从哪来</b><em>决定架构，也决定成本</em></div>
+      <div class="dec-b">
+        <div><span>选项 A · WebBridge 复用</span><p>驱动律师已登录的北大法宝／威科会话检索。零数据成本、零版权风险，且是 Kimi Work 独有能力。但依赖客户已有订阅，且稳定性受第三方页面改版影响。</p></div>
+        <div><span>选项 B · 采购数据 API</span><p>北大法宝已开放 MCP 语义检索服务，威科、元典、得理均可谈。稳定可控，但有持续成本，且这些厂商本身就是竞争对手。</p></div>
+        <div><span>选项 C · 只做不依赖判例的场景</span><p>合同审查、文书起草、翻译、尽调、卷宗整理、工商穿透全部不依赖裁判文书。法规侧可用免费的国家法律法规数据库。</p></div>
+      </div>
+      <div class="dec-rec"><b>我的建议是 C 打底、A 加分、B 备选。</b>先把不依赖判例的场景做扎实（这也正好覆盖了中国律师的真刚需清单），把 WebBridge 复用做成差异化亮点，把采购 API 作为客户要求时的兜底方案。<b>不要把公司价值建立在「我有多少篇文书」上</b>——法信一旦开放 API，所有商业案例库的优势会一夜稀释。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 10 ============ -->
+<section id="s10">
+  <span class="sec-no">10 — Gaps</span>
+  <h2 class="sec">数据空白与待核实项</h2>
+  <p class="sec-lede">这些是穷尽检索后仍未找到公开数据的事项。诚实列出，避免在 BP 或提案里引用不存在的数字。</p>
+
+  <ul class="gaps">
+    <li><b>中国律所 IT 支出占创收的比例</b>——无任何权威来源。同时，常被引用的「美国 Am Law 律所 IT 支出占收入 3–5%」本次<b>未能找到可引用的原始出处</b>（ILTA 与 Thomson Reuters 相关页面均不可访问）。建议不要写进 BP。</li>
+    <li><b>中软国际与月之暗面登月计划的具体 Token 分成比例</b>——公告未披露。媒体转述的「K3 分成最高可达 30%」未写入公开 License 文本，属研报口径。</li>
+    <li><b>K3（2.8T 参数）在昇腾芯片上的推理适配状态</b>——仅证实 K2.5 在昇腾 910B 上跑通。这是做国资与司法客户前必须向月之暗面确认的技术前提。</li>
+    <li><b>月之暗面是否提供更小参数的行业可部署版本</b>——未见公开信息，是必须谈判的技术前提。K3 私有化的硬件门槛远超律所承受力。</li>
+    <li><b>Kimi 服务的具体生成式 AI 备案号与备案主体</b>——未在公开清单中检索到确切条目，应直接向月之暗面索取并写入协议的陈述与保证条款。</li>
+    <li><b>中软国际在政法口的既有业务</b>——两路独立调研均未检索到任何法院、检察院、司法局、政法委的中标记录。<b>请向内部核实</b>，这直接决定 GTM 路径。</li>
+    <li><b>中国律师对法律 AI 的付费意愿金额问卷数据</b>——无公开调研。目前只能靠反向推理（重庆律协调研显示约七成 35 岁以下律师年收入低于 10 万）。</li>
+    <li><b>iCourt Alpha、AlphaGPT、通义法睿企业版的官方公开价格</b>——三者均不公开定价。Alpha 的 5,222 元／账号是据江苏大学 90 账号 47 万元推算，合同期限未在公告中明确。</li>
+    <li><b>幂律智能 2025–2026 年的经营状况</b>——2024 年后公开动作明显减少。</li>
+    <li><b>Harvey 的服务条款与免责条款原文</b>——harvey.ai 的 /terms、/legal/terms、/trust 均返回 404，仅 /security 可访问。建议后续通过客户试用协议或采购流程获取原文再做条款对标。</li>
+  </ul>
+
+  <div class="note amber">
+    <p class="note-h">一条关于信息源质量的提醒</p>
+    <p>2026 年 7–8 月，凤凰网、新京报、中关村在线等多家媒体集中发布了结论高度一致的「多产品评测」，且几乎每篇都把智合 AI 排第一。<b>这些应视为品牌投放内容，而非独立第三方评价</b>，其中的产品对比结论不宜直接引用。同理，智合公布的「月活增长 9.8 倍、30 日留存 58%」等倍数表述回避了绝对基数，建议按「数千付费个人加数百家机构」的量级理解。</p>
+  </div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="legend-key">
+      <span><span class="g g1">一手</span> 官方文档、法条原文、产品前端代码或政府采购公告</span>
+      <span><span class="g g2">交叉</span> 多个独立来源交叉印证</span>
+      <span><span class="g g3">测算</span> 基于已核实数据的推算，非公开数据</span>
+      <span><span class="g g4">查不到</span> 穷尽检索后无公开信息</span>
+    </div>
+    <p>调研方法：8 路并行联网调研，覆盖 Harvey 深度拆解、海外竞品全景、国内产品全景、Kimi Work 底座、中国法律服务市场与采购、法律 AI 功能与技术架构、UI/UX 设计范式、合规与渠道商业模式。关键事实均经官方一手渠道或多源交叉核验，未证实项已逐条标注。<br>
+    数据截止 2026-09-14 · 待确认后进入 demo 设计阶段</p>
+  </div>
+</footer>

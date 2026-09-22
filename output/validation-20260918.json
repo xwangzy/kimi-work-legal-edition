@@ -1,0 +1,54 @@
+{
+  "date": "2026-09-18",
+  "stateTests": {
+    "passed": 13,
+    "failed": 0,
+    "output": "PASS all declared routes render through actual views without recursion\nPASS custom connection creation, test, enable and refresh retain endpoint and tools\nPASS skill editing and disabled state persist and are honored by setup\nPASS saved skill rules and connection state reach execution snapshot\nPASS cancel before and during replay leaves no successful run\nPASS completed replay creates exactly one durable success with its skill snapshot\nPASS reset survives global click microtask, pagehide and reload\nPASS deep links and hash navigation normalize project; deliveries remain scoped\nPASS new project files and delivery cannot inherit another project results\nPASS review decisions and document draft survive refresh with Set types restored\nPASS selected enterprise skill sends to its workpaper and survives refresh without contract routing\nPASS two workpapers preserve independent text after refresh and only appear in their project delivery\nPASS disabled selected enterprise skill cannot start a draft or fall back to contract\n\n13 passed; 0 failed. DOM/state checks only; browser visual QA is separate.\n"
+  },
+  "syntaxChecks": [
+    "app.js",
+    "legal-workspace.js",
+    "legal-skills.js",
+    "bootstrap.js"
+  ],
+  "browserQA": {
+    "desktop": {
+      "width": 1280,
+      "height": 720
+    },
+    "narrow": {
+      "width": 390,
+      "height": 844,
+      "routesWithoutPageOverflow": [
+        "home",
+        "skills",
+        "connections",
+        "sources",
+        "tasks",
+        "projects",
+        "delivery",
+        "contract",
+        "matrix",
+        "research",
+        "evidence",
+        "pleading",
+        "redact",
+        "governance",
+        "skill-workbench"
+      ]
+    },
+    "verified": [
+      "Skill version edited and reflected in task plan",
+      "MCP save blocked before test; simulation enable and disable reflected in plan",
+      "Contract delivery remains blocked until all checks; state survives reload",
+      "Different project delivery panels are independent",
+      "New project has no inherited results",
+      "Pleading and custom workpaper preserve edited text after reload",
+      "Matrix verification and lock survive rerun; failed file retries; CSV download triggered",
+      "Single-file demo starts without external script or stylesheet dependencies",
+      "UI reset restores initial data and remains reset after reload"
+    ],
+    "consoleErrors": []
+  },
+  "limits": "No real model, document parser, remote MCP or legal database integration."
+}

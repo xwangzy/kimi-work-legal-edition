@@ -1,0 +1,855 @@
+<title>Kimi Work 法律版</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f3f2ef; --shell:#ffffff; --side:#fbfaf9; --line:#e8e6e1; --line2:#f1efea;
+  --ink:#0e1219; --ink2:#4a4d55; --mute:#8a8a88; --soft:#f5f5f4;
+  --kimi:#167ffb; --btn:#191919; --btn-ink:#ffffff;
+  --legal:#1f5b4e; --legal-soft:#e6f0ec; --legal-ink:#153f37;
+  --law:#1e3a8a; --law-soft:#e4e9f7;
+  --ai:#7c3aed; --ai-soft:#efe8fd;
+  --red:#b42318; --red-soft:#fde8e6; --amber:#b54708; --amber-soft:#fdeedd; --yellow:#a15c07; --yellow-soft:#fdf3d6; --green:#067647; --green-soft:#e1f4ea;
+  --paper:#ffffff; --paper-ink:#1c1b19; --hl:#fef3c7; --diff-del:#fde8e6; --diff-add:#e1f4ea;
+  --L-base:#167ffb; --L-ed:#1f5b4e; --L-gov:#c2410c;
+  --shadow:0 1px 2px rgba(20,20,20,.06),0 8px 24px rgba(20,20,20,.06);
+  --sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --serif:"Noto Serif SC","Songti SC","SimSun",serif;
+  --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121315; --shell:#1b1c1f; --side:#161719; --line:#2b2d31; --line2:#232529; --ink:#ececea; --ink2:#c2c2be; --mute:#8b8b88; --soft:#232529;
+  --btn:#f2f2f0; --btn-ink:#121315; --legal:#5fb39b; --legal-soft:#1c2f2a; --legal-ink:#bfe6d8; --law:#8ea3e8; --law-soft:#1f2740; --ai:#b08cf5; --ai-soft:#2a2140;
+  --red:#f29489; --red-soft:#3a1f1c; --amber:#f0a868; --amber-soft:#3a2a18; --yellow:#e5c063; --yellow-soft:#35301a; --green:#6fcf9a; --green-soft:#183227;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+}}
+:root[data-theme="dark"]{
+  --bg:#121315; --shell:#1b1c1f; --side:#161719; --line:#2b2d31; --line2:#232529; --ink:#ececea; --ink2:#c2c2be; --mute:#8b8b88; --soft:#232529;
+  --btn:#f2f2f0; --btn-ink:#121315; --legal:#5fb39b; --legal-soft:#1c2f2a; --legal-ink:#bfe6d8; --law:#8ea3e8; --law-soft:#1f2740; --ai:#b08cf5; --ai-soft:#2a2140;
+  --red:#f29489; --red-soft:#3a1f1c; --amber:#f0a868; --amber-soft:#3a2a18; --yellow:#e5c063; --yellow-soft:#35301a; --green:#6fcf9a; --green-soft:#183227;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.6;padding:0 16px;padding-block:16px 40px}
+h1,h2,h3,h4{margin:0;font-weight:600;text-wrap:balance}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+a{color:inherit}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono);font-size:.92em}
+:focus-visible{outline:2px solid var(--kimi);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------- presenter bar ---------- */
+.pres{max-width:1440px;margin:0 auto 12px;display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}
+.pres .brand{display:flex;align-items:baseline;gap:10px}
+.pres .brand b{font-size:15px;font-weight:600}
+.pres .brand span{font-size:12px;color:var(--mute)}
+.tabs{display:flex;flex-wrap:wrap;gap:4px;background:var(--shell);border:1px solid var(--line);border-radius:8px;padding:4px}
+.tabs button{padding:5px 11px;border-radius:5px;font-size:13px;color:var(--ink2);display:flex;gap:6px;align-items:center}
+.tabs button i{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--mute)}
+.tabs button.on{background:var(--btn);color:var(--btn-ink)}
+.tabs button.on i{color:var(--btn-ink);opacity:.7}
+.pres .tools{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tog{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink2);padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--shell)}
+.tog.on{border-color:var(--ink);color:var(--ink)}
+.tog .dot{width:8px;height:8px;border-radius:50%;background:var(--mute)}
+.tog.on .dot{background:var(--green)}
+.legend{display:none;gap:12px;font-size:12px;color:var(--ink2);align-items:center}
+body.layers .legend{display:flex}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+
+/* ---------- app frame ---------- */
+.frame{max-width:1440px;margin:0 auto;background:var(--shell);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;display:grid;grid-template-columns:240px 1fr;min-height:820px;position:relative}
+.side{background:var(--side);padding:14px 12px;display:flex;flex-direction:column;gap:2px;font-size:13.5px}
+.traffic{display:flex;gap:7px;padding:2px 4px 12px}
+.traffic i{width:12px;height:12px;border-radius:50%;background:#e5e4e0}
+.traffic i:nth-child(1){background:#ff5f57}.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+.seg{display:flex;background:#eeedec;border-radius:9px;padding:3px;margin-bottom:12px}
+:root[data-theme="dark"] .seg{background:#26282c}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .seg{background:#26282c}}
+.seg span{flex:1;text-align:center;padding:5px;border-radius:7px;font-size:13px;color:var(--mute)}
+.seg span.on{background:var(--shell);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.nav{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:7px;color:var(--ink);position:relative}
+.nav svg{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.nav.on{background:var(--soft)}
+.nav kbd{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--mute);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+.nav .badge{margin-left:auto;font-size:10.5px;color:var(--mute)}
+.side .sec{font-size:11.5px;color:var(--mute);padding:14px 8px 4px;letter-spacing:.04em}
+.side .matter{display:flex;flex-direction:column;padding:6px 8px;border-radius:7px;gap:1px}
+.side .matter b{font-weight:500;font-size:13px}
+.side .matter small{font-family:var(--mono);font-size:10.5px;color:var(--mute)}
+.side .matter.on{background:var(--legal-soft)}
+.side .user{margin-top:auto;display:flex;align-items:center;gap:8px;padding:8px}
+.avatar{width:24px;height:24px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#3693fe,#167ffb);flex:none}
+.side .user .tag{font-size:10.5px;background:var(--btn);color:var(--btn-ink);padding:1px 6px;border-radius:4px}
+.main{display:flex;flex-direction:column;min-width:0;background:var(--shell)}
+.topbar{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line2);font-size:13.5px;min-height:50px}
+.topbar .title{font-weight:500;display:flex;align-items:center;gap:6px}
+.topbar .title small{color:var(--mute);font-weight:400}
+.topbar .right{margin-left:auto;display:flex;gap:6px;align-items:center}
+.ctx{display:inline-flex;align-items:center;gap:6px;background:var(--legal-soft);color:var(--legal-ink);border-radius:999px;padding:3px 10px 3px 6px;font-size:12.5px}
+.ctx .mono{font-size:11.5px}
+.ctx .sw{width:14px;height:14px;border-radius:50%;background:var(--legal);display:inline-block}
+.local{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+.local i{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block}
+.body{flex:1;display:grid;min-height:0}
+.body.two{grid-template-columns:minmax(0,1fr) minmax(0,.9fr)}
+.pane{padding:18px 20px;min-width:0;overflow:auto}
+.pane+.pane{border-left:1px solid var(--line2)}
+.pane.ws{background:var(--side)}
+.pane h3{font-size:14px;font-weight:600;margin-bottom:10px}
+.wshead{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;margin-bottom:12px}
+.wshead .tools{margin-left:auto;display:flex;gap:4px}
+.ib{border:1px solid var(--line);border-radius:6px;padding:3px 9px;font-size:12px;color:var(--ink2);background:var(--shell)}
+.ib.primary{background:var(--btn);color:var(--btn-ink);border-color:var(--btn)}
+.ib.legal{background:var(--legal);color:#fff;border-color:var(--legal)}
+.ib.ghost{border-color:transparent}
+.ib:disabled{opacity:.45;cursor:not-allowed}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:1px 8px;font-size:11.5px;line-height:1.6;border:1px solid transparent;white-space:nowrap;vertical-align:middle}
+.chip.law{background:var(--law-soft);color:var(--law);border-color:color-mix(in srgb,var(--law) 25%,transparent)}
+.chip.case{background:var(--soft);color:var(--ink2);border-color:var(--line)}
+.chip.ai{background:var(--ai-soft);color:var(--ai)}
+.chip.legal{background:var(--legal-soft);color:var(--legal-ink)}
+.chip.ok{background:var(--green-soft);color:var(--green)}
+.chip.warn{background:var(--amber-soft);color:var(--amber)}
+.chip.bad{background:var(--red-soft);color:var(--red)}
+.chip.dead{background:var(--red-soft);color:var(--red);text-decoration:line-through}
+.chip.mid{background:var(--yellow-soft);color:var(--yellow)}
+.chip.mute{background:var(--soft);color:var(--mute)}
+.chip .n{font-family:var(--mono);font-size:10.5px}
+.chip.cite{cursor:pointer}
+.chip.cite:hover{border-color:var(--law)}
+
+/* chat */
+.msg{display:flex;gap:12px;margin-bottom:18px;max-width:720px}
+.msg.user{justify-content:flex-end}
+.msg.user .bub{background:var(--soft);border-radius:12px;padding:10px 14px;font-size:14px;max-width:560px}
+.msg .kav{width:26px;height:26px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#3693fe,#167ffb);flex:none;position:relative}
+.msg .kav:after{content:"";position:absolute;left:8px;top:9px;width:3px;height:6px;background:#fff;border-radius:2px;box-shadow:7px 0 0 #fff}
+.msg .txt{font-size:14.5px;line-height:1.75;min-width:0}
+.msg .txt p{margin:0 0 8px}
+.think{font-size:12.5px;color:var(--mute);display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.steps{border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:12.5px;margin:8px 0 12px;max-width:640px}
+.steps div{display:flex;gap:10px;align-items:center;padding:6px 10px;border-top:1px solid var(--line2)}
+.steps div:first-child{border-top:0;background:var(--soft);font-weight:500}
+.steps .st{width:14px;height:14px;border-radius:50%;flex:none;border:1.5px solid var(--line)}
+.steps .st.done{background:var(--green);border-color:var(--green);position:relative}
+.steps .st.done:after{content:"";position:absolute;left:4px;top:1.5px;width:3px;height:6px;border:solid #fff;border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}
+.steps .st.run{border-color:var(--ai);border-top-color:transparent;animation:spin 1s linear infinite}
+.steps .t{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--mute)}
+.steps .tool{font-family:var(--mono);font-size:11px;color:var(--ink2);background:var(--soft);padding:0 5px;border-radius:3px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.composer{border:1px solid var(--line);border-radius:16px;padding:12px 14px 10px;margin-top:auto;background:var(--shell);box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.composer .ph{color:var(--mute);font-size:14px;min-height:22px}
+.composer .row{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--mute)}
+.composer .row .send{margin-left:auto;width:30px;height:30px;border-radius:50%;background:var(--btn);position:relative}
+.composer .row .send:after{content:"";position:absolute;left:11px;top:9px;width:6px;height:6px;border:solid var(--btn-ink);border-width:2px 0 0 2px;transform:rotate(45deg)}
+.composer .attach{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.composer .attach span{font-size:12px;background:var(--soft);border-radius:6px;padding:2px 8px;color:var(--ink2)}
+.composer .attach span b{font-weight:500;color:var(--legal)}
+
+/* generic cards/tables */
+.card{border:1px solid var(--line);border-radius:8px;background:var(--shell);padding:14px 16px}
+.grid{display:grid;gap:12px}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+table{border-collapse:collapse;width:100%;font-size:13px;line-height:1.5}
+th{font-weight:500;color:var(--mute);text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);font-size:12px;white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--line2);vertical-align:top}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px}
+.kv dt{color:var(--mute)}.kv dd{margin:0}
+.bar{height:6px;border-radius:3px;background:var(--soft);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--legal);border-radius:3px}
+.note{font-size:12.5px;color:var(--mute)}
+.stat{display:flex;flex-direction:column;gap:2px}
+.stat b{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.stat small{font-size:12px;color:var(--mute)}
+.pill-row{display:flex;gap:6px;flex-wrap:wrap}
+.evid{font-size:12px;color:var(--ink2);display:inline-flex;gap:6px;align-items:center}
+.evid i{width:8px;height:8px;border-radius:2px;display:inline-block;background:var(--green)}
+.evid.weak i{background:var(--amber)}.evid.none i{background:var(--mute)}
+.kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--ink2);background:var(--shell)}
+
+/* document paper (always light) */
+.doc{background:#fff;color:#1c1b19;border:1px solid var(--line);border-radius:6px;padding:28px 34px;font-family:var(--serif);font-size:15px;line-height:1.9;max-width:760px}
+.doc h4{font-family:var(--serif);font-size:16px;text-align:center;margin-bottom:14px;font-weight:600}
+.doc p{margin:0 0 10px;text-indent:2em}
+.doc .cl{font-weight:600;text-indent:0}
+.doc mark{background:transparent;padding:0 1px;border-radius:2px}
+.doc mark.hl{background:#fef3c7}
+.doc mark.risk{background:#fee2e2;box-shadow:-3px 0 0 #b42318}
+.doc mark.rev{background:#dbeafe;text-decoration:underline wavy #93c5fd}
+.doc del{color:#b42318;background:#fde8e6;text-decoration:line-through}
+.doc ins{color:#067647;background:#e1f4ea;text-decoration:none}
+.doc .who{font-family:var(--sans);font-size:11px;color:#8a8a88;text-indent:0;margin:-6px 0 8px}
+
+/* suggestion card */
+.sug{border:1px solid var(--line);border-radius:8px;background:var(--shell);margin-bottom:10px;overflow:hidden}
+.sug.on{border-color:var(--ink);box-shadow:var(--shadow)}
+.sug .hd{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line2);font-size:12.5px}
+.sug .hd .no{font-family:var(--mono);color:var(--mute)}
+.sug .hd .cl{font-weight:500}
+.sug .hd .st{margin-left:auto;font-size:11.5px;color:var(--mute)}
+.sug .bd{padding:10px 12px;font-size:13px;line-height:1.7}
+.sug .lab{font-size:11px;color:var(--mute);letter-spacing:.04em;margin-bottom:3px}
+.sug .orig{color:var(--ink2);margin-bottom:8px}
+.sug .prop{margin-bottom:8px}
+.sug .prop del{color:var(--red);background:var(--diff-del);text-decoration:line-through}
+.sug .prop ins{color:var(--green);background:var(--diff-add);text-decoration:none}
+.sug .why{background:var(--soft);border-radius:6px;padding:8px 10px;font-size:12.5px;color:var(--ink2);margin-bottom:8px}
+.sug .why b{color:var(--ink);font-weight:500}
+.sug .why .pos{display:flex;gap:14px;margin-top:4px;flex-wrap:wrap}
+.sug .act{display:flex;gap:6px;align-items:center}
+.sug .act .kbd{margin-left:2px}
+.sug.done .bd{display:none}
+.sug.done .hd .st{color:var(--green)}
+.sug.rej .hd .st{color:var(--red)}
+.sug.done{opacity:.85}
+
+/* matrix */
+.mx{overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--shell);max-height:520px}
+.mx table{font-size:12.5px;min-width:980px}
+.mx th{position:sticky;top:0;background:var(--side);z-index:1}
+.mx th.q{font-weight:500;color:var(--ink)}
+.mx th.q small{display:block;font-weight:400;color:var(--mute);font-size:11px}
+.mx td{padding:7px 10px;max-width:260px}
+.mx td.f{font-weight:500;white-space:nowrap}
+.mx td.f small{display:block;font-weight:400;color:var(--mute);font-family:var(--mono);font-size:10.5px}
+.mx td.c{cursor:pointer}
+.mx td.c:hover{background:var(--soft)}
+.mx td.c.sel{outline:2px solid var(--ink);outline-offset:-2px}
+.mx .sk{height:12px;border-radius:3px;background:linear-gradient(90deg,var(--soft) 25%,var(--line) 50%,var(--soft) 75%);background-size:200% 100%;animation:sh 1.4s infinite;margin:4px 0}
+@keyframes sh{to{background-position:-200% 0}}
+.mx .q{color:var(--mute)}
+.mx .lock{font-size:10.5px;color:var(--mute);margin-left:4px}
+.drawer{border:1px solid var(--line);border-radius:8px;background:var(--shell);padding:14px 16px;font-size:13px}
+.drawer .lv{display:grid;grid-template-columns:22px 1fr;gap:10px;padding:8px 0;border-top:1px solid var(--line2)}
+.drawer .lv:first-of-type{border-top:0}
+.drawer .lv i{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--mute);padding-top:2px}
+.drawer .lv b{font-weight:500;display:block;font-size:12.5px;margin-bottom:2px}
+.drawer q{font-family:var(--serif);quotes:"「" "」";color:var(--ink2)}
+.prog{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12.5px;margin-bottom:10px}
+.prog .cnt{display:flex;gap:4px;align-items:center;color:var(--ink2)}
+.prog .cnt i{width:8px;height:8px;border-radius:50%;display:inline-block}
+
+/* research */
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.filters .f{border:1px solid var(--line);border-radius:6px;padding:4px 9px;font-size:12.5px;display:flex;gap:6px;align-items:center;background:var(--shell)}
+.filters .f b{font-weight:500}
+.filters .f small{color:var(--mute)}
+.tier{margin-bottom:14px}
+.tier h4{font-size:12.5px;color:var(--mute);font-weight:500;display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.tier h4 .chip{font-size:10.5px}
+.cs{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:var(--shell)}
+.cs .h{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}
+.cs .h .mono{font-size:12px}
+.cs .h .crt{color:var(--mute);font-size:12px}
+.cs .sim{display:flex;gap:10px;margin:6px 0 4px;font-size:11.5px;color:var(--mute);flex-wrap:wrap}
+.cs .sim span{display:flex;gap:5px;align-items:center}
+.cs .sim .bar{width:56px}
+.cs .yao{font-size:12.5px;color:var(--ink2);line-height:1.6}
+.cs.blocked{border-color:color-mix(in srgb,var(--red) 40%,var(--line));background:var(--red-soft)}
+.cs.blocked .yao{color:var(--ink2)}
+.brow{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--shell)}
+.brow .bar-{display:flex;gap:8px;align-items:center;padding:7px 10px;background:var(--soft);font-size:12px;color:var(--mute);border-bottom:1px solid var(--line)}
+.brow .url{flex:1;font-family:var(--mono);font-size:11px;background:var(--shell);border-radius:4px;padding:2px 8px;color:var(--ink2)}
+.brow .pg{padding:12px 14px;font-size:12.5px;color:var(--ink2);line-height:1.6}
+.brow .pg .cur{outline:2px solid var(--kimi);outline-offset:2px;border-radius:2px}
+
+/* business lines */
+.bl{display:inline-flex;background:var(--soft);border-radius:10px;padding:3px;gap:2px}
+.bl button{padding:6px 16px;border-radius:8px;font-size:13.5px;color:var(--ink2)}
+.bl button.on{background:var(--btn);color:var(--btn-ink)}
+/* pleading */
+table.pl td.sec{background:var(--soft);font-weight:500;font-size:12px;color:var(--ink2);padding:5px 10px}
+table.pl td:first-child{color:var(--mute)}
+table.pl select.ib{padding:1px 6px;font-size:12px}
+.mask mark.hl{background:#fef3c7;color:#1c1b19}
+/* dossier */
+.vol{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.vol span{width:34px;height:44px;border:1px solid var(--line);border-radius:3px;font-family:var(--mono);font-size:10px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:3px;color:var(--mute);background:var(--shell);position:relative;overflow:hidden}
+.vol span:before{content:"";position:absolute;inset:0;height:var(--p,0);background:var(--legal-soft);top:auto}
+.vol span.fail{border-color:var(--red)}
+.vol span.fail:before{background:var(--red-soft);height:100%}
+.tl{border-left:2px solid var(--line);margin-left:6px;padding-left:14px;font-size:13px}
+.tl div{position:relative;margin-bottom:8px}
+.tl div:before{content:"";position:absolute;left:-19px;top:7px;width:8px;height:8px;border-radius:50%;background:var(--legal)}
+.tl small{font-family:var(--mono);color:var(--mute);font-size:11px;display:block}
+.contra{border-left:3px solid var(--red);padding:8px 12px;background:var(--red-soft);border-radius:0 6px 6px 0;margin-bottom:8px;font-size:13px}
+.contra b{font-weight:500}
+.contra .src{font-size:11.5px;color:var(--mute);font-family:var(--mono);margin-top:3px}
+
+/* delivery */
+.gate{border:1px solid color-mix(in srgb,var(--amber) 45%,var(--line));background:var(--amber-soft);border-radius:8px;padding:12px 14px;font-size:13px;display:flex;gap:12px;align-items:flex-start}
+.gate b{font-weight:500}
+.chain{font-family:var(--mono);font-size:11.5px;line-height:1.7;background:var(--soft);border-radius:6px;padding:10px 12px;overflow-x:auto;color:var(--ink2)}
+.chain .h{color:var(--mute)}
+.chain .k{color:var(--legal)}
+.mask{font-family:var(--serif);font-size:14px;line-height:1.9;color:var(--paper-ink);background:#fff;border:1px solid var(--line);border-radius:6px;padding:14px 18px}
+.mask s{text-decoration:none;background:var(--soft);color:var(--ink2);border-radius:3px;padding:0 3px;font-family:var(--mono);font-size:12px}
+.outs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.outs .o{border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12.5px;background:var(--shell)}
+.outs .o b{display:block;font-weight:500;font-size:13px;margin-bottom:2px}
+.outs .o small{color:var(--mute)}
+.outs .o.on{border-color:var(--ink)}
+.stamp{display:inline-block;border:1.5px solid var(--ai);color:var(--ai);border-radius:3px;font-size:10.5px;padding:0 6px;letter-spacing:.06em;transform:rotate(-2deg)}
+
+/* admin */
+.route{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;font-size:12.5px}
+.route .box{border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:var(--shell)}
+.route .arrow{color:var(--mute)}
+.wall{display:flex;gap:6px;align-items:center;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--line2)}
+.wall .who{width:120px;font-weight:500}
+.wall .w{margin-left:auto}
+.spark{height:40px;width:100%}
+.mini{font-size:12px;color:var(--ink2)}
+
+/* overview */
+.stack{display:grid;gap:8px}
+.layer{border:1px solid var(--line);border-radius:8px;padding:12px 16px;display:grid;grid-template-columns:150px 1fr auto;gap:14px;align-items:center;background:var(--shell)}
+.layer .nm{font-weight:600;font-size:14px}
+.layer .nm small{display:block;font-weight:400;color:var(--mute);font-size:11.5px}
+.layer .items{display:flex;gap:6px;flex-wrap:wrap}
+.layer .own{font-size:11.5px;color:var(--mute);white-space:nowrap}
+.layer.base{border-left:4px solid var(--L-base)}
+.layer.ed{border-left:4px solid var(--L-ed)}
+.layer.gov{border-left:4px solid var(--L-gov)}
+.route-map{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:6px}
+.route-map button{border:1px solid var(--line);border-radius:8px;padding:10px;text-align:left;background:var(--shell);font-size:12.5px;line-height:1.45}
+.route-map button:hover{border-color:var(--ink)}
+.route-map b{display:block;font-weight:600;font-size:13px}
+.route-map small{color:var(--mute);display:block;font-size:11.5px}
+.route-map i{font-style:normal;font-family:var(--mono);font-size:10.5px;color:var(--mute)}
+.ov h2{font-size:20px;margin-bottom:4px}
+.ov .lede{font-size:14px;color:var(--ink2);max-width:60ch;margin-bottom:18px}
+.ov .facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}
+.ov .facts .card{padding:12px 14px}
+.ov .facts .card b{font-size:13px;display:block;font-weight:600;margin-bottom:2px}
+.ov .facts .card p{margin:0;font-size:12.5px;color:var(--ink2)}
+.ov .facts .card small{color:var(--mute);font-size:11px}
+
+/* layer overlay */
+[data-l]{position:relative}
+body.layers [data-l]{outline:1.5px dashed var(--lc);outline-offset:-2px;border-radius:6px}
+body.layers [data-l]:after{content:attr(data-l);position:absolute;top:-1px;right:-1px;font-size:9.5px;letter-spacing:.06em;background:var(--lc);color:#fff;padding:0 5px;border-radius:0 6px 0 4px;z-index:2;font-family:var(--sans);font-weight:500;transform:none;text-decoration:none}
+[data-l="底座"]{--lc:var(--L-base)}[data-l="发行版"]{--lc:var(--L-ed)}[data-l="治理层"]{--lc:var(--L-gov)}
+
+/* notes drawer */
+.notes{position:absolute;right:0;top:0;bottom:0;width:380px;background:var(--shell);border-left:1px solid var(--line);box-shadow:-8px 0 24px rgba(0,0,0,.08);padding:18px 20px;overflow:auto;transform:translateX(100%);transition:transform .25s cubic-bezier(.7,0,.3,1);z-index:5;font-size:13px}
+body.notes-on .notes{transform:none}
+.notes h3{font-size:13px;color:var(--mute);font-weight:500;letter-spacing:.04em;margin-bottom:10px}
+.notes h2{font-size:16px;margin-bottom:12px}
+.notes .n{padding:10px 0;border-top:1px solid var(--line2);line-height:1.6}
+.notes .n b{font-weight:500;display:block;margin-bottom:2px}
+.notes .n .ev{font-size:10.5px;color:var(--mute);border:1px solid var(--line);border-radius:3px;padding:0 4px;margin-left:4px;vertical-align:1px}
+.notes .close{position:absolute;top:12px;right:12px}
+
+/* responsive */
+@media (max-width:1100px){.frame{grid-template-columns:200px 1fr}.body.two{grid-template-columns:1fr}.pane+.pane{border-left:0;border-top:1px solid var(--line2)}.route-map{grid-template-columns:repeat(3,minmax(0,1fr))}.ov .facts,.outs{grid-template-columns:repeat(2,minmax(0,1fr))}.g3,.g4{grid-template-columns:repeat(2,minmax(0,1fr))}.notes{width:min(380px,100%)}}
+@media (max-width:700px){.frame{grid-template-columns:1fr}.side{display:none}.route-map,.ov .facts,.outs,.g2,.g3,.g4{grid-template-columns:1fr}.layer{grid-template-columns:1fr}.route{grid-template-columns:1fr}.pres .tools{margin-left:0}.doc{padding:18px}}
+</style>
+<div class="pres">
+  <div class="brand"><b>Kimi Work 法律版</b><span>可点击演示 · 中软国际 × 月之暗面 · 2026-09</span></div>
+  <div class="tabs" id="tabs"></div>
+  <div class="tools">
+    <div class="legend"><span><i style="background:var(--L-base)"></i>底座原生</span><span><i style="background:var(--L-ed)"></i>发行版共建</span><span><i style="background:var(--L-gov)"></i>中软治理层</span></div>
+    <button class="tog" id="tgLayers" aria-pressed="false"><span class="dot"></span>来源图层</button>
+    <button class="tog" id="tgNotes" aria-pressed="false"><span class="dot"></span>设计依据</button>
+  </div>
+</div>
+
+<div class="frame" id="frame">
+  <aside class="side" id="side">
+    <div class="traffic"><i></i><i></i><i></i></div>
+    <div class="seg" data-l="底座"><span class="on">Work</span><span>Chat</span></div>
+    <div class="nav" data-nav="home"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>新建任务<kbd>⌘K</kbd></div>
+    <div class="nav" data-nav="home2"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>看板<span class="badge">2</span></div>
+    <div class="nav"><svg viewBox="0 0 24 24"><path d="M9 3v4a3 3 0 0 0 6 0V3M6 10h12l-1 9H7z"/></svg>插件<span class="badge">元典 · 天眼查 · 法宝 MCP</span></div>
+    <div class="nav"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/></svg>技能<span class="badge">法律包 14</span></div>
+    <div class="nav"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>定时任务<span class="badge">3</span></div>
+    <div class="nav"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 8l8 8M16 8l-8 8"/></svg>WebBridge<span class="badge">插件 · 已开启</span></div>
+    <div class="sec" data-l="发行版">案件 · 客户-案号</div>
+    <div class="matter on" data-nav="contract"><b>星澜科技 · 股权转让</b><small>NL-2026-0142 · 非诉</small></div>
+    <div class="matter" data-nav="research"><b>沪 01 · 设备买卖纠纷</b><small>M-2026-0311 · 诉讼</small></div>
+    <div class="matter" data-nav="dossier"><b>王某 · 职务侵占案</b><small>XB-2026-0078 · 刑辩</small></div>
+    <div class="matter" data-nav="pleading"><b>李某诉赵某 · 民间借贷</b><small>M-2026-0330 · 诉讼</small></div>
+    <div class="sec" data-l="治理层">交付与审计</div>
+    <div class="nav" data-nav="delivery"><svg viewBox="0 0 24 24"><path d="M5 4h10l4 4v12H5z"/><path d="M9 13l2 2 4-4"/></svg>交付与审计</div>
+    <div class="nav" data-nav="redact"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 10h8M8 14h5"/></svg>文件脱敏</div>
+    <div class="nav" data-nav="admin"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>管理后台</div>
+    <div class="sec">项目</div>
+    <div class="nav" style="color:var(--mute);font-size:12.5px">~/案卷/星澜科技/…</div>
+    <div class="sec">对话 ›</div>
+    <div class="user"><span class="avatar"></span>陈律师<span class="tag">Business</span></div>
+  </aside>
+  <main class="main" id="main"></main>
+  <aside class="notes" id="notes" aria-label="设计依据"><button class="close ib ghost" id="notesClose">关闭</button><div id="notesBody"></div></aside>
+</div>
+<script>
+const S = {};
+
+S.overview = `
+<div class="topbar"><div class="title">总览 <small>· 三层结构与演示路线</small></div></div>
+<div class="pane ov">
+  <h2>在 Kimi Work 客户端里长出一个法律行业发行版</h2>
+  <p class="lede">不是另起一个 Web SaaS。底座提供本地 Agent 运行时，发行版把律师的标准动作做成技能、插件与知识库，中软国际补上律所与央国企 IT 评审必问的治理层。开启右上角「来源图层」，每一屏都能看到哪些是谁的。</p>
+  <div class="stack">
+    <div class="layer gov"><div class="nm">治理层<small>中软国际自建 · AllMeta</small></div><div class="items"><span class="chip mute">SSO / SCIM</span><span class="chip mute">案件上下文与伦理墙继承</span><span class="chip mute">审计留痕（哈希链）</span><span class="chip mute">模型路由与成本归集</span><span class="chip mute">脱敏网关</span><span class="chip mute">采纳度分析</span><span class="chip mute">私有化推理</span></div><div class="own">底座官方未提供 → 增值位置</div></div>
+    <div class="layer ed"><div class="nm">法律发行版<small>中软 × 月之暗面共建</small></div><div class="items"><span class="chip legal">合同审查 Playbook</span><span class="chip legal">批量审查矩阵</span><span class="chip legal">类案检索报告</span><span class="chip legal">刑事阅卷</span><span class="chip legal">要素式文书</span><span class="chip legal">引用校验器</span><span class="chip legal">法规时间线</span><span class="chip legal">Word / WPS 加载项</span></div><div class="own">技能包 + 插件 + 知识库</div></div>
+    <div class="layer base"><div class="nm">Kimi Work<small>月之暗面 · 桌面本地 Agent</small></div><div class="items"><span class="chip case">本地文件夹挂载</span><span class="chip case">内置浏览器 / WebBridge</span><span class="chip case">Agent Swarm</span><span class="chip case">技能 · 插件 · MCP</span><span class="chip case">看板 · 小组件</span><span class="chip case">定时任务</span><span class="chip case">K3 / K2.8 / K2.7</span><span class="chip case">元典 · 天眼查插件</span></div><div class="own">3.2.8 · 2026-09-12</div></div>
+  </div>
+  <div class="facts">
+    <div class="card"><b>Harvey Tenet 基于 Kimi K3</b><p>全球估值最高的法律 AI 公司用 K3 开源权重做法律后训练，LAB Contracts 达 SOTA。</p><small>harvey.ai 博客 · 2026-08-20</small></div>
+    <div class="card"><b>律协指引鼓励本地化部署</b><p>上海律协 2025/2026 指引：未脱敏司法文书不得交给非本地部署 AI；须记录输入、输出与修改过程。</p><small>第十二、十七、二十九条</small></div>
+    <div class="card"><b>企业法务线有政策抓手</b><p>国资委 2026 年 32 号文第 18 条：合同管理系统加强人机协同智能审查、风险探针预警。</p><small>国资发法规规〔2026〕32 号</small></div>
+    <div class="card"><b>幻觉已有司法后果</b><p>最高法 2026-09 意见第 19 条：提交 AI 生成材料须核实真实性；篡改 AI 标识属虚假诉讼手段。</p><small>法发〔2026〕10 号</small></div>
+  </div>
+  <h3 style="font-size:13px;color:var(--mute);font-weight:500;margin-bottom:8px">演示路线 · 按律师一天的工作顺序</h3>
+  <div class="route-map">
+    <button data-go="home"><i>1</i><b>首页</b><small>案件上下文先行</small></button>
+    <button data-go="contract"><i>2</i><b>合同审查</b><small>修订卡 + 依据</small></button>
+    <button data-go="matrix"><i>3</i><b>批量矩阵</b><small>204 份同问</small></button>
+    <button data-go="research"><i>4</i><b>类案检索</b><small>法定顺位 + 校验</small></button>
+    <button data-go="pleading"><i>5</i><b>要素式起诉状</b><small>证据 → 要素表</small></button>
+    <button data-go="dossier"><i>6</i><b>刑事阅卷</b><small>本地 32 卷</small></button>
+    <button data-go="redact"><i>7</i><b>文件脱敏</b><small>出站网关</small></button>
+    <button data-go="delivery"><i>8</i><b>交付与审计</b><small>能证明查过</small></button>
+    <button data-go="admin"><i>9</i><b>管理后台</b><small>墙 · 成本 · 路由</small></button>
+  </div>
+</div>`;
+
+S.home = `
+<div class="topbar"><div class="title">新建任务</div><div class="right"><span class="ctx" data-l="发行版"><span class="sw"></span>星澜科技 · 股权转让 <span class="mono">NL-2026-0142</span> ▾</span><span class="local" data-l="底座"><i></i>案卷在本机 · ~/案卷/星澜科技</span></div></div>
+<div class="pane">
+  <div class="bl" data-l="发行版" id="blSeg"><button data-bl="lit" class="on">诉讼仲裁</button><button data-bl="non">非诉业务</button><button data-bl="corp">企业法务</button></div>
+  <div class="pill-row" id="blSub" style="margin:10px 0 14px"></div>
+  <div class="grid g3" style="margin-bottom:18px" data-l="发行版" id="blCards"></div>
+  <div class="grid g2" style="margin-bottom:18px">
+    <div class="card" data-l="底座"><h3>继续上次</h3>
+      <div class="kv"><dt>昨天 18:42</dt><dd>星澜科技股权转让协议 · 审查进行到第 7/12 条</dd><dt>周一</dt><dd>设备买卖纠纷 · 类案检索报告草稿（未归档）</dd><dt>定时</dt><dd>每周一 08:00 · 监测目标公司工商与涉诉变更（天眼查 · 元典）</dd></div></div>
+    <div class="card" data-l="发行版"><h3>本案知识源</h3>
+      <div class="pill-row"><span class="chip legal">本所股权交易 Playbook v3.2</span><span class="chip legal">本所交易文件范本库</span><span class="chip law">国家法律法规数据库</span><span class="chip case">北大法宝（律所订阅，本人登录）</span><span class="chip case">元典 · 1.77 亿文书</span><span class="chip case">天眼查</span></div>
+      <div class="note" style="margin-top:8px">知识源随案件切换；被伦理墙隔离的文件不进入检索候选集。</div></div>
+  </div>
+  <div class="composer" data-l="底座">
+    <div class="attach"><span><b>@案件</b> NL-2026-0142</span><span><b>/合同审查</b> <small style="color:var(--mute)">技能已自动匹配</small></span><span>股权转让协议（对方稿）.docx</span></div>
+    <div class="ph">用本所股权交易 Playbook、受让方立场审查这份协议，出修订稿和意见书。</div>
+    <div class="row"><span>＋</span><span>手动允许 ▾</span><span style="margin-left:6px">K3 · High ▾</span><span class="send" aria-label="发送"></span></div>
+  </div>
+</div>`;
+
+const BL={
+ lit:{sub:['民商事诉讼','刑事辩护','劳动争议','仲裁','行政诉讼'],cards:[
+  ['类案检索报告','按法发〔2020〕24 号四级顺位检索并成文归档','WebBridge · 北大法宝','research'],
+  ['要素式起诉状 / 答辩状','对齐最高法 67 类示范文本，从证据抽要素','民间借贷 · 买卖合同 · 劳动争议','pleading'],
+  ['刑事阅卷','扫描卷宗 → 证据目录 · 矛盾点 · 辩护要点','本地处理 · 不出本机','dossier'],
+  ['证据梳理与时间线','多份证据交叉比对，生成举证质证提纲','卷-页级溯源','dossier'],
+  ['文件脱敏','发往外部服务前替换姓名、证件号、账号、案号','律协指引第十五、二十九条','redact'],
+  ['期限与费用计算','上诉期、举证期、诉讼费、利息与违约金试算','确定性规则 · 不走模型','']]},
+ non:{sub:['股权与并购','投融资','合同起草与审查','尽职调查','涉外与翻译'],cards:[
+  ['合同审查','按本所 Playbook 与委托方立场出修订稿与意见书','受让方立场 · 四档输出','contract'],
+  ['尽职调查矩阵','对目标公司几百份合同问同一组问题','行=文件 列=问题 · 带引用','matrix'],
+  ['交易文件起草','从本所范本库起草 SPA、股东协议、TS','范本 + 要素填充','contract'],
+  ['工商穿透与涉诉核查','股权结构、对外担保、被执行信息一次拉齐','天眼查 · 元典插件',''],
+  ['法律翻译（术语库）','中英交易文件互译，术语与定义项全文一致','本所术语库 · 客户术语库',''],
+  ['文件脱敏','发往外部翻译或云端服务前脱敏','假名化 · 密钥留本机','redact']]},
+ corp:{sub:['常年法律顾问','合同管理','合规与监管','劳动人事','知识产权'],cards:[
+  ['合同审查（顾问单位）','按顾问单位模板与审查尺度审查业务合同','我方 = 顾问单位 · 双审','contract'],
+  ['批量合规排查','对存量合同问：付款条件、违约金、不可抗力…','风险探针 · 国资委 32 号文','matrix'],
+  ['法规更新监测','定时抓取顾问单位所属行业新规并出影响提示','定时任务 · 每周','' ],
+  ['法律意见书','对顾问单位咨询出具带引用与假设限制的意见书','强制「假设与限制」段',''],
+  ['合同台账看板','到期、续签、履约风险一屏可见','看板 · 小组件',''],
+  ['文件脱敏','外发前脱敏','出站策略由管理员设定','redact']]}
+};
+function initHome(bl='lit'){const d=BL[bl];
+  document.querySelectorAll('#blSeg button').forEach(b=>b.classList.toggle('on',b.dataset.bl===bl));
+  document.getElementById('blSub').innerHTML=d.sub.map((x,i)=>`<span class="chip ${i?'mute':'legal'}">${x}</span>`).join('');
+  document.getElementById('blCards').innerHTML=d.cards.map(c=>`<div class="card" ${c[3]?`style="cursor:pointer" data-go="${c[3]}"`:''}><b style="font-weight:600;display:block;margin-bottom:3px">${c[0]}</b><div class="note" style="color:var(--ink2)">${c[1]}</div><div class="note" style="margin-top:6px">${c[2]}</div></div>`).join('');
+}
+
+S.contract = `
+<div class="topbar"><div class="title">星澜科技股权转让协议 · 审查 <small>▾</small></div><div class="right"><span class="ctx" data-l="发行版"><span class="sw"></span>NL-2026-0142</span><span class="chip legal">立场：受让方（我方客户）</span><span class="chip mute">Playbook v3.2</span><span class="local" data-l="底座"><i></i>本机</span></div></div>
+<div class="body two">
+  <div class="pane" data-l="底座" style="display:flex;flex-direction:column">
+    <div class="msg user"><div class="bub">用本所股权交易 Playbook、受让方立场审查这份协议，出修订稿和意见书。</div></div>
+    <div class="msg"><span class="kav"></span><div class="txt">
+      <div class="think">已深度思考 · 用时 41 秒 ▾</div>
+      <div class="steps"><div>计划 · 已确认 <span class="t">7 步</span></div>
+        <div><span class="st done"></span>读取本机文件 <span class="tool">read ~/案卷/…/股权转让协议（对方稿）.docx</span><span class="t">2s</span></div>
+        <div><span class="st done"></span>加载 Playbook <span class="tool">skill:equity-deal v3.2 · 42 条规则</span><span class="t">1s</span></div>
+        <div><span class="st done"></span>法条核验 <span class="tool">mcp:flk.npc.gov.cn · 民法典 §585 · 公司法 §84（2024）</span><span class="t">4s</span></div>
+        <div><span class="st done"></span>逐条比对 · 生成建议 <span class="t">28s</span></div>
+        <div><span class="st run"></span>写入修订（tracked changes）<span class="t">…</span></div>
+        <div><span class="st"></span>生成审查意见书</div>
+        <div><span class="st"></span>引用校验 · 写入审计记录</div>
+      </div>
+      <p>共 <b>12</b> 处建议：<span class="chip bad">重大 3</span> <span class="chip warn">谈判点 5</span> <span class="chip mid">标准条款 4</span>。未在协议中找到「过渡期损益归属」约定，已按 Playbook 规则 R-12 建议补充。</p>
+      <p class="note">每条建议均可拒绝；接受后以你的名义写入修订，AI 标注可在定稿时移除。</p>
+    </div></div>
+    <div class="composer"><div class="ph">继续追问，或输入 / 调用技能…</div><div class="row"><span>＋</span><span>手动允许 ▾</span><span style="margin-left:6px">K3 · High ▾</span><span class="send"></span></div></div>
+  </div>
+  <div class="pane ws">
+    <div class="wshead" data-l="发行版">修订建议 <span class="chip mute num" id="sugStat">已处理 0/12 · 接受 0 · 拒绝 0</span>
+      <div class="tools"><button class="ib on" id="modeRev">修订模式</button><button class="ib ghost" id="modeCmt">批注模式</button><button class="ib ghost">按风险 ▾</button></div></div>
+    <div class="note" style="margin-bottom:10px"><span class="kbd">J</span>/<span class="kbd">K</span> 切换 · <span class="kbd">A</span> 接受 · <span class="kbd">R</span> 拒绝 · <span class="kbd">E</span> 就地修改</div>
+    <div id="sugList" data-l="发行版"></div>
+    <div class="card" data-l="发行版" style="margin-top:12px"><h3>协议原文 · 第 7.4 条（点击建议卡定位）</h3>
+      <div class="doc" style="padding:18px 22px;font-size:14px">
+        <p class="cl">7.4 违反陈述与保证的责任</p>
+        <p id="docP">转让方违反本协议第六条陈述与保证的，应向受让方支付相当于股权转让价款 <mark class="rev"><del>1%</del><ins>10%</ins></mark> 的违约金<mark class="rev"><ins>，且不影响受让方就实际损失超出违约金的部分另行主张</ins></mark>。</p>
+        <p class="who">修订：陈律师 · 2026-09-14 10:32 · 依据 Playbook R-17 陈述保证违约</p>
+      </div>
+      <div class="outs" style="margin-top:12px"><div class="o on"><b>修订版 · 简洁</b><small>仅重大与谈判点</small></div><div class="o"><b>修订版 · 详细</b><small>含标准条款</small></div><div class="o"><b>纯净版</b><small>接受全部后</small></div><div class="o"><b>审查意见书</b><small>逐条 · 风险表</small></div></div>
+    </div>
+  </div>
+</div>`;
+
+S.matrix = `
+<div class="topbar"><div class="title">尽职调查矩阵 · 星澜科技采购合同 <small>▾</small></div><div class="right"><span class="ctx" data-l="发行版"><span class="sw"></span>NL-2026-0142</span><span class="chip ai">Agent Swarm · 24 子 Agent</span><span class="local" data-l="底座"><i></i>本机 · 204 份</span></div></div>
+<div class="body two" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)">
+  <div class="pane">
+    <div class="prog" data-l="底座"><b class="num">目标公司采购合同 204 份 · 6 列</b><span class="cnt"><i style="background:var(--green)"></i>完成 <b class="num" id="cDone">147</b></span><span class="cnt"><i style="background:var(--ai)"></i>进行中 <b class="num">24</b></span><span class="cnt"><i style="background:var(--mute)"></i>排队 <b class="num" id="cQ">31</b></span><span class="cnt"><i style="background:var(--red)"></i>失败 <b class="num">2</b></span><span class="note">剩余约 4–7 分钟 · 可离开，完成后通知</span><span style="margin-left:auto" class="note num">本任务成本 ¥38.20 · 归集至 NL-2026-0142</span></div>
+    <div class="bar" style="margin-bottom:12px"><i id="pbar" style="width:72%"></i></div>
+    <div class="mx" data-l="发行版"><table>
+      <thead><tr><th>文件</th><th class="q">合同总价<small>货币 · 自动建议</small></th><th class="q">付款节点是否与验收挂钩<small>是/否 + 依据</small></th><th class="q">违约金上限<small>逐字引用</small></th><th class="q">争议解决方式<small>摘要</small></th><th class="q">是否约定不可抗力包含政策变化<small>是/否</small></th></tr></thead>
+      <tbody id="mxBody"></tbody></table></div>
+    <div class="note" style="margin-top:8px">「加一列」= 派一个 Agent 任务。单元格可锁定，重跑不覆盖人工修正；失败原因用人话说明。</div>
+  </div>
+  <div class="pane ws">
+    <div class="wshead">单元格详情 <span class="chip mute">行 3 · 列 3</span><div class="tools"><button class="ib">标记已核验</button><button class="ib">锁定</button><button class="ib ghost">重跑此格</button></div></div>
+    <div class="drawer" data-l="发行版">
+      <div class="lv"><i>①</i><div><b>答案</b>合同总价的 5%</div></div>
+      <div class="lv"><i>②</i><div><b>推理</b>第 11.2 条约定逐日违约金，第 11.4 条另设总额上限；两条合并读取得出上限为总价 5%，未见其他条款调整。</div></div>
+      <div class="lv"><i>③</i><div><b>原文摘录</b><q>违约金累计总额不超过本合同总价款的百分之五（5%）。</q></div></div>
+      <div class="lv"><i>④</i><div><b>来源定位</b><span class="mono">组件采购合同-晶科-0037.docx</span> · 第 11.4 条 · 第 9 页 · 句级</div></div>
+      <div class="lv"><i>⑤</i><div><button class="ib primary">跳转并高亮原文</button> <span class="evid" style="margin-left:8px"><i></i>2 处明确表述</span></div></div>
+    </div>
+    <div class="card" style="margin-top:12px" data-l="发行版"><h3>对整张表追问</h3><div class="composer" style="margin:0"><div class="ph">哪些合同的违约金上限低于 5% 且付款不与验收挂钩？</div><div class="row"><span>＋</span><span class="send"></span></div></div>
+      <div class="note" style="margin-top:8px">答案生成为新列或旗标，纳入团队元数据，可导出带引用列的 Excel。</div></div>
+  </div>
+</div>`;
+S.research = `
+<div class="topbar"><div class="title">类案检索报告 · 设备买卖合同纠纷 <small>▾</small></div><div class="right"><span class="ctx" data-l="发行版"><span class="sw"></span>M-2026-0311</span><span class="chip mute">排序：对我方有利 ▾</span><span class="local" data-l="底座"><i></i>WebBridge · 本人浏览器</span></div></div>
+<div class="body two" style="grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)">
+  <div class="pane">
+    <div class="filters" data-l="发行版"><span class="f"><small>案由</small><b>买卖合同纠纷</b></span><span class="f"><small>争议焦点</small><b>质量异议期 · 逾期付款利息</b></span><span class="f"><small>地域</small><b>上海 · 全国</b></span><span class="f"><small>法院层级</small><b>中院及以上</b></span><span class="f"><small>标的额</small><b>500 万–5,000 万</b></span><span class="f"><small>时间</small><b>近三年（指导性案例不限）</b></span></div>
+    <div class="note" style="margin-bottom:12px">按法发〔2020〕24 号第四条顺位分组；相似度按「基本事实 / 争议焦点 / 法律适用」三维分别给出，不合成单一分数。</div>
+    <div class="tier" data-l="发行版"><h4>① 最高人民法院指导性案例 <span class="chip law">应当参照</span></h4>
+      <div class="cs"><div class="h"><span class="chip law">指导性案例 111 号</span><span class="mono">（2013）民四终字第 …</span><span class="crt">最高人民法院 · 2019 年发布</span><span class="chip ok" style="margin-left:auto">现行有效</span></div>
+        <div class="sim"><span>基本事实<span class="bar"><i style="width:55%"></i></span></span><span>争议焦点<span class="bar"><i style="width:82%"></i></span></span><span>法律适用<span class="bar"><i style="width:90%"></i></span></span></div>
+        <div class="yao">裁判要点：当事人约定的质量异议期限届满后提出异议的，人民法院不予支持，但出卖人明知瑕疵的除外。</div></div></div>
+    <div class="tier" data-l="发行版"><h4>② 最高人民法院典型案例及生效裁判 <span class="chip mute">可以参考</span></h4>
+      <div class="cs"><div class="h"><span class="chip case">公报案例</span><span class="mono">（2023）最高法民终 128 号</span><span class="crt">最高人民法院 · 二审</span><span class="chip ok" style="margin-left:auto">未被改判</span></div>
+        <div class="sim"><span>基本事实<span class="bar"><i style="width:78%"></i></span></span><span>争议焦点<span class="bar"><i style="width:74%"></i></span></span><span>法律适用<span class="bar"><i style="width:68%"></i></span></span></div>
+        <div class="yao">裁判要旨：逾期付款利息按 LPR 上浮 30%–50% 计算符合《民法典》第 585 条违约金调整规则。</div></div></div>
+    <div class="tier" data-l="发行版"><h4>③ 上海市高级人民法院参考性案例及生效裁判</h4>
+      <div class="cs"><div class="h"><span class="chip case">参考性案例</span><span class="mono">（2024）沪民终 76 号</span><span class="crt">上海高院 · 二审</span><span class="chip ok" style="margin-left:auto">未被改判</span></div>
+        <div class="sim"><span>基本事实<span class="bar"><i style="width:88%"></i></span></span><span>争议焦点<span class="bar"><i style="width:80%"></i></span></span><span>法律适用<span class="bar"><i style="width:72%"></i></span></span></div>
+        <div class="yao">光伏组件功率衰减是否构成质量瑕疵，以国家标准与合同约定并行认定；买方未在约定期限内书面异议视为符合约定。</div></div>
+      <div class="cs blocked"><div class="h"><span class="chip bad">已拦截 · 未进入报告</span><span class="mono">（2022）沪01民终12345号</span><span class="crt">模型生成 · 未在北大法宝 / 元典库中命中</span></div>
+        <div class="yao">案号序号「12345」为连续整数，命中通州法院案例揭示的 AI 编造特征；权威库存在性校验失败。显示此卡是为了让你知道我拦了什么。</div></div></div>
+    <div class="tier"><h4>④ 上一级法院及本院生效裁判 <span class="note">已检索 14 篇 · 折叠</span></h4></div>
+  </div>
+  <div class="pane ws">
+    <div class="brow" data-l="底座" style="margin-bottom:12px"><div class="bar-"><span>●</span><span class="url">www.pkulaw.com/case/…?q=买卖合同纠纷+质量异议期</span><span class="chip ok">已登录 · 律所账号</span></div>
+      <div class="pg">WebBridge 正在你的浏览器里检索：翻到第 <b class="num">3</b>/8 页，已读取 <b class="num">37</b> 条结果 · 页面内容与登录态不离开本机。<div style="margin-top:8px"><span class="cur">（2024）沪民终 76 号 · 上海市高级人民法院 · 买卖合同纠纷</span></div></div></div>
+    <div class="card" data-l="发行版"><h3>检索报告 · 法定要素（第八条）</h3>
+      <dl class="kv"><dt>检索主体</dt><dd>陈律师 · 上海某律师事务所</dd><dt>检索时间</dt><dd class="mono">2026-09-14 10:52–11:04</dd><dt>检索平台</dt><dd>北大法宝（律所订阅）· 人民法院案例库 · 元典</dd><dt>检索方法</dt><dd>关键词 + 案由 + 争议焦点语义扩展；四级顺位</dd><dt>检索结果</dt><dd>指导性案例 1 · 最高法 2 · 沪高院 3 · 其他 14</dd><dt>争议焦点</dt><dd>质量异议期效力；逾期付款利息标准</dd><dt>是否参照 / 参考</dt><dd>指导性案例 111 号应当参照；其余可参考，见分析</dd></dl>
+      <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap"><button class="ib primary">生成检索报告（.docx）并归档</button><button class="ib">切换为「统一裁判尺度」排序</button></div>
+      <div class="note" style="margin-top:8px">引用 chip 带时效性：<span class="chip law">民法典 §585 <span class="n">现行有效</span></span> <span class="chip dead">合同法 §114 <span class="n">2021-01-01 废止</span></span> → 自动给出对应条款。</div></div>
+  </div>
+</div>`;
+
+S.dossier = `
+<div class="topbar"><div class="title">刑事阅卷 · 王某职务侵占案 <small>▾</small></div><div class="right"><span class="ctx" data-l="发行版"><span class="sw"></span>XB-2026-0078</span><span class="chip ai">子 Agent 32 · 按卷并行</span><span class="local" data-l="底座"><i></i>本机处理 · 零上传</span></div></div>
+<div class="body two">
+  <div class="pane" data-l="底座">
+    <div class="msg user"><div class="bub">阅卷。~/案卷/王某/ 里 32 本卷宗扫描件，先出证据目录和阅卷笔录初稿，重点找供述矛盾。</div></div>
+    <div class="msg"><span class="kav"></span><div class="txt">
+      <div class="think">已深度思考 · 用时 1 分 12 秒 ▾</div>
+      <div class="steps"><div>32 卷 · 4,812 页 · 本地 OCR 与抽取 <span class="t">进行中 27/32</span></div>
+        <div><span class="st done"></span>识别卷宗结构 <span class="tool">诉讼文书卷 4 · 证据卷 28</span></div>
+        <div><span class="st done"></span>本地 OCR <span class="tool">python · paddleocr</span><span class="t">6m 40s</span></div>
+        <div><span class="st run"></span>证据目录 · 摘录 · 时间线 <span class="tool">swarm ×32</span></div>
+        <div><span class="st"></span>供述矛盾比对 · 程序瑕疵扫描</div>
+        <div><span class="st"></span>阅卷笔录（本所模板）</div></div>
+      <div class="vol">${Array.from({length:32},(_,i)=>{const p=i<27?100:i<29?60:0;const f=i===13;return `<span style="--p:${p}%" class="${f?'fail':''}">${i+1}</span>`}).join('')}</div>
+      <p class="note">第 14 卷：扫描件倾斜且分辨率低，OCR 置信度不足，已跳过并标记，其余卷不受影响。可重扫后单卷重跑。</p>
+    </div></div>
+    <div class="composer"><div class="ph">例如：把三次讯问笔录里关于「款项去向」的说法并排列出。</div><div class="row"><span>＋</span><span>手动允许 ▾</span><span style="margin-left:6px">K3 · High ▾</span><span class="send"></span></div></div>
+  </div>
+  <div class="pane ws">
+    <div class="wshead" data-l="发行版">阅卷笔录（初稿）<div class="tools"><button class="ib">证据目录</button><button class="ib on">矛盾点</button><button class="ib">时间线</button><button class="ib">辩护要点</button></div></div>
+    <div data-l="发行版">
+      <div class="contra"><b>矛盾 1 · 款项去向</b>：第一次讯问称「转入个人账户后用于购房」，第三次称「借给朋友周转，未留借条」；银行流水（证据卷 9 第 41–58 页）显示 2 笔 12 万转至第三人账户。<div class="src">证据卷 3 p.12 · 证据卷 3 p.47 · 证据卷 9 p.41–58</div></div>
+      <div class="contra"><b>矛盾 2 · 职务身份</b>：起诉意见书认定「财务主管」，劳动合同（证据卷 21 p.3）职位为「出纳」，无授权文件证明其对资金有处分权限。<div class="src">诉讼文书卷 1 p.2 · 证据卷 21 p.3</div></div>
+      <div class="contra" style="border-color:var(--amber);background:var(--amber-soft)"><b>程序 · 讯问时间</b>：第二次讯问笔录起止时间为 02:10–07:40，无同步录音录像说明（证据卷 3 p.29）。<div class="src">证据卷 3 p.29</div></div>
+    </div>
+    <div class="card" style="margin-top:12px" data-l="发行版"><h3>时间线（节选）</h3>
+      <div class="tl"><div><small>2024-03-11</small>公司账户转出 12 万元至第三人张某账户<span class="note"> · 证据卷 9 p.43</span></div><div><small>2024-03-15</small>王某购房首付款支付 38 万元<span class="note"> · 证据卷 12 p.7</span></div><div><small>2025-11-02</small>公司报案，立案决定书<span class="note"> · 诉讼文书卷 1 p.5</span></div><div><small>2025-11-03</small>第一次讯问 09:20–11:05<span class="note"> · 证据卷 3 p.12</span></div></div></div>
+  </div>
+</div>`;
+
+S.delivery = `
+<div class="topbar"><div class="title">交付与审计 · 星澜科技股权转让协议</div><div class="right"><span class="ctx" data-l="发行版"><span class="sw"></span>NL-2026-0142</span></div></div>
+<div class="pane">
+  <div class="gate" data-l="治理层" style="margin-bottom:14px"><span class="chip warn">导出前检查</span><div><b>还有 1 条「重大」建议未经律师确认（第 3.2 条 · 价款支付）。</b> 重大项无论证据强度都需要人工确认后才能导出定稿。<div style="margin-top:6px"><button class="ib primary">去处理</button> <button class="ib">先导出草稿（带 AI 标识）</button></div></div></div>
+  <div class="grid g3" style="margin-bottom:14px">
+    <div class="card" data-l="发行版"><h3>引用校验报告</h3>
+      <div class="kv"><dt>引用总数</dt><dd class="num">23</dd><dt>存在性</dt><dd><span class="chip ok">23 / 23 命中</span></dd><dt>时效性</dt><dd><span class="chip warn">1 条已修订</span> 公司法 §71 → 2024 修订版 §84</dd><dt>支持性</dt><dd><span class="chip ok">21 强</span> <span class="chip warn">2 弱</span></dd><dt>语境</dt><dd><span class="chip ok">无反向引用</span></dd></div>
+      <div class="note" style="margin-top:8px">校验器为确定性规则 + 判别模型，独立于生成模型。</div>
+      <button class="ib" style="margin-top:8px">导出校验报告 PDF</button></div>
+    <div class="card" data-l="治理层"><h3>AI 生成内容标识</h3>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px"><span class="stamp">AI 辅助生成 · 草稿</span><span class="note">草稿态强制显式标识</span></div>
+      <div class="kv"><dt>去除条件</dt><dd>律师逐条确认并署名后，定稿可去除显式标识；隐式元数据标识保留</dd><dt>依据</dt><dd>《标识办法》第四条；最高法 2026 意见第 19 条</dd></div></div>
+    <div class="card" data-l="治理层"><h3>脱敏预览（上传外部服务前）</h3>
+      <div class="mask">买受人<s>张某甲</s>（身份证号 <s>3101**********1234</s>，电话 <s>138****5678</s>）与出卖人<s>A 公司</s>于 2024 年签订《设备买卖合同》…</div>
+      <div class="note" style="margin-top:6px">假名化：同一人全文同一代号，密钥留本机。未脱敏文件禁止发往云端模型。</div></div>
+  </div>
+  <div class="card" data-l="治理层"><h3>审计记录 · 本任务（append-only · 哈希链）</h3>
+    <div class="chain"><span class="h">#0412</span> 2026-09-14T10:31:07+08:00 actor=陈律师 matter=NL-2026-0142 wall=v7 action=<span class="k">read_local</span> file=股权转让协议（对方稿）.docx sha256=9f3a…c1e2<br><span class="h">#0413</span> 10:31:09 action=<span class="k">retrieve</span> sources=[flk:民法典§585, flk:民法典§793, playbook:equity-deal@3.2#R-17] model=kimi-k3@2026-07 prompt_tpl=contract-review@1.4<br><span class="h">#0414</span> 10:31:48 action=<span class="k">suggest</span> id=S07 output_digest=4b7e…90aa citations_verified=3/3<br><span class="h">#0415</span> 10:32:15 action=<span class="k">human_accept</span> id=S07 by=陈律师 note="以我的名义写入修订" prev=1c9d…e0f3</div>
+    <div class="note" style="margin-top:8px">回答「出事时 AI 当时看到了什么」；模型 / 提示模板 / Playbook 三元组保证可复现；保留期与结案后档案一致。</div></div>
+</div>`;
+
+S.admin = `
+<div class="topbar"><div class="title">管理后台 <small>· 上海某律师事务所 · 186 席</small></div><div class="right"><span class="chip mute">中软国际 AllMeta</span></div></div>
+<div class="pane">
+  <div class="grid g4" style="margin-bottom:14px" data-l="治理层">
+    <div class="card stat"><b class="num">186 / 200</b><small>激活席位 · SSO 已接 AD</small></div>
+    <div class="card stat"><b class="num">71%</b><small>周活 · 合伙人 58% · 律师 79%</small></div>
+    <div class="card stat"><b class="num">¥ 6,420</b><small>本月 token 成本 · 均席 ¥34.5</small></div>
+    <div class="card stat"><b class="num">100%</b><small>输出带引用 · 拦截虚构案号 17 次</small></div>
+  </div>
+  <div class="grid g2" style="margin-bottom:14px">
+    <div class="card" data-l="治理层"><h3>模型路由（毛利管理）</h3>
+      <div class="route"><div class="box">默认 · K2.8 / K2.7<br><span class="note">摘要 · 抽取 · 翻译 · 矩阵单元格</span></div><span class="arrow">→</span><div class="box">升级 · K3 High<br><span class="note">修订建议 · 意见书 · 争议焦点分析</span></div></div>
+      <div class="note" style="margin-top:8px">本月 K3 占调用 18%、占成本 61%；上下文缓存命中率 64%。</div>
+      <svg class="spark" viewBox="0 0 300 40" preserveAspectRatio="none"><path d="M0 32 L30 30 L60 26 L90 28 L120 22 L150 20 L180 24 L210 16 L240 14 L270 12 L300 10" fill="none" stroke="var(--legal)" stroke-width="1.5"/><path d="M0 32 L30 30 L60 26 L90 28 L120 22 L150 20 L180 24 L210 16 L240 14 L270 12 L300 10 V40 H0Z" fill="var(--legal)" opacity=".1"/></svg></div>
+    <div class="card" data-l="治理层"><h3>成本按案件归集</h3>
+      <div class="tblwrap"><table><thead><tr><th>案件</th><th>任务</th><th>token 成本</th><th>可计入</th></tr></thead><tbody>
+        <tr><td>NL-2026-0142</td><td class="num">31</td><td class="num">¥ 412.60</td><td><span class="chip ok">是</span></td></tr>
+        <tr><td>M-2026-0311</td><td class="num">12</td><td class="num">¥ 96.20</td><td><span class="chip ok">是</span></td></tr>
+        <tr><td>XB-2026-0078</td><td class="num">7</td><td class="num">¥ 188.40</td><td><span class="chip mute">风险代理</span></td></tr></tbody></table></div></div>
+  </div>
+  <div class="grid g2">
+    <div class="card" data-l="治理层"><h3>利益冲突墙 · 继承自 iManage 策略</h3>
+      <div class="wall"><span class="who">NL-2026-0142</span><span class="note">对方：转让方及其关联公司</span><span class="w chip bad">隔离 3 人</span></div>
+      <div class="wall"><span class="who">M-2026-0311</span><span class="note">对方：A 公司</span><span class="w chip ok">无冲突</span></div>
+      <div class="wall"><span class="who">XB-2026-0078</span><span class="note">刑事 · 仅承办团队</span><span class="w chip warn">最小可见</span></div>
+      <div class="note" style="margin-top:8px">检索层预过滤：被墙文件不进候选集；缓存键含访问范围哈希，防止跨墙泄露。</div></div>
+    <div class="card" data-l="治理层"><h3>部署形态</h3>
+      <div class="kv"><dt>客户端</dt><dd>Kimi Work 桌面端 · 案卷本机处理</dd><dt>推理</dt><dd>官方 API（默认）/ 私有化推理（K2.x 开源权重 · 认证推理伙伴）</dd><dt>治理服务</dt><dd>AllMeta · 私有化 · 审计库 WORM</dd><dt>合规</dt><dd>已备案模型 + 属地登记；DPA 列明次级受托人；PIA 已完成</dd></div></div>
+  </div>
+</div>`;
+S.pleading = `
+<div class="topbar"><div class="title">要素式起诉状 · 民间借贷纠纷 <small>▾</small></div><div class="right"><span class="ctx" data-l="发行版"><span class="sw"></span>李某诉赵某 <span class="mono">M-2026-0330</span></span><span class="chip law">示范文本 · 法〔2025〕82 号</span><span class="local" data-l="底座"><i></i>本机</span></div></div>
+<div class="body two" style="grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr)">
+  <div class="pane" data-l="底座" style="display:flex;flex-direction:column">
+    <div class="msg user"><div class="bub">用最高法要素式示范文本起草起诉状。证据在 ~/案卷/李某/：借条.jpg、微信转账记录.pdf、催款聊天记录.pdf。</div></div>
+    <div class="msg"><span class="kav"></span><div class="txt">
+      <div class="think">已深度思考 · 用时 23 秒 ▾</div>
+      <div class="steps"><div>计划 · 已确认 <span class="t">6 步</span></div>
+        <div><span class="st done"></span>识别案由 <span class="tool">民间借贷纠纷 · 民事案件案由规定（2026）</span></div>
+        <div><span class="st done"></span>匹配示范文本 <span class="tool">skill:pleading · 民间借贷纠纷起诉状（要素式）</span></div>
+        <div><span class="st done"></span>本地 OCR 与要素抽取 <span class="tool">借条.jpg · 转账记录.pdf</span><span class="t">9s</span></div>
+        <div><span class="st done"></span>规则核验 <span class="tool">利率上限 · 诉讼时效 · 管辖</span></div>
+        <div><span class="st run"></span>填表 · 标记缺项与需确认项</div>
+        <div><span class="st"></span>生成起诉状 .docx + 证据清单</div></div>
+      <p>已从证据中抽取 <b class="num">14</b> 项要素，<span class="chip warn">3 项需你确认</span> <span class="chip mute">2 项未在证据中找到</span>。</p>
+      <p>一处规则提示：借条约定月息 2 分（年化 24%），高于合同成立时一年期 LPR 四倍（约 14.4%–15.4%），按《民间借贷规定》第二十五条，超出部分法院不予支持。建议按 LPR 四倍主张利息，或由你决定按约定主张。</p>
+    </div></div>
+    <div class="composer"><div class="ph">例如：利息按 LPR 四倍主张，起算日改为 2024-07-01。</div><div class="row"><span>＋</span><span>手动允许 ▾</span><span style="margin-left:6px">K2.8 ▾</span><span class="send"></span></div></div>
+  </div>
+  <div class="pane ws">
+    <div class="wshead" data-l="发行版">要素表 <span class="chip mute num">14 已抽取 · 3 需确认 · 2 缺失</span><div class="tools"><button class="ib on">要素表</button><button class="ib ghost">起诉状预览</button><button class="ib ghost">证据清单</button></div></div>
+    <div class="tblwrap" data-l="发行版" style="background:var(--shell)"><table class="pl">
+      <thead><tr><th style="width:26%">要素</th><th>内容</th><th style="width:34%">来源 · 状态</th></tr></thead>
+      <tbody>
+      <tr><td colspan="3" class="sec">一、当事人</td></tr>
+      <tr><td>原告</td><td>李某，男，1985 年生，住上海市浦东新区…</td><td><span class="chip case">身份证复印件 p.1</span> <span class="chip ok">已抽取</span></td></tr>
+      <tr><td>被告</td><td>赵某，身份证号 3101**…，住址不详</td><td><span class="chip case">借条 · 落款</span> <span class="chip warn">住址需确认</span></td></tr>
+      <tr><td>送达地址</td><td>原告：电子送达（手机 138****5678）</td><td><span class="chip mute">推荐电子送达</span></td></tr>
+      <tr><td colspan="3" class="sec">二、诉讼请求</td></tr>
+      <tr><td>本金</td><td class="num">¥ 300,000.00</td><td><span class="chip case">借条 · 第 1 行</span> <span class="chip case">转账记录 · 2024-03-02</span> <span class="chip ok">2 处一致</span></td></tr>
+      <tr><td>利息</td><td>自 <b class="num">2024-03-02</b> 起至实际清偿之日止，按 <select id="rateSel" class="ib"><option>一年期 LPR 四倍</option><option>约定年化 24%</option></select> 计算</td><td><span class="chip law">民间借贷规定 §25 <span class="n">2020 修正 · 现行有效</span></span> <span class="chip warn">需律师决定</span></td></tr>
+      <tr><td>是否主张担保权利</td><td>否 · 未见担保合同</td><td><span class="evid none"><i></i>未在证据中找到</span></td></tr>
+      <tr><td>实现债权的费用</td><td>律师费 ¥ 15,000（是否约定由被告承担：<b>未约定</b>）</td><td><span class="chip warn">借条无约定，法院通常不支持</span></td></tr>
+      <tr><td>标的总额</td><td class="num">¥ 300,000 + 利息</td><td><span class="chip ok">自动计算</span></td></tr>
+      <tr><td colspan="3" class="sec">三、管辖与保全</td></tr>
+      <tr><td>约定管辖</td><td>无约定 → 被告住所地或合同履行地（接收货币一方所在地：上海浦东）</td><td><span class="chip law">民诉法解释 §18</span> <span class="chip ok">已核验</span></td></tr>
+      <tr><td>诉讼保全</td><td>申请冻结被告银行账户（线索：转账对手账户尾号 8821）</td><td><span class="chip case">转账记录</span> <span class="chip warn">需确认是否申请</span></td></tr>
+      <tr><td colspan="3" class="sec">四、事实与理由（要素）</td></tr>
+      <tr><td>合同签订情况</td><td>2024-03-01 签订借条，手写，被告签名捺印</td><td><span class="chip case">借条 p.1</span> <span class="chip ok">已抽取</span></td></tr>
+      <tr><td>借款期限</td><td>2024-03-02 至 2024-09-01（6 个月）</td><td><span class="chip case">借条 p.1</span> <span class="chip ok">已抽取</span></td></tr>
+      <tr><td>借款利率</td><td>月息 2 分（年化 24%）</td><td><span class="chip case">借条 p.1</span> <span class="chip bad">超 LPR 四倍</span></td></tr>
+      <tr><td>款项交付方式</td><td>微信转账 2 笔：¥200,000（03-02）、¥100,000（03-02）</td><td><span class="chip case">转账记录 p.1–2</span> <span class="chip ok">已抽取</span></td></tr>
+      <tr><td>还款情况</td><td>2024-10 归还 ¥ 20,000，其余未还；2025-01 至 2026-06 多次催告</td><td><span class="chip case">催款聊天记录 p.3, p.7, p.12</span> <span class="chip ok">已抽取</span></td></tr>
+      <tr><td>诉讼时效</td><td>到期日 2024-09-01，2026-06 仍有催告 → 未超三年</td><td><span class="chip law">民法典 §188 §195</span> <span class="chip ok">已核验</span></td></tr>
+      <tr><td colspan="3" class="sec">五、其他</td></tr>
+      <tr><td>证据清单</td><td>借条、转账记录、催款聊天记录、身份证复印件</td><td><span class="chip ok">4 份 · 自动编号</span></td></tr>
+      <tr><td>是否同意调解</td><td><label><input type="checkbox" id="mediate" checked> 同意</label></td><td><span class="chip mute">当事人确认</span></td></tr>
+      </tbody></table></div>
+    <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;align-items:center" data-l="发行版"><button class="ib primary" disabled title="有 3 项需确认">生成起诉状 .docx</button><button class="ib">导出证据清单</button><span class="note">3 项需确认后方可生成；生成稿为草稿态、带 AI 标识。</span></div>
+  </div>
+</div>`;
+
+S.redact = `
+<div class="topbar"><div class="title">文件脱敏 · 发往外部服务前 <small>▾</small></div><div class="right"><span class="ctx" data-l="发行版"><span class="sw"></span>M-2026-0311</span><span class="chip legal">目标：法律翻译（云端）</span><span class="local" data-l="底座"><i></i>脱敏在本机完成</span></div></div>
+<div class="body two" style="grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr)">
+  <div class="pane" data-l="底座" style="display:flex;flex-direction:column">
+    <div class="msg user"><div class="bub">这三份文件要交给外部翻译，先脱敏：设备买卖合同.docx、一审判决书.pdf、当事人病历.pdf。</div></div>
+    <div class="msg"><span class="kav"></span><div class="txt">
+      <div class="steps"><div>3 份 · 本地识别与替换 <span class="t">完成 2/3</span></div>
+        <div><span class="st done"></span>设备买卖合同.docx <span class="tool">37 处 · 假名化</span><span class="t">3s</span></div>
+        <div><span class="st done"></span>一审判决书.pdf <span class="tool">OCR · 112 处</span><span class="t">14s</span></div>
+        <div><span class="st" style="border-color:var(--red)"></span>当事人病历.pdf <span class="chip bad">已拦截</span></div></div>
+      <p><b>病历属于医疗健康信息</b>（敏感个人信息）。上海律协指引第十五条：即便当事人同意，也不宜向云端 AI 工具提供。已拦截出站；如确需翻译，建议本机模型处理或人工翻译。</p>
+      <p>其余两份已完成假名化：同一人全文同一代号，映射密钥只存本机，翻译稿回来后可一键还原。</p>
+    </div></div>
+    <div class="card" data-l="治理层" style="margin-top:12px"><h3>出站策略（律所管理员设定）</h3>
+      <div class="kv"><dt>未脱敏文件</dt><dd><span class="chip ok">仅本机 / 私有化推理</span></dd><dt>脱敏后</dt><dd><span class="chip ok">可发官方 API · 翻译服务</span></dd><dt>敏感个人信息</dt><dd><span class="chip bad">禁止出站</span> 生物识别 · 医疗 · 金融账户 · 行踪 · 未成年人</dd><dt>记录</dt><dd>每次出站写入审计链（字段类型与数量，不记原文）</dd></div></div>
+    <div class="composer" style="margin-top:12px"><div class="ph">例如：企业名称不脱敏，只处理自然人。</div><div class="row"><span>＋</span><span class="send"></span></div></div>
+  </div>
+  <div class="pane ws">
+    <div class="wshead" data-l="发行版">一审判决书.pdf · 对照 <div class="tools"><button class="ib on">对照</button><button class="ib ghost">仅脱敏稿</button><button class="ib ghost">映射表（本机）</button></div></div>
+    <div class="grid g2" data-l="发行版" style="margin-bottom:12px">
+      <div><div class="note" style="margin-bottom:4px">原文（不出本机）</div><div class="mask">上海市第一中级人民法院<br>民事判决书<br><span class="mono" style="font-size:12px">（2025）沪01民终2087号</span><br>上诉人（原审被告）：<mark class="hl">王建国</mark>，男，1972 年 4 月 3 日出生，住<mark class="hl">上海市静安区共和新路 1288 弄 5 号 402 室</mark>，公民身份号码 <mark class="hl">310106197204031234</mark>。<br>被上诉人：<mark class="hl">上海某某新能源科技有限公司</mark>，统一社会信用代码 <mark class="hl">91310115MA1K3…</mark>。<br>…上诉人于 2024 年 3 月 2 日向<mark class="hl">尾号 8821</mark> 账户转账…联系电话 <mark class="hl">13912345678</mark>。</div></div>
+      <div><div class="note" style="margin-bottom:4px">脱敏稿（可出站）</div><div class="mask">上海市第一中级人民法院<br>民事判决书<br><s>（2025）沪01民终****号</s><br>上诉人（原审被告）：<s>王某甲</s>，男，1972 年生，住<s>上海市静安区</s>，公民身份号码 <s>3101**********1234</s>。<br>被上诉人：<s>A 公司</s>，统一社会信用代码 <s>[已隐去]</s>。<br>…上诉人于 2024 年 3 月 2 日向<s>[账户 A1]</s> 转账…联系电话 <s>139****5678</s>。</div></div>
+    </div>
+    <div class="tblwrap" data-l="发行版" style="background:var(--shell)"><table>
+      <thead><tr><th>字段类型</th><th>识别</th><th>处理方式</th><th>示例</th><th>开关</th></tr></thead><tbody>
+      <tr><td>姓名（自然人）</td><td class="num">31</td><td>假名化 · 一致映射</td><td>王建国 → 王某甲</td><td><input type="checkbox" checked></td></tr>
+      <tr><td>身份证号</td><td class="num">4</td><td>掩码</td><td>3101**********1234</td><td><input type="checkbox" checked></td></tr>
+      <tr><td>手机 / 电话</td><td class="num">6</td><td>掩码</td><td>139****5678</td><td><input type="checkbox" checked></td></tr>
+      <tr><td>住址</td><td class="num">5</td><td>泛化到区县</td><td>上海市静安区</td><td><input type="checkbox" checked></td></tr>
+      <tr><td>银行账号 / 卡号</td><td class="num">9</td><td>替换为代号</td><td>[账户 A1]</td><td><input type="checkbox" checked></td></tr>
+      <tr><td>企业名称 / 信用代码</td><td class="num">12</td><td>替换为字母代号</td><td>A 公司 · B 公司</td><td><input type="checkbox" checked></td></tr>
+      <tr><td>案号</td><td class="num">3</td><td>序号掩码</td><td>（2025）沪01民终****号</td><td><input type="checkbox" checked></td></tr>
+      <tr><td>出生日期</td><td class="num">4</td><td>泛化到年</td><td>1972 年生</td><td><input type="checkbox" checked></td></tr>
+      <tr><td>金额</td><td class="num">38</td><td>保留</td><td>—</td><td><input type="checkbox"></td></tr>
+      <tr><td>律师执业证号</td><td class="num">2</td><td>掩码</td><td>3101****0231</td><td><input type="checkbox" checked></td></tr>
+      </tbody></table></div>
+    <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;align-items:center" data-l="治理层"><button class="ib primary">导出脱敏稿（保留格式）</button><button class="ib">发送到翻译服务</button><span class="note">映射密钥留本机 · 出站记录写入审计链 #0431</span></div>
+  </div>
+</div>`;
+const NOTES = {
+overview:{t:'为什么是这三层',n:[
+['形态跟随底座','Kimi Work 是桌面本地 Agent，不是 Web SaaS。发行版在客户端内以技能、插件、知识库承接，治理层单独建。','一手'],
+['治理层是增值位置','截至 3.2.8 官方发布日志，团队协作、共享知识库、SSO、审计日志、管理后台、私有化均未出现。','一手'],
+['对标 LegalOn 而非 Harvey','大陆法系下价值落在结构化审查规则库；律师手写 Playbook + 合同审查 + Word 插件是可复制路径。','交叉'],
+['技术背书','Harvey Tenet 基于 Kimi K3 后训练；Kimi 官方 08-28 文章列出海问、竞天公诚合伙人案例。','一手']]},
+home:{t:'首页不是裸对话框',n:[
+['案件上下文先行','借 Harvey 的客户-案件号全局强制上下文：伦理墙、计费归因、数据隔离都挂在它上面；中国律所有案号体系但无 AI 产品挂钩。','交叉'],
+['工作流卡片优先于示例提问','入口层次：行动入口 > 常用工作流 > 继续上次 > 示例提问。法律是长周期工作，「继续上次」必须有。','交叉'],
+['按业务线组织，不按功能组织','诉讼仲裁 / 非诉业务 / 企业法务三条线各配工作流卡片。律师按业务线思考；智合 3.0 首页同样按此分线，是已验证的心智模型。','交叉'],
+['卡片只放中国真刚需','合同审查、尽调矩阵、类案报告、刑事阅卷、要素式文书、脱敏、工商穿透、翻译。没有 e-Discovery、判决预测、工时分析。','交叉'],
+['本地状态常驻','律协指引鼓励本地化部署，「案卷在本机」应作为可见状态而非法务附件。','一手']]},
+contract:{t:'修订卡三层结构',n:[
+['原文 + 建议 diff + 触发规则','Ironclad 模式：「为什么给这个建议」比「建议是什么」更重要，规则含首选立场与可退让至。','交叉'],
+['AI 建议必须可拒绝','Harvey：nothing applied automatically；VLAIR 红线审阅律师 79.7% vs AI 65.0%，谈判判断仍是人类堡垒。','一手'],
+['以律师名义落笔','Spellbook 心理学：接受后修订以律师本人署名，AI 隐身；导出时可移除 AI 标注。','交叉'],
+['修订 / 批注模式开关放最显眼','对应「我敢不敢让 AI 碰我的文档」。键盘 J/K/A/R/E 是熟练用户的效率来源。','交叉'],
+['四档输出','智合把审查输出做成修订版简洁/详细、纯净版、意见书；中国律师买的是能直接交出去的东西。','一手']]},
+matrix:{t:'行=文档，列=问题，格=带引用的答案',n:[
+['四家独立收敛到同一结构','Harvey / Legora / Hebbia / CoCounsel。「加一列 = 派一个 Agent」把调度伪装成表格操作。','交叉'],
+['尽调是矩阵的原生场景','非诉线把目标公司几百份合同放进一张表，是 Harvey Vault 与 Legora 的主用法；企业法务线复用同一组件做存量合同排查。','交叉'],
+['单元格五层','答案 → 推理 → 原文摘录 → 来源定位 → 一键跳转。引用下沉到句子级，Harvey 盲评偏好提升 4 倍。','一手'],
+['锁定与已核验','Legora：Lock Cells 防 AI 重跑覆盖人工修正；Mark as Reviewed 是 AI 输出变工作产物的临界设计。','一手'],
+['长任务让人安心离开','流式填充不等全部完成；失败不阻塞并用人话解释；剩余时间给区间；成本按案件归集是律所计费习惯。','交叉'],
+['不显示置信度百分比','改用证据强度：「2 处明确表述」可核验，「92%」未校准且出错时放大信任崩塌。','交叉']]},
+research:{t:'类案检索是法定动作',n:[
+['四级顺位是硬规则','法发〔2020〕24 号第四条：指导性案例 → 最高法典型与生效裁判 → 本省高院 → 上级法院及本院；优先近三年。权威层级排序先于相似度。','一手'],
+['报告要素来自第八条','检索主体、时间、平台、方法、结果，类案裁判要点，争议焦点，是否参照/参考的分析说明；可随案归档。','一手'],
+['相似度分维度','类案定义 = 基本事实 + 争议焦点 + 法律适用三方面相似，所以不合成单一分数。','一手'],
+['案号确定性拦截','通州法院指出 AI 编造案号有连续整数特征；格式校验 + 法院代字白名单 + 序号异常 + 权威库存在性四重规则默认开启，且显示「我拦了什么」。','一手'],
+['WebBridge 复用律所订阅','裁判文书网上网量断崖，自建判例库不可行；用律师本人已登录的北大法宝会话检索，登录态与页面内容不离开本机。3.2.0 起 WebBridge 为插件形态、默认关闭。','一手'],
+['引用带时效性','合同法 §114 于 2021-01-01 随民法典施行废止 → 民法典 §585；chip 上直接显示效力层级与状态。','一手']]},
+dossier:{t:'中国独有的深护城河',n:[
+['美国没有这个场景','刑辩律师面对数十本纸质扫描卷宗；输出形态是证据目录、摘录、矛盾点、程序瑕疵、辩护要点。','交叉'],
+['本地形态在这里最有说服力','卷宗含大量敏感个人信息，律协指引第十五条要求即便当事人同意也不宜交云端 AI；本地 OCR + 本地子 Agent 是唯一合规解。','一手'],
+['失败可懂','「扫描件倾斜、置信度不足」而不是 Error 500；单卷失败不阻塞其余 31 卷。','交叉'],
+['每条矛盾都带卷页','没有溯源的输出不应存在；来源定位精度到卷-页。','交叉']]},
+delivery:{t:'律所需要的是能证明自己检查过',n:[
+['强制 review gate','重大项无论证据强度都需人工确认，未确认则阻断导出定稿。','交叉'],
+['校验器独立于生成器','Clearbrief 用确定性方法校验，理由是校验工具本身不能产生幻觉；存在性 → 时效性 → 支持性 → 语境四步。','一手'],
+['标识的草稿态 / 定稿流程','《标识办法》第四条要求显式标识；最高法 2026 意见第 19 条把删改标识列为虚假诉讼手段，因此显式可去、隐式保留。','一手'],
+['审计最小集','actor + matter(含墙版本) + action + 检索了什么 + 模型/模板/Playbook 三元组 + 输出摘要 + 人工动作 + 引用校验；append-only 哈希链。','交叉'],
+['上海律协第十七条','应记录输入信息、生成结果、审查修改过程，妥善保存以便核查追溯。','一手']]},
+admin:{t:'治理层就是中软国际的产品',n:[
+['模型路由是毛利工具','K3 输出 ¥100/百万 token，K2.7 为 ¥27；单席位年 token 成本 ¥1.1 万起 vs 市场价锚 ¥698/年。默认 K2.x、高价值任务走 K3、缓存命中 ¥2。','一手'],
+['伦理墙继承而非重建','继承 Intapp / iManage 策略；检索层预过滤；缓存键含访问范围哈希。','交叉'],
+['采纳度分析是续费武器','Harvey Command Center 按角色下钻与同业基准；国内普遍缺失。','一手'],
+['部署与许可','SaaS/私有化产品不构成 K3 License 的 MaaS；争取「认证推理伙伴」名分；企业内部应用不适用暂行办法。','一手'],
+['买家现实','央国企法务是唯一有正常 B2B 采购流程的买家；律协集采换覆盖率；¥3–5 万/所/年是死亡地带。','交叉']]},
+pleading:{t:'文书生成 = 模板 + 要素填充，不是纯生成',n:[
+['官方样式是现成的产品规格','2024-03 三部门试行 11 类要素式文书，法〔2025〕82 号自 2025-07-14 扩至 67 类；民间借贷起诉状栏目含当事人、诉讼请求（本金/利息/担保/实现债权费用/标的总额）、管辖保全、事实理由要素、证据清单、是否同意调解。','一手'],
+['为什么不能纯生成','LexEval 显示 GPT-4 法条记忆仅 25.3%、生成 23.9%；要素从证据抽取、法条走 RAG、文书按模板填充。','一手'],
+['每个要素都带来源与状态','已抽取 / 需确认 / 未在证据中找到 三态；「缺失」用中性灰而不是红色错误。','交叉'],
+['规则核验就地提示','利率上限（民间借贷规定 §25）、诉讼时效、管辖是确定性规则，成本低且必须默认开启。','一手'],
+['需确认项未清不能生成','强制 review gate 的轻量版：律师决定利率立场后才出稿，稿件为草稿态带标识。','交叉']]},
+redact:{t:'脱敏是可以卖钱的功能，不是法务附件',n:[
+['律协把它写成了规则','上海律协第二十九条：未经同意不得把未脱敏的判决书、身份证、聊天记录交给非本地部署 AI；第十五条：敏感个人信息即便同意也不宜上云；2026 指引要求输入前用替换/模糊/概括/删除法脱敏。','一手'],
+['字段清单来自裁判文书公布规则','最高法互联网公布裁判文书规定第八、十条：隐名与删除家庭住址、通讯方式、身份证号、银行账号、健康状况、车牌等。','一手'],
+['假名化优于掩码','同一人全文同一代号、映射密钥留本机、结果可还原，翻译与检索场景才可用；智合脱敏仅支持 DOCX，PDF/OCR 是差异化。','交叉'],
+['显式展示拦截了什么','病历被拦截并说明依据，而不是静默失败；出站策略由管理员设定，出站记录只写字段类型与数量。','交叉'],
+['PIPL 转委托','中软作为受托人再发往月之暗面 API 属转委托，脱敏网关 + DPA 列明次级受托人是最易踩雷处的工程解。','一手']]}
+};
+
+const ORDER=[['overview','总览','0'],['home','首页','1'],['contract','合同审查','2'],['matrix','批量矩阵','3'],['research','类案检索','4'],['pleading','要素式起诉状','5'],['dossier','刑事阅卷','6'],['redact','文件脱敏','7'],['delivery','交付审计','8'],['admin','管理后台','9']];
+const SUGS=[
+ {no:'S01',cl:'第 3.2 条 · 价款支付',lv:'bad',orig:'受让方应于本协议签署后 5 个工作日内支付全部股权转让价款。',prop:'受让方应于<ins>第四条交割先决条件全部满足并经受让方书面确认后</ins> <del>5</del><ins>10</ins> 个工作日内支付<del>全部</del><ins>首期 70%</ins> 股权转让价款<ins>，剩余 30% 于工商变更登记完成后 5 个工作日内支付</ins>。',rule:'R-03 价款与交割挂钩',pos:'首选：70/30 分期 · 可退让至 80/20',why:'受让方立场下价款必须与交割条件和变更登记绑定，避免先付款后失去谈判筹码。'},
+ {no:'S07',cl:'第 7.4 条 · 陈述保证违约金',lv:'bad',orig:'转让方违反陈述与保证的，应向受让方支付相当于股权转让价款 1% 的违约金。',prop:'转让方违反陈述与保证的，应向受让方支付相当于股权转让价款 <del>1%</del><ins>10%</ins> 的违约金<ins>，且不影响受让方就实际损失超出违约金的部分另行主张</ins>。',rule:'R-17 陈述保证违约',pos:'首选：10% + 损失另行主张 · 可退让至 5%',why:'1% 不足以覆盖目标公司未披露负债与或有诉讼风险；违约金低于损失时可请求增加（民法典 §585，现行有效）。'},
+ {no:'S09',cl:'第 9.1 条 · 竞业限制',lv:'warn',orig:'转让方承诺自交割日起 1 年内不从事与目标公司相竞争的业务。',prop:'转让方承诺自交割日起 <del>1</del><ins>3</ins> 年内不<ins>直接或间接（包括通过其关联方）</ins>从事与目标公司相竞争的业务<ins>，亦不招揽目标公司核心员工与客户</ins>。',rule:'R-22 竞业与非招揽',pos:'首选：3 年 + 关联方 + 非招揽 · 可退让至 2 年',why:'目标公司价值集中于创始团队与客户关系，竞业期过短会掏空交易对价。'},
+ {no:'S11',cl:'第 12.1 条 · 争议解决',lv:'mid',orig:'因本协议发生的争议，提交转让方所在地人民法院管辖。',prop:'因本协议发生的争议，提交<del>转让方所在地人民法院管辖</del><ins>上海国际仲裁中心，按其届时有效的仲裁规则仲裁</ins>。',rule:'R-31 争议解决',pos:'首选：上海国际仲裁中心 · 可退让至受让方所在地法院',why:'标准条款，按本所 Playbook 统一立场；仲裁保密性对交易双方均有利。'},
+];
+let cur=null, sel=0;
+const $=(s,r=document)=>r.querySelector(s);
+
+function renderTabs(){$('#tabs').innerHTML=ORDER.map(o=>`<button data-go="${o[0]}" class="${o[0]===cur?'on':''}"><i>${o[2]}</i>${o[1]}</button>`).join('');}
+function go(id){cur=id;$('#main').innerHTML=S[id];renderTabs();
+  document.querySelectorAll('.side [data-nav]').forEach(e=>e.classList.toggle('on',e.dataset.nav===id||(id==='home'&&e.dataset.nav==='home')));
+  const n=NOTES[id];$('#notesBody').innerHTML=`<h3>设计依据 · ${ORDER.find(o=>o[0]===id)[1]}</h3><h2>${n.t}</h2>`+n.n.map(x=>`<div class="n"><b>${x[0]}<span class="ev">${x[2]}</span></b>${x[1]}</div>`).join('');
+  if(id==='contract')initContract(); if(id==='matrix')initMatrix(); if(id==='home')initHome(window.__bl||'lit');
+  if(window.__nav)$('#frame').scrollIntoView({block:'nearest'});window.__nav=1;
+}
+function initContract(){sel=0;SUGS.forEach(s=>{s.state=s.state||''});drawSugs();}
+function drawSugs(){const lvName={bad:'重大',warn:'谈判点',mid:'标准条款'};
+  $('#sugList').innerHTML=SUGS.map((s,i)=>`<div class="sug ${i===sel?'on':''} ${s.state==='acc'?'done':''} ${s.state==='rej'?'done rej':''}" data-i="${i}">
+   <div class="hd"><span class="no">${s.no}</span><span class="chip ${s.lv}">${lvName[s.lv]}</span><span class="cl">${s.cl}</span><span class="st">${s.state==='acc'?'已接受 · 撤销':s.state==='rej'?'已拒绝 · 撤销':'待处理'}</span></div>
+   <div class="bd"><div class="lab">原文</div><div class="orig">${s.orig}</div><div class="lab">建议</div><div class="prop">${s.prop}</div>
+   <div class="why"><b>为什么 · Playbook ${s.rule}</b><br>${s.why}<div class="pos"><span>${s.pos}</span></div></div>
+   <div class="act"><button class="ib primary" data-act="acc">接受<span class="kbd" style="margin-left:6px;border-color:rgba(255,255,255,.4);color:inherit;background:transparent">A</span></button><button class="ib" data-act="edit">修改</button><button class="ib" data-act="rej">拒绝</button><span class="note" style="margin-left:auto">拒绝原因：<span class="chip mute">本案不适用</span> <span class="chip mute">立场已谈定</span></span></div></div></div>`).join('');
+  const a=SUGS.filter(s=>s.state==='acc').length,r=SUGS.filter(s=>s.state==='rej').length;
+  $('#sugStat').textContent=`已处理 ${a+r}/12 · 接受 ${a} · 拒绝 ${r}`;
+  const p=$('#docP');if(p){p.style.transition='none';p.style.background=SUGS[sel].no==='S07'?'var(--hl)':'';}
+}
+function act(i,what){const s=SUGS[i];s.state=(s.state===what)?'':what;if(what!=='edit'&&s.state){sel=Math.min(i+1,SUGS.length-1)}drawSugs();}
+function initMatrix(){const files=['采购合同-鼎新材料-0037','采购合同-华瑞电子-0038','采购合同-凌宇精密-0041','框架协议-博远物流-0044','采购合同-科腾软件-0052','采购合同-明达包装-0056','采购合同-星河芯片-0061','委托加工-长盛制造-0070'];
+  const rows=files.map((f,i)=>{const st=i<5?'done':i===5?'run':i===6?'fail':'q';
+    const cell=(v,e)=>st==='done'?`<td class="c ${i===2&&e==='u'?'sel':''}">${v}</td>`:st==='run'?`<td><div class="sk"></div></td>`:st==='fail'?`<td class="q"><span class="chip bad">失败</span> <span class="note">扫描件 OCR 置信度过低</span> <button class="ib ghost" style="padding:0 4px">重试</button></td>`:`<td class="q">排队</td>`;
+    const price=['¥ 8,420,000','¥ 7,960,000','¥ 3,120,000','¥ 1,880,000','¥ 640,000'][i]||'';
+    return `<tr><td class="f">${f}<small>${st==='done'?'.docx · 已核验':'.pdf'}</small></td>${cell(`<span class="num">${price}</span>`)}${cell(i%2?'<span class="chip ok">是</span> 第 6.2 条':'<span class="chip warn">否</span> 未见挂钩')}${cell(i===2?'<span class="chip ok">是</span>合同总价的 5% <span class="lock">🔒</span>':'合同总价的 '+[3,5,5,10,8][i]+'%','u')}${cell(['上海仲裁委','项目地法院','上海仲裁委','发包人所在地法院','未约定'][i]||'')}${cell(i===3?'<span class="chip warn">是</span>':'<span class="chip ok">否</span>')}</tr>`}).join('');
+  $('#mxBody').innerHTML=rows+`<tr><td class="f" style="color:var(--mute)">… 另 196 份</td><td colspan="5" class="q">147 已完成 · 24 进行中 · 31 排队 · 2 失败</td></tr>`;
+  let done=147,q=31;const tick=setInterval(()=>{if(cur!=='matrix'||q<=0){clearInterval(tick);return}done++;q--;$('#cDone').textContent=done;$('#cQ').textContent=q;$('#pbar').style.width=Math.round(done/204*100)+'%'},1800);
+}
+document.addEventListener('click',e=>{
+  const bl=e.target.closest('#blSeg button');if(bl){window.__bl=bl.dataset.bl;initHome(bl.dataset.bl);return}
+  const g=e.target.closest('[data-go]');if(g){go(g.dataset.go);return}
+  const nv=e.target.closest('.side [data-nav]');if(nv){go(nv.dataset.nav==='home2'?'home':nv.dataset.nav);return}
+  const sg=e.target.closest('.sug');if(sg){sel=+sg.dataset.i;const b=e.target.closest('[data-act]');if(b){act(sel,b.dataset.act)}else drawSugs();return}
+  const td=e.target.closest('.mx td.c');if(td){document.querySelectorAll('.mx td.c').forEach(x=>x.classList.remove('sel'));td.classList.add('sel');return}
+  if(e.target.id==='modeCmt'||e.target.id==='modeRev'){$('#modeRev').classList.toggle('ghost',e.target.id!=='modeRev');$('#modeCmt').classList.toggle('ghost',e.target.id!=='modeCmt');return}
+});
+document.addEventListener('keydown',e=>{if(cur!=='contract'||e.target.tagName==='INPUT')return;const k=e.key.toLowerCase();
+  if(k==='j'){sel=Math.min(sel+1,SUGS.length-1);drawSugs()}else if(k==='k'){sel=Math.max(sel-1,0);drawSugs()}else if(k==='a'){act(sel,'acc')}else if(k==='r'){act(sel,'rej')}
+  else if(e.key==='ArrowRight'||e.key==='ArrowLeft'){}});
+document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;const i=ORDER.findIndex(o=>o[0]===cur);if(e.key==='ArrowRight'&&i<ORDER.length-1)go(ORDER[i+1][0]);if(e.key==='ArrowLeft'&&i>0)go(ORDER[i-1][0]);});
+$('#tgLayers').onclick=()=>{document.body.classList.toggle('layers');$('#tgLayers').classList.toggle('on');$('#tgLayers').setAttribute('aria-pressed',document.body.classList.contains('layers'))};
+$('#tgNotes').onclick=()=>{document.body.classList.toggle('notes-on');$('#tgNotes').classList.toggle('on');$('#tgNotes').setAttribute('aria-pressed',document.body.classList.contains('notes-on'))};
+$('#notesClose').onclick=()=>{document.body.classList.remove('notes-on');$('#tgNotes').classList.remove('on')};
+go('overview');
+</script>
