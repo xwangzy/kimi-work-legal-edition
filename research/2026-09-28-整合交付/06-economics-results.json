@@ -1,0 +1,355 @@
+{
+  "prepared_date": "2026-09-30",
+  "evidence_date": "2026-09-28",
+  "currency": "CNY",
+  "task_costs": {
+    "contract": {
+      "name": "30页DOCX合同首轮审查",
+      "model": 6.1775,
+      "model_retry": 0.7413,
+      "ocr": 0,
+      "data": 0.6,
+      "compute": 0.7,
+      "variable_total": 8.2188,
+      "points": 30
+    },
+    "next_draft": {
+      "name": "6处条款变化的回稿重审",
+      "model": 1.177,
+      "model_retry": 0.1412,
+      "ocr": 0,
+      "data": 0.3,
+      "compute": 0.4,
+      "variable_total": 2.0182,
+      "points": 10
+    },
+    "dossier": {
+      "name": "300页案卷整理 全扫描容量压力假设，独立验收前不可售",
+      "model": 5.311,
+      "model_retry": 0.6373,
+      "ocr": 6,
+      "data": 0,
+      "compute": 1.5,
+      "variable_total": 13.4483,
+      "points": 80
+    },
+    "pleading": {
+      "name": "已有案卷的限定文书起草",
+      "model": 1.716,
+      "model_retry": 0.2059,
+      "ocr": 0,
+      "data": 0.3,
+      "compute": 0.4,
+      "variable_total": 2.6219,
+      "points": 10
+    },
+    "research": {
+      "name": "3争点限定法源研究",
+      "model": 9.064,
+      "model_retry": 1.3596,
+      "ocr": 0,
+      "data": 12,
+      "compute": 1,
+      "variable_total": 23.4236,
+      "points": 80
+    },
+    "qa": {
+      "name": "有依据的顾问问答",
+      "model": 0.24,
+      "model_retry": 0.024,
+      "ocr": 0,
+      "data": 0.08,
+      "compute": 0.04,
+      "variable_total": 0.384,
+      "points": 1
+    },
+    "open_task": {
+      "name": "受控开放任务 假定十轮以内",
+      "model": 7.4,
+      "model_retry": 1.48,
+      "ocr": 0,
+      "data": 2,
+      "compute": 1,
+      "variable_total": 11.88,
+      "points": 60
+    }
+  },
+  "no_persistent_cache_task_costs": {
+    "contract": {
+      "name": "30页DOCX合同首轮审查",
+      "model": 11.5315,
+      "model_retry": 1.3838,
+      "ocr": 0,
+      "data": 0.6,
+      "compute": 0.7,
+      "variable_total": 14.2153,
+      "points": 30
+    },
+    "next_draft": {
+      "name": "6处条款变化的回稿重审",
+      "model": 2.071,
+      "model_retry": 0.2485,
+      "ocr": 0,
+      "data": 0.3,
+      "compute": 0.4,
+      "variable_total": 3.0195,
+      "points": 10
+    },
+    "dossier": {
+      "name": "300页案卷整理 全扫描容量压力假设，独立验收前不可售",
+      "model": 6.221,
+      "model_retry": 0.7465,
+      "ocr": 6,
+      "data": 0,
+      "compute": 1.5,
+      "variable_total": 14.4675,
+      "points": 80
+    },
+    "pleading": {
+      "name": "已有案卷的限定文书起草",
+      "model": 1.676,
+      "model_retry": 0.2011,
+      "ocr": 0,
+      "data": 0.3,
+      "compute": 0.4,
+      "variable_total": 2.5771,
+      "points": 10
+    },
+    "research": {
+      "name": "3争点限定法源研究",
+      "model": 9.624,
+      "model_retry": 1.4436,
+      "ocr": 0,
+      "data": 12,
+      "compute": 1,
+      "variable_total": 24.0676,
+      "points": 80
+    },
+    "qa": {
+      "name": "有依据的顾问问答",
+      "model": 0.24,
+      "model_retry": 0.024,
+      "ocr": 0,
+      "data": 0.08,
+      "compute": 0.04,
+      "variable_total": 0.384,
+      "points": 1
+    },
+    "open_task": {
+      "name": "受控开放任务 假定十轮以内",
+      "model": 13.0,
+      "model_retry": 2.6,
+      "ocr": 0,
+      "data": 2,
+      "compute": 1,
+      "variable_total": 18.6,
+      "points": 60
+    }
+  },
+  "personas": {
+    "light": {
+      "annual_unrestricted_task_cost": 433.15,
+      "monthly_points_requested": 145,
+      "monthly_points_above_individual_allocation": 0
+    },
+    "medium": {
+      "annual_unrestricted_task_cost": 1639.24,
+      "monthly_points_requested": 550,
+      "monthly_points_above_individual_allocation": 50
+    },
+    "heavy": {
+      "annual_unrestricted_task_cost": 6575.24,
+      "monthly_points_requested": 2270,
+      "monthly_points_above_individual_allocation": 1770
+    }
+  },
+  "weighted_unrestricted_task_cost_annual": 2264.61,
+  "weighted_requested_points_monthly": 772.5,
+  "annual_cost_if_point_budget_fully_consumed": 2400.0,
+  "steady_state": [
+    {
+      "average_seats": 500,
+      "net_annual_seat_price": 8330.0,
+      "revenue": 4165000.0,
+      "variable_cogs": 1170000,
+      "fixed_direct_cogs": 2400000,
+      "gross_profit": 595000.0,
+      "gross_margin": 0.142857,
+      "channel_commission": 208250.0,
+      "opex_excluding_channel": 15000000,
+      "operating_result": -14613250.0,
+      "break_even_average_seats": 3122
+    },
+    {
+      "average_seats": 1000,
+      "net_annual_seat_price": 8330.0,
+      "revenue": 8330000.0,
+      "variable_cogs": 2340000,
+      "fixed_direct_cogs": 2400000,
+      "gross_profit": 3590000.0,
+      "gross_margin": 0.430972,
+      "channel_commission": 416500.0,
+      "opex_excluding_channel": 15000000,
+      "operating_result": -11826500.0,
+      "break_even_average_seats": 3122
+    },
+    {
+      "average_seats": 2000,
+      "net_annual_seat_price": 8330.0,
+      "revenue": 16660000.0,
+      "variable_cogs": 4680000,
+      "fixed_direct_cogs": 2400000,
+      "gross_profit": 9580000.0,
+      "gross_margin": 0.57503,
+      "channel_commission": 833000.0,
+      "opex_excluding_channel": 15000000,
+      "operating_result": -6253000.0,
+      "break_even_average_seats": 3122
+    },
+    {
+      "average_seats": 4000,
+      "net_annual_seat_price": 8330.0,
+      "revenue": 33320000.0,
+      "variable_cogs": 9360000,
+      "fixed_direct_cogs": 2400000,
+      "gross_profit": 21560000.0,
+      "gross_margin": 0.647059,
+      "channel_commission": 1666000.0,
+      "opex_excluding_channel": 15000000,
+      "operating_result": 4894000.0,
+      "break_even_average_seats": 3122
+    }
+  ],
+  "stress_at_1000_average_seats": [
+    {
+      "average_seats": 1000,
+      "net_annual_seat_price": 8330.0,
+      "revenue": 8330000.0,
+      "variable_cogs": 2340000,
+      "fixed_direct_cogs": 2400000,
+      "gross_profit": 3590000.0,
+      "gross_margin": 0.430972,
+      "channel_commission": 416500.0,
+      "opex_excluding_channel": 15000000,
+      "operating_result": -11826500.0,
+      "break_even_average_seats": 3122,
+      "label": "基准"
+    },
+    {
+      "average_seats": 1000,
+      "net_annual_seat_price": 8330.0,
+      "revenue": 8330000.0,
+      "variable_cogs": 3240000,
+      "fixed_direct_cogs": 2400000,
+      "gross_profit": 2690000.0,
+      "gross_margin": 0.322929,
+      "channel_commission": 416500.0,
+      "opex_excluding_channel": 15000000,
+      "operating_result": -12726500.0,
+      "break_even_average_seats": 3724,
+      "label": "额度对应成本用满"
+    },
+    {
+      "average_seats": 1000,
+      "net_annual_seat_price": 6860.0,
+      "revenue": 6860000.0,
+      "variable_cogs": 2340000,
+      "fixed_direct_cogs": 2400000,
+      "gross_profit": 2120000.0,
+      "gross_margin": 0.309038,
+      "channel_commission": 343000.0,
+      "opex_excluding_channel": 15000000,
+      "operating_result": -13223000.0,
+      "break_even_average_seats": 4166,
+      "label": "售价七折"
+    },
+    {
+      "average_seats": 1000,
+      "net_annual_seat_price": 8330.0,
+      "revenue": 8330000.0,
+      "variable_cogs": 2340000,
+      "fixed_direct_cogs": 3900000,
+      "gross_profit": 2090000.0,
+      "gross_margin": 0.2509,
+      "channel_commission": 416500.0,
+      "opex_excluding_channel": 15000000,
+      "operating_result": -13326500.0,
+      "break_even_average_seats": 3392,
+      "label": "法源保底翻倍"
+    },
+    {
+      "average_seats": 1000,
+      "net_annual_seat_price": 6860.0,
+      "revenue": 6860000.0,
+      "variable_cogs": 3240000,
+      "fixed_direct_cogs": 3900000,
+      "gross_profit": -280000.0,
+      "gross_margin": -0.040816,
+      "channel_commission": 343000.0,
+      "opex_excluding_channel": 15000000,
+      "operating_result": -15623000.0,
+      "break_even_average_seats": 5768,
+      "label": "售价七折且成本用满"
+    }
+  ],
+  "ramp": [
+    {
+      "average_seats": 326.9230769230769,
+      "net_annual_seat_price": 8330.0,
+      "revenue": 2723269.23,
+      "variable_cogs": 765000.0,
+      "fixed_direct_cogs": 2400000,
+      "gross_profit": -441730.77,
+      "gross_margin": -0.162206,
+      "channel_commission": 136163.46,
+      "opex_excluding_channel": 15000000,
+      "operating_result": -15577894.23,
+      "break_even_average_seats": 3122,
+      "period": "经营第1年",
+      "start_seats": 0,
+      "end_seats": 1000,
+      "pre_ramp_weeks": 18,
+      "ending_arr": 8330000.0,
+      "cumulative_operating_result_including_prelaunch": -16777894.23
+    },
+    {
+      "average_seats": 1750.0,
+      "net_annual_seat_price": 8330.0,
+      "revenue": 14577500.0,
+      "variable_cogs": 4095000.0,
+      "fixed_direct_cogs": 3200000,
+      "gross_profit": 7282500.0,
+      "gross_margin": 0.499571,
+      "channel_commission": 728875.0,
+      "opex_excluding_channel": 18000000,
+      "operating_result": -11446375.0,
+      "break_even_average_seats": 3804,
+      "period": "经营第2年",
+      "start_seats": 1000,
+      "end_seats": 2500,
+      "pre_ramp_weeks": 0,
+      "ending_arr": 20825000.0,
+      "cumulative_operating_result_including_prelaunch": -28224269.23
+    },
+    {
+      "average_seats": 3250.0,
+      "net_annual_seat_price": 8330.0,
+      "revenue": 27072500.0,
+      "variable_cogs": 7605000.0,
+      "fixed_direct_cogs": 4400000,
+      "gross_profit": 15067500.0,
+      "gross_margin": 0.556561,
+      "channel_commission": 1353625.0,
+      "opex_excluding_channel": 21000000,
+      "operating_result": -7286125.0,
+      "break_even_average_seats": 4558,
+      "period": "经营第3年",
+      "start_seats": 2500,
+      "end_seats": 4000,
+      "pre_ramp_weeks": 0,
+      "ending_arr": 33320000.0,
+      "cumulative_operating_result_including_prelaunch": -35510394.23
+    }
+  ],
+  "note": "Forecast baseline annual task cost is an independent hypothesis, not the unrestricted persona demand and not a simulated quota cap. Add-on revenue is zero. Cumulative operating result is not cash flow or funding requirement."
+}

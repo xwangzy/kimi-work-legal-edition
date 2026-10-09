@@ -1,0 +1,417 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.qwenwork.cn/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Hooks
+
+> 本文介绍千问办公企业 Hook 的配置格式、HTTP 调用约定，以及各类事件的请求和响应。企业 Hook 由桌面客户端调用企业提供的 HTTP 服务。
+
+<style
+  dangerouslySetInnerHTML={{ __html: `
+/* qwenwork-navigation-tabs-override */
+#adoc-layout { --topbar-height: var(--topbar-row1-height) !important; }
+#navbar[data-has-tabs="true"] > div:has(.nav-tabs) { display: none !important; }
+` }}
+/>
+
+## 当前支持的 Hooks 事件
+
+当前千问办公对企业开放以下 6 个事件：
+
+| 事件                 | 触发时机                  | 典型用途                | 可以阻止操作        |
+| ------------------ | --------------------- | ------------------- | ------------- |
+| `SessionStart`     | 会话启动、恢复、清空或压缩后重新进入会话时 | 记录会话、注入企业规范         | 不建议用于阻断       |
+| `UserPromptSubmit` | 用户提交内容后、内容进入 Agent 前  | 敏感信息检查、提示词合规检查      | 可以            |
+| `PreToolUse`       | Agent 调用工具前           | 命令管控、文件操作管控、权限审批    | 可以            |
+| `PostToolUse`      | 工具执行完成后               | 操作审计、结果检查           | 工具已经执行，无法撤销   |
+| `Stop`             | Agent 准备结束当前响应时       | 完整性检查、要求 Agent 继续处理 | 可以阻止 Agent 停止 |
+| `Notification`     | Agent 产生通知时           | 通知转发、安全审计           | 不建议用于阻断       |
+
+## Hook 配置
+
+### Hook 配置格式
+
+在企业管理后台**安全管控**→**Hooks 规则**中选择事件，填写该事件的 JSON 配置数组。数组中的每一项是一个 Hook 组，`matcher` 决定何时匹配，`hooks` 指定匹配后调用的服务。
+
+下面的配置用于在 `Bash` 工具执行前调用检查服务，应填写在 `PreToolUse` 事件中：
+
+```json
+[
+  {
+    "matcher": "^Bash$",
+    "hooks": [
+      {
+        "type": "http",
+        "url": "https://hooks.example.com/pre-tool-use",
+        "timeout": 30,
+        "headers": {
+          "Authorization": "Bearer ..."
+        }
+      }
+    ]
+  }
+]
+```
+
+将 URL 和凭据替换为实际值。不需要认证时可省略 `headers`。配置为空数组 `[]` 时，该事件不调用企业 Hook。
+
+### 字段说明
+
+Hook 组字段：
+
+`matcher` 在 `PreToolUse`、`PostToolUse` 中用于匹配工具名；在 `SessionStart` 中匹配 `source`；在 `Notification` 中匹配通知类型；`UserPromptSubmit` 和 `Stop` 不需要配置该字段。
+
+| 字段        | 类型       | 必填 | 说明                                    |
+| --------- | -------- | -- | ------------------------------------- |
+| `matcher` | `string` | 否  | JavaScript 正则表达式，大小写敏感；省略或`"*"`表示匹配全部 |
+| `hooks`   | `array`  | 是  | HTTP Hook 列表，至少包含 1 项                 |
+
+### matcher 匹配规则
+
+| 写法        | 含义    | 示例                              |
+| --------- | ----- | ------------------------------- |
+| 不填或 `"*"` | 匹配所有  | 所有工具都触发                         |
+| 精确值       | 精确匹配  | `"Bash"` 只匹配 Bash 工具            |
+| `\        | ` 分隔  | 匹配多个值                           | `"Write\ | Edit"` 匹配 Write 或 Edit |
+| 正则表达式     | 正则匹配  | `"mcp__.*"` 匹配所有 MCP 工具         |
+
+HTTP Hook 字段:
+
+| 字段        | 类型                       | 必填 | 说明                                            |
+| --------- | ------------------------ | -- | --------------------------------------------- |
+| `type`    | `string`                 | 是  | 固定为 `http`。其他类型会被客户端拒收，不会执行                   |
+| `url`     | `string`                 | 是  | 接收事件的完整 HTTP 或 HTTPS 地址                       |
+| `timeout` | `number`                 | 否  | 超时时间，单位为秒，必须大于 `0`；默认 `600`，建议显式配置，例如 `5`     |
+| `headers` | `object<string, string>` | 否  | 自定义请求头，键和值均为字符串。显式配置 `headers.Accept` 会覆盖默认值。 |
+
+同一事件命中多个 Hook 时，默认并行执行，相同 URL 会去重。不依赖数组顺序；需要按顺序处理时，在同一个服务端点内编排。
+
+## HTTP 调用约定
+
+- 请求方法： `POST`，正文为当前事件的 JSON 对象。
+
+- 请求头：默认包含 `Content-Type: application/json` 和 `Accept: application/json`，并附加配置中的 `headers`。
+
+- 超时：超过 `timeout` 后结束该次调用，当前不自动重试。
+
+- 推荐返回 HTTP `200` 和 JSON 对象；不改变流程时返回 `{}`。
+
+| HTTP 状态码 | 响应体              | 客户端行为                                                                 |
+| -------- | ---------------- | --------------------------------------------------------------------- |
+| `2xx`    | 空                | 不改变原流程                                                                |
+| `2xx`    | 合法 JSON 对象       | 按当前事件支持的响应字段处理                                                        |
+| `2xx`    | 纯文本              | `SessionStart`、`UserPromptSubmit` 将文本作为上下文；`PreToolUse` 将其解释为允许，不建议使用 |
+| `2xx`    | JSON 语法错误或字段校验失败 | `PreToolUse` 拒绝本次工具调用；其他事件记录错误后继续                                     |
+| 非 `2xx`  | 任意               | 记录调用错误，继续原流程                                                          |
+| 连接失败或超时  | —                | 记录调用错误，继续原流程                                                          |
+
+## Hook 输入和输出
+
+### 请求体通用字段
+
+每个事件都包含以下通用信息：
+
+```json
+{
+  "event": "PreToolUse",
+  "hook_event_name": "PreToolUse",
+  "session_id": "session-xxxx",
+  "transcript_path": "/path/to/transcript",
+  "cwd": "/workspace"
+}
+```
+
+| 字段                | 类型            | 说明                              |
+| ----------------- | ------------- | ------------------------------- |
+| `event`           | `string`      | HTTP 事件名，与 `hook_event_name` 一致 |
+| `hook_event_name` | `string`      | 当前事件名称，可用于服务端分发                 |
+| `session_id`      | `string`      | 当前会话 ID                         |
+| `transcript_path` | `string`      | 客户端会话记录的本地路径                    |
+| `cwd`             | `string`      | 客户端当前工作目录                       |
+| `permission_mode` | `string`，可能缺省 | 当前权限模式                          |
+| `agent_id`        | `string`，可能缺省 | 智能体 ID                          |
+| `agent_type`      | `string`，可能缺省 | 智能体类型                           |
+| `model`           | `string`，可能缺省 | 模型标识，当前可在 `SessionStart` 中提供    |
+
+### 响应体通用字段
+
+1.纯文本：仅适用于 `SessionStart`、`UserPromptSubmit`作为补充上下文。
+
+2.JSON 对象：用于返回 `decision`、`reason`、`hookSpecificOutput` 等控制字段。
+
+以下字段均可选，不需要改变流程时直接返回 `{}`。
+
+```json
+{
+  "decision": "block",
+  "reason": "企业策略要求阻断本次处理。"
+}
+```
+
+| 字段                   | 类型        | 说明                          |
+| -------------------- | --------- | --------------------------- |
+| `continue`           | `boolean` | `false` 请求停止当前执行；省略时不主动停止   |
+| `stopReason`         | `string`  | 与 `continue: false` 配套的停止原因 |
+| `decision`           | `string`  | 业务决定，阻断为`block`；具体含义见各事件    |
+| `reason`             | `string`  | 业务决定的原因                     |
+| `hookSpecificOutput` | `object`  | 当前事件的专用响应字段                 |
+
+`hookSpecificOutput` 一旦出现，必须包含 `hookEventName`，并应填写当前事件名。顶层 `decision` 不接受 `ask`，工具确认应使用 `permissionDecision`。
+
+`continue: false` 用于 `UserPromptSubmit`、`PreToolUse`、`PostToolUse` 和 `Stop` 的执行控制。`SessionStart` 用于补充上下文；`Notification` 不通过响应控制流程。不要用 `async: true` 表达企业 HTTP 回调的异步处理。
+
+## Hook 事件
+
+以下请求示例展示事件名和专用字段；实际请求还包含上文列出的通用字段。各事件的 HTTP 调用失败行为统一按「HTTP 调用约定」处理。
+
+### SessionStart
+
+会话开始或恢复时触发，用于提供业务背景、项目约束等上下文。
+
+请求体：
+
+```json
+{
+  "hook_event_name": "SessionStart",
+  "source": "startup"
+}
+```
+
+| 字段       | 类型       | 说明                                                               |
+| -------- | -------- | ---------------------------------------------------------------- |
+| `source` | `string` | 会话来源：`startup`（新建）、`resume`（恢复）、`clear`（清空后开始）、`compact`（压缩后恢复）等 |
+
+响应体：
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "请在交付报告时注明数据来源和统计周期。"
+  }
+}
+```
+
+| 专用响应字段              | 类型       | 说明          |
+| ------------------- | -------- | ----------- |
+| `additionalContext` | `string` | 附加给模型的会话上下文 |
+
+也可以直接返回纯文本作为上下文。没有附加内容时返回 `{}`；此事件不用于设置操作系统环境变量。
+
+### UserPromptSubmit
+
+用户提交提示词后、模型处理前触发，用于检查输入或补充上下文。`matcher` 不筛选提示词内容。
+
+请求体：
+
+```json
+{
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "请汇总本季度客户反馈。"
+}
+```
+
+| 字段       | 类型       | 说明      |
+| -------- | -------- | ------- |
+| `prompt` | `string` | 本次用户提示词 |
+
+拒绝本次输入时返回：
+
+```json
+{
+  "decision": "block",
+  "reason": "请移除输入中的敏感凭据后重试。"
+}
+```
+
+补充上下文时返回：
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "按产品线分类，使用本年度统一的反馈口径。"
+  }
+}
+```
+
+| 响应字段                                   | 类型       | 说明                         |
+| -------------------------------------- | -------- | -------------------------- |
+| `decision`                             | `string` | `block` 阻断本次提示词进入模型；无决定时省略 |
+| `reason`                               | `string` | 拒绝原因，界面不保证逐字展示             |
+| `hookSpecificOutput.additionalContext` | `string` | 附加给本次请求的上下文                |
+
+没有附加行为时返回 `{}`。本事件也支持纯文本上下文；不要通过返回 `prompt` 替换用户输入。
+
+### PreToolUse
+
+工具实际执行前触发，用于校验或修改参数，以及允许、拒绝或请求用户确认。`matcher` 匹配 `tool_name`（如 `Bash`、`Write`、`Edit`、`Read`、`Glob`、`Grep`，MCP 工具名如 `mcp__server__tool`）
+
+请求体：
+
+```text
+{
+  "hook_event_name": "PreToolUse",
+  "tool_use_id": "tool-demo-001",
+  "tool_name": "Bash",
+  "tool_input": {...}
+}
+```
+
+| 字段                      | 类型          | 说明                                                                             |
+| ----------------------- | ----------- | ------------------------------------------------------------------------------ |
+| `tool_use_id`           | `string`    | 本次工具调用 ID                                                                      |
+| `tool_name`             | `string`    | 工具名称                                                                           |
+| `tool_input`            | `object`    | 工具输入参数                                                                         |
+| `mcp_context`           | `object`，可选 | MCP 服务信息，包括 `server_name`、`tool_name`，以及可选的 `url`、`command`、`args`、`cwd`、`tcp` |
+| `original_request_name` | `string`，可选 | 工具名称解析或别名转换前的请求名                                                               |
+
+响应示例：将命令参数调整为只读检查，并请求用户确认。
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "ask",
+    "permissionDecisionReason": "请确认是否执行项目状态检查。",
+    "updatedInput": {
+      "command": "git status --short"
+    },
+    "additionalContext": "命令已调整为只读状态检查。"
+  }
+}
+```
+
+| 专用响应字段                     | 类型       | 说明                                 |
+| -------------------------- | -------- | ---------------------------------- |
+| `permissionDecision`       | `string` | `allow`：明确允许；`deny`：拒绝；`ask`：请求确认； |
+| `permissionDecisionReason` | `string` | 权限决定的原因                            |
+| `updatedInput`             | `object` | 完整替换工具参数，不是局部合并；替换后会重新校验参数         |
+| `additionalContext`        | `string` | 附加给模型的说明                           |
+
+无权限决定时返回 `{}`，不要用 `allow` 代替「没有意见」。多个 Hook 的决定按 `deny` > `ask` > `allow` 聚合；允许仍受工具权限规则约束。
+
+`deny` 只拒绝本次工具调用；需要停止当前执行时，使用 `continue: false`。
+
+### PostToolUse
+
+工具成功执行后触发，用于检查结果、补充上下文或替换输出。`matcher` 匹配 `tool_name`。
+
+请求体：
+
+```text
+{
+  "hook_event_name": "PostToolUse",
+  "tool_use_id": "tool-demo-001",
+  "tool_name": "Bash",
+  "tool_input": {...},
+  "tool_response": {
+    }
+}
+```
+
+工具相关字段与 `PreToolUse` 相同，另外包含：
+
+| 字段              | 类型       | 说明                           |
+| --------------- | -------- | ---------------------------- |
+| `tool_response` | `object` | 工具执行结果，内部结构因工具而异；示例不代表固定返回结构 |
+
+阻断工具结果：
+
+```json
+{
+  "decision": "block",
+  "reason": "工具输出包含不允许继续传递的内容。"
+}
+```
+
+补充或替换工具结果：
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "updatedToolOutput": "xxxxxxx",
+    "additionalContext": "请根据当前分支状态继续处理任务。"
+  }
+}
+```
+
+| 响应字段                                      | 类型       | 说明                                                                   |
+| ----------------------------------------- | -------- | -------------------------------------------------------------------- |
+| `decision`                                | `string` | 返回 `decision: "block"` 时，向后续处理提供 Hook 错误反馈；不保证屏蔽原始工具结果，也不会撤销已经执行的操作。 |
+| `reason`                                  | `string` | 阻断结果的原因                                                              |
+| `hookSpecificOutput.additionalContext`    | `string` | 附加给模型的说明                                                             |
+| `hookSpecificOutput.updatedToolOutput`    | `string` | 替换工具输出文本，支持所有工具                                                      |
+| `hookSpecificOutput.updatedMCPToolOutput` | `string` | 仅用于 MCP 的兼容替换字段；优先使用 `updatedToolOutput`                             |
+
+替换字段应返回非空字符串；两种替换字段同时出现时，`updatedToolOutput` 优先。多个 Hook 不应同时修改同一份输入或输出。
+
+本事件发生时工具已经执行，拒绝或替换结果都不会撤销文件修改、命令执行或外部调用。 要阻止操作发生，应使用 `PreToolUse`。
+
+### Stop
+
+智能体准备结束当前轮次时触发，用于检查是否满足交付条件。返回 `block` 的含义是「暂不结束，继续工作」。
+
+请求体：
+
+```json
+{
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "季度报告已生成。"
+}
+```
+
+| 字段                       | 类型          | 说明                                     |
+| ------------------------ | ----------- | -------------------------------------- |
+| `stop_hook_active`       | `boolean`   | 是否已经因 Stop Hook 的要求继续过；再次准备结束时为 `true` |
+| `last_assistant_message` | `string`，可选 | 本轮累计的智能体文本输出                           |
+
+要求继续补充时返回：
+
+```json
+{
+  "decision": "block",
+  "reason": "请补充报告的数据来源和统计周期，再给出最终答复。"
+}
+```
+
+| 响应字段       | 类型       | 说明                                   |
+| ---------- | -------- | ------------------------------------ |
+| `decision` | `string` | `block` 阻止正常结束，并要求智能体继续；返回 `{}` 允许结束 |
+| `reason`   | `string` | 需要智能体继续完成的具体工作                       |
+
+`continue: false` 表示停止，不是要求继续。服务端应检查 `stop_hook_active`，设置终止条件。例如，已经要求继续过一次时返回 `{}`，避免反复触发。
+
+### Notification
+
+出现权限确认、MCP 征询等通知时触发。`matcher` 匹配 `notification_type`，不是工具名。
+
+请求体：
+
+```json
+{
+  "hook_event_name": "Notification",
+  "notification_type": "permission_prompt",
+  "message": "Tool requires confirmation",
+  "details": {}
+}
+```
+
+| 字段                  | 类型       | 说明             |
+| ------------------- | -------- | -------------- |
+| `notification_type` | `string` | 通知类型，具体枚举值见下表  |
+| `message`           | `string` | 通知正文           |
+| `details`           | `object` | 通知详情，结构随通知类型变化 |
+
+`notification_type`通知类型：
+
+| 值                      | 含义          |
+| ---------------------- | ----------- |
+| `permission_prompt`    | 请求权限确认      |
+| `elicitation_dialog`   | MCP 征询开始    |
+| `elicitation_response` | 收到 MCP 征询响应 |
+| `elicitation_complete` | MCP 征询完成    |
+
+接收成功后返回 `{}`。此事件的响应不会批准、拒绝或改变原操作；部分路径仍会等待 HTTP 返回，服务应快速响应。具体客户端不一定产生全部通知类型，也不保证每次任务完成都发送 `idle_prompt`。

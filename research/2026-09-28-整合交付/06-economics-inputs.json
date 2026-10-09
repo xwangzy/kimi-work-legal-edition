@@ -1,0 +1,316 @@
+{
+  "version": "1.1",
+  "prepared_date": "2026-09-30",
+  "evidence_date": "2026-09-28",
+  "currency": "CNY",
+  "tax_basis": "All financial planning prices exclude VAT. Public API reference rates are a sensitivity basis; contract and invoice basis must be reconciled before quoting.",
+  "warning": "Planning assumptions only. No enterprise price, usage distribution, licence quote, or production benchmark has been obtained.",
+  "public_price_source": "https://platform.kimi.com/docs/pricing/chat",
+  "price_per_million_tokens": {
+    "K3": {
+      "miss": 20.0,
+      "hit": 2.0,
+      "write_5m": 20.0,
+      "write_1h": 40.0,
+      "output": 100.0
+    },
+    "K2.6": {
+      "miss": 6.5,
+      "hit": 1.1,
+      "write_5m": 0.0,
+      "write_1h": 0.0,
+      "output": 27.0
+    }
+  },
+  "metering_note": "miss/hit/write are explicit billable buckets. Extra cache write counts below are hypotheses, not inferred from miss tokens; validate vendor invoice to avoid double counting. Output includes all billable reasoning tokens. Strict no-persistent-cache workloads must use the no-cache stress case.",
+  "task_assumptions": {
+    "contract": {
+      "name": "30页DOCX合同首轮审查",
+      "steps": [
+        {
+          "model": "K2.6",
+          "miss_k": 35,
+          "hit_k": 30,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 7
+        },
+        {
+          "model": "K3",
+          "miss_k": 72,
+          "hit_k": 344,
+          "write_5m_k": 50,
+          "write_1h_k": 0,
+          "output_k": 26
+        }
+      ],
+      "retry_fraction": 0.12,
+      "ocr": 0,
+      "data": 0.6,
+      "compute": 0.7,
+      "points": 30
+    },
+    "next_draft": {
+      "name": "6处条款变化的回稿重审",
+      "steps": [
+        {
+          "model": "K3",
+          "miss_k": 12,
+          "hit_k": 60,
+          "write_5m_k": 12,
+          "write_1h_k": 0,
+          "output_k": 5
+        },
+        {
+          "model": "K2.6",
+          "miss_k": 6,
+          "hit_k": 10,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 1
+        }
+      ],
+      "retry_fraction": 0.12,
+      "ocr": 0,
+      "data": 0.3,
+      "compute": 0.4,
+      "points": 10
+    },
+    "dossier": {
+      "name": "300页案卷整理 全扫描容量压力假设，独立验收前不可售",
+      "steps": [
+        {
+          "model": "K2.6",
+          "miss_k": 170,
+          "hit_k": 50,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 33
+        },
+        {
+          "model": "K3",
+          "miss_k": 40,
+          "hit_k": 80,
+          "write_5m_k": 40,
+          "write_1h_k": 0,
+          "output_k": 15
+        }
+      ],
+      "retry_fraction": 0.12,
+      "ocr": 6,
+      "data": 0,
+      "compute": 1.5,
+      "points": 80
+    },
+    "pleading": {
+      "name": "已有案卷的限定文书起草",
+      "steps": [
+        {
+          "model": "K2.6",
+          "miss_k": 30,
+          "hit_k": 0,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 3
+        },
+        {
+          "model": "K3",
+          "miss_k": 20,
+          "hit_k": 20,
+          "write_5m_k": 20,
+          "write_1h_k": 0,
+          "output_k": 6
+        }
+      ],
+      "retry_fraction": 0.12,
+      "ocr": 0,
+      "data": 0.3,
+      "compute": 0.4,
+      "points": 10
+    },
+    "research": {
+      "name": "3争点限定法源研究",
+      "steps": [
+        {
+          "model": "K2.6",
+          "miss_k": 220,
+          "hit_k": 0,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 22
+        },
+        {
+          "model": "K3",
+          "miss_k": 115,
+          "hit_k": 120,
+          "write_5m_k": 80,
+          "write_1h_k": 0,
+          "output_k": 29
+        }
+      ],
+      "retry_fraction": 0.15,
+      "ocr": 0,
+      "data": 12,
+      "compute": 1,
+      "points": 80
+    },
+    "qa": {
+      "name": "有依据的顾问问答",
+      "steps": [
+        {
+          "model": "K3",
+          "miss_k": 8,
+          "hit_k": 0,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 0.8
+        }
+      ],
+      "retry_fraction": 0.1,
+      "ocr": 0,
+      "data": 0.08,
+      "compute": 0.04,
+      "points": 1
+    },
+    "open_task": {
+      "name": "受控开放任务 假定十轮以内",
+      "steps": [
+        {
+          "model": "K3",
+          "miss_k": 100,
+          "hit_k": 400,
+          "write_5m_k": 80,
+          "write_1h_k": 0,
+          "output_k": 30
+        }
+      ],
+      "retry_fraction": 0.2,
+      "ocr": 0,
+      "data": 2,
+      "compute": 1,
+      "points": 60
+    }
+  },
+  "personas": {
+    "light": {
+      "weight": 0.3,
+      "monthly_tasks": {
+        "contract": 2,
+        "next_draft": 1,
+        "dossier": 0,
+        "pleading": 0,
+        "research": 0,
+        "qa": 15,
+        "open_task": 1
+      }
+    },
+    "medium": {
+      "weight": 0.5,
+      "monthly_tasks": {
+        "contract": 6,
+        "next_draft": 3,
+        "dossier": 1,
+        "pleading": 2,
+        "research": 1,
+        "qa": 40,
+        "open_task": 2
+      }
+    },
+    "heavy": {
+      "weight": 0.2,
+      "monthly_tasks": {
+        "contract": 20,
+        "next_draft": 10,
+        "dossier": 4,
+        "pleading": 6,
+        "research": 4,
+        "qa": 150,
+        "open_task": 12
+      }
+    }
+  },
+  "seat_plan": {
+    "list_price_annual": 9800,
+    "price_realization": 0.85,
+    "refund_fraction": 0.0,
+    "channel_commission_fraction": 0.05,
+    "monthly_points": 500,
+    "internal_variable_cost_per_point": 0.4,
+    "annual_task_cost_baseline": 1500,
+    "annual_storage_cloud_per_seat": 240,
+    "annual_direct_support_per_seat": 600,
+    "addon_revenue_in_forecast": 0
+  },
+  "steady_state": {
+    "fixed_legal_data": 1500000,
+    "fixed_platform_operations": 900000,
+    "opex_excluding_direct_delivery": 15000000,
+    "average_seats": [
+      500,
+      1000,
+      2000,
+      4000
+    ]
+  },
+  "ramp_years": [
+    {
+      "period": "经营第1年",
+      "start_seats": 0,
+      "end_seats": 1000,
+      "fixed_legal_data": 1500000,
+      "fixed_platform_operations": 900000,
+      "opex": 15000000,
+      "pre_ramp_weeks": 18
+    },
+    {
+      "period": "经营第2年",
+      "start_seats": 1000,
+      "end_seats": 2500,
+      "fixed_legal_data": 2000000,
+      "fixed_platform_operations": 1200000,
+      "opex": 18000000
+    },
+    {
+      "period": "经营第3年",
+      "start_seats": 2500,
+      "end_seats": 4000,
+      "fixed_legal_data": 2800000,
+      "fixed_platform_operations": 1600000,
+      "opex": 21000000
+    }
+  ],
+  "prelaunch_cash_assumption": 1200000,
+  "stress_cases": [
+    {
+      "label": "基准",
+      "price_realization": 0.85,
+      "annual_task_cost": 1500,
+      "fixed_data": 1500000
+    },
+    {
+      "label": "额度对应成本用满",
+      "price_realization": 0.85,
+      "annual_task_cost": 2400,
+      "fixed_data": 1500000
+    },
+    {
+      "label": "售价七折",
+      "price_realization": 0.7,
+      "annual_task_cost": 1500,
+      "fixed_data": 1500000
+    },
+    {
+      "label": "法源保底翻倍",
+      "price_realization": 0.85,
+      "annual_task_cost": 1500,
+      "fixed_data": 3000000
+    },
+    {
+      "label": "售价七折且成本用满",
+      "price_realization": 0.7,
+      "annual_task_cost": 2400,
+      "fixed_data": 3000000
+    }
+  ],
+  "ramp_timing_note": "Operating year 1 begins at G1. First 18 of 52 weeks have no scaled sales revenue, then seats ramp linearly from 0 to 1000 over 34 weeks. Paid pilot revenue is excluded. Later years use full-year linear growth. G0 is separate; no duplicate personnel cost."
+}

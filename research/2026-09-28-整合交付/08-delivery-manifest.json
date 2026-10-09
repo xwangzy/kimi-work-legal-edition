@@ -1,0 +1,112 @@
+{
+  "version": "1.1",
+  "date": "2026-09-30",
+  "scope": "Document delivery integrity, not production product acceptance",
+  "files": [
+    {
+      "name": "00-完整整合方案.md",
+      "bytes": 185360,
+      "sha256": "c93da871504542b13fa56e2d67fd2085352a622717105788d8a0b737d4e0179a"
+    },
+    {
+      "name": "00-阅读指南.md",
+      "bytes": 6031,
+      "sha256": "42493ad3280b584a4da97d4bdc2fca938ae86ecca160534f8aaeb9df13557ef8"
+    },
+    {
+      "name": "01-产品整合总方案.md",
+      "bytes": 48714,
+      "sha256": "8d199075f61b287c5e2f79c51cc3e965032550c50213b8e0365186d0433ba587"
+    },
+    {
+      "name": "02-全场景交付件与验收.md",
+      "bytes": 64791,
+      "sha256": "dd9ba6406ec41884c085af7943118c19c30bd8dde9df6590173960b3229b2993"
+    },
+    {
+      "name": "03-评审决策与证据索引.md",
+      "bytes": 27818,
+      "sha256": "d35172b45b502a5d89dd60c2106446829455e61ba8545c7138b6269677dcfe59"
+    },
+    {
+      "name": "04-研发交付与验收计划.md",
+      "bytes": 29694,
+      "sha256": "801a1f47bab5ee606b9cb9158b4f37cafdae10a5e2c16a51ae0d0581b8014037"
+    },
+    {
+      "name": "05-商业测算说明.md",
+      "bytes": 14031,
+      "sha256": "7500aaa6c929173141ad7af0024cabcb65841e98780cfe187fe29cc468a0046a"
+    },
+    {
+      "name": "06-economics-inputs.json",
+      "bytes": 7692,
+      "sha256": "828f3c8499ebd94cb0c7d43738bfda21260bb4593196907bd6571aed60f42a34"
+    },
+    {
+      "name": "06-economics-model.py",
+      "bytes": 7149,
+      "sha256": "c4a427f8f6adfe9a46149904d53130417e7eeb16583577fafc87a3b6a9b1237b"
+    },
+    {
+      "name": "06-economics-results.json",
+      "bytes": 10087,
+      "sha256": "ac342f914724ad3d6d485f4dc058a0f3663f219cdf4fffb562406f329dae5a96"
+    },
+    {
+      "name": "07-build-reader.mjs",
+      "bytes": 21770,
+      "sha256": "72aa424c40b95ac70acbfc7b18850bfefe0f8560041f1bd526ff79f31c820309"
+    },
+    {
+      "name": "08-交付校验记录.md",
+      "bytes": 2764,
+      "sha256": "dc05f75ac600f6ff407ce919231c56ef6f42bd9c9acafda3c9c564d9870521d7"
+    },
+    {
+      "name": "Kimi-Work-Legal-整合方案阅读版.html",
+      "bytes": 237847,
+      "sha256": "3ca210d58ddc2fb092bb6fe96877fbe3af25eccb8c9b06f5deae617eb2d86f22"
+    },
+    {
+      "name": "子报告-Kimi底座与运行时.md",
+      "bytes": 24980,
+      "sha256": "05cd2fafaff173b813fddac7d0ac5ea1bc30c77ea22212d423ead69ca380f6b0"
+    },
+    {
+      "name": "子报告-入口与文书技术.md",
+      "bytes": 28088,
+      "sha256": "882129accc70cae8c6cfec4f2e8b8c37d1b239d04ce950f62275ae4147acaa64"
+    },
+    {
+      "name": "子报告-合规与数据资产.md",
+      "bytes": 38092,
+      "sha256": "4f56d6da610500029e82cccd1cd7cd51c713fa57f469997223778f853b35edd0"
+    },
+    {
+      "name": "子报告-律师法与合规增量.md",
+      "bytes": 25312,
+      "sha256": "3f339d7332ca356a6d34adad86f5d30382448980ed1e88d9cf3105ec87bc6827"
+    },
+    {
+      "name": "子报告-技术运行时复核.md",
+      "bytes": 27882,
+      "sha256": "23c9222832bf596fe7b60d97f6cc305eac8362462794fb6128cdfcdd24675eab"
+    },
+    {
+      "name": "子报告-方案比较与竞品.md",
+      "bytes": 32150,
+      "sha256": "feb66b2f3e150a6fa7b75928968c1153bbafb98e270c4666d9ff748452455a81"
+    },
+    {
+      "name": "子报告-法源授权与模板资产.md",
+      "bytes": 20342,
+      "sha256": "a9eb5e4ab5ffdc33e39cc0b2d20125a9ac43037a0bacf431feb8f199cf3c5303"
+    },
+    {
+      "name": "子报告-竞品定价与渠道.md",
+      "bytes": 19733,
+      "sha256": "048b35ddcad9d7af20d9eac5ef8cb204875e909a233dd7c9141d42467758f382"
+    }
+  ]
+}

@@ -1,0 +1,370 @@
+Service Terms | Harvey
+We Raised $550M at a $15.5B Valuation to Help Legal Teams Own Their Intelligence
+Learn more
+We Raised $550M at a $15.5B Valuation to Help Legal Teams Own Their Intelligence
+Learn more
+We Raised $550M at a $15.5B Valuation to Help Legal Teams Own Their Intelligence
+Learn more
+→
+:Harvey:
+Platform
+Solutions
+Customers
+Security
+Resources
+Company
+Overview
+→
+A unified view of how Harvey's products work together to support your entire practice.
+Agents
+→
+Purpose built agents execute complex legal work end to end.
+Vault
+→
+Securely store, organize, and bulk-analyze legal documents.
+Knowledge
+→
+Research complex legal, regulatory, and tax questions across domains.
+Spaces
+→
+Work with legal teams across organizations in secure, shared spaces.
+Command Center
+→
+Analytics, benchmarking, and agentic insights to lead their organization’s AI transformation
+Contract Intelligence
+→
+Surface insights, strengthen negotiations, and accelerate reviews.
+Horizon Scanning
+→
+Track, assess, and take action on regulatory changes.
+Harvey Mobile
+→
+Get up to speed, capture new information, and keep work moving from anywhere.
+Ecosystem
+→
+Access Harvey where you already work and ground every answer in sources you trust.
+Introducing Memory
+New
+→
+Your preferences carried across Harvey so every response comes back consistent with how you work.
+Type
+In-House
+→
+Law Firm
+→
+Mid-size Firm
+→
+Industries
+Healthcare & Life Sciences
+→
+Energy & Utilities
+→
+Technology
+→
+Media, Entertainment & Telecom
+→
+Practice Area & Teams
+Litigation
+→
+Transactional
+→
+Innovation
+→
+A New Era of Collaboration for Legal and Professional Services
+→
+Law firms and professional service networks have been using Harvey to build new service models and add value collaboratively.
+Blog
+→
+Product updates, insights, and behind-the-scenes from the Harvey team.
+Resources Hub
+→
+The latest videos, webinars, guides, and reports from Harvey.
+Press Kit
+→
+Resources for maintaining a uniform and professional presentation of the Harvey brand.
+Research
+→
+Models, benchmarks, and field notes from Harvey's research on the frontier of legal AI.
+ROI Calculator Law Firm
+→
+See Harvey's Impact on Your Firm.
+ROI Calculator In House
+→
+See Harvey's Impact on Your Business.
+Harvey Academy
+→
+Introducing Harvey Academy: on-demand training, expert workflows, and step-by-step guidance to help legal teams get the most out of Harvey.
+About
+→
+Who we are and what we're building.
+Careers
+→
+Join our team and help Harvey shape the future of professional services.
+Newsroom
+→
+Press releases and partnership announcements.
+2025 Year in Review
+→
+In 2025, we celebrated major customer wins, introduced product breakthroughs, and expanded our global presence. Most importantly, we continued to deepen our commitment to building the best AI solutions for our customers.
+Login
+Request a Demo
+Platform
+Overview
+A unified view of how Harvey's products work together to support your entire practice.
+Agents
+Purpose built agents execute complex legal work end to end.
+Vault
+Securely store, organize, and bulk-analyze legal documents.
+Knowledge
+Research complex legal, regulatory, and tax questions across domains.
+Spaces
+Work with legal teams across organizations in secure, shared spaces.
+Command Center
+Analytics, benchmarking, and agentic insights to lead their organization’s AI transformation
+Contract Intelligence
+Surface insights, strengthen negotiations, and accelerate reviews.
+Horizon Scanning
+Track, assess, and take action on regulatory changes.
+Harvey Mobile
+Get up to speed, capture new information, and keep work moving from anywhere.
+Ecosystem
+Access Harvey where you already work and ground every answer in sources you trust.
+Introducing Memory
+New
+Your preferences carried across Harvey so every response comes back consistent with how you work.
+Solutions
+Type
+In-House
+Law Firm
+Mid-size Firm
+Industries
+Healthcare & Life Sciences
+Energy & Utilities
+Technology
+Media, Entertainment & Telecom
+Practice Area & Teams
+Litigation
+Transactional
+Innovation
+A New Era of Collaboration for Legal and Professional Services
+Law firms and professional service networks have been using Harvey to build new service models and add value collaboratively.
+Customers
+Security
+Resources
+Blog
+Product updates, insights, and behind-the-scenes from the Harvey team.
+Resources Hub
+The latest videos, webinars, guides, and reports from Harvey.
+Press Kit
+Resources for maintaining a uniform and professional presentation of the Harvey brand.
+Research
+Models, benchmarks, and field notes from Harvey's research on the frontier of legal AI.
+ROI Calculator Law Firm
+See Harvey's Impact on Your Firm.
+ROI Calculator In House
+See Harvey's Impact on Your Business.
+Harvey Academy
+Introducing Harvey Academy: on-demand training, expert workflows, and step-by-step guidance to help legal teams get the most out of Harvey.
+Company
+About
+Who we are and what we're building.
+Careers
+Join our team and help Harvey shape the future of professional services.
+Newsroom
+Press releases and partnership announcements.
+2025 Year in Review
+In 2025, we celebrated major customer wins, introduced product breakthroughs, and expanded our global presence. Most importantly, we continued to deepen our commitment to building the best AI solutions for our customers.
+Request a Demo
+Login
+US
+EU
+AU
+Legal
+/
+Service Terms
+Service Terms
+Last updated:
+ 
+September 16, 2026
+These Service Terms are part of Your Terms with Harvey. Any capitalized terms used but not defined in these Service Terms have the meaning set forth in the Terms. In any situation in which there is a conflict between these Service Terms and the Terms, these Services Terms control with respect to features and services governed by these Service Terms.
+PREVIEW FEATURES
+.
+This section governs Your use of services or features that Harvey offers on a preview, beta, or early access basis (“
+Preview Features
+”) and that You elect to use. Any Feedback related to the Preview Feature may be used to improve the Service.
+To the extent allowed by applicable law, Harvey’s liability to You with respect to Preview Features is limited to $100,000.00. Preview Features are offered on an as-is and as-available basis. Your access to or use of Preview Features is at Your own risk. To the extent permitted by law, Harvey expressly disclaims all, and You receive no, warranties and conditions of any kind, whether express or implied, including by not limited to, those of merchantability, satisfactory quality, title, fitness for a particular purpose, and non-infringement.
+Unless indicated otherwise in these Service Terms, Preview Features will be metered and billed as normal usage of the Service.
+Harvey may materially change Preview Features during the course of the preview and may opt to discontinue Preview Features.
+DATA STORAGE.
+You acknowledge that any election by You to store Customer Data or Content outside of the default location for Your selected data processing region may affect performance and availability of the Services.
+Notwithstanding anything set forth in the Terms, Your workspace retention setting will not apply to certain features, as outlined in our 
+Documentation
+.
+TARGETED SOURCE FEATURES.
+“
+Targeted Source Features
+” refers to a user’s capability within the Service to ask queries on specific targeted sources of data (such as publicly available web sources, knowledge sources, or uploaded documents).
+Content may contain portions of the Customer Data or portions of data from the exogenous data sources. IP ownership of such portions of Customer Data or data from exogenous data sources is not impacted by its use in the Services.
+WEB BROWSING AND KNOWLEDGE SOURCES
+.
+Web browsing and Knowledge Sources are features that may be leveraged in various parts of the Service to enhance the user’s experience by directly querying public websites.
+When the “
+Web Browsing Feature
+” or “
+Knowledge Source Feature”
+ is used by the Customer, links to relevant URLs will be returned to the user with the Output.
+Harvey engages a Subprocessor, listed on the Subprocessor List, to help provide the web searching aspects of the Web Browsing Feature (the “
+Web Browsing Subprocessor
+”). For URLs not searchable through Harvey’s AI providers, Harvey may use a Subprocessor, the “
+Knowledge Source Subprocessor,
+” to retrieve information from such URLs. The Knowledge Source Subprocessor and Web Browsing Subprocessor are optional features that Your administrators may configure for Your workspace.
+The Web Browsing Subprocessor and Knowledge Source Subprocessor process Customer Data and Content in the location(s) specified on 
+www.harvey.ai/legal/subprocessors
+ and may not process in Your selected data processing region. SuSea, Inc. (you.com) is not HIPAA compliant.
+Web Browsing and Knowledge Source are Targeted Source Features.
+ASK LEXISNEXIS
+.
+“Ask LexisNexis” is a feature that may be leveraged in various parts of the Service to enhance the user’s experience by surfacing answers generated by Lexis+AI within Harvey (“
+Ask LexisNexis
+”).
+Harvey engages a Subprocessor, listed on the Subprocessor List, to help provide Ask LexisNexis (the “
+LexisNexis Subprocessor
+”).
+The LexisNexis Subprocessor processes Customer Data and Content in the location(s) specified on 
+https://www.harvey.ai/legal/subprocessors
+ and may not process in Your selected data processing region.
+Ask LexisNexis is a Targeted Source Feature.
+Ask LexisNexis is separate from and not included within the Basic Service.
+EMAIL HARVEY
+“
+Email Harvey
+” is a feature that users may leverage to interact with the Service by sending emails to 
+ask@harvey.ai
+. Emails and attachments sent to Email Harvey are processed by the Service to generate Output and constitute Customer Data and Content.
+Upon receipt in Your workspace, the body of any email sent to Email Harvey is Input and any included attachments are Customer Data. A responsive email from Email Harvey is Output.
+Harvey engages a Subprocessor listed on the Subprocessor List, to help provide Email Harvey and other email-based services (the “
+Email Subprocessor
+”).
+The Email Subprocessor does not store, retain or allow human review of Customer Data or Content except (i) as required by applicable law or (ii) to the extent necessary to enforce their acceptable use policies.
+SHARED SPACES
+.
+Some Harvey features allow Your users to create, join, and invite other users to collaborative environments (each a “
+Shared Space
+”) where such users can access, modify and query over vaults, playbooks, workflows and other workspace resources added to such Shared Space (“
+Resources
+”) in accordance with such users’ permissions. Authorized users may invite collaborators from outside their workspace to participate in their Shared Space (when enabled “
+External Collaboration
+”) as further described in our 
+Documentation
+.
+When using External Collaboration: (i) the Shared Space creator (the "
+Sharing Customer
+") can customize and set member permissions, (ii) collaborators can view, edit, download, and query over Resources in the Shared Space based on their permissions and see certain activity of other collaborators, and (iii) Customer Data, Content and Resources otherwise remain subject to Your workspace’s storage, processing, retention and other settings, each as further set forth in Documentation.
+You are responsible for (i) choosing appropriate collaborators and following Your internal policies, and (ii) having the necessary rights and consents for any external data shared with You or others
+.
+COVERED AI SERVICES.
+"
+Covered AI Services
+" (formerly known as “Extended AI Features”) refer to Harvey features and services that leverage AI capabilities that have data processing requirements (e.g., retention, human review, storage) that differ from the data processing commitments made by Harvey in the Terms and Documentation.
+Notwithstanding anything to the contrary in the Terms, You agree that when You use Covered AI Services the following will apply as further described in the 
+Documentation
+:
+Subprocessors may retain Customer Data and Content to the extent necessary to provide their services, perform safety reviews, or comply with applicable law;
+Customer Data and Content may be reviewed by the Subprocessors to perform safety reviews, to enforce their acceptable use policies, or to comply with applicable law; and
+Customer Data and Content may be stored and processed in a location different to the storage and processing locations stipulated in Your Terms.
+Covered AI Services are optional features that Customer administrators may configure for Your workspace as set forth in Documentation.
+Covered AI Services are separate from and not included within the Basic Service.
+Previous Versions
+2026
+June 22, 2026
+Service Terms
+June 9, 2026
+Service Terms
+April 10, 2026
+Service Terms
+February 3, 2026
+Service Terms
+2025
+December 26, 2025
+Service Terms
+April 2, 2025
+Service Terms
+Unlock Professional Class AI for Your Organization
+Request a Demo
+Copyright © 2026 Harvey AI Corporation. All rights reserved.
+Platform
+Overview
+→
+Agents
+→
+Vault
+→
+Knowledge
+→
+Spaces
+→
+Command Center
+→
+Contract Intelligence
+→
+Horizon Scanning
+→
+Ecosystem
+→
+Harvey Mobile
+→
+Partnerships
+→
+Solutions
+Innovation
+→
+Transactional
+→
+Litigation
+→
+In-House
+→
+Law Firms
+→
+Mid-Sized Firms
+→
+Company
+Customers
+→
+Security
+→
+About
+→
+Careers
+→
+Newsroom
+→
+Law Schools
+→
+Resources
+Blog
+→
+Resources Hub
+→
+Harvey Academy
+→
+Help Center
+→
+Legal
+→
+Privacy Policy
+→
+Press Kit
+→
+Your Privacy Choices
+→
+Follow
+X
+→
+LinkedIn
+→
+YouTube
+→
+Instagram
+→
+Copyright © 2026 Harvey AI Corporation. All rights reserved.

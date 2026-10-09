@@ -1,0 +1,510 @@
+{
+  "version": "4.0",
+  "prepared_date": "2026-10-01",
+  "currency": "CNY",
+  "basis": "不含税规划口径。公开 API 价为敏感性基准，企业合同价到位后替换。所有用量、席位、人力与价格均为待试点校准的假设，不是报价、预算或收益承诺。",
+  "price_per_million_tokens": {
+    "K3": {
+      "miss": 20.0,
+      "hit": 2.0,
+      "write_5m": 20.0,
+      "write_1h": 40.0,
+      "output": 100.0
+    },
+    "K2.6": {
+      "miss": 6.5,
+      "hit": 1.1,
+      "write_5m": 0.0,
+      "write_1h": 0.0,
+      "output": 27.0
+    }
+  },
+  "task_assumptions": {
+    "contract": {
+      "name": "30页DOCX合同首轮审查（含原生修订稿与意见书）",
+      "points": 30,
+      "retry_fraction": 0.12,
+      "ocr": 0.0,
+      "data": 0.6,
+      "compute": 0.7,
+      "steps": [
+        {
+          "model": "K2.6",
+          "miss_k": 35,
+          "hit_k": 30,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 7
+        },
+        {
+          "model": "K3",
+          "miss_k": 72,
+          "hit_k": 344,
+          "write_5m_k": 50,
+          "write_1h_k": 0,
+          "output_k": 26
+        }
+      ]
+    },
+    "next_draft": {
+      "name": "对方回稿比对与受影响条款重审（约6处变化）",
+      "points": 10,
+      "retry_fraction": 0.12,
+      "ocr": 0.0,
+      "data": 0.3,
+      "compute": 0.4,
+      "steps": [
+        {
+          "model": "K3",
+          "miss_k": 12,
+          "hit_k": 60,
+          "write_5m_k": 12,
+          "write_1h_k": 0,
+          "output_k": 5
+        },
+        {
+          "model": "K2.6",
+          "miss_k": 6,
+          "hit_k": 10,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 1
+        }
+      ]
+    },
+    "dossier": {
+      "name": "案卷整理（100页混合件标准档；300页为压力档）",
+      "points": 40,
+      "retry_fraction": 0.12,
+      "ocr": 2.5,
+      "data": 0.0,
+      "compute": 0.8,
+      "steps": [
+        {
+          "model": "K2.6",
+          "miss_k": 70,
+          "hit_k": 20,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 14
+        },
+        {
+          "model": "K3",
+          "miss_k": 18,
+          "hit_k": 40,
+          "write_5m_k": 18,
+          "write_1h_k": 0,
+          "output_k": 7
+        }
+      ]
+    },
+    "pleading": {
+      "name": "要素式文书起草与金额测算（基于已整理案卷）",
+      "points": 10,
+      "retry_fraction": 0.12,
+      "ocr": 0.0,
+      "data": 0.3,
+      "compute": 0.4,
+      "steps": [
+        {
+          "model": "K2.6",
+          "miss_k": 30,
+          "hit_k": 0,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 3
+        },
+        {
+          "model": "K3",
+          "miss_k": 20,
+          "hit_k": 20,
+          "write_5m_k": 20,
+          "write_1h_k": 0,
+          "output_k": 6
+        }
+      ]
+    },
+    "research": {
+      "name": "3争点授权法源研究与类案报告",
+      "points": 80,
+      "retry_fraction": 0.15,
+      "ocr": 0.0,
+      "data": 12.0,
+      "compute": 1.0,
+      "steps": [
+        {
+          "model": "K2.6",
+          "miss_k": 220,
+          "hit_k": 0,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 22
+        },
+        {
+          "model": "K3",
+          "miss_k": 115,
+          "hit_k": 120,
+          "write_5m_k": 80,
+          "write_1h_k": 0,
+          "output_k": 29
+        }
+      ]
+    },
+    "qa": {
+      "name": "有依据的顾问问答（事项材料+法源）",
+      "points": 1,
+      "retry_fraction": 0.1,
+      "ocr": 0.0,
+      "data": 0.08,
+      "compute": 0.04,
+      "steps": [
+        {
+          "model": "K3",
+          "miss_k": 8,
+          "hit_k": 0,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 0.8
+        }
+      ]
+    },
+    "open_task": {
+      "name": "Agent 模式开放任务（十轮以内、有预算上限）",
+      "points": 60,
+      "retry_fraction": 0.2,
+      "ocr": 0.0,
+      "data": 2.0,
+      "compute": 1.0,
+      "steps": [
+        {
+          "model": "K3",
+          "miss_k": 100,
+          "hit_k": 400,
+          "write_5m_k": 80,
+          "write_1h_k": 0,
+          "output_k": 30
+        }
+      ]
+    }
+  },
+  "personas": {
+    "light": {
+      "weight": 0.3,
+      "monthly_tasks": {
+        "contract": 2,
+        "next_draft": 1,
+        "dossier": 0,
+        "pleading": 0,
+        "research": 0,
+        "qa": 15,
+        "open_task": 1
+      }
+    },
+    "medium": {
+      "weight": 0.5,
+      "monthly_tasks": {
+        "contract": 6,
+        "next_draft": 3,
+        "dossier": 1,
+        "pleading": 2,
+        "research": 1,
+        "qa": 40,
+        "open_task": 2
+      }
+    },
+    "heavy": {
+      "weight": 0.2,
+      "monthly_tasks": {
+        "contract": 20,
+        "next_draft": 10,
+        "dossier": 4,
+        "pleading": 6,
+        "research": 4,
+        "qa": 150,
+        "open_task": 12
+      }
+    }
+  },
+  "editions": {
+    "team": {
+      "label": "团队版",
+      "list_price": 9800,
+      "realization": 0.85,
+      "monthly_points": 500,
+      "pooled": true,
+      "storage": 240,
+      "support": 600
+    },
+    "firm": {
+      "label": "律所版",
+      "list_price": 8800,
+      "realization": 0.9,
+      "monthly_points": 500,
+      "pooled": true,
+      "storage": 240,
+      "support": 450,
+      "platform_fee_per_customer": 200000
+    },
+    "pro": {
+      "label": "专业版",
+      "list_price": 3600,
+      "realization": 0.95,
+      "monthly_points": 200,
+      "pooled": false,
+      "storage": 120,
+      "support": 250
+    },
+    "reviewer": {
+      "label": "审阅签发席",
+      "list_price": 1800,
+      "realization": 0.85,
+      "monthly_points": 30,
+      "pooled": false,
+      "storage": 60,
+      "support": 100
+    }
+  },
+  "reviewer_seats_per_production_seat": 0.03,
+  "addon": {
+    "price_per_point": 0.8,
+    "share_of_overquota_demand_purchased": 0.15,
+    "pro_overquota_purchase_share": 0.15
+  },
+  "services": {
+    "onboarding_revenue_per_new_team_seat": 300,
+    "onboarding_cost_ratio": 0.8,
+    "fde_day_rate": 4000
+  },
+  "private_deployment": {
+    "first_year_contract": 2000000,
+    "first_year_cost_ratio": 0.45,
+    "annual_maintenance_rate": 0.18,
+    "maintenance_cost_ratio": 0.4
+  },
+  "channel": {
+    "share_of_revenue_via_channel": 0.3,
+    "commission_rate": 0.12,
+    "payment_fee_rate_pro": 0.01
+  },
+  "loaded_cost_per_fte": 450000,
+  "years": [
+    2026,
+    2027,
+    2028,
+    2029,
+    2030
+  ],
+  "year_months_active": {
+    "2026": 2.6,
+    "2027": 12,
+    "2028": 12,
+    "2029": 12,
+    "2030": 12
+  },
+  "headcount_avg_fte": {
+    "2026": 26,
+    "2027": 43,
+    "2028": 54,
+    "2029": 64,
+    "2030": 72
+  },
+  "fixed_costs": {
+    "legal_data": {
+      "2026": 100000,
+      "2027": 800000,
+      "2028": 1500000,
+      "2029": 2500000,
+      "2030": 3000000
+    },
+    "cloud_platform": {
+      "2026": 200000,
+      "2027": 1200000,
+      "2028": 2000000,
+      "2029": 2800000,
+      "2030": 3300000
+    },
+    "external_lawyer_experts": {
+      "2026": 300000,
+      "2027": 2000000,
+      "2028": 2200000,
+      "2029": 2500000,
+      "2030": 2800000
+    },
+    "sales_marketing_programs": {
+      "2026": 300000,
+      "2027": 4000000,
+      "2028": 6000000,
+      "2029": 8000000,
+      "2030": 9000000
+    },
+    "compliance_certification": {
+      "2026": 200000,
+      "2027": 1200000,
+      "2028": 800000,
+      "2029": 900000,
+      "2030": 1000000
+    },
+    "ga_allocation": {
+      "2026": 100000,
+      "2027": 1500000,
+      "2028": 2000000,
+      "2029": 2500000,
+      "2030": 2800000
+    }
+  },
+  "launch": {
+    "paid_start_month_2027": 3,
+    "note": "2027-03 起设计合作律所转付费；2027-04 G2 通过后公开销售；专业版自助购买 2027-07 起。"
+  },
+  "scenarios": {
+    "conservative": {
+      "label": "保守",
+      "year_end_production_seats": {
+        "2027": {
+          "team": 380,
+          "firm": 100,
+          "pro": 20
+        },
+        "2028": {
+          "team": 1000,
+          "firm": 350,
+          "pro": 150
+        },
+        "2029": {
+          "team": 1900,
+          "firm": 800,
+          "pro": 300
+        },
+        "2030": {
+          "team": 3000,
+          "firm": 1500,
+          "pro": 500
+        }
+      },
+      "firm_customers_year_end": {
+        "2027": 1,
+        "2028": 4,
+        "2029": 8,
+        "2030": 14
+      },
+      "private_deployment_new_deals": {
+        "2027": 0,
+        "2028": 1,
+        "2029": 2,
+        "2030": 2
+      }
+    },
+    "base": {
+      "label": "基准",
+      "year_end_production_seats": {
+        "2027": {
+          "team": 720,
+          "firm": 200,
+          "pro": 80
+        },
+        "2028": {
+          "team": 2000,
+          "firm": 700,
+          "pro": 300
+        },
+        "2029": {
+          "team": 3800,
+          "firm": 1600,
+          "pro": 600
+        },
+        "2030": {
+          "team": 6000,
+          "firm": 3000,
+          "pro": 1000
+        }
+      },
+      "firm_customers_year_end": {
+        "2027": 2,
+        "2028": 7,
+        "2029": 15,
+        "2030": 26
+      },
+      "private_deployment_new_deals": {
+        "2027": 1,
+        "2028": 2,
+        "2029": 3,
+        "2030": 3
+      }
+    },
+    "aggressive": {
+      "label": "进取",
+      "year_end_production_seats": {
+        "2027": {
+          "team": 1100,
+          "firm": 350,
+          "pro": 150
+        },
+        "2028": {
+          "team": 3600,
+          "firm": 1400,
+          "pro": 500
+        },
+        "2029": {
+          "team": 6800,
+          "firm": 3200,
+          "pro": 1000
+        },
+        "2030": {
+          "team": 10500,
+          "firm": 5800,
+          "pro": 1700
+        }
+      },
+      "firm_customers_year_end": {
+        "2027": 3,
+        "2028": 12,
+        "2029": 26,
+        "2030": 45
+      },
+      "private_deployment_new_deals": {
+        "2027": 1,
+        "2028": 3,
+        "2029": 4,
+        "2030": 5
+      }
+    }
+  },
+  "sensitivities": [
+    {
+      "label": "成交价七折（团队/律所实现率0.70）",
+      "realization_override": 0.7
+    },
+    {
+      "label": "token 公示价上涨30%",
+      "token_price_factor": 1.3
+    },
+    {
+      "label": "token 价格下降30%（企业折扣或降价）",
+      "token_price_factor": 0.7
+    },
+    {
+      "label": "严格无持久缓存（ZDR 租户全部按未命中计）",
+      "no_cache": true
+    },
+    {
+      "label": "额度用满且加量包零购买",
+      "addon_share_override": 0.0,
+      "force_full_quota": true
+    },
+    {
+      "label": "编制增加20%",
+      "headcount_factor": 1.2
+    },
+    {
+      "label": "法源固定费翻倍",
+      "legal_data_factor": 2.0
+    },
+    {
+      "label": "精简编制（共享中软平台，编制−20%）",
+      "headcount_factor": 0.8
+    }
+  ],
+  "headcount_note": "2026：G0 16 人（10-12～11-20）与 G1 36 人（11-23 起）平均约 26；2027：G1 36、G2 40、年末 48，全年平均约 43；2028 年起与付费席位挂钩。",
+  "reviewer_free_seats_per_production_seat": 0.2,
+  "reviewer_note": "团队版每 3 个生产席含 1 个审阅签发席（只计成本，约 0.2/生产席实际启用）；超出部分付费加购（约 0.03/生产席）。"
+}
