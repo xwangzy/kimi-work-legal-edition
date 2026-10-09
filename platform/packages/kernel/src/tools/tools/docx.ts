@@ -1,0 +1,128 @@
+/**
+ * docx.* 与 redact.apply 工具（文书引擎由内核调用；§4.1 docx.propose_revisions/compare/render、redact.*）。
+ * 产出为内容寻址字节（BlobStore）；artifact_versions 登记由内核工作流完成。
+ * 挂载原件只读引用（storage_mode=mount）：读取时复算 hash，变化即需生成新文档版本。
+ */
+import { DomainError, notFound, sha256Hex } from "@zr-legal/domain";
+import {
+  applyRevisionsToDocx,
+  compareDocx,
+  createDocx,
+  maskDocxText,
+  sanitizeDocx,
+  scrubDocProps,
+  extractParagraphs,
+  type RevisionOp,
+} from "@zr-legal/docx-engine";
+import { scanDirectIdentifiers } from "@zr-legal/pseudonym";
+import type { KernelDb } from "../../db.ts";
+import type { BlobStore } from "../../blobs.ts";
+
+function loadDocument(db: KernelDb, blobs: BlobStore, claimsMatterId: string | undefined, documentVersionId: string): { buf: Buffer; filename: string; sha256: string; matter_id: string } {
+  if (!claimsMatterId) throw new DomainError("forbidden", "令牌未绑定事项", 403);
+  const row = db.get<{ document_version_id: string; matter_id: string; filename: string; sha256: string; storage_uri: string }>(
+    `SELECT document_version_id, matter_id, filename, sha256, storage_uri FROM document_versions WHERE document_version_id = ?`,
+    [documentVersionId],
+  );
+  if (!row || row.matter_id !== claimsMatterId) throw notFound("文档");
+  const buf = blobs.read(row.storage_uri);
+  if (sha256Hex(buf) !== row.sha256) {
+    throw new DomainError("hash_mismatch", "原件内容已变化（读取时复算 hash 不符）：原件只读不覆盖——请重新挂载/导入生成新文档版本", 412, { registered: row.sha256 });
+  }
+  return { buf, filename: row.filename, sha256: row.sha256, matter_id: row.matter_id };
+}
+
+export function docxApplyRevisions(
+  db: KernelDb,
+  blobs: BlobStore,
+  mid: string | undefined,
+  params: { document_version_id: string; baseline_hash: string; ops: RevisionOp[] },
+) {
+  const doc = loadDocument(db, blobs, mid, params.document_version_id);
+  if (doc.sha256 !== params.baseline_hash) {
+    throw new DomainError("stale_baseline", "基线 hash 不符：文档已有新版本", 412, { expected: params.baseline_hash, actual: doc.sha256 });
+  }
+  const result = applyRevisionsToDocx(doc.buf, { baselineHash: params.baseline_hash, ops: params.ops });
+  const stored = blobs.put(result.docx, doc.matter_id);
+  return { ...stored, applied: result.applied, source_document_version_id: params.document_version_id };
+}
+
+export function docxCompare(
+  db: KernelDb,
+  blobs: BlobStore,
+  mid: string | undefined,
+  params: { baseline_document_version_id: string; current_document_version_id: string },
+) {
+  const base = loadDocument(db, blobs, mid, params.baseline_document_version_id);
+  const cur = loadDocument(db, blobs, mid, params.current_document_version_id);
+  return { ...compareDocx(base.buf, cur.buf), baseline_sha256: base.sha256, current_sha256: cur.sha256 };
+}
+
+export function docxSanitize(db: KernelDb, blobs: BlobStore, mid: string | undefined, params: { document_version_id: string }) {
+  const doc = loadDocument(db, blobs, mid, params.document_version_id);
+  const result = sanitizeDocx(doc.buf);
+  const stored = blobs.put(result.docx, doc.matter_id);
+  return { ...stored, removed: result.removed, source_document_version_id: params.document_version_id };
+}
+
+export function docxRenderReport(blobs: BlobStore, params: { title: string; sections: { heading: string; paragraphs: string[] }[] }, matterId?: string) {
+  if (!params.title || !Array.isArray(params.sections)) throw new DomainError("validation", "需要 title 与 sections", 422);
+  const buf = createDocx(params.title, params.sections);
+  return blobs.put(buf, matterId ?? null);
+}
+
+/** 从文档提取全文（docx 段落拼接 / 纯文本直读）。 */
+function extractText(db: KernelDb, blobs: BlobStore, mid: string | undefined, documentVersionId: string): { text: string; isDocx: boolean; doc: ReturnType<typeof loadDocument> } {
+  const doc = loadDocument(db, blobs, mid, documentVersionId);
+  const isDocx = doc.filename.toLowerCase().endsWith(".docx");
+  if (isDocx) {
+    const text = extractParagraphs(doc.buf).map((p) => p.text).join("\n");
+    return { text, isDocx: true, doc };
+  }
+  return { text: doc.buf.toString("utf8"), isDocx: false, doc };
+}
+
+export function redactApply(db: KernelDb, blobs: BlobStore, mid: string | undefined, params: { document_version_id: string }) {
+  const { text, isDocx, doc } = extractText(db, blobs, mid, params.document_version_id);
+  const scan = scanDirectIdentifiers(text);
+  if (scan.findings.length === 0) {
+    return {
+      ...blobs.put(doc.buf, doc.matter_id),
+      report: { counts: {}, findings: 0, notFound: [], coverage_notes: scan.coverage_notes, note: "未发现需遮盖的直接标识符" },
+      source_document_version_id: params.document_version_id,
+    };
+  }
+  // 相同原文去重（同一遮盖值）
+  const maskMap = new Map<string, string>();
+  for (const f of scan.findings) {
+    const original = text.slice(f.start, f.end);
+    if (!maskMap.has(original)) maskMap.set(original, f.masked);
+  }
+  let outBuf: Buffer;
+  let notFound: string[] = [];
+  if (isDocx) {
+    const r = maskDocxText(doc.buf, [...maskMap.entries()].map(([find, replace]) => ({ find, replace })));
+    notFound = r.notFound;
+    // 脱敏件同时净化文档属性（作者/公司/最后修改人），不得携带元数据泄露
+    outBuf = scrubDocProps(r.docx);
+  } else {
+    let t = text;
+    for (const [find, replace] of [...maskMap.entries()].sort((a, b) => b[0].length - a[0].length)) {
+      t = t.split(find).join(replace);
+    }
+    outBuf = Buffer.from(t, "utf8");
+  }
+  const stored = blobs.put(outBuf, doc.matter_id);
+  return {
+    ...stored,
+    report: {
+      counts: scan.counts,
+      findings: scan.findings.length,
+      masked_values: maskMap.size,
+      notFound,
+      coverage_notes: scan.coverage_notes,
+      residual_risks: ["姓名、详细地址、批注/属性、图片内文字不在 v0 覆盖范围（见 coverage_notes）"],
+    },
+    source_document_version_id: params.document_version_id,
+  };
+}

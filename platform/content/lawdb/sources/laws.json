@@ -1,0 +1,134 @@
+{
+  "_comment": "G0 示例数据集（如实标注）：结构即生产采集契约（每条 law_version 带公报期号/页码/采集日期）；种子覆盖现有内存种子的 4 部 + 标准演示用例条文正文。《律师法》2026 修正本系方案设定的演示世界，其条文正文按平移演绎——非真实采集；其余条文文本为公开法律文本。公报期号/页码为示例值，待法律工程采集校准；official_url 只给权威库首页（不伪造深链）。商业法源数据零入库。",
+  "laws": [
+    {
+      "law_id": "law_lawyers",
+      "law_name": "中华人民共和国律师法",
+      "aliases": ["律师法"],
+      "level": "法律",
+      "region": "全国",
+      "versions": [
+        {
+          "lsv_id": "lsv_lawyers_2017",
+          "promulgated": "2017-09-01",
+          "effective": "2018-01-01",
+          "superseded": "2026-09-01",
+          "effectiveness": "amended",
+          "total_articles": 60,
+          "gazette_issue": "示例期号（非采集值）",
+          "gazette_page": "0",
+          "collected_at": "2026-10-02",
+          "official_url": "https://flk.npc.gov.cn/",
+          "source_license_id": "official-gazette-selfbuilt",
+          "topics": { "保密义务": 38, "执业纪律": 38 },
+          "articles": [
+            {
+              "no": 38,
+              "text": "律师应当保守在执业活动中知悉的国家秘密、商业秘密，不得泄露当事人的隐私。\n律师对在执业活动中知悉的委托人和其他人不愿泄露的情况和信息，应当予以保密。但是，委托人或者其他人准备或者正在实施的危害国家安全、公共安全以及其他严重危害他人人身、财产安全的犯罪事实和信息除外。"
+            }
+          ]
+        },
+        {
+          "lsv_id": "lsv_lawyers_2026",
+          "promulgated": "2026-06-30",
+          "effective": "2026-09-01",
+          "superseded": null,
+          "effectiveness": "valid",
+          "total_articles": 68,
+          "gazette_issue": "示例期号（演示演绎，非真实采集）",
+          "gazette_page": "0",
+          "collected_at": "2026-10-02",
+          "official_url": "https://flk.npc.gov.cn/",
+          "source_license_id": "official-gazette-selfbuilt",
+          "topics": { "保密义务": 41, "执业纪律": 41 },
+          "articles": [
+            {
+              "no": 41,
+              "text": "律师应当保守在执业活动中知悉的国家秘密、商业秘密，不得泄露当事人的隐私。\n律师对在执业活动中知悉的委托人和其他人不愿泄露的情况和信息，应当予以保密。但是，委托人或者其他人准备或者正在实施的危害国家安全、公共安全以及其他严重危害他人人身、财产安全的犯罪事实和信息除外。\n（G0 演示演绎文本：方案演示世界设定的 2026 修正本，保密条款由原第三十八条平移至第四十一条，非真实采集。）"
+            }
+          ]
+        }
+      ],
+      "renumbering": [
+        { "from_lsv_id": "lsv_lawyers_2017", "to_lsv_id": "lsv_lawyers_2026", "topic": "保密义务", "from_article": 38, "to_article": 41 },
+        { "from_lsv_id": "lsv_lawyers_2017", "to_lsv_id": "lsv_lawyers_2026", "topic": "执业纪律", "from_article": 38, "to_article": 41 }
+      ]
+    },
+    {
+      "law_id": "law_civil_code",
+      "law_name": "中华人民共和国民法典",
+      "aliases": ["民法典"],
+      "level": "法律",
+      "region": "全国",
+      "versions": [
+        {
+          "lsv_id": "lsv_civil_code_2020",
+          "promulgated": "2020-05-28",
+          "effective": "2021-01-01",
+          "superseded": null,
+          "effectiveness": "valid",
+          "total_articles": 1260,
+          "gazette_issue": "示例期号（非采集值）",
+          "gazette_page": "0",
+          "collected_at": "2026-10-02",
+          "official_url": "https://flk.npc.gov.cn/",
+          "source_license_id": "official-gazette-selfbuilt",
+          "topics": { "合同履行": 509, "违约金": 585, "定金": 587 },
+          "articles": [
+            {
+              "no": 509,
+              "text": "当事人应当按照约定全面履行自己的义务。\n当事人应当遵循诚信原则，根据合同的性质、目的和交易习惯履行通知、协助、保密等义务。\n当事人在履行合同过程中，应当避免浪费资源、污染环境和破坏生态。"
+            },
+            {
+              "no": 585,
+              "text": "当事人可以约定一方违约时应当根据违约情况向对方支付一定数额的违约金，也可以约定因违约产生的损失赔偿额的计算方法。\n约定的违约金低于造成的损失的，人民法院或者仲裁机构可以根据当事人的请求予以增加；约定的违约金过分高于造成的损失的，人民法院或者仲裁机构可以根据当事人的请求予以适当减少。\n当事人就迟延履行约定违约金的，违约方支付违约金后，还应当履行债务。"
+            },
+            {
+              "no": 587,
+              "text": "债务人履行债务的，定金应当抵作价款或者收回。给付定金的一方不履行债务或者履行债务不符合约定，致使不能实现合同目的的，无权请求返还定金；收受定金的一方不履行债务或者履行债务不符合约定，致使不能实现合同目的的，应当双倍返还定金。"
+            }
+          ]
+        }
+      ],
+      "renumbering": []
+    },
+    {
+      "law_id": "law_labor_contract",
+      "law_name": "中华人民共和国劳动合同法",
+      "aliases": ["劳动合同法"],
+      "level": "法律",
+      "region": "全国",
+      "versions": [
+        {
+          "lsv_id": "lsv_labor_contract_2012",
+          "promulgated": "2012-12-28",
+          "effective": "2013-07-01",
+          "superseded": null,
+          "effectiveness": "valid",
+          "total_articles": 98,
+          "gazette_issue": "示例期号（非采集值）",
+          "gazette_page": "0",
+          "collected_at": "2026-10-02",
+          "official_url": "https://flk.npc.gov.cn/",
+          "source_license_id": "official-gazette-selfbuilt",
+          "topics": { "竞业限制": 24, "保密与竞业": 23, "经济补偿": 47 },
+          "articles": [
+            {
+              "no": 23,
+              "text": "用人单位与劳动者可以在劳动合同中约定保守用人单位的商业秘密和与知识产权相关的保密事项。\n对负有保密义务的劳动者，用人单位可以在劳动合同或者保密协议中与劳动者约定竞业限制条款，并约定在解除或者终止劳动合同后，在竞业限制期限内按月给予劳动者经济补偿。劳动者违反竞业限制约定的，应当按照约定向用人单位支付违约金。"
+            },
+            {
+              "no": 24,
+              "text": "竞业限制的人员限于用人单位的高级管理人员、高级技术人员和其他负有保密义务的人员。竞业限制的范围、地域、期限由用人单位与劳动者约定，竞业限制的约定不得违反法律、法规的规定。\n在解除或者终止劳动合同后，前款规定的人员到与本单位生产或者经营同类产品、从事同类业务的有竞争关系的其他用人单位，或者自己开业生产或者经营同类产品、从事同类业务的竞业限制期限，不得超过二年。"
+            },
+            {
+              "no": 47,
+              "text": "经济补偿按劳动者在本单位工作的年限，每满一年支付一个月工资的标准向劳动者支付。六个月以上不满一年的，按一年计算；不满六个月的，向劳动者支付半个月工资的经济补偿。\n劳动者月工资高于用人单位所在直辖市、设区的市级人民政府公布的本地区上年度职工月平均工资三倍的，向其支付经济补偿的标准按职工月平均工资三倍的数额支付，向其支付经济补偿的年限最高不超过十二年。\n本条所称月工资是指劳动者在劳动合同解除或者终止前十二个月的平均工资。"
+            }
+          ]
+        }
+      ],
+      "renumbering": []
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@zr-legal/agent-host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent 宿主进程（每任务一个；Kimi Code 引擎 + ZP-5/6 沙箱种子；方案 v5.0 第 4 篇 §3/§4）",
+  "dependencies": {
+    "@zr-legal/domain": "*",
+    "undici": "7.30.0"
+  }
+}

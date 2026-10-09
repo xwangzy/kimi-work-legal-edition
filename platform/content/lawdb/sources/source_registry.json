@@ -1,0 +1,36 @@
+[
+  {
+    "source_license_id": "official-gazette-selfbuilt",
+    "source_type": "official_gazette",
+    "licensor": "无（立法文件不适用著作权法）",
+    "acquired_via": "官方公报标准文本人工采集自建（法律工程路径）",
+    "contract_ref": null,
+    "valid_until": null,
+    "allowed_actions": ["search", "display", "quote", "cache", "vectorize", "model", "export", "train", "retain_after_termination"],
+    "region": "全国",
+    "firm_limit": null,
+    "concurrency_limit": null,
+    "citation_requirement": "官方公报标准文本人工采集自建（著作权法第五条、立法法第六十二/七十八条）。G0 示例数据集：《律师法》2026 修正文本为演示演绎，非真实采集；公报期号/页码为示例值，待法律工程采集校准。",
+    "deletion_obligation": null,
+    "acquired_at": "2026-10-02",
+    "reliability": "demo_seed",
+    "withdrawn_reason": null
+  },
+  {
+    "source_license_id": "seed-demo",
+    "source_type": "seed_demo",
+    "licensor": "（演示种子）",
+    "acquired_via": "工程内演示种子",
+    "contract_ref": null,
+    "valid_until": null,
+    "allowed_actions": ["display", "model"],
+    "region": "",
+    "firm_limit": null,
+    "concurrency_limit": null,
+    "citation_requirement": "演示种子行：仅用于展示 Source Registry 运行时强制（display/model；其余动作拒绝），不承载法规内容。",
+    "deletion_obligation": null,
+    "acquired_at": "2026-10-02",
+    "reliability": "demo_seed",
+    "withdrawn_reason": null
+  }
+]

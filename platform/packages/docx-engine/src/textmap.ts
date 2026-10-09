@@ -1,0 +1,118 @@
+/**
+ * document.xml 段落文本映射：把每个 <w:p> 的可见文本映射回 XML 源偏移。
+ * 修订写入基于此做定点字符串手术，其余部分字节不动（保真优先）。
+ */
+export interface TextSegment {
+  /** 段内文本偏移 [start, end) */
+  start: number;
+  end: number;
+  /** 文本在整篇 XML 中的偏移（<w:t> 内容区间） */
+  xmlStart: number;
+  xmlEnd: number;
+  /** 所属 <w:r> 在整篇 XML 中的完整区间（修订手术以 run 为最小切除单位） */
+  runXmlStart: number;
+  runXmlEnd: number;
+  text: string;
+  /** 所属 <w:r> 的 rPr XML（用于继承格式） */
+  rPr: string | null;
+  /** 该文本是否在删除标记内（w:delText 或位于未闭合 w:del 内） */
+  deleted: boolean;
+}
+
+export interface ParagraphMap {
+  index: number;
+  /** 段落 XML 在整篇中的区间 */
+  xmlStart: number;
+  xmlEnd: number;
+  text: string; // 可见文本（不含已删除）
+  segments: TextSegment[];
+}
+
+const P_RE = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+const R_RE = /<w:r\b[^>]*>[\s\S]*?<\/w:r>/g;
+const T_RE = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>/;
+const DELT_RE = /<w:delText\b[^>]*>([\s\S]*?)<\/w:delText>/;
+const RPR_RE = /<w:rPr>[\s\S]*?<\/w:rPr>/;
+const DEL_OPEN = /<w:del\b/g;
+const DEL_CLOSE = /<\/w:del>/g;
+
+/** run 是否位于未闭合的 w:del 内（比较其前最近一次开/闭标记的位置）。 */
+function insideDel(pXml: string, runStart: number): boolean {
+  DEL_OPEN.lastIndex = 0;
+  DEL_CLOSE.lastIndex = 0;
+  let lastOpen = -1;
+  let lastClose = -1;
+  for (const m of pXml.matchAll(DEL_OPEN)) {
+    if (m.index! < runStart) lastOpen = m.index!;
+    else break;
+  }
+  for (const m of pXml.matchAll(DEL_CLOSE)) {
+    if (m.index! < runStart) lastClose = m.index!;
+    else break;
+  }
+  return lastOpen > lastClose;
+}
+
+export function escapeXml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+export function unescapeXml(s: string): string {
+  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+}
+
+export function mapParagraphs(documentXml: string): ParagraphMap[] {
+  const out: ParagraphMap[] = [];
+  let pIdx = 0;
+  for (const pm of documentXml.matchAll(P_RE)) {
+    const pStart = pm.index!;
+    const pXml = pm[0];
+    const segments: TextSegment[] = [];
+    let textLen = 0;
+    for (const rm of pXml.matchAll(R_RE)) {
+      const rStart = rm.index!;
+      const rXml = rm[0];
+      const rpr = RPR_RE.exec(rXml)?.[0] ?? null;
+      const inDel = insideDel(pXml, rm.index!);
+      const tMatch = T_RE.exec(rXml) ?? DELT_RE.exec(rXml);
+      if (!tMatch) continue;
+      const isDelText = DELT_RE.test(rXml) && !T_RE.test(rXml);
+      const tXmlStart = rStart + tMatch.index + tMatch[0].indexOf(">") + 1;
+      const raw = tMatch[1] ?? "";
+      const text = unescapeXml(raw);
+      const seg: TextSegment = {
+        start: textLen,
+        end: textLen + text.length,
+        xmlStart: pStart + tXmlStart,
+        xmlEnd: pStart + tXmlStart + raw.length,
+        runXmlStart: pStart + rStart,
+        runXmlEnd: pStart + rStart + rXml.length,
+        text,
+        rPr: rpr,
+        deleted: inDel || isDelText,
+      };
+      segments.push(seg);
+      if (!seg.deleted) textLen += text.length;
+      else {
+        // 删除文本不占可见文本位：回退段内偏移
+        seg.start = textLen;
+        seg.end = textLen;
+      }
+    }
+    const visible = segments.filter((s) => !s.deleted).map((s) => s.text).join("");
+    out.push({ index: pIdx++, xmlStart: pStart, xmlEnd: pStart + pXml.length, text: visible, segments });
+  }
+  return out;
+}
+
+/** 在段落文本中定位原文（支持第 N 次出现），返回段内 [start, end)。 */
+export function findInParagraph(para: ParagraphMap, originalText: string, occurrence = 0): { start: number; end: number } | null {
+  let idx = -1;
+  let from = 0;
+  for (let i = 0; i <= occurrence; i++) {
+    idx = para.text.indexOf(originalText, from);
+    if (idx < 0) return null;
+    from = idx + originalText.length;
+  }
+  return { start: idx, end: idx + originalText.length };
+}

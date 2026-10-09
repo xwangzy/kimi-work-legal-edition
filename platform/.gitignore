@@ -1,0 +1,23 @@
+node_modules/
+dist/
+out/
+*.log
+.env
+.env.*
+!.env.example
+third_party/kimi-code/
+.storage/
+coverage/
+apps/desktop/electron/kernel.bundle.cjs
+apps/desktop/electron/parse-worker.bundle.cjs
+apps/desktop/electron/agent-host.bundle.mjs
+apps/desktop/electron/firm-node.bundle.mjs
+apps/desktop/electron/migrations/
+apps/desktop/electron/lawdb/
+.data/
+*.tsbuildinfo
+# 法规库构建产物与开发内容签名密钥（首跑构建生成；生产密钥在硬件模块/云签名，不入仓）
+content/keys/
+content/lawdb/dist/
+# 本机 OCR 模型文件（npm run fetch:ocr-models 拉取；随安装包分发，不入 git）
+content/ocr-models/

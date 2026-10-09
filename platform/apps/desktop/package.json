@@ -1,0 +1,32 @@
+{
+  "name": "@zr-legal/desktop",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:web\" \"npm:build:kernel -- --watch\" \"wait-on http://127.0.0.1:5173 electron/kernel.bundle.cjs && electron .\"",
+    "dev:web": "concurrently -k \"vite\" \"npm:dev:bridge\"",
+    "dev:bridge": "node dev/bridge.ts",
+    "build:kernel": "node ../../scripts/build-kernel.mjs",
+    "build": "npm run build:kernel && vite build",
+    "start": "electron .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@zr-legal/design-tokens": "*",
+    "@zr-legal/kernel": "*",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "concurrently": "9.2.1",
+    "electron": "44.5.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.1",
+    "wait-on": "9.0.4"
+  }
+}

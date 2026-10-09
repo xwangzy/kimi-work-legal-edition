@@ -1,0 +1,34 @@
+{
+  "name": "kimi-work-legal-platform",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Kimi Work 法律行业发行版 — 本机法律内核与客户端（按方案 v5.0 第 4 篇实施：本地执行，云端推理）",
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:kernel": "node scripts/build-kernel.mjs",
+    "build:lawdb": "node content/lawdb/build-lawdb.mjs && node content/lawdb/build-increment-sample.mjs",
+    "build:agent-profile": "node content/agent-profile/build-profile.mjs",
+    "fetch:ocr-models": "node scripts/fetch-ocr-models.mjs",
+    "pretest": "npm run build:lawdb && npm run build:agent-profile",
+    "dev:desktop": "cd apps/desktop && npm run dev",
+    "dev:web": "cd apps/desktop && npm run dev:web",
+    "test": "node --test --test-concurrency=1 --test-reporter=spec \"packages/*/test/*.test.ts\"",
+    "pretest:a1": "npm run build:lawdb && npm run build:agent-profile",
+    "test:a1": "node --test --test-reporter=spec \"packages/kernel/test/a1-agent.test.ts\"",
+    "predemo:e2e": "npm run build:lawdb && npm run build:agent-profile",
+    "demo:e2e": "node scripts/demo-e2e.mjs",
+    "typecheck": "tsc -b tsconfig.check.json"
+  },
+  "devDependencies": {
+    "@types/node": "26.0.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

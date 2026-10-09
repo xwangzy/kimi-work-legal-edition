@@ -1,0 +1,60 @@
+/*
+ * 设计令牌（方案 v4.0 第 2 篇 §5.2，基线来自 Kimi Work 3.2 实测；签约设计资产到位后整体替换）。
+ * 品牌元素集中在本主题包。
+ */
+:root {
+  /* 背景与文字 */
+  --bg-sidebar: #fbfaf9;
+  --bg-main: #ffffff;
+  --text-primary: #0e1219;
+  --text-secondary: #888888;
+
+  /* 交互 */
+  --accent: #167ffb;
+  --btn-primary: #191919;
+  --btn-primary-text: #ffffff;
+
+  /* 几何 */
+  --radius-input: 16px;
+  --radius-card: 12px;
+  --sidebar-width: 260px;
+  --preview-width: 45%;
+
+  /* 风险分级：红 / 橙 / 黄（各配浅底） */
+  --risk-high: #d92d20;
+  --risk-high-bg: #fef3f2;
+  --risk-mid: #dc6803;
+  --risk-mid-bg: #fffaeb;
+  --risk-low: #b54708;
+  --risk-low-bg: #fffcf5;
+
+  /* 法规效力：现行有效 / 已修改 / 已废止（独立标签样式） */
+  --status-valid: #067647;
+  --status-valid-bg: #ecfdf3;
+  --status-amended: #175cd3;
+  --status-amended-bg: #eff4ff;
+  --status-repealed: #667085;
+  --status-repealed-bg: #f2f4f7;
+
+  /* 高亮层级：引用、风险、修订；同段最多两层 */
+  --hl-citation: #fef0c7;
+  --hl-risk: #fee4e2;
+  --hl-revision: #d1e0ff;
+
+  /* 引用四态 */
+  --cite-source-verified: #067647;
+  --cite-version-verified: #175cd3;
+  --cite-support-pending: #b54708;
+  --cite-lawyer-confirmed: #5925dc;
+  --cite-intercepted: #d92d20;
+
+  /* 排版：阅读区 16px/1.75；表格区 13px/1.6；字重只用 400/500/600 */
+  --font-reading-size: 16px;
+  --font-reading-leading: 1.75;
+  --font-table-size: 13px;
+  --font-table-leading: 1.6;
+  --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  /* 侧栏与主区用背景色阶区分，不只靠 1px 分割线 */
+  --separation-bg-step: #f4f3f2;
+}

@@ -1,0 +1,25 @@
+{
+  "benchmark": "ocr-20-pages-scanned-pdf",
+  "caveat": "macOS arm64 开发机实测，非 Windows i5 验收数据（探针 8 正式验收在 Windows 参考机）；合成文字图仅作量级参考",
+  "machine": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v26.8.1"
+  },
+  "pages": 20,
+  "total_ms": 6518,
+  "per_page_ms_avg": 326,
+  "peak_rss_mb": 1618,
+  "continuations": 1,
+  "ocr_mean_score": 0.901,
+  "pages_with_keyphrase": 20,
+  "targets": {
+    "per_page_ms": 2000,
+    "peak_rss_mb": 1024
+  },
+  "pass": {
+    "per_page": true,
+    "rss": false
+  },
+  "at": "2026-10-02T06:39:29.708Z"
+}
