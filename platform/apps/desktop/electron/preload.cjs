@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld("zrKernel", {
     ipcRenderer.on("kwl:event", listener);
     return () => ipcRenderer.removeListener("kwl:event", listener);
   },
+  /** 渲染会话被拦截的外部请求计数（设备页“唯一出口”的行为证据）。 */
+  rendererNet: () => ipcRenderer.invoke("kwl:renderer-net"),
   /** Electron 44：File.path 已移除，经 webUtils 取拖拽/选择文件的本机路径（挂载/导入用）。 */
   getPathForFile: (file) => {
     try {

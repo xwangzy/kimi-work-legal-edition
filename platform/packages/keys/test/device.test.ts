@@ -63,3 +63,25 @@ test("字段完整性：非法角色与缺失字段在验签侧如实报告", ()
   assert.equal(missing.ok, false);
   if (!missing.ok) assert.match(missing.reason, /deviceId/);
 });
+
+test("设备编号字符集（v9 阶段 6 复核 S6-A22）：只允许字母、数字、下划线与连字符——签发不出来，验签侧同样拒绝", () => {
+  const root = generateFirmRoot();
+  const dev = generateDeviceKeys();
+  const input = {
+    certId: "cert_x",
+    memberId: "mem_x",
+    role: "lawyer" as const,
+    signPublicKeyPem: dev.signPublicKeyPem,
+    encPublicKeyPem: dev.encPublicKeyPem,
+    issuedAt: "2026-10-01T00:00:00.000Z",
+    expiresAt: "2027-10-01T00:00:00.000Z",
+  };
+  for (const bad of ["dev/../x", "dev.a", "dev a", "设备一", "a".repeat(129)]) {
+    assert.throws(() => issueDeviceCertificate(root.privateKeyPem, { ...input, deviceId: bad }), /设备编号/, bad);
+  }
+  assert.doesNotThrow(() => issueDeviceCertificate(root.privateKeyPem, { ...input, deviceId: "dev_firm-1_user-2" }));
+  const { cert } = issueFixture();
+  const r = verifyDeviceCertificate({ ...cert, deviceId: "dev.macbook" }, root.publicKeyPem);
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.match(r.reason, /设备编号/);
+});

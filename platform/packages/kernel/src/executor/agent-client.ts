@@ -1,58 +1,40 @@
 /**
- * A1 Agent 任务客户端（阶段 1 过渡形态）：内核 → agent-runtime 服务的内部 HTTP。
- * 阶段 2 迁移为 apps/agent-host（内核经命名管道拉起每任务宿主进程 + ZP-5/6），接口语义不变。
+ * A1 Agent 任务客户端接口（内核 → Agent 宿主）。实现见 agent-host-manager.ts（SDK 形态宿主）与 kap-agent-client.ts（kap-host）。
+ * v4 agent-runtime 的 HTTP 客户端已删除（v9 阶段 4 出网面：内核不保留任何直连外部地址的路径）。
  */
-import { DomainError } from "@zr-legal/domain";
-import { mintTaskToken } from "../identity.ts";
+import type { AgentOutcome } from "@zr-legal/domain";
 
 export interface AgentClient {
-  start(id: { tid: string; uid: string; mid: string; rid: string; aid: string }, req: { goal: string; materials: { filename: string; text: string }[]; timeout_ms?: number }): Promise<string>;
+  /**
+   * id.fence：尝试纪元（attempts.fence_token）——任务令牌绑定尝试与纪元，端点逐次复核（v9 第 04 篇 §8；审查 R-06）；
+   * req.purpose：运行意图（审批与端点按工具清单的 purposes 校验；审查 R-09）。
+   */
+  start(
+    id: { tid: string; uid: string; mid: string; rid: string; aid: string; fence: number },
+    req: { goal: string; materials: { filename: string; text: string }[]; timeout_ms?: number; wall_ms?: number; purpose?: string; fx?: readonly string[]; continue_session_id?: string },
+  ): Promise<string>;
   poll(id: { tid: string; uid: string }, taskId: string, cursor: number): Promise<AgentTaskPoll>;
   cancel(id: { tid: string; uid: string }, taskId: string, reason: string): Promise<void>;
 }
 
-export interface AgentTaskPoll {
-  status: "starting" | "running" | "succeeded" | "failed" | "cancelled";
-  events: { seq: number; type: string; payload: Record<string, unknown>; at: string }[];
-  next_cursor: number;
-  output_text: string;
-  error: string | null;
+/** F5：结构化成果（宿主上报文件 + sha256，由管理器校验后按字节交付；不是事件文本拼接）。 */
+export interface AgentArtifact {
+  kind: string;
+  filename: string;
+  sha256: string;
+  bytes: Uint8Array;
 }
 
-export function createHttpAgentClient(baseUrl: string): AgentClient {
-  return {
-    async start(id, req) {
-      const token = mintTaskToken({ ...id, scope: ["agent:internal"] });
-      let res: Response;
-      try {
-        res = await fetch(`${baseUrl}/agent/tasks`, {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-          body: JSON.stringify({ matter_id: id.mid, goal: req.goal, materials: req.materials, timeout_ms: req.timeout_ms }),
-        });
-      } catch (e) {
-        throw new DomainError("provider_unavailable", `agent-runtime 连接失败: ${(e as Error).message}`, 503);
-      }
-      const data = (await res.json()) as any;
-      if (!res.ok) throw new DomainError("internal", `启动 Agent 任务失败: ${data.error ?? res.status}`, 502);
-      return data.task_id as string;
-    },
-    async poll(id, taskId, cursor) {
-      const token = mintTaskToken({ ...id, scope: ["agent:internal"] });
-      const res = await fetch(`${baseUrl}/agent/tasks/${taskId}/events?cursor=${cursor}`, {
-        headers: { authorization: `Bearer ${token}` },
-      });
-      const data = (await res.json()) as any;
-      if (!res.ok) throw new DomainError("internal", `轮询 Agent 任务失败: ${data.error ?? res.status}`, 502);
-      return data as AgentTaskPoll;
-    },
-    async cancel(id, taskId, reason) {
-      const token = mintTaskToken({ ...id, scope: ["agent:internal"] });
-      await fetch(`${baseUrl}/agent/tasks/${taskId}/cancel`, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ reason }),
-      }).catch(() => {});
-    },
-  };
+export interface AgentTaskPoll {
+  /** F1：终态枚举（succeeded / partial / failed / cancelled / timed_out / expired）或进行中。 */
+  status: "starting" | "running" | AgentOutcome;
+  events: { seq: number; type: string; payload: Record<string, unknown>; at: string }[];
+  next_cursor: number;
+  /** 界面预览（截断，不可作为成果）。 */
+  preview_text: string;
+  error: string | null;
+  /** 终态原因（不成功时必有）。 */
+  reason: string | null;
+  /** 校验通过的成果（只在 succeeded / partial 时非空）。 */
+  artifacts: AgentArtifact[];
 }

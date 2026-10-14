@@ -1,0 +1,14 @@
+{
+  "name": "@zr-legal/egress-gate",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "出站闸门（v9 第 02 篇 §8、§9.2④；第 04 篇 §1.2 第 3 条、§5.1）：律师电脑上的独立进程、唯一出口——/v1 /search /fetch；事项依据检查、令牌化（证件/账户/联系方式/自然人姓名，HMAC 确定性）、图像载荷识别、URL/SSRF 检查、数据去向记录",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zr-legal/tokenizer": "*",
+    "undici": "7.30.0"
+  }
+}

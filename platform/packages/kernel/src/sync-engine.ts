@@ -19,7 +19,7 @@ import { canonicalJson, unwrapMatterKey, type DeviceCertificate } from "@zr-lega
 import { checkSealed, openSegmentBody, parseSegment, scanSegments, sealSegment, writeSegment, writeShareBlob, type KeyRow, type SegmentFile, type SyncRow } from "@zr-legal/sync";
 import type { KernelDb } from "./db.ts";
 import type { BlobStore } from "./blobs.ts";
-import { assertIncomingEventAcceptable, appendAuditEvent, verifyCertSignature } from "./ledger-signer.ts";
+import { assertIncomingEventAcceptable, appendAuditEvent, deviceTombstoned, verifyCertSignature } from "./ledger-signer.ts";
 import type { KernelKeyContext } from "./devices.ts";
 
 export interface SyncDeps {
@@ -42,6 +42,8 @@ export interface SyncImportResult {
   conflicts: { matter_id: string; kind: string; detail: string }[];
   skippedNoKey: string[];
   skippedPersonal: string[];
+  /** 本机已删除的事项：其段不再导入（迁移 0021）。 */
+  skippedPurged: string[];
   rejectedRevoked: string[];
   /** 归属冲突（应当-3：非归属设备试图覆盖归属设备状态，已保留本机行）。 */
   originConflicts: string[];
@@ -159,6 +161,8 @@ export function syncExport(deps: SyncDeps, args: { shareDir: string; matterId?: 
   const deviceCertJson = JSON.stringify(keyctx.device.cert);
 
   for (const m of matters) {
+    // 已删除的事项（迁移 0021）：不再导出任何段（本机已无密钥与内容）
+    if (m.lifecycle === "purged") continue;
     // 只同步「团队」事项（红线：个人事项零字节出本机）
     if (m.collab_scope !== "team") {
       result.skippedPersonal.push(m.matter_id);
@@ -324,10 +328,11 @@ function applyRow(deps: SyncDeps, r: SyncRow, ctx: { conflicts: SyncImportResult
     db.run(`INSERT INTO ${table} (${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")})`, cols.map((c) => row[c]));
     return true;
   }
-  // devices：归属设备自证——只有设备自己的行由它自己更新（其余设备对它无可写权）
+  // devices：归属设备自证——只有设备自己的行由它自己更新（其余设备对它无可写权）；已吊销的设备行冻结，同步不能把它改回有效（复核 S6-C08）
   if (table === "devices") {
     if (r.src_device !== row.device_id) return false;
-    const existing = db.get(`SELECT device_id FROM devices WHERE device_id = ?`, [row.device_id]);
+    const existing = db.get<{ device_id: string; status: string }>(`SELECT device_id, status FROM devices WHERE device_id = ?`, [row.device_id]);
+    if (existing?.status === "revoked" || deviceTombstoned(db, String(row.device_id))) return false;
     if (!existing) {
       const cols = Object.keys(row);
       db.run(`INSERT INTO devices (${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")})`, cols.map((c) => row[c]));
@@ -363,13 +368,23 @@ function applyRow(deps: SyncDeps, r: SyncRow, ctx: { conflicts: SyncImportResult
       return false;
     }
     if (r.src_lamport <= origin.lamport) return false;
-    const cols = Object.keys(row).filter((c) => c !== pkCol);
+    // 本机权威的列不随归属设备的行覆盖（复核 C-A02）：事项的结案、保留期与法律保全是本机律师在本机做的决定，
+    // 被归属设备的旧状态静默改回会让保全失效、结案后又能写入（团队范围的生命周期指令随 G1 删除与撤权指令下发）；
+    // 材料隔离单向生效：对端已隔离则本机跟随，本机已隔离不被对端改回
+    const localOnly = LOCAL_AUTHORITATIVE[table] ?? [];
+    const keepLocalQuarantine = table === "document_versions" && (existing as Record<string, unknown>).quarantined_at != null;
+    const cols = Object.keys(row).filter((c) => c !== pkCol && !localOnly.includes(c) && !(keepLocalQuarantine && (c === "quarantined_at" || c === "quarantine_reason")));
     db.run(`UPDATE ${table} SET ${cols.map((c) => `${c} = ?`).join(", ")} WHERE ${pkCol} = ?`, [...cols.map((c) => row[c]), row[pkCol]]);
     stampOrigin(db, table, pk, r.src_device, r.src_lamport);
     return true;
   }
   return false;
 }
+
+/** 同步时保留本机值、不被入段行覆盖的列（复核 C-A02）。 */
+const LOCAL_AUTHORITATIVE: Readonly<Record<string, readonly string[]>> = {
+  matters: ["lifecycle", "closed_at", "retention_until", "legal_hold", "legal_hold_reason", "purged_at"],
+};
 
 function applyArtifact(deps: SyncDeps, r: SyncRow, ctx: { conflicts: SyncImportResult["conflicts"]; warnings: string[]; matterId: string; segDeviceId: string; bodyRows: SyncRow[]; bootstrap: boolean }): boolean {
   const { db } = deps;
@@ -411,7 +426,7 @@ function applyArtifact(deps: SyncDeps, r: SyncRow, ctx: { conflicts: SyncImportR
 
 export function syncImport(deps: SyncDeps, args: { shareDir: string }): SyncImportResult {
   const { db, keyctx, tenantId } = deps;
-  const result: SyncImportResult = { segmentsApplied: 0, segmentsSkipped: 0, rowsApplied: 0, conflicts: [], skippedNoKey: [], skippedPersonal: [], rejectedRevoked: [], originConflicts: [], warnings: { tmpFiles: [], conflictCopies: [] } };
+  const result: SyncImportResult = { segmentsApplied: 0, segmentsSkipped: 0, rowsApplied: 0, conflicts: [], skippedNoKey: [], skippedPersonal: [], skippedPurged: [], rejectedRevoked: [], originConflicts: [], warnings: { tmpFiles: [], conflictCopies: [] } };
   const rootPub = keyctx.firm.rootPublicKeyPem;
   const { candidates, warnings } = scanSegments(args.shareDir, tenantId);
   result.warnings = warnings;
@@ -434,7 +449,13 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string }): SyncImpo
       continue;
     }
     // 只同步「团队」事项（个人事项整段跳过）
-    const localMatter = db.get<{ collab_scope: string }>(`SELECT collab_scope FROM matters WHERE matter_id = ?`, [h.matter_id]);
+    const localMatter = db.get<{ collab_scope: string; lifecycle: string }>(`SELECT collab_scope, lifecycle FROM matters WHERE matter_id = ?`, [h.matter_id]);
+    // 本机已删除的事项（迁移 0021）：成员设备的段不再导入——否则会把密钥包裹与内容带回本机（删除复活）
+    if (localMatter?.lifecycle === "purged") {
+      result.skippedPurged.push(h.matter_id);
+      result.segmentsSkipped += 1;
+      continue;
+    }
     const matterRowInBody = localMatter?.collab_scope;
     if (matterRowInBody && matterRowInBody !== "team") {
       result.skippedPersonal.push(h.matter_id);
@@ -452,9 +473,9 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string }): SyncImpo
       result.segmentsSkipped += 1;
       continue;
     }
-    // 撤权回填拒收（§5.2 不依赖时钟）：本机已有该设备登记即可即判（不必能解 body）；
-    // 设备首见于本段的情形在应用 devices 行后再判一次
-    if (db.get(`SELECT 1 AS x FROM devices WHERE device_id = ?`, [h.device_id])) {
+    // 撤权回填拒收（§5.2 不依赖时钟）：本机已有该设备登记、或它在吊销墓碑里（复核 S6-B28：本机设备表里可能没有它——
+    // 不得先按段内它自己的设备行插入再判）即可即判（不必能解 body）；设备首见于本段的情形在应用 devices 行后再判一次
+    if (db.get(`SELECT 1 AS x FROM devices WHERE device_id = ?`, [h.device_id]) || deviceTombstoned(db, h.device_id)) {
       try {
         assertIncomingEventAcceptable(db, { signerDeviceId: h.device_id, keyEpoch: h.key_epoch });
       } catch {

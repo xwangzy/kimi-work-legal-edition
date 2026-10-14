@@ -1,0 +1,10 @@
+{
+  "name": "@zr-legal/host-policy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "宿主策略（v9 第 02 篇 §9、第 04 篇 §3.4 ZP-4）：工具清单（schema hash + 副作用类别）与逐次调用裁决",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

@@ -6,3 +6,9 @@ backups/
 
 # Node
 node_modules/
+
+# Python
+__pycache__/
+
+# 本机工具配置（含机器特定路径）
+.claude/

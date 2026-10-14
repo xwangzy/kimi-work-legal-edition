@@ -20,6 +20,10 @@ try {
   cpSync(`${root}content/lawdb/dist/lawdb.manifest.json`, `${root}apps/desktop/electron/lawdb/lawdb.manifest.json`, { recursive: true });
   cpSync(`${root}content/keys/content-signing-dev.pub.json`, `${root}apps/desktop/electron/lawdb/content-signing.pub.json`, { recursive: true });
   console.log("[build-kernel] lawdb 产物已随包复制（apps/desktop/electron/lawdb/）");
+  // 工具清单锁文件（审查 R-08）随包分发；内核按 <bundle>/tool-manifest/ 解析
+  cpSync(`${root}content/tool-manifest/dist`, `${root}apps/desktop/electron/tool-manifest`, { recursive: true });
+  // 方法模板包（签名，随包分发；内核按 <bundle>/skills/skills.manifest.json 解析）
+  cpSync(`${root}content/skills/dist`, `${root}apps/desktop/electron/skills`, { recursive: true });
 } catch {
   console.warn("[build-kernel] 警告：未找到 lawdb 产物，内核启动将报错——请先运行 npm run build:lawdb");
 }
@@ -76,6 +80,21 @@ const hostOptions = {
   logLevel: "info",
 };
 
+// 出站闸门制品（v9 第 04 篇 §1.1：独立进程、唯一出口；产品形态为独立签名二进制，G0 桌面以 ESM bundle 由内核 fork）
+// Electron 打包用法：内核以系统/随包 Node 运行（KWL_GATE_NODE）；主进程经 ZR_EGRESS_GATE_ENTRY 指向本制品
+const gateOptions = {
+  entryPoints: [`${root}packages/egress-gate/src/main.ts`],
+  outfile: process.env.KWL_GATE_BUNDLE_OUT ?? `${root}apps/desktop/electron/egress-gate.bundle.mjs`,
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node24",
+  sourcemap: false,
+  external: [...NATIVE_EXTERNALS],
+  banner: { js: "import { createRequire as __kwlCreateRequire } from 'node:module'; const require = __kwlCreateRequire(import.meta.url);" },
+  logLevel: "info",
+};
+
 // 所内节点制品：同一内核的 headless 形态（ESM；ZR_NODE_CONFIG 指定配置）
 const firmNodeOptions = {
   entryPoints: [`${root}apps/firm-node/src/index.ts`],
@@ -95,12 +114,14 @@ if (process.argv.includes("--watch")) {
   const hostCtx = await context(hostOptions);
   const workerCtx = await context(parseWorkerOptions);
   const nodeCtx = await context(firmNodeOptions);
-  await Promise.all([ctx.watch(), hostCtx.watch(), workerCtx.watch(), nodeCtx.watch()]);
+  const gateCtx = await context(gateOptions);
+  await Promise.all([ctx.watch(), hostCtx.watch(), workerCtx.watch(), nodeCtx.watch(), gateCtx.watch()]);
   console.log("[build-kernel] watching…");
 } else {
   await build(options);
   await build(parseWorkerOptions);
   await build(hostOptions);
   await build(firmNodeOptions);
-  console.log("[build-kernel] done → apps/desktop/electron/kernel.bundle.cjs + parse-worker.bundle.cjs + agent-host.bundle.mjs + firm-node.bundle.mjs");
+  await build(gateOptions);
+  console.log("[build-kernel] done → apps/desktop/electron/kernel.bundle.cjs + parse-worker.bundle.cjs + agent-host.bundle.mjs + firm-node.bundle.mjs + egress-gate.bundle.mjs");
 }

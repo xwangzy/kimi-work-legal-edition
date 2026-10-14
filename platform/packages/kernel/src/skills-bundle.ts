@@ -1,0 +1,124 @@
+/**
+ * 方法模板包（Kimi Code Skills）验签与物化（Kimi Code 集成核查 P0-5；历史 Demo 评估 §3.5；ZP-18）。
+ *
+ * - 包：content/skills/dist/{trusted/**, skills.manifest.json}（build-skills.mjs 生成，随安装包分发）。
+ * - 验签：manifest 的 content_sha256 = 规范化文件清单（"sha256  path" 按路径排序逐行）的 sha256，Ed25519 签名用内容签名公钥核验；
+ *   逐文件比对 sha256；清单外的文件、路径越界、任一不符 → 整包拒载（不降级加载部分技能）。
+ * - 物化：验签通过的文件复制到 <工作区>/kap-trusted/<content_sha256 前 16 位>/（新目录、只读权限），交给 Agent 宿主作为可信区：
+ *   trusted/AGENTS.md 作为可信指令，trusted/skills/ 作为技能目录。工作区与案卷目录里的技能、AGENTS.md 一律不加载（ZP-18 补丁）。
+ */
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
+import { sha256B64, verifyBytes } from "@zr-legal/keys";
+
+export interface SkillInfo {
+  id: string;
+  version: string;
+  tier: string;
+  lines: string[];
+  title: string;
+  description: string;
+  tools_required: string[];
+}
+
+export interface SkillsManifest {
+  kind: "kwl-skills";
+  schema: 1;
+  files: { path: string; sha256: string }[];
+  skills: SkillInfo[];
+  content_sha256: string;
+  signature: string;
+  signer_key_id: string;
+}
+
+export type SkillsBundleStatus =
+  | { ok: true; dir: string; contentSha256: string; skills: SkillInfo[] }
+  | { ok: false; reason: string };
+
+function listFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const e of readdirSync(dir).sort()) {
+    const p = join(dir, e);
+    const st = statSync(p);
+    if (st.isDirectory()) out.push(...listFiles(p));
+    else out.push(p);
+  }
+  return out;
+}
+
+/** 删除物化目录前恢复写权限（Windows 上只读属性会让删除失败）。 */
+function removeTree(dir: string): void {
+  if (!existsSync(dir)) return;
+  for (const f of listFiles(dir)) {
+    try {
+      chmodSync(f, 0o644);
+    } catch {
+      // 忽略
+    }
+  }
+  rmSync(dir, { recursive: true, force: true });
+}
+
+/** 验签并物化；任何问题都返回 ok:false 与原因（调用方据此在方法库与设备页如实显示“技能包校验失败”）。 */
+export function materializeSkillsBundle(manifestFile: string | null, signerPub: string, workspaceDir: string): SkillsBundleStatus {
+  if (!manifestFile || !existsSync(manifestFile)) return { ok: false, reason: "未找到方法模板包" };
+  let m: SkillsManifest;
+  try {
+    m = JSON.parse(readFileSync(manifestFile, "utf8")) as SkillsManifest;
+  } catch {
+    return { ok: false, reason: "方法模板包清单无法解析" };
+  }
+  if (m.kind !== "kwl-skills" || m.schema !== 1 || !Array.isArray(m.files) || typeof m.signature !== "string") return { ok: false, reason: "方法模板包清单格式不符" };
+  const canonical = [...m.files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)).map((f) => `${f.sha256}  ${f.path}`).join("\n");
+  const contentSha = sha256B64(new TextEncoder().encode(canonical));
+  if (contentSha !== m.content_sha256) return { ok: false, reason: "方法模板包内容摘要不符" };
+  if (!signerPub || !verifyBytes(signerPub, new TextEncoder().encode(contentSha), m.signature)) return { ok: false, reason: "方法模板包签名无效" };
+  const srcRoot = join(dirname(manifestFile), "trusted");
+  if (!existsSync(srcRoot)) return { ok: false, reason: "方法模板包缺少内容目录" };
+  const declared = new Map(m.files.map((f) => [f.path, f.sha256]));
+  for (const f of m.files) {
+    const n = normalize(f.path);
+    if (isAbsolute(n) || n.startsWith("..") || n.split(sep).includes("..")) return { ok: false, reason: `方法模板包路径越界：${f.path}` };
+  }
+  const present = listFiles(srcRoot).map((p) => relative(srcRoot, p).split(sep).join("/"));
+  for (const p of present) if (!declared.has(p)) return { ok: false, reason: `方法模板包含清单外的文件：${p}` };
+  for (const [p, h] of declared) {
+    const abs = join(srcRoot, ...p.split("/"));
+    if (!existsSync(abs)) return { ok: false, reason: `方法模板包缺少文件：${p}` };
+    if (sha256B64(new Uint8Array(readFileSync(abs))) !== h) return { ok: false, reason: `方法模板文件被改动：${p}` };
+  }
+  // 物化到按内容摘要命名的新目录：先写临时目录（复制后再核对一次摘要，防止复制期间被换），再改名；同摘要已存在则复用
+  const base = join(workspaceDir, "kap-trusted");
+  const dest = join(base, contentSha.replace(/[^A-Za-z0-9]/g, "").slice(0, 16));
+  if (!existsSync(dest)) {
+    const tmp = `${dest}.tmp-${process.pid}-${Date.now()}`;
+    try {
+      for (const [p, h] of declared) {
+        const to = join(tmp, ...p.split("/"));
+        mkdirSync(dirname(to), { recursive: true });
+        copyFileSync(join(srcRoot, ...p.split("/")), to);
+        if (sha256B64(new Uint8Array(readFileSync(to))) !== h) throw new Error(`复制后摘要不符：${p}`);
+        chmodSync(to, 0o444);
+      }
+      renameSync(tmp, dest);
+    } catch (e) {
+      removeTree(tmp);
+      return { ok: false, reason: `方法模板包物化失败：${(e as Error).message}` };
+    }
+  } else {
+    // 复用前再核对一遍（目录在律师电脑上，可能被改动）
+    for (const [p, h] of declared) {
+      const abs = join(dest, ...p.split("/"));
+      if (!existsSync(abs) || sha256B64(new Uint8Array(readFileSync(abs))) !== h) {
+        removeTree(dest);
+        return materializeSkillsBundle(manifestFile, signerPub, workspaceDir);
+      }
+    }
+    const extra = listFiles(dest).map((p) => relative(dest, p).split(sep).join("/")).filter((p) => !declared.has(p));
+    if (extra.length) {
+      removeTree(dest);
+      return materializeSkillsBundle(manifestFile, signerPub, workspaceDir);
+    }
+  }
+  return { ok: true, dir: dest, contentSha256: contentSha, skills: Array.isArray(m.skills) ? m.skills : [] };
+}

@@ -204,6 +204,28 @@ test("应当-3 merge 反例：非归属设备的大 lamport 行不得覆盖归�
   void im1;
 });
 
+test("复核 C-A02：本机的结案与法律保全不被归属设备的旧状态同步改回", { timeout: 180_000 }, async () => {
+  const { matter } = await kA.inv("matters.create", { title: "保全不被改回", stance: "原告", consent_status: "not_required", collab_scope: "team" });
+  await kA.inv("matters.members.add", { matter_id: matter.matter_id, user_id: "usr_sync-firm_bob" });
+  await kA.inv("sync.export", { share_dir: shareDir });
+  await kB.inv("sync.import", { share_dir: shareDir });
+  assert.ok(kB.kernel.db.get(`SELECT 1 AS x FROM matters WHERE matter_id = ?`, [matter.matter_id]));
+  // B 上设法律保全并结案（本机决定）
+  kB.kernel.db.run(`UPDATE matters SET legal_hold = 1, legal_hold_reason = '诉讼保全', lifecycle = 'closed', closed_at = ?, retention_until = ? WHERE matter_id = ?`, [
+    new Date().toISOString(),
+    new Date(Date.now() + 365 * 86400_000).toISOString(),
+    matter.matter_id,
+  ]);
+  // 归属设备 A 改了事项名称并导出（行里是 A 的旧生命周期状态）
+  await kA.inv("matters.update", { matter_id: matter.matter_id, patch: { title: "保全不被改回（改名）" } });
+  await kA.inv("sync.export", { share_dir: shareDir });
+  await kB.inv("sync.import", { share_dir: shareDir });
+  const b = kB.kernel.db.get<any>(`SELECT title, lifecycle, legal_hold FROM matters WHERE matter_id = ?`, [matter.matter_id]);
+  assert.equal(b.title, "保全不被改回（改名）", "其余字段照常同步");
+  assert.equal(b.legal_hold, 1, "法律保全不被改回");
+  assert.equal(b.lifecycle, "closed", "结案不被改回");
+});
+
 test("应当-6：同步冲突的审计事件已上链（signed_events 见证）", { timeout: 180_000 }, async () => {
   const row = kA.kernel.db.get<any>(`SELECT audit_event_id FROM audit_events WHERE action = 'conflict.detected' ORDER BY audit_event_id DESC LIMIT 1`);
   assert.ok(row, "前置：存在 conflict.detected 审计");
@@ -337,3 +359,27 @@ test("撤权回填拒收：A 吊销 B 的设备 → B 新段（旧纪元）→ A
   assert.ok(imA2.rejectedRevoked.length >= 1, `撤权设备旧纪元段应被拒收：${JSON.stringify(imA2)}`);
 });
 
+
+// v9 阶段 6 复核 S6-B28：本机设备表里没有、只在吊销墓碑里的设备（例如尚未登记即被控制面预先吊销的新电脑）——
+// 其段一律拒收，也不按段内它自己的设备行插入（否则先以 active 插入，撤权检查只看设备表就会放行）
+test("吊销墓碑：只在墓碑里、本机设备表没有的设备，其段一律拒收且不插入它的设备行", { timeout: 120_000 }, async () => {
+  const tid = kA.kernel.identity.tenantId;
+  // B 登记 A 的设备（与 before 里 A 登记 B 的设备对称）：B 加 A 为成员时为 A 的设备包裹事项密钥，A 能解段体——
+  // 没有墓碑预检时，这一段会先按段内 B 自己的设备行插入、随后通过撤权检查（复核 S6-C06：用例单独运行也成立）
+  const aDev = kA.kernel.db.get<any>(`SELECT * FROM devices WHERE device_id = 'dev_sync-firm_test-lawyer'`);
+  kB.kernel.db.run(`INSERT OR IGNORE INTO users (user_id, tenant_id, display_name) VALUES (?, ?, 'A')`, [aDev.member_id, tid]);
+  kB.kernel.db.run(
+    `INSERT OR IGNORE INTO devices (device_id, tenant_id, member_id, role, sign_pub_pem, enc_pub_pem, cert_json, status, key_epoch_at_issue) VALUES (?,?,?,?,?,?,?, 'active', 1)`,
+    [aDev.device_id, aDev.tenant_id, aDev.member_id, aDev.role, aDev.sign_pub_pem, aDev.enc_pub_pem, aDev.cert_json],
+  );
+  kA.kernel.db.run(`DELETE FROM devices WHERE device_id = 'dev_sync-firm_bob'`);
+  kA.kernel.db.run(`INSERT OR IGNORE INTO cp_revoked_devices (tenant_id, device_id, revoked_at, source) VALUES (?, 'dev_sync-firm_bob', ?, 'control_plane_directory')`, [tid, new Date().toISOString()]);
+  const { matter } = await kB.inv("matters.create", { title: "墓碑后事项", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
+  const add = await kB.inv("matters.members.add", { matter_id: matter.matter_id, user_id: kA.kernel.identity.userId });
+  assert.ok(add.devices_wrapped >= 1, `B 为 A 的设备包裹了事项密钥：${JSON.stringify(add)}`);
+  await kB.inv("sync.export", { share_dir: shareDir });
+  const im = await kA.inv("sync.import", { share_dir: shareDir });
+  assert.ok(im.rejectedRevoked.length >= 1, `墓碑里的设备的段应被拒收：${JSON.stringify(im)}`);
+  assert.equal(kA.kernel.db.get(`SELECT 1 AS x FROM devices WHERE device_id = 'dev_sync-firm_bob'`), undefined, "不按段内它自己的设备行插入");
+  assert.equal(kA.kernel.db.get(`SELECT 1 AS x FROM matters WHERE matter_id = ?`, [matter.matter_id]), undefined, "段内内容未被接受");
+});

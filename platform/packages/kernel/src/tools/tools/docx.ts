@@ -21,7 +21,7 @@ import type { BlobStore } from "../../blobs.ts";
 function loadDocument(db: KernelDb, blobs: BlobStore, claimsMatterId: string | undefined, documentVersionId: string): { buf: Buffer; filename: string; sha256: string; matter_id: string } {
   if (!claimsMatterId) throw new DomainError("forbidden", "令牌未绑定事项", 403);
   const row = db.get<{ document_version_id: string; matter_id: string; filename: string; sha256: string; storage_uri: string }>(
-    `SELECT document_version_id, matter_id, filename, sha256, storage_uri FROM document_versions WHERE document_version_id = ?`,
+    `SELECT document_version_id, matter_id, filename, sha256, storage_uri FROM document_versions WHERE document_version_id = ? AND quarantined_at IS NULL`,
     [documentVersionId],
   );
   if (!row || row.matter_id !== claimsMatterId) throw notFound("文档");
@@ -82,12 +82,58 @@ function extractText(db: KernelDb, blobs: BlobStore, mid: string | undefined, do
   return { text: doc.buf.toString("utf8"), isDocx: false, doc };
 }
 
+/**
+ * CSV 公式中和（复核 S5-B19）：以 = + - @ 制表或回车开头的单元格前加单引号——Excel 打开时按文本处理，不计算公式
+ * （公式可能在打开时发出外部请求）；纯数字（如 -5、+3.2）不受影响。按 CSV 规则识别带引号的字段。
+ */
+export function neutralizeCsvFormulas(csv: string): string {
+  const risky = (s: string) => /^[=+\-@\t\r]/.test(s) && !/^[+-]?\d+(?:\.\d+)?$/.test(s.trim());
+  let out = "";
+  let i = 0;
+  const n = csv.length;
+  while (i < n) {
+    if (csv[i] === '"') {
+      let j = i + 1;
+      while (j < n) {
+        if (csv[j] === '"') {
+          if (csv[j + 1] === '"') {
+            j += 2;
+            continue;
+          }
+          break;
+        }
+        j++;
+      }
+      const raw = csv.slice(i + 1, j);
+      out += `"${risky(raw.replace(/""/g, '"')) ? "'" : ""}${raw}"`;
+      i = Math.min(j + 1, n);
+      // 引号之后到分隔符之前的字符（不规范写法）原样保留
+      while (i < n && csv[i] !== "," && csv[i] !== "\n" && csv[i] !== "\r") out += csv[i++];
+    } else {
+      let j = i;
+      while (j < n && csv[j] !== "," && csv[j] !== "\n" && csv[j] !== "\r") j++;
+      const field = csv.slice(i, j);
+      out += `${risky(field) ? "'" : ""}${field}`;
+      i = j;
+    }
+    if (i < n) out += csv[i++];
+  }
+  return out;
+}
+
 export function redactApply(db: KernelDb, blobs: BlobStore, mid: string | undefined, params: { document_version_id: string }) {
+  // v0 只处理 DOCX 与纯文本：其他格式（PDF、扫描件、旧版 Word/RTF 等）不按文本误读、也不原样输出原件（复核 S5-B04 遗留）
+  const name = loadDocument(db, blobs, mid, params.document_version_id).filename.toLowerCase();
+  if (!/\.(docx|txt|md|markdown|csv)$/.test(name)) {
+    throw new DomainError("validation", "S6 脱敏（v0）只处理 DOCX 与纯文本（.txt/.md/.csv）；其他格式请先转换为 DOCX 或文本——不会原样输出原件", 422);
+  }
   const { text, isDocx, doc } = extractText(db, blobs, mid, params.document_version_id);
+  const isCsv = name.endsWith(".csv");
   const scan = scanDirectIdentifiers(text);
   if (scan.findings.length === 0) {
+    // 零命中同样产出“写出的”脱敏件（复核 S5-B04）：DOCX 经文书引擎重写——净化文档属性并去除打开时会外取的引用；CSV 中和公式；不把原件字节原样当成果
     return {
-      ...blobs.put(doc.buf, doc.matter_id),
+      ...blobs.put(isDocx ? scrubDocProps(doc.buf) : isCsv ? Buffer.from(neutralizeCsvFormulas(text), "utf8") : doc.buf, doc.matter_id),
       report: { counts: {}, findings: 0, notFound: [], coverage_notes: scan.coverage_notes, note: "未发现需遮盖的直接标识符" },
       source_document_version_id: params.document_version_id,
     };
@@ -110,7 +156,7 @@ export function redactApply(db: KernelDb, blobs: BlobStore, mid: string | undefi
     for (const [find, replace] of [...maskMap.entries()].sort((a, b) => b[0].length - a[0].length)) {
       t = t.split(find).join(replace);
     }
-    outBuf = Buffer.from(t, "utf8");
+    outBuf = Buffer.from(isCsv ? neutralizeCsvFormulas(t) : t, "utf8");
   }
   const stored = blobs.put(outBuf, doc.matter_id);
   return {

@@ -1,5 +1,6 @@
 export * from "./revision-ops.ts";
 export * from "./zip.ts";
+export * from "./external-refs.ts";
 export * from "./textmap.ts";
 export * from "./revise.ts";
 export * from "./compare.ts";
@@ -8,3 +9,4 @@ export * from "./create.ts";
 export * from "./mask.ts";
 export * from "./xlsx.ts";
 export * from "./props.ts";
+export * from "./render-html.ts";

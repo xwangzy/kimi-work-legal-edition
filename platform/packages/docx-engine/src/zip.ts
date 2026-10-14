@@ -4,6 +4,7 @@
  */
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { DomainError } from "@zr-legal/domain";
+import { stripExternalRefs } from "./external-refs.ts";
 
 const EOCD_SIG = 0x06054b50;
 const CENTRAL_SIG = 0x02014b50;
@@ -100,8 +101,21 @@ const CRC_TABLE = (() => {
   return t;
 })();
 
-/** 生成 ZIP（每个条目 deflate；按给定顺序）。 */
+/**
+ * 生成 ZIP（每个条目 deflate；按给定顺序）。OOXML 包（含 [Content_Types].xml）写出前一律去除打开时会外取的引用
+ * （v9 第 04 篇 §1.2 第 3 条：Office 打开产物零外部请求；见 external-refs.ts）——本产品写出的 DOCX/XLSX 都经过这里。
+ */
 export function writeZip(entries: ZipEntryOut[]): Buffer {
+  // OPC 部件名不区分大小写（复核 S5-B13）
+  if (!entries.some((e) => e.name.toLowerCase() === "[content_types].xml")) return writeRawZip(entries);
+  const files = new Map(entries.map((e) => [e.name, e.data] as const));
+  stripExternalRefs(files);
+  // 保持原顺序；被去除的部件不再写出
+  return writeRawZip(entries.filter((e) => files.has(e.name)).map((e) => ({ name: e.name, data: files.get(e.name)! })));
+}
+
+/** 原样写出（不做 OOXML 外取引用去除）：只供 writeZip 内部与测试构造对照样本（静态检查：产品源码不得直接调用）。 */
+export function writeRawZip(entries: ZipEntryOut[]): Buffer {
   const chunks: Buffer[] = [];
   const central: Buffer[] = [];
   let offset = 0;

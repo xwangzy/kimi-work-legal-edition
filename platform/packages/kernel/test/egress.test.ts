@@ -1,12 +1,13 @@
 /**
- * 出站闸门专项（方案 v5.0 第 4 篇 §8.3 与 §1.1 约束 2；探针 4 的 v0 版）：
- * - 「待取得」只用本机能力；「已拒绝」只能私有模型；「不使用模型」拦截；
- * - 未配置端点显式报不可用（不静默降级）；白名单按主机分列；
- * - 化名校验：未替换直接标识符零外发（block 策略拦截并记录）；mock 链路如实记 mock_local。
+ * 事项出站策略（方案 v5.0 第 4 篇 §8.3；v9 第 02 篇 §8.1–§8.2）：
+ * - 「待取得」只用本机能力；「已拒绝」只能私有模型；「不使用模型」拦截；当事人限制（L3b）只允许私有端点；策略变更即时生效；
+ * - mock 链路如实记 mock_local（含令牌化统计）；急停撤销即刻生效。
+ * 真实链路（经出站闸门进程：令牌化、端点、去向记录、用量）的用例在 gate.test.ts。
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { makeKernel, runScenario, importText, DEMO_CONTRACT, type TestKernel } from "./helpers.ts";
+import { liveTaskIdentity } from "./helpers.ts";
 
 let tk: TestKernel;
 
@@ -54,42 +55,11 @@ test("闸门：「不使用模型」事项 → 模型步骤拦截；S1b/S6/S2 �
   assert.equal(s6.run.status, "succeeded");
 });
 
-test("闸门：保密等级 strict（v0 视为拒绝云端）→ 标准端点拦截", { timeout: 90_000 }, async () => {
+test("闸门：当事人限制（L3b，保密等级 strict）→ 标准端点拦截", { timeout: 90_000 }, async () => {
   const { matter, doc } = await matterWith({ confidentiality: "strict", consent_status: "agreed", model_endpoint: "standard" });
   const { run, events } = await runScenario(tk.inv, matter.matter_id, "s1.contract_review", { document_version_ids: [doc.document_version_id] });
   assert.equal(run.status, "failed");
-  assert.match(events.find((e: any) => e.type === "run.failed").payload.error, /strict|拒绝云端/);
-});
-
-test("闸门 + 化名：block 策略下未替换直接标识符被拦截并写入去向记录（真实 findings）", { timeout: 90_000 }, async () => {
-  // 独立内核：强制 upstream 提供方（BYOK 端点默认 api.moonshot.cn 在白名单内；拦截先于发送，假密钥不会真正发出）。
-  // 绕过点选择：材料片段经全流程化名已替换——本测试把标识符放进「立场」（进入系统提示、不经全流程化名），验证闸门兜底。
-  const tk2 = await makeKernel({ ZR_MODEL_PROVIDER: "upstream", ZR_BYOK_API_KEY: "fake-key-for-block-test" }, "egress-byok-firm");
-  try {
-    const { matter } = await tk2.inv("matters.create", {
-      title: "化名拦截",
-      stance: "受让方（联系 13800138000）",
-      model_endpoint: "byok",
-      consent_status: "not_required",
-      key_dates: { analysis_as_of: "2026-10-01" },
-    });
-    const doc = await importText(tk2.inv, matter.matter_id, "协议.txt", DEMO_CONTRACT);
-    const { run, events } = await runScenario(tk2.inv, matter.matter_id, "s1.contract_review", {
-      document_version_ids: [doc.document_version_id],
-      topic_hint: "保密义务",
-    });
-    assert.equal(run.status, "failed", "未化名内容不得外发");
-    const failed = events.find((e: any) => e.type === "run.failed");
-    assert.match(failed.payload.error, /化名校验拦截|直接标识符/, failed.payload.error);
-    const eg = await tk2.inv("egress.records", { run_id: run.run_id });
-    assert.equal(eg.records.length, 1, "拦截也写入去向记录");
-    assert.equal(eg.records[0].destination_kind, "byok_model");
-    assert.equal(eg.records[0].outcome, "blocked");
-    assert.equal(eg.records[0].pseudonym_findings, 1, "记录真实 findings（不写 0）");
-    assert.match(eg.records[0].note, /已拦截/);
-  } finally {
-    await tk2.kernel.close();
-  }
+  assert.match(events.find((e: any) => e.type === "run.failed").payload.error, /当事人限制（L3b）.*私有模型端点/);
 });
 
 test("闸门：策略变更即时生效——「待取得」改为「无需」后模型步骤放行（mock 链路）", { timeout: 150_000 }, async () => {
@@ -99,48 +69,6 @@ test("闸门：策略变更即时生效——「待取得」改为「无需」�
   await tk.inv("matters.update", { matter_id: matter.matter_id, patch: { consent_status: "not_required" } });
   const second = await runScenario(tk.inv, matter.matter_id, "s1.contract_review", { document_version_ids: [doc.document_version_id] });
   assert.equal(second.run.status, "succeeded");
-});
-
-test("闸门 replace 策略：补替换真实生效——上游收到遮盖值而非明文（独立复核阻断-1 回归）", { timeout: 90_000 }, async () => {
-  // 回环假上游捕获请求体
-  const { createServer } = await import("node:http");
-  let captured = "";
-  const fake = createServer((req, res) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c) => chunks.push(c));
-    req.on("end", () => {
-      captured = Buffer.concat(chunks).toString("utf8");
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({
-        id: "fake_up_1",
-        object: "chat.completion",
-        created: 0,
-        model: "kimi-k3",
-        choices: [{ index: 0, message: { role: "assistant", content: "（假上游回包）" }, finish_reason: "stop" }],
-        usage: { prompt_tokens: 10, completion_tokens: 5 },
-      }));
-    });
-  });
-  await new Promise<void>((r) => fake.listen(0, "127.0.0.1", () => r()));
-  const port = (fake.address() as any).port;
-  const tk3 = await makeKernel(
-    { ZR_MODEL_PROVIDER: "upstream", ZR_BYOK_BASE: `http://127.0.0.1:${port}`, ZR_BYOK_API_KEY: "fake-key", ZR_PSEUDONYM_POLICY: "replace" },
-    "egress-replace-firm",
-  );
-  try {
-    const { matter } = await tk3.inv("matters.create", { title: "replace 策略", stance: "受让方", model_endpoint: "byok", consent_status: "not_required", key_dates: { analysis_as_of: "2026-10-01" } });
-    const doc = await importText(tk3.inv, matter.matter_id, "协议.txt", DEMO_CONTRACT);
-    const { run } = await runScenario(tk3.inv, matter.matter_id, "s1.contract_review", { document_version_ids: [doc.document_version_id], topic_hint: "保密义务" });
-    assert.equal(run.status, "succeeded");
-    assert.ok(captured.length > 0, "假上游应收到请求");
-    assert.ok(!captured.includes("13800138000"), "上游不得收到明文手机号");
-    assert.ok(captured.includes("138****8000"), "上游应收到遮盖值");
-    const eg = await tk3.inv("egress.records", { run_id: run.run_id });
-    assert.equal(eg.records[0].outcome, "sent");
-  } finally {
-    await tk3.kernel.close();
-    fake.close();
-  }
 });
 
 test("急停撤销：取消任务后，绑定该任务的任务令牌即刻被端点拒绝（§15.2/§6.1）", { timeout: 60_000 }, async () => {
@@ -165,8 +93,9 @@ test("急停撤销：取消任务后，绑定该任务的任务令牌即刻被�
   assert.equal(chat.status, 401, "已取消任务的令牌应被模型端点拒绝");
   const mcp = await fetch(`http://127.0.0.1:${kernel.localPort}/mcp`, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
   assert.equal(mcp.status, 401, "已取消任务的令牌应被工具端点拒绝");
-  // 未取消的任务令牌不受影响（鉴权通过，业务报错而非 401）
-  const okToken = mintTaskToken({ tid: matter.tenant_id, uid: matter.created_by, mid: matter.matter_id, rid: "run_other", scope: ["tool:legal"] }, 600);
+  // 未取消、尝试仍在执行的任务令牌不受影响（鉴权通过）；凭空编造的 rid/aid 一律 401（attempt_unknown）
+  const live = liveTaskIdentity(tk, matter.matter_id, "egress_ok");
+  const okToken = mintTaskToken({ tid: live.tid, uid: live.uid, mid: live.mid, rid: live.rid, aid: live.aid, fen: live.fence, scope: ["tool:legal"] }, 600);
   const mcp2 = await fetch(`http://127.0.0.1:${kernel.localPort}/mcp`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${okToken}` },
@@ -175,7 +104,7 @@ test("急停撤销：取消任务后，绑定该任务的任务令牌即刻被�
   assert.equal(mcp2.status, 200);
 });
 
-test("mock 链路去向记录：如实携带全流程化名统计（不谎报「无未替换标识符」）", { timeout: 90_000 }, async () => {
+test("mock 链路去向记录：如实携带令牌化统计（不谎报「无未替换标识符」）", { timeout: 90_000 }, async () => {
   const { inv } = tk;
   const { matter } = await inv("matters.create", { title: "mock 如实", stance: "受让方", consent_status: "not_required", key_dates: { analysis_as_of: "2026-10-01" } });
   const doc = await importText(inv, matter.matter_id, "协议.txt", DEMO_CONTRACT);
@@ -184,6 +113,6 @@ test("mock 链路去向记录：如实携带全流程化名统计（不谎报「
   const eg = await inv("egress.records", { run_id: run.run_id });
   assert.equal(eg.records.length, 1);
   assert.equal(eg.records[0].destination_kind, "mock_local");
-  assert.match(eg.records[0].note, /全流程化名：发送前已按规则替换 1 处直接标识符/, eg.records[0].note);
+  assert.match(eg.records[0].note, /令牌化：发送前已替换 \d+ 处（[^）]*phone×1/, eg.records[0].note);
   assert.equal(eg.records[0].outcome, "mock");
 });

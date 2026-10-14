@@ -14,6 +14,10 @@ apps/desktop/electron/agent-host.bundle.mjs
 apps/desktop/electron/firm-node.bundle.mjs
 apps/desktop/electron/migrations/
 apps/desktop/electron/lawdb/
+apps/desktop/electron/tool-manifest/
+apps/desktop/electron/egress-gate.bundle.mjs
+# 开发桥令牌（每台开发机随机生成；只在开发形态使用）
+apps/desktop/dev/.bridge-token
 .data/
 *.tsbuildinfo
 # 法规库构建产物与开发内容签名密钥（首跑构建生成；生产密钥在硬件模块/云签名，不入仓）
@@ -21,3 +25,10 @@ content/keys/
 content/lawdb/dist/
 # 本机 OCR 模型文件（npm run fetch:ocr-models 拉取；随安装包分发，不入 git）
 content/ocr-models/
+
+# P12 红队报告（本机生成）
+.redteam-reports/
+content/skills/dist/
+apps/desktop/electron/skills/
+apps/desktop/runtime/
+.cache/

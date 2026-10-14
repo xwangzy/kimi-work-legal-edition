@@ -1,0 +1,14 @@
+{
+  "name": "@zr-legal/legal-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "法律模型网关 v0（中软云端，v9 第 04 篇 §5.2）：席位令牌离线验签、匿名事项二次检查、模型路由、按租户预占/结算与排队、正文与错误体不落盘、响应原样透传；上游月之暗面企业账户（MaaS 只做结算）",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zr-legal/firm-trust": "*",
+    "@zr-legal/seat-token": "*"
+  }
+}

@@ -1,13 +1,14 @@
 /**
- * IM 运行时（firm-node 侧，方案 §11.2/§9/§6.3）：连接器选主、收文件入事项的对话流、
- * IM 确认（节点见证签名）、数据去向记录、离线行为如实计数。
+ * IM 运行时（firm-node 侧，方案 §11.2/§9/§6.3）：连接器选主、收文件入事项的对话流、数据去向记录、离线行为如实计数。
+ * v9（第 02 篇 R5、§9.6、§13 第 6 条；第 06 篇 T18）：IM 不能确认签发、不能对外发送——v5 的 IM 确认签发（节点见证 im_witnessed）已关闭，
+ * 遗留的签发审批意向一律拒绝，不经 IM 发送待交付文件（阶段 7 复核 S7-A08）。
  *
  * 红线落实：
  * - 唯一消费者：启动前取 im_connector_lease 租约（企业微信单连接语义；飞书/钉钉双活属 G1 声明）；
  * - 卡片动作校验 actorImId 绑定与事项权限——未绑定用户点卡片一律拒绝（群转发不扩权）；
- *   审批动作（确认/退回）只允许该审批意向的目标签发人本人，校验先于应答（非本人不得得到「已收到」）；
+ *   “确认签发”一律拒绝（v9）；退回只允许该审批意向的目标签发人本人；
  * - 卡片只列已授权节点的事项（strict/伦理墙不入列）；文案脱敏：不含客户名称与案情（事项标题也不上卡）；
- * - 高敏事项 IM 零文件；IM 确认只用于 internal/client 受众与已授权事项；
+ * - 高敏事项 IM 零文件；
  * - 收发全部写数据去向记录（文件名、hash、对象哈希化、平台）。
  *
  * 卡片文案纪律（三类卡片统一）：卡片内容永不含事项标题与客户名；文件名由发送人提供、
@@ -18,10 +19,8 @@
  * 生产为意向表持久化 + 临时密文块，G1）；真实平台凭据与联调属部署工作。
  */
 import { randomUUID } from "node:crypto";
-import { createHash } from "node:crypto";
-import { b64urlDecode, canonicalJson, sha256B64, signBytes } from "@zr-legal/keys";
+import { sha256B64 } from "@zr-legal/keys";
 import { recordImEgress, type LedgerSigner } from "@zr-legal/kernel/ledger-signer";
-import { getDeviceKeys, keysDirOf } from "@zr-legal/kernel";
 import { DingtalkStreamConnector, type ImCard, type ImConnector, type ImFileMessage, type ImPlatform } from "@zr-legal/im-connectors";
 import type { Kernel } from "@zr-legal/kernel";
 
@@ -205,26 +204,9 @@ export async function startImRuntime(kernel: Kernel, cfg: ImRuntimeConfig, deps:
       }
       return;
     }
-    if (verb === "confirm" && intent) {
-      const payload = JSON.parse(intent.payload || "{}") as { issuer_member_id?: string };
-      // 先做签发人校验再应答：非签发人点确认不得得到「已收到」（与 confirm 落库内复核同口径）
-      if (actorMember !== payload.issuer_member_id) {
-        await action.respond("仅签发人本人可操作");
-        return;
-      }
-      await action.respond("已收到"); // 先同步应答（2 秒硬限语义），结果异步落库后更新卡片
-      void handleApprovalConfirm(intent, action.actorImId, actorMember).catch(async (e) => {
-        // 异步落库失败必须可观测：意向如实标记 + 审计事件上链 + 卡片如实更新
-        const msg = ((e as Error)?.message ?? String(e)).slice(0, 500);
-        db.run(`UPDATE im_intents SET status = 'rejected', result = ?, updated_at = ? WHERE intent_id = ?`, [`IM 确认落库失败：${msg}`, new Date().toISOString(), intent.intent_id]);
-        signer.append({ kind: "audit_event", refId: intent.intent_id, matterId: null, type: "im.confirm_failed", payloadHash: sha256B64(msg) });
-        const cardId = (JSON.parse(intent.payload || "{}") as { intent_im_card_id?: string }).intent_im_card_id;
-        if (cardId) {
-          await connector
-            .updateCard({ cardId }, { title: "签发确认未完成", fields: [{ label: "结果", value: "确认落库失败，请在桌面客户端复核后重试" }], note: "本通知按脱敏口径发送，不含客户名称与案情。" })
-            .catch(() => {});
-        }
-      });
+    if (verb === "confirm") {
+      // v9（第 02 篇 §9.6、§13 第 6 条）：IM 不能确认签发——不论谁点、不论意向是否存在，一律不改任何状态（阶段 7 复核 S7-A08）
+      await action.respond("IM 不能确认签发：请在电脑上由本人以设备签名签发");
       return;
     }
     if (verb === "reject" && intent) {
@@ -241,97 +223,14 @@ export async function startImRuntime(kernel: Kernel, cfg: ImRuntimeConfig, deps:
     await action.respond("未知操作");
   }
 
-  async function handleApprovalConfirm(intent: IntentRow, actorImId: string, actorMember: string): Promise<void> {
-    const payload = JSON.parse(intent.payload || "{}") as { artifact_version_id: string; audience: string; issuer_member_id: string; artifact_sha256: string; intent_im_card_id?: string };
-    if (actorMember !== payload.issuer_member_id) return; // 纵深复核（onCardAction 已在应答前校验；非本人根本到不了这里）
-    const art = db.get<any>(`SELECT * FROM artifact_versions WHERE artifact_version_id = ?`, [payload.artifact_version_id]);
-    if (!art) {
-      db.run(`UPDATE im_intents SET status = 'rejected', result = '成果版本不存在，IM 确认无效', updated_at = ? WHERE intent_id = ?`, [new Date().toISOString(), intent.intent_id]);
-      return;
-    }
-    // 复核资产 hash（确认的是哪个文件 hash，防调包；artifact_sha256 为 hex 口径）
-    const bytes = kernel.blobs.read(String(art.storage_uri));
-    if (createHash("sha256").update(bytes).digest("hex") !== payload.artifact_sha256) {
-      db.run(`UPDATE im_intents SET status = 'rejected', result = '文件 hash 已变化，IM 确认无效', updated_at = ? WHERE intent_id = ?`, [new Date().toISOString(), intent.intent_id]);
-      return;
-    }
-    const approvalId = `apr_${randomUUID()}`;
-    const epoch = (db.get<{ e: number | null }>(`SELECT MAX(epoch) AS e FROM key_epochs WHERE scope = 'tenant' AND scope_id = ?`, [tenantId]))?.e ?? 1;
-    const signedPayload = canonicalJson({
-      approval_id: approvalId,
-      artifact_version_id: payload.artifact_version_id,
-      artifact_sha256: payload.artifact_sha256,
-      audience: payload.audience,
-      assurance_level: "im_witnessed",
-      witness: {
-        confirmer_member_id: payload.issuer_member_id,
-        confirmer_im_id_hash: sha256B64(actorImId).slice(0, 16),
-        confirmed_at: new Date().toISOString(),
-        node_device_id: kernel.signer.deviceId,
-        note: "IM 确认（节点见证）：节点服务密钥签名记录「谁在何时确认了哪个文件 hash」，低于设备签名",
-      },
-      key_epoch: epoch,
-    });
-    const nodeKeys = getDeviceKeys(keysDirOf(kernel.config.workspaceDir));
-    const signature = signBytes(nodeKeys.signPrivateKeyPem, new TextEncoder().encode(signedPayload));
-    const completenessHash = sha256B64(canonicalJson({ via: "im_witnessed", intent_id: intent.intent_id }));
-    db.tx(() => {
-      db.run(
-        `INSERT INTO approvals (approval_id, artifact_version_id, artifact_sha256, approver_id, decision, audience, assurance_level, checklist, signer_device_id, signature, completeness_hash, key_epoch, signed_payload)
-         VALUES (?,?,?,?,'approved',?,'im_witnessed','{}',?,?,?,?,?)`,
-        [approvalId, payload.artifact_version_id, payload.artifact_sha256, payload.issuer_member_id, payload.audience, kernel.signer.deviceId, signature, completenessHash, epoch, signedPayload],
-      );
-      db.run(`UPDATE artifact_versions SET status = 'approved' WHERE artifact_version_id = ?`, [payload.artifact_version_id]);
-      db.run(`UPDATE im_intents SET status = 'done', result = ?, updated_at = ? WHERE intent_id = ?`, [JSON.stringify({ approval_id: approvalId }), new Date().toISOString(), intent.intent_id]);
-      signer.append({ kind: "approval", refId: approvalId, matterId: art.matter_id, type: "approval.im_witnessed", payloadHash: sha256B64(signedPayload) });
-    });
-    // 更新卡片（结果异步落账本后）
-    if (payload.intent_im_card_id) {
-      await connector.updateCard({ cardId: payload.intent_im_card_id }, {
-        title: "签发已记录（IM 确认）",
-        fields: [{ label: "结果", value: `已确认 ${payload.artifact_sha256.slice(0, 12)}…（节点见证签名，assurance_level=im_witnessed）` }],
-        note: "该保证等级低于设备签名；法院版/对方版必须设备签名。",
-      });
-    }
-  }
-
+  /**
+   * 签发审批意向（v5 的 IM 确认签发）：v9 关闭（第 02 篇 §9.6、§13 第 6 条；阶段 7 复核 S7-A08）。
+   * 遗留的待处理意向一律标为拒绝——不经 IM 发送待交付文件、不发审批卡。
+   */
   async function processApprovals(): Promise<void> {
-    const rows = db.all<IntentRow>(`SELECT * FROM im_intents WHERE kind = 'approval_request' AND status = 'pending' ORDER BY created_at LIMIT 10`, []);
+    const rows = db.all<IntentRow>(`SELECT * FROM im_intents WHERE kind = 'approval_request' AND status IN ('pending','awaiting_choice') ORDER BY created_at LIMIT 50`, []);
     for (const intent of rows) {
-      const payload = JSON.parse(intent.payload || "{}") as { artifact_version_id: string; audience: string; issuer_member_id: string; artifact_sha256: string };
-      const art = db.get<any>(`SELECT * FROM artifact_versions WHERE artifact_version_id = ?`, [payload.artifact_version_id]);
-      const matter = art ? db.get<any>(`SELECT node_allowed, confidentiality FROM matters WHERE matter_id = ?`, [art.matter_id]) : null;
-      // 处理前硬门禁复核（授权撤销/strict 一律拒）
-      if (!art || !matter || matter.node_allowed !== 1 || matter.confidentiality === "strict" || !["internal", "client"].includes(payload.audience)) {
-        db.run(`UPDATE im_intents SET status = 'rejected', result = '授权或受众门禁复核未过', updated_at = ? WHERE intent_id = ?`, [new Date().toISOString(), intent.intent_id]);
-        continue;
-      }
-      const binding = db.get<{ im_user_id: string }>(`SELECT im_user_id FROM im_bindings WHERE tenant_id = ? AND platform = ? AND member_id = ?`, [tenantId, cfg.platform, payload.issuer_member_id]);
-      if (!binding) {
-        db.run(`UPDATE im_intents SET status = 'rejected', result = '签发人未绑定 IM', updated_at = ? WHERE intent_id = ?`, [new Date().toISOString(), intent.intent_id]);
-        continue;
-      }
-      // 先把确切待交付文件单独发给签发人（§6.3：签发必须先看到完整文件）
-      const bytes = kernel.blobs.read(String(art.storage_uri));
-      await connector.sendFile(binding.im_user_id, { filename: String(art.filename), bytes, mime: "application/octet-stream" });
-      recordImEgress(db, signer, { tenantId, matterId: art.matter_id, kind: "im_outbound", platform: cfg.platform, filename: String(art.filename), bytes, peerImId: binding.im_user_id, note: "审批投递（确切待交付文件）" });
-      const card = await connector.sendCard(binding.im_user_id, {
-        // 审批卡脱敏纪律：不含事项标题/客户名；文件名可能含当事人名，只在单聊对签发人本人展示（见文件头卡片文案纪律）
-        title: "签发确认（IM 确认，低于设备签名）",
-        fields: [
-          { label: "文件", value: `${String(art.filename)}` },
-          { label: "hash", value: `${String(art.sha256).slice(0, 16)}…` },
-          { label: "受众", value: payload.audience === "client" ? "客户版" : "内部稿" },
-        ],
-        actions: [
-          { actionId: `confirm:${intent.intent_id}`, text: "确认签发（IM 确认）" },
-          { actionId: `reject:${intent.intent_id}`, text: "退回" },
-        ],
-        note: "确认即代表您已查看上方完整文件；法院版/对方版必须到电脑上设备签名。",
-      });
-      recordImEgress(db, signer, { tenantId, matterId: art.matter_id, kind: "im_outbound", platform: cfg.platform, filename: `approval-card-${intent.intent_id}`, bytes: Buffer.from(String(art.sha256)), peerImId: binding.im_user_id, note: "审批卡片" });
-      db.run(`UPDATE im_intents SET status = 'awaiting_choice', payload = json_set(payload, '$.intent_im_card_id', ?), updated_at = ? WHERE intent_id = ?`, [card.cardId, new Date().toISOString(), intent.intent_id]);
-      recentCards.set(intent.intent_id, card);
+      db.run(`UPDATE im_intents SET status = 'rejected', result = ?, updated_at = ? WHERE intent_id = ?`, ["v9：IM 不能确认签发，请在电脑上签发", new Date().toISOString(), intent.intent_id]);
     }
   }
 

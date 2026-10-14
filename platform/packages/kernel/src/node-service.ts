@@ -10,6 +10,7 @@ import { DomainError } from "@zr-legal/domain";
 import type { KernelDb } from "./db.ts";
 import type { BlobStore } from "./blobs.ts";
 import { appendAuditEvent, type LedgerSigner } from "./ledger-signer.ts";
+import { dataLevelOf } from "./egress/gate-host.ts";
 
 /** 定时任务审计统一上链（§6.4；signer 未注入的纯函数测试形态降级为直插并注释）。 */
 function auditJob(db: KernelDb, signer: LedgerSigner | undefined, job: ScheduledJobRow, action: string, kind: string, objectId: string, matterId: string | null, detailHash: string): void {
@@ -55,11 +56,11 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** 执行前硬门禁：node_allowed=1 且非 strict（授权撤销后的队列残留在此被拦）。 */
+/** 执行前硬门禁：node_allowed=1 且非当事人限制（L3b：strict 或当事人拒绝云端处理的记录；授权撤销后的队列残留在此被拦）。 */
 export function assertNodeTaskAllowed(db: KernelDb, matterId: string): void {
-  const m = db.get<{ node_allowed: number; confidentiality: string }>(`SELECT node_allowed, confidentiality FROM matters WHERE matter_id = ?`, [matterId]);
+  const m = db.get<{ node_allowed: number; confidentiality: string; consent_status: string }>(`SELECT node_allowed, confidentiality, consent_status FROM matters WHERE matter_id = ?`, [matterId]);
   if (!m) throw new DomainError("not_found", "事项不存在", 404);
-  if (m.confidentiality === "strict") throw new DomainError("forbidden", "保密等级 strict 的事项不得由节点执行（§5.3：只在成员电脑上运行）", 403);
+  if (dataLevelOf(m.confidentiality, m.consent_status) === "L3b") throw new DomainError("forbidden", "当事人限制（L3b）的事项不得由节点执行（只在成员电脑上运行）", 403);
   if (m.node_allowed !== 1) throw new DomainError("forbidden", "该事项未授权节点执行（matters.node_authorize 后方可转交）", 403);
 }
 
@@ -102,7 +103,12 @@ export function finishNodeTask(db: KernelDb, taskId: string, patch: { status: "s
 export function claimScheduledJob(db: KernelDb, owner: string, leaseMs: number): ScheduledJobRow | null {
   const now = nowIso();
   const until = new Date(Date.now() + leaseMs).toISOString();
-  const due = db.all<ScheduledJobRow>(`SELECT * FROM scheduled_jobs WHERE enabled = 1 AND (lease_until IS NULL OR lease_until < ?) ORDER BY created_at`, [now]);
+  // 结案或已删除事项的定时任务不再执行（复核 C-A05）
+  const due = db.all<ScheduledJobRow>(
+    `SELECT * FROM scheduled_jobs WHERE enabled = 1 AND (lease_until IS NULL OR lease_until < ?)
+        AND (matter_id IS NULL OR matter_id IN (SELECT matter_id FROM matters WHERE lifecycle = 'active')) ORDER BY created_at`,
+    [now],
+  );
   for (const job of due) {
     const intervalSec = Number(job.cron_expr) || 86_400; // v0：cron_expr 即间隔秒（cron 解析 G1）
     if (job.last_run_at && Date.now() - Date.parse(job.last_run_at) < intervalSec * 1000) continue;

@@ -27,6 +27,10 @@ export const IdPrefix = {
   auditEvent: "aud",
   estimate: "est",
   egressRecord: "egr",
+  qaConversation: "qac",
+  qaMessage: "qam",
+  riskCard: "rkc",
+  fact: "fct",
 } as const;
 
 export type IdPrefixKey = keyof typeof IdPrefix;

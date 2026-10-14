@@ -7,7 +7,7 @@
  * （旧成员曾持有旧密钥，重加密不改变既成事实，如实注释）。既有明文开发库可弃，不做迁移。
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 /** 块加解密提供者（内核以 matter_keys + 本机设备私钥实现；测试可直接注入）。 */
@@ -15,6 +15,8 @@ export interface BlobCipher {
   /** matterId=null → 明文例外（仅无事项归属的内部块，调用点注释说明）。 */
   encrypt(matterId: string, plain: Buffer): Buffer;
   decrypt(envelope: Buffer): Buffer;
+  /** 清除内存里该事项的密钥（事项删除后；之后再读该事项的块即报“本机不持钥”）。 */
+  forget?(matterId: string): void;
 }
 
 const MAGIC = Buffer.from("KWB1");
@@ -97,6 +99,20 @@ export class BlobStore {
     if (storageUri.startsWith("blob://")) return join(this.dir, ...storageUri.slice("blob://".length).split("/"));
     if (storageUri.startsWith("file://")) return storageUri.slice("file://".length);
     return storageUri;
+  }
+
+  /** 删除单个块（材料隔离：复核 B3-A05）。只接受本存储的 blob:// 地址。 */
+  remove(storageUri: string): void {
+    const m = /^blob:\/\/([A-Za-z0-9_.-]{1,128})\/([0-9a-f]{64})$/.exec(storageUri);
+    if (!m || m[1] === "..") throw new Error("非法块地址");
+    rmSync(join(this.dir, m[1]!, m[2]!), { force: true });
+  }
+
+  /** 事项删除（密码学擦除）：删除该事项的块目录并清除内存里的事项密钥。 */
+  purgeMatter(matterId: string): void {
+    if (!/^[A-Za-z0-9_.-]{1,128}$/.test(matterId) || matterId === "_shared") throw new Error("非法事项 ID");
+    this.cipher?.forget?.(matterId);
+    rmSync(join(this.dir, matterId), { recursive: true, force: true });
   }
 
   read(storageUri: string): Buffer {

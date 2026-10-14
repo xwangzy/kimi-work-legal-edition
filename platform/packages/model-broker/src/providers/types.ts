@@ -38,7 +38,8 @@ export interface ProviderResult {
   requestId: string;
   content: string | null;
   toolCalls?: ToolCall[] | undefined;
-  finishReason: string;
+  /** 上游原样的结束原因；上游未给出时为 null（不默认成 stop——缺失不能当成功，复审 N-07）。 */
+  finishReason: string | null;
   usage: UsageBuckets;
   raw?: unknown;
 }
@@ -53,6 +54,8 @@ export interface ProviderStream {
 export interface UpstreamMeta {
   nonce: string;
   clientIdempotencyId: string;
+  /** 任务令牌被撤销、尝试被取代或任务终止时中止在途上游请求与流（复审 N-01）。 */
+  signal?: AbortSignal | undefined;
 }
 
 export interface Provider {

@@ -32,12 +32,17 @@ interface QueuedRun {
   runId: string;
 }
 
-const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
+// v9 第 04 篇 §8：终态集合（与 @zr-legal/domain TERMINAL_RUN_STATUSES 一致）；reconciling 不是终态但须等人处理，不自动拉起
+const TERMINAL = new Set(["succeeded", "partial", "failed", "cancelled", "expired", "timed_out"]);
 
 export class TaskQueue {
   private readonly workflows = new Map<string, WorkflowFn>();
   private readonly pending: QueuedRun[] = [];
   private readonly running = new Set<string>();
+  /** 退出模式下暂停的任务（启动时与运行中进入退出模式时；复核 S6-B34、S6-C12）。 */
+  private parked: string[] = [];
+  /** 拉起任务前的放行判断（退出模式下不拉起，任务暂停）。 */
+  private startGate: (() => boolean) | null = null;
   private readonly concurrency: number;
   private readonly db: KernelDb;
   private onSettle: ((runId: string) => void) | null = null;
@@ -57,6 +62,11 @@ export class TaskQueue {
     this.onSettle = cb;
   }
 
+  /** 拉起任务前的放行判断：返回 false 时任务暂停（不拉起），由 resumeParked 恢复（复核 S6-C12：运行中进入退出模式与重启口径一致）。 */
+  setStartGate(gate: () => boolean): void {
+    this.startGate = gate;
+  }
+
   /** 入队（exactly-once：只有 queued 状态的 run 会被拉起；workflowID = run_id）。 */
   enqueue(runId: string): void {
     if (this.stopped) return;
@@ -65,8 +75,14 @@ export class TaskQueue {
     this.kick();
   }
 
-  /** 内核启动恢复：仅重排 queued/running（崩溃中断）；waiting_* 与 budget_paused 保持原状等人处理。 */
-  recover(): number {
+  /**
+   * 内核启动恢复（v9 第 04 篇 §8；审查 R-05）：执行中的尝试一律中断（其任务令牌随之失效）；
+   * running 按状态机迁到 recovering（不再绕过状态机直接改回 queued），由工作流从检查点决定继续、对账或失败；
+   * queued/recovering 重新入队；waiting_* 与 budget_paused 是人的决策点，保持原状等人处理。
+   * start=false（退出模式下启动；v9 阶段 6 复核 S6-B34）：只做状态迁移、不入队——任务暂停，退出模式解除后由 resumeParked 入队
+   * （不再调用 recover：那会把解除之后新起的尝试也标成中断）。
+   */
+  recover(o: { start?: boolean } = {}): number {
     const interrupted = this.db.all<{ attempt_id: string }>(`SELECT attempt_id FROM attempts WHERE status = 'running'`, []);
     for (const a of interrupted) {
       this.db.run(`UPDATE attempts SET status = 'interrupted', ended_at = ?, error = 'interrupted_by_restart' WHERE attempt_id = ?`, [
@@ -76,21 +92,29 @@ export class TaskQueue {
     }
     // 「等待输入/等待审批/预算暂停」是人的决策点：重启不得静默拉起（§2.5）
     const stuck = this.db.all<{ run_id: string; status: string }>(
-      `SELECT run_id, status FROM runs WHERE status IN ('queued','running')`,
+      `SELECT run_id, status FROM runs WHERE status IN ('queued','running','recovering')`,
       [],
     );
     let n = 0;
     for (const r of stuck) {
-      if (r.status !== "queued") {
-        this.db.run(`UPDATE runs SET status = 'queued', status_version = status_version + 1, updated_at = ? WHERE run_id = ?`, [
+      if (r.status === "running") {
+        this.db.run(`UPDATE runs SET status = 'recovering', status_version = status_version + 1, updated_at = ? WHERE run_id = ? AND status = 'running'`, [
           new Date().toISOString(),
           r.run_id,
         ]);
       }
-      this.enqueue(r.run_id);
+      if (o.start === false) this.parked.push(r.run_id);
+      else this.enqueue(r.run_id);
       n++;
     }
     return n;
+  }
+
+  /** 退出模式解除后：启动时暂停的任务入队（取任务前照常复查权威状态，期间被取消的不会拉起）。返回入队条数。 */
+  resumeParked(): number {
+    const ids = this.parked.splice(0);
+    for (const id of ids) this.enqueue(id);
+    return ids.length;
   }
 
   private kick(): void {
@@ -106,7 +130,11 @@ export class TaskQueue {
       const { runId } = this.pending.shift()!;
       // 取任务前复查权威状态（可能已被取消）
       const run = this.db.get<{ status: string; scenario: string }>(`SELECT status, scenario FROM runs WHERE run_id = ?`, [runId]);
-      if (!run || run.status !== "queued") continue;
+      if (!run || (run.status !== "queued" && run.status !== "recovering")) continue;
+      if (this.startGate && !this.startGate()) {
+        if (!this.parked.includes(runId)) this.parked.push(runId);
+        continue;
+      }
       const wf = this.workflows.get("legalRun");
       if (!wf) throw new Error("workflow legalRun 未注册");
       this.running.add(runId);

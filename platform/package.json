@@ -9,22 +9,27 @@
   },
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "services/*"
   ],
   "scripts": {
     "build:kernel": "node scripts/build-kernel.mjs",
     "build:lawdb": "node content/lawdb/build-lawdb.mjs && node content/lawdb/build-increment-sample.mjs",
     "build:agent-profile": "node content/agent-profile/build-profile.mjs",
     "fetch:ocr-models": "node scripts/fetch-ocr-models.mjs",
-    "pretest": "npm run build:lawdb && npm run build:agent-profile",
+    "pretest": "npm run build:lawdb && npm run build:agent-profile && npm run build:tool-manifest && npm run build:skills",
     "dev:desktop": "cd apps/desktop && npm run dev",
     "dev:web": "cd apps/desktop && npm run dev:web",
-    "test": "node --test --test-concurrency=1 --test-reporter=spec \"packages/*/test/*.test.ts\"",
-    "pretest:a1": "npm run build:lawdb && npm run build:agent-profile",
+    "test": "node --test --test-concurrency=1 --test-reporter=spec \"packages/*/test/*.test.ts\" \"services/*/test/*.test.ts\" \"apps/desktop/test/*.test.ts\"",
+    "pretest:a1": "npm run build:lawdb && npm run build:agent-profile && npm run build:tool-manifest && npm run build:skills",
     "test:a1": "node --test --test-reporter=spec \"packages/kernel/test/a1-agent.test.ts\"",
-    "predemo:e2e": "npm run build:lawdb && npm run build:agent-profile",
+    "predemo:e2e": "npm run build:lawdb && npm run build:agent-profile && npm run build:tool-manifest && npm run build:skills",
     "demo:e2e": "node scripts/demo-e2e.mjs",
-    "typecheck": "tsc -b tsconfig.check.json"
+    "typecheck": "tsc -b tsconfig.check.json",
+    "build:tool-manifest": "node content/tool-manifest/build-lock.mjs",
+    "dev:cloud-v0": "node scripts/dev-cloud-v0.mjs",
+    "build:skills": "node content/skills/build-skills.mjs",
+    "build:runtime": "node scripts/build-runtime.mjs"
   },
   "devDependencies": {
     "@types/node": "26.0.0",

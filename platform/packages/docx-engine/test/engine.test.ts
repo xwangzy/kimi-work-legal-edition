@@ -6,6 +6,7 @@ import {
   compareDocx,
   createDocx,
   extractParagraphs,
+  mapParagraphs,
   readZipText,
   sanitizeDocx,
   type RevisionOp,
@@ -154,4 +155,18 @@ test("engine: createDocx 产物可被回读（zip 与段落完整）", () => {
   const paras = extractParagraphs(buf);
   assert.equal(paras[0]!.text, "股权转让协议");
   assert.ok(paras.some((p) => p.text.startsWith("7.1 乙方应当遵守")));
+});
+
+test("可见文字口径（复核 C-B03）：w:moveFrom 视同删除；段落标记被删的自闭合 w:del 不把整段当成已删除", () => {
+  const xml =
+    '<w:document xmlns:w="w"><w:body>' +
+    '<w:p><w:r><w:t>第一条 付款期限为三十日。</w:t></w:r></w:p>' +
+    '<w:p><w:moveFrom w:id="1" w:author="a"><w:r><w:t>被移走的条款。</w:t></w:r></w:moveFrom><w:r><w:t>留下的文字。</w:t></w:r></w:p>' +
+    '<w:p><w:pPr><w:rPr><w:del w:id="2" w:author="a"/></w:rPr></w:pPr><w:r><w:t>段落标记被删但文字仍在。</w:t></w:r></w:p>' +
+    '<w:p><w:moveTo w:id="3" w:author="a"><w:r><w:t>被移走的条款。</w:t></w:r></w:moveTo></w:p>' +
+    "</w:body></w:document>";
+  const paras = mapParagraphs(xml).map((p) => p.text);
+  assert.deepEqual(paras, ["第一条 付款期限为三十日。", "留下的文字。", "段落标记被删但文字仍在。", "被移走的条款。"]);
+  // 被移动的条款在视图中只出现一次（移到的新位置）
+  assert.equal(paras.join("\n").split("被移走的条款。").length - 1, 1);
 });

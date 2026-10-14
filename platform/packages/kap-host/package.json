@@ -1,0 +1,22 @@
+{
+  "name": "@zr-legal/kap-host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent 宿主（v9 第 04 篇 §3）：kap-server 无端口私有嵌入 + seeds + 宿主策略；界面与远程只见业务运行时 API",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zr-legal/domain": "*",
+    "@zr-legal/exec-wasm": "*",
+    "@zr-legal/file-broker": "*",
+    "@zr-legal/host-policy": "*",
+    "undici": "7.30.0",
+    "@zr-legal/at-rest": "*",
+    "re2js": "1.3.3"
+  },
+  "scripts": {
+    "build:vendor": "node ../../scripts/build-kap-embed.mjs"
+  }
+}

@@ -10,6 +10,12 @@ import { b64urlDecode, b64urlEncode, canonicalJson } from "./encoding.ts";
 export const DeviceRoles = ["partner", "lawyer", "assistant", "admin", "node"] as const;
 export type DeviceRole = (typeof DeviceRoles)[number];
 
+/**
+ * 设备编号字符集（v9 阶段 6 复核 S6-A22）：控制面接口以设备编号为路径段（吊销等），签发与验签都检查——
+ * 编号含其他字符的证书签发不出来，目录里出现也按格式不合法拒绝。
+ */
+export const DEVICE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
 export interface DeviceKeys {
   signPublicKeyPem: string;
   signPrivateKeyPem: string;
@@ -80,6 +86,7 @@ function checkCertificateFields(c: DeviceCertificateInput): string | null {
   for (const key of ["certId", "memberId", "deviceId", "signPublicKeyPem", "encPublicKeyPem", "issuedAt", "expiresAt"] as const) {
     if (typeof c[key] !== "string" || c[key].length === 0) return `字段 ${key} 缺失或为空`;
   }
+  if (!DEVICE_ID_PATTERN.test(c.deviceId)) return "设备编号只允许字母、数字、下划线与连字符（1–128 位）";
   if (!DeviceRoles.includes(c.role)) return `角色非法：${String(c.role)}（应为 ${DeviceRoles.join("/")}）`;
   if (Number.isNaN(Date.parse(c.issuedAt))) return "issuedAt 不是合法时间";
   if (Number.isNaN(Date.parse(c.expiresAt))) return "expiresAt 不是合法时间";

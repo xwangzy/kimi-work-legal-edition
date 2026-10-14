@@ -1,0 +1,9 @@
+{
+  "_comment": "安装包内置的中软云上游（审计 S5）：地址必须 https；钉住集为证书链中任一证书的 SPKI sha256（openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64），至少两把（当前 + 备份）。发布流程复制为 release.json 打进 asar。",
+  "gateway_base": "https://gateway.example.invalid/v1",
+  "gateway_pins": ["sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="],
+  "search_base": "https://search.example.invalid/v1/search",
+  "search_pins": ["sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="],
+  "control_plane_base": "https://cp.example.invalid",
+  "control_plane_pins": ["sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="]
+}

@@ -5,7 +5,8 @@
  * - 明确标识：requestId 带 mock 前缀，去向记录 destination=mock_local，永不冒充真实供应商。
  */
 import { createHash } from "node:crypto";
-import type { ChatRequest, Provider, ProviderResult, ProviderStream, ToolCall, UsageBuckets } from "./types.ts";
+import { DomainError } from "@zr-legal/domain";
+import type { ChatRequest, Provider, ProviderResult, ProviderStream, ToolCall, UpstreamMeta, UsageBuckets } from "./types.ts";
 import { emptyUsage, estimateTokens } from "./types.ts";
 import type { RouteDef } from "../config.ts";
 
@@ -29,6 +30,8 @@ let counter = 0;
 export interface MockScriptedReply {
   toolCalls?: ToolCall[];
   content?: string;
+  /** 流式分块间隔（测试“在途流被中止”用；缺省 0）。 */
+  chunkDelayMs?: number;
 }
 export type MockScript = (req: ChatRequest) => MockScriptedReply | null;
 let activeScript: MockScript | null = null;
@@ -138,27 +141,43 @@ function computeUsage(req: ChatRequest, content: string, effort: string | null):
   return usage;
 }
 
+/** 按（至多一次求值的）脚本结果生成响应：脚本可能有副作用（例如“只触发一次”），同一请求不得重复求值。 */
+function respond(route: RouteDef, req: ChatRequest, scripted: MockScriptedReply | null): ProviderResult {
+  const toolCall = scripted?.toolCalls?.[0] ?? (scripted ? null : mockToolCall(req));
+  const content = toolCall ? null : (scripted?.content ?? mockContent(req));
+  const usage = computeUsage(req, content ?? JSON.stringify(toolCall?.function.arguments ?? ""), req.reasoning_effort ?? route.defaultEffort);
+  if (toolCall) usage.tool_calls = 1;
+  return {
+    requestId: `mock_${createHash("sha256").update(`${Date.now()}_${counter++}`).digest("hex").slice(0, 16)}`,
+    content,
+    toolCalls: toolCall ? [toolCall] : undefined,
+    finishReason: toolCall ? "tool_calls" : "stop",
+    usage,
+  };
+}
+
 export const mockProvider: Provider = {
   name: "mock",
   async chat(route: RouteDef, req: ChatRequest): Promise<ProviderResult> {
-    const scripted = activeScript ? activeScript(req) : null;
-    const toolCall = scripted?.toolCalls?.[0] ?? (scripted ? null : mockToolCall(req));
-    const content = toolCall ? null : (scripted?.content ?? mockContent(req));
-    const usage = computeUsage(req, content ?? JSON.stringify(toolCall?.function.arguments ?? ""), req.reasoning_effort ?? route.defaultEffort);
-    if (toolCall) usage.tool_calls = 1;
-    return {
-      requestId: `mock_${createHash("sha256").update(`${Date.now()}_${counter++}`).digest("hex").slice(0, 16)}`,
-      content,
-      toolCalls: toolCall ? [toolCall] : undefined,
-      finishReason: toolCall ? "tool_calls" : "stop",
-      usage,
-    };
+    return respond(route, req, activeScript ? activeScript(req) : null);
   },
-  async chatStream(route: RouteDef, req: ChatRequest): Promise<ProviderStream> {
-    const result = await mockProvider.chat(route, req);
+  async chatStream(route: RouteDef, req: ChatRequest, meta?: UpstreamMeta): Promise<ProviderStream> {
+    const scripted = activeScript ? activeScript(req) : null;
+    const delayMs = scripted?.chunkDelayMs ?? 0;
+    const result = respond(route, req, scripted);
     const requestId = result.requestId;
     const model = route.providerModel;
+    const signal = meta?.signal;
     async function* chunks(): AsyncIterable<string> {
+      for await (const c of rawChunks()) {
+        // 与真实上游一致：令牌失效即中止在途流（复审 N-01）
+        if (signal?.aborted) throw new DomainError("cancelled", "任务令牌已失效：在途模型流已中止", 401);
+        if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+        if (signal?.aborted) throw new DomainError("cancelled", "任务令牌已失效：在途模型流已中止", 401);
+        yield c;
+      }
+    }
+    async function* rawChunks(): AsyncIterable<string> {
       if (result.toolCalls && result.toolCalls.length > 0) {
         yield JSON.stringify({
           id: requestId,

@@ -113,3 +113,43 @@ test("队列：中断尝试落 interrupted；取消即时生效（协作式）",
   await q.shutdown();
   assert.equal(db.get<{ status: string }>(`SELECT status FROM runs WHERE run_id = 'run_stuck'`)!.status, "cancelled");
 });
+
+test("队列：退出模式下启动只做状态迁移、不拉起（复核 S6-B34）；resumeParked 入队，期间被取消的不拉起", async () => {
+  const ran: string[] = [];
+  const q = new TaskQueue(db, { concurrency: 1 });
+  q.register("legalRun", async (ctx: WorkflowContext) => {
+    ran.push(ctx.runId);
+    db.run(`UPDATE runs SET status = 'succeeded' WHERE run_id = ?`, [ctx.runId]);
+  });
+  insertRun("run_parked_a");
+  insertRun("run_parked_b");
+  const n = q.recover({ start: false });
+  assert.ok(n >= 2);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.deepEqual(ran.filter((id) => id.startsWith("run_parked")), [], "暂停：不拉起");
+  db.run(`UPDATE runs SET status = 'cancelled' WHERE run_id = 'run_parked_b'`);
+  assert.ok(q.resumeParked() >= 2);
+  await new Promise((r) => setTimeout(r, 300));
+  await q.shutdown();
+  assert.deepEqual(ran.filter((id) => id.startsWith("run_parked")), ["run_parked_a"], "恢复后拉起；期间已取消的不拉起");
+});
+
+test("队列：拉起前的放行判断（复核 S6-C12）——运行中进入退出模式时，排队的任务同样暂停；放行后 resumeParked 继续", async () => {
+  const ran: string[] = [];
+  let allowed = false;
+  const q = new TaskQueue(db, { concurrency: 1 });
+  q.setStartGate(() => allowed);
+  q.register("legalRun", async (ctx: WorkflowContext) => {
+    ran.push(ctx.runId);
+    db.run(`UPDATE runs SET status = 'succeeded' WHERE run_id = ?`, [ctx.runId]);
+  });
+  insertRun("run_gate_a");
+  q.enqueue("run_gate_a");
+  await new Promise((r) => setTimeout(r, 200));
+  assert.deepEqual(ran.filter((id) => id === "run_gate_a"), [], "不放行：暂停");
+  allowed = true;
+  assert.equal(q.resumeParked(), 1);
+  await new Promise((r) => setTimeout(r, 300));
+  await q.shutdown();
+  assert.deepEqual(ran.filter((id) => id === "run_gate_a"), ["run_gate_a"]);
+});

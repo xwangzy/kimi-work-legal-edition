@@ -10,6 +10,15 @@ export const LEGAL_MCP_TOOLS = [
   "citations.verify",
   "calc.interest",
   "redact.scan",
+  // 2026-10-13 审计 D2：结构化产出与材料目录（Skills 依赖），文书与表格生成（写本事项草稿），整稿比对（只读）
+  "materials.list",
+  "riskcards.submit",
+  "riskcards.list",
+  "facts.submit",
+  "facts.list",
+  "xlsx.render_table",
+  "docx.render_report",
+  "docx.compare",
 ] as const;
 
 export type LegalMcpToolName = (typeof LEGAL_MCP_TOOLS)[number];

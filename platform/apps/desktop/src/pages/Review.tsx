@@ -35,20 +35,16 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   );
 
   return (
-    <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">◉ Kimi Work<small>法律行业发行版（demo）</small></div>
-        <button className="nav-item" onClick={() => nav("/")}>← 返回首页</button>
-      </aside>
       <main className="main">
         <div className="main-narrow">
-          <h1 className="page-title">签发：{data?.filename ?? "…"}</h1>
+          <button className="btn-link back" onClick={() => nav("/deliverables")}>← 交付件</button>
+          <h1 className="page-title">复核与签发：{data?.filename ?? "…"}</h1>
           {data && (
             <p className="muted mono">
               v{data.version} · 文件 hash {data.sha256.slice(0, 16)}… · {data.status}
             </p>
           )}
-          {err && <p className="intercept-banner">{err}</p>}
+          {err && <div className="banner banner-red">{err}</div>}
           {data && (
             <>
               <div className="section-title">完整性单</div>
@@ -100,7 +96,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
               </table>
 
               {data.blockers.length > 0 && (
-                <div className="intercept-banner">
+                <div className="banner banner-orange">
                   签发前须确认：{data.blockers.join("；")}
                 </div>
               )}
@@ -125,19 +121,18 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                 <span className="spacer" />
                 <button
                   className="btn-ghost"
-                  onClick={() => void api.downloadArtifact(data.artifact_version_id, data.filename).then(() => api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" })).catch((e) => alert(e.message))}
+                  onClick={() => void api.downloadArtifact(data.artifact_version_id, data.filename).then(() => api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" })).catch((e) => setErr(e.message))}
                 >
                   下载（留痕）
                 </button>
               </div>
               <p className="muted" style={{ marginTop: 12 }}>
                 签发绑定当前文件 hash；批准后任何实质编辑生成新版本，旧批准不迁移。内部稿不得外发。
-                设备密钥签名签发与保证等级在第 3–4 周接入，当前为批准记录（approval_record）。
+                签发以本机设备密钥签名并记入签名事件链；对外发送、导出与改权限只能由人在桌面界面操作（Agent 与远程渠道不能触发）。
               </p>
             </>
           )}
         </div>
       </main>
-    </div>
   );
 }

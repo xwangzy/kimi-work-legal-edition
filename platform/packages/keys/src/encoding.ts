@@ -40,6 +40,8 @@ function sortValue(value: unknown): unknown {
   if (t === "object") {
     const out: Record<string, unknown> = {};
     for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      // `__proto__` 自有键在赋值时会被当作原型设置而丢失，导致“带与不带该键”规范化结果相同（签名可延展；阶段 6 复核 S6-B17）：一律拒绝
+      if (key === "__proto__") throw new KeysError("validation", "canonicalJson 不接受名为 __proto__ 的键");
       const v = sortValue((value as Record<string, unknown>)[key]);
       if (v === SKIP) continue; // 对象中 undefined 跳过（与 JSON.stringify 一致）
       out[key] = v;

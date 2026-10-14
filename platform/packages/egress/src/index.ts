@@ -83,6 +83,26 @@ export class EgressBlockedError extends DomainError {
   }
 }
 
+const BASIS_LABELS: Readonly<Record<string, string>> = {
+  engagement: "委托/保密授权",
+  personal_info: "个人信息处理依据",
+  sensitive: "敏感信息特别条件",
+  subprocessor: "转委托与次处理者",
+};
+
+/** 四项依据中“待确认”的项目名（未记录四项或记录不规范时返回 null，按旧口径判定）。 */
+export function pendingBasisLabels(basis: string | null | undefined): string[] | null {
+  if (!basis) return null;
+  try {
+    const v = JSON.parse(basis) as Record<string, unknown>;
+    const ok = (x: unknown) => x === "confirmed" || x === "pending" || x === "not_applicable";
+    if (!Object.keys(BASIS_LABELS).every((k) => ok(v[k]))) return null;
+    return Object.keys(BASIS_LABELS).filter((k) => v[k] === "pending").map((k) => BASIS_LABELS[k]!);
+  } catch {
+    return null;
+  }
+}
+
 export class EgressGate {
   private readonly store: EgressStore;
   private readonly policy: EgressPolicy;
@@ -106,12 +126,13 @@ export class EgressGate {
   }
 
   /**
-   * 事项策略（§8.3 与第 2 篇 §4.2）：
-   * - 当事人同意「待取得」= 只用本机能力；「已拒绝」= 只能私有模型或不使用模型；
-   * - 模型端点 none = 不使用模型；保密等级 strict（v0 策略）= 拒绝云端，只允许私有端点；
+   * 事项策略的前置检查（人话拦截；出站闸门另行独立裁决——v9 第 02 篇 §8.1、§8.2）：
+   * - 四项依据（委托/保密授权、个人信息处理依据、敏感信息特别条件、转委托与次处理者）分项记录时按四项判定，任一“待确认”只用本机能力
+   *   （复核 S5-A09：与闸门、宿主同一口径）；未记录四项的旧事项按当事人同意状态（「待取得」= 只用本机能力）；
+   * - 当事人拒绝云端处理（记录）= 只能私有模型或不使用模型；模型端点 none = 不使用模型；当事人限制（L3b）= 只允许律所私有端点；
    * - 后台不得自动切换；本方法只负责在给定策略下裁决。
    */
-  assertMatterAllowsModel(matter: Pick<Matter, "consent_status" | "model_endpoint" | "confidentiality">, endpoint: ModelEndpoint): void {
+  assertMatterAllowsModel(matter: Pick<Matter, "consent_status" | "model_endpoint" | "confidentiality"> & { basis?: string | null }, endpoint: ModelEndpoint): void {
     if (matter.model_endpoint !== endpoint) {
       throw new EgressBlockedError(
         `任务请求的模型端点（${endpoint}）与事项当前端点（${matter.model_endpoint}）不一致；变更端点须本人在事项中确认`,
@@ -121,17 +142,20 @@ export class EgressGate {
       throw new EgressBlockedError("该事项设置为「不使用模型」：只用本机确定性工具与人工。");
     }
     const consent: ConsentStatus = matter.consent_status;
-    if (consent === "pending") {
-      throw new EgressBlockedError(
-        "当事人告知同意状态为「待取得」：本任务只能使用本机能力（解析、检索、法条核验、比对、计算、脱敏、文书生成）。可一键生成告知函，或将同意状态改为「无需/已同意」后再使用模型。",
-        { consent_status: consent },
-      );
-    }
     if (consent === "refused" && endpoint !== "private") {
-      throw new EgressBlockedError("当事人已拒绝云端处理：只能使用律所内私有模型端点或不使用模型。", { consent_status: consent });
+      throw new EgressBlockedError("当事人已拒绝云端处理（记录）：只能使用律所私有模型端点或不使用模型。", { consent_status: consent });
+    }
+    const LOCAL_ONLY = "本任务只能使用本机能力（解析、检索、法条核验、比对、计算、脱敏、文书生成）";
+    const pending = pendingBasisLabels(matter.basis);
+    if (pending !== null) {
+      if (pending.length > 0) {
+        throw new EgressBlockedError(`四项依据有“待确认”（${pending.join("、")}）：${LOCAL_ONLY}。请在事项头补录依据，或一键生成告知函。`, { basis_pending: pending });
+      }
+    } else if (consent === "pending") {
+      throw new EgressBlockedError(`依据待确认（旧事项记录的当事人同意为「待取得」）：${LOCAL_ONLY}。请在事项头补录四项依据，或一键生成告知函。`, { consent_status: consent });
     }
     if (matter.confidentiality === "strict" && endpoint !== "private") {
-      throw new EgressBlockedError("事项保密等级为 strict（v0 策略视为「拒绝云端」）：只允许私有模型端点。", {
+      throw new EgressBlockedError("当事人限制（L3b）：不使用云端模型，只允许律所私有模型端点。", {
         confidentiality: matter.confidentiality,
       });
     }
@@ -340,10 +364,41 @@ function deserialize(r: any): EgressRecord {
   };
 }
 
+/** 出站内容关键事实在备注中的字段（预写时确定；补全、清扫与对账都不改写它们）。 */
+export const EGRESS_CONTENT_FIELDS = ["purpose", "query", "url", "host_decision", "approval_id", "media", "model"] as const;
+
+/**
+ * 出站内容摘要（阶段 4 复核 S4-21、终核残余）：由去向列与备注中的内容字段计算——插入时写入 content_digest 并计入签名信封；
+ * 校验签名链时按当前备注重算，备注里的检索原文、URL、裁决等被改即校验失败。
+ */
+export function egressContentDigest(r: { destination_kind: string; destination_host: string; note: string | null }): string {
+  let note: Record<string, unknown> = {};
+  try {
+    note = JSON.parse(r.note ?? "{}") as Record<string, unknown>;
+  } catch {
+    note = {};
+  }
+  const url = note.url as { requested?: unknown; final?: unknown } | undefined;
+  return sha256B64(
+    canonicalJson({
+      destination_kind: r.destination_kind,
+      destination_host: r.destination_host,
+      purpose: note.purpose ?? null,
+      query: note.query ?? null,
+      url: url ? { requested: url.requested ?? null, final: url.final ?? null } : null,
+      host_decision: note.host_decision ?? null,
+      approval: note.approval_id ?? null,
+      media: note.media ?? [],
+      model: note.model ?? null,
+    }),
+  );
+}
+
 /**
  * 签名信封哈希（§6.4）：只含插入时确定、之后不变的数据去向关键事实——
- * 目的地、事项/任务归属、字符数、化名统计、文档引用、客户端幂等 ID、时间。
- * 排除插入后可变的生命周期列：request_id（broker 回填）、outcome 与 note（markFailed 改写）。
+ * 目的地、事项/任务归属、字符数、化名统计、文档引用、客户端幂等 ID、时间，以及出站内容摘要 content_digest
+ * （闸门记录：检索原文与发出的查询、URL、裁决、载荷摘要、模型；阶段 4 复核 S4-21。为空时不入信封，旧记录的哈希不变）。
+ * 排除插入后可变的生命周期列：request_id（broker 回填）、outcome、note 与 completed（两阶段补全另记签名审计事件）。
  * 该口径与内核 ledger-signer recomputePayloadHash 的 egress_record 分支一一对应（同改须同步）。
  */
 export function egressRecordEnvelopeHash(r: {
@@ -361,9 +416,11 @@ export function egressRecordEnvelopeHash(r: {
   pseudonym_counts: string;
   doc_refs: string;
   created_at: string;
+  content_digest?: string | null;
 }): string {
   return sha256B64(
     canonicalJson({
+      ...(r.content_digest ? { content_digest: r.content_digest } : {}),
       record_id: r.record_id,
       tenant_id: r.tenant_id,
       matter_id: r.matter_id,

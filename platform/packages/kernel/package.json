@@ -10,6 +10,12 @@
     "./ledger-signer": "./src/ledger-signer.ts"
   },
   "dependencies": {
-    "better-sqlite3-multiple-ciphers": "13.0.3"
+    "better-sqlite3-multiple-ciphers": "13.0.3",
+    "@zr-legal/host-policy": "*",
+    "@zr-legal/egress-gate": "*",
+    "@zr-legal/tokenizer": "*",
+    "@zr-legal/firm-trust": "*",
+    "@zr-legal/seat-token": "*",
+    "@zr-legal/at-rest": "*"
   }
 }

@@ -33,10 +33,14 @@ const R_RE = /<w:r\b[^>]*>[\s\S]*?<\/w:r>/g;
 const T_RE = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>/;
 const DELT_RE = /<w:delText\b[^>]*>([\s\S]*?)<\/w:delText>/;
 const RPR_RE = /<w:rPr>[\s\S]*?<\/w:rPr>/;
-const DEL_OPEN = /<w:del\b/g;
-const DEL_CLOSE = /<\/w:del>/g;
+/**
+ * 删除区段的开/闭标记：w:del 与 w:moveFrom（移动修订的原位置，等同删除；复核 C-B03，与解析器口径一致）。
+ * 自闭合的 `<w:del …/>`（段落标记被删，出现在 rPr 里）不是区段开头——否则会把其后整段都当成已删除。
+ */
+const DEL_OPEN = /<w:(?:del|moveFrom)\b[^>]*(?<!\/)>/g;
+const DEL_CLOSE = /<\/w:(?:del|moveFrom)>/g;
 
-/** run 是否位于未闭合的 w:del 内（比较其前最近一次开/闭标记的位置）。 */
+/** run 是否位于未闭合的 w:del / w:moveFrom 内（比较其前最近一次开/闭标记的位置）。 */
 function insideDel(pXml: string, runStart: number): boolean {
   DEL_OPEN.lastIndex = 0;
   DEL_CLOSE.lastIndex = 0;

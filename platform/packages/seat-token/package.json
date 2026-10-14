@@ -1,0 +1,10 @@
+{
+  "name": "@zr-legal/seat-token",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "席位令牌（v9 第 02 篇 §10 凭据表：网关离线验签 ≥ 72 小时；第 04 篇 §5.2 鉴权）：控制面以 Ed25519 签发，网关、检索服务只持公钥离线验签；不含事项信息",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "upstream_commit": "f67e6398fb3210ad8ace970e2dfd5bcc984ed61f",
+  "patch_digest_sha256": "9bc351c8f5a4abe430d6d19c73cacfb89838996fefb2f63ad543d9604b36b099",
+  "bundle_sha256": "033c03a4ce7d70fbf1fcf68cd2de489889a522f021c5a526c7dd1cbf516db1a8",
+  "inputs": 2284,
+  "built_at": "2026-10-13T08:55:08.099Z"
+}

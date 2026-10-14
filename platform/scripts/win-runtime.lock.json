@@ -1,0 +1,10 @@
+{
+  "note": "随包 Windows 运行时锁文件。exeSha256 为空时，fetch-win-runtime.mjs 以官方校验和核验后写入（首次信任），此后每次下载与构建都必须与此一致；升级版本须同时清空对应摘要并经评审。",
+  "node": {
+    "version": "v26.8.1",
+    "zipUrl": "https://nodejs.org/dist/v26.8.1/node-v26.8.1-win-x64.zip",
+    "shasumsUrl": "https://nodejs.org/dist/v26.8.1/SHASUMS256.txt",
+    "zipSha256": null,
+    "exeSha256": null
+  }
+}

@@ -5,6 +5,8 @@
     "packages/*/test/**/*.ts",
     "apps/agent-host/src/**/*.ts",
     "apps/desktop/dev/**/*.ts",
-    "scripts/**/*.mjs"
+    "scripts/**/*.mjs",
+    "services/*/src/**/*.ts",
+    "services/*/test/**/*.ts"
   ]
 }

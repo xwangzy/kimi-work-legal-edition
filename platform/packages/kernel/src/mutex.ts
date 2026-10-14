@@ -27,3 +27,29 @@ export class AsyncMutex {
     }
   }
 }
+
+/**
+ * 计数信号量：kap 引擎的开放任务槽位（Kimi Code 集成核查 P0-3）。kap 运行不再占用 Agent/OCR 共用的 ioMutex——
+ * 运行可能在“等待律师”上停留数小时，期间材料导入与 OCR 不应被阻塞；内存由 W 执行域的看门狗与并发上限约束（D-14）。
+ */
+export class Semaphore {
+  private active = 0;
+  private readonly waiters: (() => void)[] = [];
+  private readonly slots: number;
+  constructor(slots: number) {
+    this.slots = Math.max(1, slots);
+  }
+
+  async acquire(): Promise<() => void> {
+    if (this.active >= this.slots) await new Promise<void>((r) => this.waiters.push(r));
+    else this.active += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const next = this.waiters.shift();
+      if (next) next();
+      else this.active -= 1;
+    };
+  }
+}

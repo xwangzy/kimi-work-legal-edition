@@ -4,7 +4,8 @@
  * - 温度固定 1.0；K3 厂商默认 max，本产品默认 high，代理按步骤下调，max 只在律师显式选择时使用；
  * - 价格为占位版本（price-v0-placeholder）：探针 9 实测后校准，客户点数与真实成本分账；
  * - 供应商故障不静默切换其他厂商模型（§10.1 故障）：端点配置显式、报错显式；
- * - 三种模型端点（§10.2）：标准（中软 MaaS 法律分组）/ 自带密钥 / 私有模型，按事项选定。
+ * - 三种模型端点（§10.2）：标准 / 自带密钥 / 私有模型，按事项选定；v9 阶段 4 起端点地址与凭据只在出站闸门进程（标准端点 = 法律模型网关），
+ *   本包不持有任何上游地址或密钥。
  */
 
 export interface RouteDef {
@@ -66,35 +67,4 @@ export function buildRoutes(e: BrokerEnv = process.env): Record<string, RouteDef
       priceKey: "k26",
     },
   };
-}
-
-/** 模型端点配置（§10.2）：律师电脑只持有席位令牌 / 自带密钥；月之暗面密钥只在服务端。 */
-export interface EndpointConfig {
-  kind: "standard" | "byok" | "private";
-  baseUrl: string | null;
-  apiKey: string | null;
-  /** 未配置时给人话提示。 */
-  missingNote: string | null;
-}
-
-export function resolveEndpoint(kind: "standard" | "byok" | "private", e: BrokerEnv = process.env): EndpointConfig {
-  if (kind === "standard") {
-    const baseUrl = env(e, "ZR_MAAS_BASE") ?? null;
-    const apiKey = env(e, "ZR_MAAS_TOKEN") ?? null;
-    return {
-      kind,
-      baseUrl,
-      apiKey,
-      missingNote: "中软 MaaS 法律专用分组未配置（ZR_MAAS_BASE/ZR_MAAS_TOKEN）；签署与开通前标准端点只处理合成或公开材料",
-    };
-  }
-  if (kind === "byok") {
-    // 开发兼容：沿用 ZR_MOONSHOT_* 作为自带密钥（语义即律所直签月之暗面）
-    const baseUrl = env(e, "ZR_BYOK_BASE", env(e, "ZR_MOONSHOT_BASE", "https://api.moonshot.cn"))!;
-    const apiKey = env(e, "ZR_BYOK_API_KEY", env(e, "ZR_MOONSHOT_API_KEY")) ?? null;
-    return { kind, baseUrl, apiKey, missingNote: "自带密钥未配置（ZR_BYOK_API_KEY）；律所须与月之暗面直签后填入" };
-  }
-  const baseUrl = env(e, "ZR_PRIVATE_BASE") ?? null;
-  const apiKey = env(e, "ZR_PRIVATE_API_KEY") ?? null;
-  return { kind, baseUrl, apiKey, missingNote: "律所内私有模型端点未配置（ZR_PRIVATE_BASE）；2027-Q4 私有化 v1 提供" };
 }

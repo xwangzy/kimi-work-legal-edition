@@ -1,290 +1,355 @@
+/**
+ * 事项页（第 03 篇 §4.4 事项头常显；材料、任务、看板、当事人词典、数据去向）。
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Matter, type EgressRecord } from "../api.ts";
+import { api, type EgressRecord, type Matter, type MatterBasis, type RunPolicyView } from "../api.ts";
 import { nav } from "../App.tsx";
+import { Composer, type ComposerValue } from "../components/Composer.tsx";
+import { BasisEditor, basisComplete, MatterHeader } from "../components/MatterHeader.tsx";
+import { Modal } from "../components/Modal.tsx";
+import { defaultChoice } from "../components/ModeSelector.tsx";
+import { PartiesPanel } from "../components/Parties.tsx";
+import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
+import { reasonLabel } from "../components/DataFlow.tsx";
+import { DEST_LABELS, fmtTime, RUN_STATUS_LABELS, SCENARIO_LABELS } from "../lib/labels.ts";
+import { MatterBoard } from "./Boards.tsx";
+import { MatterLifecyclePanel } from "../components/MatterLifecycle.tsx";
+import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
+import { notifyDataChanged } from "../lib/events.ts";
 
-const ENDPOINT_LABELS: Record<string, string> = { standard: "标准端点（中软 MaaS）", byok: "自带密钥", private: "私有模型", none: "不使用模型" };
-const SCOPE_LABELS: Record<string, string> = { personal: "个人（仅本机）", team: "团队（所内同步）" };
-const CONSENT_LABELS: Record<string, string> = { agreed: "已同意", pending: "待取得", refused: "已拒绝", not_required: "无需" };
+type Tab = "materials" | "runs" | "board" | "parties" | "egress" | "lifecycle";
 
-/** 事项页（第 2 篇 §4.3：头部常显立场/法域/保密/模型端点/协作范围/当事人同意；材料与任务；数据去向）。 */
 export function MatterPage({ matterId }: { matterId: string }) {
   const [matter, setMatter] = useState<Matter | null>(null);
   const [docs, setDocs] = useState<any[]>([]);
-  const [egress, setEgress] = useState<EgressRecord[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [runs, setRuns] = useState<any[]>([]);
+  const [policy, setPolicy] = useState<RunPolicyView | null>(null);
+  const [tab, setTab] = useState<Tab>("materials");
+  const [value, setValue] = useState<ComposerValue>({ goal: "", scenario: "a1.agent_task", documentIds: [], choice: defaultChoice(null) });
+  const [sheet, setSheet] = useState<PendingStart | null>(null);
+  const [basisOpen, setBasisOpen] = useState(false);
   const [msg, setMsg] = useState("");
-  const [goal, setGoal] = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  /** 每份材料的审查意见（复核 B3-B20：事项页的工作台入口，跨任务汇总）；null 键 = 未关联合同的意见。 */
+  const [review, setReview] = useState<Map<string | null, { total: number; open: number }>>(new Map());
+  const [workbench, setWorkbench] = useState<{ doc: string | null } | null>(null);
   const mountRef = useRef<HTMLInputElement>(null);
 
-  const [channel, setChannel] = useState<string>("");
   const reload = useCallback(() => {
-    api.getMatter(matterId).then((r) => {
-      setMatter(r.matter);
-      setDocs(r.documents);
-    }).catch((e) => setMsg(e.message));
-    api.egressRecords({ matterId }).then((r) => setEgress(r.records)).catch(() => {});
-    api.kernelStatus().then((s) => setChannel(s.note ?? "")).catch(() => {});
+    api
+      .getMatter(matterId)
+      .then((r) => {
+        setMatter(r.matter);
+        setDocs(r.documents);
+        setRuns(r.runs ?? []);
+        setPolicy(r.run_policy ?? null);
+        setValue((v) => ({ ...v, choice: v.goal || v.documentIds.length ? v.choice : defaultChoice(r.run_policy) }));
+      })
+      .catch((e) => setMsg(e.message));
+    api
+      .riskCards(matterId)
+      .then((r) => {
+        const m = new Map<string | null, { total: number; open: number }>();
+        for (const c of r.cards) {
+          const k = c.document_version_id ?? null;
+          const cur = m.get(k) ?? { total: 0, open: 0 };
+          cur.total++;
+          if (c.status === "proposed") cur.open++;
+          m.set(k, cur);
+        }
+        setReview(m);
+      })
+      .catch(() => setReview(new Map()));
   }, [matterId]);
   useEffect(reload, [reload]);
 
-  const uploadFiles = useCallback(
-    async (files: FileList | null, mode: "import" | "mount") => {
-      if (!files || files.length === 0) return;
-      setBusy(true);
-      setMsg("");
-      try {
-        for (const f of Array.from(files)) {
-          const r = mode === "import" ? await api.importMaterial(matterId, f) : await api.mountMaterial(matterId, f);
-          setMsg(`已${mode === "import" ? "导入" : "挂载"} ${f.name}（${r.chars} 字符；${r.note}）`);
-        }
-        reload();
-      } catch (e) {
-        setMsg((e as Error).message);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [matterId, reload],
-  );
+  const patch = async (p: Record<string, unknown>, note: string) => {
+    try {
+      const r = await api.updateMatter(matterId, p);
+      setMatter(r.matter);
+      setMsg(note);
+      reload();
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
+  };
 
-  const patchMatter = useCallback(
-    async (patch: Record<string, unknown>) => {
-      try {
-        const r = await api.updateMatter(matterId, patch);
-        setMatter(r.matter);
-        if (patch.model_endpoint) {
-          const notes: Record<string, string> = {
-            standard: "标准端点：模型请求经中软 MaaS 法律通道 → Kimi；只发经化名校验的必要片段",
-            byok: "自带密钥：模型请求直连月之暗面，不经中软；token 由律所承担",
-            private: "私有模型：请求发往律所内推理服务（全链路本地化）",
-            none: "不使用模型：只用本机确定性工具与人工",
-          };
-          setMsg(`模型端点已变更并留痕。数据去向变化：${notes[String(patch.model_endpoint)] ?? ""}`);
-        } else {
-          setMsg("事项口径已更新并留痕");
+  const upload = async (files: FileList | null, mode: "import" | "mount") => {
+    if (!files || files.length === 0) return;
+    setBusy(true);
+    setMsg("");
+    // 逐个处理：一份失败（例如带密级标志被拒）不影响其余文件，结果逐条告诉律师
+    const lines: string[] = [];
+    try {
+      for (const f of Array.from(files)) {
+        try {
+          const r: any = mode === "import" ? await api.importMaterial(matterId, f) : await api.mountMaterial(matterId, f);
+          const how = mode === "import" ? "已添加（加密保存一份副本，原文件不改动）" : "已关联（只读引用原文件，不复制）";
+          lines.push(`${f.name} ${how}，${Number(r.chars ?? 0).toLocaleString()} 字${r.marking_notice ? `。${r.marking_notice}` : ""}`);
+        } catch (e) {
+          lines.push(`${f.name} 未添加：${(e as Error).message}`);
         }
-      } catch (e) {
-        setMsg((e as Error).message);
       }
-    },
-    [matterId],
-  );
+      setMsg(lines.join("\n"));
+      reload();
+    } finally {
+      setBusy(false);
+    }
+  };
 
-  const startRun = useCallback(
-    async (scenario: "s1.contract_review" | "a1.agent_task" | "s2.case_file" | "s1b.draft_compare" | "s6.redaction") => {
-      if (docs.length === 0) {
-        setMsg("请先导入或挂载材料");
-        return;
-      }
-      setBusy(true);
-      setMsg("");
-      try {
-        const docIds = docs.map((d) => d.document_version_id);
-        const extra: Record<string, unknown> = {};
-        if (scenario === "s1.contract_review") extra.topic_hint = "保密义务";
-        if (scenario === "s1b.draft_compare") {
-          if (docs.length < 2) {
-            setMsg("回稿比对需要至少两份文档（基线 + 回稿）");
-            setBusy(false);
-            return;
-          }
-          // v0：最早一份为基线、最新一份为回稿（正式版提供选择器）
-          extra.baseline_document_version_id = docs.at(-1)!.document_version_id;
-          extra.current_document_version_id = docs[0]!.document_version_id;
-        }
-        if (goal) extra.goal = goal;
-        const est = await api.estimate(matterId, { scenario, document_version_ids: docIds, ...extra });
-        const run = await api.startRun(matterId, {
-          estimate_id: est.estimate_id,
-          idempotency_key: `${matterId}-${scenario}-${Date.now()}`,
-          goal: goal || (scenario === "a1.agent_task" ? "请核验材料中引用的法条是否现行有效，并给出处理建议。" : undefined),
-          topic_hint: extra.topic_hint as string | undefined,
-        });
-        nav(`/run/${run.run_id}/${matterId}`);
-      } catch (e) {
-        setMsg((e as Error).message);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [docs, goal, matterId],
-  );
+  const submit = async () => {
+    if (!matter) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      const v = value.documentIds.length === 0 && value.scenario !== "a1.agent_task" ? { ...value, documentIds: docs.filter((d) => !d.quarantined_at).map((d) => d.document_version_id) } : value;
+      setSheet(await prepareStart(matter, v));
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
-  return (
-    <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">◉ Kimi Work<small>法律行业发行版（demo）</small></div>
-        <button className="nav-item" onClick={() => nav("/")}>← 返回首页</button>
-        {channel && (
-          <>
-            <div className="sidebar-section">模型通道</div>
-            <div className="sidebar-link" style={{ whiteSpace: "normal", fontSize: 12 }}>{channel}</div>
-          </>
-        )}
-      </aside>
+  if (!matter) {
+    return (
       <main className="main">
-        <div className="main-narrow">
-          <h1 className="page-title">{matter?.title ?? "事项"}</h1>
-          {matter && (
-            <>
-              <div className="matter-head">
-                <span><span className="kv">客户</span><span className="v">{matter.client_name ?? "—"}</span></span>
-                <span><span className="kv">相对方</span><span className="v">{matter.counterparty ?? "—"}</span></span>
-                <span><span className="kv">我方立场</span><span className="v">{matter.stance}</span></span>
-                <span><span className="kv">法域</span><span className="v">{matter.jurisdiction}</span></span>
-                <span><span className="kv">保密</span><span className="v">{matter.confidentiality}</span></span>
-                <span><span className="kv">分析截止日</span><span className="v">{(matter as any).key_dates?.analysis_as_of ?? "—"}</span></span>
-              </div>
-              <div className="matter-head" style={{ marginTop: 6 }}>
-                <label className="kv-field">
-                  模型端点
-                  <select value={matter.model_endpoint} onChange={(e) => void patchMatter({ model_endpoint: e.target.value })}>
-                    {Object.entries(ENDPOINT_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                </label>
-                <label className="kv-field">
-                  协作范围
-                  <select value={matter.collab_scope} onChange={(e) => void patchMatter({ collab_scope: e.target.value })}>
-                    {Object.entries(SCOPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                </label>
-                <label className="kv-field">
-                  当事人同意
-                  <select value={matter.consent_status} onChange={(e) => void patchMatter({ consent_status: e.target.value })}>
-                    {Object.entries(CONSENT_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                </label>
-              </div>
-              {matter.consent_status === "pending" && (
-                <p className="muted" style={{ marginTop: 6 }}>
-                  当事人告知同意「待取得」：模型步骤将被出站闸门拦截，只用本机能力（解析、比对、脱敏、法条核验）；改为「无需/已同意」后可使用模型。
-                  <button
-                    className="btn-ghost"
-                    style={{ marginLeft: 8 }}
-                    onClick={() => {
-                      void api.consentNotice(matterId).then((r) => {
-                        setMsg(r.note);
-                        return api.downloadArtifact(r.artifact_version_id, r.filename);
-                      }).catch((e) => setMsg(e.message));
-                    }}
-                  >
-                    一键生成告知函
-                  </button>
-                </p>
-              )}
-              {matter.consent_status === "refused" && (
-                <p className="muted" style={{ marginTop: 6 }}>
-                  当事人已拒绝云端处理：只允许私有模型端点或不使用模型。
-                </p>
-              )}
-              {matter.node_allowed === 1 && (
-                <p className="muted" style={{ marginTop: 6 }}>
-                  已授权所内节点执行本事项（strict 与伦理墙事项不可授权）。
-                  <button
-                    className="btn-ghost"
-                    style={{ marginLeft: 8 }}
-                    onClick={() => {
-                      void api
-                        .nodeEnqueue({
-                          matter_id: matterId,
-                          scenario: "s1.contract_review",
-                          input: { document_version_ids: docs.map((d) => d.document_version_id) },
-                          idempotency_key: `node-${matterId}-${Date.now()}`,
-                        })
-                        .then((r) => setMsg(`已转交节点执行（${r.task_id}）：节点拾取后执行，结果经同步回来，可在 node_tasks 查看`))
-                        .catch((e) => setMsg(e.message));
-                    }}
-                  >
-                    转到所内节点
-                  </button>
-                </p>
-              )}
-            </>
-          )}
-
-          <div className="section-title">材料（原件只读、不可变版本；挂载不复制原件）</div>
-          <div
-            className="upload-zone"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              void uploadFiles(e.dataTransfer.files, "import");
-            }}
-          >
-            拖入 DOCX / TXT 导入，或{" "}
-            <button className="btn-ghost" disabled={busy} onClick={() => fileRef.current?.click()}>选择文件导入</button>
-            <button className="btn-ghost" disabled={busy} style={{ marginLeft: 8 }} onClick={() => mountRef.current?.click()}>挂载文件（不复制）</button>
-            <input ref={fileRef} type="file" multiple hidden accept=".docx,.txt,.md" onChange={(e) => void uploadFiles(e.target.files, "import")} />
-            <input ref={mountRef} type="file" multiple hidden accept=".docx,.txt,.md" onChange={(e) => void uploadFiles(e.target.files, "mount")} />
-            <div className="muted" style={{ marginTop: 6 }}>内核复算 hash 后入库；PDF 待文档服务接入（G0 第 3–4 周）</div>
-          </div>
-          {docs.length > 0 && (
-            <table className="data" style={{ marginTop: 12 }}>
-              <thead><tr><th>文件</th><th>方式</th><th>大小</th><th>hash（前 12 位）</th><th>时间</th></tr></thead>
-              <tbody>
-                {docs.map((d) => (
-                  <tr key={d.document_version_id}>
-                    <td>{d.filename}</td>
-                    <td>{d.storage_mode === "mount" ? "挂载" : "导入"}</td>
-                    <td>{(d.size_bytes / 1024).toFixed(1)} KB</td>
-                    <td className="mono">{d.sha256.slice(0, 12)}</td>
-                    <td>{new Date(d.created_at).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          <div className="section-title">发起任务</div>
-          <div className="hero-input">
-            <textarea
-              placeholder="任务说明（可选）：例如“核验引用法条是否现行有效，给出处理建议”"
-              value={goal}
-              onChange={(e) => setGoal(e.target.value)}
-              style={{ minHeight: 56 }}
-            />
-            <div className="hero-toolbar">
-              <button className="btn-primary" disabled={busy} onClick={() => void startRun("s1.contract_review")}>
-                按 Playbook 审查（S1）
-              </button>
-              <button className="btn-ghost" disabled={busy} onClick={() => void startRun("s1b.draft_compare")}>
-                回稿比对（S1b）
-              </button>
-              <button className="btn-ghost" disabled={busy} onClick={() => void startRun("s2.case_file")}>
-                案卷整理（S2）
-              </button>
-              <button className="btn-ghost" disabled={busy} onClick={() => void startRun("s6.redaction")}>
-                脱敏（S6）
-              </button>
-              <button className="btn-ghost" disabled={busy} onClick={() => void startRun("a1.agent_task")}>
-                Agent 模式（A1 Beta）
-              </button>
-            </div>
-          </div>
-          {msg && <p className="muted" style={{ marginTop: 14 }}>{msg}</p>}
-
-          <div className="section-title">数据去向（每一次外发都有记录）</div>
-          {egress.length === 0 && <p className="muted">本事项尚无外发记录；原件与成果默认留在本机工作区。</p>}
-          {egress.length > 0 && (
-            <table className="data">
-              <thead><tr><th>时间</th><th>目的地</th><th>类别</th><th>字符数</th><th>化名校验</th><th>请求</th></tr></thead>
-              <tbody>
-                {egress.map((r) => (
-                  <tr key={r.record_id}>
-                    <td>{new Date(r.created_at).toLocaleString()}</td>
-                    <td>{r.destination_host}</td>
-                    <td>{r.destination_kind}</td>
-                    <td>{r.chars}</td>
-                    <td>{r.pseudonym_findings > 0 ? `发现 ${r.pseudonym_findings} 处` : "无未替换标识符"}</td>
-                    <td className="mono">{(r.request_id ?? "—").slice(0, 18)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+        <div className="main-wide">{msg ? <div className="banner banner-red">{msg}</div> : <p className="muted">载入中…</p>}</div>
+      </main>
+    );
+  }
+  if (workbench) {
+    return (
+      <ReviewWorkbench
+        matterId={matterId}
+        documentVersionId={workbench.doc}
+        readOnly={matter?.lifecycle !== undefined && matter.lifecycle !== "active"}
+        backLabel="← 返回事项"
+        onClose={() => {
+          setWorkbench(null);
+          reload();
+        }}
+      />
+    );
+  }
+  // 已删除的事项：只显示删除回执（名称已替换为占位，内容已删除）
+  if (matter.lifecycle === "purged") {
+    return (
+      <main className="main">
+        <div className="main-wide">
+          <h1 className="page-title">{matter.title}</h1>
+          <MatterLifecyclePanel matter={matter} onChanged={reload} />
         </div>
       </main>
-    </div>
+    );
+  }
+  const closed = matter.lifecycle === "closed";
+  const basis: MatterBasis = matter.basis ?? {
+    engagement: matter.consent_status === "agreed" || matter.consent_status === "not_required" ? "confirmed" : "pending",
+    personal_info: matter.consent_status === "agreed" || matter.consent_status === "not_required" ? "confirmed" : "pending",
+    sensitive: "not_applicable",
+    subprocessor: matter.consent_status === "agreed" || matter.consent_status === "not_required" ? "confirmed" : "pending",
+  };
+  return (
+    <main className="main">
+      <div className="main-wide">
+        <h1 className="page-title">{matter.title}</h1>
+        {/* 结案后只读（复核 C-B11）：事项头的修改入口不再出现，内核同样拒绝 */}
+        <MatterHeader
+          matter={matter}
+          policy={policy}
+          onParties={() => setTab("parties")}
+          {...(closed
+            ? {}
+            : {
+                onEditBasis: () => setBasisOpen(true),
+                onToggleFullPseudonym: (on: boolean) => void patch({ full_pseudonym: on }, on ? "已开启全部化名：机构名称也替换为代号（留痕）" : "已关闭全部化名（留痕）"),
+                onClearRefusal: () => void patch({ consent_status: "pending" }, "已清除“当事人拒绝云端处理”的记录（留痕）：请按回执核实四项依据"),
+                onConsentNotice: () =>
+                  void api
+                    .consentNotice(matterId)
+                    .then((r) => {
+                      setMsg(`${r.filename}：${r.note}（见“交付件 · 草稿”）`);
+                      notifyDataChanged();
+                    })
+                    .catch((e) => setMsg((e as Error).message)),
+              })}
+        />
+        {closed && (
+          <div className="banner banner-orange matter-closed-banner">
+            <span>本事项已结案（只读），保留至 {String(matter.retention_until ?? "").slice(0, 10)}{matter.legal_hold ? `；法律保全：${matter.legal_hold_reason ?? ""}` : ""}。</span>
+            <button className="btn-link" onClick={() => setTab("lifecycle")}>结案与删除</button>
+          </div>
+        )}
+        {!closed && <div className="matter-composer">
+          <Composer
+            matterId={matterId}
+            documents={docs.filter((d) => !d.quarantined_at)}
+            policy={policy}
+            value={value}
+            onChange={setValue}
+            onImport={(f) => void upload(f, "import")}
+            onSubmit={() => void submit()}
+            busy={busy}
+            placeholder="在本事项内发起任务，例如：核验起诉状引用的法条是否现行有效"
+          />
+        </div>}
+        {msg && <p className="muted" style={{ whiteSpace: "pre-line" }}>{msg}</p>}
+        <div className="tabs tabs-line">
+          {(
+            [
+              ["materials", `材料（${docs.length}）`],
+              ["runs", `任务（${runs.length}）`],
+              ["board", "看板"],
+              ["parties", "当事人词典"],
+              ["egress", "数据去向"],
+              ["lifecycle", "结案与删除"],
+            ] as [Tab, string][]
+          ).map(([k, l]) => (
+            <button key={k} className={`tab${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{l}</button>
+          ))}
+        </div>
+        {tab === "materials" && (
+          <section>
+            {!closed && <div
+              className="upload-zone"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                void upload(e.dataTransfer.files, "import");
+              }}
+            >
+              拖入文件导入（原件只读、不可变版本），或
+              <button className="btn-link" disabled={busy} onClick={() => mountRef.current?.click()}>挂载（不复制原件）</button>
+              <input ref={mountRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files, "mount")} />
+            </div>}
+            {docs.length > 0 && (
+              <table className="data">
+                <thead><tr><th>文件</th><th>方式</th><th>大小</th><th>解析</th><th>审查意见</th><th>hash</th><th>时间</th></tr></thead>
+                <tbody>
+                  {docs.map((d) => (
+                    <tr key={d.document_version_id}>
+                      <td>{d.filename}</td>
+                      <td>{d.storage_mode === "mount" ? "挂载" : "导入"}</td>
+                      <td>{(Number(d.size_bytes ?? 0) / 1024).toFixed(1)} KB</td>
+                      <td>{d.quarantined_at ? <span className="tag tag-warn">已隔离（国家秘密标志）</span> : (d.quality_flags ?? []).length ? (d.quality_flags as string[]).join("、") : "正常"}</td>
+                      <td>
+                        {review.get(d.document_version_id) ? (
+                          <button className="btn-link" onClick={() => setWorkbench({ doc: d.document_version_id })}>
+                            {review.get(d.document_version_id)!.total} 项{review.get(d.document_version_id)!.open > 0 ? `（待处理 ${review.get(d.document_version_id)!.open}）` : ""}
+                          </button>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="mono">{String(d.sha256 ?? "").slice(0, 12)}</td>
+                      <td>{fmtTime(d.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {review.get(null) && (
+              <p className="muted">
+                另有 {review.get(null)!.total} 项审查意见未关联到具体合同：
+                <button className="btn-link" onClick={() => setWorkbench({ doc: null })}>逐项处理</button>
+              </p>
+            )}
+          </section>
+        )}
+        {tab === "runs" && (
+          <section>
+            {runs.length === 0 && <p className="muted">还没有任务。</p>}
+            {runs.length > 0 && (
+              <table className="data">
+                <thead><tr><th>任务</th><th>状态</th><th>模式</th><th>发起</th></tr></thead>
+                <tbody>
+                  {runs.map((r) => (
+                    <tr key={r.run_id} className="row-link" onClick={() => nav(`/run/${r.run_id}/${matterId}`)}>
+                      <td>{SCENARIO_LABELS[r.scenario] ?? r.scenario}{r.goal ? ` · ${String(r.goal).slice(0, 40)}` : ""}</td>
+                      <td>{RUN_STATUS_LABELS[r.status] ?? r.status}</td>
+                      <td>{r.mode ?? "—"}</td>
+                      <td>{fmtTime(r.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+        )}
+        {tab === "board" && <MatterBoard matter={matter} runs={runs} />}
+        {tab === "parties" && <PartiesPanel matterId={matterId} onChanged={reload} readOnly={closed} />}
+        {tab === "egress" && <MatterEgress matterId={matterId} />}
+        {tab === "lifecycle" && <MatterLifecyclePanel matter={matter} onChanged={reload} />}
+      </div>
+      {basisOpen && (
+        <BasisDialog
+          basis={basis}
+          endpoint={matter.model_endpoint}
+          onClose={() => setBasisOpen(false)}
+          onSave={(b) => {
+            setBasisOpen(false);
+            // 同意状态由内核按四项派生（不由界面直接改写——复核 S5-A09）
+            void patch({ basis: b }, basisComplete(b) ? "四项依据已齐备（留痕）：可使用模型与联网能力" : "依据有待确认项（留痕）：本事项只运行本机能力");
+          }}
+        />
+      )}
+      {sheet && <RunSheet pending={sheet} onClose={() => setSheet(null)} />}
+    </main>
+  );
+}
+
+function BasisDialog({ basis, endpoint, onClose, onSave }: { basis: MatterBasis; endpoint: string; onClose: () => void; onSave: (b: MatterBasis) => void }) {
+  const [b, setB] = useState(basis);
+  return (
+    <Modal title="四项依据" onClose={onClose} wide>
+      <p className="muted">数据准入分四项记录；任一项“待确认”时，本事项只运行不出站的本机能力。变更留痕。</p>
+      <BasisEditor basis={b} endpoint={endpoint} onChange={setB} />
+      <div className="modal-actions">
+        <button className="btn-ghost" onClick={onClose}>取消</button>
+        <button className="btn-primary" onClick={() => onSave(b)}>保存</button>
+      </div>
+    </Modal>
+  );
+}
+
+function MatterEgress({ matterId }: { matterId: string }) {
+  const [records, setRecords] = useState<EgressRecord[] | null>(null);
+  const [unresolved, setUnresolved] = useState<any[]>([]);
+  useEffect(() => {
+    api.egressRecords({ matterId }).then((r) => setRecords(r.records)).catch(() => setRecords([]));
+    api.egressUnresolved(matterId).then((r) => setUnresolved(r.records)).catch(() => {});
+  }, [matterId]);
+  if (!records) return <p className="muted">载入中…</p>;
+  return (
+    <section>
+      {unresolved.length > 0 && <div className="banner banner-orange">有 {unresolved.length} 条出站结果不明（预写后中断），已进入人工对账。</div>}
+      {records.length === 0 && <p className="muted">本事项尚无出站记录：原件与成果留在这台电脑上。</p>}
+      {records.length > 0 && (
+        <table className="data">
+          <thead><tr><th>时间</th><th>去向</th><th>结果</th><th>字数</th><th>代号</th><th>说明</th></tr></thead>
+          <tbody>
+            {records.map((r) => {
+              let note: any = {};
+              try {
+                note = JSON.parse(r.note ?? "{}");
+              } catch {
+                note = {};
+              }
+              return (
+                <tr key={r.record_id}>
+                  <td>{fmtTime(r.created_at)}</td>
+                  <td>{DEST_LABELS[r.destination_kind] ?? r.destination_kind}</td>
+                  <td>{r.outcome === "blocked" ? "已拦截" : r.outcome === "failed" ? "失败" : r.outcome === "unknown" ? "结果不明" : "已发出"}</td>
+                  <td>{r.chars.toLocaleString()}</td>
+                  <td>{Object.values(r.pseudonym_counts ?? {}).reduce((a: number, b: any) => a + Number(b), 0)}</td>
+                  <td>{note.reason ? reasonLabel(note.reason) : note.purpose === "search" ? "检索" : note.purpose === "fetch" ? "抓取" : note.purpose === "model" ? "推理" : ""}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }

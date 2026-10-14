@@ -1,0 +1,10 @@
+{
+  "name": "@zr-legal/at-rest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "本机落盘加密（审计 S3 / 隐私 P0-3 / ZP-9）：KWE1 格式——分块 AES-256-GCM（整文件写入、随机读）与追加日志记录（会话转录、任务输出、事件日志）；事项工作区密钥按用途派生，只用 Node crypto",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

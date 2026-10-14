@@ -29,6 +29,8 @@ export class KernelDb {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
     this.db.pragma("busy_timeout = 5000");
+    // 删除即覆写空闲页（审计 S3：撤权删除的工作区密钥包裹行、令牌表等不在空闲页残留）
+    this.db.pragma("secure_delete = ON");
   }
 
   migrate(migrationsDir?: string): void {
@@ -43,9 +45,37 @@ export class KernelDb {
     for (const f of files) {
       if (applied.has(f)) continue;
       const sql = readFileSync(join(dir, f), "utf8");
-      // 迁移脚本自带 BEGIN/COMMIT
+      if (sql.includes("-- kwl:managed-transaction")) {
+        // 迁移器管理事务（复审 R-16）：重建表类迁移需临时关闭外键；外键完整性检查在 COMMIT 之前执行，
+        // 有违例即回滚——迁移与登记都不生效，下次启动会重新尝试并再次检查
+        this.db.pragma("foreign_keys = OFF");
+        try {
+          this.db.exec("BEGIN");
+          try {
+            this.db.exec(sql);
+            const violations = this.db.pragma("foreign_key_check") as unknown[];
+            if (violations.length > 0) {
+              throw new Error(`迁移 ${f} 产生 ${violations.length} 处外键违例，已回滚：${JSON.stringify(violations.slice(0, 3))}`);
+            }
+            this.run(`INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)`, [f, new Date().toISOString()]);
+            this.db.exec("COMMIT");
+          } catch (e) {
+            this.db.exec("ROLLBACK");
+            throw e;
+          }
+        } finally {
+          this.db.pragma("foreign_keys = ON");
+        }
+        continue;
+      }
+      // 早期迁移脚本自带 BEGIN/COMMIT（不重建表、不关外键）
       this.db.exec(sql);
-      this.run(`INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)`, [f, new Date().toISOString()]);
+      this.run(`INSERT OR IGNORE INTO schema_migrations (name, applied_at) VALUES (?, ?)`, [f, new Date().toISOString()]);
+    }
+    // 每次启动都检查外键完整性（复审 R-16）：有违例即拒绝启动，不带着坏数据运行
+    const violations = this.db.pragma("foreign_key_check") as unknown[];
+    if (violations.length > 0) {
+      throw new Error(`数据库外键检查发现 ${violations.length} 处违例，拒绝启动：${JSON.stringify(violations.slice(0, 3))}`);
     }
   }
 
@@ -64,6 +94,14 @@ export class KernelDb {
   /** 事务：只包同步代码段（模型调用等异步动作不得放在事务内）。 */
   tx<T>(fn: () => T): T {
     return this.db.transaction(fn)();
+  }
+
+  /**
+   * 把 WAL 里的页写回主库并截断 WAL（删除后调用；复核 C-A17）：WAL 保留着删除前的页面映像，checkpoint 之前磁盘上仍有旧内容；
+   * 主库空闲页由 secure_delete 清零。
+   */
+  checkpointTruncate(): void {
+    this.db.pragma("wal_checkpoint(TRUNCATE)");
   }
 
   close(): void {

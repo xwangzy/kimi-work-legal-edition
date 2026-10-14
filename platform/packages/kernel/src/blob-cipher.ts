@@ -32,5 +32,13 @@ export function createBlobCipher(deps: { db: KernelDb; deviceId: string; encPriv
       const h = blobHeaderOf(envelope)!;
       return openBlob(resolveKey(h.matterId, h.epoch), envelope);
     },
+    forget(matterId) {
+      for (const [k, key] of cache) {
+        if (k.startsWith(`${matterId}|`)) {
+          key.fill(0);
+          cache.delete(k);
+        }
+      }
+    },
   };
 }

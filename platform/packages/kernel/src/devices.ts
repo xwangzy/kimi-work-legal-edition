@@ -10,7 +10,9 @@
  * - 首跑且该 tenant 仅 1 个 membership 时将其角色提升为 firm_admin（G0 单机开发形态；
  *   生产由管理控制台分配角色）。
  */
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync } from "node:fs";
+import { basename, dirname } from "node:path";
+import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
 import { join } from "node:path";
 import {
   b64urlEncode,
@@ -51,9 +53,79 @@ export function keysDirOf(workspaceDir: string): string {
   return join(workspaceDir, "keys");
 }
 
+/**
+ * 密钥文件封装（隐私安全审查 P0-1）：设备私钥、律所根私钥、恢复份额落盘前用 AES-256-GCM 封装，
+ * 封装密钥 = HKDF-SHA256(数据库主密钥, "kwl-secret-files/1")——数据库主密钥由主进程经 safeStorage（Windows DPAPI）解封后
+ * 一次性交付内核，因此拷走工作区目录（备份、同步盘、被盗硬盘）不能直接得到私钥。附加数据为文件名（防止文件互换）。
+ * 未配置数据库主密钥（开发与测试形态）时按明文开发形态读写；配置后读到明文旧文件即就地改写为封装形态。
+ * 残余（如实）：同一 Windows 用户下运行的恶意程序可调用 DPAPI 解封——须 TPM 不可导出密钥（G1，见审查 P1-10）。
+ */
+const sealKeys = new Map<string, Buffer>();
+
+/** 由内核启动时按工作区登记（keysDir → 封装密钥）；dbKey 为空即不封装。 */
+export function configureSecretSealing(keysDir: string, dbKey: string | undefined): void {
+  if (!dbKey) {
+    sealKeys.delete(keysDir);
+    return;
+  }
+  sealKeys.set(keysDir, Buffer.from(hkdfSync("sha256", Buffer.from(dbKey, "utf8"), Buffer.from("kwl"), Buffer.from("kwl-secret-files/1"), 32)));
+}
+
+function sealKeyFor(path: string): Buffer | undefined {
+  let d = dirname(path);
+  for (let i = 0; i < 3; i++) {
+    const k = sealKeys.get(d);
+    if (k) return k;
+    d = dirname(d);
+  }
+  return undefined;
+}
+
+interface SealedFile {
+  format: "kwl-sealed/1";
+  iv: string;
+  tag: string;
+  ct: string;
+}
+
 function writeSecret0600(path: string, content: unknown): void {
-  mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, JSON.stringify(content, null, 2), { mode: 0o600 });
+  mkdirSync(dirname(path), { recursive: true });
+  const key = sealKeyFor(path);
+  const plain = JSON.stringify(content, null, 2);
+  let out = plain;
+  if (key) {
+    const iv = randomBytes(12);
+    const c = createCipheriv("aes-256-gcm", key, iv);
+    c.setAAD(Buffer.from(basename(path), "utf8"));
+    const ct = Buffer.concat([c.update(plain, "utf8"), c.final()]);
+    const sealed: SealedFile = { format: "kwl-sealed/1", iv: iv.toString("base64"), tag: c.getAuthTag().toString("base64"), ct: ct.toString("base64") };
+    out = JSON.stringify(sealed);
+  }
+  const tmp = `${path}.tmp-${process.pid}`;
+  writeFileSync(tmp, out, { mode: 0o600 });
+  renameSync(tmp, path);
+}
+
+/** 读取密钥文件：封装形态解封（失败即抛错，不回落）；配置了封装密钥而读到明文旧文件 → 就地改写为封装形态。 */
+export function readSecretFile<T>(path: string): T {
+  const raw = JSON.parse(readFileSync(path, "utf8")) as T | SealedFile;
+  const key = sealKeyFor(path);
+  if (raw && typeof raw === "object" && (raw as SealedFile).format === "kwl-sealed/1") {
+    if (!key) throw new Error(`${basename(path)} 已加密封装，但本次启动没有数据库主密钥，无法解封`);
+    const f = raw as SealedFile;
+    const d = createDecipheriv("aes-256-gcm", key, Buffer.from(f.iv, "base64"));
+    d.setAAD(Buffer.from(basename(path), "utf8"));
+    d.setAuthTag(Buffer.from(f.tag, "base64"));
+    let plain: string;
+    try {
+      plain = Buffer.concat([d.update(Buffer.from(f.ct, "base64")), d.final()]).toString("utf8");
+    } catch {
+      throw new Error(`${basename(path)} 解封失败（密钥不符或文件被改动），已拒用`);
+    }
+    return JSON.parse(plain) as T;
+  }
+  if (key) writeSecret0600(path, raw);
+  return raw as T;
 }
 
 /** 首跑生成律所根密钥与恢复托管（分持落盘为开发形态）；之后只读公钥。
@@ -117,7 +189,7 @@ export function ensureFirmIdentity(db: KernelDb, keysDir: string, tenantId: stri
 
 /** 仅签发设备证书时读取根私钥（G0 开发形态，见文件头声明）。 */
 export function getFirmRootPrivateKey(keysDir: string): { publicKeyPem: string; privateKeyPem: string; recoveryCode: string } {
-  const raw = JSON.parse(readFileSync(join(keysDir, "firm-root.json"), "utf8")) as { publicKeyPem: string; privateKeyPem: string; recoveryCode: string };
+  const raw = readSecretFile<{ publicKeyPem: string; privateKeyPem: string; recoveryCode: string }>(join(keysDir, "firm-root.json"));
   // 自检：文件内私钥与恢复码应派生同一公钥（发现被改/混放即拒用）
   const derived = firmRootFromRecoveryCode(raw.recoveryCode);
   if (derived.publicKeyPem !== raw.publicKeyPem || derived.privateKeyPem !== raw.privateKeyPem) {
@@ -127,7 +199,7 @@ export function getFirmRootPrivateKey(keysDir: string): { publicKeyPem: string; 
 }
 
 export function getDeviceKeys(keysDir: string): DeviceKeys {
-  return JSON.parse(readFileSync(join(keysDir, "device.json"), "utf8")) as DeviceKeys;
+  return readSecretFile<DeviceKeys>(join(keysDir, "device.json"));
 }
 
 /** membership 角色 → 证书角色（G0 映射；生产由管理控制台按席位分配）。
@@ -210,7 +282,7 @@ export function ensureNodeDevice(db: KernelDb, keysDir: string, identity: Identi
   const deviceFile = join(keysDir, "node-device.json");
   const row = db.get<{ cert_json: string }>(`SELECT cert_json FROM devices WHERE device_id = ?`, [deviceId]);
   if (row && existsSync(deviceFile)) {
-    const keys = JSON.parse(readFileSync(deviceFile, "utf8")) as DeviceKeys;
+    const keys = readSecretFile<DeviceKeys>(deviceFile);
     return { deviceId, memberId: "node_service", cert: JSON.parse(row.cert_json) as DeviceCertificate, keys };
   }
   const root = getFirmRootPrivateKey(keysDir);
@@ -240,5 +312,5 @@ export function ensureNodeDevice(db: KernelDb, keysDir: string, identity: Identi
 }
 
 export function getNodeDeviceKeys(keysDir: string): DeviceKeys {
-  return JSON.parse(readFileSync(join(keysDir, "node-device.json"), "utf8")) as DeviceKeys;
+  return readSecretFile<DeviceKeys>(join(keysDir, "node-device.json"));
 }

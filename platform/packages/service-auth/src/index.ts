@@ -14,6 +14,14 @@ export interface CapabilityClaims {
   mid?: string | undefined; // matter
   rid?: string | undefined; // run
   aid?: string | undefined; // attempt
+  /** 尝试纪元（fencing，v9 第 04 篇 §8）：端点按当前尝试行的 fence_token 比对，失去租约即失效。 */
+  fen?: number | undefined;
+  /** 令牌 ID（= Agent 任务 ID）：宿主退出等事件按 jti 撤销。 */
+  jti?: string | undefined;
+  /** 工具令牌授予的副作用类别（缺省只允许 read；端点独立强制，阶段 1 审查 R-09）。 */
+  fx?: string[] | undefined;
+  /** 任务用途（运行意图；端点按清单的 purposes 独立校验）。 */
+  pur?: string | undefined;
   scope: string[]; // e.g. ["tool:legal"], ["model:chat"]
   exp: number; // unix seconds
 }

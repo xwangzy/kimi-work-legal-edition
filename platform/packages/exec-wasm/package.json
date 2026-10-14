@@ -1,0 +1,16 @@
+{
+  "name": "@zr-legal/exec-wasm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "W 执行域（v9 第 04 篇 §4.1）：Node 26 --permission 监督进程 + 每调用 worker；W-core = just-bash（模拟 bash）+ 零 JS 桥 CPython；单一路径命名空间；快照提交经文件 broker",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zr-legal/at-rest": "*",
+    "@zr-legal/docx-engine": "*",
+    "@zr-legal/file-broker": "*",
+    "just-bash": "3.6.0"
+  }
+}

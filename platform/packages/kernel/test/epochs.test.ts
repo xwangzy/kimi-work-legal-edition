@@ -108,7 +108,12 @@ test("密钥纪元：吊销撤权 + 成员加移的密钥分发", { timeout: 120
     () => assertIncomingEventAcceptable(db, { signerDeviceId: hostDeviceId, keyEpoch: 1 }),
     (e: any) => e.code === "revoked_device_event" && e.httpStatus === 403,
   );
-  assertIncomingEventAcceptable(db, { signerDeviceId: hostDeviceId, keyEpoch: 2 }); // 不抛
+  // v9 阶段 6 复核 S6-B28：吊销同时记墓碑，被吊销设备的事件不论自报的纪元一律拒收——纪元写在签名设备自己签的段头里，
+  // 而且各设备的租户纪元是本机计数，不能作为放行依据（阶段 3 的纪元规则只拒“吊销后纪元之前”的事件）
+  assert.throws(
+    () => assertIncomingEventAcceptable(db, { signerDeviceId: hostDeviceId, keyEpoch: 2 }),
+    (e: any) => e.code === "revoked_device_event",
+  );
   assertIncomingEventAcceptable(db, { signerDeviceId: colleagueDeviceId, keyEpoch: 1 }); // 未吊销设备不抛
   assert.throws(() => assertIncomingEventAcceptable(db, { signerDeviceId: "dev_ghost", keyEpoch: 9 }), (e: any) => e.code === "revoked_device_event");
 

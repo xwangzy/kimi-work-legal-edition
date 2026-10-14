@@ -1,0 +1,13 @@
+{
+  "name": "@zr-legal/file-broker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "文件 broker（v9 第 04 篇 §4.4）：原件区只读、工作区读写、交付区只由人发布；逐级 lstat + O_NOFOLLOW + 句柄身份核对",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zr-legal/at-rest": "*"
+  }
+}

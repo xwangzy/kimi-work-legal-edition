@@ -1,0 +1,74 @@
+# Windows 安装包（W4，待用户同意安装 electron-builder 后启用）。
+# 前置：npm run build:lawdb && npm run build:agent-profile && npm run build:tool-manifest && npm run build:skills
+#       node scripts/fetch-win-runtime.mjs（下载并核验 node.exe；审计 S3 第 2 步起不再随包 rg.exe）
+#       node scripts/build-runtime.mjs --target win32-x64（随包运行时 → apps/desktop/runtime/）
+#       npm run build（内核制品 + 前端）
+# 构建：npx electron-builder --win --x64（在 apps/desktop 下）
+appId: com.chinasoft.kimiwork.legal
+productName: Kimi Work 法律版
+executableName: KimiWorkLegal
+copyright: Copyright © 2026 中国软件国际
+directories:
+  output: release
+  buildResources: build
+# 只打包运行所需：前端产物、主进程与预加载、内核制品及随包内容（迁移、法规库、工具清单、方法模板）
+files:
+  - package.json
+  - dist/**
+  - electron/main.cjs
+  - electron/preload.cjs
+  - electron/url-policy.cjs
+  - electron/runtime-paths.cjs
+  - electron/secret-store.cjs
+  - electron/release-config.cjs
+  # 内置上游地址与公钥钉住集（审计 S5；由发布流程生成，模板 electron/release.example.json）
+  - electron/release.json
+  - electron/kernel.bundle.cjs
+  - electron/parse-worker.bundle.cjs
+  - electron/migrations/**
+  - electron/lawdb/**
+  - electron/tool-manifest/**
+  - electron/skills/**
+  - node_modules/better-sqlite3-multiple-ciphers/**
+  # 解析与 OCR 依赖（pdfjs-dist、ppu-paddle-ocr、onnxruntime-node、@napi-rs/canvas 的 win32 二进制）待首次真实打包时确定清单（W6）
+asar: true
+# 原生模块（N-API 预编译，含 win32-x64）须在 asar 外才能装载
+asarUnpack:
+  - node_modules/better-sqlite3-multiple-ciphers/**
+# 需要随包 Node 运行的组件放在 asar 之外（node.exe 读不了 asar）：Agent 宿主（含宿主内检索 worker）、出站闸门、W 执行域
+extraResources:
+  - from: runtime
+    to: runtime
+    filter: ["**/*"]
+npmRebuild: false
+# Electron 安全熔断：禁止 NODE_OPTIONS 与调试参数注入、只从 asar 加载应用并校验其完整性。
+# runAsNode 暂为 true：解析/OCR 工作进程目前由内核以 Electron 自身 fork（W6）；改为随包 Node 运行后改成 false（防止签名二进制被当作 Node 滥用）。
+electronFuses:
+  runAsNode: true
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  # 代码签名证书（EV/OV Authenticode）到位后配置 signtoolOptions 或 azureSignOptions；未签名安装包会被 SmartScreen 拦截
+  requestedExecutionLevel: asInvoker
+nsis:
+  # 律师自助安装：按用户安装、无需管理员权限；允许 IT 选择为所有用户安装
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Kimi Work 法律版
+  language: "2052"
+  installerLanguages: [zh_CN]
+  # 卸载时保留本机案件数据（数据在 %APPDATA%，删除须律师在应用内按保留期规则操作）
+  deleteAppDataOnUninstall: false
+# 自动更新（W7）：更新服务器与签名校验方案确定后配置；未配置前不检查更新
+publish: null

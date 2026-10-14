@@ -11,7 +11,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { canonicalJson, sha256B64, signBytes, verifyBytes, type DeviceCertificate } from "@zr-legal/keys";
 import { DomainError, newId } from "@zr-legal/domain";
-import { egressRecordEnvelopeHash } from "@zr-legal/egress";
+import { egressContentDigest, egressRecordEnvelopeHash } from "@zr-legal/egress";
 import type { KernelDb } from "./db.ts";
 
 export type SignedKind = "run_event" | "audit_event" | "egress_record" | "approval";
@@ -39,6 +39,8 @@ export interface ChainVerifyResult {
   checkpoints: { checkpoint_id: string; upto_seq: number; kind: string; ok: boolean; reason: string | null }[];
   /** 链中出现过的、当前已吊销的签名设备（历史签名仍验签通过，状态如实单列）。 */
   revoked_signers: string[];
+  /** 事项删除时按删除清单清除了内容的签名业务行（不判篡改；清单摘要与签名的 matter.purged 审计事件核对）。 */
+  redacted?: number;
 }
 
 interface SignedEventRow {
@@ -154,11 +156,51 @@ export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signP
         return null;
       };
 
+      // 事项删除（迁移 0021）：清单内的行按“已清除”计、不判篡改——须同时满足（复核 C-A01）：
+      //   ① 事项的删除审计事件 matter.purged 有签名见证（signed_events 里该审计行的见证，属于该事项），且其摘要等于当前清单摘要；
+      //   ② 见证行本身属于该事项（signed_events.matter_id）；③ 业务行确为清除形态（运行事件 payload 为 {"redacted":true}；去向记录无备注、无文档引用）。
+      // 任一不满足就照常核对——清单不能用来掩盖对其他事项或其他内容的改动；没有签名私钥就造不出①。
+      const exempt = new Map<string, { mid: string; rowHash: string | null }>();
+      try {
+        for (const { matter_id: mid } of db.all<{ matter_id: string }>(`SELECT matter_id FROM matters WHERE lifecycle = 'purged'`, [])) {
+          const list = db.all<{ kind: string; ref_id: string; row_hash: string | null }>(`SELECT kind, ref_id, row_hash FROM redacted_rows WHERE matter_id = ? ORDER BY kind, ref_id`, [mid]);
+          if (list.length === 0) continue;
+          const digest = redactionListDigest(list);
+          const ev = db.get<{ detail_hash: string | null }>(
+            `SELECT ae.detail_hash FROM audit_events ae
+               JOIN signed_events se ON se.kind = 'audit_event' AND se.ref_id = CAST(ae.audit_event_id AS TEXT) AND se.matter_id = ae.object_id
+              WHERE ae.action = 'matter.purged' AND ae.object_id = ? ORDER BY ae.audit_event_id DESC LIMIT 1`,
+            [mid],
+          );
+          if (!ev || ev.detail_hash !== digest) {
+            failures.push({ seq: -1, reason: `事项 ${mid} 的删除清单没有签名的删除审计事件背书，或与之不符（清单被改动）` });
+            continue;
+          }
+          for (const r of list) exempt.set(`${r.kind}\u0000${r.ref_id}`, { mid, rowHash: r.row_hash });
+        }
+      } catch {
+        // 迁移 0021 之前的库：没有删除清单
+      }
+      const isRedactedForm = (kind: string, refId: string): boolean => {
+        if (kind === "run_event") return db.get<{ payload: string }>(`SELECT payload FROM run_events WHERE event_id = ?`, [Number(refId)])?.payload === '{"redacted":true}';
+        if (kind === "egress_record") {
+          const r = db.get<{ note: string | null; doc_refs: string }>(`SELECT note, doc_refs FROM egress_records WHERE record_id = ?`, [refId]);
+          return !!r && r.note === null && r.doc_refs === "[]";
+        }
+        return false;
+      };
+      let redacted = 0;
       for (const row of rows) {
         const fail = (reason: string) => failures.push({ seq: row.seq, reason });
         // 1. 业务行重算 payload_hash（检测业务行被改/被删）
         const recomputed = recomputePayloadHash(db, row.kind, row.ref_id);
-        if (recomputed === null) fail(`业务行缺失或不可解析（${row.kind} ${row.ref_id}）`);
+        const ex = exempt.get(`${row.kind}\u0000${row.ref_id}`);
+        // 清除后形态的行摘要须与删除时记下的一致（复核 C-A08：保留的元数据同样防篡改）
+        const listed = ex !== undefined && row.matter_id === ex.mid && isRedactedForm(row.kind, row.ref_id) && ex.rowHash !== null && redactedRowHash(db, row.kind, row.ref_id) === ex.rowHash;
+        if (listed) redacted++;
+        if (listed && recomputed !== row.payload_hash) {
+          // 按删除清单清除了内容：不判篡改（见证行本身的 event_hash、链接与签名仍照常核对）
+        } else if (recomputed === null) fail(`业务行缺失或不可解析（${row.kind} ${row.ref_id}）`);
         else if (recomputed !== row.payload_hash) fail(`payload 不匹配：业务行内容与签名见证不符（疑似被改）`);
         // 2. 重算 event_hash（检测见证行字段被改；用库存 payload_hash 以隔离两类故障）
         const expectHash = sha256B64(
@@ -212,10 +254,29 @@ export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signP
           return { checkpoint_id: cp.checkpoint_id, upto_seq: cp.upto_seq, kind: cp.kind, ok: reason === null, reason };
         });
 
+      // 6. 删除清单完整性在第 0 步（豁免前）已核对：清单摘要须等于有签名见证的 matter.purged 审计事件里的摘要
       const firstBad = failures.length > 0 ? failures[0]!.seq : null;
-      return { ok: failures.length === 0 && checkpoints.every((c) => c.ok), checked: rows.length, first_bad_seq: firstBad, failures, checkpoints, revoked_signers: [...revokedSigners] };
+      return { ok: failures.length === 0 && checkpoints.every((c) => c.ok), checked: rows.length, first_bad_seq: firstBad, failures, checkpoints, revoked_signers: [...revokedSigners], redacted };
     },
   };
+}
+
+/**
+ * 清除后形态的行摘要（复核 C-A08）：运行事件按 payload_hash 同一口径（payload 已是 {"redacted":true}）；去向记录取签名信封
+ * （目的地、事项、字数、化名统计等元数据），不含已清除的备注。删除时记入 redacted_rows.row_hash，链复核逐行重算核对。
+ */
+export function redactedRowHash(db: KernelDb, kind: string, refId: string): string | null {
+  if (kind === "run_event") return recomputePayloadHash(db, "run_event", refId);
+  if (kind === "egress_record") {
+    const row = db.get<Parameters<typeof egressRecordEnvelopeHash>[0]>(`SELECT * FROM egress_records WHERE record_id = ?`, [refId]);
+    return row ? egressRecordEnvelopeHash(row) : null;
+  }
+  return null;
+}
+
+/** 删除清单摘要：按种类、编号排序的 [种类, 编号, 清除后行摘要]。写进签名的 matter.purged 审计事件。 */
+export function redactionListDigest(list: readonly { kind: string; ref_id: string; row_hash: string | null }[]): string {
+  return createHash("sha256").update(canonicalJson(list.map((r) => [r.kind, r.ref_id, r.row_hash]))).digest("hex");
 }
 
 /** payload_hash 重算规则（与追加侧一一对应；改规则须两侧同改）。 */
@@ -242,8 +303,11 @@ export function recomputePayloadHash(db: KernelDb, kind: SignedKind, refId: stri
     // 签名信封口径（与 egress insertRecord 的 onRecord 一一对应，同改须同步）：
     // request_id 回填与 outcome 失败标记是生命周期列，在签名信封之外；
     // 目的地、事项归属、字符数、化名统计等数据去向关键事实在信封内。
-    const row = db.get(`SELECT * FROM egress_records WHERE record_id = ?`, [refId]);
-    return row ? egressRecordEnvelopeHash(row) : null;
+    const row = db.get<Parameters<typeof egressRecordEnvelopeHash>[0] & { note: string | null }>(`SELECT * FROM egress_records WHERE record_id = ?`, [refId]);
+    if (!row) return null;
+    // 内容摘要按当前备注复算（阶段 4 终核：备注里的检索原文、URL、裁决被改即不匹配）
+    if (row.content_digest && egressContentDigest(row) !== row.content_digest) return "content_digest_mismatch";
+    return egressRecordEnvelopeHash(row);
   }
   // approval：payload_hash = sha256B64(signed_payload)
   const row = db.get<{ signed_payload: string | null }>(`SELECT signed_payload FROM approvals WHERE approval_id = ?`, [refId]);
@@ -353,18 +417,25 @@ export function recordImEgress(
   return recordId;
 }
 /**
- * 撤权校验不依赖时钟（§5.2）：被吊销设备引用「吊销后纪元之前」纪元的事件一律拒收——
- * 被吊销设备离线回填的事件无论时钟值多小都无效。供将来同步入口调用（本阶段自测）。
+ * 吊销墓碑（v9 阶段 6；控制面目录或本机吊销记下，含本机设备表里没有的设备）：墓碑里的设备，其事件一律拒收（复核 S6-B28）。
+ */
+export function deviceTombstoned(db: KernelDb, deviceId: string): boolean {
+  return !!db.get(`SELECT 1 AS x FROM cp_revoked_devices WHERE device_id = ?`, [deviceId]);
+}
+
+/**
+ * 撤权校验不依赖时钟（§5.2）：被吊销设备的事件一律拒收——不论段头自报的纪元（纪元写在签名设备自己签的段头里，
+ * 且各设备的租户纪元是本机计数，不能作为放行依据；阶段 3 只拒“吊销后纪元之前”的事件，复核 S6-B28、S6-C08 收紧）。
+ * 吊销墓碑里的设备（控制面目录或本机吊销记下，含本机设备表里没有的）同样一律拒收。
  */
 export function assertIncomingEventAcceptable(db: KernelDb, input: { signerDeviceId: string; keyEpoch: number }): void {
+  if (deviceTombstoned(db, input.signerDeviceId)) {
+    throw new DomainError("revoked_device_event", `设备 ${input.signerDeviceId} 已吊销（吊销记录粘滞）：其事件一律拒收`, 403);
+  }
   const dev = db.get<{ status: string; revoked_epoch: number | null }>(`SELECT status, revoked_epoch FROM devices WHERE device_id = ?`, [input.signerDeviceId]);
   if (!dev) throw new DomainError("revoked_device_event", `签名设备 ${input.signerDeviceId} 未登记，事件拒收`, 403);
-  if (dev.status === "revoked" && input.keyEpoch < (dev.revoked_epoch ?? Number.MAX_SAFE_INTEGER)) {
-    throw new DomainError(
-      "revoked_device_event",
-      `设备 ${input.signerDeviceId} 已吊销：其引用密钥纪元 ${input.keyEpoch} 早于吊销后纪元 ${dev.revoked_epoch} 的事件一律拒收（撤权校验不依赖时钟）`,
-      403,
-    );
+  if (dev.status === "revoked") {
+    throw new DomainError("revoked_device_event", `设备 ${input.signerDeviceId} 已吊销（吊销后纪元 ${dev.revoked_epoch ?? "?"}）：其事件一律拒收（撤权校验不依赖时钟）`, 403);
   }
 }
 

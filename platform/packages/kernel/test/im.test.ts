@@ -1,7 +1,7 @@
 /**
  * IM 入口原型（方案 §11.2/§9/§6.3/探针 14 v0，模拟器全链）：
  * 单聊收文件 → 卡片选项（只含授权事项、文案脱敏）→ 选择 → 入库 → 节点执行 → 回执；
- * IM 确认（节点见证签名 im_witnessed，2 秒硬限、受众/事项门禁、外发只认设备签名）；
+ * IM 不能确认签发（v9 第 02 篇 §9.6、§13 第 6 条：请求即拒、遗留意向拒绝、确认动作拒绝；外发只认设备签名）；
  * 选主租约；离线行为；数据去向（im_inbound/im_outbound，对象哈希化）。**模拟器非平台。**
  */
 import { test, before, after } from "node:test";
@@ -134,7 +134,7 @@ test("探针 14 v0 全链：单聊收文件 → 卡片选项脱敏 → 选择 �
   assert.ok(!groupCardJson.includes("x.txt"), "群形态外发不得回显文件名（群卡片最小化纪律）");
 });
 
-test("IM 确认：确切文件单独发送 + 2 秒硬限 + im_witnessed 落库与验签 + 受众/事项门禁 + 外发只认设备签名", { timeout: 240_000 }, async () => {
+test("IM 不能确认签发（v9 第 02 篇 R5、§9.6、§13 第 6 条；第 06 篇 T18；阶段 7 复核 S7-A08）：请求即拒；遗留的签发审批意向一律拒绝、不经 IM 发文件与审批卡；“确认签发”动作一律拒绝且不落签发记录；外发只认设备签名", { timeout: 240_000 }, async () => {
   const { inv } = tk;
   const { matter } = await inv("matters.create", { title: "IM 审批事项", stance: "受让方", consent_status: "not_required", collab_scope: "team", key_dates: { analysis_as_of: "2026-10-01" } });
   await inv("matters.node_authorize", { matter_id: matter.matter_id, node_device_id: nodeDeviceId });
@@ -143,98 +143,48 @@ test("IM 确认：确切文件单独发送 + 2 秒硬限 + im_witnessed 落库�
   const art = d.artifacts.find((a: any) => a.kind === "s1_opinion");
   await inv("review.submit", { artifact_version_id: art.artifact_version_id });
 
-  // 受众门禁：court → 422
-  await assert.rejects(
-    () => inv("approvals.request_im", { artifact_version_id: art.artifact_version_id, audience: "court" }),
-    (e: any) => /internal\/client|设备签名/.test(e.message),
-  );
-  // 事项门禁：未授权事项 → forbidden（新建一个）
-  const m2 = await inv("matters.create", { title: "未授权审批事项", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
-  const doc2 = await inv("materials.import", { matter_id: m2.matter.matter_id, filename: "x.txt", data_base64: Buffer.from("x").toString("base64"), mime: "text/plain" });
-  const d2 = await runScenario(inv, m2.matter.matter_id, "s1.contract_review", { document_version_ids: [doc2.document_version_id] }, 120_000);
-  const art2 = d2.artifacts.find((a: any) => a.kind === "s1_opinion");
-  await inv("review.submit", { artifact_version_id: art2.artifact_version_id });
-  await assert.rejects(() => inv("approvals.request_im", { artifact_version_id: art2.artifact_version_id, audience: "client" }), (e: any) => e.code === "forbidden");
+  // 请求 IM 确认：不论受众一律拒绝
+  for (const audience of ["client", "internal", "court"]) {
+    await assert.rejects(() => inv("approvals.request_im", { artifact_version_id: art.artifact_version_id, audience, platform: PLATFORM }), (e: any) => e.code === "im_signoff_disabled", audience);
+  }
 
-  const req = await inv("approvals.request_im", { artifact_version_id: art.artifact_version_id, audience: "client", platform: PLATFORM });
+  // 遗留的签发审批意向（v5 数据）：节点一律标为拒绝——不经 IM 发送待交付文件、不发审批卡
   await inv("sync.export", { share_dir: shareDir });
   await node.kernel.invoke("sync.import", { share_dir: shareDir });
-  await node.tick(); // processApprovals：发文件 + 发卡
+  const legacy = `imi_legacy_${Date.now().toString(36)}`;
+  node.kernel.db.run(`INSERT INTO im_intents (intent_id, tenant_id, kind, platform, status, payload, created_by) VALUES (?,?,?,?,'pending',?,?)`, [
+    legacy,
+    node.kernel.identity.tenantId,
+    "approval_request",
+    PLATFORM,
+    JSON.stringify({ artifact_version_id: art.artifact_version_id, audience: "client", issuer_member_id: "usr_im-firm_test-lawyer", artifact_sha256: art.sha256 }),
+    "usr_im-firm_test-lawyer",
+  ]);
+  const files0 = sim.probes.sentFiles.length;
+  const cards0 = sim.probes.sentCards.length;
+  await node.tick();
+  assert.equal(node.kernel.db.get<any>(`SELECT status FROM im_intents WHERE intent_id = ?`, [legacy]).status, "rejected");
+  assert.equal(sim.probes.sentFiles.length, files0, "不经 IM 发送待交付文件");
+  assert.equal(sim.probes.sentCards.length, cards0, "不发审批卡");
 
-  // 确切待交付文件单独发给签发人（字节一致）
-  const sentFile = sim.probes.sentFiles.find((f) => f.filename === art.filename);
-  assert.ok(sentFile, "签发人应收到确切文件");
-  const artBytes = tk.kernel.blobs.read(tk.kernel.db.get<any>(`SELECT storage_uri FROM artifact_versions WHERE artifact_version_id = ?`, [art.artifact_version_id]).storage_uri);
-  assert.equal(sentFile.bytes, artBytes.length, "发送字节与成果一致");
-  const outbound = sim.probes.sentCards.at(-1)!.card;
-  const outboundJson = JSON.stringify(outbound);
-  assert.ok(outboundJson.includes("确认签发"), "应有审批卡片");
-  // 审批卡脱敏硬断言：不含事项标题/客户名；单聊对签发人本人可含文件名（纪律见 im-runtime 文件头）
-  assert.ok(!outboundJson.includes("IM 审批事项"), "审批卡不得含事项标题");
-  assert.ok(outboundJson.includes(String(art.filename)), "单聊对签发人本人可展示文件名");
+  // “确认签发”卡片动作（即便是签发人本人、意向编号真实）：一律拒绝，不落任何签发记录
+  const r = await sim.emitCardAction({ actionId: `confirm:${legacy}`, actorImId: "u_lawyer_1" });
+  assert.match(r.text, /IM 不能确认签发/);
+  await sleep(300);
+  assert.equal(node.kernel.db.get<any>(`SELECT COUNT(*) AS n FROM approvals`).n, 0, "节点不产生任何签发记录");
+  assert.equal(tk.kernel.db.get<any>(`SELECT COUNT(*) AS n FROM approvals WHERE assurance_level = 'im_witnessed'`).n, 0);
 
-  const confirmAction = (outbound.actions ?? []).find((a) => a.actionId.startsWith("confirm:"))!;
-  const rejectAction = (outbound.actions ?? []).find((a) => a.actionId.startsWith("reject:"))!;
-  // 非签发人本人点确认/退回 → 一律拒（校验先于应答：非本人不得得到「已收到」）
-  const rNC = await sim.emitCardAction({ actionId: confirmAction.actionId, actorImId: "u_lawyer_2" });
-  assert.match(rNC.text, /仅签发人本人可操作/, `非签发人点确认必须拒绝：${rNC.text}`);
-  const rNR = await sim.emitCardAction({ actionId: rejectAction.actionId, actorImId: "u_lawyer_2" });
-  assert.match(rNR.text, /仅签发人本人可操作/, `非签发人点退回必须拒绝：${rNR.text}`);
-  const intentMid = node.kernel.db.get<any>(`SELECT status FROM im_intents WHERE kind = 'approval_request' ORDER BY created_at DESC LIMIT 1`);
-  assert.equal(intentMid.status, "awaiting_choice", "他人操作不得改变审批意向状态");
-  assert.equal(node.kernel.db.get<any>(`SELECT COUNT(*) AS n FROM approvals WHERE assurance_level = 'im_witnessed'`).n, 0, "他人点确认不得落库");
-
-  // 签发人确认 → 先同步应答「已收到」（2 秒硬限）→ 异步落库 → 落库后更新卡片
-  const r = await sim.emitCardAction({ actionId: confirmAction.actionId, actorImId: "u_lawyer_1" });
-  assert.equal(r.text, "已收到");
-  assert.ok(r.withinMs < 2000, `确认同步应答在 2 秒内：${r.withinMs}ms`);
-  const respProbe = sim.probes.actionResponses.at(-1)!;
-  await sleep(600);
-  const ap = node.kernel.db.get<any>(`SELECT * FROM approvals WHERE assurance_level = 'im_witnessed' ORDER BY created_at DESC LIMIT 1`);
-  assert.ok(ap, "im_witnessed 应落库（节点侧）");
-  assert.equal(ap.artifact_version_id, art.artifact_version_id);
-  assert.equal(ap.signer_device_id, nodeDeviceId);
-
-  // 时序断言：同步应答必须先于落库完成后的卡片更新（同连接帧序，模拟器探针全局序号）
-  const updProbe = sim.probes.updatedCards.find((c) => JSON.stringify(c.card).includes("签发已记录"));
-  assert.ok(updProbe, "落库后应更新卡片（签发已记录）");
-  assert.ok(respProbe.seq < updProbe.seq, `应答(seq=${respProbe.seq}) 必须先于卡片更新(seq=${updProbe.seq})`);
-
-  // 结果同步回桌面 → approvals.verify：valid + 节点见证语义
-  await node.kernel.invoke("sync.export", { share_dir: shareDir });
-  await inv("sync.import", { share_dir: shareDir });
-  const v = await inv("approvals.verify", { approval_id: ap.approval_id });
-  assert.equal(v.overall, "valid", JSON.stringify(v));
-  assert.equal(v.signature_valid, true, "节点签名可验");
-  assert.match(v.assurance_note, /低于设备签名/);
-  assert.equal(v.im_audience_ok, true);
-
-  // 外发门禁：im_witnessed 不得外发（构造 client 受众成果 + 仅 im_witnessed 批准 → 409）
+  // 外发门禁（遗留数据纵深）：只有 im_witnessed 批准的客户版成果不得外发——外发只认设备签名
+  tk.kernel.db.run(`UPDATE artifact_versions SET audience = 'client', status = 'approved' WHERE artifact_version_id = ?`, [art.artifact_version_id]);
   tk.kernel.db.run(
-    `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, version, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by)
-     VALUES (?,?,?,?,?,?,'client','approved',?,?,?,?,?,?)`,
-    [
-      "artv_im_ext",
-      tk.kernel.identity.tenantId,
-      matter.matter_id,
-      d.run.run_id,
-      art.kind,
-      99,
-      art.filename,
-      art.sha256,
-      tk.kernel.db.get<any>(`SELECT storage_uri FROM artifact_versions WHERE artifact_version_id = ?`, [art.artifact_version_id]).storage_uri,
-      "[]",
-      "{}",
-      tk.kernel.identity.userId,
-    ],
+    `INSERT INTO approvals (approval_id, artifact_version_id, artifact_sha256, approver_id, decision, audience, assurance_level, checklist, signer_device_id, signature, completeness_hash, key_epoch, signed_payload)
+     VALUES (?,?,?,?,'approved','client','im_witnessed','{}',?,?,?,1,?)`,
+    ["apr_legacy_im", art.artifact_version_id, art.sha256, tk.kernel.identity.userId, nodeDeviceId, "legacy", "legacy", "{}"],
   );
-  tk.kernel.db.run(`UPDATE approvals SET artifact_version_id = 'artv_im_ext' WHERE approval_id = ?`, [ap.approval_id]);
   await assert.rejects(
-    () => inv("deliveries.create", { artifact_version_id: "artv_im_ext", action: "external_send", audience: "client" }),
+    () => inv("deliveries.create", { artifact_version_id: art.artifact_version_id, action: "external_send", audience: "client" }),
     (e: any) => e.code === "approval_invalidated" && /device_signature/.test(e.message),
   );
-  // 还原（不影响其他断言）
-  tk.kernel.db.run(`UPDATE approvals SET artifact_version_id = ? WHERE approval_id = ?`, [art.artifact_version_id, ap.approval_id]);
 });
 
 test("选主租约与离线行为", { timeout: 120_000 }, async () => {

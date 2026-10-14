@@ -68,7 +68,9 @@ test("探针 1 取消：runs.cancel → 宿主退出、账本 cancelled、任务
   assert.equal(att.status, "cancelled", "尝试应 cancelled");
 
   // 任务令牌撤销：经命名管道对已取消 rid 的模型请求一律 401（端点急停证据）
-  const token = mintTaskToken({ tid: tk.kernel.identity.tenantId, uid: tk.kernel.identity.userId, mid: done.run.matter_id, rid: runId, scope: ["model:chat"] }, 300);
+  // 令牌绑定该任务真实的（已取消）尝试与纪元：尝试非执行中 + rid 已撤销，端点双重拒绝
+  const lastAtt = tk.kernel.db.get(`SELECT attempt_id, fence_token FROM attempts WHERE run_id = ? ORDER BY seq DESC LIMIT 1`, [runId]) as any;
+  const token = mintTaskToken({ tid: tk.kernel.identity.tenantId, uid: tk.kernel.identity.userId, mid: done.run.matter_id, rid: runId, aid: lastAtt.attempt_id, fen: lastAtt.fence_token, scope: ["model:chat"] }, 300);
   const agent = new Agent({ connect: { socketPath: tk.kernel.pipePath } });
   const res = await undiciFetch("http://broker.kwl/v1/chat/completions", {
     method: "POST",
@@ -108,7 +110,7 @@ test("探针 1 崩溃恢复：现场重构崩溃 → recover 整任务重跑到 
   kernels.length = 0;
 
   const { createKernel } = await import("../src/index.ts");
-  const kernel2 = await createKernel({ dataDir: dir, firmSlug: "a1-life-firm", userSlug: "test-lawyer", env: { ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off" } });
+  const kernel2 = await createKernel({ dataDir: dir, firmSlug: "a1-life-firm", userSlug: "test-lawyer", env: { ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off", ZR_AGENT_ENGINE: "sdk" } });
   tk.kernel = kernel2;
   tk.inv = (m, p) => kernel2.invoke(m, p);
   kernels.push(tk);

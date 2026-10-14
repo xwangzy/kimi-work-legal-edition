@@ -1,0 +1,15 @@
+{
+  "name": "@zr-legal/control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "控制面最小集 v0（中软云端，v9 第 02 篇 §5 ①、§7.1；第 06 篇 §1 G0“控制面最小集”）：租户与许可、席位令牌签发、设备与公钥目录（含吊销）、律所策略与连接器登记的起草—管理员设备签名—发布、租户盐、事项匿名摘要与网关订阅；不持久化客户内容",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zr-legal/firm-trust": "*",
+    "@zr-legal/keys": "*",
+    "@zr-legal/seat-token": "*"
+  }
+}

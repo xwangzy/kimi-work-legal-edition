@@ -37,6 +37,14 @@ export const FaultCode = {
   lawdbInvalid: "lawdb_invalid",
   sourceActionDenied: "source_action_denied",
   unverifiedCitations: "unverified_citations",
+  // 控制面与许可（v9 阶段 6；第 02 篇 §10 退出模式）
+  exitMode: "exit_mode",
+  /** v9 第 02 篇 §9.6、§13 第 6 条：IM 不能确认签发（阶段 7 复核 S7-A08）。 */
+  imSignoffDisabled: "im_signoff_disabled",
+  /** v9 第 02 篇 §8.1 L4：带国家秘密标志的材料拒绝导入（审计 S6）。 */
+  classifiedMaterial: "classified_material",
+  /** 令牌还原等敏感接口的速率上限（隐私安全审查 P1-5）。 */
+  rateLimited: "rate_limited",
   // 通用
   validation: "validation",
   notFound: "not_found",

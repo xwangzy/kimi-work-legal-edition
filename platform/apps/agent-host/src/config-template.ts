@@ -28,10 +28,26 @@ export interface WorkerHomeSpec {
 /** [tools] enabled 白名单（探针 2：内置工具在模型可见层与执行层都不存在——精确等于此表）。 */
 export const LEGAL_TOOLS_ENABLED = ["mcp__legal__*", "EnterPlanMode", "ExitPlanMode", "TodoList", "AskUserQuestion"] as const;
 
+/** 旧形态（测试与回归用）：config.toml 与 mcp.json 都写进 homeDir。生产路径用 writeTrustedConfig + writeMcpJson。 */
 export function prepareWorkerHome(spec: WorkerHomeSpec): void {
   mkdirSync(spec.homeDir, { recursive: true });
   writeFileSync(join(spec.homeDir, "config.toml"), configToml(spec), "utf8");
   writeFileSync(join(spec.homeDir, "mcp.json"), mcpJson(spec), "utf8");
+}
+
+/**
+ * F7：由内核（策略权威）写入引擎配置。上游约束：配置服务按 `basename(configPath)` 从 homeDir 读取
+ * （agent-core-v2 `configService.ts` 的 documentStore），mcp.json 同样只从 homeDir 读取——二者无法移出 homeDir。
+ * 因此：文件设为 0444；宿主把它们登记为文件 broker 的只读文件（Agent 写、追加、删除一律 EPERM）；
+ * 内核计算 hash 随任务规格下发，宿主启动前复核。签名 profile 放在独立的只读可信目录。
+ */
+export function writeHomeConfig(homeDir: string, spec: WorkerHomeSpec): { configFile: string; mcpFile: string } {
+  mkdirSync(homeDir, { recursive: true });
+  const configFile = join(homeDir, "config.toml");
+  const mcpFile = join(homeDir, "mcp.json");
+  writeFileSync(configFile, configToml(spec), { encoding: "utf8", mode: 0o444 });
+  writeFileSync(mcpFile, mcpJson(spec), { encoding: "utf8", mode: 0o444 });
+  return { configFile, mcpFile };
 }
 
 function configToml(spec: WorkerHomeSpec): string {

@@ -1,0 +1,14 @@
+{
+  "name": "@zr-legal/search-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "检索服务 v0（中软云端，v9 第 04 篇 §5.3、§11 P4）：对 Kimi Code 实现检索协议（{text_query} → {search_results}），上游月之暗面 /v1/tools/search(_pro)；法律官方站点集按每组 ≤ 5 个站点扇出合并去重；查询原文不落盘、不接收事项编号",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zr-legal/firm-trust": "*",
+    "@zr-legal/seat-token": "*"
+  }
+}
