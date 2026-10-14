@@ -1,0 +1,620 @@
+{
+  "version": "9.0",
+  "prepared_date": "2026-10-10",
+  "currency": "CNY",
+  "basis": "不含税规划口径。v9 云地划分：本地事项为默认——案卷解析、OCR、文书、Kimi Code 本地 Agent（WASM 执行域内代码执行、子 Agent）在律师电脑运行，算力由律所硬件承担；中软云端为控制面（身份、席位与点数、策略、通知、提醒、计量、分发、控制台）、能力网关（法律模型网关、检索服务、法源服务、无事项问答、公开监测）与中继（端到端加密事项共享、设备中继），按等保三级建设；G3（2028 起计）提供云端事项与云端执行面，按采用比例计入每席云端成本。中软成本含模型 token（经中软 MaaS 按月之暗面公开价转移，子 Agent 默认低价模型）、检索按次费（/v1/tools/search_pro 公开价）、法源按量费、云端组件、桌面支持与内容分发。所有用量、席位、人力与价格均为待试点校准的假设，不是报价、预算或收益承诺；主口径另报“加量收入为零”的结果。",
+  "price_per_million_tokens": {
+    "K3": {
+      "miss": 20.0,
+      "hit": 2.0,
+      "write_5m": 20.0,
+      "write_1h": 40.0,
+      "output": 100.0
+    },
+    "K2.6": {
+      "miss": 6.5,
+      "hit": 1.1,
+      "write_5m": 0.0,
+      "write_1h": 0.0,
+      "output": 27.0
+    }
+  },
+  "task_assumptions": {
+    "contract": {
+      "name": "30页DOCX合同首轮审查（含原生修订稿与意见书）",
+      "points": 30,
+      "retry_fraction": 0.12,
+      "ocr": 0.0,
+      "data": 0.6,
+      "compute": 0.03,
+      "steps": [
+        {
+          "model": "K2.6",
+          "miss_k": 35,
+          "hit_k": 30,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 7
+        },
+        {
+          "model": "K3",
+          "miss_k": 72,
+          "hit_k": 344,
+          "write_5m_k": 50,
+          "write_1h_k": 0,
+          "output_k": 26
+        }
+      ]
+    },
+    "next_draft": {
+      "name": "对方回稿比对与受影响条款重审（约6处变化）",
+      "points": 10,
+      "retry_fraction": 0.12,
+      "ocr": 0.0,
+      "data": 0.3,
+      "compute": 0.0,
+      "steps": [
+        {
+          "model": "K3",
+          "miss_k": 12,
+          "hit_k": 60,
+          "write_5m_k": 12,
+          "write_1h_k": 0,
+          "output_k": 5
+        },
+        {
+          "model": "K2.6",
+          "miss_k": 6,
+          "hit_k": 10,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 1
+        }
+      ]
+    },
+    "dossier": {
+      "name": "案卷整理（100页混合件标准档；300页为压力档）",
+      "points": 40,
+      "retry_fraction": 0.12,
+      "ocr": 0.0,
+      "data": 0.0,
+      "compute": 0.0,
+      "steps": [
+        {
+          "model": "K2.6",
+          "miss_k": 70,
+          "hit_k": 20,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 14
+        },
+        {
+          "model": "K3",
+          "miss_k": 18,
+          "hit_k": 40,
+          "write_5m_k": 18,
+          "write_1h_k": 0,
+          "output_k": 7
+        }
+      ]
+    },
+    "pleading": {
+      "name": "要素式文书起草与金额测算（基于已整理案卷）",
+      "points": 10,
+      "retry_fraction": 0.12,
+      "ocr": 0.0,
+      "data": 0.3,
+      "compute": 0.03,
+      "steps": [
+        {
+          "model": "K2.6",
+          "miss_k": 30,
+          "hit_k": 0,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 3
+        },
+        {
+          "model": "K3",
+          "miss_k": 20,
+          "hit_k": 20,
+          "write_5m_k": 20,
+          "write_1h_k": 0,
+          "output_k": 6
+        }
+      ]
+    },
+    "research": {
+      "name": "3争点授权法源研究与类案报告",
+      "points": 80,
+      "retry_fraction": 0.15,
+      "ocr": 0.0,
+      "data": 12.0,
+      "compute": 0.8,
+      "steps": [
+        {
+          "model": "K2.6",
+          "miss_k": 220,
+          "hit_k": 0,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 22
+        },
+        {
+          "model": "K3",
+          "miss_k": 115,
+          "hit_k": 120,
+          "write_5m_k": 80,
+          "write_1h_k": 0,
+          "output_k": 29
+        }
+      ]
+    },
+    "qa": {
+      "name": "有依据的顾问问答（事项材料+法源）",
+      "points": 1,
+      "retry_fraction": 0.1,
+      "ocr": 0.0,
+      "data": 0.08,
+      "compute": 0.015,
+      "steps": [
+        {
+          "model": "K3",
+          "miss_k": 8,
+          "hit_k": 0,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 0.8
+        }
+      ]
+    },
+    "open_task": {
+      "name": "Agent 模式开放任务（Kimi Code 本地 Agent：WASM 执行域代码执行、子 Agent 走低价模型、联网检索，有预算上限）",
+      "points": 60,
+      "retry_fraction": 0.2,
+      "ocr": 0.0,
+      "data": 2.0,
+      "compute": 0.325,
+      "steps": [
+        {
+          "model": "K3",
+          "miss_k": 70,
+          "hit_k": 300,
+          "write_5m_k": 60,
+          "write_1h_k": 0,
+          "output_k": 20
+        },
+        {
+          "model": "K2.6",
+          "miss_k": 60,
+          "hit_k": 200,
+          "write_5m_k": 0,
+          "write_1h_k": 0,
+          "output_k": 18
+        }
+      ]
+    }
+  },
+  "personas": {
+    "light": {
+      "weight": 0.3,
+      "monthly_tasks": {
+        "contract": 2,
+        "next_draft": 1,
+        "dossier": 0,
+        "pleading": 0,
+        "research": 0,
+        "qa": 15,
+        "open_task": 2
+      }
+    },
+    "medium": {
+      "weight": 0.5,
+      "monthly_tasks": {
+        "contract": 6,
+        "next_draft": 3,
+        "dossier": 1,
+        "pleading": 2,
+        "research": 1,
+        "qa": 40,
+        "open_task": 4
+      }
+    },
+    "heavy": {
+      "weight": 0.2,
+      "monthly_tasks": {
+        "contract": 20,
+        "next_draft": 10,
+        "dossier": 4,
+        "pleading": 6,
+        "research": 4,
+        "qa": 150,
+        "open_task": 18
+      }
+    }
+  },
+  "editions": {
+    "team": {
+      "label": "团队版",
+      "list_price": 9800,
+      "realization": 0.85,
+      "monthly_points": 500,
+      "pooled": true,
+      "storage": 25,
+      "support": 600
+    },
+    "firm": {
+      "label": "律所版",
+      "list_price": 8800,
+      "realization": 0.9,
+      "monthly_points": 500,
+      "pooled": true,
+      "storage": 25,
+      "support": 480,
+      "platform_fee_per_customer": 300000,
+      "platform_fee_cost_per_customer": 65000,
+      "platform_fee_note": "价单分档 20/35/50 万元（50–99/100–299/300+ 席），按客户规模结构折算平均约 30 万元；交付成本含律所执行器部署、律所 Hooks 与目录对接、规则上线人天与专属客户成功分摊，约 6.5 万元/客户/年（v5 含所内节点部署与加固为 8 万元）"
+    },
+    "pro": {
+      "label": "专业版",
+      "list_price": 3600,
+      "realization": 0.95,
+      "monthly_points": 200,
+      "pooled": false,
+      "storage": 12,
+      "support": 280
+    },
+    "reviewer": {
+      "label": "审阅签发席",
+      "list_price": 1800,
+      "realization": 0.85,
+      "monthly_points": 30,
+      "pooled": false,
+      "storage": 5,
+      "support": 100
+    }
+  },
+  "reviewer_seats_per_production_seat": 0.03,
+  "addon": {
+    "price_per_point": 0.8,
+    "share_of_overquota_demand_purchased": 0.15,
+    "pro_overquota_purchase_share": 0.15
+  },
+  "services": {
+    "onboarding_revenue_per_new_team_seat": 300,
+    "onboarding_cost_ratio": 0.8,
+    "fde_day_rate": 4000
+  },
+  "private_deployment": {
+    "first_year_contract": 2000000,
+    "first_year_cost_ratio": 0.35,
+    "annual_maintenance_rate": 0.18,
+    "maintenance_cost_ratio": 0.35,
+    "note": "私有化成交只含 P2（律所内 K2.6 级）与 P3；P1（中软专属推理 K3）为 2028 年评估项，不进基准；硬件由律所采购，不计入中软成本"
+  },
+  "channel": {
+    "share_of_revenue_via_channel": 0.3,
+    "commission_rate": 0.12,
+    "payment_fee_rate_pro": 0.01
+  },
+  "loaded_cost_per_fte": 450000,
+  "years": [
+    2026,
+    2027,
+    2028,
+    2029,
+    2030
+  ],
+  "year_months_active": {
+    "2026": 2.6,
+    "2027": 12,
+    "2028": 12,
+    "2029": 12,
+    "2030": 12
+  },
+  "headcount_avg_fte": {
+    "2026": 32,
+    "2027": 50,
+    "2028": 56,
+    "2029": 62,
+    "2030": 68
+  },
+  "fixed_costs": {
+    "legal_data": {
+      "2026": 100000,
+      "2027": 800000,
+      "2028": 1500000,
+      "2029": 2500000,
+      "2030": 3000000
+    },
+    "cloud_platform": {
+      "2026": 280000,
+      "2027": 1500000,
+      "2028": 2450000,
+      "2029": 3000000,
+      "2030": 3600000
+    },
+    "external_lawyer_experts": {
+      "2026": 300000,
+      "2027": 2000000,
+      "2028": 2200000,
+      "2029": 2500000,
+      "2030": 2800000
+    },
+    "sales_marketing_programs": {
+      "2026": 300000,
+      "2027": 4000000,
+      "2028": 6000000,
+      "2029": 8000000,
+      "2030": 9000000
+    },
+    "compliance_certification": {
+      "2026": 250000,
+      "2027": 1200000,
+      "2028": 1150000,
+      "2029": 1200000,
+      "2030": 1250000
+    },
+    "ga_allocation": {
+      "2026": 100000,
+      "2027": 1500000,
+      "2028": 2000000,
+      "2029": 2500000,
+      "2030": 2800000
+    }
+  },
+  "launch": {
+    "paid_start_month_2027": 4,
+    "pro_start_month_2027": 9,
+    "note": "2027-04 起设计合作律所转付费；2027-06 首个商用版本公开销售；专业版自助购买 2027-09 起；G3（云端事项、律所执行器、macOS）2027-H2 研发、2028 起计成本与采用。"
+  },
+  "scenarios": {
+    "conservative": {
+      "label": "保守",
+      "year_end_production_seats": {
+        "2027": {
+          "team": 300,
+          "firm": 80,
+          "pro": 15
+        },
+        "2028": {
+          "team": 1000,
+          "firm": 350,
+          "pro": 150
+        },
+        "2029": {
+          "team": 1900,
+          "firm": 800,
+          "pro": 300
+        },
+        "2030": {
+          "team": 3000,
+          "firm": 1500,
+          "pro": 500
+        }
+      },
+      "firm_customers_year_end": {
+        "2027": 1,
+        "2028": 4,
+        "2029": 8,
+        "2030": 14
+      },
+      "private_deployment_new_deals": {
+        "2027": 0,
+        "2028": 1,
+        "2029": 2,
+        "2030": 2
+      }
+    },
+    "base": {
+      "label": "基准",
+      "year_end_production_seats": {
+        "2027": {
+          "team": 600,
+          "firm": 160,
+          "pro": 60
+        },
+        "2028": {
+          "team": 2000,
+          "firm": 700,
+          "pro": 300
+        },
+        "2029": {
+          "team": 3800,
+          "firm": 1600,
+          "pro": 600
+        },
+        "2030": {
+          "team": 6000,
+          "firm": 3000,
+          "pro": 1000
+        }
+      },
+      "firm_customers_year_end": {
+        "2027": 2,
+        "2028": 7,
+        "2029": 15,
+        "2030": 26
+      },
+      "private_deployment_new_deals": {
+        "2027": 1,
+        "2028": 2,
+        "2029": 3,
+        "2030": 3
+      }
+    },
+    "aggressive": {
+      "label": "进取",
+      "year_end_production_seats": {
+        "2027": {
+          "team": 900,
+          "firm": 300,
+          "pro": 120
+        },
+        "2028": {
+          "team": 3600,
+          "firm": 1400,
+          "pro": 500
+        },
+        "2029": {
+          "team": 6800,
+          "firm": 3200,
+          "pro": 1000
+        },
+        "2030": {
+          "team": 10500,
+          "firm": 5800,
+          "pro": 1700
+        }
+      },
+      "firm_customers_year_end": {
+        "2027": 3,
+        "2028": 12,
+        "2029": 26,
+        "2030": 45
+      },
+      "private_deployment_new_deals": {
+        "2027": 1,
+        "2028": 3,
+        "2029": 4,
+        "2030": 5
+      }
+    }
+  },
+  "sensitivities": [
+    {
+      "label": "含加量收入（超额需求的 15% 购买加量包）",
+      "addon_share_override": 0.15
+    },
+    {
+      "label": "额度用满且加量包零购买（重度用量）",
+      "addon_share_override": 0.0,
+      "force_full_quota": true
+    },
+    {
+      "label": "成交价七折（团队/律所实现率0.70）",
+      "realization_override": 0.7
+    },
+    {
+      "label": "token 公示价上涨30%",
+      "token_price_factor": 1.3
+    },
+    {
+      "label": "token 价格下降30%（企业折扣或降价）",
+      "token_price_factor": 0.7
+    },
+    {
+      "label": "严格无持久缓存（ZDR 租户全部按未命中计）",
+      "no_cache": true
+    },
+    {
+      "label": "MaaS 转移价高于公示价 10%",
+      "token_price_factor": 1.1
+    },
+    {
+      "label": "编制增加20%",
+      "headcount_factor": 1.2
+    },
+    {
+      "label": "精简编制（共享中软平台，编制−20%）",
+      "headcount_factor": 0.8
+    },
+    {
+      "label": "法源固定费翻倍",
+      "legal_data_factor": 2.0
+    },
+    {
+      "label": "桌面支持成本每席 +300 元/年",
+      "support_add": 300.0
+    },
+    {
+      "label": "云端组件成本 +50%",
+      "cloud_platform_factor": 1.5
+    },
+    {
+      "label": "合规成本翻倍（等保三级 + 密评全面落实）",
+      "compliance_factor": 2.0
+    },
+    {
+      "label": "首个付费推迟一个季度（2027-07 起，2027 年末席位 −35%，2028 年末 −10%）",
+      "paid_start_month_override": 7,
+      "year_seat_factor": {
+        "2027": 0.65,
+        "2028": 0.9
+      }
+    },
+    {
+      "label": "云端事项采用率翻倍（G3）",
+      "cloud_matters_factor": 2.0
+    },
+    {
+      "label": "团队版席位 +10%（本地 Agent 能力完整 + 律所持钥被认可）",
+      "team_seat_factor": 1.1
+    },
+    {
+      "label": "团队版席位 −15%（定位或能力不被认可）",
+      "team_seat_factor": 0.85
+    },
+    {
+      "label": "执行域兼容问题使可签约生产席位 −5%",
+      "production_seat_factor": 0.95
+    },
+    {
+      "label": "执行域兼容或安全事件使可签约生产席位 −15%",
+      "production_seat_factor": 0.85
+    },
+    {
+      "label": "Agent 开放任务用量不涨（1/2/12 次/月）",
+      "open_task_counts": {
+        "light": 1,
+        "medium": 2,
+        "heavy": 12
+      }
+    },
+    {
+      "label": "Agent 开放任务单次 token 再 +50%（子 Agent 放大）",
+      "open_task_token_factor": 1.5
+    },
+    {
+      "label": "Agent 开放任务用量再翻倍",
+      "open_task_factor": 2.0
+    },
+    {
+      "label": "检索单价翻倍（切换备选供应商）",
+      "search_price_factor": 2.0
+    },
+    {
+      "label": "30% 子 Agent 任务改用 K3（模型池未强制）",
+      "subagent_k3_share": 0.3
+    }
+  ],
+  "headcount_note": "按到岗爬坡：G0（2026-10-12～11-20）约 24 人；G1（11-23～2027-02-26）约 40 人；G2（03-01～06-11）约 44 人；2026 年 10–12 月平均约 32 人。2027 年平均约 50 人＝G1/G2 研发 + GA 后 G3 研发（云端事项、执行器、macOS、App 遥控）+ 销售与客户成功；2028 年起含持续研发、内容运营、销售与客户成功。现金谷底已含 G3 研发。",
+  "reviewer_free_seats_per_production_seat": 0.2,
+  "reviewer_note": "团队版每 3 个生产席含 1 个审阅签发席（只计成本，约 0.2/生产席实际启用）；超出部分付费加购（约 0.03/生产席）。",
+  "cost_notes": {
+    "cloud_platform": "MaaS 法律分组分摊（独立上游组织、等保与运维）、境内 CDN（安装包、规则包、法规库增量）、Office/WPS 兼容测试农场、代码签名与时间戳服务",
+    "storage": "每席存储与接口许可：密文中继存储与同步流量、服务商应用接口许可等，口径见 editions_note_v6",
+    "support": "桌面支持：v6 去掉所内节点与共享文件夹排障（团队 560、律所 450、专业 260 元/席/年），见 editions_note_v6",
+    "compute_ocr": "解析、OCR、检索、文书生成在律所硬件上执行，不计入中软成本"
+  },
+  "cache_note": "基准以“企业协议下前缀缓存可用”为显式前提（ZDR 下缓存是否保留在 P0 谈判中确认）；无缓存见敏感性",
+  "fixed_costs_note_v6": "cloud_platform：控制面、中继、网关、公开沙箱的多可用区云资源、对象存储、CDN、HSM/KMS、WAF/堡垒机/日志与数据库审计等等保三级配套（v5 为 15/60/80/100/120 万元）；compliance_certification：在 v5 基础上增加控制面与中继的等保三级测评、商用密码应用安全性评估预留与第三方渗透测试（v5 为 20/70/50/55/60 万元）",
+  "editions_note_v6": "support：去掉所内节点与共享文件夹同步的现场排障，云端元数据诊断缩短定位时间（团队 650→560、律所 500→450、专业 280→260 元/席/年）；storage（元/席/年）按以下口径估算：密文中继平均每席 5 GB（含版本与附件）× 对象存储约 0.12 元/GB/月 ≈ 7 元；成员间同步下行约 20 GB/席/年 × 约 0.5 元/GB ≈ 10 元；企业微信等服务商应用接口许可约 4–5 元/账号/年；其余为备份与冗余，合计团队/律所 25 元、专业版 12 元",
+  "headcount_note_v6": "G0–G2 工作包约 793 人周（v5 约 690，第 4 篇 §12），按 24 周折算约 +4 人；此后云端后端、SRE 与内容安全常设约 +3 人。相对 v5（29/46/53/59/65）为 +4/+4/+3/+3/+3",
+  "headcount_note_v7": "G0–G2 工作包约 895 人周（v6 约 793；含对抗式审阅后新增约 26 人周：宿主策略与上游补丁、律所侧校验锚、加密落盘扩面、遥控网关、渲染 CSP 与 Office 外链剥离、闸门绕过与遥控越权红队，第 4 篇 §12），按 24 周折算约 +4 人；此后本机沙箱维护、Kimi Code 上游跟踪与移动 App 常设约 +2 人。相对 v6（33/50/56/62/68）为 +4/+4/+2/+2/+2。",
+  "fixed_costs_note_v7": "cloud_platform：取消公开任务沙箱（每任务一容器）、透明日志与见证；新增检索服务与遥控中继（轻量、无状态或只转发密文），合计较 v6 下调约 8%（v6 为 30/170/230/290/350 万元）。",
+  "editions_note_v7": "support：Windows 沙箱自检、杀软加白与隔离等级排障使团队/律所/专业版桌面支持各 +40/+30/+20 元/席/年（v6 为 560/450/260）。compute 字段在 v7 表示检索与抓取按次费：合同审查 2 次 search_pro、研究 40 次 search_pro + 20 次 fetch、问答 1 次、Agent 开放任务 15 次 search_pro + 10 次 fetch。open_task：全量工具与子 Agent 使单次 token 约 +20%、各画像月度次数上调（2/4/18，v6 为 1/2/12）。",
+  "cloud_matters": {
+    "note": "G3 云端事项：云端事项库（服务端加密、备份）与每任务隔离沙箱算力（单任务约 ¥0.04–0.3），按采用比例计入每席年成本",
+    "share_of_production_seats": {
+      "2028": 0.15,
+      "2029": 0.25,
+      "2030": 0.3
+    },
+    "cost_per_seat_year": 150
+  },
+  "base_sensitivity": {
+    "addon_share_override": 0.0
+  },
+  "base_sensitivity_label": "加量收入为零（超额需求不购买；额度按实际需求消耗）"
+}

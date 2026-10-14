@@ -1,0 +1,101 @@
+{
+  "as_of": "2026-10-09",
+  "notice": "规划压力测算，不是实际报价、采购合同或盈利预测；revenue已假定为不含税可确认收入，加量包收入为0。",
+  "scenarios": [
+    {
+      "name": "轻度使用",
+      "tasks_per_month": 20,
+      "model_cost_per_task": 4.42,
+      "total_cost_per_task": 6.06,
+      "annual_net_revenue_assumption": 7840.0,
+      "annual_direct_and_allocated_service_cost": 2653.44,
+      "annual_contribution": 5186.56,
+      "contribution_percent": 66.16,
+      "monthly_tasks_at_60pct_contribution": 26.64
+    },
+    {
+      "name": "基准使用",
+      "tasks_per_month": 40,
+      "model_cost_per_task": 4.42,
+      "total_cost_per_task": 6.06,
+      "annual_net_revenue_assumption": 7840.0,
+      "annual_direct_and_allocated_service_cost": 4106.88,
+      "annual_contribution": 3733.12,
+      "contribution_percent": 47.62,
+      "monthly_tasks_at_60pct_contribution": 26.64
+    },
+    {
+      "name": "重度使用且无加量收入",
+      "tasks_per_month": 150,
+      "model_cost_per_task": 4.42,
+      "total_cost_per_task": 6.06,
+      "annual_net_revenue_assumption": 7840.0,
+      "annual_direct_and_allocated_service_cost": 12100.8,
+      "annual_contribution": -4260.8,
+      "contribution_percent": -54.35,
+      "monthly_tasks_at_60pct_contribution": 26.64
+    },
+    {
+      "name": "基准但缓存完全不可用",
+      "tasks_per_month": 40,
+      "model_cost_per_task": 6.9,
+      "total_cost_per_task": 8.54,
+      "annual_net_revenue_assumption": 7840.0,
+      "annual_direct_and_allocated_service_cost": 5299.2,
+      "annual_contribution": 2540.8,
+      "contribution_percent": 32.41,
+      "monthly_tasks_at_60pct_contribution": 18.89
+    },
+    {
+      "name": "基准但成交价降至标价七折",
+      "tasks_per_month": 40,
+      "model_cost_per_task": 4.42,
+      "total_cost_per_task": 6.06,
+      "annual_net_revenue_assumption": 6860.0,
+      "annual_direct_and_allocated_service_cost": 4106.88,
+      "annual_contribution": 2753.12,
+      "contribution_percent": 40.13,
+      "monthly_tasks_at_60pct_contribution": 21.25
+    },
+    {
+      "name": "基准但输出翻倍",
+      "tasks_per_month": 40,
+      "model_cost_per_task": 6.72,
+      "total_cost_per_task": 8.36,
+      "annual_net_revenue_assumption": 7840.0,
+      "annual_direct_and_allocated_service_cost": 5210.88,
+      "annual_contribution": 2629.12,
+      "contribution_percent": 33.53,
+      "monthly_tasks_at_60pct_contribution": 19.31
+    },
+    {
+      "name": "综合压力",
+      "tasks_per_month": 80,
+      "model_cost_per_task": 10.4,
+      "total_cost_per_task": 12.04,
+      "annual_net_revenue_assumption": 6860.0,
+      "annual_direct_and_allocated_service_cost": 12758.4,
+      "annual_contribution": -5898.4,
+      "contribution_percent": -85.98,
+      "monthly_tasks_at_60pct_contribution": 10.69
+    }
+  ],
+  "development": {
+    "person_weeks_with_contingency": 875.0,
+    "work_weeks_at_assumed_team": 36.46,
+    "cost_scenarios_cny": [
+      {
+        "cny_per_person_week": 6000,
+        "total": 5250000.0
+      },
+      {
+        "cny_per_person_week": 9000,
+        "total": 7875000.0
+      },
+      {
+        "cny_per_person_week": 12000,
+        "total": 10500000.0
+      }
+    ]
+  }
+}

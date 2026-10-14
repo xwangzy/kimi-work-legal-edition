@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Kimi Work 法律行业发行版 · 经济模型 v7（端上全能力、云上补能力；规划模型，不是计费代码）。
 
-相对 v6：Kimi Code 全量嵌入与本机沙箱、检索补位、移动 App 使 G0–G2 工作包由约 793 增至约 869 人周（编制 +3/+3/+2/+2/+2）；
+相对 v6：Kimi Code 全量嵌入与本机沙箱、检索补位、移动 App 及审阅后的宿主策略、遥控网关、律所侧校验锚使 G0–G2 工作包由约 793 增至约 895 人周（编制 +4/+4/+2/+2/+2）；
 取消公开任务沙箱、透明日志见证等云端组件（cloud_platform 下调约 8%）；任务成本新增“检索”按次费（月之暗面工具接口）；
 Agent 开放任务用量与单次 token 上调（全量工具与子 Agent）；Windows 沙箱与杀软排障使桌面支持小幅上调。
-新增敏感性：open_task_factor（Agent 任务用量倍数）、search_price_factor（检索单价倍数）。
+新增敏感性：open_task_factor / open_task_counts（Agent 任务用量）、open_task_token_factor（Agent 单次 token）、search_price_factor（检索单价）、production_seat_factor（团队与律所版席位整体倍数，用于沙箱覆盖不足等情形）。
+对抗式审阅后：G0–G2 约 895 人周，编制 37/54/58/64/70。
 
 只用 Python 标准库。按月模拟 2026-10 至 2030-12：
   任务成本（含缓存写入、重试、OCR、法源、检索按次费）→ 用户画像与额度（团队池化/个人不池化）
@@ -170,12 +171,20 @@ def simulate(cfg: dict, scenario_key: str, sens: dict | None = None) -> dict:
 
     search_factor = sens.get("search_price_factor", 1.0)
     open_task_factor = sens.get("open_task_factor", 1.0)
-    if search_factor != 1.0 or open_task_factor != 1.0:
+    open_task_counts = sens.get("open_task_counts")
+    open_task_token_factor = sens.get("open_task_token_factor", 1.0)
+    if search_factor != 1.0 or open_task_factor != 1.0 or open_task_counts or open_task_token_factor != 1.0:
         cfg = copy.deepcopy(cfg)
         for t in cfg["task_assumptions"].values():
             t["compute"] = t["compute"] * search_factor
-        for persona in cfg["personas"].values():
+        for name, persona in cfg["personas"].items():
+            if open_task_counts:
+                persona["monthly_tasks"]["open_task"] = open_task_counts[name]
             persona["monthly_tasks"]["open_task"] = persona["monthly_tasks"]["open_task"] * open_task_factor
+        if open_task_token_factor != 1.0:
+            for step in cfg["task_assumptions"]["open_task"]["steps"]:
+                for k in ("miss_k", "hit_k", "write_5m_k", "write_1h_k", "output_k"):
+                    step[k] = step[k] * open_task_token_factor
     tasks = {k: task_cost(t, cfg["price_per_million_tokens"], token_factor, no_cache) for k, t in cfg["task_assumptions"].items()}
     personas = persona_stats(cfg, tasks)
     support_add = sens.get("support_add", 0.0)
@@ -183,9 +192,11 @@ def simulate(cfg: dict, scenario_key: str, sens: dict | None = None) -> dict:
             for k in ("team", "firm", "pro", "reviewer")}
 
     sc = copy.deepcopy(cfg["scenarios"][scenario_key])
-    if team_seat_factor != 1.0:
+    production_seat_factor = sens.get("production_seat_factor", 1.0)
+    if team_seat_factor != 1.0 or production_seat_factor != 1.0:
         for yv in sc["year_end_production_seats"].values():
-            yv["team"] = yv["team"] * team_seat_factor
+            yv["team"] = yv["team"] * team_seat_factor * production_seat_factor
+            yv["firm"] = yv["firm"] * production_seat_factor
     years = cfg["years"]
     start_m = cfg["launch"]["paid_start_month_2027"]
     curves = seat_curve(sc["year_end_production_seats"], start_m, 7, years)

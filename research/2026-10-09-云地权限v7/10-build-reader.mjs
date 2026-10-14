@@ -173,7 +173,7 @@ const html = `<!doctype html>
 <header class="cover"><div class="eyebrow">中软国际 × 月之暗面 · 立项评审材料</div>
 <h1>Kimi Work 法律行业发行版<br>完整产品方案 v7.0（能力补位 · 沙箱放权）</h1>
 <p>按“云端执行与本地执行的权限、功能划分有问题”“我方从 Kimi 采购的是 API token”“完整接入 Kimi Code 的后端功能、能力、特性”三点意见，在 v6.0 基础上补齐“能力来源”与“边界机制”两个维度：端上全能力、沙箱定边界；云上补能力、控制归云；案卷在所、推理过境。评审 astra 与 opus 各稿（含 v5、v6），完成 Kimi Code 源码复核与 2026-10-09 三路联网核验。所有价格、指标、人力与收入均为待试点校准的假设。</p>
-<div class="pills"><span>控制在云 · 内容在所</span><span>推理只过境</span><span>密文中继：律所持钥</span><span>零服务器开通</span><span>T0–T7 · 四档 · 四层策略</span><span>2027-04-12 公开销售</span></div>
+<div class="pills"><span>Kimi Code 全量嵌入</span><span>事项沙箱 · 闸门唯一出口</span><span>宿主策略 · 四档 · 无完全访问</span><span>能力补位：检索 · 法源 · 遥控</span><span>案卷在所 · 推理过境</span><span>2027-04-12 公开销售</span></div>
 </header>
 ${articles.join('\n')}
 ${econBlock}

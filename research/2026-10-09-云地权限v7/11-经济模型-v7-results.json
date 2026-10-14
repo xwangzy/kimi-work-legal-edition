@@ -175,7 +175,7 @@
           "payment_fees": 0.0,
           "legal_data": 100000.0,
           "cloud_platform": 280000.0,
-          "headcount": 3510000.0,
+          "headcount": 3607500.0,
           "experts": 300000,
           "sales_marketing": 300000,
           "compliance": 250000.0,
@@ -187,16 +187,16 @@
           "cogs": 380000.0,
           "gross_profit": -380000.0,
           "gross_margin": null,
-          "opex": 4460000.0,
-          "operating_result": -4840000.0,
-          "cumulative_operating_result": -4840000.0,
-          "cash_net": -4840000.0,
-          "cumulative_cash": -4840000.0,
+          "opex": 4557500.0,
+          "operating_result": -4937500.0,
+          "cumulative_operating_result": -4937500.0,
+          "cash_net": -4937500.0,
+          "cumulative_cash": -4937500.0,
           "year_end_production_seats": 0,
           "average_production_seats": 0,
           "year_end_arr": 0.0,
           "blended_contribution_per_production_seat": 6511.0,
-          "break_even_average_production_seats_at_this_cost_base": 744
+          "break_even_average_production_seats_at_this_cost_base": 759
         },
         "2027": {
           "subscription": 1833758.0,
@@ -214,7 +214,7 @@
           "payment_fees": 200.0,
           "legal_data": 800000.0,
           "cloud_platform": 1550000.0,
-          "headcount": 23850000.0,
+          "headcount": 24300000.0,
           "experts": 2000000,
           "sales_marketing": 4000000,
           "compliance": 1200000.0,
@@ -226,16 +226,16 @@
           "cogs": 2981435.0,
           "gross_profit": -733072.0,
           "gross_margin": -0.326,
-          "opex": 32625757.0,
-          "operating_result": -33358830.0,
-          "cumulative_operating_result": -38198830.0,
-          "cash_net": -31154854.0,
-          "cumulative_cash": -35994854.0,
+          "opex": 33075757.0,
+          "operating_result": -33808830.0,
+          "cumulative_operating_result": -38746330.0,
+          "cash_net": -31604854.0,
+          "cumulative_cash": -36542354.0,
           "year_end_production_seats": 500,
           "average_production_seats": 226,
           "year_end_arr": 4347832.0,
           "blended_contribution_per_production_seat": 6644.0,
-          "break_even_average_production_seats_at_this_cost_base": 5249
+          "break_even_average_production_seats_at_this_cost_base": 5317
         },
         "2028": {
           "subscription": 8136617.0,
@@ -267,9 +267,9 @@
           "gross_margin": 0.4203,
           "opex": 37594253.0,
           "operating_result": -32624679.0,
-          "cumulative_operating_result": -70823509.0,
+          "cumulative_operating_result": -71371009.0,
           "cash_net": -29127993.0,
-          "cumulative_cash": -65122847.0,
+          "cumulative_cash": -65670347.0,
           "year_end_production_seats": 1500,
           "average_production_seats": 1042,
           "year_end_arr": 12876965.0,
@@ -306,9 +306,9 @@
           "gross_margin": 0.5299,
           "opex": 43561884.0,
           "operating_result": -29821475.0,
-          "cumulative_operating_result": -100644984.0,
+          "cumulative_operating_result": -101192484.0,
           "cash_net": -24488325.0,
-          "cumulative_cash": -89611172.0,
+          "cumulative_cash": -90158672.0,
           "year_end_production_seats": 3000,
           "average_production_seats": 2312,
           "year_end_arr": 25712930.0,
@@ -345,9 +345,9 @@
           "gross_margin": 0.5916,
           "opex": 48497279.0,
           "operating_result": -23031503.0,
-          "cumulative_operating_result": -123676488.0,
+          "cumulative_operating_result": -124223988.0,
           "cash_net": -15939428.0,
-          "cumulative_cash": -105550600.0,
+          "cumulative_cash": -106098100.0,
           "year_end_production_seats": 5000,
           "average_production_seats": 4083,
           "year_end_arr": 42986550.0,
@@ -355,8 +355,8 @@
           "break_even_average_production_seats_at_this_cost_base": 7571
         }
       },
-      "operating_trough": -123676488.0,
-      "cash_trough": -105550600.0
+      "operating_trough": -124223988.0,
+      "cash_trough": -106098100.0
     },
     "base": {
       "scenario": "基准",
@@ -530,7 +530,7 @@
           "payment_fees": 0.0,
           "legal_data": 100000.0,
           "cloud_platform": 280000.0,
-          "headcount": 3510000.0,
+          "headcount": 3607500.0,
           "experts": 300000,
           "sales_marketing": 300000,
           "compliance": 250000.0,
@@ -542,16 +542,16 @@
           "cogs": 380000.0,
           "gross_profit": -380000.0,
           "gross_margin": null,
-          "opex": 4460000.0,
-          "operating_result": -4840000.0,
-          "cumulative_operating_result": -4840000.0,
-          "cash_net": -4840000.0,
-          "cumulative_cash": -4840000.0,
+          "opex": 4557500.0,
+          "operating_result": -4937500.0,
+          "cumulative_operating_result": -4937500.0,
+          "cash_net": -4937500.0,
+          "cumulative_cash": -4937500.0,
           "year_end_production_seats": 0,
           "average_production_seats": 0,
           "year_end_arr": 0.0,
           "blended_contribution_per_production_seat": 6511.0,
-          "break_even_average_production_seats_at_this_cost_base": 744
+          "break_even_average_production_seats_at_this_cost_base": 759
         },
         "2027": {
           "subscription": 3554700.0,
@@ -569,7 +569,7 @@
           "payment_fees": 798.0,
           "legal_data": 800000.0,
           "cloud_platform": 1550000.0,
-          "headcount": 23850000.0,
+          "headcount": 24300000.0,
           "experts": 2000000,
           "sales_marketing": 4000000,
           "compliance": 1200000.0,
@@ -581,16 +581,16 @@
           "cogs": 4276395.0,
           "gross_profit": 2096156.0,
           "gross_margin": 0.3289,
-          "opex": 32697476.0,
-          "operating_result": -30601320.0,
-          "cumulative_operating_result": -35441320.0,
-          "cash_net": -26277946.0,
-          "cumulative_cash": -31117946.0,
+          "opex": 33147476.0,
+          "operating_result": -31051320.0,
+          "cumulative_operating_result": -35988820.0,
+          "cash_net": -26727946.0,
+          "cumulative_cash": -31665446.0,
           "year_end_production_seats": 1000,
           "average_production_seats": 445,
           "year_end_arr": 8497428.0,
           "blended_contribution_per_production_seat": 6511.0,
-          "break_even_average_production_seats_at_this_cost_base": 5152
+          "break_even_average_production_seats_at_this_cost_base": 5221
         },
         "2028": {
           "subscription": 16183217.0,
@@ -622,9 +622,9 @@
           "gross_margin": 0.5714,
           "opex": 37929671.0,
           "operating_result": -24345222.0,
-          "cumulative_operating_result": -59786541.0,
+          "cumulative_operating_result": -60334041.0,
           "cash_net": -17260992.0,
-          "cumulative_cash": -48378938.0,
+          "cumulative_cash": -48926438.0,
           "year_end_production_seats": 3000,
           "average_production_seats": 2083,
           "year_end_arr": 25453930.0,
@@ -661,9 +661,9 @@
           "gross_margin": 0.6276,
           "opex": 44312968.0,
           "operating_result": -12983150.0,
-          "cumulative_operating_result": -72769692.0,
+          "cumulative_operating_result": -73317192.0,
           "cash_net": -2316849.0,
-          "cumulative_cash": -50695787.0,
+          "cumulative_cash": -51243287.0,
           "year_end_production_seats": 6000,
           "average_production_seats": 4625,
           "year_end_arr": 51125860.0,
@@ -700,9 +700,9 @@
           "gross_margin": 0.6633,
           "opex": 49827908.0,
           "operating_result": 5641351.0,
-          "cumulative_operating_result": -67128340.0,
+          "cumulative_operating_result": -67675840.0,
           "cash_net": 19825503.0,
-          "cumulative_cash": -30870284.0,
+          "cumulative_cash": -31417784.0,
           "year_end_production_seats": 10000,
           "average_production_seats": 8167,
           "year_end_arr": 85373100.0,
@@ -710,8 +710,8 @@
           "break_even_average_production_seats_at_this_cost_base": 7301
         }
       },
-      "operating_trough": -72769692.0,
-      "cash_trough": -50695787.0
+      "operating_trough": -73317192.0,
+      "cash_trough": -51243287.0
     },
     "aggressive": {
       "scenario": "进取",
@@ -885,7 +885,7 @@
           "payment_fees": 0.0,
           "legal_data": 100000.0,
           "cloud_platform": 280000.0,
-          "headcount": 3510000.0,
+          "headcount": 3607500.0,
           "experts": 300000,
           "sales_marketing": 300000,
           "compliance": 250000.0,
@@ -897,16 +897,16 @@
           "cogs": 380000.0,
           "gross_profit": -380000.0,
           "gross_margin": null,
-          "opex": 4460000.0,
-          "operating_result": -4840000.0,
-          "cumulative_operating_result": -4840000.0,
-          "cash_net": -4840000.0,
-          "cumulative_cash": -4840000.0,
+          "opex": 4557500.0,
+          "operating_result": -4937500.0,
+          "cumulative_operating_result": -4937500.0,
+          "cash_net": -4937500.0,
+          "cumulative_cash": -4937500.0,
           "year_end_production_seats": 0,
           "average_production_seats": 0,
           "year_end_arr": 0.0,
           "blended_contribution_per_production_seat": 6511.0,
-          "break_even_average_production_seats_at_this_cost_base": 744
+          "break_even_average_production_seats_at_this_cost_base": 759
         },
         "2027": {
           "subscription": 5619833.0,
@@ -924,7 +924,7 @@
           "payment_fees": 1496.0,
           "legal_data": 800000.0,
           "cloud_platform": 1550000.0,
-          "headcount": 23850000.0,
+          "headcount": 24300000.0,
           "experts": 2000000,
           "sales_marketing": 4000000,
           "compliance": 1200000.0,
@@ -936,16 +936,16 @@
           "cogs": 4984561.0,
           "gross_profit": 3910087.0,
           "gross_margin": 0.4396,
-          "opex": 32782547.0,
-          "operating_result": -28872461.0,
-          "cumulative_operating_result": -33712461.0,
-          "cash_net": -22008243.0,
-          "cumulative_cash": -26848243.0,
+          "opex": 33232547.0,
+          "operating_result": -29322461.0,
+          "cumulative_operating_result": -34259961.0,
+          "cash_net": -22458243.0,
+          "cumulative_cash": -27395743.0,
           "year_end_production_seats": 1600,
           "average_production_seats": 708,
           "year_end_arr": 13414555.0,
           "blended_contribution_per_production_seat": 6433.0,
-          "break_even_average_production_seats_at_this_cost_base": 5210
+          "break_even_average_production_seats_at_this_cost_base": 5280
         },
         "2028": {
           "subscription": 28881083.0,
@@ -977,9 +977,9 @@
           "gross_margin": 0.6358,
           "opex": 38456929.0,
           "operating_result": -12418590.0,
-          "cumulative_operating_result": -46131051.0,
+          "cumulative_operating_result": -46678551.0,
           "cash_net": 1561010.0,
-          "cumulative_cash": -25287234.0,
+          "cumulative_cash": -25834734.0,
           "year_end_production_seats": 5500,
           "average_production_seats": 3712,
           "year_end_arr": 46615500.0,
@@ -1016,9 +1016,9 @@
           "gross_margin": 0.6753,
           "opex": 45570507.0,
           "operating_result": 13791349.0,
-          "cumulative_operating_result": -32339702.0,
+          "cumulative_operating_result": -32887202.0,
           "cash_net": 33431619.0,
-          "cumulative_cash": 8144386.0,
+          "cumulative_cash": 7596886.0,
           "year_end_production_seats": 11000,
           "average_production_seats": 8479,
           "year_end_arr": 93667000.0,
@@ -1055,9 +1055,9 @@
           "gross_margin": 0.6972,
           "opex": 51993586.0,
           "operating_result": 52113561.0,
-          "cumulative_operating_result": 19773859.0,
+          "cumulative_operating_result": 19226359.0,
           "cash_net": 76907639.0,
-          "cumulative_cash": 85052025.0,
+          "cumulative_cash": 84504525.0,
           "year_end_production_seats": 18000,
           "average_production_seats": 14792,
           "year_end_arr": 153463170.0,
@@ -1065,8 +1065,8 @@
           "break_even_average_production_seats_at_this_cost_base": 6818
         }
       },
-      "operating_trough": -46131051.0,
-      "cash_trough": -26848243.0
+      "operating_trough": -46678551.0,
+      "cash_trough": -27395743.0
     }
   },
   "no_cache_tasks": {
@@ -1153,120 +1153,148 @@
       "label": "成交价七折（团队/律所实现率0.70）",
       "op_2029": -19246226.0,
       "op_2030": -5490874.0,
-      "cash_trough": -64390789.0,
-      "operating_trough": -87966449.0
+      "cash_trough": -64938289.0,
+      "operating_trough": -88513949.0
     },
     {
       "label": "token 公示价上涨30%",
       "op_2029": -14603555.0,
       "op_2030": 2780096.0,
-      "cash_trough": -53207107.0,
-      "operating_trough": -75281012.0
+      "cash_trough": -53754607.0,
+      "operating_trough": -75828512.0
     },
     {
       "label": "token 价格下降30%（企业折扣或降价）",
       "op_2029": -11362820.0,
       "op_2030": 8502476.0,
-      "cash_trough": -48184589.0,
-      "operating_trough": -70258494.0
+      "cash_trough": -48732089.0,
+      "operating_trough": -70805994.0
     },
     {
       "label": "严格无持久缓存（ZDR 租户全部按未命中计）",
       "op_2029": -16426310.0,
       "op_2030": -438462.0,
-      "cash_trough": -56031622.0,
-      "operating_trough": -78543989.0
+      "cash_trough": -56579122.0,
+      "operating_trough": -79091489.0
     },
     {
       "label": "额度用满且加量包零购买",
       "op_2029": -14845635.0,
       "op_2030": 2352639.0,
-      "cash_trough": -53568027.0,
-      "operating_trough": -75641932.0
+      "cash_trough": -54115527.0,
+      "operating_trough": -76189432.0
     },
     {
       "label": "编制增加20%",
       "op_2029": -18743150.0,
       "op_2030": -658649.0,
-      "cash_trough": -67147787.0,
-      "operating_trough": -89880340.0
+      "cash_trough": -67804787.0,
+      "operating_trough": -90537340.0
     },
     {
       "label": "法源固定费翻倍",
       "op_2029": -15483150.0,
       "op_2030": 2641351.0,
-      "cash_trough": -55595787.0,
-      "operating_trough": -77669692.0
+      "cash_trough": -56143287.0,
+      "operating_trough": -78217192.0
     },
     {
       "label": "精简编制（共享中软平台，编制−20%）",
       "op_2029": -7223150.0,
       "op_2030": 11941351.0,
-      "cash_trough": -37686938.0,
-      "operating_trough": -56317692.0
+      "cash_trough": -38124938.0,
+      "operating_trough": -56755692.0
     },
     {
       "label": "MaaS 转移价高于公示价 10%",
       "op_2029": -13523361.0,
       "op_2030": 4687466.0,
-      "cash_trough": -51533011.0,
-      "operating_trough": -73606916.0
+      "cash_trough": -52080511.0,
+      "operating_trough": -74154416.0
     },
     {
       "label": "桌面支持成本每席 +300 元/年",
       "op_2029": -14657863.0,
       "op_2030": 2684201.0,
-      "cash_trough": -53288102.0,
-      "operating_trough": -75362007.0
+      "cash_trough": -53835602.0,
+      "operating_trough": -75909507.0
     },
     {
       "label": "云端组件成本 +50%",
       "op_2029": -14308150.0,
       "op_2030": 4041351.0,
-      "cash_trough": -53985787.0,
-      "operating_trough": -76059692.0
+      "cash_trough": -54533287.0,
+      "operating_trough": -76607192.0
     },
     {
       "label": "合规成本翻倍（等保三级 + 密评全面落实）",
       "op_2029": -13983150.0,
       "op_2030": 4591351.0,
-      "cash_trough": -54095787.0,
-      "operating_trough": -76169692.0
+      "cash_trough": -54643287.0,
+      "operating_trough": -76717192.0
     },
     {
-      "label": "能力完整 + 零服务器使团队版席位 +10%",
+      "label": "本地工具能力完整 + 零服务器使团队版席位 +10%",
       "op_2029": -11073295.0,
       "op_2030": 8840921.0,
-      "cash_trough": -46436056.0,
-      "operating_trough": -69735001.0
+      "cash_trough": -46983556.0,
+      "operating_trough": -70282501.0
     },
     {
-      "label": "能力完整 + 零服务器使团队版席位 +20%",
+      "label": "本地工具能力完整 + 零服务器使团队版席位 +20%",
       "op_2029": -9163440.0,
       "op_2030": 12040491.0,
-      "cash_trough": -44493174.0,
-      "operating_trough": -66700311.0
+      "cash_trough": -45040674.0,
+      "operating_trough": -67247811.0
     },
     {
       "label": "能力弱于 Kimi 企业版导致团队版席位 −15%（v6 形态风险示意）",
       "op_2029": -15847933.0,
       "op_2030": 841997.0,
-      "cash_trough": -57511410.0,
-      "operating_trough": -77321728.0
+      "cash_trough": -58058910.0,
+      "operating_trough": -77869228.0
+    },
+    {
+      "label": "Agent 开放任务用量不涨（维持 v6 的 1/2/12 次/月）",
+      "op_2029": -13730821.0,
+      "op_2030": 4321140.0,
+      "cash_trough": -52401849.0,
+      "operating_trough": -74475754.0
+    },
+    {
+      "label": "Agent 开放任务单次 token 再 +50%（子 Agent 放大）",
+      "op_2029": -14086671.0,
+      "op_2030": 3692793.0,
+      "cash_trough": -52953396.0,
+      "operating_trough": -75027301.0
     },
     {
       "label": "Agent 开放任务用量再翻倍",
       "op_2029": -11142694.0,
       "op_2030": 8891166.0,
-      "cash_trough": -47848763.0,
-      "operating_trough": -69922668.0
+      "cash_trough": -48396263.0,
+      "operating_trough": -70470168.0
     },
     {
       "label": "检索单价翻倍（切换备选供应商）",
       "op_2029": -13126534.0,
       "op_2030": 5388169.0,
-      "cash_trough": -50918021.0,
-      "operating_trough": -72991926.0
+      "cash_trough": -51465521.0,
+      "operating_trough": -73539426.0
+    },
+    {
+      "label": "Windows 沙箱覆盖不足：可签约生产席位 −15%",
+      "op_2029": -16944045.0,
+      "op_2030": -1331357.0,
+      "cash_trough": -60572860.0,
+      "operating_trough": -80818371.0
+    },
+    {
+      "label": "Windows 沙箱覆盖不足：可签约生产席位 −30%",
+      "op_2029": -20904940.0,
+      "op_2030": -8304065.0,
+      "cash_trough": -69902433.0,
+      "operating_trough": -93960902.0
     }
   ]
 }

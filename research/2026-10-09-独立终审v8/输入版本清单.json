@@ -1,0 +1,246 @@
+{
+  "as_of": "2026-10-09",
+  "meaning": "最终复核时可见输入版本；hash不代表事实真实性，不代表所有附录均做了逐字审计",
+  "files": [
+    {
+      "path": "research/2026-10-01-本地执行方案v5/00-结论先行与阅读指南.md",
+      "bytes": 16125,
+      "sha256": "f7c4065717b6cc9a36e800aa84d11ca5f12ca42dd81051a329d80a4822039931"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/01-评审与裁决.md",
+      "bytes": 37102,
+      "sha256": "f7b0b42764c4d2b6dce878b6da7d0996df3f121bce9c8d0a49183a981d89ded3"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/02-产品方案.md",
+      "bytes": 48618,
+      "sha256": "e003750ecb18c73d98eef41e1fe513848b2fc80b9dc2d36941b8b06312d698bb"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/03-场景交付件与验收.md",
+      "bytes": 40792,
+      "sha256": "7c0dbdba727a2a875a04da89cbb7153d055fbf7268c7fa731d1f2c1fa59a9076"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/04-技术架构与研发计划.md",
+      "bytes": 83361,
+      "sha256": "6ed0b7d5b90fba226bb783af93a197f2c2566bdf64da53b9f7728bbf1939feba"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/05-内容与数据资产.md",
+      "bytes": 20823,
+      "sha256": "59b57823b342616f7946e66bcc77c1ca964fb0addc6ed7a6cc4152ad1d000c5c"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/06-合规与信任.md",
+      "bytes": 37464,
+      "sha256": "df659ba56f4e4722b3311d4453ccef8df510b540eeb8eef9993f99dad733b31c"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/07-商业闭环.md",
+      "bytes": 30952,
+      "sha256": "e3fcd9c1e7a4608bfc1c2d7c11efdeb7ba7f22029175c1d95143ecd8a8270eae"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/08-交付运营组织与路线.md",
+      "bytes": 22008,
+      "sha256": "ab6ad9288a5f38e57b2577e1fd9e282e2ed2ad69fb7696e5a45bb966fc5a2325"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/09-附录-核验摘要与证据.md",
+      "bytes": 26620,
+      "sha256": "b03f1a04c9ee5a05b397c2e5745ddcc0f60fb254bd4743a5553848861a790e08"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/11-经济模型-v5-摘要.md",
+      "bytes": 5247,
+      "sha256": "fcd1ba2dfa96aa3946f4197f278125c1d2d92ba49de4ee3666bae8059321f29b"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/12-交付清单与校验.md",
+      "bytes": 3908,
+      "sha256": "725fd7527410478fa2c514c37e1ef0741ea2a2e7be183679f82788dbc1cd2e26"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/审阅-对抗式-2026-10-01.md",
+      "bytes": 46264,
+      "sha256": "18e4f31abce2a70c9079edb51eb1e3f2b5a3376c28405cc9eb43e1096b012214"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/调研-V1-token通道与IM长连接.md",
+      "bytes": 38104,
+      "sha256": "8b2b923a779f4978e0417602a7b15d88fd5a9ecaaf79274fd4c93fe90efe3441"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/调研-V2-合规与法源本地化.md",
+      "bytes": 64219,
+      "sha256": "f6e1d5493a823717843ef45006242619b8e40de18adce55df21594e2cd432dbd"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/调研-V3-本机技术栈与性能.md",
+      "bytes": 36585,
+      "sha256": "8fd2acf42172472cbc1f2e96c9e572bf7d4248a434042eef973d8899da56eefc"
+    },
+    {
+      "path": "research/2026-10-01-本地执行方案v5/调研-V4-同步Office桥与私有模型.md",
+      "bytes": 34408,
+      "sha256": "8a0092d60cd856eb9ef74710511d60d31ead0a6869d516e07eaf6f6eb7d14b70"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/00-结论先行与阅读指南.md",
+      "bytes": 16976,
+      "sha256": "e394d352352ec86fa876fdc4ca5f04ab595a6bcc6d834e3fa8b91987a31ea572"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/01-评审与裁决.md",
+      "bytes": 31315,
+      "sha256": "ff6cb965fbc50cff1bee5743438122f72459e8ec10958f8af5004865978b4670"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/02-云地划分与权限体系.md",
+      "bytes": 59291,
+      "sha256": "4aa54f72482aacbd1e944a1abb7e067f760a0aadb7981b0cbb75194499085686"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/03-产品方案.md",
+      "bytes": 28915,
+      "sha256": "7d33521e0ba8b5647682a0bc5bd4506c0edbeec8c26f8fbbeb3e3ddb477617fd"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/04-技术架构与研发计划.md",
+      "bytes": 56691,
+      "sha256": "4508201a0deca2c35d0af37cbf47d00ff9bc2fa6baf2fd44b08dc9968e369d20"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/05-合规商业与路线.md",
+      "bytes": 24642,
+      "sha256": "8adb6fd51a8b682345a21233a02b5aec363933dce2696ea2368fcdef65b70ba9"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/06-附录-核验摘要与未决事项.md",
+      "bytes": 19264,
+      "sha256": "da2cea66847bbf50a5534d388ffabcea84ce35e9b0c3201cfb7b8b7e95c279ff"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/11-经济模型-v6-摘要.md",
+      "bytes": 5527,
+      "sha256": "c75792a642d51f8a6045ed372badf01ad5bc77405478e3500fd0deef1e08e6e3"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/12-交付清单与校验.md",
+      "bytes": 1831,
+      "sha256": "152cbb29446ca5746e6b455ca34307aba6d75ba927553ed38c7439a19709590e"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/审阅-对抗式-2026-10-02.md",
+      "bytes": 42614,
+      "sha256": "da2ba9afcead5af642307d18e100de833e477fe56713113aa07b58c2b93faf46"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/调研-R1-国内办公Agent云地划分.md",
+      "bytes": 52210,
+      "sha256": "75883a21a7347a8cd930b8c095ea4ff3fd71823924f600e4fa7b03758abc6594"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/调研-R2-海外Agent与法律AI云地划分.md",
+      "bytes": 53118,
+      "sha256": "7e01776d6a44f002295f3595f4bed2687a8a581a0958d81d1806dca7918aace7"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/调研-R3-IM服务商应用与移动端.md",
+      "bytes": 34876,
+      "sha256": "cfd50d5f466727d2a8b0bd7e644eac7226e3491501ca3104183aa639f44b054e"
+    },
+    {
+      "path": "research/2026-10-02-云地划分v6/调研-R4-密文托管合规与律所市场.md",
+      "bytes": 35469,
+      "sha256": "f3accb85a51ee639cc4c416ea41718eb905914ff8a6dc1bdfe2d827880778d8b"
+    },
+    {
+      "path": "research/2026-10-09-云地权限v7/00-结论先行与阅读指南.md",
+      "bytes": 17678,
+      "sha256": "2bb014f329a56d2c6fbf6329e4a483c1ff26696152582c32b1cfdf093ae9a1fc"
+    },
+    {
+      "path": "research/2026-10-09-云地权限v7/01-评审与裁决.md",
+      "bytes": 32093,
+      "sha256": "866dc883b6e18ea19cd3cfaf676babd9a1d0f35dd1c9f5f065eb53c5d26d605c"
+    },
+    {
+      "path": "research/2026-10-09-云地权限v7/02-云地划分与权限体系.md",
+      "bytes": 84771,
+      "sha256": "2f896ae25d4ec9b511ec5c81f87054fc54cf2b9b26750d38b2f2cdaffb3e1de8"
+    },
+    {
+      "path": "research/2026-10-09-云地权限v7/03-产品方案.md",
+      "bytes": 26269,
+      "sha256": "1216a2cfcb2e4d288f02f7c02bc5af89c07c98525a00bceda0f3f325f7926b3a"
+    },
+    {
+      "path": "research/2026-10-09-云地权限v7/04-技术架构与研发计划.md",
+      "bytes": 48188,
+      "sha256": "e7814b339e6751bf09c75cb6333dae1946d6499af593cbbb12661daa0e528309"
+    },
+    {
+      "path": "research/2026-10-09-云地权限v7/05-合规商业与路线.md",
+      "bytes": 23618,
+      "sha256": "7327373559ad840ebfab8aa5dc41fc75d446742f629bcdd99e5bd2f222d50125"
+    },
+    {
+      "path": "research/2026-10-09-云地权限v7/06-附录-核验摘要与未决事项.md",
+      "bytes": 19585,
+      "sha256": "5fcadaf75c2dbf42b88615359a48b6695d7fba4103340839cffec50e455999c4"
+    },
+    {
+      "path": "research/2026-10-09-云地权限v7/11-经济模型-v7-摘要.md",
+      "bytes": 6236,
+      "sha256": "19171b21b9abd95bc9d28c725d819b2629ce7dc29c1e38127a606831e871affb"
+    },
+    {
+      "path": "research/2026-10-09-云地权限v7/审阅-对抗式-2026-10-09.md",
+      "bytes": 45697,
+      "sha256": "f0f80926af4ac85db45c1d838f2386f86eacf1ac582f84e8eed2658fbccea4ef"
+    },
+    {
+      "path": "research/2026-10-09-云地权限v7/调研-S0-KimiCode源码云依赖与可嵌入面.md",
+      "bytes": 14351,
+      "sha256": "02caf459110623815f31eef0a224544cba6f804cb6cddb3400022de9b013b0f1"
+    },
+    {
+      "path": "research/2026-10-09-云地权限v7/调研-S1-Kimi能力来源与KimiCode云依赖.md",
+      "bytes": 48374,
+      "sha256": "cdff0750ade9d048a546850c165b2e687060320574c465d3311283442e07d251"
+    },
+    {
+      "path": "research/2026-10-09-云地权限v7/调研-S2-主流Agent权限设定与本机沙箱.md",
+      "bytes": 55509,
+      "sha256": "a32bafdd3a751fbaca657e50226676092448f5455fecb9d9eaea94ba42a255a8"
+    },
+    {
+      "path": "research/2026-10-09-云地权限v7/调研-S3-检索供应商加密协作与法律市场.md",
+      "bytes": 43822,
+      "sha256": "9c0696a4e9d1043eda54a9c2afd73209662aac69962c20a954979bba956b1717"
+    },
+    {
+      "path": "research/2026-09-22-Kimi法律发行版-产品与技术整合方案.md",
+      "bytes": 47896,
+      "sha256": "ac97c26d99ddee8362b54e0a399647df052775c3141032c14c20f35565c747c8"
+    },
+    {
+      "path": "research/2026-09-23-Kimi法律发行版-完整产品整合方案.md",
+      "bytes": 125471,
+      "sha256": "6182804c0426c67b1db8962cbcdb010808d3d5c42a380e98af54cafdb828053f"
+    },
+    {
+      "path": "research/2026-09-28-整合交付/00-完整整合方案.md",
+      "bytes": 185360,
+      "sha256": "c93da871504542b13fa56e2d67fd2085352a622717105788d8a0b737d4e0179a"
+    },
+    {
+      "path": "research/2026-09-28-整合交付/Kimi法律发行版-最终整合方案.md",
+      "bytes": 192493,
+      "sha256": "c3bb1c6031290adef2b0417a0c6935148be220cd1d37a1ffb960274b081c405a"
+    }
+  ]
+}

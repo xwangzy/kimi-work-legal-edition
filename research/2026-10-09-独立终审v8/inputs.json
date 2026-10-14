@@ -1,0 +1,19 @@
+{
+  "as_of": "2026-10-09",
+  "currency": "CNY",
+  "notice": "规划压力测算，不是实际报价、采购合同或盈利预测；revenue已假定为不含税可确认收入，加量包收入为0。",
+  "price_source": "https://platform.kimi.com/",
+  "model": {"name": "K3", "input_per_million": 20, "cache_hit_per_million": 2, "output_per_million": 100},
+  "account": {"annual_list_price": 9800, "realization": 0.8, "annual_allocated_service_cost": 1200},
+  "task": {"noncached_input": 80000, "cache_hit_input": 120000, "billed_output_including_reasoning": 20000, "model_attempt_multiplier": 1.15, "search_calls": 6, "search_unit_price_assumption": 0.015, "licensed_data": 0.8, "execution_compute": 0.6, "storage_network": 0.15},
+  "scenarios": [
+    {"name": "轻度使用", "tasks_per_month": 20},
+    {"name": "基准使用", "tasks_per_month": 40},
+    {"name": "重度使用且无加量收入", "tasks_per_month": 150},
+    {"name": "基准但缓存完全不可用", "tasks_per_month": 40, "cache_disabled": true},
+    {"name": "基准但成交价降至标价七折", "tasks_per_month": 40, "realization": 0.7},
+    {"name": "基准但输出翻倍", "tasks_per_month": 40, "output_multiplier": 2},
+    {"name": "综合压力", "tasks_per_month": 80, "cache_disabled": true, "output_multiplier": 2, "realization": 0.7, "model_attempt_multiplier": 1.3}
+  ],
+  "development": {"base_person_weeks": 700, "contingency_fraction": 0.25, "all_in_cny_per_person_week": [6000, 9000, 12000], "average_fte": 30, "effective_fraction": 0.8}
+}

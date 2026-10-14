@@ -1,0 +1,12 @@
+{
+  "articles": 12,
+  "tables": 50,
+  "internal_anchors": 104,
+  "broken_anchors": [],
+  "duplicate_ids": [],
+  "external_runtime_assets": [],
+  "javascript_syntax_ok": true,
+  "economics_reproducible": true,
+  "markdown_chinese_characters": 47486,
+  "visual_browser_check": "not completed: bundled Chromium missing; file URL prohibited by browser policy; no workaround attempted"
+}

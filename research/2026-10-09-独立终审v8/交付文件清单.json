@@ -1,0 +1,195 @@
+{
+  "as_of": "2026-10-09",
+  "files": [
+    {
+      "path": "research/2026-10-09-独立终审v8/00-决策摘要与阅读指南.md",
+      "bytes": 8151,
+      "sha256": "732e09d3f1c740e7b1a7bfcb4ee4ede12ee5bb8cc4f1b103910baaabb988f166"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/01-独立评审与裁决.md",
+      "bytes": 14122,
+      "sha256": "196101a95e7afddaf99f606acfcf62014d2db5e558c74c606e794dd3e2ea7d82"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/02-云地执行与权限规范.md",
+      "bytes": 18911,
+      "sha256": "2ccd351da66b1dc66bdcf3dbff6586993002feb9702b59916ade8e024b19b57c"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/03-产品功能与律师工作流.md",
+      "bytes": 18246,
+      "sha256": "4bf981665a7baa9c5b352e3e07937b8003520b4d4a86a4ddcaf970e4d4eb5e89"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/04-KimiCode集成与工程实施.md",
+      "bytes": 17155,
+      "sha256": "57ffcdbff9f74bc183bbdb77ba8e6d26934d9656090009c9d9e1ebd3e317f50c"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/05-合规运营与商业闭环.md",
+      "bytes": 12638,
+      "sha256": "2add70168c9efb117c1c76002cff546f8fa08cc9ab16b457f034fa8fd70889c1"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/06-研发路线与上线验收.md",
+      "bytes": 13877,
+      "sha256": "d1f51f88612f49fd3640fd1c150ce9a5c30878eb110d771d5b71555b63a900b7"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/07-经济压力测算.py",
+      "bytes": 6077,
+      "sha256": "8179fca348b32669d05aef9f62dde8810f78056cfd4c91cb975a0cb3c5f0cf86"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/07-经济压力测算摘要.md",
+      "bytes": 3120,
+      "sha256": "3543df2b2ecaa620b0afd26a7d87d900bd83e841dae8ef173672a31273425694"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/08-竞品结论与证据索引.md",
+      "bytes": 9271,
+      "sha256": "abe96d608b0e0fab60a112265f9f74e3f12f191c74f5a4ff245ea6c873546fd5"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/09-build-reader.mjs",
+      "bytes": 10648,
+      "sha256": "5dce277b589210940a02941c4e174f1a921d5c0cde531b9153160f5c70a90af3"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/10-交付核验记录.md",
+      "bytes": 2618,
+      "sha256": "97ff56a4814e83e1c94bed9df4c0e2f0dddbcabec3b5ee1cde45654a38b74155"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/Kimi-Work-Legal-v8-完整合并报告.md",
+      "bytes": 191475,
+      "sha256": "d035a65ee4282d6020a8acf8481bbce60c19fb817725014927587bdc2e0dd512"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/Kimi-Work-Legal-v8-独立终审阅读版.html",
+      "bytes": 433781,
+      "sha256": "b74a05fda0bd7022913c6eb8a34ee452eb20328bf9fca15b05de9fb9ca18d72d"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/harvey-terms.txt",
+      "bytes": 13819,
+      "sha256": "6a7a6429fcb305fe83168e9962f9b097bc02795124bd1956dcb89700ab63d32e"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/kimi-faq.txt",
+      "bytes": 5801,
+      "sha256": "63a80a018da6711f49c78b37e9907b4173669c1ba67231ac70c6d38333a98605"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/kimi-plugins.txt",
+      "bytes": 5336,
+      "sha256": "c74c0712d0a789878510ec135439e05aff093728ee267a570572047a253364da"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/kimi-release.txt",
+      "bytes": 14815,
+      "sha256": "25661c8c8be4467b29d9bb3ba7364c2e7e3cb436c41809dcb62a88bb4d088c31"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/manifest.json",
+      "bytes": 28297,
+      "sha256": "05330bdaedcddafe671528072173161da825b108b28a764441f36130d112bc9b"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/qwen-ai-logs.txt",
+      "bytes": 2140,
+      "sha256": "5bb0d14e271a0a7c5a5e2612c5bd6808d78ddfb6391bfe81d865c5588235bdbd"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/qwen-computer-use.txt",
+      "bytes": 7135,
+      "sha256": "82d56c3c717f494f3e7a930041647ff02a407c91fe8672b7e71c0f97b142a53b"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/qwen-desktop-schedule.txt",
+      "bytes": 12817,
+      "sha256": "17a2f6decaa5f10837e3b534c36057b0b5a32628b525ba8c364ca2971cd79c6b"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/qwen-faq.txt",
+      "bytes": 6156,
+      "sha256": "5e35d96bac3ade6e0797ace0b4986bf68cf669ecf38a857bd74f351b767532a1"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/qwen-hooks.txt",
+      "bytes": 19084,
+      "sha256": "ab20c378a37275d20a135f20e48ff8522a7537fdd4ffde7f58cd4aeaa460b9ff"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/qwen-privacy.txt",
+      "bytes": 5447,
+      "sha256": "bb57f1164794a862b875f75f9f2deaef741d1c6197902aa2f87b058ed0bc057e"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/qwen-release.txt",
+      "bytes": 23567,
+      "sha256": "1f1807de0b6102a43cbe6ce7bf0eb83cf7bf9081fff6c84250b2ca2de8300259"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/qwen-settings.txt",
+      "bytes": 8800,
+      "sha256": "bffe097a65f9749f9a312128a62b20dbd5430f100a390133d876096101c32fe4"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/qwen-web-schedule.txt",
+      "bytes": 7192,
+      "sha256": "c87ba690ccfc8112a3d231f88e47277611c960c9a6eb7af4899c9f21ffc4cee2"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/workbuddy-audit.txt",
+      "bytes": 5574,
+      "sha256": "c9104beac8d13f08e27dd9fa81d51082870574ba3450c4f1008c171732561e00"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/workbuddy-faq.txt",
+      "bytes": 19662,
+      "sha256": "ca7913f7534c28721bb208406f4a7d8c6e134cede86fbb3eb5be1e495de37646"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/evidence-B/workbuddy-wma.txt",
+      "bytes": 6107,
+      "sha256": "76ee6fbd81bf914038f90f45f98a26ff0426c4c49b5fb24dbda31e77f291b0a8"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/inputs.json",
+      "bytes": 1538,
+      "sha256": "91e96fdb24567388885bdef21e2b63f5596b1594d6baee8e274286a835b7f1d2"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/results.json",
+      "bytes": 3280,
+      "sha256": "bd8f1a0776348bf9696a3e34a91964d12d7fb13a52952db37e505af495223280"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/核验结果.json",
+      "bytes": 383,
+      "sha256": "66826e619de925e0fd8fd0555fa3f99c461c4267c151fc6c9c9ec049d5184ac0"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/调研-A-KimiCode与工程核验.md",
+      "bytes": 26539,
+      "sha256": "95212bc719ee9c6a25885c303811a212b7f885694ec12189710b0ddf4bc54ae6"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/调研-B-办公Agent云地边界.md",
+      "bytes": 24744,
+      "sha256": "0102d9fea53d95fc453c9d36ad4ed3783f39d550af8a98b7f6c04327b6c02458"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/调研-C-法律产品合规与商业.md",
+      "bytes": 23842,
+      "sha256": "856dc6b4ffd07a4148ea9718e6fb6600e1e2fee8299afaac63533823c3c3a4eb"
+    },
+    {
+      "path": "research/2026-10-09-独立终审v8/输入版本清单.json",
+      "bytes": 10051,
+      "sha256": "915a4f2f07f8feca440c65eade8959399212dc6b65487c1fa7ac4c1415020ae7"
+    }
+  ]
+}
