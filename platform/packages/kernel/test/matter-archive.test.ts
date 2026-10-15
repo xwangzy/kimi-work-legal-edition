@@ -6,7 +6,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { readZipEntries } from "@zr-legal/docx-engine";
-import { canonicalJson, sha256B64, verifyBytes } from "@zr-legal/keys";
+import { canonicalJson, sha256B64, SoftwareSigner, verifyBytes } from "@zr-legal/keys";
 import { findTokens } from "@zr-legal/tokenizer";
 import { importText, makeKernel, runScenario, type TestKernel } from "./helpers.ts";
 import { buildMatterArchive } from "../src/services/matter-archive.ts";
@@ -36,7 +36,7 @@ test("归档：签名可核、文件 hash 一致、原件逐字节一致、代�
       blobs: tk.kernel.blobs,
       tokens: new MatterTokenStore(db),
       deviceId: "dev_test",
-      signPrivateKeyPem: signPriv,
+      signer: new SoftwareSigner(signPriv),
       deviceCert: { certId: "cert_test", deviceId: "dev_test", signPublicKeyPem: signPub } as any,
       firmRootPublicKeyPem: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----\n",
     },
@@ -76,7 +76,7 @@ test("归档：签名可核、文件 hash 一致、原件逐字节一致、代�
   }
   // 6. 已删除事项不能导出
   db.run(`UPDATE matters SET lifecycle = 'purged' WHERE matter_id = ?`, [matter.matter_id]);
-  assert.throws(() => buildMatterArchive({ db, blobs: tk.kernel.blobs, deviceId: "d", signPrivateKeyPem: signPriv, deviceCert: {} as any, firmRootPublicKeyPem: "" }, matter.matter_id, { by: "u" }), /已删除/);
+  assert.throws(() => buildMatterArchive({ db, blobs: tk.kernel.blobs, deviceId: "d", signer: new SoftwareSigner(signPriv), deviceCert: {} as any, firmRootPublicKeyPem: "" }, matter.matter_id, { by: "u" }), /已删除/);
 });
 
 test("接口：事项负责人导出归档、记审计；签名用本机设备证书（复核 C-A14 接线）", { timeout: 120_000 }, async () => {

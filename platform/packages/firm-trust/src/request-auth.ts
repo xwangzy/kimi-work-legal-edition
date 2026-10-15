@@ -3,8 +3,8 @@
  * 绑定方法、路径、请求体摘要、租户、设备、时刻与一次性随机数；控制面按目录中该设备的公钥核验（时刻偏差 ≤ 5 分钟、随机数不重放）。
  * 首次登记时目录里还没有该设备：用请求体里由律所根签发的证书公钥核验（持有证明）。
  */
-import { createHash, randomBytes, sign, verify } from "node:crypto";
-import { canonicalJson } from "@zr-legal/keys";
+import { createHash, randomBytes } from "node:crypto";
+import { canonicalJson, signSyncWith, verifyBytes, type SyncSignerLike } from "@zr-legal/keys";
 
 const REQ_DOMAIN = "kwl-device-request-v1\n";
 export const REQUEST_MAX_SKEW_MS = 5 * 60 * 1000;
@@ -39,10 +39,11 @@ function bytes(p: DeviceRequestParts & { tid: string; deviceId: string; ts: stri
   );
 }
 
-export function signDeviceRequest(p: DeviceRequestParts & { tid: string; deviceId: string; signPrivateKeyPem: string; now?: number }): DeviceRequestHeaders {
+/** 设备请求签名：signer 为签名者（内核）或私钥 PEM（测试与工具）；算法随设备密钥（Ed25519 或 P-256）。 */
+export function signDeviceRequest(p: DeviceRequestParts & { tid: string; deviceId: string; now?: number } & ({ signer: SyncSignerLike } | { signPrivateKeyPem: string })): DeviceRequestHeaders {
   const ts = String(p.now ?? Date.now());
   const nonce = randomBytes(16).toString("base64url");
-  const sig = sign(null, bytes({ ...p, ts, nonce }), p.signPrivateKeyPem).toString("base64url");
+  const sig = signSyncWith("signer" in p ? p.signer : p.signPrivateKeyPem, bytes({ ...p, ts, nonce }));
   return { "x-kwl-tenant": p.tid, "x-kwl-device": p.deviceId, "x-kwl-ts": ts, "x-kwl-nonce": nonce, "x-kwl-sig": sig };
 }
 
@@ -74,12 +75,7 @@ export function verifyDeviceRequest(
   if (!Number.isFinite(t) || Math.abs(now - t) > REQUEST_MAX_SKEW_MS) return { ok: false, reason: "device_auth_stale" };
   const pub = o.publicKeyFor(tid, deviceId);
   if (!pub) return { ok: false, reason: "device_unknown_or_revoked" };
-  let good = false;
-  try {
-    good = verify(null, bytes({ ...req, tid, deviceId, ts, nonce }), pub, Buffer.from(sig, "base64url"));
-  } catch {
-    good = false;
-  }
+  const good = verifyBytes(pub, bytes({ ...req, tid, deviceId, ts, nonce }), sig);
   if (!good) return { ok: false, reason: "device_auth_signature_invalid" };
   if (o.seenNonce(`${tid}\u0000${deviceId}\u0000${nonce}`)) return { ok: false, reason: "device_auth_replayed" };
   return { ok: true, tid, deviceId };

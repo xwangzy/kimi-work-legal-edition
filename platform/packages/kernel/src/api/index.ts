@@ -38,7 +38,6 @@ import {
   generateMatterKey,
   hashBreakGlassRecord,
   sha256B64,
-  signBytes,
   unwrapMatterKey,
   unwrapPrivateKeyScrypt,
   verifyBytes,
@@ -332,7 +331,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     db,
     purgeBlobs: (matterId) => blobs.purgeMatter(matterId),
     deviceId: keyctx.device.deviceId,
-    signPrivateKeyPem: keyctx.device.keys.signPrivateKeyPem,
+    signer: keyctx.device.signer,
     signPublicKeyPem: keyctx.device.cert.signPublicKeyPem,
     purgeAgentData: deps.purgeAgentData ?? (async () => {}),
   });
@@ -1008,7 +1007,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           blobs,
           tokens: tokens ?? null,
           deviceId: keyctx.device.deviceId,
-          signPrivateKeyPem: keyctx.device.keys.signPrivateKeyPem,
+          signer: keyctx.device.signer,
           deviceCert: keyctx.device.cert,
           firmRootPublicKeyPem: keyctx.firm.rootPublicKeyPem,
         },
@@ -1821,7 +1820,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           assurance_level: "device_signature",
           signed_at: new Date().toISOString(),
         });
-        const signature = signBytes(keyctx.device.keys.signPrivateKeyPem, new TextEncoder().encode(signedPayload));
+        // 签发审批：对外可验证（TPM 直签的落点，W8 改异步，偏离 D-71）
+        const signature = keyctx.device.signer.signSync(new TextEncoder().encode(signedPayload));
         db.tx(() => {
           db.run(
             `INSERT INTO approvals (approval_id, artifact_version_id, artifact_sha256, approver_id, decision, audience, assurance_level, checklist,
@@ -3062,7 +3062,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         tokens: tokens ?? null,
         tenantId: id.tenantId,
         deviceId: keyctx.device.deviceId,
-        signPrivateKeyPem: keyctx.device.keys.signPrivateKeyPem,
+        signer: keyctx.device.signer,
         status: async () => api["kernel.status"]!({}, id),
         capabilities: async () => w1["kernel.capabilities"]!({}, id),
         logsDir: join(config.workspaceDir, "logs"),

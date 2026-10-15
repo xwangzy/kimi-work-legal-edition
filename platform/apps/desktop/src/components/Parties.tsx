@@ -2,6 +2,7 @@
  * 当事人词典（第 02 篇 §8.3：自然人姓名识别靠当事人词典 + 实体识别，L3a 事项须人工核对词典；阶段 4 复核 S4-20）：
  * 确认的别名、从材料“以下简称”学得的待确认别名（照常参与匹配，请确认或驳回）、机构名称自动派生的字号（可停用）、已停用的写法（可撤销）。
  */
+import { ConfirmButton } from "./ConfirmButton.tsx";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.ts";
 
@@ -71,7 +72,7 @@ export function PartiesPanel({ matterId, onChanged, readOnly = false }: { matter
                 {p.derived.length === 0 ? "—" : p.derived.map((a) => (
                   <span key={a} className="alias-chip">
                     {a}
-                    <button title="常用词形态的字号会误拒一般性检索时停用" onClick={() => void alias(p.name, a, "reject")}>停用</button>
+                    <ConfirmButton label="停用" className="btn-link btn-danger" question={`停用后“${a}”不再换成代号，之后发出的内容可能带这个字号。`} confirmLabel="确定停用" onConfirm={() => alias(p.name, a, "reject")} />
                   </span>
                 ))}
               </td>
@@ -85,7 +86,7 @@ export function PartiesPanel({ matterId, onChanged, readOnly = false }: { matter
               </td>
               <td>
                 {p.source === "dictionary" && (
-                  <button className="btn-link" onClick={() => void act(() => api.removeParty(matterId, p.name))}>删除</button>
+                  <ConfirmButton label="删除" className="btn-link btn-danger" question={`删除后“${p.name}”不再换成代号，之后发出的内容可能带这个名称。`} confirmLabel="确定删除" onConfirm={() => act(() => api.removeParty(matterId, p.name))} />
                 )}
               </td>
             </tr>

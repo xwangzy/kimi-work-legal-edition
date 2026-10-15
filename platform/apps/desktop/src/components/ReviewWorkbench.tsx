@@ -6,6 +6,7 @@
  * 卡片文字是事项令牌形态，这里按事项令牌表还原显示（只在本机界面）；律师改写的条款按原文保存。
  * 修订稿由内核按已接受的卡在原件副本上写原生修订——有卡定位不到时整体不写，列出是哪几张，律师可跳过后再生成。
  */
+import { scrollBehavior } from "../lib/ui-prefs.ts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { firstOpenCard, nextOpenCard, stepCard } from "../lib/workbench.ts";
 import { api, type RiskCard, type RiskProgress } from "../api.ts";
@@ -113,7 +114,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
         const next = nextOpenCard(fresh.filter((c) => shown.has(c.card_id) || c.card_id === card.card_id), card.card_id);
         if (next) {
           setActive(next);
-          requestAnimationFrame(() => cardRefs.current.get(next)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+          requestAnimationFrame(() => cardRefs.current.get(next)?.scrollIntoView({ block: "nearest", behavior: scrollBehavior() }));
         }
       }
     } catch (e) {
@@ -153,7 +154,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   const focusCard = (id: string) => {
     setActive(id);
     setFilter("all");
-    requestAnimationFrame(() => cardRefs.current.get(id)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    requestAnimationFrame(() => cardRefs.current.get(id)?.scrollIntoView({ block: "nearest", behavior: scrollBehavior() }));
   };
 
   const accepted = progress?.accepted ?? 0;
@@ -189,7 +190,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   // 悬停卡片 → 原文对应处加深并滚到可视区（W-3）
   const hoverCard = (id: string | null) => {
     setHover(id);
-    if (id) document.querySelector(`[data-mark="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (id) document.querySelector(`[data-mark="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest", behavior: scrollBehavior() });
   };
 
   return (

@@ -2,6 +2,7 @@
  * 事项数据生命周期（结案 → 保留期 → 删除；法律保全）。事项页“结案与删除”标签与已删除事项页共用。
  * 动作均由事项负责人执行，内核再核对一次；删除不可恢复，出具本机签名的删除回执。
  */
+import { ConfirmButton } from "./ConfirmButton.tsx";
 import { useEffect, useState } from "react";
 import { api, type DeletionReceiptView, type Matter, type MatterLifecycle } from "../api.ts";
 import { fmtTime } from "../lib/labels.ts";
@@ -144,7 +145,7 @@ export function MatterLifecyclePanel({ matter, onChanged }: { matter: Matter; on
         <p className="muted">诉讼保全、监管调查或客户要求保存期间，设置法律保全：保全解除前本事项数据不能删除。</p>
         {lc.legal_hold ? (
           <div className="modal-actions">
-            <button className="btn-ghost" disabled={!owner || busy} onClick={() => void act(() => api.setLegalHold(matter.matter_id, false), "已解除法律保全（留痕）")}>解除保全</button>
+            <ConfirmButton label="解除保全" disabled={!owner || busy} question="解除后本事项数据可以被删除。确定解除？" confirmLabel="确定解除" onConfirm={() => act(() => api.setLegalHold(matter.matter_id, false), "已解除法律保全（留痕）")} />
           </div>
         ) : (
           <>

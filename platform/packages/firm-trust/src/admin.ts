@@ -6,18 +6,18 @@
  * 因此不能自造管理员；只有控制面签名、没有管理员设备签名的放宽内容一律拒绝。
  * 门限按**不同成员**计（同一管理员的两台设备只算一名）。
  */
-import { createHash, sign, verify } from "node:crypto";
-import { verifyDeviceCertificate, type DeviceCertificate } from "@zr-legal/keys";
+import { createHash } from "node:crypto";
+import { signSyncWith, verifyBytes, verifyDeviceCertificate, type DeviceCertificate, type SyncSignerLike } from "@zr-legal/keys";
 
 export interface AdminSignature {
   /** 签名设备的证书（律所根签发，角色须为 admin）。 */
   cert: DeviceCertificate;
-  /** 设备签名私钥对待签字节的 Ed25519 签名（base64url）。 */
+  /** 设备签名私钥对待签字节的签名（Ed25519 或 P-256 低 S，base64url）。 */
   sig: string;
 }
 
-export function adminSign(bytes: Buffer, cert: DeviceCertificate, signPrivateKeyPem: string): AdminSignature {
-  return { cert, sig: sign(null, bytes, signPrivateKeyPem).toString("base64url") };
+export function adminSign(bytes: Buffer, cert: DeviceCertificate, signer: SyncSignerLike): AdminSignature {
+  return { cert, sig: signSyncWith(signer, bytes) };
 }
 
 export interface AdminVerifyContext {
@@ -79,12 +79,7 @@ export function verifyAdminSignatures(bytes: Buffer, sigs: unknown, ctx: AdminVe
       problems.push(`signer_revoked:${cert.deviceId}`);
       continue;
     }
-    let good = false;
-    try {
-      good = verify(null, bytes, cert.signPublicKeyPem, Buffer.from(s.sig, "base64url"));
-    } catch {
-      good = false;
-    }
+    const good = typeof s.sig === "string" && verifyBytes(cert.signPublicKeyPem, bytes, s.sig);
     if (!good) {
       problems.push(`signature_invalid:${cert.deviceId}`);
       continue;

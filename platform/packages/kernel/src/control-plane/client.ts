@@ -9,7 +9,7 @@
  * 签名时控制面返回的草稿与之不符即拒签并告警（复核 S6-B02）。
  */
 import { sign } from "node:crypto";
-import { DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
+import { DEVICE_ID_PATTERN, type DeviceCertificate, type DeviceSyncSigner } from "@zr-legal/keys";
 import {
   adminSign,
   bytesDigest,
@@ -34,7 +34,8 @@ export interface ControlPlaneClientDeps {
   /** 经闸门代发（闸门按需拉起）。 */
   relay: (req: CpRelayRequest) => Promise<CpRelayResult>;
   tenantId: string;
-  device: { deviceId: string; cert: DeviceCertificate; signPrivateKeyPem: string };
+  /** 控制面请求与管理员签名对外可验证：只收设备签名者（复核 S7A-06）。 */
+  device: { deviceId: string; cert: DeviceCertificate; signer: DeviceSyncSigner };
   /** G0 开发形态：创始设备的律所根密钥（开通时登记根公钥用；生产为开通流程，不在联机设备上）。 */
   firmRoot?: () => { publicKeyPem: string; privateKeyPem: string } | null;
   now?: () => number;
@@ -105,7 +106,7 @@ export class ControlPlaneClient {
 
   private async call(method: string, path: string, body?: unknown): Promise<CallResult> {
     const raw = body === undefined ? "" : JSON.stringify(body);
-    const headers = { ...signDeviceRequest({ method, path, body: raw, tid: this.d.tenantId, deviceId: this.d.device.deviceId, signPrivateKeyPem: this.d.device.signPrivateKeyPem, ...(this.d.now ? { now: this.d.now() } : {}) }) };
+    const headers = { ...signDeviceRequest({ method, path, body: raw, tid: this.d.tenantId, deviceId: this.d.device.deviceId, signer: this.d.device.signer, ...(this.d.now ? { now: this.d.now() } : {}) }) };
     const r = await this.d.relay({ method, path, headers, body: raw });
     if (!r.ok) return { ok: false, error: r.reason };
     let json: Record<string, unknown> = {};
@@ -393,7 +394,7 @@ export class ControlPlaneClient {
     const checked = view.kind === "policy" ? validatePolicyDoc(view.doc) : validateConnectorDoc(view.doc);
     if (!checked.ok) throw new Error(`草稿未通过本机核验（${checked.reason}）：不签名`);
     const bytes = view.kind === "policy" ? policySigningBytes(checked.value as FirmPolicyDoc) : connectorSigningBytes(checked.value as FirmConnectorDoc);
-    const sig = adminSign(bytes, this.d.device.cert, this.d.device.signPrivateKeyPem);
+    const sig = adminSign(bytes, this.d.device.cert, this.d.device.signer);
     const r = await this.call("POST", `/v1/drafts/${draftId}/signatures`, sig);
     if (!r.ok) throw new Error(r.error);
     return this.view(r.json.draft as Record<string, unknown>);

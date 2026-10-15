@@ -50,16 +50,15 @@ export function MethodsPage() {
             <div className="methods-line">{LINE_LABELS[line]}</div>
             <div className="cards">
               {SCENARIOS.filter((c) => c.line === line).map((c) => (
-                <div key={c.id} className="card card-static">
-                  <div className="title">
+                // 卡片要么整卡可点、要么只有一个明确按钮（Y4 V-5）：与首页场景卡一致，整卡可点
+                <button key={c.id} className="card method-card" aria-label={`开始：${c.title}`} onClick={() => nav(`/start/${c.id}`)}>
+                  <span className="title">
                     {c.title} <span className="tag tag-trial" title={TIER_HINT}>试用</span>
-                  </div>
-                  <div className="desc clamp-2">给：{c.gives}</div>
-                  <div className="desc clamp-2">得：{c.gets.join("、")}</div>
-                  <div className="card-actions">
-                    <button className="btn-link" onClick={() => nav(`/start/${c.id}`)}>开始 →</button>
-                  </div>
-                </div>
+                  </span>
+                  <span className="desc clamp-2">给：{c.gives}</span>
+                  <span className="desc clamp-2">得：{c.gets.join("、")}</span>
+                  <span className="method-go">开始 →</span>
+                </button>
               ))}
             </div>
           </section>
@@ -73,17 +72,15 @@ export function MethodsPage() {
         ) : (
           <div className="cards">
             {skills.map((s) => (
-              <div key={s.id} className="card card-static">
-                <div className="title">
+              <button key={s.id} className="card method-card" aria-label={`${cleanTitle(s.title)}：在首页描述任务`} onClick={() => nav("/")}>
+                <span className="title">
                   {cleanTitle(s.title)}{" "}
                   {s.tier === "production" ? <span className="tag tag-ok">可用</span> : <span className="tag tag-trial" title={TIER_HINT}>试用</span>}
-                </div>
-                <div className="desc clamp-2">{s.description}</div>
-                {s.lines.length > 0 && <div className="desc">适用：{s.lines.join(" · ")}</div>}
-                <div className="card-actions">
-                  <button className="btn-link" onClick={() => nav("/")}>开始 →</button>
-                </div>
-              </div>
+                </span>
+                <span className="desc clamp-2">{s.description}</span>
+                {s.lines.length > 0 && <span className="desc">适用：{s.lines.join(" · ")}</span>}
+                <span className="method-go">开始 →</span>
+              </button>
             ))}
           </div>
         )}

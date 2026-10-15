@@ -3,6 +3,7 @@
  * 按“过期”收尾（终态事件留痕、预留点数释放），其出站批准作废；不静默拉起、不永久停在等待。
  * 以“现场重构”复刻崩溃（与 a1-lifecycle 同法）：直接落“运行等待中 + 尝试执行中”的残留，再在同一数据目录重开内核。
  */
+import { SoftwareSigner } from "@zr-legal/keys";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
@@ -33,8 +34,7 @@ test("内核重启：等待律师中的开放任务按“过期”收尾、预�
   const keys = generateKeyPairSync("ed25519");
   const store = new EgressApprovalStore(kernel.db, {
     deviceId: "dev_t",
-    signPrivateKeyPem: keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
-    signPublicKeyPem: keys.publicKey.export({ type: "spki", format: "pem" }).toString(),
+    signer: new SoftwareSigner(keys.privateKey),
   });
   store.issue({ approvalId: "apr_restart", tenantId: matter.tenant_id, matterId: matter.matter_id, runId: "run_wait_approval", userId: matter.created_by, channel: "desktop", purpose: "search", reason: "search_entity_requires_confirmation", digest: null, dest: "search_service", variant: "generalized", scope: "task", policy: "fp" });
   await kernel.close();

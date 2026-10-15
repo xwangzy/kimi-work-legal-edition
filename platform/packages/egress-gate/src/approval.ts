@@ -7,7 +7,7 @@
  *   宿主与模型文本里的“已批准”不构成任何凭据；
  * - 序列化只有这一份（内核签名与闸门验签共用），键按字典序、值只含字符串、数字与 null。
  */
-import { verify as cryptoVerify } from "node:crypto";
+import { verifyBytes } from "@zr-legal/keys";
 import { createHash } from "node:crypto";
 
 export type ApprovalPurpose = "search" | "fetch" | "media";
@@ -46,7 +46,7 @@ export interface ApprovalCredential {
 
 export interface SignedApproval {
   credential: ApprovalCredential;
-  /** Ed25519 签名（base64url），签名内容为 canonicalCredential(credential)。 */
+  /** 设备签名（Ed25519 或 P-256 低 S，base64url），签名内容为 canonicalCredential(credential)。 */
   signature: string;
 }
 
@@ -69,9 +69,6 @@ export function canonicalCredential(c: ApprovalCredential): string {
   return JSON.stringify(out);
 }
 
-function b64urlDecode(s: string): Buffer {
-  return Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
-}
 
 export interface ApprovalExpectation {
   tid: string;
@@ -103,12 +100,8 @@ export function verifyApproval(s: SignedApproval | null | undefined, publicKeys:
   const c = s.credential;
   const pem = publicKeys[c.dev];
   if (!pem) return { ok: false, reason: "approval_unknown_device" };
-  let valid = false;
-  try {
-    valid = cryptoVerify(null, Buffer.from(canonicalCredential(c), "utf8"), pem, b64urlDecode(s.signature));
-  } catch {
-    valid = false;
-  }
+  // 算法敏捷（TPM 设计 v1 §4.2）：按设备公钥类型核验（Ed25519 或 P-256 低 S），格式异常即无效
+  const valid = verifyBytes(pem, Buffer.from(canonicalCredential(c), "utf8"), s.signature);
   if (!valid) return { ok: false, reason: "approval_bad_signature" };
   if (c.v !== 1) return { ok: false, reason: "approval_version" };
   if (c.tid !== e.tid || c.mid !== e.mid || c.rid !== e.rid) return { ok: false, reason: "approval_scope_mismatch" };

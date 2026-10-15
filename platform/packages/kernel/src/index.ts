@@ -101,7 +101,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const recovery = applyStagedRecovery(db, keysDir, { firmSlug: config.firmSlug, userSlug: config.userSlug }, firm.rootPublicKeyPem);
   if (recovery.rejected) slog.event("KERNEL_RECOVERY_REJECTED", {});
   const device = ensureDevice(db, keysDir, identity, { firmSlug: config.firmSlug, userSlug: config.userSlug });
-  const signer = createLedgerSigner({ db, deviceId: device.deviceId, signPrivateKeyPem: device.keys.signPrivateKeyPem, tenantId: identity.tenantId });
+  const signer = createLedgerSigner({ db, deviceId: device.deviceId, signer: device.signer, tenantId: identity.tenantId });
   if (recovery.applied || recovery.rejected) {
     // 恢复生效或被拒：记审计（只记结果与计数）
     const action = recovery.applied ? "recovery.applied" : "recovery.rejected";
@@ -199,7 +199,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const revokedJtis = new Set<string>();
   let resolveRouteForGate: (alias: string) => ReturnType<ModelBroker["resolveRoute"]> | null = () => null;
   // 出站批准凭据（W1，收敛偏离 D-16）：本机设备签名密钥签发，闸门按设备公钥独立核验
-  const approvals = new EgressApprovalStore(db, { deviceId: device.deviceId, signPrivateKeyPem: device.keys.signPrivateKeyPem, signPublicKeyPem: device.keys.signPublicKeyPem });
+  const approvals = new EgressApprovalStore(db, { deviceId: device.deviceId, signer: device.signer });
   const gate = new KernelGate({
     db,
     env,
@@ -224,7 +224,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
           gov: governance,
           relay: (req) => gate.cp(req),
           tenantId: identity.tenantId,
-          device: { deviceId: device.deviceId, cert: device.cert, signPrivateKeyPem: device.keys.signPrivateKeyPem },
+          device: { deviceId: device.deviceId, cert: device.cert, signer: device.signer },
           // G0 开发形态：创始工作区持律所根私钥（devices.ts 文件头声明）；开通时登记根公钥用
           firmRoot: () => {
             try {
@@ -290,7 +290,12 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     // CJS 制品：由 ZR_KAP_HOST_ENTRY 指定
   }
   // K9-1：v5 SDK 宿主曾把材料快照以明文写进 <工作区>/agent-tasks（只在开发形态出现过）——退役后启动即删除遗留目录
-  rmSync(join(config.workspaceDir, "agent-tasks"), { recursive: true, force: true });
+  // 删除失败（文件被占用等）不阻断启动：下次启动再删（复核 S7A-01）
+  try {
+    rmSync(join(config.workspaceDir, "agent-tasks"), { recursive: true, force: true });
+  } catch {
+    // 下次启动重试
+  }
   // 数据根不进 Windows 搜索的内容索引（Y5 P1-7）：后台进行，不阻塞启动
   void excludeFromContentIndex(config.workspaceDir).then((outcome) => slog.event("KERNEL_INDEX_EXCLUDE", { outcome }));
   slog.event("KERNEL_STARTED", {

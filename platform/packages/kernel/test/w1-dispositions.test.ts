@@ -6,6 +6,7 @@
  * - 律所档位上限（复核 S5-A13）：未设置为“默认”，取值不认识按最严“手动”。
  */
 process.env.ZR_INTERNAL_SECRET = process.env.ZR_INTERNAL_SECRET ?? "w1-disp-secret-0123456789abcdef";
+import { SoftwareSigner } from "@zr-legal/keys";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -271,8 +272,7 @@ test("审批策略指纹（复核 S5-B18）：当事人词典与事项头当事�
   const keys = generateKeyPairSync("ed25519");
   const store = new EgressApprovalStore(db, {
     deviceId: "dev_fp",
-    signPrivateKeyPem: keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
-    signPublicKeyPem: keys.publicKey.export({ type: "spki", format: "pem" }).toString(),
+    signer: new SoftwareSigner(keys.privateKey),
   });
   const issue = (id: string) =>
     store.issue({ approvalId: id, tenantId: matter.tenant_id, matterId: mid, runId: `run_${id}`, userId: matter.created_by, channel: "desktop", purpose: "search", reason: "search_entity_requires_confirmation", digest: null, dest: "search_service", variant: "generalized", scope: "task", policy: fp() });

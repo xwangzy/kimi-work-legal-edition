@@ -11,7 +11,7 @@
  */
 import { createHash } from "node:crypto";
 import { arch, cpus, platform, release, totalmem } from "node:os";
-import { canonicalJson, signBytes } from "@zr-legal/keys";
+import { canonicalJson, type DeviceSigner } from "@zr-legal/keys";
 import { residualIdentifiers } from "@zr-legal/tokenizer";
 import { DomainError, RunStatus } from "@zr-legal/domain";
 import type { KernelDb } from "../db.ts";
@@ -23,7 +23,8 @@ export interface DiagnosticsDeps {
   tokens: MatterTokenStore | null;
   tenantId: string;
   deviceId: string;
-  signPrivateKeyPem: string;
+  /** 设备签名者（对外可验证的低频签名：将来由 TPM 直签，TPM 设计 v1 §4.2）。 */
+  signer: DeviceSigner;
   status: () => Promise<any>;
   capabilities: () => Promise<any>;
   /** 统一脱敏日志目录（v9.2 §3.6）：近 7 天事件按登记表重新核验后计入（记录编号已是本机加盐 hash）。 */
@@ -241,7 +242,7 @@ export async function buildDiagnostics(d: DiagnosticsDeps): Promise<{ filename: 
   }
   json = canonicalJson(parsed);
   const contentSha = createHash("sha256").update(json).digest("hex");
-  const signature = signBytes(d.signPrivateKeyPem, new TextEncoder().encode(contentSha));
+  const signature = await d.signer.sign(new TextEncoder().encode(contentSha));
   const doc = { format: "kwl-diagnostics/1", content: parsed, content_sha256: contentSha, signer_device: d.deviceId, signature };
   const out = JSON.stringify(doc, null, 2);
   return {

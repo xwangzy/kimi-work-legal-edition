@@ -204,7 +204,7 @@ export function syncExport(deps: SyncDeps, args: { shareDir: string; matterId?: 
       keyRows,
       rows,
       matterKey,
-      signPrivateKeyPem: keyctx.device.keys.signPrivateKeyPem,
+      signer: keyctx.device.signer,
     });
     const path = writeSegment(args.shareDir, tenantId, keyctx.device.deviceId, segmentId, sealed);
     result.segments.push(path);

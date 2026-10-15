@@ -3,7 +3,7 @@
  * 律师层（默认可见）与处理细节（默认收起；UIUX P0-4）分开；工程原因码经映射表转中文。
  */
 import type { RunEvent } from "../api.ts";
-import { ARTIFACT_LABELS, fmtShortTime, MODE_LABELS, RUN_STATUS_LABELS } from "./labels.ts";
+import { ARTIFACT_LABELS, MODE_LABELS, RUN_STATUS_LABELS } from "./labels.ts";
 
 export const TOOL_LABELS: Record<string, string> = {
   Read: "读取材料",
@@ -69,9 +69,79 @@ export interface Step {
   level: "lawyer" | "detail";
   icon: "ok" | "fail" | "dot" | "wait";
   title: string;
+  /** 事件时刻（ISO）；显示由执行页决定（Y4 R-12）。 */
+  at?: string;
+  /** 时刻之外的补充说明。 */
   meta?: string;
   agent?: string;
   detail?: string;
+}
+
+/** 时间线的一行：普通步骤，或同一子任务的若干步骤合成的一组（Y4 #33：子任务折叠，默认只显示一行）。 */
+export type TimelineItem =
+  | { kind: "step"; step: Step; label?: string }
+  | { kind: "sub"; key: string; agent: string; label: string; steps: Step[]; failed: boolean; done: boolean };
+
+/** 联网步骤不折叠：律师要能直接看到“实际发出什么”（复核 S7B-05）。 */
+const NETWORK_TITLES = new Set(["联网查资料", "打开网页"]);
+
+/**
+ * 子任务折叠（复核 S7B-05）：同一子任务的全部步骤（并发子任务交错出现时也归到一起）合成一组，放在它第一次出现的位置；
+ * 只有一步的不包成组；联网步骤不折叠；子任务按出现顺序称“子任务 1、2……”，不显示引擎内部编号。纯函数。
+ */
+export function groupSubtaskSteps(steps: Step[]): TimelineItem[] {
+  const order: string[] = [];
+  const byAgent = new Map<string, Step[]>();
+  for (const s of steps) {
+    if (!s.agent) continue;
+    if (!order.includes(s.agent)) order.push(s.agent);
+    if (NETWORK_TITLES.has(s.title)) continue;
+    if (!byAgent.has(s.agent)) byAgent.set(s.agent, []);
+    byAgent.get(s.agent)!.push(s);
+  }
+  const labelOf = (agent: string) => `子任务 ${order.indexOf(agent) + 1}`;
+  const out: TimelineItem[] = [];
+  const placed = new Set<string>();
+  for (const s of steps) {
+    if (!s.agent) {
+      out.push({ kind: "step", step: s });
+      continue;
+    }
+    const group = byAgent.get(s.agent);
+    if (NETWORK_TITLES.has(s.title) || !group) {
+      out.push({ kind: "step", step: s, label: labelOf(s.agent) });
+      continue;
+    }
+    if (group.length === 1) {
+      out.push({ kind: "step", step: s, label: labelOf(s.agent) });
+      continue;
+    }
+    if (placed.has(s.agent)) continue;
+    placed.add(s.agent);
+    out.push({
+      kind: "sub",
+      key: `sub-${s.key}`,
+      agent: s.agent,
+      label: labelOf(s.agent),
+      steps: group,
+      failed: group.some((x) => x.icon === "fail"),
+      done: group.every((x) => x.icon !== "wait"),
+    });
+  }
+  return out;
+}
+
+/**
+ * 律师层只在关键步骤显示时刻（Y4 R-12，复核 S7B-06）：第一步、最后一步、需要你处理或没有完成的步骤；其余律师层步骤不显示时刻。
+ * 返回应显示时刻的步骤 key（处理细节层另按时分秒显示）。纯函数。
+ */
+export function keyStepKeys(steps: Step[]): Set<string> {
+  const lawyer = steps.filter((s) => s.level === "lawyer");
+  const keys = new Set<string>();
+  if (lawyer[0]) keys.add(lawyer[0].key);
+  if (lawyer.at(-1)) keys.add(lawyer.at(-1)!.key);
+  for (const s of lawyer) if (s.icon === "fail" || s.icon === "wait") keys.add(s.key);
+  return keys;
 }
 
 /** 联网检索/抓取实际发出的内容（来自本机去向记录，按工具调用编号关联；v9.2 Y4 P0-A）。 */
@@ -124,22 +194,23 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
   const questionIndex = new Map<string, number>();
   for (const e of events) {
     const p = e.payload ?? {};
-    const at = fmtShortTime(e.created_at);
+    // 时间不拼进说明文字：执行页按层级显示（律师层相对时间、处理细节时分秒、悬停完整时间；Y4 R-12）
+    const at = e.created_at;
     switch (e.type) {
       case "run.started":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "任务受理", meta: at });
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "任务受理", at });
         break;
       case "agent.task_started":
-        steps.push({ key: `${e.event_id}`, icon: "ok", level: "detail", title: "助手已在本机启动", meta: at });
+        steps.push({ key: `${e.event_id}`, icon: "ok", level: "detail", title: "助手已在本机启动", at });
         break;
       case "agent.started":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: `运行模式：${MODE_LABELS[p.mode as keyof typeof MODE_LABELS] ?? p.mode}${p.plan_first ? " · 先出计划" : ""}`, meta: `${at} · 数据级别 ${p.data_level ?? "—"}` });
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: `运行模式：${MODE_LABELS[p.mode as keyof typeof MODE_LABELS] ?? p.mode}${p.plan_first ? " · 先出计划" : ""}`, at, meta: `数据级别 ${p.data_level ?? "—"}` });
         break;
       case "materials.loaded":
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: p.failed ? "fail" : "ok", title: Number(p.requested) === 0 ? "开始处理" : `已读完 ${p.loaded}/${p.requested} 份材料${p.failed ? `，${p.failed} 份无法读取` : ""}`, meta: at });
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: p.failed ? "fail" : "ok", title: Number(p.requested) === 0 ? "开始处理" : `已读完 ${p.loaded}/${p.requested} 份材料${p.failed ? `，${p.failed} 份无法读取` : ""}`, at });
         break;
       case "plan.created":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "内部步骤已排定", meta: at, detail: (p.steps ?? []).join(" → ") });
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "内部步骤已排定", at, detail: (p.steps ?? []).join(" → ") });
         break;
       case "agent.tool_started": {
         const name = String(p.tool ?? "");
@@ -158,7 +229,8 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
           level: "lawyer",
           icon: "wait",
           title: toolLabel(name),
-          meta: network && !s ? `${at} · 实际发出的内容见右侧“数据去向”` : at,
+          at,
+          meta: network && !s ? "实际发出的内容见右侧“数据去向”" : undefined,
           agent: p.agent_id && p.agent_id !== "main" ? String(p.agent_id) : undefined,
           detail: s ? sentDetail(s) : desc,
         });
@@ -170,12 +242,12 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
           const st = steps[i]!;
           // 联网步骤已结束却没有任何去向记录：这一步没有离开电脑（例如你拒绝了确认卡，复核 S5B-11），不再指向“数据去向”
           const noRecord = (st.title === toolLabel("WebSearch") || st.title === toolLabel("FetchURL")) && !sent.has(String(p.tool_call_id));
-          steps[i] = { ...st, icon: p.is_error ? "fail" : "ok", ...(noRecord ? { detail: "这一步没有联网发出", meta: (st.meta ?? "").replace(/ · 实际发出的内容见右侧“数据去向”$/, "") } : {}) };
+          steps[i] = { ...st, icon: p.is_error ? "fail" : "ok", ...(noRecord ? { detail: "这一步没有联网发出", meta: undefined } : {}) };
         }
         break;
       }
       case "agent.exec.queued":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "wait", title: `本机计算排队（第 ${Number(p.position ?? 0) + 1} 位）`, meta: at });
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "wait", title: `本机计算排队（第 ${Number(p.position ?? 0) + 1} 位）`, at });
         break;
       case "agent.exec.finished":
         steps.push({
@@ -183,52 +255,52 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
           level: "detail",
           icon: Number(p.exit_code ?? 0) === 0 ? "ok" : "fail",
           title: `本机计算结束（退出码 ${p.exit_code ?? "—"}${p.duration_ms ? `，${Math.round(Number(p.duration_ms))} ms` : ""}）`,
-          meta: at,
+          at,
           detail: p.commit ? `工作区提交：写入 ${p.commit.written ?? 0}，删除 ${p.commit.deleted ?? 0}${p.commit.conflicts ? `，冲突 ${p.commit.conflicts}` : ""}` : undefined,
         });
         break;
       case "agent.approval_requested":
         approvalIndex.set(String(p.approval_id), steps.length);
-        steps.push({ key: `${e.event_id}`, icon: "wait", level: "lawyer", title: `需要你确认：${toolLabel(String(p.tool ?? ""))}`, meta: at });
+        steps.push({ key: `${e.event_id}`, icon: "wait", level: "lawyer", title: `需要你确认：${toolLabel(String(p.tool ?? ""))}`, at });
         break;
       case "agent.approval_auto":
-        steps.push({ key: `${e.event_id}`, icon: "ok", level: "detail", title: "未要求先看计划，直接执行", meta: at });
+        steps.push({ key: `${e.event_id}`, icon: "ok", level: "detail", title: "未要求先看计划，直接执行", at });
         break;
       case "agent.approval_decided": {
         const i = approvalIndex.get(String(p.approval_id));
         if (i !== undefined && steps[i]) steps[i] = { ...steps[i]!, icon: p.decision === "approve" ? "ok" : "fail" };
-        steps.push({ key: `${e.event_id}`, icon: p.decision === "approve" ? "ok" : "fail", level: "lawyer", title: p.decision === "approve" ? `你已同意${p.scope === "task" ? "（本任务内同类不再询问）" : ""}` : "你没有同意，已跳过", meta: at });
+        steps.push({ key: `${e.event_id}`, icon: p.decision === "approve" ? "ok" : "fail", level: "lawyer", title: p.decision === "approve" ? `你已同意${p.scope === "task" ? "（本任务内同类不再询问）" : ""}` : "你没有同意，已跳过", at });
         break;
       }
       case "agent.approval_expired": {
         const i = approvalIndex.get(String(p.approval_id));
         if (i !== undefined && steps[i]) steps[i] = { ...steps[i]!, icon: "fail" };
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: "确认已超时，已跳过这一步", meta: at });
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: "确认已超时，已跳过这一步", at });
         break;
       }
       case "agent.subagent":
         // 子任务起止：进展面板里逐项显示；时间线只在没有完成时提醒律师
-        if (p.event === "failed") steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: "有一个子任务没有完成，主任务会继续", meta: at });
-        else steps.push({ key: `${e.event_id}`, level: "detail", icon: p.event === "spawned" ? "wait" : "ok", title: p.event === "spawned" ? "开始一个子任务" : `子任务${p.event === "done" ? "完成" : p.event === "cancelled" ? "已停止" : "暂停"}`, meta: at });
+        if (p.event === "failed") steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: "有一个子任务没有完成，主任务会继续", at });
+        else steps.push({ key: `${e.event_id}`, level: "detail", icon: p.event === "spawned" ? "wait" : "ok", title: p.event === "spawned" ? "开始一个子任务" : `子任务${p.event === "done" ? "完成" : p.event === "cancelled" ? "已停止" : "暂停"}`, at });
         break;
       case "agent.compaction":
         steps.push(
           p.event === "failed"
-            ? { key: `${e.event_id}`, level: "lawyer", icon: "fail", title: "对话过长，助手暂停整理。请把任务拆小，或新开一个任务继续。", meta: at }
-            : { key: `${e.event_id}`, level: p.event === "completed" ? "lawyer" : "detail", icon: "ok", title: p.event === "completed" ? `对话较长，助手已把前面的内容整理成摘要继续工作（第 ${p.count ?? 1} 次）` : "上下文整理已取消", meta: at, detail: p.event === "completed" ? "材料原文仍在，结论请以引用的原文为准。" : undefined },
+            ? { key: `${e.event_id}`, level: "lawyer", icon: "fail", title: "对话过长，助手暂停整理。请把任务拆小，或新开一个任务继续。", at }
+            : { key: `${e.event_id}`, level: p.event === "completed" ? "lawyer" : "detail", icon: "ok", title: p.event === "completed" ? `对话较长，助手已把前面的内容整理成摘要继续工作（第 ${p.count ?? 1} 次）` : "上下文整理已取消", at, detail: p.event === "completed" ? "材料原文仍在，结论请以引用的原文为准。" : undefined },
         );
         break;
       case "agent.skill":
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "ok", title: `已按方法模板《${skillTitles[String(p.skill)] ?? String(p.skill)}》执行`, meta: at });
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "ok", title: `已按方法模板《${skillTitles[String(p.skill)] ?? String(p.skill)}》执行`, at });
         break;
       case "agent.question":
         questionIndex.set(String(p.question_id), steps.length);
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "wait", title: "需要你定一下", meta: at });
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "wait", title: "需要你定一下", at });
         break;
       case "agent.question_answered": {
         const i = questionIndex.get(String(p.question_id));
         if (i !== undefined && steps[i]) steps[i] = { ...steps[i]!, icon: "ok" };
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "ok", title: "已回答", meta: at });
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "ok", title: "已回答", at });
         break;
       }
       case "agent.workspace_skipped":
@@ -239,7 +311,7 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
           level: "lawyer",
           icon: "dot",
           title: `${files.length} 个文件没有收进交付件${e.type === "agent.workspace_rejected" ? "（含外部链接，已拦下）" : ""}`,
-          meta: at,
+          at,
           detail: files.map((f: any) => `${f.path ?? f.filename}${SKIP_REASONS[f.reason] ? `（${SKIP_REASONS[f.reason]}）` : ""}`).join("、"),
         });
         break;
@@ -247,29 +319,29 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
       case "agent.error":
         // 律师层只给一句可理解的说明（不显示英文错误与状态码）；原文进“处理细节”（UIUX 增量评审 P0-D）。
         // retryable 由内核保留（复核 B4-B21：此前被裁掉，“正在自动重试”永远不出现）
-        steps.push({ key: `${e.event_id}-l`, level: "lawyer", icon: "fail", title: p.retryable === true ? "AI 服务出了点问题，正在自动重试" : "这一步没有完成，任务会尽量继续", meta: at });
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "fail", title: "错误详情", meta: at, detail: String(p.message ?? p.error ?? "") });
+        steps.push({ key: `${e.event_id}-l`, level: "lawyer", icon: "fail", title: p.retryable === true ? "AI 服务出了点问题，正在自动重试" : "这一步没有完成，任务会尽量继续", at });
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "fail", title: "错误详情", at, detail: String(p.message ?? p.error ?? "") });
         break;
       case "agent.cancel_unconfirmed":
         // 停止请求与强制停止都没有得到本机助手的确认（复核 B4-B07：原文案“已强制停止”与事实相反）
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: CANCEL_UNCONFIRMED_TEXT, meta: at });
-        if (p.error || p.cause) steps.push({ key: `${e.event_id}-d`, level: "detail", icon: "fail", title: "停止请求的处理详情", meta: at, detail: [p.cause ? `原因：${cancelCauseLabel(String(p.cause))}` : "", p.error ? String(p.error) : ""].filter(Boolean).join("；") });
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: CANCEL_UNCONFIRMED_TEXT, at });
+        if (p.error || p.cause) steps.push({ key: `${e.event_id}-d`, level: "detail", icon: "fail", title: "停止请求的处理详情", at, detail: [p.cause ? `原因：${cancelCauseLabel(String(p.cause))}` : "", p.error ? String(p.error) : ""].filter(Boolean).join("；") });
         break;
       case "agent.cancel_forced":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: `停止请求经强制方式生效（${cancelCauseLabel(String(p.cause ?? ""))}）`, meta: at });
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: `停止请求经强制方式生效（${cancelCauseLabel(String(p.cause ?? ""))}）`, at });
         break;
       case "citations.verified":
-        steps.push({ key: `${e.event_id}`, icon: Number(p.intercepted) > 0 ? "fail" : "ok", level: "lawyer", title: Number(p.intercepted) > 0 ? `核对引用：${p.total} 条中 ${p.intercepted} 条有问题，已标出` : `核对引用：${p.total} 条均已核对`, meta: at });
+        steps.push({ key: `${e.event_id}`, icon: Number(p.intercepted) > 0 ? "fail" : "ok", level: "lawyer", title: Number(p.intercepted) > 0 ? `核对引用：${p.total} 条中 ${p.intercepted} 条有问题，已标出` : `核对引用：${p.total} 条均已核对`, at });
         break;
       case "model.completed":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "AI 分析完成", meta: `${at} · ${p.route ?? ""}` });
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "AI 分析完成", at, meta: String(p.route ?? "") || undefined });
         break;
       case "artifact.drafted":
-        steps.push({ key: `${e.event_id}`, icon: "ok", level: "lawyer", title: `草稿已生成：${p.kind === "a1_workspace_file" ? p.filename : ARTIFACT_LABELS[p.kind] ?? p.filename ?? "成果"}（待复核）`, meta: at });
+        steps.push({ key: `${e.event_id}`, icon: "ok", level: "lawyer", title: `草稿已生成：${p.kind === "a1_workspace_file" ? p.filename : ARTIFACT_LABELS[p.kind] ?? p.filename ?? "成果"}（待复核）`, at });
         break;
       case "agent.outcome":
         // 原因码转中文（复核 B4-B23：不直接显示英文原因码）
-        steps.push({ key: `${e.event_id}`, icon: p.status === "succeeded" ? "ok" : p.status === "partial" ? "dot" : "fail", level: "detail", title: `助手结束：${RUN_STATUS_LABELS[String(p.status)] ?? p.status}${p.reason ? `（${outcomeReasonLabel(String(p.reason))}）` : ""}`, meta: at });
+        steps.push({ key: `${e.event_id}`, icon: p.status === "succeeded" ? "ok" : p.status === "partial" ? "dot" : "fail", level: "detail", title: `助手结束：${RUN_STATUS_LABELS[String(p.status)] ?? p.status}${p.reason ? `（${outcomeReasonLabel(String(p.reason))}）` : ""}`, at });
         break;
       case "run.succeeded":
       case "run.partial":
@@ -283,7 +355,7 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
           level: "lawyer",
           icon: e.type === "run.succeeded" ? "ok" : e.type === "run.partial" ? "dot" : "fail",
           title: RUN_STATUS_LABELS[e.type.slice(4)] ?? e.type,
-          meta: at,
+          at,
           detail: e.type === "run.failed" ? String(p.error ?? p.reason ?? "") : undefined,
         });
         break;

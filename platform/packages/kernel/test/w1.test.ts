@@ -6,6 +6,7 @@
  * - 运行模式按事项策略钳制；四项依据分项记录（收敛偏离 D-21）；无事项问答的当事人词典检查与问答路由。
  */
 process.env.ZR_INTERNAL_SECRET = process.env.ZR_INTERNAL_SECRET ?? "w1-test-secret-0123456789abcdef";
+import { SoftwareSigner } from "@zr-legal/keys";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
@@ -119,7 +120,7 @@ test("W1 确认卡：含当事人的检索——改写后允许（闸门核验�
 test("W1 批准凭据：闸门侧独立核验——伪造签名、他人运行或事项、批准人、渠道、策略版本、过期、摘要不符、未知设备一律拒绝；“本次”一次用尽；“本任务内”可复用（检索只能改写后）；图像按首次使用绑定并重新签名；宿主拒收或事项策略变化即作废", () => {
   const db = tk.kernel.db;
   const keys = generateKeyPairSync("ed25519");
-  const signer = { deviceId: "dev_test", signPrivateKeyPem: keys.privateKey.export({ type: "pkcs8", format: "pem" }).toString(), signPublicKeyPem: keys.publicKey.export({ type: "spki", format: "pem" }).toString() };
+  const signer = { deviceId: "dev_test", signer: new SoftwareSigner(keys.privateKey) };
   const store = new EgressApprovalStore(db, signer);
   const pub = store.publicKeys();
   const mid = db.get<{ matter_id: string }>(`SELECT matter_id FROM matters LIMIT 1`)!.matter_id;

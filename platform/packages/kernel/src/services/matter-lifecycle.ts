@@ -15,7 +15,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { DomainError, notFound } from "@zr-legal/domain";
-import { canonicalJson, signBytes, verifyBytes } from "@zr-legal/keys";
+import { canonicalJson, verifyBytes, type DeviceSyncSigner } from "@zr-legal/keys";
 import type { KernelDb } from "../db.ts";
 import { redactedRowHash, redactionListDigest } from "../ledger-signer.ts";
 
@@ -26,7 +26,8 @@ export interface LifecycleDeps {
   /** 删除该事项的块目录并清除内存里的事项密钥（BlobStore.purgeMatter）。 */
   purgeBlobs: (matterId: string) => void;
   deviceId: string;
-  signPrivateKeyPem: string;
+  /** 设备签名者（删除回执对外可验证：将来由 TPM 直签；回执在事务内签，今天同步，随 W8 改异步——偏离 D-71）。 */
+  signer: DeviceSyncSigner;
   signPublicKeyPem: string;
   /** 清理本机 Agent 数据（关闭引擎、删除 kap/<事项>、删除工作区密钥）；有进行中任务时抛错。 */
   purgeAgentData: (matterId: string) => Promise<void>;
@@ -284,7 +285,7 @@ export async function purgeMatter(
         { where: "挂载原件（律师文件夹中的原文件）", status: inventory.document_versions_mounted! > 0 ? "kept" : "none", note: `${inventory.document_versions_mounted} 份挂载原件属律师自己的文件夹，本产品未删除` },
       ],
     };
-    signature = signBytes(d.signPrivateKeyPem, new TextEncoder().encode(canonicalJson(receipt)));
+    signature = d.signer.signSync(new TextEncoder().encode(canonicalJson(receipt)));
     d.db.run(`INSERT INTO deletion_receipts (receipt_id, tenant_id, matter_id, created_by, signer_device_id, receipt_json, signature) VALUES (?,?,?,?,?,?,?)`, [
       receipt.receipt_id,
       r.tenant_id,

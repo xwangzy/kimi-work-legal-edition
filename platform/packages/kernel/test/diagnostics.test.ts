@@ -2,6 +2,7 @@
  * 脱敏诊断包（v9.2 §3.6；Y5 P1-2）：只含白名单结构化事实；不含事项名称、客户与相对方、当事人、材料文字、任务目标；
  * 设备签名可核对；导出前自证——敏感字符串从任何字段漏进来都拒绝导出（只报字段路径，不报值）；记审计。
  */
+import { SoftwareSigner } from "@zr-legal/keys";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -79,7 +80,7 @@ test("诊断包自证：当事人名称经任何白名单字段漏进来都拒�
           tokens: null,
           tenantId: tk.kernel.db.get<any>(`SELECT tenant_id FROM matters LIMIT 1`).tenant_id,
           deviceId: "dev_test",
-          signPrivateKeyPem: keys.signPrivateKeyPem,
+          signer: new SoftwareSigner(keys.signPrivateKeyPem),
           // 模拟某个白名单字段（形如版本号的小写串）里混进了客户名称
           status: async () => ({ version: "acmeholdings", queue: {} }),
           capabilities: async () => ({}),
@@ -100,7 +101,7 @@ test("诊断包自证（复核 B4-R03）：两侧同一套折叠（全角、大�
     const keys = getDeviceKeys(keysDirOf(tk.kernel.config.workspaceDir));
     const tenantId = tk.kernel.db.get<any>(`SELECT tenant_id FROM matters LIMIT 1`).tenant_id;
     const run = (status: Record<string, unknown>) =>
-      buildDiagnostics({ db: tk.kernel.db, tokens: null, tenantId, deviceId: "dev_test", signPrivateKeyPem: keys.signPrivateKeyPem, status: async () => ({ queue: {}, ...status }), capabilities: async () => ({}) });
+      buildDiagnostics({ db: tk.kernel.db, tokens: null, tenantId, deviceId: "dev_test", signer: new SoftwareSigner(keys.signPrivateKeyPem), status: async () => ({ queue: {}, ...status }), capabilities: async () => ({}) });
     const refused = (e: any) => e.code === "conflict" && /自检未通过/.test(e.message);
     // 全角客户名 ＡＣＭＥ 折叠后与小写代码 acme 相同 → 拒绝
     await assert.rejects(() => run({ model_provider: "acme" }), refused);

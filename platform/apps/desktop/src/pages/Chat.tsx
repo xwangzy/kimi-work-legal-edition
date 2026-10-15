@@ -3,6 +3,7 @@
  * 不读任何事项；问题经出站闸门令牌化，并做本人可见事项的当事人词典检查——命中当事人限制（L3b）事项的当事人即拦截，
  * 命中其他事项的当事人同样拦截并给出“到事项中处理”的链接（方案为“提示”，偏离 D-22）；服务端不持久化问答内容，历史只在本机。
  */
+import { scrollBehavior } from "../lib/ui-prefs.ts";
 import { useEffect, useRef, useState } from "react";
 import { api, type ChatMessage } from "../api.ts";
 import { nav } from "../App.tsx";
@@ -32,7 +33,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   }, [conversationId]);
   useEffect(() => {
     // 新版 Chromium 的 scrollIntoView 返回 Promise：不能作为 effect 的返回值
-    void endRef.current?.scrollIntoView({ behavior: "smooth" });
+    void endRef.current?.scrollIntoView({ behavior: scrollBehavior() });
   }, [messages]);
 
   const send = async () => {

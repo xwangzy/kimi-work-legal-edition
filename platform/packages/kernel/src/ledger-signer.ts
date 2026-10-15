@@ -9,7 +9,7 @@
  * 撤权校验不依赖时钟：见 assertIncomingEventAcceptable（§5.2）。
  */
 import { createHash, randomUUID } from "node:crypto";
-import { canonicalJson, sha256B64, signBytes, verifyBytes, type DeviceCertificate } from "@zr-legal/keys";
+import { canonicalJson, certSignAlgConsistent, sha256B64, verifyBytes, type DeviceCertificate, type SessionSigner } from "@zr-legal/keys";
 import { DomainError, newId } from "@zr-legal/domain";
 import { egressContentDigest, egressRecordEnvelopeHash } from "@zr-legal/egress";
 import type { KernelDb } from "./db.ts";
@@ -61,8 +61,9 @@ interface SignedEventRow {
   signer_device_id: string;
 }
 
-export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signPrivateKeyPem: string; tenantId: string }): LedgerSigner {
-  const { db, deviceId, signPrivateKeyPem, tenantId } = deps;
+/** 账本见证与检查点走同步签名者（会话签名密钥的落点，TPM 设计 v1 §4.2；今天是设备软件密钥）。 */
+export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signer: SessionSigner; tenantId: string }): LedgerSigner {
+  const { db, deviceId, signer: sessionSigner, tenantId } = deps;
 
   function head(): { seq: number; event_hash: string; lamport: number } | undefined {
     return db.get<{ seq: number; event_hash: string; lamport: number }>(`SELECT seq, event_hash, lamport FROM signed_events ORDER BY seq DESC LIMIT 1`, []);
@@ -100,7 +101,7 @@ export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signP
           prev_hash: prevHash,
         }),
       );
-      const signature = signBytes(signPrivateKeyPem, new TextEncoder().encode(eventHash));
+      const signature = sessionSigner.signSync(new TextEncoder().encode(eventHash));
       db.run(
         `INSERT INTO signed_events (kind, ref_id, matter_id, type, payload_hash, lamport, key_epoch, rev_checkpoint_hash, prev_hash, event_hash, signature, signer_device_id)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -120,7 +121,7 @@ export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signP
         last.event_hash,
         kind,
         deviceId,
-        signBytes(signPrivateKeyPem, new TextEncoder().encode(last.event_hash)),
+        sessionSigner.signSync(new TextEncoder().encode(last.event_hash)),
       ]);
       return { checkpointId, uptoSeq: last.seq, headHash: last.event_hash };
     },
@@ -507,8 +508,12 @@ export function certVerifying(
   return null;
 }
 
-/** 证书链校验：根公钥对证书字段（除 signature）的 Ed25519 签名有效；有效期由调用方按业务时点判断。 */
+/**
+ * 证书链校验：根公钥对证书字段（除 signature）的签名有效，且证书的签名算法与设备公钥一致（与 verifyDeviceCertificate 同一口径，复核 S7A-05）；
+ * 有效期由调用方按业务时点判断。
+ */
 export function verifyCertSignature(cert: DeviceCertificate, rootPublicKeyPem: string): boolean {
+  if (!certSignAlgConsistent(cert)) return false;
   const { signature, ...unsigned } = cert;
   return verifyBytes(rootPublicKeyPem, new TextEncoder().encode(canonicalJson(unsigned)), signature);
 }

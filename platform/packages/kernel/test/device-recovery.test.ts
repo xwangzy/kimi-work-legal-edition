@@ -7,6 +7,7 @@
  *  - 证书须律所根签发、编号与成员是本机、公钥与私钥一致；明文字段被改、已吊销设备一律拒绝，且不改设备状态；
  *  - 导入后到重启前，其余操作拒绝（本进程各组件仍持有旧密钥）。
  */
+import { SoftwareSigner } from "@zr-legal/keys";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createPublicKey } from "node:crypto";
@@ -120,7 +121,7 @@ test("设备恢复完整场景：丢失 device.json → 临时密钥期间建事
     // 被替换下来的临时私钥（复核 B4-R10）：恢复之后用它签出的新见证行不得被判有效
     const { createLedgerSigner } = await import("../src/ledger-signer.ts");
     const tenantId = k.db.get<{ tenant_id: string }>(`SELECT tenant_id FROM devices WHERE device_id = ?`, [deviceId])!.tenant_id;
-    const forged = createLedgerSigner({ db: k.db, deviceId, signPrivateKeyPem: temp.signPrivateKeyPem, tenantId });
+    const forged = createLedgerSigner({ db: k.db, deviceId, signer: new SoftwareSigner(temp.signPrivateKeyPem), tenantId });
     k.db.tx(() => {
       const r = k.db.run(`INSERT INTO audit_events (tenant_id, actor_id, action, object_kind, object_id, detail_hash) VALUES (?,?,?,?,?,?)`, [tenantId, "forger", "forged.event", "device", deviceId, null]);
       const { rowPayloadHash } = forgedHelpers;

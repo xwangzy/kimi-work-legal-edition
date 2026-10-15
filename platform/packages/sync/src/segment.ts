@@ -7,11 +7,11 @@
  * - key_rows（cleartext）：matter_keys 包裹行——每行已是面向特定设备的 ECIES 密文，
  *   是密钥分发通道（新成员设备先收 key_rows 才能解 body），不构成额外泄露；
  * - body：按事项密钥 AES-256-GCM 加密的 JSON 行数组（业务表可同步行）；
- * - footer：body_hash + header_hash + 设备 Ed25519 签名。
+ * - footer：body_hash + header_hash + 设备签名（Ed25519 或 P-256，按设备公钥分派核验）。
  * 「已封口」= footer 完整、两个 hash 重算一致、签名验过（读取端只认已封口段，§7.2）。
  */
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { b64urlDecode, b64urlEncode, canonicalJson, sha256B64, signBytes, verifyBytes } from "@zr-legal/keys";
+import { b64urlDecode, b64urlEncode, canonicalJson, sha256B64, signSyncWith, verifyBytes, type SyncSignerLike } from "@zr-legal/keys";
 
 export interface SegmentHeader {
   segment_id: string;
@@ -69,12 +69,13 @@ export function sealSegment(input: {
   keyRows: KeyRow[];
   rows: SyncRow[];
   matterKey: Uint8Array;
-  signPrivateKeyPem: string;
+  /** 段签名者（今天是设备软件密钥；会话签名密钥见 TPM 设计 v1 §4.2）。 */
+  signer: SyncSignerLike;
 }): string {
   const enc = gcmEncrypt(input.matterKey, Buffer.from(JSON.stringify(input.rows), "utf8"));
   const headerHash = sha256B64(canonicalJson(input.header));
   const bodyHash = sha256B64(canonicalJson(enc));
-  const signature = signBytes(input.signPrivateKeyPem, new TextEncoder().encode(sha256B64(canonicalJson({ header_hash: headerHash, body_hash: bodyHash }))));
+  const signature = signSyncWith(input.signer, new TextEncoder().encode(sha256B64(canonicalJson({ header_hash: headerHash, body_hash: bodyHash }))));
   const seg: SegmentFile = {
     header: input.header,
     key_rows: input.keyRows,

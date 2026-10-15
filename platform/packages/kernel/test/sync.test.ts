@@ -273,7 +273,7 @@ test("阻断-C 复刻（恶意内部人）：伪造大 lamport 成员行翻墓�
       },
     ],
     matterKey: k1,
-    signPrivateKeyPem: bKeys.signPrivateKeyPem,
+    signer: bKeys.signPrivateKeyPem,
   });
   writeSegment(shareDir, kA.kernel.identity.tenantId, "dev_sync-firm_bob", `seg_forged_${Date.now().toString(36)}`, forged);
 
@@ -307,7 +307,7 @@ test("阻断-C 复刻（恶意内部人）：伪造大 lamport 成员行翻墓�
       },
     ],
     matterKey: k1,
-    signPrivateKeyPem: bKeys.signPrivateKeyPem,
+    signer: bKeys.signPrivateKeyPem,
   });
   writeSegment(shareDir, kA.kernel.identity.tenantId, "dev_sync-firm_bob", `seg_forged2_${Date.now().toString(36)}`, forged2);
   const im2 = await kA.inv("sync.import", { share_dir: shareDir });

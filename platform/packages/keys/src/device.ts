@@ -1,11 +1,12 @@
 /**
  * 成员设备证书（方案 v5.0 第 4 篇 §5.3：律所根密钥签发；成员 ID、角色、设备 ID、有效期；
- * Ed25519 签名密钥 + X25519 加密密钥）。
+ * 签名密钥 Ed25519（存量）或 ECDSA P-256（TPM 与新安装，证书 signAlg 写明）+ X25519 加密密钥）。
  * 证书 = 上述字段 + 根私钥对 canonicalJson(除 signature 外全部字段) 的 Ed25519 签名。
  * 边界：验签只查签名、字段完整性与有效期；吊销检查在内核侧按密钥纪元处理，不在本模块。
  */
-import { generateKeyPairSync, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
-import { b64urlDecode, b64urlEncode, canonicalJson } from "./encoding.ts";
+import { generateKeyPairSync } from "node:crypto";
+import { canonicalJson } from "./encoding.ts";
+import { signAlgOfPublicKey, signBytes, verifyBytes, type SignAlg } from "./signing.ts";
 
 export const DeviceRoles = ["partner", "lawyer", "assistant", "admin", "node"] as const;
 export type DeviceRole = (typeof DeviceRoles)[number];
@@ -45,6 +46,11 @@ export interface DeviceCertificateInput {
   /** ISO 时间串。 */
   issuedAt: string;
   expiresAt: string;
+  /**
+   * 设备签名算法（TPM 设计 v1 §4.2 算法敏捷）：缺省视为 ed25519（存量证书没有此字段，签名字节不变）；
+   * ECDSA P-256 设备（TPM 或软件新安装）必须写明。签发与核验都要求它与 signPublicKeyPem 的实际类型一致。
+   */
+  signAlg?: SignAlg;
 }
 
 export interface DeviceCertificate extends DeviceCertificateInput {
@@ -53,10 +59,13 @@ export interface DeviceCertificate extends DeviceCertificateInput {
 }
 
 export function issueDeviceCertificate(rootPrivateKeyPem: string, input: DeviceCertificateInput): DeviceCertificate {
-  const check = checkCertificateFields(input);
+  // 非 Ed25519 的设备公钥必须写明算法（未写时按公钥补上；Ed25519 不写，存量证书签名字节不变）
+  const alg = signAlgOfPublicKey(input.signPublicKeyPem);
+  const body: DeviceCertificateInput = alg === "ed25519" || input.signAlg ? input : { ...input, ...(alg ? { signAlg: alg } : {}) };
+  const check = checkCertificateFields(body);
   if (check) throw new Error(`签发前字段校验失败：${check}`);
-  const signature = b64urlEncode(new Uint8Array(cryptoSign(null, Buffer.from(canonicalJson(input), "utf8"), rootPrivateKeyPem)));
-  return { ...input, signature };
+  const signature = signBytes(rootPrivateKeyPem, Buffer.from(canonicalJson(body), "utf8"));
+  return { ...body, signature };
 }
 
 export type VerifyResult = { ok: true } | { ok: false; reason: string };
@@ -68,17 +77,21 @@ export function verifyDeviceCertificate(cert: DeviceCertificate, rootPublicKeyPe
   if (typeof cert.signature !== "string" || cert.signature.length === 0) return { ok: false, reason: "缺少 signature 字段" };
 
   const { signature, ...unsigned } = cert;
-  let valid = false;
-  try {
-    valid = cryptoVerify(null, Buffer.from(canonicalJson(unsigned), "utf8"), rootPublicKeyPem, new Uint8Array(b64urlDecode(signature)));
-  } catch {
-    return { ok: false, reason: "验签过程出错（根公钥或签名格式异常）" };
-  }
+  // 根签名（Ed25519）经同一分派核验；格式异常一律按无效
+  const valid = verifyBytes(rootPublicKeyPem, Buffer.from(canonicalJson(unsigned), "utf8"), signature);
   if (!valid) return { ok: false, reason: "签名无效：证书字段与律所根密钥签名不符" };
 
   const expiresAt = Date.parse(cert.expiresAt);
   if (expiresAt <= now.getTime()) return { ok: false, reason: `证书已过有效期（expiresAt=${cert.expiresAt}）` };
   return { ok: true };
+}
+
+/**
+ * 证书写明（或缺省）的签名算法与设备公钥实际类型一致；所有证书有效性核验点共用这一口径（复核 S7A-05）。
+ */
+export function certSignAlgConsistent(c: Pick<DeviceCertificateInput, "signAlg" | "signPublicKeyPem">): boolean {
+  const actual = signAlgOfPublicKey(c.signPublicKeyPem);
+  return !!actual && (c.signAlg ?? "ed25519") === actual;
 }
 
 /** 字段完整性检查；返回问题描述，null 表示通过。 */
@@ -91,5 +104,9 @@ function checkCertificateFields(c: DeviceCertificateInput): string | null {
   if (Number.isNaN(Date.parse(c.issuedAt))) return "issuedAt 不是合法时间";
   if (Number.isNaN(Date.parse(c.expiresAt))) return "expiresAt 不是合法时间";
   if (Date.parse(c.expiresAt) <= Date.parse(c.issuedAt)) return "expiresAt 须晚于 issuedAt";
+  // 算法敏捷：只认 Ed25519 与 ECDSA P-256；写明的 signAlg 须与公钥实际类型一致，未写即须为 Ed25519
+  const actual = signAlgOfPublicKey(c.signPublicKeyPem);
+  if (!actual) return "设备签名公钥不是 Ed25519 或 ECDSA P-256";
+  if ((c.signAlg ?? "ed25519") !== actual) return `签名算法与公钥类型不符（证书 ${c.signAlg ?? "未写（视为 ed25519）"}，公钥 ${actual}）`;
   return null;
 }

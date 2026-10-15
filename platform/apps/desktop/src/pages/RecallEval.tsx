@@ -315,7 +315,8 @@ function Annotate({ st }: { st: EvalState }) {
               </label>
             )}
             <button
-              className="btn btn-sm btn-danger"
+              // 只删本页内存里的一处标注、可以重标：不算危险操作，不用红色（Y4 V-5）
+              className="btn-ghost btn-sm"
               onClick={() => {
                 replaceDoc(removeSpan(doc, active!));
                 setActive(null);

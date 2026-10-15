@@ -16,13 +16,13 @@
 import { randomBytes } from "node:crypto";
 import { canonicalCredential, type ApprovalCredential, type ApprovalPurpose, type SignedApproval } from "@zr-legal/egress-gate";
 import { newId } from "@zr-legal/domain";
-import { signBytes } from "@zr-legal/keys";
+import type { SessionSigner } from "@zr-legal/keys";
 import type { KernelDb } from "../db.ts";
 
 export interface ApprovalSigner {
   deviceId: string;
-  signPrivateKeyPem: string;
-  signPublicKeyPem: string;
+  /** 出站批准凭据在同步路径签名（会话签名密钥的落点，TPM 设计 v1 §4.2）。 */
+  signer: SessionSigner;
 }
 
 interface Row {
@@ -54,7 +54,7 @@ export class EgressApprovalStore {
 
   /** 闸门验签用的公钥表（设备 → 公钥）。 */
   publicKeys(): Record<string, string> {
-    return { [this.signer.deviceId]: this.signer.signPublicKeyPem };
+    return { [this.signer.deviceId]: this.signer.signer.publicKeyPem };
   }
 
   issue(input: {
@@ -126,7 +126,7 @@ export class EgressApprovalStore {
   }
 
   private sign(c: ApprovalCredential): string {
-    return signBytes(this.signer.signPrivateKeyPem, new TextEncoder().encode(canonicalCredential(c)));
+    return this.signer.signer.signSync(new TextEncoder().encode(canonicalCredential(c)));
   }
 
   /**

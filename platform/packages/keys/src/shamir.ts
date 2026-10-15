@@ -1,7 +1,7 @@
 /**
  * Shamir 秘密分持（方案 v5.0 第 4 篇 §5.3：恢复托管私钥按 M-of-N 分持给多名合伙人，
  * 默认 3-of-5，任何一人单独不可用）。
- * GF(256) 运算，约减多项式 x^8+x^4+x^3+x+1（0x11b，xtime 标准实现），log/exp 表以 3 为生成元。
+ * GF(256) 运算，约减多项式 x^8+x^4+x^3+x+1（0x11b），乘法与求逆为常量时间实现（不查依赖秘密的表）。
  * 逐字节取随机多项式：f(0)=秘密字节，其余系数 crypto.randomBytes；份额 x ∈ 1..255。
  * 边界：combineShares 不做「份额是否足够」的判断——份额不足会得到错误结果但不报错，
  * 调用方须用哈希校验识别（见 recovery.ts 的 privateKeyHash）。
@@ -9,37 +9,33 @@
 import { randomBytes } from "node:crypto";
 import { KeysError } from "./errors.ts";
 
-const FIELD_SIZE = 256;
 const MAX_SHARES = 255;
 
-const EXP = new Uint8Array(FIELD_SIZE * 2);
-const LOG = new Uint8Array(FIELD_SIZE);
-
-(function initTables() {
-  let x = 1;
-  for (let i = 0; i < MAX_SHARES; i++) {
-    EXP[i] = x;
-    LOG[x] = i;
-    // 乘以生成元 3：xtime(x) ^ x
-    x = xtime(x) ^ x;
-  }
-  for (let i = MAX_SHARES; i < EXP.length; i++) EXP[i] = EXP[i - MAX_SHARES]!;
-})();
-
-/** 乘以 2（模 0x11b：溢出异或 0x1b）。 */
-function xtime(a: number): number {
-  const t = a << 1;
-  return (a & 0x80) !== 0 ? (t ^ 0x1b) & 0xff : t & 0xff;
-}
-
+/**
+ * GF(256) 乘法，常量时间（TPM 设计 v1 §3.2：原实现用对数表查表，内存访问依赖秘密字节）：
+ * 固定 8 轮移位—异或，分支只看循环计数，系数由掩码选取。
+ */
 function gfMul(a: number, b: number): number {
-  if (a === 0 || b === 0) return 0;
-  return EXP[LOG[a]! + LOG[b]!]!;
+  let p = 0;
+  for (let i = 0; i < 8; i++) {
+    p ^= -(b & 1) & a;
+    const hi = -((a >> 7) & 1) & 0x1b;
+    a = ((a << 1) & 0xff) ^ hi;
+    b >>= 1;
+  }
+  return p & 0xff;
 }
 
+/** 乘法逆元 a^254（固定的平方—乘序列，指数是公开常数）；0 无逆元（只对公开的份额编号调用）。 */
 function gfInv(a: number): number {
   if (a === 0) throw new KeysError("internal", "GF(256) 0 无乘法逆元");
-  return EXP[MAX_SHARES - LOG[a]!]!;
+  let r = 1;
+  let base = a;
+  for (let e = 254; e > 0; e >>= 1) {
+    if (e & 1) r = gfMul(r, base);
+    base = gfMul(base, base);
+  }
+  return r;
 }
 
 export interface Share {
@@ -78,6 +74,8 @@ export function splitSecret(secret: Uint8Array, total: number, threshold: number
     }
     shares.push({ x: i, y });
   }
+  // 系数里含秘密字节：用完清零（复核 S7A-09）
+  for (const c of coeffs) c.fill(0);
   return shares;
 }
 

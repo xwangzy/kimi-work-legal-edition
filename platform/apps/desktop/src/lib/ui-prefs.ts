@@ -29,3 +29,12 @@ export function applyUiZoom(v: number, persist = false): void {
     // 存不下：本次生效，下次启动回到标准
   }
 }
+
+/** 脚本发起的滚动是否平滑：系统“减少动画”时直接跳到位置（Y4 V-11；CSS 的 reduced-motion 规则管不到 scrollIntoView，复核 S7B-10）。 */
+export function scrollBehavior(): ScrollBehavior {
+  try {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+  } catch {
+    return "smooth";
+  }
+}

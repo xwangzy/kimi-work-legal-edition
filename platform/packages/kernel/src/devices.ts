@@ -21,6 +21,7 @@ import {
   generateFirmRoot,
   generateRecoveryEscrow,
   issueDeviceCertificate,
+  SoftwareSigner,
   splitRecoveryPrivateKey,
   unwrapMatterKey,
   verifyDeviceCertificate,
@@ -45,11 +46,23 @@ export interface KernelKeyContext {
   keysDir: string;
 }
 
+/** 设备密钥去掉签名私钥后的部分。 */
+export type DeviceEncKeys = Omit<DeviceKeys, "signPrivateKeyPem">;
+
+/** 由完整密钥构造设备上下文的两部分：签名私钥只交给签名者。 */
+function splitKeys(k: DeviceKeys): { keys: DeviceEncKeys; signer: SoftwareSigner } {
+  const { signPrivateKeyPem, ...rest } = k;
+  return { keys: rest, signer: new SoftwareSigner(signPrivateKeyPem) };
+}
+
 export interface DeviceContext {
   deviceId: string;
   memberId: string;
   cert: DeviceCertificate;
-  keys: DeviceKeys;
+  /** 设备公钥与加密私钥（事项密钥包裹）；签名私钥不常驻于此，只在 signer 内（复核 S7A-02，KP-02）。 */
+  keys: DeviceEncKeys;
+  /** 设备签名者（TPM 设计 v1 §4.3：今天是软件密钥；装上 TPM 后由主进程经 IPC 签名）。 */
+  signer: SoftwareSigner;
 }
 
 export function keysDirOf(workspaceDir: string): string {
@@ -390,7 +403,8 @@ export function ensureDevice(db: KernelDb, keysDir: string, identity: Identity, 
   const deviceFile = join(keysDir, "device.json");
   const row = db.get<{ cert_json: string }>(`SELECT cert_json FROM devices WHERE device_id = ?`, [deviceId]);
   if (row && existsSync(deviceFile)) {
-    return { deviceId, memberId: identity.userId, cert: JSON.parse(row.cert_json) as DeviceCertificate, keys: getDeviceKeys(keysDir) };
+    const keys = getDeviceKeys(keysDir);
+    return { deviceId, memberId: identity.userId, cert: JSON.parse(row.cert_json) as DeviceCertificate, ...splitKeys(keys) };
   }
 
   // 已登记但 device.json 不在（丢失或损坏后重开）：换新密钥前把旧证书留档，旧密钥签出的历史仍可验签；旧密钥本身可用恢复文件导回
@@ -420,7 +434,7 @@ export function ensureDevice(db: KernelDb, keysDir: string, identity: Identity, 
     _comment: "G0 开发形态：本机设备私钥（生产由 safeStorage/TPM 包裹保存，§5.3）；切勿提交或外传。",
     ...keys,
   });
-  return { deviceId, memberId: identity.userId, cert, keys };
+  return { deviceId, memberId: identity.userId, cert, ...splitKeys(keys) };
 }
 
 /** 当前 tenant 密钥纪元（无记录为 1）。 */
@@ -440,7 +454,7 @@ export function ensureNodeDevice(db: KernelDb, keysDir: string, identity: Identi
   const row = db.get<{ cert_json: string }>(`SELECT cert_json FROM devices WHERE device_id = ?`, [deviceId]);
   if (row && existsSync(deviceFile)) {
     const keys = readSecretFile<DeviceKeys>(deviceFile);
-    return { deviceId, memberId: "node_service", cert: JSON.parse(row.cert_json) as DeviceCertificate, keys };
+    return { deviceId, memberId: "node_service", cert: JSON.parse(row.cert_json) as DeviceCertificate, ...splitKeys(keys) };
   }
   if (row) archiveDeviceCert(db, deviceId, "rekeyed");
   const root = getFirmRootPrivateKey(keysDir);
@@ -466,7 +480,7 @@ export function ensureNodeDevice(db: KernelDb, keysDir: string, identity: Identi
     _comment: "G0 开发形态：节点设备私钥（生产为所内节点 TPM/硬件封存，导出受控并写入审计，§5.3）；切勿提交或外传。",
     ...keys,
   });
-  return { deviceId, memberId: "node_service", cert, keys };
+  return { deviceId, memberId: "node_service", cert, ...splitKeys(keys) };
 }
 
 export function getNodeDeviceKeys(keysDir: string): DeviceKeys {

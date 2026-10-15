@@ -2,6 +2,7 @@
  * 任务执行态（第 03 篇 §4.3 三栏：左 材料与覆盖；中 计划、进度、澄清、确认卡、子任务；右 成果预览与文件历史；§8.3 执行域徽标；§8.4 数据去向卡）。
  * 事件先落本机事项账本，本页按游标续读；离开本页不会取消任务。确认卡独立于聊天文本（模型文本里的“已批准”不触发权限）。
  */
+import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, onKernelEvent, type ApprovalCard, type QuestionCard, type RunEvent, type RunMode, type RunProgress, type SendSummaryView, type UnresolvedOperation } from "../api.ts";
 import { SendSummary } from "../components/SendSummary.tsx";
@@ -12,12 +13,12 @@ import { Icon } from "../components/Icons.tsx";
 import { Markdown, tokens as renderTokens } from "../components/Markdown.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
-import { artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, TERMINAL_STATUSES } from "../lib/labels.ts";
+import { artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, stepTime, TERMINAL_STATUSES } from "../lib/labels.ts";
 import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
 import { currentBadges } from "../lib/badges.ts";
 import { engineHeartbeatMs, hasProgress, mergeProgress, phaseLine, progressActivityKey, progressTexts, silenceMs, stallThresholdMs, progressView, type ProgressViewModel } from "../lib/progress.ts";
-import { buildSteps, sentByToolCall, toolLabel, type SentInfo } from "../lib/timeline.ts";
+import { buildSteps, groupSubtaskSteps, keyStepKeys, sentByToolCall, toolLabel, type SentInfo, type Step } from "../lib/timeline.ts";
 import { busyRunOfError } from "../lib/start-block.ts";
 
 /** 页面标题：任务目标前 24 字（律师能区分多个任务）；没有目标时用场景名。 */
@@ -84,6 +85,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const [preview, setPreview] = useState<{ filename: string; text: string; office?: boolean } | null>(null);
   // 本任务提交的风险卡（按合同分组）；打开审查工作台时整页切换
   const [risk, setRisk] = useState<{ total: number; highOpen: number; decided: number; docs: string[]; unlinked: number; bySeverity: { high: number; mid: number; low: number }; top: { severity: string; issue: string }[] } | null>(null);
+  // 中栏“审查意见”入口带主按钮时，同屏其余动作都降为次按钮（每屏最多一个主按钮，Y4 V-5）
+  const hasRiskEntry = !!risk && risk.docs.length > 0;
   // 成果是否已取过一次（D-5：区分“加载中”与“确实没有”）
   const [artifactsLoaded, setArtifactsLoaded] = useState(false);
   // 律师是否自己点过右栏标签（有风险卡时缺省显示审查摘要，D-3；点过之后不再自动切换）
@@ -252,6 +255,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
       .catch(() => {});
   }, [networkDone, runId]);
   const allSteps = useMemo(() => buildSteps(events, skillTitles, sent), [events, skillTitles, sent]);
+  // 律师层只在关键步骤显示时刻（Y4 R-12，复核 S7B-06）
+  const keySteps = useMemo(() => keyStepKeys(allSteps), [allSteps]);
   const pv = useMemo(() => progressView(progress), [progress]);
   // 进展通知在任务结束后仍可回看（复核 S5B-02）：只保留在本页内存，内核终态后不再返回过程快照
   const [lastNotes, setLastNotes] = useState<{ text: string; source: string }[]>([]);
@@ -265,8 +270,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const progressKey = useMemo(() => progressActivityKey(progress), [progress]);
   useEffect(() => setLastActivity(Date.now()), [events.length, liveText, progressKey, approvals.length, questions.length]);
   useEffect(() => {
-    if (terminal) return;
-    const t = setInterval(() => setNow(Date.now()), 5000);
+    // 终态后也慢速刷新：步骤的相对时间（“2 分钟前”）要随时间更新
+    const t = setInterval(() => setNow(Date.now()), terminal ? 30_000 : 5000);
     return () => clearInterval(t);
   }, [terminal]);
   // 引擎心跳（宿主转来）也算“还活着”：长时间思考或执行工具时不误报“没有新进展”
@@ -475,11 +480,13 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             </div>
           </div>
           {!terminal && run && (
-            <button
-              className="btn-ghost"
-              onClick={async () => {
-                // 误点可撤回（UIUX 增量评审 R-10）
-                if (!window.confirm("确定要停止这个任务吗？停止后可以重新运行。")) return;
+            // 误点可撤回（UIUX 增量评审 R-10）；危险操作红字描边、原位二次确认（Y4 V-5，复核 S7B-04）
+            <ConfirmButton
+              label="取消任务"
+              question="停止这个任务？停止后可以重新运行。"
+              confirmLabel="停止任务"
+              keepLabel="继续运行"
+              onConfirm={async () => {
                 try {
                   const cur = await api.getRun(runId);
                   await api.cancelRun(runId, cur.run.status_version);
@@ -488,9 +495,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                   setErr((e as Error).message);
                 }
               }}
-            >
-              取消任务
-            </button>
+            />
           )}
         </div>
         {run?.input_snapshot?.followup_of && (
@@ -500,19 +505,28 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
         )}
         {(run?.goal ?? run?.input_snapshot?.goal) && <div className="goal-bubble">{renderTokens(String(run.goal ?? run.input_snapshot.goal), tokenMap)}</div>}
         <div className="timeline">
-          {steps.map((s) => (
-            <div key={s.key} className={`step step-${s.icon}${s.agent ? " step-sub" : ""}`}>
-              <span className="step-dot">{s.icon === "ok" ? <Icon.check /> : s.icon === "fail" ? <Icon.x /> : null}</span>
-              <div className="step-body">
-                <div className="step-title">
-                  {s.agent ? <span className="tag tag-sub">子任务 {s.agent}</span> : null}
-                  {s.title}
-                </div>
-                {s.detail && <div className="step-detail">{renderTokens(s.detail, tokenMap)}</div>}
-                {s.meta && <div className="step-meta">{s.meta}</div>}
-              </div>
-            </div>
-          ))}
+          {groupSubtaskSteps(steps).map((it) =>
+            it.kind === "step" ? (
+              <StepRow key={it.step.key} s={it.step} now={now} tokenMap={tokenMap} label={it.label} showTime={it.step.level === "detail" || keySteps.has(it.step.key)} />
+            ) : (
+              // 子任务折叠（Y4 #33，复核 S7B-05）：同一子任务的步骤只显示一行，展开看逐步
+              <details key={it.key} className={`step step-${it.failed ? "fail" : it.done ? "ok" : "wait"} step-sub step-group`}>
+                <summary>
+                  <span className="step-dot">{it.failed ? <Icon.x /> : it.done ? <Icon.check /> : null}</span>
+                  <span className="step-body">
+                    <span className="step-title">
+                      <span className="tag tag-sub">{it.label}</span>
+                      {it.failed ? "有一步没有完成" : it.done ? "已完成" : `进行中：${it.steps.at(-1)!.title}`}
+                      <span className="muted"> · 共 {it.steps.length} 步 · 展开</span>
+                    </span>
+                  </span>
+                </summary>
+                {it.steps.map((s) => (
+                  <StepRow key={s.key} s={s} now={now} tokenMap={tokenMap} showTime={s.level === "detail" || keySteps.has(s.key)} />
+                ))}
+              </details>
+            ),
+          )}
           {!terminal && approvals.length === 0 && questions.length === 0 && !liveText && (
             <div className={`step step-wait${pv.retry ? " step-retry" : ""}`}>
               <span className="step-dot" />
@@ -589,8 +603,9 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             </div>
             <p className="muted">逐项接受、修改或不采纳后，可一键生成带修订痕迹和批注的 Word 修订稿（原件不改动）。已处理 {risk.decided}/{risk.total}。</p>
             <div className="card-actions">
-              {risk.docs.map((d) => (
-                <button key={d} className="btn-primary" onClick={() => setWorkbench({ doc: d })}>
+              {risk.docs.map((d, i) => (
+                // 每屏最多一个黑色主按钮（Y4 V-5）：多份文书时只有第一份用主按钮
+                <button key={d} className={i === 0 ? "btn-primary" : "btn-ghost"} onClick={() => setWorkbench({ doc: d })}>
                   打开审查工作台{risk.docs.length > 1 ? `：${docs.find((x) => x.document_version_id === d)?.filename ?? ""}` : ""}
                 </button>
               ))}
@@ -667,7 +682,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 }}
               />
               {!followConfirm && (
-                <button className="btn-primary" disabled={busy || !followText.trim()} onClick={() => void prepareFollowUp()}>
+                // 每屏最多一个主按钮（Y4 V-5，复核 S7B-01）：有待处理的审查意见时主按钮是“打开审查工作台”，追问降为次按钮
+                <button className={hasRiskEntry ? "btn-ghost" : "btn-primary"} disabled={busy || !followText.trim()} onClick={() => void prepareFollowUp()}>
                   追问
                 </button>
               )}
@@ -744,7 +760,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 ))}
               </ol>
               {risk.docs.length > 0 && (
-                <button className="btn-primary" onClick={() => setWorkbench({ doc: risk.docs[0]! })}>
+                // 中栏已有同一动作的主按钮：右栏这里只用次按钮（复核 S7B-01）
+                <button className="btn-ghost" onClick={() => setWorkbench({ doc: risk.docs[0]! })}>
                   打开审查工作台
                 </button>
               )}
@@ -769,7 +786,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 </select>
               )}
               {selected && preview && <SafePreview filename={preview.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} />}
-              {selected && <ArtifactActions artifact={artifacts.find((a) => a.artifact_version_id === selected)} onError={setErr} />}
+              {selected && <ArtifactActions artifact={artifacts.find((a) => a.artifact_version_id === selected)} onError={setErr} primary={!hasRiskEntry} />}
             </>
           )}
           {tab === "history" && (
@@ -802,7 +819,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   );
 }
 
-function ArtifactActions({ artifact, onError }: { artifact: any; onError: (m: string) => void }) {
+/** primary=false：同屏已有主按钮（待处理的审查意见），这里的动作降为次按钮（复核 S7B-01）。 */
+function ArtifactActions({ artifact, onError, primary = true }: { artifact: any; onError: (m: string) => void; primary?: boolean }) {
   if (!artifact) return null;
   return (
     <div className="artifact-actions">
@@ -820,7 +838,7 @@ function ArtifactActions({ artifact, onError }: { artifact: any; onError: (m: st
       </button>
       {artifact.status === "draft" && (
         <button
-          className="btn-primary"
+          className={primary ? "btn-primary" : "btn-ghost"}
           onClick={async () => {
             try {
               await api.submitReview(artifact.artifact_version_id);
@@ -833,7 +851,7 @@ function ArtifactActions({ artifact, onError }: { artifact: any; onError: (m: st
           提交复核
         </button>
       )}
-      {artifact.status === "pending_review" && <button className="btn-primary" onClick={() => nav(`/review/${artifact.artifact_version_id}`)}>去复核 / 签发</button>}
+      {artifact.status === "pending_review" && <button className={primary ? "btn-primary" : "btn-ghost"} onClick={() => nav(`/review/${artifact.artifact_version_id}`)}>去复核 / 签发</button>}
     </div>
   );
 }
@@ -856,6 +874,30 @@ function Citations({ ev }: { ev: RunEvent | undefined }) {
         </div>
       ))}
     </>
+  );
+}
+
+/** 时间线的一步：律师层显示相对时间、处理细节显示时分秒，悬停看完整时间（Y4 R-12）。 */
+function StepRow({ s, now, tokenMap, label, showTime }: { s: Step; now: number; tokenMap: Map<string, string | null>; label?: string; showTime: boolean }) {
+  const t = showTime ? stepTime(s.at, s.level, now) : null;
+  return (
+    <div className={`step step-${s.icon}${s.agent ? " step-sub" : ""}`}>
+      <span className="step-dot">{s.icon === "ok" ? <Icon.check /> : s.icon === "fail" ? <Icon.x /> : null}</span>
+      <div className="step-body">
+        <div className="step-title">
+          {label ? <span className="tag tag-sub">{label}</span> : null}
+          {s.title}
+        </div>
+        {s.detail && <div className="step-detail">{renderTokens(s.detail, tokenMap)}</div>}
+        {(t || s.meta) && (
+          <div className="step-meta">
+            {t && <time dateTime={s.at} title={t.title}>{t.text}</time>}
+            {t && s.meta ? " · " : ""}
+            {s.meta}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

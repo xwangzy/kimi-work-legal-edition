@@ -261,7 +261,8 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
         {err && <div className="banner banner-red">{err}</div>}
         <div className="modal-actions">
           <button className="btn-ghost" onClick={onClose}>取消</button>
-          <button className="btn-primary" disabled={busy || !ready} onClick={() => void start()}>
+          {/* 还不能开始时（例如疑似姓名待核对）不占主按钮：同屏的主动作是待办那一步（复核 S7B-01） */}
+          <button className={ready ? "btn-primary" : "btn-ghost"} disabled={busy || !ready} onClick={() => void start()}>
             {card.verb}
           </button>
         </div>

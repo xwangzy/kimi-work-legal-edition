@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { DomainError } from "@zr-legal/domain";
 import { writeZip } from "@zr-legal/docx-engine";
-import { canonicalJson, signBytes, type DeviceCertificate } from "@zr-legal/keys";
+import { canonicalJson, type DeviceCertificate, type DeviceSyncSigner } from "@zr-legal/keys";
 import type { BlobStore } from "../blobs.ts";
 import type { KernelDb } from "../db.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
@@ -33,7 +33,8 @@ export interface ArchiveDeps {
   blobs: BlobStore;
   tokens?: MatterTokenStore | null;
   deviceId: string;
-  signPrivateKeyPem: string;
+  /** 归档清单签名（今天同步；改为 TPM 直签时随 W8 改异步，偏离 D-71）。 */
+  signer: DeviceSyncSigner;
   deviceCert: DeviceCertificate;
   firmRootPublicKeyPem: string;
 }
@@ -254,7 +255,7 @@ export function buildMatterArchive(d: ArchiveDeps, matterId: string, opts: { by:
     missing,
   };
   const manifestJson = canonicalJson(manifest);
-  const signature = signBytes(d.signPrivateKeyPem, new TextEncoder().encode(manifestJson));
+  const signature = d.signer.signSync(new TextEncoder().encode(manifestJson));
   const zip = writeZip([
     { name: "manifest.json", data: Buffer.from(manifestJson, "utf8") },
     { name: "manifest.sig", data: Buffer.from(signature, "utf8") },

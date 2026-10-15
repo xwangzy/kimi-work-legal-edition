@@ -1,5 +1,5 @@
 /**
- * A1 Agent 任务客户端接口（内核 → Agent 宿主）。实现见 agent-host-manager.ts（SDK 形态宿主）与 kap-agent-client.ts（kap-host）。
+ * A1 Agent 任务客户端接口（内核 → Agent 宿主）。实现见 kap-agent-client.ts（kap-host；v5 SDK 宿主已于 K9-1 退役）。
  * v4 agent-runtime 的 HTTP 客户端已删除（v9 阶段 4 出网面：内核不保留任何直连外部地址的路径）。
  */
 import type { AgentOutcome } from "@zr-legal/domain";

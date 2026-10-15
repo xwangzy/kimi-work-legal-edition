@@ -8,7 +8,7 @@
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { generateDeviceKeys, generateFirmRoot, issueDeviceCertificate, type DeviceCertificate, type DeviceRole } from "@zr-legal/keys";
+import { generateDeviceKeys, generateFirmRoot, issueDeviceCertificate, SoftwareSigner, type DeviceCertificate, type DeviceRole } from "@zr-legal/keys";
 import { adminSign, connectorSigningBytes, enrollProofBytes, parsePublicKeyMap, policySigningBytes, safetyCode, strictestTemplate, type FirmPolicyBody, type FirmPolicyDoc } from "@zr-legal/firm-trust";
 import { sign } from "node:crypto";
 import { makeKernel, type TestKernel } from "./helpers.ts";
@@ -373,7 +373,7 @@ test("时钟偏差告警走真实控制面（复核 S6-C02）：本机时钟快 
   const client = new ControlPlaneClient({
     gov: g,
     tenantId: CT,
-    device: { deviceId: "dev_cpd_clock", cert: dev.cert, signPrivateKeyPem: dev.signPrivateKeyPem },
+    device: { deviceId: "dev_cpd_clock", cert: dev.cert, signer: new SoftwareSigner(dev.signPrivateKeyPem) },
     relay: (req) => relayControlPlane(req, { baseUrl: cloud.base }),
     now: () => Date.now() + 12 * 60_000,
   });
@@ -390,7 +390,7 @@ test("时钟偏差告警（复核 S6-B37）与同步间隔上限（复核 S6-A21
   const client = new ControlPlaneClient({
     gov: g,
     tenantId: CT,
-    device: { deviceId: MY_DEV, cert: JSON.parse(tk.kernel.db.get<{ cert_json: string }>(`SELECT cert_json FROM devices WHERE device_id = ?`, [MY_DEV])!.cert_json), signPrivateKeyPem: generateDeviceKeys().signPrivateKeyPem },
+    device: { deviceId: MY_DEV, cert: JSON.parse(tk.kernel.db.get<{ cert_json: string }>(`SELECT cert_json FROM devices WHERE device_id = ?`, [MY_DEV])!.cert_json), signer: new SoftwareSigner(generateDeviceKeys().signPrivateKeyPem) },
     relay: async () => ({ ok: true, status: 401, body: JSON.stringify({ error: { code: "device_auth_stale", message: "x" }, server_time: serverTime }) }),
   });
   const rep = await client.sync();

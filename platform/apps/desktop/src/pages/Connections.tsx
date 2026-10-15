@@ -4,6 +4,7 @@
  * 管理员另有“管理”：律所策略、诊断（技术版数据去向表、能力账本、待对账出站、闸门与执行域细节、详细运行记录）、召回评测（律所内）。
  * “管理”是否显示只是界面安排，授权一律由内核按角色逐个方法核验。
  */
+import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { useEffect, useState } from "react";
 import { api, updates, type Capabilities, type ControlPlaneStatus, type PolicyDraft } from "../api.ts";
 import { nav, type SettingsTab } from "../App.tsx";
@@ -824,7 +825,7 @@ function PolicyTab() {
                         核对无误，签名
                       </button>
                     )}
-                    <button className="btn-link" disabled={busy} onClick={() => act(() => api.policyPublish(d.draft_id), "已发布并同步（本机按同一规则核验后生效）")}>发布</button>
+                    <ConfirmButton label="发布" danger={false} className="btn-link" disabled={busy} question="发布后全所设备同步生效。确定发布？" confirmLabel="确定发布" onConfirm={() => act(() => api.policyPublish(d.draft_id), "已发布并同步（本机按同一规则核验后生效）")} />
                   </div>
                 </div>
               </div>

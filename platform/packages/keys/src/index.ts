@@ -12,3 +12,5 @@ export * from "./matter-keys.ts";
 export * from "./shamir.ts";
 export * from "./recovery.ts";
 export * from "./signing.ts";
+export * from "./share-codec.ts";
+export * from "./signer.ts";

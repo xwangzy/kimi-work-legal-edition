@@ -172,6 +172,14 @@ export function matterProgress(a: { waiting: number; running: number; pending_re
   return out;
 }
 
+/**
+ * 执行页步骤时刻（Y4 R-12）：律师层显示相对时间（“刚刚”“2 分钟前”），处理细节显示时分秒；悬停都给完整时间。纯函数。
+ */
+export function stepTime(at: string | undefined, level: "lawyer" | "detail", now = Date.now()): { text: string; title: string } | null {
+  if (!at || !Number.isFinite(Date.parse(at))) return null;
+  return { text: level === "lawyer" ? fmtRelative(at, now) : fmtShortTime(at), title: fmtTime(at) };
+}
+
 export function fmtShortTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
