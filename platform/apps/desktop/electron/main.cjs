@@ -229,7 +229,6 @@ const restart = { times: [], timer: null, quitting: false, runtimeEnv: null };
 
 async function startKernel() {
   const bundle = path.join(__dirname, "kernel.bundle.cjs");
-  const agentHostEntry = path.join(__dirname, "agent-host.bundle.mjs");
   // 出站闸门（v9 第 04 篇 §5.1：独立进程、唯一出口；内核按需拉起）
   const gateEntry = path.join(__dirname, "egress-gate.bundle.mjs");
   // 以下缺省入口只用于开发形态；安装包形态的闸门与 Agent 宿主入口只来自核验过的随包运行时（release-config.cjs，复核 B4-A20）。
@@ -267,7 +266,7 @@ async function startKernel() {
       isDev,
       processEnv: process.env,
       release,
-      paths: { dataDir: DATA_DIR, agentHostEntry, gateEntry, kapEntry },
+      paths: { dataDir: DATA_DIR, gateEntry, kapEntry },
       runtimeEnv: restart.runtimeEnv,
     }),
     // 内核 stdout/stderr 进内存环形缓冲（上限 16KB）：内核崩溃在 asar 加载期只有这里可见——
@@ -315,6 +314,12 @@ async function startKernel() {
     if (msg && msg.type === "kernel.fatal") {
       slog.event("MAIN_KERNEL_FATAL", {});
       dumpKernelOutput();
+      // 致命错误文本进 .kernel.log（同一取证通道：可能含路径与用户名，只落 runner/IT 提供的临时位置；结果文件仍只写码）
+      if (smoke.out && typeof msg.message === "string") {
+        try {
+          require("node:fs").appendFileSync(`${smoke.out}.kernel.log`, `kernel.fatal: ${msg.message}\n`);
+        } catch {}
+      }
       if (smoke.out) smoke.kernelFailed("kernel_fatal");
       return;
     }

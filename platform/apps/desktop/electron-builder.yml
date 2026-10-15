@@ -14,6 +14,8 @@ files:
   - package.json
   - dist/**
   - electron/**
+  # 法规库经 extraResources 放 asar 外：原生 SQLite 走 OS 层打不开 asar 虚拟路径，且 asar 内副本会让内核按 bundleDir 误选
+  - "!electron/lawdb/**"
   - node_modules/better-sqlite3-multiple-ciphers/**
 asar: true
 # 原生模块（N-API 预编译）须在 asar 外才能装载
@@ -24,6 +26,10 @@ asarUnpack:
 extraResources:
   - from: runtime
     to: runtime
+    filter: ["**/*"]
+  # 签名只读法规库包（lawdb.sqlite + manifest + 内容签名公钥）：须在 asar 外（同上）
+  - from: electron/lawdb
+    to: lawdb
     filter: ["**/*"]
 npmRebuild: false
 nodeGypRebuild: false

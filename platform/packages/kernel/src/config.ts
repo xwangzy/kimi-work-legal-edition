@@ -152,17 +152,21 @@ function firstExisting(paths: (string | undefined)[]): string | undefined {
  */
 function resolveLawdb(env: NodeJS.ProcessEnv, workspaceDir: string): { lawdbFile: string; lawdbSignerPub: string } {
   const bundleDir = typeof __dirname !== "undefined" ? __dirname : undefined;
+  // Electron 安装包形态：法规库经 extraResources 放在 resources/lawdb/（asar 外的真文件）。bundleDir 在 asar 内——
+  // 原生 SQLite 走 OS 层打不开 asar 虚拟路径，而 Electron 补丁过的 fs.existsSync 对 asar 路径却返回 true，
+  // 所以 resourcesPath 候选必须排在 bundleDir 之前（按真实存在性命中，开发形态无此目录自然跳过）
+  const resourcesLawdb = (process as any).resourcesPath ? join((process as any).resourcesPath, "lawdb") : undefined;
   const devFile = repoContentPath("lawdb", "dist", "lawdb.sqlite");
   const lawdbFile =
     env.ZR_LAWDB_FILE ??
-    firstExisting([join(workspaceDir, "lawdb", "lawdb.sqlite"), bundleDir ? join(bundleDir, "lawdb", "lawdb.sqlite") : undefined, devFile]) ??
+    firstExisting([join(workspaceDir, "lawdb", "lawdb.sqlite"), resourcesLawdb ? join(resourcesLawdb, "lawdb.sqlite") : undefined, bundleDir ? join(bundleDir, "lawdb", "lawdb.sqlite") : undefined, devFile]) ??
     devFile ??
     join(workspaceDir, "lawdb", "lawdb.sqlite");
 
   const devPub = repoContentPath("keys", "content-signing-dev.pub.json");
   let lawdbSignerPub = env.ZR_LAWDB_SIGNER_PUB ?? "";
   if (!lawdbSignerPub) {
-    const pubFile = firstExisting([join(workspaceDir, "lawdb", "content-signing.pub.json"), bundleDir ? join(bundleDir, "lawdb", "content-signing.pub.json") : undefined, devPub]);
+    const pubFile = firstExisting([join(workspaceDir, "lawdb", "content-signing.pub.json"), resourcesLawdb ? join(resourcesLawdb, "content-signing.pub.json") : undefined, bundleDir ? join(bundleDir, "lawdb", "content-signing.pub.json") : undefined, devPub]);
     if (pubFile) {
       try {
         lawdbSignerPub = (JSON.parse(readFileSync(pubFile, "utf8")) as { publicKeyPem?: string }).publicKeyPem ?? "";
