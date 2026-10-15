@@ -5,6 +5,9 @@
   "type": "module",
   "description": "令牌化核心（v9 第 02 篇 §8.3–§8.4、第 04 篇 §5.1）：证件、账户、联系方式类标识符与自然人姓名按事项 HMAC 确定性替换为代号；机构名称默认保留，L3a 全部化名；还原只给可信界面与文书引擎",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./eval/evaluate": "./eval/evaluate.ts",
+    "./eval/agreement": "./eval/agreement.ts",
+    "./eval/gate": "./eval/gate.ts"
   }
 }

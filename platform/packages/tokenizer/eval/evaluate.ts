@@ -3,10 +3,18 @@
  */
 import { type MatterTokenizer, type PartyEntry, type TokenCategory } from "../src/index.ts";
 
+/**
+ * 金标准类别（标注规范 v1 §2）：与 TokenCategory 一一对应的 11 类，另加两类只用于评测的标注——
+ * person_partial：隐名写法（“张某”“张某某”），单独报告召回、不计入人级泄露；
+ * negative：形似但不应替换的困难负例（“王府井”“高峰期”），替换了即计“负例误替换”。
+ */
+export type GoldCategory = TokenCategory | "person_partial" | "negative";
+export const GOLD_CATEGORIES: readonly GoldCategory[] = Object.freeze(["person", "org", "id_number", "phone", "account", "uscc", "address", "plate", "email", "case_no", "birth_date", "person_partial", "negative"]);
+
 export interface GoldSpan {
   start: number;
   end: number;
-  category: TokenCategory;
+  category: GoldCategory;
   person_id?: string;
 }
 
@@ -31,6 +39,12 @@ export interface DocOutcome {
   falseReplacements: Record<string, number>;
   /** 类别 → 过度替换次数（覆盖了标注，但还吞掉了标注之外的字——会改变法律含义）。 */
   overReplacements: Record<string, number>;
+  /** 正文字数（UTF-16 码元；误替换按每千字折算用）。旧版结果没有这三项时按 0 计。 */
+  chars?: number;
+  /** [与正例标注相交的替换数, 替换总数]（精确率）。 */
+  precision?: [number, number];
+  /** [被替换（与任一替换相交）的困难负例数, 困难负例数]。 */
+  negatives?: [number, number];
 }
 
 function count(hay: string, needle: string): number {
@@ -44,12 +58,16 @@ function count(hay: string, needle: string): number {
 export function validateGold(d: GoldDoc): string[] {
   const problems: string[] = [];
   if (!d.doc_id || typeof d.text !== "string") problems.push("缺 doc_id 或 text");
-  const cats = new Set(["person", "org", "id_number", "phone", "account", "uscc", "address", "plate", "email", "case_no", "birth_date"]);
+  const cats = new Set<string>(GOLD_CATEGORIES);
+  if (!Array.isArray(d.spans)) problems.push("缺 spans");
   for (const s of d.spans ?? []) {
     if (!(Number.isInteger(s.start) && Number.isInteger(s.end) && s.start >= 0 && s.end > s.start && s.end <= d.text.length)) problems.push(`区间越界 ${s.start}-${s.end}`);
     if (!cats.has(s.category)) problems.push(`类别不合法 ${s.category}`);
     if (s.category === "person" && !s.person_id) problems.push(`自然人提及缺 person_id（${s.start}-${s.end}）`);
   }
+  // 标注区间不得重叠（标注规范 v1 §3：机构内含人名整体标机构，不嵌套）
+  const sorted = [...(d.spans ?? [])].sort((a, b) => a.start - b.start || a.end - b.end);
+  for (let i = 1; i < sorted.length; i++) if (sorted[i]!.start < sorted[i - 1]!.end) problems.push(`区间重叠 ${sorted[i - 1]!.start}-${sorted[i - 1]!.end} 与 ${sorted[i]!.start}-${sorted[i]!.end}`);
   return problems;
 }
 
@@ -71,7 +89,9 @@ export function evaluateDoc(d: GoldDoc, makeTokenizer: (parties: PartyEntry[]) =
   const falseReplacements: Record<string, number> = {};
   const personForms = new Map<string, Set<string>>();
   const usedOver = new Set<number>();
-  for (const g of d.spans) {
+  const positives = d.spans.filter((g) => g.category !== "negative");
+  const negativeSpans = d.spans.filter((g) => g.category === "negative");
+  for (const g of positives) {
     const m = (mentions[g.category] ??= [0, 0]);
     m[0] += 1;
     const covering = r.spans.findIndex((x) => x.start <= g.start && x.end >= g.end);
@@ -84,7 +104,7 @@ export function evaluateDoc(d: GoldDoc, makeTokenizer: (parties: PartyEntry[]) =
         overReplacements[g.category] = (overReplacements[g.category] ?? 0) + 1;
       }
     } else if (overlapping) partial[g.category] = (partial[g.category] ?? 0) + 1;
-    if (g.person_id) {
+    if (g.category === "person" && g.person_id) {
       persons[g.person_id] ??= false;
       if (covering < 0) persons[g.person_id] = true;
       const forms = personForms.get(g.person_id) ?? new Set<string>();
@@ -94,11 +114,28 @@ export function evaluateDoc(d: GoldDoc, makeTokenizer: (parties: PartyEntry[]) =
   }
   // 写法仍出现在输出里（含嵌在未标注处、未被替换的出现）：判泄露
   for (const [pid, forms] of personForms) if ([...forms].some((f) => count(out, f) > 0)) persons[pid] = true;
+  // 误替换只看正例标注：替换落在困难负例上同样是误替换，另计“负例误替换”
+  let hitPositive = 0;
   for (const x of r.spans) {
-    if (d.spans.some((g) => x.start < g.end && x.end > g.start)) continue;
+    if (positives.some((g) => x.start < g.end && x.end > g.start)) {
+      hitPositive += 1;
+      continue;
+    }
     falseReplacements[x.category] = (falseReplacements[x.category] ?? 0) + 1;
   }
-  return { doc_id: d.doc_id, source: d.source, mentions, partial, persons, falseReplacements, overReplacements };
+  const negHit = negativeSpans.filter((g) => r.spans.some((x) => x.start < g.end && x.end > g.start)).length;
+  return {
+    doc_id: d.doc_id,
+    source: d.source,
+    mentions,
+    partial,
+    persons,
+    falseReplacements,
+    overReplacements,
+    chars: d.text.length,
+    precision: [hitPositive, r.spans.length],
+    negatives: [negHit, negativeSpans.length],
+  };
 }
 
 /** 确定性 PRNG（mulberry32）：自助法可复现。 */
@@ -197,6 +234,13 @@ export interface EvalReport {
   personLeakRate: MetricWithCi;
   falseReplacements: Record<string, number>;
   overReplacements: Record<string, number>;
+  /** 替换的精确率（与正例标注相交的替换 / 全部替换）。 */
+  precision: MetricWithCi;
+  /** 困难负例被替换的比例。 */
+  negativeHitRate: MetricWithCi;
+  /** 正文总字数与误替换每千字。 */
+  chars: number;
+  falsePerKChars: number | null;
 }
 
 export function aggregate(outcomes: DocOutcome[]): EvalReport {
@@ -212,7 +256,22 @@ export function aggregate(outcomes: DocOutcome[]): EvalReport {
   };
   const sources: Record<string, number> = {};
   for (const o of outcomes) sources[o.source] = (sources[o.source] ?? 0) + 1;
-  return { docs: outcomes.length, sources, recallByCategory, partialByCategory: sum((o) => o.partial), personLeakRate, falseReplacements: sum((o) => o.falseReplacements), overReplacements: sum((o) => o.overReplacements) };
+  const falseReplacements = sum((o) => o.falseReplacements);
+  const chars = outcomes.reduce((a, o) => a + (o.chars ?? 0), 0);
+  const falseTotal = Object.values(falseReplacements).reduce((a, n) => a + n, 0);
+  return {
+    docs: outcomes.length,
+    sources,
+    recallByCategory,
+    partialByCategory: sum((o) => o.partial),
+    personLeakRate,
+    falseReplacements,
+    overReplacements: sum((o) => o.overReplacements),
+    precision: ratioCi(outcomes, (o) => o.precision ?? [0, 0]),
+    negativeHitRate: ratioCi(outcomes, (o) => o.negatives ?? [0, 0]),
+    chars,
+    falsePerKChars: chars > 0 ? (falseTotal * 1000) / chars : null,
+  };
 }
 
 /** 按来源分别汇总（复核 B4-R07：来源不同的评测集不合并成一个数；合成来源只用于回归）。 */
@@ -240,7 +299,10 @@ export function reportMarkdown(title: string, r: EvalReport): string {
   for (const [c, m] of Object.entries(r.recallByCategory)) lines.push(`| ${c} | ${pct(m.value)} | ${ci(m)} | ${m.numerator}/${m.denominator} | ${m.docsWithData} | ${r.partialByCategory[c] ?? 0} |`);
   const pl = r.personLeakRate;
   lines.push("", `人级泄露率（保守口径）：${pct(pl.value)}（95% 区间 ${ci(pl)}；${pl.numerator}/${pl.denominator} 人）`);
-  lines.push("", `误替换：${kv(r.falseReplacements)}；过度替换：${kv(r.overReplacements)}`);
+  lines.push("", `误替换：${kv(r.falseReplacements)}（每千字 ${r.falsePerKChars === null ? "—" : r.falsePerKChars.toFixed(2)}）；过度替换：${kv(r.overReplacements)}`);
+  if (r.precision?.denominator) lines.push("", `替换精确率：${pct(r.precision.value)}（95% 区间 ${ci(r.precision)}；${r.precision.numerator}/${r.precision.denominator} 处替换与标注相交）`);
+  if (r.negativeHitRate?.denominator) lines.push("", `困难负例被替换：${pct(r.negativeHitRate.value)}（95% 区间 ${ci(r.negativeHitRate)}；${r.negativeHitRate.numerator}/${r.negativeHitRate.denominator}）`);
+  if (r.docs < 30) lines.push("", `文书只有 ${r.docs} 份（少于 30 份）：区间很宽，只能作参考，不能作为对外引用的召回数字。`);
   lines.push("", "本报告只含计数与比例，不含原文。区间注“精确”者为 Clopper–Pearson（比例在 0 或 1、或有效文书不足 30 份时采用）。");
   return lines.join("\n");
 }

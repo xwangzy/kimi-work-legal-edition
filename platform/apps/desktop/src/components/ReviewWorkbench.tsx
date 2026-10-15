@@ -7,6 +7,7 @@
  * 修订稿由内核按已接受的卡在原件副本上写原生修订——有卡定位不到时整体不写，列出是哪几张，律师可跳过后再生成。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { firstOpenCard, nextOpenCard, stepCard } from "../lib/workbench.ts";
 import { api, type RiskCard, type RiskProgress } from "../api.ts";
 import { CITE_STATE_LABELS } from "../lib/labels.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
@@ -55,13 +56,23 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "warn" | "err"; text: string; conflicts?: { card_id: string | null; detail?: string }[]; artifact?: string } | null>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
+  // 原文与卡片的悬停联动（W-3）
+  const [hover, setHover] = useState<string | null>(null);
+  // 首次载入后自动展开第一张未处理的卡（W-1）；之后由律师操作决定
+  const autoOpened = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<RiskCard[]> => {
     const r = await api.riskCards(matterId, { document_version_id: documentVersionId, ...(runFilter ? { run_id: runFilter } : {}) });
     setCards(r.cards);
     setProgress(r.progress);
+    if (!autoOpened.current) {
+      autoOpened.current = true;
+      const first = firstOpenCard(r.cards);
+      if (first) setActive(first);
+    }
     const all = r.cards.flatMap((c) => [c.anchor_text, c.issue, c.suggestion ?? "", c.fallback ?? "", c.assumptions ?? ""]).join("\n");
     if (all.includes("〔")) setMap(await restoreTokens(matterId, all));
+    return r.cards;
   }, [matterId, documentVersionId, runFilter]);
 
   useEffect(() => {
@@ -95,7 +106,16 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
     try {
       await api.decideRiskCard(matterId, card.card_id, decision, finalText);
       setEditing(null);
-      await load();
+      const fresh = await load();
+      // 处理完自动展开下一张未处理的卡（W-1）；用刷新后的卡片集合，且只在当前过滤可见的卡里找（复核 S6B-11）
+      if (decision !== "reset") {
+        const shown = new Set(visible.map((c) => c.card_id));
+        const next = nextOpenCard(fresh.filter((c) => shown.has(c.card_id) || c.card_id === card.card_id), card.card_id);
+        if (next) {
+          setActive(next);
+          requestAnimationFrame(() => cardRefs.current.get(next)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+        }
+      }
     } catch (e) {
       setMsg({ tone: "err", text: (e as Error).message });
     } finally {
@@ -138,6 +158,39 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
 
   const accepted = progress?.accepted ?? 0;
   const allDecided = !!progress && progress.total > 0 && progress.decided === progress.total;
+  const openCount = cards.filter((c) => c.status === "proposed").length;
+
+  // 键盘（W-1）：J/K 切换卡片，A 接受，E 修改后接受，N 不采纳；在输入框里不响应
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      const k = e.key.toLowerCase();
+      if (k === "j" || k === "k") {
+        const id = stepCard(visible.map((c) => c.card_id), active, k === "j" ? 1 : -1);
+        if (id) focusCard(id);
+        e.preventDefault();
+        return;
+      }
+      if (readOnly || busy || !active || editing) return;
+      // 只对当前看得见的卡生效（复核 S6B-11）
+      const c = visible.find((x) => x.card_id === active);
+      if (!c || c.status !== "proposed") return;
+      if (k === "a") void decide(c, "accept");
+      else if (k === "n") void decide(c, "reject");
+      else if (k === "e") setEditing({ id: c.card_id, text: plain(c.suggestion) || plain(c.anchor_text) });
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  // 悬停卡片 → 原文对应处加深并滚到可视区（W-3）
+  const hoverCard = (id: string | null) => {
+    setHover(id);
+    if (id) document.querySelector(`[data-mark="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
 
   return (
     <div className="wb">
@@ -165,6 +218,12 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
               {/* 勾选“只看本次任务”时修订稿也只含本次任务的卡（复核 C-B06）：文案写明 */}
               生成修订稿{accepted > 0 ? `（${runFilter ? "本次任务 " : ""}${accepted} 项）` : ""}
             </button>
+          )}
+          {/* 置灰原因与“先生成”（W-2）：未处理的卡不写进修订稿 */}
+          {documentVersionId && !readOnly && progress && progress.total > 0 && !allDecided && (
+            <div className="wb-why muted">
+              {accepted === 0 ? `先接受或修改后接受至少一项（还有 ${openCount} 项未处理）` : `还有 ${openCount} 项未处理 · 现在生成也可以，未处理的不写入修订稿`}
+            </div>
           )}
         </div>
       </div>
@@ -201,7 +260,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
         <section className="wb-doc" aria-label="合同原文">
           {!documentVersionId && <p className="muted">这些意见没有关联到具体合同（例如条款来自任务说明或聊天内容）：可以逐张决定，不参与修订稿。</p>}
           {documentVersionId && !doc && <p className="muted">正在载入合同原文…</p>}
-          {doc?.paragraphs.map((p, i) => (p.trim() ? <p key={i}>{highlight(p, marks, active, focusCard)}</p> : <br key={i} />))}
+          {doc?.paragraphs.map((p, i) => (p.trim() ? <p key={i}>{highlight(p, marks, active, hover, focusCard, setHover)}</p> : <br key={i} />))}
         </section>
         <section className="wb-cards" aria-label="风险卡">
           <div className="wb-filters" role="tablist">
@@ -218,6 +277,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
               </button>
             ))}
           </div>
+          {!readOnly && cards.length > 0 && <div className="wb-keys muted">快捷键：J / K 切换 · A 接受 · E 修改 · N 不采纳</div>}
           {visible.length === 0 && <p className="muted">没有符合条件的风险项。</p>}
           {visible.map((c) => {
             const sev = SEVERITY[c.severity];
@@ -228,7 +288,9 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                 ref={(el) => {
                   if (el) cardRefs.current.set(c.card_id, el);
                 }}
-                className={`rc ${sev.cls}${open ? " open" : ""} rc-${c.status}`}
+                className={`rc ${sev.cls}${open ? " open" : ""}${hover === c.card_id ? " rc-hover" : ""} rc-${c.status}`}
+                onMouseEnter={() => hoverCard(c.card_id)}
+                onMouseLeave={() => setHover(null)}
               >
                 <button className="rc-head" aria-expanded={open} onClick={() => setActive(open ? null : c.card_id)}>
                   <span className={`rc-sev ${sev.cls}`}>{sev.label}</span>
@@ -321,7 +383,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
 }
 
 /** 在段落中标出风险卡引用的原文（不改变文字，只包一层可点击的标记）。 */
-function highlight(text: string, marks: { id: string; text: string; sev: string; status: string }[], active: string | null, onPick: (id: string) => void) {
+function highlight(text: string, marks: { id: string; text: string; sev: string; status: string }[], active: string | null, hover: string | null, onPick: (id: string) => void, onHover: (id: string | null) => void) {
   const hits: { start: number; end: number; m: (typeof marks)[number] }[] = [];
   for (const m of marks) {
     const at = text.indexOf(m.text);
@@ -334,7 +396,17 @@ function highlight(text: string, marks: { id: string; text: string; sev: string;
   for (const h of hits) {
     if (h.start > last) out.push(text.slice(last, h.start));
     out.push(
-      <mark key={h.m.id} className={`wb-mark mark-${h.m.sev}${h.m.status === "rejected" ? " mark-rejected" : ""}${active === h.m.id ? " mark-active" : ""}`} onClick={() => onPick(h.m.id)} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && onPick(h.m.id)}>
+      <mark
+        key={h.m.id}
+        data-mark={h.m.id}
+        className={`wb-mark mark-${h.m.sev}${h.m.status === "rejected" ? " mark-rejected" : ""}${active === h.m.id ? " mark-active" : ""}${hover === h.m.id ? " mark-hover" : ""}`}
+        onClick={() => onPick(h.m.id)}
+        onMouseEnter={() => onHover(h.m.id)}
+        onMouseLeave={() => onHover(null)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === "Enter" && onPick(h.m.id)}
+      >
         {text.slice(h.start, h.end)}
       </mark>,
     );

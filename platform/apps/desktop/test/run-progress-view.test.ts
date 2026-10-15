@@ -66,3 +66,36 @@ test("复核 B4-B20 静默看门狗的活动键按内容：每秒轮询反序列
   assert.equal(progressActivityKey(null), "");
   assert.equal(progressActivityKey(undefined), "");
 });
+
+test("阶段行（P0-D）：同一阶段 30 秒内只说在做什么，超过 30 秒带已用时间；重试与旧内核返回 null；心跳不算“新进展”", async () => {
+  const { phaseLine, engineHeartbeatMs, progressActivityKey } = await import("../src/lib/progress.ts");
+  const base = { todo: [], subagents: [], tasks: [], notes: [], compaction: { count: 0, running: false, blocked: false, last_at: null, tokens_before: null, tokens_after: null }, skills: [], retry: null };
+  const since = "2026-10-15T08:00:00.000Z";
+  const t0 = Date.parse(since);
+  const p = (phase: any, tool: string | null = null, hb = since) => ({ ...base, activity: { phase, since, tool, heartbeat_at: hb } });
+  const label = (x: string) => (x === "ReadFile" ? "读取材料" : x);
+  assert.equal(phaseLine(p("thinking"), t0 + 5_000, label), "正在思考下一步…");
+  assert.equal(phaseLine(p("tool", "ReadFile"), t0 + 65_000, label), "正在执行：读取材料（已 1 分 05 秒）");
+  assert.equal(phaseLine(p("writing"), t0 + 31_000, label), "正在写（已 31 秒）");
+  assert.equal(phaseLine(p("retrying"), t0, label), null);
+  assert.equal(phaseLine(base as any, t0, label), null);
+  assert.equal(engineHeartbeatMs(p("thinking", null, "2026-10-15T08:01:00.000Z")), t0 + 60_000);
+  assert.equal(progressActivityKey(p("thinking", null, "2026-10-15T08:00:01.000Z")), progressActivityKey(p("thinking", null, "2026-10-15T08:09:00.000Z")), "只有心跳不同：活动键相同");
+});
+
+test("心跳与看门狗的组合（复核 S6B-01/S6B-03）：内容不变时保留旧快照但心跳取新的；只有心跳更新也让静默归零；执行工具时放宽到 10 分钟", async () => {
+  const { mergeProgress, silenceMs, stallThresholdMs } = await import("../src/lib/progress.ts");
+  const base = { todo: [], subagents: [], tasks: [], notes: [], compaction: { count: 0, running: false, blocked: false, last_at: null, tokens_before: null, tokens_after: null }, skills: [], retry: null };
+  const mk = (hb: string, phase: any = "thinking") => ({ ...base, activity: { phase, since: "2026-10-15T08:00:00.000Z", tool: null, heartbeat_at: hb } });
+  const prev = mk("2026-10-15T08:00:00.000Z");
+  const next = mk("2026-10-15T08:02:00.000Z");
+  const m = mergeProgress(prev as any, next as any);
+  assert.equal(m.progress, prev, "内容相同：保留旧对象");
+  assert.equal(m.heartbeatMs, Date.parse("2026-10-15T08:02:00.000Z"), "心跳取新快照");
+  const lastActivity = Date.parse("2026-10-15T08:00:00.000Z");
+  const now = Date.parse("2026-10-15T08:02:05.000Z");
+  assert.equal(silenceMs(now, lastActivity, m.heartbeatMs), 5_000, "只有心跳更新：静默按心跳算");
+  assert.ok(silenceMs(now, lastActivity, 0) > 90_000, "没有心跳时仍按界面进展算（引擎真的卡住会提示）");
+  assert.equal(stallThresholdMs(mk("x", "tool") as any), 600_000);
+  assert.equal(stallThresholdMs(mk("x") as any), 90_000);
+});

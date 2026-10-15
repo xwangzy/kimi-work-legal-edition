@@ -76,6 +76,14 @@ export async function pickMaterials(fallback: HTMLInputElement | null, onPicked:
 }
 
 /** web 开发形态的浏览器下载（桌面客户端不走这里）。 */
+/** 文本转 base64（分块，避免大文本展开参数超出调用栈）。 */
+function textToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
 function browserDownload(dataBase64: string, filename: string, type: string): void {
   const bin = Uint8Array.from(atob(dataBase64), (c) => c.charCodeAt(0));
   const url = URL.createObjectURL(new Blob([bin], { type }));
@@ -141,6 +149,8 @@ export interface RunProgress {
   compaction: { count: number; running: boolean; blocked: boolean; last_at: string | null; tokens_before: number | null; tokens_after: number | null };
   skills: string[];
   retry: { attempt: number; max: number; status_code: number | null; at: string } | null;
+  /** 主 Agent 当前阶段与引擎心跳（旧内核没有此项）。 */
+  activity?: { phase: "thinking" | "writing" | "tool" | "retrying" | null; since: string | null; tool: string | null; heartbeat_at: string | null };
 }
 
 /** 自动更新状态（主进程 updater.cjs；只在安装包形态启用）。 */
@@ -327,6 +337,46 @@ export interface SendPreview {
   suspects: { start: number; end: number; confidence: string }[];
   orgs_kept: boolean;
 }
+/** 召回评测（S8 进所评测）：金标准文书（与 packages/tokenizer/eval 同一格式）。 */
+export type EvalCategory = "person" | "org" | "id_number" | "phone" | "account" | "uscc" | "address" | "plate" | "email" | "case_no" | "birth_date" | "person_partial" | "negative";
+export interface EvalSpan {
+  start: number;
+  end: number;
+  category: EvalCategory;
+  person_id?: string;
+}
+export interface EvalDoc {
+  doc_id: string;
+  source: string;
+  text: string;
+  known_parties: { name: string; kind: "person" | "org" }[];
+  spans: EvalSpan[];
+}
+export interface EvalMetric {
+  value: number | null;
+  ci95: [number, number] | null;
+  method: string | null;
+  numerator: number;
+  denominator: number;
+  docsWithData: number;
+}
+export interface EvalAgreement {
+  report: {
+    paired: number;
+    missing_in_a: number;
+    missing_in_b: number;
+    pooled_kappa: number | null;
+    pooled_f1: number | null;
+    kappa_min: number | null;
+    docs_passing: number;
+    docs_failing: number;
+    per_doc: { doc_id: string; kappa: number; f1: number | null; agreed: number; only_a: number; only_b: number; text_mismatch: boolean; passes: boolean }[];
+    thresholds: { kappa: number; f1: number };
+  };
+  groups: { doc_id: string; group: number; start: number; end: number; a: EvalSpan[]; b: EvalSpan[] }[];
+}
+export type EvalDecision = "a" | "b" | "none";
+
 export interface SuspectView {
   value: string;
   confidence: "high" | "medium";
@@ -530,6 +580,39 @@ export const api = {
     if (!target && r.data_base64) browserDownload(r.data_base64, r.filename, "application/json");
     return { filename: r.filename, bytes: r.summary.bytes };
   },
+  // 召回评测（S8 进所评测；标注规范 v1 §8）：文书与标注只在本机；导出报告由内核重新计算、只含计数
+  /** 选择文书或标注文件并读入（桌面客户端经主进程对话框；返回 null = 不是桌面客户端，调用方改用文件输入框）。 */
+  evalPick: async (): Promise<{ kind: "annotations" | "text"; docs: EvalDoc[] }[] | null> => {
+    if (!window.zrKernel?.pickFiles) return null;
+    const picked = (await window.zrKernel.pickFiles({ extensions: ["jsonl", "txt", "md", "docx", "pdf"], multiple: true })) ?? [];
+    const out: { kind: "annotations" | "text"; docs: EvalDoc[] }[] = [];
+    for (const f of picked) out.push(await invoke("eval.open", { file_handle: f.handle, filename: f.name }));
+    return out;
+  },
+  evalOpenFile: async (file: File) => invoke<{ kind: "annotations" | "text"; docs: EvalDoc[] }>("eval.open", { data_base64: await fileToBase64(file), filename: file.name }),
+  evalAgreement: (a: EvalDoc[], b: EvalDoc[]) => invoke<EvalAgreement>("eval.agreement", { a, b }),
+  evalAdjudicate: (a: EvalDoc, b: EvalDoc, decisions: { group: number; decision: EvalDecision }[]) =>
+    invoke<{ doc: EvalDoc; problems: string[]; undecided: number[]; person_id_conflicts: string[] }>("eval.adjudicate", { a, b, decisions }),
+  evalRecall: (docs: EvalDoc[], o: { full_pseudonym?: boolean; case_numbers?: boolean } = {}) =>
+    invoke<{ report: { docs: number; with_dictionary: Record<string, any>; rules_only: Record<string, any> }; markdown: string }>("eval.recall", { docs, ...o }),
+  /** 保存标注（含原文：提醒律师保存在律所内）。返回 null = 取消。 */
+  evalSaveWork: async (docs: EvalDoc[], suggestedName: string): Promise<{ filename: string } | null> => {
+    const target = await chooseSaveTarget(suggestedName, "case");
+    if (target === null) return null;
+    const r = await invoke<{ saved?: boolean; filename?: string; text?: string }>("eval.save_work", { docs, ...(target ? { save_handle: target.handle } : {}) });
+    if (!target && r.text) browserDownload(textToBase64(r.text), suggestedName, "application/jsonl");
+    return { filename: r.filename ?? suggestedName };
+  },
+  /** 导出报告（只含计数、比例与区间；内核按文书重新计算生成，界面不提供任何文字）。返回 null = 取消。 */
+  evalSaveReport: async (docs: EvalDoc[], o: { full_pseudonym?: boolean; case_numbers?: boolean }, suggestedName: string): Promise<{ filename: string } | null> => {
+    const target = await chooseSaveTarget(suggestedName, "none");
+    if (target === null) return null;
+    const r = await invoke<{ saved?: boolean; filename?: string; text?: string }>("eval.save_report", { docs, ...o, ...(target ? { save_handle: target.handle } : {}) });
+    if (!target && r.text) browserDownload(textToBase64(r.text), suggestedName, "text/markdown");
+    return { filename: r.filename ?? suggestedName };
+  },
+  /** “数据去向说明”的示例请求：随包令牌化器现场替换一段虚构句子。 */
+  exampleRequest: () => invoke<{ original: string; sent: string; replaced: number; fictional: boolean }>("privacy.example_request", {}),
   /** 预览用：取令牌形态的原文（界面按事项令牌表还原显示；不是导出，不记导出审计）。 */
   artifactText: (artifactVersionId: string) => invoke<{ filename: string; sha256: string; data_base64: string }>("artifacts.download", { artifact_version_id: artifactVersionId, restore: false }),
   /** Office 成果的应用内预览（内核渲染为白名单 HTML，界面在隔离框架中显示）。 */

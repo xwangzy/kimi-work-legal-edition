@@ -6,6 +6,7 @@
  * 事项密钥分发/恢复托管分持）+ 法律工具（内核内模块）+ 本机模型代理 + 出站闸门 +
  * 内核 API（§15.2）+ 本机端点（MCP / OpenAI 兼容，供 Agent 宿主）。
  */
+import { excludeFromContentIndex } from "./services/not-indexed.ts";
 import { purgeWsKeys } from "./ws-keys.ts";
 import { zoneKeysFor } from "./ws-keys.ts";
 import type { Server } from "node:http";
@@ -306,6 +307,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   }
   // 审计 S3 第 2 步（设计 2-9）：v5 SDK 宿主把材料快照以明文写进每任务目录——落盘加密为必需（安装包形态）时不得选用，一律 kap-host
   const useSdkEngine = env.ZR_AGENT_ENGINE === "sdk" && env.ZR_AT_REST !== "required";
+  // 数据根不进 Windows 搜索的内容索引（Y5 P1-7）：后台进行，不阻塞启动
+  void excludeFromContentIndex(config.workspaceDir).then((outcome) => slog.event("KERNEL_INDEX_EXCLUDE", { outcome }));
   slog.event("KERNEL_STARTED", {
     engine: useSdkEngine ? "sdk" : "kap",
     at_rest: env.ZR_AT_REST === "required" ? "required" : env.ZR_AT_REST === "off" ? "off" : "on",

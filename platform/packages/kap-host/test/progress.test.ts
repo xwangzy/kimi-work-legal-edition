@@ -101,3 +101,26 @@ test("压缩验收取证（2026-10-14）：事件顺序 started → blocked → 
   assert.equal(t.snapshot().compaction.blocked, false);
 });
 
+
+test("阶段与心跳（P0-D）：主 Agent 思考/写/执行工具/重试切换即推送；只有心跳时按 15 秒节流；子 Agent 只更新心跳、不改主阶段", async () => {
+  const { ProgressTracker, HEARTBEAT_PUSH_MS } = await import("../src/progress.ts");
+  const t = new ProgressTracker();
+  const t0 = new Date("2026-10-15T08:00:00.000Z");
+  const at = (ms: number) => new Date(t0.getTime() + ms);
+  assert.equal(t.apply("turn.started", { agentId: "main" }, at(0)).beat, true);
+  assert.equal(t.snapshot().activity.phase, "thinking");
+  assert.equal(t.apply("thinking.delta", { agentId: "main" }, at(1_000)).beat, false, "同一阶段、未到心跳间隔：不推");
+  assert.equal(t.snapshot().activity.heartbeat_at, at(1_000).toISOString(), "快照里的心跳照样更新");
+  assert.equal(t.apply("thinking.delta", { agentId: "main" }, at(HEARTBEAT_PUSH_MS + 1)).beat, true, "到了心跳间隔：推一次");
+  const r = t.apply("tool.call.started", { agentId: "main", name: "ReadFile", toolCallId: "c1", args: {} }, at(20_000));
+  assert.equal(r.beat, true);
+  assert.equal(r.changed, false, "过程内容没有变化");
+  assert.deepEqual({ phase: t.snapshot().activity.phase, tool: t.snapshot().activity.tool, since: t.snapshot().activity.since }, { phase: "tool", tool: "ReadFile", since: at(20_000).toISOString() });
+  t.apply("assistant.delta", { agentId: "sub_1", delta: "x" }, at(21_000));
+  assert.equal(t.snapshot().activity.phase, "tool", "子 Agent 不改主阶段");
+  assert.equal(t.snapshot().activity.heartbeat_at, at(21_000).toISOString(), "子 Agent 的事件也算心跳");
+  t.apply("assistant.delta", { agentId: "main", delta: "好" }, at(22_000));
+  assert.equal(t.snapshot().activity.phase, "writing");
+  t.apply("turn.ended", { agentId: "main" }, at(23_000));
+  assert.deepEqual({ phase: t.snapshot().activity.phase, since: t.snapshot().activity.since }, { phase: null, since: null });
+});

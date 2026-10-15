@@ -81,8 +81,17 @@ export const SCENARIO_LABELS: Record<string, string> = {
 };
 
 /** 成果在列表里的名称：Agent 产出的文件用文件名（同一任务可能有多份），其余用类别名。 */
-export function artifactName(a: { kind: string; filename: string }): string {
-  return ["a1_workspace_file", "agent_table", "agent_report"].includes(a.kind) ? a.filename : (ARTIFACT_LABELS[a.kind] ?? a.filename);
+/**
+ * 交付件名称（UIUX 增量评审 D-2）：Agent 成果有内容标题（内核取第一行）时用标题，否则用文件名；工作流成果用固定名称。
+ * 标题是令牌形态，传入 restore 才还原代号（下拉框里不能渲染胶囊）。
+ */
+export function artifactName(a: { kind: string; filename: string; title?: string | null }, restore?: (t: string) => string): string {
+  const agentKind = ["a1_workspace_file", "agent_table", "agent_report", "a1_agent_draft", "a1_agent_draft_partial"].includes(a.kind);
+  if (!agentKind) return ARTIFACT_LABELS[a.kind] ?? a.filename;
+  const t = a.title ? (restore ? restore(a.title) : a.title) : null;
+  // 助手草稿有标题时写“标题（草稿）”，没有标题时沿用固定名称
+  if (a.kind === "a1_agent_draft" || a.kind === "a1_agent_draft_partial") return t ? `${t}（${a.kind === "a1_agent_draft" ? "草稿" : "部分完成"}）` : ARTIFACT_LABELS[a.kind]!;
+  return t ?? a.filename;
 }
 
 export const ARTIFACT_LABELS: Record<string, string> = {

@@ -2,6 +2,7 @@
  * 安装包内置上游（审计 S5）：release.json 只接受 https + 至少两把钉住值；安装包形态剔除环境变量里的上游配置、强制严格传输与真实上游。
  */
 import { test } from "node:test";
+import { generateKeyPairSync } from "node:crypto";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -31,13 +32,31 @@ const write = (name: string, v: unknown) => {
   return f;
 };
 
-test("合法配置：地址与钉住集进入内核环境", () => {
-  const r = loadReleaseConfig(write("ok.json", { gateway_base: "https://gw.example.cn/v1/", gateway_pins: [P1, P2], control_plane_base: "https://cp.example.cn", control_plane_pins: [P2, P1] }));
+const edPem = () => generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString();
+const CP_KEYS = { "cp-1": edPem(), "cp-2": edPem() };
+const SEAT_KEYS = { "seat-1": edPem() };
+
+test("合法配置：地址与钉住集进入内核环境；控制面签名公钥表与席位公钥表随控制面一同进入", () => {
+  const r = loadReleaseConfig(write("ok.json", { gateway_base: "https://gw.example.cn/v1/", gateway_pins: [P1, P2], control_plane_base: "https://cp.example.cn", control_plane_pins: [P2, P1], control_plane_keys: CP_KEYS, seat_keys: SEAT_KEYS }));
   assert.deepEqual(r.problems, []);
+  assert.deepEqual(JSON.parse(r.env.ZR_CONTROL_PLANE_KEYS!), CP_KEYS);
+  assert.deepEqual(JSON.parse(r.env.ZR_SEAT_KEYS!), SEAT_KEYS);
   assert.equal(r.env.ZR_GATEWAY_BASE, "https://gw.example.cn/v1");
   assert.equal(r.env.ZR_GATEWAY_PINS, `${P1},${P2}`);
   assert.equal(r.env.ZR_CONTROL_PLANE_BASE, "https://cp.example.cn");
   assert.equal(r.env.ZR_SEARCH_BASE, undefined);
+});
+
+test("控制面缺公钥表、公钥不是 Ed25519 或 kid 不合法：整组控制面配置不生效并报告（云端持久化与 KMS 设计 v1：安装包曾因公钥表为空而拒收一切控制面文档）", () => {
+  const base = { control_plane_base: "https://cp.example.cn", control_plane_pins: [P1, P2] };
+  const rsa = generateKeyPairSync("rsa", { modulusLength: 1024 }).publicKey.export({ type: "spki", format: "pem" }).toString();
+  const edPriv = generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  for (const extra of [{}, { control_plane_keys: CP_KEYS }, { control_plane_keys: { "cp-1": edPriv, "cp-2": edPem() }, seat_keys: SEAT_KEYS }, { control_plane_keys: { "cp-1": rsa, "cp-2": edPem() }, seat_keys: SEAT_KEYS }, { control_plane_keys: { "bad kid": edPem(), "cp-2": edPem() }, seat_keys: SEAT_KEYS }, { control_plane_keys: { "cp-1": edPem() }, seat_keys: SEAT_KEYS }, { control_plane_keys: {}, seat_keys: SEAT_KEYS }]) {
+    const r = loadReleaseConfig(write("cpk.json", { ...base, ...extra }));
+    assert.equal(r.problems.length, 1, JSON.stringify(Object.keys(extra)));
+    assert.equal(r.env.ZR_CONTROL_PLANE_BASE, undefined);
+    assert.equal(r.env.ZR_CONTROL_PLANE_KEYS, undefined);
+  }
 });
 
 test("不合法：http 地址、只有一把钉住、钉住形态错误都不进入环境", () => {

@@ -251,7 +251,7 @@ test("对外口径与行为一致（第 06 篇 T20；复核 S5-A01/A14）：“�
   const { inv } = tk;
   const CORE = "逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）";
   const conn = readFileSync(fileURLToPath(new URL("../../../apps/desktop/src/pages/Connections.tsx", import.meta.url)), "utf8");
-  assert.equal(conn.split(CORE).length - 1, 3, "“连接与数据”的数据源说明、“中软看得到什么”表格与页首说明三处");
+  assert.equal(conn.split(CORE).length - 1, 3, "设置的“资料来源”、律师版“数据去向说明”与“管理 → 诊断”的技术版去向表三处");
   const { matter } = await inv("matters.create", { title: "口径", stance: "原告", client_name: "己公司", basis: FULL });
   const notice = await inv("matters.consent_notice", { matter_id: matter.matter_id });
   const dl = await inv("artifacts.download", { artifact_version_id: notice.artifact_version_id });

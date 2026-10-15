@@ -510,7 +510,7 @@ export class KapRuntime {
     // 过程快照（K7-P）：工作清单、子任务、后台任务、上下文整理、方法模板、模型重试；里程碑进时间线
     const progressed = run.progress.apply(e.type, p);
     if (progressed.milestone) this.push(run, progressed.milestone.type, progressed.milestone.payload);
-    if (progressed.changed && this.deps.onRunProgress && !run.progressTimer) {
+    if ((progressed.changed || progressed.beat) && this.deps.onRunProgress && !run.progressTimer) {
       run.progressTimer = setTimeout(() => {
         run.progressTimer = null;
         if (TERMINAL.has(run.status)) return;

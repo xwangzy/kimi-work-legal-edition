@@ -12,6 +12,8 @@ export interface RunProgressView {
   compaction: { count: number; running: boolean; blocked: boolean; last_at: string | null; tokens_before: number | null; tokens_after: number | null };
   skills: string[];
   retry: { attempt: number; max: number; status_code: number | null; at: string } | null;
+  /** 主 Agent 当前阶段与引擎心跳（P0-D）：界面区分“在忙但没有可显示的东西”与“真的没动静”。 */
+  activity: { phase: "thinking" | "writing" | "tool" | "retrying" | null; since: string | null; tool: string | null; heartbeat_at: string | null };
 }
 
 const arr = (v: unknown, max: number): unknown[] => (Array.isArray(v) ? v.slice(0, max) : []);
@@ -25,6 +27,8 @@ export function sanitizeProgress(raw: unknown): RunProgressView | null {
   const p = raw as Record<string, unknown>;
   const c = (p.compaction ?? {}) as Record<string, unknown>;
   const r = p.retry as Record<string, unknown> | null | undefined;
+  const a = (p.activity ?? {}) as Record<string, unknown>;
+  const phase = (["thinking", "writing", "tool", "retrying"] as const).find((x) => x === a.phase) ?? null;
   return {
     todo: arr(p.todo, 30).flatMap((t) => {
       const o = t as Record<string, unknown>;
@@ -69,6 +73,13 @@ export function sanitizeProgress(raw: unknown): RunProgressView | null {
     },
     skills: arr(p.skills, 8).flatMap((x) => (typeof x === "string" && /^[\p{L}\p{N}_.-]{1,80}$/u.test(x) ? [x] : [])),
     retry: r && typeof r === "object" && iso(r.at) ? { attempt: n(r.attempt) ?? 0, max: n(r.max) ?? 0, status_code: n(r.status_code), at: iso(r.at)! } : null,
+    activity: {
+      phase,
+      since: phase ? iso(a.since) : null,
+      // 工具名只认标识符形态（界面按登记表转成律师用语）
+      tool: phase === "tool" && typeof a.tool === "string" && /^[A-Za-z0-9_.:-]{1,40}$/.test(a.tool) ? a.tool : null,
+      heartbeat_at: iso(a.heartbeat_at),
+    },
   };
 }
 

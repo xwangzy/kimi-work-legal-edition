@@ -589,8 +589,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
-      const token = issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid: seat.sid, dev: dev.cert.deviceId, kid: o.keys.seat.kid }, o.keys.seat.privateKey, seatTtl, now());
-      return send(res, 200, { token, expires_at: iso(now() + seatTtl * 1000) });
+      // 签发时刻与回复里的到期时刻由同一时刻推出（云端持久化与 KMS 设计 v1 F-3）
+      const at = now();
+      const token = issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid: seat.sid, dev: dev.cert.deviceId, kid: o.keys.seat.kid }, o.keys.seat.privateKey, seatTtl, at);
+      return send(res, 200, { token, expires_at: iso(at + seatTtl * 1000) });
     }
     if (method === "GET" && p === "/v1/policy") return send(res, 200, seal("kwl-firm-policy-current", t.policy));
     if (method === "GET" && p === "/v1/connectors") {

@@ -53,6 +53,7 @@ test("A1 经 kap-host 完成开放任务：模型请求经出站闸门与网关�
   assert.equal(outcome.payload.status, "succeeded");
   const draft = artifacts.find((x: any) => x.kind === "a1_agent_draft");
   assert.ok(draft, "应有 a1_agent_draft 成果（来自宿主上报的最终回答）");
+  assert.ok(typeof draft.title === "string" && draft.title.length > 0, "助手草稿按内容命名（UIUX 增量评审 D-2：runs.get 带第一行标题）");
   // 模型调用经出站闸门到达法律模型网关（去向记录归属本任务，目的地类别 legal_gateway）
   const eg = tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM egress_records WHERE run_id = ? AND destination_kind = 'legal_gateway' AND outcome = 'sent'`, [run.run_id])!;
   assert.ok(eg.n >= 1, "模型请求经宿主出口与出站闸门到达网关并归属本任务");

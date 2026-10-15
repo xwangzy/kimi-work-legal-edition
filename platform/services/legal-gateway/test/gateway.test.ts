@@ -173,3 +173,42 @@ describe("法律模型网关 v0", () => {
     assert.ok(recs.some((x) => x.kind === "settle" && x.reason === "upstream_error_released"));
   });
 });
+
+test("预写计量失败（第 6 批联调发现）：退还预占、释放并发槽、503 失败关闭且不到达上游；之后的请求不因槽位泄漏而排队超时", async () => {
+  const { privateKey, publicKey } = devSeatKeyPair();
+  const keys = new Map([["k1", publicKey]]);
+  const token = issueSeatToken({ tid: "tm", uid: "u1", sid: "s-tm", dev: "d1", kid: "k1" }, privateKey);
+  const provider = new MockProvider();
+  const budgets = new Map([["tm", 1_000_000]]);
+  let failReserve = 3;
+  const meter = {
+    append: (r: { kind: string }) => {
+      if (r.kind === "reserve" && failReserve > 0) {
+        failReserve -= 1;
+        throw new Error("ENOSPC");
+      }
+    },
+  };
+  const server = createLegalGateway({ keys, revokedDevices: new Set(), provider, routes: DEFAULT_ROUTES, meter: meter as never, budgets, tenantConcurrency: 1, queueTimeoutMs: 400 });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const chat = () =>
+    fetch(`${base}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}`, "x-kwl-anon-matter": "anon-1", "x-kwl-data-level": "L2" },
+      body: JSON.stringify({ model: "legal/k3", messages: [{ role: "user", content: "你好" }] }),
+    });
+  try {
+    for (let i = 0; i < 3; i++) {
+      const r = await chat();
+      assert.equal(r.status, 503);
+      assert.equal(((await r.json()) as { error: { code: string } }).error.code, "meter_unavailable");
+    }
+    assert.equal(provider.seen.length, 0, "计量写不进去就不发往上游");
+    assert.equal(budgets.get("tm"), 1_000_000, "预占全部退还");
+    const ok = await chat();
+    assert.equal(ok.status, 200, "并发上限 1：前三次失败没有占住槽位");
+  } finally {
+    server.close();
+  }
+});

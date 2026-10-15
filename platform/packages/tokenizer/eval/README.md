@@ -12,11 +12,14 @@
 ```
 
 - `start`/`end`：按 JavaScript 字符串下标（UTF-16 码元）的左闭右开区间；`text.slice(start,end)` 即标注的原文写法。
-- `category` 取 `person / org / id_number / phone / account / uscc / address / plate / email / case_no / birth_date`（与 `src/index.ts` 的 `TokenCategory` 一致）。
+- `category` 取 `person / org / id_number / phone / account / uscc / address / plate / email / case_no / birth_date`（与 `src/index.ts` 的 `TokenCategory` 一致），
+  另加只用于评测的 `person_partial`（“张某”类隐名写法，单独报告召回、不计入人级泄露）与 `negative`（困难负例：替换了即计“负例误替换”）。区间不得重叠。
 - `person_id`：同一自然人的全部提及共用一个编号（计算“人级泄露率”）。
 - `known_parties`：律师在事项头填写的当事人（模拟“有词典”的情形，通常取文书首部列明的当事人）；评测同时报告“只靠规则”的结果。
 
-## 标注规范要点
+## 标注规范
+
+完整规范见 [标注规范-v1.md](标注规范-v1.md)（类别与边界、自然人编号、双人标注与裁决、开发集/锁定集、四个来源、进所评测流程、门禁阈值）。要点：
 
 - 两名标注员独立标注、一名执业律师裁决分歧；按文档计算 Cohen κ，**κ ≥ 0.85** 才进入评测集。
 - 标注全部自然人提及（含简称、“张某”类称谓不标、昵称与职务称呼标）、机构名称、证件号、电话、账号、统一社会信用代码、住址（到门牌或村组）、车牌、邮箱、案号、出生日期。
@@ -31,10 +34,15 @@
 | 部分替换 / 过度替换 / 误替换 | 按区间判定（不按写法计数）：替换只覆盖了提及的一部分记部分替换（不算已替换、计入泄露）；覆盖了提及但吞掉标注之外的字记过度替换；与任何标注都不相交记误替换（按类别） |
 | 95% 区间 | 按文档整份重抽样（簇自助法，1,000 次，固定种子）得到的百分位区间；比例为 0 或 1、自助区间零宽或有该类提及的文书不足 30 份时改报 Clopper–Pearson 精确区间（报告注“精确”）。报告按来源分节，不合并成一个数 |
 
-## 运行
+## 工具链
 
-```bash
-node packages/tokenizer/eval/run-eval.mjs <gold.jsonl> [--out report] [--full-pseudonym] [--case-numbers]
-```
+| 步骤 | 命令 | 输出 |
+|---|---|---|
+| 抽样（来源 A） | `node packages/tokenizer/eval/sample.mjs <目录> --per-stratum 200 [--locked-ratio 0.6]` | `s8-a-dev.jsonl` / `s8-a-locked.jsonl`（spans 为空，不做预标注） |
+| 标注 | 桌面端“设置 → 召回评测（律所内）”（本机标注，打开/保存经系统对话框） | 每名标注员一份 JSONL |
+| 一致性 | `node packages/tokenizer/eval/agreement.mjs 甲.jsonl 乙.jsonl [--out agreement]` 或桌面端“一致性” | κ、F1、达标份数；分歧组（只含位置） |
+| 裁决 | 桌面端“裁决”（逐组采用甲/乙/手工） | 金标准 JSONL |
+| 锁定 | `node packages/tokenizer/eval/lock-set.mjs locked.jsonl --version 2026Q4-v1` | `locked-manifest.json`（入库） |
+| 评测 | `node packages/tokenizer/eval/run-eval.mjs <gold.jsonl> [--locked m.json] [--gate thresholds.json] [--out report]` | `report.json` / `report.md`（只含计数与比例） |
 
-输出 `report.json` 与 `report.md`（只含计数与比例，不含原文）。
+门禁：阈值文件 `status: "approved"` 时未通过即退出 1；`draft`（产品与法务拍板前）只在报告里给结论。代码：`evaluate.ts`（指标）、`agreement.ts`（一致性与裁决）、`gate.ts`（锁定清单与门禁）。

@@ -13,10 +13,11 @@ import { Markdown, tokens as renderTokens } from "../components/Markdown.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
 import { artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, TERMINAL_STATUSES } from "../lib/labels.ts";
-import { forgetRestored, restoreTokens } from "../lib/tokens.ts";
+import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "../lib/tokens.ts";
+import { nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
 import { currentBadges } from "../lib/badges.ts";
-import { hasProgress, progressActivityKey, progressTexts, progressView, type ProgressViewModel } from "../lib/progress.ts";
-import { buildSteps, sentByToolCall, type SentInfo } from "../lib/timeline.ts";
+import { engineHeartbeatMs, hasProgress, mergeProgress, phaseLine, progressActivityKey, progressTexts, silenceMs, stallThresholdMs, progressView, type ProgressViewModel } from "../lib/progress.ts";
+import { buildSteps, sentByToolCall, toolLabel, type SentInfo } from "../lib/timeline.ts";
 import { busyRunOfError } from "../lib/start-block.ts";
 
 /** 页面标题：任务目标前 24 字（律师能区分多个任务）；没有目标时用场景名。 */
@@ -39,7 +40,32 @@ function openToolsOf(events: RunEvent[]): { openTools: string[]; execOpen: boole
   return { openTools: [...open.values()], execOpen };
 }
 
-type RightTab = "artifact" | "history" | "egress" | "citations" | "record";
+type RightTab = "review" | "artifact" | "history" | "egress" | "citations" | "record";
+
+/** 正文前三行（去掉 Markdown 标题符号），用于中栏摘要（UIUX 增量评审 D-1）。 */
+function summaryLines(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^#+\s*|^[-*]\s+/, "").trim())
+    .filter((l) => l.length > 0)
+    .slice(0, 3)
+    .map((l) => cutKeepingTokens(l, 80));
+}
+
+/** 律师在首页选的业务线（只读本机偏好；读不到返回 null）。 */
+function homeLine(): BusinessLine | null {
+  try {
+    const v = window.localStorage.getItem("kwl.home.line");
+    return v === "litigation" || v === "transactional" || v === "inhouse" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 下载按钮按文件类型说清下载的是什么（D-2）。 */
+function downloadLabel(filename: string): string {
+  return /\.docx$/i.test(filename) ? "下载 Word" : /\.xlsx$/i.test(filename) ? "下载 Excel" : /\.pdf$/i.test(filename) ? "下载 PDF" : "下载";
+}
 
 export function RunView({ runId, matterId }: { runId: string; matterId: string }) {
   const [events, setEvents] = useState<RunEvent[]>([]);
@@ -57,13 +83,21 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ filename: string; text: string; office?: boolean } | null>(null);
   // 本任务提交的风险卡（按合同分组）；打开审查工作台时整页切换
-  const [risk, setRisk] = useState<{ total: number; highOpen: number; decided: number; docs: string[]; unlinked: number } | null>(null);
+  const [risk, setRisk] = useState<{ total: number; highOpen: number; decided: number; docs: string[]; unlinked: number; bySeverity: { high: number; mid: number; low: number }; top: { severity: string; issue: string }[] } | null>(null);
+  // 成果是否已取过一次（D-5：区分“加载中”与“确实没有”）
+  const [artifactsLoaded, setArtifactsLoaded] = useState(false);
+  // 律师是否自己点过右栏标签（有风险卡时缺省显示审查摘要，D-3；点过之后不再自动切换）
+  const tabTouched = useRef(false);
+  // 窄屏材料弹出层（N-1）
+  const [matsOpen, setMatsOpen] = useState(false);
   /** 打开的审查工作台：doc 为 null 表示“未关联合同的意见”。 */
   const [workbench, setWorkbench] = useState<{ doc: string | null } | null>(null);
   // 正在生成的回复（流式；运行中每秒随待决卡片一起取）
   const [liveText, setLiveText] = useState<string>("");
   // 过程快照（K7-P：工作清单、子任务、后台任务、上下文整理、模型重试）
   const [progress, setProgress] = useState<RunProgress | null>(null);
+  // 引擎心跳单独保存（复核 S6B-01：过程快照内容不变时保留旧对象，心跳不能跟着被丢掉）
+  const [heartbeat, setHeartbeat] = useState(0);
   // 方法模板名 → 中文名（时间线“已按方法模板《…》执行”）
   const [skillTitles, setSkillTitles] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -101,12 +135,17 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
       const g = await api.getRun(runId);
       setRun(g.run);
       setArtifacts(g.artifacts);
+      setArtifactsLoaded(true);
       setEgressInflight(g.inflight ?? null);
       setUnresolved(g.unresolved_operations ?? []);
       const rc = await api.riskCards(matterId, { run_id: runId }).catch(() => null);
       if (rc && rc.cards.length > 0) {
         const docsOf = [...new Set(rc.cards.map((c) => c.document_version_id).filter((x): x is string => !!x))];
-        setRisk({ total: rc.progress.total, highOpen: rc.progress.high_open, decided: rc.progress.decided, docs: docsOf, unlinked: rc.cards.filter((c) => !c.document_version_id).length });
+        const rank: Record<string, number> = { high: 0, mid: 1, low: 2 };
+        const top = [...rc.cards].sort((a, b) => (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3) || a.seq - b.seq).slice(0, 3).map((c) => ({ severity: c.severity, issue: c.issue }));
+        const count = (sev: string) => rc.cards.filter((c) => c.severity === sev).length;
+        setRisk({ total: rc.progress.total, highOpen: rc.progress.high_open, decided: rc.progress.decided, docs: docsOf, unlinked: rc.cards.filter((c) => !c.document_version_id).length, bySeverity: { high: count("high"), mid: count("mid"), low: count("low") }, top });
+        if (!tabTouched.current) setTab("review");
       } else setRisk(null);
       if (!TERMINAL_STATUSES.includes(r.run_status)) {
         const i = await api.interactions(runId).catch(() => ({ approvals: [], questions: [], state_version: null, live_text: null, progress: null }));
@@ -116,12 +155,14 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
         setLiveText(i.live_text ?? "");
         // 内容不变时保留原对象（复核 B4-B20：每秒轮询都会反序列化出新对象，引用变化让静默看门狗永远被重置）
         const next = i.progress ?? null;
-        setProgress((prev) => (progressActivityKey(prev) === progressActivityKey(next) ? prev : next));
+        setProgress((prev) => mergeProgress(prev, next).progress);
+        setHeartbeat(engineHeartbeatMs(next));
       } else {
         setApprovals([]);
         setQuestions([]);
         setLiveText("");
         setProgress(null);
+        setHeartbeat(0);
       }
     } catch (e) {
       setErr((e as Error).message);
@@ -154,8 +195,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
 
   // 代号只在界面还原（标题、计划、提问、预览）
   const texts = useMemo(
-    () => [preview?.text ?? "", liveText, ...progressTexts(progress), ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? ""))].join("\n"),
-    [preview, liveText, progress, approvals, questions, events],
+    () => [preview?.text ?? "", liveText, ...progressTexts(progress), ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? "")), ...artifacts.map((a) => String(a.title ?? "")), ...(risk?.top.map((t) => t.issue) ?? [])].join("\n"),
+    [preview, liveText, progress, approvals, questions, events, artifacts, risk],
   );
   useEffect(() => {
     if (!texts.includes("〔")) return;
@@ -228,7 +269,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     const t = setInterval(() => setNow(Date.now()), 5000);
     return () => clearInterval(t);
   }, [terminal]);
-  const silentFor = !terminal && approvals.length === 0 && questions.length === 0 ? now - lastActivity : 0;
+  // 引擎心跳（宿主转来）也算“还活着”：长时间思考或执行工具时不误报“没有新进展”
+  const silentFor = !terminal && approvals.length === 0 && questions.length === 0 ? silenceMs(now, lastActivity, heartbeat) : 0;
   const pendingCards = useMemo(
     () => [...approvals.map((card) => ({ kind: "approval" as const, card })), ...questions.map((card) => ({ kind: "question" as const, card }))],
     [approvals, questions],
@@ -411,6 +453,25 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             <div className="exec-sub">
               <span className={`pill ${terminal ? (status === "succeeded" ? "pill-green" : "pill-gray") : status.startsWith("waiting") ? "pill-orange" : "pill-blue"}`}>{RUN_STATUS_LABELS[status] ?? status}</span>
               {!status.startsWith("waiting") && badges.map((b) => <span key={b.label} className={`pill pill-${b.tone}`}>{b.label}</span>)}
+              {/* 窄屏（≤1280px）左栏收起时的材料入口（UIUX 增量评审 N-1） */}
+              <span className="narrow-only mats-chip-wrap">
+                <button className="pill pill-gray" aria-expanded={matsOpen} onClick={() => setMatsOpen((v) => !v)}>
+                  材料 {inputDocs.length} 份 ▾
+                </button>
+                {matsOpen && (
+                  <div className="mats-pop" role="dialog" aria-label="本次用到的材料">
+                    {inputDocs.length === 0 && <div className="muted">没有指定材料：会按需读取本事项的材料。</div>}
+                    {inputDocs.map((d) => (
+                      <div key={d.document_version_id} className="mat-row">
+                        <Icon.file />
+                        <span className="mat-name" title={d.filename}>{d.filename}</span>
+                      </div>
+                    ))}
+                    {loaded && <div className="muted">已读 {loaded.loaded}/{loaded.requested} 份{loaded.failed ? `，${loaded.failed} 份无法解析（未静默跳过）` : ""}。</div>}
+                    <div className="muted">在这台电脑上处理 · 原件不会被修改 · 结果都是草稿</div>
+                  </div>
+                )}
+              </span>
             </div>
           </div>
           {!terminal && run && (
@@ -456,7 +517,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             <div className={`step step-wait${pv.retry ? " step-retry" : ""}`}>
               <span className="step-dot" />
               <div className="step-body muted">
-                {pv.retry ?? (silentFor > 90_000 ? "已经有一阵子没有新进展了。任务仍在运行；如果长时间没有变化，可以取消后重新运行。" : "正在处理…")}
+                {pv.retry ?? (silentFor > stallThresholdMs(progress) ? "已经有一阵子没有新进展了。任务仍在运行；如果长时间没有变化，可以取消后重新运行。" : phaseLine(progress, now, toolLabel) ?? "正在处理…")}
               </div>
             </div>
           )}
@@ -556,10 +617,33 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             </button>
           )}
         </div>
-        {terminal && preview && preview.text && !preview.office && (
-          <div className="answer">
-            <div className="pane-title">回复（草稿）</div>
-            <Markdown text={preview.text} tokenMap={tokenMap} />
+        {/* 有交付件时中栏只放摘要，全文在右栏（UIUX 增量评审 D-1：同一份内容不读两遍） */}
+        {terminal && preview && preview.text && !preview.office && String(artifacts.find((a) => a.artifact_version_id === selected)?.kind ?? "").startsWith("a1_agent_draft") && (
+          <div className="answer answer-summary">
+            <div className="pane-title">回复（草稿）· 摘要</div>
+            {summaryLines(preview.text).map((l, i) => (
+              <p key={i}>{renderTokens(l, tokenMap)}</p>
+            ))}
+            <button
+              className="btn-link"
+              onClick={() => {
+                tabTouched.current = true;
+                setTab("artifact");
+              }}
+            >
+              在右侧查看全文 →
+            </button>
+          </div>
+        )}
+        {/* 接着做（D-4）：同一事项下打开下一场景的开始面板 */}
+        {(status === "succeeded" || status === "partial") && (matter?.lifecycle ?? "active") === "active" && nextScenarios(scenarioOfRun(run, homeLine())).length > 0 && (
+          <div className="next-steps">
+            <span className="muted">接着做：</span>
+            {nextScenarios(scenarioOfRun(run, homeLine())).map((c) => (
+              <button key={c.id} className="pill pill-link" onClick={() => nav(`/start/${c.id}/${matterId}`)}>
+                {c.title} →
+              </button>
+            ))}
           </div>
         )}
         {run?.scenario === "a1.agent_task" && run?.is_mine && (matter?.lifecycle ?? "active") === "active" && (status === "succeeded" || status === "partial") && (
@@ -625,6 +709,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
         <div className="tabs">
           {(
             [
+              ...(risk ? ([["review", "审查摘要"]] as [RightTab, string][]) : []),
               ["artifact", "成果"],
               ["history", "文件历史"],
               ["egress", "数据去向"],
@@ -632,16 +717,55 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               ["record", "记录"],
             ] as [RightTab, string][]
           ).map(([k, l]) => (
-            <button key={k} className={`tab${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{l}</button>
+            <button
+              key={k}
+              className={`tab${tab === k ? " active" : ""}`}
+              onClick={() => {
+                tabTouched.current = true;
+                setTab(k);
+              }}
+            >
+              {l}
+            </button>
           ))}
         </div>
         <div className="tab-body">
+          {tab === "review" && risk && (
+            <div className="review-summary">
+              <div className="sev-row">
+                <span className="pill pill-red">重大 {risk.bySeverity.high}</span>
+                <span className="pill pill-orange">一般 {risk.bySeverity.mid}</span>
+                <span className="pill pill-gray">提示 {risk.bySeverity.low}</span>
+                <span className="muted">已处理 {risk.decided}/{risk.total}</span>
+              </div>
+              <ol className="review-top">
+                {risk.top.map((t, i) => (
+                  <li key={i}>{renderTokens(cutKeepingTokens(t.issue, 60), tokenMap)}</li>
+                ))}
+              </ol>
+              {risk.docs.length > 0 && (
+                <button className="btn-primary" onClick={() => setWorkbench({ doc: risk.docs[0]! })}>
+                  打开审查工作台
+                </button>
+              )}
+            </div>
+          )}
           {tab === "artifact" && (
             <>
-              {artifacts.length === 0 && <p className="muted">尚无成果。</p>}
+              {!artifactsLoaded && (
+                <div className="skeleton" aria-busy="true" aria-label="正在载入成果">
+                  <div className="skeleton-line" />
+                  <div className="skeleton-line short" />
+                </div>
+              )}
+              {artifactsLoaded && artifacts.length === 0 && <p className="muted">{terminal ? "本任务没有生成文件；结论见左侧回复。" : "任务完成后，生成的文件会出现在这里。"}</p>}
               {artifacts.length > 0 && (
-                <select className="artifact-select" value={selected ?? ""} onChange={(e) => setSelected(e.target.value)}>
-                  {artifacts.map((a) => <option key={a.artifact_version_id} value={a.artifact_version_id}>{artifactName(a)} · v{a.version}</option>)}
+                <select className="artifact-select" value={selected ?? ""} onChange={(e) => setSelected(e.target.value)} aria-label="选择交付件">
+                  {artifacts.map((a) => (
+                    <option key={a.artifact_version_id} value={a.artifact_version_id}>
+                      {artifactName(a, (t) => restoredPlain(t, tokenMap))} · v{a.version}
+                    </option>
+                  ))}
                 </select>
               )}
               {selected && preview && <SafePreview filename={preview.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} />}
@@ -684,6 +808,7 @@ function ArtifactActions({ artifact, onError }: { artifact: any; onError: (m: st
     <div className="artifact-actions">
       <button
         className="btn-ghost"
+        title="下载会记录在事项日志里"
         onClick={() =>
           void api
             .downloadArtifact(artifact.artifact_version_id, artifact.filename)
@@ -691,7 +816,7 @@ function ArtifactActions({ artifact, onError }: { artifact: any; onError: (m: st
             .catch((e) => onError(e.message))
         }
       >
-        下载（留痕）
+        {downloadLabel(String(artifact.filename ?? ""))}
       </button>
       {artifact.status === "draft" && (
         <button

@@ -599,3 +599,88 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 
 /* 设备页环境自检（Y5 P1-6） */
 .env-warn { color: #93370d; }
+
+/* 召回评测（律所内）：标注 · 一致性与裁决 · 评测（S8；标注规范 v1） */
+.ev-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
+.ev-spacer { flex: 1; }
+.ev-empty { color: var(--text-secondary); }
+.ev-grid { display: grid; grid-template-columns: 180px minmax(0, 1fr) 260px; gap: 14px; align-items: start; }
+.ev-docs { display: flex; flex-direction: column; gap: 2px; max-height: 70vh; overflow: auto; }
+.ev-doc { display: flex; justify-content: space-between; gap: 6px; border: 0; background: transparent; text-align: left; padding: 6px 8px; border-radius: 8px; font-size: 13px; }
+.ev-doc.on { background: var(--blue-bg); }
+.ev-doc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-main { min-width: 0; }
+.ev-catbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 34px; font-size: 13px; position: sticky; top: 0; background: var(--bg, #fff); padding: 4px 0; z-index: 1; }
+.ev-cat { border: 1px solid var(--line); border-radius: 8px; padding: 2px 8px; font-size: 12.5px; background: #fff; display: inline-flex; gap: 5px; align-items: center; }
+.ev-cat kbd { font-size: 11px; color: var(--text-secondary); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; background: #f9fafb; }
+.ev-text { white-space: pre-wrap; font-family: var(--font-doc, serif); font-size: var(--doc-size, 16px); line-height: var(--doc-leading, 1.9); background: var(--bg-paper, #fff); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 18px 22px; max-height: 70vh; overflow: auto; }
+.ev-mark { border-radius: 3px; padding: 0 1px; cursor: pointer; }
+.ev-mark::after { content: attr(data-label); font-family: var(--font-sans, sans-serif); font-size: 10.5px; line-height: 1; margin-left: 2px; padding: 1px 3px; border-radius: 3px; vertical-align: 2px; user-select: none; }
+.ev-mark.on { outline: 2px solid var(--accent); }
+.ev-tone-person { background: #fdeaea; } .ev-mark.ev-tone-person::after { background: #b42318; color: #fff; }
+.ev-tone-partial { background: #fff1e6; } .ev-mark.ev-tone-partial::after { background: #b54708; color: #fff; }
+.ev-tone-org { background: #eaf2ff; } .ev-mark.ev-tone-org::after { background: #175cd3; color: #fff; }
+.ev-tone-id { background: #f0ebff; } .ev-mark.ev-tone-id::after { background: #5925dc; color: #fff; }
+.ev-tone-place { background: #e9f7ef; } .ev-mark.ev-tone-place::after { background: #067647; color: #fff; }
+.ev-tone-negative { background: #f2f4f7; text-decoration: line-through dotted; } .ev-mark.ev-tone-negative::after { background: #475467; color: #fff; }
+.ev-side .panel { display: flex; flex-direction: column; gap: 8px; }
+.ev-st { margin: 0; }
+.ev-quote { font-family: var(--font-doc, serif); background: var(--bg-paper, #fff); border-left: 3px solid var(--line); padding: 4px 8px; }
+.ev-field { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--text-secondary); }
+.ev-row { display: flex; gap: 6px; }
+.ev-row input { flex: 1; min-width: 0; }
+.ev-small { font-size: 12px; }
+.ev-stats { display: flex; gap: 22px; margin: 8px 0 12px; }
+.ev-stats > div { display: flex; flex-direction: column; }
+.ev-stats b { font-size: 20px; }
+tr.row-on td { background: var(--blue-bg); }
+.ev-groups { display: flex; flex-direction: column; gap: 8px; }
+.ev-ctx { font-family: var(--font-doc, serif); margin-bottom: 6px; }
+.ev-ctx b { background: #fff1e6; }
+.ev-choice { display: flex; flex-wrap: wrap; gap: 6px; }
+.ev-report { margin-top: 10px; }
+@media (max-width: 1280px) { .ev-grid { grid-template-columns: 150px minmax(0, 1fr); } .ev-side { grid-column: 1 / -1; } }
+
+/* 设置 · 数据去向说明（UIUX 增量评审 §3.5）：三栏，一眼回答“东西在哪”；可打印成 PDF 给客户 */
+.settings-choice { display: flex; gap: 6px; flex-wrap: wrap; }
+.vis-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+.vis-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.vis-col { border: 1px solid var(--line); border-radius: var(--radius-card); padding: 12px 14px; background: #fff; }
+.vis-col h3 { font-size: 14px; margin: 0 0 8px; }
+.vis-col ul { margin: 0; padding-left: 18px; line-height: 1.8; }
+.vis-local { border-top: 3px solid #067647; }
+.vis-transit { border-top: 3px solid #175cd3; }
+.vis-stored { border-top: 3px solid #b54708; }
+.vis-example { margin: 12px 0; }
+.vis-sent { font-family: var(--font-doc, serif); background: var(--bg-paper, #fff); border-left: 3px solid var(--line); padding: 6px 10px; margin: 6px 0; }
+.vis-more { margin-top: 8px; }
+@media (max-width: 1100px) { .vis-cols { grid-template-columns: minmax(0, 1fr); } }
+@media print {
+  .sidebar, .tabs, .page-title, .no-print, .update-banner { display: none !important; }
+  .main, .main-wide { padding: 0 !important; margin: 0 !important; max-width: none !important; }
+  .vis-cols { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  details.vis-more { display: none; }
+}
+
+/* 执行态完成态（UIUX 增量评审 D-1～D-5、N-1） */
+.narrow-only { display: none; }
+@media (max-width: 1280px) { .narrow-only { display: inline-flex; } }
+.mats-chip-wrap { position: relative; }
+.mats-pop { position: absolute; top: 28px; left: 0; z-index: 20; min-width: 260px; max-width: 360px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12); display: flex; flex-direction: column; gap: 6px; }
+.answer-summary p { margin: 4px 0; }
+.next-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0; }
+.review-summary { display: flex; flex-direction: column; gap: 10px; }
+.review-summary .sev-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.review-top { margin: 0; padding-left: 20px; line-height: 1.7; }
+.skeleton { display: flex; flex-direction: column; gap: 8px; padding: 6px 0; }
+.skeleton-line { height: 12px; border-radius: 6px; background: linear-gradient(90deg, #f2f4f7, #e4e7ec, #f2f4f7); background-size: 200% 100%; animation: kwl-skel 1.2s infinite; }
+.skeleton-line.short { width: 60%; }
+@keyframes kwl-skel { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton-line { animation: none; } }
+
+/* 审查工作台联动（UIUX 增量评审 W-1～W-3） */
+.wb-why { font-size: 12px; margin-top: 4px; max-width: 320px; }
+.wb-keys { font-size: 12px; margin: 4px 0 8px; }
+.rc.rc-hover { outline: 2px solid var(--accent); outline-offset: -1px; }
+.wb-mark.mark-hover { filter: saturate(1.6) brightness(0.92); outline: 1px solid currentColor; }
+.vis-direct { margin-top: 12px; border-top: 3px solid #5925dc; }

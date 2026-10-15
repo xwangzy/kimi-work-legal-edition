@@ -4,7 +4,7 @@
  * 所内节点都走这同一份方法表。签发已接入设备签名（§6.3）；审计事件入签名 hash 链（§6.4）；
  * 策略事件的签发人角色签名在同步阶段接入（当前经审计事件上链留痕）。
  */
-import { createPrivateKey, createPublicKey } from "node:crypto";
+import { createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
 import { errFields, slog } from "@zr-legal/safe-log";
 import { readFileSync, lstatSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -25,7 +25,7 @@ import {
   validation,
 } from "@zr-legal/domain";
 import { pendingBasisLabels, type EgressGate } from "@zr-legal/egress";
-import { countTokens } from "@zr-legal/tokenizer";
+import { countTokens, MatterTokenizer } from "@zr-legal/tokenizer";
 import { skillQualityChecklist, type SkillsBundleStatus } from "../skills-bundle.ts";
 import type { ModelBroker } from "@zr-legal/model-broker";
 import type { Lawdb } from "@zr-legal/lawdb";
@@ -74,6 +74,8 @@ import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter,
 import { buildRedlineFromCards, decideFact, decideRiskCard, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
 import { SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, sampleContract } from "../services/sample-matter.ts";
 import { probeEnvironment, type EnvProbeResult } from "../services/env-probe.ts";
+import { firstLineTitle, isTitledFilename } from "../services/artifact-title.ts";
+import { adjudicate, compareAnnotations, normalizeDocs, openEvalBytes, openEvalFile, parseDecisions, reportFileText, runRecallEval, workFileText } from "../services/recall-eval.ts";
 import { isImage, isPdf, ocrReady, parseWithPipeline } from "../services/parse-pipeline.ts";
 import { estimatePoints, scenarioCap } from "../services/estimate.ts";
 import { docxRenderReport } from "../tools/tools/docx.ts";
@@ -293,6 +295,22 @@ function liveAgentRunOf(db: KernelDb, matterId: string): { run_id: string; goal:
 export function createApi(deps: ApiDeps): Record<string, Handler> {
   const { db, blobs, broker, egress, queue, config, lawdb, keyctx, ioMutex, ocrModelPaths, parseMock, parseWorker, localStats, revokeRun, tokens, gate } = deps;
   const MODE_RANK: Record<string, number> = { chat: 0, manual: 1, default: 2, auto: 3 };
+  const titleCache = new Map<string, string | null>();
+  /** Markdown/文本成果的第一行标题（去掉 # 与强调符号，至多 40 字）；读不到或不是文本返回 null。 */
+  const artifactTitle = (id: string, filename: string, uri: string): string | null => {
+    if (titleCache.has(id)) return titleCache.get(id)!;
+    let title: string | null = null;
+    if (isTitledFilename(filename)) {
+      try {
+        title = firstLineTitle(blobs.read(uri));
+      } catch {
+        title = null;
+      }
+    }
+    if (titleCache.size > 2000) titleCache.clear();
+    titleCache.set(id, title);
+    return title;
+  };
   /** 界面用的运行策略视图（模式选择器只显示允许的档位；第 03 篇 §8.1）。 */
   const runPolicyView = (matterId: string) => {
     if (!deps.matterPolicy) return null;
@@ -1125,7 +1143,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           ? "上游为律所私有模型，留存由律所决定"
           : matter.model_endpoint === "byok"
             ? "上游是否留存以律所与模型厂商的协议为准"
-            : "上游是否留存以模型服务企业协议为准（协议状态见“中软看得到什么”）";
+            : "上游是否留存以模型服务企业协议为准（协议状态见“设置 → 数据去向说明”）";
       const pseudonymScope =
         level === "L3a" || matter.full_pseudonym === 1
           ? "证件、账户、联系方式、自然人姓名与机构名称在发送前全部替换为代号（全部化名）"
@@ -1307,11 +1325,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
 
     "runs.get": (p, id) => {
       const run = requireRunAccess(db, String(p?.run_id ?? ""), id);
-      const artifacts = db.all(
-        `SELECT artifact_version_id, kind, version, audience, status, filename, sha256, created_at
-           FROM artifact_versions WHERE run_id = ? ORDER BY created_at`,
-        [run.run_id],
-      );
+      const artifacts = db
+        .all<Record<string, unknown>>(
+          `SELECT artifact_version_id, kind, version, audience, status, filename, sha256, created_at, storage_uri
+             FROM artifact_versions WHERE run_id = ? ORDER BY created_at`,
+          [run.run_id],
+        )
+        .map(({ storage_uri, ...r }) => ({ ...r, title: artifactTitle(String(r.artifact_version_id), String(r.filename), String(storage_uri)) }));
       // 在途出站（闸门已预写、尚未补全的去向记录）：执行位置徽标据此显示“模型推理中/联网检索中”，不靠推断（复核 S5-A04）
       const open = db.all<{ destination_kind: string; n: number }>(
         `SELECT destination_kind, COUNT(*) AS n FROM egress_records WHERE run_id = ? AND completed = 0 AND outcome = 'sent' GROUP BY destination_kind`,
@@ -1562,12 +1582,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "artifacts.list": (p, id) => {
       const matterId = String(p?.matter_id ?? "");
       requireMatterAccess(db, matterId, id);
-      const rows = db.all(
-        `SELECT artifact_version_id, run_id, kind, version, audience, status, filename, sha256, created_at
+      const rows = db.all<Record<string, unknown>>(
+        `SELECT artifact_version_id, run_id, kind, version, audience, status, filename, sha256, created_at, storage_uri
            FROM artifact_versions WHERE matter_id = ? ORDER BY kind, version DESC`,
         [matterId],
       );
-      return { artifacts: rows };
+      // 交付件按内容命名（UIUX 增量评审 D-2）：Markdown/文本成果取第一行标题（令牌形态，界面还原代号）；成果不可变，按版本缓存
+      return {
+        artifacts: rows.map(({ storage_uri, ...r }) => ({ ...r, title: artifactTitle(String(r.artifact_version_id), String(r.filename), String(storage_uri)) })),
+      };
     },
 
     /**
@@ -2078,6 +2101,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         user: config.userSlug,
         tenant_id: id.tenantId,
         user_id: id.userId,
+        // 本机成员角色（设置页据此显示“管理”；内核仍按角色逐个方法核验，界面显示与否不是授权依据）
+        // 共享文件夹同步是否配置（“数据去向说明”如实列出团队共享；复核 S6A-02）
+        sync_configured: !!config.syncShareDir,
+        member_role: db.get<{ role: string }>(`SELECT role FROM memberships WHERE tenant_id = ? AND user_id = ?`, [id.tenantId, id.userId])?.role ?? null,
         model_routes: broker.routeAliases(),
         model_provider: config.env.ZR_MODEL_PROVIDER ?? "mock",
         endpoints_configured: endpoints,
@@ -3047,6 +3074,58 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         return { filename: saved.name, saved: true, content_sha256: r.content_sha256, summary: r.summary };
       }
       return r;
+    },
+    // “数据去向说明”页的示例请求（UIUX 增量评审 §3.5）：用随包令牌化器对一段虚构的示例句子现场替换（随机密钥、不写令牌表），
+    // 让律师看到发给 AI 的内容真实长什么样；示例句子与人物均为虚构（证件号地区码 99 不存在、手机号为示例号段；复核 S6A-13）
+    "privacy.example_request": () => {
+      const key = randomBytes(32);
+      const original = "承租方：周晓梅，身份证号 990105198806152349，手机 13800000000；出租方：北京某某置业有限公司。请指出租赁合同中违约责任条款的风险。";
+      const tz = new MatterTokenizer({ matterKey: key, parties: [{ name: "周晓梅", kind: "person" }, { name: "北京某某置业有限公司", kind: "org" }] });
+      const r = tz.tokenize(original);
+      key.fill(0);
+      return { original, sent: r.text, replaced: r.replaced, fictional: true };
+    },
+    // 进所评测（S8 来源 B；services/recall-eval.ts）：打开、一致性、裁决、评测、保存都在本机；导出报告由内核重新计算、只含计数
+    "eval.open": async (p, id) => {
+      requireFirmAdmin(id);
+      const deps = { parse: (b: Buffer, f: string, m: string) => parseAny(b, f, m) };
+      // 桌面客户端经主进程句柄给路径；web 开发形态由界面传字节
+      const r = p?.path ? await openEvalFile(String(p.path), deps) : p?.data_base64 ? await openEvalBytes(Buffer.from(String(p.data_base64), "base64"), String(p?.filename ?? ""), deps) : await openEvalFile("", deps);
+      audit(db, id, "eval.open", "device", keyctx.device.deviceId, undefined, keyctx);
+      return r;
+    },
+    // 召回评测只对律所管理员与合伙人开放（复核 S6A-09：与设置页“管理”一致，授权以内核为准）
+    "eval.agreement": (p, id) => {
+      requireFirmAdmin(id);
+      return compareAnnotations(normalizeDocs(p?.a, "甲的标注"), normalizeDocs(p?.b, "乙的标注"));
+    },
+    "eval.adjudicate": (p, id) => {
+      requireFirmAdmin(id);
+      const [a] = normalizeDocs([p?.a], "甲的标注");
+      const [b] = normalizeDocs([p?.b], "乙的标注");
+      return adjudicate(a!, b!, parseDecisions(p?.decisions));
+    },
+    "eval.recall": (p, id) => {
+      requireFirmAdmin(id);
+      const r = runRecallEval(normalizeDocs(p?.docs), { fullPseudonym: p?.full_pseudonym === true, caseNumbers: p?.case_numbers === true });
+      audit(db, id, "eval.recall", "device", keyctx.device.deviceId, undefined, keyctx);
+      return r;
+    },
+    "eval.save_work": (p, id) => {
+      requireFirmAdmin(id);
+      const text = workFileText(normalizeDocs(p?.docs, "标注"));
+      audit(db, id, "eval.save_work", "device", keyctx.device.deviceId, undefined, keyctx);
+      if (!p?.save_path) return { text };
+      const saved = writeExportFile(String(p.save_path), Buffer.from(text, "utf8"), config.workspaceDir);
+      return { saved: true, filename: saved.name };
+    },
+    "eval.save_report": (p, id) => {
+      requireFirmAdmin(id);
+      const text = reportFileText(runRecallEval(normalizeDocs(p?.docs), { fullPseudonym: p?.full_pseudonym === true, caseNumbers: p?.case_numbers === true }));
+      audit(db, id, "eval.save_report", "device", keyctx.device.deviceId, undefined, keyctx);
+      if (!p?.save_path) return { text };
+      const saved = writeExportFile(String(p.save_path), Buffer.from(text, "utf8"), config.workspaceDir);
+      return { saved: true, filename: saved.name };
     },
     // Windows 环境自检（v9.2 §3.7；Y5 P1-6）：只读、结果缓存 1 小时（刷新时重新检查）；只含枚举与杀软产品名
     "device.env_probe": async (p) => {

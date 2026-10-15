@@ -19,6 +19,9 @@ import { ChatPage } from "./pages/Chat.tsx";
 import { NotOpenPage } from "./pages/NotOpen.tsx";
 import { updateBannerView } from "./lib/update-banner.ts";
 
+/** 设置页的标签（UIUX 增量评审 ST-5）：律师版四页 + 管理员“管理”。 */
+export type SettingsTab = "general" | "visibility" | "sources" | "device" | "admin";
+
 export type Route =
   | { page: "home"; matterId?: string; startScenario?: string }
   | { page: "matters" }
@@ -30,7 +33,7 @@ export type Route =
   | { page: "boards" }
   | { page: "reminders" }
   | { page: "inbox" }
-  | { page: "connections"; tab: "data" | "device" | "visibility" | "policy" }
+  | { page: "connections"; tab: SettingsTab }
   | { page: "chat"; conversationId?: string };
 
 export function parseHash(hash: string): Route {
@@ -41,7 +44,8 @@ export function parseHash(hash: string): Route {
       return a ? { page: "home", matterId: a } : { page: "home" };
     // 方法与模板页“开始 →”：回到首页并打开该业务场景的开始面板（与首页场景卡同一入口）
     case "start":
-      return a ? { page: "home", startScenario: a } : { page: "home" };
+      // “接着做”（UIUX 增量评审 D-4）：#/start/<场景>/<事项> 在该事项下直接打开下一场景的开始面板
+      return a ? (b ? { page: "home", startScenario: a, matterId: b } : { page: "home", startScenario: a }) : { page: "home" };
     case "matters":
       return { page: "matters" };
     case "matter":
@@ -61,7 +65,8 @@ export function parseHash(hash: string): Route {
     case "inbox":
       return { page: "inbox" };
     case "connections":
-      return { page: "connections", tab: a === "device" || a === "visibility" || a === "policy" ? a : "data" };
+      // 旧链接兼容：data → 资料来源，policy → 管理
+      return { page: "connections", tab: a === "device" || a === "visibility" || a === "sources" || a === "admin" ? a : a === "data" ? "sources" : a === "policy" ? "admin" : "general" };
     case "chat":
       return a ? { page: "chat", conversationId: a } : { page: "chat" };
     default:

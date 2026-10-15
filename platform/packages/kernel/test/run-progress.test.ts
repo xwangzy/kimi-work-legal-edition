@@ -16,7 +16,7 @@ test("K7-P 内核过程快照白名单：未知字段丢弃、非法枚举改缺
     retry: { attempt: 2, max: 5, status_code: 503, at: "2026-10-14T01:02:03.000Z" },
     injected: { html: "<script>" },
   })!;
-  assert.deepEqual(Object.keys(p).sort(), ["compaction", "notes", "retry", "skills", "subagents", "tasks", "todo"]);
+  assert.deepEqual(Object.keys(p).sort(), ["activity", "compaction", "notes", "retry", "skills", "subagents", "tasks", "todo"]);
   assert.deepEqual(p.todo[0], { title: "读合同", status: "done" });
   assert.equal(p.todo[1]!.title.length, 120);
   assert.equal(p.todo[1]!.status, "pending");
@@ -57,4 +57,14 @@ test("WR-1 Windows 命名管道名：按“Windows 用户名 + 数据目录”�
   assert.notEqual(a, b);
   assert.equal(a, pipeSuffix("c:\\users\\zhang\\appdata\\roaming\\kimiworklegal\\demo-firm", "zhang"), "路径大小写不敏感（Windows）");
   assert.notEqual(a, pipeSuffix("C:\\Users\\zhang\\AppData\\Roaming\\KimiWorkLegal\\demo-firm", "li"));
+});
+
+test("过程快照的阶段与心跳（P0-D）：枚举外的阶段丢弃；工具名只认标识符形态；时间只认 ISO", () => {
+  const ok = sanitizeProgress({ activity: { phase: "tool", since: "2026-10-15T08:00:00.000Z", tool: "ReadFile", heartbeat_at: "2026-10-15T08:00:05.000Z" } })!;
+  assert.deepEqual(ok.activity, { phase: "tool", since: "2026-10-15T08:00:00.000Z", tool: "ReadFile", heartbeat_at: "2026-10-15T08:00:05.000Z" });
+  const bad = sanitizeProgress({ activity: { phase: "hacking", since: "昨天", tool: "读取<script>", heartbeat_at: 5 } })!;
+  assert.deepEqual(bad.activity, { phase: null, since: null, tool: null, heartbeat_at: null });
+  const noTool = sanitizeProgress({ activity: { phase: "thinking", since: "2026-10-15T08:00:00.000Z", tool: "ReadFile" } })!;
+  assert.equal(noTool.activity.tool, null, "不在执行工具时不带工具名");
+  assert.deepEqual(sanitizeProgress({})!.activity, { phase: null, since: null, tool: null, heartbeat_at: null });
 });

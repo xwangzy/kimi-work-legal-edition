@@ -12,10 +12,29 @@ export function DataFlowCard({ runId, tokenMap, refreshKey }: { runId: string; t
   const [records, setRecords] = useState<EgressRecord[] | null>(null);
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState("");
+  // 结果不明（待核对）的记录数（复核 S6B-02：对账要在任务的“数据去向”里就能做，不只在管理员的诊断页）
+  const [unknownCount, setUnknownCount] = useState(0);
+  const [tick, setTick] = useState(0);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     api.egressSummary(runId).then(setSum).catch((e) => setErr(e.message));
     if (open) api.egressRecords({ runId }).then((r) => setRecords(r.records)).catch(() => {});
-  }, [runId, open, refreshKey]);
+    api
+      .egressUnresolved()
+      .then((r) => setUnknownCount(r.records.filter((x: any) => x.run_id === runId && x.reconcile !== "done").length))
+      .catch(() => setUnknownCount(0));
+  }, [runId, open, refreshKey, tick]);
+  const reconcile = async (recordId: string, resolution: "confirmed_sent" | "not_sent" | "unknown") => {
+    setBusy(true);
+    try {
+      await api.egressReconcile(recordId, resolution);
+      setTick((n) => n + 1);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   if (err) return <p className="muted">{err}</p>;
   if (!sum) return <p className="muted">载入中…</p>;
   return (
@@ -32,6 +51,11 @@ export function DataFlowCard({ runId, tokenMap, refreshKey }: { runId: string; t
       {sum.blocked.length > 0 && (
         <div className="df-blocked">
           有 {sum.blocked.length} 次没有发出（软件在发出前拦下）：{[...new Set(sum.blocked.map((b) => reasonLabel(b.reason)))].join("、")}
+        </div>
+      )}
+      {unknownCount > 0 && (
+        <div className="df-blocked">
+          有 {unknownCount} 条记录不能确定是否已发出（发送途中软件中断）。请展开逐条记录，按你的判断逐条登记“已发出 / 没有发出 / 无法确定”（只登记结论，不会重发）。
         </div>
       )}
       <button className="btn-link" onClick={() => setOpen(!open)}>{open ? "收起逐条记录" : "展开逐条记录"}</button>
@@ -65,6 +89,19 @@ export function DataFlowCard({ runId, tokenMap, refreshKey }: { runId: string; t
                 {note.reason && r.outcome !== "sent" && <div className="df-line">原因：{reasonLabel(note.reason)}</div>}
                 {note.approval_id && <div className="df-line">依据：你的确认（{String(note.approval_id).slice(0, 12)}…）</div>}
                 {note.usage_note && <div className="df-line muted">{note.usage_note}</div>}
+                {r.outcome === "unknown" && note.reconcile === "done" && (
+                  <div className="df-line muted">已登记：{note.resolution === "confirmed_sent" ? "已发出" : note.resolution === "not_sent" ? "没有发出" : "无法确定"}</div>
+                )}
+                {r.outcome === "unknown" && note.reconcile !== "done" && (
+                  <div className="df-line">
+                    这条是否已发出：
+                    {(["confirmed_sent", "not_sent", "unknown"] as const).map((res) => (
+                      <button key={res} className="btn-link" disabled={busy} onClick={() => void reconcile(r.record_id, res)}>
+                        {res === "confirmed_sent" ? "已发出" : res === "not_sent" ? "没有发出" : "无法确定"}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="df-line mono muted">请求 {(r.request_id ?? "—").slice(0, 24)}</div>
               </div>
             );

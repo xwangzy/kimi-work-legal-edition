@@ -25,6 +25,22 @@ const STOP = new Set([
   ..."诉称于与和及等的在向将已系为是因对同把被所曾自从经由以之签共均都也又还就并即则但而或认主提要请不未没应可能会说表承确拒支付借欠归交收出购买卖租住现户身男女年月日族名某方人辩述作起上下中内外前后时处至到去来给让叫每各该此其他她它们这那有无非合字盖章代委托申执行判决裁调解协议书证据材料院庭审案件号元万亿省市区县镇乡村路街楼室栋公司厂店行",
 ]);
 
+/**
+ * STOP 中常作名字用字的字（“张明月”“王建中”“李方”“王羲之”）：只在姓名有明确的右边界时才允许出现在名字里——
+ * 角色词后的姓名紧跟标点、空白或文末，或称谓、言语动词、身份信息之前的姓名。否则按 STOP 截短会漏出名字的末字（S8 进所评测发现）。
+ * 不含助词与后缀（等、的、某、们、人……）：“张三等，”仍取“张三”。
+ */
+// 复核 S6A-04：去掉“均、至、日、方”——“施工方”“甲方”“于近日”“均”这类功能写法太常见，宁可让“张晓方”的“方”照旧截短
+const NAME_OK = new Set([..."月年中之承元万章栋镇路庭书申"]);
+/** 名字（1–2 字）：都是汉字；STOP 字只允许作两字名的末字且须在 NAME_OK 内（单字名“王月”与“官方”“许可”难以区分，宁可不认）。 */
+const GIVEN_NOT = new Set(["双方", "各方", "对方", "我方", "他方", "己方", "一方", "三方", "多方", "四方", "八方", "本月", "当月", "次月", "每月", "当日", "次日", "本年", "当年", "次年"]);
+const givenOk = (given: string, loose = true) => {
+  if (GIVEN_NOT.has(given)) return false;
+  const cs = [...given];
+  // loose = 右边界是标点、文末、称谓或身份信息；言语动词与出庭类动词作右边界时不放宽（“李四方辩称”不能读成“李四方”）
+  return cs.length >= 1 && cs.every((c, i) => CJK.test(c) && (!STOP.has(c) || (loose && i === 1 && cs.length === 2 && NAME_OK.has(c))));
+};
+
 /** 姓名之前若是这些字，优先取较短的候选（“和王明律师”取“王明”而不是“和王明”）。 */
 const FUNCTION_BEFORE = new Set([..."和与及同跟给向对由被把让请找叫是为因从在将等的了及或并而且就也都还又经据按向至到即"]);
 
@@ -295,11 +311,26 @@ export function findNicknames(
   return out;
 }
 
+/** 姓名的明确右边界（除标点、空白、文末外）：言语动词、称谓、出庭类动词。 */
+const RIGHT_ANCHORS = [...SPEECH_VERBS, ...HONORIFICS, "出庭", "到庭", "作证"].sort((a, b) => b.length - a.length);
+
 /** 从 j 起读一个姓名：姓氏 + 1–2 个名字；不是姓名返回 null。 */
 function readName(text: string, j: number): string | null {
   const s = surnameAt(text, j);
   if (s === 0) return null;
   if (COMMON_WORDS.has(text.slice(j, j + 2))) return null;
+  // 有明确右边界（标点、空白、文末）：名字可含常作名字用字的功能字（“原告：张明月，”）
+  for (const g of [2, 1]) {
+    const given = text.slice(j + s, j + s + g);
+    const at = j + s + g;
+    const after = text[at] ?? "";
+    const hard = after === "" || BOUNDARY.test(after) || HONORIFICS.some((w) => text.startsWith(w, at));
+    const anchored = hard || RIGHT_ANCHORS.some((w) => text.startsWith(w, at));
+    if (given.length !== g || !anchored || !givenOk(given, hard)) continue;
+    // “姓氏”其实是前一个词的功能字（“向双方，”）：不认
+    if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
+    return text.slice(j, j + s + g);
+  }
   const g1 = text[j + s];
   const g2 = text[j + s + 1];
   if (!g1 || !CJK.test(g1) || STOP.has(g1)) return null;
@@ -345,8 +376,9 @@ function headerNames(text: string, out: Set<string>): void {
       if (before !== "" && !BOUNDARY.test(before) && !FUNCTION_BEFORE.has(before)) continue;
       const s = surnameAt(text, j);
       if (s === 0 || len - s < 1 || len - s > 2) continue;
+      if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
       const given = text.slice(j + s, k);
-      if (![...given].every((c) => CJK.test(c) && !STOP.has(c))) continue;
+      if (!givenOk(given)) continue;
       if (COMMON_WORDS.has(text.slice(j, j + 2))) continue;
       out.add(text.slice(j, k));
       break;
@@ -382,7 +414,7 @@ export function recognizeNames(text: string): Set<string> {
       const s = surnameAt(text, j);
       if (s === 0 || len - s < 1 || len - s > 2) continue;
       const given = text.slice(j + s, k);
-      if (![...given].every((c) => CJK.test(c) && !STOP.has(c))) continue;
+      if (!givenOk(given)) continue;
       if (COMMON_WORDS.has(text.slice(j, j + 2)) || COMMON_WORDS.has(text.slice(j + 1, j + 3))) continue;
       // 较长候选的“姓氏”若其实是前一个词的功能字（“和王明律师”的“和”），放弃较长候选
       if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
@@ -402,7 +434,7 @@ export function recognizeNames(text: string): Set<string> {
       if (s === 0 || len - s < 1 || len - s > 2) continue;
       if (FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0 && s === 1) continue;
       const given = text.slice(j + s, k);
-      if (![...given].every((c) => CJK.test(c) && !STOP.has(c))) continue;
+      if (!givenOk(given, false)) continue;
       if (COMMON_WORDS.has(text.slice(j, j + 2))) continue;
       out.add(text.slice(j, k));
       break;

@@ -51,6 +51,16 @@ export function splitTokens(text: string, map: Map<string, string | null>): Toke
 }
 
 /** 纯文本还原（复制、导出到剪贴板时用）。 */
+/** 按字截断，但不把代号切成半截（复核 S6B-14）；截掉了就加省略号。 */
+export function cutKeepingTokens(s: string, n: number): string {
+  const cs = [...s];
+  if (cs.length <= n) return s;
+  let cut = cs.slice(0, n).join("");
+  const open = cut.lastIndexOf("〔");
+  if (open > cut.lastIndexOf("〕")) cut = cut.slice(0, open);
+  return `${cut}…`;
+}
+
 export function restoredPlain(text: string, map: Map<string, string | null>): string {
   return text.replace(TOKEN_RE, (t) => map.get(t) ?? t);
 }

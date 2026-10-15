@@ -54,10 +54,18 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
     if (fresh.length > 0) setDocIds((ids) => [...ids, ...fresh.filter((x) => !ids.includes(x))]);
   }, [documents]);
 
-  const goal = useMemo(() => (card.scenario === "a1.agent_task" ? buildGoal(card, values, extra) : extra.trim()), [card, values, extra]);
+  // 材料不齐也可先开始（UIUX 增量评审 S-4 / 历史 Demo D-5）：只限 Agent 场景；确定性流程（回稿比对、案卷整理、脱敏）仍须选够材料
+  const [partial, setPartial] = useState(false);
+  const goal = useMemo(() => {
+    if (card.scenario !== "a1.agent_task") return extra.trim();
+    const g = buildGoal(card, values, extra);
+    // 只在材料确实还不齐时追加（复核 S6B-04：补齐材料后不能再让模型按“不齐”处理）
+    return partial && card.minMaterials > docIds.length && g ? `${g}\n（材料还不齐：先按已有材料做，缺少的材料列为“待补充”，无法核实的内容标注“待补充”，不要推测。）` : g;
+  }, [card, values, extra, partial, docIds.length]);
   const missing = card.fields.filter((f) => f.required && !(Array.isArray(values[f.key]) ? (values[f.key] as string[]).length : String(values[f.key] ?? "").trim()));
   const needDocs = Math.max(0, card.minMaterials - docIds.length);
-  const ready = missing.length === 0 && needDocs === 0 && (card.scenario !== "a1.agent_task" || goal.length > 0);
+  const canPartial = card.scenario === "a1.agent_task" && needDocs > 0;
+  const ready = missing.length === 0 && (needDocs === 0 || (canPartial && partial)) && (card.scenario !== "a1.agent_task" || goal.length > 0);
   const value = useMemo(() => ({ goal, scenario: card.scenario, documentIds: docIds, choice: defaultChoice(policy) }), [goal, card.scenario, docIds, policy]);
   const opts = useMemo(() => ({ ...(card.skill ? { skill: card.skill } : {}), label: card.title }), [card]);
 
@@ -146,7 +154,24 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
                   e.target.value = "";
                 }}
               />
-              {needDocs > 0 && <div className="ss-need">{card.scenario === "s1b.draft_compare" ? "请依次勾选基线稿与对方回稿" : `还需要选择 ${needDocs} 份材料`}</div>}
+              {needDocs > 0 && !(canPartial && partial) && (
+                <div className="ss-need">
+                  {card.scenario === "s1b.draft_compare" ? "请依次勾选基线稿与对方回稿" : `还需要选择 ${needDocs} 份材料`}
+                  {canPartial && (
+                    <button className="btn-link" onClick={() => setPartial(true)}>
+                      先开始，缺的稍后补
+                    </button>
+                  )}
+                </div>
+              )}
+              {canPartial && partial && (
+                <div className="muted">
+                  材料还不齐：会先按已有材料做，缺的列为“待补充”，无法核实的内容不会推测。{" "}
+                  <button className="btn-link" onClick={() => setPartial(false)}>
+                    改回等材料齐了再开始
+                  </button>
+                </div>
+              )}
             </div>
           ) : null}
           {card.fields.map((f) => (

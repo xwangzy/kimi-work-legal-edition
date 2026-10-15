@@ -77,5 +77,54 @@ export function progressTexts(p: RunProgress | null | undefined): string[] {
  * 静默看门狗按引用判断“有进展”会被每秒重置；按内容取键才只在过程真的变化时计为活动。
  */
 export function progressActivityKey(p: RunProgress | null | undefined): string {
-  return p ? JSON.stringify(p) : "";
+  if (!p) return "";
+  // 心跳单独计（engineHeartbeatMs）：它表示“引擎还活着”，不等于“有了律师能看到的新进展”
+  const { activity, ...rest } = p;
+  return JSON.stringify({ ...rest, phase: activity?.phase ?? null, since: activity?.since ?? null, tool: activity?.tool ?? null });
+}
+
+/**
+ * 合并一次轮询得到的过程快照（复核 S6B-01）：内容不变时保留原对象（避免每秒重渲染），但心跳一律取新快照的——
+ * 曾经连心跳一起丢掉，长时间思考时看门狗读到的永远是旧心跳。
+ */
+export function mergeProgress(prev: RunProgress | null, next: RunProgress | null): { progress: RunProgress | null; heartbeatMs: number } {
+  return { progress: progressActivityKey(prev) === progressActivityKey(next) ? prev : next, heartbeatMs: engineHeartbeatMs(next) };
+}
+
+/**
+ * 何时提示“已经有一阵子没有新进展”（复核 S6B-03）：一般 90 秒；正在执行工具（运行代码、读大文件）时工具本身不发事件，
+ * 而执行域另有硬时限，放宽到 10 分钟，期间显示阶段行与已用时间。
+ */
+export function stallThresholdMs(p: RunProgress | null | undefined): number {
+  return p?.activity?.phase === "tool" ? 600_000 : 90_000;
+}
+
+/** 静默时长：界面进展与引擎心跳中较新者到现在的间隔。 */
+export function silenceMs(now: number, lastActivity: number, heartbeatMs: number): number {
+  return now - Math.max(lastActivity, heartbeatMs);
+}
+
+/** 引擎最近一次心跳的时刻（毫秒）；没有心跳返回 0。 */
+export function engineHeartbeatMs(p: RunProgress | null | undefined): number {
+  const t = p?.activity?.heartbeat_at ? Date.parse(p.activity.heartbeat_at) : NaN;
+  return Number.isFinite(t) ? t : 0;
+}
+
+function elapsedText(ms: number): string {
+  const sec = Math.floor(ms / 1000);
+  return sec < 60 ? `${sec} 秒` : `${Math.floor(sec / 60)} 分 ${String(sec % 60).padStart(2, "0")} 秒`;
+}
+
+/**
+ * 阶段行（UIUX 增量评审 P0-D）：取代笼统的“正在处理…”。同一阶段超过 30 秒时带上已用时间，让律师知道它还在做、做了多久。
+ * 重试另有提示（progressView.retry），这里返回 null；没有阶段信息（旧内核）也返回 null。
+ */
+export function phaseLine(p: RunProgress | null | undefined, now: number, label: (tool: string) => string): string | null {
+  const a = p?.activity;
+  if (!a?.phase || a.phase === "retrying") return null;
+  // 没登记律师用语的工具不显示英文原名（复核 S6B-10）
+  const named = a.tool ? label(a.tool) : "";
+  const what = a.phase === "thinking" ? "正在思考下一步" : a.phase === "writing" ? "正在写" : `正在执行：${named && !/^[\x00-\x7f]+$/.test(named) ? named : "一个步骤"}`;
+  const since = a.since ? Date.parse(a.since) : NaN;
+  return Number.isFinite(since) && now - since >= 30_000 ? `${what}（已 ${elapsedText(now - since)}）` : `${what}…`;
 }

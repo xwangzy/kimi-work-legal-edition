@@ -12,6 +12,7 @@
  * 本模块无 Electron 依赖，可单测。
  */
 const fs = require("node:fs");
+const { createPublicKey } = require("node:crypto");
 
 const PIN_RE = /^sha256\/[A-Za-z0-9+/]{43}=$/;
 
@@ -53,6 +54,25 @@ function pinList(v) {
  * 读取 release.json → { env, problems }。缺文件不是错误（安装包未配置云端：只有本机能力，控制面缺失即退出模式）；
  * 每一项不合法都单独列出问题且不进入环境（失败关闭）。
  */
+/** { kid: PEM } 公钥表：kid 只许 [A-Za-z0-9_.-]{1,64}、每把必须是 Ed25519 公钥；不合格返回 null。 */
+function keyTable(v, min = 1) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out = {};
+  for (const [kid, pem] of Object.entries(v)) {
+    if (!/^[A-Za-z0-9_.-]{1,64}$/.test(kid) || typeof pem !== "string") return null;
+    // 只收公钥（复核 S6A-10：createPublicKey 也接受私钥 PEM 并导出公钥——误填私钥会随安装包分发）
+    if (!/^\s*-----BEGIN PUBLIC KEY-----/.test(pem) || /PRIVATE KEY/.test(pem)) return null;
+    try {
+      if (createPublicKey(pem).asymmetricKeyType !== "ed25519") return null;
+    } catch {
+      return null;
+    }
+    out[kid] = pem;
+  }
+  const n = Object.keys(out).length;
+  return n >= min && n <= 8 ? out : null;
+}
+
 function loadReleaseConfig(file) {
   let raw;
   try {
@@ -76,6 +96,21 @@ function loadReleaseConfig(file) {
   pair("gateway_base", "gateway_pins", "ZR_GATEWAY_BASE", "ZR_GATEWAY_PINS");
   pair("search_base", "search_pins", "ZR_SEARCH_BASE", "ZR_SEARCH_PINS");
   pair("control_plane_base", "control_plane_pins", "ZR_CONTROL_PLANE_BASE", "ZR_CONTROL_PLANE_PINS");
+  // 控制面签名公钥表与席位令牌公钥表（云端持久化与 KMS 设计 v1 §4：安装包曾只带地址与钉住，内核公钥表为空 → 一切控制面文档按未知密钥拒收）。
+  // 形如 { "<kid>": "<Ed25519 公钥 SPKI PEM>" }；配置了控制面就必须两表都有、每把都能解析为 Ed25519 公钥，否则整组控制面配置不生效并报告。
+  if (env.ZR_CONTROL_PLANE_BASE) {
+    // 控制面签名公钥至少两把（当前 + 预置的下一把，轮换不必改格式；云端持久化与 KMS 设计 v1 §4.7），至多 8 把
+    const cp = keyTable(raw.control_plane_keys, 2);
+    const seat = keyTable(raw.seat_keys);
+    if (!cp || !seat) {
+      problems.push("control_plane_keys 须为 2–8 把、seat_keys 须为 1–8 把 { kid: Ed25519 公钥 PEM }（只收公钥）");
+      delete env.ZR_CONTROL_PLANE_BASE;
+      delete env.ZR_CONTROL_PLANE_PINS;
+    } else {
+      env.ZR_CONTROL_PLANE_KEYS = JSON.stringify(cp);
+      env.ZR_SEAT_KEYS = JSON.stringify(seat);
+    }
+  }
   // 自动更新（W7）：更新源地址、钉住集与发布签名公钥只认这里（主进程使用，不进内核环境）；三项缺一即不检查更新
   let update = null;
   if (raw.update_base !== undefined) {

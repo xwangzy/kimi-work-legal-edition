@@ -1,6 +1,6 @@
 {
   "format": "kwl-residency/1",
-  "updated": "2026-10-14",
+  "updated": "2026-10-15",
   "basis": "v9.2 §3.2 数据驻留面清单（每版门禁）；调研 Y5 §1.2 主表、§1.4 门禁做法",
   "gate": "packages/kernel/test/privacy-residency.test.ts：字段齐全、强制点（文件 + 符号）存在、测试文件存在；写盘面与渲染存储键与源码扫描逐一相符——新增未登记的写盘点即失败",
   "forms": {
@@ -601,6 +601,38 @@
       ],
       "residual": "设备签名密钥在内核进程（D-24）、根私钥在成员机（D-41）、同一 Windows 账户可经 DPAPI 解封（Y5 §7.3）",
       "owner": "隐私负责人"
+    },
+    {
+      "id": 21,
+      "data": "进所评测的文书与标注（S8 来源 B：律所人员在本机标注的文书原文、标注区间、一致性与裁决中间结果）",
+      "memory": "渲染进程（标注界面）、内核（打开、一致性、裁决、评测时的瞬时计算，不留存）、解析进程（打开 Word/PDF 时抽取文字）",
+      "disk": "只在律所人员经系统对话框选定的位置（标注文件 JSONL 含原文，不得写进数据根）；不进块存储、账本与事项",
+      "local_channels": "渲染进程 ↔ 主进程 ↔ 内核（eval.* 方法；打开与保存只认一次性句柄）",
+      "network": "否",
+      "logs_dumps": "审计只记动作（eval.open / eval.recall / eval.save_work / eval.save_report），不记文书名与内容；进程崩溃转储与系统页面文件可能含正在标注的原文（与其他内存中的案卷同一残余）",
+      "form": [
+        "plain",
+        "content_free"
+      ],
+      "enforcement": [
+        {
+          "file": "packages/kernel/src/services/recall-eval.ts",
+          "symbol": "reportFileText"
+        },
+        {
+          "file": "packages/kernel/src/services/export-file.ts",
+          "symbol": "writeExportFile"
+        },
+        {
+          "file": "apps/desktop/electron/file-dialogs.cjs",
+          "symbol": "SAVE_METHODS"
+        }
+      ],
+      "tests": [
+        "packages/kernel/test/recall-eval.test.ts"
+      ],
+      "residual": "标注文件含原文，保管与删除由律所负责（标注规范 v1 §8 第 5 步）；保存到“文档”等位置后可能被 OneDrive 等同步或被 Windows 搜索编入索引（保存时对同步与网络位置有提示）；导出的报告只含计数，由律所自行交给中软；评测只对律所管理员与合伙人开放",
+      "owner": "隐私负责人"
     }
   ],
   "write_points": {
@@ -814,13 +846,16 @@
       "localStorage"
     ],
     "keys": {
-      "kwl.home.line": "首页业务线偏好（诉讼/非诉/企业法务）",
+      "kwl.home.line": "首页业务线偏好（诉讼/非诉/企业法务）；执行页“接着做”按它挑同一业务线的场景卡（只读）",
       "kwl.update.later": "更新横幅“稍后”记住的版本号",
-      "kwl.update.rejected-seen": "已知道未通过核验的版本号"
+      "kwl.update.rejected-seen": "已知道未通过核验的版本号",
+      "kwl.ui.zoom": "设置 → 通用 → 字号（标准/大/特大）"
     },
     "files": [
       "apps/desktop/src/App.tsx",
-      "apps/desktop/src/pages/Home.tsx"
+      "apps/desktop/src/pages/Home.tsx",
+      "apps/desktop/src/lib/ui-prefs.ts",
+      "apps/desktop/src/pages/RunView.tsx"
     ]
   },
   "out_of_scope": {

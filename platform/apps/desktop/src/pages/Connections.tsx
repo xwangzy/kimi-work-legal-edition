@@ -1,14 +1,19 @@
 /**
- * 连接与数据（第 03 篇 §4.1、§8.5；第 02 篇 §12；第 04 篇 §5.1 设备页“唯一出口：应用层约束 / 系统强制”；第 03 篇 §5 步骤 2 设备自检文案）。
- * 四页：数据与连接（每项标注可接收的数据级别）/ 设备（执行域如实标注）/ 中软看得到什么（按本所实际启用的渠道动态展示，可截图给客户）/
- * 律所策略（阶段 6：生效策略与签名人、许可与退出模式、控制面告警、成员公钥变更核对、已登记的连接器；管理员签名与发布）。
+ * 设置（UIUX 增量评审 ST-1～ST-5、§3.5；v9 第 03 篇 §4.1、§8.5；第 02 篇 §12；第 04 篇 §5.1）。
+ * 律师版四页：通用（字号、通知）/ 数据去向说明（三栏 + 现场生成的示例请求，可打印给客户）/ 资料来源 / 本机与安全；
+ * 管理员另有“管理”：律所策略、诊断（技术版数据去向表、能力账本、待对账出站、闸门与执行域细节、详细运行记录）、召回评测（律所内）。
+ * “管理”是否显示只是界面安排，授权一律由内核按角色逐个方法核验。
  */
 import { useEffect, useState } from "react";
 import { api, updates, type Capabilities, type ControlPlaneStatus, type PolicyDraft } from "../api.ts";
-import { nav } from "../App.tsx";
+import { nav, type SettingsTab } from "../App.tsx";
 import { fmtTime } from "../lib/labels.ts";
+import { applyUiZoom, readUiZoom, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
+import { RecallEvalPanel } from "./RecallEval.tsx";
 
-export function ConnectionsPage({ tab }: { tab: "data" | "device" | "visibility" | "policy" }) {
+const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
+
+export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
   const [status, setStatus] = useState<any>(null);
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [lawdb, setLawdb] = useState<any>(null);
@@ -35,67 +40,305 @@ export function ConnectionsPage({ tab }: { tab: "data" | "device" | "visibility"
   };
   useEffect(load, []);
   const gate = status?.egress_gate ?? null;
+  const isAdmin = ADMIN_ROLES.has(String(status?.member_role ?? ""));
+  const tabs: [SettingsTab, string][] = [
+    ["general", "通用"],
+    ["visibility", "数据去向说明"],
+    ["sources", "资料来源"],
+    ["device", "本机与安全"],
+    ...(isAdmin ? ([["admin", "管理"]] as [SettingsTab, string][]) : []),
+  ];
   return (
     <main className="main">
       <div className="main-wide">
         <h1 className="page-title">设置</h1>
-        <div className="tabs tabs-line">
-          <button className={`tab${tab === "data" ? " active" : ""}`} onClick={() => nav("/connections")}>数据与连接</button>
-          <button className={`tab${tab === "device" ? " active" : ""}`} onClick={() => nav("/connections/device")}>设备</button>
-          <button className={`tab${tab === "visibility" ? " active" : ""}`} onClick={() => nav("/connections/visibility")}>中软看得到什么</button>
-          <button className={`tab${tab === "policy" ? " active" : ""}`} onClick={() => nav("/connections/policy")}>律所策略</button>
+        <div className="tabs tabs-line" role="tablist" aria-label="设置">
+          {tabs.map(([k, label]) => (
+            <button key={k} role="tab" aria-selected={tab === k} className={`tab${tab === k ? " active" : ""}`} onClick={() => nav(`/connections/${k}`)}>
+              {label}
+            </button>
+          ))}
         </div>
         {err && <div className="banner banner-red">{err}</div>}
-        {tab === "data" && <DataTab gate={gate} lawdb={lawdb} im={im} />}
-        {tab === "device" && <DeviceTab caps={caps} gate={gate} devices={devices} mySafety={mySafety} recovery={recovery} unresolved={unresolved} onReconciled={load} />}
-        {tab === "visibility" && <VisibilityTab gate={gate} im={im} recovery={recovery} />}
-        {tab === "policy" && <PolicyTab />}
+        {tab === "general" && <GeneralTab version={status?.version ?? null} />}
+        {tab === "visibility" && <VisibilityTab gate={gate} im={im} recovery={recovery} firm={status?.firm ?? null} syncOn={!!status?.sync_configured} />}
+        {tab === "sources" && <SourcesTab gate={gate} lawdb={lawdb} im={im} />}
+        {tab === "device" && <DeviceTab caps={caps} gate={gate} mySafety={mySafety} recovery={recovery} />}
+        {tab === "admin" &&
+          (status === null ? null : isAdmin ? (
+            <AdminTab caps={caps} gate={gate} devices={devices} unresolved={unresolved} onReconciled={load} im={im} recovery={recovery} />
+          ) : (
+            <div className="banner banner-gray">“管理”只对律所管理员与合伙人开放。</div>
+          ))}
       </div>
     </main>
   );
 }
 
-function DataTab({ gate, lawdb, im }: { gate: any; lawdb: any; im: any[] }) {
-  const rows: { name: string; state: string; levels: string; note: string }[] = [
-    { name: "离线法规库", state: lawdb?.error ? "不可用" : "已启用", levels: "本机（不出站）", note: lawdb?.error ? `签名校验未通过即拒载：${lawdb.error}` : `${lawdb?.display ?? ""}；法条核验全部离线` },
-    { name: "Kimi 模型（经中软法律模型网关）", state: gate?.routes ? "已启用" : "未配置", levels: "L0–L2（L3a 须管理员放开并全部化名；L3b 禁止）", note: "证件、账户、联系方式与自然人姓名在发送前替换为代号；网关不落盘" },
-    {
-      name: "联网检索（中软检索服务）",
-      state: gate?.search_configured ? "已启用" : "未启用",
-      levels: "L0–L2（含当事人须逐条确认或改写；L3a 只能改写后逐条确认；L3b 禁止）",
-      note: "默认只发出令牌化并去除已知当事人名称的查询；含当事人名称的查询须经办律师逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）；不带事项编号；查询原文只记在本机",
-    },
-    { name: "公开网页抓取", state: gate?.fetch === "local" ? "已启用（本机经闸门）" : "未启用", levels: "公开站点（URL 不得含事项信息）", note: `白名单 ${gate?.fetch_allowlist_size ?? 0} 个域名（公开官方站点基线 + 律所策略），新域名须确认` },
-    { name: "法源与主体信息查询", state: "即将开放", levels: "—", note: "案例核验与工商查询经数据商合同接入" },
-    { name: "律所连接器（MCP）", state: "即将开放", levels: "—", note: "登记须管理员设备签名（本机核验已就绪，见“律所策略”）；按数据级别上限放行" },
-    { name: "IM 收件", state: im.length > 0 ? `所内节点原型 ${im.length} 个绑定` : "即将开放", levels: "—", note: "将经中软 IM 服务接入；文件进入本人收件区" },
-    { name: "隔离浏览器", state: "即将开放", levels: "—", note: "访问公开站点；表单提交须确认" },
+function GeneralTab({ version }: { version: string | null }) {
+  const [zoom, setZoom] = useState(readUiZoom());
+  return (
+    <div className="device">
+      <div className="panel">
+        <div className="device-row">
+          <div className="device-k">字号</div>
+          <div className="settings-choice" role="radiogroup" aria-label="字号">
+            {UI_ZOOM_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                role="radio"
+                aria-checked={zoom === o.value}
+                className={`q-option${zoom === o.value ? " on" : ""}`}
+                onClick={() => {
+                  applyUiZoom(o.value, true);
+                  setZoom(o.value);
+                }}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="device-row">
+          <div className="device-k">提醒</div>
+          <div>
+            任务需要你确认或回答问题、而 Kimi Work 不在前台时，会发一条系统通知并闪烁任务栏。通知只写“有一个任务在等你确认”，不写事项内容。
+            <div className="muted">如不想收到，可在 Windows“设置 → 系统 → 通知”里关闭 Kimi Work 的通知。</div>
+          </div>
+        </div>
+        <div className="device-row">
+          <div className="device-k">版本</div>
+          <div>{version ?? "—"}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** “数据去向说明”（UIUX 增量评审 §3.5）：一眼回答“东西在哪”，按本所实际启用的功能生成，可打印成 PDF 给客户。 */
+function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: any[]; recovery: any; firm: string | null; syncOn: boolean }) {
+  const [example, setExample] = useState<{ sent: string; replaced: number } | null>(null);
+  const [updatesOn, setUpdatesOn] = useState(false);
+  useEffect(() => {
+    api.exampleRequest().then(setExample).catch(() => setExample(null));
+    updates.status().then((u) => setUpdatesOn(!!u?.enabled)).catch(() => setUpdatesOn(false));
+  }, []);
+  // 复核 S6A-02/03：逐项写清替换了什么、哪些按原文；不经中软但会出本机的去向（网页、IM、团队共享）单列
+  const local = ["案卷原件与全部交付件", "代号与真实姓名的对照表", "对话、问答与任务记录", "事项名称与事项头信息"];
+  const transit = [
+    "发给 AI 的任务内容：证件号、账号、电话、住址与识别出的姓名先换成代号；机构名称（含客户名称）、案情、金额、日期按原文",
+    ...(gate?.search_configured ? ["联网检索的查询（默认去掉当事人名称）"] : []),
+    ...(gate ? ["无事项问答的问题（同样先替换）"] : []),
+  ];
+  const direct = [
+    ...(gate?.fetch === "local" ? ["打开公开网页：网址由这台电脑直接发往该网站（不经中软）"] : []),
+    ...(im.length > 0 ? ["IM 收件：发给机器人的文字与文件经所用的 IM 平台传递"] : []),
+    ...(syncOn ? ["团队共享：经律所指定的共享文件夹同步（加密）"] : []),
+  ];
+  const stored = ["账号、席位与用量", "匿名事项编号与调用记录（不含内容）", "律所策略与设备证书", ...(updatesOn ? ["更新检查的访问记录（IP 与版本）"] : [])];
+  const notEnabled = [
+    ...(gate?.search_configured ? [] : ["联网检索"]),
+    "法源与主体信息查询",
+    ...(im.length > 0 ? [] : ["IM 收件"]),
+    ...(syncOn ? [] : ["团队共享"]),
+    "设备中继（端到端加密）",
+    "期限提醒",
+    "云端事项",
+    ...(recovery?.escrow ? [] : ["中软托管恢复"]),
   ];
   return (
+    <div className="visibility v2">
+      <div className="vis-head">
+        <div>
+          <b>数据去向说明</b>
+          <span className="muted">
+            {" "}
+            · {firm ? `${firm} · ` : ""}本所当前设置 · {new Date().toLocaleDateString("zh-CN")}
+          </span>
+        </div>
+        <button className="btn btn-sm no-print" onClick={() => window.print()}>
+          打印或另存为 PDF
+        </button>
+      </div>
+      <div className="vis-cols">
+        <section className="vis-col vis-local" aria-label="只在你的电脑上">
+          <h3>只在你的电脑上</h3>
+          <ul>{local.map((x) => <li key={x}>{x}</li>)}</ul>
+        </section>
+        <section className="vis-col vis-transit" aria-label="经过中软，不保存">
+          <h3>经过中软，不保存</h3>
+          <ul>{transit.map((x) => <li key={x}>{x}</li>)}</ul>
+        </section>
+        <section className="vis-col vis-stored" aria-label="中软会保存">
+          <h3>中软会保存</h3>
+          <ul>{stored.map((x) => <li key={x}>{x}</li>)}</ul>
+        </section>
+      </div>
+      {direct.length > 0 && (
+        <div className="panel vis-direct">
+          <b>不经中软、但会离开这台电脑的</b>
+          <ul className="plain-list">{direct.map((x) => <li key={x}>{x}</li>)}</ul>
+        </div>
+      )}
+      <div className="panel vis-example">
+        <div className="muted">一次 AI 请求长什么样（示例句子与人物均为虚构，由本机现场替换生成）：</div>
+        <div className="vis-sent">{example ? example.sent : "—"}</div>
+        <div className="muted">姓名、证件号、电话等换成了代号；机构名称、案情、金额和日期按原文发送（可按事项开启“全部化名”）。</div>
+      </div>
+      <ul className="plain-list">
+        <li>
+          与月之暗面“不用于训练、不保留”的书面确认：<b>待签署</b>（签署后此处显示日期）。在此之前，模型服务商一侧的保留以其企业协议为准。
+        </li>
+        {gate?.search_configured && <li>联网检索默认去掉当事人名称再发出；含当事人名称的查询须经办律师逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）。</li>}
+        <li>识别依靠规则与当事人名单，可能遗漏：<b>没有识别出的姓名会按原文发出</b>；每个任务的“数据去向”里可以逐条查看实际发出的内容。</li>
+        <li>自带密钥或律所私有端点的事项，模型请求不经中软。</li>
+      </ul>
+      {/* 本机密钥保护的如实说明（调研 Y5 §7.3 建议原文的律师版） */}
+      <details className="vis-more">
+        <summary>本机密钥保护（当前版本）</summary>
+        <ol className="plain-list muted">
+          <li>案件数据在本机加密保存，解密密钥受 Windows 数据保护（DPAPI）保护、与你的 Windows 账户绑定；以同一账户运行的其他程序（包括恶意软件）技术上可以调用同一保护机制，使用域账户的律所，域管理员按 Windows 的设计也具备恢复能力。</li>
+          <li>设备签名与解密密钥目前由软件保存，尚未存放在电脑的安全芯片（TPM）中。</li>
+          <li>律所恢复所需的根密钥目前保存在各成员的电脑上；律所版将改为线下分片保管。</li>
+          <li>删除事项会销毁本机密钥并删除数据；Windows 还原点、文件历史和备份软件中的旧副本不在删除范围内。</li>
+          <li>建议开启 BitLocker，并使用本机（非漫游、非重定向）的用户目录。</li>
+        </ol>
+      </details>
+      <details className="vis-more">
+        <summary>未启用的功能（{notEnabled.length}）</summary>
+        <ul className="plain-list muted">{notEnabled.map((x) => <li key={x}>{x}：未启用</li>)}</ul>
+      </details>
+    </div>
+  );
+}
+
+/** 资料来源（ST-2）：来源 · 状态 · 一句话；数据级别用“一般 / 敏感 / 客户要求不上云”。 */
+function SourcesTab({ gate, lawdb, im }: { gate: any; lawdb: any; im: any[] }) {
+  const rows: { name: string; state: "可用" | "未开通" | "即将推出" | "不可用"; note: string; detail?: string }[] = [
+    { name: "离线法规库", state: lawdb?.error ? "不可用" : "可用", note: lawdb?.error ? "法规库文件没有通过签名核对，已停用" : "法条核验在本机完成，不联网", detail: lawdb?.error ? undefined : lawdb?.display },
+    { name: "Kimi 模型（经中软）", state: gate?.routes ? "可用" : "未开通", note: "一般事项可用；敏感事项须管理员放开并全部化名；客户要求不上云的事项不用" },
+    { name: "联网检索", state: gate?.search_configured ? "可用" : "未开通", note: "默认去掉当事人名称再发出；含当事人名称的查询须经办律师逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）" },
+    { name: "公开网页", state: gate?.fetch === "local" ? "可用" : "未开通", note: `只打开公开官方站点与律所允许的网站（${gate?.fetch_allowlist_size ?? 0} 个），新网站要你确认` },
+    { name: "案例与工商查询", state: "即将推出", note: "经数据商合同接入" },
+    { name: "律所自有系统（连接器）", state: "即将推出", note: "由管理员登记，按事项敏感程度放行" },
+    { name: "IM 收件", state: im.length > 0 ? "可用" : "即将推出", note: im.length > 0 ? "所内节点原型" : "文件进入本人收件区" },
+  ];
+  const tone = (s: string) => (s === "可用" ? "pill-green" : s === "不可用" ? "pill-red" : "pill-gray");
+  return (
     <table className="data">
-      <thead><tr><th>连接</th><th>状态</th><th>可接收的数据级别</th><th>说明</th></tr></thead>
+      <thead>
+        <tr>
+          <th>资料来源</th>
+          <th>状态</th>
+          <th>说明</th>
+        </tr>
+      </thead>
       <tbody>
         {rows.map((r) => (
-          <tr key={r.name}><td><b>{r.name}</b></td><td>{r.state}</td><td>{r.levels}</td><td className="muted">{r.note}</td></tr>
+          <tr key={r.name}>
+            <td>
+              <b>{r.name}</b>
+            </td>
+            <td>
+              <span className={`pill ${tone(r.state)}`}>{r.state}</span>
+            </td>
+            <td>
+              {r.note}
+              {r.detail && (
+                <details className="muted">
+                  <summary>版本与签名</summary>
+                  {r.detail}
+                </details>
+              )}
+            </td>
+          </tr>
         ))}
       </tbody>
     </table>
   );
 }
 
-function DeviceTab({ caps, gate, devices, mySafety, recovery, unresolved, onReconciled }: { caps: Capabilities | null; gate: any; devices: any[]; mySafety: string | null; recovery: any; unresolved: any[]; onReconciled: () => void }) {
+/** 本机与安全（ST-1 律师版）：四行结论 + 电脑环境 + 遇到问题；工程细节在“管理 → 诊断”。 */
+function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | null; gate: any; mySafety: string | null; recovery: any }) {
   const [busy, setBusy] = useState(false);
   const [diag, setDiag] = useState<{ open: boolean; msg: string }>({ open: false, msg: "" });
-  const [logLevel, setLogLevel] = useState<string | null>(null);
   const [env, setEnv] = useState<Record<string, any> | null>(null);
+  const [cp, setCp] = useState<ControlPlaneStatus | null>(null);
   useEffect(() => {
     api.envProbe().then(setEnv).catch(() => setEnv(null));
+    api.controlPlaneStatus().then(setCp).catch(() => setCp(null));
   }, []);
-  useEffect(() => {
-    api.kernelStatus().then((st: any) => setLogLevel(typeof st?.log_level === "string" ? st.log_level : null)).catch(() => setLogLevel(null));
-  }, []);
+  const domainOk = !!caps && !/不可用|未启用|失败/.test(String(caps.execution_domain.status ?? ""));
+  const envWarn = env && env.platform === "win32" ? envLines(env).filter((l) => l.warn).length : 0;
   return (
     <div className="device">
+      <div className="panel">
+        <div className="device-row">
+          <div className="device-k">本机防护</div>
+          <div>
+            {domainOk ? "✓ " : ""}案卷加密保存在这台电脑上；AI 运行代码时不能联网、只看得到本事项的文件。
+            {!domainOk && <div className="muted">代码运行环境暂不可用：需要运行代码的任务会停下并说明原因。</div>}
+          </div>
+        </div>
+        <div className="device-row">
+          <div className="device-k">联网通道</div>
+          <div>
+            {gate ? "✓ " : ""}模型、检索与网页只经 Kimi Work 自己的联网通道发出，每一次都记在“数据去向”里。
+            <div className="muted">律所 IT 可另加系统防火墙规则，让“只有这条通道能联网”由 Windows 强制。</div>
+          </div>
+        </div>
+        <div className="device-row">
+          <div className="device-k">本机安全码</div>
+          <div>
+            <b className="mono">{mySafety ?? "—"}</b>
+            <div className="muted">同事核对你的设备变更时，请在电话或当面读出这串数字；对方屏幕上的一致才确认。</div>
+          </div>
+        </div>
+        {/* 律所设置与许可（复核 S6B-08：拆分后普通律师也要看得到许可是否有效、是否处于退出状态） */}
+        {cp && cp.mode === "control_plane" && (
+          <div className="device-row">
+            <div className="device-k">律所设置</div>
+            <div>
+              {cp.exit_mode ? (
+                <span className="pill pill-red">{cp.exit_mode.message}</span>
+              ) : (
+                <>
+                  {cp.license?.state === "valid" ? `许可有效${cp.license.expires_at ? `，至 ${fmtTime(cp.license.expires_at)}` : ""}` : cp.license?.state === "expired" ? "许可已到期" : "尚未取得许可"}
+                  {" · "}
+                  {cp.policy?.source === "control_plane" ? `本所策略第 ${cp.policy.version} 版` : "按最严设置运行（尚未取得或已不能使用本所策略）"}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+        <div className="device-row">
+          <div className="device-k">最近一次自检</div>
+          <div>
+            {env?.checked_at ? fmtTime(env.checked_at) : "—"}
+            {envWarn > 0 && <span className="pill pill-orange"> {envWarn} 项需要 IT 处理（见下）</span>}
+          </div>
+        </div>
+      </div>
+      {/* Windows 环境自检（v9.2 §3.7；Y5 P1-6）：只提示会让“本机加密保存”打折扣的系统设置，读不到的写“未知” */}
+      {env && env.platform === "win32" && (
+        <div className="panel">
+          <div className="device-row">
+            <div className="device-k">电脑环境</div>
+            <div>
+              <ul className="plain-list">
+                {envLines(env).map((l) => (
+                  <li key={l.k} className={l.warn ? "env-warn" : undefined}>
+                    {l.k}：{l.v}
+                  </li>
+                ))}
+              </ul>
+              <button className="btn btn-sm" onClick={() => void api.envProbe(true).then(setEnv).catch(() => {})}>
+                重新检查
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* 脱敏诊断包（v9.2 §3.6）：律师主动导出交给支持团队；内容白名单 + 导出前自证 + 设备签名 */}
       <div className="panel diag-panel">
         <div className="device-row">
@@ -138,47 +381,48 @@ function DeviceTab({ caps, gate, devices, mySafety, recovery, unresolved, onReco
               </div>
             )}
             {diag.msg && <div className="muted">{diag.msg}</div>}
-            {logLevel && (
-              <div className="muted">
-                {logLevel === "debug" ? "已开启详细运行记录（24 小时后自动关闭）。" : "排查偶发问题时，可临时记录更详细的运行事件（同样不含任何事项内容）。"}{" "}
-                <button
-                  className="btn btn-sm"
-                  onClick={async () => {
-                    try {
-                      const r = await api.setLogLevel(logLevel === "debug" ? "info" : "debug");
-                      setLogLevel(r.level);
-                    } catch (e) {
-                      setDiag({ open: false, msg: (e as Error).message });
-                    }
-                  }}
-                >
-                  {logLevel === "debug" ? "关闭详细记录" : "开启 24 小时"}
-                </button>
-              </div>
-            )}
           </div>
         </div>
       </div>
-      {/* Windows 环境自检（v9.2 §3.7；Y5 P1-6）：只提示会让“本机加密保存”打折扣的系统设置，读不到的写“未知” */}
-      {env && env.platform === "win32" && (
-        <div className="panel">
-          <div className="device-row">
-            <div className="device-k">电脑环境</div>
-            <div>
-              <ul className="plain-list">
-                {envLines(env).map((l) => (
-                  <li key={l.k} className={l.warn ? "env-warn" : undefined}>
-                    {l.k}：{l.v}
-                  </li>
-                ))}
-              </ul>
-              <button className="btn btn-sm" onClick={() => void api.envProbe(true).then(setEnv).catch(() => {})}>
-                重新检查
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {recovery && <p className="muted">设备恢复：{recovery.note ?? (recovery.configured ? "已配置" : "未配置")}</p>}
+    </div>
+  );
+}
+
+/** 管理（ST-1、ST-4）：律所策略、诊断（工程细节）、召回评测（律所内）。 */
+function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[]; unresolved: any[]; onReconciled: () => void; im: any[]; recovery: any }) {
+  const [sub, setSub] = useState<"policy" | "diagnostics" | "recall">("policy");
+  return (
+    <div>
+      <div className="tabs" role="tablist" aria-label="管理">
+        {(
+          [
+            ["policy", "律所策略"],
+            ["diagnostics", "诊断"],
+            ["recall", "召回评测（律所内）"],
+          ] as const
+        ).map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={sub === k} className={`tab${sub === k ? " active" : ""}`} onClick={() => setSub(k)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {sub === "policy" && <PolicyTab />}
+      {sub === "diagnostics" && <DiagnosticsTab {...props} />}
+      {sub === "recall" && <RecallEvalPanel />}
+    </div>
+  );
+}
+
+function DiagnosticsTab({ caps, gate, devices, unresolved, onReconciled, im, recovery }: { caps: Capabilities | null; gate: any; devices: any[]; unresolved: any[]; onReconciled: () => void; im: any[]; recovery: any }) {
+  const [busy, setBusy] = useState(false);
+  const [logLevel, setLogLevel] = useState<string | null>(null);
+  const [msg, setMsg] = useState("");
+  useEffect(() => {
+    api.kernelStatus().then((st: any) => setLogLevel(typeof st?.log_level === "string" ? st.log_level : null)).catch(() => setLogLevel(null));
+  }, []);
+  return (
+    <div className="device">
       <div className="panel">
         <div className="device-row">
           <div className="device-k">代码运行</div>
@@ -195,14 +439,6 @@ function DeviceTab({ caps, gate, devices, mySafety, recovery, unresolved, onReco
           <div className="device-k">唯一出口</div>
           <div>
             <b>{gate?.sole_exit ?? caps?.sole_exit ?? "应用层约束"}</b>：模型、检索、抓取只经出站闸门（独立进程）；执行域无网；渲染进程拦截一切外部请求。
-            <div className="muted">律所 IT 可另加按程序的出站防火墙规则，使“只有闸门进程能出网”由操作系统强制（需管理员）。</div>
-          </div>
-        </div>
-        <div className="device-row">
-          <div className="device-k">本机安全码</div>
-          <div>
-            <b className="mono">{mySafety ?? "—"}</b>
-            <div className="muted">同事核对你的设备公钥变更时，请在电话或当面读出这串数字；对方屏幕上的数字一致才确认。</div>
           </div>
         </div>
         <div className="device-row">
@@ -211,6 +447,28 @@ function DeviceTab({ caps, gate, devices, mySafety, recovery, unresolved, onReco
             {gate ? <>{gate.running ? "运行中" : "已配置（按需拉起：下一次出站时启动）"} · 检索{gate.routes?.search ? "已接入" : "未接入"} · 抓取{gate.routes?.fetch ? "已接入" : "未接入"} · 已拉起 {gate.stats?.starts ?? 0} 次</> : "未启用（离线模拟提供方）"}
           </div>
         </div>
+        {logLevel && (
+          <div className="device-row">
+            <div className="device-k">详细运行记录</div>
+            <div>
+              {logLevel === "debug" ? "已开启（24 小时后自动关闭）。" : "排查偶发问题时，可临时记录更详细的运行事件（同样不含任何事项内容）。"}{" "}
+              <button
+                className="btn btn-sm"
+                onClick={async () => {
+                  try {
+                    const r = await api.setLogLevel(logLevel === "debug" ? "info" : "debug");
+                    setLogLevel(r.level);
+                  } catch (e) {
+                    setMsg((e as Error).message);
+                  }
+                }}
+              >
+                {logLevel === "debug" ? "关闭详细记录" : "开启 24 小时"}
+              </button>
+              {msg && <div className="muted">{msg}</div>}
+            </div>
+          </div>
+        )}
       </div>
       {caps && caps.rows.length > 0 && (
         <>
@@ -272,12 +530,14 @@ function DeviceTab({ caps, gate, devices, mySafety, recovery, unresolved, onReco
           ))}
         </tbody>
       </table>
-      {recovery && <p className="muted">恢复：{recovery.note ?? (recovery.configured ? "已配置" : "未配置")}</p>}
+      <div className="section-title">数据去向（技术版）</div>
+      <TechnicalVisibility gate={gate} im={im} recovery={recovery} />
     </div>
   );
 }
 
-function VisibilityTab({ gate, im, recovery }: { gate: any; im: any[]; recovery: any }) {
+/** 原“中软看得到什么”逐情形明细（技术版，供管理员与客户 IT 核对；律师版见“数据去向说明”）。 */
+function TechnicalVisibility({ gate, im, recovery }: { gate: any; im: any[]; recovery: any }) {
   const [updatesOn, setUpdatesOn] = useState(false);
   useEffect(() => {
     updates.status().then((u) => setUpdatesOn(!!u?.enabled)).catch(() => setUpdatesOn(false));
@@ -327,27 +587,14 @@ function VisibilityTab({ gate, im, recovery }: { gate: any; im: any[]; recovery:
     },
   ];
   const on = rows.filter((r) => r.enabled);
-  const off = rows.filter((r) => !r.enabled);
   return (
-    <div className="visibility">
-      <p>
-        案卷默认在律师电脑上处理和保存；模型推理会收到任务涉及的文档内容，其中证件号、账号、手机号、住址和自然人姓名在发送前替换为代号，机构名称保留（可按事项开启全部化名）；
-        联网检索默认只发出令牌化并去除已知当事人名称的查询；含当事人名称的查询须经办律师逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）；网关不落盘，上游留存以企业协议为准。识别可能遗漏，数据去向卡逐条可查。
-      </p>
+    <>
       <table className="data visibility-table">
         <thead><tr><th>本所已启用的情形</th><th>中软看得到（过境或保存）</th><th>中软看不到</th></tr></thead>
         <tbody>{on.map((r) => <tr key={r.situation}><td><b>{r.situation}</b></td><td>{r.sees}</td><td>{r.notSees}</td></tr>)}</tbody>
       </table>
-      <div className="section-title">未启用的情形</div>
-      <ul className="plain-list muted">
-        {off.map((r) => <li key={r.situation}>{r.situation}：未启用。</li>)}
-        <li>团队共享与设备中继（端到端加密，中软只见密文）：即将开放。</li>
-        <li>期限提醒（内容加密，中软只见触发时间与推送目标）：即将开放。</li>
-        <li>云端事项（在中软云端处理并保存的事项）：未开放。</li>
-        {im.length > 0 && <li>当前的 IM 绑定为所内节点原型，不经中软。</li>}
-      </ul>
-      <p className="muted">自带密钥或律所私有端点的事项，模型请求不经中软网关。本页按本所实际启用的渠道生成，可截图给客户。</p>
-    </div>
+      {im.length > 0 && <p className="muted">当前的 IM 绑定为所内节点原型，不经中软。</p>}
+    </>
   );
 }
 
@@ -694,7 +941,7 @@ function envLines(e: Record<string, any>): { k: string; v: string; warn: boolean
     { k: "OneDrive 同步“文档/桌面”", v: tri(e.onedrive_kfm, "是：保存到这些位置的文件会同步到云端", "否"), warn: e.onedrive_kfm === "yes" },
     { k: "FSLogix 配置文件容器", v: tri(e.fslogix, "是：配置文件在网络容器中，请 IT 确认存放位置", "否"), warn: e.fslogix === "yes" },
     { k: "系统完整内存转储（LocalDumps）", v: tri(e.local_dumps, "已配置：程序崩溃时可能留下含案件文字的转储，请 IT 排除本应用", "未配置"), warn: e.local_dumps === "yes" },
-    { k: "律所出站规则（防火墙）", v: tri(e.firewall_rules, "已配置", "未配置（律所版可由 IT 配置，见部署指南）"), warn: false },
+    { k: "律所防火墙规则", v: tri(e.firewall_rules, "已配置", "未配置（律所版可由 IT 配置，见部署指南）"), warn: false },
     { k: "杀毒软件", v: Array.isArray(e.antivirus) && e.antivirus.length ? e.antivirus.join("、") : "未知", warn: false },
   ];
 }

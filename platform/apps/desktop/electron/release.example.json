@@ -15,6 +15,14 @@
     "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
   ],
+  "control_plane_keys": {
+    "cp-prod-1": "<控制面文档签名公钥（Ed25519 SPKI PEM）>",
+    "cp-prod-2": "<预置的下一把（轮换用）>"
+  },
+  "seat_keys": {
+    "seat-prod-1": "<席位令牌签名公钥（Ed25519 SPKI PEM）>",
+    "seat-prod-2": "<预置的下一把（轮换用）>"
+  },
   "update_base": "https://updates.example.invalid/kimi-work-legal/win",
   "update_pins": [
     "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",

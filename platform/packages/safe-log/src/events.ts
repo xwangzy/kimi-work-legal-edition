@@ -34,6 +34,7 @@ export const EVENTS = {
   CHILD_STDERR_UNSTRUCTURED: { level: "debug", fields: { proc: PROCS, lines: "int" } },
 
   // —— 内核 ——
+  KERNEL_INDEX_EXCLUDE: { level: "info", fields: { outcome: ["done", "failed", "not_applicable"] } },
   KERNEL_STARTED: { level: "info", fields: { engine: ["kap", "sdk"], at_rest: ["required", "on", "off"], control_plane: ["dev", "configured"] } },
   KERNEL_CLOSED: { level: "info", fields: {} },
   KERNEL_SKILLS_UNAVAILABLE: { level: "warn", fields: {} },

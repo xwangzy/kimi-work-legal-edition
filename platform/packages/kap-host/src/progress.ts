@@ -25,7 +25,16 @@ export interface RunProgress {
   skills: string[];
   /** 模型请求失败后引擎正在重试（主 Agent）；下一步成功即清除。 */
   retry: { attempt: number; max: number; status_code: number | null; at: string } | null;
+  /**
+   * 主 Agent 当前在做什么（UIUX 增量评审 P0-D）：思考 / 写回复 / 执行工具 / 重试，及进入该阶段的时刻；
+   * heartbeat_at = 引擎最近一次有任何事件（含思考与子任务）的时刻——界面据此区分“在忙但还没有可显示的东西”与“真的没动静”。
+   */
+  activity: { phase: ActivityPhase | null; since: string | null; tool: string | null; heartbeat_at: string | null };
 }
+
+export type ActivityPhase = "thinking" | "writing" | "tool" | "retrying";
+/** 心跳单独推送的最短间隔（只有心跳变化时不必每条流式事件都推一次快照）。 */
+export const HEARTBEAT_PUSH_MS = 15_000;
 
 export const PROGRESS_LIMITS = Object.freeze({ todo: 30, todoTitle: 120, subagents: 32, description: 200, summary: 1_000, tasks: 16, notes: 5, note: 1_000, skills: 8 });
 /** 记住的子任务编号上限（超过快照条数后只为里程碑去重；集群单次最多 128 个成员）。 */
@@ -50,7 +59,9 @@ export class ProgressTracker {
     compaction: { count: 0, running: false, blocked: false, last_at: null, tokens_before: null, tokens_after: null },
     skills: [],
     retry: null,
+    activity: { phase: null, since: null, tool: null, heartbeat_at: null },
   };
+  private lastBeatPush = 0;
   /** 受信的方法模板名（已验签清单）；不在清单内的名字不记（模型可能拼错或编造）。 */
   private readonly trustedSkills: ReadonlySet<string>;
   /** 见过的子任务编号（含超出快照条数上限的；里程碑去重与收尾用）。 */
@@ -67,8 +78,42 @@ export class ProgressTracker {
     return structuredClone(this.p);
   }
 
-  /** 应用一条引擎事件；返回 { changed, milestone }。 */
-  apply(type: string, payload: Record<string, any>, now = new Date()): { changed: boolean; milestone?: ProgressMilestone } {
+  /** 应用一条引擎事件；返回 { changed（过程内容变化）, beat（阶段变化或到了心跳推送间隔）, milestone }。 */
+  apply(type: string, payload: Record<string, any>, now = new Date()): { changed: boolean; beat: boolean; milestone?: ProgressMilestone } {
+    const r = this.applyContent(type, payload, now);
+    return { ...r, beat: this.touch(type, payload, now) };
+  }
+
+  /** 心跳与阶段：阶段变化即算变化；只有心跳时按 HEARTBEAT_PUSH_MS 节流。 */
+  private touch(type: string, payload: Record<string, any>, now: Date): boolean {
+    const a = this.p.activity;
+    const at = now.toISOString();
+    a.heartbeat_at = at;
+    let changed = false;
+    if (now.getTime() - this.lastBeatPush >= HEARTBEAT_PUSH_MS) changed = true;
+    const main = (typeof payload.agentId === "string" ? payload.agentId : "main") === "main";
+    if (main) {
+      let next: ActivityPhase | null | undefined;
+      let tool: string | null = null;
+      if (type === "turn.started" || type === "turn.step.started" || type === "thinking.delta" || type === "tool.result") next = "thinking";
+      else if (type === "assistant.delta") next = "writing";
+      else if (type === "tool.call.started") {
+        next = "tool";
+        tool = str(payload.name, 40) || null;
+      } else if (type === "turn.step.retrying") next = "retrying";
+      else if (type === "turn.ended") next = null;
+      if (next !== undefined && (next !== a.phase || tool !== a.tool)) {
+        a.phase = next;
+        a.tool = next === "tool" ? tool : null;
+        a.since = next === null ? null : at;
+        changed = true;
+      }
+    }
+    if (changed) this.lastBeatPush = now.getTime();
+    return changed;
+  }
+
+  private applyContent(type: string, payload: Record<string, any>, now: Date): { changed: boolean; milestone?: ProgressMilestone } {
     const at = now.toISOString();
     const agentId = typeof payload.agentId === "string" ? payload.agentId : "main";
     switch (type) {

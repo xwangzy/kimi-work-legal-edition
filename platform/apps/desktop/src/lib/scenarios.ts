@@ -304,6 +304,47 @@ export const SCENARIOS: ScenarioCard[] = [
 ];
 
 /** 按律师填写生成任务说明：空字段所在的分句省略。 */
+/**
+ * 完成后“接着做”（UIUX 增量评审 D-4）：场景 → 下一步常做的场景（诉讼链：整理案卷 → 金额测算 → 起草起诉状；审合同 → 给不同受众的版本……）。
+ * 只列已有的场景卡；点开的是下一场景的开始面板（同一事项），材料在面板里照常勾选。
+ */
+export const NEXT_STEPS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  casefile: ["amount", "pleading"],
+  "labor-response": ["research-lit", "pleading"],
+  amount: ["pleading", "demand-lit"],
+  pleading: ["case-report"],
+  "research-lit": ["pleading", "demand-lit"],
+  "demand-lit": ["case-report"],
+  intake: ["research-lit", "casefile"],
+  "contract-review": ["audience-pack", "redraft"],
+  "contract-review-inhouse": ["audience-pack", "compliance-qa"],
+  "research-deal": ["contract-review"],
+  "compliance-qa": ["demand-inhouse"],
+});
+
+/** 本次任务对应的场景卡：按方法模板（Agent 场景）或工作流场景找第一张；找不到返回 null。 */
+export function scenarioOfRun(run: { scenario?: string | null; input_snapshot?: any } | null | undefined, preferLine?: BusinessLine | null): ScenarioCard | null {
+  if (!run) return null;
+  let snap: any = run.input_snapshot;
+  if (typeof snap === "string") {
+    try {
+      snap = JSON.parse(snap);
+    } catch {
+      snap = null;
+    }
+  }
+  const skill = typeof snap?.skill === "string" ? snap.skill : null;
+  // 同一方法模板在不同业务线有不同卡（复核 S6B-05）：优先律师当前所在的业务线
+  const pick = (cands: ScenarioCard[]) => (preferLine ? cands.find((c) => c.line === preferLine) : undefined) ?? cands[0] ?? null;
+  if (run.scenario === "a1.agent_task") return skill ? pick(SCENARIOS.filter((c) => c.skill === skill)) : null;
+  return pick(SCENARIOS.filter((c) => c.scenario === run.scenario));
+}
+
+export function nextScenarios(card: ScenarioCard | null): ScenarioCard[] {
+  if (!card) return [];
+  return (NEXT_STEPS[card.id] ?? []).flatMap((id) => SCENARIOS.filter((c) => c.id === id)).slice(0, 3);
+}
+
 export function buildGoal(card: ScenarioCard, values: Record<string, string | string[]>, extra: string): string {
   const parts = card.goal.split(/(?<=[。；])/);
   const out = parts

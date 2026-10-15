@@ -301,7 +301,16 @@ export function createLegalGateway(o: GatewayOptions): Server {
       o.meter.append({ at: new Date().toISOString(), clientRequestId, kind: "reject", requestId, tid: seat.tid, sid: seat.sid, anonMatter: anon, model: alias, status: null, reserved: 0, inputTokens: null, outputTokens: null, cachedTokens: null, latencyMs: Date.now() - started, reason: "client_gone_before_upstream" });
       return;
     }
-    o.meter.append({ at: new Date().toISOString(), clientRequestId, kind: "reserve", requestId, tid: seat.tid, sid: seat.sid, anonMatter: anon, model: alias, status: null, reserved, inputTokens: null, outputTokens: null, cachedTokens: null, latencyMs: null, reason: summaryMissing ? "summary_missing_header_checked" : null });
+    // 预写计量失败（磁盘满、目录不可写）：退还预占并释放并发槽后失败关闭——否则每次失败都永久占住本所一个并发槽，
+    // 累积到上限后全所请求都会排队超时（第 6 批联调发现）
+    try {
+      o.meter.append({ at: new Date().toISOString(), clientRequestId, kind: "reserve", requestId, tid: seat.tid, sid: seat.sid, anonMatter: anon, model: alias, status: null, reserved, inputTokens: null, outputTokens: null, cachedTokens: null, latencyMs: null, reason: summaryMissing ? "summary_missing_header_checked" : null });
+    } catch {
+      release();
+      o.budgets.set(seat.tid, (o.budgets.get(seat.tid) ?? 0) + reserved);
+      // 计量本身写不进去：不再尝试写拒绝记录，直接失败关闭
+      throw new GwError(503, "meter_unavailable", "计量记录写入失败：本次请求未发往上游");
+    }
     let status: number | null = null;
     let usage: { input: number; output: number; cached: number } | null = null;
     let interrupted = false;
