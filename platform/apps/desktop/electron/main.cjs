@@ -270,8 +270,28 @@ async function startKernel() {
       paths: { dataDir: DATA_DIR, agentHostEntry, gateEntry, kapEntry },
       runtimeEnv: restart.runtimeEnv,
     }),
-    stdio: "ignore",
+    // 内核 stdout/stderr 进内存环形缓冲（上限 16KB）：内核崩溃在 asar 加载期只有这里可见——
+    // 仅冒烟形态（KWL_SMOKE）在内核死亡时把它写到结果文件旁的 <out>.kernel.log 供 CI 取证
+    // （错误文本可能含安装路径与用户名：只落在 runner/IT 提供的临时位置，绝不进用户数据根）
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  const kernelOutRing = [];
+  let kernelOutBytes = 0;
+  for (const s of [kernel.stdout, kernel.stderr]) {
+    if (!s) continue;
+    s.on("data", (c) => {
+      kernelOutRing.push(c);
+      kernelOutBytes += c.length;
+      while (kernelOutBytes > 16 * 1024 && kernelOutRing.length > 1) kernelOutBytes -= kernelOutRing.shift().length;
+    });
+  }
+  const dumpKernelOutput = () => {
+    if (!smoke.out || kernelOutRing.length === 0) return;
+    try {
+      require("node:fs").appendFileSync(`${smoke.out}.kernel.log`, kernelOutRing.join(""));
+    } catch {}
+    kernelOutRing.length = 0;
+  };
   // 一次性交付数据库主密钥（内核等待 kernel.init 后启动），主进程随即清除
   kernel.postMessage(dbKey ? { type: "kernel.init", dbKey } : { type: "kernel.init" });
   dbKey = null;
@@ -294,6 +314,7 @@ async function startKernel() {
     }
     if (msg && msg.type === "kernel.fatal") {
       slog.event("MAIN_KERNEL_FATAL", {});
+      dumpKernelOutput();
       if (smoke.out) smoke.kernelFailed("kernel_fatal");
       return;
     }
@@ -309,6 +330,7 @@ async function startKernel() {
   kernel.on("exit", (code) => {
     kernel = null;
     slog.event("MAIN_KERNEL_EXITED", { code: Number.isInteger(code) ? code : undefined });
+    dumpKernelOutput();
     if (smoke.out) smoke.kernelFailed("kernel_exited");
     for (const [, resolve] of pendingRpc) resolve({ ok: false, error: { code: "internal", message: "内核进程已退出" } });
     pendingRpc.clear();

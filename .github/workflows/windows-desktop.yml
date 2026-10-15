@@ -118,12 +118,13 @@ jobs:
           Copy-Item $out apps/desktop/release/smoke.json
           $res = Get-Content $out -Raw -Encoding utf8 | ConvertFrom-Json
           if ($res -and $res.ok -ne $true) {
-            # 冒烟失败取证：日志本身只含脱敏事件码与枚举字段（v9.2 §3.6）；数据目录只列名字与大小、不读内容
+            # 冒烟失败取证：日志本身只含脱敏事件码与枚举字段（v9.2 §3.6）；数据目录只列名字与大小、不读内容（.electron 缓存噪声排除）
+            if (Test-Path "$out.kernel.log") { Write-Output "=== 内核输出（尾 60 行，仅崩溃取证）==="; Get-Content "$out.kernel.log" -Tail 60 -Encoding utf8 }
             foreach ($root in @((Join-Path $env:LOCALAPPDATA "KimiWorkLegal"), (Join-Path $env:APPDATA "KimiWorkLegal"))) {
               if (-not (Test-Path $root)) { continue }
-              Write-Output "=== 数据目录 $root（名字与大小）==="
-              Get-ChildItem $root -Recurse -Force -ErrorAction SilentlyContinue | Select-Object -First 60 | ForEach-Object { Write-Output "$($_.Length)  $($_.FullName.Substring($root.Length))" }
-              Get-ChildItem (Join-Path $root "logs") -Filter *.jsonl -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Output "=== 数据目录 $root（名字与大小，不含 .electron）==="
+              Get-ChildItem $root -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notlike "*\.electron\*" -and $_.FullName -notlike "*\.electron" } | Select-Object -First 80 | ForEach-Object { Write-Output "$($_.Length)  $($_.FullName.Substring($root.Length))" }
+              Get-ChildItem $root -Recurse -Filter *.jsonl -ErrorAction SilentlyContinue | ForEach-Object {
                 Write-Output "=== 日志 $($_.Name)（尾 60 行）==="
                 Get-Content $_.FullName -Tail 60 -Encoding utf8
               }

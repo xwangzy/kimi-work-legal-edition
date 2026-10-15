@@ -13,6 +13,8 @@ const ERROR_CODES = new Set([
   "db_key",
   "already_running",
   "kernel_ready_timeout",
+  "kernel_fatal",
+  "kernel_exited",
   "kernel_status_failed",
   "ocr_unavailable",
   "renderer_load_timeout",
