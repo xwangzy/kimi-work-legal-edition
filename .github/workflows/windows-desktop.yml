@@ -1,0 +1,141 @@
+# Windows 桌面端：真机用例 + 安装包构建 + 安装后冒烟（W4/W5/W7；审计 2026-10-13 W 节、2026-10-14 生产化方案）。
+# - test：执行域（just-bash/CPython）、文件 broker、落盘加密、宿主内检索、kap 端到端、随包运行时与解析进程在 Windows 上运行；
+#         另以中文临时目录重跑关键用例（律师电脑上 Windows 用户名常为中文，%APPDATA% 与临时目录含中文）。
+# - package：构建随包运行时与 NSIS 安装包（按用户安装），用**仅供测试**的自签名证书签名；生成测试密钥签名的发布清单；
+#            静默安装后以 --kwl-smoke 启动（核验随包运行时、DPAPI 主密钥、内核、OCR、闸门与界面），上传安装包与冒烟结果。
+# 正式发布另用中软 EV/OV 证书与硬件模块里的发布签名密钥（不在本工作流）。
+name: windows-desktop
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["platform/**", ".github/workflows/windows-desktop.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: platform
+    shell: bash
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.8.1
+          cache: npm
+          cache-dependency-path: platform/package-lock.json
+      - run: npm ci
+      - run: npm run fetch:ocr-models
+      - run: npm run build:lawdb && npm run build:agent-profile && npm run build:tool-manifest && npm run build:skills
+      - name: 关键用例（Windows）
+        run: >
+          node --test --test-concurrency=1 --test-reporter=spec
+          packages/exec-wasm/test/*.test.ts packages/file-broker/test/*.test.ts packages/at-rest/test/*.test.ts
+          packages/kap-host/test/*.test.ts packages/egress-gate/test/*.test.ts
+          packages/kernel/test/kap-a1.test.ts packages/kernel/test/kap-gate.test.ts packages/kernel/test/parse-ocr.test.ts
+          packages/kernel/test/secret-files.test.ts packages/kernel/test/matter-lifecycle.test.ts
+          apps/desktop/test/*.test.ts
+      - name: 中文路径（临时目录含中文）
+        shell: pwsh
+        working-directory: platform
+        run: |
+          $d = Join-Path $env:RUNNER_TEMP "律师 张三\临时"
+          New-Item -ItemType Directory -Force -Path $d | Out-Null
+          $env:TEMP = $d; $env:TMP = $d
+          node --test --test-concurrency=1 --test-reporter=spec packages/exec-wasm/test/w-core.test.ts packages/exec-wasm/test/w-runtime-bundle.test.ts packages/kernel/test/kap-a1.test.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: 全量（信息性，不阻断：部分用例依赖 POSIX 语义，逐条登记后再转为阻断）
+        continue-on-error: true
+        run: npm test
+
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.8.1
+          cache: npm
+          cache-dependency-path: platform/package-lock.json
+      - run: npm ci
+      - run: npm run fetch:ocr-models
+      - name: 仅供测试的代码签名证书（每次运行新建，30 天有效，不得用于对外发布）
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Kimi Work Legal DEV TEST ONLY, O=ChinaSoft International (DEV TEST ONLY)" -CertStoreLocation Cert:\CurrentUser\My -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddDays(30)
+          $pw = [guid]::NewGuid().ToString("N")
+          Write-Output "::add-mask::$pw"
+          $pfx = Join-Path $env:RUNNER_TEMP "dev-codesign.pfx"
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password (ConvertTo-SecureString $pw -AsPlainText -Force) | Out-Null
+          "CSC_LINK=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "CSC_KEY_PASSWORD=$pw" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: 构建安装包（随包 Node 按锁文件核验；签名）
+        run: node scripts/package-desktop.mjs --sign env
+      - name: 发布签名清单（测试密钥）
+        run: node scripts/sign-update.mjs
+      - name: 静默安装并冒烟
+        shell: pwsh
+        working-directory: platform
+        timeout-minutes: 15
+        env:
+          KWL_SMOKE: "1"
+        run: |
+          $exe = Get-ChildItem apps/desktop/release/KimiWorkLegal-Setup-*.exe | Select-Object -First 1
+          $sig = Get-AuthenticodeSignature $exe.FullName
+          Write-Output "安装包签名：$($sig.Status) $($sig.SignerCertificate.Subject)"
+          # 自签名在 runner 上通常是 UnknownError（根不受信任）；断言签名者是本次的测试证书，而不是“未签名”
+          if (-not $sig.SignerCertificate -or $sig.SignerCertificate.Subject -notlike "*DEV TEST ONLY*") { throw "安装包没有用本次的测试证书签名" }
+          $p = Start-Process $exe.FullName -ArgumentList "/S" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "安装失败：$($p.ExitCode)" }
+          $installDir = Join-Path $env:LOCALAPPDATA "Programs\kimi-work-legal"
+          $app = Join-Path $installDir "KimiWorkLegal.exe"
+          if (-not (Test-Path $app)) { throw "未找到已安装的程序：$app" }
+          # 随包 Node 不得被重签（signExts: !node.exe）：签名者须仍是 OpenJS Foundation，否则运行时摘要必然不符
+          $node = Join-Path $installDir "resources\runtime\node\node.exe"
+          $nodeSigner = (Get-AuthenticodeSignature $node).SignerCertificate.Subject
+          Write-Output "随包 Node 签名：$nodeSigner"
+          if ($nodeSigner -notlike "*OpenJS Foundation*") { throw "随包 node.exe 的签名者不是 OpenJS Foundation（被重签或被替换）" }
+          $out = Join-Path $env:RUNNER_TEMP "smoke.json"
+          if (Test-Path $out) { Remove-Item $out }
+          # 只等主进程（-Wait 会等整棵进程树）；内核及其子进程由应用有序关闭，随后断言没有残留
+          $r = Start-Process $app -ArgumentList "--kwl-smoke=$out" -PassThru
+          if (-not $r.WaitForExit(600000)) { $r.Kill(); throw "冒烟超时（10 分钟）" }
+          Get-Content $out -Encoding utf8
+          Copy-Item $out apps/desktop/release/smoke.json
+          if ($r.ExitCode -ne 0) { throw "冒烟失败：$($r.ExitCode)" }
+          Start-Sleep -Seconds 5
+          $left = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path -like "$installDir*" }
+          if ($left) { $left | Format-Table Id, ProcessName, Path | Out-String | Write-Output; throw "冒烟结束后仍有残留进程（会占用安装目录，更新覆盖失败）" }
+          # 数据根及其内容不编入索引（复核 B4-A09；首次启动后异步标记，这里只报告，不阻断——新文件是否继承须实机核对）
+          $data = Join-Path $env:LOCALAPPDATA "KimiWorkLegal"
+          Write-Output "数据根属性：$((Get-Item $data -Force).Attributes)"
+          Get-ChildItem $data -Force -Recurse -ErrorAction SilentlyContinue | Select-Object -First 5 | ForEach-Object { Write-Output "$($_.Attributes)  $($_.Name)" }
+          # 结果文件已存在：应立即以 3 退出、不覆盖（复核 B4-A08）
+          $before = Get-FileHash $out
+          $again = Start-Process $app -ArgumentList "--kwl-smoke=$out" -PassThru
+          if (-not $again.WaitForExit(120000)) { $again.Kill(); throw "第二次冒烟未立即退出" }
+          if ($again.ExitCode -ne 3) { throw "结果文件已存在时冒烟应以 3 退出（实际 $($again.ExitCode)）" }
+          if ((Get-FileHash $out).Hash -ne $before.Hash) { throw "已存在的结果文件被覆盖" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kimi-work-legal-win-x64
+          path: |
+            platform/apps/desktop/release/*.exe
+            platform/apps/desktop/release/*.blockmap
+            platform/apps/desktop/release/latest.yml
+            platform/apps/desktop/release/kwl-update-*.json
+            platform/apps/desktop/release/smoke.json
+          retention-days: 14
