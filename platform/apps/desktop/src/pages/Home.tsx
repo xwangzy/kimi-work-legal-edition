@@ -3,8 +3,8 @@
  * 输入框在上（描述任务即可，命中业务场景时给出建议、不自动切换）；下面按业务线（诉讼仲裁 / 非诉 / 企业法务）各 5 张场景卡，
  * 卡片写“给什么 → 得到什么”，点开是两段式开始面板。所有场景尚未通过法律质量门槛，统一标“试用”。
  */
-import { useCallback, useEffect, useState } from "react";
-import { api, type Matter, type RunPolicyView } from "../api.ts";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, type Matter, type MaterialFile, type RunPolicyView } from "../api.ts";
 import { nav } from "../App.tsx";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
 import { defaultChoice } from "../components/ModeSelector.tsx";
@@ -12,6 +12,22 @@ import { NewMatterDialog } from "../components/NewMatter.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { ScenarioStart } from "../components/ScenarioStart.tsx";
 import { LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard } from "../lib/scenarios.ts";
+import { fmtShortTime, RUN_STATUS_LABELS, SCENARIO_LABELS } from "../lib/labels.ts";
+
+/** 任务状态胶囊的颜色：等你处理为橙、进行中为蓝、完成为绿、失败为红，其余灰。 */
+const STATUS_TONE: Record<string, string> = {
+  waiting_approval: "pill-orange",
+  waiting_input: "pill-orange",
+  reconciling: "pill-orange",
+  queued: "pill-blue",
+  running: "pill-blue",
+  succeeded: "pill-green",
+  partial: "pill-orange",
+  failed: "pill-red",
+  timed_out: "pill-red",
+  expired: "pill-gray",
+  cancelled: "pill-gray",
+};
 
 const LINE_KEY = "kwl.home.line";
 function savedLine(): BusinessLine {
@@ -24,13 +40,16 @@ function savedLine(): BusinessLine {
   return "litigation";
 }
 
-export function Home({ presetMatterId }: { presetMatterId?: string | undefined }) {
+export function Home({ presetMatterId, startScenario }: { presetMatterId?: string | undefined; startScenario?: string | undefined }) {
   const [matters, setMatters] = useState<Matter[]>([]);
   const [matterId, setMatterId] = useState<string | null>(presetMatterId ?? null);
   const [docs, setDocs] = useState<{ document_version_id: string; filename: string }[]>([]);
   const [policy, setPolicy] = useState<RunPolicyView | null>(null);
   const [value, setValue] = useState<ComposerValue>({ goal: "", scenario: "a1.agent_task", documentIds: [], choice: defaultChoice(null) });
   const [pendingReview, setPendingReview] = useState<any[]>([]);
+  // 等你处理 / 继续工作（UIUX 增量评审 H-1）
+  const [recent, setRecent] = useState<{ run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; goal: string }[]>([]);
+  const [waiting, setWaiting] = useState<{ run_id: string; matter_id: string }[]>([]);
   const [newMatter, setNewMatter] = useState(false);
   const [sheet, setSheet] = useState<PendingStart | null>(null);
   const [msg, setMsg] = useState("");
@@ -52,13 +71,36 @@ export function Home({ presetMatterId }: { presetMatterId?: string | undefined }
     if (!matters.find((m) => m.matter_id === matterId)) return setNewMatter(true);
     setStarting({ card, ...(extra ? { extra } : {}) });
   };
+  // 从“方法与模板”页进入（#/start/<场景>）：事项载入后打开该场景的开始面板一次，并把地址还原为首页
+  const startedFrom = useRef<string | null>(null);
+  useEffect(() => {
+    if (!startScenario || startedFrom.current === startScenario || matterId === null || !matters.some((m) => m.matter_id === matterId)) return;
+    const card = SCENARIOS.find((c) => c.id === startScenario);
+    startedFrom.current = startScenario;
+    if (card) {
+      setLine(card.line);
+      openCard(card);
+    }
+    window.history.replaceState(null, "", "#/");
+  }, [startScenario, matterId, matters]);
 
+  const sampleTried = useRef(false);
   const loadMatters = useCallback(() => {
     api
       .listMatters()
       .then((r) => {
         // 首页只用于发起任务：已结案（只读）的事项不在可选之列
         const open = r.matters.filter((m) => (m.lifecycle ?? "active") === "active");
+        // 第一次使用、还没有任何事项：放入一件虚构的示例事项（只放一次，移除后不再放入）
+        if (r.matters.length === 0 && !sampleTried.current) {
+          sampleTried.current = true;
+          void api
+            .installSample()
+            .then((s) => {
+              if (s.installed) loadMatters();
+            })
+            .catch(() => {});
+        }
         setMatters(open);
         setMatterId((cur) => (cur && open.some((m) => m.matter_id === cur) ? cur : open[0]?.matter_id ?? null));
       })
@@ -67,6 +109,13 @@ export function Home({ presetMatterId }: { presetMatterId?: string | undefined }
   useEffect(() => {
     loadMatters();
     api.pending().then((r) => setPendingReview(r.pending)).catch(() => {});
+    api
+      .recentRuns(5)
+      .then((r) => {
+        setRecent(r.runs);
+        setWaiting(r.waiting);
+      })
+      .catch(() => {});
   }, [loadMatters]);
   const loadMatter = useCallback((id: string) => {
     api
@@ -97,7 +146,7 @@ export function Home({ presetMatterId }: { presetMatterId?: string | undefined }
     }
   };
 
-  const importFiles = async (files: FileList) => {
+  const importFiles = async (files: FileList | MaterialFile[]) => {
     if (!matterId) return;
     setBusy(true);
     // 逐个导入：一份失败（例如带密级标志被拒）不影响其余文件，结果逐条告诉律师
@@ -154,18 +203,20 @@ export function Home({ presetMatterId }: { presetMatterId?: string | undefined }
           </div>
         )}
 
-        {pendingReview.length > 0 && (
-          <section>
-            <div className="section-title">待我复核 / 签发</div>
-            <div className="cards">
-              {pendingReview.slice(0, 4).map((p) => (
-                <button key={p.artifact_version_id} className="card" onClick={() => nav(`/review/${p.artifact_version_id}`)}>
-                  <div className="title">{p.filename}</div>
-                  <div className="desc">{p.matter_title} · v{p.version} · 待复核</div>
-                </button>
-              ))}
-            </div>
-          </section>
+        {(waiting.length > 0 || pendingReview.length > 0) && (
+          <div className="todo-strip" role="status">
+            <span className="act-dot act-wait" aria-hidden="true" />
+            {waiting.length > 0 && (
+              <button className="btn-link" onClick={() => nav(`/run/${waiting[0]!.run_id}/${waiting[0]!.matter_id}`)}>
+                {waiting.length} 个任务在等你确认或回答 →
+              </button>
+            )}
+            {pendingReview.length > 0 && (
+              <button className="btn-link" onClick={() => nav(pendingReview.length === 1 ? `/review/${pendingReview[0].artifact_version_id}` : "/deliverables")}>
+                {pendingReview.length} 份草稿待你复核 →
+              </button>
+            )}
+          </div>
         )}
 
         <section className="lines">
@@ -193,8 +244,29 @@ export function Home({ presetMatterId }: { presetMatterId?: string | undefined }
                 </div>
               </button>
             ))}
+            <button className="card scenario-card scenario-more" onClick={() => nav("/methods")}>
+              <div className="title">更多场景 →</div>
+              <div className="desc">全部方法与模板，按业务线和交付件查找</div>
+            </button>
           </div>
         </section>
+        {recent.length > 0 && (
+          <section>
+            <div className="section-title">继续工作</div>
+            <ul className="recent-list">
+              {recent.map((r) => (
+                <li key={r.run_id}>
+                  <button className="recent-row" onClick={() => nav(`/run/${r.run_id}/${r.matter_id}`)}>
+                    <span className="recent-goal">{r.goal || SCENARIO_LABELS[r.scenario] || "任务"}</span>
+                    <span className="muted">{r.matter_title}</span>
+                    <span className={`pill ${STATUS_TONE[r.status] ?? "pill-gray"}`}>{RUN_STATUS_LABELS[r.status] ?? r.status}</span>
+                    <span className="muted recent-time">{fmtShortTime(r.updated_at)}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         <p className="muted foot-note">
           所有场景都在试用阶段：结果是草稿，须律师复核后使用。也可以直接在上面描述任务。更多方法见 <button className="btn-link" onClick={() => nav("/methods")}>方法与模板</button>。
         </p>

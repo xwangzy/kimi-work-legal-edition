@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@zr-legal/safe-log": "*",
     "@zr-legal/tokenizer": "*",
     "undici": "7.30.0"
   }

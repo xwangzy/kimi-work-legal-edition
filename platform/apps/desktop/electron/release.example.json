@@ -1,9 +1,29 @@
 {
-  "_comment": "安装包内置的中软云上游（审计 S5）：地址必须 https；钉住集为证书链中任一证书的 SPKI sha256（openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64），至少两把（当前 + 备份）。发布流程复制为 release.json 打进 asar。",
+  "_comment": "安装包内置的中软云上游（审计 S5）：地址必须 https；钉住集为证书链中任一证书的 SPKI sha256（openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64），至少两把（当前 + 备份）；只钉叶子证书或中软自有中间证书，不要钉公共 CA（同一 CA 签发的其他主机也会通过钉住检查，复核 B4-A06）。发布流程复制为 release.json 打进 asar。 自动更新（W7）：update_base 为通用 HTTPS 更新源，update_pins 同上，update_keys 为发布签名公钥（Ed25519 SPKI DER base64，可多把以便轮换）；更新源上按渠道放 kwl-update-<渠道>.json（scripts/sign-update.mjs 生成，带有效期，到期前须重签）。",
   "gateway_base": "https://gateway.example.invalid/v1",
-  "gateway_pins": ["sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="],
+  "gateway_pins": [
+    "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+  ],
   "search_base": "https://search.example.invalid/v1/search",
-  "search_pins": ["sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="],
+  "search_pins": [
+    "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+  ],
   "control_plane_base": "https://cp.example.invalid",
-  "control_plane_pins": ["sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="]
+  "control_plane_pins": [
+    "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+  ],
+  "update_base": "https://updates.example.invalid/kimi-work-legal/win",
+  "update_pins": [
+    "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB="
+  ],
+  "update_keys": [
+    "<Ed25519 发布公钥 SPKI DER base64，scripts/sign-update.mjs --print-public-key 输出>"
+  ],
+  "update_publishers": [
+    "中软国际科技服务有限公司（示例：正式代码签名证书主体 CN）"
+  ]
 }

@@ -6,7 +6,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const VENDOR = fileURLToPath(new URL("../vendor/kap-embed/", import.meta.url));
@@ -81,4 +82,28 @@ test("已删除的直连路径不在制品中：ripgrep CDN 下载（ZP-20）、
 test("ZP-4b：前置钩子的 allow() 不再短路其余监听者（权限闸门/宿主策略总会裁决）；ZP-22：拒绝按本机路径附件", () => {
   assert.doesNotMatch(bundle, /if \(event\.finalAllowed\)/, "发射器不得因 allow() 提前返回");
   assert.match(bundle, /attachment by local path is disabled in this distribution/);
+});
+
+test("复核 B4-B08：强制取消只经内核 IPC 可达——kap-host 源码不监听端口，forceCancel 只在运行时定义与 main.ts 方法表；方法分派只认方法表自有键；内核只有 kap 适配器调用它", () => {
+  const src = fileURLToPath(new URL("../src/", import.meta.url));
+  const files = readdirSync(src).filter((f) => f.endsWith(".ts"));
+  assert.deepEqual(files.filter((f) => readFileSync(join(src, f), "utf8").includes("forceCancel")).sort(), ["main.ts", "runtime.ts"]);
+  for (const f of files) assert.doesNotMatch(readFileSync(join(src, f), "utf8"), /\bcreateServer\s*\(|\.listen\s*\(/, `${f} 不得监听端口`);
+  const main = readFileSync(join(src, "main.ts"), "utf8");
+  const table = main.slice(main.indexOf("const methods"), main.indexOf('process.on("message"'));
+  assert.match(table, /async forceCancel\(p: \{ run_id: string; reason\?: string \}\)/, "forceCancel 在 IPC 方法表内");
+  assert.equal(main.match(/forceCancel/g)?.length, 2, "main.ts 只在方法表里出现（方法名与对运行时的调用）");
+  assert.match(main, /Object\.hasOwn\(methods, msg\.method\)/, "分派只认方法表自有键（不认原型键）");
+  // 内核侧：只有 kap 适配器调用 forceCancel；内核 API 与其余模块不出现（没有透传宿主方法名的入口）
+  const kernel = fileURLToPath(new URL("../../kernel/src/", import.meta.url));
+  const users: string[] = [];
+  const walk = (d: string) => {
+    for (const n of readdirSync(d)) {
+      const p = join(d, n);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (/\.ts$/.test(n) && readFileSync(p, "utf8").includes("forceCancel")) users.push(p.slice(kernel.length).split("\\").join("/"));
+    }
+  };
+  walk(kernel);
+  assert.deepEqual(users, ["executor/kap-agent-client.ts"]);
 });

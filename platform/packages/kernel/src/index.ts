@@ -22,7 +22,7 @@ import { BlobStore } from "./blobs.ts";
 import { TaskQueue } from "./queue.ts";
 import { createApi } from "./api/index.ts";
 import { resolveIdentity, taskTokenKey, type Identity } from "./identity.ts";
-import { configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
+import { applyStagedRecovery, configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
 import { FirmGovernance, localDevPolicyBody, firmPolicyInputOf, type FirmPolicyInput } from "./control-plane/governance.ts";
 import { ControlPlaneClient } from "./control-plane/client.ts";
 import { parsePublicKeyMap } from "@zr-legal/firm-trust";
@@ -47,6 +47,7 @@ import { screenSearchQuery } from "@zr-legal/egress-gate";
 import { createGateProvider, mockProvider } from "@zr-legal/model-broker";
 import { QaChatService } from "./services/qa-chat.ts";
 import { mintTaskToken } from "./identity.ts";
+import { FileSink, errFields, loadOrCreateSalt, slog } from "@zr-legal/safe-log";
 
 export interface Kernel {
   invoke(method: string, params?: unknown): Promise<unknown>;
@@ -74,6 +75,9 @@ export interface Kernel {
 export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const config = loadConfig(opts);
   const env = config.env;
+  // 统一脱敏日志（v9.2 §3.6）：内核单写数据根下 logs/；记录编号按本机盐 hash（盐与日志分开存放）
+  const logSink = new FileSink({ dir: join(config.workspaceDir, "logs"), salt: loadOrCreateSalt(join(config.workspaceDir, ".log-salt")) });
+  slog.setSink(logSink);
 
   const db = new KernelDb(config.dbFile, { key: config.dbKey });
   db.migrate();
@@ -89,12 +93,25 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const keysDir = keysDirOf(config.workspaceDir);
   // 方法模板包（核查 P0-5）：用法规库同一把内容签名公钥验签，物化为只读可信区
   const skillsBundle = materializeSkillsBundle(config.skillsManifestFile, config.lawdbSignerPub, config.workspaceDir);
-  if (!skillsBundle.ok) console.warn(`[kernel] 方法模板未加载：${skillsBundle.reason}`);
+  if (!skillsBundle.ok) slog.event("KERNEL_SKILLS_UNAVAILABLE", {});
   // 密钥文件按数据库主密钥派生的密钥封装（隐私安全审查 P0-1）；开发与测试形态无主密钥时为明文
   configureSecretSealing(keysDir, config.dbKey);
   const firm = ensureFirmIdentity(db, keysDir, identity.tenantId);
+  // 暂存的设备恢复在任何组件装载设备密钥之前生效（复核 B4-R09）
+  const recovery = applyStagedRecovery(db, keysDir, { firmSlug: config.firmSlug, userSlug: config.userSlug }, firm.rootPublicKeyPem);
+  if (recovery.rejected) slog.event("KERNEL_RECOVERY_REJECTED", {});
   const device = ensureDevice(db, keysDir, identity, { firmSlug: config.firmSlug, userSlug: config.userSlug });
   const signer = createLedgerSigner({ db, deviceId: device.deviceId, signPrivateKeyPem: device.keys.signPrivateKeyPem, tenantId: identity.tenantId });
+  if (recovery.applied || recovery.rejected) {
+    // 恢复生效或被拒：记审计（只记结果与计数）
+    const action = recovery.applied ? "recovery.applied" : "recovery.rejected";
+    const detail = createHash("sha256").update(JSON.stringify({ rewrapped: recovery.rewrapped, unreadable: recovery.unreadable, rejected: recovery.rejected ?? null })).digest("hex");
+    db.tx(() => {
+      const r = db.run(`INSERT INTO audit_events (tenant_id, actor_id, action, object_kind, object_id, detail_hash) VALUES (?,?,?,?,?,?)`, [identity.tenantId, identity.userId, action, "device", device.deviceId, detail]);
+      const row = db.get<Record<string, unknown>>(`SELECT * FROM audit_events WHERE audit_event_id = ?`, [Number(r.lastInsertRowid)]);
+      signer.append({ kind: "audit_event", refId: String(r.lastInsertRowid), matterId: null, type: action, payloadHash: rowPayloadHash(row ?? {}) });
+    });
+  }
 
   // 律所治理（v9 阶段 6：控制面最小集的本机一侧）。控制面地址与控制面公钥随客户端构建固定（G0 开发形态经本机配置给出）；
   // 未配置控制面 = 开发形态：律所策略沿用本机配置项（D-17），不检查许可
@@ -221,7 +238,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
           onSynced: () => {
             if (governance.exitMode()) return;
             const n = queue.resumeParked();
-            if (n > 0) console.warn(`[kernel] 退出模式已解除：恢复 ${n} 个暂停的任务`);
+            if (n > 0) slog.event("KERNEL_EXIT_MODE_LIFTED", { resumed: n });
           },
         })
       : null;
@@ -289,6 +306,11 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   }
   // 审计 S3 第 2 步（设计 2-9）：v5 SDK 宿主把材料快照以明文写进每任务目录——落盘加密为必需（安装包形态）时不得选用，一律 kap-host
   const useSdkEngine = env.ZR_AGENT_ENGINE === "sdk" && env.ZR_AT_REST !== "required";
+  slog.event("KERNEL_STARTED", {
+    engine: useSdkEngine ? "sdk" : "kap",
+    at_rest: env.ZR_AT_REST === "required" ? "required" : env.ZR_AT_REST === "off" ? "off" : "on",
+    control_plane: env.ZR_CONTROL_PLANE_BASE ? "configured" : "dev",
+  });
   const kapAgentClient =
     !useSdkEngine
       ? createKapAgentClient({
@@ -300,6 +322,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
           trustedRgPath: null,
           // 方法模板（Kimi Code Skills）：验签物化后的可信区；校验失败即不加载任何技能（不降级加载部分）
           trustedDir: skillsBundle.ok ? skillsBundle.dir : null,
+          // 只供测试（上下文压缩验收 K7-3）：ZR_KAP_TEST_CONTEXT 缩小引擎上下文窗口；安装包形态（落盘加密 required、控制面必需）不传
+          ...(env.ZR_KAP_TEST_CONTEXT && env.ZR_AT_REST !== "required" && env.ZR_REQUIRE_CONTROL_PLANE !== "1" ? { testMaxContextSize: Number(env.ZR_KAP_TEST_CONTEXT) } : {}),
           // 安装包形态：主进程按随包运行时清单给出（apps/desktop/electron/runtime-paths.cjs）
           ...(env.KWL_W_RUNTIME_DIR || env.KWL_RUNTIME_NODE_SHA256 || env.KWL_RUNTIME_NODE_VERSION
             ? {
@@ -414,6 +438,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     ioMutex,
     ocrModelPaths,
     parseMock: env.ZR_PARSE_OCR_MOCK === "1",
+    // W6：安装包里解析进程用随包 Node 运行（runtime-paths.cjs 给出），不借 Electron 自身 fork
+    parseWorker: { execPath: env.KWL_PARSE_NODE || undefined, entry: env.KWL_PARSE_WORKER_ENTRY || undefined },
     localStats,
     revokeRun,
     tokens,
@@ -539,8 +565,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const recovered = queue.recover({ start: !exitAtStart });
   if (exitAtStart) {
     if (exitAtStart.code === "device_revoked") cancelOpenRuns();
-    if (recovered > 0) console.warn(`[kernel] 退出模式（${exitAtStart.code}）：${recovered} 个中断任务暂停，退出模式解除后恢复`);
-  } else if (recovered > 0) console.warn(`[kernel] 恢复 ${recovered} 个中断任务（从最后检查点继续）`);
+    if (recovered > 0) slog.event("KERNEL_RUNS_RECOVERED", { count: recovered, parked: true });
+  } else if (recovered > 0) slog.event("KERNEL_RUNS_RECOVERED", { count: recovered, parked: false });
   // 等待律师中的开放任务：待决项只在宿主内存，重启后按“过期”收尾并作废其批准（复核 S5-B03）
   for (const rid of await expireOrphanedAgentWaits(workflowDeps)) approvals.revokeRun(rid);
 
@@ -549,7 +575,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     try {
       signer.checkpoint("daily");
     } catch (e) {
-      console.warn(`[kernel] 每日检查点失败：${(e as Error)?.message ?? e}`);
+      slog.event("KERNEL_CHECKPOINT_FAILED", errFields(e));
     }
   };
   const today = new Date().toISOString().slice(0, 10);
@@ -577,7 +603,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
         const msg = (e as Error)?.message ?? String(e);
         if (msg !== lastSyncTickError) {
           lastSyncTickError = msg;
-          console.warn(`[kernel] 同步定时器异常：${msg}`);
+          slog.event("KERNEL_SYNC_TIMER_FAILED", errFields(e));
           try {
             db.tx(() => {
               const r = db.run(`INSERT INTO audit_events (tenant_id, actor_id, action, object_kind, object_id, detail_hash) VALUES (?,?,?,?,?,?)`, [
@@ -653,6 +679,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       }
       lawdb.close();
       db.close();
+      slog.event("KERNEL_CLOSED", {});
+      if (slog.getSink() === logSink) slog.setSink(null);
     },
   };
 }

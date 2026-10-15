@@ -10,9 +10,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileBroker } from "@zr-legal/file-broker";
 import { ManifestRegistry, argsHash } from "@zr-legal/host-policy";
-import { HostPolicy, type RunPolicyContext } from "../src/policy.ts";
+import { HostPolicy, type PolicyDecisionRecord, type RunPolicyContext } from "../src/policy.ts";
 import { ExecRouter } from "../src/exec-router.ts";
 import { KapRuntime } from "../src/runtime.ts";
+import { ProgressTracker } from "../src/progress.ts";
 
 function ctx(mode: RunPolicyContext["mode"], maxToolCalls: number, maxSubagents: number): RunPolicyContext {
   return {
@@ -95,6 +96,8 @@ test("S2-03 宿主代批计划确认：只认同一会话、同一 Agent、同�
     providerFinishReason: undefined,
     assistantText: "",
     modelToken: "t",
+    progress: new ProgressTracker(),
+    progressTimer: null,
   });
   const decisions = (rt as unknown as { decisions: Map<string, unknown> }).decisions;
   const plan = (sessionId: string, agentId: string, toolCallId: string, args: unknown) =>
@@ -312,4 +315,130 @@ test("S2-15 看门狗：审批卡过期即按拒绝处理（不依赖有人调�
   assert.equal(run2.status, "failed");
   assert.ok(run2.events.some((e) => e.type === "run.failed" && e.payload.reason === "run_deadline_exceeded"));
   void rt;
+});
+
+test("K7-4 子 Agent 预算按成员计：一次 AgentSwarm 计 items + resume_agent_ids 个成员；无法解析即拒绝；分叉上下文与另指模型一律拒绝", () => {
+  const p = policy();
+  // 默认档、子 Agent 上限 2：三个成员的集群 → 超预算询问；自动档 → 硬上限拒绝
+  p.bindSession("k1", ctx("default", 100, 2));
+  assert.equal(tag(ev(p, "k1", "s1", "AgentSwarm", { prompt_template: "核对 {{item}}", items: ["一", "二", "三"] })), "ask:over_budget");
+  p.bindSession("k2", ctx("auto", 100, 2));
+  assert.equal(tag(ev(p, "k2", "s1", "AgentSwarm", { prompt_template: "核对 {{item}}", items: ["一", "二", "三"] })), "deny:budget_hard_cap");
+  // 两个成员恰好用满额度，随后的单个 Agent 超预算
+  p.bindSession("k3", ctx("default", 100, 2));
+  assert.equal(tag(ev(p, "k3", "s1", "AgentSwarm", { prompt_template: "核对 {{item}}", items: ["一", "二"] })), "approve:orchestration_within_budget");
+  assert.equal(tag(ev(p, "k3", "s2", "Agent", { prompt: "再核对一项" })), "ask:over_budget");
+  // 续跑的成员同样计数
+  p.bindSession("k4", ctx("default", 100, 2));
+  assert.equal(tag(ev(p, "k4", "s1", "AgentSwarm", { items: ["一"], resume_agent_ids: { a1: "继续", a2: "继续" } })), "ask:over_budget");
+  // 成员数无法解析（缺 items 与 resume_agent_ids，或都为空）→ 宿主拒绝（复核 B4-B06：不再问律师一张无意义的“超预算”卡），不消耗预算
+  p.bindSession("k5", ctx("default", 100, 10));
+  assert.equal(tag(ev(p, "k5", "s1", "AgentSwarm", { prompt_template: "x" })), "deny:swarm_members_unparseable");
+  assert.equal(tag(ev(p, "k5", "s2", "AgentSwarm", { prompt_template: "x", items: [], resume_agent_ids: {} })), "deny:swarm_members_unparseable");
+  assert.equal(tag(ev(p, "k5", "s3", "AgentSwarm", { items: "一,二" })), "deny:swarm_members_unparseable");
+  assert.deepEqual(p.budgetUsage("k5"), { toolCalls: 0, subagents: 0 });
+  // 分叉上下文（继承主模型与整段对话）：Agent 与 AgentSwarm 都拒绝
+  p.bindSession("k6", ctx("default", 100, 10));
+  assert.equal(tag(ev(p, "k6", "s1", "Agent", { prompt: "x", fork: true })), "deny:subagent_fork_disabled");
+  assert.equal(tag(ev(p, "k6", "s2", "AgentSwarm", { items: ["一"], fork: true })), "deny:subagent_fork_disabled");
+  // 另指模型（复核 B4-B06）：只允许缺省或低价模型别名；“primary”与主模型一律宿主拒绝（不只依赖引擎的 [secondary_model].force）
+  p.bindSession("k7", ctx("default", 100, 10));
+  assert.equal(tag(ev(p, "k7", "s1", "Agent", { prompt: "x", model: "primary" })), "deny:subagent_model_override_disabled");
+  assert.equal(tag(ev(p, "k7", "s2", "Agent", { prompt: "x", model: "legal/k3" })), "deny:subagent_model_override_disabled");
+  assert.equal(tag(ev(p, "k7", "s3", "AgentSwarm", { items: ["一"], model: "primary" })), "deny:subagent_model_override_disabled");
+  assert.equal(tag(ev(p, "k7", "s4", "Agent", { prompt: "x", model: "legal/k2.6" })), "approve:orchestration_within_budget");
+  assert.equal(tag(ev(p, "k7", "s5", "AgentSwarm", { items: ["一"] })), "approve:orchestration_within_budget");
+});
+
+test("复核 B4-B05 超预算获批后计数：批准一次 5 成员集群后，下一次单个 Agent 仍须询问；拒绝则不计；工具调用次数同样补记", () => {
+  const recs: PolicyDecisionRecord[] = [];
+  const pr = new HostPolicy({ broker: { locate: () => null } as never, workDir: "/nonexistent", manifests: new ManifestRegistry([]), execDomainAvailable: () => false, onDecision: (r) => recs.push(r) });
+  // 上限 3、已用 2
+  pr.bindSession("b1", ctx("default", 100, 3));
+  assert.equal(tag(ev(pr, "b1", "a1", "Agent", { prompt: "一" })), "approve:orchestration_within_budget");
+  assert.equal(tag(ev(pr, "b1", "a2", "Agent", { prompt: "二" })), "approve:orchestration_within_budget");
+  const swarm = ev(pr, "b1", "w1", "AgentSwarm", { items: ["甲", "乙", "丙", "丁", "戊"] });
+  assert.equal(tag(swarm), "ask:over_budget");
+  const askRec = recs.at(-1)!;
+  assert.deepEqual(askRec.overBudget, { members: 5, toolCallsLeft: 98, subagentsLeft: 1 }, "询问记下本次成员数与余额（卡片据此写明）");
+  // 律师批准 → 补记 1 次调用与 5 个成员
+  pr.chargeApprovedOverBudget("b1", askRec);
+  pr.chargeApprovedOverBudget("b1", askRec); // 同一裁决只补记一次
+  assert.deepEqual(pr.budgetUsage("b1"), { toolCalls: 3, subagents: 7 });
+  assert.equal(tag(ev(pr, "b1", "a3", "Agent", { prompt: "三" })), "ask:over_budget", "获批之后再派子任务仍须询问");
+  // 别的会话或非超预算的裁决不能拿来补记
+  pr.bindSession("b2", ctx("default", 100, 3));
+  pr.chargeApprovedOverBudget("b2", askRec);
+  assert.deepEqual(pr.budgetUsage("b2"), { toolCalls: 0, subagents: 0 });
+  // 拒绝（不补记）：同样已用 2 的会话，单个 Agent 仍在余额内
+  pr.bindSession("b3", ctx("default", 100, 3));
+  ev(pr, "b3", "a1", "Agent", { prompt: "一" });
+  ev(pr, "b3", "a2", "Agent", { prompt: "二" });
+  assert.equal(tag(ev(pr, "b3", "w1", "AgentSwarm", { items: ["甲", "乙"] })), "ask:over_budget");
+  assert.equal(tag(ev(pr, "b3", "a3", "Agent", { prompt: "三" })), "approve:orchestration_within_budget");
+  // 工具调用次数：上限 2，第三次读取超预算 → 批准后补记，第四次仍询问
+  pr.bindSession("b4", ctx("default", 2, 0));
+  ev(pr, "b4", "r1", "Read", {});
+  ev(pr, "b4", "r2", "Read", {});
+  assert.equal(tag(ev(pr, "b4", "r3", "Read", {})), "ask:over_budget");
+  assert.deepEqual(recs.at(-1)!.overBudget, { members: 0, toolCallsLeft: 0, subagentsLeft: 0 });
+  pr.chargeApprovedOverBudget("b4", recs.at(-1)!);
+  assert.deepEqual(pr.budgetUsage("b4"), { toolCalls: 3, subagents: 0 });
+  assert.equal(tag(ev(pr, "b4", "r4", "Read", {})), "ask:over_budget");
+});
+
+test("复核 B4-B05（运行时整链）：超预算确认卡带成员数与余额；律师经宿主审批接口批准后补记预算，随后的子任务再次出卡", async () => {
+  const run = fakeRunRecord({ status: "running", waitingSince: null, questions: new Set(), progress: new ProgressTracker(), progressTimer: null, stepText: "", lastStepText: "" });
+  const { rt, engine } = runtimeWith(run);
+  const decisions = (rt as unknown as { decisions: Map<string, PolicyDecisionRecord> }).decisions;
+  const pol = new HostPolicy({
+    broker: { locate: () => null } as never,
+    workDir: "/nonexistent",
+    manifests: new ManifestRegistry([]),
+    execDomainAvailable: () => false,
+    onDecision: (r) => decisions.set(`${r.sessionId}\u0000${r.agentId}\u0000${r.toolCallId}`, r),
+  });
+  (engine as { policy: unknown }).policy = pol;
+  pol.bindSession("s", ctx("default", 100, 3));
+  ev(pol, "s", "a1", "Agent", { prompt: "一" });
+  ev(pol, "s", "a2", "Agent", { prompt: "二" });
+  const swarmArgs = { items: ["甲", "乙", "丙", "丁", "戊"] };
+  assert.equal(tag(ev(pol, "s", "w1", "AgentSwarm", swarmArgs)), "ask:over_budget");
+  const onEngineEvent = (rt as unknown as { onEngineEvent: (...a: unknown[]) => void }).onEngineEvent.bind(rt);
+  onEngineEvent(run, engine, { type: "permission.approval.requested", payload: { id: "ap_w1", toolCallId: "w1", toolName: "AgentSwarm", toolInput: swarmArgs, agentId: "main" } });
+  const req = run.events.find((e) => e.type === "run.approval_requested")!;
+  assert.equal(req.payload.reason, "over_budget");
+  assert.deepEqual(req.payload.budget, { members: 5, tool_calls_left: 98, subagents_left: 1 });
+  await rt.approve("ap_w1", { decision: "approve", object_hash: argsHash(swarmArgs), nonce: String(req.payload.nonce) }, { channel: "desktop", userId: "u" });
+  assert.deepEqual(pol.budgetUsage("s"), { toolCalls: 3, subagents: 7 });
+  assert.equal(tag(ev(pol, "s", "a3", "Agent", { prompt: "三" })), "ask:over_budget");
+});
+
+test("复核 B4-B08：内核强制取消对已结束的运行原样返回（不改终态、不中止会话、不记事件）；进行中的运行强制取消后为“已取消”、中止会话并记来源为内核", async () => {
+  const done = fakeRunRecord({ status: "succeeded", approvals: new Map(), questions: new Set() });
+  const w1 = runtimeWith(done);
+  assert.deepEqual(await w1.rt.forceCancel("r", "用户取消"), { status: "succeeded" });
+  assert.equal(w1.calls.length, 0);
+  assert.equal(done.events.length, 0);
+  const live = fakeRunRecord();
+  const w2 = runtimeWith(live);
+  assert.deepEqual(await w2.rt.forceCancel("r", "用户取消"), { status: "cancelled" });
+  assert.ok(w2.calls.some((c) => c[0] === "action" && c[2] === "abort"), "中止引擎会话");
+  assert.ok(live.events.some((e) => e.type === "run.cancelled" && e.payload.by_channel === "kernel"));
+  assert.equal(live.approvals.size, 0, "待决确认卡随之清除");
+});
+
+test("重试同一任务（第 4 批复核 B 范围外发现）：上一次运行已终结即换下旧记录、照常发起；仍在进行或正在收尾的照旧拒绝", async () => {
+  const origin = { channel: "desktop" as const, userId: "u" };
+  // 已终结：越过“运行已存在”检查，进入发起流程（本桩的事项布局抛 unused，说明已进入发起）
+  const done = fakeRunRecord({ status: "failed", mainTurnOpen: false, questions: new Set() });
+  const a = runtimeWith(done);
+  await assert.rejects(() => a.rt.startRun({ matter_id: "m", goal: "重试", run_id: "r" } as never, origin as never), (e: any) => !/运行已存在/.test(String(e?.message)));
+  assert.equal(a.internals.runs.get("r"), undefined, "旧记录已换下");
+  // 仍在进行：拒绝
+  const live = runtimeWith(fakeRunRecord({ status: "running" }));
+  await assert.rejects(() => live.rt.startRun({ matter_id: "m", goal: "重试", run_id: "r" } as never, origin as never), /运行已存在/);
+  // 终态但正在收尾：拒绝
+  const settling = runtimeWith(fakeRunRecord({ status: "succeeded", settling: true }));
+  await assert.rejects(() => settling.rt.startRun({ matter_id: "m", goal: "重试", run_id: "r" } as never, origin as never), /运行已存在/);
 });

@@ -9,10 +9,12 @@
  * 4. “本任务内不再询问”做成勾选框，不单独占按钮。
  * 5. 过期不惩罚：说明跳过了什么。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import type { ApprovalCard, QuestionAnswer, QuestionCard } from "../api.ts";
 import { Markdown, tokens as renderTokens } from "./Markdown.tsx";
 import { Icon } from "./Icons.tsx";
+import { sendView } from "../lib/query-diff.ts";
+import { buildAnswers, isAnswered, pickOption, typeOther, unansweredCount, type AnswerDraft } from "../lib/question-answers.ts";
 
 /** 卡片标题（动词短语，律师语言）。 */
 export const KIND_TITLES: Record<ApprovalCard["kind"], string> = {
@@ -63,7 +65,7 @@ export function ApprovalCardView({ card, tokenMap, busy, onDecide }: {
     return (
       <div className={`card-confirm card-${card.kind} card-expired`} aria-live="polite">
         <div className="cc-head"><Icon.shield /> {KIND_TITLES[card.kind]} {timer}</div>
-        <p className="muted">已超时，Agent 跳过了这一步。需要的话，可以在下方追问里让它重新做这一步。</p>
+        <p className="muted">已超时，助手跳过了这一步。需要的话，可以在下方追问里让它重新做这一步。</p>
       </div>
     );
   }
@@ -72,7 +74,7 @@ export function ApprovalCardView({ card, tokenMap, busy, onDecide }: {
       <div className="card-confirm card-plan" aria-live="polite">
         <div className="cc-head"><Icon.list /> 请确认工作计划 {timer}</div>
         <div className="cc-plan">{card.preview.plan ? <Markdown text={card.preview.plan} tokenMap={tokenMap} /> : <p className="muted">（计划正文为空）</p>}</div>
-        {showFeedback && <textarea className="cc-feedback" placeholder="写下你希望怎么改（会附给 Agent）" value={feedback} onChange={(e) => setFeedback(e.target.value)} autoFocus />}
+        {showFeedback && <textarea className="cc-feedback" placeholder="写下你希望怎么改（会转给助手）" value={feedback} onChange={(e) => setFeedback(e.target.value)} autoFocus />}
         <div className="cc-actions">
           <button className="btn-primary" disabled={busy} onClick={() => onDecide({ decision: "approve", scope: "once" })}>按这个计划开始</button>
           {showFeedback ? (
@@ -101,13 +103,16 @@ export function ApprovalCardView({ card, tokenMap, busy, onDecide }: {
       {card.why && <div className="cc-why">{card.why}</div>}
       <dl className="cc-body">
         <dt>会做什么</dt>
-        <dd>{renderTokens(card.title, tokenMap)}</dd>
+        {/* 检索卡一律不显示 Agent 写的标题（可能含改写前的当事人名称，UIUX 增量评审 P0-B；复核 B4-B15：没有改写变体的检索卡同样不显示）；
+            实际发出的内容见下一行，原文只在“更多选项”里出现 */}
+        <dd>{card.kind === "search" ? "联网检索公开的法律资料" : renderTokens(card.title, tokenMap)}</dd>
         <dt>发给谁、发什么</dt>
         <dd>
           {card.destination}
-          {sendText !== undefined && <div className="cc-send">“{sendText}”</div>}
-          {isSearchCred && generalizedOk && card.preview.send_original !== undefined && card.preview.send_original !== card.preview.send_generalized && (
-            <div className="cc-note muted">已把当事人名称改写为一般性表述后再发出。</div>
+          {isSearchCred && generalizedOk && card.preview.send_original !== undefined && card.preview.send_generalized !== undefined && card.preview.send_original !== card.preview.send_generalized ? (
+            <QuerySend original={card.preview.send_original} rewritten={card.preview.send_generalized} />
+          ) : (
+            sendText !== undefined && <div className="cc-send">将发出：“{sendText}”</div>
           )}
           {card.preview.url && <div className="cc-send mono">{card.preview.url}</div>}
           {card.preview.detail && <div>{renderTokens(card.preview.detail, tokenMap)}</div>}
@@ -121,7 +126,7 @@ export function ApprovalCardView({ card, tokenMap, busy, onDecide }: {
       </dl>
       {card.agent_note && (
         <details className="cc-details">
-          <summary>查看 Agent 的理由</summary>
+          <summary>查看助手给出的理由</summary>
           <div className="cc-note">{renderTokens(card.agent_note, tokenMap)}</div>
         </details>
       )}
@@ -165,52 +170,65 @@ export function QuestionCardView({ card, tokenMap, busy, onAnswer }: {
   busy?: boolean;
   onAnswer: (answers: Record<string, QuestionAnswer>) => void;
 }) {
-  const [sel, setSel] = useState<Record<string, string[]>>({});
-  const [other, setOther] = useState<Record<string, string>>({});
-  const answers = (): Record<string, QuestionAnswer> =>
-    Object.fromEntries(
-      card.questions.map((q) => {
-        const o = (other[q.id] ?? "").trim();
-        const s = sel[q.id] ?? [];
-        if (o) return [q.id, { kind: "other", text: o } as QuestionAnswer];
-        if (q.multi_select) return [q.id, s.length ? ({ kind: "multi", option_ids: s } as QuestionAnswer) : ({ kind: "skipped" } as QuestionAnswer)];
-        return [q.id, s[0] ? ({ kind: "single", option_id: s[0] } as QuestionAnswer) : ({ kind: "skipped" } as QuestionAnswer)];
-      }),
-    );
+  // 选项与“其他”互斥（复核 B4-B16：此前“其他”有文字时静默覆盖已选项，界面上两者同时呈选中）
+  const [draft, setDraft] = useState<AnswerDraft>({ sel: {}, other: {} });
+  const { sel, other } = draft;
+  const answered = isAnswered(card.questions, draft);
+  const missing = unansweredCount(card.questions, draft);
+  const idBase = useId();
   return (
     <div className="card-confirm card-question">
-      <div className="cc-head"><Icon.question /> Agent 想先问你</div>
+      <div className="cc-head"><Icon.question /> 需要你定一下{card.questions[0]?.header ? `：${card.questions[0].header}` : ""}</div>
       {card.questions.map((q) => (
         <div key={q.id} className="q-block">
-          {q.header && <div className="q-header">{renderTokens(q.header, tokenMap)}</div>}
-          <div className="q-text">{renderTokens(q.question, tokenMap)}</div>
-          <div className="q-options">
+          {/* 只有一个问题时标题已写明，不再重复 */}
+          {q.header && card.questions.length > 1 && <div className="q-header">{renderTokens(q.header, tokenMap)}</div>}
+          <div className="q-text" id={`${idBase}-${q.id}`}>{renderTokens(q.question, tokenMap)}</div>
+          <div className="q-options" role={q.multi_select ? "group" : "radiogroup"} aria-labelledby={`${idBase}-${q.id}`}>
             {q.options.map((o) => {
               const on = (sel[q.id] ?? []).includes(o.id);
               return (
                 <button
                   key={o.id}
+                  type="button"
+                  role={q.multi_select ? "checkbox" : "radio"}
+                  aria-checked={on}
                   className={`q-option${on ? " on" : ""}`}
-                  onClick={() =>
-                    setSel({
-                      ...sel,
-                      [q.id]: q.multi_select ? (on ? (sel[q.id] ?? []).filter((x) => x !== o.id) : [...(sel[q.id] ?? []), o.id]) : [o.id],
-                    })
-                  }
+                  onClick={() => setDraft((d) => pickOption(d, q, o.id))}
                 >
-                  <span>{renderTokens(o.label, tokenMap)}</span>
+                  <span>
+                    <span className="q-mark" aria-hidden="true">{on ? "✓" : q.multi_select ? "☐" : "○"}</span> {renderTokens(o.label, tokenMap)}
+                  </span>
                   {o.description && <small>{renderTokens(o.description, tokenMap)}</small>}
                 </button>
               );
             })}
           </div>
-          <input className="q-other" placeholder="其他（直接输入）" value={other[q.id] ?? ""} onChange={(e) => setOther({ ...other, [q.id]: e.target.value })} />
+          <input className="q-other" placeholder="其他（直接输入；会取代上面的选择）" aria-label="其他（直接输入）" value={other[q.id] ?? ""} onChange={(e) => setDraft((d) => typeOther(d, q, e.target.value))} />
         </div>
       ))}
+      {/* 不能提交的原因写在卡片上（读屏与触屏也能看到），不只放在按钮的悬停提示里 */}
+      {!answered && <div className="cc-hint muted">{card.questions.length > 1 ? `还有 ${missing} 题未选：` : ""}先选一个选项，或在“其他”里写下你的意思。</div>}
       <div className="cc-actions">
-        <button className="btn-primary" disabled={busy} onClick={() => onAnswer(answers())}>回答</button>
+        <button className="btn-primary" disabled={busy || !answered} onClick={() => onAnswer(buildAnswers(card.questions, draft))}>
+          确定
+        </button>
         <button className="btn-ghost" disabled={busy} onClick={() => onAnswer(Object.fromEntries(card.questions.map((q) => [q.id, { kind: "skipped" } as QuestionAnswer])))}>跳过</button>
       </div>
+    </div>
+  );
+}
+
+/** 检索将发出的改写稿：改写处加底色；原文被去掉的部分只说“去掉了几处”，不在首屏显示（UIUX 增量评审 P0-B）。 */
+function QuerySend({ original, rewritten }: { original: string; rewritten: string }) {
+  // 卡片每秒随倒计时重渲染：差异只在查询变化时重算（复核 B4-B15）
+  const v = useMemo(() => sendView(original, rewritten), [original, rewritten]);
+  const removedText = v.removedCount > 0 ? `已去掉 ${v.removedCount} 处当事人信息` : "";
+  return (
+    <div className="cc-send" aria-label={`将发出：${rewritten}。${removedText}`}>
+      将发出：“
+      {v.shown.map((p, i) => (p.kind === "added" ? <mark key={i} className="q-diff-add">{p.text}</mark> : <span key={i}>{p.text}</span>))}”
+      {removedText && <div className="cc-note muted">{removedText}，改写处已标出；不会发出当事人名称。</div>}
     </div>
   );
 }

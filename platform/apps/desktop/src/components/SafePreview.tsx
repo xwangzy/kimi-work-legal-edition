@@ -10,7 +10,8 @@ export function SafePreview({ filename, text, tokenMap, office }: { filename: st
   const lower = filename.toLowerCase();
   // office：内核把 DOCX/XLSX 渲染成的白名单 HTML（修订、批注、表格），同样在隔离框架中显示
   const isHtml = office || lower.endsWith(".html") || lower.endsWith(".htm");
-  const srcDoc = useMemo(() => (isHtml ? buildPreviewDoc(text, tokenMap) : ""), [isHtml, text, tokenMap]);
+  // Office 成果用文书纸面版式（Y4 #31）
+  const srcDoc = useMemo(() => (isHtml ? buildPreviewDoc(text, tokenMap, { paper: !!office }) : ""), [isHtml, text, tokenMap, office]);
   if (isHtml) {
     return (
       <div className="safe-preview">

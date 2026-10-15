@@ -8,7 +8,8 @@ import { fork, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { DomainError } from "@zr-legal/domain";
-import type { OcrModelPaths } from "./ocr-engine.ts";
+import { relayChildStderr } from "@zr-legal/safe-log";
+import type { OcrModelPaths } from "./models.ts";
 import type { PageQuality } from "./quality.ts";
 
 export interface ParsedPage extends PageQuality {
@@ -35,8 +36,13 @@ export interface ParseBatchOptions {
   mockOcr?: boolean;
   /** 每页超时（默认 30s）。 */
   pageTimeoutMs?: number;
-  /** worker 入口（默认包内 parse-worker.ts；CJS 制品为 parse-worker.bundle.cjs）。 */
+  /** worker 入口（默认包内 parse-worker.ts；CJS 制品为 parse-worker.bundle.cjs；安装包为随包运行时 parse/parse-worker.cjs）。 */
   workerEntry?: string;
+  /**
+   * 运行 worker 的 Node（W6）：安装包为随包 Node（resources/runtime/node），不用 Electron 自身 fork——
+   * 安装包关闭 RunAsNode 熔断后 Electron 不能再当 Node 运行。缺省 process.execPath（开发与测试）。
+   */
+  execPath?: string;
   /** 崩毁最多重建次数（默认 1）。 */
   maxRestarts?: number;
   /** 单进程 OCR 页预算（默认 10；超过即换进程续跑，见 parse-worker 注释）。 */
@@ -54,7 +60,7 @@ export interface ParseBatchOptions {
  */
 function workerEnv(extraAllowlist: string[] | undefined): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  const base = ["PATH", "HOME", "USERPROFILE", "SystemRoot", "SYSTEMROOT", "TEMP", "TMP", "COMSPEC", "LANG", "LC_ALL", "TZ"];
+  const base = ["PATH", "HOME", "USERPROFILE", "SystemRoot", "SYSTEMROOT", "windir", "TEMP", "TMP", "COMSPEC", "LANG", "LC_ALL", "TZ"];
   for (const k of [...base, ...(extraAllowlist ?? [])]) {
     const v = process.env[k];
     if (v !== undefined) env[k] = v;
@@ -124,7 +130,16 @@ function runOnce(opts: ParseBatchOptions, startPage: number | undefined): Promis
   const entry = opts.workerEntry ?? defaultWorkerEntry();
   const pageTimeoutMs = opts.pageTimeoutMs ?? 30_000;
   return new Promise((resolve, reject) => {
-    const child: ChildProcess = fork(entry, [], { stdio: ["pipe", "pipe", "inherit", "ipc"], execArgv: [], env: workerEnv(opts.extraEnvAllowlist) });
+    const child: ChildProcess = fork(entry, [], {
+      // stderr 不直通内核 stderr：原生库的警告可能带文件片段——只认日志器 JSON 行，其余计数（v9.2 §3.6）
+      stdio: ["pipe", "pipe", "pipe", "ipc"],
+      execArgv: [],
+      env: workerEnv(opts.extraEnvAllowlist),
+      // Windows：不弹控制台窗口（@types/node 的 ForkOptions 未声明，运行时生效）
+      ...({ windowsHide: true } as {}),
+      ...(opts.execPath ? { execPath: opts.execPath } : {}),
+    });
+    relayChildStderr(child.stderr, "parse");
     const pages: ParsedPage[] = [];
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;

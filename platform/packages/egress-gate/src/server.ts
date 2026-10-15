@@ -30,6 +30,8 @@ export interface GateServerOptions {
   maxBodyBytes?: number;
   /** 在途请求活性复核周期（缺省 500 ms）。 */
   recheckIntervalMs?: number;
+  /** 事项令牌化器空闲多久即逐出（毫秒，缺省 15 分钟；Y5 P1-12：当事人词典、令牌表与令牌密钥不长期驻留闸门内存）。 */
+  tokenizerIdleMs?: number;
   /** 批准凭据验签公钥（设备 ID → Ed25519 公钥 PEM；内核随 init 下发）。未给出 = 不受理确认（失败关闭）。 */
   approvalKeys?: Readonly<Record<string, string>>;
 }
@@ -94,11 +96,20 @@ export function seatUsable(token: string | null | undefined, now = Date.now()): 
   }
 }
 
+/** 版本更替下来的令牌化器的释放宽限（毫秒）。 */
+const RETIRED_GRACE_MS = 60_000;
+
 export class EgressGateServer {
   readonly server: Server;
   private readonly o: GateServerOptions;
-  /** 事项 → 令牌化器（按令牌表版本 + 事项策略版本 + 全部化名缓存；内核有新条目、当事人词典或化名设置变更时重建）。 */
-  private readonly tokenizers = new Map<string, { version: string; tz: MatterTokenizer }>();
+  /**
+   * 事项 → 令牌化器（按令牌表版本 + 事项策略版本 + 全部化名缓存；内核有新条目、当事人词典或化名设置变更时重建）。
+   * 空闲超过 tokenizerIdleMs 即逐出并清零令牌密钥（Y5 P1-12）；下一次请求由内核随授权结果重新下发。
+   */
+  private readonly tokenizers = new Map<string, { version: string; tz: MatterTokenizer; key: Buffer; lastUsed: number }>();
+  private evictTimer: NodeJS.Timeout | null = null;
+  /** 版本更替下来的旧实例：在途请求（检索、抓取在等待批准凭据时仍持有它）可能还在用，宽限 60 秒后再释放。 */
+  private readonly retired: { tz: MatterTokenizer; key: Buffer; at: number }[] = [];
   /** 任务 → 在途上游请求（内核撤销任务时中止；另按周期复核活性：与内核本机端点的 N-01 处理一致）。 */
   private readonly inflight = new Map<string, Set<{ ac: AbortController; recheck: () => Promise<boolean> }>>();
   private sweepTimer: NodeJS.Timeout | null = null;
@@ -159,6 +170,9 @@ export class EgressGateServer {
   close(): Promise<void> {
     if (this.sweepTimer) clearInterval(this.sweepTimer);
     this.sweepTimer = null;
+    if (this.evictTimer) clearInterval(this.evictTimer);
+    this.evictTimer = null;
+    this.evictTokenizers(Number.POSITIVE_INFINITY);
     return new Promise((resolve) => this.server.close(() => resolve()));
   }
 
@@ -252,19 +266,59 @@ export class EgressGateServer {
     };
   }
 
+  /** 逐出空闲的事项令牌化器并清零其令牌密钥；返回逐出个数。idleMs = Infinity 时全部逐出。 */
+  evictTokenizers(idleMs = this.o.tokenizerIdleMs ?? 15 * 60_000, now = Date.now()): number {
+    let n = 0;
+    for (let i = this.retired.length - 1; i >= 0; i--) {
+      const r = this.retired[i]!;
+      if (idleMs !== Number.POSITIVE_INFINITY && now - r.at < RETIRED_GRACE_MS) continue;
+      r.key.fill(0);
+      r.tz.dispose();
+      this.retired.splice(i, 1);
+    }
+    for (const [mid, e] of this.tokenizers) {
+      if (idleMs !== Number.POSITIVE_INFINITY && now - e.lastUsed < idleMs) continue;
+      e.key.fill(0);
+      e.tz.dispose();
+      this.tokenizers.delete(mid);
+      n += 1;
+    }
+    if (this.tokenizers.size === 0 && this.retired.length === 0 && this.evictTimer) {
+      clearInterval(this.evictTimer);
+      this.evictTimer = null;
+    }
+    return n;
+  }
+
+  /** 当前驻留的事项令牌化器个数（诊断与测试用）。 */
+  get residentTokenizers(): number {
+    return this.tokenizers.size;
+  }
+
   private tokenizerFor(ctx: MatterEgressContext): MatterTokenizer {
     const version = `${ctx.tokenizer.tableVersion}:${ctx.policyVersion}:${ctx.tokenizer.fullPseudonym ? 1 : 0}`;
     const cached = this.tokenizers.get(ctx.matterId);
-    if (cached && cached.version === version) return cached.tz;
+    if (cached && cached.version === version) {
+      cached.lastUsed = Date.now();
+      return cached.tz;
+    }
+    // 版本变了：旧实例不再用于新请求；在途请求可能还持有它，宽限后由逐出定时器释放
+    if (cached) this.retired.push({ tz: cached.tz, key: cached.key, at: Date.now() });
+    const key = Buffer.from(ctx.tokenizer.keyB64, "base64");
     const tz = new MatterTokenizer({
-      matterKey: Buffer.from(ctx.tokenizer.keyB64, "base64"),
+      matterKey: key,
       parties: ctx.tokenizer.parties,
       table: ctx.tokenizer.table,
       fullPseudonym: ctx.tokenizer.fullPseudonym,
       // 案号与全部化名同一条件（审计 P1-3；与内核 MatterTokenStore.tokenizer 一致）
       caseNumbers: ctx.tokenizer.fullPseudonym,
     });
-    this.tokenizers.set(ctx.matterId, { version, tz });
+    this.tokenizers.set(ctx.matterId, { version, tz, key, lastUsed: Date.now() });
+    if (!this.evictTimer) {
+      const idle = this.o.tokenizerIdleMs ?? 15 * 60_000;
+      this.evictTimer = setInterval(() => this.evictTokenizers(), Math.max(1_000, Math.min(60_000, Math.floor(idle / 4))));
+      this.evictTimer.unref();
+    }
     return tz;
   }
 
@@ -418,7 +472,8 @@ export class EgressGateServer {
     const fetchImpl = tr.fetch;
     let upstreamRes: Response;
     const ac = this.track(ctx.runId, req, res, this.recheckFor(req, ctx, purpose));
-    const sentBase = { ...base, destination: t.kind, destinationHost: hostOf(t.url), chars: report.textChars, segments: report.segments, tokenized: report.present, replacedAtGate: report.counts, media, model, ...(mediaApproval ? { approvalId: mediaApproval } : {}) };
+    const suspected = report.suspects.high + report.suspects.medium > 0 ? { suspectedNames: report.suspects } : {};
+    const sentBase = { ...base, destination: t.kind, destinationHost: hostOf(t.url), chars: report.textChars, segments: report.segments, tokenized: report.present, replacedAtGate: report.counts, media, model, ...suspected, ...(mediaApproval ? { approvalId: mediaApproval } : {}) };
     // 预写去向记录（审查 S4-03）：转发之前写入“已发出”，结束时补全结果与用量——闸门或内核中途退出时账本里也有这次出站
     this.record({ ...sentBase, phase: "start", outcome: "sent", reason: null, upstreamStatus: null, durationMs: 0, usage: null });
     try {
@@ -525,7 +580,7 @@ export class EgressGateServer {
     const started = Date.now();
     const requestId = `kwls_${randomUUID()}`;
     const ctx = await this.authorize(req, matterId, "search");
-    const base0 = { requestId, tenantId: ctx.tenantId, matterId, runId: ctx.runId, purpose: "search" as const, policyVersion: ctx.policyVersion, media: [] as string[], hostDecision: hostDecisionOf(req) };
+    const base0 = { requestId, tenantId: ctx.tenantId, matterId, runId: ctx.runId, purpose: "search" as const, policyVersion: ctx.policyVersion, media: [] as string[], hostDecision: hostDecisionOf(req), toolCallId: toolCallOf(req) };
     const raw = await readBody(req, 64 * 1024);
     let query = "";
     try {
@@ -598,7 +653,7 @@ export class EgressGateServer {
     const started = Date.now();
     const requestId = `kwlf_${randomUUID()}`;
     const ctx = await this.authorize(req, matterId, "fetch");
-    const base = { requestId, tenantId: ctx.tenantId, matterId, runId: ctx.runId, purpose: "fetch" as const, policyVersion: ctx.policyVersion, media: [] as string[], tokenized: {}, hostDecision: hostDecisionOf(req) };
+    const base = { requestId, tenantId: ctx.tenantId, matterId, runId: ctx.runId, purpose: "fetch" as const, policyVersion: ctx.policyVersion, media: [] as string[], tokenized: {}, hostDecision: hostDecisionOf(req), toolCallId: toolCallOf(req) };
     const raw = await readBody(req, 16 * 1024);
     let requested = "";
     try {
@@ -667,6 +722,12 @@ export class EgressGateServer {
 function hostDecisionOf(req: IncomingMessage): string | null {
   const v = req.headers["x-kwl-host-decision"];
   return typeof v === "string" && v.length > 0 ? v.replace(/[^\x20-\x7e]/g, "").slice(0, 120) : null;
+}
+
+/** 宿主告知的工具调用编号（只作时间线关联；格式不符即不记）。 */
+function toolCallOf(req: IncomingMessage): string | null {
+  const v = req.headers["x-kwl-tool-call"];
+  return typeof v === "string" && /^[A-Za-z0-9_:.-]{1,128}$/.test(v) ? v : null;
 }
 
 function hostOf(u: string): string | null {

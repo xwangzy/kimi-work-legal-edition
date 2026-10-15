@@ -24,7 +24,7 @@
 | ZP-16 | P1 | `_base/execEnv/environmentProbe.ts`、`shellPathBridge.ts` | 不再直接执行 `cygpath`/探测命令；环境由宿主种子返回固定值（执行域占位 shell） | Windows 免 Git Bash；探测类调用不绕过进程服务 |
 | ZP-17 | P0 | `kap-server/src/lib/fileLaunch.ts`、`features/tower/protocol/git.ts`、`environmentProbe.ts`、`shellPathBridge.ts`、`features/externalHooks/internal/runHook.ts`（改为 `import type`） | 删除或封闭绕过进程服务的 `node:child_process` 直接调用 | 静态检查：制品中 `node:child_process` 只剩默认进程服务（由种子替换为执行域路由），见 `static-surface.test.ts` |
 | ZP-18 | P0 | `workspace/workspaceInstructions/workspaceInstructionsService.ts`、`app/bootstrap/bootstrap.ts`、`features/skill/workspace/rootFileSkillSource.ts`、`features/skill/catalog/userFileSkillSource.ts` | 工作区指令只从宿主给出的 `trustedInstructionsDir`（签名方法包与只读可信配置区）加载；工作区、案卷目录与 OS home 的 `AGENTS.md`、项目级技能目录不加载、不监听 | 被注入的 Agent 写入 `/work/AGENTS.md` 不能形成持久化注入 |
-| ZP-19 | P0 | 新增 `kap-server/src/embed.ts`；`kap-server/package.json` 增加 `./embed` 导出 | 无端口私有嵌入：进程内 `bootstrap` + Fastify `inject()`；内存令牌服务（不落盘）；只注册 sessions、prompts、approvals、questions、tasks、messages、fileHistory、snapshot、transcript 九组路由（终端、配置、工作区信任、插件、OAuth、关机、遥控、文件打开均不注册） | 第 04 篇 §1.2 第 4 条“kap-server 不对外、不监听端口”；§3.2 嵌入方式 |
+| ZP-19 | P0 | 新增 `kap-server/src/embed.ts`；`kap-server/package.json` 增加 `./embed` 导出 | 无端口私有嵌入：进程内 `bootstrap` + Fastify `inject()`；内存令牌服务（不落盘）；只注册 sessions、prompts、approvals、questions、tasks、messages、fileHistory、snapshot、transcript 九组路由（终端、配置、工作区信任、插件、OAuth、关机、遥控、文件打开均不注册）。2026-10-14 第 5 批：`bootstrap` 增 `uiCapabilities: ['update_panel']`（宿主有“进展”面板），NotifyUser 随之注册（锁版 `features/notify/notifyUserAvailability.ts`），通知只进过程快照 | 第 04 篇 §1.2 第 4 条“kap-server 不对外、不监听端口”；§3.2 嵌入方式 |
 | ZP-20 | P0 | `agent-core-v2/src/os/backends/node-local/tools/rgLocator.ts`、`index.ts` | Grep/Glob 只使用宿主登记的可信 ripgrep（`configureTrustedRipgrep`）；不在 PATH 查找，不从 CDN 下载（下载代码删除）。2026-10-13 起宿主登记的是**宿主内检索入口**（数据根下不可执行的占位文件，执行域路由按字面匹配后在宿主进程内检索；不再随包原生 rg，审计 S3 第 2 步、偏离 D-56），本补丁不变 | 实施中发现：上游找不到 rg 时会从 Kimi CDN 下载并写入用户目录——绕过闸门的直连出网，且 PATH 上的 rg 可能被替换 |
 | ZP-22 | P0 | `kap-server/src/lib/promptMedia.ts` | 提示词中按本机路径附加文件（image/video/file 的 `path` 来源）一律拒绝 | 调研发现：kap-server 用 `node:fs` 直接读取任意绝对路径（只过滤敏感文件名），绕过宿主文件系统种子（事项 broker）；宿主侧 KapClient 只发文本部件，此为“每处独立强制” |
 | ZP-9a | P0 | `kap-server/src/transport/ws/v1/sessionEventJournal.ts`、`sessionEventBroadcaster.ts`、`embed.ts`（`eventJournalIo` 选项） | WS 事件日志 `server/events/*.jsonl` 的读写改经可注入的 `JournalIo`（缺省 node fs，上游行为不变）；宿主注入按事项工作区密钥加密的追加日志（`kap-host/src/sealed-storage.ts` `sealedJournalIo`） | 落盘加密第 1 步（2026-10-13 审计 S3）：事件日志是引擎里唯一绕过可注入持久化服务、直接 `appendFile` 的含内容文件；其余（会话转录、状态、文件历史、任务输出、查询库）经种子替换，零补丁 |
@@ -80,3 +80,8 @@ KJ-4 之后的数据规模口径：单个文件经 `python3` 或 `awk` 读入的
 - v5 的 SDK 宿主以 `[tools] enabled = ["mcp__legal__*", …]` 关闭全部内置工具，“2.1.0 工作区加固”当时评估为“风险经工具面归零缓解，不回移”。
   v9 起开放任务改由 kap-host 承载并开放 Read/Write/Edit/Glob/Grep/Bash，**该例外失效**，改列为待实现的 ZP-7。
 - v5 待办“ZP-4（备选）：SDK 层经 engineAccessor 接线 addRules() 兜底 deny”已由 v9 的 ZP-4（策略链首位）取代。
+
+## 已知事项
+
+- fork 的 `kap-server`、`agent-core-v2` 为上游“无注释区”（`scripts/check-no-comments.mjs`），历次 ZP 补丁中有约 20 处注释（复核 S5B-16）。不影响制品；rebase 到 2.2.0 时统一移入本台账并从源码删除，届时 fork 的 lint 才能通过。
+

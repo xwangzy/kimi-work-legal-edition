@@ -13,6 +13,7 @@ import { mkdir, open, readdir, readFile, rename, rm, stat, truncate, unlink, typ
 import { dirname, join } from "node:path";
 import { AtRestError, HEADER_BYTES, isSealed, type ZoneCodec } from "@zr-legal/at-rest";
 import { retryWin } from "@zr-legal/file-broker";
+import { slog } from "@zr-legal/safe-log";
 import { toStorageIoError, type JournalIo } from "../vendor/kap-embed/kap-embed.mjs";
 
 const isEnoent = (e: unknown) => (e as NodeJS.ErrnoException)?.code === "ENOENT";
@@ -131,8 +132,8 @@ export class SealedLogFiles {
         if (!(e instanceof AtRestError) || e.code !== "corrupt") throw e;
         // 中段损坏（复核 B3-A17）：不截断——原文件整份另存为隔离副本（仍是密文，供排查），本条写入新日志
         const quarantine = `${path}.kwl-corrupt-${Date.now()}`;
-        await rename(path, quarantine);
-        console.warn(`[kap-host] 追加日志中段损坏，已隔离为 ${quarantine.split(/[\\/]/).pop()}；新记录写入新文件`);
+        await retryWin(() => rename(path, quarantine));
+        slog.event("KAP_SEALED_LOG_QUARANTINED", {});
         this.cache.delete(path);
         await this.write(path, plain);
         return;

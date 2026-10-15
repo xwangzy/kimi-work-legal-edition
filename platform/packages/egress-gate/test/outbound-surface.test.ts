@@ -42,7 +42,7 @@ const OUT_OF_SCOPE: Readonly<Record<string, string>> = Object.freeze({
   "services/": "中软云端服务 v0（法律模型网关、检索服务、控制面与其订阅器）：部署在云端，本机测试以回环端口模拟",
   "packages/im-connectors/": "律所节点 IM 连接器（v5 原型，钉钉 Stream WebSocket）：运行在所内节点；v9 G2 改经中软 im-isv，不在律师电脑 Agent 链路",
   "apps/firm-node/": "所内节点（同上）",
-  "apps/desktop/electron/": "Electron 主进程（不发起网络连接；对渲染会话做网络层拦截，见 desktop 安全检查用例）；更新通道在 G1（W21）",
+  "apps/desktop/electron/": "Electron 主进程：除自动更新（updater.cjs，D-58，见下方专门用例）外不发起网络连接；对渲染会话做网络层拦截，见 desktop 安全检查用例",
 });
 
 const NET_MODULES = "(?:node:)?(?:net|tls|http|https|http2|dgram|dns|dns\\/promises)|undici|ws";
@@ -182,4 +182,16 @@ test("出网面：内核、模型代理与 Agent 宿主的源码不出现任何�
     if (/https?:\/\/api\.moonshot\.cn/.test(f.text) && f.rel !== "packages/kernel/src/egress/kernel-gate.ts") offenders.push(`${f.rel}：月之暗面地址`);
   }
   assert.deepEqual(offenders, [], offenders.join("；"));
+});
+
+test("出网面（D-58）：Electron 主进程只有自动更新（updater.cjs）一处出网——固定更新主机、SPKI 钉住、Ed25519 发布清单；其余主进程文件不发起连接", () => {
+  const dir = join(root, "apps/desktop/electron");
+  const NET_MAIN = /electron-updater|\.fetch\s*\(|net\.request\s*\(|require\(\s*["'](?:node:)?(?:https?|http2|net|tls|dgram)["']\s*\)/;
+  const hits = readdirSync(dir)
+    .filter((n) => n.endsWith(".cjs") && !n.includes(".bundle."))
+    .filter((n) => NET_MAIN.test(stripComments(readFileSync(join(dir, n), "utf8"))))
+    .sort();
+  assert.deepEqual(hits, ["updater.cjs"], `主进程出网位置：${hits.join("、")}`);
+  const up = readFileSync(join(dir, "updater.cjs"), "utf8");
+  for (const must of ["setCertificateVerifyProc", "tlsPinMatch", "verifyReleaseManifest", "checkDownloaded", "allowDowngrade = false", "u.host === host"]) assert.ok(up.includes(must), `updater.cjs 缺少 ${must}`);
 });

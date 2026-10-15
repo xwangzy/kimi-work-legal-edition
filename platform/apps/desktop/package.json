@@ -16,6 +16,7 @@
   "dependencies": {
     "@zr-legal/design-tokens": "*",
     "@zr-legal/kernel": "*",
+    "electron-updater": "6.8.9",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
@@ -25,6 +26,7 @@
     "@vitejs/plugin-react": "6.1.1",
     "concurrently": "9.2.1",
     "electron": "44.5.1",
+    "electron-builder": "26.15.3",
     "typescript": "7.0.2",
     "vite": "8.3.1",
     "wait-on": "9.0.4"

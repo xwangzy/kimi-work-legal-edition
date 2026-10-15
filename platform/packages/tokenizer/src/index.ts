@@ -24,6 +24,7 @@ import { findIdentifiers, foldWidth, normalizeValue, type Hit, type IdentifierOp
 
 export { idCardValid, luhnValid, findIdentifiers, foldWidth, normalizeValue, type IdentifierOptions } from "./patterns.ts";
 export { findNicknames, nicknameSurname, recognizeNames } from "./names.ts";
+export { suspectCounts, suspectedNames, type SuspectConfidence, type SuspectCue, type SuspectedName } from "./candidates.ts";
 export { deriveOrgAliases, extractDefinedAliases, foldText, foldWithMap, FOLD_VERSION, isGenericAlias, shapeFold, VariantMatcher } from "./variants.ts";
 
 export type TokenCategory = "person" | "org" | "id_number" | "phone" | "account" | "uscc" | "address" | "plate" | "email" | "case_no" | "birth_date";
@@ -91,6 +92,8 @@ export interface TokenizeResult {
   /** 按类别的替换次数。 */
   counts: Partial<Record<TokenCategory, number>>;
   replaced: number;
+  /** 本次替换的原文区间（输入坐标；评测按区间判定已替换、部分替换与过度替换，复核 B4-R02）。 */
+  spans: { start: number; end: number; category: TokenCategory; token: string }[];
 }
 
 export interface MatterTokenizerOptions {
@@ -140,6 +143,18 @@ export class MatterTokenizer {
     }
     for (const e of o.table ?? []) this.remember(e);
   }
+
+  /**
+   * 释放（闸门逐出空闲令牌化器时调用；Y5 P1-12）：派生的令牌密钥清零，当事人词典与令牌表清空。之后不得再用于令牌化。
+   */
+  dispose(): void {
+    this.key.fill(0);
+    this.parties.length = 0;
+    this.byValue.clear();
+    this.byToken.clear();
+    this.disposed = true;
+  }
+  private disposed = false;
 
   private remember(e: TokenEntry): void {
     // 只按**现行规则**的规范值建索引（终核 S4-26）：旧规则（FOLD_VERSION 2，含繁转简）存下的条目不再以旧规范值命中——
@@ -195,7 +210,9 @@ export class MatterTokenizer {
   }
 
   tokenize(text: string): TokenizeResult {
-    if (typeof text !== "string" || text.length === 0) return { text: text ?? "", entries: [], counts: {}, replaced: 0 };
+    // 已释放的令牌化器密钥已清零：继续使用会产生错误的代号（失败关闭）
+    if (this.disposed) throw new Error("令牌化器已释放");
+    if (typeof text !== "string" || text.length === 0) return { text: text ?? "", entries: [], counts: {}, replaced: 0, spans: [] };
     // 已有代号的区间不再识别（幂等）
     const skip: { start: number; end: number }[] = [];
     TOKEN_RE.lastIndex = 0;
@@ -239,24 +256,26 @@ export class MatterTokenizer {
         }
       }
     }
-    if (hits.length === 0) return { text, entries: [], counts: {}, replaced: 0 };
+    if (hits.length === 0) return { text, entries: [], counts: {}, replaced: 0, spans: [] };
 
     hits.sort((a, b) => a.start - b.start);
     const counts: Partial<Record<TokenCategory, number>> = {};
     const used = new Map<string, TokenEntry>();
+    const spans: TokenizeResult["spans"] = [];
     let out = "";
     let at = 0;
     for (const h of hits) {
       if (h.start < at) continue; // 防御：不重叠由各步保证
       const e = this.tokenFor(h.category, h.value, h.source);
       out += text.slice(at, h.start) + e.token;
+      spans.push({ start: h.start, end: h.end, category: h.category, token: e.token });
       at = h.end;
       counts[h.category] = (counts[h.category] ?? 0) + 1;
       used.set(e.token, e);
     }
     out += text.slice(at);
     const replaced = Object.values(counts).reduce((n, c) => n + (c ?? 0), 0);
-    return { text: out, entries: [...used.values()], counts, replaced };
+    return { text: out, entries: [...used.values()], counts, replaced, spans };
   }
 }
 

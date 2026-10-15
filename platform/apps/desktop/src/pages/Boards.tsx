@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
-import { fmtTime, RUN_STATUS_LABELS, SCENARIO_LABELS } from "../lib/labels.ts";
+import { fmtRelative, RUN_STATUS_LABELS, SCENARIO_LABELS } from "../lib/labels.ts";
 
 export const MAX_BOARDS = 2;
 export const MAX_WIDGETS = 20;
@@ -58,15 +58,16 @@ export function MatterBoard({ matter, runs }: { matter: Matter; runs: any[] }) {
       <Widget title="最近任务">
         {runs.length === 0 && <p className="muted">还没有任务。</p>}
         {runs.slice(0, 6).map((r) => (
+          // 任务以目标前 20 字区分（Y4 B-2）；没有目标的显示场景名；时间用相对时间
           <button key={r.run_id} className="w-link" onClick={() => nav(`/run/${r.run_id}/${matter.matter_id}`)}>
-            {SCENARIO_LABELS[r.scenario] ?? r.scenario} · {RUN_STATUS_LABELS[r.status] ?? r.status} · {fmtTime(r.created_at)}
+            {r.goal ? `${String(r.goal).slice(0, 20)}${String(r.goal).length > 20 ? "…" : ""}` : (SCENARIO_LABELS[r.scenario] ?? "任务")} · {RUN_STATUS_LABELS[r.status] ?? "状态未知"} · {fmtRelative(r.created_at)}
           </button>
         ))}
       </Widget>
-      <Widget title="出站">
+      <Widget title="联网记录">
         <div className="w-row"><span>已发出</span><b>{egress.sent}</b></div>
-        <div className="w-row"><span>闸门拦截</span><b>{egress.blocked}</b></div>
-        <div className="w-row"><span>结果不明（待对账）</span><b>{egress.unknown}</b></div>
+        <div className="w-row"><span>已拦下（没有发出）</span><b>{egress.blocked}</b></div>
+        <div className="w-row"><span>需要核对</span><b>{egress.unknown}</b></div>
       </Widget>
     </div>
   );
@@ -104,7 +105,6 @@ export function BoardsPage() {
     <main className="main">
       <div className="main-wide">
         <h1 className="page-title">看板</h1>
-        <p className="muted">最多 {MAX_BOARDS} 个看板、每板 {MAX_WIDGETS} 个小组件。当前版本为固定布局（拖拽、缩放与批注未开放）。</p>
         <div className="section-title">我的看板</div>
         <div className="board">
           <Widget title="待复核 / 签发">
@@ -118,9 +118,12 @@ export function BoardsPage() {
           <Widget title="事项">
             <div className="w-row"><span>进行中的事项</span><b>{matters.length}</b></div>
           </Widget>
-          <Widget title="出站对账">
-            {unresolved.length === 0 ? <p className="muted">没有结果不明的出站。</p> : <p>{unresolved.length} 条结果不明，待人工对账。</p>}
-          </Widget>
+          {/* 只在有需要核对的联网记录时出现（Y4 B-3） */}
+          {unresolved.length > 0 && (
+            <Widget title="需要核对的联网记录">
+              <p>{unresolved.length} 条记录不确定是否已经发出，请在对应任务的“数据去向”里逐条确认。</p>
+            </Widget>
+          )}
         </div>
         <div className="section-title board-head">
           事项看板

@@ -24,6 +24,11 @@ export interface EngineConfigSpec {
   /** 闸门 /search、/fetch 已接入时才配置（ZP-11：未配置即不注册 FetchURL；WebSearch 无配置不注册）。 */
   searchConfigured: boolean;
   fetchConfigured: boolean;
+  /**
+   * 只供测试（上下文压缩验收，Kimi Code 增量核查 K7-3）：把两个模型的上下文窗口改小，以便在合成材料上触发压缩。
+   * 宿主只在非安装包形态（落盘加密不是 required）接受该项。
+   */
+  testMaxContextSize?: number | undefined;
 }
 
 export interface EngineConfig {
@@ -67,6 +72,7 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
 export function buildEngineConfig(spec: EngineConfigSpec): EngineConfig {
   const disabled: string[] = [];
+  const ctx = spec.testMaxContextSize && Number.isInteger(spec.testMaxContextSize) && spec.testMaxContextSize >= 4096 && spec.testMaxContextSize < 262144 ? spec.testMaxContextSize : 262144;
   if (!spec.execDomainAvailable) disabled.push("Bash");
   const config: Record<string, unknown> = {
     default_model: MAIN_MODEL,
@@ -87,13 +93,13 @@ export function buildEngineConfig(spec: EngineConfigSpec): EngineConfig {
       [MAIN_MODEL]: {
         provider: "kwl-gate",
         model: MAIN_MODEL,
-        max_context_size: 262144,
+        max_context_size: ctx,
         capabilities: ["tool_use", "thinking"],
       },
       [SECONDARY_MODEL]: {
         provider: "kwl-gate",
         model: SECONDARY_MODEL,
-        max_context_size: 262144,
+        max_context_size: ctx,
         capabilities: ["tool_use"],
       },
     },

@@ -38,6 +38,12 @@ export interface W1Deps {
 
 const invalid = (msg: string) => new DomainError("validation", msg, 422);
 
+/**
+ * 内核已判终态（或转人工对账）的任务：确认卡与提问不再呈现、不再受理（复核 B4-B07 取消竞态补强）——律师取消后到宿主收尾之间
+ * （执行器轮询发现并取消宿主，约 1 秒）宿主内存里的卡片仍在，此时批准会让已取消任务的工具照常执行。
+ */
+const SETTLED_RUN_STATUSES: ReadonlySet<string> = new Set(["succeeded", "partial", "failed", "cancelled", "expired", "timed_out", "reconciling"]);
+
 export function createW1Api(d: W1Deps): Record<string, Handler> {
   const cardsFor = (runId: string, matterId: string) => {
     const pending = d.kap?.interactions(runId);
@@ -62,11 +68,12 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
   return {
     "runs.interactions": async (p, id) => {
       const run = d.requireRunAccess(String(p?.run_id ?? ""), id);
+      if (SETTLED_RUN_STATUSES.has(run.status)) return { approvals: [], questions: [], state_version: null, live_text: null, progress: null };
       const { approvals, questions } = cardsFor(run.run_id, run.matter_id);
       // 状态版本：界面作答时带回（第 04 篇 §3.3 answers 的 expected_state_version；版本已变 = 期间有新的提问或决定，须按最新卡片作答）
       const state_version = questions.length > 0 && d.kap ? await d.kap.stateVersion(run.run_id).catch(() => null) : null;
       // 正在生成的回复（流式，令牌形态；界面还原显示）：随轮询一起取，运行结束后为 null
-      return { approvals, questions, state_version, live_text: d.kap?.liveText(run.run_id) ?? null };
+      return { approvals, questions, state_version, live_text: d.kap?.liveText(run.run_id) ?? null, progress: d.kap?.liveProgress(run.run_id) ?? null };
     },
 
     "runs.approve": async (p, id) => {
@@ -74,6 +81,7 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
       d.requireMatterWriter(run.matter_id, id);
       // 第 02 篇 §9.6：桌面渠道能确认“本人事项内全部”——运行须是本人发起的
       if (run.created_by !== id.userId) throw new DomainError("forbidden", "只能确认本人发起的任务", 403);
+      if (SETTLED_RUN_STATUSES.has(run.status)) throw new DomainError("conflict", "任务已结束，这张确认卡已失效", 409);
       if (!d.kap) throw new DomainError("not_found", "当前引擎没有确认卡通道", 404);
       const approvalId = String(p?.approval_id ?? "");
       const decision = p?.decision === "approve" ? "approve" : p?.decision === "reject" ? "reject" : null;
@@ -136,6 +144,7 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
       const run = d.requireRunAccess(String(p?.run_id ?? ""), id);
       d.requireMatterWriter(run.matter_id, id);
       if (run.created_by !== id.userId) throw new DomainError("forbidden", "只能回答本人发起的任务", 403);
+      if (SETTLED_RUN_STATUSES.has(run.status)) throw new DomainError("conflict", "任务已结束：这个问题已失效或已处理，不再受理", 409);
       if (!d.kap) throw new DomainError("not_found", "当前引擎没有提问通道", 404);
       const raw = (p?.answers ?? {}) as Record<string, any>;
       const answers: Record<string, unknown> = {};

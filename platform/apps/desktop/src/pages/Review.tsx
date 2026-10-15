@@ -1,19 +1,87 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.ts";
 import { nav } from "../App.tsx";
+import { SafePreview } from "../components/SafePreview.tsx";
+import { restoreTokens } from "../lib/tokens.ts";
 
-/** 复核/签发页（§5.4 签发页线框：完整性单 + 确切文件 + 退回/确认签发）。 */
+/** 成果状态 → 律师称呼。 */
+const STATUS_TEXT: Record<string, string> = {
+  draft: "草稿",
+  pending_review: "待你复核",
+  approved: "已签发",
+  rejected: "已退回",
+  superseded: "已有新版本",
+};
+
+/** 未决项 → 一句话（不展示内部结构）。 */
+function openItemText(it: any): string {
+  if (it && typeof it === "object") {
+    if (it.kind === "citation_intercepted") return `有 ${Number(it.count ?? 0)} 条引用被拦下（查不到或已失效），请核对正文里是否还在使用`;
+    if (it.kind === "quarantined_source") return "本成果用到的材料带国家秘密标志、已隔离：请按涉密载体规定核查，确认前不得交付";
+    if (typeof it.note === "string") return it.note;
+  }
+  return typeof it === "string" ? it : "有一项需要你确认的事项";
+}
+
+type Check = { label: string; ok: boolean | null; text: string };
+
+/** 系统已核对的事实（来自内核完整性单；只陈述结果）。 */
+function systemChecks(c: any, latest: boolean): Check[] {
+  const out: Check[] = [];
+  const m = c.materials ?? {};
+  if (m.requested !== undefined) out.push({ label: "材料读取", ok: Number(m.failed ?? 0) === 0 && Number(m.loaded) === Number(m.requested), text: `已读 ${m.loaded}/${m.requested} 份${Number(m.failed ?? 0) > 0 ? `，${m.failed} 份没有读到` : ""}` });
+  else out.push({ label: "材料读取", ok: null, text: "不是任务产出（无材料读取记录）" });
+  const ct = c.citations ?? {};
+  if (ct.total !== undefined) {
+    const bad = Number(ct.intercepted ?? 0) + Number(ct.unverified_offline ?? 0);
+    out.push({
+      label: "引用核验",
+      ok: bad === 0,
+      text: `共 ${ct.total} 条${Number(ct.intercepted ?? 0) > 0 ? `，${ct.intercepted} 条被拦下` : ""}${Number(ct.unverified_offline ?? 0) > 0 ? `，${ct.unverified_offline} 条离线未能核实` : ""}${ct.as_of ? `（法规版本截至 ${ct.as_of}）` : ""}`,
+    });
+  } else out.push({ label: "引用核验", ok: null, text: "本成果没有引用核验记录" });
+  out.push({ label: "文件未被改动", ok: c.file_integrity === "ok", text: c.file_integrity === "ok" ? "与生成时一致" : "与生成时不一致，不能签发" });
+  out.push({ label: "版本", ok: latest, text: latest ? "这是最新版本" : "已有更新版本，本版不能签发" });
+  out.push({ label: "受众", ok: null, text: c.audience_check });
+  out.push({ label: "AI 辅助标识", ok: null, text: "文档属性中已标明 AI 辅助起草" });
+  if (c.egress?.note) out.push({ label: "数据去向", ok: null, text: c.egress.note });
+  return out;
+}
+
+/** 复核/签发页（§5.4 签发页线框；v9.2 §4.4 / Y4 #18、§5 D-3）：左预览，右“签发前检查”——系统已核对与你来核对分开。 */
 export function ReviewPage({ artifactId }: { artifactId: string }) {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState("");
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [ack, setAck] = useState(false);
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  const [preview, setPreview] = useState<{ text: string; office: boolean } | null>(null);
+  const [tokenMap, setTokenMap] = useState<Map<string, string | null>>(new Map());
 
   const reload = useCallback(() => {
     api.completeness(artifactId).then(setData).catch((e) => setErr(e.message));
   }, [artifactId]);
   useEffect(reload, [reload]);
 
+  // 预览：Office 成果由内核渲染为白名单 HTML；文本成果取令牌形态原文；代号只在本机界面还原显示
+  useEffect(() => {
+    if (!data) return;
+    const office = /\.(docx|xlsx)$/i.test(data.filename);
+    const load = office
+      ? api.artifactHtml(artifactId).then((r) => r.html)
+      : /\.(md|txt|markdown|csv|json)$/i.test(data.filename)
+        ? api.artifactText(artifactId).then((r) => new TextDecoder().decode(Uint8Array.from(atob(r.data_base64), (c) => c.charCodeAt(0))))
+        : Promise.resolve("");
+    load
+      .then(async (text) => {
+        setPreview({ text, office });
+        if (text.includes("〔") && data.matter_id) setTokenMap(await restoreTokens(data.matter_id, text));
+      })
+      .catch(() => setPreview({ text: "", office }));
+  }, [data?.artifact_version_id]);
+
+  const items: string[] = data?.lawyer_checklist?.items ?? [];
   const act = useCallback(
     async (decision: "approved" | "rejected") => {
       setBusy(true);
@@ -22,7 +90,8 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
         await api.approve(artifactId, {
           decision,
           expected_sha256: data.sha256,
-          checklist: { reviewed_open_items: ack, at: new Date().toISOString() },
+          // 人工核对的勾选只作留痕（不代表系统验证）
+          checklist: { reviewed_open_items: ack, lawyer_checked: [...checked].sort((a, b) => a - b), lawyer_items: items.length, skill: data.lawyer_checklist?.skill ?? null, at: new Date().toISOString() },
         });
         reload();
       } catch (e) {
@@ -31,108 +100,127 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
         setBusy(false);
       }
     },
-    [artifactId, data, ack, reload],
+    [artifactId, data, ack, checked, items.length, reload],
   );
 
+  const latest = !!data?.is_latest_version;
+  const pending = data?.status === "pending_review";
+  const openItems: unknown[] = data?.completeness?.open_items ?? [];
   return (
-      <main className="main">
-        <div className="main-narrow">
-          <button className="btn-link back" onClick={() => nav("/deliverables")}>← 交付件</button>
-          <h1 className="page-title">复核与签发：{data?.filename ?? "…"}</h1>
-          {data && (
-            <p className="muted mono">
-              v{data.version} · 文件 hash {data.sha256.slice(0, 16)}… · {data.status}
-            </p>
-          )}
-          {err && <div className="banner banner-red">{err}</div>}
-          {data && (
-            <>
-              <div className="section-title">完整性单</div>
-              <table className="data">
-                <tbody>
-                  <tr>
-                    <th>材料覆盖</th>
-                    <td>
-                      {data.completeness.materials.note ??
-                        `已读 ${data.completeness.materials.loaded}/${data.completeness.materials.requested}，失败 ${data.completeness.materials.failed}`}
-                    </td>
-                  </tr>
-                  <tr>
-                    <th>引用核验</th>
-                    <td>
-                      {data.completeness.citations.note ??
-                        `共 ${data.completeness.citations.total} 条，拦截 ${data.completeness.citations.intercepted} 条` +
-                          (Number(data.completeness.citations.unverified_offline) > 0 ? `，未核实（离线） ${data.completeness.citations.unverified_offline} 条` : "") +
-                          `（as_of ${data.completeness.citations.as_of}）`}
-                    </td>
-                  </tr>
-                  <tr>
-                    <th>未决项</th>
-                    <td>{data.completeness.open_items.length === 0 ? "无" : JSON.stringify(data.completeness.open_items)}</td>
-                  </tr>
-                  <tr>
-                    <th>文件完整性</th>
-                    <td>{data.completeness.file_integrity === "ok" ? "✓ 服务端复算一致" : "✗ 不一致"}</td>
-                  </tr>
-                  <tr>
-                    <th>受众</th>
-                    <td>{data.completeness.audience_check}</td>
-                  </tr>
-                  <tr>
-                    <th>AI 标识</th>
-                    <td>{data.completeness.ai_marking}</td>
-                  </tr>
-                  {data.completeness.egress && (
-                    <tr>
-                      <th>数据去向</th>
-                      <td>{data.completeness.egress.note}</td>
-                    </tr>
-                  )}
-                  <tr>
-                    <th>版本</th>
-                    <td>{data.is_latest_version ? "最新版" : "已有更新版本（本版不得签发）"}</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              {data.blockers.length > 0 && (
+    <main className="main">
+      <div className="review-page">
+        <button className="btn-link back" onClick={() => nav("/deliverables")}>← 交付件</button>
+        <h1 className="page-title">复核与签发：{data?.filename ?? "…"}</h1>
+        {data && (
+          <p className="muted">
+            第 {data.version} 版 · {STATUS_TEXT[data.status] ?? "状态未知"}
+          </p>
+        )}
+        {err && <div className="banner banner-red">{err}</div>}
+        {data && (
+          <div className="review-cols">
+            <section className="review-preview" aria-label="成果预览">
+              {preview === null ? (
+                <div className="muted">正在加载预览…</div>
+              ) : preview.text ? (
+                <SafePreview filename={data.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} />
+              ) : (
+                <div className="muted">这种文件不能在应用内预览，请下载后打开。</div>
+              )}
+            </section>
+            <aside className="review-checks" aria-label="签发前检查">
+              <div className="section-title">系统已核对</div>
+              <ul className="check-list">
+                {systemChecks(data.completeness, latest).map((c) => (
+                  <li key={c.label} className={c.ok === false ? "check-bad" : c.ok ? "check-ok" : "check-info"}>
+                    <span className="check-mark" aria-hidden="true">{c.ok === false ? "✕" : c.ok ? "✓" : "·"}</span>
+                    <span>
+                      <b>{c.label}</b>：{c.text}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {openItems.length > 0 && (
                 <div className="banner banner-orange">
-                  签发前须确认：{data.blockers.join("；")}
+                  需要你确认的事项：
+                  <ul>
+                    {openItems.map((it, i) => (
+                      <li key={i}>{openItemText(it)}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
+              {data.blockers.length > 0 && <div className="banner banner-orange">签发前须处理：{data.blockers.join("；")}</div>}
 
-              <div style={{ marginTop: 16 }}>
-                <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14 }}>
-                  <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
-                  我已实质复核全部内容与未决项（点击不等于复核，系统记录本确认）
-                </label>
-              </div>
-              <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-                <button className="btn-ghost" disabled={busy || data.status !== "pending_review"} onClick={() => void act("rejected")}>
+              <div className="section-title">你来核对</div>
+              {items.length > 0 ? (
+                <>
+                  <p className="muted">取自本次所用方法模板的质量自检。勾选只记录你的人工核对，不代表系统验证。</p>
+                  <ul className="lawyer-checks">
+                    {items.map((t, i) => (
+                      <li key={i}>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={checked.has(i)}
+                            onChange={(e) =>
+                              setChecked((s) => {
+                                const n = new Set(s);
+                                if (e.target.checked) n.add(i);
+                                else n.delete(i);
+                                return n;
+                              })
+                            }
+                          />
+                          {t}
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="muted">本成果没有对应的方法模板自检清单。请按所内质量要求核对。</p>
+              )}
+              <label className="review-ack">
+                <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+                我已实质复核全部内容{openItems.length > 0 ? "与需要确认的事项" : ""}（点选不等于复核，系统会记录这次确认）
+              </label>
+              <div className="review-actions">
+                <button className="btn-ghost" disabled={busy || !pending} onClick={() => void act("rejected")}>
                   退回
                 </button>
-                <button
-                  className="btn-primary"
-                  disabled={busy || data.status !== "pending_review" || !ack || !data.is_latest_version}
-                  onClick={() => void act("approved")}
-                >
+                <button className="btn-primary" disabled={busy || !pending || !ack || !latest} onClick={() => void act("approved")}>
                   确认签发
                 </button>
                 <span className="spacer" />
                 <button
                   className="btn-ghost"
-                  onClick={() => void api.downloadArtifact(data.artifact_version_id, data.filename).then(() => api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" })).catch((e) => setErr(e.message))}
+                  onClick={() =>
+                    void api
+                      .downloadArtifact(data.artifact_version_id, data.filename)
+                      .then((saved) => {
+                        if (!saved) return;
+                        setNote("已保存（真实名称已还原）。下载已留痕。");
+                        return api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" });
+                      })
+                      .catch((e) => setErr(e.message))
+                  }
                 >
                   下载（留痕）
                 </button>
               </div>
-              <p className="muted" style={{ marginTop: 12 }}>
-                签发绑定当前文件 hash；批准后任何实质编辑生成新版本，旧批准不迁移。内部稿不得外发。
-                签发以本机设备密钥签名并记入签名事件链；对外发送、导出与改权限只能由人在桌面界面操作（Agent 与远程渠道不能触发）。
-              </p>
-            </>
-          )}
-        </div>
-      </main>
+              {note && <p className="muted">{note}</p>}
+              {!pending && <p className="muted">只有“待你复核”的成果可以签发或退回。</p>}
+              <details className="review-proof">
+                <summary className="muted">签发凭证</summary>
+                <p className="muted">
+                  文件指纹 {data.sha256.slice(0, 16)}…。签发绑定这一份确切文件；之后任何实质修改都生成新版本，旧的签发不会转到新版本。签发用本机设备密钥签名并记入签名事件链；对外发送、导出与改权限只能由你在桌面界面操作。内部稿不得外发。
+                </p>
+              </details>
+            </aside>
+          </div>
+        )}
+      </div>
+    </main>
   );
 }

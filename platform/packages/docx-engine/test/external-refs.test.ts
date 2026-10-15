@@ -265,7 +265,8 @@ test("P5 Office：产品源码只经 writeZip 写出 OOXML（writeRawZip 仅限 
   const hits: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
-      if (name === "node_modules" || name === "test" || name === "dist" || name.startsWith(".")) continue;
+      // runtime/、release/ 是安装包构建产物（随包运行时与 electron-builder 输出，已入 .gitignore），不是产品源码
+      if (name === "node_modules" || name === "test" || name === "dist" || name === "runtime" || name === "release" || name.startsWith(".")) continue;
       const p = join(dir, name);
       const st = statSync(p);
       if (st.isDirectory()) walk(p);

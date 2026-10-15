@@ -17,8 +17,11 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolManifest } from "@zr-legal/host-policy";
 import { mintTaskToken } from "../identity.ts";
-import type { AgentArtifact, AgentClient, AgentTaskPoll } from "./agent-client.ts";
+import type { AgentArtifact, AgentCancelOutcome, AgentClient, AgentTaskPoll } from "./agent-client.ts";
 import { diffWorkspace, snapshotWorkspace, type WorkspaceSnapshot } from "./workspace-artifacts.ts";
+import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, startParentHeartbeat, windowsSystemEnv } from "./child-env.ts";
+import { sanitizeProgress, type RunProgressView } from "./run-progress.ts";
+import { relayChildStderr, slog } from "@zr-legal/safe-log";
 
 export interface KapMatterPolicy {
   dataLevel: "L0" | "L1" | "L2" | "L3a" | "L3b";
@@ -50,6 +53,8 @@ export interface KapAgentOptions {
   runtime?: string;
   /** 验签物化后的可信区（AGENTS.md + skills/）：交给宿主作为每个事项的只读可信区；缺省不加载任何技能。 */
   trustedDir?: string | null;
+  /** 只供测试（上下文压缩验收）：缩小宿主引擎的上下文窗口；宿主在安装包形态忽略。 */
+  testMaxContextSize?: number;
   /** 随包 W 运行时（安装包形态，收敛偏离 D-05/D-23）：目录与随包 Node 的摘要、锁定版本；缺省开发形态。 */
   wRuntime?: { dir?: string; nodeSha256?: string; nodeVersion?: string };
   /** 检索式预筛（宿主策略经 kcall 调用；见 kap-host HostPolicyDeps.screenSearch）。 */
@@ -77,8 +82,10 @@ interface TaskState {
   status: AgentTaskPoll["status"];
   events: { seq: number; type: string; payload: Record<string, unknown>; at: string }[];
   previewText: string;
-  /** 正在生成的回复尾部（流式，内存）。 */
-  liveText?: string;
+  /** 正在生成的回复尾部（流式，内存；终态后清空）。 */
+  liveText?: string | undefined;
+  /** 过程快照（K7-P：工作清单、子任务、后台任务、上下文整理、方法模板、模型重试；内存）。 */
+  progress?: RunProgressView | null;
   error: string | null;
   reason: string | null;
   artifacts: AgentArtifact[];
@@ -102,13 +109,24 @@ const TERMINAL_TYPES: Record<string, AgentTaskPoll["status"]> = {
   "run.cancelled": "cancelled",
 };
 
+/** 取消相关调用的超时（复核 B4-B08：宿主卡死时不让执行器收尾阻塞数分钟）；取消与强制取消含引擎中止回合，稍长。 */
+const CANCEL_PROBE_TIMEOUT_MS = 5_000;
+const CANCEL_CALL_TIMEOUT_MS = 10_000;
+/** 按版本取消的重试次数（只对版本冲突重试）。 */
+const CANCEL_RETRIES = 3;
+/** 同一事项上一任务尚未收尾（例如刚被取消）时，发起新任务前最多等待的时长（复核 B4-B11）。 */
+const SAME_MATTER_RELEASE_WAIT_MS = 15_000;
+
 export interface KapAgentClient extends AgentClient {
+  cancel(id: { tid: string; uid: string }, taskId: string, reason: string): Promise<AgentCancelOutcome>;
   close(): Promise<void>;
   getTask(taskId: string): TaskState | undefined;
   /** 某运行的待决审批与提问（界面渲染确认卡与提问卡）。 */
   interactions(runId: string): { approvals: KapPendingApproval[]; questions: KapPendingQuestion[] } | null;
   /** 正在生成的回复（流式；令牌形态；运行结束后为 null）。 */
   liveText(runId: string): string | null;
+  /** 过程快照（令牌形态；运行结束后为 null）。 */
+  liveProgress(runId: string): RunProgressView | null;
   /** 撤权擦除：关闭该事项的引擎并删除其全部 Agent 数据（宿主未运行时直接删除目录）。 */
   purgeMatter(matterId: string): Promise<void>;
   /** 律师的审批决定（批准人由内核注入）。 */
@@ -154,6 +172,12 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
       if (task && (task.status === "running" || task.status === "starting") && typeof msg.text === "string") task.liveText = msg.text.slice(-4_000);
       return;
     }
+    if (msg?.t === "progress") {
+      // 过程快照：按白名单重建、只保留最新一份（内存，不落库）
+      const task = taskByRun.get(String(msg.run_id));
+      if (task && (task.status === "running" || task.status === "starting")) task.progress = sanitizeProgress(msg.progress);
+      return;
+    }
     if (msg?.t === "kcall") {
       // 宿主策略的只读查询：只认已知方法、只回答本运行（运行须属于本客户端的进行中任务）
       const reply = (ok: boolean, result?: unknown, message?: string) => {
@@ -183,6 +207,8 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
   function ensureHost(): Promise<void> {
     if (child && child.connected && ready) return ready;
     ready = (async () => {
+      // 随包运行时全量摘要核验通过之前不拉起（复核 B4-R15）
+      await runtimeReady();
       // 闸门先就绪（宿主的模型、检索、抓取只经闸门；闸门起不来即宿主不启动——失败关闭，不改为直连）
       const gateSocket = opts.gate ? await opts.gate.socket() : undefined;
       const c = fork(opts.entryPath, [], {
@@ -198,15 +224,21 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
           HTTPS_PROXY: "http://127.0.0.1:9",
           ALL_PROXY: "http://127.0.0.1:9",
           NO_PROXY: "",
+          ...windowsSystemEnv(),
+          ...parentHeartbeatEnv(),
         },
+        ...HIDE_WINDOW,
       });
       child = c;
-      c.stderr?.on("data", () => {});
+      startParentHeartbeat(c);
+      // stderr 只认日志器 JSON 行（重新核验后写入本机日志），其余行只计数（v9.2 §3.6）
+      relayChildStderr(c.stderr, "kap_host");
       c.on("message", onMessage);
-      c.on("exit", () => {
+      c.on("exit", (code, signal) => {
+        slog.event("CHILD_EXIT", { proc: "kap_host", code: Number.isInteger(code) ? code! : undefined, signal: signal ?? undefined });
         for (const [, p] of pending) {
           clearTimeout(p.timer);
-          p.reject(new Error("kap-host 已退出"));
+          p.reject(Object.assign(new Error("kap-host 已退出"), { code: "host_exited" }));
         }
         pending.clear();
         for (const t of tasks.values()) {
@@ -218,6 +250,8 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
             t.status = "failed";
             t.reason = "host_exited";
             t.error = "Agent 宿主进程退出";
+            t.progress = null;
+            t.liveText = undefined;
             t.workCodec?.wipe();
             t.workCodec = null;
             t.release?.();
@@ -249,6 +283,7 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
             ...(gateSocket ? { gateSocket, gateRoutes: opts.gate!.routes } : {}),
             trustedRgPath: opts.trustedRgPath,
             ...(opts.trustedDir ? { trustedDir: opts.trustedDir } : {}),
+            ...(opts.testMaxContextSize ? { testMaxContextSize: opts.testMaxContextSize } : {}),
             ...(opts.wRuntime?.dir ? { wRuntimeDir: opts.wRuntime.dir } : {}),
             ...(opts.wRuntime?.nodeSha256 ? { wNodeSha256: opts.wRuntime.nodeSha256 } : {}),
             ...(opts.wRuntime?.nodeVersion ? { wNodeVersion: opts.wRuntime.nodeVersion } : {}),
@@ -264,13 +299,15 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
     return ready;
   }
 
-  async function call<T>(method: string, params: unknown, timeoutMs = 60_000): Promise<T> {
+  /** noSpawn：宿主不在运行时直接失败，不为这次调用拉起新宿主（取消路径：宿主已退出即无需取消）。 */
+  async function call<T>(method: string, params: unknown, timeoutMs = 60_000, o: { noSpawn?: boolean } = {}): Promise<T> {
+    if (o.noSpawn && !(child?.connected && ready)) throw Object.assign(new Error("kap-host 未在运行"), { code: "host_exited" });
     await ensureHost();
     const id = nextId++;
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         pending.delete(id);
-        reject(new Error(`kap-host 调用超时：${method}`));
+        reject(Object.assign(new Error(`kap-host 调用超时：${method}`), { code: "timeout" }));
       }, timeoutMs);
       pending.set(id, { resolve, reject, timer });
       child!.send({ t: "call", id, method, params });
@@ -310,6 +347,9 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
     task.approvals.clear();
     task.questions.clear();
     syncWaiting(task);
+    // 过程快照与流式文字只在运行期间留在内存（复核 B4-B04：子任务结论摘要等不在内核进程里常驻）
+    task.progress = null;
+    task.liveText = undefined;
     task.reason = (e.payload.reason as string | null) ?? null;
     // 宿主按工作时限或总时长收尾时报 failed + 原因：内核按原因记为超时（与内核兜底一致；复核 S5-B08）
     task.status = terminal === "failed" && (task.reason === "run_deadline_exceeded" || task.reason === "run_wall_deadline_exceeded") ? "timed_out" : terminal;
@@ -347,6 +387,14 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
   return {
     async start(id, req) {
       const taskId = `kap_${id.rid}_${id.aid}`;
+      // 复核 B4-B11：同一事项上一任务尚未收尾（律师取消后马上重开：内核已置“已取消”，宿主要等执行器轮询发现并取消后才释放事项）——
+      // 先等它收尾（有上限）再发起，而不是让宿主以“同一事项已有运行中的任务”拒绝、律师看到“先受理后失败”。
+      // 等待在占用运行槽位之前；超时仍未收尾即照常发起（宿主如实拒绝）
+      for (const until = Date.now() + SAME_MATTER_RELEASE_WAIT_MS; Date.now() < until; ) {
+        const busy = [...tasks.values()].some((x) => x.matterId === id.mid && x.runId !== id.rid && (x.status === "starting" || x.status === "running"));
+        if (!busy) break;
+        await new Promise((r) => setTimeout(r, 200));
+      }
       const release = opts.ioMutex ? await opts.ioMutex.acquire() : () => {};
       const task: TaskState = {
         taskId,
@@ -437,6 +485,8 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
         task.status = "failed";
         task.reason = "start_failed";
         task.error = (e as Error).message;
+        task.progress = null;
+        task.liveText = undefined;
         task.workCodec?.wipe();
         task.workCodec = null;
         opts.revokeToken?.(taskId);
@@ -461,14 +511,45 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
     },
     async cancel(id, taskId, reason) {
       const t = tasks.get(taskId);
-      if (!t) return;
+      if (!t) return { confirmed: true, forced: false, cause: "unknown_task" };
       opts.revokeToken?.(taskId);
-      if (t.status !== "starting" && t.status !== "running") return;
+      if (t.status !== "starting" && t.status !== "running") return { confirmed: true, forced: false };
       // 取消的任务不登记工作区产物：区编解码器立即清零（复核 S3B-A09：宿主没有回终态事件时也不会长期留在内存）
       t.workCodec?.wipe();
       t.workCodec = null;
-      const st = await call<{ state_version: number }>("events", { run_id: t.runId, after: 1e9, origin: { channel: "desktop", userId: id.uid } }).catch(() => null);
-      await call("cancel", { run_id: t.runId, request: { reason, expected_state_version: st?.state_version ?? 0 }, origin: { channel: "desktop", userId: id.uid } }).catch(() => {});
+      // 取消竞态（Kimi Code 增量核查 N-1）：宿主按状态版本比较—取消，确认卡或提问恰在此刻到达会使版本变化——重取版本重试；
+      // 复核 B4-B08：只对版本冲突重试；宿主已在终态即无需取消；超时、重试耗尽或身份不一致（forbidden：内核与宿主的发起人不一致，
+      // 记入原因）时请宿主强制取消（不校验版本，只经内核 IPC 可达；内核 API 层已按律师所见版本校验过）——停下来是安全方向。
+      // 结果交执行器直接写入事项账本（复核 B4-B07：轮询此时已退出，宿主事件流里的记录再没有人镜像）
+      const origin = { channel: "desktop", userId: id.uid };
+      const codeOf = (e: unknown): string => String((e as { code?: unknown })?.code ?? "error");
+      const settled = (st: { status?: unknown } | null) => !!st && ["succeeded", "partial", "failed", "cancelled"].includes(String(st.status));
+      let cause: string | null = null;
+      for (let i = 0; i < CANCEL_RETRIES; i++) {
+        let st: { state_version: number; status?: string } | null;
+        try {
+          st = await call<{ state_version: number; status?: string }>("events", { run_id: t.runId, after: 1e9, origin }, CANCEL_PROBE_TIMEOUT_MS, { noSpawn: true });
+        } catch (e) {
+          cause = codeOf(e);
+          break;
+        }
+        if (settled(st)) return { confirmed: true, forced: false };
+        try {
+          await call("cancel", { run_id: t.runId, request: { reason, expected_state_version: st.state_version }, origin }, CANCEL_CALL_TIMEOUT_MS, { noSpawn: true });
+          return { confirmed: true, forced: false };
+        } catch (e) {
+          cause = codeOf(e) === "conflict" ? "version_conflict" : codeOf(e);
+          if (cause !== "version_conflict") break;
+        }
+      }
+      if (cause === "host_exited") return { confirmed: true, forced: false, cause }; // 宿主已退出：运行随之结束（退出处理已按失败收尾）
+      try {
+        await call("forceCancel", { run_id: t.runId, reason }, CANCEL_CALL_TIMEOUT_MS, { noSpawn: true });
+        return { confirmed: true, forced: true, cause };
+      } catch (e) {
+        if (codeOf(e) === "host_exited") return { confirmed: true, forced: false, cause: "host_exited" };
+        return { confirmed: false, forced: true, cause, error: String((e as Error)?.message ?? e).slice(0, 300) };
+      }
     },
     getTask: (taskId) => tasks.get(taskId),
     hostPid() {
@@ -495,6 +576,11 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
         return;
       }
       rmSync(join(opts.dataRoot, matterId), { recursive: true, force: true });
+    },
+    liveProgress(runId) {
+      const t = taskByRun.get(runId);
+      if (!t || (t.status !== "running" && t.status !== "starting")) return null;
+      return t.progress ?? null;
     },
     liveText(runId) {
       const t = taskByRun.get(runId);
@@ -524,10 +610,19 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
       const st = await call<{ state_version: number }>("events", { run_id: runId, after: 1e9, origin: { channel: "desktop", userId: t.uid } });
       return st.state_version;
     },
+    // 等宿主真正退出再返回（复核 B4-R11）：内核关闭之后紧接着可能是安装更新，残留的宿主进程会占用安装目录；最多等 5 秒，之后强制结束
     async close() {
-      if (child?.connected) child.send({ t: "shutdown" });
+      const c = child;
       child = null;
       ready = null;
+      if (!c || c.exitCode !== null || c.signalCode !== null) return;
+      const exited = new Promise<void>((resolve) => c.once("exit", () => resolve()));
+      if (c.connected) c.send({ t: "shutdown" }, () => {});
+      const timer = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 5_000).unref());
+      if ((await Promise.race([exited, timer])) === "timeout") {
+        c.kill("SIGKILL");
+        await Promise.race([exited, new Promise<void>((r) => setTimeout(r, 2_000).unref())]);
+      }
     },
   };
 }

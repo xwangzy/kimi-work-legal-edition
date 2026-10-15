@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
 import type { FileBroker } from "@zr-legal/file-broker";
 import { argsHash, authorizeToolCall, type ManifestRegistry, type RunMode } from "@zr-legal/host-policy";
+import { SECONDARY_MODEL } from "./engine-config.ts";
 import { BUILTIN_TOOLS, CROSS_BOUNDARY, LOCKED_OFF_TOOLS, TOOL_ZONES, type ToolGrade } from "./tool-table.ts";
 
 export type DataLevel = "L0" | "L1" | "L2" | "L3a" | "L3b";
@@ -68,6 +69,11 @@ export interface PolicyDecisionRecord {
   argsHash: string;
   /** 联网检索与网页抓取：出站内容的摘要（查询或 URL）。宿主出口据此把闸门请求对到这一次裁决（第 04 篇 §5.1）。 */
   egressDigest?: string;
+  /**
+   * 超预算询问（复核 B4-B05/B4-B06）：本次调用将派出的子任务数（非编排类为 0）与询问时的余额。
+   * 律师批准后按此补记预算（1 次工具调用 + members 个子任务）——之后的调用按实际用量判断，越额仍逐次询问；确认卡据此写明成员数与余额。
+   */
+  overBudget?: { members: number; toolCallsLeft: number; subagentsLeft: number };
 }
 
 /** 出站内容摘要：WebSearch 的查询、FetchURL 的 URL（与宿主出口从请求体算出的摘要比对）。 */
@@ -189,7 +195,13 @@ export class HostPolicy {
   evaluate(req: HostPolicyRequest, pre?: PolicyPreScreen): PolicyResult {
     const hash = argsHash(req.args ?? {});
     const state = this.runsBySession.get(req.sessionId);
-    const record = (decision: PolicyDecisionRecord["decision"], reason: string, grade: PolicyDecisionRecord["grade"], crossBoundary: string | null = null): void => {
+    const record = (
+      decision: PolicyDecisionRecord["decision"],
+      reason: string,
+      grade: PolicyDecisionRecord["grade"],
+      crossBoundary: string | null = null,
+      extra: Pick<PolicyDecisionRecord, "overBudget"> = {},
+    ): void => {
       const r: PolicyDecisionRecord = {
         at: new Date().toISOString(),
         runId: state?.ctx.runId ?? null,
@@ -207,6 +219,7 @@ export class HostPolicy {
           : req.toolName === "FetchURL" && typeof (req.args as { url?: unknown } | null)?.url === "string"
             ? { egressDigest: egressDigest("FetchURL", (req.args as { url: string }).url) }
             : {}),
+        ...extra,
       };
       this.decisions.push(r);
       if (this.decisions.length > 5000) this.decisions.splice(0, 1000);
@@ -220,12 +233,12 @@ export class HostPolicy {
       record("approve", reason, grade);
       return { kind: "approve", reason: { host_policy: reason } };
     };
-    const ask = (reason: string, grade: PolicyDecisionRecord["grade"], crossBoundary: string | null): PolicyResult => {
+    const ask = (reason: string, grade: PolicyDecisionRecord["grade"], crossBoundary: string | null, extra: Pick<PolicyDecisionRecord, "overBudget"> = {}): PolicyResult => {
       // 每次都须确认的原因（超预算、停止任务、定时、图像直送、L3a 检索）永不按任务放行（审查 S2-02）
       if (state && !ONCE_ONLY_REASONS.has(reason) && state.taskAllowances.has(HostPolicy.allowanceKey(req.toolName, req.args, reason))) {
         return approve(`task_allowance:${reason}`, grade);
       }
-      record("ask", reason, grade, crossBoundary);
+      record("ask", reason, grade, crossBoundary, extra);
       return { kind: "ask", reason: { host_policy: reason, cross_boundary: crossBoundary } };
     };
 
@@ -250,7 +263,7 @@ export class HostPolicy {
         req.args,
       );
       if (d.decision === "deny") return deny(d.reason, "mcp");
-      if (!this.consumeBudget(state, false)) return this.overBudget(ctx, ask, deny, "mcp");
+      if (!this.consumeBudget(state, 0)) return this.overBudget(state, 0, ask, deny, "mcp");
       if (d.decision === "ask") return ask(d.reason, "mcp", d.manifest?.sideEffect === "network" ? CROSS_BOUNDARY.connectorWrite : null);
       return approve(d.reason, "mcp");
     }
@@ -291,7 +304,7 @@ export class HostPolicy {
         if (mode === "chat") return deny("chat_read_only", spec.grade);
         return approve(mode === "auto" && !ctx.planFirst ? "plan_auto_approved" : "plan_review_by_card", spec.grade);
       case "T0":
-        if (!this.consumeBudget(state, false)) return this.overBudget(ctx, ask, deny, spec.grade);
+        if (!this.consumeBudget(state, 0)) return this.overBudget(state, 0, ask, deny, spec.grade);
         return mode === "manual" ? ask("manual_mode", spec.grade, null) : approve("read_within_matter", spec.grade);
       case "T0'":
         if (mode === "chat") return deny("chat_read_only", spec.grade);
@@ -312,8 +325,26 @@ export class HostPolicy {
             return deny("bash_background_timeout_cap", spec.grade, "宿主策略拒绝：后台命令最长 60 分钟（timeout ≤ 3600）");
           }
         }
-        if (!this.consumeBudget(state, spec.grade === "T3" && (req.toolName === "Agent" || req.toolName === "AgentSwarm"))) {
-          return this.overBudget(ctx, ask, deny, spec.grade);
+        if ((req.toolName === "Agent" || req.toolName === "AgentSwarm") && (req.args as { fork?: unknown } | null)?.fork === true) {
+          // 分叉上下文的子 Agent 继承主 Agent 的模型并复制整段对话，绕过 [secondary_model].force（子 Agent 强制低价模型）：
+          // 引擎已由实验开关锁关（ZP-13），宿主策略独立拒绝（每处独立强制）
+          return deny("subagent_fork_disabled", spec.grade, "宿主策略拒绝：不支持分叉上下文的子任务（子任务一律使用独立上下文与低价模型）");
+        }
+        if (req.toolName === "Agent" || req.toolName === "AgentSwarm") {
+          // 子任务一律低价模型（复核 B4-B06）：引擎的 [secondary_model].force 之外，宿主独立拒绝指定其他模型（每处独立强制，与 fork 同口径）
+          const model = (req.args as { model?: unknown } | null)?.model;
+          if (model !== undefined && model !== SECONDARY_MODEL) {
+            return deny("subagent_model_override_disabled", spec.grade, "宿主策略拒绝：子任务一律使用低价模型，不能另行指定模型");
+          }
+        }
+        // 子 Agent 预算按成员计（K7-4）：一次 AgentSwarm = items 与 resume_agent_ids 的成员总数；
+        // 无法解析即拒绝（复核 B4-B06：引擎同样会因参数无效拒绝，询问律师“超预算”既无意义也误导）
+        const members = spec.grade !== "T3" ? 0 : req.toolName === "Agent" ? 1 : req.toolName === "AgentSwarm" ? swarmMembers(req.args) : 0;
+        if (!Number.isFinite(members)) {
+          return deny("swarm_members_unparseable", spec.grade, "宿主策略拒绝：集群的成员数无法确定（须给出 items 或 resume_agent_ids）");
+        }
+        if (!this.consumeBudget(state, members)) {
+          return this.overBudget(state, members, ask, deny, spec.grade);
         }
         if (mode === "manual") return ask("manual_mode", spec.grade, null);
         return approve(spec.grade === "T1" ? "draft_within_workspace" : spec.grade === "T2" ? "exec_within_domain" : "orchestration_within_budget", spec.grade);
@@ -324,7 +355,7 @@ export class HostPolicy {
         if (mode === "chat" && !ctx.basisComplete) return deny("basis_pending_no_egress", spec.grade);
         if (ctx.dataLevel === "L3b") return deny("search_forbidden_l3b", spec.grade);
         if (!ctx.basisComplete) return deny("basis_pending_no_egress", spec.grade);
-        if (!this.consumeBudget(state, false)) return this.overBudget(ctx, ask, deny, spec.grade);
+        if (!this.consumeBudget(state, 0)) return this.overBudget(state, 0, ask, deny, spec.grade);
         if (ctx.dataLevel === "L3a") return ask("search_l3a_each_query", spec.grade, CROSS_BOUNDARY.searchEntity);
         if (mode === "manual") return ask("manual_mode", spec.grade, null);
         // 默认/自动档：出站闸门逐条去标识；预授权“泛化后放行”时由闸门泛化
@@ -340,7 +371,7 @@ export class HostPolicy {
         const url = (req.args as { url?: unknown } | null)?.url;
         const host = hostOf(url);
         if (!host) return deny("fetch_url_invalid", spec.grade);
-        if (!this.consumeBudget(state, false)) return this.overBudget(ctx, ask, deny, spec.grade);
+        if (!this.consumeBudget(state, 0)) return this.overBudget(state, 0, ask, deny, spec.grade);
         const allowlisted = ctx.fetchAllowlist.some((d) => host === d || host.endsWith(`.${d}`));
         // 白名单域名：默认档与自动档都自动（第 02 篇 §9.4 T5“白名单域名自动”；自动档不比默认档更严——复核 S5-A07）；手动档每一步都问
         if (allowlisted) return mode === "manual" ? ask("manual_mode", spec.grade, null) : approve("fetch_allowlisted_domain", spec.grade);
@@ -354,23 +385,52 @@ export class HostPolicy {
     }
   }
 
-  private consumeBudget(state: RunState, subagent: boolean): boolean {
-    if (state.toolCalls + 1 > state.ctx.budget.maxToolCalls) return false;
-    if (subagent && state.subagents + 1 > state.ctx.budget.maxSubagents) return false;
+  /**
+   * 律师批准了超预算询问（复核 B4-B05）：按该次调用补记 1 次工具调用与其成员数。此前获批的那一次不计数，
+   * 随后的调用在“名义余额”内被自动放行（例：上限 3、已用 2，批准一次 5 成员集群后，单个 Agent 仍按 2+1≤3 放行）。
+   * 只认本会话、本策略记下的超预算询问；同一裁决只补记一次。
+   */
+  chargeApprovedOverBudget(sessionId: string, r: PolicyDecisionRecord): void {
+    const state = this.runsBySession.get(sessionId);
+    if (!state || r.sessionId !== sessionId || r.decision !== "ask" || r.reason !== "over_budget" || !r.overBudget || this.charged.has(r)) return;
+    const members = r.overBudget.members;
+    if (!Number.isFinite(members) || members < 0) return;
+    this.charged.add(r);
     state.toolCalls += 1;
-    if (subagent) state.subagents += 1;
+    state.subagents += members;
+  }
+
+  /** 已补记过的超预算裁决。 */
+  private readonly charged = new WeakSet<PolicyDecisionRecord>();
+
+  /** 本会话当前的预算用量（测试与诊断）。 */
+  budgetUsage(sessionId: string): { toolCalls: number; subagents: number } | null {
+    const s = this.runsBySession.get(sessionId);
+    return s ? { toolCalls: s.toolCalls, subagents: s.subagents } : null;
+  }
+
+  /** subagents：本次调用将派出的子 Agent 数（0 = 非编排类；调用方已拒绝无法解析的情形）。 */
+  private consumeBudget(state: RunState, subagents: number): boolean {
+    if (state.toolCalls + 1 > state.ctx.budget.maxToolCalls) return false;
+    if (subagents > 0 && state.subagents + subagents > state.ctx.budget.maxSubagents) return false;
+    state.toolCalls += 1;
+    state.subagents += subagents;
     return true;
   }
 
   private overBudget(
-    ctx: RunPolicyContext,
-    ask: (reason: string, grade: PolicyDecisionRecord["grade"], cb: string | null) => PolicyResult,
+    state: RunState,
+    members: number,
+    ask: (reason: string, grade: PolicyDecisionRecord["grade"], cb: string | null, extra?: Pick<PolicyDecisionRecord, "overBudget">) => PolicyResult,
     deny: (reason: string, grade: PolicyDecisionRecord["grade"], message?: string) => PolicyResult,
     grade: PolicyDecisionRecord["grade"],
   ): PolicyResult {
-    // 自动档：预算硬上限；默认/手动档：超出预算是跨边界动作，问律师
-    if (ctx.mode === "auto") return deny("budget_hard_cap", grade, "宿主策略拒绝：已达本任务预算硬上限（自动档）");
-    return ask("over_budget", grade, CROSS_BOUNDARY.budget);
+    // 自动档：预算硬上限；默认/手动档：超出预算是跨边界动作，问律师（卡片写明本次成员数与余额；批准后补记——复核 B4-B05/B06）
+    if (state.ctx.mode === "auto") return deny("budget_hard_cap", grade, "宿主策略拒绝：已达本任务预算硬上限（自动档）");
+    const { maxToolCalls, maxSubagents } = state.ctx.budget;
+    return ask("over_budget", grade, CROSS_BOUNDARY.budget, {
+      overBudget: { members, toolCallsLeft: Math.max(0, maxToolCalls - state.toolCalls), subagentsLeft: Math.max(0, maxSubagents - state.subagents) },
+    });
   }
 }
 
@@ -408,4 +468,16 @@ function hostOf(url: unknown): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * 一次 AgentSwarm 调用派出的成员数（上游 agent-core-v2 features/swarm/tools/agent-swarm/agent-swarm.ts：
+ * `items` 每项派出一个新成员，`resume_agent_ids` 每个键续跑一个已有成员）。无法解析或为 0 → 无穷大（宿主策略拒绝，失败关闭；复核 B4-B06）。
+ */
+export function swarmMembers(args: unknown): number {
+  const a = (args ?? {}) as { items?: unknown; resume_agent_ids?: unknown };
+  const items = Array.isArray(a.items) ? a.items.length : 0;
+  const resumed = a.resume_agent_ids && typeof a.resume_agent_ids === "object" && !Array.isArray(a.resume_agent_ids) ? Object.keys(a.resume_agent_ids).length : 0;
+  const n = items + resumed;
+  return n > 0 ? n : Number.POSITIVE_INFINITY;
 }

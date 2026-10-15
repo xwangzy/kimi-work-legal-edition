@@ -4,13 +4,19 @@
  * 失败诚实：模型缺失时扫描/图片页标 unreadable 并注明「本机 OCR 未就绪」，不伪造文本；
  * 文本层路径不依赖模型，照常可用。
  */
-import { runParseBatch, ocrModelsAvailable, type OcrModelPaths, type ParsedPage } from "@zr-legal/parse-ocr";
+import { runParseBatch, ocrModelsAvailable, type OcrModelPaths, type ParsedPage } from "@zr-legal/parse-ocr/client";
+import { runtimeReady } from "../executor/child-env.ts";
 import { DomainError } from "@zr-legal/domain";
 
 export interface RichParseDeps {
   ocrModelPaths: OcrModelPaths;
   /** 开发/测试：mock OCR 引擎（ZR_PARSE_OCR_MOCK=1；不加载模型）。 */
   mockOcr: boolean;
+  /**
+   * 隔离解析进程的运行方式（W6）：安装包由随包运行时给出（KWL_PARSE_NODE + KWL_PARSE_WORKER_ENTRY），
+   * 缺省为当前进程的 Node 与包内入口（开发与测试）。
+   */
+  worker?: { execPath?: string | undefined; entry?: string | undefined } | undefined;
 }
 
 export interface RichParseOutcome {
@@ -44,7 +50,16 @@ export async function parseWithPipeline(buf: Buffer, filename: string, mime: str
     throw new DomainError("unsupported_file", `parseWithPipeline 只处理 PDF/JPG/PNG（收到 ${mime} ${filename}）`, 422);
   }
   const modelPaths = deps.mockOcr ? null : deps.ocrModelPaths;
-  const r = await runParseBatch({ file: buf, kind, modelPaths, mockOcr: deps.mockOcr });
+  // 随包运行时全量摘要核验通过之前不拉起解析进程（复核 B4-R15）
+  await runtimeReady();
+  const r = await runParseBatch({
+    file: buf,
+    kind,
+    modelPaths,
+    mockOcr: deps.mockOcr,
+    ...(deps.worker?.execPath ? { execPath: deps.worker.execPath } : {}),
+    ...(deps.worker?.entry ? { workerEntry: deps.worker.entry } : {}),
+  });
   const flags = new Set<string>([kind === "pdf" ? "pdf_pipeline" : "image_ocr"]);
   let low = 0;
   let unreadable = 0;

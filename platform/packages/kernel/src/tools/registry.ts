@@ -22,6 +22,7 @@ import { materialsReadExcerpt } from "./tools/materials.ts";
 import { docxApplyRevisions, docxCompare, docxRenderReport, docxSanitize, redactApply } from "./tools/docx.ts";
 import { factsList, factsSubmit, materialsList, registerToolArtifact, riskcardsList, riskcardsSubmit, xlsxRenderTable } from "./tools/review.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
+import { errFields, slog } from "@zr-legal/safe-log";
 
 export interface ToolDef {
   name: string;
@@ -472,10 +473,10 @@ export function setLegalToolLock(file: string | null, signerPub: string): void {
     lock = loadSignedToolLock(file, signerPub);
   } catch (e) {
     error = (e as Error).message;
-    console.error(`[tools] 工具清单锁文件不可用，法律工具一律不暴露：${error}`);
+    slog.event("TOOLS_LOCK_UNAVAILABLE", errFields(e));
   }
   const problems = verifyToolsAgainstLock(lock, TOOLS);
-  for (const [name, why] of problems) if (lock) console.error(`[tools] ${name}：${why}——不暴露`);
+  for (const [name] of problems) if (lock) slog.event("TOOLS_TOOL_HIDDEN", { tool: /^[a-z][a-z0-9_.-]{0,47}$/.test(name) ? name : "unnamed" });
   lockState = { lock, registry: lock ? registryFromLock(lock) : new ManifestRegistry([]), problems, error };
 }
 

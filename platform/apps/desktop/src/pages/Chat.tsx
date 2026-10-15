@@ -70,14 +70,27 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
         {list.length === 0 && <p className="muted">还没有问答。</p>}
       </aside>
       <main className="chat-main">
+        {/* 一句话说清楚（Y4 C-1）；机制放进“了解更多” */}
         <div className="chat-notice">
-          无事项问答：不读取任何事项材料；问题经出站闸门令牌化并做当事人词典检查后发给 Kimi 模型（经中软网关，不保存）；历史只在本机。涉及具体案件请在事项内处理。
+          问答不会读取事项材料。提到具体当事人时，建议到事项里提问。
+          <details className="chat-more">
+            <summary>了解更多</summary>
+            发送前，问题里能识别的姓名、证件号、账号、联系方式会换成代号（识别依靠规则与名单，可能有遗漏），并与你的事项当事人名单比对：涉及“客户要求不上云”事项的当事人会被拦下。问题经中软安全通道发给 Kimi 模型；问答记录只保存在这台电脑上。
+          </details>
         </div>
         <div className="chat-messages">
           {messages.length === 0 && !blocked && (
             <div className="chat-empty">
               <h2>法律问答</h2>
-              <p className="muted">例如：“股权转让中未实缴出资股东的补足责任如何认定？”</p>
+              <p className="muted">可以这样问（点一下填入）：</p>
+              {/* 空态给出可点击的示例问题（Y4 C-2） */}
+              <div className="chat-examples">
+                {["股权转让中，未实缴出资股东的补足责任如何认定？", "买卖合同逾期付款违约金过高时，法院一般如何调整？", "劳动合同到期不续签，用人单位需要支付经济补偿吗？"].map((q) => (
+                  <button key={q} className="chip" onClick={() => setText(q)}>
+                    {q}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           {messages.map((m) => (
@@ -114,7 +127,6 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
             }}
           />
           <div className="composer-bar">
-            <span className="chip chip-static">问答（只读）</span>
             <span className="spacer" />
             <button className="send" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="发送"><Icon.send /></button>
           </div>

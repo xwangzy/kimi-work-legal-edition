@@ -184,6 +184,8 @@ export class HostEgressDispatcher extends Dispatcher {
 
     const gateAgent = this.modelAgent;
     if (!gateAgent) return this.deny(opts, handler, host, path, "egress_gate_not_configured");
+    // 引擎自带的 x-kwl-* 请求头一律剥掉（复核 S5A-12）：这类头只由宿主写入（关联用的裁决与调用编号），不能被引擎伪造而错配时间线
+    for (const k of Object.keys(headers)) if (k.toLowerCase().startsWith("x-kwl-")) delete headers[k];
     // 检索与抓取：按工具调用 ID 与参数摘要对到宿主策略刚放行的那一次调用（每次裁决只换一次运行令牌）
     if (m[2] === "/search" || m[2] === "/fetch") {
       const tool = m[2] === "/search" ? ("WebSearch" as const) : ("FetchURL" as const);
@@ -206,7 +208,9 @@ export class HostEgressDispatcher extends Dispatcher {
           if (binding.matterId !== matterId) return this.deny(opts, handler, host, path, "matter_mismatch");
           this.record({ route: tool === "WebSearch" ? "search" : "fetch", host, path: m[2]!, matterId, runId: binding.runId, sessionId: null, reason: null });
           const decisionHeader = binding.decision ? { "x-kwl-host-decision": binding.decision.replace(/[^\x20-\x7e]/g, "").slice(0, 120) } : {};
-          return gateAgent.dispatch({ ...opts, origin: `http://${MODEL_HOST}`, path: url.pathname, body, headers: { ...headers, ...decisionHeader, authorization: `Bearer ${binding.token}` } }, handler);
+          // 工具调用编号只作去向记录与时间线步骤的关联（界面据此在该步骤显示实际发出的内容；v9.2 Y4 P0-A），不作授权依据
+          const callHeader = /^[A-Za-z0-9_:.-]{1,128}$/.test(callId) ? { "x-kwl-tool-call": callId } : {};
+          return gateAgent.dispatch({ ...opts, origin: `http://${MODEL_HOST}`, path: url.pathname, body, headers: { ...headers, ...decisionHeader, ...callHeader, authorization: `Bearer ${binding.token}` } }, handler);
         })
         .catch((err: unknown) => this.deny(opts, handler, host, path, err instanceof EgressDenied ? err.message : "request_body_unreadable"));
       return true;

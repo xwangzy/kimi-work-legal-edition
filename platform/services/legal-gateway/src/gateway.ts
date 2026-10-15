@@ -11,7 +11,9 @@
  * - 额度：按租户的点数预占 → 结算（预写日志：先记预占、再记结算；只记元数据）；额度不足即拒绝；
  * - 并发：按租户排队与限流（上游 Tier5 仅 100 并发 / 300 RPM，避免一个律所的 Swarm 挤占全平台）；
  * - 留存：**正文与错误体不落盘**——计量日志只有请求 ID、租户、席位、匿名事项编号、模型、token、耗时、状态；
- * - 响应：原样透传（流式逐块），同时从 usage 字段取计量。
+ * - 响应：原样透传（流式逐块），同时从 usage 字段取计量；
+ * - 内容安全（v9.2 R11）：配置了内容安全策略时，请求文字与模型输出按类别匹配，计量只记“类别:次数”；动作为 block 的类别
+ *   拒绝请求或截断输出（以一条错误事件结束流）。
  */
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -19,6 +21,7 @@ import type { KeyObject } from "node:crypto";
 import { verifySeatToken, SeatTokenError, type SeatClaims } from "@zr-legal/seat-token";
 import type { GatewayFeedView } from "@zr-legal/firm-trust";
 import type { ChatProvider } from "./providers.ts";
+import { completionTexts, OutputTextTap, requestTexts, safetySummary, type ContentSafety, type SafetyVerdict } from "./content-safety.ts";
 
 export interface MeterRecord {
   at: string;
@@ -37,6 +40,8 @@ export interface MeterRecord {
   reason: string | null;
   /** 闸门的请求编号（请求头 x-kwl-request-id）：网关与闸门去向记录按它双向对账（阶段 7 复核 S7-B03）。 */
   clientRequestId?: string | null;
+  /** 内容安全命中（只有类别编号与次数，如 `in:cat-a:2;out:cat-b:1`；不含命中的文字）。 */
+  safety?: string | null;
 }
 
 /** HTTP 层访问记录（含 401/404/400 等未进入计量的请求；只有元数据，不含请求体）。 */
@@ -83,6 +88,8 @@ export interface GatewayOptions {
   tenantConcurrency?: number;
   queueTimeoutMs?: number;
   maxBodyBytes?: number;
+  /** 内容安全（v9.2 R11）：未给出 = 不检查。 */
+  contentSafety?: ContentSafety;
 }
 
 export const DEFAULT_ROUTES: Readonly<Record<string, ModelRoute>> = Object.freeze({
@@ -216,8 +223,13 @@ export function createLegalGateway(o: GatewayOptions): Server {
     // 无事项问答（第 04 篇 §5.3）：专门路由，不带事项编号；计量只记席位与“qa”；只接受 L0/L1（问题经闸门令牌化与当事人词典检查）
     const anon = qa ? "qa" : typeof req.headers["x-kwl-anon-matter"] === "string" ? req.headers["x-kwl-anon-matter"] : null;
     const level = String(req.headers["x-kwl-data-level"] ?? "");
+    let safetyIn: SafetyVerdict | null = null;
+    const safetyField = (out: SafetyVerdict | null = null): string | null => {
+      const parts = [safetyIn && safetySummary(safetyIn) ? `in:${safetySummary(safetyIn)}` : null, out && safetySummary(out) ? `out:${safetySummary(out)}` : null].filter(Boolean);
+      return parts.length ? parts.join(";") : null;
+    };
     const reject = (status: number, code: string, message: string, model: string | null = null): never => {
-      o.meter.append({ at: new Date().toISOString(), clientRequestId, kind: "reject", requestId, tid: seat.tid, sid: seat.sid, anonMatter: anon, model, status, reserved: 0, inputTokens: null, outputTokens: null, cachedTokens: null, latencyMs: Date.now() - started, reason: code });
+      o.meter.append({ at: new Date().toISOString(), clientRequestId, kind: "reject", requestId, tid: seat.tid, sid: seat.sid, anonMatter: anon, model, status, reserved: 0, inputTokens: null, outputTokens: null, cachedTokens: null, latencyMs: Date.now() - started, reason: code, safety: safetyField() });
       throw new GwError(status, code, message);
     };
     if (!anon) reject(400, "anon_matter_missing", "缺少匿名事项编号（无事项问答走专门路由）");
@@ -261,6 +273,11 @@ export function createLegalGateway(o: GatewayOptions): Server {
     const alias = String(body.model ?? "");
     const route = o.routes[alias];
     if (!route) reject(400, "model_not_routed", "模型未登记（不静默跨供应商路由）", alias);
+    const cs = o.contentSafety && !o.contentSafety.empty ? o.contentSafety : null;
+    if (cs) {
+      safetyIn = cs.check(requestTexts(body));
+      if (safetyIn.blocked) reject(422, "content_blocked_input", `请求内容命中内容安全策略（${safetyIn.blocked}），已拒绝`, alias);
+    }
     const reserved = points(estimateTokens(body, route!), route!);
     // 预占原子化（审查 S4-15）：检查与扣减在同一同步段内完成，再排队；排队失败退回
     const left = o.budgets.get(seat.tid) ?? 0;
@@ -288,22 +305,83 @@ export function createLegalGateway(o: GatewayOptions): Server {
     let status: number | null = null;
     let usage: { input: number; output: number; cached: number } | null = null;
     let interrupted = false;
+    let safetyOut: SafetyVerdict | null = null;
+    let blockedOut: string | null = null;
     try {
       const upstreamBody = { ...body, model: route!.upstreamModel, ...(body.stream === true ? { stream_options: { ...(body.stream_options as object | undefined), include_usage: true } } : {}) };
       const up = await o.provider.chat(upstreamBody, { requestId, signal: ac.signal });
       status = up.status;
-      res.writeHead(up.status, { ...up.headers, "x-kwl-gateway-request-id": requestId });
+      const streaming = body.stream === true;
+      // 内容安全：非流式响应先在内存里检查再发出；流式逐块检查，命中拦截类别即以错误事件结束
+      const holdForCheck = !!cs && !streaming && up.status === 200;
+      if (!holdForCheck) res.writeHead(up.status, { ...up.headers, "x-kwl-gateway-request-id": requestId });
       // 透传并在内存中取 usage（不落盘）；流式只保留最后 64 KiB 用于取 usage；写回与客户端断开竞争（不会永久等待 drain）
       let tail = "";
       const dec = new TextDecoder();
+      const tap = cs && streaming ? new OutputTextTap() : null;
+      // 按通道（正文、推理文字、各工具调用参数）分别累积全文与跨块窗口（复核 B4-R05）
+      const outTexts = new Map<string, string>();
+      const windows = new Map<string, string>();
+      const blockedEvent = (cat: string, why = "模型输出命中内容安全策略") =>
+        new TextEncoder().encode(`data: ${JSON.stringify({ error: { type: "kwl_gateway", code: "content_blocked_output", message: `${why}（${cat}），已中止` } })}\n\n`);
+      const held: Uint8Array[] = [];
+      let heldBytes = 0;
       for await (const c of up.body) {
-        tail = (tail + dec.decode(c, { stream: true })).slice(-65_536);
+        const piece = dec.decode(c, { stream: true });
+        tail = (tail + piece).slice(-65_536);
+        if (holdForCheck) {
+          heldBytes += c.byteLength;
+          if (heldBytes > 16 * 1024 * 1024) throw new GwError(502, "upstream_response_too_large", "上游响应过大");
+          held.push(c);
+          continue;
+        }
+        if (tap) {
+          let hit: string | null = null;
+          for (const { channel, text } of tap.feedChannels(piece)) {
+            const all = outTexts.get(channel) ?? "";
+            if (all.length < 2_000_000) outTexts.set(channel, all + text);
+            // 只看“本通道上一段末尾 + 新文字”，跨块的词也能命中；拦截判定不重复计数（计数在结束时对全文一次完成）
+            const w = windows.get(channel) ?? "";
+            const v = cs!.check([w + text]);
+            windows.set(channel, (w + text).slice(-256));
+            if (v.blocked) {
+              hit = v.blocked;
+              break;
+            }
+          }
+          if (hit) {
+            safetyOut = cs!.check([...outTexts.values()]);
+            blockedOut = hit;
+            await writeChunk(res, blockedEvent(hit), ac.signal);
+            break;
+          }
+          // 一行超长：无法检查即不放行（失败关闭）
+          if (tap.overflow) {
+            safetyOut = cs!.check([...outTexts.values()]);
+            blockedOut = "uncheckable";
+            await writeChunk(res, blockedEvent("uncheckable", "模型输出无法完成内容安全检查"), ac.signal);
+            break;
+          }
+        }
         if (!(await writeChunk(res, c, ac.signal))) {
           interrupted = true;
           ac.abort();
           break;
         }
       }
+      if (holdForCheck) {
+        const whole = Buffer.concat(held).toString("utf8");
+        safetyOut = cs!.check(completionTexts(whole));
+        if (safetyOut.blocked) {
+          blockedOut = safetyOut.blocked;
+          const s = JSON.stringify({ error: { type: "kwl_gateway", code: "content_blocked_output", message: `模型输出命中内容安全策略（${safetyOut.blocked}），已拒绝` } });
+          res.writeHead(422, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(s), "x-kwl-gateway-request-id": requestId });
+          res.write(s);
+        } else {
+          res.writeHead(up.status, { ...up.headers, "x-kwl-gateway-request-id": requestId });
+          for (const c of held) res.write(c);
+        }
+      } else if (tap && !blockedOut) safetyOut = cs!.check([...outTexts.values()]);
       // 上游因中止而提前结束（没有走 break）同样算客户端断开
       if (ac.signal.aborted) interrupted = true;
       if (interrupted) res.destroy();
@@ -328,7 +406,18 @@ export function createLegalGateway(o: GatewayOptions): Server {
         outputTokens: usage?.output ?? null,
         cachedTokens: usage?.cached ?? null,
         latencyMs: Date.now() - started,
-        reason: usage ? (interrupted ? "client_gone_partial_usage" : null) : status === 200 ? (interrupted ? "client_gone_charged_reserved" : "usage_missing_charged_reserved") : "upstream_error_released",
+        reason: blockedOut
+          ? `content_blocked_output:${blockedOut}`
+          : usage
+            ? interrupted
+              ? "client_gone_partial_usage"
+              : null
+            : status === 200
+              ? interrupted
+                ? "client_gone_charged_reserved"
+                : "usage_missing_charged_reserved"
+              : "upstream_error_released",
+        safety: safetyField(safetyOut),
       });
     }
   }

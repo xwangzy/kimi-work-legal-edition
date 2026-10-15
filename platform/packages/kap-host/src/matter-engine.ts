@@ -8,7 +8,7 @@
  *   律所批准技能与工作区指令（ZP-18 trustedInstructionsDir 指向这里）；
  * - 可信配置（config.toml / mcp.json）只在内存中（engine-config.ts）。
  */
-import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { arch, release } from "node:os";
 import { join } from "node:path";
 import { FileBroker, type ZoneSpec } from "@zr-legal/file-broker";
@@ -44,6 +44,8 @@ export interface MatterEngineOptions {
   execAllowed?: () => string | null;
   searchConfigured?: boolean;
   fetchConfigured?: boolean;
+  /** 只供测试：上下文窗口（见 EngineConfigSpec.testMaxContextSize）。 */
+  testMaxContextSize?: number | undefined;
   onDecision?: (r: PolicyDecisionRecord) => void;
   /** 检索式预筛（内核提供；见 HostPolicyDeps.screenSearch）。 */
   screenSearch?: HostPolicyDeps["screenSearch"];
@@ -77,6 +79,8 @@ export class MatterEngine {
   readonly policy: HostPolicy;
   readonly config: EngineConfig;
   readonly kap: KapClient;
+  /** 可信区里已验签的方法模板名（过程快照只记录这些名字的加载）。 */
+  readonly skillNames: ReadonlySet<string>;
   /** 执行域创建失败的原因（null = 未配置或已就绪）。 */
   private readonly initialExecDomainError: string | null;
   private readonly server: EmbeddedServer;
@@ -94,6 +98,7 @@ export class MatterEngine {
     server: EmbeddedServer;
     ownedDomain: ExecutionDomain | null;
     execDomainError: string | null;
+    skillNames: ReadonlySet<string>;
   }) {
     this.matterId = o.matterId;
     this.homeDir = o.homeDir;
@@ -107,13 +112,14 @@ export class MatterEngine {
     this.kap = new KapClient(o.server);
     this.ownedDomain = o.ownedDomain;
     this.initialExecDomainError = o.execDomainError;
+    this.skillNames = o.skillNames;
   }
 
   static async open(o: MatterEngineOptions): Promise<MatterEngine> {
     for (const d of [o.homeDir, o.materialsDir, o.workDir]) mkdirSync(d, { recursive: true });
-    const homeDir = realpathSync(o.homeDir);
-    const materialsDir = realpathSync(o.materialsDir);
-    const workDir = realpathSync(o.workDir);
+    const homeDir = realpathSync.native(o.homeDir);
+    const materialsDir = realpathSync.native(o.materialsDir);
+    const workDir = realpathSync.native(o.workDir);
     // 引擎自身经 IHostFileSystem 读写的会话内部状态（例如计划文件 sessions/<wd>/<session>/agents/main/plans）：
     // 单独一个区，供引擎内部使用；宿主策略与执行域路由把它判为工具不可寻址（TOOL_ZONES 之外），Agent 的文件工具够不到
     const engineStateDir = join(homeDir, "sessions");
@@ -129,14 +135,14 @@ export class MatterEngine {
     const zones: ZoneSpec[] = [
       { name: "materials", root: materialsDir, access: "ro", ...sealedZone("materials") },
       { name: "work", root: workDir, access: "rw", ...sealedZone("work") },
-      { name: "engine", root: realpathSync(engineStateDir), access: "rw", ...sealedZone("engine_fs") },
+      { name: "engine", root: realpathSync.native(engineStateDir), access: "rw", ...sealedZone("engine_fs") },
     ];
-    if (o.trustedDir) zones.push({ name: "trusted", root: realpathSync(o.trustedDir), access: "ro" });
+    if (o.trustedDir) zones.push({ name: "trusted", root: realpathSync.native(o.trustedDir), access: "ro" });
     const broker = new FileBroker(zones);
     const pathClass = process.platform === "win32" ? "win32" : "posix";
     const shellPath = placeholderShellPath(pathClass);
     const router = new ExecRouter({ broker, workDir, shellPath, trustedRgPath: o.trustedRgPath, pathClass, ...(o.execAllowed ? { execAllowed: o.execAllowed } : {}) });
-    const trustedRoot = o.trustedDir ? realpathSync(o.trustedDir) : null;
+    const trustedRoot = o.trustedDir ? realpathSync.native(o.trustedDir) : null;
     let ownedDomain: ExecutionDomain | null = null;
     let execDomainError: string | null = null;
     if (o.execDomain) router.setDomain(o.execDomain);
@@ -175,6 +181,7 @@ export class MatterEngine {
       legalMcpTools: o.legalMcpTools ?? [],
       searchConfigured: o.searchConfigured ?? false,
       fetchConfigured: o.fetchConfigured ?? false,
+      testMaxContextSize: o.testMaxContextSize,
     });
     const virtualFiles = new Map<string, string>();
     if (config.mcpJson) virtualFiles.set(join(homeDir, "mcp.json"), config.mcpJson);
@@ -218,7 +225,15 @@ export class MatterEngine {
       await ownedDomain?.close?.().catch(() => {});
       throw e;
     }
-    return new MatterEngine({ matterId: o.matterId, homeDir, workDir, materialsDir, broker, router, policy, config, server, ownedDomain, execDomainError });
+    let skillNames: ReadonlySet<string> = new Set();
+    if (trustedRoot) {
+      try {
+        skillNames = new Set(readdirSync(join(trustedRoot, "skills"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name));
+      } catch {
+        skillNames = new Set();
+      }
+    }
+    return new MatterEngine({ matterId: o.matterId, homeDir, workDir, materialsDir, broker, router, policy, config, server, ownedDomain, execDomainError, skillNames });
   }
 
   /** 执行域不可用的原因（创建失败，或运行中 W 进程拉起/自检失败——复核 S3-23）；设备页与能力账本如实显示。null = 可用或未配置。 */

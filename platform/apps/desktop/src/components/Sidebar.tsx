@@ -1,6 +1,6 @@
 /** 左侧栏（第 03 篇 §4.1：Kimi Work 入口 → 发行版入口）。未开放的入口不占一级导航；状态用律师语言，只在异常时变色（UIUX P0-6）。 */
 import { useEffect, useState, type ReactNode } from "react";
-import { api, type Matter } from "../api.ts";
+import { api, onKernelEvent, type Matter } from "../api.ts";
 import { nav, type Route } from "../App.tsx";
 import { Icon } from "./Icons.tsx";
 import { onDataChanged } from "../lib/events.ts";
@@ -31,6 +31,20 @@ export function Sidebar({ route }: { route: Route }) {
   const [execOk, setExecOk] = useState<boolean | null>(true);
   const [tick, setTick] = useState(0);
   useEffect(() => onDataChanged(() => setTick((t) => t + 1)), []);
+  // 任务状态变化（开始等待、结束）时刷新侧栏状态点；运行中另每 5 秒刷新一次
+  useEffect(() => onKernelEvent((m) => (m?.type === "run.updated" || m?.type === "run.settled" ? setTick((t) => t + 1) : undefined)), []);
+  const anyActive = matters.some((m) => (m.activity?.waiting ?? 0) + (m.activity?.running ?? 0) > 0);
+  useEffect(() => {
+    if (!anyActive) return;
+    const t = setInterval(() => setTick((x) => x + 1), 5000);
+    return () => clearInterval(t);
+  }, [anyActive]);
+  // 窗口标题前缀“(N) ”：N 为等你确认的任务数（任务栏上也能看到）
+  const waitingTotal = matters.reduce((n, m) => n + (m.activity?.waiting ?? 0), 0);
+  useEffect(() => {
+    const base = "Kimi Work 法律行业发行版";
+    document.title = waitingTotal > 0 ? `(${waitingTotal}) ${base}` : base;
+  }, [waitingTotal]);
   useEffect(() => {
     api.listMatters().then((r) => setMatters(r.matters)).catch(() => {});
     api.pending().then((r) => setPending(r.count)).catch(() => {});
@@ -76,7 +90,24 @@ export function Sidebar({ route }: { route: Route }) {
       <div className="sidebar-list">
         {matters.length === 0 && <div className="sidebar-empty">还没有事项</div>}
         {matters.slice(0, 8).map((m) => (
-          <button key={m.matter_id} className={`sidebar-link${activeMatter === m.matter_id ? " active" : ""}`} onClick={() => nav(`/matter/${m.matter_id}`)} title={m.title}>
+          <button
+            key={m.matter_id}
+            className={`sidebar-link${activeMatter === m.matter_id ? " active" : ""}`}
+            onClick={() => nav(m.activity?.waiting_run_id ? `/run/${m.activity.waiting_run_id}/${m.matter_id}` : `/matter/${m.matter_id}`)}
+            title={m.activity?.waiting ? `${m.title}（有任务等你确认）` : m.activity?.running ? `${m.title}（有任务进行中）` : m.title}
+          >
+            {/* 状态点：视觉圆点 + 读屏文字（复核 B4-B18：无角色的 span 上的 aria-label 多数读屏不朗读） */}
+            {m.activity?.waiting ? (
+              <>
+                <span className="act-dot act-wait" aria-hidden="true" />
+                <span className="sr-only">等你确认：</span>
+              </>
+            ) : m.activity?.running ? (
+              <>
+                <span className="act-dot act-run" aria-hidden="true" />
+                <span className="sr-only">进行中：</span>
+              </>
+            ) : null}
             {m.title}
           </button>
         ))}

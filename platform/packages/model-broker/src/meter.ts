@@ -5,6 +5,7 @@
 import { newId } from "@zr-legal/domain";
 import type { UsageBuckets } from "./providers/types.ts";
 import { PRICES, PRICE_VERSION, type RouteDef } from "./config.ts";
+import { errFields, slog } from "@zr-legal/safe-log";
 
 export interface MeterStore {
   run(sql: string, params: unknown[]): void;
@@ -60,7 +61,7 @@ export function recordUsage(store: MeterStore, row: MeterRow): { costMicro: numb
     );
   } catch (err) {
     // 计量失败不阻断服务，但必须显式可见（对账时发现缺口）
-    console.error(`[meter] usage insert failed for ${row.requestId}:`, (err as Error).message);
+    slog.event("METER_INSERT_FAILED", errFields(err));
   }
   return { costMicro };
 }

@@ -7,6 +7,8 @@
  * - KWL_CONTROL_PLANE=1（阶段 6）：同时拉起控制面 v0 并开通租户（KWL_EDITION=firm 为律所版，管理员签名门限 2）；网关与检索服务订阅控制面
  *   （吊销集、事项匿名摘要）；席位令牌由控制面签发给内核——本脚本不再输出任何令牌，只输出地址与控制面公钥。
  * - 计量只写元数据（网关预写日志在 KWL_CLOUD_DIR，缺省会话临时目录）。
+ * - KWL_SAFETY_POLICY=<策略 JSON>：网关启用内容安全（按类别计数或拦截，计量只记类别与次数）。
+ * - KWL_CP_STATE_FILE / KWL_CP_STATE_KEY：控制面状态持久化（两代交替文件、可封装；生产形态必须封装）。
  *
  * 用法：node scripts/dev-cloud-v0.mjs   → 按输出设置环境变量后启动内核 / 桌面（ZR_AGENT_ENGINE=kap）
  */
@@ -30,9 +32,17 @@ if (withCp) {
   const cpMod = await import("../services/control-plane/src/index.ts");
   const ft = await import("../packages/firm-trust/src/index.ts");
   const serviceSecret = randomBytes(24).toString("base64url");
-  cp = cpMod.createControlPlane({ keys: cpMod.devControlPlaneKeys(), serviceSecret });
+  // 状态持久化（复核 B4-R14）：KWL_CP_STATE_FILE 指定状态文件（两代交替写），KWL_CP_STATE_KEY 为 64 位十六进制封装密钥；
+  // NODE_ENV=production 时没有封装密钥拒绝启动。注意：开发形态的控制面签名密钥每次运行新生成，重启后客户端须重新取回签名文档
+  const statePath = process.env.KWL_CP_STATE_FILE;
+  const stateKey = process.env.KWL_CP_STATE_KEY;
+  if (stateKey && !/^[0-9a-f]{64}$/i.test(stateKey)) throw new Error("KWL_CP_STATE_KEY 须为 64 位十六进制（32 字节）");
+  const stateStore = statePath
+    ? cpMod.fileStateStore(statePath, { ...(stateKey ? { key: Buffer.from(stateKey, "hex") } : {}), requireKey: process.env.NODE_ENV === "production" })
+    : undefined;
+  cp = cpMod.createControlPlane({ keys: cpMod.devControlPlaneKeys(), serviceSecret, ...(stateStore ? { stateStore } : {}) });
   await new Promise((r) => cp.server.listen(Number(process.env.KWL_CP_PORT ?? 0), "127.0.0.1", r));
-  cp.ops.createTenant({ tid: tenant, edition: process.env.KWL_EDITION === "firm" ? "firm" : "team", seats: 20 });
+  if (!cp.ops.tenant(tenant)) cp.ops.createTenant({ tid: tenant, edition: process.env.KWL_EDITION === "firm" ? "firm" : "team", seats: 20 });
   keys = ft.publicKeyMap(cp.publicKeys.seat);
   feed = new cpMod.GatewayFeedSubscriber({ url: `http://127.0.0.1:${cp.server.address().port}/v1/feed/gateway`, serviceSecret, keys: ft.publicKeyMap(cp.publicKeys.envelope) });
   feed.start(15_000);
@@ -46,7 +56,10 @@ if (process.env.KWL_MOCK_SCRIPT && provider instanceof gw.MockProvider) {
   const { pathToFileURL } = await import("node:url");
   provider.script = (await import(pathToFileURL(process.env.KWL_MOCK_SCRIPT).href)).default;
 }
-const gateway = gw.createLegalGateway({ keys, provider, routes: gw.DEFAULT_ROUTES, meter: gw.fileMeter(join(dir, "gateway-meter.jsonl")), budgets: new Map([[tenant, 100_000_000]]), ...(feed ? { feed } : {}) });
+// 内容安全（v9.2 R11）：KWL_SAFETY_POLICY 指向策略 JSON（{version, categories:[{id, action, terms}]}）时启用；生产词库由内容安全团队签名下发
+const { readFileSync } = await import("node:fs");
+const contentSafety = process.env.KWL_SAFETY_POLICY ? new gw.ContentSafety(JSON.parse(readFileSync(process.env.KWL_SAFETY_POLICY, "utf8"))) : undefined;
+const gateway = gw.createLegalGateway({ keys, provider, routes: gw.DEFAULT_ROUTES, meter: gw.fileMeter(join(dir, "gateway-meter.jsonl")), budgets: new Map([[tenant, 100_000_000]]), ...(feed ? { feed } : {}), ...(contentSafety ? { contentSafety } : {}) });
 const searchProvider =
   process.env.KWL_MOONSHOT_SEARCH === "1" && process.env.KWL_MOONSHOT_API_KEY
     ? new ss.MoonshotToolsSearchProvider({ apiKey: process.env.KWL_MOONSHOT_API_KEY, baseUrl: process.env.KWL_MOONSHOT_BASE })

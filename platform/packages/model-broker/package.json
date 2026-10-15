@@ -9,6 +9,7 @@
   "dependencies": {
     "@zr-legal/domain": "*",
     "@zr-legal/egress": "*",
+    "@zr-legal/safe-log": "*",
     "undici": "7.30.0"
   }
 }

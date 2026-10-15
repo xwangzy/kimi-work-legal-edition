@@ -22,12 +22,24 @@ contextBridge.exposeInMainWorld("zrKernel", {
   },
   /** 渲染会话被拦截的外部请求计数（设备页“唯一出口”的行为证据）。 */
   rendererNet: () => ipcRenderer.invoke("kwl:renderer-net"),
-  /** Electron 44：File.path 已移除，经 webUtils 取拖拽/选择文件的本机路径（挂载/导入用）。 */
-  getPathForFile: (file) => {
+  /** 自动更新（W7）：状态与“重启并安装”（只在更新已下载并通过发布签名核验后可用）。 */
+  updateStatus: () => ipcRenderer.invoke("kwl:update-status"),
+  installUpdate: () => ipcRenderer.invoke("kwl:update-install"),
+  /** 主进程文件对话框（v9.2 §3.7；Y5 P1-4）：不进“最近使用”；只回一次性句柄与文件名，渲染进程拿不到也不能指定路径。 */
+  pickFiles: (o) => ipcRenderer.invoke("kwl:pick-files", o ?? {}),
+  pickSave: (o) => ipcRenderer.invoke("kwl:pick-save", o ?? {}),
+  saveText: (handle, text) => ipcRenderer.invoke("kwl:save-text", handle, text),
+  /**
+   * 拖放或文件框选中的文件 → 一次性句柄（复核 S5A-01）：路径只在 preload 与主进程之间（Electron 44 经 webUtils 从真实的 File 取得），
+   * 页面拿不到也不能指定路径。
+   */
+  fileHandleFor: async (file) => {
+    let p = "";
     try {
-      return webUtils.getPathForFile(file);
+      p = webUtils.getPathForFile(file);
     } catch {
-      return "";
+      p = "";
     }
+    return p ? ipcRenderer.invoke("kwl:register-file", p) : null;
   },
 });

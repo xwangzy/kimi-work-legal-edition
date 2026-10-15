@@ -22,6 +22,8 @@ export interface PendingApproval {
   agent_id?: string;
   /** Agent 在这一步的说明（模型自述，令牌形态）。 */
   agent_note?: string | null;
+  /** 超预算询问（复核 B4-B06）：本次要派出的子任务数与询问时的余额（宿主策略记下）。 */
+  budget?: { members?: unknown; tool_calls_left?: unknown; subagents_left?: unknown } | null;
 }
 
 export interface ApprovalCardView {
@@ -198,8 +200,15 @@ export function buildApprovalCard(p: PendingApproval, ctx: CardContext): { card:
     reason === "over_budget" ? "budget" : reason === "schedule_requires_confirmation" ? "schedule" : reason === "stop_task_requires_confirmation" ? "stop" : reason === "manual_mode" ? "manual" : p.tool.startsWith("mcp__") ? "connector" : "other";
   const label = TOOL_LABELS[p.tool] ?? (p.tool.startsWith("mcp__") ? `调用连接器 ${p.tool.slice(5)}` : p.tool);
   const detail = str(input.command) ?? str(input.path) ?? str(input.file_path) ?? str(display.description) ?? undefined;
+  // 超预算卡写明本次要派出的子任务数与余额（复核 B4-B06；Y3 §3.1“这一步要同时派出 {n} 个子任务”）
+  const count = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.min(Math.floor(v), 100_000) : null);
+  const members = kind === "budget" ? count(p.budget?.members) : null;
+  const subLeft = count(p.budget?.subagents_left);
   const why: Record<string, string> = {
-    budget: `本任务的工具调用已达预算上限${ctx.budget ? `（工具调用 ${ctx.budget.maxToolCalls} 次、子任务 ${ctx.budget.maxSubagents} 个）` : ""}：继续执行须你确认。`,
+    budget:
+      members !== null && members > 0
+        ? `本任务的子任务额度${subLeft !== null ? `还剩 ${subLeft} 个` : "已用完"}${ctx.budget ? `（上限 ${ctx.budget.maxSubagents} 个）` : ""}，这一步要派出 ${members} 个：继续执行须你确认。批准后按实际派出数计入额度，之后再超出仍会逐次问你。`
+        : `本任务的工具调用已达预算上限${ctx.budget ? `（工具调用 ${ctx.budget.maxToolCalls} 次、子任务 ${ctx.budget.maxSubagents} 个）` : ""}：继续执行须你确认。`,
     schedule: "创建定时任务须你确认（定时任务按“定时”渠道权限运行，遇确认即暂停）。",
     stop: "停止后台任务须你确认。",
     manual: "手动档：每一步都先问你。",
@@ -210,7 +219,7 @@ export function buildApprovalCard(p: PendingApproval, ctx: CardContext): { card:
     card: {
       ...base,
       kind,
-      title: label,
+      title: members !== null && members > 0 ? `这一步要同时派出 ${members} 个子任务` : label,
       why: why[kind] ?? why.other!,
       destination: p.tool.startsWith("mcp__") ? "律所批准的连接器" : "本机（执行域内，无网络）",
       cost: kind === "budget" ? "继续执行将按实际用量扣点（模型按用量计点，检索按次计点）" : null,

@@ -4,8 +4,8 @@
  * - 文件 `electron/release.json` 打进 asar，安装包形态下**只认它**：内核环境按白名单构造（复核 B3-A02）——进程环境里只保留
  *   操作系统必需的变量，任何 ZR_* 配置项、NODE_OPTIONS 等运行时注入变量都不进入内核（本机其他程序或用户环境不能把推理流量改投他处，
  *   也不能替换入口脚本或数据目录）；
- * - 注意：asar 完整性校验（Electron 熔断 EnableEmbeddedAsarIntegrityValidation、OnlyLoadAppFromAsar、RunAsNode 关闭）须在第 4 批打包时配置
- *   （afterPack 钩子用 @electron/fuses），在此之前 release.json 的完整性只靠安装目录的文件权限，不能宣称受熔断保护；
+ * - asar 完整性：熔断 EnableEmbeddedAsarIntegrityValidation、OnlyLoadAppFromAsar、RunAsNode 关闭已在 electron-builder.yml 配置（第 4 批），
+ *   release.json 随 asar 受其保护；按用户安装时安装目录对本人可写，同一 Windows 账户下的恶意程序不在防护范围内（要防这一层选按机器安装）；
  * - 地址必须 https；钉住集为 `sha256/<base64>`，至少两把（当前 + 备份），否则该上游不配置（闸门侧按 requirePins 拒绝发出）；
  * - 安装包形态模型提供方固定为真实上游（经出站闸门），不会以离线模拟运行；
  * - 同时下发 ZR_UPSTREAM_TLS=strict：回环 http 也不允许、中软上游缺钉住即拒绝（packages/egress-gate/src/tls-check.ts）。
@@ -58,7 +58,7 @@ function loadReleaseConfig(file) {
   try {
     raw = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (e) {
-    return { env: {}, problems: e && e.code === "ENOENT" ? [] : ["release.json 无法解析"] };
+    return { env: {}, problems: e && e.code === "ENOENT" ? [] : ["release.json 无法解析"], update: null };
   }
   const env = {};
   const problems = [];
@@ -76,7 +76,22 @@ function loadReleaseConfig(file) {
   pair("gateway_base", "gateway_pins", "ZR_GATEWAY_BASE", "ZR_GATEWAY_PINS");
   pair("search_base", "search_pins", "ZR_SEARCH_BASE", "ZR_SEARCH_PINS");
   pair("control_plane_base", "control_plane_pins", "ZR_CONTROL_PLANE_BASE", "ZR_CONTROL_PLANE_PINS");
-  return { env, problems };
+  // 自动更新（W7）：更新源地址、钉住集与发布签名公钥只认这里（主进程使用，不进内核环境）；三项缺一即不检查更新
+  let update = null;
+  if (raw.update_base !== undefined) {
+    const base = httpsUrl(raw.update_base);
+    const pins = pinList(raw.update_pins);
+    const keys = Array.isArray(raw.update_keys) ? raw.update_keys.map(String).filter((k) => /^[A-Za-z0-9+/]{40,120}={0,2}$/.test(k)) : [];
+    if (!base) problems.push("update_base 必须是 https 地址");
+    else if (!pins) problems.push("update_pins 须为至少两把 sha256/<base64> 钉住值（当前 + 备份）");
+    else if (keys.length === 0 || keys.length !== raw.update_keys.length) problems.push("update_keys 须为 Ed25519 公钥（SPKI DER base64）列表");
+    else {
+      // 可选：Authenticode 发布者（代码签名证书主体 CN，正式证书到位后填写）——更新安装前另行核对
+      const publishers = Array.isArray(raw.update_publishers) ? raw.update_publishers.map(String).filter((x) => x.length > 0 && x.length <= 200) : [];
+      update = { base, pins, keys, publishers, channel: raw.update_channel === "beta" ? "beta" : "latest" };
+    }
+  }
+  return { env, problems, update };
 }
 
 /** 安装包形态的内核环境：进程环境只取白名单里的系统变量，再叠加 release.json 与严格传输策略（其余由主进程逐项写定）。 */
@@ -93,14 +108,23 @@ function packagedKernelEnv(processEnv, release) {
 function kernelChildEnv(o) {
   const base = o.packaged ? packagedKernelEnv(o.processEnv, o.release ?? { env: {} }) : o.processEnv;
   const pick = (k, fallback) => (!o.packaged && o.processEnv[k]) || fallback;
+  // 安装包形态：子进程入口只来自核验过的随包运行时（runtimeEnv），不下发指向 asar 内并不存在的文件的缺省入口；
+  // SDK 宿主入口不下发（落盘加密强制时 SDK 引擎本就禁用）。缺项即运行时损坏（复核 B4-A20）
+  if (o.packaged) {
+    for (const k of ["ZR_EGRESS_GATE_ENTRY", "ZR_KAP_HOST_ENTRY"]) if (!(o.runtimeEnv && o.runtimeEnv[k])) throw new Error(`随包运行时缺少 ${k}`);
+  }
   return {
     ...base,
     ...(o.packaged ? { ZR_REQUIRE_CONTROL_PLANE: "1", ZR_AT_REST: "required" } : {}),
     ...(o.isDev ? {} : { ZR_KERNEL_TCP: "off" }),
     ZR_KERNEL_DATA_DIR: pick("ZR_KERNEL_DATA_DIR", o.paths.dataDir),
-    ZR_AGENT_HOST_ENTRY: pick("ZR_AGENT_HOST_ENTRY", o.paths.agentHostEntry),
-    ZR_EGRESS_GATE_ENTRY: pick("ZR_EGRESS_GATE_ENTRY", o.paths.gateEntry),
-    ZR_KAP_HOST_ENTRY: pick("ZR_KAP_HOST_ENTRY", o.paths.kapEntry),
+    ...(o.packaged
+      ? {}
+      : {
+          ZR_AGENT_HOST_ENTRY: pick("ZR_AGENT_HOST_ENTRY", o.paths.agentHostEntry),
+          ZR_EGRESS_GATE_ENTRY: pick("ZR_EGRESS_GATE_ENTRY", o.paths.gateEntry),
+          ZR_KAP_HOST_ENTRY: pick("ZR_KAP_HOST_ENTRY", o.paths.kapEntry),
+        }),
     ...(o.runtimeEnv ?? {}),
   };
 }

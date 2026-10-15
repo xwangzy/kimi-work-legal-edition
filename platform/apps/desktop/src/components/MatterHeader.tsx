@@ -1,9 +1,11 @@
 /**
- * 事项头（第 03 篇 §4.4，常显）：客户 / 相对方 / 立场 / 法域 / 关键日期 / 数据模式 / 密级 / 依据状态（四项）/ 允许的模型端点 / 执行位置 / 当事人化名开关。
+ * 事项头（第 03 篇 §4.4，常显）：客户 / 相对方 / 立场 / 法域 / 关键日期；第二行只放一个“保护状态”胶囊（依据、密级、端点、化名合在一起说，
+ * 点开四行；UIUX 增量评审 §3.2）与当事人名单。
  * 依据任一项“待确认”时，该事项只运行不出站的本机能力（第 02 篇 §8.1）。
  */
 import type { Matter, MatterBasis, RunPolicyView } from "../api.ts";
-import { BASIS_FIELDS, BASIS_VALUE_LABELS, ENDPOINT_LABELS, LEVEL_LABELS } from "../lib/labels.ts";
+import { BASIS_FIELDS, BASIS_VALUE_LABELS, ENDPOINT_LABELS } from "../lib/labels.ts";
+import { jurisdictionLabel, stanceLabel } from "../lib/labels.ts";
 
 export function basisComplete(b: MatterBasis | undefined): boolean {
   if (!b) return false;
@@ -26,37 +28,71 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
   const refused = matter.consent_status === "refused";
   const complete = matter.basis_complete ?? (!refused && basisComplete(basis));
   const dates = Object.entries(matter.key_dates ?? {}).filter(([, v]) => !!v);
+  const fullPseudonym = !!matter.full_pseudonym || level === "L3a";
+  const protect =
+    refused || level === "L3b"
+      ? { icon: "⛔", label: "客户要求不上云 · 只用本机功能", tone: "pill-red" }
+      : !complete
+        ? { icon: "⚠", label: "AI 暂不可用：客户同意待确认", tone: "pill-orange" }
+        : level === "L3a"
+          ? { icon: "🛡", label: "敏感事项 · 全部化名 · 每条检索都要你确认", tone: "pill-blue" }
+          : { icon: "🛡", label: `可用 AI · 个人信息发送前替换${fullPseudonym ? " · 公司名称也替换" : ""}`, tone: "pill-green" };
   return (
     <div className="matter-head">
       <div className="mh-row">
         <Field k="客户" v={matter.client_name ?? "—"} />
         <Field k="相对方" v={matter.counterparty ?? "—"} />
-        <Field k="立场" v={matter.stance} />
-        <Field k="法域" v={matter.jurisdiction} />
+        <Field k="立场" v={stanceLabel(matter.stance)} />
+        <Field k="法域" v={jurisdictionLabel(matter.jurisdiction)} />
         {dates.slice(0, 2).map(([k, v]) => (
           <Field key={k} k={k === "analysis_as_of" ? "分析截止日" : k} v={v} />
         ))}
       </div>
       <div className="mh-row">
-        <span className="pill pill-local" title="案卷在这台电脑上处理与保存；团队共享只以端到端加密形式存在">本地事项</span>
-        <span className={`pill ${level === "L3b" ? "pill-red" : level === "L3a" ? "pill-orange" : "pill-gray"}`}>{LEVEL_LABELS[level] ?? level}</span>
-        <button className={`pill ${complete ? "pill-green" : "pill-orange"}`} onClick={onEditBasis} disabled={!onEditBasis} title="四项依据：委托/保密授权、个人信息处理依据、敏感信息特别条件、转委托与次处理者">
-          依据：{complete ? "齐备" : "待确认（只运行本机能力）"}
-        </button>
-        <span className="pill pill-gray" title="允许的模型端点">{ENDPOINT_LABELS[matter.model_endpoint] ?? matter.model_endpoint}</span>
-        <span className="pill pill-gray" title="执行位置">{policy?.execution_location ?? "本机"}</span>
-        <label className="pill pill-gray pill-toggle" title="开启后机构名称也替换为代号（L3a 强制）">
-          <input
-            type="checkbox"
-            checked={!!matter.full_pseudonym || level === "L3a"}
-            disabled={level === "L3a" || !onToggleFullPseudonym}
-            onChange={(e) => onToggleFullPseudonym?.(e.target.checked)}
-          />
-          全部化名
-        </label>
+        {/* 保护状态（UIUX 增量评审 §3.2）：一个胶囊说清“能不能用 AI、发出去前替换了什么”，展开四行；技术细节在设置页 */}
+        <details className="protect">
+          <summary className={`pill ${protect.tone}`} aria-label={`保护状态：${protect.label}`}>
+            <span aria-hidden="true">{protect.icon}</span> {protect.label} ▾
+          </summary>
+          <div className="protect-pop" role="group" aria-label="本事项的保护状态">
+            <div className="protect-line">
+              <span className="protect-k">客户同意</span>
+              <span>{refused ? "客户要求不上云（已记录）" : complete ? "已记录" : "待确认：模型与联网检索都不会发生，只用本机功能"}</span>
+              {onEditBasis && !refused && (
+                <button className="btn-link" onClick={onEditBasis}>
+                  {complete ? "调整" : "去确认"}
+                </button>
+              )}
+            </div>
+            <div className="protect-line">
+              <span className="protect-k">发给 AI 前替换</span>
+              <span>证件号、手机号、账号、住址、自然人姓名 ✓ · 公司名称：{fullPseudonym ? "也替换" : "保留"}</span>
+              {level !== "L3a" && onToggleFullPseudonym && (
+                <button className="btn-link" onClick={() => onToggleFullPseudonym(!matter.full_pseudonym)}>
+                  {matter.full_pseudonym ? "改为保留公司名称" : "改为也替换"}
+                </button>
+              )}
+              {level === "L3a" && <span className="muted">（敏感事项必须）</span>}
+            </div>
+            <div className="protect-line">
+              <span className="protect-k">联网检索</span>
+              <span>{level === "L3b" || refused ? "不可用" : level === "L3a" ? "只发改写后的一般性查询，每一条都要你确认" : "自动去掉当事人名称后发出；含当事人名称的要你确认"}</span>
+            </div>
+            <div className="protect-line">
+              <span className="protect-k">案卷保存</span>
+              <span>这台电脑，已加密 · AI 通道：{ENDPOINT_LABELS[matter.model_endpoint] ?? matter.model_endpoint}</span>
+            </div>
+            {(level === "L3a" || level === "L3b") && (
+              <div className="protect-line">
+                <span className="protect-k">截屏与共享</span>
+                <span>已遮挡：截图、录屏和远程会议共享屏幕时，看不到本事项的页面</span>
+              </div>
+            )}
+          </div>
+        </details>
         {onParties && (
           <button className="pill pill-link" onClick={onParties}>
-            当事人词典
+            当事人名单
           </button>
         )}
       </div>

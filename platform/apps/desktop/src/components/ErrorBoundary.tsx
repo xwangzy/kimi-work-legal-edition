@@ -23,8 +23,9 @@ export class ErrorBoundary extends Component<Props, State> {
 
   private diagnostics(): string {
     const e = this.state.error;
-    // 只给类型与消息首行（截断），不带组件状态或数据
-    return [`页面：${this.props.routeLabel}`, `错误：${e?.name ?? "Error"}：${String(e?.message ?? "").split("\n")[0]!.slice(0, 200)}`, `时间：${new Date().toISOString()}`].join("\n");
+    // 只给页面与错误类型（复核 S5A-15：错误消息可能夹带材料或当事人文字，不进剪贴板）；详细排查用设备页的脱敏诊断包
+    const name = /^[A-Za-z]{1,40}$/.test(e?.name ?? "") ? e!.name : "Error";
+    return [`页面：${this.props.routeLabel}`, `错误类型：${name}`, `时间：${new Date().toISOString()}`].join("\n");
   }
 
   override render(): ReactNode {

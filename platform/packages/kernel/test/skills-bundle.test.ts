@@ -8,7 +8,7 @@ import { appendFileSync, chmodSync, cpSync, existsSync, mkdtempSync, readFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { materializeSkillsBundle } from "../src/skills-bundle.ts";
+import { materializeSkillsBundle, skillQualityChecklist } from "../src/skills-bundle.ts";
 
 const platform = fileURLToPath(new URL("../../../", import.meta.url));
 const dist = join(platform, "content", "skills", "dist");
@@ -21,7 +21,7 @@ function copyDist(): string {
   return join(d, "dist", "skills.manifest.json");
 }
 
-test("有效签名包物化为只读可信区：AGENTS.md 与五个方法模板", () => {
+test("有效签名包物化为只读可信区：AGENTS.md 与清单中的全部方法模板（Y3 N-2：数量与构建清单一致）", () => {
   const ws = mkdtempSync(join(tmpdir(), "kwl-ws-"));
   const r = materializeSkillsBundle(copyDist(), signerPub, ws);
   assert.equal(r.ok, true, r.ok ? "" : r.reason);
@@ -31,6 +31,10 @@ test("有效签名包物化为只读可信区：AGENTS.md 与五个方法模板"
     assert.ok(existsSync(join(r.dir, "skills", id, "SKILL.md")), id);
     assert.ok(r.skills.some((s) => s.id === id));
   }
+  const manifest = JSON.parse(readFileSync(join(dist, "skills.manifest.json"), "utf8"));
+  assert.equal(r.skills.length, manifest.skills.length, "物化的模板数 = 构建清单的模板数");
+  assert.equal(r.skills.length, 13);
+  for (const s of r.skills) assert.ok(existsSync(join(r.dir, "skills", s.id, "SKILL.md")), s.id);
   // 第二次复用同一目录
   const r2 = materializeSkillsBundle(copyDist(), signerPub, ws);
   assert.ok(r2.ok && r2.dir === r.dir);
@@ -72,3 +76,19 @@ test("已物化目录被改动：复用前核对不过 → 重新物化为正确
   assert.ok(r2.ok);
   assert.equal(readFileSync(join(r2.ok ? r2.dir : "", "skills", "amount-calc", "SKILL.md"), "utf8"), orig);
 });
+
+test("复核页“你来核对”（v9.2 §4.4、Y4 §5 D-3）：每个方法模板都能从签名可信区取到质量自检清单；非法编号与不存在的模板返回空", () => {
+  const ws = mkdtempSync(join(tmpdir(), "kwl-ws-"));
+  const r = materializeSkillsBundle(copyDist(), signerPub, ws);
+  assert.ok(r.ok);
+  if (!r.ok) return;
+  for (const s of r.skills) {
+    const items = skillQualityChecklist(r.dir, s.id);
+    assert.ok(items.length >= 3 && items.length <= 20, `${s.id}：${items.length} 条`);
+    assert.ok(items.every((t) => t.length > 0 && t.length <= 200 && !t.startsWith("[")), s.id);
+  }
+  assert.match(skillQualityChecklist(r.dir, "contract-review")[0]!, /风险卡/);
+  assert.deepEqual(skillQualityChecklist(r.dir, "../AGENTS"), []);
+  assert.deepEqual(skillQualityChecklist(r.dir, "no-such-skill"), []);
+});
+

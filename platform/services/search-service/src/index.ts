@@ -3,12 +3,14 @@
  *
  * - 协议：Kimi Code 的托管检索协议 `POST {"text_query"}` → `{"search_results":[{title,url,snippet,site_name,date}]}`；
  * - 鉴权：席位令牌（离线验签）；**不接收、不记录事项编号**（只按席位计量）；
- * - 上游：月之暗面 `/v1/tools/search_pro`（`sites` ≤ 5、`time_window`）与 `/v1/tools/search`；真实协议与计费待中软组织测试额度核验（P4）；
+ * - 上游：月之暗面 `/v1/tools/search_pro`（`sites` ≤ 5、`time_window:{start,end}`）与 `/v1/tools/search`，请求体 `text_query/limit/timeout_seconds`
+ *   （2026-10-14 按官方文档 platform.kimi.com/docs/api/tools-search(.md|-pro.md) 核对；`$web_search` 内置工具 10-20 下线，不进任何路径）；
+ *   计费“HTTP 200 且结果非空才计一次”，真实额度待中软组织测试账号核验（P4）；
  * - 法律官方站点集：每组 ≤ 5 个站点扇出，与一次通用检索合并、按 URL 去重，官方站点在前；
  * - 留存：查询原文不落盘、不进日志（计量只记席位、上游调用次数、结果数、耗时）；结果是公开信息，可按 URL 短期缓存（v0 不缓存）。
  */
 import { createServer, type Server } from "node:http";
-import type { KeyObject } from "node:crypto";
+import { randomUUID, type KeyObject } from "node:crypto";
 import { verifySeatToken, SeatTokenError, type SeatClaims } from "@zr-legal/seat-token";
 import type { GatewayFeedView } from "@zr-legal/firm-trust";
 
@@ -20,9 +22,15 @@ export interface SearchResult {
   date?: string;
 }
 
+/** 时间范围（search_pro）：start/end 为 YYYY、YYYY-MM 或 YYYY-MM-DD，start 不晚于 end。 */
+export interface SearchTimeWindow {
+  start: string;
+  end: string;
+}
+
 export interface SearchProvider {
   readonly name: string;
-  search(q: { query: string; sites?: readonly string[]; timeWindow?: string }, o: { signal: AbortSignal }): Promise<SearchResult[]>;
+  search(q: { query: string; sites?: readonly string[]; timeWindow?: SearchTimeWindow }, o: { signal: AbortSignal }): Promise<SearchResult[]>;
 }
 
 /** 法律官方站点集（规划初稿；由法律内容工程维护，签名下发）：每组 ≤ 5 个站点（search_pro 的 sites 上限）。 */
@@ -150,25 +158,48 @@ export class MoonshotToolsSearchProvider implements SearchProvider {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch;
-  constructor(o: { baseUrl?: string; apiKey: string; fetchImpl?: typeof fetch }) {
+  private readonly limit: number;
+  private readonly timeoutSeconds: number;
+  constructor(o: { baseUrl?: string; apiKey: string; fetchImpl?: typeof fetch; limit?: number; timeoutSeconds?: number }) {
     if (!o.apiKey) throw new Error("检索上游密钥未配置");
     this.baseUrl = (o.baseUrl ?? "https://api.moonshot.cn/v1").replace(/\/+$/, "");
     this.apiKey = o.apiKey;
     this.fetchImpl = o.fetchImpl ?? globalThis.fetch;
+    this.limit = Math.min(20, Math.max(1, Math.floor(o.limit ?? 10)));
+    this.timeoutSeconds = Math.min(60, Math.max(1, Math.floor(o.timeoutSeconds ?? 15)));
   }
-  async search(q: { query: string; sites?: readonly string[]; timeWindow?: string }, o: { signal: AbortSignal }): Promise<SearchResult[]> {
-    const pro = (q.sites?.length ?? 0) > 0 || q.timeWindow !== undefined;
+  async search(q: { query: string; sites?: readonly string[]; timeWindow?: SearchTimeWindow }, o: { signal: AbortSignal }): Promise<SearchResult[]> {
+    const sites = (q.sites ?? []).filter((x) => /^[^\s()]+$/.test(x)).slice(0, 5);
+    const tw = q.timeWindow && TIME_POINT.test(q.timeWindow.start) && TIME_POINT.test(q.timeWindow.end) ? q.timeWindow : undefined;
+    const pro = sites.length > 0 || tw !== undefined;
+    const body = {
+      text_query: q.query,
+      limit: this.limit,
+      timeout_seconds: this.timeoutSeconds,
+      ...(sites.length ? { sites } : {}),
+      ...(tw ? { time_window: { start: tw.start, end: tw.end } } : {}),
+    };
     const r = await this.fetchImpl(`${this.baseUrl}/tools/${pro ? "search_pro" : "search"}`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}` },
-      body: JSON.stringify({ query: q.query, ...(q.sites?.length ? { sites: q.sites.slice(0, 5) } : {}), ...(q.timeWindow ? { time_window: q.timeWindow } : {}) }),
+      // 对账编号用随机值（不含席位、律所或事项信息）；供应商按同名头沿用
+      headers: { "content-type": "application/json", authorization: `Bearer ${this.apiKey}`, "x-msh-track-id": `kwl-${randomUUID()}` },
+      body: JSON.stringify(body),
       signal: o.signal,
     });
     if (!r.ok) throw new Error(`upstream ${r.status}`);
-    const j = (await r.json()) as { search_results?: SearchResult[]; results?: SearchResult[]; data?: SearchResult[] };
-    return (j.search_results ?? j.results ?? j.data ?? []).filter((x) => x && typeof x.url === "string");
+    const j = (await r.json()) as { search_results?: (SearchResult & { chunks?: { text?: string; score?: number }[] })[] };
+    return (j.search_results ?? [])
+      .filter((x) => x && typeof x.url === "string")
+      .map((x) => {
+        // Pro 的结构化正文片段折进摘要（客户端协议不变：只有 title/url/snippet/site_name/date）
+        const chunk = Array.isArray(x.chunks) ? x.chunks.map((c) => (typeof c?.text === "string" ? c.text : "")).find((t) => t.length > 0) : undefined;
+        const snippet = typeof x.snippet === "string" && x.snippet.length > 0 ? x.snippet : (chunk ?? "");
+        return { title: String(x.title ?? ""), url: x.url, snippet: snippet.slice(0, 1000), ...(x.site_name ? { site_name: String(x.site_name) } : {}), ...(x.date ? { date: String(x.date) } : {}) };
+      });
   }
 }
+
+const TIME_POINT = /^\d{4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/;
 
 /** 确定性离线检索上游（开发与测试）：按站点组返回固定的官方站点结果，通用检索返回一条普通结果；明确标识为 mock。 */
 export class MockSearchProvider implements SearchProvider {

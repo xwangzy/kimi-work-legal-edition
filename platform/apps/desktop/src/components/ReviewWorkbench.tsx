@@ -113,7 +113,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
         setMsg({ tone: "ok", text: `已生成修订稿《${r.filename}》：${r.applied} 处修改以 Word 原生修订和批注写入（原件未改动）${r.skipped.length ? `；跳过 ${r.skipped.length} 项` : ""}。`, artifact: r.artifact_version_id });
         onRedline?.(r.artifact_version_id);
       } else if (r.reason === "not_docx") {
-        setMsg({ tone: "warn", text: "这份材料不是 Word 文件，不能直接写修订。可让 Agent 把已接受的修改整理成《修订说明》。" });
+        setMsg({ tone: "warn", text: "这份材料不是 Word 文件，不能直接写修订。可让助手把已接受的修改整理成《修订说明》。" });
       } else if (r.reason === "document_version_superseded") {
         setMsg({ tone: "warn", text: "这份合同已有更新的版本，请在新版本上重新审查后再生成修订稿。" });
       } else {

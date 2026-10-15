@@ -2,9 +2,10 @@
  * 任务输入框（第 03 篇 §4.1：输入框显示“当前事项 · 执行位置 · 运行模式”；`/` 法律方法、`@` 事项材料、`+` 导入）。
  */
 import { useEffect, useRef, useState } from "react";
-import type { Matter, RunPolicyView } from "../api.ts";
+import { MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type RunPolicyView } from "../api.ts";
 import { Icon } from "./Icons.tsx";
 import { ModeSelector, type ModeChoice } from "./ModeSelector.tsx";
+import { stanceLabel } from "../lib/labels.ts";
 
 export interface MethodDef {
   scenario: string;
@@ -16,7 +17,7 @@ export interface MethodDef {
 
 /** 方法库中已接入本机内核的方法（首页与方法库共用）。 */
 export const METHODS: MethodDef[] = [
-  { scenario: "a1.agent_task", label: "通用 Agent", desc: "开放任务：读写材料、数据处理与计算、子任务、联网检索（经出站闸门）；产物为草稿", tier: "Beta" },
+  { scenario: "a1.agent_task", label: "通用任务", desc: "开放任务：读写材料、数据处理与计算、子任务、联网检索（经出站闸门）；产物为草稿", tier: "Beta" },
   { scenario: "s1.contract_review", label: "审合同", desc: "DOCX 进，原生修订稿与审查意见书出；按立场与 Playbook", tier: "演示", needs: "一份 DOCX 合同" },
   { scenario: "s1b.draft_compare", label: "回稿比对", desc: "对方回稿只重审改动，标出静默改动", tier: "演示", needs: "基线稿与回稿各一份" },
   { scenario: "s2.case_file", label: "整理材料", desc: "证据目录、事实时间轴、争点—证据矩阵", tier: "演示", needs: "案卷材料" },
@@ -39,7 +40,7 @@ export function Composer(props: {
   policy: RunPolicyView | null | undefined;
   value: ComposerValue;
   onChange: (v: ComposerValue) => void;
-  onImport: (files: FileList) => void;
+  onImport: (files: FileList | MaterialFile[]) => void;
   onSubmit: () => void;
   busy?: boolean;
   placeholder?: string;
@@ -104,13 +105,13 @@ export function Composer(props: {
       <div className="composer-bar">
         <button className="tool" title="法律方法" onClick={() => setMenu(menu === "method" ? null : "method")}><Icon.slash /> <span className="tool-label">方法</span></button>
         <button className="tool" title="事项材料" disabled={!props.matterId} onClick={() => setMenu(menu === "material" ? null : "material")}><Icon.at /> <span className="tool-label">材料</span></button>
-        <button className="tool" title="导入文件" disabled={!props.matterId} onClick={() => fileRef.current?.click()}><Icon.attach /> <span className="tool-label">导入</span></button>
+        <button className="tool" title="导入文件" disabled={!props.matterId} onClick={() => void pickMaterials(fileRef.current, props.onImport)}><Icon.attach /> <span className="tool-label">导入</span></button>
         <input
           ref={fileRef}
           type="file"
           multiple
           hidden
-          accept=".docx,.txt,.md,.pdf,.png,.jpg,.jpeg"
+          accept={MATERIAL_ACCEPT}
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) props.onImport(e.target.files);
             e.target.value = "";
@@ -124,9 +125,6 @@ export function Composer(props: {
         ) : (
           <span className="chip chip-static" title="当前事项"><Icon.folder /> {props.matterId ? "本事项" : "未选择事项"}</span>
         )}
-        <span className="chip chip-static" title="执行位置：在这台电脑上运行（代码只在执行域中运行；隔离方式与当前状态见“连接与数据 · 设备”）">
-          <Icon.device /> 本机
-        </span>
         {value.scenario === "a1.agent_task" ? (
           <ModeSelector policy={props.policy} value={value.choice} onChange={(choice) => onChange({ ...value, choice })} />
         ) : (
@@ -160,7 +158,7 @@ export function Composer(props: {
       )}
       {menu === "material" && (
         <div className="popover composer-menu">
-          <div className="menu-title">事项材料（只读原件；Agent 只见令牌化视图）</div>
+          <div className="menu-title">事项材料（原件只读；助手看到的是已替换代号的版本）</div>
           {props.documents.length === 0 && <div className="menu-empty">本事项还没有材料，先“导入”。</div>}
           {props.documents.map((d) => {
             const on = value.documentIds.includes(d.document_version_id);
@@ -195,7 +193,7 @@ export function Composer(props: {
               }}
             >
               <span className="menu-label">{m.title}</span>
-              <span className="menu-desc">{[m.client_name, m.counterparty].filter(Boolean).join(" / ") || m.stance}</span>
+              <span className="menu-desc">{[m.client_name, m.counterparty].filter(Boolean).join(" / ") || stanceLabel(m.stance)}</span>
             </button>
           ))}
           <button

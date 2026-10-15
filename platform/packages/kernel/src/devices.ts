@@ -10,9 +10,9 @@
  * - 首跑且该 tenant 仅 1 个 membership 时将其角色提升为 firm_admin（G0 单机开发形态；
  *   生产由管理控制台分配角色）。
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createPublicKey, hkdfSync, randomBytes } from "node:crypto";
 import { join } from "node:path";
 import {
   b64urlEncode,
@@ -22,6 +22,9 @@ import {
   generateRecoveryEscrow,
   issueDeviceCertificate,
   splitRecoveryPrivateKey,
+  unwrapMatterKey,
+  verifyDeviceCertificate,
+  wrapMatterKey,
   type DeviceCertificate,
   type DeviceKeys,
   type DeviceRole,
@@ -202,6 +205,158 @@ export function getDeviceKeys(keysDir: string): DeviceKeys {
   return readSecretFile<DeviceKeys>(join(keysDir, "device.json"));
 }
 
+/**
+ * 写回设备密钥文件（设备恢复导入用）：与其他密钥文件同一封装（配置了封装密钥即 AES-256-GCM 封装、临时文件改名、0600）。
+ * 隐私安全增量评审 F2：恢复导入曾直接写明文 PEM 到 device.json。
+ */
+export function writeDeviceKeys(keysDir: string, keys: DeviceKeys): void {
+  writeSecret0600(join(keysDir, "device.json"), keys);
+}
+
+/**
+ * 换证前把该设备当前证书留档（迁移 0024；复核 B4-A11）：同一设备编号下旧证书签出的见证行、审批与回执仍要能验签。
+ * 同一证书只留一次；当前没有登记或证书不可解析即不留。
+ */
+export function archiveDeviceCert(db: KernelDb, deviceId: string, reason: "rekeyed" | "recovered"): void {
+  const row = db.get<{ cert_json: string }>(`SELECT cert_json FROM devices WHERE device_id = ?`, [deviceId]);
+  if (!row) return;
+  let certId: unknown;
+  try {
+    certId = (JSON.parse(row.cert_json) as DeviceCertificate).certId;
+  } catch {
+    return;
+  }
+  if (typeof certId !== "string" || !certId) return;
+  // 有效上界（复核 B4-R10，迁移 0025）：此刻签名事件链的最大序号；同一证书再次留档取较大者
+  const seq = db.get<{ s: number | null }>(`SELECT MAX(seq) AS s FROM signed_events`, [])?.s ?? 0;
+  db.run(
+    `INSERT INTO device_cert_history (device_id, cert_id, cert_json, reason, superseded_seq) VALUES (?,?,?,?,?)
+     ON CONFLICT(device_id, cert_id) DO UPDATE SET superseded_seq = MAX(superseded_seq, excluded.superseded_seq)`,
+    [deviceId, certId, row.cert_json, reason, seq],
+  );
+}
+
+/** 暂存的设备恢复（复核 B4-R09）：导入时只核验并封装保存，下次启动、任何组件装载设备密钥之前再生效。 */
+export interface StagedRecovery {
+  device_id: string;
+  cert: DeviceCertificate;
+  signPrivateKeyPem: string;
+  encPrivateKeyPem: string;
+  staged_at: string;
+}
+const STAGED_RECOVERY = "recovery-staged.json";
+
+export function stageDeviceRecovery(keysDir: string, staged: StagedRecovery): void {
+  writeSecret0600(join(keysDir, STAGED_RECOVERY), staged);
+}
+
+export function hasStagedRecovery(keysDir: string): boolean {
+  return existsSync(join(keysDir, STAGED_RECOVERY));
+}
+
+export interface AppliedRecovery {
+  applied: boolean;
+  rewrapped: number;
+  unreadable: number;
+  /** 暂存文件未通过复核（已改名留存，不生效）的原因。 */
+  rejected?: string;
+}
+
+/**
+ * 启动时应用暂存的设备恢复（复核 B4-R09）：在 ensureDevice、内核各组件与 Agent 宿主装载设备密钥之前执行——
+ * 这时没有任何组件持有临时密钥，不会再有事项或工作区密钥被包裹给即将作废的临时公钥。
+ * 1. 复核：编号是本机、证书由律所根签发且公钥与私钥推导结果一致、设备未被吊销（期间可能已被吊销）；不通过即改名留存、不生效；
+ * 2. 同一事务：临时密钥包裹、备份私钥解不开的 matter_keys 与 matter_ws_keys 改包裹给备份公钥；临时证书留档；devices 行换回；
+ * 3. 账本提交之后写 device.json（写失败时下次启动重做，幂等），最后删除暂存文件。
+ */
+export function applyStagedRecovery(db: KernelDb, keysDir: string, slugs: { firmSlug: string; userSlug: string }, rootPublicKeyPem: string): AppliedRecovery {
+  const path = join(keysDir, STAGED_RECOVERY);
+  if (!existsSync(path)) return { applied: false, rewrapped: 0, unreadable: 0 };
+  const deviceId = `dev_${slugs.firmSlug}_${slugs.userSlug}`;
+  const reject = (reason: string): AppliedRecovery => {
+    try {
+      renameSync(path, join(keysDir, `recovery-staged.rejected-${Date.now()}.json`));
+    } catch {
+      rmSync(path, { force: true });
+    }
+    return { applied: false, rewrapped: 0, unreadable: 0, rejected: reason };
+  };
+  let st: StagedRecovery;
+  try {
+    st = readSecretFile<StagedRecovery>(path);
+  } catch {
+    return reject("暂存的恢复文件无法读取");
+  }
+  if (st.device_id !== deviceId || st.cert?.deviceId !== deviceId) return reject("暂存的恢复属于另一台设备");
+  const vr = verifyDeviceCertificate(st.cert, rootPublicKeyPem);
+  if (!vr.ok) return reject(`证书无效：${vr.reason}`);
+  let signPub: string;
+  let encPub: string;
+  try {
+    signPub = createPublicKey(st.signPrivateKeyPem).export({ format: "pem", type: "spki" }).toString();
+    encPub = createPublicKey(st.encPrivateKeyPem).export({ format: "pem", type: "spki" }).toString();
+  } catch {
+    return reject("私钥不完整");
+  }
+  if (st.cert.signPublicKeyPem.trim() !== signPub.trim() || st.cert.encPublicKeyPem.trim() !== encPub.trim()) return reject("私钥与证书不符");
+  const row = db.get<{ status: string }>(`SELECT status FROM devices WHERE device_id = ?`, [deviceId]);
+  if (!row) return reject("本机没有这台设备的登记");
+  let tomb = false;
+  try {
+    tomb = !!db.get(`SELECT 1 AS x FROM cp_revoked_devices WHERE device_id = ?`, [deviceId]);
+  } catch {
+    tomb = false;
+  }
+  if (row.status === "revoked" || tomb) return reject("设备已被律所吊销");
+
+  const deviceFile = join(keysDir, "device.json");
+  const cur = existsSync(deviceFile) ? readSecretFile<DeviceKeys>(deviceFile) : null;
+  let rewrapped = 0;
+  let unreadable = 0;
+  const rewrap = (wrapped: string): string | null => {
+    try {
+      unwrapMatterKey(wrapped, st.encPrivateKeyPem).fill(0);
+      return null; // 备份私钥本来就能解
+    } catch {
+      // 继续试临时私钥
+    }
+    if (!cur) {
+      unreadable++;
+      return null;
+    }
+    let k: Uint8Array;
+    try {
+      k = unwrapMatterKey(wrapped, cur.encPrivateKeyPem);
+    } catch {
+      unreadable++;
+      return null;
+    }
+    try {
+      rewrapped++;
+      return wrapMatterKey(k, encPub);
+    } finally {
+      k.fill(0);
+    }
+  };
+  db.tx(() => {
+    for (const r of db.all<{ matter_id: string; epoch: number; wrapped_key: string }>(`SELECT matter_id, epoch, wrapped_key FROM matter_keys WHERE wrapped_for = ?`, [deviceId])) {
+      const w = rewrap(r.wrapped_key);
+      if (w) db.run(`UPDATE matter_keys SET wrapped_key = ? WHERE matter_id = ? AND epoch = ? AND wrapped_for = ?`, [w, r.matter_id, r.epoch, deviceId]);
+    }
+    for (const r of db.all<{ matter_id: string; gen: number; wrapped_key: string }>(`SELECT matter_id, gen, wrapped_key FROM matter_ws_keys WHERE device_id = ?`, [deviceId])) {
+      const w = rewrap(r.wrapped_key);
+      if (w) db.run(`UPDATE matter_ws_keys SET wrapped_key = ? WHERE matter_id = ? AND gen = ? AND device_id = ?`, [w, r.matter_id, r.gen, deviceId]);
+    }
+    const now = db.get<{ cert_json: string }>(`SELECT cert_json FROM devices WHERE device_id = ?`, [deviceId]);
+    if (now && now.cert_json !== JSON.stringify(st.cert)) archiveDeviceCert(db, deviceId, "recovered");
+    db.run(`UPDATE devices SET cert_json = ?, sign_pub_pem = ?, enc_pub_pem = ? WHERE device_id = ?`, [JSON.stringify(st.cert), signPub, encPub, deviceId]);
+  });
+  // 账本先提交、再写密钥文件：写文件失败时下次启动重做（改包裹幂等），反过来会让临时密钥建的事项永久丢失
+  writeDeviceKeys(keysDir, { signPublicKeyPem: signPub, signPrivateKeyPem: st.signPrivateKeyPem, encPublicKeyPem: encPub, encPrivateKeyPem: st.encPrivateKeyPem });
+  rmSync(path, { force: true });
+  return { applied: true, rewrapped, unreadable };
+}
+
 /** membership 角色 → 证书角色（G0 映射；生产由管理控制台按席位分配）。
  * userSlug === 'node' 的工作区是所内节点服务身份（§5.3 服务成员，firm-node 形态）——角色恒为 node。 */
 function certRoleOf(membershipRole: string | undefined, userSlug?: string): DeviceRole {
@@ -238,6 +393,8 @@ export function ensureDevice(db: KernelDb, keysDir: string, identity: Identity, 
     return { deviceId, memberId: identity.userId, cert: JSON.parse(row.cert_json) as DeviceCertificate, keys: getDeviceKeys(keysDir) };
   }
 
+  // 已登记但 device.json 不在（丢失或损坏后重开）：换新密钥前把旧证书留档，旧密钥签出的历史仍可验签；旧密钥本身可用恢复文件导回
+  if (row) archiveDeviceCert(db, deviceId, "rekeyed");
   const root = getFirmRootPrivateKey(keysDir);
   const keys = generateDeviceKeys();
   const now = Date.now();
@@ -285,6 +442,7 @@ export function ensureNodeDevice(db: KernelDb, keysDir: string, identity: Identi
     const keys = readSecretFile<DeviceKeys>(deviceFile);
     return { deviceId, memberId: "node_service", cert: JSON.parse(row.cert_json) as DeviceCertificate, keys };
   }
+  if (row) archiveDeviceCert(db, deviceId, "rekeyed");
   const root = getFirmRootPrivateKey(keysDir);
   const keys = generateDeviceKeys();
   const now = Date.now();

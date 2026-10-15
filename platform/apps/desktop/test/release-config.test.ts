@@ -51,7 +51,7 @@ test("不合法：http 地址、只有一把钉住、钉住形态错误都不进
   }));
   assert.equal(r.problems.length, 3);
   assert.deepEqual(r.env, {});
-  assert.deepEqual(loadReleaseConfig(join(dir, "missing.json")), { env: {}, problems: [] });
+  assert.deepEqual(loadReleaseConfig(join(dir, "missing.json")), { env: {}, problems: [], update: null });
   assert.deepEqual(loadReleaseConfig(write("garbage.json", "{")).problems, ["release.json 无法解析"]);
 });
 
@@ -94,11 +94,14 @@ test("安装包形态：环境变量里的上游、席位令牌、自带密钥�
 test("内核子进程环境（复核 C-A15）：安装包形态数据目录与入口写定、强制控制面与落盘加密；开发形态允许覆盖", () => {
   const paths = { dataDir: "/app/KimiWorkLegal", agentHostEntry: "/app/agent-host.mjs", gateEntry: "/app/gate.mjs", kapEntry: "/app/kap.mjs" };
   const evil = { PATH: "/bin", ZR_KERNEL_DATA_DIR: "/tmp/evil", ZR_AGENT_HOST_ENTRY: "/tmp/evil.mjs", ZR_EGRESS_GATE_ENTRY: "/tmp/evil-gate.mjs", ZR_KAP_HOST_ENTRY: "/tmp/evil-kap.mjs", NODE_OPTIONS: "--require /tmp/x.js", ZR_AT_REST: "off" };
-  const packaged = kernelChildEnv({ packaged: true, isDev: false, processEnv: evil, release: { env: {} }, paths, runtimeEnv: { ZR_NODE_RUNTIME: "/app/node" } });
+  const runtimeEnv = { ZR_NODE_RUNTIME: "/app/node", ZR_EGRESS_GATE_ENTRY: "/res/runtime/gate/main.mjs", ZR_KAP_HOST_ENTRY: "/res/runtime/kap/main.mjs" };
+  const packaged = kernelChildEnv({ packaged: true, isDev: false, processEnv: evil, release: { env: {} }, paths, runtimeEnv });
   assert.equal(packaged.ZR_KERNEL_DATA_DIR, paths.dataDir);
-  assert.equal(packaged.ZR_AGENT_HOST_ENTRY, paths.agentHostEntry);
-  assert.equal(packaged.ZR_EGRESS_GATE_ENTRY, paths.gateEntry);
-  assert.equal(packaged.ZR_KAP_HOST_ENTRY, paths.kapEntry);
+  // 入口只来自随包运行时（复核 B4-A20）：不下发 SDK 宿主入口，也不用 asar 内的缺省路径
+  assert.equal(packaged.ZR_AGENT_HOST_ENTRY, undefined);
+  assert.equal(packaged.ZR_EGRESS_GATE_ENTRY, runtimeEnv.ZR_EGRESS_GATE_ENTRY);
+  assert.equal(packaged.ZR_KAP_HOST_ENTRY, runtimeEnv.ZR_KAP_HOST_ENTRY);
+  assert.throws(() => kernelChildEnv({ packaged: true, isDev: false, processEnv: evil, release: { env: {} }, paths, runtimeEnv: { ZR_NODE_RUNTIME: "/app/node" } }), /随包运行时缺少/);
   assert.equal(packaged.NODE_OPTIONS, undefined);
   assert.equal(packaged.ZR_AT_REST, "required");
   assert.equal(packaged.ZR_REQUIRE_CONTROL_PLANE, "1");

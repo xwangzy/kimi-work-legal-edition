@@ -8,11 +8,82 @@ declare global {
     zrKernel?: {
       invoke: (method: string, params?: Record<string, unknown>) => Promise<any>;
       onEvent?: (cb: (msg: any) => void) => () => void;
-      getPathForFile?: (file: File) => string;
+      fileHandleFor?: (file: File) => Promise<PickedFile | null>;
+      /** 主进程文件对话框（v9.2 §3.7）：只回一次性句柄、文件名与大小。 */
+      pickFiles?: (o: { extensions?: string[]; multiple?: boolean }) => Promise<PickedFile[] | null>;
+      pickSave?: (o: { name: string }) => Promise<{ handle: string; name: string; risk: SaveRisk | null } | null>;
+      saveText?: (handle: string, text: string) => Promise<{ ok: boolean; name?: string }>;
       rendererNet?: () => Promise<{ blocked: number; last: string[] }>;
+      updateStatus?: () => Promise<UpdateStatus | null>;
+      installUpdate?: () => Promise<{ ok: boolean; reason?: string }>;
       platform?: string;
     };
   }
+}
+
+/** 主进程对话框选中的文件（渲染进程拿不到路径）。 */
+export interface PickedFile {
+  handle: string;
+  name: string;
+  size: number;
+}
+export type MaterialFile = File | PickedFile;
+const isPicked = (f: MaterialFile): f is PickedFile => typeof (f as PickedFile).handle === "string";
+export type SaveRisk = "onedrive" | "cloud" | "network";
+const SAVE_PLACE: Record<SaveRisk, string> = {
+  onedrive: "这个位置在 OneDrive 同步文件夹里",
+  cloud: "这个位置在云盘的同步文件夹里",
+  network: "这个位置是网络共享文件夹",
+};
+
+/**
+ * 选保存位置（桌面客户端）：返回句柄；取消返回 null；不是桌面客户端返回 undefined（改用浏览器下载）。
+ * 同步或网络位置先说明后果（复核 S5B-09：按文件是否含案件内容分别措辞；选“取消”会重新选择位置，而不是直接保存）。
+ */
+async function chooseSaveTarget(name: string, content: "case" | "none" = "case"): Promise<{ handle: string; name: string } | null | undefined> {
+  const pick = window.zrKernel?.pickSave;
+  if (!pick) return undefined;
+  for (let i = 0; i < 3; i++) {
+    const s = await pick({ name });
+    if (!s) return null;
+    if (!s.risk) return s;
+    const what = content === "case" ? "文件会以原文（含当事人真实名称）同步或保存到其他设备上" : "文件会同步或保存到其他设备上（文件本身不含案件内容）";
+    if (window.confirm(`${SAVE_PLACE[s.risk]}：${what}。\n\n点“确定”仍保存在这里；点“取消”换一个位置。`)) return s;
+  }
+  return null;
+}
+
+/** 材料的常见扩展名（选择对话框的过滤器）。 */
+export const MATERIAL_EXTENSIONS = ["docx", "pdf", "txt", "md", "png", "jpg", "jpeg", "xlsx", "csv"];
+/** web 开发形态文件输入框的同一组扩展名（复核 S5B-10）。 */
+export const MATERIAL_ACCEPT = MATERIAL_EXTENSIONS.map((e) => `.${e}`).join(",");
+
+/**
+ * 选择材料（Y5 P1-4）：桌面客户端弹主进程系统对话框（不进“最近使用”，渲染进程只拿句柄）；web 开发形态退回隐藏的文件输入框。
+ */
+export async function pickMaterials(fallback: HTMLInputElement | null, onPicked: (files: MaterialFile[]) => unknown): Promise<void> {
+  if (!window.zrKernel?.pickFiles) {
+    fallback?.click();
+    return;
+  }
+  try {
+    const picked = (await window.zrKernel.pickFiles({ extensions: MATERIAL_EXTENSIONS })) ?? [];
+    if (picked.length > 0) await onPicked(picked);
+  } catch (e) {
+    // 选择或添加失败要让律师看到（复核 S5B-10）
+    window.alert(`没能添加文件：${(e as Error).message}`);
+  }
+}
+
+/** web 开发形态的浏览器下载（桌面客户端不走这里）。 */
+function browserDownload(dataBase64: string, filename: string, type: string): void {
+  const bin = Uint8Array.from(atob(dataBase64), (c) => c.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bin], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 const BRIDGE = "http://127.0.0.1:7720/invoke";
@@ -48,12 +119,38 @@ async function invoke<T = any>(method: string, params: Record<string, unknown> =
   return data.result as T;
 }
 
+/** 自动更新（W7，只在安装包形态启用）：状态与“重启并安装”。 */
+export const updates = {
+  status: async (): Promise<UpdateStatus | null> => (window.zrKernel?.updateStatus ? window.zrKernel.updateStatus() : null),
+  install: async (): Promise<{ ok: boolean; reason?: string }> => (window.zrKernel?.installUpdate ? window.zrKernel.installUpdate() : { ok: false }),
+};
+
 /** 订阅内核广播（Electron）；web 开发桥无推送，调用方自行轮询。 */
 export function onKernelEvent(cb: (msg: any) => void): () => void {
   return window.zrKernel?.onEvent ? window.zrKernel.onEvent(cb) : () => {};
 }
 
 // ─── 类型 ───
+
+/** 运行过程快照（K7-P；令牌形态，运行中每秒随待决卡片一起取）。 */
+export interface RunProgress {
+  todo: { title: string; status: "pending" | "in_progress" | "done" }[];
+  subagents: { id: string; name: string; description: string; status: "running" | "done" | "failed" | "cancelled" | "paused"; swarm_index: number | null; background: boolean; summary: string | null }[];
+  tasks: { id: string; kind: "bash" | "agent" | "other"; description: string; status: "running" | "done" | "failed" | "stopped" }[];
+  notes: { at: string; text: string; agent_id: string }[];
+  compaction: { count: number; running: boolean; blocked: boolean; last_at: string | null; tokens_before: number | null; tokens_after: number | null };
+  skills: string[];
+  retry: { attempt: number; max: number; status_code: number | null; at: string } | null;
+}
+
+/** 自动更新状态（主进程 updater.cjs；只在安装包形态启用）。 */
+export interface UpdateStatus {
+  enabled?: boolean;
+  state: "idle" | "checking" | "downloading" | "ready" | "rejected" | "error";
+  version?: string | null;
+  percent?: number;
+  message?: string;
+}
 
 export type RunMode = "chat" | "manual" | "default" | "auto";
 export type Preauthorization = "search_generalized" | "fetch_allowlisted" | "connector_readonly";
@@ -71,6 +168,10 @@ export interface MatterBasis {
 
 export interface Matter {
   matter_id: string;
+  /** 示例事项（虚构内容，本机生成、不联网；可移除）。 */
+  is_sample?: boolean;
+  /** 进行中与等你确认的任务数（matters.list 给出）。 */
+  activity?: { waiting: number; running: number; waiting_run_id: string | null; pending_review?: number; last_at?: string };
   title: string;
   client_name: string | null;
   counterparty: string | null;
@@ -206,6 +307,34 @@ export interface EgressSummary {
   sentence: string;
 }
 
+/** 发起前“将发送什么”（v9.2 §3.3）：按类别的替换计数与疑似未替换的姓名。 */
+export interface SendSummaryView {
+  docs: number;
+  chars: number;
+  replaced: Partial<Record<string, number>>;
+  replaced_total: number;
+  orgs_kept: boolean;
+  suspects: { high: number; medium: number; unreviewed: number };
+  truncated: boolean;
+}
+export interface SendPreview {
+  filename: string;
+  sent_text: string;
+  chars: number;
+  truncated: boolean;
+  replaced: Partial<Record<string, number>>;
+  tokens: { start: number; end: number; category: string }[];
+  suspects: { start: number; end: number; confidence: string }[];
+  orgs_kept: boolean;
+}
+export interface SuspectView {
+  value: string;
+  confidence: "high" | "medium";
+  cue: string;
+  context: string;
+  occurrences: number;
+}
+
 export interface ChatMessage {
   message_id: string;
   role: "user" | "assistant" | "notice";
@@ -288,6 +417,9 @@ export interface UnresolvedOperation {
 export const api = {
   // 事项
   listMatters: () => invoke<{ matters: Matter[] }>("matters.list"),
+  /** 示例事项（v9.2 §4.4；Y4 §5 D-6）：首次使用放入一次；移除后不再放入。 */
+  installSample: () => invoke<{ matter_id: string | null; installed: boolean }>("samples.install", {}),
+  removeSample: (matterId: string) => invoke<{ removed: boolean }>("samples.remove", { matter_id: matterId }),
   createMatter: (body: Record<string, unknown>) => invoke<{ matter: Matter }>("matters.create", body),
   getMatter: (id: string) => invoke<{ matter: Matter; documents: any[]; run_policy?: RunPolicyView; runs?: any[] }>("matters.get", { matter_id: id }),
   updateMatter: (id: string, patch: Record<string, unknown>) => invoke<{ matter: Matter }>("matters.update", { matter_id: id, patch }),
@@ -296,8 +428,25 @@ export const api = {
   closeMatter: (id: string, retentionYears: number) => invoke<{ lifecycle: MatterLifecycle; agent_data_purged: boolean }>("matters.close", { matter_id: id, retention_years: retentionYears }),
   reopenMatter: (id: string) => invoke<{ lifecycle: MatterLifecycle }>("matters.reopen", { matter_id: id }),
   setLegalHold: (id: string, on: boolean, reason?: string) => invoke<{ lifecycle: MatterLifecycle }>("matters.hold", { matter_id: id, on, reason }),
-  archiveMatter: (id: string) =>
-    invoke<{ filename: string; data_base64: string; bytes: number; sha256: string; counts: Record<string, number>; missing: { document_version_id: string; filename: string; reason: string }[] }>("matters.archive", { matter_id: id }),
+  /** 结案归档：桌面客户端由内核直接写到律师选定的位置；返回 null = 律师取消。 */
+  archiveMatter: async (id: string, suggestedName = "结案归档.zip") => {
+    type R = { filename: string; data_base64?: string; saved?: boolean; bytes: number; sha256: string; counts: Record<string, number>; missing: { document_version_id: string; filename: string; reason: string }[] };
+    const target = await chooseSaveTarget(suggestedName);
+    if (target === null) return null;
+    const r = await invoke<R>("matters.archive", { matter_id: id, ...(target ? { save_handle: target.handle } : {}) });
+    if (!target && r.data_base64) browserDownload(r.data_base64, r.filename, "application/zip");
+    return r;
+  },
+  /** 选择材料（桌面客户端用主进程对话框，不进“最近使用”）；不是桌面客户端返回 null，调用方改用文件输入框。 */
+  pickFiles: async (extensions?: string[]): Promise<PickedFile[] | null> => (window.zrKernel?.pickFiles ? ((await window.zrKernel.pickFiles({ extensions })) ?? []) : null),
+  /** 不含案件内容的小文件（删除回执）：桌面客户端经主进程写到选定位置。返回 false = 取消或失败。 */
+  saveSmallText: async (suggestedName: string, text: string): Promise<boolean> => {
+    const target = await chooseSaveTarget(suggestedName, "none");
+    if (target === null) return false;
+    if (target && window.zrKernel?.saveText) return (await window.zrKernel.saveText(target.handle, text)).ok;
+    browserDownload(btoa(String.fromCharCode(...new TextEncoder().encode(text))), suggestedName, "application/json");
+    return true;
+  },
   purgeMatter: (id: string, body: { confirm_title: string; early: boolean; reason: string }) => invoke<{ lifecycle: MatterLifecycle; receipt: DeletionReceiptView }>("matters.purge", { matter_id: id, ...body }),
   consentNotice: (id: string) => invoke<{ artifact_version_id: string; filename: string; note: string }>("matters.consent_notice", { matter_id: id }),
   parties: (matterId: string) => invoke<{ parties: { name: string; kind: "person" | "org"; aliases: string[]; role: string | null }[]; full_pseudonym: boolean }>("matters.parties.list", { matter_id: matterId }),
@@ -310,21 +459,35 @@ export const api = {
   restore: (matterId: string, text: string) => invoke<{ text: string; unknown: string[] }>("matters.tokens.restore", { matter_id: matterId, text }),
 
   // 材料
-  importMaterial: async (matterId: string, file: File): Promise<{ document_version_id: string; quality_flags: string[]; chars: number; sha256: string; note: string; marking_notice?: string | null }> => {
-    const path = window.zrKernel?.getPathForFile?.(file);
-    if (path) return invoke("materials.import", { matter_id: matterId, path, filename: file.name, mime: file.type || "application/octet-stream" });
+  importMaterial: async (matterId: string, file: MaterialFile): Promise<{ document_version_id: string; quality_flags: string[]; chars: number; sha256: string; note: string; marking_notice?: string | null }> => {
+    if (isPicked(file)) return invoke("materials.import", { matter_id: matterId, file_handle: file.handle, filename: file.name });
+    // 桌面客户端：拖放的文件经 preload 换成一次性句柄，内核按句柄换来的路径直读（不经页面内存、页面拿不到路径）
+    if (window.zrKernel?.fileHandleFor) {
+      const h = await window.zrKernel.fileHandleFor(file);
+      if (!h) throw new KernelError("这个文件不能添加（网络位置上的文件请先复制到本机）", "validation");
+      return invoke("materials.import", { matter_id: matterId, file_handle: h.handle, filename: file.name });
+    }
     const data_base64 = await fileToBase64(file);
     return invoke("materials.import", { matter_id: matterId, data_base64, filename: file.name, mime: file.type || "application/octet-stream" });
   },
-  mountMaterial: async (matterId: string, file: File) => {
-    const path = window.zrKernel?.getPathForFile?.(file);
-    if (!path) throw new KernelError("挂载需要桌面客户端（web 调试请用导入）", "validation");
-    return invoke("materials.mount", { matter_id: matterId, path, filename: file.name, mime: file.type || "application/octet-stream" });
+  /** 材料用途（我方 / 对方 / 参考；null 清除）。 */
+  setMaterialRole: (documentVersionId: string, role: "ours" | "theirs" | "reference" | null) => invoke<{ role: string | null }>("materials.set_role", { document_version_id: documentVersionId, role }),
+  mountMaterial: async (matterId: string, file: MaterialFile) => {
+    if (isPicked(file)) return invoke("materials.mount", { matter_id: matterId, file_handle: file.handle, filename: file.name });
+    const h = window.zrKernel?.fileHandleFor ? await window.zrKernel.fileHandleFor(file) : null;
+    if (!h) throw new KernelError(window.zrKernel?.fileHandleFor ? "这个文件不能引用（网络位置上的文件请先复制到本机）" : "引用原文件需要桌面客户端（web 调试请用添加）", "validation");
+    return invoke("materials.mount", { matter_id: matterId, file_handle: h.handle, filename: file.name });
   },
 
   // 任务
   estimate: (matterId: string, body: { scenario: string; document_version_ids: string[]; goal?: string; topic_hint?: string } & Record<string, unknown>) =>
-    invoke<{ estimate_id: string; points: number; points_display: string; assumptions: string[]; data_where?: { preview: string; warning: string | null; start_blocked: boolean } }>("runs.estimate", { matter_id: matterId, ...body }),
+    invoke<{ estimate_id: string; points: number; points_display: string; assumptions: string[]; data_where?: { preview: string; warning: string | null; start_blocked: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | null; busy_run_id?: string; send_summary?: SendSummaryView } }>("runs.estimate", { matter_id: matterId, ...body }),
+  /** 发送视图（v9.2 §3.4）：模型会看到的样子——令牌形态与代号位置，不含代号真值。 */
+  sendPreview: (matterId: string, documentVersionId: string) => invoke<SendPreview>("materials.send_preview", { matter_id: matterId, document_version_id: documentVersionId }),
+  /** 疑似未替换的姓名（只在本机界面显示）。 */
+  listSuspects: (matterId: string, documentVersionIds: string[], goal?: string) => invoke<{ suspects: SuspectView[]; summary: SendSummaryView }>("matters.suspects.list", { matter_id: matterId, document_version_ids: documentVersionIds, ...(goal ? { goal } : {}) }),
+  reviewSuspects: (matterId: string, items: { value: string; decision: "name" | "not_name" }[]) =>
+    invoke<{ added_to_parties: number; dismissed: number; rejected: string[] }>("matters.suspects.review", { matter_id: matterId, items }),
   startRun: (matterId: string, body: { estimate_id: string; idempotency_key: string; goal?: string; topic_hint?: string; mode?: RunMode; plan_first?: boolean; preauthorizations?: Preauthorization[]; skill?: string; followup_of?: string; mode_raise_confirmed?: boolean }) =>
     invoke<{ run_id: string; status: string; mode?: RunMode }>("runs.start", { matter_id: matterId, ...body }),
   getRun: (runId: string) =>
@@ -339,7 +502,7 @@ export const api = {
   retryRun: (runId: string, expectedVersion: number) => invoke("runs.retry", { run_id: runId, expected_version: expectedVersion }),
   runEvents: (runId: string, cursor = 0) => invoke<{ events: RunEvent[]; next_cursor: number; run_status: string }>("runs.events", { run_id: runId, cursor, limit: 500 }),
   cancelRun: (runId: string, expectedVersion: number) => invoke("runs.cancel", { run_id: runId, expected_version: expectedVersion, reason: "用户取消" }),
-  interactions: (runId: string) => invoke<{ approvals: ApprovalCard[]; questions: QuestionCard[]; state_version: number | null; live_text?: string | null }>("runs.interactions", { run_id: runId }),
+  interactions: (runId: string) => invoke<{ approvals: ApprovalCard[]; questions: QuestionCard[]; state_version: number | null; live_text?: string | null; progress?: RunProgress | null }>("runs.interactions", { run_id: runId }),
   decide: (runId: string, card: ApprovalCard, body: { decision: "approve" | "reject"; scope?: "once" | "task"; variant?: "original" | "generalized"; feedback?: string }) =>
     invoke<{ ok: true }>("runs.approve", { run_id: runId, approval_id: card.approval_id, object_hash: card.object_hash, nonce: card.nonce, ...body }),
   /** 作答带回界面看到的状态版本（乐观并发：期间有新的提问或决定时须按最新卡片作答）。 */
@@ -347,15 +510,25 @@ export const api = {
     invoke<{ ok: true }>("runs.answer", { run_id: runId, question_id: questionId, answers, ...(typeof expectedStateVersion === "number" ? { expected_state_version: expectedStateVersion } : {}) }),
 
   // 成果
-  downloadArtifact: async (artifactVersionId: string, filename: string): Promise<void> => {
-    const r = await invoke<{ filename: string; sha256: string; data_base64: string }>("artifacts.download", { artifact_version_id: artifactVersionId });
-    const bin = Uint8Array.from(atob(r.data_base64), (c) => c.charCodeAt(0));
-    const url = URL.createObjectURL(new Blob([bin], { type: "application/octet-stream" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
+  /** 下载成果（还原真名）：桌面客户端由内核直接写到律师选定的位置（不经浏览器下载、不进“最近使用”）。返回 false = 律师取消。 */
+  downloadArtifact: async (artifactVersionId: string, filename: string): Promise<boolean> => {
+    const target = await chooseSaveTarget(filename);
+    if (target === null) return false;
+    const r = await invoke<{ filename: string; sha256: string; data_base64?: string; saved?: boolean }>("artifacts.download", { artifact_version_id: artifactVersionId, ...(target ? { save_handle: target.handle } : {}) });
+    if (!target && r.data_base64) browserDownload(r.data_base64, filename, "application/octet-stream");
+    return true;
+  },
+  /** Windows 环境自检（v9.2 §3.7；Y5 P1-6）：只读；Windows 之外为“不适用”。 */
+  envProbe: (refresh = false) => invoke<Record<string, any>>("device.env_probe", refresh ? { refresh: true } : {}),
+  /** 详细运行记录（v9.2 §3.6）：只记登记的事件代码与计数，开启后 24 小时自动关闭。 */
+  setLogLevel: (level: "debug" | "info") => invoke<{ level: string }>("diagnostics.set_log_level", { level }),
+  /** 脱敏诊断包（交给支持团队）：内核按白名单生成、导出前自证不含事项内容、设备签名；在本机保存为文件。 */
+  exportDiagnostics: async (): Promise<{ filename: string; bytes: number } | null> => {
+    const target = await chooseSaveTarget(`kimi-work-legal-diagnostics-${new Date().toISOString().slice(0, 10)}.json`, "none");
+    if (target === null) return null;
+    const r = await invoke<{ filename: string; data_base64?: string; saved?: boolean; summary: { bytes: number } }>("diagnostics.export", target ? { save_handle: target.handle } : {});
+    if (!target && r.data_base64) browserDownload(r.data_base64, r.filename, "application/json");
+    return { filename: r.filename, bytes: r.summary.bytes };
   },
   /** 预览用：取令牌形态的原文（界面按事项令牌表还原显示；不是导出，不记导出审计）。 */
   artifactText: (artifactVersionId: string) => invoke<{ filename: string; sha256: string; data_base64: string }>("artifacts.download", { artifact_version_id: artifactVersionId, restore: false }),
@@ -384,6 +557,8 @@ export const api = {
     invoke<any>("review.approve", { artifact_version_id: artifactVersionId, ...body }),
   deliver: (body: { artifact_version_id: string; action: "download" | "external_send" | "archive"; audience?: string }) => invoke<any>("deliveries.create", body),
   pending: () => invoke<{ pending: any[]; count: number }>("pending.list"),
+  recentRuns: (limit = 5) =>
+    invoke<{ runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; goal: string }[]; waiting: { run_id: string; matter_id: string }[] }>("runs.list_recent", { limit }),
 
   // 数据去向
   egressRecords: (args: { runId?: string; matterId?: string }) => invoke<{ records: EgressRecord[] }>("egress.records", args.runId ? { run_id: args.runId } : { matter_id: args.matterId }),

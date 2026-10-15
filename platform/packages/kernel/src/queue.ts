@@ -16,6 +16,7 @@
  */
 import { hostname } from "node:os";
 import type { KernelDb } from "./db.ts";
+import { errFields, slog } from "@zr-legal/safe-log";
 
 export const WORKER_ID = `${hostname()}:${process.pid}`;
 
@@ -140,7 +141,7 @@ export class TaskQueue {
       this.running.add(runId);
       void this.execute(runId, wf)
         .catch((err) => {
-          console.error(`[queue] run ${runId} workflow error:`, (err as Error)?.message ?? err);
+          slog.event("QUEUE_WORKFLOW_ERROR", { run: runId, ...errFields(err) });
         })
         .finally(() => {
           this.running.delete(runId);

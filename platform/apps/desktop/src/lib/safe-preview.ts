@@ -26,7 +26,10 @@ function isDataUrl(v: string): boolean {
 }
 
 /** 清洗并包装为预览文档（返回 srcdoc 字符串）；给出代号表时按文本节点还原（只在隔离框架内显示）。 */
-export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | null>): string {
+/** 文书纸面版式（v9.2 §4.4；Y4 §5 D-8、#31）：衬线正文、较大字号与行距、纸面底色——用于 Word/Excel 成果预览。 */
+const PAPER_STYLE = "body{font-family:'Source Han Serif SC','Noto Serif CJK SC','Songti SC',SimSun,serif;font-size:16px;line-height:1.9;color:#1f1d1a;background:#fffdf9;margin:24px 40px;}";
+
+export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | null>, o: { paper?: boolean } = {}): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   for (const tag of DROP_ELEMENTS) for (const el of Array.from(doc.querySelectorAll(tag))) el.remove();
   for (const a of Array.from(doc.querySelectorAll("a[href]"))) a.setAttribute("data-kwl-href", a.getAttribute("href") ?? "");
@@ -72,6 +75,7 @@ export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | nu
     `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">`,
     '<meta charset="utf-8">',
     "<style>body{font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;line-height:1.7;color:#0e1219;margin:16px;} .kwl-link{color:#167ffb;text-decoration:underline dotted;cursor:default;} img{max-width:100%;}</style>",
+    o.paper ? `<style>${PAPER_STYLE}</style>` : "",
     styles,
     "</head><body>",
     body,

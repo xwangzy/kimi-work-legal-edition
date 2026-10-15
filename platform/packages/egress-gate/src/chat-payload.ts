@@ -12,7 +12,7 @@
  *   **未知类型**同样列为非文本载荷（`unknown:<类型>`）——失败关闭，由闸门拒绝。
  */
 import { createHash } from "node:crypto";
-import { TOKEN_RE, tokenCategory, type MatterTokenizer, type TokenCategory } from "@zr-legal/tokenizer";
+import { suspectedNames, TOKEN_RE, tokenCategory, type MatterTokenizer, type TokenCategory } from "@zr-legal/tokenizer";
 
 export interface ChatPayloadReport {
   /** 处理后的请求体（只改文本值）。 */
@@ -26,6 +26,12 @@ export interface ChatPayloadReport {
   present: Partial<Record<TokenCategory, number>>;
   /** 非文本载荷（类别、所在消息序号、内联数据的摘要；未知内容块类型为 `unknown:<类型>`）。不含载荷本身。 */
   media: { kind: string; message: number; digest?: string }[];
+  /**
+   * 发送前二次检测（v9.2 R7；Y5 §4.3）：令牌化之后仍像自然人姓名的原文，按不同的值计数（高、中两档）。
+   * 只有计数进去向记录；具体的值只在 `suspectValues`（闸门内存，用于回给本机界面核对），不写入任何记录。
+   */
+  suspects: { high: number; medium: number };
+  suspectValues: { value: string; confidence: "high" | "medium" }[];
 }
 
 const MEDIA_TYPES = new Set(["image_url", "input_image", "image", "video_url", "input_video", "video", "file", "input_file", "input_audio", "audio", "document"]);
@@ -43,7 +49,8 @@ const BLOCK_STRUCTURAL = new Set(["type", "id", "tool_use_id", "cache_control", 
 
 export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): ChatPayloadReport {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("请求体不是对象");
-  const report: ChatPayloadReport = { body: {}, textChars: 0, segments: 0, replaced: 0, counts: {}, present: {}, media: [] };
+  const report: ChatPayloadReport = { body: {}, textChars: 0, segments: 0, replaced: 0, counts: {}, present: {}, media: [], suspects: { high: 0, medium: 0 }, suspectValues: [] };
+  const seen = new Map<string, "high" | "medium">();
   const tok = (s: string): string => {
     if (s.length === 0) return s;
     report.textChars += s.length;
@@ -55,6 +62,13 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): 
     for (const m of r.text.matchAll(TOKEN_RE)) {
       const c = tokenCategory(m[0]);
       if (c) report.present[c] = (report.present[c] ?? 0) + 1;
+    }
+    for (const x of suspectedNames(r.text)) {
+      const had = seen.get(x.value);
+      if (had === "high" || had === x.confidence) continue;
+      if (had === "medium") report.suspects.medium -= 1;
+      seen.set(x.value, x.confidence);
+      report.suspects[x.confidence] += 1;
     }
     return r.text;
   };
@@ -182,6 +196,7 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): 
     } else body[k] = deep(x);
   }
   report.body = body;
+  report.suspectValues = [...seen].map(([value, confidence]) => ({ value, confidence }));
   return report;
 }
 

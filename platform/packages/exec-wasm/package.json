@@ -11,6 +11,7 @@
     "@zr-legal/at-rest": "*",
     "@zr-legal/docx-engine": "*",
     "@zr-legal/file-broker": "*",
+    "@zr-legal/safe-log": "*",
     "just-bash": "3.6.0"
   }
 }

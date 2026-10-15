@@ -10,6 +10,8 @@
  * 为 N-API 原生模块，保持 external 随包附带。
  */
 import { createKernel } from "./index.ts";
+import { markRuntimeVerified } from "./executor/child-env.ts";
+import { slog } from "@zr-legal/safe-log";
 
 interface RpcRequest {
   id: number;
@@ -93,7 +95,27 @@ async function main(): Promise<void> {
 
   kernel.onBroadcast((msg) => port.postMessage({ type: "kernel.event", ...msg }));
 
+  let closing = false;
   port.on("message", async (raw) => {
+    // 主进程退出或安装更新前要求有序关闭（复核 B4-A13）：先关闭闸门、Agent 宿主等子进程与账本，再退出——
+    // 强制终止会留下仍占用安装目录文件的子进程，静默更新随之失败
+    // 随包运行时全量摘要核验通过（复核 B4-R15）：放行随包子进程的拉起
+    // 主进程交来的日志事件（v9.2 §3.6）：按登记表重新核验，进程名由这里标注
+    if ((raw as { type?: unknown } | null)?.type === "log.event") {
+      const m = raw as { code?: unknown; fields?: unknown };
+      slog.ingest("main", m.code, m.fields);
+      return;
+    }
+    if ((raw as { type?: unknown } | null)?.type === "kernel.runtime_verified") {
+      markRuntimeVerified();
+      return;
+    }
+    if ((raw as { type?: unknown } | null)?.type === "kernel.shutdown") {
+      if (closing) return;
+      closing = true;
+      await kernel.close().catch(() => {});
+      process.exit(0);
+    }
     const req = raw as RpcRequest;
     if (!req || typeof req.id !== "number" || typeof req.method !== "string") return;
     try {

@@ -154,6 +154,15 @@ export class MatterTokenStore {
     return r!;
   }
 
+  /** 预跑（发送前“将发送什么”与发送视图，v9.2 §3.3）：与出站同一套令牌化器，不写回令牌表、不出站。 */
+  preview(matterId: string, texts: readonly string[]): { text: string; replaced: number; counts: Partial<Record<TokenEntry["category"], number>> }[] {
+    const tz = this.tokenizer(matterId);
+    return texts.map((t) => {
+      const r = tz.tokenize(t);
+      return { text: r.text, replaced: r.replaced, counts: r.counts };
+    });
+  }
+
   /** 批量令牌化（同一令牌化器，跨文本稳定）并一次写回新条目。 */
   tokenizeAll(matterId: string, texts: readonly string[]): { text: string; replaced: number; counts: Partial<Record<TokenEntry["category"], number>> }[] {
     const tz = this.tokenizer(matterId);

@@ -10,8 +10,10 @@ import type { ComposerValue } from "./Composer.tsx";
 import { METHODS } from "./Composer.tsx";
 import { Modal } from "./Modal.tsx";
 import { basisForConsent, ConsentQuestion, type ConsentAnswer } from "./Consent.tsx";
-import type { MatterBasis } from "../api.ts";
+import type { MatterBasis, SendSummaryView } from "../api.ts";
+import { SendSummary } from "./SendSummary.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
+import { afterConsentNotice, busyRunOfError } from "../lib/start-block.ts";
 
 export interface PendingStart {
   matter: Matter;
@@ -20,7 +22,13 @@ export interface PendingStart {
   skill?: string;
   /** 发起确认里“做什么”的显示名（业务场景名）。 */
   label?: string;
-  estimate: { estimate_id: string; points: number; points_display: string; assumptions: string[]; data_where?: { preview?: string; warning?: string | null; start_blocked?: boolean } };
+  estimate: {
+    estimate_id: string;
+    points: number;
+    points_display: string;
+    assumptions: string[];
+    data_where?: { preview?: string; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | null; busy_run_id?: string; send_summary?: SendSummaryView };
+  };
 }
 
 /** 发起任务（确认卡与场景开始面板共用）：返回任务编号并跳到执行态。 */
@@ -54,11 +62,26 @@ export async function prepareStart(matter: Matter, value: ComposerValue, o: { sk
 export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  /** 发起时被拒（并发发起，409 带进行中任务编号；复核 B4-B13）：错误提示旁给出入口。 */
+  const [errBusyRun, setErrBusyRun] = useState<string | null>(null);
   const [cur, setCur] = useState(pending);
   const { matter, value, estimate } = cur;
   const method = METHODS.find((m) => m.scenario === value.scenario);
   const agent = value.scenario === "a1.agent_task";
   const blocked = !!estimate.data_where?.start_blocked;
+  // 只有“依据待确认”可以原地修复；事项里另有进行中的任务、或处于退出模式时只说明原因并禁用开始
+  const consentBlocked = blocked && (estimate.data_where?.block_kind ?? "consent") === "consent";
+  const busyRun = estimate.data_where?.block_kind === "busy" ? estimate.data_where.busy_run_id : undefined;
+  // 敏感事项（L3a）：像姓名的文字核对完才能开始（v9.2 §3.3）；核对后重新估价
+  const suspectsBlocked = blocked && estimate.data_where?.block_kind === "suspects";
+  const reestimate = async () => {
+    setErr("");
+    try {
+      setCur(await prepareStart(matter, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}) }));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
   // 依据未齐时原地修复（UIUX 评审 P0-1）：在这里回答“客户是否同意”，记录后重新预估再发起
   const sensitive = matter.confidentiality === "high";
   const [consent, setConsent] = useState<ConsentAnswer>("consented");
@@ -72,12 +95,13 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
       const fresh = await prepareStart({ ...matter, basis }, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}) });
       setCur(fresh);
       if (fresh.estimate.data_where?.start_blocked) {
-        setErr(sensitive ? "已记录。本事项为敏感事项，还需在“逐项调整”中确认“敏感信息特别条件”。" : "已记录，但仍有待确认项，请展开“逐项调整”检查。");
+        setErr(afterConsentNotice(fresh.estimate.data_where.block_kind, sensitive));
         return;
       }
       await doStart(fresh);
     } catch (e) {
       setErr((e as Error).message);
+      setErrBusyRun(busyRunOfError(e));
     } finally {
       setBusy(false);
     }
@@ -85,10 +109,12 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   const start = async () => {
     setBusy(true);
     setErr("");
+    setErrBusyRun(null);
     try {
       await doStart(cur);
     } catch (e) {
       setErr((e as Error).message);
+      setErrBusyRun(busyRunOfError(e));
     } finally {
       setBusy(false);
     }
@@ -117,9 +143,31 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
         <dt>预计花费</dt>
         <dd>{estimate.points_display}</dd>
         <dt>内容会发给谁</dt>
-        <dd>{estimate.data_where?.preview ?? "—"}</dd>
+        <dd>
+          {estimate.data_where?.preview ?? "—"}
+          {estimate.data_where?.send_summary && (
+            <SendSummary matterId={matter.matter_id} summary={estimate.data_where.send_summary} documentIds={value.documentIds} goal={value.goal} mustReview={suspectsBlocked} onReviewed={() => void reestimate()} />
+          )}
+        </dd>
       </dl>
-      {blocked ? (
+      {blocked && !consentBlocked ? (
+        <div className="banner banner-orange">
+          {estimate.data_where?.warning ?? "现在不能开始这个任务。"}
+          {busyRun && (
+            <div className="banner-actions">
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  onClose();
+                  nav(`/run/${busyRun}/${matter.matter_id}`);
+                }}
+              >
+                查看进行中的任务
+              </button>
+            </div>
+          )}
+        </div>
+      ) : consentBlocked ? (
         <div className="consent-fix">
           <p>这个任务需要用到 AI 模型。开始前请确认：</p>
           <ConsentQuestion answer={consent} onAnswer={setConsent} basis={basis} onBasis={setBasis} endpoint={matter.model_endpoint} sensitiveMatter={sensitive} allowRefuse={false} />
@@ -132,10 +180,31 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
           {estimate.assumptions.map((a, i) => <li key={i}>{a}</li>)}
         </ul>
       )}
-      {err && <div className="banner banner-red">{err}</div>}
+      {err && (
+        <div className="banner banner-red">
+          {err}
+          {errBusyRun && (
+            <div className="banner-actions">
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  onClose();
+                  nav(`/run/${errBusyRun}/${matter.matter_id}`);
+                }}
+              >
+                查看进行中的任务
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="modal-actions">
         <button className="btn-ghost" onClick={onClose}>返回修改</button>
-        {blocked ? (
+        {blocked && !consentBlocked ? (
+          <button className="btn-primary" disabled>
+            确认发起
+          </button>
+        ) : consentBlocked ? (
           <button className="btn-primary" disabled={busy || consent !== "consented"} onClick={() => void recordConsentAndStart()}>
             记录客户同意并开始
           </button>

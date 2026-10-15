@@ -35,6 +35,9 @@ test("estimate 含数据去向预览：待取得事项给出拦截预警，本�
   assert.match(est2.data_where.preview, /^将发送：/);
   assert.match(est2.data_where.preview, /替换为代号/);
   assert.match(est2.data_where.preview, /数据去向卡/);
+  // 隐私安全增量评审 P0-3：如实写明以原文发送的类别与上游留存口径
+  assert.match(est2.data_where.preview, /以原文发送的有：机构名称、案情事实、金额、日期、条款文字与案号（未能识别的姓名也会以原文发送）/);
+  assert.match(est2.data_where.preview, /上游是否留存以模型服务企业协议为准/);
   assert.equal(est2.data_where.warning, null);
   const estLocal = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "s6.redaction", document_version_ids: [doc.document_version_id] });
   assert.match(estLocal.data_where.preview, /本机完成/);
@@ -74,4 +77,24 @@ test("事项列表常显数据级别与依据（第 03 篇 §4.1；复核 S5-A05
   assert.equal(by(a.matter_id).basis_complete, true);
   assert.equal(by(c.matter_id).basis_complete, false, "拒绝云端处理的记录：标准端点下依据不齐备");
   assert.equal(by(d.matter_id).basis_complete, true, "只拒绝云端时可用律所私有模型（第 02 篇 §8.2 L3b 行）");
+});
+
+test("材料用途（v9.2 Y4 §5 D-4）：我方 / 对方 / 参考可设、可清除；事项材料清单带出；非法值拒绝；记审计", async () => {
+  const { makeKernel: mk, importText: imp } = await import("./helpers.ts");
+  const tk = await mk({}, "doc-roles");
+  try {
+    const { matter } = await tk.inv("matters.create", { title: "用途标注", stance: "原告", consent_status: "not_required" });
+    const doc = await imp(tk.inv, matter.matter_id, "对方回函.txt", "对方回函正文。");
+    await tk.inv("materials.set_role", { document_version_id: doc.document_version_id, role: "theirs" });
+    let got = await tk.inv("matters.get", { matter_id: matter.matter_id });
+    assert.equal(got.documents.find((d: any) => d.document_version_id === doc.document_version_id).role, "theirs");
+    await assert.rejects(() => tk.inv("materials.set_role", { document_version_id: doc.document_version_id, role: "mine" }), (e: any) => e.code === "validation");
+    await tk.inv("materials.set_role", { document_version_id: doc.document_version_id, role: null });
+    got = await tk.inv("matters.get", { matter_id: matter.matter_id });
+    assert.equal(got.documents.find((d: any) => d.document_version_id === doc.document_version_id).role ?? null, null);
+    assert.ok(tk.kernel.db.get(`SELECT 1 AS x FROM audit_events WHERE action = 'materials.set_role'`));
+    await assert.rejects(() => tk.inv("materials.set_role", { document_version_id: "nope", role: "ours" }), (e: any) => e.code === "not_found");
+  } finally {
+    await tk.kernel.close();
+  }
 });

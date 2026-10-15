@@ -1,7 +1,23 @@
 /** 界面文案映射（只说事实；不用“绝对安全”“数据不出所”等禁用词——第 02 篇 §12）。 */
 import type { BasisValue, RunMode } from "../api.ts";
 
-export const MODE_LABELS: Record<RunMode, string> = { chat: "问答（只读）", manual: "手动", default: "默认", auto: "自动" };
+// 律师语言（UIUX 增量评审 H-2；10-13 文案表）：档位语义不变，只改称呼
+/** 代号类别（令牌化器的 TokenCategory）→ 律师称呼。 */
+export const TOKEN_CATEGORY_LABELS: Record<string, string> = {
+  person: "姓名",
+  org: "公司名称",
+  id_number: "证件号",
+  phone: "电话",
+  account: "账号",
+  uscc: "信用代码",
+  address: "地址",
+  plate: "车牌",
+  email: "邮箱",
+  case_no: "案号",
+  birth_date: "出生日期",
+};
+
+export const MODE_LABELS: Record<RunMode, string> = { chat: "只问答", manual: "每步问我", default: "标准（推荐）", auto: "放手做" };
 export const MODE_HINTS: Record<RunMode, string> = {
   chat: "只读材料、不写不执行；检索按规则",
   manual: "每一步都先问你",
@@ -78,13 +94,13 @@ export const ARTIFACT_LABELS: Record<string, string> = {
   s1b_diff_table: "回稿差异表",
   s6_redacted: "脱敏件",
   s6_report: "脱敏报告",
-  a1_agent_draft: "Agent 草稿",
+  a1_agent_draft: "助手草稿",
   a1_workspace_file: "工作区文件（草稿）",
   revision_draft: "修订稿（Word 修订痕迹）",
   agent_table: "表格（草稿）",
   agent_report: "文书（草稿）",
-  final_message: "Agent 回复",
-  a1_agent_draft_partial: "Agent 草稿（部分完成）",
+  final_message: "助手回复",
+  a1_agent_draft_partial: "助手草稿（部分完成）",
   consent_notice: "当事人告知函（草稿）",
 };
 
@@ -120,8 +136,45 @@ export function fmtTime(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("zh-CN", { hour12: false });
 }
 
+/** 相对时间（事项列表“最近活动”）：刚刚 / N 分钟前 / N 小时前 / 昨天 / N 天前 / 日期。纯函数。 */
+export function fmtRelative(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "—";
+  const min = Math.floor((now - t) / 60_000);
+  if (min < 1) return "刚刚";
+  if (min < 60) return `${min} 分钟前`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} 小时前`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return "昨天";
+  if (d < 30) return `${d} 天前`;
+  const dt = new Date(t);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+
+/** 事项进展（事项列表；Y4 M-1）：等你确认 / 进行中 / 待签发，没有则为空数组。纯函数。 */
+export function matterProgress(a: { waiting: number; running: number; pending_review?: number } | undefined): { text: string; tone: "orange" | "blue" | "gray" }[] {
+  if (!a) return [];
+  const out: { text: string; tone: "orange" | "blue" | "gray" }[] = [];
+  if (a.waiting > 0) out.push({ text: `${a.waiting} 项等你确认`, tone: "orange" });
+  if (a.running > 0) out.push({ text: `${a.running} 个任务进行中`, tone: "blue" });
+  if ((a.pending_review ?? 0) > 0) out.push({ text: `${a.pending_review} 份待签发`, tone: "gray" });
+  return out;
+}
+
 export function fmtShortTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleTimeString("zh-CN", { hour12: false });
+}
+
+/** 立场与法域的显示（经接口或旧版本写入的英文代码也显示为中文；中文原样）。 */
+const STANCE_CODES: Record<string, string> = { client_side: "委托人一方", plaintiff: "原告", defendant: "被告", buyer: "买方", seller: "卖方", lessee: "承租方", lessor: "出租方", neutral: "中立" };
+const JURISDICTION_CODES: Record<string, string> = { CN: "中国内地", "CN-HK": "中国香港", HK: "中国香港", "CN-MO": "中国澳门", "CN-TW": "中国台湾" };
+export function stanceLabel(v: string | null | undefined): string {
+  return v ? (STANCE_CODES[v] ?? v) : "—";
+}
+export function jurisdictionLabel(v: string | null | undefined): string {
+  return v ? (JURISDICTION_CODES[v] ?? v) : "—";
 }

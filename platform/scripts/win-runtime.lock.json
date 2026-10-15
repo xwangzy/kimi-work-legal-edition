@@ -4,7 +4,13 @@
     "version": "v26.8.1",
     "zipUrl": "https://nodejs.org/dist/v26.8.1/node-v26.8.1-win-x64.zip",
     "shasumsUrl": "https://nodejs.org/dist/v26.8.1/SHASUMS256.txt",
-    "zipSha256": null,
-    "exeSha256": null
+    "zipSha256": "57693d8e93d1b04e7b7de46aca53ecd63e97564e73de36a68428d7ff08d83587",
+    "exeSha256": "5cba0ea928508c65ddadefc0681d2fb6d95f1f3beea4428f04397631140ee8e5"
+  },
+  "npm": {
+    "@napi-rs/canvas-win32-x64-msvc": {
+      "version": "1.0.10",
+      "integrity": "sha512-9WtzW85PaIhtB27iXaR/9RrLCqHLbqD3Z8Q+kh17NjFxwQXFXU5vWbYH4vEH+drM307TTyK3hidZgpt09G5T3g=="
+    }
   }
 }

@@ -3,7 +3,8 @@
  * 事件先落本机事项账本，本页按游标续读；离开本页不会取消任务。确认卡独立于聊天文本（模型文本里的“已批准”不触发权限）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, onKernelEvent, type ApprovalCard, type QuestionCard, type RunEvent, type RunMode, type UnresolvedOperation } from "../api.ts";
+import { api, onKernelEvent, type ApprovalCard, type QuestionCard, type RunEvent, type RunMode, type RunProgress, type SendSummaryView, type UnresolvedOperation } from "../api.ts";
+import { SendSummary } from "../components/SendSummary.tsx";
 import { nav } from "../App.tsx";
 import { ApprovalCardView, QuestionCardView } from "../components/Cards.tsx";
 import { DataFlowCard, reasonLabel } from "../components/DataFlow.tsx";
@@ -11,208 +12,12 @@ import { Icon } from "../components/Icons.tsx";
 import { Markdown, tokens as renderTokens } from "../components/Markdown.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
-import { ARTIFACT_LABELS, artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, TERMINAL_STATUSES } from "../lib/labels.ts";
+import { artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, TERMINAL_STATUSES } from "../lib/labels.ts";
 import { forgetRestored, restoreTokens } from "../lib/tokens.ts";
 import { currentBadges } from "../lib/badges.ts";
-
-const TOOL_LABELS: Record<string, string> = {
-  Read: "读取材料",
-  Glob: "查找文件",
-  Grep: "检索材料内容",
-  Write: "写草稿",
-  Edit: "修改草稿",
-  Bash: "在本机计算 / 整理数据",
-  WebSearch: "联网查资料",
-  FetchURL: "打开网页",
-  Agent: "子任务",
-  AgentSwarm: "子任务集群",
-  TodoList: "任务清单",
-  TaskList: "后台任务",
-  TaskOutput: "后台任务输出",
-  TaskStop: "停止后台任务",
-  EnterPlanMode: "制定计划",
-  ExitPlanMode: "提交计划",
-  AskUserQuestion: "向你提问",
-  ReadMediaFile: "查看图片",
-  Skill: "使用方法模板",
-};
-
-function toolLabel(name: string): string {
-  if (name.startsWith("mcp__legal__")) {
-    // 引擎里的工具名把第一个点写成下划线（materials.read_excerpt → mcp__legal__materials_read_excerpt）
-    const raw = name.slice("mcp__legal__".length);
-    return LEGAL_TOOL_LABELS[raw] ?? LEGAL_TOOL_LABELS[raw.replace("_", ".")] ?? "法律工具";
-  }
-  if (name.startsWith("mcp__")) return "外部资料库";
-  return TOOL_LABELS[name] ?? name;
-}
-
-const SKIP_REASONS: Record<string, string> = {
-  format: "格式不支持",
-  too_large: "文件过大",
-  limit: "超过数量上限",
-  instructions: "Agent 指令文件，不作为交付件",
-  unreadable: "无法解密读取（文件损坏，或不是经本软件写入的）",
-};
-
-/** 法律工具的中文名（律师层；原始工具名只在“处理细节”里出现）。 */
-const LEGAL_TOOL_LABELS: Record<string, string> = {
-  "materials.read_excerpt": "查阅材料原文",
-  "law.get_version": "查法条版本",
-  "law.search": "检索法规",
-  "citations.verify": "核对引用",
-  "calc.interest": "计算利息与违约金",
-  "redact.scan": "检查个人信息",
-  "materials.list": "查看材料目录",
-  "riskcards.submit": "提交风险项",
-  "riskcards.list": "查看审查结论",
-  "facts.submit": "整理事实",
-  "facts.list": "查看事实",
-  "xlsx.render_table": "生成表格",
-  "docx.render_report": "生成 Word 文书",
-  "docx.compare": "比对两版合同",
-};
-
-interface Step {
-  key: string;
-  /** 律师层（默认可见）或处理细节（默认收起；UIUX P0-4）。 */
-  level: "lawyer" | "detail";
-  icon: "ok" | "fail" | "dot" | "wait";
-  title: string;
-  meta?: string;
-  agent?: string;
-  detail?: string;
-}
-
-/** 事件 → 时间线步骤（只说事实）。 */
-function buildSteps(events: RunEvent[]): Step[] {
-  const steps: Step[] = [];
-  const toolIndex = new Map<string, number>();
-  const approvalIndex = new Map<string, number>();
-  const questionIndex = new Map<string, number>();
-  for (const e of events) {
-    const p = e.payload ?? {};
-    const at = fmtShortTime(e.created_at);
-    switch (e.type) {
-      case "run.started":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "任务受理", meta: at });
-        break;
-      case "agent.task_started":
-        steps.push({ key: `${e.event_id}`, icon: "ok", level: "detail", title: "Agent 引擎已启动（本机）", meta: at });
-        break;
-      case "agent.started":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: `运行模式：${MODE_LABELS[p.mode as keyof typeof MODE_LABELS] ?? p.mode}${p.plan_first ? " · 先出计划" : ""}`, meta: `${at} · 数据级别 ${p.data_level ?? "—"}` });
-        break;
-      case "materials.loaded":
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: p.failed ? "fail" : "ok", title: Number(p.requested) === 0 ? "开始处理" : `已读完 ${p.loaded}/${p.requested} 份材料${p.failed ? `，${p.failed} 份无法读取` : ""}`, meta: at });
-        break;
-      case "plan.created":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "内部步骤已排定", meta: at, detail: (p.steps ?? []).join(" → ") });
-        break;
-      case "agent.tool_started": {
-        const name = String(p.tool ?? "");
-        if (name === "AskUserQuestion" || name === "ExitPlanMode" || name === "EnterPlanMode") break;
-        toolIndex.set(String(p.tool_call_id), steps.length);
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "wait", title: toolLabel(name), meta: at, agent: p.agent_id && p.agent_id !== "main" ? String(p.agent_id) : undefined, detail: p.description ? String(p.description) : undefined });
-        break;
-      }
-      case "agent.tool_result": {
-        const i = toolIndex.get(String(p.tool_call_id));
-        if (i !== undefined && steps[i]) steps[i] = { ...steps[i]!, icon: p.is_error ? "fail" : "ok" };
-        break;
-      }
-      case "agent.exec.queued":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "wait", title: `本机计算排队（第 ${Number(p.position ?? 0) + 1} 位）`, meta: at });
-        break;
-      case "agent.exec.finished":
-        steps.push({
-          key: `${e.event_id}`,
-          level: "detail",
-          icon: Number(p.exit_code ?? 0) === 0 ? "ok" : "fail",
-          title: `本机计算结束（退出码 ${p.exit_code ?? "—"}${p.duration_ms ? `，${Math.round(Number(p.duration_ms))} ms` : ""}）`,
-          meta: at,
-          detail: p.commit ? `工作区提交：写入 ${p.commit.written ?? 0}，删除 ${p.commit.deleted ?? 0}${p.commit.conflicts ? `，冲突 ${p.commit.conflicts}` : ""}` : undefined,
-        });
-        break;
-      case "agent.approval_requested":
-        approvalIndex.set(String(p.approval_id), steps.length);
-        steps.push({ key: `${e.event_id}`, icon: "wait", level: "lawyer", title: `需要你确认：${toolLabel(String(p.tool ?? ""))}`, meta: at });
-        break;
-      case "agent.approval_auto":
-        steps.push({ key: `${e.event_id}`, icon: "ok", level: "detail", title: "未要求先看计划，直接执行", meta: at });
-        break;
-      case "agent.approval_decided": {
-        const i = approvalIndex.get(String(p.approval_id));
-        if (i !== undefined && steps[i]) steps[i] = { ...steps[i]!, icon: p.decision === "approve" ? "ok" : "fail" };
-        steps.push({ key: `${e.event_id}`, icon: p.decision === "approve" ? "ok" : "fail", level: "lawyer", title: p.decision === "approve" ? `你已同意${p.scope === "task" ? "（本任务内同类不再询问）" : ""}` : "你没有同意，已跳过", meta: at });
-        break;
-      }
-      case "agent.approval_expired": {
-        const i = approvalIndex.get(String(p.approval_id));
-        if (i !== undefined && steps[i]) steps[i] = { ...steps[i]!, icon: "fail" };
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: "确认已超时，Agent 跳过了这一步", meta: at });
-        break;
-      }
-      case "agent.question":
-        questionIndex.set(String(p.question_id), steps.length);
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "wait", title: "Agent 想先问你", meta: at });
-        break;
-      case "agent.question_answered": {
-        const i = questionIndex.get(String(p.question_id));
-        if (i !== undefined && steps[i]) steps[i] = { ...steps[i]!, icon: "ok" };
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "ok", title: "已回答", meta: at });
-        break;
-      }
-      case "agent.workspace_skipped":
-      case "agent.workspace_rejected": {
-        const files = Array.isArray(p.files) ? p.files : [];
-        steps.push({
-          key: `${e.event_id}`,
-          level: "lawyer",
-          icon: "dot",
-          title: `${files.length} 个文件没有收进交付件${e.type === "agent.workspace_rejected" ? "（含外部链接，已拦下）" : ""}`,
-          meta: at,
-          detail: files.map((f: any) => `${f.path ?? f.filename}${SKIP_REASONS[f.reason] ? `（${SKIP_REASONS[f.reason]}）` : ""}`).join("、"),
-        });
-        break;
-      }
-      case "agent.error":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "fail", title: "Agent 报告了一个错误", meta: at, detail: String(p.message ?? p.error ?? "") });
-        break;
-      case "citations.verified":
-        steps.push({ key: `${e.event_id}`, icon: Number(p.intercepted) > 0 ? "fail" : "ok", level: "lawyer", title: Number(p.intercepted) > 0 ? `核对引用：${p.total} 条中 ${p.intercepted} 条有问题，已标出` : `核对引用：${p.total} 条均已核对`, meta: at });
-        break;
-      case "model.completed":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "AI 分析完成", meta: `${at} · ${p.route ?? ""}` });
-        break;
-      case "artifact.drafted":
-        steps.push({ key: `${e.event_id}`, icon: "ok", level: "lawyer", title: `草稿已生成：${p.kind === "a1_workspace_file" ? p.filename : ARTIFACT_LABELS[p.kind] ?? p.filename ?? "成果"}（待复核）`, meta: at });
-        break;
-      case "agent.outcome":
-        steps.push({ key: `${e.event_id}`, icon: p.status === "succeeded" ? "ok" : p.status === "partial" ? "dot" : "fail", level: "detail", title: `Agent 结束：${RUN_STATUS_LABELS[String(p.status)] ?? p.status}${p.reason ? `（${p.reason}）` : ""}`, meta: at });
-        break;
-      case "run.succeeded":
-      case "run.partial":
-      case "run.failed":
-      case "run.cancelled":
-      case "run.timed_out":
-      case "run.expired":
-      case "run.reconciling":
-        steps.push({
-          key: `${e.event_id}`,
-          level: "lawyer",
-          icon: e.type === "run.succeeded" ? "ok" : e.type === "run.partial" ? "dot" : "fail",
-          title: RUN_STATUS_LABELS[e.type.slice(4)] ?? e.type,
-          meta: at,
-          detail: e.type === "run.failed" ? String(p.error ?? p.reason ?? "") : undefined,
-        });
-        break;
-      default:
-        break;
-    }
-  }
-  return steps;
-}
+import { hasProgress, progressActivityKey, progressTexts, progressView, type ProgressViewModel } from "../lib/progress.ts";
+import { buildSteps, sentByToolCall, type SentInfo } from "../lib/timeline.ts";
+import { busyRunOfError } from "../lib/start-block.ts";
 
 /** 页面标题：任务目标前 24 字（律师能区分多个任务）；没有目标时用场景名。 */
 function runTitle(run: any): string {
@@ -257,9 +62,19 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const [workbench, setWorkbench] = useState<{ doc: string | null } | null>(null);
   // 正在生成的回复（流式；运行中每秒随待决卡片一起取）
   const [liveText, setLiveText] = useState<string>("");
+  // 过程快照（K7-P：工作清单、子任务、后台任务、上下文整理、模型重试）
+  const [progress, setProgress] = useState<RunProgress | null>(null);
+  // 方法模板名 → 中文名（时间线“已按方法模板《…》执行”）
+  const [skillTitles, setSkillTitles] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api
+      .listSkills()
+      .then((r: any) => setSkillTitles(Object.fromEntries(((r?.skills ?? []) as any[]).map((k) => [String(k.id), String(k.title ?? k.id)]))))
+      .catch(() => {});
+  }, []);
   const [followText, setFollowText] = useState("");
   /** 追问前的一行确认（复核 B3-B10）：沿用的档位、估价与内容去向；问答档要写入草稿须明确勾选（复核 B3-B09）。 */
-  const [followConfirm, setFollowConfirm] = useState<{ estimate_id: string; points_display: string; preview: string; warning: string | null; blocked: boolean } | null>(null);
+  const [followConfirm, setFollowConfirm] = useState<{ estimate_id: string; points_display: string; preview: string; warning: string | null; blocked: boolean; busyRunId: string | null; sendSummary?: SendSummaryView; mustReview: boolean } | null>(null);
   const [followRaise, setFollowRaise] = useState(false);
   const [tokenMap, setTokenMap] = useState<Map<string, string | null>>(new Map());
   const [busy, setBusy] = useState(false);
@@ -294,15 +109,19 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
         setRisk({ total: rc.progress.total, highOpen: rc.progress.high_open, decided: rc.progress.decided, docs: docsOf, unlinked: rc.cards.filter((c) => !c.document_version_id).length });
       } else setRisk(null);
       if (!TERMINAL_STATUSES.includes(r.run_status)) {
-        const i = await api.interactions(runId).catch(() => ({ approvals: [], questions: [], state_version: null, live_text: null }));
+        const i = await api.interactions(runId).catch(() => ({ approvals: [], questions: [], state_version: null, live_text: null, progress: null }));
         setApprovals(i.approvals);
         setQuestions(i.questions);
         setStateVersion(i.state_version ?? null);
         setLiveText(i.live_text ?? "");
+        // 内容不变时保留原对象（复核 B4-B20：每秒轮询都会反序列化出新对象，引用变化让静默看门狗永远被重置）
+        const next = i.progress ?? null;
+        setProgress((prev) => (progressActivityKey(prev) === progressActivityKey(next) ? prev : next));
       } else {
         setApprovals([]);
         setQuestions([]);
         setLiveText("");
+        setProgress(null);
       }
     } catch (e) {
       setErr((e as Error).message);
@@ -335,8 +154,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
 
   // 代号只在界面还原（标题、计划、提问、预览）
   const texts = useMemo(
-    () => [preview?.text ?? "", liveText, ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? ""))].join("\n"),
-    [preview, liveText, approvals, questions, events],
+    () => [preview?.text ?? "", liveText, ...progressTexts(progress), ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? ""))].join("\n"),
+    [preview, liveText, progress, approvals, questions, events],
   );
   useEffect(() => {
     if (!texts.includes("〔")) return;
@@ -378,7 +197,43 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
       .then((k) => setExitMode(k?.control_plane?.exit_mode?.code ?? null))
       .catch(() => {});
   }, [status]);
-  const allSteps = useMemo(() => buildSteps(events), [events]);
+  // 联网步骤实际发出的内容（v9.2 Y4 P0-A）：联网工具每有一步结束，从本机去向记录重新取一次
+  const [sent, setSent] = useState<Map<string, SentInfo>>(new Map());
+  const networkDone = useMemo(() => {
+    const ids = new Set(events.filter((e) => e.type === "agent.tool_started" && /^(WebSearch|FetchURL)$/.test(String(e.payload?.tool ?? ""))).map((e) => String(e.payload?.tool_call_id)));
+    return ids.size + events.filter((e) => e.type === "agent.tool_result" && ids.has(String(e.payload?.tool_call_id))).length;
+  }, [events]);
+  useEffect(() => {
+    if (networkDone === 0) return;
+    api
+      .egressRecords({ runId })
+      .then((r) => setSent(sentByToolCall(r.records)))
+      .catch(() => {});
+  }, [networkDone, runId]);
+  const allSteps = useMemo(() => buildSteps(events, skillTitles, sent), [events, skillTitles, sent]);
+  const pv = useMemo(() => progressView(progress), [progress]);
+  // 进展通知在任务结束后仍可回看（复核 S5B-02）：只保留在本页内存，内核终态后不再返回过程快照
+  const [lastNotes, setLastNotes] = useState<{ text: string; source: string }[]>([]);
+  useEffect(() => {
+    if (pv.notes.length > 0) setLastNotes(pv.notes);
+  }, [pv.notes]);
+  // 静默看门狗（UIUX 增量评审 P0-D）：运行中 90 秒没有任何新进展（时间线、正在起草的文字、过程信息、待你确认）时如实提示。
+  // 过程信息按内容取键（复核 B4-B20：按对象引用时每秒轮询都算“有进展”，有过程快照的任务永远不会提示）
+  const [lastActivity, setLastActivity] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  const progressKey = useMemo(() => progressActivityKey(progress), [progress]);
+  useEffect(() => setLastActivity(Date.now()), [events.length, liveText, progressKey, approvals.length, questions.length]);
+  useEffect(() => {
+    if (terminal) return;
+    const t = setInterval(() => setNow(Date.now()), 5000);
+    return () => clearInterval(t);
+  }, [terminal]);
+  const silentFor = !terminal && approvals.length === 0 && questions.length === 0 ? now - lastActivity : 0;
+  const pendingCards = useMemo(
+    () => [...approvals.map((card) => ({ kind: "approval" as const, card })), ...questions.map((card) => ({ kind: "question" as const, card }))],
+    [approvals, questions],
+  );
+  const [showAllCards, setShowAllCards] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const steps = showDetail ? allSteps : allSteps.filter((x) => x.level === "lawyer");
   const hiddenSteps = allSteps.length - allSteps.filter((x) => x.level === "lawyer").length;
@@ -418,15 +273,19 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     }
   };
 
+  /** 重新运行被拒：同一事项另有进行中的任务（复核 B4-B12：409 带那个任务的编号）。 */
+  const [retryBusyRun, setRetryBusyRun] = useState<string | null>(null);
   const retry = async () => {
     setBusy(true);
     setErr("");
+    setRetryBusyRun(null);
     try {
       const cur = await api.getRun(runId);
       await api.retryRun(runId, cur.run.status_version);
       await refresh();
     } catch (e) {
       setErr((e as Error).message);
+      setRetryBusyRun(busyRunOfError(e));
     } finally {
       setBusy(false);
     }
@@ -443,7 +302,9 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
       const docIds = inputDocs.map((d) => d.document_version_id);
       const est = await api.estimate(matterId, { scenario: "a1.agent_task", document_version_ids: docIds, goal: text });
       const dw = est.data_where ?? { preview: "", warning: null, start_blocked: false };
-      setFollowConfirm({ estimate_id: est.estimate_id, points_display: est.points_display, preview: String(dw.preview ?? ""), warning: dw.warning ?? null, blocked: !!dw.start_blocked });
+      // 事项里另有进行中的任务（复核 B4-B13）：与开始面板同样给出“查看进行中的任务”
+      const busyRunId = dw.block_kind === "busy" && typeof dw.busy_run_id === "string" ? dw.busy_run_id : null;
+      setFollowConfirm({ estimate_id: est.estimate_id, points_display: est.points_display, preview: String(dw.preview ?? ""), warning: dw.warning ?? null, blocked: !!dw.start_blocked, busyRunId, ...(dw.send_summary ? { sendSummary: dw.send_summary } : {}), mustReview: dw.block_kind === "suspects" });
       setFollowRaise(false);
     } catch (e) {
       setErr((e as Error).message);
@@ -472,6 +333,9 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
       nav(`/run/${r.run_id}/${matterId}`);
     } catch (e) {
       setErr((e as Error).message);
+      // 估价时不忙、发起时 409（并发发起）：同样给出入口
+      const other = busyRunOfError(e);
+      if (other) setFollowConfirm((c) => (c ? { ...c, blocked: true, busyRunId: other } : c));
     } finally {
       setBusy(false);
     }
@@ -553,6 +417,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             <button
               className="btn-ghost"
               onClick={async () => {
+                // 误点可撤回（UIUX 增量评审 R-10）
+                if (!window.confirm("确定要停止这个任务吗？停止后可以重新运行。")) return;
                 try {
                   const cur = await api.getRun(runId);
                   await api.cancelRun(runId, cur.run.status_version);
@@ -586,13 +452,32 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               </div>
             </div>
           ))}
-          {!terminal && approvals.length === 0 && questions.length === 0 && !liveText && <div className="step step-wait"><span className="step-dot" /><div className="step-body muted">正在处理…</div></div>}
+          {!terminal && approvals.length === 0 && questions.length === 0 && !liveText && (
+            <div className={`step step-wait${pv.retry ? " step-retry" : ""}`}>
+              <span className="step-dot" />
+              <div className="step-body muted">
+                {pv.retry ?? (silentFor > 90_000 ? "已经有一阵子没有新进展了。任务仍在运行；如果长时间没有变化，可以取消后重新运行。" : "正在处理…")}
+              </div>
+            </div>
+          )}
           {hiddenSteps > 0 && (
             <button className="btn-link step-toggle" onClick={() => setShowDetail((v) => !v)}>
               {showDetail ? "收起处理细节" : `处理细节（${hiddenSteps} 条）`}
             </button>
           )}
         </div>
+        {!terminal && hasProgress(pv) && <ProgressPanel vm={pv} tokenMap={tokenMap} />}
+        {terminal && lastNotes.length > 0 && (
+          <details className="progress-panel">
+            <summary className="muted">助手在过程中的进展说明（{lastNotes.length} 条）</summary>
+            {lastNotes.map((n, i) => (
+              <div key={i} className="progress-note">
+                <div className="muted">{n.source}</div>
+                <Markdown text={n.text} tokenMap={tokenMap} />
+              </div>
+            ))}
+          </details>
+        )}
         {!terminal && liveText.trim() && (
           <div className="live-draft" aria-live="polite" aria-busy="true">
             <div className="pane-title">正在起草…</div>
@@ -624,9 +509,16 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
           <div className="card retry-card">
             <div className="title">任务未完成</div>
             {run.terminal_reason && <p className="muted">{String(run.terminal_reason)}</p>}
-            <button className="btn-primary" disabled={busy} onClick={() => void retry()}>
-              重新运行
-            </button>
+            <div className="card-actions">
+              <button className="btn-primary" disabled={busy} onClick={() => void retry()}>
+                重新运行
+              </button>
+              {retryBusyRun && (
+                <button className="btn-ghost" onClick={() => nav(`/run/${retryBusyRun}/${matterId}`)}>
+                  查看进行中的任务
+                </button>
+              )}
+            </div>
           </div>
         )}
         {risk && (risk.docs.length > 0 || risk.unlinked > 0) && (
@@ -650,12 +542,19 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
           </div>
         )}
         <div className="interactions">
-          {approvals.map((a) => (
-            <ApprovalCardView key={a.approval_id} card={a} tokenMap={tokenMap} busy={busy} onDecide={(d) => void decide(a, d)} />
-          ))}
-          {questions.map((q) => (
-            <QuestionCardView key={q.question_id} card={q} tokenMap={tokenMap} busy={busy} onAnswer={(ans) => void answer(q, ans)} />
-          ))}
+          {/* 同一时间只展开一张（UIUX 增量评审 P0-F）：先到的先处理，其余折叠为“还有 N 项待确认”，可展开 */}
+          {pendingCards.slice(0, showAllCards ? pendingCards.length : 1).map((c) =>
+            c.kind === "approval" ? (
+              <ApprovalCardView key={c.card.approval_id} card={c.card} tokenMap={tokenMap} busy={busy} onDecide={(d) => void decide(c.card, d)} />
+            ) : (
+              <QuestionCardView key={c.card.question_id} card={c.card} tokenMap={tokenMap} busy={busy} onAnswer={(ans) => void answer(c.card, ans)} />
+            ),
+          )}
+          {pendingCards.length > 1 && (
+            <button className="btn-link interactions-more" onClick={() => setShowAllCards((v) => !v)}>
+              {showAllCards ? "只显示第一项" : `还有 ${pendingCards.length - 1} 项待确认`}
+            </button>
+          )}
         </div>
         {terminal && preview && preview.text && !preview.office && (
           <div className="answer">
@@ -695,7 +594,17 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                   沿用上一轮：<b>{MODE_LABELS[prevMode]}</b> · 再次使用 {inputDocs.length} 份材料 · {followConfirm.points_display}
                 </div>
                 <div className="muted">{followConfirm.preview}</div>
+                {followConfirm.sendSummary && (
+                  <SendSummary matterId={matterId} summary={followConfirm.sendSummary} documentIds={inputDocs.map((d) => d.document_version_id)} goal={followText} mustReview={followConfirm.mustReview} onReviewed={() => void prepareFollowUp()} followup />
+                )}
                 {followConfirm.warning && <div className="banner banner-orange">{followConfirm.warning}</div>}
+                {followConfirm.busyRunId && followConfirm.busyRunId !== runId && (
+                  <div className="banner-actions">
+                    <button className="btn btn-sm" onClick={() => nav(`/run/${followConfirm.busyRunId}/${matterId}`)}>
+                      查看进行中的任务
+                    </button>
+                  </div>
+                )}
                 {prevMode === "chat" && (
                   <label className="lifecycle-check">
                     <input type="checkbox" aria-label="本轮允许写入草稿" checked={followRaise} onChange={(e) => setFollowRaise(e.target.checked)} />
@@ -778,7 +687,7 @@ function ArtifactActions({ artifact, onError }: { artifact: any; onError: (m: st
         onClick={() =>
           void api
             .downloadArtifact(artifact.artifact_version_id, artifact.filename)
-            .then(() => api.deliver({ artifact_version_id: artifact.artifact_version_id, action: "download" }))
+            .then((saved) => (saved ? api.deliver({ artifact_version_id: artifact.artifact_version_id, action: "download" }) : undefined))
             .catch((e) => onError(e.message))
         }
       >
@@ -822,5 +731,68 @@ function Citations({ ev }: { ev: RunEvent | undefined }) {
         </div>
       ))}
     </>
+  );
+}
+
+/** 执行态过程面板（K7-P）：工作清单、子任务、后台任务、进展通知、上下文整理。 */
+function ProgressPanel({ vm, tokenMap }: { vm: ProgressViewModel; tokenMap: Map<string, string | null> }) {
+  return (
+    <div className="progress-panel" aria-live="polite">
+      {vm.todo && (
+        <div className="progress-block">
+          <div className="pane-title">{vm.todo.title}</div>
+          <ul className="todo-list">
+            {vm.todo.items.map((t, i) => (
+              <li key={i} className={`todo-${t.state}`}>
+                <span className="todo-mark" aria-hidden="true">{t.mark}</span>
+                <span className="sr-only">{t.state === "done" ? "已完成：" : t.state === "doing" ? "进行中：" : "待做："}</span>
+                {renderTokens(t.text, tokenMap)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {vm.subagents && (
+        <div className="progress-block">
+          <div className="pane-title">{vm.subagents.title}</div>
+          <ul className="sub-list">
+            {vm.subagents.items.map((x, i) => (
+              <li key={i} className={x.failed ? "sub-failed" : undefined}>
+                <span className="tag tag-sub">{x.state}</span> {renderTokens(x.text, tokenMap)}
+                {x.summary && (
+                  <details>
+                    <summary>子任务的结论摘要</summary>
+                    <div className="muted">{renderTokens(x.summary, tokenMap)}</div>
+                  </details>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {vm.tasks && (
+        <div className="progress-block muted">
+          {/* 后台任务描述是模型写的文字（令牌形态）：逐项还原代号（复核 B4-B03） */}
+          {vm.tasks.title}：
+          {vm.tasks.items.map((t, i) => (
+            <span key={i}>
+              {i > 0 ? "；" : ""}
+              {renderTokens(t, tokenMap)}
+            </span>
+          ))}
+        </div>
+      )}
+      {vm.notes.length > 0 && (
+        <div className="progress-block">
+          {vm.notes.map((n, i) => (
+            <div key={i} className="progress-note">
+              <div className="muted">{n.source}的进展</div>
+              <Markdown text={n.text} tokenMap={tokenMap} />
+            </div>
+          ))}
+        </div>
+      )}
+      {vm.compaction && <div className="progress-block muted">{vm.compaction}</div>}
+    </div>
   );
 }

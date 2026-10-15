@@ -2,7 +2,7 @@
  * 事项页（第 03 篇 §4.4 事项头常显；材料、任务、看板、当事人词典、数据去向）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type EgressRecord, type Matter, type MatterBasis, type RunPolicyView } from "../api.ts";
+import { api, pickMaterials, type EgressRecord, type Matter, type MaterialFile, type MatterBasis, type RunPolicyView } from "../api.ts";
 import { nav } from "../App.tsx";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
 import { BasisEditor, basisComplete, MatterHeader } from "../components/MatterHeader.tsx";
@@ -34,6 +34,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
   const [review, setReview] = useState<Map<string | null, { total: number; open: number }>>(new Map());
   const [workbench, setWorkbench] = useState<{ doc: string | null } | null>(null);
   const mountRef = useRef<HTMLInputElement>(null);
+  const importRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(() => {
     api
@@ -74,7 +75,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
     }
   };
 
-  const upload = async (files: FileList | null, mode: "import" | "mount") => {
+  const upload = async (files: FileList | MaterialFile[] | null, mode: "import" | "mount") => {
     if (!files || files.length === 0) return;
     setBusy(true);
     setMsg("");
@@ -154,6 +155,24 @@ export function MatterPage({ matterId }: { matterId: string }) {
     <main className="main">
       <div className="main-wide">
         <h1 className="page-title">{matter.title}</h1>
+        {matter.is_sample && (
+          <div className="banner banner-gray">
+            这是示例事项：合同与审查意见都是虚构的，只在这台电脑上，不会发给任何人。可以在“材料”里打开审查意见，试着逐条决定并生成修订稿。
+            <div className="banner-actions">
+              <button
+                className="btn btn-sm"
+                onClick={() =>
+                  void api
+                    .removeSample(matterId)
+                    .then(() => nav("/matters"))
+                    .catch((e) => setMsg((e as Error).message))
+                }
+              >
+                移除示例
+              </button>
+            </div>
+          </div>
+        )}
         {/* 结案后只读（复核 C-B11）：事项头的修改入口不再出现，内核同样拒绝 */}
         <MatterHeader
           matter={matter}
@@ -219,20 +238,43 @@ export function MatterPage({ matterId }: { matterId: string }) {
                 void upload(e.dataTransfer.files, "import");
               }}
             >
-              拖入文件导入（原件只读、不可变版本），或
-              <button className="btn-link" disabled={busy} onClick={() => mountRef.current?.click()}>挂载（不复制原件）</button>
+              {/* 律师语言（Y4 MT-3 / 10-13 P1-5）：说清楚“复制一份加密保存”与“只引用原文件”的区别 */}
+              把文件拖到这里添加（加密保存一份副本，原文件不改动），或
+              <button className="btn-link" disabled={busy} onClick={() => void pickMaterials(importRef.current, (f) => upload(f, "import"))}>选择文件</button>
+              ；也可以
+              <button className="btn-link" disabled={busy} onClick={() => void pickMaterials(mountRef.current, (f) => upload(f, "mount"))}>只引用、不复制</button>
+              <input ref={importRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files, "import")} />
               <input ref={mountRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files, "mount")} />
             </div>}
             {docs.length > 0 && (
               <table className="data">
-                <thead><tr><th>文件</th><th>方式</th><th>大小</th><th>解析</th><th>审查意见</th><th>hash</th><th>时间</th></tr></thead>
+                <thead><tr><th>文件</th><th>用途</th><th>大小</th><th>读取</th><th>审查意见</th><th>时间</th></tr></thead>
                 <tbody>
                   {docs.map((d) => (
                     <tr key={d.document_version_id}>
-                      <td>{d.filename}</td>
-                      <td>{d.storage_mode === "mount" ? "挂载" : "导入"}</td>
+                      <td title={`${d.storage_mode === "mount" ? "只引用原文件（未复制）" : "已加密保存副本"} · 文件指纹 ${String(d.sha256 ?? "").slice(0, 12)}`}>{d.filename}{d.storage_mode === "mount" && <span className="tag tag-gray">引用</span>}</td>
+                      <td>
+                        {/* 材料用途（Y4 §5 D-4）：我方 / 对方 / 参考，写进任务的材料清单 */}
+                        <select
+                          aria-label={`${d.filename} 的用途`}
+                          value={d.role ?? ""}
+                          disabled={closed}
+                          onChange={(e) => {
+                            const v = e.target.value as "" | "ours" | "theirs" | "reference";
+                            void api
+                              .setMaterialRole(d.document_version_id, v || null)
+                              .then(reload)
+                              .catch((err) => setMsg((err as Error).message));
+                          }}
+                        >
+                          <option value="">未标</option>
+                          <option value="ours">我方</option>
+                          <option value="theirs">对方</option>
+                          <option value="reference">参考</option>
+                        </select>
+                      </td>
                       <td>{(Number(d.size_bytes ?? 0) / 1024).toFixed(1)} KB</td>
-                      <td>{d.quarantined_at ? <span className="tag tag-warn">已隔离（国家秘密标志）</span> : (d.quality_flags ?? []).length ? (d.quality_flags as string[]).join("、") : "正常"}</td>
+                      <td>{d.quarantined_at ? <span className="tag tag-warn">已隔离（国家秘密标志）</span> : (d.quality_flags ?? []).length ? (d.quality_flags as string[]).join("、") : "已读取"}</td>
                       <td>
                         {review.get(d.document_version_id) ? (
                           <button className="btn-link" onClick={() => setWorkbench({ doc: d.document_version_id })}>
@@ -242,8 +284,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                           "—"
                         )}
                       </td>
-                      <td className="mono">{String(d.sha256 ?? "").slice(0, 12)}</td>
-                      <td>{fmtTime(d.created_at)}</td>
+                      <td className="nowrap">{fmtTime(d.created_at)}</td>
                     </tr>
                   ))}
                 </tbody>

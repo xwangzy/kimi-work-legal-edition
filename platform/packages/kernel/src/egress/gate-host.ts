@@ -16,6 +16,8 @@ import type { PartyEntry, TokenEntry } from "@zr-legal/tokenizer";
 import type { AuthorizeResult, CpRelayRequest, CpRelayResult, GateEgressRecord, GatePurpose, GateUpstreams, MatterEgressContext, SignedApproval } from "@zr-legal/egress-gate";
 import type { KernelDb } from "../db.ts";
 import { liveRunForClaims } from "../identity.ts";
+import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, startParentHeartbeat, windowsSystemEnv } from "../executor/child-env.ts";
+import { errFields, relayChildStderr, slog } from "@zr-legal/safe-log";
 
 /** 用途 → 任务令牌须带的 scope。 */
 export const GATE_SCOPES: Readonly<Record<GatePurpose, string>> = Object.freeze({ model: "model:chat", search: "egress:search", fetch: "egress:fetch", qa: "qa:chat" });
@@ -214,6 +216,8 @@ const DESTINATION_KIND: Readonly<Record<GateEgressRecord["destination"], string>
 export function egressRowFromGate(rec: GateEgressRecord): Record<string, unknown> {
   const kind = DESTINATION_KIND[rec.destination] ?? "gate_blocked";
   const interruptedModel = rec.purpose === "model" && rec.phase === "end" && rec.outcome === "failed" && !rec.usage;
+  const count = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.floor(v)) : 0);
+  const suspects = { high: count(rec.suspectedNames?.high), medium: count(rec.suspectedNames?.medium) };
   const note = {
     ...(rec.phase ? { phase: rec.phase } : {}),
     purpose: rec.purpose,
@@ -223,7 +227,10 @@ export function egressRowFromGate(rec: GateEgressRecord): Record<string, unknown
     ...(rec.media.length ? { media: rec.media } : {}),
     ...(rec.model ? { model: rec.model } : {}),
     ...(rec.hostDecision ? { host_decision: rec.hostDecision } : {}),
+    ...(typeof rec.toolCallId === "string" && /^[A-Za-z0-9_:.-]{1,128}$/.test(rec.toolCallId) ? { tool_call_id: rec.toolCallId } : {}),
     ...(rec.replacedAtGate && Object.keys(rec.replacedAtGate).length ? { replaced_at_gate: rec.replacedAtGate } : {}),
+    // 发送前二次检测（v9.2 R7）：只有计数（高、中两档的不同值个数，规整为非负整数），不含值
+    ...(suspects.high + suspects.medium > 0 ? { suspected_names: suspects } : {}),
     ...(rec.usage ? { usage: rec.usage } : {}),
     // 中断的流式请求：本机没有尾部用量，计费以网关结算为准（复核 S4-21）
     ...(interruptedModel ? { usage_note: "中断的流式请求：本机未收到用量，计费以网关结算为准" } : {}),
@@ -288,9 +295,17 @@ export interface StartGateOptions {
 }
 
 /** 拉起闸门进程（环境变量不继承内核；只经 IPC）。闸门退出时调用方应视为“唯一出口不可用”：模型与联网步骤排队。 */
-export function startEgressGate(o: StartGateOptions): Promise<GateHandle> {
-  const child = fork(o.entryPath, [], { execPath: o.runtime ?? process.execPath, execArgv: [], stdio: ["ignore", "ignore", "pipe", "ipc"], env: { PATH: process.env.PATH ?? "" } });
-  child.stderr?.on("data", () => {});
+export async function startEgressGate(o: StartGateOptions): Promise<GateHandle> {
+  // 随包运行时全量摘要核验通过之前不拉起（复核 B4-R15）
+  await runtimeReady();
+  return startEgressGateNow(o);
+}
+
+function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
+  const child = fork(o.entryPath, [], { execPath: o.runtime ?? process.execPath, execArgv: [], stdio: ["ignore", "ignore", "pipe", "ipc"], env: { PATH: process.env.PATH ?? "", ...windowsSystemEnv(), ...parentHeartbeatEnv() }, ...HIDE_WINDOW });
+  startParentHeartbeat(child);
+  // stderr 只认日志器 JSON 行（按登记表重新核验后写入本机日志），其余行只计数（v9.2 §3.6）
+  relayChildStderr(child.stderr, "gate");
   let alive = true;
   child.on("message", (m: any) => {
     if (m?.t === "call" && m.method === "authorize") {
@@ -315,13 +330,13 @@ export function startEgressGate(o: StartGateOptions): Promise<GateHandle> {
       try {
         o.onRecord(m.rec as GateEgressRecord);
       } catch (e) {
-        console.error(`[gate] 去向记录写入失败：${(e as Error)?.message ?? e}`);
+        slog.event("GATE_RECORD_WRITE_FAILED", errFields(e));
       }
     } else if (m?.t === "tokens") {
       try {
         o.onTokens(String(m.matterId), m.entries as TokenEntry[]);
       } catch (e) {
-        console.error(`[gate] 令牌条目写入失败：${(e as Error)?.message ?? e}`);
+        slog.event("GATE_TOKEN_WRITE_FAILED", errFields(e));
       }
     }
   });
@@ -337,8 +352,9 @@ export function startEgressGate(o: StartGateOptions): Promise<GateHandle> {
     const r = m.result as CpRelayResult | undefined;
     p.resolve(r && typeof r === "object" && (r.ok === true ? typeof r.status === "number" && typeof r.body === "string" : typeof r.reason === "string") ? r : { ok: false, reason: "cp_bad_reply" });
   });
-  child.on("exit", (code) => {
+  child.on("exit", (code, signal) => {
     alive = false;
+    slog.event("CHILD_EXIT", { proc: "gate", code: Number.isInteger(code) ? code! : undefined, signal: signal ?? undefined });
     for (const [, p] of cpPending) {
       clearTimeout(p.timer);
       p.resolve({ ok: false, reason: "gate_exited" });

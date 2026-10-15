@@ -10,7 +10,7 @@
  * - MockOcrEngine：测试用（不依赖模型文件）。
  */
 import { PaddleOcrService } from "ppu-paddle-ocr";
-import { readFileSync } from "node:fs";
+import type { OcrModelPaths } from "./models.ts";
 import type { RgbaBitmap } from "./pdf-render.ts";
 import { rgbaToPng } from "./image-decode.ts";
 
@@ -32,22 +32,7 @@ export interface OcrEngine {
   close?(): Promise<void> | void;
 }
 
-export interface OcrModelPaths {
-  det: string;
-  rec: string;
-  dict: string;
-}
-
-export function ocrModelsAvailable(paths: OcrModelPaths): boolean {
-  try {
-    readFileSync(paths.det);
-    readFileSync(paths.rec);
-    readFileSync(paths.dict);
-    return true;
-  } catch {
-    return false;
-  }
-}
+export { ocrModelsAvailable, type OcrModelPaths } from "./models.ts";
 
 export class PpuOcrEngine implements OcrEngine {
   private service: PaddleOcrService | null = null;

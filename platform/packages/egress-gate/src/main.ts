@@ -13,12 +13,16 @@
  * 控制面通道（阶段 6，cp-relay.ts）：只有内核持有 IPC，故 Agent 宿主与执行域都不能借闸门访问控制面；目的地为 init 下发的固定地址。
  */
 import { rmSync } from "node:fs";
+import { slog } from "@zr-legal/safe-log";
 import { EgressGateServer } from "./server.ts";
 import { relayControlPlane, type CpRelayRequest } from "./cp-relay.ts";
 import { checkUpstream, upstreamFetch, type TransportCheck } from "./tls-policy.ts";
 import type { AuthorizeResult, GateAuthority, GateEgressRecord, GatePurpose, GateUpstreams } from "./types.ts";
 import type { SignedApproval } from "./approval.ts";
 import type { TokenEntry } from "@zr-legal/tokenizer";
+
+// 统一脱敏日志（v9.2 §3.6）：本进程的事件经 stderr 交内核
+slog.useStderr("gate");
 
 export interface GateInitConfig {
   /** 本机套接字（POSIX）或命名管道（Windows）。 */
@@ -166,3 +170,39 @@ process.on("message", (raw: unknown) => {
 });
 
 process.on("disconnect", () => void shutdown(0));
+// 父进程看门狗（Kimi Code 增量核查 WR-3；第 4 批复核 B4-A13）：IPC 断开事件是主信号；看门狗只补“断开事件永远不来”的情形
+// （例如管道句柄被子孙进程继承而保持打开）。父进程按 KWL_PARENT_HEARTBEAT_MS 每隔一段发 {t:"hb"}：
+// - Windows：ppid 不随父进程退出而变、PID 复用很快，kill(pid,0) 判不了存活——改看心跳，30 秒（至少 5 个周期）没收到即退出；
+// - 其他平台：父进程退出后 ppid 变为 1，沿用 ppid 判断（有心跳时同样检查心跳）；
+// - 本进程事件循环自身卡顿（本次检查比预期晚 4 秒以上）时跳过一次：先让排队的心跳消息被处理，避免主线程忙时误判父进程已退出。
+{
+  const parentPid = process.ppid;
+  const hbEvery = Number(process.env.KWL_PARENT_HEARTBEAT_MS ?? 0);
+  const hbLimit = hbEvery > 0 ? Math.max(30_000, hbEvery * 5) : 0;
+  let lastHb = Date.now();
+  let lastTick = Date.now();
+  process.on("message", (m: unknown) => {
+    if ((m as { t?: unknown } | null)?.t === "hb") lastHb = Date.now();
+  });
+  const parentWatch = setInterval(() => {
+    const now = Date.now();
+    const lagged = now - lastTick > 6_000;
+    lastTick = now;
+    if (lagged) return;
+    let alive = hbLimit > 0 ? now - lastHb <= hbLimit : true;
+    if (alive && process.platform !== "win32" && process.ppid !== parentPid) alive = false;
+    if (alive && hbLimit === 0) {
+      try {
+        process.kill(parentPid, 0);
+      } catch (e) {
+        alive = (e as NodeJS.ErrnoException).code === "EPERM";
+      }
+    }
+    if (!alive) {
+      clearInterval(parentWatch);
+      void shutdown(0);
+    }
+  }, 2_000);
+  parentWatch.unref();
+}
+

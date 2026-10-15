@@ -10,12 +10,14 @@
     "./ledger-signer": "./src/ledger-signer.ts"
   },
   "dependencies": {
-    "better-sqlite3-multiple-ciphers": "13.0.3",
-    "@zr-legal/host-policy": "*",
+    "@zr-legal/at-rest": "*",
+    "@zr-legal/docx-engine": "*",
     "@zr-legal/egress-gate": "*",
-    "@zr-legal/tokenizer": "*",
     "@zr-legal/firm-trust": "*",
+    "@zr-legal/host-policy": "*",
+    "@zr-legal/safe-log": "*",
     "@zr-legal/seat-token": "*",
-    "@zr-legal/at-rest": "*"
+    "@zr-legal/tokenizer": "*",
+    "better-sqlite3-multiple-ciphers": "13.0.3"
   }
 }

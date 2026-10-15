@@ -22,21 +22,22 @@ export function DataFlowCard({ runId, tokenMap, refreshKey }: { runId: string; t
     <div className="dataflow">
       <p className="df-sentence">{sum.sentence}</p>
       <div className="df-grid">
-        <Stat k="模型请求" v={sum.model.requests} sub={`${sum.model.chars.toLocaleString()} 字（含系统指令与工具定义）`} />
-        <Stat k="出站代号" v={Object.values(sum.model.tokens_present).reduce((a, b) => a + b, 0)} sub="证件、账户、联系方式与自然人姓名" />
-        <Stat k="检索" v={sum.search.sent} sub={`改写 ${sum.search.generalized} · 原文（经你确认）${sum.search.confirmed_original} · 拦截 ${sum.search.blocked}`} />
-        <Stat k="抓取" v={sum.fetch.pages} sub={`${sum.fetch.domains.length} 个域名 · 拦截 ${sum.fetch.blocked}`} />
-        <Stat k="执行域运行" v={sum.exec.runs} sub="无网络" />
+        {/* 律师语言（v9.2 §4.4；Y4 #19 / 10-13 P1-12）：说“发给谁、换掉了什么、有没有没发出去的”，不出现系统术语 */}
+        <Stat k="发给 AI 模型（次）" v={sum.model.requests} sub={`共约 ${sum.model.chars.toLocaleString()} 字（含给 AI 的工作说明）`} />
+        <Stat k="换成代号（处）" v={Object.values(sum.model.tokens_present).reduce((a, b) => a + b, 0)} sub="姓名、证件号、账号、联系方式等" />
+        <Stat k="联网查资料（次）" v={sum.search.sent} sub={`去掉当事人名称 ${sum.search.generalized} · 经你确认按原文 ${sum.search.confirmed_original} · 没有发出 ${sum.search.blocked}`} />
+        <Stat k="打开网页（页）" v={sum.fetch.pages} sub={`${sum.fetch.domains.length} 个网站 · 没有打开 ${sum.fetch.blocked}`} />
+        <Stat k="本机计算（次）" v={sum.exec.runs} sub="在你的电脑上运行，不联网" />
       </div>
       {sum.blocked.length > 0 && (
         <div className="df-blocked">
-          闸门拦截 {sum.blocked.length} 次（未发出）：{[...new Set(sum.blocked.map((b) => reasonLabel(b.reason)))].join("、")}
+          有 {sum.blocked.length} 次没有发出（软件在发出前拦下）：{[...new Set(sum.blocked.map((b) => reasonLabel(b.reason)))].join("、")}
         </div>
       )}
       <button className="btn-link" onClick={() => setOpen(!open)}>{open ? "收起逐条记录" : "展开逐条记录"}</button>
       {open && records && (
         <div className="df-records">
-          {records.length === 0 && <p className="muted">本任务没有出站记录。</p>}
+          {records.length === 0 && <p className="muted">本任务没有内容离开这台电脑。</p>}
           {records.map((r) => {
             const note = parseNote(r.note);
             return (
@@ -47,6 +48,12 @@ export function DataFlowCard({ runId, tokenMap, refreshKey }: { runId: string; t
                 </div>
                 {note.purpose === "model" && (
                   <div className="df-line">{r.segments} 个文本片段 · {r.chars.toLocaleString()} 字 · 代号 {Object.values(r.pseudonym_counts ?? {}).reduce((a: number, b: any) => a + Number(b), 0)} 处{note.model ? ` · ${note.model}` : ""}</div>
+                )}
+                {note.purpose === "model" && note.suspected_names && Number(note.suspected_names.high) + Number(note.suspected_names.medium) > 0 && (
+                  <div className="df-line df-warn">
+                    发送前复查：另有 {Number(note.suspected_names.high) + Number(note.suspected_names.medium)} 处像姓名的原文没有替换为代号，已随这次请求发出。
+                    在事项的“当事人”里补上这些人，之后的发送会自动替换。
+                  </div>
                 )}
                 {note.query && (
                   <div className="df-line">
@@ -106,6 +113,10 @@ export function reasonLabel(r: string): string {
     media_requires_approval: "图像原样送模型须确认",
     unknown_content_block: "未知内容类型",
     aborted: "已中止",
+    seat_unavailable: "席位未取得或已失效",
+    search_upstream_unavailable: "检索服务暂不可用",
+    query_empty_after_generalization: "去掉当事人信息后查询为空",
   };
-  return map[r] ?? r;
+  // 未登记的原因不把内部代码直接给律师看（代码仍在逐条记录的请求编号里可对账）
+  return map[r] ?? "其他原因";
 }

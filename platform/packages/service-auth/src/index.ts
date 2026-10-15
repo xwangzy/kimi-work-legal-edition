@@ -7,6 +7,7 @@
  * 注意：gateway 只信令牌 claims，不信请求体里的 tenant/matter 字段。
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { slog } from "@zr-legal/safe-log";
 
 export interface CapabilityClaims {
   tid: string; // tenant
@@ -84,6 +85,6 @@ export function requireSecret(envName: string): string {
   if (v && v.length >= 16) return v;
   if (process.env.ZR_ENV === "production") throw new Error(`[service-auth] FATAL: ${envName} 未设置或过短，生产环境拒绝启动`);
   const dev = `dev-only-insecure-${envName}`;
-  console.warn(`[service-auth] WARN: ${envName} 未设置或过短，使用开发占位密钥（禁止用于生产）`);
+  slog.event("SERVICE_AUTH_DEV_SECRET", {});
   return dev;
 }

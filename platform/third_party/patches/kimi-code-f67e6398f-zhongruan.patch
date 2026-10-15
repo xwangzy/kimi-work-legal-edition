@@ -1340,10 +1340,10 @@ index 000000000..2e7756ef9
 +}
 diff --git a/packages/kap-server/src/embed.ts b/packages/kap-server/src/embed.ts
 new file mode 100644
-index 000000000..59684b17b
+index 000000000..d821bdabd
 --- /dev/null
 +++ b/packages/kap-server/src/embed.ts
-@@ -0,0 +1,240 @@
+@@ -0,0 +1,241 @@
 +import { randomBytes, timingSafeEqual } from 'node:crypto';
 +import { join } from 'node:path';
 +
@@ -1462,6 +1462,7 @@ index 000000000..59684b17b
 +        trustedInstructionsDir: opts.trustedInstructionsDir,
 +        displayName: opts.hostIdentity.displayName,
 +        replyStyleGuide: opts.hostIdentity.replyStyleGuide,
++        uiCapabilities: ['update_panel'],
 +      },
 +    },
 +    [...logSeed(logging), ...(opts.seeds ?? [])],

@@ -52,7 +52,6 @@ export const BUILTIN_TOOLS: Readonly<Record<string, BuiltinToolSpec>> = Object.f
   EnterPlanMode: { grade: "UI" },
   ExitPlanMode: { grade: "plan" },
   TodoList: { grade: "UI" },
-  SetTodoList: { grade: "UI" },
   AskUserQuestion: { grade: "UI" },
   NotifyUser: { grade: "UI" },
   WebSearch: { grade: "T4" },

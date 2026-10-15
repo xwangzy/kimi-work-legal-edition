@@ -15,6 +15,7 @@
  */
 import { createHash, generateKeyPairSync, randomBytes, timingSafeEqual, verify as cryptoVerify, type KeyObject } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { StateStore } from "./state-store.ts";
 import { canonicalJson, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
 import { issueSeatToken, MIN_SEAT_TTL_SECONDS } from "@zr-legal/seat-token";
 import {
@@ -121,6 +122,8 @@ export interface ControlPlaneOptions {
   maxBodyBytes?: number;
   /** 每租户预先吊销的设备数上限（缺省 1000；用例可调小）。 */
   maxPreRevoked?: number;
+  /** 状态持久化（试点形态，state-store.ts）：未给出 = 只在内存（开发与测试）。 */
+  stateStore?: StateStore;
 }
 
 export interface ControlPlaneOps {
@@ -174,6 +177,73 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const tenants = new Map<string, TenantRecord>();
   const nonces = new Map<string, number>();
   let feedVersion = 1;
+  // 持久化（试点形态）：启动时读回；每个响应发出之前、每个运维操作之后，状态有变化即写盘（state-store.ts）。
+  // “没写成就等于没发生”（复核 B4-R01）：写盘失败或请求出错时，内存状态回到上次写成的样子；请求得到 500，进程不退出。
+  // 防重放 nonce 单独处理（复核 B4-R14）：只有 nonce 变了不触发整份重写（否则每个只读请求都要重写并 fsync），
+  // 随下一次状态写入或每 30 秒的定时写入一并落盘；崩溃后丢失的至多是最近一个周期的 nonce，且只能在请求时间窗内重放
+  let lastSaved: string | null = null;
+  let lastSavedState: string | null = null;
+  let noncesDirty = false;
+  const stateOnly = (): string =>
+    JSON.stringify({
+      v: 1,
+      feedVersion,
+      tenants: [...tenants.values()].map((t) => ({ ...t, devices: [...t.devices], preRevoked: [...t.preRevoked], seatsByUser: [...t.seatsByUser], connectors: [...t.connectors], drafts: [...t.drafts], anon: [...t.anon] })),
+    });
+  const snapshot = (state = stateOnly()): string => JSON.stringify({ ...(JSON.parse(state) as object), nonces: [...nonces] });
+  /** 由快照重建内存状态（启动读回与失败回滚共用）；null = 空状态。 */
+  const applySnapshot = (raw: string | null, withNonces: boolean): void => {
+    tenants.clear();
+    feedVersion = 1;
+    if (withNonces) nonces.clear();
+    if (raw === null) return;
+    const st = JSON.parse(raw) as { v: number; feedVersion: number; nonces?: [string, number][]; tenants: any[] };
+    if (st.v !== 1) throw new Error(`控制面状态版本不认识：${st.v}`);
+    feedVersion = st.feedVersion;
+    if (withNonces) for (const [k, exp] of st.nonces ?? []) nonces.set(k, exp);
+    for (const t of st.tenants) {
+      tenants.set(t.tid, { ...t, devices: new Map(t.devices), preRevoked: new Map(t.preRevoked), seatsByUser: new Map(t.seatsByUser), connectors: new Map(t.connectors), drafts: new Map(t.drafts), anon: new Map(t.anon) });
+    }
+  };
+  if (o.stateStore) {
+    const raw = o.stateStore.load();
+    if (raw !== null) {
+      applySnapshot(raw, true);
+      lastSaved = raw;
+      lastSavedState = stateOnly();
+    }
+  }
+  /** 状态有变化（或 force 且 nonce 有变化）即写盘；失败则回滚到上次写成的状态并抛 500。 */
+  const persistNow = (force = false): void => {
+    if (!o.stateStore) return;
+    const state = stateOnly();
+    if (state === lastSavedState && !(force && noncesDirty)) return;
+    const json = snapshot(state);
+    try {
+      o.stateStore.save(json);
+    } catch {
+      rollback();
+      throw new CpError(500, "state_persist_failed", "控制面状态写盘失败，本次操作未生效");
+    }
+    lastSaved = json;
+    lastSavedState = state;
+    noncesDirty = false;
+  };
+  /** 回到上次写成的状态（nonce 保留：已见过的仍视为见过，回滚不能打开重放）。 */
+  const rollback = (): void => {
+    if (!o.stateStore) return;
+    if (stateOnly() !== lastSavedState) applySnapshot(lastSaved, false);
+  };
+  const nonceFlush = o.stateStore
+    ? setInterval(() => {
+        try {
+          persistNow(true);
+        } catch {
+          // 下个周期再试
+        }
+      }, 30_000)
+    : null;
+  nonceFlush?.unref();
   // 席位令牌签发 96 小时（复核 S6-A01）：客户端剩余不足 73 小时即续期，任何时刻控制面停机后都还有 ≥ 72 小时可用（第 02 篇 §10、§13 第 10 条）
   const seatTtl = Math.max(MIN_SEAT_TTL_SECONDS, o.seatTtlSeconds ?? SEAT_TTL_DEFAULT_SECONDS);
   const seal = <T>(kind: string, body: T): CpEnvelope<T> => sealEnvelope(kind, body, o.keys.envelope);
@@ -183,6 +253,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (nonces.size > 20_000) for (const [k, exp] of nonces) if (exp < t) nonces.delete(k);
     if (nonces.has(key)) return true;
     nonces.set(key, t + 10 * 60_000);
+    noncesDirty = true;
     return false;
   };
 
@@ -216,7 +287,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     feedVersion += 1;
   };
 
-  const ops: ControlPlaneOps = {
+  const rawOps: ControlPlaneOps = {
     createTenant({ tid, edition, seats, subscriptionDays = 365 }) {
       if (tenants.has(tid)) throw new Error(`租户已存在：${tid}`);
       const t: TenantRecord = {
@@ -293,6 +364,23 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       feedVersion += 1;
     },
   };
+  // 运维操作（开通、续订、吊销等）之后同样落盘
+  const ops: ControlPlaneOps = Object.fromEntries(
+    Object.entries(rawOps).map(([k, fn]) => [
+      k,
+      (...args: unknown[]) => {
+        let r: unknown;
+        try {
+          r = (fn as (...a: unknown[]) => unknown)(...args);
+        } catch (e) {
+          rollback();
+          throw e;
+        }
+        if (k !== "tenant" && k !== "seal") persistNow();
+        return r;
+      },
+    ]),
+  ) as unknown as ControlPlaneOps;
 
   /** 已登记、未吊销的设备公钥（设备签名请求核验用）。 */
   const devicePub = (tid: string, deviceId: string): string | null => {
@@ -322,7 +410,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
   };
 
+  /** 只发送、不持久化（错误应答用）。 */
+  const sendRaw = (res: ServerResponse, status: number, body: unknown) => {
+    const s = JSON.stringify(body);
+    res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(s), "cache-control": "no-store" });
+    res.end(s);
+  };
   const send = (res: ServerResponse, status: number, body: unknown) => {
+    // 先持久化再回复：吊销、席位、发布一旦回复成功即已落盘（写盘失败 → persistNow 回滚并抛 500，由外层以 sendRaw 回复）
+    persistNow();
     const s = JSON.stringify(body);
     res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(s), "cache-control": "no-store" });
     res.end(s);
@@ -622,10 +718,26 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
 
   const server = createServer((req, res) => {
     route(req, res).catch((e: unknown) => {
+      // 出错的请求不留下任何状态改动（已改的内存回滚到上次写成的样子）；错误应答不再触发写盘
+      try {
+        rollback();
+      } catch {
+        // 回滚失败不影响应答
+      }
       const ce = e instanceof CpError ? e : new CpError(500, "control_plane_error", "控制面错误");
       if (res.headersSent) res.destroy();
-      else send(res, ce.status, { error: { code: ce.code, message: ce.message }, ...(ce.extra ?? {}) });
+      else sendRaw(res, ce.status, { error: { code: ce.code, message: ce.message }, ...(ce.extra ?? {}) });
     });
+  });
+
+  // 正常关闭：停定时写入，把未落盘的 nonce 一并写下
+  server.on("close", () => {
+    if (nonceFlush) clearInterval(nonceFlush);
+    try {
+      persistNow(true);
+    } catch {
+      // 关闭时写盘失败：下次启动读回上次写成的状态
+    }
   });
 
   const pem = (k: KeyObject) => k.export({ format: "pem", type: "spki" }).toString();

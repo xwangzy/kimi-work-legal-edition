@@ -4,12 +4,14 @@
  * “这个方法会怎么做”默认折叠。主按钮写动词（开始审查 / 开始整理…），按下即发起；依据未齐等需要处理的情况转到发起确认。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type Matter, type RunPolicyView } from "../api.ts";
+import { api, MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type RunPolicyView } from "../api.ts";
 import type { ScenarioCard } from "../lib/scenarios.ts";
 import { buildGoal, LINE_LABELS } from "../lib/scenarios.ts";
 import { Modal } from "./Modal.tsx";
 import { defaultChoice } from "./ModeSelector.tsx";
 import { launchRun, prepareStart, RunSheet, type PendingStart } from "./RunSheet.tsx";
+import { SendSummary } from "./SendSummary.tsx";
+import { stanceLabel } from "../lib/labels.ts";
 
 interface Props {
   card: ScenarioCard;
@@ -18,7 +20,7 @@ interface Props {
   policy: RunPolicyView | null;
   /** 从输入框带来的任务描述（作为补充要求）。 */
   initialExtra?: string;
-  onImport: (files: FileList) => Promise<void> | void;
+  onImport: (files: FileList | MaterialFile[]) => Promise<void> | void;
   onClose: () => void;
 }
 
@@ -59,6 +61,8 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
   const value = useMemo(() => ({ goal, scenario: card.scenario, documentIds: docIds, choice: defaultChoice(policy) }), [goal, card.scenario, docIds, policy]);
   const opts = useMemo(() => ({ ...(card.skill ? { skill: card.skill } : {}), label: card.title }), [card]);
 
+  // 疑似姓名核对之后重新估价
+  const [reestimateTick, setReestimateTick] = useState(0);
   // 预计花费与内容去向：材料或说明变化后重新估价（去抖）
   useEffect(() => {
     if (!ready) {
@@ -77,7 +81,7 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
         });
     }, 400);
     return () => clearTimeout(t);
-  }, [ready, matter, value, opts]);
+  }, [ready, matter, value, opts, reestimateTick]);
 
   const start = async () => {
     setBusy(true);
@@ -104,10 +108,10 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
   const order = (id: string) => docIds.indexOf(id) + 1;
 
   return (
-    <Modal title={card.title} onClose={onClose}>
+    <Modal title={card.title} onClose={onClose} wide>
       <div className="ss">
         <div className="ss-sub muted">
-          {LINE_LABELS[card.line]} · {matter.title} · 我方：{matter.stance}
+          {LINE_LABELS[card.line]} · {matter.title} · 我方：{stanceLabel(matter.stance)}
         </div>
         <section className="ss-sec">
           <div className="ss-h">你给什么</div>
@@ -130,13 +134,13 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
                   </label>
                 );
               })}
-              <button className="btn-link ss-add" onClick={() => fileRef.current?.click()}>＋ 添加文件</button>
+              <button className="btn-link ss-add" onClick={() => void pickMaterials(fileRef.current, onImport)}>＋ 添加文件</button>
               <input
                 ref={fileRef}
                 type="file"
                 multiple
                 hidden
-                accept=".docx,.txt,.md,.pdf,.png,.jpg,.jpeg"
+                accept={MATERIAL_ACCEPT}
                 onChange={(e) => {
                   if (e.target.files && e.target.files.length > 0) void onImport(e.target.files);
                   e.target.value = "";
@@ -216,6 +220,17 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
               <span className="muted">{missing.length > 0 ? `请先填写：${missing.map((f) => f.label).join("、")}` : needDocs > 0 ? "请先选择材料" : ""}</span>
             )}
           </div>
+          {/* 发送摘要不放在 aria-live 区域里（复核 S5B-06：发送视图与核对表不应被整段朗读） */}
+          {estimate?.estimate.data_where?.send_summary && (
+            <SendSummary
+              matterId={matter.matter_id}
+              summary={estimate.estimate.data_where.send_summary}
+              documentIds={docIds}
+              goal={goal}
+              mustReview={estimate.estimate.data_where.block_kind === "suspects"}
+              onReviewed={() => setReestimateTick((n) => n + 1)}
+            />
+          )}
           <p className="ss-note muted">结果都是草稿，需要你复核后使用。{card.scenario === "a1.agent_task" ? "处理中需要联网或用到当事人信息时，会先问你。" : ""}</p>
         </section>
         {err && <div className="banner banner-red">{err}</div>}

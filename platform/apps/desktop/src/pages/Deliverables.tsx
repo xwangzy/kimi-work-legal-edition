@@ -46,7 +46,7 @@ export function DeliverablesPage() {
             ))}
           </div>
         </div>
-        <p className="muted">Agent 与工作流的产物一律是草稿；经律师复核、签发绑定确切版本后才对外。{matters.length > 50 ? "（只列最近 50 个事项）" : ""}</p>
+        <p className="muted">助手与工作流的产物一律是草稿；经律师复核、签发绑定确切版本后才对外。{matters.length > 50 ? "（只列最近 50 个事项）" : ""}</p>
         {shown.length === 0 && <p className="muted">没有符合条件的成果。</p>}
         {shown.length > 0 && (
           <table className="data">

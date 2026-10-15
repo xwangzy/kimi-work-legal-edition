@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts"
   },
   "dependencies": {
     "@hyzyla/pdfium": "2.1.13",
     "@napi-rs/canvas": "1.0.10",
     "@zr-legal/domain": "*",
+    "@zr-legal/safe-log": "*",
     "onnxruntime-node": "1.30.0",
     "pdfjs-dist": "6.3.289",
     "ppu-paddle-ocr": "6.6.0"

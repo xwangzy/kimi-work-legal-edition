@@ -18,6 +18,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExecChunk, ExecRequest, ExecResult, SelftestResult, SupervisorMessage } from "./protocol.ts";
 
+/** 父进程心跳间隔（复核 B4-A13；W 监督进程按 KWL_PARENT_HEARTBEAT_MS 判断宿主是否还在）。 */
+const HEARTBEAT_MS = 2_000;
+
 export interface WSupervisorOptions {
   /** 只读授权的数据目录：本任务材料快照、事项工作区、（可选）可信区。 */
   dataDirs: string[];
@@ -175,7 +178,14 @@ export class WSupervisor {
     const nodePath = this.opts.nodePath ?? process.execPath;
     this.checkNode(nodePath);
     const env: Record<string, string> = {};
-    if (process.platform === "win32" && process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot;
+    // Windows 系统目录（与 kernel/executor/child-env.ts 同口径：SystemRoot 与 windir 都给；复核 B4-A15）
+    const sysRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? process.env.windir ?? process.env.WINDIR;
+    if (process.platform === "win32" && sysRoot) {
+      env.SystemRoot = sysRoot;
+      env.windir = sysRoot;
+    }
+    // 父进程心跳（复核 B4-A13）：W 监督进程据此判断宿主是否还在（Windows 上 ppid 与 kill(pid,0) 判不了）
+    env.KWL_PARENT_HEARTBEAT_MS = String(HEARTBEAT_MS);
     const child = fork(
       this.paths.supervisorPath,
       [this.paths.jbEntry, String(this.opts.maxConcurrent ?? 2), String(this.opts.rssLimitMb ?? defaultRssLimitMb()), String(this.opts.hardTimerGraceMs ?? 15_000)],
@@ -186,6 +196,8 @@ export class WSupervisor {
       env,
       stdio: ["ignore", "pipe", "pipe", "ipc"],
       serialization: "advanced",
+      // Windows：从桌面进程拉起随包 node.exe 时不弹控制台窗口（@types/node 的 ForkOptions 未声明，运行时生效）
+      ...({ windowsHide: true } as {}),
       },
     );
     const diag = (d: Buffer) => {
@@ -195,6 +207,11 @@ export class WSupervisor {
     child.stdout?.on("data", diag);
     child.stderr?.on("data", diag);
     child.on("message", (m: SupervisorMessage) => this.onMessage(m));
+    const hb = setInterval(() => {
+      if (child.connected) child.send({ t: "hb" }, () => {});
+    }, HEARTBEAT_MS);
+    hb.unref();
+    child.once("exit", () => clearInterval(hb));
     // 拉起失败（ENOENT、EACCES）与运行中的 IPC 错误（ERR_IPC_CHANNEL_CLOSED）：记诊断，按退出处理，不让宿主崩溃
     let startError: Error | null = null;
     child.on("error", (e: Error) => {

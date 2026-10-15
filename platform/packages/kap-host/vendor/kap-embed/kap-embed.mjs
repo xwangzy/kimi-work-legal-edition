@@ -307656,7 +307656,8 @@ async function createEmbeddedServer(opts) {
         agentFiles: opts.agentFiles,
         trustedInstructionsDir: opts.trustedInstructionsDir,
         displayName: opts.hostIdentity.displayName,
-        replyStyleGuide: opts.hostIdentity.replyStyleGuide
+        replyStyleGuide: opts.hostIdentity.replyStyleGuide,
+        uiCapabilities: ["update_panel"]
       }
     },
     [...logSeed(logging), ...opts.seeds ?? []]

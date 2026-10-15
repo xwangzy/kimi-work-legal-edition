@@ -14,7 +14,22 @@ export interface AgentClient {
     req: { goal: string; materials: { filename: string; text: string }[]; timeout_ms?: number; wall_ms?: number; purpose?: string; fx?: readonly string[]; continue_session_id?: string },
   ): Promise<string>;
   poll(id: { tid: string; uid: string }, taskId: string, cursor: number): Promise<AgentTaskPoll>;
-  cancel(id: { tid: string; uid: string }, taskId: string, reason: string): Promise<void>;
+  /** 取消；kap-host 适配器返回取消结果（复核 B4-B07：执行器据此直接记入事项账本），SDK 宿主不返回。 */
+  cancel(id: { tid: string; uid: string }, taskId: string, reason: string): Promise<AgentCancelOutcome | void>;
+}
+
+/**
+ * 取消结果（Kimi Code 增量核查 N-1；复核 B4-B07/B4-B08）：
+ * - confirmed：宿主确认运行已停止（按版本取消成功、宿主已在终态，或经强制取消成功）；
+ * - forced：经强制取消（不比对宿主状态版本；只在内核 IPC 方法表）；
+ * - cause：未能按版本取消的原因（version_conflict 重试耗尽、timeout、forbidden 身份不一致、not_found 等）；
+ * - error：强制取消也失败时的错误（此时本机任务可能仍在运行）。
+ */
+export interface AgentCancelOutcome {
+  confirmed: boolean;
+  forced: boolean;
+  cause?: string | null;
+  error?: string | null;
 }
 
 /** F5：结构化成果（宿主上报文件 + sha256，由管理器校验后按字节交付；不是事件文本拼接）。 */

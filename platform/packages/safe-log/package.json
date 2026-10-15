@@ -1,0 +1,10 @@
+{
+  "name": "@zr-legal/safe-log",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "统一脱敏日志器（v9.2 §3.6、调研 Y5 §5.2 / P1-1）：只有 slog.event(事件码, 字段)；事件码登记表声明级别与字段类型，禁止自由文本、异常消息、路径与代号；子进程经 stderr 交 JSON 行，内核单写本机日志文件（轮转与保留）",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

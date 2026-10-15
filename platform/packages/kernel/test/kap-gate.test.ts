@@ -99,6 +99,11 @@ test("WebSearch 与 FetchURL 经出站闸门：一般查询放行且不带事项
     assert.equal(JSON.parse(searchSent[0].note).query.original, "股东未实缴出资 补足责任 判例");
     // 去向记录关联所依据的宿主裁决（审查 S4-03）
     assert.equal(JSON.parse(searchSent[0].note).host_decision, "approve:search_screened_by_gate");
+    // 去向记录带工具调用编号（只作时间线关联；v9.2 Y4 P0-A）：执行页在该步骤显示实际发出的查询与打开的网址
+    assert.equal(JSON.parse(searchSent[0].note).tool_call_id, "ws_0");
+    // 被闸门拦截的抓取同样带调用编号（界面据此在该步骤写“这个网址没有打开”；映射逻辑见 apps/desktop/test/timeline-sent.test.ts）
+    const fu2 = eg.records.find((r: any) => JSON.parse(r.note).tool_call_id === "fu_2");
+    assert.ok(fu2 && fu2.outcome === "blocked", JSON.stringify(fu2));
     const blocked = eg.records.filter((r: any) => r.destination_kind === "gate_blocked");
     // 被律师拒绝的检索根本没有到闸门（宿主层面就停住了）；URL 带人名仍由闸门拦截
     assert.ok(!blocked.some((r: any) => JSON.parse(r.note).purpose === "search"), JSON.stringify(blocked));

@@ -22,6 +22,7 @@ import { MatterKeyRing, type ZonePurpose } from "@zr-legal/at-rest";
 import { HostEgressDispatcher } from "./host-egress.ts";
 import { KapRuntime, RuntimeError, type MatterPolicy, type RequestOrigin, type StartRunRequest } from "./runtime.ts";
 import { wCoreFactory } from "./w-domain.ts";
+import { slog } from "@zr-legal/safe-log";
 
 export interface HostInitConfig {
   /** 宿主数据根（每个事项 <dataRoot>/<matterId>/{home,materials,work}）。 */
@@ -56,6 +57,8 @@ export interface HostInitConfig {
    * 落盘加密（审计 S3 第 1 步）：required = 每次运行必须带事项区密钥，否则拒绝运行（安装包形态）；缺省 = 有密钥就加密（开发与测试）。
    */
   atRest?: "required" | "optional";
+  /** 只供测试（上下文压缩验收）：缩小上下文窗口。安装包形态（atRest = required）一律忽略。 */
+  testMaxContextSize?: number;
 }
 
 export interface StartRunParams {
@@ -105,9 +108,11 @@ const SAFE_ID = /^[A-Za-z0-9_.-]{1,128}$/;
 
 export async function startHost(): Promise<void> {
   if (!process.send) {
-    console.error("kap-host 必须由内核经 IPC 拉起");
-    process.exit(2);
+    process.exitCode = 2;
+    throw new Error("kap-host 必须由内核经 IPC 拉起");
   }
+  // 统一脱敏日志：事件经 stderr 交内核（内核按登记表重新核验后写盘）
+  slog.useStderr("kap_host");
   // 纵深：这些变量在任何情况下不得影响引擎（升级闸门：rebase 前先 revert #4059）
   delete process.env.KIMI_CODE_TRUST_WORKSPACE;
   let runtime: KapRuntime | null = null;
@@ -157,7 +162,7 @@ export async function startHost(): Promise<void> {
   const methods: Record<string, (p: any) => Promise<unknown> | unknown> = {
     async startRun(p: StartRunParams) {
       const mid = p.request.matter_id;
-      if (activeByMatter.has(mid)) throw new RuntimeError("conflict", "本事项已有运行中的任务（G0：同一事项同时只运行一个任务）");
+      if (activeByMatter.has(mid)) throw new RuntimeError("conflict", "这个事项里还有一个任务在进行，请等它完成或取消后再开始（同一事项同时只运行一个任务）");
       // 落盘加密：安装包形态必须有区密钥（失败关闭）；密钥环在本事项引擎打开前就位。
       // 复核 S3B-A10：下发的代集合变了（换代），或本事项此前以无密钥（开发形态）打开过引擎——关闭引擎、换密钥环、下次运行按新密钥重开
       if (p.at_rest) {
@@ -210,6 +215,11 @@ export async function startHost(): Promise<void> {
       release(p.run_id);
       return r;
     },
+    async forceCancel(p: { run_id: string; reason?: string }) {
+      const r = await runtime!.forceCancel(p.run_id, String(p.reason ?? "用户取消").slice(0, 200));
+      release(p.run_id);
+      return r;
+    },
     artifacts: (p: { run_id: string; origin: RequestOrigin }) => runtime!.artifacts(p.run_id, p.origin),
     /**
      * 撤权擦除（审计 S3 1-4）：本机律师被移出事项、本设备被吊销或事项删除时，内核要求关闭该事项的引擎、清零密钥环并删除其全部 Agent 数据
@@ -245,6 +255,7 @@ export async function startHost(): Promise<void> {
         const searchEntry = join(config.dataRoot, ".kwl-host-search");
         writeFileSync(searchEntry, "Kimi Work Legal host search entry (never executed)\n", { mode: 0o600 });
         configureTrustedRipgrep(searchEntry);
+        if (config.atRest === "required" && config.testMaxContextSize) slog.event("KAP_TEST_CONTEXT_IGNORED", {}); // 安装包形态忽略测试专用配置（复核 S5B-15）
         runtime = new KapRuntime({
           matterLayout: layout,
           atRestActive: () => config?.atRest === "required" || keyrings.size > 0,
@@ -269,9 +280,11 @@ export async function startHost(): Promise<void> {
               }),
           searchConfigured: config.gateRoutes?.search ?? false,
           fetchConfigured: config.gateRoutes?.fetch ?? false,
+          ...(config.atRest !== "required" && config.testMaxContextSize ? { testMaxContextSize: config.testMaxContextSize } : {}),
           screenSearch: (run, query) => kernelCall<{ needsConfirmation: boolean }>("screenSearch", { run_id: run.runId, matter_id: run.matterId, query }),
           logLevel: "silent",
           onRunText: (runId, text) => send({ t: "text", run_id: runId, text }),
+          onRunProgress: (runId, progress) => send({ t: "progress", run_id: runId, progress }),
           onRunEvent: (runId, event) => {
             send({ t: "event", run_id: runId, event });
             if (/^run\.(succeeded|partial|failed|cancelled)$/.test(event.type)) release(runId);
@@ -291,7 +304,8 @@ export async function startHost(): Promise<void> {
         return;
       }
       if (msg?.t === "call") {
-        const fn = methods[msg.method];
+        // 只认方法表自有的键（复核 B4-B08：constructor、toString 等原型键不得被当作方法调用）
+        const fn = typeof msg.method === "string" && Object.hasOwn(methods, msg.method) ? methods[msg.method] : undefined;
         if (!runtime || !fn) return send({ t: "result", id: msg.id, ok: false, error: { code: "not_found", message: `未知方法或未初始化：${msg.method}` } });
         try {
           send({ t: "result", id: msg.id, ok: true, result: await fn(msg.params ?? {}) });
@@ -309,13 +323,49 @@ export async function startHost(): Promise<void> {
     })();
   });
   // 内核退出或断开即退出（不成为孤儿）
-  process.on("disconnect", () => {
+  const exitOnParentGone = () => {
     void (async () => {
       await runtime?.close().catch(() => {});
       for (const k of keyrings.values()) k.wipe();
       process.exit(0);
     })();
-  });
+  };
+  process.on("disconnect", exitOnParentGone);
+  // 父进程看门狗（Kimi Code 增量核查 WR-3；第 4 批复核 B4-A13）：IPC 断开事件是主信号；看门狗只补“断开事件永远不来”的情形
+  // （例如管道句柄被子孙进程继承而保持打开）。父进程按 KWL_PARENT_HEARTBEAT_MS 每隔一段发 {t:"hb"}：
+  // - Windows：ppid 不随父进程退出而变、PID 复用很快，kill(pid,0) 判不了存活——改看心跳，30 秒（至少 5 个周期）没收到即退出；
+  // - 其他平台：父进程退出后 ppid 变为 1，沿用 ppid 判断（有心跳时同样检查心跳）；
+  // - 本进程事件循环自身卡顿（本次检查比预期晚 4 秒以上）时跳过一次：先让排队的心跳消息被处理，避免主线程忙时误判父进程已退出。
+  {
+    const parentPid = process.ppid;
+    const hbEvery = Number(process.env.KWL_PARENT_HEARTBEAT_MS ?? 0);
+    const hbLimit = hbEvery > 0 ? Math.max(30_000, hbEvery * 5) : 0;
+    let lastHb = Date.now();
+    let lastTick = Date.now();
+    process.on("message", (m: unknown) => {
+      if ((m as { t?: unknown } | null)?.t === "hb") lastHb = Date.now();
+    });
+    const parentWatch = setInterval(() => {
+      const now = Date.now();
+      const lagged = now - lastTick > 6_000;
+      lastTick = now;
+      if (lagged) return;
+      let alive = hbLimit > 0 ? now - lastHb <= hbLimit : true;
+      if (alive && process.platform !== "win32" && process.ppid !== parentPid) alive = false;
+      if (alive && hbLimit === 0) {
+        try {
+          process.kill(parentPid, 0);
+        } catch (e) {
+          alive = (e as NodeJS.ErrnoException).code === "EPERM";
+        }
+      }
+      if (!alive) {
+        clearInterval(parentWatch);
+        exitOnParentGone();
+      }
+    }, 2_000);
+    parentWatch.unref();
+  }
 }
 
 if (process.argv[1] && /main\.(ts|mjs|js)$/.test(process.argv[1])) void startHost();

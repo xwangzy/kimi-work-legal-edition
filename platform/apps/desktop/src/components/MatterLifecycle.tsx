@@ -43,13 +43,9 @@ export function MatterLifecyclePanel({ matter, onChanged }: { matter: Matter; on
     setBusy(true);
     setMsg("");
     try {
-      const r = await api.archiveMatter(matter.matter_id);
-      const bin = Uint8Array.from(atob(r.data_base64), (ch) => ch.charCodeAt(0));
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([bin], { type: "application/zip" }));
-      a.download = r.filename;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      // 桌面客户端由内核直接写到律师在系统对话框里选定的位置（不经浏览器下载、不进“最近使用”）；取消即不导出
+      const r = await api.archiveMatter(matter.matter_id, `结案归档-${matter.title.slice(0, 40)}.zip`);
+      if (!r) return;
       const miss = r.missing.length ? `；${r.missing.length} 份未收入（${r.missing.map((m) => `${m.filename}：${m.reason}`).join("；")}）` : "";
       setArchived(`已导出《${r.filename}》：${r.counts.materials ?? 0} 份原件、${r.counts.artifacts ?? 0} 份成果、${r.counts.signed_events ?? 0} 条签名事件${miss}。sha256 ${r.sha256.slice(0, 16)}…（留痕）`);
     } catch (e) {
@@ -105,7 +101,7 @@ export function MatterLifecyclePanel({ matter, onChanged }: { matter: Matter; on
         <div className="card lifecycle-card">
           <h3>结案</h3>
           <p className="muted">
-            结案后本事项只读：不能再发起任务或添加材料；这台电脑上的 Agent 会话、工作区与材料快照会清理，材料、成果与记录保留。
+            结案后本事项只读：不能再发起任务或添加材料；这台电脑上的助手会话、工作区与材料快照会清理，材料、成果与记录保留。
             保留期满后可以删除本事项数据；需要继续工作时可以重新打开。
           </p>
           <label className="field">
@@ -208,13 +204,13 @@ export function MatterLifecyclePanel({ matter, onChanged }: { matter: Matter; on
 
 export function DeletionReceipt({ view }: { view: DeletionReceiptView }) {
   const r = view.receipt;
+  const [saved, setSaved] = useState("");
   const download = () => {
-    const blob = new Blob([JSON.stringify({ receipt: r, signature: view.signature, signer_cert: view.signer_cert }, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `删除回执-${r.receipt_id}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    // 回执不含案件内容：桌面客户端经主进程写到选定位置（系统对话框，不进“最近使用”）；成功与失败都告诉律师（复核 S5B-10）
+    void api
+      .saveSmallText(`删除回执-${r.receipt_id}.json`, JSON.stringify({ receipt: r, signature: view.signature, signer_cert: view.signer_cert }, null, 2))
+      .then((ok) => setSaved(ok ? "删除回执已保存。" : "没有保存（已取消或保存失败）。"))
+      .catch((e) => setSaved(`没能保存：${(e as Error).message}`));
   };
   return (
     <section className="lifecycle">
@@ -245,6 +241,7 @@ export function DeletionReceipt({ view }: { view: DeletionReceiptView }) {
       </details>
       <div className="modal-actions">
         <button className="btn-ghost" onClick={download}>保存删除回执（可离线验签）</button>
+        {saved && <span className="muted"> {saved}</span>}
       </div>
     </section>
   );

@@ -208,6 +208,176 @@ test("追问（Kimi Code 集成核查 P1-1）：在上一次运行的会话上�
   }
 });
 
+test("过程事件与流式回复（Kimi Code 增量核查 K7-P/K7-0）：运行中 runs.interactions 给出主 Agent 的工作清单、子任务状态与正在起草的文字（子任务的文字不进流式）；终态后不再返回；子任务起止进时间线", { timeout: 240_000 }, async () => {
+  const { inv } = tk;
+  const { matter } = await inv("matters.create", { title: "kap 过程事件", stance: "原告", consent_status: "not_required" });
+  type Msg = { role?: string; tool_call_id?: string; content?: unknown };
+  const msgs = (body: Record<string, unknown>): Msg[] => (Array.isArray(body.messages) ? (body.messages as Msg[]) : []);
+  const subModels: string[] = [];
+  const noteResults: string[] = [];
+  cloud.model.script = (body) => {
+    const first = JSON.stringify(msgs(body).find((m) => m.role === "user")?.content ?? "");
+    if (first.includes("KAPPROG-SUB")) {
+      subModels.push(String(body.model));
+      return { content: "KAPPROG-SUBANSWER 保密条款无异常" };
+    }
+    if (!first.includes("KAPPROG")) return null;
+    const done = new Set(msgs(body).filter((m) => m.role === "tool").map((m) => m.tool_call_id));
+    for (const m of msgs(body)) if (m.role === "tool" && m.tool_call_id === "note1" && noteResults.length === 0) noteResults.push(JSON.stringify(m.content ?? ""));
+    if (!done.has("todo1")) return { toolCalls: [{ id: "todo1", name: "TodoList", args: { todos: [{ title: "读合同", status: "done" }, { title: "核对保密条款", status: "in_progress" }] } }] };
+    // 进展通知（v9.2 第 5 批：嵌入声明界面能力 update_panel 后 NotifyUser 注册）
+    if (!done.has("note1")) return { toolCalls: [{ id: "note1", name: "NotifyUser", args: { message: "KAPNOTE 已读完合同，正在核对保密条款" } }] };
+    if (!done.has("sub1")) return { toolCalls: [{ id: "sub1", name: "Agent", args: { description: "核对第七条", prompt: "KAPPROG-SUB 核对保密条款" } }] };
+    if (!done.has("q1")) return { content: "KAPSTREAM-MAIN 正在汇总核对结果", toolCalls: [{ id: "q1", name: "AskUserQuestion", args: { questions: [{ question: "需要列出修改建议吗？", header: "范围", options: [{ label: "需要", description: "列出" }, { label: "不需要", description: "只给结论" }], multi_select: false }] } }] };
+    return { content: "完成 KAPPROG-DONE" };
+  };
+  try {
+    const est = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
+    const run = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-prog-${Date.now()}`, goal: "KAPPROG 核对合同保密条款", plan_first: false, mode: "default" });
+    let seen: any = null;
+    const deadline = Date.now() + 150_000;
+    for (;;) {
+      assert.ok(Date.now() < deadline, "等待提问超时");
+      const it = await inv("runs.interactions", { run_id: run.run_id });
+      for (const c of it.approvals) await inv("runs.approve", { run_id: run.run_id, approval_id: c.approval_id, object_hash: c.object_hash, nonce: c.nonce, decision: "approve" });
+      if (it.questions.length > 0) {
+        // 等过程快照节流（300 ms）送达后再取一次
+        await new Promise((r) => setTimeout(r, 700));
+        seen = await inv("runs.interactions", { run_id: run.run_id });
+        await inv("runs.answer", { run_id: run.run_id, question_id: it.questions[0].question_id, answers: Object.fromEntries(it.questions[0].questions.map((x: any) => [x.id, { kind: "skipped" }])) });
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    assert.ok(seen.progress, "运行中应有过程快照");
+    // NotifyUser：进展通知进入过程快照（只展示、不授权）；工具结果是“已显示”而不是“通知已关闭”
+    assert.ok(seen.progress.notes.some((n: any) => n.text.includes("KAPNOTE 已读完合同")), JSON.stringify(seen.progress.notes));
+    assert.ok(noteResults.length > 0 && noteResults.every((t) => t.includes("Update shown to the user")), `NotifyUser 工具结果：${JSON.stringify(noteResults)}`);
+    assert.deepEqual(seen.progress.todo, [{ title: "读合同", status: "done" }, { title: "核对保密条款", status: "in_progress" }]);
+    assert.equal(seen.progress.subagents.length, 1);
+    assert.equal(seen.progress.subagents[0].description, "核对第七条");
+    assert.equal(seen.progress.subagents[0].status, "done");
+    assert.match(seen.progress.subagents[0].summary ?? "", /KAPPROG-SUBANSWER/);
+    assert.match(seen.live_text ?? "", /KAPSTREAM-MAIN/, "正在起草的文字是主 Agent 的");
+    assert.ok(!(seen.live_text ?? "").includes("KAPPROG-SUBANSWER"), "子任务的文字不进流式");
+    const fin = await waitRun(inv, run.run_id, 150_000);
+    assert.equal(fin.run.status, "succeeded", JSON.stringify(fin.events.map((e: any) => e.type)));
+    const sub = fin.events.filter((e: any) => e.type === "agent.subagent").map((e: any) => e.payload.event);
+    assert.deepEqual(sub, ["spawned", "done"], "子任务起止进时间线");
+    assert.ok(fin.events.filter((e: any) => e.type === "agent.subagent").every((e: any) => !JSON.stringify(e.payload).includes("核对第七条")), "时间线只记编号与状态，不记模型写的文字");
+    const after = await inv("runs.interactions", { run_id: run.run_id }).catch(() => null);
+    assert.ok(!after || (after.progress ?? null) === null, "终态后不再返回过程快照");
+    // 复核 B4-B04：终态后内核内存里的过程快照与流式文字已清空（子任务结论摘要等不常驻内核进程）
+    const taskId = String(fin.events.find((e: any) => e.type === "agent.task_started")?.payload.agent_task_id ?? "");
+    const kept = (tk.kernel.agentClient as unknown as { getTask(id: string): { progress?: unknown; liveText?: unknown } | undefined }).getTask(taskId);
+    assert.ok(kept, "内核仍记得这个任务（用于事件续读）");
+    assert.equal(kept.progress ?? null, null, "过程快照已清空");
+    assert.equal(kept.liveText, undefined, "流式文字已清空");
+    // 子 Agent 强制低价模型（[secondary_model].force；Y3 N-7）：子任务的请求经网关时的模型与主 Agent 不同
+    assert.ok(subModels.length > 0 && subModels.every((m) => m !== "legal/k3"), `子任务模型：${JSON.stringify(subModels)}`);
+  } finally {
+    cloud.model.script = null;
+  }
+});
+
+test("同一事项的第二个任务（2026-10-14 联调发现）：估价即标明“事项里还有一个任务在进行”（block_kind=busy、给出那个任务），发起直接拒绝而不是受理后失败；前一个任务结束后恢复", { timeout: 240_000 }, async () => {
+  const { inv } = tk;
+  const { matter } = await inv("matters.create", { title: "kap 同事项并发", stance: "原告", consent_status: "not_required" });
+  type Msg = { role?: string; tool_call_id?: string; content?: unknown };
+  const msgs = (body: Record<string, unknown>): Msg[] => (Array.isArray(body.messages) ? (body.messages as Msg[]) : []);
+  cloud.model.script = (body) => {
+    const first = JSON.stringify(msgs(body).find((m) => m.role === "user")?.content ?? "");
+    if (!first.includes("KAPBUSY")) return null;
+    const done = new Set(msgs(body).filter((m) => m.role === "tool").map((m) => m.tool_call_id));
+    if (!done.has("qb")) return { toolCalls: [{ id: "qb", name: "AskUserQuestion", args: { questions: [{ question: "继续吗？", header: "继续", options: [{ label: "是", description: "继续" }, { label: "否", description: "停止" }], multi_select: false }] } }] };
+    return { content: "完成 KAPBUSY" };
+  };
+  try {
+    const est = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
+    assert.equal(est.data_where.start_blocked, false);
+    const run = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-busy-${Date.now()}`, goal: "KAPBUSY 第一个任务", plan_first: false, mode: "default" });
+    let q: any = null;
+    for (let i = 0; i < 300 && !q; i++) {
+      const it = await inv("runs.interactions", { run_id: run.run_id });
+      q = it.questions[0] ?? null;
+      if (!q) await new Promise((r) => setTimeout(r, 300));
+    }
+    assert.ok(q, "第一个任务应在等待作答");
+    const est2 = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
+    assert.equal(est2.data_where.start_blocked, true);
+    assert.equal(est2.data_where.block_kind, "busy");
+    assert.equal(est2.data_where.busy_run_id, run.run_id);
+    assert.match(est2.data_where.warning, /还有一个任务在进行（“KAPBUSY 第一个任务”）/);
+    assert.ok(!/G0/.test(est2.data_where.warning), "律师看到的文字不出现工程代号");
+    await assert.rejects(() => inv("runs.start", { matter_id: matter.matter_id, estimate_id: est2.estimate_id, idempotency_key: `kap-busy2-${Date.now()}`, goal: "第二个任务", plan_first: false, mode: "default" }), /还有一个任务在进行/);
+    // 本机确定性场景（不经宿主）不受影响
+    const s6 = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "s1.contract_review", document_version_ids: [] }).catch((e: Error) => ({ data_where: { start_blocked: false, block_kind: null }, err: e.message }));
+    assert.notEqual((s6 as any).data_where?.block_kind, "busy");
+    await inv("runs.answer", { run_id: run.run_id, question_id: q.question_id, answers: Object.fromEntries(q.questions.map((x: any) => [x.id, { kind: "skipped" }])) });
+    const fin = await waitRun(inv, run.run_id, 150_000);
+    assert.equal(fin.run.status, "succeeded");
+    const est3 = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
+    assert.equal(est3.data_where.start_blocked, false, "前一个任务结束后可以开始新任务");
+  } finally {
+    cloud.model.script = null;
+  }
+});
+
+test("取消与确认卡同时到达（Kimi Code 增量核查 N-1；复核 B4-B07/B4-B11）：确认卡正在到达时取消——任务取消、宿主停下（之后没有模型请求）、账本没有“取消未确认”、卡片消失；随即在同一事项发起新任务能成功开始", { timeout: 240_000 }, async () => {
+  const { inv } = tk;
+  const { matter } = await inv("matters.create", { title: "kap 取消竞态", stance: "原告", consent_status: "not_required" });
+  type Msg = { role?: string; tool_call_id?: string; content?: unknown };
+  const msgs = (body: Record<string, unknown>): Msg[] => (Array.isArray(body.messages) ? (body.messages as Msg[]) : []);
+  let firstRunModelCalls = 0;
+  cloud.model.script = (body) => {
+    const first = JSON.stringify(msgs(body).find((m) => m.role === "user")?.content ?? "");
+    if (first.includes("KAPCANCEL-NEXT")) return { content: "第二个任务完成" };
+    if (!first.includes("KAPCANCEL")) return null;
+    firstRunModelCalls += 1;
+    // 手动档：两个并行的工具调用各出一张确认卡——第二张在律师取消时可能正在到达（宿主状态版本随之变化）
+    if (!msgs(body).some((m) => m.role === "tool")) {
+      return { toolCalls: [{ id: "c1", name: "Glob", args: { pattern: "*.md" } }, { id: "c2", name: "Glob", args: { pattern: "*.txt" } }] };
+    }
+    return { content: "不应再被调用" };
+  };
+  try {
+    const est = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
+    const run = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-cancel-${Date.now()}`, goal: "KAPCANCEL 列出工作区文件", plan_first: false, mode: "manual" });
+    let cards: any[] = [];
+    for (let i = 0; i < 500 && cards.length === 0; i++) {
+      cards = (await inv("runs.interactions", { run_id: run.run_id })).approvals;
+      if (cards.length === 0) await new Promise((r) => setTimeout(r, 100));
+    }
+    assert.ok(cards.length > 0, "确认卡应已到达");
+    // 卡片一出现就取消（不等第二张）：律师所见版本由内核 API 校验；宿主侧版本冲突由适配器重试或强制取消
+    const cur = await inv("runs.get", { run_id: run.run_id });
+    await inv("runs.cancel", { run_id: run.run_id, expected_version: cur.run.status_version });
+    // 随即在同一事项发起新任务（不等宿主收尾）：估价不再“忙”，发起后能成功开始并完成——不是“先受理后失败”
+    const est2 = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
+    assert.equal(est2.data_where.start_blocked, false);
+    const run2 = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est2.estimate_id, idempotency_key: `kap-cancel2-${Date.now()}`, goal: "KAPCANCEL-NEXT 简述", plan_first: false, mode: "default" });
+    const fin = await waitRun(inv, run.run_id, 60_000);
+    assert.equal(fin.run.status, "cancelled");
+    // 内核已判“已取消”、宿主尚未收尾的窗口里：卡片不再呈现、批准不再受理（否则已取消任务的工具会照常执行）
+    const it = await inv("runs.interactions", { run_id: run.run_id });
+    assert.deepEqual(it.approvals, [], "取消后确认卡消失");
+    await assert.rejects(() => inv("runs.approve", { run_id: run.run_id, approval_id: cards[0].approval_id, object_hash: cards[0].object_hash, nonce: cards[0].nonce, decision: "approve" }), /任务已结束/);
+    const fin2 = await waitRun(inv, run2.run_id, 150_000);
+    assert.equal(fin2.run.status, "succeeded", `新任务：${fin2.run.status} ${fin2.run.terminal_reason ?? ""} ${JSON.stringify(fin2.events.map((e: any) => e.type))}`);
+    // 新任务开始意味着第一个任务已在宿主收尾：取消结果此时已入账
+    const types = ((await inv("runs.events", { run_id: run.run_id, limit: 500 })).events as any[]).map((e) => e.type);
+    assert.ok(!types.includes("agent.cancel_unconfirmed"), `宿主应确认停止：${types.join(",")}`);
+    // 宿主确实停下：取消之后第一个任务没有新的模型请求，确认卡对应的工具没有执行
+    const callsAtEnd = firstRunModelCalls;
+    await new Promise((r) => setTimeout(r, 1_500));
+    assert.equal(firstRunModelCalls, callsAtEnd);
+    assert.equal(firstRunModelCalls, 1, "取消后第一个任务没有继续向模型发请求");
+    assert.ok(!types.includes("agent.tool_result"), "确认卡对应的工具没有执行");
+  } finally {
+    cloud.model.script = null;
+  }
+});
+
 test("落盘加密第 1 步（审计 S3）：运行结束后引擎目录里找不到材料与对话中的金丝雀；会话与事件日志是 KWE1 密文；引擎日志与查询库不落盘；材料快照已删除", { timeout: 240_000 }, async () => {
   const { inv } = tk;
   const { readdirSync: rd, readFileSync: rf, statSync: st } = await import("node:fs");
@@ -414,6 +584,12 @@ test("落盘加密第 2 步（审计 S3）S1：计划、Read/Grep/Glob/Write/Edi
   for (const f of [...planFiles, ...taskLogs]) assert.equal(readFileSync(f).subarray(0, 4).toString(), "KWE1", `${f} 是密文`);
   const sha = (await import("node:crypto")).createHash("sha256").update(Buffer.from(r.draft, "utf8")).digest("hex");
   assert.ok(r.artifacts.some((a: any) => a.kind === "a1_workspace_file" && a.sha256 === sha), `草稿按明文登记：${JSON.stringify(r.artifacts.map((a: any) => [a.kind, a.filename]))}`);
+  // 统一脱敏日志（v9.2 §3.2/§3.6）：日志目录在数据根内、本次运行有写出（上面的金丝雀扫描已覆盖它），且宿主子进程的事件经内核写入
+  const logsDir = join(tk.kernel.config.workspaceDir, "logs");
+  assert.ok(logsDir.startsWith(tk.dir), "日志目录在扫描范围内");
+  const logText = readdirSync(logsDir).map((n) => readFileSync(join(logsDir, n), "utf8")).join("");
+  assert.match(logText, /"code":"KERNEL_STARTED"/, "内核事件已写盘");
+  assert.ok(!logText.includes(r.matterId) && !logText.includes(r.runId), "记录编号只以加盐 hash 出现");
 });
 
 test("落盘加密第 2 步（审计 S3）S2：草稿写成后强杀 kap-host（模拟崩溃/断电），数据根与新增临时目录仍找不到金丝雀；运行如实收尾", { timeout: 240_000 }, async () => {

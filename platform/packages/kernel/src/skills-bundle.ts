@@ -122,3 +122,31 @@ export function materializeSkillsBundle(manifestFile: string | null, signerPub: 
   }
   return { ok: true, dir: dest, contentSha256: contentSha, skills: Array.isArray(m.skills) ? m.skills : [] };
 }
+
+/**
+ * 方法模板的“质量自检”清单（复核页“你来核对”，v9.2 §4.4 / Y4 §5 D-3）：取签名可信区里该模板 SKILL.md 中标题含“质量自检”的一节的勾选项。
+ * 只读验签后物化的可信区；模板编号须为登记的字符集，读不到或没有该节返回空。
+ */
+export function skillQualityChecklist(dir: string, skillId: string): string[] {
+  if (!/^[a-z0-9-]{1,64}$/.test(skillId)) return [];
+  let text = "";
+  try {
+    text = readFileSync(join(dir, "skills", skillId, "SKILL.md"), "utf8");
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  let inSection = false;
+  for (const line of text.split(/\r?\n/)) {
+    if (/^##\s/.test(line)) {
+      if (inSection) break;
+      inSection = line.includes("质量自检");
+      continue;
+    }
+    const m = inSection ? /^\s*-\s*\[[ xX]\]\s*(.+)$/.exec(line) : null;
+    if (m) out.push(m[1]!.trim().slice(0, 200));
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+

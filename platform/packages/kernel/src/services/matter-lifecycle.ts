@@ -191,6 +191,8 @@ export async function purgeMatter(
     d.db.run(`DELETE FROM matter_tokens WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM matter_token_keys WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM matter_parties WHERE matter_id = ?`, [matterId]);
+    d.db.run(`DELETE FROM matter_suspect_reviews WHERE matter_id = ?`, [matterId]);
+    d.db.run(`DELETE FROM document_roles WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM risk_cards WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM matter_facts WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM artifact_payloads WHERE artifact_version_id IN (SELECT artifact_version_id FROM artifact_versions WHERE matter_id = ?)`, [matterId]);
@@ -275,9 +277,9 @@ export async function purgeMatter(
         },
         {
           // 第 02 篇 §9.13“备份待到期”：系统备份在律所自有系统中，本产品不控制（D-52）
-          where: "电脑与律所的系统备份（如 Windows 文件历史、NAS 快照）",
+          where: "电脑与律所的系统备份（Windows 系统还原点与卷影副本、文件历史、NAS 快照、备份软件）",
           status: "pending",
-          note: "备份里的块文件是密文；但若同时备份了账本与设备密钥，旧密钥包裹仍在备份中——按律所备份保留期到期删除；恢复旧备份前须先核对本回执",
+          note: "不在本次删除范围：备份与快照里的块文件是密文，但旧的密钥包裹与解封所需材料可能一并留在快照中，同一 Windows 账户可以取回并解开（隐私安全增量评审 F9）——按律所备份保留期到期删除；恢复旧备份前须先核对本回执",
         },
         { where: "挂载原件（律师文件夹中的原文件）", status: inventory.document_versions_mounted! > 0 ? "kept" : "none", note: `${inventory.document_versions_mounted} 份挂载原件属律师自己的文件夹，本产品未删除` },
       ],

@@ -36,6 +36,7 @@ import type { EgressAuthority, ModelBinding } from "./host-egress.ts";
 import { KapError, type KapAnswer } from "./kap-client.ts";
 import { MatterEngine } from "./matter-engine.ts";
 import { HostPolicy, ONCE_ONLY_REASONS, effectiveMode, type Channel, type DataLevel, type PolicyDecisionRecord, type Preauthorization } from "./policy.ts";
+import { ProgressTracker, type RunProgress } from "./progress.ts";
 
 export class RuntimeError extends Error {
   readonly code: "validation" | "not_found" | "conflict" | "forbidden" | "unavailable";
@@ -115,6 +116,8 @@ export interface RuntimeDeps {
   execDomainFactory?: ExecDomainFactory | undefined;
   egressLevel?: DeviceFacts["egress"];
   searchConfigured?: boolean;
+  /** 只供测试（上下文压缩验收）：缩小引擎上下文窗口（宿主入口在安装包形态不传）。 */
+  testMaxContextSize?: number;
   fetchConfigured?: boolean;
   /** 运行事件出口（内核落库、界面推送）；宿主内另保留内存副本供断线续读。 */
   onRunEvent?: (runId: string, e: RuntimeEvent) => void;
@@ -123,6 +126,10 @@ export interface RuntimeDeps {
    * 至多每 300 ms 一次。只给可信界面实时显示，不进运行事件与事项账本（最终答复另以终态事件交付）。
    */
   onRunText?: (runId: string, text: string) => void;
+  /**
+   * 过程快照（Kimi Code 增量核查 K7-P）：至多每 300 ms 一次，交内核内存（与流式文字同一口径，不落账本）；里程碑另作运行事件。
+   */
+  onRunProgress?: (runId: string, progress: RunProgress) => void;
   /** 单次运行的工作时限（含主回合结束后等待会话空闲；**不含**等待律师确认或回答的时间——W1）；内核在 startRun 中下发时以下发值为准，否则缺省 30 分钟。 */
   maxRunMs?: number;
   /** 单次运行的总时长上限（含等待律师）；缺省 8 小时 5 分钟（内核在 8 小时判“过期”，宿主为兜底）。 */
@@ -220,6 +227,9 @@ interface RunRecord {
   watchdog: NodeJS.Timeout | null;
   /** 流式文字的节流定时器（onRunText）。 */
   textTimer: NodeJS.Timeout | null;
+  /** 过程快照（K7-P：工作清单、子任务、后台任务、上下文整理、方法模板、模型重试）与其节流定时器（onRunProgress）。 */
+  progress: ProgressTracker;
+  progressTimer: NodeJS.Timeout | null;
   /** 执行域提交中“被整体拒绝或写入失败”的次数（审查 S3-06：有则运行不得判 succeeded）。 */
   commitFailures: number;
 }
@@ -309,6 +319,7 @@ export class KapRuntime {
         execAllowed: () => (this.hasLiveRun(matterId) ? null : "no_live_run"),
         searchConfigured: this.deps.searchConfigured ?? false,
         fetchConfigured: this.deps.fetchConfigured ?? false,
+        ...(this.deps.testMaxContextSize ? { testMaxContextSize: this.deps.testMaxContextSize } : {}),
         onDecision: (r) => this.decisions.set(decisionKey(r.sessionId, r.agentId, r.toolCallId), r),
         ...(this.deps.screenSearch ? { screenSearch: this.deps.screenSearch } : {}),
         ...(this.deps.logLevel ? { logLevel: this.deps.logLevel } : {}),
@@ -373,9 +384,17 @@ export class KapRuntime {
     if (!origin?.channel || !origin.userId) throw new RuntimeError("forbidden", "缺少网关注入的请求来源");
     const policy = this.deps.matterPolicy?.(req.matter_id) ?? STRICTEST_MATTER_POLICY;
     const runId = req.run_id ?? `krun_${randomUUID()}`;
-    if (this.runs.has(runId)) throw new RuntimeError("conflict", "运行已存在");
+    const prev = this.runs.get(runId);
+    if (prev) {
+      // 内核重试同一任务（runs.retry 沿用任务编号）：上一次运行已终结（finish 已解绑会话、清理审批与裁决）即换下旧记录；
+      // 仍在进行或正在收尾的照旧拒绝（第 4 批复核 B 范围外发现：此前宿主不重启就无法重试失败的任务）
+      if (!TERMINAL.has(prev.status) || prev.settling) throw new RuntimeError("conflict", "运行已存在");
+      if (prev.textTimer) clearTimeout(prev.textTimer);
+      if (prev.progressTimer) clearTimeout(prev.progressTimer);
+      this.runs.delete(runId);
+    }
     // 审查 S3-16：G0 同一事项同时只运行一个任务——执行域的取消范围、路由 fencing 与事件归属都按事项，入口必须强制
-    if (this.hasLiveRun(req.matter_id) || this.starting.has(req.matter_id)) throw new RuntimeError("conflict", "本事项已有进行中的运行（同一事项同时只运行一个任务）");
+    if (this.hasLiveRun(req.matter_id) || this.starting.has(req.matter_id)) throw new RuntimeError("conflict", "这个事项里还有一个任务在进行，请等它完成或取消后再开始（同一事项同时只运行一个任务）");
     this.starting.add(req.matter_id);
     try {
       return await this.startRunReserved(req, origin, policy, runId);
@@ -435,6 +454,8 @@ export class KapRuntime {
       modelToken: this.deps.modelToken({ runId, matterId: req.matter_id, sessionId: session.id }),
       watchdog: null,
       textTimer: null,
+      progress: new ProgressTracker(engine.skillNames),
+      progressTimer: null,
       commitFailures: 0,
     };
     const planFirst = req.plan_first ?? !req.continue_session_id;
@@ -485,6 +506,17 @@ export class KapRuntime {
     if (TERMINAL.has(run.status)) {
       if (e.type === "turn.started") void engine.kap.sessionAction(run.sessionId, "abort").catch(() => {});
       return;
+    }
+    // 过程快照（K7-P）：工作清单、子任务、后台任务、上下文整理、方法模板、模型重试；里程碑进时间线
+    const progressed = run.progress.apply(e.type, p);
+    if (progressed.milestone) this.push(run, progressed.milestone.type, progressed.milestone.payload);
+    if (progressed.changed && this.deps.onRunProgress && !run.progressTimer) {
+      run.progressTimer = setTimeout(() => {
+        run.progressTimer = null;
+        if (TERMINAL.has(run.status)) return;
+        this.deps.onRunProgress?.(run.runId, run.progress.snapshot());
+      }, 300);
+      run.progressTimer.unref();
     }
     // 回合生命周期只认主 Agent：子 Agent 与集群成员在同一会话内有自己的回合
     const lifecycle = e.type === "turn.started" || e.type === "turn.ended" || e.type === "assistant.delta" || e.type === "turn.step.completed";
@@ -625,6 +657,8 @@ export class KapRuntime {
       reason: pending.reason,
       cross_boundary: pending.crossBoundary,
       scope_options: pending.taskAllowable ? ["once", "task"] : ["once"],
+      // 超预算卡（复核 B4-B06）：本次要派出的子任务数与询问时的余额（内核据此写卡片标题与正文）
+      budget: d?.overBudget ? { members: d.overBudget.members, tool_calls_left: d.overBudget.toolCallsLeft, subagents_left: d.overBudget.subagentsLeft } : null,
       agent_id: agentId,
       // Agent 在这一步给出的说明（模型自述，令牌形态；确认卡标注“仅供参考”——第 03 篇 §8.2“为什么”；复核 S5-A06）
       agent_note: ((run.stepText ?? "").trim() || (run.lastStepText ?? "").trim()).slice(-300) || null,
@@ -782,8 +816,12 @@ export class KapRuntime {
     if (req.decision === "approve" && scope === "task" && pending.reason) {
       engine.policy.allowForTask(run.sessionId, HostPolicy.allowanceKey(pending.toolName, pending.toolInput, pending.reason));
     }
-    // 律师批准了宿主策略“询问”的那次调用：检索与抓取经闸门时据此换取运行令牌（仍须工具调用 ID 与参数摘要一致）
-    if (req.decision === "approve" && pending.decision?.decision === "ask") this.grantedAsks.add(pending.decision);
+    // 律师批准了宿主策略“询问”的那次调用：检索与抓取经闸门时据此换取运行令牌（仍须工具调用 ID 与参数摘要一致）；
+    // 超预算询问获批即按该次调用补记预算（复核 B4-B05：否则之后的调用在“名义余额”内被自动放行）
+    if (req.decision === "approve" && pending.decision?.decision === "ask") {
+      this.grantedAsks.add(pending.decision);
+      engine.policy.chargeApprovedOverBudget(run.sessionId, pending.decision);
+    }
     this.push(run, "run.approval_decided", { approval_id: approvalId, decision: req.decision, scope, approver_channel: approver.channel });
     await engine.kap.resolveApproval(run.sessionId, approvalId, req.decision === "approve" ? "approved" : "rejected", req.feedback);
     return { ok: true, scope };
@@ -798,6 +836,19 @@ export class KapRuntime {
     const engine = await this.engine(run.matterId);
     // 先解绑（模型请求与工具调用立即失败），再通知引擎中止当前回合
     this.finish(run, engine, "cancelled", { reason: req.reason ?? "用户取消", by_channel: origin.channel });
+    await engine.kap.sessionAction(run.sessionId, "abort").catch(() => {});
+    return { status: run.status };
+  }
+
+  /**
+   * 内核强制取消（N-1）：内核按状态版本取消、遇版本冲突重试仍失败时调用；不校验状态版本与渠道（方法只在内核 IPC 方法表中，
+   * 远程渠道经内核 API 到不了这里；内核 API 已按律师看到的版本校验过）。已结束的运行原样返回。
+   */
+  async forceCancel(runId: string, reason: string): Promise<{ status: RuntimeRunStatus }> {
+    const run = this.runOrThrow(runId);
+    if (TERMINAL.has(run.status)) return { status: run.status };
+    const engine = await this.engine(run.matterId);
+    this.finish(run, engine, "cancelled", { reason, by_channel: "kernel" });
     await engine.kap.sessionAction(run.sessionId, "abort").catch(() => {});
     return { status: run.status };
   }

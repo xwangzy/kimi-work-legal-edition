@@ -1,5 +1,5 @@
 /**
- * 下载并核验 Windows 随包运行时（node.exe）到 .cache/win-runtime/，供 build-runtime.mjs --target win32-x64 使用。
+ * 下载并核验 Windows 随包运行时（node.exe 与解析/OCR 进程的 Windows 原生包）到 .cache/win-runtime/，供 build-runtime.mjs --target win32-x64 使用。
  * （审计 S3 第 2 步起不再随包原生 ripgrep：Grep/Glob 由 Agent 宿主内检索完成。）
  *
  * 核验：压缩包 sha256 必须与官方发布的校验和一致（同版本 SHASUMS256.txt），
@@ -10,7 +10,7 @@
  */
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -71,6 +71,34 @@ await fetchOne("node", "node.exe", (buf, file) => {
   const line = buf.toString("utf8").split("\n").find((l) => l.trim().endsWith(`  ${file}`));
   return line ? line.split(/\s+/)[0] : null;
 });
+
+/**
+ * 解析/OCR 进程的 Windows 原生包（W6）：npm 只为当前平台安装可选原生依赖，Windows 二进制须单独取得。
+ * 用 npm pack 从官方源取 tarball（npm 按登记的 integrity 校验），再与锁文件中的 integrity 核对（首次信任写入），解到缓存。
+ */
+const npmCache = join(cache, "npm");
+/** 缓存里 tarball 的确定文件名（build-runtime.mjs 同一规则）。 */
+const tarballName = (name, version) => `${name.replace(/^@/, "").replace(/\//g, "-")}-${version}.tgz`;
+mkdirSync(npmCache, { recursive: true });
+lock.npm ??= {};
+for (const [name, ent] of Object.entries(lock.npm)) {
+  const spec = `${name}@${ent.version}`;
+  const out = execFileSync("npm", ["pack", spec, "--json", "--pack-destination", npmCache], { encoding: "utf8", shell: process.platform === "win32" });
+  const info = JSON.parse(out)[0];
+  if (!info || typeof info.integrity !== "string" || !info.filename) throw new Error(`${spec}：npm pack 未返回 integrity`);
+  if (ent.integrity && ent.integrity !== info.integrity) throw new Error(`${spec}：integrity 与锁文件不符（锁 ${ent.integrity}，实得 ${info.integrity}）`);
+  const tgz = join(npmCache, info.filename);
+  const tgzSri = "sha512-" + createHash("sha512").update(readFileSync(tgz)).digest("base64");
+  if (tgzSri !== info.integrity) throw new Error(`${spec}：下载文件摘要与 integrity 不符`);
+  const dest = join(npmCache, "node_modules", ...name.split("/"));
+  rmSync(dest, { recursive: true, force: true });
+  mkdirSync(dest, { recursive: true });
+  execFileSync("tar", ["-xzf", tgz, "-C", dest, "--strip-components=1"]);
+  // 保留 tarball（复核 B4-R15）：build-runtime 交叉构建时按锁文件 integrity 复核它、并从它重新解出，不信任缓存里解好的目录
+  renameSync(tgz, join(npmCache, tarballName(name, ent.version)));
+  ent.integrity = info.integrity;
+  console.log(`[fetch-win-runtime] ${spec}：${info.integrity.slice(0, 24)}…`);
+}
 writeFileSync(lockPath, JSON.stringify(lock, null, 2) + "\n");
 console.log("[fetch-win-runtime] 完成；锁文件已更新（若新增摘要请评审后提交）");
 if (!existsSync(join(cache, `node-${lock.node.version}-win32-x64`, "node.exe"))) process.exit(1);

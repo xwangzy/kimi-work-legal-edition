@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { devSeatKeyPair, issueSeatToken } from "@zr-legal/seat-token";
-import { createSearchService, LEGAL_SITE_GROUPS, MockSearchProvider, type SearchMeterRecord } from "../src/index.ts";
+import { createSearchService, LEGAL_SITE_GROUPS, MockSearchProvider, MoonshotToolsSearchProvider, type SearchMeterRecord } from "../src/index.ts";
 
 const { privateKey, publicKey } = devSeatKeyPair();
 const keys = new Map([["k1", publicKey]]);
@@ -84,4 +84,39 @@ test("S4-01 / S4-15：客户端断开即中止上游检索；被吊销的席位�
     svc.closeAllConnections();
     svc.close();
   }
+});
+
+test("月之暗面检索上游（2026-10-14 按官方文档核对）：text_query/limit/timeout_seconds，sites 与 time_window 对象走 search_pro，对账编号随机，Pro 正文片段折进摘要", async () => {
+  const seen: { url: string; body: any; headers: Record<string, string> }[] = [];
+  const fetchImpl = (async (u: string, init: RequestInit) => {
+    seen.push({ url: u, body: JSON.parse(String(init.body)), headers: init.headers as Record<string, string> });
+    const pro = u.endsWith("/search_pro");
+    return new Response(
+      JSON.stringify({
+        search_results: [
+          { title: "最高法公报", url: "https://www.court.gov.cn/a", snippet: pro ? "" : "摘要", site_name: "最高人民法院", date: "2026-01-02", chunks: pro ? [{ text: "正文片段一", score: 0.9 }] : undefined },
+          { title: "无链接", snippet: "丢弃" },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as unknown as typeof fetch;
+  const p = new MoonshotToolsSearchProvider({ apiKey: "sk-test", baseUrl: "https://api.moonshot.cn/v1/", fetchImpl, limit: 99, timeoutSeconds: 0 });
+  const ac = new AbortController();
+  const basic = await p.search({ query: "股东出资 补足责任" }, { signal: ac.signal });
+  assert.equal(seen[0]!.url, "https://api.moonshot.cn/v1/tools/search");
+  assert.deepEqual(seen[0]!.body, { text_query: "股东出资 补足责任", limit: 20, timeout_seconds: 1 });
+  assert.match(seen[0]!.headers["x-msh-track-id"]!, /^kwl-[0-9a-f-]{36}$/);
+  assert.deepEqual(basic, [{ title: "最高法公报", url: "https://www.court.gov.cn/a", snippet: "摘要", site_name: "最高人民法院", date: "2026-01-02" }]);
+  const pro = await p.search({ query: "公司法 第五十条", sites: ["flk.npc.gov.cn", "bad site", "a(b)", "www.court.gov.cn", "x.cn", "y.cn", "z.cn"], timeWindow: { start: "2024-07", end: "2026" } }, { signal: ac.signal });
+  assert.equal(seen[1]!.url, "https://api.moonshot.cn/v1/tools/search_pro");
+  assert.deepEqual(seen[1]!.body.sites, ["flk.npc.gov.cn", "www.court.gov.cn", "x.cn", "y.cn", "z.cn"]);
+  assert.deepEqual(seen[1]!.body.time_window, { start: "2024-07", end: "2026" });
+  assert.equal(seen[1]!.body.query, undefined, "旧字段 query 不再发送");
+  assert.equal(pro[0]!.snippet, "正文片段一");
+  // 不合法的时间点不发送 time_window（无站点时回落到 Basic）
+  await p.search({ query: "x", timeWindow: { start: "2024/07", end: "2026" } }, { signal: ac.signal });
+  assert.equal(seen[2]!.url, "https://api.moonshot.cn/v1/tools/search");
+  assert.equal(seen[2]!.body.time_window, undefined);
+  assert.notEqual(seen[0]!.headers["x-msh-track-id"], seen[1]!.headers["x-msh-track-id"]);
 });

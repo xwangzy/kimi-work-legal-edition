@@ -73,6 +73,8 @@ export interface GateEgressRecord {
   tokenized: Partial<Record<TokenCategory, number>>;
   /** 闸门本次补替换的次数（按类别；工作区已是令牌形态时通常为 0）。 */
   replacedAtGate?: Partial<Record<TokenCategory, number>>;
+  /** 发送前二次检测：令牌化之后仍像自然人姓名的原文个数（按不同的值、分高中两档；只有计数，不含值）。 */
+  suspectedNames?: { high: number; medium: number };
   media: string[];
   /** 检索：查询原文与实际发出的查询（只在本机事项账本）。 */
   query?: { original: string; sent: string | null; decision: string };
@@ -80,6 +82,8 @@ export interface GateEgressRecord {
   url?: { requested: string; final: string | null; hops: number; bytes: number };
   /** 检索/抓取所依据的宿主裁决（宿主出口告知，只作关联，不作授权依据；审查 S4-03）。 */
   hostDecision?: string | null;
+  /** 检索/抓取对应的工具调用编号（宿主告知，只作时间线关联）。 */
+  toolCallId?: string | null;
   /** 闸门核验通过的批准凭据（律师在可信界面的确认；第 02 篇 §9.5）。 */
   approvalId?: string | null;
   policyVersion: number;

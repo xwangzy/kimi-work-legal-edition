@@ -26,6 +26,7 @@ import type { AsyncMutex } from "../mutex.ts";
 import { legalToolManifests } from "../tools/registry.ts";
 import { writeHomeConfig } from "../../../../apps/agent-host/src/config-template.ts";
 import type { AgentArtifact, AgentClient, AgentTaskPoll } from "./agent-client.ts";
+import { HIDE_WINDOW, windowsSystemEnv } from "./child-env.ts";
 
 export interface AgentHostOptions {
   /** 宿主入口（开发：apps/agent-host/src/host.ts；生产：打包制品路径）。 */
@@ -116,7 +117,8 @@ function killProcessGroup(pid: number | undefined, alive: boolean): void {
   if (process.platform === "win32") {
     if (!alive) return;
     try {
-      const k = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+      // 系统目录下的绝对路径（复核 B4-A15：不按 PATH 查找）
+      const k = spawn(join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe"), ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
       k.on("error", () => {
         // taskkill 不可用：不抛出（不让内核进程因未捕获异常退出）
       });
@@ -366,7 +368,9 @@ export function createLocalAgentClient(opts: AgentHostOptions): AgentClient & { 
           timeoutMs: Math.max(10_000, timeoutMs - 5_000), // 宿主自身先于管理器超时，留出上报完成记录的时间
         };
         const child = spawn(runtime, [opts.entryPath], {
+          ...HIDE_WINDOW,
           env: {
+            ...windowsSystemEnv(),
             PATH: process.env.PATH ?? "",
             // OS home 指向任务目录：锁版引擎会读取 ~/.agents/AGENTS.md 等用户级指令与技能——不让律师电脑上的任何未签名指令进入任务
             HOME: base,

@@ -2,10 +2,10 @@
  * 内核配置（方案 v5.0 第 4 篇 §5.1：每台电脑上每个律所工作区一个目录；
  * Windows 为 %LOCALAPPDATA%\KimiWorkLegal\<律所 ID>\，macOS/Linux 同理）。
  */
-import { createHash } from "node:crypto";
-import { homedir, tmpdir } from "node:os";
+import { createHash, randomBytes } from "node:crypto";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export interface KernelOptions {
@@ -56,17 +56,64 @@ function unixSocketPath(workspaceDir: string, name: string): string {
   return join(dir, name);
 }
 
+/**
+ * Windows 命名管道名的本机唯一后缀（Kimi Code 增量核查 WR-1）：命名管道在同一台机器的所有登录会话间共享命名空间——
+ * 只按律所标识命名时，RDS/云桌面上同一律所的第二位律师的内核绑定失败（Agent 与法律工具全不可用），本机其他进程也能抢先占名。
+ * 后缀取“Windows 用户名 + 数据目录 + 本目录随机盐”的摘要：同一用户同一数据目录稳定、不同用户互不冲突、他人不可推算。名字不作凭据（通道另有令牌鉴权）。
+ */
+export function pipeSuffix(workspaceDir: string, user = safeUserName(), salt = ""): string {
+  return createHash("sha256").update(`${user}\u0000${workspaceDir.toLowerCase()}\u0000${salt}`).digest("hex").slice(0, 16);
+}
+
+/**
+ * 每个数据目录一份随机盐（复核 B4-A14）：用户名与数据目录对同机其他账户都可推算，RDS/云桌面上别的账户可以抢先占用管道名，
+ * 让本人的 Agent 与闸门起不来。盐在首次运行时生成、存数据目录内（只有本账户可读），管道名因此不可推算。
+ */
+export function pipeSalt(workspaceDir: string): string {
+  const f = join(workspaceDir, ".pipe-salt");
+  const read = (): string | null => {
+    try {
+      const v = readFileSync(f, "utf8").trim();
+      return /^[0-9a-f]{32}$/.test(v) ? v : null;
+    } catch {
+      return null;
+    }
+  };
+  const have = read();
+  if (have) return have;
+  mkdirSync(workspaceDir, { recursive: true, mode: 0o700 });
+  const fresh = randomBytes(16).toString("hex");
+  try {
+    writeFileSync(f, fresh, { mode: 0o600, flag: "wx" });
+    return fresh;
+  } catch {
+    // 并发首跑：以先写成的为准；文件损坏则覆盖重建
+    const again = read();
+    if (again) return again;
+    writeFileSync(f, fresh, { mode: 0o600 });
+    return fresh;
+  }
+}
+
+function safeUserName(): string {
+  try {
+    return userInfo().username;
+  } catch {
+    return process.env.USERNAME ?? "";
+  }
+}
+
 /** 内核命名管道（Agent 宿主与界面加载项的本机通道；§3：命名管道为主）。 */
 export function defaultPipePath(config: Pick<KernelConfig, "workspaceDir" | "firmSlug" | "env">): string {
   if (config.env.ZR_KERNEL_PIPE) return config.env.ZR_KERNEL_PIPE;
-  if (process.platform === "win32") return `\\\\.\\pipe\\kwl-${config.firmSlug}`;
+  if (process.platform === "win32") return `\\\\.\\pipe\\kwl-${config.firmSlug}-${pipeSuffix(config.workspaceDir, undefined, pipeSalt(config.workspaceDir))}`;
   return unixSocketPath(config.workspaceDir, "kernel.sock");
 }
 
 /** 出站闸门的本机套接字/命名管道（v9 第 04 篇 §5.1：闸门只监听本机通道，无 TCP 端口）。 */
 export function defaultGatePath(config: Pick<KernelConfig, "workspaceDir" | "firmSlug" | "env">): string {
   if (config.env.ZR_GATE_PIPE) return config.env.ZR_GATE_PIPE;
-  if (process.platform === "win32") return `\\\\.\\pipe\\kwl-gate-${config.firmSlug}`;
+  if (process.platform === "win32") return `\\\\.\\pipe\\kwl-gate-${config.firmSlug}-${pipeSuffix(config.workspaceDir, undefined, pipeSalt(config.workspaceDir))}`;
   return unixSocketPath(config.workspaceDir, "gate.sock");
 }
 

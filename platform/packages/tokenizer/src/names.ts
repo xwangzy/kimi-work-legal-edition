@@ -9,6 +9,7 @@
  * 覆盖扩展（审计 P1-3，2026-10-13）：
  * 5. 音译名（含“·”及其变体“•‧・･∙⋅”与全角句点）：角色词之后，或其后紧跟称谓/言语动词时识别；词典命中照常（分隔符不计）；
  * 6. 拉丁字母姓名（“John Smith”“Zhang San”，2–4 个首字母大写或全大写的词）：**只在角色词之后**识别，含机构词（Inc/Ltd/Group……）的不算；
+ * 8. 表头写法（姓名后紧跟性别、身份证号或联系电话说明，见 headerNames）。
  * 7. 昵称与职务称呼（老王、小李、王总、李工、张律、刘董、陈经理、赵主任……）：**只在该姓氏属于已知自然人**（词典、令牌表、本段识别）时识别，
  *    作为独立的值获得代号；称呼取称呼表中的最长匹配（“王总经理”整体识别），其后若紧跟会改变词义的字（“王总监”“王总是”“李工程”）则整段不识别。
  * 偏向召回：误把普通词替换为代号只影响可读性（界面与交付件会还原），漏识别则姓名出站——漏识别率在合成测试集上如实报告。
@@ -327,6 +328,32 @@ function skipSeparators(text: string, i: number): number {
   return k;
 }
 
+/**
+ * 8. 表头写法（v9.2 R7；二次检测发现的高置信写法并入规则，直接替换）：姓名后紧跟性别或身份、联系方式说明——
+ * “王明，男，汉族”“王明（女，1985 年生）”“王明，身份证号……”“王明，电话……”。只认起点在句首、标点、空白或功能字之后的候选
+ * （“其中李明，男”这种起点不清的不认，宁可交给二次检测提示）。
+ */
+const HEADER_CUE = /[，,（(]\s?(?:[男女](?=[，,。；;、）)]|$)|身份证号?|公民身份号码|身份证件号码|联系电话|手机号?|电话)/g;
+function headerNames(text: string, out: Set<string>): void {
+  HEADER_CUE.lastIndex = 0;
+  for (const m of text.matchAll(HEADER_CUE)) {
+    const k = m.index!;
+    for (const len of [4, 3, 2]) {
+      const j = k - len;
+      if (j < 0) continue;
+      const before = j === 0 ? "" : text[j - 1]!;
+      if (before !== "" && !BOUNDARY.test(before) && !FUNCTION_BEFORE.has(before)) continue;
+      const s = surnameAt(text, j);
+      if (s === 0 || len - s < 1 || len - s > 2) continue;
+      const given = text.slice(j + s, k);
+      if (![...given].every((c) => CJK.test(c) && !STOP.has(c))) continue;
+      if (COMMON_WORDS.has(text.slice(j, j + 2))) continue;
+      out.add(text.slice(j, k));
+      break;
+    }
+  }
+}
+
 /** 规则识别出的候选姓名（去重；不含位置）。 */
 export function recognizeNames(text: string): Set<string> {
   const out = new Set<string>();
@@ -343,6 +370,7 @@ export function recognizeNames(text: string): Set<string> {
     if (name) out.add(name);
   }
   dottedByContext(text, out);
+  headerNames(text, out);
   HONORIFIC_RE.lastIndex = 0;
   for (const m of text.matchAll(HONORIFIC_RE)) {
     const k = m.index!;
@@ -425,3 +453,7 @@ export function matcherFor(values: readonly string[]): VariantMatcher {
   }
   return m;
 }
+
+/** 供二次检测（candidates.ts）复用的规则表与读名函数：与本模块的识别同一口径。 */
+export const NAME_RULES = { STOP, COMMON_WORDS, FUNCTION_BEFORE, NAME_DELIM, ORG_AFTER, ORG_TAIL, SPEECH_VERBS, CJK } as const;
+export { readName };

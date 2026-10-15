@@ -72,3 +72,42 @@ test("密钥文件封装：工作区内不出现私钥明文；同密钥重开�
   assert.equal(readSecretFile<{ signPrivateKeyPem: string }>(join(lk, "device.json")).signPrivateKeyPem, keys.signPrivateKeyPem);
   configureSecretSealing(lk, undefined);
 });
+
+test("设备恢复包与密钥封装（隐私安全增量评审 F2）：导出的备份含私钥；导入经封装写回、不落明文；口令不足、口令错误与别的设备的恢复文件一律拒绝", { timeout: 180_000 }, async () => {
+  const { createKernel } = await import("../src/index.ts");
+  const { getDeviceKeys, configureSecretSealing } = await import("../src/devices.ts");
+  const { unwrapPrivateKeyScrypt } = await import("@zr-legal/keys");
+  const key = "secret-files-recovery-key-2026-0123456789";
+  const dir = mkdtempSync(join(tmpdir(), "kwl-sealed-rec-"));
+  const k = await createKernel({ dataDir: dir, firmSlug: "rec-firm", userSlug: "lawyer", env: env(key) });
+  const keysDir = join(dir, "rec-firm", "keys");
+  try {
+    await assert.rejects(() => k.invoke("recovery.export_device", { password: "short" }), /至少 10 个字/);
+    const out = join(dir, "backup", "device.kwlrec");
+    const ex = (await k.invoke("recovery.export_device", { password: "恢复口令-测试-0123", path: out })) as any;
+    const doc = JSON.parse(readFileSync(out, "utf8"));
+    const inner = JSON.parse(unwrapPrivateKeyScrypt(doc.wrapped, "恢复口令-测试-0123"));
+    assert.match(inner.signPrivateKeyPem, /PRIVATE KEY/, "导出的备份必须含签名私钥（封装形态下曾导出空值）");
+    assert.match(inner.encPrivateKeyPem, /PRIVATE KEY/);
+    assert.equal(doc.device_id, ex.device_id);
+    // 口令错误、别的设备的恢复文件：拒绝且不改动 device.json
+    const before = readFileSync(join(keysDir, "device.json"), "utf8");
+    await assert.rejects(() => k.invoke("recovery.import_device", { file: out, password: "错误口令-0000000000" }), (e: any) => e.code === "bad_password");
+    const other = join(dir, "backup", "other.kwlrec");
+    writeFileSync(other, JSON.stringify({ ...doc, device_id: "dev_other_device" }));
+    await assert.rejects(() => k.invoke("recovery.import_device", { file: other, password: "恢复口令-测试-0123" }), /另一台设备/);
+    assert.equal(readFileSync(join(keysDir, "device.json"), "utf8"), before);
+    // 正常导入：device.json 仍是封装形态、无明文私钥，解封后与备份一致
+    const im = (await k.invoke("recovery.import_device", { file: out, password: "恢复口令-测试-0123" })) as any;
+    // 同机导出后立即导入：密钥相同，无需暂存与重启（换钥的完整场景见 device-recovery.test.ts）
+    assert.equal(im.restart_required, false);
+    assert.equal(im.staged, false);
+    const raw = readFileSync(join(keysDir, "device.json"), "utf8");
+    assert.equal(JSON.parse(raw).format, "kwl-sealed/1");
+    assert.equal(raw.includes("PRIVATE KEY"), false, "导入后 device.json 不得出现明文私钥");
+    assert.equal(getDeviceKeys(keysDir).signPrivateKeyPem, inner.signPrivateKeyPem);
+  } finally {
+    await k.close();
+    configureSecretSealing(keysDir, undefined);
+  }
+});

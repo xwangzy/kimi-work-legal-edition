@@ -4,8 +4,12 @@
  * 所内节点都走这同一份方法表。签发已接入设备签名（§6.3）；审计事件入签名 hash 链（§6.4）；
  * 策略事件的签发人角色签名在同步阶段接入（当前经审计事件上链留痕）。
  */
+import { createPrivateKey, createPublicKey } from "node:crypto";
+import { errFields, slog } from "@zr-legal/safe-log";
 import { readFileSync, lstatSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { writeExportFile } from "../services/export-file.ts";
+import { recordSuspectReview, sendPreview, summarizeSend, type SendSummary, type SuspectView } from "../services/send-preview.ts";
 import {
   ConsentStatus,
   CollabScope,
@@ -22,10 +26,10 @@ import {
 } from "@zr-legal/domain";
 import { pendingBasisLabels, type EgressGate } from "@zr-legal/egress";
 import { countTokens } from "@zr-legal/tokenizer";
-import type { SkillsBundleStatus } from "../skills-bundle.ts";
+import { skillQualityChecklist, type SkillsBundleStatus } from "../skills-bundle.ts";
 import type { ModelBroker } from "@zr-legal/model-broker";
 import type { Lawdb } from "@zr-legal/lawdb";
-import { ocrModelsAvailable, type OcrModelPaths } from "@zr-legal/parse-ocr";
+import { ocrModelsAvailable, type OcrModelPaths } from "@zr-legal/parse-ocr/client";
 import {
   b64urlDecode,
   canonicalJson,
@@ -38,6 +42,7 @@ import {
   unwrapMatterKey,
   unwrapPrivateKeyScrypt,
   verifyBytes,
+  verifyDeviceCertificate,
   wrapMatterKey,
   wrapPrivateKeyScrypt,
   type DeviceCertificate,
@@ -51,21 +56,24 @@ import type { EgressApprovalStore } from "../services/egress-approvals.ts";
 import type { QaChatService } from "../services/qa-chat.ts";
 import type { KapAgentClient, KapMatterPolicy } from "../executor/kap-agent-client.ts";
 import { createW1Api } from "./w1.ts";
+import { buildDiagnostics } from "../services/diagnostics.ts";
 import { nowIso } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
 import type { TaskQueue } from "../queue.ts";
 import type { KernelConfig } from "../config.ts";
 import { runModeOf, type Identity } from "../identity.ts";
 import type { AsyncMutex } from "../mutex.ts";
-import { currentTenantEpoch, ensureNodeDevice, type KernelKeyContext } from "../devices.ts";
-import { rowPayloadHash, verifyCertSignature } from "../ledger-signer.ts";
+import { currentTenantEpoch, ensureNodeDevice, getDeviceKeys, stageDeviceRecovery, type KernelKeyContext } from "../devices.ts";
+import { archivedCertsOf, certVerifying, rowPayloadHash, verifyCertSignature } from "../ledger-signer.ts";
 import { syncExport, syncImport, syncStatus } from "../sync-engine.ts";
 import { docxHeaderFooterTexts, parseDocument } from "../services/parser.ts";
 import { detectClassifiedMarking, type ClassifiedFinding } from "../services/classified-marking.ts";
 import { restoreArtifactBytes } from "../services/export-restore.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
-import { buildRedlineFromCards, decideFact, decideRiskCard, listFacts, listRiskCards, riskCardProgress } from "../services/review-cards.ts";
+import { buildRedlineFromCards, decideFact, decideRiskCard, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
+import { SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, sampleContract } from "../services/sample-matter.ts";
+import { probeEnvironment, type EnvProbeResult } from "../services/env-probe.ts";
 import { isImage, isPdf, ocrReady, parseWithPipeline } from "../services/parse-pipeline.ts";
 import { estimatePoints, scenarioCap } from "../services/estimate.ts";
 import { docxRenderReport } from "../tools/tools/docx.ts";
@@ -85,6 +93,8 @@ export interface ApiDeps {
   ioMutex: AsyncMutex;
   /** OCR 模型路径（缺失时 OCR 路径如实报不可用，文本层照常）。 */
   ocrModelPaths: OcrModelPaths;
+  /** 隔离解析进程的 Node 与入口（W6：安装包为随包运行时；缺省当前进程）。 */
+  parseWorker?: { execPath?: string | undefined; entry?: string | undefined } | undefined;
   /** 开发/测试 mock OCR（ZR_PARSE_OCR_MOCK=1）。 */
   parseMock: boolean;
   /** 探针 2：本机端点非白名单路径请求计数（遥测/更新/远程控制零外连的行为证据）。 */
@@ -264,8 +274,24 @@ function registerParsedDocumentRemoved(): void {
 }
 void registerParsedDocumentRemoved;
 
+/**
+ * 本事项正在进行或排队中的 Agent 任务（Agent 宿主在同一事项同时只运行一个任务——执行域取消范围与路由 fencing 按事项，审查 S3-16）。
+ * 发起前就如实告诉律师，而不是先受理、排队后再以“已有运行中的任务”失败（2026-10-14 联调发现）。对账中的任务宿主已不在运行，不计入。
+ * 复核 B4-B11：崩溃恢复中的任务（recovering）会重新入队并再次拉起宿主，计入；waiting_device 目前没有任何代码路径会让开放任务进入，不列。
+ */
+function liveAgentRunOf(db: KernelDb, matterId: string): { run_id: string; goal: string } | null {
+  const rows = db.all<{ run_id: string; status: string; input_snapshot: string | null }>(
+    `SELECT run_id, status, input_snapshot FROM runs WHERE matter_id = ? AND scenario = 'a1.agent_task' AND status IN ('queued','running','recovering','waiting_input','waiting_approval','budget_paused') ORDER BY created_at DESC LIMIT 1`,
+    [matterId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const goal = String(parseJson<any>(r.input_snapshot, {})?.goal ?? "").replace(/\s+/g, " ").slice(0, 24);
+  return { run_id: r.run_id, goal };
+}
+
 export function createApi(deps: ApiDeps): Record<string, Handler> {
-  const { db, blobs, broker, egress, queue, config, lawdb, keyctx, ioMutex, ocrModelPaths, parseMock, localStats, revokeRun, tokens, gate } = deps;
+  const { db, blobs, broker, egress, queue, config, lawdb, keyctx, ioMutex, ocrModelPaths, parseMock, parseWorker, localStats, revokeRun, tokens, gate } = deps;
   const MODE_RANK: Record<string, number> = { chat: 0, manual: 1, default: 2, auto: 3 };
   /** 界面用的运行策略视图（模式选择器只显示允许的档位；第 03 篇 §8.1）。 */
   const runPolicyView = (matterId: string) => {
@@ -297,7 +323,21 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     const r = deletionReceiptOf(db, matterId);
     if (!r) return null;
     const certJson = db.get<{ cert_json: string }>(`SELECT cert_json FROM devices WHERE device_id = ?`, [r.receipt.device_id])?.cert_json;
-    const cert = certJson ? (JSON.parse(certJson) as DeviceCertificate) : r.receipt.device_id === keyctx.device.deviceId ? keyctx.device.cert : null;
+    const current = certJson ? (JSON.parse(certJson) as DeviceCertificate) : r.receipt.device_id === keyctx.device.deviceId ? keyctx.device.cert : null;
+    // 当前证书验不过时再试同一设备编号的留档证书（复核 B4-A11）
+    // 留档证书只对见证序号不晚于其上界的回执有效（复核 B4-R10）：回执由签名的 matter.purged 审计事件见证
+    const witness = db.get<{ seq: number }>(
+      `SELECT se.seq FROM signed_events se JOIN audit_events ae ON se.kind = 'audit_event' AND se.ref_id = CAST(ae.audit_event_id AS TEXT)
+        WHERE ae.action = 'matter.purged' AND ae.object_id = ? ORDER BY se.seq DESC LIMIT 1`,
+      [matterId],
+    )?.seq ?? null;
+    let cert = current;
+    if (!(current && verifyDeletionReceipt(r.receipt, r.signature, current.signPublicKeyPem)) && witness !== null) {
+      const archived = archivedCertsOf(db, r.receipt.device_id).find(
+        (a) => witness <= a.supersededSeq && a.cert.deviceId === r.receipt.device_id && verifyCertSignature(a.cert, keyctx.firm.rootPublicKeyPem) && verifyDeletionReceipt(r.receipt, r.signature, a.cert.signPublicKeyPem),
+      );
+      if (archived) cert = archived.cert;
+    }
     return { ...r, signer_cert: cert, signature_valid: cert ? verifyDeletionReceipt(r.receipt, r.signature, cert.signPublicKeyPem) : false };
   };
 
@@ -325,7 +365,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   /** 统一解析入口：PDF/JPG/PNG 走隔离进程管线（持互斥锁，§4.5）；DOCX/TXT 维持 v0 粗解析。 */
   async function parseAny(buf: Buffer, filename: string, mime: string): Promise<{ text: string; pageCount: number | null; qualityFlags: string[]; parser: string; parserVersion: string; pages?: { pageNo: number; kind: string; quality: string; note?: string | undefined; charCount: number; meanScore?: number | undefined }[] }> {
     if (isPdf(filename, mime) || isImage(filename, mime)) {
-      const r = await ioMutex.runExclusive(() => parseWithPipeline(buf, filename, mime, { ocrModelPaths, mockOcr: parseMock }));
+      const r = await ioMutex.runExclusive(() => parseWithPipeline(buf, filename, mime, { ocrModelPaths, mockOcr: parseMock, worker: parseWorker }));
       return r;
     }
     return parseDocument(filename, mime, buf);
@@ -557,15 +597,82 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           WHERE m.tenant_id = ? AND m.status = 'active' AND (m.lifecycle <> 'purged' OR ? = 1) ORDER BY m.created_at DESC LIMIT 100`,
         [id.userId, id.tenantId, _p?.include_purged === true ? 1 : 0],
       );
+      // 进行中与等你确认的任务（UIUX 增量评审 P0-F：侧栏状态点、窗口标题与系统通知，离开执行页也知道有任务在等你）
+      const act = new Map<string, { waiting: number; running: number; waiting_run_id: string | null }>();
+      for (const r of db.all<{ matter_id: string; run_id: string; status: string }>(
+        `SELECT matter_id, run_id, status FROM runs WHERE tenant_id = ? AND status IN ('queued','running','waiting_approval','waiting_input') ORDER BY created_at DESC`,
+        [id.tenantId],
+      )) {
+        const a = act.get(r.matter_id) ?? { waiting: 0, running: 0, waiting_run_id: null };
+        if (r.status === "waiting_approval" || r.status === "waiting_input") {
+          a.waiting += 1;
+          a.waiting_run_id ??= r.run_id;
+        } else a.running += 1;
+        act.set(r.matter_id, a);
+      }
+      // 事项列表“进展”与“最近活动”（v9.2 §4.4；Y4 M-1）：待签发的成果数、最近一次任务/材料/成果的时间
+      const pendingReview = new Map<string, number>();
+      for (const r of db.all<{ matter_id: string; n: number }>(`SELECT matter_id, COUNT(*) AS n FROM artifact_versions WHERE tenant_id = ? AND status = 'pending_review' GROUP BY matter_id`, [id.tenantId])) pendingReview.set(r.matter_id, r.n);
+      const samples = new Set(db.all<{ matter_id: string }>(`SELECT matter_id FROM sample_matters WHERE removed_at IS NULL`, []).map((r) => r.matter_id));
+      const lastAt = new Map<string, string>();
+      const bump = (mid: string, at: string | null) => {
+        if (at && (!lastAt.has(mid) || at > lastAt.get(mid)!)) lastAt.set(mid, at);
+      };
+      for (const r of db.all<{ matter_id: string; at: string | null }>(`SELECT matter_id, MAX(updated_at) AS at FROM runs WHERE tenant_id = ? GROUP BY matter_id`, [id.tenantId])) bump(r.matter_id, r.at);
+      for (const r of db.all<{ matter_id: string; at: string | null }>(`SELECT matter_id, MAX(created_at) AS at FROM document_versions WHERE tenant_id = ? GROUP BY matter_id`, [id.tenantId])) bump(r.matter_id, r.at);
+      for (const r of db.all<{ matter_id: string; at: string | null }>(`SELECT matter_id, MAX(created_at) AS at FROM artifact_versions WHERE tenant_id = ? GROUP BY matter_id`, [id.tenantId])) bump(r.matter_id, r.at);
       // 列表同样经 matterOut：数据级别（L2/L3a/L3b）、四项依据与全部化名常显（第 03 篇 §4.1；复核 S5-A05）
-      return { matters: rows.map(matterOut) };
+      return {
+        matters: rows.map((m: any) => ({
+          ...matterOut(m),
+          ...(samples.has(m.matter_id) ? { is_sample: true } : {}),
+          activity: { ...(act.get(m.matter_id) ?? { waiting: 0, running: 0, waiting_run_id: null }), pending_review: pendingReview.get(m.matter_id) ?? 0, last_at: lastAt.get(m.matter_id) ?? m.created_at },
+        })),
+      };
+    },
+
+    // ─── 示例事项（v9.2 §4.4；Y4 §5 D-6、#24）：虚构内容、本机生成、不联网；每台设备只自动放入一次，移除后不再放入 ───
+    "samples.status": (_p, id) => {
+      const r = db.get<{ matter_id: string; removed_at: string | null }>(
+        `SELECT s.matter_id, s.removed_at FROM sample_matters s JOIN matters m ON m.matter_id = s.matter_id WHERE m.tenant_id = ? ORDER BY s.installed_at DESC LIMIT 1`,
+        [id.tenantId],
+      );
+      return { installed: !!r && !r.removed_at, removed: !!r?.removed_at, matter_id: r && !r.removed_at ? r.matter_id : null };
+    },
+    "samples.install": async (_p, id) => {
+      const prior = db.get<{ matter_id: string; removed_at: string | null }>(
+        `SELECT s.matter_id, s.removed_at FROM sample_matters s JOIN matters m ON m.matter_id = s.matter_id WHERE m.tenant_id = ? LIMIT 1`,
+        [id.tenantId],
+      );
+      if (prior) return { matter_id: prior.removed_at ? null : prior.matter_id, installed: false };
+      const created = (await api["matters.create"]!({ title: SAMPLE_TITLE, stance: "受让方", client_name: "乙投资有限公司（示例）", counterparty: "甲科技有限公司（示例）", consent_status: "not_required" }, id)) as { matter: { matter_id: string } };
+      const mid = created.matter.matter_id;
+      db.run(`INSERT INTO sample_matters (matter_id) VALUES (?)`, [mid]);
+      const doc = (await api["materials.import"]!({ matter_id: mid, filename: SAMPLE_FILENAME, data_base64: sampleContract().toString("base64"), mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }, id)) as { document_version_id: string };
+      db.run(`INSERT INTO document_roles (document_version_id, matter_id, role, set_by) VALUES (?,?,?,?)`, [doc.document_version_id, mid, "theirs", id.userId]);
+      submitRiskCards({ db, blobs, ...(tokens ? { tokens } : {}) }, { tenantId: id.tenantId, matterId: mid, runId: null }, { document_version_id: doc.document_version_id, cards: SAMPLE_CARDS.map((c) => ({ ...c })) });
+      audit(db, id, "sample.installed", "matter", mid, undefined, keyctx);
+      return { matter_id: mid, installed: true };
+    },
+    "samples.remove": async (p, id) => {
+      const mid = String(p?.matter_id ?? "");
+      const row = db.get<{ removed_at: string | null }>(`SELECT removed_at FROM sample_matters WHERE matter_id = ?`, [mid]);
+      if (!row) throw validation("这不是示例事项");
+      if (row.removed_at) return { removed: true };
+      const m = requireMatterAccess(db, mid, id);
+      // 走正常的结案与删除流程（密码学擦除 + 签名回执），只是不要求律师输入名称与原因
+      if ((m.lifecycle ?? "active") === "active") await api["matters.close"]!({ matter_id: mid, retention_years: 1 }, id);
+      await api["matters.purge"]!({ matter_id: mid, confirm_title: m.title, early: true, reason: "移除示例事项" }, id);
+      db.run(`UPDATE sample_matters SET removed_at = CURRENT_TIMESTAMP WHERE matter_id = ?`, [mid]);
+      return { removed: true };
     },
 
     "matters.get": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       const docs = db.all(
-        `SELECT document_version_id, filename, sha256, size_bytes, mime, storage_mode, created_at, quarantined_at
-           FROM document_versions WHERE matter_id = ? ORDER BY created_at DESC`,
+        `SELECT dv.document_version_id, dv.filename, dv.sha256, dv.size_bytes, dv.mime, dv.storage_mode, dv.created_at, dv.quarantined_at, dr.role
+           FROM document_versions dv LEFT JOIN document_roles dr ON dr.document_version_id = dv.document_version_id
+          WHERE dv.matter_id = ? ORDER BY dv.created_at DESC`,
         [matter.matter_id],
       );
       const runs = db.all(
@@ -576,7 +683,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         return { run_id: r.run_id, scenario: r.scenario, status: r.status, created_at: r.created_at, mode: snap?.run_options?.mode ?? null, goal: typeof snap?.goal === "string" ? snap.goal.slice(0, 120) : null };
       });
       const myRole = db.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matter.matter_id, id.userId])?.matter_role ?? null;
-      return { matter: { ...matterOut(matter), my_role: myRole }, documents: docs, runs, run_policy: runPolicyView(matter.matter_id) };
+      const isSample = !!db.get(`SELECT 1 AS x FROM sample_matters WHERE matter_id = ? AND removed_at IS NULL`, [matter.matter_id]);
+      return { matter: { ...matterOut(matter), my_role: myRole, ...(isSample ? { is_sample: true } : {}) }, documents: docs, runs, run_policy: runPolicyView(matter.matter_id) };
     },
 
     "matters.update": (p, id) => {
@@ -711,6 +819,26 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       });
       audit(db, id, "materials.import", "document", result.document_version_id, sha256, keyctx);
       return { ...result, sha256, note: "导入副本进入内容寻址块（不可变）；纠错请上传新版本" };
+    },
+
+    /** 材料用途（v9.2 Y4 §5 D-4）：我方 / 对方 / 参考，或清除；写入 A1 材料快照清单。审计只记用途类别。 */
+    "materials.set_role": (p, id) => {
+      const docId = String(p?.document_version_id ?? "");
+      const doc = db.get<{ matter_id: string }>(`SELECT matter_id FROM document_versions WHERE document_version_id = ?`, [docId]);
+      if (!doc) throw notFound("材料");
+      requireMatterAccess(db, doc.matter_id, id);
+      requireMatterWriter(db, doc.matter_id, id);
+      const role = p?.role ?? null;
+      if (role !== null && role !== "ours" && role !== "theirs" && role !== "reference") throw validation("用途须为 ours / theirs / reference 或 null");
+      if (role === null) db.run(`DELETE FROM document_roles WHERE document_version_id = ?`, [docId]);
+      else
+        db.run(
+          `INSERT INTO document_roles (document_version_id, matter_id, role, set_by) VALUES (?,?,?,?)
+           ON CONFLICT (document_version_id) DO UPDATE SET role = excluded.role, set_by = excluded.set_by, set_at = CURRENT_TIMESTAMP`,
+          [docId, doc.matter_id, role, id.userId],
+        );
+      audit(db, id, "materials.set_role", "document", docId, sha256Hex(JSON.stringify({ role })), keyctx);
+      return { document_version_id: docId, role };
     },
 
     "materials.mount": async (p, id) => {
@@ -870,9 +998,11 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         { by: id.userId },
       );
       audit(db, id, "matter.archive_exported", "matter", matter.matter_id, sha256Hex(out.zip), keyctx);
+      // 桌面客户端：内核直接写到律师在系统对话框里选定的位置（不经渲染进程与浏览器下载；Y5 P1-4）
+      const saved = p?.save_path ? writeExportFile(String(p.save_path), out.zip, config.workspaceDir) : null;
       return {
-        filename: out.filename,
-        data_base64: out.zip.toString("base64"),
+        filename: saved?.name ?? out.filename,
+        ...(saved ? { saved: true } : { data_base64: out.zip.toString("base64") }),
         bytes: out.zip.length,
         sha256: sha256Hex(out.zip),
         counts: out.manifest.counts,
@@ -983,6 +1113,19 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       // 退出模式（许可到期或未取得、本设备被吊销；第 02 篇 §10）：新任务不可用
       const exitMode = deps.governance?.exitMode() ?? null;
       const blockReason = modelBlockReason(matter);
+      const busy = p.scenario === "a1.agent_task" ? liveAgentRunOf(db, matterId) : null;
+      const busyMessage = busy ? `这个事项里还有一个任务在进行${busy.goal ? `（“${busy.goal}”）` : ""}。请等它完成，或在它的执行页取消后再开始；也可以先在其他事项里开始任务` : null;
+      // 如实写明按原文发送的类别与上游留存口径（隐私安全增量评审 §3 P0-3：预览不能只说“替换了什么”）
+      const plainNote =
+        level === "L3a" || matter.full_pseudonym === 1
+          ? "以原文发送的有：案情事实、金额、日期与条款文字（未能识别的姓名也会以原文发送）"
+          : "以原文发送的有：机构名称、案情事实、金额、日期、条款文字与案号（未能识别的姓名也会以原文发送）";
+      const retentionNote =
+        matter.model_endpoint === "private"
+          ? "上游为律所私有模型，留存由律所决定"
+          : matter.model_endpoint === "byok"
+            ? "上游是否留存以律所与模型厂商的协议为准"
+            : "上游是否留存以模型服务企业协议为准（协议状态见“中软看得到什么”）";
       const pseudonymScope =
         level === "L3a" || matter.full_pseudonym === 1
           ? "证件、账户、联系方式、自然人姓名与机构名称在发送前全部替换为代号（全部化名）"
@@ -995,25 +1138,40 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
             : level === "L3a"
             ? "；联网检索只能以改写后的一般性查询发出，且每一条都须你确认"
             : "；联网检索默认只发出令牌化并去除已知当事人名称的查询；含当事人名称的查询须你逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）";
+      // “将发送什么”（v9.2 §3.3–3.4；P1-10、P1-11 ③）：同一套事项令牌化器离线预跑（不出站、不写回令牌表），给出替换计数与疑似未替换的姓名；
+      // L3a 事项还有未核对的疑似姓名时不能发起（发起时内核再核一次）
+      let sendSummary: SendSummary | null = null;
+      if (usesModel && !exitMode && !blockReason && tokens && level !== "L3b") {
+        sendSummary = summarizeSend(db, tokens, matterId, docIds, String(p?.goal ?? ""), level === "L3a" || matter.full_pseudonym === 1, { fullScan: level === "L3a", extraTexts: [String(matter.stance ?? ""), String(matter.jurisdiction ?? "")] }).summary;
+      }
+      const suspectsBlock = level === "L3a" && (sendSummary?.suspects.unreviewed ?? 0) > 0;
       const dataWhere = {
         model_endpoint: matter.model_endpoint,
         consent_status: matter.consent_status,
+        ...(sendSummary ? { send_summary: sendSummary } : {}),
         preview: exitMode
           ? `不会发送：${exitMode.message}`
           : !usesModel
             ? "本场景全部步骤在本机完成，不调用模型、无外发"
             : blockReason
               ? `不会发送：${blockReason}`
-              : `将发送：${docIds.length ? `${docIds.length} 份文档中任务涉及的内容` : "任务说明与按需读取的材料内容"}→ ${endpointLabels[matter.model_endpoint] ?? matter.model_endpoint}；${pseudonymScope}${searchNote}；每一次出站都记入数据去向卡`,
+              : `将发送：${docIds.length ? `${docIds.length} 份文档中任务涉及的内容` : "任务说明与按需读取的材料内容"}→ ${endpointLabels[matter.model_endpoint] ?? matter.model_endpoint}；${pseudonymScope}；${plainNote}${searchNote}；${retentionNote}；每一次出站都记入数据去向卡`,
         warning: exitMode
           ? exitMode.message
+          : busyMessage
+            ? busyMessage
+          : suspectsBlock
+            ? `这是敏感事项：发送前还有 ${sendSummary!.suspects.unreviewed} 处像姓名的文字没有换成代号，请先逐个核对（是姓名的加入当事人名单）再开始`
           : usesModel && blockReason
             ? p.scenario === "a1.agent_task"
               ? `${blockReason}。开放任务离不开模型：补齐后才能发起`
               : `${blockReason}；可在事项头补录依据，或一键生成告知函`
             : null,
         // 开放任务在模型被拦截时无法运行；退出模式下任何新任务都不能发起：界面据此禁用“确认发起”
-        start_blocked: !!exitMode || (usesModel && !!blockReason && p.scenario === "a1.agent_task"),
+        start_blocked: !!exitMode || !!busy || suspectsBlock || (usesModel && !!blockReason && p.scenario === "a1.agent_task"),
+        // 阻断原因的类别：界面据此给出对应的修复入口（只有 consent 才是“记录客户同意”）
+        block_kind: exitMode ? "exit_mode" : busy ? "busy" : usesModel && !!blockReason && p.scenario === "a1.agent_task" ? "consent" : suspectsBlock ? "suspects" : null,
+        ...(busy ? { busy_run_id: busy.run_id } : {}),
         caps: { per_request_chars: 200_000, per_task_chars: 1_000_000 },
       };
       return { estimate_id: estimateId, ...est, points_display: `预计 ${est.points} 点`, data_where: dataWhere };
@@ -1111,6 +1269,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (est.scenario === "a1.agent_task") {
         const br = modelBlockReason(matter);
         if (br) throw validation(`${br}。开放任务离不开模型：补齐后才能发起`, { start_blocked: true });
+      }
+      // 同一事项同时只运行一个 Agent 任务（宿主按事项划定执行域取消与路由，审查 S3-16）：发起前如实拒绝，不受理后再失败。
+      // 放在幂等重放与参数、追问条件校验之后：更具体的原因先报
+      // L3a 事项：疑似未替换的姓名核对完才能发起（估价之后材料或名单可能变了，界面的禁用也可能被绕过）
+      if ((est.scenario === "a1.agent_task" || est.scenario === "s1.contract_review") && tokens && dataLevelOf(matter.confidentiality, matter.consent_status) === "L3a") {
+        const s = summarizeSend(db, tokens, matterId, (est.input.document_version_ids as string[] | undefined) ?? [], String(p?.goal ?? est.input.goal ?? ""), true, { fullScan: true, extraTexts: [String(matter.stance ?? ""), String(matter.jurisdiction ?? "")] }).summary;
+        if (s.suspects.unreviewed > 0) throw validation(`这是敏感事项：还有 ${s.suspects.unreviewed} 处像姓名的文字没有核对，核对完才能开始`, { start_blocked: true, block_kind: "suspects" });
+      }
+      if (est.scenario === "a1.agent_task") {
+        const busy = liveAgentRunOf(db, matterId);
+        if (busy) throw new DomainError("conflict", `这个事项里还有一个任务在进行${busy.goal ? `（“${busy.goal}”）` : ""}。请等它完成，或在它的执行页取消后再开始`, 409, { run_id: busy.run_id });
       }
 
       const runId = newId("run");
@@ -1212,7 +1381,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           syncExport({ db, blobs, keyctx, tenantId: id.tenantId }, { shareDir: config.syncShareDir, matterId: matter.matter_id });
           inlineExported = true;
         } catch (e) {
-          console.warn(`[kernel] node_enqueue 内联导出失败（不阻断转交）：${(e as Error)?.message ?? e}`);
+          slog.event("KERNEL_NODE_ENQUEUE_EXPORT_FAILED", errFields(e));
         }
       }
       return {
@@ -1344,6 +1513,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (unresolved > 0) throw new DomainError("conflict", `仍有 ${unresolved} 个副作用调用结果不明，须先人工对账（runs.reconcile）`, 409);
       const expected = Number(p?.expected_version);
       if (!Number.isInteger(expected)) throw validation("需要 expected_version（乐观并发）");
+      // 同一事项同时只运行一个 Agent 任务（复核 B4-B12）：重试与发起同一口径——事项里另有进行中的任务即如实拒绝并给出那个任务，
+      // 不先改回排队、再在宿主失败
+      const retried = db.get<{ matter_id: string; scenario: string }>(`SELECT matter_id, scenario FROM runs WHERE run_id = ?`, [runId]);
+      if (retried?.scenario === "a1.agent_task") {
+        const busy = liveAgentRunOf(db, retried.matter_id);
+        if (busy && busy.run_id !== runId) {
+          throw new DomainError("conflict", `这个事项里还有一个任务在进行${busy.goal ? `（“${busy.goal}”）` : ""}。请等它完成，或在它的执行页取消后再重新运行`, 409, { run_id: busy.run_id });
+        }
+      }
       const r = db.run(
         `UPDATE runs SET status = 'queued', status_version = status_version + 1, updated_at = ?, terminal_reason = NULL, points_reserved = budget_points WHERE run_id = ? AND status = 'failed' AND status_version = ?`,
         [new Date().toISOString(), runId, expected],
@@ -1406,14 +1584,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         audit(db, id, "artifact.exported", "artifact", art.artifact_version_id, sha256Hex(JSON.stringify({ restored: r.restored, unresolved: r.unresolved.length })), keyctx);
       }
       const out = r?.changed ? r.bytes : buf;
+      // 桌面客户端：导出直写到律师选定的位置（还原真名的明文只落在那里；Y5 P1-4）；预览（restore:false）不接受保存位置
+      const saved = p?.save_path && p?.restore !== false ? writeExportFile(String(p.save_path), out, config.workspaceDir) : null;
+      if (saved) audit(db, id, "artifact.saved", "artifact", art.artifact_version_id, sha256Hex(out), keyctx);
       return {
-        filename: art.filename,
+        filename: saved?.name ?? art.filename,
         sha256: art.sha256,
         exported_sha256: r?.changed ? sha256Hex(out) : art.sha256,
         tokens_restored: r?.restored ?? 0,
         unresolved_tokens: r?.unresolved.length ?? 0,
         size_bytes: out.length,
-        data_base64: out.toString("base64"),
+        ...(saved ? { saved: true } : { data_base64: out.toString("base64") }),
       };
     },
 
@@ -1520,8 +1701,18 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         [art.matter_id, art.kind, art.audience],
       )!;
       const egressSummary = art.run_id ? egressSummaryOf(art.run_id) : null;
+      // “你来核对”（v9.2 §4.4；Y4 §5 D-3）：取本任务所用方法模板的质量自检清单；勾选只记录人工核对，不代表系统验证
+      let skillId: string | null = null;
+      if (art.run_id) {
+        const r = db.get<{ scenario: string; input_snapshot: string | null }>(`SELECT scenario, input_snapshot FROM runs WHERE run_id = ?`, [art.run_id]);
+        const snap = parseJson<any>(r?.input_snapshot ?? "{}", {});
+        skillId = typeof snap.skill === "string" ? snap.skill : r?.scenario === "s1.contract_review" ? "contract-review" : r?.scenario === "s1b.draft_compare" ? "redraft-review" : null;
+      }
+      const sk = deps.skills;
+      const lawyerChecklist = skillId && sk?.ok ? skillQualityChecklist(sk.dir, skillId) : [];
       return {
         artifact_version_id: art.artifact_version_id,
+        matter_id: art.matter_id,
         filename: art.filename,
         sha256: art.sha256,
         status: art.status,
@@ -1538,6 +1729,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           ai_marking: "显式（文档属性含 AI 辅助起草标识）",
           egress: egressSummary,
         },
+        lawyer_checklist: { skill: lawyerChecklist.length ? skillId : null, items: lawyerChecklist },
         blockers: [
           ...(fileOk ? [] : ["文件完整性校验失败"]),
           ...(openItems.length > 0 ? ["存在未决项，签发人须逐项确认"] : []),
@@ -1672,8 +1864,21 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       } catch {
         cert = null;
       }
-      const signatureValid = cert ? verifyBytes(cert.signPublicKeyPem, new TextEncoder().encode(ap.signed_payload), ap.signature) : false;
-      const certChainValid = cert && firmRow ? verifyCertSignature(cert, firmRow.root_public_key_pem) : false;
+      // 当前证书验不过时再试同一设备编号的留档证书（换新密钥到恢复之间签出的审批，复核 B4-A11）；证明包给出实际验签通过的那张
+      const signerCert = cert && verifyBytes(cert.signPublicKeyPem, new TextEncoder().encode(ap.signed_payload), ap.signature)
+        ? cert
+        : (certVerifying(
+            db,
+            ap.signer_device_id,
+            null,
+            firmRow?.root_public_key_pem ?? null,
+            new TextEncoder().encode(ap.signed_payload),
+            ap.signature,
+            // 审批的见证行序号（复核 B4-R10：留档证书只对不晚于其上界的见证有效）
+            db.get<{ seq: number }>(`SELECT seq FROM signed_events WHERE kind = 'approval' AND ref_id = ?`, [ap.approval_id])?.seq ?? null,
+          ) ?? cert);
+      const signatureValid = signerCert ? verifyBytes(signerCert.signPublicKeyPem, new TextEncoder().encode(ap.signed_payload), ap.signature) : false;
+      const certChainValid = signerCert && firmRow ? verifyCertSignature(signerCert, firmRow.root_public_key_pem) : false;
       const signedAt = parseJson<any>(ap.signed_payload, {})?.signed_at ?? ap.created_at;
       let signerStatus: string = "unknown";
       if (device) {
@@ -1709,7 +1914,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         proof: {
           signed_payload: ap.signed_payload,
           signature: ap.signature,
-          cert_json: device?.cert_json ?? null,
+          cert_json: signerCert ? JSON.stringify(signerCert) : (device?.cert_json ?? null),
           root_public_key_pem: firmRow?.root_public_key_pem ?? null,
         },
       };
@@ -1747,6 +1952,36 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         [deliveryId, art.artifact_version_id, id.tenantId, art.matter_id, audience, art.sha256, action, linkedApprovalId, id.userId, String(p?.note ?? "")],
       );
       return { delivery_id: deliveryId, action, package_sha256: art.sha256, status: action === "external_send" ? "issued" : art.status };
+    },
+
+    // 首页“等你处理 / 继续工作”（UIUX 增量评审 H-1）：本人能看到的事项里最近的任务（只给目标前 24 字与状态，不含正文）
+    "runs.list_recent": (p, id) => {
+      const limit = Math.max(1, Math.min(20, Number(p?.limit ?? 5) || 5));
+      const rows = db.all<{ run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; input_snapshot: string | null }>(
+        `SELECT r.run_id, r.matter_id, m.title AS matter_title, r.scenario, r.status, r.updated_at, r.input_snapshot
+           FROM runs r JOIN matters m ON m.matter_id = r.matter_id
+           JOIN matter_members mm ON mm.matter_id = r.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL
+          WHERE r.tenant_id = ? AND m.lifecycle <> 'purged'
+          ORDER BY r.updated_at DESC LIMIT ?`,
+        [id.userId, id.tenantId, limit],
+      );
+      const waiting = db.all<{ run_id: string; matter_id: string }>(
+        `SELECT r.run_id, r.matter_id FROM runs r JOIN matter_members mm ON mm.matter_id = r.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL
+          WHERE r.tenant_id = ? AND r.status IN ('waiting_approval','waiting_input') ORDER BY r.updated_at DESC LIMIT 50`,
+        [id.userId, id.tenantId],
+      );
+      return {
+        runs: rows.map((r) => ({
+          run_id: r.run_id,
+          matter_id: r.matter_id,
+          matter_title: r.matter_title,
+          scenario: r.scenario,
+          status: r.status,
+          updated_at: r.updated_at,
+          goal: String(parseJson<any>(r.input_snapshot, {})?.goal ?? "").replace(/\s+/g, " ").slice(0, 24),
+        })),
+        waiting: waiting.map((w) => ({ run_id: w.run_id, matter_id: w.matter_id })),
+      };
     },
 
     "pending.list": (_p, id) => {
@@ -1847,6 +2082,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         model_provider: config.env.ZR_MODEL_PROVIDER ?? "mock",
         endpoints_configured: endpoints,
         queue: queue.stats(),
+        log_level: slog.currentLevel(),
         local_server: {
           // 探针 2「遥测/更新/远程控制零外连」：落在端点白名单（/healthz、/v1/models、/mcp、/v1/chat/completions）之外的请求计数
           rejected_path_requests: localStats.rejectedPathRequests,
@@ -2006,6 +2242,58 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
      * 隐私安全审查 P1-5：按（成员, 事项）计量——每分钟调用与还原条数有上限（界面渲染远低于此；超限说明有程序在批量取原文），
      * 还原记“事项内容审计”（只记条数，不记代号与原文），同一成员同一事项按分钟合并为一条。
      */
+    /**
+     * 发送视图（v9.2 §3.4；Y4 #15）：某份材料令牌化之后模型会看到的前若干字、代号位置与疑似未替换姓名的位置。
+     * 与出站闸门同一套令牌化器预跑（不写回、不出站）；不返回代号真值——界面悬停时经受审计、限量的 matters.tokens.restore 逐个还原。
+     */
+    "materials.send_preview": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      if (!tokens) throw new DomainError("provider_unavailable", "令牌化工作区未启用", 503);
+      const level = dataLevelOf(matter.confidentiality, matter.consent_status);
+      const r = sendPreview(db, tokens, matter.matter_id, String(p?.document_version_id ?? ""), level === "L3a" || matter.full_pseudonym === 1);
+      if (!r) throw notFound("材料");
+      return r;
+    },
+    /** 发送前疑似未替换的姓名（Y5 §4.3 ②③）：对任务将用到的材料与任务说明预跑后二次检测，去掉律师已判“不是姓名”的。只在本机界面显示。 */
+    "matters.suspects.list": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      if (!tokens) throw new DomainError("provider_unavailable", "令牌化工作区未启用", 503);
+      const docIds = Array.isArray(p?.document_version_ids) ? (p.document_version_ids as unknown[]).map(String).slice(0, 50) : [];
+      const level = dataLevelOf(matter.confidentiality, matter.consent_status);
+      const r = summarizeSend(db, tokens, matter.matter_id, docIds, String(p?.goal ?? ""), level === "L3a" || matter.full_pseudonym === 1, { fullScan: level === "L3a", extraTexts: [String(matter.stance ?? ""), String(matter.jurisdiction ?? "")] });
+      return { suspects: r.suspects.slice(0, 200) as SuspectView[], summary: r.summary };
+    },
+    /** 律师对疑似姓名的判定：是姓名 → 加入当事人名单（之后发送前替换）；不是 → 本事项不再提示。审计只记条数。 */
+    "matters.suspects.review": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      if (!tokens) throw new DomainError("provider_unavailable", "令牌化工作区未启用", 503);
+      const items = Array.isArray(p?.items) ? (p.items as { value?: unknown; decision?: unknown }[]) : [];
+      if (items.length === 0 || items.length > 200) throw validation("须有 1–200 条判定");
+      const clean = items.map((x) => ({ value: String(x?.value ?? "").trim(), decision: x?.decision }));
+      for (const x of clean) {
+        if (x.value.length < 2 || x.value.length > 64) throw validation("每条文字须为 2–64 字");
+        if (x.decision !== "name" && x.decision !== "not_name") throw validation("判定须为 name 或 not_name");
+      }
+      const names = clean.filter((x) => x.decision === "name");
+      const rejected: string[] = [];
+      db.tx(() => {
+        for (const x of names) {
+          try {
+            tokens.upsertParty(matter.matter_id, { name: x.value, kind: "person" }, id.userId);
+          } catch (e) {
+            rejected.push(`${x.value}：${(e as Error).message}`);
+            continue;
+          }
+          recordSuspectReview(db, matter.matter_id, x.value, "name", id.userId);
+        }
+        for (const x of clean.filter((y) => y.decision === "not_name")) recordSuspectReview(db, matter.matter_id, x.value, "not_name", id.userId);
+        // 词典变了：出站令牌化随之改变（同 matters.parties.upsert）
+        if (names.length > rejected.length) db.run(`UPDATE matters SET policy_version = policy_version + 1 WHERE matter_id = ?`, [matter.matter_id]);
+      });
+      audit(db, id, "matter.suspects_reviewed", "matter", matter.matter_id, sha256Hex(JSON.stringify({ name: names.length - rejected.length, not_name: clean.length - names.length, rejected: rejected.length })), keyctx);
+      return { added_to_parties: names.length - rejected.length, dismissed: clean.length - names.length, rejected };
+    },
     "matters.tokens.restore": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       if (!tokens) throw new DomainError("provider_unavailable", "令牌化工作区未启用", 503);
@@ -2452,13 +2740,23 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "recovery.export_device": (p, id) => {
       const password = String(p?.password ?? "");
       const outPath = String(p?.path ?? join(config.workspaceDir, "recovery", "device-export.json"));
-      const deviceJson = JSON.parse(readFileSync(join(keyctx.keysDir, "device.json"), "utf8")) as Record<string, unknown>;
+      if ([...password].length < 10) throw validation("恢复口令至少 10 个字（这份备份离线保存，口令是唯一保护）");
+      // 设备密钥文件是封装形态（审计 S1）：经解封读取，不直接读文件（隐私安全增量评审 F2：直接读会导出不含私钥的“备份”）
+      const deviceKeys = getDeviceKeys(keyctx.keysDir);
+      if (!deviceKeys.signPrivateKeyPem?.includes("PRIVATE KEY") || !deviceKeys.encPrivateKeyPem?.includes("PRIVATE KEY")) throw new DomainError("internal", "读不到本机设备私钥，未导出", 500);
+      // v2：设备编号与证书摘要放进口令包裹的明文里（复核 B4-A12：文件外层的明文字段可以随意改，不能当绑定）
       const blob = wrapPrivateKeyScrypt(
-        JSON.stringify({ signPrivateKeyPem: deviceJson.signPrivateKeyPem, encPrivateKeyPem: deviceJson.encPrivateKeyPem }),
+        JSON.stringify({
+          v: 2,
+          device_id: keyctx.device.deviceId,
+          cert_sha256: sha256Hex(Buffer.from(canonicalJson(keyctx.device.cert), "utf8")),
+          signPrivateKeyPem: deviceKeys.signPrivateKeyPem,
+          encPrivateKeyPem: deviceKeys.encPrivateKeyPem,
+        }),
         password,
       );
       mkdirSync(join(outPath, ".."), { recursive: true });
-      writeFileSync(outPath, JSON.stringify({ v: 1, kind: "kwl-device-recovery", device_id: keyctx.device.deviceId, cert: keyctx.device.cert, wrapped: blob }, null, 2), { mode: 0o600 });
+      writeFileSync(outPath, JSON.stringify({ v: 2, kind: "kwl-device-recovery", device_id: keyctx.device.deviceId, cert: keyctx.device.cert, wrapped: blob }, null, 2), { mode: 0o600 });
       audit(db, id, "recovery.export_device", "device", keyctx.device.deviceId, undefined, keyctx);
       return {
         path: outPath,
@@ -2470,23 +2768,64 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "recovery.import_device": (p, id) => {
       const file = String(p?.file ?? "");
       const password = String(p?.password ?? "");
-      const doc = JSON.parse(readFileSync(file, "utf8")) as { kind?: string; device_id?: string; cert?: unknown; wrapped?: string };
-      if (doc.kind !== "kwl-device-recovery" || typeof doc.wrapped !== "string") throw validation("不是有效的设备恢复文件");
-      const secrets = JSON.parse(unwrapPrivateKeyScrypt(doc.wrapped, password)) as { signPrivateKeyPem: string; encPrivateKeyPem: string };
-      // 解开后即恢复设备身份：重写 device.json（0600），devices 行按文件内证书登记
-      const cur = JSON.parse(readFileSync(join(keyctx.keysDir, "device.json"), "utf8")) as Record<string, unknown>;
-      writeFileSync(
-        join(keyctx.keysDir, "device.json"),
-        JSON.stringify({ ...cur, signPrivateKeyPem: secrets.signPrivateKeyPem, encPrivateKeyPem: secrets.encPrivateKeyPem }, null, 2),
-        { mode: 0o600 },
-      );
-      if (doc.cert) {
-        db.run(`UPDATE devices SET cert_json = ?, status = 'active', revoked_at = NULL WHERE device_id = ?`, [JSON.stringify(doc.cert), keyctx.device.deviceId]);
+      const deviceId = keyctx.device.deviceId;
+      let doc: { kind?: string; device_id?: string; cert?: DeviceCertificate; wrapped?: string };
+      try {
+        doc = JSON.parse(readFileSync(file, "utf8"));
+      } catch {
+        throw validation("读不到恢复文件，或文件已损坏");
       }
-      audit(db, id, "recovery.import_device", "device", keyctx.device.deviceId, undefined, keyctx);
+      if (doc?.kind !== "kwl-device-recovery" || typeof doc.wrapped !== "string" || !doc.cert || typeof doc.cert !== "object") throw validation("不是有效的设备恢复文件");
+      // 已吊销的设备不能靠恢复文件在本地复活（复核 B4-A12）：拒绝，且不改状态与吊销时间
+      const devRow = db.get<{ status: string }>(`SELECT status FROM devices WHERE device_id = ?`, [deviceId]);
+      const tomb = db.get<{ x: number }>(`SELECT 1 AS x FROM cp_revoked_devices WHERE device_id = ?`, [deviceId]);
+      if (!devRow || devRow.status === "revoked" || tomb) {
+        throw new DomainError("conflict", "这台设备已被律所吊销，不能用恢复文件恢复；请联系律所管理员重新签发设备", 409);
+      }
+      if (doc.device_id !== deviceId) throw validation("这份恢复文件属于另一台设备，不能导入到本机");
+      // 口令错误时 unwrapPrivateKeyScrypt 抛 bad_password（接口约定，界面据此提示）
+      const secrets = JSON.parse(unwrapPrivateKeyScrypt(doc.wrapped, password)) as { v?: number; device_id?: string; cert_sha256?: string; signPrivateKeyPem?: string; encPrivateKeyPem?: string };
+      // v2 起编号与证书摘要在口令包裹里：外层明文被改即拒绝（v1 文件没有这层绑定，靠下面的证书与公钥核对）
+      if (secrets.v === 2) {
+        if (secrets.device_id !== deviceId) throw validation("这份恢复文件属于另一台设备，不能导入到本机");
+        if (secrets.cert_sha256 !== sha256Hex(Buffer.from(canonicalJson(doc.cert), "utf8"))) throw validation("恢复文件被改动过，不能导入");
+      }
+      // 从备份私钥推导两把公钥（复核 B4-A11：不能沿用 device.json 里现有的公钥，那可能是丢失后新换的）
+      let signPub: string;
+      let encPub: string;
+      try {
+        const sk = createPrivateKey(String(secrets.signPrivateKeyPem ?? ""));
+        const ek = createPrivateKey(String(secrets.encPrivateKeyPem ?? ""));
+        if (sk.asymmetricKeyType !== "ed25519" || ek.asymmetricKeyType !== "x25519") throw new Error("type");
+        // 由私钥 PEM 推导公钥（node:crypto 接受私钥输入）
+        signPub = createPublicKey(String(secrets.signPrivateKeyPem)).export({ format: "pem", type: "spki" }).toString();
+        encPub = createPublicKey(String(secrets.encPrivateKeyPem)).export({ format: "pem", type: "spki" }).toString();
+      } catch {
+        throw validation("恢复文件里的设备私钥不完整，不能导入");
+      }
+      // 证书：律所根签发、未过期、编号与成员是本机、其中的公钥与推导结果一致——否则不写入（复核 B4-A12）
+      const cert = doc.cert;
+      const vr = verifyDeviceCertificate(cert, keyctx.firm.rootPublicKeyPem);
+      if (!vr.ok) throw validation(`恢复文件里的设备证书无效（${vr.reason}）；请联系律所管理员重新签发设备`);
+      if (cert.deviceId !== deviceId || cert.memberId !== keyctx.device.memberId) throw validation("这份恢复文件属于另一台设备，不能导入到本机");
+      if (cert.signPublicKeyPem.trim() !== signPub.trim() || cert.encPublicKeyPem.trim() !== encPub.trim()) throw validation("恢复文件里的私钥与证书不符，不能导入");
+
+      // 与本机现有密钥相同（同机导出后立即导入）：无需任何改动
+      const cur = getDeviceKeys(keyctx.keysDir);
+      const sameKeys = cur.signPublicKeyPem.trim() === signPub.trim() && cur.encPublicKeyPem.trim() === encPub.trim();
+      if (!sameKeys) {
+        // 暂存、重启生效（复核 B4-R09）：本进程里内核、队列与 Agent 宿主都还持有临时密钥，此刻改包裹会与在途任务竞争；
+        // 下次启动时、任何组件装载密钥之前完成改包裹与换钥（devices.ts applyStagedRecovery，届时再复核一次）
+        stageDeviceRecovery(keyctx.keysDir, { device_id: deviceId, cert, signPrivateKeyPem: secrets.signPrivateKeyPem!, encPrivateKeyPem: secrets.encPrivateKeyPem!, staged_at: new Date().toISOString() });
+      }
+      audit(db, id, "recovery.import_device", "device", deviceId, undefined, keyctx);
       return {
-        device_id: keyctx.device.deviceId,
-        note: "设备私钥已自口令备份恢复（单机与专业版恢复路径，§5.3）；请立即吊销旧设备证书（如设备实际丢失）",
+        device_id: deviceId,
+        restart_required: !sameKeys,
+        staged: !sameKeys,
+        note: sameKeys
+          ? "恢复文件里的密钥与本机现有密钥相同，无需改动"
+          : "恢复文件已核验，重启应用后生效：重启时会把本机在此期间新建的事项改由恢复的密钥保护。如设备实际丢失，请立即吊销旧设备证书",
       };
     },
 
@@ -2540,7 +2879,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
 
     // ─── 审计链（§6.4：全量重放校验；手动检查点。只记元数据与 hash，不存正文） ───
-    "audit.verifyChain": (_p, _id) => keyctx.signer.verifyChain(),
+    // 分批让出事件循环（复核 B4-R12）：长链校验不挡住子进程心跳与界面请求
+    "audit.verifyChain": (_p, _id) => keyctx.signer.verifyChainAsync(),
 
     "audit.checkpoint": (p, _id) => {
       const kind = p?.kind === "daily" ? ("daily" as const) : ("manual" as const);
@@ -2665,9 +3005,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     return r?.e ?? 1;
   }
 
-  return {
-    ...api,
-    ...createW1Api({
+  const w1 = createW1Api({
       db,
       tokens: tokens ?? null,
       approvals: deps.approvals ?? null,
@@ -2685,6 +3023,43 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         return ledger ? { ledger } : null;
       },
       gateFacts: () => (gate ? { running: gate.running, routes: gate.routes(), search_configured: !!gate.upstreams.search, fetch: gate.upstreams.fetch ?? "disabled" } : null),
-    }),
+  });
+  let envProbeCache: { at: number; result: EnvProbeResult } | null = null;
+  const all: Record<string, Handler> = {
+    ...api,
+    ...w1,
+    // 脱敏诊断包（v9.2 §3.6；Y5 P1-2）：只含白名单结构化事实，导出前对照本机全部当事人与令牌原文自证，设备签名；记审计
+    "diagnostics.export": async (_p, id) => {
+      const r = await buildDiagnostics({
+        db,
+        tokens: tokens ?? null,
+        tenantId: id.tenantId,
+        deviceId: keyctx.device.deviceId,
+        signPrivateKeyPem: keyctx.device.keys.signPrivateKeyPem,
+        status: async () => api["kernel.status"]!({}, id),
+        capabilities: async () => w1["kernel.capabilities"]!({}, id),
+        logsDir: join(config.workspaceDir, "logs"),
+        envProbe: async () => all["device.env_probe"]!({}, id),
+      });
+      audit(db, id, "diagnostics.export", "device", keyctx.device.deviceId, r.content_sha256, keyctx);
+      if (_p?.save_path) {
+        const saved = writeExportFile(String(_p.save_path), Buffer.from(r.data_base64, "base64"), config.workspaceDir);
+        return { filename: saved.name, saved: true, content_sha256: r.content_sha256, summary: r.summary };
+      }
+      return r;
+    },
+    // Windows 环境自检（v9.2 §3.7；Y5 P1-6）：只读、结果缓存 1 小时（刷新时重新检查）；只含枚举与杀软产品名
+    "device.env_probe": async (p) => {
+      if (!envProbeCache || p?.refresh === true || Date.now() - envProbeCache.at > 3600_000) envProbeCache = { at: Date.now(), result: await probeEnvironment() };
+      return envProbeCache.result;
+    },
+    // 日志级别（Y5 §5.2）：设备页可临时开启 debug，24 小时后自动回到 info；字段规则不变（debug 也只记登记的事件）
+    "diagnostics.set_log_level": (p) => {
+      const level = (p as { level?: unknown } | undefined)?.level;
+      if (level !== "debug" && level !== "info") throw new DomainError("validation", "日志级别只能是 debug 或 info", 422);
+      slog.setLevel(level);
+      return { level: slog.currentLevel() };
+    },
   };
+  return all;
 }

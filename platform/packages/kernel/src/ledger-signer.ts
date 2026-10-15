@@ -24,6 +24,8 @@ export interface LedgerSigner {
   checkpoint(kind: "daily" | "manual"): { checkpointId: string; uptoSeq: number; headHash: string } | null;
   /** 全量重放校验（见 verifyChain 返回）。 */
   verifyChain(): ChainVerifyResult;
+  /** 同一校验，每 2,000 行让出一次事件循环（复核 B4-R12：长链同步校验会挡住子进程心跳与界面请求）。界面与节点调用走它。 */
+  verifyChainAsync(): Promise<ChainVerifyResult>;
 }
 
 export interface ChainFailure {
@@ -76,7 +78,7 @@ export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signP
     return row ? sha256B64(canonicalJson(row)) : "";
   }
 
-  return {
+  const signer: LedgerSigner = {
     deviceId,
 
     append(input) {
@@ -124,21 +126,41 @@ export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signP
     },
 
     verifyChain(): ChainVerifyResult {
+      const it = verifySteps();
+      let r = it.next();
+      while (!r.done) r = it.next();
+      return r.value;
+    },
+
+    async verifyChainAsync(): Promise<ChainVerifyResult> {
+      const it = verifySteps();
+      let r = it.next();
+      while (!r.done) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        r = it.next();
+      }
+      return r.value;
+    },
+  };
+
+  /** 校验的步骤：逐行核对，每 2,000 行暂停一次（同步调用方直接跑完，异步调用方在暂停处让出事件循环）。 */
+  function* verifySteps(): Generator<void, ChainVerifyResult> {
       const rows = db.all<SignedEventRow>(`SELECT * FROM signed_events ORDER BY seq`, []);
       const failures: ChainFailure[] = [];
       const revokedSigners = new Set<string>();
       let prevHash: string | null = null;
       const firmRow = db.get<{ root_public_key_pem: string }>(`SELECT root_public_key_pem FROM firm_identity WHERE tenant_id = ?`, [tenantId]);
       const rootPub = firmRow?.root_public_key_pem ?? null;
-      const deviceCache = new Map<string, { cert: DeviceCertificate; status: string } | null>();
+      type Dev = { cert: DeviceCertificate; archived: ArchivedCert[]; status: string };
+      const deviceCache = new Map<string, Dev | null>();
 
-      const deviceOf = (deviceId2: string): { cert: DeviceCertificate; status: string } | null => {
+      const deviceOf = (deviceId2: string): Dev | null => {
         if (!deviceCache.has(deviceId2)) {
           const d = db.get<{ cert_json: string; status: string }>(`SELECT cert_json, status FROM devices WHERE device_id = ?`, [deviceId2]);
-          let parsed: { cert: DeviceCertificate; status: string } | null = null;
+          let parsed: Dev | null = null;
           if (d) {
             try {
-              parsed = { cert: JSON.parse(d.cert_json) as DeviceCertificate, status: d.status };
+              parsed = { cert: JSON.parse(d.cert_json) as DeviceCertificate, archived: archivedCertsOf(db, deviceId2), status: d.status };
             } catch {
               parsed = null;
             }
@@ -149,11 +171,19 @@ export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signP
       };
 
       // 证书链与归属核对（每条签名/检查点共用）：证书须被律所根密钥签出且 cert.deviceId 与签名设备一致
-      const certProblems = (dev: { cert: DeviceCertificate; status: string }, expectedDeviceId: string): string | null => {
+      const certProblem = (cert: DeviceCertificate, expectedDeviceId: string): string | null => {
         if (!rootPub) return "firm_identity 缺失，无法验证书链";
-        if (!verifyCertSignature(dev.cert, rootPub)) return "证书链验签失败";
-        if (dev.cert.deviceId !== expectedDeviceId) return "证书与签名设备不符";
+        if (!verifyCertSignature(cert, rootPub)) return "证书链验签失败";
+        if (cert.deviceId !== expectedDeviceId) return "证书与签名设备不符";
         return null;
+      };
+      // 按当前证书核对；不通过再试同一设备编号的留档证书（换新密钥与恢复之间签出的历史，迁移 0024）——留档证书只对不晚于其
+      // 留档时链上最大序号的行有效（复核 B4-R10，迁移 0025）：被替换下来的旧私钥即使泄露，也签不出被判为有效的新见证。都不通过报当前证书的问题
+      const signatureProblem = (dev: Dev, expectedDeviceId: string, data: string, sig: string, badSig: string, seq: number): string | null => {
+        const bytes = new TextEncoder().encode(data);
+        const cur = certProblem(dev.cert, expectedDeviceId) ?? (verifyBytes(dev.cert.signPublicKeyPem, bytes, sig) ? null : badSig);
+        if (cur === null) return null;
+        return dev.archived.some((a) => seq <= a.supersededSeq && certProblem(a.cert, expectedDeviceId) === null && verifyBytes(a.cert.signPublicKeyPem, bytes, sig)) ? null : cur;
       };
 
       // 事项删除（迁移 0021）：清单内的行按“已清除”计、不判篡改——须同时满足（复核 C-A01）：
@@ -190,7 +220,9 @@ export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signP
         return false;
       };
       let redacted = 0;
+      let stepped = 0;
       for (const row of rows) {
+        if (++stepped % 2000 === 0) yield;
         const fail = (reason: string) => failures.push({ seq: row.seq, reason });
         // 1. 业务行重算 payload_hash（检测业务行被改/被删）
         const recomputed = recomputePayloadHash(db, row.kind, row.ref_id);
@@ -225,9 +257,8 @@ export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signP
           fail(`签名设备 ${row.signer_device_id} 未登记`);
         } else {
           if (dev.status === "revoked") revokedSigners.add(row.signer_device_id);
-          const certProblem = certProblems(dev, row.signer_device_id);
-          if (certProblem) fail(certProblem);
-          if (!verifyBytes(dev.cert.signPublicKeyPem, new TextEncoder().encode(row.event_hash), row.signature)) fail("签名验签失败");
+          const problem = signatureProblem(dev, row.signer_device_id, row.event_hash, row.signature, "签名验签失败", row.seq);
+          if (problem) fail(problem);
         }
         prevHash = row.event_hash;
       }
@@ -246,19 +277,15 @@ export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signP
           if (headAt === undefined) reason = `检查点指向的 seq ${cp.upto_seq} 不在链上`;
           else if (headAt !== cp.head_hash) reason = "检查点 head_hash 与链上该 seq 的 event_hash 不一致";
           else if (!dev) reason = `检查点签名设备 ${cp.signer_device_id} 未登记`;
-          else {
-            const certProblem = certProblems(dev, cp.signer_device_id);
-            if (certProblem) reason = certProblem;
-            else if (!verifyBytes(dev.cert.signPublicKeyPem, new TextEncoder().encode(cp.head_hash), cp.signature)) reason = "检查点签名验签失败";
-          }
+          else reason = signatureProblem(dev, cp.signer_device_id, cp.head_hash, cp.signature, "检查点签名验签失败", cp.upto_seq);
           return { checkpoint_id: cp.checkpoint_id, upto_seq: cp.upto_seq, kind: cp.kind, ok: reason === null, reason };
         });
 
       // 6. 删除清单完整性在第 0 步（豁免前）已核对：清单摘要须等于有签名见证的 matter.purged 审计事件里的摘要
       const firstBad = failures.length > 0 ? failures[0]!.seq : null;
       return { ok: failures.length === 0 && checkpoints.every((c) => c.ok), checked: rows.length, first_bad_seq: firstBad, failures, checkpoints, revoked_signers: [...revokedSigners], redacted };
-    },
-  };
+  }
+  return signer;
 }
 
 /**
@@ -437,6 +464,47 @@ export function assertIncomingEventAcceptable(db: KernelDb, input: { signerDevic
   if (dev.status === "revoked") {
     throw new DomainError("revoked_device_event", `设备 ${input.signerDeviceId} 已吊销（吊销后纪元 ${dev.revoked_epoch ?? "?"}）：其事件一律拒收（撤权校验不依赖时钟）`, 403);
   }
+}
+
+export interface ArchivedCert {
+  cert: DeviceCertificate;
+  /** 留档时签名事件链的最大序号：只对不晚于它的见证有效（迁移 0025）。 */
+  supersededSeq: number;
+}
+
+/** 某设备编号下被替换掉的证书（迁移 0024/0025，新替换的在前）；调用方逐张做证书链、编号与序号上界核对后再用。 */
+export function archivedCertsOf(db: KernelDb, deviceId: string): ArchivedCert[] {
+  const out: ArchivedCert[] = [];
+  for (const r of db.all<{ cert_json: string; superseded_seq: number }>(`SELECT cert_json, superseded_seq FROM device_cert_history WHERE device_id = ? ORDER BY superseded_at DESC, rowid DESC`, [deviceId])) {
+    try {
+      out.push({ cert: JSON.parse(r.cert_json) as DeviceCertificate, supersededSeq: Number(r.superseded_seq) || 0 });
+    } catch {
+      // 不可解析的留档不参与验签
+    }
+  }
+  return out;
+}
+
+/**
+ * 用某设备的证书验一段签名：先当前证书、再留档证书；每张都须律所根签发且设备编号一致，留档证书另须见证序号不晚于其上界
+ * （witnessSeq 为该签名在签名事件链上的见证行序号；没有见证即不用留档证书，复核 B4-R10）。
+ * 返回验签通过的那张证书（null = 都不通过）。成果审批与删除回执共用（复核 B4-A11）。
+ */
+export function certVerifying(
+  db: KernelDb,
+  deviceId: string,
+  current: DeviceCertificate | null,
+  rootPublicKeyPem: string | null,
+  data: Uint8Array,
+  signature: string,
+  witnessSeq: number | null,
+): DeviceCertificate | null {
+  if (!rootPublicKeyPem) return null;
+  const ok = (c: DeviceCertificate) => c.deviceId === deviceId && verifyCertSignature(c, rootPublicKeyPem) && verifyBytes(c.signPublicKeyPem, data, signature);
+  if (current && ok(current)) return current;
+  if (witnessSeq === null) return null;
+  for (const a of archivedCertsOf(db, deviceId)) if (witnessSeq <= a.supersededSeq && ok(a.cert)) return a.cert;
+  return null;
 }
 
 /** 证书链校验：根公钥对证书字段（除 signature）的 Ed25519 签名有效；有效期由调用方按业务时点判断。 */

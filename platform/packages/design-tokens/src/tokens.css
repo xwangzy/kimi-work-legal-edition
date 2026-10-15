@@ -7,10 +7,16 @@
   --bg-sidebar: #fbfaf9;
   --bg-main: #ffffff;
   --text-primary: #0e1219;
-  --text-secondary: #888888;
+  /* 次级文字：#888 在白底仅 3.5:1（WCAG AA 正文要求 4.5:1，UIUX 增量评审第 6 节）→ #6b6b6b（约 5.3:1） */
+  --text-secondary: #6b6b6b;
 
   /* 交互 */
   --accent: #167ffb;
+  /* 用作文字（链接、强调）的 Kimi 蓝：#167ffb 在白底 3.8:1 不达标 → #0b6bdc（约 5.1:1）；--accent 只用于填充与图形 */
+  --accent-text: #0b6bdc;
+  /* 表单控件边框与焦点环（非文本对比度 ≥ 3:1） */
+  --control-border: #8f8a84;
+  --focus-ring: #0b6bdc;
   --btn-primary: #191919;
   --btn-primary-text: #ffffff;
 
@@ -53,6 +59,11 @@
   --font-reading-leading: 1.75;
   --font-table-size: 13px;
   --font-table-leading: 1.6;
+  /* 文书纸面版式（v9.2 §4.4；Y4 §5 D-8）：DOCX 预览、审查工作台原文 */
+  --font-doc: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", SimSun, serif;
+  --doc-size: 16px;
+  --doc-leading: 1.9;
+  --bg-paper: #fffdf9;
   --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
 
   /* 侧栏与主区用背景色阶区分，不只靠 1px 分割线 */
