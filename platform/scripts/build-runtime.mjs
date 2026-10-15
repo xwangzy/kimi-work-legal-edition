@@ -22,7 +22,7 @@ import { build } from "esbuild";
 import { createHash } from "node:crypto";
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -87,7 +87,8 @@ function crossNativeDirFresh(pkgName) {
   const fresh = join(crossNpmCache, "verified", `${pkgName.replace(/^@/, "").replace(/\//g, "-")}-${want}`);
   rmSync(fresh, { recursive: true, force: true });
   mkdirSync(fresh, { recursive: true });
-  execFileSync("tar", ["-xzf", tgz, "-C", fresh, "--strip-components=1"]);
+  // 归档操作数相对 + cwd：GNU tar 会把 "D:\..." 的盘符冒号当远程主机（同 fetch-win-runtime.mjs）
+  execFileSync("tar", ["-xzf", basename(tgz), "-C", fresh, "--strip-components=1"], { cwd: crossNpmCache });
   if (JSON.parse(readFileSync(join(fresh, "package.json"), "utf8")).version !== want) throw new Error(`锁定的 ${pkgName} tarball 版本不是 ${want}`);
   return fresh;
 }

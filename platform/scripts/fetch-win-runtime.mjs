@@ -50,7 +50,8 @@ async function fetchOne(key, exeName, officialSha) {
   try {
     const zipFile = join(tmp, "a.zip");
     writeFileSync(zipFile, zip);
-    execFileSync("tar", ["-xf", zipFile, "-C", tmp]);
+    // 归档操作数必须相对：GNU tar 会把绝对路径的 "D:" 前缀解析成远程主机（bsdtar 无此问题但不支持 --force-local，故不用）
+    execFileSync("tar", ["-xf", "a.zip"], { cwd: tmp });
     const exe = findFile(tmp, exeName);
     if (!exe) throw new Error(`${key}：压缩包内没有 ${exeName}`);
     const exeSha = sha256(readFileSync(exe));
@@ -93,7 +94,7 @@ for (const [name, ent] of Object.entries(lock.npm)) {
   const dest = join(npmCache, "node_modules", ...name.split("/"));
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
-  execFileSync("tar", ["-xzf", tgz, "-C", dest, "--strip-components=1"]);
+  execFileSync("tar", ["-xzf", info.filename, "-C", dest, "--strip-components=1"], { cwd: npmCache });
   // 保留 tarball（复核 B4-R15）：build-runtime 交叉构建时按锁文件 integrity 复核它、并从它重新解出，不信任缓存里解好的目录
   renameSync(tgz, join(npmCache, tarballName(name, ent.version)));
   ent.integrity = info.integrity;
