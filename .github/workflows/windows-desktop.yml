@@ -27,7 +27,8 @@ defaults:
 jobs:
   test:
     runs-on: windows-latest
-    timeout-minutes: 120
+    # 关键用例（Windows 单并发）实测 117 分钟仍未跑完即被 120 分钟超时杀掉（run 38690633107）——放宽到 240
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
