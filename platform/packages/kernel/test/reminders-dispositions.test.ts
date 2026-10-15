@@ -398,3 +398,109 @@ test("S10B-10 取凭据失败后暂停 5 分钟：不在控制面刷签发", asy
   s.cancel(a.reminder_id);
   await s.tick();
 });
+
+test("S10B-19 前面各行网络往返期间被撤销的行，轮到它时不再发出（云端不留孤儿）", async () => {
+  const s = svc();
+  const a = s.create(input());
+  const b = s.create(input());
+  inject = (req) => {
+    if (req.step === "put" && req.reminder_id === a.reminder_id) s.cancel(b.reminder_id);
+    return null;
+  };
+  await s.tick();
+  assert.equal(notify.snapshot().some((x) => x.id === b.reminder_id), false, "已撤销的没有发出");
+  assert.equal(row(b.reminder_id).cloud_state, "cancelled");
+  inject = null;
+  s.cancel(a.reminder_id);
+  await s.tick();
+});
+
+test("S10B-21 超过云端可接受范围仍没登记成功的有效提醒改为只在本机，不删云端已有的旧版本；撤销时再删", async () => {
+  const s = svc();
+  const a = s.create(input());
+  await s.tick();
+  s.update(a.reminder_id, input({ note: "新版本" }));
+  tk.kernel.db.run(`UPDATE reminders SET remind_at = ? WHERE reminder_id = ?`, [new Date(clock - 25 * 3600_000).toISOString(), a.reminder_id]);
+  await s.tick();
+  assert.deepEqual([row(a.reminder_id).cloud_state, row(a.reminder_id).cloud_may_have_copy], ["local", 1]);
+  assert.ok(notify.snapshot().some((x) => x.id === a.reminder_id), "旧版本仍在云端");
+  s.cancel(a.reminder_id);
+  assert.equal(row(a.reminder_id).cloud_state, "cancel_pending");
+  await s.tick();
+  assert.equal(notify.snapshot().some((x) => x.id === a.reminder_id), false);
+});
+
+test("S10B-23 取提醒中途出错，已放进收件的照样通知", async () => {
+  const s = svc();
+  inject = (req) => {
+    if (req.step === "due") return { ok: true, status: 200, body: JSON.stringify({ items: [item({ id: rid("7") })], more: false }) };
+    if (req.step === "ack") throw new Error("闸门意外");
+    return null;
+  };
+  const out = await s.tick();
+  assert.equal(out.cloud, 1);
+  assert.deepEqual(due, [1]);
+});
+
+test("S10B-20 删除回执：送达过其他设备、后来撤销且云端已删的提醒也计入“已送达其他设备的期限提醒”", async () => {
+  const m3 = (await tk.inv("matters.create", { title: "回执事项", stance: "原告", consent_status: "agreed" })).matter.matter_id;
+  const s = svc();
+  const a = s.create(input({ matter_id: m3, audience: "team" }));
+  await s.tick();
+  s.cancel(a.reminder_id);
+  await s.tick();
+  assert.deepEqual([row(a.reminder_id).cloud_may_have_copy, row(a.reminder_id).cloud_state], [0, "cancelled"]);
+  await tk.inv("matters.close", { matter_id: m3, retention_years: 1 });
+  const purged = await tk.inv("matters.purge", { matter_id: m3, confirm_title: "回执事项", early: true, reason: "客户书面要求删除" });
+  const copies = purged.receipt.receipt.copies as { where: string; status: string }[];
+  assert.equal(copies.find((c) => c.where === "已送达其他设备的期限提醒")!.status, "pending");
+  assert.equal(copies.find((c) => c.where === "中软通知服务（期限提醒）")!.status, "none", "云端已删");
+});
+
+test("S10A-04 遗留 / S10A-22 对方换钥待核对时一直暂缓（不计 24 小时）；发出方时钟偏快暂缓而不丢弃", async () => {
+  const s = svc();
+  const acked: string[] = [];
+  const deferred: { id: string; until: string }[] = [];
+  const newKey = generateDeviceKeys();
+  tk.kernel.db.run(
+    `INSERT OR REPLACE INTO device_key_changes (device_id, tenant_id, member_id, cert_json, safety_code, detected_at, status) VALUES (?,?,?,?,?,?, 'pending')`,
+    [COL_DEV, TID, COL, "{}", "000000", new Date().toISOString()],
+  );
+  feed(
+    [
+      item({ id: rid("8"), signer: new SoftwareSigner(newKey.signPrivateKeyPem) }),
+      item({ id: rid("6"), body: { issued_at: new Date(clock + 3600_000).toISOString() } }),
+    ],
+    acked,
+    deferred,
+  );
+  await s.tick();
+  assert.deepEqual(deferred.map((d) => d.id).sort(), [rid("6"), rid("8")]);
+  clock += 30 * 3600_000;
+  acked.length = 0;
+  deferred.length = 0;
+  await s.tick();
+  assert.ok(deferred.some((d) => d.id === rid("8")), "换钥待核对：超过 24 小时仍暂缓");
+  assert.equal(acked.includes(rid("8")), false);
+  tk.kernel.db.run(`DELETE FROM device_key_changes WHERE device_id = ?`, [COL_DEV]);
+});
+
+test("S10A-23 待登记行的缓存密文按当时的接收设备封装：名单变了就升版本重封，不原样重发", async () => {
+  const s = svc();
+  const a = s.create(input({ audience: "team" }));
+  // 已到时的提醒（登记指纹重扫只管未到时的；这里只能靠重发前核对）
+  tk.kernel.db.run(`UPDATE reminders SET remind_at = ? WHERE reminder_id = ?`, [new Date(Math.floor((clock - 60_000) / 60_000) * 60_000).toISOString(), a.reminder_id]);
+  inject = (req) => (req.step === "put" ? { ok: false, reason: "notify_timeout" } : null);
+  await s.tick();
+  assert.ok(row(a.reminder_id).cloud_body, "已缓存");
+  inject = null;
+  tk.kernel.db.run(`UPDATE matter_members SET removed_at = ? WHERE matter_id = ? AND user_id = ?`, [new Date().toISOString(), mid, COL]);
+  clock += 2 * 60_000;
+  await s.tick();
+  await s.tick();
+  assert.equal(row(a.reminder_id).version, 2, "升版本重封");
+  assert.deepEqual(Object.keys(notify.snapshot().find((x) => x.id === a.reminder_id)!.targets), [MY_DEV], "被移出的同事不在接收设备里");
+  tk.kernel.db.run(`UPDATE matter_members SET removed_at = NULL WHERE matter_id = ? AND user_id = ?`, [mid, COL]);
+  s.cancel(a.reminder_id);
+  await s.tick();
+});

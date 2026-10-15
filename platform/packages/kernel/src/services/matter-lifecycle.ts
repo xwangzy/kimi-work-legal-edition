@@ -176,7 +176,8 @@ export async function purgeMatter(
     // 只计“云端可能有副本”的（发出过登记、尚未确认删除；复核 S10B-05）
     reminders_cloud: count(`SELECT COUNT(*) AS n FROM reminders WHERE matter_id = ? AND cloud_may_have_copy = 1`),
     // 可能已送达其他设备的（本人其他设备或事项成员；那些设备上有解密后的提醒内容）
-    reminders_elsewhere: count(`SELECT COUNT(*) AS n FROM reminders WHERE matter_id = ? AND cloud_may_have_copy = 1 AND (COALESCE(cloud_targets, 0) > 1 OR audience = 'team')`),
+    // 已经送达过的也算（复核 S10B-20：撤销且云端删成的，那些设备上仍有解密后的内容）；cloud_targets 只在登记成功时写入
+    reminders_elsewhere: count(`SELECT COUNT(*) AS n FROM reminders WHERE matter_id = ? AND (cloud_may_have_copy = 1 OR cloud_targets IS NOT NULL) AND (COALESCE(cloud_targets, 0) > 1 OR audience = 'team')`),
   };
   // 已导出或下载过的文件（成果下载、账本导出、结案归档）：在律师自己保存的位置，本产品无法删除（复核 C-A10；第 02 篇 §9.13“导出临时包”）
   inventory.exports = count(

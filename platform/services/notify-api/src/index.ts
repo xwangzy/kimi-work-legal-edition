@@ -189,13 +189,18 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
       rmSync(tmp, { force: true });
       throw e;
     }
-    // 改名本身落盘要同步目录（Windows 不支持打开目录做 fsync：跳过）
+    // 改名本身落盘要同步目录（Windows 不支持打开目录做 fsync：跳过）。改名已成功，目录同步失败不再抛出——
+    // 否则调用方回滚内存而磁盘已是新状态（复核 S10A-26）
     if (process.platform !== "win32") {
-      const dfd = openSync(o.dir, "r");
       try {
-        fsyncSync(dfd);
-      } finally {
-        closeSync(dfd);
+        const dfd = openSync(o.dir, "r");
+        try {
+          fsyncSync(dfd);
+        } finally {
+          closeSync(dfd);
+        }
+      } catch {
+        // 断电时可能丢失这次改名：生产形态由数据库事务保证（D-84）
       }
     }
   };
@@ -281,6 +286,13 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
     }
   };
 
+  /** 租户当前占用（提醒 + 墓碑）。 */
+  const tenantCount = (tid: string): number => {
+    let n = 0;
+    for (const r of byKey.values()) if (r.tid === tid) n++;
+    for (const t of tombs.values()) if (t.tid === tid) n++;
+    return n;
+  };
   const writeKey = (tid: string, uid: string) => `${tid}\u0000${uid}\u0000${bjDay(now())}`;
 
   /** 校验并整理 PUT 的请求体（键集合固定；任何多出的字段都拒绝——除触发时刻与设备编号外云端不收明文）。 */
@@ -340,11 +352,7 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
         return send(res, 200, { ok: true, version: cur.version, unchanged: true });
       }
       for (const dev of b.targets.keys()) if (revoked(c.tid, dev)) throw new HttpError(400, "target_revoked");
-      if (!cur) {
-        let n = 0;
-        for (const r of byKey.values()) if (r.tid === c.tid) n++;
-        if (n >= NOTIFY_MAX_PER_TENANT) throw new HttpError(429, "tenant_limit");
-      }
+      if (!cur && !tomb && tenantCount(c.tid) >= NOTIFY_MAX_PER_TENANT) throw new HttpError(429, "tenant_limit");
       const wk = writeKey(c.tid, c.uid);
       const prevWrites = writes[wk] ?? 0;
       if (prevWrites + 1 > NOTIFY_WRITES_PER_MEMBER_PER_DAY) throw new HttpError(429, "too_many_writes");
@@ -381,18 +389,26 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
       const cur = byKey.get(k);
       const tomb = tombs.get(k);
       if ((cur && cur.owner !== c.uid) || (tomb && tomb.owner !== c.uid)) throw new HttpError(403, "not_owner");
+      // 撤销也计入每日写入次数；为不存在的编号新建墓碑计入租户上限（复核 S10A-21：不能借撤销撑大状态文件）
+      const wk = writeKey(c.tid, c.uid);
+      const prevWrites = writes[wk] ?? 0;
+      if (prevWrites + 1 > NOTIFY_WRITES_PER_MEMBER_PER_DAY) throw new HttpError(429, "too_many_writes");
+      if (!cur && !tomb && tenantCount(c.tid) >= NOTIFY_MAX_PER_TENANT) throw new HttpError(429, "tenant_limit");
       // 墓碑记到“触发后 7 天”（没有副本的按现在起 7 天）；同一编号只升不降
       const version = Math.max(b.version, cur?.version ?? 0, tomb?.version ?? 0);
       const expires_at = iso(Math.max(cur ? Date.parse(cur.fire_at) + NOTIFY_RETENTION_MS : 0, tomb ? Date.parse(tomb.expires_at) : 0, now() + NOTIFY_RETENTION_MS));
       const nextTomb: Tombstone = { tid: c.tid, id: one[1]!, owner: c.uid, version, expires_at };
       byKey.delete(k);
       tombs.set(k, nextTomb);
+      writes[wk] = prevWrites + 1;
       try {
         persist();
       } catch (e) {
         if (cur) byKey.set(k, cur);
         if (tomb) tombs.set(k, tomb);
         else tombs.delete(k);
+        if (prevWrites === 0) delete writes[wk];
+        else writes[wk] = prevWrites;
         throw e;
       }
       return send(res, 200, { ok: true, existed: !!cur });
@@ -459,6 +475,11 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
       } catch (e) {
         for (const [k, r] of removedR) byKey.set(k, r);
         for (const [k, t] of removedT) tombs.set(k, t);
+        try {
+          access({ at: iso(), action: "tenant_purge", operator: who, tid, removed: 0, result: "rolled_back:state_persist_failed" });
+        } catch {
+          // 访问审计不可用：生产由告警处理
+        }
         throw e;
       }
       return send(res, 200, { ok: true, removed: removedR.length });

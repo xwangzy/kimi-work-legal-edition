@@ -338,7 +338,9 @@ export class ReminderService {
 
   /** 有效提醒的云端状态：一律“待登记”（未配置时等配置后再登记）；太早的只在本机——除非云端可能还有旧版本要替换。 */
   #activeCloudState(remindAt: string, mayHaveCopy = false): ReminderRow["cloud_state"] {
-    if (Date.parse(remindAt) < this.#now() - CLOUD_PAST_LIMIT_MS) return mayHaveCopy ? "cancel_pending" : "local";
+    // 太早（超过云端可接受范围）只在本机；云端若还有旧版本不删——它仍可能补发给离线设备，撤销时再删（复核 S10B-21）
+    void mayHaveCopy;
+    if (Date.parse(remindAt) < this.#now() - CLOUD_PAST_LIMIT_MS) return "local";
     return "pending";
   }
 
@@ -403,15 +405,24 @@ export class ReminderService {
       slog.event("KERNEL_REMINDER_TICK_FAILED", errFields(e));
     }
     if (local > 0) this.#safeOnDue(local);
-    if (this.#d.cloudConfigured() && !this.#d.suspended()) {
+    const counter = { added: 0 };
+    let cloudOn = false;
+    try {
+      cloudOn = this.#d.cloudConfigured() && !this.#d.suspended();
+    } catch (e) {
+      slog.event("KERNEL_REMINDER_TICK_FAILED", errFields(e));
+    }
+    if (cloudOn) {
       this.#forcedThisRound = false;
       try {
         this.#housekeeping();
         const reachable = await this.#push();
-        if (reachable) cloud = await this.#poll();
+        if (reachable) await this.#poll(counter);
       } catch (e) {
         slog.event("KERNEL_REMINDER_TICK_FAILED", errFields(e));
       }
+      // 取提醒中途出错时，已经放进收件的照样通知（复核 S10B-23）
+      cloud = counter.added;
       if (cloud > 0) this.#safeOnDue(cloud);
     }
     return { local, cloud };
@@ -466,13 +477,17 @@ export class ReminderService {
     }
   }
 
-  async #relay(make: (credential: string) => NotifyRelayRequest): Promise<NotifyRelayResult> {
+  /**
+   * `still`：发出之前（取凭据之后）再核对一次该行仍是这一版本、这一状态——等待期间被撤销、改动或事项被删除的，不再发出（复核 S10B-19）。
+   */
+  async #relay(make: (credential: string) => NotifyRelayRequest, still?: () => boolean): Promise<NotifyRelayResult> {
     let cred: string;
     try {
       cred = await this.#credential(false);
     } catch (e) {
       return { ok: false, reason: `credential:${String((e as Error)?.message ?? "error").slice(0, 40)}` };
     }
+    if (still && !still()) return { ok: false, reason: "superseded" };
     let r = await this.#d.relay(make(cred));
     // 凭据失效（到期、轮换、控制面重启）：每轮至多换一次（复核 S10B-10、S10A-13）
     if (r.ok && r.status === 401 && !this.#forcedThisRound) {
@@ -482,6 +497,7 @@ export class ReminderService {
       } catch (e) {
         return { ok: false, reason: `credential:${String((e as Error)?.message ?? "error").slice(0, 40)}` };
       }
+      if (still && !still()) return { ok: false, reason: "superseded" };
       r = await this.#d.relay(make(cred));
     }
     return r;
@@ -508,7 +524,10 @@ export class ReminderService {
          AND (cloud_next_at IS NULL OR cloud_next_at <= ?) ORDER BY cloud_next_at IS NOT NULL, cloud_next_at, updated_at LIMIT 20`,
       [this.#d.tenantId, this.#d.userId, nowS],
     );
-    for (const row of rows) {
+    for (const snap of rows) {
+      // 处理到这一行时重读：前面各行的网络往返期间它可能已被撤销、改动或随事项删除（复核 S10B-19）
+      const row = this.get(snap.reminder_id);
+      if (!row || row.version !== snap.version || row.cloud_state !== snap.cloud_state) continue;
       let outcome: "ok" | "stop";
       try {
         outcome = row.cloud_state === "cancel_pending" ? await this.#pushDelete(row) : await this.#pushPut(row);
@@ -521,6 +540,12 @@ export class ReminderService {
       if (outcome === "stop") return false;
     }
     return true;
+  }
+
+  /** 该行仍是这一版本、这一状态（有效提醒还须仍有效）。 */
+  #unchanged(row: ReminderRow, state: "pending" | "cancel_pending"): boolean {
+    const c = this.get(row.reminder_id);
+    return !!c && c.version === row.version && c.cloud_state === state && (state === "cancel_pending" || c.status === "active");
   }
 
   /** 该行稍后再试（退避）；状态不变。 */
@@ -546,7 +571,11 @@ export class ReminderService {
       this.#finishDelete(row, "expired");
       return "ok";
     }
-    const r = await this.#relay((credential) => ({ step: "delete", credential, reminder_id: row.reminder_id, version: row.version }));
+    const r = await this.#relay(
+      (credential) => ({ step: "delete", credential, reminder_id: row.reminder_id, version: row.version }),
+      () => this.#unchanged(row, "cancel_pending"),
+    );
+    if (!r.ok && r.reason === "superseded") return "ok";
     this.#note(r);
     if (r.ok && r.status === 200) {
       this.#finishDelete(row, null);
@@ -579,11 +608,7 @@ export class ReminderService {
 
   async #pushPut(row: ReminderRow & ReminderCloudCols): Promise<"ok" | "stop"> {
     if (Date.parse(row.remind_at) < this.#now() - CLOUD_PAST_LIMIT_MS) {
-      this.#d.db.run(`UPDATE reminders SET cloud_state = ? WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending'`, [
-        row.cloud_may_have_copy === 1 ? "cancel_pending" : "local",
-        row.reminder_id,
-        row.version,
-      ]);
+      this.#d.db.run(`UPDATE reminders SET cloud_state = 'local' WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending'`, [row.reminder_id, row.version]);
       return "ok";
     }
     // 同一版本已封好的密文原样重发（结果不明后重发命中云端幂等，不升版本、不重响；复核 S10A-09、S10B-07）
@@ -594,6 +619,14 @@ export class ReminderService {
       if (c && c.version === row.version && c.fire_at === row.remind_at && Array.isArray(c.targets) && typeof c.devices === "string") cached = c;
     } catch {
       cached = null;
+    }
+    // 缓存的密文按当时的接收设备封装：名单或公钥已变（成员移出、换钥、新设备）就升一版重封，不再原样重发（复核 S10A-23）
+    if (cached && cached.devices !== this.#fingerprint(this.recipients(row.matter_id, row.audience))) {
+      this.#d.db.run(
+        `UPDATE reminders SET version = version + 1, cloud_body = NULL, cloud_attempts = 0, cloud_next_at = NULL WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending' AND status = 'active'`,
+        [row.reminder_id, row.version],
+      );
+      return "ok";
     }
     if (!cached) {
       const targets = this.recipients(row.matter_id, row.audience);
@@ -619,17 +652,23 @@ export class ReminderService {
         targets: targets.map((t) => ({ dev: t.device_id, ct: sealForDevice(plain, t.enc_pub_pem, reminderAad(body.tid, body.rid, body.ver, t.device_id)) })),
         devices: this.#fingerprint(targets),
       };
-      // 先记“云端可能有副本”与密文，再发出（发出途中退出也知道要云端删除、重发也是同一份）
-      this.#d.db.run(`UPDATE reminders SET cloud_body = ?, cloud_may_have_copy = 1 WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending'`, [
+      // 先记“云端可能有副本”与密文，再发出（发出途中退出也知道要云端删除、重发也是同一份）；没命中 = 该行已变，不发
+      const w = this.#d.db.run(`UPDATE reminders SET cloud_body = ?, cloud_may_have_copy = 1 WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending' AND status = 'active'`, [
         JSON.stringify(cached),
         row.reminder_id,
         row.version,
       ]);
+      if (w.changes !== 1) return "ok";
     } else if (row.cloud_may_have_copy !== 1) {
-      this.#d.db.run(`UPDATE reminders SET cloud_may_have_copy = 1 WHERE reminder_id = ?`, [row.reminder_id]);
+      const w = this.#d.db.run(`UPDATE reminders SET cloud_may_have_copy = 1 WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending' AND status = 'active'`, [row.reminder_id, row.version]);
+      if (w.changes !== 1) return "ok";
     }
     const sealed = cached;
-    const r = await this.#relay((credential) => ({ step: "put", credential, reminder_id: row.reminder_id, fire_at: sealed.fire_at, version: sealed.version, targets: sealed.targets }));
+    const r = await this.#relay(
+      (credential) => ({ step: "put", credential, reminder_id: row.reminder_id, fire_at: sealed.fire_at, version: sealed.version, targets: sealed.targets }),
+      () => this.#unchanged(row, "pending"),
+    );
+    if (!r.ok && r.reason === "superseded") return "ok";
     this.#note(r);
     if (r.ok && r.status === 200) {
       this.#d.db.run(
@@ -672,7 +711,7 @@ export class ReminderService {
   }
 
   /** 取本设备到时的提醒：解密、核对后放进“收到的提醒”，确认收到；暂时不能判断的请云端暂缓。返回新放入的条数。 */
-  async #poll(): Promise<number> {
+  async #poll(counter: { added: number }): Promise<number> {
     let added = 0;
     for (let round = 0; round < 5; round++) {
       const r = await this.#relay((credential) => ({ step: "due", credential }));
@@ -696,13 +735,16 @@ export class ReminderService {
         }
         if (v.v === "hold") {
           const first = this.#holdSince(item, v.reason);
-          if (this.#now() - first > HOLD_LIMIT_MS) v = { v: "rejected", reason: `held_${v.reason}` };
+          if (v.reason !== "key_change_pending" && this.#now() - first > HOLD_LIMIT_MS) v = { v: "rejected", reason: `held_${v.reason}` };
           else {
             defer.push({ id: item.id, version: item.version, until: new Date(v.until).toISOString() });
             continue;
           }
         }
-        if (v.v === "added") added++;
+        if (v.v === "added") {
+          added++;
+          counter.added++;
+        }
         if (v.v === "rejected") this.#countReject(v.reason);
         ack.push({ id: item.id, version: item.version });
       }
@@ -751,7 +793,7 @@ export class ReminderService {
     if (typeof b.matter_id !== "string" || typeof b.from_dev !== "string" || typeof b.from_member !== "string" || typeof b.note !== "string") return { v: "rejected", reason: "malformed" };
     if (!(REMINDER_KINDS as readonly string[]).includes(b.kind) || !DATE_RE.test(b.due_date) || [...b.note].length > REMINDER_NOTE_MAX) return { v: "rejected", reason: "malformed" };
     if (b.audience !== "me" && b.audience !== "team") return { v: "rejected", reason: "malformed" };
-    if (typeof b.issued_at !== "string" || Number.isNaN(Date.parse(b.issued_at)) || Date.parse(b.issued_at) > this.#now() + EARLY_TOLERANCE_MS * 2) return { v: "rejected", reason: "malformed" };
+    if (typeof b.issued_at !== "string" || Number.isNaN(Date.parse(b.issued_at))) return { v: "rejected", reason: "malformed" };
     if (typeof b.remind_at !== "string" || Number.isNaN(Date.parse(b.remind_at))) return { v: "rejected", reason: "malformed" };
 
     // 发出设备：本机目录里还没有 → 暂缓；已吊销（含墓碑）或成员不符 → 不收
@@ -764,7 +806,11 @@ export class ReminderService {
     if (sender.status !== "active" || sender.revoked === 1) return { v: "rejected", reason: "sender_revoked" };
     if (sender.member_id !== b.from_member) return { v: "rejected", reason: "context_mismatch" };
     // 签名对不上：可能是发出设备刚换钥、本机目录还没同步——暂缓（复核 S10A-04；24 小时后仍不符即丢弃）
-    if (!verifyBytes(sender.sign_pub_pem, bodyBytes(b), p.sig)) return { v: "hold", reason: "signature", until: this.#now() + HOLD_RETRY_MS };
+    if (!verifyBytes(sender.sign_pub_pem, bodyBytes(b), p.sig)) {
+      // 对方换钥、待双方核对安全码：不计 24 小时上限，一直暂缓到核对完成或云端副本过期（复核 S10A-04 遗留）
+      const keyChange = this.#d.db.get(`SELECT 1 AS x FROM device_key_changes WHERE device_id = ? AND tenant_id = ? AND status = 'pending'`, [b.from_dev, this.#d.tenantId]);
+      return { v: "hold", reason: keyChange ? "key_change_pending" : "signature", until: this.#now() + HOLD_RETRY_MS };
+    }
 
     // 事项：本机已删除 → 不收（复核 S10A-06、S10B-03）；本人已被移出 → 不收；发出者不是成员 → 暂缓（成员关系可能未同步）
     const matter = this.#d.db.get<{ lifecycle: string | null }>(`SELECT lifecycle FROM matters WHERE matter_id = ? AND tenant_id = ?`, [b.matter_id, this.#d.tenantId]);
@@ -777,6 +823,8 @@ export class ReminderService {
         if (!member) return { v: "hold", reason: "sender_not_member", until: this.#now() + HOLD_RETRY_MS };
       }
     }
+    // 发出方时钟偏快（签发时刻在“现在”之后 10 分钟以上）：暂缓而不是丢弃（复核 S10A-22）
+    if (Date.parse(b.issued_at) > this.#now() + EARLY_TOLERANCE_MS * 2) return { v: "hold", reason: "clock", until: Math.min(Date.parse(b.issued_at), this.#now() + HOLD_LIMIT_MS) };
     // 提前送达（云端只该给已到时的）：暂缓到提醒时刻（复核 S10A-11）
     const at = Date.parse(b.remind_at);
     if (at > this.#now() + EARLY_TOLERANCE_MS) return { v: "hold", reason: "early", until: Math.min(at, this.#now() + HOLD_LIMIT_MS) };

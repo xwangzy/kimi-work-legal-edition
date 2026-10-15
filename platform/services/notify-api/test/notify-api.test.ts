@@ -239,3 +239,16 @@ test("NA-09 生产形态必须接吊销订阅；运营按租户整体删除（�
   assert.deepEqual(s.snapshot().map((x) => x.tid), ["t2"], "只删该租户");
   assert.deepEqual(access.map((a) => [a.action, a.operator, a.tid, a.removed]), [["tenant_purge", "op.a", "t1", 1]]);
 });
+
+test("NA-10 撤销也计入每日写入次数；为不存在的编号建墓碑计入租户上限（复核 S10A-21）", async () => {
+  const { base, s: svc } = await start(mkdtempSync(join(tmpdir(), "kwl-na-")));
+  const u = cred({ uid: "u-del", dev: "devD" });
+  let last = 0;
+  for (let i = 0; i < 501; i++) {
+    const r = await call(base, "DELETE", `/v1/reminders/rmd_${i.toString(16).padStart(24, "0")}`, u, { version: 1 });
+    last = r.status;
+    if (r.status !== 200) break;
+  }
+  assert.equal(last, 429, "第 501 次撤销被拒");
+  assert.equal(svc.tombstones().filter((t) => t.tid === "t1" && t.owner === "u-del").length, 500);
+});

@@ -3359,7 +3359,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const input = parseReminderInput(p, Date.now());
       reminderMatterGate(input.matter_id, input.audience, id);
       const r = rs.create(input);
-      void rs.tick();
+      void rs.tick().catch(() => {});
       return reminderOut(r);
     },
     "reminders.update": (p, id) => {
@@ -3370,7 +3370,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const input = parseReminderInput({ ...p, matter_id: cur.matter_id }, Date.now());
       reminderMatterGate(cur.matter_id, input.audience, id, "update");
       const r = rs.update(rid, input);
-      void rs.tick();
+      void rs.tick().catch(() => {});
       return reminderOut(r);
     },
     "reminders.cancel": (p, id) => {
@@ -3379,7 +3379,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const cur = rs.get(rid);
       if (!cur || cur.created_by !== id.userId) throw notFound("提醒");
       const r = rs.cancel(rid);
-      void rs.tick();
+      void rs.tick().catch(() => {});
       return reminderOut(r);
     },
     /** 云端判定请求不合格的提醒（不应出现）由律师点“重试”。 */
@@ -3389,7 +3389,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const cur = rs.get(rid);
       if (!cur || cur.created_by !== id.userId) throw notFound("提醒");
       const r = rs.retry(rid);
-      void rs.tick();
+      void rs.tick().catch(() => {});
       return reminderOut(r);
     },
     /** 标为已读：给 items（编号 + 版本）或 all:true。 */

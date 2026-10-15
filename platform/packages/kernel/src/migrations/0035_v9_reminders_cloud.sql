@@ -14,7 +14,8 @@ ALTER TABLE reminders ADD COLUMN cloud_attempts integer NOT NULL DEFAULT 0;
 ALTER TABLE reminders ADD COLUMN cloud_body text;
 ALTER TABLE reminders ADD COLUMN cloud_devices text;
 ALTER TABLE reminders ADD COLUMN cloud_expire_at text;
-UPDATE reminders SET cloud_may_have_copy = 1 WHERE cloud_state IN ('synced','failed','cancel_pending');
+-- 首版的“待登记”行可能已经送出过（结果不明）：一并按“可能有副本”处理（复核 S10B-22；删除不存在的副本无害）
+UPDATE reminders SET cloud_may_have_copy = 1 WHERE cloud_state IN ('synced','failed','cancel_pending','pending');
 UPDATE reminders SET cloud_state = 'pending' WHERE cloud_state = 'failed' AND status = 'active';
 UPDATE reminders SET cloud_state = 'cancel_pending' WHERE cloud_state = 'failed' AND status = 'cancelled';
 UPDATE reminders SET cloud_expire_at = strftime('%Y-%m-%dT%H:%M:%fZ', remind_at, '+7 days');
