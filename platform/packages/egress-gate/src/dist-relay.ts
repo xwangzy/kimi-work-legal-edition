@@ -11,7 +11,7 @@ import { transportFailureReason, type TransportCheck } from "./tls-policy.ts";
 export type DistRelayResult = { ok: true; status: number; body_b64: string } | { ok: false; reason: string };
 
 /** 与 @zr-legal/content-dist 的文件名规则、类别与通道一致。 */
-const PATH_RE = /^\/dist\/(lawdb|skills)\/(stable|beta)\/(latest\.json|files\/[A-Za-z0-9][A-Za-z0-9._-]{0,119})$/;
+const PATH_RE = /^\/dist\/(lawdb|skills)\/(stable|beta)\/(latest\.json|files\/(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._-]{0,119})$/;
 /** 单次响应上限：经 IPC 以 base64 交回，取 64 MiB（与 content-dist MAX_PACKAGE_BYTES 一致）。 */
 export const DIST_MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
 

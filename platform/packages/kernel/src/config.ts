@@ -162,8 +162,9 @@ function resolveLawdb(env: NodeJS.ProcessEnv, workspaceDir: string): { lawdbFile
   const lawdbFile =
     env.ZR_LAWDB_FILE ??
     firstExisting([resourcesLawdb ? join(resourcesLawdb, "lawdb.sqlite") : undefined, bundleDir ? join(bundleDir, "lawdb", "lawdb.sqlite") : undefined, devFile]) ??
+    // 都找不到：给出开发路径（不存在时 openLawdb 以中文报错——不兜底到可写的工作区，复核 S8A-21）
     devFile ??
-    join(workspaceDir, "lawdb", "lawdb.sqlite");
+    "";
 
   const devPub = repoContentPath("keys", "content-signing-dev.pub.json");
   let lawdbSignerPub = env.ZR_LAWDB_SIGNER_PUB ?? "";

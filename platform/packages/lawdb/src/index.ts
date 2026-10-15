@@ -237,6 +237,11 @@ export class Lawdb {
     return this.manifest.package_version;
   }
 
+  /** 内容摘要（签名覆盖的对象；判断“内容是否相同”用它，不用不在签名内的版本号）。 */
+  get contentSha256(): string {
+    return this.manifest.content_sha256;
+  }
+
   close(): void {
     this.db.close();
   }
@@ -408,6 +413,8 @@ export class Lawdb {
         this.manifest.built_at = manifest.built_at;
         this.manifest.content_sha256 = manifest.content_sha256;
         this.manifest.signature = manifest.signature;
+        // 签名与指纹必须成对来自同一份清单（复核 S8A-03：内容签名公钥轮换后，旧钥底包 + 新钥增量合并的 sidecar 曾留着旧指纹，之后永远验不过）
+        this.manifest.signer_key_id = manifest.signer_key_id;
       })();
       // 文件对保持一致：sidecar manifest 更新为增量声明（合并后版本），供「校验→原子替换」
       writeFileSync(manifestPathFor(this.filePath), JSON.stringify(this.manifest, null, 2) + "\n");

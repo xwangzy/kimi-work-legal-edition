@@ -29,6 +29,9 @@ function isDataUrl(v: string): boolean {
 /** 文书纸面版式（v9.2 §4.4；Y4 §5 D-8、#31）：衬线正文、较大字号与行距、纸面底色——用于 Word/Excel 成果预览。 */
 const PAPER_STYLE = "body{font-family:'Source Han Serif SC','Noto Serif CJK SC','Songti SC',SimSun,serif;font-size:16px;line-height:1.9;color:#1f1d1a;background:#fffdf9;margin:24px 40px;}";
 
+/** 预览框架的基础样式（框架内取不到本页令牌：颜色值手抄自 tokens.css 的 --p-ink、--p-white、--p-blue-600，style-tokens.test.ts 核对相等）。 */
+const BASE_STYLE = "body{font-family:'Segoe UI','Microsoft YaHei UI','Microsoft YaHei',-apple-system,'PingFang SC',sans-serif;font-size:14px;line-height:1.7;color:#0e1219;background:#ffffff;margin:16px;} .kwl-link{color:#0a66d1;text-decoration:underline dotted;cursor:default;} img{max-width:100%;}";
+
 export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | null>, o: { paper?: boolean } = {}): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   for (const tag of DROP_ELEMENTS) for (const el of Array.from(doc.querySelectorAll(tag))) el.remove();
@@ -74,7 +77,7 @@ export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | nu
     "<!doctype html><html><head>",
     `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">`,
     '<meta charset="utf-8">',
-    "<style>body{font-family:'Segoe UI','Microsoft YaHei UI','Microsoft YaHei',-apple-system,'PingFang SC',sans-serif;font-size:14px;line-height:1.7;color:#0e1219;background:#ffffff;margin:16px;} .kwl-link{color:#0a66d1;text-decoration:underline dotted;cursor:default;} img{max-width:100%;}</style>",
+    `<style>${BASE_STYLE}</style>`,
     o.paper ? `<style>${PAPER_STYLE}</style>` : "",
     styles,
     "</head><body>",

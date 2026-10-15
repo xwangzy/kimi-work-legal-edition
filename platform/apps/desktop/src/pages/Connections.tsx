@@ -7,7 +7,7 @@
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { useEffect, useState } from "react";
 import { api, updates, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft } from "../api.ts";
-import { contentCheckLine, contentSourceLine } from "../lib/content-labels.ts";
+import { CONTENT_CHECK_FAILED, CONTENT_PANEL_NOTE, contentCheckLine, contentSourceLine, contentStaleLine } from "../lib/content-labels.ts";
 import { nav, type SettingsTab } from "../App.tsx";
 import { fmtTime } from "../lib/labels.ts";
 import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
@@ -117,11 +117,11 @@ function GeneralTab({ version }: { version: string | null }) {
                     setTheme(o.value);
                   }}
                 >
-                  {o.label}
+                  {o.value === "system" ? `${o.label}（现在是${document.documentElement.dataset.theme === "dark" ? "深色" : "浅色"}）` : o.label}
                 </button>
               ))}
             </div>
-            <div className="muted">深色模式下，文书预览与审查原文仍按纸面白显示，便于对照打印稿。</div>
+            <div className="muted">深色模式下，Word/Excel 成果预览与审查原文仍按纸面白显示，便于对照打印稿；打印一律按浅色。</div>
           </div>
         </div>
         <div className="device-row">
@@ -144,9 +144,11 @@ function GeneralTab({ version }: { version: string | null }) {
 function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: any[]; recovery: any; firm: string | null; syncOn: boolean }) {
   const [example, setExample] = useState<{ sent: string; replaced: number } | null>(null);
   const [updatesOn, setUpdatesOn] = useState(false);
+  const [contentOn, setContentOn] = useState(false);
   useEffect(() => {
     api.exampleRequest().then(setExample).catch(() => setExample(null));
     updates.status().then((u) => setUpdatesOn(!!u?.enabled)).catch(() => setUpdatesOn(false));
+    api.contentStatus().then((c) => setContentOn(!!c?.configured)).catch(() => setContentOn(false));
   }, []);
   // 复核 S6A-02/03：逐项写清替换了什么、哪些按原文；不经中软但会出本机的去向（网页、IM、团队共享）单列
   const local = ["案卷原件与全部交付件", "代号与真实姓名的对照表", "对话、问答与任务记录", "事项名称与事项头信息"];
@@ -160,7 +162,14 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
     ...(im.length > 0 ? ["IM 收件：发给机器人的文字与文件经所用的 IM 平台传递"] : []),
     ...(syncOn ? ["团队共享：经律所指定的共享文件夹同步（加密）"] : []),
   ];
-  const stored = ["账号、席位与用量", "匿名事项编号与调用记录（不含内容）", "律所策略与设备证书", ...(updatesOn ? ["更新检查的访问记录（IP 与版本）"] : [])];
+  const stored = [
+    "账号、席位与用量",
+    "匿名事项编号与调用记录（不含内容）",
+    "律所策略与设备证书",
+    ...(updatesOn ? ["更新检查的访问记录（IP 与版本）"] : []),
+    // 复核 S8A-05：法规库与方法模板的在线更新也是一条出网（随席位凭据，服务端看得到账号与设备）
+    ...(contentOn ? ["法规库与方法模板的下载记录（账号、设备、下载的版本与时间；不含任何案件信息）"] : []),
+  ];
   const notEnabled = [
     ...(gate?.search_configured ? [] : ["联网检索"]),
     "法源与主体信息查询",
@@ -242,11 +251,13 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
   const [content, setContent] = useState<ContentStatus | null>(null);
   const [checking, setChecking] = useState(false);
   const [results, setResults] = useState<ContentCheckResult[] | null>(null);
+  const [checkFailed, setCheckFailed] = useState(false);
   useEffect(() => {
     api.contentStatus().then(setContent).catch(() => setContent(null));
   }, []);
   const check = () => {
     setChecking(true);
+    setCheckFailed(false);
     api
       .contentCheck()
       .then((r) => {
@@ -254,12 +265,20 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
         setContent(r.status);
         if (r.results.some((x) => x.kind === "lawdb" && (x.outcome === "installed" || x.outcome === "reverted"))) onLawdbChanged();
       })
-      .catch(() => setResults([]))
+      // 失败时保留上次结果，另给一句提示（复核 S8B-03）
+      .catch(() => setCheckFailed(true))
       .finally(() => setChecking(false));
   };
-  const lines = (results ?? [content?.lawdb?.last_check, content?.skills?.last_check].filter(Boolean)).map((r) => contentCheckLine(r as ContentCheckResult)).filter(Boolean) as string[];
+  const shown = (results ?? [content?.lawdb?.last_check, content?.skills?.last_check].filter(Boolean)) as ContentCheckResult[];
+  const lines = shown.map((r) => contentCheckLine(r)).filter(Boolean) as string[];
+  const lastAt = shown.map((r) => r.at).sort().at(-1) ?? null;
   const rows: { name: string; state: "可用" | "未开通" | "即将推出" | "不可用"; note: string; detail?: string }[] = [
-    { name: "离线法规库", state: lawdb?.error ? "不可用" : "可用", note: lawdb?.error ? "法规库文件没有通过签名核对，已停用" : "法条核验在本机完成，不联网", detail: lawdb?.error ? undefined : lawdb?.display },
+    {
+      name: "离线法规库",
+      state: lawdb?.error ? "不可用" : "可用",
+      note: lawdb?.error ? "法规库文件没有通过核对，已停用" : content?.configured ? "法条核验在本机完成；法规库可在线更新（见下方）" : "法条核验在本机完成，不联网",
+      detail: lawdb?.error ? undefined : lawdb?.display,
+    },
     { name: "Kimi 模型（经中软）", state: gate?.routes ? "可用" : "未开通", note: "一般事项可用；敏感事项须管理员放开并全部化名；客户要求不上云的事项不用" },
     { name: "联网检索", state: gate?.search_configured ? "可用" : "未开通", note: "默认去掉当事人名称再发出；含当事人名称的查询须经办律师逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）" },
     { name: "公开网页", state: gate?.fetch === "local" ? "可用" : "未开通", note: `只打开公开官方站点与律所允许的网站（${gate?.fetch_allowlist_size ?? 0} 个），新网站要你确认` },
@@ -304,7 +323,7 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
         <div className="panel content-updates">
           <div className="content-updates-head">
             <b>在线更新</b>
-            <span className="muted">法规库与方法模板由中软签名发布，下载后在本机核对通过才使用；只带席位凭据，不带任何事项信息</span>
+            <span className="muted">{CONTENT_PANEL_NOTE}</span>
             <span className="spacer" />
             <button className="btn-ghost btn-sm" disabled={checking} onClick={check}>
               {checking ? "正在检查…" : "检查更新"}
@@ -320,6 +339,13 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
               {l}
             </div>
           ))}
+          {checkFailed && <div className="content-line muted">{CONTENT_CHECK_FAILED}</div>}
+          {[contentStaleLine("lawdb", content, Date.now()), contentStaleLine("skills", content, Date.now())].filter(Boolean).map((l) => (
+            <div key={l} className="content-line content-warn">
+              {l}
+            </div>
+          ))}
+          {lastAt && <div className="content-line muted">最近检查：{fmtTime(lastAt)}</div>}
         </div>
       )}
     </>
@@ -607,10 +633,18 @@ function DiagnosticsTab({ caps, gate, devices, unresolved, onReconciled, im, rec
 /** 原“中软看得到什么”逐情形明细（技术版，供管理员与客户 IT 核对；律师版见“数据去向说明”）。 */
 function TechnicalVisibility({ gate, im, recovery }: { gate: any; im: any[]; recovery: any }) {
   const [updatesOn, setUpdatesOn] = useState(false);
+  const [contentOn, setContentOn] = useState(false);
   useEffect(() => {
     updates.status().then((u) => setUpdatesOn(!!u?.enabled)).catch(() => setUpdatesOn(false));
+    api.contentStatus().then((c) => setContentOn(!!c?.configured)).catch(() => setContentOn(false));
   }, []);
   const rows: { situation: string; enabled: boolean; sees: string; notSees: string }[] = [
+    {
+      situation: "法规库与方法模板的在线更新",
+      enabled: contentOn,
+      sees: "每天一次（及手动“检查更新”）经出站闸门的检查与下载：席位令牌所含的租户、成员、席位与设备编号，本机 IP，检查时刻，所请求的通道清单与包文件名（文件名含版本；增量包还反映本机当前法规库版本）；分发服务保存下载记录（租户、设备编号的密钥摘要、类别、通道、文件名、时间）",
+      notSees: "事项与案卷的任何内容、事项编号、查询与对话",
+    },
     {
       situation: "自动更新",
       enabled: updatesOn,

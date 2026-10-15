@@ -56,10 +56,23 @@ export interface SignedChannelManifest {
 /** 单个包文件上限：闸门经 IPC 以 base64 交回，取 64 MiB（与 egress-gate DIST_MAX_RESPONSE_BYTES 一致）。 */
 export const MAX_PACKAGE_BYTES = 64 * 1024 * 1024;
 export const MAX_MANIFEST_DAYS = 90;
-const FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
+/** 文件名：无路径、无 ..（与闸门 dist-relay 与分发服务的规则一致，复核 S8A-17）。 */
+export const DIST_FILE_RE = /^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
+const FILE_RE = DIST_FILE_RE;
 const SHA_RE = /^[A-Za-z0-9_-]{43}$/;
 const VERSION_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const KID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** 通道清单签名的域前缀（复核 S8A-16：同一把内容签名钥还签法规库与方法模板的内容摘要，加前缀防跨类型混用）。 */
+const SIGN_DOMAIN = "kwl-dist/1\n";
+export function channelManifestSigningBytes(m: ChannelManifest): Uint8Array {
+  return new TextEncoder().encode(SIGN_DOMAIN + canonicalJson(m));
+}
+
+/** 方法模板的版本标签：内容摘要去掉 base64url 的 - _ 后取前 16 位（发布脚本与内核共用，复核 S8A-09）。 */
+export function skillsVersionOf(contentSha256: string): string {
+  return `s${contentSha256.replace(/[^A-Za-z0-9]/g, "").slice(0, 15)}`;
+}
 
 /** 内容签名公钥指纹（与 @zr-legal/lawdb signerKeyId 同一算法）。 */
 export function contentKeyId(publicKeyPem: string): string {
@@ -73,7 +86,7 @@ export function contentKeyId(publicKeyPem: string): string {
 export function signChannelManifest(manifest: ChannelManifest, sign: (bytes: Uint8Array) => string, publicKeyPem: string): SignedChannelManifest {
   const bad = manifestShapeProblem(manifest);
   if (bad) throw new Error(`通道清单格式不符：${bad}`);
-  return { manifest, kid: contentKeyId(publicKeyPem), sig: sign(new TextEncoder().encode(canonicalJson(manifest))) };
+  return { manifest, kid: contentKeyId(publicKeyPem), sig: sign(channelManifestSigningBytes(manifest)) };
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -153,7 +166,7 @@ export function verifyChannelManifest(
   const bad = manifestShapeProblem(raw.manifest);
   if (bad) return { ok: false, reason: `shape_${bad}` };
   const m = raw.manifest as ChannelManifest;
-  if (!verifyBytes(pem, new TextEncoder().encode(canonicalJson(m)), raw.sig)) return { ok: false, reason: "signature" };
+  if (!verifyBytes(pem, channelManifestSigningBytes(m), raw.sig)) return { ok: false, reason: "signature" };
   if (m.kind !== o.kind) return { ok: false, reason: "kind_mismatch" };
   if (o.channel && m.channel !== o.channel) return { ok: false, reason: "channel_mismatch" };
   if (!o.ignoreExpiry) {
@@ -176,26 +189,37 @@ export function inRollout(m: Pick<ChannelManifest, "staging_percent" | "seq">, d
 
 export type InstallPlan = { type: "full"; packages: [DistPackage] } | { type: "incremental"; packages: DistPackage[] };
 
+const pkgBytes = (p: DistPackage): number => p.size + (p.manifest_size ?? 0);
+
 /**
- * 选包：当前版本能沿增量链到达清单版本就走增量（每步 base_version 等于上一步版本，最多 20 步），否则走全量；都不行返回 null。
- * 方法模板包只有全量。
+ * 选包：从当前版本按广度优先找到达清单版本的最短增量链（最多 20 步；同一 base_version 有多个增量包时都试，复核 S8A-20）；
+ * 链的总字节不小于全量包时改走全量（复核 S8A-11：增量链不得比全量更重）；都不行返回 null。方法模板包只有全量。
  */
 export function planInstall(m: ChannelManifest, currentVersion: string | null): InstallPlan | null {
   if (currentVersion === m.version) return null;
-  if (currentVersion) {
-    const chain: DistPackage[] = [];
-    let cur = currentVersion;
-    const seen = new Set<string>([cur]);
-    while (cur !== m.version && chain.length < 20) {
-      const next = m.packages.find((p) => p.type === "incremental" && p.base_version === cur);
-      if (!next || seen.has(next.version)) break;
-      chain.push(next);
-      seen.add(next.version);
-      cur = next.version;
-    }
-    if (cur === m.version && chain.length > 0) return { type: "incremental", packages: chain };
-  }
   const full = m.packages.find((p) => p.type === "full");
+  if (currentVersion) {
+    const prev = new Map<string, { from: string; pkg: DistPackage }>();
+    let frontier = [currentVersion];
+    const seen = new Set<string>(frontier);
+    for (let depth = 0; depth < 20 && frontier.length > 0 && !seen.has(m.version); depth++) {
+      const next: string[] = [];
+      for (const v of frontier) {
+        for (const p of m.packages) {
+          if (p.type !== "incremental" || p.base_version !== v || seen.has(p.version)) continue;
+          seen.add(p.version);
+          prev.set(p.version, { from: v, pkg: p });
+          next.push(p.version);
+        }
+      }
+      frontier = next;
+    }
+    if (prev.has(m.version)) {
+      const chain: DistPackage[] = [];
+      for (let v = m.version; v !== currentVersion; v = prev.get(v)!.from) chain.unshift(prev.get(v)!.pkg);
+      if (!full || chain.reduce((n, p) => n + pkgBytes(p), 0) < pkgBytes(full)) return { type: "incremental", packages: chain };
+    }
+  }
   return full ? { type: "full", packages: [full] } : null;
 }
 

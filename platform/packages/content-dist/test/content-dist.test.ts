@@ -8,6 +8,7 @@ import {
   contentKeyId,
   inRollout,
   manifestShapeProblem,
+  skillsVersionOf,
   parseSkillsPack,
   planInstall,
   signChannelManifest as signEnvelope,
@@ -42,7 +43,7 @@ function lawdbManifest(over: Partial<ChannelManifest> = {}): ChannelManifest {
     packages: [
       { type: "incremental", version: "g0.v2", base_version: "g0.v1", file: "i12.sqlite", size: 10, sha256: SHA, manifest_file: "i12.manifest.json", manifest_size: 5, manifest_sha256: SHA },
       { type: "incremental", version: "g0.v3", base_version: "g0.v2", file: "i23.sqlite", size: 10, sha256: SHA, manifest_file: "i23.manifest.json", manifest_size: 5, manifest_sha256: SHA },
-      { type: "full", version: "g0.v3", file: "full.sqlite", size: 10, sha256: SHA, manifest_file: "full.manifest.json", manifest_size: 5, manifest_sha256: SHA },
+      { type: "full", version: "g0.v3", file: "full.sqlite", size: 1000, sha256: SHA, manifest_file: "full.manifest.json", manifest_size: 5, manifest_sha256: SHA },
     ],
     ...over,
   };
@@ -77,6 +78,7 @@ test("清单结构：文件名白名单（无路径、无 ..）、有效期 ≤ 
   assert.equal(manifestShapeProblem(withPkg({ file: "../x.sqlite" })), "package_file");
   assert.equal(manifestShapeProblem(withPkg({ file: "a/b.sqlite" })), "package_file");
   assert.equal(manifestShapeProblem(withPkg({ file: ".hidden" })), "package_file");
+  assert.equal(manifestShapeProblem(withPkg({ file: "lawdb-1..2.sqlite" })), "package_file", "名字中间的 .. 也拒绝（与闸门一致，S8A-17）");
   assert.equal(manifestShapeProblem(withPkg({ manifest_file: "full.sqlite" })), "package_manifest");
   assert.equal(manifestShapeProblem(withPkg({ size: 0 })), "package_digest");
   assert.equal(manifestShapeProblem(withPkg({ size: 65 * 1024 * 1024 })), "package_digest");
@@ -103,6 +105,22 @@ test("选包：能沿增量链到达就走增量（多步），断链或未知�
   assert.equal(planInstall(m, "g0.v3"), null);
   const noFull = lawdbManifest({ packages: lawdbManifest().packages.slice(0, 1) });
   assert.equal(planInstall(noFull, "g0.v2"), null, "增量链到不了、又没有全量");
+  // 链比全量重：走全量（S8A-11）
+  const heavy = lawdbManifest();
+  heavy.packages[2] = { ...heavy.packages[2]!, size: 20 };
+  assert.equal(planInstall(heavy, "g0.v1")?.type, "full");
+  // 同一 base_version 有两个增量：第一个走进死胡同时仍能找到通路（广度优先，S8A-20）
+  const branch = lawdbManifest();
+  branch.packages.unshift({ type: "incremental", version: "g0.dead", base_version: "g0.v1", file: "dead.sqlite", size: 10, sha256: SHA, manifest_file: "dead.manifest.json", manifest_size: 5, manifest_sha256: SHA });
+  assert.deepEqual(planInstall(branch, "g0.v1")?.packages.map((p) => p.file), ["i12.sqlite", "i23.sqlite"]);
+});
+
+test("方法模板版本标签：发布脚本与内核同一推导，摘要以 - 或 _ 开头也合规（S8A-09）", () => {
+  for (const sha of ["_abcDEF-ghi_jkl-mnopqrstuvwxyz0123456789ABC", "-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"]) {
+    const v = skillsVersionOf(sha);
+    assert.match(v, /^[A-Za-z0-9]{1,16}$/);
+    assert.equal(manifestShapeProblem({ ...lawdbManifest({ kind: "skills", version: v, packages: [{ type: "full", version: v, file: "s.json", size: 3, sha256: SHA }] }) }), null);
+  }
 });
 
 test("分阶段推送：同一设备对同一 seq 结论稳定；0% 无人、100% 全部；约按比例", () => {

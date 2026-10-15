@@ -3,22 +3,25 @@
  *
  * 内核不联网：通道清单与包经出站闸门的分发通道代取（egress-gate/dist-relay.ts，地址随客户端构建固定、席位令牌由闸门附上）。
  * 本机核验三层，任何一层不过都不落位、不切换：
- *   ① 通道清单签名（内容签名公钥表：随包公钥 + release.json 的 content_keys）、类别与通道相符、未过期；
+ *   ① 通道清单签名（内容签名公钥表：随包公钥 + release.json 的 content_keys，减去停用的 kid）、类别与通道相符、未过期；
  *   ② 每个下载文件的大小与摘要等于清单所列；
  *   ③ 包自身的签名与内容摘要（法规库 sidecar 清单 / 方法模板清单），且应用后的内容摘要与版本等于通道清单所写。
- * 先后与防回退：只认通道清单的 seq（包自带版本号不可比较）；本机账本记已装 seq 与见过的最高通道 seq（迁移 0029）。
- * 落位：先写 <工作区>/content/<类别>/<seq>.stage-…，核验通过后改名为 <seq>/，再在同一事务里登记、切换 active 并写签名审计。
- * 法规库即时换用（LawdbHolder）；方法模板包在下次打开时生效（Agent 宿主的可信区随宿主启动固定）。
+ * 先后与防回退：只认通道清单的 seq（包自带版本号不可比较）；本机账本记已装 seq、见过的最高通道 seq 及该 seq 的内容摘要
+ * （迁移 0029、0030）——同一 seq 给出不同内容一律拒绝（复核 S8A-04）。随包内容的 seq 由同目录签名信封给出，信封通道须等于本机通道（S8A-01）。
+ * 落位：先写 <工作区>/content/<类别>/<通道>-<seq>.stage-…，核验通过后改名，再在同一事务里登记、切换 active 并写签名审计；撤回同样在事务内（S8A-07）。
+ * 法规库换用（LawdbHolder）：没有任务在运行时即时换用；有任务时等任务都结束再换（S8A-10：成果清单记录的法规库版本须与核验所用一致）。
+ * 方法模板包在下次打开时生效（Agent 宿主的可信区随宿主启动固定，D-76）。
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import {
   contentKeyId,
   fileMatches,
   inRollout,
   parseSkillsPack,
   planInstall,
+  skillsVersionOf,
   verifyChannelManifest,
   type ChannelManifest,
   type ContentKind,
@@ -36,18 +39,24 @@ export interface ActiveContent {
   source: ContentSource;
   seq: number;
   version: string;
+  /** 应用后的内容摘要（判断“内容是否相同”只看它，复核 S8A-09）。 */
+  contentSha256: string;
   /** 法规库文件 / 方法模板清单文件。 */
   file: string;
 }
 
-/** 内容签名公钥表：kid 一律由公钥算出（不信任外部给的名字）。 */
-export function contentKeyTable(pems: readonly string[]): Map<string, string> {
+/** 内容签名公钥表：kid 一律由公钥算出（不信任外部给的名字）；停用的 kid 不进表（复核 S8A-18）。 */
+export function contentKeyTable(pems: readonly string[], revokedKids: readonly string[] = []): Map<string, string> {
   const out = new Map<string, string>();
-  for (const pem of pems) if (typeof pem === "string" && /-----BEGIN PUBLIC KEY-----/.test(pem) && !/PRIVATE/.test(pem)) out.set(contentKeyId(pem), pem);
+  for (const pem of pems) {
+    if (typeof pem !== "string" || !/-----BEGIN PUBLIC KEY-----/.test(pem) || /PRIVATE/.test(pem)) continue;
+    const kid = contentKeyId(pem);
+    if (!revokedKids.includes(kid)) out.set(kid, pem);
+  }
   return out;
 }
 
-/** ZR_CONTENT_KEYS：公钥 PEM 的 JSON 数组（release.json 的 content_keys 经主进程写入）；解析失败按空表。 */
+/** ZR_CONTENT_KEYS / ZR_CONTENT_KEYS_REVOKED：字符串的 JSON 数组（release.json 经主进程写入）；解析失败按空表。 */
 export function contentKeysFromEnv(v: string | undefined): string[] {
   if (!v) return [];
   try {
@@ -69,12 +78,12 @@ function readJson(path: string): any {
 const sidecarOf = (file: string): string => `${file.slice(0, -".sqlite".length)}.manifest.json`;
 
 /**
- * 随包内容的 seq：同目录 <kind>.release.json（与通道清单同格式的签名信封，不看有效期）所写的 seq，
- * 且信封里的内容摘要必须等于随包内容的摘要；没有或不符按 0（任何在线安装都比它新）。
+ * 随包内容的 seq：同目录 <kind>.release.json（与通道清单同格式的签名信封，不看有效期）所写的 seq；
+ * 信封通道须等于本机通道、内容摘要须等于随包内容的摘要，否则按 0（任何在线安装都比它新）。
  */
-export function bundledSeq(kind: ContentKind, releaseFile: string | null, contentSha256: string | null, keys: ReadonlyMap<string, string>): number {
+export function bundledSeq(kind: ContentKind, channel: DistChannel, releaseFile: string | null, contentSha256: string | null, keys: ReadonlyMap<string, string>): number {
   if (!releaseFile || !contentSha256 || !existsSync(releaseFile)) return 0;
-  const v = verifyChannelManifest(readJson(releaseFile), keys, { kind, ignoreExpiry: true });
+  const v = verifyChannelManifest(readJson(releaseFile), keys, { kind, channel, ignoreExpiry: true });
   return v.ok && v.manifest.content_sha256 === contentSha256 ? v.manifest.seq : 0;
 }
 
@@ -98,7 +107,7 @@ function activeRow(db: KernelDb, kind: ContentKind, channel: DistChannel): Insta
   return db.get<InstallRow>(`SELECT * FROM content_installs WHERE kind = ? AND channel = ? AND active = 1 AND revoked_at IS NULL AND problem IS NULL ORDER BY seq DESC LIMIT 1`, [kind, channel]) ?? null;
 }
 
-function markProblem(db: KernelDb, kind: ContentKind, channel: DistChannel, seq: number, problem: string): void {
+export function markProblem(db: KernelDb, kind: ContentKind, channel: DistChannel, seq: number, problem: string): void {
   db.run(`UPDATE content_installs SET active = 0, problem = ? WHERE kind = ? AND channel = ? AND seq = ?`, [problem.slice(0, 120), kind, channel, seq]);
 }
 
@@ -109,40 +118,67 @@ export function openLawdbWithKeys(file: string, keys: ReadonlyMap<string, string
   return openLawdb(file, { expectedSignerPubPem: pem, ...(o.writable ? { writable: true } : {}) });
 }
 
-/**
- * 启动时选用法规库：已装（账本 active 行）的 seq 高于随包 seq 且本机核验通过才用；核验失败的已装副本标记问题、回到随包。
- */
-export function selectLawdb(o: { db: KernelDb; workspaceDir: string; channel: DistChannel; keys: ReadonlyMap<string, string>; bundledFile: string; bundledReleaseFile: string | null }): { active: ActiveContent; bundled: ActiveContent } {
-  const bundledSha = readJson(sidecarOf(o.bundledFile))?.content_sha256 ?? null;
-  const bseq = bundledSeq("lawdb", o.bundledReleaseFile, bundledSha, o.keys);
-  const bundled: ActiveContent = { source: "bundled", seq: bseq, version: String(readJson(sidecarOf(o.bundledFile))?.package_version ?? ""), file: o.bundledFile };
-  const row = activeRow(o.db, "lawdb", o.channel);
-  if (!row || row.seq <= bseq) return { active: bundled, bundled };
-  const file = join(installedDir(o.workspaceDir, "lawdb", o.channel, row.seq), "lawdb.sqlite");
-  try {
-    const l = openLawdbWithKeys(file, o.keys);
-    const ok = readJson(sidecarOf(file))?.content_sha256 === row.content_sha256 && l.packageVersion === row.version;
-    l.close();
-    if (!ok) throw new Error("content_mismatch");
-    return { active: { source: "installed", seq: row.seq, version: row.version, file }, bundled };
-  } catch {
-    markProblem(o.db, "lawdb", o.channel, row.seq, "本机核验失败（文件缺失或被改动）");
-    return { active: bundled, bundled };
+/** 有限次退避重试（复核 S8A-12：Windows 上杀软与索引服务常短暂占用新写的文件，改名与删除偶发 EPERM/EBUSY）。 */
+function retrySync(fn: () => void, attempts = 5): void {
+  for (let i = 1; ; i++) {
+    try {
+      fn();
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException)?.code;
+      if (i >= attempts || !["EPERM", "EBUSY", "EACCES", "ENOTEMPTY"].includes(String(code))) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 * i);
+    }
   }
 }
 
-/** 启动时选用方法模板包：规则同法规库。 */
-export function selectSkills(o: { db: KernelDb; workspaceDir: string; channel: DistChannel; keys: ReadonlyMap<string, string>; bundledManifest: string | null; bundledReleaseFile: string | null }): { active: ActiveContent | null; bundled: ActiveContent | null } {
+/**
+ * 启动时选用并打开法规库（复核 S8A-11：只核验一次，直接返回已打开实例）：已装（账本 active 行）seq 高于随包 seq 且本机核验通过才用；
+ * 核验失败的已装副本标记问题、回到随包。随包也打不开时抛出（与原先“验签不符即拒绝加载”一致）。
+ */
+export function selectLawdb(o: { db: KernelDb; workspaceDir: string; channel: DistChannel; keys: ReadonlyMap<string, string>; bundledFile: string; bundledReleaseFile: string | null }): {
+  active: ActiveContent;
+  bundled: ActiveContent;
+  lawdb: Lawdb;
+  bundledStamped: boolean;
+} {
+  const bm = readJson(sidecarOf(o.bundledFile));
+  const bseq = bundledSeq("lawdb", o.channel, o.bundledReleaseFile, bm?.content_sha256 ?? null, o.keys);
+  const bundled: ActiveContent = { source: "bundled", seq: bseq, version: String(bm?.package_version ?? ""), contentSha256: String(bm?.content_sha256 ?? ""), file: o.bundledFile };
+  const row = activeRow(o.db, "lawdb", o.channel);
+  if (row && row.seq > bseq) {
+    const file = join(installedDir(o.workspaceDir, "lawdb", o.channel, row.seq), "lawdb.sqlite");
+    try {
+      const l = openLawdbWithKeys(file, o.keys);
+      if (l.contentSha256 === row.content_sha256 && l.packageVersion === row.version) {
+        return { active: { source: "installed", seq: row.seq, version: row.version, contentSha256: row.content_sha256, file }, bundled, lawdb: l, bundledStamped: bseq > 0 };
+      }
+      l.close();
+    } catch {
+      // 落到下面：标记问题、回到随包
+    }
+    markProblem(o.db, "lawdb", o.channel, row.seq, "本机核验失败（文件缺失或被改动）");
+  }
+  return { active: bundled, bundled, lawdb: openLawdbWithKeys(o.bundledFile, o.keys), bundledStamped: bseq > 0 };
+}
+
+/** 启动时选用方法模板包：规则同法规库（物化失败的回退在内核入口，复核 S8A-08）。 */
+export function selectSkills(o: { db: KernelDb; workspaceDir: string; channel: DistChannel; keys: ReadonlyMap<string, string>; bundledManifest: string | null; bundledReleaseFile: string | null }): {
+  active: ActiveContent | null;
+  bundled: ActiveContent | null;
+  bundledStamped: boolean;
+} {
   const bm = o.bundledManifest ? readJson(o.bundledManifest) : null;
-  const bseq = bundledSeq("skills", o.bundledReleaseFile, bm?.content_sha256 ?? null, o.keys);
-  const bundled: ActiveContent | null = o.bundledManifest ? { source: "bundled", seq: bseq, version: String(bm?.content_sha256 ?? "").slice(0, 16), file: o.bundledManifest } : null;
+  const bsha = String(bm?.content_sha256 ?? "");
+  const bseq = bundledSeq("skills", o.channel, o.bundledReleaseFile, bsha || null, o.keys);
+  const bundled: ActiveContent | null = o.bundledManifest ? { source: "bundled", seq: bseq, version: skillsVersionOf(bsha), contentSha256: bsha, file: o.bundledManifest } : null;
   const row = activeRow(o.db, "skills", o.channel);
-  if (!row || row.seq <= bseq) return { active: bundled, bundled };
+  if (!row || row.seq <= bseq) return { active: bundled, bundled, bundledStamped: bseq > 0 };
   const file = join(installedDir(o.workspaceDir, "skills", o.channel, row.seq), "skills.manifest.json");
   const v = verifySkillsSource(file, o.keys);
-  if (v.ok && v.contentSha256 === row.content_sha256) return { active: { source: "installed", seq: row.seq, version: row.version, file }, bundled };
+  if (v.ok && v.contentSha256 === row.content_sha256) return { active: { source: "installed", seq: row.seq, version: row.version, contentSha256: row.content_sha256, file }, bundled, bundledStamped: bseq > 0 };
   markProblem(o.db, "skills", o.channel, row.seq, "本机核验失败（文件缺失或被改动）");
-  return { active: bundled, bundled };
+  return { active: bundled, bundled, bundledStamped: bseq > 0 };
 }
 
 /** 法规库持有者：内核各处拿到的是同一个代理，换用时只换内部实例（调用都是同步的，换用与关闭旧实例之间不会有查询在途）。 */
@@ -176,9 +212,13 @@ export type CheckOutcome =
   | "staged_rollout"
   | "not_configured"
   | "unreachable"
+  | "unauthorized"
+  | "stale"
   | "rejected"
+  | "failed"
   | "rollback_ignored"
-  | "reverted";
+  | "reverted"
+  | "skipped";
 
 export interface CheckResult {
   kind: ContentKind;
@@ -190,6 +230,8 @@ export interface CheckResult {
   at: string;
   /** 方法模板包：下次打开 Kimi Work 时生效。 */
   restart_required?: boolean;
+  /** 法规库：已装好，等进行中的任务结束后换用。 */
+  pending_swap?: boolean;
 }
 
 export interface ContentUpdaterDeps {
@@ -201,29 +243,54 @@ export interface ContentUpdaterDeps {
   /** 闸门分发通道。 */
   fetch: (path: string) => Promise<DistRelayResult>;
   configured: () => boolean;
+  /** 退出模式（许可到期、设备被吊销）：不检查（复核 S8A-19）。 */
+  suspended?: () => boolean;
+  /** 有任务在运行或排队：法规库延后换用（S8A-10）。 */
+  busy?: () => boolean;
   lawdb: LawdbHolder;
   /** 启动时选定的内容（检查时据此判断当前 seq 与版本）。 */
   active: { lawdb: ActiveContent; skills: ActiveContent | null };
   /** 随包内容（撤回已装版本时回退到它）。 */
   bundled: { lawdb: ActiveContent; skills: ActiveContent | null };
+  /** 随包内容是否带了本通道的签名信封（没有时随包 seq 按 0，应用升级后可能仍选用更旧的在线版本，S8A-02）。 */
+  bundledStamped?: { lawdb: boolean; skills: boolean };
   audit: (action: string, objectId: string) => void;
   now?: () => number;
 }
 
 class Reject extends Error {
   readonly code: string;
-  constructor(code: string) {
+  readonly outcome: CheckOutcome;
+  constructor(code: string, outcome: CheckOutcome = "rejected") {
     super(code);
     this.code = code;
+    this.outcome = outcome;
   }
+}
+
+/** 清单核验失败原因 → 结果分类（S8A-13：过期/未生效是“内容可能过时”，不是“包没通过核对”）。 */
+function manifestOutcome(reason: string): CheckOutcome {
+  return reason === "expired" || reason === "not_yet_valid" ? "stale" : "rejected";
+}
+
+/** 分发通道失败原因 → 结果分类（S8A-13：席位缺失或被拒不是“连不上”）。 */
+function transportOutcome(reason: string): CheckOutcome {
+  if (reason === "dist_seat_unavailable" || reason === "http_401" || reason === "http_403") return "unauthorized";
+  return "unreachable";
 }
 
 export class ContentUpdater {
   private readonly last = new Map<ContentKind, CheckResult>();
+  private readonly lastConfirmed = new Map<ContentKind, string>();
   private readonly inflight = new Map<ContentKind, Promise<CheckResult>>();
-  /** 已装好、下次打开才生效的方法模板 seq。 */
+  /** 已装好、下次打开才生效的方法模板。 */
   private skillsPending: ActiveContent | null = null;
-
+  /** 本次运行在用的方法模板已被撤回（下次打开时换回随包）。 */
+  private skillsRevokedPending = false;
+  /** 已装好、等任务结束再换用的法规库。 */
+  private lawdbPending: ActiveContent | null = null;
+  private swapTimer: NodeJS.Timeout | null = null;
+  private closed = false;
   private readonly d: ContentUpdaterDeps;
 
   constructor(d: ContentUpdaterDeps) {
@@ -233,22 +300,47 @@ export class ContentUpdater {
   status(): {
     configured: boolean;
     channel: DistChannel;
-    lawdb: { source: ContentSource; seq: number; version: string; last_check: CheckResult | null };
-    skills: { source: ContentSource | null; seq: number; version: string | null; pending: { seq: number; version: string } | null; last_check: CheckResult | null };
+    lawdb: { source: ContentSource; seq: number; version: string; pending: { seq: number; version: string } | null; bundled_stamped: boolean; last_check: CheckResult | null; last_confirmed_at: string | null };
+    skills: {
+      source: ContentSource | null;
+      seq: number;
+      version: string | null;
+      pending: { seq: number; version: string } | null;
+      revoked_pending_restart: boolean;
+      bundled_stamped: boolean;
+      last_check: CheckResult | null;
+      last_confirmed_at: string | null;
+    };
   } {
     const s = this.d.active.skills;
     return {
       configured: this.d.configured(),
       channel: this.d.channel,
-      lawdb: { source: this.d.active.lawdb.source, seq: this.d.active.lawdb.seq, version: this.d.lawdb.current.packageVersion, last_check: this.last.get("lawdb") ?? null },
+      lawdb: {
+        source: this.d.active.lawdb.source,
+        seq: this.d.active.lawdb.seq,
+        version: this.d.lawdb.current.packageVersion,
+        pending: this.lawdbPending ? { seq: this.lawdbPending.seq, version: this.lawdbPending.version } : null,
+        bundled_stamped: this.d.bundledStamped?.lawdb ?? false,
+        last_check: this.last.get("lawdb") ?? null,
+        last_confirmed_at: this.lastConfirmed.get("lawdb") ?? null,
+      },
       skills: {
         source: s?.source ?? null,
         seq: s?.seq ?? 0,
         version: s?.version ?? null,
         pending: this.skillsPending ? { seq: this.skillsPending.seq, version: this.skillsPending.version } : null,
+        revoked_pending_restart: this.skillsRevokedPending,
+        bundled_stamped: this.d.bundledStamped?.skills ?? false,
         last_check: this.last.get("skills") ?? null,
+        last_confirmed_at: this.lastConfirmed.get("skills") ?? null,
       },
     };
+  }
+
+  /** 首次检查的随机抖动（S8A-19：固定在启动后 2 分钟会向分发方暴露精确的启动时刻）。 */
+  static firstDelayMs(): number {
+    return 120_000 + randomInt(0, 600_000);
   }
 
   /** 检查并安装（每个类别单飞；不抛异常，结果写进状态）。 */
@@ -256,14 +348,22 @@ export class ContentUpdater {
     const running = this.inflight.get(kind);
     if (running) return running;
     const p = this.run(kind)
-      .catch((e): CheckResult => ({ kind, outcome: e instanceof Reject ? "rejected" : "unreachable", reason: e instanceof Reject ? e.code : "internal", at: this.iso() }))
+      .catch((e): CheckResult => (e instanceof Reject ? { kind, outcome: e.outcome, reason: e.code, at: this.iso() } : { kind, outcome: "failed", reason: "internal", at: this.iso() }))
       .then((r) => {
         this.last.set(kind, r);
+        if (r.outcome === "up_to_date" || r.outcome === "installed") this.lastConfirmed.set(kind, r.at);
         this.inflight.delete(kind);
         return r;
       });
     this.inflight.set(kind, p);
     return p;
+  }
+
+  /** 关停：等在途检查结束（S8A-20：不在已关闭的账本上写入、不留下未登记的落位目录）。 */
+  async close(): Promise<void> {
+    this.closed = true;
+    if (this.swapTimer) clearInterval(this.swapTimer);
+    await Promise.allSettled([...this.inflight.values()]);
   }
 
   private iso(): string {
@@ -272,29 +372,47 @@ export class ContentUpdater {
 
   private async get(path: string): Promise<Uint8Array> {
     const r = await this.d.fetch(path);
-    if (!r.ok) throw r.reason === "dist_not_configured" ? new Reject("not_configured") : Object.assign(new Error(r.reason), { unreachable: r.reason });
-    if (r.status !== 200) throw Object.assign(new Error(`http_${r.status}`), { unreachable: `http_${r.status}` });
+    if (!r.ok) throw r.reason === "dist_not_configured" ? new Reject("not_configured", "not_configured") : new Reject(r.reason, transportOutcome(r.reason));
+    if (r.status !== 200) throw new Reject(`http_${r.status}`, transportOutcome(`http_${r.status}`));
     return new Uint8Array(Buffer.from(r.body_b64, "base64"));
   }
 
-  private current(kind: ContentKind): { seq: number; version: string | null } {
-    if (kind === "lawdb") return { seq: this.d.active.lawdb.seq, version: this.d.lawdb.current.packageVersion };
+  private current(kind: ContentKind): { seq: number; version: string | null; contentSha256: string | null } {
+    if (kind === "lawdb") {
+      const l = this.lawdbPending ?? this.d.active.lawdb;
+      return { seq: l.seq, version: this.lawdbPending ? l.version : this.d.lawdb.current.packageVersion, contentSha256: this.lawdbPending ? l.contentSha256 : this.d.lawdb.current.contentSha256 };
+    }
+    if (this.skillsRevokedPending && !this.skillsPending) {
+      const b = this.d.bundled.skills;
+      return { seq: b?.seq ?? 0, version: b?.version ?? null, contentSha256: b?.contentSha256 ?? null };
+    }
     const s = this.skillsPending ?? this.d.active.skills;
-    return { seq: s?.seq ?? 0, version: s?.version ?? null };
+    return { seq: s?.seq ?? 0, version: s?.version ?? null, contentSha256: s?.contentSha256 ?? null };
+  }
+
+  /** 当前在用（含待生效）的是否是在线已装版本。 */
+  private currentInstalledSeq(kind: ContentKind): number | null {
+    if (kind === "lawdb") {
+      const l = this.lawdbPending ?? this.d.active.lawdb;
+      return l.source === "installed" ? l.seq : null;
+    }
+    if (this.skillsPending) return this.skillsPending.seq;
+    if (this.skillsRevokedPending) return null;
+    return this.d.active.skills?.source === "installed" ? this.d.active.skills.seq : null;
   }
 
   private async run(kind: ContentKind): Promise<CheckResult> {
     const at = this.iso();
     const { db, channel } = this.d;
     if (!this.d.configured()) return { kind, outcome: "not_configured", at };
+    if (this.d.suspended?.()) return { kind, outcome: "skipped", reason: "exit_mode", at };
     let raw: Uint8Array;
     try {
       raw = await this.get(`/dist/${kind}/${channel}/latest.json`);
     } catch (e) {
-      if (e instanceof Reject) return { kind, outcome: "not_configured", at };
       // 本通道还没有发布过这一类内容：不是连不上
-      if ((e as any)?.unreachable === "http_404") return { kind, outcome: "up_to_date", reason: "not_published", seq: this.current(kind).seq, at };
-      return { kind, outcome: "unreachable", reason: String((e as any)?.unreachable ?? "unreachable"), at };
+      if (e instanceof Reject && e.code === "http_404") return { kind, outcome: "up_to_date", reason: "not_published", seq: this.current(kind).seq, at };
+      throw e;
     }
     let parsed: unknown;
     try {
@@ -303,54 +421,64 @@ export class ContentUpdater {
       return { kind, outcome: "rejected", reason: "manifest_json", at };
     }
     const v = verifyChannelManifest(parsed, this.d.keys, { kind, channel, now: (this.d.now ?? Date.now)() });
-    if (!v.ok) return { kind, outcome: "rejected", reason: `manifest_${v.reason}`, at };
+    if (!v.ok) return { kind, outcome: manifestOutcome(v.reason), reason: `manifest_${v.reason}`, at };
     const m = v.manifest;
-    // 通道清单回退（低于见过的最高 seq）：不采用
-    const hw = db.get<{ seq: number }>(`SELECT seq FROM content_channel_hw WHERE kind = ? AND channel = ?`, [kind, channel])?.seq ?? 0;
-    if (m.seq < hw) return { kind, outcome: "rollback_ignored", reason: "manifest_seq_below_seen", seq: m.seq, at };
-    db.run(`INSERT INTO content_channel_hw (kind, channel, seq, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT (kind, channel) DO UPDATE SET seq = excluded.seq, updated_at = excluded.updated_at`, [kind, channel, m.seq, at]);
+    // 通道清单回退（低于见过的最高 seq）：不采用；同一 seq 给出不同内容：拒绝（S8A-04）
+    const hw = db.get<{ seq: number; content_sha256: string | null }>(`SELECT seq, content_sha256 FROM content_channel_hw WHERE kind = ? AND channel = ?`, [kind, channel]);
+    if (hw && m.seq < hw.seq) return { kind, outcome: "rollback_ignored", reason: "manifest_seq_below_seen", seq: m.seq, at };
+    const sameSeqInstalled = db.get<{ content_sha256: string }>(`SELECT content_sha256 FROM content_installs WHERE kind = ? AND channel = ? AND seq = ?`, [kind, channel, m.seq]);
+    if ((hw && m.seq === hw.seq && hw.content_sha256 && hw.content_sha256 !== m.content_sha256) || (sameSeqInstalled && sameSeqInstalled.content_sha256 !== m.content_sha256)) {
+      db.tx(() => this.d.audit("content.seq_conflict", `${kind}:${channel}:${m.seq}`));
+      return { kind, outcome: "rejected", reason: "seq_content_conflict", seq: m.seq, at };
+    }
+    db.run(
+      `INSERT INTO content_channel_hw (kind, channel, seq, content_sha256, updated_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (kind, channel) DO UPDATE SET seq = excluded.seq, content_sha256 = excluded.content_sha256, updated_at = excluded.updated_at`,
+      [kind, channel, m.seq, m.content_sha256, at],
+    );
 
-    const cur = this.current(kind);
-    // 撤回：当前在用的已装版本被列入 revoked_seqs → 标记撤回；清单有更新的就装新的，否则回到随包内容
-    if (cur.seq > 0 && m.revoked_seqs.includes(cur.seq) && this.activeSource(kind) === "installed") {
-      db.run(`UPDATE content_installs SET active = 0, revoked_at = ? WHERE kind = ? AND channel = ? AND seq = ?`, [at, kind, channel, cur.seq]);
-      this.d.audit("content.revoked", `${kind}:${channel}:${cur.seq}`);
-      if (m.seq <= cur.seq || !inRollout(m, this.d.deviceId)) return this.revertToBundled(kind, at);
-      // 撤回后从随包版本开始重新规划（增量链以随包版本为起点）
-      if (kind === "lawdb") this.revertLawdb();
-      else this.skillsPending = null;
+    // 撤回：当前在用（含待生效）的已装版本被列入 revoked_seqs → 同一事务标记撤回并审计（只记一次）；清单有更新的就装新的，否则回到随包内容
+    const instSeq = this.currentInstalledSeq(kind);
+    if (instSeq !== null && m.revoked_seqs.includes(instSeq)) {
+      db.tx(() => {
+        const r = db.run(`UPDATE content_installs SET active = 0, revoked_at = ? WHERE kind = ? AND channel = ? AND seq = ? AND revoked_at IS NULL`, [at, kind, channel, instSeq]);
+        if (r.changes > 0) this.d.audit("content.revoked", `${kind}:${channel}:${instSeq}`);
+      });
+      this.revertToBundled(kind);
+      if (m.seq <= instSeq || !inRollout(m, this.d.deviceId)) return { kind, outcome: "reverted", seq: this.current(kind).seq, at, ...(kind === "skills" ? { restart_required: true } : {}) };
     }
     const now = this.current(kind);
     if (m.seq <= now.seq) return { kind, outcome: "up_to_date", seq: now.seq, at };
-    if (!inRollout(m, this.d.deviceId)) return { kind, outcome: "staged_rollout", seq: m.seq, at };
     // 内容相同（只是通道 seq 更高，例如随包内容未带信封）：无需安装
-    if (now.version === m.version) return { kind, outcome: "up_to_date", seq: now.seq, at };
+    if (now.contentSha256 && now.contentSha256 === m.content_sha256) return { kind, outcome: "up_to_date", seq: now.seq, at };
+    if (!inRollout(m, this.d.deviceId)) return { kind, outcome: "staged_rollout", seq: m.seq, at };
     const plan = planInstall(m, now.version);
     if (!plan) return { kind, outcome: "rejected", reason: "no_applicable_package", seq: m.seq, at };
     const files = new Map<string, Uint8Array>();
-    try {
-      for (const p of plan.packages) {
-        for (const [name, size, sha] of [[p.file, p.size, p.sha256], ...(p.manifest_file ? [[p.manifest_file, p.manifest_size!, p.manifest_sha256!]] : [])] as [string, number, string][]) {
-          const bytes = await this.get(`/dist/${kind}/${channel}/files/${name}`);
-          if (!fileMatches(bytes, size, sha)) throw new Reject("file_digest_mismatch");
-          files.set(name, bytes);
-        }
+    for (const p of plan.packages) {
+      for (const [name, size, sha] of [[p.file, p.size, p.sha256], ...(p.manifest_file ? [[p.manifest_file, p.manifest_size!, p.manifest_sha256!]] : [])] as [string, number, string][]) {
+        const bytes = await this.get(`/dist/${kind}/${channel}/files/${name}`);
+        if (!fileMatches(bytes, size, sha)) throw new Reject("file_digest_mismatch");
+        files.set(name, bytes);
       }
-    } catch (e) {
-      if (e instanceof Reject) return { kind, outcome: "rejected", reason: e.code, seq: m.seq, at };
-      return { kind, outcome: "unreachable", reason: String((e as any)?.unreachable ?? "unreachable"), seq: m.seq, at };
     }
+    if (this.closed) return { kind, outcome: "skipped", reason: "closing", at };
     const dest = installedDir(this.d.workspaceDir, kind, channel, m.seq);
     const stage = `${dest}.stage-${randomBytes(6).toString("hex")}`;
     try {
       mkdirSync(stage, { recursive: true });
       if (kind === "lawdb") this.stageLawdb(stage, m, plan.packages, files);
       else this.stageSkills(stage, m, plan.packages[0]!, files);
-      rmSync(dest, { recursive: true, force: true });
-      renameSync(stage, dest);
+      retrySync(() => rmSync(dest, { recursive: true, force: true }));
+      retrySync(() => renameSync(stage, dest));
     } catch (e) {
-      rmSync(stage, { recursive: true, force: true });
-      return { kind, outcome: "rejected", reason: e instanceof Reject ? e.code : "stage_failed", seq: m.seq, at };
+      try {
+        rmSync(stage, { recursive: true, force: true, maxRetries: 3 });
+      } catch {
+        // 留给下次 prune
+      }
+      if (e instanceof Reject) throw new Reject(e.code, e.outcome);
+      throw new Reject("stage_failed", "failed");
     }
     // 登记与切换（同一事务；签名审计在 audit 内与事件同事务）
     db.tx(() => {
@@ -362,37 +490,67 @@ export class ContentUpdater {
       );
       this.d.audit("content.installed", `${kind}:${channel}:${m.seq}`);
     });
-    const installed: ActiveContent = { source: "installed", seq: m.seq, version: m.version, file: kind === "lawdb" ? join(dest, "lawdb.sqlite") : join(dest, "skills.manifest.json") };
+    const installed: ActiveContent = { source: "installed", seq: m.seq, version: m.version, contentSha256: m.content_sha256, file: kind === "lawdb" ? join(dest, "lawdb.sqlite") : join(dest, "skills.manifest.json") };
+    let pendingSwap = false;
     if (kind === "lawdb") {
-      this.d.lawdb.swap(openLawdbWithKeys(installed.file, this.d.keys));
-      this.d.active.lawdb = installed;
-      this.d.audit("lawdb.load", m.version);
+      if (this.d.busy?.()) {
+        this.lawdbPending = installed;
+        pendingSwap = true;
+        this.scheduleSwap();
+      } else {
+        this.lawdbPending = null;
+        this.swapLawdb(installed);
+      }
     } else {
       this.skillsPending = installed;
+      this.skillsRevokedPending = false;
     }
     this.prune(kind, m.seq);
-    return { kind, outcome: "installed", seq: m.seq, version: m.version, at, ...(kind === "skills" ? { restart_required: true } : {}) };
+    return { kind, outcome: "installed", seq: m.seq, version: m.version, at, ...(kind === "skills" ? { restart_required: true } : {}), ...(pendingSwap ? { pending_swap: true } : {}) };
   }
 
-  private activeSource(kind: ContentKind): ContentSource | null {
-    if (kind === "lawdb") return this.d.active.lawdb.source;
-    return (this.skillsPending ?? this.d.active.skills)?.source ?? null;
-  }
-
-  private revertLawdb(): void {
-    if (this.d.active.lawdb.source !== "installed") return;
-    this.d.lawdb.swap(openLawdbWithKeys(this.d.bundled.lawdb.file, this.d.keys));
-    this.d.active.lawdb = this.d.bundled.lawdb;
+  private swapLawdb(next: ActiveContent): void {
+    this.d.lawdb.swap(openLawdbWithKeys(next.file, this.d.keys));
+    this.d.active.lawdb = next;
     this.d.audit("lawdb.load", this.d.lawdb.current.packageVersion);
   }
 
-  private revertToBundled(kind: ContentKind, at: string): CheckResult {
+  /** 有任务时延后换用：每 15 秒看一次，空闲即换（S8A-10）。 */
+  private scheduleSwap(): void {
+    if (this.swapTimer) return;
+    this.swapTimer = setInterval(() => {
+      if (this.closed || !this.lawdbPending) {
+        if (this.swapTimer) clearInterval(this.swapTimer);
+        this.swapTimer = null;
+        return;
+      }
+      if (this.d.busy?.()) return;
+      const next = this.lawdbPending;
+      this.lawdbPending = null;
+      try {
+        this.swapLawdb(next);
+      } catch {
+        markProblem(this.d.db, "lawdb", this.d.channel, next.seq, "换用时打开失败");
+      }
+      if (this.swapTimer) clearInterval(this.swapTimer);
+      this.swapTimer = null;
+    }, 15_000);
+    this.swapTimer.unref();
+  }
+
+  /** 回到随包：法规库换回随包（有任务时同样延后）；方法模板下次打开时生效。 */
+  private revertToBundled(kind: ContentKind): void {
     if (kind === "lawdb") {
-      this.revertLawdb();
-      return { kind, outcome: "reverted", seq: this.d.bundled.lawdb.seq, at };
+      this.lawdbPending = null;
+      if (this.d.active.lawdb.source !== "installed") return;
+      if (this.d.busy?.()) {
+        this.lawdbPending = this.d.bundled.lawdb;
+        this.scheduleSwap();
+      } else this.swapLawdb(this.d.bundled.lawdb);
+      return;
     }
     this.skillsPending = null;
-    return { kind, outcome: "reverted", seq: this.d.bundled.skills?.seq ?? 0, at, restart_required: true };
+    this.skillsRevokedPending = this.d.active.skills?.source === "installed";
   }
 
   /** 法规库落位：全量包直接核验；增量链从当前在用的包复制出可写副本逐个应用，最后按通道清单核对摘要与版本。 */
@@ -402,14 +560,14 @@ export class ContentUpdater {
       writeFileSync(target, files.get(pkgs[0]!.file)!);
       writeFileSync(sidecarOf(target), files.get(pkgs[0]!.manifest_file!)!);
     } else {
-      const srcFile = this.d.active.lawdb.file;
+      const srcFile = (this.lawdbPending ?? this.d.active.lawdb).file;
       copyFileSync(srcFile, target);
       copyFileSync(sidecarOf(srcFile), sidecarOf(target));
       let w: Lawdb;
       try {
         w = openLawdbWithKeys(target, this.d.keys, { writable: true });
       } catch {
-        throw new Reject("base_invalid");
+        throw new Reject("base_invalid", "failed");
       }
       try {
         pkgs.forEach((p, i) => {
@@ -428,7 +586,6 @@ export class ContentUpdater {
       } finally {
         w.close();
       }
-      for (const n of readdirSync(stage)) if (n.startsWith("incr-")) rmSync(join(stage, n), { force: true });
       // SQLite 可能留下 -wal/-shm：只保留包文件对
       for (const n of readdirSync(stage)) if (n !== "lawdb.sqlite" && n !== "lawdb.manifest.json") rmSync(join(stage, n), { force: true });
     }
@@ -438,7 +595,7 @@ export class ContentUpdater {
     } catch {
       throw new Reject("package_invalid");
     }
-    const ok = l.packageVersion === m.version && readJson(sidecarOf(target))?.content_sha256 === m.content_sha256;
+    const ok = l.packageVersion === m.version && l.contentSha256 === m.content_sha256;
     l.close();
     if (!ok) throw new Reject("content_mismatch");
   }
@@ -460,15 +617,23 @@ export class ContentUpdater {
     if (v.contentSha256 !== m.content_sha256) throw new Reject("content_mismatch");
   }
 
-  /** 只保留在用的与上一个已装版本（回退备用），其余目录删除；账本行保留（防回退依据）。 */
+  /** 只保留在用的、待生效的与上一个已装版本（回退备用），其余目录删除；账本行保留（防回退依据）。 */
   private prune(kind: ContentKind, keepSeq: number): void {
     const base = join(this.d.workspaceDir, "content", kind);
     const rows = this.d.db.all<{ seq: number }>(`SELECT seq FROM content_installs WHERE kind = ? AND channel = ? AND problem IS NULL AND revoked_at IS NULL ORDER BY seq DESC LIMIT 2`, [kind, this.d.channel]);
-    const keep = new Set([keepSeq, ...rows.map((r) => r.seq)].map((s) => `${this.d.channel}-${s}`));
+    const inUse = kind === "lawdb" ? this.d.active.lawdb : this.d.active.skills;
+    const keep = new Set([keepSeq, ...rows.map((r) => r.seq), ...(inUse?.source === "installed" ? [inUse.seq] : [])].map((s) => `${this.d.channel}-${s}`));
     try {
-      for (const n of readdirSync(base)) if (!keep.has(n)) rmSync(join(base, n), { recursive: true, force: true });
+      for (const n of readdirSync(base)) {
+        if (keep.has(n)) continue;
+        try {
+          rmSync(join(base, n), { recursive: true, force: true, maxRetries: 3 });
+        } catch {
+          // 删不掉（被占用）：下次再清
+        }
+      }
     } catch {
-      // 目录不存在或删不掉：下次再清
+      // 目录不存在
     }
   }
 }

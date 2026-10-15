@@ -124,6 +124,35 @@ for (const d of ["migrations", "lawdb", "tool-manifest", "skills"]) {
   if (!existsSync(join(desktop, "electron", d))) throw new Error(`缺少 electron/${d}：先运行内容构建`);
   cpSync(join(desktop, "electron", d), join(stage, "electron", d), { recursive: true });
 }
+// 随包内容的签名信封（第 8 批复核 S8A-01/02）：发布流程把本通道当前的 lawdb.release.json / skills.release.json 放进 KWL_CONTENT_RELEASE_DIR
+// （dist-publish --bundled-out 生成）；逐个核对签名、通道与随包内容摘要，不符即中止。缺失时随包内容按 seq 0 计——
+// 应用升级带来更新的随包内容时，本机仍会选用更旧的在线版本：开通在线更新（release.json 的 dist_base）的正式发布必须提供
+{
+  const relDir = process.env.KWL_CONTENT_RELEASE_DIR;
+  const releaseCfg = existsSync(join(desktop, "electron/release.json")) ? JSON.parse(readFileSync(join(desktop, "electron/release.json"), "utf8")) : {};
+  const channel = releaseCfg.dist_channel === "beta" ? "beta" : "stable";
+  if (!relDir) {
+    if (releaseCfg.dist_base) throw new Error("release.json 开通了在线内容更新（dist_base），但没有给出 KWL_CONTENT_RELEASE_DIR（随包内容的签名信封）");
+    log("提示：未给出 KWL_CONTENT_RELEASE_DIR——随包法规库与方法模板不带签名信封（未开通在线更新时无影响）");
+  } else {
+    const { verifyChannelManifest, contentKeyId } = await import("../packages/content-dist/src/index.ts");
+    const pub = JSON.parse(readFileSync(join(stage, "electron/lawdb/content-signing.pub.json"), "utf8")).publicKeyPem;
+    const keys = new Map([[contentKeyId(pub), pub], ...(Array.isArray(releaseCfg.content_keys) ? releaseCfg.content_keys.map((k) => [contentKeyId(k), k]) : [])]);
+    const want = {
+      lawdb: JSON.parse(readFileSync(join(stage, "electron/lawdb/lawdb.manifest.json"), "utf8")).content_sha256,
+      skills: JSON.parse(readFileSync(join(stage, "electron/skills/skills.manifest.json"), "utf8")).content_sha256,
+    };
+    for (const kind of ["lawdb", "skills"]) {
+      const f = join(relDir, `${kind}.release.json`);
+      if (!existsSync(f)) throw new Error(`KWL_CONTENT_RELEASE_DIR 缺少 ${kind}.release.json`);
+      const v = verifyChannelManifest(JSON.parse(readFileSync(f, "utf8")), keys, { kind, channel, ignoreExpiry: true });
+      if (!v.ok) throw new Error(`${kind}.release.json 核验失败：${v.reason}（通道须为 ${channel}）`);
+      if (v.manifest.content_sha256 !== want[kind]) throw new Error(`${kind}.release.json 的内容摘要与随包内容不符`);
+      cpSync(f, join(stage, "electron", kind, `${kind}.release.json`));
+      log(`随包 ${kind} 信封：${channel} seq ${v.manifest.seq}`);
+    }
+  }
+}
 // 安装包上游与钉住集（审计 S5）：发布流程放置 electron/release.json；缺失时安装包只有本机能力（控制面缺失即退出模式）
 if (existsSync(join(desktop, "electron/release.json"))) cpSync(join(desktop, "electron/release.json"), join(stage, "electron/release.json"));
 else log("提示：未找到 electron/release.json——安装包不含中软云上游（只能用本机能力），正式发布必须提供");

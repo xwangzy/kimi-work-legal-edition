@@ -29,7 +29,7 @@ import { parsePublicKeyMap } from "@zr-legal/firm-trust";
 import { appendAuditEvent, createLedgerSigner, rowPayloadHash } from "./ledger-signer.ts";
 import { AsyncMutex, Semaphore } from "./mutex.ts";
 import { materializeSkillsBundle } from "./skills-bundle.ts";
-import { ContentUpdater, LawdbHolder, contentKeyTable, contentKeysFromEnv, openLawdbWithKeys, selectLawdb, selectSkills } from "./services/content-updates.ts";
+import { ContentUpdater, LawdbHolder, contentKeyTable, contentKeysFromEnv, markProblem, selectLawdb, selectSkills } from "./services/content-updates.ts";
 import { totalmem } from "node:os";
 import { createBlobCipher } from "./blob-cipher.ts";
 import { syncExport, syncImport } from "./sync-engine.ts";
@@ -88,19 +88,11 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     throw new DomainError("lawdb_invalid", "未找到内容签名公钥：请先运行 npm run build:lawdb 生成法规库包与签名公钥（或设置 ZR_LAWDB_SIGNER_PUB）", 422);
   }
   // 内容签名公钥表（随包公钥 + release.json 的 content_keys；kid 由公钥算出）与分发通道（第 8 批 S6/S7）
-  const contentKeys = contentKeyTable([config.lawdbSignerPub, ...contentKeysFromEnv(env.ZR_CONTENT_KEYS)]);
+  const contentKeys = contentKeyTable([config.lawdbSignerPub, ...contentKeysFromEnv(env.ZR_CONTENT_KEYS)], contentKeysFromEnv(env.ZR_CONTENT_KEYS_REVOKED));
   const distChannel = env.ZR_DIST_CHANNEL === "beta" ? "beta" : "stable";
-  // 选用法规库：在线已装（账本登记、seq 高于随包）且本机核验通过才用，否则随包；之后在线更新经 LawdbHolder 即时换用
+  // 选用法规库：在线已装（账本登记、seq 高于随包）且本机核验通过才用，否则随包（只核验一次，返回已打开实例）；之后在线更新经 LawdbHolder 换用
   const lawdbChoice = selectLawdb({ db, workspaceDir: config.workspaceDir, channel: distChannel, keys: contentKeys, bundledFile: config.lawdbFile, bundledReleaseFile: join(dirname(config.lawdbFile), "lawdb.release.json") });
-  let lawdbInitial;
-  try {
-    lawdbInitial = openLawdbWithKeys(lawdbChoice.active.file, contentKeys);
-  } catch (e) {
-    if (lawdbChoice.active.source === "bundled") throw e;
-    lawdbChoice.active = lawdbChoice.bundled;
-    lawdbInitial = openLawdbWithKeys(lawdbChoice.bundled.file, contentKeys);
-  }
-  const lawdbHolder = new LawdbHolder(lawdbInitial);
+  const lawdbHolder = new LawdbHolder(lawdbChoice.lawdb);
   const lawdb = lawdbHolder.proxy;
 
   // 密钥体系引导（§5.3）：律所身份（只存公钥）+ 本机设备证书 + 签名事件链
@@ -114,7 +106,13 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     bundledManifest: config.skillsManifestFile,
     bundledReleaseFile: config.skillsManifestFile ? join(dirname(config.skillsManifestFile), "skills.release.json") : null,
   });
-  const skillsBundle = materializeSkillsBundle(skillsChoice.active?.file ?? null, contentKeys, config.workspaceDir);
+  let skillsBundle = materializeSkillsBundle(skillsChoice.active?.file ?? null, contentKeys, config.workspaceDir);
+  // 在线已装的方法模板物化失败（选用之后被改动、磁盘满）：标记问题、回到随包（复核 S8A-08）
+  if (!skillsBundle.ok && skillsChoice.active?.source === "installed") {
+    markProblem(db, "skills", distChannel, skillsChoice.active.seq, "物化失败");
+    skillsChoice.active = skillsChoice.bundled;
+    skillsBundle = materializeSkillsBundle(skillsChoice.bundled?.file ?? null, contentKeys, config.workspaceDir);
+  }
   if (!skillsBundle.ok) slog.event("KERNEL_SKILLS_UNAVAILABLE", {});
   // 密钥文件按数据库主密钥派生的密钥封装（隐私安全审查 P0-1）；开发与测试形态无主密钥时为明文
   configureSecretSealing(keysDir, config.dbKey);
@@ -428,12 +426,18 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     deviceId: device.deviceId,
     fetch: (path) => gate.dist(path),
     configured: () => gate.distConfigured,
+    suspended: () => governance.exitMode() !== null,
+    busy: () => {
+      const st = queue.stats();
+      return st.running + st.pending > 0;
+    },
+    bundledStamped: { lawdb: lawdbChoice.bundledStamped, skills: skillsChoice.bundledStamped },
     lawdb: lawdbHolder,
     active: { lawdb: lawdbChoice.active, skills: skillsChoice.active },
     bundled: { lawdb: lawdbChoice.bundled, skills: skillsChoice.bundled },
     audit: (action, objectId) => appendAuditEvent(db, signer, { tenantId: identity.tenantId, actorId: identity.userId, action, kind: "content", objectId, matterId: null }),
   });
-  // 定时检查：启动 2 分钟后一次，之后每天；ZR_CONTENT_CHECK_MS=off 只在“检查更新”时检查（测试）
+  // 定时检查：启动 2～12 分钟内随机一次（复核 S8A-19），之后每天；ZR_CONTENT_CHECK_MS=off 只在“检查更新”时检查（测试）
   let contentTimer: NodeJS.Timeout | null = null;
   let contentFirst: NodeJS.Timeout | null = null;
   if (gate.distConfigured && env.ZR_CONTENT_CHECK_MS !== "off") {
@@ -441,7 +445,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     const tick = () => {
       void contentUpdater.check("lawdb").then(() => contentUpdater.check("skills"));
     };
-    contentFirst = setTimeout(tick, 120_000);
+    contentFirst = setTimeout(tick, ContentUpdater.firstDelayMs());
     contentFirst.unref();
     contentTimer = setInterval(tick, every);
     contentTimer.unref();
@@ -701,6 +705,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       if (syncTimer) clearInterval(syncTimer);
       if (contentTimer) clearInterval(contentTimer);
       if (contentFirst) clearTimeout(contentFirst);
+      await contentUpdater.close();
       await queue.shutdown();
       for (const s of [servers.tcp, servers.pipe]) {
         if (s) await new Promise<void>((r) => s.close(() => r()));

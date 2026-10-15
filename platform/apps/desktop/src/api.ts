@@ -731,17 +731,27 @@ export interface FactRow {
 
 export interface ContentCheckResult {
   kind: "lawdb" | "skills";
-  outcome: "up_to_date" | "installed" | "staged_rollout" | "not_configured" | "unreachable" | "rejected" | "rollback_ignored" | "reverted";
+  outcome: "up_to_date" | "installed" | "staged_rollout" | "not_configured" | "unreachable" | "unauthorized" | "stale" | "rejected" | "failed" | "rollback_ignored" | "reverted" | "skipped";
   reason?: string;
   seq?: number;
   version?: string;
   at: string;
   restart_required?: boolean;
+  pending_swap?: boolean;
 }
 
 export interface ContentStatus {
   configured: boolean;
   channel?: "stable" | "beta";
-  lawdb?: { source: "bundled" | "installed"; seq: number; version: string; last_check: ContentCheckResult | null };
-  skills?: { source: "bundled" | "installed" | null; seq: number; version: string | null; pending: { seq: number; version: string } | null; last_check: ContentCheckResult | null };
+  lawdb?: { source: "bundled" | "installed"; seq: number; version: string; pending?: { seq: number; version: string } | null; bundled_stamped?: boolean; last_check: ContentCheckResult | null; last_confirmed_at?: string | null };
+  skills?: {
+    source: "bundled" | "installed" | null;
+    seq: number;
+    version: string | null;
+    pending: { seq: number; version: string } | null;
+    revoked_pending_restart?: boolean;
+    bundled_stamped?: boolean;
+    last_check: ContentCheckResult | null;
+    last_confirmed_at?: string | null;
+  };
 }

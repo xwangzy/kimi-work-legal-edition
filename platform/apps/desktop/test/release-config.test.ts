@@ -150,7 +150,11 @@ test("内容分发（第 8 批 S6/S7）：dist_base 须 https + 两把钉住；�
   const badKeys = loadReleaseConfig(write("dist-keys.json", { dist_base: "https://dl.example.cn", dist_pins: [P1, P2], content_keys: [priv] }));
   assert.equal(badKeys.env.ZR_CONTENT_KEYS, undefined, "私钥不收");
   assert.match(badKeys.problems.join(""), /content_keys/);
-  const packaged = packagedKernelEnv({ ZR_DIST_BASE: "http://evil.example", ZR_CONTENT_KEYS: "[]", ZR_DIST_CHANNEL: "beta", PATH: "/bin" }, { env: {} });
+  const rv = loadReleaseConfig(write("dist-rv.json", { dist_base: "https://dl.example.cn", dist_pins: [P1, P2], content_keys_revoked: ["ABCDEFGHIJKLMNOP"] }));
+  assert.equal(rv.env.ZR_CONTENT_KEYS_REVOKED, '["ABCDEFGHIJKLMNOP"]');
+  assert.match(loadReleaseConfig(write("dist-rv-bad.json", { dist_base: "https://dl.example.cn", dist_pins: [P1, P2], content_keys_revoked: ["x"] })).problems.join(""), /content_keys_revoked/);
+  const packaged = packagedKernelEnv({ ZR_DIST_BASE: "http://evil.example", ZR_CONTENT_KEYS: "[]", ZR_CONTENT_KEYS_REVOKED: "[]", ZR_DIST_CHANNEL: "beta", PATH: "/bin" }, { env: {} });
+  assert.equal(packaged.ZR_CONTENT_KEYS_REVOKED, undefined);
   assert.equal(packaged.ZR_DIST_BASE, undefined);
   assert.equal(packaged.ZR_CONTENT_KEYS, undefined);
   assert.equal(packaged.ZR_DIST_CHANNEL, undefined);

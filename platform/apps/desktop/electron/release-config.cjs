@@ -122,6 +122,12 @@ function loadReleaseConfig(file) {
       if (!ok) problems.push("content_keys 须为 1–8 把 Ed25519 公钥 PEM（只收公钥）");
       else env.ZR_CONTENT_KEYS = JSON.stringify(raw.content_keys);
     }
+    // 停用的内容签名公钥指纹（复核 S8A-18：随包公钥“始终可信”，旧钥泄露后须能停用）
+    if (raw.content_keys_revoked !== undefined) {
+      const ok = Array.isArray(raw.content_keys_revoked) && raw.content_keys_revoked.length <= 16 && raw.content_keys_revoked.every((k) => typeof k === "string" && /^[A-Za-z0-9_-]{16}$/.test(k));
+      if (!ok) problems.push("content_keys_revoked 须为至多 16 个公钥指纹（16 位）");
+      else env.ZR_CONTENT_KEYS_REVOKED = JSON.stringify(raw.content_keys_revoked);
+    }
   }
   // 自动更新（W7）：更新源地址、钉住集与发布签名公钥只认这里（主进程使用，不进内核环境）；三项缺一即不检查更新
   let update = null;

@@ -62,12 +62,12 @@ export function contrast(fg: string, bg: string): number {
 
 /** 正文文字（4.5:1）：[前景, 背景…]；所有组合在深浅两套里都要过线。 */
 const TEXT_PAIRS: [string, string[]][] = [
-  ["--text-primary", ["--bg-main", "--bg-sidebar", "--bg-surface", "--bg-subtle", "--bg-muted", "--bg-hover", "--bg-active", "--accent-bg", "--bg-code"]],
-  ["--text-secondary", ["--bg-main", "--bg-sidebar", "--bg-surface", "--bg-subtle", "--bg-muted", "--bg-hover", "--bg-active"]],
-  ["--text-tertiary", ["--bg-main", "--bg-sidebar", "--bg-surface", "--bg-hover"]],
+  ["--text-primary", ["--bg-main", "--bg-sidebar", "--bg-surface", "--bg-elevated", "--bg-subtle", "--bg-muted", "--bg-hover", "--bg-active", "--accent-bg", "--bg-code"]],
+  ["--text-secondary", ["--bg-main", "--bg-sidebar", "--bg-surface", "--bg-elevated", "--bg-subtle", "--bg-muted", "--bg-hover", "--bg-active", "--accent-bg", "--bg-code"]],
+  ["--text-label", ["--bg-main", "--bg-sidebar", "--bg-surface", "--bg-hover"]],
   ["--text-strong", ["--bg-main", "--bg-surface"]],
   ["--accent-text", ["--bg-main", "--bg-sidebar", "--bg-surface", "--accent-bg", "--bg-hover"]],
-  ["--status-danger-text", ["--bg-main", "--bg-surface", "--status-danger-bg"]],
+  ["--status-danger-text", ["--bg-main", "--bg-surface", "--bg-elevated", "--status-danger-bg"]],
   ["--status-danger-strong", ["--status-danger-bg", "--bg-surface"]],
   ["--status-warning-text", ["--bg-main", "--bg-surface", "--status-warning-bg", "--status-warning-bg-soft"]],
   ["--status-warning-strong", ["--status-warning-bg", "--bg-surface"]],
@@ -79,13 +79,15 @@ const TEXT_PAIRS: [string, string[]][] = [
   ["--status-purple-text", ["--bg-surface", "--status-purple-bg"]],
   ["--btn-primary-text", ["--btn-primary", "--btn-primary-hover"]],
   ["--text-on-solid", ["--accent-text"]], // 计数徽标等实色底上的字：底色用 --accent-text（#167ffb 上白字仅 3.8:1）
-  ["--text-on-paper", ["--bg-paper", "--hl-citation", "--hl-risk", "--hl-revision", "--hl-added", "--hl-restored", "--paper-mark-person", "--paper-mark-org", "--paper-mark-id", "--paper-mark-place", "--paper-mark-negative", "--paper-quote-bg"]],
+  ["--text-on-paper-muted", ["--bg-paper", "--paper-quote-bg"]],
+  ["--text-on-paper", ["--bg-paper", "--paper-mark-partial", "--hl-citation", "--hl-risk", "--hl-revision", "--hl-added", "--hl-restored", "--paper-mark-person", "--paper-mark-org", "--paper-mark-id", "--paper-mark-place", "--paper-mark-negative", "--paper-quote-bg"]],
   ["--paper-mark-label-text", ["--paper-mark-label-person", "--paper-mark-label-partial", "--paper-mark-label-org", "--paper-mark-label-id", "--paper-mark-label-place", "--paper-mark-label-negative"]],
 ];
 /** 非文本（3:1，WCAG 1.4.11）：表单控件边框、焦点环、出错色条。橙绿状态圆点总与文字说明同现（颜色不是唯一信息），不在此列。 */
 const UI_PAIRS: [string, string[]][] = [
   ["--border-strong", ["--bg-main", "--bg-surface"]],
-  ["--focus-ring", ["--bg-main", "--bg-surface", "--bg-sidebar"]],
+  ["--focus-ring", ["--bg-main", "--bg-surface", "--bg-sidebar", "--bg-elevated"]],
+  ["--paper-focus", ["--bg-paper", "--paper-mark-person", "--paper-mark-partial", "--paper-mark-org", "--paper-mark-id", "--paper-mark-place", "--hl-risk", "--hl-citation"]],
   ["--accent", ["--bg-main", "--bg-surface"]],
   ["--status-danger-solid", ["--bg-surface"]],
 ];
@@ -105,7 +107,7 @@ for (const [theme, map] of [["浅色", light], ["深色", themed]] as const) {
   });
 }
 
-test("三层：基础色板只在令牌文件内被引用；语义层不直接写颜色字面量以外的基础名；组件层颜色都经语义层或基础色板", () => {
+test("基础色板只放六位十六进制；深色块不改基础色板（深色直接给语义值）", () => {
   for (const [k, v] of light) {
     if (k.startsWith("--p-")) assert.match(v, /^#[0-9a-f]{6}$/i, `${k} 基础色板只放六位十六进制`);
   }
@@ -135,3 +137,9 @@ test("字号 7 级、圆角 5 级（Y4 V-1、V-3；中文不用半像素）", ()
   const r = [...light].filter(([k]) => /^--r-/.test(k)).map(([, v]) => v);
   assert.deepEqual(r, ["4px", "8px", "12px", "16px", "999px"]);
 });
+
+test("深色下弹层比卡片亮一级（S8B-09：同色时只剩 1px 暗边区分层次）", () => {
+  const l = (v: string) => contrast(v, "#000000");
+  assert.ok(l(resolve(themed, "--bg-elevated")) > l(resolve(themed, "--bg-surface")) * 1.05);
+});
+

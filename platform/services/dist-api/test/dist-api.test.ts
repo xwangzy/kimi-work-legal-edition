@@ -66,7 +66,7 @@ test("路径白名单：未知类别/通道、上级目录、编码路径、查�
   assert.equal((await get("/dist/lawdb/stable/latest.json", seat, "POST")).status, 405);
 });
 
-test("计量只记租户、设备编号摘要、类别、通道与文件名（不记设备编号原文与来源地址）", async () => {
+test("计量只记租户、设备编号的服务端 HMAC、类别、通道与文件名（不记设备编号原文与来源地址）", async () => {
   meter.length = 0;
   await get("/dist/lawdb/stable/files/pkg.sqlite");
   assert.equal(meter.length, 1);
@@ -76,4 +76,8 @@ test("计量只记租户、设备编号摘要、类别、通道与文件名（�
   assert.notEqual(m.dev, "dev_a_u");
   assert.match(m.dev, /^[0-9a-f]{16}$/);
   assert.ok(!JSON.stringify(m).includes("127.0.0.1"));
+  // 设备编号摘要用服务端密钥 HMAC（S8A-14）：不同密钥下不同，不能按无盐 sha256 字典还原
+  const { createHash } = await import("node:crypto");
+  assert.notEqual(m.dev, createHash("sha256").update("dev_a_u").digest("hex").slice(0, 16));
+  assert.throws(() => createDistApi({ dir, keys, meterKey: Buffer.alloc(8) }));
 });

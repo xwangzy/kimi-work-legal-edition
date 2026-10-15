@@ -6,8 +6,10 @@
  *   ① 基础色板 --p-*：只在本文件内被语义层引用，组件样式不得直接使用；
  *   ② 语义层：--bg-* / --text-* / --border-* / --status-* / --accent* / --shadow-* 等，组件样式只用这一层；
  *   ③ 组件层：按钮、风险分级、引用四态、高亮、字号 7 级、圆角 5 级。
- * 深色模式（Y4 V-10、#32）：:root[data-theme="dark"] 只改写语义层（基础色板与组件层引用语义层，随之变化）；
- *   “纸面”类令牌（--bg-paper、--text-on-paper、--hl-*、--paper-*）两套相同——文书预览在深色模式下保持纸面白。
+ * 深色模式（Y4 V-10、#32）：:root[data-theme="dark"] 改写语义层，以及组件层里直接取基础色板的几项（主按钮、风险填充色）；
+ *   “纸面”类令牌（--bg-paper、--bg-preview、--text-on-paper*、--hl-*、--paper-*）两套相同——文书预览在深色模式下保持纸面白，
+ *   纸面上的字、焦点环一律用纸面令牌。深色块只对屏幕生效（@media screen）：任何打印路径都按浅色。
+ * 文字层级（由深到浅）：--text-primary > --text-strong > --text-label（标签、图标、辅助说明）> --text-secondary（次级说明）。
  * 门禁：packages/design-tokens/test/tokens.test.ts（深浅两套对比度、深色覆盖完整）与 apps/desktop/test/style-tokens.test.ts
  *   （组件样式不得出现颜色字面量、字号与圆角只用令牌、引用的令牌必须已定义）。
  */
@@ -77,6 +79,8 @@
   --bg-main: var(--p-white);
   --bg-sidebar: var(--p-gray-50);
   --bg-surface: var(--p-white);
+  /* 弹层、对话框（深色下比卡片亮一级，否则只剩 1px 暗边区分层次） */
+  --bg-elevated: var(--p-white);
   --bg-subtle: var(--p-gray-75);
   --bg-muted: var(--p-gray-100);
   --bg-hover: var(--p-gray-150);
@@ -85,10 +89,10 @@
   --bg-code: var(--p-slate-150);
   --bg-overlay: rgba(14, 18, 25, 0.28);
   --bg-fade: rgba(255, 255, 255, 0);
-  /* 文字：主 / 次级（#888 在白底仅 3.5:1 → #666 约 5.7:1，选中行底上仍 ≥ 4.5）/ 正文辅助（标签、图标） / 反白 */
+  /* 文字：主 / 次级（#888 在白底仅 3.5:1 → #666 约 5.7:1，选中行底上仍 ≥ 4.5）/ 标签与图标（比次级深）/ 反白 */
   --text-primary: var(--p-ink);
   --text-secondary: var(--p-gray-600);
-  --text-tertiary: var(--p-gray-700);
+  --text-label: var(--p-gray-700);
   --text-strong: var(--p-gray-800);
   --text-on-solid: var(--p-white);
   /* 边框：分割线 / 次按钮与卡片悬停 / 表单控件（非文本对比度 ≥ 3:1） */
@@ -140,6 +144,9 @@
   --bg-paper: var(--p-paper);
   --bg-preview: var(--p-white); /* 隔离预览框架（框架内文书自带浅色样式，取不到本页令牌） */
   --text-on-paper: var(--p-paper-ink);
+  --text-on-paper-muted: #5c5850;
+  /* 纸面上的键盘焦点环（深色模式的 --focus-ring 是浅蓝，画在纸面白上不足 3:1） */
+  --paper-focus: var(--p-blue-600);
   --paper-border: var(--p-gray-250);
   --paper-quote-bg: var(--p-slate-50);
   --paper-mark-person: #fdeaea;
@@ -231,12 +238,14 @@
 }
 
 /* 深色模式：只改写语义层与组件层中直接引用基础色板的项；纸面令牌不改（保持纸面白） */
+@media screen {
 :root[data-theme="dark"] {
   color-scheme: dark;
 
   --bg-main: #1a1918;
   --bg-sidebar: #141312;
   --bg-surface: #211f1e;
+  --bg-elevated: #2b2927;
   --bg-subtle: #1e1d1c;
   --bg-muted: #252321;
   --bg-hover: #2c2a28;
@@ -248,7 +257,7 @@
 
   --text-primary: #ecebe9;
   --text-secondary: #a9a59f;
-  --text-tertiary: #c4c0ba;
+  --text-label: #c4c0ba;
   --text-strong: #dcd9d5;
   --text-on-solid: #141312;
 
@@ -303,4 +312,5 @@
   --risk-high: #f0645a;
   --risk-mid: #f5a02a;
   --risk-low: #fbb24c;
+}
 }

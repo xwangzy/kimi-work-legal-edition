@@ -572,7 +572,7 @@
         "packages/kernel/test/privacy-residency.test.ts",
         "packages/kernel/test/content-updates.test.ts"
       ],
-      "residual": "Local Storage 为明文 leveldb（只存偏好与版本号）",
+      "residual": "Local Storage 为明文 leveldb（只存偏好与版本号）；在线更新装上的法规库与方法模板副本在 <工作区>/content/（本人可写）：启动时核验，核验通过后到下次启动之间被本机改动的页会被直接读到（复核 S8A-12）",
       "owner": "研发-桌面"
     },
     {
