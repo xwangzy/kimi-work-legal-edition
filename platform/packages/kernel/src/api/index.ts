@@ -3108,10 +3108,21 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   /**
    * 提醒的事项门禁：须是事项成员、事项进行中（结案与删除的不能设新提醒）；通知事项成员须有编辑权限（只读成员只能提醒自己）。
    */
-  function reminderMatterGate(matterId: string, audience: "me" | "team", id: Identity): void {
+  function reminderMatterGate(matterId: string, audience: "me" | "team", id: Identity, op: "create" | "update" = "create"): void {
     const m = requireMatterAccess(db, matterId, id);
-    if ((m.lifecycle ?? "active") !== "active") throw validation("已结案的事项不能设新提醒");
-    if (audience === "team") requireMatterWriter(db, matterId, id);
+    if ((m.lifecycle ?? "active") !== "active") throw validation(op === "update" ? "已结案的事项的提醒不能修改，可以撤销" : "已结案的事项不能设新提醒");
+    if (audience === "team") {
+      // 律师语言的报错（复核 S10B-12）：只读成员只能提醒自己
+      const role = db.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matterId, id.userId])?.matter_role;
+      if (role === "viewer") throw forbidden("你在这个事项里是只读成员：只能设“只提醒我”");
+      requireMatterWriter(db, matterId, id);
+    }
+  }
+
+  /** 提醒对外的字段（不含缓存的密文与指纹）。 */
+  function reminderOut(r: object): Record<string, unknown> {
+    const { cloud_body: _b, cloud_devices: _d, ...rest } = r as Record<string, unknown>;
+    return rest;
   }
 
   /** 成员写操作门禁（viewer 最小权限）：有效成员（墓碑过滤）且非 viewer；节点身份例外见下。 */
@@ -3308,18 +3319,21 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const rs = requireReminders();
       const mine = db.all<Record<string, unknown>>(
         `SELECT r.reminder_id, r.matter_id, r.kind, r.due_date, r.remind_at, r.days_before, r.remind_time, r.note, r.audience, r.version, r.status,
-                r.cloud_state, r.cloud_error, r.cloud_targets, r.created_at, r.updated_at, m.title AS matter_title, m.collab_scope
+                r.cloud_state, r.cloud_error, r.cloud_targets, r.created_at, r.updated_at, m.title AS matter_title, m.collab_scope, m.lifecycle AS matter_lifecycle,
+                (SELECT mm.matter_role FROM matter_members mm WHERE mm.matter_id = r.matter_id AND mm.user_id = r.created_by AND mm.removed_at IS NULL) AS my_role,
+                EXISTS (SELECT 1 FROM reminder_inbox i WHERE i.reminder_id = r.reminder_id AND i.version = r.version) AS fired
            FROM reminders r JOIN matters m ON m.matter_id = r.matter_id
           WHERE r.tenant_id = ? AND r.created_by = ? AND r.status = 'active' AND m.lifecycle <> 'purged'
             ${p?.matter_id ? "AND r.matter_id = ?" : ""}
           ORDER BY r.due_date, r.remind_at LIMIT 500`,
         p?.matter_id ? [id.tenantId, id.userId, String(p.matter_id)] : [id.tenantId, id.userId],
       );
-      // 收到的提醒：只显示本人仍是成员的事项的（或本机没有该事项时显示期限类型、日期与发出人，不显示事项名）
+      // 收到的提醒：本人仍是成员的事项显示事项名与备注；本机没有该事项时只显示期限类型、日期与发出人（D-85；复核 S10A-06）
       const inbox = db.all<Record<string, unknown>>(
         `SELECT i.reminder_id, i.version, i.matter_id, i.kind, i.due_date, i.remind_at, i.note, i.source, i.received_at, i.read_at, i.from_member,
                 u.display_name AS from_name,
-                (SELECT m.title FROM matters m JOIN matter_members mm ON mm.matter_id = m.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL WHERE m.matter_id = i.matter_id) AS matter_title
+                (SELECT m.title FROM matters m JOIN matter_members mm ON mm.matter_id = m.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL
+                  WHERE m.matter_id = i.matter_id AND m.lifecycle <> 'purged') AS matter_title
            FROM reminder_inbox i LEFT JOIN users u ON u.user_id = i.from_member
           WHERE i.tenant_id = ? ${p?.matter_id ? "AND i.matter_id = ?" : ""}
           ORDER BY i.received_at DESC LIMIT 100`,
@@ -3328,18 +3342,25 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const unread = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM reminder_inbox WHERE tenant_id = ? AND read_at IS NULL`, [id.tenantId])?.n ?? 0;
       return {
         cloud: { configured: rs.cloudConfigured, last: rs.lastCloud },
-        reminders: mine.map((r) => ({ ...r, mine: true })),
-        inbox: inbox.map((r) => ({ ...r, from_me: r.from_member === id.userId })),
+        reminders: mine.map((r) => ({ ...r, fired: r.fired === 1, mine: true })),
+        inbox: inbox.map((r) => ({ ...r, note: r.matter_title === null ? "" : r.note, from_me: r.from_member === id.userId })),
         unread,
+        // 云端送来、因核对不通过而没有显示的条数（复核 S10A-04：如实提示，不再只记在运行记录里）
+        rejected: rs.rejectSummary(),
       };
+    },
+    /** 侧栏未读数（复核 S10B-16：不为一个数字拉整张列表）。 */
+    "reminders.unread": (_p, id) => {
+      requireReminders();
+      return { unread: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM reminder_inbox WHERE tenant_id = ? AND read_at IS NULL`, [id.tenantId])?.n ?? 0 };
     },
     "reminders.create": (p, id) => {
       const rs = requireReminders();
       const input = parseReminderInput(p, Date.now());
       reminderMatterGate(input.matter_id, input.audience, id);
       const r = rs.create(input);
-      void rs.tick().catch(() => {});
-      return r;
+      void rs.tick();
+      return reminderOut(r);
     },
     "reminders.update": (p, id) => {
       const rs = requireReminders();
@@ -3347,10 +3368,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const cur = rs.get(rid);
       if (!cur || cur.created_by !== id.userId) throw notFound("提醒");
       const input = parseReminderInput({ ...p, matter_id: cur.matter_id }, Date.now());
-      reminderMatterGate(cur.matter_id, input.audience, id);
+      reminderMatterGate(cur.matter_id, input.audience, id, "update");
       const r = rs.update(rid, input);
-      void rs.tick().catch(() => {});
-      return r;
+      void rs.tick();
+      return reminderOut(r);
     },
     "reminders.cancel": (p, id) => {
       const rs = requireReminders();
@@ -3358,15 +3379,26 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const cur = rs.get(rid);
       if (!cur || cur.created_by !== id.userId) throw notFound("提醒");
       const r = rs.cancel(rid);
-      void rs.tick().catch(() => {});
-      return r;
+      void rs.tick();
+      return reminderOut(r);
+    },
+    /** 云端判定请求不合格的提醒（不应出现）由律师点“重试”。 */
+    "reminders.retry": (p, id) => {
+      const rs = requireReminders();
+      const rid = String(p?.reminder_id ?? "");
+      const cur = rs.get(rid);
+      if (!cur || cur.created_by !== id.userId) throw notFound("提醒");
+      const r = rs.retry(rid);
+      void rs.tick();
+      return reminderOut(r);
     },
     /** 标为已读：给 items（编号 + 版本）或 all:true。 */
     "reminders.mark_read": (p, id) => {
       requireReminders();
       const at = nowIso();
       if (p?.all === true) return { updated: db.run(`UPDATE reminder_inbox SET read_at = ? WHERE tenant_id = ? AND read_at IS NULL`, [at, id.tenantId]).changes };
-      const items = Array.isArray(p?.items) ? (p.items as unknown[]).slice(0, 200) : [];
+      if (!Array.isArray(p?.items)) throw validation("items 须为数组");
+      const items = (p.items as unknown[]).slice(0, 200);
       let n = 0;
       for (const it of items) {
         const x = it as { reminder_id?: unknown; version?: unknown };
@@ -3375,11 +3407,19 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       }
       return { updated: n };
     },
-    /** 立即巡检一次（界面“立即同步”与测试；平时每分钟自动）。 */
-    "reminders.sync": async () => {
+    /**
+     * 立即巡检一次（界面“立即同步”与测试；平时每分钟自动）。至多等 wait_ms（缺省 10 秒）：网络不通时界面不长时间停住，
+     * 巡检在后台继续（复核 S10B-09）。
+     */
+    "reminders.sync": async (p) => {
       const rs = requireReminders();
-      const r = await rs.tick();
-      return { local: r.local, cloud: r.cloud, cloud_status: { configured: rs.cloudConfigured, last: rs.lastCloud } };
+      const waitMs = Math.max(0, Math.min(Number(p?.wait_ms ?? 10_000) || 10_000, 60_000));
+      let timer: NodeJS.Timeout | undefined;
+      const r = await Promise.race([rs.tick(), new Promise<null>((res) => (timer = setTimeout(() => res(null), waitMs)))]);
+      clearTimeout(timer);
+      return r
+        ? { local: r.local, cloud: r.cloud, finished: true, cloud_status: { configured: rs.cloudConfigured, last: rs.lastCloud } }
+        : { local: 0, cloud: 0, finished: false, cloud_status: { configured: rs.cloudConfigured, last: rs.lastCloud } };
     },
     /** 本机的诊断包上传记录（最近 20 次；复核 S9B-02）。 */
     "diagnostics.uploads": (_p, id) => ({

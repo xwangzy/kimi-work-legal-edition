@@ -18,7 +18,7 @@ body {
 button { font: inherit; cursor: pointer; color: inherit; }
 button:disabled { cursor: not-allowed; opacity: 0.5; }
 input, textarea, select { font: inherit; color: inherit; }
-input[type="text"], input:not([type]), input[type="date"], select, textarea { border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 7px 10px; background: var(--bg-surface); outline: none; }
+input[type="text"], input:not([type]), input[type="date"], input[type="time"], select, textarea { border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 7px 10px; background: var(--bg-surface); outline: none; }
 input:focus, select:focus, textarea:focus { border-color: var(--focus-ring); }
 
 /* ── 外壳与侧栏 ── */
@@ -765,4 +765,3 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .reminder-warn { color: var(--status-warning-strong); font-size: var(--fs-sm); }
 .reminder-actions { white-space: nowrap; display: flex; gap: 6px; align-items: flex-start; }
 .consent-opt.disabled { cursor: default; color: var(--text-secondary); }
-input[type="time"] { border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 7px 10px; background: var(--bg-surface); color: var(--text-primary); }

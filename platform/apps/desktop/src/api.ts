@@ -438,6 +438,11 @@ export interface ReminderItem {
   version: number;
   cloud_state: "local" | "pending" | "synced" | "failed" | "cancel_pending" | "cancelled";
   cloud_targets: number | null;
+  cloud_error: string | null;
+  matter_lifecycle: "active" | "closed" | "purged";
+  my_role: string | null;
+  /** 当前版本已经响过（改动后会再提醒一次）。 */
+  fired: boolean;
 }
 /** 收到的提醒（本机到时或云端送来、核对签名后）。 */
 export interface ReminderInboxItem {
@@ -754,12 +759,20 @@ export const api = {
   quotaStatus: () => invoke<QuotaStatus>("quota.status"),
   // 期限提醒（第 10 批 S9）
   reminders: (matterId?: string) =>
-    invoke<{ cloud: { configured: boolean; last: { at: string; ok: boolean; code: string | null } | null }; reminders: ReminderItem[]; inbox: ReminderInboxItem[]; unread: number }>("reminders.list", matterId ? { matter_id: matterId } : {}),
+    invoke<{
+      cloud: { configured: boolean; last: { at: string; ok: boolean; code: string | null } | null };
+      reminders: ReminderItem[];
+      inbox: ReminderInboxItem[];
+      unread: number;
+      rejected: { reason: string; count: number; last_at: string }[];
+    }>("reminders.list", matterId ? { matter_id: matterId } : {}),
+  remindersUnread: () => invoke<{ unread: number }>("reminders.unread"),
+  reminderRetry: (reminderId: string) => invoke<ReminderItem>("reminders.retry", { reminder_id: reminderId }),
   reminderCreate: (input: ReminderInput & { matter_id: string }) => invoke<ReminderItem>("reminders.create", { ...input }),
   reminderUpdate: (reminderId: string, input: ReminderInput) => invoke<ReminderItem>("reminders.update", { reminder_id: reminderId, ...input }),
   reminderCancel: (reminderId: string) => invoke<ReminderItem>("reminders.cancel", { reminder_id: reminderId }),
   remindersMarkRead: (items: { reminder_id: string; version: number }[] | "all") => invoke<{ updated: number }>("reminders.mark_read", items === "all" ? { all: true } : { items }),
-  remindersSync: () => invoke<{ local: number; cloud: number }>("reminders.sync"),
+  remindersSync: () => invoke<{ local: number; cloud: number; finished: boolean }>("reminders.sync"),
   diagnosticsUploadPreview: () => invoke<SupportPreview>("diagnostics.upload_preview"),
   diagnosticsUploads: () => invoke<{ uploads: { upload_id: string; ticket: string | null; bytes: number; status: "pending" | "sent" | "failed" | "unknown"; error_code: string | null; created_at: string }[] }>("diagnostics.uploads"),
   diagnosticsUpload: (fileSha256: string) => invoke<{ ticket: string; expires_at: string | null; retention_days: number }>("diagnostics.upload", { file_sha256: fileSha256 }),

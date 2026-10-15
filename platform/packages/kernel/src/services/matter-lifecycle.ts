@@ -173,7 +173,10 @@ export async function purgeMatter(
     egress_sent: count(`SELECT COUNT(*) AS n FROM egress_records WHERE matter_id = ? AND outcome = 'sent'`),
     // 第 10 批 S9：期限提醒（交过中软通知服务的另计——云端副本是密文，由下次巡检删除）
     reminders: count(`SELECT COUNT(*) AS n FROM reminders WHERE matter_id = ?`),
-    reminders_cloud: count(`SELECT COUNT(*) AS n FROM reminders WHERE matter_id = ? AND cloud_state IN ('pending','synced','failed','cancel_pending')`),
+    // 只计“云端可能有副本”的（发出过登记、尚未确认删除；复核 S10B-05）
+    reminders_cloud: count(`SELECT COUNT(*) AS n FROM reminders WHERE matter_id = ? AND cloud_may_have_copy = 1`),
+    // 可能已送达其他设备的（本人其他设备或事项成员；那些设备上有解密后的提醒内容）
+    reminders_elsewhere: count(`SELECT COUNT(*) AS n FROM reminders WHERE matter_id = ? AND cloud_may_have_copy = 1 AND (COALESCE(cloud_targets, 0) > 1 OR audience = 'team')`),
   };
   // 已导出或下载过的文件（成果下载、账本导出、结案归档）：在律师自己保存的位置，本产品无法删除（复核 C-A10；第 02 篇 §9.13“导出临时包”）
   inventory.exports = count(
@@ -293,8 +296,16 @@ export async function purgeMatter(
           status: inventory.reminders_cloud! > 0 ? "pending" : "none",
           note:
             inventory.reminders_cloud! > 0
-              ? `${inventory.reminders_cloud} 条提醒交过中软通知服务（只有触发时刻、设备编号与密文）：本机已撤销，云端副本在本机下次联网巡检时删除；未删除的也在触发后 7 天自动删除`
+              ? `${inventory.reminders_cloud} 条提醒交过中软通知服务（触发时刻、接收设备编号与密文）：本机已撤销，云端副本在这台电脑联网且未处于退出模式时删除；未删成的由中软在触发后 7 天自动删除`
               : "没有交给中软通知服务的提醒",
+        },
+        {
+          where: "已送达其他设备的期限提醒",
+          status: inventory.reminders_elsewhere! > 0 ? "pending" : "none",
+          note:
+            inventory.reminders_elsewhere! > 0
+              ? `${inventory.reminders_elsewhere} 条提醒可能已送达你的其他设备或事项成员的设备，那些设备上保存着提醒内容（期限类型、日期与备注）：须经同步删除指令在其上线后清除（G1），在此之前仍可见`
+              : "没有送达其他设备的提醒",
         },
         { where: "挂载原件（律师文件夹中的原文件）", status: inventory.document_versions_mounted! > 0 ? "kept" : "none", note: `${inventory.document_versions_mounted} 份挂载原件属律师自己的文件夹，本产品未删除` },
       ],

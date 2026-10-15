@@ -15,7 +15,10 @@ const put = { step: "put" as const, credential, reminder_id: RID, fire_at: "2026
 test("请求形状：四种之外、多余字段、坏编号、坏时刻、坏密文、通用或支持凭据一律拒绝", () => {
   assert.equal(notifyRelayAllowed(put), null);
   assert.equal(notifyRelayAllowed({ step: "due", credential }), null);
-  assert.equal(notifyRelayAllowed({ step: "delete", credential, reminder_id: RID }), null);
+  assert.equal(notifyRelayAllowed({ step: "delete", credential, reminder_id: RID, version: 2 }), null);
+  assert.equal(notifyRelayAllowed({ step: "delete", credential, reminder_id: RID }), "notify_request_invalid", "撤销须带版本");
+  assert.equal(notifyRelayAllowed({ step: "defer", credential, items: [{ id: RID, version: 1, until: "2026-11-27T01:00:00.000Z" }] }), null);
+  assert.equal(notifyRelayAllowed({ step: "defer", credential, items: [{ id: RID, version: 1 }] }), "notify_items_invalid");
   assert.equal(notifyRelayAllowed({ step: "ack", credential, items: [{ id: RID, version: 1 }] }), null);
   assert.equal(notifyRelayAllowed({ step: "due", credential: credOf(undefined) }), "notify_credential_audience", "通用席位令牌不发往通知服务");
   assert.equal(notifyRelayAllowed({ step: "due", credential: credOf(["support"]) }), "notify_credential_audience");
@@ -47,7 +50,7 @@ test("固定路径与方法；请求体由闸门重拼（只含触发时刻、�
   assert.equal(seen[0]!.init.redirect, "error");
   assert.equal((seen[0]!.init.headers as Record<string, string>).authorization, `Bearer ${credential}`);
   assert.deepEqual(JSON.parse(String(seen[0]!.init.body)), { fire_at: put.fire_at, version: 2, targets: [{ dev: "dev_a", ct: "Q".repeat(120) }] });
-  await relayNotify({ step: "delete", credential, reminder_id: RID }, o);
+  await relayNotify({ step: "delete", credential, reminder_id: RID, version: 2 }, o);
   await relayNotify({ step: "due", credential }, o);
   await relayNotify({ step: "ack", credential, items: [{ id: RID, version: 2 }] }, o);
   assert.deepEqual(
@@ -59,6 +62,9 @@ test("固定路径与方法；请求体由闸门重拼（只含触发时刻、�
     ],
   );
   assert.deepEqual(JSON.parse(String(seen[3]!.init.body)), { items: [{ id: RID, version: 2 }] });
+  assert.deepEqual(JSON.parse(String(seen[1]!.init.body)), { version: 2 }, "撤销的请求体只有版本号");
+  await relayNotify({ step: "defer", credential, items: [{ id: RID, version: 2, until: "2026-11-27T01:00:00.000Z" }] }, o);
+  assert.deepEqual([seen[4]!.init.method, seen[4]!.url.endsWith("/v1/notify/defer"), JSON.parse(String(seen[4]!.init.body))], ["POST", true, { items: [{ id: RID, version: 2, until: "2026-11-27T01:00:00.000Z" }] }]);
 });
 
 test("未配置不发；形状不合格不发；响应超过 1 MiB 截断报错；连接被拒报“确定没有送出”", async () => {

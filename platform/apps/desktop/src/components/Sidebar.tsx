@@ -50,7 +50,7 @@ export function Sidebar({ route }: { route: Route }) {
   useEffect(() => {
     api.listMatters().then((r) => setMatters(r.matters)).catch(() => {});
     api.pending().then((r) => setPending(r.count)).catch(() => {});
-    api.reminders().then((r) => setUnreadReminders(r.unread)).catch(() => {});
+    api.remindersUnread().then((r) => setUnreadReminders(r.unread)).catch(() => {});
     api
       .kernelStatus()
       .then((s) => setStatus({ gate: s.egress_gate ? true : false, unresolved: s.egress_gate?.unresolved ?? 0 }))

@@ -8,7 +8,7 @@ import { nav } from "../App.tsx";
 import { Modal } from "../components/Modal.tsx";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
-import { audienceText, cloudStateText, defaultForm, dueText, dueTone, REMINDER_KINDS, reminderKindLabel, scheduleLine } from "../lib/reminders.ts";
+import { audienceText, bjToday, cloudStateText, daysUntil, defaultForm, dueText, dueTone, REMINDER_KINDS, reminderKindLabel, rejectReasonText, scheduleLine } from "../lib/reminders.ts";
 
 const DAYS_CHOICES = [0, 1, 2, 3, 5, 7, 10, 14, 30];
 
@@ -33,10 +33,23 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
   useEffect(() => {
     if (newForMatter) setEditing({ matterId: newForMatter });
   }, [newForMatter]);
+  // 操作失败要让律师看见（复核 S10B-13：原先撤销与标为已读失败时界面毫无反应）
   const markRead = async (items: ReminderInboxItem[] | "all") => {
-    await api.remindersMarkRead(items === "all" ? "all" : items.map((i) => ({ reminder_id: i.reminder_id, version: i.version }))).catch(() => {});
+    try {
+      await api.remindersMarkRead(items === "all" ? "all" : items.map((i) => ({ reminder_id: i.reminder_id, version: i.version })));
+    } catch (e) {
+      setErr(`没能标为已读：${(e as Error).message}`);
+    }
     notifyDataChanged();
     void load();
+  };
+  /** 先刷新列表，再在后台巡检一次、完成后再刷新（复核 S10B-09：网络不通时界面不停住）。 */
+  const refreshThenSync = () => {
+    void load();
+    void api
+      .remindersSync()
+      .catch(() => {})
+      .finally(() => void load());
   };
   const unread = data?.inbox.filter((i) => !i.read_at) ?? [];
   const read = data?.inbox.filter((i) => !!i.read_at).slice(0, 20) ?? [];
@@ -55,7 +68,14 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
             {data.cloud.configured
               ? "到时在这台电脑上提醒；电脑关机时，由中软通知服务送到你的其他设备（选了“事项成员”的也送到他们的设备）。中软只知道提醒时间和接收设备，期限类型、事项和备注在这台电脑上加密，中软看不到。"
               : "到时在这台电脑上提醒。没有连接中软通知服务：电脑关机或应用没开时不会提醒。"}
-            {data.cloud.configured && data.cloud.last && !data.cloud.last.ok && " 刚才没能连上中软通知服务，联网后自动重试。"}
+            {data.cloud.configured && data.cloud.last && !data.cloud.last.ok && " 刚才没能和中软通知服务完成同步，稍后自动重试（这台电脑上照常提醒）。"}
+            {/* 复核 S10B-06：提醒只保存在建立它的电脑上 */}
+            {" 提醒保存在这台电脑上：换电脑要重新设置；这台电脑停用后，它设的提醒在其他设备上也不再响。"}
+          </p>
+        )}
+        {data && data.rejected.length > 0 && (
+          <p className="muted">
+            另有 {data.rejected.reduce((n, r) => n + r.count, 0)} 条别的设备送来的提醒因核对不通过没有显示（{[...new Set(data.rejected.map((r) => rejectReasonText(r.reason)))].join("；")}）。
           </p>
         )}
 
@@ -77,7 +97,7 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
         <div className="section-title">我设的提醒</div>
         {data && data.reminders.length === 0 && <p className="muted">还没有设提醒。可以在这里设，也可以在事项页的“设提醒”里设。</p>}
         {data && data.reminders.length > 0 && (
-          <table className="data reminder-table">
+          <table className="data">
             <thead>
               <tr>
                 <th>期限</th>
@@ -89,7 +109,9 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
             </thead>
             <tbody>
               {data.reminders.map((r) => {
-                const cs = cloudStateText(r.cloud_state, data.cloud.configured);
+                const cs = cloudStateText(r.cloud_state, data.cloud.configured, { targets: r.cloud_targets, audience: r.audience });
+                // 已结案的事项、期限已过的提醒只能撤销（复核 S10B-08）
+                const editable = r.matter_lifecycle === "active" && daysUntil(r.due_date) >= 0;
                 return (
                   <tr key={r.reminder_id}>
                     <td>
@@ -108,19 +130,32 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
                       <div>{scheduleLine(r)}</div>
                       <div className="muted">{audienceText(r.audience, r.collab_scope === "team")}</div>
                     </td>
-                    <td className={cs.tone === "warn" ? "reminder-warn" : "muted"}>{cs.text}</td>
+                    <td className={cs.tone === "warn" ? "reminder-warn" : "muted"}>
+                      {cs.text}
+                      {r.cloud_state === "failed" && (
+                        <button className="btn-link" onClick={() => void api.reminderRetry(r.reminder_id).then(refreshThenSync, (e) => setErr((e as Error).message))}>
+                          重试
+                        </button>
+                      )}
+                    </td>
                     <td className="reminder-actions">
-                      <button className="btn-ghost" onClick={() => setEditing({ reminder: r })}>
-                        修改
-                      </button>
+                      {editable && (
+                        <button className="btn-ghost" onClick={() => setEditing({ reminder: r })}>
+                          修改
+                        </button>
+                      )}
                       <ConfirmButton
                         label="撤销"
                         question="撤销后这条提醒不再响；交给中软通知服务的也一并删除。"
                         confirmLabel="撤销提醒"
                         onConfirm={async () => {
-                          await api.reminderCancel(r.reminder_id);
-                          await api.remindersSync().catch(() => {});
-                          void load();
+                          try {
+                            await api.reminderCancel(r.reminder_id);
+                          } catch (e) {
+                            setErr(`没能撤销：${(e as Error).message}`);
+                            return;
+                          }
+                          refreshThenSync();
                         }}
                       />
                     </td>
@@ -142,8 +177,7 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
           onSaved={() => {
             setEditing(null);
             if (newForMatter) nav("/reminders");
-            // 先完成一次巡检再刷新（联调：否则刚保存的那条总显示“正在交给中软通知服务…”）
-            void api.remindersSync().catch(() => {}).finally(() => void load());
+            refreshThenSync();
           }}
         />
       )}
@@ -201,12 +235,14 @@ function ReminderForm({ reminder, matterId, onClose, onSaved }: { reminder?: Rem
       .catch(() => {});
   }, []);
   const matter = matters.find((m) => m.matter_id === f.matter_id);
-  const team = matter?.collab_scope === "team";
+  // 只读成员只能提醒自己（复核 S10B-12）；事项信息没取到时不改动原来的通知对象（不悄悄降级）
+  const role = reminder?.my_role ?? matter?.my_role ?? null;
+  const team = matter ? matter.collab_scope === "team" && role !== "viewer" : reminder ? reminder.collab_scope === "team" && role !== "viewer" : false;
   const save = async () => {
     setBusy(true);
     setErr("");
     try {
-      const input = { ...f, audience: team ? f.audience : "me" } as const;
+      const input = { ...f, audience: team || (!matter && reminder) ? f.audience : "me" } as const;
       if (reminder) await api.reminderUpdate(reminder.reminder_id, input);
       else await api.reminderCreate(input);
       onSaved();
@@ -243,7 +279,7 @@ function ReminderForm({ reminder, matterId, onClose, onSaved }: { reminder?: Rem
         </label>
         <label className="field">
           <span>期限日</span>
-          <input type="date" value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} />
+          <input type="date" min={bjToday()} value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} />
         </label>
         <label className="field">
           <span>提前几天提醒</span>
@@ -256,7 +292,7 @@ function ReminderForm({ reminder, matterId, onClose, onSaved }: { reminder?: Rem
           </select>
         </label>
         <label className="field">
-          <span>几点提醒</span>
+          <span>几点提醒（北京时间）</span>
           <input type="time" value={f.remind_time} onChange={(e) => setF({ ...f, remind_time: e.target.value })} />
         </label>
         <label className="field field-wide">
@@ -270,11 +306,12 @@ function ReminderForm({ reminder, matterId, onClose, onSaved }: { reminder?: Rem
           </label>
           <label className={`consent-opt${team ? "" : " disabled"}`}>
             <input type="radio" name="aud" disabled={!team} checked={team && f.audience === "team"} onChange={() => setF({ ...f, audience: "team" })} /> 提醒事项全体成员
-            {!team && <span className="muted">（个人事项只有你一人）</span>}
+            {!team && <span className="muted">{role === "viewer" ? "（你在这个事项里是只读成员，只能提醒自己）" : "（个人事项只有你一人）"}</span>}
           </label>
         </div>
       </div>
-      <p className="muted">期限日由你核对填写，系统不推算法定期间、不顺延节假日。</p>
+      {reminder?.fired && <div className="banner banner-orange">这条提醒已经响过：保存后会按新的时间再提醒一次{reminder.audience === "team" ? "（事项成员也会再收到）" : ""}。</div>}
+      <p className="muted">期限日由你核对填写，系统不推算法定期间、不顺延节假日。提醒保存在这台电脑上，换电脑需要重新设置。</p>
       {err && <div className="banner banner-red">{err}</div>}
       <div className="modal-actions">
         <button className="btn-ghost" onClick={onClose}>

@@ -5,7 +5,7 @@
  */
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
@@ -122,11 +122,11 @@ test("NA-04 只有同一成员能改与撤销；版本只升不降；同版本�
   assert.equal((await call(base, "PUT", `/v1/reminders/${RID2}`, cred(), v1)).json.unchanged, true);
   assert.equal((await call(base, "PUT", `/v1/reminders/${RID2}`, cred(), { ...v1, targets: [{ dev: "devA", ct: CT("Z") }] })).json.error, "version_conflict");
   assert.equal((await call(base, "PUT", `/v1/reminders/${RID2}`, cred({ uid: "u2", dev: "devX" }), { ...v1, version: 2 })).json.error, "not_owner");
-  assert.equal((await call(base, "DELETE", `/v1/reminders/${RID2}`, cred({ uid: "u2", dev: "devX" }))).json.error, "not_owner");
+  assert.equal((await call(base, "DELETE", `/v1/reminders/${RID2}`, cred({ uid: "u2", dev: "devX" }), { version: 3 })).json.error, "not_owner");
   assert.equal((await call(base, "PUT", `/v1/reminders/${RID2}`, cred({ dev: "devA2" }), { ...v1, version: 3 })).status, 200, "同一成员的另一台设备可以改");
   assert.equal((await call(base, "PUT", `/v1/reminders/${RID2}`, cred(), { ...v1, version: 2 })).json.error, "version_stale");
-  assert.deepEqual(await call(base, "DELETE", `/v1/reminders/${RID2}`, cred()).then((r) => r.json), { ok: true, existed: true });
-  assert.deepEqual(await call(base, "DELETE", `/v1/reminders/${RID2}`, cred()).then((r) => r.json), { ok: true, existed: false });
+  assert.deepEqual(await call(base, "DELETE", `/v1/reminders/${RID2}`, cred(), { version: 3 }).then((r) => r.json), { ok: true, existed: true });
+  assert.deepEqual(await call(base, "DELETE", `/v1/reminders/${RID2}`, cred(), { version: 3 }).then((r) => r.json), { ok: true, existed: false });
   clock += 2 * 3600_000;
   assert.deepEqual((await call(base, "GET", "/v1/notify/due", cred())).json.items, []);
 });
@@ -157,4 +157,85 @@ test("NA-05 被吊销设备：凭据拒收、登记为目标拒绝、清扫删�
   const bad = mkdtempSync(join(tmpdir(), "kwl-na-"));
   writeFileSync(join(bad, "reminders.json"), "{not json");
   assert.throws(() => createNotifyApi({ dir: bad, keys, now: () => clock }));
+});
+
+test("NA-06 撤销留墓碑：迟到或被重放的旧版本登记拒收，更高版本可以重新登记（复核 S10A-10）；撤销须带版本", async () => {
+  const { base, s: svc } = await start(mkdtempSync(join(tmpdir(), "kwl-na-")));
+  const RID3 = "rmd_" + "d".repeat(24);
+  const fire = minute(clock + 3600_000);
+  const v = (version: number, c = "A") => ({ fire_at: fire, version, targets: [{ dev: "devA", ct: CT(c) }] });
+  assert.equal((await call(base, "PUT", `/v1/reminders/${RID3}`, cred(), v(2))).status, 200);
+  assert.equal((await call(base, "DELETE", `/v1/reminders/${RID3}`, cred(), {})).json.error, "body_invalid");
+  assert.equal((await call(base, "DELETE", `/v1/reminders/${RID3}`, cred(), { version: 2 })).json.existed, true);
+  assert.deepEqual(svc.tombstones().map((t) => [t.id, t.version]), [[RID3, 2]]);
+  assert.equal((await call(base, "PUT", `/v1/reminders/${RID3}`, cred(), v(2, "Z"))).json.error, "version_stale", "被重放的旧版本");
+  assert.equal((await call(base, "PUT", `/v1/reminders/${RID3}`, cred(), v(1))).json.error, "version_stale");
+  assert.equal((await call(base, "PUT", `/v1/reminders/${RID3}`, cred({ uid: "u9", dev: "devQ" }), v(9))).json.error, "not_owner", "别人不能借墓碑编号登记");
+  assert.equal((await call(base, "PUT", `/v1/reminders/${RID3}`, cred(), v(3))).status, 200, "更高版本可以重新登记");
+  assert.deepEqual(svc.tombstones(), []);
+  // 墓碑到期删除
+  assert.equal((await call(base, "DELETE", `/v1/reminders/${RID3}`, cred(), { version: 3 })).status, 200);
+  clock += 3600_000 + NOTIFY_RETENTION_MS + 1;
+  svc.sweep();
+  assert.deepEqual(svc.tombstones(), []);
+});
+
+test("NA-07 暂缓：本设备暂时不能判断的条目暂缓后不再堵在队头，到时再给；暂缓最长 24 小时；只影响本设备（复核 S10A-03）", async () => {
+  const { base } = await start(mkdtempSync(join(tmpdir(), "kwl-na-")));
+  const ids = Array.from({ length: 51 }, (_, i) => `rmd_${i.toString(16).padStart(24, "0")}`);
+  const fire = minute(clock - 60_000);
+  for (const id of ids) assert.equal((await call(base, "PUT", `/v1/reminders/${id}`, cred(), { fire_at: fire, version: 1, targets: [{ dev: "devA", ct: CT("A") }, { dev: "devB", ct: CT("B") }] })).status, 200);
+  const first = await call(base, "GET", "/v1/notify/due", cred());
+  assert.equal(first.json.items.length, 50);
+  assert.equal(first.json.more, true);
+  const until = new Date(clock + 30 * 86_400_000).toISOString();
+  assert.equal((await call(base, "POST", "/v1/notify/defer", cred(), { items: first.json.items.map((x: any) => ({ id: x.id, version: 1, until })) })).json.deferred, 50);
+  const next = await call(base, "GET", "/v1/notify/due", cred());
+  assert.deepEqual(next.json.items.map((x: any) => x.id), [ids[50]], "暂缓的不再堵住后面的");
+  assert.equal((await call(base, "GET", "/v1/notify/due", cred({ dev: "devB" }))).json.items.length, 50, "别的设备不受影响");
+  assert.equal((await call(base, "POST", "/v1/notify/defer", cred(), { items: [{ id: ids[0], version: 1 }] })).json.error, "body_invalid");
+  clock += 24 * 3600_000 + 1;
+  assert.equal((await call(base, "GET", "/v1/notify/due", cred())).json.items.length, 50, "暂缓最长 24 小时");
+});
+
+test("NA-08 落盘：启动时删掉崩溃残留的临时状态文件；状态里有坏记录拒绝启动；写盘失败时内存回滚（复核 S10A-12）", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kwl-na-"));
+  writeFileSync(join(dir, "reminders.json.tmp-abcd1234"), "{\"v\":1,\"reminders\":[]}");
+  const a = await start(dir);
+  assert.equal(existsSync(join(dir, "reminders.json.tmp-abcd1234")), false);
+  const fire = minute(clock + 3600_000);
+  assert.equal((await call(a.base, "PUT", `/v1/reminders/${RID}`, cred(), { fire_at: fire, version: 1, targets: [{ dev: "devA", ct: CT("A") }] })).status, 200);
+  if (process.platform !== "win32") {
+    chmodSync(dir, 0o500);
+    try {
+      const r = await call(a.base, "PUT", `/v1/reminders/${RID}`, cred(), { fire_at: fire, version: 2, targets: [{ dev: "devA", ct: CT("B") }] });
+      assert.equal(r.status, 500);
+    } finally {
+      chmodSync(dir, 0o700);
+    }
+    assert.equal(a.s.snapshot()[0]!.version, 1, "写盘失败：内存回到改动之前");
+    assert.deepEqual(readdirSync(dir).filter((f) => f.includes(".tmp-")), []);
+  }
+  const bad = mkdtempSync(join(tmpdir(), "kwl-na-"));
+  writeFileSync(join(bad, "reminders.json"), JSON.stringify({ v: 1, reminders: [{ tid: "t1", id: "rmd_x", owner: "u", version: 1, fire_at: fire, updated_at: fire, targets: {} }], writes: {} }));
+  assert.throws(() => createNotifyApi({ dir: bad, keys, now: () => clock }), /不合格/);
+});
+
+test("NA-09 生产形态必须接吊销订阅；运营按租户整体删除（先记访问审计；凭据与操作人缺一不可；复核 S10A-13/15）", async () => {
+  assert.throws(() => createNotifyApi({ dir: mkdtempSync(join(tmpdir(), "kwl-na-")), keys, production: true }), /吊销订阅/);
+  const access: any[] = [];
+  const s = createNotifyApi({ dir: mkdtempSync(join(tmpdir(), "kwl-na-")), keys, feed, now: () => clock, opsSecret: "ops-secret-0123456789", accessLog: (r) => void access.push(r) });
+  servers.push(s);
+  await new Promise<void>((r) => s.listen(0, "127.0.0.1", () => r()));
+  const base = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
+  const fire = minute(clock + 3600_000);
+  await call(base, "PUT", `/v1/reminders/${RID}`, cred(), { fire_at: fire, version: 1, targets: [{ dev: "devA", ct: CT("A") }] });
+  await call(base, "PUT", `/v1/reminders/${RID}`, cred({ tid: "t2" }), { fire_at: fire, version: 1, targets: [{ dev: "devA", ct: CT("A") }] });
+  const ops = (h: Record<string, string>) => fetch(`${base}/v1/notify/ops/tenants/t1`, { method: "DELETE", headers: h });
+  assert.equal((await ops({ authorization: "Bearer wrong-secret-000000000" , "x-kwl-operator": "op.a" })).status, 401);
+  assert.equal((await ops({ authorization: "Bearer ops-secret-0123456789" })).status, 400);
+  const r = await ops({ authorization: "Bearer ops-secret-0123456789", "x-kwl-operator": "op.a" });
+  assert.deepEqual(await r.json(), { ok: true, removed: 1 });
+  assert.deepEqual(s.snapshot().map((x) => x.tid), ["t2"], "只删该租户");
+  assert.deepEqual(access.map((a) => [a.action, a.operator, a.tid, a.removed]), [["tenant_purge", "op.a", "t1", 1]]);
 });

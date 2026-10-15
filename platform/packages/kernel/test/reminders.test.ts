@@ -85,7 +85,8 @@ test("本机提醒（未配置通知服务）：到时放进收到的提醒、�
   local.kernel.onBroadcast((m) => void seen.push(m));
   const { matter } = await local.inv("matters.create", { title: "本机提醒事项", stance: "原告", consent_status: "agreed" });
   const r = await local.inv("reminders.create", { matter_id: matter.matter_id, kind: "hearing", due_date: inDays(10), days_before: 3, note: "带齐证据原件" });
-  assert.equal(r.cloud_state, "local", "未配置通知服务：只在本机");
+  assert.equal(r.cloud_state, "pending", "未配置通知服务：本机照常提醒，云端登记等配置后再做（复核 S10B-02）");
+  assert.equal((await local.inv("reminders.list")).cloud.configured, false);
   assert.equal((await local.inv("reminders.sync")).local, 0, "未到时");
   const c = await local.inv("reminders.create", { matter_id: matter.matter_id, kind: "appeal", due_date: inDays(9), days_before: 1 });
   await local.inv("reminders.cancel", { reminder_id: c.reminder_id });
@@ -235,9 +236,11 @@ test("伪造与挪用一律不收：别的提醒的密文、别的设备的密�
     mk(id("7"), { signer: phoneSigner, from: phone.cert.deviceId }), // 合格
   ];
   const acked: string[] = [];
+  const deferred: string[] = [];
   const relay = async (req: NotifyRelayRequest): Promise<NotifyRelayResult> => {
     if (req.step === "due") return { ok: true, status: 200, body: JSON.stringify({ items, more: false }) };
     if (req.step === "ack") acked.push(...req.items.map((x) => x.id));
+    if (req.step === "defer") deferred.push(...req.items.map((x) => x.id));
     return { ok: true, status: 200, body: '{"ok":true}' };
   };
   const svc = new ReminderService({
@@ -256,7 +259,9 @@ test("伪造与挪用一律不收：别的提醒的密文、别的设备的密�
   });
   const r = await svc.tick();
   assert.equal(r.cloud, 1, "只收合格的那一条");
-  assert.deepEqual(acked.sort(), [id("1"), id("2"), id("4"), id("5"), id("6"), id("7")].sort(), "不合格的确认后丢弃；发出设备未知的暂不确认");
+  assert.deepEqual(acked.sort(), [id("1"), id("2"), id("4"), id("5"), id("7")].sort(), "不合格的确认后丢弃");
+  // 发出设备未知、签名对不上（可能是对方刚换钥、本机目录未同步）：请云端暂缓，不确认（复核 S10A-03/04）
+  assert.deepEqual(deferred.sort(), [id("3"), id("6")].sort());
   const inbox = tk.kernel.db.all<{ reminder_id: string }>(`SELECT reminder_id FROM reminder_inbox WHERE note = '伪造'`);
   assert.deepEqual(inbox.map((x) => x.reminder_id), [id("7")]);
 });

@@ -5,7 +5,8 @@
  * （release.json 的 notify_base，钉住集同规则）。只有四种请求，请求体都由闸门按固定形状重新拼出：
  *   ① 登记 `PUT /v1/reminders/<编号>`：只有触发时刻（到分钟）、版本号、接收设备编号与每台设备一份不透明密文——
  *      云端不收任何明文字段（期限类型、事项、文案都在密文里，由内核按接收设备公钥加密）；
- *   ② 撤销 `DELETE /v1/reminders/<编号>`；③ 取到时提醒 `GET /v1/notify/due`；④ 确认收到 `POST /v1/notify/ack`。
+ *   ② 撤销 `DELETE /v1/reminders/<编号>`（请求体只有版本号，云端据此留墓碑）；③ 取到时提醒 `GET /v1/notify/due`；④ 确认收到 `POST /v1/notify/ack`；
+ *   ⑤ 暂缓 `POST /v1/notify/defer`（本设备暂时不能判断的条目暂缓到给定时刻再给；第 10 批复核 S10A-03）。
  * 凭据是控制面签发的**只限通知服务**的短期凭据（受众 notify），由内核随请求交来，闸门核对形态与载荷里的受众后附上；
  * 不跟随跳转；响应 ≤ 1 MiB；闸门不解析、不记录密文。
  */
@@ -17,9 +18,10 @@ export interface NotifyTarget {
 }
 export type NotifyRelayRequest =
   | { step: "put"; credential: string; reminder_id: string; fire_at: string; version: number; targets: NotifyTarget[] }
-  | { step: "delete"; credential: string; reminder_id: string }
+  | { step: "delete"; credential: string; reminder_id: string; version: number }
   | { step: "due"; credential: string }
-  | { step: "ack"; credential: string; items: { id: string; version: number }[] };
+  | { step: "ack"; credential: string; items: { id: string; version: number }[] }
+  | { step: "defer"; credential: string; items: { id: string; version: number; until: string }[] };
 export type NotifyRelayResult = { ok: true; status: number; body: string } | { ok: false; reason: string };
 
 const NOTIFY_MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -27,6 +29,7 @@ const CREDENTIAL_RE = /^zst1\.[A-Za-z0-9_-]{20,2000}\.[A-Za-z0-9_-]{40,200}$/;
 const REMINDER_ID_RE = /^rmd_[0-9a-f]{24}$/;
 const DEVICE_ID_RE = /^[A-Za-z0-9_-]{1,200}$/;
 const FIRE_AT_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z$/;
+const UNTIL_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const CT_RE = /^[A-Za-z0-9_-]{40,8192}$/;
 const MAX_TARGETS = 50;
 const MAX_ACK = 50;
@@ -53,7 +56,8 @@ export function notifyRelayAllowed(r: unknown): string | null {
     case "due":
       return keysAre(x, "credential,step") ? null : "notify_request_invalid";
     case "delete":
-      if (!keysAre(x, "credential,reminder_id,step")) return "notify_request_invalid";
+      if (!keysAre(x, "credential,reminder_id,step,version")) return "notify_request_invalid";
+      if (typeof x.version !== "number" || !Number.isSafeInteger(x.version) || x.version < 1) return "notify_version_invalid";
       return typeof x.reminder_id === "string" && REMINDER_ID_RE.test(x.reminder_id) ? null : "notify_reminder_invalid";
     case "put": {
       if (!keysAre(x, "credential,fire_at,reminder_id,step,targets,version")) return "notify_request_invalid";
@@ -71,13 +75,15 @@ export function notifyRelayAllowed(r: unknown): string | null {
       }
       return null;
     }
-    case "ack": {
+    case "ack":
+    case "defer": {
       if (!keysAre(x, "credential,items,step")) return "notify_request_invalid";
       if (!Array.isArray(x.items) || x.items.length < 1 || x.items.length > MAX_ACK) return "notify_items_invalid";
       for (const it of x.items as unknown[]) {
         const y = it as Record<string, unknown> | null;
-        if (!y || typeof y !== "object" || !keysAre(y, "id,version")) return "notify_items_invalid";
+        if (!y || typeof y !== "object" || !keysAre(y, x.step === "defer" ? "id,until,version" : "id,version")) return "notify_items_invalid";
         if (typeof y.id !== "string" || !REMINDER_ID_RE.test(y.id) || typeof y.version !== "number" || !Number.isSafeInteger(y.version) || y.version < 1) return "notify_items_invalid";
+        if (x.step === "defer" && (typeof y.until !== "string" || !UNTIL_RE.test(y.until) || Number.isNaN(Date.parse(y.until)))) return "notify_items_invalid";
       }
       return null;
     }
@@ -115,13 +121,16 @@ export async function relayNotify(
     init = { method: "PUT", headers: { ...auth, "content-type": "application/json" }, body };
   } else if (req.step === "delete") {
     path = `/v1/reminders/${req.reminder_id}`;
-    init = { method: "DELETE", headers: auth };
+    init = { method: "DELETE", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ version: req.version }) };
   } else if (req.step === "due") {
     path = "/v1/notify/due";
     init = { method: "GET", headers: auth };
-  } else {
+  } else if (req.step === "ack") {
     path = "/v1/notify/ack";
     init = { method: "POST", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ items: req.items.map((i) => ({ id: i.id, version: i.version })) }) };
+  } else {
+    path = "/v1/notify/defer";
+    init = { method: "POST", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ items: req.items.map((i) => ({ id: i.id, version: i.version, until: i.until })) }) };
   }
   try {
     if (new URL(`${base}${path}`).pathname !== `${new URL(base).pathname.replace(/\/+$/, "")}${path}`) return { ok: false, reason: "notify_path_not_allowed" };

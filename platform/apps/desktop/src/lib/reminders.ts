@@ -70,13 +70,27 @@ export function scheduleLine(r: { due_date: string; days_before: number; remind_
   return `${scheduleText(r.days_before, r.remind_time)}（${remindAtText(r.remind_at)}）`;
 }
 
-/** 本人提醒的“电脑关机时”状态一句话。 */
-export function cloudStateText(state: string, configured: boolean): { text: string; tone: "ok" | "warn" | "plain" } {
+/**
+ * 本人提醒的“电脑关机时”状态一句话（复核 S10B-13：按实际送达的设备数与通知对象说，只有这一台电脑时不说“其他设备也会收到”）。
+ */
+export function cloudStateText(state: string, configured: boolean, o: { targets?: number | null; audience?: string } = {}): { text: string; tone: "ok" | "warn" | "plain" } {
   if (!configured || state === "local") return { text: "只在这台电脑上提醒（电脑关机时不提醒）", tone: "plain" };
-  if (state === "synced") return { text: "电脑关机时，你的其他设备也会收到", tone: "ok" };
+  if (state === "synced") {
+    const others = Math.max(0, (o.targets ?? 1) - 1);
+    if (others === 0) return { text: "目前只有这台电脑：关机时不会提醒（之后在其他设备登录，还没到时的提醒会自动补发过去）", tone: "plain" };
+    return { text: o.audience === "team" ? `电脑关机时，事项成员与你的其他设备共 ${others} 台也会收到` : `电脑关机时，你的其他 ${others} 台设备也会收到`, tone: "ok" };
+  }
   if (state === "pending") return { text: "正在交给中软通知服务…（联网后自动完成）", tone: "plain" };
-  if (state === "failed") return { text: "没能交给中软通知服务：这台电脑上照常提醒；可改一下再保存重试", tone: "warn" };
+  if (state === "failed") return { text: "没能交给中软通知服务：这台电脑上照常提醒", tone: "warn" };
   return { text: "", tone: "plain" };
+}
+
+/** 收件核对丢弃的原因（律师语言；复核 S10A-04）。 */
+export function rejectReasonText(reason: string): string {
+  if (reason === "sender_revoked") return "设提醒的那台设备已停用";
+  if (reason === "not_member" || reason === "matter_deleted") return "你已不在该事项或事项已删除";
+  if (reason.startsWith("held_")) return "一天内都没能核对设提醒的设备";
+  return "内容核对不通过";
 }
 
 export function audienceText(a: string, collabTeam: boolean): string {

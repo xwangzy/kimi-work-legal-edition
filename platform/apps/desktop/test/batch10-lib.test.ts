@@ -3,7 +3,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scheduleLine, plannedRemindAt, audienceText, bjToday, cloudStateText, daysUntil, defaultForm, dueText, dueTone, reminderKindLabel, remindAtText, scheduleText } from "../src/lib/reminders.ts";
+import { rejectReasonText, scheduleLine, plannedRemindAt, audienceText, bjToday, cloudStateText, daysUntil, defaultForm, dueText, dueTone, reminderKindLabel, remindAtText, scheduleText } from "../src/lib/reminders.ts";
 
 // 2026-10-16 23:30 北京时间 = 15:30Z
 const NOW = Date.parse("2026-10-16T15:30:00.000Z");
@@ -34,7 +34,12 @@ test("提醒时刻按北京时间显示；提前天数与提醒对象的说法",
 
 test("云端状态一句话：未接通知服务如实写“电脑关机时不提醒”；用语里没有技术词", () => {
   assert.match(cloudStateText("synced", false).text, /关机时不提醒/);
-  assert.match(cloudStateText("synced", true).text, /其他设备也会收到/);
+  // 按实际送达的设备数说（复核 S10B-13）：只有这一台电脑时不说“其他设备也会收到”
+  assert.match(cloudStateText("synced", true, { targets: 1, audience: "me" }).text, /只有这台电脑/);
+  assert.match(cloudStateText("synced", true, { targets: 3, audience: "me" }).text, /其他 2 台设备也会收到/);
+  assert.match(cloudStateText("synced", true, { targets: 4, audience: "team" }).text, /事项成员与你的其他设备共 3 台/);
+  assert.equal(rejectReasonText("sender_revoked"), "设提醒的那台设备已停用");
+  assert.equal(rejectReasonText("held_unknown_sender"), "一天内都没能核对设提醒的设备");
   assert.equal(cloudStateText("failed", true).tone, "warn");
   for (const s of ["local", "pending", "synced", "failed"]) {
     const t = cloudStateText(s, true).text;
