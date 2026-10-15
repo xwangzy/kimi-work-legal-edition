@@ -26,6 +26,9 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+// Windows 上 PATH 里的 tar 可能是 Git 自带 GNU tar（把盘符当远程主机）；用 System32 bsdtar（同 fetch-win-runtime.mjs）
+const system32 = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
+const tarBin = process.platform === "win32" && existsSync(system32) ? system32 : "tar";
 const arg = (name) => {
   const i = process.argv.indexOf(name);
   return i >= 0 ? process.argv[i + 1] : undefined;
@@ -88,7 +91,7 @@ function crossNativeDirFresh(pkgName) {
   rmSync(fresh, { recursive: true, force: true });
   mkdirSync(fresh, { recursive: true });
   // 归档操作数相对 + cwd：GNU tar 会把 "D:\..." 的盘符冒号当远程主机（同 fetch-win-runtime.mjs）
-  execFileSync("tar", ["-xzf", basename(tgz), "-C", fresh, "--strip-components=1"], { cwd: crossNpmCache });
+  execFileSync(tarBin, ["-xzf", basename(tgz), "-C", fresh, "--strip-components=1"], { cwd: crossNpmCache });
   if (JSON.parse(readFileSync(join(fresh, "package.json"), "utf8")).version !== want) throw new Error(`锁定的 ${pkgName} tarball 版本不是 ${want}`);
   return fresh;
 }

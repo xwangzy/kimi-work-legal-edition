@@ -20,6 +20,11 @@ const lock = JSON.parse(readFileSync(lockPath, "utf8"));
 const cache = join(root, ".cache/win-runtime");
 mkdirSync(cache, { recursive: true });
 
+// Windows 上 PATH 里的 tar 可能是 Git 自带的 GNU tar：不认 zip 归档，且把绝对路径盘符当远程主机。
+// 一律改用系统自带的 System32 bsdtar（Windows 10+ 必有，与 macOS 同为 libarchive，支持 zip）。
+const system32 = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
+const tarBin = process.platform === "win32" && existsSync(system32) ? system32 : "tar";
+
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 
 async function get(url) {
@@ -51,7 +56,7 @@ async function fetchOne(key, exeName, officialSha) {
     const zipFile = join(tmp, "a.zip");
     writeFileSync(zipFile, zip);
     // 归档操作数必须相对：GNU tar 会把绝对路径的 "D:" 前缀解析成远程主机（bsdtar 无此问题但不支持 --force-local，故不用）
-    execFileSync("tar", ["-xf", "a.zip"], { cwd: tmp });
+    execFileSync(tarBin, ["-xf", "a.zip"], { cwd: tmp });
     const exe = findFile(tmp, exeName);
     if (!exe) throw new Error(`${key}：压缩包内没有 ${exeName}`);
     const exeSha = sha256(readFileSync(exe));
@@ -94,7 +99,7 @@ for (const [name, ent] of Object.entries(lock.npm)) {
   const dest = join(npmCache, "node_modules", ...name.split("/"));
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
-  execFileSync("tar", ["-xzf", info.filename, "-C", dest, "--strip-components=1"], { cwd: npmCache });
+  execFileSync(tarBin, ["-xzf", info.filename, "-C", dest, "--strip-components=1"], { cwd: npmCache });
   // 保留 tarball（复核 B4-R15）：build-runtime 交叉构建时按锁文件 integrity 复核它、并从它重新解出，不信任缓存里解好的目录
   renameSync(tgz, join(npmCache, tarballName(name, ent.version)));
   ent.integrity = info.integrity;
