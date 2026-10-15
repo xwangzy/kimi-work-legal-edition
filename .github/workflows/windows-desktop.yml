@@ -99,9 +99,11 @@ jobs:
           if (-not $sig.SignerCertificate -or $sig.SignerCertificate.Subject -notlike "*DEV TEST ONLY*") { throw "安装包没有用本次的测试证书签名" }
           $p = Start-Process $exe.FullName -ArgumentList "/S" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "安装失败：$($p.ExitCode)" }
-          $installDir = Join-Path $env:LOCALAPPDATA "Programs\kimi-work-legal"
+          # 安装目录名按 electron-builder 规则（getWindowsInstallationDirName）：assisted（oneClick:false）per-user
+          # 安装到 %LOCALAPPDATA%\Programs\<productFilename>，productFilename=sanitizeFileName(executableName)=KimiWorkLegal
+          $installDir = Join-Path $env:LOCALAPPDATA "Programs\KimiWorkLegal"
           $app = Join-Path $installDir "KimiWorkLegal.exe"
-          if (-not (Test-Path $app)) { throw "未找到已安装的程序：$app" }
+          if (-not (Test-Path $app)) { Get-ChildItem (Join-Path $env:LOCALAPPDATA "Programs") -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name | Write-Output; throw "未找到已安装的程序：$app" }
           # 随包 Node 不得被重签（signExts: !node.exe）：签名者须仍是 OpenJS Foundation，否则运行时摘要必然不符
           $node = Join-Path $installDir "resources\runtime\node\node.exe"
           $nodeSigner = (Get-AuthenticodeSignature $node).SignerCertificate.Subject
