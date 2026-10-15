@@ -4,7 +4,9 @@
  *
  * 核验：压缩包 sha256 必须与官方发布的校验和一致（同版本 SHASUMS256.txt），
  * 且与 scripts/win-runtime.lock.json 中已记录的摘要一致；锁文件摘要为空时写入（首次信任，提交前须评审）。
- * 解压用系统 tar（Windows 10+ 与 macOS 自带，支持 zip）。只访问锁文件中的官方地址。
+ * 解压：tgz 用系统 tar（GNU/bsdtar 均可）；node 的 zip 在 Windows 用 PowerShell Expand-Archive
+ * （GitHub windows-2025 镜像没有 System32 bsdtar，PATH 上的 tar 是 Git 自带 GNU tar、不认 zip；macOS 自带 bsdtar 认 zip）。
+ * 只访问锁文件中的官方地址。
  *
  * 用法：node scripts/fetch-win-runtime.mjs
  */
@@ -20,10 +22,6 @@ const lock = JSON.parse(readFileSync(lockPath, "utf8"));
 const cache = join(root, ".cache/win-runtime");
 mkdirSync(cache, { recursive: true });
 
-// Windows 上 PATH 里的 tar 可能是 Git 自带的 GNU tar：不认 zip 归档，且把绝对路径盘符当远程主机。
-// 一律改用系统自带的 System32 bsdtar（Windows 10+ 必有，与 macOS 同为 libarchive，支持 zip）。
-const system32 = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
-const tarBin = process.platform === "win32" && existsSync(system32) ? system32 : "tar";
 
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 
@@ -55,8 +53,13 @@ async function fetchOne(key, exeName, officialSha) {
   try {
     const zipFile = join(tmp, "a.zip");
     writeFileSync(zipFile, zip);
-    // 归档操作数必须相对：GNU tar 会把绝对路径的 "D:" 前缀解析成远程主机（bsdtar 无此问题但不支持 --force-local，故不用）
-    execFileSync(tarBin, ["-xf", "a.zip"], { cwd: tmp });
+    // zip 解压：Windows 一律 PowerShell Expand-Archive（windows-2025 镜像无 System32 bsdtar，PATH 上的 GNU tar 不认 zip）；
+    // macOS 自带 bsdtar 认 zip。操作数相对 + cwd（GNU tar 会把绝对路径的 "D:" 前缀解析成远程主机）。
+    if (process.platform === "win32") {
+      execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "Expand-Archive -LiteralPath a.zip -DestinationPath ."], { cwd: tmp });
+    } else {
+      execFileSync("tar", ["-xf", "a.zip"], { cwd: tmp });
+    }
     const exe = findFile(tmp, exeName);
     if (!exe) throw new Error(`${key}：压缩包内没有 ${exeName}`);
     const exeSha = sha256(readFileSync(exe));
@@ -99,7 +102,8 @@ for (const [name, ent] of Object.entries(lock.npm)) {
   const dest = join(npmCache, "node_modules", ...name.split("/"));
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
-  execFileSync(tarBin, ["-xzf", info.filename, "-C", dest, "--strip-components=1"], { cwd: npmCache });
+  // tgz：GNU/bsdtar tar 均可解；归档操作数相对 + cwd（GNU tar 会把绝对路径的盘符当远程主机）
+  execFileSync("tar", ["-xzf", info.filename, "-C", dest, "--strip-components=1"], { cwd: npmCache });
   // 保留 tarball（复核 B4-R15）：build-runtime 交叉构建时按锁文件 integrity 复核它、并从它重新解出，不信任缓存里解好的目录
   renameSync(tgz, join(npmCache, tarballName(name, ent.version)));
   ent.integrity = info.integrity;

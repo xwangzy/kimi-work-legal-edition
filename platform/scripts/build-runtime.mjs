@@ -26,9 +26,8 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-// Windows 上 PATH 里的 tar 可能是 Git 自带 GNU tar（把盘符当远程主机）；用 System32 bsdtar（同 fetch-win-runtime.mjs）
-const system32 = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
-const tarBin = process.platform === "win32" && existsSync(system32) ? system32 : "tar";
+// tar 只用于 tgz 解压（GNU/bsdtar 均可）；zip 不走 tar——windows-2025 镜像无 System32 bsdtar、Git 的 GNU tar 不认 zip（见 fetch-win-runtime.mjs）
+const tarBin = "tar";
 const arg = (name) => {
   const i = process.argv.indexOf(name);
   return i >= 0 ? process.argv[i + 1] : undefined;
