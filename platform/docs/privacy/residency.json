@@ -374,7 +374,7 @@
       "memory": "—",
       "disk": "Electron userData/crash（不上传，启动删 > 3 天）；脱敏诊断包由律师主动导出（content_free，设备签名）；冒烟结果文件（不含内容）",
       "local_channels": "—",
-      "network": "否（Electron 侧）；随包 Node 子进程按 WER 同意级别（F4）",
+      "network": "否（Electron 侧）；随包 Node 子进程按 WER 同意级别（F4）；脱敏诊断包在律所策略允许时可由律师逐次预览、确认后经出站闸门上传中软支持（第 9 批 S13，中软保存 7 天，运营查看留访问审计）",
       "logs_dumps": "—",
       "form": [
         "content_free"
@@ -391,12 +391,18 @@
         {
           "file": "apps/desktop/electron/smoke-io.cjs",
           "symbol": "writeSmokeResult"
+        },
+        {
+          "file": "packages/egress-gate/src/support-relay.ts",
+          "symbol": "relaySupport"
         }
       ],
       "tests": [
         "apps/desktop/test/secret-store.test.ts",
         "packages/kernel/test/diagnostics.test.ts",
-        "apps/desktop/test/smoke-io.test.ts"
+        "apps/desktop/test/smoke-io.test.ts",
+        "packages/kernel/test/support-upload.test.ts",
+        "packages/egress-gate/test/support-relay.test.ts"
       ],
       "residual": "随包 Node 子进程原生崩溃不在 Crashpad 内（P1-5）",
       "owner": "研发-桌面"
@@ -407,7 +413,7 @@
       "memory": "各进程",
       "disk": "数据根 logs/kwl-YYYYMMDD[-N].jsonl（content_free；单文件 ≤ 5 MB、保留 14 天、总量 ≤ 50 MB）；记录编号按本机盐（数据根 .log-salt）HMAC 成 12 个字母；读回时按登记表重建记录",
       "local_channels": "子进程 stderr（只认日志器 JSON 行，其余只计数）；Electron 主进程经内核消息（内核未就绪时暂存 50 条）；更新链只交事件码",
-      "network": "否（诊断包由律师主动导出）",
+      "network": "否（诊断包由律师主动导出，或在律所策略允许时逐次确认后上传，见第 13 类）",
       "logs_dumps": "—",
       "form": [
         "content_free"

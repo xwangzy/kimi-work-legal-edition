@@ -9,6 +9,7 @@ import { errFields, slog } from "@zr-legal/safe-log";
 import { readFileSync, lstatSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { writeExportFile } from "../services/export-file.ts";
+import type { CpAuditRecord } from "@zr-legal/firm-trust";
 import { recordSuspectReview, sendPreview, summarizeSend, type SendSummary, type SuspectView } from "../services/send-preview.ts";
 import {
   ConsentStatus,
@@ -2134,6 +2135,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
               running: gate.running,
               routes: gate.routes(),
               search_configured: !!up?.search,
+              // 第 9 批 S13：支持服务（诊断包上传）是否配置、律所是否允许
+              support_configured: !!up?.support,
+              support_upload_allowed: deps.governance?.supportUploadAllowed() ?? false,
               fetch: up?.fetch ?? "disabled",
               fetch_allowlist_size: gate.fetchAllowlist.length,
               stats: { ...gate.stats },
@@ -2400,6 +2404,71 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       // 发布后立即同步：本机按同一规则独立核验后才生效
       const report = await deps.controlPlane!.sync();
       return { report, status: deps.governance!.status() };
+    },
+    // ─── 用量与上限（第 9 批 S3）：本所本月用量、律所设的月度上限（硬停）；管理员与合伙人另看按成员明细 ───
+    "quota.status": async (_p, id) => {
+      if (!deps.controlPlane) return { mode: "local_dev", note: "未配置控制面（开发形态：额度只在开发网关内存里）" };
+      const view = await cpCall(() => deps.controlPlane!.quota());
+      // 成员编号换成本机成员名（控制面只有编号）
+      const names = new Map(db.all<{ user_id: string; display_name: string }>(`SELECT user_id, display_name FROM users WHERE tenant_id = ?`, [id.tenantId]).map((r) => [r.user_id, r.display_name]));
+      return {
+        mode: "control_plane",
+        ...view,
+        ...(view.by_member ? { by_member: view.by_member.map((m) => ({ ...m, name: m.member_id ? (names.get(m.member_id) ?? null) : null })) } : {}),
+      };
+    },
+    "quota.set_cap": async (p, id) => {
+      requireAdminDevice(id);
+      const raw = p?.monthly_cap;
+      const cap = raw === null ? null : Number(raw);
+      if (cap !== null && !(Number.isSafeInteger(cap) && cap >= 0)) throw validation("月度上限须为非负整数点数，或不设上限");
+      const r = await cpCall(() => deps.controlPlane!.setQuotaCap(cap));
+      audit(db, id, "quota.cap_set", "tenant", id.tenantId, sha256Hex(JSON.stringify({ cap })), keyctx);
+      return r;
+    },
+    // ─── 中软侧操作记录（第 9 批 S14）：取回、验控制面签名与哈希链、本机留存；律所管理员与合伙人可看、可导出 ───
+    "control_plane.audit": async (p, id) => {
+      requireFirmAdmin(id);
+      let fetched: { added: number; head: number } | null = null;
+      let fetch_error: string | null = null;
+      if (deps.controlPlane) {
+        try {
+          fetched = await deps.controlPlane.fetchAudit();
+        } catch (e) {
+          fetch_error = (e as Error)?.message ?? "fetch_failed";
+        }
+      }
+      const limit = Math.max(1, Math.min(500, Number(p?.limit ?? 200) || 200));
+      const before = p?.before_seq === undefined ? undefined : Number(p.before_seq);
+      const records = deps.governance ? deps.governance.auditRecords(limit, Number.isSafeInteger(before) ? before : undefined) : [];
+      const devMember = new Map(db.all<{ device_id: string; display_name: string | null }>(`SELECT d.device_id, u.display_name FROM devices d LEFT JOIN users u ON u.user_id = d.member_id WHERE d.tenant_id = ?`, [id.tenantId]).map((r) => [r.device_id, r.display_name]));
+      // 目标可能是设备编号，也可能是成员编号（席位凭据签发、收回席位）
+      for (const u of db.all<{ user_id: string; display_name: string }>(`SELECT user_id, display_name FROM users WHERE tenant_id = ?`, [id.tenantId])) if (!devMember.has(u.user_id)) devMember.set(u.user_id, u.display_name);
+      return {
+        mode: deps.controlPlane ? "control_plane" : "local_dev",
+        fetched,
+        fetch_error,
+        records: records.map((r) => ({ ...r, actor_name: r.actor.kind === "device" ? (devMember.get(r.actor.id) ?? null) : null, target_name: r.target ? (devMember.get(r.target) ?? null) : null })),
+      };
+    },
+    "control_plane.audit_export": (p, id) => {
+      requireFirmAdmin(id);
+      if (!deps.governance) throw notFound("中软侧操作记录");
+      const records: CpAuditRecord[] = [];
+      for (let before: number | undefined; ; ) {
+        const page = deps.governance.auditRecords(1000, before);
+        records.push(...page);
+        if (page.length < 1000) break;
+        before = page.at(-1)!.seq;
+      }
+      records.reverse();
+      // 导出原记录（含 prev/hash，收件人可自行验链）；只有代码与编号
+      const text = `${JSON.stringify({ format: "kwl-cp-audit-export/1", tenant_id: id.tenantId, exported_at: new Date().toISOString(), records }, null, 2)}\n`;
+      audit(db, id, "control_plane.audit_export", "tenant", id.tenantId, sha256Hex(text), keyctx);
+      const filename = `zr-cloud-operations-${new Date().toISOString().slice(0, 10)}.json`;
+      if (!p?.save_path) return { filename, saved: false, count: records.length, data_base64: Buffer.from(text, "utf8").toString("base64") };
+      const saved = writeExportFile(String(p.save_path), Buffer.from(text, "utf8"), config.workspaceDir);
+      return { filename: saved.name, saved: true, count: records.length };
     },
     // 公钥变更只影响本机今后向该设备包裹事项密钥：由本机当前成员核对（事项密钥由各成员设备各自包裹；复核 S6-A03）
     "devices.key_changes.confirm": (p, id) => {
@@ -3068,28 +3137,86 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       gateFacts: () => (gate ? { running: gate.running, routes: gate.routes(), search_configured: !!gate.upstreams.search, fetch: gate.upstreams.fetch ?? "disabled" } : null),
   });
   let envProbeCache: { at: number; result: EnvProbeResult } | null = null;
+  /** 脱敏诊断包（导出与上传预览共用同一生成）。 */
+  const buildDiag = (id: Identity) =>
+    buildDiagnostics({
+      db,
+      tokens: tokens ?? null,
+      tenantId: id.tenantId,
+      deviceId: keyctx.device.deviceId,
+      signer: keyctx.device.signer,
+      status: async () => api["kernel.status"]!({}, id),
+      capabilities: async () => w1["kernel.capabilities"]!({}, id),
+      logsDir: join(config.workspaceDir, "logs"),
+      envProbe: async () => all["device.env_probe"]!({}, id),
+    });
+  /** 待确认上传的诊断包（内容摘要 → 生成者与内容；只在内存，10 分钟；每人只留最近一份）。 */
+  const pendingUploads = new Map<string, { at: number; userId: string; data_base64: string }>();
+  const UPLOAD_PREVIEW_TTL_MS = 10 * 60_000;
   const all: Record<string, Handler> = {
     ...api,
     ...w1,
     // 脱敏诊断包（v9.2 §3.6；Y5 P1-2）：只含白名单结构化事实，导出前对照本机全部当事人与令牌原文自证，设备签名；记审计
     "diagnostics.export": async (_p, id) => {
-      const r = await buildDiagnostics({
-        db,
-        tokens: tokens ?? null,
-        tenantId: id.tenantId,
-        deviceId: keyctx.device.deviceId,
-        signer: keyctx.device.signer,
-        status: async () => api["kernel.status"]!({}, id),
-        capabilities: async () => w1["kernel.capabilities"]!({}, id),
-        logsDir: join(config.workspaceDir, "logs"),
-        envProbe: async () => all["device.env_probe"]!({}, id),
-      });
+      const r = await buildDiag(id);
       audit(db, id, "diagnostics.export", "device", keyctx.device.deviceId, r.content_sha256, keyctx);
       if (_p?.save_path) {
         const saved = writeExportFile(String(_p.save_path), Buffer.from(r.data_base64, "base64"), config.workspaceDir);
         return { filename: saved.name, saved: true, content_sha256: r.content_sha256, summary: r.summary };
       }
       return r;
+    },
+    // 诊断包上传给中软支持（第 9 批 S13；Y2 §3.13“预览将上传的内容 → 确认后上传”）：
+    // 预览由内核生成同一份脱敏诊断包、留在内存 10 分钟；律师确认时交回预览的摘要，内核上传的正是那一份（不重新生成）
+    "diagnostics.upload_preview": async (_p, id) => {
+      const r = await buildDiag(id);
+      const t = Date.now();
+      // 按文件字节的摘要登记（上传时闸门与支持服务都按这一摘要核对；content_sha256 是包内签名覆盖的内容摘要）
+      const fileSha = sha256Hex(Buffer.from(r.data_base64, "base64"));
+      for (const [k, v] of pendingUploads) if (t - v.at > UPLOAD_PREVIEW_TTL_MS || v.userId === id.userId) pendingUploads.delete(k);
+      pendingUploads.set(fileSha, { at: t, userId: id.userId, data_base64: r.data_base64 });
+      const text = Buffer.from(r.data_base64, "base64").toString("utf8");
+      let pretty = text;
+      try {
+        pretty = JSON.stringify(JSON.parse(text), null, 2);
+      } catch {
+        // 原样显示
+      }
+      return {
+        allowed: deps.governance?.supportUploadAllowed() ?? false,
+        configured: !!gate?.supportConfigured,
+        file_sha256: fileSha,
+        content_sha256: r.content_sha256,
+        summary: r.summary,
+        preview: pretty,
+      };
+    },
+    "diagnostics.upload": async (p, id) => {
+      const sha = String(p?.file_sha256 ?? "");
+      const pending = pendingUploads.get(sha);
+      if (!pending || pending.userId !== id.userId || Date.now() - pending.at > UPLOAD_PREVIEW_TTL_MS) throw validation("预览已过期或不是本人生成：请重新预览后再上传");
+      if (!(deps.governance?.supportUploadAllowed() ?? false)) throw forbidden("律所未开启“上传诊断包给中软支持”：可导出文件后按律所流程发送");
+      if (!gate?.supportConfigured) throw new DomainError("provider_unavailable", "本机未配置支持服务：可导出文件后按律所流程发送", 503);
+      const parse = (r: { ok: true; status: number; body: string } | { ok: false; reason: string }): { status: number; json: any } => {
+        if (!r.ok) throw new DomainError("provider_unavailable", `支持服务不可达（${r.reason}）`, 502);
+        let json: any = {};
+        try {
+          json = r.body ? JSON.parse(r.body) : {};
+        } catch {
+          throw new DomainError("provider_unavailable", "支持服务的应答不是 JSON", 502);
+        }
+        return { status: r.status, json };
+      };
+      const tk = parse(await gate.support({ step: "ticket" }));
+      if (tk.status !== 200 || typeof tk.json.ticket !== "string" || typeof tk.json.upload_token !== "string") {
+        const code = String(tk.json?.error ?? `http_${tk.status}`).slice(0, 60);
+        throw code === "support_upload_disabled" ? forbidden("中软支持服务按律所策略拒绝了上传（律所未开启）") : new DomainError("provider_unavailable", `支持服务拒绝申请工单（${code}）`, 502);
+      }
+      const up = parse(await gate.support({ step: "upload", ticket: tk.json.ticket, upload_token: tk.json.upload_token, content_sha256: sha, body_b64: pending.data_base64 }));
+      if (up.status !== 200 || up.json.ok !== true) throw new DomainError("provider_unavailable", `支持服务拒收（${String(up.json?.error ?? `http_${up.status}`).slice(0, 60)}）`, 502);
+      pendingUploads.delete(sha);
+      audit(db, id, "diagnostics.upload", "support_ticket", String(tk.json.ticket).slice(0, 20), sha, keyctx);
+      return { ticket: String(tk.json.ticket), expires_at: typeof up.json.expires_at === "string" ? up.json.expires_at : null, retention_days: 7 };
     },
     // “数据去向说明”页的示例请求（UIUX 增量评审 §3.5）：用随包令牌化器对一段虚构的示例句子现场替换（随机密钥、不写令牌表），
     // 让律师看到发给 AI 的内容真实长什么样；示例句子与人物均为虚构（证件号地区码 99 不存在、手机号为示例号段；复核 S6A-13）

@@ -22,7 +22,7 @@ import { createGateAuthorizer, egressRowFromGate, startEgressGate, type GateHand
 import type { MatterTokenStore } from "./matter-tokens.ts";
 import type { EgressApprovalStore } from "../services/egress-approvals.ts";
 import type { FirmGovernance } from "../control-plane/governance.ts";
-import { checkUpstream, type CpRelayRequest, type CpRelayResult, type DistRelayResult, type TransportCheck } from "@zr-legal/egress-gate";
+import { checkUpstream, type CpRelayRequest, type CpRelayResult, type DistRelayResult, type SupportRelayRequest, type SupportRelayResult, type TransportCheck } from "@zr-legal/egress-gate";
 
 export interface KernelGateDeps {
   db: KernelDb;
@@ -93,13 +93,15 @@ export function gateUpstreamsFromEnv(env: NodeJS.ProcessEnv, cp?: { seatToken: s
     controlPlane: env.ZR_CONTROL_PLANE_BASE ? { baseUrl: env.ZR_CONTROL_PLANE_BASE, ...pin(pinsFrom(env.ZR_CONTROL_PLANE_PINS)) } : null,
     // 内容分发（第 8 批）：法规库与方法模板的签名清单与包；钉住集同其他中软上游（安装包形态必须带）
     dist: env.ZR_DIST_BASE && hasSeat ? { baseUrl: env.ZR_DIST_BASE, seatToken: seat ?? "", ...pin(pinsFrom(env.ZR_DIST_PINS)) } : null,
+    // 支持服务（第 9 批 S13）：律师确认上传的脱敏诊断包；席位令牌由闸门附上
+    support: env.ZR_SUPPORT_BASE && hasSeat ? { baseUrl: env.ZR_SUPPORT_BASE, ...pin(pinsFrom(env.ZR_SUPPORT_PINS)) } : null,
     // 传输策略（审计 S5）：安装包形态（ZR_UPSTREAM_TLS=strict）不允许回环 http，中软网关、检索与控制面必须带内置钉住集
     tls: env.ZR_UPSTREAM_TLS === "strict" ? { allowLoopbackHttp: false, requirePins: true } : { allowLoopbackHttp: true, requirePins: false },
   };
 }
 
 /** 各上游的传输状态（设备页“连接加密”；纯检查，不联网）。 */
-export function upstreamTransport(u: GateUpstreams): Record<"model" | "byok" | "private" | "search" | "control_plane" | "dist", TransportCheck> {
+export function upstreamTransport(u: GateUpstreams): Record<"model" | "byok" | "private" | "search" | "control_plane" | "dist" | "support", TransportCheck> {
   const tls = u.tls ?? { allowLoopbackHttp: true, requirePins: false };
   const c = (base: string | undefined, pins: readonly string[] | undefined, requirePins: boolean) => checkUpstream(base, { allowLoopbackHttp: tls.allowLoopbackHttp, pins: pins ?? [], requirePins });
   return {
@@ -109,6 +111,7 @@ export function upstreamTransport(u: GateUpstreams): Record<"model" | "byok" | "
     search: c(u.search?.baseUrl, u.search?.pins, tls.requirePins),
     control_plane: c(u.controlPlane?.baseUrl, u.controlPlane?.pins, tls.requirePins),
     dist: c(u.dist?.baseUrl, u.dist?.pins, tls.requirePins),
+    support: c(u.support?.baseUrl, u.support?.pins, tls.requirePins),
   };
 }
 
@@ -255,6 +258,23 @@ export class KernelGate {
       return { ok: false, reason: "gate_unavailable" };
     }
     return h.dist(path);
+  }
+
+  /** 支持服务是否已配置（未配置 = 诊断包只能导出文件）。 */
+  get supportConfigured(): boolean {
+    return !!this.upstreams.support;
+  }
+
+  /** 支持通道（第 9 批 S13；闸门按需拉起）。 */
+  async support(req: SupportRelayRequest): Promise<SupportRelayResult> {
+    if (!this.upstreams.support) return { ok: false, reason: "support_not_configured" };
+    let h: GateHandle;
+    try {
+      h = await this.ensure();
+    } catch {
+      return { ok: false, reason: "gate_unavailable" };
+    }
+    return h.support(req);
   }
 
   /** 确保闸门进程在运行（单飞；退出后重新拉起）。 */

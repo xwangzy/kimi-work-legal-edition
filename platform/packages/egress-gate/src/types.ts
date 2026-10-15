@@ -155,6 +155,11 @@ export interface GateUpstreams {
    */
   dist?: { baseUrl: string; seatToken?: string; pins?: readonly string[] } | null;
   /**
+   * 支持服务（第 9 批，v9.2 §5.1 S13，support-relay.ts）：律师确认上传的脱敏诊断包，内核经 IPC 请闸门代发；地址随客户端构建固定，
+   * 席位令牌由闸门附上。未配置 = 只能导出文件、不能上传。
+   */
+  support?: { baseUrl: string; pins?: readonly string[] } | null;
+  /**
    * 传输策略（tls-policy.ts；审计 S5）：非回环一律 https；回环 http 只在开发形态允许；安装包形态中软网关、检索与控制面必须带钉住集。
    * 缺省 = 开发形态（允许回环 http、不强制钉住）；安装包形态由内核按 ZR_UPSTREAM_TLS=strict 下发。
    */

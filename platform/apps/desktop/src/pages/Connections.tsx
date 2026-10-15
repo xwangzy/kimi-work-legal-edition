@@ -1,17 +1,20 @@
 /**
  * 设置（UIUX 增量评审 ST-1～ST-5、§3.5；v9 第 03 篇 §4.1、§8.5；第 02 篇 §12；第 04 篇 §5.1）。
  * 律师版四页：通用（字号、通知）/ 数据去向说明（三栏 + 现场生成的示例请求，可打印给客户）/ 资料来源 / 本机与安全；
- * 管理员另有“管理”：律所策略、诊断（技术版数据去向表、能力账本、待对账出站、闸门与执行域细节、详细运行记录）、召回评测（律所内）。
+ * 管理员另有“管理”：律所策略、用量与上限、中软侧操作记录、诊断（技术版数据去向表、能力账本、待对账出站、闸门与执行域细节、详细运行记录）、召回评测（律所内）。
  * “管理”是否显示只是界面安排，授权一律由内核按角色逐个方法核验。
  */
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { useEffect, useState } from "react";
-import { api, updates, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft } from "../api.ts";
+import { api, updates, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft, type QuotaStatus } from "../api.ts";
+import { quotaLawyerLine } from "../lib/firm-usage.ts";
 import { CONTENT_CHECK_FAILED, CONTENT_PANEL_NOTE, contentCheckLine, contentSourceLine, contentStaleLine } from "../lib/content-labels.ts";
 import { nav, type SettingsTab } from "../App.tsx";
 import { fmtTime } from "../lib/labels.ts";
 import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
 import { RecallEvalPanel } from "./RecallEval.tsx";
+import { CpAuditPanel, UsagePanel } from "./FirmUsage.tsx";
+import { SupportUpload } from "../components/SupportUpload.tsx";
 
 const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
 
@@ -169,6 +172,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
     ...(updatesOn ? ["更新检查的访问记录（IP 与版本）"] : []),
     // 复核 S8A-05：法规库与方法模板的在线更新也是一条出网（随席位凭据，服务端看得到账号与设备）
     ...(contentOn ? ["法规库与方法模板的下载记录（账号、设备、下载的版本与时间；不含任何案件信息）"] : []),
+    ...(gate?.support_configured && gate?.support_upload_allowed ? ["你主动上传给支持的诊断包（不含案件内容，逐次确认，保存 7 天）"] : []),
   ];
   const notEnabled = [
     ...(gate?.search_configured ? [] : ["联网检索"]),
@@ -358,9 +362,16 @@ function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | nu
   const [diag, setDiag] = useState<{ open: boolean; msg: string }>({ open: false, msg: "" });
   const [env, setEnv] = useState<Record<string, any> | null>(null);
   const [cp, setCp] = useState<ControlPlaneStatus | null>(null);
+  const [quota, setQuota] = useState<QuotaStatus | null>(null);
   useEffect(() => {
     api.envProbe().then(setEnv).catch(() => setEnv(null));
-    api.controlPlaneStatus().then(setCp).catch(() => setCp(null));
+    api
+      .controlPlaneStatus()
+      .then((c) => {
+        setCp(c);
+        if (c.mode === "control_plane") api.quotaStatus().then(setQuota).catch(() => setQuota(null));
+      })
+      .catch(() => setCp(null));
   }, []);
   const domainOk = !!caps && !/不可用|未启用|失败/.test(String(caps.execution_domain.status ?? ""));
   const envWarn = env && env.platform === "win32" ? envLines(env).filter((l) => l.warn).length : 0;
@@ -403,6 +414,12 @@ function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | nu
                 </>
               )}
             </div>
+          </div>
+        )}
+        {cp && cp.mode === "control_plane" && quota && (
+          <div className="device-row">
+            <div className="device-k">本月用量</div>
+            <div>{quotaLawyerLine(quota)}</div>
           </div>
         )}
         <div className="device-row">
@@ -475,6 +492,7 @@ function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | nu
               </div>
             )}
             {diag.msg && <div className="muted">{diag.msg}</div>}
+            <SupportUpload />
           </div>
         </div>
       </div>
@@ -483,15 +501,17 @@ function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | nu
   );
 }
 
-/** 管理（ST-1、ST-4）：律所策略、诊断（工程细节）、召回评测（律所内）。 */
+/** 管理（ST-1、ST-4）：律所策略、用量与上限、中软侧操作记录、诊断（工程细节）、召回评测（律所内）。 */
 function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[]; unresolved: any[]; onReconciled: () => void; im: any[]; recovery: any }) {
-  const [sub, setSub] = useState<"policy" | "diagnostics" | "recall">("policy");
+  const [sub, setSub] = useState<"policy" | "usage" | "cp_audit" | "diagnostics" | "recall">("policy");
   return (
     <div>
       <div className="tabs" role="tablist" aria-label="管理">
         {(
           [
             ["policy", "律所策略"],
+            ["usage", "用量与上限"],
+            ["cp_audit", "中软侧操作记录"],
             ["diagnostics", "诊断"],
             ["recall", "召回评测（律所内）"],
           ] as const
@@ -502,6 +522,8 @@ function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[];
         ))}
       </div>
       {sub === "policy" && <PolicyTab />}
+      {sub === "usage" && <UsagePanel />}
+      {sub === "cp_audit" && <CpAuditPanel />}
       {sub === "diagnostics" && <DiagnosticsTab {...props} />}
       {sub === "recall" && <RecallEvalPanel />}
     </div>
@@ -646,6 +668,12 @@ function TechnicalVisibility({ gate, im, recovery }: { gate: any; im: any[]; rec
       notSees: "事项与案卷的任何内容、事项编号、查询与对话",
     },
     {
+      situation: "上传诊断包给中软支持",
+      enabled: !!gate?.support_configured && !!gate?.support_upload_allowed,
+      sees: "律师逐次预览并确认后上传的脱敏诊断包（软件版本、运行环境、服务状态、任务状态与错误代码、出站与审计计数、近 7 天事件代码计数；本机签名）、席位令牌所含的租户、成员、席位与设备编号、上传时刻；保存 7 天，运营查看留访问审计",
+      notSees: "事项名称、当事人、材料、成果、任务内容、文件名、检索式（上传前本机按全部当事人与令牌原文自证）",
+    },
+    {
       situation: "自动更新",
       enabled: updatesOn,
       sees: "每 6 小时一次的更新检查与安装包下载：本机 IP、操作系统与应用版本（请求的 User-Agent）、更新渠道（保存在更新服务器的访问日志里）",
@@ -745,6 +773,7 @@ function relaxationText(r: string): string {
   if (k === "auto_preauthorization") return v === "search_generalized" ? "自动档可预授权：泛化后放行的检索" : `自动档可预授权：${v}`;
   if (k === "fetch_allowlist") return `抓取白名单追加：${v}`;
   if (k === "l3a_standard_model") return "敏感事项（L3a）可经标准端点推理（全部化名）";
+  if (k === "support_upload") return "律师可把脱敏诊断包上传给中软支持（逐次预览、确认后上传；中软保存 7 天）";
   if (k === "connector") return `登记连接器：${v}`;
   return r;
 }
@@ -951,7 +980,7 @@ function DraftContent({ d }: { d: PolicyDraft }) {
         有效期：{fmtTime(String(doc.issued_at ?? ""))} 至 {fmtTime(String(doc.expires_at ?? ""))}
         <div className="muted">
           运行模式上限：{MODE_TEXT[String(b.max_mode)] ?? String(b.max_mode)} · 自动档可预授权：{Array.isArray(b.auto_preauthorizations) && b.auto_preauthorizations.length > 0 ? b.auto_preauthorizations.join("、") : "无"} ·
-          抓取白名单追加：{Array.isArray(b.fetch_allowlist_extra) && b.fetch_allowlist_extra.length > 0 ? b.fetch_allowlist_extra.join("、") : "无"} · 敏感事项（L3a）经标准端点：{b.l3a_standard_model === "allow" ? "放开" : "不放开"}
+          抓取白名单追加：{Array.isArray(b.fetch_allowlist_extra) && b.fetch_allowlist_extra.length > 0 ? b.fetch_allowlist_extra.join("、") : "无"} · 敏感事项（L3a）经标准端点：{b.l3a_standard_model === "allow" ? "放开" : "不放开"} · 上传诊断包给中软支持：{b.support_upload === "allow" ? "允许" : "不允许"}
         </div>
       </div>
     );
@@ -979,6 +1008,7 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
   const [preSearch, setPreSearch] = useState(false);
   const [extra, setExtra] = useState("");
   const [l3a, setL3a] = useState(false);
+  const [support, setSupport] = useState(false);
   const [ttl, setTtl] = useState(30);
   const domains = extra
     .split(/[\s,，、]+/)
@@ -1010,6 +1040,9 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
             <input type="checkbox" checked={l3a} onChange={(e) => setL3a(e.target.checked)} /> 敏感事项（L3a）可经标准端点推理（全部化名强制）
           </label>{" "}
           <label>
+            <input type="checkbox" checked={support} onChange={(e) => setSupport(e.target.checked)} /> 律师可把脱敏诊断包上传给中软支持
+          </label>{" "}
+          <label>
             有效期（天，≤ 30）{" "}
             <input type="number" min={1} max={30} value={ttl} onChange={(e) => setTtl(Math.max(1, Math.min(30, Number(e.target.value) || 30)))} />
           </label>
@@ -1019,7 +1052,7 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
             disabled={busy}
             onClick={() =>
               onSubmit(
-                { max_mode: maxMode, auto_preauthorizations: maxMode === "auto" && preSearch ? ["search_generalized"] : [], fetch_allowlist_extra: [...new Set(domains)], l3a_standard_model: l3a ? "allow" : "deny" },
+                { max_mode: maxMode, auto_preauthorizations: maxMode === "auto" && preSearch ? ["search_generalized"] : [], fetch_allowlist_extra: [...new Set(domains)], l3a_standard_model: l3a ? "allow" : "deny", ...(support ? { support_upload: "allow" } : {}) },
                 ttl,
               )
             }

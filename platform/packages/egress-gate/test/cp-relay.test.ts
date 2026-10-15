@@ -31,6 +31,24 @@ test("路径与方法白名单：控制面已知接口可达；网关订阅、�
   assert.equal(cpRelayAllowed({ method: "POST", path: "/v1/devices/%2e%2e/revoke", headers: H, body: "" }), "cp_path_not_allowed");
   assert.equal(cpRelayAllowed({ method: "POST", path: "/v1/devices/dev.a/revoke", headers: H, body: "" }), "cp_path_not_allowed");
   assert.equal(cpRelayAllowed({ method: "POST", path: "/v1/devices/dev_a-1/revoke", headers: H, body: "" }), null);
+  // 第 9 批：用量与上限、中软侧操作记录（只许 after/limit 这一种查询串）
+  assert.equal(cpRelayAllowed({ method: "GET", path: "/v1/quota", headers: H, body: "" }), null);
+  assert.equal(cpRelayAllowed({ method: "PUT", path: "/v1/quota/cap", headers: H, body: "" }), null);
+  assert.equal(cpRelayAllowed({ method: "GET", path: "/v1/audit?after=0&limit=500", headers: H, body: "" }), null);
+  assert.equal(cpRelayAllowed({ method: "GET", path: "/v1/audit?after=0&limit=500&x=1", headers: H, body: "" }), "cp_path_not_allowed");
+  assert.equal(cpRelayAllowed({ method: "GET", path: "/v1/audit", headers: H, body: "" }), "cp_path_not_allowed");
+  assert.equal(cpRelayAllowed({ method: "GET", path: "/v1/policy?x=1", headers: H, body: "" }), "cp_path_not_allowed");
+});
+
+test("带查询串的白名单路径原样发出（归一化核对含查询串）", async () => {
+  const seen: string[] = [];
+  const fetchImpl = (async (url: string) => {
+    seen.push(url);
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  const r = await relayControlPlane({ method: "GET", path: "/v1/audit?after=12&limit=500", headers: H, body: "" }, { baseUrl: "https://cp.example-zr.cn/api", fetchImpl });
+  assert.equal(r.ok, true);
+  assert.equal(seen[0], "https://cp.example-zr.cn/api/v1/audit?after=12&limit=500");
 });
 
 test("以 URL 归一化之后的路径为准：控制面地址带前缀时同样只发往该前缀下的白名单路径", async () => {

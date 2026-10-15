@@ -21,6 +21,10 @@ import {
   validateConnectorDoc,
   validatePolicyDoc,
   verifyAdminSignatures,
+  verifyAuditChain,
+  AUDIT_GENESIS,
+  type CpAuditPage,
+  type CpAuditRecord,
   POLICY_MAX_TTL_MS,
   type AdminSignature,
   type FirmConnectorDoc,
@@ -83,6 +87,22 @@ export interface DraftView {
   /** 本机核验文档本身是否合法（不合法即不签）。 */
   valid: boolean;
   problem: string | null;
+}
+
+/** 本所用量视图（控制面 quotaView 的字段；只有点数与成员编号）。 */
+export interface QuotaView {
+  period: string;
+  cap_monthly: number | null;
+  cap_set_at: string | null;
+  period_used: number;
+  in_flight: number;
+  own: { points: number; requests: number } | null;
+  history: { period: string; used: number }[];
+  issued_at: string;
+  pool_remaining?: number;
+  granted_total?: number;
+  by_member?: { member_id: string | null; points: number; requests: number }[];
+  unreconciled_leases?: number;
 }
 
 type CallResult = { ok: true; status: number; json: Record<string, unknown> } | { ok: false; error: string; status?: number };
@@ -398,6 +418,86 @@ export class ControlPlaneClient {
     const r = await this.call("POST", `/v1/drafts/${draftId}/signatures`, sig);
     if (!r.ok) throw new Error(r.error);
     return this.view(r.json.draft as Record<string, unknown>);
+  }
+
+  // ─── 用量与上限（第 9 批 S3） ───
+
+  /** 本所本月用量与上限（控制面签名的视图；管理员与合伙人另含按成员明细与池余额）。 */
+  async quota(): Promise<QuotaView> {
+    const r = await this.call("GET", "/v1/quota");
+    if (!r.ok) throw new Error(r.error);
+    const v = this.d.gov.openSigned<QuotaView & { tid: string }>(r.json, "kwl-quota-view");
+    if (!v || v.tid !== this.d.tenantId) throw new Error("quota_view_invalid");
+    return v;
+  }
+
+  /** 管理员设月度上限（点数；null = 不设上限）。 */
+  async setQuotaCap(cap: number | null): Promise<{ cap_monthly: number | null }> {
+    if (cap !== null && !(Number.isSafeInteger(cap) && cap >= 0)) throw new Error("月度上限须为非负整数点数");
+    const r = await this.call("PUT", "/v1/quota/cap", { monthly_cap: cap });
+    if (!r.ok) throw new Error(r.error);
+    return { cap_monthly: (r.json.cap_monthly as number | null) ?? null };
+  }
+
+  // ─── 中软侧操作记录（第 9 批 S14） ───
+
+  /**
+   * 取回本机还没有的运营审计流水：验控制面签名、验哈希链、与本机见过的最高序号对照（同一序号 hash 不同 = 云端改写了历史，告警且不覆盖）；
+   * 通过的记录留存在本机（云端之后删改，本机仍有原记录）。返回本次新增条数与云端当前最高序号。
+   */
+  async fetchAudit(): Promise<{ added: number; head: number }> {
+    const anchor = this.d.gov.auditAnchor();
+    // 有锚点时从锚点那一条开始取（重新取回它、比对 hash）
+    let after = anchor ? anchor.seq - 1 : 0;
+    let link: { seq: number; hash: string } = anchor ? { seq: anchor.seq - 1, hash: "" } : { seq: 0, hash: AUDIT_GENESIS };
+    let added = 0;
+    let head = anchor?.seq ?? 0;
+    for (let page = 0; page < 200; page++) {
+      const r = await this.call("GET", `/v1/audit?after=${after}&limit=500`);
+      if (!r.ok) throw new Error(r.error);
+      const body = this.d.gov.openSigned<CpAuditPage>(r.json, "kwl-cp-audit-page");
+      if (!body || body.tid !== this.d.tenantId || !Array.isArray(body.records) || !body.head || !Number.isSafeInteger(body.head.seq)) {
+        this.d.gov.alert("cp_audit", "cp_audit_page_invalid", null, "中软侧操作记录未通过控制面签名核验：已拒收");
+        throw new Error("cp_audit_page_invalid");
+      }
+      let recs: unknown[] = body.records;
+      if (page === 0 && anchor) {
+        const first = recs[0] as CpAuditRecord | undefined;
+        if (!first || first.seq !== anchor.seq || first.hash !== anchor.hash) {
+          this.d.gov.alert("cp_audit", "cp_audit_rewritten", String(anchor.seq), `中软侧操作记录第 ${anchor.seq} 条与本机此前取回的不一致（云端改写或删除了已给出的历史）：已拒收，本机留存的原记录不变`);
+          throw new Error("cp_audit_rewritten");
+        }
+        link = { seq: first.seq, hash: first.hash };
+        recs = recs.slice(1);
+      }
+      const v = verifyAuditChain(recs, this.d.tenantId, link);
+      if (!v.ok) {
+        this.d.gov.alert("cp_audit", "cp_audit_chain_invalid", v.seq === null ? null : String(v.seq), `中软侧操作记录未通过哈希链核验（${v.reason}）：已拒收`);
+        throw new Error("cp_audit_chain_invalid");
+      }
+      const ok = recs as CpAuditRecord[];
+      const st = this.d.gov.storeAuditRecords(ok);
+      if (st.conflicts.length) {
+        this.d.gov.alert("cp_audit", "cp_audit_rewritten", String(st.conflicts[0]), `中软侧操作记录第 ${st.conflicts[0]} 条与本机留存的不一致：已拒收，本机留存的原记录不变`);
+        throw new Error("cp_audit_rewritten");
+      }
+      added += st.stored;
+      const last = ok.at(-1);
+      if (last) {
+        this.d.gov.raiseAuditAnchor(last.seq, last.hash);
+        link = { seq: last.seq, hash: last.hash };
+        after = last.seq;
+      }
+      head = Math.max(head, last?.seq ?? 0);
+      if (!last || last.seq >= body.head.seq) {
+        // 分页说已到头，但云端的最高序号比给出的多：扣下了记录
+        if (body.head.seq > head) {
+          this.d.gov.alert("cp_audit", "cp_audit_withheld", String(body.head.seq), `中软侧操作记录最高序号为 ${body.head.seq}，只给出到 ${head}`);
+        }
+        return { added, head: body.head.seq };
+      }
+    }
+    return { added, head };
   }
 
   async publishDraft(draftId: string): Promise<{ ok: true }> {

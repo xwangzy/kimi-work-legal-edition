@@ -26,6 +26,7 @@ const SAVE_METHODS = new Map([
   ["recovery.export_device", "path"],
   ["eval.save_work", "save_path"],
   ["eval.save_report", "save_path"],
+  ["control_plane.audit_export", "save_path"],
 ]);
 /** 渲染进程带来的一切路径类参数一律剥掉（复核 S5A-01：否则内核会按页面给的路径读写，含 UNC 网络路径引起的 SMB 外连）。 */
 const PATH_KEYS = ["path", "file", "save_path", "share_dir", "dir", "out", "target"];

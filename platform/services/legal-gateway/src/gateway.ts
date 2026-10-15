@@ -9,6 +9,7 @@
  *   没有匿名事项编号的模型请求拒绝（无事项问答另走专门路由）；
  * - 路由：只认登记的模型别名（主任务 K3、子 Agent K2.6 级），不静默跨供应商；
  * - 额度：按租户的点数预占 → 结算（预写日志：先记预占、再记结算；只记元数据）；额度不足即拒绝；
+ *   额度来源可换（quota.ts）：内存余额（v0）或控制面额度账本的租约（第 9 批，S3：律所月度上限硬停）；
  * - 并发：按租户排队与限流（上游 Tier5 仅 100 并发 / 300 RPM，避免一个律所的 Swarm 挤占全平台）；
  * - 留存：**正文与错误体不落盘**——计量日志只有请求 ID、租户、席位、匿名事项编号、模型、token、耗时、状态；
  * - 响应：原样透传（流式逐块），同时从 usage 字段取计量；
@@ -22,6 +23,7 @@ import { verifySeatToken, SeatTokenError, type SeatClaims } from "@zr-legal/seat
 import type { GatewayFeedView } from "@zr-legal/firm-trust";
 import type { ChatProvider } from "./providers.ts";
 import { completionTexts, OutputTextTap, requestTexts, safetySummary, type ContentSafety, type SafetyVerdict } from "./content-safety.ts";
+import { MapQuota, type QuotaHold, type QuotaSource } from "./quota.ts";
 
 export interface MeterRecord {
   at: string;
@@ -83,8 +85,10 @@ export interface GatewayOptions {
   meter: MeterSink;
   /** HTTP 层访问日志（每个请求一条，含鉴权失败与未知路由；只有元数据）。 */
   accessLog?: (r: AccessRecord) => void;
-  /** 租户剩余点数（v0：内存账本；生产为控制面的权威账本）。 */
-  budgets: Map<string, number>;
+  /** 租户剩余点数（v0：内存账本）。与 quota 二选一。 */
+  budgets?: Map<string, number>;
+  /** 额度来源（第 9 批：控制面额度账本租约 LeaseQuota）；给出即不用 budgets。 */
+  quota?: QuotaSource;
   tenantConcurrency?: number;
   queueTimeoutMs?: number;
   maxBodyBytes?: number;
@@ -183,6 +187,7 @@ export function extractUsage(text: string): { input: number; output: number; cac
 }
 
 export function createLegalGateway(o: GatewayOptions): Server {
+  const quota: QuotaSource = o.quota ?? new MapQuota(o.budgets ?? new Map());
   const gates = new Map<string, TenantGate>();
   const gateFor = (tid: string) => {
     let g = gates.get(tid);
@@ -279,10 +284,10 @@ export function createLegalGateway(o: GatewayOptions): Server {
       if (safetyIn.blocked) reject(422, "content_blocked_input", `请求内容命中内容安全策略（${safetyIn.blocked}），已拒绝`, alias);
     }
     const reserved = points(estimateTokens(body, route!), route!);
-    // 预占原子化（审查 S4-15）：检查与扣减在同一同步段内完成，再排队；排队失败退回
-    const left = o.budgets.get(seat.tid) ?? 0;
-    if (left < reserved) reject(402, "quota_exhausted", "本所点数不足（预占失败）", alias);
-    o.budgets.set(seat.tid, left - reserved);
+    // 预占原子化（审查 S4-15）：检查与扣减在同一同步段内完成（额度来源保证），再排队；排队失败退回
+    const rr = await quota.reserve(seat.tid, reserved);
+    if (!rr.ok) return reject(rr.status, rr.code, rr.message, alias);
+    const hold: QuotaHold = rr.hold;
     // 客户端断开（闸门撤销、宿主取消）：响应未写完即中止上游（审查 S4-01：req 'close' 在读完请求体后已触发，不能用它判断）
     const ac = new AbortController();
     res.on("close", () => {
@@ -292,12 +297,12 @@ export function createLegalGateway(o: GatewayOptions): Server {
     try {
       release = await gateFor(seat.tid).acquire(o.queueTimeoutMs ?? 30_000);
     } catch (e) {
-      o.budgets.set(seat.tid, (o.budgets.get(seat.tid) ?? 0) + reserved);
+      quota.refund(hold);
       throw e;
     }
     if (ac.signal.aborted) {
       release();
-      o.budgets.set(seat.tid, (o.budgets.get(seat.tid) ?? 0) + reserved);
+      quota.refund(hold);
       o.meter.append({ at: new Date().toISOString(), clientRequestId, kind: "reject", requestId, tid: seat.tid, sid: seat.sid, anonMatter: anon, model: alias, status: null, reserved: 0, inputTokens: null, outputTokens: null, cachedTokens: null, latencyMs: Date.now() - started, reason: "client_gone_before_upstream" });
       return;
     }
@@ -307,7 +312,7 @@ export function createLegalGateway(o: GatewayOptions): Server {
       o.meter.append({ at: new Date().toISOString(), clientRequestId, kind: "reserve", requestId, tid: seat.tid, sid: seat.sid, anonMatter: anon, model: alias, status: null, reserved, inputTokens: null, outputTokens: null, cachedTokens: null, latencyMs: null, reason: summaryMissing ? "summary_missing_header_checked" : null });
     } catch {
       release();
-      o.budgets.set(seat.tid, (o.budgets.get(seat.tid) ?? 0) + reserved);
+      quota.refund(hold);
       // 计量本身写不进去：不再尝试写拒绝记录，直接失败关闭
       throw new GwError(503, "meter_unavailable", "计量记录写入失败：本次请求未发往上游");
     }
@@ -399,7 +404,7 @@ export function createLegalGateway(o: GatewayOptions): Server {
     } finally {
       release();
       const actual = usage ? points(usage.input + usage.output, route!) : status === 200 ? reserved : 0;
-      o.budgets.set(seat.tid, (o.budgets.get(seat.tid) ?? 0) + reserved - actual);
+      quota.settle(hold, seat.sid, actual);
       o.meter.append({
         at: new Date().toISOString(),
         kind: "settle",

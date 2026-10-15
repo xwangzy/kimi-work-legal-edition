@@ -8,8 +8,12 @@ import type { Server } from "node:http";
 import { issueSeatToken } from "@zr-legal/seat-token";
 import { publicKeyMap, signDeviceRequest } from "@zr-legal/firm-trust";
 import { createControlPlane, devControlPlaneKeys, GatewayFeedSubscriber, type ControlPlane } from "@zr-legal/control-plane";
-import { createLegalGateway, DEFAULT_ROUTES, memoryMeter, MockProvider, type MeterRecord } from "@zr-legal/legal-gateway";
+import { createLegalGateway, DEFAULT_ROUTES, httpLedger, LeaseQuota, memoryMeter, MockProvider, type MeterRecord } from "@zr-legal/legal-gateway";
 import { createSearchService, MockSearchProvider, type SearchMeterRecord } from "@zr-legal/search-service";
+import { createSupportApi, type SupportAccessRecord } from "@zr-legal/support-api";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { DeviceCertificate } from "@zr-legal/keys";
 
 export interface CloudCp {
@@ -22,6 +26,10 @@ export interface CloudCp {
   gatewayMeter: MeterRecord[];
   searchMeter: SearchMeterRecord[];
   feed: GatewayFeedSubscriber;
+  /** 支持服务（第 9 批 S13；诊断包上传）：存储目录、运营凭据与访问审计。 */
+  support: { dir: string; opsSecret: string; base: string; access: SupportAccessRecord[] };
+  /** 网关的额度租约（用例可 flush 后核对控制面账本）。 */
+  quota: LeaseQuota;
   gatewayUrl: string;
   /** 直接向网关发请求用（模拟误配置或旧客户端）：用控制面的席位密钥签一枚席位令牌。 */
   seatFor(c: { tid: string; uid: string; sid: string; dev: string }): string;
@@ -50,19 +58,27 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
   });
   await new Promise<void>((r) => cp.server.listen(0, "127.0.0.1", () => r()));
   const base = `http://127.0.0.1:${(cp.server.address() as AddressInfo).port}`;
-  cp.ops.createTenant({ tid: o.tenant, edition: o.edition ?? "team", seats: o.seats ?? 10 });
+  cp.ops.createTenant({ tid: o.tenant, edition: o.edition ?? "team", seats: o.seats ?? 10, points: 50_000_000 });
 
   const cpKeys = publicKeyMap(cp.publicKeys.envelope);
   const seatKeys = publicKeyMap(cp.publicKeys.seat);
   const feed = new GatewayFeedSubscriber({ url: `${base}/v1/feed/gateway`, serviceSecret, keys: cpKeys, minRefreshMs: 0 });
   const model = new MockProvider();
   const meter = memoryMeter();
-  const gateway: Server = createLegalGateway({ keys: seatKeys, provider: model, routes: DEFAULT_ROUTES, meter, budgets: new Map([[o.tenant, 50_000_000]]), tenantConcurrency: 4, feed });
+  // 额度走控制面额度账本的租约（第 9 批 S3），与生产形态一致
+  const quota = new LeaseQuota({ ledger: httpLedger({ baseUrl: base, serviceSecret }), holder: "gw-test", flushMs: 1_000 });
+  const gateway: Server = createLegalGateway({ keys: seatKeys, provider: model, routes: DEFAULT_ROUTES, meter, quota, tenantConcurrency: 4, feed });
   const search = new MockSearchProvider();
   const searchMeter: SearchMeterRecord[] = [];
   const searchSvc: Server = createSearchService({ keys: seatKeys, provider: search, meter: { append: (r) => void searchMeter.push(r) }, feed });
+  const supportDir = mkdtempSync(join(tmpdir(), "kwl-support-"));
+  const supportAccess: SupportAccessRecord[] = [];
+  const opsSecret = `ops-${Math.random().toString(36).slice(2)}-secret`;
+  const supportSvc = createSupportApi({ dir: supportDir, keys: seatKeys, feed, opsSecret, accessLog: (r) => void supportAccess.push(r) });
   await new Promise<void>((r) => gateway.listen(0, "127.0.0.1", () => r()));
   await new Promise<void>((r) => searchSvc.listen(0, "127.0.0.1", () => r()));
+  await new Promise<void>((r) => supportSvc.listen(0, "127.0.0.1", () => r()));
+  const supportBase = `http://127.0.0.1:${(supportSvc.address() as AddressInfo).port}`;
   const gatewayUrl = `http://127.0.0.1:${(gateway.address() as AddressInfo).port}/v1`;
   return {
     env: {
@@ -72,6 +88,7 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
       ZR_CONTROL_PLANE_SYNC_MS: "off",
       ZR_GATEWAY_BASE: gatewayUrl,
       ZR_SEARCH_BASE: `http://127.0.0.1:${(searchSvc.address() as AddressInfo).port}/search`,
+      ZR_SUPPORT_BASE: supportBase,
     },
     cp,
     base,
@@ -80,6 +97,8 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
     gatewayMeter: (meter as unknown as { records: MeterRecord[] }).records,
     searchMeter,
     feed,
+    quota,
+    support: { dir: supportDir, opsSecret, base: supportBase, access: supportAccess },
     gatewayUrl,
     seatFor: (c) => issueSeatToken({ ...c, kid: keys.seat.kid }, keys.seat.privateKey),
     setControlPlaneAvailable(on) {
@@ -94,7 +113,8 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
     },
     async close() {
       feed.stop();
-      for (const s of [cp.server, gateway, searchSvc]) {
+      await quota.close().catch(() => {});
+      for (const s of [cp.server, gateway, searchSvc, supportSvc]) {
         s.closeAllConnections();
         await new Promise<void>((r) => s.close(() => r()));
       }

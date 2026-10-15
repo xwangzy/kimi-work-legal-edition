@@ -32,6 +32,10 @@ const PATHS: readonly RegExp[] = [
   /^\/v1\/anon-matters\/[A-Za-z0-9_-]{16,64}$/,
   /^\/v1\/devices\/[A-Za-z0-9_-]{1,200}\/revoke$/,
   /^\/v1\/seats\/[A-Za-z0-9_-]{1,200}\/revoke$/,
+  // 第 9 批：用量与上限（S3）、中软侧操作记录（S14，只许这一种查询串）
+  /^\/v1\/quota$/,
+  /^\/v1\/quota\/cap$/,
+  /^\/v1\/audit\?after=\d{1,15}&limit=\d{1,3}$/,
 ];
 const METHODS = new Set(["GET", "POST", "PUT", "DELETE"]);
 const HEADERS = new Set(["x-kwl-tenant", "x-kwl-device", "x-kwl-ts", "x-kwl-nonce", "x-kwl-sig"]);
@@ -61,9 +65,10 @@ export async function relayControlPlane(
   const bad = cpRelayAllowed(req);
   if (bad) return { ok: false, reason: bad };
   const base = o.baseUrl.replace(/\/+$/, "");
-  // 以 URL 归一化之后的路径为准（复核 S6-B16：编码的点段会被解析成上一级目录）
+  // 以 URL 归一化之后的路径为准（复核 S6-B16：编码的点段会被解析成上一级目录）；查询串原样保留（白名单只许 /v1/audit 的一种）
   try {
-    if (new URL(`${base}${req.path}`).pathname !== `${new URL(base).pathname.replace(/\/+$/, "")}${req.path}`) return { ok: false, reason: "cp_path_not_allowed" };
+    const u = new URL(`${base}${req.path}`);
+    if (`${u.pathname}${u.search}` !== `${new URL(base).pathname.replace(/\/+$/, "")}${req.path}`) return { ok: false, reason: "cp_path_not_allowed" };
   } catch {
     return { ok: false, reason: "cp_path_not_allowed" };
   }

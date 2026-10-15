@@ -408,6 +408,46 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+/** 上传诊断包前的预览（第 9 批 S13）：与“导出诊断信息”同一份内容。 */
+export interface SupportPreview {
+  allowed: boolean;
+  configured: boolean;
+  /** 诊断包文件字节的 SHA-256（确认上传时交回；内核据此找回预览的那一份）。 */
+  file_sha256: string;
+  content_sha256: string;
+  summary: { sections: string[]; bytes: number };
+  preview: string;
+}
+
+/** 本所用量与上限（第 9 批 S3；只有点数与成员编号，成员名由内核在本机换上）。 */
+export interface QuotaStatus {
+  mode: "control_plane" | "local_dev";
+  note?: string;
+  period?: string;
+  cap_monthly?: number | null;
+  cap_set_at?: string | null;
+  period_used?: number;
+  in_flight?: number;
+  own?: { points: number; requests: number } | null;
+  history?: { period: string; used: number }[];
+  pool_remaining?: number;
+  granted_total?: number;
+  by_member?: { member_id: string | null; name: string | null; points: number; requests: number }[];
+  unreconciled_leases?: number;
+}
+
+/** 中软侧操作记录（第 9 批 S14）：本机验过签名与哈希链后留存的记录。 */
+export interface CpAuditRow {
+  seq: number;
+  at: string;
+  actor: { kind: "device" | "root" | "ops" | "service"; id: string; fp?: string };
+  actor_name: string | null;
+  action: string;
+  target: string | null;
+  target_name: string | null;
+  result: string;
+}
+
 /** 控制面状态（阶段 6；不含任何令牌）。 */
 export interface ControlPlaneStatus {
   mode: "control_plane" | "local_dev";
@@ -419,7 +459,7 @@ export interface ControlPlaneStatus {
     version: number | null;
     issued_at: string | null;
     expires_at: string | null;
-    body: { max_mode: RunMode; auto_preauthorizations: string[]; fetch_allowlist_extra: string[]; l3a_standard_model: "deny" | "allow" };
+    body: { max_mode: RunMode; auto_preauthorizations: string[]; fetch_allowlist_extra: string[]; l3a_standard_model: "deny" | "allow"; support_upload?: "deny" | "allow" };
     relaxations: string[];
     signers: string[];
     fallback_reason: "none_received" | "expired" | "signers_insufficient" | "unrecognized_newer" | null;
@@ -662,6 +702,20 @@ export const api = {
   kernelStatus: () => invoke<any>("kernel.status"),
   // 控制面与律所治理（阶段 6）：状态不含任何令牌；告警是控制面下发内容未通过本机核验的记录
   controlPlaneStatus: () => invoke<ControlPlaneStatus>("control_plane.status"),
+  quotaStatus: () => invoke<QuotaStatus>("quota.status"),
+  diagnosticsUploadPreview: () => invoke<SupportPreview>("diagnostics.upload_preview"),
+  diagnosticsUpload: (fileSha256: string) => invoke<{ ticket: string; expires_at: string | null; retention_days: number }>("diagnostics.upload", { file_sha256: fileSha256 }),
+  quotaSetCap: (cap: number | null) => invoke<{ cap_monthly: number | null }>("quota.set_cap", { monthly_cap: cap }),
+  cpAudit: (o: { limit?: number; before_seq?: number } = {}) =>
+    invoke<{ mode: string; fetched: { added: number; head: number } | null; fetch_error: string | null; records: CpAuditRow[] }>("control_plane.audit", o),
+  /** 导出中软侧操作记录（原记录含哈希链，收件人可自行核验；只有代码与编号）。返回 null = 取消。 */
+  cpAuditExport: async (): Promise<{ filename: string; count: number } | null> => {
+    const target = await chooseSaveTarget(`zr-cloud-operations-${new Date().toISOString().slice(0, 10)}.json`, "none");
+    if (target === null) return null;
+    const r = await invoke<{ filename: string; count: number; data_base64?: string }>("control_plane.audit_export", target ? { save_handle: target.handle } : {});
+    if (!target && r.data_base64) browserDownload(r.data_base64, r.filename, "application/json");
+    return { filename: r.filename, count: r.count };
+  },
   controlPlaneSync: () => invoke<{ report?: { ok: boolean; steps: Record<string, string>; at: string }; status?: ControlPlaneStatus; note?: string }>("control_plane.sync"),
   controlPlaneAck: (alertId: number) => invoke("control_plane.alerts.ack", { alert_id: alertId }),
   policyDrafts: () => invoke<{ drafts: PolicyDraft[] }>("firm_policy.drafts"),

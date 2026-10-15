@@ -28,6 +28,12 @@ export interface FirmPolicyBody {
   fetch_allowlist_extra: string[];
   /** L3a 事项经标准端点推理（“管理员放开 + 全部化名强制”，第 02 篇 §8.2）。 */
   l3a_standard_model: "deny" | "allow";
+  /**
+   * 律师可把脱敏诊断包上传给中软支持（第 9 批，v9.2 §5.1 S13；调研 Y2 §3.13“律所策略可禁用”）。
+   * **可选字段**：没有 = 不允许（与最严模板相同）；第 9 批之前签发的策略不含此字段，签名字节不变。
+   * 本实现按“比最严模板宽即放宽”的既定口径，把允许上传算作放宽（须管理员设备签名；偏离登记 D-77）。
+   */
+  support_upload?: "deny" | "allow";
 }
 
 export function strictestTemplate(): FirmPolicyBody {
@@ -40,6 +46,8 @@ export const POLICY_MAX_TTL_MS = 30 * 24 * 3600 * 1000;
 export const CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 const POLICY_FIELDS = ["max_mode", "auto_preauthorizations", "fetch_allowlist_extra", "l3a_standard_model"] as const;
+/** 可选字段（没有即按最严处理；不在 POLICY_FIELDS 的“必须齐全”之列）。 */
+const OPTIONAL_POLICY_FIELDS = ["support_upload"] as const;
 export const DOMAIN_RE = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
 type Check<T> = { ok: true; value: T } | { ok: false; reason: string };
@@ -48,7 +56,7 @@ type Check<T> = { ok: true; value: T } | { ok: false; reason: string };
 export function validatePolicyBody(x: unknown): Check<FirmPolicyBody> {
   if (!x || typeof x !== "object" || Array.isArray(x)) return { ok: false, reason: "body_not_object" };
   const b = x as Record<string, unknown>;
-  for (const k of Object.keys(b)) if (!(POLICY_FIELDS as readonly string[]).includes(k)) return { ok: false, reason: `unknown_field:${k}` };
+  for (const k of Object.keys(b)) if (!(POLICY_FIELDS as readonly string[]).includes(k) && !(OPTIONAL_POLICY_FIELDS as readonly string[]).includes(k)) return { ok: false, reason: `unknown_field:${k}` };
   for (const k of POLICY_FIELDS) if (!(k in b)) return { ok: false, reason: `missing_field:${k}` };
   if (!(RUN_MODES as readonly unknown[]).includes(b.max_mode)) return { ok: false, reason: "max_mode_invalid" };
   const pre = b.auto_preauthorizations;
@@ -61,6 +69,7 @@ export function validatePolicyBody(x: unknown): Check<FirmPolicyBody> {
     return { ok: false, reason: "fetch_allowlist_extra_invalid" };
   }
   if (b.l3a_standard_model !== "deny" && b.l3a_standard_model !== "allow") return { ok: false, reason: "l3a_standard_model_invalid" };
+  if ("support_upload" in b && b.support_upload !== "deny" && b.support_upload !== "allow") return { ok: false, reason: "support_upload_invalid" };
   return {
     ok: true,
     value: {
@@ -68,6 +77,8 @@ export function validatePolicyBody(x: unknown): Check<FirmPolicyBody> {
       auto_preauthorizations: [...(pre as AutoPreauthorization[])],
       fetch_allowlist_extra: [...(extra as string[])],
       l3a_standard_model: b.l3a_standard_model,
+      // 只在原文有时带上（签名字节按原文计算：第 9 批之前的策略不含此字段）
+      ...("support_upload" in b ? { support_upload: b.support_upload as "deny" | "allow" } : {}),
     },
   };
 }
@@ -82,7 +93,13 @@ export function stricterBody(a: FirmPolicyBody, b: FirmPolicyBody): FirmPolicyBo
     auto_preauthorizations: a.auto_preauthorizations.filter((p) => b.auto_preauthorizations.includes(p)),
     fetch_allowlist_extra: a.fetch_allowlist_extra.filter((d) => b.fetch_allowlist_extra.includes(d)),
     l3a_standard_model: a.l3a_standard_model === "allow" && b.l3a_standard_model === "allow" ? "allow" : "deny",
+    ...(a.support_upload === "allow" && b.support_upload === "allow" ? { support_upload: "allow" as const } : {}),
   };
+}
+
+/** 是否允许律师上传诊断包（没有该字段 = 不允许）。 */
+export function supportUploadAllowed(body: FirmPolicyBody): boolean {
+  return body.support_upload === "allow";
 }
 
 /** 单次版本跳跃的上限（复核 S6-A13、S6-B20）：超出即拒收并告警，防止版本号被一次抬到顶、此后再也无法更新。 */
@@ -101,6 +118,7 @@ export function policyRelaxations(body: FirmPolicyBody): string[] {
   for (const p of body.auto_preauthorizations) r.push(`auto_preauthorization:${p}`);
   for (const d of body.fetch_allowlist_extra) r.push(`fetch_allowlist:${d}`);
   if (body.l3a_standard_model === "allow") r.push("l3a_standard_model:allow");
+  if (body.support_upload === "allow") r.push("support_upload:allow");
   return r;
 }
 

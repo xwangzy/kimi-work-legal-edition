@@ -738,3 +738,18 @@ tr.row-on td { background: var(--accent-bg); }
 .wb-doc, .ev-text, .vis-sent, .ev-quote { color-scheme: light; }
 .wb-doc .muted, .ev-text .muted, .vis-sent .muted, .ev-quote .muted { color: var(--text-on-paper-muted); }
 .wb-doc :focus-visible, .ev-text :focus-visible { outline-color: var(--paper-focus); }
+
+/* 第 9 批：用量与上限、中软侧操作记录 */
+.tag-bad { color: var(--status-danger-text); background: var(--status-danger-bg); }
+table.data .tag { white-space: nowrap; margin-left: 0; }
+table.data td.num { white-space: nowrap; }
+.inline-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.inline-form input { width: 160px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 4px 8px; background: var(--bg-surface); color: var(--text-primary); font-size: var(--fs-base); font-variant-numeric: tabular-nums; }
+table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.usage-meter { height: 8px; border-radius: var(--r-full); background: var(--bg-muted); overflow: hidden; margin: 8px 0 4px; max-width: 420px; }
+.usage-meter > span { display: block; height: 100%; background: var(--accent); }
+.usage-meter.high > span { background: var(--status-warning-solid); }
+.usage-meter.full > span { background: var(--status-danger-solid); }
+.support-upload { margin-top: 8px; }
+.support-upload details { margin: 8px 0; }
+.support-preview { max-height: 320px; overflow: auto; background: var(--bg-code); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); padding: 8px 10px; font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-all; }

@@ -28,6 +28,7 @@ export class GatewayFeedSubscriber implements GatewayFeedView {
   private revSeats = new Set<string>();
   private matters = new Map<string, AnonMatterSummary>();
   private policies = new Map<string, "deny" | "allow">();
+  private supportUpload = new Set<string>();
   private lastFetch = 0;
   private inflight: Promise<void> | null = null;
   private timer: NodeJS.Timeout | null = null;
@@ -60,6 +61,10 @@ export class GatewayFeedSubscriber implements GatewayFeedView {
 
   l3aStandardAllowed(tid: string): boolean {
     return this.policies.get(tid) === "allow";
+  }
+
+  supportUploadAllowed(tid: string): boolean {
+    return this.supportUpload.has(tid);
   }
 
   refresh(): Promise<void> {
@@ -106,8 +111,14 @@ export class GatewayFeedSubscriber implements GatewayFeedView {
       }
       this.matters = matters;
       const policies = new Map<string, "deny" | "allow">();
-      for (const p of b.policies) if (p && typeof p.tid === "string") policies.set(p.tid, p.l3a_standard_model === "allow" ? "allow" : "deny");
+      const supportUpload = new Set<string>();
+      for (const p of b.policies) {
+        if (!p || typeof p.tid !== "string") continue;
+        policies.set(p.tid, p.l3a_standard_model === "allow" ? "allow" : "deny");
+        if (p.support_upload === "allow") supportUpload.add(p.tid);
+      }
       this.policies = policies;
+      this.supportUpload = supportUpload;
       this.version = b.version;
       this.stats.ok += 1;
     } catch {

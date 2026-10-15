@@ -16,6 +16,8 @@
 import { createHash, generateKeyPairSync, randomBytes, timingSafeEqual, verify as cryptoVerify, type KeyObject } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { StateStore } from "./state-store.ts";
+import { createAuditLog, type AuditEntry, type AuditLog } from "./audit-log.ts";
+import { emptyQuota, grantPoints as quotaGrant, leaseQuota, QuotaError, quotaView, setCap as quotaSetCap, settleLease, type QuotaState } from "./quota.ts";
 import { canonicalJson, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
 import { issueSeatToken, MIN_SEAT_TTL_SECONDS } from "@zr-legal/seat-token";
 import {
@@ -44,6 +46,8 @@ import {
   type SignedFirmConnector,
   type SignedFirmPolicy,
   type TenantSaltBody,
+  type CpAuditActor,
+  type CpAuditPage,
 } from "@zr-legal/firm-trust";
 
 export interface CpKeyPair {
@@ -110,6 +114,8 @@ export interface TenantRecord {
   connectorsVersion: number;
   drafts: Map<string, DraftRecord>;
   anon: Map<string, AnonMatterSummary>;
+  /** 额度池与月度上限（S3 v0，quota.ts）。 */
+  quota: QuotaState;
 }
 
 export interface ControlPlaneOptions {
@@ -124,11 +130,13 @@ export interface ControlPlaneOptions {
   maxPreRevoked?: number;
   /** 状态持久化（试点形态，state-store.ts）：未给出 = 只在内存（开发与测试）。 */
   stateStore?: StateStore;
+  /** 运营审计流水（S14 v0，audit-log.ts）：未给出 = 只在内存。 */
+  auditLog?: AuditLog;
 }
 
 export interface ControlPlaneOps {
   /** 商务开通：建租户、发许可（≤ 30 天）、生成租户盐、发布最严模板策略 v1（不比最严模板宽：只需控制面签名）。 */
-  createTenant(o: { tid: string; edition: LicenseBody["edition"]; seats: number; subscriptionDays?: number }): TenantRecord;
+  createTenant(o: { tid: string; edition: LicenseBody["edition"]; seats: number; subscriptionDays?: number; points?: number }): TenantRecord;
   /** 续订：订阅截止改为 days 天后（许可仍按签到滚动签发 ≤ 30 天）。 */
   renewLicense(tid: string, days: number): LicenseBody;
   /** 终止订阅（合同终止）：此后签发的许可立即到期，客户端进入退出模式。 */
@@ -136,6 +144,10 @@ export interface ControlPlaneOps {
   /** 吊销设备；尚未登记的设备须附它的律所根签发证书（预先吊销，复核 S6-C05、S6-C09）。 */
   revokeDevice(tid: string, deviceId: string, o?: { cert?: unknown; by?: string }): void;
   revokeSeat(tid: string, uid: string): void;
+  /** 运营加量：额度池注入点数（S3）。 */
+  grantPoints(tid: string, points: number): void;
+  /** 运营代设月度上限（律所管理员通常在客户端自己设；null = 不设上限）。 */
+  setQuotaCap(tid: string, cap: number | null): void;
   tenant(tid: string): TenantRecord | undefined;
   /** 用控制面自己的信封密钥签任意文档（演练“控制面被攻破”时攻击者同样能做到）。 */
   seal<T>(kind: string, body: T): CpEnvelope<T>;
@@ -176,6 +188,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const iso = (t = now()) => new Date(t).toISOString();
   const tenants = new Map<string, TenantRecord>();
   const nonces = new Map<string, number>();
+  const auditLog = o.auditLog ?? createAuditLog();
+  /** 写一条审计；写不进去即整个操作失败（调用方回滚）。 */
+  const audit = (e: AuditEntry): void => {
+    try {
+      auditLog.append(e, iso());
+    } catch {
+      throw new CpError(500, "audit_unavailable", "审计流水写入失败，本次操作未生效");
+    }
+  };
   let feedVersion = 1;
   // 持久化（试点形态）：启动时读回；每个响应发出之前、每个运维操作之后，状态有变化即写盘（state-store.ts）。
   // “没写成就等于没发生”（复核 B4-R01）：写盘失败或请求出错时，内存状态回到上次写成的样子；请求得到 500，进程不退出。
@@ -202,7 +223,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     feedVersion = st.feedVersion;
     if (withNonces) for (const [k, exp] of st.nonces ?? []) nonces.set(k, exp);
     for (const t of st.tenants) {
-      tenants.set(t.tid, { ...t, devices: new Map(t.devices), preRevoked: new Map(t.preRevoked), seatsByUser: new Map(t.seatsByUser), connectors: new Map(t.connectors), drafts: new Map(t.drafts), anon: new Map(t.anon) });
+      // 第 9 批之前保存的状态没有额度字段：按空池读回（运营须重新注入点数）
+      tenants.set(t.tid, { ...t, devices: new Map(t.devices), preRevoked: new Map(t.preRevoked), seatsByUser: new Map(t.seatsByUser), connectors: new Map(t.connectors), drafts: new Map(t.drafts), anon: new Map(t.anon), quota: t.quota ?? emptyQuota(now()) });
     }
   };
   if (o.stateStore) {
@@ -288,7 +310,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
 
   const rawOps: ControlPlaneOps = {
-    createTenant({ tid, edition, seats, subscriptionDays = 365 }) {
+    createTenant({ tid, edition, seats, subscriptionDays = 365, points = 0 }) {
       if (tenants.has(tid)) throw new Error(`租户已存在：${tid}`);
       const t: TenantRecord = {
         tid,
@@ -309,7 +331,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         connectorsVersion: 1,
         drafts: new Map(),
         anon: new Map(),
+        quota: emptyQuota(now()),
       };
+      if (points > 0) quotaGrant(t.quota, points);
       issueLicense(t);
       publishStrictest(t);
       tenants.set(tid, t);
@@ -358,25 +382,75 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         feedVersion += 1;
       }
     },
+    grantPoints(tid, points) {
+      quotaGrant(tenantOf(tid).quota, points);
+    },
+    setQuotaCap(tid, cap) {
+      quotaSetCap(tenantOf(tid).quota, cap, now(), null);
+    },
     tenant: (tid) => tenants.get(tid),
     seal,
     touch() {
       feedVersion += 1;
     },
   };
-  // 运维操作（开通、续订、吊销等）之后同样落盘
+  // 运维操作（开通、续订、吊销等）之后同样落盘，并记运营审计（S14）：先记“成功”再写盘，写盘失败补记“已撤销”
+  const OPS_AUDIT: Readonly<Record<string, { action: string; target?: (args: unknown[]) => string | null }>> = {
+    createTenant: { action: "tenant.create" },
+    renewLicense: { action: "license.renew" },
+    terminateLicense: { action: "license.terminate" },
+    revokeDevice: { action: "device.revoke", target: (a) => String(a[1]) },
+    revokeSeat: { action: "seat.revoke", target: (a) => String(a[1]) },
+    grantPoints: { action: "quota.grant" },
+    setQuotaCap: { action: "quota.cap_set" },
+  };
+  const OPS_ACTOR: CpAuditActor = { kind: "ops", id: "ops" };
+  /** 路由代为调用运维操作时为真：审计由路由按设备执行者记，包装不再按“运营”记一条。 */
+  let routeCall = false;
+  const viaRoute = <T>(fn: () => T): T => {
+    routeCall = true;
+    try {
+      return fn();
+    } finally {
+      routeCall = false;
+    }
+  };
   const ops: ControlPlaneOps = Object.fromEntries(
     Object.entries(rawOps).map(([k, fn]) => [
       k,
       (...args: unknown[]) => {
+        const spec = routeCall ? undefined : OPS_AUDIT[k];
+        const tid = k === "createTenant" ? String((args[0] as { tid?: unknown } | undefined)?.tid ?? "") : String(args[0] ?? "");
+        const entry = spec ? { tid, actor: OPS_ACTOR, action: spec.action, target: spec.target ? spec.target(args) : null } : null;
         let r: unknown;
         try {
           r = (fn as (...a: unknown[]) => unknown)(...args);
+          if (entry && tenants.has(tid)) audit({ ...entry, result: "ok" });
         } catch (e) {
           rollback();
+          if (entry && tenants.has(tid)) {
+            try {
+              auditLog.append({ ...entry, result: `rejected:${e instanceof CpError || e instanceof QuotaError ? e.code : "error"}` }, iso());
+            } catch {
+              // 审计写不进去：操作本身已失败
+            }
+          }
           throw e;
         }
-        if (k !== "tenant" && k !== "seal") persistNow();
+        if (k !== "tenant" && k !== "seal") {
+          try {
+            persistNow();
+          } catch (e) {
+            if (entry) {
+              try {
+                auditLog.append({ ...entry, result: "rolled_back:state_persist_failed" }, iso());
+              } catch {
+                // 同上
+              }
+            }
+            throw e;
+          }
+        }
         return r;
       },
     ]),
@@ -416,8 +490,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(s), "cache-control": "no-store" });
     res.end(s);
   };
+  /** 本请求要记的运营审计（设备签名核验通过之后才记：未认证的请求只进访问日志，不能用来撑大律所的审计流水）。 */
+  const auditCtx = new WeakMap<ServerResponse, { entry: Omit<AuditEntry, "result">; written: boolean }>();
   const send = (res: ServerResponse, status: number, body: unknown) => {
-    // 先持久化再回复：吊销、席位、发布一旦回复成功即已落盘（写盘失败 → persistNow 回滚并抛 500，由外层以 sendRaw 回复）
+    // 先记审计、再持久化、再回复：吊销、席位、发布一旦回复成功即已落盘且有审计（写盘失败 → 外层补记“已撤销”）
+    const ctx = auditCtx.get(res);
+    if (ctx && !ctx.written) {
+      audit({ ...ctx.entry, result: "ok" });
+      ctx.written = true;
+    }
     persistNow();
     const s = JSON.stringify(body);
     res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(s), "cache-control": "no-store" });
@@ -453,6 +534,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     const t = tenantOf(v.tid);
     return { t, dev: t.devices.get(v.deviceId)! };
+  };
+
+  /** 服务间凭据（网关、检索服务；G0 共享密钥，生产为 mTLS）。 */
+  const requireService = (req: IncomingMessage): void => {
+    const h = req.headers.authorization;
+    const tok = typeof h === "string" ? /^Bearer\s+(.+)$/i.exec(h)?.[1] ?? "" : "";
+    const a = Buffer.from(tok);
+    const b = Buffer.from(o.serviceSecret);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) throw new CpError(401, "service_auth_invalid", "服务凭据无效");
   };
 
   /** 收紧类管理动作（吊销设备与席位）：管理员或合伙人设备（与本机吊销的角色口径一致；复核 S6-B04）。 */
@@ -499,7 +589,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       for (const s of t.seatsByUser.values()) if (s.revoked_at) revokedSeats.push(s.sid);
       for (const m of t.anon.values()) matters.push({ ...m, tid: t.tid });
       const pol = t.policy && Date.parse(t.policy.doc.expires_at) > now() ? t.policy.doc.body : strictestTemplate();
-      policies.push({ tid: t.tid, l3a_standard_model: pol.l3a_standard_model });
+      policies.push({ tid: t.tid, l3a_standard_model: pol.l3a_standard_model, support_upload: pol.support_upload === "allow" ? "allow" : "deny" });
     }
     return { version: feedVersion, issued_at: iso(), revoked_devices: revokedDevices, revoked_seats: revokedSeats, matters, policies };
   };
@@ -528,6 +618,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (!good) throw new CpError(400, "enroll_proof_invalid", "开通证明无效");
       if (t.root_public_key_pem && t.root_public_key_pem !== pem) throw new CpError(409, "root_already_enrolled", "该租户已登记另一把律所根公钥");
       t.root_public_key_pem = pem;
+      auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "root", id: t.tid }, action: "tenant.enroll_root", target: null }, written: false });
       return send(res, 200, { ok: true, tid: t.tid });
     }
 
@@ -544,6 +635,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const v = verifyDeviceRequest(req.headers, { method, path, body: raw }, { publicKeyFor: (rt, rd) => (rt === tid && rd === cert.deviceId ? cert.signPublicKeyPem : null), now: now(), seenNonce });
       // 时钟偏差同样附控制面当前时间（复核 S6-C02：每次同步第一步就是登记）
       if (!v.ok) throw new CpError(401, v.reason, "登记请求的设备签名无效", v.reason === "device_auth_stale" ? { server_time: iso() } : undefined);
+      auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "device", id: cert.deviceId, fp: certFingerprint(cert) }, action: "device.register", target: cert.deviceId }, written: false });
       const existing = t.devices.get(cert.deviceId);
       const revokedAt = existing?.revoked_at ?? t.preRevoked.get(cert.deviceId)?.revoked_at ?? null;
       if (revokedAt) {
@@ -553,7 +645,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (!existing || existing.cert.signature !== cert.signature) {
         t.devices.set(cert.deviceId, { cert, registered_at: iso(), revoked_at: null });
         t.directoryVersion += 1;
-      }
+      } else auditCtx.delete(res); // 已登记、证书未变：每次同步都会来一次，不记
       // 席位：成员没有席位且许可内仍有余量时自动分配（G0；生产由管理员在控制台分配）
       if (!t.seatsByUser.has(cert.memberId) && cert.role !== "node") {
         const active = [...t.seatsByUser.values()].filter((s) => !s.revoked_at).length;
@@ -567,16 +659,31 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
 
     // ─── 网关与检索服务订阅（服务间凭据） ───
     if (method === "GET" && p === "/v1/feed/gateway") {
-      const h = req.headers.authorization;
-      const tok = typeof h === "string" ? /^Bearer\s+(.+)$/i.exec(h)?.[1] ?? "" : "";
-      const a = Buffer.from(tok);
-      const b = Buffer.from(o.serviceSecret);
-      if (a.length !== b.length || !timingSafeEqual(a, b)) throw new CpError(401, "service_auth_invalid", "服务凭据无效");
+      requireService(req);
       return send(res, 200, seal("kwl-gateway-feed", feedBody()));
+    }
+    // ─── 额度租约（S3 v0）：网关领取一段点数、本地扣减、按租约回报累计用量（服务间凭据） ───
+    if (method === "POST" && p === "/v1/quota/lease") {
+      requireService(req);
+      const b = parseJson(raw);
+      const t = tenantOf(String(b.tid ?? ""));
+      // 许可到期或已终止：不再发放（与席位令牌同一口径）
+      if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不发放额度");
+      const l = leaseQuota(t.quota, { want: b.want, holder: b.holder, ttl_ms: b.ttl_ms, need: b.need }, now());
+      return send(res, 200, { lease_id: l.lease_id, points: l.points, expires_at: l.expires_at, limited_by: l.limited_by });
+    }
+    if (method === "POST" && p === "/v1/quota/settle") {
+      requireService(req);
+      const b = parseJson(raw);
+      const t = tenantOf(String(b.tid ?? ""));
+      const r = settleLease(t.quota, { lease_id: b.lease_id, holder: b.holder, usage: b.usage, final: b.final }, now());
+      return send(res, 200, { ok: true, ...r });
     }
 
     // 以下一律设备签名
     const { t, dev } = authDevice(req, path, raw);
+    const mark = (action: string, target: string | null = null) =>
+      auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "device", id: dev.cert.deviceId, fp: certFingerprint(dev.cert) }, action, target }, written: false });
 
     if (method === "GET" && p === "/v1/directory") return send(res, 200, seal("kwl-device-directory", directoryBody(t)));
     if (method === "GET" && p === "/v1/license") return send(res, 200, seal("kwl-license", issueLicense(t)));
@@ -585,6 +692,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       return send(res, 200, seal("kwl-tenant-salt", body));
     }
     if (method === "POST" && p === "/v1/seat-token") {
+      mark("seat_token.issue", dev.cert.memberId);
       if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不签发席位令牌");
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
@@ -595,11 +703,36 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       return send(res, 200, { token, expires_at: iso(at + seatTtl * 1000) });
     }
     if (method === "GET" && p === "/v1/policy") return send(res, 200, seal("kwl-firm-policy-current", t.policy));
+    // ─── 本所用量与上限（S3 v0）：成员看本所本月用量、上限与自己的用量；管理员与合伙人另看按成员明细与池余额 ───
+    if (method === "GET" && p === "/v1/quota") {
+      const detail = dev.cert.role === "admin" || dev.cert.role === "partner";
+      const owner = new Map([...t.seatsByUser.values()].map((x) => [x.sid, x.uid]));
+      const view = quotaView(t.quota, now(), { detail, seatOwner: (sid) => owner.get(sid) ?? null, ownSid: t.seatsByUser.get(dev.cert.memberId)?.sid ?? null });
+      return send(res, 200, seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), ...view }));
+    }
+    if (method === "PUT" && p === "/v1/quota/cap") {
+      mark("quota.cap_set");
+      requireAdmin(dev);
+      const b = parseJson(raw);
+      if (!("monthly_cap" in b)) throw new CpError(400, "cap_invalid", "缺少月度上限（不设上限请传 null）");
+      quotaSetCap(t.quota, b.monthly_cap, now(), dev.cert.deviceId);
+      return send(res, 200, { ok: true, cap_monthly: t.quota.cap_monthly });
+    }
+    // ─── 中软侧操作记录（S14 v0）：管理员与合伙人可取本所流水（控制面签名的分页；律所侧另行验链） ───
+    if (method === "GET" && p === "/v1/audit") {
+      requireRevoker(dev);
+      const after = Number(url.searchParams.get("after") ?? "0");
+      const limit = Number(url.searchParams.get("limit") ?? "500");
+      if (!Number.isSafeInteger(after) || after < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new CpError(400, "audit_range_invalid", "分页参数不合法");
+      const page: CpAuditPage = { tid: t.tid, records: auditLog.list(t.tid, after, limit), head: auditLog.head(t.tid), issued_at: iso() };
+      return send(res, 200, seal("kwl-cp-audit-page", page));
+    }
     if (method === "GET" && p === "/v1/connectors") {
       return send(res, 200, seal("kwl-firm-connectors", { tid: t.tid, version: t.connectorsVersion, issued_at: iso(), entries: [...t.connectors.values()] }));
     }
     if (method === "PUT" && p.startsWith("/v1/anon-matters/")) {
       const anon = decodeURIComponent(p.slice("/v1/anon-matters/".length));
+      mark("anon_summary.update", /^[A-Za-z0-9_-]{1,64}$/.test(anon) ? anon : null);
       const s = validateSummary(parseJson(raw));
       if (!s.ok) throw new CpError(400, s.reason, "事项匿名摘要不合法");
       if (s.value.anon !== anon) throw new CpError(400, "summary_anon_mismatch", "匿名编号与路径不符");
@@ -609,7 +742,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (!prev || canonicalJson(prev) !== canonicalJson(next)) {
         t.anon.set(anon, next);
         feedVersion += 1;
-      }
+      } else auditCtx.delete(res); // 摘要没有变化：不记
       return send(res, 200, { ok: true });
     }
 
@@ -619,9 +752,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       return send(res, 200, { drafts: [...t.drafts.values()].filter((d) => !d.published_at) });
     }
     if (method === "POST" && p === "/v1/drafts") {
+      const draftId = `drf_${randomBytes(8).toString("hex")}`;
+      mark("draft.create", draftId);
       requireAdmin(dev);
       const b = parseJson(raw);
-      const draftId = `drf_${randomBytes(8).toString("hex")}`;
       if (b.kind === "policy") {
         const body = validatePolicyBody(b.body);
         if (!body.ok) throw new CpError(400, body.reason, "策略内容不合法");
@@ -652,6 +786,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     const m = /^\/v1\/drafts\/(drf_[0-9a-f]{16})(\/signatures|\/publish)?$/.exec(p);
     if (m) {
+      if (method === "POST" && m[2]) mark(m[2] === "/signatures" ? "draft.sign" : "draft.publish", m[1]!);
       const d = t.drafts.get(m[1]!);
       if (!d) throw new CpError(404, "draft_unknown", "草稿不存在");
       requireAdmin(dev);
@@ -696,6 +831,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // 撤下连接器（收紧：管理员设备即可）
     const rc = /^\/v1\/connectors\/([a-z][a-z0-9_-]{1,40})$/.exec(p);
     if (method === "DELETE" && rc) {
+      mark("connector.remove", rc[1]!);
       requireAdmin(dev);
       if (t.connectors.delete(rc[1]!)) t.connectorsVersion += 1;
       return send(res, 200, { ok: true, version: t.connectorsVersion });
@@ -703,16 +839,19 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // 吊销（收紧：管理员或合伙人设备即可）；尚未登记的设备编号记预先吊销（复核 S6-B31）
     const rd = /^\/v1\/devices\/([^/]{1,200})\/revoke$/.exec(p);
     if (method === "POST" && rd) {
+      mark("device.revoke", rd[1]!);
       requireRevoker(dev);
       const b = parseJson(raw);
-      ops.revokeDevice(t.tid, rd[1]!, { cert: b.cert, by: dev.cert.deviceId });
+      // 本请求的审计由路由记（运维包装不再记一条“运营吊销”）；仍经 ops 调用（演练可替换 ops 模拟被攻破的控制面）
+      viaRoute(() => ops.revokeDevice(t.tid, rd[1]!, { cert: b.cert, by: dev.cert.deviceId }));
       return send(res, 200, { ok: true, directory_version: t.directoryVersion });
     }
     const rs = /^\/v1\/seats\/([^/]{1,200})\/revoke$/.exec(p);
     if (method === "POST" && rs) {
+      mark("seat.revoke", rs[1]!);
       requireRevoker(dev);
       if (!t.seatsByUser.has(decodeURIComponent(rs[1]!))) throw new CpError(404, "seat_unknown", "成员没有席位");
-      ops.revokeSeat(t.tid, decodeURIComponent(rs[1]!));
+      viaRoute(() => ops.revokeSeat(t.tid, decodeURIComponent(rs[1]!)));
       return send(res, 200, { ok: true, directory_version: t.directoryVersion });
     }
     throw new CpError(404, "not_found", "没有这条路由");
@@ -726,7 +865,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       } catch {
         // 回滚失败不影响应答
       }
-      const ce = e instanceof CpError ? e : new CpError(500, "control_plane_error", "控制面错误");
+      const ce = e instanceof CpError ? e : e instanceof QuotaError ? new CpError(e.status, e.code, e.message) : new CpError(500, "control_plane_error", "控制面错误");
+      const ctx = auditCtx.get(res);
+      if (ctx) {
+        try {
+          auditLog.append({ ...ctx.entry, result: `${ctx.written ? "rolled_back" : "rejected"}:${ce.code}` }, iso());
+        } catch {
+          // 审计写不进去：本请求本来就失败了
+        }
+      }
       if (res.headersSent) res.destroy();
       else sendRaw(res, ce.status, { error: { code: ce.code, message: ce.message }, ...(ce.extra ?? {}) });
     });
@@ -735,6 +882,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   // 正常关闭：停定时写入，把未落盘的 nonce 一并写下
   server.on("close", () => {
     if (nonceFlush) clearInterval(nonceFlush);
+    if (!o.auditLog) auditLog.close();
     try {
       persistNow(true);
     } catch {

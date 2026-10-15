@@ -25,6 +25,7 @@ import {
   evaluateConnector,
   evaluatePolicy,
   openEnvelope,
+  type CpAuditRecord,
   policyRelaxations,
   safetyCode,
   signersStillSufficient,
@@ -273,6 +274,11 @@ export class FirmGovernance {
     return this.effectivePolicy().body.l3a_standard_model === "allow";
   }
 
+  /** 律所是否允许律师上传诊断包（第 9 批 S13；没有该项 = 不允许）。 */
+  supportUploadAllowed(): boolean {
+    return this.effectivePolicy().body.support_upload === "allow";
+  }
+
   /** 已固定的管理员签名门限；首次取得许可之前为 null（此时不接受任何放宽内容；复核 SF-1、S6-B07）。 */
   pinnedThreshold(): number | null {
     return this.d.db.get<{ admin_threshold: number }>(`SELECT admin_threshold FROM firm_trust WHERE tenant_id = ?`, [this.d.tenantId])?.admin_threshold ?? null;
@@ -407,6 +413,52 @@ export class FirmGovernance {
     } catch {
       return null;
     }
+  }
+
+  /** 验控制面信封（只读类文档：用量视图、操作记录分页）；不合法即 null。 */
+  openSigned<T>(envelope: unknown, kind: string): T | null {
+    const o = openEnvelope<T>(envelope, kind, this.d.cpKeys);
+    return o.ok ? o.body : null;
+  }
+
+  /** 中软侧操作记录（S14）：本机见过的最高序号与它的 hash（防云端改写已给出的历史）。 */
+  auditAnchor(): { seq: number; hash: string } | null {
+    const hw = this.highWater("cp_audit");
+    return hw && hw.digest ? { seq: hw.version, hash: hw.digest } : null;
+  }
+
+  raiseAuditAnchor(seq: number, hash: string): void {
+    this.raiseHighWater("cp_audit", seq, hash);
+  }
+
+  /** 留存验过的记录；同一序号已有而 hash 不同 = 云端改写了历史（返回冲突的序号，不覆盖）。 */
+  storeAuditRecords(recs: readonly CpAuditRecord[]): { stored: number; conflicts: number[] } {
+    let stored = 0;
+    const conflicts: number[] = [];
+    this.d.db.tx(() => {
+      for (const r of recs) {
+        const prev = this.d.db.get<{ hash: string }>(`SELECT hash FROM cp_audit_records WHERE tenant_id = ? AND seq = ?`, [this.d.tenantId, r.seq]);
+        if (prev) {
+          if (prev.hash !== r.hash) conflicts.push(r.seq);
+          continue;
+        }
+        this.d.db.run(
+          `INSERT INTO cp_audit_records (tenant_id, seq, at, actor_kind, actor_id, actor_fp, action, target, result, prev, hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+          [this.d.tenantId, r.seq, r.at, r.actor.kind, r.actor.id, r.actor.fp ?? null, r.action, r.target, r.result, r.prev, r.hash],
+        );
+        stored++;
+      }
+    });
+    return { stored, conflicts };
+  }
+
+  /** 本机留存的操作记录（新的在前）。 */
+  auditRecords(limit: number, beforeSeq?: number): CpAuditRecord[] {
+    const rows = this.d.db.all<{ seq: number; at: string; actor_kind: CpAuditRecord["actor"]["kind"]; actor_id: string; actor_fp: string | null; action: string; target: string | null; result: string; prev: string; hash: string }>(
+      `SELECT seq, at, actor_kind, actor_id, actor_fp, action, target, result, prev, hash FROM cp_audit_records WHERE tenant_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?`,
+      [this.d.tenantId, beforeSeq ?? Number.MAX_SAFE_INTEGER, Math.max(1, Math.min(1000, limit))],
+    );
+    return rows.map((r) => ({ tid: this.d.tenantId, seq: r.seq, at: r.at, actor: { kind: r.actor_kind, id: r.actor_id, ...(r.actor_fp ? { fp: r.actor_fp } : {}) }, action: r.action, target: r.target, result: r.result, prev: r.prev, hash: r.hash }));
   }
 
   /** 本机已接受的版本（高水位；控制面客户端据此标出已过时的草稿）。 */
@@ -1149,6 +1201,8 @@ export function localDevPolicyBody(env: NodeJS.ProcessEnv): FirmPolicyBody {
     auto_preauthorizations: max === "auto" ? ["search_generalized"] : [],
     fetch_allowlist_extra: extra,
     l3a_standard_model: env.ZR_FIRM_L3A_STANDARD_MODEL === "allow" ? "allow" : "deny",
+    // 第 9 批 S13：开发形态按本机配置项（缺省不允许上传诊断包）
+    ...(env.ZR_FIRM_SUPPORT_UPLOAD === "allow" ? { support_upload: "allow" as const } : {}),
   };
 }
 

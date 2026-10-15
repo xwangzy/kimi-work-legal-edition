@@ -296,3 +296,24 @@ test("规范化 JSON 拒绝 __proto__ 键（复核 S6-B17：否则带与不带�
   assert.throws(() => canonicalJson(JSON.parse('{"a":1,"__proto__":{"x":1}}')), /__proto__/);
   assert.equal(canonicalJson({ b: 1, a: 2 }), '{"a":2,"b":1}');
 });
+
+test("第 9 批 support_upload：可选字段（没有 = 不允许）；允许即放宽、须管理员签名；取值不合法拒绝；逐项取更严；旧策略的签名字节不变", async () => {
+  const { supportUploadAllowed, validatePolicyDoc } = await import("../src/index.ts");
+  const base = strictestTemplate();
+  assert.equal(validatePolicyBody({ ...base, support_upload: "maybe" }).ok, false);
+  const allowed = validatePolicyBody({ ...base, support_upload: "allow" });
+  assert.ok(allowed.ok && supportUploadAllowed(allowed.value));
+  assert.ok(!supportUploadAllowed(base));
+  assert.deepEqual(policyRelaxations({ ...base, support_upload: "allow" }), ["support_upload:allow"]);
+  assert.deepEqual(policyRelaxations({ ...base, support_upload: "deny" }), []);
+  const unsigned = evaluatePolicy({ doc: doc({ ...base, support_upload: "allow" }), admin_signatures: [] }, ctx());
+  assert.equal(unsigned.ok, false, "允许上传须管理员设备签名");
+  assert.equal(stricterBody({ ...base, support_upload: "allow" }, base).support_upload, undefined);
+  assert.equal(stricterBody({ ...base, support_upload: "allow" }, { ...base, support_upload: "allow" }).support_upload, "allow");
+  // 第 9 批之前签发的策略不含此字段：核验后的文档仍不含它，签名字节与原文一致
+  const old = doc(base);
+  const v = validatePolicyDoc(JSON.parse(JSON.stringify(old)));
+  assert.ok(v.ok);
+  assert.equal(v.ok && "support_upload" in v.value.body, false);
+  assert.ok(v.ok && policySigningBytes(v.value).equals(policySigningBytes(old)));
+});

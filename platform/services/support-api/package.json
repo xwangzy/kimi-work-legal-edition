@@ -1,0 +1,14 @@
+{
+  "name": "@zr-legal/support-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "支持与诊断服务 v0（中软云端，v9.2 §5.1 S13）：律师主动上传的脱敏诊断包（单次上传令牌、7 天后删除、运营访问留审计；律所策略可禁用）",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zr-legal/firm-trust": "*",
+    "@zr-legal/seat-token": "*"
+  }
+}

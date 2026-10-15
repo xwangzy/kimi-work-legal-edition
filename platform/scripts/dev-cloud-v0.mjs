@@ -10,6 +10,9 @@
  * - KWL_SAFETY_POLICY=<策略 JSON>：网关启用内容安全（按类别计数或拦截，计量只记类别与次数）。
  * - KWL_CP_STATE_FILE / KWL_CP_STATE_KEY：控制面状态持久化（两代交替文件、可封装；生产形态必须封装）。
  * - KWL_DIST_DIR=<分发存储根>（第 8 批 S6/S7）：同时拉起内容分发服务 v0（法规库与方法模板的签名清单与包；发布用 scripts/dist-publish.mjs）。
+ * - 控制面形态（第 9 批 S3）：网关的额度改由控制面额度账本发放租约（开通时注入 KWL_POINTS 点，缺省 1 亿）；律所管理员可在客户端设月度上限。
+ *   KWL_CP_AUDIT_FILE：运营审计流水落盘（JSON Lines，启动时验链）。
+ * - KWL_SUPPORT_DIR=<目录>（第 9 批 S13）：同时拉起支持与诊断服务 v0（诊断包上传；运营凭据 KWL_SUPPORT_OPS_SECRET，缺省随机且不输出）。
  *
  * 用法：node scripts/dev-cloud-v0.mjs   → 按输出设置环境变量后启动内核 / 桌面
  */
@@ -29,6 +32,7 @@ const { privateKey, publicKey } = devSeatKeyPair();
 let keys = new Map([["dev1", publicKey]]);
 let feed;
 let cp;
+let quota;
 if (withCp) {
   const cpMod = await import("../services/control-plane/src/index.ts");
   const ft = await import("../packages/firm-trust/src/index.ts");
@@ -41,9 +45,11 @@ if (withCp) {
   const stateStore = statePath
     ? cpMod.fileStateStore(statePath, { ...(stateKey ? { key: Buffer.from(stateKey, "hex") } : {}), requireKey: process.env.NODE_ENV === "production" })
     : undefined;
-  cp = cpMod.createControlPlane({ keys: cpMod.devControlPlaneKeys(), serviceSecret, ...(stateStore ? { stateStore } : {}) });
+  const auditLog = process.env.KWL_CP_AUDIT_FILE ? cpMod.createAuditLog({ file: process.env.KWL_CP_AUDIT_FILE }) : undefined;
+  cp = cpMod.createControlPlane({ keys: cpMod.devControlPlaneKeys(), serviceSecret, ...(stateStore ? { stateStore } : {}), ...(auditLog ? { auditLog } : {}) });
   await new Promise((r) => cp.server.listen(Number(process.env.KWL_CP_PORT ?? 0), "127.0.0.1", r));
-  if (!cp.ops.tenant(tenant)) cp.ops.createTenant({ tid: tenant, edition: process.env.KWL_EDITION === "firm" ? "firm" : "team", seats: 20 });
+  if (!cp.ops.tenant(tenant)) cp.ops.createTenant({ tid: tenant, edition: process.env.KWL_EDITION === "firm" ? "firm" : "team", seats: 20, points: Number(process.env.KWL_POINTS ?? 100_000_000) });
+  quota = new gw.LeaseQuota({ ledger: gw.httpLedger({ baseUrl: `http://127.0.0.1:${cp.server.address().port}`, serviceSecret }), holder: "gw-dev-1" });
   keys = ft.publicKeyMap(cp.publicKeys.seat);
   feed = new cpMod.GatewayFeedSubscriber({ url: `http://127.0.0.1:${cp.server.address().port}/v1/feed/gateway`, serviceSecret, keys: ft.publicKeyMap(cp.publicKeys.envelope) });
   feed.start(15_000);
@@ -60,7 +66,7 @@ if (process.env.KWL_MOCK_SCRIPT && provider instanceof gw.MockProvider) {
 // 内容安全（v9.2 R11）：KWL_SAFETY_POLICY 指向策略 JSON（{version, categories:[{id, action, terms}]}）时启用；生产词库由内容安全团队签名下发
 const { readFileSync } = await import("node:fs");
 const contentSafety = process.env.KWL_SAFETY_POLICY ? new gw.ContentSafety(JSON.parse(readFileSync(process.env.KWL_SAFETY_POLICY, "utf8"))) : undefined;
-const gateway = gw.createLegalGateway({ keys, provider, routes: gw.DEFAULT_ROUTES, meter: gw.fileMeter(join(dir, "gateway-meter.jsonl")), budgets: new Map([[tenant, 100_000_000]]), ...(feed ? { feed } : {}), ...(contentSafety ? { contentSafety } : {}) });
+const gateway = gw.createLegalGateway({ keys, provider, routes: gw.DEFAULT_ROUTES, meter: gw.fileMeter(join(dir, "gateway-meter.jsonl")), ...(quota ? { quota } : { budgets: new Map([[tenant, 100_000_000]]) }), ...(feed ? { feed } : {}), ...(contentSafety ? { contentSafety } : {}) });
 const searchProvider =
   process.env.KWL_MOONSHOT_SEARCH === "1" && process.env.KWL_MOONSHOT_API_KEY
     ? new ss.MoonshotToolsSearchProvider({ apiKey: process.env.KWL_MOONSHOT_API_KEY, baseUrl: process.env.KWL_MOONSHOT_BASE })
@@ -75,10 +81,17 @@ if (process.env.KWL_DIST_DIR) {
   dist = da.createDistApi({ dir: process.env.KWL_DIST_DIR, keys, ...(feed ? { feed } : {}) });
   await new Promise((r) => dist.listen(Number(process.env.KWL_DIST_PORT ?? 0), "127.0.0.1", r));
 }
+let support;
+if (process.env.KWL_SUPPORT_DIR) {
+  const sa = await import("../services/support-api/src/index.ts");
+  support = sa.createSupportApi({ dir: process.env.KWL_SUPPORT_DIR, keys, opsSecret: process.env.KWL_SUPPORT_OPS_SECRET ?? randomBytes(24).toString("base64url"), ...(feed ? { feed } : {}) });
+  await new Promise((r) => support.listen(Number(process.env.KWL_SUPPORT_PORT ?? 0), "127.0.0.1", r));
+}
 console.log("# 云端 v0 已启动（本机模拟部署；上游：" + provider.name + " / 检索：" + searchProvider.name + (withCp ? " / 控制面 v0" : "") + "）");
 console.log(`export ZR_GATEWAY_BASE=http://127.0.0.1:${gateway.address().port}/v1`);
 console.log(`export ZR_SEARCH_BASE=http://127.0.0.1:${search.address().port}/search`);
 if (dist) console.log(`export ZR_DIST_BASE=http://127.0.0.1:${dist.address().port}`);
+if (support) console.log(`export ZR_SUPPORT_BASE=http://127.0.0.1:${support.address().port}`);
 if (withCp) {
   // 控制面形态：地址与控制面公钥随客户端构建固定（这里经环境变量给出）；席位令牌由控制面签发给内核，不输出
   console.log(`export ZR_CONTROL_PLANE_BASE=http://127.0.0.1:${cp.server.address().port}`);

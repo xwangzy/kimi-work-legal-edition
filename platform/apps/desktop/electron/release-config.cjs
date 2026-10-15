@@ -17,7 +17,7 @@ const { createPublicKey } = require("node:crypto");
 const PIN_RE = /^sha256\/[A-Za-z0-9+/]{43}=$/;
 
 /** 安装包形态从进程环境中剔除的配置项（上游、钉住、传输策略与开发形态的令牌/密钥）。白名单之外本就不传，此表留作说明与单测。 */
-const ROUTING_ENV = /^ZR_(?:GATEWAY_|SEARCH_|CONTROL_PLANE_|DIST_|CONTENT_KEYS|UPSTREAM_TLS|SEAT_TOKEN|BYOK_|MOONSHOT_|PRIVATE_|MODEL_PROVIDER|GATE_FETCH|FETCH_ALLOWLIST|FIRM_L3A)/;
+const ROUTING_ENV = /^ZR_(?:GATEWAY_|SEARCH_|CONTROL_PLANE_|DIST_|SUPPORT_|CONTENT_KEYS|UPSTREAM_TLS|SEAT_TOKEN|BYOK_|MOONSHOT_|PRIVATE_|MODEL_PROVIDER|GATE_FETCH|FETCH_ALLOWLIST|FIRM_L3A)/;
 
 /**
  * 安装包形态内核环境的白名单（复核 B3-A02）：只保留操作系统与运行时正常工作所需的变量（大小写不敏感，Windows 环境变量名不区分大小写）。
@@ -129,6 +129,8 @@ function loadReleaseConfig(file) {
       else env.ZR_CONTENT_KEYS_REVOKED = JSON.stringify(raw.content_keys_revoked);
     }
   }
+  // 支持服务（第 9 批 S13）：律师确认上传的脱敏诊断包；缺省不配置 = 只能导出文件
+  pair("support_base", "support_pins", "ZR_SUPPORT_BASE", "ZR_SUPPORT_PINS");
   // 自动更新（W7）：更新源地址、钉住集与发布签名公钥只认这里（主进程使用，不进内核环境）；三项缺一即不检查更新
   let update = null;
   if (raw.update_base !== undefined) {

@@ -8,17 +8,19 @@
  *
  * 协议（JSON 消息）：
  *   内核 → 闸门：{t:"init", config} | {t:"result", id, ok, result | error} | {t:"revoke", runId} | {t:"seat", token} | {t:"cp", id, req}
- *               | {t:"dist", id, path} | {t:"shutdown"}
+ *               | {t:"dist", id, path} | {t:"support", id, req} | {t:"shutdown"}
  *   闸门 → 内核：{t:"ready"} | {t:"call", id, method:"authorize"|"approval", params} | {t:"record", rec} | {t:"tokens", matterId, entries}
- *               | {t:"cp_result", id, result} | {t:"dist_result", id, result} | {t:"fatal", message}
+ *               | {t:"cp_result", id, result} | {t:"dist_result", id, result} | {t:"support_result", id, result} | {t:"fatal", message}
  * 控制面通道（阶段 6，cp-relay.ts）：只有内核持有 IPC，故 Agent 宿主与执行域都不能借闸门访问控制面；目的地为 init 下发的固定地址。
  * 内容分发通道（第 8 批，dist-relay.ts）：同上，只许 GET 白名单路径，席位令牌由闸门附上。
+ * 支持通道（第 9 批，support-relay.ts）：同上，只有“申请工单”与“上传诊断包”两种固定请求，摘要由闸门重算。
  */
 import { rmSync } from "node:fs";
 import { slog } from "@zr-legal/safe-log";
 import { EgressGateServer, seatUsable } from "./server.ts";
 import { relayControlPlane, type CpRelayRequest } from "./cp-relay.ts";
 import { relayDist } from "./dist-relay.ts";
+import { relaySupport, type SupportRelayRequest } from "./support-relay.ts";
 import { checkUpstream, upstreamFetch, type TransportCheck } from "./tls-policy.ts";
 import type { AuthorizeResult, GateAuthority, GateEgressRecord, GatePurpose, GateUpstreams } from "./types.ts";
 import type { SignedApproval } from "./approval.ts";
@@ -44,6 +46,7 @@ type Msg =
   | { t: "seat"; token: string }
   | { t: "cp"; id: number; req: CpRelayRequest }
   | { t: "dist"; id: number; path: string }
+  | { t: "support"; id: number; req: SupportRelayRequest }
   | { t: "shutdown" };
 
 const send = (m: unknown): void => {
@@ -61,6 +64,9 @@ let controlPlaneFetch: typeof fetch | undefined;
 let distBase: string | null = null;
 let distTransport: TransportCheck | undefined;
 let distFetch: typeof fetch | undefined;
+let supportBase: string | null = null;
+let supportTransport: TransportCheck | undefined;
+let supportFetch: typeof fetch | undefined;
 /** 当前席位令牌（与模型、检索同一张；内核续期后经 {t:"seat"} 更新）。 */
 let seatToken: string | null = null;
 
@@ -130,6 +136,10 @@ process.on("message", (raw: unknown) => {
     const distPins = m.config.upstreams.dist?.pins ?? [];
     distTransport = checkUpstream(distBase, { allowLoopbackHttp: tls.allowLoopbackHttp, pins: distPins, requirePins: tls.requirePins });
     distFetch = upstreamFetch({ pins: distPins });
+    supportBase = m.config.upstreams.support?.baseUrl ?? null;
+    const supportPins = m.config.upstreams.support?.pins ?? [];
+    supportTransport = checkUpstream(supportBase, { allowLoopbackHttp: tls.allowLoopbackHttp, pins: supportPins, requirePins: tls.requirePins });
+    supportFetch = upstreamFetch({ pins: supportPins });
     seatToken = m.config.upstreams.dist?.seatToken || m.config.upstreams.model?.seatToken || m.config.upstreams.search?.seatToken || null;
     if (process.platform !== "win32") rmSync(socketPath, { force: true });
     server = new EgressGateServer({
@@ -191,6 +201,16 @@ process.on("message", (raw: unknown) => {
       ...(distTransport ? { transport: distTransport } : {}),
       ...(distFetch ? { fetchImpl: distFetch } : {}),
     }).then((result) => send({ t: "dist_result", id, result }));
+    return;
+  }
+  if (m?.t === "support") {
+    const id = m.id;
+    void relaySupport(m.req, {
+      baseUrl: supportBase,
+      seatToken: seatUsable(seatToken) ? seatToken : null,
+      ...(supportTransport ? { transport: supportTransport } : {}),
+      ...(supportFetch ? { fetchImpl: supportFetch } : {}),
+    }).then((result) => send({ t: "support_result", id, result }));
     return;
   }
   if (m?.t === "shutdown") void shutdown(0);

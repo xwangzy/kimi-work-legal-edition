@@ -13,7 +13,7 @@ import { verifyToken, type CapabilityClaims } from "@zr-legal/service-auth";
 import { newId } from "@zr-legal/domain";
 import { egressContentDigest } from "@zr-legal/egress";
 import type { PartyEntry, TokenEntry } from "@zr-legal/tokenizer";
-import type { AuthorizeResult, CpRelayRequest, CpRelayResult, DistRelayResult, GateEgressRecord, GatePurpose, GateUpstreams, MatterEgressContext, SignedApproval } from "@zr-legal/egress-gate";
+import type { AuthorizeResult, CpRelayRequest, CpRelayResult, DistRelayResult, SupportRelayRequest, SupportRelayResult, GateEgressRecord, GatePurpose, GateUpstreams, MatterEgressContext, SignedApproval } from "@zr-legal/egress-gate";
 import type { KernelDb } from "../db.ts";
 import { liveRunForClaims } from "../identity.ts";
 import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, startParentHeartbeat, windowsSystemEnv } from "../executor/child-env.ts";
@@ -275,6 +275,8 @@ export interface GateHandle {
   cp(req: CpRelayRequest, timeoutMs?: number): Promise<CpRelayResult>;
   /** 内容分发请求经闸门代取（第 8 批；只许 GET 白名单路径，席位令牌由闸门附上；闸门退出即失败）。 */
   dist(path: string, timeoutMs?: number): Promise<DistRelayResult>;
+  /** 支持通道（第 9 批；只有申请工单与上传诊断包两种固定请求；闸门退出即失败）。 */
+  support(req: SupportRelayRequest, timeoutMs?: number): Promise<SupportRelayResult>;
   close(): Promise<void>;
   readonly process: ChildProcess;
 }
@@ -366,6 +368,18 @@ function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
     const r = m.result as DistRelayResult | undefined;
     p.resolve(r && typeof r === "object" && (r.ok === true ? typeof r.status === "number" && typeof r.body_b64 === "string" : typeof r.reason === "string") ? r : { ok: false, reason: "dist_bad_reply" });
   });
+  // 支持通道（第 9 批）：同上
+  let supportSeq = 1;
+  const supportPending = new Map<number, { resolve: (r: SupportRelayResult) => void; timer: NodeJS.Timeout }>();
+  child.on("message", (m: any) => {
+    if (m?.t !== "support_result") return;
+    const p = supportPending.get(Number(m.id));
+    if (!p) return;
+    supportPending.delete(Number(m.id));
+    clearTimeout(p.timer);
+    const r = m.result as SupportRelayResult | undefined;
+    p.resolve(r && typeof r === "object" && (r.ok === true ? typeof r.status === "number" && typeof r.body === "string" : typeof r.reason === "string") ? r : { ok: false, reason: "support_bad_reply" });
+  });
   child.on("exit", (code, signal) => {
     alive = false;
     slog.event("CHILD_EXIT", { proc: "gate", code: Number.isInteger(code) ? code! : undefined, signal: signal ?? undefined });
@@ -379,6 +393,11 @@ function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
       p.resolve({ ok: false, reason: "gate_exited" });
     }
     distPending.clear();
+    for (const [, p] of supportPending) {
+      clearTimeout(p.timer);
+      p.resolve({ ok: false, reason: "gate_exited" });
+    }
+    supportPending.clear();
     o.onExit?.(code);
   });
   return new Promise((resolve, reject) => {
@@ -434,6 +453,17 @@ function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
             }, timeoutMs);
             distPending.set(id, { resolve: res, timer });
             child.send({ t: "dist", id, path });
+          }),
+        support: (req: SupportRelayRequest, timeoutMs = 90_000) =>
+          new Promise<SupportRelayResult>((res) => {
+            if (!child.connected) return res({ ok: false, reason: "gate_exited" });
+            const id = supportSeq++;
+            const timer = setTimeout(() => {
+              supportPending.delete(id);
+              res({ ok: false, reason: "support_timeout" });
+            }, timeoutMs);
+            supportPending.set(id, { resolve: res, timer });
+            child.send({ t: "support", id, req });
           }),
         close: () =>
           new Promise<void>((r) => {

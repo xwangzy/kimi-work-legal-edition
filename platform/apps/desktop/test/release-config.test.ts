@@ -159,3 +159,18 @@ test("内容分发（第 8 批 S6/S7）：dist_base 须 https + 两把钉住；�
   assert.equal(packaged.ZR_CONTENT_KEYS, undefined);
   assert.equal(packaged.ZR_DIST_CHANNEL, undefined);
 });
+
+test("支持服务（第 9 批 S13）：support_base 须 https + 两把钉住；安装包形态剔除环境里的支持服务配置", () => {
+  const ok = loadReleaseConfig(write("support-ok.json", { support_base: "https://support.example.cn/", support_pins: [P1, P2] }));
+  assert.deepEqual(ok.problems, []);
+  assert.equal(ok.env.ZR_SUPPORT_BASE, "https://support.example.cn");
+  assert.equal(ok.env.ZR_SUPPORT_PINS, `${P1},${P2}`);
+  const http = loadReleaseConfig(write("support-http.json", { support_base: "http://support.example.cn", support_pins: [P1, P2] }));
+  assert.equal(http.env.ZR_SUPPORT_BASE, undefined);
+  assert.equal(http.problems.length, 1);
+  const noPins = loadReleaseConfig(write("support-nopin.json", { support_base: "https://support.example.cn", support_pins: [P1] }));
+  assert.equal(noPins.env.ZR_SUPPORT_BASE, undefined);
+  const packaged = packagedKernelEnv({ ZR_SUPPORT_BASE: "http://evil.example", ZR_SUPPORT_PINS: "x", PATH: "/bin" }, { env: {} });
+  assert.equal(packaged.ZR_SUPPORT_BASE, undefined);
+  assert.equal(packaged.ZR_SUPPORT_PINS, undefined);
+});
