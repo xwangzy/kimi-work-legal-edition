@@ -252,3 +252,14 @@ test("NA-10 撤销也计入每日写入次数；为不存在的编号建墓碑�
   assert.equal(last, 429, "第 501 次撤销被拒");
   assert.equal(svc.tombstones().filter((t) => t.tid === "t1" && t.owner === "u-del").length, 500);
 });
+
+test("NA-11 撤销已有的提醒不计写入次数：额度用完也能撤销（复核 S10A-27）", async () => {
+  const { base } = await start(mkdtempSync(join(tmpdir(), "kwl-na-")));
+  const u = cred({ uid: "u-full", dev: "devF" });
+  const fire = minute(clock + 3600_000);
+  const ids = Array.from({ length: 500 }, (_, i) => `rmd_${(i + 0x1000).toString(16).padStart(24, "0")}`);
+  for (const id of ids) assert.equal((await call(base, "PUT", `/v1/reminders/${id}`, u, { fire_at: fire, version: 1, targets: [{ dev: "devF", ct: CT("F") }] })).status, 200);
+  assert.equal((await call(base, "PUT", `/v1/reminders/rmd_${"e".repeat(24)}`, u, { fire_at: fire, version: 1, targets: [{ dev: "devF", ct: CT("F") }] })).json.error, "too_many_writes");
+  assert.equal((await call(base, "DELETE", `/v1/reminders/${ids[0]}`, u, { version: 1 })).status, 200, "额度用完仍能撤销已有的");
+  assert.equal((await call(base, "DELETE", `/v1/reminders/rmd_${"f".repeat(24)}`, u, { version: 1 })).json.error, "too_many_writes", "为不存在的编号建墓碑仍计");
+});

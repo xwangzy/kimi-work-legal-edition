@@ -74,7 +74,8 @@ export function scheduleLine(r: { due_date: string; days_before: number; remind_
  * 本人提醒的“电脑关机时”状态一句话（复核 S10B-13：按实际送达的设备数与通知对象说，只有这一台电脑时不说“其他设备也会收到”）。
  */
 export function cloudStateText(state: string, configured: boolean, o: { targets?: number | null; audience?: string } = {}): { text: string; tone: "ok" | "warn" | "plain" } {
-  if (!configured || state === "local") return { text: "只在这台电脑上提醒（电脑关机时不提醒）", tone: "plain" };
+  // cancel_pending 的有效提醒 = 云端那份旧版本正在删除，之后只在本机（复核 S10B-25）
+  if (!configured || state === "local" || state === "cancel_pending") return { text: "只在这台电脑上提醒（电脑关机时不提醒）", tone: "plain" };
   if (state === "synced") {
     const others = Math.max(0, (o.targets ?? 1) - 1);
     if (others === 0) return { text: "目前只有这台电脑：关机时不会提醒（之后在其他设备登录，还没到时的提醒会自动补发过去）", tone: "plain" };

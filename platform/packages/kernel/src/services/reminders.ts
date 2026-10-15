@@ -338,9 +338,9 @@ export class ReminderService {
 
   /** 有效提醒的云端状态：一律“待登记”（未配置时等配置后再登记）；太早的只在本机——除非云端可能还有旧版本要替换。 */
   #activeCloudState(remindAt: string, mayHaveCopy = false): ReminderRow["cloud_state"] {
-    // 太早（超过云端可接受范围）只在本机；云端若还有旧版本不删——它仍可能补发给离线设备，撤销时再删（复核 S10B-21）
-    void mayHaveCopy;
-    if (Date.parse(remindAt) < this.#now() - CLOUD_PAST_LIMIT_MS) return "local";
+    // 太早（超过云端可接受范围）只在本机。改动后版本已升，云端若有副本必是旧版本——删掉（复核 S10B-25）；
+    // 删完回到“只在本机”（#finishDelete 对有效提醒写 local）
+    if (Date.parse(remindAt) < this.#now() - CLOUD_PAST_LIMIT_MS) return mayHaveCopy ? "cancel_pending" : "local";
     return "pending";
   }
 
@@ -521,7 +521,7 @@ export class ReminderService {
     const nowS = new Date(this.#now()).toISOString();
     const rows = this.#d.db.all<ReminderRow & ReminderCloudCols>(
       `SELECT * FROM reminders WHERE tenant_id = ? AND created_by = ? AND cloud_state IN ('pending','cancel_pending')
-         AND (cloud_next_at IS NULL OR cloud_next_at <= ?) ORDER BY cloud_next_at IS NOT NULL, cloud_next_at, updated_at LIMIT 20`,
+         AND (cloud_next_at IS NULL OR cloud_next_at <= ?) ORDER BY cloud_state = 'cancel_pending' DESC, cloud_next_at IS NOT NULL, cloud_next_at, updated_at LIMIT 20`,
       [this.#d.tenantId, this.#d.userId, nowS],
     );
     for (const snap of rows) {
@@ -600,15 +600,19 @@ export class ReminderService {
       this.#d.db.run(`DELETE FROM reminders WHERE reminder_id = ? AND version = ? AND cloud_state = 'cancel_pending'`, [row.reminder_id, row.version]);
       return;
     }
+    // 有效提醒（云端旧版本删完）回到“只在本机”；已撤销的记“已撤销”
     this.#d.db.run(
-      `UPDATE reminders SET cloud_state = 'cancelled', cloud_may_have_copy = 0, cloud_error = ?, cloud_next_at = NULL, cloud_body = NULL WHERE reminder_id = ? AND version = ? AND cloud_state = 'cancel_pending'`,
+      `UPDATE reminders SET cloud_state = CASE WHEN status = 'active' THEN 'local' ELSE 'cancelled' END, cloud_may_have_copy = 0, cloud_version = NULL, cloud_error = ?, cloud_next_at = NULL, cloud_body = NULL
+        WHERE reminder_id = ? AND version = ? AND cloud_state = 'cancel_pending'`,
       [code, row.reminder_id, row.version],
     );
   }
 
   async #pushPut(row: ReminderRow & ReminderCloudCols): Promise<"ok" | "stop"> {
     if (Date.parse(row.remind_at) < this.#now() - CLOUD_PAST_LIMIT_MS) {
-      this.#d.db.run(`UPDATE reminders SET cloud_state = 'local' WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending'`, [row.reminder_id, row.version]);
+      // 云端持有的就是当前版本：保留（仍可补发给离线设备；复核 S10B-21）；是更旧的或不确定：删掉，删完回到“只在本机”（复核 S10B-25）
+      const keep = row.cloud_may_have_copy !== 1 || row.cloud_version === row.version;
+      this.#d.db.run(`UPDATE reminders SET cloud_state = ? WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending'`, [keep ? "local" : "cancel_pending", row.reminder_id, row.version]);
       return "ok";
     }
     // 同一版本已封好的密文原样重发（结果不明后重发命中云端幂等，不升版本、不重响；复核 S10A-09、S10B-07）
@@ -620,13 +624,31 @@ export class ReminderService {
     } catch {
       cached = null;
     }
-    // 缓存的密文按当时的接收设备封装：名单或公钥已变（成员移出、换钥、新设备）就升一版重封，不再原样重发（复核 S10A-23）
-    if (cached && cached.devices !== this.#fingerprint(this.recipients(row.matter_id, row.audience))) {
-      this.#d.db.run(
-        `UPDATE reminders SET version = version + 1, cloud_body = NULL, cloud_attempts = 0, cloud_next_at = NULL WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending' AND status = 'active'`,
-        [row.reminder_id, row.version],
-      );
-      return "ok";
+    // 缓存的密文按当时的接收设备封装：名单或公钥已变（成员移出、换钥、新设备）——
+    // 还没到时：升一版重封（复核 S10A-23）；已经响过：不升版本（免得所有人再响一次，复核 S10B-24），只去掉已不在名单里或已换钥的设备
+    if (cached) {
+      const current = this.recipients(row.matter_id, row.audience);
+      const fp = this.#fingerprint(current);
+      if (cached.devices !== fp) {
+        if (Date.parse(row.remind_at) > this.#now()) {
+          this.#d.db.run(
+            `UPDATE reminders SET version = version + 1, cloud_body = NULL, cloud_attempts = 0, cloud_next_at = NULL WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending' AND status = 'active'`,
+            [row.reminder_id, row.version],
+          );
+          return "ok";
+        }
+        const still = new Set((JSON.parse(fp) as { t: [string, string][] }).t.map(([d, h]) => `${d}:${h}`));
+        const was = new Map((JSON.parse(cached.devices) as { t: [string, string][] }).t.map(([d, h]) => [d, `${d}:${h}`]));
+        const kept = cached.targets.filter((t) => still.has(was.get(t.dev) ?? ""));
+        if (kept.length === 0) {
+          this.#d.db.run(`UPDATE reminders SET cloud_state = 'local' WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending'`, [row.reminder_id, row.version]);
+          return "ok";
+        }
+        const keptDevs = new Set(kept.map((t) => t.dev));
+        const devices = JSON.stringify({ s: (JSON.parse(cached.devices) as { s: string }).s, t: (JSON.parse(cached.devices) as { t: [string, string][] }).t.filter(([d]) => keptDevs.has(d)) });
+        cached = { ...cached, targets: kept, devices };
+        this.#d.db.run(`UPDATE reminders SET cloud_body = ? WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending'`, [JSON.stringify(cached), row.reminder_id, row.version]);
+      }
     }
     if (!cached) {
       const targets = this.recipients(row.matter_id, row.audience);
@@ -672,9 +694,9 @@ export class ReminderService {
     this.#note(r);
     if (r.ok && r.status === 200) {
       this.#d.db.run(
-        `UPDATE reminders SET cloud_state = 'synced', cloud_error = NULL, cloud_targets = ?, cloud_devices = ?, cloud_attempts = 0, cloud_next_at = NULL
+        `UPDATE reminders SET cloud_state = 'synced', cloud_error = NULL, cloud_targets = ?, cloud_devices = ?, cloud_version = ?, cloud_attempts = 0, cloud_next_at = NULL
           WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending'`,
-        [sealed.targets.length, sealed.devices, row.reminder_id, row.version],
+        [sealed.targets.length, sealed.devices, row.version, row.reminder_id, row.version],
       );
       return "ok";
     }
@@ -686,6 +708,14 @@ export class ReminderService {
     if (r.ok && r.status >= 500) {
       this.#retryLater(row, code);
       return "stop";
+    }
+    // 已经响过的提醒：云端已有同版本（版本只对应一份内容），按已登记处理，不升版本重响（复核 S10B-24）
+    if (code === "version_conflict" && Date.parse(row.remind_at) <= this.#now()) {
+      this.#d.db.run(
+        `UPDATE reminders SET cloud_state = 'synced', cloud_error = NULL, cloud_version = ?, cloud_attempts = 0, cloud_next_at = NULL WHERE reminder_id = ? AND version = ? AND cloud_state = 'pending'`,
+        [row.version, row.reminder_id, row.version],
+      );
+      return "ok";
     }
     if (code === "version_conflict" || code === "version_stale") {
       // 云端已有同版本的另一份内容或更高版本（墓碑）：升一版、重新封装后再登记
@@ -863,4 +893,6 @@ export interface ReminderCloudCols {
   cloud_body: string | null;
   cloud_devices: string | null;
   cloud_expire_at: string | null;
+  /** 云端确认持有的版本（登记成功时写入；迁移 0036）。 */
+  cloud_version: number | null;
 }

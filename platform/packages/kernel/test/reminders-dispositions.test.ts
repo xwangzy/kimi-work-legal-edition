@@ -415,19 +415,28 @@ test("S10B-19 前面各行网络往返期间被撤销的行，轮到它时不再
   await s.tick();
 });
 
-test("S10B-21 超过云端可接受范围仍没登记成功的有效提醒改为只在本机，不删云端已有的旧版本；撤销时再删", async () => {
+test("S10B-21 / S10B-25 超出云端可接受范围的有效提醒：云端持有当前版本就保留（可补发），持有更旧的版本就删掉、删完只在本机", async () => {
   const s = svc();
+  // 云端是当前版本：保留
   const a = s.create(input());
   await s.tick();
-  s.update(a.reminder_id, input({ note: "新版本" }));
-  tk.kernel.db.run(`UPDATE reminders SET remind_at = ? WHERE reminder_id = ?`, [new Date(clock - 25 * 3600_000).toISOString(), a.reminder_id]);
+  tk.kernel.db.run(`UPDATE reminders SET cloud_state = 'pending', remind_at = ? WHERE reminder_id = ?`, [new Date(clock - 25 * 3600_000).toISOString(), a.reminder_id]);
   await s.tick();
   assert.deepEqual([row(a.reminder_id).cloud_state, row(a.reminder_id).cloud_may_have_copy], ["local", 1]);
-  assert.ok(notify.snapshot().some((x) => x.id === a.reminder_id), "旧版本仍在云端");
+  assert.ok(notify.snapshot().some((x) => x.id === a.reminder_id), "当前版本保留在云端");
   s.cancel(a.reminder_id);
-  assert.equal(row(a.reminder_id).cloud_state, "cancel_pending");
   await s.tick();
-  assert.equal(notify.snapshot().some((x) => x.id === a.reminder_id), false);
+  assert.equal(notify.snapshot().some((x) => x.id === a.reminder_id), false, "撤销时删");
+  // 离线时改过期限：云端是更旧的版本 → 删掉，删完回到“只在本机”
+  const b = s.create(input());
+  await s.tick();
+  s.update(b.reminder_id, input({ note: "提前了期限" }));
+  tk.kernel.db.run(`UPDATE reminders SET remind_at = ? WHERE reminder_id = ?`, [new Date(clock - 25 * 3600_000).toISOString(), b.reminder_id]);
+  await s.tick();
+  await s.tick();
+  assert.equal(notify.snapshot().some((x) => x.id === b.reminder_id), false, "旧版本已删");
+  assert.deepEqual([row(b.reminder_id).status, row(b.reminder_id).cloud_state, row(b.reminder_id).cloud_may_have_copy], ["active", "local", 0]);
+  s.cancel(b.reminder_id);
 });
 
 test("S10B-23 取提醒中途出错，已放进收件的照样通知", async () => {
@@ -485,7 +494,7 @@ test("S10A-04 遗留 / S10A-22 对方换钥待核对时一直暂缓（不计 24 
   tk.kernel.db.run(`DELETE FROM device_key_changes WHERE device_id = ?`, [COL_DEV]);
 });
 
-test("S10A-23 待登记行的缓存密文按当时的接收设备封装：名单变了就升版本重封，不原样重发", async () => {
+test("S10A-23 / S10B-24 已响过的待登记行：接收设备名单变了不升版本（不让所有人再响），只去掉已不在名单里的设备", async () => {
   const s = svc();
   const a = s.create(input({ audience: "team" }));
   // 已到时的提醒（登记指纹重扫只管未到时的；这里只能靠重发前核对）
@@ -498,7 +507,8 @@ test("S10A-23 待登记行的缓存密文按当时的接收设备封装：名单
   clock += 2 * 60_000;
   await s.tick();
   await s.tick();
-  assert.equal(row(a.reminder_id).version, 2, "升版本重封");
+  assert.equal(row(a.reminder_id).version, 1, "已响过：不升版本");
+  assert.equal(row(a.reminder_id).cloud_state, "synced");
   assert.deepEqual(Object.keys(notify.snapshot().find((x) => x.id === a.reminder_id)!.targets), [MY_DEV], "被移出的同事不在接收设备里");
   tk.kernel.db.run(`UPDATE matter_members SET removed_at = NULL WHERE matter_id = ? AND user_id = ?`, [mid, COL]);
   s.cancel(a.reminder_id);

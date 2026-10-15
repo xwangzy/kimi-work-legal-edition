@@ -389,18 +389,20 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
       const cur = byKey.get(k);
       const tomb = tombs.get(k);
       if ((cur && cur.owner !== c.uid) || (tomb && tomb.owner !== c.uid)) throw new HttpError(403, "not_owner");
-      // 撤销也计入每日写入次数；为不存在的编号新建墓碑计入租户上限（复核 S10A-21：不能借撤销撑大状态文件）
+      // 只有为不存在的编号新建墓碑才计入每日写入次数与租户上限（复核 S10A-21：不能借撤销撑大状态文件）；
+      // 撤销已有的提醒不计——撤销不能被自动重登挤占的额度挡住（复核 S10A-27）
+      const fresh = !cur && !tomb;
       const wk = writeKey(c.tid, c.uid);
       const prevWrites = writes[wk] ?? 0;
-      if (prevWrites + 1 > NOTIFY_WRITES_PER_MEMBER_PER_DAY) throw new HttpError(429, "too_many_writes");
-      if (!cur && !tomb && tenantCount(c.tid) >= NOTIFY_MAX_PER_TENANT) throw new HttpError(429, "tenant_limit");
+      if (fresh && prevWrites + 1 > NOTIFY_WRITES_PER_MEMBER_PER_DAY) throw new HttpError(429, "too_many_writes");
+      if (fresh && tenantCount(c.tid) >= NOTIFY_MAX_PER_TENANT) throw new HttpError(429, "tenant_limit");
       // 墓碑记到“触发后 7 天”（没有副本的按现在起 7 天）；同一编号只升不降
       const version = Math.max(b.version, cur?.version ?? 0, tomb?.version ?? 0);
       const expires_at = iso(Math.max(cur ? Date.parse(cur.fire_at) + NOTIFY_RETENTION_MS : 0, tomb ? Date.parse(tomb.expires_at) : 0, now() + NOTIFY_RETENTION_MS));
       const nextTomb: Tombstone = { tid: c.tid, id: one[1]!, owner: c.uid, version, expires_at };
       byKey.delete(k);
       tombs.set(k, nextTomb);
-      writes[wk] = prevWrites + 1;
+      if (fresh) writes[wk] = prevWrites + 1;
       try {
         persist();
       } catch (e) {
