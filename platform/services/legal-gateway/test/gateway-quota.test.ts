@@ -119,3 +119,90 @@ test("账本不可达：已有租约照常用到到期；之后 503 quota_unavai
   assert.equal(quota.snapshot().length, 0, "到期且无在途请求的租约在最终回报后移除");
   await quota.close();
 });
+
+test("复核 S9A-05：两个网关实例共用账本、接近上限时，后台预取不会一次拿走全部剩余（另一实例仍领得到）", async () => {
+  const tid = "ten_gwq_d";
+  cp.ops.createTenant({ tid, edition: "team", seats: 3, points: 100_000 });
+  cp.ops.setQuotaCap(tid, 8_000);
+  const ledger = httpLedger({ baseUrl: cpBase, serviceSecret: SECRET });
+  const a = new LeaseQuota({ ledger, holder: "gw-da", leaseSize: 20_000, flushMs: 60_000 });
+  const b = new LeaseQuota({ ledger, holder: "gw-db", leaseSize: 20_000, flushMs: 60_000 });
+  const ra = await a.reserve(tid, 10);
+  assert.ok(ra.ok);
+  await new Promise((r) => setTimeout(r, 50)); // 让 A 的后台预取完成
+  const rb = await b.reserve(tid, 10);
+  assert.ok(rb.ok, `B 仍领得到：${JSON.stringify(rb)}`);
+  const total = [...a.snapshot(), ...b.snapshot()].reduce((s, l) => s + l.points, 0);
+  assert.ok(total <= 8_000, "两实例合计不超过上限");
+  await a.close();
+  await b.close();
+});
+
+test("复核 S9A-06、S9A-08：账本 404 not_found 时保留租约下次重报，只在 lease_unknown 时放弃；许可到期报“订阅已到期”", async () => {
+  let settleCode = "not_found";
+  const calls: string[] = [];
+  const ledger: LedgerClient = {
+    lease: async () => ({ ok: true as const, lease_id: "ls_x", points: 1000, expires_at: new Date(Date.now() + 60_000).toISOString() }),
+    settle: async () => {
+      calls.push(settleCode);
+      return { ok: false as const, status: 404, code: settleCode };
+    },
+  };
+  const q = new LeaseQuota({ ledger, holder: "gw-e", flushMs: 60_000 });
+  const r = await q.reserve("t_e", 10);
+  assert.ok(r.ok);
+  if (r.ok) q.settle(r.hold, "s1", 5);
+  await q.flush();
+  assert.equal(q.snapshot().length, 1, "not_found：保留");
+  settleCode = "lease_unknown";
+  await q.flush();
+  assert.equal(q.snapshot().length, 0, "lease_unknown：放弃");
+  await q.close();
+
+  const expired: LedgerClient = { lease: async () => ({ ok: false as const, status: 402, code: "license_expired" }), settle: async () => ({ ok: true as const }) };
+  const q2 = new LeaseQuota({ ledger: expired, holder: "gw-f" });
+  const r2 = await q2.reserve("t_f", 10);
+  assert.ok(!r2.ok && r2.code === "quota_license_expired" && /订阅已到期/.test(r2.message));
+  await q2.close();
+});
+
+test("复核 S9A-07：等账本期间客户端断开——不发往上游、预占退还", async () => {
+  const tid = "ten_gwq_g";
+  cp.ops.createTenant({ tid, edition: "team", seats: 3, points: 100_000 });
+  const real = httpLedger({ baseUrl: cpBase, serviceSecret: SECRET });
+  const slow: LedgerClient = { lease: async (...a) => (await new Promise((r) => setTimeout(r, 300)), real.lease(...a)), settle: (...a) => real.settle(...a) };
+  const quota = new LeaseQuota({ ledger: slow, holder: "gw-g", flushMs: 60_000 });
+  const meter: MeterRecord[] = [];
+  const provider = new MockProvider();
+  const gw = createLegalGateway({ keys: publicKeyMap(cp.publicKeys.seat), provider, routes: DEFAULT_ROUTES, meter: { append: (r) => void meter.push(r) }, quota });
+  await new Promise<void>((r) => gw.listen(0, "127.0.0.1", () => r()));
+  servers.push(gw);
+  const ac = new AbortController();
+  const p = fetch(`http://127.0.0.1:${(gw.address() as AddressInfo).port}/v1/chat/completions`, {
+    method: "POST",
+    signal: ac.signal,
+    headers: { "content-type": "application/json", authorization: `Bearer ${issueSeatToken({ tid, uid: "u1", sid: "s_g", dev: "d1", kid: cpKeys.seat.kid }, cpKeys.seat.privateKey)}`, "x-kwl-anon-matter": "anon-1", "x-kwl-data-level": "L2" },
+    body: JSON.stringify({ model: "legal/k2.6", max_tokens: 10, messages: [{ role: "user", content: "x" }] }),
+  }).catch(() => null);
+  await new Promise((r) => setTimeout(r, 100));
+  ac.abort();
+  await p;
+  await new Promise((r) => setTimeout(r, 500));
+  assert.equal(provider.seen.length, 0, "没有发往上游");
+  assert.ok(meter.some((m) => m.reason === "client_gone_before_upstream"));
+  assert.ok(quota.snapshot().every((l) => l.holds === 0), "预占已退还");
+  await quota.close();
+});
+
+test("复核 S9B-03：只限支持服务的凭据在网关被拒（受众不符）", async () => {
+  const tid = "ten_gwq_h";
+  cp.ops.createTenant({ tid, edition: "team", seats: 3, points: 100_000 });
+  const quota = new LeaseQuota({ ledger: httpLedger({ baseUrl: cpBase, serviceSecret: SECRET }), holder: "gw-h", flushMs: 60_000 });
+  const gw = createLegalGateway({ keys: publicKeyMap(cp.publicKeys.seat), provider: new MockProvider(), routes: DEFAULT_ROUTES, meter: { append() {} }, quota });
+  await new Promise<void>((r) => gw.listen(0, "127.0.0.1", () => r()));
+  servers.push(gw);
+  const support = issueSeatToken({ tid, uid: "u1", sid: "s_h", dev: "d1", kid: cpKeys.seat.kid, aud: ["support"] }, cpKeys.seat.privateKey, 900);
+  const r = await fetch(`http://127.0.0.1:${(gw.address() as AddressInfo).port}/v1/models`, { headers: { authorization: `Bearer ${support}` } });
+  assert.equal(r.status, 401);
+  await quota.close();
+});

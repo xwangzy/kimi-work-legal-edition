@@ -46,12 +46,14 @@ export interface SupportApiOptions {
   dir: string;
   keys: ReadonlyMap<string, KeyObject>;
   /** 吊销集与律所策略（support_upload）；没有订阅即一律不允许上传（失败关闭）。 */
-  feed?: Pick<GatewayFeedView, "revokedDevice" | "revokedSeat" | "supportUploadAllowed">;
+  feed?: Pick<GatewayFeedView, "revokedDevice" | "revokedSeat" | "supportUploadAllowed"> & { refresh?: () => Promise<void> };
   /** 运营凭据（G0 共享密钥；生产为运维网络 + 堡垒机 + 双因素）。 */
   opsSecret: string;
   /** 访问审计（缺省写 <dir>/access.jsonl）。 */
   accessLog?: (r: SupportAccessRecord) => void;
   meterKey?: Buffer;
+  /** 生产形态（缺省按 NODE_ENV=production）：必须给 meterKey（复核 S9B-08：重启换密钥会让待上传工单失效、审计无法跨重启关联）。 */
+  production?: boolean;
   now?: () => number;
 }
 
@@ -86,24 +88,49 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
   const now = o.now ?? Date.now;
   const iso = (t = now()) => new Date(t).toISOString();
   if (o.meterKey && o.meterKey.byteLength < 32) throw new Error("meterKey 至少 32 字节");
+  if (!o.meterKey && (o.production ?? process.env.NODE_ENV === "production")) throw new Error("生产形态必须配置 meterKey（设备编号 HMAC 密钥，由 KMS 下发）");
   if (!o.opsSecret || o.opsSecret.length < 16) throw new Error("opsSecret 至少 16 个字符");
   const meterKey = o.meterKey ?? randomBytes(32);
   mkdirSync(o.dir, { recursive: true, mode: 0o700 });
   const access = o.accessLog ?? ((r: SupportAccessRecord) => appendFileSync(join(o.dir, "access.jsonl"), `${JSON.stringify(r)}\n`, { mode: 0o600 }));
   const devHash = (dev: string) => createHmac("sha256", meterKey).update(dev).digest("hex").slice(0, 16);
-  const issuedToday = new Map<string, { day: string; n: number }>();
+  /** 上传进行中的工单（复核 S9B-05：同一工单的并发 PUT 只放行一个；单实例形态，多实例生产按数据库行锁）。 */
+  const uploading = new Set<string>();
 
   const metaPath = (t: string) => join(o.dir, `${t}.json`);
   const binPath = (t: string) => join(o.dir, `${t}.bin`);
-  const readMeta = (t: string): TicketMeta | null => {
-    if (!TICKET_RE.test(t)) return null;
+  /** 只读普通文件（不跟随符号链接；复核 S9B-09）。 */
+  const readRegular = (path: string): Buffer | null => {
     try {
-      const st = lstatSync(metaPath(t));
-      if (!st.isFile()) return null;
-      return JSON.parse(readFileSync(metaPath(t), "utf8")) as TicketMeta;
+      if (!lstatSync(path).isFile()) return null;
+      return readFileSync(path);
     } catch {
       return null;
     }
+  };
+  /** 工单元数据；已到期的按不存在（复核 S9B-09：到期后、清扫前运营也取不到）。includeExpired 只供清扫。 */
+  const readMeta = (t: string, includeExpired = false): TicketMeta | null => {
+    if (!TICKET_RE.test(t)) return null;
+    const raw = readRegular(metaPath(t));
+    if (!raw) return null;
+    try {
+      const m = JSON.parse(raw.toString("utf8")) as TicketMeta;
+      if (!includeExpired && !(Date.parse(m.expires_at) > now())) return null;
+      return m;
+    } catch {
+      return null;
+    }
+  };
+  /** 本设备今天已申请的工单数（按存储里的元数据计，重启不清零；复核 S9B-08）。 */
+  const issuedTodayCount = (tid: string, dev: string): number => {
+    const day = iso().slice(0, 10);
+    let n = 0;
+    for (const f of readdirSync(o.dir)) {
+      const m = /^(SUP-[0-9A-Z-]+)\.json$/.exec(f);
+      const meta = m ? readMeta(m[1]!, true) : null;
+      if (meta && meta.tid === tid && meta.dev === dev && meta.issued_at.slice(0, 10) === day) n++;
+    }
+    return n;
   };
   const writeAtomic = (path: string, data: Buffer | string) => {
     const tmp = `${path}.tmp-${randomBytes(4).toString("hex")}`;
@@ -116,9 +143,21 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
     let n = 0;
     const t = now();
     for (const f of readdirSync(o.dir)) {
+      // 崩溃留下的临时文件（超过 1 小时）与没有元数据的孤立包本体一并删除（复核 S9B-09）
+      if (/\.tmp-[0-9a-f]+$/.test(f) || (/^SUP-[0-9A-Z-]+\.bin$/.test(f) && !readRegular(join(o.dir, f.replace(/\.bin$/, ".json"))))) {
+        try {
+          if (t - lstatSync(join(o.dir, f)).mtimeMs > 3600_000) {
+            rmSync(join(o.dir, f), { force: true });
+            n++;
+          }
+        } catch {
+          // 已被删除
+        }
+        continue;
+      }
       const m = /^(SUP-[0-9A-Z-]+)\.json$/.exec(f);
       if (!m) continue;
-      const meta = readMeta(m[1]!);
+      const meta = readMeta(m[1]!, true);
       if (!meta || Date.parse(meta.expires_at) <= t) {
         rmSync(binPath(m[1]!), { force: true });
         rmSync(metaPath(m[1]!), { force: true });
@@ -138,12 +177,20 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
   }, 3600_000);
   timer.unref();
 
+  /** 律所是否允许上传；不允许时按需刷新一次订阅再判（复核 S9B-07：刚开启时首个请求不误拒）。 */
+  const allowed = async (tid: string): Promise<boolean> => {
+    if (o.feed?.supportUploadAllowed?.(tid)) return true;
+    if (!o.feed?.refresh) return false;
+    await o.feed.refresh().catch(() => {});
+    return !!o.feed.supportUploadAllowed?.(tid);
+  };
   const seat = (req: IncomingMessage): SeatClaims => {
     const tok = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization ?? ""))?.[1];
     if (!tok) throw Object.assign(new Error("seat_required"), { status: 401 });
     let c: SeatClaims;
     try {
-      c = verifySeatToken(tok, o.keys, { now: now() });
+      // 只收控制面签发的“只限支持服务”短期凭据（复核 S9B-03：通用席位令牌不交给支持域）
+      c = verifySeatToken(tok, o.keys, { now: now(), audience: "support", requireAudience: true });
     } catch (e) {
       throw Object.assign(new Error(`seat_${e instanceof SeatTokenError ? e.reason : "invalid"}`), { status: 401 });
     }
@@ -178,13 +225,8 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
 
     if (method === "POST" && raw === "/v1/support/tickets") {
       const c = seat(req);
-      if (!o.feed?.supportUploadAllowed?.(c.tid)) return send(res, 403, { error: "support_upload_disabled" });
-      const day = iso().slice(0, 10);
-      const k = `${c.tid}\u0000${c.dev}`;
-      const cnt = issuedToday.get(k);
-      const n = cnt && cnt.day === day ? cnt.n : 0;
-      if (n >= TICKETS_PER_DEVICE_PER_DAY) return send(res, 429, { error: "too_many_tickets" });
-      issuedToday.set(k, { day, n: n + 1 });
+      if (!(await allowed(c.tid))) return send(res, 403, { error: "support_upload_disabled" });
+      if (issuedTodayCount(c.tid, devHash(c.dev)) >= TICKETS_PER_DEVICE_PER_DAY) return send(res, 429, { error: "too_many_tickets" });
       let ticket = newTicket();
       while (existsSync(metaPath(ticket))) ticket = newTicket();
       const token = randomBytes(32).toString("base64url");
@@ -210,13 +252,36 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
       const b = Buffer.from(meta.upload_token_sha256);
       if (!token || a.length !== b.length || !timingSafeEqual(a, b)) return fail(401, "upload_token_invalid");
       if (Date.parse(meta.token_expires_at) <= now()) return fail(401, "upload_token_expired");
-      if (!o.feed?.supportUploadAllowed?.(c.tid)) return fail(403, "support_upload_disabled");
-      const body = await readBody(req, SUPPORT_MAX_BYTES);
-      if (!/^[0-9a-f]{64}$/.test(declared) || sha256(body) !== declared) return fail(400, "content_digest_mismatch");
-      writeAtomic(binPath(meta.ticket), body);
-      writeAtomic(metaPath(meta.ticket), JSON.stringify({ ...meta, uploaded_at: iso(), bytes: body.byteLength, content_sha256: declared, upload_token_sha256: "used" }));
-      access({ at: iso(), action: "upload", ticket: meta.ticket, operator: null, tid: c.tid, dev: meta.dev, bytes: body.byteLength, result: "ok" });
-      return send(res, 200, { ok: true, ticket: meta.ticket, expires_at: meta.expires_at });
+      if (uploading.has(meta.ticket)) return fail(409, "ticket_used");
+      uploading.add(meta.ticket);
+      try {
+        if (!(await allowed(c.tid))) return fail(403, "support_upload_disabled");
+        const body = await readBody(req, SUPPORT_MAX_BYTES);
+        if (!/^[0-9a-f]{64}$/.test(declared) || sha256(body) !== declared) return fail(400, "content_digest_mismatch");
+        // 只收诊断包（复核 S9B-13）：格式相符、包内签名设备等于凭据里的设备（一台设备不能冒称另一台设备的包）
+        const doc = ((): { format?: unknown; signer_device?: unknown } | null => {
+          try {
+            const v = JSON.parse(body.toString("utf8")) as unknown;
+            return v && typeof v === "object" ? (v as { format?: unknown; signer_device?: unknown }) : null;
+          } catch {
+            return null;
+          }
+        })();
+        if (!doc || doc.format !== "kwl-diagnostics/1" || doc.signer_device !== c.dev) return fail(400, "package_invalid");
+        const fresh = readMeta(meta.ticket);
+        if (!fresh || fresh.uploaded_at) return fail(409, "ticket_used");
+        writeAtomic(binPath(meta.ticket), body);
+        writeAtomic(metaPath(meta.ticket), JSON.stringify({ ...meta, uploaded_at: iso(), bytes: body.byteLength, content_sha256: declared, upload_token_sha256: "used" }));
+        // 包已保存：访问审计写不进去也回 200（复核 S9B-10：否则客户端以为失败、重试得 409，中软实际已持有）
+        try {
+          access({ at: iso(), action: "upload", ticket: meta.ticket, operator: null, tid: c.tid, dev: meta.dev, bytes: body.byteLength, result: "ok" });
+        } catch {
+          // 访问审计不可用：生产形态由告警处理
+        }
+        return send(res, 200, { ok: true, ticket: meta.ticket, expires_at: meta.expires_at });
+      } finally {
+        uploading.delete(meta.ticket);
+      }
     }
 
     // ─── 运营：列出、下载、删除（每次访问都记访问审计） ───
@@ -242,15 +307,24 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
         access({ at: iso(), action: method === "GET" ? "download" : "delete", ticket: op[1]!, operator: who, tid: null, dev: null, bytes: null, result: "not_found" });
         return send(res, 404, { error: "not_found" });
       }
+      // 运营操作先记访问审计、记不进去即不执行（复核 S9B-10）
       if (method === "DELETE") {
+        access({ at: iso(), action: "delete", ticket: meta.ticket, operator: who, tid: meta.tid, dev: meta.dev, bytes: meta.bytes, result: "ok" });
         rmSync(binPath(meta.ticket), { force: true });
         rmSync(metaPath(meta.ticket), { force: true });
-        access({ at: iso(), action: "delete", ticket: meta.ticket, operator: who, tid: meta.tid, dev: meta.dev, bytes: meta.bytes, result: "ok" });
         return send(res, 200, { ok: true });
       }
-      const body = readFileSync(binPath(meta.ticket));
+      const body = readRegular(binPath(meta.ticket));
+      if (!body) return send(res, 404, { error: "not_found" });
       access({ at: iso(), action: "download", ticket: meta.ticket, operator: who, tid: meta.tid, dev: meta.dev, bytes: body.byteLength, result: "ok" });
-      res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-length": body.byteLength, "x-kwl-content-sha256": meta.content_sha256 ?? "" });
+      res.writeHead(200, {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "content-length": body.byteLength,
+        "x-kwl-content-sha256": meta.content_sha256 ?? "",
+        "x-content-type-options": "nosniff",
+        "content-disposition": `attachment; filename="${meta.ticket}.json"`,
+      });
       res.end(body);
       return;
     }

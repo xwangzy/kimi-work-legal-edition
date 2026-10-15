@@ -45,7 +45,9 @@ if (withCp) {
   const stateStore = statePath
     ? cpMod.fileStateStore(statePath, { ...(stateKey ? { key: Buffer.from(stateKey, "hex") } : {}), requireKey: process.env.NODE_ENV === "production" })
     : undefined;
-  const auditLog = process.env.KWL_CP_AUDIT_FILE ? cpMod.createAuditLog({ file: process.env.KWL_CP_AUDIT_FILE }) : undefined;
+  // 给了状态文件就要有审计文件（复核 S9A-15：否则重启后租户还在、审计链从零开始，律所侧误报“云端改写了历史”）：缺省放在状态文件旁边
+  const auditFile = process.env.KWL_CP_AUDIT_FILE ?? (statePath ? `${statePath}.audit.jsonl` : undefined);
+  const auditLog = auditFile ? cpMod.createAuditLog({ file: auditFile }) : undefined;
   cp = cpMod.createControlPlane({ keys: cpMod.devControlPlaneKeys(), serviceSecret, ...(stateStore ? { stateStore } : {}), ...(auditLog ? { auditLog } : {}) });
   await new Promise((r) => cp.server.listen(Number(process.env.KWL_CP_PORT ?? 0), "127.0.0.1", r));
   if (!cp.ops.tenant(tenant)) cp.ops.createTenant({ tid: tenant, edition: process.env.KWL_EDITION === "firm" ? "firm" : "team", seats: 20, points: Number(process.env.KWL_POINTS ?? 100_000_000) });
@@ -84,7 +86,10 @@ if (process.env.KWL_DIST_DIR) {
 let support;
 if (process.env.KWL_SUPPORT_DIR) {
   const sa = await import("../services/support-api/src/index.ts");
-  support = sa.createSupportApi({ dir: process.env.KWL_SUPPORT_DIR, keys, opsSecret: process.env.KWL_SUPPORT_OPS_SECRET ?? randomBytes(24).toString("base64url"), ...(feed ? { feed } : {}) });
+  // 设备编号 HMAC 密钥：开发形态由目录派生固定值（复核 S9B-08：重启不换，待上传工单与访问审计跨重启可关联）；生产由 KMS 下发
+  const { createHash } = await import("node:crypto");
+  const meterKey = process.env.KWL_SUPPORT_METER_KEY ? Buffer.from(process.env.KWL_SUPPORT_METER_KEY, "hex") : createHash("sha256").update(`kwl-dev-support-meter\n${process.env.KWL_SUPPORT_DIR}`).digest();
+  support = sa.createSupportApi({ dir: process.env.KWL_SUPPORT_DIR, keys, meterKey, opsSecret: process.env.KWL_SUPPORT_OPS_SECRET ?? randomBytes(24).toString("base64url"), ...(feed ? { feed } : {}) });
   await new Promise((r) => support.listen(Number(process.env.KWL_SUPPORT_PORT ?? 0), "127.0.0.1", r));
 }
 console.log("# 云端 v0 已启动（本机模拟部署；上游：" + provider.name + " / 检索：" + searchProvider.name + (withCp ? " / 控制面 v0" : "") + "）");

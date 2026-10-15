@@ -412,6 +412,8 @@ function fileToBase64(file: File): Promise<string> {
 export interface SupportPreview {
   allowed: boolean;
   configured: boolean;
+  /** 超过 2 MB：不能上传（预览时即说明，不去申请工单）。 */
+  too_large: boolean;
   /** 诊断包文件字节的 SHA-256（确认上传时交回；内核据此找回预览的那一份）。 */
   file_sha256: string;
   content_sha256: string;
@@ -424,6 +426,8 @@ export interface QuotaStatus {
   mode: "control_plane" | "local_dev";
   note?: string;
   period?: string;
+  /** 暂停原因：上限已到 / 购买额度用完（成员也能看到，不含金额）。 */
+  paused?: "cap" | "pool" | null;
   cap_monthly?: number | null;
   cap_set_at?: string | null;
   period_used?: number;
@@ -704,10 +708,11 @@ export const api = {
   controlPlaneStatus: () => invoke<ControlPlaneStatus>("control_plane.status"),
   quotaStatus: () => invoke<QuotaStatus>("quota.status"),
   diagnosticsUploadPreview: () => invoke<SupportPreview>("diagnostics.upload_preview"),
+  diagnosticsUploads: () => invoke<{ uploads: { upload_id: string; ticket: string | null; bytes: number; status: "pending" | "sent" | "failed" | "unknown"; error_code: string | null; created_at: string }[] }>("diagnostics.uploads"),
   diagnosticsUpload: (fileSha256: string) => invoke<{ ticket: string; expires_at: string | null; retention_days: number }>("diagnostics.upload", { file_sha256: fileSha256 }),
   quotaSetCap: (cap: number | null) => invoke<{ cap_monthly: number | null }>("quota.set_cap", { monthly_cap: cap }),
   cpAudit: (o: { limit?: number; before_seq?: number } = {}) =>
-    invoke<{ mode: string; fetched: { added: number; head: number } | null; fetch_error: string | null; records: CpAuditRow[] }>("control_plane.audit", o),
+    invoke<{ mode: string; fetched: { added: number; head: number; withheld: boolean } | null; fetch_error: string | null; records: CpAuditRow[] }>("control_plane.audit", o),
   /** 导出中软侧操作记录（原记录含哈希链，收件人可自行核验；只有代码与编号）。返回 null = 取消。 */
   cpAuditExport: async (): Promise<{ filename: string; count: number } | null> => {
     const target = await chooseSaveTarget(`zr-cloud-operations-${new Date().toISOString().slice(0, 10)}.json`, "none");

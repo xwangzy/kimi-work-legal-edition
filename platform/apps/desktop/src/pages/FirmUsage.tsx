@@ -30,7 +30,7 @@ export function UsagePanel() {
     setMsg("");
     try {
       await api.quotaSetCap(cap);
-      setMsg(cap === null ? "已取消月度上限" : `月度上限已设为 ${fmtPoints(cap)} 点（本所设备下一次请求起生效）`);
+      setMsg(cap === null ? "已取消月度上限" : `月度上限已设为 ${fmtPoints(cap)} 点（几分钟内生效，已发出的请求照常完成）`);
       load();
     } catch (e) {
       setMsg((e as Error).message);
@@ -48,6 +48,7 @@ export function UsagePanel() {
     <div className="device">
       {msg && <div className="banner">{msg}</div>}
       {ratio !== null && ratio >= 1 && <div className="banner banner-red">本所{periodLabel(q.period)}的用量已达上限：AI 处理暂停，直到调高上限或下月。</div>}
+      {q.paused === "pool" && <div className="banner banner-red">本所购买的 AI 额度已用完：AI 处理暂停，请联系中软加量。</div>}
       <div className="panel">
         <div className="device-row">
           <div className="device-k">{periodLabel(q.period)}</div>
@@ -61,7 +62,7 @@ export function UsagePanel() {
                 <span style={{ width: `${Math.round(ratio * 100)}%` }} />
               </div>
             )}
-            <div className="muted">中软网关已预领、尚未用掉 {fmtPoints(q.in_flight)} 点（计入上限判断，几分钟内未用即释放）。用量按实际结算，到上限即停：最多超出进行中请求的估算差额。</div>
+            <div className="muted">中软网关已预领、尚未结算 {fmtPoints(q.in_flight)} 点（计入上限判断，几分钟内释放）。用量按实际结算，到上限即停；单个请求的实际用量超过预估时，最多略超上限。</div>
           </div>
         </div>
         {q.pool_remaining !== undefined && (
@@ -108,7 +109,7 @@ export function UsagePanel() {
               <tbody>
                 {q.by_member.map((m, i) => (
                   <tr key={m.member_id ?? `x${i}`}>
-                    <td>{m.name ?? m.member_id ?? "已收回的席位"}</td>
+                    <td>{m.name ?? m.member_id ?? "未知席位"}</td>
                     <td className="num">{fmtPoints(m.points)}</td>
                     <td className="num">{fmtPoints(m.requests)}</td>
                   </tr>
@@ -140,6 +141,7 @@ export function UsagePanel() {
 export function CpAuditPanel() {
   const [rows, setRows] = useState<CpAuditRow[] | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [withheld, setWithheld] = useState(false);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -150,6 +152,7 @@ export function CpAuditPanel() {
       .then((r) => {
         setRows(r.records);
         setFetchError(r.fetch_error);
+        setWithheld(!!r.fetched?.withheld);
       })
       .catch((e) => setErr((e as Error).message))
       .finally(() => setBusy(false));
@@ -167,8 +170,9 @@ export function CpAuditPanel() {
   if (err) return <div className="banner banner-red">{err}</div>;
   return (
     <div className="device">
-      <p className="muted">中软云端对本所做过的每个写操作：谁、何时、做了什么、结果。本机核对过控制面签名与前后相接的哈希链才留存；中软之后改动或删除已给出的记录，本机会告警并保留原记录。记录里没有任何案件内容。</p>
+      <p className="muted">控制面上与本所有关的每个写操作（本所设备与中软运营）：谁、何时、做了什么、结果。本机核对过控制面签名与前后相接的哈希链才留存；中软之后改动或删除已给出的记录，本机会告警并保留原记录。记录里没有任何案件内容。</p>
       {fetchError && <div className={`banner ${fetchError.startsWith("cp_audit_") ? "banner-red" : "banner-gray"}`}>{auditFetchErrorText(fetchError)}</div>}
+      {withheld && <div className="banner banner-red">中软侧的最高记录序号比给出的多：可能有记录未给出（已记告警）。请联系中软核对。</div>}
       {msg && <div className="banner">{msg}</div>}
       <div className="inline-form">
         <button className="btn btn-sm" disabled={busy} onClick={load}>

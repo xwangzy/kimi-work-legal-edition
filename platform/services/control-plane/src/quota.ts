@@ -4,8 +4,9 @@
  * - 每租户一个**额度池**（点数，运营开通或加量时注入）与律所管理员设的**月度消费上限**（硬停；null = 不设上限）；
  * - 网关不逐请求扣库：向账本**领取租约**（一段点数 + 到期时刻），本地扣减，定期按租约回报**累计**用量（按席位）；
  *   账本按“新累计 − 已记累计”入账，回报重发不会重复计费（幂等）；
- * - 可领取的点数 = min(池余额 − 在途租约未用部分, 本月上限 − 本月已用 − 在途租约未用部分)：上限最多被突破“在途租约里
- *   估算与实际的差额”（预占按估算、结算按实际），不会被并发请求成倍突破；
+ * - 可领取的点数 = min(池余额 − 在途租约未用部分, 本月上限 − 本月已用 − 在途租约未用部分)；**在途**包括已到期但尚未收到最终回报、
+ *   仍在宽限期内的租约（复核 S9A-04：到期租约上还在排队或执行的请求、尚未回报的用量都还会入账，不能把同一份额度再发一次）。
+ *   上限最多被突破“预占估算与实际用量之差”（结算超出租约点数的部分）；调低上限对已发出的租约几分钟后生效；
  * - 租约到期后网关不再从中支出；到期 + 宽限（30 分钟）仍未收到最终回报的租约按**已报用量**结案并标记“待对账”——
  *   计费以网关的预写计量日志为准（Y2 §3.3 三方对账），账本不按整段租约推定扣费；结案后 7 天内的迟到回报照常补记；
  * - 月份按北京时间自然月；跨月的租约，回报到达时记入当时所在的月份；
@@ -95,16 +96,28 @@ const isPoints = (n: unknown, allowZero = true): n is number => typeof n === "nu
 export function rollPeriod(q: QuotaState, t: number): void {
   const p = periodOf(t);
   if (p === q.period) return;
-  q.history = [...q.history, { period: q.period, used: q.period_used }].slice(-12);
+  // 中间没有活动的月份补 0（复核 S9A-17：界面“最近月份”不跳月）
+  const gap: { period: string; used: number }[] = [];
+  for (let [y, m] = q.period.split("-").map(Number) as [number, number]; ; ) {
+    m += 1;
+    if (m > 12) [y, m] = [y + 1, 1];
+    const k = `${y}-${String(m).padStart(2, "0")}`;
+    if (k >= p || gap.length >= 12) break;
+    gap.push({ period: k, used: 0 });
+  }
+  q.history = [...q.history, { period: q.period, used: q.period_used }, ...gap].slice(-12);
   q.period = p;
   q.period_used = 0;
   q.period_by_seat = {};
 }
 
-/** 在途租约中尚未使用的点数（未结案且未到期；已到期的不能再支出，不计在途）。 */
-export function outstanding(q: QuotaState, t: number): number {
+/**
+ * 在途租约中尚未入账的点数：未结案的租约都算（含已到期、仍在宽限期内的——其上的请求可能还在执行，用量尚未回报；复核 S9A-04）。
+ * 收到最终回报或宽限期满结案后释放。
+ */
+export function outstanding(q: QuotaState, _t: number): number {
   let s = 0;
-  for (const l of Object.values(q.leases)) if (!l.closed_at && Date.parse(l.expires_at) > t) s += Math.max(0, l.points - l.used);
+  for (const l of Object.values(q.leases)) if (!l.closed_at) s += Math.max(0, l.points - l.used);
   return s;
 }
 
@@ -157,6 +170,7 @@ export function leaseQuota(q: QuotaState, input: { want: unknown; holder: unknow
   }
   const ttl = typeof input.ttl_ms === "number" && Number.isFinite(input.ttl_ms) ? Math.min(LEASE_MAX_TTL_MS, Math.max(10_000, Math.floor(input.ttl_ms))) : LEASE_TTL_MS;
   // 每次至多发剩余可发放的 1/4（但不少于本次请求所需 need）：多个网关实例时，一个实例不会一次领走全部剩余额度、让其他实例误报用完
+  // need 超过单次上限时归因可能不准（单次上限 100 万点，预占远到不了）
   const need = isPoints(input.need, false) ? Math.min(input.need, input.want) : 1;
   const points = Math.min(input.want, avail, LEASE_MAX_POINTS, Math.max(need, Math.ceil(avail / 4)));
   // 发得比想要的少：告诉网关是上限还是池余额所限（网关据此对“单次预占超过剩余额度”的请求报对原因）
@@ -218,13 +232,17 @@ export function quotaView(q: QuotaState, t: number, o: { detail: boolean; seatOw
   rollPeriod(q, t);
   sweepLeases(q, t);
   const own = o.ownSid ? (q.period_by_seat[o.ownSid] ?? { points: 0, requests: 0 }) : null;
+  const out = outstanding(q, t);
+  // 暂停原因（复核 S9A-13：成员也要知道“点数用完”，但不给金额）
+  const paused: "cap" | "pool" | null = q.cap_monthly !== null && q.period_used >= q.cap_monthly ? "cap" : q.pool <= 0 ? "pool" : null;
   return {
     period: q.period,
+    paused,
     cap_monthly: q.cap_monthly,
     cap_set_at: q.cap_set_at,
     period_used: q.period_used,
     /** 在途（已发放给网关、尚未用掉）的点数：上限判断已把它算进去。 */
-    in_flight: outstanding(q, t),
+    in_flight: out,
     own,
     history: q.history,
     ...(o.detail

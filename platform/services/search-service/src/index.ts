@@ -101,7 +101,7 @@ export function createSearchService(o: SearchServiceOptions): Server {
       let seat: SeatClaims;
       try {
         if (!tok) throw new SeatTokenError("missing");
-        seat = verifySeatToken(tok, o.keys, { ...(o.revokedDevices ? { revokedDevices: o.revokedDevices } : {}), ...(o.revokedSeats ? { revokedSeats: o.revokedSeats } : {}) });
+        seat = verifySeatToken(tok, o.keys, { audience: "search", ...(o.revokedDevices ? { revokedDevices: o.revokedDevices } : {}), ...(o.revokedSeats ? { revokedSeats: o.revokedSeats } : {}) });
         // 控制面订阅的吊销集（阶段 6）
         if (o.feed?.revokedDevice(seat.tid, seat.dev)) throw new SeatTokenError("device_revoked");
         if (o.feed?.revokedSeat(seat.sid)) throw new SeatTokenError("seat_revoked");

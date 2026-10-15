@@ -431,6 +431,20 @@ export class FirmGovernance {
     this.raiseHighWater("cp_audit", seq, hash);
   }
 
+  /** 最后一次取到最新记录时那一页的控制面签名信封（导出用；复核 S9A-12）。 */
+  saveSignedAuditPage(envelope: unknown): void {
+    this.d.db.run(
+      `INSERT INTO cp_audit_signed_page (tenant_id, envelope_json, fetched_at) VALUES (?,?,?)
+       ON CONFLICT(tenant_id) DO UPDATE SET envelope_json = excluded.envelope_json, fetched_at = excluded.fetched_at`,
+      [this.d.tenantId, JSON.stringify(envelope), new Date(this.now()).toISOString()],
+    );
+  }
+
+  signedAuditPage(): { envelope: unknown; fetched_at: string } | null {
+    const r = this.d.db.get<{ envelope_json: string; fetched_at: string }>(`SELECT envelope_json, fetched_at FROM cp_audit_signed_page WHERE tenant_id = ?`, [this.d.tenantId]);
+    return r ? { envelope: JSON.parse(r.envelope_json) as unknown, fetched_at: r.fetched_at } : null;
+  }
+
   /** 留存验过的记录；同一序号已有而 hash 不同 = 云端改写了历史（返回冲突的序号，不覆盖）。 */
   storeAuditRecords(recs: readonly CpAuditRecord[]): { stored: number; conflicts: number[] } {
     let stored = 0;
@@ -443,8 +457,8 @@ export class FirmGovernance {
           continue;
         }
         this.d.db.run(
-          `INSERT INTO cp_audit_records (tenant_id, seq, at, actor_kind, actor_id, actor_fp, action, target, result, prev, hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-          [this.d.tenantId, r.seq, r.at, r.actor.kind, r.actor.id, r.actor.fp ?? null, r.action, r.target, r.result, r.prev, r.hash],
+          `INSERT INTO cp_audit_records (tenant_id, seq, at, actor_kind, actor_id, actor_fp, action, target, result, prev, hash, detail_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [this.d.tenantId, r.seq, r.at, r.actor.kind, r.actor.id, r.actor.fp ?? null, r.action, r.target, r.result, r.prev, r.hash, r.detail ? JSON.stringify(r.detail) : null],
         );
         stored++;
       }
@@ -454,11 +468,11 @@ export class FirmGovernance {
 
   /** 本机留存的操作记录（新的在前）。 */
   auditRecords(limit: number, beforeSeq?: number): CpAuditRecord[] {
-    const rows = this.d.db.all<{ seq: number; at: string; actor_kind: CpAuditRecord["actor"]["kind"]; actor_id: string; actor_fp: string | null; action: string; target: string | null; result: string; prev: string; hash: string }>(
-      `SELECT seq, at, actor_kind, actor_id, actor_fp, action, target, result, prev, hash FROM cp_audit_records WHERE tenant_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?`,
+    const rows = this.d.db.all<{ seq: number; at: string; actor_kind: CpAuditRecord["actor"]["kind"]; actor_id: string; actor_fp: string | null; action: string; target: string | null; result: string; prev: string; hash: string; detail_json: string | null }>(
+      `SELECT seq, at, actor_kind, actor_id, actor_fp, action, target, result, prev, hash, detail_json FROM cp_audit_records WHERE tenant_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?`,
       [this.d.tenantId, beforeSeq ?? Number.MAX_SAFE_INTEGER, Math.max(1, Math.min(1000, limit))],
     );
-    return rows.map((r) => ({ tid: this.d.tenantId, seq: r.seq, at: r.at, actor: { kind: r.actor_kind, id: r.actor_id, ...(r.actor_fp ? { fp: r.actor_fp } : {}) }, action: r.action, target: r.target, result: r.result, prev: r.prev, hash: r.hash }));
+    return rows.map((r) => ({ tid: this.d.tenantId, seq: r.seq, at: r.at, actor: { kind: r.actor_kind, id: r.actor_id, ...(r.actor_fp ? { fp: r.actor_fp } : {}) }, action: r.action, target: r.target, result: r.result, prev: r.prev, ...(r.detail_json ? { detail: JSON.parse(r.detail_json) as Record<string, number> } : {}), hash: r.hash }));
   }
 
   /** 本机已接受的版本（高水位；控制面客户端据此标出已过时的草稿）。 */

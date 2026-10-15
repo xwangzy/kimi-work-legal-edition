@@ -19,6 +19,11 @@ export interface SeatClaims {
   kid: string;
   iat: number;
   exp: number;
+  /**
+   * 受众（第 9 批复核 S9B-03）：没有 = 通用席位令牌（网关、检索、分发都认，第 9 批之前的形态）；有 = 只给列出的服务用。
+   * 支持服务只收带 "support" 受众的短期凭据，网关、检索、分发拒收只限支持服务的凭据——诊断包上传不再把通用席位令牌交给支持域。
+   */
+  aud?: string[];
 }
 
 const PREFIX = "zst1.";
@@ -40,11 +45,14 @@ export class SeatTokenError extends Error {
   }
 }
 
-/** 离线验签：公钥按 kid 选取；过期、吊销（设备或席位）、形态不符一律拒绝。 */
+/**
+ * 离线验签：公钥按 kid 选取；过期、吊销（设备或席位）、形态不符一律拒绝。
+ * `audience`：本服务的受众名——令牌带受众而不含它即拒绝；`requireAudience`：没有受众的通用令牌也拒绝（支持服务）。
+ */
 export function verifySeatToken(
   token: string,
   keys: ReadonlyMap<string, KeyObject>,
-  o: { now?: number; revokedDevices?: ReadonlySet<string>; revokedSeats?: ReadonlySet<string> } = {},
+  o: { now?: number; revokedDevices?: ReadonlySet<string>; revokedSeats?: ReadonlySet<string>; audience?: string; requireAudience?: boolean } = {},
 ): SeatClaims {
   if (typeof token !== "string" || !token.startsWith(PREFIX)) throw new SeatTokenError("format");
   const rest = token.slice(PREFIX.length);
@@ -66,6 +74,10 @@ export function verifySeatToken(
   if (claims.exp <= now) throw new SeatTokenError("expired");
   if (o.revokedDevices?.has(claims.dev)) throw new SeatTokenError("device_revoked");
   if (o.revokedSeats?.has(claims.sid)) throw new SeatTokenError("seat_revoked");
+  if (claims.aud !== undefined) {
+    if (!Array.isArray(claims.aud) || claims.aud.length === 0 || claims.aud.some((a) => typeof a !== "string")) throw new SeatTokenError("audience");
+    if (o.audience === undefined || !claims.aud.includes(o.audience)) throw new SeatTokenError("audience");
+  } else if (o.requireAudience) throw new SeatTokenError("audience");
   return claims;
 }
 

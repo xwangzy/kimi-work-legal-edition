@@ -32,7 +32,15 @@ export function quotaLawyerLine(q: QuotaStatus | null): string {
   const own = q.own ? `你本月用了 ${fmtPoints(q.own.points)} 点` : "你本月还没有用量";
   const firm = q.cap_monthly === null || q.cap_monthly === undefined ? `本所 ${fmtPoints(q.period_used)} 点（未设上限）` : `本所 ${fmtPoints(q.period_used)} / ${fmtPoints(q.cap_monthly)} 点`;
   const r = capRatio(q);
-  const warn = r !== null && r >= 1 ? "；本所本月额度已用完，AI 处理暂停，请联系律所管理员" : r !== null && r >= 0.8 ? "；本所本月额度即将用完" : "";
+  // 购买额度用完同样暂停（复核 S9A-13：成员看不到余额，但要知道为什么停了）
+  const warn =
+    q.paused === "pool"
+      ? "；本所购买的 AI 额度已用完，AI 处理暂停，请联系律所管理员"
+      : q.paused === "cap" || (r !== null && r >= 1)
+        ? "；本所本月额度已用完，AI 处理暂停，请联系律所管理员"
+        : r !== null && r >= 0.8
+          ? "；本所本月额度即将用完"
+          : "";
   return `${own}；${firm}${warn}`;
 }
 
@@ -76,11 +84,27 @@ export function auditTargetLabel(r: Pick<CpAuditRow, "target" | "target_name">):
   return r.target_name ? `${r.target_name}（${shortId(r.target)}）` : shortId(r.target);
 }
 
+const RESULT_CODES: Readonly<Record<string, string>> = {
+  admin_required: "需要管理员设备",
+  revoker_required: "需要管理员或合伙人设备",
+  license_expired: "订阅已到期",
+  no_seat: "没有席位",
+  seat_revoked: "席位已收回",
+  device_revoked: "设备已吊销",
+  cap_invalid: "上限不合法",
+  draft_stale: "草稿已过时",
+  admin_threshold_not_met: "管理员签名不足",
+  state_persist_failed: "写盘失败",
+  audit_unavailable: "记录写入失败",
+  invalid_request: "请求不合法",
+};
+
 export function auditResultLabel(result: string): { text: string; tone: "ok" | "warn" | "bad" } {
   if (result === "ok") return { text: "成功", tone: "ok" };
   const [kind, code] = [result.slice(0, result.indexOf(":")), result.slice(result.indexOf(":") + 1)];
-  if (kind === "rolled_back") return { text: `未生效（${code}）`, tone: "warn" };
-  return { text: `被拒绝（${code}）`, tone: "bad" };
+  const why = RESULT_CODES[code] ?? code;
+  if (kind === "rolled_back") return { text: `未生效（${why}）`, tone: "warn" };
+  return { text: `被拒绝（${why}）`, tone: "bad" };
 }
 
 /** 取回失败的原因 → 管理员看得懂的说明。 */
@@ -92,6 +116,8 @@ export function auditFetchErrorText(code: string): string {
       return "中软侧返回的记录未通过哈希链核验：已拒收。";
     case "cp_audit_page_invalid":
       return "中软侧返回的记录未通过控制面签名核验：已拒收。";
+    case "device_role_required":
+      return "这台电脑的设备证书不是管理员或合伙人设备，中软不提供操作记录：下面是本机已留存的记录。";
     default:
       return `暂时取不到最新记录（${code}）：下面是本机已留存的记录。`;
   }
@@ -103,15 +129,15 @@ const DIAG_SECTIONS: Readonly<Record<string, string | null>> = {
   device_id: "设备编号",
   kernel: "后台服务状态",
   execution_domain_available: "代码运行环境",
-  environment_check: "电脑环境自检",
-  environment: "软件版本与运行环境",
+  environment_check: "电脑环境自检（含 BitLocker、同步盘与杀毒软件产品名）",
+  environment: "软件版本与运行环境（操作系统、处理器、内存）",
   schema: "数据库版本",
   runs_30d: "近 30 天任务计数",
-  recent_runs: "最近任务的状态与错误代码",
+  recent_runs: "最近 20 个任务的状态、错误代码、开始时刻与时长",
   egress_30d: "近 30 天联网次数",
   audit_30d: "近 30 天操作计数",
-  table_rows: "数据量统计",
-  logs_7d: "近 7 天运行记录（事件代码与次数）",
+  table_rows: "数据量统计（事项、文档、任务等的条数）",
+  logs_7d: "近 7 天运行记录（事件代码、时间与次数，最多 200 条）",
 };
 
 /** 诊断包分节 → 律师看得懂的名称（不认识的写“其他统计”，只出现一次）。 */

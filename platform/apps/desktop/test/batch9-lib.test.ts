@@ -25,6 +25,10 @@ test("律师一句话：本人与本所用量、上限；到 80% 提示即将用
   assert.match(lines[2]!, /即将用完/);
   assert.match(lines[3]!, /已用完，AI 处理暂停/);
   assert.match(lines[4]!, /你本月还没有用量/);
+  // 购买额度用完同样写明暂停（复核 S9A-13）
+  const pool = quotaLawyerLine({ ...base, cap_monthly: null, paused: "pool" });
+  assert.match(pool, /购买的 AI 额度已用完，AI 处理暂停/);
+  assert.doesNotMatch(pool, JARGON);
 });
 
 test("上限比例只按已结算用量（网关预领的不算已用）；上限为 0 即满；不设上限为 null；月份写成中文", () => {
@@ -48,7 +52,8 @@ test("操作记录：动作、执行者、对象、结果都有中文；未知�
   assert.equal(auditTargetLabel({ target: null, target_name: null }), "—");
   assert.match(auditTargetLabel({ target: "dev_firm_a_very_long_device_identifier", target_name: null }), /…/);
   assert.deepEqual(auditResultLabel("ok"), { text: "成功", tone: "ok" });
-  assert.deepEqual(auditResultLabel("rejected:admin_required"), { text: "被拒绝（admin_required）", tone: "bad" });
+  assert.deepEqual(auditResultLabel("rejected:admin_required"), { text: "被拒绝（需要管理员设备）", tone: "bad" });
+  assert.deepEqual(auditResultLabel("rejected:some_new_code"), { text: "被拒绝（some_new_code）", tone: "bad" }, "不认识的代码原样");
   assert.equal(auditResultLabel("rolled_back:state_persist_failed").tone, "warn");
   assert.match(auditFetchErrorText("cp_audit_rewritten"), /改写或删除.*本机留存的原记录不变/);
   assert.match(auditFetchErrorText("cp_unreachable"), /暂时取不到/);
@@ -56,7 +61,7 @@ test("操作记录：动作、执行者、对象、结果都有中文；未知�
 
 test("诊断包分节写成中文：格式与时间不列，不认识的合并为“其他统计”", () => {
   const out = diagSectionLabels(["format", "created_at", "kernel", "runs_30d", "logs_7d", "x_new", "y_new"]);
-  assert.deepEqual(out, ["后台服务状态", "近 30 天任务计数", "近 7 天运行记录（事件代码与次数）", "其他统计"]);
+  assert.deepEqual(out, ["后台服务状态", "近 30 天任务计数", "近 7 天运行记录（事件代码、时间与次数，最多 200 条）", "其他统计"]);
   for (const l of out) assert.doesNotMatch(l, /[a-z_]{3,}/);
 });
 

@@ -420,6 +420,17 @@ export class ControlPlaneClient {
     return this.view(r.json.draft as Record<string, unknown>);
   }
 
+  // ─── 支持服务专用凭据（第 9 批复核 S9B-03） ───
+
+  /** 只限支持服务、15 分钟的凭据（受众 support）：诊断包上传用它，通用席位令牌不发给支持服务。 */
+  async supportToken(): Promise<string> {
+    const r = await this.call("POST", "/v1/support-token", {});
+    if (!r.ok) throw new Error(r.error);
+    const tok = r.json.token;
+    if (typeof tok !== "string" || !/^zst1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(tok)) throw new Error("support_token_invalid");
+    return tok;
+  }
+
   // ─── 用量与上限（第 9 批 S3） ───
 
   /** 本所本月用量与上限（控制面签名的视图；管理员与合伙人另含按成员明细与池余额）。 */
@@ -445,7 +456,7 @@ export class ControlPlaneClient {
    * 取回本机还没有的运营审计流水：验控制面签名、验哈希链、与本机见过的最高序号对照（同一序号 hash 不同 = 云端改写了历史，告警且不覆盖）；
    * 通过的记录留存在本机（云端之后删改，本机仍有原记录）。返回本次新增条数与云端当前最高序号。
    */
-  async fetchAudit(): Promise<{ added: number; head: number }> {
+  async fetchAudit(): Promise<{ added: number; head: number; withheld: boolean }> {
     const anchor = this.d.gov.auditAnchor();
     // 有锚点时从锚点那一条开始取（重新取回它、比对 hash）
     let after = anchor ? anchor.seq - 1 : 0;
@@ -491,13 +502,17 @@ export class ControlPlaneClient {
       head = Math.max(head, last?.seq ?? 0);
       if (!last || last.seq >= body.head.seq) {
         // 分页说已到头，但云端的最高序号比给出的多：扣下了记录
-        if (body.head.seq > head) {
+        const withheld = body.head.seq > head;
+        if (withheld) {
           this.d.gov.alert("cp_audit", "cp_audit_withheld", String(body.head.seq), `中软侧操作记录最高序号为 ${body.head.seq}，只给出到 ${head}`);
+        } else {
+          // 留存最后一页的控制面签名信封（复核 S9A-12：导出时附上，收件人可用控制面公钥核对“截至云端序号 N”）
+          this.d.gov.saveSignedAuditPage(r.json);
         }
-        return { added, head: body.head.seq };
+        return { added, head: body.head.seq, withheld };
       }
     }
-    return { added, head };
+    return { added, head, withheld: false };
   }
 
   async publishDraft(draftId: string): Promise<{ ok: true }> {

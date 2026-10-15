@@ -251,7 +251,8 @@ export function evaluatePolicy(candidate: unknown, ctx: PolicyContext): PolicyVe
  * 认不出即无法判断宽严：这类文档不接受，但生效策略回退最严模板，而不是沿用可能更宽的旧策略。
  */
 export function isUnrecognizedFormat(detail: string): boolean {
-  return /^(unknown_(doc_)?field|doc_format_unsupported|max_mode_invalid|auto_preauthorizations_invalid|l3a_standard_model_invalid)/.test(detail);
+  // 枚举类取值认不出（含第 9 批的 support_upload；复核 S9B-06）：按“更新的格式”回退最严，不沿用可能更宽的旧策略
+  return /^(unknown_(doc_)?field|doc_format_unsupported|max_mode_invalid|auto_preauthorizations_invalid|l3a_standard_model_invalid|support_upload_invalid)/.test(detail);
 }
 
 /**

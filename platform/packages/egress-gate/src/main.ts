@@ -207,7 +207,6 @@ process.on("message", (raw: unknown) => {
     const id = m.id;
     void relaySupport(m.req, {
       baseUrl: supportBase,
-      seatToken: seatUsable(seatToken) ? seatToken : null,
       ...(supportTransport ? { transport: supportTransport } : {}),
       ...(supportFetch ? { fetchImpl: supportFetch } : {}),
     }).then((result) => send({ t: "support_result", id, result }));

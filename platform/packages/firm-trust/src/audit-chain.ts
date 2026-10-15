@@ -30,6 +30,8 @@ export interface CpAuditRecord {
   target: string | null;
   /** `ok` / `rejected:<代码>` / `rolled_back:<代码>`（已记为成功、随后写盘失败而撤销）。 */
   result: string;
+  /** 数值明细（复核 S9A-09：如设上限的点数、加量点数、席位数）：只有小写键与安全整数，至多 4 项。 */
+  detail?: Record<string, number>;
   prev: string;
   hash: string;
 }
@@ -42,15 +44,36 @@ export interface CpAuditPage {
 }
 
 const DOMAIN = "kwl-cp-audit/1\n";
-const CODE_RE = /^[a-z][a-z0-9_.:-]{0,79}$/;
-const ID_RE = /^[A-Za-z0-9_.:-]{1,200}$/;
 const RESULT_RE = /^(ok|rejected:[a-z0-9_.:-]{1,80}|rolled_back:[a-z0-9_.:-]{1,80})$/;
 
 export function auditHash(r: Omit<CpAuditRecord, "hash">): string {
-  const { tid, seq, at, actor, action, target, result, prev } = r;
+  const { tid, seq, at, actor, action, target, result, prev, detail } = r;
   return createHash("sha256")
-    .update(DOMAIN + canonicalJson({ tid, seq, at, actor, action, target, result, prev }))
+    .update(DOMAIN + canonicalJson({ tid, seq, at, actor, action, target, result, prev, ...(detail !== undefined ? { detail } : {}) }))
     .digest("hex");
+}
+
+/** 写入侧与读取侧共用的字段规则（复核 S9A-01：写入时不校验、读回时严格校验，会让一条记录拖垮启动）。 */
+export const AUDIT_ID_RE = /^[A-Za-z0-9_.:-]{1,200}$/;
+export const AUDIT_CODE_RE = /^[a-z][a-z0-9_.:-]{0,79}$/;
+
+export function validAuditDetail(d: unknown): d is Record<string, number> {
+  if (!d || typeof d !== "object" || Array.isArray(d)) return false;
+  const e = Object.entries(d as Record<string, unknown>);
+  return e.length >= 1 && e.length <= 4 && e.every(([k, v]) => /^[a-z_]{1,20}$/.test(k) && typeof v === "number" && Number.isSafeInteger(v));
+}
+
+/**
+ * 结果代码规范化（复核 S9A-01）：只保留 `ok` 或 `<种类>:<固定代码>`；拒绝代码里拼接的动态后缀（如 `summary_unknown_field:<键名>`）
+ * 一律截掉，不合规的代码写 `invalid_request`——请求方能控制的文字进不了流水。
+ */
+export function normalizeAuditResult(result: string): string {
+  if (result === "ok") return "ok";
+  const i = result.indexOf(":");
+  const kind = i > 0 ? result.slice(0, i) : "";
+  if (kind !== "rejected" && kind !== "rolled_back") return "rejected:invalid_request";
+  const code = result.slice(i + 1).split(":")[0] ?? "";
+  return `${kind}:${/^[a-z0-9_.-]{1,80}$/.test(code) ? code : "invalid_request"}`;
 }
 
 /** 单条记录形态（不验链）。 */
@@ -58,24 +81,25 @@ export function validAuditRecord(x: unknown): x is CpAuditRecord {
   if (!x || typeof x !== "object" || Array.isArray(x)) return false;
   const r = x as Record<string, unknown>;
   const keys = Object.keys(r).sort().join(",");
-  if (keys !== "action,actor,at,hash,prev,result,seq,target,tid") return false;
+  if (keys !== "action,actor,at,hash,prev,result,seq,target,tid" && keys !== "action,actor,at,detail,hash,prev,result,seq,target,tid") return false;
+  if ("detail" in r && !validAuditDetail(r.detail)) return false;
   const a = r.actor as Record<string, unknown> | null;
   if (!a || typeof a !== "object" || Array.isArray(a)) return false;
   const ak = Object.keys(a).sort().join(",");
   if (ak !== "id,kind" && ak !== "fp,id,kind") return false;
-  if (!["device", "root", "ops", "service"].includes(a.kind as string) || typeof a.id !== "string" || !ID_RE.test(a.id)) return false;
+  if (!["device", "root", "ops", "service"].includes(a.kind as string) || typeof a.id !== "string" || !AUDIT_ID_RE.test(a.id)) return false;
   if (a.fp !== undefined && (typeof a.fp !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(a.fp))) return false;
   return (
     typeof r.tid === "string" &&
-    ID_RE.test(r.tid) &&
+    AUDIT_ID_RE.test(r.tid) &&
     typeof r.seq === "number" &&
     Number.isSafeInteger(r.seq) &&
     r.seq >= 1 &&
     typeof r.at === "string" &&
     Number.isFinite(Date.parse(r.at)) &&
     typeof r.action === "string" &&
-    CODE_RE.test(r.action) &&
-    (r.target === null || (typeof r.target === "string" && ID_RE.test(r.target))) &&
+    AUDIT_CODE_RE.test(r.action) &&
+    (r.target === null || (typeof r.target === "string" && AUDIT_ID_RE.test(r.target))) &&
     typeof r.result === "string" &&
     RESULT_RE.test(r.result) &&
     typeof r.prev === "string" &&

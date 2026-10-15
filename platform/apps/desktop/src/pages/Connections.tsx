@@ -172,7 +172,8 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
     ...(updatesOn ? ["更新检查的访问记录（IP 与版本）"] : []),
     // 复核 S8A-05：法规库与方法模板的在线更新也是一条出网（随席位凭据，服务端看得到账号与设备）
     ...(contentOn ? ["法规库与方法模板的下载记录（账号、设备、下载的版本与时间；不含任何案件信息）"] : []),
-    ...(gate?.support_configured && gate?.support_upload_allowed ? ["你主动上传给支持的诊断包（不含案件内容，逐次确认，保存 7 天）"] : []),
+    // 开关关闭后已上传的包仍保存至 7 天：只要配置了支持服务就列出（复核 S9B-04⑤）
+    ...(gate?.support_configured ? ["你主动上传给支持的诊断包（如有；不含案件内容，含软件与电脑环境、任务状态与运行记录，逐次确认，保存 7 天）"] : []),
   ];
   const notEnabled = [
     ...(gate?.search_configured ? [] : ["联网检索"]),
@@ -455,7 +456,7 @@ function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | nu
         <div className="device-row">
           <div className="device-k">遇到问题</div>
           <div>
-            导出一份诊断信息交给所内 IT 或客服：只包含软件版本、运行环境、后台服务状态、最近任务的状态与错误代码、联网次数统计、近 7 天的运行记录（只有事件代码与次数），
+            导出一份诊断信息交给所内 IT 或客服：只包含软件版本、运行环境、后台服务状态、最近任务的状态与错误代码、联网次数统计、近 7 天的运行记录（事件代码、时间与次数），以及电脑环境自检结果（含杀毒软件产品名）与各类数据的条数，
             <b>不包含任何事项名称、当事人、材料、成果与任务内容</b>；导出前软件会自动核对，发现可能含有当事人信息即不导出。
             {!diag.open ? (
               <div className="banner-actions">
@@ -492,7 +493,7 @@ function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | nu
               </div>
             )}
             {diag.msg && <div className="muted">{diag.msg}</div>}
-            <SupportUpload />
+            <SupportUpload allowed={gate ? !!gate.support_upload_allowed : null} configured={gate ? !!gate.support_configured : null} />
           </div>
         </div>
       </div>
@@ -670,7 +671,7 @@ function TechnicalVisibility({ gate, im, recovery }: { gate: any; im: any[]; rec
     {
       situation: "上传诊断包给中软支持",
       enabled: !!gate?.support_configured && !!gate?.support_upload_allowed,
-      sees: "律师逐次预览并确认后上传的脱敏诊断包（软件版本、运行环境、服务状态、任务状态与错误代码、出站与审计计数、近 7 天事件代码计数；本机签名）、席位令牌所含的租户、成员、席位与设备编号、上传时刻；保存 7 天，运营查看留访问审计",
+      sees: "律师逐次预览并确认后上传的脱敏诊断包，保存 7 天，运营查看记入支持服务的访问审计：设备编号原文与本机签名；软件版本与运行环境（操作系统、处理器、内存）；电脑环境自检（BitLocker、漫游/重定向目录、同步盘、本地转储、防火墙规则、杀毒软件产品名）；后台服务状态与能力账本；近 30 天任务按场景与状态计数、最近 20 个任务的状态、错误代码、开始时刻与时长；出站与审计按类别计数；各数据表条数（反映业务量）；近 7 天运行记录（事件代码、时间与封闭字段，最多 200 条）。另有本机网络地址、只限支持服务的短期凭据所含的租户、席位与设备编号、上传时刻",
       notSees: "事项名称、当事人、材料、成果、任务内容、文件名、检索式（上传前本机按全部当事人与令牌原文自证）",
     },
     {
@@ -1042,6 +1043,7 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
           <label>
             <input type="checkbox" checked={support} onChange={(e) => setSupport(e.target.checked)} /> 律师可把脱敏诊断包上传给中软支持
           </label>{" "}
+          {support && <div className="banner banner-gray">勾选这一项后，尚未更新到最新版本的电脑会把整份律所策略当作“看不懂的新版本”，暂时按最严设置运行（自动档、预授权检索、抓取白名单追加、敏感事项放开都暂时不可用），直至更新。建议先确认全所电脑都已更新。</div>}
           <label>
             有效期（天，≤ 30）{" "}
             <input type="number" min={1} max={30} value={ttl} onChange={(e) => setTtl(Math.max(1, Math.min(30, Number(e.target.value) || 30)))} />

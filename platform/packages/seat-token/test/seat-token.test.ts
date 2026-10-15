@@ -28,3 +28,17 @@ test("席位令牌：Ed25519 离线验签；缺省有效期 ≥ 72 小时；过�
   const other = devSeatKeyPair();
   assert.equal(reason(() => verifySeatToken(issueSeatToken({ tid: "t1", uid: "u1", sid: "s1", dev: "d1", kid: "k1" }, other.privateKey), keys)), "signature");
 });
+
+test("受众（第 9 批复核 S9B-03）：无受众的通用令牌各服务都认、要求受众的服务拒收；带受众的令牌只给列出的服务", async () => {
+  const { devSeatKeyPair: kp, issueSeatToken: issue, verifySeatToken: verifyTok } = await import("../src/index.ts");
+  const { privateKey, publicKey } = kp();
+  const keys = new Map([["k", publicKey]]);
+  const base = { tid: "t", uid: "u", sid: "s", dev: "d", kid: "k" };
+  const general = issue(base, privateKey);
+  assert.equal(verifyTok(general, keys, { audience: "gateway" }).sid, "s");
+  assert.throws(() => verifyTok(general, keys, { audience: "support", requireAudience: true }), /audience/);
+  const support = issue({ ...base, aud: ["support"] }, privateKey, 900);
+  assert.equal(verifyTok(support, keys, { audience: "support", requireAudience: true }).aud?.[0], "support");
+  for (const a of ["gateway", "search", "dist"]) assert.throws(() => verifyTok(support, keys, { audience: a }), /audience/);
+  assert.throws(() => verifyTok(support, keys), /audience/, "没写受众的使用方（如内核核验席位令牌）也不收带受众的凭据");
+});

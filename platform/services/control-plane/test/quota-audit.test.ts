@@ -4,7 +4,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { sign } from "node:crypto";
-import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, fsyncSync, mkdtempSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,7 @@ import {
   leaseQuota,
   periodOf,
   QuotaError,
+  rollPeriod,
   setCap,
   settleLease,
   sweepLeases,
@@ -207,14 +208,22 @@ test("运营审计流水：运营与设备的写操作逐条入链（吊销只�
     [
       "ops:tenant.create:-:ok",
       "root:tenant.enroll_root:-:ok",
+      `device:seat.assign:seat_${tid}_1:ok`,
       "device:device.register:dev_aadmin:ok",
+      `device:seat.assign:seat_${tid}_2:ok`,
       "device:device.register:dev_apartner:ok",
+      `device:seat.assign:seat_${tid}_3:ok`,
       "device:device.register:dev_alaw:ok",
       "ops:quota.grant:-:ok",
       "device:quota.cap_set:-:rejected:admin_required",
       "device:device.revoke:dev_alaw:ok",
     ],
   );
+  // 数值明细（复核 S9A-09）
+  assert.deepEqual(recs.find((r) => r.action === "tenant.create")!.detail, { seats: 5, points: 0 });
+  assert.deepEqual(recs.find((r) => r.action === "quota.grant")!.detail, { points: 1000 });
+  // 成员编号不进流水（复核 S9A-11）
+  assert.ok(!JSON.stringify(recs).includes("usr_"), "流水里只有席位编号，没有成员编号");
   assert.equal(recs.find((r) => r.action === "device.revoke")!.actor.id, "dev_apartner");
   assert.ok(recs.every((r) => r.tid === tid));
   assert.deepEqual(verifyAuditChain(recs, tid, { seq: 0, hash: AUDIT_GENESIS }), { ok: true });
@@ -226,6 +235,12 @@ test("运营审计流水：运营与设备的写操作逐条入链（吊销只�
   const tail = openEnvelope<CpAuditPage>((await admin.call("GET", "/v1/audit?after=5&limit=2")).json, "kwl-cp-audit-page", publicKeyMap(cp.publicKeys.envelope));
   assert.ok(tail.ok && tail.body.records.length === 2 && tail.body.records[0]!.seq === 6);
   assert.deepEqual(tail.ok && verifyAuditChain(tail.body.records, tid, { seq: 5, hash: recs[4]!.hash }), { ok: true });
+  // 被拒绝记录限速（复核 S9A-10）：同一设备同一动作每分钟至多 10 条
+  for (let i = 0; i < 30; i++) await partner.call("PUT", "/v1/quota/cap", { monthly_cap: 1 });
+  const all = openEnvelope<CpAuditPage>((await admin.call("GET", "/v1/audit?after=0&limit=500")).json, "kwl-cp-audit-page", publicKeyMap(cp.publicKeys.envelope));
+  assert.ok(all.ok);
+  const spam = all.ok ? all.body.records.filter((r) => r.action === "quota.cap_set" && r.actor.id === "dev_apartner").length : -1;
+  assert.ok(spam <= 10, `限速后只有 ${spam} 条`);
   assert.equal((await admin.call("GET", "/v1/audit?after=0&limit=501")).status, 400);
 });
 
@@ -245,4 +260,131 @@ test("审计流水落盘：重启读回并验链；最后半行（掉电）丢�
   const lines = readFileSync(file, "utf8").split("\n");
   writeFileSync(file, [lines[0], lines[1]!.replace('"tenant.create"', '"tenant.renamed"'), lines[2], ""].join("\n"));
   assert.throws(() => createAuditLog({ file }), /未通过验链/);
+});
+
+test("复核 S9A-01：成员设备在匿名摘要里塞带中文的未知键——拒绝记录只留固定代码、仍通过记录校验；落盘重启照常；不合规的租户编号拒绝开通", async () => {
+  const { validAuditRecord } = await import("@zr-legal/firm-trust");
+  const dir = mkdtempSync(join(tmpdir(), "kwl-cp-audit-s01-"));
+  const file = join(dir, "audit.jsonl");
+  const local = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: "s01-secret", auditLog: createAuditLog({ file }) });
+  await new Promise<void>((r) => local.server.listen(0, "127.0.0.1", () => r()));
+  const b0 = base;
+  base = `http://127.0.0.1:${(local.server.address() as AddressInfo).port}`;
+  try {
+    const tid = "ten_s01";
+    local.ops.createTenant({ tid, edition: "team", seats: 3 });
+    const ts = Date.now();
+    const proof = sign(null, enrollProofBytes(tid, root.publicKeyPem, ts), root.privateKeyPem).toString("base64url");
+    await fetch(`${base}/v1/enroll`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tid, root_public_key_pem: root.publicKeyPem, ts, proof }) });
+    const law = makeDevice(tid, "lawyer", "usr_l1", "dev_s01");
+    assert.equal((await law.register()).status, 200);
+    const anon = "A".repeat(22);
+    const r = await law.call("PUT", `/v1/anon-matters/${anon}`, { "张三诉李四 Foo": 1 });
+    assert.equal(r.status, 400);
+    const page = openEnvelope<CpAuditPage>((await law.call("GET", "/v1/audit?after=0&limit=500")).json, "kwl-cp-audit-page", publicKeyMap(local.publicKeys.envelope));
+    // 律师设备取不到流水（403）：直接看文件
+    void page;
+    const lines = readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    const rej = lines.find((x) => x.action === "anon_summary.update")!;
+    assert.equal(rej.result, "rejected:summary_unknown_field");
+    assert.ok(lines.every((x) => validAuditRecord(x)));
+    assert.ok(!readFileSync(file, "utf8").includes("张三"), "请求方的文字进不了流水");
+    assert.throws(() => local.ops.createTenant({ tid: "律所A", edition: "team", seats: 1 }), /租户编号/);
+  } finally {
+    local.server.closeAllConnections();
+    await new Promise<void>((r) => local.server.close(() => r()));
+    base = b0;
+  }
+  const again = createAuditLog({ file });
+  assert.ok(again.head("ten_s01").seq >= 3, "重启验链通过");
+  again.close();
+});
+
+test("复核 S9A-02：半行截断后再追加、再重启照常；fsync 失败截断回去——文件与内存一致", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kwl-cp-audit-s02-"));
+  const file = join(dir, "audit.jsonl");
+  const a = createAuditLog({ file });
+  a.append({ tid: "t1", actor: { kind: "ops", id: "ops" }, action: "tenant.create", target: null, result: "ok" }, new Date().toISOString());
+  a.close();
+  appendFileSync(file, '{"tid":"t1","seq":2,"at"');
+  const b = createAuditLog({ file });
+  b.append({ tid: "t1", actor: { kind: "ops", id: "ops" }, action: "license.renew", target: null, result: "ok" }, new Date().toISOString());
+  b.close();
+  const c = createAuditLog({ file });
+  assert.equal(c.head("t1").seq, 2);
+  c.close();
+  // fsync 失败：截断回写入前，重启后没有这一条
+  let failOnce = true;
+  const d = createAuditLog({
+    file,
+    fs: {
+      writeSync: (fd, data) => writeSync(fd, data),
+      fsyncSync: (fd) => {
+        if (failOnce) {
+          failOnce = false;
+          throw new Error("EIO");
+        }
+        fsyncSync(fd);
+      },
+    },
+  });
+  assert.throws(() => d.append({ tid: "t1", actor: { kind: "ops", id: "ops" }, action: "quota.grant", target: null, result: "ok" }, new Date().toISOString()));
+  assert.equal(d.head("t1").seq, 2);
+  d.append({ tid: "t1", actor: { kind: "ops", id: "ops" }, action: "quota.grant", target: null, result: "ok" }, new Date().toISOString());
+  d.close();
+  const e = createAuditLog({ file });
+  assert.equal(e.head("t1").seq, 3, "失败的那条不在文件里；之后的追加照常");
+  e.close();
+});
+
+test("复核 S9A-03：审计写不进去时吊销整体不生效（设备未吊销、目录版本不变）", async () => {
+  let failRevoke = false;
+  const real = createAuditLog();
+  const flaky = { ...real, append: (e: Parameters<typeof real.append>[0], at: string) => (failRevoke && e.action === "device.revoke" ? (() => { throw new Error("disk full"); })() : real.append(e, at)) };
+  const store = { saved: null as string | null, load: () => null, save(j: string) { this.saved = j; } };
+  const local = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: "s03-secret", auditLog: flaky, stateStore: store });
+  await new Promise<void>((r) => local.server.listen(0, "127.0.0.1", () => r()));
+  const b0 = base;
+  base = `http://127.0.0.1:${(local.server.address() as AddressInfo).port}`;
+  try {
+    const tid = "ten_s03";
+    local.ops.createTenant({ tid, edition: "team", seats: 3 });
+    const ts = Date.now();
+    const proof = sign(null, enrollProofBytes(tid, root.publicKeyPem, ts), root.privateKeyPem).toString("base64url");
+    await fetch(`${base}/v1/enroll`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tid, root_public_key_pem: root.publicKeyPem, ts, proof }) });
+    const adm = makeDevice(tid, "admin", "usr_a3", "dev_a3");
+    const law = makeDevice(tid, "lawyer", "usr_l3", "dev_l3");
+    await adm.register();
+    await law.register();
+    const v0 = local.ops.tenant(tid)!.directoryVersion;
+    failRevoke = true;
+    const r = await adm.call("POST", "/v1/devices/dev_l3/revoke", {});
+    assert.equal(r.status, 500);
+    assert.equal(local.ops.tenant(tid)!.devices.get("dev_l3")!.revoked_at, null, "吊销没有生效");
+    assert.equal(local.ops.tenant(tid)!.directoryVersion, v0);
+    assert.ok(!store.saved!.includes('"revoked_at":"20'), "状态文件里也没有");
+  } finally {
+    local.server.closeAllConnections();
+    await new Promise<void>((r) => local.server.close(() => r()));
+    base = b0;
+  }
+});
+
+test("复核 S9A-04、S9A-17：已到期但未终报的租约仍计在途（同一份额度不再发两次）；终报后释放；空月份补 0", () => {
+  const t0 = Date.parse("2026-10-15T02:00:00Z");
+  const q = emptyQuota(t0);
+  grantPoints(q, 100_000);
+  setCap(q, 1_000, t0, null);
+  const a = leaseQuota(q, { want: 1_000, need: 1_000, holder: "gw-1", ttl_ms: 60_000 }, t0);
+  assert.equal(a.points, 1_000);
+  const t1 = t0 + 61_000; // A 已到期，未终报
+  assert.equal(available(q, t1), 0, "到期未终报的租约仍计在途");
+  assert.throws(() => leaseQuota(q, { want: 1, holder: "gw-2" }, t1), (e: unknown) => e instanceof QuotaError && e.code === "cap_reached");
+  settleLease(q, { lease_id: a.lease_id, holder: "gw-1", usage: [{ sid: "s1", points: 300, requests: 1 }], final: true }, t1);
+  assert.equal(available(q, t1), 700, "终报后未用部分释放");
+  const h = emptyQuota(Date.parse("2026-07-10T00:00:00Z"));
+  h.period_used = 5;
+  rollPeriod(h, Date.parse("2026-10-10T00:00:00Z"));
+  assert.deepEqual(h.history, [{ period: "2026-07", used: 5 }, { period: "2026-08", used: 0 }, { period: "2026-09", used: 0 }]);
+  assert.equal(h.period, "2026-10");
 });

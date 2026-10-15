@@ -395,6 +395,14 @@
         {
           "file": "packages/egress-gate/src/support-relay.ts",
           "symbol": "relaySupport"
+        },
+        {
+          "file": "packages/kernel/src/control-plane/governance.ts",
+          "symbol": "supportUploadAllowed"
+        },
+        {
+          "file": "services/support-api/src/index.ts",
+          "symbol": "createSupportApi"
         }
       ],
       "tests": [
@@ -402,7 +410,8 @@
         "packages/kernel/test/diagnostics.test.ts",
         "apps/desktop/test/smoke-io.test.ts",
         "packages/kernel/test/support-upload.test.ts",
-        "packages/egress-gate/test/support-relay.test.ts"
+        "packages/egress-gate/test/support-relay.test.ts",
+        "services/support-api/test/support-api.test.ts"
       ],
       "residual": "随包 Node 子进程原生崩溃不在 Crashpad 内（P1-5）",
       "owner": "研发-桌面"
@@ -858,7 +867,7 @@
   "out_of_scope": {
     "apps/firm-node/": "所内节点（无界面服务，律所服务器上的存储与日志另行规定）",
     "packages/im-connectors/": "所内节点 IM 连接器",
-    "services/": "中软云端服务（Y2 第 6 章：只计量不留内容）",
+    "services/": "中软云端服务（Y2 第 6 章：只计量不留案件内容）；例外：支持服务（services/support-api）保存律师逐次确认上传的脱敏诊断包 7 天（不含案件内容，内容见第 13 类与“数据去向说明”）",
     "packages/kap-host/vendor/": "Kimi Code 引擎制品（kap-embed.mjs）：引擎的持久化经宿主注入的种子（SealedFileStorageService、事件日志 JournalIo、broker）改写为 KWE1 密文；制品内直接文件写入由 static-surface.test.ts 按输入文件另行锁定，不在本扫描内"
   },
   "scan_limits": "写盘面扫描只认绑定到 node:fs / node:fs/promises / original-fs 的写接口（含别名导入、命名空间、require 解构）；经包装函数间接调用、动态 import 与第三方库内部的写入不在扫描范围，由代码评审与金丝雀用例补位"

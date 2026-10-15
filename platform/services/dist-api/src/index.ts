@@ -79,7 +79,7 @@ export function createDistApi(o: DistApiOptions): Server {
     if (!tok) return json(res, 401, { error: "seat_required" });
     let claims;
     try {
-      claims = verifySeatToken(tok, o.keys, { now: (o.now ?? Date.now)() });
+      claims = verifySeatToken(tok, o.keys, { now: (o.now ?? Date.now)(), audience: "dist" });
       if (o.feed?.revokedDevice(claims.tid, claims.dev)) throw new SeatTokenError("device_revoked");
       if (o.feed?.revokedSeat(claims.sid)) throw new SeatTokenError("seat_revoked");
     } catch (e) {

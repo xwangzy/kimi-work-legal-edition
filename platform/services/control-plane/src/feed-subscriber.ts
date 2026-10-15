@@ -19,6 +19,8 @@ export interface FeedSubscriberOptions {
   /** 按需刷新的最小间隔（缺省 1 秒）。 */
   minRefreshMs?: number;
   timeoutMs?: number;
+  /** 放宽类判定要求订阅在这么久之内成功取得过（缺省 10 分钟；复核 S9B-07）。 */
+  maxStaleMs?: number;
 }
 
 export class GatewayFeedSubscriber implements GatewayFeedView {
@@ -29,6 +31,7 @@ export class GatewayFeedSubscriber implements GatewayFeedView {
   private matters = new Map<string, AnonMatterSummary>();
   private policies = new Map<string, "deny" | "allow">();
   private supportUpload = new Set<string>();
+  private lastOkAt = 0;
   private lastFetch = 0;
   private inflight: Promise<void> | null = null;
   private timer: NodeJS.Timeout | null = null;
@@ -63,8 +66,18 @@ export class GatewayFeedSubscriber implements GatewayFeedView {
     return this.policies.get(tid) === "allow";
   }
 
+  /**
+   * 放宽类判定要求订阅新鲜（复核 S9B-07）：最近一次成功取得订阅超过 maxStaleMs（缺省 10 分钟）即按不允许——
+   * 律所关闭开关后，支持服务与控制面之间网络中断也不会无限期按旧订阅放行。
+   */
   supportUploadAllowed(tid: string): boolean {
+    if (this.lastOkAt === 0 || Date.now() - this.lastOkAt > (this.o.maxStaleMs ?? 10 * 60_000)) return false;
     return this.supportUpload.has(tid);
+  }
+
+  /** 最近一次成功取得并接受订阅的时刻（毫秒；0 = 从未）。 */
+  get lastOk(): number {
+    return this.lastOkAt;
   }
 
   refresh(): Promise<void> {
@@ -119,6 +132,7 @@ export class GatewayFeedSubscriber implements GatewayFeedView {
       }
       this.policies = policies;
       this.supportUpload = supportUpload;
+      this.lastOkAt = Date.now();
       this.version = b.version;
       this.stats.ok += 1;
     } catch {

@@ -317,3 +317,12 @@ test("第 9 批 support_upload：可选字段（没有 = 不允许）；允许�
   assert.equal(v.ok && "support_upload" in v.value.body, false);
   assert.ok(v.ok && policySigningBytes(v.value).equals(policySigningBytes(old)));
 });
+
+test("复核 S9B-01、S9B-06：未升级客户端遇到 support_upload 判为“更新的格式”（整份回退最严）；将来的新取值同样按更新的格式", async () => {
+  const { isUnrecognizedFormat } = await import("../src/index.ts");
+  // 第 8 批客户端的 validatePolicyBody 对未知字段返回 unknown_field:<字段>
+  assert.equal(isUnrecognizedFormat("unknown_field:support_upload"), true);
+  assert.equal(validatePolicyBody({ ...strictestTemplate(), support_upload: "ask_admin" }).ok, false);
+  const r = validatePolicyBody({ ...strictestTemplate(), support_upload: "ask_admin" });
+  assert.equal(!r.ok && isUnrecognizedFormat(r.reason), true, "不认识的取值不沿用可能更宽的旧策略");
+});

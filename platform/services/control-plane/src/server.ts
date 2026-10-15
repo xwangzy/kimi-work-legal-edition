@@ -177,6 +177,9 @@ class CpError extends Error {
 /** 每租户预先吊销的设备数上限（复核 S6-C09：防止目录被撑过通道响应上限）。 */
 const MAX_PRE_REVOKED = 1000;
 
+/** 支持服务专用凭据的有效期（复核 S9B-03）。 */
+export const SUPPORT_TOKEN_TTL_SECONDS = 15 * 60;
+
 /** 席位令牌缺省签发时长（96 小时，复核 S6-A01）。 */
 export const SEAT_TTL_DEFAULT_SECONDS = 96 * 3600;
 
@@ -311,6 +314,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
 
   const rawOps: ControlPlaneOps = {
     createTenant({ tid, edition, seats, subscriptionDays = 365, points = 0 }) {
+      // 租户编号字符集（复核 S9A-01：不合规的编号写进审计流水会让重启验链失败）
+      if (typeof tid !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(tid)) throw new CpError(400, "tid_invalid", "租户编号只能用字母、数字、下划线与连字符");
       if (tenants.has(tid)) throw new Error(`租户已存在：${tid}`);
       const t: TenantRecord = {
         tid,
@@ -395,14 +400,22 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     },
   };
   // 运维操作（开通、续订、吊销等）之后同样落盘，并记运营审计（S14）：先记“成功”再写盘，写盘失败补记“已撤销”
-  const OPS_AUDIT: Readonly<Record<string, { action: string; target?: (args: unknown[]) => string | null }>> = {
-    createTenant: { action: "tenant.create" },
-    renewLicense: { action: "license.renew" },
+  // 数值明细（复核 S9A-09）只放整数；成员只记席位编号（复核 S9A-11：成员编号可能是姓名拼音，流水不可删）
+  const seatOf = (tid: string, uid: unknown): string | null => tenants.get(tid)?.seatsByUser.get(String(uid))?.sid ?? null;
+  const OPS_AUDIT: Readonly<Record<string, { action: string; target?: (args: unknown[]) => string | null; detail?: (args: unknown[]) => Record<string, number> | undefined }>> = {
+    createTenant: {
+      action: "tenant.create",
+      detail: (a) => {
+        const x = (a[0] ?? {}) as { seats?: unknown; points?: unknown };
+        return { seats: Number(x.seats) || 0, points: Number(x.points) || 0 };
+      },
+    },
+    renewLicense: { action: "license.renew", detail: (a) => ({ days: Math.floor(Number(a[1])) || 0 }) },
     terminateLicense: { action: "license.terminate" },
     revokeDevice: { action: "device.revoke", target: (a) => String(a[1]) },
-    revokeSeat: { action: "seat.revoke", target: (a) => String(a[1]) },
-    grantPoints: { action: "quota.grant" },
-    setQuotaCap: { action: "quota.cap_set" },
+    revokeSeat: { action: "seat.revoke", target: (a) => seatOf(String(a[0]), a[1]) },
+    grantPoints: { action: "quota.grant", detail: (a) => ({ points: Math.floor(Number(a[1])) || 0 }) },
+    setQuotaCap: { action: "quota.cap_set", detail: (a) => (a[1] === null ? { uncapped: 1 } : { cap: Math.floor(Number(a[1])) || 0 }) },
   };
   const OPS_ACTOR: CpAuditActor = { kind: "ops", id: "ops" };
   /** 路由代为调用运维操作时为真：审计由路由按设备执行者记，包装不再按“运营”记一条。 */
@@ -421,7 +434,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       (...args: unknown[]) => {
         const spec = routeCall ? undefined : OPS_AUDIT[k];
         const tid = k === "createTenant" ? String((args[0] as { tid?: unknown } | undefined)?.tid ?? "") : String(args[0] ?? "");
-        const entry = spec ? { tid, actor: OPS_ACTOR, action: spec.action, target: spec.target ? spec.target(args) : null } : null;
+        const detail = spec?.detail?.(args);
+        const entry = spec ? { tid, actor: OPS_ACTOR, action: spec.action, target: spec.target ? spec.target(args) : null, ...(detail ? { detail } : {}) } : null;
         let r: unknown;
         try {
           r = (fn as (...a: unknown[]) => unknown)(...args);
@@ -437,7 +451,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           }
           throw e;
         }
-        if (k !== "tenant" && k !== "seal") {
+        // 路由代调时不在这里写盘（复核 S9A-03）：由路由的 send 统一按“审计 → 写盘 → 回复”执行，审计写不进去即整个操作回滚
+        if (k !== "tenant" && k !== "seal" && !routeCall) {
           try {
             persistNow();
           } catch (e) {
@@ -489,6 +504,23 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const s = JSON.stringify(body);
     res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(s), "cache-control": "no-store" });
     res.end(s);
+  };
+  /**
+   * “被拒绝”记录限速（复核 S9A-10）：同一租户、同一执行者、同一动作每分钟至多 10 条，之后的同类拒绝不再进流水
+   * （已认证设备反复发同一个被拒请求不能撑大流水、也不能每条都同步写盘拖慢全平台）。
+   */
+  const rejectedWindow = new Map<string, { minute: number; n: number }>();
+  const rejectedAllowed = (e: Omit<AuditEntry, "result">): boolean => {
+    const minute = Math.floor(now() / 60_000);
+    const k = `${e.tid}\u0000${e.actor.id}\u0000${e.action}`;
+    const w = rejectedWindow.get(k);
+    if (rejectedWindow.size > 50_000) rejectedWindow.clear();
+    if (!w || w.minute !== minute) {
+      rejectedWindow.set(k, { minute, n: 1 });
+      return true;
+    }
+    w.n += 1;
+    return w.n <= 10;
   };
   /** 本请求要记的运营审计（设备签名核验通过之后才记：未认证的请求只进访问日志，不能用来撑大律所的审计流水）。 */
   const auditCtx = new WeakMap<ServerResponse, { entry: Omit<AuditEntry, "result">; written: boolean }>();
@@ -588,7 +620,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       for (const id of t.preRevoked.keys()) revokedDevices.push({ tid: t.tid, device_id: id });
       for (const s of t.seatsByUser.values()) if (s.revoked_at) revokedSeats.push(s.sid);
       for (const m of t.anon.values()) matters.push({ ...m, tid: t.tid });
-      const pol = t.policy && Date.parse(t.policy.doc.expires_at) > now() ? t.policy.doc.body : strictestTemplate();
+      // 放宽类策略按当前吊销集重算管理员签名是否仍够门限（复核 S9B-07：与客户端 signers_insufficient 回退同一口径）
+      const live = t.policy && Date.parse(t.policy.doc.expires_at) > now() ? t.policy : null;
+      const pol = live && (policyRelaxations(live.doc.body).length === 0 || adminCheck(t, policySigningBytes(live.doc), live.admin_signatures).ok) ? live.doc.body : strictestTemplate();
       policies.push({ tid: t.tid, l3a_standard_model: pol.l3a_standard_model, support_upload: pol.support_upload === "allow" ? "allow" : "deny" });
     }
     return { version: feedVersion, issued_at: iso(), revoked_devices: revokedDevices, revoked_seats: revokedSeats, matters, policies };
@@ -651,7 +685,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const active = [...t.seatsByUser.values()].filter((s) => !s.revoked_at).length;
         if (active < t.seats) {
           t.seatCounter += 1;
-          t.seatsByUser.set(cert.memberId, { sid: `seat_${t.tid}_${t.seatCounter}`, uid: cert.memberId, assigned_at: iso(), revoked_at: null });
+          const sid = `seat_${t.tid}_${t.seatCounter}`;
+          t.seatsByUser.set(cert.memberId, { sid, uid: cert.memberId, assigned_at: iso(), revoked_at: null });
+          // 席位分配单独记一条（复核 S9A-09：证书未变的重复登记不记登记，但顺带分配了席位要记）
+          audit({ tid: t.tid, actor: { kind: "device", id: cert.deviceId, fp: certFingerprint(cert) }, action: "seat.assign", target: sid, result: "ok" });
         }
       }
       return send(res, 200, { ok: true, directory_version: t.directoryVersion, seat: t.seatsByUser.get(cert.memberId)?.sid ?? null });
@@ -692,7 +729,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       return send(res, 200, seal("kwl-tenant-salt", body));
     }
     if (method === "POST" && p === "/v1/seat-token") {
-      mark("seat_token.issue", dev.cert.memberId);
+      mark("seat_token.issue", t.seatsByUser.get(dev.cert.memberId)?.sid ?? null);
       if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不签发席位令牌");
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
@@ -701,6 +738,17 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const at = now();
       const token = issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid: seat.sid, dev: dev.cert.deviceId, kid: o.keys.seat.kid }, o.keys.seat.privateKey, seatTtl, at);
       return send(res, 200, { token, expires_at: iso(at + seatTtl * 1000) });
+    }
+    // 支持服务专用的短期凭据（第 9 批复核 S9B-03）：受众只有 "support"、15 分钟；网关、检索、分发拒收——诊断包上传不再把通用席位令牌交给支持域
+    if (method === "POST" && p === "/v1/support-token") {
+      mark("support_token.issue", t.seatsByUser.get(dev.cert.memberId)?.sid ?? null);
+      if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不签发");
+      const seat = t.seatsByUser.get(dev.cert.memberId);
+      if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
+      if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
+      const at = now();
+      const token = issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid: seat.sid, dev: dev.cert.deviceId, kid: o.keys.seat.kid, aud: ["support"] }, o.keys.seat.privateKey, SUPPORT_TOKEN_TTL_SECONDS, at);
+      return send(res, 200, { token, expires_at: iso(at + SUPPORT_TOKEN_TTL_SECONDS * 1000) });
     }
     if (method === "GET" && p === "/v1/policy") return send(res, 200, seal("kwl-firm-policy-current", t.policy));
     // ─── 本所用量与上限（S3 v0）：成员看本所本月用量、上限与自己的用量；管理员与合伙人另看按成员明细与池余额 ───
@@ -716,6 +764,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const b = parseJson(raw);
       if (!("monthly_cap" in b)) throw new CpError(400, "cap_invalid", "缺少月度上限（不设上限请传 null）");
       quotaSetCap(t.quota, b.monthly_cap, now(), dev.cert.deviceId);
+      const ctx = auditCtx.get(res);
+      if (ctx) ctx.entry.detail = t.quota.cap_monthly === null ? { uncapped: 1 } : { cap: t.quota.cap_monthly };
       return send(res, 200, { ok: true, cap_monthly: t.quota.cap_monthly });
     }
     // ─── 中软侧操作记录（S14 v0）：管理员与合伙人可取本所流水（控制面签名的分页；律所侧另行验链） ───
@@ -848,7 +898,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     const rs = /^\/v1\/seats\/([^/]{1,200})\/revoke$/.exec(p);
     if (method === "POST" && rs) {
-      mark("seat.revoke", rs[1]!);
+      mark("seat.revoke", t.seatsByUser.get(decodeURIComponent(rs[1]!))?.sid ?? null);
       requireRevoker(dev);
       if (!t.seatsByUser.has(decodeURIComponent(rs[1]!))) throw new CpError(404, "seat_unknown", "成员没有席位");
       viaRoute(() => ops.revokeSeat(t.tid, decodeURIComponent(rs[1]!)));
@@ -867,7 +917,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       }
       const ce = e instanceof CpError ? e : e instanceof QuotaError ? new CpError(e.status, e.code, e.message) : new CpError(500, "control_plane_error", "控制面错误");
       const ctx = auditCtx.get(res);
-      if (ctx) {
+      if (ctx && (ctx.written || rejectedAllowed(ctx.entry))) {
         try {
           auditLog.append({ ...ctx.entry, result: `${ctx.written ? "rolled_back" : "rejected"}:${ce.code}` }, iso());
         } catch {

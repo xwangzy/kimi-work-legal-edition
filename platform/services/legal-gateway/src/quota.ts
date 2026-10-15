@@ -149,17 +149,22 @@ export class LeaseQuota implements QuotaSource {
     return { tid, points, leaseId: l.id };
   }
 
-  private acquire(tid: string, want: number): Promise<void> {
+  /**
+   * 领取租约。`need` = 本次请求所需（同步领取时给出）；后台预取不给（复核 S9A-05：预取把整份租约当“所需”会绕过账本“每次至多发剩余 1/4”，
+   * 一个实例拿走全部剩余），也不据预取结果记“已达上限”。
+   */
+  private acquire(tid: string, need?: number): Promise<void> {
     const cur = this.acquiring.get(tid);
     if (cur) return cur;
     const p = (async () => {
-      const r = await this.o.ledger.lease(tid, Math.max(want, this.o.leaseSize), this.o.holder, want);
+      const r = await this.o.ledger.lease(tid, Math.max(need ?? 0, this.o.leaseSize), this.o.holder, need);
       if (!r.ok) {
+        // 预取失败只在账本不可达或拒绝时记（同步领取据此报原因）
         this.lastFailure.set(tid, { at: this.o.now(), status: r.status, code: r.code });
         return;
       }
-      // 发得比想要的少（上限或池余额所限）：单次预占超过它的请求按 402 报对原因
-      if (r.limited_by && r.points < want) this.lastFailure.set(tid, { at: this.o.now(), status: 402, code: r.limited_by === "cap" ? "cap_reached" : "pool_exhausted" });
+      // 同步领取发得比本次所需少（上限或池余额所限）：按 402 报对原因
+      if (need !== undefined && r.limited_by && r.points < need) this.lastFailure.set(tid, { at: this.o.now(), status: 402, code: r.limited_by === "cap" ? "cap_reached" : "pool_exhausted" });
       else this.lastFailure.delete(tid);
       this.leases.set(r.lease_id, { id: r.lease_id, tid, points: r.points, expiresAt: Date.parse(r.expires_at), remaining: r.points, holds: 0, bySeat: new Map(), dirty: false, finalSent: false });
     })().finally(() => this.acquiring.delete(tid));
@@ -170,7 +175,7 @@ export class LeaseQuota implements QuotaSource {
   private prefetch(tid: string): void {
     const total = this.usable(tid).reduce((s, l) => s + Math.max(0, l.remaining), 0);
     const f = this.lastFailure.get(tid);
-    if (total < this.o.lowWatermark && !(f && this.o.now() - f.at < 2_000)) void this.acquire(tid, this.o.leaseSize);
+    if (total < this.o.lowWatermark && !(f && this.o.now() - f.at < 2_000)) void this.acquire(tid);
   }
 
   async reserve(tid: string, points: number): Promise<ReserveResult> {
@@ -181,15 +186,25 @@ export class LeaseQuota implements QuotaSource {
     if (!h && !(recent && this.o.now() - recent.at < 1_000)) {
       await this.acquire(tid, points);
       h = this.take(tid, points);
+      // 共用的是别的请求发起的领取（例如小额预取）、领取本身成功却不够本次：按本次所需再领一次（复核 S9A-08②）
+      if (!h && !this.lastFailure.has(tid)) {
+        await this.acquire(tid, points);
+        h = this.take(tid, points);
+      }
     }
     if (h) {
       this.prefetch(tid);
       return { ok: true, hold: h };
     }
+    // 拒绝原因按账本代码映射（复核 S9A-08、S9A-19：文字给律师看，不出现工程用语）
     const f = this.lastFailure.get(tid);
-    if (f && f.status === 402) return { ok: false, status: 402, code: f.code === "cap_reached" ? "quota_cap_reached" : "quota_exhausted", message: f.code === "cap_reached" ? "本所本月用量已达律所设定的上限" : "本所点数不足（预占失败）" };
-    if (f && f.status !== 0 && f.status < 500) return { ok: false, status: 402, code: "quota_denied", message: "额度账本拒绝发放（许可或租户状态）" };
-    return { ok: false, status: 503, code: "quota_unavailable", message: "额度账本暂时不可达，且本网关没有可用的额度租约" };
+    if (f?.code === "license_expired") return { ok: false, status: 402, code: "quota_license_expired", message: "本所订阅已到期，AI 处理暂停：请联系律所管理员" };
+    if (f?.code === "cap_reached") return { ok: false, status: 402, code: "quota_cap_reached", message: "本所本月 AI 额度已达律所设定的上限：请联系律所管理员" };
+    if (f?.code === "pool_exhausted") return { ok: false, status: 402, code: "quota_exhausted", message: "本所购买的 AI 额度已用完：请联系律所管理员" };
+    if (f && f.status === 401) return { ok: false, status: 503, code: "quota_unavailable", message: "暂时无法确认本所 AI 额度，请稍后再试" };
+    if (f && f.status !== 0 && f.status < 500) return { ok: false, status: 402, code: "quota_denied", message: "暂时无法为本所发放 AI 额度：请联系律所管理员" };
+    if (!f) return { ok: false, status: 402, code: "quota_exhausted", message: "本所 AI 额度暂时不足，请稍后再试" };
+    return { ok: false, status: 503, code: "quota_unavailable", message: "暂时无法确认本所 AI 额度，请稍后再试" };
   }
 
   refund(hold: QuotaHold): void {
@@ -222,8 +237,9 @@ export class LeaseQuota implements QuotaSource {
         if (r.ok) {
           l.dirty = false;
           if (expired) this.leases.delete(l.id);
-        } else if (r.status === 404 || r.status === 403) {
-          // 账本已不认这份租约（过保留期）：不再重试，计费以计量日志对账
+        } else if (r.code === "lease_unknown" || r.code === "lease_holder_mismatch") {
+          // 只有账本明确不认这份租约（过保留期、不属本实例）才放弃（复核 S9A-06）：计费以网关计量日志对账。
+          // 其他 4xx（地址指向旧版控制面、租户记录丢失……）保留并在下个周期重报，不静默漏记
           this.leases.delete(l.id);
         }
         // 其余失败（不可达）：保留，下个周期再报

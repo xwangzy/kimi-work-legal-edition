@@ -5,25 +5,33 @@
  * （release.json 的 support_base，钉住集同规则）。只有两种请求、都由闸门按固定形状拼出：
  *   ① 申请工单 `POST /v1/support/tickets`（无请求体）；② 上传 `PUT /v1/support/packages/<工单号>`（请求体 ≤ 2 MiB，
  *   附单次上传令牌与内容摘要，摘要由闸门按实际字节重算、与内核声明不符即不发）。
- * 凭据（席位令牌）由闸门附上；不跟随跳转；响应 ≤ 64 KiB；闸门不解析、不记录诊断包内容。
+ * 凭据是控制面签发的**只限支持服务**的短期凭据（受众 support、15 分钟；复核 S9B-03），由内核随请求交来，闸门只核对形态后附上——
+ * 通用席位令牌不发给支持服务；不跟随跳转；响应 ≤ 64 KiB；闸门不解析、不记录诊断包内容。
  */
 import { createHash } from "node:crypto";
 import { transportFailureReason, type TransportCheck } from "./tls-policy.ts";
 
-export type SupportRelayRequest = { step: "ticket" } | { step: "upload"; ticket: string; upload_token: string; content_sha256: string; body_b64: string };
+export type SupportRelayRequest =
+  | { step: "ticket"; credential: string }
+  | { step: "upload"; credential: string; ticket: string; upload_token: string; content_sha256: string; body_b64: string };
 export type SupportRelayResult = { ok: true; status: number; body: string } | { ok: false; reason: string };
 
 export const SUPPORT_MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
 const SUPPORT_MAX_RESPONSE_BYTES = 64 * 1024;
 const TICKET_RE = /^SUP-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/;
+const CREDENTIAL_RE = /^zst1\.[A-Za-z0-9_-]{20,2000}\.[A-Za-z0-9_-]{40,200}$/;
 
 /** 请求形状检查（纯函数）：返回 null = 合格。 */
 export function supportRelayAllowed(r: unknown): string | null {
   const x = r as Record<string, unknown> | null;
   if (!x || typeof x !== "object") return "support_request_invalid";
-  if (x.step === "ticket") return Object.keys(x).length === 1 ? null : "support_request_invalid";
+  if (x.step === "ticket") {
+    if (Object.keys(x).sort().join(",") !== "credential,step") return "support_request_invalid";
+    return typeof x.credential === "string" && CREDENTIAL_RE.test(x.credential) ? null : "support_credential_invalid";
+  }
   if (x.step !== "upload") return "support_request_invalid";
-  if (Object.keys(x).sort().join(",") !== "body_b64,content_sha256,step,ticket,upload_token") return "support_request_invalid";
+  if (Object.keys(x).sort().join(",") !== "body_b64,content_sha256,credential,step,ticket,upload_token") return "support_request_invalid";
+  if (typeof x.credential !== "string" || !CREDENTIAL_RE.test(x.credential)) return "support_credential_invalid";
   if (typeof x.ticket !== "string" || !TICKET_RE.test(x.ticket)) return "support_ticket_invalid";
   if (typeof x.upload_token !== "string" || !/^[A-Za-z0-9_-]{20,100}$/.test(x.upload_token)) return "support_token_invalid";
   if (typeof x.content_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(x.content_sha256)) return "support_digest_invalid";
@@ -33,19 +41,18 @@ export function supportRelayAllowed(r: unknown): string | null {
 
 export async function relaySupport(
   req: SupportRelayRequest,
-  o: { baseUrl: string | null; seatToken: string | null; fetchImpl?: typeof fetch; timeoutMs?: number; transport?: TransportCheck },
+  o: { baseUrl: string | null; fetchImpl?: typeof fetch; timeoutMs?: number; transport?: TransportCheck },
 ): Promise<SupportRelayResult> {
   if (!o.baseUrl) return { ok: false, reason: "support_not_configured" };
   if (o.transport?.state === "invalid") return { ok: false, reason: `support_${o.transport.reason ?? "upstream_tls_required"}` };
   const bad = supportRelayAllowed(req);
   if (bad) return { ok: false, reason: bad };
-  if (!o.seatToken) return { ok: false, reason: "support_seat_unavailable" };
   const base = o.baseUrl.replace(/\/+$/, "");
   let path: string;
   let init: RequestInit;
   if (req.step === "ticket") {
     path = "/v1/support/tickets";
-    init = { method: "POST", headers: { authorization: `Bearer ${o.seatToken}` } };
+    init = { method: "POST", headers: { authorization: `Bearer ${req.credential}` } };
   } else {
     const body = Buffer.from(req.body_b64, "base64");
     // 规范 base64 + 字节摘要由闸门重算：与内核声明不一致即不发（防止 IPC 上被夹带别的字节）
@@ -53,7 +60,7 @@ export async function relaySupport(
     if (body.byteLength > SUPPORT_MAX_UPLOAD_BYTES) return { ok: false, reason: "support_body_too_large" };
     if (createHash("sha256").update(body).digest("hex") !== req.content_sha256) return { ok: false, reason: "support_digest_mismatch" };
     path = `/v1/support/packages/${req.ticket}`;
-    init = { method: "PUT", headers: { authorization: `Bearer ${o.seatToken}`, "x-kwl-upload-token": req.upload_token, "x-kwl-content-sha256": req.content_sha256, "content-type": "application/json" }, body };
+    init = { method: "PUT", headers: { authorization: `Bearer ${req.credential}`, "x-kwl-upload-token": req.upload_token, "x-kwl-content-sha256": req.content_sha256, "content-type": "application/json" }, body };
   }
   try {
     if (new URL(`${base}${path}`).pathname !== `${new URL(base).pathname.replace(/\/+$/, "")}${path}`) return { ok: false, reason: "support_path_not_allowed" };

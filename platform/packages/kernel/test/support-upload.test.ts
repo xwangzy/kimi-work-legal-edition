@@ -56,6 +56,11 @@ test("管理员开启后：预览 → 确认上传，中软收到的字节就是
   assert.equal(createHash("sha256").update(got).digest("hex"), p.file_sha256, "中软收到的字节就是预览的那一份");
   assert.equal(JSON.parse(got.toString("utf8")).content_sha256, p.content_sha256);
   await assert.rejects(() => tk.inv("diagnostics.upload", { file_sha256: p.file_sha256 }), (e: any) => e.code === "validation", "同一预览只能上传一次");
-  const audits = tk.kernel.db.all<{ action: string; object_id: string }>(`SELECT action, object_id FROM audit_events WHERE action = 'diagnostics.upload'`);
-  assert.deepEqual(audits.map((a) => a.object_id), [r.ticket]);
+  // 本机上传记录（复核 S9B-02）：发送前写进行中、完成后为已上传；审计记“尝试 + 结果”
+  const ups = (await tk.inv("diagnostics.uploads")).uploads;
+  assert.deepEqual(ups.map((u: any) => [u.status, u.ticket]), [["sent", r.ticket]]);
+  const audits = tk.kernel.db.all<{ action: string }>(`SELECT action FROM audit_events WHERE action LIKE 'diagnostics.upload%' ORDER BY audit_event_id`);
+  assert.deepEqual(audits.map((a) => a.action), ["diagnostics.upload_attempt", "diagnostics.upload_sent"]);
+  // 支持服务收到的凭据是“只限支持服务”的短期凭据（复核 S9B-03）：同一张凭据在网关被拒
+  assert.ok(cloud.support.access.some((x) => x.action === "upload" && x.result === "ok"));
 });

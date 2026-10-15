@@ -10,6 +10,8 @@ import { readFileSync, lstatSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { writeExportFile } from "../services/export-file.ts";
 import type { CpAuditRecord } from "@zr-legal/firm-trust";
+import { SUPPORT_MAX_UPLOAD_BYTES } from "@zr-legal/egress-gate";
+import { supportErrorText } from "../services/support-errors.ts";
 import { recordSuspectReview, sendPreview, summarizeSend, type SendSummary, type SuspectView } from "../services/send-preview.ts";
 import {
   ConsentStatus,
@@ -2420,7 +2422,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "quota.set_cap": async (p, id) => {
       requireAdminDevice(id);
       const raw = p?.monthly_cap;
-      const cap = raw === null ? null : Number(raw);
+      // 空串、布尔等不按 0 处理（复核 S9A-20：上限 0 = 立即停）
+      const cap = raw === null ? null : typeof raw === "number" || (typeof raw === "string" && /^\d+$/.test(raw)) ? Number(raw) : NaN;
       if (cap !== null && !(Number.isSafeInteger(cap) && cap >= 0)) throw validation("月度上限须为非负整数点数，或不设上限");
       const r = await cpCall(() => deps.controlPlane!.setQuotaCap(cap));
       audit(db, id, "quota.cap_set", "tenant", id.tenantId, sha256Hex(JSON.stringify({ cap })), keyctx);
@@ -2429,13 +2432,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     // ─── 中软侧操作记录（第 9 批 S14）：取回、验控制面签名与哈希链、本机留存；律所管理员与合伙人可看、可导出 ───
     "control_plane.audit": async (p, id) => {
       requireFirmAdmin(id);
-      let fetched: { added: number; head: number } | null = null;
+      let fetched: { added: number; head: number; withheld: boolean } | null = null;
       let fetch_error: string | null = null;
       if (deps.controlPlane) {
         try {
           fetched = await deps.controlPlane.fetchAudit();
         } catch (e) {
           fetch_error = (e as Error)?.message ?? "fetch_failed";
+          // 本机成员角色与设备证书角色不一致（控制面按证书判断）：写明原因（复核 S9A-18）
+          if (fetch_error === "revoker_required") fetch_error = "device_role_required";
         }
       }
       const limit = Math.max(1, Math.min(500, Number(p?.limit ?? 200) || 200));
@@ -2451,9 +2456,19 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         records: records.map((r) => ({ ...r, actor_name: r.actor.kind === "device" ? (devMember.get(r.actor.id) ?? null) : null, target_name: r.target ? (devMember.get(r.target) ?? null) : null })),
       };
     },
-    "control_plane.audit_export": (p, id) => {
+    "control_plane.audit_export": async (p, id) => {
       requireFirmAdmin(id);
       if (!deps.governance) throw notFound("中软侧操作记录");
+      // 导出前先取一次最新（复核 S9A-12）；取不到照常导出本机留存的，并写明截至哪一次取回
+      let fetchNote: string | null = null;
+      if (deps.controlPlane) {
+        try {
+          const f = await deps.controlPlane.fetchAudit();
+          if (f.withheld) fetchNote = "cloud_withheld";
+        } catch (e) {
+          fetchNote = String((e as Error)?.message ?? "fetch_failed").slice(0, 60);
+        }
+      }
       const records: CpAuditRecord[] = [];
       for (let before: number | undefined; ; ) {
         const page = deps.governance.auditRecords(1000, before);
@@ -2463,7 +2478,20 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       }
       records.reverse();
       // 导出原记录（含 prev/hash，收件人可自行验链）；只有代码与编号
-      const text = `${JSON.stringify({ format: "kwl-cp-audit-export/1", tenant_id: id.tenantId, exported_at: new Date().toISOString(), records }, null, 2)}\n`;
+      const signed = deps.governance.signedAuditPage();
+      const text = `${JSON.stringify(
+        {
+          format: "kwl-cp-audit-export/1",
+          tenant_id: id.tenantId,
+          exported_at: new Date().toISOString(),
+          fetch_note: fetchNote,
+          // 最后一次取到最新时那一页的控制面签名信封：用控制面公钥核对，其 head 与 records 末条一致即“截至云端序号 N”
+          signed_page: signed ? { fetched_at: signed.fetched_at, envelope: signed.envelope } : null,
+          records,
+        },
+        null,
+        2,
+      )}\n`;
       audit(db, id, "control_plane.audit_export", "tenant", id.tenantId, sha256Hex(text), keyctx);
       const filename = `zr-cloud-operations-${new Date().toISOString().slice(0, 10)}.json`;
       if (!p?.save_path) return { filename, saved: false, count: records.length, data_base64: Buffer.from(text, "utf8").toString("base64") };
@@ -3153,6 +3181,16 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   /** 待确认上传的诊断包（内容摘要 → 生成者与内容；只在内存，10 分钟；每人只留最近一份）。 */
   const pendingUploads = new Map<string, { at: number; userId: string; data_base64: string }>();
   const UPLOAD_PREVIEW_TTL_MS = 10 * 60_000;
+  const safeJsonText = (t: string): Record<string, unknown> => {
+    try {
+      const v = JSON.parse(t) as unknown;
+      return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  };
+  // 发送途中内核退出留下的“进行中”记录：结果不明（复核 S9B-02）
+  db.run(`UPDATE support_uploads SET status = 'unknown', error_code = 'interrupted', updated_at = ? WHERE status = 'pending'`, [new Date().toISOString()]);
   const all: Record<string, Handler> = {
     ...api,
     ...w1,
@@ -3172,10 +3210,11 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const r = await buildDiag(id);
       const t = Date.now();
       // 按文件字节的摘要登记（上传时闸门与支持服务都按这一摘要核对；content_sha256 是包内签名覆盖的内容摘要）
-      const fileSha = sha256Hex(Buffer.from(r.data_base64, "base64"));
+      const bytes = Buffer.from(r.data_base64, "base64");
+      const fileSha = sha256Hex(bytes);
       for (const [k, v] of pendingUploads) if (t - v.at > UPLOAD_PREVIEW_TTL_MS || v.userId === id.userId) pendingUploads.delete(k);
       pendingUploads.set(fileSha, { at: t, userId: id.userId, data_base64: r.data_base64 });
-      const text = Buffer.from(r.data_base64, "base64").toString("utf8");
+      const text = bytes.toString("utf8");
       let pretty = text;
       try {
         pretty = JSON.stringify(JSON.parse(text), null, 2);
@@ -3184,7 +3223,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       }
       return {
         allowed: deps.governance?.supportUploadAllowed() ?? false,
-        configured: !!gate?.supportConfigured,
+        configured: !!gate?.supportConfigured && !!deps.controlPlane,
+        // 超过上限的包预览时即说明，不去申请工单（复核 S9B-11）
+        too_large: bytes.byteLength > SUPPORT_MAX_UPLOAD_BYTES,
         file_sha256: fileSha,
         content_sha256: r.content_sha256,
         summary: r.summary,
@@ -3194,30 +3235,53 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "diagnostics.upload": async (p, id) => {
       const sha = String(p?.file_sha256 ?? "");
       const pending = pendingUploads.get(sha);
-      if (!pending || pending.userId !== id.userId || Date.now() - pending.at > UPLOAD_PREVIEW_TTL_MS) throw validation("预览已过期或不是本人生成：请重新预览后再上传");
-      if (!(deps.governance?.supportUploadAllowed() ?? false)) throw forbidden("律所未开启“上传诊断包给中软支持”：可导出文件后按律所流程发送");
-      if (!gate?.supportConfigured) throw new DomainError("provider_unavailable", "本机未配置支持服务：可导出文件后按律所流程发送", 503);
-      const parse = (r: { ok: true; status: number; body: string } | { ok: false; reason: string }): { status: number; json: any } => {
-        if (!r.ok) throw new DomainError("provider_unavailable", `支持服务不可达（${r.reason}）`, 502);
-        let json: any = {};
-        try {
-          json = r.body ? JSON.parse(r.body) : {};
-        } catch {
-          throw new DomainError("provider_unavailable", "支持服务的应答不是 JSON", 502);
-        }
-        return { status: r.status, json };
-      };
-      const tk = parse(await gate.support({ step: "ticket" }));
-      if (tk.status !== 200 || typeof tk.json.ticket !== "string" || typeof tk.json.upload_token !== "string") {
-        const code = String(tk.json?.error ?? `http_${tk.status}`).slice(0, 60);
-        throw code === "support_upload_disabled" ? forbidden("中软支持服务按律所策略拒绝了上传（律所未开启）") : new DomainError("provider_unavailable", `支持服务拒绝申请工单（${code}）`, 502);
-      }
-      const up = parse(await gate.support({ step: "upload", ticket: tk.json.ticket, upload_token: tk.json.upload_token, content_sha256: sha, body_b64: pending.data_base64 }));
-      if (up.status !== 200 || up.json.ok !== true) throw new DomainError("provider_unavailable", `支持服务拒收（${String(up.json?.error ?? `http_${up.status}`).slice(0, 60)}）`, 502);
+      if (!pending || pending.userId !== id.userId || Date.now() - pending.at > UPLOAD_PREVIEW_TTL_MS) throw validation("预览已过期，请重新点“上传给中软支持”生成一份");
+      if (!(deps.governance?.supportUploadAllowed() ?? false)) throw forbidden("律所没有开启“上传诊断包给中软支持”：可导出文件后按所内要求发送");
+      if (!gate?.supportConfigured || !deps.controlPlane) throw new DomainError("provider_unavailable", "这台电脑没有配置中软支持服务：可导出文件后按所内要求发送", 503);
+      const body = Buffer.from(pending.data_base64, "base64");
+      if (body.byteLength > SUPPORT_MAX_UPLOAD_BYTES) throw validation("诊断包超过 2 MB，无法上传：请导出文件后按所内要求发送");
+      // 先从待上传表取出（复核 S9B-05：并发的第二次提交拿不到同一份预览；失败时放回，可重试）
       pendingUploads.delete(sha);
-      audit(db, id, "diagnostics.upload", "support_ticket", String(tk.json.ticket).slice(0, 20), sha, keyctx);
-      return { ticket: String(tk.json.ticket), expires_at: typeof up.json.expires_at === "string" ? up.json.expires_at : null, retention_days: 7 };
+      // 发送前写本机上传记录（复核 S9B-02）：结果在完成后更新；发送途中内核退出的，下次启动记“结果不明”
+      const uploadId = `sup_${randomBytes(8).toString("hex")}`;
+      const at = nowIso();
+      db.run(`INSERT INTO support_uploads (upload_id, tenant_id, user_id, file_sha256, bytes, status, created_at, updated_at) VALUES (?,?,?,?,?,'pending',?,?)`, [uploadId, id.tenantId, id.userId, sha, body.byteLength, at, at]);
+      audit(db, id, "diagnostics.upload_attempt", "support_upload", uploadId, sha, keyctx);
+      let ticket: string | null = null;
+      const finish = (status: "sent" | "failed" | "unknown", code: string | null) => {
+        db.run(`UPDATE support_uploads SET status = ?, error_code = ?, ticket = ?, updated_at = ? WHERE upload_id = ?`, [status, code, ticket, nowIso(), uploadId]);
+        audit(db, id, `diagnostics.upload_${status}`, "support_upload", uploadId, sha256Hex(JSON.stringify({ sha, ticket, code })), keyctx);
+      };
+      const fail = (status: "failed" | "unknown", code: string): never => {
+        finish(status, code);
+        // 确定没有送达的，预览放回（可直接重试）；结果不明的不放回，免得重复上传
+        if (status === "failed") pendingUploads.set(sha, pending);
+        throw new DomainError(status === "unknown" ? "provider_unavailable" : "provider_unavailable", supportErrorText(code, status), 502);
+      };
+      // 结果不明：闸门或支持服务在送出之后才失败（超时、连接中断、闸门退出）
+      const UNCERTAIN = new Set(["support_timeout", "gate_exited", "support_unreachable"]);
+      let credential: string;
+      try {
+        credential = await deps.controlPlane.supportToken();
+      } catch (e) {
+        return fail("failed", `credential:${String((e as Error)?.message ?? "error").slice(0, 40)}`);
+      }
+      const tk = await gate.support({ step: "ticket", credential });
+      if (!tk.ok) return fail("failed", tk.reason);
+      const tj = safeJsonText(tk.body);
+      if (tk.status !== 200 || typeof tj.ticket !== "string" || typeof tj.upload_token !== "string") return fail("failed", String(tj.error ?? `http_${tk.status}`).slice(0, 60));
+      ticket = String(tj.ticket).slice(0, 20);
+      const up = await gate.support({ step: "upload", credential, ticket, upload_token: String(tj.upload_token), content_sha256: sha, body_b64: pending.data_base64 });
+      if (!up.ok) return fail(UNCERTAIN.has(up.reason) ? "unknown" : "failed", up.reason);
+      const uj = safeJsonText(up.body);
+      if (up.status !== 200 || uj.ok !== true) return fail(up.status >= 500 ? "unknown" : "failed", String(uj.error ?? `http_${up.status}`).slice(0, 60));
+      finish("sent", null);
+      return { ticket, expires_at: typeof uj.expires_at === "string" ? uj.expires_at : null, retention_days: 7 };
     },
+    /** 本机的诊断包上传记录（最近 20 次；复核 S9B-02）。 */
+    "diagnostics.uploads": (_p, id) => ({
+      uploads: db.all(`SELECT upload_id, ticket, bytes, status, error_code, created_at, updated_at FROM support_uploads WHERE tenant_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 20`, [id.tenantId, id.userId]),
+    }),
     // “数据去向说明”页的示例请求（UIUX 增量评审 §3.5）：用随包令牌化器对一段虚构的示例句子现场替换（随机密钥、不写令牌表），
     // 让律师看到发给 AI 的内容真实长什么样；示例句子与人物均为虚构（证件号地区码 99 不存在、手机号为示例号段；复核 S6A-13）
     "privacy.example_request": () => {

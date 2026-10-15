@@ -209,7 +209,7 @@ export function createLegalGateway(o: GatewayOptions): Server {
     if (!tok) throw new GwError(401, "seat_token_missing", "缺少席位令牌");
     let claims: SeatClaims;
     try {
-      claims = verifySeatToken(tok, o.keys, { ...(o.revokedDevices ? { revokedDevices: o.revokedDevices } : {}), ...(o.revokedSeats ? { revokedSeats: o.revokedSeats } : {}) });
+      claims = verifySeatToken(tok, o.keys, { audience: "gateway", ...(o.revokedDevices ? { revokedDevices: o.revokedDevices } : {}), ...(o.revokedSeats ? { revokedSeats: o.revokedSeats } : {}) });
     } catch (e) {
       throw new GwError(401, `seat_${e instanceof SeatTokenError ? e.reason : "invalid"}`, "席位令牌无效或已吊销");
     }
@@ -285,14 +285,15 @@ export function createLegalGateway(o: GatewayOptions): Server {
     }
     const reserved = points(estimateTokens(body, route!), route!);
     // 预占原子化（审查 S4-15）：检查与扣减在同一同步段内完成（额度来源保证），再排队；排队失败退回
-    const rr = await quota.reserve(seat.tid, reserved);
-    if (!rr.ok) return reject(rr.status, rr.code, rr.message, alias);
-    const hold: QuotaHold = rr.hold;
-    // 客户端断开（闸门撤销、宿主取消）：响应未写完即中止上游（审查 S4-01：req 'close' 在读完请求体后已触发，不能用它判断）
+    // 客户端断开（闸门撤销、宿主取消）：响应未写完即中止上游（审查 S4-01：req 'close' 在读完请求体后已触发，不能用它判断）。
+    // 监听在预占之前注册（复核 S9A-07：预占可能要等账本，等待期间断开也要察觉，不再发往上游、不按预占计费）
     const ac = new AbortController();
     res.on("close", () => {
       if (!res.writableFinished) ac.abort();
     });
+    const rr = await quota.reserve(seat.tid, reserved);
+    if (!rr.ok) return reject(rr.status, rr.code, rr.message, alias);
+    const hold: QuotaHold = rr.hold;
     let release: () => void;
     try {
       release = await gateFor(seat.tid).acquire(o.queueTimeoutMs ?? 30_000);

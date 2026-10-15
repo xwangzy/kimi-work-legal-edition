@@ -34,6 +34,7 @@ const PATHS: readonly RegExp[] = [
   /^\/v1\/seats\/[A-Za-z0-9_-]{1,200}\/revoke$/,
   // 第 9 批：用量与上限（S3）、中软侧操作记录（S14，只许这一种查询串）
   /^\/v1\/quota$/,
+  /^\/v1\/support-token$/,
   /^\/v1\/quota\/cap$/,
   /^\/v1\/audit\?after=\d{1,15}&limit=\d{1,3}$/,
 ];

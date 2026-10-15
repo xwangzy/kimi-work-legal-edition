@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AUDIT_GENESIS, verifyAuditChain } from "@zr-legal/firm-trust";
+import { AUDIT_GENESIS, openEnvelope, publicKeyMap, verifyAuditChain } from "@zr-legal/firm-trust";
 import { makeKernel, type TestKernel } from "./helpers.ts";
 import { startCloudCp, type CloudCp } from "./cloud-cp.ts";
 
@@ -86,5 +86,10 @@ test("中软侧操作记录：取回后验签验链、本机留存（再取不�
   assert.equal(doc.format, "kwl-cp-audit-export/1");
   assert.equal(doc.records.length, n);
   assert.deepEqual(verifyAuditChain(doc.records, TID, { seq: 0, hash: AUDIT_GENESIS }), { ok: true }, "导出的原记录收件人可自行验链");
+  // 附控制面签名的最后一页（复核 S9A-12）：用控制面公钥核对，head 等于本机最高序号的那一条
+  const opened = openEnvelope<{ head: { seq: number; hash: string } }>(doc.signed_page.envelope, "kwl-cp-audit-page", publicKeyMap(cloud.cp.publicKeys.envelope));
+  assert.ok(opened.ok);
+  const lastRec = doc.records.at(-1);
+  assert.ok(opened.ok && opened.body.head.seq >= lastRec.seq);
   await assert.rejects(() => tk.inv("control_plane.audit_export", { save_path: join(tk.kernel.config.workspaceDir, "x.json") }), (e: any) => e.code === "validation");
 });
