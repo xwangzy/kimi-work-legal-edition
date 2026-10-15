@@ -132,3 +132,26 @@ test("内核子进程环境（复核 C-A15）：安装包形态数据目录与�
   assert.equal(dev.ZR_KERNEL_TCP, undefined);
 });
 
+
+test("内容分发（第 8 批 S6/S7）：dist_base 须 https + 两把钉住；通道只收 stable/beta；content_keys 只收 1–8 把 Ed25519 公钥；安装包形态剔除环境里的分发配置", () => {
+  const ok = loadReleaseConfig(write("dist-ok.json", { dist_base: "https://dl.example.cn/", dist_pins: [P1, P2], dist_channel: "beta", content_keys: [edPem()] }));
+  assert.deepEqual(ok.problems, []);
+  assert.equal(ok.env.ZR_DIST_BASE, "https://dl.example.cn");
+  assert.equal(ok.env.ZR_DIST_PINS, `${P1},${P2}`);
+  assert.equal(ok.env.ZR_DIST_CHANNEL, "beta");
+  assert.equal(JSON.parse(ok.env.ZR_CONTENT_KEYS!).length, 1);
+  const noPins = loadReleaseConfig(write("dist-nopin.json", { dist_base: "https://dl.example.cn", dist_pins: [P1] }));
+  assert.equal(noPins.env.ZR_DIST_BASE, undefined);
+  assert.equal(noPins.problems.length, 1);
+  const badChannel = loadReleaseConfig(write("dist-ch.json", { dist_base: "https://dl.example.cn", dist_pins: [P1, P2], dist_channel: "nightly" }));
+  assert.equal(badChannel.env.ZR_DIST_CHANNEL, undefined);
+  assert.match(badChannel.problems.join(""), /dist_channel/);
+  const priv = generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+  const badKeys = loadReleaseConfig(write("dist-keys.json", { dist_base: "https://dl.example.cn", dist_pins: [P1, P2], content_keys: [priv] }));
+  assert.equal(badKeys.env.ZR_CONTENT_KEYS, undefined, "私钥不收");
+  assert.match(badKeys.problems.join(""), /content_keys/);
+  const packaged = packagedKernelEnv({ ZR_DIST_BASE: "http://evil.example", ZR_CONTENT_KEYS: "[]", ZR_DIST_CHANNEL: "beta", PATH: "/bin" }, { env: {} });
+  assert.equal(packaged.ZR_DIST_BASE, undefined);
+  assert.equal(packaged.ZR_CONTENT_KEYS, undefined);
+  assert.equal(packaged.ZR_DIST_CHANNEL, undefined);
+});

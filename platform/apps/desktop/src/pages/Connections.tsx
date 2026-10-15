@@ -6,7 +6,8 @@
  */
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { useEffect, useState } from "react";
-import { api, updates, type Capabilities, type ControlPlaneStatus, type PolicyDraft } from "../api.ts";
+import { api, updates, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft } from "../api.ts";
+import { contentCheckLine, contentSourceLine } from "../lib/content-labels.ts";
 import { nav, type SettingsTab } from "../App.tsx";
 import { fmtTime } from "../lib/labels.ts";
 import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
@@ -63,7 +64,7 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
         {err && <div className="banner banner-red">{err}</div>}
         {tab === "general" && <GeneralTab version={status?.version ?? null} />}
         {tab === "visibility" && <VisibilityTab gate={gate} im={im} recovery={recovery} firm={status?.firm ?? null} syncOn={!!status?.sync_configured} />}
-        {tab === "sources" && <SourcesTab gate={gate} lawdb={lawdb} im={im} />}
+        {tab === "sources" && <SourcesTab gate={gate} lawdb={lawdb} im={im} onLawdbChanged={() => api.lawdbStatus().then(setLawdb).catch(() => {})} />}
         {tab === "device" && <DeviceTab caps={caps} gate={gate} mySafety={mySafety} recovery={recovery} />}
         {tab === "admin" &&
           (status === null ? null : isAdmin ? (
@@ -237,7 +238,26 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
 }
 
 /** 资料来源（ST-2）：来源 · 状态 · 一句话；数据级别用“一般 / 敏感 / 客户要求不上云”。 */
-function SourcesTab({ gate, lawdb, im }: { gate: any; lawdb: any; im: any[] }) {
+function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any; im: any[]; onLawdbChanged: () => void }) {
+  const [content, setContent] = useState<ContentStatus | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [results, setResults] = useState<ContentCheckResult[] | null>(null);
+  useEffect(() => {
+    api.contentStatus().then(setContent).catch(() => setContent(null));
+  }, []);
+  const check = () => {
+    setChecking(true);
+    api
+      .contentCheck()
+      .then((r) => {
+        setResults(r.results);
+        setContent(r.status);
+        if (r.results.some((x) => x.kind === "lawdb" && (x.outcome === "installed" || x.outcome === "reverted"))) onLawdbChanged();
+      })
+      .catch(() => setResults([]))
+      .finally(() => setChecking(false));
+  };
+  const lines = (results ?? [content?.lawdb?.last_check, content?.skills?.last_check].filter(Boolean)).map((r) => contentCheckLine(r as ContentCheckResult)).filter(Boolean) as string[];
   const rows: { name: string; state: "可用" | "未开通" | "即将推出" | "不可用"; note: string; detail?: string }[] = [
     { name: "离线法规库", state: lawdb?.error ? "不可用" : "可用", note: lawdb?.error ? "法规库文件没有通过签名核对，已停用" : "法条核验在本机完成，不联网", detail: lawdb?.error ? undefined : lawdb?.display },
     { name: "Kimi 模型（经中软）", state: gate?.routes ? "可用" : "未开通", note: "一般事项可用；敏感事项须管理员放开并全部化名；客户要求不上云的事项不用" },
@@ -249,36 +269,60 @@ function SourcesTab({ gate, lawdb, im }: { gate: any; lawdb: any; im: any[] }) {
   ];
   const tone = (s: string) => (s === "可用" ? "pill-green" : s === "不可用" ? "pill-red" : "pill-gray");
   return (
-    <table className="data">
-      <thead>
-        <tr>
-          <th>资料来源</th>
-          <th>状态</th>
-          <th>说明</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.name}>
-            <td>
-              <b>{r.name}</b>
-            </td>
-            <td>
-              <span className={`pill ${tone(r.state)}`}>{r.state}</span>
-            </td>
-            <td>
-              {r.note}
-              {r.detail && (
-                <details className="muted">
-                  <summary>版本与签名</summary>
-                  {r.detail}
-                </details>
-              )}
-            </td>
+    <>
+      <table className="data">
+        <thead>
+          <tr>
+            <th>资料来源</th>
+            <th>状态</th>
+            <th>说明</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.name}>
+              <td>
+                <b>{r.name}</b>
+              </td>
+              <td>
+                <span className={`pill ${tone(r.state)}`}>{r.state}</span>
+              </td>
+              <td>
+                {r.note}
+                {r.detail && (
+                  <details className="muted">
+                    <summary>版本与签名</summary>
+                    {r.detail}
+                  </details>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {content?.configured && (
+        <div className="panel content-updates">
+          <div className="content-updates-head">
+            <b>在线更新</b>
+            <span className="muted">法规库与方法模板由中软签名发布，下载后在本机核对通过才使用；只带席位凭据，不带任何事项信息</span>
+            <span className="spacer" />
+            <button className="btn-ghost btn-sm" disabled={checking} onClick={check}>
+              {checking ? "正在检查…" : "检查更新"}
+            </button>
+          </div>
+          {[contentSourceLine("lawdb", content), contentSourceLine("skills", content)].filter(Boolean).map((l) => (
+            <div key={l} className="content-line">
+              {l}
+            </div>
+          ))}
+          {lines.map((l) => (
+            <div key={l} className="content-line muted">
+              {l}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 

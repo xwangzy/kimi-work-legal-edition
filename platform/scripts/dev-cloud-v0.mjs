@@ -9,6 +9,7 @@
  * - 计量只写元数据（网关预写日志在 KWL_CLOUD_DIR，缺省会话临时目录）。
  * - KWL_SAFETY_POLICY=<策略 JSON>：网关启用内容安全（按类别计数或拦截，计量只记类别与次数）。
  * - KWL_CP_STATE_FILE / KWL_CP_STATE_KEY：控制面状态持久化（两代交替文件、可封装；生产形态必须封装）。
+ * - KWL_DIST_DIR=<分发存储根>（第 8 批 S6/S7）：同时拉起内容分发服务 v0（法规库与方法模板的签名清单与包；发布用 scripts/dist-publish.mjs）。
  *
  * 用法：node scripts/dev-cloud-v0.mjs   → 按输出设置环境变量后启动内核 / 桌面
  */
@@ -68,9 +69,16 @@ const search = ss.createSearchService({ keys, provider: searchProvider, meter: {
 
 await new Promise((r) => gateway.listen(Number(process.env.KWL_GATEWAY_PORT ?? 0), "127.0.0.1", r));
 await new Promise((r) => search.listen(Number(process.env.KWL_SEARCH_PORT ?? 0), "127.0.0.1", r));
+let dist;
+if (process.env.KWL_DIST_DIR) {
+  const da = await import("../services/dist-api/src/index.ts");
+  dist = da.createDistApi({ dir: process.env.KWL_DIST_DIR, keys, ...(feed ? { feed } : {}) });
+  await new Promise((r) => dist.listen(Number(process.env.KWL_DIST_PORT ?? 0), "127.0.0.1", r));
+}
 console.log("# 云端 v0 已启动（本机模拟部署；上游：" + provider.name + " / 检索：" + searchProvider.name + (withCp ? " / 控制面 v0" : "") + "）");
 console.log(`export ZR_GATEWAY_BASE=http://127.0.0.1:${gateway.address().port}/v1`);
 console.log(`export ZR_SEARCH_BASE=http://127.0.0.1:${search.address().port}/search`);
+if (dist) console.log(`export ZR_DIST_BASE=http://127.0.0.1:${dist.address().port}`);
 if (withCp) {
   // 控制面形态：地址与控制面公钥随客户端构建固定（这里经环境变量给出）；席位令牌由控制面签发给内核，不输出
   console.log(`export ZR_CONTROL_PLANE_BASE=http://127.0.0.1:${cp.server.address().port}`);

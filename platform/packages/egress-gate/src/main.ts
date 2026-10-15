@@ -7,15 +7,18 @@
  * - 环境变量不继承内核（席位凭据与上游地址经 init 下发，不进环境）。
  *
  * 协议（JSON 消息）：
- *   内核 → 闸门：{t:"init", config} | {t:"result", id, ok, result | error} | {t:"revoke", runId} | {t:"seat", token} | {t:"cp", id, req} | {t:"shutdown"}
+ *   内核 → 闸门：{t:"init", config} | {t:"result", id, ok, result | error} | {t:"revoke", runId} | {t:"seat", token} | {t:"cp", id, req}
+ *               | {t:"dist", id, path} | {t:"shutdown"}
  *   闸门 → 内核：{t:"ready"} | {t:"call", id, method:"authorize"|"approval", params} | {t:"record", rec} | {t:"tokens", matterId, entries}
- *               | {t:"cp_result", id, result} | {t:"fatal", message}
+ *               | {t:"cp_result", id, result} | {t:"dist_result", id, result} | {t:"fatal", message}
  * 控制面通道（阶段 6，cp-relay.ts）：只有内核持有 IPC，故 Agent 宿主与执行域都不能借闸门访问控制面；目的地为 init 下发的固定地址。
+ * 内容分发通道（第 8 批，dist-relay.ts）：同上，只许 GET 白名单路径，席位令牌由闸门附上。
  */
 import { rmSync } from "node:fs";
 import { slog } from "@zr-legal/safe-log";
-import { EgressGateServer } from "./server.ts";
+import { EgressGateServer, seatUsable } from "./server.ts";
 import { relayControlPlane, type CpRelayRequest } from "./cp-relay.ts";
+import { relayDist } from "./dist-relay.ts";
 import { checkUpstream, upstreamFetch, type TransportCheck } from "./tls-policy.ts";
 import type { AuthorizeResult, GateAuthority, GateEgressRecord, GatePurpose, GateUpstreams } from "./types.ts";
 import type { SignedApproval } from "./approval.ts";
@@ -40,6 +43,7 @@ type Msg =
   | { t: "revoke"; runId: string }
   | { t: "seat"; token: string }
   | { t: "cp"; id: number; req: CpRelayRequest }
+  | { t: "dist"; id: number; path: string }
   | { t: "shutdown" };
 
 const send = (m: unknown): void => {
@@ -54,6 +58,11 @@ let socketPath: string | null = null;
 let controlPlaneBase: string | null = null;
 let controlPlaneTransport: TransportCheck | undefined;
 let controlPlaneFetch: typeof fetch | undefined;
+let distBase: string | null = null;
+let distTransport: TransportCheck | undefined;
+let distFetch: typeof fetch | undefined;
+/** 当前席位令牌（与模型、检索同一张；内核续期后经 {t:"seat"} 更新）。 */
+let seatToken: string | null = null;
 
 function ipcAuthority(timeoutMs: number): GateAuthority {
   return {
@@ -117,6 +126,11 @@ process.on("message", (raw: unknown) => {
     const cpPins = m.config.upstreams.controlPlane?.pins ?? [];
     controlPlaneTransport = checkUpstream(controlPlaneBase, { allowLoopbackHttp: tls.allowLoopbackHttp, pins: cpPins, requirePins: tls.requirePins });
     controlPlaneFetch = upstreamFetch({ pins: cpPins });
+    distBase = m.config.upstreams.dist?.baseUrl ?? null;
+    const distPins = m.config.upstreams.dist?.pins ?? [];
+    distTransport = checkUpstream(distBase, { allowLoopbackHttp: tls.allowLoopbackHttp, pins: distPins, requirePins: tls.requirePins });
+    distFetch = upstreamFetch({ pins: distPins });
+    seatToken = m.config.upstreams.dist?.seatToken || m.config.upstreams.model?.seatToken || m.config.upstreams.search?.seatToken || null;
     if (process.platform !== "win32") rmSync(socketPath, { force: true });
     server = new EgressGateServer({
       authority: ipcAuthority(m.config.authorizeTimeoutMs ?? 5_000),
@@ -154,7 +168,10 @@ process.on("message", (raw: unknown) => {
     return;
   }
   if (m?.t === "seat") {
-    if (typeof m.token === "string") server?.updateSeat(m.token);
+    if (typeof m.token === "string") {
+      server?.updateSeat(m.token);
+      seatToken = m.token || null;
+    }
     return;
   }
   if (m?.t === "cp") {
@@ -164,6 +181,16 @@ process.on("message", (raw: unknown) => {
       ...(controlPlaneTransport ? { transport: controlPlaneTransport } : {}),
       ...(controlPlaneFetch ? { fetchImpl: controlPlaneFetch } : {}),
     }).then((result) => send({ t: "cp_result", id, result }));
+    return;
+  }
+  if (m?.t === "dist") {
+    const id = m.id;
+    void relayDist(String(m.path), {
+      baseUrl: distBase,
+      seatToken: seatUsable(seatToken) ? seatToken : null,
+      ...(distTransport ? { transport: distTransport } : {}),
+      ...(distFetch ? { fetchImpl: distFetch } : {}),
+    }).then((result) => send({ t: "dist_result", id, result }));
     return;
   }
   if (m?.t === "shutdown") void shutdown(0);

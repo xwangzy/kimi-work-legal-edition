@@ -1,0 +1,14 @@
+{
+  "name": "@zr-legal/dist-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "内容分发服务 v0（中软云端，v9.2 §5.1 S6/S7）：签名通道清单与包文件托管，凭据为席位令牌，计量只记设备编号摘要与文件名",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zr-legal/firm-trust": "*",
+    "@zr-legal/seat-token": "*"
+  }
+}

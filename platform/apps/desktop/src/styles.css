@@ -152,7 +152,7 @@ button.chip:active, button.pill:active { background: var(--bg-active); }
 .mh-field { font-size: var(--fs-sm); }
 .mh-k { color: var(--text-secondary); margin-right: 5px; }
 .mh-v { font-weight: 500; }
-.pill { display: inline-flex; align-items: center; gap: 5px; border-radius: var(--r-xs); padding: 1px 8px; font-size: var(--fs-xs); border: 1px solid transparent; background: var(--bg-surface); line-height: 20px; }
+.pill { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; border-radius: var(--r-xs); padding: 1px 8px; font-size: var(--fs-xs); border: 1px solid transparent; background: var(--bg-surface); line-height: 20px; }
 .pill-local { color: var(--status-success-text); background: var(--status-valid-bg); }
 .pill-gray { color: var(--status-neutral-text); background: var(--bg-surface); border-color: var(--border-subtle); }
 .pill-green { color: var(--status-success-text); background: var(--status-valid-bg); }
@@ -717,3 +717,8 @@ tr.row-on td { background: var(--accent-bg); }
 .method-card { display: flex; flex-direction: column; font: inherit; color: inherit; width: 100%; }
 .method-go { margin-top: auto; padding-top: 8px; font-size: var(--fs-sm); color: var(--accent-text); }
 .method-card > span { display: block; }
+
+/* 设置 · 资料来源 · 在线更新（第 8 批 S6/S7） */
+.content-updates { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.content-updates-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--fs-sm); }
+.content-line { font-size: var(--fs-sm); }

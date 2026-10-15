@@ -59,8 +59,15 @@ function removeTree(dir: string): void {
   rmSync(dir, { recursive: true, force: true });
 }
 
-/** 验签并物化；任何问题都返回 ok:false 与原因（调用方据此在方法库与设备页如实显示“技能包校验失败”）。 */
-export function materializeSkillsBundle(manifestFile: string | null, signerPub: string, workspaceDir: string): SkillsBundleStatus {
+export type SkillsSourceCheck =
+  | { ok: true; manifest: SkillsManifest; contentSha256: string; srcRoot: string; declared: Map<string, string> }
+  | { ok: false; reason: string };
+
+/**
+ * 只核验不物化（第 8 批：在线下载的方法模板包落位前先核验）：清单格式、内容摘要、签名、路径越界、清单外文件、逐文件摘要。
+ * signerPub 为单把公钥，或内容签名公钥表（按清单的 signer_key_id 选取）。
+ */
+export function verifySkillsSource(manifestFile: string | null, signerPub: string | ReadonlyMap<string, string>): SkillsSourceCheck {
   if (!manifestFile || !existsSync(manifestFile)) return { ok: false, reason: "未找到方法模板包" };
   let m: SkillsManifest;
   try {
@@ -72,7 +79,8 @@ export function materializeSkillsBundle(manifestFile: string | null, signerPub: 
   const canonical = [...m.files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)).map((f) => `${f.sha256}  ${f.path}`).join("\n");
   const contentSha = sha256B64(new TextEncoder().encode(canonical));
   if (contentSha !== m.content_sha256) return { ok: false, reason: "方法模板包内容摘要不符" };
-  if (!signerPub || !verifyBytes(signerPub, new TextEncoder().encode(contentSha), m.signature)) return { ok: false, reason: "方法模板包签名无效" };
+  const pub = typeof signerPub === "string" ? signerPub : signerPub.get(String(m.signer_key_id)) ?? "";
+  if (!pub || !verifyBytes(pub, new TextEncoder().encode(contentSha), m.signature)) return { ok: false, reason: "方法模板包签名无效" };
   const srcRoot = join(dirname(manifestFile), "trusted");
   if (!existsSync(srcRoot)) return { ok: false, reason: "方法模板包缺少内容目录" };
   const declared = new Map(m.files.map((f) => [f.path, f.sha256]));
@@ -87,6 +95,14 @@ export function materializeSkillsBundle(manifestFile: string | null, signerPub: 
     if (!existsSync(abs)) return { ok: false, reason: `方法模板包缺少文件：${p}` };
     if (sha256B64(new Uint8Array(readFileSync(abs))) !== h) return { ok: false, reason: `方法模板文件被改动：${p}` };
   }
+  return { ok: true, manifest: m, contentSha256: contentSha, srcRoot, declared };
+}
+
+/** 验签并物化；任何问题都返回 ok:false 与原因（调用方据此在方法库与设备页如实显示“技能包校验失败”）。 */
+export function materializeSkillsBundle(manifestFile: string | null, signerPub: string | ReadonlyMap<string, string>, workspaceDir: string): SkillsBundleStatus {
+  const v = verifySkillsSource(manifestFile, signerPub);
+  if (!v.ok) return v;
+  const { manifest: m, contentSha256: contentSha, srcRoot, declared } = v;
   // 物化到按内容摘要命名的新目录：先写临时目录（复制后再核对一次摘要，防止复制期间被换），再改名；同摘要已存在则复用
   const base = join(workspaceDir, "kap-trusted");
   const dest = join(base, contentSha.replace(/[^A-Za-z0-9]/g, "").slice(0, 16));

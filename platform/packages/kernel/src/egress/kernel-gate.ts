@@ -22,7 +22,7 @@ import { createGateAuthorizer, egressRowFromGate, startEgressGate, type GateHand
 import type { MatterTokenStore } from "./matter-tokens.ts";
 import type { EgressApprovalStore } from "../services/egress-approvals.ts";
 import type { FirmGovernance } from "../control-plane/governance.ts";
-import { checkUpstream, type CpRelayRequest, type CpRelayResult, type TransportCheck } from "@zr-legal/egress-gate";
+import { checkUpstream, type CpRelayRequest, type CpRelayResult, type DistRelayResult, type TransportCheck } from "@zr-legal/egress-gate";
 
 export interface KernelGateDeps {
   db: KernelDb;
@@ -91,13 +91,15 @@ export function gateUpstreamsFromEnv(env: NodeJS.ProcessEnv, cp?: { seatToken: s
     search: env.ZR_SEARCH_BASE && hasSeat ? { baseUrl: env.ZR_SEARCH_BASE, seatToken: seat ?? "", ...pin(searchPins) } : null,
     fetch: env.ZR_GATE_FETCH === "disabled" ? "disabled" : "local",
     controlPlane: env.ZR_CONTROL_PLANE_BASE ? { baseUrl: env.ZR_CONTROL_PLANE_BASE, ...pin(pinsFrom(env.ZR_CONTROL_PLANE_PINS)) } : null,
+    // 内容分发（第 8 批）：法规库与方法模板的签名清单与包；钉住集同其他中软上游（安装包形态必须带）
+    dist: env.ZR_DIST_BASE && hasSeat ? { baseUrl: env.ZR_DIST_BASE, seatToken: seat ?? "", ...pin(pinsFrom(env.ZR_DIST_PINS)) } : null,
     // 传输策略（审计 S5）：安装包形态（ZR_UPSTREAM_TLS=strict）不允许回环 http，中软网关、检索与控制面必须带内置钉住集
     tls: env.ZR_UPSTREAM_TLS === "strict" ? { allowLoopbackHttp: false, requirePins: true } : { allowLoopbackHttp: true, requirePins: false },
   };
 }
 
 /** 各上游的传输状态（设备页“连接加密”；纯检查，不联网）。 */
-export function upstreamTransport(u: GateUpstreams): Record<"model" | "byok" | "private" | "search" | "control_plane", TransportCheck> {
+export function upstreamTransport(u: GateUpstreams): Record<"model" | "byok" | "private" | "search" | "control_plane" | "dist", TransportCheck> {
   const tls = u.tls ?? { allowLoopbackHttp: true, requirePins: false };
   const c = (base: string | undefined, pins: readonly string[] | undefined, requirePins: boolean) => checkUpstream(base, { allowLoopbackHttp: tls.allowLoopbackHttp, pins: pins ?? [], requirePins });
   return {
@@ -106,6 +108,7 @@ export function upstreamTransport(u: GateUpstreams): Record<"model" | "byok" | "
     private: c(u.private?.baseUrl, undefined, false),
     search: c(u.search?.baseUrl, u.search?.pins, tls.requirePins),
     control_plane: c(u.controlPlane?.baseUrl, u.controlPlane?.pins, tls.requirePins),
+    dist: c(u.dist?.baseUrl, u.dist?.pins, tls.requirePins),
   };
 }
 
@@ -162,6 +165,7 @@ export class KernelGate {
     d.governance.onSeatChange((token) => {
       if (this.upstreams.model) this.upstreams.model = { ...this.upstreams.model, seatToken: token };
       if (this.upstreams.search) this.upstreams.search = { ...this.upstreams.search, seatToken: token };
+      if (this.upstreams.dist) this.upstreams.dist = { ...this.upstreams.dist, seatToken: token };
       if (this.handle?.alive) this.handle.updateSeat(token);
     });
     d.governance.onSaltChange(() => this.salts.clear());
@@ -236,6 +240,23 @@ export class KernelGate {
     return h.cp(req);
   }
 
+  /** 内容分发是否已配置（未配置 = 不检查在线更新）。 */
+  get distConfigured(): boolean {
+    return !!this.upstreams.dist;
+  }
+
+  /** 内容分发请求经闸门代取（第 8 批；闸门按需拉起）。 */
+  async dist(path: string): Promise<DistRelayResult> {
+    if (!this.upstreams.dist) return { ok: false, reason: "dist_not_configured" };
+    let h: GateHandle;
+    try {
+      h = await this.ensure();
+    } catch {
+      return { ok: false, reason: "gate_unavailable" };
+    }
+    return h.dist(path);
+  }
+
   /** 确保闸门进程在运行（单飞；退出后重新拉起）。 */
   async ensure(): Promise<GateHandle> {
     if (this.closed) throw new Error("出站闸门已关闭");
@@ -302,7 +323,7 @@ export class KernelGate {
         this.restartBackoffMs = 0;
         this.handle = h;
         // 启动窗口内发生的席位续期或清除（init 之后、句柄就绪之前）不会丢：就绪后再下发一次当前令牌（复核 S6-B25）
-        if (gov.mode === "control_plane") h.updateSeat(this.upstreams.model?.seatToken ?? this.upstreams.search?.seatToken ?? "");
+        if (gov.mode === "control_plane") h.updateSeat(this.upstreams.model?.seatToken ?? this.upstreams.search?.seatToken ?? this.upstreams.dist?.seatToken ?? "");
         return h;
       })
       .finally(() => {

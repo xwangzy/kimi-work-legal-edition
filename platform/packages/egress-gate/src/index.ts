@@ -11,4 +11,5 @@ export { extractUsage } from "./usage.ts";
 export { OFFICIAL_SITE_BASELINE } from "./baseline.ts";
 export { checkUpstream, isLoopbackHost, normalizePins, PIN_RE, spkiPin, type TransportCheck, type TransportState } from "./tls-check.ts";
 export { cpRelayAllowed, relayControlPlane, CP_MAX_REQUEST_BYTES, CP_MAX_RESPONSE_BYTES, type CpRelayRequest, type CpRelayResult } from "./cp-relay.ts";
+export { distRelayAllowed, relayDist, DIST_MAX_RESPONSE_BYTES, type DistRelayResult } from "./dist-relay.ts";
 export { canonicalCredential, egressDigest, verifyApproval, type ApprovalCredential, type ApprovalExpectation, type ApprovalPurpose, type SignedApproval } from "./approval.ts";

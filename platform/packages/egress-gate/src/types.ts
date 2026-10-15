@@ -150,6 +150,11 @@ export interface GateUpstreams {
    */
   controlPlane?: { baseUrl: string; pins?: readonly string[] } | null;
   /**
+   * 内容分发（v9.2 §5.1 S6/S7，dist-relay.ts）：法规库与方法模板的签名清单与包，内核经 IPC 请闸门代取；地址随客户端构建固定，
+   * 凭据为席位令牌（闸门自己附上），钉住集与其他中软上游同规则。未配置 = 不检查在线更新。
+   */
+  dist?: { baseUrl: string; seatToken?: string; pins?: readonly string[] } | null;
+  /**
    * 传输策略（tls-policy.ts；审计 S5）：非回环一律 https；回环 http 只在开发形态允许；安装包形态中软网关、检索与控制面必须带钉住集。
    * 缺省 = 开发形态（允许回环 http、不强制钉住）；安装包形态由内核按 ZR_UPSTREAM_TLS=strict 下发。
    */

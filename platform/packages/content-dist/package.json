@@ -1,0 +1,13 @@
+{
+  "name": "@zr-legal/content-dist",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "内容分发格式（法规库增量包、方法模板包的签名通道清单；v9.2 §5.1 S6/S7）。不含联网代码",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zr-legal/keys": "*"
+  }
+}

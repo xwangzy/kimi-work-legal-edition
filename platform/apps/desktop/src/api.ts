@@ -672,6 +672,9 @@ export const api = {
   keyChangeConfirm: (deviceId: string, safetyCode: string) => invoke<{ ok: true; note: string }>("devices.key_changes.confirm", { device_id: deviceId, safety_code: safetyCode }),
   capabilities: () => invoke<Capabilities>("kernel.capabilities"),
   lawdbStatus: () => invoke<any>("lawdb.status"),
+  /** 在线内容更新（第 8 批 S6/S7）：法规库与方法模板的来源、序号与最近一次检查。 */
+  contentStatus: () => invoke<ContentStatus>("content.status"),
+  contentCheck: () => invoke<{ results: ContentCheckResult[]; status: ContentStatus }>("content.check", {}),
   devices: () => invoke<{ devices: any[]; tenant_epoch: number; my_device_id?: string; my_safety_code?: string }>("devices.list"),
   imList: () => invoke<{ bindings: any[] }>("im.list"),
   recoveryStatus: () => invoke<any>("recovery.status"),
@@ -724,4 +727,21 @@ export interface FactRow {
   quote: string | null;
   anchor_status: string;
   status: "proposed" | "confirmed" | "rejected";
+}
+
+export interface ContentCheckResult {
+  kind: "lawdb" | "skills";
+  outcome: "up_to_date" | "installed" | "staged_rollout" | "not_configured" | "unreachable" | "rejected" | "rollback_ignored" | "reverted";
+  reason?: string;
+  seq?: number;
+  version?: string;
+  at: string;
+  restart_required?: boolean;
+}
+
+export interface ContentStatus {
+  configured: boolean;
+  channel?: "stable" | "beta";
+  lawdb?: { source: "bundled" | "installed"; seq: number; version: string; last_check: ContentCheckResult | null };
+  skills?: { source: "bundled" | "installed" | null; seq: number; version: string | null; pending: { seq: number; version: string } | null; last_check: ContentCheckResult | null };
 }

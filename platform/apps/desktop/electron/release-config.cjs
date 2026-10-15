@@ -17,7 +17,7 @@ const { createPublicKey } = require("node:crypto");
 const PIN_RE = /^sha256\/[A-Za-z0-9+/]{43}=$/;
 
 /** 安装包形态从进程环境中剔除的配置项（上游、钉住、传输策略与开发形态的令牌/密钥）。白名单之外本就不传，此表留作说明与单测。 */
-const ROUTING_ENV = /^ZR_(?:GATEWAY_|SEARCH_|CONTROL_PLANE_|UPSTREAM_TLS|SEAT_TOKEN|BYOK_|MOONSHOT_|PRIVATE_|MODEL_PROVIDER|GATE_FETCH|FETCH_ALLOWLIST|FIRM_L3A)/;
+const ROUTING_ENV = /^ZR_(?:GATEWAY_|SEARCH_|CONTROL_PLANE_|DIST_|CONTENT_KEYS|UPSTREAM_TLS|SEAT_TOKEN|BYOK_|MOONSHOT_|PRIVATE_|MODEL_PROVIDER|GATE_FETCH|FETCH_ALLOWLIST|FIRM_L3A)/;
 
 /**
  * 安装包形态内核环境的白名单（复核 B3-A02）：只保留操作系统与运行时正常工作所需的变量（大小写不敏感，Windows 环境变量名不区分大小写）。
@@ -109,6 +109,18 @@ function loadReleaseConfig(file) {
     } else {
       env.ZR_CONTROL_PLANE_KEYS = JSON.stringify(cp);
       env.ZR_SEAT_KEYS = JSON.stringify(seat);
+    }
+  }
+  // 内容分发（第 8 批 S6/S7）：法规库与方法模板的在线更新地址（钉住集同其他中软上游）、通道与内容签名公钥。
+  // content_keys 只用于轮换后的新内容签名公钥（随包公钥始终可信）；每把须为 Ed25519 公钥，1–8 把；缺省不检查在线更新
+  pair("dist_base", "dist_pins", "ZR_DIST_BASE", "ZR_DIST_PINS");
+  if (env.ZR_DIST_BASE) {
+    if (raw.dist_channel !== undefined && raw.dist_channel !== "stable" && raw.dist_channel !== "beta") problems.push("dist_channel 只能是 stable 或 beta");
+    else if (raw.dist_channel === "beta") env.ZR_DIST_CHANNEL = "beta";
+    if (raw.content_keys !== undefined) {
+      const ok = Array.isArray(raw.content_keys) && raw.content_keys.length >= 1 && raw.content_keys.length <= 8 && keyTable(Object.fromEntries(raw.content_keys.map((k, i) => [`k${i}`, k])));
+      if (!ok) problems.push("content_keys 须为 1–8 把 Ed25519 公钥 PEM（只收公钥）");
+      else env.ZR_CONTENT_KEYS = JSON.stringify(raw.content_keys);
     }
   }
   // 自动更新（W7）：更新源地址、钉住集与发布签名公钥只认这里（主进程使用，不进内核环境）；三项缺一即不检查更新

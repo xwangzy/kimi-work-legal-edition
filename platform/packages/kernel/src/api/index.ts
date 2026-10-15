@@ -27,6 +27,7 @@ import {
 import { pendingBasisLabels, type EgressGate } from "@zr-legal/egress";
 import { countTokens, MatterTokenizer } from "@zr-legal/tokenizer";
 import { skillQualityChecklist, type SkillsBundleStatus } from "../skills-bundle.ts";
+import type { ContentUpdater } from "../services/content-updates.ts";
 import type { ModelBroker } from "@zr-legal/model-broker";
 import type { Lawdb } from "@zr-legal/lawdb";
 import { ocrModelsAvailable, type OcrModelPaths } from "@zr-legal/parse-ocr/client";
@@ -119,6 +120,8 @@ export interface ApiDeps {
   controlPlane?: ControlPlaneClient | null;
   /** 方法模板包（Kimi Code Skills）验签结果：方法库页展示可用的方法模板，校验失败如实显示原因。 */
   skills?: SkillsBundleStatus;
+  /** 在线内容更新（第 8 批 S6/S7：法规库增量包与方法模板包）。 */
+  content?: ContentUpdater;
   /** 清理一个事项的本机 Agent 数据与工作区密钥（结案、删除时调用；有进行中任务时抛错）。 */
   purgeAgentData?: (matterId: string) => Promise<void>;
   /** 登记内核关闭前要执行的冲刷（例如未到期的还原审计窗口）。 */
@@ -2596,6 +2599,19 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         ...st,
         display: `法规库最后更新 ${st.built_at.slice(0, 10)} · ${st.laws_count} 部 / ${st.versions_count} 版本 · 签名有效（${st.signer_key_id}）`,
       };
+    },
+
+    // ─── 在线内容更新（第 8 批；v9.2 §5.1 S6 法规增量包、S7 方法模板分发）：只取中软签名的公开内容，不带任何事项信息 ───
+    "content.status": () => {
+      if (!deps.content) return { configured: false };
+      return deps.content.status();
+    },
+    "content.check": async (p) => {
+      if (!deps.content) return { results: [] };
+      const kinds = p?.kind === "lawdb" || p?.kind === "skills" ? [p.kind as "lawdb" | "skills"] : (["lawdb", "skills"] as const);
+      const results = [];
+      for (const k of kinds) results.push(await deps.content.check(k));
+      return { results, status: deps.content.status() };
     },
 
     // ─── 共享文件夹同步（§7.1/§7.2：段式导出/摄取/状态；个人事项与无权限事项不出本机） ───

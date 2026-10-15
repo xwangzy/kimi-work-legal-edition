@@ -145,9 +145,11 @@ function firstExisting(paths: (string | undefined)[]): string | undefined {
 }
 
 /**
- * 法规库包与内容签名公钥的解析顺序（§9：包随客户端分发；公钥随包内置）：
- * 1) env（ZR_LAWDB_FILE / ZR_LAWDB_SIGNER_PUB，开发覆盖）；2) 工作区 lawdb/ 目录（生产安装位）；
- * 3) 制品旁 lawdb/ 目录（Electron 打包随包分发）；4) 仓库 content/lawdb/dist 与 content/keys（开发默认）。
+ * 随包法规库与内容签名公钥的解析顺序（§9：包随客户端分发；公钥随包内置）：
+ * 1) env（ZR_LAWDB_FILE / ZR_LAWDB_SIGNER_PUB，开发覆盖；安装包形态内核环境按白名单构造，不含这两项）；
+ * 2) 安装包 resources/lawdb/；3) 制品旁 lawdb/；4) 仓库 content/lawdb/dist 与 content/keys（开发默认）。
+ * **不从工作区（数据目录）取**（第 8 批更正）：数据目录对本人可写，原先“工作区 lawdb/ 优先”使能写数据目录者同时换掉法规库与
+ * 核验它的公钥；在线更新的法规库装在 <工作区>/content/ 下，由账本登记与签名通道清单决定是否选用（services/content-updates.ts）。
  * 全部缺失时返回仓库开发路径（openLawdb 将以中文报错提示先运行 build:lawdb——不静默降级）。
  */
 function resolveLawdb(env: NodeJS.ProcessEnv, workspaceDir: string): { lawdbFile: string; lawdbSignerPub: string } {
@@ -159,14 +161,14 @@ function resolveLawdb(env: NodeJS.ProcessEnv, workspaceDir: string): { lawdbFile
   const devFile = repoContentPath("lawdb", "dist", "lawdb.sqlite");
   const lawdbFile =
     env.ZR_LAWDB_FILE ??
-    firstExisting([join(workspaceDir, "lawdb", "lawdb.sqlite"), resourcesLawdb ? join(resourcesLawdb, "lawdb.sqlite") : undefined, bundleDir ? join(bundleDir, "lawdb", "lawdb.sqlite") : undefined, devFile]) ??
+    firstExisting([resourcesLawdb ? join(resourcesLawdb, "lawdb.sqlite") : undefined, bundleDir ? join(bundleDir, "lawdb", "lawdb.sqlite") : undefined, devFile]) ??
     devFile ??
     join(workspaceDir, "lawdb", "lawdb.sqlite");
 
   const devPub = repoContentPath("keys", "content-signing-dev.pub.json");
   let lawdbSignerPub = env.ZR_LAWDB_SIGNER_PUB ?? "";
   if (!lawdbSignerPub) {
-    const pubFile = firstExisting([join(workspaceDir, "lawdb", "content-signing.pub.json"), resourcesLawdb ? join(resourcesLawdb, "content-signing.pub.json") : undefined, bundleDir ? join(bundleDir, "lawdb", "content-signing.pub.json") : undefined, devPub]);
+    const pubFile = firstExisting([resourcesLawdb ? join(resourcesLawdb, "content-signing.pub.json") : undefined, bundleDir ? join(bundleDir, "lawdb", "content-signing.pub.json") : undefined, devPub]);
     if (pubFile) {
       try {
         lawdbSignerPub = (JSON.parse(readFileSync(pubFile, "utf8")) as { publicKeyPem?: string }).publicKeyPem ?? "";
