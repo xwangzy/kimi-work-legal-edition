@@ -89,8 +89,8 @@ function crossNativeDirFresh(pkgName) {
   const fresh = join(crossNpmCache, "verified", `${pkgName.replace(/^@/, "").replace(/\//g, "-")}-${want}`);
   rmSync(fresh, { recursive: true, force: true });
   mkdirSync(fresh, { recursive: true });
-  // 归档操作数相对 + cwd：GNU tar 会把 "D:\..." 的盘符冒号当远程主机（同 fetch-win-runtime.mjs）
-  execFileSync(tarBin, ["-xzf", basename(tgz), "-C", fresh, "--strip-components=1"], { cwd: crossNpmCache });
+  // 不给 tar 传任何绝对路径（-C 的盘符/反斜杠会被 GNU tar 弄坏）：cwd 到目标目录，归档参数用相对正斜杠路径（同 fetch-win-runtime.mjs）
+  execFileSync(tarBin, ["-xzf", relative(fresh, tgz).split("\\").join("/"), "--strip-components=1"], { cwd: fresh });
   if (JSON.parse(readFileSync(join(fresh, "package.json"), "utf8")).version !== want) throw new Error(`锁定的 ${pkgName} tarball 版本不是 ${want}`);
   return fresh;
 }

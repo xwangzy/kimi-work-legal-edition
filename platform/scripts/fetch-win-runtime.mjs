@@ -13,7 +13,7 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -102,8 +102,9 @@ for (const [name, ent] of Object.entries(lock.npm)) {
   const dest = join(npmCache, "node_modules", ...name.split("/"));
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
-  // tgz：GNU/bsdtar tar 均可解；归档操作数相对 + cwd（GNU tar 会把绝对路径的盘符当远程主机）
-  execFileSync("tar", ["-xzf", info.filename, "-C", dest, "--strip-components=1"], { cwd: npmCache });
+  // tgz：GNU/bsdtar 均可解。不给 tar 传任何绝对路径——-C 的盘符/反斜杠会被 GNU tar 弄坏（run 38676717086）；
+  // cwd 到目标目录，归档参数用相对正斜杠路径
+  execFileSync("tar", ["-xzf", relative(dest, tgz).split("\\").join("/"), "--strip-components=1"], { cwd: dest });
   // 保留 tarball（复核 B4-R15）：build-runtime 交叉构建时按锁文件 integrity 复核它、并从它重新解出，不信任缓存里解好的目录
   renameSync(tgz, join(npmCache, tarballName(name, ent.version)));
   ent.integrity = info.integrity;
