@@ -10,7 +10,7 @@ import { relaySupport, supportRelayAllowed, SUPPORT_MAX_UPLOAD_BYTES } from "../
 
 const body = Buffer.from('{"format":"kwl-diagnostics/1"}');
 const sha = createHash("sha256").update(body).digest("hex");
-const credential = `zst1.${"e".repeat(60)}.${"s".repeat(86)}`;
+const credential = `zst1.${Buffer.from(JSON.stringify({ tid: "t", uid: "u", sid: "s", dev: "d", kid: "k", iat: 1, exp: 2, aud: ["support"] })).toString("base64url")}.${"s".repeat(86)}`;
 const ticketReq = { step: "ticket" as const, credential };
 const up = { step: "upload" as const, credential, ticket: "SUP-AB12-CD34", upload_token: "t".repeat(43), content_sha256: sha, body_b64: body.toString("base64") };
 
@@ -66,4 +66,16 @@ test("摘要由闸门重算：与内核声明不符、非规范 base64 不发；
   assert.equal(calls, 0);
   const big = (async () => new Response("x".repeat(70 * 1024), { status: 200 })) as unknown as typeof fetch;
   assert.deepEqual(await relaySupport(ticketReq, { ...o, fetchImpl: big }), { ok: false, reason: "support_response_too_large" });
+});
+
+test("复核 S9B-19、S9B-22：凭据载荷不含受众 support（误交通用席位令牌）不发；连接被拒判“确定没有送出”", async () => {
+  const general = `zst1.${Buffer.from(JSON.stringify({ tid: "t", uid: "u", sid: "s", dev: "d", kid: "k", iat: 1, exp: 2 })).toString("base64url")}.${"s".repeat(86)}`;
+  assert.equal(supportRelayAllowed({ step: "ticket", credential: general }), "support_credential_audience");
+  const net = await import("node:net");
+  const srv = net.createServer();
+  await new Promise<void>((r) => srv.listen(0, "127.0.0.1", () => r()));
+  const port = (srv.address() as { port: number }).port;
+  await new Promise<void>((r) => srv.close(() => r()));
+  const r = await relaySupport(ticketReq, { baseUrl: `http://127.0.0.1:${port}` });
+  assert.deepEqual(r, { ok: false, reason: "support_connect_failed" });
 });

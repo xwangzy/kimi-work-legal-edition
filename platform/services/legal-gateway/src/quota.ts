@@ -224,13 +224,13 @@ export class LeaseQuota implements QuotaSource {
     l.dirty = true;
   }
 
-  /** 回报：有新用量的租约报累计；已到期且无在途请求的报最终并移除。 */
-  flush(): Promise<void> {
+  /** 回报：有新用量的租约报累计；已到期（或 finalAll 时一切）且无在途请求的报最终并移除。 */
+  flush(finalAll = false): Promise<void> {
     if (this.flushing) return this.flushing;
     this.flushing = (async () => {
       const t = this.o.now();
       for (const l of [...this.leases.values()]) {
-        const expired = l.expiresAt <= t && l.holds === 0;
+        const expired = (finalAll || l.expiresAt <= t) && l.holds === 0;
         if (!l.dirty && !expired) continue;
         const usage = [...l.bySeat].map(([sid, u]) => ({ sid, points: u.points, requests: u.requests }));
         const r = await this.o.ledger.settle(l.tid, { lease_id: l.id, holder: this.o.holder, usage, final: expired });
@@ -250,11 +250,17 @@ export class LeaseQuota implements QuotaSource {
     return this.flushing;
   }
 
-  /** 关闭：停定时器，把所有租约的累计用量报一次（不标最终：进程重启后的新实例领新租约）。 */
-  async close(): Promise<void> {
+  /**
+   * 关闭：停定时器，等进行中的请求结算（至多 waitMs，缺省 10 秒），然后对所有租约做**最终回报**——未用部分立即在账本释放
+   * （复核 S9A-21：否则要等租约到期 + 宽限约 35 分钟，期间律师可能看到“已达上限”）。崩溃时发不出最终回报，按到期 + 宽限释放。
+   */
+  async close(waitMs = 10_000): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    await this.flush();
+    const deadline = Date.now() + waitMs;
+    while ([...this.leases.values()].some((l) => l.holds > 0) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+    if (this.flushing) await this.flushing;
+    await this.flush(true);
   }
 
   /** 测试与诊断：本地租约概况。 */

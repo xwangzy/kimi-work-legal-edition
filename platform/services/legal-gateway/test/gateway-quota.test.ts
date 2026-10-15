@@ -206,3 +206,19 @@ test("复核 S9B-03：只限支持服务的凭据在网关被拒（受众不符�
   assert.equal(r.status, 401);
   await quota.close();
 });
+
+test("复核 S9A-21：网关正常关闭时对所有租约做最终回报，未用部分立即在账本释放", async () => {
+  const tid = "ten_gwq_i";
+  cp.ops.createTenant({ tid, edition: "team", seats: 3, points: 100_000 });
+  cp.ops.setQuotaCap(tid, 10_000);
+  const quota = new LeaseQuota({ ledger: httpLedger({ baseUrl: cpBase, serviceSecret: SECRET }), holder: "gw-i", leaseSize: 5_000, flushMs: 60_000 });
+  const r = await quota.reserve(tid, 100);
+  assert.ok(r.ok);
+  if (r.ok) quota.settle(r.hold, "s_i", 40);
+  const { available } = await import("@zr-legal/control-plane");
+  const q = cp.ops.tenant(tid)!.quota;
+  assert.ok(available(q, Date.now()) < 10_000);
+  await quota.close();
+  assert.equal(q.period_used, 40);
+  assert.equal(available(q, Date.now()), 10_000 - 40, "关闭后未用部分已释放");
+});

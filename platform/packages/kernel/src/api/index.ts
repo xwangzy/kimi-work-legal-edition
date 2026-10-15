@@ -2447,13 +2447,19 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const before = p?.before_seq === undefined ? undefined : Number(p.before_seq);
       const records = deps.governance ? deps.governance.auditRecords(limit, Number.isSafeInteger(before) ? before : undefined) : [];
       const devMember = new Map(db.all<{ device_id: string; display_name: string | null }>(`SELECT d.device_id, u.display_name FROM devices d LEFT JOIN users u ON u.user_id = d.member_id WHERE d.tenant_id = ?`, [id.tenantId]).map((r) => [r.device_id, r.display_name]));
-      // 目标可能是设备编号，也可能是成员编号（席位凭据签发、收回席位）
-      for (const u of db.all<{ user_id: string; display_name: string }>(`SELECT user_id, display_name FROM users WHERE tenant_id = ?`, [id.tenantId])) if (!devMember.has(u.user_id)) devMember.set(u.user_id, u.display_name);
+      // 目标是设备编号或席位编号（复核 S9A-11 后成员相关的对象改记席位编号）：本机自己的席位写“你的席位”；
+      // 签发凭据与分配席位的席位属于执行者本人，按执行者的成员名写“××的席位”；收回别人的席位只显示席位编号（复核 S9A-24）
+      const mySid = deps.governance?.seatInfo().sid ?? null;
+      const SEAT_OF_ACTOR = new Set(["seat_token.issue", "support_token.issue", "seat.assign"]);
       return {
         mode: deps.controlPlane ? "control_plane" : "local_dev",
         fetched,
         fetch_error,
-        records: records.map((r) => ({ ...r, actor_name: r.actor.kind === "device" ? (devMember.get(r.actor.id) ?? null) : null, target_name: r.target ? (devMember.get(r.target) ?? null) : null })),
+        records: records.map((r) => {
+          const actor_name = r.actor.kind === "device" ? (devMember.get(r.actor.id) ?? null) : null;
+          const target_name = !r.target ? null : r.target === mySid ? "你的席位" : SEAT_OF_ACTOR.has(r.action) && actor_name ? `${actor_name}的席位` : (devMember.get(r.target) ?? null);
+          return { ...r, actor_name, target_name };
+        }),
       };
     },
     "control_plane.audit_export": async (p, id) => {

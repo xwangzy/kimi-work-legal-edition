@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { api, type CpAuditRow, type QuotaStatus } from "../api.ts";
 import { fmtTime } from "../lib/labels.ts";
-import { auditActionLabel, auditActorLabel, auditFetchErrorText, auditResultLabel, auditTargetLabel, capRatio, fmtPoints, periodLabel } from "../lib/firm-usage.ts";
+import { auditActionLabel, auditActorLabel, auditDetailLabel, auditFetchErrorText, auditResultLabel, auditTargetLabel, capRatio, fmtPoints, periodLabel } from "../lib/firm-usage.ts";
 
 export function UsagePanel() {
   const [q, setQ] = useState<QuotaStatus | null>(null);
@@ -62,7 +62,7 @@ export function UsagePanel() {
                 <span style={{ width: `${Math.round(ratio * 100)}%` }} />
               </div>
             )}
-            <div className="muted">中软网关已预领、尚未结算 {fmtPoints(q.in_flight)} 点（计入上限判断，几分钟内释放）。用量按实际结算，到上限即停；单个请求的实际用量超过预估时，最多略超上限。</div>
+            <div className="muted">中软网关已预领、尚未结算 {fmtPoints(q.in_flight)} 点（计入上限判断；网关正常关闭时立即释放，异常退出时最长约 35 分钟后释放——这期间用量条未满也可能暂时领不到额度）。用量按实际结算，到上限即停；单个请求的实际用量超过预估时，最多略超上限。</div>
           </div>
         </div>
         {q.pool_remaining !== undefined && (
@@ -204,7 +204,10 @@ export function CpAuditPanel() {
                 <tr key={r.seq}>
                   <td className="num">{fmtTime(r.at)}</td>
                   <td>{auditActorLabel(r)}</td>
-                  <td>{auditActionLabel(r.action)}</td>
+                  <td>
+                    {auditActionLabel(r.action)}
+                    {r.detail && <span className="muted">（{auditDetailLabel(r.detail)}）</span>}
+                  </td>
                   <td>{auditTargetLabel(r)}</td>
                   <td>
                     <span className={`tag tag-${res.tone}`}>{res.text}</span>

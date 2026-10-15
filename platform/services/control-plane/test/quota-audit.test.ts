@@ -388,3 +388,31 @@ test("复核 S9A-04、S9A-17：已到期但未终报的租约仍计在途（同�
   assert.deepEqual(h.history, [{ period: "2026-07", used: 5 }, { period: "2026-08", used: 0 }, { period: "2026-09", used: 0 }]);
   assert.equal(h.period, "2026-10");
 });
+
+test("复核 S9A-22、S9A-23、S9B-21：证书未变的重复登记顺带分配席位只记“席位分配”；凭据签发每小时限 12 张；支持专用凭据受众 support、15 分钟", async () => {
+  const { verifySeatToken } = await import("@zr-legal/seat-token");
+  const tid = "ten_s22";
+  cp.ops.createTenant({ tid, edition: "team", seats: 1 });
+  await enroll(tid);
+  const a = makeDevice(tid, "admin", "usr_s22a", "dev_s22a");
+  const b = makeDevice(tid, "lawyer", "usr_s22b", "dev_s22b");
+  await a.register();
+  await b.register(); // 席位已满：B 没有席位
+  cp.ops.revokeSeat(tid, "usr_s22a");
+  assert.equal((await b.register()).json.seat !== null, true, "空出席位后重复登记即分配");
+  const page = openEnvelope<CpAuditPage>((await a.call("GET", "/v1/audit?after=0&limit=500")).json, "kwl-cp-audit-page", publicKeyMap(cp.publicKeys.envelope));
+  // A 已收回席位但设备仍是管理员设备，可取流水
+  assert.ok(page.ok);
+  const tailActs = page.ok ? page.body.records.slice(-2).map((r) => `${r.action}:${r.actor.id}`) : [];
+  assert.deepEqual(tailActs, ["seat.revoke:ops", "seat.assign:dev_s22b"], "重复登记不记登记本身，只记席位分配");
+
+  const st = await b.call("POST", "/v1/support-token", {});
+  assert.equal(st.status, 200);
+  const claims = verifySeatToken(st.json.token, publicKeyMap(cp.publicKeys.seat), { audience: "support", requireAudience: true });
+  assert.deepEqual(claims.aud, ["support"]);
+  assert.equal(claims.exp - claims.iat, 900);
+  let last = 0;
+  for (let i = 0; i < 12; i++) last = (await b.call("POST", "/v1/seat-token", {})).status;
+  assert.equal(last, 200);
+  assert.equal((await b.call("POST", "/v1/seat-token", {})).status, 429, "第 13 张被限速");
+});

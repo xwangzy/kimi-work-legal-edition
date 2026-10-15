@@ -509,6 +509,23 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
    * “被拒绝”记录限速（复核 S9A-10）：同一租户、同一执行者、同一动作每分钟至多 10 条，之后的同类拒绝不再进流水
    * （已认证设备反复发同一个被拒请求不能撑大流水、也不能每条都同步写盘拖慢全平台）。
    */
+  /**
+   * 凭据签发限速（复核 S9A-23）：同一设备每小时至多签 12 张席位令牌 / 支持凭据（正常续期每天一次、上传每次一张）——
+   * 成功的签发都要记审计并同步写盘，不能让一台设备反复申请撑大流水。
+   */
+  const issueWindow = new Map<string, { hour: number; n: number }>();
+  const issueAllowed = (tid: string, dev: string, action: string): boolean => {
+    const hour = Math.floor(now() / 3600_000);
+    const k = `${tid}\u0000${dev}\u0000${action}`;
+    if (issueWindow.size > 50_000) issueWindow.clear();
+    const w = issueWindow.get(k);
+    if (!w || w.hour !== hour) {
+      issueWindow.set(k, { hour, n: 1 });
+      return true;
+    }
+    w.n += 1;
+    return w.n <= 12;
+  };
   const rejectedWindow = new Map<string, { minute: number; n: number }>();
   const rejectedAllowed = (e: Omit<AuditEntry, "result">): boolean => {
     const minute = Math.floor(now() / 60_000);
@@ -523,11 +540,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     return w.n <= 10;
   };
   /** 本请求要记的运营审计（设备签名核验通过之后才记：未认证的请求只进访问日志，不能用来撑大律所的审计流水）。 */
-  const auditCtx = new WeakMap<ServerResponse, { entry: Omit<AuditEntry, "result">; written: boolean }>();
+  /** extra：同一请求顺带发生的写操作（如登记时自动分配席位；复核 S9A-22），与主记录同样“先记、写盘失败补记已撤销”。 */
+  const auditCtx = new WeakMap<ServerResponse, { entry: Omit<AuditEntry, "result">; written: boolean; extra?: Omit<AuditEntry, "result">[] }>();
   const send = (res: ServerResponse, status: number, body: unknown) => {
     // 先记审计、再持久化、再回复：吊销、席位、发布一旦回复成功即已落盘且有审计（写盘失败 → 外层补记“已撤销”）
     const ctx = auditCtx.get(res);
     if (ctx && !ctx.written) {
+      for (const x of ctx.extra ?? []) audit({ ...x, result: "ok" });
       audit({ ...ctx.entry, result: "ok" });
       ctx.written = true;
     }
@@ -586,12 +605,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (dev.cert.role !== "admin") throw new CpError(403, "admin_required", "需要管理员设备");
   };
 
-  const adminCheck = (t: TenantRecord, bytes: Buffer, sigs: AdminSignature[]) =>
+  const adminCheck = (t: TenantRecord, bytes: Buffer, sigs: AdminSignature[], at: Date = new Date(now())) =>
     verifyAdminSignatures(bytes, sigs, {
       rootPublicKeyPem: t.root_public_key_pem ?? "",
       threshold: adminThresholdForEdition(t.edition),
       revokedDevices: new Set([...t.devices.values()].filter((d) => d.revoked_at).map((d) => d.cert.deviceId)),
-      now: new Date(now()),
+      now: at,
     });
 
   const signingBytesOf = (d: DraftRecord): Buffer => (d.kind === "policy" ? policySigningBytes(d.doc as FirmPolicyDoc) : connectorSigningBytes(d.doc as FirmConnectorDoc));
@@ -622,7 +641,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       for (const m of t.anon.values()) matters.push({ ...m, tid: t.tid });
       // 放宽类策略按当前吊销集重算管理员签名是否仍够门限（复核 S9B-07：与客户端 signers_insufficient 回退同一口径）
       const live = t.policy && Date.parse(t.policy.doc.expires_at) > now() ? t.policy : null;
-      const pol = live && (policyRelaxations(live.doc.body).length === 0 || adminCheck(t, policySigningBytes(live.doc), live.admin_signatures).ok) ? live.doc.body : strictestTemplate();
+      // 与客户端同一口径（复核 S9B-18）：证书按策略签发时刻核验（之后到期不影响已签的策略），只按吊销集重算
+      const pol =
+        live && (policyRelaxations(live.doc.body).length === 0 || adminCheck(t, policySigningBytes(live.doc), live.admin_signatures, new Date(Date.parse(live.doc.issued_at))).ok) ? live.doc.body : strictestTemplate();
       policies.push({ tid: t.tid, l3a_standard_model: pol.l3a_standard_model, support_upload: pol.support_upload === "allow" ? "allow" : "deny" });
     }
     return { version: feedVersion, issued_at: iso(), revoked_devices: revokedDevices, revoked_seats: revokedSeats, matters, policies };
@@ -676,10 +697,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const body: DeviceRevocationNotice = { tid: t.tid, device_id: cert.deviceId, revoked_at: revokedAt };
         throw new CpError(403, "device_revoked", "设备已吊销", { notice: seal("kwl-device-revoked", body) });
       }
-      if (!existing || existing.cert.signature !== cert.signature) {
+      const changed = !existing || existing.cert.signature !== cert.signature;
+      if (changed) {
         t.devices.set(cert.deviceId, { cert, registered_at: iso(), revoked_at: null });
         t.directoryVersion += 1;
-      } else auditCtx.delete(res); // 已登记、证书未变：每次同步都会来一次，不记
+      }
       // 席位：成员没有席位且许可内仍有余量时自动分配（G0；生产由管理员在控制台分配）
       if (!t.seatsByUser.has(cert.memberId) && cert.role !== "node") {
         const active = [...t.seatsByUser.values()].filter((s) => !s.revoked_at).length;
@@ -687,9 +709,18 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           t.seatCounter += 1;
           const sid = `seat_${t.tid}_${t.seatCounter}`;
           t.seatsByUser.set(cert.memberId, { sid, uid: cert.memberId, assigned_at: iso(), revoked_at: null });
-          // 席位分配单独记一条（复核 S9A-09：证书未变的重复登记不记登记，但顺带分配了席位要记）
-          audit({ tid: t.tid, actor: { kind: "device", id: cert.deviceId, fp: certFingerprint(cert) }, action: "seat.assign", target: sid, result: "ok" });
+          // 席位分配单独记一条（复核 S9A-09），随本请求的主记录一并“先记、写盘失败补记已撤销”（复核 S9A-22）
+          const seatEntry = { tid: t.tid, actor: { kind: "device" as const, id: cert.deviceId, fp: certFingerprint(cert) }, action: "seat.assign", target: sid };
+          const ctx = auditCtx.get(res);
+          if (ctx) ctx.extra = [...(ctx.extra ?? []), seatEntry];
         }
+      }
+      // 已登记、证书未变：每次同步都会来一次，登记本身不记；顺带分配了席位则只记席位分配
+      if (!changed) {
+        const ctx = auditCtx.get(res);
+        const seatOnly = ctx?.extra?.[0];
+        if (ctx && seatOnly) auditCtx.set(res, { entry: seatOnly, written: false });
+        else auditCtx.delete(res);
       }
       return send(res, 200, { ok: true, directory_version: t.directoryVersion, seat: t.seatsByUser.get(cert.memberId)?.sid ?? null });
     }
@@ -730,6 +761,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     if (method === "POST" && p === "/v1/seat-token") {
       mark("seat_token.issue", t.seatsByUser.get(dev.cert.memberId)?.sid ?? null);
+      if (!issueAllowed(t.tid, dev.cert.deviceId, "seat_token")) throw new CpError(429, "rate_limited", "签发过于频繁，请稍后再试");
       if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不签发席位令牌");
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
@@ -742,6 +774,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // 支持服务专用的短期凭据（第 9 批复核 S9B-03）：受众只有 "support"、15 分钟；网关、检索、分发拒收——诊断包上传不再把通用席位令牌交给支持域
     if (method === "POST" && p === "/v1/support-token") {
       mark("support_token.issue", t.seatsByUser.get(dev.cert.memberId)?.sid ?? null);
+      if (!issueAllowed(t.tid, dev.cert.deviceId, "support_token")) throw new CpError(429, "rate_limited", "签发过于频繁，请稍后再试");
       if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不签发");
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
@@ -919,6 +952,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const ctx = auditCtx.get(res);
       if (ctx && (ctx.written || rejectedAllowed(ctx.entry))) {
         try {
+          if (ctx.written) for (const x of ctx.extra ?? []) auditLog.append({ ...x, result: `rolled_back:${ce.code}` }, iso());
           auditLog.append({ ...ctx.entry, result: `${ctx.written ? "rolled_back" : "rejected"}:${ce.code}` }, iso());
         } catch {
           // 审计写不进去：本请求本来就失败了

@@ -3,7 +3,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { diagSectionLabels, auditActionLabel, auditActorLabel, auditFetchErrorText, auditResultLabel, auditTargetLabel, capRatio, periodLabel, quotaLawyerLine } from "../src/lib/firm-usage.ts";
+import { auditDetailLabel, diagSectionLabels, auditActionLabel, auditActorLabel, auditFetchErrorText, auditResultLabel, auditTargetLabel, capRatio, periodLabel, quotaLawyerLine } from "../src/lib/firm-usage.ts";
 import { SAVE_METHODS } from "../electron/file-dialogs.cjs";
 
 const JARGON = /租约|lease|序号|seq|签名|哈希|hash|席位|控制面|token/i;
@@ -42,7 +42,12 @@ test("上限比例只按已结算用量（网关预领的不算已用）；上�
 });
 
 test("操作记录：动作、执行者、对象、结果都有中文；未知动作原样显示；取回失败分“被改写/验不过”与“暂时取不到”", () => {
-  for (const a of ["tenant.create", "tenant.enroll_root", "device.register", "seat_token.issue", "anon_summary.update", "draft.create", "draft.sign", "draft.publish", "connector.remove", "device.revoke", "seat.revoke", "quota.grant", "quota.cap_set", "license.renew", "license.terminate"]) {
+  assert.equal(auditDetailLabel({ cap: 5000 }), "上限 5,000 点");
+  assert.equal(auditDetailLabel({ uncapped: 1 }), "不设上限");
+  assert.equal(auditDetailLabel({ points: 1000 }), "1,000 点");
+  assert.equal(auditDetailLabel({ seats: 5, points: 0 }), "席位 5、点数 0");
+  assert.equal(auditDetailLabel(undefined), "");
+  for (const a of ["seat.assign", "support_token.issue", "tenant.create", "tenant.enroll_root", "device.register", "seat_token.issue", "anon_summary.update", "draft.create", "draft.sign", "draft.publish", "connector.remove", "device.revoke", "seat.revoke", "quota.grant", "quota.cap_set", "license.renew", "license.terminate"]) {
     assert.doesNotMatch(auditActionLabel(a), /\./, a);
   }
   assert.equal(auditActionLabel("x.unknown"), "x.unknown");

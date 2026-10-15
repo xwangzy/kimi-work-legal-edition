@@ -156,7 +156,7 @@ export interface GateUpstreams {
   dist?: { baseUrl: string; seatToken?: string; pins?: readonly string[] } | null;
   /**
    * 支持服务（第 9 批，v9.2 §5.1 S13，support-relay.ts）：律师确认上传的脱敏诊断包，内核经 IPC 请闸门代发；地址随客户端构建固定，
-   * 席位令牌由闸门附上。未配置 = 只能导出文件、不能上传。
+   * 凭据是内核交来的支持专用短期凭据（受众 support，闸门核对受众后附上；通用席位令牌不发往支持服务）。未配置 = 只能导出文件、不能上传。
    */
   support?: { baseUrl: string; pins?: readonly string[] } | null;
   /**

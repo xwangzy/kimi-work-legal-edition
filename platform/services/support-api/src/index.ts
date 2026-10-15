@@ -122,13 +122,15 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
     }
   };
   /** 本设备今天已申请的工单数（按存储里的元数据计，重启不清零；复核 S9B-08）。 */
+  // “每天”按北京时间换日（复核 S9B-22）
+  const bjDay = (t: number) => new Date(t + 8 * 3600_000).toISOString().slice(0, 10);
   const issuedTodayCount = (tid: string, dev: string): number => {
-    const day = iso().slice(0, 10);
+    const day = bjDay(now());
     let n = 0;
     for (const f of readdirSync(o.dir)) {
       const m = /^(SUP-[0-9A-Z-]+)\.json$/.exec(f);
       const meta = m ? readMeta(m[1]!, true) : null;
-      if (meta && meta.tid === tid && meta.dev === dev && meta.issued_at.slice(0, 10) === day) n++;
+      if (meta && meta.tid === tid && meta.dev === dev && bjDay(Date.parse(meta.issued_at)) === day) n++;
     }
     return n;
   };

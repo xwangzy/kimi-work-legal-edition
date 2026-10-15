@@ -56,6 +56,8 @@ const ACTIONS: Readonly<Record<string, string>> = {
   "connector.remove": "撤下连接器",
   "device.revoke": "吊销设备",
   "seat.revoke": "收回席位",
+  "seat.assign": "分配席位",
+  "support_token.issue": "签发支持凭据（诊断包上传）",
   "quota.grant": "加量",
   "quota.cap_set": "设置月度上限",
   "license.renew": "续订",
@@ -64,6 +66,18 @@ const ACTIONS: Readonly<Record<string, string>> = {
 
 export function auditActionLabel(a: string): string {
   return ACTIONS[a] ?? a;
+}
+
+/** 数值明细 → 一句话（复核 S9A-25：上限改成多少点等在页面上可见）。 */
+export function auditDetailLabel(d: Record<string, number> | undefined): string {
+  if (!d) return "";
+  const parts: string[] = [];
+  if (d.uncapped) parts.push("不设上限");
+  if (d.cap !== undefined) parts.push(`上限 ${fmtPoints(d.cap)} 点`);
+  if (d.points !== undefined && d.seats === undefined) parts.push(`${fmtPoints(d.points)} 点`);
+  if (d.seats !== undefined) parts.push(`席位 ${d.seats}、点数 ${fmtPoints(d.points ?? 0)}`);
+  if (d.days !== undefined) parts.push(`${d.days} 天`);
+  return parts.join("，");
 }
 
 export function auditActorLabel(r: Pick<CpAuditRow, "actor" | "actor_name">): string {

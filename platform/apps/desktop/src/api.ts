@@ -450,6 +450,8 @@ export interface CpAuditRow {
   target: string | null;
   target_name: string | null;
   result: string;
+  /** 数值明细（上限点数、加量点数、席位数、续订天数）。 */
+  detail?: Record<string, number>;
 }
 
 /** 控制面状态（阶段 6；不含任何令牌）。 */
