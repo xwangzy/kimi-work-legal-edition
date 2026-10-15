@@ -128,7 +128,11 @@ const smoke = (() => {
   if (problem) slog.event("MAIN_SMOKE_FAILED", { reason: "arg_rejected" });
   let onReady = null;
   const ready = new Promise((r) => (onReady = r));
-  return { out, rejected: Boolean(problem), ready, kernelReady: (msg) => onReady && onReady(msg) };
+  // 冒烟期间内核崩溃/退出：立即失败并给出与"挂起超时"区分开的错误码（kernel.fatal 的 message 可能含路径，只写码不外带）
+  let onFail = null;
+  const failed = new Promise((_, rej) => (onFail = rej));
+  failed.catch(() => {});
+  return { out, rejected: Boolean(problem), ready, failed, kernelReady: (msg) => onReady && onReady(msg), kernelFailed: (code) => onFail && onFail(new SmokeFailure(code)) };
 })();
 
 async function runSmoke(win) {
@@ -137,7 +141,8 @@ async function runSmoke(win) {
   const timeout = (ms, what) => new Promise((_, rej) => setTimeout(() => rej(new Error(`${what} 超时`)), ms));
   try {
     result.checks.runtime = restart.runtimeEnv ? "ok" : "missing";
-    await Promise.race([smoke.ready, timeout(120_000, "内核就绪")]).catch(() => {
+    await Promise.race([smoke.ready, smoke.failed, timeout(120_000, "内核就绪")]).catch((e) => {
+      if (e instanceof SmokeFailure) throw e;
       throw new SmokeFailure("kernel_ready_timeout");
     });
     result.checks.kernel_ready = "ok";
@@ -289,6 +294,7 @@ async function startKernel() {
     }
     if (msg && msg.type === "kernel.fatal") {
       slog.event("MAIN_KERNEL_FATAL", {});
+      if (smoke.out) smoke.kernelFailed("kernel_fatal");
       return;
     }
     // 其余都是内核广播（{type:"kernel.event",...} 与 run.updated、run.settled 等——广播自带的 type 会覆盖信封的 "kernel.event"，
@@ -303,6 +309,7 @@ async function startKernel() {
   kernel.on("exit", (code) => {
     kernel = null;
     slog.event("MAIN_KERNEL_EXITED", { code: Number.isInteger(code) ? code : undefined });
+    if (smoke.out) smoke.kernelFailed("kernel_exited");
     for (const [, resolve] of pendingRpc) resolve({ ok: false, error: { code: "internal", message: "内核进程已退出" } });
     pendingRpc.clear();
     if (restart.quitting) return;
