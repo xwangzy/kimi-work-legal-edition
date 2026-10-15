@@ -46,6 +46,7 @@ import { EgressApprovalStore } from "./services/egress-approvals.ts";
 import { screenSearchQuery } from "@zr-legal/egress-gate";
 import { createGateProvider, mockProvider } from "@zr-legal/model-broker";
 import { QaChatService } from "./services/qa-chat.ts";
+import { ReminderService } from "./services/reminders.ts";
 import { mintTaskToken } from "./identity.ts";
 import { FileSink, errFields, loadOrCreateSalt, slog } from "@zr-legal/safe-log";
 
@@ -451,6 +452,34 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     contentTimer.unref();
   }
 
+  // 期限提醒（第 10 批 S9）：本机到时即提醒；配置了通知服务与控制面时另交中软通知服务调度（只见触发时刻、设备编号与密文）
+  const reminders = new ReminderService({
+    db,
+    tenantId: identity.tenantId,
+    userId: identity.userId,
+    deviceId: device.deviceId,
+    encPrivateKeyPem: device.keys.encPrivateKeyPem,
+    signer: device.signer,
+    cloudConfigured: () => gate.notifyConfigured && !!controlPlane,
+    suspended: () => governance.exitMode() !== null,
+    credential: () => {
+      if (!controlPlane) return Promise.reject(new Error("control_plane_not_configured"));
+      return controlPlane.notifyToken();
+    },
+    relay: (req) => gate.notify(req),
+    onDue: (count) => broadcastRef.current?.({ type: "reminder.due", count }),
+    audit: (action, objectId, matterId) => appendAuditEvent(db, signer, { tenantId: identity.tenantId, actorId: identity.userId, action, kind: "reminder", objectId, matterId }),
+  });
+  // 巡检：缺省每分钟（本机到时 + 云端登记与取回）；ZR_NOTIFY_POLL_MS=off 只在显式调用 reminders.sync 时巡检（测试）
+  let reminderTimer: NodeJS.Timeout | null = null;
+  if (env.ZR_NOTIFY_POLL_MS !== "off") {
+    const every = Math.min(Math.max(Number(env.ZR_NOTIFY_POLL_MS ?? 60_000) || 60_000, 15_000), 600_000);
+    reminderTimer = setInterval(() => {
+      void reminders.tick().catch((e) => slog.event("KERNEL_REMINDER_TICK_FAILED", errFields(e)));
+    }, every);
+    reminderTimer.unref();
+  }
+
   const shutdownHooks: (() => void)[] = [];
   const api = createApi({
     purgeAgentData: purgeAgentDataFor,
@@ -480,6 +509,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     matterPolicy: (mid) => kapMatterPolicy(db, mid, firmPolicy()),
     governance,
     controlPlane,
+    reminders,
   });
 
   // 本设备被吊销（第 02 篇 §9.13；复核 S6-A02、S6-B01）：终止进行中的任务（闸门在退出模式下已拒绝一切出站）；
@@ -704,6 +734,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       clearInterval(dailyTimer);
       if (syncTimer) clearInterval(syncTimer);
       if (contentTimer) clearInterval(contentTimer);
+      if (reminderTimer) clearInterval(reminderTimer);
       if (contentFirst) clearTimeout(contentFirst);
       await contentUpdater.close();
       await queue.shutdown();

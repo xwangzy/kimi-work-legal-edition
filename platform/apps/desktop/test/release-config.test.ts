@@ -174,3 +174,16 @@ test("支持服务（第 9 批 S13）：support_base 须 https + 两把钉住；
   assert.equal(packaged.ZR_SUPPORT_BASE, undefined);
   assert.equal(packaged.ZR_SUPPORT_PINS, undefined);
 });
+
+test("通知服务（第 10 批 S9）：notify_base 须 https + 两把钉住；安装包形态剔除环境里的通知服务配置", () => {
+  const ok = loadReleaseConfig(write("notify-ok.json", { notify_base: "https://notify.example.cn/", notify_pins: [P1, P2] }));
+  assert.deepEqual(ok.problems, []);
+  assert.equal(ok.env.ZR_NOTIFY_BASE, "https://notify.example.cn");
+  assert.equal(ok.env.ZR_NOTIFY_PINS, `${P1},${P2}`);
+  const http = loadReleaseConfig(write("notify-http.json", { notify_base: "http://notify.example.cn", notify_pins: [P1, P2] }));
+  assert.equal(http.env.ZR_NOTIFY_BASE, undefined);
+  assert.equal(http.problems.length, 1);
+  const packaged = packagedKernelEnv({ ZR_NOTIFY_BASE: "http://evil.example", ZR_NOTIFY_PINS: "x", PATH: "/bin" }, { env: {} });
+  assert.equal(packaged.ZR_NOTIFY_BASE, undefined);
+  assert.equal(packaged.ZR_NOTIFY_PINS, undefined);
+});

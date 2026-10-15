@@ -154,7 +154,14 @@ export function MatterPage({ matterId }: { matterId: string }) {
   return (
     <main className="main">
       <div className="main-wide">
-        <h1 className="page-title">{matter.title}</h1>
+        <div className="page-head">
+          <h1 className="page-title">{matter.title}</h1>
+          {!closed && !matter.is_sample && (
+            <button className="btn-ghost" onClick={() => nav(`/reminders/new/${encodeURIComponent(matterId)}`)}>
+              设提醒
+            </button>
+          )}
+        </div>
         {matter.is_sample && (
           <div className="banner banner-gray">
             这是示例事项：合同与审查意见都是虚构的，只在这台电脑上，不会发给任何人。可以在“材料”里打开审查意见，试着逐条决定并生成修订稿。

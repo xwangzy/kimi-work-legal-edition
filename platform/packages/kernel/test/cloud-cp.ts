@@ -11,6 +11,7 @@ import { createControlPlane, devControlPlaneKeys, GatewayFeedSubscriber, type Co
 import { createLegalGateway, DEFAULT_ROUTES, httpLedger, LeaseQuota, memoryMeter, MockProvider, type MeterRecord } from "@zr-legal/legal-gateway";
 import { createSearchService, MockSearchProvider, type SearchMeterRecord } from "@zr-legal/search-service";
 import { createSupportApi, type SupportAccessRecord } from "@zr-legal/support-api";
+import { createNotifyApi } from "@zr-legal/notify-api";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,6 +29,8 @@ export interface CloudCp {
   feed: GatewayFeedSubscriber;
   /** 支持服务（第 9 批 S13；诊断包上传）：存储目录、运营凭据与访问审计。 */
   support: { dir: string; opsSecret: string; base: string; access: SupportAccessRecord[] };
+  /** 通知服务（第 10 批 S9；期限提醒）：存储目录与服务（用例可看云端保存了什么）。 */
+  notify: { dir: string; base: string; server: ReturnType<typeof createNotifyApi>; setSkew(ms: number): void };
   /** 网关的额度租约（用例可 flush 后核对控制面账本）。 */
   quota: LeaseQuota;
   gatewayUrl: string;
@@ -78,6 +81,13 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
   await new Promise<void>((r) => gateway.listen(0, "127.0.0.1", () => r()));
   await new Promise<void>((r) => searchSvc.listen(0, "127.0.0.1", () => r()));
   await new Promise<void>((r) => supportSvc.listen(0, "127.0.0.1", () => r()));
+  // 通知服务（第 10 批 S9）
+  const notifyDir = mkdtempSync(join(tmpdir(), "kwl-notify-"));
+  // 通知服务的时钟可前拨（用例让提醒“到时”而不必等待）
+  let notifySkew = 0;
+  const notifySvc = createNotifyApi({ dir: notifyDir, keys: seatKeys, feed, now: () => Date.now() + notifySkew });
+  await new Promise<void>((r) => notifySvc.listen(0, "127.0.0.1", () => r()));
+  const notifyBase = `http://127.0.0.1:${(notifySvc.address() as AddressInfo).port}`;
   const supportBase = `http://127.0.0.1:${(supportSvc.address() as AddressInfo).port}`;
   const gatewayUrl = `http://127.0.0.1:${(gateway.address() as AddressInfo).port}/v1`;
   return {
@@ -89,6 +99,8 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
       ZR_GATEWAY_BASE: gatewayUrl,
       ZR_SEARCH_BASE: `http://127.0.0.1:${(searchSvc.address() as AddressInfo).port}/search`,
       ZR_SUPPORT_BASE: supportBase,
+      ZR_NOTIFY_BASE: notifyBase,
+      ZR_NOTIFY_POLL_MS: "off",
     },
     cp,
     base,
@@ -99,6 +111,14 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
     feed,
     quota,
     support: { dir: supportDir, opsSecret, base: supportBase, access: supportAccess },
+    notify: {
+      dir: notifyDir,
+      base: notifyBase,
+      server: notifySvc,
+      setSkew(ms) {
+        notifySkew = ms;
+      },
+    },
     gatewayUrl,
     seatFor: (c) => issueSeatToken({ ...c, kid: keys.seat.kid }, keys.seat.privateKey),
     setControlPlaneAvailable(on) {
@@ -114,7 +134,7 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
     async close() {
       feed.stop();
       await quota.close().catch(() => {});
-      for (const s of [cp.server, gateway, searchSvc, supportSvc]) {
+      for (const s of [cp.server, gateway, searchSvc, supportSvc, notifySvc]) {
         s.closeAllConnections();
         await new Promise<void>((r) => s.close(() => r()));
       }

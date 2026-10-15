@@ -43,6 +43,9 @@ export const EVENTS = {
   KERNEL_RUNS_RECOVERED: { level: "warn", fields: { count: "int", parked: "bool" } },
   KERNEL_CHECKPOINT_FAILED: { level: "warn", fields: { ...ERR } },
   KERNEL_SYNC_TIMER_FAILED: { level: "warn", fields: { ...ERR } },
+  KERNEL_REMINDER_TICK_FAILED: { level: "warn", fields: { ...ERR } },
+  /** 云端送来、核对不通过而丢弃的提醒条数（解不开、签名不符、发出设备已吊销等；第 10 批 S9）。 */
+  REMINDER_REJECTED: { level: "warn", fields: { count: "int" } },
   KERNEL_NODE_ENQUEUE_EXPORT_FAILED: { level: "warn", fields: { ...ERR } },
   SERVICE_AUTH_DEV_SECRET: { level: "warn", fields: {} },
   EXECUTOR_PROVIDER_RETRY: { level: "warn", fields: { step: "ident", attempt: "int", delay_ms: "ms" } },

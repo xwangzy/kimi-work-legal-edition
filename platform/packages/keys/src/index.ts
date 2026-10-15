@@ -14,3 +14,4 @@ export * from "./recovery.ts";
 export * from "./signing.ts";
 export * from "./share-codec.ts";
 export * from "./signer.ts";
+export * from "./device-seal.ts";

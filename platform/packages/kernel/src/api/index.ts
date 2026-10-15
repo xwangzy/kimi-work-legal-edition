@@ -12,6 +12,7 @@ import { writeExportFile } from "../services/export-file.ts";
 import type { CpAuditRecord } from "@zr-legal/firm-trust";
 import { SUPPORT_MAX_UPLOAD_BYTES } from "@zr-legal/egress-gate";
 import { supportErrorText } from "../services/support-errors.ts";
+import { parseReminderInput, type ReminderService } from "../services/reminders.ts";
 import { recordSuspectReview, sendPreview, summarizeSend, type SendSummary, type SuspectView } from "../services/send-preview.ts";
 import {
   ConsentStatus,
@@ -129,6 +130,8 @@ export interface ApiDeps {
   purgeAgentData?: (matterId: string) => Promise<void>;
   /** 登记内核关闭前要执行的冲刷（例如未到期的还原审计窗口）。 */
   onShutdown?: (fn: () => void) => void;
+  /** 期限提醒（第 10 批 S9）。 */
+  reminders?: ReminderService;
 }
 
 type Handler = (params: any, id: Identity) => unknown | Promise<unknown>;
@@ -2139,6 +2142,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
               search_configured: !!up?.search,
               // 第 9 批 S13：支持服务（诊断包上传）是否配置、律所是否允许
               support_configured: !!up?.support,
+              // 期限提醒（第 10 批 S9）：通知服务地址已配置且接入了控制面（凭据由控制面签发）
+              notify_configured: !!up?.notify && !!deps.controlPlane,
               support_upload_allowed: deps.governance?.supportUploadAllowed() ?? false,
               fetch: up?.fetch ?? "disabled",
               fetch_allowlist_size: gate.fetchAllowlist.length,
@@ -3095,6 +3100,20 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     if (row?.matter_role !== "owner") throw forbidden(msg);
   }
 
+  function requireReminders(): ReminderService {
+    if (!deps.reminders) throw new DomainError("provider_unavailable", "提醒功能未启用", 503);
+    return deps.reminders;
+  }
+
+  /**
+   * 提醒的事项门禁：须是事项成员、事项进行中（结案与删除的不能设新提醒）；通知事项成员须有编辑权限（只读成员只能提醒自己）。
+   */
+  function reminderMatterGate(matterId: string, audience: "me" | "team", id: Identity): void {
+    const m = requireMatterAccess(db, matterId, id);
+    if ((m.lifecycle ?? "active") !== "active") throw validation("已结案的事项不能设新提醒");
+    if (audience === "team") requireMatterWriter(db, matterId, id);
+  }
+
   /** 成员写操作门禁（viewer 最小权限）：有效成员（墓碑过滤）且非 viewer；节点身份例外见下。 */
   function requireMatterWriter(db2: KernelDb, matterId: string, id: Identity, opts?: { allowClosed?: boolean }): void {
     // 数据生命周期（迁移 0021）：已结案事项只读（取消、对账等收尾操作除外）；已删除事项不可写
@@ -3283,6 +3302,84 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (up.status !== 200 || uj.ok !== true) return fail(up.status >= 500 ? "unknown" : "failed", String(uj.error ?? `http_${up.status}`).slice(0, 60));
       finish("sent", null);
       return { ticket, expires_at: typeof uj.expires_at === "string" ? uj.expires_at : null, retention_days: 7 };
+    },
+    // ─── 期限提醒（第 10 批 S9；services/reminders.ts） ───
+    "reminders.list": (p, id) => {
+      const rs = requireReminders();
+      const mine = db.all<Record<string, unknown>>(
+        `SELECT r.reminder_id, r.matter_id, r.kind, r.due_date, r.remind_at, r.days_before, r.remind_time, r.note, r.audience, r.version, r.status,
+                r.cloud_state, r.cloud_error, r.cloud_targets, r.created_at, r.updated_at, m.title AS matter_title, m.collab_scope
+           FROM reminders r JOIN matters m ON m.matter_id = r.matter_id
+          WHERE r.tenant_id = ? AND r.created_by = ? AND r.status = 'active' AND m.lifecycle <> 'purged'
+            ${p?.matter_id ? "AND r.matter_id = ?" : ""}
+          ORDER BY r.due_date, r.remind_at LIMIT 500`,
+        p?.matter_id ? [id.tenantId, id.userId, String(p.matter_id)] : [id.tenantId, id.userId],
+      );
+      // 收到的提醒：只显示本人仍是成员的事项的（或本机没有该事项时显示期限类型、日期与发出人，不显示事项名）
+      const inbox = db.all<Record<string, unknown>>(
+        `SELECT i.reminder_id, i.version, i.matter_id, i.kind, i.due_date, i.remind_at, i.note, i.source, i.received_at, i.read_at, i.from_member,
+                u.display_name AS from_name,
+                (SELECT m.title FROM matters m JOIN matter_members mm ON mm.matter_id = m.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL WHERE m.matter_id = i.matter_id) AS matter_title
+           FROM reminder_inbox i LEFT JOIN users u ON u.user_id = i.from_member
+          WHERE i.tenant_id = ? ${p?.matter_id ? "AND i.matter_id = ?" : ""}
+          ORDER BY i.received_at DESC LIMIT 100`,
+        p?.matter_id ? [id.userId, id.tenantId, String(p.matter_id)] : [id.userId, id.tenantId],
+      );
+      const unread = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM reminder_inbox WHERE tenant_id = ? AND read_at IS NULL`, [id.tenantId])?.n ?? 0;
+      return {
+        cloud: { configured: rs.cloudConfigured, last: rs.lastCloud },
+        reminders: mine.map((r) => ({ ...r, mine: true })),
+        inbox: inbox.map((r) => ({ ...r, from_me: r.from_member === id.userId })),
+        unread,
+      };
+    },
+    "reminders.create": (p, id) => {
+      const rs = requireReminders();
+      const input = parseReminderInput(p, Date.now());
+      reminderMatterGate(input.matter_id, input.audience, id);
+      const r = rs.create(input);
+      void rs.tick().catch(() => {});
+      return r;
+    },
+    "reminders.update": (p, id) => {
+      const rs = requireReminders();
+      const rid = String(p?.reminder_id ?? "");
+      const cur = rs.get(rid);
+      if (!cur || cur.created_by !== id.userId) throw notFound("提醒");
+      const input = parseReminderInput({ ...p, matter_id: cur.matter_id }, Date.now());
+      reminderMatterGate(cur.matter_id, input.audience, id);
+      const r = rs.update(rid, input);
+      void rs.tick().catch(() => {});
+      return r;
+    },
+    "reminders.cancel": (p, id) => {
+      const rs = requireReminders();
+      const rid = String(p?.reminder_id ?? "");
+      const cur = rs.get(rid);
+      if (!cur || cur.created_by !== id.userId) throw notFound("提醒");
+      const r = rs.cancel(rid);
+      void rs.tick().catch(() => {});
+      return r;
+    },
+    /** 标为已读：给 items（编号 + 版本）或 all:true。 */
+    "reminders.mark_read": (p, id) => {
+      requireReminders();
+      const at = nowIso();
+      if (p?.all === true) return { updated: db.run(`UPDATE reminder_inbox SET read_at = ? WHERE tenant_id = ? AND read_at IS NULL`, [at, id.tenantId]).changes };
+      const items = Array.isArray(p?.items) ? (p.items as unknown[]).slice(0, 200) : [];
+      let n = 0;
+      for (const it of items) {
+        const x = it as { reminder_id?: unknown; version?: unknown };
+        if (typeof x?.reminder_id !== "string" || typeof x.version !== "number") continue;
+        n += db.run(`UPDATE reminder_inbox SET read_at = ? WHERE tenant_id = ? AND reminder_id = ? AND version = ? AND read_at IS NULL`, [at, id.tenantId, x.reminder_id, x.version]).changes;
+      }
+      return { updated: n };
+    },
+    /** 立即巡检一次（界面“立即同步”与测试；平时每分钟自动）。 */
+    "reminders.sync": async () => {
+      const rs = requireReminders();
+      const r = await rs.tick();
+      return { local: r.local, cloud: r.cloud, cloud_status: { configured: rs.cloudConfigured, last: rs.lastCloud } };
     },
     /** 本机的诊断包上传记录（最近 20 次；复核 S9B-02）。 */
     "diagnostics.uploads": (_p, id) => ({

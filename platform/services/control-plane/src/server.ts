@@ -179,6 +179,11 @@ const MAX_PRE_REVOKED = 1000;
 
 /** 支持服务专用凭据的有效期（复核 S9B-03）。 */
 export const SUPPORT_TOKEN_TTL_SECONDS = 15 * 60;
+/**
+ * 通知服务专用凭据的有效期（第 10 批 S9）：客户端在线时每分钟取一次到时提醒，凭据 6 小时一换——
+ * 签发要记操作审计并同步写盘，过短会让每台设备每天往流水里写几十条。
+ */
+export const NOTIFY_TOKEN_TTL_SECONDS = 6 * 3600;
 
 /** 席位令牌缺省签发时长（96 小时，复核 S6-A01）。 */
 export const SEAT_TTL_DEFAULT_SECONDS = 96 * 3600;
@@ -782,6 +787,18 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const at = now();
       const token = issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid: seat.sid, dev: dev.cert.deviceId, kid: o.keys.seat.kid, aud: ["support"] }, o.keys.seat.privateKey, SUPPORT_TOKEN_TTL_SECONDS, at);
       return send(res, 200, { token, expires_at: iso(at + SUPPORT_TOKEN_TTL_SECONDS * 1000) });
+    }
+    // 通知服务专用凭据（第 10 批 S9）：受众只有 "notify"；网关、检索、分发、支持服务都拒收——期限提醒的密文与投递不用通用席位令牌
+    if (method === "POST" && p === "/v1/notify-token") {
+      mark("notify_token.issue", t.seatsByUser.get(dev.cert.memberId)?.sid ?? null);
+      if (!issueAllowed(t.tid, dev.cert.deviceId, "notify_token")) throw new CpError(429, "rate_limited", "签发过于频繁，请稍后再试");
+      if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不签发");
+      const seat = t.seatsByUser.get(dev.cert.memberId);
+      if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
+      if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
+      const at = now();
+      const token = issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid: seat.sid, dev: dev.cert.deviceId, kid: o.keys.seat.kid, aud: ["notify"] }, o.keys.seat.privateKey, NOTIFY_TOKEN_TTL_SECONDS, at);
+      return send(res, 200, { token, expires_at: iso(at + NOTIFY_TOKEN_TTL_SECONDS * 1000) });
     }
     if (method === "GET" && p === "/v1/policy") return send(res, 200, seal("kwl-firm-policy-current", t.policy));
     // ─── 本所用量与上限（S3 v0）：成员看本所本月用量、上限与自己的用量；管理员与合伙人另看按成员明细与池余额 ───

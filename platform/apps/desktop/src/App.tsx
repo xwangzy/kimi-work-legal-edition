@@ -17,6 +17,7 @@ import { BoardsPage } from "./pages/Boards.tsx";
 import { ConnectionsPage } from "./pages/Connections.tsx";
 import { ChatPage } from "./pages/Chat.tsx";
 import { NotOpenPage } from "./pages/NotOpen.tsx";
+import { RemindersPage } from "./pages/Reminders.tsx";
 import { updateBannerView } from "./lib/update-banner.ts";
 
 /** 设置页的标签（UIUX 增量评审 ST-5）：律师版四页 + 管理员“管理”。 */
@@ -31,7 +32,7 @@ export type Route =
   | { page: "deliverables" }
   | { page: "methods" }
   | { page: "boards" }
-  | { page: "reminders" }
+  | { page: "reminders"; newForMatter?: string }
   | { page: "inbox" }
   | { page: "connections"; tab: SettingsTab }
   | { page: "chat"; conversationId?: string };
@@ -61,7 +62,8 @@ export function parseHash(hash: string): Route {
     case "boards":
       return { page: "boards" };
     case "reminders":
-      return { page: "reminders" };
+      // #/reminders/new/<事项>：打开设提醒表单并选好该事项（事项头“设提醒”）
+      return a === "new" && b ? { page: "reminders", newForMatter: b } : { page: "reminders" };
     case "inbox":
       return { page: "inbox" };
     case "connections":
@@ -107,6 +109,8 @@ export function App() {
       }),
     [],
   );
+  // 期限提醒的系统通知被点击：打开提醒页
+  useEffect(() => onKernelEvent((m) => (m?.type === "focus.reminders" ? nav("/reminders") : undefined)), []);
   // 自动更新（W7）：新版本下载并通过发布签名核验后提示；由律师选择时机重启，不强制
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
@@ -256,7 +260,7 @@ function Page({ route }: { route: Route }) {
     case "chat":
       return <ChatPage conversationId={route.conversationId} />;
     case "reminders":
-      return <NotOpenPage title="提醒与定时" phase="" lines={["期限提醒与定时任务即将推出：到期前提醒你，定时整理事项进展。"]} />;
+      return <RemindersPage {...(route.newForMatter ? { newForMatter: route.newForMatter } : {})} />;
     case "inbox":
       return <NotOpenPage title="收件区" phase="" lines={["收件区即将推出：手机和工作群发来的文件先放这里，再归入事项。"]} />;
   }

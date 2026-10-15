@@ -13,7 +13,7 @@ import { verifyToken, type CapabilityClaims } from "@zr-legal/service-auth";
 import { newId } from "@zr-legal/domain";
 import { egressContentDigest } from "@zr-legal/egress";
 import type { PartyEntry, TokenEntry } from "@zr-legal/tokenizer";
-import type { AuthorizeResult, CpRelayRequest, CpRelayResult, DistRelayResult, SupportRelayRequest, SupportRelayResult, GateEgressRecord, GatePurpose, GateUpstreams, MatterEgressContext, SignedApproval } from "@zr-legal/egress-gate";
+import type { AuthorizeResult, CpRelayRequest, CpRelayResult, DistRelayResult, SupportRelayRequest, SupportRelayResult, NotifyRelayRequest, NotifyRelayResult, GateEgressRecord, GatePurpose, GateUpstreams, MatterEgressContext, SignedApproval } from "@zr-legal/egress-gate";
 import type { KernelDb } from "../db.ts";
 import { liveRunForClaims } from "../identity.ts";
 import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, startParentHeartbeat, windowsSystemEnv } from "../executor/child-env.ts";
@@ -277,6 +277,8 @@ export interface GateHandle {
   dist(path: string, timeoutMs?: number): Promise<DistRelayResult>;
   /** 支持通道（第 9 批；只有申请工单与上传诊断包两种固定请求；闸门退出即失败）。 */
   support(req: SupportRelayRequest, timeoutMs?: number): Promise<SupportRelayResult>;
+  /** 通知通道（第 10 批；只有登记、撤销、取到时提醒、确认收到四种固定请求；闸门退出即失败）。 */
+  notify(req: NotifyRelayRequest, timeoutMs?: number): Promise<NotifyRelayResult>;
   close(): Promise<void>;
   readonly process: ChildProcess;
 }
@@ -380,6 +382,18 @@ function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
     const r = m.result as SupportRelayResult | undefined;
     p.resolve(r && typeof r === "object" && (r.ok === true ? typeof r.status === "number" && typeof r.body === "string" : typeof r.reason === "string") ? r : { ok: false, reason: "support_bad_reply" });
   });
+  // 通知通道（第 10 批）：同上
+  let notifySeq = 1;
+  const notifyPending = new Map<number, { resolve: (r: NotifyRelayResult) => void; timer: NodeJS.Timeout }>();
+  child.on("message", (m: any) => {
+    if (m?.t !== "notify_result") return;
+    const p = notifyPending.get(Number(m.id));
+    if (!p) return;
+    notifyPending.delete(Number(m.id));
+    clearTimeout(p.timer);
+    const r = m.result as NotifyRelayResult | undefined;
+    p.resolve(r && typeof r === "object" && (r.ok === true ? typeof r.status === "number" && typeof r.body === "string" : typeof r.reason === "string") ? r : { ok: false, reason: "notify_bad_reply" });
+  });
   child.on("exit", (code, signal) => {
     alive = false;
     slog.event("CHILD_EXIT", { proc: "gate", code: Number.isInteger(code) ? code! : undefined, signal: signal ?? undefined });
@@ -398,6 +412,11 @@ function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
       p.resolve({ ok: false, reason: "gate_exited" });
     }
     supportPending.clear();
+    for (const [, p] of notifyPending) {
+      clearTimeout(p.timer);
+      p.resolve({ ok: false, reason: "gate_exited" });
+    }
+    notifyPending.clear();
     o.onExit?.(code);
   });
   return new Promise((resolve, reject) => {
@@ -464,6 +483,17 @@ function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
             }, timeoutMs);
             supportPending.set(id, { resolve: res, timer });
             child.send({ t: "support", id, req });
+          }),
+        notify: (req: NotifyRelayRequest, timeoutMs = 45_000) =>
+          new Promise<NotifyRelayResult>((res) => {
+            if (!child.connected) return res({ ok: false, reason: "gate_exited" });
+            const id = notifySeq++;
+            const timer = setTimeout(() => {
+              notifyPending.delete(id);
+              res({ ok: false, reason: "notify_timeout" });
+            }, timeoutMs);
+            notifyPending.set(id, { resolve: res, timer });
+            child.send({ t: "notify", id, req });
           }),
         close: () =>
           new Promise<void>((r) => {

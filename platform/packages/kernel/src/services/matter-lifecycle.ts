@@ -18,6 +18,7 @@ import { DomainError, notFound } from "@zr-legal/domain";
 import { canonicalJson, verifyBytes, type DeviceSyncSigner } from "@zr-legal/keys";
 import type { KernelDb } from "../db.ts";
 import { redactedRowHash, redactionListDigest } from "../ledger-signer.ts";
+import { ReminderService } from "./reminders.ts";
 
 export const RETENTION_YEARS = { min: 1, max: 30, default: 10 } as const;
 
@@ -170,6 +171,9 @@ export async function purgeMatter(
     key_wrappings: count(`SELECT COUNT(*) AS n FROM matter_keys WHERE matter_id = ?`),
     egress_records: count(`SELECT COUNT(*) AS n FROM egress_records WHERE matter_id = ?`),
     egress_sent: count(`SELECT COUNT(*) AS n FROM egress_records WHERE matter_id = ? AND outcome = 'sent'`),
+    // 第 10 批 S9：期限提醒（交过中软通知服务的另计——云端副本是密文，由下次巡检删除）
+    reminders: count(`SELECT COUNT(*) AS n FROM reminders WHERE matter_id = ?`),
+    reminders_cloud: count(`SELECT COUNT(*) AS n FROM reminders WHERE matter_id = ? AND cloud_state IN ('pending','synced','failed','cancel_pending')`),
   };
   // 已导出或下载过的文件（成果下载、账本导出、结案归档）：在律师自己保存的位置，本产品无法删除（复核 C-A10；第 02 篇 §9.13“导出临时包”）
   inventory.exports = count(
@@ -225,6 +229,8 @@ export async function purgeMatter(
     d.db.run(`DELETE FROM sync_conflicts WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM anon_matter_outbox WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM matter_token_conflicts WHERE matter_id = ?`, [matterId]);
+    // 期限提醒：撤销并清空备注，交过云端的待云端删除；收到的提醒删除（第 10 批 S9）
+    ReminderService.purgeMatter(d.db, matterId);
     // IM 意图（所内节点；载荷里写有事项编号的）
     d.db.run(`UPDATE im_intents SET payload = '{"redacted":true}', result = NULL WHERE instr(payload, ?) > 0 OR instr(COALESCE(result, ''), ?) > 0`, [matterId, matterId]);
     // 挂载材料登记的是律师电脑上的完整路径（常含当事人命名的目录与文件名；复核 C-A04）：一并清除
@@ -281,6 +287,14 @@ export async function purgeMatter(
           where: "电脑与律所的系统备份（Windows 系统还原点与卷影副本、文件历史、NAS 快照、备份软件）",
           status: "pending",
           note: "不在本次删除范围：备份与快照里的块文件是密文，但旧的密钥包裹与解封所需材料可能一并留在快照中，同一 Windows 账户可以取回并解开（隐私安全增量评审 F9）——按律所备份保留期到期删除；恢复旧备份前须先核对本回执",
+        },
+        {
+          where: "中软通知服务（期限提醒）",
+          status: inventory.reminders_cloud! > 0 ? "pending" : "none",
+          note:
+            inventory.reminders_cloud! > 0
+              ? `${inventory.reminders_cloud} 条提醒交过中软通知服务（只有触发时刻、设备编号与密文）：本机已撤销，云端副本在本机下次联网巡检时删除；未删除的也在触发后 7 天自动删除`
+              : "没有交给中软通知服务的提醒",
         },
         { where: "挂载原件（律师文件夹中的原文件）", status: inventory.document_versions_mounted! > 0 ? "kept" : "none", note: `${inventory.document_versions_mounted} 份挂载原件属律师自己的文件夹，本产品未删除` },
       ],

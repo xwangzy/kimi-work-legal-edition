@@ -753,3 +753,16 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .support-upload { margin-top: 8px; }
 .support-upload details { margin: 8px 0; }
 .support-preview { max-height: 320px; overflow: auto; background: var(--bg-code); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); padding: 8px 10px; font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-all; }
+
+/* 第 10 批：期限提醒 */
+.reminder-section-head { margin: 22px 0 0; }
+.reminder-section-head .section-title { margin: 0; flex: 1 1 auto; }
+.reminder-list { display: flex; flex-direction: column; gap: 8px; }
+.reminder-card { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; }
+.reminder-card.read { background: var(--bg-subtle); }
+.reminder-card-main { flex: 1 1 auto; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.reminder-note { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.reminder-warn { color: var(--status-warning-strong); font-size: var(--fs-sm); }
+.reminder-actions { white-space: nowrap; display: flex; gap: 6px; align-items: flex-start; }
+.consent-opt.disabled { cursor: default; color: var(--text-secondary); }
+input[type="time"] { border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 7px 10px; background: var(--bg-surface); color: var(--text-primary); }

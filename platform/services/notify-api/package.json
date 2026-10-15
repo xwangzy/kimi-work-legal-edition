@@ -1,0 +1,14 @@
+{
+  "name": "@zr-legal/notify-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "通知与提醒服务 v0（中软云端，v9.2 §5.1 S9；v9 #51）：只保存触发时刻、接收设备与密文（提醒内容在律师电脑上按接收设备加密并签名）；触发后 7 天删除",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zr-legal/firm-trust": "*",
+    "@zr-legal/seat-token": "*"
+  }
+}

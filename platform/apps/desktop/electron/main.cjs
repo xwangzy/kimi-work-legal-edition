@@ -331,6 +331,11 @@ async function startKernel() {
       for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", msg);
       notifyWaiting(msg);
     }
+    // 期限提醒到时（第 10 批 S9）：只转发条数，系统通知只写“有 N 条期限提醒”
+    if (msg && msg.type === "reminder.due" && Number.isInteger(msg.count) && msg.count > 0) {
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", { type: "reminder.due", count: msg.count });
+      notifyReminder(msg.count);
+    }
   });
   kernel.on("exit", (code) => {
     kernel = null;
@@ -374,6 +379,30 @@ function notifyWaiting(msg) {
       if (win.isMinimized()) win.restore();
       win.focus();
       win.webContents.send("kwl:event", { type: "focus.run", run_id: msg.run_id });
+    });
+    n.show();
+  } catch (e) {
+    slog.event("MAIN_NOTIFY_FAILED", errFields(e));
+  }
+}
+
+/**
+ * 期限提醒到时（第 10 批 S9）：发系统通知——无论窗口是否在前台（期限比任务确认更不能漏看）。
+ * 通知中心会留存通知文字（驻留面第 22 类），所以只写条数，不写事项名、期限类型与备注；点击通知打开“期限提醒”页。
+ */
+function notifyReminder(count) {
+  const wins = BrowserWindow.getAllWindows();
+  const win = wins[0];
+  try {
+    if (win && !wins.some((w) => w.isFocused())) win.flashFrame(true);
+    const { Notification } = require("electron");
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title: "Kimi Work 法律版", body: count === 1 ? "你有一条期限提醒" : `你有 ${Math.min(count, 99)} 条期限提醒`, silent: false });
+    n.on("click", () => {
+      if (!win) return;
+      if (win.isMinimized()) win.restore();
+      win.focus();
+      win.webContents.send("kwl:event", { type: "focus.reminders" });
     });
     n.show();
   } catch (e) {

@@ -22,6 +22,7 @@ const ALLOWED: Readonly<Record<string, string>> = Object.freeze({
   "packages/egress-gate/src/cp-relay.ts": "闸门控制面通道（阶段 6）：内核经 IPC 交来的控制面请求，只发往本机配置固定的控制面地址（路径与请求头白名单、不跟随跳转；唯一出口）",
   "packages/egress-gate/src/dist-relay.ts": "闸门内容分发通道（第 8 批 S6/S7）：内核经 IPC 交来的法规库与方法模板下载路径，只发往构建固定的分发地址（只许 GET 白名单路径、凭据由闸门附上、不跟随跳转、响应有上限；唯一出口）",
   "packages/egress-gate/src/support-relay.ts": "闸门支持通道（第 9 批 S13）：律师确认上传的脱敏诊断包，只发往构建固定的支持服务地址（只有申请工单与上传两种固定请求、摘要由闸门重算、只附内核交来的支持专用凭据〔受众 support〕、不跟随跳转、响应有上限；唯一出口）",
+  "packages/egress-gate/src/notify-relay.ts": "闸门通知通道（第 10 批 S9 期限提醒）：只发往构建固定的通知服务地址（只有登记、撤销、取到时提醒、确认收到四种固定请求，请求体由闸门按固定字段重拼、云端只收触发时刻、设备编号与密文；只附内核交来的通知专用凭据〔受众 notify〕、不跟随跳转、响应有上限；唯一出口）",
   // 本机通道（套接字/命名管道）
   "packages/model-broker/src/providers/gate.ts": "undici 只连出站闸门的本机套接字（内核不直连上游）",
   "packages/kap-host/src/host-egress.ts": "宿主出口：undici 只连出站闸门与内核的本机套接字；其余主机名在本进程内失败",

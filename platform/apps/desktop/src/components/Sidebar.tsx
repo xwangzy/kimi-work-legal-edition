@@ -19,6 +19,7 @@ const ITEMS: Item[] = [
   { key: "deliverables", label: "交付件", icon: Icon.file, href: "/deliverables" },
   { key: "methods", label: "方法与模板", icon: Icon.book, href: "/methods" },
   { key: "boards", label: "看板", icon: Icon.board, href: "/boards" },
+  { key: "reminders", label: "期限提醒", icon: Icon.bell, href: "/reminders" },
   { key: "chat", label: "问答", icon: Icon.chat, href: "/chat" },
   { key: "connections", label: "设置", icon: Icon.plug, href: "/connections" },
 ];
@@ -26,13 +27,14 @@ const ITEMS: Item[] = [
 export function Sidebar({ route }: { route: Route }) {
   const [matters, setMatters] = useState<Matter[]>([]);
   const [pending, setPending] = useState(0);
+  const [unreadReminders, setUnreadReminders] = useState(0);
   const [status, setStatus] = useState<{ gate: boolean | null; unresolved: number }>({ gate: null, unresolved: 0 });
   // 执行域标注由能力账本推出（复核 S5-A10：W 不可用时如实写“未隔离：不运行代码”）
   const [execOk, setExecOk] = useState<boolean | null>(true);
   const [tick, setTick] = useState(0);
   useEffect(() => onDataChanged(() => setTick((t) => t + 1)), []);
   // 任务状态变化（开始等待、结束）时刷新侧栏状态点；运行中另每 5 秒刷新一次
-  useEffect(() => onKernelEvent((m) => (m?.type === "run.updated" || m?.type === "run.settled" ? setTick((t) => t + 1) : undefined)), []);
+  useEffect(() => onKernelEvent((m) => (m?.type === "run.updated" || m?.type === "run.settled" || m?.type === "reminder.due" ? setTick((t) => t + 1) : undefined)), []);
   const anyActive = matters.some((m) => (m.activity?.waiting ?? 0) + (m.activity?.running ?? 0) > 0);
   useEffect(() => {
     if (!anyActive) return;
@@ -48,6 +50,7 @@ export function Sidebar({ route }: { route: Route }) {
   useEffect(() => {
     api.listMatters().then((r) => setMatters(r.matters)).catch(() => {});
     api.pending().then((r) => setPending(r.count)).catch(() => {});
+    api.reminders().then((r) => setUnreadReminders(r.unread)).catch(() => {});
     api
       .kernelStatus()
       .then((s) => setStatus({ gate: s.egress_gate ? true : false, unresolved: s.egress_gate?.unresolved ?? 0 }))
@@ -81,6 +84,7 @@ export function Sidebar({ route }: { route: Route }) {
               <span className="nav-icon">{it.icon()}</span>
               <span className="nav-label">{it.label}</span>
               {it.key === "deliverables" && pending > 0 && <span className="badge">{pending}</span>}
+              {it.key === "reminders" && unreadReminders > 0 && <span className="badge" aria-label={`${unreadReminders} 条未读提醒`}>{unreadReminders}</span>}
               {it.phase && <span className="phase">{it.phase}</span>}
             </button>
           );
