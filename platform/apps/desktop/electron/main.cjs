@@ -589,7 +589,8 @@ function createWindow() {
     minWidth: 1080,
     minHeight: 700,
     title: "Kimi Work 法律行业发行版",
-    backgroundColor: "#fbfaf9",
+    // 首帧底色随系统明暗（侧栏 --bg-sidebar 两套值）；界面里显式选了与系统相反的外观时，首帧可能闪一下另一底色
+    backgroundColor: require("electron").nativeTheme.shouldUseDarkColors ? "#141312" : "#fbfaf9",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       sandbox: true,

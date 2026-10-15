@@ -1,71 +1,306 @@
 /*
  * 设计令牌（方案 v4.0 第 2 篇 §5.2，基线来自 Kimi Work 3.2 实测；签约设计资产到位后整体替换）。
  * 品牌元素集中在本主题包。
+ *
+ * 三层（Y4 V-2、#30）：
+ *   ① 基础色板 --p-*：只在本文件内被语义层引用，组件样式不得直接使用；
+ *   ② 语义层：--bg-* / --text-* / --border-* / --status-* / --accent* / --shadow-* 等，组件样式只用这一层；
+ *   ③ 组件层：按钮、风险分级、引用四态、高亮、字号 7 级、圆角 5 级。
+ * 深色模式（Y4 V-10、#32）：:root[data-theme="dark"] 只改写语义层（基础色板与组件层引用语义层，随之变化）；
+ *   “纸面”类令牌（--bg-paper、--text-on-paper、--hl-*、--paper-*）两套相同——文书预览在深色模式下保持纸面白。
+ * 门禁：packages/design-tokens/test/tokens.test.ts（深浅两套对比度、深色覆盖完整）与 apps/desktop/test/style-tokens.test.ts
+ *   （组件样式不得出现颜色字面量、字号与圆角只用令牌、引用的令牌必须已定义）。
  */
 :root {
-  /* 背景与文字 */
-  --bg-sidebar: #fbfaf9;
-  --bg-main: #ffffff;
-  --text-primary: #0e1219;
-  /* 次级文字：#888 在白底仅 3.5:1（WCAG AA 正文要求 4.5:1，UIUX 增量评审第 6 节）→ #6b6b6b（约 5.3:1） */
-  --text-secondary: #6b6b6b;
+  color-scheme: light;
 
-  /* 交互 */
-  --accent: #167ffb;
-  /* 用作文字（链接、强调）的 Kimi 蓝：#167ffb 在白底 3.8:1 不达标 → #0b6bdc（约 5.1:1）；--accent 只用于填充与图形 */
-  --accent-text: #0b6bdc;
-  /* 表单控件边框与焦点环（非文本对比度 ≥ 3:1） */
-  --control-border: #8f8a84;
-  --focus-ring: #0b6bdc;
-  --btn-primary: #191919;
-  --btn-primary-text: #ffffff;
+  /* ── ① 基础色板（暖灰 + 品牌蓝 + 状态色） ── */
+  --p-white: #ffffff;
+  --p-black: #000000;
+  --p-ink: #0e1219;
+  --p-gray-25: #fdfcfb;
+  --p-gray-50: #fbfaf9;
+  --p-gray-75: #f9f8f7;
+  --p-gray-100: #f4f3f2;
+  --p-gray-150: #f2f0ed;
+  --p-gray-200: #ebe8e4;
+  --p-gray-250: #eeebe7;
+  --p-gray-300: #e3dfda;
+  --p-gray-400: #d0cbc5;
+  --p-gray-500: #8f8a84;
+  --p-gray-600: #666666;
+  --p-gray-700: #555555;
+  --p-gray-800: #333333;
+  --p-gray-900: #191919;
+  --p-slate-50: #f9fafb;
+  --p-slate-100: #f2f4f7;
+  --p-slate-150: #eef2f6;
+  --p-slate-300: #d0d5dd;
+  --p-slate-400: #98a2b3;
+  --p-slate-600: #475467;
+  --p-slate-700: #344054;
+  --p-blue-50: #eef5ff;
+  --p-blue-100: #eff4ff;
+  --p-blue-200: #d6e6ff;
+  --p-blue-500: #167ffb;
+  --p-blue-600: #0a66d1;
+  --p-blue-700: #175cd3;
+  --p-red-50: #fef3f2;
+  --p-red-100: #fee4e2;
+  --p-red-200: #fecdca;
+  --p-red-300: #fda29b;
+  --p-red-500: #f04438;
+  --p-red-600: #d92d20;
+  --p-red-700: #b42318;
+  --p-red-800: #912018;
+  --p-orange-25: #fffcf5;
+  --p-orange-50: #fffaeb;
+  --p-orange-100: #fef0c7;
+  --p-orange-150: #fff1c2;
+  --p-orange-200: #fedf89;
+  --p-orange-500: #f79009;
+  --p-orange-600: #dc6803;
+  --p-orange-700: #b54708;
+  --p-orange-800: #93370d;
+  --p-green-50: #ecfdf3;
+  --p-green-200: #abefc6;
+  --p-green-500: #12b76a;
+  --p-green-700: #067647;
+  --p-green-800: #05603a;
+  --p-purple-50: #f4f3ff;
+  --p-purple-700: #5925dc;
+  --p-paper: #fffdf9;
+  --p-paper-ink: #1f1d1a;
 
-  /* 几何 */
-  --radius-input: 16px;
-  --radius-card: 12px;
-  --sidebar-width: 260px;
-  --preview-width: 45%;
+  /* ── ② 语义层 ── */
+  /* 背景：主区 / 侧栏（色阶区分，不只靠 1px 分割线）/ 卡片与输入框等表面 / 浅底 / 悬停 / 选中 */
+  --bg-main: var(--p-white);
+  --bg-sidebar: var(--p-gray-50);
+  --bg-surface: var(--p-white);
+  --bg-subtle: var(--p-gray-75);
+  --bg-muted: var(--p-gray-100);
+  --bg-hover: var(--p-gray-150);
+  --bg-hover-soft: var(--p-gray-25);
+  --bg-active: var(--p-gray-200);
+  --bg-code: var(--p-slate-150);
+  --bg-overlay: rgba(14, 18, 25, 0.28);
+  --bg-fade: rgba(255, 255, 255, 0);
+  /* 文字：主 / 次级（#888 在白底仅 3.5:1 → #666 约 5.7:1，选中行底上仍 ≥ 4.5）/ 正文辅助（标签、图标） / 反白 */
+  --text-primary: var(--p-ink);
+  --text-secondary: var(--p-gray-600);
+  --text-tertiary: var(--p-gray-700);
+  --text-strong: var(--p-gray-800);
+  --text-on-solid: var(--p-white);
+  /* 边框：分割线 / 次按钮与卡片悬停 / 表单控件（非文本对比度 ≥ 3:1） */
+  --border-subtle: var(--p-gray-250);
+  --border-default: var(--p-gray-300);
+  --border-hover: var(--p-gray-400);
+  --border-strong: var(--p-gray-500);
+  --border-dashed: var(--p-gray-400);
+  /* 交互：--accent 只用于填充与图形；用作文字的 Kimi 蓝 #167ffb 在白底 3.8:1 不达标 → --accent-text #0a66d1（约 5.5:1，悬停底上仍 ≥ 4.5） */
+  --accent: var(--p-blue-500);
+  --accent-text: var(--p-blue-600);
+  --accent-bg: var(--p-blue-50);
+  --accent-border: var(--p-blue-200);
+  --focus-ring: var(--p-blue-600);
+  --focus-glow: rgba(22, 127, 251, 0.2);
+  /* 状态：文字 / 浅底 / 描边 / 实色（图形、圆点、色条） */
+  --status-danger-text: var(--p-red-700);
+  --status-danger-strong: var(--p-red-800);
+  --status-danger-bg: var(--p-red-50);
+  --status-danger-border: var(--p-red-200);
+  --status-danger-solid: var(--p-red-500);
+  --status-warning-text: var(--p-orange-700);
+  --status-warning-strong: var(--p-orange-800);
+  --status-warning-bg: var(--p-orange-50);
+  --status-warning-bg-soft: var(--p-orange-25);
+  --status-warning-border: var(--p-orange-200);
+  --status-warning-solid: var(--p-orange-500);
+  --status-success-text: var(--p-green-700);
+  --status-success-strong: var(--p-green-800);
+  --status-success-bg: var(--p-green-50);
+  --status-success-border: var(--p-green-200);
+  --status-success-solid: var(--p-green-500);
+  --status-info-text: var(--p-blue-700);
+  --status-info-bg: var(--p-blue-100);
+  --status-neutral-text: var(--p-slate-600);
+  --status-neutral-strong: var(--p-slate-700);
+  --status-neutral-bg: var(--p-slate-100);
+  --status-neutral-border: var(--p-slate-300);
+  --status-neutral-solid: var(--p-slate-400);
+  --status-purple-text: var(--p-purple-700);
+  --status-purple-bg: var(--p-purple-50);
+  /* 阴影 */
+  --shadow-xs: 0 1px 4px rgba(14, 18, 25, 0.04);
+  --shadow-sm: 0 1px 6px rgba(14, 18, 25, 0.06);
+  --shadow-input: 0 2px 10px rgba(14, 18, 25, 0.05);
+  --shadow-md: 0 8px 24px rgba(16, 24, 40, 0.12);
+  --shadow-lg: 0 24px 60px rgba(14, 18, 25, 0.25);
+  /* 纸面（文书预览、审查工作台原文、评测文书）：深浅两套相同，保持纸面白 */
+  --bg-paper: var(--p-paper);
+  --bg-preview: var(--p-white); /* 隔离预览框架（框架内文书自带浅色样式，取不到本页令牌） */
+  --text-on-paper: var(--p-paper-ink);
+  --paper-border: var(--p-gray-250);
+  --paper-quote-bg: var(--p-slate-50);
+  --paper-mark-person: #fdeaea;
+  --paper-mark-partial: #fff1e6;
+  --paper-mark-org: #eaf2ff;
+  --paper-mark-id: #f0ebff;
+  --paper-mark-place: #e9f7ef;
+  --paper-mark-negative: var(--p-slate-100);
+  --paper-mark-line-high: var(--p-red-500);
+  --paper-mark-line-mid: var(--p-orange-500);
+  --paper-mark-line-low: var(--p-slate-400);
+  --paper-mark-line-off: var(--p-slate-300);
+  --paper-mark-label-person: var(--p-red-700);
+  --paper-mark-label-partial: var(--p-orange-700);
+  --paper-mark-label-org: var(--p-blue-700);
+  --paper-mark-label-id: var(--p-purple-700);
+  --paper-mark-label-place: var(--p-green-700);
+  --paper-mark-label-negative: var(--p-slate-600);
+  --paper-mark-label-text: var(--p-white);
 
-  /* 风险分级：红 / 橙 / 黄（各配浅底） */
-  --risk-high: #d92d20;
-  --risk-high-bg: #fef3f2;
-  --risk-mid: #dc6803;
-  --risk-mid-bg: #fffaeb;
-  --risk-low: #b54708;
-  --risk-low-bg: #fffcf5;
+  /* ── ③ 组件层 ── */
+  --btn-primary: var(--p-gray-900);
+  --btn-primary-hover: var(--p-black);
+  --btn-primary-text: var(--p-white);
+
+  /* 风险分级：红 / 橙 / 黄（各配浅底）；--risk-mid 是填充色，用作文字一律 --status-warning-text */
+  --risk-high: var(--p-red-600);
+  --risk-high-bg: var(--status-danger-bg);
+  --risk-mid: var(--p-orange-600);
+  --risk-mid-bg: var(--status-warning-bg);
+  --risk-low: var(--p-orange-700);
+  --risk-low-bg: var(--status-warning-bg-soft);
 
   /* 法规效力：现行有效 / 已修改 / 已废止（独立标签样式） */
-  --status-valid: #067647;
-  --status-valid-bg: #ecfdf3;
-  --status-amended: #175cd3;
-  --status-amended-bg: #eff4ff;
-  --status-repealed: #667085;
-  --status-repealed-bg: #f2f4f7;
+  --status-valid: var(--status-success-text);
+  --status-valid-bg: var(--status-success-bg);
+  --status-amended: var(--status-info-text);
+  --status-amended-bg: var(--status-info-bg);
+  --status-repealed: var(--status-neutral-text);
+  --status-repealed-bg: var(--status-neutral-bg);
 
-  /* 高亮层级：引用、风险、修订；同段最多两层 */
-  --hl-citation: #fef0c7;
-  --hl-risk: #fee4e2;
+  /* 高亮层级（纸面上）：引用、风险、修订；同段最多两层 */
+  --hl-citation: var(--p-orange-100);
+  --hl-risk: var(--p-red-100);
   --hl-revision: #d1e0ff;
+  --hl-added: var(--p-orange-150);
+  --hl-restored: #fff8e6;
+  --hl-restored-line: #e0b443;
 
   /* 引用四态 */
-  --cite-source-verified: #067647;
-  --cite-version-verified: #175cd3;
-  --cite-support-pending: #b54708;
-  --cite-lawyer-confirmed: #5925dc;
-  --cite-intercepted: #d92d20;
+  --cite-source-verified: var(--status-success-text);
+  --cite-version-verified: var(--status-info-text);
+  --cite-support-pending: var(--status-warning-text);
+  --cite-lawyer-confirmed: var(--status-purple-text);
+  --cite-intercepted: var(--status-danger-text);
 
+  /* 字号 7 级（Y4 V-1；中文不用半像素）：12 / 13 / 14 / 15 / 16（阅读区）/ 20 / 28 */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 14px;
+  --fs-md: 15px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 28px;
   /* 排版：阅读区 16px/1.75；表格区 13px/1.6；字重只用 400/500/600 */
-  --font-reading-size: 16px;
+  --font-reading-size: var(--fs-lg);
   --font-reading-leading: 1.75;
-  --font-table-size: 13px;
+  --font-table-size: var(--fs-sm);
   --font-table-leading: 1.6;
+  --font-sans: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
   /* 文书纸面版式（v9.2 §4.4；Y4 §5 D-8）：DOCX 预览、审查工作台原文 */
   --font-doc: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", SimSun, serif;
-  --doc-size: 16px;
+  --doc-size: var(--fs-lg);
   --doc-leading: 1.9;
-  --bg-paper: #fffdf9;
   --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
 
-  /* 侧栏与主区用背景色阶区分，不只靠 1px 分割线 */
-  --separation-bg-step: #f4f3f2;
+  /* 圆角 5 级（Y4 V-3）：代号胶囊与标签 / 按钮、输入框、列表项 / 卡片 / 输入框主体与弹窗 / 胶囊 */
+  --r-xs: 4px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-full: 999px;
+  --radius-input: var(--r-lg);
+  --radius-card: var(--r-md);
+
+  /* 几何 */
+  --sidebar-width: 260px;
+  --preview-width: 45%;
+}
+
+/* 深色模式：只改写语义层与组件层中直接引用基础色板的项；纸面令牌不改（保持纸面白） */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-main: #1a1918;
+  --bg-sidebar: #141312;
+  --bg-surface: #211f1e;
+  --bg-subtle: #1e1d1c;
+  --bg-muted: #252321;
+  --bg-hover: #2c2a28;
+  --bg-hover-soft: #242220;
+  --bg-active: #36332f;
+  --bg-code: #2a2d33;
+  --bg-overlay: rgba(0, 0, 0, 0.55);
+  --bg-fade: rgba(26, 25, 24, 0);
+
+  --text-primary: #ecebe9;
+  --text-secondary: #a9a59f;
+  --text-tertiary: #c4c0ba;
+  --text-strong: #dcd9d5;
+  --text-on-solid: #141312;
+
+  --border-subtle: #302e2b;
+  --border-default: #3d3a37;
+  --border-hover: #55514c;
+  --border-strong: #7b766f;
+  --border-dashed: #55514c;
+
+  --accent: #3b8efc;
+  --accent-text: #74b0ff;
+  --accent-bg: #172539;
+  --accent-border: #284a75;
+  --focus-ring: #74b0ff;
+  --focus-glow: rgba(116, 176, 255, 0.28);
+
+  --status-danger-text: #ff8a80;
+  --status-danger-strong: #ffaba3;
+  --status-danger-bg: #2e1916;
+  --status-danger-border: #5c2a24;
+  --status-danger-solid: #f0645a;
+  --status-warning-text: #fbb24c;
+  --status-warning-strong: #fcc77a;
+  --status-warning-bg: #2c2112;
+  --status-warning-bg-soft: #262015;
+  --status-warning-border: #5a4419;
+  --status-warning-solid: #f5a02a;
+  --status-success-text: #5ad39a;
+  --status-success-strong: #85e0b5;
+  --status-success-bg: #12291e;
+  --status-success-border: #1f4a35;
+  --status-success-solid: #32c47f;
+  --status-info-text: #8ab4ff;
+  --status-info-bg: #18233a;
+  --status-neutral-text: #b4b9c2;
+  --status-neutral-strong: #cdd1d8;
+  --status-neutral-bg: #272a30;
+  --status-neutral-border: #3d424b;
+  --status-neutral-solid: #7d8796;
+  --status-purple-text: #bba3ff;
+  --status-purple-bg: #251d3d;
+
+  --shadow-xs: 0 1px 4px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 6px rgba(0, 0, 0, 0.35);
+  --shadow-input: 0 2px 10px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.6);
+
+  --btn-primary: #ecebe9;
+  --btn-primary-hover: #ffffff;
+  --btn-primary-text: #141312;
+  --risk-high: #f0645a;
+  --risk-mid: #f5a02a;
+  --risk-low: #fbb24c;
 }

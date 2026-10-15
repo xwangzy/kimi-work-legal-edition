@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { api, updates, type Capabilities, type ControlPlaneStatus, type PolicyDraft } from "../api.ts";
 import { nav, type SettingsTab } from "../App.tsx";
 import { fmtTime } from "../lib/labels.ts";
-import { applyUiZoom, readUiZoom, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
+import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
 import { RecallEvalPanel } from "./RecallEval.tsx";
 
 const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
@@ -78,6 +78,7 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
 
 function GeneralTab({ version }: { version: string | null }) {
   const [zoom, setZoom] = useState(readUiZoom());
+  const [theme, setTheme] = useState(readUiTheme());
   return (
     <div className="device">
       <div className="panel">
@@ -98,6 +99,28 @@ function GeneralTab({ version }: { version: string | null }) {
                 {o.label}
               </button>
             ))}
+          </div>
+        </div>
+        <div className="device-row">
+          <div className="device-k">外观</div>
+          <div>
+            <div className="settings-choice" role="radiogroup" aria-label="外观">
+              {UI_THEME_OPTIONS.map((o) => (
+                <button
+                  key={o.value}
+                  role="radio"
+                  aria-checked={theme === o.value}
+                  className={`q-option${theme === o.value ? " on" : ""}`}
+                  onClick={() => {
+                    applyUiTheme(o.value, true);
+                    setTheme(o.value);
+                  }}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <div className="muted">深色模式下，文书预览与审查原文仍按纸面白显示，便于对照打印稿。</div>
           </div>
         </div>
         <div className="device-row">

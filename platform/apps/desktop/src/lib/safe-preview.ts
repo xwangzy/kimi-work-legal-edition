@@ -74,7 +74,7 @@ export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | nu
     "<!doctype html><html><head>",
     `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">`,
     '<meta charset="utf-8">',
-    "<style>body{font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;line-height:1.7;color:#0e1219;margin:16px;} .kwl-link{color:#167ffb;text-decoration:underline dotted;cursor:default;} img{max-width:100%;}</style>",
+    "<style>body{font-family:'Segoe UI','Microsoft YaHei UI','Microsoft YaHei',-apple-system,'PingFang SC',sans-serif;font-size:14px;line-height:1.7;color:#0e1219;background:#ffffff;margin:16px;} .kwl-link{color:#0a66d1;text-decoration:underline dotted;cursor:default;} img{max-width:100%;}</style>",
     o.paper ? `<style>${PAPER_STYLE}</style>` : "",
     styles,
     "</head><body>",
