@@ -22,7 +22,7 @@
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -127,6 +127,9 @@ for (const d of ["migrations", "lawdb", "tool-manifest", "skills"]) {
 // 安装包上游与钉住集（审计 S5）：发布流程放置 electron/release.json；缺失时安装包只有本机能力（控制面缺失即退出模式）
 if (existsSync(join(desktop, "electron/release.json"))) cpSync(join(desktop, "electron/release.json"), join(stage, "electron/release.json"));
 else log("提示：未找到 electron/release.json——安装包不含中软云上游（只能用本机能力），正式发布必须提供");
+// K9-1：v5 SDK 宿主已退役——暂存目录里不得出现它的制品或 SDK 入口（防止旧的本地构建产物被带进安装包）
+for (const f of readdirSync(join(stage, "electron"))) if (/^agent-host/.test(f)) throw new Error(`暂存目录含已退役的 SDK 宿主制品：electron/${f}`);
+if (readFileSync(join(stage, "electron/kernel.bundle.cjs"), "utf8").includes("createKimiHarness")) throw new Error("内核制品含已退役的 SDK 宿主入口（createKimiHarness）：先重新构建内核");
 log(`暂存完成 → ${stage}`);
 
 // ── 4. electron-builder ────────────────────────────────────────────────

@@ -14,7 +14,7 @@ let cloud: CloudV0;
 
 before(async () => {
   cloud = await startCloudV0({ tenant: "ten_w1-wait-firm" });
-  tk = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "upstream", ZR_KERNEL_TCP: "off", ZR_AGENT_ENGINE: "kap", ZR_AGENT_WORK_LIMIT_MS: "4000" }, "w1-wait-firm");
+  tk = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "upstream", ZR_KERNEL_TCP: "off", ZR_AGENT_WORK_LIMIT_MS: "4000" }, "w1-wait-firm");
 });
 
 after(async () => {

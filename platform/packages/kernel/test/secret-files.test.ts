@@ -20,7 +20,7 @@ function allFiles(dir: string): string[] {
   return out;
 }
 
-const env = (key?: string) => ({ ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_AGENT_ENGINE: "sdk", ...(key ? { ZR_DB_KEY: key } : {}) });
+const env = (key?: string) => ({ ...process.env, ZR_MODEL_PROVIDER: "mock", ...(key ? { ZR_DB_KEY: key } : {}) });
 
 test("密钥文件封装：工作区内不出现私钥明文；同密钥重开；错密钥与篡改拒用；明文旧文件迁移", { timeout: 180_000 }, async () => {
   const { createKernel } = await import("../src/index.ts");

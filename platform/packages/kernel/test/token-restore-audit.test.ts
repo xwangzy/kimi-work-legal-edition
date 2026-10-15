@@ -73,7 +73,7 @@ test("内核关闭时冲刷未到期的还原审计：重启后可查（复核 B
   await k1.inv("matters.tokens.restore", { matter_id: matter.matter_id, text: `电话 ${e.token}` });
   await k1.kernel.close();
   const { createKernel } = await import("../src/index.ts");
-  const k2 = await createKernel({ dataDir: k1.dir, firmSlug: "restore-flush-firm", userSlug: "test-lawyer", env: { ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_AGENT_ENGINE: "sdk" } });
+  const k2 = await createKernel({ dataDir: k1.dir, firmSlug: "restore-flush-firm", userSlug: "test-lawyer", env: { ...process.env, ZR_MODEL_PROVIDER: "mock" } });
   try {
     const rows = k2.db.all<any>(`SELECT * FROM audit_events WHERE action = 'matter.tokens_restored' AND object_id = ?`, [matter.matter_id]);
     assert.equal(rows.length, 1, "关闭前已补记条数");

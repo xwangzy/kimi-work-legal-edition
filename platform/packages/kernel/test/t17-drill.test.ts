@@ -137,7 +137,7 @@ test("T17-2 回放的旧策略：管理员签名的旧版本在更新的版本�
   const dir = tk.dir;
   await tk.kernel.close();
   const { createKernel } = await import("../src/index.ts");
-  const k2 = await createKernel({ dataDir: dir, firmSlug: FIRM, userSlug: "test-lawyer", env: { ...process.env, ZR_MODEL_PROVIDER: "upstream", ZR_AGENT_ENGINE: "sdk", ...cloud.env } });
+  const k2 = await createKernel({ dataDir: dir, firmSlug: FIRM, userSlug: "test-lawyer", env: { ...process.env, ZR_MODEL_PROVIDER: "upstream", ...cloud.env } });
   tk = { kernel: k2, dir, inv: (m, p) => k2.invoke(m, p) };
   const again = await tk.inv("control_plane.sync");
   assert.equal(again.report.steps.policy, "rejected:replayed", "重启后同一回放依旧拒绝");

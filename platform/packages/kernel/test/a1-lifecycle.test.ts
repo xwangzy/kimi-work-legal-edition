@@ -11,12 +11,16 @@ import assert from "node:assert/strict";
 import { Agent, fetch as undiciFetch, setGlobalDispatcher } from "undici";
 import { makeKernel, importText, waitRun, type TestKernel } from "./helpers.ts";
 import { mintTaskToken } from "../src/identity.ts";
+import { startCloudV0, type CloudV0 } from "./cloud-v0.ts";
 
 let tk: TestKernel;
+let cloud: CloudV0;
 const kernels: TestKernel[] = [];
 
 before(async () => {
-  tk = await makeKernel({ ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off" }, "a1-life-firm");
+  // kap-host 经出站闸门与法律模型网关 v0 访问 mock 上游（K9-1：SDK 宿主退役后不再有内核内直连）
+  cloud = await startCloudV0({ tenant: "ten_a1-life-firm" });
+  tk = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off" }, "a1-life-firm");
   kernels.push(tk);
 });
 
@@ -29,6 +33,7 @@ after(async () => {
     }
   }
   setGlobalDispatcher(new Agent());
+  await cloud.close();
 });
 
 async function startA1(t: TestKernel, title: string, goal: string): Promise<{ matterId: string; runId: string }> {
@@ -110,7 +115,7 @@ test("探针 1 崩溃恢复：现场重构崩溃 → recover 整任务重跑到 
   kernels.length = 0;
 
   const { createKernel } = await import("../src/index.ts");
-  const kernel2 = await createKernel({ dataDir: dir, firmSlug: "a1-life-firm", userSlug: "test-lawyer", env: { ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off", ZR_AGENT_ENGINE: "sdk" } });
+  const kernel2 = await createKernel({ dataDir: dir, firmSlug: "a1-life-firm", userSlug: "test-lawyer", env: { ...process.env, ...cloud.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off" } });
   tk.kernel = kernel2;
   tk.inv = (m, p) => kernel2.invoke(m, p);
   kernels.push(tk);

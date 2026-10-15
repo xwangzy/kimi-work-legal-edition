@@ -34,8 +34,7 @@ import { totalmem } from "node:os";
 import { createBlobCipher } from "./blob-cipher.ts";
 import { syncExport, syncImport } from "./sync-engine.ts";
 import { createLegalWorkflow, expireOrphanedAgentWaits } from "./executor/executor.ts";
-import { createLocalAgentClient } from "./executor/agent-host-manager.ts";
-import { createKapAgentClient, type KapMatterPolicy } from "./executor/kap-agent-client.ts";
+import { createKapAgentClient, type KapAgentClient, type KapMatterPolicy } from "./executor/kap-agent-client.ts";
 import type { AgentClient } from "./executor/agent-client.ts";
 import { startLocalServer, localServerPort, type LocalServers } from "./local-server.ts";
 import { legalToolManifests, setLegalToolLock } from "./tools/registry.ts";
@@ -61,8 +60,8 @@ export interface Kernel {
   blobs: BlobStore;
   /** 内部（本进程内模块用，如 firm-node 定时任务上链）：签名事件链签名器。 */
   signer: ReturnType<typeof createLedgerSigner>;
-  /** 内部（测试用）：Agent 宿主客户端（任务状态/进程句柄）。 */
-  agentClient: ReturnType<typeof createLocalAgentClient>;
+  /** 内部（测试用）：Agent 宿主客户端（kap-host；任务状态与宿主进程号）。 */
+  agentClient: KapAgentClient;
   /** 内部（测试用）：任务队列（退出模式下的暂停与恢复，复核 S6-C14）。 */
   queue: TaskQueue;
   /** 内部（测试与设备页用）：出站闸门的内核侧（拉起、授权、去向记录）。 */
@@ -260,7 +259,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     }
   };
   const queue = new TaskQueue(db, { concurrency: Number(env.ZR_KERNEL_CONCURRENCY ?? 2) });
-  const ioMutex = new AsyncMutex(); // §4.5：Agent 宿主与 OCR 批次共享一把互斥锁
+  const ioMutex = new AsyncMutex(); // §4.5：材料解析与 OCR 批次排队（8 GB 笔记本内存预算；Agent 运行另有独立槽位）
   const localStats = { rejectedPathRequests: 0, rejectedPaths: [] as string[], rejectedToolCalls: 0 }; // 探针 2：管道非白名单请求/工具调用取证
 
   // 急停撤销集（§15.2 runs.cancel：立即撤销任务令牌 → 工具端点与模型代理立即拒绝）
@@ -280,98 +279,80 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     sweepInflight();
   };
 
-  // Agent 宿主（每任务一进程；宿主与内核只经命名管道通信，§4.2 网络层）
+  // 内核本机端点的命名管道（法律 MCP 与模型代理；Agent 宿主只经它与内核的 IPC 通信，§4.2 网络层）
   const pipePath = defaultPipePath(config);
-  let defaultEntry = "apps/agent-host/src/host.ts";
-  try {
-    defaultEntry = fileURLToPath(new URL("../../../apps/agent-host/src/host.ts", import.meta.url));
-  } catch {
-    // CJS 制品（Electron）下 import.meta.url 为空：由 ZR_AGENT_HOST_ENTRY 指定打包宿主
-  }
-  const sdkAgentClient = createLocalAgentClient({
-    entryPath: env.ZR_AGENT_HOST_ENTRY ?? defaultEntry,
-    pipePath,
-    workspaceRoot: join(config.workspaceDir, "agent-tasks"),
-    runtime: env.KWL_AGENT_HOST_NODE ?? ((process as any).versions?.electron ? "node" : process.execPath),
-    ioMutex, // §4.5：Agent 宿主与 OCR 互斥排队（8GB 笔记本内存预算）
-    agentProfile: { file: config.agentProfileFile, signerPub: config.lawdbSignerPub }, // §4.3：同一内容签名公钥验签
-    revokeToken, // F6：取消、超时、宿主退出都按 jti 撤销任务令牌（终态由端点按尝试行复核兜底）
-  });
   const broadcastRef: { current: ((msg: Record<string, unknown>) => void) | null } = { current: null };
-  // v9：开放任务由 kap-host（Kimi Code kap-server 私有嵌入）承载——默认引擎（阶段 5 切换）；ZR_AGENT_ENGINE=sdk 退回 v5 SDK 宿主（既有用例与对照）
+  // v9：开放任务由 kap-host（Kimi Code kap-server 私有嵌入）承载——唯一引擎（K9-1：v5 SDK 宿主已退役，ZR_AGENT_ENGINE 不再有效）
   let kapEntry = "packages/kap-host/src/main.ts";
   try {
     kapEntry = fileURLToPath(new URL("../../kap-host/src/main.ts", import.meta.url));
   } catch {
     // CJS 制品：由 ZR_KAP_HOST_ENTRY 指定
   }
-  // 审计 S3 第 2 步（设计 2-9）：v5 SDK 宿主把材料快照以明文写进每任务目录——落盘加密为必需（安装包形态）时不得选用，一律 kap-host
-  const useSdkEngine = env.ZR_AGENT_ENGINE === "sdk" && env.ZR_AT_REST !== "required";
+  // K9-1：v5 SDK 宿主曾把材料快照以明文写进 <工作区>/agent-tasks（只在开发形态出现过）——退役后启动即删除遗留目录
+  rmSync(join(config.workspaceDir, "agent-tasks"), { recursive: true, force: true });
   // 数据根不进 Windows 搜索的内容索引（Y5 P1-7）：后台进行，不阻塞启动
   void excludeFromContentIndex(config.workspaceDir).then((outcome) => slog.event("KERNEL_INDEX_EXCLUDE", { outcome }));
   slog.event("KERNEL_STARTED", {
-    engine: useSdkEngine ? "sdk" : "kap",
+    engine: "kap",
     at_rest: env.ZR_AT_REST === "required" ? "required" : env.ZR_AT_REST === "off" ? "off" : "on",
     control_plane: env.ZR_CONTROL_PLANE_BASE ? "configured" : "dev",
   });
-  const kapAgentClient =
-    !useSdkEngine
-      ? createKapAgentClient({
-          entryPath: env.ZR_KAP_HOST_ENTRY ?? kapEntry,
-          dataRoot: join(config.workspaceDir, "kap"),
-          kernelSocket: pipePath,
-          gate: { socket: async () => (await gate.ensure()).socketPath, routes: gate.routes() },
-          // Grep/Glob 由 kap-host 宿主内检索完成（审计 S3 第 2 步：工作区是密文，不再使用原生 rg）；字段只为兼容旧宿主
-          trustedRgPath: null,
-          // 方法模板（Kimi Code Skills）：验签物化后的可信区；校验失败即不加载任何技能（不降级加载部分）
-          trustedDir: skillsBundle.ok ? skillsBundle.dir : null,
-          // 只供测试（上下文压缩验收 K7-3）：ZR_KAP_TEST_CONTEXT 缩小引擎上下文窗口；安装包形态（落盘加密 required、控制面必需）不传
-          ...(env.ZR_KAP_TEST_CONTEXT && env.ZR_AT_REST !== "required" && env.ZR_REQUIRE_CONTROL_PLANE !== "1" ? { testMaxContextSize: Number(env.ZR_KAP_TEST_CONTEXT) } : {}),
-          // 安装包形态：主进程按随包运行时清单给出（apps/desktop/electron/runtime-paths.cjs）
-          ...(env.KWL_W_RUNTIME_DIR || env.KWL_RUNTIME_NODE_SHA256 || env.KWL_RUNTIME_NODE_VERSION
-            ? {
-                wRuntime: {
-                  ...(env.KWL_W_RUNTIME_DIR ? { dir: env.KWL_W_RUNTIME_DIR } : {}),
-                  ...(env.KWL_RUNTIME_NODE_SHA256 ? { nodeSha256: env.KWL_RUNTIME_NODE_SHA256 } : {}),
-                  ...(env.KWL_RUNTIME_NODE_VERSION ? { nodeVersion: env.KWL_RUNTIME_NODE_VERSION } : {}),
-                },
-              }
-            : {}),
-          manifests: () => legalToolManifests().list(),
-          legalMcpTools: [...LEGAL_MCP_TOOLS],
-          // 落盘加密（审计 S3 第 1 步）：每次运行下发本事项的区密钥；安装包形态（ZR_AT_REST=required）宿主缺密钥即拒绝运行
-          // ZR_AT_REST=off 只供开发对照（安装包形态由主进程固定为 required，环境变量不可覆盖）
-          ...(env.ZR_AT_REST === "off" && env.ZR_REQUIRE_CONTROL_PLANE !== "1"
-            ? {}
-            : {
-                atRest: {
-                  mode: env.ZR_AT_REST === "required" ? ("required" as const) : ("optional" as const),
-                  keys: (mid: string) => zoneKeysFor({ db, deviceId: device.deviceId, encPublicKeyPem: device.keys.encPublicKeyPem, encPrivateKeyPem: device.keys.encPrivateKeyPem }, mid),
-                },
-              }),
-          matterPolicy: (mid) => kapMatterPolicy(db, mid, firmPolicy()),
-          // 不与材料导入/OCR 共用 ioMutex（核查 P0-3）：独立的运行槽位，≤ 8 GB 设备 1 个、其余 2 个（每事项另限 1 个）
-          ioMutex: new Semaphore(Number(env.ZR_KAP_CONCURRENCY ?? (totalmem() <= 8 * 1024 ** 3 ? 1 : 2))),
-          revokeToken,
-          // Electron 内核（utilityProcess）里 process.execPath 是 Electron：宿主用随包/系统 Node（与 SDK 宿主同一口径）
-          ...(env.KWL_AGENT_HOST_NODE ? {} : (process as any).versions?.electron ? { runtime: "node" } : {}),
-          // W1：运行模式与先出计划（界面请求经事项策略钳制）、检索式预筛、等待律师的状态
-          runOptions: (rid) => runOptionsOf(db, rid, firmPolicy()),
-          screenSearch: ({ runId, matterId, query }) => {
-            const run = db.get<{ matter_id: string }>(`SELECT matter_id FROM runs WHERE run_id = ?`, [runId]);
-            if (!run || run.matter_id !== matterId) throw new Error("运行与事项不符");
-            const pol = kapMatterPolicy(db, matterId, firmPolicy());
-            const v = screenSearchQuery(query, { dataLevel: pol.dataLevel, basisComplete: pol.basisComplete, preauthorizedGeneralize: false, tokenizer: tokens.tokenizer(matterId) });
-            return { needsConfirmation: v.decision === "deny" && (v.reason === "search_entity_requires_confirmation" || v.reason === "search_l3a_each_query") };
+  const kapAgentClient = createKapAgentClient({
+    entryPath: env.ZR_KAP_HOST_ENTRY ?? kapEntry,
+    dataRoot: join(config.workspaceDir, "kap"),
+    kernelSocket: pipePath,
+    gate: { socket: async () => (await gate.ensure()).socketPath, routes: gate.routes() },
+    // Grep/Glob 由 kap-host 宿主内检索完成（审计 S3 第 2 步：工作区是密文，不再使用原生 rg）；字段只为兼容旧宿主
+    trustedRgPath: null,
+    // 方法模板（Kimi Code Skills）：验签物化后的可信区；校验失败即不加载任何技能（不降级加载部分）
+    trustedDir: skillsBundle.ok ? skillsBundle.dir : null,
+    // 只供测试（上下文压缩验收 K7-3）：ZR_KAP_TEST_CONTEXT 缩小引擎上下文窗口；安装包形态（落盘加密 required、控制面必需）不传
+    ...(env.ZR_KAP_TEST_CONTEXT && env.ZR_AT_REST !== "required" && env.ZR_REQUIRE_CONTROL_PLANE !== "1" ? { testMaxContextSize: Number(env.ZR_KAP_TEST_CONTEXT) } : {}),
+    // 安装包形态：主进程按随包运行时清单给出（apps/desktop/electron/runtime-paths.cjs）
+    ...(env.KWL_W_RUNTIME_DIR || env.KWL_RUNTIME_NODE_SHA256 || env.KWL_RUNTIME_NODE_VERSION
+      ? {
+          wRuntime: {
+            ...(env.KWL_W_RUNTIME_DIR ? { dir: env.KWL_W_RUNTIME_DIR } : {}),
+            ...(env.KWL_RUNTIME_NODE_SHA256 ? { nodeSha256: env.KWL_RUNTIME_NODE_SHA256 } : {}),
+            ...(env.KWL_RUNTIME_NODE_VERSION ? { nodeVersion: env.KWL_RUNTIME_NODE_VERSION } : {}),
           },
-          onWaiting: (rid, kind) => {
-            setWaiting(db, rid, kind);
-            broadcastRef.current?.({ type: "run.updated", run_id: rid, waiting: kind });
+        }
+      : {}),
+    manifests: () => legalToolManifests().list(),
+    legalMcpTools: [...LEGAL_MCP_TOOLS],
+    // 落盘加密（审计 S3 第 1 步）：每次运行下发本事项的区密钥；安装包形态（ZR_AT_REST=required）宿主缺密钥即拒绝运行
+    // ZR_AT_REST=off 只供开发对照（安装包形态由主进程固定为 required，环境变量不可覆盖）
+    ...(env.ZR_AT_REST === "off" && env.ZR_REQUIRE_CONTROL_PLANE !== "1"
+      ? {}
+      : {
+          atRest: {
+            mode: env.ZR_AT_REST === "required" ? ("required" as const) : ("optional" as const),
+            keys: (mid: string) => zoneKeysFor({ db, deviceId: device.deviceId, encPublicKeyPem: device.keys.encPublicKeyPem, encPrivateKeyPem: device.keys.encPrivateKeyPem }, mid),
           },
-          ...(env.KWL_AGENT_HOST_NODE ? { runtime: env.KWL_AGENT_HOST_NODE } : {}),
-        })
-      : null;
-  const agentClient = kapAgentClient ?? sdkAgentClient;
+        }),
+    matterPolicy: (mid) => kapMatterPolicy(db, mid, firmPolicy()),
+    // 不与材料导入/OCR 共用 ioMutex（核查 P0-3）：独立的运行槽位，≤ 8 GB 设备 1 个、其余 2 个（每事项另限 1 个）
+    ioMutex: new Semaphore(Number(env.ZR_KAP_CONCURRENCY ?? (totalmem() <= 8 * 1024 ** 3 ? 1 : 2))),
+    revokeToken,
+    // Electron 内核（utilityProcess）里 process.execPath 是 Electron：宿主用随包/系统 Node（与 SDK 宿主同一口径）
+    ...(env.KWL_AGENT_HOST_NODE ? {} : (process as any).versions?.electron ? { runtime: "node" } : {}),
+    // W1：运行模式与先出计划（界面请求经事项策略钳制）、检索式预筛、等待律师的状态
+    runOptions: (rid) => runOptionsOf(db, rid, firmPolicy()),
+    screenSearch: ({ runId, matterId, query }) => {
+      const run = db.get<{ matter_id: string }>(`SELECT matter_id FROM runs WHERE run_id = ?`, [runId]);
+      if (!run || run.matter_id !== matterId) throw new Error("运行与事项不符");
+      const pol = kapMatterPolicy(db, matterId, firmPolicy());
+      const v = screenSearchQuery(query, { dataLevel: pol.dataLevel, basisComplete: pol.basisComplete, preauthorizedGeneralize: false, tokenizer: tokens.tokenizer(matterId) });
+      return { needsConfirmation: v.decision === "deny" && (v.reason === "search_entity_requires_confirmation" || v.reason === "search_l3a_each_query") };
+    },
+    onWaiting: (rid, kind) => {
+      setWaiting(db, rid, kind);
+      broadcastRef.current?.({ type: "run.updated", run_id: rid, waiting: kind });
+    },
+    ...(env.KWL_AGENT_HOST_NODE ? { runtime: env.KWL_AGENT_HOST_NODE } : {}),
+  });
+  const agentClient = kapAgentClient;
   // A1 工作时限（不含等待律师的时间；W1）：缺省 10 分钟，本机配置可调
   const workLimit = Number(env.ZR_AGENT_WORK_LIMIT_MS);
   const agentWorkLimitMs = Number.isFinite(workLimit) && workLimit >= 1000 ? workLimit : undefined;
@@ -407,21 +388,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
 
   /** 清理一个事项的本机 Agent 数据（关闭引擎、删除会话、事件日志、工作区与材料快照），再删除本机的事项工作区密钥。有进行中任务时抛错。 */
   const purgeAgentDataFor = async (matterId: string): Promise<void> => {
-    if (kapAgentClient) await kapAgentClient.purgeMatter(matterId);
-    else rmSync(join(config.workspaceDir, "kap", matterId), { recursive: true, force: true });
-    // 旧宿主（ZR_AGENT_ENGINE=sdk，开发形态）的每任务目录按任务编号命名：从该事项运行事件里的 agent_task_id 找到并删除（复核 C-A16）
-    for (const r of db.all<{ payload: string }>(
-      `SELECT e.payload FROM run_events e JOIN runs r ON r.run_id = e.run_id WHERE r.matter_id = ? AND e.type = 'agent.task_started'`,
-      [matterId],
-    )) {
-      let id: unknown;
-      try {
-        id = (JSON.parse(r.payload) as { agent_task_id?: unknown }).agent_task_id;
-      } catch {
-        id = null;
-      }
-      if (typeof id === "string" && /^agt_[A-Za-z0-9_-]{1,120}$/.test(id)) rmSync(join(config.workspaceDir, "agent-tasks", id), { recursive: true, force: true });
-    }
+    await kapAgentClient.purgeMatter(matterId);
     purgeWsKeys(db, matterId);
   };
 
@@ -672,7 +639,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
         }
       }
       controlPlane?.stop();
-      await kapAgentClient?.close().catch(() => {});
+      await kapAgentClient.close().catch(() => {});
       await gate.close().catch(() => {});
       clearInterval(dailyTimer);
       if (syncTimer) clearInterval(syncTimer);

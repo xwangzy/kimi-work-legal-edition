@@ -20,7 +20,7 @@ let cloud: CloudV0;
 before(async () => {
   cloud = await startCloudV0({ tenant: "ten_kap-a1-firm" });
   // 账本按生产形态加密（SQLCipher；安装包由 safeStorage 解封密钥）：落盘加密的金丝雀扫描覆盖整个数据根
-  tk = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off", ZR_AGENT_ENGINE: "kap", ZR_DB_KEY: "kap-a1-ledger-key-0123456789abcdef" }, "kap-a1-firm");
+  tk = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off", ZR_DB_KEY: "kap-a1-ledger-key-0123456789abcdef" }, "kap-a1-firm");
 });
 
 after(async () => {
@@ -602,7 +602,7 @@ test("落盘加密第 2 步（审计 S3）S2：草稿写成后强杀 kap-host（
 });
 
 test("落盘加密第 2 步（审计 S3）阴性对照：同一脚本在关闭落盘加密的内核上运行，扫描必须命中（工作区草稿、会话转录、强杀后残留的材料快照）——证明扫描器与金丝雀有效", { timeout: 360_000 }, async () => {
-  const off = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off", ZR_AGENT_ENGINE: "kap", ZR_DB_KEY: "kap-a1-ledger-key-0123456789abcdef", ZR_AT_REST: "off" }, "kap-a1-off");
+  const off = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off", ZR_DB_KEY: "kap-a1-ledger-key-0123456789abcdef", ZR_AT_REST: "off" }, "kap-a1-off");
   try {
     const clean = await canaryRun(off, { crash: false, tag: "OFFCLEAN" });
     assert.equal(clean.status, "succeeded");

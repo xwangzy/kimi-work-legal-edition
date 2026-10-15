@@ -10,7 +10,7 @@
  * - KWL_SAFETY_POLICY=<策略 JSON>：网关启用内容安全（按类别计数或拦截，计量只记类别与次数）。
  * - KWL_CP_STATE_FILE / KWL_CP_STATE_KEY：控制面状态持久化（两代交替文件、可封装；生产形态必须封装）。
  *
- * 用法：node scripts/dev-cloud-v0.mjs   → 按输出设置环境变量后启动内核 / 桌面（ZR_AGENT_ENGINE=kap）
+ * 用法：node scripts/dev-cloud-v0.mjs   → 按输出设置环境变量后启动内核 / 桌面
  */
 import { randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";

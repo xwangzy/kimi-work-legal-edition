@@ -64,22 +64,6 @@ const parseWorkerOptions = {
   logLevel: "info",
 };
 
-// Agent 宿主制品：ESM bundle（top-level await 合法；vendor SDK 打入；目标 node24）
-// Electron 打包用法：utilityProcess fork .mjs；dev 默认仍跑 src/host.ts，ZR_AGENT_HOST_ENTRY 可指制品
-const hostOptions = {
-  entryPoints: [`${root}apps/agent-host/src/host.ts`],
-  outfile: `${root}apps/desktop/electron/agent-host.bundle.mjs`,
-  bundle: true,
-  platform: "node",
-  format: "esm",
-  target: "node24",
-  sourcemap: false,
-  external: [...NATIVE_EXTERNALS, "undici"],
-  // ESM 中承载 CJS 依赖（vendor SDK 等含 dynamic require）的 shim（别名避开 SDK 内的同名声明）
-  banner: { js: "import { createRequire as __kwlCreateRequire } from 'node:module'; const require = __kwlCreateRequire(import.meta.url);" },
-  logLevel: "info",
-};
-
 // 出站闸门制品（v9 第 04 篇 §1.1：独立进程、唯一出口；产品形态为独立签名二进制，G0 桌面以 ESM bundle 由内核 fork）
 // Electron 打包用法：内核以系统/随包 Node 运行（KWL_GATE_NODE）；主进程经 ZR_EGRESS_GATE_ENTRY 指向本制品
 const gateOptions = {
@@ -111,17 +95,15 @@ const firmNodeOptions = {
 
 if (process.argv.includes("--watch")) {
   const ctx = await context(options);
-  const hostCtx = await context(hostOptions);
   const workerCtx = await context(parseWorkerOptions);
   const nodeCtx = await context(firmNodeOptions);
   const gateCtx = await context(gateOptions);
-  await Promise.all([ctx.watch(), hostCtx.watch(), workerCtx.watch(), nodeCtx.watch(), gateCtx.watch()]);
+  await Promise.all([ctx.watch(), workerCtx.watch(), nodeCtx.watch(), gateCtx.watch()]);
   console.log("[build-kernel] watching…");
 } else {
   await build(options);
   await build(parseWorkerOptions);
-  await build(hostOptions);
   await build(firmNodeOptions);
   await build(gateOptions);
-  console.log("[build-kernel] done → apps/desktop/electron/kernel.bundle.cjs + parse-worker.bundle.cjs + agent-host.bundle.mjs + firm-node.bundle.mjs + egress-gate.bundle.mjs");
+  console.log("[build-kernel] done → apps/desktop/electron/kernel.bundle.cjs + parse-worker.bundle.cjs + firm-node.bundle.mjs + egress-gate.bundle.mjs");
 }

@@ -20,7 +20,7 @@ process.env.ZR_INTERNAL_SECRET = process.env.ZR_INTERNAL_SECRET ?? "device-recov
 
 const KEY = "device-recovery-test-key-2026-0123456789";
 const PW = "恢复口令-完整场景-0123";
-const env = () => ({ ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_AGENT_ENGINE: "sdk", ZR_DB_KEY: KEY });
+const env = () => ({ ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_DB_KEY: KEY });
 const spki = (privatePem: string) => createPublicKey(privatePem).export({ format: "pem", type: "spki" }).toString();
 
 async function workspace(firm: string) {

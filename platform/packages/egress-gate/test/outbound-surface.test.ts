@@ -24,7 +24,6 @@ const ALLOWED: Readonly<Record<string, string>> = Object.freeze({
   "packages/model-broker/src/providers/gate.ts": "undici 只连出站闸门的本机套接字（内核不直连上游）",
   "packages/kap-host/src/host-egress.ts": "宿主出口：undici 只连出站闸门与内核的本机套接字；其余主机名在本进程内失败",
   "packages/kap-host/src/main.ts": "安装上面的宿主出口为进程全局调度器",
-  "apps/agent-host/src/host.ts": "旧 SDK 宿主：undici 只连内核本机管道（全局调度器）",
   "packages/kernel/src/local-server.ts": "内核本机端点：只监听本机套接字/管道（与开发用回环端口），不发起外连",
   "packages/kernel/src/index.ts": "只有 node:http 的 Server 类型导入",
   "packages/exec-wasm/src/supervisor.ts": "W 自检：在 --permission 下做一次 DNS 查询，确认失败（证明无网），不发起连接",
@@ -178,7 +177,7 @@ test("出网面扫描自身（审查 S4-10）：六种常见绕过写法都能�
 test("出网面：内核、模型代理与 Agent 宿主的源码不出现任何上游地址（凭据与地址只经 IPC 到闸门）", () => {
   const offenders: string[] = [];
   for (const f of sources()) {
-    if (!/^(packages\/kernel|packages\/model-broker|packages\/kap-host|apps\/agent-host)\/src\//.test(f.rel)) continue;
+    if (!/^(packages\/kernel|packages\/model-broker|packages\/kap-host)\/src\//.test(f.rel)) continue;
     if (/https?:\/\/api\.moonshot\.cn/.test(f.text) && f.rel !== "packages/kernel/src/egress/kernel-gate.ts") offenders.push(`${f.rel}：月之暗面地址`);
   }
   assert.deepEqual(offenders, [], offenders.join("；"));

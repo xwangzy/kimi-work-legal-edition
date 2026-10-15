@@ -20,7 +20,6 @@ const OUT_OF_SCOPE = [
 const STDIO_ALLOWED: Readonly<Record<string, string>> = Object.freeze({
   "packages/safe-log/src/index.ts": "子进程日志通道：只写核验通过的事件 JSON 行（stderrSink）",
   "packages/parse-ocr/src/parse-worker.ts": "解析进程与内核之间的结果协议（stdout JSON 行，只含解析结果，内核读后不落日志）",
-  "apps/agent-host/src/host.ts": "旧 SDK 宿主（开发对照，安装包不含，K9-1 待退役）与内核之间的事件协议（stdout JSON 行）",
 });
 
 // 任何对 console 的引用都算（复核 S5A-06：`log = console` 这类别名能绕过只查调用的写法）

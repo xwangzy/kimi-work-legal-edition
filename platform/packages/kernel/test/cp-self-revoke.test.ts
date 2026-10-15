@@ -23,7 +23,7 @@ const msgs = (body: Record<string, unknown>): Msg[] => (Array.isArray(body.messa
 
 test("本设备被吊销：凭控制面签名的通知进入退出模式，清除席位令牌，终止正在等待律师的任务；新任务与同步不可用", { timeout: 180_000 }, async () => {
   cloud = await startCloudCp({ tenant: TID });
-  tk = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "upstream", ZR_KERNEL_TCP: "off", ZR_AGENT_ENGINE: "kap" }, FIRM);
+  tk = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "upstream", ZR_KERNEL_TCP: "off" }, FIRM);
   const { inv } = tk;
   assert.equal((await inv("control_plane.sync")).report.ok, true);
   const { matter } = await inv("matters.create", { title: "吊销演练", stance: "原告", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" } });

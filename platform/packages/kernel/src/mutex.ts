@@ -1,7 +1,7 @@
 /**
- * 内核级异步互斥（方案 §4.5：8GB 笔记本上 Agent 宿主与 OCR 互斥排队——G0 v0 做内核级互斥）。
- * 单例共享一把锁：agent-host-manager 启动宿主前 acquire、宿主退出 release；
- * 解析/OCR 批次（import/reparse）同理。简单 promise 队列实现，注释即契约。
+ * 内核级异步互斥（方案 §4.5：8GB 笔记本上解析与 OCR 批次排队——G0 v0 做内核级互斥）。
+ * 单例共享一把锁：解析/OCR 批次（import/reparse）取锁、结束释放（Agent 运行另有独立槽位 Semaphore，核查 P0-3）。
+ * 简单 promise 队列实现，注释即契约。
  */
 export class AsyncMutex {
   private tail: Promise<void> = Promise.resolve();

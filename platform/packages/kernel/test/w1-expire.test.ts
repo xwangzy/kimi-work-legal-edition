@@ -22,7 +22,7 @@ const msgs = (body: Record<string, unknown>): Msg[] => (Array.isArray(body.messa
 
 test("等待律师期间到达总时长上限：任务按过期收尾（终态事件、释放预留点数），取消宿主后不被改回运行中；重启后不重跑", { timeout: 180_000 }, async () => {
   cloud = await startCloudV0({ tenant: "ten_w1-expire-firm" });
-  const env = { ...cloud.env, ZR_MODEL_PROVIDER: "upstream", ZR_KERNEL_TCP: "off", ZR_AGENT_ENGINE: "kap", ZR_AGENT_WORK_LIMIT_MS: "4000", ZR_AGENT_WALL_MS: "6000" };
+  const env = { ...cloud.env, ZR_MODEL_PROVIDER: "upstream", ZR_KERNEL_TCP: "off", ZR_AGENT_WORK_LIMIT_MS: "4000", ZR_AGENT_WALL_MS: "6000" };
   const tk = await makeKernel(env, "w1-expire-firm");
   kernels.push(tk.kernel);
   const { inv } = tk;

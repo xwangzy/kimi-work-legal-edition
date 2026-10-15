@@ -54,15 +54,12 @@ test("WR-2 子进程不弹控制台窗口：产品源码中每一处 fork/spawn 
         else if (src[end] === ")" && --depth === 0) break;
       }
       const call = src.slice(m.index!, end + 1);
-      if (/^spawn\(join\(process\.env\.SystemRoot/.test(call) && call.includes("taskkill.exe")) continue; // 结束进程树的系统命令另带 windowsHide（见下一断言）
       calls++;
       if (!/windowsHide|HIDE_WINDOW/.test(call)) missing.push(`${f}: ${call.slice(0, 80).replace(/\s+/g, " ")}…`);
     }
   }
   assert.ok(calls >= 5, `应找到至少 5 处启动调用（实际 ${calls}）`);
   assert.deepEqual(missing, [], `以下调用缺 windowsHide：\n${missing.join("\n")}`);
-  // taskkill 用系统目录下的绝对路径（不按 PATH 查找）并带 windowsHide
-  assert.match(readFileSync(root + "packages/kernel/src/executor/agent-host-manager.ts", "utf8"), /spawn\(join\(process\.env\.SystemRoot[^)]*"taskkill\.exe"\), \[[^\]]*\], \{[^}]*windowsHide: true/);
   // 扫描面覆盖已知的启动点（防止扫描本身失效）
   for (const f of ["packages/exec-wasm/src/host.ts", "packages/kernel/src/egress/gate-host.ts", "packages/kernel/src/executor/kap-agent-client.ts", "packages/parse-ocr/src/worker-client.ts", "apps/desktop/electron/main.cjs"]) assert.ok(FILES.includes(f), `扫描应覆盖 ${f}`);
 });

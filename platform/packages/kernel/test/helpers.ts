@@ -19,8 +19,8 @@ export async function makeKernel(env: Record<string, string> = {}, slug = "test-
     dataDir: dir,
     firmSlug: slug,
     userSlug: "test-lawyer",
-    // 产品默认引擎是 kap-host（阶段 5 切换）；既有 A1 用例沿用 SDK 宿主，须走 kap 的用例显式传 ZR_AGENT_ENGINE=kap
-    env: { ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_AGENT_ENGINE: "sdk", ...env },
+    // 唯一引擎是 kap-host（K9-1：SDK 宿主已退役）；须跑通模型请求的用例另起云端 v0（cloud-v0.ts）并传其环境
+    env: { ...process.env, ZR_MODEL_PROVIDER: "mock", ...env },
   });
   return { kernel, dir, inv: (m, p) => kernel.invoke(m, p) };
 }

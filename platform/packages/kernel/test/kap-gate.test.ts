@@ -17,7 +17,7 @@ let cloud: CloudV0;
 
 before(async () => {
   cloud = await startCloudV0({ tenant: "ten_kap-gate-firm" });
-  tk = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off", ZR_AGENT_ENGINE: "kap" }, "kap-gate-firm");
+  tk = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off" }, "kap-gate-firm");
 });
 
 after(async () => {

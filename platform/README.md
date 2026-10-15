@@ -68,7 +68,7 @@
 - **探针 1**：纯管道生命周期（已有）+ 取消（runs.cancel → 宿主退出、attempts 收尾、`run.cancelled` 落账、已取消 rid 的任务令牌经管道请求一律 401）+ 崩溃恢复（现场重构 → recover → interrupted + 新尝试整任务重跑到 succeeded、事件 seq 无重复）；A1 恢复粒度修正为任务级（agent_start/agent_wait 不落检查点，见 executor 注释）；另修一处既有缺口：API 先置取消时 markTerminal 早退导致 attempts 残留 running 且无终态事件；
 - **探针 2**：local-server 非白名单路径（除 /healthz、/v1/models、GET|POST /mcp、/v1/chat/completions 外）请求计数器，A1 全程后 === 0（零外连行为证据，kernel.status.local_server 可见并留前 10 条路径取证）；取证实录：引擎 MCP 客户端对 /mcp 有一次 GET 握手探测（Streamable HTTP，回退 POST 正常），内核按协议回 405 并列入白名单——非遥测/更新外呼；**MCP 面按声明子集收窄**：tools/list 只返回 A1 工具面（`LEGAL_MCP_TOOLS`，@zr-legal/domain 单一出处，agent-host 同源再导出），白名单外 tools/call 一律 -32601 拒绝并计入取证计数器（不依赖引擎侧单层 enabledTools；覆盖点 a1-agent.test.ts「MCP 面按声明子集收窄」用例）；`[tools] enabled` 精确白名单断言（内置 Read/Write/Bash/Agent 等双不可见）；
 - **探针 3**：隐藏 skills（.kimi-code/skills 与 .agents/skills 投放）不加载无痕迹；快照内容断言（只含派生文本、无 PK/%PDF 原件字节）；材料导入遇符号链接如实拒绝（不跟随，import/mount 均拦截）；路径穿越压缩包解析前拦截（zip.ts，docx 伪装包用例）；既有注入用例（伪系统指令/.kimi-code/agents/.kimi-code/mcp.json）保持全绿；
-- **agent-host 制品**：esbuild **ESM** bundle（`apps/desktop/electron/agent-host.bundle.mjs`，vendor SDK 打入，目标 node24，top-level await 合法）+ 制品级冒烟测试（真实引擎经制品完成任务）；Electron 打包用法：utilityProcess fork .mjs；dev 默认仍跑 src/host.ts，`ZR_AGENT_HOST_ENTRY` 可指制品。
+- ~~**agent-host 制品**~~：v5 SDK 宿主（`apps/agent-host`、`agent-host.bundle.mjs`）已于 2026-10-15 退役（Kimi Code 增量核查 K9-1）；开放任务只由 `packages/kap-host` 承载，旧红队 34 例迁到 P12 运行器（`content/redteam/cases/dev-v0/`）。
 
 阶段 5a（材料块加密收尾 + 同步协议核心 + 节点授权 + 恢复演练，§5.1/§5.3/§7/§16.3 探针 11）：
 
@@ -158,7 +158,7 @@ npm run typecheck
 ## 许可证与供应链
 
 - 自研代码：内部资产。第三方依赖版本全部锁定（root 与各 workspace package.json）。
-- `third_party/kimi-code`：MIT（Moonshot AI），fork 锁版 `f67e6398f` + ZP 补丁（`third_party/PATCHES.md`）；`services/agent-runtime/vendor/kimi-code-sdk/` 为源码自建产物（MIT，保留 LICENSE）。
+- `third_party/kimi-code`：MIT（Moonshot AI），fork 锁版 `f67e6398f` + ZP 补丁（`third_party/PATCHES.md`）；`packages/kap-host/vendor/kap-embed/` 为源码自建产物（MIT，保留 LICENSE）；原 SDK 自建产物随 SDK 宿主退役删除（K9-1）。
 - better-sqlite3-multiple-ciphers（MIT，N-API）；Electron/React/Vite/esbuild 均为宽松许可。
 - 解析与 OCR 链：pdfjs-dist 6.3.289（Apache-2.0，PDF 文本层）、@hyzyla/pdfium 2.1.13（MIT，PDFium WASM 渲染，内核 BSD-3）、@napi-rs/canvas 1.0.10（MIT，图像解码）、onnxruntime-node 1.30.0（MIT，推理运行时）、ppu-paddle-ocr 6.6.0（MIT，PaddleOCR Node 封装）、ppu-ocv 4.0.0（MIT，OpenCV WASM，ppu-paddle-ocr 传递依赖）；OCR 模型 PP-OCRv5 mobile det/rec/cls 与字典（Apache-2.0，RapidAI/PaddleOCR，ModelScope + GitHub 拉取，SHA256 校验，`npm run fetch:ocr-models`，gitignore 不入仓、随安装包分发——安装包预算 ≤400MB 含 OCR 模型约 21MB）。
 - IM 连接器链：ws 8.18.3（MIT，WebSocket 客户端/服务端——钉钉 Stream 骨架与平台模拟器共用；连接器只连配置的平台端点或本机模拟器，无中软域名路径）。

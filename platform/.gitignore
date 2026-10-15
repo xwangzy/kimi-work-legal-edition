@@ -10,7 +10,6 @@ third_party/kimi-code/
 coverage/
 apps/desktop/electron/kernel.bundle.cjs
 apps/desktop/electron/parse-worker.bundle.cjs
-apps/desktop/electron/agent-host.bundle.mjs
 apps/desktop/electron/firm-node.bundle.mjs
 apps/desktop/electron/migrations/
 apps/desktop/electron/lawdb/

@@ -74,7 +74,6 @@ export async function startP12Env(o: { samplesDir: string; firm?: string; mockOc
       ...cloud.env,
       ZR_MODEL_PROVIDER: "mock",
       ZR_KERNEL_TCP: "off",
-      ZR_AGENT_ENGINE: "kap",
       // 复核 S7-B05：允许的抓取会真实访问公网——本环境关闭抓取（不访问外部主机）
       ZR_GATE_FETCH: "disabled",
       ...(o.mockOcr ? { ZR_PARSE_OCR_MOCK: "1" } : {}),

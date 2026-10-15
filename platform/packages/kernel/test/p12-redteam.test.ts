@@ -1,7 +1,8 @@
 /**
  * P12 注入红队框架（v9 阶段 7；第 04 篇 §11 P12、第 06 篇 §2 T08/T19）：用例格式、判定自检与用例运行。
  *
- * 缺省运行冒烟用例（content/redteam/cases/smoke/，每层 1 例，措辞良性，只验证框架本身）；
+ * 缺省运行冒烟用例（content/redteam/cases/smoke/，每层 1 例，措辞良性，只验证框架本身）与研发 v0 用例（content/redteam/cases/dev-v0/，
+ * 34 例，K9-1 自旧 SDK 宿主红队用例迁移到 kap 路径；研发合成，不计入独立红队 ≥ 300 例）；
  * 独立红队的用例：KWL_REDTEAM_CASES=<目录>；只跑某几例：KWL_REDTEAM_ONLY=<编号,编号>；报告目录：KWL_REDTEAM_REPORT=<目录>。
  * 运行器、判定与报告见 test/p12/；用例格式见 content/redteam/README.md。
  */
@@ -134,11 +135,8 @@ test("判定自检：分别注入“金丝雀出现”“上游请求没有闸�
   assert.equal(judge(party).unconfirmedCrossing.ok, false);
 });
 
-test(`运行用例（${SMOKE ? "冒烟：每层 1 例" : CASE_DIR}）：已运行的用例三类判定全部通过；报告写明环境、版本、样本来源、分母、观察时间与失败复现`, { timeout: 1_800_000 }, async () => {
-  const loaded = loadCases(CASE_DIR);
-  const only = (process.env.KWL_REDTEAM_ONLY ?? "").split(",").filter(Boolean);
-  const cases = loaded.filter((l) => l.case && (only.length === 0 || only.includes(l.case.id))).map((l) => l.case!);
-  const startedAt = new Date();
+/** 按载体分三类环境运行用例（主环境、IM 入口、模拟 OCR）。 */
+async function runCases(cases: RedteamCase[]): Promise<CaseResult[]> {
   const results: CaseResult[] = [];
   const main = await startP12Env({ samplesDir: SAMPLES });
   try {
@@ -164,6 +162,15 @@ test(`运行用例（${SMOKE ? "冒烟：每层 1 例" : CASE_DIR}）：已运�
       await ocr.close();
     }
   }
+  return results;
+}
+
+test(`运行用例（${SMOKE ? "冒烟：每层 1 例" : CASE_DIR}）：已运行的用例三类判定全部通过；报告写明环境、版本、样本来源、分母、观察时间与失败复现`, { timeout: 1_800_000 }, async () => {
+  const loaded = loadCases(CASE_DIR);
+  const only = (process.env.KWL_REDTEAM_ONLY ?? "").split(",").filter(Boolean);
+  const cases = loaded.filter((l) => l.case && (only.length === 0 || only.includes(l.case.id))).map((l) => l.case!);
+  const startedAt = new Date();
+  const results = await runCases(cases);
   const report = buildReport({ caseDir: CASE_DIR, loaded, results, startedAt, endedAt: new Date(), repoDir: REPO });
   const out = writeReport(report, process.env.KWL_REDTEAM_REPORT ?? mkdtempSync(join(tmpdir(), "kwl-p12-report-")));
   console.log(`[p12] 报告：${out.md}`);
@@ -180,4 +187,21 @@ test(`运行用例（${SMOKE ? "冒烟：每层 1 例" : CASE_DIR}）：已运�
     for (const layer of LAYERS) assert.ok(ranLayers.has(layer), `冒烟用例在 ${layer} 层运行`);
     assert.equal(report.totals.ran, cases.length);
   }
+});
+
+test("研发 v0 用例（K9-1：旧 SDK 宿主红队 34 例迁到 kap 路径；六类注入 × 脚本化“听话的模型”）：全部运行、三类判定全部通过", { timeout: 1_800_000, skip: !SMOKE && "已指定用例目录" }, async () => {
+  const dir = join(REPO, "content", "redteam", "cases", "dev-v0");
+  const loaded = loadCases(dir);
+  assert.deepEqual(loaded.filter((l) => !l.case).map((l) => [l.file, l.problems]), []);
+  assert.equal(loaded.length, 34);
+  const startedAt = new Date();
+  const results = await runCases(loaded.map((l) => l.case!));
+  const report = buildReport({ caseDir: dir, loaded, results, startedAt, endedAt: new Date(), repoDir: REPO });
+  writeReport(report, process.env.KWL_REDTEAM_REPORT ? join(process.env.KWL_REDTEAM_REPORT, "dev-v0") : mkdtempSync(join(tmpdir(), "kwl-p12-dev-v0-")));
+  for (const r of results) {
+    assert.equal(r.status, "ran", `${r.id}：${r.status} ${r.note ?? ""}——${JSON.stringify(r.actions)}`);
+    assert.ok(r.actions.length > 0 && r.actions.every((a) => a.result !== null), `${r.id}：每个脚本化动作都到达了系统`);
+    assert.ok(passed(r.verdicts!), `${r.id} 未通过：${JSON.stringify(r.verdicts)}`);
+  }
+  assert.equal(report.totals.passed, 34);
 });

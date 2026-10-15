@@ -144,7 +144,7 @@ function kernelChildEnv(o) {
   const base = o.packaged ? packagedKernelEnv(o.processEnv, o.release ?? { env: {} }) : o.processEnv;
   const pick = (k, fallback) => (!o.packaged && o.processEnv[k]) || fallback;
   // 安装包形态：子进程入口只来自核验过的随包运行时（runtimeEnv），不下发指向 asar 内并不存在的文件的缺省入口；
-  // SDK 宿主入口不下发（落盘加密强制时 SDK 引擎本就禁用）。缺项即运行时损坏（复核 B4-A20）
+  // 缺项即运行时损坏（复核 B4-A20）。v5 SDK 宿主已退役（K9-1），没有它的入口
   if (o.packaged) {
     for (const k of ["ZR_EGRESS_GATE_ENTRY", "ZR_KAP_HOST_ENTRY"]) if (!(o.runtimeEnv && o.runtimeEnv[k])) throw new Error(`随包运行时缺少 ${k}`);
   }
@@ -156,7 +156,6 @@ function kernelChildEnv(o) {
     ...(o.packaged
       ? {}
       : {
-          ZR_AGENT_HOST_ENTRY: pick("ZR_AGENT_HOST_ENTRY", o.paths.agentHostEntry),
           ZR_EGRESS_GATE_ENTRY: pick("ZR_EGRESS_GATE_ENTRY", o.paths.gateEntry),
           ZR_KAP_HOST_ENTRY: pick("ZR_KAP_HOST_ENTRY", o.paths.kapEntry),
         }),

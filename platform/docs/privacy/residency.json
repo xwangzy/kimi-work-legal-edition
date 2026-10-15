@@ -636,26 +636,9 @@
     }
   ],
   "write_points": {
-    "apps/agent-host/src/config-template.ts": {
-      "apis": [
-        "writeFileSync"
-      ],
-      "rows": [
-        4
-      ],
-      "reason": "旧 SDK 宿主每任务配置（开发对照，安装包不含，K9-1 待退役）"
-    },
-    "apps/agent-host/src/host.ts": {
-      "apis": [
-        "writeFileSync"
-      ],
-      "rows": [
-        5
-      ],
-      "reason": "旧 SDK 宿主成果目录（开发对照，安装包不含）"
-    },
     "apps/desktop/electron/main.cjs": {
       "apis": [
+        "appendFileSync",
         "writeFileSync"
       ],
       "rows": [
@@ -663,7 +646,7 @@
         17,
         19
       ],
-      "reason": "非内容索引版本标记与旧漫游数据提示标记（只写版本号或时间）；删除回执（不含案件内容）写到系统对话框选定的位置"
+      "reason": "非内容索引版本标记与旧漫游数据提示标记（只写版本号或时间）；删除回执（不含案件内容）写到系统对话框选定的位置；冒烟形态（KWL_SMOKE=1）内核死亡时把内核输出环形缓冲（≤ 16 KB）追加到 CI 或 IT 指定的冒烟结果文件旁（<out>.kernel.log），从不写入用户数据根"
     },
     "apps/desktop/electron/secret-store.cjs": {
       "apis": [
@@ -768,15 +751,6 @@
         20
       ],
       "reason": "设备与律所密钥文件（kwl-sealed/1）、暂存的设备恢复"
-    },
-    "packages/kernel/src/executor/agent-host-manager.ts": {
-      "apis": [
-        "writeFileSync"
-      ],
-      "rows": [
-        4
-      ],
-      "reason": "旧 SDK 宿主每任务规格文件（开发对照，安装包形态不走此路径）"
     },
     "packages/kernel/src/services/export-file.ts": {
       "apis": [

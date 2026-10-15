@@ -254,6 +254,8 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
             t.liveText = undefined;
             t.workCodec?.wipe();
             t.workCodec = null;
+            // 任何退出路径都撤销任务令牌（旧宿主管理器 R-01 的不变量；K9-1 迁移时发现宿主异常退出这条路径漏了）
+            opts.revokeToken?.(t.taskId);
             t.release?.();
             t.release = null;
           }

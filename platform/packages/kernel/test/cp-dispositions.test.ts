@@ -648,7 +648,7 @@ test("闩锁与产品构建：已接入控制面的工作区去掉控制面地�
   const { createKernel } = await import("../src/index.ts");
   const dir = tk.dir;
   await tk.kernel.close();
-  const env = { ...process.env, ZR_MODEL_PROVIDER: "upstream", ZR_AGENT_ENGINE: "sdk", ZR_CONTROL_PLANE_SYNC_MS: "off", ZR_FIRM_MAX_MODE: "auto" } as NodeJS.ProcessEnv;
+  const env = { ...process.env, ZR_MODEL_PROVIDER: "upstream", ZR_CONTROL_PLANE_SYNC_MS: "off", ZR_FIRM_MAX_MODE: "auto" } as NodeJS.ProcessEnv;
   delete env.ZR_CONTROL_PLANE_BASE;
   const k2 = await createKernel({ dataDir: dir, firmSlug: FIRM, userSlug: "test-lawyer", env });
   try {
@@ -669,7 +669,7 @@ test("闩锁与产品构建：已接入控制面的工作区去掉控制面地�
     await fresh.kernel.close();
   }
   // 复原本文件后续可能用到的内核
-  const k3 = await createKernel({ dataDir: dir, firmSlug: FIRM, userSlug: "test-lawyer", env: { ...process.env, ZR_MODEL_PROVIDER: "upstream", ZR_AGENT_ENGINE: "sdk", ...cloud.env } });
+  const k3 = await createKernel({ dataDir: dir, firmSlug: FIRM, userSlug: "test-lawyer", env: { ...process.env, ZR_MODEL_PROVIDER: "upstream", ...cloud.env } });
   tk = { kernel: k3, dir, inv: (m, p) => k3.invoke(m, p) };
 });
 
@@ -686,7 +686,7 @@ test("退出模式下重启（复核 S6-B34）：排队与中断的任务暂停�
   assert.equal((await tk.inv("control_plane.status")).exit_mode?.code, "license_expired");
   const dir = tk.dir;
   await tk.kernel.close();
-  const k = await createKernel({ dataDir: dir, firmSlug: FIRM, userSlug: "test-lawyer", env: { ...process.env, ZR_MODEL_PROVIDER: "upstream", ZR_AGENT_ENGINE: "sdk", ...cloud.env } });
+  const k = await createKernel({ dataDir: dir, firmSlug: FIRM, userSlug: "test-lawyer", env: { ...process.env, ZR_MODEL_PROVIDER: "upstream", ...cloud.env } });
   tk = { kernel: k, dir, inv: (m, p) => k.invoke(m, p) };
   const attempts = () => k.db.all(`SELECT attempt_id FROM attempts WHERE run_id = ?`, [rid]).length;
   await new Promise((r) => setTimeout(r, 800));

@@ -55,7 +55,7 @@ export interface ParseBatchOptions {
 }
 
 /**
- * 子进程 env 白名单（对齐 agent-host-manager 的最小形态）：只含运行必需项——
+ * 子进程 env 白名单（与 kap-host、闸门子进程同一最小形态）：只含运行必需项——
  * 解析进程处理不可信文件，绝不继承 ZR_MAAS_TOKEN/ZR_DB_KEY/ZR_INTERNAL_SECRET 等机密。
  */
 function workerEnv(extraAllowlist: string[] | undefined): NodeJS.ProcessEnv {

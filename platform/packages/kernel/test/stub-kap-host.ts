@@ -2,6 +2,8 @@
  * 测试用桩宿主（复核 B4-B07/B4-B08/B4-B11）：按 kap-host 的 IPC 协议只实现取消路径需要的方法（startRun / events / cancel / forceCancel），
  * 用来稳定复现真实引擎难以卡准的时刻——取消与确认卡同时到达（状态版本持续变化）、强制取消失败、发起人不一致、宿主已先收尾。
  * 行为由数据根下的 stub-mode.json 决定（每次调用现读）；收到的调用按顺序记入 calls.log。同一事项同时只允许一个运行（与真实宿主同口径）。
+ * K9-1（SDK 宿主退役）补：after_start 按序发出脚本化事件（含重复终态、未登记的事件类型），"crash" 表示宿主进程异常退出——
+ * 用来在 kap 路径上复核旧宿主管理器的不变量（任何退出路径都撤销任务令牌、只认第一条终态、未登记的结束不算成功）。
  */
 import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,7 +21,15 @@ const runs = new Map<string, StubRun>();
 const active = new Map<string, string>();
 const TERMINAL = new Set(["succeeded", "partial", "failed", "cancelled"]);
 
-const mode = (): { cancel?: "ok" | "conflict" | "conflict_once" | "forbidden"; force?: "ok" | "fail"; events?: "live" | "settled"; shutdown_delay_ms?: number } => {
+type Scripted = { type: string; payload?: Record<string, unknown> } | "crash";
+const mode = (): {
+  cancel?: "ok" | "conflict" | "conflict_once" | "forbidden";
+  force?: "ok" | "fail";
+  events?: "live" | "settled";
+  shutdown_delay_ms?: number;
+  start?: "ok" | "fail";
+  after_start?: Scripted[];
+} => {
   try {
     return JSON.parse(readFileSync(join(dataRoot, "stub-mode.json"), "utf8"));
   } catch {
@@ -47,9 +57,22 @@ const finish = (runId: string, by: string): void => {
 const methods: Record<string, (p: any) => unknown> = {
   startRun(p) {
     const mid = String(p.request.matter_id);
+    if (mode().start === "fail") throw fail("internal", "模拟：启动失败");
     if (active.has(mid)) throw fail("conflict", "这个事项里还有一个任务在进行，请等它完成或取消后再开始（同一事项同时只运行一个任务）");
     runs.set(String(p.request.run_id), { matterId: mid, status: "running", version: 1, seq: 0, cancelCalls: 0 });
     active.set(mid, String(p.request.run_id));
+    const script = mode().after_start ?? [];
+    if (script.length) {
+      const runId = String(p.request.run_id);
+      setTimeout(() => {
+        const r = runs.get(runId)!;
+        for (const e of script) {
+          if (e === "crash") process.exit(1);
+          if (TERMINAL.has(e.type.replace(/^run\./, ""))) r.status = e.type.replace(/^run\./, "");
+          send({ t: "event", run_id: runId, event: { seq: ++r.seq, at: new Date().toISOString(), type: e.type, payload: e.payload ?? {} } });
+        }
+      }, 50);
+    }
     return { run_id: p.request.run_id, session_id: "s", status: "running", mode: "default", state_version: 1 };
   },
   events(p) {

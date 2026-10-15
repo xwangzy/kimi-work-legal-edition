@@ -41,7 +41,7 @@ test("内核重启：等待律师中的开放任务按“过期”收尾、预�
   kernels.length = 0;
 
   const { createKernel } = await import("../src/index.ts");
-  const k2 = await createKernel({ dataDir: dir, firmSlug: "w1-restart-firm", userSlug: "test-lawyer", env: { ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off", ZR_AGENT_ENGINE: "sdk" } });
+  const k2 = await createKernel({ dataDir: dir, firmSlug: "w1-restart-firm", userSlug: "test-lawyer", env: { ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off" } });
   kernels.push(k2);
   for (const runId of ["run_wait_approval", "run_wait_input"]) {
     const r = k2.db.get<{ status: string; points_reserved: number; terminal_reason: string }>(`SELECT status, points_reserved, terminal_reason FROM runs WHERE run_id = ?`, [runId])!;
