@@ -8,7 +8,7 @@ import { nav } from "../App.tsx";
 import { Modal } from "../components/Modal.tsx";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
-import { audienceText, cloudStateText, defaultForm, dueText, dueTone, REMINDER_KINDS, reminderKindLabel, remindAtText, scheduleText } from "../lib/reminders.ts";
+import { audienceText, cloudStateText, defaultForm, dueText, dueTone, REMINDER_KINDS, reminderKindLabel, scheduleLine } from "../lib/reminders.ts";
 
 const DAYS_CHOICES = [0, 1, 2, 3, 5, 7, 10, 14, 30];
 
@@ -105,10 +105,8 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
                       </button>
                     </td>
                     <td>
-                      <div>{scheduleText(r.days_before, r.remind_time)}</div>
-                      <div className="muted">
-                        {remindAtText(r.remind_at)} · {audienceText(r.audience, r.collab_scope === "team")}
-                      </div>
+                      <div>{scheduleLine(r)}</div>
+                      <div className="muted">{audienceText(r.audience, r.collab_scope === "team")}</div>
                     </td>
                     <td className={cs.tone === "warn" ? "reminder-warn" : "muted"}>{cs.text}</td>
                     <td className="reminder-actions">
@@ -121,6 +119,7 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
                         confirmLabel="撤销提醒"
                         onConfirm={async () => {
                           await api.reminderCancel(r.reminder_id);
+                          await api.remindersSync().catch(() => {});
                           void load();
                         }}
                       />
@@ -143,7 +142,8 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
           onSaved={() => {
             setEditing(null);
             if (newForMatter) nav("/reminders");
-            void load();
+            // 先完成一次巡检再刷新（联调：否则刚保存的那条总显示“正在交给中软通知服务…”）
+            void api.remindersSync().catch(() => {}).finally(() => void load());
           }}
         />
       )}

@@ -54,6 +54,22 @@ export function scheduleText(daysBefore: number, time: string): string {
   return daysBefore === 0 ? `当天 ${time} 提醒` : `提前 ${daysBefore} 天 ${time} 提醒`;
 }
 
+/** 按期限日、提前天数与几点（北京时间）算出的提醒时刻（UTC ISO，与内核同一算法）。 */
+export function plannedRemindAt(dueDate: string, daysBefore: number, time: string): string {
+  const [y, m, d] = dueDate.split("-").map(Number) as [number, number, number];
+  const [hh, mm] = time.split(":").map(Number) as [number, number];
+  return new Date(Date.UTC(y, m - 1, d - daysBefore, hh, mm) - BJ).toISOString();
+}
+
+/**
+ * 提醒时间一句话：设提醒时已经过了“提前 N 天几点”的（期限临近），内核改为立即提醒——如实写出，不再显示原来的“提前 N 天”。
+ */
+export function scheduleLine(r: { due_date: string; days_before: number; remind_time: string; remind_at: string }): string {
+  const planned = plannedRemindAt(r.due_date, r.days_before, r.remind_time);
+  if (Date.parse(r.remind_at) > Date.parse(planned)) return `期限临近，设好时已立即提醒（${remindAtText(r.remind_at)}）`;
+  return `${scheduleText(r.days_before, r.remind_time)}（${remindAtText(r.remind_at)}）`;
+}
+
 /** 本人提醒的“电脑关机时”状态一句话。 */
 export function cloudStateText(state: string, configured: boolean): { text: string; tone: "ok" | "warn" | "plain" } {
   if (!configured || state === "local") return { text: "只在这台电脑上提醒（电脑关机时不提醒）", tone: "plain" };

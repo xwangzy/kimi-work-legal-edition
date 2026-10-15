@@ -167,6 +167,17 @@ test("云端：只提醒我 → 本人两台设备；云端只见触发时刻、
   tk.kernel.db.run(`UPDATE reminders SET remind_at = ? WHERE reminder_id = ?`, [s.fire_at, rid]);
 });
 
+test("连续建立几条后立即同步：巡检正在进行时到来的同步等它结束后再完整跑一次，全部交给云端（联调回归）", { timeout: 60_000 }, async () => {
+  const ids: string[] = [];
+  for (const k of ["hearing", "evidence", "appeal"]) ids.push((await tk.inv("reminders.create", { matter_id: mid, kind: k, due_date: inDays(15), days_before: 2 })).reminder_id);
+  await tk.inv("reminders.sync");
+  const states = ids.map((x) => tk.kernel.db.get<{ cloud_state: string }>(`SELECT cloud_state FROM reminders WHERE reminder_id = ?`, [x])!.cloud_state);
+  assert.deepEqual(states, ["synced", "synced", "synced"]);
+  for (const x of ids) await tk.inv("reminders.cancel", { reminder_id: x });
+  await tk.inv("reminders.sync");
+  assert.deepEqual(cloud.notify.server.snapshot().filter((r) => ids.includes(r.id)), []);
+});
+
 test("改动升版本整条重登、撤销即云端删除；通知事项成员 → 同事的设备收到并能核对", { timeout: 90_000 }, async () => {
   const d = inDays(20);
   const u = await tk.inv("reminders.update", { reminder_id: rid, kind: "evidence", due_date: d, days_before: 5, note: "改期" });

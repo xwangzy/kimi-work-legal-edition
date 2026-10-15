@@ -3,7 +3,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { audienceText, bjToday, cloudStateText, daysUntil, defaultForm, dueText, dueTone, reminderKindLabel, remindAtText, scheduleText } from "../src/lib/reminders.ts";
+import { scheduleLine, plannedRemindAt, audienceText, bjToday, cloudStateText, daysUntil, defaultForm, dueText, dueTone, reminderKindLabel, remindAtText, scheduleText } from "../src/lib/reminders.ts";
 
 // 2026-10-16 23:30 北京时间 = 15:30Z
 const NOW = Date.parse("2026-10-16T15:30:00.000Z");
@@ -40,4 +40,10 @@ test("云端状态一句话：未接通知服务如实写“电脑关机时不�
     const t = cloudStateText(s, true).text;
     assert.doesNotMatch(t, /密文|版本|设备编号|租约|凭据|token|API/i, t);
   }
+});
+
+test("提醒时间一句话：期限临近被改为立即提醒的如实写出（联调回归）", () => {
+  assert.equal(plannedRemindAt("2026-11-30", 3, "09:00"), "2026-11-27T01:00:00.000Z");
+  assert.equal(scheduleLine({ due_date: "2026-11-30", days_before: 3, remind_time: "09:00", remind_at: "2026-11-27T01:00:00.000Z" }), "提前 3 天 09:00 提醒（11月27日 09:00）");
+  assert.equal(scheduleLine({ due_date: "2026-10-17", days_before: 3, remind_time: "09:00", remind_at: "2026-10-15T17:22:00.000Z" }), "期限临近，设好时已立即提醒（10月16日 01:22）");
 });

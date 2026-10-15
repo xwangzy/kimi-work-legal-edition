@@ -303,12 +303,12 @@ export class ReminderService {
     return n;
   }
 
-  /** 一次完整巡检：本机到时 → 云端登记与撤销 → 取到时提醒。并发调用合并为同一次。 */
+  /**
+   * 一次完整巡检：本机到时 → 云端登记与撤销 → 取到时提醒。同一时刻只跑一次；正在跑时到来的调用等它结束后**再完整跑一次**
+   * （联调发现：建立提醒触发的巡检已取过待登记清单，紧接着的“立即同步”若只等那一次，会漏掉之后建立的提醒）。
+   */
   async tick(): Promise<{ local: number; cloud: number }> {
-    if (this.#busy) {
-      await this.#busy;
-      return { local: 0, cloud: 0 };
-    }
+    while (this.#busy) await this.#busy;
     let local = 0;
     let cloud = 0;
     const run = (async () => {
