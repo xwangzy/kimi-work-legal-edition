@@ -131,7 +131,9 @@ function copyClosure(pkgName, fromDir, destNodeModules, seen = new Set()) {
     dereference: true,
     filter: (src) => {
       const inPkg = src.slice(pkgDir.length);
-      return !/[\\/](test|tests|__tests__|docs|\.github)([\\/]|$)/.test(inPkg) && !src.endsWith(".map") && pathWanted(pkgName, inPkg);
+      // 点文件/点目录（.eslintrc、.travis.yml、.gitkeep、.bin 等）一律不随包：全是开发工具配置或垫片，
+      // 且 electron-builder 的 extraResources glob `**/*` 本就不拷贝点文件——暂存即剪除，保持"清单=发货内容"（run 38678772986）
+      return !/(?:^|[\\/])\./.test(inPkg) && !/[\\/](test|tests|__tests__|docs|\.github)([\\/]|$)/.test(inPkg) && !src.endsWith(".map") && pathWanted(pkgName, inPkg);
     },
   });
   const pj = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
