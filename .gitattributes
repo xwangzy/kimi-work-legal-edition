@@ -1,0 +1,22 @@
+# 统一各平台检出换行为 LF（Windows CI 的 Git 默认 autocrlf=true 会把文本文件检出为 CRLF，
+# 曾导致 build:skills 的 frontmatter 解析失败，见 run 38666585799）。
+* text=auto eol=lf
+
+# 二进制文件不做任何转换
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.zip binary
+*.7z binary
+*.gz binary
+*.exe binary
+*.dll binary
+*.node binary
+*.onnx binary
+# 密钥材料保持字节原样
+*.pem binary
+
+# vendored SDK 保持与上游字节一致，不参与换行/文本转换
+platform/apps/agent-host/vendor/** -text

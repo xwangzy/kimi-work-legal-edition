@@ -52,14 +52,16 @@ cpSync(join(here, "AGENTS.md"), join(trusted, "AGENTS.md"));
 const skills = [];
 for (const id of ids) {
   const file = join(here, id, "SKILL.md");
-  const fm = frontmatter(readFileSync(file, "utf8"), file);
+  // 换行归一：Windows 检出可能带 CRLF（autocrlf），frontmatter 与标题解析只按 LF 写
+  const text = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+  const fm = frontmatter(text, file);
   if (fm.name !== id || !/^[a-z][a-z0-9-]{1,47}$/.test(id)) throw new Error(`${file}：name 必须与目录名一致且为小写连字符`);
   if (!fm.description || [...fm.description].length > 250) throw new Error(`${file}：description 必填且不超过 250 字（现 ${[...(fm.description ?? "")].length} 字）`);
   const req = fm.kwl.tools_required ?? [];
   const bad = req.filter((t) => !LEGAL_MCP_TOOLS.includes(t));
   if (bad.length) throw new Error(`${file}：tools_required 含 Agent 调不到的工具：${bad.join("、")}`);
   cpSync(join(here, id), join(trusted, "skills", id), { recursive: true, filter: (s) => !/[\\/](evals|examples)([\\/]|$)/.test(s) });
-  skills.push({ id, version: fm.kwl.version ?? "0.0.0", tier: fm.kwl.tier ?? "beta", lines: fm.kwl.lines ?? [], tools_required: req, title: (/^# (.+)$/m.exec(readFileSync(file, "utf8")) ?? [])[1] ?? id, description: fm.description });
+  skills.push({ id, version: fm.kwl.version ?? "0.0.0", tier: fm.kwl.tier ?? "beta", lines: fm.kwl.lines ?? [], tools_required: req, title: (/^# (.+)$/m.exec(text) ?? [])[1] ?? id, description: fm.description });
 }
 
 function list(dir) {
