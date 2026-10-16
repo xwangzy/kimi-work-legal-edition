@@ -85,7 +85,8 @@ export class ShareRelaySync {
   private pushing: Promise<RelayReport> | null = null;
   /** 超出中继单段上限的段（本进程内不再反复尝试；状态里如实显示，G1 拆段）。 */
   private readonly tooLarge = new Set<string>();
-  private pulling: Promise<RelayReport> | null = null;
+  private waiting: Promise<RelayReport> | null = null;
+  private pullChain: Promise<unknown> = Promise.resolve();
 
   private readonly d: ShareRelayDeps;
 
@@ -272,14 +273,44 @@ export class ShareRelaySync {
 
   /** 取回并摄取（单飞）；wait = 没有新段时长轮询等待。 */
   pull(wait = false): Promise<RelayReport> {
-    if (this.pulling) return this.pulling;
-    this.pulling = this.doPull(wait).finally(() => {
-      this.pulling = null;
+    if (!wait) return this.serial(() => this.doPull());
+    if (this.waiting) return this.waiting;
+    this.waiting = this.waitThenPull().finally(() => {
+      this.waiting = null;
     });
-    return this.pulling;
+    return this.waiting;
   }
 
-  private async doPull(wait: boolean): Promise<RelayReport> {
+  /**
+   * 长轮询只作“有新段”的唤醒信号，不在锁里等：手动“立即同步”不必等它（至多 25 秒）返回；
+   * 醒来后按普通收件取一次（长轮询回复里的条目由这一次重新取，已在本机的跳过）。
+   */
+  private async waitThenPull(): Promise<RelayReport> {
+    const why = this.blocked();
+    if (why) return this.empty(why);
+    try {
+      await this.call({ step: "changes", since: Number(this.kv("feed_cursor") ?? "0") || 0, wait: true });
+    } catch (e) {
+      const code = e instanceof RelayError ? e.code : "relay_pull_failed";
+      // 游标比中继上的记录多：交给普通收件处理（从头再取）
+      if (code !== "cursor_invalid") {
+        const r = this.empty();
+        r.errors.push(code);
+        this.noteResult(r);
+        return r;
+      }
+    }
+    return this.serial(() => this.doPull());
+  }
+
+  /** 收件串行执行（后台巡检与手动同步不并发处理同一批收件）。 */
+  private serial(fn: () => Promise<RelayReport>): Promise<RelayReport> {
+    const run = this.pullChain.then(fn, fn);
+    this.pullChain = run.catch(() => undefined);
+    return run;
+  }
+
+  private async doPull(): Promise<RelayReport> {
     const why = this.blocked();
     if (why) return this.empty(why);
     const report = this.empty();
@@ -289,7 +320,7 @@ export class ShareRelaySync {
       for (let page = 0; page < MAX_PAGES; page++) {
         let res: { json: any };
         try {
-          res = await this.call({ step: "changes", since: cursor, wait: wait && page === 0 });
+          res = await this.call({ step: "changes", since: cursor, wait: false });
         } catch (e) {
           // 中继上的记录比本机游标少（中继重建或律所数据被整体删除）：从头再取（已摄取的段按编号跳过）
           if (e instanceof RelayError && e.code === "cursor_invalid" && cursor > 0) {
