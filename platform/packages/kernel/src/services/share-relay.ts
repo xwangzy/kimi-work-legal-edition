@@ -78,7 +78,7 @@ const MAX_PAGES = 10;
 export const RELAY_INBOX_MAX_FILES = 5000;
 export const RELAY_INBOX_MAX_BYTES = 2 * 1024 ** 3;
 export const RELAY_RETRY_MAX_ROWS = 5000;
-/** 单份材料的上限：中继“每设备未登记字节”缺省 2 GiB 留出余量（第三轮复核 S11B-33a）。 */
+/** 单份材料的上限：中继“每设备未登记字节”缺省 2 GiB 留出余量（第三轮复核 S11B-33a）。现行材料导入限 100 MB，走不到这里，只作防御；真要支持大材料须先改导出时整份读入（第四轮 S11B-40c）。 */
 export const RELAY_SINGLE_BLOB_MAX = 1.75 * 1024 ** 3;
 /** 暂存区（取回、待摄取的段与密文块）上限（第二轮复核 S11A-10）。 */
 export const RELAY_STAGING_MAX_BYTES = 4 * 1024 ** 3;
@@ -90,9 +90,12 @@ const ownedBy = (sid: string, dev: string) => SEGMENT_ID_RE.test(sid) && sid.sta
 
 class RelayError extends Error {
   readonly code: string;
-  constructor(code: string) {
+  /** “事项不存在”回复里带的重置代数（第四轮复核 S11B-36/37）。 */
+  readonly gen: number | null;
+  constructor(code: string, gen: number | null = null) {
     super(code);
     this.code = code;
+    this.gen = gen;
   }
 }
 
@@ -113,6 +116,8 @@ export class ShareRelaySync {
   private cred: { token: string; expiresAt: number } | null = null;
   private credFailUntil = 0;
   private pushing: Promise<RelayReport> | null = null;
+  /** 本进程里按重置处理过的次数（手动同步据此决定是否再发一次）。 */
+  private resetsSeen = 0;
   private waiting: Promise<RelayReport> | null = null;
   private pullChain: Promise<unknown> = Promise.resolve();
   private lastFullPull = 0;
@@ -199,13 +204,15 @@ export class ShareRelaySync {
     if (r.status === 401) this.cred = null;
     if (r.status < 200 || r.status >= 300) {
       let code = `http_${r.status}`;
+      let gen: number | null = null;
       try {
-        const e = JSON.parse(r.body)?.error;
-        if (typeof e === "string" && /^[a-z0-9_]{1,60}$/.test(e)) code = e;
+        const j = JSON.parse(r.body);
+        if (typeof j?.error === "string" && /^[a-z0-9_]{1,60}$/.test(j.error)) code = j.error;
+        if (Number.isSafeInteger(j?.gen) && j.gen >= 0) gen = j.gen;
       } catch {
         // 不是 JSON：按状态码
       }
-      throw new RelayError(code);
+      throw new RelayError(code, gen);
     }
     if (r.body_b64 !== undefined) return { json: null, bytes: Buffer.from(r.body_b64, "base64") };
     try {
@@ -250,6 +257,38 @@ export class ShareRelaySync {
     if (fields.uploaded) this.d.db.run(`UPDATE relay_matters SET uploaded_at = ?, known = 1, known_at = ? WHERE matter_id = ?`, [at, at, matterId]);
   }
 
+  /**
+   * 中继告知的重置代数（第四轮复核 S11B-36/37：重置由中继确定地告知，不靠取历史时碰上“事项不存在”猜）。
+   * 比本机记下的大：本机曾经收发过该事项（登记成功过、或已知中继上有它、或有导出水位）即按运营重置处理，返回 true；
+   * 本机从没收发过（例如重置之后才加入）只记下代数。
+   */
+  private noteGen(matterId: string, gen: unknown): boolean {
+    if (!Number.isSafeInteger(gen) || (gen as number) < 0) return false;
+    const row = this.d.db.get<{ gen: number; uploaded_at: string | null; known: number }>(`SELECT gen, uploaded_at, known FROM relay_matters WHERE matter_id = ?`, [matterId]);
+    if (row && (gen as number) <= row.gen) return false;
+    const had = !!row && (!!row.uploaded_at || row.known === 1 || !!this.d.db.get(`SELECT 1 AS x FROM relay_export_state WHERE matter_id = ?`, [matterId]));
+    this.d.db.run(`INSERT OR IGNORE INTO relay_matters (matter_id, first_seen_at) VALUES (?,?)`, [matterId, this.iso()]);
+    this.d.db.run(`UPDATE relay_matters SET gen = ? WHERE matter_id = ?`, [gen, matterId]);
+    if (!had) return false;
+    this.resetMatter(matterId);
+    return true;
+  }
+
+  /**
+   * 中继上的事项被重置（或中继重建）：清掉导出水位、标记本机写入的行全量重发（第四轮复核 S11A-36）、删掉发件目录里该事项尚未登记的段
+   * （全量重发会包含它们，复核 S11A-37）、重取历史；取回中的旧段记录一并清掉（中继上已没有）。
+   */
+  private resetMatter(matterId: string): void {
+    this.resetsSeen += 1;
+    this.d.db.run(`DELETE FROM relay_export_state WHERE matter_id = ?`, [matterId]);
+    this.d.db.run(
+      `UPDATE relay_matters SET resend_full = 1, known = 0, uploaded_at = NULL, controller = NULL, history_state = 'pending', history_cursor = 0, history_next_at = NULL, history_attempts = 0 WHERE matter_id = ?`,
+      [matterId],
+    );
+    for (const t of ["relay_outbox", "relay_retry", "relay_blob_wait"]) this.d.db.run(`DELETE FROM ${t} WHERE matter_id = ?`, [matterId]);
+    for (const c of scanSegments(this.outbox, this.d.tenantId).candidates) if (parseSegment(c.content)?.header.matter_id === matterId) rmSync(c.path, { force: true });
+  }
+
   // ─── 发件 ───
 
   /** 导出并上传（单飞）。 */
@@ -281,6 +320,7 @@ export class ShareRelaySync {
           const relay = this.d.db.get<{ first_seen_at: string }>(`SELECT first_seen_at FROM relay_matters WHERE matter_id = ? AND known = 1`, [mid])?.first_seen_at ?? null;
           return [seen, relay].filter((x): x is string => !!x).sort()[0] ?? null;
         },
+        relayFullResend: (mid) => !!this.d.db.get(`SELECT 1 AS x FROM relay_matters WHERE matter_id = ? AND resend_full = 1`, [mid]),
       }).segments.length;
     } catch {
       // 导出失败（磁盘满、读块失败等）也如实记下（复核 S11B-04②）
@@ -293,8 +333,11 @@ export class ShareRelaySync {
         (a, b) =>
           (a.seg?.header.from_lamport ?? 0) - (b.seg?.header.from_lamport ?? 0) || (a.seg?.header.segment_id ?? a.path).localeCompare(b.seg?.header.segment_id ?? b.path),
       );
+    // 本轮发件中发现被重置的事项：剩下的段已随重置删除，下一轮全量重发
+    const resetNow = new Set<string>();
     for (const c of segs) {
       const seg = c.seg;
+      if (seg && resetNow.has(seg.header.matter_id)) continue;
       if (!seg || seg.header.device_id !== this.own || !ownedBy(seg.header.segment_id, this.own)) {
         rmSync(c.path, { force: true });
         continue;
@@ -318,9 +361,19 @@ export class ShareRelaySync {
         if (!this.isOwner(mid) && !this.d.db.get(`SELECT 1 AS x FROM relay_matters WHERE matter_id = ? AND known = 1 AND known_at > ?`, [mid, this.iso(this.now() - 3600_000)])) {
           try {
             const h = await this.call({ step: "history", matter_id: mid, since: 0 });
+            if (this.noteGen(mid, h.json?.gen)) {
+              resetNow.add(mid);
+              continue;
+            }
             this.noteMatter(mid, { known: true, controller: h.json?.controller });
           } catch (e) {
-            if (e instanceof RelayError && e.code === "matter_unknown") throw new RelayError("waiting_for_owner");
+            if (e instanceof RelayError && e.code === "matter_unknown") {
+              if (this.noteGen(mid, e.gen)) {
+                resetNow.add(mid);
+                continue;
+              }
+              throw new RelayError("waiting_for_owner");
+            }
             if (!(e instanceof RelayError && e.code === "not_reader")) throw e;
           }
         }
@@ -359,13 +412,22 @@ export class ShareRelaySync {
           blob_chunks: [...new Set(blobs.flatMap((b) => b.parts.map((p) => p.cid)))],
           epoch: seg.header.key_epoch,
           readers,
+          gen: this.d.db.get<{ gen: number }>(`SELECT gen FROM relay_matters WHERE matter_id = ?`, [mid])?.gen ?? 0,
         });
         rmSync(c.path, { force: true });
         this.d.db.run(`DELETE FROM relay_outbox WHERE segment_id = ?`, [sid]);
         report.uploaded += 1;
+        // 登记回复带的重置代数变大：本机上一次登记之后中继上的事项被重置过——这一段登记成了新事项的第一段，本机写入的全量重发
+        // 纵深：登记回复也带重置代数（正常情形下代数不符的登记已被中继以 matter_reset 拒收）
+        if (this.noteGen(mid, committed.json?.gen)) resetNow.add(mid);
         this.noteMatter(mid, { uploaded: true, controller: committed.json?.controller });
       } catch (e) {
         const code = e instanceof RelayError ? e.code : "relay_push_failed";
+        // 中继上的事项在本机上次收发之后被重置过：按重置处理（本机写入的全量重发、非负责人重新等负责人登记），不算错误
+        if (code === "matter_reset" && e instanceof RelayError) {
+          if (this.noteGen(mid, e.gen)) resetNow.add(mid);
+          continue;
+        }
         report.errors.push(code);
         if (transportFailure(code)) break;
         if (code === "matter_purged") {
@@ -500,9 +562,9 @@ export class ShareRelaySync {
     this.setKv("instance", inst);
     if (prev === null) return false;
     this.setKv("feed_cursor", "0");
-    this.d.db.run(`UPDATE relay_matters SET history_state = 'pending', history_cursor = 0, history_next_at = NULL, history_attempts = 0, known = 0, controller = NULL`, []);
-    // 中继重建：负责人重新全量导出（第二轮复核 S11B-27a）
-    // 各设备只重发本机写入的行（收到过的行仍不回传）
+    // 中继重建：各设备把本机写入的行全量重发（第二轮复核 S11B-27a、第四轮 S11A-36；收到过的行仍不回传）；重置代数从头算
+    for (const m of this.d.db.all<{ matter_id: string }>(`SELECT matter_id FROM relay_matters`, [])) this.resetMatter(m.matter_id);
+    this.d.db.run(`UPDATE relay_matters SET gen = 0`, []);
     this.d.db.run(`DELETE FROM relay_export_state`, []);
     return true;
   }
@@ -533,6 +595,8 @@ export class ShareRelaySync {
           report.dropped += 1;
           continue;
         }
+        // 新登记的段属于重置后的事项：本机曾收发过的按重置处理（第四轮复核 S11B-36：非负责人不必等自己的定期核对）
+        this.noteGen(mid, (it as any)?.gen);
         this.noteMatter(mid, { known: true });
         await this.fetchOrPark(it, report);
       }
@@ -547,10 +611,11 @@ export class ShareRelaySync {
 
   /** 取历史：按事项隔离错误（复核 S11B-06③）；不是读者的记为暂缓、退避重试，不当作完成（复核 S11A-11）。 */
   private async pullHistories(report: RelayReport): Promise<void> {
-    // 每 6 小时把各事项重新核对一遍（只列登记，已摄取的不重下）：发现运营按事项重置后由负责人重新全量（第三轮复核 S11A-30）
+    // 每 6 小时把各事项从本机游标起核对一次（只取游标之后的登记，代价与新段数成正比；第四轮复核 S11B-40a）：
+    // 没有人再发件时也能从“事项不存在 + 重置代数”发现运营重置（第三轮复核 S11A-30）
     const last = Date.parse(this.kv("history_recheck_at") ?? "") || 0;
     if (this.now() - last > 6 * 3600_000) {
-      this.d.db.run(`UPDATE relay_matters SET history_state = 'pending', history_cursor = 0, history_next_at = NULL WHERE history_state = 'done'`, []);
+      this.d.db.run(`UPDATE relay_matters SET history_state = 'pending', history_next_at = NULL WHERE history_state = 'done'`, []);
       this.setKv("history_recheck_at", this.iso());
     }
     for (const m of this.d.db.all<{ matter_id: string; history_cursor: number; history_attempts: number }>(
@@ -566,13 +631,10 @@ export class ShareRelaySync {
       } catch (e) {
         const code = e instanceof RelayError ? e.code : "relay_history_failed";
         if (transportFailure(code)) throw e;
-        // 本机发出过、中继上却没有了（运营按事项重置）：负责人的电脑清掉导出水位，下次发件重新全量；其他成员等负责人
-        if (code === "matter_unknown") {
-          this.d.db.run(`DELETE FROM relay_export_state WHERE matter_id = ?`, [m.matter_id]);
-          this.d.db.run(`UPDATE relay_matters SET known = 0, uploaded_at = NULL, controller = NULL, history_state = 'done', history_attempts = 0, history_next_at = NULL WHERE matter_id = ?`, [m.matter_id]);
-          continue;
-        }
-        report.errors.push(code);
+        // 中继上没有该事项：重置代数变大才是运营重置（本机写入的全量重发）；否则是负责人还没登记（含本机首次登记之前），
+        // 按退避再查，不清水位（第四轮复核 S11B-37/S11A-37）
+        if (code === "matter_unknown" && e instanceof RelayError && this.noteGen(m.matter_id, e.gen)) continue;
+        if (code !== "matter_unknown") report.errors.push(code);
         const attempts = m.history_attempts + 1;
         this.d.db.run(`UPDATE relay_matters SET history_state = 'denied', history_attempts = ?, history_next_at = ? WHERE matter_id = ?`, [
           attempts,
@@ -587,6 +649,8 @@ export class ShareRelaySync {
     let cursor = from;
     for (let page = 0; page < MAX_PAGES; page++) {
       const res = await this.call({ step: "history", matter_id: mid, since: cursor });
+      // 重置后的事项：重取历史从头开始（resetMatter 已把游标归零）
+      if (this.noteGen(mid, res.json?.gen)) return;
       this.noteMatter(mid, { known: true, controller: res.json?.controller });
       for (const it of Array.isArray(res.json?.items) ? (res.json.items as unknown[]) : []) await this.fetchOrPark(it, report);
       const next = Number(res.json?.next);
@@ -934,7 +998,12 @@ export class ShareRelaySync {
   /** 发件与收件各一次（API 与测试用）。 */
   async sync(): Promise<{ push: RelayReport; pull: RelayReport }> {
     const push = await this.push(true);
+    // 手动“立即同步”同时把各事项向中继核对一次（第四轮：运营重置后没有新改动的负责人也能立即发现，不必等 6 小时的定期核对）
+    this.d.db.run(`DELETE FROM relay_kv WHERE k = 'history_recheck_at'`, []);
+    const resetsBefore = this.resetsSeen;
     const pull = await this.pull(false);
+    // 核对发现了重置：本机写入的行随即全量重发
+    if (this.resetsSeen !== resetsBefore) return { push: await this.push(true), pull };
     return { push, pull };
   }
 
@@ -968,8 +1037,9 @@ export class ShareRelaySync {
    * 否则本机的新纪元永远登记不上，控制成员不知道这次移出，被移出者继续收到新内容）；可以操作返回 null。
    */
   foreignController(matterId: string): string | null {
-    // 策略暂关或退出模式时也按已知的控制成员判断（第三轮复核 S11B-33e：恢复收发后中继仍只认控制成员）
-    if (!this.d.configured()) return null;
+    // 退出模式时也按已知的控制成员判断（第三轮复核 S11B-33e：恢复收发后中继仍只认控制成员）；
+    // 律所策略不再允许中继时放行（第四轮复核 S11A-39：不再经中继同步的事项不能永远锁住伦理墙；重新开启前须办理重置，见 D-94）
+    if (!this.d.configured() || !this.d.allowed()) return null;
     const row = this.d.db.get<{ controller: string | null; known: number }>(`SELECT controller, known FROM relay_matters WHERE matter_id = ?`, [matterId]);
     if (!row) return null;
     // 本机经中继收发过该事项、但还不知道控制成员（升级后、刚开始收发）：先不放行，等取历史得知（第三轮复核 S11B-32④）

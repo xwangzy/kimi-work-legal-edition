@@ -25,6 +25,7 @@ const commit: ShareRelayRequest = {
   blob_chunks: [],
   epoch: 1,
   readers: ["dev_a", "dev_b"],
+  gen: 0,
 };
 
 test("形状：六种请求合格；凭据须受众 relay；多一个字段、明文字段、坏编号一律不合格", () => {
@@ -41,6 +42,7 @@ test("形状：六种请求合格；凭据须受众 relay；多一个字段、�
   assert.equal(shareRelayAllowed({ ...commit, readers: ["dev a"] }), "relay_readers_invalid");
   assert.equal(shareRelayAllowed({ ...commit, readers: ["d", "d"] }), "relay_readers_invalid");
   assert.equal(shareRelayAllowed({ ...commit, chunks: [] }), "relay_cid_invalid");
+  assert.equal(shareRelayAllowed({ ...commit, gen: -1 }), "relay_request_invalid", "重置代数须为非负整数");
   assert.equal(shareRelayAllowed({ ...commit, blob_chunks: ["abc"] }), "relay_cid_invalid");
   assert.equal(shareRelayAllowed({ step: "changes", credential, since: -1, wait: false }), "relay_cursor_invalid");
   assert.equal(shareRelayAllowed({ step: "put_chunk", credential, matter_id: MID, cid: CID, body_b64: "不是base64" }), "relay_chunk_invalid");
@@ -59,7 +61,7 @@ test("固定路径与方法；请求由闸门重拼；上传块按实际字节�
   assert.equal(seen[0]!.url, `https://relay.example-zr.cn/api/v1/relay/matters/${MID}/segments`);
   assert.equal(seen[0]!.init.redirect, "error");
   assert.equal((seen[0]!.init.headers as Record<string, string>).authorization, `Bearer ${credential}`);
-  assert.deepEqual(Object.keys(JSON.parse(String(seen[0]!.init.body))).sort(), ["blob_chunks", "chunks", "epoch", "readers", "segment_id", "sha256", "size"]);
+  assert.deepEqual(Object.keys(JSON.parse(String(seen[0]!.init.body))).sort(), ["blob_chunks", "chunks", "epoch", "gen", "readers", "segment_id", "sha256", "size"]);
   // 上传块：摘要不符不发
   const before = seen.length;
   assert.deepEqual(await relayShare({ step: "put_chunk", credential, matter_id: MID, cid: sha(randomBytes(5)), body_b64: chunk.toString("base64") }, o), { ok: false, reason: "relay_chunk_digest_mismatch" });

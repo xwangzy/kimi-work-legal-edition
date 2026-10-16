@@ -20,7 +20,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { canonicalJson, unwrapMatterKey, type DeviceCertificate } from "@zr-legal/keys";
+import { canonicalJson, signSyncWith, unwrapMatterKey, verifyBytes, type DeviceCertificate } from "@zr-legal/keys";
 import { checkSealed, keyRowsSigned, openSegmentBody, parseSegment, scanSegments, sealSegment, writeSegment, writeShareBlob, type KeyRow, type SegmentFile, type SyncRow } from "@zr-legal/sync";
 import type { KernelDb } from "./db.ts";
 import type { BlobStore } from "./blobs.ts";
@@ -84,6 +84,9 @@ export interface SyncImportResult {
 
 /** 每段都会附带的行（与事项内容是否变化无关）：中继介质按它们的摘要判断是否需要出段。 */
 const ALWAYS_TABLES = new Set(["users", "matters", "devices", "im_bindings", "matter_members"]);
+
+/** 摄取时记来源设备（sync_row_origin）的表：中继介质只发来源是本机的行。 */
+const ORIGIN_TABLES = new Set(["runs", "document_versions", "artifact_versions"]);
 
 const APPEND_ONLY_TABLES = new Set(["run_events", "audit_events", "egress_records", "key_epochs", "matter_keys"]);
 
@@ -196,7 +199,7 @@ export const RELAY_PART_BLOB_BYTES = 1024 * 1024 * 1024;
 
 export function syncExport(
   deps: SyncDeps,
-  args: { shareDir: string; matterId?: string; medium?: "folder" | "relay"; partBytes?: number; partBlobBytes?: number; relayJoinedAt?: (matterId: string) => string | null },
+  args: { shareDir: string; matterId?: string; medium?: "folder" | "relay"; partBytes?: number; partBlobBytes?: number; relayJoinedAt?: (matterId: string) => string | null; relayFullResend?: (matterId: string) => boolean },
 ): SyncExportResult {
   const relay = args.medium === "relay";
   const stateTable = relay ? "relay_export_state" : "sync_state";
@@ -244,7 +247,8 @@ export function syncExport(
     let since = state?.last_export_at ?? null;
     if (relay && !state) {
       const owner = !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [m.matter_id, keyctx.device.cert.memberId]);
-      if (!owner) {
+      // 中继上的事项被运营重置或中继重建之后：本机写入的行全量重发（收到过的仍不回传；第四轮复核 S11A-36）
+      if (!owner && !args.relayFullResend?.(m.matter_id)) {
         const joined = args.relayJoinedAt?.(m.matter_id) ?? null;
         if (!joined) {
           writeState(m.matter_id, toLamport, exportAt, null);
@@ -255,14 +259,17 @@ export function syncExport(
       }
     }
     const fromLamport = (state?.last_export_lamport ?? 0) + 1;
+    signOwnMemberRows(deps, m.matter_id, deviceCertJson);
     let rows = collectRows(db, m.matter_id, keyctx.device.deviceId, toLamport, since);
     // 中继介质（第三轮复核 S11B-28/29/30 后的规则，取代按内容摘要比对）：
     // ①“总是附带的行”（事项行、全部成员行、用户行、IM 绑定、本机设备行）每段都带、不过滤——迟到成员与新设备据此引导事项、认出负责人；
-    // ② 其余行凡是经同步（中继或共享文件夹）收到过的，一律不经中继发回（只发本机写入的）；
+    // ② 其余行凡是经同步（中继或共享文件夹）收下的，一律不经中继发回；状态类表另要求来源是本机（只发本机写入的，第四轮复核 S11B-34）；
     // ③ 设备行只发本机自己的（接收方只认设备自己写的设备行）；
     // ④ 是否需要出段只看本机写的“总是附带的行”：本机是来源设备的事项行、本机设备写的成员行、本人用户行、本机设备行、IM 绑定
     if (relay) {
       rows = rows.filter((r) => ALWAYS_TABLES.has(r.t) || !db.get(`SELECT 1 AS x FROM relay_imported WHERE t = ? AND pk = ?`, [r.t, String(r.pk)]));
+      // 状态类表另按来源设备判断（第四轮复核 S11B-34/39①：不依赖摄取时有没有记下——升级前经共享文件夹收到的也不回传）
+      rows = rows.filter((r) => !ORIGIN_TABLES.has(r.t) || originOf(db, r.t, String(r.pk), keyctx.device.deviceId).device === keyctx.device.deviceId);
       rows = rows.filter((r) => r.t !== "devices" || String(r.pk) === keyctx.device.deviceId);
     }
     const ownUser = keyctx.device.cert.memberId;
@@ -285,9 +292,11 @@ export function syncExport(
     // 引用的密文块（同一份密文，不经二次加解密）：共享文件夹介质**先**复制块、后写段——接收方看到段时块已在（否则摄取到没有块的行）；
     // 中继介质不复制，在引用它的行之后附一行块清单（上传时读本机块库）
     // 每行与它引用的块清单行为一个单元（拆段时不分开）；单元记引用的新材料字节
-    const units: { rows: SyncRow[]; blobBytes: number }[] = [];
+    // “总是附带的行”合成一个单元放在最前（第四轮：首同步要在同一段里同时看到事项行与全部成员行，拆开会让引导失败）
+    const units: { rows: SyncRow[]; blobBytes: number }[] = [{ rows: rows.filter((r) => ALWAYS_TABLES.has(r.t)), blobBytes: 0 }];
     const seenRel = new Set<string>();
     for (const r of rows) {
+      if (ALWAYS_TABLES.has(r.t)) continue;
       const unit = { rows: [r] as SyncRow[], blobBytes: 0 };
       units.push(unit);
       const uri = (r.row as any).storage_uri as string | undefined;
@@ -394,56 +403,8 @@ function applyRow(deps: SyncDeps, r: SyncRow, ctx: { conflicts: SyncImportResult
     return res.changes > 0;
   }
   if (table === "artifact_versions") return applyArtifact(deps, r, ctx);
-  // 成员行（阻断-C 修复：墓碑 + 作者权威 + 较新者胜）——摄取三道检查：
-  // 1. row.author_device 必须等于段签名设备（防借名：拿别人设备名写大 lamport 的伪造行直接拒）；
-  // 2. 作者资格：既有事项——作者设备须为该事项 owner 角色且未墓碑的成员设备（非 owner 成员不得变更成员集）；
-  //    首同步引导例外——本机尚无该事项时，仅当成员行与 matters 行同批到达且 author == matters 行 origin
-  //    （创建者即初始 owner；事项首同步只从创建设备的段接受成员行，多跳转发不扩成员）；
-  // 3. 不满足即整行拒收记 member_row_rejected（含作者/原因）；满足后按 (row_lamport, author_device) 较新者胜。
-  // 残余如实声明：恶意 owner 重新 add 被移出成员是合法管理动作（墓碑清除本就要求显式 add）——
-  // 伦理墙防的是非 owner 成员与「管理员单人」，防不了在任 owner 的合法权限。
-  if (table === "matter_members") {
-    const key = [row.matter_id, row.user_id];
-    const author = String(row.author_device ?? "");
-    const reject = (reason: string): boolean => {
-      ctx.warnings.push(`member_row_rejected:${key[0]}|${key[1]}（作者 ${author || "（空）"}：${reason}）`);
-      return false;
-    };
-    if (!author || author !== ctx.segDeviceId) return reject("author_device 与段签名设备不一致（借名伪造拒收）");
-    if (ctx.bootstrap) {
-      // 首同步引导：须与 matters 行同批且作者即创建设备（matters 行 src；多跳转发不扩成员）
-      const mattersRow = ctx.bodyRows.find((x) => x.t === "matters");
-      if (!mattersRow || String(mattersRow.src_device) !== author) return reject("首同步须由创建设备的段携带成员行（多跳转发不扩成员）");
-    } else {
-      // 既有事项：作者资格以本机库（本段之前）的 owner 成员为准——段内自封 owner 不算数
-      const authorMember = db.get<{ member_id: string }>(`SELECT member_id FROM devices WHERE device_id = ?`, [author]);
-      const qualified =
-        authorMember &&
-        db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [ctx.matterId, authorMember.member_id]);
-      if (!qualified) return reject("作者设备不是该事项未墓碑的 owner 成员设备（无成员变更权）");
-    }
-    const local = db.get<{ row_lamport: number | null; author_device: string | null }>(
-      `SELECT row_lamport, author_device FROM matter_members WHERE matter_id = ? AND user_id = ?`,
-      key,
-    );
-    const incomingL = Number(row.row_lamport ?? 0);
-    if (local) {
-      const localL = local.row_lamport ?? 0;
-      const localA = local.author_device ?? "";
-      const newer = incomingL > localL || (incomingL === localL && author > localA);
-      if (!newer) return false;
-      db.run(
-        `UPDATE matter_members SET matter_role = ?, added_by = ?, removed_at = ?, removed_lamport = ?, author_device = ?, row_lamport = ? WHERE matter_id = ? AND user_id = ?`,
-        [row.matter_role ?? "viewer", row.added_by ?? "", row.removed_at ?? null, row.removed_lamport ?? null, author, incomingL, key[0], key[1]],
-      );
-      return true;
-    }
-    db.run(
-      `INSERT INTO matter_members (matter_id, user_id, matter_role, added_by, removed_at, removed_lamport, author_device, row_lamport) VALUES (?,?,?,?,?,?,?,?)`,
-      [key[0], key[1], row.matter_role ?? "viewer", row.added_by ?? "", row.removed_at ?? null, row.removed_lamport ?? null, author, incomingL],
-    );
-    return true;
-  }
+  // 成员行由 applyMemberRows 按因果顺序整批处理（第四轮复核 S11A-35/S11B-35）
+  if (table === "matter_members") return false;
   // 这些表只做插入（不可变/行级删除随轮换语义在 G1）：存在即跳过
   if (["approvals", "parse_versions", "parse_texts", "node_tasks", "scheduled_jobs", "im_intents", "im_bindings"].includes(table)) {
     const pkCol = table === "parse_texts" ? "parse_version_id" : TABLE_PK[table]!;
@@ -552,6 +513,131 @@ function applyArtifact(deps: SyncDeps, r: SyncRow, ctx: { conflicts: SyncImportR
   return true;
 }
 
+/** 成员行作者签名覆盖的内容（第四轮复核 S11A-35/S11B-35）：成员关系的全部语义字段，带域分隔与租户。 */
+function memberRowPayload(tenantId: string, r: Record<string, unknown>): Uint8Array {
+  return new TextEncoder().encode(
+    canonicalJson({
+      v: "kwl-member-row/1",
+      tenant: tenantId,
+      matter_id: r.matter_id ?? null,
+      user_id: r.user_id ?? null,
+      matter_role: r.matter_role ?? null,
+      added_by: r.added_by ?? null,
+      removed_at: r.removed_at ?? null,
+      removed_lamport: r.removed_lamport ?? null,
+      author_device: r.author_device ?? null,
+      row_lamport: r.row_lamport ?? null,
+    }),
+  );
+}
+
+/**
+ * 导出前给本机写的成员行签名（两种介质；签名与本机证书存在行上，随行转发）：同事转发这些行时，接收方能核验作者。
+ * 已有签名且仍对得上（行没改过、证书没换）的不重签——设备签名可能不是确定性的，重签会让每段内容都变。
+ */
+function signOwnMemberRows(deps: SyncDeps, matterId: string, certJson: string): void {
+  const { db, keyctx, tenantId } = deps;
+  for (const m of db.all<Record<string, unknown>>(`SELECT * FROM matter_members WHERE matter_id = ? AND author_device = ?`, [matterId, keyctx.device.deviceId])) {
+    const payload = memberRowPayload(tenantId, m);
+    if (typeof m.author_sig === "string" && m.author_cert === certJson && verifyBytes(keyctx.device.cert.signPublicKeyPem, payload, m.author_sig)) continue;
+    db.run(`UPDATE matter_members SET author_sig = ?, author_cert = ? WHERE matter_id = ? AND user_id = ?`, [signSyncWith(keyctx.device.signer, payload), certJson, matterId, m.user_id]);
+  }
+}
+
+type MemberOutcome = "applied" | "same" | "pending" | "rejected";
+
+/**
+ * 一条成员行（墓碑 + 作者权威 + 较新者胜；第四轮复核 S11A-35/S11B-35 起别人写的行凭作者签名也收）：
+ * 1. 不比本机新（含逐字段相同的转发）→ 静默跳过（复核 S11A-40/S11B-38：转发不告警）；
+ * 2. 作者设备 = 段签名设备 → 作者即段证书的成员；否则须带作者签名与作者设备证书（律所根签发、设备编号对得上、签名核验通过、
+ *    作者设备未被吊销），作者取证书里的成员——转发的成员行与作者亲自发出的同等对待；
+ * 3. 作者资格：作者是该事项未墓碑的负责人（按本机库，含本段已应用的行），或首同步时它是事项创建者、且创建者自己的成员行还没处理（引导的起点）；
+ *    暂不满足返回 pending（同段后面的行可能使它满足），由调用方按因果顺序重试；
+ * 4. 满足后落库（签名与证书随行存，之后本机转发时原样带上）。
+ * 残余如实声明：在任负责人的合法权限（包括重新加回被移出的成员）防不了；首同步设备看不到签发者没有转发的成员行（段内选择由签发者决定，创世与成员日志的见证在 G1）。
+ */
+function applyMemberRow(deps: SyncDeps, r: SyncRow, ctx: { warnings: string[]; matterId: string; segDeviceId: string; segCert: DeviceCertificate; bootstrap: boolean; creator: string | null }): MemberOutcome {
+  const { db, keyctx, tenantId } = deps;
+  const row = r.row as Record<string, unknown>;
+  const key = [String(row.matter_id ?? ""), String(row.user_id ?? "")] as const;
+  const author = String(row.author_device ?? "");
+  const reject = (reason: string): MemberOutcome => {
+    ctx.warnings.push(`member_row_rejected:${key[0]}|${key[1]}（作者 ${author || "（空）"}：${reason}）`);
+    return "rejected";
+  };
+  if (key[0] !== ctx.matterId || !key[1] || !author) return reject("成员行不属于本段事项或缺作者");
+  const local = db.get<{ row_lamport: number | null; author_device: string | null }>(`SELECT row_lamport, author_device FROM matter_members WHERE matter_id = ? AND user_id = ?`, [key[0], key[1]]);
+  const incomingL = Number(row.row_lamport ?? 0);
+  if (local) {
+    const localL = local.row_lamport ?? 0;
+    const localA = local.author_device ?? "";
+    if (!(incomingL > localL || (incomingL === localL && author > localA))) return "same";
+  }
+  let authorMember: string;
+  let sig: string | null = null;
+  let certJson: string | null = null;
+  if (author === ctx.segDeviceId) {
+    authorMember = ctx.segCert.memberId;
+    if (typeof row.author_sig === "string" && typeof row.author_cert === "string") {
+      sig = row.author_sig;
+      certJson = row.author_cert;
+    }
+  } else {
+    if (typeof row.author_sig !== "string" || typeof row.author_cert !== "string") return reject("别人写的成员行没有作者签名，无法核验（借名伪造拒收）");
+    let ac: DeviceCertificate | null = null;
+    try {
+      ac = JSON.parse(row.author_cert) as DeviceCertificate;
+    } catch {
+      ac = null;
+    }
+    if (!ac || ac.deviceId !== author || !verifyCertSignature(ac, keyctx.firm.rootPublicKeyPem) || !verifyBytes(ac.signPublicKeyPem, memberRowPayload(tenantId, row), row.author_sig)) {
+      return reject("作者签名或作者设备证书核验不通过（拒收）");
+    }
+    if (deviceTombstoned(db, author) || db.get(`SELECT 1 AS x FROM devices WHERE device_id = ? AND status = 'revoked'`, [author])) return reject("作者设备已被吊销（拒收）");
+    authorMember = ac.memberId;
+    sig = row.author_sig;
+    certJson = row.author_cert;
+  }
+  const ownerNow = !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [key[0], authorMember]);
+  // 首同步的起点：事项创建者在它自己的成员行被处理之前视为负责人（成员行按先后处理——创建者先加人、后把自己改为成员的移交也成立）
+  const seed = ctx.bootstrap && !!ctx.creator && authorMember === ctx.creator && !db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ?`, [key[0], ctx.creator]);
+  if (!ownerNow && !seed) return "pending";
+  const vals = [row.matter_role ?? "viewer", row.added_by ?? "", row.removed_at ?? null, row.removed_lamport ?? null, author, incomingL, sig, certJson];
+  if (local) {
+    db.run(`UPDATE matter_members SET matter_role = ?, added_by = ?, removed_at = ?, removed_lamport = ?, author_device = ?, row_lamport = ?, author_sig = ?, author_cert = ? WHERE matter_id = ? AND user_id = ?`, [...vals, key[0], key[1]]);
+  } else {
+    db.run(`INSERT INTO matter_members (matter_id, user_id, matter_role, added_by, removed_at, removed_lamport, author_device, row_lamport, author_sig, author_cert) VALUES (?,?,?,?,?,?,?,?,?,?)`, [key[0], key[1], ...vals]);
+  }
+  return "applied";
+}
+
+/**
+ * 一段里的成员行按 row_lamport 先后整批处理，暂不满足作者资格的反复重试到不再有进展（同段里先有“加为负责人”、后有“该负责人加人”）。
+ * 返回应用的行数，以及签发设备自己写的行是否有被应用的（说明签发者当时是负责人：移交与加人在同一段时据此收包裹、引导）。
+ */
+function applyMemberRows(deps: SyncDeps, rows: SyncRow[], ctx: Parameters<typeof applyMemberRow>[2]): { applied: number; signerActed: boolean } {
+  let pending = rows.filter((r) => r.t === "matter_members").sort((a, b) => Number((a.row as any).row_lamport ?? 0) - Number((b.row as any).row_lamport ?? 0));
+  let applied = 0;
+  let signerActed = false;
+  for (;;) {
+    const next: SyncRow[] = [];
+    let progress = false;
+    for (const r of pending) {
+      const res = applyMemberRow(deps, r, ctx);
+      if (res === "pending") next.push(r);
+      else if (res === "applied") {
+        progress = true;
+        applied += 1;
+        if (String((r.row as any).author_device ?? "") === ctx.segDeviceId) signerActed = true;
+      }
+    }
+    pending = next;
+    if (!progress || pending.length === 0) break;
+  }
+  for (const r of pending) ctx.warnings.push(`member_row_rejected:${(r.row as any).matter_id}|${(r.row as any).user_id}（作者 ${(r.row as any).author_device}：作者设备不是该事项未墓碑的负责人（无成员变更权））`);
+  return { applied, signerActed };
+}
+
 /**
  * 摄取前的核验（第 11 批复核 S11A-01：中继收件在取块、写盘之前先做同一套核验）：本机自产、已摄取、本机已删除、个人事项、
  * 证书链与封口签名（含 key_rows 摘要）、撤权（本机已知该设备或它在吊销墓碑里时）。通过只说明“这一段确由所内在用的设备签发”。
@@ -586,18 +672,6 @@ export function preverifySegment(deps: SyncDeps, seg: SegmentFile): { ok: true; 
     }
   }
   return { ok: true, cert };
-}
-
-/**
- * 段内密钥包裹能否落库（第 11 批复核 S11A-02、第二轮 S11A-18、第三轮 S11A-27）：包裹必须被段签名覆盖、属于本段事项、纪元为正整数，
- * 且签发设备是该事项当前在册负责人（按本机库，含本段刚应用的成员行）的设备。每段都附带全部成员行，迟到加入的成员也认得出负责人；
- * 第二轮的“事项行来源设备”例外已撤销（来源设备的成员被移出或移交负责人后仍会被放行）。
- * 轮换、加人、补包裹都是负责人的操作（管理员设备不例外，D-93）；其他成员段里的包裹只是转抄，不落库
- * （解段体时仍可在内存里用面向本机的那一行）。
- */
-function keyRowsAcceptable(db: KernelDb, seg: SegmentFile, cert: DeviceCertificate): boolean {
-  if (!keyRowsSigned(seg)) return false;
-  return !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [seg.header.matter_id, cert.memberId]);
 }
 
 export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapController?: (matterId: string) => string | null }): SyncImportResult {
@@ -678,16 +752,12 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
       out("personal");
       continue;
     }
-    // 首次收到事项（本机还没有）：只从“签发成员在本段里是在册负责人”的段引导；中继介质另要求签发成员是中继上的控制成员
-    // （第三轮复核 S11A-28/29：在册同事的段先到时不再把同事认作事项来源；同所成员伪造的首段在中继上不被采信）。其他段延后，等负责人的段
-    if (!db.get(`SELECT 1 AS x FROM matters WHERE matter_id = ?`, [h.matter_id])) {
-      const ownerHere = rows.some((r) => r.t === "matter_members" && (r.row as any).user_id === cert.memberId && (r.row as any).matter_role === "owner" && (r.row as any).removed_at == null);
-      const ctl = args.bootstrapController?.(h.matter_id) ?? null;
-      if (!ownerHere || (args.bootstrapController && ctl !== cert.memberId)) {
-        result.segmentsSkipped += 1;
-        out("deferred");
-        continue;
-      }
+    // 首次收到事项（本机还没有）：中继介质只从中继上的控制成员签发的段引导（第三轮复核 S11A-29：同所成员伪造的首段不被采信）；
+    // 两种介质都要求签发成员按核验过的成员行是负责人（在事务里判，见下）。其他段延后，等负责人的段
+    if (args.bootstrapController && !db.get(`SELECT 1 AS x FROM matters WHERE matter_id = ?`, [h.matter_id]) && args.bootstrapController(h.matter_id) !== cert.memberId) {
+      result.segmentsSkipped += 1;
+      out("deferred");
+      continue;
     }
     // 撤权回填拒收（§5.2 不依赖时钟；devices 行可能就在本段——先应用 devices 行再判）
     for (const r of rows.filter((x) => x.t === "devices")) applyRow(deps, r, { conflicts: result.conflicts, warnings: result.originConflicts, matterId: h.matter_id, segDeviceId: h.device_id, bodyRows: rows, bootstrap: !db.get(`SELECT 1 AS x FROM matters WHERE matter_id = ?`, [h.matter_id]) });
@@ -710,13 +780,25 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
       bootstrap: !db.get(`SELECT 1 AS x FROM matters WHERE matter_id = ?`, [h.matter_id]),
     };
     db.tx(() => {
+      const applied: SyncRow[] = [];
       for (const r of rows) {
-        // 中继介质的块清单行只供取块，不落库
-        if (r.t === "devices" || r.t === RELAY_BLOB_TABLE) continue;
-        if (applyRow(deps, r, ctx)) result.rowsApplied += 1;
+        // 中继介质的块清单行只供取块，不落库；成员行在下面按因果顺序整批处理
+        if (r.t === "devices" || r.t === RELAY_BLOB_TABLE || r.t === "matter_members") continue;
+        if (applyRow(deps, r, ctx)) {
+          result.rowsApplied += 1;
+          applied.push(r);
+        }
       }
-      // key_rows 随事务落库（matters 行已在库，外键满足）——只收被签名覆盖、属于本事项、由负责人或管理员设备签发的（复核 S11A-02）
-      const keyRowsOk = keyRowsAcceptable(db, seg, cert);
+      const creator = ctx.bootstrap ? String((rows.find((x) => x.t === "matters")?.row as any)?.created_by ?? "") || null : null;
+      const mem = applyMemberRows(deps, rows, { warnings: ctx.warnings, matterId: h.matter_id, segDeviceId: h.device_id, segCert: cert, bootstrap: ctx.bootstrap, creator });
+      result.rowsApplied += mem.applied;
+      const signerOwner = !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [h.matter_id, cert.memberId]);
+      // 首同步：签发成员按核验过的成员行须是负责人，或本段里有它以负责人身份做的成员变更（同一段里移交）；否则整段回滚、延后
+      // （第三轮复核 S11A-28 的闸门移到这里——按能落库的行判，不按段里写了什么判，第四轮复核 S11A-35）
+      if (ctx.bootstrap && !signerOwner && !mem.signerActed) throw new BootstrapDeferred();
+      // key_rows 随事务落库（matters 行已在库，外键满足）——只收被签名覆盖、属于本事项、由负责人签发的（复核 S11A-02）；
+      // 签发者本段里以负责人身份做过成员变更的也收（移交与加人在同一段，第四轮复核 S11A-35③）
+      const keyRowsOk = keyRowsSigned(seg) && (signerOwner || mem.signerActed);
       for (const kr of keyRowsOk ? (seg.key_rows ?? []) : []) {
         if (kr.matter_id !== h.matter_id || !Number.isSafeInteger(kr.epoch) || kr.epoch < 1) continue;
         db.run(`INSERT OR IGNORE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key, created_at) VALUES (?,?,?,?,?)`, [
@@ -747,10 +829,11 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
         mkdirSync(join(dst, ".."), { recursive: true });
         copyFileSync(src, dst);
       }
-      // 经同步（中继或共享文件夹）摄取过的行另记（复核 S11B-03、第三轮 S11B-30）：中继介质导出时不把它们发回中继；
+      // 经同步（中继或共享文件夹）收下的行另记（复核 S11B-03、第三轮 S11B-30）：中继介质导出时不把它们发回中继；
+      // 只记本机实际应用了的（第四轮复核 S11B-34：共享文件夹回声送回的本机自己的行已存在、不应用，不记）；
       // “总是附带的行”不记（每段都带）；按事项记，删除事项时清理（S11B-24）
-      for (const r of rows) {
-        if (r.t === RELAY_BLOB_TABLE || ALWAYS_TABLES.has(r.t)) continue;
+      for (const r of applied) {
+        if (ALWAYS_TABLES.has(r.t)) continue;
         db.run(`INSERT OR IGNORE INTO relay_imported (t, pk, matter_id) VALUES (?, ?, ?)`, [r.t, String(r.pk), h.matter_id]);
       }
       db.run(`INSERT INTO sync_segments_seen (segment_id, from_device, matter_id) VALUES (?,?,?)`, [h.segment_id, h.device_id, h.matter_id]);
@@ -764,12 +847,16 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
     result.segmentsApplied += 1;
     out("applied");
     } catch {
+      // BootstrapDeferred 与其他摄取异常一样：整段回滚、延后
       result.segmentsSkipped += 1;
       out("deferred");
     }
   }
   return result;
 }
+
+/** 首同步的段不满足引导条件：整段回滚、延后。 */
+class BootstrapDeferred extends Error {}
 
 /**
  * 用本机密钥解开一段的段体（先查本机 matter_keys，没有再找段内面向本机的包裹；第 11 批中继收发件用）。

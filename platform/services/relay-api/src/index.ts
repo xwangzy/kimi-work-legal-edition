@@ -111,6 +111,8 @@ interface TenantState {
   /** 已被运营重置的段（按序号）：不再出现在取新段与历史里。 */
   gone: Set<number>;
   matters: Map<string, MatterState>;
+  /** 各事项被运营重置的次数（“重置代数”，第四轮复核 S11B-36/37）：登记、取历史、取新段与“事项不存在”的回复都带上，客户端据此确定地发现重置。 */
+  resets: Map<string, number>;
   /** `${mid}/${cid}` → 大小、上传时刻与上传设备。 */
   chunks: Map<string, ChunkInfo>;
   bytes: number;
@@ -249,7 +251,7 @@ export function createRelayApi(o: RelayApiOptions): Server & {
   const tenantDir = (tid: string) => join(o.dir, "t", tid);
   const journalOf = (t: TenantState) => join(t.dir, "journal.jsonl");
   const chunkPath = (t: TenantState, mid: string, cid: string) => join(t.dir, "m", mid, cid);
-  const fresh = (tid: string): TenantState => ({ tid, dir: tenantDir(tid), entries: [], gone: new Set(), matters: new Map(), chunks: new Map(), bytes: 0, pending: new Map(), purging: false });
+  const fresh = (tid: string): TenantState => ({ tid, dir: tenantDir(tid), entries: [], gone: new Set(), matters: new Map(), resets: new Map(), chunks: new Map(), bytes: 0, pending: new Map(), purging: false });
 
   // ─── 读回：登记日志逐行校验（最后一行写了一半的截掉）；块文件与登记核对 ───
   const load = (tid: string): TenantState => {
@@ -272,6 +274,7 @@ export function createRelayApi(o: RelayApiOptions): Server & {
           if (!validReset(e)) throw new Error(`中继登记日志有不合格的重置记录（租户 ${tid}）`);
           for (const x of t.entries) if (x.mid === e.mid) t.gone.add(x.seq);
           t.matters.delete(e.mid);
+          t.resets.set(e.mid, (t.resets.get(e.mid) ?? 0) + 1);
           continue;
         }
         if (!validEntry(e) || e.seq !== t.entries.length + 1) throw new Error(`中继登记日志有不合格的记录（租户 ${tid}）`);
@@ -454,7 +457,8 @@ export function createRelayApi(o: RelayApiOptions): Server & {
     for (const w of [...ws]) if (!readers || readers.has(w.dev)) w.done();
   };
 
-  const entryOut = (e: SegEntry) => ({ seq: e.seq, matter_id: e.mid, segment_id: e.sid, dev: e.dev, sha256: e.sha, size: e.size, chunks: e.chunks });
+  // 取新段与历史里只出现未被重置的段，它们都属于该事项当前的重置代数
+  const entryOut = (t: TenantState) => (e: SegEntry) => ({ seq: e.seq, matter_id: e.mid, segment_id: e.sid, dev: e.dev, sha256: e.sha, size: e.size, chunks: e.chunks, gen: t.resets.get(e.mid) ?? 0 });
 
   /** 从 since 之后扫描：只给本设备是读者的；返回可见条目与游标（扫描到哪里）。 */
   const scan = (t: TenantState, since: number, dev: string, mid: string | null) => {
@@ -579,7 +583,10 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       const t = tenantOf(c.tid);
       const b = await readJson(req);
       stillLive(t);
-      if (Object.keys(b).sort().join(",") !== "blob_chunks,chunks,epoch,readers,segment_id,sha256,size") throw new HttpError(400, "body_invalid");
+      // gen：客户端知道的重置代数（第四轮复核；旧客户端不带，不核对）
+      const keys = Object.keys(b).sort().join(",");
+      if (keys !== "blob_chunks,chunks,epoch,readers,segment_id,sha256,size" && keys !== "blob_chunks,chunks,epoch,gen,readers,segment_id,sha256,size") throw new HttpError(400, "body_invalid");
+      if (b.gen !== undefined && (typeof b.gen !== "number" || !Number.isSafeInteger(b.gen) || b.gen < 0)) throw new HttpError(400, "gen_invalid");
       const sid = b.segment_id;
       if (typeof sid !== "string" || !segmentOwnedBy(sid, c.dev)) throw new HttpError(400, "segment_id_invalid");
       if (typeof b.sha256 !== "string" || !CID_RE.test(b.sha256)) throw new HttpError(400, "sha256_invalid");
@@ -592,11 +599,14 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       }
       const readers = b.readers as string[];
       if (!readers.includes(c.dev)) throw new HttpError(400, "writer_not_reader");
+      // 客户端还不知道该事项被重置过：拒收并告知当前代数（重置前的登记不能把事项在中继上重新建起来，也不让非负责人借此成为控制成员）
+      const gen = t.resets.get(mid) ?? 0;
+      if (b.gen !== undefined && b.gen !== gen) return send(res, 409, { error: "matter_reset", gen });
       const m = t.matters.get(mid);
       const prev = m?.segs.get(sid);
       if (prev) {
         // 同一段编号重发：内容相同即成功（结果不明后原样重发），不同即拒绝
-        if (prev.sha === b.sha256 && prev.size === b.size && prev.dev === c.dev) return send(res, 200, { ok: true, seq: prev.seq, existed: true, controller: m!.controller });
+        if (prev.sha === b.sha256 && prev.size === b.size && prev.dev === c.dev) return send(res, 200, { ok: true, seq: prev.seq, existed: true, controller: m!.controller, gen: t.resets.get(mid) ?? 0 });
         throw new HttpError(409, "segment_conflict");
       }
       if (m && !m.readers.has(c.dev)) throw new HttpError(403, "not_reader");
@@ -641,7 +651,7 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       // 唤醒该事项的其他读者（写入设备自己不用醒）
       wake(c.tid, new Set([...t.matters.get(mid)!.readers].filter((d) => d !== c.dev)));
       // 回告控制成员（复核 S11B-19：客户端据此判断本机能否调整成员、轮换密钥）
-      return send(res, 200, { ok: true, seq: e.seq, existed: false, controller: t.matters.get(mid)!.controller });
+      return send(res, 200, { ok: true, seq: e.seq, existed: false, controller: t.matters.get(mid)!.controller, gen: t.resets.get(mid) ?? 0 });
     }
 
     const feed = /^\/v1\/relay\/changes\/(\d{1,15})(\/wait)?$/.exec(raw);
@@ -676,7 +686,7 @@ export function createRelayApi(o: RelayApiOptions): Server & {
         r = scan(t, r.next, c.dev, null);
       }
       // 不回全所登记总数（复核 S11A-12）
-      return send(res, 200, { items: r.out.map(entryOut), next: r.next, more: r.more, instance, server_time: iso() });
+      return send(res, 200, { items: r.out.map(entryOut(t)), next: r.next, more: r.more, instance, server_time: iso() });
     }
 
     const hist = /^\/v1\/relay\/matters\/([^/]+)\/segments\/(\d{1,15})$/.exec(raw);
@@ -685,13 +695,13 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       const mid = hist[1]!;
       if (!MATTER_ID_RE.test(mid)) throw new HttpError(400, "matter_invalid");
       const t = tenantOf(c.tid);
-      // 中继上还没有该事项：如实回 404（非负责人的设备据此等负责人先登记；复核 S11A-04）
-      if (!t.matters.has(mid)) throw new HttpError(404, "matter_unknown");
+      // 中继上还没有该事项：如实回 404（非负责人的设备据此等负责人先登记；复核 S11A-04），附重置代数（被重置过的事项 ≥ 1）
+      if (!t.matters.has(mid)) return send(res, 404, { error: "matter_unknown", gen: t.resets.get(mid) ?? 0 });
       if (!canRead(t, mid, c.dev)) throw new HttpError(403, "not_reader");
       const since = Number(hist[2]);
       if (!Number.isSafeInteger(since) || since > t.entries.length) throw new HttpError(400, "cursor_invalid");
       const r = scan(t, since, c.dev, mid);
-      return send(res, 200, { items: r.out.map(entryOut), next: r.next, more: r.more, instance, controller: t.matters.get(mid)!.controller });
+      return send(res, 200, { items: r.out.map(entryOut(t)), next: r.next, more: r.more, instance, controller: t.matters.get(mid)!.controller, gen: t.resets.get(mid) ?? 0 });
     }
 
     // ─── 运营：律所退约时按租户整体删除；中继上的事项状态异常时按事项重置（先记访问审计，记不进去即不删） ───
@@ -708,6 +718,7 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       appendJournal(t, Buffer.from(`${JSON.stringify(rec)}\n`, "utf8"));
       for (const x of t.entries) if (x.mid === mid) t.gone.add(x.seq);
       t.matters.delete(mid);
+      t.resets.set(mid, (t.resets.get(mid) ?? 0) + 1);
       for (const [k, cinfo] of [...t.chunks]) {
         if (!k.startsWith(`${mid}/`)) continue;
         t.chunks.delete(k);

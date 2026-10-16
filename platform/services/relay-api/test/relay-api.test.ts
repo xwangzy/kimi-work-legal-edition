@@ -74,7 +74,7 @@ async function getChunk(base: string, mid: string, token: string, cid: string) {
   return { status: r.status, body: Buffer.from(await r.arrayBuffer()) };
 }
 /** 上传一段（切成两块）并登记；块上传被拒（非读者）时直接返回那次的结果。 */
-async function writeSeg(base: string, mid: string, token: string, dev: string, o: { epoch?: number; readers?: string[]; blobs?: Buffer[]; sid?: string } = {}) {
+async function writeSeg(base: string, mid: string, token: string, dev: string, o: { epoch?: number; readers?: string[]; blobs?: Buffer[]; sid?: string; gen?: number } = {}) {
   const seg = randomBytes(5000);
   const parts = [seg.subarray(0, 3000), seg.subarray(3000)];
   const body = {
@@ -85,6 +85,7 @@ async function writeSeg(base: string, mid: string, token: string, dev: string, o
     blob_chunks: (o.blobs ?? []).map(sha),
     epoch: o.epoch ?? 1,
     readers: o.readers ?? ["devA", "devB"],
+    ...(o.gen !== undefined ? { gen: o.gen } : {}),
   };
   for (const p of [...parts.map((x) => Buffer.from(x)), ...(o.blobs ?? [])]) {
     const put = await putChunk(base, mid, token, p);
@@ -169,7 +170,7 @@ test("RA-04 读者收窄：非读者看不到段、取不到块、写不进事�
   assert.equal(w.r.status, 200);
   const fb = await call(base, "GET", "/v1/relay/changes/0", B());
   assert.equal(fb.json.items.length, 1);
-  assert.deepEqual(Object.keys(fb.json.items[0]).sort(), ["chunks", "dev", "matter_id", "segment_id", "seq", "sha256", "size"], "条目带写入设备（客户端按它精确判断本机自产）");
+  assert.deepEqual(Object.keys(fb.json.items[0]).sort(), ["chunks", "dev", "gen", "matter_id", "segment_id", "seq", "sha256", "size"], "条目带写入设备（客户端按它精确判断本机自产）与重置代数");
   assert.equal(fb.json.items[0].dev, "devA");
   const got = Buffer.concat(await Promise.all(fb.json.items[0].chunks.map(async (cid: string) => (await getChunk(base, mid, B(), cid)).body)));
   assert.equal(sha(got), w.body.sha256);
@@ -337,4 +338,35 @@ test("RA-10 登记日志写入失败（复核 S11A-08）：截回写入前的长
   await new Promise<void>((r) => s.close(() => r()));
   const again = await start(dir);
   assert.equal(again.s.tenant("t1")!.entries.length, 2);
+});
+
+test("RA-11 重置代数（第四轮复核 S11B-36/37）：重置后取历史回 404 并带代数；带旧代数的登记回 409 matter_reset；带新代数的登记、取新段与历史都带代数；重启读回照旧", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kwl-ra-"));
+  const opsSecret = "ops-secret-0123456789";
+  const { base, s } = await start(dir, { opsSecret, accessLog: () => {} });
+  const mid = newMid();
+  const first = await writeSeg(base, mid, A(), "devA", { gen: 0 });
+  assert.equal(first.r.status, 200);
+  assert.equal(first.r.json.gen, 0);
+  assert.equal((await call(base, "GET", "/v1/relay/changes/0", B())).json.items[0].gen, 0);
+  const r = await fetch(`${base}/v1/relay/ops/tenants/t1/matters/${mid}`, { method: "DELETE", headers: { authorization: `Bearer ${opsSecret}`, "x-kwl-operator": "ops.zhang" } });
+  assert.equal(r.status, 200);
+  assert.deepEqual((await call(base, "GET", `/v1/relay/matters/${mid}/segments/0`, A())).json, { error: "matter_unknown", gen: 1 });
+  // 还不知道重置的设备（例如非负责人）带旧代数登记：拒收，事项不会被它重新建起来
+  const stale = await writeSeg(base, mid, B(), "devB", { gen: 0 });
+  assert.equal(stale.r.status, 409);
+  assert.deepEqual(stale.r.json, { error: "matter_reset", gen: 1 });
+  assert.equal(s.tenant("t1")!.controller(mid), null);
+  const fresh = await writeSeg(base, mid, A(), "devA", { gen: 1 });
+  assert.equal(fresh.r.status, 200);
+  assert.equal(fresh.r.json.gen, 1);
+  const hist = await call(base, "GET", `/v1/relay/matters/${mid}/segments/0`, B());
+  assert.equal(hist.json.gen, 1);
+  assert.deepEqual(hist.json.items.map((x: any) => x.gen), [1]);
+  // 不带代数的旧客户端不核对（部署顺序：中继先于客户端升级）
+  assert.equal((await writeSeg(base, mid, A(), "devA")).r.status, 200);
+  s.closeAllConnections();
+  await new Promise<void>((done) => s.close(() => done()));
+  const again = await start(dir, { opsSecret, accessLog: () => {} });
+  assert.equal((await call(again.base, "GET", `/v1/relay/matters/${mid}/segments/0`, A())).json.gen, 1, "重置记录随登记日志读回");
 });

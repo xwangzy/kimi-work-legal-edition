@@ -7,7 +7,8 @@
 --   旧列 history_done 不再使用。
 -- relay_outbox：发件的退避与卡住原因（复核 S11B-01/08/09）。
 -- relay_blob_wait：密文块取不回的收件段（退避，30 天放弃；复核 S11B-06）。
--- relay_imported：经中继摄取的行与收到时的内容摘要；本机行仍与收到时相同即不经中继原样发回（复核 S11B-03/20）；按事项清理（S11B-24）。
+-- relay_imported：经同步（中继或共享文件夹，第三轮起两种介质都记；第四轮起只记本机实际应用了的行）收下的行；中继导出时不发回（复核 S11B-03/30/34）；
+--   h 列第三轮起不再使用；按事项清理（S11B-24）。
 -- relay_unreadable：本机永远解不开、已丢弃的段（本机加入前的纪元、待钥 30 天），下载前跳过（复核 S11B-25）。
 
 ALTER TABLE relay_matters ADD COLUMN known integer NOT NULL DEFAULT 0;
