@@ -1,5 +1,6 @@
 -- 0038_v9_share_relay_review.sql — 第 11 批两路复核处置（第一、二轮）：共享中继的收发状态。
 -- 另起迁移，不改已执行过的 0037（复核 S11B-26；执行器按文件名判断）。
+-- kwl:managed-transaction（多条 ALTER 在同一事务里：中途失败整体回滚，不留半套列——第三轮复核 S11B-32②）
 -- relay_matters 增列：known / known_at（已知中继上有该事项、最近确认时刻：非负责人等负责人先登记，复核 S11A-04/21）；
 --   history_state / history_next_at / history_attempts（取历史的进度与退避，不是读者记“暂缓”不当完成，复核 S11A-11）；
 --   my_epoch（本机持有自己包裹的最高纪元：上升即重取历史，复核 S11B-05）；controller（中继告知的控制成员，复核 S11B-19）。

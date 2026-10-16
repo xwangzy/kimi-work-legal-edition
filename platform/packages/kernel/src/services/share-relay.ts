@@ -78,6 +78,8 @@ const MAX_PAGES = 10;
 export const RELAY_INBOX_MAX_FILES = 5000;
 export const RELAY_INBOX_MAX_BYTES = 2 * 1024 ** 3;
 export const RELAY_RETRY_MAX_ROWS = 5000;
+/** 单份材料的上限：中继“每设备未登记字节”缺省 2 GiB 留出余量（第三轮复核 S11B-33a）。 */
+export const RELAY_SINGLE_BLOB_MAX = 1.75 * 1024 ** 3;
 /** 暂存区（取回、待摄取的段与密文块）上限（第二轮复核 S11A-10）。 */
 export const RELAY_STAGING_MAX_BYTES = 4 * 1024 ** 3;
 /** 长轮询醒来但没有新段：至多每 60 秒做一次完整收件（重试、待块、摄取）；其余只推进游标（复核 S11B-11）。 */
@@ -252,6 +254,8 @@ export class ShareRelaySync {
 
   /** 导出并上传（单飞）。 */
   push(force = false): Promise<RelayReport> {
+    // 手动“立即同步”遇到后台发件正在进行：等它结束后再强制跑一次（第三轮复核 S11B-33b）
+    if (this.pushing && force) return this.pushing.then(() => this.push(true));
     if (this.pushing) return this.pushing;
     this.pushing = this.doPush(force).finally(() => {
       this.pushing = null;
@@ -329,6 +333,8 @@ export class ShareRelaySync {
           const ref = r.row as unknown as RelayBlobRef;
           const env = readFileSync(join(this.d.blobs.dir, ...r.pk.split("/")));
           if (sha256Hex(env) !== ref.sha256) throw new RelayError("local_blob_changed");
+          // 单份材料超过中继“每设备未登记字节”上限（缺省 2 GiB）登记不上：直接标卡住并显示（第三轮复核 S11B-33a；分块续传在 G1）
+          if (env.length > RELAY_SINGLE_BLOB_MAX) throw new RelayError("segment_too_large");
           const parts = relayChunks(env);
           blobChunkCount += parts.length;
           if (blobChunkCount > MAX_BLOB_CHUNKS) throw new RelayError("segment_too_large");
@@ -496,8 +502,8 @@ export class ShareRelaySync {
     this.setKv("feed_cursor", "0");
     this.d.db.run(`UPDATE relay_matters SET history_state = 'pending', history_cursor = 0, history_next_at = NULL, history_attempts = 0, known = 0, controller = NULL`, []);
     // 中继重建：负责人重新全量导出（第二轮复核 S11B-27a）
+    // 各设备只重发本机写入的行（收到过的行仍不回传）
     this.d.db.run(`DELETE FROM relay_export_state`, []);
-    this.d.db.run(`DELETE FROM relay_imported`, []);
     return true;
   }
 
@@ -541,6 +547,12 @@ export class ShareRelaySync {
 
   /** 取历史：按事项隔离错误（复核 S11B-06③）；不是读者的记为暂缓、退避重试，不当作完成（复核 S11A-11）。 */
   private async pullHistories(report: RelayReport): Promise<void> {
+    // 每 6 小时把各事项重新核对一遍（只列登记，已摄取的不重下）：发现运营按事项重置后由负责人重新全量（第三轮复核 S11A-30）
+    const last = Date.parse(this.kv("history_recheck_at") ?? "") || 0;
+    if (this.now() - last > 6 * 3600_000) {
+      this.d.db.run(`UPDATE relay_matters SET history_state = 'pending', history_cursor = 0, history_next_at = NULL WHERE history_state = 'done'`, []);
+      this.setKv("history_recheck_at", this.iso());
+    }
     for (const m of this.d.db.all<{ matter_id: string; history_cursor: number; history_attempts: number }>(
       `SELECT matter_id, history_cursor, history_attempts FROM relay_matters WHERE history_state != 'done' AND (history_next_at IS NULL OR history_next_at <= ?)`,
       [this.iso()],
@@ -554,6 +566,12 @@ export class ShareRelaySync {
       } catch (e) {
         const code = e instanceof RelayError ? e.code : "relay_history_failed";
         if (transportFailure(code)) throw e;
+        // 本机发出过、中继上却没有了（运营按事项重置）：负责人的电脑清掉导出水位，下次发件重新全量；其他成员等负责人
+        if (code === "matter_unknown") {
+          this.d.db.run(`DELETE FROM relay_export_state WHERE matter_id = ?`, [m.matter_id]);
+          this.d.db.run(`UPDATE relay_matters SET known = 0, uploaded_at = NULL, controller = NULL, history_state = 'done', history_attempts = 0, history_next_at = NULL WHERE matter_id = ?`, [m.matter_id]);
+          continue;
+        }
         report.errors.push(code);
         const attempts = m.history_attempts + 1;
         this.d.db.run(`UPDATE relay_matters SET history_state = 'denied', history_attempts = ?, history_next_at = ? WHERE matter_id = ?`, [
@@ -757,6 +775,8 @@ export class ShareRelaySync {
    * 传输类失败停止本轮（②）；暂存区超过上限即暂停（复核 S11A-10）。
    */
   private async fetchBlobs(report: RelayReport): Promise<void> {
+    // 暂存区占用只在开始时统计一次，之后按取回的字节累加（第三轮复核 S11A-34）
+    let staged = this.readyBytes();
     for (const c of scanSegments(this.inbox, this.d.tenantId).candidates) {
       const seg = parseSegment(c.content);
       if (!seg) continue;
@@ -765,7 +785,7 @@ export class ShareRelaySync {
       const sid = seg.header.segment_id;
       const wait = this.d.db.get<{ next_at: string; attempts: number; first_at: string }>(`SELECT next_at, attempts, first_at FROM relay_blob_wait WHERE segment_id = ?`, [sid]);
       if (wait && wait.next_at > this.iso()) continue;
-      if (this.readyBytes() >= RELAY_STAGING_MAX_BYTES) {
+      if (staged >= RELAY_STAGING_MAX_BYTES) {
         report.errors.push("staging_full");
         return;
       }
@@ -774,7 +794,7 @@ export class ShareRelaySync {
       for (const r of rows) {
         if (r.t !== RELAY_BLOB_TABLE) continue;
         try {
-          await this.fetchBlob(seg, r.pk, r.row as unknown as RelayBlobRef, stage);
+          staged += await this.fetchBlob(seg, r.pk, r.row as unknown as RelayBlobRef, stage);
         } catch (e) {
           const code = e instanceof RelayError ? e.code : "relay_blob_failed";
           if (transportFailure(code)) throw e;
@@ -811,43 +831,52 @@ export class ShareRelaySync {
    * 取回一个密文块到这一段的暂存目录（本机块库已有即跳过；暂存里已有的按这一段块清单里的封装摘要再核一次，不符即重取——
    * 第二轮复核 S11A-22）：封装摘要与大小、块头事项编号核对；明文摘要由摄取时用事项密钥核对。
    */
-  private async fetchBlob(seg: SegmentFile, rel: string, ref: RelayBlobRef, stage: string): Promise<void> {
+  private async fetchBlob(seg: SegmentFile, rel: string, ref: RelayBlobRef, stage: string): Promise<number> {
     const m = BLOB_REL_RE.exec(rel);
     // 块只能落在本段事项自己的块目录里
     if (!m || m[1] !== seg.header.matter_id) throw new RelayError("relay_blob_ref_invalid");
     if (!ref || typeof ref.sha256 !== "string" || !CID_RE.test(ref.sha256) || !Number.isSafeInteger(ref.size) || !Array.isArray(ref.chunks) || ref.chunks.some((c) => typeof c !== "string" || !CID_RE.test(c))) {
       throw new RelayError("relay_blob_ref_invalid");
     }
-    if (existsSync(join(this.d.blobs.dir, m[1]!, m[2]!))) return;
+    if (existsSync(join(this.d.blobs.dir, m[1]!, m[2]!))) return 0;
     const dst = join(stage, this.d.tenantId, "blobs", m[1]!, m[2]!);
-    if (existsSync(dst) && sha256Hex(readFileSync(dst)) === ref.sha256) return;
+    if (existsSync(dst) && sha256Hex(readFileSync(dst)) === ref.sha256) return 0;
     const parts: Buffer[] = [];
     for (const cid of ref.chunks) parts.push((await this.call({ step: "get_chunk", matter_id: seg.header.matter_id, cid })).bytes!);
     const env = Buffer.concat(parts);
     if (env.length !== ref.size || sha256Hex(env) !== ref.sha256 || blobHeaderOf(env)?.matterId !== seg.header.matter_id) throw new RelayError("relay_blob_mismatch");
     // 事项在取块期间被删除：不写
-    if (this.lifecycle(seg.header.matter_id) === "purged") return;
+    if (this.lifecycle(seg.header.matter_id) === "purged") return 0;
     mkdirSync(dirname(dst), { recursive: true });
     const tmp = `${dst}.tmp-${process.pid}-${Date.now().toString(36)}`;
     writeFileSync(tmp, env);
     renameSync(tmp, dst);
+    return env.length;
   }
 
   /** 暂存区里各段（已带段文件的）：按摄取顺序（序号区间、写入设备、段编号）。没有段文件的是取块中途的暂存，过期即删。 */
   private readySegments(): { sid: string; dir: string; path: string; seg: SegmentFile }[] {
     if (!existsSync(this.ready)) return [];
     const out: { sid: string; dir: string; path: string; seg: SegmentFile }[] = [];
+    const inboxNames = new Set(scanSegments(this.inbox, this.d.tenantId).candidates.map((x) => x.path.split(/[\\/]/).pop()!));
     for (const sid of readdirSync(this.ready)) {
       const dir = join(this.ready, sid);
       if (!SEGMENT_ID_RE.test(sid)) {
-        // 旧版布局或不认识的目录：清掉
+        // 旧版布局（ready/<租户>/segments/…）：段移回收件目录重新处理，不删除（第三轮复核 S11B-32③）；其余不认识的目录清掉
+        for (const c of scanSegments(this.ready, sid === this.d.tenantId ? this.d.tenantId : "\u0000").candidates) {
+          const seg = parseSegment(c.content);
+          if (!seg) continue;
+          const back = join(this.inbox, this.d.tenantId, "segments", seg.header.device_id, `${seg.header.segment_id}.seg`);
+          mkdirSync(dirname(back), { recursive: true });
+          if (!existsSync(back)) renameSync(c.path, back);
+        }
         rmSync(dir, { recursive: true, force: true });
         continue;
       }
       const c = scanSegments(dir, this.d.tenantId).candidates.find((x) => parseSegment(x.content)?.header.segment_id === sid);
       const seg = c ? parseSegment(c.content) : null;
       if (!c || !seg) {
-        const inInbox = scanSegments(this.inbox, this.d.tenantId).candidates.some((x) => x.path.endsWith(`${sid}.seg`));
+        const inInbox = inboxNames.has(`${sid}.seg`);
         if (!inInbox || this.now() - statSync(dir).mtimeMs > RELAY_HOLD_MS) rmSync(dir, { recursive: true, force: true });
         continue;
       }
@@ -864,7 +893,11 @@ export class ShareRelaySync {
     const before = new Map<string, number>();
     for (const r of ready) if (!before.has(r.seg.header.matter_id)) before.set(r.seg.header.matter_id, this.myEpochs(r.seg.header.matter_id)?.max ?? 0);
     for (const r of ready) {
-      const res = syncImport(this.d, { shareDir: r.dir, trackRelay: true });
+      // 首次收到的事项只从中继上的控制成员签发的段引导（第三轮复核 S11A-29；控制成员由取历史得知，未知前先延后）
+      const res = syncImport(this.d, {
+        shareDir: r.dir,
+        bootstrapController: (mid) => this.d.db.get<{ controller: string | null }>(`SELECT controller FROM relay_matters WHERE matter_id = ?`, [mid])?.controller ?? null,
+      });
       report.applied += res.segmentsApplied;
       const x = res.dispositions.find((d) => d.segment_id === r.sid);
       if (x?.outcome === "no_key") {
@@ -935,9 +968,13 @@ export class ShareRelaySync {
    * 否则本机的新纪元永远登记不上，控制成员不知道这次移出，被移出者继续收到新内容）；可以操作返回 null。
    */
   foreignController(matterId: string): string | null {
-    if (this.blocked()) return null;
-    const c = this.d.db.get<{ controller: string | null }>(`SELECT controller FROM relay_matters WHERE matter_id = ?`, [matterId])?.controller ?? null;
-    return c && c !== this.d.keyctx.device.cert.memberId ? c : null;
+    // 策略暂关或退出模式时也按已知的控制成员判断（第三轮复核 S11B-33e：恢复收发后中继仍只认控制成员）
+    if (!this.d.configured()) return null;
+    const row = this.d.db.get<{ controller: string | null; known: number }>(`SELECT controller, known FROM relay_matters WHERE matter_id = ?`, [matterId]);
+    if (!row) return null;
+    // 本机经中继收发过该事项、但还不知道控制成员（升级后、刚开始收发）：先不放行，等取历史得知（第三轮复核 S11B-32④）
+    if (!row.controller) return row.known ? "?" : null;
+    return row.controller !== this.d.keyctx.device.cert.memberId ? row.controller : null;
   }
 
   /** 关闭：不再开始新的收发，等进行中的结束（至多 timeoutMs；复核 S11B-07）。 */

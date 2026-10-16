@@ -82,25 +82,8 @@ export interface SyncImportResult {
   dispositions: { segment_id: string; matter_id: string; path: string; outcome: SegmentOutcome }[];
 }
 
-/** 本机库里与一条同步行对应的那一行（导出时 collectRows 用的就是 SELECT *）；找不到返回 undefined。 */
-function localRowOf(db: KernelDb, t: string, pk: string): Record<string, unknown> | undefined {
-  const two = pk.split("|");
-  if (t === "matter_members") return db.get(`SELECT * FROM matter_members WHERE matter_id = ? AND user_id = ?`, [two[0], two[1]]);
-  if (t === "im_bindings") return db.get(`SELECT * FROM im_bindings WHERE platform = ? AND im_user_id = ?`, [two[0], two[1]]);
-  if (t === "key_epochs") return db.get(`SELECT * FROM key_epochs WHERE scope = ? AND scope_id = ? AND epoch = ?`, [two[0], two[1], Number(two[2])]);
-  if (t === "parse_texts") return db.get(`SELECT * FROM parse_texts WHERE parse_version_id = ?`, [pk]);
-  const col = TABLE_PK[t];
-  if (!col || !/^[a-z_]+$/.test(t)) return undefined;
-  return db.get(`SELECT * FROM ${t} WHERE ${col} = ?`, [pk]);
-}
-
-/** 一行的内容摘要（规范 JSON）。 */
-function rowDigest(row: Record<string, unknown>): string {
-  return createHash("sha256").update(canonicalJson(row)).digest("hex");
-}
-
 /** 每段都会附带的行（与事项内容是否变化无关）：中继介质按它们的摘要判断是否需要出段。 */
-const ALWAYS_TABLES = new Set(["users", "matters", "devices", "im_bindings"]);
+const ALWAYS_TABLES = new Set(["users", "matters", "devices", "im_bindings", "matter_members"]);
 
 const APPEND_ONLY_TABLES = new Set(["run_events", "audit_events", "egress_records", "key_epochs", "matter_keys"]);
 
@@ -157,7 +140,8 @@ function collectRows(db: KernelDb, matterId: string, deviceId: string, lamport: 
   for (const r of db.all(`SELECT * FROM users WHERE tenant_id = ?`, [tenantId])) push("users", (r as any).user_id, r as Record<string, unknown>);
   const matter = db.get(`SELECT * FROM matters WHERE matter_id = ?`, [matterId]);
   if (matter) push("matters", matterId, matter as Record<string, unknown>);
-  for (const r of db.all(`SELECT * FROM matter_members WHERE matter_id = ? AND (added_at > ? OR removed_at > ?)`, [matterId, w, w])) {
+  // 成员行每段都附带全部（第三轮复核 S11A-28：迟到加入的成员由此认出负责人与在册成员；原作者随行保留）
+  for (const r of db.all(`SELECT * FROM matter_members WHERE matter_id = ?`, [matterId])) {
     const m = r as any;
     push("matter_members", `${matterId}|${m.user_id}`, m);
   }
@@ -266,23 +250,29 @@ export function syncExport(
           writeState(m.matter_id, toLamport, exportAt, null);
           continue;
         }
-        since = joined;
+        // 起点减 1 毫秒：与本机写入落在同一毫秒的行也收进来（第三轮复核 S11B-31）
+        since = new Date(Date.parse(joined) - 1).toISOString();
       }
     }
     const fromLamport = (state?.last_export_lamport ?? 0) + 1;
     let rows = collectRows(db, m.matter_id, keyctx.device.deviceId, toLamport, since);
-    // 中继介质：经中继收到的行不原样发回中继（复核 S11B-03）；每段都附带的四张表只在本机行与收到时不同（本机改过）才发
+    // 中继介质（第三轮复核 S11B-28/29/30 后的规则，取代按内容摘要比对）：
+    // ①“总是附带的行”（事项行、全部成员行、用户行、IM 绑定、本机设备行）每段都带、不过滤——迟到成员与新设备据此引导事项、认出负责人；
+    // ② 其余行凡是经同步（中继或共享文件夹）收到过的，一律不经中继发回（只发本机写入的）；
+    // ③ 设备行只发本机自己的（接收方只认设备自己写的设备行）；
+    // ④ 是否需要出段只看本机写的“总是附带的行”：本机是来源设备的事项行、本机设备写的成员行、本人用户行、本机设备行、IM 绑定
     if (relay) {
-      rows = rows.filter((r) => {
-        const got = db.get<{ h: string }>(`SELECT h FROM relay_imported WHERE t = ? AND pk = ?`, [r.t, String(r.pk)]);
-            return !got || got.h !== rowDigest(r.row);
-      });
+      rows = rows.filter((r) => ALWAYS_TABLES.has(r.t) || !db.get(`SELECT 1 AS x FROM relay_imported WHERE t = ? AND pk = ?`, [r.t, String(r.pk)]));
+      rows = rows.filter((r) => r.t !== "devices" || String(r.pk) === keyctx.device.deviceId);
     }
-    // 中继介质：设备行只发本机自己的（接收方只认设备自己写的设备行）；是否需要出段只看本机能改的“总是附带的行”——
-    // 事项行、IM 绑定、本人的用户行与本机设备行；同所其他人的用户行各机内容可能不同（显示名），不作为出段理由（复核 S11B-03 回声）
-    if (relay) rows = rows.filter((r) => r.t !== "devices" || String(r.pk) === keyctx.device.deviceId);
     const ownUser = keyctx.device.cert.memberId;
-    const triggers = (r: SyncRow) => ALWAYS_TABLES.has(r.t) && (r.t !== "users" || String(r.pk) === ownUser);
+    const triggers = (r: SyncRow) => {
+      if (!ALWAYS_TABLES.has(r.t)) return false;
+      if (r.t === "users") return String(r.pk) === ownUser;
+      if (r.t === "matters") return originOf(db, "matters", String(r.pk), keyctx.device.deviceId).device === keyctx.device.deviceId;
+      if (r.t === "matter_members") return (r.row as { author_device?: unknown }).author_device === keyctx.device.deviceId;
+      return true;
+    };
     // 中继介质：只有总是附带的行、且其中会触发出段的与上次出段时相同 → 不出段（否则每个周期都会给每个团队事项写一段）
     const alwaysDigest = relay ? createHash("sha256").update(canonicalJson(rows.filter(triggers).map((r) => [r.t, r.pk, r.row]))).digest("hex") : null;
     // 非负责人第一次导出、只有总是附带的行：记为基线，不出段（这些行由负责人与控制面目录传播）
@@ -599,19 +589,18 @@ export function preverifySegment(deps: SyncDeps, seg: SegmentFile): { ok: true; 
 }
 
 /**
- * 段内密钥包裹能否落库（第 11 批复核 S11A-02、第二轮 S11A-18）：包裹必须被段签名覆盖、属于本段事项、纪元为正整数，且签发设备是
- * ①该事项当前在册的负责人（按本机库，含本段刚应用的成员行）的设备，或 ②本机认定的事项行来源设备（本机从它那里收下的事项行——
- * 通常就是创建事项的负责人；迟到加入的成员收到的增量段里没有负责人自己的成员行，靠这一条认出负责人）。
+ * 段内密钥包裹能否落库（第 11 批复核 S11A-02、第二轮 S11A-18、第三轮 S11A-27）：包裹必须被段签名覆盖、属于本段事项、纪元为正整数，
+ * 且签发设备是该事项当前在册负责人（按本机库，含本段刚应用的成员行）的设备。每段都附带全部成员行，迟到加入的成员也认得出负责人；
+ * 第二轮的“事项行来源设备”例外已撤销（来源设备的成员被移出或移交负责人后仍会被放行）。
  * 轮换、加人、补包裹都是负责人的操作（管理员设备不例外，D-93）；其他成员段里的包裹只是转抄，不落库
  * （解段体时仍可在内存里用面向本机的那一行）。
  */
-function keyRowsAcceptable(db: KernelDb, seg: SegmentFile, cert: DeviceCertificate, ownDeviceId: string): boolean {
+function keyRowsAcceptable(db: KernelDb, seg: SegmentFile, cert: DeviceCertificate): boolean {
   if (!keyRowsSigned(seg)) return false;
-  if (db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [seg.header.matter_id, cert.memberId])) return true;
-  return originOf(db, "matters", seg.header.matter_id, ownDeviceId).device === cert.deviceId;
+  return !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [seg.header.matter_id, cert.memberId]);
 }
 
-export function syncImport(deps: SyncDeps, args: { shareDir: string; trackRelay?: boolean }): SyncImportResult {
+export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapController?: (matterId: string) => string | null }): SyncImportResult {
   const { db, keyctx, tenantId } = deps;
   const result: SyncImportResult = {
     segmentsApplied: 0,
@@ -689,6 +678,17 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; trackRelay?
       out("personal");
       continue;
     }
+    // 首次收到事项（本机还没有）：只从“签发成员在本段里是在册负责人”的段引导；中继介质另要求签发成员是中继上的控制成员
+    // （第三轮复核 S11A-28/29：在册同事的段先到时不再把同事认作事项来源；同所成员伪造的首段在中继上不被采信）。其他段延后，等负责人的段
+    if (!db.get(`SELECT 1 AS x FROM matters WHERE matter_id = ?`, [h.matter_id])) {
+      const ownerHere = rows.some((r) => r.t === "matter_members" && (r.row as any).user_id === cert.memberId && (r.row as any).matter_role === "owner" && (r.row as any).removed_at == null);
+      const ctl = args.bootstrapController?.(h.matter_id) ?? null;
+      if (!ownerHere || (args.bootstrapController && ctl !== cert.memberId)) {
+        result.segmentsSkipped += 1;
+        out("deferred");
+        continue;
+      }
+    }
     // 撤权回填拒收（§5.2 不依赖时钟；devices 行可能就在本段——先应用 devices 行再判）
     for (const r of rows.filter((x) => x.t === "devices")) applyRow(deps, r, { conflicts: result.conflicts, warnings: result.originConflicts, matterId: h.matter_id, segDeviceId: h.device_id, bodyRows: rows, bootstrap: !db.get(`SELECT 1 AS x FROM matters WHERE matter_id = ?`, [h.matter_id]) });
     try {
@@ -716,7 +716,7 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; trackRelay?
         if (applyRow(deps, r, ctx)) result.rowsApplied += 1;
       }
       // key_rows 随事务落库（matters 行已在库，外键满足）——只收被签名覆盖、属于本事项、由负责人或管理员设备签发的（复核 S11A-02）
-      const keyRowsOk = keyRowsAcceptable(db, seg, cert, keyctx.device.deviceId);
+      const keyRowsOk = keyRowsAcceptable(db, seg, cert);
       for (const kr of keyRowsOk ? (seg.key_rows ?? []) : []) {
         if (kr.matter_id !== h.matter_id || !Number.isSafeInteger(kr.epoch) || kr.epoch < 1) continue;
         db.run(`INSERT OR IGNORE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key, created_at) VALUES (?,?,?,?,?)`, [
@@ -747,17 +747,11 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; trackRelay?
         mkdirSync(join(dst, ".."), { recursive: true });
         copyFileSync(src, dst);
       }
-      // 经中继摄取的行另记（第 11 批复核 S11B-03）：中继介质导出时不再把它们原样发回中继（避免每台设备各回传一份全量历史）
-      // 每行都记摄取后本机那一行的内容摘要（第二轮复核 S11B-20：本机之后改过的行——例如共同负责人改角色、加回成员——照常发出；
-      // 本机保留自己版本的行，例如本人的用户行、合并时保留的本机列，不因“与收到的不同”而回传）；
-      // 按事项记，删除事项时清理（S11B-24；用户、设备、IM 绑定是所级行，不挂事项）
-      if (args.trackRelay) {
-        for (const r of rows) {
-          if (r.t === RELAY_BLOB_TABLE) continue;
-          const scoped = r.t === "users" || r.t === "devices" || r.t === "im_bindings" ? null : h.matter_id;
-          const local = localRowOf(db, r.t, String(r.pk));
-          db.run(`INSERT OR REPLACE INTO relay_imported (t, pk, matter_id, h) VALUES (?, ?, ?, ?)`, [r.t, String(r.pk), scoped, rowDigest(local ?? r.row)]);
-        }
+      // 经同步（中继或共享文件夹）摄取过的行另记（复核 S11B-03、第三轮 S11B-30）：中继介质导出时不把它们发回中继；
+      // “总是附带的行”不记（每段都带）；按事项记，删除事项时清理（S11B-24）
+      for (const r of rows) {
+        if (r.t === RELAY_BLOB_TABLE || ALWAYS_TABLES.has(r.t)) continue;
+        db.run(`INSERT OR IGNORE INTO relay_imported (t, pk, matter_id) VALUES (?, ?, ?)`, [r.t, String(r.pk), h.matter_id]);
       }
       db.run(`INSERT INTO sync_segments_seen (segment_id, from_device, matter_id) VALUES (?,?,?)`, [h.segment_id, h.device_id, h.matter_id]);
       // 归属冲突计数透出（应当-2：编辑机可经 sync.status 看到被拒规模；界面只读化与 NACK 提示在 G1）

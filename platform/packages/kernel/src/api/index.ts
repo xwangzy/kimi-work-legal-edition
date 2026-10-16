@@ -3219,7 +3219,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   function requireRelayController(matterId: string, what: string): void {
     const ctl = deps.shareRelay?.foreignController(matterId);
     if (!ctl) return;
+    if (ctl === "?") throw forbidden(`这个事项经中软共享中继同步，正在向中继确认最先同步它的负责人：${what}请稍后再试（可先点“立即同步”）`);
+    const row = db.get<{ matter_role: string; removed_at: string | null }>(`SELECT matter_role, removed_at FROM matter_members WHERE matter_id = ? AND user_id = ?`, [matterId, ctl]);
     const name = db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE user_id = ?`, [ctl])?.display_name ?? ctl;
+    // 第三轮复核 S11A-31：控制成员已不是在册负责人（移交、被移出）或根本不是本事项成员（被抢先登记）时，如实说明须找中软客服
+    if (!row) throw forbidden(`这个事项在中软共享中继上的状态异常（登记者不是本事项成员）：${what}暂时不能经中继同步，请联系中软客服重置该事项`);
+    if (row.removed_at || row.matter_role !== "owner") throw forbidden(`这个事项经中软共享中继同步，最先同步它的负责人（${name}）已不是负责人：${what}暂时不能经中继同步，请联系中软客服办理负责人交接`);
     throw forbidden(`这个事项经中软共享中继同步：${what}须由最先同步该事项的负责人（${name}）在其电脑上操作`);
   }
 

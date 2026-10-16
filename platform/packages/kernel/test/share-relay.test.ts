@@ -234,9 +234,14 @@ test("第二轮 S11B-19/20/21/22/25：共同负责人不能在中继事项上调
   await kB.inv("relay.sync");
   await assert.rejects(kB.inv("matters.members.remove", { matter_id: m6, user_id: usr("bob_2") }), /最先同步该事项的负责人/);
   await assert.rejects(kB.inv("matters.members.add", { matter_id: m6, user_id: usr("carol") }), /最先同步该事项的负责人/);
-  // S11B-20：B 收到的成员行在本机被改（模拟共同负责人经共享文件夹做的合法改动）→ 经中继照常发出
-  kB.kernel.db.run(`UPDATE matter_members SET matter_role = 'viewer', row_lamport = row_lamport + 100 WHERE matter_id = ? AND user_id = ?`, [m6, usr("bob_2")]);
-  assert.ok((await kB.inv("relay.sync")).push.exported >= 1, "本机改过的收到行照常发出");
+  // S11B-20（第三轮改写，复核 S11B-33f）：成员行每段都带——控制成员改角色，其他成员电脑上随之改变
+  await kA.inv("matters.members.add", { matter_id: m6, user_id: usr("bob_2"), matter_role: "viewer" });
+  await kA.inv("relay.sync");
+  await kD.inv("relay.sync");
+  await kB.inv("relay.sync");
+  const roleAt = (k: K | TestKernel) => k.kernel.db.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ?`, [m6, usr("bob_2")])?.matter_role;
+  assert.equal(roleAt(kB), "viewer");
+  assert.equal(roleAt(kD), "viewer");
   // S11B-21：A 一次导入三份材料，每段引用的材料不超过上限（测试设 2500 字节）→ 拆成多段，B 全部收到
   for (const i of [1, 2, 3]) await importText(kA, m6, `证据${i}.txt`, `证据${i}`.repeat(400));
   const a = await kA.inv("relay.sync");
@@ -274,6 +279,64 @@ test("第二轮 S11B-19/20/21/22/25：共同负责人不能在中继事项上调
   assert.ok((kC.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM relay_unreadable WHERE matter_id = ?`, [m8.matter_id])?.n ?? 0) >= 1);
   kC.kernel.db.run(`UPDATE relay_matters SET history_state = 'pending', history_cursor = 0 WHERE matter_id = ?`, [m8.matter_id]);
   assert.equal((await kC.inv("relay.sync")).pull.downloaded, 0, "记为不可读的段不再重下");
+});
+
+test("第三轮 S11B-28/29/30：编辑成员改过标题、或事项先经共享文件夹，之后加入的成员照样拿到事项；负责人改标题后先收件再发件不丢；非负责人首次中继导出不带经文件夹收到的行", { timeout: 240_000 }, async () => {
+  // S11B-28①：编辑成员 B 改过一次标题后，A 再加 D：D 拿到事项、包裹与材料
+  const { matter } = await kA.inv("matters.create", { title: "原题", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
+  const mx = matter.matter_id;
+  await kA.inv("matters.members.add", { matter_id: mx, user_id: usr("bob") });
+  await kA.inv("matters.members.add", { matter_id: mx, user_id: usr("carol") });
+  await importText(kA, mx, "甲.txt", "甲");
+  await kA.inv("relay.sync");
+  await kB.inv("relay.sync");
+  await kB.inv("matters.update", { matter_id: mx, patch: { title: "B改的题" } });
+  await importText(kB, mx, "B写.txt", "B");
+  await kB.inv("relay.sync");
+  await kA.inv("relay.sync");
+  // A 摄取过 B 带事项行的段之后移出 C（纪元上升）：D 只读得到新纪元的段，事项行只能来自这些段（反向对照 R26）
+  await kA.inv("matters.members.remove", { matter_id: mx, user_id: usr("carol") });
+  await kA.inv("matters.members.add", { matter_id: mx, user_id: usr("bob_2") });
+  await importText(kA, mx, "乙.txt", "乙");
+  await kA.inv("relay.sync");
+  await kD.inv("relay.sync");
+  await kD.inv("relay.sync");
+  assert.ok(kD.kernel.db.get(`SELECT 1 AS x FROM matters WHERE matter_id = ?`, [mx]), "之后加入的成员拿到事项");
+  assert.ok(kD.kernel.db.get(`SELECT 1 AS x FROM matter_keys WHERE matter_id = ? AND wrapped_for = ?`, [mx, dev("bob_2")]));
+  assert.ok((await docs(kD, mx)).includes("乙.txt"));
+  // S11B-29：A 改标题，发件之前先收到 B 的段（B 的段带着 B 的事项行）→ A 的改动照常发出
+  await kA.inv("matters.update", { matter_id: mx, patch: { title: "A新题" } });
+  await importText(kB, mx, "B再写.txt", "B");
+  await kB.inv("relay.sync");
+  await kA.inv("relay.sync");
+  await kD.inv("relay.sync");
+  assert.equal(kD.kernel.db.get<{ title: string }>(`SELECT title FROM matters WHERE matter_id = ?`, [mx])!.title, "A新题");
+  // S11B-28② + S11B-30：事项先经共享文件夹到 B（含约 300 KB 材料），开启中继后 B 第一次经中继导出不带经文件夹收到的行；之后加入的 C 照样拿到
+  const { matter: mf } = await kA.inv("matters.create", { title: "文件夹时代事项", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
+  await kA.inv("matters.members.add", { matter_id: mf.matter_id, user_id: usr("bob") });
+  await importText(kA, mf.matter_id, "大材料.txt", "证据".repeat(50_000));
+  const share = mkdtempSync(join(tmpdir(), "kwl-share-era-"));
+  await kA.inv("sync.export", { share_dir: share, matter_id: mf.matter_id });
+  await kB.inv("sync.import", { share_dir: share });
+  // B 第一次收到之后 A 又经共享文件夹送来一份材料：B 开启中继后也不转发（反向对照 R27）
+  await importText(kA, mf.matter_id, "后续材料.txt", "后续".repeat(20_000));
+  await kA.inv("sync.export", { share_dir: share, matter_id: mf.matter_id });
+  await kB.inv("sync.import", { share_dir: share });
+  await kA.inv("relay.sync");
+  kB.kernel.db.run(`DELETE FROM relay_export_state WHERE matter_id = ?`, [mf.matter_id]);
+  await importText(kB, mf.matter_id, "B小改动.txt", "小");
+  kB.kernel.db.run(`UPDATE relay_outbox SET next_at = ?`, [new Date(Date.now() - 1000).toISOString()]);
+  await kB.inv("relay.sync");
+  const bSegs = entries().filter((e) => e.mid === mf.matter_id && e.dev === dev("bob"));
+  assert.ok(bSegs.length >= 1 && bSegs.every((e) => e.size < 60_000), `B 首次中继导出只带本机写入的行：${JSON.stringify(bSegs.map((e) => e.size))}`);
+  // B 只引用本机新写的那份小材料，不转发经共享文件夹收到的大材料（反向对照 R27）
+  assert.equal(bSegs.reduce((n, e) => n + e.blobs.length, 0), 1, "B 不转发经共享文件夹收到的材料");
+  await kA.inv("matters.members.add", { matter_id: mf.matter_id, user_id: usr("carol") });
+  await kA.inv("relay.sync");
+  await kC.inv("relay.sync");
+  await kC.inv("relay.sync");
+  assert.ok((await docs(kC, mf.matter_id)).includes("大材料.txt"), "文件夹时代的事项，之后加入的成员照样拿到");
+  assert.ok((await docs(kC, mf.matter_id)).includes("后续材料.txt"));
 });
 
 test("复核 S11A-02：包裹未被签名覆盖即判不合格；非负责人段里的包裹不落库（不能改别人设备的加密纪元）", { timeout: 120_000 }, async () => {
@@ -442,6 +505,26 @@ test("复核 S11A-01（两种介质都适用）：介质上被换成同事项另
   // 读取时核对：本机块库里同名文件内容不符即拒绝读取
   copyFileSync(join(kA.kernel.blobs.dir, ...rel2.split("/")), join(kA.kernel.blobs.dir, ...rel1.split("/")));
   assert.throws(() => kA.kernel.blobs.read(`blob://${rel1}`), /块内容与名称不符/);
+});
+
+test("第三轮 S11A-30：运营按事项重置后，负责人的电脑发现中继上没有了即重新全量；之后加入的成员仍能拿到重置前的材料", { timeout: 180_000 }, async () => {
+  const { matter } = await kA.inv("matters.create", { title: "被重置的事项", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
+  const m9 = matter.matter_id;
+  await importText(kA, m9, "重置前.txt", "重置前的材料");
+  await kA.inv("relay.sync");
+  assert.ok(entries().some((e) => e.mid === m9));
+  const r = await fetch(`${cloud.relay.base}/v1/relay/ops/tenants/${TID}/matters/${m9}`, { method: "DELETE", headers: { authorization: `Bearer ${cloud.relay.opsSecret}`, "x-kwl-operator": "ops.test" } });
+  assert.equal(r.status, 200);
+  // 到了定期核对时刻：负责人发现中继上没有了，清掉导出水位，下一次发件重新全量
+  kA.kernel.db.run(`DELETE FROM relay_kv WHERE k = 'history_recheck_at'`);
+  await kA.inv("relay.sync");
+  await kA.inv("relay.sync");
+  assert.equal(cloud.relay.server.tenant(TID)!.controller(m9), usr("test-lawyer"));
+  await kA.inv("matters.members.add", { matter_id: m9, user_id: usr("bob") });
+  await kA.inv("relay.sync");
+  await kB.inv("relay.sync");
+  await kB.inv("relay.sync");
+  assert.ok((await docs(kB, m9)).includes("重置前.txt"), "重置后加入的成员拿得到重置前的材料");
 });
 
 test("删除事项：回执写明中继上有密文副本；之后 B 再发的段 A 不取回、本机不留任何东西", { timeout: 120_000 }, async () => {

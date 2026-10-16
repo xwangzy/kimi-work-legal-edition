@@ -33,7 +33,7 @@ export interface CloudCp {
   /** 通知服务（第 10 批 S9；期限提醒）：存储目录与服务（用例可看云端保存了什么）。 */
   notify: { dir: string; base: string; server: ReturnType<typeof createNotifyApi>; setSkew(ms: number): void };
   /** 共享中继（第 11 批 S11；团队事项密文同步）：存储目录与服务（用例可看中继上保存了什么）。 */
-  relay: { dir: string; base: string; server: ReturnType<typeof createRelayApi> };
+  relay: { dir: string; base: string; server: ReturnType<typeof createRelayApi>; opsSecret: string };
   /** 网关的额度租约（用例可 flush 后核对控制面账本）。 */
   quota: LeaseQuota;
   gatewayUrl: string;
@@ -93,7 +93,8 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
   const notifyBase = `http://127.0.0.1:${(notifySvc.address() as AddressInfo).port}`;
   // 共享中继（第 11 批 S11）：按订阅核对律所策略（share_relay）
   const relayDir = mkdtempSync(join(tmpdir(), "kwl-relay-"));
-  const relaySvc = createRelayApi({ dir: relayDir, keys: seatKeys, feed });
+  const relayOps = `relay-ops-${Math.random().toString(36).slice(2)}-secret`;
+  const relaySvc = createRelayApi({ dir: relayDir, keys: seatKeys, feed, opsSecret: relayOps, accessLog: () => {} });
   await new Promise<void>((r) => relaySvc.listen(0, "127.0.0.1", () => r()));
   const relayBase = `http://127.0.0.1:${(relaySvc.address() as AddressInfo).port}`;
   const supportBase = `http://127.0.0.1:${(supportSvc.address() as AddressInfo).port}`;
@@ -129,7 +130,7 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
         notifySkew = ms;
       },
     },
-    relay: { dir: relayDir, base: relayBase, server: relaySvc },
+    relay: { dir: relayDir, base: relayBase, server: relaySvc, opsSecret: relayOps },
     gatewayUrl,
     seatFor: (c) => issueSeatToken({ ...c, kid: keys.seat.kid }, keys.seat.privateKey),
     setControlPlaneAvailable(on) {
