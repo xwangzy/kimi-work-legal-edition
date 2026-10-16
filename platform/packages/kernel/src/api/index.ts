@@ -3219,6 +3219,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   function requireRelayController(matterId: string, what: string): void {
     const ctl = deps.shareRelay?.foreignController(matterId);
     if (!ctl) return;
+    if (ctl === "~") throw forbidden(`这个事项经中软共享中继同步，而本机的律所策略已过期或尚未收到：${what}请先联网更新律所策略后再试（策略回退期间改动成员，在中继上不会生效）`);
     if (ctl === "?") throw forbidden(`这个事项经中软共享中继同步，正在向中继确认最先同步它的负责人：${what}请稍后再试（可先点“立即同步”）`);
     const row = db.get<{ matter_role: string; removed_at: string | null }>(`SELECT matter_role, removed_at FROM matter_members WHERE matter_id = ? AND user_id = ?`, [matterId, ctl]);
     const name = db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE user_id = ?`, [ctl])?.display_name ?? ctl;

@@ -352,6 +352,7 @@ test("RA-11 重置代数（第四轮复核 S11B-36/37）：重置后取历史回
   const r = await fetch(`${base}/v1/relay/ops/tenants/t1/matters/${mid}`, { method: "DELETE", headers: { authorization: `Bearer ${opsSecret}`, "x-kwl-operator": "ops.zhang" } });
   assert.equal(r.status, 200);
   assert.deepEqual((await call(base, "GET", `/v1/relay/matters/${mid}/segments/0`, A())).json, { error: "matter_unknown", gen: 1 });
+  assert.deepEqual((await call(base, "GET", `/v1/relay/matters/${mid}/segments/0`, C())).json, { error: "matter_unknown" }, "重置前不是读者的同所设备探测不到重置（第五轮复核 S11A-46）");
   // 还不知道重置的设备（例如非负责人）带旧代数登记：拒收，事项不会被它重新建起来
   const stale = await writeSeg(base, mid, B(), "devB", { gen: 0 });
   assert.equal(stale.r.status, 409);

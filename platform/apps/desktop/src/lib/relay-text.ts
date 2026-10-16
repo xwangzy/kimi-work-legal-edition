@@ -7,7 +7,8 @@ import type { RelayReport } from "../api.ts";
 export function relayErrorText(code: string | null | undefined): string | null {
   if (!code) return null;
   if (code === "waiting_for_owner") return "这个事项的负责人还没有经中继同步过：负责人的电脑同步一次后，这里的改动会自动发出";
-  if (code === "epoch_not_established") return "这个事项的成员或密钥刚有调整，正在等最先同步该事项的负责人的变更送达；若一直不到，请由那位负责人在其电脑上操作";
+  if (code === "epoch_not_established")
+    return "这个事项的成员或密钥在本机有调整，中继上还没有生效：正在等最先同步该事项的负责人的变更送达。若是在律所关闭共享中继期间做的移出，被移出的人仍能经中继收到其他成员的新内容——请由那位负责人在其电脑上重做移出，或联系中软客服重置该事项";
   if (code === "credential_backoff") return "暂时取不到中继的使用凭据（控制面可能暂时连不上），稍后自动重试";
   if (code === "relay_push_failed" || code === "relay_blob_failed" || code === "relay_import_failed") return "本机处理改动时出错（可能是文件被占用），稍后自动重试";
   if (code === "segment_too_large" || code === "too_many_readers") return "有一批改动过大或事项成员过多，无法经中继同步；请联系中软客服，或先经律所共享文件夹同步";

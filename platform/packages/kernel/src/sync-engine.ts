@@ -217,6 +217,8 @@ export function syncExport(
            last_always_digest = excluded.last_always_digest, updated_at = excluded.updated_at`,
         [matterId, toLamport, exportAt, alwaysDigest, nowIso()],
       );
+      // 有了导出水位，“重置后全量重发”的标记即已用过（第五轮复核 S11B-45f）
+      db.run(`UPDATE relay_matters SET resend_full = 0 WHERE matter_id = ? AND resend_full = 1`, [matterId]);
       return;
     }
     db.run(
@@ -537,12 +539,25 @@ function memberRowPayload(tenantId: string, r: Record<string, unknown>): Uint8Ar
  */
 function signOwnMemberRows(deps: SyncDeps, matterId: string, certJson: string): void {
   const { db, keyctx, tenantId } = deps;
+  let seen = verifiedOwnRows.get(db);
+  if (!seen) verifiedOwnRows.set(db, (seen = new Set()));
   for (const m of db.all<Record<string, unknown>>(`SELECT * FROM matter_members WHERE matter_id = ? AND author_device = ?`, [matterId, keyctx.device.deviceId])) {
     const payload = memberRowPayload(tenantId, m);
-    if (typeof m.author_sig === "string" && m.author_cert === certJson && verifyBytes(keyctx.device.cert.signPublicKeyPem, payload, m.author_sig)) continue;
+    if (typeof m.author_sig === "string" && m.author_cert === certJson) {
+      // 本进程里核过的（内容、签名、证书都没变）不再验签（第五轮复核 S11B-45c：只用共享文件夹的律所每次导出也付这份成本）
+      const memo = createHash("sha256").update(payload).update(m.author_sig).update(certJson).digest("hex");
+      if (seen.has(memo)) continue;
+      if (verifyBytes(keyctx.device.cert.signPublicKeyPem, payload, m.author_sig)) {
+        seen.add(memo);
+        continue;
+      }
+    }
     db.run(`UPDATE matter_members SET author_sig = ?, author_cert = ? WHERE matter_id = ? AND user_id = ?`, [signSyncWith(keyctx.device.signer, payload), certJson, matterId, m.user_id]);
   }
 }
+
+/** 本进程里已核过的本机成员行签名（按库区分）。 */
+const verifiedOwnRows = new WeakMap<KernelDb, Set<string>>();
 
 type MemberOutcome = "applied" | "same" | "pending" | "rejected";
 
@@ -556,8 +571,12 @@ type MemberOutcome = "applied" | "same" | "pending" | "rejected";
  * 4. 满足后落库（签名与证书随行存，之后本机转发时原样带上）。
  * 残余如实声明：在任负责人的合法权限（包括重新加回被移出的成员）防不了；首同步设备看不到签发者没有转发的成员行（段内选择由签发者决定，创世与成员日志的见证在 G1）。
  */
-function applyMemberRow(deps: SyncDeps, r: SyncRow, ctx: { warnings: string[]; matterId: string; segDeviceId: string; segCert: DeviceCertificate; bootstrap: boolean; creator: string | null }): MemberOutcome {
-  const { db, keyctx, tenantId } = deps;
+function applyMemberRow(
+  deps: SyncDeps,
+  r: SyncRow,
+  ctx: { warnings: string[]; matterId: string; segDeviceId: string; segCert: DeviceCertificate; bootstrap: boolean; creator: string | null; owners: Set<string> | null; forwarderTrusted: boolean },
+): MemberOutcome {
+  const { db, tenantId } = deps;
   const row = r.row as Record<string, unknown>;
   const key = [String(row.matter_id ?? ""), String(row.user_id ?? "")] as const;
   const author = String(row.author_device ?? "");
@@ -566,49 +585,70 @@ function applyMemberRow(deps: SyncDeps, r: SyncRow, ctx: { warnings: string[]; m
     return "rejected";
   };
   if (key[0] !== ctx.matterId || !key[1] || !author) return reject("成员行不属于本段事项或缺作者");
-  const local = db.get<{ row_lamport: number | null; author_device: string | null }>(`SELECT row_lamport, author_device FROM matter_members WHERE matter_id = ? AND user_id = ?`, [key[0], key[1]]);
+  const local = db.get<Record<string, unknown>>(`SELECT * FROM matter_members WHERE matter_id = ? AND user_id = ?`, [key[0], key[1]]);
   const incomingL = Number(row.row_lamport ?? 0);
   if (local) {
-    const localL = local.row_lamport ?? 0;
-    const localA = local.author_device ?? "";
-    if (!(incomingL > localL || (incomingL === localL && author > localA))) return "same";
+    const localL = Number(local.row_lamport ?? 0);
+    const localA = String(local.author_device ?? "");
+    if (!(incomingL > localL || (incomingL === localL && author > localA))) {
+      // 不比本机新：静默跳过（复核 S11A-40/S11B-38）。本机这一行还没有作者签名（0039 之前同步来的）、收到的是同一内容且签名核验通过的版本：
+      // 把签名补进本机行，之后转发时带上（第五轮复核 S11B-41：否则升级前同步过的成员行永远补不上签名）
+      if (typeof local.author_sig !== "string" && Buffer.from(memberRowPayload(tenantId, local)).equals(Buffer.from(memberRowPayload(tenantId, row)))) {
+        const ac = authorCertOf(deps, row, author);
+        if (ac) db.run(`UPDATE matter_members SET author_sig = ?, author_cert = ? WHERE matter_id = ? AND user_id = ?`, [row.author_sig, row.author_cert, key[0], key[1]]);
+      }
+      return "same";
+    }
   }
   let authorMember: string;
-  let sig: string | null = null;
-  let certJson: string | null = null;
+  let signed = false;
   if (author === ctx.segDeviceId) {
     authorMember = ctx.segCert.memberId;
-    if (typeof row.author_sig === "string" && typeof row.author_cert === "string") {
-      sig = row.author_sig;
-      certJson = row.author_cert;
-    }
+    // 签发者自己写的行附带的签名也核验，不对的不存（第五轮复核 S11A-47③：否则转发出去第三方会拒收）
+    signed = !!authorCertOf(deps, row, author);
   } else {
+    const ac = authorCertOf(deps, row, author);
     if (typeof row.author_sig !== "string" || typeof row.author_cert !== "string") return reject("别人写的成员行没有作者签名，无法核验（借名伪造拒收）");
-    let ac: DeviceCertificate | null = null;
-    try {
-      ac = JSON.parse(row.author_cert) as DeviceCertificate;
-    } catch {
-      ac = null;
+    if (!ac) return reject("作者签名或作者设备证书核验不通过（拒收）");
+    // 作者设备已被吊销：它在吊销前写的行仍要能被后加入的成员收下（第五轮复核 S11A-42/S11B-44：创建者离所或换机后事项仍可交接）——
+    // 只在转发者可信时收：本段之前本机就认它为负责人，或首同步时的签发者（首同步另须通过下面的闸门）；其他来源仍拒收
+    if ((deviceTombstoned(db, author) || db.get(`SELECT 1 AS x FROM devices WHERE device_id = ? AND status = 'revoked'`, [author])) && !ctx.forwarderTrusted) {
+      return reject("作者设备已被吊销，且转发者不是本机认得的负责人（拒收）");
     }
-    if (!ac || ac.deviceId !== author || !verifyCertSignature(ac, keyctx.firm.rootPublicKeyPem) || !verifyBytes(ac.signPublicKeyPem, memberRowPayload(tenantId, row), row.author_sig)) {
-      return reject("作者签名或作者设备证书核验不通过（拒收）");
-    }
-    if (deviceTombstoned(db, author) || db.get(`SELECT 1 AS x FROM devices WHERE device_id = ? AND status = 'revoked'`, [author])) return reject("作者设备已被吊销（拒收）");
     authorMember = ac.memberId;
-    sig = row.author_sig;
-    certJson = row.author_cert;
+    signed = true;
   }
-  const ownerNow = !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [key[0], authorMember]);
-  // 首同步的起点：事项创建者在它自己的成员行被处理之前视为负责人（成员行按先后处理——创建者先加人、后把自己改为成员的移交也成立）
-  const seed = ctx.bootstrap && !!ctx.creator && authorMember === ctx.creator && !db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ?`, [key[0], ctx.creator]);
-  if (!ownerNow && !seed) return "pending";
-  const vals = [row.matter_role ?? "viewer", row.added_by ?? "", row.removed_at ?? null, row.removed_lamport ?? null, author, incomingL, sig, certJson];
+  // 作者资格：首同步按本段已应用的行逐步确立（起点是创建者）；已有事项按本段之前本机认得的负责人判断——
+  // 同段里转发来的“某人是负责人”可以落库，但不让他在同一段里就以负责人身份变更成员（第五轮复核 S11A-43：签名不带新鲜度）
+  let qualified: boolean;
+  if (ctx.owners) qualified = ctx.owners.has(authorMember);
+  else {
+    const ownerNow = !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [key[0], authorMember]);
+    // 首同步的起点：事项创建者在它自己的成员行被处理之前视为负责人（成员行按先后处理——创建者先加人、后把自己改为成员的移交也成立）
+    const seed = !!ctx.creator && authorMember === ctx.creator && !db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ?`, [key[0], ctx.creator]);
+    qualified = ownerNow || seed;
+  }
+  if (!qualified) return "pending";
+  const vals = [row.matter_role ?? "viewer", row.added_by ?? "", row.removed_at ?? null, row.removed_lamport ?? null, author, incomingL, signed ? row.author_sig : null, signed ? row.author_cert : null];
   if (local) {
     db.run(`UPDATE matter_members SET matter_role = ?, added_by = ?, removed_at = ?, removed_lamport = ?, author_device = ?, row_lamport = ?, author_sig = ?, author_cert = ? WHERE matter_id = ? AND user_id = ?`, [...vals, key[0], key[1]]);
   } else {
     db.run(`INSERT INTO matter_members (matter_id, user_id, matter_role, added_by, removed_at, removed_lamport, author_device, row_lamport, author_sig, author_cert) VALUES (?,?,?,?,?,?,?,?,?,?)`, [key[0], key[1], ...vals]);
   }
   return "applied";
+}
+
+/** 成员行附带的作者证书与签名核验通过（证书由律所根签发、设备编号对得上、签名覆盖这一行）即返回证书，否则 null。 */
+function authorCertOf(deps: SyncDeps, row: Record<string, unknown>, author: string): DeviceCertificate | null {
+  if (typeof row.author_sig !== "string" || typeof row.author_cert !== "string") return null;
+  let ac: DeviceCertificate | null = null;
+  try {
+    ac = JSON.parse(row.author_cert) as DeviceCertificate;
+  } catch {
+    return null;
+  }
+  if (!ac || ac.deviceId !== author || !verifyCertSignature(ac, deps.keyctx.firm.rootPublicKeyPem)) return null;
+  return verifyBytes(ac.signPublicKeyPem, memberRowPayload(deps.tenantId, row), row.author_sig) ? ac : null;
 }
 
 /**
@@ -740,6 +780,10 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
     try {
       rows = openSegmentBody(seg, matterKey);
     } catch {
+      // 本机已有这个纪元的密钥却解不开：同号纪元分叉（第五轮复核 S11A-43②），如实记下
+      if (resolveMatterKey(db, h.matter_id, seg.body.epoch, keyctx.device.deviceId, keyctx.device.keys.encPrivateKeyPem)) {
+        result.originConflicts.push(`epoch_conflict:${h.matter_id}/${seg.body.epoch}（本机该纪元的密钥解不开设备 ${h.device_id} 的段）`);
+      }
       result.segmentsSkipped += 1;
       out("invalid");
       continue;
@@ -779,6 +823,9 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
       // 首同步判定以本段之前的本机状态为准（段内 matters 行落地不改变引导口径）
       bootstrap: !db.get(`SELECT 1 AS x FROM matters WHERE matter_id = ?`, [h.matter_id]),
     };
+    // 整段回滚时，本段计入的条数与告警一并撤回（第五轮复核 S11B-45e）
+    const mark = { rows: result.rowsApplied, conflicts: result.conflicts.length, warnings: result.originConflicts.length };
+    try {
     db.tx(() => {
       const applied: SyncRow[] = [];
       for (const r of rows) {
@@ -790,17 +837,33 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
         }
       }
       const creator = ctx.bootstrap ? String((rows.find((x) => x.t === "matters")?.row as any)?.created_by ?? "") || null : null;
-      const mem = applyMemberRows(deps, rows, { warnings: ctx.warnings, matterId: h.matter_id, segDeviceId: h.device_id, segCert: cert, bootstrap: ctx.bootstrap, creator });
+      // 已有事项：本段之前本机认得的负责人（第五轮复核 S11A-43）
+      const owners = ctx.bootstrap
+        ? null
+        : new Set(db.all<{ user_id: string }>(`SELECT user_id FROM matter_members WHERE matter_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [h.matter_id]).map((x) => x.user_id));
+      const mem = applyMemberRows(deps, rows, {
+        warnings: ctx.warnings,
+        matterId: h.matter_id,
+        segDeviceId: h.device_id,
+        segCert: cert,
+        bootstrap: ctx.bootstrap,
+        creator,
+        owners,
+        forwarderTrusted: ctx.bootstrap || !!owners?.has(cert.memberId),
+      });
       result.rowsApplied += mem.applied;
       const signerOwner = !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [h.matter_id, cert.memberId]);
       // 首同步：签发成员按核验过的成员行须是负责人，或本段里有它以负责人身份做的成员变更（同一段里移交）；否则整段回滚、延后
       // （第三轮复核 S11A-28 的闸门移到这里——按能落库的行判，不按段里写了什么判，第四轮复核 S11A-35）
       if (ctx.bootstrap && !signerOwner && !mem.signerActed) throw new BootstrapDeferred();
-      // key_rows 随事务落库（matters 行已在库，外键满足）——只收被签名覆盖、属于本事项、由负责人签发的（复核 S11A-02）；
-      // 签发者本段里以负责人身份做过成员变更的也收（移交与加人在同一段，第四轮复核 S11A-35③）
-      const keyRowsOk = keyRowsSigned(seg) && (signerOwner || mem.signerActed);
+      // key_rows 随事务落库（matters 行已在库，外键满足）——只收被签名覆盖、属于本事项、由负责人签发的（复核 S11A-02）：
+      // 已有事项按本段之前本机认得的负责人（第五轮复核 S11A-43）；首同步按核验后的负责人，或签发者本段里以负责人身份做过成员变更（移交与加人在同一段，第四轮 S11A-35③）
+      const keyRowsOk = keyRowsSigned(seg) && (ctx.bootstrap ? signerOwner || mem.signerActed : !!owners?.has(cert.memberId));
       for (const kr of keyRowsOk ? (seg.key_rows ?? []) : []) {
         if (kr.matter_id !== h.matter_id || !Number.isSafeInteger(kr.epoch) || kr.epoch < 1) continue;
+        // 同一纪元、同一设备已有不同的包裹：两位负责人各自轮换出了同号纪元（或被移出者用旧状态轮换），不静默忽略（第五轮复核 S11A-43②）
+        const had = db.get<{ wrapped_key: string }>(`SELECT wrapped_key FROM matter_keys WHERE matter_id = ? AND epoch = ? AND wrapped_for = ?`, [kr.matter_id, kr.epoch, kr.wrapped_for]);
+        if (had && had.wrapped_key !== kr.wrapped_key && kr.wrapped_for === keyctx.device.deviceId && !sameMatterKey(had.wrapped_key, kr.wrapped_key, keyctx.device.keys.encPrivateKeyPem)) ctx.warnings.push(`epoch_conflict:${kr.matter_id}/${kr.epoch}（本机已有该纪元的另一把密钥，签发设备 ${h.device_id}）`);
         db.run(`INSERT OR IGNORE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key, created_at) VALUES (?,?,?,?,?)`, [
           kr.matter_id,
           kr.epoch,
@@ -844,6 +907,12 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
         [h.matter_id, nowIso(), ctx.warnings.length, nowIso()],
       );
     });
+    } catch (e) {
+      result.rowsApplied = mark.rows;
+      result.conflicts.length = mark.conflicts;
+      result.originConflicts.length = mark.warnings;
+      throw e;
+    }
     result.segmentsApplied += 1;
     out("applied");
     } catch {
@@ -853,6 +922,15 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
     }
   }
   return result;
+}
+
+/** 两个面向本机的包裹是否包着同一把事项密钥（包裹是随机化的，同一把密钥两次包裹的密文不同）。 */
+function sameMatterKey(a: string, b: string, encPrivateKeyPem: string): boolean {
+  try {
+    return Buffer.from(unwrapMatterKey(a, encPrivateKeyPem)).equals(Buffer.from(unwrapMatterKey(b, encPrivateKeyPem)));
+  } catch {
+    return false;
+  }
 }
 
 /** 首同步的段不满足引导条件：整段回滚、延后。 */

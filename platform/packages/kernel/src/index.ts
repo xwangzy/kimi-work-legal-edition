@@ -490,6 +490,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     root: join(config.workspaceDir, "relay"),
     configured: () => gate.relayConfigured && !!controlPlane,
     allowed: () => governance.shareRelayAllowed(),
+    relayExplicitlyOff: () => governance.effectivePolicy().source !== "strictest_fallback" && !governance.shareRelayAllowed(),
     exitMode: () => governance.exitMode() !== null,
     credential: () => {
       if (!controlPlane) return Promise.reject(new Error("control_plane_not_configured"));

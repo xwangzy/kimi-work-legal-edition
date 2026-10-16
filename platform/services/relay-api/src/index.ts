@@ -113,6 +113,8 @@ interface TenantState {
   matters: Map<string, MatterState>;
   /** 各事项被运营重置的次数（“重置代数”，第四轮复核 S11B-36/37）：登记、取历史、取新段与“事项不存在”的回复都带上，客户端据此确定地发现重置。 */
   resets: Map<string, number>;
+  /** 被重置过的事项在重置时的读者（第五轮复核 S11A-46：“事项不存在”只对这些设备带重置代数，其他同所设备探测不到重置）。 */
+  resetReaders: Map<string, Set<string>>;
   /** `${mid}/${cid}` → 大小、上传时刻与上传设备。 */
   chunks: Map<string, ChunkInfo>;
   bytes: number;
@@ -200,6 +202,15 @@ function validEntry(x: unknown): x is SegEntry {
   if (!Array.isArray(e.readers) || e.readers.length < 1 || e.readers.some((d) => !DEVICE_ID_RE.test(String(d)))) return false;
   return true;
 }
+/** 按事项重置：记下重置时的读者，删掉事项状态，重置代数加一。 */
+function noteReset(t: TenantState, mid: string): void {
+  const prev = t.resetReaders.get(mid) ?? new Set<string>();
+  for (const d of t.matters.get(mid)?.readers ?? []) prev.add(d);
+  t.resetReaders.set(mid, prev);
+  t.matters.delete(mid);
+  t.resets.set(mid, (t.resets.get(mid) ?? 0) + 1);
+}
+
 function validReset(x: unknown): x is ResetRecord {
   const r = x as ResetRecord;
   return !!r && r.k === "reset" && MATTER_ID_RE.test(String(r.mid)) && isoOk(r.at) && typeof r.operator === "string";
@@ -251,7 +262,7 @@ export function createRelayApi(o: RelayApiOptions): Server & {
   const tenantDir = (tid: string) => join(o.dir, "t", tid);
   const journalOf = (t: TenantState) => join(t.dir, "journal.jsonl");
   const chunkPath = (t: TenantState, mid: string, cid: string) => join(t.dir, "m", mid, cid);
-  const fresh = (tid: string): TenantState => ({ tid, dir: tenantDir(tid), entries: [], gone: new Set(), matters: new Map(), resets: new Map(), chunks: new Map(), bytes: 0, pending: new Map(), purging: false });
+  const fresh = (tid: string): TenantState => ({ tid, dir: tenantDir(tid), entries: [], gone: new Set(), matters: new Map(), resets: new Map(), resetReaders: new Map(), chunks: new Map(), bytes: 0, pending: new Map(), purging: false });
 
   // ─── 读回：登记日志逐行校验（最后一行写了一半的截掉）；块文件与登记核对 ───
   const load = (tid: string): TenantState => {
@@ -273,8 +284,7 @@ export function createRelayApi(o: RelayApiOptions): Server & {
         if ((e as { k?: unknown })?.k === "reset") {
           if (!validReset(e)) throw new Error(`中继登记日志有不合格的重置记录（租户 ${tid}）`);
           for (const x of t.entries) if (x.mid === e.mid) t.gone.add(x.seq);
-          t.matters.delete(e.mid);
-          t.resets.set(e.mid, (t.resets.get(e.mid) ?? 0) + 1);
+          noteReset(t, e.mid);
           continue;
         }
         if (!validEntry(e) || e.seq !== t.entries.length + 1) throw new Error(`中继登记日志有不合格的记录（租户 ${tid}）`);
@@ -695,8 +705,8 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       const mid = hist[1]!;
       if (!MATTER_ID_RE.test(mid)) throw new HttpError(400, "matter_invalid");
       const t = tenantOf(c.tid);
-      // 中继上还没有该事项：如实回 404（非负责人的设备据此等负责人先登记；复核 S11A-04），附重置代数（被重置过的事项 ≥ 1）
-      if (!t.matters.has(mid)) return send(res, 404, { error: "matter_unknown", gen: t.resets.get(mid) ?? 0 });
+      // 中继上还没有该事项：如实回 404（非负责人的设备据此等负责人先登记；复核 S11A-04）；重置前的读者另得到重置代数（被重置过的事项 ≥ 1）
+      if (!t.matters.has(mid)) return send(res, 404, t.resetReaders.get(mid)?.has(c.dev) ? { error: "matter_unknown", gen: t.resets.get(mid) ?? 0 } : { error: "matter_unknown" });
       if (!canRead(t, mid, c.dev)) throw new HttpError(403, "not_reader");
       const since = Number(hist[2]);
       if (!Number.isSafeInteger(since) || since > t.entries.length) throw new HttpError(400, "cursor_invalid");
@@ -717,8 +727,7 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       const rec: ResetRecord = { k: "reset", mid, at: iso(), operator: who };
       appendJournal(t, Buffer.from(`${JSON.stringify(rec)}\n`, "utf8"));
       for (const x of t.entries) if (x.mid === mid) t.gone.add(x.seq);
-      t.matters.delete(mid);
-      t.resets.set(mid, (t.resets.get(mid) ?? 0) + 1);
+      noteReset(t, mid);
       for (const [k, cinfo] of [...t.chunks]) {
         if (!k.startsWith(`${mid}/`)) continue;
         t.chunks.delete(k);
