@@ -39,7 +39,7 @@ export const RELAY_CHUNK_MAX_BYTES = 4 * 1024 * 1024;
 const RELAY_MAX_JSON_RESPONSE = 2 * 1024 * 1024;
 const CREDENTIAL_RE = /^zst1\.[A-Za-z0-9_-]{20,2000}\.[A-Za-z0-9_-]{40,200}$/;
 const MATTER_ID_RE = /^mat_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const SEGMENT_ID_RE = /^seg_[A-Za-z0-9_-]{1,280}$/;
+const SEGMENT_ID_RE = /^seg_[A-Za-z0-9_-]{1,200}_[0-9a-z]{1,13}_[0-9a-f]{8}$/;
 const DEVICE_ID_RE = /^[A-Za-z0-9_-]{1,200}$/;
 const CID_RE = /^[0-9a-f]{64}$/;
 const B64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
@@ -86,7 +86,7 @@ export function shareRelayAllowed(r: unknown): string | null {
       if (!cidList(x.chunks, 1, 64) || !cidList(x.blob_chunks, 0, 16384)) return "relay_cid_invalid";
       if (typeof x.epoch !== "number" || !Number.isSafeInteger(x.epoch) || x.epoch < 1) return "relay_epoch_invalid";
       const rd = x.readers;
-      if (!Array.isArray(rd) || rd.length < 1 || rd.length > 200 || rd.some((d) => typeof d !== "string" || !DEVICE_ID_RE.test(d)) || new Set(rd).size !== rd.length) return "relay_readers_invalid";
+      if (!Array.isArray(rd) || rd.length < 1 || rd.length > 1000 || rd.some((d) => typeof d !== "string" || !DEVICE_ID_RE.test(d)) || new Set(rd).size !== rd.length) return "relay_readers_invalid";
       return null;
     }
     case "changes":

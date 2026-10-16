@@ -8,6 +8,8 @@
  *   是密钥分发通道（新成员设备先收 key_rows 才能解 body），不构成额外泄露；
  * - body：按事项密钥 AES-256-GCM 加密的 JSON 行数组（业务表可同步行）；
  * - footer：body_hash + header_hash + 设备签名（Ed25519 或 P-256，按设备公钥分派核验）。
+ * - header.key_rows_hash（第 11 批复核 S11A-02）：key_rows 的摘要写进段头，随段头一起被签名——介质（共享文件夹或中继）改动、
+ *   增删任何一行包裹，checkSealed 即判不符；没有此字段的旧段，其 key_rows 视为**未签名**（keyRowsSigned 为 false，摄取时不落库）。
  * 「已封口」= footer 完整、两个 hash 重算一致、签名验过（读取端只认已封口段，§7.2）。
  */
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
@@ -24,6 +26,8 @@ export interface SegmentHeader {
   created_at: string;
   /** 签名设备证书（公开信息；接收端验证书链 + cert.deviceId === header.device_id）。 */
   device_cert_json: string;
+  /** key_rows 的规范 JSON 摘要（随段头签名；复核 S11A-02）。 */
+  key_rows_hash?: string;
 }
 
 export interface SyncRow {
@@ -65,7 +69,7 @@ function gcmDecrypt(matterKey: Uint8Array, body: SegmentFile["body"]): Buffer {
 }
 
 export function sealSegment(input: {
-  header: Omit<SegmentHeader, "device_cert_json"> & { device_cert_json: string };
+  header: Omit<SegmentHeader, "device_cert_json" | "key_rows_hash"> & { device_cert_json: string };
   keyRows: KeyRow[];
   rows: SyncRow[];
   matterKey: Uint8Array;
@@ -73,11 +77,12 @@ export function sealSegment(input: {
   signer: SyncSignerLike;
 }): string {
   const enc = gcmEncrypt(input.matterKey, Buffer.from(JSON.stringify(input.rows), "utf8"));
-  const headerHash = sha256B64(canonicalJson(input.header));
+  const header: SegmentHeader = { ...input.header, key_rows_hash: keyRowsHash(input.keyRows) };
+  const headerHash = sha256B64(canonicalJson(header));
   const bodyHash = sha256B64(canonicalJson(enc));
   const signature = signSyncWith(input.signer, new TextEncoder().encode(sha256B64(canonicalJson({ header_hash: headerHash, body_hash: bodyHash }))));
   const seg: SegmentFile = {
-    header: input.header,
+    header,
     key_rows: input.keyRows,
     body: { v: 1, epoch: input.header.key_epoch, ...enc },
     footer: { body_hash: bodyHash, header_hash: headerHash, signature },
@@ -87,10 +92,22 @@ export function sealSegment(input: {
 
 export type SealCheck = { ok: true } | { ok: false; reason: string };
 
+/** key_rows 的摘要（规范 JSON）。 */
+export function keyRowsHash(rows: readonly KeyRow[]): string {
+  return sha256B64(canonicalJson(rows));
+}
+
+/** 这一段的 key_rows 是否被段签名覆盖（段头带摘要且与之相符；checkSealed 通过之后才有意义）。 */
+export function keyRowsSigned(seg: SegmentFile): boolean {
+  return typeof seg.header.key_rows_hash === "string" && seg.header.key_rows_hash === keyRowsHash(seg.key_rows ?? []);
+}
+
 /** 已封口校验（结构 + 双 hash + 签名；证书链与撤权校验由调用方做——它持有 devices/根公钥）。 */
 export function checkSealed(seg: SegmentFile, signerPublicKeyPem: string): SealCheck {
   if (!seg?.header || !seg?.body || !seg?.footer) return { ok: false, reason: "段结构不完整（未封口）" };
   if (sha256B64(canonicalJson(seg.header)) !== seg.footer.header_hash) return { ok: false, reason: "header_hash 不符" };
+  // 段头声明了包裹摘要：包裹被改动、增删即不符（复核 S11A-02）
+  if (seg.header.key_rows_hash !== undefined && seg.header.key_rows_hash !== keyRowsHash(seg.key_rows ?? [])) return { ok: false, reason: "key_rows_hash 不符" };
   const { v: _v, epoch: _e, ...encRest } = seg.body;
   void _v;
   void _e;

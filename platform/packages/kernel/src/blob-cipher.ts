@@ -23,7 +23,8 @@ export function createBlobCipher(deps: { db: KernelDb; deviceId: string; encPriv
 
   return {
     encrypt(matterId, plain) {
-      const epochRow = db.get<{ e: number | null }>(`SELECT MAX(epoch) AS e FROM matter_keys WHERE matter_id = ?`, [matterId]);
+      // 本机持有包裹的最高纪元（第 11 批复核 S11A-02：同步送来的、没有本机包裹的纪元不改变加密密钥）
+      const epochRow = db.get<{ e: number | null }>(`SELECT MAX(epoch) AS e FROM matter_keys WHERE matter_id = ? AND wrapped_for = ?`, [matterId, deviceId]);
       const epoch = epochRow?.e ?? 1;
       return sealBlob(matterId, resolveKey(matterId, epoch), epoch, plain);
     },

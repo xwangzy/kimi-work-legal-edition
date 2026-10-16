@@ -884,17 +884,24 @@ export interface ContentStatus {
   };
 }
 
-/** 共享中继状态（第 11 批 S11；只有计数、时刻与错误代码）。 */
+/** 共享中继状态（第 11 批 S11；只有计数、时刻与错误代码；发件与收件分别记——复核 S11B-04）。 */
 export interface RelayStatus {
-  blocked: "not_configured" | "not_allowed" | "exit_mode" | null;
+  blocked: "not_configured" | "not_allowed" | "exit_mode" | "closed" | null;
   configured: boolean;
   allowed: boolean;
-  last_ok_at?: string | null;
-  last_error?: string | null;
-  last_error_at?: string | null;
+  push_last_ok_at?: string | null;
+  push_last_error?: string | null;
+  pull_last_ok_at?: string | null;
+  pull_last_error?: string | null;
   pending_upload?: number;
-  held?: number;
+  stuck?: number;
+  stuck_matters?: number;
+  stuck_errors?: string[];
+  waiting_key?: number;
+  waiting_blob?: number;
+  deferred?: number;
   retrying?: number;
+  dropped_total?: number;
   matters?: number;
 }
 export interface RelayReport {

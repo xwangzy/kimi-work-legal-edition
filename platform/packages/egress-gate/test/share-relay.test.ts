@@ -18,7 +18,7 @@ const commit: ShareRelayRequest = {
   step: "commit",
   credential,
   matter_id: MID,
-  segment_id: "seg_dev_a_x1",
+  segment_id: "seg_dev_a_lk3abc_abcdef12",
   sha256: CID,
   size: 1000,
   chunks: [CID],

@@ -119,6 +119,22 @@ export class BlobStore {
     const raw = readFileSync(this.pathOf(storageUri));
     // file:// 挂载原件：只读引用，不加密（§5.1 原件引用语义）
     if (storageUri.startsWith("file://")) return raw;
-    return this.cipher ? this.cipher.decrypt(raw) : raw;
+    const plain = this.cipher ? this.cipher.decrypt(raw) : raw;
+    // 内容寻址：块名就是明文摘要——读出的内容与名称不符即拒绝（第 11 批复核 S11A-01：同步介质送来、被预先放入的同名块不能冒充）
+    const name = /^blob:\/\/[A-Za-z0-9_.-]{1,128}\/([0-9a-f]{64})$/.exec(storageUri)?.[1];
+    if (name && createHash("sha256").update(plain).digest("hex") !== name) throw new Error("块内容与名称不符（可能被替换），已拒绝读取");
+    return plain;
+  }
+
+  /** 一份块文件的字节解开后是否与块名相符（同步摄取复制块之前核对；解不开也算不符）。rel = “作用域/明文摘要”。 */
+  matches(rel: string, stored: Buffer): boolean {
+    const name = /^[A-Za-z0-9_.-]{1,128}\/([0-9a-f]{64})$/.exec(rel)?.[1];
+    if (!name) return false;
+    try {
+      const plain = this.cipher && isSealedBlob(stored) ? this.cipher.decrypt(stored) : stored;
+      return createHash("sha256").update(plain).digest("hex") === name;
+    } catch {
+      return false;
+    }
   }
 }

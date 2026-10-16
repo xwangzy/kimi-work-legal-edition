@@ -147,10 +147,13 @@ function GeneralTab({ version }: { version: string | null }) {
 /** “数据去向说明”（UIUX 增量评审 §3.5）：一眼回答“东西在哪”，按本所实际启用的功能生成，可打印成 PDF 给客户。 */
 function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: any[]; recovery: any; firm: string | null; syncOn: boolean }) {
   const [example, setExample] = useState<{ sent: string; replaced: number } | null>(null);
+  const [relayUsed, setRelayUsed] = useState(false);
   const [updatesOn, setUpdatesOn] = useState(false);
   const [contentOn, setContentOn] = useState(false);
   useEffect(() => {
     api.exampleRequest().then(setExample).catch(() => setExample(null));
+    // 本机经中继收发过：律所关闭开关后，已保存在中软的密文仍在（复核 S11B-10）
+    api.relayStatus().then((r) => setRelayUsed((r.matters ?? 0) > 0)).catch(() => setRelayUsed(false));
     updates.status().then((u) => setUpdatesOn(!!u?.enabled)).catch(() => setUpdatesOn(false));
     api.contentStatus().then((c) => setContentOn(!!c?.configured)).catch(() => setContentOn(false));
   }, []);
@@ -168,6 +171,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
   ];
   // 第 11 批 S11：团队共享经中软共享中继（本所策略开启且已配置）
   const relayOn = !!gate?.relay_configured && !!gate?.share_relay_allowed;
+  const relayStored = relayOn || (!!gate?.relay_configured && relayUsed);
   const stored = [
     "账号、席位与用量",
     "匿名事项编号与调用记录（不含内容）",
@@ -178,8 +182,10 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
     // 开关关闭后已上传的包仍保存至 7 天：只要配置了支持服务就列出（复核 S9B-04⑤）
     ...(gate?.support_configured ? ["你主动上传给支持的诊断包（如有；不含案件内容，含软件与电脑环境、任务状态与运行记录，逐次确认，保存 7 天）"] : []),
     // 第 10 批 S9：期限提醒交中软通知服务——中软只保存提醒时间与接收设备，内容加密
-    ...(relayOn
-      ? ["团队事项同步的加密记录与材料（中软没有事项密钥、看不到内容；能看到匿名事项编号、哪几台设备在同一事项、改动的次数、大小与时间；律所退约时删除）"]
+    ...(relayStored
+      ? [
+          `团队事项同步的加密记录与材料（中软没有事项密钥、看不到内容；能看到匿名事项编号、哪几台设备在同一事项及其加入与移出的时间、每次改动的条数、确切大小与时间；保存到律所退约${relayOn ? "" : "——本所已关闭这一项，已保存的仍在"}）`,
+        ]
       : []),
     ...(gate?.notify_configured ? ["期限提醒的提醒时间、接收设备、设提醒的人与改动次数（期限类型、事项与备注在这台电脑上加密并补齐到同样长度，中软看不到；从提醒时间可以大致推出期限在哪几天；提醒响过 7 天后删除）"] : []),
   ];
@@ -666,9 +672,11 @@ function DiagnosticsTab({ caps, gate, devices, unresolved, onReconciled, im, rec
 /** 原“中软看得到什么”逐情形明细（技术版，供管理员与客户 IT 核对；律师版见“数据去向说明”）。 */
 function TechnicalVisibility({ gate, im, recovery }: { gate: any; im: any[]; recovery: any }) {
   const [updatesOn, setUpdatesOn] = useState(false);
+  const [relayUsed, setRelayUsed] = useState(false);
   const [contentOn, setContentOn] = useState(false);
   useEffect(() => {
     updates.status().then((u) => setUpdatesOn(!!u?.enabled)).catch(() => setUpdatesOn(false));
+    api.relayStatus().then((r) => setRelayUsed((r.matters ?? 0) > 0)).catch(() => setRelayUsed(false));
     api.contentStatus().then((c) => setContentOn(!!c?.configured)).catch(() => setContentOn(false));
   }, []);
   const rows: { situation: string; enabled: boolean; sees: string; notSees: string }[] = [
@@ -692,9 +700,9 @@ function TechnicalVisibility({ gate, im, recovery }: { gate: any; im: any[]; rec
     },
     {
       situation: "团队事项经中软共享中继同步",
-      enabled: !!gate?.relay_configured && !!gate?.share_relay_allowed,
-      sees: "每个团队事项的匿名编号（随机生成）；每次改动的同步记录与引用的材料块，均为按事项密钥加密的密文，切成不超过 4 MiB 的块、按密文的摘要存放（保存到律所退约整体删除；单个事项的团队删除指令待后续版本）；每条同步记录的编号、写入设备、大小、时间与密钥纪元；能读取该事项的设备编号（来自写入设备，反映哪几台设备在同一事项）；同步记录明文部分里的写入设备证书（成员编号、角色、公钥，不含姓名）与面向各设备的密钥包裹（密文）；取新改动的请求时刻（客户端在线时长轮询，反映电脑何时开机）；只限中继的短期凭据所含的租户、成员、席位与设备编号，本机 IP；签发中继凭据记入中软侧操作记录",
-      notSees: "事项名称、当事人、材料原文与文件名、成果、任务内容（都在律师电脑上按事项密钥加密，中软没有事项密钥）；材料明文的摘要（中继只按密文摘要寻址，不能用来核对某份已知文件在不在事项里）。被攻破的中继可以扣留或丢弃改动，但换掉的内容会被成员电脑按摘要与签名拒收",
+      enabled: !!gate?.relay_configured && (!!gate?.share_relay_allowed || relayUsed),
+      sees: "每个团队事项的匿名编号（随机生成）；每次改动的同步记录与引用的材料块，均为按事项密钥加密的密文，切成不超过 4 MiB 的块、按密文的摘要存放，材料的确切字节数可见（保存到律所退约整体删除；关闭开关后已保存的仍在；单个事项的团队删除指令待后续版本）；每条同步记录的编号、写入设备与写入成员编号、条数（行数）、事件序号区间、大小、时间与密钥纪元；能读取该事项的设备编号；同步记录明文部分里的写入设备证书（成员编号、角色、公钥——成员编号由律所设定，可能含姓名拼音）与面向各设备的密钥包裹（密文，含各纪元、已移出成员的设备与是否启用恢复托管，反映团队加入、移出的时间线）；取新改动的请求时刻（客户端在线时长轮询，反映电脑何时开机）；只限中继的短期凭据所含的租户、成员、席位与设备编号，本机 IP；签发中继凭据记入中软侧操作记录。设备被吊销后，在中继刷新吊销名单之前（通常 30 秒内、至多约 10 分钟）该设备仍可能取到新的密文",
+      notSees: "事项名称、当事人、材料原文与文件名、成果、任务内容（都在律师电脑上按事项密钥加密，中软没有事项密钥）；材料明文的摘要（中继只按密文摘要寻址）。成员电脑先核验同步记录的设备签名与证书链再取材料，材料按“解开后的摘要 = 名称”核对后才放进本机：被攻破的中继换掉的内容会被拒收，但它可以扣留、延迟或丢弃改动",
     },
     {
       situation: "自动更新",
@@ -1070,7 +1078,12 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
           <label>
             <input type="checkbox" checked={relay} onChange={(e) => setRelay(e.target.checked)} /> 团队事项可经中软共享中继同步（端到端加密）
           </label>{" "}
-          {relay && <div className="muted">开启后，团队事项的改动与材料加密后经中软中继在成员电脑之间同步：中软保存密文（没有事项密钥），能看到匿名事项编号、哪几台设备在同一事项、改动的大小与时间；律所退约时由中软整体删除。</div>}
+          {relay && (
+            <div className="muted">
+              开启后，团队事项的改动与材料加密后经中软中继在成员电脑之间同步：现有团队事项（含历史材料）会由各事项负责人的电脑加密上传；中软保存密文（没有事项密钥），能看到匿名事项编号、哪几台设备在同一事项及其加入与移出的时间、改动的条数、确切大小与时间；
+              在本机删除事项不会删除中软上的副本；关闭这一项后，已保存的密文仍在中软，直到律所退约整体删除。
+            </div>
+          )}
           {(support || relay) && <div className="banner banner-gray">勾选这一项后，尚未更新到最新版本的电脑会把整份律所策略当作“看不懂的新版本”，暂时按最严设置运行（自动档、预授权检索、抓取白名单追加、敏感事项放开都暂时不可用），直至更新。建议先确认全所电脑都已更新。</div>}
           <label>
             有效期（天，≤ 30）{" "}

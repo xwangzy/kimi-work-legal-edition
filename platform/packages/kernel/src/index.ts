@@ -497,6 +497,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     },
     relay: (req) => gate.relay(req),
     onApplied: (n) => broadcastRef.current?.({ type: "sync.applied", segments: n }),
+    // 开发与测试：小值验证大段拆分（下限 4 KiB）
+    ...(env.ZR_RELAY_PART_BYTES ? { partBytes: Math.max(4096, Number(env.ZR_RELAY_PART_BYTES) || 0) } : {}),
   });
   // 发件每 5 秒（导出没有新内容时不出段）；收件长轮询（有新段即返回，约 5 秒内可见）；出错或不能收发时 30 秒后再试。
   // ZR_RELAY_SYNC_MS=off 只在显式调用 relay.sync 时收发（测试）
@@ -774,18 +776,20 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
         }
       }
       controlPlane?.stop();
+      relayClosed = true;
+      if (relayPushTimer) clearInterval(relayPushTimer);
+      // 等进行中的收发结束（至多 5 秒；复核 S11B-07），之后才关闭闸门与数据库
+      await shareRelay.close(5_000).catch(() => {});
+      if (relayPause) {
+        clearTimeout((relayPause as { timer: NodeJS.Timeout }).timer);
+        (relayPause as { done: () => void }).done();
+      }
       await kapAgentClient.close().catch(() => {});
       await gate.close().catch(() => {});
       clearInterval(dailyTimer);
       if (syncTimer) clearInterval(syncTimer);
       if (contentTimer) clearInterval(contentTimer);
       if (reminderTimer) clearInterval(reminderTimer);
-      relayClosed = true;
-      if (relayPushTimer) clearInterval(relayPushTimer);
-      if (relayPause) {
-        clearTimeout((relayPause as { timer: NodeJS.Timeout }).timer);
-        (relayPause as { done: () => void }).done();
-      }
       if (contentFirst) clearTimeout(contentFirst);
       await contentUpdater.close();
       await queue.shutdown();

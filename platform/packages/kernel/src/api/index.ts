@@ -2598,6 +2598,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           `INSERT INTO matter_members (matter_id, user_id, matter_role, added_by, removed_at, removed_lamport, author_device, row_lamport)
            VALUES (?,?,?,?,NULL,NULL,?,?)
            ON CONFLICT(matter_id, user_id) DO UPDATE SET matter_role = excluded.matter_role, removed_at = NULL, removed_lamport = NULL,
+             -- 移出后加回：加入时刻刷新，导出按水位才会再带上这一行（第 11 批复核 S11B 既有缺陷：否则对端一直停在“已移出”）
+             added_at = excluded.added_at,
              author_device = excluded.author_device, row_lamport = excluded.row_lamport`,
           [matter.matter_id, userId, matterRole, id.userId, keyctx.device.deviceId, rowLamport],
         );
@@ -2772,7 +2774,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       assertNotExitMode("同步");
       const r = await deps.shareRelay.sync();
       if (r.push.uploaded > 0 || r.pull.applied > 0) {
-        audit(db, id, "relay.sync", "tenant", id.tenantId, `发出 ${r.push.uploaded} 段 / 收到并应用 ${r.pull.applied} 段`, keyctx);
+        audit(db, id, "relay.sync", "tenant", id.tenantId, sha256Hex(JSON.stringify({ uploaded: r.push.uploaded, applied: r.pull.applied })), keyctx);
       }
       return { ...r, status: deps.shareRelay.status() };
     },
@@ -3201,9 +3203,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     for (const s of sources) lawdb2.assertAction(s, "export");
   }
 
-  /** 当前事项密钥纪元（matter_keys 最大 epoch，无记录为 1）。 */
+  /**
+   * 当前事项密钥纪元：本机持有面向自己包裹的最高纪元（无记录为 1）。不取全部包裹的最大值——同步送来的、没有本机包裹的纪元
+   * 不改变本机用哪把密钥加密（第 11 批复核 S11A-02）。
+   */
   function currentMatterEpoch(db2: KernelDb, matterId: string): number {
-    const r = db2.get<{ e: number | null }>(`SELECT MAX(epoch) AS e FROM matter_keys WHERE matter_id = ?`, [matterId]);
+    const r = db2.get<{ e: number | null }>(`SELECT MAX(epoch) AS e FROM matter_keys WHERE matter_id = ? AND wrapped_for = ?`, [matterId, keyctx.device.deviceId]);
     return r?.e ?? 1;
   }
 

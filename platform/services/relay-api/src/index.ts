@@ -3,31 +3,33 @@
  * 第 04 篇“中继：只追加段 + 内容寻址块；设备签名写入；条件写；不保存成员名单以外的身份信息；不可解密”；调研 Y2 §3.11）。
  *
  * 中继只是律所共享文件夹之外的**另一种介质**：承载端侧 `packages/sync` 的不可变同步段与密文块。它保存的只有：
- * - 块（chunk）：每块 ≤ 4 MiB 的不透明字节，按**密文**的 SHA-256 寻址（客户端把同步段与加密块切成块再上传；
- *   明文内容的摘要不出律师电脑——块名不能被用来核对“某份已知文件在不在这个事项里”）；
- * - 段登记：匿名事项编号（随机生成的事项编号）、段编号、写入设备、段摘要与大小、组成段的块、该段引用的密文块、
- *   密钥纪元与读者设备编号（端侧从段里面向各设备的密钥包裹得出）——读者名单只用来**收窄**谁能取到密文（纵深防御）；
- *   能否解密由端侧密钥体系保证，中继没有任何事项密钥。
+ * - 块（chunk）：每块 ≤ 4 MiB 的不透明字节，按**密文**的 SHA-256 寻址（明文内容的摘要不出律师电脑）；
+ * - 段登记：随机事项编号、段编号、写入设备与写入成员（取自凭据）、段摘要与大小、组成段的块、该段引用的密文块、
+ *   密钥纪元与读者设备编号——读者名单只用来**收窄**谁能取到密文（纵深防御）；能否解密、内容是否可信由端侧密钥体系与段签名保证。
  *
  * 接口（凭据只收控制面签发的**只限中继**的短期凭据，受众 relay；按请求行原样匹配，不认查询串与编码）：
- * - `POST /v1/relay/matters/<事项>/have`        {cids} → 还缺哪些块（写入前查询，已有的不再上传）；
- * - `PUT  /v1/relay/matters/<事项>/chunks/<cid>` 原始字节，服务端按实际字节重算摘要，与 cid 不符即拒绝；同一块重传幂等；
- * - `POST /v1/relay/matters/<事项>/segments`     登记一段（块必须都已上传，服务端按块重算整段摘要）；同一段编号只对应一份内容；
- * - `GET  /v1/relay/changes/<游标>[/wait]`       本设备是读者的事项的新段（按序号；`/wait` 无新段时最多等 25 秒）；
- * - `GET  /v1/relay/matters/<事项>/segments/<游标>` 某事项的全部段（新加入的成员取历史）；
- * - `GET  /v1/relay/matters/<事项>/chunks/<cid>` 取块（只给该事项的读者，只给已登记段引用的块）；
- * - 运营 `DELETE /v1/relay/ops/tenants/<租户>`（运营凭据 + 操作人，先记访问审计）：律所退约时整体删除。
+ * - `POST /v1/relay/matters/<事项>/have`        {cids} → 还缺哪些块；
+ * - `PUT  /v1/relay/matters/<事项>/chunks/<cid>` 原始字节，服务端按实际字节重算摘要；
+ * - `POST /v1/relay/matters/<事项>/segments`     登记一段；
+ * - `GET  /v1/relay/changes/<游标>[/wait]`       本设备是读者的事项的新段（`/wait` 无新段时至多等 25 秒）；
+ * - `GET  /v1/relay/matters/<事项>/segments/<游标>` 某事项的全部段（新成员、加回的成员取历史；中继上没有该事项回 404 matter_unknown）；
+ * - `GET  /v1/relay/matters/<事项>/chunks/<cid>` 取块（只给读者、只给已登记段引用的块）；
+ * - 运营 `DELETE /v1/relay/ops/tenants/<租户>`（律所退约整体删除）与 `DELETE /v1/relay/ops/tenants/<租户>/matters/<事项>`
+ *   （中继上的事项状态异常时按事项重置，例如被抢先登记；复核 S11A-04）。都须运营凭据与操作人，先记访问审计。
  *
- * 写入规则：段编号必须以 `seg_<写入设备>_` 开头（只能以自己的设备写段）；事项已存在时写入设备必须是当前读者；
- * 纪元只能持平或加一（持平时读者取并集、加一时整体替换——成员移出须轮换密钥，被移出的设备从此取不到）。
+ * 写入规则（复核 S11A-03/04、S11B-01/02）：
+ * - 段编号必须是 `seg_<写入设备>_<时间>_<8 位十六进制>` 的完整格式（只能以自己的设备写段，前缀相同的设备不会混淆）；
+ * - 事项的**控制成员** = 第一个登记该事项的成员（取自凭据，不是自报）。只有控制成员能提升纪元（可一次升多级：负责人离线期间
+ *   连续轮换也能恢复），提升即整体替换读者——成员移出须轮换密钥，被移出的设备从此取不到任何段与块；
+ *   其他读者登记与当前纪元持平的段（读者取并集），声明更高纪元回 409 `epoch_not_established`（可恢复，等控制成员的段先到）；
+ * - 事项已存在时写入设备必须是当前读者。
  * 律所策略（share_relay）不允许时一律拒绝（按订阅二次核对；订阅过旧按不允许）。
  *
- * v0 偏离（如实，D-90/D-91）：存储为本地目录（块文件 + 每租户一份只追加的登记日志，fsync 后才回复；生产为对象存储
- * SSE-KMS + PostgreSQL + 信令 WebSocket）；保留期不按律所策略自动删除（律所退约时运营整体删除；单个事项的团队删除指令在 G1）；
- * 没有上传但 24 小时内没被登记段引用的块按残留删除。
+ * v0 偏离（如实，D-90/D-91）：存储为本地目录（块文件 + 每租户一份只追加的登记日志，fsync 后才回复；写入失败截回原长度；
+ * 某个租户的日志损坏只让该租户不可用）；保留期不按律所策略自动删除；未登记的块 24 小时后按残留删除。
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { appendFileSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, truncateSync, writeSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, fstatSync, fsyncSync, ftruncateSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, truncateSync, writeFileSync, writeSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import type { KeyObject } from "node:crypto";
@@ -37,7 +39,10 @@ import { verifySeatToken, SeatTokenError, type SeatClaims } from "@zr-legal/seat
 /** 事项编号：`mat_` + UUID（随机生成，不含事项名或时间）。 */
 export const MATTER_ID_RE = /^mat_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const DEVICE_ID_RE = /^[A-Za-z0-9_-]{1,200}$/;
-export const SEGMENT_ID_RE = /^seg_[A-Za-z0-9_-]{1,280}$/;
+export const MEMBER_ID_RE = /^[A-Za-z0-9_-]{1,200}$/;
+/** 段编号的完整格式：seg_<设备>_<时间（base36）>_<8 位十六进制>。 */
+export const SEGMENT_ID_RE = /^seg_[A-Za-z0-9_-]{1,200}_[0-9a-z]{1,13}_[0-9a-f]{8}$/;
+const SEGMENT_TAIL_RE = /^[0-9a-z]{1,13}_[0-9a-f]{8}$/;
 export const CID_RE = /^[0-9a-f]{64}$/;
 const TENANT_RE = /^[A-Za-z0-9_-]{1,80}$/;
 /** 单块上限。 */
@@ -46,14 +51,19 @@ export const RELAY_CHUNK_MAX = 4 * 1024 * 1024;
 export const RELAY_MAX_SEGMENT_CHUNKS = 64;
 /** 一段引用的密文块至多 16384 个块（约 64 GiB 材料；大案首次同步也够用）。 */
 export const RELAY_MAX_BLOB_CHUNKS = 16384;
-export const RELAY_MAX_READERS = 200;
+export const RELAY_MAX_READERS = 1000;
 export const RELAY_FEED_BATCH = 200;
 export const RELAY_HAVE_MAX = 512;
 export const RELAY_WAIT_MS = 25_000;
+/** 每台设备同时挂起的长轮询、每个租户的总数。 */
+export const RELAY_WAITERS_PER_DEVICE = 4;
+export const RELAY_WAITERS_PER_TENANT = 2000;
 /** 已上传、未被任何登记段引用的块：24 小时后按残留删除。 */
 export const RELAY_UNCOMMITTED_TTL_MS = 24 * 3600_000;
 /** 每租户存储上限（缺省 50 GiB；试点按律所规模另配）。 */
 export const RELAY_DEFAULT_TENANT_BYTES = 50 * 1024 ** 3;
+/** 每台设备“已上传、尚未登记”的字节上限（复核 S11A-07：一台设备不能用未登记的块占满全所存储）。 */
+export const RELAY_DEFAULT_DEVICE_PENDING_BYTES = 2 * 1024 ** 3;
 const MAX_JSON = 2 * 1024 * 1024;
 
 export interface SegEntry {
@@ -61,6 +71,8 @@ export interface SegEntry {
   mid: string;
   sid: string;
   dev: string;
+  /** 写入成员（取自凭据）。 */
+  uid: string;
   sha: string;
   size: number;
   chunks: string[];
@@ -69,7 +81,16 @@ export interface SegEntry {
   readers: string[];
   at: string;
 }
+/** 运营按事项重置的记录（登记日志里与段登记交替出现，不占序号）。 */
+interface ResetRecord {
+  k: "reset";
+  mid: string;
+  at: string;
+  operator: string;
+}
 interface MatterState {
+  /** 控制成员：第一个登记该事项的成员；只有它能提升纪元。 */
+  controller: string;
   epoch: number;
   readers: Set<string>;
   segs: Map<string, SegEntry>;
@@ -80,22 +101,31 @@ interface ChunkInfo {
   size: number;
   /** 上传时刻（毫秒；未登记的按它清残留）。 */
   at: number;
+  /** 上传设备（只在本进程内记，用于未登记字节的按设备上限；重启后读回的块不计入任何设备）。 */
+  dev: string | null;
 }
 interface TenantState {
   tid: string;
   dir: string;
   entries: SegEntry[];
+  /** 已被运营重置的段（按序号）：不再出现在取新段与历史里。 */
+  gone: Set<number>;
   matters: Map<string, MatterState>;
-  /** `${mid}/${cid}` → 大小与上传时刻。 */
+  /** `${mid}/${cid}` → 大小、上传时刻与上传设备。 */
   chunks: Map<string, ChunkInfo>;
   bytes: number;
+  /** 每台设备未登记的字节（含正在上传的预留）。 */
+  pending: Map<string, number>;
+  /** 正在整体删除：在途请求读完请求体后发现即放弃（复核 S11A-09）。 */
+  purging: boolean;
 }
 
 export interface RelayAccessRecord {
   at: string;
-  action: "tenant_purge";
+  action: "tenant_purge" | "matter_reset";
   operator: string;
   tid: string;
+  mid?: string;
   removed_bytes: number;
   result: string;
 }
@@ -108,11 +138,14 @@ export interface RelayApiOptions {
   /** 测试与开发形态：不经订阅、直接认定律所允许（生产禁用）。 */
   allowAllTenants?: boolean;
   tenantMaxBytes?: number;
+  devicePendingBytes?: number;
   opsSecret?: string;
   accessLog?: (r: RelayAccessRecord) => void;
   production?: boolean;
   now?: () => number;
   waitMs?: number;
+  /** 测试用：登记日志写入时注入失败（复核 S11A-08）。 */
+  journalWrite?: (fd: number, buf: Buffer) => void;
 }
 
 class HttpError extends Error {
@@ -134,6 +167,12 @@ function send(res: ServerResponse, status: number, body: unknown): void {
 const isoOk = (v: unknown): v is string => typeof v === "string" && !Number.isNaN(Date.parse(v));
 const uniq = (xs: string[]) => new Set(xs).size === xs.length;
 
+/** 段编号属于这台设备：前缀精确、其后正好是“时间_8 位十六进制”（复核 S11A-14、S11B-02）。 */
+export function segmentOwnedBy(sid: string, dev: string): boolean {
+  const prefix = `seg_${dev}_`;
+  return SEGMENT_ID_RE.test(sid) && sid.startsWith(prefix) && SEGMENT_TAIL_RE.test(sid.slice(prefix.length));
+}
+
 function fsyncPath(p: string): void {
   if (process.platform === "win32") return;
   try {
@@ -148,28 +187,41 @@ function fsyncPath(p: string): void {
   }
 }
 
-/** 读回的登记逐条校验（坏记录拒绝启动）。 */
+/** 读回的登记逐条校验（坏记录让该租户不可用）。 */
 function validEntry(x: unknown): x is SegEntry {
   const e = x as SegEntry;
   if (!e || typeof e !== "object" || !Number.isSafeInteger(e.seq) || e.seq < 1) return false;
-  if (!MATTER_ID_RE.test(String(e.mid)) || !SEGMENT_ID_RE.test(String(e.sid)) || !DEVICE_ID_RE.test(String(e.dev))) return false;
+  if (!MATTER_ID_RE.test(String(e.mid)) || !segmentOwnedBy(String(e.sid), String(e.dev)) || !DEVICE_ID_RE.test(String(e.dev)) || !MEMBER_ID_RE.test(String(e.uid))) return false;
   if (!CID_RE.test(String(e.sha)) || !Number.isSafeInteger(e.size) || e.size < 1 || !Number.isSafeInteger(e.epoch) || e.epoch < 1 || !isoOk(e.at)) return false;
   if (!Array.isArray(e.chunks) || e.chunks.length < 1 || e.chunks.some((c) => !CID_RE.test(String(c)))) return false;
   if (!Array.isArray(e.blobs) || e.blobs.some((c) => !CID_RE.test(String(c)))) return false;
   if (!Array.isArray(e.readers) || e.readers.length < 1 || e.readers.some((d) => !DEVICE_ID_RE.test(String(d)))) return false;
   return true;
 }
-
-/** 按纪元规则合入读者（持平取并集、加一整体替换、更旧不动）。 */
-function applyReaders(m: MatterState, e: SegEntry): void {
-  if (e.epoch === m.epoch) for (const d of e.readers) m.readers.add(d);
-  else if (e.epoch === m.epoch + 1) {
-    m.epoch = e.epoch;
-    m.readers = new Set(e.readers);
-  }
+function validReset(x: unknown): x is ResetRecord {
+  const r = x as ResetRecord;
+  return !!r && r.k === "reset" && MATTER_ID_RE.test(String(r.mid)) && isoOk(r.at) && typeof r.operator === "string";
 }
 
-export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; tenant(tid: string): { entries: SegEntry[]; bytes: number; chunkFiles: string[] } | null } {
+/** 按纪元规则合入一段（新事项：写入成员成为控制成员；更高纪元整体替换读者；持平取并集；更旧不动）。 */
+function applyEntry(t: TenantState, e: SegEntry): void {
+  let m = t.matters.get(e.mid);
+  if (!m) {
+    m = { controller: e.uid, epoch: e.epoch, readers: new Set(e.readers), segs: new Map(), committed: new Set() };
+    t.matters.set(e.mid, m);
+  } else if (e.epoch > m.epoch) {
+    m.epoch = e.epoch;
+    m.readers = new Set(e.readers);
+  } else if (e.epoch === m.epoch) for (const d of e.readers) m.readers.add(d);
+  m.segs.set(e.sid, e);
+  for (const c of [...e.chunks, ...e.blobs]) m.committed.add(c);
+}
+
+export function createRelayApi(o: RelayApiOptions): Server & {
+  sweep(): number;
+  tenant(tid: string): { entries: SegEntry[]; bytes: number; chunkFiles: string[]; controller(mid: string): string | null } | null;
+  readonly instance: string;
+} {
   const now = o.now ?? Date.now;
   const iso = (t = now()) => new Date(t).toISOString();
   const production = o.production ?? process.env.NODE_ENV === "production";
@@ -177,28 +229,35 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
   if (production && o.allowAllTenants) throw new Error("生产形态不得跳过律所策略核对");
   if (o.opsSecret !== undefined && o.opsSecret.length < 16) throw new Error("opsSecret 至少 16 个字符");
   const tenantMax = o.tenantMaxBytes ?? RELAY_DEFAULT_TENANT_BYTES;
+  const devicePendingMax = o.devicePendingBytes ?? RELAY_DEFAULT_DEVICE_PENDING_BYTES;
   const waitMs = o.waitMs ?? RELAY_WAIT_MS;
   mkdirSync(join(o.dir, "t"), { recursive: true, mode: 0o700 });
+  // 实例编号（复核 S11B-13）：中继重建或迁移后编号变化，客户端据此重置游标与历史
+  const instPath = join(o.dir, "instance");
+  if (!existsSync(instPath)) writeFileSync(instPath, randomBytes(12).toString("hex"), { mode: 0o600 });
+  const instance = readFileSync(instPath, "utf8").trim();
+  if (!/^[0-9a-f]{24}$/.test(instance)) throw new Error("中继实例编号文件格式不符");
   const access = o.accessLog ?? ((r: RelayAccessRecord) => appendFileSync(join(o.dir, "access.jsonl"), `${JSON.stringify(r)}\n`, { mode: 0o600 }));
   const tenants = new Map<string, TenantState>();
-  const waiters = new Map<string, Set<() => void>>();
+  /** 某租户的登记日志或目录读回失败：只让这个租户不可用（复核 S11A-08），其余律所照常。 */
+  const badTenants = new Set<string>();
+  const waiters = new Map<string, Set<{ dev: string; done: () => void }>>();
 
   const tenantDir = (tid: string) => join(o.dir, "t", tid);
   const journalOf = (t: TenantState) => join(t.dir, "journal.jsonl");
   const chunkPath = (t: TenantState, mid: string, cid: string) => join(t.dir, "m", mid, cid);
+  const fresh = (tid: string): TenantState => ({ tid, dir: tenantDir(tid), entries: [], gone: new Set(), matters: new Map(), chunks: new Map(), bytes: 0, pending: new Map(), purging: false });
 
-  // ─── 读回：登记日志逐行校验（最后一行写了一半的截掉；中间有坏行拒绝启动）；块文件与登记核对 ───
+  // ─── 读回：登记日志逐行校验（最后一行写了一半的截掉）；块文件与登记核对 ───
   const load = (tid: string): TenantState => {
-    const t: TenantState = { tid, dir: tenantDir(tid), entries: [], matters: new Map(), chunks: new Map(), bytes: 0 };
+    const t = fresh(tid);
     const jp = join(t.dir, "journal.jsonl");
     if (existsSync(jp)) {
       const raw = readFileSync(jp, "utf8");
       const lines = raw.split("\n");
       const tail = lines.pop() ?? "";
-      if (tail !== "") {
-        // 最后一行没有换行：写入中断（没有回复过成功），截掉
-        truncateSync(jp, Buffer.byteLength(raw) - Buffer.byteLength(tail));
-      }
+      // 最后一行没有换行：写入中断（没有回复过成功），截掉
+      if (tail !== "") truncateSync(jp, Buffer.byteLength(raw) - Buffer.byteLength(tail));
       for (const line of lines) {
         let e: unknown;
         try {
@@ -206,15 +265,15 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
         } catch {
           throw new Error(`中继登记日志有坏行（租户 ${tid}）`);
         }
+        if ((e as { k?: unknown })?.k === "reset") {
+          if (!validReset(e)) throw new Error(`中继登记日志有不合格的重置记录（租户 ${tid}）`);
+          for (const x of t.entries) if (x.mid === e.mid) t.gone.add(x.seq);
+          t.matters.delete(e.mid);
+          continue;
+        }
         if (!validEntry(e) || e.seq !== t.entries.length + 1) throw new Error(`中继登记日志有不合格的记录（租户 ${tid}）`);
         t.entries.push(e);
-        let m = t.matters.get(e.mid);
-        if (!m) {
-          m = { epoch: e.epoch, readers: new Set(e.readers), segs: new Map(), committed: new Set() };
-          t.matters.set(e.mid, m);
-        } else applyReaders(m, e);
-        m.segs.set(e.sid, e);
-        for (const c of [...e.chunks, ...e.blobs]) m.committed.add(c);
+        applyEntry(t, e);
       }
     }
     const mdir = join(t.dir, "m");
@@ -230,7 +289,7 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
           }
           if (!CID_RE.test(f)) throw new Error(`中继目录里有不认识的文件（租户 ${tid}）`);
           const st = statSync(p);
-          t.chunks.set(`${mid}/${f}`, { size: st.size, at: st.mtimeMs });
+          t.chunks.set(`${mid}/${f}`, { size: st.size, at: st.mtimeMs, dev: null });
           t.bytes += st.size;
         }
       }
@@ -240,15 +299,32 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
   };
   for (const tid of readdirSync(join(o.dir, "t"))) {
     if (!TENANT_RE.test(tid)) throw new Error("中继目录里有不认识的租户目录");
-    tenants.set(tid, load(tid));
+    try {
+      tenants.set(tid, load(tid));
+    } catch (e) {
+      badTenants.add(tid);
+      console.error(`[relay] 租户 ${tid} 读回失败，暂不可用：${(e as Error).message}`);
+    }
   }
   const tenantOf = (tid: string): TenantState => {
+    if (badTenants.has(tid)) throw new HttpError(503, "tenant_unavailable");
     let t = tenants.get(tid);
     if (!t) {
-      t = { tid, dir: tenantDir(tid), entries: [], matters: new Map(), chunks: new Map(), bytes: 0 };
+      t = fresh(tid);
       tenants.set(tid, t);
     }
     return t;
+  };
+  /** 在途请求读完请求体后复查：租户已被整体删除（或替换）即放弃。 */
+  const stillLive = (t: TenantState) => {
+    if (t.purging || tenants.get(t.tid) !== t) throw new HttpError(410, "tenant_purged");
+  };
+  const committedIn = (t: TenantState, mid: string, cid: string) => !!t.matters.get(mid)?.committed.has(cid);
+  const releasePending = (t: TenantState, dev: string | null, n: number) => {
+    if (!dev) return;
+    const v = (t.pending.get(dev) ?? 0) - n;
+    if (v > 0) t.pending.set(dev, v);
+    else t.pending.delete(dev);
   };
 
   /** 删除超过 24 小时仍未被登记段引用的块；返回删除的块数。 */
@@ -258,11 +334,12 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
     for (const t of tenants.values()) {
       for (const [k, c] of t.chunks) {
         const [mid, cid] = k.split("/") as [string, string];
-        if (t.matters.get(mid)?.committed.has(cid)) continue;
+        if (committedIn(t, mid, cid)) continue;
         if (t0 - c.at < RELAY_UNCOMMITTED_TTL_MS) continue;
         rmSync(chunkPath(t, mid, cid), { force: true });
         t.chunks.delete(k);
         t.bytes -= c.size;
+        releasePending(t, c.dev, c.size);
         n++;
       }
     }
@@ -289,7 +366,10 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
     } catch (e) {
       throw new HttpError(401, `credential_${e instanceof SeatTokenError ? e.reason : "invalid"}`);
     }
-    if (!TENANT_RE.test(c.tid) || !DEVICE_ID_RE.test(c.dev)) throw new HttpError(401, "credential_invalid");
+    // 声明逐项按类型核对（复核 S11A-17）
+    const x = c as unknown as Record<string, unknown>;
+    if (typeof x.tid !== "string" || typeof x.dev !== "string" || typeof x.uid !== "string" || typeof x.sid !== "string") throw new HttpError(401, "credential_invalid");
+    if (!TENANT_RE.test(c.tid) || !DEVICE_ID_RE.test(c.dev) || !MEMBER_ID_RE.test(c.uid)) throw new HttpError(401, "credential_invalid");
     if (revoked(c.tid, c.dev) || o.feed?.revokedSeat(c.sid)) throw new HttpError(401, "credential_revoked");
     return c;
   };
@@ -334,17 +414,44 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
     }
   };
 
+  /** 追加一行登记日志并 fsync；写入失败把文件截回写入前的长度（复核 S11A-08：不留半行，下一行不会接在坏行后面）。 */
+  const appendJournal = (t: TenantState, line: Buffer): void => {
+    mkdirSync(t.dir, { recursive: true, mode: 0o700 });
+    const fd = openSync(journalOf(t), "a", 0o600);
+    let before = -1;
+    try {
+      before = fstatSync(fd).size;
+      if (o.journalWrite) o.journalWrite(fd, line);
+      else {
+        let off = 0;
+        while (off < line.length) off += writeSync(fd, line, off);
+      }
+      fsyncSync(fd);
+    } catch (e) {
+      try {
+        if (before >= 0) ftruncateSync(fd, before);
+        fsyncSync(fd);
+      } catch {
+        // 截不回去：该租户此后不可用（重启时按读回规则处理），避免后续登记接在坏行后面
+        badTenants.add(t.tid);
+      }
+      throw e;
+    } finally {
+      closeSync(fd);
+    }
+  };
+
   const canRead = (t: TenantState, mid: string, dev: string) => !!t.matters.get(mid)?.readers.has(dev);
   const canWrite = (t: TenantState, mid: string, dev: string) => !t.matters.has(mid) || canRead(t, mid, dev);
 
-  const wake = (tid: string) => {
+  /** 只唤醒该事项的读者（复核 S11B-11：不再按租户广播）。 */
+  const wake = (tid: string, readers: Set<string> | null) => {
     const ws = waiters.get(tid);
     if (!ws) return;
-    waiters.delete(tid);
-    for (const w of ws) w();
+    for (const w of [...ws]) if (!readers || readers.has(w.dev)) w.done();
   };
 
-  const entryOut = (e: SegEntry) => ({ seq: e.seq, matter_id: e.mid, segment_id: e.sid, sha256: e.sha, size: e.size, chunks: e.chunks });
+  const entryOut = (e: SegEntry) => ({ seq: e.seq, matter_id: e.mid, segment_id: e.sid, dev: e.dev, sha256: e.sha, size: e.size, chunks: e.chunks });
 
   /** 从 since 之后扫描：只给本设备是读者的；返回可见条目与游标（扫描到哪里）。 */
   const scan = (t: TenantState, since: number, dev: string, mid: string | null) => {
@@ -353,6 +460,7 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
     for (let i = since; i < t.entries.length; i++) {
       const e = t.entries[i]!;
       next = e.seq;
+      if (t.gone.has(e.seq)) continue;
       if (mid !== null && e.mid !== mid) continue;
       if (!canRead(t, e.mid, dev)) continue;
       out.push(e);
@@ -396,42 +504,55 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
         for await (const _ of req) void _;
         return send(res, 200, { ok: true, existed: true });
       }
+      // 配额检查与预留在同一同步区段（复核 S11A-07：并发上传不会超额）；未登记字节按设备设上限
       if (t.bytes + declared > tenantMax) throw new HttpError(507, "tenant_storage_full");
-      const hash = createHash("sha256");
-      const parts: Buffer[] = [];
-      let size = 0;
-      for await (const part of req) {
-        size += (part as Buffer).length;
-        if (size > RELAY_CHUNK_MAX) throw new HttpError(413, "chunk_too_large");
-        hash.update(part as Buffer);
-        parts.push(part as Buffer);
-      }
-      // 服务端按实际字节重算摘要：块名与内容不符即拒绝（内容寻址、不可变）
-      if (size !== declared || hash.digest("hex") !== cid) throw new HttpError(400, "chunk_digest_mismatch");
-      // 读请求体期间同一块已由另一请求写好：按已有处理（不重复计入占用）
-      if (t.chunks.has(k)) return send(res, 200, { ok: true, existed: true });
-      const dir = join(t.dir, "m", mid);
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const tmp = join(dir, `.tmp-${randomBytes(6).toString("hex")}`);
+      if ((t.pending.get(c.dev) ?? 0) + declared > devicePendingMax) throw new HttpError(429, "device_pending_full");
+      t.bytes += declared;
+      t.pending.set(c.dev, (t.pending.get(c.dev) ?? 0) + declared);
+      let kept = false;
       try {
-        const fd = openSync(tmp, "w", 0o600);
-        try {
-          const body = Buffer.concat(parts);
-          let off = 0;
-          while (off < body.length) off += writeSync(fd, body, off);
-          fsyncSync(fd);
-        } finally {
-          closeSync(fd);
+        const hash = createHash("sha256");
+        const parts: Buffer[] = [];
+        let size = 0;
+        for await (const part of req) {
+          size += (part as Buffer).length;
+          if (size > declared) throw new HttpError(413, "chunk_too_large");
+          hash.update(part as Buffer);
+          parts.push(part as Buffer);
         }
-        renameSync(tmp, join(dir, cid));
-      } catch (e) {
-        rmSync(tmp, { force: true });
-        throw e;
+        // 服务端按实际字节重算摘要：块名与内容不符即拒绝（内容寻址、不可变）
+        if (size !== declared || hash.digest("hex") !== cid) throw new HttpError(400, "chunk_digest_mismatch");
+        stillLive(t);
+        // 读请求体期间同一块已由另一请求写好：按已有处理
+        if (t.chunks.has(k)) return send(res, 200, { ok: true, existed: true });
+        const dir = join(t.dir, "m", mid);
+        mkdirSync(dir, { recursive: true, mode: 0o700 });
+        const tmp = join(dir, `.tmp-${randomBytes(6).toString("hex")}`);
+        try {
+          const fd = openSync(tmp, "w", 0o600);
+          try {
+            const body = Buffer.concat(parts);
+            let off = 0;
+            while (off < body.length) off += writeSync(fd, body, off);
+            fsyncSync(fd);
+          } finally {
+            closeSync(fd);
+          }
+          renameSync(tmp, join(dir, cid));
+        } catch (e) {
+          rmSync(tmp, { force: true });
+          throw e;
+        }
+        fsyncPath(dir);
+        t.chunks.set(k, { size, at: now(), dev: c.dev });
+        kept = true;
+        return send(res, 200, { ok: true, existed: false });
+      } finally {
+        if (!kept) {
+          t.bytes -= declared;
+          releasePending(t, c.dev, declared);
+        }
       }
-      fsyncPath(dir);
-      t.chunks.set(k, { size, at: now() });
-      t.bytes += size;
-      return send(res, 200, { ok: true, existed: false });
     }
     if (chunk && method === "GET") {
       const c = await device(req);
@@ -440,7 +561,7 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
       const t = tenantOf(c.tid);
       // 只给读者、只给已登记段引用的块（不能借中继互传未登记的内容）
       if (!canRead(t, mid, c.dev)) throw new HttpError(403, "not_reader");
-      if (!t.matters.get(mid)!.committed.has(cid)) throw new HttpError(404, "chunk_not_found");
+      if (!committedIn(t, mid, cid)) throw new HttpError(404, "chunk_not_found");
       const body = readFileSync(chunkPath(t, mid, cid));
       res.writeHead(200, { "content-type": "application/octet-stream", "cache-control": "no-store", "content-length": body.length });
       res.end(body);
@@ -454,10 +575,10 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
       if (!MATTER_ID_RE.test(mid)) throw new HttpError(400, "matter_invalid");
       const t = tenantOf(c.tid);
       const b = await readJson(req);
+      stillLive(t);
       if (Object.keys(b).sort().join(",") !== "blob_chunks,chunks,epoch,readers,segment_id,sha256,size") throw new HttpError(400, "body_invalid");
       const sid = b.segment_id;
-      // 只能以自己的设备写段（段编号以写入设备编号开头；端侧另按段内设备签名与证书链核验）
-      if (typeof sid !== "string" || !SEGMENT_ID_RE.test(sid) || !sid.startsWith(`seg_${c.dev}_`)) throw new HttpError(400, "segment_id_invalid");
+      if (typeof sid !== "string" || !segmentOwnedBy(sid, c.dev)) throw new HttpError(400, "segment_id_invalid");
       if (typeof b.sha256 !== "string" || !CID_RE.test(b.sha256)) throw new HttpError(400, "sha256_invalid");
       if (typeof b.size !== "number" || !Number.isSafeInteger(b.size) || b.size < 1) throw new HttpError(400, "size_invalid");
       if (!Array.isArray(b.chunks) || b.chunks.length < 1 || b.chunks.length > RELAY_MAX_SEGMENT_CHUNKS || b.chunks.some((x) => typeof x !== "string" || !CID_RE.test(x))) throw new HttpError(400, "chunks_invalid");
@@ -476,7 +597,8 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
         throw new HttpError(409, "segment_conflict");
       }
       if (m && !m.readers.has(c.dev)) throw new HttpError(403, "not_reader");
-      if (m && b.epoch > m.epoch + 1) throw new HttpError(409, "epoch_jump");
+      // 只有控制成员能提升纪元（可一次升多级）；其他读者声明更高纪元：等控制成员的段先到（可恢复）
+      if (m && b.epoch > m.epoch && c.uid !== m.controller) throw new HttpError(409, "epoch_not_established");
       for (const cid of [...(b.chunks as string[]), ...(b.blob_chunks as string[])]) if (!t.chunks.has(`${mid}/${cid}`)) throw new HttpError(409, "chunk_missing");
       // 整段摘要按块重算（不收与块对不上的登记）
       const h = createHash("sha256");
@@ -492,6 +614,7 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
         mid,
         sid,
         dev: c.dev,
+        uid: c.uid,
         sha: b.sha256,
         size,
         chunks: [...(b.chunks as string[])],
@@ -501,24 +624,19 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
         at: iso(),
       };
       // 先落盘（追加 + fsync），后改内存、后回复
-      mkdirSync(t.dir, { recursive: true, mode: 0o700 });
-      const fd = openSync(journalOf(t), "a", 0o600);
-      try {
-        const line = Buffer.from(`${JSON.stringify(e)}\n`, "utf8");
-        let off = 0;
-        while (off < line.length) off += writeSync(fd, line, off);
-        fsyncSync(fd);
-      } finally {
-        closeSync(fd);
-      }
+      appendJournal(t, Buffer.from(`${JSON.stringify(e)}\n`, "utf8"));
       t.entries.push(e);
-      if (!m) t.matters.set(mid, { epoch: e.epoch, readers: new Set(e.readers), segs: new Map([[sid, e]]), committed: new Set([...e.chunks, ...e.blobs]) });
-      else {
-        applyReaders(m, e);
-        m.segs.set(sid, e);
-        for (const cid of [...e.chunks, ...e.blobs]) m.committed.add(cid);
+      applyEntry(t, e);
+      // 登记后这些块不再计入设备的未登记字节
+      for (const cid of [...e.chunks, ...e.blobs]) {
+        const info = t.chunks.get(`${mid}/${cid}`);
+        if (info?.dev) {
+          releasePending(t, info.dev, info.size);
+          info.dev = null;
+        }
       }
-      wake(c.tid);
+      // 唤醒该事项的其他读者（写入设备自己不用醒）
+      wake(c.tid, new Set([...t.matters.get(mid)!.readers].filter((d) => d !== c.dev)));
       return send(res, 200, { ok: true, seq: e.seq, existed: false });
     }
 
@@ -529,26 +647,32 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
       const since = Number(feed[1]);
       if (!Number.isSafeInteger(since) || since > t.entries.length) throw new HttpError(400, "cursor_invalid");
       let r = scan(t, since, c.dev, null);
-      if (r.out.length === 0 && !r.more && feed[2]) {
-        // 长轮询：本设备暂时没有新段，等到有新登记或 25 秒
+      const ws = waiters.get(c.tid) ?? new Set();
+      const mine = [...ws].filter((w) => w.dev === c.dev).length;
+      // 长轮询：本设备暂时没有新段，等到该设备是读者的事项有新登记或 25 秒；挂起数有上限（复核 S11A-15），超出即立即返回
+      if (r.out.length === 0 && !r.more && feed[2] && mine < RELAY_WAITERS_PER_DEVICE && ws.size < RELAY_WAITERS_PER_TENANT) {
+        waiters.set(c.tid, ws);
         await new Promise<void>((resolve) => {
-          let set = waiters.get(c.tid);
-          if (!set) waiters.set(c.tid, (set = new Set()));
           // 客户端断开看响应的 close（请求的 close 在请求体读完时就会触发）
-          const done = () => {
-            clearTimeout(timer);
-            set!.delete(done);
-            res.off("close", done);
-            resolve();
+          const w = {
+            dev: c.dev,
+            done: () => {
+              clearTimeout(timer);
+              ws.delete(w);
+              res.off("close", w.done);
+              resolve();
+            },
           };
-          const timer = setTimeout(done, waitMs);
-          set.add(done);
-          res.once("close", done);
+          const timer = setTimeout(w.done, waitMs);
+          ws.add(w);
+          res.once("close", w.done);
         });
         if (res.destroyed) return;
+        if (tenants.get(c.tid) !== t) throw new HttpError(410, "tenant_purged");
         r = scan(t, r.next, c.dev, null);
       }
-      return send(res, 200, { items: r.out.map(entryOut), next: r.next, more: r.more, head: t.entries.length, server_time: iso() });
+      // 不回全所登记总数（复核 S11A-12）
+      return send(res, 200, { items: r.out.map(entryOut), next: r.next, more: r.more, instance, server_time: iso() });
     }
 
     const hist = /^\/v1\/relay\/matters\/([^/]+)\/segments\/(\d{1,15})$/.exec(raw);
@@ -557,14 +681,38 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
       const mid = hist[1]!;
       if (!MATTER_ID_RE.test(mid)) throw new HttpError(400, "matter_invalid");
       const t = tenantOf(c.tid);
+      // 中继上还没有该事项：如实回 404（非负责人的设备据此等负责人先登记；复核 S11A-04）
+      if (!t.matters.has(mid)) throw new HttpError(404, "matter_unknown");
       if (!canRead(t, mid, c.dev)) throw new HttpError(403, "not_reader");
       const since = Number(hist[2]);
       if (!Number.isSafeInteger(since) || since > t.entries.length) throw new HttpError(400, "cursor_invalid");
       const r = scan(t, since, c.dev, mid);
-      return send(res, 200, { items: r.out.map(entryOut), next: r.next, more: r.more, head: t.entries.length });
+      return send(res, 200, { items: r.out.map(entryOut), next: r.next, more: r.more, instance });
     }
 
-    // ─── 运营：律所退约时按租户整体删除（先记访问审计，记不进去即不删） ───
+    // ─── 运营：律所退约时按租户整体删除；中继上的事项状态异常时按事项重置（先记访问审计，记不进去即不删） ───
+    const opsMatter = /^\/v1\/relay\/ops\/tenants\/([A-Za-z0-9_-]{1,80})\/matters\/([^/]+)$/.exec(raw);
+    if (opsMatter && method === "DELETE") {
+      const who = opsAuth(req);
+      const [tid, mid] = [opsMatter[1]!, opsMatter[2]!];
+      if (!MATTER_ID_RE.test(mid)) throw new HttpError(400, "matter_invalid");
+      const t = tenantOf(tid);
+      let bytes = 0;
+      for (const [k, cinfo] of t.chunks) if (k.startsWith(`${mid}/`)) bytes += cinfo.size;
+      access({ at: iso(), action: "matter_reset", operator: who, tid, mid, removed_bytes: bytes, result: "ok" });
+      const rec: ResetRecord = { k: "reset", mid, at: iso(), operator: who };
+      appendJournal(t, Buffer.from(`${JSON.stringify(rec)}\n`, "utf8"));
+      for (const x of t.entries) if (x.mid === mid) t.gone.add(x.seq);
+      t.matters.delete(mid);
+      for (const [k, cinfo] of [...t.chunks]) {
+        if (!k.startsWith(`${mid}/`)) continue;
+        t.chunks.delete(k);
+        t.bytes -= cinfo.size;
+        releasePending(t, cinfo.dev, cinfo.size);
+      }
+      rmSync(join(t.dir, "m", mid), { recursive: true, force: true });
+      return send(res, 200, { ok: true, removed_bytes: bytes });
+    }
     const opsTenant = /^\/v1\/relay\/ops\/tenants\/([A-Za-z0-9_-]{1,80})$/.exec(raw);
     if (opsTenant && method === "DELETE") {
       const who = opsAuth(req);
@@ -572,9 +720,12 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
       const t = tenants.get(tid);
       const bytes = t?.bytes ?? 0;
       access({ at: iso(), action: "tenant_purge", operator: who, tid, removed_bytes: bytes, result: "ok" });
+      // 先标记“删除中”，在途请求读完请求体后放弃（复核 S11A-09）
+      if (t) t.purging = true;
       tenants.delete(tid);
+      badTenants.delete(tid);
       rmSync(tenantDir(tid), { recursive: true, force: true });
-      wake(tid);
+      wake(tid, null);
       return send(res, 200, { ok: true, removed_bytes: bytes });
     }
 
@@ -594,14 +745,20 @@ export function createRelayApi(o: RelayApiOptions): Server & { sweep(): number; 
   });
   server.on("close", () => {
     clearInterval(timer);
-    for (const tid of [...waiters.keys()]) wake(tid);
+    for (const tid of [...waiters.keys()]) wake(tid, null);
   });
   return Object.assign(server, {
     sweep,
+    instance,
     tenant(tid: string) {
       const t = tenants.get(tid);
       if (!t) return null;
-      return { entries: t.entries.map((e) => structuredClone(e)), bytes: t.bytes, chunkFiles: [...t.chunks.keys()] };
+      return {
+        entries: t.entries.map((e) => structuredClone(e)),
+        bytes: t.bytes,
+        chunkFiles: [...t.chunks.keys()],
+        controller: (mid: string) => t.matters.get(mid)?.controller ?? null,
+      };
     },
   });
 }
