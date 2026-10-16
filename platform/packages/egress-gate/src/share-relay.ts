@@ -21,6 +21,8 @@ export type ShareRelayRequest =
       step: "commit";
       /** 本机知道的该事项重置代数（第四轮复核：中继据此拒收重置前的登记，非负责人不会在重置后抢先成为控制成员）。 */
       gen: number;
+      /** 本机知道的中继实例编号（24 位十六进制；还不知道时为空串；第六轮复核 S11B-50）。 */
+      instance: string;
       credential: string;
       matter_id: string;
       segment_id: string;
@@ -80,8 +82,9 @@ export function shareRelayAllowed(r: unknown): string | null {
       return null;
     }
     case "commit": {
-      if (!keysAre(x, "blob_chunks,chunks,credential,epoch,gen,matter_id,readers,segment_id,sha256,size,step")) return "relay_request_invalid";
+      if (!keysAre(x, "blob_chunks,chunks,credential,epoch,gen,instance,matter_id,readers,segment_id,sha256,size,step")) return "relay_request_invalid";
       if (typeof x.gen !== "number" || !Number.isSafeInteger(x.gen) || x.gen < 0) return "relay_request_invalid";
+      if (typeof x.instance !== "string" || !/^([0-9a-f]{24})?$/.test(x.instance)) return "relay_request_invalid";
       if (!midOk) return "relay_matter_invalid";
       if (typeof x.segment_id !== "string" || !SEGMENT_ID_RE.test(x.segment_id)) return "relay_segment_invalid";
       if (typeof x.sha256 !== "string" || !CID_RE.test(x.sha256)) return "relay_segment_invalid";
@@ -163,6 +166,7 @@ export async function relayShare(
           epoch: req.epoch,
           readers: [...req.readers],
           gen: req.gen,
+          instance: req.instance,
         }),
       };
       break;

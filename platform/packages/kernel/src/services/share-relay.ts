@@ -23,7 +23,7 @@ import { parseSegment, scanSegments, writeSegment, type SegmentFile } from "@zr-
 import type { ShareRelayRequest, ShareRelayResult } from "@zr-legal/egress-gate";
 import { blobHeaderOf } from "../blobs.ts";
 import { deviceTombstoned } from "../ledger-signer.ts";
-import { openSegmentRows, preverifySegment, RELAY_BLOB_TABLE, relayChunks, syncExport, syncImport, type RelayBlobRef, type SyncDeps } from "../sync-engine.ts";
+import { openSegmentRows, preverifySegment, RELAY_BLOB_TABLE, relayChunks, syncExport, syncImport, activeSyncAlerts, type RelayBlobRef, type SyncDeps } from "../sync-engine.ts";
 
 export interface ShareRelayDeps extends SyncDeps {
   /** 本机中继目录（<数据根>/relay）：outbox 发件、inbox 已核验待钥待块、ready 待摄取（含暂存的密文块）。 */
@@ -94,10 +94,13 @@ class RelayError extends Error {
   readonly code: string;
   /** “事项不存在”回复里带的重置代数（第四轮复核 S11B-36/37）。 */
   readonly gen: number | null;
-  constructor(code: string, gen: number | null = null) {
+  /** “中继已重建”回复里带的实例编号（第六轮复核 S11B-50）。 */
+  readonly instance: string | null;
+  constructor(code: string, gen: number | null = null, instance: string | null = null) {
     super(code);
     this.code = code;
     this.gen = gen;
+    this.instance = instance;
   }
 }
 
@@ -207,14 +210,16 @@ export class ShareRelaySync {
     if (r.status < 200 || r.status >= 300) {
       let code = `http_${r.status}`;
       let gen: number | null = null;
+      let instance: string | null = null;
       try {
         const j = JSON.parse(r.body);
         if (typeof j?.error === "string" && /^[a-z0-9_]{1,60}$/.test(j.error)) code = j.error;
         if (Number.isSafeInteger(j?.gen) && j.gen >= 0) gen = j.gen;
+        if (typeof j?.instance === "string" && /^[0-9a-f]{24}$/.test(j.instance)) instance = j.instance;
       } catch {
         // 不是 JSON：按状态码
       }
-      throw new RelayError(code, gen);
+      throw new RelayError(code, gen, instance);
     }
     if (r.body_b64 !== undefined) return { json: null, bytes: Buffer.from(r.body_b64, "base64") };
     try {
@@ -342,8 +347,7 @@ export class ShareRelaySync {
       if (seg && resetNow.has(seg.header.matter_id)) continue;
       // 收件可能在这一轮发件之前或期间发现了重置并删掉了这一段（第五轮复核 S11B-42）
       if (!existsSync(c.path)) continue;
-      // 登记带的重置代数取开始处理这一段时的值：上传期间收件发现重置、改了本机代数，这一段仍按旧代数登记、被中继拒收（不借新代数抢先成为控制成员）
-      const genAtStart = seg ? (this.d.db.get<{ gen: number }>(`SELECT gen FROM relay_matters WHERE matter_id = ?`, [seg.header.matter_id])?.gen ?? 0) : 0;
+      let genAtStart = 0;
       if (!seg || seg.header.device_id !== this.own || !ownedBy(seg.header.segment_id, this.own)) {
         rmSync(c.path, { force: true });
         continue;
@@ -383,6 +387,9 @@ export class ShareRelaySync {
             if (!(e instanceof RelayError && e.code === "not_reader")) throw e;
           }
         }
+        // 登记带的重置代数取上传之前的值（非负责人的确认之后，第六轮复核 S11B-51a）：上传期间收件发现重置、改了本机代数，
+        // 这一段仍按旧代数登记、被中继拒收（不借新代数抢先成为控制成员，第五轮复核 S11B-42）
+        genAtStart = this.d.db.get<{ gen: number }>(`SELECT gen FROM relay_matters WHERE matter_id = ?`, [mid])?.gen ?? 0;
         const readers = readersOf(seg, this.own, this.d.db);
         if (readers.length > MAX_READERS) throw new RelayError("too_many_readers");
         const blobs: { rel: string; parts: { cid: string; bytes: Buffer }[] }[] = [];
@@ -419,6 +426,7 @@ export class ShareRelaySync {
           epoch: seg.header.key_epoch,
           readers,
           gen: genAtStart,
+          instance: this.kv("instance") ?? "",
         });
         rmSync(c.path, { force: true });
         this.d.db.run(`DELETE FROM relay_outbox WHERE segment_id = ?`, [sid]);
@@ -431,6 +439,11 @@ export class ShareRelaySync {
         if (code === "matter_reset" && e instanceof RelayError) {
           if (this.noteGen(mid, e.gen)) resetNow.add(mid);
           continue;
+        }
+        // 中继重建过（实例编号变了）：按重建处理——各事项本机写入的全量重发、非负责人重新等负责人登记（第六轮复核 S11B-50），本轮不再发
+        if (code === "relay_rebuilt" && e instanceof RelayError) {
+          this.checkInstance(e.instance);
+          break;
         }
         report.errors.push(code);
         if (transportFailure(code)) break;
@@ -1078,6 +1091,10 @@ export class ShareRelaySync {
       blocked: this.blocked(),
       configured: this.d.configured(),
       allowed: this.d.allowed(),
+      // 策略回退（过期、认不出、没收到）而不是律所关闭（第六轮复核 S11B-51c）
+      policy_fallback: !this.d.allowed() && !this.d.relayExplicitlyOff?.(),
+      // 团队同步的持久告警（两种介质；第六轮复核 S11A-51/52）
+      alerts: syncAlertsView(this.d.db, this.own),
       push_last_ok_at: this.kv("push_last_ok_at"),
       push_last_error: this.kv("push_last_error") || null,
       push_last_error_at: this.kv("push_last_error_at"),
@@ -1107,4 +1124,16 @@ export function readersOf(seg: SegmentFile, own: string, db?: SyncDeps["db"]): s
     set.add(kr.wrapped_for);
   }
   return [...set];
+}
+
+/** 界面用的告警列表：带事项标题（本机库里的），只有编号、种类、纪元与计数。 */
+export function syncAlertsView(db: ShareRelayDeps["db"], ownDeviceId: string): { matter_id: string; title: string | null; kind: string; epoch: number; first_at: string; hits: number }[] {
+  return activeSyncAlerts(db, ownDeviceId).map((a) => ({
+    matter_id: a.matter_id,
+    title: db.get<{ title: string }>(`SELECT title FROM matters WHERE matter_id = ?`, [a.matter_id])?.title ?? null,
+    kind: a.kind,
+    epoch: a.epoch,
+    first_at: a.first_at,
+    hits: a.hits,
+  }));
 }

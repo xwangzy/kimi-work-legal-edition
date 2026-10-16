@@ -161,6 +161,7 @@ button.chip:active, :is(button, summary, label).pill:active, .alias-chip:active 
 .pill-green { color: var(--status-success-text); background: var(--status-valid-bg); }
 .pill-orange { color: var(--status-warning-text); background: var(--risk-mid-bg); }
 .pill-red { color: var(--status-danger-text); background: var(--risk-high-bg); }
+.sync-alert { display: block; margin: 0 0 6px; padding: 6px 10px; border-radius: var(--r-sm); color: var(--status-danger-text); background: var(--risk-high-bg); font-size: var(--fs-sm); }
 .pill-blue { color: var(--status-info-text); background: var(--status-amended-bg); }
 .pill-toggle input { margin: 0; }
 .pill-link { color: var(--accent-text); border-color: var(--accent-border); }

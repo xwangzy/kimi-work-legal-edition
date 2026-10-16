@@ -38,6 +38,8 @@ export interface SyncExportResult {
   segments: string[];
   skippedPersonal: string[];
   rowsExported: number;
+  /** 有未解决的纪元冲突、本机暂停发出的事项（第六轮复核 S11A-51/S11B-46）。 */
+  pausedConflict: string[];
 }
 
 /** 中继介质：每块大小（与中继服务的单块上限一致）。 */
@@ -207,7 +209,7 @@ export function syncExport(
   const matters = args.matterId
     ? db.all<any>(`SELECT * FROM matters WHERE matter_id = ? AND tenant_id = ?`, [args.matterId, tenantId])
     : db.all<any>(`SELECT * FROM matters WHERE tenant_id = ? AND status = 'active'`, [tenantId]);
-  const result: SyncExportResult = { segments: [], skippedPersonal: [], rowsExported: 0 };
+  const result: SyncExportResult = { segments: [], skippedPersonal: [], rowsExported: 0, pausedConflict: [] };
   const deviceCertJson = JSON.stringify(keyctx.device.cert);
   const writeState = (matterId: string, toLamport: number, exportAt: string, alwaysDigest: string | null) => {
     if (relay) {
@@ -239,6 +241,12 @@ export function syncExport(
     const epoch = currentMatterEpoch(db, m.matter_id, keyctx.device.deviceId);
     const matterKey = resolveMatterKey(db, m.matter_id, epoch, keyctx.device.deviceId, keyctx.device.keys.encPrivateKeyPem);
     if (!matterKey) continue; // 本机不持钥（理论上不发生：成员设备才导得出）
+    // 本机当前纪元与在册成员签发的不一致（同号纪元分叉），或负责人无法确认（交接时本机离线）：不经同步发出新内容，
+    // 免得被移出者读到（失败即关闭，第六轮复核 S11A-51/52）；纪元冲突在负责人再次轮换后自动恢复
+    if (db.get(`SELECT 1 AS x FROM sync_alerts WHERE matter_id = ? AND ((kind = 'epoch_conflict' AND epoch >= ?) OR kind = 'owner_unverifiable')`, [m.matter_id, epoch])) {
+      result.pausedConflict.push(m.matter_id);
+      continue;
+    }
     const state = db.get<{ last_export_lamport: number; last_export_at: string | null; last_always_digest?: string | null }>(`SELECT * FROM ${stateTable} WHERE matter_id = ?`, [m.matter_id]);
     const head = db.get<{ l: number | null }>(`SELECT MAX(lamport) AS l FROM signed_events WHERE matter_id = ?`, [m.matter_id]);
     const toLamport = head?.l ?? 1;
@@ -561,6 +569,9 @@ const verifiedOwnRows = new WeakMap<KernelDb, Set<string>>();
 
 type MemberOutcome = "applied" | "same" | "pending" | "rejected";
 
+/** 成员行序号相对本机见过的最大值的上限跳跃（升级前的行序号取自各设备的事件计数，可能较大：留足余量）。 */
+const MEMBER_LAMPORT_MAX_JUMP = 1_000_000;
+
 /**
  * 一条成员行（墓碑 + 作者权威 + 较新者胜；第四轮复核 S11A-35/S11B-35 起别人写的行凭作者签名也收）：
  * 1. 不比本机新（含逐字段相同的转发）→ 静默跳过（复核 S11A-40/S11B-38：转发不告警）；
@@ -574,7 +585,7 @@ type MemberOutcome = "applied" | "same" | "pending" | "rejected";
 function applyMemberRow(
   deps: SyncDeps,
   r: SyncRow,
-  ctx: { warnings: string[]; matterId: string; segDeviceId: string; segCert: DeviceCertificate; bootstrap: boolean; creator: string | null; owners: Set<string> | null; forwarderTrusted: boolean },
+  ctx: { warnings: string[]; matterId: string; segDeviceId: string; segCert: DeviceCertificate; bootstrap: boolean; creator: string | null; forwarderTrusted: boolean },
 ): MemberOutcome {
   const { db, tenantId } = deps;
   const row = r.row as Record<string, unknown>;
@@ -587,6 +598,9 @@ function applyMemberRow(
   if (key[0] !== ctx.matterId || !key[1] || !author) return reject("成员行不属于本段事项或缺作者");
   const local = db.get<Record<string, unknown>>(`SELECT * FROM matter_members WHERE matter_id = ? AND user_id = ?`, [key[0], key[1]]);
   const incomingL = Number(row.row_lamport ?? 0);
+  // 行序号是合并过的逻辑时钟（第六轮复核 S11A-49）：比本机见过的最大值跳得过多的行拒收，免得一行“粘住”、此后谁都盖不过
+  const seenMax = db.get<{ l: number | null }>(`SELECT MAX(row_lamport) AS l FROM matter_members WHERE matter_id = ?`, [key[0]])?.l ?? 0;
+  if (!Number.isSafeInteger(incomingL) || incomingL < 0 || incomingL > seenMax + MEMBER_LAMPORT_MAX_JUMP) return reject(`行序号跳跃过大（本机见过的最大值 ${seenMax}）`);
   if (local) {
     const localL = Number(local.row_lamport ?? 0);
     const localA = String(local.author_device ?? "");
@@ -613,22 +627,20 @@ function applyMemberRow(
     // 作者设备已被吊销：它在吊销前写的行仍要能被后加入的成员收下（第五轮复核 S11A-42/S11B-44：创建者离所或换机后事项仍可交接）——
     // 只在转发者可信时收：本段之前本机就认它为负责人，或首同步时的签发者（首同步另须通过下面的闸门）；其他来源仍拒收
     if ((deviceTombstoned(db, author) || db.get(`SELECT 1 AS x FROM devices WHERE device_id = ? AND status = 'revoked'`, [author])) && !ctx.forwarderTrusted) {
+      // 已有事项：交接时本机离线、原负责人设备已吊销，新负责人可能永远确认不了——持久告警、界面可见（第六轮复核 S11A-52；带因果链的成员日志在第 12 批）
+      if (!ctx.bootstrap) noteSyncAlert(db, key[0], "owner_unverifiable", 0, `设备 ${ctx.segDeviceId} 转发了已吊销设备 ${author} 写的成员行（${key[1]}），本机无法确认`);
       return reject("作者设备已被吊销，且转发者不是本机认得的负责人（拒收）");
     }
     authorMember = ac.memberId;
     signed = true;
   }
-  // 作者资格：首同步按本段已应用的行逐步确立（起点是创建者）；已有事项按本段之前本机认得的负责人判断——
-  // 同段里转发来的“某人是负责人”可以落库，但不让他在同一段里就以负责人身份变更成员（第五轮复核 S11A-43：签名不带新鲜度）
-  let qualified: boolean;
-  if (ctx.owners) qualified = ctx.owners.has(authorMember);
-  else {
-    const ownerNow = !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [key[0], authorMember]);
-    // 首同步的起点：事项创建者在它自己的成员行被处理之前视为负责人（成员行按先后处理——创建者先加人、后把自己改为成员的移交也成立）
-    const seed = !!ctx.creator && authorMember === ctx.creator && !db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ?`, [key[0], ctx.creator]);
-    qualified = ownerNow || seed;
-  }
-  if (!qualified) return "pending";
+  // 作者资格：作者是该事项未墓碑的负责人（按本机库，含本段已应用的行，逐步确立）；首同步的起点是事项创建者——
+  // 它自己的成员行被处理之前视为负责人（成员行按先后处理，创建者先加人、后把自己改为成员的移交也成立）。
+  // 第五轮的“已有事项按段前负责人判断”已在第六轮撤回（它让新任共同负责人第一段的移出与包裹在滞后设备上不生效，复核 S11A-48/S11B-47）；
+  // 签名不带新鲜度（转发者可以给出某行的旧版本，S11A-43/S11B-46）登记为残余，带因果链的成员日志在第 12 批
+  const ownerNow = !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [key[0], authorMember]);
+  const seed = ctx.bootstrap && !!ctx.creator && authorMember === ctx.creator && !db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ?`, [key[0], ctx.creator]);
+  if (!ownerNow && !seed) return "pending";
   const vals = [row.matter_role ?? "viewer", row.added_by ?? "", row.removed_at ?? null, row.removed_lamport ?? null, author, incomingL, signed ? row.author_sig : null, signed ? row.author_cert : null];
   if (local) {
     db.run(`UPDATE matter_members SET matter_role = ?, added_by = ?, removed_at = ?, removed_lamport = ?, author_device = ?, row_lamport = ?, author_sig = ?, author_cert = ? WHERE matter_id = ? AND user_id = ?`, [...vals, key[0], key[1]]);
@@ -781,8 +793,13 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
       rows = openSegmentBody(seg, matterKey);
     } catch {
       // 本机已有这个纪元的密钥却解不开：同号纪元分叉（第五轮复核 S11A-43②），如实记下
-      if (resolveMatterKey(db, h.matter_id, seg.body.epoch, keyctx.device.deviceId, keyctx.device.keys.encPrivateKeyPem)) {
+      // 只记在册成员签发的段（所内任意设备伪造一段不能制造告警噪声，第六轮复核 S11A-51）；持久记下、界面可见，未解决前本机暂停发出该事项
+      if (
+        resolveMatterKey(db, h.matter_id, seg.body.epoch, keyctx.device.deviceId, keyctx.device.keys.encPrivateKeyPem) &&
+        db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [h.matter_id, cert.memberId])
+      ) {
         result.originConflicts.push(`epoch_conflict:${h.matter_id}/${seg.body.epoch}（本机该纪元的密钥解不开设备 ${h.device_id} 的段）`);
+        noteSyncAlert(db, h.matter_id, "epoch_conflict", seg.body.epoch, `本机纪元 ${seg.body.epoch} 的密钥解不开设备 ${h.device_id} 的段`);
       }
       result.segmentsSkipped += 1;
       out("invalid");
@@ -837,10 +854,8 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
         }
       }
       const creator = ctx.bootstrap ? String((rows.find((x) => x.t === "matters")?.row as any)?.created_by ?? "") || null : null;
-      // 已有事项：本段之前本机认得的负责人（第五轮复核 S11A-43）
-      const owners = ctx.bootstrap
-        ? null
-        : new Set(db.all<{ user_id: string }>(`SELECT user_id FROM matter_members WHERE matter_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [h.matter_id]).map((x) => x.user_id));
+      // 本段之前本机认得的负责人：只用来判断“转发者是否可信”（吊销设备写的行，第五轮复核 S11A-42）
+      const ownersBefore = new Set(db.all<{ user_id: string }>(`SELECT user_id FROM matter_members WHERE matter_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [h.matter_id]).map((x) => x.user_id));
       const mem = applyMemberRows(deps, rows, {
         warnings: ctx.warnings,
         matterId: h.matter_id,
@@ -848,8 +863,7 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
         segCert: cert,
         bootstrap: ctx.bootstrap,
         creator,
-        owners,
-        forwarderTrusted: ctx.bootstrap || !!owners?.has(cert.memberId),
+        forwarderTrusted: ctx.bootstrap || ownersBefore.has(cert.memberId),
       });
       result.rowsApplied += mem.applied;
       const signerOwner = !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [h.matter_id, cert.memberId]);
@@ -857,13 +871,16 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
       // （第三轮复核 S11A-28 的闸门移到这里——按能落库的行判，不按段里写了什么判，第四轮复核 S11A-35）
       if (ctx.bootstrap && !signerOwner && !mem.signerActed) throw new BootstrapDeferred();
       // key_rows 随事务落库（matters 行已在库，外键满足）——只收被签名覆盖、属于本事项、由负责人签发的（复核 S11A-02）：
-      // 已有事项按本段之前本机认得的负责人（第五轮复核 S11A-43）；首同步按核验后的负责人，或签发者本段里以负责人身份做过成员变更（移交与加人在同一段，第四轮 S11A-35③）
-      const keyRowsOk = keyRowsSigned(seg) && (ctx.bootstrap ? signerOwner || mem.signerActed : !!owners?.has(cert.memberId));
+      // 签发者按本段应用之后是负责人，或本段里以负责人身份做过成员变更（移交与加人在同一段，第四轮 S11A-35③）
+      const keyRowsOk = keyRowsSigned(seg) && (signerOwner || mem.signerActed);
       for (const kr of keyRowsOk ? (seg.key_rows ?? []) : []) {
         if (kr.matter_id !== h.matter_id || !Number.isSafeInteger(kr.epoch) || kr.epoch < 1) continue;
         // 同一纪元、同一设备已有不同的包裹：两位负责人各自轮换出了同号纪元（或被移出者用旧状态轮换），不静默忽略（第五轮复核 S11A-43②）
         const had = db.get<{ wrapped_key: string }>(`SELECT wrapped_key FROM matter_keys WHERE matter_id = ? AND epoch = ? AND wrapped_for = ?`, [kr.matter_id, kr.epoch, kr.wrapped_for]);
-        if (had && had.wrapped_key !== kr.wrapped_key && kr.wrapped_for === keyctx.device.deviceId && !sameMatterKey(had.wrapped_key, kr.wrapped_key, keyctx.device.keys.encPrivateKeyPem)) ctx.warnings.push(`epoch_conflict:${kr.matter_id}/${kr.epoch}（本机已有该纪元的另一把密钥，签发设备 ${h.device_id}）`);
+        if (had && had.wrapped_key !== kr.wrapped_key && kr.wrapped_for === keyctx.device.deviceId && !sameMatterKey(had.wrapped_key, kr.wrapped_key, keyctx.device.keys.encPrivateKeyPem)) {
+          ctx.warnings.push(`epoch_conflict:${kr.matter_id}/${kr.epoch}（本机已有该纪元的另一把密钥，签发设备 ${h.device_id}）`);
+          noteSyncAlert(db, kr.matter_id, "epoch_conflict", kr.epoch, `本机已有纪元 ${kr.epoch} 的另一把密钥，负责人设备 ${h.device_id} 签发了不同的一把`);
+        }
         db.run(`INSERT OR IGNORE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key, created_at) VALUES (?,?,?,?,?)`, [
           kr.matter_id,
           kr.epoch,
@@ -908,9 +925,12 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
       );
     });
     } catch (e) {
+      // 首同步延后时保留第一条原因（第六轮复核 S11B-51b：否则永久延后的事项看不到原因），其余撤回
+      const why = e instanceof BootstrapDeferred ? result.originConflicts.slice(mark.warnings).find((w) => w.startsWith("member_row_rejected")) : undefined;
       result.rowsApplied = mark.rows;
       result.conflicts.length = mark.conflicts;
       result.originConflicts.length = mark.warnings;
+      if (e instanceof BootstrapDeferred) result.originConflicts.push(`bootstrap_deferred:${h.segment_id}（${why ?? "签发成员按核验后的成员行不是负责人"}）`);
       throw e;
     }
     result.segmentsApplied += 1;
@@ -931,6 +951,30 @@ function sameMatterKey(a: string, b: string, encPrivateKeyPem: string): boolean 
   } catch {
     return false;
   }
+}
+
+/** 记一条团队同步告警（迁移 0040；同一事项、种类、纪元合并计数）。 */
+function noteSyncAlert(db: KernelDb, matterId: string, kind: "epoch_conflict" | "owner_unverifiable", epoch: number, detail: string): void {
+  const at = nowIso();
+  db.run(
+    `INSERT INTO sync_alerts (matter_id, kind, epoch, detail, first_at, last_at, hits) VALUES (?,?,?,?,?,?,1)
+     ON CONFLICT(matter_id, kind, epoch) DO UPDATE SET detail = excluded.detail, last_at = excluded.last_at, hits = hits + 1`,
+    [matterId, kind, epoch, detail.slice(0, 300), at, at],
+  );
+}
+
+/** 未解决的团队同步告警：纪元冲突在本机持有更高纪元之后视为解决（并删除）；已删除的事项不再显示。 */
+export function activeSyncAlerts(db: KernelDb, ownDeviceId: string): { matter_id: string; kind: string; epoch: number; first_at: string; last_at: string; hits: number }[] {
+  const out: { matter_id: string; kind: string; epoch: number; first_at: string; last_at: string; hits: number }[] = [];
+  for (const a of db.all<{ matter_id: string; kind: string; epoch: number; first_at: string; last_at: string; hits: number }>(`SELECT matter_id, kind, epoch, first_at, last_at, hits FROM sync_alerts ORDER BY last_at DESC`, [])) {
+    const lc = db.get<{ lifecycle: string }>(`SELECT lifecycle FROM matters WHERE matter_id = ?`, [a.matter_id])?.lifecycle;
+    if (!lc || lc === "purged" || (a.kind === "epoch_conflict" && currentMatterEpoch(db, a.matter_id, ownDeviceId) > a.epoch)) {
+      db.run(`DELETE FROM sync_alerts WHERE matter_id = ? AND kind = ? AND epoch = ?`, [a.matter_id, a.kind, a.epoch]);
+      continue;
+    }
+    out.push(a);
+  }
+  return out;
 }
 
 /** 首同步的段不满足引导条件：整段回滚、延后。 */

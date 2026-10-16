@@ -340,14 +340,14 @@ test("RA-10 登记日志写入失败（复核 S11A-08）：截回写入前的长
   assert.equal(again.s.tenant("t1")!.entries.length, 2);
 });
 
-test("RA-11 重置代数（第四轮复核 S11B-36/37）：重置后取历史回 404 并带代数；带旧代数的登记回 409 matter_reset；带新代数的登记、取新段与历史都带代数；重启读回照旧", async () => {
+test("RA-11 重置代数（第四轮复核 S11B-36/37）：重置后取历史回 404 并带代数；带旧代数的登记回 409 matter_reset；取新段与历史都带代数；重启读回照旧", async () => {
   const dir = mkdtempSync(join(tmpdir(), "kwl-ra-"));
   const opsSecret = "ops-secret-0123456789";
   const { base, s } = await start(dir, { opsSecret, accessLog: () => {} });
   const mid = newMid();
   const first = await writeSeg(base, mid, A(), "devA", { gen: 0 });
   assert.equal(first.r.status, 200);
-  assert.equal(first.r.json.gen, 0);
+  assert.equal(first.r.json.gen, undefined, "登记成功的回复不带代数（第六轮复核 S11A-50）");
   assert.equal((await call(base, "GET", "/v1/relay/changes/0", B())).json.items[0].gen, 0);
   const r = await fetch(`${base}/v1/relay/ops/tenants/t1/matters/${mid}`, { method: "DELETE", headers: { authorization: `Bearer ${opsSecret}`, "x-kwl-operator": "ops.zhang" } });
   assert.equal(r.status, 200);
@@ -360,7 +360,6 @@ test("RA-11 重置代数（第四轮复核 S11B-36/37）：重置后取历史回
   assert.equal(s.tenant("t1")!.controller(mid), null);
   const fresh = await writeSeg(base, mid, A(), "devA", { gen: 1 });
   assert.equal(fresh.r.status, 200);
-  assert.equal(fresh.r.json.gen, 1);
   const hist = await call(base, "GET", `/v1/relay/matters/${mid}/segments/0`, B());
   assert.equal(hist.json.gen, 1);
   assert.deepEqual(hist.json.items.map((x: any) => x.gen), [1]);
@@ -370,4 +369,27 @@ test("RA-11 重置代数（第四轮复核 S11B-36/37）：重置后取历史回
   await new Promise<void>((done) => s.close(() => done()));
   const again = await start(dir, { opsSecret, accessLog: () => {} });
   assert.equal((await call(again.base, "GET", `/v1/relay/matters/${mid}/segments/0`, A())).json.gen, 1, "重置记录随登记日志读回");
+});
+
+test("RA-12 第六轮复核 S11A-50/S11B-50：非读者经登记接口也探测不到重置代数；客户端带的实例编号与本中继不同即回 409 relay_rebuilt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kwl-ra-"));
+  const opsSecret = "ops-secret-0123456789";
+  const { base, s } = await start(dir, { opsSecret, accessLog: () => {} });
+  const mid = newMid();
+  assert.equal((await writeSeg(base, mid, A(), "devA", { gen: 0 })).r.status, 200);
+  const r = await fetch(`${base}/v1/relay/ops/tenants/t1/matters/${mid}`, { method: "DELETE", headers: { authorization: `Bearer ${opsSecret}`, "x-kwl-operator": "ops.zhang" } });
+  assert.equal(r.status, 200);
+  // 非读者 C 带假代数登记：不核对代数（不告知），按块缺失或新建事项处理
+  const probe = await writeSeg(base, mid, C(), "devC", { gen: 7, readers: ["devC"] });
+  assert.notEqual(probe.r.json?.error, "matter_reset");
+  assert.equal(probe.r.json?.gen === 1, false, "非读者得不到重置代数");
+  // 实例编号不同：拒收并告知本中继的实例编号
+  const seg = randomBytes(100);
+  await putChunk(base, newMid(), A(), seg);
+  const m2 = newMid();
+  await putChunk(base, m2, A(), seg);
+  const wrong = await call(base, "POST", `/v1/relay/matters/${m2}/segments`, A(), { segment_id: sidOf("devA"), sha256: sha(seg), size: seg.length, chunks: [sha(seg)], blob_chunks: [], epoch: 1, readers: ["devA"], gen: 0, instance: "0".repeat(24) });
+  assert.deepEqual(wrong.json, { error: "relay_rebuilt", instance: s.instance });
+  const ok = await call(base, "POST", `/v1/relay/matters/${m2}/segments`, A(), { segment_id: sidOf("devA"), sha256: sha(seg), size: seg.length, chunks: [sha(seg)], blob_chunks: [], epoch: 1, readers: ["devA"], gen: 0, instance: s.instance });
+  assert.equal(ok.status, 200);
 });

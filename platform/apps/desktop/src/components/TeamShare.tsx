@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, type RelayStatus } from "../api.ts";
-import { relayErrorText, syncOutcomeText } from "../lib/relay-text.ts";
+import { relayErrorText, syncAlertText, syncOutcomeText } from "../lib/relay-text.ts";
 import { fmtTime } from "../lib/labels.ts";
 
 export function TeamShare() {
@@ -18,7 +18,8 @@ export function TeamShare() {
     const t = setInterval(load, 15_000);
     return () => clearInterval(t);
   }, []);
-  if (!st || st.blocked === "not_configured") return null;
+  const alerts = st?.alerts ?? [];
+  if (!st || (st.blocked === "not_configured" && alerts.length === 0)) return null;
   const syncNow = async () => {
     setBusy(true);
     setMsg("");
@@ -46,7 +47,13 @@ export function TeamShare() {
     <div className="device-row">
       <div className="device-k">团队共享</div>
       <div>
-        {st.blocked === "not_allowed" && <span>本所未开启经中软中继的团队共享（由律所管理员在“管理”里开启）。团队事项仍可经律所指定的共享文件夹同步。</span>}
+        {alerts.map((a) => (
+          <div key={`${a.matter_id}-${a.kind}-${a.epoch}`} className="sync-alert">
+            {syncAlertText(a)}
+          </div>
+        ))}
+        {st.blocked === "not_allowed" && st.policy_fallback && <span>这台电脑的律所策略已过期或尚未收到：经中软中继的团队共享暂停，联网更新律所策略后自动恢复。</span>}
+        {st.blocked === "not_allowed" && !st.policy_fallback && <span>本所未开启经中软中继的团队共享（由律所管理员在“管理”里开启）。团队事项仍可经律所指定的共享文件夹同步。</span>}
         {st.blocked === "exit_mode" && <span className="pill pill-red">许可失效或这台电脑已停用：团队共享已暂停</span>}
         {st.blocked === null && (
           <>

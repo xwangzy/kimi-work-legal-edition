@@ -1,5 +1,5 @@
-// 第 11 批第五轮复核 A 的复现转入（S11A-43，缺省与 onedir 变体）：修正前为失败，修正后为回归用例。第五轮处置：已有事项按本段之前本机认得的负责人判断成员变更与包裹。
-// saw 变体（滞后设备事先见过被移出者是负责人）是第四轮之前就有的窗口，登记为残余（同号纪元分叉记 epoch_conflict 告警；纪元号区分签发者在 G1）
+// 第 11 批第五轮复核 A 的复现转入（S11A-43）。第六轮起“段前负责人”规则撤回（复核 S11A-48/S11B-47），S11A-43 登记为残余（签名不带新鲜度，带因果链的成员日志在第 12 批）：
+// 用例改为断言缓解措施——滞后设备上的纪元分叉持久可见、本机暂停发出该事项，被移出者读不到滞后设备之后写的内容
 /**
  * 作者签名不带“新鲜度”：任何持有某行旧版本签名的设备都能转发它，接收方只按“比本机新”判断。
  * 被移出的共同负责人 bob 用**未改过的客户端**、只是不去收（或收不到）移出他的那一段，就能：
@@ -71,7 +71,7 @@ after(async () => {
   await kA.kernel.close();
 });
 
-test(`S11A-43：被移出的共同负责人借转发的旧签名行与同号轮换，不能把自己的纪元密钥塞进滞后设备${SAW ? "（变体：dave 先见过 bob 是负责人）" : ""}`, { timeout: 120_000 }, async () => {
+test(`S11A-43（残余）：被移出的共同负责人借转发的旧签名行与同号轮换塞进滞后设备的纪元密钥，不会让他读到滞后设备之后写的内容${SAW ? "（变体：dave 先见过 bob 是负责人）" : ""}`, { timeout: 120_000 }, async () => {
   const { matter } = await kA.inv("matters.create", { title: "移出共同负责人", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
   const mid = matter.matter_id;
   await kA.inv("matters.members.add", { matter_id: mid, user_id: usr("dave") });
@@ -124,6 +124,5 @@ test(`S11A-43：被移出的共同负责人借转发的旧签名行与同号轮�
   const ra = await kA.inv("sync.import", { share_dir: s4 });
   LOG("A 摄取 dave 的段：", JSON.stringify(ra.dispositions.map((x: any) => x.outcome)), "｜A 读到：", textOf(kA, "丁-移出后.txt"));
   assert.equal(leaked, null, "被移出的成员不应读到移出之后其他成员写的内容");
-  // 已有事项按本段之前本机认得的负责人判断成员变更：bob 借转发来的旧签名行在同一段里移出 erin，在 dave 上不生效（第五轮反向对照 R49）
-  assert.equal(kD.kernel.db.get(`SELECT removed_at FROM matter_members WHERE matter_id = ? AND user_id = ?`, [mid, usr("erin")]).removed_at, null);
+  assert.ok((await kD.inv("relay.status")).alerts.some((a: any) => a.matter_id === mid && a.kind === "epoch_conflict"), "滞后设备上的纪元分叉持久可见");
 });

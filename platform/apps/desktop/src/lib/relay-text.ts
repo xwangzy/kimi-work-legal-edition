@@ -4,6 +4,16 @@
 import type { RelayReport } from "../api.ts";
 
 /** 错误代码 → 律师看得懂的说法。 */
+/** 团队同步告警的说明（第六轮复核 S11A-51/52）。 */
+export function syncAlertText(a: { kind: string; title: string | null }): string {
+  const t = a.title ? `「${a.title}」` : "一个团队事项";
+  if (a.kind === "epoch_conflict")
+    return `事项${t}的加密密钥在这台电脑与负责人那里不一致（多为成员调整时这台电脑离线）：这台电脑暂停发出该事项的新改动，免得被移出的人读到。请联系事项负责人在其电脑上重新轮换密钥（例如移出后再加回任一成员），轮换送到后自动恢复`;
+  if (a.kind === "owner_unverifiable")
+    return `事项${t}交接负责人时这台电脑离线、原负责人的电脑已停用：这台电脑认不出新负责人，新负责人做的成员调整在这里可能不生效。请先不要在这台电脑上继续处理该事项，联系中软客服`;
+  return `事项${t}的团队同步有异常（${a.kind}）`;
+}
+
 export function relayErrorText(code: string | null | undefined): string | null {
   if (!code) return null;
   if (code === "waiting_for_owner") return "这个事项的负责人还没有经中继同步过：负责人的电脑同步一次后，这里的改动会自动发出";

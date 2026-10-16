@@ -593,10 +593,14 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       const t = tenantOf(c.tid);
       const b = await readJson(req);
       stillLive(t);
-      // gen：客户端知道的重置代数（第四轮复核；旧客户端不带，不核对）
+      // gen：客户端知道的重置代数（第四轮复核）；instance：客户端知道的中继实例编号（第六轮复核 S11B-50）。旧客户端不带，不核对
       const keys = Object.keys(b).sort().join(",");
-      if (keys !== "blob_chunks,chunks,epoch,readers,segment_id,sha256,size" && keys !== "blob_chunks,chunks,epoch,gen,readers,segment_id,sha256,size") throw new HttpError(400, "body_invalid");
+      const base = "blob_chunks,chunks,epoch,readers,segment_id,sha256,size";
+      if (keys !== base && keys !== "blob_chunks,chunks,epoch,gen,readers,segment_id,sha256,size" && keys !== "blob_chunks,chunks,epoch,gen,instance,readers,segment_id,sha256,size") throw new HttpError(400, "body_invalid");
       if (b.gen !== undefined && (typeof b.gen !== "number" || !Number.isSafeInteger(b.gen) || b.gen < 0)) throw new HttpError(400, "gen_invalid");
+      if (b.instance !== undefined && (typeof b.instance !== "string" || !/^([0-9a-f]{24})?$/.test(b.instance))) throw new HttpError(400, "instance_invalid");
+      // 客户端知道的实例编号与本中继不同：中继重建过，客户端须先按重建处理（否则重建后代数从 0 算，非负责人的待发段会把事项重新建起来）
+      if (b.instance && b.instance !== instance) return send(res, 409, { error: "relay_rebuilt", instance });
       const sid = b.segment_id;
       if (typeof sid !== "string" || !segmentOwnedBy(sid, c.dev)) throw new HttpError(400, "segment_id_invalid");
       if (typeof b.sha256 !== "string" || !CID_RE.test(b.sha256)) throw new HttpError(400, "sha256_invalid");
@@ -609,17 +613,18 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       }
       const readers = b.readers as string[];
       if (!readers.includes(c.dev)) throw new HttpError(400, "writer_not_reader");
-      // 客户端还不知道该事项被重置过：拒收并告知当前代数（重置前的登记不能把事项在中继上重新建起来，也不让非负责人借此成为控制成员）
-      const gen = t.resets.get(mid) ?? 0;
-      if (b.gen !== undefined && b.gen !== gen) return send(res, 409, { error: "matter_reset", gen });
       const m = t.matters.get(mid);
       const prev = m?.segs.get(sid);
       if (prev) {
         // 同一段编号重发：内容相同即成功（结果不明后原样重发），不同即拒绝
-        if (prev.sha === b.sha256 && prev.size === b.size && prev.dev === c.dev) return send(res, 200, { ok: true, seq: prev.seq, existed: true, controller: m!.controller, gen: t.resets.get(mid) ?? 0 });
+        if (prev.sha === b.sha256 && prev.size === b.size && prev.dev === c.dev) return send(res, 200, { ok: true, seq: prev.seq, existed: true, controller: m!.controller });
         throw new HttpError(409, "segment_conflict");
       }
       if (m && !m.readers.has(c.dev)) throw new HttpError(403, "not_reader");
+      // 客户端还不知道该事项被重置过：拒收并告知当前代数（重置前的登记不能把事项在中继上重新建起来，也不让非负责人借此成为控制成员）。
+      // 先核对读者再核对代数（第六轮复核 S11A-50）：事项在中继上时只对读者核对；不在时只对重置前的读者核对，其他设备探测不到重置
+      const gen = t.resets.get(mid) ?? 0;
+      if (b.gen !== undefined && b.gen !== gen && (m || t.resetReaders.get(mid)?.has(c.dev))) return send(res, 409, { error: "matter_reset", gen });
       // 只有控制成员能提升纪元（可一次升多级）；其他读者声明更高纪元：等控制成员的段先到（可恢复）
       if (m && b.epoch > m.epoch && c.uid !== m.controller) throw new HttpError(409, "epoch_not_established");
       for (const cid of [...(b.chunks as string[]), ...(b.blob_chunks as string[])]) if (!t.chunks.has(`${mid}/${cid}`)) throw new HttpError(409, "chunk_missing");
@@ -661,7 +666,8 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       // 唤醒该事项的其他读者（写入设备自己不用醒）
       wake(c.tid, new Set([...t.matters.get(mid)!.readers].filter((d) => d !== c.dev)));
       // 回告控制成员（复核 S11B-19：客户端据此判断本机能否调整成员、轮换密钥）
-      return send(res, 200, { ok: true, seq: e.seq, existed: false, controller: t.matters.get(mid)!.controller, gen: t.resets.get(mid) ?? 0 });
+      // 登记成功的回复不带重置代数（第六轮复核 S11A-50：重置后抢先登记的非读者不借此得知重置次数；客户端从取历史与“代数不符”得知）
+      return send(res, 200, { ok: true, seq: e.seq, existed: false, controller: t.matters.get(mid)!.controller });
     }
 
     const feed = /^\/v1\/relay\/changes\/(\d{1,15})(\/wait)?$/.exec(raw);

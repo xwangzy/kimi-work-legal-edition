@@ -13,7 +13,7 @@ import type { CpAuditRecord } from "@zr-legal/firm-trust";
 import { SUPPORT_MAX_UPLOAD_BYTES } from "@zr-legal/egress-gate";
 import { supportErrorText } from "../services/support-errors.ts";
 import { parseReminderInput, type ReminderService } from "../services/reminders.ts";
-import type { ShareRelaySync } from "../services/share-relay.ts";
+import { syncAlertsView, type ShareRelaySync } from "../services/share-relay.ts";
 import { recordSuspectReview, sendPreview, summarizeSend, type SendSummary, type SuspectView } from "../services/send-preview.ts";
 import {
   ConsentStatus,
@@ -599,7 +599,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         );
         db.run(
           `INSERT INTO matter_members (matter_id, user_id, matter_role, added_by, removed_at, removed_lamport, author_device, row_lamport) VALUES (?,?,'owner',?,NULL,NULL,?,?)`,
-          [matterId, id.userId, id.userId, keyctx.device.deviceId, nextLocalLamport(db)],
+          [matterId, id.userId, id.userId, keyctx.device.deviceId, nextMemberLamport(db, matterId)],
         );
         // 事项密钥（§5.3 伦理墙由密钥分发实现）：epoch=1，包裹给创建者当前设备 + 恢复托管公钥；
         // 律所根密钥不解事项密钥——恢复只走 recovery 包裹行（M-of-N 重组后解）
@@ -2590,7 +2590,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         `SELECT device_id, enc_pub_pem FROM devices WHERE tenant_id = ? AND member_id = ? AND status = 'active'`,
         [id.tenantId, userId],
       );
-      const rowLamport = nextLocalLamport(db);
+      const rowLamport = nextMemberLamport(db, matter.matter_id);
       db.tx(() => {
         db.run(`INSERT OR IGNORE INTO users (user_id, tenant_id, display_name) VALUES (?,?,?)`, [userId, id.tenantId, userId]);
         db.run(`INSERT OR IGNORE INTO memberships (membership_id, tenant_id, user_id, role) VALUES (?,?,?,'lawyer')`, [newId("membership"), id.tenantId, userId]);
@@ -2638,7 +2638,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (target.matter_role === "owner") throw validation("不能移出事项负责人（须先移交负责人）");
       let newEpoch = 0;
       let wrapped = 0;
-      const removeLamport = nextLocalLamport(db);
+      const removeLamport = nextMemberLamport(db, matter.matter_id);
       db.tx(() => {
         // 墓碑（阻断项修复：行级 DELETE 会被同步回灌复活——removed_* + 作者权威 + 较新者胜）
         db.run(`UPDATE matter_members SET removed_at = ?, removed_lamport = ?, author_device = ?, row_lamport = ? WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [
@@ -2762,12 +2762,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
 
     "sync.status": (p, id) => {
-      return syncStatus({ db, blobs, keyctx, tenantId: id.tenantId }, { ...(p?.share_dir ? { shareDir: String(p.share_dir) } : {}) });
+      return { ...syncStatus({ db, blobs, keyctx, tenantId: id.tenantId }, { ...(p?.share_dir ? { shareDir: String(p.share_dir) } : {}) }), alerts: syncAlertsView(db, keyctx.device.deviceId) };
     },
 
     // ─── 团队事项经中软共享中继同步（第 11 批 S11；services/share-relay.ts） ───
     "relay.status": () => {
-      if (!deps.shareRelay) return { blocked: "not_configured", configured: false, allowed: false };
+      if (!deps.shareRelay) return { blocked: "not_configured", configured: false, allowed: false, alerts: syncAlertsView(db, keyctx.device.deviceId) };
       return deps.shareRelay.status();
     },
     // 立即收发一次（界面“立即同步”与测试）：不能收发时如实返回原因
@@ -2818,7 +2818,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           db.run(
             `INSERT INTO matter_members (matter_id, user_id, matter_role, added_by, removed_at, removed_lamport, author_device, row_lamport) VALUES (?,?,'viewer',?,NULL,NULL,?,?)
              ON CONFLICT(matter_id, user_id) DO UPDATE SET removed_at = NULL, removed_lamport = NULL, author_device = excluded.author_device, row_lamport = excluded.row_lamport`,
-            [matter.matter_id, node.memberId, id.userId, keyctx.device.deviceId, nextLocalLamport(db)],
+            [matter.matter_id, node.memberId, id.userId, keyctx.device.deviceId, nextMemberLamport(db, matter.matter_id)],
           );
         }
         db.run(`UPDATE matters SET node_allowed = 1 WHERE matter_id = ?`, [matter.matter_id]);
@@ -3179,6 +3179,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   }
 
   /** 本机 lamport 递增（墓碑/成员行的行级时钟，与签名链同源）。 */
+  /**
+   * 成员行的行序号：按事项合并的逻辑时钟（第六轮复核 S11A-49/S11B-48）——该事项已见过（本机写的与收到的）的最大成员行序号加一。
+   * 原先取本机事件计数，各设备互不可比：写得少的共同负责人做的移出，在其他设备上被当作“不比本机新”丢掉。
+   */
+  function nextMemberLamport(db2: KernelDb, matterId: string): number {
+    const seen = db2.get<{ l: number | null }>(`SELECT MAX(row_lamport) AS l FROM matter_members WHERE matter_id = ?`, [matterId])?.l ?? 0;
+    return seen + 1;
+  }
+
   function nextLocalLamport(db2: KernelDb): number {
     const r = db2.get<{ l: number | null }>(`SELECT MAX(lamport) AS l FROM signed_events`, []);
     return (r?.l ?? 0) + 1;

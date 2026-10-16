@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { relayErrorText, syncOutcomeText } from "../src/lib/relay-text.ts";
+import { relayErrorText, syncAlertText, syncOutcomeText } from "../src/lib/relay-text.ts";
 
 const rep = (o: Partial<{ uploaded: number; applied: number; errors: string[] }> = {}) => ({ ran: true, exported: 0, uploaded: o.uploaded ?? 0, downloaded: 0, applied: o.applied ?? 0, held: 0, dropped: 0, errors: o.errors ?? [] });
 
@@ -38,4 +38,14 @@ test("立即同步的结果：成功且无改动说“已是最新”；有错�
   assert.ok(!syncOutcomeText({ push: rep({ errors: ["epoch_not_established"] }), pull: rep() }).includes("已是最新"));
   const mixed = syncOutcomeText({ push: rep({ uploaded: 1 }), pull: rep({ errors: ["relay_connect_failed"] }) });
   assert.ok(mixed.startsWith("发出 1 条改动") && mixed.includes("连不上"), mixed);
+});
+
+test("第六轮：团队同步告警的说明（纪元冲突、负责人无法确认）写明本机暂停发出与出路，不含内容", () => {
+  const c = syncAlertText({ kind: "epoch_conflict", title: "甲案" });
+  assert.match(c, /「甲案」/);
+  assert.match(c, /暂停发出/);
+  assert.match(c, /重新轮换密钥/);
+  const o = syncAlertText({ kind: "owner_unverifiable", title: null });
+  assert.match(o, /一个团队事项/);
+  assert.match(o, /联系中软客服/);
 });
