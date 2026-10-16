@@ -41,11 +41,13 @@ test("立即同步的结果：成功且无改动说“已是最新”；有错�
 });
 
 test("第六轮：团队同步告警的说明（纪元冲突、负责人无法确认）写明本机暂停发出与出路，不含内容", () => {
-  const c = syncAlertText({ kind: "epoch_conflict", title: "甲案" });
+  const c = syncAlertText({ kind: "epoch_conflict", title: "甲案", peer_member: "usr_x" });
   assert.match(c, /「甲案」/);
+  assert.match(c, /usr_x/, "写明冲突的另一方");
   assert.match(c, /暂停发出/);
   assert.match(c, /重新轮换密钥/);
   const o = syncAlertText({ kind: "owner_unverifiable", title: null });
   assert.match(o, /一个团队事项/);
-  assert.match(o, /联系中软客服/);
+  assert.match(o, /自动恢复/);
+  assert.doesNotMatch(o, /交接/, "不断言发生过交接（第七轮复核 S11A-55）");
 });

@@ -2579,6 +2579,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterOwner(db, matter.matter_id, id);
       requireRelayController(matter.matter_id, "加入成员");
+      requireNoSyncAlert(matter.matter_id, "加入成员");
       // 结案或已删除的事项不再加入成员（复核 C-A05；须先重新打开）
       requireActiveMatter(db, matter.matter_id);
       const userId = String(p?.user_id ?? "");
@@ -2632,6 +2633,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterOwner(db, matter.matter_id, id);
       requireRelayController(matter.matter_id, "移出成员");
+      requireNoSyncAlert(matter.matter_id, "移出成员");
       const userId = String(p?.user_id ?? "");
       const target = db.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matter.matter_id, userId]);
       if (!target) throw notFound("事项成员");
@@ -2664,6 +2666,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         }
         db.run(`INSERT OR IGNORE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key) VALUES (?,?,'recovery',?)`, [matter.matter_id, newEpoch, wrapMatterKey(newKey, keyctx.firm.recoveryPublicKeyPem)]);
         db.run(`INSERT INTO key_epochs (scope, scope_id, epoch, reason) VALUES ('matter', ?, ?, ?)`, [matter.matter_id, newEpoch, `member.remove ${userId}`]);
+        // 负责人在本机轮换出新纪元（只包给本机认定的成员）：本机的纪元冲突随之解除（第七轮复核 S11B-55 并发轮换的出路）
+        db.run(`DELETE FROM sync_alerts WHERE matter_id = ? AND kind = 'epoch_conflict'`, [matter.matter_id]);
         wrapped = remaining.length;
       });
       audit(db, id, "matter.member_remove", "matter", matter.matter_id, userId, keyctx);
@@ -2875,6 +2879,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       // 团队事项的新纪元只认负责人签发的包裹（D-93）：非负责人轮换不会传播，还会与负责人下次轮换撞纪元号（第二轮复核 S11A-20）
       if (rotate) requireMatterOwner(db, matter.matter_id, id, "轮换事项密钥需要事项负责人角色（团队事项的新纪元只认负责人签发的包裹）");
       if (rotate) requireRelayController(matter.matter_id, "轮换事项密钥");
+      if (rotate) requireNoSyncAlert(matter.matter_id, "轮换事项密钥");
       const revokeDeviceIds: string[] = Array.isArray(p?.revoke_device_ids) ? p.revoke_device_ids.map(String) : [];
       let rotatedEpoch = epoch;
       db.tx(() => {
@@ -2902,6 +2907,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           }
           db.run(`INSERT OR IGNORE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key) VALUES (?,?,'recovery',?)`, [matter.matter_id, newEpoch, wrapMatterKey(newKey, keyctx.firm.recoveryPublicKeyPem)]);
           db.run(`INSERT INTO key_epochs (scope, scope_id, epoch, reason) VALUES ('matter', ?, ?, ?)`, [matter.matter_id, newEpoch, `recovery.restore rotate${revokeDeviceIds.length > 0 ? `（吊销候选 ${revokeDeviceIds.join("/")}）` : ""}`]);
+          db.run(`DELETE FROM sync_alerts WHERE matter_id = ? AND kind = 'epoch_conflict'`, [matter.matter_id]);
         }
       });
       // 破窗事件（§5.3「动用即破窗」：须 M 名持有人签名、写审计链并通知成员——通知界面/IM 在 G1）
@@ -3225,6 +3231,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
    * 经中软共享中继同步的事项：成员调整与密钥轮换须由中继上的控制成员（最先经中继同步该事项的负责人）操作（第二轮复核 S11B-19）——
    * 其他负责人的电脑做了，新纪元在中继上登记不上，控制成员不知道这次移出，被移出者会继续收到新内容。
    */
+  /**
+   * 本机无法确认该事项的负责人时不在本机调整成员（第七轮复核 S11B-52：这期间的调整只在本机生效、发不出去，被移出者仍收到其他成员的新内容）。
+   * 纪元冲突不拦：负责人在本机重新轮换正是解除冲突的出路（轮换后本机的冲突告警即清除；非负责人设备的冲突只由冲突另一方的新纪元解除）。
+   */
+  function requireNoSyncAlert(matterId: string, what: string): void {
+    if (!db.get(`SELECT 1 AS x FROM sync_alerts WHERE matter_id = ? AND kind = 'owner_unverifiable'`, [matterId])) return;
+    throw forbidden(`这台电脑暂时无法确认这个事项的负责人：${what}暂不可用；在用的负责人同步一次后自动恢复，若负责人都已离所请联系中软客服`);
+  }
+
   function requireRelayController(matterId: string, what: string): void {
     const ctl = deps.shareRelay?.foreignController(matterId);
     if (!ctl) return;

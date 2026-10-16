@@ -348,6 +348,7 @@ export class ShareRelaySync {
       // 收件可能在这一轮发件之前或期间发现了重置并删掉了这一段（第五轮复核 S11B-42）
       if (!existsSync(c.path)) continue;
       let genAtStart = 0;
+      let instanceAtStart = "";
       if (!seg || seg.header.device_id !== this.own || !ownedBy(seg.header.segment_id, this.own)) {
         rmSync(c.path, { force: true });
         continue;
@@ -390,6 +391,8 @@ export class ShareRelaySync {
         // 登记带的重置代数取上传之前的值（非负责人的确认之后，第六轮复核 S11B-51a）：上传期间收件发现重置、改了本机代数，
         // 这一段仍按旧代数登记、被中继拒收（不借新代数抢先成为控制成员，第五轮复核 S11B-42）
         genAtStart = this.d.db.get<{ gen: number }>(`SELECT gen FROM relay_matters WHERE matter_id = ?`, [mid])?.gen ?? 0;
+        // 实例编号同样在上传之前读（第七轮复核 S11B-53：上传期间收件发现中继重建、改了本机编号，这一段仍按旧编号登记、被拒收）
+        instanceAtStart = this.kv("instance") ?? "";
         const readers = readersOf(seg, this.own, this.d.db);
         if (readers.length > MAX_READERS) throw new RelayError("too_many_readers");
         const blobs: { rel: string; parts: { cid: string; bytes: Buffer }[] }[] = [];
@@ -426,7 +429,7 @@ export class ShareRelaySync {
           epoch: seg.header.key_epoch,
           readers,
           gen: genAtStart,
-          instance: this.kv("instance") ?? "",
+          instance: instanceAtStart,
         });
         rmSync(c.path, { force: true });
         this.d.db.run(`DELETE FROM relay_outbox WHERE segment_id = ?`, [sid]);
@@ -1127,13 +1130,14 @@ export function readersOf(seg: SegmentFile, own: string, db?: SyncDeps["db"]): s
 }
 
 /** 界面用的告警列表：带事项标题（本机库里的），只有编号、种类、纪元与计数。 */
-export function syncAlertsView(db: ShareRelayDeps["db"], ownDeviceId: string): { matter_id: string; title: string | null; kind: string; epoch: number; first_at: string; hits: number }[] {
-  return activeSyncAlerts(db, ownDeviceId).map((a) => ({
+export function syncAlertsView(db: ShareRelayDeps["db"], _ownDeviceId?: string): { matter_id: string; title: string | null; kind: string; epoch: number; first_at: string; hits: number; peer_member: string | null }[] {
+  return activeSyncAlerts(db).map((a) => ({
     matter_id: a.matter_id,
     title: db.get<{ title: string }>(`SELECT title FROM matters WHERE matter_id = ?`, [a.matter_id])?.title ?? null,
     kind: a.kind,
     epoch: a.epoch,
     first_at: a.first_at,
     hits: a.hits,
+    peer_member: a.peer_member,
   }));
 }

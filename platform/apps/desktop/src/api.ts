@@ -906,7 +906,7 @@ export interface RelayStatus {
   /** 策略回退（过期、认不出、没收到），不是律所关闭。 */
   policy_fallback?: boolean;
   /** 团队同步的持久告警（两种介质）：纪元冲突、负责人无法确认。 */
-  alerts?: { matter_id: string; title: string | null; kind: string; epoch: number; first_at: string; hits: number }[];
+  alerts?: { matter_id: string; title: string | null; kind: string; epoch: number; first_at: string; hits: number; peer_member: string | null }[];
 }
 export interface RelayReport {
   ran: boolean;

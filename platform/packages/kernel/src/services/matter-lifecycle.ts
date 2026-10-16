@@ -233,6 +233,8 @@ export async function purgeMatter(
     d.db.run(`UPDATE approvals SET checklist = '{}' WHERE artifact_version_id IN (SELECT artifact_version_id FROM artifact_versions WHERE matter_id = ?)`, [matterId]);
     d.db.run(`DELETE FROM egress_approvals WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM sync_conflicts WHERE matter_id = ?`, [matterId]);
+    // 团队同步告警（第七轮复核 S11A-57②：事项删除时一并清掉）
+    d.db.run(`DELETE FROM sync_alerts WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM anon_matter_outbox WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM matter_token_conflicts WHERE matter_id = ?`, [matterId]);
     // 期限提醒：撤销并清空备注，交过云端的待云端删除；收到的提醒删除（第 10 批 S9）

@@ -5,12 +5,12 @@ import type { RelayReport } from "../api.ts";
 
 /** 错误代码 → 律师看得懂的说法。 */
 /** 团队同步告警的说明（第六轮复核 S11A-51/52）。 */
-export function syncAlertText(a: { kind: string; title: string | null }): string {
+export function syncAlertText(a: { kind: string; title: string | null; peer_member?: string | null }): string {
   const t = a.title ? `「${a.title}」` : "一个团队事项";
   if (a.kind === "epoch_conflict")
-    return `事项${t}的加密密钥在这台电脑与负责人那里不一致（多为成员调整时这台电脑离线）：这台电脑暂停发出该事项的新改动，免得被移出的人读到。请联系事项负责人在其电脑上重新轮换密钥（例如移出后再加回任一成员），轮换送到后自动恢复`;
+    return `事项${t}的加密密钥在这台电脑与负责人${a.peer_member ? `（${a.peer_member}）` : ""}那里不一致（多为成员调整时这台电脑离线）：这台电脑暂停发出该事项的新改动，免得被移出的人读到。请这位负责人在其电脑上重新轮换密钥（例如移出后再加回任一成员），由他发出的新密钥送到后自动恢复；你是该事项的负责人时，也可以在这台电脑上重新轮换`;
   if (a.kind === "owner_unverifiable")
-    return `事项${t}交接负责人时这台电脑离线、原负责人的电脑已停用：这台电脑认不出新负责人，新负责人做的成员调整在这里可能不生效。请先不要在这台电脑上继续处理该事项，联系中软客服`;
+    return `事项${t}的负责人在这台电脑上暂时无法确认（原负责人的电脑已停用，这台电脑还没收到其他在用负责人的确认）：这台电脑暂停发出该事项的新改动、暂不能调整成员。在用的负责人同步一次后自动恢复；若负责人都已离所，请联系中软客服`;
   return `事项${t}的团队同步有异常（${a.kind}）`;
 }
 

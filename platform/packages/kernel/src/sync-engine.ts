@@ -241,9 +241,9 @@ export function syncExport(
     const epoch = currentMatterEpoch(db, m.matter_id, keyctx.device.deviceId);
     const matterKey = resolveMatterKey(db, m.matter_id, epoch, keyctx.device.deviceId, keyctx.device.keys.encPrivateKeyPem);
     if (!matterKey) continue; // 本机不持钥（理论上不发生：成员设备才导得出）
-    // 本机当前纪元与在册成员签发的不一致（同号纪元分叉），或负责人无法确认（交接时本机离线）：不经同步发出新内容，
-    // 免得被移出者读到（失败即关闭，第六轮复核 S11A-51/52）；纪元冲突在负责人再次轮换后自动恢复
-    if (db.get(`SELECT 1 AS x FROM sync_alerts WHERE matter_id = ? AND ((kind = 'epoch_conflict' AND epoch >= ?) OR kind = 'owner_unverifiable')`, [m.matter_id, epoch])) {
+    // 该事项有未解除的团队同步告警（同号纪元分叉、负责人无法确认）：不经同步发出新内容，免得被移出者读到
+    // （失败即关闭，第六轮复核 S11A-51/52；第七轮起只看“有没有未解除的”，不看纪元高低——S11A-54/S11B-54）
+    if (db.get(`SELECT 1 AS x FROM sync_alerts WHERE matter_id = ?`, [m.matter_id])) {
       result.pausedConflict.push(m.matter_id);
       continue;
     }
@@ -628,7 +628,11 @@ function applyMemberRow(
     // 只在转发者可信时收：本段之前本机就认它为负责人，或首同步时的签发者（首同步另须通过下面的闸门）；其他来源仍拒收
     if ((deviceTombstoned(db, author) || db.get(`SELECT 1 AS x FROM devices WHERE device_id = ? AND status = 'revoked'`, [author])) && !ctx.forwarderTrusted) {
       // 已有事项：交接时本机离线、原负责人设备已吊销，新负责人可能永远确认不了——持久告警、界面可见（第六轮复核 S11A-52；带因果链的成员日志在第 12 批）
-      if (!ctx.bootstrap) noteSyncAlert(db, key[0], "owner_unverifiable", 0, `设备 ${ctx.segDeviceId} 转发了已吊销设备 ${author} 写的成员行（${key[1]}），本机无法确认`);
+      // 只在涉及负责人的行、且本机认得的负责人名下已没有在用设备时才记（第七轮复核 S11A-55/S11B-52：负责人仍在时，他的段之后会把这一行送到）
+      const ownerRow = row.matter_role === "owner" || local?.matter_role === "owner";
+      if (!ctx.bootstrap && ownerRow && !liveOwnerDevice(db, key[0])) {
+        noteSyncAlert(db, key[0], "owner_unverifiable", 0, `设备 ${ctx.segDeviceId} 转发了已停用设备 ${author} 写的负责人成员行（${key[1]}），本机没有在用的负责人设备可确认`, ctx.segDeviceId, ctx.segCert.memberId);
+      }
       return reject("作者设备已被吊销，且转发者不是本机认得的负责人（拒收）");
     }
     authorMember = ac.memberId;
@@ -796,10 +800,11 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
       // 只记在册成员签发的段（所内任意设备伪造一段不能制造告警噪声，第六轮复核 S11A-51）；持久记下、界面可见，未解决前本机暂停发出该事项
       if (
         resolveMatterKey(db, h.matter_id, seg.body.epoch, keyctx.device.deviceId, keyctx.device.keys.encPrivateKeyPem) &&
-        db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [h.matter_id, cert.memberId])
+        // 只记本机认得的在册负责人签发的段（第七轮复核 S11A-56：只读成员伪造一段不能让全体成员停发）
+        db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [h.matter_id, cert.memberId])
       ) {
         result.originConflicts.push(`epoch_conflict:${h.matter_id}/${seg.body.epoch}（本机该纪元的密钥解不开设备 ${h.device_id} 的段）`);
-        noteSyncAlert(db, h.matter_id, "epoch_conflict", seg.body.epoch, `本机纪元 ${seg.body.epoch} 的密钥解不开设备 ${h.device_id} 的段`);
+        noteSyncAlert(db, h.matter_id, "epoch_conflict", seg.body.epoch, `本机纪元 ${seg.body.epoch} 的密钥解不开负责人设备 ${h.device_id} 的段`, h.device_id, cert.memberId);
       }
       result.segmentsSkipped += 1;
       out("invalid");
@@ -879,7 +884,7 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
         const had = db.get<{ wrapped_key: string }>(`SELECT wrapped_key FROM matter_keys WHERE matter_id = ? AND epoch = ? AND wrapped_for = ?`, [kr.matter_id, kr.epoch, kr.wrapped_for]);
         if (had && had.wrapped_key !== kr.wrapped_key && kr.wrapped_for === keyctx.device.deviceId && !sameMatterKey(had.wrapped_key, kr.wrapped_key, keyctx.device.keys.encPrivateKeyPem)) {
           ctx.warnings.push(`epoch_conflict:${kr.matter_id}/${kr.epoch}（本机已有该纪元的另一把密钥，签发设备 ${h.device_id}）`);
-          noteSyncAlert(db, kr.matter_id, "epoch_conflict", kr.epoch, `本机已有纪元 ${kr.epoch} 的另一把密钥，负责人设备 ${h.device_id} 签发了不同的一把`);
+          noteSyncAlert(db, kr.matter_id, "epoch_conflict", kr.epoch, `本机已有纪元 ${kr.epoch} 的另一把密钥，负责人设备 ${h.device_id} 签发了不同的一把`, h.device_id, cert.memberId);
         }
         db.run(`INSERT OR IGNORE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key, created_at) VALUES (?,?,?,?,?)`, [
           kr.matter_id,
@@ -916,6 +921,10 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
         if (ALWAYS_TABLES.has(r.t)) continue;
         db.run(`INSERT OR IGNORE INTO relay_imported (t, pk, matter_id) VALUES (?, ?, ?)`, [r.t, String(r.pk), h.matter_id]);
       }
+      // 告警解除（第七轮复核 S11A-54/55、S11B-52/54）：纪元冲突只在冲突的另一方发来更高纪元、本机解开并收下时解除
+      // （别人再轮换一次不算——被移出的共同负责人不能借此解除暂停）；“负责人无法确认”在本机有在用的负责人设备之后解除
+      db.run(`DELETE FROM sync_alerts WHERE matter_id = ? AND kind = 'epoch_conflict' AND peer_device = ? AND epoch < ?`, [h.matter_id, h.device_id, seg.body.epoch]);
+      if (liveOwnerDevice(db, h.matter_id)) db.run(`DELETE FROM sync_alerts WHERE matter_id = ? AND kind = 'owner_unverifiable'`, [h.matter_id]);
       db.run(`INSERT INTO sync_segments_seen (segment_id, from_device, matter_id) VALUES (?,?,?)`, [h.segment_id, h.device_id, h.matter_id]);
       // 归属冲突计数透出（应当-2：编辑机可经 sync.status 看到被拒规模；界面只读化与 NACK 提示在 G1）
       db.run(
@@ -953,23 +962,37 @@ function sameMatterKey(a: string, b: string, encPrivateKeyPem: string): boolean 
   }
 }
 
-/** 记一条团队同步告警（迁移 0040；同一事项、种类、纪元合并计数）。 */
-function noteSyncAlert(db: KernelDb, matterId: string, kind: "epoch_conflict" | "owner_unverifiable", epoch: number, detail: string): void {
+/** 记一条团队同步告警（迁移 0040/0041；同一事项、种类、纪元合并计数；另一方的设备与成员编号）。 */
+function noteSyncAlert(db: KernelDb, matterId: string, kind: "epoch_conflict" | "owner_unverifiable", epoch: number, detail: string, peerDevice: string, peerMember: string): void {
   const at = nowIso();
   db.run(
-    `INSERT INTO sync_alerts (matter_id, kind, epoch, detail, first_at, last_at, hits) VALUES (?,?,?,?,?,?,1)
-     ON CONFLICT(matter_id, kind, epoch) DO UPDATE SET detail = excluded.detail, last_at = excluded.last_at, hits = hits + 1`,
-    [matterId, kind, epoch, detail.slice(0, 300), at, at],
+    `INSERT INTO sync_alerts (matter_id, kind, epoch, detail, first_at, last_at, hits, peer_device, peer_member) VALUES (?,?,?,?,?,?,1,?,?)
+     ON CONFLICT(matter_id, kind, epoch) DO UPDATE SET detail = excluded.detail, last_at = excluded.last_at, hits = hits + 1, peer_device = excluded.peer_device, peer_member = excluded.peer_member`,
+    [matterId, kind, epoch, detail.slice(0, 300), at, at, peerDevice, peerMember],
   );
 }
 
-/** 未解决的团队同步告警：纪元冲突在本机持有更高纪元之后视为解决（并删除）；已删除的事项不再显示。 */
-export function activeSyncAlerts(db: KernelDb, ownDeviceId: string): { matter_id: string; kind: string; epoch: number; first_at: string; last_at: string; hits: number }[] {
-  const out: { matter_id: string; kind: string; epoch: number; first_at: string; last_at: string; hits: number }[] = [];
-  for (const a of db.all<{ matter_id: string; kind: string; epoch: number; first_at: string; last_at: string; hits: number }>(`SELECT matter_id, kind, epoch, first_at, last_at, hits FROM sync_alerts ORDER BY last_at DESC`, [])) {
+/** 本机认得的在册负责人名下是否还有在用（未吊销）的设备。 */
+function liveOwnerDevice(db: KernelDb, matterId: string): boolean {
+  for (const d of db.all<{ device_id: string }>(
+    `SELECT d.device_id FROM devices d JOIN matter_members mm ON mm.user_id = d.member_id AND mm.matter_id = ? AND mm.matter_role = 'owner' AND mm.removed_at IS NULL WHERE d.status = 'active'`,
+    [matterId],
+  )) {
+    if (!deviceTombstoned(db, d.device_id)) return true;
+  }
+  return false;
+}
+
+/** 未解除的团队同步告警（解除见 syncImport）；已删除的事项的告警一并清掉。 */
+export function activeSyncAlerts(db: KernelDb): { matter_id: string; kind: string; epoch: number; first_at: string; last_at: string; hits: number; peer_member: string | null }[] {
+  const out: { matter_id: string; kind: string; epoch: number; first_at: string; last_at: string; hits: number; peer_member: string | null }[] = [];
+  for (const a of db.all<{ matter_id: string; kind: string; epoch: number; first_at: string; last_at: string; hits: number; peer_member: string | null }>(
+    `SELECT matter_id, kind, epoch, first_at, last_at, hits, peer_member FROM sync_alerts ORDER BY last_at DESC`,
+    [],
+  )) {
     const lc = db.get<{ lifecycle: string }>(`SELECT lifecycle FROM matters WHERE matter_id = ?`, [a.matter_id])?.lifecycle;
-    if (!lc || lc === "purged" || (a.kind === "epoch_conflict" && currentMatterEpoch(db, a.matter_id, ownDeviceId) > a.epoch)) {
-      db.run(`DELETE FROM sync_alerts WHERE matter_id = ? AND kind = ? AND epoch = ?`, [a.matter_id, a.kind, a.epoch]);
+    if (!lc || lc === "purged") {
+      db.run(`DELETE FROM sync_alerts WHERE matter_id = ?`, [a.matter_id]);
       continue;
     }
     out.push(a);
