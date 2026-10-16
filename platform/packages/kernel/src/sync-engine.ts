@@ -11,10 +11,15 @@
  * - 撤权回填拒收：assertIncomingEventAcceptable（§5.2 不依赖时钟）；
  * - 只同步「团队」事项：个人事项导出跳过、摄取整段跳过；无本机密钥的事项段跳过记告警——
  *   个人事项与无权限事项零字节出/入本机（红线）。
+ *
+ * 介质（第 11 批 S11）：律所共享文件夹（folder），或中软共享中继（relay，services/share-relay.ts 负责上传与取回）。
+ * 中继介质的导出：段写进本机发件目录（不复制块——上传时直接读本机块库）；导出水位另记（relay_export_state，与共享文件夹互不影响）；
+ * 段体（按事项密钥加密）内另附 `_relay_blob` 行——引用的每个密文块的封装摘要、大小与切块摘要，供接收方取块与核对
+ * （块在中继上按**密文**摘要寻址，明文内容摘要只在加密的段体里）；事项没有新内容时不出段（总是附带的用户、设备等行另按摘要比对）。
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { canonicalJson, unwrapMatterKey, type DeviceCertificate } from "@zr-legal/keys";
 import { checkSealed, openSegmentBody, parseSegment, scanSegments, sealSegment, writeSegment, writeShareBlob, type KeyRow, type SegmentFile, type SyncRow } from "@zr-legal/sync";
 import type { KernelDb } from "./db.ts";
@@ -35,6 +40,31 @@ export interface SyncExportResult {
   rowsExported: number;
 }
 
+/** 中继介质：每块大小（与中继服务的单块上限一致）。 */
+export const RELAY_CHUNK_BYTES = 4 * 1024 * 1024;
+/** 段体内的块清单行（只在中继介质的段里；接收方据此取块，摄取时不落库）。 */
+export const RELAY_BLOB_TABLE = "_relay_blob";
+export interface RelayBlobRef {
+  /** 封装（密文）字节的 SHA-256。 */
+  sha256: string;
+  size: number;
+  /** 按 RELAY_CHUNK_BYTES 切开后每块的 SHA-256。 */
+  chunks: string[];
+}
+
+/** 把字节按固定大小切块并给出各块摘要（中继介质的上传与核对共用）。 */
+export function relayChunks(buf: Buffer): { cid: string; bytes: Buffer }[] {
+  const out: { cid: string; bytes: Buffer }[] = [];
+  for (let off = 0; off < buf.length; off += RELAY_CHUNK_BYTES) {
+    const bytes = buf.subarray(off, Math.min(buf.length, off + RELAY_CHUNK_BYTES));
+    out.push({ cid: createHash("sha256").update(bytes).digest("hex"), bytes });
+  }
+  return out;
+}
+
+/** 摄取时每一段的去向（第 11 批：中继收件据此决定删除、保留待钥或丢弃）。 */
+export type SegmentOutcome = "applied" | "own" | "seen" | "purged" | "personal" | "invalid" | "revoked" | "no_key";
+
 export interface SyncImportResult {
   segmentsApplied: number;
   segmentsSkipped: number;
@@ -48,7 +78,12 @@ export interface SyncImportResult {
   /** 归属冲突（应当-3：非归属设备试图覆盖归属设备状态，已保留本机行）。 */
   originConflicts: string[];
   warnings: { tmpFiles: string[]; conflictCopies: string[] };
+  /** 每段的去向（按段编号）。 */
+  dispositions: { segment_id: string; matter_id: string; path: string; outcome: SegmentOutcome }[];
 }
+
+/** 每段都会附带的行（与事项内容是否变化无关）：中继介质按它们的摘要判断是否需要出段。 */
+const ALWAYS_TABLES = new Set(["users", "matters", "devices", "im_bindings"]);
 
 const APPEND_ONLY_TABLES = new Set(["run_events", "audit_events", "egress_records", "key_epochs", "matter_keys"]);
 
@@ -152,7 +187,9 @@ function collectRows(db: KernelDb, matterId: string, deviceId: string, lamport: 
   return rows;
 }
 
-export function syncExport(deps: SyncDeps, args: { shareDir: string; matterId?: string }): SyncExportResult {
+export function syncExport(deps: SyncDeps, args: { shareDir: string; matterId?: string; medium?: "folder" | "relay" }): SyncExportResult {
+  const relay = args.medium === "relay";
+  const stateTable = relay ? "relay_export_state" : "sync_state";
   const { db, keyctx, tenantId } = deps;
   const matters = args.matterId
     ? db.all<any>(`SELECT * FROM matters WHERE matter_id = ? AND tenant_id = ?`, [args.matterId, tenantId])
@@ -171,21 +208,44 @@ export function syncExport(deps: SyncDeps, args: { shareDir: string; matterId?: 
     const epoch = currentMatterEpoch(db, m.matter_id);
     const matterKey = resolveMatterKey(db, m.matter_id, epoch, keyctx.device.deviceId, keyctx.device.keys.encPrivateKeyPem);
     if (!matterKey) continue; // 本机不持钥（理论上不发生：成员设备才导得出）
-    const state = db.get<{ last_export_lamport: number; last_export_at: string | null }>(`SELECT * FROM sync_state WHERE matter_id = ?`, [m.matter_id]);
+    const state = db.get<{ last_export_lamport: number; last_export_at: string | null; last_always_digest?: string | null }>(`SELECT * FROM ${stateTable} WHERE matter_id = ?`, [m.matter_id]);
     const since = state?.last_export_at ?? null;
     const head = db.get<{ l: number | null }>(`SELECT MAX(lamport) AS l FROM signed_events WHERE matter_id = ?`, [m.matter_id]);
     const toLamport = head?.l ?? 1;
     const fromLamport = (state?.last_export_lamport ?? 0) + 1;
+    const exportAt = nowIso();
     const rows = collectRows(db, m.matter_id, keyctx.device.deviceId, toLamport, since);
-    if (rows.length === 0) {
-      db.run(`INSERT INTO sync_state (matter_id, last_export_lamport, last_export_at, updated_at) VALUES (?,?,?,?)
+    // 中继介质：只有总是附带的行、且它们与上次出段时相同 → 不出段（否则每个周期都会给每个团队事项写一段）
+    const alwaysDigest = relay ? createHash("sha256").update(canonicalJson(rows.filter((r) => ALWAYS_TABLES.has(r.t)).map((r) => [r.t, r.pk, r.row]))).digest("hex") : null;
+    const unchanged = relay && rows.every((r) => ALWAYS_TABLES.has(r.t)) && state?.last_always_digest === alwaysDigest;
+    if (rows.length === 0 || unchanged) {
+      db.run(`INSERT INTO ${stateTable} (matter_id, last_export_lamport, last_export_at, updated_at) VALUES (?,?,?,?)
               ON CONFLICT(matter_id) DO UPDATE SET last_export_lamport = excluded.last_export_lamport, last_export_at = excluded.last_export_at, updated_at = excluded.updated_at`, [
         m.matter_id,
         toLamport,
-        nowIso(),
+        exportAt,
         nowIso(),
       ]);
       continue;
+    }
+    // 引用的密文块（同一份密文，不经二次加解密）：共享文件夹介质**先**复制块、后写段——接收方看到段时块已在（否则摄取到没有块的行）；
+    // 中继介质不复制，只在段体里附块清单（上传时读本机块库）
+    const blobRels = new Set<string>();
+    for (const r of rows) {
+      const uri = (r.row as any).storage_uri as string | undefined;
+      if (typeof uri === "string" && uri.startsWith("blob://")) blobRels.add(uri.slice("blob://".length));
+    }
+    for (const rel of blobRels) {
+      const src = join(deps.blobs.dir, ...rel.split("/"));
+      if (!existsSync(src)) continue;
+      const [scope, sha] = rel.split("/");
+      if (!relay) {
+        writeShareBlob(args.shareDir, tenantId, scope!, sha!, readFileSync(src));
+        continue;
+      }
+      const env = readFileSync(src);
+      const ref: RelayBlobRef = { sha256: createHash("sha256").update(env).digest("hex"), size: env.length, chunks: relayChunks(env).map((c) => c.cid) };
+      rows.push({ t: RELAY_BLOB_TABLE, pk: rel, src_device: keyctx.device.deviceId, src_lamport: toLamport, row: ref as unknown as Record<string, unknown> });
     }
     const keyRows = db.all<KeyRow>(`SELECT matter_id, epoch, wrapped_for, wrapped_key, created_at FROM matter_keys WHERE matter_id = ?`, [m.matter_id]);
     const segmentId = `seg_${keyctx.device.deviceId}_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
@@ -209,23 +269,21 @@ export function syncExport(deps: SyncDeps, args: { shareDir: string; matterId?: 
     const path = writeSegment(args.shareDir, tenantId, keyctx.device.deviceId, segmentId, sealed);
     result.segments.push(path);
     result.rowsExported += rows.length;
-    // 引用的密文块随行复制（同一份密文，不经二次加解密）
-    for (const r of rows) {
-      const uri = (r.row as any).storage_uri as string | undefined;
-      if (typeof uri === "string" && uri.startsWith("blob://")) {
-        const rel = uri.slice("blob://".length);
-        const src = join(deps.blobs.dir, ...rel.split("/"));
-        if (existsSync(src)) {
-          const [scope, sha] = rel.split("/");
-          writeShareBlob(args.shareDir, tenantId, scope!, sha!, readFileSync(src));
-        }
-      }
+    // 水位取收集之前的时刻（收集与写段期间新建的行下次仍会被收进来）
+    if (relay) {
+      db.run(
+        `INSERT INTO relay_export_state (matter_id, last_export_lamport, last_export_at, last_always_digest, updated_at) VALUES (?,?,?,?,?)
+         ON CONFLICT(matter_id) DO UPDATE SET last_export_lamport = excluded.last_export_lamport, last_export_at = excluded.last_export_at,
+           last_always_digest = excluded.last_always_digest, updated_at = excluded.updated_at`,
+        [m.matter_id, toLamport, exportAt, alwaysDigest, nowIso()],
+      );
+      continue;
     }
     db.run(`INSERT INTO sync_state (matter_id, last_export_lamport, last_export_at, updated_at) VALUES (?,?,?,?)
             ON CONFLICT(matter_id) DO UPDATE SET last_export_lamport = excluded.last_export_lamport, last_export_at = excluded.last_export_at, updated_at = excluded.updated_at`, [
       m.matter_id,
       toLamport,
-      nowIso(),
+      exportAt,
       nowIso(),
     ]);
   }
@@ -426,26 +484,42 @@ function applyArtifact(deps: SyncDeps, r: SyncRow, ctx: { conflicts: SyncImportR
 
 export function syncImport(deps: SyncDeps, args: { shareDir: string }): SyncImportResult {
   const { db, keyctx, tenantId } = deps;
-  const result: SyncImportResult = { segmentsApplied: 0, segmentsSkipped: 0, rowsApplied: 0, conflicts: [], skippedNoKey: [], skippedPersonal: [], skippedPurged: [], rejectedRevoked: [], originConflicts: [], warnings: { tmpFiles: [], conflictCopies: [] } };
+  const result: SyncImportResult = {
+    segmentsApplied: 0,
+    segmentsSkipped: 0,
+    rowsApplied: 0,
+    conflicts: [],
+    skippedNoKey: [],
+    skippedPersonal: [],
+    skippedPurged: [],
+    rejectedRevoked: [],
+    originConflicts: [],
+    warnings: { tmpFiles: [], conflictCopies: [] },
+    dispositions: [],
+  };
   const rootPub = keyctx.firm.rootPublicKeyPem;
   const { candidates, warnings } = scanSegments(args.shareDir, tenantId);
   result.warnings = warnings;
 
   // 确定全序（§7.1：按 (lamport, device) 合并）
-  const parsed = candidates
-    .map((c: (typeof candidates)[number]) => ({ ...c, seg: parseSegment(c.content) }))
+  const all = candidates.map((c: (typeof candidates)[number]) => ({ ...c, seg: parseSegment(c.content) }));
+  for (const c of all) if (!c.seg) result.dispositions.push({ segment_id: "", matter_id: "", path: c.path, outcome: "invalid" });
+  const parsed = all
     .filter((c): c is (typeof candidates)[number] & { seg: SegmentFile } => c.seg !== null)
     .sort((a, b) => a.seg.header.from_lamport - b.seg.header.from_lamport || a.seg.header.device_id.localeCompare(b.seg.header.device_id));
 
   for (const cand of parsed) {
     const seg = cand.seg;
     const h = seg.header;
+    const out = (outcome: SegmentOutcome) => result.dispositions.push({ segment_id: String(h.segment_id), matter_id: String(h.matter_id), path: cand.path, outcome });
     if (h.device_id === keyctx.device.deviceId) {
       result.segmentsSkipped += 1;
+      out("own");
       continue; // 本机自产段
     }
     if (db.get(`SELECT 1 AS x FROM sync_segments_seen WHERE segment_id = ?`, [h.segment_id])) {
       result.segmentsSkipped += 1;
+      out("seen");
       continue;
     }
     // 只同步「团队」事项（个人事项整段跳过）
@@ -454,12 +528,14 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string }): SyncImpo
     if (localMatter?.lifecycle === "purged") {
       result.skippedPurged.push(h.matter_id);
       result.segmentsSkipped += 1;
+      out("purged");
       continue;
     }
     const matterRowInBody = localMatter?.collab_scope;
     if (matterRowInBody && matterRowInBody !== "team") {
       result.skippedPersonal.push(h.matter_id);
       result.segmentsSkipped += 1;
+      out("personal");
       continue;
     }
     // 证书链 + 归属 + 封口验签
@@ -471,6 +547,7 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string }): SyncImpo
     }
     if (!cert || cert.deviceId !== h.device_id || !verifyCertSignature(cert, rootPub) || checkSealed(seg, cert.signPublicKeyPem).ok !== true) {
       result.segmentsSkipped += 1;
+      out("invalid");
       continue;
     }
     // 撤权回填拒收（§5.2 不依赖时钟）：本机已有该设备登记、或它在吊销墓碑里（复核 S6-B28：本机设备表里可能没有它——
@@ -481,6 +558,7 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string }): SyncImpo
       } catch {
         result.rejectedRevoked.push(h.segment_id);
         result.segmentsSkipped += 1;
+        out("revoked");
         continue;
       }
     }
@@ -500,6 +578,7 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string }): SyncImpo
     if (!matterKey) {
       result.skippedNoKey.push(h.matter_id);
       result.segmentsSkipped += 1;
+      out("no_key");
       continue;
     }
     let rows: SyncRow[];
@@ -507,6 +586,7 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string }): SyncImpo
       rows = openSegmentBody(seg, matterKey);
     } catch {
       result.segmentsSkipped += 1;
+      out("invalid");
       continue;
     }
     // 个人事项双保险（body 内 matters 行若标 personal 也跳）
@@ -514,6 +594,7 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string }): SyncImpo
     if (bodyMatter && (bodyMatter.row as any).collab_scope !== "team") {
       result.skippedPersonal.push(h.matter_id);
       result.segmentsSkipped += 1;
+      out("personal");
       continue;
     }
     // 撤权回填拒收（§5.2 不依赖时钟；devices 行可能就在本段——先应用 devices 行再判）
@@ -523,6 +604,7 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string }): SyncImpo
     } catch {
       result.rejectedRevoked.push(h.segment_id);
       result.segmentsSkipped += 1;
+      out("revoked");
       continue;
     }
 
@@ -537,7 +619,8 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string }): SyncImpo
     };
     db.tx(() => {
       for (const r of rows) {
-        if (r.t === "devices") continue;
+        // 中继介质的块清单行只供取块，不落库
+        if (r.t === "devices" || r.t === RELAY_BLOB_TABLE) continue;
         if (applyRow(deps, r, ctx)) result.rowsApplied += 1;
       }
       // key_rows 随事务落库（matters 行已在库，外键满足）
@@ -574,8 +657,34 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string }): SyncImpo
       );
     });
     result.segmentsApplied += 1;
+    out("applied");
   }
   return result;
+}
+
+/**
+ * 用本机密钥解开一段的段体（先查本机 matter_keys，没有再找段内面向本机的包裹；第 11 批中继收发件用）。
+ * 不验签、不落库——只用来读出段体里的块清单；摄取仍按 syncImport 的全部核验。解不开返回 null。
+ */
+export function openSegmentRows(deps: SyncDeps, seg: SegmentFile): SyncRow[] | null {
+  const { db, keyctx } = deps;
+  let key = resolveMatterKey(db, seg.header.matter_id, seg.body.epoch, keyctx.device.deviceId, keyctx.device.keys.encPrivateKeyPem);
+  if (!key) {
+    const forUs = (seg.key_rows ?? []).find((kr) => kr.wrapped_for === keyctx.device.deviceId && kr.epoch === seg.body.epoch);
+    if (forUs) {
+      try {
+        key = unwrapMatterKey(forUs.wrapped_key, keyctx.device.keys.encPrivateKeyPem);
+      } catch {
+        key = null;
+      }
+    }
+  }
+  if (!key) return null;
+  try {
+    return openSegmentBody(seg, key);
+  } catch {
+    return null;
+  }
 }
 
 export function syncStatus(deps: SyncDeps, args: { shareDir?: string }): Record<string, unknown> {

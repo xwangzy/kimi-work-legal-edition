@@ -14,6 +14,7 @@
  *   KWL_CP_AUDIT_FILE：运营审计流水落盘（JSON Lines，启动时验链）。
  * - KWL_SUPPORT_DIR=<目录>（第 9 批 S13）：同时拉起支持与诊断服务 v0（诊断包上传；运营凭据 KWL_SUPPORT_OPS_SECRET，缺省随机且不输出）。
  * - KWL_NOTIFY_DIR=<目录>（第 10 批 S9）：同时拉起通知与提醒服务 v0（期限提醒：只存触发时刻、接收设备与密文；凭据由控制面签发，须 KWL_CONTROL_PLANE=1）。
+ * - KWL_RELAY_DIR=<目录>（第 11 批 S11）：同时拉起共享中继服务 v0（团队事项密文同步；按订阅核对律所策略 share_relay，须 KWL_CONTROL_PLANE=1）。
  *
  * 用法：node scripts/dev-cloud-v0.mjs   → 按输出设置环境变量后启动内核 / 桌面
  */
@@ -99,12 +100,20 @@ if (process.env.KWL_NOTIFY_DIR) {
   notify = na.createNotifyApi({ dir: process.env.KWL_NOTIFY_DIR, keys, ...(feed ? { feed } : {}) });
   await new Promise((r) => notify.listen(Number(process.env.KWL_NOTIFY_PORT ?? 0), "127.0.0.1", r));
 }
+let relay;
+if (process.env.KWL_RELAY_DIR) {
+  if (!feed) throw new Error("KWL_RELAY_DIR 须与 KWL_CONTROL_PLANE=1 一起使用（中继按控制面订阅核对律所策略）");
+  const ra = await import("../services/relay-api/src/index.ts");
+  relay = ra.createRelayApi({ dir: process.env.KWL_RELAY_DIR, keys, feed });
+  await new Promise((r) => relay.listen(Number(process.env.KWL_RELAY_PORT ?? 0), "127.0.0.1", r));
+}
 console.log("# 云端 v0 已启动（本机模拟部署；上游：" + provider.name + " / 检索：" + searchProvider.name + (withCp ? " / 控制面 v0" : "") + "）");
 console.log(`export ZR_GATEWAY_BASE=http://127.0.0.1:${gateway.address().port}/v1`);
 console.log(`export ZR_SEARCH_BASE=http://127.0.0.1:${search.address().port}/search`);
 if (dist) console.log(`export ZR_DIST_BASE=http://127.0.0.1:${dist.address().port}`);
 if (support) console.log(`export ZR_SUPPORT_BASE=http://127.0.0.1:${support.address().port}`);
 if (notify) console.log(`export ZR_NOTIFY_BASE=http://127.0.0.1:${notify.address().port}`);
+if (relay) console.log(`export ZR_RELAY_BASE=http://127.0.0.1:${relay.address().port}`);
 if (withCp) {
   // 控制面形态：地址与控制面公钥随客户端构建固定（这里经环境变量给出）；席位令牌由控制面签发给内核，不输出
   console.log(`export ZR_CONTROL_PLANE_BASE=http://127.0.0.1:${cp.server.address().port}`);

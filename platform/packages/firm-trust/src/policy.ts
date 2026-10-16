@@ -34,6 +34,11 @@ export interface FirmPolicyBody {
    * 本实现按“比最严模板宽即放宽”的既定口径，把允许上传算作放宽（须管理员设备签名；偏离登记 D-77）。
    */
   support_upload?: "deny" | "allow";
+  /**
+   * 团队事项经中软共享中继同步（第 11 批，v9.2 §5.1 S11；v9 第 02 篇“团队协作：端到端加密事项共享”）：中继只保存段与块的密文、
+   * 匿名事项编号、写入设备与读者设备编号。**可选字段**：没有 = 不允许（与最严模板相同）；允许即放宽（须管理员设备签名；偏离登记 D-89）。
+   */
+  share_relay?: "deny" | "allow";
 }
 
 export function strictestTemplate(): FirmPolicyBody {
@@ -47,7 +52,7 @@ export const CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 const POLICY_FIELDS = ["max_mode", "auto_preauthorizations", "fetch_allowlist_extra", "l3a_standard_model"] as const;
 /** 可选字段（没有即按最严处理；不在 POLICY_FIELDS 的“必须齐全”之列）。 */
-const OPTIONAL_POLICY_FIELDS = ["support_upload"] as const;
+const OPTIONAL_POLICY_FIELDS = ["support_upload", "share_relay"] as const;
 export const DOMAIN_RE = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
 type Check<T> = { ok: true; value: T } | { ok: false; reason: string };
@@ -70,6 +75,7 @@ export function validatePolicyBody(x: unknown): Check<FirmPolicyBody> {
   }
   if (b.l3a_standard_model !== "deny" && b.l3a_standard_model !== "allow") return { ok: false, reason: "l3a_standard_model_invalid" };
   if ("support_upload" in b && b.support_upload !== "deny" && b.support_upload !== "allow") return { ok: false, reason: "support_upload_invalid" };
+  if ("share_relay" in b && b.share_relay !== "deny" && b.share_relay !== "allow") return { ok: false, reason: "share_relay_invalid" };
   return {
     ok: true,
     value: {
@@ -79,6 +85,7 @@ export function validatePolicyBody(x: unknown): Check<FirmPolicyBody> {
       l3a_standard_model: b.l3a_standard_model,
       // 只在原文有时带上（签名字节按原文计算：第 9 批之前的策略不含此字段）
       ...("support_upload" in b ? { support_upload: b.support_upload as "deny" | "allow" } : {}),
+      ...("share_relay" in b ? { share_relay: b.share_relay as "deny" | "allow" } : {}),
     },
   };
 }
@@ -94,12 +101,18 @@ export function stricterBody(a: FirmPolicyBody, b: FirmPolicyBody): FirmPolicyBo
     fetch_allowlist_extra: a.fetch_allowlist_extra.filter((d) => b.fetch_allowlist_extra.includes(d)),
     l3a_standard_model: a.l3a_standard_model === "allow" && b.l3a_standard_model === "allow" ? "allow" : "deny",
     ...(a.support_upload === "allow" && b.support_upload === "allow" ? { support_upload: "allow" as const } : {}),
+    ...(a.share_relay === "allow" && b.share_relay === "allow" ? { share_relay: "allow" as const } : {}),
   };
 }
 
 /** 是否允许律师上传诊断包（没有该字段 = 不允许）。 */
 export function supportUploadAllowed(body: FirmPolicyBody): boolean {
   return body.support_upload === "allow";
+}
+
+/** 是否允许团队事项经中软共享中继同步（第 11 批 S11；没有该字段 = 不允许）。 */
+export function shareRelayAllowed(body: FirmPolicyBody): boolean {
+  return body.share_relay === "allow";
 }
 
 /** 单次版本跳跃的上限（复核 S6-A13、S6-B20）：超出即拒收并告警，防止版本号被一次抬到顶、此后再也无法更新。 */
@@ -119,6 +132,7 @@ export function policyRelaxations(body: FirmPolicyBody): string[] {
   for (const d of body.fetch_allowlist_extra) r.push(`fetch_allowlist:${d}`);
   if (body.l3a_standard_model === "allow") r.push("l3a_standard_model:allow");
   if (body.support_upload === "allow") r.push("support_upload:allow");
+  if (body.share_relay === "allow") r.push("share_relay:allow");
   return r;
 }
 
@@ -251,8 +265,8 @@ export function evaluatePolicy(candidate: unknown, ctx: PolicyContext): PolicyVe
  * 认不出即无法判断宽严：这类文档不接受，但生效策略回退最严模板，而不是沿用可能更宽的旧策略。
  */
 export function isUnrecognizedFormat(detail: string): boolean {
-  // 枚举类取值认不出（含第 9 批的 support_upload；复核 S9B-06）：按“更新的格式”回退最严，不沿用可能更宽的旧策略
-  return /^(unknown_(doc_)?field|doc_format_unsupported|max_mode_invalid|auto_preauthorizations_invalid|l3a_standard_model_invalid|support_upload_invalid)/.test(detail);
+  // 枚举类取值认不出（含第 9 批的 support_upload、第 11 批的 share_relay；复核 S9B-06）：按“更新的格式”回退最严，不沿用可能更宽的旧策略
+  return /^(unknown_(doc_)?field|doc_format_unsupported|max_mode_invalid|auto_preauthorizations_invalid|l3a_standard_model_invalid|support_upload_invalid|share_relay_invalid)/.test(detail);
 }
 
 /**

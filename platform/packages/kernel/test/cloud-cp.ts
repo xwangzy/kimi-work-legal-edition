@@ -12,6 +12,7 @@ import { createLegalGateway, DEFAULT_ROUTES, httpLedger, LeaseQuota, memoryMeter
 import { createSearchService, MockSearchProvider, type SearchMeterRecord } from "@zr-legal/search-service";
 import { createSupportApi, type SupportAccessRecord } from "@zr-legal/support-api";
 import { createNotifyApi } from "@zr-legal/notify-api";
+import { createRelayApi } from "@zr-legal/relay-api";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,11 +32,13 @@ export interface CloudCp {
   support: { dir: string; opsSecret: string; base: string; access: SupportAccessRecord[] };
   /** 通知服务（第 10 批 S9；期限提醒）：存储目录与服务（用例可看云端保存了什么）。 */
   notify: { dir: string; base: string; server: ReturnType<typeof createNotifyApi>; setSkew(ms: number): void };
+  /** 共享中继（第 11 批 S11；团队事项密文同步）：存储目录与服务（用例可看中继上保存了什么）。 */
+  relay: { dir: string; base: string; server: ReturnType<typeof createRelayApi> };
   /** 网关的额度租约（用例可 flush 后核对控制面账本）。 */
   quota: LeaseQuota;
   gatewayUrl: string;
   /** 直接向网关发请求用（模拟误配置或旧客户端）：用控制面的席位密钥签一枚席位令牌。 */
-  seatFor(c: { tid: string; uid: string; sid: string; dev: string }): string;
+  seatFor(c: { tid: string; uid: string; sid: string; dev: string; aud?: string[] }): string;
   /** 以某台设备的身份向控制面发设备签名请求（模拟同事的客户端登记）。 */
   deviceCall(tid: string, device: { cert: DeviceCertificate; signPrivateKeyPem: string }, method: string, path: string, body?: unknown): Promise<{ status: number; json: any }>;
   /**
@@ -88,6 +91,11 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
   const notifySvc = createNotifyApi({ dir: notifyDir, keys: seatKeys, feed, now: () => Date.now() + notifySkew });
   await new Promise<void>((r) => notifySvc.listen(0, "127.0.0.1", () => r()));
   const notifyBase = `http://127.0.0.1:${(notifySvc.address() as AddressInfo).port}`;
+  // 共享中继（第 11 批 S11）：按订阅核对律所策略（share_relay）
+  const relayDir = mkdtempSync(join(tmpdir(), "kwl-relay-"));
+  const relaySvc = createRelayApi({ dir: relayDir, keys: seatKeys, feed });
+  await new Promise<void>((r) => relaySvc.listen(0, "127.0.0.1", () => r()));
+  const relayBase = `http://127.0.0.1:${(relaySvc.address() as AddressInfo).port}`;
   const supportBase = `http://127.0.0.1:${(supportSvc.address() as AddressInfo).port}`;
   const gatewayUrl = `http://127.0.0.1:${(gateway.address() as AddressInfo).port}/v1`;
   return {
@@ -101,6 +109,8 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
       ZR_SUPPORT_BASE: supportBase,
       ZR_NOTIFY_BASE: notifyBase,
       ZR_NOTIFY_POLL_MS: "off",
+      ZR_RELAY_BASE: relayBase,
+      ZR_RELAY_SYNC_MS: "off",
     },
     cp,
     base,
@@ -119,6 +129,7 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
         notifySkew = ms;
       },
     },
+    relay: { dir: relayDir, base: relayBase, server: relaySvc },
     gatewayUrl,
     seatFor: (c) => issueSeatToken({ ...c, kid: keys.seat.kid }, keys.seat.privateKey),
     setControlPlaneAvailable(on) {
@@ -134,7 +145,7 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
     async close() {
       feed.stop();
       await quota.close().catch(() => {});
-      for (const s of [cp.server, gateway, searchSvc, supportSvc, notifySvc]) {
+      for (const s of [cp.server, gateway, searchSvc, supportSvc, notifySvc, relaySvc]) {
         s.closeAllConnections();
         await new Promise<void>((r) => s.close(() => r()));
       }

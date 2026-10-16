@@ -47,6 +47,7 @@ import { screenSearchQuery } from "@zr-legal/egress-gate";
 import { createGateProvider, mockProvider } from "@zr-legal/model-broker";
 import { QaChatService } from "./services/qa-chat.ts";
 import { ReminderService } from "./services/reminders.ts";
+import { ShareRelaySync } from "./services/share-relay.ts";
 import { mintTaskToken } from "./identity.ts";
 import { FileSink, errFields, loadOrCreateSalt, slog } from "@zr-legal/safe-log";
 
@@ -480,6 +481,49 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     reminderTimer.unref();
   }
 
+  // 团队事项经中软共享中继同步（第 11 批 S11）：只在律所策略允许、中继已配置且接入控制面时收发；段与块都是密文
+  const shareRelay = new ShareRelaySync({
+    db,
+    blobs,
+    keyctx,
+    tenantId: identity.tenantId,
+    root: join(config.workspaceDir, "relay"),
+    configured: () => gate.relayConfigured && !!controlPlane,
+    allowed: () => governance.shareRelayAllowed(),
+    exitMode: () => governance.exitMode() !== null,
+    credential: () => {
+      if (!controlPlane) return Promise.reject(new Error("control_plane_not_configured"));
+      return controlPlane.relayToken();
+    },
+    relay: (req) => gate.relay(req),
+    onApplied: (n) => broadcastRef.current?.({ type: "sync.applied", segments: n }),
+  });
+  // 发件每 5 秒（导出没有新内容时不出段）；收件长轮询（有新段即返回，约 5 秒内可见）；出错或不能收发时 30 秒后再试。
+  // ZR_RELAY_SYNC_MS=off 只在显式调用 relay.sync 时收发（测试）
+  let relayPushTimer: NodeJS.Timeout | null = null;
+  let relayClosed = false;
+  let relayPause: { timer: NodeJS.Timeout; done: () => void } | null = null;
+  if (env.ZR_RELAY_SYNC_MS !== "off") {
+    const every = Math.min(Math.max(Number(env.ZR_RELAY_SYNC_MS ?? 5_000) || 5_000, 2_000), 600_000);
+    relayPushTimer = setInterval(() => {
+      if (!shareRelay.blocked()) void shareRelay.push().catch((e) => slog.event("KERNEL_RELAY_PUSH_FAILED", errFields(e)));
+    }, every);
+    relayPushTimer.unref();
+    void (async () => {
+      while (!relayClosed) {
+        const r = shareRelay.blocked() ? null : await shareRelay.pull(true).catch(() => null);
+        if (relayClosed) break;
+        const wait = !r || r.errors.length > 0 ? 30_000 : 200;
+        await new Promise<void>((done) => {
+          const timer = setTimeout(done, wait);
+          timer.unref();
+          relayPause = { timer, done };
+        });
+        relayPause = null;
+      }
+    })();
+  }
+
   const shutdownHooks: (() => void)[] = [];
   const api = createApi({
     purgeAgentData: purgeAgentDataFor,
@@ -510,6 +554,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     governance,
     controlPlane,
     reminders,
+    shareRelay,
   });
 
   // 本设备被吊销（第 02 篇 §9.13；复核 S6-A02、S6-B01）：终止进行中的任务（闸门在退出模式下已拒绝一切出站）；
@@ -735,6 +780,12 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       if (syncTimer) clearInterval(syncTimer);
       if (contentTimer) clearInterval(contentTimer);
       if (reminderTimer) clearInterval(reminderTimer);
+      relayClosed = true;
+      if (relayPushTimer) clearInterval(relayPushTimer);
+      if (relayPause) {
+        clearTimeout((relayPause as { timer: NodeJS.Timeout }).timer);
+        (relayPause as { done: () => void }).done();
+      }
       if (contentFirst) clearTimeout(contentFirst);
       await contentUpdater.close();
       await queue.shutdown();

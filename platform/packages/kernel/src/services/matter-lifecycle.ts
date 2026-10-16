@@ -179,6 +179,8 @@ export async function purgeMatter(
     // 已经送达过的也算（复核 S10B-20：撤销且云端删成的，那些设备上仍有解密后的内容）；cloud_targets 只在登记成功时写入
     reminders_elsewhere: count(`SELECT COUNT(*) AS n FROM reminders WHERE matter_id = ? AND (cloud_may_have_copy = 1 OR cloud_targets IS NOT NULL) AND (COALESCE(cloud_targets, 0) > 1 OR audience = 'team')`),
   };
+  // 第 11 批 S11：经中软共享中继发出或取回过段的（中继上有该事项的密文段与块）
+  inventory.relay = count(`SELECT COUNT(*) AS n FROM relay_matters WHERE matter_id = ?`);
   // 已导出或下载过的文件（成果下载、账本导出、结案归档）：在律师自己保存的位置，本产品无法删除（复核 C-A10；第 02 篇 §9.13“导出临时包”）
   inventory.exports = count(
     `SELECT COUNT(*) AS n FROM signed_events WHERE matter_id = ? AND kind = 'audit_event' AND type IN ('artifact.exported','matter.export_ledger','matter.archive_exported')`,
@@ -271,6 +273,14 @@ export async function purgeMatter(
           where: "律所共享文件夹（同步段）",
           status: team ? "pending" : "none",
           note: team ? "同步段为密文；本机密钥已删除，但持有密钥的成员设备仍可解密——待同步删除指令（G1）" : "个人事项不同步，共享文件夹中没有本事项内容",
+        },
+        {
+          where: "中软共享中继（同步段与块的密文）",
+          status: inventory.relay! > 0 ? "pending" : "none",
+          note:
+            inventory.relay! > 0
+              ? "本事项的同步段与材料块以密文保存在中软共享中继上（中软没有事项密钥）：本机密钥与本机收发件目录已删除，但持有密钥的成员设备仍可取回并解密——待团队删除指令（G1）；律所退约时由中软整体删除"
+              : "本事项没有经中软共享中继同步"
         },
         // 复核 C-A03：团队事项的恢复托管包裹已随同步段写入共享文件夹、也在其他成员设备上——只有本机那份已删
         team

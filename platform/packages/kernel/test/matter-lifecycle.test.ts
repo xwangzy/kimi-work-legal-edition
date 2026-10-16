@@ -103,8 +103,9 @@ test("结案只读 → 保全阻止删除 → 提前删除须写原因 → 删�
   assert.equal(JSON.stringify(rc).includes(CANARY), false, "回执不含名称与内容");
   assert.deepEqual(
     rc.receipt.copies.map((c: any) => c.status),
-    // 第 10 批：增“中软通知服务（期限提醒）”“已送达其他设备的期限提醒”两行（本事项没有交给云端的提醒 → none）
-    ["deleted", "none", "none", "deleted", rc.receipt.inventory.egress_sent > 0 ? "irrevocable" : "none", "none", "pending", "none", "none", "kept"],
+    // 第 10 批：增“中软通知服务（期限提醒）”“已送达其他设备的期限提醒”两行（本事项没有交给云端的提醒 → none）；
+    // 第 11 批：增“中软共享中继”一行（个人事项不经中继 → none）
+    ["deleted", "none", "none", "none", "deleted", rc.receipt.inventory.egress_sent > 0 ? "irrevocable" : "none", "none", "pending", "none", "none", "kept"],
   );
 
   // 5. 全库无残留；块目录已删除；密钥包裹已删除

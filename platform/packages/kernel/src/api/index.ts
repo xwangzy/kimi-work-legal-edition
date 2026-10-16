@@ -13,6 +13,7 @@ import type { CpAuditRecord } from "@zr-legal/firm-trust";
 import { SUPPORT_MAX_UPLOAD_BYTES } from "@zr-legal/egress-gate";
 import { supportErrorText } from "../services/support-errors.ts";
 import { parseReminderInput, type ReminderService } from "../services/reminders.ts";
+import type { ShareRelaySync } from "../services/share-relay.ts";
 import { recordSuspectReview, sendPreview, summarizeSend, type SendSummary, type SuspectView } from "../services/send-preview.ts";
 import {
   ConsentStatus,
@@ -132,6 +133,8 @@ export interface ApiDeps {
   onShutdown?: (fn: () => void) => void;
   /** 期限提醒（第 10 批 S9）。 */
   reminders?: ReminderService;
+  /** 团队事项经中软共享中继同步（第 11 批 S11）。 */
+  shareRelay?: ShareRelaySync;
 }
 
 type Handler = (params: any, id: Identity) => unknown | Promise<unknown>;
@@ -338,7 +341,11 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
 
   const lifecycleDeps = (): LifecycleDeps => ({
     db,
-    purgeBlobs: (matterId) => blobs.purgeMatter(matterId),
+    purgeBlobs: (matterId) => {
+      blobs.purgeMatter(matterId);
+      // 本机中继收发件目录里该事项的段（第 11 批 S11）
+      deps.shareRelay?.purgeMatter(matterId);
+    },
     deviceId: keyctx.device.deviceId,
     signer: keyctx.device.signer,
     signPublicKeyPem: keyctx.device.cert.signPublicKeyPem,
@@ -2145,6 +2152,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
               // 期限提醒（第 10 批 S9）：通知服务地址已配置且接入了控制面（凭据由控制面签发）
               notify_configured: !!up?.notify && !!deps.controlPlane,
               support_upload_allowed: deps.governance?.supportUploadAllowed() ?? false,
+              // 共享中继（第 11 批 S11）：中继地址已配置且接入了控制面；律所策略是否允许另列
+              relay_configured: !!up?.relay && !!deps.controlPlane,
+              share_relay_allowed: deps.governance?.shareRelayAllowed() ?? false,
               fetch: up?.fetch ?? "disabled",
               fetch_allowlist_size: gate.fetchAllowlist.length,
               stats: { ...gate.stats },
@@ -2749,6 +2759,22 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
 
     "sync.status": (p, id) => {
       return syncStatus({ db, blobs, keyctx, tenantId: id.tenantId }, { ...(p?.share_dir ? { shareDir: String(p.share_dir) } : {}) });
+    },
+
+    // ─── 团队事项经中软共享中继同步（第 11 批 S11；services/share-relay.ts） ───
+    "relay.status": () => {
+      if (!deps.shareRelay) return { blocked: "not_configured", configured: false, allowed: false };
+      return deps.shareRelay.status();
+    },
+    // 立即收发一次（界面“立即同步”与测试）：不能收发时如实返回原因
+    "relay.sync": async (_p, id) => {
+      if (!deps.shareRelay) throw new DomainError("provider_unavailable", "共享中继未启用", 503);
+      assertNotExitMode("同步");
+      const r = await deps.shareRelay.sync();
+      if (r.push.uploaded > 0 || r.pull.applied > 0) {
+        audit(db, id, "relay.sync", "tenant", id.tenantId, `发出 ${r.push.uploaded} 段 / 收到并应用 ${r.pull.applied} 段`, keyctx);
+      }
+      return { ...r, status: deps.shareRelay.status() };
     },
 
     // ─── 节点逐事项授权（§5.3 服务成员；v0 同机节点设备，跨机器加入流程 G1） ───

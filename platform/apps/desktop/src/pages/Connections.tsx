@@ -15,6 +15,7 @@ import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, U
 import { RecallEvalPanel } from "./RecallEval.tsx";
 import { CpAuditPanel, UsagePanel } from "./FirmUsage.tsx";
 import { SupportUpload } from "../components/SupportUpload.tsx";
+import { TeamShare } from "../components/TeamShare.tsx";
 
 const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
 
@@ -165,6 +166,8 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
     ...(im.length > 0 ? ["IM 收件：发给机器人的文字与文件经所用的 IM 平台传递"] : []),
     ...(syncOn ? ["团队共享：经律所指定的共享文件夹同步（加密）"] : []),
   ];
+  // 第 11 批 S11：团队共享经中软共享中继（本所策略开启且已配置）
+  const relayOn = !!gate?.relay_configured && !!gate?.share_relay_allowed;
   const stored = [
     "账号、席位与用量",
     "匿名事项编号与调用记录（不含内容）",
@@ -175,13 +178,17 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
     // 开关关闭后已上传的包仍保存至 7 天：只要配置了支持服务就列出（复核 S9B-04⑤）
     ...(gate?.support_configured ? ["你主动上传给支持的诊断包（如有；不含案件内容，含软件与电脑环境、任务状态与运行记录，逐次确认，保存 7 天）"] : []),
     // 第 10 批 S9：期限提醒交中软通知服务——中软只保存提醒时间与接收设备，内容加密
+    ...(relayOn
+      ? ["团队事项同步的加密记录与材料（中软没有事项密钥、看不到内容；能看到匿名事项编号、哪几台设备在同一事项、改动的次数、大小与时间；律所退约时删除）"]
+      : []),
     ...(gate?.notify_configured ? ["期限提醒的提醒时间、接收设备、设提醒的人与改动次数（期限类型、事项与备注在这台电脑上加密并补齐到同样长度，中软看不到；从提醒时间可以大致推出期限在哪几天；提醒响过 7 天后删除）"] : []),
   ];
   const notEnabled = [
     ...(gate?.search_configured ? [] : ["联网检索"]),
     "法源与主体信息查询",
     ...(im.length > 0 ? [] : ["IM 收件"]),
-    ...(syncOn ? [] : ["团队共享"]),
+    ...(syncOn || relayOn ? [] : ["团队共享"]),
+    ...(relayOn ? [] : ["经中软中继的团队共享（端到端加密）"]),
     "设备中继（端到端加密）",
     ...(gate?.notify_configured ? [] : ["电脑关机时的期限提醒（现在只在这台电脑上提醒）"]),
     "云端事项",
@@ -425,6 +432,7 @@ function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | nu
             <div>{quotaLawyerLine(quota)}</div>
           </div>
         )}
+        <TeamShare />
         <div className="device-row">
           <div className="device-k">最近一次自检</div>
           <div>
@@ -683,6 +691,12 @@ function TechnicalVisibility({ gate, im, recovery }: { gate: any; im: any[]; rec
       notSees: "期限类型、期限日本身、事项名称与编号、当事人、备注（在律师电脑上用接收设备的公钥加密、补齐长度、并由发出设备签名；中软解不开，也不能把一份密文挪给别的提醒或别的设备；撤销后迟到的旧版本登记会被云端拒收，但被攻破的云端仍可能重放一次已撤销的提醒）",
     },
     {
+      situation: "团队事项经中软共享中继同步",
+      enabled: !!gate?.relay_configured && !!gate?.share_relay_allowed,
+      sees: "每个团队事项的匿名编号（随机生成）；每次改动的同步记录与引用的材料块，均为按事项密钥加密的密文，切成不超过 4 MiB 的块、按密文的摘要存放（保存到律所退约整体删除；单个事项的团队删除指令待后续版本）；每条同步记录的编号、写入设备、大小、时间与密钥纪元；能读取该事项的设备编号（来自写入设备，反映哪几台设备在同一事项）；同步记录明文部分里的写入设备证书（成员编号、角色、公钥，不含姓名）与面向各设备的密钥包裹（密文）；取新改动的请求时刻（客户端在线时长轮询，反映电脑何时开机）；只限中继的短期凭据所含的租户、成员、席位与设备编号，本机 IP；签发中继凭据记入中软侧操作记录",
+      notSees: "事项名称、当事人、材料原文与文件名、成果、任务内容（都在律师电脑上按事项密钥加密，中软没有事项密钥）；材料明文的摘要（中继只按密文摘要寻址，不能用来核对某份已知文件在不在事项里）。被攻破的中继可以扣留或丢弃改动，但换掉的内容会被成员电脑按摘要与签名拒收",
+    },
+    {
       situation: "自动更新",
       enabled: updatesOn,
       sees: "每 6 小时一次的更新检查与安装包下载：本机 IP、操作系统与应用版本（请求的 User-Agent）、更新渠道（保存在更新服务器的访问日志里）",
@@ -783,6 +797,7 @@ function relaxationText(r: string): string {
   if (k === "fetch_allowlist") return `抓取白名单追加：${v}`;
   if (k === "l3a_standard_model") return "敏感事项（L3a）可经标准端点推理（全部化名）";
   if (k === "support_upload") return "律师可把脱敏诊断包上传给中软支持（逐次预览、确认后上传；中软保存 7 天）";
+  if (k === "share_relay") return "团队事项可经中软共享中继同步（端到端加密，中软保存密文直到律所退约）";
   if (k === "connector") return `登记连接器：${v}`;
   return r;
 }
@@ -989,7 +1004,7 @@ function DraftContent({ d }: { d: PolicyDraft }) {
         有效期：{fmtTime(String(doc.issued_at ?? ""))} 至 {fmtTime(String(doc.expires_at ?? ""))}
         <div className="muted">
           运行模式上限：{MODE_TEXT[String(b.max_mode)] ?? String(b.max_mode)} · 自动档可预授权：{Array.isArray(b.auto_preauthorizations) && b.auto_preauthorizations.length > 0 ? b.auto_preauthorizations.join("、") : "无"} ·
-          抓取白名单追加：{Array.isArray(b.fetch_allowlist_extra) && b.fetch_allowlist_extra.length > 0 ? b.fetch_allowlist_extra.join("、") : "无"} · 敏感事项（L3a）经标准端点：{b.l3a_standard_model === "allow" ? "放开" : "不放开"} · 上传诊断包给中软支持：{b.support_upload === "allow" ? "允许" : "不允许"}
+          抓取白名单追加：{Array.isArray(b.fetch_allowlist_extra) && b.fetch_allowlist_extra.length > 0 ? b.fetch_allowlist_extra.join("、") : "无"} · 敏感事项（L3a）经标准端点：{b.l3a_standard_model === "allow" ? "放开" : "不放开"} · 上传诊断包给中软支持：{b.support_upload === "allow" ? "允许" : "不允许"} · 经中软中继的团队共享：{b.share_relay === "allow" ? "允许" : "不允许"}
         </div>
       </div>
     );
@@ -1018,6 +1033,7 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
   const [extra, setExtra] = useState("");
   const [l3a, setL3a] = useState(false);
   const [support, setSupport] = useState(false);
+  const [relay, setRelay] = useState(false);
   const [ttl, setTtl] = useState(30);
   const domains = extra
     .split(/[\s,，、]+/)
@@ -1051,7 +1067,11 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
           <label>
             <input type="checkbox" checked={support} onChange={(e) => setSupport(e.target.checked)} /> 律师可把脱敏诊断包上传给中软支持
           </label>{" "}
-          {support && <div className="banner banner-gray">勾选这一项后，尚未更新到最新版本的电脑会把整份律所策略当作“看不懂的新版本”，暂时按最严设置运行（自动档、预授权检索、抓取白名单追加、敏感事项放开都暂时不可用），直至更新。建议先确认全所电脑都已更新。</div>}
+          <label>
+            <input type="checkbox" checked={relay} onChange={(e) => setRelay(e.target.checked)} /> 团队事项可经中软共享中继同步（端到端加密）
+          </label>{" "}
+          {relay && <div className="muted">开启后，团队事项的改动与材料加密后经中软中继在成员电脑之间同步：中软保存密文（没有事项密钥），能看到匿名事项编号、哪几台设备在同一事项、改动的大小与时间；律所退约时由中软整体删除。</div>}
+          {(support || relay) && <div className="banner banner-gray">勾选这一项后，尚未更新到最新版本的电脑会把整份律所策略当作“看不懂的新版本”，暂时按最严设置运行（自动档、预授权检索、抓取白名单追加、敏感事项放开都暂时不可用），直至更新。建议先确认全所电脑都已更新。</div>}
           <label>
             有效期（天，≤ 30）{" "}
             <input type="number" min={1} max={30} value={ttl} onChange={(e) => setTtl(Math.max(1, Math.min(30, Number(e.target.value) || 30)))} />
@@ -1062,7 +1082,7 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
             disabled={busy}
             onClick={() =>
               onSubmit(
-                { max_mode: maxMode, auto_preauthorizations: maxMode === "auto" && preSearch ? ["search_generalized"] : [], fetch_allowlist_extra: [...new Set(domains)], l3a_standard_model: l3a ? "allow" : "deny", ...(support ? { support_upload: "allow" } : {}) },
+                { max_mode: maxMode, auto_preauthorizations: maxMode === "auto" && preSearch ? ["search_generalized"] : [], fetch_allowlist_extra: [...new Set(domains)], l3a_standard_model: l3a ? "allow" : "deny", ...(support ? { support_upload: "allow" } : {}), ...(relay ? { share_relay: "allow" } : {}) },
                 ttl,
               )
             }

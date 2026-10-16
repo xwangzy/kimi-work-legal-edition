@@ -773,6 +773,9 @@ export const api = {
   reminderCancel: (reminderId: string) => invoke<ReminderItem>("reminders.cancel", { reminder_id: reminderId }),
   remindersMarkRead: (items: { reminder_id: string; version: number }[] | "all") => invoke<{ updated: number }>("reminders.mark_read", items === "all" ? { all: true } : { items }),
   remindersSync: () => invoke<{ local: number; cloud: number; finished: boolean }>("reminders.sync"),
+  // 团队事项经中软共享中继同步（第 11 批 S11）
+  relayStatus: () => invoke<RelayStatus>("relay.status"),
+  relaySync: () => invoke<{ push: RelayReport; pull: RelayReport; status: RelayStatus }>("relay.sync"),
   diagnosticsUploadPreview: () => invoke<SupportPreview>("diagnostics.upload_preview"),
   diagnosticsUploads: () => invoke<{ uploads: { upload_id: string; ticket: string | null; bytes: number; status: "pending" | "sent" | "failed" | "unknown"; error_code: string | null; created_at: string }[] }>("diagnostics.uploads"),
   diagnosticsUpload: (fileSha256: string) => invoke<{ ticket: string; expires_at: string | null; retention_days: number }>("diagnostics.upload", { file_sha256: fileSha256 }),
@@ -879,4 +882,29 @@ export interface ContentStatus {
     last_check: ContentCheckResult | null;
     last_confirmed_at?: string | null;
   };
+}
+
+/** 共享中继状态（第 11 批 S11；只有计数、时刻与错误代码）。 */
+export interface RelayStatus {
+  blocked: "not_configured" | "not_allowed" | "exit_mode" | null;
+  configured: boolean;
+  allowed: boolean;
+  last_ok_at?: string | null;
+  last_error?: string | null;
+  last_error_at?: string | null;
+  pending_upload?: number;
+  held?: number;
+  retrying?: number;
+  matters?: number;
+}
+export interface RelayReport {
+  ran: boolean;
+  reason?: string;
+  exported: number;
+  uploaded: number;
+  downloaded: number;
+  applied: number;
+  held: number;
+  dropped: number;
+  errors: string[];
 }

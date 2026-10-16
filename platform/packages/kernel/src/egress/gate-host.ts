@@ -13,7 +13,7 @@ import { verifyToken, type CapabilityClaims } from "@zr-legal/service-auth";
 import { newId } from "@zr-legal/domain";
 import { egressContentDigest } from "@zr-legal/egress";
 import type { PartyEntry, TokenEntry } from "@zr-legal/tokenizer";
-import type { AuthorizeResult, CpRelayRequest, CpRelayResult, DistRelayResult, SupportRelayRequest, SupportRelayResult, NotifyRelayRequest, NotifyRelayResult, GateEgressRecord, GatePurpose, GateUpstreams, MatterEgressContext, SignedApproval } from "@zr-legal/egress-gate";
+import type { AuthorizeResult, CpRelayRequest, CpRelayResult, DistRelayResult, SupportRelayRequest, SupportRelayResult, NotifyRelayRequest, NotifyRelayResult, ShareRelayRequest, ShareRelayResult, GateEgressRecord, GatePurpose, GateUpstreams, MatterEgressContext, SignedApproval } from "@zr-legal/egress-gate";
 import type { KernelDb } from "../db.ts";
 import { liveRunForClaims } from "../identity.ts";
 import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, startParentHeartbeat, windowsSystemEnv } from "../executor/child-env.ts";
@@ -279,6 +279,8 @@ export interface GateHandle {
   support(req: SupportRelayRequest, timeoutMs?: number): Promise<SupportRelayResult>;
   /** 通知通道（第 10 批；只有登记、撤销、取到时提醒、确认收到四种固定请求；闸门退出即失败）。 */
   notify(req: NotifyRelayRequest, timeoutMs?: number): Promise<NotifyRelayResult>;
+  /** 共享中继通道（第 11 批；只有查缺、上传块、登记段、取新段、取事项历史、取块六种固定请求；闸门退出即失败）。 */
+  relay(req: ShareRelayRequest, timeoutMs?: number): Promise<ShareRelayResult>;
   close(): Promise<void>;
   readonly process: ChildProcess;
 }
@@ -394,6 +396,20 @@ function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
     const r = m.result as NotifyRelayResult | undefined;
     p.resolve(r && typeof r === "object" && (r.ok === true ? typeof r.status === "number" && typeof r.body === "string" : typeof r.reason === "string") ? r : { ok: false, reason: "notify_bad_reply" });
   });
+  // 共享中继通道（第 11 批）：同上；取块的结果另带块字节（base64）
+  let relaySeq = 1;
+  const relayPending = new Map<number, { resolve: (r: ShareRelayResult) => void; timer: NodeJS.Timeout }>();
+  child.on("message", (m: any) => {
+    if (m?.t !== "relay_result") return;
+    const p = relayPending.get(Number(m.id));
+    if (!p) return;
+    relayPending.delete(Number(m.id));
+    clearTimeout(p.timer);
+    const r = m.result as ShareRelayResult | undefined;
+    const shaped =
+      r && typeof r === "object" && (r.ok === true ? typeof r.status === "number" && typeof r.body === "string" && (r.body_b64 === undefined || typeof r.body_b64 === "string") : typeof r.reason === "string");
+    p.resolve(shaped ? r : { ok: false, reason: "relay_bad_reply" });
+  });
   child.on("exit", (code, signal) => {
     alive = false;
     slog.event("CHILD_EXIT", { proc: "gate", code: Number.isInteger(code) ? code! : undefined, signal: signal ?? undefined });
@@ -417,6 +433,11 @@ function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
       p.resolve({ ok: false, reason: "gate_exited" });
     }
     notifyPending.clear();
+    for (const [, p] of relayPending) {
+      clearTimeout(p.timer);
+      p.resolve({ ok: false, reason: "gate_exited" });
+    }
+    relayPending.clear();
     o.onExit?.(code);
   });
   return new Promise((resolve, reject) => {
@@ -494,6 +515,18 @@ function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
             }, timeoutMs);
             notifyPending.set(id, { resolve: res, timer });
             child.send({ t: "notify", id, req });
+          }),
+        // 长轮询 25 秒、块上下行 4 MiB：比闸门自身的时限多留余量
+        relay: (req: ShareRelayRequest, timeoutMs = 150_000) =>
+          new Promise<ShareRelayResult>((res) => {
+            if (!child.connected) return res({ ok: false, reason: "gate_exited" });
+            const id = relaySeq++;
+            const timer = setTimeout(() => {
+              relayPending.delete(id);
+              res({ ok: false, reason: "relay_timeout" });
+            }, timeoutMs);
+            relayPending.set(id, { resolve: res, timer });
+            child.send({ t: "relay", id, req });
           }),
         close: () =>
           new Promise<void>((r) => {

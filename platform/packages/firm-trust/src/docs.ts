@@ -124,8 +124,11 @@ export interface GatewayFeedBody {
   revoked_devices: { tid: string; device_id: string }[];
   revoked_seats: string[];
   matters: (AnonMatterSummary & { tid: string })[];
-  /** support_upload：律所是否允许上传诊断包（第 9 批 S13；支持服务按它二次核对，旧网关忽略）。 */
-  policies: { tid: string; l3a_standard_model: "deny" | "allow"; support_upload?: "deny" | "allow" }[];
+  /**
+   * support_upload：律所是否允许上传诊断包（第 9 批 S13；支持服务按它二次核对，旧网关忽略）；
+   * share_relay：律所是否允许团队事项经共享中继同步（第 11 批 S11；中继服务按它二次核对）。
+   */
+  policies: { tid: string; l3a_standard_model: "deny" | "allow"; support_upload?: "deny" | "allow"; share_relay?: "deny" | "allow" }[];
 }
 
 /** 网关与检索服务对控制面订阅的只读视图（订阅器在云端服务一侧实现：services/control-plane 的 GatewayFeedSubscriber）。 */
@@ -138,6 +141,8 @@ export interface GatewayFeedView {
   l3aStandardAllowed(tid: string): boolean;
   /** 律所是否允许上传诊断包（第 9 批 S13；没有实现 = 不允许）。 */
   supportUploadAllowed?(tid: string): boolean;
+  /** 律所是否允许团队事项经共享中继同步（第 11 批 S11；没有实现 = 不允许）。 */
+  shareRelayAllowed?(tid: string): boolean;
   /** 按需刷新（单飞、限频）：遇到未知事项或级别不符时调用一次。 */
   refresh(): Promise<void>;
 }

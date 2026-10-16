@@ -165,6 +165,11 @@ export interface GateUpstreams {
    */
   notify?: { baseUrl: string; pins?: readonly string[] } | null;
   /**
+   * 共享中继（第 11 批，v9.2 §5.1 S11，share-relay.ts）：团队事项同步段与密文块切块后的上传、登记与取回，内核经 IPC 请闸门代发；
+   * 地址随客户端构建固定；凭据是内核交来的中继专用短期凭据（受众 relay）。未配置 = 团队事项只能经律所共享文件夹同步。
+   */
+  relay?: { baseUrl: string; pins?: readonly string[] } | null;
+  /**
    * 传输策略（tls-policy.ts；审计 S5）：非回环一律 https；回环 http 只在开发形态允许；安装包形态中软网关、检索与控制面必须带钉住集。
    * 缺省 = 开发形态（允许回环 http、不强制钉住）；安装包形态由内核按 ZR_UPSTREAM_TLS=strict 下发。
    */

@@ -441,6 +441,16 @@ export class ControlPlaneClient {
     return { token: tok, expiresAt: exp };
   }
 
+  /** 只限共享中继、6 小时的凭据（受众 relay；第 11 批 S11 团队事项密文同步）。返回凭据与到期时刻（毫秒）。 */
+  async relayToken(): Promise<{ token: string; expiresAt: number }> {
+    const r = await this.call("POST", "/v1/relay-token", {});
+    if (!r.ok) throw new Error(r.error);
+    const tok = r.json.token;
+    const exp = Date.parse(String(r.json.expires_at ?? ""));
+    if (typeof tok !== "string" || !/^zst1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(tok) || !Number.isFinite(exp)) throw new Error("relay_token_invalid");
+    return { token: tok, expiresAt: exp };
+  }
+
   // ─── 用量与上限（第 9 批 S3） ───
 
   /** 本所本月用量与上限（控制面签名的视图；管理员与合伙人另含按成员明细与池余额）。 */

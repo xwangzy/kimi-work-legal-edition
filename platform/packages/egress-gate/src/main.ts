@@ -8,13 +8,15 @@
  *
  * 协议（JSON 消息）：
  *   内核 → 闸门：{t:"init", config} | {t:"result", id, ok, result | error} | {t:"revoke", runId} | {t:"seat", token} | {t:"cp", id, req}
- *               | {t:"dist", id, path} | {t:"support", id, req} | {t:"notify", id, req} | {t:"shutdown"}
+ *               | {t:"dist", id, path} | {t:"support", id, req} | {t:"notify", id, req} | {t:"relay", id, req} | {t:"shutdown"}
  *   闸门 → 内核：{t:"ready"} | {t:"call", id, method:"authorize"|"approval", params} | {t:"record", rec} | {t:"tokens", matterId, entries}
- *               | {t:"cp_result", id, result} | {t:"dist_result", id, result} | {t:"support_result", id, result} | {t:"notify_result", id, result} | {t:"fatal", message}
+ *               | {t:"cp_result", id, result} | {t:"dist_result", id, result} | {t:"support_result", id, result} | {t:"notify_result", id, result}
+ *               | {t:"relay_result", id, result} | {t:"fatal", message}
  * 控制面通道（阶段 6，cp-relay.ts）：只有内核持有 IPC，故 Agent 宿主与执行域都不能借闸门访问控制面；目的地为 init 下发的固定地址。
  * 内容分发通道（第 8 批，dist-relay.ts）：同上，只许 GET 白名单路径，席位令牌由闸门附上。
  * 支持通道（第 9 批，support-relay.ts）：同上，只有“申请工单”与“上传诊断包”两种固定请求，摘要由闸门重算。
  * 通知通道（第 10 批，notify-relay.ts）：同上，只有登记、撤销、取到时提醒、确认收到四种固定请求；云端只收触发时刻、设备编号与密文。
+ * 共享中继通道（第 11 批，share-relay.ts）：同上，只有查缺、上传块、登记段、取新段、取事项历史、取块六种固定请求；块摘要由闸门在上下行两头重算。
  */
 import { rmSync } from "node:fs";
 import { slog } from "@zr-legal/safe-log";
@@ -23,6 +25,7 @@ import { relayControlPlane, type CpRelayRequest } from "./cp-relay.ts";
 import { relayDist } from "./dist-relay.ts";
 import { relaySupport, type SupportRelayRequest } from "./support-relay.ts";
 import { relayNotify, type NotifyRelayRequest } from "./notify-relay.ts";
+import { relayShare, type ShareRelayRequest } from "./share-relay.ts";
 import { checkUpstream, upstreamFetch, type TransportCheck } from "./tls-policy.ts";
 import type { AuthorizeResult, GateAuthority, GateEgressRecord, GatePurpose, GateUpstreams } from "./types.ts";
 import type { SignedApproval } from "./approval.ts";
@@ -50,6 +53,7 @@ type Msg =
   | { t: "dist"; id: number; path: string }
   | { t: "support"; id: number; req: SupportRelayRequest }
   | { t: "notify"; id: number; req: NotifyRelayRequest }
+  | { t: "relay"; id: number; req: ShareRelayRequest }
   | { t: "shutdown" };
 
 const send = (m: unknown): void => {
@@ -73,6 +77,9 @@ let supportFetch: typeof fetch | undefined;
 let notifyBase: string | null = null;
 let notifyTransport: TransportCheck | undefined;
 let notifyFetch: typeof fetch | undefined;
+let relayBase: string | null = null;
+let relayTransport: TransportCheck | undefined;
+let relayFetch: typeof fetch | undefined;
 /** 当前席位令牌（与模型、检索同一张；内核续期后经 {t:"seat"} 更新）。 */
 let seatToken: string | null = null;
 
@@ -150,6 +157,10 @@ process.on("message", (raw: unknown) => {
     const notifyPins = m.config.upstreams.notify?.pins ?? [];
     notifyTransport = checkUpstream(notifyBase, { allowLoopbackHttp: tls.allowLoopbackHttp, pins: notifyPins, requirePins: tls.requirePins });
     notifyFetch = upstreamFetch({ pins: notifyPins });
+    relayBase = m.config.upstreams.relay?.baseUrl ?? null;
+    const relayPins = m.config.upstreams.relay?.pins ?? [];
+    relayTransport = checkUpstream(relayBase, { allowLoopbackHttp: tls.allowLoopbackHttp, pins: relayPins, requirePins: tls.requirePins });
+    relayFetch = upstreamFetch({ pins: relayPins });
     seatToken = m.config.upstreams.dist?.seatToken || m.config.upstreams.model?.seatToken || m.config.upstreams.search?.seatToken || null;
     if (process.platform !== "win32") rmSync(socketPath, { force: true });
     server = new EgressGateServer({
@@ -229,6 +240,15 @@ process.on("message", (raw: unknown) => {
       ...(notifyTransport ? { transport: notifyTransport } : {}),
       ...(notifyFetch ? { fetchImpl: notifyFetch } : {}),
     }).then((result) => send({ t: "notify_result", id, result }));
+    return;
+  }
+  if (m?.t === "relay") {
+    const id = m.id;
+    void relayShare(m.req, {
+      baseUrl: relayBase,
+      ...(relayTransport ? { transport: relayTransport } : {}),
+      ...(relayFetch ? { fetchImpl: relayFetch } : {}),
+    }).then((result) => send({ t: "relay_result", id, result }));
     return;
   }
   if (m?.t === "shutdown") void shutdown(0);

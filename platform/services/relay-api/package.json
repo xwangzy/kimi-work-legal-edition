@@ -1,0 +1,14 @@
+{
+  "name": "@zr-legal/relay-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "共享中继服务 v0（中软云端，v9.2 §5.1 S11）：团队事项同步段与密文块的中继；只保存按密文摘要寻址的块、匿名事项编号与读者设备编号，没有任何事项密钥",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zr-legal/firm-trust": "*",
+    "@zr-legal/seat-token": "*"
+  }
+}

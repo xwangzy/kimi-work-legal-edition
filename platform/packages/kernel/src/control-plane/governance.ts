@@ -279,6 +279,11 @@ export class FirmGovernance {
     return this.effectivePolicy().body.support_upload === "allow";
   }
 
+  /** 律所是否允许团队事项经中软共享中继同步（第 11 批 S11；没有该项 = 不允许）。 */
+  shareRelayAllowed(): boolean {
+    return this.effectivePolicy().body.share_relay === "allow";
+  }
+
   /** 已固定的管理员签名门限；首次取得许可之前为 null（此时不接受任何放宽内容；复核 SF-1、S6-B07）。 */
   pinnedThreshold(): number | null {
     return this.d.db.get<{ admin_threshold: number }>(`SELECT admin_threshold FROM firm_trust WHERE tenant_id = ?`, [this.d.tenantId])?.admin_threshold ?? null;
@@ -1217,6 +1222,8 @@ export function localDevPolicyBody(env: NodeJS.ProcessEnv): FirmPolicyBody {
     l3a_standard_model: env.ZR_FIRM_L3A_STANDARD_MODEL === "allow" ? "allow" : "deny",
     // 第 9 批 S13：开发形态按本机配置项（缺省不允许上传诊断包）
     ...(env.ZR_FIRM_SUPPORT_UPLOAD === "allow" ? { support_upload: "allow" as const } : {}),
+    // 第 11 批 S11：开发形态按本机配置项（缺省不允许经共享中继同步）
+    ...(env.ZR_FIRM_SHARE_RELAY === "allow" ? { share_relay: "allow" as const } : {}),
   };
 }
 

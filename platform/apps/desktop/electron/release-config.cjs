@@ -17,7 +17,7 @@ const { createPublicKey } = require("node:crypto");
 const PIN_RE = /^sha256\/[A-Za-z0-9+/]{43}=$/;
 
 /** 安装包形态从进程环境中剔除的配置项（上游、钉住、传输策略与开发形态的令牌/密钥）。白名单之外本就不传，此表留作说明与单测。 */
-const ROUTING_ENV = /^ZR_(?:GATEWAY_|SEARCH_|CONTROL_PLANE_|DIST_|SUPPORT_|NOTIFY_|CONTENT_KEYS|UPSTREAM_TLS|SEAT_TOKEN|BYOK_|MOONSHOT_|PRIVATE_|MODEL_PROVIDER|GATE_FETCH|FETCH_ALLOWLIST|FIRM_L3A|FIRM_SUPPORT_)/;
+const ROUTING_ENV = /^ZR_(?:GATEWAY_|SEARCH_|CONTROL_PLANE_|DIST_|SUPPORT_|NOTIFY_|RELAY_|CONTENT_KEYS|UPSTREAM_TLS|SEAT_TOKEN|BYOK_|MOONSHOT_|PRIVATE_|MODEL_PROVIDER|GATE_FETCH|FETCH_ALLOWLIST|FIRM_L3A|FIRM_SUPPORT_|FIRM_SHARE_RELAY)/;
 
 /**
  * 安装包形态内核环境的白名单（复核 B3-A02）：只保留操作系统与运行时正常工作所需的变量（大小写不敏感，Windows 环境变量名不区分大小写）。
@@ -133,6 +133,8 @@ function loadReleaseConfig(file) {
   pair("support_base", "support_pins", "ZR_SUPPORT_BASE", "ZR_SUPPORT_PINS");
   // 通知服务（第 10 批 S9）：期限提醒的登记与到时取回；缺省不配置 = 提醒只在本机响（电脑关机时不提醒）
   pair("notify_base", "notify_pins", "ZR_NOTIFY_BASE", "ZR_NOTIFY_PINS");
+  // 共享中继（第 11 批 S11）：团队事项的密文同步；缺省不配置 = 团队事项只能经律所共享文件夹同步。律所是否使用另由律所策略决定
+  pair("relay_base", "relay_pins", "ZR_RELAY_BASE", "ZR_RELAY_PINS");
   // 自动更新（W7）：更新源地址、钉住集与发布签名公钥只认这里（主进程使用，不进内核环境）；三项缺一即不检查更新
   let update = null;
   if (raw.update_base !== undefined) {

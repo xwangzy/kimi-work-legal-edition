@@ -22,7 +22,7 @@ import { createGateAuthorizer, egressRowFromGate, startEgressGate, type GateHand
 import type { MatterTokenStore } from "./matter-tokens.ts";
 import type { EgressApprovalStore } from "../services/egress-approvals.ts";
 import type { FirmGovernance } from "../control-plane/governance.ts";
-import { checkUpstream, type CpRelayRequest, type CpRelayResult, type DistRelayResult, type SupportRelayRequest, type SupportRelayResult, type NotifyRelayRequest, type NotifyRelayResult, type TransportCheck } from "@zr-legal/egress-gate";
+import { checkUpstream, type CpRelayRequest, type CpRelayResult, type DistRelayResult, type SupportRelayRequest, type SupportRelayResult, type NotifyRelayRequest, type NotifyRelayResult, type ShareRelayRequest, type ShareRelayResult, type TransportCheck } from "@zr-legal/egress-gate";
 
 export interface KernelGateDeps {
   db: KernelDb;
@@ -97,13 +97,15 @@ export function gateUpstreamsFromEnv(env: NodeJS.ProcessEnv, cp?: { seatToken: s
     support: env.ZR_SUPPORT_BASE && hasSeat ? { baseUrl: env.ZR_SUPPORT_BASE, ...pin(pinsFrom(env.ZR_SUPPORT_PINS)) } : null,
     // 通知服务（第 10 批 S9）：期限提醒的登记与到时取回；凭据为内核交来的通知专用凭据
     notify: env.ZR_NOTIFY_BASE && hasSeat ? { baseUrl: env.ZR_NOTIFY_BASE, ...pin(pinsFrom(env.ZR_NOTIFY_PINS)) } : null,
+    // 共享中继（第 11 批 S11）：团队事项同步段与密文块；凭据为内核交来的中继专用凭据
+    relay: env.ZR_RELAY_BASE && hasSeat ? { baseUrl: env.ZR_RELAY_BASE, ...pin(pinsFrom(env.ZR_RELAY_PINS)) } : null,
     // 传输策略（审计 S5）：安装包形态（ZR_UPSTREAM_TLS=strict）不允许回环 http，中软网关、检索与控制面必须带内置钉住集
     tls: env.ZR_UPSTREAM_TLS === "strict" ? { allowLoopbackHttp: false, requirePins: true } : { allowLoopbackHttp: true, requirePins: false },
   };
 }
 
 /** 各上游的传输状态（设备页“连接加密”；纯检查，不联网）。 */
-export function upstreamTransport(u: GateUpstreams): Record<"model" | "byok" | "private" | "search" | "control_plane" | "dist" | "support" | "notify", TransportCheck> {
+export function upstreamTransport(u: GateUpstreams): Record<"model" | "byok" | "private" | "search" | "control_plane" | "dist" | "support" | "notify" | "relay", TransportCheck> {
   const tls = u.tls ?? { allowLoopbackHttp: true, requirePins: false };
   const c = (base: string | undefined, pins: readonly string[] | undefined, requirePins: boolean) => checkUpstream(base, { allowLoopbackHttp: tls.allowLoopbackHttp, pins: pins ?? [], requirePins });
   return {
@@ -115,6 +117,7 @@ export function upstreamTransport(u: GateUpstreams): Record<"model" | "byok" | "
     dist: c(u.dist?.baseUrl, u.dist?.pins, tls.requirePins),
     support: c(u.support?.baseUrl, u.support?.pins, tls.requirePins),
     notify: c(u.notify?.baseUrl, u.notify?.pins, tls.requirePins),
+    relay: c(u.relay?.baseUrl, u.relay?.pins, tls.requirePins),
   };
 }
 
@@ -295,6 +298,23 @@ export class KernelGate {
       return { ok: false, reason: "gate_unavailable" };
     }
     return h.notify(req);
+  }
+
+  /** 共享中继是否已配置（未配置 = 团队事项只能经律所共享文件夹同步）。 */
+  get relayConfigured(): boolean {
+    return !!this.upstreams.relay;
+  }
+
+  /** 共享中继通道（第 11 批 S11；闸门按需拉起）。 */
+  async relay(req: ShareRelayRequest): Promise<ShareRelayResult> {
+    if (!this.upstreams.relay) return { ok: false, reason: "relay_not_configured" };
+    let h: GateHandle;
+    try {
+      h = await this.ensure();
+    } catch {
+      return { ok: false, reason: "gate_unavailable" };
+    }
+    return h.relay(req);
   }
 
   /** 确保闸门进程在运行（单飞；退出后重新拉起）。 */

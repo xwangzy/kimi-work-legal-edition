@@ -14,4 +14,5 @@ export { cpRelayAllowed, relayControlPlane, CP_MAX_REQUEST_BYTES, CP_MAX_RESPONS
 export { distRelayAllowed, relayDist, DIST_MAX_RESPONSE_BYTES, type DistRelayResult } from "./dist-relay.ts";
 export { supportRelayAllowed, relaySupport, SUPPORT_MAX_UPLOAD_BYTES, type SupportRelayRequest, type SupportRelayResult } from "./support-relay.ts";
 export { notifyRelayAllowed, relayNotify, type NotifyRelayRequest, type NotifyRelayResult, type NotifyTarget } from "./notify-relay.ts";
+export { shareRelayAllowed, relayShare, RELAY_CHUNK_MAX_BYTES, type ShareRelayRequest, type ShareRelayResult } from "./share-relay.ts";
 export { canonicalCredential, egressDigest, verifyApproval, type ApprovalCredential, type ApprovalExpectation, type ApprovalPurpose, type SignedApproval } from "./approval.ts";

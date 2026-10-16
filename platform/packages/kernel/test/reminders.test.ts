@@ -131,7 +131,8 @@ test("云端：只提醒我 → 本人两台设备；云端只见触发时刻、
   assert.equal(stored.length, 1);
   assert.equal(stored[0]!.fire_at, s.fire_at);
   assert.deepEqual(Object.keys(stored[0]!.targets).sort(), [MY_DEV, phone.cert.deviceId].sort());
-  const text = JSON.stringify(stored);
+  // 触发时刻与修改时刻本身就是云端保存的（期限当天提醒时其中含期限日）：扫描其余字段
+  const text = JSON.stringify(stored.map(({ fire_at: _f, updated_at: _u, ...rest }) => rest));
   for (const plain of ["举证", "evidence", mid, "云端提醒事项", "客户甲", s.due_date]) assert.ok(!text.includes(plain), `云端看不到：${plain}`);
 
   // 另一台设备：未到时取不到；到时（通知服务时钟前拨）取到自己那份，用自己的私钥解开、核对发出设备签名

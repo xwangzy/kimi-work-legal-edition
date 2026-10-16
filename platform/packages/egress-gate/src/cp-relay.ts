@@ -37,6 +37,8 @@ const PATHS: readonly RegExp[] = [
   /^\/v1\/support-token$/,
   // 第 10 批：通知服务专用凭据（S9 期限提醒）
   /^\/v1\/notify-token$/,
+  // 第 11 批：共享中继专用凭据（S11 团队事项密文同步）
+  /^\/v1\/relay-token$/,
   /^\/v1\/quota\/cap$/,
   /^\/v1\/audit\?after=\d{1,15}&limit=\d{1,3}$/,
 ];

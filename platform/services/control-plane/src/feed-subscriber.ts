@@ -31,6 +31,7 @@ export class GatewayFeedSubscriber implements GatewayFeedView {
   private matters = new Map<string, AnonMatterSummary>();
   private policies = new Map<string, "deny" | "allow">();
   private supportUpload = new Set<string>();
+  private shareRelay = new Set<string>();
   private lastOkAt = 0;
   private lastFetch = 0;
   private inflight: Promise<void> | null = null;
@@ -73,6 +74,12 @@ export class GatewayFeedSubscriber implements GatewayFeedView {
   supportUploadAllowed(tid: string): boolean {
     if (this.lastOkAt === 0 || Date.now() - this.lastOkAt > (this.o.maxStaleMs ?? 10 * 60_000)) return false;
     return this.supportUpload.has(tid);
+  }
+
+  /** 律所是否允许经共享中继同步（第 11 批 S11）：与诊断包上传同一新鲜度要求（放宽类判定，订阅过旧即按不允许）。 */
+  shareRelayAllowed(tid: string): boolean {
+    if (this.lastOkAt === 0 || Date.now() - this.lastOkAt > (this.o.maxStaleMs ?? 10 * 60_000)) return false;
+    return this.shareRelay.has(tid);
   }
 
   /** 最近一次成功取得并接受订阅的时刻（毫秒；0 = 从未）。 */
@@ -125,13 +132,16 @@ export class GatewayFeedSubscriber implements GatewayFeedView {
       this.matters = matters;
       const policies = new Map<string, "deny" | "allow">();
       const supportUpload = new Set<string>();
+      const shareRelay = new Set<string>();
       for (const p of b.policies) {
         if (!p || typeof p.tid !== "string") continue;
         policies.set(p.tid, p.l3a_standard_model === "allow" ? "allow" : "deny");
         if (p.support_upload === "allow") supportUpload.add(p.tid);
+        if (p.share_relay === "allow") shareRelay.add(p.tid);
       }
       this.policies = policies;
       this.supportUpload = supportUpload;
+      this.shareRelay = shareRelay;
       this.lastOkAt = Date.now();
       this.version = b.version;
       this.stats.ok += 1;

@@ -326,3 +326,23 @@ test("复核 S9B-01、S9B-06：未升级客户端遇到 support_upload 判为“
   const r = validatePolicyBody({ ...strictestTemplate(), support_upload: "ask_admin" });
   assert.equal(!r.ok && isUnrecognizedFormat(r.reason), true, "不认识的取值不沿用可能更宽的旧策略");
 });
+
+test("第 11 批 share_relay：可选字段（没有 = 不允许）；允许即放宽、须管理员签名；取值不合法按更新的格式；逐项取更严；与 support_upload 互不影响；旧策略签名字节不变", async () => {
+  const { shareRelayAllowed, supportUploadAllowed, validatePolicyDoc, isUnrecognizedFormat } = await import("../src/index.ts");
+  const base = strictestTemplate();
+  const bad = validatePolicyBody({ ...base, share_relay: "members_only" });
+  assert.equal(!bad.ok && bad.reason, "share_relay_invalid");
+  assert.equal(!bad.ok && isUnrecognizedFormat(bad.reason), true, "不认识的取值整份回退最严");
+  assert.equal(isUnrecognizedFormat("unknown_field:share_relay"), true, "第 10 批客户端遇到此字段按更新的格式");
+  const allowed = validatePolicyBody({ ...base, share_relay: "allow" });
+  assert.ok(allowed.ok && shareRelayAllowed(allowed.value) && !supportUploadAllowed(allowed.value));
+  assert.ok(!shareRelayAllowed(base));
+  assert.deepEqual(policyRelaxations({ ...base, share_relay: "allow", support_upload: "allow" }), ["support_upload:allow", "share_relay:allow"]);
+  assert.deepEqual(policyRelaxations({ ...base, share_relay: "deny" }), []);
+  assert.equal(evaluatePolicy({ doc: doc({ ...base, share_relay: "allow" }), admin_signatures: [] }, ctx()).ok, false, "允许经中继同步须管理员设备签名");
+  assert.equal(stricterBody({ ...base, share_relay: "allow" }, base).share_relay, undefined);
+  assert.equal(stricterBody({ ...base, share_relay: "allow" }, { ...base, share_relay: "allow" }).share_relay, "allow");
+  const old = doc(base);
+  const v = validatePolicyDoc(JSON.parse(JSON.stringify(old)));
+  assert.ok(v.ok && !("share_relay" in v.value.body) && policySigningBytes(v.value).equals(policySigningBytes(old)));
+});

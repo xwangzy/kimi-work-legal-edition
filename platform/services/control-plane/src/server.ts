@@ -184,6 +184,8 @@ export const SUPPORT_TOKEN_TTL_SECONDS = 15 * 60;
  * 签发要记操作审计并同步写盘，过短会让每台设备每天往流水里写几十条。
  */
 export const NOTIFY_TOKEN_TTL_SECONDS = 6 * 3600;
+/** 共享中继专用凭据的有效期（第 11 批 S11；客户端在线时持续收发，与通知凭据同为 6 小时）。 */
+export const RELAY_TOKEN_TTL_SECONDS = 6 * 3600;
 
 /** 席位令牌缺省签发时长（96 小时，复核 S6-A01）。 */
 export const SEAT_TTL_DEFAULT_SECONDS = 96 * 3600;
@@ -649,7 +651,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       // 与客户端同一口径（复核 S9B-18）：证书按策略签发时刻核验（之后到期不影响已签的策略），只按吊销集重算
       const pol =
         live && (policyRelaxations(live.doc.body).length === 0 || adminCheck(t, policySigningBytes(live.doc), live.admin_signatures, new Date(Date.parse(live.doc.issued_at))).ok) ? live.doc.body : strictestTemplate();
-      policies.push({ tid: t.tid, l3a_standard_model: pol.l3a_standard_model, support_upload: pol.support_upload === "allow" ? "allow" : "deny" });
+      policies.push({
+        tid: t.tid,
+        l3a_standard_model: pol.l3a_standard_model,
+        support_upload: pol.support_upload === "allow" ? "allow" : "deny",
+        share_relay: pol.share_relay === "allow" ? "allow" : "deny",
+      });
     }
     return { version: feedVersion, issued_at: iso(), revoked_devices: revokedDevices, revoked_seats: revokedSeats, matters, policies };
   };
@@ -799,6 +806,19 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const at = now();
       const token = issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid: seat.sid, dev: dev.cert.deviceId, kid: o.keys.seat.kid, aud: ["notify"] }, o.keys.seat.privateKey, NOTIFY_TOKEN_TTL_SECONDS, at);
       return send(res, 200, { token, expires_at: iso(at + NOTIFY_TOKEN_TTL_SECONDS * 1000) });
+    }
+    // 共享中继专用凭据（第 11 批 S11）：受众只有 "relay"；网关、检索、分发、支持、通知服务都拒收——团队事项的密文同步不用通用席位令牌。
+    // 是否允许按律所策略由中继服务核对（订阅里的 share_relay）；这里只看席位与许可
+    if (method === "POST" && p === "/v1/relay-token") {
+      mark("relay_token.issue", t.seatsByUser.get(dev.cert.memberId)?.sid ?? null);
+      if (!issueAllowed(t.tid, dev.cert.deviceId, "relay_token")) throw new CpError(429, "rate_limited", "签发过于频繁，请稍后再试");
+      if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不签发");
+      const seat = t.seatsByUser.get(dev.cert.memberId);
+      if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
+      if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
+      const at = now();
+      const token = issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid: seat.sid, dev: dev.cert.deviceId, kid: o.keys.seat.kid, aud: ["relay"] }, o.keys.seat.privateKey, RELAY_TOKEN_TTL_SECONDS, at);
+      return send(res, 200, { token, expires_at: iso(at + RELAY_TOKEN_TTL_SECONDS * 1000) });
     }
     if (method === "GET" && p === "/v1/policy") return send(res, 200, seal("kwl-firm-policy-current", t.policy));
     // ─── 本所用量与上限（S3 v0）：成员看本所本月用量、上限与自己的用量；管理员与合伙人另看按成员明细与池余额 ───

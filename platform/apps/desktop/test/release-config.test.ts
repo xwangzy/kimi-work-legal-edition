@@ -187,3 +187,18 @@ test("通知服务（第 10 批 S9）：notify_base 须 https + 两把钉住；�
   assert.equal(packaged.ZR_NOTIFY_BASE, undefined);
   assert.equal(packaged.ZR_NOTIFY_PINS, undefined);
 });
+
+test("共享中继（第 11 批 S11）：relay_base 须 https + 两把钉住；安装包形态剔除环境里的中继配置与开发形态的策略开关", () => {
+  const ok = loadReleaseConfig(write("relay-ok.json", { relay_base: "https://relay.example.cn/", relay_pins: [P1, P2] }));
+  assert.deepEqual(ok.problems, []);
+  assert.equal(ok.env.ZR_RELAY_BASE, "https://relay.example.cn");
+  assert.equal(ok.env.ZR_RELAY_PINS, `${P1},${P2}`);
+  const http = loadReleaseConfig(write("relay-http.json", { relay_base: "http://relay.example.cn", relay_pins: [P1, P2] }));
+  assert.equal(http.env.ZR_RELAY_BASE, undefined);
+  assert.equal(http.problems.length, 1);
+  const packaged = packagedKernelEnv({ ZR_RELAY_BASE: "http://evil.example", ZR_RELAY_PINS: "x", ZR_FIRM_SHARE_RELAY: "allow", ZR_RELAY_SYNC_MS: "off", PATH: "/bin" }, { env: {} });
+  assert.equal(packaged.ZR_RELAY_BASE, undefined);
+  assert.equal(packaged.ZR_RELAY_PINS, undefined);
+  assert.equal(packaged.ZR_FIRM_SHARE_RELAY, undefined);
+  assert.equal(packaged.ZR_RELAY_SYNC_MS, undefined);
+});
