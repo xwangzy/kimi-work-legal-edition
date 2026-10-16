@@ -2578,6 +2578,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "matters.members.add": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterOwner(db, matter.matter_id, id);
+      requireRelayController(matter.matter_id, "加入成员");
       // 结案或已删除的事项不再加入成员（复核 C-A05；须先重新打开）
       requireActiveMatter(db, matter.matter_id);
       const userId = String(p?.user_id ?? "");
@@ -2630,6 +2631,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "matters.members.remove": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterOwner(db, matter.matter_id, id);
+      requireRelayController(matter.matter_id, "移出成员");
       const userId = String(p?.user_id ?? "");
       const target = db.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matter.matter_id, userId]);
       if (!target) throw notFound("事项成员");
@@ -2864,12 +2866,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (!combined.ok) {
         return { ok: false as const, reason: `份额重组托管私钥失败：${combined.reason}` };
       }
-      const epoch = currentMatterEpoch(db, matter.matter_id);
+      // 恢复取托管包裹的最高纪元（第二轮复核 S11A-23：本机可能没有任何包裹，不能按“本机持有的最高纪元”起算）
+      const epoch = db.get<{ e: number | null }>(`SELECT MAX(epoch) AS e FROM matter_keys WHERE matter_id = ? AND wrapped_for = 'recovery'`, [matter.matter_id])?.e ?? 0;
       const recWrap = db.get<{ wrapped_key: string }>(`SELECT wrapped_key FROM matter_keys WHERE matter_id = ? AND epoch = ? AND wrapped_for = 'recovery'`, [matter.matter_id, epoch]);
       if (!recWrap) throw notFound("该事项的恢复托管包裹行");
       const matterKey = unwrapMatterKey(recWrap.wrapped_key, combined.privateKeyPem);
       const rotate = p?.rotate === true;
+      // 团队事项的新纪元只认负责人签发的包裹（D-93）：非负责人轮换不会传播，还会与负责人下次轮换撞纪元号（第二轮复核 S11A-20）
+      if (rotate) requireMatterOwner(db, matter.matter_id, id, "轮换事项密钥需要事项负责人角色（团队事项的新纪元只认负责人签发的包裹）");
+      if (rotate) requireRelayController(matter.matter_id, "轮换事项密钥");
       const revokeDeviceIds: string[] = Array.isArray(p?.revoke_device_ids) ? p.revoke_device_ids.map(String) : [];
+      let rotatedEpoch = epoch;
       db.tx(() => {
         db.run(`INSERT OR REPLACE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key) VALUES (?,?,?,?)`, [
           matter.matter_id,
@@ -2880,7 +2887,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (rotate) {
           // 设备丢失场景的推荐路径：先吊销旧设备并 rotate——新纪元密钥只包裹给
           // 「有效成员（墓碑过滤）减去 revoke_device_ids」的 active 设备 + recovery（旧设备解不开新内容）
-          const newEpoch = epoch + 1;
+          // 新纪元号取库里已有的最高纪元之后（不与任何已有纪元撞号）
+          const newEpoch = (db.get<{ e: number | null }>(`SELECT MAX(epoch) AS e FROM matter_keys WHERE matter_id = ?`, [matter.matter_id])?.e ?? epoch) + 1;
+          rotatedEpoch = newEpoch;
           const newKey = generateMatterKey();
           const remaining = db.all<{ device_id: string; enc_pub_pem: string }>(
             `SELECT d.device_id, d.enc_pub_pem FROM devices d
@@ -2898,7 +2907,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       // 破窗事件（§5.3「动用即破窗」：须 M 名持有人签名、写审计链并通知成员——通知界面/IM 在 G1）
       const record = createBreakGlassRecord({
         matterId: matter.matter_id,
-        keyEpoch: rotate ? epoch + 1 : epoch,
+        keyEpoch: rotatedEpoch,
         shareHolderIds: shareFiles.map((f) => basename(f)),
         actorId: id.userId,
         at: nowIso(),
@@ -2907,7 +2916,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       return {
         ok: true as const,
         matter_id: matter.matter_id,
-        epoch: rotate ? epoch + 1 : epoch,
+        epoch: rotatedEpoch,
         rotated: rotate,
         break_glass: { record_id: record.record_id, hash: hashBreakGlassRecord(record) },
         note: rotate
@@ -3201,6 +3210,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       }
     }
     for (const s of sources) lawdb2.assertAction(s, "export");
+  }
+
+  /**
+   * 经中软共享中继同步的事项：成员调整与密钥轮换须由中继上的控制成员（最先经中继同步该事项的负责人）操作（第二轮复核 S11B-19）——
+   * 其他负责人的电脑做了，新纪元在中继上登记不上，控制成员不知道这次移出，被移出者会继续收到新内容。
+   */
+  function requireRelayController(matterId: string, what: string): void {
+    const ctl = deps.shareRelay?.foreignController(matterId);
+    if (!ctl) return;
+    const name = db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE user_id = ?`, [ctl])?.display_name ?? ctl;
+    throw forbidden(`这个事项经中软共享中继同步：${what}须由最先同步该事项的负责人（${name}）在其电脑上操作`);
   }
 
   /**

@@ -12,7 +12,7 @@ test("错误代码映射：每类代码给出对应说法；未知代码给通�
   assert.equal(relayErrorText(null), null);
   assert.equal(relayErrorText(""), null);
   assert.match(relayErrorText("waiting_for_owner")!, /负责人/);
-  assert.match(relayErrorText("epoch_not_established")!, /负责人刚调整过成员/);
+  assert.match(relayErrorText("epoch_not_established")!, /最先同步该事项的负责人/);
   assert.match(relayErrorText("segment_too_large")!, /过大/);
   assert.match(relayErrorText("relay_connect_failed")!, /连不上/);
   assert.match(relayErrorText("relay_timeout")!, /连不上/);
@@ -22,7 +22,9 @@ test("错误代码映射：每类代码给出对应说法；未知代码给通�
   assert.match(relayErrorText("relay_chunk_digest_mismatch")!, /核对不通过/);
   assert.match(relayErrorText("not_reader")!, /已不在/);
   assert.match(relayErrorText("export_failed")!, /磁盘/);
-  assert.match(relayErrorText("something_new")!, /自动重试/);
+  assert.equal(relayErrorText("something_new"), "有改动没有同步成功", "未知代码不承诺会自动重试（第二轮复核 S11B-23③）");
+  assert.match(relayErrorText("credential_backoff")!, /控制面/);
+  assert.match(relayErrorText("relay_matter_conflict")!, /中软客服/);
   // epoch_jump 已不存在：不再说成“会自动重试”而实际卡死（复核 S11B 第六节）
   assert.equal(relayErrorText("epoch_not_established")!.includes("连不上"), false);
 });
@@ -32,6 +34,8 @@ test("立即同步的结果：成功且无改动说“已是最新”；有错�
   assert.equal(syncOutcomeText({ push: rep({ uploaded: 2 }), pull: rep({ applied: 1 }) }), "发出 2 条改动，收到并合入 1 条同事的改动");
   const e = syncOutcomeText({ push: rep({ errors: ["waiting_for_owner"] }), pull: rep() });
   assert.ok(!e.includes("已是最新") && e.includes("负责人"), e);
+  // 退避中的段：立即同步会强制再试，仍失败就有错误代码，不会说“已是最新”
+  assert.ok(!syncOutcomeText({ push: rep({ errors: ["epoch_not_established"] }), pull: rep() }).includes("已是最新"));
   const mixed = syncOutcomeText({ push: rep({ uploaded: 1 }), pull: rep({ errors: ["relay_connect_failed"] }) });
   assert.ok(mixed.startsWith("发出 1 条改动") && mixed.includes("连不上"), mixed);
 });

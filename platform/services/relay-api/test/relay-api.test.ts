@@ -183,7 +183,10 @@ test("RA-04 读者收窄：非读者看不到段、取不到块、写不进事�
   const loose = randomBytes(64);
   await putChunk(base, mid, A(), loose);
   assert.equal((await getChunk(base, mid, B(), sha(loose))).status, 404);
-  assert.equal((await call(base, "GET", `/v1/relay/matters/${mid}/segments/0`, B())).json.items.length, 1);
+  const hb = await call(base, "GET", `/v1/relay/matters/${mid}/segments/0`, B());
+  assert.equal(hb.json.items.length, 1);
+  assert.equal(hb.json.controller, "u-devA", "取历史回告控制成员（复核 S11B-19）");
+  assert.equal(w.r.json.controller, "u-devA", "登记回告控制成员");
 });
 
 test("RA-05 控制成员与纪元（复核 S11A-03、S11B-01）：只有控制成员能提升纪元且可跳级；其他读者声明更高纪元可恢复地拒绝；不能劫持或锁死", async () => {
@@ -194,13 +197,18 @@ test("RA-05 控制成员与纪元（复核 S11A-03、S11B-01）：只有控制�
   // 将被移出的 C 抢先声明更高纪元、或任一读者把读者改成只有自己：都被拒（可恢复的 409，不改读者）
   assert.equal((await writeSeg(base, mid, C(), "devC", { epoch: 2, readers: ["devA", "devB", "devC"] })).r.json.error, "epoch_not_established");
   assert.equal((await writeSeg(base, mid, B(), "devB", { epoch: 5, readers: ["devB"] })).r.json.error, "epoch_not_established");
-  // 持平纪元：并集
-  assert.equal((await writeSeg(base, mid, B(), "devB", { epoch: 1, readers: ["devB", "devA"] })).r.status, 200);
+  // 持平纪元：其他读者照常登记，但不能加读者（第二轮复核 S11A-25）；控制成员能加
+  const D = () => cred({ dev: "devD" });
+  assert.equal((await writeSeg(base, mid, B(), "devB", { epoch: 1, readers: ["devB", "devA", "devD"] })).r.status, 200);
   assert.equal((await call(base, "GET", "/v1/relay/changes/0", C())).json.items.length, 2);
+  assert.equal((await call(base, "GET", "/v1/relay/changes/0", D())).json.items.length, 0, "非控制成员加不进读者");
+  assert.equal((await writeSeg(base, mid, A(), "devA", { epoch: 1, readers: ["devA", "devD"] })).r.status, 200);
+  assert.equal((await call(base, "GET", "/v1/relay/changes/0", D())).json.items.length, 3, "控制成员加人后可见");
   // 负责人离线期间连续移出两人（纪元 1 → 3）：跳级照常登记
   const rot = await writeSeg(base, mid, A(), "devA", { epoch: 3, readers: ["devA", "devB"] });
   assert.equal(rot.r.status, 200, JSON.stringify(rot.r.json));
   assert.equal((await call(base, "GET", "/v1/relay/changes/0", C())).json.items.length, 0, "被移出的设备看不到任何段（含旧段）");
+  assert.equal((await call(base, "GET", "/v1/relay/changes/0", D())).json.items.length, 0);
   assert.equal((await getChunk(base, mid, C(), rot.body.chunks[0]!)).status, 403);
   assert.equal((await writeSeg(base, mid, C(), "devC", { epoch: 3, readers: ["devC"] })).r.status, 403);
   // 旧纪元的迟到段不改读者

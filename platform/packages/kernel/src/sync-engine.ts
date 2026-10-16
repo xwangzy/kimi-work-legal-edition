@@ -82,6 +82,18 @@ export interface SyncImportResult {
   dispositions: { segment_id: string; matter_id: string; path: string; outcome: SegmentOutcome }[];
 }
 
+/** 本机库里与一条同步行对应的那一行（导出时 collectRows 用的就是 SELECT *）；找不到返回 undefined。 */
+function localRowOf(db: KernelDb, t: string, pk: string): Record<string, unknown> | undefined {
+  const two = pk.split("|");
+  if (t === "matter_members") return db.get(`SELECT * FROM matter_members WHERE matter_id = ? AND user_id = ?`, [two[0], two[1]]);
+  if (t === "im_bindings") return db.get(`SELECT * FROM im_bindings WHERE platform = ? AND im_user_id = ?`, [two[0], two[1]]);
+  if (t === "key_epochs") return db.get(`SELECT * FROM key_epochs WHERE scope = ? AND scope_id = ? AND epoch = ?`, [two[0], two[1], Number(two[2])]);
+  if (t === "parse_texts") return db.get(`SELECT * FROM parse_texts WHERE parse_version_id = ?`, [pk]);
+  const col = TABLE_PK[t];
+  if (!col || !/^[a-z_]+$/.test(t)) return undefined;
+  return db.get(`SELECT * FROM ${t} WHERE ${col} = ?`, [pk]);
+}
+
 /** 一行的内容摘要（规范 JSON）。 */
 function rowDigest(row: Record<string, unknown>): string {
   return createHash("sha256").update(canonicalJson(row)).digest("hex");
@@ -195,10 +207,12 @@ function collectRows(db: KernelDb, matterId: string, deviceId: string, lamport: 
 
 /** 中继介质单段的段体目标上限（按行的 JSON 估算；超出即拆成按顺序的多段，复核 S11B-08）。 */
 export const RELAY_PART_BYTES = 96 * 1024 * 1024;
+/** 中继介质单段引用的新材料（密文块）字节上限：中继“每设备未登记字节”缺省 2 GiB 的一半（第二轮复核 S11B-21）。 */
+export const RELAY_PART_BLOB_BYTES = 1024 * 1024 * 1024;
 
 export function syncExport(
   deps: SyncDeps,
-  args: { shareDir: string; matterId?: string; medium?: "folder" | "relay"; partBytes?: number; relayJoinedAt?: (matterId: string) => string | null },
+  args: { shareDir: string; matterId?: string; medium?: "folder" | "relay"; partBytes?: number; partBlobBytes?: number; relayJoinedAt?: (matterId: string) => string | null },
 ): SyncExportResult {
   const relay = args.medium === "relay";
   const stateTable = relay ? "relay_export_state" : "sync_state";
@@ -261,8 +275,7 @@ export function syncExport(
     if (relay) {
       rows = rows.filter((r) => {
         const got = db.get<{ h: string }>(`SELECT h FROM relay_imported WHERE t = ? AND pk = ?`, [r.t, String(r.pk)]);
-        if (!got) return true;
-        return ALWAYS_TABLES.has(r.t) && got.h !== rowDigest(r.row);
+            return !got || got.h !== rowDigest(r.row);
       });
     }
     // 中继介质：设备行只发本机自己的（接收方只认设备自己写的设备行）；是否需要出段只看本机能改的“总是附带的行”——
@@ -281,10 +294,12 @@ export function syncExport(
     }
     // 引用的密文块（同一份密文，不经二次加解密）：共享文件夹介质**先**复制块、后写段——接收方看到段时块已在（否则摄取到没有块的行）；
     // 中继介质不复制，在引用它的行之后附一行块清单（上传时读本机块库）
-    const withRefs: SyncRow[] = [];
+    // 每行与它引用的块清单行为一个单元（拆段时不分开）；单元记引用的新材料字节
+    const units: { rows: SyncRow[]; blobBytes: number }[] = [];
     const seenRel = new Set<string>();
     for (const r of rows) {
-      withRefs.push(r);
+      const unit = { rows: [r] as SyncRow[], blobBytes: 0 };
+      units.push(unit);
       const uri = (r.row as any).storage_uri as string | undefined;
       if (typeof uri !== "string" || !uri.startsWith("blob://")) continue;
       const rel = uri.slice("blob://".length);
@@ -299,26 +314,32 @@ export function syncExport(
       }
       const env = readFileSync(src);
       const ref: RelayBlobRef = { sha256: createHash("sha256").update(env).digest("hex"), size: env.length, chunks: relayChunks(env).map((c) => c.cid) };
-      withRefs.push({ t: RELAY_BLOB_TABLE, pk: rel, src_device: keyctx.device.deviceId, src_lamport: toLamport, row: ref as unknown as Record<string, unknown> });
+      unit.rows.push({ t: RELAY_BLOB_TABLE, pk: rel, src_device: keyctx.device.deviceId, src_lamport: toLamport, row: ref as unknown as Record<string, unknown> });
+      unit.blobBytes += env.length;
     }
-    // 中继介质按段体大小拆成按顺序的多段（段编号里的时间递增，摄取按编号先后；依赖的行总在被依赖的行之后）
+    // 中继介质按段体大小与引用的新材料字节拆成按顺序的多段（第二轮复核 S11B-21：一段引用的材料不超过中继
+    // “每设备未登记字节”上限的一半，否则永远登记不上）；段编号里的时间递增，摄取按编号先后，依赖的行总在被依赖的行之后
     const parts: SyncRow[][] = [];
     if (relay) {
       const limit = args.partBytes ?? RELAY_PART_BYTES;
+      const blobLimit = args.partBlobBytes ?? RELAY_PART_BLOB_BYTES;
       let cur: SyncRow[] = [];
       let size = 0;
-      for (const r of withRefs) {
-        const n = Buffer.byteLength(JSON.stringify(r));
-        if (cur.length > 0 && size + n > limit) {
+      let blobBytes = 0;
+      for (const u of units) {
+        const n = u.rows.reduce((acc, r) => acc + Buffer.byteLength(JSON.stringify(r)), 0);
+        if (cur.length > 0 && (size + n > limit || blobBytes + u.blobBytes > blobLimit)) {
           parts.push(cur);
           cur = [];
           size = 0;
+          blobBytes = 0;
         }
-        cur.push(r);
+        cur.push(...u.rows);
         size += n;
+        blobBytes += u.blobBytes;
       }
       if (cur.length > 0) parts.push(cur);
-    } else parts.push(withRefs);
+    } else parts.push(units.flatMap((u) => u.rows));
     const keyRows = db.all<KeyRow>(`SELECT matter_id, epoch, wrapped_for, wrapped_key, created_at FROM matter_keys WHERE matter_id = ?`, [m.matter_id]);
     const t0 = Date.now();
     parts.forEach((partRows, i) => {
@@ -563,6 +584,8 @@ export function preverifySegment(deps: SyncDeps, seg: SegmentFile): { ok: true; 
     cert = null;
   }
   if (!cert || cert.deviceId !== h.device_id || !verifyCertSignature(cert, keyctx.firm.rootPublicKeyPem) || checkSealed(seg, cert.signPublicKeyPem).ok !== true) return { ok: false, outcome: "invalid" };
+  // 段体的纪元字段不在签名范围内：必须等于已签名的段头纪元（第二轮复核 S11A-24）
+  if (seg.body.epoch !== h.key_epoch) return { ok: false, outcome: "invalid" };
   // 撤权回填拒收（§5.2 不依赖时钟）：本机已有该设备登记、或它在吊销墓碑里（复核 S6-B28）即可即判；
   // 设备首见于本段的情形在摄取时应用 devices 行后再判一次
   if (db.get(`SELECT 1 AS x FROM devices WHERE device_id = ?`, [h.device_id]) || deviceTombstoned(db, h.device_id)) {
@@ -576,14 +599,16 @@ export function preverifySegment(deps: SyncDeps, seg: SegmentFile): { ok: true; 
 }
 
 /**
- * 段内密钥包裹能否落库（第 11 批复核 S11A-02）：包裹必须被段签名覆盖、属于本段事项、纪元为正整数，且签发设备是该事项
- * 当前在册的负责人（按本机库，含本段刚应用的成员行）——轮换、加人、补包裹都是负责人的操作（管理员设备不例外：小所里
- * 多台设备都可能是管理员；管理员做恢复演练轮换产生的包裹不随同步传播，见偏离登记 D-93）；
- * 其他成员的段里那些包裹只是转抄，不落库（解段体时仍可在内存里用面向本机的那一行）。
+ * 段内密钥包裹能否落库（第 11 批复核 S11A-02、第二轮 S11A-18）：包裹必须被段签名覆盖、属于本段事项、纪元为正整数，且签发设备是
+ * ①该事项当前在册的负责人（按本机库，含本段刚应用的成员行）的设备，或 ②本机认定的事项行来源设备（本机从它那里收下的事项行——
+ * 通常就是创建事项的负责人；迟到加入的成员收到的增量段里没有负责人自己的成员行，靠这一条认出负责人）。
+ * 轮换、加人、补包裹都是负责人的操作（管理员设备不例外，D-93）；其他成员段里的包裹只是转抄，不落库
+ * （解段体时仍可在内存里用面向本机的那一行）。
  */
-function keyRowsAcceptable(db: KernelDb, seg: SegmentFile, cert: DeviceCertificate): boolean {
+function keyRowsAcceptable(db: KernelDb, seg: SegmentFile, cert: DeviceCertificate, ownDeviceId: string): boolean {
   if (!keyRowsSigned(seg)) return false;
-  return !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [seg.header.matter_id, cert.memberId]);
+  if (db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [seg.header.matter_id, cert.memberId])) return true;
+  return originOf(db, "matters", seg.header.matter_id, ownDeviceId).device === cert.deviceId;
 }
 
 export function syncImport(deps: SyncDeps, args: { shareDir: string; trackRelay?: boolean }): SyncImportResult {
@@ -691,7 +716,7 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; trackRelay?
         if (applyRow(deps, r, ctx)) result.rowsApplied += 1;
       }
       // key_rows 随事务落库（matters 行已在库，外键满足）——只收被签名覆盖、属于本事项、由负责人或管理员设备签发的（复核 S11A-02）
-      const keyRowsOk = keyRowsAcceptable(db, seg, cert);
+      const keyRowsOk = keyRowsAcceptable(db, seg, cert, keyctx.device.deviceId);
       for (const kr of keyRowsOk ? (seg.key_rows ?? []) : []) {
         if (kr.matter_id !== h.matter_id || !Number.isSafeInteger(kr.epoch) || kr.epoch < 1) continue;
         db.run(`INSERT OR IGNORE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key, created_at) VALUES (?,?,?,?,?)`, [
@@ -723,11 +748,15 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; trackRelay?
         copyFileSync(src, dst);
       }
       // 经中继摄取的行另记（第 11 批复核 S11B-03）：中继介质导出时不再把它们原样发回中继（避免每台设备各回传一份全量历史）
+      // 每行都记摄取后本机那一行的内容摘要（第二轮复核 S11B-20：本机之后改过的行——例如共同负责人改角色、加回成员——照常发出；
+      // 本机保留自己版本的行，例如本人的用户行、合并时保留的本机列，不因“与收到的不同”而回传）；
+      // 按事项记，删除事项时清理（S11B-24；用户、设备、IM 绑定是所级行，不挂事项）
       if (args.trackRelay) {
         for (const r of rows) {
           if (r.t === RELAY_BLOB_TABLE) continue;
-          if (ALWAYS_TABLES.has(r.t)) db.run(`INSERT OR REPLACE INTO relay_imported (t, pk, h) VALUES (?, ?, ?)`, [r.t, String(r.pk), rowDigest(r.row)]);
-          else db.run(`INSERT OR IGNORE INTO relay_imported (t, pk) VALUES (?, ?)`, [r.t, String(r.pk)]);
+          const scoped = r.t === "users" || r.t === "devices" || r.t === "im_bindings" ? null : h.matter_id;
+          const local = localRowOf(db, r.t, String(r.pk));
+          db.run(`INSERT OR REPLACE INTO relay_imported (t, pk, matter_id, h) VALUES (?, ?, ?, ?)`, [r.t, String(r.pk), scoped, rowDigest(local ?? r.row)]);
         }
       }
       db.run(`INSERT INTO sync_segments_seen (segment_id, from_device, matter_id) VALUES (?,?,?)`, [h.segment_id, h.device_id, h.matter_id]);

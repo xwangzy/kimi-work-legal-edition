@@ -203,7 +203,10 @@ function validReset(x: unknown): x is ResetRecord {
   return !!r && r.k === "reset" && MATTER_ID_RE.test(String(r.mid)) && isoOk(r.at) && typeof r.operator === "string";
 }
 
-/** 按纪元规则合入一段（新事项：写入成员成为控制成员；更高纪元整体替换读者；持平取并集；更旧不动）。 */
+/**
+ * 按纪元规则合入一段：新事项——写入成员成为控制成员；更高纪元（只有控制成员能登记）整体替换读者；
+ * 持平纪元——只有控制成员的段能加读者（第二轮复核 S11A-25：其他读者不能把任意设备加进来，堵住借读者身份投递伪造事项的通道）；更旧不动。
+ */
 function applyEntry(t: TenantState, e: SegEntry): void {
   let m = t.matters.get(e.mid);
   if (!m) {
@@ -212,7 +215,7 @@ function applyEntry(t: TenantState, e: SegEntry): void {
   } else if (e.epoch > m.epoch) {
     m.epoch = e.epoch;
     m.readers = new Set(e.readers);
-  } else if (e.epoch === m.epoch) for (const d of e.readers) m.readers.add(d);
+  } else if (e.epoch === m.epoch && e.uid === m.controller) for (const d of e.readers) m.readers.add(d);
   m.segs.set(e.sid, e);
   for (const c of [...e.chunks, ...e.blobs]) m.committed.add(c);
 }
@@ -593,7 +596,7 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       const prev = m?.segs.get(sid);
       if (prev) {
         // 同一段编号重发：内容相同即成功（结果不明后原样重发），不同即拒绝
-        if (prev.sha === b.sha256 && prev.size === b.size && prev.dev === c.dev) return send(res, 200, { ok: true, seq: prev.seq, existed: true });
+        if (prev.sha === b.sha256 && prev.size === b.size && prev.dev === c.dev) return send(res, 200, { ok: true, seq: prev.seq, existed: true, controller: m!.controller });
         throw new HttpError(409, "segment_conflict");
       }
       if (m && !m.readers.has(c.dev)) throw new HttpError(403, "not_reader");
@@ -637,7 +640,8 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       }
       // 唤醒该事项的其他读者（写入设备自己不用醒）
       wake(c.tid, new Set([...t.matters.get(mid)!.readers].filter((d) => d !== c.dev)));
-      return send(res, 200, { ok: true, seq: e.seq, existed: false });
+      // 回告控制成员（复核 S11B-19：客户端据此判断本机能否调整成员、轮换密钥）
+      return send(res, 200, { ok: true, seq: e.seq, existed: false, controller: t.matters.get(mid)!.controller });
     }
 
     const feed = /^\/v1\/relay\/changes\/(\d{1,15})(\/wait)?$/.exec(raw);
@@ -687,7 +691,7 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       const since = Number(hist[2]);
       if (!Number.isSafeInteger(since) || since > t.entries.length) throw new HttpError(400, "cursor_invalid");
       const r = scan(t, since, c.dev, mid);
-      return send(res, 200, { items: r.out.map(entryOut), next: r.next, more: r.more, instance });
+      return send(res, 200, { items: r.out.map(entryOut), next: r.next, more: r.more, instance, controller: t.matters.get(mid)!.controller });
     }
 
     // ─── 运营：律所退约时按租户整体删除；中继上的事项状态异常时按事项重置（先记访问审计，记不进去即不删） ───

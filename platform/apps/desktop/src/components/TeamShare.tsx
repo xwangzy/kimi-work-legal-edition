@@ -55,7 +55,8 @@ export function TeamShare() {
               上次发出 {st.push_last_ok_at ? fmtTime(st.push_last_ok_at) : "—"} · 上次收取 {st.pull_last_ok_at ? fmtTime(st.pull_last_ok_at) : "—"}
               {counts.length > 0 ? ` · ${counts.join(" · ")}` : ""}
             </div>
-            {stuckErr && <div className="muted">发不出去的原因：{stuckErr}</div>}
+            {stuckErr && <div className="muted">发不出去的原因：{stuckErr}（每 6 小时自动再试一次；点“立即同步”马上再试）</div>}
+            {st.dropped_total ? <div className="muted">另有 {st.dropped_total} 条同事的改动无法在这台电脑上处理（多为这台电脑加入事项之前的内容），已略过。</div> : null}
             {pushErr && pushErr !== stuckErr && <div className="muted">发出：{pushErr}</div>}
             {pullErr && <div className="muted">收取：{pullErr}</div>}
             <button className="btn btn-sm" disabled={busy} onClick={() => void syncNow()}>

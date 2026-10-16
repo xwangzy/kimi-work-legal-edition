@@ -499,6 +499,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     onApplied: (n) => broadcastRef.current?.({ type: "sync.applied", segments: n }),
     // 开发与测试：小值验证大段拆分（下限 4 KiB）
     ...(env.ZR_RELAY_PART_BYTES ? { partBytes: Math.max(4096, Number(env.ZR_RELAY_PART_BYTES) || 0) } : {}),
+    ...(env.ZR_RELAY_PART_BLOB_BYTES ? { partBlobBytes: Math.max(1024, Number(env.ZR_RELAY_PART_BLOB_BYTES) || 0) } : {}),
   });
   // 发件每 5 秒（导出没有新内容时不出段）；收件长轮询（有新段即返回，约 5 秒内可见）；出错或不能收发时 30 秒后再试。
   // ZR_RELAY_SYNC_MS=off 只在显式调用 relay.sync 时收发（测试）
@@ -515,7 +516,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       while (!relayClosed) {
         const r = shareRelay.blocked() ? null : await shareRelay.pull(true).catch(() => null);
         if (relayClosed) break;
-        const wait = !r || r.errors.length > 0 ? 30_000 : 200;
+        const wait = !r || r.errors.length > 0 ? 30_000 : r.reason === "idle_fast" ? 5_000 : 200;
         await new Promise<void>((done) => {
           const timer = setTimeout(done, wait);
           timer.unref();
