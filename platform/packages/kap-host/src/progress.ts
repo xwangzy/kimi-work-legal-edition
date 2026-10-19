@@ -36,7 +36,7 @@ export type ActivityPhase = "thinking" | "writing" | "tool" | "retrying";
 /** 心跳单独推送的最短间隔（只有心跳变化时不必每条流式事件都推一次快照）。 */
 export const HEARTBEAT_PUSH_MS = 15_000;
 
-export const PROGRESS_LIMITS = Object.freeze({ todo: 30, todoTitle: 120, subagents: 32, description: 200, summary: 1_000, tasks: 16, notes: 5, note: 1_000, skills: 8 });
+export const PROGRESS_LIMITS = Object.freeze({ todo: 30, todoTitle: 120, subagents: 32, description: 200, summary: 1_000, tasks: 16, notes: 5, note: 1_000, noteTitle: 120, skills: 8 });
 /** 记住的子任务编号上限（超过快照条数后只为里程碑去重；集群单次最多 128 个成员）。 */
 const KNOWN_SUBAGENTS_MAX = 1_024;
 /** 等待返回结果的方法模板调用上限。 */
@@ -129,7 +129,10 @@ export class ProgressTracker {
         }
         if (payload.name === "NotifyUser") {
           // 上游工具说明要求约 1000 字以内（复核 S5B-02）：超出部分截去并注明，不静默丢字
-          const raw = typeof args.message === "string" ? args.message : typeof args.text === "string" ? args.text : "";
+          // 2.2.0 起入参可带一行标题（上游要求约 60 字以内）：标题截到 PROGRESS_LIMITS.noteTitle 后与正文合成一条，总长仍受 note 上限约束
+          const body = typeof args.message === "string" ? args.message : typeof args.text === "string" ? args.text : "";
+          const title = str(args.title, PROGRESS_LIMITS.noteTitle).trim();
+          const raw = title && body.trim() ? `${title}：${body}` : title || body;
           const text = (raw.length > PROGRESS_LIMITS.note ? `${raw.slice(0, PROGRESS_LIMITS.note - 8)}…（已截断）` : raw).trim();
           if (!text) return { changed: false };
           this.p.notes = [...this.p.notes, { at, text, agent_id: agentId }].slice(-PROGRESS_LIMITS.notes);

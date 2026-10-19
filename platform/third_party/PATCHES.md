@@ -1,13 +1,30 @@
 # 中软 fork 补丁台账（kimi-code）
 
-- 基线：`f67e6398fb3210ad8ace970e2dfd5bcc984ed61f`（`@moonshot-ai/kimi-code@2.1.1`，2026-09-24）
-- 方案依据：终版方案 v9.1 第 04 篇 §3.4 补丁台账（ZP-1～18），本表另增 ZP-4b、ZP-19～22（实施中发现，口径见各行）
-- 复现：`third_party/kimi-code/` 不入仓（嵌套仓库）。全部补丁导出为
-  `third_party/patches/kimi-code-f67e6398f-zhongruan.patch`（`git diff HEAD` + 新增文件；已在干净的锁版源码上
-  `git apply --check` 通过，应用结果与 fork 逐字节一致）。制品由 `node scripts/build-kap-embed.mjs` 生成，
-  `packages/kap-host/vendor/kap-embed/BUILD.json` 记录上游提交、补丁摘要与制品 hash。
-- 升级闸门：rebase 到 > 2.1.1 之前，**必须先 revert #4059**（`KIMI_CODE_TRUST_WORKSPACE`），逐条回归本表；
-  `packages/kap-host/test/static-surface.test.ts` 的进程与网络入口白名单是精确集合，上游新增入口即失败。
+- 基线：`472192c34c1efad89a369870eff0da0b708ce9bb`（tag `@moonshot-ai/kimi-code@2.2.0`，2026-10-14）。2.2.0 由上游“隔离发布分支”出版，
+  **不在上游 main 上**（与 main 的分叉点 `c69bd6c5a`）：以 tag 为基线，main 上的提交只按需挑选（见“上游挑选”）。
+  上一基线 `f67e6398f`（2.1.1）于 2026-10-19 退役（实施记录：`research/2026-10-19-商用交付评审v9.3/实施-I1-KimiCode-2.2.0-rebase.md`；增量核查：同目录评审 Z2）。
+- 方案依据：终版方案 v9.1 第 04 篇 §3.4 补丁台账（ZP-1～18），本表另增 ZP-4b、ZP-19～23（实施中发现，口径见各行）
+- 补丁文件：`third_party/patches/kimi-code-2.2.0-zhongruan.patch`，sha256 `468f1518f0ff78c3e6c89c4376264708e58b822fad09ee486afa34b97fe30f65`
+  （相对 tag 的 55 个文件：52 改、3 新增；含 #4059 revert、ZP 全部条目、ZP-23 与挑选的 #4066）。`BUILD.json.patch_digest_sha256` 与该文件 sha256 相同
+  （构建脚本按 `git diff HEAD` + 未跟踪 .ts 求摘要；fork 的 HEAD 停在 tag、全部改动已暂存且工作区与暂存区一致时二者恰好相等——今后导出须保持这一状态）。
+- 导出法（`third_party/kimi-code/` 不入仓，嵌套仓库）：fork 的 HEAD 保持为 tag，改动只暂存不提交，
+  `git -C third_party/kimi-code add -A && git -C third_party/kimi-code diff --cached --binary 472192c34 > third_party/patches/kimi-code-2.2.0-zhongruan.patch`（新增文件因已暂存而包含在内）。
+- 复现（2026-10-19 实测）：
+  ```
+  git -C <kimi-code 克隆> worktree add --detach <干净目录> 472192c34
+  cd <干净目录> && git apply --check <补丁> && git apply <补丁> && git add -A && git write-tree
+  diff -r -q --exclude=.git --exclude=node_modules <干净目录> third_party/kimi-code
+  ```
+  结果：`git apply --check` 通过；树 `0c4808861774d83ab70b51cb140b143140b6edb8` 与 fork 的 `git write-tree` 相同；`diff -r` 无输出（除 .git、node_modules 外逐字节一致）。
+  制品由 `node scripts/build-kap-embed.mjs` 生成，`packages/kap-host/vendor/kap-embed/BUILD.json` 记录上游提交、补丁摘要与制品 hash；
+  制品与 inputs.json 不含构建机绝对路径（`?raw` 文本模块记为 `raw:third_party/kimi-code/…`），换目录构建逐字节一致。
+- 依赖：2.2.0 相对 2.1.1 的锁文件只删不增（`packages/kaos`、`ssh2` 等），沿用 2.1.1 已安装的 node_modules 即可构建，未联网安装。
+- 升级闸门：rebase 到新版本前，**必须核对 #4059（`KIMI_CODE_TRUST_WORKSPACE`）仍被 revert**（2.2.0 与 main 都还带着它；本补丁含 revert，14 个文件）、逐条回归本表；
+  `packages/kap-host/test/static-surface.test.ts` 的进程、网络入口与 HTTP 客户端库导入者白名单是精确集合，上游新增入口即失败；
+  `embed-drift.test.ts` 锁定 `start.ts` 启动种子段与宿主读取的事件字段、工具入参。
+- 质量闸（fork 内，2026-10-19）：`tsc --noEmit`（agent-core-v2、kap-server）0 错误；`scripts/check-no-comments.mjs` OK（1757 个文件，补丁不再带注释）；
+  `oxlint`（补丁改动的 49 个 .ts 文件）0 error。上游 vitest 不作为门禁：ZP 条目（宿主策略缺省全部拒绝、默认放行清空、FetchURL 不注册等）有意改变了上游行为，
+  抽查 5 个文件 325 条用例中 24 条失败（其中 18 条在只应用 Z2 补丁时就失败，6 条是 #4066 新用例与 ZP-11 不注册 FetchURL 的交互；纯 2.2.0 + #4066 不带 ZP 时同 3 个文件 3 条失败，均在前述 18 条内）。
 
 ## 已应用
 
@@ -18,17 +35,17 @@
 | ZP-3 | P1 | `agent-core-v2/src/app/plugin/marketplace.ts` | 默认插件市场地址指向黑洞 | 插件安装另由路由白名单关闭；G1 指向中软/律所目录 |
 | ZP-4 | P0 | 新增 `agent-core-v2/src/agent/permissionPolicy/hostPolicy.ts`；`permissionPolicyService.ts` | 宿主策略插在策略链首位（每个 Agent 作用域，含子 Agent）；应用级 `IHostPolicyProvider` 默认实现为**全部拒绝**（失败关闭），由宿主种子替换；提供者抛错、返回空或非法结果 → 拒绝 | 上游在构造函数里写死 13 条策略、注册在 Agent 作用域，seeds 覆盖不到；宿主策略永不弃权，其后的 auto/yolo/默认放行永远不被触达 |
 | ZP-4b | P0 | `agent-core-v2/src/agent/toolExecutor/beforeToolExecuteEvent.ts` | 执行前钩子的 `allow()` 不再短路其余监听者：只表示“本监听者不反对”，权限闸门（宿主策略所在的策略链）总会裁决；任一监听者否决仍立即生效 | 实施中发现（P1 遍历工具时取证）：上游计划模式对“只写计划文件”的 Write/Edit 调用 `allow()`，计划服务的监听者注册在权限闸门之前——该调用不经宿主策略直接执行 |
-| ZP-5/6 | P0 | `node-sdk/src/types.ts`、`sdk-rpc-client-v2.ts`、`index.ts` | SDK 路径 `extraSeeds` 透传到 `bootstrap` 种子末尾；再导出 DI 标识 | SDK 宿主（确定性工作流与回归）注入进程与文件系统服务；kap-server 路径用 `createEmbeddedServer({seeds})`，无需补丁 |
 | ZP-11 | P0 | `agent-core-v2/src/app/web/webService.ts`、`web.ts`、`agent/tools/fetch-url/fetchUrlTool.ts`、`index.ts`；测试 `test/app/web/tools/fetch-url.test.ts`；（补充，阶段 4）`app/web/providers/moonshot-fetch-url.ts` | 删除托管抓取失败后的本机直连回落与 Kimi OAuth 托管抓取；未配置 `[services.moonshot_fetch]` 时不注册 FetchURL；`index.ts` 不再导出本机直连抓取实现（制品中不再包含该模块及其依赖）。补充：托管抓取（出站闸门）失败时不再调用回落（原先回落到“已禁用”的占位实现，闸门给出的拒绝原因被换成“Direct local fetch is disabled”），错误原样交给模型 | 闸门是唯一出口；模型须看到闸门的拒绝原因（例如 URL 含当事人信息、域名不在白名单）才能改写 |
 | ZP-14 | P0 | `policies/default-tool-approve.ts`、`policies/git-cwd-write-approve.ts` | 默认放行清单清空；git 工作区写入自动放行改为弃权（原实现保留为 `evaluateUpstream` 供对照） | 纵深：即使宿主策略被绕过，上游也不自动放行 |
 | ZP-16 | P1 | `_base/execEnv/environmentProbe.ts`、`shellPathBridge.ts` | 不再直接执行 `cygpath`/探测命令；环境由宿主种子返回固定值（执行域占位 shell） | Windows 免 Git Bash；探测类调用不绕过进程服务 |
-| ZP-17 | P0 | `kap-server/src/lib/fileLaunch.ts`、`features/tower/protocol/git.ts`、`environmentProbe.ts`、`shellPathBridge.ts`、`features/externalHooks/internal/runHook.ts`（改为 `import type`） | 删除或封闭绕过进程服务的 `node:child_process` 直接调用 | 静态检查：制品中 `node:child_process` 只剩默认进程服务（由种子替换为执行域路由），见 `static-surface.test.ts` |
+| ZP-17 | P0 | `kap-server/src/lib/fileLaunch.ts`、`features/tower/protocol/git.ts`、`environmentProbe.ts`、`shellPathBridge.ts`、`features/externalHooks/internal/runHook.ts`（改为 `import type`） | 删除或封闭绕过进程服务的 `node:child_process` 直接调用。2.2.0 rebase：`tower/protocol/git.ts` 唯一冲突（上游 #4074 给 `GitError` 加退出码），按“保留封闭实现”解决——`git()` 整段仍为 `throw new GitError(args, 'direct process execution is disabled')`，`node:child_process` 导入删除；`GitError` 的 `exitCode?` 为可选参，不需改 | 静态检查：制品中 `node:child_process` 只剩默认进程服务（由种子替换为执行域路由），见 `static-surface.test.ts` |
 | ZP-18 | P0 | `workspace/workspaceInstructions/workspaceInstructionsService.ts`、`app/bootstrap/bootstrap.ts`、`features/skill/workspace/rootFileSkillSource.ts`、`features/skill/catalog/userFileSkillSource.ts` | 工作区指令只从宿主给出的 `trustedInstructionsDir`（签名方法包与只读可信配置区）加载；工作区、案卷目录与 OS home 的 `AGENTS.md`、项目级技能目录不加载、不监听 | 被注入的 Agent 写入 `/work/AGENTS.md` 不能形成持久化注入 |
 | ZP-19 | P0 | 新增 `kap-server/src/embed.ts`；`kap-server/package.json` 增加 `./embed` 导出 | 无端口私有嵌入：进程内 `bootstrap` + Fastify `inject()`；内存令牌服务（不落盘）；只注册 sessions、prompts、approvals、questions、tasks、messages、fileHistory、snapshot、transcript 九组路由（终端、配置、工作区信任、插件、OAuth、关机、遥控、文件打开均不注册）。2026-10-14 第 5 批：`bootstrap` 增 `uiCapabilities: ['update_panel']`（宿主有“进展”面板），NotifyUser 随之注册（锁版 `features/notify/notifyUserAvailability.ts`），通知只进过程快照 | 第 04 篇 §1.2 第 4 条“kap-server 不对外、不监听端口”；§3.2 嵌入方式 |
 | ZP-20 | P0 | `agent-core-v2/src/os/backends/node-local/tools/rgLocator.ts`、`index.ts` | Grep/Glob 只使用宿主登记的可信 ripgrep（`configureTrustedRipgrep`）；不在 PATH 查找，不从 CDN 下载（下载代码删除）。2026-10-13 起宿主登记的是**宿主内检索入口**（数据根下不可执行的占位文件，执行域路由按字面匹配后在宿主进程内检索；不再随包原生 rg，审计 S3 第 2 步、偏离 D-56），本补丁不变 | 实施中发现：上游找不到 rg 时会从 Kimi CDN 下载并写入用户目录——绕过闸门的直连出网，且 PATH 上的 rg 可能被替换 |
-| ZP-22 | P0 | `kap-server/src/lib/promptMedia.ts` | 提示词中按本机路径附加文件（image/video/file 的 `path` 来源）一律拒绝 | 调研发现：kap-server 用 `node:fs` 直接读取任意绝对路径（只过滤敏感文件名），绕过宿主文件系统种子（事项 broker）；宿主侧 KapClient 只发文本部件，此为“每处独立强制” |
+| ZP-22 | P0 | `kap-server/src/lib/promptMedia.ts` | 提示词中按本机路径附加文件（image/video/file 的 `path` 来源）一律拒绝。2.2.0 rebase 改写：原写法在函数中插入无条件 `throw`、其后代码不可达（2.2.0 的 kap-server `tsc` 报 2 个 TS2345），改为遇到任何按路径的部件即抛同一错误，删除不可达代码与随之不用的 `isAbsolute`、`isSensitiveFile` 导入；错误文本不变 | 调研发现：kap-server 用 `node:fs` 直接读取任意绝对路径（只过滤敏感文件名），绕过宿主文件系统种子（事项 broker）；宿主侧 KapClient 只发文本部件，此为“每处独立强制” |
 | ZP-9a | P0 | `kap-server/src/transport/ws/v1/sessionEventJournal.ts`、`sessionEventBroadcaster.ts`、`embed.ts`（`eventJournalIo` 选项） | WS 事件日志 `server/events/*.jsonl` 的读写改经可注入的 `JournalIo`（缺省 node fs，上游行为不变）；宿主注入按事项工作区密钥加密的追加日志（`kap-host/src/sealed-storage.ts` `sealedJournalIo`） | 落盘加密第 1 步（2026-10-13 审计 S3）：事件日志是引擎里唯一绕过可注入持久化服务、直接 `appendFile` 的含内容文件；其余（会话转录、状态、文件历史、任务输出、查询库）经种子替换，零补丁 |
 | ZP-21 | P0 | `agent-core-v2/src/mcpCore/oauth/callback-server.ts` | MCP OAuth 授权回调监听关闭（`startCallbackServer` 一律失败，不再导入 `node:http`/`node:net`） | 实施中发现：交互式 MCP OAuth 会在本机起 HTTP 监听；宿主不监听任何 TCP 端口，MCP 只用宿主下发的令牌 |
+| ZP-23 | P0 | `agent-core-v2/src/human/llm/requester/timeout.ts`；上游测试 `src/human/test/llm/headers-timeout.test.ts` 改为断言封闭行为 | `resolveLlmHeadersTimeoutMs()` 恒返回 `undefined`、`getLlmHeadersTimeoutDispatcher()` 恒返回 `undefined`，不再值导入 undici（只留 `import type`）；三个请求器（anthropic、openai、openai-responses）因而永不传 `fetchOptions.dispatcher`，模型请求一律走宿主全局调度器。首包头超时改由宿主出口设：`kap-host/src/host-egress.ts` 的模型 Agent `headersTimeout: MODEL_HEADERS_TIMEOUT_MS`（300 秒，与 undici 缺省相同，唯一设置点） | Z2 评审 N-1：2.2.0 新增（#4092），设了 `KIMI_CODE_LLM_HEADERS_TIMEOUT_MS` 时为模型请求自建 undici `Agent`/`EnvHttpProxyAgent`，**不经宿主 `HostEgressDispatcher`**（不按会话换任务令牌、不受事项校验）。门禁：`static-surface.test.ts` 的 ZP-23 用例——构建脚本按导入说明符记录每个输入对 HTTP 客户端库（undici、ws、socks 等）的值导入，第一方导入者精确为 `_base/utils/proxy.ts`（其建调度器函数不进制品）；制品中不得出现该环境变量名与按超时建调度器的代码。反向对照：去掉本补丁重建制品，该用例失败（第一方导入者多出 `timeout.ts`） |
 
 ## just-bash 3.6.0 自维护补丁（W 执行域，第 04 篇 §4.1“流式回调：对上游提需求，或自维护补丁”）
 
@@ -81,7 +98,22 @@ KJ-4 之后的数据规模口径：单个文件经 `python3` 或 `awk` 读入的
   v9 起开放任务改由 kap-host 承载并开放 Read/Write/Edit/Glob/Grep/Bash，**该例外失效**，改列为待实现的 ZP-7。
 - v5 待办“ZP-4（备选）：SDK 层经 engineAccessor 接线 addRules() 兜底 deny”已由 v9 的 ZP-4（策略链首位）取代。
 
+## 上游挑选（2.2.0 tag 之后，main 上的提交）
+
+| 提交 | 内容 | 处置 |
+|---|---|---|
+| `85077a419` #4066 | 子 Agent 工具描述与实际可用性对齐（`toolActivation/toolAvailability.ts`、`agentTool.ts` 等） | **已挑入**（`git cherry-pick -n`）。产品代码干净；两份上游测试（`test/agent/loop/loop.test.ts`、`test/tool/tool.test.ts`）的快照冲突按 #4066 一侧解决；`.changeset` 文件不收。宿主拒绝表外工具，描述与可用性一致可减少子 Agent 调用被拒的空转 |
+| `da5918c0c` #4239 | 提醒 Agent 维护待办清单 | **不挑**：改系统提示 `system.md` 与待办提醒频率、新增遥测事件；宿主“进展”面板读 TodoList 现已可用，收益不足以抵消未经 kap 用例验证的提示词变化。另行评审后单独挑 |
+| 其余（#4190、#4242、#4250、#4210、#4188、#4171、#4209、#4224、#4019） | 见评审 Z2 §1.8 | 不跟进 |
+
+## 已移除
+
+| # | 移除时间 | 说明 |
+|---|---|---|
+| ZP-5/6 | 2026-10-19（2.2.0 rebase） | 原内容：`node-sdk/src/types.ts`、`sdk-rpc-client-v2.ts`、`index.ts` 让 SDK 路径 `extraSeeds` 透传到 `bootstrap` 种子末尾并再导出 DI 标识。SDK 宿主已退役（仓库内只有 kap-server 嵌入路径 `createEmbeddedServer({seeds})`；旧制品 inputs.json 中 node-sdk 输入为 0），三处文件恢复上游原样 |
+
 ## 已知事项
 
-- fork 的 `kap-server`、`agent-core-v2` 为上游“无注释区”（`scripts/check-no-comments.mjs`），历次 ZP 补丁中有约 20 处注释（复核 S5B-16）。不影响制品；rebase 到 2.2.0 时统一移入本台账并从源码删除，届时 fork 的 lint 才能通过。
-
+- 历次 ZP 补丁中的约 20 处注释（复核 S5B-16）已在 2.2.0 rebase 时全部从源码删除，意图以本台账为准；fork 的无注释 lint 通过。
+- 上游仍 open、未合并的相关缺陷：#4193（同一步多个大工具结果使压缩请求超窗）、#2337（配置权限规则不生效）、#4070（后台子 Agent 审批不触发 PermissionRequest 钩子）。见评审 Z2 §1.3。
+- 2.2.0 新增 Tower 工具 `TowerComplete`、`TowerRebase` 已列入宿主 `LOCKED_OFF_TOOLS`（`kap-host/src/tool-table.ts`）；NotifyUser 新增可选 `title`，宿主过程快照把标题与正文合成一条（`progress.ts`）。

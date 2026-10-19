@@ -87,6 +87,14 @@ test("K7-P 过程快照的上限：清单、标题、子任务、通知条数与
   assert.equal(t.snapshot().subagents.length, PROGRESS_LIMITS.subagents);
   for (let i = 0; i < 9; i++) t.apply("tool.call.started", { agentId: "main", name: "NotifyUser", args: { message: `进展${i}` } });
   assert.deepEqual(t.snapshot().notes.map((n) => n.text), ["进展4", "进展5", "进展6", "进展7", "进展8"]);
+  // 2.2.0 起 NotifyUser 可带一行标题：与正文合成一条；标题截到 noteTitle；只有标题也记；合成后总长仍受 note 上限约束
+  t.apply("tool.call.started", { agentId: "main", name: "NotifyUser", args: { title: "初稿完成", message: "已列出三项风险" } });
+  t.apply("tool.call.started", { agentId: "main", name: "NotifyUser", args: { title: "标".repeat(500) } });
+  t.apply("tool.call.started", { agentId: "main", name: "NotifyUser", args: { title: "长", message: "文".repeat(5_000) } });
+  const notes = t.snapshot().notes.map((n) => n.text);
+  assert.equal(notes[2], "初稿完成：已列出三项风险");
+  assert.equal(notes[3], "标".repeat(PROGRESS_LIMITS.noteTitle));
+  assert.ok(notes[4]!.startsWith("长：") && notes[4]!.endsWith("…（已截断）") && notes[4]!.length <= PROGRESS_LIMITS.note);
 });
 
 test("压缩验收取证（2026-10-14）：事件顺序 started → blocked → completed——blocked 是“本步等整理完成”，不是失败：不出里程碑、不丢触发方式", () => {

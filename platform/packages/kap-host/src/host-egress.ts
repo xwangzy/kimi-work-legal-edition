@@ -58,6 +58,9 @@ export interface HostEgressOptions {
   authority: EgressAuthority;
 }
 
+/** 模型请求的首包头超时（毫秒）：与 undici 缺省值相同，显式写出，作为唯一设置点（Z2 评审 N-1）。 */
+export const MODEL_HEADERS_TIMEOUT_MS = 300_000;
+
 const MATTER_PREFIX = /^\/m\/([A-Za-z0-9_.-]{1,128})(\/.*)$/;
 const STRIPPED_HEADERS = new Set(["authorization", "x-api-key", "api-key", "host", "proxy-authorization", "cookie"]);
 
@@ -142,7 +145,10 @@ export class HostEgressDispatcher extends Dispatcher {
   constructor(opts: HostEgressOptions) {
     super();
     this.authority = opts.authority;
-    this.modelAgent = opts.modelSocket ? new Agent({ connect: { socketPath: opts.modelSocket }, keepAliveTimeout: 10_000, keepAliveMaxTimeout: 60_000 }) : null;
+    // 首包头超时只在宿主出口设（ZP-23 封闭了引擎按 KIMI_CODE_LLM_HEADERS_TIMEOUT_MS 自建调度器的路径）
+    this.modelAgent = opts.modelSocket
+      ? new Agent({ connect: { socketPath: opts.modelSocket }, keepAliveTimeout: 10_000, keepAliveMaxTimeout: 60_000, headersTimeout: MODEL_HEADERS_TIMEOUT_MS })
+      : null;
     this.toolsAgent = new Agent({ connect: { socketPath: opts.toolsSocket }, keepAliveTimeout: 10_000, keepAliveMaxTimeout: 60_000 });
   }
 
