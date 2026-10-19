@@ -801,3 +801,4 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .done-files .done-file-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
 .done-files .done-file-list li { display: flex; align-items: center; gap: 8px; }
 .menu-group { font-size: var(--fs-xs); color: var(--text-secondary); padding: 8px 10px 2px; border-top: 1px solid var(--border-subtle); margin-top: 4px; }
+.tab-more { min-width: 40px; }

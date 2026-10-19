@@ -143,3 +143,53 @@ export function DeliverablesPage() {
     </main>
   );
 }
+
+/** 事项页“交付件”标签（Z3 评审 #10）：本事项的成果，与交付件页同样的标题、直达与下载。 */
+export function MatterDeliverables({ matterId }: { matterId: string }) {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    api
+      .listArtifacts(matterId)
+      .then(async (a) => {
+        const titles = a.artifacts.map((x: any) => String(x.title ?? "")).join("\n");
+        const map = titles.includes("〔") ? await restoreTokens(matterId, titles).catch(() => new Map<string, string | null>()) : new Map<string, string | null>();
+        setRows([...a.artifacts].sort((x: any, y: any) => String(y.created_at).localeCompare(String(x.created_at))).map((x: any) => ({ ...x, display: artifactName(x, (t) => restoredPlain(t, map)) })));
+      })
+      .catch(() => setRows([]));
+  }, [matterId]);
+  if (rows === null) return <p className="muted">正在载入…</p>;
+  if (rows.length === 0) return <p className="muted">本事项还没有成果。任务完成后，生成的文件会出现在这里。</p>;
+  return (
+    <>
+      {err && <div className="banner banner-red">{err}</div>}
+      <table className="data deliverables">
+        <thead><tr><th>成果</th><th>版本</th><th>状态</th><th>生成</th><th className="dl-actions-h">操作</th></tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.artifact_version_id} className="row-link" onClick={() => nav(`/review/${r.artifact_version_id}`)}>
+              <td title={r.filename}><b>{r.display}</b></td>
+              <td>v{r.version}</td>
+              <td>{STATUS_LABELS[r.status] ?? r.status}</td>
+              <td title={fmtTime(r.created_at)}>{fmtRelative(r.created_at)}</td>
+              <td className="dl-actions" onClick={(e) => e.stopPropagation()}>
+                <button className="btn-link" onClick={() => nav(`/review/${r.artifact_version_id}`)}>预览</button>
+                <button
+                  className="btn-link"
+                  onClick={() =>
+                    void api
+                      .downloadArtifact(r.artifact_version_id, r.filename)
+                      .then((saved) => (saved ? api.deliver({ artifact_version_id: r.artifact_version_id, action: "download" }) : undefined))
+                      .catch((e) => setErr((e as Error).message))
+                  }
+                >
+                  {/\.docx$/i.test(r.filename) ? "下载 Word" : /\.xlsx$/i.test(r.filename) ? "下载 Excel" : "下载"}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
