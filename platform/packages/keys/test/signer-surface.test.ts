@@ -34,6 +34,7 @@ const PRIVATE_PEM_ALLOWED: Record<string, { count: number; why: string }> = {
   "packages/keys/src/signer.ts": { count: 1, why: "签名者实现（只在对象内持有 KeyObject）" },
   "packages/kernel/src/devices.ts": { count: 7, why: "密钥文件读写、暂存的设备恢复、拆出签名者（DeviceContext 不常驻签名私钥）" },
   "packages/kernel/src/api/index.ts": { count: 8, why: "设备恢复包导出与导入（recovery.*，从密钥文件读取）" },
+  "packages/kernel/src/services/recovery-package.ts": { count: 1, why: "整机恢复包（第 14 批）：从密钥文件读出设备私钥封入恢复码包裹的恢复包（只核对私钥存在）" },
   "packages/firm-trust/src/request-auth.ts": { count: 2, why: "测试与工具的私钥 PEM 入口（内核传签名者）" },
 };
 
