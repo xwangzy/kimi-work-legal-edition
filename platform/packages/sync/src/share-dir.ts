@@ -52,7 +52,8 @@ export function writeSegment(shareDir: string, tenantId: string, deviceId: strin
 
 export function writeShareBlob(shareDir: string, tenantId: string, scope: string, sha256: string, content: Buffer): string {
   const path = join(blobsDirOf(shareDir, tenantId), scope, sha256);
-  if (!existsSync(path)) atomicWriteFile(path, content);
+  // 同名块内容不同即覆盖（第 12 批第四轮复核 S12A-24：本机按段的纪元重封过的块；块名是明文摘要，接收方读时核对）
+  if (!existsSync(path) || !readFileSync(path).equals(content)) atomicWriteFile(path, content);
   return path;
 }
 

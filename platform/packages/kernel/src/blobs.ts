@@ -19,6 +19,8 @@ export interface BlobCipher {
   forget?(matterId: string): void;
   /** 此刻写入该事项的块所用的纪元（第 12 批复核 S12B-31/32：链模式按链上已声明的纪元）。 */
   currentEpoch?(matterId: string): number;
+  /** 这一块是否按此刻的纪元、用此刻本机持有的那把密钥封的（同号纪元换过密钥的也算不是；第四轮复核 S12B-44）。 */
+  sealedWithCurrent?(envelope: Buffer): boolean;
 }
 
 const MAGIC = Buffer.from("KWB1");
@@ -139,7 +141,8 @@ export class BlobStore {
     if (!existsSync(path)) return false;
     const raw = readFileSync(path);
     const h = blobHeaderOf(raw);
-    if (!h || h.epoch === this.cipher.currentEpoch(m[1]!) || (need && !need(h.epoch))) return false;
+    const current = this.cipher.sealedWithCurrent ? this.cipher.sealedWithCurrent(raw) : h?.epoch === this.cipher.currentEpoch(m[1]!);
+    if (!h || current || (need && !need(h.epoch))) return false;
     const plain = this.read(storageUri);
     const tmp = join(this.dir, m[1]!, `.${m[2]!}.${process.pid}.reseal.tmp`);
     writeFileSync(tmp, this.cipher.encrypt(m[1]!, plain));

@@ -3033,8 +3033,11 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (!combined.ok) {
         return { ok: false as const, reason: `份额重组托管私钥失败：${combined.reason}` };
       }
-      // 恢复取托管包裹的最高纪元（第二轮复核 S11A-23：本机可能没有任何包裹，不能按“本机持有的最高纪元”起算）
-      const epoch = db.get<{ e: number | null }>(`SELECT MAX(epoch) AS e FROM matter_keys WHERE matter_id = ? AND wrapped_for = 'recovery'`, [matter.matter_id])?.e ?? 0;
+      // 恢复取托管包裹的最高纪元（第二轮复核 S11A-23：本机可能没有任何包裹，不能按“本机持有的最高纪元”起算）；
+      // 有成员链的事项取链上已声明的最高纪元（第四轮复核 S12B-50：不取链上不成立的那一纪元）
+      const epoch = hasChain(db, matter.matter_id)
+        ? chainView(chainDeps(id), matter.matter_id).maxEpoch
+        : (db.get<{ e: number | null }>(`SELECT MAX(epoch) AS e FROM matter_keys WHERE matter_id = ? AND wrapped_for = 'recovery'`, [matter.matter_id])?.e ?? 0);
       const recWrap = db.get<{ wrapped_key: string }>(`SELECT wrapped_key FROM matter_keys WHERE matter_id = ? AND epoch = ? AND wrapped_for = 'recovery'`, [matter.matter_id, epoch]);
       if (!recWrap) throw notFound("该事项的恢复托管包裹行");
       const matterKey = unwrapMatterKey(recWrap.wrapped_key, combined.privateKeyPem);

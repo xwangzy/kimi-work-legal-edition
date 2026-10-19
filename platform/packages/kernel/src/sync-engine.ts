@@ -272,7 +272,13 @@ export function syncExport(
     const chainErr = prepareChain(deps, m.matter_id);
     if (chainErr) result.chainErrors.push(`${m.matter_id}：${chainErr}`);
     // 链模式：加密纪元取链上已声明、本机持有胜者密钥的最高纪元（复核 S12B-02/20）
-    const epoch = (hasChain(db, m.matter_id) ? chainEncryptEpoch(deps, m.matter_id) : null) ?? currentMatterEpoch(db, m.matter_id, keyctx.device.deviceId);
+    const chainEpoch = hasChain(db, m.matter_id) ? chainEncryptEpoch(deps, m.matter_id) : undefined;
+    // 有链却没有可用纪元（等胜者的包裹）：这一轮什么都不发，连成员链也不用非链上的纪元封（第四轮复核 S12B-50）
+    if (chainEpoch === null) {
+      result.pausedConflict.push(m.matter_id);
+      continue;
+    }
+    const epoch = chainEpoch ?? currentMatterEpoch(db, m.matter_id, keyctx.device.deviceId);
     const matterKey = resolveMatterKey(db, m.matter_id, epoch, keyctx.device.deviceId, keyctx.device.keys.encPrivateKeyPem);
     if (!matterKey) continue; // 本机不持钥（理论上不发生：成员设备才导得出）
     // 该事项有未解除的团队同步告警（同号纪元分叉、负责人无法确认）：不经同步发出新内容，免得被移出者读到
@@ -355,6 +361,13 @@ export function syncExport(
       const rel = uri.slice("blob://".length);
       if (seenRel.has(rel)) continue;
       seenRel.add(rel);
+      // 发出之前按此刻的加密纪元重封（第四轮复核 S12B-44/45：暂停期间、或用落选与不成立的纪元封的块，原样发出会让被移出者解得开、
+      // 在册成员却解不开）；块名不变
+      try {
+        if (rel.split("/")[0] === m.matter_id) deps.blobs.reseal(uri);
+      } catch {
+        // 解不开或此刻没有可用纪元：原样（接收方核对不过即不收）
+      }
       const src = join(deps.blobs.dir, ...rel.split("/"));
       if (!existsSync(src)) continue;
       const [scope, sha] = rel.split("/");

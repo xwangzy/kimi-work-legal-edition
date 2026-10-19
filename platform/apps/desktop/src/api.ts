@@ -890,6 +890,8 @@ export interface ContentStatus {
 /** 共享中继状态（第 11 批 S11；只有计数、时刻与错误代码；发件与收件分别记——复核 S11B-04）。 */
 export interface RelayStatus {
   blocked: "not_configured" | "not_allowed" | "exit_mode" | "closed" | null;
+  /** 成员链自动处置最近一次失败的原因（第 12 批）。 */
+  chain_last_error?: string | null;
   configured: boolean;
   allowed: boolean;
   push_last_ok_at?: string | null;

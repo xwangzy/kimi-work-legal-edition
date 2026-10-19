@@ -340,7 +340,8 @@ export function revokedAtOf(db: KernelDb, deviceId: string): string | null {
   const a = db.get<{ t: string | null }>(`SELECT revoked_at AS t FROM devices WHERE device_id = ? AND status = 'revoked'`, [deviceId])?.t ?? null;
   const b = db.get<{ t: string | null }>(`SELECT MIN(revoked_at) AS t FROM cp_revoked_devices WHERE device_id = ?`, [deviceId])?.t ?? null;
   // 只认合格的时刻（复核 S12A-18：墓碑时刻不合格时不用）
-  return [a, b].filter((x): x is string => !!x && Number.isFinite(Date.parse(x))).sort()[0] ?? null;
+  // 规范成 UTC 再比较（第四轮复核 S12A-18：带时区偏移的时刻按字符串比较会错）
+  return [a, b].filter((x): x is string => !!x && Number.isFinite(Date.parse(x))).map((x) => new Date(x).toISOString()).sort()[0] ?? null;
 }
 
 /**
@@ -465,7 +466,8 @@ function computeView(deps: ChainDeps, matterId: string, opts: { liveBefore?: Map
   // ② 否则须有未吊销设备写的事件 v 认可：x 是 v 的祖先，且 v 的因果过去里没有给 d 的在用标记、或 x 在其中某条标记的祖先里
   //    （复核 S12A-09：标记的“链上位置”——不知道吊销的负责人设备在标记之后写的事件，不能替标记之后才出现的 x 担保）；
   // ③ 链上有给 d 的在用标记 → 拒收，没有 → 待定。“在用”与“认可”同一判据：作者设备未吊销（复核 S12B-35）。
-  // 本机不知道 d 已吊销、链上却有给它的在用标记：按已吊销对待（吊销时刻不明，① 不适用；复核 S12A-09——伪造的标记最多造成暂停）
+  // 是否吊销只看本机的吊销记录与控制面墓碑——链上的标记本身不算吊销依据（第四轮复核 S12A-19/S12B-43：否则任何负责人、
+  // 包括正被移出的负责人，给在用同事的设备写一条标记就能撤销对方的移出；本机还不知道吊销的窗口登记为残余）
   const localRevoked = new Map<string, boolean>();
   const isLocallyRevoked = (dev: string) => {
     let v = localRevoked.get(dev);
@@ -484,9 +486,8 @@ function computeView(deps: ChainDeps, matterId: string, opts: { liveBefore?: Map
   const devState = (dev: string) => {
     let v = liveMemo.get(dev);
     if (v === undefined) {
-      const local = isLocallyRevoked(dev);
-      const revoked = local || liveMarks.has(dev);
-      liveMemo.set(dev, (v = { revoked, at: local ? (opts.liveBefore?.get(dev) ?? revokedAtOf(db, dev)) : null }));
+      const revoked = isLocallyRevoked(dev);
+      liveMemo.set(dev, (v = { revoked, at: revoked ? (opts.liveBefore?.get(dev) ?? revokedAtOf(db, dev)) : null }));
     }
     return v;
   };
@@ -504,13 +505,6 @@ function computeView(deps: ChainDeps, matterId: string, opts: { liveBefore?: Map
       if (ms.length === 0 || ms.some((m) => m.id !== v.id ? anc.get(m.id)!.has(xid) : a.has(xid))) into.add(xid);
     }
   };
-  const vouched = new Set<string>();
-  for (const v of tentative) if (!devState(v.p.author_device).revoked) vouchesFrom(v, vouched);
-  const bad = new Map<string, EventStatus>();
-  for (const e of tentative) {
-    if (e.id === root.id || isLive(e) || vouched.has(e.id)) continue;
-    bad.set(e.id, liveMarks.has(e.p.author_device) ? { s: "rejected", why: "revoked_after_mark" } : { s: "pending", why: "revoked_unvouched" });
-  }
   const withDescendants = (seed: Map<string, EventStatus>, among: StoredEvent[]) => {
     for (const e of among) {
       if (seed.has(e.id)) continue;
@@ -523,13 +517,22 @@ function computeView(deps: ChainDeps, matterId: string, opts: { liveBefore?: Map
       }
     }
   };
-  withDescendants(bad, tentative);
+  /** 第二遍：被吊销设备的事件，按给定的认可者集合判（null = 全部未吊销设备写的事件）。 */
+  const revocationPass = (vouchers: Set<string> | null) => {
+    const vouched = new Set<string>();
+    for (const v of tentative) if (!devState(v.p.author_device).revoked && (!vouchers || vouchers.has(v.id))) vouchesFrom(v, vouched);
+    const nb = new Map<string, EventStatus>();
+    for (const e of tentative) {
+      if (e.id === root.id || isLive(e) || vouched.has(e.id)) continue;
+      nb.set(e.id, liveMarks.has(e.p.author_device) ? { s: "rejected", why: "revoked_after_mark" } : { s: "pending", why: "revoked_unvouched" });
+    }
+    withDescendants(nb, tentative);
+    return nb;
+  };
   // 第三遍：移出优先于被移出者的并发操作——最终不是负责人的成员，他写的、与降级或移出他的事件并发（互不为祖先）的事件拒收，后代随之。
-  // 例外（报复）：把“降级他的那个人”降为非负责人（不是移出）的事件不拒收——互相降级时两条都成立（失败即关闭，复核 S12A-02）；
-  // 这类事件里的纪元声明与包裹一律不算（复核 S12B-23：否则被移出者借报复事件带一把自己的密钥稳定胜出）。
-  // 迭代到不动点（复核 S12B-01）：每轮只用上一轮存活的事件找降级，在第二遍之后的全集上重判；至多 8 轮。
-  // 不收敛（循环降级，复核 S12B-19）时取保守结果：第二遍之后的全部降级都成立，被降级者与之并发的其他事件（报复的降级除外）一律拒收
-  const base = tentative.filter((e) => !bad.has(e.id));
+  // 例外（报复）：把“降级他的那个人”降为非负责人，或移出已不是负责人的他——互相降级时两条都成立（失败即关闭，复核 S12A-02）；
+  // 这类事件里的纪元声明与包裹一律不算（复核 S12B-23）。迭代到不动点（复核 S12B-01），至多 8 轮；不收敛（循环降级，复核 S12B-19）时
+  // 取保守结果：全部降级都成立，被降级者与之并发的其他事件（真正的降级除外，复核 S12B-34）一律拒收
   const demotionsOf = (set: StoredEvent[]) => {
     const p = project(set, anc);
     const out = new Map<string, StoredEvent[]>();
@@ -544,8 +547,6 @@ function computeView(deps: ChainDeps, matterId: string, opts: { liveBefore?: Map
     return out;
   };
   const concurrent = (x: StoredEvent, y: StoredEvent) => x.id !== y.id && !anc.get(x.id)!.has(y.id) && !anc.get(y.id)!.has(x.id);
-  // 报复：针对“降级他的那个人”的降级，或移出——移出只在对方于本事件的因果过去里已不是负责人时才算（负责人须先降级才能移出，
-  // 与成员操作接口同一规矩；被移出者不能借此移出仍是负责人的移出者，移出者却可以移出已被他降为编辑的人）
   const ownerInPast = (e: StoredEvent, user: string) => {
     const a = anc.get(e.id)!;
     return project(tentative.filter((x) => a.has(x.id)), anc).get(user)?.role === "owner";
@@ -555,45 +556,39 @@ function computeView(deps: ChainDeps, matterId: string, opts: { liveBefore?: Map
     String(e.p.body.user) === d.member &&
     e.p.body.role !== "owner" &&
     (typeof e.p.body.role === "string" || (e.p.body.role === null && !ownerInPast(e, d.member)));
-  const judge = (demotions: Map<string, StoredEvent[]>, exemptDemotions: boolean) => {
-    const nb = new Map<string, EventStatus>();
-    for (const e of base) {
-      if (e.id === root.id) continue;
-      const ds = demotions.get(e.member);
-      if (!ds) continue;
-      // 保守结果只豁免真正的降级（对象在该事件因果过去里是负责人、改为非负责人角色；复核 S12B-34：原先加人为编辑也被当作降级放行）
-      if (exemptDemotions && e.p.kind === "member" && typeof e.p.body.role === "string" && e.p.body.role !== "owner" && ownerInPast(e, String(e.p.body.user))) continue;
-      if (ds.some((d) => concurrent(e, d) && !retaliation(e, d))) nb.set(e.id, { s: "rejected", why: "author_demoted_concurrently" });
+  const pass3 = (base: StoredEvent[]) => {
+    const judge = (demotions: Map<string, StoredEvent[]>, exemptDemotions: boolean) => {
+      const nb = new Map<string, EventStatus>();
+      for (const e of base) {
+        if (e.id === root.id) continue;
+        const ds = demotions.get(e.member);
+        if (!ds) continue;
+        if (exemptDemotions && e.p.kind === "member" && typeof e.p.body.role === "string" && e.p.body.role !== "owner" && ownerInPast(e, String(e.p.body.user))) continue;
+        if (ds.some((d) => concurrent(e, d) && !retaliation(e, d))) nb.set(e.id, { s: "rejected", why: "author_demoted_concurrently" });
+      }
+      withDescendants(nb, base);
+      return nb;
+    };
+    let alive = base;
+    for (let iter = 0; iter < 8; iter++) {
+      const nb = judge(demotionsOf(alive), false);
+      const next = base.filter((e) => !nb.has(e.id));
+      if (next.length === alive.length && next.every((e, i) => e.id === alive[i]!.id)) return nb;
+      alive = next;
     }
-    withDescendants(nb, base);
-    return nb;
+    return judge(demotionsOf(base), true);
   };
-  let alive = base;
-  let bad3: Map<string, EventStatus> | null = null;
-  for (let iter = 0; iter < 8; iter++) {
-    const nb = judge(demotionsOf(alive), false);
-    const next = base.filter((e) => !nb.has(e.id));
-    if (next.length === alive.length && next.every((e, i) => e.id === alive[i]!.id)) {
-      bad3 = nb;
-      break;
-    }
-    alive = next;
-  }
-  if (!bad3) bad3 = judge(demotionsOf(base), true);
-  for (const [id, st] of bad3) bad.set(id, st);
-  // 认可只算最终成立的事件（复核 S12A-14）：第三遍拒收的事件不再替被吊销设备的事件担保；改判的连同后代（只再判一次）
-  {
-    const finalVouched = new Set<string>();
-    for (const v of tentative) if (!bad.has(v.id) && !devState(v.p.author_device).revoked) vouchesFrom(v, finalVouched);
-    const again = new Map<string, EventStatus>();
-    for (const e of tentative) {
-      if (bad.has(e.id) || e.id === root.id || isLive(e) || finalVouched.has(e.id)) continue;
-      again.set(e.id, liveMarks.has(e.p.author_device) ? { s: "rejected", why: "revoked_after_mark" } : { s: "pending", why: "revoked_unvouched" });
-    }
-    if (again.size > 0) {
-      withDescendants(again, tentative.filter((e) => !bad.has(e.id)));
-      for (const [id, st] of again) bad.set(id, st);
-    }
+  // 第二、三遍合起来迭代（复核 S12A-14/23、S12B-49）：认可只算上一轮最终成立的事件；第三遍据以拒收的降级若改判不成立，它造成的拒收随之撤回。至多 4 轮
+  let bad = new Map<string, EventStatus>();
+  let vouchers: Set<string> | null = null;
+  for (let round = 0; round < 4; round++) {
+    const b2 = revocationPass(vouchers);
+    const b3 = pass3(tentative.filter((e) => !b2.has(e.id)));
+    bad = new Map([...b2, ...b3]);
+    const next = new Set(tentative.filter((e) => !bad.has(e.id) && !devState(e.p.author_device).revoked).map((e) => e.id));
+    const prev = vouchers ?? new Set(tentative.filter((e) => !devState(e.p.author_device).revoked).map((e) => e.id));
+    if (next.size === prev.size && [...next].every((id) => prev.has(id))) break;
+    vouchers = next;
   }
   for (const [id, st] of bad) status.set(id, st);
   view.valid = tentative.filter((e) => !bad.has(e.id));
@@ -872,9 +867,11 @@ export function addOrUpdateMember(deps: ChainDeps, matterId: string, user: strin
   const { db, keyctx, tenantId } = deps;
   writeDueMarks(deps, matterId);
   const view = chainView(deps, matterId);
-  const epoch = chainEncryptEpoch(deps, matterId, view) ?? ownEpoch(db, matterId, keyctx.device.deviceId);
-  // 本机这把落选（等胜者的包裹期间）：不用它包给新设备、也不在链上声明（复核 S12B-11），由处置者补包裹
-  const key = ownKeyIsWinner(deps, matterId, view, epoch) ? ownKey(deps, matterId, epoch) : null;
+  // 链上没有可用纪元时不包（第四轮复核 S12B-50：不退回非链上的纪元），由处置者补包裹
+  const enc = chainEncryptEpoch(deps, matterId, view);
+  const epoch = enc ?? ownEpoch(db, matterId, keyctx.device.deviceId);
+  // 本机这把落选（等胜者的包裹期间）：不用它包给新设备、也不在链上声明（复核 S12B-11）
+  const key = enc !== null && ownKeyIsWinner(deps, matterId, view, epoch) ? ownKey(deps, matterId, epoch) : null;
   const excluded = excludedDevices(view);
   const devs = [...new Map([...liveDevicesOf(db, tenantId, [user]), ...extraDevices].map((d) => [d.device_id, d])).values()].filter((d) => !excluded.has(d.device_id));
   const wraps: Record<string, string> = {};
@@ -956,6 +953,8 @@ export function acceptKeyRows(
         const k = ownKey(deps, matterId, kr.epoch);
         if (k && (!fp || keyFingerprint(k) === fp)) continue;
       } else if (wrapDeclared(view, kr.epoch, kr.wrapped_for, had.wrapped_key)) continue;
+      // 原先那把留进历史（第四轮复核 S12A-24/S12B-44：用它封过的材料块仍要解得开、导出前按段的纪元重封）
+      db.run(`INSERT OR IGNORE INTO matter_key_history (matter_id, epoch, wrapped_for, wrapped_key, replaced_at) VALUES (?,?,?,?,?)`, [matterId, kr.epoch, kr.wrapped_for, had.wrapped_key, nowIso()]);
       db.run(`UPDATE matter_keys SET wrapped_key = ? WHERE matter_id = ? AND epoch = ? AND wrapped_for = ?`, [kr.wrapped_key, matterId, kr.epoch, kr.wrapped_for]);
       if (kr.wrapped_for === me) replacedSelf.push(kr.epoch);
       stored += 1;
@@ -1052,8 +1051,15 @@ export function chainHealth(deps: ChainDeps, matterId: string, view: ChainView):
     for (const d2 of demotes) {
       if (d1.id >= d2.id || d1.member !== String(d2.p.body.user) || d2.member !== String(d1.p.body.user)) continue;
       if (view.anc.get(d1.id)!.has(d2.id) || view.anc.get(d2.id)!.has(d1.id)) continue;
+      // 解除只认第三位在册负责人在两条之后亲手做的成员操作（第四轮复核 S12B-46：自动补轮换不算——否则冲突从未出现就被“解除”）
       const resolved = view.valid.some(
-        (v) => v.member !== d1.member && v.member !== d2.member && view.members.get(v.member)?.role === "owner" && view.anc.get(v.id)!.has(d1.id) && view.anc.get(v.id)!.has(d2.id),
+        (v) =>
+          v.p.kind === "member" &&
+          v.member !== d1.member &&
+          v.member !== d2.member &&
+          view.members.get(v.member)?.role === "owner" &&
+          view.anc.get(v.id)!.has(d1.id) &&
+          view.anc.get(v.id)!.has(d2.id),
       );
       if (!resolved) h.memberConflict.push([d1.member, d2.member].sort() as [string, string]);
     }
@@ -1068,11 +1074,13 @@ export function chainHealth(deps: ChainDeps, matterId: string, view: ChainView):
     // 只记经本链在册成员转发来的（被吊销设备自己的段整段拒收；伪造的移出要借在册成员之手才进得来）
     const via = db.get<{ via_member: string | null }>(`SELECT via_member FROM member_events WHERE event_id = ?`, [e.id])?.via_member;
     if (!via || !effectiveMembers.has(via)) continue;
-    // 负责人此后写过成员事件（处理过或决定不处理）即不再提示
+    // 负责人此后对同一成员做过成员操作（重做或确认保留），或轮换出了更高的纪元，即不再提示（第四轮复核 S12A-22/S12B-48：不再是“任何负责人写过任何事件”）
     const handled =
-      (removal && view.valid.some((v) => v.p.kind === "member" && String(v.p.body.user) === String(e.p.body.user) && v.p.lamport > e.p.lamport)) ||
-      (!removal && !!k && view.maxEpoch > k.epoch) ||
-      view.valid.some((v) => v.p.kind !== "mark" && v.p.lamport > e.p.lamport && view.members.get(v.member)?.role === "owner" && !deviceRevoked(db, v.p.author_device));
+      (removal &&
+        view.valid.some(
+          (v) => v.p.kind === "member" && String(v.p.body.user) === String(e.p.body.user) && v.p.lamport > e.p.lamport && view.members.get(v.member)?.role === "owner" && !deviceRevoked(db, v.p.author_device),
+        )) ||
+      (!removal && !!k && view.maxEpoch > k.epoch);
     if (!handled) h.revokedChanges.push(e);
   }
   return h;
@@ -1210,7 +1218,15 @@ export function maintainChain(
   // 处置者长时间不处置（告警超过 24 小时），其他在册负责人可以接手（复核 S12B-10；中继事项仍只有控制成员能提升纪元，由 mayRotate 把关）
   const stale = !!db.get(`SELECT 1 AS x FROM sync_alerts WHERE matter_id = ? AND kind = 'rekey_needed' AND first_at < ?`, [matterId, new Date(Date.now() - 24 * 3600_000).toISOString()]);
   const iAmOwner = view.members.get(me)?.role === "owner";
-  const iRotate = (rotator === me || (stale && !o.rotator)) && iAmOwner && o.mayRotate && !deviceRevoked(db, keyctx.device.deviceId) && h.pendingRevoked.length === 0 && h.pendingMissing.length === 0;
+  // 互相降级或移出未解除时不自动处置（第四轮复核 S12B-46：交由第三位负责人人工调整）
+  const iRotate =
+    (rotator === me || (stale && !o.rotator)) &&
+    iAmOwner &&
+    o.mayRotate &&
+    !deviceRevoked(db, keyctx.device.deviceId) &&
+    h.pendingRevoked.length === 0 &&
+    h.pendingMissing.length === 0 &&
+    h.memberConflict.length === 0;
   try {
     if (h.rekeyNeeded && iRotate) {
       db.tx(() => rotateChainKey(deps, matterId, { reason: "member_log.rekey_removed" }));

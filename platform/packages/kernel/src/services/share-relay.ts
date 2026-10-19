@@ -471,6 +471,25 @@ export class ShareRelaySync {
           report.errors.push("relay_matter_conflict");
           continue;
         }
+        // 段引用的材料块在本机已被重封（第四轮复核 S12B-51：成员链的纪元改变后导出前按段的纪元重封）：这一段作废，
+        // 退回导出水位、下一次按新的块重新出段（否则每次上传都报 local_blob_changed、无限重试）
+        if (code === "local_blob_changed") {
+          rmSync(c.path, { force: true });
+          this.d.db.run(`DELETE FROM relay_outbox WHERE segment_id = ?`, [sid]);
+          const at = seg.header.created_at;
+          this.d.db.run(`UPDATE relay_export_state SET last_export_at = ?, last_always_digest = NULL WHERE matter_id = ? AND last_export_at > ?`, [
+            new Date(Date.parse(at) - 1).toISOString(),
+            mid,
+            new Date(Date.parse(at) - 1).toISOString(),
+          ]);
+          report.errors.pop();
+          continue;
+        }
+        // 中继说本机控制成员过期（本机以为自己是控制成员，提升纪元却被拒）：清掉、重取历史得知新的控制成员（第四轮复核 S12A-12）
+        if (code === "epoch_not_established" && this.controllerOf(mid) === this.d.keyctx.device.cert.memberId) {
+          this.d.db.run(`UPDATE relay_matters SET controller = NULL, known = 1 WHERE matter_id = ?`, [mid]);
+          this.refetchHistory(mid);
+        }
         // 本机已不是该事项的读者（被移出）：这一段发不出去，丢弃并计数
         if (code === "not_reader") {
           rmSync(c.path, { force: true });

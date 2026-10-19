@@ -88,6 +88,7 @@ export function TeamShare() {
             {st.dropped_total ? <div className="muted">另有 {st.dropped_total} 条同事的改动无法在这台电脑上处理（多为这台电脑加入事项之前的内容），已略过。</div> : null}
             {pushErr && pushErr !== stuckErr && <div className="muted">发出：{pushErr}</div>}
             {pullErr && <div className="muted">收取：{pullErr}</div>}
+            {st.chain_last_error && <div className="muted">成员记录自动处理没有完成（{st.chain_last_error.slice(0, 80)}），会在下次同步时再试</div>}
             <button className="btn btn-sm" disabled={busy} onClick={() => void syncNow()}>
               {busy ? "正在同步…" : "立即同步"}
             </button>
