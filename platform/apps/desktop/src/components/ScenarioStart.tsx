@@ -6,7 +6,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type RunPolicyView } from "../api.ts";
 import type { ScenarioCard } from "../lib/scenarios.ts";
-import { buildGoal, LINE_LABELS } from "../lib/scenarios.ts";
+import { buildGoal, canStartPartial, LINE_LABELS, lineMismatchText, missingMaterialsText } from "../lib/scenarios.ts";
+import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { defaultChoice } from "./ModeSelector.tsx";
 import { launchRun, prepareStart, RunSheet, type PendingStart } from "./RunSheet.tsx";
@@ -15,7 +16,14 @@ import { stanceLabel } from "../lib/labels.ts";
 
 interface Props {
   card: ScenarioCard;
-  matter: Matter;
+  /** 面板里选中的事项；null = 还没有合适的事项（默认“新建事项”，Z3 评审 #1）。 */
+  matter: Matter | null;
+  /** 可切换的事项（与输入框的事项菜单同一份）。 */
+  matters: Matter[];
+  onMatterChange: (id: string) => void;
+  onNewMatter: () => void;
+  /** documents 属于哪个事项（切换事项后，新事项的材料到达前不重置勾选）。 */
+  documentsFor: string | null;
   documents: { document_version_id: string; filename: string }[];
   policy: RunPolicyView | null;
   /** 从输入框带来的任务描述（作为补充要求）。 */
@@ -34,7 +42,11 @@ function preselect(card: ScenarioCard, docs: Props["documents"]): string[] {
   return docs.map((d) => d.document_version_id);
 }
 
-export function ScenarioStart({ card, matter, documents, policy, initialExtra, onImport, onClose }: Props) {
+export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatter, documentsFor, documents: allDocs, policy, initialExtra, onImport, onClose }: Props) {
+  // 只用属于当前所选事项的材料（切换事项后旧事项的材料不显示、不勾选）
+  const docsReady = !!matter && documentsFor === matter.matter_id;
+  const documents = docsReady ? allDocs : [];
+  const [matterMenu, setMatterMenu] = useState(false);
   const [values, setValues] = useState<Record<string, string | string[]>>({});
   const [extra, setExtra] = useState(initialExtra ?? "");
   const [docIds, setDocIds] = useState<string[]>(() => preselect(card, documents));
@@ -46,15 +58,23 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
   const [confirm, setConfirm] = useState<PendingStart | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const known = useRef(new Set(documents.map((d) => d.document_version_id)));
+  const knownFor = useRef<string | null>(docsReady ? documentsFor : null);
 
-  // 新导入的材料自动勾选
+  // 新导入的材料自动勾选；换了事项则按新事项的材料重新预选（Z3 评审 #1：切换事项后刷新材料列表）
   useEffect(() => {
+    if (!docsReady) return;
+    if (knownFor.current !== documentsFor) {
+      knownFor.current = documentsFor;
+      known.current = new Set(documents.map((d) => d.document_version_id));
+      setDocIds(preselect(card, documents));
+      return;
+    }
     const fresh = documents.filter((d) => !known.current.has(d.document_version_id)).map((d) => d.document_version_id);
     for (const d of documents) known.current.add(d.document_version_id);
     if (fresh.length > 0) setDocIds((ids) => [...ids, ...fresh.filter((x) => !ids.includes(x))]);
-  }, [documents]);
+  }, [documents, docsReady, documentsFor, card]);
 
-  // 材料不齐也可先开始（UIUX 增量评审 S-4 / 历史 Demo D-5）：只限 Agent 场景；确定性流程（回稿比对、案卷整理、脱敏）仍须选够材料
+  // 材料不齐也可先开始（UIUX 增量评审 S-4 / 历史 Demo D-5）：只限卡片声明允许的 Agent 场景（Z3 评审 #4：审合同没有合同不能先开始）；确定性流程仍须选够材料
   const [partial, setPartial] = useState(false);
   const goal = useMemo(() => {
     if (card.scenario !== "a1.agent_task") return extra.trim();
@@ -64,8 +84,8 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
   }, [card, values, extra, partial, docIds.length]);
   const missing = card.fields.filter((f) => f.required && !(Array.isArray(values[f.key]) ? (values[f.key] as string[]).length : String(values[f.key] ?? "").trim()));
   const needDocs = Math.max(0, card.minMaterials - docIds.length);
-  const canPartial = card.scenario === "a1.agent_task" && needDocs > 0;
-  const ready = missing.length === 0 && (needDocs === 0 || (canPartial && partial)) && (card.scenario !== "a1.agent_task" || goal.length > 0);
+  const canPartial = canStartPartial(card) && needDocs > 0;
+  const ready = !!matter && docsReady && missing.length === 0 && (needDocs === 0 || (canPartial && partial)) && (card.scenario !== "a1.agent_task" || goal.length > 0);
   const value = useMemo(() => ({ goal, scenario: card.scenario, documentIds: docIds, choice: defaultChoice(policy) }), [goal, card.scenario, docIds, policy]);
   const opts = useMemo(() => ({ ...(card.skill ? { skill: card.skill } : {}), label: card.title }), [card]);
 
@@ -73,7 +93,7 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
   const [reestimateTick, setReestimateTick] = useState(0);
   // 预计花费与内容去向：材料或说明变化后重新估价（去抖）
   useEffect(() => {
-    if (!ready) {
+    if (!ready || !matter) {
       setEstimate(null);
       return;
     }
@@ -95,6 +115,7 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
     setBusy(true);
     setErr("");
     try {
+      if (!matter) return;
       const p = estimate ?? (await prepareStart(matter, value, opts));
       // 依据未齐、去向有提醒：转到发起确认（在那里原地记录客户同意）
       if (p.estimate.data_where?.start_blocked || p.estimate.data_where?.warning) {
@@ -118,15 +139,57 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
   return (
     <Modal title={card.title} onClose={onClose} wide>
       <div className="ss">
-        <div className="ss-sub muted">
-          {LINE_LABELS[card.line]} · {matter.title} · 我方：{stanceLabel(matter.stance)}
+        <div className="ss-matter">
+          <span className="ss-label">事项</span>
+          <span className="ss-matter-pick">
+            <button type="button" className="chip" aria-haspopup="listbox" aria-expanded={matterMenu} onClick={() => setMatterMenu((v) => !v)} title={matter?.title ?? "新建事项"}>
+              <Icon.folder /> <span className="ss-matter-name">{matter ? matter.title : "新建事项"}</span> <Icon.down />
+            </button>
+            {matterMenu && (
+              <div className="popover composer-menu ss-matter-menu" role="listbox" aria-label="选择事项">
+                {matters.map((m) => (
+                  <button
+                    key={m.matter_id}
+                    role="option"
+                    aria-selected={m.matter_id === matter?.matter_id}
+                    className={`menu-item${m.matter_id === matter?.matter_id ? " selected" : ""}`}
+                    onClick={() => {
+                      onMatterChange(m.matter_id);
+                      setMatterMenu(false);
+                    }}
+                  >
+                    <span className="menu-label">{m.title}</span>
+                    <span className="menu-desc">我方：{stanceLabel(m.stance)}</span>
+                  </button>
+                ))}
+                <button
+                  className="menu-item menu-new"
+                  onClick={() => {
+                    setMatterMenu(false);
+                    onNewMatter();
+                  }}
+                >
+                  <span className="menu-label"><Icon.plus /> 新建事项</span>
+                </button>
+              </div>
+            )}
+          </span>
+          {matter && <span className="muted">我方：{stanceLabel(matter.stance)}</span>}
         </div>
+        {matter && lineMismatchText(card, matter) && <div className="muted ss-mismatch">{lineMismatchText(card, matter)}</div>}
+        {!matter && (
+          <div className="ss-need">
+            还没有{LINE_LABELS[card.line]}事项。先新建一个事项（写明客户和我方立场），再开始{card.title}。{" "}
+            <button className="btn-link" onClick={onNewMatter}>新建事项</button>
+          </div>
+        )}
         <section className="ss-sec">
           <div className="ss-h">你给什么</div>
           <div className="ss-hint">{card.gives}</div>
-          {card.minMaterials > 0 || documents.length > 0 ? (
+          {matter && (card.minMaterials > 0 || documents.length > 0) ? (
             <div className="ss-docs" role="group" aria-label="选择材料">
-              {documents.length === 0 && <div className="muted">本事项还没有材料。</div>}
+              {!docsReady && <div className="muted">正在读取这个事项的材料…</div>}
+              {docsReady && documents.length === 0 && <div className="muted">本事项还没有材料。</div>}
               {documents.map((d) => {
                 const on = docIds.includes(d.document_version_id);
                 return (
@@ -156,7 +219,7 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
               />
               {needDocs > 0 && !(canPartial && partial) && (
                 <div className="ss-need">
-                  {card.scenario === "s1b.draft_compare" ? "请依次勾选基线稿与对方回稿" : `还需要选择 ${needDocs} 份材料`}
+                  {missingMaterialsText(card, needDocs)}
                   {canPartial && (
                     <button className="btn-link" onClick={() => setPartial(true)}>
                       先开始，缺的稍后补
@@ -246,7 +309,7 @@ export function ScenarioStart({ card, matter, documents, policy, initialExtra, o
             )}
           </div>
           {/* 发送摘要不放在 aria-live 区域里（复核 S5B-06：发送视图与核对表不应被整段朗读） */}
-          {estimate?.estimate.data_where?.send_summary && (
+          {matter && estimate?.estimate.data_where?.send_summary && (
             <SendSummary
               matterId={matter.matter_id}
               summary={estimate.estimate.data_where.send_summary}

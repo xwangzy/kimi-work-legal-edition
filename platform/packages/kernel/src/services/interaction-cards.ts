@@ -33,6 +33,8 @@ export interface ApprovalCardView {
   reason: string;
   title: string;
   why: string;
+  /** 为什么要问我：机制说明（界面折叠显示；Z3 评审 3.3）。 */
+  why_detail?: string;
   destination: string;
   cost: string | null;
   preview: { send_original?: string; send_generalized?: string; url?: string; host?: string; plan?: string; detail?: string };
@@ -73,7 +75,7 @@ const TOOL_LABELS: Record<string, string> = {
   Grep: "检索材料内容",
   Write: "写入工作区草稿",
   Edit: "修改工作区草稿",
-  Bash: "在本机执行域运行代码",
+  Bash: "在这台电脑上做计算（不能联网）",
   WebSearch: "联网检索",
   FetchURL: "抓取网页",
   Agent: "启动子任务",
@@ -133,13 +135,19 @@ export function buildApprovalCard(p: PendingApproval, ctx: CardContext): { card:
     const variants: ("original" | "generalized")[] = !needsCredential ? [] : l3a ? ["generalized"] : ["original", "generalized"];
     const sendOriginal = needsCredential && !l3a ? ctx.screenSearch(query, "original").sent : screen.sent;
     const sendGeneralized = needsCredential ? ctx.screenSearch(query, "generalized").sent : undefined;
+    // 首屏只放一句话（Z3 评审 3.3、#5）；原来的机制说明原样放进 why_detail，界面收在“为什么要问我”折叠里
     const why = l3a
-      ? "敏感事项（L3a）的每一条检索都须你确认；只能以改写后的一般性查询发出。"
+      ? "这是敏感事项：每一条检索都要你确认，而且只能换成一般说法再查。"
       : needsCredential
-        ? "检索式中含有当事人名称（或其简称、其他写法）、自然人姓名或事项代号：可逐条确认按原文发出（保留机构当事人名称；已识别的自然人姓名改为“某人”，证件号、账号等标识符去除——识别可能遗漏，请核对检索式），或改写为不含当事人的一般性查询。"
+        ? "检索词里有当事人名称，建议换成一般说法（如“某公司”）再查。"
         : reason === "manual_mode"
           ? "手动档：每一次联网检索都先问你。"
           : "这一次检索需要你确认。";
+    const whyDetail = l3a
+      ? "敏感事项（L3a）的每一条检索都须你确认；只能以改写后的一般性查询发出。"
+      : needsCredential
+        ? "检索式中含有当事人名称（或其简称、其他写法）、自然人姓名或事项代号：可逐条确认按原文发出（保留机构当事人名称；已识别的自然人姓名改为“某人”，证件号、账号等标识符去除——识别可能遗漏，请核对检索式），或改写为不含当事人的一般性查询。"
+        : null;
     // “本任务内允许”只放行改写后的一般性查询（第 02 篇 §8.3；复核 S5-A02/B01）；原文放行只能逐条
     const taskAllowed = !l3a && p.scope_options.includes("task");
     return {
@@ -148,8 +156,9 @@ export function buildApprovalCard(p: PendingApproval, ctx: CardContext): { card:
         kind: "search",
         title: `联网检索：“${query}”`,
         why,
-        destination: "中软检索服务（查询不带事项编号，中软不保存查询原文）→ 检索上游；查询原文只记在本机事项账本",
-        cost: "1 次检索（按次计点）",
+        ...(whyDetail ? { why_detail: whyDetail } : {}),
+        destination: "中软检索服务（不保存，也不知道是哪个案子）",
+        cost: "1 次检索 · 计入本所用量",
         preview: { ...(sendOriginal !== undefined ? { send_original: sendOriginal } : {}), ...(sendGeneralized !== undefined ? { send_generalized: sendGeneralized } : {}) },
         scope_options: taskAllowed ? p.scope_options : ["once"],
         ...(variants.length ? { variants } : {}),
@@ -170,9 +179,9 @@ export function buildApprovalCard(p: PendingApproval, ctx: CardContext): { card:
         ...base,
         kind: "fetch",
         title: `抓取网页：${url}`,
-        why: newDomain ? `${host} 不在公开官方站点白名单内（新域名）：首次访问须你确认。` : reason === "manual_mode" ? "手动档：每一次抓取都先问你。" : "这一次抓取需要你确认。",
-        destination: `公开网站 ${host}（本机经出站闸门直接访问；网址已检查不含当事人与事项信息；跳转到其他未经确认的域名会被拦截）`,
-        cost: "不计点",
+        why: newDomain ? `${host} 不在常用官方网站名单里：第一次打开要你确认。` : reason === "manual_mode" ? "手动档：每一次打开网页都先问你。" : "这一次打开网页需要你确认。",
+        destination: `公开网站 ${host}（由这台电脑直接打开；网址里没有当事人和事项信息；跳到其他没确认过的网站会被拦下）`,
+        cost: "不计入用量",
         preview: { url, host },
       },
       credential: newDomain && host ? { purpose: "fetch", onceDigest: egressDigest("FetchURL", url), dest: host, variants: [], taskAllowed: p.scope_options.includes("task") } : null,
@@ -188,7 +197,7 @@ export function buildApprovalCard(p: PendingApproval, ctx: CardContext): { card:
         title: `把图片“${basename(path) || "（未知文件）"}”原样发给模型`,
         why: "默认改走本机 OCR（只发送识别出的文字，并经令牌化）。原样发送时，图片中的姓名、证件号等无法替换为代号。",
         destination: `${modelDestination(ctx.modelEndpoint)}；本运行内重发同一张图片无需再次确认`,
-        cost: "按模型用量计点",
+        cost: "按 AI 用量计入本所用量",
         preview: { detail: "批准只放行本任务接下来的一张新图片。" },
         scope_options: ["once"],
       },
@@ -221,8 +230,8 @@ export function buildApprovalCard(p: PendingApproval, ctx: CardContext): { card:
       kind,
       title: members !== null && members > 0 ? `这一步要同时派出 ${members} 个子任务` : label,
       why: why[kind] ?? why.other!,
-      destination: p.tool.startsWith("mcp__") ? "律所批准的连接器" : "本机（执行域内，无网络）",
-      cost: kind === "budget" ? "继续执行将按实际用量扣点（模型按用量计点，检索按次计点）" : null,
+      destination: p.tool.startsWith("mcp__") ? "律所批准的连接器" : "这台电脑（不联网）",
+      cost: kind === "budget" ? "继续做会按实际用量计入本所用量（AI 按用量、检索按次）" : null,
       preview: detail ? { detail } : {},
     },
     credential: null,

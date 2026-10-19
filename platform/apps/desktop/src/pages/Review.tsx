@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.ts";
 import { nav } from "../App.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
-import { restoreTokens } from "../lib/tokens.ts";
+import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
+import { artifactName } from "../lib/labels.ts";
 
 /** 成果状态 → 律师称呼。 */
 const STATUS_TEXT: Record<string, string> = {
@@ -48,7 +49,10 @@ function systemChecks(c: any, latest: boolean): Check[] {
   return out;
 }
 
-/** 复核/签发页（§5.4 签发页线框；v9.2 §4.4 / Y4 #18、§5 D-3）：左预览，右“签发前检查”——系统已核对与你来核对分开。 */
+/**
+ * 交付件详情 / 复核签发页（§5.4 签发页线框；v9.2 §4.4 / Y4 #18、§5 D-3；Z3 评审 #2）：左预览，右“签发前检查”——系统已核对与你来核对分开。
+ * 任何状态的成果都进这一页：草稿也能看到检查清单，主动作是“提交复核”；待复核的是“确认签发”。右上角始终可下载。
+ */
 export function ReviewPage({ artifactId }: { artifactId: string }) {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState("");
@@ -58,11 +62,46 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [preview, setPreview] = useState<{ text: string; office: boolean } | null>(null);
   const [tokenMap, setTokenMap] = useState<Map<string, string | null>>(new Map());
+  // 律师看得懂的标题（内容标题在本机还原代号；取不到时用固定名称）
+  const [title, setTitle] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     api.completeness(artifactId).then(setData).catch((e) => setErr(e.message));
   }, [artifactId]);
   useEffect(reload, [reload]);
+  useEffect(() => {
+    if (!data?.matter_id) return;
+    api
+      .listArtifacts(data.matter_id)
+      .then(async (r) => {
+        const a = r.artifacts.find((x: any) => x.artifact_version_id === data.artifact_version_id);
+        if (!a) return;
+        const map = String(a.title ?? "").includes("〔") ? await restoreTokens(data.matter_id, String(a.title)) : new Map<string, string | null>();
+        setTitle(artifactName(a, (t) => restoredPlain(t, map)));
+      })
+      .catch(() => {});
+  }, [data?.artifact_version_id, data?.matter_id]);
+  const download = () =>
+    void api
+      .downloadArtifact(data.artifact_version_id, data.filename)
+      .then((saved) => {
+        if (!saved) return;
+        setNote("已保存（真实名称已还原）。下载已留痕。");
+        return api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" });
+      })
+      .catch((e) => setErr(e.message));
+  const submitForReview = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      await api.submitReview(data.artifact_version_id);
+      reload();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   // 预览：Office 成果由内核渲染为白名单 HTML；文本成果取令牌形态原文；代号只在本机界面还原显示
   useEffect(() => {
@@ -105,15 +144,24 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
 
   const latest = !!data?.is_latest_version;
   const pending = data?.status === "pending_review";
+  const draft = data?.status === "draft";
   const openItems: unknown[] = data?.completeness?.open_items ?? [];
   return (
     <main className="main">
       <div className="review-page">
         <button className="btn-link back" onClick={() => nav("/deliverables")}>← 交付件</button>
-        <h1 className="page-title">复核与签发：{data?.filename ?? "…"}</h1>
+        <div className="page-head">
+          <h1 className="page-title" title={data?.filename ?? ""}>{title ?? data?.filename ?? "…"}</h1>
+          {data && (
+            <button className="btn-ghost" onClick={download}>
+              {/\.docx$/i.test(data.filename) ? "下载 Word" : /\.xlsx$/i.test(data.filename) ? "下载 Excel" : "下载"}
+            </button>
+          )}
+        </div>
         {data && (
           <p className="muted">
             第 {data.version} 版 · {STATUS_TEXT[data.status] ?? "状态未知"}
+            {draft ? " · 这是草稿：提交复核后才能签发" : ""}
           </p>
         )}
         {err && <div className="banner banner-red">{err}</div>}
@@ -189,33 +237,26 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                 <button className="btn-ghost" disabled={busy || !pending} onClick={() => void act("rejected")}>
                   退回
                 </button>
-                <button className="btn-primary" disabled={busy || !pending || !ack || !latest} onClick={() => void act("approved")}>
-                  确认签发
-                </button>
+                {draft ? (
+                  <button className="btn-primary" disabled={busy || !latest} onClick={() => void submitForReview()}>
+                    提交复核
+                  </button>
+                ) : (
+                  <button className="btn-primary" disabled={busy || !pending || !ack || !latest} onClick={() => void act("approved")}>
+                    确认签发
+                  </button>
+                )}
                 <span className="spacer" />
-                <button
-                  className="btn-ghost"
-                  onClick={() =>
-                    void api
-                      .downloadArtifact(data.artifact_version_id, data.filename)
-                      .then((saved) => {
-                        if (!saved) return;
-                        setNote("已保存（真实名称已还原）。下载已留痕。");
-                        return api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" });
-                      })
-                      .catch((e) => setErr(e.message))
-                  }
-                >
+                <button className="btn-ghost" onClick={download}>
                   下载（留痕）
                 </button>
               </div>
               {note && <p className="muted">{note}</p>}
-              {!pending && <p className="muted">只有“待你复核”的成果可以签发或退回。</p>}
+              {!pending && !draft && <p className="muted">只有“待你复核”的成果可以签发或退回。</p>}
               <details className="review-proof">
                 <summary className="muted">签发凭证</summary>
-                <p className="muted">
-                  文件指纹 {data.sha256.slice(0, 16)}…。签发绑定这一份确切文件；之后任何实质修改都生成新版本，旧的签发不会转到新版本。签发用本机设备密钥签名并记入签名事件链；对外发送、导出与改权限只能由你在桌面界面操作。内部稿不得外发。
-                </p>
+                <p className="muted">签发的就是这一份文件；之后再改会生成新版本，需要重新签发。对外发送、导出与改权限只能由你在这台电脑上操作。内部稿不得外发。</p>
+                <p className="muted mono">文件指纹 {data.sha256.slice(0, 16)}…（第三方可据此核对文件是否被改过）</p>
               </details>
             </aside>
           </div>

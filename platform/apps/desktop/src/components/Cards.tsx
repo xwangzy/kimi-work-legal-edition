@@ -130,6 +130,12 @@ export function ApprovalCardView({ card, tokenMap, busy, onDecide }: {
           <div className="cc-note">{renderTokens(card.agent_note, tokenMap)}</div>
         </details>
       )}
+      {card.why_detail && (
+        <details className="cc-details">
+          <summary>为什么要问我</summary>
+          <div className="cc-note">{card.why_detail}</div>
+        </details>
+      )}
       <div className="cc-actions">
         {(generalizedOk || originalOk) && (
           <button className="btn-primary" disabled={busy} onClick={approve}>
@@ -143,7 +149,7 @@ export function ApprovalCardView({ card, tokenMap, busy, onDecide }: {
       {taskOk && (
         <label className="cc-check">
           <input type="checkbox" checked={forTask} onChange={(e) => setForTask(e.target.checked)} />
-          {isSearchCred ? "本任务内同类检索都按改写后发出，不再询问" : "本任务内同类操作不再询问"}
+          {isSearchCred ? "这个任务后面的检索都这样处理，不再问我" : "这个任务后面的同类操作不再问我"}
         </label>
       )}
       {isSearchCred && generalizedOk && originalOk && card.preview.send_original !== undefined && (
@@ -228,7 +234,7 @@ function QuerySend({ original, rewritten }: { original: string; rewritten: strin
     <div className="cc-send" aria-label={`将发出：${rewritten}。${removedText}`}>
       将发出：“
       {v.shown.map((p, i) => (p.kind === "added" ? <mark key={i} className="q-diff-add">{p.text}</mark> : <span key={i}>{p.text}</span>))}”
-      {removedText && <div className="cc-note muted">{removedText}，改写处已标出；不会发出当事人名称。</div>}
+      {removedText && <div className="cc-note muted">不会发出当事人名称。</div>}
     </div>
   );
 }
