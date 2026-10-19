@@ -13,7 +13,7 @@
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { generateDeviceKeys, issueDeviceCertificate, signBytes, verifyBytes, verifyDeviceCertificate, type DeviceCertificate, type DeviceKeys, type DeviceRole } from "@zr-legal/keys";
+import { issueDeviceCertificate, SoftwareSigner, verifyBytes, verifyDeviceCertificate, type DeviceCertificate, type DeviceKeys, type DeviceRole } from "@zr-legal/keys";
 import {
   firmBundleBytes,
   firmCheckCode,
@@ -28,7 +28,7 @@ import {
 import { DomainError } from "@zr-legal/domain";
 import { slog } from "@zr-legal/safe-log";
 import { activationFilePath, PENDING_WORKSPACE_SLUG, type ActivationFile, type KernelConfig } from "../config.ts";
-import { configureSecretSealing, getFirmRootPrivateKey, keysDirOf, readSecretFile, writeStagedSecret, type FirmIdentityRow } from "../devices.ts";
+import { configureSecretSealing, generateJoinDeviceKeys, getFirmRootPrivateKey, keysDirOf, readSecretFile, writeStagedSecret, type FirmIdentityRow } from "../devices.ts";
 import type { KernelDb } from "../db.ts";
 import type { Identity } from "../identity.ts";
 
@@ -230,9 +230,9 @@ export class OnboardingService {
     }
 
     // 成员：本机生成设备密钥，提交入组申请（只含公钥 + 持有证明）
-    const keys = generateDeviceKeys();
+    const { keys, signer } = generateJoinDeviceKeys();
     const deviceId = `dev_${firmSlug}_${memberSlug}`;
-    const proof = signBytes(keys.signPrivateKeyPem, joinProofBytes({ tid: j.tid, activationId: j.activation_id, deviceId, signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem }));
+    const proof = signer.signSync(joinProofBytes({ tid: j.tid, activationId: j.activation_id, deviceId, signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem }));
     const jr = await cpPost(this.d.relay, "/v1/join-requests", {
       tid: j.tid,
       activation_id: j.activation_id,
@@ -444,7 +444,8 @@ export const membersApi = (d: MembersDeps) => ({
     });
     const bundle: FirmBundle = {
       recovery_public_key_pem: d.firm.recoveryPublicKeyPem,
-      sig: signBytes(root.privateKeyPem, firmBundleBytes(d.identity.tenantId, root.publicKeyPem, d.firm.recoveryPublicKeyPem)),
+      // 经签名者签（签名者表面门禁 KP-02：keys 包外不直接按私钥签名）
+      sig: new SoftwareSigner(root.privateKeyPem).signSync(firmBundleBytes(d.identity.tenantId, root.publicKeyPem, d.firm.recoveryPublicKeyPem)),
     };
     const r = await call("POST", `/v1/join-requests/${id}/approve`, { cert, firm_bundle: bundle });
     if (!r.ok) cpFail(r);

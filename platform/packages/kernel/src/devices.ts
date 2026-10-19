@@ -226,6 +226,12 @@ export function writeDeviceKeys(keysDir: string, keys: DeviceKeys): void {
   writeSecret0600(join(keysDir, "device.json"), keys);
 }
 
+/** 成员入组时本机新生成的设备密钥（第 13 批）：私钥只交给签名者（签名者表面门禁 KP-02），整套密钥另经封装暂存。 */
+export function generateJoinDeviceKeys(): { keys: DeviceKeys; signer: SoftwareSigner } {
+  const keys = generateDeviceKeys();
+  return { keys, signer: splitKeys(keys).signer };
+}
+
 /** 开通与入组的暂存秘密（认领凭据、入组设备密钥与取回的证书；第 13 批）：与其他密钥文件同一封装。 */
 export function writeStagedSecret(path: string, content: unknown): void {
   writeSecret0600(path, content);
