@@ -21,13 +21,13 @@ export const MODE_LABELS: Record<RunMode, string> = { chat: "只问答", manual:
 export const MODE_HINTS: Record<RunMode, string> = {
   chat: "只读材料、不写不执行；检索按规则",
   manual: "每一步都先问你",
-  default: "执行域内的读写与代码直接执行；跨边界动作逐项确认",
-  auto: "预算硬上限内自动；开始时预授权的跨边界范围自动通过，其余仍确认；产物只为草稿",
+  default: "在这台电脑上读写本事项文件、做计算；要联网或用到当事人信息时先问你",
+  auto: "在本次用量上限内自己做完；开始时你同意过的检索不再逐条问；结果仍是草稿",
 };
 export const PREAUTH_LABELS: Record<string, string> = {
-  search_generalized: "泛化后的检索（当事人名称改写为“某公司/某人”后发出）",
-  fetch_allowlisted: "白名单站点抓取",
-  connector_readonly: "只读连接器",
+  search_generalized: "去掉当事人名称后检索（改成“某公司 / 某人”再发出）",
+  fetch_allowlisted: "打开官方网站（法院、政府等）",
+  connector_readonly: "只读查看律所系统",
 };
 
 export const BASIS_FIELDS: { key: "engagement" | "personal_info" | "sensitive" | "subprocessor"; label: string; hint: string }[] = [
@@ -123,8 +123,8 @@ export const DEST_LABELS: Record<string, string> = {
   private_model: "律所私有模型",
   search_service: "中软检索服务",
   public_web: "公开网页（本机抓取）",
-  gate_blocked: "出站闸门拦截（未发出）",
-  mock_local: "本机模拟（未外发）",
+  gate_blocked: "已拦下（没有发出）",
+  mock_local: "本机示例（未外发）",
   law_source: "法源服务",
 };
 
@@ -195,3 +195,10 @@ export function stanceLabel(v: string | null | undefined): string {
 export function jurisdictionLabel(v: string | null | undefined): string {
   return v ? (JURISDICTION_CODES[v] ?? v) : "—";
 }
+
+/** 核对码每 4 位一组显示（Z3 评审 7.0：与成员入组的核对码同一种读法）。 */
+export function groupDigits(code: string): string {
+  const d = code.replace(/\s+/g, "");
+  return d.replace(/(.{4})(?=.)/g, "$1 ");
+}
+

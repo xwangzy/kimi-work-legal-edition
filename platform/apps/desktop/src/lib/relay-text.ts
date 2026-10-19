@@ -29,6 +29,26 @@ export function syncAlertText(a: { kind: string; title: string | null; peer_memb
   return `事项${t}的团队同步有异常（${a.kind}）`;
 }
 
+/**
+ * 律师层的一句话（Z3 评审 3.5、5.5）：同步告警不讲密钥、起点、控制成员，只说哪个事项暂停、谁处理后恢复；
+ * 原来的长说明（syncAlertText）作为“详情”只给管理员看。
+ */
+export function syncAlertSummary(a: { title: string | null; peer_member?: string | null; peer_name?: string | null }): string {
+  const t = a.title ? `「${a.title}」` : "有一个事项";
+  const who = a.peer_name ?? a.peer_member ?? null;
+  return `${t}暂时不能同步给同事，负责人${who ? ` ${who} ` : ""}处理后会自动恢复。`;
+}
+
+/** 律师层一行状态（Z3 评审 5.5）：正常 / 有 n 个事项暂停同步 / 暂停原因一句话。纯函数。 */
+export function teamShareLine(st: { blocked: string | null; alerts?: unknown[] | null; stuck?: number | null; stuck_matters?: number | null; policy_fallback?: boolean | null }): string {
+  const n = st.alerts?.length ?? 0;
+  if (st.blocked === "exit_mode") return "同事之间同步已暂停：这台电脑的许可失效或已被停用";
+  if (st.blocked === "not_allowed") return st.policy_fallback ? "同事之间同步已暂停：这台电脑还没收到最新的律所规则，联网后自动恢复" : "本所没有开启经中软的同事之间同步（团队事项仍可经律所共享文件夹同步）";
+  if (n > 0) return `有 ${n} 个事项暂停同步，负责人处理后自动恢复`;
+  if (st.stuck) return `有 ${st.stuck_matters ?? 1} 个事项的改动暂时发不出去，会自动重试`;
+  return "同事之间同步：正常";
+}
+
 export function relayErrorText(code: string | null | undefined): string | null {
   if (!code) return null;
   if (code === "waiting_for_owner") return "这个事项的负责人还没有经中继同步过：负责人的电脑同步一次后，这里的改动会自动发出";

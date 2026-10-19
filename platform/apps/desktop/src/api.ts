@@ -2,6 +2,7 @@
  * 内核 API 客户端（v9 第 04 篇 §3.3：界面只见业务运行时 API；§1.1：渲染进程经主进程 IPC 调用，不直连任何网络地址）。
  * Electron：preload 暴露的 zrKernel.invoke；web 开发：开发桥（127.0.0.1:7720，仅开发，带令牌）。
  */
+import { GENERIC_FAILURE } from "./lib/errors.ts";
 
 declare global {
   interface Window {
@@ -123,7 +124,7 @@ async function invoke<T = any>(method: string, params: Record<string, unknown> =
     body: JSON.stringify({ method, params }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!data.ok) throw new KernelError(data.error?.message ?? "内核调用失败", data.error?.code ?? "internal", data.error?.detail);
+  if (!data.ok) throw new KernelError(data.error?.message ?? GENERIC_FAILURE, data.error?.code ?? "internal", data.error?.detail);
   return data.result as T;
 }
 
@@ -281,6 +282,8 @@ export interface ApprovalCard {
   reason: string;
   title: string;
   why: string;
+  /** 为什么要问我（机制说明，折叠显示；Z3 评审 3.3）。 */
+  why_detail?: string;
   destination: string;
   cost: string | null;
   /** 检索：原文放行与泛化改写各自将发出的查询；抓取：URL 与主机；计划：计划正文（令牌形态，界面还原后显示）。 */

@@ -5,24 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type RunPolicyView } from "../api.ts";
 import { Icon } from "./Icons.tsx";
 import { ModeSelector, type ModeChoice } from "./ModeSelector.tsx";
-import { stanceLabel } from "../lib/labels.ts";
-
-export interface MethodDef {
-  scenario: string;
-  label: string;
-  desc: string;
-  tier: "演示" | "Beta";
-  needs?: string;
-}
-
-/** 方法库中已接入本机内核的方法（首页与方法库共用）。 */
-export const METHODS: MethodDef[] = [
-  { scenario: "a1.agent_task", label: "通用任务", desc: "开放任务：读写材料、数据处理与计算、子任务、联网检索（经出站闸门）；产物为草稿", tier: "Beta" },
-  { scenario: "s1.contract_review", label: "审合同", desc: "DOCX 进，原生修订稿与审查意见书出；按立场与 Playbook", tier: "演示", needs: "一份 DOCX 合同" },
-  { scenario: "s1b.draft_compare", label: "回稿比对", desc: "对方回稿只重审改动，标出静默改动", tier: "演示", needs: "基线稿与回稿各一份" },
-  { scenario: "s2.case_file", label: "整理材料", desc: "证据目录、事实时间轴、争点—证据矩阵", tier: "演示", needs: "案卷材料" },
-  { scenario: "s6.redaction", label: "对外脱敏", desc: "脱敏件与脱敏报告，全流程化名", tier: "演示", needs: "待脱敏文件" },
-];
+import { SCENARIO_LABELS, stanceLabel } from "../lib/labels.ts";
+import { LINE_LABELS, SCENARIOS, type BusinessLine, type ScenarioCard } from "../lib/scenarios.ts";
 
 export interface ComposerValue {
   goal: string;
@@ -44,6 +28,11 @@ export function Composer(props: {
   onSubmit: () => void;
   busy?: boolean;
   placeholder?: string;
+  /**
+   * “/ 方法”菜单选中一个业务场景（Z3 评审 IA-2、#8：菜单与首页场景卡同一份名单 lib/scenarios.ts）：
+   * 打开该场景的开始面板。未提供时菜单只有“自由描述”。
+   */
+  onPickScenario?: (card: ScenarioCard) => void;
   /** 意图建议（UIUX P0-2）：根据描述建议一个业务场景，不自动切换。 */
   suggestion?: { title: string; gets: string; onUse: () => void; onDismiss: () => void } | null;
 }) {
@@ -59,7 +48,6 @@ export function Composer(props: {
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [menu]);
-  const method = METHODS.find((m) => m.scenario === value.scenario) ?? METHODS[0]!;
   const matter = props.matters?.find((m) => m.matter_id === props.matterId) ?? null;
   const canSend = !props.busy && !!props.matterId && (value.goal.trim().length > 0 || value.scenario !== "a1.agent_task");
   return (
@@ -90,7 +78,7 @@ export function Composer(props: {
         <div className="composer-chips">
           {value.scenario !== "a1.agent_task" && (
             <span className="chip chip-soft">
-              方法：{method.label}
+              方法：{SCENARIO_LABELS[value.scenario] ?? "自由描述"}
               <button className="chip-x" aria-label="移除方法" onClick={() => onChange({ ...value, scenario: "a1.agent_task" })}><Icon.x /></button>
             </span>
           )}
@@ -125,12 +113,8 @@ export function Composer(props: {
         ) : (
           <span className="chip chip-static" title="当前事项"><Icon.folder /> {props.matterId ? "本事项" : "未选择事项"}</span>
         )}
-        {value.scenario === "a1.agent_task" ? (
-          <ModeSelector policy={props.policy} value={value.choice} onChange={(choice) => onChange({ ...value, choice })} />
-        ) : (
-          // 确定性工作流按固定步骤运行，不适用运行模式（复核 S5-A07）
-          <span className="chip chip-static" title="确定性工作流按固定步骤运行，不适用运行模式">确定性工作流</span>
-        )}
+        {/* 固定步骤的流程不适用运行模式（复核 S5-A07）；也不再显示研发用语胶囊（Z3 评审 3.1） */}
+        {value.scenario === "a1.agent_task" && <ModeSelector policy={props.policy} value={value.choice} onChange={(choice) => onChange({ ...value, choice })} />}
         <button className="send" disabled={!canSend} onClick={props.onSubmit} aria-label="发送">
           <Icon.send />
         </button>
@@ -138,22 +122,37 @@ export function Composer(props: {
 
       {menu === "method" && (
         <div className="popover composer-menu">
-          <div className="menu-title">法律方法</div>
-          {METHODS.map((m) => (
-            <button
-              key={m.scenario}
-              className={`menu-item${m.scenario === value.scenario ? " selected" : ""}`}
-              onClick={() => {
-                onChange({ ...value, scenario: m.scenario, goal: value.goal.replace(/\/$/, "") });
-                setMenu(null);
-              }}
-            >
-              <span className="menu-label">
-                {m.label} <span className={`tag ${m.tier === "Beta" ? "tag-beta" : "tag-demo"}`}>{m.tier}</span>
-              </span>
-              <span className="menu-desc">{m.desc}{m.needs ? `（需要：${m.needs}）` : ""}</span>
-            </button>
-          ))}
+          <div className="menu-title">法律方法（都在试用阶段，结果是草稿）</div>
+          <button
+            className={`menu-item${value.scenario === "a1.agent_task" ? " selected" : ""}`}
+            onClick={() => {
+              onChange({ ...value, scenario: "a1.agent_task", goal: value.goal.replace(/\/$/, "") });
+              setMenu(null);
+            }}
+          >
+            <span className="menu-label">自由描述</span>
+            <span className="menu-desc">按你的描述读材料、计算、联网查资料；结果是草稿</span>
+          </button>
+          {props.onPickScenario &&
+            (Object.keys(LINE_LABELS) as BusinessLine[]).map((l) => (
+              <div key={l} role="group" aria-label={LINE_LABELS[l]}>
+                <div className="menu-group">{LINE_LABELS[l]}</div>
+                {SCENARIOS.filter((c) => c.line === l).map((c) => (
+                  <button
+                    key={c.id}
+                    className="menu-item"
+                    onClick={() => {
+                      onChange({ ...value, goal: value.goal.replace(/\/$/, "") });
+                      setMenu(null);
+                      props.onPickScenario?.(c);
+                    }}
+                  >
+                    <span className="menu-label">{c.title}</span>
+                    <span className="menu-desc">给：{c.gives}　得：{c.gets.join("、")}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
         </div>
       )}
       {menu === "material" && (

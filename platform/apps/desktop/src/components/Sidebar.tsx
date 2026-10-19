@@ -13,12 +13,12 @@ interface Item {
   phase?: string;
 }
 
+// 侧栏收敛（Z3 评审 IA-1、IA-2、#9）：“看板”与首页、事项页重复，“方法与模板”与首页场景卡重复，不再占一级入口；
+// #/boards、#/methods 两个路由保留（首页“更多场景 →”进入方法与模板；事项页有本事项看板）
 const ITEMS: Item[] = [
   { key: "home", label: "新建任务", icon: Icon.plus, href: "/" },
   { key: "matters", label: "事项", icon: Icon.folder, href: "/matters" },
   { key: "deliverables", label: "交付件", icon: Icon.file, href: "/deliverables" },
-  { key: "methods", label: "方法与模板", icon: Icon.book, href: "/methods" },
-  { key: "boards", label: "看板", icon: Icon.board, href: "/boards" },
   { key: "reminders", label: "期限提醒", icon: Icon.bell, href: "/reminders" },
   { key: "chat", label: "问答", icon: Icon.chat, href: "/chat" },
   { key: "connections", label: "设置", icon: Icon.plug, href: "/connections" },

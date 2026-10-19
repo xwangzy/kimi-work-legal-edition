@@ -13,18 +13,28 @@ import { prepareStart, RunSheet, type PendingStart } from "../components/RunShee
 import { reasonLabel } from "../components/DataFlow.tsx";
 import { DEST_LABELS, fmtTime, RUN_STATUS_LABELS, SCENARIO_LABELS } from "../lib/labels.ts";
 import { MatterBoard } from "./Boards.tsx";
+import { MatterDeliverables } from "./Deliverables.tsx";
 import { MatterLifecyclePanel } from "../components/MatterLifecycle.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 
-type Tab = "materials" | "runs" | "board" | "parties" | "egress" | "lifecycle";
+type Tab = "materials" | "runs" | "board" | "deliverables" | "parties" | "egress" | "lifecycle";
 
 export function MatterPage({ matterId }: { matterId: string }) {
   const [matter, setMatter] = useState<Matter | null>(null);
   const [docs, setDocs] = useState<any[]>([]);
   const [runs, setRuns] = useState<any[]>([]);
   const [policy, setPolicy] = useState<RunPolicyView | null>(null);
-  const [tab, setTab] = useState<Tab>("materials");
+  // 事项页标签（Z3 评审 IA-4、#10）：打开事项默认停在“概览”；还没有材料的新事项停在“材料”；律师点过标签后不再自动切换
+  const [tab, setTabRaw] = useState<Tab>("materials");
+  const tabTouched = useRef(false);
+  const setTab = (t: Tab) => {
+    tabTouched.current = true;
+    setTabRaw(t);
+  };
+  useEffect(() => {
+    if (!tabTouched.current && matter && docs.length > 0) setTabRaw("board");
+  }, [matter?.matter_id, docs.length]);
   const [value, setValue] = useState<ComposerValue>({ goal: "", scenario: "a1.agent_task", documentIds: [], choice: defaultChoice(null) });
   const [sheet, setSheet] = useState<PendingStart | null>(null);
   const [basisOpen, setBasisOpen] = useState(false);
@@ -217,6 +227,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
             onImport={(f) => void upload(f, "import")}
             onSubmit={() => void submit()}
             busy={busy}
+            onPickScenario={(c) => nav(`/start/${c.id}/${matterId}`)}
             placeholder="在本事项内发起任务，例如：核验起诉状引用的法条是否现行有效"
           />
         </div>}
@@ -224,16 +235,21 @@ export function MatterPage({ matterId }: { matterId: string }) {
         <div className="tabs tabs-line">
           {(
             [
+              ["board", "概览"],
               ["materials", `材料（${docs.length}）`],
               ["runs", `任务（${runs.length}）`],
-              ["board", "看板"],
-              ["parties", "当事人词典"],
+              ["deliverables", "交付件"],
+              ["parties", "当事人名单"],
               ["egress", "数据去向"],
-              ["lifecycle", "结案与删除"],
             ] as [Tab, string][]
           ).map(([k, l]) => (
             <button key={k} className={`tab${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{l}</button>
           ))}
+          <span className="spacer" />
+          {/* 不可逆操作不放在日常浏览路径上：结案与删除收进“⋯”（点 2 次才到删除） */}
+          <button className={`tab tab-more${tab === "lifecycle" ? " active" : ""}`} title="结案与删除" aria-label="更多：结案与删除" onClick={() => setTab("lifecycle")}>
+            {tab === "lifecycle" ? "结案与删除" : "⋯"}
+          </button>
         </div>
         {tab === "materials" && (
           <section>
@@ -259,7 +275,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                 <tbody>
                   {docs.map((d) => (
                     <tr key={d.document_version_id}>
-                      <td title={`${d.storage_mode === "mount" ? "只引用原文件（未复制）" : "已加密保存副本"} · 文件指纹 ${String(d.sha256 ?? "").slice(0, 12)}`}>{d.filename}{d.storage_mode === "mount" && <span className="tag tag-gray">引用</span>}</td>
+                      <td title={d.storage_mode === "mount" ? "只引用原文件（未复制）" : "已加密保存副本"}>{d.filename}{d.storage_mode === "mount" && <span className="tag tag-gray">引用</span>}</td>
                       <td>
                         {/* 材料用途（Y4 §5 D-4）：我方 / 对方 / 参考，写进任务的材料清单 */}
                         <select
@@ -326,6 +342,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
           </section>
         )}
         {tab === "board" && <MatterBoard matter={matter} runs={runs} />}
+        {tab === "deliverables" && <MatterDeliverables matterId={matterId} />}
         {tab === "parties" && <PartiesPanel matterId={matterId} onChanged={reload} readOnly={closed} />}
         {tab === "egress" && <MatterEgress matterId={matterId} />}
         {tab === "lifecycle" && <MatterLifecyclePanel matter={matter} onChanged={reload} />}

@@ -450,7 +450,7 @@ async function stepModelReview(ctx: Ctx, runId: string, attemptId: string, mater
     cost_microcny: result.costMicroCny,
     usage: { input: result.usage.uncached_input + result.usage.cached_input, output: result.usage.output, reasoning: result.usage.reasoning },
     egress_record_id: result.egressRecordId,
-    where: result.endpointKind === "mock" ? "本机（mock）" : "模型推理中",
+    where: result.endpointKind === "mock" ? "本机示例" : "模型推理中",
   });
   return {
     content: result.content ?? "",

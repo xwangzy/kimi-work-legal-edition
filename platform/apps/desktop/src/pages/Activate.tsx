@@ -93,8 +93,8 @@ function EnterCode({ onPending }: { onPending: (s: Status) => void }) {
   }
   return (
     <Frame>
-      <h1 className="activate-title">激活这台电脑</h1>
-      <p className="activate-lead">输入中软交给律所的开通码，或律所管理员发给你的邀请码。</p>
+      <h1 className="activate-title">欢迎使用</h1>
+      <p className="activate-lead">请输入开通码或邀请码。</p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -121,11 +121,15 @@ function EnterCode({ onPending }: { onPending: (s: Status) => void }) {
           </p>
         )}
         <button type="submit" className="btn-primary activate-submit" disabled={!ready || busy}>
-          {busy ? "正在核对…" : "激活"}
+          {busy ? "正在核对…" : "下一步"}
         </button>
       </form>
       <p id="activate-hint" className="muted activate-foot">
-        激活只把这串码发给中软核对，不会上传任何案件材料。码只能用一次，过期请向发码人重新获取。
+        开通码由中软发给律所负责人；邀请码由律所管理员发给你。码只能用一次，过期请向发码人重新获取。
+        <br />
+        没有码？请联系律所管理员；律所负责人还没收到开通码，请联系中软客服。
+        <br />
+        开通时只需联网核对一次这个码；你的案卷不会上传。
       </p>
     </Frame>
   );
@@ -170,9 +174,9 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
   const who = [status.member?.name, status.member?.role ? ROLE_LABEL[status.member.role] : null].filter(Boolean).join(" · ");
   return (
     <Frame>
-      <h1 className="activate-title">等待律所管理员批准</h1>
+      <h1 className="activate-title">等待管理员批准</h1>
       <p className="activate-lead">
-        你以{who ? `「${who}」` : "成员"}的身份申请加入「{status.firm?.name ?? "律所"}」。请把下面这串数字念给管理员，两边屏幕上的数字一致，管理员再点“批准”。
+        已向「{status.firm?.name ?? "律所"}」申请加入{who ? `（${who}）` : ""}。请打电话或当面联系管理员，把下面的核对码读给他；管理员核对一致后批准，这里会自动进入。
       </p>
       <div className="activate-checkcode" aria-label="核对码">
         {status.check_code}
@@ -198,6 +202,10 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
           重新输入邀请码
         </button>
       </div>
+      <details className="muted activate-foot">
+        <summary>为什么要核对</summary>
+        确认申请加入的确实是你本人的这台电脑。核对码请通过电话或当面告知，不要截图转发。
+      </details>
       <p className="muted activate-foot">批准后会自动打开，不用一直守在这里。申请 7 天内有效。</p>
     </Frame>
   );

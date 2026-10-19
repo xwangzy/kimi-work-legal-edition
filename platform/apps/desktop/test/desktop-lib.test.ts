@@ -50,22 +50,22 @@ test("执行位置徽标：由事实生成——排队、恢复、预算暂停�
   // 退出模式：排队与恢复中的任务暂停（阶段 6 复核 S6-C12）；等待律师的照旧
   assert.deepEqual(labels({ status: "queued", exitMode: "license_expired" }), ["暂停（退出模式：恢复许可后自动继续）"]);
   assert.deepEqual(labels({ status: "recovering", exitMode: "license_missing" }), ["暂停（退出模式：恢复许可后自动继续）"]);
-  assert.deepEqual(labels({ status: "queued", exitMode: "device_revoked" }), ["已暂停（本设备已被吊销，不会继续）"], "复核 S6-C18");
-  assert.deepEqual(labels({ status: "queued", exitMode: "control_plane_unconfigured" }), ["暂停（控制面地址未配置）"]);
+  assert.deepEqual(labels({ status: "queued", exitMode: "device_revoked" }), ["已暂停（这台电脑已被律所停用，不会继续）"], "复核 S6-C18");
+  assert.deepEqual(labels({ status: "queued", exitMode: "control_plane_unconfigured" }), ["暂停（还没连上律所的服务，请联系管理员）"]);
   assert.deepEqual(labels({ status: "waiting_approval", exitMode: "license_expired" }), ["等待你确认"]);
   assert.deepEqual(labels({ status: "queued", exitMode: null }), ["排队中"]);
   // 没有在途模型请求：不写“模型推理中”
   assert.deepEqual(labels({}), ["本机处理中"]);
   assert.deepEqual(labels({ scenario: "s6.redaction" }), ["本机处理中（本场景不调用模型、不联网）"]);
   // 在途模型请求：按端点写去向，按全部化名写代号范围
-  assert.match(labels({ inflight: { model: 1, search: 0, fetch: 0 } })[0]!, /经中软网关；证件、账户、联系方式与自然人姓名已替换为代号/);
+  assert.match(labels({ inflight: { model: 1, search: 0, fetch: 0 } })[0]!, /AI 正在处理（经中软；证件、账户、联系方式与自然人姓名已替换为代号/);
   assert.match(labels({ inflight: { model: 1, search: 0, fetch: 0 }, fullPseudonym: true })[0]!, /自然人姓名与机构名称已替换为代号/);
-  assert.match(labels({ inflight: { model: 1, search: 0, fetch: 0 }, endpoint: "byok" })[0]!, /自带密钥.*不经中软/);
+  assert.match(labels({ inflight: { model: 1, search: 0, fetch: 0 }, endpoint: "byok" })[0]!, /律所自己的 Kimi 账号.*不经中软/);
   assert.match(labels({ inflight: { model: 1, search: 0, fetch: 0 }, endpoint: "private" })[0]!, /律所私有模型/);
   // 执行域与检索、抓取
   assert.deepEqual(labels({ openTools: ["Bash"] }), ["本机 · 运行时隔离（W）"]);
   assert.ok(labels({ inflight: { model: 0, search: 1, fetch: 0 } }).some((l) => l.startsWith("联网检索中")));
-  assert.ok(labels({ openTools: ["FetchURL"] }).some((l) => l.startsWith("抓取公开网页中")));
+  assert.ok(labels({ openTools: ["FetchURL"] }).some((l) => l.startsWith("正在打开公开网页")));
 });
 
 // ─── 第 4 批复核 B 的界面纯函数 ───

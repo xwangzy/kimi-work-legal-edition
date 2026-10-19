@@ -38,6 +38,11 @@ export interface ScenarioCard {
   fields: ScenarioField[];
   /** 需要材料的最少份数（0 = 可无材料）。 */
   minMaterials: number;
+  /**
+   * 材料不齐时能否“先开始，缺的稍后补”（Z3 评审 #4）：只有起草类与整理访谈这几张卡可以；审合同等“没有材料就没法做”的卡不行。
+   * 只对 Agent 场景生效（确定性流程须选够材料）。
+   */
+  allowPartial?: boolean;
   /** “这个方法会怎么做”（折叠显示）。 */
   steps: string[];
   /** 意图建议的关键词（命中即建议；词组内全部出现才算）。 */
@@ -89,6 +94,7 @@ export const SCENARIOS: ScenarioCard[] = [
     gets: ["民事起诉状（草稿）.docx", "提交前核对清单"],
     scenario: "a1.agent_task",
     skill: "pleading-draft",
+    allowPartial: true,
     verb: "开始起草",
     goal: "请起草民事起诉状。拟受理法院：{court}。{extra}",
     fields: [
@@ -126,6 +132,7 @@ export const SCENARIOS: ScenarioCard[] = [
     gets: ["函件草稿.docx", "发送前核对清单"],
     scenario: "a1.agent_task",
     skill: "demand-letter",
+    allowPartial: true,
     verb: "开始起草",
     goal: "请起草{purpose}函件；期限要求：{deadline}。",
     fields: [
@@ -206,6 +213,7 @@ export const SCENARIOS: ScenarioCard[] = [
     gets: ["访谈纪要.docx", "材料收集清单.xlsx"],
     scenario: "a1.agent_task",
     skill: "intake-notes",
+    allowPartial: true,
     verb: "开始整理",
     goal: "请根据访谈记录整理访谈纪要与材料收集清单；访谈对象：{who}。",
     fields: [{ key: "who", label: "访谈对象角色", kind: "text", placeholder: "例如：公司财务负责人" }],
@@ -380,4 +388,56 @@ export function suggestScenario(goal: string): ScenarioCard | null {
     }
   }
   return best;
+}
+
+/** 材料不齐时能否先开始（Z3 评审 #4）：卡片声明允许、且是 Agent 场景。 */
+export function canStartPartial(card: Pick<ScenarioCard, "allowPartial" | "scenario">): boolean {
+  return card.allowPartial === true && card.scenario === "a1.agent_task";
+}
+
+/** 缺材料时的一句提示：审合同类写“请先添加合同”，回稿比对写清要哪两份，其余写还差几份。 */
+export function missingMaterialsText(card: Pick<ScenarioCard, "scenario" | "skill">, need: number): string {
+  if (card.scenario === "s1b.draft_compare") return "请依次勾选基线稿与对方回稿";
+  if (card.skill === "contract-review") return "请先添加合同";
+  return `还需要选择 ${need} 份材料`;
+}
+
+const LITIGATION_STANCES = new Set(["原告", "被告", "申请人", "被申请人", "第三人", "上诉人", "被上诉人", "plaintiff", "defendant"]);
+const TRANSACTIONAL_STANCES = new Set(["受让方", "转让方", "买方", "卖方", "出租人", "承租人", "出租方", "承租方", "投资方", "目标公司", "buyer", "seller", "lessee", "lessor"]);
+const INHOUSE_STANCES = new Set(["常年顾问"]);
+
+/**
+ * 事项属于哪条业务线（Z3 评审 #1）：事项本身没有业务线字段，按立场推断（诉讼立场 → 诉讼仲裁；交易立场 → 非诉；常年顾问 → 企业法务）；
+ * 立场为“其他”等看不出时返回 null（不判定为不一致）。
+ */
+export function matterLine(m: { stance?: string | null } | null | undefined): BusinessLine | null {
+  const st = String(m?.stance ?? "").trim();
+  if (LITIGATION_STANCES.has(st)) return "litigation";
+  if (TRANSACTIONAL_STANCES.has(st)) return "transactional";
+  if (INHOUSE_STANCES.has(st)) return "inhouse";
+  return null;
+}
+
+type PickableMatter = { matter_id: string; stance?: string | null; created_at?: string | null; activity?: { last_at?: string } | null };
+
+/**
+ * 开始面板的默认事项（Z3 评审 #1）：业务线与卡片一致的事项里，优先当前事项，其次最近用过的；
+ * 没有一致的，退到看不出业务线的事项；都没有就返回 null（默认“新建事项”）。不会把非诉卡默认挂到诉讼事项上。
+ */
+export function pickMatterForCard(card: Pick<ScenarioCard, "line">, matters: PickableMatter[], currentId: string | null): string | null {
+  const recency = (m: PickableMatter) => String(m.activity?.last_at ?? m.created_at ?? "");
+  const byRecent = [...matters].sort((a, b) => recency(b).localeCompare(recency(a)));
+  for (const want of [card.line, null] as (BusinessLine | null)[]) {
+    const cands = byRecent.filter((m) => matterLine(m) === want);
+    if (cands.length === 0) continue;
+    return (cands.find((m) => m.matter_id === currentId) ?? cands[0]!).matter_id;
+  }
+  return null;
+}
+
+/** 所选事项与卡片业务线不一致时的一行提醒（不阻断）；一致或看不出时返回 null。 */
+export function lineMismatchText(card: Pick<ScenarioCard, "line" | "title">, matter: { stance?: string | null } | null | undefined): string | null {
+  const l = matterLine(matter);
+  if (!l || l === card.line) return null;
+  return `这是${LINE_LABELS[l]}事项。确定在这里做「${card.title}」吗？`;
 }

@@ -36,8 +36,8 @@ export function ModeSelector({ policy, value, onChange, allowChat = true }: { po
   return (
     <div className="mode-selector" ref={ref}>
       <button className="chip" onClick={() => setOpen(!open)} aria-haspopup="listbox" aria-expanded={open}>
-        {MODE_LABELS[value.mode]}
-        {value.mode !== "chat" && value.planFirst ? " · 先出计划" : ""}
+        {MODE_LABELS[value.mode].replace("（推荐）", "")}
+        {value.mode !== "chat" && value.planFirst ? " · 先给我看计划" : ""}
         <Icon.down />
       </button>
       {open && (
@@ -59,15 +59,15 @@ export function ModeSelector({ policy, value, onChange, allowChat = true }: { po
           {value.mode !== "chat" && (
             <label className="mode-toggle">
               <input type="checkbox" checked={value.planFirst} onChange={(e) => onChange({ ...value, planFirst: e.target.checked })} />
-              先出计划（计划经你确认后再执行）
+              先给我看计划（你确认后再开始做）
             </label>
           )}
           {value.mode === "auto" && policy && (
             <div className="mode-auto">
-              <div className="mode-auto-title">自动档：本任务预算上限</div>
-              <div className="muted">工具调用 ≤ {policy.budget.max_tool_calls} 次 · 子任务 ≤ {policy.budget.max_subagents} 个；超出即停止（不询问）。产物只为草稿。</div>
-              <div className="mode-auto-title">开始时预授权、将自动通过的跨边界动作</div>
-              {policy.preauthorizations.length === 0 && <div className="muted">本事项的策略不允许预授权：跨边界动作仍逐项确认。</div>}
+              <div className="mode-auto-title">放手做：本任务的用量上限</div>
+              <div className="muted">最多 {policy.budget.max_tool_calls} 步操作、{policy.budget.max_subagents} 个子任务；用完就停下（不再问你）。结果是草稿。</div>
+              <div className="mode-auto-title">开始时就同意、之后不再逐条问的操作</div>
+              {policy.preauthorizations.length === 0 && <div className="muted">本事项不能提前同意：联网和用到当事人信息的操作仍逐条问你。</div>}
               {policy.preauthorizations.map((p) => (
                 <label key={p} className="mode-toggle">
                   <input
@@ -78,10 +78,10 @@ export function ModeSelector({ policy, value, onChange, allowChat = true }: { po
                   {PREAUTH_LABELS[p] ?? p}
                 </label>
               ))}
-              <div className="muted">白名单站点抓取在默认档与自动档都自动放行；其余跨边界动作（新域名抓取、图像原样送模型、未预授权的含当事人检索等）仍会请你确认。</div>
+              <div className="muted">打开官方网站不用问；打开其他网站、把图片原样发给 AI、带当事人名称检索，仍会先问你。</div>
             </div>
           )}
-          <div className="mode-foot muted">没有“完全访问”档：执行域与出站闸门在任何档位都生效。</div>
+          <div className="mode-foot muted">任何档位下，AI 都不能自己联网，也不能读本事项以外的文件。</div>
         </div>
       )}
     </div>

@@ -10,7 +10,7 @@ import { api, updates, type Capabilities, type ContentCheckResult, type ContentS
 import { quotaLawyerLine } from "../lib/firm-usage.ts";
 import { CONTENT_CHECK_FAILED, CONTENT_PANEL_NOTE, contentCheckLine, contentSourceLine, contentStaleLine } from "../lib/content-labels.ts";
 import { nav, type SettingsTab } from "../App.tsx";
-import { fmtTime } from "../lib/labels.ts";
+import { fmtTime, groupDigits } from "../lib/labels.ts";
 import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
 import { RecallEvalPanel } from "./RecallEval.tsx";
 import { CpAuditPanel, UsagePanel } from "./FirmUsage.tsx";
@@ -70,7 +70,7 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
         {tab === "general" && <GeneralTab version={status?.version ?? null} />}
         {tab === "visibility" && <VisibilityTab gate={gate} im={im} recovery={recovery} firm={status?.firm ?? null} syncOn={!!status?.sync_configured} />}
         {tab === "sources" && <SourcesTab gate={gate} lawdb={lawdb} im={im} onLawdbChanged={() => api.lawdbStatus().then(setLawdb).catch(() => {})} />}
-        {tab === "device" && <DeviceTab caps={caps} gate={gate} mySafety={mySafety} recovery={recovery} />}
+        {tab === "device" && <DeviceTab caps={caps} gate={gate} mySafety={mySafety} recovery={recovery} admin={isAdmin} />}
         {tab === "admin" &&
           (status === null ? null : isAdmin ? (
             <AdminTab caps={caps} gate={gate} devices={devices} unresolved={unresolved} onReconciled={load} im={im} recovery={recovery} />
@@ -159,7 +159,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
     api.contentStatus().then((c) => setContentOn(!!c?.configured)).catch(() => setContentOn(false));
   }, []);
   // 复核 S6A-02/03：逐项写清替换了什么、哪些按原文；不经中软但会出本机的去向（网页、IM、团队共享）单列
-  const local = ["案卷原件与全部交付件", "代号与真实姓名的对照表", "对话、问答与任务记录", "事项名称与事项头信息"];
+  const local = ["案卷原件与全部交付件", "代号与真实姓名的对照表", "对话、问答与任务记录", "事项名称与建事项时填写的信息"];
   const transit = [
     "发给 AI 的任务内容：证件号、账号、电话、住址与识别出的姓名先换成代号；机构名称（含客户名称）、案情、金额、日期按原文",
     ...(gate?.search_configured ? ["联网检索的查询（默认去掉当事人名称）"] : []),
@@ -176,7 +176,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
   const stored = [
     "账号、席位与用量",
     "匿名事项编号与调用记录（不含内容）",
-    "律所策略与设备证书",
+    "律所规则，以及登记过的电脑",
     ...(updatesOn ? ["更新检查的访问记录（IP 与版本）"] : []),
     // 复核 S8A-05：法规库与方法模板的在线更新也是一条出网（随席位凭据，服务端看得到账号与设备）
     ...(contentOn ? ["法规库与方法模板的下载记录（账号、设备、下载的版本与时间；不含任何案件信息）"] : []),
@@ -195,8 +195,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
     "法源与主体信息查询",
     ...(im.length > 0 ? [] : ["IM 收件"]),
     ...(syncOn || relayOn ? [] : ["团队共享"]),
-    ...(relayOn ? [] : ["经中软中继的团队共享（端到端加密）"]),
-    "设备中继（端到端加密）",
+    ...(relayOn ? [] : ["同事之间同步（中软看不到内容）"]),
     ...(gate?.notify_configured ? [] : ["电脑关机时的期限提醒（现在只在这台电脑上提醒）"]),
     "云端事项",
     ...(recovery?.escrow ? [] : ["中软托管恢复"]),
@@ -246,7 +245,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
         </li>
         {gate?.search_configured && <li>联网检索默认去掉当事人名称再发出；含当事人名称的查询须经办律师逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）。</li>}
         <li>识别依靠规则与当事人名单，可能遗漏：<b>没有识别出的姓名会按原文发出</b>；每个任务的“数据去向”里可以逐条查看实际发出的内容。</li>
-        <li>自带密钥或律所私有端点的事项，模型请求不经中软。</li>
+        <li>使用律所自己的 Kimi 账号或私有模型的事项，不经过中软。</li>
       </ul>
       {/* 本机密钥保护的如实说明（调研 Y5 §7.3 建议原文的律师版） */}
       <details className="vis-more">
@@ -293,10 +292,10 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
   const shown = (results ?? [content?.lawdb?.last_check, content?.skills?.last_check].filter(Boolean)) as ContentCheckResult[];
   const lines = shown.map((r) => contentCheckLine(r)).filter(Boolean) as string[];
   const lastAt = shown.map((r) => r.at).sort().at(-1) ?? null;
-  const rows: { name: string; state: "可用" | "未开通" | "即将推出" | "不可用"; note: string; detail?: string }[] = [
+  const rows: { name: string; state: "可用" | "部分可用" | "未开通" | "即将推出" | "不可用"; note: string; detail?: string }[] = [
     {
       name: "离线法规库",
-      state: lawdb?.error ? "不可用" : "可用",
+      state: lawdb?.error ? "不可用" : lawdb?.coverage?.level === "sample" ? "部分可用" : "可用",
       note: lawdb?.error ? "法规库文件没有通过核对，已停用" : content?.configured ? "法条核验在本机完成；法规库可在线更新（见下方）" : "法条核验在本机完成，不联网",
       detail: lawdb?.error ? undefined : lawdb?.display,
     },
@@ -304,10 +303,10 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
     { name: "联网检索", state: gate?.search_configured ? "可用" : "未开通", note: "默认去掉当事人名称再发出；含当事人名称的查询须经办律师逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）" },
     { name: "公开网页", state: gate?.fetch === "local" ? "可用" : "未开通", note: `只打开公开官方站点与律所允许的网站（${gate?.fetch_allowlist_size ?? 0} 个），新网站要你确认` },
     { name: "案例与工商查询", state: "即将推出", note: "经数据商合同接入" },
-    { name: "律所自有系统（连接器）", state: "即将推出", note: "由管理员登记，按事项敏感程度放行" },
+    { name: "律所自有系统（如 OA、案件管理）", state: "即将推出", note: "由管理员登记，按事项敏感程度放行" },
     { name: "IM 收件", state: im.length > 0 ? "可用" : "即将推出", note: im.length > 0 ? "所内节点原型" : "文件进入本人收件区" },
   ];
-  const tone = (s: string) => (s === "可用" ? "pill-green" : s === "不可用" ? "pill-red" : "pill-gray");
+  const tone = (s: string) => (s === "可用" ? "pill-green" : s === "不可用" ? "pill-red" : s === "部分可用" ? "pill-orange" : "pill-gray");
   return (
     <>
       <table className="data">
@@ -331,7 +330,7 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
                 {r.note}
                 {r.detail && (
                   <details className="muted">
-                    <summary>版本与签名</summary>
+                    <summary>版本</summary>
                     {r.detail}
                   </details>
                 )}
@@ -393,7 +392,7 @@ function ActivationRow() {
   );
 }
 
-function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | null; gate: any; mySafety: string | null; recovery: any }) {
+function DeviceTab({ caps, gate, mySafety, recovery, admin }: { caps: Capabilities | null; gate: any; mySafety: string | null; recovery: any; admin: boolean }) {
   const [busy, setBusy] = useState(false);
   const [diag, setDiag] = useState<{ open: boolean; msg: string }>({ open: false, msg: "" });
   const [env, setEnv] = useState<Record<string, any> | null>(null);
@@ -417,23 +416,25 @@ function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | nu
         <div className="device-row">
           <div className="device-k">本机防护</div>
           <div>
-            {domainOk ? "✓ " : ""}案卷加密保存在这台电脑上；AI 运行代码时不能联网、只看得到本事项的文件。
-            {!domainOk && <div className="muted">代码运行环境暂不可用：需要运行代码的任务会停下并说明原因。</div>}
+            {domainOk ? "✓ " : ""}案卷加密保存在这台电脑上；AI 在这台电脑上做计算时不能联网，只能看本事项的文件。
+            {!domainOk && <div className="muted">计算环境暂不可用：需要计算的任务会停下并说明原因。</div>}
           </div>
         </div>
         <div className="device-row">
           <div className="device-k">联网通道</div>
           <div>
             {gate ? "✓ " : ""}模型、检索与网页只经 Kimi Work 自己的联网通道发出，每一次都记在“数据去向”里。
-            <div className="muted">律所 IT 可另加系统防火墙规则，让“只有这条通道能联网”由 Windows 强制。</div>
           </div>
         </div>
         <ActivationRow />
         <div className="device-row">
-          <div className="device-k">本机安全码</div>
+          <div className="device-k">核对码</div>
           <div>
-            <b className="mono">{mySafety ?? "—"}</b>
-            <div className="muted">同事核对你的设备变更时，请在电话或当面读出这串数字；对方屏幕上的一致才确认。</div>
+            <details>
+              <summary className="muted">换电脑或管理员要求核对时才需要（点开查看）</summary>
+              <b className="mono safety-code">{mySafety ? groupDigits(mySafety) : "—"}</b>
+              <div className="muted">请在电话或当面把这串数字读给对方；对方屏幕上的一致才确认。</div>
+            </details>
           </div>
         </div>
         {/* 律所设置与许可（复核 S6B-08：拆分后普通律师也要看得到许可是否有效、是否处于退出状态） */}
@@ -459,7 +460,7 @@ function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | nu
             <div>{quotaLawyerLine(quota)}</div>
           </div>
         )}
-        <TeamShare />
+        <TeamShare admin={admin} />
         <div className="device-row">
           <div className="device-k">最近一次自检</div>
           <div>
@@ -514,7 +515,7 @@ function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | nu
                         setDiag({ open: false, msg: "" });
                         return;
                       }
-                      setDiag({ open: false, msg: `已保存 ${r.filename}（${Math.ceil(r.bytes / 1024)} KB）。文件带本机签名，请按所内要求发给 IT 或客服。` });
+                      setDiag({ open: false, msg: `已保存 ${r.filename}（${Math.ceil(r.bytes / 1024)} KB）。文件可以证明出自这台电脑，请按所内要求发给 IT 或客服。` });
                     } catch (e) {
                       setDiag({ open: false, msg: (e as Error).message });
                     } finally {
@@ -534,7 +535,7 @@ function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | nu
           </div>
         </div>
       </div>
-      {recovery && <p className="muted">设备恢复：{recovery.note ?? (recovery.configured ? "已配置" : "未配置")}</p>}
+      {recovery && <p className="muted">找回资料：{Number(recovery.device_exports ?? 0) > 0 || recovery.drill_completed ? "已备份 ✓" : "还没有备份，请联系律所管理员"}</p>}
     </div>
   );
 }
@@ -552,7 +553,7 @@ function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[];
             ["usage", "用量与上限"],
             ["cp_audit", "中软侧操作记录"],
             ["diagnostics", "诊断"],
-            ["recall", "召回评测（律所内）"],
+            ["recall", "替换准确度测试"],
           ] as const
         ).map(([k, label]) => (
           <button key={k} role="tab" aria-selected={sub === k} className={`tab${sub === k ? " active" : ""}`} onClick={() => setSub(k)}>
@@ -836,10 +837,10 @@ function relaxationText(r: string): string {
 function policyLine(st: ControlPlaneStatus): string {
   const p = st.policy;
   if (!p) return "未知";
-  if (p.source === "local_dev") return "开发形态：律所策略取本机配置项（未接入控制面）";
+  if (p.source === "local_dev") return import.meta.env.DEV ? "开发形态：律所规则取本机配置项（未接入中软）" : "当前律所规则：中软默认（最严）";
   if (p.source === "strictest_fallback") {
     if (p.fallback_reason === "expired") return `律所策略 v${p.version} 已于 ${fmtTime(p.expires_at ?? "")} 过期：已回退“产品基线 + 最严模板”（不比该策略宽）`;
-    if (p.fallback_reason === "signers_insufficient") return `律所策略 v${p.version} 的有效管理员签名已不足门限（签名设备被吊销或门限提高）：已回退最严模板（不比该策略宽）`;
+    if (p.fallback_reason === "signers_insufficient") return `确认律所规则（第 ${p.version} 版）的管理员不够了，暂时按最严规则执行`;
     if (p.fallback_reason === "unrecognized_newer") return "收到本机不认识的律所策略新版本（客户端需要升级）：已回退最严模板";
     return "尚未取得律所策略：按“产品基线 + 最严模板”运行";
   }
@@ -909,7 +910,7 @@ function PolicyTab() {
             <div className="device-row">
               <div className="device-k">离线可用</div>
               <div>
-                {st.seat?.has_token && st.seat.expires_at ? `席位令牌有效至 ${fmtTime(st.seat.expires_at)}` : "席位令牌未取得或已失效：经标准端点的推理与联网检索暂不可用"}
+                {st.seat?.has_token && st.seat.expires_at ? `断网也能用到 ${fmtTime(st.seat.expires_at)}；联网后会自动延长` : "暂时用不了 Kimi 和联网检索（还没连上中软，或本所席位已失效），本机功能不受影响"}
                 <div className="muted">控制面不可达时，经标准端点的推理与联网检索可用到席位令牌到期（在线时自动续期，保持至少 72 小时）；本机能力不受影响。{st.directory?.expires_at ? `设备目录有效至 ${fmtTime(st.directory.expires_at)}。` : ""}</div>
               </div>
             </div>
@@ -939,7 +940,7 @@ function PolicyTab() {
       </div>
       {(st.alerts ?? []).length > 0 && (
         <>
-          <div className="section-title">控制面告警（下发内容未通过本机核验而被拒绝，或须人工核对）</div>
+          <div className="section-title">需要管理员留意的事</div>
           <table className="data">
             <thead><tr><th>时间</th><th>范围</th><th>说明</th><th></th></tr></thead>
             <tbody>
@@ -958,7 +959,7 @@ function PolicyTab() {
       {(st.key_changes ?? []).length > 0 && (
         <>
           <div className="section-title">成员设备公钥变更（核对安全码后才替换）</div>
-          <p className="muted">请与该成员当面或电话核对：请对方在其设备“连接与数据 → 设备”页读出“本机安全码”，与下方一致才确认。确认前不会向新公钥包裹任何事项密钥；确认只影响本机今后向该设备包裹事项密钥。</p>
+          <p className="muted">请与该成员当面或电话核对：请对方在自己电脑的“设置 → 本机与安全”里读出“核对码”，与下方一致才确认。确认前不会向新公钥包裹任何事项密钥；确认只影响本机今后向该设备包裹事项密钥。</p>
           <table className="data">
             <thead><tr><th>成员</th><th>设备</th><th>对方读出的安全码</th></tr></thead>
             <tbody>

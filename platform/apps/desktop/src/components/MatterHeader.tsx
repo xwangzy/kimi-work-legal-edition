@@ -80,7 +80,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
             </div>
             <div className="protect-line">
               <span className="protect-k">案卷保存</span>
-              <span>这台电脑，已加密 · AI 通道：{ENDPOINT_LABELS[matter.model_endpoint] ?? matter.model_endpoint}</span>
+              <span>存在这台电脑，已加密 · 使用 {ENDPOINT_LABELS[matter.model_endpoint] ?? matter.model_endpoint}</span>
             </div>
             {(level === "L3a" || level === "L3b") && (
               <div className="protect-line">
@@ -98,7 +98,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
       </div>
       {refused && (
         <div className="mh-note mh-red">
-          当事人拒绝云端处理（记录）：按当事人限制（L3b）处理——不使用云端模型与联网检索，只能使用律所私有模型（如已部署）或本机能力；补录四项依据不改变这一点。如已取得新的书面同意，核实后再清除这条记录。
+          客户拒绝云端处理（已记录）：不用云端 AI，也不联网检索，只能用律所私有模型（如已部署）或本机能力；补填客户授权情况也不改变这一点。如已取得新的书面同意，核实后再清除这条记录。
           {onClearRefusal && (
             <button className="btn-link" onClick={onClearRefusal}>
               清除拒绝记录
@@ -116,7 +116,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
           )}
         </div>
       )}
-      {level === "L3b" && !refused && <div className="mh-note mh-red">当事人限制（L3b）：不使用云端模型与联网检索；任何管理员不可放开。</div>}
+      {level === "L3b" && !refused && <div className="mh-note mh-red">客户要求不上云：不用云端 AI，也不联网检索；任何人都不能放开。</div>}
     </div>
   );
 }

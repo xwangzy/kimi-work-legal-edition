@@ -87,6 +87,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const [risk, setRisk] = useState<{ total: number; highOpen: number; decided: number; docs: string[]; unlinked: number; bySeverity: { high: number; mid: number; low: number }; top: { severity: string; issue: string }[] } | null>(null);
   // 中栏“审查意见”入口带主按钮时，同屏其余动作都降为次按钮（每屏最多一个主按钮，Y4 V-5）
   const hasRiskEntry = !!risk && risk.docs.length > 0;
+  // 本任务最新的 Word 修订稿（审查意见全部处理完后，首屏主按钮下载它；Z3 评审 #3）
+  const revision = useMemo(() => [...artifacts].filter((a) => a.kind === "revision_draft").sort((a, b) => Number(b.version) - Number(a.version))[0] ?? null, [artifacts]);
   // 成果是否已取过一次（D-5：区分“加载中”与“确实没有”）
   const [artifactsLoaded, setArtifactsLoaded] = useState(false);
   // 律师是否自己点过右栏标签（有风险卡时缺省显示审查摘要，D-3；点过之后不再自动切换）
@@ -120,6 +122,19 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const cursor = useRef(0);
   const inflight = useRef(false);
   const terminal = TERMINAL_STATUSES.includes(status);
+  const downloadOne = (a: any) =>
+    void api
+      .downloadArtifact(a.artifact_version_id, a.filename)
+      .then((saved) => (saved ? api.deliver({ artifact_version_id: a.artifact_version_id, action: "download" }) : undefined))
+      .catch((e) => setErr(e.message));
+  const submitOne = async (a: any) => {
+    try {
+      await api.submitReview(a.artifact_version_id);
+      nav(`/review/${a.artifact_version_id}`);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
 
   const refresh = useCallback(async () => {
     // 单飞：定时器与内核广播可能同时触发；同一游标只取一次，按事件 ID 去重
@@ -601,11 +616,29 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             <div className="title">
               本任务提出了 {risk.total} 项审查意见{risk.highOpen > 0 ? `，其中 ${risk.highOpen} 项重大风险待你处理` : ""}
             </div>
-            <p className="muted">逐项接受、修改或不采纳后，可一键生成带修订痕迹和批注的 Word 修订稿（原件不改动）。已处理 {risk.decided}/{risk.total}。</p>
+            <p className="muted">
+              {risk.decided >= risk.total
+                ? revision
+                  ? `${risk.total} 项意见都已处理，修订稿已生成，可以下载或提交复核。`
+                  : `${risk.total} 项意见都已处理：在审查工作台生成带修订痕迹的 Word 修订稿（原件不改动）。`
+                : `逐项接受、修改或不采纳后，可一键生成带修订痕迹和批注的 Word 修订稿（原件不改动）。已处理 ${risk.decided}/${risk.total}。`}
+            </p>
+            {/* 全部处理完且已有修订稿：首屏主按钮换成“下载修订稿（Word）”，次按钮“提交复核”（Z3 评审 #3） */}
+            {risk.decided >= risk.total && revision && (
+              <div className="card-actions">
+                <button className="btn-primary" onClick={() => downloadOne(revision)}>下载修订稿（Word）</button>
+                {revision.status === "draft" && (
+                  <button className="btn-ghost" onClick={() => void submitOne(revision)}>提交复核</button>
+                )}
+                {revision.status === "pending_review" && (
+                  <button className="btn-ghost" onClick={() => nav(`/review/${revision.artifact_version_id}`)}>去复核 / 签发</button>
+                )}
+              </div>
+            )}
             <div className="card-actions">
               {risk.docs.map((d, i) => (
                 // 每屏最多一个黑色主按钮（Y4 V-5）：多份文书时只有第一份用主按钮
-                <button key={d} className={i === 0 ? "btn-primary" : "btn-ghost"} onClick={() => setWorkbench({ doc: d })}>
+                <button key={d} className={i === 0 && !(risk.decided >= risk.total && revision) ? "btn-primary" : "btn-ghost"} onClick={() => setWorkbench({ doc: d })}>
                   打开审查工作台{risk.docs.length > 1 ? `：${docs.find((x) => x.document_version_id === d)?.filename ?? ""}` : ""}
                 </button>
               ))}
@@ -648,6 +681,32 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             >
               在右侧查看全文 →
             </button>
+          </div>
+        )}
+        {/* 首屏下载入口（Z3 评审 #3）：没有审查意见的任务，完成后在中栏直接列出成果，不必先切右栏 */}
+        {terminal && !hasRiskEntry && (status === "succeeded" || status === "partial") && artifacts.length > 0 && (
+          <div className="card done-files">
+            <div className="title">本任务生成了 {artifacts.length} 份文件（草稿）</div>
+            <ul className="done-file-list">
+              {artifacts.slice(0, 4).map((a, i) => (
+                <li key={a.artifact_version_id}>
+                  <button
+                    className="btn-link"
+                    onClick={() => {
+                      tabTouched.current = true;
+                      setSelected(a.artifact_version_id);
+                      setTab("artifact");
+                    }}
+                  >
+                    {artifactName(a, (t) => restoredPlain(t, tokenMap))}
+                  </button>
+                  <span className="spacer" />
+                  <button className={i === 0 ? "btn-primary btn-sm" : "btn-ghost btn-sm"} onClick={() => downloadOne(a)}>
+                    {downloadLabel(String(a.filename ?? ""))}
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
         {/* 接着做（D-4）：同一事项下打开下一场景的开始面板 */}
@@ -729,7 +788,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               ["artifact", "成果"],
               ["history", "文件历史"],
               ["egress", "数据去向"],
-              ["citations", `引用${Number(citationEvent?.payload?.intercepted ?? 0) > 0 ? `（拦截 ${citationEvent!.payload.intercepted}）` : ""}`],
+              ["citations", `引用${Number(citationEvent?.payload?.intercepted ?? 0) > 0 ? ` · ${citationEvent!.payload.intercepted} 条无法核实` : ""}`],
               ["record", "记录"],
             ] as [RightTab, string][]
           ).map(([k, l]) => (

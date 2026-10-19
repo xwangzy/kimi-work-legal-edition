@@ -204,7 +204,7 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         steps.push({ key: `${e.event_id}`, icon: "ok", level: "detail", title: "助手已在本机启动", at });
         break;
       case "agent.started":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: `运行模式：${MODE_LABELS[p.mode as keyof typeof MODE_LABELS] ?? p.mode}${p.plan_first ? " · 先出计划" : ""}`, at, meta: `数据级别 ${p.data_level ?? "—"}` });
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: `运行模式：${MODE_LABELS[p.mode as keyof typeof MODE_LABELS] ?? p.mode}${p.plan_first ? " · 先给我看计划" : ""}`, at, meta: `数据级别 ${p.data_level ?? "—"}` });
         break;
       case "materials.loaded":
         steps.push({ key: `${e.event_id}`, level: "lawyer", icon: p.failed ? "fail" : "ok", title: Number(p.requested) === 0 ? "开始处理" : `已读完 ${p.loaded}/${p.requested} 份材料${p.failed ? `，${p.failed} 份无法读取` : ""}`, at });

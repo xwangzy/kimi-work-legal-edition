@@ -11,23 +11,10 @@ import { defaultChoice } from "../components/ModeSelector.tsx";
 import { NewMatterDialog } from "../components/NewMatter.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { ScenarioStart } from "../components/ScenarioStart.tsx";
-import { LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard } from "../lib/scenarios.ts";
-import { fmtShortTime, RUN_STATUS_LABELS, SCENARIO_LABELS } from "../lib/labels.ts";
-
-/** 任务状态胶囊的颜色：等你处理为橙、进行中为蓝、完成为绿、失败为红，其余灰。 */
-const STATUS_TONE: Record<string, string> = {
-  waiting_approval: "pill-orange",
-  waiting_input: "pill-orange",
-  reconciling: "pill-orange",
-  queued: "pill-blue",
-  running: "pill-blue",
-  succeeded: "pill-green",
-  partial: "pill-orange",
-  failed: "pill-red",
-  timed_out: "pill-red",
-  expired: "pill-gray",
-  cancelled: "pill-gray",
-};
+import { LINE_LABELS, pickMatterForCard, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard } from "../lib/scenarios.ts";
+import { fmtRelative, fmtTime, SCENARIO_LABELS } from "../lib/labels.ts";
+import { nextStepPill, type RunFacts } from "../lib/next-step.ts";
+import { backendDownText } from "../lib/errors.ts";
 
 const LINE_KEY = "kwl.home.line";
 function savedLine(): BusinessLine {
@@ -44,6 +31,11 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   const [matters, setMatters] = useState<Matter[]>([]);
   const [matterId, setMatterId] = useState<string | null>(presetMatterId ?? null);
   const [docs, setDocs] = useState<{ document_version_id: string; filename: string }[]>([]);
+  // docs 属于哪个事项（开始面板切换事项时据此判断新事项的材料是否已到）
+  const [docsFor, setDocsFor] = useState<string | null>(null);
+  const [mattersLoaded, setMattersLoaded] = useState(false);
+  // 继续工作：每个已完成任务的“下一步”事实（未处理意见、待复核成果、成果份数）
+  const [facts, setFacts] = useState<Record<string, RunFacts>>({});
   const [policy, setPolicy] = useState<RunPolicyView | null>(null);
   const [value, setValue] = useState<ComposerValue>({ goal: "", scenario: "a1.agent_task", documentIds: [], choice: defaultChoice(null) });
   const [pendingReview, setPendingReview] = useState<any[]>([]);
@@ -55,7 +47,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [line, setLine] = useState<BusinessLine>(savedLine);
-  const [starting, setStarting] = useState<{ card: ScenarioCard; extra?: string } | null>(null);
+  // 开始面板：事项在面板里可切换（Z3 评审 #1）；matterId 为 null 表示默认“新建事项”
+  const [starting, setStarting] = useState<{ card: ScenarioCard; extra?: string; matterId: string | null } | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const suggested = value.scenario === "a1.agent_task" ? suggestScenario(value.goal) : null;
   const suggestion = suggested && suggested.id !== dismissed ? suggested : null;
@@ -67,22 +60,28 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
       // 忽略
     }
   };
-  const openCard = (card: ScenarioCard, extra?: string) => {
-    if (!matters.find((m) => m.matter_id === matterId)) return setNewMatter(true);
-    setStarting({ card, ...(extra ? { extra } : {}) });
+  // 默认事项按卡片业务线挑（Z3 评审 #1：非诉卡不默认挂到诉讼事项上）；keep = 指定了事项（“接着做”）时照用
+  const openCard = (card: ScenarioCard, extra?: string, keep?: string) => {
+    const pick = keep && matters.some((m) => m.matter_id === keep) ? keep : pickMatterForCard(card, matters, matterId);
+    if (pick && pick !== matterId) setMatterId(pick);
+    setStarting({ card, ...(extra ? { extra } : {}), matterId: pick });
+  };
+  const switchStartMatter = (id: string) => {
+    setMatterId(id);
+    setStarting((s) => (s ? { ...s, matterId: id } : s));
   };
   // 从“方法与模板”页进入（#/start/<场景>）：事项载入后打开该场景的开始面板一次，并把地址还原为首页
   const startedFrom = useRef<string | null>(null);
   useEffect(() => {
-    if (!startScenario || startedFrom.current === startScenario || matterId === null || !matters.some((m) => m.matter_id === matterId)) return;
+    if (!startScenario || startedFrom.current === startScenario || !mattersLoaded) return;
     const card = SCENARIOS.find((c) => c.id === startScenario);
     startedFrom.current = startScenario;
     if (card) {
       setLine(card.line);
-      openCard(card);
+      openCard(card, undefined, presetMatterId);
     }
     window.history.replaceState(null, "", "#/");
-  }, [startScenario, matterId, matters]);
+  }, [startScenario, mattersLoaded, matters]);
 
   const sampleTried = useRef(false);
   const loadMatters = useCallback(() => {
@@ -102,9 +101,10 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
             .catch(() => {});
         }
         setMatters(open);
+        setMattersLoaded(true);
         setMatterId((cur) => (cur && open.some((m) => m.matter_id === cur) ? cur : open[0]?.matter_id ?? null));
       })
-      .catch((e) => setMsg(`${e.message}（请确认内核已启动：桌面客户端内嵌，或开发桥 127.0.0.1:7720）`));
+      .catch(() => setMsg(backendDownText(import.meta.env.DEV)));
   }, []);
   useEffect(() => {
     loadMatters();
@@ -122,6 +122,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
       .getMatter(id)
       .then((r) => {
         setDocs(r.documents.filter((d: any) => !d.quarantined_at));
+        setDocsFor(id);
         setPolicy(r.run_policy ?? null);
         setValue((v) => ({ ...v, documentIds: v.documentIds.filter((d) => r.documents.some((x: any) => x.document_version_id === d)), choice: defaultChoice(r.run_policy) }));
       })
@@ -130,6 +131,31 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   useEffect(() => {
     if (matterId) loadMatter(matterId);
   }, [matterId, loadMatter]);
+  // “下一步”胶囊的事实：已完成的任务再取审查意见进度与本任务成果（本机内核，最多 5 个任务）
+  useEffect(() => {
+    const done = recent.filter((r) => r.status === "succeeded" || r.status === "partial");
+    if (done.length === 0) return;
+    let live = true;
+    void (async () => {
+      const arts = new Map<string, any[]>();
+      for (const mid of [...new Set(done.map((r) => r.matter_id))]) arts.set(mid, (await api.listArtifacts(mid).catch(() => ({ artifacts: [] as any[] }))).artifacts);
+      const out: Record<string, RunFacts> = {};
+      for (const r of done) {
+        const rc = await api.riskCards(r.matter_id, { run_id: r.run_id }).catch(() => null);
+        const mine = (arts.get(r.matter_id) ?? []).filter((a) => a.run_id === r.run_id);
+        out[r.run_id] = {
+          status: r.status,
+          openOpinions: rc ? Math.max(0, rc.progress.total - rc.progress.decided) : 0,
+          pendingReview: mine.filter((a) => a.status === "pending_review").length,
+          artifacts: mine.length,
+        };
+      }
+      if (live) setFacts(out);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [recent]);
 
   const submit = async () => {
     const matter = matters.find((m) => m.matter_id === matterId);
@@ -184,6 +210,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
           onImport={(f) => void importFiles(f)}
           onSubmit={() => void submit()}
           busy={busy}
+          onPickScenario={(c) => openCard(c, value.goal.replace(/\/$/, "").trim() || undefined)}
           suggestion={
             suggestion
               ? {
@@ -198,7 +225,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
         {msg && <p className="muted home-msg">{msg}</p>}
         {matters.length === 0 && (
           <div className="panel empty-panel">
-            <p>先建一个事项：案卷在这台电脑上处理与保存，事项头写明立场、密级与四项依据。</p>
+            <p>先建一个事项：案卷在这台电脑上处理与保存。建事项时写明我方立场、敏感程度和客户授权情况。</p>
             <button className="btn-primary" onClick={() => setNewMatter(true)}>新建事项</button>
           </div>
         )}
@@ -252,18 +279,28 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
         </section>
         {recent.length > 0 && (
           <section>
-            <div className="section-title">继续工作</div>
+            <div className="section-title section-title-row">
+              继续工作
+              {matterId && (
+                <button className="btn-link" onClick={() => nav(`/matter/${matterId}`)}>
+                  本事项全部任务 →
+                </button>
+              )}
+            </div>
             <ul className="recent-list">
-              {recent.map((r) => (
+              {recent.map((r) => {
+                const pill = nextStepPill(facts[r.run_id] ?? { status: r.status });
+                return (
                 <li key={r.run_id}>
                   <button className="recent-row" onClick={() => nav(`/run/${r.run_id}/${r.matter_id}`)}>
                     <span className="recent-goal">{r.goal || SCENARIO_LABELS[r.scenario] || "任务"}</span>
                     <span className="muted">{r.matter_title}</span>
-                    <span className={`pill ${STATUS_TONE[r.status] ?? "pill-gray"}`}>{RUN_STATUS_LABELS[r.status] ?? r.status}</span>
-                    <span className="muted recent-time">{fmtShortTime(r.updated_at)}</span>
+                    <span className={`pill ${pill.tone}`}>{pill.text}</span>
+                    <span className="muted recent-time" title={fmtTime(r.updated_at)}>{fmtRelative(r.updated_at)}</span>
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </section>
         )}
@@ -271,6 +308,23 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
           所有场景都在试用阶段：结果是草稿，须律师复核后使用。也可以直接在上面描述任务。更多方法见 <button className="btn-link" onClick={() => nav("/methods")}>方法与模板</button>。
         </p>
       </div>
+      {sheet && <RunSheet pending={sheet} onClose={() => setSheet(null)} />}
+      {starting && (
+        <ScenarioStart
+          card={starting.card}
+          matter={matters.find((m) => m.matter_id === starting.matterId) ?? null}
+          matters={matters}
+          onMatterChange={switchStartMatter}
+          onNewMatter={() => setNewMatter(true)}
+          documentsFor={docsFor}
+          documents={docs}
+          policy={policy}
+          {...(starting.extra ? { initialExtra: starting.extra } : {})}
+          onImport={(f) => importFiles(f)}
+          onClose={() => setStarting(null)}
+        />
+      )}
+      {/* 新建事项放在开始面板之后渲染：从面板里“新建事项”时盖在面板上面，建好后面板直接选中它 */}
       {newMatter && (
         <NewMatterDialog
           onClose={() => setNewMatter(false)}
@@ -278,19 +332,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
             setNewMatter(false);
             setMatters((ms) => [m, ...ms]);
             setMatterId(m.matter_id);
+            setStarting((st) => (st ? { ...st, matterId: m.matter_id } : st));
           }}
-        />
-      )}
-      {sheet && <RunSheet pending={sheet} onClose={() => setSheet(null)} />}
-      {starting && matterId && matters.find((m) => m.matter_id === matterId) && (
-        <ScenarioStart
-          card={starting.card}
-          matter={matters.find((m) => m.matter_id === matterId)!}
-          documents={docs}
-          policy={policy}
-          {...(starting.extra ? { initialExtra: starting.extra } : {})}
-          onImport={(f) => importFiles(f)}
-          onClose={() => setStarting(null)}
         />
       )}
     </main>

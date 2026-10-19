@@ -488,6 +488,12 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .confirm-q { font-size: var(--fs-sm); color: var(--text-secondary); }
 .ss { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .ss-sub { font-size: var(--fs-sm); }
+.ss-matter { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); flex-wrap: wrap; }
+.ss-matter-pick { position: relative; min-width: 0; }
+.ss-matter-pick .chip { max-width: 420px; }
+.ss-matter-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-matter-menu { position: absolute; top: calc(100% + 4px); left: 0; bottom: auto; right: auto; width: 420px; max-height: 320px; overflow: auto; z-index: 30; }
+.ss-mismatch { font-size: var(--fs-sm); }
 .ss-sec { border: 1px solid var(--border-subtle); border-radius: var(--r-md); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
 .ss-h { font-weight: 600; font-size: var(--fs-base); }
 .ss-hint { font-size: var(--fs-sm); color: var(--text-secondary); }
@@ -497,7 +503,7 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .ss-doc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ss-add { align-self: flex-start; padding: 2px 0; font-size: var(--fs-sm); }
 .ss-need { color: var(--status-warning-text); font-size: var(--fs-sm); }
-.ss-field { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: center; font-size: var(--fs-sm); }
+.ss-field { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: center; font-size: var(--fs-sm); }
 .ss-label { color: var(--text-strong); }
 .ss-req { color: var(--status-danger-text); margin-left: 2px; }
 .ss-multi { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -785,3 +791,14 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .members-table th { text-align: left; color: var(--text-label); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); }
 .members-table td { padding: 8px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; }
 .members-check { font-family: var(--font-mono); letter-spacing: 0.04em; }
+/* 交付件列表（Z3 评审 #2）：按事项分组、每行直接下载 */
+table.data.deliverables tr.dl-group td { background: var(--bg-subtle); font-weight: 500; padding-top: 10px; }
+table.data.deliverables td.dl-actions { white-space: nowrap; text-align: right; }
+table.data.deliverables td.dl-actions .btn-link + .btn-link { margin-left: 12px; }
+table.data.deliverables th.dl-actions-h { text-align: right; }
+.section-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+/* 执行页首屏的成果与下载（Z3 评审 #3） */
+.done-files .done-file-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.done-files .done-file-list li { display: flex; align-items: center; gap: 8px; }
+.menu-group { font-size: var(--fs-xs); color: var(--text-secondary); padding: 8px 10px 2px; border-top: 1px solid var(--border-subtle); margin-top: 4px; }
+.tab-more { min-width: 40px; }
