@@ -87,6 +87,7 @@ import { estimatePoints, scenarioCap } from "../services/estimate.ts";
 import { docxRenderReport } from "../tools/tools/docx.ts";
 import { extractParagraphs, renderDocxHtml, renderXlsxHtml } from "@zr-legal/docx-engine";
 import { isToolOperationInFlight } from "../local-server.ts";
+import { artifactCitationBlock, checkArtifactCitations, type ArtifactCitationCheck } from "../services/artifact-citations.ts";
 
 export interface ApiDeps {
   db: KernelDb;
@@ -302,6 +303,18 @@ function liveAgentRunOf(db: KernelDb, matterId: string): { run_id: string; goal:
   if (!r) return null;
   const goal = String(parseJson<any>(r.input_snapshot, {})?.goal ?? "").replace(/\s+/g, " ").slice(0, 24);
   return { run_id: r.run_id, goal };
+}
+
+/** 成果文件的引用核验（第 13 批）：适用时点取事项的分析截止日，缺省今天。 */
+function artifactCitationsFor(db: KernelDb, blobs: BlobStore, lawdb: Lawdb, art: { matter_id: string; filename: string; storage_uri: string }): ArtifactCitationCheck | null {
+  try {
+    const m = db.get<{ key_dates: string | null }>(`SELECT key_dates FROM matters WHERE matter_id = ?`, [art.matter_id]);
+    const kd = parseJson<Record<string, unknown>>(m?.key_dates ?? "{}", {});
+    const asOf = typeof kd.analysis_as_of === "string" && /^\d{4}-\d{2}-\d{2}$/.test(kd.analysis_as_of) ? kd.analysis_as_of : new Date().toISOString().slice(0, 10);
+    return checkArtifactCitations(lawdb, String(art.filename), blobs.read(String(art.storage_uri)), asOf);
+  } catch {
+    return null;
+  }
 }
 
 export function createApi(deps: ApiDeps): Record<string, Handler> {
@@ -1751,6 +1764,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       }
       const sk = deps.skills;
       const lawyerChecklist = skillId && sk?.ok ? skillQualityChecklist(sk.dir, skillId) : [];
+      const artCitations = artifactCitationsFor(db, blobs, lawdb, art as any);
       return {
         artifact_version_id: art.artifact_version_id,
         matter_id: art.matter_id,
@@ -1769,12 +1783,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           audience_check: art.audience === "internal" ? "内部稿（不得外发）" : "受众净化待确认",
           ai_marking: "显式（文档属性含 AI 辅助起草标识）",
           egress: egressSummary,
+          // 成果文件自身的引用核验（第 13 批）：签发门禁同一判定
+          artifact_citations: artCitations,
         },
         lawyer_checklist: { skill: lawyerChecklist.length ? skillId : null, items: lawyerChecklist },
         blockers: [
           ...(fileOk ? [] : ["文件完整性校验失败"]),
           ...(openItems.length > 0 ? ["存在未决项，签发人须逐项确认"] : []),
           ...(unverifiedOffline > 0 ? [`存在 ${unverifiedOffline} 条未核实（离线）的引用（案号离线未核），不得签发，联网补核或改引后再提交`] : []),
+          ...(artCitations && artCitations.wrong > 0 ? [`成果里有 ${artCitations.wrong} 条引用核对不通过（条号不存在、已改号或当时没有有效版本），改正后再签发`] : []),
+          ...(artCitations && artCitations.unverified_offline > 0 ? [`成果里有 ${artCitations.unverified_offline} 个案号离线无法核实，联网补核或改引后再签发`] : []),
+          ...(artCitations && artCitations.outside_registry > 0 ? [`成果里有 ${artCitations.outside_registry} 条引用不在本机法规库里，须逐条人工核对并勾选后才能签发`] : []),
           ...(art.version === latest.v ? [] : ["已有更新版本，本版不得签发（批准不跨版本）"]),
         ],
       };
@@ -1810,6 +1829,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           throw new DomainError("unverified_citations", `存在 ${unverified} 条未核实（离线）的引用（案号离线未核）：该引用不得进入签发版。联网补核或改引后再签发`, 409, {
             unverified_offline: unverified,
           });
+        }
+        // 成果文件自身的引用核验（第 13 批）：定性错误与离线案号不得签发；法规库未收录的须律师勾选“已逐条人工核对”
+        const ac = artifactCitationsFor(db, blobs, lawdb, art as any);
+        const acBlock = ac ? artifactCitationBlock(ac, checklistObj) : null;
+        if (acBlock) {
+          throw new DomainError("unverified_citations", acBlock.message, 409, { artifact_citations: { code: acBlock.code, wrong: ac!.wrong, unverified_offline: ac!.unverified_offline, outside_registry: ac!.outside_registry } });
         }
         // 设备签名签发（§6.3）：绑定最终字节 hash——重算成果内容，与登记不符即拒签
         let actual: string;
@@ -2761,9 +2786,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     // ─── 法规库状态（§9：界面显示「法规库最后更新日」；签名无效时内核已拒载，不会走到这里） ───
     "lawdb.status": (_p, _id) => {
       const st = lawdb.status();
+      // 覆盖范围如实说（第 13 批，评审 Z1）：收录不足 50 部即“演示范围”——多数引用无法自动核对，复核页要求逐条人工核对
+      const level = st.laws_count < 50 ? "sample" : st.laws_count < 300 ? "partial" : "standard";
+      const scope = level === "sample" ? `目前只收录 ${st.laws_count} 部法律法规、${st.articles_count} 条正文（演示范围），多数引用无法自动核对` : `收录 ${st.laws_count} 部 / ${st.versions_count} 个版本`;
       return {
         ...st,
-        display: `法规库最后更新 ${st.built_at.slice(0, 10)} · ${st.laws_count} 部 / ${st.versions_count} 版本 · 签名有效（${st.signer_key_id}）`,
+        coverage: { level, laws: st.laws_count, articles: st.articles_count },
+        display: `${scope} · 法规库最后更新 ${st.built_at.slice(0, 10)} · 签名有效`,
       };
     },
 

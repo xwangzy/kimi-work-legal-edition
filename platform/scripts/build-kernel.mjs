@@ -4,7 +4,7 @@
  * 用法：node scripts/build-kernel.mjs [--watch]
  */
 import { build, context } from "esbuild";
-import { cpSync, mkdirSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -18,7 +18,14 @@ cpSync(`${root}packages/kernel/src/migrations`, `${root}apps/desktop/electron/mi
 try {
   cpSync(`${root}content/lawdb/dist/lawdb.sqlite`, `${root}apps/desktop/electron/lawdb/lawdb.sqlite`, { recursive: true });
   cpSync(`${root}content/lawdb/dist/lawdb.manifest.json`, `${root}apps/desktop/electron/lawdb/lawdb.manifest.json`, { recursive: true });
-  cpSync(`${root}content/keys/content-signing-dev.pub.json`, `${root}apps/desktop/electron/lawdb/content-signing.pub.json`, { recursive: true });
+  // 内容签名公钥（第 13 批，评审 Z4 P0-3）：正式发布经 KWL_CONTENT_SIGNING_PUB_FILE 给出生产公钥（私钥在签名服务/硬件模块）；
+  // 未给出时随包开发公钥并写明 dev:true——内核据此在状态里如实报告，打包脚本对正式 release.json 拒收
+  const prodPub = process.env.KWL_CONTENT_SIGNING_PUB_FILE;
+  const pubSrc = prodPub ? JSON.parse(readFileSync(prodPub, "utf8")) : { ...JSON.parse(readFileSync(`${root}content/keys/content-signing-dev.pub.json`, "utf8")), dev: true };
+  if (typeof pubSrc.publicKeyPem !== "string" || !pubSrc.publicKeyPem.includes("BEGIN PUBLIC KEY")) throw new Error("内容签名公钥文件缺少 publicKeyPem");
+  if (prodPub && pubSrc.dev) throw new Error("KWL_CONTENT_SIGNING_PUB_FILE 指向的是开发公钥（dev:true）");
+  mkdirSync(`${root}apps/desktop/electron/lawdb`, { recursive: true });
+  writeFileSync(`${root}apps/desktop/electron/lawdb/content-signing.pub.json`, JSON.stringify({ publicKeyPem: pubSrc.publicKeyPem, ...(pubSrc.dev ? { dev: true } : {}) }, null, 2));
   console.log("[build-kernel] lawdb 产物已随包复制（apps/desktop/electron/lawdb/）");
   // 工具清单锁文件（审查 R-08）随包分发；内核按 <bundle>/tool-manifest/ 解析
   cpSync(`${root}content/tool-manifest/dist`, `${root}apps/desktop/electron/tool-manifest`, { recursive: true });

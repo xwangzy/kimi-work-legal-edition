@@ -30,6 +30,9 @@ test("lawdb.status：版本/更新日/签名有效；加载留痕上链", async 
   assert.equal(st.laws_count, 3);
   assert.equal(st.versions_count, 4);
   assert.match(st.display, /法规库最后更新/);
+  // 覆盖范围如实说（第 13 批）：演示法规库不足 50 部 → sample，说明里直说多数引用无法自动核对
+  assert.equal(st.coverage.level, "sample");
+  assert.match(st.display, /演示范围.*无法自动核对/);
   const row = tk.kernel.db.get(`SELECT * FROM audit_events WHERE action = 'lawdb.load' AND object_id = ?`, [st.package_version]) as any;
   assert.ok(row, "lawdb.load 审计事件应落库");
   const onChain = tk.kernel.db.get(`SELECT 1 AS x FROM signed_events WHERE kind = 'audit_event' AND ref_id = ?`, [String(row.audit_event_id)]) as any;

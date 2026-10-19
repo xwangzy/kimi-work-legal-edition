@@ -1,0 +1,87 @@
+/**
+ * 成果文件的引用核验与签发门禁（第 13 批；评审 Z1 P0-5）：Agent 任务成果里的引用按成果文字离线核验——
+ * 定性错误与离线案号不得签发；本机法规库未收录的法源须律师勾选“已逐条人工核对”；取不到文字的成果不核验。
+ * 再走一遍内核签发链：成果含法规库外的引用 → 未勾选被拒、勾选后签发成功；含错误条号 → 勾选也不行。
+ */
+import { test, after } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { openLawdb } from "@zr-legal/lawdb";
+import { createDocx } from "@zr-legal/docx-engine";
+import { artifactCitationBlock, checkArtifactCitations, CITATIONS_MANUAL_CHECK_KEY } from "../src/services/artifact-citations.ts";
+import { makeKernel, type TestKernel } from "./helpers.ts";
+
+const repo = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
+const signerPub = (JSON.parse(readFileSync(repo("content/keys/content-signing-dev.pub.json"), "utf8")) as { publicKeyPem: string }).publicKeyPem;
+const lawdb = openLawdb(repo("content/lawdb/dist/lawdb.sqlite"), { expectedSignerPubPem: signerPub });
+
+test("分类：已收录且条号正确为已核；条号超范围为错误；法规库未收录须人工核对；案号离线未核实", () => {
+  const text = [
+    "依据《民法典》第五百八十五条，违约金可以调整。",
+    "《民法典》第一千三百条规定……",
+    "《公司法》第一百八十八条规定董事的忠实义务。",
+    "参见（2023）最高法民终123号判决。",
+  ].join("\n");
+  const c = checkArtifactCitations(lawdb, "研究备忘录.md", Buffer.from(text), "2026-10-01");
+  assert.equal(c.checked, true);
+  assert.equal(c.verified, 1);
+  assert.equal(c.wrong, 1, "民法典只有 1260 条");
+  assert.equal(c.outside_registry, 1, "公司法不在演示法规库");
+  assert.equal(c.unverified_offline, 1);
+  assert.equal(artifactCitationBlock(c, {})?.code, "wrong");
+  // docx 取可见文字
+  const docx = createDocx("备忘录", [{ heading: "结论", paragraphs: ["《公司法》第一百八十八条"] }]);
+  const d = checkArtifactCitations(lawdb, "备忘录.docx", docx, "2026-10-01");
+  assert.equal(d.outside_registry, 1);
+  assert.equal(artifactCitationBlock(d, {})?.code, "outside");
+  assert.equal(artifactCitationBlock(d, { [CITATIONS_MANUAL_CHECK_KEY]: true }), null);
+  assert.equal(artifactCitationBlock(d, { [CITATIONS_MANUAL_CHECK_KEY]: "yes" })?.code, "outside", "只认布尔 true");
+  // 取不到文字的成果不核验、不阻断
+  const x = checkArtifactCitations(lawdb, "表格.xlsx", Buffer.from("PK"), "2026-10-01");
+  assert.equal(x.checked, false);
+  assert.equal(artifactCitationBlock(x, {}), null);
+});
+
+let tk: TestKernel | null = null;
+after(async () => {
+  await tk?.kernel.close().catch(() => {});
+});
+
+test("签发链：成果含法规库外的引用须勾选人工核对；含错误条号勾选也不能签发；复核页列出阻断理由", { timeout: 120_000 }, async () => {
+  tk = await makeKernel({}, "artcite-firm");
+  const { inv, kernel } = tk;
+  const { matter } = await inv("matters.create", { title: "引用门禁", stance: "原告", consent_status: "not_required", key_dates: { analysis_as_of: "2026-10-01" } });
+  // 直接登记成果（模拟 Agent 任务产出：块存储 + 成果表），只测签发门禁
+  const { randomUUID } = await import("node:crypto");
+  const ident = (kernel as any).identity as { tenantId: string; userId: string };
+  const reg = (filename: string, text: string) => {
+    const bytes = createDocx("成果", [{ heading: "正文", paragraphs: [text] }]);
+    const { sha256, storage_uri } = kernel.blobs.put(bytes, matter.matter_id);
+    const id = `artv_${randomUUID()}`;
+    kernel.db.run(
+      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, audience, version, filename, sha256, storage_uri, status, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?, 'pending_review', ?)`,
+      [id, ident.tenantId, matter.matter_id, null, `test_${filename}`, "internal", 1, filename, sha256, storage_uri, ident.userId],
+    );
+    return { artifact_version_id: id, sha256 };
+  };
+  {
+    const outside = reg("备忘录.docx", "依据《公司法》第一百八十八条，董事负有忠实义务。");
+    const comp = await inv("review.completeness", { artifact_version_id: outside.artifact_version_id });
+    assert.equal(comp.completeness.artifact_citations.outside_registry, 1);
+    assert.ok(comp.blockers.some((b: string) => b.includes("不在本机法规库")));
+    await assert.rejects(
+      () => inv("review.approve", { artifact_version_id: outside.artifact_version_id, decision: "approved", expected_sha256: outside.sha256, checklist: {} }),
+      (e: any) => e.code === "unverified_citations" && /人工核对/.test(e.message),
+    );
+    const ok = await inv("review.approve", { artifact_version_id: outside.artifact_version_id, decision: "approved", expected_sha256: outside.sha256, checklist: { [CITATIONS_MANUAL_CHECK_KEY]: true } });
+    assert.ok(ok);
+
+    const wrong = reg("起诉状.docx", "根据《民法典》第一千三百条，被告应当赔偿。");
+    await assert.rejects(
+      () => inv("review.approve", { artifact_version_id: wrong.artifact_version_id, decision: "approved", expected_sha256: wrong.sha256, checklist: { [CITATIONS_MANUAL_CHECK_KEY]: true } }),
+      (e: any) => e.code === "unverified_citations" && /核对不通过/.test(e.message),
+    );
+  }
+});

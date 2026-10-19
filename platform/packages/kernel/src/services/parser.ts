@@ -4,6 +4,7 @@
  * 中文合同保真度以 G0 同台评测为准。v0 解析结果一律打 quality_flags，如实降级。
  */
 import { DomainError } from "@zr-legal/domain";
+import { xlsxToText } from "@zr-legal/docx-engine";
 import { listEntries, readEntry, readEntryText } from "./zip.ts";
 
 export interface ParseOutcome {
@@ -37,7 +38,7 @@ export function decodePlainText(buf: Buffer): { text: string; encoding: "utf-8" 
 
 export function parseDocument(filename: string, mime: string, buf: Buffer): ParseOutcome {
   const lower = filename.toLowerCase();
-  if (mime.startsWith("text/") || lower.endsWith(".txt") || lower.endsWith(".md")) {
+  if (mime.startsWith("text/") || lower.endsWith(".txt") || lower.endsWith(".md") || lower.endsWith(".csv")) {
     const decoded = decodePlainText(buf);
     return {
       text: decoded.text,
@@ -62,13 +63,29 @@ export function parseDocument(filename: string, mime: string, buf: Buffer): Pars
       parserVersion: PARSER_VERSION,
     };
   }
+  // XLSX（第 13 批）：只取单元格的值，逐表逐行转成文字（不执行公式、不读外部链接）
+  if (lower.endsWith(".xlsx") || mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+    let r: { text: string; sheets: number; truncated: boolean };
+    try {
+      r = xlsxToText(buf);
+    } catch {
+      throw new DomainError("unsupported_file", "这份表格打不开（文件可能已损坏或不是 xlsx），请另存为 xlsx 或 csv 后再导入", 422);
+    }
+    return {
+      text: r.text,
+      pageCount: null,
+      qualityFlags: ["xlsx_values_only", ...(r.truncated ? ["xlsx_truncated"] : [])],
+      parser: "xlsx-values",
+      parserVersion: PARSER_VERSION,
+    };
+  }
   if (lower.endsWith(".pdf") || mime === "application/pdf") {
     // 生产：PDF 文本层 + OCR（文档服务）；v0 不伪造解析能力
     throw new DomainError("unsupported_file", "PDF 解析待文档服务接入（G0 第 3–4 周）；v0 支持 DOCX/TXT", 422, {
       supported: ["docx", "txt", "md"],
     });
   }
-  throw new DomainError("unsupported_file", `不支持的文件类型 ${mime}（v0 支持 DOCX/TXT/MD）`, 422);
+  throw new DomainError("unsupported_file", `不支持的文件类型 ${mime}（支持 DOCX、XLSX、PDF、图片、TXT、MD、CSV）`, 422);
 }
 
 /**

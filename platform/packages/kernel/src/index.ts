@@ -808,6 +808,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     api["kernel.status"] = async (p, id) => ({
       ...((await baseStatus(p, id)) as Record<string, unknown>),
       onboarding: onboarding ? onboarding.status() : null,
+      // 内容签名公钥来源（第 13 批，评审 Z4 P0-3）：dev = 开发公钥（测试构建），release = 正式公钥
+      content_key: config.contentKeyDev ? "dev" : "release",
       activation: config.onboarding ? null : activationInfo(config, firm, identity),
     });
   }

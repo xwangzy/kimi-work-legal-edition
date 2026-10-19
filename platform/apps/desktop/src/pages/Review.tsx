@@ -82,6 +82,9 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   }, [data?.artifact_version_id]);
 
   const items: string[] = data?.lawyer_checklist?.items ?? [];
+  // 成果里不在本机法规库的引用（第 13 批）：系统核对不了，律师逐条人工核对后勾选才能签发
+  const outside: { raw: string }[] = (data?.completeness?.artifact_citations?.items ?? []).filter((i: any) => i.kind === "outside");
+  const [citationsChecked, setCitationsChecked] = useState(false);
   const act = useCallback(
     async (decision: "approved" | "rejected") => {
       setBusy(true);
@@ -91,7 +94,14 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
           decision,
           expected_sha256: data.sha256,
           // 人工核对的勾选只作留痕（不代表系统验证）
-          checklist: { reviewed_open_items: ack, lawyer_checked: [...checked].sort((a, b) => a - b), lawyer_items: items.length, skill: data.lawyer_checklist?.skill ?? null, at: new Date().toISOString() },
+          checklist: {
+            reviewed_open_items: ack,
+            lawyer_checked: [...checked].sort((a, b) => a - b),
+            lawyer_items: items.length,
+            skill: data.lawyer_checklist?.skill ?? null,
+            ...(outside.length > 0 ? { citations_outside_registry_checked: citationsChecked } : {}),
+            at: new Date().toISOString(),
+          },
         });
         reload();
       } catch (e) {
@@ -100,7 +110,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
         setBusy(false);
       }
     },
-    [artifactId, data, ack, checked, items.length, reload],
+    [artifactId, data, ack, checked, items.length, reload, outside.length, citationsChecked],
   );
 
   const latest = !!data?.is_latest_version;
@@ -151,6 +161,21 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                 </div>
               )}
               {data.blockers.length > 0 && <div className="banner banner-orange">签发前须处理：{data.blockers.join("；")}</div>}
+
+              {outside.length > 0 && (
+                <div className="banner banner-orange">
+                  这些引用不在本机法规库里，系统没法自动核对，请逐条查原文核对：
+                  <ul>
+                    {outside.slice(0, 20).map((c, i) => (
+                      <li key={i}>{c.raw}</li>
+                    ))}
+                  </ul>
+                  {outside.length > 20 && <div className="muted">另有 {outside.length - 20} 条，见成果原文。</div>}
+                  <label>
+                    <input type="checkbox" checked={citationsChecked} onChange={(e) => setCitationsChecked(e.target.checked)} /> 已逐条人工核对上面的引用
+                  </label>
+                </div>
+              )}
 
               <div className="section-title">你来核对</div>
               {items.length > 0 ? (

@@ -188,9 +188,8 @@ function toolCtx(run: RunRow, runId: string, attemptId: string): { claims: any &
  * 插入新尝试行、把 queued（恢复重置）或 running 推进为 running；事件按 seq 唯一约束不重复。
  * 注意：不得放进 ctx.step 检查点（否则恢复时状态迁移被跳过，任务停在 queued 无法结算——探针 11 回归项）。
  *
- * 引用核验覆盖边界（如实声明）：citations.verify（含案号「未核实（离线）」→ 签发门禁）G0 只挂在
- * S1 默认路径（load_materials → verify_citations）；S1b/S2/S6/A1 成果的引用核验步骤在 W10
- * （法源与核验工作包）补齐，其案号引用暂不受 unverified_citations 门禁约束。
+ * 引用核验覆盖（第 13 批起）：S1 默认路径在运行中核验材料（load_materials → verify_citations）；此外任何成果在复核与签发时
+ * 按成果文件自身的文字再核验一次（services/artifact-citations.ts）——定性错误与离线案号不得签发，法规库未收录的须律师勾选人工核对。
  */
 async function stepStart(ctx: Ctx, runId: string): Promise<{ attemptId: string; fence: number }> {
   const { db } = ctx.deps;

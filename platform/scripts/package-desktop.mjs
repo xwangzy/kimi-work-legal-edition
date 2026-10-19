@@ -161,6 +161,18 @@ for (const f of readdirSync(join(stage, "electron"))) if (/^agent-host/.test(f))
 if (readFileSync(join(stage, "electron/kernel.bundle.cjs"), "utf8").includes("createKimiHarness")) throw new Error("内核制品含已退役的 SDK 宿主入口（createKimiHarness）：先重新构建内核");
 log(`暂存完成 → ${stage}`);
 
+// 正式发布门禁（第 13 批，评审 Z4 P0-3）：放了 release.json 的安装包不得随包开发内容签名公钥、不得用测试代码签名证书——
+// 只有 release.json 明确写 "test_build": true（CI 与内部测试）才放行
+{
+  const rel = existsSync(join(desktop, "electron/release.json")) ? JSON.parse(readFileSync(join(desktop, "electron/release.json"), "utf8")) : null;
+  const pubDev = JSON.parse(readFileSync(join(stage, "electron/lawdb/content-signing.pub.json"), "utf8")).dev === true;
+  if (rel && rel.test_build !== true) {
+    if (pubDev) throw new Error("正式发布（release.json 未标 test_build）不得随包开发内容签名公钥：请用 KWL_CONTENT_SIGNING_PUB_FILE 给出生产公钥并重新构建内核");
+    if (sign === "dev" || sign === "none") throw new Error(`正式发布（release.json 未标 test_build）不得用 --sign ${sign}：须用正式代码签名证书（--sign env）`);
+  }
+  if (pubDev) log("提示：随包的是开发内容签名公钥——本安装包只能用于测试");
+}
+
 // ── 4. electron-builder ────────────────────────────────────────────────
 const env = { ...process.env };
 if (sign === "dev") {

@@ -31,6 +31,8 @@ export interface KernelConfig {
   lawdbFile: string;
   /** 内容签名公钥 PEM（验签法规库包；随客户端内置）。 */
   lawdbSignerPub: string;
+  /** 内容签名公钥是不是开发公钥（第 13 批：开发公钥的私钥在开发机上，不能用于对外发布；状态如实报告）。 */
+  contentKeyDev: boolean;
   /** OCR 模型目录（§8.1：PP-OCRv5 mobile 三模型 + 字典；缺失时 OCR 路径如实报不可用）。 */
   ocrModelDir: string;
   /** 签名法律 Agent profile 路径（§4.3：A1 任务注入 agentFiles；验签失败任务失败关闭）。 */
@@ -209,7 +211,7 @@ function firstExisting(paths: (string | undefined)[]): string | undefined {
  * 核验它的公钥；在线更新的法规库装在 <工作区>/content/ 下，由账本登记与签名通道清单决定是否选用（services/content-updates.ts）。
  * 全部缺失时返回仓库开发路径（openLawdb 将以中文报错提示先运行 build:lawdb——不静默降级）。
  */
-function resolveLawdb(env: NodeJS.ProcessEnv, workspaceDir: string): { lawdbFile: string; lawdbSignerPub: string } {
+function resolveLawdb(env: NodeJS.ProcessEnv, workspaceDir: string): { lawdbFile: string; lawdbSignerPub: string; contentKeyDev: boolean } {
   const bundleDir = typeof __dirname !== "undefined" ? __dirname : undefined;
   // Electron 安装包形态：法规库经 extraResources 放在 resources/lawdb/（asar 外的真文件）。bundleDir 在 asar 内——
   // 原生 SQLite 走 OS 层打不开 asar 虚拟路径，而 Electron 补丁过的 fs.existsSync 对 asar 路径却返回 true，
@@ -225,17 +227,21 @@ function resolveLawdb(env: NodeJS.ProcessEnv, workspaceDir: string): { lawdbFile
 
   const devPub = repoContentPath("keys", "content-signing-dev.pub.json");
   let lawdbSignerPub = env.ZR_LAWDB_SIGNER_PUB ?? "";
+  let contentKeyDev = !lawdbSignerPub;
   if (!lawdbSignerPub) {
     const pubFile = firstExisting([resourcesLawdb ? join(resourcesLawdb, "content-signing.pub.json") : undefined, bundleDir ? join(bundleDir, "lawdb", "content-signing.pub.json") : undefined, devPub]);
     if (pubFile) {
       try {
-        lawdbSignerPub = (JSON.parse(readFileSync(pubFile, "utf8")) as { publicKeyPem?: string }).publicKeyPem ?? "";
+        const pub = JSON.parse(readFileSync(pubFile, "utf8")) as { publicKeyPem?: string; dev?: boolean };
+        lawdbSignerPub = pub.publicKeyPem ?? "";
+        // 开发公钥（第 13 批）：仓库开发路径或随包文件写明 dev:true
+        contentKeyDev = pubFile === devPub || pub.dev === true;
       } catch {
         lawdbSignerPub = "";
       }
     }
   }
-  return { lawdbFile, lawdbSignerPub };
+  return { lawdbFile, lawdbSignerPub, contentKeyDev };
 }
 
 /**
@@ -258,7 +264,7 @@ export function loadConfig(opts: KernelOptions = {}): KernelConfig {
   const onboarding = !explicit && !activation && (env.ZR_ONBOARDING === "1" || env.ZR_REQUIRE_CONTROL_PLANE === "1");
   const firmSlug = checkSlug("律所标识", opts.firmSlug ?? env.ZR_FIRM_SLUG ?? (onboarding ? PENDING_WORKSPACE_SLUG : activation?.firm_slug) ?? "demo-firm");
   const workspaceDir = join(root, firmSlug);
-  const { lawdbFile, lawdbSignerPub } = resolveLawdb(env, workspaceDir);
+  const { lawdbFile, lawdbSignerPub, contentKeyDev } = resolveLawdb(env, workspaceDir);
   const ocrModelDir = env.ZR_OCR_MODEL_DIR ?? firstExisting([repoContentPath("ocr-models")]) ?? join(workspaceDir, "ocr-models");
   const bundleDir = typeof __dirname !== "undefined" ? __dirname : undefined;
   const agentProfileFile =
@@ -296,6 +302,7 @@ export function loadConfig(opts: KernelOptions = {}): KernelConfig {
     userSlug: checkSlug("成员标识", opts.userSlug ?? env.ZR_USER_SLUG ?? (onboarding ? "pending" : activation?.member_slug) ?? "demo-lawyer"),
     lawdbFile,
     lawdbSignerPub,
+    contentKeyDev,
     ocrModelDir,
     agentProfileFile,
     syncShareDir: env.ZR_SYNC_SHARE_DIR || undefined,

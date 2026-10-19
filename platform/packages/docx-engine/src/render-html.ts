@@ -216,3 +216,62 @@ export function renderXlsxHtml(xlsx: Buffer): { html: string; sheets: number; tr
   const style = "<style>table{border-collapse:collapse;margin:8px 0;font-size:13px}td,th{border:1px solid #d0d4da;padding:4px 8px;vertical-align:top}th{background:#f4f5f7;text-align:left}h3{font-size:15px}</style>";
   return { html: `${style}${out.join("\n")}${truncated ? `<p><em>（预览只显示每个表前 ${PREVIEW_LIMITS.maxRows} 行，请下载查看全部）</em></p>` : ""}`, sheets: out.length, truncated };
 }
+
+/**
+ * XLSX → 纯文字（第 13 批：材料导入，评审 Z1——选择对话框允许 xlsx，解析却不支持）：每个表以“【表名】”开头，
+ * 每行单元格以制表符分隔；只取值（不算公式），共享字符串与内联字符串都认。上限：50 个表、每表 20,000 行、每行 200 列、总计 200 万字，
+ * 超出即截断并返回 truncated（导入页如实提示）。
+ */
+export function xlsxToText(xlsx: Buffer): { text: string; sheets: number; truncated: boolean } {
+  const files = readZipEntries(xlsx);
+  const shared: string[] = [];
+  const sst = files.get("xl/sharedStrings.xml")?.toString("utf8");
+  if (sst) for (const si of sst.matchAll(/<si>([\s\S]*?)<\/si>/g)) shared.push([...si[1]!.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((t) => unescapeXml(t[1]!)).join(""));
+  const wb = files.get("xl/workbook.xml")?.toString("utf8") ?? "";
+  const names = [...wb.matchAll(/<sheet\b[^>]*name="([^"]*)"/g)].map((m) => unescapeXml(m[1]!));
+  const sheetFiles = [...files.keys()].filter((k) => /^xl\/worksheets\/sheet\d+\.xml$/.test(k)).sort((a, b) => Number(/(\d+)\.xml$/.exec(a)![1]) - Number(/(\d+)\.xml$/.exec(b)![1]));
+  const MAX_SHEETS = 50, MAX_ROWS = 20_000, MAX_COLS = 200, MAX_CHARS = 2_000_000;
+  let truncated = sheetFiles.length > MAX_SHEETS;
+  const out: string[] = [];
+  let chars = 0;
+  for (const [si, f] of sheetFiles.slice(0, MAX_SHEETS).entries()) {
+    if (chars >= MAX_CHARS) {
+      truncated = true;
+      break;
+    }
+    out.push(`【${names[si] ?? `表${si + 1}`}】`);
+    const xml = files.get(f)!.toString("utf8");
+    const rows = xml.match(/<row\b[\s\S]*?<\/row>|<row\b[^>]*\/>/g) ?? [];
+    if (rows.length > MAX_ROWS) truncated = true;
+    for (const row of rows.slice(0, MAX_ROWS)) {
+      const cells: string[] = [];
+      for (const c of row.matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+        const attrs = c[1]!;
+        const inner = c[2] ?? "";
+        const ref = /r="([A-Z]+\d+)"/.exec(attrs)?.[1];
+        const ci = ref ? colIndex(ref) : cells.length;
+        if (ci >= MAX_COLS) {
+          truncated = true;
+          continue;
+        }
+        const t = /t="([^"]*)"/.exec(attrs)?.[1];
+        let v = "";
+        if (t === "s") v = shared[Number(/<v>([\s\S]*?)<\/v>/.exec(inner)?.[1] ?? -1)] ?? "";
+        else if (t === "inlineStr") v = [...inner.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((x) => unescapeXml(x[1]!)).join("");
+        else v = unescapeXml(/<v>([\s\S]*?)<\/v>/.exec(inner)?.[1] ?? "");
+        while (cells.length < ci) cells.push("");
+        cells[ci] = v.replace(/[\t\r\n]+/g, " ");
+      }
+      const line = cells.join("\t").replace(/\t+$/, "");
+      if (!line) continue;
+      out.push(line);
+      chars += line.length + 1;
+      if (chars >= MAX_CHARS) {
+        truncated = true;
+        break;
+      }
+    }
+  }
+  return { text: out.join("\n").slice(0, MAX_CHARS), sheets: Math.min(sheetFiles.length, MAX_SHEETS), truncated };
+}
+

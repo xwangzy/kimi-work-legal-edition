@@ -156,7 +156,7 @@ async function runSmoke(win) {
     ]).catch(() => null);
     if (!st || st.ok !== true) throw new SmokeFailure("kernel_status_failed");
     const s = st.result;
-    result.checks.kernel_status = { ocr_available: s.ocr.available, egress_gate: Boolean(s.egress_gate), sole_exit: s.egress_gate && s.egress_gate.sole_exit, control_plane_mode: s.control_plane && s.control_plane.mode, lawdb: s.lawdb_package ? "ok" : "missing", onboarding: s.onboarding ? s.onboarding.mode : "activated" };
+    result.checks.kernel_status = { ocr_available: s.ocr.available, egress_gate: Boolean(s.egress_gate), sole_exit: s.egress_gate && s.egress_gate.sole_exit, control_plane_mode: s.control_plane && s.control_plane.mode, lawdb: s.lawdb_package ? "ok" : "missing", onboarding: s.onboarding ? s.onboarding.mode : "activated", content_key: s.content_key };
     if (!s.ocr.available) throw new SmokeFailure("ocr_unavailable");
     await Promise.race([win.webContents.isLoading() ? new Promise((r) => win.webContents.once("did-finish-load", r)) : Promise.resolve(), timeout(60_000, "界面加载")]).catch(() => {
       throw new SmokeFailure("renderer_load_timeout");
