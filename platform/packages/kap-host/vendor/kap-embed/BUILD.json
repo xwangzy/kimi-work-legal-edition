@@ -1,7 +1,7 @@
 {
-  "upstream_commit": "f67e6398fb3210ad8ace970e2dfd5bcc984ed61f",
-  "patch_digest_sha256": "d9ac5764036387a169eb0a69b5b7dd08ee1ac9303680f89c7a805ef74ad8882b",
-  "bundle_sha256": "e04c2d5f970cdefb17f12e1e09a730fdf2e3b4f4eaf82a305cde063181a456e4",
-  "inputs": 2284,
-  "built_at": "2026-10-14T12:44:31.105Z"
+  "upstream_commit": "472192c34c1efad89a369870eff0da0b708ce9bb",
+  "patch_digest_sha256": "468f1518f0ff78c3e6c89c4376264708e58b822fad09ee486afa34b97fe30f65",
+  "bundle_sha256": "5e4ae4a0661754c6953c8541696efc5a56787fdc86e6d35c77069b27c9164557",
+  "inputs": 2298,
+  "built_at": "2026-10-19T07:36:33.443Z"
 }

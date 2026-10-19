@@ -30,8 +30,8 @@ function upstream(rel: string): string {
   return readFileSync(p, "utf8");
 }
 
-/** 锁版 f67e6398f + ZP 补丁下 start.ts 的 bootstrap(...) 段（规范化空白）摘要。 */
-const START_BOOTSTRAP_SHA256 = "78bae7ca45754cdef24384eff1fa89eb25bd2ae91d84479c5ca4e51df774a1d8";
+/** 2.2.0（472192c34）+ ZP 补丁下 start.ts 的 bootstrap(...) 段（规范化空白）摘要。2.2.0 新增 `uiCapabilities: [NOTIFY_USER_UI_CAPABILITY]`，embed.ts 自第 5 批已有（字面量 update_panel）。 */
+const START_BOOTSTRAP_SHA256 = "8da4992bdff5d1f89384c44c5a45572e25c7fe8ddf8ba3d4e80ea913647f32a2";
 /** start.ts 的 args 中、嵌入形态有意不传的键（原因）。 */
 const INTENTIONALLY_OMITTED: Record<string, string> = {};
 
@@ -315,7 +315,7 @@ const TOOL_INPUTS: { tool: string; file: string; schema: string; keys: string[];
   },
   { tool: "TodoList", file: "features/todo/tools/todo-list/todo-list.ts", schema: "TodoListInputSchema", keys: ["todos"], reads: "progress.ts：工作清单" },
   { tool: "TodoList 清单项", file: "features/todo/tools/todo-list/todo-list.ts", schema: "TodoItemSchema", keys: ["status", "title"], reads: "progress.ts：todos[].title / status" },
-  { tool: "NotifyUser", file: "features/notify/tools/notify-user/notify-user.ts", schema: "NotifyUserInputSchema", keys: ["message"], reads: "progress.ts：进展通知" },
+  { tool: "NotifyUser", file: "features/notify/tools/notify-user/notify-user.ts", schema: "NotifyUserInputSchema", keys: ["message", "title"], reads: "progress.ts：进展通知（2.2.0 新增可选 title：截到 noteTitle 后与正文合成一条）" },
   { tool: "Skill", file: "features/skill/tools/skill.ts", schema: "SkillToolInputSchema", keys: ["args", "skill"], reads: "progress.ts：方法模板名" },
   { tool: "WebSearch", file: "agent/tools/web-search/web-search.ts", schema: "WebSearchInputSchema", keys: ["query"], reads: "policy.ts：检索式预筛与出站摘要" },
   { tool: "FetchURL", file: "agent/tools/fetch-url/fetch-url.ts", schema: "FetchURLInputSchema", keys: ["url"], reads: "policy.ts：域名白名单与出站摘要" },

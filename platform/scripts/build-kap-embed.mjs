@@ -1,9 +1,11 @@
 /**
  * kap-embed 制品（v9 第 04 篇 §3.2：kap-server 无端口私有嵌入）。
- * 输入：third_party/kimi-code（锁版 f67e6398f + 中软补丁 ZP-1～19，见 third_party/PATCHES.md）。
- * 输出：packages/kap-host/vendor/kap-embed/kap-embed.mjs + inputs.json（ZP-17 静态检查用：制品中每个输入文件
- * 及其对 child_process / worker_threads 的导入）+ BUILD.json（上游提交、补丁摘要、输入数）。
+ * 输入：third_party/kimi-code（`@moonshot-ai/kimi-code@2.2.0` 472192c34 + 中软补丁，见 third_party/PATCHES.md）。
+ * 输出：packages/kap-host/vendor/kap-embed/kap-embed.mjs + inputs.json（静态面检查用：制品中每个输入文件
+ * 及其对 child_process / worker_threads、底层网络模块、HTTP 客户端库（自建调度器的入口，ZP-23）的导入）+ BUILD.json（上游提交、补丁摘要、输入数）。
  * 用法：node scripts/build-kap-embed.mjs
+ * 可选环境变量（缺省行为不变，供“候选上游”构建）：KWL_KC 指定 kimi-code 源目录，KWL_KAP_EMBED_OUT 指定输出目录；
+ * inputs.json 中源目录内的文件一律记为 third_party/kimi-code/… 以保持静态面口径。
  */
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
@@ -13,15 +15,22 @@ import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const KC = resolve(root, "third_party/kimi-code");
-const outDir = resolve(root, "packages/kap-host/vendor/kap-embed");
+const KC = process.env.KWL_KC ? resolve(process.env.KWL_KC) : resolve(root, "third_party/kimi-code");
+const outDir = process.env.KWL_KAP_EMBED_OUT ? resolve(process.env.KWL_KAP_EMBED_OUT) : resolve(root, "packages/kap-host/vendor/kap-embed");
 mkdirSync(outDir, { recursive: true });
+
+const kcPrefix = `${KC}/`;
+/** 源目录内的文件记为 third_party/kimi-code/…，其余相对 platform 根：制品与 inputs.json 不含构建机的绝对路径（换目录构建结果逐字节一致）。 */
+const portable = (abs) => (abs.startsWith(kcPrefix) ? `third_party/kimi-code/${relative(KC, abs)}` : relative(root, abs)).replaceAll("\\", "/");
 
 const rawText = {
   name: "raw-text",
   setup(b) {
-    b.onResolve({ filter: /\?raw$/ }, (a) => ({ path: resolve(a.resolveDir, a.path.replace(/\?raw$/, "")), namespace: "raw" }));
-    b.onLoad({ filter: /.*/, namespace: "raw" }, (a) => ({ contents: `export default ${JSON.stringify(readFileSync(a.path, "utf8"))};`, loader: "js" }));
+    b.onResolve({ filter: /\?raw$/ }, (a) => {
+      const abs = resolve(a.resolveDir, a.path.replace(/\?raw$/, ""));
+      return { path: portable(abs), namespace: "raw", pluginData: abs };
+    });
+    b.onLoad({ filter: /.*/, namespace: "raw" }, (a) => ({ contents: `export default ${JSON.stringify(readFileSync(a.pluginData, "utf8"))};`, loader: "js" }));
   },
 };
 
@@ -72,10 +81,14 @@ const result = await build({
 const PROCESS_MODULES = /^(node:)?(child_process|worker_threads|cluster)$/;
 // 出网面（第 04 篇 §5.1 第②级“CI 扫描出网面”，审查 R-14）：直接导入底层网络模块的输入文件
 const NETWORK_MODULES = /^(node:)?(net|tls|dgram|dns|dns\/promises|http|https|http2)$/;
+// 自建出网调度器的入口（ZP-23，Z2 评审 N-1）：直接导入 HTTP 客户端库（undici 的 Agent/EnvHttpProxyAgent/ProxyAgent、ws、socks 等）的输入文件；按导入说明符记录
+const HTTP_CLIENT_MODULES = /^(undici|ws|socks|node-fetch|axios|got|https-proxy-agent|http-proxy-agent|socks-proxy-agent|proxy-agent)(\/.*)?$/;
+const inputFile = (file) => (file.startsWith("raw:") ? file : portable(resolve(process.cwd(), file)));
 const inputs = Object.entries(result.metafile.inputs).map(([file, info]) => ({
-  file: relative(root, resolve(root, file)).replaceAll("\\", "/"),
+  file: inputFile(file),
   processImports: info.imports.filter((i) => PROCESS_MODULES.test(i.path)).map((i) => i.path),
   networkImports: info.imports.filter((i) => NETWORK_MODULES.test(i.path)).map((i) => i.path),
+  httpClientImports: info.imports.filter((i) => HTTP_CLIENT_MODULES.test(i.original ?? i.path)).map((i) => i.original ?? i.path),
 }));
 writeFileSync(resolve(outDir, "inputs.json"), JSON.stringify(inputs, null, 1));
 

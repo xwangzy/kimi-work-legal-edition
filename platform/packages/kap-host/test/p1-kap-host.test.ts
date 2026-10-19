@@ -145,6 +145,10 @@ test("端到端：嵌入引擎经种子与宿主出口跑通一个回合；模�
   assert.equal(req.auth, `Bearer tok-${r.run_id}`, "宿主出口换上运行令牌（引擎配置里的占位凭据被剥离）");
   assert.equal(req.body.prompt_cache_key, r.session_id);
   assert.equal(req.body.model, "legal/k3");
+  // 2.2.0（#4091）：宿主生成的模型配置不写输出上限，引擎不再发 max_tokens（2.1.1 发“窗口剩余量”）；
+  // 输出上限与预占由内核 model-broker 补（`max_tokens ?? 32_000`），见实施记录 I1“行为变化核对”
+  assert.equal(req.body.max_tokens, undefined);
+  assert.equal(req.body.max_completion_tokens, undefined);
 });
 
 /** 驱动一个运行到终态：审批一律拒绝（或按 decide 决定），提问选第一个选项。 */

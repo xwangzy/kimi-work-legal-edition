@@ -11,14 +11,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const VENDOR = fileURLToPath(new URL("../vendor/kap-embed/", import.meta.url));
-const inputs = JSON.parse(readFileSync(`${VENDOR}inputs.json`, "utf8")) as { file: string; processImports: string[]; networkImports: string[] }[];
+const inputs = JSON.parse(readFileSync(`${VENDOR}inputs.json`, "utf8")) as { file: string; processImports: string[]; networkImports: string[]; httpClientImports: string[] }[];
 const bundle = readFileSync(`${VENDOR}kap-embed.mjs`, "utf8");
 const build = JSON.parse(readFileSync(`${VENDOR}BUILD.json`, "utf8")) as { upstream_commit: string; inputs: number };
 
 const strip = (f: string) => f.replace(/^third_party\/kimi-code\//, "").replace(/node_modules\/\.pnpm\/[^/]+\/node_modules\//, "npm:");
 
-test("制品锁定上游提交 f67e6398f（2.1.1）", () => {
-  assert.match(build.upstream_commit, /^f67e6398f/);
+test("制品锁定上游提交 472192c34（@moonshot-ai/kimi-code@2.2.0，发布分支 tag）", () => {
+  assert.match(build.upstream_commit, /^472192c34c1efad89a369870eff0da0b708ce9bb$/);
   assert.equal(build.inputs, inputs.length);
 });
 
@@ -70,6 +70,28 @@ test("出网面：第一方源码不直接导入任何网络模块；第三方�
     "npm:ws/lib/websocket-server.js",
     "npm:ws/lib/websocket.js",
   ]);
+});
+
+test("ZP-23：引擎不自建出网调度器——KIMI_CODE_LLM_HEADERS_TIMEOUT_MS 的独立 undici 调度器封闭，首包头超时只在宿主出口设；第一方源码直接导入 HTTP 客户端库的为固定集合", () => {
+  assert.ok(inputs.every((i) => Array.isArray(i.httpClientImports)), "inputs.json 须由记录 httpClientImports 的构建脚本生成");
+  const importers = (thirdParty: boolean) =>
+    inputs
+      .filter((i) => i.httpClientImports.length > 0 && i.file.includes("node_modules") === thirdParty)
+      .map((i) => `${strip(i.file)} <- ${[...new Set(i.httpClientImports)].sort().join(",")}`)
+      .sort();
+  // 第一方：只有 proxy.ts（代理环境变量解析与子进程代理环境；它的建调度器、装全局调度器、SOCKS 连接函数不进制品，见下）。
+  // 上游新增“第一方 new Agent / EnvHttpProxyAgent / ProxyAgent / WebSocket 客户端”时这里失败：须经评审（不得绕过宿主 HostEgressDispatcher）
+  assert.deepEqual(importers(false), ["packages/agent-core-v2/src/_base/utils/proxy.ts <- socks,undici"], "第一方源码新增了 HTTP 客户端库的值导入（可能自建出网调度器）——须经评审");
+  assert.deepEqual(importers(true), ["npm:@google/genai/dist/node/index.mjs <- ws"]);
+  assert.doesNotMatch(bundle, /createProxyDispatcher|installGlobalProxyDispatcher|resolveSocksProxy/, "proxy.ts 的建调度器函数进入了制品");
+  // 文本层：环境变量名与按超时建调度器的代码都不在；封闭实现恒返回 undefined（三个请求器因而不传 dispatcher，走宿主全局调度器）
+  assert.doesNotMatch(bundle, /KIMI_CODE_LLM_HEADERS_TIMEOUT_MS/);
+  assert.doesNotMatch(bundle, /headersTimeout: timeoutMs/);
+  assert.match(bundle, /function resolveLlmHeadersTimeoutMs\(\) \{\n {2}return void 0;\n\}/);
+  assert.match(bundle, /function getLlmHeadersTimeoutDispatcher\(_timeoutMs\) \{\n {2}return void 0;\n\}/);
+  // 宿主侧：首包头超时的唯一设置点是出口的模型 Agent
+  const egress = readFileSync(fileURLToPath(new URL("../src/host-egress.ts", import.meta.url)), "utf8");
+  assert.match(egress, /keepAliveMaxTimeout: 60_000, headersTimeout: MODEL_HEADERS_TIMEOUT_MS \}/);
 });
 
 test("已删除的直连路径不在制品中：ripgrep CDN 下载（ZP-20）、本机直连抓取（ZP-11）、MCP OAuth 回调监听（ZP-21）", () => {

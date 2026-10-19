@@ -1,5 +1,5 @@
 /**
- * Kimi Code 内置工具分级（v9 第 02 篇 §9.4，与锁版 2.1.1 的内置工具一一对应）。
+ * Kimi Code 内置工具分级（v9 第 02 篇 §9.4，与锁版 2.2.0 的内置工具一一对应；2.2.0 新增的 TowerComplete、TowerRebase 列入锁死集合）。
  *
  * 级别决定“默认”模式下是自动、询问还是拒绝；跨边界动作（§9.5）另行判定。
  * 表外的工具（含上游新增工具、实验开关锁死的 Tower*、select_tools）一律拒绝——上游新增能力默认不可用，
@@ -73,6 +73,8 @@ export const LOCKED_OFF_TOOLS = new Set([
   "TowerMerge",
   "TowerFinding",
   "TowerTeardown",
+  "TowerComplete",
+  "TowerRebase",
   "select_tools",
 ]);
 
