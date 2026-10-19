@@ -173,7 +173,7 @@ test("成员伪造：非负责人的成员事件、借名事件、缺前序事�
   assert.deepEqual(alerts(kD, m), [], "成员伪造的缺前序事件与起点不暂停发出");
 });
 
-test("并发：移出优先于并发的改角色；互相降级的两位负责人都维持原状；不同到达顺序得到同一结果", async () => {
+test("并发：移出优先于并发的改角色；互相降级两条都成立（失败即关闭）；不同到达顺序得到同一结果", async () => {
   const m = await newMatter(kA, "并发");
   await kA.inv("matters.members.add", { matter_id: m, user_id: usr("bob"), matter_role: "owner" });
   await kA.inv("matters.members.add", { matter_id: m, user_id: usr("carol") });
@@ -207,9 +207,10 @@ test("并发：移出优先于并发的改角色；互相降级的两位负责�
   await kB.inv("sync.export", { share_dir: s2, matter_id: m2 });
   await kD.inv("sync.import", { share_dir: s2 });
   await kD.inv("sync.import", { share_dir: s1 });
+  // 复核 S12A-02 之后：互相降级两条都成立（失败即关闭；原先“都不成立”让被移出者能撤销自己的移出）
   const owners = roles(kD, m2).filter((x) => x.matter_role === "owner" && x.live).map((x) => x.user_id);
-  assert.deepEqual(owners, [usr("bob"), usr("test-lawyer")].sort(), "互相降级都不成立，维持原状");
-  assert.ok((await log(kD, m2)).filter((e) => e.reason === "author_demoted_concurrently").length === 2);
+  assert.deepEqual(owners, [], "互相降级两条都成立");
+  assert.equal((await log(kD, m2)).filter((e) => e.reason === "author_demoted_concurrently").length, 0);
 });
 
 test("成员后登记的设备：负责人下一次同步自动补当前纪元的包裹（wrap 事件）", async () => {
@@ -349,4 +350,135 @@ test("起点冲突：两位负责人各自锚定 → 后来者暂停并提示；
   const after = await nA.inv("matters.member_log", { matter_id: m });
   assert.equal(after.anchored, true);
   assert.deepEqual(alerts(nA, m), []);
+});
+
+// ─── 第 12 批复核 A 的处置回归（S12A-01/02/04/05/06） ───
+
+test("S12A-01：已有起点一律不切换——被移出的创建者再签一个编号更小的创世，成员设备不改认、也不暂停", async () => {
+  const m = await newMatter(kA, "再签创世");
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("carol"), matter_role: "owner" });
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("dave") });
+  await pass(kA, [kC, kD], m);
+  // bob 把创建者 A 降为编辑并移出（轮换）
+  await kC.inv("matters.members.add", { matter_id: m, user_id: usr("test-lawyer"), matter_role: "editor" });
+  await kC.inv("matters.members.remove", { matter_id: m, user_id: usr("test-lawyer") });
+  await pass(kC, [kD], m);
+  const rootBefore = kD.kernel.db.get<{ root_id: string }>(`SELECT root_id FROM member_chain WHERE matter_id = ?`, [m])!.root_id;
+  // A 用旧纪元密钥签一个编号更小的创世（只把自己列为负责人）
+  const a = await deviceOf(kA, "test-lawyer");
+  let g: ReturnType<typeof forgeEvent>;
+  for (let i = 0; ; i++) {
+    g = forgeEvent(a, m, "genesis", [], 1, { creator: usr("test-lawyer"), members: [{ user: usr("test-lawyer"), role: "owner" }], key: { epoch: 1, fp: "0".repeat(32), wraps: {} }, n: i } as any);
+    if (g.event_id < rootBefore) break;
+  }
+  const share = dir("regen");
+  forgeSegment(share, a, m, 1, keyOf(kA, a, m, 1), [{ t: "member_events", pk: g.event_id, row: g as any }]);
+  await kD.inv("sync.import", { share_dir: share });
+  assert.equal(kD.kernel.db.get<{ root_id: string }>(`SELECT root_id FROM member_chain WHERE matter_id = ?`, [m])!.root_id, rootBefore, "起点不换");
+  assert.ok(roles(kD, m).some((x) => x.user_id === usr("carol") && x.matter_role === "owner" && x.live), "carol 仍是负责人");
+  assert.ok(roles(kD, m).some((x) => x.user_id === usr("test-lawyer") && !x.live), "A 仍是已移出");
+  assert.deepEqual(alerts(kD, m), [], "已移出者签的起点不暂停别人");
+});
+
+test("S12A-02：被移出的共同负责人在旧链头上降级移出他的人——移出照样成立，他读不到之后的内容（互相降级两条都成立）", async () => {
+  const m = await newMatter(kA, "反降级");
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("carol"), matter_role: "owner" });
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("dave") });
+  await pass(kA, [kC, kD], m);
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("carol"), matter_role: "editor" });
+  await kA.inv("matters.members.remove", { matter_id: m, user_id: usr("carol") });
+  const sa = dir("ra");
+  await kA.inv("sync.export", { share_dir: sa, matter_id: m });
+  // bob 没收移出段：在本机把 A 降为编辑
+  await kC.inv("matters.members.add", { matter_id: m, user_id: usr("test-lawyer"), matter_role: "editor" });
+  const sb = dir("rb");
+  await kC.inv("sync.export", { share_dir: sb, matter_id: m });
+  await kD.inv("sync.import", { share_dir: sb });
+  await kD.inv("sync.import", { share_dir: sa });
+  assert.ok(roles(kD, m).some((x) => x.user_id === usr("carol") && !x.live), "carol 仍被移出");
+  await imp(kD, m, "丁.txt", "dave 之后写的");
+  const sd = dir("rd");
+  await kD.inv("sync.export", { share_dir: sd, matter_id: m });
+  await kC.inv("sync.import", { share_dir: sd });
+  assert.equal(hasDoc(kC, m, "丁.txt"), false, "被移出的 carol 读不到");
+});
+
+test("S12A-04：本机重新引导之后、重新采用起点之前暂停发出", async () => {
+  const m = await newMatter(kA, "引导期间暂停");
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("dave") });
+  await pass(kA, [kD], m);
+  await kD.inv("matters.sync_rebootstrap", { matter_id: m });
+  await imp(kD, m, "引导中写的.txt", "x");
+  const ex = await kD.inv("sync.export", { share_dir: dir("rbp"), matter_id: m });
+  assert.deepEqual(ex.pausedConflict, [m]);
+  assert.equal(ex.segments.length, 0);
+  assert.deepEqual(alerts(kD, m), ["chain_pending"]);
+  // 收到负责人的链后恢复
+  await pass(kA, [kD], m);
+  assert.deepEqual(alerts(kD, m), []);
+});
+
+test("S12A-05：不是本机在册成员签发、内容延后的段里的链不存；链上拒收的事件不转发", async () => {
+  const m = await newMatter(kA, "不存外人的链");
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("dave") });
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("carol") });
+  await pass(kA, [kC, kD], m);
+  // 所内一台不是成员的设备
+  const kF = await open("frank");
+  copyDev(kF, dev("frank"), [kA, kB, kC, kD]);
+  copyDev(kA, dev("dave"), [kF]);
+  const frank = await deviceOf(kF, "frank");
+  const daveEnc = kA.kernel.db.get<{ enc_pub_pem: string }>(`SELECT enc_pub_pem FROM devices WHERE device_id = ?`, [dev("dave")])!.enc_pub_pem;
+  const fake = generateMatterKey();
+  const junk = forgeEvent(frank, m, "member", ["e".repeat(64)], 9, { user: usr("frank"), role: "owner" });
+  const share = dir("outsider");
+  forgeSegment(share, frank, m, 7, fake, [{ t: "member_events", pk: junk.event_id, row: junk as any }], [
+    { matter_id: m, epoch: 7, wrapped_for: dev("dave"), wrapped_key: wrapMatterKey(fake, daveEnc), created_at: new Date().toISOString() },
+  ]);
+  const r = await kD.inv("sync.import", { share_dir: share });
+  assert.deepEqual(r.dispositions.map((x: any) => x.outcome), ["deferred"]);
+  assert.equal(kD.kernel.db.get(`SELECT 1 AS x FROM member_events WHERE event_id = ?`, [junk.event_id]), undefined, "外人的链不存");
+  // 成员 carol 自封负责人的事件（拒收）不会被 dave 转发
+  const carol = await deviceOf(kC, "carol");
+  const { heads: hs, lamport } = heads(kD, m);
+  const self = forgeEvent(carol, m, "member", hs, lamport + 1, { user: usr("carol"), role: "owner" });
+  const s2 = dir("selfp");
+  forgeSegment(s2, carol, m, 1, keyOf(kC, carol, m, 1), [{ t: "member_events", pk: self.event_id, row: self as any }]);
+  await kD.inv("sync.import", { share_dir: s2 });
+  assert.equal((await log(kD, m)).find((e) => e.event_id === self.event_id)?.reason, "author_not_owner");
+  await imp(kD, m, "触发.txt", "x");
+  const s3 = dir("fw");
+  await kD.inv("sync.export", { share_dir: s3, matter_id: m });
+  const { scanSegments, parseSegment, openSegmentBody } = await import("@zr-legal/sync");
+  const dv = await deviceOf(kD, "dave");
+  const seg = parseSegment(scanSegments(s3, TID).candidates[0]!.content)!;
+  const rows = openSegmentBody(seg, keyOf(kD, dv, m, seg.body.epoch));
+  assert.ok(rows.some((r) => r.t === "member_events"));
+  assert.ok(!rows.some((r) => r.t === "member_events" && r.pk === self.event_id), "拒收的事件不转发");
+});
+
+test("S12A-06：暂停期间只发成员链的段不带事项行（标题、委托人等）与 IM 绑定", async () => {
+  // 真实的暂停：共同负责人 carol 加了 frank，A 转发了这条事件但之后没写过事件；dave 得知 carol 的设备已吊销 → 这条事件待定（chain_pending）
+  const m = await newMatter(kA, "暂停不带事项行");
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("carol"), matter_role: "owner" });
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("dave") });
+  await pass(kA, [kC, kD], m);
+  await kC.inv("matters.members.add", { matter_id: m, user_id: usr("frank") });
+  await pass(kC, [kA], m);
+  kD.kernel.db.run(`INSERT OR IGNORE INTO cp_revoked_devices (tenant_id, device_id, revoked_at, source) VALUES (?,?,?,?)`, [TID, dev("carol"), new Date().toISOString(), "test"]);
+  await pass(kA, [kD], m);
+  assert.deepEqual(alerts(kD, m), ["chain_pending"]);
+  await imp(kD, m, "暂停中.txt", "x");
+  const s = dir("p6");
+  const ex = await kD.inv("sync.export", { share_dir: s, matter_id: m });
+  assert.deepEqual(ex.pausedConflict, [m]);
+  assert.equal(ex.segments.length, 1, "只发成员链");
+  const { scanSegments, parseSegment, openSegmentBody } = await import("@zr-legal/sync");
+  const dv = await deviceOf(kD, "dave");
+  const seg = parseSegment(scanSegments(s, TID).candidates[0]!.content)!;
+  const rows = openSegmentBody(seg, keyOf(kD, dv, m, seg.body.epoch));
+  assert.ok(rows.some((r) => r.t === "member_events"));
+  assert.ok(!rows.some((r) => r.t === "matters" || r.t === "im_bindings" || r.t === "document_versions"), JSON.stringify([...new Set(rows.map((r) => r.t))]));
+  // 再导出一次：链没变不重发
+  assert.equal((await kD.inv("sync.export", { share_dir: dir("p6b"), matter_id: m })).segments.length, 0);
 });

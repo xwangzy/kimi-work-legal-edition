@@ -117,9 +117,12 @@ function loadEvents(db: KernelDb, matterId: string): StoredEvent[] {
     .map((r) => ({ id: r.event_id, p: JSON.parse(r.payload) as MemberEventPayload, sig: r.sig, certJson: r.author_cert, member: r.author_member, received: r.received_at }));
 }
 
-/** 段里的成员事件行导出形态。 */
-export function exportEventRows(db: KernelDb, matterId: string): MemberEventRow[] {
-  return db.all<MemberEventRow>(`SELECT event_id, payload, sig, author_cert FROM member_events WHERE matter_id = ? ORDER BY lamport, event_id`, [matterId]);
+/** 段里的成员事件行导出形态：链上拒收的事件不转发（复核 S12A-05：否则所内任意设备塞进来的事件被全员无限转发）；有效与待定的照发。 */
+export function exportEventRows(deps: ChainDeps, matterId: string): MemberEventRow[] {
+  const rows = deps.db.all<MemberEventRow>(`SELECT event_id, payload, sig, author_cert FROM member_events WHERE matter_id = ? ORDER BY lamport, event_id`, [matterId]);
+  if (rows.length === 0 || !hasChain(deps.db, matterId)) return rows;
+  const v = chainView(deps, matterId);
+  return rows.filter((r) => v.status.get(r.event_id)?.s !== "rejected");
 }
 
 function insertEvent(db: KernelDb, e: StoredEvent, viaMember: string | null): boolean {
@@ -450,7 +453,8 @@ function computeView(deps: ChainDeps, matterId: string, opts: { liveBefore?: Map
     }
   }
   // 第三遍：被降级或移出者的并发操作不算（移出优先于被移出者的并发操作）——最终不是负责人的成员，他写的、与降级或移出他的事件并发
-  // （互不为祖先）的事件拒收，后代随之。只按第二遍之后的投影判一次（不迭代：互相降级的两位负责人的降级都不成立，维持原状、交人工处理）
+  // （互不为祖先）的事件拒收，后代随之。例外：降级或移出“降级他的那个人”的事件不拒收——互相降级时两条都成立（失败即关闭，复核 S12A-02：
+  // 原先两条都不成立，被移出者只要在旧链头上对移出者做一次降级，就能撤销自己的移出）。只按第二遍之后的投影判一次
   const pass2 = tentative.filter((e) => !bad.has(e.id));
   const p1 = project(pass2, anc);
   const demotions = new Map<string, StoredEvent[]>();
@@ -465,7 +469,8 @@ function computeView(deps: ChainDeps, matterId: string, opts: { liveBefore?: Map
   for (const e of pass2) {
     if (e.id === root.id || bad.has(e.id)) continue;
     const ds = demotions.get(e.member);
-    if (ds?.some((d) => d.id !== e.id && !anc.get(e.id)!.has(d.id) && !anc.get(d.id)!.has(e.id))) bad.set(e.id, { s: "rejected", why: "author_demoted_concurrently" });
+    const retaliation = (d: StoredEvent) => e.p.kind === "member" && e.p.body.role !== "owner" && String(e.p.body.user) === d.member;
+    if (ds?.some((d) => d.id !== e.id && !anc.get(e.id)!.has(d.id) && !anc.get(d.id)!.has(e.id) && !retaliation(d))) bad.set(e.id, { s: "rejected", why: "author_demoted_concurrently" });
   }
   for (const e of tentative) {
     if (bad.has(e.id)) continue;
@@ -567,24 +572,21 @@ export function applyProjection(deps: ChainDeps, matterId: string, view: ChainVi
 // ─── 起点 ───
 
 /**
- * 采用起点（本机还没有起点时）。`bootstrap`：本机还没有这个事项、或被要求重新引导（不看本机旧成员行）。
+ * 采用起点（本机还没有起点时）。本机已有起点时**一律不切换**（复核 S12A-01：同一作者编号更小的起点也不换——被移出的创建者可以再签一个）。
+ * `bootstrap`：本机还没有这个事项（不看本机成员行）；否则（含“本机重新引导”，复核 S12A-03）作者须是本机成员行里在册的负责人。
+ * `candidates`：只考虑这些事件（本段带来的起点——首同步与重新引导时不从以前存下的、可能是伪造的起点里挑）。
  * - genesis：作者成员 = creator，本机有事项行时另须 = 事项行的创建者；
- * - anchor：作者在锚定里列为在册负责人；非引导时另须是本机旧成员行里的在册负责人（旧规则下本机可能稍后才认出他：不满足即暂不采用）。
- * 本机已有起点时：同一作者成员的另一个起点（同一人的两台设备各自锚定）编号更小即切换；其他起点不采用（记 root_conflict）。
+ * - anchor：作者在锚定里列为在册负责人。
  */
-export function adoptRoot(deps: ChainDeps, matterId: string, bootstrap: boolean): StoredEvent | null {
+export function adoptRoot(deps: ChainDeps, matterId: string, bootstrap: boolean, candidates?: Set<string>): StoredEvent | null {
   const { db } = deps;
-  const rows = loadEvents(db, matterId).filter((e) => isRootKind(e.p.kind) && e.p.prev.length === 0 && e.p.lamport === 1).sort((a, b) => (a.id < b.id ? -1 : 1));
   const current = db.get<{ root_id: string | null }>(`SELECT root_id FROM member_chain WHERE matter_id = ?`, [matterId]);
-  if (current?.root_id) {
-    const cur = rows.find((e) => e.id === current.root_id);
-    const better = cur && rows.find((e) => e.id < cur.id && e.member === cur.member && rootAcceptable(deps, matterId, e, true));
-    if (better) db.run(`UPDATE member_chain SET root_id = ?, adopted_at = ? WHERE matter_id = ?`, [better.id, nowIso(), matterId]);
-    return better ?? cur ?? null;
-  }
-  const boot = bootstrap || !!current; // root_id 为空的行 = 要求重新引导
+  if (current?.root_id) return loadEvents(db, matterId).find((e) => e.id === current.root_id) ?? null;
+  const rows = loadEvents(db, matterId)
+    .filter((e) => isRootKind(e.p.kind) && e.p.prev.length === 0 && e.p.lamport === 1 && (!candidates || candidates.has(e.id)))
+    .sort((a, b) => (a.id < b.id ? -1 : 1));
   for (const e of rows) {
-    if (!rootAcceptable(deps, matterId, e, boot)) continue;
+    if (!rootAcceptable(deps, matterId, e, bootstrap)) continue;
     db.run(`INSERT INTO member_chain (matter_id, root_id, adopted_at) VALUES (?,?,?) ON CONFLICT(matter_id) DO UPDATE SET root_id = excluded.root_id, adopted_at = excluded.adopted_at`, [matterId, e.id, nowIso()]);
     return e;
   }
@@ -597,9 +599,9 @@ function rootAcceptable(deps: ChainDeps, matterId: string, e: StoredEvent, boots
   if (e.p.kind === "genesis") {
     if (e.member !== b.creator) return false;
     const createdBy = db.get<{ created_by: string }>(`SELECT created_by FROM matters WHERE matter_id = ?`, [matterId])?.created_by;
-    return !createdBy || createdBy === b.creator;
+    if (createdBy && createdBy !== b.creator) return false;
   }
-  if (!b.members.some((m) => m.user === e.member && m.role === "owner" && !m.removed)) return false;
+  else if (!b.members.some((m) => m.user === e.member && m.role === "owner" && !m.removed)) return false;
   if (bootstrap) return true;
   return !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [matterId, e.member]);
 }
@@ -849,7 +851,8 @@ export function chainHealth(deps: ChainDeps, matterId: string, view: ChainView):
     }
   }
   // 起点冲突：别的起点本身按起点规则可以采用（创建者的创世、在册负责人的锚定）——成员伪造的起点只计不停
-  h.rootConflict = view.foreignRoots.find((r) => r.member !== view.root!.member && rootAcceptable(deps, matterId, r, false)) ?? null;
+  // 同一作者的另一个起点也算（同一人两台设备各自锚定；不自动切换，复核 S12A-01）；按本机投影作者须是在册负责人——被移出的创建者再签的创世只计不停
+  h.rootConflict = view.foreignRoots.find((r) => rootAcceptable(deps, matterId, r, false)) ?? null;
   // 当前最高纪元的包裹里还有已移出成员（或不再是成员）的设备
   const top = view.epochs.get(view.maxEpoch);
   if (top) {
@@ -1005,6 +1008,9 @@ export function rebootstrapMatter(db: KernelDb, matterId: string): void {
     db.run(`INSERT INTO member_chain (matter_id, root_id, adopted_at) VALUES (?, NULL, ?) ON CONFLICT(matter_id) DO UPDATE SET root_id = NULL, adopted_at = excluded.adopted_at`, [matterId, nowIso()]);
     db.run(`DELETE FROM sync_segments_seen WHERE matter_id = ?`, [matterId]);
     db.run(`DELETE FROM sync_alerts WHERE matter_id = ?`, [matterId]);
+    // 重新采用起点之前暂停发出该事项（复核 S12A-04：原先清掉告警即解除暂停，被移出者能读到这期间的内容）；采用起点后由链的告警重算清除
+    const at = nowIso();
+    db.run(`INSERT INTO sync_alerts (matter_id, kind, epoch, detail, first_at, last_at, hits) VALUES (?, 'chain_pending', 0, ?, ?, ?, 1)`, [matterId, "本机正在重新引导该事项，收到负责人的成员链之前暂停发出", at, at]);
   });
 }
 

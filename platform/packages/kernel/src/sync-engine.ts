@@ -158,7 +158,8 @@ function resolveMatterKey(db: KernelDb, matterId: string, epoch: number, deviceI
 }
 
 /** 可同步行收集（watermark：created_at > since；since 为空则全量）。 */
-function collectRows(db: KernelDb, matterId: string, deviceId: string, lamport: number, since: string | null): SyncRow[] {
+function collectRows(deps: SyncDeps, matterId: string, deviceId: string, lamport: number, since: string | null): SyncRow[] {
+  const { db } = deps;
   const rows: SyncRow[] = [];
   const w = since ?? "0000";
   const push = (t: string, pk: string, row: Record<string, unknown>) => rows.push({ t, pk, src_device: deviceId, src_lamport: lamport, row });
@@ -169,7 +170,7 @@ function collectRows(db: KernelDb, matterId: string, deviceId: string, lamport: 
   const matter = db.get(`SELECT * FROM matters WHERE matter_id = ?`, [matterId]);
   if (matter) push("matters", matterId, matter as Record<string, unknown>);
   // 成员事件链每段全量附带（第 12 批；接收方先处理链、再处理其余行）
-  for (const e of exportEventRows(db, matterId)) push(MEMBER_EVENTS_TABLE, e.event_id, e as unknown as Record<string, unknown>);
+  for (const e of exportEventRows(deps, matterId)) push(MEMBER_EVENTS_TABLE, e.event_id, e as unknown as Record<string, unknown>);
   // 成员行每段都附带全部（第三轮复核 S11A-28：迟到加入的成员由此认出负责人与在册成员；原作者随行保留）
   for (const r of db.all(`SELECT * FROM matter_members WHERE matter_id = ?`, [matterId])) {
     const m = r as any;
@@ -301,7 +302,7 @@ export function syncExport(
     const fromLamport = (state?.last_export_lamport ?? 0) + 1;
     // 链模式下成员行只是投影、不再逐行签名（接收方不采信）；未锚定的事项沿用第 11 批的行签名
     if (!hasChain(db, m.matter_id)) signOwnMemberRows(deps, m.matter_id, deviceCertJson);
-    let rows = collectRows(db, m.matter_id, keyctx.device.deviceId, toLamport, since);
+    let rows = collectRows(deps, m.matter_id, keyctx.device.deviceId, toLamport, since);
     // 中继介质（第三轮复核 S11B-28/29/30 后的规则，取代按内容摘要比对）：
     // ①“总是附带的行”（事项行、全部成员行、用户行、IM 绑定、本机设备行）每段都带、不过滤——迟到成员与新设备据此引导事项、认出负责人；
     // ② 其余行凡是经同步（中继或共享文件夹）收下的，一律不经中继发回；状态类表另要求来源是本机（只发本机写入的，第四轮复核 S11B-34）；
@@ -471,7 +472,8 @@ function exportChainOnly(
   const medium = o.relay ? "relay" : "folder";
   const head = db.get<{ l: number | null }>(`SELECT MAX(lamport) AS l FROM signed_events WHERE matter_id = ?`, [matterId])?.l ?? 1;
   // 水位取未来：只收“总是附带的行”
-  let rows = collectRows(db, matterId, keyctx.device.deviceId, head, "9999");
+  // 不带事项行与 IM 绑定（复核 S12A-06：事项行有标题、委托人、对方与关键日期，这时的纪元可能仍包含被移出者）
+  let rows = collectRows(deps, matterId, keyctx.device.deviceId, head, "9999").filter((r) => r.t !== "matters" && r.t !== "im_bindings");
   if (o.relay) rows = rows.filter((r) => r.t !== "devices" || String(r.pk) === keyctx.device.deviceId);
   const digest = createHash("sha256").update(canonicalJson(rows.filter((r) => r.t === MEMBER_EVENTS_TABLE).map((r) => r.pk))).digest("hex");
   if (db.get<{ digest: string }>(`SELECT digest FROM chain_paused_export WHERE matter_id = ? AND medium = ?`, [matterId, medium])?.digest === digest) return;
@@ -949,7 +951,8 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
     }
     // 首次收到事项（本机还没有）：中继介质只从中继上的控制成员签发的段引导（第三轮复核 S11A-29：同所成员伪造的首段不被采信）；
     // 两种介质都要求签发成员按核验过的成员行是负责人（在事务里判，见下）。其他段延后，等负责人的段
-    if (args.bootstrapController && !db.get(`SELECT 1 AS x FROM matters WHERE matter_id = ?`, [h.matter_id]) && args.bootstrapController(h.matter_id) !== cert.memberId) {
+    // 本机被要求重新引导时同样只认控制成员的段（复核 S12A-03）
+    if (args.bootstrapController && (!db.get(`SELECT 1 AS x FROM matters WHERE matter_id = ?`, [h.matter_id]) || rebootstrapPending(db, h.matter_id)) && args.bootstrapController(h.matter_id) !== cert.memberId) {
       result.segmentsSkipped += 1;
       out("deferred");
       continue;
@@ -1011,7 +1014,9 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
       let mem = { applied: 0, signerActed: false };
       // 未锚定、非首同步：先按第 11 批的行规则处理成员行（本机可能由此认出锚定者是负责人），再尝试采用起点
       if (!hasChain(db, h.matter_id) && !reboot && !ctx.bootstrap) mem = applyMemberRows(deps, rows, memberCtx());
-      if (chainRows.length > 0 || hasChain(db, h.matter_id)) adoptRoot(deps, h.matter_id, ctx.bootstrap || reboot);
+      // 首同步与重新引导只从本段带来的起点里挑（复核 S12A-01/03：不从以前存下的、可能是伪造的起点里挑）；重新引导按本机成员行判作者
+      const segRoots = new Set(chainRows.map((r) => String((r as { event_id?: unknown }).event_id ?? "")));
+      if (chainRows.length > 0 || hasChain(db, h.matter_id)) adoptRoot(deps, h.matter_id, ctx.bootstrap, ctx.bootstrap || reboot ? segRoots : undefined);
       if (hasChain(db, h.matter_id)) {
         const view = chainView(deps, h.matter_id);
         applyProjection(deps, h.matter_id, view);
@@ -1106,7 +1111,8 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
       result.conflicts.length = mark.conflicts;
       result.originConflicts.length = mark.warnings;
       if (e instanceof BootstrapDeferred) result.originConflicts.push(`bootstrap_deferred:${h.segment_id}（${e.message || why || "签发成员按核验后的成员行不是负责人"}）`);
-      if (chainRows.length > 0) {
+      // 只收本机在册成员签发的段里的链（复核 S12A-05：所内任意设备塞一把包给本机的密钥，就能让这里存下任意事件）
+      if (chainRows.length > 0 && db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [h.matter_id, cert.memberId])) {
         try {
           const stored = db.tx(() => storeIncomingEvents(deps, h.matter_id, chainRows, cert.memberId).stored);
           if (stored > 0 && hasChain(db, h.matter_id)) touchedChain.add(h.matter_id);

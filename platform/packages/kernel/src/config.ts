@@ -243,7 +243,7 @@ export function loadConfig(opts: KernelOptions = {}): KernelConfig {
     ocrModelDir,
     agentProfileFile,
     syncShareDir: env.ZR_SYNC_SHARE_DIR || undefined,
-    legacyMemberRows: env.ZR_MEMBER_LOG === "off" && !!process.env.NODE_TEST_CONTEXT,
+    legacyMemberRows: env.ZR_MEMBER_LOG === "off" && !!process.env.NODE_TEST_CONTEXT && process.env.NODE_ENV !== "production",
     env,
   };
 }
