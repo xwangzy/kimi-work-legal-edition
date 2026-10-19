@@ -13,6 +13,8 @@ declare global {
       /** 主进程文件对话框（v9.2 §3.7）：只回一次性句柄、文件名与大小。 */
       pickFiles?: (o: { extensions?: string[]; multiple?: boolean }) => Promise<PickedFile[] | null>;
       pickSave?: (o: { name: string }) => Promise<{ handle: string; name: string; risk: SaveRisk | null } | null>;
+      /** 选文件夹（第 14 批：备份位置、从备份恢复）。 */
+      pickFolder?: () => Promise<{ handle: string; name: string; risk: SaveRisk | null } | null>;
       saveText?: (handle: string, text: string) => Promise<{ ok: boolean; name?: string }>;
       rendererNet?: () => Promise<{ blocked: number; last: string[] }>;
       updateStatus?: () => Promise<UpdateStatus | null>;
@@ -934,6 +936,21 @@ export const onboarding = {
   redeem: (code: string) => invoke<any>("onboarding.redeem", { code }),
   check: () => invoke<any>("onboarding.check"),
   reset: () => invoke<any>("onboarding.reset"),
+  /** 从备份恢复（第 14 批）：安装包形态传句柄；开发形态（无对话框）传路径。 */
+  restore: (o: { file_handle?: string; folder_handle?: string; file?: string; dir?: string; code: string }) => invoke<any>("onboarding.restore", o),
+};
+
+/** 恢复包与备份（第 14 批）：安装包形态经系统对话框拿句柄；开发形态（浏览器）没有对话框，界面让开发者填路径。 */
+export const recovery = {
+  hasDialogs: () => !!window.zrKernel?.pickFolder,
+  pickFolder: () => window.zrKernel?.pickFolder?.() ?? Promise.resolve(null),
+  pickPackageFile: async () => ((await window.zrKernel?.pickFiles?.({ extensions: ["kwlr"], multiple: false })) ?? [])[0] ?? null,
+  pickPackageSave: () => window.zrKernel?.pickSave?.({ name: "Kimi Work 恢复包.kwlr" }) ?? Promise.resolve(null),
+  createPackage: (o: { save_handle?: string; path?: string }) => invoke<any>("recovery.create_package", o),
+  verifyPackage: (o: { file_handle?: string; file?: string; code: string }) => invoke<any>("recovery.verify_package", o),
+  backupStatus: () => invoke<any>("backup.status"),
+  configureBackup: (o: { folder_handle?: string; dir?: string }) => invoke<any>("backup.configure", o),
+  runBackup: () => invoke<any>("backup.run"),
 };
 
 /** 成员管理（管理员）：邀请、待批准申请、批准与拒绝。 */

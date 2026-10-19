@@ -10,7 +10,7 @@ const path = require("node:path");
 const { createUrlPolicy } = require("./url-policy.cjs");
 const { APP_INDEX_URL, handleAppProtocol, registerAppScheme } = require("./app-protocol.cjs");
 const { resolveBundledRuntime, verifyRuntimeDigests } = require("./runtime-paths.cjs");
-const { loadOrCreateDbKey, purgeOldDumps } = require("./secret-store.cjs");
+const { adoptDbKey, loadOrCreateDbKey, purgeOldDumps } = require("./secret-store.cjs");
 const { kernelChildEnv, loadReleaseConfig } = require("./release-config.cjs");
 const { initUpdater } = require("./updater.cjs");
 const { parseSmokeArg, writeSmokeResult, SmokeFailure } = require("./smoke-io.cjs");
@@ -304,11 +304,31 @@ async function startKernel() {
       return;
     }
     if (msg && msg.type === "kernel.ready") {
+      kernelOnboarding = msg.onboarding === true;
       slog.flush();
       slog.event("MAIN_KERNEL_READY", {});
       smoke.kernelReady(msg);
       // 内核（重新）就绪：若随包运行时全量核验已通过，告诉它可以拉起随包子进程（复核 B4-R15）
       sendRuntimeVerified();
+      return;
+    }
+    // 从备份恢复（第 14 批）：内核取回了旧电脑的数据库主密钥——只在内核报告处于待激活模式时接受（本机还没有任何案件数据），
+    // 用本机 DPAPI 重新包裹、原包裹文件留档，再按新身份重启；这条消息绝不转发给界面
+    if (msg && msg.type === "kernel.adopt_master_key") {
+      const key = msg.key;
+      msg.key = null;
+      if (!kernelOnboarding) {
+        slog.event("MAIN_ADOPT_KEY_REJECTED", {});
+        return;
+      }
+      void adoptDbKey({ safeStorage, file: path.join(app.getPath("userData"), "ledger-key"), key }).then((r) => {
+        if (!r.ok) {
+          slog.event("MAIN_ADOPT_KEY_REJECTED", {});
+          return;
+        }
+        slog.event("MAIN_ADOPT_KEY_DONE", {});
+        void restartKernelForIdentity();
+      });
       return;
     }
     // 开通或入组完成（第 13 批）：内核已写好 activation.json，按新身份有序重启内核（界面轮询 kernel.status 后自行刷新）
@@ -464,6 +484,19 @@ function wireIpc() {
       } catch {}
       return { handle: fileHandles.issue("open", p), name: path.basename(p), size };
     });
+  });
+  // 选文件夹（第 14 批：备份位置、从备份恢复）：不进“最近使用”；不许选本应用自己的数据目录；网络与同步位置给风险标记
+  ipcMain.handle("kwl:pick-folder", async (e) => {
+    if (!fromAppMainFrame(e)) return null;
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory", "createDirectory", "dontAddToRecent"] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    const p = r.filePaths[0];
+    if (insideAppData(p, [DATA_DIR, app.getPath("userData")])) {
+      await dialog.showMessageBox(win, { type: "warning", message: "不能选 Kimi Work 自己的数据目录", detail: "请选移动硬盘、律所共享盘或另一个文件夹。" });
+      return null;
+    }
+    return { handle: fileHandles.issue("folder", p), name: path.basename(p), risk: classifySaveTarget(p) };
   });
   // 保存位置：系统对话框（不进“最近使用”、覆盖须确认）；同步文件夹与网络位置给出风险标记，界面先说明再保存
   ipcMain.handle("kwl:pick-save", async (e, opts) => {
@@ -832,6 +865,8 @@ app.on("before-quit", () => {
 
 /** 开通或入组完成后按新身份重启内核：先有序关闭（闸门、宿主等子进程一并退出），再按 activation.json 拉起。 */
 let identityRestarting = false;
+/** 内核就绪消息报告的待激活模式（第 14 批：只有这时才接受“采用恢复的主密钥”）。 */
+let kernelOnboarding = false;
 async function restartKernelForIdentity() {
   if (identityRestarting) return;
   identityRestarting = true;

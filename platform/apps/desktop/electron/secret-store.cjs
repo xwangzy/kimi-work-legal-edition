@@ -96,4 +96,25 @@ function purgeOldDumps(dir, maxAgeDays = 3, now = Date.now()) {
   return removed;
 }
 
-module.exports = { loadOrCreateDbKey, purgeOldDumps };
+/**
+ * 采用从恢复包取回的数据库主密钥（第 14 批“从备份恢复”）：用本机 safeStorage 重新包裹后替换 ledger-key；
+ * 原包裹文件改名留档（ledger-key.prev-<时刻>），绝不删除——调用方只在内核处于待激活模式（本机还没有任何案件数据）时调用。
+ */
+async function adoptDbKey({ safeStorage, file, key, now = Date.now() }) {
+  if (typeof key !== "string" || !/^[A-Za-z0-9+/]{43}=$/.test(key) || Buffer.from(key, "base64").length !== 32) return { ok: false, code: "key_invalid" };
+  let available = false;
+  try {
+    available = typeof safeStorage.isAsyncEncryptionAvailable === "function" ? await safeStorage.isAsyncEncryptionAvailable() : safeStorage.isEncryptionAvailable();
+  } catch {
+    available = false;
+  }
+  if (!available) return { ok: false, code: "unavailable" };
+  const sealed = await safeStorage.encryptStringAsync(key);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (fs.existsSync(file)) fs.renameSync(file, `${file}.prev-${now}`);
+  atomicWrite(file, sealed);
+  return { ok: true };
+}
+
+module.exports = {
+  adoptDbKey, loadOrCreateDbKey, purgeOldDumps };

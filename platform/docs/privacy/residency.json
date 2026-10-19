@@ -868,6 +868,41 @@
       ],
       "residual": "问答历史在本机留存到律师删除；漏识别的姓名以原文保存与发出（同第 10 类）",
       "owner": "研发-内核"
+    },
+    {
+      "id": 28,
+      "data": "整机恢复包与本机备份（第 14 批）：恢复包（激活信息、数据库主密钥、设备私钥与证书、创始设备的律所根与 5 份恢复份额）；备份位置里的账本快照、块、工作区、封装的密钥文件与签名清单；备份状态",
+      "memory": "内核（生成与打开恢复包时的明文只在调用期间；恢复码不落盘、只返回一次）",
+      "disk": "恢复包：律师在系统对话框里选定的位置（不得在数据根内），AES-256-GCM（密钥 = HKDF(恢复码秘密)）；备份：律师选定的备份位置 <位置>/KimiWorkLegal-backup/<律所>/<设备编号>/，内容全是密文（SQLCipher 页、按事项密钥加密的块、KWE1 工作区、按主密钥封装的密钥文件）+ 设备签名的清单；<工作区>/backup.json 只有备份位置、序号、时刻与错误代码",
+      "local_channels": "内核 → 主进程（只在待激活模式下恢复时：采用旧主密钥的请求，主进程用本机 DPAPI 重新包裹并留档原文件，不转发界面）",
+      "network": "不出网（备份位置若是同步盘或网络盘，由律师选择；内容为密文）",
+      "logs_dumps": "运行记录只记事件码与文件数（KERNEL_BACKUP_*、KERNEL_RESTORED_FROM_BACKUP、MAIN_ADOPT_KEY_*）；审计记生成与试解恢复包、配置备份位置",
+      "form": [
+        "kwl_sealed",
+        "sqlcipher",
+        "block_cipher",
+        "kwe1",
+        "content_free"
+      ],
+      "enforcement": [
+        {
+          "file": "packages/kernel/src/services/recovery-package.ts",
+          "symbol": "sealRecoveryPackage"
+        },
+        {
+          "file": "packages/kernel/src/services/backup.ts",
+          "symbol": "runBackup"
+        },
+        {
+          "file": "apps/desktop/electron/secret-store.cjs",
+          "symbol": "adoptDbKey"
+        }
+      ],
+      "tests": [
+        "packages/kernel/test/backup-restore.test.ts"
+      ],
+      "residual": "恢复包 + 恢复码 = 本机全部能力（两样须分开保管，界面写明）；恢复后与旧电脑同一设备身份（设备编号确定性，D-42），旧电脑若被偷，其数据仍受该 Windows 账户 DPAPI 保护；备份里已删除事项的块在下一次备份时删除，之前的备份副本因事项密钥已删而不可读",
+      "owner": "研发-内核"
     }
   ],
   "write_points": {
@@ -1081,6 +1116,17 @@
         24
       ],
       "reason": "本机激活记录 activation.json 与成员待批准状态 onboarding.json（只有编号、显示名与状态；临时文件改名原子写）；秘密一律经 devices.ts 的封装写入"
+    },
+    "packages/kernel/src/services/backup.ts": {
+      "apis": [
+        "copyFileSync",
+        "renameSync",
+        "writeFileSync"
+      ],
+      "rows": [
+        28
+      ],
+      "reason": "备份位置里的账本快照、增量文件与签名清单（全是密文）；从备份恢复时复制回数据根；备份状态文件（只有位置、序号、时刻、错误代码）"
     }
   },
   "renderer_storage": {

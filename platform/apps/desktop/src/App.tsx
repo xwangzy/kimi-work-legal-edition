@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
-import { api, onKernelEvent, updates, type UpdateStatus } from "./api.ts";
+import { api, onKernelEvent, recovery, updates, type UpdateStatus } from "./api.ts";
 import { Home } from "./pages/Home.tsx";
 import { MattersPage } from "./pages/Matters.tsx";
 import { MatterPage } from "./pages/Matter.tsx";
@@ -91,6 +91,15 @@ export function App() {
       .then((st: any) => setBoot({ onboarding: st?.onboarding ?? null }))
       .catch(() => setBoot({ onboarding: null }));
   useEffect(loadBoot, []);
+  // 开通的最后一步（第 14 批）：还没有生成恢复包时，首页与事项页顶部提醒（电脑坏了数据就找不回）
+  const [needRecovery, setNeedRecovery] = useState(false);
+  useEffect(() => {
+    if (!boot || boot.onboarding) return;
+    void recovery
+      .backupStatus()
+      .then((s: any) => setNeedRecovery(!!s && s.packages_created === 0))
+      .catch(() => setNeedRecovery(false));
+  }, [boot, route.page]);
   useEffect(() => {
     const on = () => setRoute(parseHash(window.location.hash));
     window.addEventListener("hashchange", on);
@@ -140,6 +149,14 @@ export function App() {
       <div className="shell-main">
         {kernelNotice && <div className={`banner ${kernelNotice.status === "stopped" ? "banner-red" : "banner-orange"} kernel-banner`}>{kernelNotice.message ?? "后台服务正在恢复…"}</div>}
         {update && !updateDismissed && route.page !== "run" && route.page !== "review" && <UpdateBanner status={update} onDismiss={() => setUpdateDismissed(true)} />}
+        {needRecovery && (route.page === "home" || route.page === "matters") && (
+          <div className="banner banner-orange">
+            完成开通的最后一步：生成恢复包并设置备份。不做的话，这台电脑坏了或丢了，案件数据将无法找回。{" "}
+            <button className="btn-link" onClick={() => nav("/connections/device")}>
+              去设置 →
+            </button>
+          </div>
+        )}
         <ErrorBoundary key={routeKey} routeLabel={route.page}>
           <Page route={route} />
         </ErrorBoundary>

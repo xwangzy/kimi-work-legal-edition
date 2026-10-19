@@ -12,7 +12,12 @@ import { zoneKeysFor } from "./ws-keys.ts";
 import type { Server } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { signSyncWith, verifyBytes, verifyDeviceCertificate } from "@zr-legal/keys";
+import { collectRecoveryContent, openRecoveryPackage, peekRecoveryPackage, sealRecoveryPackage } from "./services/recovery-package.ts";
+import { configureBackup, readBackupState, restoreFromBackup, runBackup, type BackupDeps } from "./services/backup.ts";
+import { writeExportFile } from "./services/export-file.ts";
+
 import { EgressGate, type DestinationKind } from "@zr-legal/egress";
 import { ModelBroker } from "@zr-legal/model-broker";
 import { DomainError, LEGAL_MCP_TOOLS } from "@zr-legal/domain";
@@ -23,7 +28,7 @@ import { TaskQueue } from "./queue.ts";
 import { createApi } from "./api/index.ts";
 import { resolveIdentity, taskTokenKey, type Identity } from "./identity.ts";
 import { applyStagedJoin, applyStagedRecovery, configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
-import { activationInfo, dropActivationClaim, membersApi, OnboardingService, ONBOARDING_METHODS, readActivationClaim, removePendingWorkspace } from "./services/onboarding.ts";
+import { activationInfo, dropActivationClaim, membersApi, OnboardingService, ONBOARDING_METHODS, readActivationClaim, removePendingWorkspace, writeActivationFile } from "./services/onboarding.ts";
 import { FirmGovernance, localDevPolicyBody, firmPolicyInputOf, type FirmPolicyInput } from "./control-plane/governance.ts";
 import { ControlPlaneClient } from "./control-plane/client.ts";
 import { parsePublicKeyMap } from "@zr-legal/firm-trust";
@@ -784,6 +789,46 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     api["onboarding.redeem"] = (p) => onboarding.redeem((p ?? {}) as { code?: unknown });
     api["onboarding.check"] = () => onboarding.check();
     api["onboarding.reset"] = () => onboarding.reset();
+    // 从备份恢复（第 14 批；设计 docs/design/恢复与备份设计-v1.md §3.4）：恢复包 + 恢复码 + 备份位置 → 与原机相同的身份与数据
+    api["onboarding.restore"] = (p) => {
+      const file = String(p?.file ?? "");
+      const dir = String(p?.dir ?? "");
+      if (!file || !dir) throw new DomainError("validation", "请选择恢复包文件和备份位置", 400);
+      const c = openRecoveryPackage(readFileSync(file), String(p?.code ?? ""));
+      const cert = c.device.cert;
+      const vr = verifyDeviceCertificate(cert, c.root_public_key_pem, new Date(Date.parse(cert.issuedAt) + 1000));
+      if (!vr.ok || cert.signPublicKeyPem !== c.device.keys.signPublicKeyPem || cert.encPublicKeyPem !== c.device.keys.encPublicKeyPem) {
+        throw new DomainError("validation", "恢复包里的设备身份核对不通过", 400);
+      }
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(c.firm_slug) || c.firm_slug === "pending-activation") throw new DomainError("validation", "恢复包里的律所标识不合法", 400);
+      const r = restoreFromBackup({
+        backupDir: dir,
+        firmSlug: c.firm_slug,
+        deviceId: c.device.device_id,
+        workspaceDir: join(config.dataRoot, c.firm_slug),
+        verifySig: (bytes, sig) => verifyBytes(cert.signPublicKeyPem, bytes, sig),
+      });
+      const roleOf: Record<string, "admin" | "partner" | "lawyer" | "assistant"> = { admin: "admin", partner: "partner", assistant: "assistant" };
+      const act = c.activation ?? {
+        v: 1 as const,
+        tid: c.tid,
+        firm_slug: c.firm_slug,
+        firm_name: c.firm_slug,
+        member_slug: c.member_slug,
+        member_name: null,
+        role: roleOf[cert.role] ?? "lawyer",
+        kind: c.firm_root ? ("founder" as const) : ("member" as const),
+        activated_at: new Date().toISOString(),
+      };
+      writeActivationFile(config.dataRoot, act);
+      slog.event("KERNEL_RESTORED_FROM_BACKUP", { files: r.files });
+      // 恢复的账本与密钥文件都由旧电脑的数据库主密钥保护：请主进程用本机 DPAPI 重新包裹它（只在待激活模式下接受），再按新身份重启
+      setTimeout(() => {
+        if (c.db_master_key) broadcast({ type: "kernel.adopt_master_key", key: c.db_master_key });
+        else broadcast({ type: "kernel.restart_for_identity" });
+      }, 300).unref();
+      return { ok: true, firm: { name: act.firm_name }, member: { name: act.member_name, role: act.role }, backup_at: r.manifest.at, files: r.files, next: "restart" };
+    };
   } else {
     api["onboarding.status"] = () => ({ mode: "activated", activation: activationInfo(config, firm, identity) });
     // 待批准页的轮询与内核自动取回会赛跑：自动取回先拿到批准、内核已按新身份重启时，界面的这次查询照样得到“已批准”并刷新
@@ -803,6 +848,83 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   api["members.approve"] = (p) => members.approve(p ?? {});
   api["members.reject"] = (p) => members.reject(p ?? {});
   api["members.revoke_invitation"] = (p) => members.revokeInvitation(p ?? {});
+
+  // ─── 恢复包与备份（第 14 批；设计 docs/design/恢复与备份设计-v1.md） ───
+  if (!config.onboarding) {
+    const backupDeps: BackupDeps = {
+      db,
+      workspaceDir: config.workspaceDir,
+      dbFile: config.dbFile,
+      tenantId: identity.tenantId,
+      firmSlug: config.firmSlug,
+      deviceId: device.deviceId,
+      sign: (bytes) => signSyncWith(device.signer, bytes),
+      stateFile: join(config.workspaceDir, "backup.json"),
+    };
+    const insideDataRoot = (p: string) => {
+      const a = (x: string) => x.replace(/[\\/]+$/, "").toLowerCase();
+      return a(p) === a(config.dataRoot) || a(p).startsWith(`${a(config.dataRoot)}/`) || a(p).startsWith(`${a(config.dataRoot)}\\`);
+    };
+    const auditLocal = (action: string, objectId: string) => appendAuditEvent(db, signer, { tenantId: identity.tenantId, actorId: identity.userId, action, kind: "device", objectId, matterId: null });
+    api["recovery.create_package"] = (p) => {
+      const target = String(p?.path ?? "");
+      if (!target) throw new DomainError("validation", "请选择恢复包的保存位置", 400);
+      const content = collectRecoveryContent({
+        keysDir,
+        activation: config.activation,
+        tenantId: identity.tenantId,
+        firmSlug: config.firmSlug,
+        userSlug: config.userSlug,
+        dbKey: config.dbKey,
+        device: { deviceId: device.deviceId, cert: device.cert },
+        firm,
+      });
+      const sealed = sealRecoveryPackage(content, config.activation?.firm_name ?? config.firmSlug);
+      const w = writeExportFile(target, sealed.bytes, config.dataRoot);
+      auditLocal("recovery.package_created", device.deviceId);
+      return { file_name: w.name, code_text: sealed.codeText, set_id: sealed.setId, includes_firm_root: !!content.firm_root };
+    };
+    api["recovery.verify_package"] = (p) => {
+      const file = String(p?.file ?? "");
+      if (!file) throw new DomainError("validation", "请选择恢复包文件", 400);
+      const bytes = readFileSync(file);
+      const outer = peekRecoveryPackage(bytes);
+      const c = openRecoveryPackage(bytes, String(p?.code ?? ""));
+      const sameDevice = c.device.device_id === device.deviceId && c.device.keys.signPublicKeyPem === device.cert.signPublicKeyPem;
+      auditLocal("recovery.package_verified", device.deviceId);
+      return { ok: true, same_device: sameDevice, created_at: outer.created_at, includes_db_key: !!c.db_master_key, includes_firm_root: !!c.firm_root };
+    };
+    api["backup.status"] = () => {
+      const st = readBackupState(backupDeps.stateFile);
+      const pk = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_events WHERE action = 'recovery.package_created' AND tenant_id = ?`, [identity.tenantId])!.n;
+      const pv = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_events WHERE action = 'recovery.package_verified' AND tenant_id = ?`, [identity.tenantId])!.n;
+      return { configured: !!st.dir, last_ok_at: st.last_ok_at, last_error: st.last_error, files: st.last_files, bytes: st.last_bytes, packages_created: pk, packages_verified: pv };
+    };
+    api["backup.configure"] = (p) => {
+      const st = configureBackup(backupDeps, String(p?.dir ?? ""), insideDataRoot);
+      auditLocal("backup.configured", device.deviceId);
+      return { configured: !!st.dir };
+    };
+    api["backup.run"] = () => {
+      const r = runBackup(backupDeps);
+      slog.event("KERNEL_BACKUP_DONE", { files: r.last_files, copied: r.copied });
+      return { ok: true, last_ok_at: r.last_ok_at, files: r.last_files, copied: r.copied };
+    };
+    // 每天自动一次（每小时看一次：配置了位置且上次成功已超过 24 小时）；失败只记事件码，界面看 backup.status
+    const backupTimer = env.ZR_BACKUP_TIMER === "off" ? null : setInterval(() => {
+      const st = readBackupState(backupDeps.stateFile);
+      if (!st.dir || (st.last_ok_at && Date.now() - Date.parse(st.last_ok_at) < 24 * 3600_000)) return;
+      try {
+        runBackup(backupDeps);
+      } catch {
+        slog.event("KERNEL_BACKUP_FAILED", {});
+      }
+    }, 3600_000);
+    backupTimer?.unref();
+    shutdownHooks.push(() => {
+      if (backupTimer) clearInterval(backupTimer);
+    });
+  }
   {
     const baseStatus = api["kernel.status"]!;
     api["kernel.status"] = async (p, id) => ({

@@ -802,3 +802,6 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .done-files .done-file-list li { display: flex; align-items: center; gap: 8px; }
 .menu-group { font-size: var(--fs-xs); color: var(--text-secondary); padding: 8px 10px 2px; border-top: 1px solid var(--border-subtle); margin-top: 4px; }
 .tab-more { min-width: 40px; }
+.recovery-code { white-space: pre; display: block; font-size: var(--fs-md); line-height: 1.7; }
+@media print { body * { visibility: hidden; } .recovery-code, .recovery-code * { visibility: visible; } .recovery-code { position: fixed; top: 40px; left: 40px; background: none; } }
+

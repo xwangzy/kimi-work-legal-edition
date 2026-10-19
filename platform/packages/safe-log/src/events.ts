@@ -46,6 +46,10 @@ export const EVENTS = {
   KERNEL_ONBOARDING_JOINED: { level: "info", fields: {} },
   KERNEL_ONBOARDING_CERT_REJECTED: { level: "warn", fields: {} },
   KERNEL_JOIN_STAGED_REJECTED: { level: "warn", fields: {} },
+  /** 恢复与备份（第 14 批）：只记文件数，不记路径与内容。 */
+  KERNEL_RESTORED_FROM_BACKUP: { level: "info", fields: { files: "int" } },
+  KERNEL_BACKUP_DONE: { level: "info", fields: { files: "int", copied: "int" } },
+  KERNEL_BACKUP_FAILED: { level: "warn", fields: {} },
   KERNEL_EXIT_MODE_LIFTED: { level: "info", fields: { resumed: "int" } },
   KERNEL_RUNS_RECOVERED: { level: "warn", fields: { count: "int", parked: "bool" } },
   KERNEL_CHECKPOINT_FAILED: { level: "warn", fields: { ...ERR } },
@@ -81,6 +85,9 @@ export const EVENTS = {
   MAIN_KERNEL_EXITED: { level: "warn", fields: { "code?": "int" } },
   /** 开通或入组完成：主进程按 activation.json 有序重启内核（第 13 批）。 */
   MAIN_KERNEL_IDENTITY_RESTART: { level: "info", fields: {} },
+  /** 从备份恢复时采用旧电脑的数据库主密钥（第 14 批）：只记结果。 */
+  MAIN_ADOPT_KEY_DONE: { level: "info", fields: {} },
+  MAIN_ADOPT_KEY_REJECTED: { level: "warn", fields: {} },
   MAIN_NOTIFY_FAILED: { level: "warn", fields: { ...ERR } },
   MAIN_CRASH_DIR_FAILED: { level: "warn", fields: { ...ERR } },
   MAIN_RUNTIME_PROBLEM: { level: "error", fields: { count: "int", stage: ["startup", "background"] } },

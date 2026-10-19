@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("zrKernel", {
   /** 主进程文件对话框（v9.2 §3.7；Y5 P1-4）：不进“最近使用”；只回一次性句柄与文件名，渲染进程拿不到也不能指定路径。 */
   pickFiles: (o) => ipcRenderer.invoke("kwl:pick-files", o ?? {}),
   pickSave: (o) => ipcRenderer.invoke("kwl:pick-save", o ?? {}),
+  /** 选文件夹（第 14 批：备份位置、从备份恢复）：同样只回一次性句柄与文件夹名。 */
+  pickFolder: () => ipcRenderer.invoke("kwl:pick-folder"),
   saveText: (handle, text) => ipcRenderer.invoke("kwl:save-text", handle, text),
   /**
    * 拖放或文件框选中的文件 → 一次性句柄（复核 S5A-01）：路径只在 preload 与主进程之间（Electron 44 经 webUtils 从真实的 File 取得），

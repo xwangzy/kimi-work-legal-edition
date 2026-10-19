@@ -131,7 +131,7 @@ async function main(): Promise<void> {
     }
   });
 
-  port.postMessage({ type: "kernel.ready", localPort: kernel.localPort, workspace: kernel.config.workspaceDir });
+  port.postMessage({ type: "kernel.ready", localPort: kernel.localPort, workspace: kernel.config.workspaceDir, onboarding: kernel.config.onboarding });
 
   for (const sig of ["SIGINT", "SIGTERM"] as const) {
     process.on(sig, () => {

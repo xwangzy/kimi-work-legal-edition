@@ -5,7 +5,7 @@
  * 律师层不出现“证书、密钥、签名”等词；激活只把码发给中软核对，不上传任何案件材料。
  */
 import { useEffect, useRef, useState } from "react";
-import { api, onboarding } from "../api.ts";
+import { api, onboarding, recovery } from "../api.ts";
 
 type Status = { mode: "unactivated" | "member_pending"; firm?: { name: string }; member?: { name: string | null; role: string }; check_code?: string; requested_at?: string; restarting?: boolean };
 
@@ -64,6 +64,7 @@ function EnterCode({ onPending }: { onPending: (s: Status) => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
   const ready = code.replace(/-/g, "").length === 20;
   const submit = async () => {
     if (!ready || busy) return;
@@ -91,6 +92,7 @@ function EnterCode({ onPending }: { onPending: (s: Status) => void }) {
       </Frame>
     );
   }
+  if (restoring) return <RestoreFromBackup onBack={() => setRestoring(false)} onDone={setDone} />;
   return (
     <Frame>
       <h1 className="activate-title">欢迎使用</h1>
@@ -131,6 +133,84 @@ function EnterCode({ onPending }: { onPending: (s: Status) => void }) {
         <br />
         开通时只需联网核对一次这个码；你的案卷不会上传。
       </p>
+      <p className="activate-foot">
+        <button className="btn-link" onClick={() => setRestoring(true)}>
+          换了新电脑？从备份恢复 →
+        </button>
+      </p>
+    </Frame>
+  );
+}
+
+/** 从备份恢复（第 14 批）：恢复包 + 备份位置 + 恢复码 → 与原来那台电脑相同的身份与数据。 */
+function RestoreFromBackup({ onBack, onDone }: { onBack: () => void; onDone: (s: string) => void }) {
+  const dialogs = recovery.hasDialogs();
+  const [pkg, setPkg] = useState<{ handle?: string; name: string; path?: string } | null>(null);
+  const [folder, setFolder] = useState<{ handle?: string; name: string; path?: string } | null>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const submit = async () => {
+    if (!pkg || !folder || busy) return;
+    setBusy(true);
+    setErr("");
+    try {
+      const r = await onboarding.restore({
+        ...(pkg.handle ? { file_handle: pkg.handle } : { file: pkg.path }),
+        ...(folder.handle ? { folder_handle: folder.handle } : { dir: folder.path }),
+        code,
+      });
+      onDone(`已恢复「${r.firm?.name ?? "本所"}」的数据（备份于 ${String(r.backup_at ?? "").slice(0, 10)}），正在打开…`);
+      void waitForActivated();
+    } catch (e) {
+      setErr((e as Error).message || "恢复没有完成");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Frame>
+      <h1 className="activate-title">从备份恢复</h1>
+      <p className="activate-lead">需要三样东西：恢复包文件、备份所在的位置（例如 U 盘）、打印或抄下的恢复码。</p>
+      {dialogs ? (
+        <div className="activate-actions">
+          <button className="btn-ghost" onClick={() => void recovery.pickPackageFile().then((f) => f && setPkg({ handle: f.handle, name: f.name }))}>
+            {pkg ? `恢复包：${pkg.name}` : "选择恢复包"}
+          </button>
+          <button className="btn-ghost" onClick={() => void recovery.pickFolder().then((f) => f && setFolder({ handle: f.handle, name: f.name }))}>
+            {folder ? `备份位置：${folder.name}` : "选择备份位置"}
+          </button>
+        </div>
+      ) : (
+        <>
+          <label className="field">
+            <span>开发形态：恢复包文件路径</span>
+            <input onChange={(e) => setPkg({ name: e.target.value, path: e.target.value })} />
+          </label>
+          <label className="field">
+            <span>开发形态：备份位置路径</span>
+            <input onChange={(e) => setFolder({ name: e.target.value, path: e.target.value })} />
+          </label>
+        </>
+      )}
+      <label className="field">
+        <span>恢复码（含第一行 KWR1）</span>
+        <textarea className="activate-code" rows={4} value={code} onChange={(e) => setCode(e.target.value)} spellCheck={false} autoComplete="off" />
+      </label>
+      {err && (
+        <p className="activate-error" role="alert">
+          {err}
+        </p>
+      )}
+      <div className="activate-actions">
+        <button className="btn-primary" disabled={!pkg || !folder || code.trim().length < 10 || busy} onClick={() => void submit()}>
+          {busy ? "正在核对与恢复…" : "恢复"}
+        </button>
+        <button className="btn-ghost" onClick={onBack}>
+          返回
+        </button>
+      </div>
+      <p className="muted activate-foot">恢复只在这台电脑上进行，不经过网络；恢复包和备份都会先核对，被改动过的不会采用。</p>
     </Frame>
   );
 }

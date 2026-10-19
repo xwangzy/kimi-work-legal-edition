@@ -97,3 +97,23 @@ test("复核 S5A-04：保存目标落在数据根或 Electron userData 里一律
   assert.equal(fd.insideAppData("/Users/A/Library/Application Support/KimiWorkLegal/x", ["/Users/a/Library/Application Support/KimiWorkLegal"], "darwin"), true);
 });
 
+
+test("选文件夹句柄（第 14 批）：备份位置与从备份恢复只认文件夹句柄；页面自带的 dir 一律剥掉；文件句柄冒充文件夹被拒", () => {
+  const store = fd.createHandleStore();
+  const resolveFileParams = (fd as any).resolveFileParams as (m: string, p: unknown, s: unknown) => { params?: Record<string, unknown>; error?: { code: string } };
+  const folder = store.issue("folder", "/Volumes/U盘/备份");
+  const r = resolveFileParams("backup.configure", { folder_handle: folder, dir: "/etc" }, store);
+  assert.deepEqual(r.params, { dir: "/Volumes/U盘/备份" });
+  const stripped = resolveFileParams("backup.configure", { dir: "/etc" }, store);
+  assert.deepEqual(stripped.params, {}, "没有句柄时页面给的路径不转发");
+  const fileHandle = store.issue("open", "/tmp/x");
+  assert.equal(resolveFileParams("backup.configure", { folder_handle: fileHandle }, store).error?.code, "validation");
+  // 从备份恢复：恢复包文件句柄 + 备份文件夹句柄同时换
+  const pkg = store.issue("open", "/Volumes/U盘/恢复包.kwlr");
+  const dir = store.issue("folder", "/Volumes/U盘");
+  const rr = resolveFileParams("onboarding.restore", { file_handle: pkg, folder_handle: dir, code: "KWR1" }, store);
+  assert.deepEqual(rr.params, { file: "/Volumes/U盘/恢复包.kwlr", dir: "/Volumes/U盘", code: "KWR1" });
+  // 恢复包只写到对话框选定的位置
+  const save = store.issue("save", "/Users/a/Documents/恢复包.kwlr");
+  assert.deepEqual(resolveFileParams("recovery.create_package", { save_handle: save, path: "/tmp/evil" }, store).params, { path: "/Users/a/Documents/恢复包.kwlr" });
+});

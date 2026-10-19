@@ -16,7 +16,9 @@ console.log(`[bridge] kernel up, localPort=${kernel.localPort}, workspace=${kern
 let ready: Promise<void> = Promise.resolve();
 const watchIdentity = (k: typeof kernel) =>
   k.onBroadcast((m) => {
-    if (m.type !== "kernel.restart_for_identity") return;
+    // 从备份恢复（第 14 批）：开发形态没有 DPAPI，直接以恢复的主密钥重建内核（只在待激活模式）
+    if (m.type === "kernel.adopt_master_key" && k.config.onboarding && typeof m.key === "string") process.env.ZR_DB_KEY = m.key;
+    else if (m.type !== "kernel.restart_for_identity") return;
     ready = (async () => {
       await k.close().catch(() => {});
       kernel = await createKernel();

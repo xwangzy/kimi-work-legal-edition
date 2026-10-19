@@ -17,6 +17,7 @@ import { CpAuditPanel, UsagePanel } from "./FirmUsage.tsx";
 import { SupportUpload } from "../components/SupportUpload.tsx";
 import { TeamShare } from "../components/TeamShare.tsx";
 import { MembersAdmin } from "../components/MembersAdmin.tsx";
+import { RecoveryBackup } from "../components/RecoveryBackup.tsx";
 
 const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
 
@@ -427,6 +428,7 @@ function DeviceTab({ caps, gate, mySafety, recovery, admin }: { caps: Capabiliti
           </div>
         </div>
         <ActivationRow />
+        <RecoveryBackup />
         <div className="device-row">
           <div className="device-k">核对码</div>
           <div>

@@ -473,8 +473,13 @@ export const membersApi = (d: MembersDeps) => ({
   },
 });
 
-/** 待激活模式下开放的内核方法（其余一律 not_activated）。 */
-export const ONBOARDING_METHODS: ReadonlySet<string> = new Set(["kernel.status", "onboarding.status", "onboarding.redeem", "onboarding.check", "onboarding.reset", "device.env_probe"]);
+/** 待激活模式下开放的内核方法（其余一律 not_activated）。第 14 批加“从备份恢复”。 */
+export const ONBOARDING_METHODS: ReadonlySet<string> = new Set(["kernel.status", "onboarding.status", "onboarding.redeem", "onboarding.check", "onboarding.reset", "onboarding.restore", "device.env_probe"]);
+
+/** 写本机激活记录（从备份恢复时用；与兑换开通码同一原子写）。 */
+export function writeActivationFile(dataRoot: string, a: ActivationFile): void {
+  writeJsonAtomic(activationFilePath(dataRoot), a);
+}
 
 /** 认领凭据暂存（创始设备首次登记根公钥时出示；登记成功即删除）。 */
 export function readActivationClaim(keysDir: string): { activation_id: string; claim_secret: string } | null {

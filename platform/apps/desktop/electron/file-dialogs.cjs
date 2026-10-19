@@ -17,6 +17,14 @@ const OPEN_METHODS = new Map([
   ["materials.mount", "path"],
   ["recovery.import_device", "file"],
   ["eval.open", "path"],
+  // 第 14 批：试解恢复包、从备份恢复（恢复包文件）
+  ["recovery.verify_package", "file"],
+  ["onboarding.restore", "file"],
+]);
+/** 选文件夹类方法（第 14 批）：文件夹句柄换成内核参数名。 */
+const FOLDER_METHODS = new Map([
+  ["backup.configure", "dir"],
+  ["onboarding.restore", "dir"],
 ]);
 /** 写出类方法：保存句柄换成内核参数名。 */
 const SAVE_METHODS = new Map([
@@ -27,6 +35,8 @@ const SAVE_METHODS = new Map([
   ["eval.save_work", "save_path"],
   ["eval.save_report", "save_path"],
   ["control_plane.audit_export", "save_path"],
+  // 第 14 批：恢复包
+  ["recovery.create_package", "path"],
 ]);
 /** 渲染进程带来的一切路径类参数一律剥掉（复核 S5A-01：否则内核会按页面给的路径读写，含 UNC 网络路径引起的 SMB 外连）。 */
 const PATH_KEYS = ["path", "file", "save_path", "share_dir", "dir", "out", "target"];
@@ -136,6 +146,13 @@ function resolveFileParams(method, params, store) {
     }
   }
   delete p.file_handle;
+  const folderKey = FOLDER_METHODS.get(method);
+  if (folderKey && p.folder_handle !== undefined) {
+    const dir = store.take(p.folder_handle, "folder");
+    if (!dir) return { error: { code: "validation", message: "所选文件夹已失效，请重新选择" } };
+    p[folderKey] = dir;
+  }
+  delete p.folder_handle;
   return { params: p };
 }
 
