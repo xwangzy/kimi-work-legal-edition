@@ -39,6 +39,13 @@ export const EVENTS = {
   KERNEL_CLOSED: { level: "info", fields: {} },
   KERNEL_SKILLS_UNAVAILABLE: { level: "warn", fields: {} },
   KERNEL_RECOVERY_REJECTED: { level: "warn", fields: {} },
+  /** 开通与成员入组（第 13 批）：只记发生了什么，不记码、律所或成员。 */
+  KERNEL_ONBOARDING_REDEEM_FAILED: { level: "warn", fields: {} },
+  KERNEL_ONBOARDING_ACTIVATED: { level: "info", fields: {} },
+  KERNEL_ONBOARDING_JOIN_REQUESTED: { level: "info", fields: {} },
+  KERNEL_ONBOARDING_JOINED: { level: "info", fields: {} },
+  KERNEL_ONBOARDING_CERT_REJECTED: { level: "warn", fields: {} },
+  KERNEL_JOIN_STAGED_REJECTED: { level: "warn", fields: {} },
   KERNEL_EXIT_MODE_LIFTED: { level: "info", fields: { resumed: "int" } },
   KERNEL_RUNS_RECOVERED: { level: "warn", fields: { count: "int", parked: "bool" } },
   KERNEL_CHECKPOINT_FAILED: { level: "warn", fields: { ...ERR } },
@@ -72,6 +79,8 @@ export const EVENTS = {
   MAIN_KERNEL_READY: { level: "info", fields: {} },
   MAIN_KERNEL_FATAL: { level: "error", fields: {} },
   MAIN_KERNEL_EXITED: { level: "warn", fields: { "code?": "int" } },
+  /** 开通或入组完成：主进程按 activation.json 有序重启内核（第 13 批）。 */
+  MAIN_KERNEL_IDENTITY_RESTART: { level: "info", fields: {} },
   MAIN_NOTIFY_FAILED: { level: "warn", fields: { ...ERR } },
   MAIN_CRASH_DIR_FAILED: { level: "warn", fields: { ...ERR } },
   MAIN_RUNTIME_PROBLEM: { level: "error", fields: { count: "int", stage: ["startup", "background"] } },

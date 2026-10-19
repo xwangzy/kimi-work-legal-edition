@@ -18,6 +18,7 @@ import { ConnectionsPage } from "./pages/Connections.tsx";
 import { ChatPage } from "./pages/Chat.tsx";
 import { NotOpenPage } from "./pages/NotOpen.tsx";
 import { RemindersPage } from "./pages/Reminders.tsx";
+import { ActivatePage } from "./pages/Activate.tsx";
 import { updateBannerView } from "./lib/update-banner.ts";
 
 /** 设置页的标签（UIUX 增量评审 ST-5）：律师版四页 + 管理员“管理”。 */
@@ -82,6 +83,14 @@ export function nav(path: string): void {
 
 export function App() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
+  // 首次启动激活（第 13 批）：这台电脑还没有激活时整个应用只显示激活页
+  const [boot, setBoot] = useState<{ onboarding: any } | null>(null);
+  const loadBoot = () =>
+    void api
+      .kernelStatus()
+      .then((st: any) => setBoot({ onboarding: st?.onboarding ?? null }))
+      .catch(() => setBoot({ onboarding: null }));
+  useEffect(loadBoot, []);
   useEffect(() => {
     const on = () => setRoute(parseHash(window.location.hash));
     window.addEventListener("hashchange", on);
@@ -123,6 +132,8 @@ export function App() {
     });
   }, []);
   const routeKey = route.page === "run" ? `run:${route.runId}` : route.page === "matter" ? `matter:${route.matterId}` : route.page;
+  if (boot === null) return <div className="activate" aria-busy="true" />;
+  if (boot.onboarding) return <ActivatePage initial={boot.onboarding} onRefresh={loadBoot} />;
   return (
     <div className="shell">
       <Sidebar route={route} />

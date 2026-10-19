@@ -156,7 +156,7 @@ async function runSmoke(win) {
     ]).catch(() => null);
     if (!st || st.ok !== true) throw new SmokeFailure("kernel_status_failed");
     const s = st.result;
-    result.checks.kernel_status = { ocr_available: s.ocr.available, egress_gate: Boolean(s.egress_gate), sole_exit: s.egress_gate && s.egress_gate.sole_exit, control_plane_mode: s.control_plane && s.control_plane.mode, lawdb: s.lawdb_package ? "ok" : "missing" };
+    result.checks.kernel_status = { ocr_available: s.ocr.available, egress_gate: Boolean(s.egress_gate), sole_exit: s.egress_gate && s.egress_gate.sole_exit, control_plane_mode: s.control_plane && s.control_plane.mode, lawdb: s.lawdb_package ? "ok" : "missing", onboarding: s.onboarding ? s.onboarding.mode : "activated" };
     if (!s.ocr.available) throw new SmokeFailure("ocr_unavailable");
     await Promise.race([win.webContents.isLoading() ? new Promise((r) => win.webContents.once("did-finish-load", r)) : Promise.resolve(), timeout(60_000, "界面加载")]).catch(() => {
       throw new SmokeFailure("renderer_load_timeout");
@@ -309,6 +309,12 @@ async function startKernel() {
       smoke.kernelReady(msg);
       // 内核（重新）就绪：若随包运行时全量核验已通过，告诉它可以拉起随包子进程（复核 B4-R15）
       sendRuntimeVerified();
+      return;
+    }
+    // 开通或入组完成（第 13 批）：内核已写好 activation.json，按新身份有序重启内核（界面轮询 kernel.status 后自行刷新）
+    if (msg && msg.type === "kernel.restart_for_identity") {
+      slog.event("MAIN_KERNEL_IDENTITY_RESTART", {});
+      void restartKernelForIdentity();
       return;
     }
     if (msg && msg.type === "kernel.fatal") {
@@ -823,6 +829,22 @@ app.on("before-quit", () => {
   restart.quitting = true;
   if (restart.timer) clearTimeout(restart.timer);
 });
+
+/** 开通或入组完成后按新身份重启内核：先有序关闭（闸门、宿主等子进程一并退出），再按 activation.json 拉起。 */
+let identityRestarting = false;
+async function restartKernelForIdentity() {
+  if (identityRestarting) return;
+  identityRestarting = true;
+  try {
+    broadcastStatus({ status: "restarting", message: "正在完成激活…" });
+    await stopKernel();
+    restart.quitting = false;
+    await startKernel();
+    broadcastStatus({ status: "running" });
+  } finally {
+    identityRestarting = false;
+  }
+}
 
 /**
  * 有序关闭内核（复核 B4-A13）：先请内核关闭闸门、Agent 宿主等子进程与账本，最多等 timeoutMs 再强制终止。

@@ -14,6 +14,7 @@
  *   KWL_CP_AUDIT_FILE：运营审计流水落盘（JSON Lines，启动时验链）。
  * - KWL_SUPPORT_DIR=<目录>（第 9 批 S13）：同时拉起支持与诊断服务 v0（诊断包上传；运营凭据 KWL_SUPPORT_OPS_SECRET，缺省随机且不输出）。
  * - KWL_NOTIFY_DIR=<目录>（第 10 批 S9）：同时拉起通知与提醒服务 v0（期限提醒：只存触发时刻、接收设备与密文；凭据由控制面签发，须 KWL_CONTROL_PLANE=1）。
+ * - KWL_ACTIVATION=1（第 13 批开通与成员入组；须 KWL_CONTROL_PLANE=1）：租户要求开通码，开发用创始开通码写进 <KWL_CLOUD_DIR>/founder-code.txt。
  * - KWL_RELAY_DIR=<目录>（第 11 批 S11）：同时拉起共享中继服务 v0（团队事项密文同步；按订阅核对律所策略 share_relay，须 KWL_CONTROL_PLANE=1）。
  *
  * 用法：node scripts/dev-cloud-v0.mjs   → 按输出设置环境变量后启动内核 / 桌面
@@ -52,7 +53,17 @@ if (withCp) {
   const auditLog = auditFile ? cpMod.createAuditLog({ file: auditFile }) : undefined;
   cp = cpMod.createControlPlane({ keys: cpMod.devControlPlaneKeys(), serviceSecret, ...(stateStore ? { stateStore } : {}), ...(auditLog ? { auditLog } : {}) });
   await new Promise((r) => cp.server.listen(Number(process.env.KWL_CP_PORT ?? 0), "127.0.0.1", r));
-  if (!cp.ops.tenant(tenant)) cp.ops.createTenant({ tid: tenant, edition: process.env.KWL_EDITION === "firm" ? "firm" : "team", seats: 20, points: Number(process.env.KWL_POINTS ?? 100_000_000) });
+  // 第 13 批开通与成员入组：KWL_ACTIVATION=1 时租户要求开通码，开发用创始开通码写进 <KWL_CLOUD_DIR>/founder-code.txt（0600，不输出到终端）
+  const activation = process.env.KWL_ACTIVATION === "1";
+  if (!cp.ops.tenant(tenant)) {
+    cp.ops.createTenant({ tid: tenant, edition: process.env.KWL_EDITION === "firm" ? "firm" : "team", seats: 20, points: Number(process.env.KWL_POINTS ?? 100_000_000), ...(activation ? { name: process.env.KWL_FIRM_NAME ?? "示例律师事务所", activationRequired: true } : {}) });
+    if (activation) {
+      const { writeFileSync } = await import("node:fs");
+      const issued = cp.ops.issueActivationCode(tenant, { member: { slug: process.env.KWL_FOUNDER_SLUG ?? "admin", name: process.env.KWL_FOUNDER_NAME ?? "管理员" } });
+      writeFileSync(join(dir, "founder-code.txt"), `${issued.code}\n`, { mode: 0o600 });
+      console.log(`# 开发用创始开通码已写入 ${join(dir, "founder-code.txt")}（客户端须以待激活形态启动：ZR_ONBOARDING=1 且不设 ZR_FIRM_SLUG）`);
+    }
+  }
   quota = new gw.LeaseQuota({ ledger: gw.httpLedger({ baseUrl: `http://127.0.0.1:${cp.server.address().port}`, serviceSecret }), holder: "gw-dev-1" });
   keys = ft.publicKeyMap(cp.publicKeys.seat);
   feed = new cpMod.GatewayFeedSubscriber({ url: `http://127.0.0.1:${cp.server.address().port}/v1/feed/gateway`, serviceSecret, keys: ft.publicKeyMap(cp.publicKeys.envelope) });

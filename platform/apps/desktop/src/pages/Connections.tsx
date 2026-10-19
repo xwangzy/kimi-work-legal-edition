@@ -16,6 +16,7 @@ import { RecallEvalPanel } from "./RecallEval.tsx";
 import { CpAuditPanel, UsagePanel } from "./FirmUsage.tsx";
 import { SupportUpload } from "../components/SupportUpload.tsx";
 import { TeamShare } from "../components/TeamShare.tsx";
+import { MembersAdmin } from "../components/MembersAdmin.tsx";
 
 const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
 
@@ -373,6 +374,25 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
 }
 
 /** 本机与安全（ST-1 律师版）：四行结论 + 电脑环境 + 遇到问题；工程细节在“管理 → 诊断”。 */
+/** 本所与本人（第 13 批）：经开通码或邀请码激活的电脑显示律所核对码，新成员可与管理员核对。 */
+function ActivationRow() {
+  const [a, setA] = useState<any | null>(null);
+  useEffect(() => {
+    api.kernelStatus().then((st: any) => setA(st?.activation ?? null)).catch(() => setA(null));
+  }, []);
+  if (!a) return null;
+  return (
+    <div className="device-row">
+      <div className="device-k">本所</div>
+      <div>
+        <b>{a.firm?.name}</b>
+        {a.member?.name ? ` · ${a.member.name}` : ""}
+        <div className="muted">律所核对码 <span className="mono">{a.firm_check_code}</span>：与管理员“设置 · 管理 · 成员”页底部的数字一致，说明你加入的是本所。</div>
+      </div>
+    </div>
+  );
+}
+
 function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | null; gate: any; mySafety: string | null; recovery: any }) {
   const [busy, setBusy] = useState(false);
   const [diag, setDiag] = useState<{ open: boolean; msg: string }>({ open: false, msg: "" });
@@ -408,6 +428,7 @@ function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | nu
             <div className="muted">律所 IT 可另加系统防火墙规则，让“只有这条通道能联网”由 Windows 强制。</div>
           </div>
         </div>
+        <ActivationRow />
         <div className="device-row">
           <div className="device-k">本机安全码</div>
           <div>
@@ -520,12 +541,13 @@ function DeviceTab({ caps, gate, mySafety, recovery }: { caps: Capabilities | nu
 
 /** 管理（ST-1、ST-4）：律所策略、用量与上限、中软侧操作记录、诊断（工程细节）、召回评测（律所内）。 */
 function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[]; unresolved: any[]; onReconciled: () => void; im: any[]; recovery: any }) {
-  const [sub, setSub] = useState<"policy" | "usage" | "cp_audit" | "diagnostics" | "recall">("policy");
+  const [sub, setSub] = useState<"members" | "policy" | "usage" | "cp_audit" | "diagnostics" | "recall">("members");
   return (
     <div>
       <div className="tabs" role="tablist" aria-label="管理">
         {(
           [
+            ["members", "成员"],
             ["policy", "律所策略"],
             ["usage", "用量与上限"],
             ["cp_audit", "中软侧操作记录"],
@@ -538,6 +560,7 @@ function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[];
           </button>
         ))}
       </div>
+      {sub === "members" && <MembersAdmin />}
       {sub === "policy" && <PolicyTab />}
       {sub === "usage" && <UsagePanel />}
       {sub === "cp_audit" && <CpAuditPanel />}

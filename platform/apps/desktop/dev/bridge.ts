@@ -10,12 +10,26 @@ import { createKernel } from "@zr-legal/kernel";
 import { bridgeToken } from "./bridge-token.ts";
 
 const PORT = Number(process.env.ZR_DEV_BRIDGE_PORT ?? 7720);
-const kernel = await createKernel();
+let kernel = await createKernel();
 console.log(`[bridge] kernel up, localPort=${kernel.localPort}, workspace=${kernel.config.workspaceDir}`);
+// 开通或入组完成（第 13 批）：与安装包主进程一样按 activation.json 重建内核；重建期间的请求等它就绪
+let ready: Promise<void> = Promise.resolve();
+const watchIdentity = (k: typeof kernel) =>
+  k.onBroadcast((m) => {
+    if (m.type !== "kernel.restart_for_identity") return;
+    ready = (async () => {
+      await k.close().catch(() => {});
+      kernel = await createKernel();
+      watchIdentity(kernel);
+      console.log(`[bridge] kernel restarted for identity, workspace=${kernel.config.workspaceDir}`);
+    })();
+  });
+watchIdentity(kernel);
 
 // 令牌：先到者随机生成并写入 dev/.bridge-token（vite 读取后注入开发页）；ZR_DEV_BRIDGE_TOKEN 可覆盖
 const BRIDGE_TOKEN = bridgeToken();
-const ALLOWED_ORIGINS = new Set(["http://127.0.0.1:5173", "http://localhost:5173"]);
+const WEB_PORT = Number(process.env.KWL_DEV_WEB_PORT ?? 5173);
+const ALLOWED_ORIGINS = new Set([`http://127.0.0.1:${WEB_PORT}`, `http://localhost:${WEB_PORT}`]);
 
 const server = createServer((req, res) => {
   const origin = String(req.headers.origin ?? "");
@@ -49,6 +63,7 @@ const server = createServer((req, res) => {
       // 保持 {}
     }
     try {
+      await ready;
       const result = await kernel.invoke(String(body.method), body.params ?? {});
       res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({ ok: true, result }));

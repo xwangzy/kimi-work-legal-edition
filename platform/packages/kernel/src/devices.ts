@@ -226,6 +226,51 @@ export function writeDeviceKeys(keysDir: string, keys: DeviceKeys): void {
   writeSecret0600(join(keysDir, "device.json"), keys);
 }
 
+/** 开通与入组的暂存秘密（认领凭据、入组设备密钥与取回的证书；第 13 批）：与其他密钥文件同一封装。 */
+export function writeStagedSecret(path: string, content: unknown): void {
+  writeSecret0600(path, content);
+}
+
+/** 成员入组取回证书后暂存的内容（keys/join-approved.json），下次按真实身份启动时在任何组件装载设备密钥之前生效。 */
+export interface StagedJoin {
+  cert: DeviceCertificate;
+  root_public_key_pem: string;
+  recovery_public_key_pem: string;
+  keys: DeviceKeys;
+}
+
+/**
+ * 应用暂存的入组结果（第 13 批）：成员设备不持律所根——律所身份只登记根公钥与（经律所根签名核验过的）恢复托管公钥，
+ * 设备行与 device.json 用管理员签发的证书和入组时生成的设备密钥。证书须由该根签发、编号与成员是本机身份、公钥与暂存的私钥配对。
+ * 账本先提交、再写密钥文件、最后删暂存（写密钥失败下次启动重做；幂等）。
+ */
+export function applyStagedJoin(db: KernelDb, keysDir: string, identity: Identity, slugs: { firmSlug: string; userSlug: string }): { applied: boolean; rejected?: string } {
+  const path = join(keysDir, "join-approved.json");
+  if (!existsSync(path)) return { applied: false };
+  const st = readSecretFile<StagedJoin>(path);
+  const deviceId = `dev_${slugs.firmSlug}_${slugs.userSlug}`;
+  const vr = verifyDeviceCertificate(st.cert, st.root_public_key_pem);
+  if (!vr.ok) return { applied: false, rejected: "cert_invalid" };
+  if (st.cert.deviceId !== deviceId || st.cert.memberId !== identity.userId) return { applied: false, rejected: "identity_mismatch" };
+  if (st.cert.signPublicKeyPem !== st.keys.signPublicKeyPem || st.cert.encPublicKeyPem !== st.keys.encPublicKeyPem) return { applied: false, rejected: "key_mismatch" };
+  const existing = db.get<{ root_public_key_pem: string }>(`SELECT root_public_key_pem FROM firm_identity WHERE tenant_id = ?`, [identity.tenantId]);
+  if (existing && existing.root_public_key_pem !== st.root_public_key_pem) return { applied: false, rejected: "root_mismatch" };
+  const roleOf: Record<string, string> = { admin: "firm_admin", partner: "partner", assistant: "paralegal", lawyer: "lawyer" };
+  db.tx(() => {
+    if (!existing) db.run(`INSERT INTO firm_identity (tenant_id, root_public_key_pem, recovery_public_key_pem) VALUES (?,?,?)`, [identity.tenantId, st.root_public_key_pem, st.recovery_public_key_pem]);
+    db.run(`UPDATE memberships SET role = ? WHERE tenant_id = ? AND user_id = ?`, [roleOf[st.cert.role] ?? "lawyer", identity.tenantId, identity.userId]);
+    db.run(
+      `INSERT INTO devices (device_id, tenant_id, member_id, role, sign_pub_pem, enc_pub_pem, cert_json, status, key_epoch_at_issue)
+       VALUES (?,?,?,?,?,?,?, 'active', ?)
+       ON CONFLICT(device_id) DO UPDATE SET cert_json = excluded.cert_json, sign_pub_pem = excluded.sign_pub_pem, enc_pub_pem = excluded.enc_pub_pem`,
+      [deviceId, identity.tenantId, identity.userId, st.cert.role, st.keys.signPublicKeyPem, st.keys.encPublicKeyPem, JSON.stringify(st.cert), currentTenantEpoch(db, identity.tenantId)],
+    );
+  });
+  writeDeviceKeys(keysDir, st.keys);
+  rmSync(path, { force: true });
+  return { applied: true };
+}
+
 /**
  * 换证前把该设备当前证书留档（迁移 0024；复核 B4-A11）：同一设备编号下旧证书签出的见证行、审批与回执仍要能验签。
  * 同一证书只留一次；当前没有登记或证书不可解析即不留。
@@ -390,12 +435,13 @@ function certRoleOf(membershipRole: string | undefined, userSlug?: string): Devi
  * 当前主机设备（v0 确定性 device_id = dev_<firmSlug>_<userSlug>；一人一台设备）：
  * 首跑生成设备密钥（0600）→ 根私钥签发 1 年期设备证书 → devices upsert；之后直接装载。
  */
-export function ensureDevice(db: KernelDb, keysDir: string, identity: Identity, slugs: { firmSlug: string; userSlug: string }): DeviceContext {
+export function ensureDevice(db: KernelDb, keysDir: string, identity: Identity, slugs: { firmSlug: string; userSlug: string }, opts: { promoteSole?: boolean } = {}): DeviceContext {
   const deviceId = `dev_${slugs.firmSlug}_${slugs.userSlug}`;
 
   // G0 单机开发形态：首跑且仅 1 个 membership 时提升为 firm_admin（生产由管理控制台分配）
+  // 经开通码激活的设备（第 13 批）不做此提升：角色只来自开通码 / 邀请码与管理员签发的证书
   const ms = db.all<{ membership_id: string; role: string }>(`SELECT membership_id, role FROM memberships WHERE tenant_id = ?`, [identity.tenantId]);
-  if (ms.length === 1 && ms[0]!.role === "lawyer") {
+  if (opts.promoteSole !== false && ms.length === 1 && ms[0]!.role === "lawyer") {
     db.run(`UPDATE memberships SET role = 'firm_admin' WHERE membership_id = ?`, [ms[0]!.membership_id]);
   }
   const membershipRole = db.get<{ role: string }>(`SELECT role FROM memberships WHERE tenant_id = ? AND user_id = ?`, [identity.tenantId, identity.userId])?.role;

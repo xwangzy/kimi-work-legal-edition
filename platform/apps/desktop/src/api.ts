@@ -94,7 +94,7 @@ function browserDownload(dataBase64: string, filename: string, type: string): vo
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-const BRIDGE = "http://127.0.0.1:7720/invoke";
+const BRIDGE = `http://127.0.0.1:${(import.meta as any).env?.VITE_KWL_BRIDGE_PORT ?? "7720"}/invoke`;
 /** 开发桥令牌（vite 注入；生产不经开发桥）。 */
 const BRIDGE_TOKEN: string = (import.meta as any).env?.VITE_KWL_BRIDGE_TOKEN ?? "";
 
@@ -924,3 +924,20 @@ export interface RelayReport {
   dropped: number;
   errors: string[];
 }
+
+/** 开通与成员入组（第 13 批）：待激活模式下只有这几个方法可用。 */
+export const onboarding = {
+  status: () => invoke<any>("onboarding.status"),
+  redeem: (code: string) => invoke<any>("onboarding.redeem", { code }),
+  check: () => invoke<any>("onboarding.check"),
+  reset: () => invoke<any>("onboarding.reset"),
+};
+
+/** 成员管理（管理员）：邀请、待批准申请、批准与拒绝。 */
+export const members = {
+  list: () => invoke<any>("members.list"),
+  invite: (name: string, role: string) => invoke<any>("members.invite", { name, role }),
+  approve: (joinRequestId: string) => invoke<any>("members.approve", { join_request_id: joinRequestId }),
+  reject: (joinRequestId: string) => invoke<any>("members.reject", { join_request_id: joinRequestId }),
+  revokeInvitation: (activationId: string) => invoke<any>("members.revoke_invitation", { activation_id: activationId }),
+};

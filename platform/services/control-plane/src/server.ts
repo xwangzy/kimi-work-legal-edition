@@ -13,14 +13,25 @@
  * 客户端按本机固定的律所根公钥与门限独立核验（packages/firm-trust；T17 演练）。
  * 设备请求一律设备签名（firm-trust/request-auth）；网关订阅用服务间凭据（G0：共享密钥；生产为 mTLS）。
  */
-import { createHash, generateKeyPairSync, randomBytes, timingSafeEqual, verify as cryptoVerify, type KeyObject } from "node:crypto";
+import { createHash, generateKeyPairSync, hkdfSync, randomBytes, timingSafeEqual, verify as cryptoVerify, type KeyObject } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { StateStore } from "./state-store.ts";
 import { createAuditLog, type AuditEntry, type AuditLog } from "./audit-log.ts";
 import { emptyQuota, grantPoints as quotaGrant, leaseQuota, QuotaError, quotaView, setCap as quotaSetCap, settleLease, type QuotaState } from "./quota.ts";
-import { canonicalJson, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
+import { canonicalJson, verifyBytes, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
 import { issueSeatToken, MIN_SEAT_TTL_SECONDS } from "@zr-legal/seat-token";
 import {
+  activationCodeMac,
+  claimSecretHash,
+  firmBundleBytes,
+  joinProofBytes,
+  type FirmBundle,
+  MEMBER_SLUG_PATTERN,
+  newActivationCode,
+  newClaimSecret,
+  normalizeActivationCode,
+  validDisplayName,
+  type ActivationRedeemResult,
   adminThresholdForEdition,
   connectorSigningBytes,
   enrollProofBytes,
@@ -93,8 +104,54 @@ export interface DraftRecord {
   published_at: string | null;
 }
 
+/**
+ * 开通码 / 邀请码记录（第 13 批，设计 docs/design/开通与成员入组设计-v1.md）：只存码的 HMAC 与认领凭据的摘要。
+ * 状态：open（未兑换）→ claimed（已兑换，认领凭据有效；同一码在消费前可再兑换一次，旧凭据作废）→ consumed（创始：律所根已登记；
+ * 成员：入组申请已批准）；revoked / 过期不再接受。成员显示名只留到消费为止（之后清空，云端不长期保存姓名）。
+ */
+export interface ActivationRecord {
+  id: string;
+  code_mac: string;
+  kind: "founder" | "member";
+  member: { slug: string; name: string | null; role: "admin" | "partner" | "lawyer" | "assistant" };
+  created_at: string;
+  expires_at: string;
+  /** 发码者：运营（"ops"）或管理员设备编号。 */
+  created_by: string;
+  status: "open" | "claimed" | "consumed" | "revoked";
+  claim_hash: string | null;
+  claimed_at: string | null;
+  consumed_at: string | null;
+  /** 同一认领提交入组申请的次数（被拒后可重提，至多 3 次）。 */
+  join_attempts: number;
+}
+
+/** 成员入组申请：成员设备提交公钥，管理员本机核对核对码后用律所根签发证书，经此送达。 */
+export interface JoinRequestRecord {
+  id: string;
+  activation_id: string;
+  member_slug: string;
+  role: ActivationRecord["member"]["role"];
+  device_id: string;
+  sign_pub: string;
+  enc_pub: string;
+  created_at: string;
+  status: "pending" | "approved" | "rejected";
+  decided_at: string | null;
+  decided_by: string | null;
+  cert: DeviceCertificate | null;
+  /** 律所公钥包（恢复托管公钥 + 律所根签名），批准时随证书一并存，成员取回。 */
+  firm_bundle: FirmBundle | null;
+}
+
 export interface TenantRecord {
   tid: string;
+  /** 律所显示名（开通时运营填写；缺省为租户编号）。 */
+  name?: string;
+  /** 开通须出示创始开通码（第 13 批：关闭“知道租户编号即可抢先登记律所根”）；旧状态缺省 false。 */
+  activation_required?: boolean;
+  activations: Map<string, ActivationRecord>;
+  joinRequests: Map<string, JoinRequestRecord>;
   edition: LicenseBody["edition"];
   seats: number;
   root_public_key_pem: string | null;
@@ -132,11 +189,20 @@ export interface ControlPlaneOptions {
   stateStore?: StateStore;
   /** 运营审计流水（S14 v0，audit-log.ts）：未给出 = 只在内存。 */
   auditLog?: AuditLog;
+  /**
+   * 开通码 HMAC 的胡椒（32 字节；生产由 KMS 下发，与签名密钥分开）。未给出 = 由信封签名私钥 HKDF 派生（开发与试点形态：
+   * 重启后不变，码记录仍可核对）。
+   */
+  codePepper?: Uint8Array;
 }
 
 export interface ControlPlaneOps {
   /** 商务开通：建租户、发许可（≤ 30 天）、生成租户盐、发布最严模板策略 v1（不比最严模板宽：只需控制面签名）。 */
-  createTenant(o: { tid: string; edition: LicenseBody["edition"]; seats: number; subscriptionDays?: number; points?: number }): TenantRecord;
+  createTenant(o: { tid: string; edition: LicenseBody["edition"]; seats: number; subscriptionDays?: number; points?: number; name?: string; activationRequired?: boolean }): TenantRecord;
+  /** 发创始开通码（交律所管理员）：返回码明文（只此一次）；云端只存 HMAC。 */
+  issueActivationCode(tid: string, o: { member: { slug: string; name?: string }; ttlHours?: number }): { code: string; activation_id: string; expires_at: string };
+  /** 作废尚未消费的开通码 / 邀请码。 */
+  revokeActivationCode(tid: string, activationId: string): void;
   /** 续订：订阅截止改为 days 天后（许可仍按签到滚动签发 ≤ 30 天）。 */
   renewLicense(tid: string, days: number): LicenseBody;
   /** 终止订阅（合同终止）：此后签发的许可立即到期，客户端进入退出模式。 */
@@ -219,7 +285,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     JSON.stringify({
       v: 1,
       feedVersion,
-      tenants: [...tenants.values()].map((t) => ({ ...t, devices: [...t.devices], preRevoked: [...t.preRevoked], seatsByUser: [...t.seatsByUser], connectors: [...t.connectors], drafts: [...t.drafts], anon: [...t.anon] })),
+      tenants: [...tenants.values()].map((t) => ({ ...t, devices: [...t.devices], preRevoked: [...t.preRevoked], seatsByUser: [...t.seatsByUser], connectors: [...t.connectors], drafts: [...t.drafts], anon: [...t.anon], activations: [...t.activations], joinRequests: [...t.joinRequests] })),
     });
   const snapshot = (state = stateOnly()): string => JSON.stringify({ ...(JSON.parse(state) as object), nonces: [...nonces] });
   /** 由快照重建内存状态（启动读回与失败回滚共用）；null = 空状态。 */
@@ -234,7 +300,19 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (withNonces) for (const [k, exp] of st.nonces ?? []) nonces.set(k, exp);
     for (const t of st.tenants) {
       // 第 9 批之前保存的状态没有额度字段：按空池读回（运营须重新注入点数）
-      tenants.set(t.tid, { ...t, devices: new Map(t.devices), preRevoked: new Map(t.preRevoked), seatsByUser: new Map(t.seatsByUser), connectors: new Map(t.connectors), drafts: new Map(t.drafts), anon: new Map(t.anon), quota: t.quota ?? emptyQuota(now()) });
+      // 第 13 批之前保存的状态没有开通码与入组申请：按空读回（这些租户不要求开通码，行为与之前相同）
+      tenants.set(t.tid, {
+        ...t,
+        devices: new Map(t.devices),
+        preRevoked: new Map(t.preRevoked),
+        seatsByUser: new Map(t.seatsByUser),
+        connectors: new Map(t.connectors),
+        drafts: new Map(t.drafts),
+        anon: new Map(t.anon),
+        activations: new Map(t.activations ?? []),
+        joinRequests: new Map(t.joinRequests ?? []),
+        quota: t.quota ?? emptyQuota(now()),
+      });
     }
   };
   if (o.stateStore) {
@@ -297,6 +375,73 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
 
   const licenseValid = (t: TenantRecord): boolean => Date.parse(t.subscription_until) > now();
 
+  // ─── 开通与入组（第 13 批） ───
+  const codePepper: Buffer = o.codePepper
+    ? Buffer.from(o.codePepper)
+    : Buffer.from(hkdfSync("sha256", o.keys.envelope.privateKey.export({ format: "der", type: "pkcs8" }), Buffer.alloc(0), "kwl-cp-code-pepper/1", 32));
+  if (codePepper.byteLength !== 32) throw new Error("开通码胡椒须为 32 字节");
+  /** 律所标识 = 租户编号去掉 ten_ 前缀（与内核 identity.ts 的 ten_<律所标识> 对应）；不合规的租户不能发开通码。 */
+  const firmSlugOf = (tid: string): string | null => (/^ten_[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(tid) ? tid.slice(4) : null);
+  const newRecordId = (prefix: string) => `${prefix}_${randomBytes(12).toString("base64url")}`;
+  const sameHex = (a: string, b: string): boolean => {
+    const x = Buffer.from(a, "hex");
+    const y = Buffer.from(b, "hex");
+    return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
+  };
+  const activationLive = (r: ActivationRecord): boolean => (r.status === "open" || r.status === "claimed") && Date.parse(r.expires_at) > now();
+  /** 认领凭据核对（成员入组、创始登记根公钥）：码已兑换、未消费、未作废；认领后 7 天内有效。 */
+  const claimOf = (t: TenantRecord, activationId: unknown, secret: unknown, kind: ActivationRecord["kind"]): ActivationRecord => {
+    const r = typeof activationId === "string" ? t.activations.get(activationId) : undefined;
+    const ok =
+      !!r &&
+      r.kind === kind &&
+      r.status === "claimed" &&
+      typeof secret === "string" &&
+      secret.length <= 128 &&
+      !!r.claim_hash &&
+      sameHex(r.claim_hash, claimSecretHash(secret)) &&
+      Date.parse(r.claimed_at ?? "") + 7 * DAY_MS > now();
+    if (!ok) throw new CpError(403, "claim_invalid", "开通凭据无效或已过期，请重新输入开通码或邀请码");
+    return r!;
+  };
+  const issueCode = (t: TenantRecord, o2: { kind: ActivationRecord["kind"]; member: { slug: string; name?: string | null; role: ActivationRecord["member"]["role"] }; ttlHours: number; by: string }) => {
+    if (!firmSlugOf(t.tid)) throw new CpError(400, "tid_not_activatable", "租户编号须为 ten_<律所标识> 才能发开通码");
+    if (!MEMBER_SLUG_PATTERN.test(o2.member.slug)) throw new CpError(400, "member_slug_invalid", "成员标识只允许小写字母、数字、下划线与连字符");
+    if (o2.member.name != null && !validDisplayName(o2.member.name)) throw new CpError(400, "member_name_invalid", "成员姓名须为 1–40 个字符");
+    const live = [...t.activations.values()].filter(activationLive).length;
+    if (live >= 200) throw new CpError(409, "too_many_open_codes", "未使用的开通码与邀请码过多，请先作废不用的");
+    const code = newActivationCode();
+    const at = now();
+    const rec: ActivationRecord = {
+      id: newRecordId("act"),
+      code_mac: activationCodeMac(codePepper, code),
+      kind: o2.kind,
+      member: { slug: o2.member.slug, name: o2.member.name ?? null, role: o2.member.role },
+      created_at: iso(at),
+      expires_at: iso(at + Math.min(Math.max(1, o2.ttlHours), 14 * 24) * 3600_000),
+      created_by: o2.by,
+      status: "open",
+      claim_hash: null,
+      claimed_at: null,
+      consumed_at: null,
+      join_attempts: 0,
+    };
+    t.activations.set(rec.id, rec);
+    return { code, activation_id: rec.id, expires_at: rec.expires_at };
+  };
+  /** 兑换限速：同一来源每分钟 10 次、全平台每分钟 600 次（码有 100 bit，限速只为压低噪声与撑大流水）。 */
+  const redeemWindow = new Map<string, { minute: number; n: number }>();
+  const redeemAllowed = (source: string): boolean => {
+    const minute = Math.floor(now() / 60_000);
+    if (redeemWindow.size > 50_000) redeemWindow.clear();
+    for (const [k, lim] of [[`src:${source}`, 10], ["all", 600]] as const) {
+      const w = redeemWindow.get(k);
+      if (!w || w.minute !== minute) redeemWindow.set(k, { minute, n: 1 });
+      else if (++w.n > lim) return false;
+    }
+    return true;
+  };
+
   /**
    * 签发许可（复核 S6-A06：按设备签到滚动）：签发时刻 = 现在，到期 = min(现在 + 30 天, 订阅截止)；
    * 订阅已终止 → 新签发一份立即到期的许可（客户端按签发时刻接受更新的一份，进入退出模式）。
@@ -320,12 +465,17 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
 
   const rawOps: ControlPlaneOps = {
-    createTenant({ tid, edition, seats, subscriptionDays = 365, points = 0 }) {
+    createTenant({ tid, edition, seats, subscriptionDays = 365, points = 0, name, activationRequired = false }) {
       // 租户编号字符集（复核 S9A-01：不合规的编号写进审计流水会让重启验链失败）
       if (typeof tid !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(tid)) throw new CpError(400, "tid_invalid", "租户编号只能用字母、数字、下划线与连字符");
       if (tenants.has(tid)) throw new Error(`租户已存在：${tid}`);
+      if (name !== undefined && !validDisplayName(name)) throw new CpError(400, "tenant_name_invalid", "律所名称须为 1–40 个字符");
       const t: TenantRecord = {
         tid,
+        ...(name !== undefined ? { name } : {}),
+        activation_required: activationRequired,
+        activations: new Map(),
+        joinRequests: new Map(),
         edition,
         seats,
         root_public_key_pem: null,
@@ -397,6 +547,18 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     grantPoints(tid, points) {
       quotaGrant(tenantOf(tid).quota, points);
     },
+    issueActivationCode(tid, { member, ttlHours = 14 * 24 }) {
+      return issueCode(tenantOf(tid), { kind: "founder", member: { slug: member.slug, name: member.name ?? null, role: "admin" }, ttlHours, by: "ops" });
+    },
+    revokeActivationCode(tid, activationId) {
+      const t = tenantOf(tid);
+      const r = t.activations.get(activationId);
+      if (!r) throw new CpError(404, "activation_unknown", "没有这个开通码");
+      if (r.status === "consumed") throw new CpError(409, "activation_consumed", "开通码已使用，不能作废（请改为吊销设备）");
+      r.status = "revoked";
+      r.member.name = null;
+      for (const jr of t.joinRequests.values()) if (jr.activation_id === r.id && jr.status === "pending") Object.assign(jr, { status: "rejected", decided_at: iso(), decided_by: "ops" });
+    },
     setQuotaCap(tid, cap) {
       quotaSetCap(tenantOf(tid).quota, cap, now(), null);
     },
@@ -422,6 +584,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     revokeDevice: { action: "device.revoke", target: (a) => String(a[1]) },
     revokeSeat: { action: "seat.revoke", target: (a) => seatOf(String(a[0]), a[1]) },
     grantPoints: { action: "quota.grant", detail: (a) => ({ points: Math.floor(Number(a[1])) || 0 }) },
+    issueActivationCode: { action: "activation.issue" },
+    revokeActivationCode: { action: "activation.revoke", target: (a) => String(a[1]) },
     setQuotaCap: { action: "quota.cap_set", detail: (a) => (a[1] === null ? { uncapped: 1 } : { cap: Math.floor(Number(a[1])) || 0 }) },
   };
   const OPS_ACTOR: CpAuditActor = { kind: "ops", id: "ops" };
@@ -684,6 +848,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       }
       if (!good) throw new CpError(400, "enroll_proof_invalid", "开通证明无效");
       if (t.root_public_key_pem && t.root_public_key_pem !== pem) throw new CpError(409, "root_already_enrolled", "该租户已登记另一把律所根公钥");
+      // 要求开通码的租户（第 13 批）：首次登记根公钥须出示创始认领（开通码兑换所得），之后创始码即消费——知道租户编号不再能抢先登记
+      if (t.activation_required && !t.root_public_key_pem) {
+        const rec = claimOf(t, b.activation_id, b.claim_secret, "founder");
+        rec.status = "consumed";
+        rec.consumed_at = iso();
+        rec.member.name = null;
+      }
       t.root_public_key_pem = pem;
       auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "root", id: t.tid }, action: "tenant.enroll_root", target: null }, written: false });
       return send(res, 200, { ok: true, tid: t.tid });
@@ -735,6 +906,95 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         else auditCtx.delete(res);
       }
       return send(res, 200, { ok: true, directory_version: t.directoryVersion, seat: t.seatsByUser.get(cert.memberId)?.sid ?? null });
+    }
+
+    // ─── 开通码 / 邀请码兑换（第 13 批；未登记设备，凭码本身）：成功即返回律所与成员信息和一次性认领凭据 ───
+    if (method === "POST" && p === "/v1/activation/redeem") {
+      if (!redeemAllowed(String(req.socket.remoteAddress ?? "?"))) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
+      const b = parseJson(raw);
+      const code = normalizeActivationCode(b.code);
+      const mac = code ? activationCodeMac(codePepper, code) : null;
+      let hit: { t: TenantRecord; r: ActivationRecord } | null = null;
+      if (mac) {
+        for (const t of tenants.values()) {
+          for (const r of t.activations.values()) if (sameHex(r.code_mac, mac)) hit = { t, r };
+          if (hit) break;
+        }
+      }
+      // 码不对、过期、作废、已用：同一句话（不区分，防枚举）
+      if (!hit || !activationLive(hit.r)) throw new CpError(400, "code_invalid", "开通码不正确或已失效，请向发码人重新获取");
+      const { t, r } = hit;
+      if (!licenseValid(t)) throw new CpError(402, "license_expired", "律所订阅已到期，请联系中软开通");
+      const secret = newClaimSecret();
+      r.status = "claimed";
+      r.claim_hash = claimSecretHash(secret);
+      r.claimed_at = iso();
+      auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "claimant", id: r.id }, action: "activation.redeem", target: r.id }, written: false });
+      const body: ActivationRedeemResult = {
+        ok: true,
+        tid: t.tid,
+        activation_id: r.id,
+        kind: r.kind,
+        firm: { slug: firmSlugOf(t.tid)!, name: t.name ?? t.tid },
+        member: { slug: r.member.slug, name: r.member.name, role: r.member.role },
+        claim_secret: secret,
+        edition: t.edition,
+      };
+      return send(res, 200, body);
+    }
+    // ─── 成员入组申请（凭认领凭据 + 设备签名私钥的持有证明；只含公钥） ───
+    if (method === "POST" && p === "/v1/join-requests") {
+      const b = parseJson(raw);
+      const t = tenantOf(String(b.tid ?? ""));
+      const rec = claimOf(t, b.activation_id, b.claim_secret, "member");
+      const deviceId = String(b.device_id ?? "");
+      const signPub = String(b.sign_pub ?? "");
+      const encPub = String(b.enc_pub ?? "");
+      if (!DEVICE_ID_PATTERN.test(deviceId)) throw new CpError(400, "device_id_invalid", "设备编号不合法");
+      if (signPub.length > 4096 || encPub.length > 4096 || !/BEGIN PUBLIC KEY/.test(signPub) || !/BEGIN PUBLIC KEY/.test(encPub)) throw new CpError(400, "public_key_invalid", "公钥格式不对");
+      if (t.devices.has(deviceId) || t.preRevoked.has(deviceId)) throw new CpError(409, "device_exists", "该设备编号已登记或已吊销");
+      const proofOk = verifyBytes(signPub, joinProofBytes({ tid: t.tid, activationId: rec.id, deviceId, signPublicKeyPem: signPub, encPublicKeyPem: encPub }), String(b.proof ?? ""));
+      if (!proofOk) throw new CpError(400, "join_proof_invalid", "入组证明无效");
+      const open = [...t.joinRequests.values()].find((x) => x.activation_id === rec.id && x.status === "pending");
+      if (open) {
+        // 同一台设备重发（网络中断后重试）：原样返回；换了设备或公钥：先等管理员处理前一个
+        if (open.device_id === deviceId && open.sign_pub === signPub && open.enc_pub === encPub) return send(res, 200, { ok: true, join_request_id: open.id, status: open.status });
+        throw new CpError(409, "join_pending", "已有一个等待批准的申请");
+      }
+      if (rec.join_attempts >= 3) throw new CpError(409, "join_attempts_exceeded", "申请次数已用完，请向管理员重新获取邀请码");
+      if ([...t.joinRequests.values()].filter((x) => x.status === "pending").length >= 100) throw new CpError(409, "too_many_pending", "等待批准的申请过多");
+      rec.join_attempts += 1;
+      const jr: JoinRequestRecord = {
+        id: newRecordId("jr"),
+        activation_id: rec.id,
+        member_slug: rec.member.slug,
+        role: rec.member.role,
+        device_id: deviceId,
+        sign_pub: signPub,
+        enc_pub: encPub,
+        created_at: iso(),
+        status: "pending",
+        decided_at: null,
+        decided_by: null,
+        cert: null,
+        firm_bundle: null,
+      };
+      t.joinRequests.set(jr.id, jr);
+      auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "claimant", id: rec.id }, action: "join.request", target: jr.id }, written: false });
+      return send(res, 200, { ok: true, join_request_id: jr.id, status: jr.status });
+    }
+    // 成员取回申请结果（凭认领凭据；批准后附证书与律所根公钥）
+    const rjf = /^\/v1\/join-requests\/([A-Za-z0-9_-]{1,64})\/fetch$/.exec(p);
+    if (method === "POST" && rjf) {
+      const b = parseJson(raw);
+      const t = tenantOf(String(b.tid ?? ""));
+      const jr = t.joinRequests.get(rjf[1]!);
+      if (!jr) throw new CpError(404, "join_unknown", "没有这个申请");
+      const rec = t.activations.get(jr.activation_id);
+      if (!rec || !rec.claim_hash || typeof b.claim_secret !== "string" || !sameHex(rec.claim_hash, claimSecretHash(b.claim_secret))) throw new CpError(403, "claim_invalid", "开通凭据无效");
+      const expired = jr.status === "pending" && Date.parse(jr.created_at) + 7 * DAY_MS < now();
+      const status = expired ? "rejected" : jr.status;
+      return sendRaw(res, 200, { ok: true, status, ...(status === "approved" ? { cert: jr.cert, root_public_key_pem: t.root_public_key_pem, firm_bundle: jr.firm_bundle } : {}) });
     }
 
     // ─── 网关与检索服务订阅（服务间凭据） ───
@@ -955,6 +1215,89 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       requireAdmin(dev);
       if (t.connectors.delete(rc[1]!)) t.connectorsVersion += 1;
       return send(res, 200, { ok: true, version: t.connectorsVersion });
+    }
+    // ─── 成员邀请与入组批准（第 13 批；管理员设备） ───
+    if (method === "POST" && p === "/v1/invitations") {
+      mark("invitation.create");
+      requireAdmin(dev);
+      const b = parseJson(raw);
+      const role = String(b.role ?? "lawyer");
+      if (role !== "lawyer" && role !== "partner" && role !== "assistant" && role !== "admin") throw new CpError(400, "role_invalid", "角色不合法");
+      const ttl = Number(b.ttl_hours ?? 72);
+      const r = issueCode(t, { kind: "member", member: { slug: String(b.member_slug ?? ""), name: b.name == null ? null : String(b.name), role }, ttlHours: Number.isFinite(ttl) ? Math.min(ttl, 7 * 24) : 72, by: dev.cert.deviceId });
+      auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "device", id: dev.cert.deviceId, fp: certFingerprint(dev.cert) }, action: "invitation.create", target: r.activation_id }, written: false });
+      return send(res, 200, { ok: true, ...r });
+    }
+    if (method === "GET" && p === "/v1/invitations") {
+      requireAdmin(dev);
+      const list = [...t.activations.values()]
+        .filter((r) => r.kind === "member")
+        .map((r) => ({
+          activation_id: r.id,
+          member: r.member,
+          status: r.status !== "consumed" && r.status !== "revoked" && Date.parse(r.expires_at) <= now() && r.status === "open" ? "expired" : r.status,
+          created_at: r.created_at,
+          expires_at: r.expires_at,
+          claimed_at: r.claimed_at,
+          consumed_at: r.consumed_at,
+        }));
+      return sendRaw(res, 200, { ok: true, invitations: list });
+    }
+    const rir = /^\/v1\/invitations\/([A-Za-z0-9_-]{1,64})\/revoke$/.exec(p);
+    if (method === "POST" && rir) {
+      mark("invitation.revoke", rir[1]!);
+      requireAdmin(dev);
+      const r = t.activations.get(rir[1]!);
+      if (!r || r.kind !== "member") throw new CpError(404, "activation_unknown", "没有这个邀请");
+      viaRoute(() => ops.revokeActivationCode(t.tid, r.id));
+      return send(res, 200, { ok: true });
+    }
+    if (method === "GET" && p === "/v1/join-requests") {
+      requireAdmin(dev);
+      const list = [...t.joinRequests.values()]
+        .filter((x) => x.status === "pending" && Date.parse(x.created_at) + 7 * DAY_MS > now())
+        .map((x) => ({ id: x.id, activation_id: x.activation_id, member_slug: x.member_slug, role: x.role, device_id: x.device_id, sign_pub: x.sign_pub, enc_pub: x.enc_pub, created_at: x.created_at }));
+      return sendRaw(res, 200, { ok: true, join_requests: list });
+    }
+    const rja = /^\/v1\/join-requests\/([A-Za-z0-9_-]{1,64})\/(approve|reject)$/.exec(p);
+    if (method === "POST" && rja) {
+      const approve = rja[2] === "approve";
+      mark(approve ? "join.approve" : "join.reject", rja[1]!);
+      requireAdmin(dev);
+      const jr = t.joinRequests.get(rja[1]!);
+      if (!jr || jr.status !== "pending" || Date.parse(jr.created_at) + 7 * DAY_MS <= now()) throw new CpError(404, "join_unknown", "没有这个待批准的申请");
+      const rec = t.activations.get(jr.activation_id);
+      if (!rec || rec.status !== "claimed") throw new CpError(409, "activation_not_claimed", "该邀请已作废或已使用");
+      if (approve) {
+        const b = parseJson(raw);
+        const cert = b.cert as DeviceCertificate | undefined;
+        if (!cert || typeof cert !== "object" || !t.root_public_key_pem) throw new CpError(400, "cert_missing", "缺少设备证书");
+        const cv = verifyDeviceCertificate(cert, t.root_public_key_pem, new Date(now()));
+        // 证书须由本所律所根签发，且与申请里的设备、两把公钥、邀请的成员与角色逐项一致（控制面不能替管理员改任何一项）
+        const firmSlug = firmSlugOf(t.tid);
+        const same =
+          cert.deviceId === jr.device_id &&
+          cert.signPublicKeyPem === jr.sign_pub &&
+          cert.encPublicKeyPem === jr.enc_pub &&
+          cert.memberId === `usr_${firmSlug}_${jr.member_slug}` &&
+          cert.role === jr.role;
+        if (!cv.ok || !same) throw new CpError(400, "cert_mismatch", "设备证书与申请不一致或不是本所律所根签发");
+        const fb = b.firm_bundle as FirmBundle | undefined;
+        const fbOk =
+          !!fb &&
+          typeof fb.recovery_public_key_pem === "string" &&
+          fb.recovery_public_key_pem.length <= 4096 &&
+          typeof fb.sig === "string" &&
+          verifyBytes(t.root_public_key_pem, firmBundleBytes(t.tid, t.root_public_key_pem, fb.recovery_public_key_pem), fb.sig);
+        if (!fbOk) throw new CpError(400, "firm_bundle_invalid", "律所公钥包缺失或签名无效");
+        Object.assign(jr, { status: "approved", decided_at: iso(), decided_by: dev.cert.deviceId, cert, firm_bundle: { recovery_public_key_pem: fb!.recovery_public_key_pem, sig: fb!.sig } });
+        rec.status = "consumed";
+        rec.consumed_at = iso();
+        rec.member.name = null;
+      } else {
+        Object.assign(jr, { status: "rejected", decided_at: iso(), decided_by: dev.cert.deviceId });
+      }
+      return send(res, 200, { ok: true, status: jr.status });
     }
     // 吊销（收紧：管理员或合伙人设备即可）；尚未登记的设备编号记预先吊销（复核 S6-B31）
     const rd = /^\/v1\/devices\/([^/]{1,200})\/revoke$/.exec(p);

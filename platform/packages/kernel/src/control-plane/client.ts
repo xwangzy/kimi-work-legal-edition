@@ -42,6 +42,9 @@ export interface ControlPlaneClientDeps {
   device: { deviceId: string; cert: DeviceCertificate; signer: DeviceSyncSigner };
   /** G0 开发形态：创始设备的律所根密钥（开通时登记根公钥用；生产为开通流程，不在联机设备上）。 */
   firmRoot?: () => { publicKeyPem: string; privateKeyPem: string } | null;
+  /** 第 13 批：经开通码激活的创始设备，首次登记根公钥时出示的认领凭据（登记成功后 onEnrolled 删除暂存）。 */
+  activationClaim?: () => { activation_id: string; claim_secret: string } | null;
+  onEnrolled?: () => void;
   now?: () => number;
   /** 每次同步结束后（内核据此在退出模式解除后恢复暂停的任务；复核 S6-B34）。 */
   onSynced?: (report: SyncReport) => void;
@@ -124,6 +127,11 @@ export class ControlPlaneClient {
     return this.last;
   }
 
+  /** 设备签名的控制面请求（第 13 批成员管理：邀请、待批准列表、批准与拒绝）；不进同步单飞。 */
+  request(method: string, path: string, body?: unknown): Promise<CallResult> {
+    return this.call(method, path, body);
+  }
+
   private async call(method: string, path: string, body?: unknown): Promise<CallResult> {
     const raw = body === undefined ? "" : JSON.stringify(body);
     const headers = { ...signDeviceRequest({ method, path, body: raw, tid: this.d.tenantId, deviceId: this.d.device.deviceId, signer: this.d.device.signer, ...(this.d.now ? { now: this.d.now() } : {}) }) };
@@ -155,8 +163,10 @@ export class ControlPlaneClient {
       if (!root) return "root_not_enrolled";
       const ts = this.d.now?.() ?? Date.now();
       const proof = sign(null, enrollProofBytes(this.d.tenantId, root.publicKeyPem, ts), root.privateKeyPem).toString("base64url");
-      const e = await this.call("POST", "/v1/enroll", { tid: this.d.tenantId, root_public_key_pem: root.publicKeyPem, ts, proof });
+      const claim = this.d.activationClaim?.() ?? null;
+      const e = await this.call("POST", "/v1/enroll", { tid: this.d.tenantId, root_public_key_pem: root.publicKeyPem, ts, proof, ...(claim ? { activation_id: claim.activation_id, claim_secret: claim.claim_secret } : {}) });
       if (!e.ok) return `enroll:${e.error}`;
+      if (claim) this.d.onEnrolled?.();
       r = await this.call("POST", "/v1/devices/register", body);
     }
     return r.ok ? "ok" : r.error;

@@ -22,7 +22,8 @@ import { BlobStore } from "./blobs.ts";
 import { TaskQueue } from "./queue.ts";
 import { createApi } from "./api/index.ts";
 import { resolveIdentity, taskTokenKey, type Identity } from "./identity.ts";
-import { applyStagedRecovery, configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
+import { applyStagedJoin, applyStagedRecovery, configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
+import { activationInfo, dropActivationClaim, membersApi, OnboardingService, ONBOARDING_METHODS, readActivationClaim, removePendingWorkspace } from "./services/onboarding.ts";
 import { FirmGovernance, localDevPolicyBody, firmPolicyInputOf, type FirmPolicyInput } from "./control-plane/governance.ts";
 import { ControlPlaneClient } from "./control-plane/client.ts";
 import { parsePublicKeyMap } from "@zr-legal/firm-trust";
@@ -85,6 +86,12 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const db = new KernelDb(config.dbFile, { key: config.dbKey });
   db.migrate();
   const identity = resolveIdentity(db, config.firmSlug, config.userSlug);
+  // 经开通码激活（第 13 批）：成员角色以开通码 / 邀请码为准；占位工作区已无用
+  if (config.activation) {
+    const roleOf: Record<string, string> = { admin: "firm_admin", partner: "partner", assistant: "paralegal", lawyer: "lawyer" };
+    db.run(`UPDATE memberships SET role = ? WHERE tenant_id = ? AND user_id = ?`, [roleOf[config.activation.role] ?? "lawyer", identity.tenantId, identity.userId]);
+    removePendingWorkspace(config.dataRoot);
+  }
 
   // 法规库包（§9：签名只读 SQLite 包；验签/哈希不符即拒绝加载，不静默降级到任何种子）
   if (!config.lawdbSignerPub) {
@@ -119,11 +126,19 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   if (!skillsBundle.ok) slog.event("KERNEL_SKILLS_UNAVAILABLE", {});
   // 密钥文件按数据库主密钥派生的密钥封装（隐私安全审查 P0-1）；开发与测试形态无主密钥时为明文
   configureSecretSealing(keysDir, config.dbKey);
+  // 成员设备（第 13 批）：律所身份来自管理员批准时送达的证书与律所公钥包，本机不生成律所根
+  if (config.activation?.kind === "member") {
+    const sj = applyStagedJoin(db, keysDir, identity, { firmSlug: config.firmSlug, userSlug: config.userSlug });
+    if (sj.rejected) slog.event("KERNEL_JOIN_STAGED_REJECTED", {});
+    if (!db.get(`SELECT 1 AS x FROM firm_identity WHERE tenant_id = ?`, [identity.tenantId])) {
+      throw new DomainError("conflict", "入组没有完成：本机缺少管理员批准后的证书。请重新安装后用邀请码再申请一次", 409);
+    }
+  }
   const firm = ensureFirmIdentity(db, keysDir, identity.tenantId);
   // 暂存的设备恢复在任何组件装载设备密钥之前生效（复核 B4-R09）
   const recovery = applyStagedRecovery(db, keysDir, { firmSlug: config.firmSlug, userSlug: config.userSlug }, firm.rootPublicKeyPem);
   if (recovery.rejected) slog.event("KERNEL_RECOVERY_REJECTED", {});
-  const device = ensureDevice(db, keysDir, identity, { firmSlug: config.firmSlug, userSlug: config.userSlug });
+  const device = ensureDevice(db, keysDir, identity, { firmSlug: config.firmSlug, userSlug: config.userSlug }, { promoteSole: !config.activation });
   const signer = createLedgerSigner({ db, deviceId: device.deviceId, signer: device.signer, tenantId: identity.tenantId });
   if (recovery.applied || recovery.rejected) {
     // 恢复生效或被拒：记审计（只记结果与计数）
@@ -247,7 +262,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   });
   // 控制面客户端（只在配置了控制面时）：请求经闸门代发，内核本身不联网
   const controlPlane =
-    governance.mode === "control_plane"
+    governance.mode === "control_plane" && !config.onboarding
       ? new ControlPlaneClient({
           gov: governance,
           relay: (req) => gate.cp(req),
@@ -262,6 +277,9 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
               return null;
             }
           },
+          // 第 13 批：经开通码激活的创始设备首次登记根公钥时出示认领凭据，登记成功即删除暂存
+          activationClaim: () => readActivationClaim(keysDir),
+          onEnrolled: () => dropActivationClaim(keysDir),
           // 退出模式下启动时暂停的任务：退出模式解除后（同步取得许可）入队（复核 S6-B34）
           onSynced: () => {
             if (governance.exitMode()) return;
@@ -757,6 +775,43 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
 
   // 控制面同步（阶段 6）：启动即同步一次，之后定时（缺省 10 分钟，钳在 10 秒～1 小时——复核 S6-A21）；
   // ZR_CONTROL_PLANE_SYNC_MS=off 时只在显式调用 control_plane.sync 时同步（测试）
+  // ─── 开通与成员入组（第 13 批；docs/design/开通与成员入组设计-v1.md） ───
+  // 待激活模式：只开放 onboarding.*（见 invoke 的门禁）；激活完成后请主进程按 activation.json 重启内核
+  const onboarding = config.onboarding ? new OnboardingService({ config, relay: (req) => gate.cp(req), requestRestart: () => broadcast({ type: "kernel.restart_for_identity" }) }) : null;
+  if (onboarding) {
+    onboarding.start();
+    api["onboarding.status"] = () => onboarding.status();
+    api["onboarding.redeem"] = (p) => onboarding.redeem((p ?? {}) as { code?: unknown });
+    api["onboarding.check"] = () => onboarding.check();
+    api["onboarding.reset"] = () => onboarding.reset();
+  } else {
+    api["onboarding.status"] = () => ({ mode: "activated", activation: activationInfo(config, firm, identity) });
+    // 待批准页的轮询与内核自动取回会赛跑：自动取回先拿到批准、内核已按新身份重启时，界面的这次查询照样得到“已批准”并刷新
+    api["onboarding.check"] = () => ({ mode: "activated", last_check: "approved" });
+  }
+  const members = membersApi({
+    db,
+    identity,
+    config,
+    firm,
+    keysDir,
+    call: controlPlane ? (m, p, b) => controlPlane.request(m, p, b) : null,
+    audit: (action, kind, objectId) => appendAuditEvent(db, signer, { tenantId: identity.tenantId, actorId: identity.userId, action, kind, objectId, matterId: null }),
+  });
+  api["members.invite"] = (p) => members.invite(p ?? {});
+  api["members.list"] = () => members.list();
+  api["members.approve"] = (p) => members.approve(p ?? {});
+  api["members.reject"] = (p) => members.reject(p ?? {});
+  api["members.revoke_invitation"] = (p) => members.revokeInvitation(p ?? {});
+  {
+    const baseStatus = api["kernel.status"]!;
+    api["kernel.status"] = async (p, id) => ({
+      ...((await baseStatus(p, id)) as Record<string, unknown>),
+      onboarding: onboarding ? onboarding.status() : null,
+      activation: config.onboarding ? null : activationInfo(config, firm, identity),
+    });
+  }
+
   if (controlPlane && env.ZR_CONTROL_PLANE_SYNC_MS !== "off") controlPlane.start(Number(env.ZR_CONTROL_PLANE_SYNC_MS ?? 600_000) || 600_000);
 
   return {
@@ -772,6 +827,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     gate,
     purgeRevokedAgentData: () => purgeLocalAgentData(false),
     async invoke(method: string, params: unknown = {}): Promise<unknown> {
+      if (config.onboarding && !ONBOARDING_METHODS.has(method)) throw new DomainError("not_activated", "这台电脑还没有激活：请先输入中软给的开通码或律所发的邀请码", 409);
       const handler = api[method];
       if (!handler) throw new DomainError("not_found", `未知内核方法 ${method}`, 404);
       return handler(params, identity);
@@ -789,6 +845,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
         }
       }
       controlPlane?.stop();
+      onboarding?.stop();
       relayClosed = true;
       if (relayPushTimer) clearInterval(relayPushTimer);
       // 等进行中的收发结束（至多 5 秒；复核 S11B-07），之后才关闭闸门与数据库

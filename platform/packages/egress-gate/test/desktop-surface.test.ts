@@ -120,7 +120,9 @@ test("地址策略（行为）：生产只放行应用协议 kwl://app/；任何
 test("渲染进程 CSP：生产 default-src 'none' 起步、connect-src 'none'、不允许内联脚本；index.html 由构建注入", () => {
   const vite = read("vite.config.ts");
   assert.match(vite, /"default-src 'none'"/);
-  assert.match(vite, /dev \? "connect-src 'self' http:\/\/127\.0\.0\.1:7720 ws:\/\/127\.0\.0\.1:5173" : "connect-src 'none'"/);
+  // 开发端口可经环境变量错开（多会话并行联调）；生产仍是 connect-src 'none'
+  assert.match(vite, /dev \? `connect-src 'self' http:\/\/127\.0\.0\.1:\$\{BRIDGE_PORT\} ws:\/\/127\.0\.0\.1:\$\{WEB_PORT\}` : "connect-src 'none'"/);
+  assert.match(vite, /const BRIDGE_PORT = Number\(process\.env\.ZR_DEV_BRIDGE_PORT \?\? 7720\)/);
   assert.match(vite, /dev \? "script-src 'self' 'unsafe-inline'" : "script-src 'self'"/);
   assert.match(vite, /"object-src 'none'"/);
   assert.match(vite, /"base-uri 'none'"/);

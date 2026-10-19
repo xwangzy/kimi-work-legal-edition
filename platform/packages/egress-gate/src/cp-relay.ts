@@ -41,6 +41,12 @@ const PATHS: readonly RegExp[] = [
   /^\/v1\/relay-token$/,
   /^\/v1\/quota\/cap$/,
   /^\/v1\/audit\?after=\d{1,15}&limit=\d{1,3}$/,
+  // 第 13 批：开通与成员入组（开通码兑换、入组申请与取回、管理员发邀请与批准；记录编号固定 16 位）
+  /^\/v1\/activation\/redeem$/,
+  /^\/v1\/join-requests$/,
+  /^\/v1\/join-requests\/jr_[A-Za-z0-9_-]{16}\/(?:fetch|approve|reject)$/,
+  /^\/v1\/invitations$/,
+  /^\/v1\/invitations\/act_[A-Za-z0-9_-]{16}\/revoke$/,
 ];
 const METHODS = new Set(["GET", "POST", "PUT", "DELETE"]);
 const HEADERS = new Set(["x-kwl-tenant", "x-kwl-device", "x-kwl-ts", "x-kwl-nonce", "x-kwl-sig"]);

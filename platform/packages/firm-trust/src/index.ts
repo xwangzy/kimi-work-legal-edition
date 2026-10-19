@@ -9,3 +9,4 @@ export * from "./connectors.ts";
 export * from "./docs.ts";
 export * from "./request-auth.ts";
 export * from "./audit-chain.ts";
+export * from "./onboarding.ts";

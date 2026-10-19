@@ -766,3 +766,22 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .reminder-warn { color: var(--status-warning-strong); font-size: var(--fs-sm); }
 .reminder-actions { white-space: nowrap; display: flex; gap: 6px; align-items: flex-start; }
 .consent-opt.disabled { cursor: default; color: var(--text-secondary); }
+
+/* ── 首次启动激活（第 13 批开通与成员入组） ── */
+.activate { min-height: 100vh; display: grid; place-items: center; background: var(--bg-sidebar); padding: 24px; }
+.activate-card { width: min(480px, 100%); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); padding: 28px 32px 24px; box-shadow: var(--shadow-xs); }
+.activate-card .brand { padding: 0 0 18px; }
+.activate-title { font-size: var(--fs-xl); font-weight: 600; margin: 0 0 8px; }
+.activate-lead { color: var(--text-secondary); font-size: var(--fs-base); line-height: 1.6; margin: 0 0 18px; }
+.activate-code { font-family: var(--font-mono); font-size: var(--fs-lg); letter-spacing: 0.06em; padding: 10px 12px; border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-main); color: var(--text-primary); }
+.activate-code:focus { outline: none; box-shadow: var(--focus-ring); }
+.activate-submit { width: 100%; margin-top: 14px; padding: 10px 16px; }
+.activate-error { color: var(--status-danger-text); font-size: var(--fs-sm); margin: 10px 0 0; }
+.activate-foot { margin: 16px 0 0; line-height: 1.6; }
+.activate-checkcode { font-family: var(--font-mono); font-size: var(--fs-2xl); letter-spacing: 0.08em; text-align: center; padding: 16px 8px; margin: 4px 0 12px; border-radius: var(--r-md); background: var(--accent-bg); color: var(--text-primary); }
+.activate-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.members-code { font-family: var(--font-mono); font-size: var(--fs-lg); letter-spacing: 0.06em; padding: 8px 12px; border-radius: var(--r-sm); background: var(--accent-bg); display: inline-block; user-select: all; }
+.members-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.members-table th { text-align: left; color: var(--text-label); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); }
+.members-table td { padding: 8px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; }
+.members-check { font-family: var(--font-mono); letter-spacing: 0.04em; }

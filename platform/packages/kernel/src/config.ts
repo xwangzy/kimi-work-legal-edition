@@ -46,7 +46,59 @@ export interface KernelConfig {
    * 用来覆盖仍然在用的第 11 批行规则（未锚定的事项、混合版本）。
    */
   legacyMemberRows: boolean;
+  /** 数据根（各律所工作区的上一级；activation.json 与 onboarding.json 在这里）。 */
+  dataRoot: string;
+  /** 本机激活记录（第 13 批开通与入组；安装包形态的律所与成员标识只从这里来）。 */
+  activation: ActivationFile | null;
+  /**
+   * 待激活模式（第 13 批）：要求控制面（安装包形态）或 ZR_ONBOARDING=1，且本机没有激活记录、也没有显式给出律所/成员标识。
+   * 内核以占位工作区启动，只开放开通相关方法；不生成本所律所根、不与控制面同步。
+   */
+  onboarding: boolean;
   env: NodeJS.ProcessEnv;
+}
+
+/** 本机激活记录 `<数据根>/activation.json`（只有编号与显示名，不含任何秘密；秘密在工作区 keys/ 里按主密钥封装）。 */
+export interface ActivationFile {
+  v: 1;
+  tid: string;
+  firm_slug: string;
+  firm_name: string;
+  member_slug: string;
+  member_name: string | null;
+  role: "admin" | "partner" | "lawyer" | "assistant";
+  kind: "founder" | "member";
+  activated_at: string;
+}
+
+/** 待激活模式的占位工作区（激活完成、按真实身份启动后删除）。 */
+export const PENDING_WORKSPACE_SLUG = "pending-activation";
+
+export function activationFilePath(dataRoot: string): string {
+  return join(dataRoot, "activation.json");
+}
+
+/** 读激活记录；不存在 null；内容不合规也按 null（不会以半截身份启动）。 */
+export function readActivationFile(dataRoot: string): ActivationFile | null {
+  const p = activationFilePath(dataRoot);
+  if (!existsSync(p)) return null;
+  try {
+    const a = JSON.parse(readFileSync(p, "utf8")) as Partial<ActivationFile>;
+    const okSlug = (x: unknown) => typeof x === "string" && SLUG_PATTERN.test(x) && x !== PENDING_WORKSPACE_SLUG;
+    if (
+      a.v !== 1 ||
+      !okSlug(a.firm_slug) ||
+      !okSlug(a.member_slug) ||
+      a.tid !== `ten_${a.firm_slug}` ||
+      (a.kind !== "founder" && a.kind !== "member") ||
+      !["admin", "partner", "lawyer", "assistant"].includes(String(a.role)) ||
+      typeof a.firm_name !== "string"
+    )
+      return null;
+    return a as ActivationFile;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -199,8 +251,12 @@ function checkSlug(kind: string, slug: string): string {
 
 export function loadConfig(opts: KernelOptions = {}): KernelConfig {
   const env = opts.env ?? process.env;
-  const firmSlug = checkSlug("律所标识", opts.firmSlug ?? env.ZR_FIRM_SLUG ?? "demo-firm");
   const root = opts.dataDir ?? defaultDataDir(env);
+  // 身份来源（第 13 批）：显式给出（开发与测试）> 本机激活记录 > 待激活占位 > 开发缺省
+  const explicit = !!(opts.firmSlug ?? env.ZR_FIRM_SLUG);
+  const activation = explicit ? null : readActivationFile(root);
+  const onboarding = !explicit && !activation && (env.ZR_ONBOARDING === "1" || env.ZR_REQUIRE_CONTROL_PLANE === "1");
+  const firmSlug = checkSlug("律所标识", opts.firmSlug ?? env.ZR_FIRM_SLUG ?? (onboarding ? PENDING_WORKSPACE_SLUG : activation?.firm_slug) ?? "demo-firm");
   const workspaceDir = join(root, firmSlug);
   const { lawdbFile, lawdbSignerPub } = resolveLawdb(env, workspaceDir);
   const ocrModelDir = env.ZR_OCR_MODEL_DIR ?? firstExisting([repoContentPath("ocr-models")]) ?? join(workspaceDir, "ocr-models");
@@ -237,13 +293,16 @@ export function loadConfig(opts: KernelOptions = {}): KernelConfig {
     dbKey: opts.dbKey ?? env.ZR_DB_KEY,
     blobDir: join(workspaceDir, "blobs"),
     firmSlug,
-    userSlug: checkSlug("成员标识", opts.userSlug ?? env.ZR_USER_SLUG ?? "demo-lawyer"),
+    userSlug: checkSlug("成员标识", opts.userSlug ?? env.ZR_USER_SLUG ?? (onboarding ? "pending" : activation?.member_slug) ?? "demo-lawyer"),
     lawdbFile,
     lawdbSignerPub,
     ocrModelDir,
     agentProfileFile,
     syncShareDir: env.ZR_SYNC_SHARE_DIR || undefined,
     legacyMemberRows: env.ZR_MEMBER_LOG === "off" && !!process.env.NODE_TEST_CONTEXT && process.env.NODE_ENV !== "production",
+    dataRoot: root,
+    activation,
+    onboarding,
     env,
   };
 }
