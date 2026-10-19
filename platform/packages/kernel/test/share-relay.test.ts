@@ -232,8 +232,8 @@ test("第二轮 S11B-19/20/21/22/25：共同负责人不能在中继事项上调
   await kA.inv("matters.members.add", { matter_id: m6, user_id: usr("bob_2") });
   await kA.inv("relay.sync");
   await kB.inv("relay.sync");
-  await assert.rejects(kB.inv("matters.members.remove", { matter_id: m6, user_id: usr("bob_2") }), /最先同步该事项的负责人/);
-  await assert.rejects(kB.inv("matters.members.add", { matter_id: m6, user_id: usr("carol") }), /最先同步该事项的负责人/);
+  await assert.rejects(kB.inv("matters.members.remove", { matter_id: m6, user_id: usr("bob_2") }), /中继上的控制成员/);
+  await assert.rejects(kB.inv("matters.members.add", { matter_id: m6, user_id: usr("carol") }), /中继上的控制成员/);
   // S11B-20（第三轮改写，复核 S11B-33f）：成员行每段都带——控制成员改角色，其他成员电脑上随之改变
   await kA.inv("matters.members.add", { matter_id: m6, user_id: usr("bob_2"), matter_role: "viewer" });
   await kA.inv("relay.sync");

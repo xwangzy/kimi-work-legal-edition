@@ -428,8 +428,15 @@ function mayRotate(deps: SyncDeps, matterId: string): boolean {
 }
 
 /** 链的自动处置（中继事项的处置者是控制成员）。 */
-function maintain(deps: SyncDeps, matterId: string): { rotated: boolean } {
-  return maintainChain(deps, matterId, { mayRotate: mayRotate(deps, matterId), rotator: deps.relayControl?.controller(matterId) ?? null });
+function maintain(deps: SyncDeps, matterId: string): void {
+  // 处置失败（写出的事件在链上不成立已回滚、库忙等）不影响其他事项的导出
+  try {
+    const r = maintainChain(deps, matterId, { mayRotate: mayRotate(deps, matterId), rotator: deps.relayControl?.controller(matterId) ?? null });
+    // 收回了本机在链上不成立的纪元：从那次轮换起重发本机写的内容（复核 S12B-02/17：只退到那一刻，不全量重发）
+    if (r.rewindSince) rewindExport(deps.db, matterId, r.rewindSince);
+  } catch {
+    // 下一次导出或摄取再试
+  }
 }
 
 /**
@@ -445,19 +452,22 @@ export function prepareChain(deps: SyncDeps, matterId: string): void {
     if (foreign === "?" || foreign === "~") return;
     const anchorer = deps.relayControl?.controller(matterId) ?? folderAnchorer(db, matterId);
     if (anchorer !== keyctx.device.cert.memberId) return;
-    db.tx(() => writeAnchor(deps, matterId));
+    try {
+      db.tx(() => writeAnchor(deps, matterId));
+    } catch {
+      return;
+    }
     if (!hasChain(db, matterId)) return;
   }
-  const r = maintain(deps, matterId);
-  if (r.rotated) rewindExport(db, matterId, null);
+  maintain(deps, matterId);
 }
 
 /**
- * 退回导出水位，重发本机写的内容（第 12 批：本机的纪元密钥在分叉中落选、改用胜者或再轮换之后，之前用落选密钥加密发出的内容别人解不开）。
- * since 为空时退回到最早（全部重发；合并规则幂等）。
+ * 退回导出水位，重发本机写的内容（第 12 批：本机的纪元密钥在分叉中落选、或本机的轮换在链上不成立，之前用那把密钥加密发出的内容别人解不开）。
+ * 退到 since 之前 1 毫秒；since 为空时退回到最早（全部重发；合并规则幂等）。
  */
 function rewindExport(db: KernelDb, matterId: string, since: string | null): void {
-  const to = since ?? "0000";
+  const to = since ? new Date(Date.parse(since) - 1).toISOString() : "0000";
   db.run(`UPDATE sync_state SET last_export_at = ? WHERE matter_id = ? AND (last_export_at IS NULL OR last_export_at > ?)`, [to, matterId, to]);
   db.run(`UPDATE relay_export_state SET last_export_at = ?, last_always_digest = NULL WHERE matter_id = ? AND (last_export_at IS NULL OR last_export_at > ?)`, [to, matterId, to]);
 }
@@ -475,9 +485,13 @@ function exportChainOnly(
   // 不带事项行与 IM 绑定（复核 S12A-06：事项行有标题、委托人、对方与关键日期，这时的纪元可能仍包含被移出者）
   let rows = collectRows(deps, matterId, keyctx.device.deviceId, head, "9999").filter((r) => r.t !== "matters" && r.t !== "im_bindings");
   if (o.relay) rows = rows.filter((r) => r.t !== "devices" || String(r.pk) === keyctx.device.deviceId);
-  const digest = createHash("sha256").update(canonicalJson(rows.filter((r) => r.t === MEMBER_EVENTS_TABLE).map((r) => r.pk))).digest("hex");
+  const keyRowsNow = db.all<KeyRow>(`SELECT matter_id, epoch, wrapped_for, wrapped_key, created_at FROM matter_keys WHERE matter_id = ?`, [matterId]);
+  // 摘要含成员链、包裹与介质位置（复核 S12B-12：换了共享目录、或只多了别人转发的包裹时也要再发）
+  const digest = createHash("sha256")
+    .update(canonicalJson([rows.filter((r) => r.t === MEMBER_EVENTS_TABLE).map((r) => r.pk), keyRowsNow.map((k) => [k.epoch, k.wrapped_for, k.wrapped_key]), o.relay ? "relay" : o.shareDir]))
+    .digest("hex");
   if (db.get<{ digest: string }>(`SELECT digest FROM chain_paused_export WHERE matter_id = ? AND medium = ?`, [matterId, medium])?.digest === digest) return;
-  const keyRows = db.all<KeyRow>(`SELECT matter_id, epoch, wrapped_for, wrapped_key, created_at FROM matter_keys WHERE matter_id = ?`, [matterId]);
+  const keyRows = keyRowsNow;
   const segmentId = `seg_${keyctx.device.deviceId}_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
   const sealed = sealSegment({
     header: { segment_id: segmentId, device_id: keyctx.device.deviceId, matter_id: matterId, from_lamport: head, to_lamport: head, key_epoch: o.epoch, event_count: rows.length, created_at: nowIso(), device_cert_json: o.certJson },
@@ -1028,7 +1042,16 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
         if (keyRowsSigned(seg)) {
           const k = acceptKeyRows(deps, h.matter_id, view, seg.key_rows ?? []);
           // 本机那把落选、换成了胜者：之前用落选密钥发出的内容别人解不开，重发本机写的
-          if (k.replacedSelf.length > 0) rewindExport(db, h.matter_id, null);
+          // 只退到本机那次落选的声明之前（复核 S12B-17）；找不到本机的声明（不是本机轮换的）则全量
+          if (k.replacedSelf.length > 0) {
+            const mine = db
+              .all<{ payload: string }>(`SELECT payload FROM member_events WHERE matter_id = ? AND author_device = ?`, [h.matter_id, keyctx.device.deviceId])
+              .map((r) => JSON.parse(r.payload) as { at: string; body: { key?: { epoch: number } } })
+              .filter((p) => p.body.key && k.replacedSelf.includes(p.body.key.epoch))
+              .map((p) => p.at)
+              .sort();
+            rewindExport(db, h.matter_id, mine[0] ?? null);
+          }
         }
         refreshChainAlerts(deps, h.matter_id, chainHealth(deps, h.matter_id, view));
         touchedChain.add(h.matter_id);
@@ -1133,8 +1156,7 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
   // 链的自动处置（吊销标记、补轮换、告警）：在每段的事务之外做
   for (const mid of touchedChain) {
     try {
-      const r = maintain(deps, mid);
-      if (r.rotated) rewindExport(db, mid, null);
+      maintain(deps, mid);
     } catch (e) {
       result.originConflicts.push(`member_log_maintain_failed:${mid}（${e instanceof Error ? e.message : String(e)}）`);
     }

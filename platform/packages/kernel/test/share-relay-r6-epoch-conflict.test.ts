@@ -134,5 +134,5 @@ test(`S11A-51（第 12 批解决）：被移出的共同负责人同号轮换，
   assert.deepEqual((st2.alerts ?? []).filter((a: any) => a.matter_id === mid), [], "链模式下没有分叉告警");
   assert.equal(textOf(kA, "丁-移出后.txt"), "dave 在 bob 被移出之后写的保密内容", "负责人读到");
   void row;
-  assert.equal(leaked, null, "被移出的成员读不到滞后设备之后写的内容（滞后设备暂停发出）");
+  assert.equal(leaked, null, "被移出的成员读不到滞后设备之后写的内容（新纪元不包给他）");
 });

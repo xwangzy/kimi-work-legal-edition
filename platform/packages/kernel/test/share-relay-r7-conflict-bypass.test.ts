@@ -69,7 +69,7 @@ after(async () => {
   await kA.kernel.close();
 });
 
-test(`S11A-54（第 12 批）：被移出的共同负责人不知道自己被移出时再做的成员变更与轮换在链上拒收，读不到滞后设备之后写的内容${BOB_SEES ? "（bob 也见过 A 的移出段、本机有告警）" : "（bob 没见过 A 的移出段）"}`, { timeout: 120_000 }, async () => {
+test(`S11A-54（第 12 批）：被移出的共同负责人不知道自己被移出时再做的成员变更与轮换在链上拒收，读不到滞后设备之后写的内容${BOB_SEES ? "（bob 去收 A 的移出段，解不开）" : "（bob 不去收 A 的移出段）"}`, { timeout: 120_000 }, async () => {
   const { matter } = await kA.inv("matters.create", { title: "冲突绕过", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
   const mid = matter.matter_id;
   await kA.inv("matters.members.add", { matter_id: mid, user_id: usr("dave") });

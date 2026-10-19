@@ -479,6 +479,7 @@ test("S12A-06：暂停期间只发成员链的段不带事项行（标题、委�
   const rows = openSegmentBody(seg, keyOf(kD, dv, m, seg.body.epoch));
   assert.ok(rows.some((r) => r.t === "member_events"));
   assert.ok(!rows.some((r) => r.t === "matters" || r.t === "im_bindings" || r.t === "document_versions"), JSON.stringify([...new Set(rows.map((r) => r.t))]));
-  // 再导出一次：链没变不重发
-  assert.equal((await kD.inv("sync.export", { share_dir: dir("p6b"), matter_id: m })).segments.length, 0);
+  // 再导出到同一目录：链没变不重发；换一个共享目录：要发（复核 S12B-12）
+  assert.equal((await kD.inv("sync.export", { share_dir: s, matter_id: m })).segments.length, 0);
+  assert.equal((await kD.inv("sync.export", { share_dir: dir("p6b"), matter_id: m })).segments.length, 1);
 });

@@ -35,7 +35,7 @@ export function TeamShare() {
   };
   // 第 12 批：清除这台电脑上该事项的成员链，下次收到时按首次同步的规则重新确认负责人（内容与密钥不动）
   const rebootstrap = async (matterId: string, title: string | null) => {
-    if (!window.confirm(`重新引导「${title ?? matterId}」：这台电脑会清除该事项的成员记录链，下次同步时按最先同步该事项的负责人重新确认成员。内容与密钥不受影响。继续？`)) return;
+    if (!window.confirm(`重新引导「${title ?? matterId}」：这台电脑会清除该事项的成员记录链，重新确认之前暂停发出该事项；之后只采用这台电脑记录里在册负责人发来的起点（经中软中继同步的事项只认中继上的控制成员）。内容与密钥不受影响。继续？`)) return;
     setBusy(true);
     setMsg("");
     try {
@@ -64,7 +64,7 @@ export function TeamShare() {
         {alerts.map((a) => (
           <div key={`${a.matter_id}-${a.kind}-${a.epoch}`} className="sync-alert">
             {syncAlertText(a)}
-            {(a.kind === "root_conflict" || a.kind === "chain_pending") && (
+            {a.kind === "root_conflict" && (
               <>
                 {" "}
                 <button className="btn btn-sm" disabled={busy} onClick={() => void rebootstrap(a.matter_id, a.title)}>

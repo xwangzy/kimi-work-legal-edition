@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 import { canonicalJson, generateMatterKey, signSyncWith, unwrapMatterKey, verifyBytes, wrapMatterKey, type DeviceCertificate } from "@zr-legal/keys";
 import type { KernelDb } from "./db.ts";
 import type { KernelKeyContext } from "./devices.ts";
+import { DomainError } from "@zr-legal/domain";
 import { deviceTombstoned, verifyCertSignature } from "./ledger-signer.ts";
 
 export interface ChainDeps {
@@ -39,6 +40,8 @@ export interface KeyDecl {
   epoch: number;
   fp: string | null;
   wraps: Record<string, string>;
+  /** 轮换时特意排除的设备（恢复轮换的吊销候选；复核 S12B-09：自动补包裹跳过它们）。 */
+  excluded?: string[];
 }
 
 export interface MemberEventPayload {
@@ -117,13 +120,25 @@ function loadEvents(db: KernelDb, matterId: string): StoredEvent[] {
     .map((r) => ({ id: r.event_id, p: JSON.parse(r.payload) as MemberEventPayload, sig: r.sig, certJson: r.author_cert, member: r.author_member, received: r.received_at }));
 }
 
-/** 段里的成员事件行导出形态：链上拒收的事件不转发（复核 S12A-05：否则所内任意设备塞进来的事件被全员无限转发）；有效与待定的照发。 */
+/**
+ * 段里的成员事件行导出形态：只转发有效的，以及作者按本机投影是在册负责人的待定事件（复核 S12A-05、S12B-07：拒收的、
+ * 成员或所内任意设备签的缺前序事件不转发——否则被全员无限转发）。
+ */
 export function exportEventRows(deps: ChainDeps, matterId: string): MemberEventRow[] {
   const rows = deps.db.all<MemberEventRow>(`SELECT event_id, payload, sig, author_cert FROM member_events WHERE matter_id = ? ORDER BY lamport, event_id`, [matterId]);
   if (rows.length === 0 || !hasChain(deps.db, matterId)) return rows;
   const v = chainView(deps, matterId);
-  return rows.filter((r) => v.status.get(r.event_id)?.s !== "rejected");
+  return rows.filter((r) => {
+    const st = v.status.get(r.event_id);
+    if (st?.s === "valid") return true;
+    if (st?.s !== "pending") return false;
+    const e = v.events.get(r.event_id)!;
+    return v.members.get(e.member)?.role === "owner" || st.why === "revoked_unvouched";
+  });
 }
+
+/** 每个事项本机最多存的成员事件条数（复核 S12B-07：成员可以签大量无效事件；超过后只收作者是在册负责人的）。 */
+export const MAX_EVENTS_PER_MATTER = 5000;
 
 function insertEvent(db: KernelDb, e: StoredEvent, viaMember: string | null): boolean {
   const r = db.run(
@@ -140,6 +155,7 @@ function isKeyDecl(x: unknown, allowNullFp: boolean): x is KeyDecl {
   const k = x as KeyDecl;
   if (!k || typeof k !== "object" || !Number.isSafeInteger(k.epoch) || k.epoch < 1) return false;
   if (!(typeof k.fp === "string" ? /^[0-9a-f]{32}$/.test(k.fp) : allowNullFp && k.fp === null)) return false;
+  if (k.excluded !== undefined && !(Array.isArray(k.excluded) && k.excluded.length <= MAX_WRAPS && k.excluded.every((d) => typeof d === "string" && NAME_RE.test(d)))) return false;
   return isWraps(k.wraps);
 }
 
@@ -219,12 +235,18 @@ export function verifyEventRow(deps: ChainDeps, matterId: string, raw: unknown):
 export function storeIncomingEvents(deps: ChainDeps, matterId: string, rows: unknown[], viaMember: string): { stored: number; bad: number } {
   let stored = 0;
   let bad = 0;
+  let count = deps.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM member_events WHERE matter_id = ?`, [matterId])?.n ?? 0;
   for (const raw of rows) {
     const e = verifyEventRow(deps, matterId, raw);
     if (!e) {
       bad += 1;
       continue;
     }
+    if (count >= MAX_EVENTS_PER_MATTER && !deps.db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [matterId, e.member])) {
+      bad += 1;
+      continue;
+    }
+    count += 1;
     if (insertEvent(deps.db, e, viaMember)) stored += 1;
   }
   return { stored, bad };
@@ -334,7 +356,11 @@ export function chainView(deps: ChainDeps, matterId: string, opts: { liveBefore?
 const viewCache = new WeakMap<KernelDb, Map<string, { key: string; view: ChainView }>>();
 
 function viewKey(db: KernelDb, matterId: string): string {
-  const ev = db.get<{ n: number; r: string | null }>(`SELECT COUNT(*) AS n, MAX(received_at || event_id) AS r FROM member_events WHERE matter_id = ?`, [matterId]);
+  // 条数 + 最后写入的那一行（rowid 最大者）的编号：回滚后再写入的是另一条事件，编号不同（复核 S12B-04：原先按收下时刻，本机时钟回拨时命中过期视图）
+  const ev = db.get<{ n: number; r: string | null }>(
+    `SELECT COUNT(*) AS n, (SELECT event_id FROM member_events WHERE matter_id = ? ORDER BY rowid DESC LIMIT 1) AS r FROM member_events WHERE matter_id = ?`,
+    [matterId, matterId],
+  );
   const root = db.get<{ root_id: string | null }>(`SELECT root_id FROM member_chain WHERE matter_id = ?`, [matterId])?.root_id ?? "";
   const rv = db.get<{ a: number; b: number }>(`SELECT (SELECT COUNT(*) FROM devices WHERE status = 'revoked') AS a, (SELECT COUNT(*) FROM cp_revoked_devices) AS b`, []);
   return `${root}|${ev?.n ?? 0}|${ev?.r ?? ""}|${rv?.a ?? 0}|${rv?.b ?? 0}`;
@@ -421,17 +447,21 @@ function computeView(deps: ChainDeps, matterId: string, opts: { liveBefore?: Map
     status.set(e.id, { s: "valid" });
     tentative.push(e);
   }
-  // 第二遍：吊销按链上位置（根事件不受影响——它的有效性在采用时确定）
-  const liveMemo = new Map<string, boolean>();
-  const devLive = (dev: string) => {
+  // 第二遍：吊销按链上位置（根事件不受影响——它的有效性在采用时确定）。被吊销设备写的事件：本机在吊销时刻之前收下的照收
+  // （复核 S12B-06：原先一得知吊销就把它写过的全部成员事件当待定、剔出投影，唯一负责人的设备被吊销时成员在本机被标为已移出）；
+  // 吊销时刻之后才收到的，被在用设备的有效事件引用过（标记或其他事件）才收；链上已有给它的在用标记 → 拒收，没有 → 待定
+  const liveMemo = new Map<string, { revoked: boolean; at: string | null }>();
+  const devState = (dev: string) => {
     let v = liveMemo.get(dev);
-    if (v === undefined) liveMemo.set(dev, (v = !deviceRevoked(db, dev)));
+    if (v === undefined) {
+      const revoked = deviceRevoked(db, dev);
+      liveMemo.set(dev, (v = { revoked, at: revoked ? (opts.liveBefore?.get(dev) ?? revokedAtOf(db, dev)) : null }));
+    }
     return v;
   };
   const isLive = (e: StoredEvent) => {
-    if (devLive(e.p.author_device)) return true;
-    const before = opts.liveBefore?.get(e.p.author_device);
-    return !!before && e.received < before;
+    const st = devState(e.p.author_device);
+    return !st.revoked || (!!st.at && e.received < st.at);
   };
   const vouched = new Set<string>();
   for (const v of tentative) if (isLive(v)) for (const x of anc.get(v.id)!) vouched.add(x);
@@ -441,59 +471,62 @@ function computeView(deps: ChainDeps, matterId: string, opts: { liveBefore?: Map
     if (e.id === root.id || isLive(e) || vouched.has(e.id)) continue;
     bad.set(e.id, marked.has(e.p.author_device) ? { s: "rejected", why: "revoked_after_mark" } : { s: "pending", why: "revoked_unvouched" });
   }
-  // 后代随之（按先后，祖先先处理）
-  for (const e of tentative) {
-    if (bad.has(e.id)) continue;
-    for (const x of anc.get(e.id) ?? []) {
-      const b = bad.get(x);
-      if (b) {
-        bad.set(e.id, b.s === "rejected" ? { s: "rejected", why: "parent_rejected" } : { s: "pending", why: "parent_pending" });
-        break;
+  const withDescendants = (seed: Map<string, EventStatus>, among: StoredEvent[]) => {
+    for (const e of among) {
+      if (seed.has(e.id)) continue;
+      for (const x of anc.get(e.id) ?? []) {
+        const b = seed.get(x);
+        if (b) {
+          seed.set(e.id, b.s === "rejected" ? { s: "rejected", why: "parent_rejected" } : { s: "pending", why: "parent_pending" });
+          break;
+        }
       }
     }
-  }
-  // 第三遍：被降级或移出者的并发操作不算（移出优先于被移出者的并发操作）——最终不是负责人的成员，他写的、与降级或移出他的事件并发
-  // （互不为祖先）的事件拒收，后代随之。例外：降级或移出“降级他的那个人”的事件不拒收——互相降级时两条都成立（失败即关闭，复核 S12A-02：
-  // 原先两条都不成立，被移出者只要在旧链头上对移出者做一次降级，就能撤销自己的移出）。只按第二遍之后的投影判一次
-  const pass2 = tentative.filter((e) => !bad.has(e.id));
-  const p1 = project(pass2, anc);
-  const demotions = new Map<string, StoredEvent[]>();
-  for (const e of pass2) {
-    if (e.p.kind !== "member") continue;
-    const u = String(e.p.body.user);
-    if (e.p.body.role === "owner" || p1.get(u)?.role === "owner") continue;
-    const l = demotions.get(u) ?? [];
-    l.push(e);
-    demotions.set(u, l);
-  }
-  for (const e of pass2) {
-    if (e.id === root.id || bad.has(e.id)) continue;
-    const ds = demotions.get(e.member);
-    const retaliation = (d: StoredEvent) => e.p.kind === "member" && e.p.body.role !== "owner" && String(e.p.body.user) === d.member;
-    if (ds?.some((d) => d.id !== e.id && !anc.get(e.id)!.has(d.id) && !anc.get(d.id)!.has(e.id) && !retaliation(d))) bad.set(e.id, { s: "rejected", why: "author_demoted_concurrently" });
-  }
-  for (const e of tentative) {
-    if (bad.has(e.id)) continue;
-    for (const x of anc.get(e.id) ?? []) {
-      const b = bad.get(x);
-      if (b) {
-        bad.set(e.id, b.s === "rejected" ? { s: "rejected", why: "parent_rejected" } : { s: "pending", why: "parent_pending" });
-        break;
-      }
+  };
+  withDescendants(bad, tentative);
+  // 第三遍：移出优先于被移出者的并发操作——最终不是负责人的成员，他写的、与降级或移出他的事件并发（互不为祖先）的事件拒收，后代随之。
+  // 例外：降级或移出“降级他的那个人”的事件不拒收——互相降级时两条都成立（失败即关闭，复核 S12A-02）。
+  // 迭代到不动点（复核 S12B-01：原先只判一次，本身被拒收的降级仍被当作降级，被它“降级”的负责人此后写的事件全被拒收）：
+  // 每轮只用上一轮存活的事件找降级，在第二遍之后的全集上重判；至多 8 轮
+  const base = tentative.filter((e) => !bad.has(e.id));
+  let alive = base;
+  let bad3 = new Map<string, EventStatus>();
+  for (let iter = 0; iter < 8; iter++) {
+    const p = project(alive, anc);
+    const demotions = new Map<string, StoredEvent[]>();
+    for (const e of alive) {
+      if (e.p.kind !== "member") continue;
+      const u = String(e.p.body.user);
+      if (e.p.body.role === "owner" || p.get(u)?.role === "owner") continue;
+      const l = demotions.get(u) ?? [];
+      l.push(e);
+      demotions.set(u, l);
     }
+    const nb = new Map<string, EventStatus>();
+    for (const e of base) {
+      if (e.id === root.id) continue;
+      const ds = demotions.get(e.member);
+      const retaliation = (d: StoredEvent) => e.p.kind === "member" && e.p.body.role !== "owner" && String(e.p.body.user) === d.member;
+      if (ds?.some((d) => d.id !== e.id && !anc.get(e.id)!.has(d.id) && !anc.get(d.id)!.has(e.id) && !retaliation(d))) nb.set(e.id, { s: "rejected", why: "author_demoted_concurrently" });
+    }
+    withDescendants(nb, base);
+    const next = base.filter((e) => !nb.has(e.id));
+    bad3 = nb;
+    if (next.length === alive.length && next.every((e, i) => e.id === alive[i]!.id)) break;
+    alive = next;
   }
+  for (const [id, st] of bad3) bad.set(id, st);
   for (const [id, st] of bad) status.set(id, st);
   view.valid = tentative.filter((e) => !bad.has(e.id));
   const covered = new Set<string>();
   for (const e of view.valid) for (const x of anc.get(e.id)!) covered.add(x);
   view.heads = view.valid.filter((e) => !covered.has(e.id)).map((e) => e.id).sort();
   view.members = project(view.valid, anc);
-  // 纪元：胜者 = 同号声明里，作者此刻仍是在册负责人的优先，再按 (lamport, 编号) 最小者（被移出的共同负责人并发轮换出的同号纪元落选）；
-  // 包裹 = 胜者声明 + 因果过去含胜者的追加
-  const ownerNow = (m: string) => view.members.get(m)?.role === "owner";
+  // 纪元：胜者 = 同号声明里 (lamport, 编号) 最小者，与之后的成员变化无关（复核 S12B-03：原先“作者此刻仍是负责人的优先”，
+  // 胜者作者之后被正常降级时胜者翻转，已无人持有新胜者的密钥；被移出者并发的轮换已由第三遍拒收）；包裹 = 胜者声明 + 因果过去含胜者的追加
   const decls: { e: StoredEvent; d: KeyDecl }[] = [];
   for (const e of view.valid) for (const d of declsOf(e)) decls.push({ e, d });
-  decls.sort((a, b) => Number(ownerNow(b.e.member)) - Number(ownerNow(a.e.member)) || order(a.e, b.e));
+  decls.sort((a, b) => order(a.e, b.e));
   for (const { e, d } of decls) {
     const cur = view.epochs.get(d.epoch);
     if (!cur) {
@@ -537,7 +570,15 @@ export function wrapDeclared(view: ChainView, epoch: number, wrappedFor: string,
 export function applyProjection(deps: ChainDeps, matterId: string, view: ChainView): void {
   const { db, tenantId } = deps;
   if (!view.root) return;
+  // 链上还有待定事件涉及的成员：本机行不动（复核 S12B-06：待定只用来暂停，不能据此把人从本机移出或加回——移出会触发本机数据擦除）
+  const pendingUsers = new Set<string>();
+  for (const e of view.events.values()) {
+    if (view.status.get(e.id)?.s !== "pending") continue;
+    if (e.p.kind === "member") pendingUsers.add(String(e.p.body.user));
+    if (isRootKind(e.p.kind)) for (const m of (e.p.body.members as { user: string }[]) ?? []) pendingUsers.add(m.user);
+  }
   for (const [user, st] of view.members) {
+    if (pendingUsers.has(user)) continue;
     const d = st.decider;
     db.run(`INSERT OR IGNORE INTO users (user_id, tenant_id, display_name) VALUES (?,?,?)`, [user, tenantId, user]);
     const local = db.get<{ matter_role: string; removed_at: string | null; author_device: string; row_lamport: number }>(
@@ -564,7 +605,7 @@ export function applyProjection(deps: ChainDeps, matterId: string, view: ChainVi
   }
   // 起点没有列出、链上也从未出现的本机行：按已移出处理（锚定者的成员关系为准）
   for (const r of db.all<{ user_id: string }>(`SELECT user_id FROM matter_members WHERE matter_id = ? AND removed_at IS NULL`, [matterId])) {
-    if (view.members.has(r.user_id)) continue;
+    if (view.members.has(r.user_id) || pendingUsers.has(r.user_id)) continue;
     db.run(`UPDATE matter_members SET removed_at = ?, removed_lamport = ?, author_sig = NULL, author_cert = NULL WHERE matter_id = ? AND user_id = ?`, [nowIso(), view.root.p.lamport, matterId, r.user_id]);
   }
 }
@@ -621,6 +662,14 @@ export function writeEvent(deps: ChainDeps, matterId: string, kind: EventKind, b
   insertEvent(db, e, null);
   if (isRootKind(kind)) {
     db.run(`INSERT INTO member_chain (matter_id, root_id, adopted_at) VALUES (?,?,?) ON CONFLICT(matter_id) DO UPDATE SET root_id = excluded.root_id, adopted_at = excluded.adopted_at`, [matterId, id, nowIso()]);
+    return e;
+  }
+  // 写完即按链核一次（复核 S12B-01/02：原先链上不成立的变更 API 照样返回成功、本机还用它的新纪元加密，别人永远收不到）：
+  // 不成立就删掉这一条并抛错——调用方的事务回滚（连同本机已写的包裹），接口如实返回失败
+  const st = chainView(deps, matterId).status.get(id);
+  if (st?.s !== "valid") {
+    db.run(`DELETE FROM member_events WHERE event_id = ?`, [id]);
+    throw new DomainError("conflict", `这次成员变更在成员链上不成立（${st ? st.why : "unknown"}）：多为本机的负责人身份已被其他负责人的变更取消，请同步后再看`, 409);
   }
   return e;
 }
@@ -715,7 +764,7 @@ export function rotateChainKey(
   for (const d of devices) db.run(`INSERT OR REPLACE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key) VALUES (?,?,?,?)`, [matterId, epoch, d.device_id, wrapMatterKey(key, d.enc_pub_pem)]);
   db.run(`INSERT OR REPLACE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key) VALUES (?,?,'recovery',?)`, [matterId, epoch, wrapMatterKey(key, keyctx.firm.recoveryPublicKeyPem)]);
   db.run(`INSERT OR IGNORE INTO key_epochs (scope, scope_id, epoch, reason) VALUES ('matter', ?, ?, ?)`, [matterId, epoch, o.reason.slice(0, 300)]);
-  const decl: KeyDecl = { epoch, fp: keyFingerprint(key), wraps: localWraps(db, matterId, epoch) };
+  const decl: KeyDecl = { epoch, fp: keyFingerprint(key), wraps: localWraps(db, matterId, epoch), ...(o.exclude && o.exclude.size > 0 ? { excluded: [...o.exclude].sort() } : {}) };
   const event = o.memberChange
     ? writeEvent(deps, matterId, "member", { user: o.memberChange.user, role: o.memberChange.role, key: decl }, view)
     : writeEvent(deps, matterId, "rekey", { key: decl, reason: o.reason.slice(0, 300) }, view);
@@ -733,7 +782,8 @@ export function addOrUpdateMember(deps: ChainDeps, matterId: string, user: strin
   writeDueMarks(deps, matterId);
   const view = chainView(deps, matterId);
   const epoch = ownEpoch(db, matterId, keyctx.device.deviceId);
-  const key = ownKey(deps, matterId, epoch);
+  // 本机这把落选（等胜者的包裹期间）：不用它包给新设备、也不在链上声明（复核 S12B-11），由处置者补包裹
+  const key = ownKeyIsWinner(deps, matterId, view, epoch) ? ownKey(deps, matterId, epoch) : null;
   const devs = [...new Map([...liveDevicesOf(db, tenantId, [user]), ...extraDevices].map((d) => [d.device_id, d])).values()];
   const wraps: Record<string, string> = {};
   if (key) {
@@ -832,6 +882,8 @@ export interface ChainHealth {
   rekeyNeeded: boolean;
   superseded: boolean;
   rootConflict: StoredEvent | null;
+  /** rekey_needed 时在等哪位成员处置（界面写明）。 */
+  waitingFor?: string | null;
 }
 
 /** 判断该事项链的健康状况（不写库）。 */
@@ -882,7 +934,7 @@ export function refreshChainAlerts(deps: ChainDeps, matterId: string, h: ChainHe
     const e = h.pendingMissing[0]!;
     want.set("chain_pending", { detail: `${h.pendingMissing.length} 条成员事件缺少前序事件，等待其余同步段`, peerDevice: e.p.author_device, peerMember: e.member });
   }
-  if (h.rekeyNeeded) want.set("rekey_needed", { detail: "当前纪元的密钥包裹里仍有已移出成员的设备，等待负责人轮换", peerDevice: null, peerMember: null });
+  if (h.rekeyNeeded) want.set("rekey_needed", { detail: "当前纪元的密钥包裹里仍有已移出成员的设备，等待负责人轮换", peerDevice: null, peerMember: h.waitingFor ?? null });
   if (h.superseded) want.set("epoch_superseded", { detail: "本机当前纪元的密钥在并发轮换中落选，等待采用胜出的密钥或再次轮换", peerDevice: null, peerMember: null });
   if (h.rootConflict) want.set("root_conflict", { detail: `收到与本机不同的成员链起点（作者 ${h.rootConflict.member}）`, peerDevice: h.rootConflict.p.author_device, peerMember: h.rootConflict.member });
   const kinds: ChainAlertKind[] = ["chain_pending", "rekey_needed", "epoch_superseded", "root_conflict"];
@@ -924,10 +976,15 @@ export function writeDueMarks(deps: ChainDeps, matterId: string): boolean {
   // 本机是否负责人按“吊销之前收下的事件仍有效”判断（交接给本机的那条事件可能正是被吊销设备写的）
   const optimistic = chainView(deps, matterId, { liveBefore });
   if (optimistic.members.get(keyctx.device.cert.memberId)?.role !== "owner") return false;
-  db.tx(() => {
-    for (const d of due) writeEvent(deps, matterId, "mark", { device: d }, chainView(deps, matterId, { liveBefore }));
-    applyProjection(deps, matterId, chainView(deps, matterId));
-  });
+  try {
+    db.tx(() => {
+      // 标记里记下本机所用的吊销时刻（复核 S12B-17：事后可核对时钟依据）
+      for (const d of due) writeEvent(deps, matterId, "mark", { device: d, ...(liveBefore.has(d) ? { revoked_at: liveBefore.get(d) } : {}) }, chainView(deps, matterId, { liveBefore }));
+      applyProjection(deps, matterId, chainView(deps, matterId));
+    });
+  } catch {
+    return false;
+  }
   return true;
 }
 
@@ -946,56 +1003,83 @@ export function refreshChain(deps: ChainDeps, matterId: string): void {
  * - 最后按健康状况重写告警。
  * 返回本机是否写了新事件（调用方据此决定是否需要重发）。
  */
-export function maintainChain(deps: ChainDeps, matterId: string, o: { mayRotate: boolean; rotator?: string | null }): { wrote: boolean; rotated: boolean } {
+export function maintainChain(
+  deps: ChainDeps,
+  matterId: string,
+  o: { mayRotate: boolean; rotator?: string | null },
+): { wrote: boolean; rotated: boolean; rewindSince: string | null } {
   const { db, keyctx, tenantId } = deps;
   let wrote = false;
   let rotated = false;
-  if (!hasChain(db, matterId)) return { wrote, rotated };
+  let rewindSince: string | null = null;
+  if (!hasChain(db, matterId)) return { wrote, rotated, rewindSince };
   if (writeDueMarks(deps, matterId)) wrote = true;
   let view = chainView(deps, matterId);
+  const sinces: string[] = [];
+  // 本机写过、合并后在链上不成立的轮换（复核 S12B-02）：它声明的纪元链上没有，本机若继续用它加密，别人永远收不到——
+  // 收回该纪元本机的全部包裹，从那次轮换起重发本机写的内容（改用链上已声明的纪元）
+  for (const e of view.events.values()) {
+    if (e.p.author_device !== keyctx.device.deviceId || view.status.get(e.id)?.s !== "rejected") continue;
+    const k = e.p.body.key as KeyDecl | undefined;
+    if (!k || view.epochs.has(k.epoch)) continue;
+    if (!db.get(`SELECT 1 AS x FROM matter_keys WHERE matter_id = ? AND epoch = ?`, [matterId, k.epoch])) continue;
+    db.run(`DELETE FROM matter_keys WHERE matter_id = ? AND epoch = ?`, [matterId, k.epoch]);
+    sinces.push(e.p.at);
+    wrote = true;
+  }
+  rewindSince = sinces.sort()[0] ?? null;
   let h = chainHealth(deps, matterId, view);
   const me = keyctx.device.cert.memberId;
-  // 自动处置只由一位成员做（否则几位负责人同时补轮换又分叉）：中继事项为控制成员，否则为当前纪元胜出声明的作者（仍是负责人时），再否则成员编号最小的负责人
-  const rotator = o.rotator ?? defaultRotator(view);
-  const iRotate = rotator === me && view.members.get(me)?.role === "owner" && o.mayRotate && !deviceRevoked(db, keyctx.device.deviceId) && h.pendingRevoked.length === 0 && h.pendingMissing.length === 0;
-  if (h.rekeyNeeded && iRotate) {
-    db.tx(() => rotateChainKey(deps, matterId, { reason: "member_log.rekey_removed" }));
-    wrote = true;
-    rotated = true;
-    view = chainView(deps, matterId);
-    h = chainHealth(deps, matterId, view);
-  } else if (iRotate && !h.superseded) {
-    // 在册成员的在用设备在当前纪元没有包裹（并发加人与轮换、成员后登记的新设备）：补包裹
-    const top = view.epochs.get(view.maxEpoch);
-    const key = top ? ownKey(deps, matterId, view.maxEpoch) : null;
-    if (top && key && ownKeyIsWinner(deps, matterId, view, view.maxEpoch)) {
-      const users = [...view.members].filter(([, s]) => s.role !== null).map(([u]) => u);
-      const missing = liveDevicesOf(db, tenantId, users).filter((d) => !top.wraps.has(d.device_id));
-      if (missing.length > 0) {
-        db.tx(() => {
-          const wraps: Record<string, string> = {};
-          for (const d of missing) {
-            const w = wrapMatterKey(key, d.enc_pub_pem);
-            db.run(`INSERT OR REPLACE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key) VALUES (?,?,?,?)`, [matterId, view.maxEpoch, d.device_id, w]);
-            wraps[d.device_id] = wrapDigest(w);
-          }
-          writeEvent(deps, matterId, "wrap", { wraps: { epoch: view.maxEpoch, wraps } }, view);
-        });
-        wrote = true;
-        view = chainView(deps, matterId);
-        h = chainHealth(deps, matterId, view);
+  const rotator = o.rotator ?? defaultRotator(deps, view);
+  // 处置者长时间不处置（告警超过 24 小时），其他在册负责人可以接手（复核 S12B-10；中继事项仍只有控制成员能提升纪元，由 mayRotate 把关）
+  const stale = !!db.get(`SELECT 1 AS x FROM sync_alerts WHERE matter_id = ? AND kind = 'rekey_needed' AND first_at < ?`, [matterId, new Date(Date.now() - 24 * 3600_000).toISOString()]);
+  const iAmOwner = view.members.get(me)?.role === "owner";
+  const iRotate = (rotator === me || (stale && !o.rotator)) && iAmOwner && o.mayRotate && !deviceRevoked(db, keyctx.device.deviceId) && h.pendingRevoked.length === 0 && h.pendingMissing.length === 0;
+  try {
+    if (h.rekeyNeeded && iRotate) {
+      db.tx(() => rotateChainKey(deps, matterId, { reason: "member_log.rekey_removed" }));
+      wrote = true;
+      rotated = true;
+      view = chainView(deps, matterId);
+      h = chainHealth(deps, matterId, view);
+    } else if (iRotate && !h.superseded) {
+      // 在册成员的在用设备在当前纪元没有包裹（并发加人与轮换、成员后登记的新设备）：补包裹；轮换时特意排除的设备不补（复核 S12B-09）
+      const top = view.epochs.get(view.maxEpoch);
+      const key = top ? ownKey(deps, matterId, view.maxEpoch) : null;
+      if (top && key && ownKeyIsWinner(deps, matterId, view, view.maxEpoch)) {
+        const excluded = new Set(top.decl.excluded ?? []);
+        const users = [...view.members].filter(([, s]) => s.role !== null).map(([u]) => u);
+        const missing = liveDevicesOf(db, tenantId, users).filter((d) => !top.wraps.has(d.device_id) && !excluded.has(d.device_id));
+        if (missing.length > 0) {
+          db.tx(() => {
+            const wraps: Record<string, string> = {};
+            for (const d of missing) {
+              const w = wrapMatterKey(key, d.enc_pub_pem);
+              db.run(`INSERT OR REPLACE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key) VALUES (?,?,?,?)`, [matterId, view.maxEpoch, d.device_id, w]);
+              wraps[d.device_id] = wrapDigest(w);
+            }
+            writeEvent(deps, matterId, "wrap", { wraps: { epoch: view.maxEpoch, wraps } }, view);
+          });
+          wrote = true;
+          view = chainView(deps, matterId);
+          h = chainHealth(deps, matterId, view);
+        }
       }
     }
+  } catch {
+    // 本机的处置在链上不成立（writeEvent 已回滚）：不重写、不出段，告警照常（复核 S12B-01：原先每个周期再写一条被拒收的事件）
   }
+  h.waitingFor = h.rekeyNeeded ? rotator : null;
   refreshChainAlerts(deps, matterId, h);
-  return { wrote, rotated };
+  return { wrote, rotated, rewindSince };
 }
 
-/** 缺省的自动处置者：当前纪元胜出声明的作者（仍是负责人时），否则成员编号最小的负责人。 */
-function defaultRotator(view: ChainView): string | null {
+/** 缺省的自动处置者：当前纪元胜出声明的作者（仍是负责人、且还有在用设备时），否则有在用设备的负责人里成员编号最小者（复核 S12B-10）。 */
+function defaultRotator(deps: ChainDeps, view: ChainView): string | null {
+  const hasLive = (u: string) => liveDevicesOf(deps.db, deps.tenantId, [u]).length > 0;
   const top = view.epochs.get(view.maxEpoch);
-  if (top && view.members.get(top.winner.member)?.role === "owner") return top.winner.member;
-  return [...view.members].filter(([, s]) => s.role === "owner").map(([u]) => u).sort()[0] ?? null;
+  if (top && view.members.get(top.winner.member)?.role === "owner" && hasLive(top.winner.member)) return top.winner.member;
+  return [...view.members].filter(([u, s]) => s.role === "owner" && hasLive(u)).map(([u]) => u).sort()[0] ?? null;
 }
 
 /**

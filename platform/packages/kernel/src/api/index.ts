@@ -2803,7 +2803,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
 
     "sync.status": (p, id) => {
-      return { ...syncStatus({ db, blobs, keyctx, tenantId: id.tenantId }, { ...(p?.share_dir ? { shareDir: String(p.share_dir) } : {}) }), alerts: syncAlertsView(db, keyctx.device.deviceId) };
+      const st = syncStatus({ db, blobs, keyctx, tenantId: id.tenantId }, { ...(p?.share_dir ? { shareDir: String(p.share_dir) } : {}) }) as { matters: { matter_id: string; collab_scope: string }[] };
+      // 每个团队事项的成员链概况（复核 S12B-13：是否锚定、待定条数、链上纪元）
+      for (const m of st.matters) if (m.collab_scope === "team") (m as Record<string, unknown>).member_log = chainSummary(chainDeps(id), m.matter_id);
+      return { ...st, alerts: syncAlertsView(db, keyctx.device.deviceId) };
     },
 
     // ─── 成员链（第 12 批；member-log.ts） ───
@@ -2870,7 +2873,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       rebootstrapMatter(db, matterId);
       deps.shareRelay?.refetchHistory(matterId);
       audit(db, id, "matter.sync_rebootstrap", "matter", matterId, undefined, keyctx);
-      return { matter_id: matterId, note: "已清除本机的成员链：下次收到该事项的同步段时按首次同步的规则重新确认负责人（经中继的事项只认中继上最先同步它的负责人）" };
+      return { matter_id: matterId, note: "已清除本机的成员链：重新确认之前暂停发出该事项；之后只采用本机记录里在册负责人发来的起点（经中继的事项只认中继上的控制成员）" };
     },
 
     // ─── 团队事项经中软共享中继同步（第 11 批 S11；services/share-relay.ts） ───
@@ -3410,8 +3413,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     const name = db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE user_id = ?`, [ctl])?.display_name ?? ctl;
     // 第三轮复核 S11A-31：控制成员已不是在册负责人（移交、被移出）或根本不是本事项成员（被抢先登记）时，如实说明须找中软客服
     if (!row) throw forbidden(`这个事项在中软共享中继上的状态异常（登记者不是本事项成员）：${what}暂时不能经中继同步，请联系中软客服重置该事项`);
-    if (row.removed_at || row.matter_role !== "owner") throw forbidden(`这个事项经中软共享中继同步，最先同步它的负责人（${name}）已不是负责人：${what}暂时不能经中继同步，请联系中软客服办理负责人交接`);
-    throw forbidden(`这个事项经中软共享中继同步：${what}须由最先同步该事项的负责人（${name}）在其电脑上操作`);
+    if (row.removed_at || row.matter_role !== "owner") throw forbidden(`这个事项经中软共享中继同步，中继上的控制成员（${name}）已不是负责人：${what}暂时不能经中继同步，请联系中软客服办理交接`);
+    throw forbidden(`这个事项经中软共享中继同步：${what}须由中继上的控制成员（${name}）在其电脑上操作，或请对方先把控制成员移交给你`);
   }
 
   /**

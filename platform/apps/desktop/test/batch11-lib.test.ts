@@ -12,7 +12,7 @@ test("错误代码映射：每类代码给出对应说法；未知代码给通�
   assert.equal(relayErrorText(null), null);
   assert.equal(relayErrorText(""), null);
   assert.match(relayErrorText("waiting_for_owner")!, /负责人/);
-  assert.match(relayErrorText("epoch_not_established")!, /最先同步该事项的负责人/);
+  assert.match(relayErrorText("epoch_not_established")!, /中继上的控制成员/);
   assert.match(relayErrorText("segment_too_large")!, /过大/);
   assert.match(relayErrorText("relay_connect_failed")!, /连不上/);
   assert.match(relayErrorText("relay_timeout")!, /连不上/);

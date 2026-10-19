@@ -76,7 +76,7 @@ test("控制成员移交：对方须是在册负责人且经中继同步过；�
   await syncAll();
   assert.equal((await kB.inv("matters.member_log", { matter_id: m })).control_to, usr("bob"), "bob 的设备从链上得知");
   // 原控制成员 A 不能再在中继上调整成员；bob 可以
-  await assert.rejects(kA.inv("matters.members.remove", { matter_id: m, user_id: usr("carol") }), /须由最先同步该事项的负责人/);
+  await assert.rejects(kA.inv("matters.members.remove", { matter_id: m, user_id: usr("carol") }), /须由中继上的控制成员/);
   await kB.inv("matters.members.remove", { matter_id: m, user_id: usr("carol") });
   await imp(kB, m, "丙-移出后.txt", "carol 被移出之后写的");
   await syncAll();
@@ -86,4 +86,24 @@ test("控制成员移交：对方须是在册负责人且经中继同步过；�
   await kB.inv("matters.members.add", { matter_id: m, user_id: usr("test-lawyer"), matter_role: "editor" });
   await syncAll();
   assert.ok(kA.kernel.db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'editor' AND removed_at IS NULL`, [m, usr("test-lawyer")]));
+});
+
+test("经中继的本机重新引导（复核 S12B-05/08/15）：重新引导期间暂停发出；只从控制成员的段重新采用起点，之后恢复收发", { timeout: 240_000 }, async () => {
+  const m = (await kA.inv("matters.create", { title: "中继重新引导", stance: "受让方", consent_status: "not_required", collab_scope: "team" })).matter.matter_id as string;
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("carol") });
+  await imp(kA, m, "甲.txt", "甲");
+  await syncAll();
+  assert.ok(hasDoc(kC, m, "甲.txt"));
+  await kC.inv("matters.sync_rebootstrap", { matter_id: m });
+  await imp(kC, m, "丙-引导中.txt", "carol 重新引导期间写的");
+  const r1 = await kC.inv("relay.sync");
+  assert.equal(r1.push.uploaded, 0, "重新引导期间不发出");
+  // 控制成员 A 的段在中继历史里：carol 重取历史、重新采用起点
+  await syncAll();
+  const lg = await kC.inv("matters.member_log", { matter_id: m });
+  assert.equal(lg.anchored, true);
+  assert.equal(lg.events.find((e: any) => e.root)?.author_member, usr("test-lawyer"));
+  assert.deepEqual((await kC.inv("relay.status")).alerts.filter((a: any) => a.matter_id === m), []);
+  await syncAll();
+  assert.ok(hasDoc(kA, m, "丙-引导中.txt"), "恢复后补发");
 });

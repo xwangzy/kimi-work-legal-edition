@@ -94,8 +94,15 @@ test("S11B-55（第 12 批）：两位共同负责人并发移出不同成员、
   void rotShare;
   // 等待的一方此时写的内容暂不发出
   await imp(wait, m, "等待期间.txt", "等待新纪元期间写的");
-  const pausedEx = await wait.inv("sync.export", { share_dir: dir("cw"), matter_id: m });
-  if (alerts(wait, m).length > 0) assert.deepEqual(pausedEx.pausedConflict, [m], "等待期间只发成员链");
+  const cw = dir("cw");
+  const pausedEx = await wait.inv("sync.export", { share_dir: cw, matter_id: m });
+  assert.deepEqual(alerts(wait, m), ["rekey_needed"], "等待方有 rekey_needed");
+  assert.deepEqual(pausedEx.pausedConflict, [m], "等待期间只发成员链");
+  // 被移出者收到等待期间发出的段也读不到内容（复核 S12B-16）
+  for (const k of [kC, kD]) {
+    await k.inv("sync.import", { share_dir: cw });
+    assert.equal(k.kernel.db.get(`SELECT 1 AS x FROM document_versions WHERE matter_id = ? AND filename = ?`, [m, "等待期间.txt"]), undefined);
+  }
   // 补轮换的一方的新纪元送到 → 解除；等待期间的内容随后送达
   const s3 = dir("c3");
   await rot.inv("sync.export", { share_dir: s3, matter_id: m });
