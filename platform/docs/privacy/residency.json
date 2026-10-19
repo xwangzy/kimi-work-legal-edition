@@ -780,6 +780,94 @@
       ],
       "residual": "创始设备仍持律所根（D-41 未变，根私钥离线分持见 C6）；成员首次取回证书时律所根公钥按首次信任采用（界面给出律所核对码供与管理员核对）；管理员不核对入组核对码即批准时，控制面替换申请公钥的攻击挡不住；activation.json 明文含本人与律所显示名",
       "owner": "研发-内核"
+    },
+    {
+      "id": 25,
+      "data": "律所治理与控制面同步元数据（第 6～12 批）：律所策略、连接器登记、设备目录与吊销墓碑、许可与席位、控制面文档高水位、待发动作、告警、中软运营审计流水的本机留存与签名页、匿名事项摘要的待发队列、诊断包上传记录",
+      "memory": "内核（控制面客户端、律所治理）",
+      "disk": "账本 firm_policies / firm_connectors / firm_trust / cp_documents / cp_high_water / cp_pending_actions / cp_revoked_devices / cp_alerts / cp_audit_records / cp_audit_signed_page / seats / anon_matter_outbox / support_uploads（SQLCipher；只有编号、版本、签名文档、计数与错误代码，匿名事项摘要只含事项密级与策略指纹，不含标题与当事人）",
+      "local_channels": "内核 ↔ 闸门（Node IPC，控制面通道）",
+      "network": "经出站闸门控制面通道：设备公钥与证书、席位申请、匿名事项摘要、本机吊销；中软控制面保存租户、设备目录、席位、额度池与按席位的点数用量（不含内容）、运营审计流水（动作代码、执行者编号、目标编号与结果）",
+      "logs_dumps": "运行记录只记事件码；审计只记动作与编号",
+      "form": [
+        "sqlcipher",
+        "tls_pinned",
+        "content_free"
+      ],
+      "enforcement": [
+        {
+          "file": "packages/kernel/src/control-plane/governance.ts",
+          "symbol": "FirmGovernance"
+        },
+        {
+          "file": "packages/kernel/src/control-plane/client.ts",
+          "symbol": "ControlPlaneClient"
+        },
+        {
+          "file": "packages/egress-gate/src/cp-relay.ts",
+          "symbol": "cpRelayAllowed"
+        }
+      ],
+      "tests": [
+        "packages/kernel/test/control-plane.test.ts",
+        "packages/kernel/test/cp-dispositions.test.ts",
+        "services/control-plane/test/quota-audit.test.ts"
+      ],
+      "residual": "中软控制面能看到律所有多少设备、席位与匿名事项及其点数用量与时间；成员编号由律所设定，可能含姓名拼音（经开通码激活的成员编号为随机串）",
+      "owner": "研发-内核"
+    },
+    {
+      "id": 26,
+      "data": "事项与任务执行元数据：事项头（标题、立场、客户与相对方名称、关键日期）、成员与角色、任务与尝试、步骤检查点、工具调用记录与运行事件（含引用核验裁决里的被引法条原文）、定时任务、所内节点与 IM 收件队列、用量计数、示例事项标记",
+      "memory": "内核",
+      "disk": "账本 tenants / users / memberships / matters / runs / attempts / step_checkpoints / tool_operations / run_events / scheduled_jobs / node_tasks / im_bindings / im_connector_lease / im_intents / usage_records / sample_matters / schema_migrations（SQLCipher；事项头与运行事件含案件信息，按事项删除时一并密码学擦除或清除并登记 redacted_rows）",
+      "local_channels": "内核 ↔ 界面（preload 7 个方法）",
+      "network": "不出网（匿名事项摘要见第 25 类；团队事项同步见第 23 类）",
+      "logs_dumps": "运行记录只记事件码与错误代码",
+      "form": [
+        "sqlcipher"
+      ],
+      "enforcement": [
+        {
+          "file": "packages/kernel/src/db.ts",
+          "symbol": "KernelDb"
+        },
+        {
+          "file": "packages/kernel/src/services/matter-lifecycle.ts",
+          "symbol": "purgeMatter"
+        }
+      ],
+      "tests": [
+        "packages/kernel/test/matter-lifecycle.test.ts",
+        "packages/kernel/test/privacy-residency.test.ts"
+      ],
+      "residual": "事项标题与客户、相对方名称为原文（界面要显示）；同一 Windows 账户下能拿到数据库主密钥的程序可解",
+      "owner": "研发-内核"
+    },
+    {
+      "id": 27,
+      "data": "无事项问答（问答页）：问题与回答文字、问答令牌表（每个会话一把令牌密钥）",
+      "memory": "内核（问答服务）",
+      "disk": "账本 qa_conversations / qa_messages / qa_tokens（SQLCipher；问题按当事人词典与规则令牌化后保存，回答为模型输出的令牌形态，显示时还原）",
+      "local_channels": "内核 ↔ 闸门（模型请求）",
+      "network": "经出站闸门到中软网关与月之暗面（与第 10 类同一出口与留存口径）；问题先经全部事项的当事人词典检查，命中即拦截",
+      "logs_dumps": "运行记录只记事件码",
+      "form": [
+        "sqlcipher",
+        "token_plain",
+        "tls_pinned"
+      ],
+      "enforcement": [
+        {
+          "file": "packages/kernel/src/services/qa-chat.ts",
+          "symbol": "QaChatService"
+        }
+      ],
+      "tests": [
+        "packages/kernel/test/w1.test.ts"
+      ],
+      "residual": "问答历史在本机留存到律师删除；漏识别的姓名以原文保存与发出（同第 10 类）",
+      "owner": "研发-内核"
     }
   ],
   "write_points": {

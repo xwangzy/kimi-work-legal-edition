@@ -1,0 +1,279 @@
+{
+  "_comment": "账本（SQLCipher）每张表 → 驻留面清单 residency.json 的数据类编号（第 13 批，评审 Z4 P0-11）。门禁 packages/kernel/test/privacy-residency.test.ts：迁移后的真实表集合须与本表逐一相符（新增表未登记即失败），编号须存在于清单。",
+  "tables": {
+    "anon_matter_outbox": [
+      25
+    ],
+    "approvals": [
+      12
+    ],
+    "artifact_payloads": [
+      7
+    ],
+    "artifact_versions": [
+      7
+    ],
+    "attempts": [
+      26
+    ],
+    "audit_events": [
+      8
+    ],
+    "chain_checkpoints": [
+      8
+    ],
+    "chain_paused_export": [
+      23
+    ],
+    "content_channel_hw": [
+      19
+    ],
+    "content_installs": [
+      19
+    ],
+    "cp_alerts": [
+      25
+    ],
+    "cp_audit_records": [
+      25
+    ],
+    "cp_audit_signed_page": [
+      25
+    ],
+    "cp_documents": [
+      25
+    ],
+    "cp_high_water": [
+      25
+    ],
+    "cp_pending_actions": [
+      25
+    ],
+    "cp_revoked_devices": [
+      25
+    ],
+    "deletion_receipts": [
+      17
+    ],
+    "deliveries": [
+      7
+    ],
+    "device_cert_history": [
+      20
+    ],
+    "device_key_changes": [
+      20
+    ],
+    "devices": [
+      20
+    ],
+    "document_roles": [
+      1
+    ],
+    "document_versions": [
+      1
+    ],
+    "egress_approvals": [
+      12
+    ],
+    "egress_records": [
+      9,
+      10
+    ],
+    "evidence_anchors": [
+      7
+    ],
+    "firm_connectors": [
+      25
+    ],
+    "firm_identity": [
+      20
+    ],
+    "firm_policies": [
+      25
+    ],
+    "firm_trust": [
+      25
+    ],
+    "im_bindings": [
+      26
+    ],
+    "im_connector_lease": [
+      26
+    ],
+    "im_intents": [
+      26
+    ],
+    "key_epochs": [
+      20
+    ],
+    "matter_facts": [
+      7
+    ],
+    "matter_key_history": [
+      20
+    ],
+    "matter_keys": [
+      20
+    ],
+    "matter_members": [
+      23
+    ],
+    "matter_parties": [
+      3
+    ],
+    "matter_suspect_reviews": [
+      3
+    ],
+    "matter_token_conflicts": [
+      3
+    ],
+    "matter_token_keys": [
+      3
+    ],
+    "matter_tokens": [
+      3
+    ],
+    "matter_ws_keys": [
+      20
+    ],
+    "matters": [
+      26
+    ],
+    "member_chain": [
+      23
+    ],
+    "member_dismissed_roots": [
+      23
+    ],
+    "member_events": [
+      23
+    ],
+    "member_rewinds": [
+      23
+    ],
+    "memberships": [
+      26
+    ],
+    "node_tasks": [
+      26
+    ],
+    "parse_pages": [
+      2
+    ],
+    "parse_texts": [
+      2
+    ],
+    "parse_versions": [
+      2
+    ],
+    "qa_conversations": [
+      27
+    ],
+    "qa_messages": [
+      27
+    ],
+    "qa_tokens": [
+      27
+    ],
+    "redacted_rows": [
+      8
+    ],
+    "relay_blob_wait": [
+      23
+    ],
+    "relay_export_state": [
+      23
+    ],
+    "relay_imported": [
+      23
+    ],
+    "relay_kv": [
+      23
+    ],
+    "relay_matters": [
+      23
+    ],
+    "relay_outbox": [
+      23
+    ],
+    "relay_retry": [
+      23
+    ],
+    "relay_unreadable": [
+      23
+    ],
+    "reminder_holds": [
+      22
+    ],
+    "reminder_inbox": [
+      22
+    ],
+    "reminder_rejects": [
+      22
+    ],
+    "reminders": [
+      22
+    ],
+    "risk_cards": [
+      7
+    ],
+    "run_events": [
+      26
+    ],
+    "runs": [
+      26
+    ],
+    "sample_matters": [
+      26
+    ],
+    "scheduled_jobs": [
+      26
+    ],
+    "schema_migrations": [
+      26
+    ],
+    "seats": [
+      25
+    ],
+    "signed_events": [
+      8
+    ],
+    "step_checkpoints": [
+      26
+    ],
+    "support_uploads": [
+      25
+    ],
+    "sync_alerts": [
+      23
+    ],
+    "sync_conflicts": [
+      23
+    ],
+    "sync_row_origin": [
+      23
+    ],
+    "sync_segments_seen": [
+      23
+    ],
+    "sync_state": [
+      23
+    ],
+    "tenant_salts": [
+      3
+    ],
+    "tenants": [
+      26
+    ],
+    "tool_operations": [
+      26
+    ],
+    "usage_records": [
+      26
+    ],
+    "users": [
+      26
+    ]
+  }
+}

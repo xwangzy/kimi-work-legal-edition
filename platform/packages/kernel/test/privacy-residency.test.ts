@@ -130,3 +130,23 @@ test("写盘面扫描自身：能识别具名导入、命名空间、require 与
   assert.deepEqual(fsWriteCalls(stripComments(`import { openSync } from "node:fs"; openSync(f, "w");`)), ["openSync"]);
   assert.deepEqual(fsWriteCalls(stripComments(`// fs.writeFileSync(a) 只是注释\nimport * as fs from "node:fs";`)), []);
 });
+
+test("账本表：迁移后的每张表都登记到驻留面清单的数据类（docs/privacy/ledger-tables.json；新增表未登记即失败）", async () => {
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { KernelDb } = await import("../src/db.ts");
+  const db = new KernelDb(join(mkdtempSync(join(tmpdir(), "kwl-ledger-tables-")), "ledger.db"), {});
+  db.migrate();
+  const actual = db.all<{ name: string }>(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`, []).map((r) => r.name);
+  db.close?.();
+  const mapping = JSON.parse(readFileSync(new URL("../../../docs/privacy/ledger-tables.json", import.meta.url), "utf8")) as { tables: Record<string, number[]> };
+  const residency = JSON.parse(readFileSync(new URL("../../../docs/privacy/residency.json", import.meta.url), "utf8")) as { rows: { id: number }[] };
+  const ids = new Set(residency.rows.map((r) => r.id));
+  assert.deepEqual(actual.filter((t) => !(t in mapping.tables)), [], "未登记的账本表");
+  assert.deepEqual(Object.keys(mapping.tables).filter((t) => !actual.includes(t)), [], "清单里已不存在的表");
+  for (const [t, rows] of Object.entries(mapping.tables)) {
+    assert.ok(rows.length > 0 && rows.every((r) => ids.has(r)), `${t} 的数据类编号不存在：${rows.join(",")}`);
+  }
+});
+
