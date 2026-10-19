@@ -157,7 +157,8 @@ export function buildApprovalCard(p: PendingApproval, ctx: CardContext): { card:
         title: `联网检索：“${query}”`,
         why,
         ...(whyDetail ? { why_detail: whyDetail } : {}),
-        destination: "中软检索服务（不保存，也不知道是哪个案子）",
+        // 去向如实写全（主审更正 I2 的简化稿）：查询经中软检索服务转给月之暗面检索；不带事项编号，中软不保存查询原文——但查询文字本身（含按原文放行时的机构当事人名称）会到达月之暗面
+        destination: "中软检索服务 → 月之暗面检索（不带是哪个事项；中软不保存查询原文，查询文字会发给月之暗面）",
         cost: "1 次检索 · 计入本所用量",
         preview: { ...(sendOriginal !== undefined ? { send_original: sendOriginal } : {}), ...(sendGeneralized !== undefined ? { send_generalized: sendGeneralized } : {}) },
         scope_options: taskAllowed ? p.scope_options : ["once"],
