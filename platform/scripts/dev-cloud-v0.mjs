@@ -56,7 +56,7 @@ if (withCp) {
   // 第 13 批开通与成员入组：KWL_ACTIVATION=1 时租户要求开通码，开发用创始开通码写进 <KWL_CLOUD_DIR>/founder-code.txt（0600，不输出到终端）
   const activation = process.env.KWL_ACTIVATION === "1";
   if (!cp.ops.tenant(tenant)) {
-    cp.ops.createTenant({ tid: tenant, edition: process.env.KWL_EDITION === "firm" ? "firm" : "team", seats: 20, points: Number(process.env.KWL_POINTS ?? 100_000_000), ...(activation ? { name: process.env.KWL_FIRM_NAME ?? "示例律师事务所", activationRequired: true } : {}) });
+    cp.ops.createTenant({ tid: tenant, edition: process.env.KWL_EDITION === "firm" ? "firm" : "team", seats: 20, points: Number(process.env.KWL_POINTS ?? 100_000_000), ...(activation ? { name: process.env.KWL_FIRM_NAME ?? "示例律师事务所", activationRequired: true } : { activationRequired: false }) });
     if (activation) {
       const { writeFileSync } = await import("node:fs");
       const issued = cp.ops.issueActivationCode(tenant, { member: { slug: process.env.KWL_FOUNDER_SLUG ?? "admin", name: process.env.KWL_FOUNDER_NAME ?? "管理员" } });

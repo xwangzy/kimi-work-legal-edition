@@ -62,7 +62,7 @@ async function enroll(tid: string, r = root): Promise<number> {
 
 test("开通与设备登记：根公钥入组后，只接受本所律所根签发的证书；席位自动分配并签发 ≥ 72 小时席位令牌", async () => {
   const tid = "ten_cp_basic";
-  cp.ops.createTenant({ tid, edition: "team", seats: 2 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 2 });
   const admin = makeDevice(tid, "admin", "usr_admin", "dev_admin");
   assert.equal((await admin.register()).json.error.code, "root_not_enrolled");
   assert.equal(await enroll(tid), 200);
@@ -96,7 +96,7 @@ test("开通与设备登记：根公钥入组后，只接受本所律所根签�
 
 test("许可到期不签发席位令牌；吊销的设备、席位不再能续期；已吊销设备的请求得到控制面签名的吊销通知；合伙人设备可吊销", async () => {
   const tid = "ten_cp_revoke";
-  cp.ops.createTenant({ tid, edition: "team", seats: 3 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 3 });
   assert.equal(await enroll(tid), 200);
   const admin = makeDevice(tid, "admin", "usr_admin", "dev_ra");
   const lawyer = makeDevice(tid, "lawyer", "usr_l", "dev_rl");
@@ -128,7 +128,7 @@ test("许可到期不签发席位令牌；吊销的设备、席位不再能续�
 
 test("许可按设备签到滚动签发（复核 S6-A06）：每次取回都是新签发的 ≤ 30 天许可，不超过订阅截止；终止后签发的许可立即到期", async () => {
   const tid = "ten_cp_license";
-  cp.ops.createTenant({ tid, edition: "team", seats: 2, subscriptionDays: 365 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 2, subscriptionDays: 365 });
   assert.equal(await enroll(tid), 200);
   const d = makeDevice(tid, "admin", "usr_lic", "dev_lic");
   await d.register();
@@ -149,7 +149,7 @@ test("许可按设备签到滚动签发（复核 S6-A06）：每次取回都是�
 
 test("起草—签名—发布：放宽类策略须管理员设备签名（律所版 2 名），版本单调；非管理员设备不能起草", async () => {
   const tid = "ten_cp_policy";
-  cp.ops.createTenant({ tid, edition: "firm", seats: 5 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "firm", seats: 5 });
   assert.equal(await enroll(tid), 200);
   const a = makeDevice(tid, "admin", "usr_a", "dev_pa");
   const b = makeDevice(tid, "admin", "usr_b", "dev_pb");
@@ -176,7 +176,7 @@ test("起草—签名—发布：放宽类策略须管理员设备签名（律�
 
 test("草稿不占版本号（复核 S6-B29）：版本 = 当前已发布版本 + 1；再多未发布的草稿，发布出去的也只比上一版大一；已过时的草稿拒绝发布", async () => {
   const tid = "ten_cp_drafts";
-  cp.ops.createTenant({ tid, edition: "team", seats: 5 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 5 });
   assert.equal(await enroll(tid), 200);
   const a = makeDevice(tid, "admin", "usr_da", "dev_da");
   assert.equal((await a.register()).status, 200);
@@ -201,7 +201,7 @@ test("草稿不占版本号（复核 S6-B29）：版本 = 当前已发布版本 
 
 test("连接器草稿编号（复核 S6-B29、S6-C06）：版本 = 已发布过的最高版本 + 1；撤下后重新登记不回退", async () => {
   const tid = "ten_cp_conn_ver";
-  cp.ops.createTenant({ tid, edition: "team", seats: 5 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 5 });
   assert.equal(await enroll(tid), 200);
   const a = makeDevice(tid, "admin", "usr_ca2", "dev_cca2");
   assert.equal((await a.register()).status, 200);
@@ -234,7 +234,7 @@ test("连接器草稿编号（复核 S6-B29、S6-C06）：版本 = 已发布过�
 
 test("预先吊销（复核 S6-B31）：吊销尚未登记的设备编号——列入目录与网关订阅，之后它登记即收到吊销通知；编号不合法即拒绝", async () => {
   const tid = "ten_cp_prerevoke";
-  cp.ops.createTenant({ tid, edition: "team", seats: 5 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 5 });
   assert.equal(await enroll(tid), 200);
   const a = makeDevice(tid, "admin", "usr_pa", "dev_ppa");
   assert.equal((await a.register()).status, 200);
@@ -262,7 +262,7 @@ test("预先吊销（复核 S6-B31）：吊销尚未登记的设备编号——�
 test("预先吊销的数量上限（复核 S6-C09、S6-C16）：每租户达到上限即拒绝（409 pre_revocation_limit），已登记设备的吊销不受影响", async () => {
   const small = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: "cap-secret", maxPreRevoked: 2 });
   const tid = "ten_cp_cap";
-  small.ops.createTenant({ tid, edition: "team", seats: 5 });
+  small.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 5 });
   small.ops.tenant(tid)!.root_public_key_pem = root.publicKeyPem;
   for (const id of ["dev_cap_1", "dev_cap_2"]) small.ops.revokeDevice(tid, id, { cert: makeDevice(tid, "lawyer", `usr_${id}`, id).cert, by: "dev_admin" });
   assert.throws(() => small.ops.revokeDevice(tid, "dev_cap_3", { cert: makeDevice(tid, "lawyer", "usr_dev_cap_3", "dev_cap_3").cert, by: "dev_admin" }), (e: Error & { code?: string }) => e.code === "pre_revocation_limit");
@@ -281,7 +281,7 @@ test("设备目录的有效期（复核 S6-C01）：签发与到期取同一时�
   try {
     const tbase = `http://127.0.0.1:${(tick.server.address() as AddressInfo).port}`;
     const tid = "ten_cp_tick";
-    tick.ops.createTenant({ tid, edition: "team", seats: 5 });
+    tick.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 5 });
     const ts = t;
     const proof = sign(null, enrollProofBytes(tid, root.publicKeyPem, ts), root.privateKeyPem).toString("base64url");
     assert.equal((await fetch(`${tbase}/v1/enroll`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tid, root_public_key_pem: root.publicKeyPem, ts, proof }) })).status, 200);
@@ -315,7 +315,7 @@ test("设备目录的有效期（复核 S6-C01）：签发与到期取同一时�
 
 test("时钟偏差（复核 S6-B37）：设备签名请求的时间戳偏差超过 5 分钟即拒绝，并附控制面当前时间（客户端据此提示校准系统时间）", async () => {
   const tid = "ten_cp_clock";
-  cp.ops.createTenant({ tid, edition: "team", seats: 5 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 5 });
   assert.equal(await enroll(tid), 200);
   const a = makeDevice(tid, "admin", "usr_ca", "dev_cca");
   assert.equal((await a.register()).status, 200);
@@ -336,7 +336,7 @@ test("时钟偏差（复核 S6-B37）：设备签名请求的时间戳偏差超�
 
 test("网关订阅：只认服务凭据；含吊销集与事项匿名摘要（不含事项名称与内容）", async () => {
   const tid = "ten_cp_feed";
-  cp.ops.createTenant({ tid, edition: "team", seats: 2 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 2 });
   assert.equal(await enroll(tid), 200);
   const d = makeDevice(tid, "admin", "usr_f", "dev_f");
   await d.register();
@@ -363,7 +363,7 @@ test("网关订阅：只认服务凭据；含吊销集与事项匿名摘要（�
 
 test("真实订阅器：只认控制面签名、版本只进不退、吊销粘滞并按租户区分、不合法的摘要丢弃", async () => {
   const tid = "ten_cp_sub";
-  cp.ops.createTenant({ tid, edition: "team", seats: 2 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 2 });
   assert.equal(await enroll(tid), 200);
   const d = makeDevice(tid, "admin", "usr_sub", "dev_sub");
   const x = makeDevice(tid, "lawyer", "usr_subx", "dev_subx");

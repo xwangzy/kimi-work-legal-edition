@@ -363,7 +363,7 @@ test("已过时的草稿（复核 S6-B29、S6-C06）：本机已接受同版本�
 test("时钟偏差告警走真实控制面（复核 S6-C02）：本机时钟快 12 分钟时，同步第一步登记即被拒，告警写明快约 12 分钟", { timeout: 60_000 }, async () => {
   const { relayControlPlane } = await import("@zr-legal/egress-gate");
   const CT = "ten_cpd_clock2";
-  cloud.cp.ops.createTenant({ tid: CT, edition: "team", seats: 5 });
+  cloud.cp.ops.createTenant({ activationRequired: false, tid: CT, edition: "team", seats: 5 });
   const r0 = root();
   const ts = Date.now();
   const proof = sign(null, enrollProofBytes(CT, r0.publicKeyPem, ts), r0.privateKeyPem).toString("base64url");

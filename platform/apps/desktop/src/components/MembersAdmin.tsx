@@ -142,7 +142,9 @@ export function MembersAdmin() {
                   <td>{fmtTime(r.requested_at)}</td>
                   <td className="members-check">{r.check_code}</td>
                   <td>
-                    {r.local_invite ? (
+                    {r.local_invite && r.verified === false ? (
+                      <span className="activate-error">这份申请在传送中被改动过，不要批准；请拒绝并重新发邀请，同时告知中软客服</span>
+                    ) : r.local_invite ? (
                       <span className="settings-choice">
                         <ConfirmButton label="批准" danger={false} className="btn-primary btn-sm" question={`请先电话或当面联系${r.name ?? "对方"}，请他读出屏幕上的核对码，与这里逐位对照。号码一致吗？`} confirmLabel="已核对一致，批准" onConfirm={() => act(() => members.approve(r.id), `已批准${r.name ? ` ${r.name}` : ""}`)} />
                         <ConfirmButton label="拒绝" question={`拒绝${r.name ? ` ${r.name} ` : ""}的申请？他需要新的邀请码才能再次申请。`} confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />

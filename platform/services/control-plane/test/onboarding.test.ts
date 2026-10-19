@@ -14,6 +14,10 @@ import type { AddressInfo } from "node:net";
 import { generateDeviceKeys, generateFirmRoot, issueDeviceCertificate, signBytes, type DeviceCertificate, type DeviceRole } from "@zr-legal/keys";
 import {
   activationCodeMac,
+  approvalMacBytes,
+  inviteMac,
+  joinMacBytes,
+  newInviteSecret,
   enrollProofBytes,
   firmBundleBytes,
   formatActivationCode,
@@ -137,7 +141,7 @@ test("要求开通码的租户：不出示创始认领不能登记根公钥（�
   assert.equal((await post("/v1/activation/redeem", { code })).json.error.code, "code_invalid");
   // 不要求开通码的旧租户：行为不变（先到先得）
   const legacy = "ten_onb-legacy";
-  cp.ops.createTenant({ tid: legacy, edition: "team", seats: 1 });
+  cp.ops.createTenant({ activationRequired: false, tid: legacy, edition: "team", seats: 1 });
   const r2 = generateFirmRoot();
   const p2 = sign(null, enrollProofBytes(legacy, r2.publicKeyPem, ts), r2.privateKeyPem).toString("base64url");
   assert.equal((await post("/v1/enroll", { tid: legacy, root_public_key_pem: r2.publicKeyPem, ts, proof: p2 })).status, 200);
@@ -161,7 +165,8 @@ test("成员入组：管理员发邀请 → 凭邀请码提交申请（持有证
   assert.equal(red.json.kind, "member");
   assert.deepEqual(red.json.member, { slug: "zhang", name: "张律师", role: "lawyer" });
   const mk = generateDeviceKeys();
-  const deviceId = "dev_zhang_1";
+  const deviceId = "dev_onb-join_zhang";
+  const S = newInviteSecret();
   const body = (o: { proofKey?: string; signPub?: string } = {}) => ({
     tid,
     activation_id: red.json.activation_id,
@@ -170,6 +175,7 @@ test("成员入组：管理员发邀请 → 凭邀请码提交申请（持有证
     sign_pub: o.signPub ?? mk.signPublicKeyPem,
     enc_pub: mk.encPublicKeyPem,
     proof: signBytes(o.proofKey ?? mk.signPrivateKeyPem, joinProofBytes({ tid, activationId: red.json.activation_id, deviceId, signPublicKeyPem: o.signPub ?? mk.signPublicKeyPem, encPublicKeyPem: mk.encPublicKeyPem })),
+    mac: inviteMac(S, joinMacBytes({ tid, activationId: red.json.activation_id, deviceId, signPublicKeyPem: o.signPub ?? mk.signPublicKeyPem, encPublicKeyPem: mk.encPublicKeyPem, memberSlug: "zhang", role: "lawyer" })),
   });
   // 持有证明不对：拒绝
   const bad = await post("/v1/join-requests", body({ proofKey: generateDeviceKeys().signPrivateKeyPem }));
@@ -212,13 +218,17 @@ test("成员入组：管理员发邀请 → 凭邀请码提交申请（持有证
   const forged = { recovery_public_key_pem: recoveryPub, sig: signBytes(generateFirmRoot().privateKeyPem, firmBundleBytes(tid, f.root.publicKeyPem, recoveryPub)) };
   assert.equal((await f.call("POST", `/v1/join-requests/${item.id}/approve`, { cert: good, firm_bundle: forged })).json.error.code, "firm_bundle_invalid");
   const bundle = { recovery_public_key_pem: recoveryPub, sig: signBytes(f.root.privateKeyPem, firmBundleBytes(tid, f.root.publicKeyPem, recoveryPub)) };
-  const ap = await f.call("POST", `/v1/join-requests/${item.id}/approve`, { cert: good, firm_bundle: bundle });
+  // 缺管理员 MAC：拒绝
+  assert.equal((await f.call("POST", `/v1/join-requests/${item.id}/approve`, { cert: good, firm_bundle: bundle })).json.error.code, "admin_mac_missing");
+  const adminMac = inviteMac(S, approvalMacBytes({ tid, joinRequestId: item.id, cert: good, rootPublicKeyPem: f.root.publicKeyPem, bundle }));
+  const ap = await f.call("POST", `/v1/join-requests/${item.id}/approve`, { cert: good, firm_bundle: bundle, admin_mac: adminMac });
   assert.equal(ap.status, 200, JSON.stringify(ap.json));
   const got = await post(`/v1/join-requests/${jr.json.join_request_id}/fetch`, { tid, claim_secret: red.json.claim_secret });
   assert.equal(got.json.status, "approved");
   assert.equal(got.json.root_public_key_pem, f.root.publicKeyPem);
   assert.deepEqual(got.json.cert, good);
   assert.deepEqual(got.json.firm_bundle, bundle);
+  assert.equal(got.json.admin_mac, adminMac, "成员取回管理员对批准结果的 MAC");
   // 成员用取回的证书登记，取得席位
   const memberCall = deviceCaller(tid, deviceId, mk.signPrivateKeyPem);
   const reg = await memberCall("POST", "/v1/devices/register", { tid, cert: got.json.cert });

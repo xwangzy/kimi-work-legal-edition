@@ -21,7 +21,7 @@ import { writeExportFile } from "./services/export-file.ts";
 import { EgressGate, type DestinationKind } from "@zr-legal/egress";
 import { ModelBroker } from "@zr-legal/model-broker";
 import { DomainError, LEGAL_MCP_TOOLS } from "@zr-legal/domain";
-import { loadConfig, defaultGatePath, defaultPipePath, type KernelConfig, type KernelOptions } from "./config.ts";
+import { activationFilePath, loadConfig, defaultGatePath, defaultPipePath, type KernelConfig, type KernelOptions } from "./config.ts";
 import { KernelDb } from "./db.ts";
 import { BlobStore } from "./blobs.ts";
 import { TaskQueue } from "./queue.ts";
@@ -93,8 +93,12 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const identity = resolveIdentity(db, config.firmSlug, config.userSlug);
   // 经开通码激活（第 13 批）：成员角色以开通码 / 邀请码为准；占位工作区已无用
   if (config.activation) {
-    const roleOf: Record<string, string> = { admin: "firm_admin", partner: "partner", assistant: "paralegal", lawyer: "lawyer" };
-    db.run(`UPDATE memberships SET role = ? WHERE tenant_id = ? AND user_id = ?`, [roleOf[config.activation.role] ?? "lawyer", identity.tenantId, identity.userId]);
+    // 角色只在创始设备首次按真实身份启动时取自 activation.json（复核 A-08 / B13-K05：之后改 activation.json 不再生效）；
+    // 成员设备的角色由管理员签发的证书决定（applyStagedJoin）
+    const firstBoot = !db.get(`SELECT 1 AS x FROM firm_identity WHERE tenant_id = ?`, [identity.tenantId]);
+    if (firstBoot && config.activation.kind === "founder") {
+      db.run(`UPDATE memberships SET role = 'firm_admin' WHERE tenant_id = ? AND user_id = ?`, [identity.tenantId, identity.userId]);
+    }
     removePendingWorkspace(config.dataRoot);
   }
 
@@ -136,7 +140,11 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     const sj = applyStagedJoin(db, keysDir, identity, { firmSlug: config.firmSlug, userSlug: config.userSlug });
     if (sj.rejected) slog.event("KERNEL_JOIN_STAGED_REJECTED", {});
     if (!db.get(`SELECT 1 AS x FROM firm_identity WHERE tenant_id = ?`, [identity.tenantId])) {
-      throw new DomainError("conflict", "入组没有完成：本机缺少管理员批准后的证书。请重新安装后用邀请码再申请一次", 409);
+      // 入组没有生效（复核 A-09 / B13-K02）：清掉暂存与激活记录，下次启动回到待激活页面重新输入邀请码（主进程会自动重启内核）
+      rmSync(join(keysDir, "join-approved.json"), { force: true });
+      rmSync(activationFilePath(config.dataRoot), { force: true });
+      db.close();
+      throw new DomainError("conflict", "入组没有完成：管理员批准的结果核对不通过。请重新打开应用，用邀请码再申请一次", 409);
     }
   }
   const firm = ensureFirmIdentity(db, keysDir, identity.tenantId);
@@ -472,7 +480,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   // 定时检查：启动 2～12 分钟内随机一次（复核 S8A-19），之后每天；ZR_CONTENT_CHECK_MS=off 只在“检查更新”时检查（测试）
   let contentTimer: NodeJS.Timeout | null = null;
   let contentFirst: NodeJS.Timeout | null = null;
-  if (gate.distConfigured && env.ZR_CONTENT_CHECK_MS !== "off") {
+  // 待激活模式不检查内容更新（复核 B13-K04：此时没有席位，也没有律所）
+  if (gate.distConfigured && env.ZR_CONTENT_CHECK_MS !== "off" && !config.onboarding) {
     const every = Math.min(Math.max(Number(env.ZR_CONTENT_CHECK_MS ?? 86_400_000) || 86_400_000, 600_000), 7 * 86_400_000);
     const tick = () => {
       void contentUpdater.check("lawdb").then(() => contentUpdater.check("skills"));

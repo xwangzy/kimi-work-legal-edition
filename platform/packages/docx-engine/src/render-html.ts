@@ -6,7 +6,7 @@
  * 输出只含白名单元素（p、h1–h3、table/tr/td/th、ins、del、sup、ol/li、section、strong、em、span），不带任何属性以外的链接与外部资源；
  * 文字一律 HTML 转义。界面再经隔离框架（sandbox="" + CSP）渲染，代号在隔离框架里按事项令牌表还原。
  */
-import { readZipEntries } from "./zip.ts";
+import { readZipEntries, readZipSelected } from "./zip.ts";
 import { unescapeXml } from "./textmap.ts";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -217,35 +217,76 @@ export function renderXlsxHtml(xlsx: Buffer): { html: string; sheets: number; tr
   return { html: `${style}${out.join("\n")}${truncated ? `<p><em>（预览只显示每个表前 ${PREVIEW_LIMITS.maxRows} 行，请下载查看全部）</em></p>` : ""}`, sheets: out.length, truncated };
 }
 
+/** Excel 内置的日期类数字格式编号（14–22、45–47）。 */
+const DATE_FMT_IDS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47]);
+
+/** 序列号 → ISO 日期（1900 日期系统；带时间则加 HH:MM）。 */
+function excelDate(serial: number): string | null {
+  if (!Number.isFinite(serial) || serial < 1 || serial > 2_958_465) return null;
+  const ms = Math.round((serial - 25569) * 86400_000);
+  const d = new Date(ms);
+  const iso = d.toISOString();
+  return serial % 1 === 0 ? iso.slice(0, 10) : `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
+}
+
 /**
  * XLSX → 纯文字（第 13 批：材料导入，评审 Z1——选择对话框允许 xlsx，解析却不支持）：每个表以“【表名】”开头，
  * 每行单元格以制表符分隔；只取值（不算公式），共享字符串与内联字符串都认。上限：50 个表、每表 20,000 行、每行 200 列、总计 200 万字，
  * 超出即截断并返回 truncated（导入页如实提示）。
+ * 复核处置（B13-O01/O02）：只解压工作簿、关系、共享字符串、样式与各表（图片等不解压，每个条目以声明大小为解压上限）；
+ * 表名经 workbook.xml.rels 对应到表文件（调整过顺序的工作簿也不会对错）；日期格式的数值转成日期（转不了的保留数字并记 dates_raw）。
  */
-export function xlsxToText(xlsx: Buffer): { text: string; sheets: number; truncated: boolean } {
-  const files = readZipEntries(xlsx);
+export function xlsxToText(xlsx: Buffer): { text: string; sheets: number; truncated: boolean; dates_raw?: boolean } {
+  const files = readZipSelected(xlsx, (n) => n === "xl/workbook.xml" || n === "xl/_rels/workbook.xml.rels" || n === "xl/sharedStrings.xml" || n === "xl/styles.xml" || /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
   const shared: string[] = [];
   const sst = files.get("xl/sharedStrings.xml")?.toString("utf8");
   if (sst) for (const si of sst.matchAll(/<si>([\s\S]*?)<\/si>/g)) shared.push([...si[1]!.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((t) => unescapeXml(t[1]!)).join(""));
+  // 日期样式：cellXfs 的第 i 个 xf 的 numFmtId；自定义格式含 y/m/d 也算日期
+  const styles = files.get("xl/styles.xml")?.toString("utf8") ?? "";
+  const customDate = new Set<number>();
+  for (const m of styles.matchAll(/<numFmt\b[^>]*numFmtId="(\d+)"[^>]*formatCode="([^"]*)"/g)) if (/[yd]|m(?![^\[]*\])/i.test(unescapeXml(m[2]!).replace(/"[^"]*"/g, "")) && !/^\[?h/i.test(m[2]!)) customDate.add(Number(m[1]));
+  const xfDate: boolean[] = [];
+  const cellXfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(styles)?.[1] ?? "";
+  for (const m of cellXfs.matchAll(/<xf\b([^>]*)/g)) {
+    const id = Number(/numFmtId="(\d+)"/.exec(m[1]!)?.[1] ?? 0);
+    xfDate.push(DATE_FMT_IDS.has(id) || customDate.has(id));
+  }
+  // 表名 → 表文件（经 rels 对应）
+  const rels = files.get("xl/_rels/workbook.xml.rels")?.toString("utf8") ?? "";
+  const target = new Map<string, string>();
+  for (const m of rels.matchAll(/<Relationship\b([^>]*)\/?>/g)) {
+    const id = /\bId="([^"]*)"/.exec(m[1]!)?.[1];
+    const t = /\bTarget="([^"]*)"/.exec(m[1]!)?.[1];
+    if (id && t) target.set(id, t.startsWith("/") ? t.slice(1) : `xl/${t.replace(/^\.\//, "")}`);
+  }
   const wb = files.get("xl/workbook.xml")?.toString("utf8") ?? "";
-  const names = [...wb.matchAll(/<sheet\b[^>]*name="([^"]*)"/g)].map((m) => unescapeXml(m[1]!));
-  const sheetFiles = [...files.keys()].filter((k) => /^xl\/worksheets\/sheet\d+\.xml$/.test(k)).sort((a, b) => Number(/(\d+)\.xml$/.exec(a)![1]) - Number(/(\d+)\.xml$/.exec(b)![1]));
+  const sheets = [...wb.matchAll(/<sheet\b([^>]*)\/?>/g)].map((m, i) => {
+    const name = unescapeXml(/\bname="([^"]*)"/.exec(m[1]!)?.[1] ?? `表${i + 1}`);
+    const rid = /\br:id="([^"]*)"/.exec(m[1]!)?.[1];
+    return { name, file: (rid && target.get(rid)) || `xl/worksheets/sheet${i + 1}.xml` };
+  });
   const MAX_SHEETS = 50, MAX_ROWS = 20_000, MAX_COLS = 200, MAX_CHARS = 2_000_000;
-  let truncated = sheetFiles.length > MAX_SHEETS;
+  let truncated = sheets.length > MAX_SHEETS;
+  let datesRaw = false;
   const out: string[] = [];
   let chars = 0;
-  for (const [si, f] of sheetFiles.slice(0, MAX_SHEETS).entries()) {
+  for (const sh of sheets.slice(0, MAX_SHEETS)) {
     if (chars >= MAX_CHARS) {
       truncated = true;
       break;
     }
-    out.push(`【${names[si] ?? `表${si + 1}`}】`);
-    const xml = files.get(f)!.toString("utf8");
-    const rows = xml.match(/<row\b[\s\S]*?<\/row>|<row\b[^>]*\/>/g) ?? [];
-    if (rows.length > MAX_ROWS) truncated = true;
-    for (const row of rows.slice(0, MAX_ROWS)) {
+    const xml = files.get(sh.file)?.toString("utf8");
+    if (xml === undefined) continue;
+    out.push(`【${sh.name}】`);
+    const rowRe = /<row\b[\s\S]*?<\/row>|<row\b[^>]*\/>/g;
+    let rows = 0;
+    for (let m = rowRe.exec(xml); m; m = rowRe.exec(xml)) {
+      if (++rows > MAX_ROWS) {
+        truncated = true;
+        break;
+      }
       const cells: string[] = [];
-      for (const c of row.matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+      for (const c of m[0].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
         const attrs = c[1]!;
         const inner = c[2] ?? "";
         const ref = /r="([A-Z]+\d+)"/.exec(attrs)?.[1];
@@ -258,7 +299,15 @@ export function xlsxToText(xlsx: Buffer): { text: string; sheets: number; trunca
         let v = "";
         if (t === "s") v = shared[Number(/<v>([\s\S]*?)<\/v>/.exec(inner)?.[1] ?? -1)] ?? "";
         else if (t === "inlineStr") v = [...inner.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((x) => unescapeXml(x[1]!)).join("");
-        else v = unescapeXml(/<v>([\s\S]*?)<\/v>/.exec(inner)?.[1] ?? "");
+        else {
+          v = unescapeXml(/<v>([\s\S]*?)<\/v>/.exec(inner)?.[1] ?? "");
+          const si = /\bs="(\d+)"/.exec(attrs)?.[1];
+          if (v && (t === undefined || t === "n") && si !== undefined && xfDate[Number(si)]) {
+            const d = excelDate(Number(v));
+            if (d) v = d;
+            else datesRaw = true;
+          }
+        }
         while (cells.length < ci) cells.push("");
         cells[ci] = v.replace(/[\t\r\n]+/g, " ");
       }
@@ -272,6 +321,5 @@ export function xlsxToText(xlsx: Buffer): { text: string; sheets: number; trunca
       }
     }
   }
-  return { text: out.join("\n").slice(0, MAX_CHARS), sheets: Math.min(sheetFiles.length, MAX_SHEETS), truncated };
+  return { text: out.join("\n").slice(0, MAX_CHARS), sheets: Math.min(sheets.length, MAX_SHEETS), truncated, ...(datesRaw ? { dates_raw: true } : {}) };
 }
-

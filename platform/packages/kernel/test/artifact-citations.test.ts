@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { openLawdb } from "@zr-legal/lawdb";
 import { createDocx } from "@zr-legal/docx-engine";
-import { artifactCitationBlock, checkArtifactCitations, CITATIONS_MANUAL_CHECK_KEY } from "../src/services/artifact-citations.ts";
+import { artifactCitationBlock, checkArtifactCitations, CITATIONS_CASES_CHECK_KEY, CITATIONS_MANUAL_CHECK_KEY, CITATIONS_UNVERIFIABLE_CHECK_KEY } from "../src/services/artifact-citations.ts";
 import { makeKernel, type TestKernel } from "./helpers.ts";
 
 const repo = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
@@ -37,10 +37,17 @@ test("分类：已收录且条号正确为已核；条号超范围为错误；�
   assert.equal(artifactCitationBlock(d, {})?.code, "outside");
   assert.equal(artifactCitationBlock(d, { [CITATIONS_MANUAL_CHECK_KEY]: true }), null);
   assert.equal(artifactCitationBlock(d, { [CITATIONS_MANUAL_CHECK_KEY]: "yes" })?.code, "outside", "只认布尔 true");
-  // 取不到文字的成果不核验、不阻断
-  const x = checkArtifactCitations(lawdb, "表格.xlsx", Buffer.from("PK"), "2026-10-01");
-  assert.equal(x.checked, false);
-  assert.equal(artifactCitationBlock(x, {}), null);
+  // 案号：逐个核对并勾选后可签发（复核 B13-U01）
+  const k = checkArtifactCitations(lawdb, "上诉状.md", Buffer.from("不服（2024）京0105民初1234号判决。"), "2026-10-01");
+  assert.equal(artifactCitationBlock(k, {})?.code, "case");
+  assert.equal(artifactCitationBlock(k, { [CITATIONS_CASES_CHECK_KEY]: true }), null);
+  // 读不出文字的成果（格式不认识、读取出错）不再静默放行（复核 B13-U02）：须勾选“已人工核对”
+  for (const [name, bytes] of [["意见.pdf", Buffer.from("%PDF-1.7")], ["损坏.docx", Buffer.from("PK broken")], ["损坏.xlsx", Buffer.from("PK")]] as const) {
+    const x = checkArtifactCitations(lawdb, name, bytes, "2026-10-01");
+    assert.equal(x.checked, false, name);
+    assert.equal(artifactCitationBlock(x, {})?.code, "unchecked", name);
+    assert.equal(artifactCitationBlock(x, { [CITATIONS_UNVERIFIABLE_CHECK_KEY]: true }), null, name);
+  }
 });
 
 let tk: TestKernel | null = null;
@@ -84,4 +91,17 @@ test("签发链：成果含法规库外的引用须勾选人工核对；含错�
       (e: any) => e.code === "unverified_citations" && /核对不通过/.test(e.message),
     );
   }
+});
+
+test("DOCX 的脚注与页眉也核验（复核 A-12）；XLSX 成果取单元格文字核验", async () => {
+  const { createDocx, readZipEntries, writeZip, createXlsx } = await import("@zr-legal/docx-engine");
+  const base = createDocx("成果", [{ heading: "正文", paragraphs: ["正文没有引用。"] }]);
+  const files = readZipEntries(base);
+  files.set("word/footnotes.xml", Buffer.from(`<?xml version="1.0" encoding="UTF-8"?><w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="1"><w:p><w:r><w:t>见《民法典》第一千三百条。</w:t></w:r></w:p></w:footnote></w:footnotes>`));
+  const withFootnote = writeZip([...files].map(([name, data]) => ({ name, data })));
+  const c = checkArtifactCitations(lawdb, "备忘录.docx", withFootnote, "2026-10-01");
+  assert.equal(c.wrong, 1, "脚注里的错误条号被核出");
+  const x = checkArtifactCitations(lawdb, "矩阵.xlsx", createXlsx([{ name: "争点", rows: [["争点", "依据"], ["违约金", "《民法典》第五百八十五条"]] }]), "2026-10-01");
+  assert.equal(x.checked, true);
+  assert.equal(x.verified, 1);
 });

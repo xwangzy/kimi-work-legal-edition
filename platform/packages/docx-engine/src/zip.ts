@@ -22,6 +22,8 @@ interface ReadEntry {
   name: string;
   method: number;
   compressed: Buffer;
+  /** 中央目录声明的解压后大小：解压输出以它为上限（复核 B13-O01：只信声明大小的检查挡不住“声明 1 MB、实际数 GB”的条目）。 */
+  size: number;
 }
 
 export function readZipText(buf: Buffer, name: string): string | null {
@@ -33,6 +35,13 @@ export function readZipText(buf: Buffer, name: string): string | null {
 export function readZipEntries(buf: Buffer): Map<string, Buffer> {
   const out = new Map<string, Buffer>();
   for (const e of listEntries(buf)) out.set(e.name, inflateEntry(e));
+  return out;
+}
+
+/** 只解压需要的条目（复核 B13-O01：表格里的图片等不解压）。 */
+export function readZipSelected(buf: Buffer, want: (name: string) => boolean): Map<string, Buffer> {
+  const out = new Map<string, Buffer>();
+  for (const e of listEntries(buf)) if (want(e.name)) out.set(e.name, inflateEntry(e));
   return out;
 }
 
@@ -71,15 +80,28 @@ function listEntries(buf: Buffer): ReadEntry[] {
     const lhNameLen = buf.readUInt16LE(localOffset + 26);
     const lhExtraLen = buf.readUInt16LE(localOffset + 28);
     const dataStart = localOffset + 30 + lhNameLen + lhExtraLen;
-    entries.push({ name, method, compressed: buf.subarray(dataStart, dataStart + compressedSize) });
+    entries.push({ name, method, compressed: buf.subarray(dataStart, dataStart + compressedSize), size: uncompressedSize });
     offset += 46 + nameLen + extraLen + commentLen;
   }
   return entries;
 }
 
 function inflateEntry(e: ReadEntry): Buffer {
-  if (e.method === 0) return Buffer.from(e.compressed);
-  if (e.method === 8) return inflateRawSync(e.compressed);
+  if (e.method === 0) {
+    if (e.compressed.length !== e.size) throw new DomainError("unsupported_file", "ZIP 条目大小与声明不符", 422);
+    return Buffer.from(e.compressed);
+  }
+  if (e.method === 8) {
+    let out: Buffer;
+    try {
+      // 输出上限 = 声明大小 + 1：实际解压出更多即判为压缩炸弹（不再无上限解压到内存）
+      out = inflateRawSync(e.compressed, { maxOutputLength: e.size + 1 });
+    } catch {
+      throw new DomainError("unsupported_file", "解压后大小与声明不符（疑似压缩炸弹）或数据损坏", 422);
+    }
+    if (out.length !== e.size) throw new DomainError("unsupported_file", "解压后大小与声明不符（疑似压缩炸弹）", 422);
+    return out;
+  }
   throw new DomainError("unsupported_file", `不支持的 ZIP 压缩方式 ${e.method}`, 422);
 }
 

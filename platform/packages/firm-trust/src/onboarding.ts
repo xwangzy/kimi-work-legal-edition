@@ -7,7 +7,7 @@
  *   防止控制面把申请里的公钥换成别人的。律所核对码同理（律所根公钥指纹），成员取回证书后可与管理员核对。
  * - 入组证明：成员设备用自己的签名私钥签申请字节，证明持有私钥（控制面与管理员都核）。
  */
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, hkdfSync, randomBytes, timingSafeEqual } from "node:crypto";
 import { canonicalJson } from "@zr-legal/keys";
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -32,6 +32,65 @@ export function normalizeActivationCode(input: unknown): string | null {
   if (s.length !== ACTIVATION_CODE_LEN) return null;
   for (const c of s) if (!CROCKFORD.includes(c)) return null;
   return s;
+}
+
+/**
+ * 邀请码的本机秘密段（第 13 批复核 A-01/02/03）：管理员本机生成 16 位 Crockford（80 bit），**不经控制面**，附在控制面的 20 位码后面，
+ * 一起经微信或当面交给同事（显示为 36 位、9 组）。成员机用它对入组申请做 HMAC，管理员机用它核对申请、并对批准结果做 HMAC——
+ * 控制面不知道这段秘密：改不了申请里的公钥与成员，伪造不了律所根与证书，也无从离线碾磨。创始开通码（运营发）没有这一段。
+ */
+export const INVITE_SECRET_LEN = 16;
+
+export function newInviteSecret(): string {
+  const bytes = randomBytes(INVITE_SECRET_LEN);
+  let s = "";
+  for (const b of bytes) s += CROCKFORD[b & 31];
+  return s;
+}
+
+/** 输入归一后拆成控制面码与本机秘密段：20 位（开通码）或 36 位（邀请码）；其余长度为 null。 */
+export function splitInvitationInput(input: unknown): { code: string; secret: string | null } | null {
+  if (typeof input !== "string" || input.length > 96) return null;
+  const s = input
+    .toUpperCase()
+    .replace(/[\s\-‐-―－]/g, "")
+    .replace(/[IL]/g, "1")
+    .replace(/O/g, "0");
+  for (const c of s) if (!CROCKFORD.includes(c)) return null;
+  if (s.length === ACTIVATION_CODE_LEN) return { code: s, secret: null };
+  if (s.length === ACTIVATION_CODE_LEN + INVITE_SECRET_LEN) return { code: s.slice(0, ACTIVATION_CODE_LEN), secret: s.slice(ACTIVATION_CODE_LEN) };
+  return null;
+}
+
+const inviteKey = (secret: string) => Buffer.from(hkdfSync("sha256", Buffer.from(secret, "utf8"), Buffer.from("kwl"), Buffer.from("kwl-invite-mac/1"), 32));
+
+/** 入组申请的待 MAC 字节（成员机算、管理员机核）：租户、码记录、设备编号、两把公钥、成员标识与角色。 */
+export function joinMacBytes(o: { tid: string; activationId: string; deviceId: string; signPublicKeyPem: string; encPublicKeyPem: string; memberSlug: string; role: string }): Buffer {
+  return Buffer.from(
+    `kwl-join-mac/1\n${canonicalJson({ tid: o.tid, activation_id: o.activationId, device_id: o.deviceId, sign_pub: o.signPublicKeyPem, enc_pub: o.encPublicKeyPem, member_slug: o.memberSlug, role: o.role })}`,
+    "utf8",
+  );
+}
+
+/** 批准结果的待 MAC 字节（管理员机算、成员机核）：证书、律所根公钥与律所公钥包。 */
+export function approvalMacBytes(o: { tid: string; joinRequestId: string; cert: unknown; rootPublicKeyPem: string; bundle: unknown }): Buffer {
+  return Buffer.from(`kwl-approval-mac/1\n${canonicalJson({ tid: o.tid, join_request_id: o.joinRequestId, cert: o.cert, root_public_key_pem: o.rootPublicKeyPem, bundle: o.bundle })}`, "utf8");
+}
+
+export function inviteMac(secret: string, bytes: Uint8Array): string {
+  return createHmac("sha256", inviteKey(secret)).update(bytes).digest("hex");
+}
+
+export function inviteMacValid(secret: string, bytes: Uint8Array, mac: unknown): boolean {
+  if (typeof mac !== "string" || !/^[0-9a-f]{64}$/.test(mac)) return false;
+  const a = Buffer.from(inviteMac(secret, bytes), "hex");
+  const b = Buffer.from(mac, "hex");
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** 入组设备编号只能是 dev_<律所标识>_<成员标识>（复核 A-02：控制面不能借设备编号碾磨核对码）。 */
+export function expectedJoinDeviceId(firmSlug: string, memberSlug: string): string {
+  return `dev_${firmSlug}_${memberSlug}`;
 }
 
 /** 显示形：4 位一组。 */

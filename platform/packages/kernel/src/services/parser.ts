@@ -65,7 +65,7 @@ export function parseDocument(filename: string, mime: string, buf: Buffer): Pars
   }
   // XLSX（第 13 批）：只取单元格的值，逐表逐行转成文字（不执行公式、不读外部链接）
   if (lower.endsWith(".xlsx") || mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
-    let r: { text: string; sheets: number; truncated: boolean };
+    let r: { text: string; sheets: number; truncated: boolean; dates_raw?: boolean };
     try {
       r = xlsxToText(buf);
     } catch {
@@ -74,7 +74,7 @@ export function parseDocument(filename: string, mime: string, buf: Buffer): Pars
     return {
       text: r.text,
       pageCount: null,
-      qualityFlags: ["xlsx_values_only", ...(r.truncated ? ["xlsx_truncated"] : [])],
+      qualityFlags: ["xlsx_values_only", ...(r.truncated ? ["xlsx_truncated"] : []), ...(r.dates_raw ? ["xlsx_dates_raw"] : [])],
       parser: "xlsx-values",
       parserVersion: PARSER_VERSION,
     };

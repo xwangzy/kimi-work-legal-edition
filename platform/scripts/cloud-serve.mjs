@@ -96,6 +96,8 @@ if (cfg.role === "control-plane") {
     keys: { envelope: pair(cfg.envelope_key, "envelope_key"), seat: pair(cfg.seat_key, "seat_key") },
     serviceSecret: serviceSecret(),
     stateStore: cpMod.fileStateStore(join(dir, "state"), { key: Buffer.from(stateKey, "hex"), requireKey: true }),
+    // 开通码 HMAC 的胡椒（复核 A-06）：与签名密钥分开，由 KMS 挂载；未给出时按信封私钥派生（轮换信封密钥会让在途码失效）
+    ...(cfg.code_pepper_file ? { codePepper: Buffer.from(read(cfg.code_pepper_file, "code_pepper_file"), "hex") } : {}),
     auditLog: cpMod.createAuditLog({ file: join(dir, "audit.jsonl") }),
   }).server;
 } else {

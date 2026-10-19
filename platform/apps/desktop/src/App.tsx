@@ -85,11 +85,22 @@ export function App() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
   // 首次启动激活（第 13 批）：这台电脑还没有激活时整个应用只显示激活页
   const [boot, setBoot] = useState<{ onboarding: any } | null>(null);
-  const loadBoot = () =>
-    void api
-      .kernelStatus()
-      .then((st: any) => setBoot({ onboarding: st?.onboarding ?? null }))
-      .catch(() => setBoot({ onboarding: null }));
+  // 取不到状态时不当作“已激活”（复核 B13-K01）：首次启动内核较慢，按退避重试；约一分半仍取不到才给出说明与“重试”
+  const [bootFailed, setBootFailed] = useState(false);
+  const loadBoot = () => {
+    setBootFailed(false);
+    let attempt = 0;
+    const tryOnce = () =>
+      void api
+        .kernelStatus()
+        .then((st: any) => setBoot({ onboarding: st?.onboarding ?? null }))
+        .catch(() => {
+          attempt += 1;
+          if (attempt >= 20) return setBootFailed(true);
+          setTimeout(tryOnce, Math.min(8_000, 500 * 2 ** Math.min(attempt, 4)));
+        });
+    tryOnce();
+  };
   useEffect(loadBoot, []);
   // 开通的最后一步（第 14 批）：还没有生成恢复包时，首页与事项页顶部提醒（电脑坏了数据就找不回）
   const [needRecovery, setNeedRecovery] = useState(false);
@@ -141,7 +152,22 @@ export function App() {
     });
   }, []);
   const routeKey = route.page === "run" ? `run:${route.runId}` : route.page === "matter" ? `matter:${route.matterId}` : route.page;
-  if (boot === null) return <div className="activate" aria-busy="true" />;
+  if (boot === null) {
+    return (
+      <div className="activate" aria-busy={!bootFailed}>
+        <div className="activate-card">
+          <p className="muted" role="status">
+            {bootFailed ? "后台服务没有启动起来。可以点“重试”；仍不行请重新打开应用，或联系所内 IT 与客服。" : "正在启动…第一次打开需要十几秒。"}
+          </p>
+          {bootFailed && (
+            <button className="btn-primary" onClick={loadBoot}>
+              重试
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
   if (boot.onboarding) return <ActivatePage initial={boot.onboarding} onRefresh={loadBoot} />;
   return (
     <div className="shell">

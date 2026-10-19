@@ -14,7 +14,7 @@ test("重启后租户、许可、策略版本、订阅版本仍在；只读操�
   const keys = devControlPlaneKeys();
   const store = memoryStateStore();
   const a = createControlPlane({ keys, serviceSecret: "s".repeat(24), stateStore: store });
-  const t = a.ops.createTenant({ tid: "ten_persist", edition: "firm", seats: 5 });
+  const t = a.ops.createTenant({ activationRequired: false, tid: "ten_persist", edition: "firm", seats: 5 });
   const salt = t.salt_b64;
   const policyVersion = t.policy!.doc.version;
   a.ops.terminateLicense("ten_persist");
@@ -30,7 +30,7 @@ test("重启后租户、许可、策略版本、订阅版本仍在；只读操�
   assert.equal(t2.policy!.doc.version, policyVersion);
   assert.ok(Date.parse(t2.license.expires_at) <= Date.now(), "终止后的许可仍是已到期");
   assert.ok(t2.devices instanceof Map && t2.anon instanceof Map, "集合类型恢复为 Map");
-  assert.throws(() => b.ops.createTenant({ tid: "ten_persist", edition: "firm", seats: 5 }), /已存在/);
+  assert.throws(() => b.ops.createTenant({ activationRequired: false, tid: "ten_persist", edition: "firm", seats: 5 }), /已存在/);
 });
 
 test("文件存储（复核 B4-R04）：两代交替写、可封装；最新一代写坏回退上一代；两代都坏、密钥不符、明文配了密钥一律拒绝；生产形态无密钥拒绝构造", () => {
@@ -117,7 +117,7 @@ test("写盘失败（复核 B4-R01）：运维操作抛错且内存回滚；恢�
   const keys = devControlPlaneKeys();
   const store = memoryStateStore();
   const a = createControlPlane({ keys, serviceSecret: "s".repeat(24), stateStore: store });
-  a.ops.createTenant({ tid: "ten_fail", edition: "firm", seats: 5 });
+  a.ops.createTenant({ activationRequired: false, tid: "ten_fail", edition: "firm", seats: 5 });
   const untilBefore = a.ops.tenant("ten_fail")!.subscription_until;
   store.failNext = 1;
   assert.throws(() => a.ops.renewLicense("ten_fail", 400), /写盘失败/);
@@ -138,7 +138,7 @@ test("写盘失败（复核 B4-R01）：HTTP 请求得到 500、进程不退出�
   try {
     const tid = "ten_http_fail";
     const root = generateFirmRoot();
-    cp.ops.createTenant({ tid, edition: "team", seats: 3 });
+    cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 3 });
     const ts = Date.now();
     const proof = sign(null, enrollProofBytes(tid, root.publicKeyPem, ts), root.privateKeyPem).toString("base64url");
     assert.equal((await fetch(`${base}/v1/enroll`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tid, root_public_key_pem: root.publicKeyPem, ts, proof }) })).status, 200);

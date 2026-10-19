@@ -4,6 +4,7 @@ import { nav } from "../App.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { artifactName } from "../lib/labels.ts";
+import { citationChecklist, citationNeeds, citationsAllowSign, type CitationTicks } from "../lib/citation-review.ts";
 
 /** 成果状态 → 律师称呼。 */
 const STATUS_TEXT: Record<string, string> = {
@@ -122,8 +123,9 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
 
   const items: string[] = data?.lawyer_checklist?.items ?? [];
   // 成果里不在本机法规库的引用（第 13 批）：系统核对不了，律师逐条人工核对后勾选才能签发
-  const outside: { raw: string }[] = (data?.completeness?.artifact_citations?.items ?? []).filter((i: any) => i.kind === "outside");
-  const [citationsChecked, setCitationsChecked] = useState(false);
+  // 成果的引用核对（第 13 批复核 B13-U01/U02/U03）：分组列出、逐类勾选、勾选不齐不能签发
+  const cneeds = citationNeeds(data?.completeness?.artifact_citations);
+  const [cticks, setCticks] = useState<CitationTicks>({ cases: false, outside: false, unchecked: false });
   const act = useCallback(
     async (decision: "approved" | "rejected") => {
       setBusy(true);
@@ -138,7 +140,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
             lawyer_checked: [...checked].sort((a, b) => a - b),
             lawyer_items: items.length,
             skill: data.lawyer_checklist?.skill ?? null,
-            ...(outside.length > 0 ? { citations_outside_registry_checked: citationsChecked } : {}),
+            ...citationChecklist(cneeds, cticks),
             at: new Date().toISOString(),
           },
         });
@@ -149,7 +151,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
         setBusy(false);
       }
     },
-    [artifactId, data, ack, checked, items.length, reload, outside.length, citationsChecked],
+    [artifactId, data, ack, checked, items.length, reload, cneeds, cticks],
   );
 
   const latest = !!data?.is_latest_version;
@@ -210,17 +212,51 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
               )}
               {data.blockers.length > 0 && <div className="banner banner-orange">签发前须处理：{data.blockers.join("；")}</div>}
 
-              {outside.length > 0 && (
-                <div className="banner banner-orange">
-                  这些引用不在本机法规库里，系统没法自动核对，请逐条查原文核对：
+              {cneeds.wrong.length > 0 && (
+                <div className="banner banner-red">
+                  这些引用核对不通过，要先改正再签发：
                   <ul>
-                    {outside.slice(0, 20).map((c, i) => (
+                    {cneeds.wrong.slice(0, 20).map((c, i) => (
+                      <li key={i}>
+                        {c.raw}
+                        {c.reason ? `（${c.reason}）` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {cneeds.cases.length > 0 && (
+                <div className="banner banner-orange">
+                  这些案号系统离线核对不了，请逐个在裁判文书网等官方来源核对：
+                  <ul>
+                    {cneeds.cases.slice(0, 20).map((c, i) => (
                       <li key={i}>{c.raw}</li>
                     ))}
                   </ul>
-                  {outside.length > 20 && <div className="muted">另有 {outside.length - 20} 条，见成果原文。</div>}
                   <label>
-                    <input type="checkbox" checked={citationsChecked} onChange={(e) => setCitationsChecked(e.target.checked)} /> 已逐条人工核对上面的引用
+                    <input type="checkbox" checked={cticks.cases} onChange={(e) => setCticks((t) => ({ ...t, cases: e.target.checked }))} /> 已逐个核对上面的案号
+                  </label>
+                </div>
+              )}
+              {cneeds.outside.length > 0 && (
+                <div className="banner banner-orange">
+                  这些引用不在本机法规库里，系统没法自动核对，请逐条查原文核对：
+                  <ul>
+                    {cneeds.outside.slice(0, 20).map((c, i) => (
+                      <li key={i}>{c.raw}</li>
+                    ))}
+                  </ul>
+                  {cneeds.outside.length > 20 && <div className="muted">另有 {cneeds.outside.length - 20} 条，见成果原文。</div>}
+                  <label>
+                    <input type="checkbox" checked={cticks.outside} onChange={(e) => setCticks((t) => ({ ...t, outside: e.target.checked }))} /> 已逐条人工核对上面的引用
+                  </label>
+                </div>
+              )}
+              {cneeds.unchecked && (
+                <div className="banner banner-orange">
+                  这份文件的引用系统没有核对（格式不认识或读取出错），请人工核对文中的法条与案号。
+                  <label>
+                    <input type="checkbox" checked={cticks.unchecked} onChange={(e) => setCticks((t) => ({ ...t, unchecked: e.target.checked }))} /> 这份文件的引用已人工核对
                   </label>
                 </div>
               )}
@@ -267,7 +303,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                     提交复核
                   </button>
                 ) : (
-                  <button className="btn-primary" disabled={busy || !pending || !ack || !latest} onClick={() => void act("approved")}>
+                  <button className="btn-primary" disabled={busy || !pending || !ack || !latest || !citationsAllowSign(cneeds, cticks)} onClick={() => void act("approved")}>
                     确认签发
                   </button>
                 )}

@@ -47,7 +47,7 @@ async function gatewayWith(quota: LeaseQuota, meter: MeterRecord[] = []) {
 
 test("租约：网关本地扣减，回报后账本的本月用量等于网关按实际 usage 结算的点数（按席位）；重复回报不重复计费", async () => {
   const tid = "ten_gwq_a";
-  cp.ops.createTenant({ tid, edition: "team", seats: 3, points: 100_000 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 3, points: 100_000 });
   const meter: MeterRecord[] = [];
   const quota = new LeaseQuota({ ledger: httpLedger({ baseUrl: cpBase, serviceSecret: SECRET }), holder: "gw-a", leaseSize: 1_000, flushMs: 60_000 });
   const chat = await gatewayWith(quota, meter);
@@ -69,7 +69,7 @@ test("租约：网关本地扣减，回报后账本的本月用量等于网关�
 
 test("月度上限硬停：律所设的上限用完后网关返回 402 quota_cap_reached、不到达上游；上限调高后恢复", async () => {
   const tid = "ten_gwq_b";
-  cp.ops.createTenant({ tid, edition: "team", seats: 3, points: 100_000 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 3, points: 100_000 });
   cp.ops.setQuotaCap(tid, 450);
   const meter: MeterRecord[] = [];
   const quota = new LeaseQuota({ ledger: httpLedger({ baseUrl: cpBase, serviceSecret: SECRET }), holder: "gw-b", leaseSize: 1_000, flushMs: 60_000 });
@@ -93,7 +93,7 @@ test("月度上限硬停：律所设的上限用完后网关返回 402 quota_cap
 
 test("账本不可达：已有租约照常用到到期；之后 503 quota_unavailable（不发往上游）；回报保留到账本恢复", async () => {
   const tid = "ten_gwq_c";
-  cp.ops.createTenant({ tid, edition: "team", seats: 3, points: 100_000 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 3, points: 100_000 });
   let down = false;
   let clock = Date.now();
   const real = httpLedger({ baseUrl: cpBase, serviceSecret: SECRET });
@@ -122,7 +122,7 @@ test("账本不可达：已有租约照常用到到期；之后 503 quota_unavai
 
 test("复核 S9A-05：两个网关实例共用账本、接近上限时，后台预取不会一次拿走全部剩余（另一实例仍领得到）", async () => {
   const tid = "ten_gwq_d";
-  cp.ops.createTenant({ tid, edition: "team", seats: 3, points: 100_000 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 3, points: 100_000 });
   cp.ops.setQuotaCap(tid, 8_000);
   const ledger = httpLedger({ baseUrl: cpBase, serviceSecret: SECRET });
   const a = new LeaseQuota({ ledger, holder: "gw-da", leaseSize: 20_000, flushMs: 60_000 });
@@ -168,7 +168,7 @@ test("复核 S9A-06、S9A-08：账本 404 not_found 时保留租约下次重报�
 
 test("复核 S9A-07：等账本期间客户端断开——不发往上游、预占退还", async () => {
   const tid = "ten_gwq_g";
-  cp.ops.createTenant({ tid, edition: "team", seats: 3, points: 100_000 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 3, points: 100_000 });
   const real = httpLedger({ baseUrl: cpBase, serviceSecret: SECRET });
   const slow: LedgerClient = { lease: async (...a) => (await new Promise((r) => setTimeout(r, 300)), real.lease(...a)), settle: (...a) => real.settle(...a) };
   const quota = new LeaseQuota({ ledger: slow, holder: "gw-g", flushMs: 60_000 });
@@ -196,7 +196,7 @@ test("复核 S9A-07：等账本期间客户端断开——不发往上游、预�
 
 test("复核 S9B-03：只限支持服务的凭据在网关被拒（受众不符）", async () => {
   const tid = "ten_gwq_h";
-  cp.ops.createTenant({ tid, edition: "team", seats: 3, points: 100_000 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 3, points: 100_000 });
   const quota = new LeaseQuota({ ledger: httpLedger({ baseUrl: cpBase, serviceSecret: SECRET }), holder: "gw-h", flushMs: 60_000 });
   const gw = createLegalGateway({ keys: publicKeyMap(cp.publicKeys.seat), provider: new MockProvider(), routes: DEFAULT_ROUTES, meter: { append() {} }, quota });
   await new Promise<void>((r) => gw.listen(0, "127.0.0.1", () => r()));
@@ -209,7 +209,7 @@ test("复核 S9B-03：只限支持服务的凭据在网关被拒（受众不符�
 
 test("复核 S9A-21：网关正常关闭时对所有租约做最终回报，未用部分立即在账本释放", async () => {
   const tid = "ten_gwq_i";
-  cp.ops.createTenant({ tid, edition: "team", seats: 3, points: 100_000 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 3, points: 100_000 });
   cp.ops.setQuotaCap(tid, 10_000);
   const quota = new LeaseQuota({ ledger: httpLedger({ baseUrl: cpBase, serviceSecret: SECRET }), holder: "gw-i", leaseSize: 5_000, flushMs: 60_000 });
   const r = await quota.reserve(tid, 100);

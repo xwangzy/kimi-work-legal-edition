@@ -50,26 +50,79 @@ interface InitMessage {
 }
 
 /**
- * 启动时先等一条 {type:'kernel.init', dbKey?} 消息（§5.1：数据库主密钥由主进程经 safeStorage
- * 解封后一次性交付内核，主进程随即清除）；超时无消息则不带 key 启动并广播提示（明文开发库形态）。
+ * 统一的消息处理（复核 B13-K01）：一启动就挂上，内核就绪之前到达的调用排队（至多 200 条），就绪后依次处理——
+ * 首次启动要做全部迁移、生成密钥、拉起闸门，以前这段时间里到达的调用被 init 监听忽略、永远不回，界面停在空白。
  */
+let kernelRef: Awaited<ReturnType<typeof createKernel>> | null = null;
+const queued: RpcRequest[] = [];
+let closing = false;
+let initResolve: ((v: { dbKey: string | undefined }) => void) | null = null;
+
+async function handleRpc(req: RpcRequest): Promise<void> {
+  try {
+    const result = await kernelRef!.invoke(req.method, req.params ?? {});
+    port.postMessage({ id: req.id, ok: true, result });
+  } catch (e) {
+    const err = e as any;
+    port.postMessage({
+      id: req.id,
+      ok: false,
+      error: { code: err?.code ?? "internal", message: err?.message ?? String(e), httpStatus: err?.httpStatus ?? 500, detail: err?.detail },
+    });
+  }
+}
+
+port.on("message", async (raw) => {
+  const type = (raw as { type?: unknown } | null)?.type;
+  // 数据库主密钥由主进程经 safeStorage 解封后一次性交付（§5.1），只认第一条
+  if (type === "kernel.init") {
+    const msg = raw as InitMessage;
+    const r = initResolve;
+    initResolve = null;
+    r?.({ dbKey: typeof msg.dbKey === "string" && msg.dbKey.length > 0 ? msg.dbKey : undefined });
+    return;
+  }
+  // 主进程交来的日志事件（v9.2 §3.6）：按登记表重新核验，进程名由这里标注
+  if (type === "log.event") {
+    const m = raw as { code?: unknown; fields?: unknown };
+    slog.ingest("main", m.code, m.fields);
+    return;
+  }
+  // 随包运行时全量摘要核验通过（复核 B4-R15）：放行随包子进程的拉起
+  if (type === "kernel.runtime_verified") {
+    markRuntimeVerified();
+    return;
+  }
+  // 主进程退出或安装更新前要求有序关闭（复核 B4-A13）：先关闭闸门、Agent 宿主等子进程与账本，再退出
+  if (type === "kernel.shutdown") {
+    if (closing) return;
+    closing = true;
+    if (kernelRef) await kernelRef.close().catch(() => {});
+    process.exit(0);
+  }
+  const req = raw as RpcRequest;
+  if (!req || typeof req.id !== "number" || typeof req.method !== "string") return;
+  if (!kernelRef) {
+    if (queued.length < 200) queued.push(req);
+    else port.postMessage({ id: req.id, ok: false, error: { code: "kernel_starting", message: "后台服务正在启动，请稍候", httpStatus: 503 } });
+    return;
+  }
+  await handleRpc(req);
+});
+
+/** 启动时先等 {type:'kernel.init', dbKey?}；超时无消息则不带 key 启动并广播提示（明文开发库形态）。 */
 function waitForInit(timeoutMs: number): Promise<{ dbKey: string | undefined } | null> {
   return new Promise((resolve) => {
-    let settled = false;
     const timer = setTimeout(() => {
-      if (!settled) {
-        settled = true;
+      if (initResolve) {
+        initResolve = null;
         resolve(null);
       }
     }, timeoutMs);
-    port.on("message", (raw) => {
-      const msg = raw as InitMessage;
-      if (msg && msg.type === "kernel.init" && !settled) {
-        settled = true;
-        clearTimeout(timer);
-        resolve({ dbKey: typeof msg.dbKey === "string" && msg.dbKey.length > 0 ? msg.dbKey : undefined });
-      }
-    });
+    initResolve = (v) => {
+      clearTimeout(timer);
+      resolve(v);
+    };
   });
 }
 
@@ -94,42 +147,13 @@ async function main(): Promise<void> {
   }
 
   kernel.onBroadcast((msg) => port.postMessage({ type: "kernel.event", ...msg }));
-
-  let closing = false;
-  port.on("message", async (raw) => {
-    // 主进程退出或安装更新前要求有序关闭（复核 B4-A13）：先关闭闸门、Agent 宿主等子进程与账本，再退出——
-    // 强制终止会留下仍占用安装目录文件的子进程，静默更新随之失败
-    // 随包运行时全量摘要核验通过（复核 B4-R15）：放行随包子进程的拉起
-    // 主进程交来的日志事件（v9.2 §3.6）：按登记表重新核验，进程名由这里标注
-    if ((raw as { type?: unknown } | null)?.type === "log.event") {
-      const m = raw as { code?: unknown; fields?: unknown };
-      slog.ingest("main", m.code, m.fields);
-      return;
-    }
-    if ((raw as { type?: unknown } | null)?.type === "kernel.runtime_verified") {
-      markRuntimeVerified();
-      return;
-    }
-    if ((raw as { type?: unknown } | null)?.type === "kernel.shutdown") {
-      if (closing) return;
-      closing = true;
-      await kernel.close().catch(() => {});
-      process.exit(0);
-    }
-    const req = raw as RpcRequest;
-    if (!req || typeof req.id !== "number" || typeof req.method !== "string") return;
-    try {
-      const result = await kernel.invoke(req.method, req.params ?? {});
-      port.postMessage({ id: req.id, ok: true, result });
-    } catch (e) {
-      const err = e as any;
-      port.postMessage({
-        id: req.id,
-        ok: false,
-        error: { code: err?.code ?? "internal", message: err?.message ?? String(e), httpStatus: err?.httpStatus ?? 500, detail: err?.detail },
-      });
-    }
-  });
+  kernelRef = kernel;
+  if (closing) {
+    await kernel.close().catch(() => {});
+    process.exit(0);
+  }
+  // 就绪前排队的调用依次处理
+  for (const req of queued.splice(0)) await handleRpc(req);
 
   port.postMessage({ type: "kernel.ready", localPort: kernel.localPort, workspace: kernel.config.workspaceDir, onboarding: kernel.config.onboarding });
 

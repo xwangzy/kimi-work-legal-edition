@@ -450,6 +450,20 @@ function fromAppMainFrame(e) {
   return allowedMainNavigation(frame.url);
 }
 
+/** 等内核子进程出现（至多 timeoutMs；正在退出时立即放弃）。 */
+function whenKernel(timeoutMs) {
+  if (kernel) return Promise.resolve(kernel);
+  const until = Date.now() + timeoutMs;
+  return new Promise((resolve) => {
+    const tick = () => {
+      if (kernel) return resolve(kernel);
+      if (Date.now() > until || (restart.quitting && !identityRestarting)) return resolve(null);
+      setTimeout(tick, 200);
+    };
+    tick();
+  });
+}
+
 /** 文件对话框的一次性句柄（file-dialogs.cjs）：渲染进程只拿句柄与文件名，路径只在主进程与内核之间。 */
 const fileHandles = createHandleStore();
 
@@ -459,12 +473,16 @@ function wireIpc() {
     // 导出类方法只往对话框选定的位置写；读取类方法的句柄换成路径（渲染进程自带的写入路径一律剥掉）
     const r = resolveFileParams(String(method), params, fileHandles);
     if (r.error) return Promise.resolve({ ok: false, error: r.error });
-    return new Promise((resolve) => {
-      if (!kernel) return resolve({ ok: false, error: { code: "internal", message: "内核未启动" } });
-      const id = ++rpcSeq;
-      pendingRpc.set(id, resolve);
-      kernel.postMessage({ id, method, params: r.params });
-    });
+    // 内核还没拉起（首次启动在解封主密钥、重启中）：等它出现再转发（复核 B13-K01）；内核入口在就绪前把调用排队
+    return whenKernel(60_000).then(
+      (k) =>
+        new Promise((resolve) => {
+          if (!k) return resolve({ ok: false, error: { code: "kernel_starting", message: "后台服务正在启动，请稍候" } });
+          const id = ++rpcSeq;
+          pendingRpc.set(id, resolve);
+          k.postMessage({ id, method, params: r.params });
+        }),
+    );
   });
   // 选择材料（v9.2 §3.7；Y5 P1-4）：系统对话框带 dontAddToRecent（不进“最近使用”与跳转列表）；只回句柄、文件名与大小
   ipcMain.handle("kwl:pick-files", async (e, opts) => {

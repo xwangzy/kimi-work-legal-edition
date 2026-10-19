@@ -138,7 +138,7 @@ test("额度账本（纯函数）：到期 + 宽限未回报的租约按已报�
 
 test("额度 HTTP：租约与回报只认服务凭据；成员只看本所与自己的用量，管理员看按成员明细；只有管理员能设上限；上限到达后网关领不到租约", async () => {
   const tid = "ten_quota_http";
-  cp.ops.createTenant({ tid, edition: "team", seats: 5, points: 50_000 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 5, points: 50_000 });
   await enroll(tid);
   const admin = makeDevice(tid, "admin", "usr_admin", "dev_qadmin");
   const lawyer = makeDevice(tid, "lawyer", "usr_law", "dev_qlaw");
@@ -186,7 +186,7 @@ test("额度 HTTP：租约与回报只认服务凭据；成员只看本所与自
 
 test("运营审计流水：运营与设备的写操作逐条入链（吊销只记一次、重复登记不记、拒绝也记）；管理员与合伙人可取、律师不可；控制面签名 + 律所侧验链", async () => {
   const tid = "ten_audit_http";
-  cp.ops.createTenant({ tid, edition: "team", seats: 5 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 5 });
   await enroll(tid);
   const admin = makeDevice(tid, "admin", "usr_a", "dev_aadmin");
   const partner = makeDevice(tid, "partner", "usr_p", "dev_apartner");
@@ -272,7 +272,7 @@ test("复核 S9A-01：成员设备在匿名摘要里塞带中文的未知键—�
   base = `http://127.0.0.1:${(local.server.address() as AddressInfo).port}`;
   try {
     const tid = "ten_s01";
-    local.ops.createTenant({ tid, edition: "team", seats: 3 });
+    local.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 3 });
     const ts = Date.now();
     const proof = sign(null, enrollProofBytes(tid, root.publicKeyPem, ts), root.privateKeyPem).toString("base64url");
     await fetch(`${base}/v1/enroll`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tid, root_public_key_pem: root.publicKeyPem, ts, proof }) });
@@ -289,7 +289,7 @@ test("复核 S9A-01：成员设备在匿名摘要里塞带中文的未知键—�
     assert.equal(rej.result, "rejected:summary_unknown_field");
     assert.ok(lines.every((x) => validAuditRecord(x)));
     assert.ok(!readFileSync(file, "utf8").includes("张三"), "请求方的文字进不了流水");
-    assert.throws(() => local.ops.createTenant({ tid: "律所A", edition: "team", seats: 1 }), /租户编号/);
+    assert.throws(() => local.ops.createTenant({ activationRequired: false, tid: "律所A", edition: "team", seats: 1 }), /租户编号/);
   } finally {
     local.server.closeAllConnections();
     await new Promise<void>((r) => local.server.close(() => r()));
@@ -348,7 +348,7 @@ test("复核 S9A-03：审计写不进去时吊销整体不生效（设备未吊�
   base = `http://127.0.0.1:${(local.server.address() as AddressInfo).port}`;
   try {
     const tid = "ten_s03";
-    local.ops.createTenant({ tid, edition: "team", seats: 3 });
+    local.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 3 });
     const ts = Date.now();
     const proof = sign(null, enrollProofBytes(tid, root.publicKeyPem, ts), root.privateKeyPem).toString("base64url");
     await fetch(`${base}/v1/enroll`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tid, root_public_key_pem: root.publicKeyPem, ts, proof }) });
@@ -392,7 +392,7 @@ test("复核 S9A-04、S9A-17：已到期但未终报的租约仍计在途（同�
 test("复核 S9A-22、S9A-23、S9B-21：证书未变的重复登记顺带分配席位只记“席位分配”；凭据签发每小时限 12 张；支持专用凭据受众 support、15 分钟", async () => {
   const { verifySeatToken } = await import("@zr-legal/seat-token");
   const tid = "ten_s22";
-  cp.ops.createTenant({ tid, edition: "team", seats: 1 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 1 });
   await enroll(tid);
   const a = makeDevice(tid, "admin", "usr_s22a", "dev_s22a");
   const b = makeDevice(tid, "lawyer", "usr_s22b", "dev_s22b");

@@ -87,7 +87,7 @@ import { estimatePoints, scenarioCap } from "../services/estimate.ts";
 import { docxRenderReport } from "../tools/tools/docx.ts";
 import { extractParagraphs, renderDocxHtml, renderXlsxHtml } from "@zr-legal/docx-engine";
 import { isToolOperationInFlight } from "../local-server.ts";
-import { artifactCitationBlock, checkArtifactCitations, type ArtifactCitationCheck } from "../services/artifact-citations.ts";
+import { artifactCitationBlock, checkArtifactCitations, uncheckedCitations, type ArtifactCitationCheck } from "../services/artifact-citations.ts";
 
 export interface ApiDeps {
   db: KernelDb;
@@ -313,7 +313,8 @@ function artifactCitationsFor(db: KernelDb, blobs: BlobStore, lawdb: Lawdb, art:
     const asOf = typeof kd.analysis_as_of === "string" && /^\d{4}-\d{2}-\d{2}$/.test(kd.analysis_as_of) ? kd.analysis_as_of : new Date().toISOString().slice(0, 10);
     return checkArtifactCitations(lawdb, String(art.filename), blobs.read(String(art.storage_uri)), asOf);
   } catch {
-    return null;
+    // 出错不放行（复核 B13-U02）：按“系统没有核对”处理，须人工核对勾选
+    return uncheckedCitations("error", lawdb.packageVersion, new Date().toISOString().slice(0, 10));
   }
 }
 
@@ -1792,8 +1793,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           ...(openItems.length > 0 ? ["存在未决项，签发人须逐项确认"] : []),
           ...(unverifiedOffline > 0 ? [`存在 ${unverifiedOffline} 条未核实（离线）的引用（案号离线未核），不得签发，联网补核或改引后再提交`] : []),
           ...(artCitations && artCitations.wrong > 0 ? [`成果里有 ${artCitations.wrong} 条引用核对不通过（条号不存在、已改号或当时没有有效版本），改正后再签发`] : []),
-          ...(artCitations && artCitations.unverified_offline > 0 ? [`成果里有 ${artCitations.unverified_offline} 个案号离线无法核实，联网补核或改引后再签发`] : []),
+          ...(artCitations && artCitations.unverified_offline > 0 ? [`成果里有 ${artCitations.unverified_offline} 个案号系统离线无法核实，须逐个核对并勾选后才能签发`] : []),
           ...(artCitations && artCitations.outside_registry > 0 ? [`成果里有 ${artCitations.outside_registry} 条引用不在本机法规库里，须逐条人工核对并勾选后才能签发`] : []),
+          ...(artCitations && !artCitations.checked ? ["这份文件的引用系统没有核对（格式不认识或读取出错），须人工核对并勾选后才能签发"] : []),
           ...(art.version === latest.v ? [] : ["已有更新版本，本版不得签发（批准不跨版本）"]),
         ],
       };

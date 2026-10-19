@@ -44,7 +44,7 @@ const PATHS: readonly RegExp[] = [
   // 第 13 批：开通与成员入组（开通码兑换、入组申请与取回、管理员发邀请与批准；记录编号固定 16 位）
   /^\/v1\/activation\/redeem$/,
   /^\/v1\/join-requests$/,
-  /^\/v1\/join-requests\/jr_[A-Za-z0-9_-]{16}\/(?:fetch|approve|reject)$/,
+  /^\/v1\/join-requests\/jr_[A-Za-z0-9_-]{16}\/(?:fetch|approve|reject|withdraw)$/,
   /^\/v1\/invitations$/,
   /^\/v1\/invitations\/act_[A-Za-z0-9_-]{16}\/revoke$/,
 ];

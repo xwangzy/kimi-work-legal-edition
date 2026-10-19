@@ -64,7 +64,7 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
   });
   await new Promise<void>((r) => cp.server.listen(0, "127.0.0.1", () => r()));
   const base = `http://127.0.0.1:${(cp.server.address() as AddressInfo).port}`;
-  cp.ops.createTenant({ tid: o.tenant, edition: o.edition ?? "team", seats: o.seats ?? 10, points: 50_000_000 });
+  cp.ops.createTenant({ activationRequired: false, tid: o.tenant, edition: o.edition ?? "team", seats: o.seats ?? 10, points: 50_000_000 });
 
   const cpKeys = publicKeyMap(cp.publicKeys.envelope);
   const seatKeys = publicKeyMap(cp.publicKeys.seat);

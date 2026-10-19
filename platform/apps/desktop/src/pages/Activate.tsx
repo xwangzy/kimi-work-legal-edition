@@ -13,7 +13,8 @@ const ROLE_LABEL: Record<string, string> = { admin: "管理员", partner: "合�
 
 /** 输入时按 4 位一组显示（只留字母与数字，大写）。 */
 function groupCode(raw: string): string {
-  const s = raw.toUpperCase().replace(/[^0-9A-Z]/g, "").slice(0, 20);
+  // 开通码 20 位；邀请码 36 位（控制面码 + 管理员本机生成的核对段，复核 A-01）
+  const s = raw.toUpperCase().replace(/[^0-9A-Z]/g, "").slice(0, 36);
   return s.replace(/(.{4})(?=.)/g, "$1-");
 }
 
@@ -65,7 +66,7 @@ function EnterCode({ onPending }: { onPending: (s: Status) => void }) {
   const [err, setErr] = useState("");
   const [done, setDone] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
-  const ready = code.replace(/-/g, "").length === 20;
+  const ready = [20, 36].includes(code.replace(/-/g, "").length);
   const submit = async () => {
     if (!ready || busy) return;
     setBusy(true);
@@ -109,7 +110,7 @@ function EnterCode({ onPending }: { onPending: (s: Status) => void }) {
             className="activate-code"
             value={code}
             onChange={(e) => setCode(groupCode(e.target.value))}
-            placeholder="XXXX-XXXX-XXXX-XXXX-XXXX"
+            placeholder="开通码 20 位，邀请码 36 位"
             autoFocus
             spellCheck={false}
             autoComplete="off"

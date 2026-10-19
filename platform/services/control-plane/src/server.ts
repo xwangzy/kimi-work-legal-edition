@@ -13,7 +13,7 @@
  * 客户端按本机固定的律所根公钥与门限独立核验（packages/firm-trust；T17 演练）。
  * 设备请求一律设备签名（firm-trust/request-auth）；网关订阅用服务间凭据（G0：共享密钥；生产为 mTLS）。
  */
-import { createHash, generateKeyPairSync, hkdfSync, randomBytes, timingSafeEqual, verify as cryptoVerify, type KeyObject } from "node:crypto";
+import { createHash, createPublicKey, generateKeyPairSync, hkdfSync, randomBytes, timingSafeEqual, verify as cryptoVerify, type KeyObject } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { StateStore } from "./state-store.ts";
 import { createAuditLog, type AuditEntry, type AuditLog } from "./audit-log.ts";
@@ -23,6 +23,7 @@ import { issueSeatToken, MIN_SEAT_TTL_SECONDS } from "@zr-legal/seat-token";
 import {
   activationCodeMac,
   claimSecretHash,
+  expectedJoinDeviceId,
   firmBundleBytes,
   joinProofBytes,
   type FirmBundle,
@@ -124,6 +125,9 @@ export interface ActivationRecord {
   consumed_at: string | null;
   /** 同一认领提交入组申请的次数（被拒后可重提，至多 3 次）。 */
   join_attempts: number;
+  /** 首次兑换时刻与兑换次数（复核 A-04：只在首次兑换后 10 分钟内、尚未提交申请或登记根之前可再兑换，覆盖“应答丢失重试”）。 */
+  first_claimed_at?: string | null;
+  redeem_count?: number;
 }
 
 /** 成员入组申请：成员设备提交公钥，管理员本机核对核对码后用律所根签发证书，经此送达。 */
@@ -136,19 +140,23 @@ export interface JoinRequestRecord {
   sign_pub: string;
   enc_pub: string;
   created_at: string;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "withdrawn";
   decided_at: string | null;
   decided_by: string | null;
   cert: DeviceCertificate | null;
   /** 律所公钥包（恢复托管公钥 + 律所根签名），批准时随证书一并存，成员取回。 */
   firm_bundle: FirmBundle | null;
+  /** 成员机用邀请码本机秘密段对申请做的 HMAC（复核 A-01/02：控制面不知秘密，改不了申请）；管理员机核对。 */
+  mac?: string;
+  /** 管理员机用同一秘密对批准结果做的 HMAC（复核 A-03：成员机据此认律所根与证书，不再首次信任）。 */
+  admin_mac?: string | null;
 }
 
 export interface TenantRecord {
   tid: string;
   /** 律所显示名（开通时运营填写；缺省为租户编号）。 */
   name?: string;
-  /** 开通须出示创始开通码（第 13 批：关闭“知道租户编号即可抢先登记律所根”）；旧状态缺省 false。 */
+  /** 开通须出示创始开通码（第 13 批：关闭“知道租户编号即可抢先登记律所根”）；新建缺省 true（复核 A-05），第 13 批之前保存的状态读回为 false。 */
   activation_required?: boolean;
   activations: Map<string, ActivationRecord>;
   joinRequests: Map<string, JoinRequestRecord>;
@@ -388,6 +396,24 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const y = Buffer.from(b, "hex");
     return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
   };
+  /** 码索引（复核 A-07）：MAC → 码记录；启动读回与发码时维护，兑换不再线性扫描全部记录。 */
+  const codeIndex = new Map<string, { tid: string; id: string }>();
+  const rebuildCodeIndex = () => {
+    codeIndex.clear();
+    for (const t of tenants.values()) for (const r of t.activations.values()) codeIndex.set(r.code_mac, { tid: t.tid, id: r.id });
+  };
+  rebuildCodeIndex();
+  const REREDEEM_WINDOW_MS = 10 * 60_000;
+  /** 可兑换：未作废、未消费、未过期；已兑换的只在首次兑换后 10 分钟内且尚未提交入组申请（成员）/尚未登记根（创始）时可再兑换（复核 A-04）。 */
+  const redeemable = (t: TenantRecord, r: ActivationRecord): boolean => {
+    if (Date.parse(r.expires_at) <= now()) return false;
+    if (r.status === "open") return true;
+    if (r.status !== "claimed") return false;
+    const first = Date.parse(r.first_claimed_at ?? r.claimed_at ?? "");
+    if (!Number.isFinite(first) || now() - first > REREDEEM_WINDOW_MS) return false;
+    if (r.kind === "founder") return !t.root_public_key_pem;
+    return ![...t.joinRequests.values()].some((x) => x.activation_id === r.id);
+  };
   const activationLive = (r: ActivationRecord): boolean => (r.status === "open" || r.status === "claimed") && Date.parse(r.expires_at) > now();
   /** 认领凭据核对（成员入组、创始登记根公钥）：码已兑换、未消费、未作废；认领后 7 天内有效。 */
   const claimOf = (t: TenantRecord, activationId: unknown, secret: unknown, kind: ActivationRecord["kind"]): ActivationRecord => {
@@ -427,19 +453,39 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       join_attempts: 0,
     };
     t.activations.set(rec.id, rec);
+    codeIndex.set(rec.code_mac, { tid: t.tid, id: rec.id });
     return { code, activation_id: rec.id, expires_at: rec.expires_at };
   };
-  /** 兑换限速：同一来源每分钟 10 次、全平台每分钟 600 次（码有 100 bit，限速只为压低噪声与撑大流水）。 */
+  /**
+   * 兑换限速：同一来源每分钟 10 次（码有 100 bit，限速只为压低噪声与撑大流水）。不设全平台桶（复核 A-07：否则任何人都能让全平台的激活 429）；
+   * 计数按分钟滚动淘汰（不整表清空）。部署须在本进程或四层终止 TLS——七层代理后来源全是代理地址，限速失效（docs/部署-云端生产入口.md）。
+   */
   const redeemWindow = new Map<string, { minute: number; n: number }>();
   const redeemAllowed = (source: string): boolean => {
     const minute = Math.floor(now() / 60_000);
-    if (redeemWindow.size > 50_000) redeemWindow.clear();
-    for (const [k, lim] of [[`src:${source}`, 10], ["all", 600]] as const) {
-      const w = redeemWindow.get(k);
-      if (!w || w.minute !== minute) redeemWindow.set(k, { minute, n: 1 });
-      else if (++w.n > lim) return false;
+    if (redeemWindow.size > 50_000) for (const [k, w] of redeemWindow) if (w.minute !== minute) redeemWindow.delete(k);
+    const w = redeemWindow.get(source);
+    if (!w || w.minute !== minute) {
+      redeemWindow.set(source, { minute, n: 1 });
+      return true;
     }
-    return true;
+    return ++w.n <= 10;
+  };
+  /** 未认证入口按租户编号查：未知租户与凭据不对回同一错误（复核 A-11：不可借此枚举租户）。 */
+  const claimTenant = (tid: unknown): TenantRecord => {
+    const t = tenants.get(String(tid ?? ""));
+    if (!t) throw new CpError(403, "claim_invalid", "开通凭据无效或已过期，请重新输入开通码或邀请码");
+    return t;
+  };
+  /** 两把公钥按算法解析（复核 A-11）：签名公钥 Ed25519 或 P-256，加密公钥 X25519。 */
+  const keysOk = (signPub: string, encPub: string): boolean => {
+    try {
+      const sk = createPublicKey(signPub);
+      const ek = createPublicKey(encPub);
+      return (sk.asymmetricKeyType === "ed25519" || sk.asymmetricKeyType === "ec") && ek.asymmetricKeyType === "x25519";
+    } catch {
+      return false;
+    }
   };
 
   /**
@@ -465,7 +511,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
 
   const rawOps: ControlPlaneOps = {
-    createTenant({ tid, edition, seats, subscriptionDays = 365, points = 0, name, activationRequired = false }) {
+    createTenant({ tid, edition, seats, subscriptionDays = 365, points = 0, name, activationRequired = true }) {
       // 租户编号字符集（复核 S9A-01：不合规的编号写进审计流水会让重启验链失败）
       if (typeof tid !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(tid)) throw new CpError(400, "tid_invalid", "租户编号只能用字母、数字、下划线与连字符");
       if (tenants.has(tid)) throw new Error(`租户已存在：${tid}`);
@@ -914,21 +960,20 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const b = parseJson(raw);
       const code = normalizeActivationCode(b.code);
       const mac = code ? activationCodeMac(codePepper, code) : null;
-      let hit: { t: TenantRecord; r: ActivationRecord } | null = null;
-      if (mac) {
-        for (const t of tenants.values()) {
-          for (const r of t.activations.values()) if (sameHex(r.code_mac, mac)) hit = { t, r };
-          if (hit) break;
-        }
-      }
-      // 码不对、过期、作废、已用：同一句话（不区分，防枚举）
-      if (!hit || !activationLive(hit.r)) throw new CpError(400, "code_invalid", "开通码不正确或已失效，请向发码人重新获取");
-      const { t, r } = hit;
+      const ix = mac ? codeIndex.get(mac) : undefined;
+      const ht = ix ? tenants.get(ix.tid) : undefined;
+      const hr = ix && ht ? ht.activations.get(ix.id) : undefined;
+      // 码不对、过期、作废、已用、超出再兑换窗口：同一句话（不区分，防枚举）
+      if (!ht || !hr || !sameHex(hr.code_mac, mac!) || !redeemable(ht, hr)) throw new CpError(400, "code_invalid", "开通码不正确或已失效，请向发码人重新获取");
+      const t = ht;
+      const r = hr;
       if (!licenseValid(t)) throw new CpError(402, "license_expired", "律所订阅已到期，请联系中软开通");
       const secret = newClaimSecret();
       r.status = "claimed";
       r.claim_hash = claimSecretHash(secret);
       r.claimed_at = iso();
+      r.first_claimed_at = r.first_claimed_at ?? r.claimed_at;
+      r.redeem_count = (r.redeem_count ?? 0) + 1;
       auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "claimant", id: r.id }, action: "activation.redeem", target: r.id }, written: false });
       const body: ActivationRedeemResult = {
         ok: true,
@@ -945,13 +990,17 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // ─── 成员入组申请（凭认领凭据 + 设备签名私钥的持有证明；只含公钥） ───
     if (method === "POST" && p === "/v1/join-requests") {
       const b = parseJson(raw);
-      const t = tenantOf(String(b.tid ?? ""));
+      const t = claimTenant(b.tid);
       const rec = claimOf(t, b.activation_id, b.claim_secret, "member");
       const deviceId = String(b.device_id ?? "");
       const signPub = String(b.sign_pub ?? "");
       const encPub = String(b.enc_pub ?? "");
       if (!DEVICE_ID_PATTERN.test(deviceId)) throw new CpError(400, "device_id_invalid", "设备编号不合法");
-      if (signPub.length > 4096 || encPub.length > 4096 || !/BEGIN PUBLIC KEY/.test(signPub) || !/BEGIN PUBLIC KEY/.test(encPub)) throw new CpError(400, "public_key_invalid", "公钥格式不对");
+      if (signPub.length > 4096 || encPub.length > 4096 || !keysOk(signPub, encPub)) throw new CpError(400, "public_key_invalid", "公钥格式不对");
+      // 设备编号只能是 dev_<律所>_<成员>（复核 A-02）；申请须带成员机用邀请码本机秘密段做的 HMAC（复核 A-01，管理员机核对）
+      if (deviceId !== expectedJoinDeviceId(firmSlugOf(t.tid) ?? "", rec.member.slug)) throw new CpError(400, "device_id_invalid", "设备编号不合法");
+      const jmac = String(b.mac ?? "");
+      if (!/^[0-9a-f]{64}$/.test(jmac)) throw new CpError(400, "join_mac_missing", "邀请码不完整（缺少本机核对段），请向管理员核对邀请码");
       if (t.devices.has(deviceId) || t.preRevoked.has(deviceId)) throw new CpError(409, "device_exists", "该设备编号已登记或已吊销");
       const proofOk = verifyBytes(signPub, joinProofBytes({ tid: t.tid, activationId: rec.id, deviceId, signPublicKeyPem: signPub, encPublicKeyPem: encPub }), String(b.proof ?? ""));
       if (!proofOk) throw new CpError(400, "join_proof_invalid", "入组证明无效");
@@ -978,6 +1027,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         decided_by: null,
         cert: null,
         firm_bundle: null,
+        mac: jmac,
+        admin_mac: null,
       };
       t.joinRequests.set(jr.id, jr);
       auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "claimant", id: rec.id }, action: "join.request", target: jr.id }, written: false });
@@ -987,14 +1038,29 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const rjf = /^\/v1\/join-requests\/([A-Za-z0-9_-]{1,64})\/fetch$/.exec(p);
     if (method === "POST" && rjf) {
       const b = parseJson(raw);
-      const t = tenantOf(String(b.tid ?? ""));
+      const t = claimTenant(b.tid);
       const jr = t.joinRequests.get(rjf[1]!);
-      if (!jr) throw new CpError(404, "join_unknown", "没有这个申请");
-      const rec = t.activations.get(jr.activation_id);
-      if (!rec || !rec.claim_hash || typeof b.claim_secret !== "string" || !sameHex(rec.claim_hash, claimSecretHash(b.claim_secret))) throw new CpError(403, "claim_invalid", "开通凭据无效");
+      const rec = jr ? t.activations.get(jr.activation_id) : undefined;
+      if (!jr || !rec || !rec.claim_hash || typeof b.claim_secret !== "string" || !sameHex(rec.claim_hash, claimSecretHash(b.claim_secret))) throw new CpError(403, "claim_invalid", "开通凭据无效或已过期");
+      // 批准 30 天后不再凭认领凭据取回（复核 A-11）
+      if (jr.status === "approved" && Date.parse(jr.decided_at ?? "") + 30 * DAY_MS < now()) throw new CpError(403, "claim_invalid", "开通凭据无效或已过期");
       const expired = jr.status === "pending" && Date.parse(jr.created_at) + 7 * DAY_MS < now();
-      const status = expired ? "rejected" : jr.status;
-      return sendRaw(res, 200, { ok: true, status, ...(status === "approved" ? { cert: jr.cert, root_public_key_pem: t.root_public_key_pem, firm_bundle: jr.firm_bundle } : {}) });
+      const status = expired || jr.status === "withdrawn" ? "rejected" : jr.status;
+      return sendRaw(res, 200, { ok: true, status, ...(status === "approved" ? { cert: jr.cert, root_public_key_pem: t.root_public_key_pem, firm_bundle: jr.firm_bundle, admin_mac: jr.admin_mac } : {}) });
+    }
+    // 成员撤回自己的待批准申请（复核 A-09：“重新输入”时让控制面也放下，不必等 7 天）
+    const rjw = /^\/v1\/join-requests\/([A-Za-z0-9_-]{1,64})\/withdraw$/.exec(p);
+    if (method === "POST" && rjw) {
+      const b = parseJson(raw);
+      const t = claimTenant(b.tid);
+      const jr = t.joinRequests.get(rjw[1]!);
+      const rec = jr ? t.activations.get(jr.activation_id) : undefined;
+      if (!jr || !rec || !rec.claim_hash || typeof b.claim_secret !== "string" || !sameHex(rec.claim_hash, claimSecretHash(b.claim_secret))) throw new CpError(403, "claim_invalid", "开通凭据无效或已过期");
+      if (jr.status === "pending") {
+        Object.assign(jr, { status: "withdrawn", decided_at: iso(), decided_by: "member" });
+        auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "claimant", id: rec.id }, action: "join.withdraw", target: jr.id }, written: false });
+      }
+      return send(res, 200, { ok: true, status: jr.status });
     }
 
     // ─── 网关与检索服务订阅（服务间凭据） ───
@@ -1256,7 +1322,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       requireAdmin(dev);
       const list = [...t.joinRequests.values()]
         .filter((x) => x.status === "pending" && Date.parse(x.created_at) + 7 * DAY_MS > now())
-        .map((x) => ({ id: x.id, activation_id: x.activation_id, member_slug: x.member_slug, role: x.role, device_id: x.device_id, sign_pub: x.sign_pub, enc_pub: x.enc_pub, created_at: x.created_at }));
+        .map((x) => ({ id: x.id, activation_id: x.activation_id, member_slug: x.member_slug, role: x.role, device_id: x.device_id, sign_pub: x.sign_pub, enc_pub: x.enc_pub, created_at: x.created_at, mac: x.mac ?? null }));
       return sendRaw(res, 200, { ok: true, join_requests: list });
     }
     const rja = /^\/v1\/join-requests\/([A-Za-z0-9_-]{1,64})\/(approve|reject)$/.exec(p);
@@ -1290,7 +1356,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           typeof fb.sig === "string" &&
           verifyBytes(t.root_public_key_pem, firmBundleBytes(t.tid, t.root_public_key_pem, fb.recovery_public_key_pem), fb.sig);
         if (!fbOk) throw new CpError(400, "firm_bundle_invalid", "律所公钥包缺失或签名无效");
-        Object.assign(jr, { status: "approved", decided_at: iso(), decided_by: dev.cert.deviceId, cert, firm_bundle: { recovery_public_key_pem: fb!.recovery_public_key_pem, sig: fb!.sig } });
+        const amac = String(b.admin_mac ?? "");
+        if (!/^[0-9a-f]{64}$/.test(amac)) throw new CpError(400, "admin_mac_missing", "缺少批准核对段");
+        Object.assign(jr, { status: "approved", decided_at: iso(), decided_by: dev.cert.deviceId, cert, firm_bundle: { recovery_public_key_pem: fb!.recovery_public_key_pem, sig: fb!.sig }, admin_mac: amac });
         rec.status = "consumed";
         rec.consumed_at = iso();
         rec.member.name = null;
