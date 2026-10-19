@@ -11,6 +11,7 @@ import { MattersPage } from "./pages/Matters.tsx";
 import { MatterPage } from "./pages/Matter.tsx";
 import { RunView } from "./pages/RunView.tsx";
 import { ReviewPage } from "./pages/Review.tsx";
+import { bootRetryDelay } from "./lib/boot-gate.ts";
 import { DeliverablesPage } from "./pages/Deliverables.tsx";
 import { MethodsPage } from "./pages/Methods.tsx";
 import { BoardsPage } from "./pages/Boards.tsx";
@@ -85,7 +86,7 @@ export function App() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
   // 首次启动激活（第 13 批）：这台电脑还没有激活时整个应用只显示激活页
   const [boot, setBoot] = useState<{ onboarding: any } | null>(null);
-  // 取不到状态时不当作“已激活”（复核 B13-K01）：首次启动内核较慢，按退避重试；约一分半仍取不到才给出说明与“重试”
+  // 取不到状态时不当作“已激活”（复核 B13-K01）：首次启动内核较慢，按退避重试（lib/boot-gate.ts）；约两分钟仍取不到才给出说明与“重试”
   const [bootFailed, setBootFailed] = useState(false);
   const loadBoot = () => {
     setBootFailed(false);
@@ -96,8 +97,9 @@ export function App() {
         .then((st: any) => setBoot({ onboarding: st?.onboarding ?? null }))
         .catch(() => {
           attempt += 1;
-          if (attempt >= 20) return setBootFailed(true);
-          setTimeout(tryOnce, Math.min(8_000, 500 * 2 ** Math.min(attempt, 4)));
+          const delay = bootRetryDelay(attempt);
+          if (delay === null) return setBootFailed(true);
+          setTimeout(tryOnce, delay);
         });
     tryOnce();
   };

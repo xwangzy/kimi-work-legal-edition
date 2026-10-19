@@ -60,3 +60,12 @@ test("并发请求合并为一次", async () => {
   assert.equal(b, "restarted");
   assert.equal(h.log.filter((x) => x === "start").length, 1);
 });
+
+test("激活门禁取不到内核状态：退避重试、第 20 次失败才放弃（不当作已激活；复核 B13-K01）", async () => {
+  const { bootRetryDelay, BOOT_MAX_ATTEMPTS } = await import("../src/lib/boot-gate.ts");
+  assert.deepEqual([1, 2, 3, 4, 5, 19].map(bootRetryDelay), [1000, 2000, 4000, 8000, 8000, 8000]);
+  assert.equal(bootRetryDelay(BOOT_MAX_ATTEMPTS), null);
+  let total = 0;
+  for (let i = 1; i < BOOT_MAX_ATTEMPTS; i++) total += bootRetryDelay(i)!;
+  assert.ok(total >= 120_000, `放弃前至少等两分钟（首次启动内核较慢），实际 ${total} 毫秒`);
+});
