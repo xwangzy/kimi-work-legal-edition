@@ -28,7 +28,7 @@ import { TaskQueue } from "./queue.ts";
 import { createApi } from "./api/index.ts";
 import { resolveIdentity, taskTokenKey, type Identity } from "./identity.ts";
 import { applyStagedJoin, applyStagedRecovery, configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
-import { activationInfo, dropActivationClaim, membersApi, OnboardingService, ONBOARDING_METHODS, readActivationClaim, removePendingWorkspace, writeActivationFile } from "./services/onboarding.ts";
+import { activationInfo, dropActivationClaim, membersApi, OnboardingService, ONBOARDING_METHODS, readActivationClaim, removePendingWorkspace, writeActivationFile, writeJoinFailure } from "./services/onboarding.ts";
 import { FirmGovernance, localDevPolicyBody, firmPolicyInputOf, type FirmPolicyInput } from "./control-plane/governance.ts";
 import { ControlPlaneClient } from "./control-plane/client.ts";
 import { parsePublicKeyMap } from "@zr-legal/firm-trust";
@@ -137,12 +137,19 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   configureSecretSealing(keysDir, config.dbKey);
   // 成员设备（第 13 批）：律所身份来自管理员批准时送达的证书与律所公钥包，本机不生成律所根
   if (config.activation?.kind === "member") {
-    const sj = applyStagedJoin(db, keysDir, identity, { firmSlug: config.firmSlug, userSlug: config.userSlug });
+    let sj: { applied: boolean; rejected?: string };
+    try {
+      sj = applyStagedJoin(db, keysDir, identity, { firmSlug: config.firmSlug, userSlug: config.userSlug });
+    } catch {
+      // 暂存文件损坏或解封不了（复核 B13-K02）：按“被拒”处理，不让未捕获异常把内核卡在每次启动都失败
+      sj = { applied: false, rejected: "unreadable" };
+    }
     if (sj.rejected) slog.event("KERNEL_JOIN_STAGED_REJECTED", {});
     if (!db.get(`SELECT 1 AS x FROM firm_identity WHERE tenant_id = ?`, [identity.tenantId])) {
       // 入组没有生效（复核 A-09 / B13-K02）：清掉暂存与激活记录，下次启动回到待激活页面重新输入邀请码（主进程会自动重启内核）
       rmSync(join(keysDir, "join-approved.json"), { force: true });
       rmSync(activationFilePath(config.dataRoot), { force: true });
+      writeJoinFailure(config.dataRoot, sj.rejected ?? "missing");
       db.close();
       throw new DomainError("conflict", "入组没有完成：管理员批准的结果核对不通过。请重新打开应用，用邀请码再申请一次", 409);
     }

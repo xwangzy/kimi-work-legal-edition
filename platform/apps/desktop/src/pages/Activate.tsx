@@ -7,7 +7,18 @@
 import { useEffect, useRef, useState } from "react";
 import { api, onboarding, recovery } from "../api.ts";
 
-type Status = { mode: "unactivated" | "member_pending"; firm?: { name: string }; member?: { name: string | null; role: string }; check_code?: string; requested_at?: string; restarting?: boolean; legacy_workspaces?: string[] };
+type Status = {
+  mode: "unactivated" | "member_pending";
+  firm?: { name: string };
+  member?: { name: string | null; role: string };
+  check_code?: string;
+  requested_at?: string;
+  restarting?: boolean;
+  legacy_workspaces?: string[];
+  last_failure?: { code: string; at: string };
+};
+
+const JOIN_FAILED_TEXT = "入组没有完成：管理员批准的结果在这台电脑上核对不通过。请向管理员重新要一个邀请码，再输入一次；若反复出现，请联系所内 IT。";
 
 const ROLE_LABEL: Record<string, string> = { admin: "管理员", partner: "合伙人", lawyer: "律师", assistant: "助理" };
 
@@ -18,8 +29,11 @@ function groupCode(raw: string): string {
   return s.replace(/(.{4})(?=.)/g, "$1-");
 }
 
-/** 激活完成后内核按新身份重启：等它就绪再刷新页面。 */
-async function waitForActivated(): Promise<void> {
+/**
+ * 激活完成后内核按新身份重启：等它就绪再刷新页面。复核 B13-K02：入组在本机没有生效（内核回到待激活并报 last_failure）
+ * 或 2 分钟还没打开，都告诉律师怎么办（onStuck），不再一直显示“正在打开…”。
+ */
+async function waitForActivated(onStuck: (text: string) => void): Promise<void> {
   for (let i = 0; i < 120; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     try {
@@ -29,16 +43,21 @@ async function waitForActivated(): Promise<void> {
         window.location.reload();
         return;
       }
+      if (st?.onboarding?.last_failure && !st.onboarding.restarting) {
+        onStuck(JOIN_FAILED_TEXT);
+        return;
+      }
     } catch {
       // 重启期间内核暂不可用：继续等
     }
   }
+  onStuck("还没有打开成功。请关闭并重新打开应用；若仍如此，请联系所内 IT。");
 }
 
 export function ActivatePage({ initial, onRefresh }: { initial: Status; onRefresh: () => void }) {
   const [status, setStatus] = useState<Status>(initial);
   if (status.mode === "member_pending") return <WaitApproval status={status} onReset={async () => setStatus((await onboarding.reset()) as Status)} onRefresh={onRefresh} />;
-  return <EnterCode onPending={(s) => setStatus(s)} legacy={status.legacy_workspaces ?? []} />;
+  return <EnterCode onPending={(s) => setStatus(s)} legacy={status.legacy_workspaces ?? []} failed={status.last_failure ? JOIN_FAILED_TEXT : ""} />;
 }
 
 function Frame({ children }: { children: React.ReactNode }) {
@@ -60,10 +79,15 @@ function Frame({ children }: { children: React.ReactNode }) {
   );
 }
 
-function EnterCode({ onPending, legacy }: { onPending: (s: Status) => void; legacy: string[] }) {
+function EnterCode({ onPending, legacy, failed }: { onPending: (s: Status) => void; legacy: string[]; failed: string }) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState(failed);
+  const stuck = (t: string) => {
+    setDone(null);
+    setRestoring(false);
+    setErr(t);
+  };
   const [done, setDone] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
   const ready = [20, 36].includes(code.replace(/-/g, "").length);
@@ -75,7 +99,7 @@ function EnterCode({ onPending, legacy }: { onPending: (s: Status) => void; lega
       const r = await onboarding.redeem(code);
       if (r.kind === "founder") {
         setDone(`已为「${r.firm?.name ?? "本所"}」激活，正在打开…`);
-        void waitForActivated();
+        void waitForActivated(stuck);
       } else {
         onPending({ mode: "member_pending", firm: r.firm, member: r.member, check_code: r.check_code, requested_at: new Date().toISOString() });
       }
@@ -93,7 +117,7 @@ function EnterCode({ onPending, legacy }: { onPending: (s: Status) => void; lega
       </Frame>
     );
   }
-  if (restoring) return <RestoreFromBackup onBack={() => setRestoring(false)} onDone={setDone} />;
+  if (restoring) return <RestoreFromBackup onBack={() => setRestoring(false)} onDone={setDone} onStuck={stuck} />;
   return (
     <Frame>
       <h1 className="activate-title">欢迎使用</h1>
@@ -141,7 +165,7 @@ function EnterCode({ onPending, legacy }: { onPending: (s: Status) => void; lega
       </p>
       {legacy.length > 0 && (
         <p className="muted activate-foot" role="note">
-          这台电脑上还有旧版本（试用版）留下的数据（{legacy.join("、")}）。激活后不会自动转入，也不会删除；如需保留或清理，请联系所内 IT。
+          这台电脑上还有以前留下的数据（{legacy.join("、")}，例如旧版本试用或没有完成的入组）。激活后不会自动转入，也不会删除；如需保留或清理，请联系所内 IT。
         </p>
       )}
     </Frame>
@@ -149,7 +173,7 @@ function EnterCode({ onPending, legacy }: { onPending: (s: Status) => void; lega
 }
 
 /** 从备份恢复（第 14 批）：恢复包 + 备份位置 + 恢复码 → 与原来那台电脑相同的身份与数据。 */
-function RestoreFromBackup({ onBack, onDone }: { onBack: () => void; onDone: (s: string) => void }) {
+function RestoreFromBackup({ onBack, onDone, onStuck }: { onBack: () => void; onDone: (s: string) => void; onStuck: (t: string) => void }) {
   const dialogs = recovery.hasDialogs();
   const [pkg, setPkg] = useState<{ handle?: string; name: string; path?: string } | null>(null);
   const [folder, setFolder] = useState<{ handle?: string; name: string; path?: string } | null>(null);
@@ -167,7 +191,7 @@ function RestoreFromBackup({ onBack, onDone }: { onBack: () => void; onDone: (s:
         code,
       });
       onDone(`已恢复「${r.firm?.name ?? "本所"}」的数据（备份于 ${String(r.backup_at ?? "").slice(0, 10)}），正在打开…`);
-      void waitForActivated();
+      void waitForActivated(onStuck);
     } catch (e) {
       setErr((e as Error).message || "恢复没有完成");
     } finally {
@@ -234,7 +258,11 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
       if (!alive.current) return;
       if (r.last_check === "approved") {
         setNote("管理员已批准，正在打开…");
-        void waitForActivated();
+        void waitForActivated((t) => {
+          if (!alive.current) return;
+          setRejected(true);
+          setNote(t);
+        });
       } else if (r.last_check === "rejected") {
         setRejected(true);
         setNote(r.message ?? "管理员没有批准这次申请");

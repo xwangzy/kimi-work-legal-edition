@@ -187,7 +187,8 @@ export class OnboardingService {
         requested_at: p.created_at,
       };
     }
-    return { mode: "unactivated", restarting: this.restarting, legacy_workspaces: this.legacyWorkspaces() };
+    const failed = readJoinFailure(this.root);
+    return { mode: "unactivated", restarting: this.restarting, legacy_workspaces: this.legacyWorkspaces(), ...(failed ? { last_failure: failed } : {}) };
   }
 
   /**
@@ -219,6 +220,7 @@ export class OnboardingService {
     if (this.pending()) throw new DomainError("conflict", "这台电脑正在等待管理员批准；如要改用别的邀请码，请先点“重新输入”", 409);
     const input = splitInvitationInput(p.code);
     if (!input) throw new DomainError("validation", "开通码是 20 位、邀请码是 36 位字母与数字（可带连字符），请核对后重新输入", 400);
+    rmSync(join(this.root, JOIN_FAILED_FILE), { force: true });
     const r = await cpPost(this.d.relay, "/v1/activation/redeem", { code: input.code });
     if (!r.ok) {
       slog.event("KERNEL_ONBOARDING_REDEEM_FAILED", {});
@@ -365,6 +367,7 @@ export class OnboardingService {
       rmSync(pendingPath, { force: true });
     }
     rmSync(join(this.root, ONBOARDING_FILE), { force: true });
+    rmSync(join(this.root, JOIN_FAILED_FILE), { force: true });
     this.stop();
     return this.status();
   }
@@ -574,6 +577,25 @@ export const membersApi = (d: MembersDeps) => {
 
 /** 待激活模式下开放的内核方法（其余一律 not_activated）。第 14 批加“从备份恢复”。 */
 export const ONBOARDING_METHODS: ReadonlySet<string> = new Set(["kernel.status", "onboarding.status", "onboarding.redeem", "onboarding.check", "onboarding.reset", "onboarding.restore", "device.env_probe"]);
+
+const JOIN_FAILED_FILE = "onboarding-failed.json";
+
+/**
+ * 成员入组在本机没有生效（复核 B13-K02）：记下原因代码（不含路径与身份），回到待激活后激活页据此告诉律师“要重新申请”，
+ * 而不是一直显示“正在打开…”。重新兑换或“重新输入”即删除。
+ */
+export function writeJoinFailure(dataRoot: string, code: string): void {
+  writeJsonAtomic(join(dataRoot, JOIN_FAILED_FILE), { v: 1, code: /^[a-z_]{1,40}$/.test(code) ? code : "unknown", at: new Date().toISOString() });
+}
+
+function readJoinFailure(dataRoot: string): { code: string; at: string } | null {
+  try {
+    const f = JSON.parse(readFileSync(join(dataRoot, JOIN_FAILED_FILE), "utf8")) as { v?: number; code?: unknown; at?: unknown };
+    return f.v === 1 && typeof f.code === "string" && /^[a-z_]{1,40}$/.test(f.code) ? { code: f.code, at: String(f.at ?? "") } : null;
+  } catch {
+    return null;
+  }
+}
 
 /** 写本机激活记录（从备份恢复时用；与兑换开通码同一原子写）。 */
 export function writeActivationFile(dataRoot: string, a: ActivationFile): void {
