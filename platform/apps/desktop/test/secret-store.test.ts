@@ -85,3 +85,23 @@ test("崩溃转储：只删除超过保留天数的文件", () => {
   assert.equal(existsSync(oldF), false);
   assert.equal(existsSync(newF), true);
 });
+
+test("采用恢复的主密钥（第 14 批第二轮复核 R2A-05/06）：格式不符、不可用、写入失败都返回失败码且原文件不动；成功时原文件复制留档、新文件就位", async () => {
+  const { adoptDbKey } = require("../electron/secret-store.cjs") as { adoptDbKey: (o: { safeStorage: any; file: string; key: string; now?: number }) => Promise<{ ok: boolean; code?: string }> };
+  const d = dir();
+  const file = join(d, "ledger-key");
+  writeFileSync(file, "SEALED:old-key");
+  const newKey = Buffer.alloc(32, 7).toString("base64");
+  assert.deepEqual(await adoptDbKey({ safeStorage: fakeSafeStorage(), file, key: "not-a-key" }), { ok: false, code: "key_invalid" });
+  assert.deepEqual(await adoptDbKey({ safeStorage: fakeSafeStorage({ available: false }), file, key: newKey }), { ok: false, code: "unavailable" });
+  const broken = { ...fakeSafeStorage(), encryptStringAsync: async () => {
+    throw new Error("DPAPI 写入失败");
+  } };
+  assert.deepEqual(await adoptDbKey({ safeStorage: broken, file, key: newKey }), { ok: false, code: "write_failed" });
+  assert.equal(readFileSync(file, "utf8"), "SEALED:old-key", "失败时原主密钥文件不动（不会出现文件不在、下次启动静默生成新主密钥）");
+  assert.equal(existsSync(`${file}.next`), false);
+  assert.deepEqual(await adoptDbKey({ safeStorage: fakeSafeStorage(), file, key: newKey, now: 1234 }), { ok: true });
+  assert.equal(readFileSync(file, "utf8"), `SEALED:${newKey}`);
+  assert.equal(readFileSync(`${file}.prev-1234`, "utf8"), "SEALED:old-key", "原文件留档");
+  assert.equal(existsSync(`${file}.next`), false);
+});

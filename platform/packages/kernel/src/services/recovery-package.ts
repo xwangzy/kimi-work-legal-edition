@@ -30,6 +30,8 @@ export interface RecoveryContent {
   root_public_key_pem: string;
   firm_root: { publicKeyPem: string; privateKeyPem: string; recoveryCode: string } | null;
   recovery_shares: { file: string; content: unknown }[];
+  /** 生成时本机最近一次成功备份（复核 R2A-12：恢复时备份比它旧即要求确认）；没有备份为 null。旧包没有这个字段。 */
+  backup?: { seq: number; at: string | null } | null;
   created_at: string;
 }
 
@@ -62,6 +64,7 @@ export function collectRecoveryContent(o: {
   dbKey: string | undefined;
   device: { deviceId: string; cert: DeviceCertificate };
   firm: { rootPublicKeyPem: string; recoveryPublicKeyPem: string };
+  backup?: { seq: number; at: string | null } | null;
 }): RecoveryContent {
   const keys = readSecretFile<DeviceKeys>(join(o.keysDir, "device.json"));
   if (!keys.signPrivateKeyPem?.includes("PRIVATE KEY") || !keys.encPrivateKeyPem?.includes("PRIVATE KEY")) throw new DomainError("internal", "读不到本机设备私钥，没有生成恢复包", 500);
@@ -86,6 +89,7 @@ export function collectRecoveryContent(o: {
     root_public_key_pem: o.firm.rootPublicKeyPem,
     firm_root: firmRoot ? { publicKeyPem: firmRoot.publicKeyPem, privateKeyPem: firmRoot.privateKeyPem, recoveryCode: firmRoot.recoveryCode } : null,
     recovery_shares: shares,
+    backup: o.backup ?? null,
     created_at: new Date().toISOString(),
   };
 }

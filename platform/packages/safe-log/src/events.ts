@@ -49,7 +49,7 @@ export const EVENTS = {
   /** 恢复与备份（第 14 批）：只记文件数，不记路径与内容。 */
   KERNEL_RESTORED_FROM_BACKUP: { level: "info", fields: { files: "int" } },
   KERNEL_BACKUP_DONE: { level: "info", fields: { files: "int", copied: "int" } },
-  KERNEL_BACKUP_FAILED: { level: "warn", fields: {} },
+  KERNEL_BACKUP_FAILED: { level: "warn", fields: { ...ERR } },
   KERNEL_EXIT_MODE_LIFTED: { level: "info", fields: { resumed: "int" } },
   KERNEL_RUNS_RECOVERED: { level: "warn", fields: { count: "int", parked: "bool" } },
   KERNEL_CHECKPOINT_FAILED: { level: "warn", fields: { ...ERR } },
@@ -88,7 +88,7 @@ export const EVENTS = {
   MAIN_KERNEL_IDENTITY_RESTART_FAILED: { level: "error", fields: {} },
   /** 从备份恢复时采用旧电脑的数据库主密钥（第 14 批）：只记结果。 */
   MAIN_ADOPT_KEY_DONE: { level: "info", fields: {} },
-  MAIN_ADOPT_KEY_REJECTED: { level: "warn", fields: {} },
+  MAIN_ADOPT_KEY_REJECTED: { level: "warn", fields: { reason: ["not_onboarding", "key_invalid", "unavailable", "write_failed"] } },
   MAIN_NOTIFY_FAILED: { level: "warn", fields: { ...ERR } },
   MAIN_CRASH_DIR_FAILED: { level: "warn", fields: { ...ERR } },
   MAIN_RUNTIME_PROBLEM: { level: "error", fields: { count: "int", stage: ["startup", "background"] } },

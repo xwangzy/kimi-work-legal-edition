@@ -146,7 +146,8 @@ async function main(): Promise<void> {
     throw e;
   }
 
-  kernel.onBroadcast((msg) => port.postMessage({ type: "kernel.event", ...msg }));
+  // 采用主密钥的消息单独写出（复核 R2A-07）：不经通用信封，免得将来改信封写法时它以 kernel.event 身份进入转发界面的白名单
+  kernel.onBroadcast((msg) => port.postMessage(msg.type === "kernel.adopt_master_key" ? { type: "kernel.adopt_master_key", key: msg.key } : { type: "kernel.event", ...msg }));
   kernelRef = kernel;
   if (closing) {
     await kernel.close().catch(() => {});

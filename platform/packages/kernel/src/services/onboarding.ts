@@ -142,6 +142,7 @@ export class OnboardingService {
   private timer: NodeJS.Timeout | null = null;
   private checking: Promise<unknown> | null = null;
   private restarting = false;
+  private busy = false;
 
   constructor(d: OnboardingDeps) {
     this.d = d;
@@ -218,7 +219,25 @@ export class OnboardingService {
     setTimeout(() => this.d.requestRestart(), 300).unref();
   }
 
+  /**
+   * 兑换、入组生效与从备份恢复互斥（复核 R2A-07）：进行中或已请求重启时，另一次一律 409——
+   * 否则两次快速的恢复会交错写激活记录与主密钥。返回“结束”函数（失败时调用以释放）。
+   */
+  exclusive(): () => void {
+    if (this.restarting || this.busy) throw new DomainError("conflict", "上一步还在进行（或正在重启）：请稍候再试", 409);
+    this.busy = true;
+    return () => {
+      this.busy = false;
+    };
+  }
+
+  /** 已请求主进程重启（恢复完成后由调用方标记）。 */
+  markRestarting(): void {
+    this.restarting = true;
+  }
+
   async redeem(p: { code?: unknown }): Promise<Record<string, unknown>> {
+    if (this.restarting) throw new DomainError("conflict", "正在完成激活，请稍候", 409);
     if (this.pending()) throw new DomainError("conflict", "这台电脑正在等待管理员批准；如要改用别的邀请码，请先点“重新输入”", 409);
     const input = splitInvitationInput(p.code);
     if (!input) throw new DomainError("validation", "开通码是 20 位、邀请码是 36 位字母与数字（可带连字符），请核对后重新输入", 400);
@@ -581,6 +600,34 @@ export const membersApi = (d: MembersDeps) => {
 export const ONBOARDING_METHODS: ReadonlySet<string> = new Set(["kernel.status", "onboarding.status", "onboarding.redeem", "onboarding.check", "onboarding.reset", "onboarding.restore", "device.env_probe"]);
 
 const JOIN_FAILED_FILE = "onboarding-failed.json";
+const PENDING_ACTIVATION_FILE = "activation.pending.json";
+
+/**
+ * 从备份恢复的“待生效激活记录”（复核 R2A-15）：恢复写好工作区后先写 activation.pending.json，主进程采用旧主密钥并重启后，
+ * 内核在启动时（`reconcilePendingRestore`）用当前主密钥试开恢复出的账本——打得开才改名为 activation.json；打不开（主进程没能采用）
+ * 就删掉恢复出的工作区与待生效记录、记原因代码，回到待激活，律师可以再恢复一次。
+ */
+export function writePendingActivation(dataRoot: string, a: ActivationFile): void {
+  writeJsonAtomic(join(dataRoot, PENDING_ACTIVATION_FILE), a);
+}
+
+export function reconcilePendingRestore(dataRoot: string, canOpenLedger: (dbFile: string) => boolean, readActivation: (a: unknown) => ActivationFile | null): "promoted" | "rolled_back" | "none" {
+  const pendingPath = join(dataRoot, PENDING_ACTIVATION_FILE);
+  if (!existsSync(pendingPath)) return "none";
+  const a = readActivation(readJson<unknown>(pendingPath));
+  const ws = a ? join(dataRoot, a.firm_slug) : null;
+  const restored = ws !== null && existsSync(join(ws, ".restored-from-backup.json"));
+  if (a && ws && restored && !existsSync(activationFilePath(dataRoot)) && canOpenLedger(join(ws, "ledger.db"))) {
+    renameSync(pendingPath, activationFilePath(dataRoot));
+    rmSync(join(dataRoot, JOIN_FAILED_FILE), { force: true });
+    return "promoted";
+  }
+  // 只删恢复出来的工作区（带恢复标记的），别的目录不动
+  if (ws && restored) rmSync(ws, { recursive: true, force: true });
+  rmSync(pendingPath, { force: true });
+  writeJoinFailure(dataRoot, "restore_incomplete");
+  return "rolled_back";
+}
 
 /**
  * 成员入组在本机没有生效（复核 B13-K02）：记下原因代码（不含路径与身份），回到待激活后激活页据此告诉律师“要重新申请”，

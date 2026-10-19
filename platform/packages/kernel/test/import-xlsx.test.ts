@@ -51,6 +51,31 @@ test("复核 B13-O02：调整过顺序的工作簿按 rels 对上表名；日期
   assert.equal(r.dates_raw, undefined);
 });
 
+test("复核 R2B-28：带 [Red]、[DBNum2]、货币符号的金额格式原样保留；时间、累计时长与 1904 日期系统按类别转换", () => {
+  const fmts = [
+    [164, "#,##0.00_);[Red](#,##0.00)"],
+    [165, "[DBNum2][$-804]General"],
+    [166, '"¥"#,##0.00;[Red]"¥"\\-#,##0.00'],
+    [167, "h:mm"],
+    [168, "[h]:mm:ss"],
+    [169, 'yyyy"年"m"月"d"日"'],
+  ] as const;
+  const styles = `<styleSheet ${NS}><numFmts count="${fmts.length}">${fmts.map(([id, c]) => `<numFmt numFmtId="${id}" formatCode="${c.replace(/&/g, "&amp;").replace(/"/g, "&quot;")}"/>`).join("")}</numFmts><cellXfs count="${fmts.length + 1}"><xf numFmtId="0"/>${fmts.map(([id]) => `<xf numFmtId="${id}" applyNumberFormat="1"/>`).join("")}</cellXfs></styleSheet>`;
+  const row = (vals: number[]) => `<row r="1">${vals.map((v, i) => `<c r="${String.fromCharCode(65 + i)}1" s="${i + 1}"><v>${v}</v></c>`).join("")}</row>`;
+  const book = (date1904: boolean) =>
+    writeRawZip([
+      { name: "[Content_Types].xml", data: W(`<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>`) },
+      { name: "xl/workbook.xml", data: W(`<workbook ${NS}>${date1904 ? '<workbookPr date1904="1"/>' : ""}<sheets><sheet name="付款" sheetId="1" r:id="rId1"/></sheets></workbook>`) },
+      { name: "xl/_rels/workbook.xml.rels", data: W(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/></Relationships>`) },
+      { name: "xl/styles.xml", data: W(styles) },
+      { name: "xl/worksheets/sheet1.xml", data: W(`<worksheet ${NS}><sheetData>${row([500000, 1234.56, 88000, 0.5, 1.25, date1904 ? 43538 : 45000])}</sheetData></worksheet>`) },
+    ]);
+  const r = xlsxToText(book(false));
+  assert.equal(r.text, "【付款】\n500000\t1234.56\t88000\t12:00\t30:00\t2023-03-15", "金额不被改写成日期；时间与累计时长按时分输出");
+  assert.equal(r.dates_raw, undefined);
+  assert.match(xlsxToText(book(true)).text, /\t2023-03-15$/, "1904 日期系统的工作簿日期不差 4 年");
+});
+
 test("复核 B13-O01：中央目录声明的解压大小与实际不符（压缩炸弹）即拒收，导入回 422、内核不崩", { timeout: 120_000 }, async () => {
   const big = createXlsx([{ name: "表", rows: [["x".repeat(10)]] }]);
   // 构造一个“声明 1000 字节、实际解压出 4 MB”的条目：改写本地头与中央目录里的解压后大小

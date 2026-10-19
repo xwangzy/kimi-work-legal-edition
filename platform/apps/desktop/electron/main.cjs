@@ -319,15 +319,13 @@ async function startKernel() {
       const key = msg.key;
       msg.key = null;
       if (!kernelOnboarding) {
-        slog.event("MAIN_ADOPT_KEY_REJECTED", {});
+        slog.event("MAIN_ADOPT_KEY_REJECTED", { reason: "not_onboarding" });
         return;
       }
       void adoptDbKey({ safeStorage, file: path.join(app.getPath("userData"), "ledger-key"), key }).then((r) => {
-        if (!r.ok) {
-          slog.event("MAIN_ADOPT_KEY_REJECTED", {});
-          return;
-        }
-        slog.event("MAIN_ADOPT_KEY_DONE", {});
+        if (!r.ok) slog.event("MAIN_ADOPT_KEY_REJECTED", { reason: r.code });
+        else slog.event("MAIN_ADOPT_KEY_DONE", {});
+        // 成功与否都按新身份重启（复核 R2A-15）：内核启动时用当前主密钥试开恢复出的账本——没采用成功就回滚恢复、回到待激活并告诉律师
         void restartKernelForIdentity();
       });
       return;
@@ -602,7 +600,8 @@ ipcMain.handle("kwl:update-install", async (e) => {
   if (!fromAppMainFrame(e) || !updateState.handle || !updateState.handle.enabled || updateState.last.state !== "ready") return { ok: false };
   // 界面在有任务时不显示重启按钮；主进程再核一次（界面状态可能过时）——有进行中的任务即不安装，退出时再自动安装
   const recent = await kernelCall("runs.list_recent", { limit: 20 });
-  if (recent && Array.isArray(recent.runs) && recent.runs.some((r) => LIVE_RUN_STATUSES.has(r.status))) return { ok: false, reason: "busy" };
+  // 内核没有应答（正在备份、正在启动）按“忙”处理，不放行安装（复核 R2B-04：原先超时返回 null 即绕过了这项检查）
+  if (!recent || !Array.isArray(recent.runs) || recent.runs.some((r) => LIVE_RUN_STATUSES.has(r.status))) return { ok: false, reason: "busy" };
   restart.quitting = true;
   appExiting = true;
   // 先有序关闭内核及其子进程、再拉起安装程序（复核 B4-R11）：electron-updater 先拉起安装程序、后退出应用，

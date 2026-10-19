@@ -594,7 +594,7 @@
       "id": 20,
       "data": "密钥材料（DB 主密钥、设备签名/加密私钥、律所根私钥、事项密钥、工作区密钥）",
       "memory": "主进程（DB 主密钥交付后置 null）、内核、kap-host（区密钥只在内存）",
-      "disk": "userData/ledger-key（dpapi）；keys/*.json（kwl_sealed）；matter_keys、工作区密钥包裹（sqlcipher 内再以设备公钥包裹）；设备恢复包（scrypt）",
+      "disk": "userData/ledger-key（dpapi）；userData/ledger-key.prev-<时刻>（从备份恢复采用旧电脑主密钥时把本机原主密钥的 DPAPI 包裹复制留档，不自动删除：本机以前留下的数据要用它才能打开；第 14 批复核 R2A-05/R2B-15）；keys/*.json（kwl_sealed）；matter_keys、工作区密钥包裹（sqlcipher 内再以设备公钥包裹）；设备恢复包（scrypt）",
       "local_channels": "kernel.init 一次性消息；区密钥随每次运行经 IPC 下发",
       "network": "否",
       "logs_dumps": "内核/主进程转储可能含密钥（3 天）",
@@ -779,7 +779,7 @@
         "services/control-plane/test/onboarding.test.ts",
         "services/control-plane/test/onboarding-hardening.test.ts"
       ],
-      "residual": "创始设备仍持律所根（D-41 未变，根私钥离线分持见 C6）；成员首次取回证书时律所根公钥按首次信任采用（界面给出律所核对码供与管理员核对）；入组申请与批准经邀请码本机秘密段（80 bit，只在管理员电脑与成员手里）做双向 HMAC，控制面替换申请公钥或证书会被双方识破；邀请码连同秘密段一起泄露给第三方时，第三方可抢先入组（管理员核对入组核对码可发现）；activation.json 明文含本人与律所显示名",
+      "residual": "创始设备仍持律所根（D-41 未变，根私钥离线分持见 C6）；律所核对码作为辅助的人工核对；入组申请与批准经邀请码本机秘密段（80 bit，只在管理员电脑与成员手里）做双向 HMAC，控制面替换申请公钥或证书会被双方识破；邀请码连同秘密段一起泄露给第三方时，第三方可抢先入组（管理员核对入组核对码可发现）；activation.json 明文含本人与律所显示名",
       "owner": "研发-内核"
     },
     {
@@ -874,9 +874,9 @@
       "id": 28,
       "data": "整机恢复包与本机备份（第 14 批）：恢复包（激活信息、数据库主密钥、设备私钥与证书、创始设备的律所根与 5 份恢复份额）；备份位置里的账本快照、块、工作区、封装的密钥文件与签名清单；备份状态",
       "memory": "内核（生成与打开恢复包时的明文只在调用期间；恢复码不落盘、只返回一次）",
-      "disk": "恢复包：律师在系统对话框里选定的位置（不得在数据根内），AES-256-GCM（密钥 = HKDF(恢复码秘密)）；备份：律师选定的备份位置 <位置>/KimiWorkLegal-backup/<律所>/<设备编号>/，内容全是密文（SQLCipher 页、按事项密钥加密的块、KWE1 工作区、按主密钥封装的密钥文件）+ 设备签名的清单；<工作区>/backup.json 只有备份位置、序号、时刻与错误代码",
+      "disk": "恢复包：律师在系统对话框里选定的位置（不得在数据根内），AES-256-GCM（密钥 = HKDF(恢复码秘密)），外层明文只有律所显示名、设备编号、恢复码集编号与创建时刻；备份（格式 v2）：<位置>/KimiWorkLegal-backup/<不透明编号>/（编号由主密钥派生，看不出律所与设备），objects/<sha256> 按内容寻址存放（SQLCipher 页、按事项密钥加密的块、KWE1 工作区、按主密钥封装的密钥文件；另有少量明文：随包公开内容与 .pipe-salt 等非秘密配置），manifest.kwlb 为加密清单（文件路径、大小、摘要以主密钥派生的密钥 AES-256-GCM 加密）+ 设备签名；<工作区>/backup.json（备份位置、序号、时刻、错误代码）与 backup-index.json（相对路径、大小、修改时间、摘要）只在本机、不进备份；恢复时暂存在 <数据根>/.restore-<随机>/，成功后改名为工作区，失败即删除；<数据根>/activation.pending.json（待生效的激活记录，主密钥采用成功后改名为 activation.json，否则连同恢复出的工作区一并删除）",
       "local_channels": "内核 → 主进程（只在待激活模式下恢复时：采用旧主密钥的请求，主进程用本机 DPAPI 重新包裹并留档原文件，不转发界面）",
-      "network": "不出网（备份位置若是同步盘或网络盘，由律师选择；内容为密文）",
+      "network": "不出网；备份位置若是同步盘或网络盘（律师选择），网盘服务商能看到对象数量、大小与写入时间，看不到文件名、目录结构与内容",
       "logs_dumps": "运行记录只记事件码与文件数（KERNEL_BACKUP_*、KERNEL_RESTORED_FROM_BACKUP、MAIN_ADOPT_KEY_*）；审计记生成与试解恢复包、配置备份位置",
       "form": [
         "kwl_sealed",
@@ -900,9 +900,10 @@
         }
       ],
       "tests": [
-        "packages/kernel/test/backup-restore.test.ts"
+        "packages/kernel/test/backup-restore.test.ts",
+        "apps/desktop/test/secret-store.test.ts"
       ],
-      "residual": "恢复包 + 恢复码 = 本机全部能力（两样须分开保管，界面写明）；恢复后与旧电脑同一设备身份（设备编号确定性，D-42），旧电脑若被偷，其数据仍受该 Windows 账户 DPAPI 保护；备份里已删除事项的块在下一次备份时删除，之前的备份副本因事项密钥已删而不可读",
+      "residual": "恢复包 + 恢复码 = 这台电脑的全部能力；创始设备的恢复包另含律所根与全部 5 份恢复份额（可签发管理员证书、解开全所托管的事项密钥——界面单独提示，C6 落地前的过渡）；恢复包不能作废、数据库主密钥暂不能轮换（再生成一份不会让旧的失效，界面写明；轮换在 G1，复核 R2A-01）；吊销设备后不再备份、不再生成恢复包，但已生成的恢复包与已有备份不受影响；恢复后与旧电脑同一设备身份（设备编号确定性，D-42）：控制面不能单独吊销旧电脑，吊销即同时停用恢复出的新电脑——旧电脑丢失或被偷时须由管理员重新办理入组（界面提示，复核 R2A-14）；删除事项后立即再备份一次，备份位置上的旧账本快照与该事项的块随之删除；备份位置若保留旧版本（网盘版本历史、NAS 快照），旧版本连同恢复包与恢复码仍可解开已删事项，须按律所保留期清理（删除回执写明）；备份只保留最近若干代，更早的副本由备份位置自身的版本历史决定",
       "owner": "研发-内核"
     }
   ],
@@ -921,13 +922,15 @@
     },
     "apps/desktop/electron/secret-store.cjs": {
       "apis": [
+        "copyFileSync",
         "renameSync",
         "writeFileSync"
       ],
       "rows": [
-        20
+        20,
+        28
       ],
-      "reason": "数据库主密钥 DPAPI 包裹文件（原子写，解封失败不覆盖）"
+      "reason": "数据库主密钥 DPAPI 包裹文件（原子写，解封失败不覆盖）；采用恢复的主密钥：新包裹先写 .next、原文件复制留档为 .prev-<时刻>、再原子替换"
     },
     "apps/desktop/electron/smoke-io.cjs": {
       "apis": [
@@ -1043,7 +1046,8 @@
       "rows": [
         7,
         13,
-        17
+        17,
+        28
       ],
       "reason": "导出直写：成果（还原真名）、诊断包与结案归档写到律师在主进程系统对话框里选定的位置（同目录临时文件 → fsync → 改名；不得写入数据根）"
     },
@@ -1114,20 +1118,23 @@
         "writeFileSync"
       ],
       "rows": [
-        24
+        24,
+        28
       ],
-      "reason": "本机激活记录 activation.json 与成员待批准状态 onboarding.json（只有编号、显示名与状态；临时文件改名原子写）；秘密一律经 devices.ts 的封装写入"
+      "reason": "本机激活记录 activation.json、待生效激活记录 activation.pending.json、入组/恢复失败原因 onboarding-failed.json 与成员待批准状态 onboarding.json（只有编号、显示名、状态与原因代码；临时文件改名原子写）；秘密一律经 devices.ts 的封装写入"
     },
     "packages/kernel/src/services/backup.ts": {
       "apis": [
-        "copyFileSync",
+        "copyFile",
+        "rename",
         "renameSync",
+        "writeFile",
         "writeFileSync"
       ],
       "rows": [
         28
       ],
-      "reason": "备份位置里的账本快照、增量文件与签名清单（全是密文）；从备份恢复时复制回数据根；备份状态文件（只有位置、序号、时刻、错误代码）"
+      "reason": "备份位置里的内容寻址对象（全是密文）与加密签名清单；从备份恢复时写进数据根下的暂存目录再整体改名；本机备份状态与摘要索引（只有位置、序号、时刻、错误代码与相对路径摘要）"
     }
   },
   "renderer_storage": {

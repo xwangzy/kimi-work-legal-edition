@@ -217,16 +217,63 @@ export function renderXlsxHtml(xlsx: Buffer): { html: string; sheets: number; tr
   return { html: `${style}${out.join("\n")}${truncated ? `<p><em>（预览只显示每个表前 ${PREVIEW_LIMITS.maxRows} 行，请下载查看全部）</em></p>` : ""}`, sheets: out.length, truncated };
 }
 
-/** Excel 内置的日期类数字格式编号（14–22、45–47）。 */
-const DATE_FMT_IDS = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47]);
+type FmtKind = "date" | "datetime" | "time" | "elapsed" | null;
 
-/** 序列号 → ISO 日期（1900 日期系统；带时间则加 HH:MM）。 */
-function excelDate(serial: number): string | null {
-  if (!Number.isFinite(serial) || serial < 1 || serial > 2_958_465) return null;
-  const ms = Math.round((serial - 25569) * 86400_000);
-  const d = new Date(ms);
-  const iso = d.toISOString();
-  return serial % 1 === 0 ? iso.slice(0, 10) : `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
+/**
+ * Excel 内置数字格式编号的类别：14–17 日期、22 日期时间、18–21 与 45、47 时间、46 累计时长（[h]:mm:ss）；
+ * 27–36、50–58 是中日韩区域的内置日期格式（如 yyyy"年"m"月"d"日"）。其余（含 0–13 数值、货币、百分比）都不是日期。
+ */
+function builtinKind(id: number): FmtKind {
+  if (id >= 14 && id <= 17) return "date";
+  if (id === 22) return "datetime";
+  if ((id >= 18 && id <= 21) || id === 45 || id === 47) return "time";
+  if (id === 46) return "elapsed";
+  if ((id >= 27 && id <= 36) || (id >= 50 && id <= 58)) return "date";
+  return null;
+}
+
+/**
+ * 自定义格式的类别（复核 R2B-28：原判定把 [Red] 里的 d、[DBNum2] 里的 D 当成日期占位，金额被改写成日期）：
+ * 只看第一段（正数段）；先去掉引号里的文字、反斜杠转义、方括号段（颜色、区域、DBNum；[h]/[m]/[s] 记为累计时长）、_x 与 *x 填充；
+ * 含数字占位 0 # ? 的一律不是日期；y、d 是日期，m 与 h、s 相邻时是分钟、否则是月份。
+ */
+export function customFmtKind(code: string): FmtKind {
+  let elapsed = false;
+  const s = (code.split(";")[0] ?? "")
+    .replace(/"[^"]*"/g, "")
+    .replace(/\\./g, "")
+    .replace(/\[[^\]]*\]/g, (m) => {
+      const e = /^\[(h+|m+|s+)\]$/i.test(m);
+      if (e) elapsed = true;
+      return e ? "h" : "";
+    })
+    .replace(/[_*]./g, "");
+  if (/[0#?]/.test(s)) return null;
+  const withoutMinutes = s.replace(/h+[^a-z]*m+|m+[^a-z]*s+/gi, "hh");
+  const date = /[yd]/i.test(s) || /m/i.test(withoutMinutes);
+  const time = /[hs]/i.test(s) || /AM\/PM|A\/P|上午\/下午/i.test(s);
+  if (elapsed) return "elapsed";
+  if (date && time) return "datetime";
+  if (date) return "date";
+  if (time) return "time";
+  return null;
+}
+
+/** 序列号 → ISO 日期 / 时间（1900 日期系统；1904 日期系统的工作簿由调用方先加 1462 天）。 */
+function excelDate(serial: number, kind: Exclude<FmtKind, null>): string | null {
+  if (!Number.isFinite(serial) || serial < 0 || serial > 2_958_465) return null;
+  const hms = (frac: number, total = false) => {
+    const sec = Math.round(frac * 86400);
+    const h = total ? Math.floor(sec / 3600) : Math.floor(sec / 3600) % 24;
+    const mm = Math.floor((sec % 3600) / 60);
+    const ss = sec % 60;
+    return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}${ss ? `:${String(ss).padStart(2, "0")}` : ""}`;
+  };
+  if (kind === "elapsed") return hms(serial, true);
+  if (kind === "time") return hms(serial % 1);
+  if (serial < 1) return null;
+  const iso = new Date(Math.round((serial - 25569) * 86400_000)).toISOString();
+  return kind === "datetime" && serial % 1 !== 0 ? `${iso.slice(0, 10)} ${iso.slice(11, 16)}` : iso.slice(0, 10);
 }
 
 /**
@@ -241,15 +288,15 @@ export function xlsxToText(xlsx: Buffer): { text: string; sheets: number; trunca
   const shared: string[] = [];
   const sst = files.get("xl/sharedStrings.xml")?.toString("utf8");
   if (sst) for (const si of sst.matchAll(/<si>([\s\S]*?)<\/si>/g)) shared.push([...si[1]!.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((t) => unescapeXml(t[1]!)).join(""));
-  // 日期样式：cellXfs 的第 i 个 xf 的 numFmtId；自定义格式含 y/m/d 也算日期
+  // 日期样式：cellXfs 的第 i 个 xf 的 numFmtId → 类别（内置编号查表；自定义格式按 customFmtKind 判定，自定义优先）
   const styles = files.get("xl/styles.xml")?.toString("utf8") ?? "";
-  const customDate = new Set<number>();
-  for (const m of styles.matchAll(/<numFmt\b[^>]*numFmtId="(\d+)"[^>]*formatCode="([^"]*)"/g)) if (/[yd]|m(?![^\[]*\])/i.test(unescapeXml(m[2]!).replace(/"[^"]*"/g, "")) && !/^\[?h/i.test(m[2]!)) customDate.add(Number(m[1]));
-  const xfDate: boolean[] = [];
+  const customKind = new Map<number, FmtKind>();
+  for (const m of styles.matchAll(/<numFmt\b[^>]*numFmtId="(\d+)"[^>]*formatCode="([^"]*)"/g)) customKind.set(Number(m[1]), customFmtKind(unescapeXml(m[2]!)));
+  const xfKind: FmtKind[] = [];
   const cellXfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(styles)?.[1] ?? "";
   for (const m of cellXfs.matchAll(/<xf\b([^>]*)/g)) {
     const id = Number(/numFmtId="(\d+)"/.exec(m[1]!)?.[1] ?? 0);
-    xfDate.push(DATE_FMT_IDS.has(id) || customDate.has(id));
+    xfKind.push(customKind.has(id) ? customKind.get(id)! : builtinKind(id));
   }
   // 表名 → 表文件（经 rels 对应）
   const rels = files.get("xl/_rels/workbook.xml.rels")?.toString("utf8") ?? "";
@@ -260,6 +307,8 @@ export function xlsxToText(xlsx: Buffer): { text: string; sheets: number; trunca
     if (id && t) target.set(id, t.startsWith("/") ? t.slice(1) : `xl/${t.replace(/^\.\//, "")}`);
   }
   const wb = files.get("xl/workbook.xml")?.toString("utf8") ?? "";
+  // 1904 日期系统（Mac 旧工作簿）：序列号比 1900 系统小 1462 天
+  const date1904 = /<workbookPr\b[^>]*\bdate1904="(1|true)"/.test(wb);
   const sheets = [...wb.matchAll(/<sheet\b([^>]*)\/?>/g)].map((m, i) => {
     const name = unescapeXml(/\bname="([^"]*)"/.exec(m[1]!)?.[1] ?? `表${i + 1}`);
     const rid = /\br:id="([^"]*)"/.exec(m[1]!)?.[1];
@@ -302,8 +351,9 @@ export function xlsxToText(xlsx: Buffer): { text: string; sheets: number; trunca
         else {
           v = unescapeXml(/<v>([\s\S]*?)<\/v>/.exec(inner)?.[1] ?? "");
           const si = /\bs="(\d+)"/.exec(attrs)?.[1];
-          if (v && (t === undefined || t === "n") && si !== undefined && xfDate[Number(si)]) {
-            const d = excelDate(Number(v));
+          const kind = si !== undefined ? (xfKind[Number(si)] ?? null) : null;
+          if (v && (t === undefined || t === "n") && kind) {
+            const d = excelDate(Number(v) + (date1904 && kind !== "time" && kind !== "elapsed" ? 1462 : 0), kind);
             if (d) v = d;
             else datesRaw = true;
           }

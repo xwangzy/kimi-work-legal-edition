@@ -19,6 +19,9 @@ type Status = {
 };
 
 const JOIN_FAILED_TEXT = "入组没有完成：管理员批准的结果在这台电脑上核对不通过。请向管理员重新要一个邀请码，再输入一次；若反复出现，请联系所内 IT。";
+const RESTORE_FAILED_TEXT = "从备份恢复没有完成（这台电脑没能保存恢复出来的密钥，或恢复中途被打断）。恢复出来的内容已清掉，备份本身没有变：请再恢复一次；若仍不行，请联系所内 IT。";
+/** 内核回到待激活时报的原因代码 → 律师看得懂的一句话。 */
+const failureText = (code: string | undefined) => (code === "restore_incomplete" ? RESTORE_FAILED_TEXT : JOIN_FAILED_TEXT);
 
 const ROLE_LABEL: Record<string, string> = { admin: "管理员", partner: "合伙人", lawyer: "律师", assistant: "助理" };
 
@@ -44,7 +47,7 @@ async function waitForActivated(onStuck: (text: string) => void): Promise<void> 
         return;
       }
       if (st?.onboarding?.last_failure && !st.onboarding.restarting) {
-        onStuck(JOIN_FAILED_TEXT);
+        onStuck(failureText(st.onboarding.last_failure.code));
         return;
       }
     } catch {
@@ -57,7 +60,7 @@ async function waitForActivated(onStuck: (text: string) => void): Promise<void> 
 export function ActivatePage({ initial, onRefresh }: { initial: Status; onRefresh: () => void }) {
   const [status, setStatus] = useState<Status>(initial);
   if (status.mode === "member_pending") return <WaitApproval status={status} onReset={async () => setStatus((await onboarding.reset()) as Status)} onRefresh={onRefresh} />;
-  return <EnterCode onPending={(s) => setStatus(s)} legacy={status.legacy_workspaces ?? []} failed={status.last_failure ? JOIN_FAILED_TEXT : ""} />;
+  return <EnterCode onPending={(s) => setStatus(s)} legacy={status.legacy_workspaces ?? []} failed={status.last_failure ? failureText(status.last_failure.code) : ""} />;
 }
 
 function Frame({ children }: { children: React.ReactNode }) {
@@ -180,6 +183,9 @@ function RestoreFromBackup({ onBack, onDone, onStuck }: { onBack: () => void; on
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // 需要律师确认的两种情形（复核 R2A-05、R2A-12）：本机有以前留下的数据；备份比恢复包还旧
+  const [needAck, setNeedAck] = useState<{ legacy?: boolean; older?: boolean }>({});
+  const [ack, setAck] = useState<{ legacy: boolean; older: boolean }>({ legacy: false, older: false });
   const submit = async () => {
     if (!pkg || !folder || busy) return;
     setBusy(true);
@@ -189,10 +195,15 @@ function RestoreFromBackup({ onBack, onDone, onStuck }: { onBack: () => void; on
         ...(pkg.handle ? { file_handle: pkg.handle } : { file: pkg.path }),
         ...(folder.handle ? { folder_handle: folder.handle } : { dir: folder.path }),
         code,
+        ...(ack.legacy ? { legacy_ack: true } : {}),
+        ...(ack.older ? { older_ack: true } : {}),
       });
       onDone(`已恢复「${r.firm?.name ?? "本所"}」的数据（备份于 ${String(r.backup_at ?? "").slice(0, 10)}），正在打开…`);
       void waitForActivated(onStuck);
     } catch (e) {
+      const why = ((e as { detail?: { code?: string } }).detail ?? {}).code;
+      if (why === "legacy_present") setNeedAck((n) => ({ ...n, legacy: true }));
+      if (why === "backup_older") setNeedAck((n) => ({ ...n, older: true }));
       setErr((e as Error).message || "恢复没有完成");
     } finally {
       setBusy(false);
@@ -232,8 +243,18 @@ function RestoreFromBackup({ onBack, onDone, onStuck }: { onBack: () => void; on
           {err}
         </p>
       )}
+      {needAck.legacy && (
+        <label className="activate-foot">
+          <input type="checkbox" checked={ack.legacy} onChange={(e) => setAck((a) => ({ ...a, legacy: e.target.checked }))} /> 我知道以前留下的数据恢复后在本应用里打不开（不会删除）
+        </label>
+      )}
+      {needAck.older && (
+        <label className="activate-foot">
+          <input type="checkbox" checked={ack.older} onChange={(e) => setAck((a) => ({ ...a, older: e.target.checked }))} /> 仍用这份备份恢复（之后的内容会丢失）
+        </label>
+      )}
       <div className="activate-actions">
-        <button className="btn-primary" disabled={!pkg || !folder || code.trim().length < 10 || busy} onClick={() => void submit()}>
+        <button className="btn-primary" disabled={!pkg || !folder || code.trim().length < 10 || busy || (needAck.legacy && !ack.legacy) || (needAck.older && !ack.older)} onClick={() => void submit()}>
           {busy ? "正在核对与恢复…" : "恢复"}
         </button>
         <button className="btn-ghost" onClick={onBack}>

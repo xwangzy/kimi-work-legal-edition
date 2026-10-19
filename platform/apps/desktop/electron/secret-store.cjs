@@ -98,7 +98,9 @@ function purgeOldDumps(dir, maxAgeDays = 3, now = Date.now()) {
 
 /**
  * 采用从恢复包取回的数据库主密钥（第 14 批“从备份恢复”）：用本机 safeStorage 重新包裹后替换 ledger-key；
- * 原包裹文件改名留档（ledger-key.prev-<时刻>），绝不删除——调用方只在内核处于待激活模式（本机还没有任何案件数据）时调用。
+ * 原包裹文件复制留档（ledger-key.prev-<时刻>，绝不删除；本机若有以前留下的数据，用它才能打开——驻留面第 20 类登记）。
+ * 调用方只在内核处于待激活模式时调用。复核 R2A-06：先把新包裹写成独立文件、再复制留档、最后原子替换——任何一步中断，
+ * ledger-key 都还在（要么是旧的，要么是新的），不会出现“文件不在、下次启动静默生成新主密钥”。所有异常都转成 {ok:false}。
  */
 async function adoptDbKey({ safeStorage, file, key, now = Date.now() }) {
   if (typeof key !== "string" || !/^[A-Za-z0-9+/]{43}=$/.test(key) || Buffer.from(key, "base64").length !== 32) return { ok: false, code: "key_invalid" };
@@ -109,11 +111,23 @@ async function adoptDbKey({ safeStorage, file, key, now = Date.now() }) {
     available = false;
   }
   if (!available) return { ok: false, code: "unavailable" };
-  const sealed = await safeStorage.encryptStringAsync(key);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  if (fs.existsSync(file)) fs.renameSync(file, `${file}.prev-${now}`);
-  atomicWrite(file, sealed);
-  return { ok: true };
+  const next = `${file}.next`;
+  try {
+    const sealed = await safeStorage.encryptStringAsync(key);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.rmSync(next, { force: true });
+    fs.writeFileSync(next, sealed, { mode: 0o600, flag: "wx", flush: true });
+    if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.prev-${now}`, fs.constants.COPYFILE_EXCL);
+    fs.renameSync(next, file);
+    return { ok: true };
+  } catch {
+    try {
+      fs.rmSync(next, { force: true });
+    } catch {
+      // 留着也无害：下次采用前会先删
+    }
+    return { ok: false, code: "write_failed" };
+  }
 }
 
 module.exports = {

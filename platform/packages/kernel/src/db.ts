@@ -100,8 +100,11 @@ export class KernelDb {
    * 把 WAL 里的页写回主库并截断 WAL（删除后调用；复核 C-A17）：WAL 保留着删除前的页面映像，checkpoint 之前磁盘上仍有旧内容；
    * 主库空闲页由 secure_delete 清零。
    */
-  checkpointTruncate(): void {
-    this.db.pragma("wal_checkpoint(TRUNCATE)");
+  /** WAL 检查点（TRUNCATE）；返回是否完整完成（busy = 0 且 WAL 里的页全部合并——复核 R2B-14：备份前据此判断快照是否一致）。 */
+  checkpointTruncate(): boolean {
+    const r = this.db.pragma("wal_checkpoint(TRUNCATE)") as { busy: number; log: number; checkpointed: number }[];
+    const x = r[0];
+    return !x || (x.busy === 0 && x.log === x.checkpointed);
   }
 
   close(): void {

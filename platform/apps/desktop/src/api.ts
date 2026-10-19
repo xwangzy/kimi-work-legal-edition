@@ -937,7 +937,7 @@ export const onboarding = {
   check: () => invoke<any>("onboarding.check"),
   reset: () => invoke<any>("onboarding.reset"),
   /** 从备份恢复（第 14 批）：安装包形态传句柄；开发形态（无对话框）传路径。 */
-  restore: (o: { file_handle?: string; folder_handle?: string; file?: string; dir?: string; code: string }) => invoke<any>("onboarding.restore", o),
+  restore: (o: { file_handle?: string; folder_handle?: string; file?: string; dir?: string; code: string; legacy_ack?: boolean; older_ack?: boolean }) => invoke<any>("onboarding.restore", o),
 };
 
 /** 恢复包与备份（第 14 批）：安装包形态经系统对话框拿句柄；开发形态（浏览器）没有对话框，界面让开发者填路径。 */

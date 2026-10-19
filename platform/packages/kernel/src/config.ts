@@ -85,7 +85,16 @@ export function readActivationFile(dataRoot: string): ActivationFile | null {
   const p = activationFilePath(dataRoot);
   if (!existsSync(p)) return null;
   try {
-    const a = JSON.parse(readFileSync(p, "utf8")) as Partial<ActivationFile>;
+    return validActivation(JSON.parse(readFileSync(p, "utf8")));
+  } catch {
+    return null;
+  }
+}
+
+/** 激活记录格式核对（activation.json 与从备份恢复时的待生效记录共用）。 */
+export function validActivation(raw: unknown): ActivationFile | null {
+  try {
+    const a = (raw ?? {}) as Partial<ActivationFile>;
     const okSlug = (x: unknown) => typeof x === "string" && SLUG_PATTERN.test(x) && x !== PENDING_WORKSPACE_SLUG;
     if (
       a.v !== 1 ||
