@@ -14,6 +14,7 @@ const { adoptDbKey, loadOrCreateDbKey, purgeOldDumps } = require("./secret-store
 const { kernelChildEnv, loadReleaseConfig } = require("./release-config.cjs");
 const { initUpdater } = require("./updater.cjs");
 const { parseSmokeArg, writeSmokeResult, SmokeFailure } = require("./smoke-io.cjs");
+const { createIdentityRestart } = require("./identity-restart.cjs");
 const { createHandleStore, classifySaveTarget, resolveFileParams, acceptDroppedPath, insideAppData, safeSuggestedName } = require("./file-dialogs.cjs");
 
 const DEV_SERVER = process.env.ZR_DESKTOP_DEV_URL ?? "http://127.0.0.1:5173";
@@ -603,6 +604,7 @@ ipcMain.handle("kwl:update-install", async (e) => {
   const recent = await kernelCall("runs.list_recent", { limit: 20 });
   if (recent && Array.isArray(recent.runs) && recent.runs.some((r) => LIVE_RUN_STATUSES.has(r.status))) return { ok: false, reason: "busy" };
   restart.quitting = true;
+  appExiting = true;
   // 先有序关闭内核及其子进程、再拉起安装程序（复核 B4-R11）：electron-updater 先拉起安装程序、后退出应用，
   // 安装程序约 1–3 秒后就强制结束应用，来不及等内核按序关闭子进程，残留的随包 node.exe 会占用安装目录
   await stopKernel();
@@ -878,22 +880,34 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   restart.quitting = true;
+  appExiting = true;
   if (restart.timer) clearTimeout(restart.timer);
 });
 
-/** 开通或入组完成后按新身份重启内核：先有序关闭（闸门、宿主等子进程一并退出），再按 activation.json 拉起。 */
+/**
+ * 开通或入组完成后按新身份重启内核：先有序关闭（闸门、宿主等子进程一并退出），再按 activation.json 拉起。
+ * 编排在 identity-restart.cjs（复核 B13-K03）：应用退出或安装更新期间不再拉起；拉起失败广播 stopped。
+ */
 let identityRestarting = false;
+/** 应用正在退出或安装更新（只增不减；before-quit、will-quit、kwl:update-install 置位）。 */
+let appExiting = false;
 /** 内核就绪消息报告的待激活模式（第 14 批：只有这时才接受“采用恢复的主密钥”）。 */
 let kernelOnboarding = false;
+const identityRestart = createIdentityRestart({
+  stop: () => stopKernel(),
+  start: async () => {
+    restart.quitting = false;
+    await startKernel();
+  },
+  exiting: () => appExiting,
+  broadcast: (p) => broadcastStatus(p),
+  onError: () => slog.event("MAIN_KERNEL_IDENTITY_RESTART_FAILED", {}),
+});
 async function restartKernelForIdentity() {
   if (identityRestarting) return;
   identityRestarting = true;
   try {
-    broadcastStatus({ status: "restarting", message: "正在完成激活…" });
-    await stopKernel();
-    restart.quitting = false;
-    await startKernel();
-    broadcastStatus({ status: "running" });
+    await identityRestart.restart();
   } finally {
     identityRestarting = false;
   }
@@ -934,6 +948,7 @@ function stopKernel(timeoutMs = 8_000) {
 let quitAfterKernel = false;
 app.on("will-quit", (event) => {
   restart.quitting = true;
+  appExiting = true;
   if (!kernel || quitAfterKernel) return;
   event.preventDefault();
   quitAfterKernel = true;

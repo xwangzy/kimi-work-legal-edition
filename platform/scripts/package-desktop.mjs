@@ -165,9 +165,20 @@ log(`暂存完成 → ${stage}`);
 // 只有 release.json 明确写 "test_build": true（CI 与内部测试）才放行
 {
   const rel = existsSync(join(desktop, "electron/release.json")) ? JSON.parse(readFileSync(join(desktop, "electron/release.json"), "utf8")) : null;
-  const pubDev = JSON.parse(readFileSync(join(stage, "electron/lawdb/content-signing.pub.json"), "utf8")).dev === true;
+  // 按公钥指纹识别开发公钥（复核 A-14/B13-O05）：随包公钥与 release.json 的每把 content_keys 都核，标记只作辅助
+  const { createHash, createPublicKey } = await import("node:crypto");
+  const keyFp = (pem) => createHash("sha256").update(createPublicKey(pem).export({ type: "spki", format: "der" })).digest("hex");
+  const devFps = new Set();
+  const fpFile = join(stage, "electron/lawdb/content-dev-fingerprints.json");
+  if (existsSync(fpFile)) for (const f of JSON.parse(readFileSync(fpFile, "utf8"))) devFps.add(f);
+  const localDev = join(root, "content/keys/content-signing-dev.pub.json");
+  if (existsSync(localDev)) devFps.add(keyFp(JSON.parse(readFileSync(localDev, "utf8")).publicKeyPem));
+  const bundledPub = JSON.parse(readFileSync(join(stage, "electron/lawdb/content-signing.pub.json"), "utf8"));
+  const pubDev = bundledPub.dev === true || devFps.has(keyFp(bundledPub.publicKeyPem));
+  const devExtra = (Array.isArray(rel?.content_keys) ? rel.content_keys : []).flatMap((k, i) => (typeof k === "string" && devFps.has(keyFp(k)) ? [i + 1] : []));
   if (rel && rel.test_build !== true) {
     if (pubDev) throw new Error("正式发布（release.json 未标 test_build）不得随包开发内容签名公钥：请用 KWL_CONTENT_SIGNING_PUB_FILE 给出生产公钥并重新构建内核");
+    if (devExtra.length) throw new Error(`正式发布（release.json 未标 test_build）的 content_keys 第 ${devExtra.join("、")} 把是开发公钥`);
     if (sign === "dev" || sign === "none") throw new Error(`正式发布（release.json 未标 test_build）不得用 --sign ${sign}：须用正式代码签名证书（--sign env）`);
   }
   if (pubDev) log("提示：随包的是开发内容签名公钥——本安装包只能用于测试");

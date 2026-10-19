@@ -10,7 +10,7 @@
  *
  * 秘密（认领凭据、设备私钥、取回的证书）只进按数据库主密钥封装的 keys/ 文件；activation.json / onboarding.json 只有编号、显示名与状态。
  */
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { issueDeviceCertificate, SoftwareSigner, verifyBytes, verifyDeviceCertificate, type DeviceCertificate, type DeviceKeys, type DeviceRole } from "@zr-legal/keys";
@@ -187,7 +187,22 @@ export class OnboardingService {
         requested_at: p.created_at,
       };
     }
-    return { mode: "unactivated", restarting: this.restarting };
+    return { mode: "unactivated", restarting: this.restarting, legacy_workspaces: this.legacyWorkspaces() };
+  }
+
+  /**
+   * 本机已有的旧工作区（复核 B13-K06）：第 13 批之前的安装包以 demo-firm 等身份运行，升级后进入待激活，旧工作区不会自动迁移、界面也不再可见——
+   * 只报目录名（律所标识），由所内 IT 决定导出或清理；占位工作区不算。
+   */
+  private legacyWorkspaces(): string[] {
+    try {
+      return readdirSync(this.root, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && e.name !== PENDING_WORKSPACE_SLUG && existsSync(join(this.root, e.name, "ledger.db")))
+        .map((e) => e.name)
+        .slice(0, 10);
+    } catch {
+      return [];
+    }
   }
 
   private writeActivation(a: Omit<ActivationFile, "v" | "activated_at">): void {

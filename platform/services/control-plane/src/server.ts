@@ -211,6 +211,11 @@ export interface ControlPlaneOps {
   issueActivationCode(tid: string, o: { member: { slug: string; name?: string }; ttlHours?: number }): { code: string; activation_id: string; expires_at: string };
   /** 作废尚未消费的开通码 / 邀请码。 */
   revokeActivationCode(tid: string, activationId: string): void;
+  /**
+   * 开通记录清理（复核 A-16；控制面每小时自动执行）：成员显示名只用于兑换时回显——已过期、已作废、已消费或已提交入组申请的码清空姓名；
+   * 已结束（消费、作废、过期）超过 31 天、且没有待批准申请的码记录连同入组申请记录删除（批准后 30 天内仍可凭认领凭据取回证书）。
+   */
+  sweepOnboarding(): { names_cleared: number; records_removed: number };
   /** 续订：订阅截止改为 days 天后（许可仍按签到滚动签发 ≤ 30 天）。 */
   renewLicense(tid: string, days: number): LicenseBody;
   /** 终止订阅（合同终止）：此后签发的许可立即到期，客户端进入退出模式。 */
@@ -362,6 +367,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       }, 30_000)
     : null;
   nonceFlush?.unref();
+  const onboardingSweep = setInterval(() => {
+    try {
+      ops.sweepOnboarding();
+    } catch {
+      // 下个周期再试（写盘失败已回滚）
+    }
+  }, 3600_000);
+  onboardingSweep.unref();
   // 席位令牌签发 96 小时（复核 S6-A01）：客户端剩余不足 73 小时即续期，任何时刻控制面停机后都还有 ≥ 72 小时可用（第 02 篇 §10、§13 第 10 条）
   const seatTtl = Math.max(MIN_SEAT_TTL_SECONDS, o.seatTtlSeconds ?? SEAT_TTL_DEFAULT_SECONDS);
   const seal = <T>(kind: string, body: T): CpEnvelope<T> => sealEnvelope(kind, body, o.keys.envelope);
@@ -607,6 +620,33 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     },
     setQuotaCap(tid, cap) {
       quotaSetCap(tenantOf(tid).quota, cap, now(), null);
+    },
+    sweepOnboarding() {
+      const t0 = now();
+      let names = 0;
+      let removed = 0;
+      for (const t of tenants.values()) {
+        const jrsOf = new Map<string, JoinRequestRecord[]>();
+        for (const jr of t.joinRequests.values()) jrsOf.set(jr.activation_id, [...(jrsOf.get(jr.activation_id) ?? []), jr]);
+        for (const r of [...t.activations.values()]) {
+          const jrs = jrsOf.get(r.id) ?? [];
+          const expired = Date.parse(r.expires_at) <= t0;
+          if (r.member.name !== null && (expired || jrs.length > 0 || r.status === "consumed" || r.status === "revoked")) {
+            r.member.name = null;
+            names += 1;
+          }
+          const pendingLive = jrs.some((x) => x.status === "pending" && Date.parse(x.created_at) + 7 * DAY_MS > t0);
+          const finished = r.status === "consumed" || r.status === "revoked" || expired;
+          if (!finished || pendingLive) continue;
+          const ends = [Date.parse(r.consumed_at ?? ""), Math.min(Date.parse(r.expires_at), t0), ...jrs.map((x) => Date.parse(x.decided_at ?? "") || Date.parse(x.created_at) + 7 * DAY_MS)].filter(Number.isFinite);
+          if (Math.max(...ends) + 31 * DAY_MS > t0) continue;
+          for (const jr of jrs) t.joinRequests.delete(jr.id);
+          t.activations.delete(r.id);
+          codeIndex.delete(r.code_mac);
+          removed += 1;
+        }
+      }
+      return { names_cleared: names, records_removed: removed };
     },
     tenant: (tid) => tenants.get(tid),
     seal,
@@ -1031,6 +1071,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         admin_mac: null,
       };
       t.joinRequests.set(jr.id, jr);
+      // 提交申请后不能再兑换，显示名不再需要（复核 A-16：被拒绝、次数用完的邀请也不留姓名）
+      rec.member.name = null;
       auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "claimant", id: rec.id }, action: "join.request", target: jr.id }, written: false });
       return send(res, 200, { ok: true, join_request_id: jr.id, status: jr.status });
     }
@@ -1414,6 +1456,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   // 正常关闭：停定时写入，把未落盘的 nonce 一并写下
   server.on("close", () => {
     if (nonceFlush) clearInterval(nonceFlush);
+    clearInterval(onboardingSweep);
     if (!o.auditLog) auditLog.close();
     try {
       persistNow(true);

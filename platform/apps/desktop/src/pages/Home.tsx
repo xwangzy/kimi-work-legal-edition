@@ -11,7 +11,7 @@ import { defaultChoice } from "../components/ModeSelector.tsx";
 import { NewMatterDialog } from "../components/NewMatter.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { ScenarioStart } from "../components/ScenarioStart.tsx";
-import { LINE_LABELS, pickMatterForCard, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard } from "../lib/scenarios.ts";
+import { LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
 import { fmtRelative, fmtTime, SCENARIO_LABELS } from "../lib/labels.ts";
 import { nextStepPill, type RunFacts } from "../lib/next-step.ts";
 import { backendDownText } from "../lib/errors.ts";
@@ -62,8 +62,9 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   };
   // 默认事项按卡片业务线挑（Z3 评审 #1：非诉卡不默认挂到诉讼事项上）；keep = 指定了事项（“接着做”）时照用
   const openCard = (card: ScenarioCard, extra?: string, keep?: string) => {
-    const pick = keep && matters.some((m) => m.matter_id === keep) ? keep : pickMatterForCard(card, matters, matterId);
+    const { matterId: pick, missing } = startMatterFor(keep, matters, matterId, card);
     if (pick && pick !== matterId) setMatterId(pick);
+    if (missing) setMsg("原来的事项已结案或不在最近的事项里，没有替你换成别的事项：请在下面选择事项，或新建一个。");
     setStarting({ card, ...(extra ? { extra } : {}), matterId: pick });
   };
   const switchStartMatter = (id: string) => {

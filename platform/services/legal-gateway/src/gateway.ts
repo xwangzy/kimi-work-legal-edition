@@ -44,6 +44,8 @@ export interface MeterRecord {
   clientRequestId?: string | null;
   /** 内容安全命中（只有类别编号与次数，如 `in:cat-a:2;out:cat-b:1`；不含命中的文字）。 */
   safety?: string | null;
+  /** 上游的结束原因（stop / tool_calls / length …；复核 B13-C01：length 即输出被上限截断，验收报告据此给截断次数）。 */
+  finishReason?: string | null;
 }
 
 /** HTTP 层访问记录（含 401/404/400 等未进入计量的请求；只有元数据，不含请求体）。 */
@@ -160,6 +162,13 @@ function points(tokens: number, route: ModelRoute): number {
 }
 
 /** 从 OpenAI 兼容的 JSON 或 SSE 文本中取 usage（顶层或 choices[].usage）。 */
+/** 响应尾部最后一个 finish_reason（流式取最后一个非空值；非流式取第一个选择）。 */
+export function extractFinishReason(text: string): string | null {
+  let found: string | null = null;
+  for (const m of text.matchAll(/"finish_reason"\s*:\s*"([a-z_]{1,32})"/g)) found = m[1]!;
+  return found;
+}
+
 export function extractUsage(text: string): { input: number; output: number; cached: number } | null {
   const pick = (o: any) => {
     const u = o?.usage ?? o?.choices?.find?.((c: any) => c?.usage)?.usage;
@@ -319,6 +328,7 @@ export function createLegalGateway(o: GatewayOptions): Server {
     }
     let status: number | null = null;
     let usage: { input: number; output: number; cached: number } | null = null;
+    let finishReason: string | null = null;
     let interrupted = false;
     let safetyOut: SafetyVerdict | null = null;
     let blockedOut: string | null = null;
@@ -401,7 +411,10 @@ export function createLegalGateway(o: GatewayOptions): Server {
       if (ac.signal.aborted) interrupted = true;
       if (interrupted) res.destroy();
       else res.end();
-      if (up.status === 200) usage = extractUsage(tail);
+      if (up.status === 200) {
+        usage = extractUsage(tail);
+        finishReason = extractFinishReason(tail);
+      }
     } finally {
       release();
       const actual = usage ? points(usage.input + usage.output, route!) : status === 200 ? reserved : 0;
@@ -421,6 +434,7 @@ export function createLegalGateway(o: GatewayOptions): Server {
         outputTokens: usage?.output ?? null,
         cachedTokens: usage?.cached ?? null,
         latencyMs: Date.now() - started,
+        finishReason,
         reason: blockedOut
           ? `content_blocked_output:${blockedOut}`
           : usage

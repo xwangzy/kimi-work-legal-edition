@@ -84,6 +84,12 @@ test("签发链：成果含法规库外的引用须勾选人工核对；含错�
     );
     const ok = await inv("review.approve", { artifact_version_id: outside.artifact_version_id, decision: "approved", expected_sha256: outside.sha256, checklist: { [CITATIONS_MANUAL_CHECK_KEY]: true } });
     assert.ok(ok);
+    // 复核 A-12：签发记录里签进的是内核自己算的核验计数
+    const signed = kernel.db.get<{ signed_payload: string }>(`SELECT signed_payload FROM approvals WHERE artifact_version_id = ? AND decision = 'approved'`, [outside.artifact_version_id])!;
+    const cc = JSON.parse(signed.signed_payload).citation_check;
+    assert.equal(cc.checked, true);
+    assert.ok(cc.outside_registry >= 1, "法规库以外的引用计数签进了签发记录");
+    assert.equal(cc.wrong, 0);
 
     const wrong = reg("起诉状.docx", "根据《民法典》第一千三百条，被告应当赔偿。");
     await assert.rejects(

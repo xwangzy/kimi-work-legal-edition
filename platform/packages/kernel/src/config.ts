@@ -2,7 +2,7 @@
  * 内核配置（方案 v5.0 第 4 篇 §5.1：每台电脑上每个律所工作区一个目录；
  * Windows 为 %LOCALAPPDATA%\KimiWorkLegal\<律所 ID>\，macOS/Linux 同理）。
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createPublicKey, randomBytes } from "node:crypto";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -211,6 +211,41 @@ function firstExisting(paths: (string | undefined)[]): string | undefined {
  * 核验它的公钥；在线更新的法规库装在 <工作区>/content/ 下，由账本登记与签名通道清单决定是否选用（services/content-updates.ts）。
  * 全部缺失时返回仓库开发路径（openLawdb 将以中文报错提示先运行 build:lawdb——不静默降级）。
  */
+/** 内容签名公钥指纹：SPKI DER 的 sha256（与 PEM 换行、注释无关；复核 A-14/B13-O05）。 */
+export function contentKeyFingerprint(publicKeyPem: string): string | null {
+  try {
+    return createHash("sha256").update(createPublicKey(publicKeyPem).export({ type: "spki", format: "der" })).digest("hex");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 已知开发公钥指纹：构建内核时写在随包公钥旁（content-dev-fingerprints.json，即构建机的开发公钥），开发形态再加上仓库开发公钥。
+ * 内核据此判断 content_key 是否为 dev——不只看文件里的 dev 标记（复制一份开发公钥、去掉标记也认得出）。
+ */
+function devContentFingerprints(dirs: (string | undefined)[], devPub: string | undefined): Set<string> {
+  const out = new Set<string>();
+  for (const d of dirs) {
+    if (!d) continue;
+    try {
+      const list = JSON.parse(readFileSync(join(d, "content-dev-fingerprints.json"), "utf8")) as unknown;
+      if (Array.isArray(list)) for (const f of list) if (typeof f === "string" && /^[0-9a-f]{64}$/.test(f)) out.add(f);
+    } catch {
+      /* 没有登记文件 */
+    }
+  }
+  if (devPub && existsSync(devPub)) {
+    try {
+      const fp = contentKeyFingerprint(String((JSON.parse(readFileSync(devPub, "utf8")) as { publicKeyPem?: string }).publicKeyPem ?? ""));
+      if (fp) out.add(fp);
+    } catch {
+      /* 开发公钥文件损坏 */
+    }
+  }
+  return out;
+}
+
 function resolveLawdb(env: NodeJS.ProcessEnv, workspaceDir: string): { lawdbFile: string; lawdbSignerPub: string; contentKeyDev: boolean } {
   const bundleDir = typeof __dirname !== "undefined" ? __dirname : undefined;
   // Electron 安装包形态：法规库经 extraResources 放在 resources/lawdb/（asar 外的真文件）。bundleDir 在 asar 内——
@@ -226,20 +261,32 @@ function resolveLawdb(env: NodeJS.ProcessEnv, workspaceDir: string): { lawdbFile
     "";
 
   const devPub = repoContentPath("keys", "content-signing-dev.pub.json");
+  const devFps = devContentFingerprints([resourcesLawdb, bundleDir ? join(bundleDir, "lawdb") : undefined], devPub);
+  const isDev = (pem: string) => {
+    const fp = contentKeyFingerprint(pem);
+    return fp !== null && devFps.has(fp);
+  };
   let lawdbSignerPub = env.ZR_LAWDB_SIGNER_PUB ?? "";
-  let contentKeyDev = !lawdbSignerPub;
+  let contentKeyDev = !lawdbSignerPub || isDev(lawdbSignerPub);
   if (!lawdbSignerPub) {
     const pubFile = firstExisting([resourcesLawdb ? join(resourcesLawdb, "content-signing.pub.json") : undefined, bundleDir ? join(bundleDir, "lawdb", "content-signing.pub.json") : undefined, devPub]);
     if (pubFile) {
       try {
         const pub = JSON.parse(readFileSync(pubFile, "utf8")) as { publicKeyPem?: string; dev?: boolean };
         lawdbSignerPub = pub.publicKeyPem ?? "";
-        // 开发公钥（第 13 批）：仓库开发路径或随包文件写明 dev:true
-        contentKeyDev = pubFile === devPub || pub.dev === true;
+        // 开发公钥（第 13 批；复核 A-14 起另按指纹识别）：仓库开发路径、随包文件写明 dev:true，或指纹是已知开发公钥
+        contentKeyDev = pubFile === devPub || pub.dev === true || isDev(lawdbSignerPub);
       } catch {
         lawdbSignerPub = "";
       }
     }
+  }
+  // release.json 的 content_keys（轮换用的新公钥）里混进开发公钥，同样报 dev（复核 A-14：这条路径原先不经任何门禁）
+  try {
+    const extra = JSON.parse(env.ZR_CONTENT_KEYS ?? "[]") as unknown;
+    if (Array.isArray(extra) && extra.some((k) => typeof k === "string" && isDev(k))) contentKeyDev = true;
+  } catch {
+    /* 格式由 release-config 把关 */
   }
   return { lawdbFile, lawdbSignerPub, contentKeyDev };
 }

@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, onboarding, recovery } from "../api.ts";
 
-type Status = { mode: "unactivated" | "member_pending"; firm?: { name: string }; member?: { name: string | null; role: string }; check_code?: string; requested_at?: string; restarting?: boolean };
+type Status = { mode: "unactivated" | "member_pending"; firm?: { name: string }; member?: { name: string | null; role: string }; check_code?: string; requested_at?: string; restarting?: boolean; legacy_workspaces?: string[] };
 
 const ROLE_LABEL: Record<string, string> = { admin: "管理员", partner: "合伙人", lawyer: "律师", assistant: "助理" };
 
@@ -38,7 +38,7 @@ async function waitForActivated(): Promise<void> {
 export function ActivatePage({ initial, onRefresh }: { initial: Status; onRefresh: () => void }) {
   const [status, setStatus] = useState<Status>(initial);
   if (status.mode === "member_pending") return <WaitApproval status={status} onReset={async () => setStatus((await onboarding.reset()) as Status)} onRefresh={onRefresh} />;
-  return <EnterCode onPending={(s) => setStatus(s)} />;
+  return <EnterCode onPending={(s) => setStatus(s)} legacy={status.legacy_workspaces ?? []} />;
 }
 
 function Frame({ children }: { children: React.ReactNode }) {
@@ -60,7 +60,7 @@ function Frame({ children }: { children: React.ReactNode }) {
   );
 }
 
-function EnterCode({ onPending }: { onPending: (s: Status) => void }) {
+function EnterCode({ onPending, legacy }: { onPending: (s: Status) => void; legacy: string[] }) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -139,6 +139,11 @@ function EnterCode({ onPending }: { onPending: (s: Status) => void }) {
           换了新电脑？从备份恢复 →
         </button>
       </p>
+      {legacy.length > 0 && (
+        <p className="muted activate-foot" role="note">
+          这台电脑上还有旧版本（试用版）留下的数据（{legacy.join("、")}）。激活后不会自动转入，也不会删除；如需保留或清理，请联系所内 IT。
+        </p>
+      )}
     </Frame>
   );
 }

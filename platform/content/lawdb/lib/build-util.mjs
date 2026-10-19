@@ -39,7 +39,8 @@ export function ensureContentSigningKey(keysDir) {
     ),
     { mode: 0o600 },
   );
-  writeFileSync(pubFile, JSON.stringify({ _comment: "内容签名公钥（随客户端内置，内核验签法规库包用）", publicKeyPem }, null, 2));
+  // dev:true（复核 A-14）：开发公钥文件自带标记；构建与打包另按公钥指纹识别（标记被去掉也认得出）
+  writeFileSync(pubFile, JSON.stringify({ _comment: "开发内容签名公钥（只用于开发与测试构建）", publicKeyPem, dev: true }, null, 2));
   return { publicKeyPem, privateKeyPem, pubFile };
 }
 

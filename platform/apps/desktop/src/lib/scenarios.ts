@@ -435,6 +435,16 @@ export function pickMatterForCard(card: Pick<ScenarioCard, "line">, matters: Pic
   return null;
 }
 
+/**
+ * 开始面板挂哪个事项（复核 B13-U05）：指定了事项（深链 #/start/<场景>/<事项>、事项页“/ 方法”）就只用它——
+ * 它不在列表里（已结案，或不在最近的 100 个里）时返回 null 并标 missing，**不**自动换成别的事项（误挂会让材料与成果进错案卷）；
+ * 没指定才按卡片业务线挑。
+ */
+export function startMatterFor(keep: string | undefined, matters: PickableMatter[], currentId: string | null, card: Pick<ScenarioCard, "line">): { matterId: string | null; missing: boolean } {
+  if (keep) return matters.some((m) => m.matter_id === keep) ? { matterId: keep, missing: false } : { matterId: null, missing: true };
+  return { matterId: pickMatterForCard(card, matters, currentId), missing: false };
+}
+
 /** 所选事项与卡片业务线不一致时的一行提醒（不阻断）；一致或看不出时返回 null。 */
 export function lineMismatchText(card: Pick<ScenarioCard, "line" | "title">, matter: { stance?: string | null } | null | undefined): string | null {
   const l = matterLine(matter);

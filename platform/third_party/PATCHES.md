@@ -114,6 +114,11 @@ KJ-4 之后的数据规模口径：单个文件经 `python3` 或 `awk` 读入的
 
 ## 已知事项
 
+- 引擎漂移报警的执行环境（复核 B13-C02）：`embed-drift.test.ts` 要 `third_party/kimi-code`（2.2.0 fork）在场，否则 4 条跳过。
+  CI 的 `engine-drift` 作业按上面“复现”步骤从 GitHub 的 `@moonshot-ai/kimi-code@2.2.0`（提交 472192c34）+ 本补丁重建后专跑（`KWL_REQUIRE_FORK=1`，不在即失败；
+  2026-10-19 在本机按同一步骤从 GitHub 重建实测 16/16 通过、0 跳过）。**开发机**：主检出若仍是旧 fork（2.1.1），合入后本地全量测试这 4 条会按 2.1.1 源码失败
+  （报警本身正确，不是回归）——先按“复现”步骤把 `third_party/kimi-code` 切到 472192c34 + 本补丁。
+
 - 历次 ZP 补丁中的约 20 处注释（复核 S5B-16）已在 2.2.0 rebase 时全部从源码删除，意图以本台账为准；fork 的无注释 lint 通过。
 - 上游仍 open、未合并的相关缺陷：#4193（同一步多个大工具结果使压缩请求超窗）、#2337（配置权限规则不生效）、#4070（后台子 Agent 审批不触发 PermissionRequest 钩子）。见评审 Z2 §1.3。
 - 2.2.0 新增 Tower 工具 `TowerComplete`、`TowerRebase` 已列入宿主 `LOCKED_OFF_TOOLS`（`kap-host/src/tool-table.ts`）；NotifyUser 新增可选 `title`，宿主过程快照把标题与正文合成一条（`progress.ts`）。

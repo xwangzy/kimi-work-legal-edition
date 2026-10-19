@@ -85,6 +85,7 @@ export const EVENTS = {
   MAIN_KERNEL_EXITED: { level: "warn", fields: { "code?": "int" } },
   /** 开通或入组完成：主进程按 activation.json 有序重启内核（第 13 批）。 */
   MAIN_KERNEL_IDENTITY_RESTART: { level: "info", fields: {} },
+  MAIN_KERNEL_IDENTITY_RESTART_FAILED: { level: "error", fields: {} },
   /** 从备份恢复时采用旧电脑的数据库主密钥（第 14 批）：只记结果。 */
   MAIN_ADOPT_KEY_DONE: { level: "info", fields: {} },
   MAIN_ADOPT_KEY_REJECTED: { level: "warn", fields: {} },

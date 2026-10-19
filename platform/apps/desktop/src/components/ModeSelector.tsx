@@ -81,7 +81,7 @@ export function ModeSelector({ policy, value, onChange, allowChat = true }: { po
               <div className="muted">打开官方网站不用问；打开其他网站、把图片原样发给 AI、带当事人名称检索，仍会先问你。</div>
             </div>
           )}
-          <div className="mode-foot muted">任何档位下，AI 都不能自己联网，也不能读本事项以外的文件。</div>
+          <div className="mode-foot muted">任何档位下，AI 联网都要经过本应用的检查（该问你的一定会先问你），也不能读本事项以外的文件。</div>
         </div>
       )}
     </div>

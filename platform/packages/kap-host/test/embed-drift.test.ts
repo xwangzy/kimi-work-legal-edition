@@ -386,6 +386,11 @@ test("K9-2 漂移报警的截取与解析自测（复核 B4-B10）：注释里�
 
 const SKIP = forkPresent ? false : "third_party/kimi-code 不在（嵌套仓库不入库）：报警在引擎升级的机器上起作用";
 
+// CI 的 engine-drift 作业按台账重建 fork 后设 KWL_REQUIRE_FORK=1（复核 B13-C02）：此时 fork 不在即失败，不静默跳过
+test("CI：要求 fork 在场", { skip: process.env.KWL_REQUIRE_FORK !== "1" && "只在 CI 的 engine-drift 作业里检查" }, () => {
+  assert.ok(forkPresent, "KWL_REQUIRE_FORK=1 但 third_party/kimi-code 不在：重建步骤失败或路径不对");
+});
+
 test("K9-2 引擎漂移报警：start.ts 启动种子段锁定、args 键与 embed.ts 一致（或登记有意省略）、宿主依赖的事件字段仍在", { skip: SKIP }, () => {
   const start = upstream(`${KS}start.ts`);
   const embed = upstream(`${KS}embed.ts`);

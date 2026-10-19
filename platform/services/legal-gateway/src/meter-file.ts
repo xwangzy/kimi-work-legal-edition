@@ -5,7 +5,7 @@
 import { appendFileSync } from "node:fs";
 import type { MeterRecord, MeterSink } from "./gateway.ts";
 
-const FIELDS: readonly (keyof MeterRecord)[] = ["at", "kind", "requestId", "clientRequestId", "tid", "sid", "anonMatter", "model", "status", "reserved", "inputTokens", "outputTokens", "cachedTokens", "latencyMs", "reason", "safety"];
+const FIELDS: readonly (keyof MeterRecord)[] = ["at", "kind", "requestId", "clientRequestId", "tid", "sid", "anonMatter", "model", "status", "reserved", "inputTokens", "outputTokens", "cachedTokens", "latencyMs", "reason", "safety", "finishReason"];
 
 export function fileMeter(path: string): MeterSink {
   return {

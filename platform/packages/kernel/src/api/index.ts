@@ -1864,6 +1864,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           signer: { member_id: id.userId, device_id: keyctx.device.deviceId, cert_id: keyctx.device.cert.certId },
           key_epoch: keyEpoch,
           assurance_level: "device_signature",
+          // 系统核验结果摘要（复核 A-12）：签进签发记录的是内核自己算的计数，不是界面提交的核对单；律师勾选了哪些人工核对见 completeness_hash
+          citation_check: ac
+            ? { checked: ac.checked, total: ac.total, verified: ac.verified, wrong: ac.wrong, case_offline: ac.unverified_offline, outside_registry: ac.outside_registry, registry_coverage: ac.registry_coverage }
+            : null,
           signed_at: new Date().toISOString(),
         });
         // 签发审批：对外可验证（TPM 直签的落点，W8 改异步，偏离 D-71）

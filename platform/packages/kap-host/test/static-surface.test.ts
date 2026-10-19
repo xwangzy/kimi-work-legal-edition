@@ -129,3 +129,8 @@ test("复核 B4-B08：强制取消只经内核 IPC 可达——kap-host 源码�
   walk(kernel);
   assert.deepEqual(users, ["executor/kap-agent-client.ts"]);
 });
+
+// 复核 A-18：上游 #4059（KIMI_CODE_TRUST_WORKSPACE，环境变量即可信任工作区）在补丁里被 revert——锁定制品里不出现这个开关
+test("#4059 仍被 revert：制品里没有 KIMI_CODE_TRUST_WORKSPACE", () => {
+  assert.doesNotMatch(bundle, /KIMI_CODE_TRUST_WORKSPACE/);
+});

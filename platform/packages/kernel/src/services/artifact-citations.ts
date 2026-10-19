@@ -10,7 +10,7 @@
  *   如实承认法规库覆盖有限，不把“没查到”说成“没问题”，也不让演示法规库把所有成果卡死；
  * - 系统读不出文字的成果（格式不认识、解析出错；复核 B13-U02、A-12）→ 不再静默放行：须勾选“这份文件的引用已人工核对”。
  * DOCX 核验正文以外的脚注、尾注、页眉页脚与批注（复核 A-12）。
- * 只读：不改成果、不写事件；签发时由调用方把结果摘要写进签发记录的完整性单。
+ * 只读：不改成果、不写事件；签发时由调用方把结果计数写进设备签名的签发记录（signed_payload.citation_check，复核 A-12）。
  */
 import { CitationState } from "@zr-legal/domain";
 import { extractParagraphs, mapParagraphs, readZipText, xlsxToText } from "@zr-legal/docx-engine";

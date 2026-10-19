@@ -17,6 +17,14 @@ export interface RouteDef {
   allowedEfforts: ("low" | "high" | "max")[];
   temperature: number;
   priceKey: string;
+  /** 缺省输出上限（复核 B13-C01：按路由配置而非常量；请求未给 max_tokens 时用它；推理 token 计入输出）。 */
+  maxOutputTokens?: number;
+}
+
+/** 正整数环境变量（1,000–262,144），否则用缺省值。 */
+function tokensEnv(e: BrokerEnv, name: string, fallback: number): number {
+  const n = Number(e[name]);
+  return Number.isInteger(n) && n >= 1_000 && n <= 262_144 ? n : fallback;
 }
 
 export const PRICE_VERSION = "price-v0-placeholder-2026-10-01";
@@ -55,6 +63,7 @@ export function buildRoutes(e: BrokerEnv = process.env): Record<string, RouteDef
       allowedEfforts: ["low", "high", "max"],
       temperature: 1.0,
       priceKey: "k3",
+      maxOutputTokens: tokensEnv(e, "ZR_MODEL_K3_MAX_TOKENS", 32_000),
     },
     "legal/k2.6": {
       alias: "legal/k2.6",
@@ -65,6 +74,7 @@ export function buildRoutes(e: BrokerEnv = process.env): Record<string, RouteDef
       allowedEfforts: [],
       temperature: 1.0,
       priceKey: "k26",
+      maxOutputTokens: tokensEnv(e, "ZR_MODEL_K26_MAX_TOKENS", 32_000),
     },
   };
 }

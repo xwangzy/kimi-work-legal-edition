@@ -35,3 +35,6 @@ apps/desktop/runtime/
 # 安装包构建（scripts/package-desktop.mjs）
 apps/desktop/.stage/
 apps/desktop/release/
+
+# 真实上游验收报告（scripts/upstream-acceptance.mjs 缺省输出目录；--keep-outputs 时含成果全文）
+output/

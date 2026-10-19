@@ -202,3 +202,46 @@ export function groupDigits(code: string): string {
   return d.replace(/(.{4})(?=.)/g, "$1 ");
 }
 
+
+/**
+ * 材料解析标记 → 律师话术（复核 B13-U07：材料表原先把 xlsx_values_only 这类标记原样显示）。
+ * 键为标记本身或冒号前的前缀（scanned_pages:3）；encoding_* 单独处理；空串表示不必提示；未登记的标记显示“有提示”。
+ * 门禁：apps/desktop/test/parse-flags.test.ts 扫描内核解析器里出现的全部标记，须都在这里有对应。
+ */
+export const PARSE_FLAG_TEXT: Record<string, string | ((n: string) => string)> = {
+  plain_text: "",
+  pdf_pipeline: "",
+  image_ocr: "图片里的文字是识别出来的，请核对",
+  v0_crude_docx_parser: "只读了文字",
+  no_page_anchors: "没有页码",
+  tables_flattened: "表格按文字读取",
+  comments_revisions_ignored: "批注与修订没有读取",
+  xlsx_values_only: "只读了表格里的值，公式没有计算",
+  xlsx_truncated: "表格太大，只读了前一部分",
+  xlsx_dates_raw: "部分日期显示为数字",
+  scanned_pages: (n) => `${n} 页是扫描件（文字是识别出来的）`,
+  ocr_low_quality_pages: (n) => `${n} 页识别不清，请核对原件`,
+  unreadable_pages: (n) => `${n} 页没有读出文字`,
+  ocr_mock_engine: "文字识别为演示引擎，结果不可信",
+  ocr_unavailable: "本机文字识别不可用，扫描页没有读出文字",
+};
+
+export function parseFlagsText(flags: readonly string[]): string {
+  const notes: string[] = [];
+  let unknown = false;
+  for (const f of flags) {
+    if (/^encoding_/.test(f)) {
+      notes.push(`按 ${f.slice("encoding_".length).toUpperCase()} 编码读取`);
+      continue;
+    }
+    const [key, arg = ""] = f.split(":", 2) as [string, string?];
+    const t = PARSE_FLAG_TEXT[key];
+    if (t === undefined) unknown = true;
+    else {
+      const s = typeof t === "function" ? t(arg) : t;
+      if (s) notes.push(s);
+    }
+  }
+  if (notes.length === 0) return unknown ? "已读取（有提示）" : "已读取";
+  return `已读取：${notes.join("；")}${unknown ? "（另有提示）" : ""}`;
+}

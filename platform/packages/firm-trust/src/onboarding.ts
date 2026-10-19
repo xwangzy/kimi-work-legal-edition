@@ -5,7 +5,8 @@
  *   I/L 读作 1、O 读作 0（Crockford 约定，律师照着微信念出来也不会错）。云端只存 HMAC 摘要。
  * - 入组核对码：成员机与管理员机各自由（租户、设备编号、两把公钥）算出 12 位十进制数字，当面或电话念一遍一致才批准——
  *   防止控制面把申请里的公钥换成别人的。律所核对码同理（律所根公钥指纹），成员取回证书后可与管理员核对。
- * - 入组证明：成员设备用自己的签名私钥签申请字节，证明持有私钥（控制面与管理员都核）。
+ * - 入组证明：成员设备用自己的签名私钥签申请字节，证明持有私钥（控制面核；管理员一侧不核证明，改核邀请秘密段的 HMAC——
+ *   见 joinMacBytes / approvalMacBytes：秘密段只在管理员电脑与成员手里，控制面换掉公钥或证书都会被识破）。
  */
 import { createHash, createHmac, hkdfSync, randomBytes, timingSafeEqual } from "node:crypto";
 import { canonicalJson } from "@zr-legal/keys";

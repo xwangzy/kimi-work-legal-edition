@@ -110,7 +110,7 @@ export class ModelBroker {
       reasoning_effort: args.effort ?? route.defaultEffort ?? undefined,
       response_format: args.responseFormat,
       // §10.1 计量与容量：每个请求设置合理的 max_completion_tokens 上限，避免按模型上限预占配额
-      max_tokens: args.maxTokens ?? 32_000,
+      max_tokens: args.maxTokens ?? route.maxOutputTokens ?? 32_000,
       tools: args.tools,
       tool_choice: args.toolChoice,
     };

@@ -149,3 +149,9 @@ test("#13 页面与组件不用浏览器原生确认框（改用 ConfirmButton�
   const hits = files.filter((f) => /window\.confirm\(/.test(readFileSync(f, "utf8")));
   assert.deepEqual(hits, []);
 });
+
+test("复核 B13-U06：模式说明不写“AI 都不能自己联网”（与预授权检索、官方网站不用问相矛盾）", () => {
+  const src = readFileSync(join(SRC, "components/ModeSelector.tsx"), "utf8");
+  assert.doesNotMatch(src, /不能自己联网/);
+  assert.match(src, /联网都要经过本应用的检查/);
+});

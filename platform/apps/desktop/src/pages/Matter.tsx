@@ -11,7 +11,8 @@ import { defaultChoice } from "../components/ModeSelector.tsx";
 import { PartiesPanel } from "../components/Parties.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { reasonLabel } from "../components/DataFlow.tsx";
-import { DEST_LABELS, fmtTime, RUN_STATUS_LABELS, SCENARIO_LABELS } from "../lib/labels.ts";
+import { DEST_LABELS, fmtTime, RUN_STATUS_LABELS, SCENARIO_LABELS, parseFlagsText } from "../lib/labels.ts";
+import { decideMatterTab } from "../lib/matter-tab.ts";
 import { MatterBoard } from "./Boards.tsx";
 import { MatterDeliverables } from "./Deliverables.tsx";
 import { MatterLifecyclePanel } from "../components/MatterLifecycle.tsx";
@@ -27,13 +28,17 @@ export function MatterPage({ matterId }: { matterId: string }) {
   const [policy, setPolicy] = useState<RunPolicyView | null>(null);
   // 事项页标签（Z3 评审 IA-4、#10）：打开事项默认停在“概览”；还没有材料的新事项停在“材料”；律师点过标签后不再自动切换
   const [tab, setTabRaw] = useState<Tab>("materials");
+  // 复核 B13-U04：只在每个事项首次拿到材料列表时定一次，之后材料数变化（如拖入第一份材料）不再自动跳走
   const tabTouched = useRef(false);
+  const tabDecidedFor = useRef<string | null>(null);
   const setTab = (t: Tab) => {
     tabTouched.current = true;
     setTabRaw(t);
   };
   useEffect(() => {
-    if (!tabTouched.current && matter && docs.length > 0) setTabRaw("board");
+    const next = decideMatterTab(tabDecidedFor.current, matter?.matter_id ?? null, docs.length, tabTouched.current);
+    tabDecidedFor.current = next.decidedFor;
+    if (next.tab) setTabRaw(next.tab);
   }, [matter?.matter_id, docs.length]);
   const [value, setValue] = useState<ComposerValue>({ goal: "", scenario: "a1.agent_task", documentIds: [], choice: defaultChoice(null) });
   const [sheet, setSheet] = useState<PendingStart | null>(null);
@@ -297,7 +302,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                         </select>
                       </td>
                       <td>{(Number(d.size_bytes ?? 0) / 1024).toFixed(1)} KB</td>
-                      <td>{d.quarantined_at ? <span className="tag tag-warn">已隔离（国家秘密标志）</span> : (d.quality_flags ?? []).length ? (d.quality_flags as string[]).join("、") : "已读取"}</td>
+                      <td>{d.quarantined_at ? <span className="tag tag-warn">已隔离（国家秘密标志）</span> : parseFlagsText(d.quality_flags ?? [])}</td>
                       <td>
                         {review.get(d.document_version_id) ? (
                           <button className="btn-link" onClick={() => setWorkbench({ doc: d.document_version_id })}>

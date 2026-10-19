@@ -121,3 +121,28 @@ test("未认证入口：未知租户与凭据错误回同一错误（不可借�
   const f1 = await post("/v1/join-requests/jr_aaaaaaaaaaaaaaaa/fetch", { tid: "ten_no-such-firm", claim_secret: "z" });
   assert.equal(f1.json.error.code, "claim_invalid");
 });
+
+test("清理（复核 A-16）：提交申请即清空成员姓名；过期未用的码清空姓名；结束 31 天后码记录与申请记录删除", async () => {
+  const tid = "ten_hard-sweep";
+  const f = await firm(tid);
+  const a = (await f.call("POST", "/v1/invitations", { member_slug: "sun", role: "lawyer", name: "孙律师" })).json;
+  const b = (await f.call("POST", "/v1/invitations", { member_slug: "zhao", role: "lawyer", name: "赵律师" })).json;
+  const ra = (await post("/v1/activation/redeem", { code: a.code })).json;
+  assert.equal(ra.member.name, "孙律师", "兑换时回显姓名");
+  await post("/v1/join-requests", joinBody(tid, ra));
+  const t = cp.ops.tenant(tid)!;
+  assert.equal(t.activations.get(ra.activation_id)!.member.name, null, "提交申请后控制面不留姓名");
+  const bid = [...t.activations.values()].find((r) => r.member.slug === "zhao")!.id;
+  assert.equal(t.activations.get(bid)!.member.name, "赵律师");
+  clock += 4 * 86400_000; // 邀请缺省 72 小时过期
+  assert.ok(cp.ops.sweepOnboarding().names_cleared >= 1);
+  assert.equal(t.activations.get(bid)!.member.name, null, "过期未用的邀请清空姓名");
+  assert.ok(t.activations.has(bid), "未满 31 天的记录保留");
+  clock += 35 * 86400_000;
+  const r = cp.ops.sweepOnboarding();
+  assert.ok(r.records_removed >= 2);
+  assert.equal(t.activations.has(bid), false);
+  assert.equal(t.activations.has(ra.activation_id), false);
+  assert.equal([...t.joinRequests.values()].some((x) => x.activation_id === ra.activation_id), false, "申请记录一并删除");
+  assert.equal((await post("/v1/activation/redeem", { code: b.code })).json.error.code, "code_invalid");
+});
