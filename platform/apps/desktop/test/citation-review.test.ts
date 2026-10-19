@@ -41,3 +41,13 @@ test("签发判定：有核对不通过的不能签；案号、法规库外、�
   assert.deepEqual(citationChecklist(u, { ...none, unchecked: true }), { citations_unverifiable_checked: true });
   assert.equal(citationsAllowSign(citationNeeds(ac([{ raw: "D", kind: "ok" }])), none), true);
 });
+
+test("复核 R2B-27：运行里在材料中核到的离线案号与成果里的案号同一个勾选；没有成果级核验结果时也要求勾选", () => {
+  const n = citationNeeds(ac([{ raw: "D", kind: "ok" }]), 2);
+  assert.equal(n.counts.cases, 2);
+  assert.equal(citationsAllowSign(n, none), false);
+  assert.deepEqual(citationChecklist(n, { ...none, cases: true }), { citations_cases_checked: true });
+  assert.equal(citationsAllowSign(n, { ...none, cases: true }), true);
+  assert.equal(citationNeeds(null, 1).counts.cases, 1);
+  assert.equal(citationsAllowSign(citationNeeds(null, 1), none), false);
+});

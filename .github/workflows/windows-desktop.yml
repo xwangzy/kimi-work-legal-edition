@@ -25,26 +25,6 @@ defaults:
     shell: bash
 
 jobs:
-  # 复核 B13-C02：引擎漂移报警（embed-drift）要 fork 源码在场——按补丁台账从上游 2.2.0 tag + 中软补丁重建后专跑，
-  # 锁定值不再只在一台开发机上验证过；KWL_REQUIRE_FORK=1 时 fork 不在即失败（不静默跳过）
-  engine-drift:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 26.8.1
-      - name: 重建 fork（上游 tag + third_party/patches）
-        run: |
-          git clone --filter=blob:none --no-checkout https://github.com/MoonshotAI/kimi-code.git third_party/kimi-code
-          git -C third_party/kimi-code checkout --detach 472192c34c1efad89a369870eff0da0b708ce9bb
-          git -C third_party/kimi-code apply --check ../patches/kimi-code-2.2.0-zhongruan.patch
-          git -C third_party/kimi-code apply ../patches/kimi-code-2.2.0-zhongruan.patch
-      - run: node --test packages/kap-host/test/embed-drift.test.ts packages/kap-host/test/static-surface.test.ts
-        env:
-          KWL_REQUIRE_FORK: "1"
-
   test:
     runs-on: windows-latest
     # 关键用例（Windows 单并发）实测 117 分钟仍未跑完即被 120 分钟超时杀掉（run 38690633107）——放宽到 240

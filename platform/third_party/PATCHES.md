@@ -115,7 +115,7 @@ KJ-4 之后的数据规模口径：单个文件经 `python3` 或 `awk` 读入的
 ## 已知事项
 
 - 引擎漂移报警的执行环境（复核 B13-C02）：`embed-drift.test.ts` 要 `third_party/kimi-code`（2.2.0 fork）在场，否则 4 条跳过。
-  CI 的 `engine-drift` 作业按上面“复现”步骤从 GitHub 的 `@moonshot-ai/kimi-code@2.2.0`（提交 472192c34）+ 本补丁重建后专跑（`KWL_REQUIRE_FORK=1`，不在即失败；
+  CI 的 `engine-drift` 工作流（`.github/workflows/engine-drift.yml`，所有分支的推送与合并请求都跑）按上面“复现”步骤从 GitHub 的 `@moonshot-ai/kimi-code@2.2.0`（提交 472192c34）+ 本补丁重建后专跑（`KWL_REQUIRE_FORK=1`，不在即失败；
   2026-10-19 在本机按同一步骤从 GitHub 重建实测 16/16 通过、0 跳过）。**开发机**：主检出若仍是旧 fork（2.1.1），合入后本地全量测试这 4 条会按 2.1.1 源码失败
   （报警本身正确，不是回归）——先按“复现”步骤把 `third_party/kimi-code` 切到 472192c34 + 本补丁。
 

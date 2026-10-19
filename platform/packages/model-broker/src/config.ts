@@ -21,10 +21,13 @@ export interface RouteDef {
   maxOutputTokens?: number;
 }
 
-/** 正整数环境变量（1,000–262,144），否则用缺省值。 */
+/**
+ * 正整数环境变量（1,000–48,000），否则用缺省值。上限 48,000（复核 R2B-32）：引擎自动压缩为输出预留 50,000，
+ * 输出上限超过它，上下文接近满时请求可能被上游以超窗拒绝；网关按“输入估算 + 输出上限”预占点数，调得越高越早被额度挡下。
+ */
 function tokensEnv(e: BrokerEnv, name: string, fallback: number): number {
   const n = Number(e[name]);
-  return Number.isInteger(n) && n >= 1_000 && n <= 262_144 ? n : fallback;
+  return Number.isInteger(n) && n >= 1_000 && n <= 48_000 ? n : fallback;
 }
 
 export const PRICE_VERSION = "price-v0-placeholder-2026-10-01";

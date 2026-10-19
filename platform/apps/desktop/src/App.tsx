@@ -12,6 +12,7 @@ import { MatterPage } from "./pages/Matter.tsx";
 import { RunView } from "./pages/RunView.tsx";
 import { ReviewPage } from "./pages/Review.tsx";
 import { bootRetryDelay } from "./lib/boot-gate.ts";
+import { recoveryReminder } from "./lib/recovery-reminder.ts";
 import { DeliverablesPage } from "./pages/Deliverables.tsx";
 import { MethodsPage } from "./pages/Methods.tsx";
 import { BoardsPage } from "./pages/Boards.tsx";
@@ -85,7 +86,7 @@ export function nav(path: string): void {
 export function App() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
   // 首次启动激活（第 13 批）：这台电脑还没有激活时整个应用只显示激活页
-  const [boot, setBoot] = useState<{ onboarding: any } | null>(null);
+  const [boot, setBoot] = useState<{ onboarding: any; restoredAt?: string | null } | null>(null);
   // 取不到状态时不当作“已激活”（复核 B13-K01）：首次启动内核较慢，按退避重试（lib/boot-gate.ts）；约两分钟仍取不到才给出说明与“重试”
   const [bootFailed, setBootFailed] = useState(false);
   const loadBoot = () => {
@@ -94,7 +95,7 @@ export function App() {
     const tryOnce = () =>
       void api
         .kernelStatus()
-        .then((st: any) => setBoot({ onboarding: st?.onboarding ?? null }))
+        .then((st: any) => setBoot({ onboarding: st?.onboarding ?? null, restoredAt: st?.restored_from_backup_at ?? null }))
         .catch(() => {
           attempt += 1;
           const delay = bootRetryDelay(attempt);
@@ -104,14 +105,14 @@ export function App() {
     tryOnce();
   };
   useEffect(loadBoot, []);
-  // 开通的最后一步（第 14 批）：还没有生成恢复包时，首页与事项页顶部提醒（电脑坏了数据就找不回）
-  const [needRecovery, setNeedRecovery] = useState(false);
+  // 恢复与备份的提醒（第 14 批；第二轮复核 R2B-05）：缺恢复包、缺备份位置只在首页与事项页提醒；备份失败、多日未成功在各页都提醒
+  const [reminder, setReminder] = useState<ReturnType<typeof recoveryReminder>>(null);
   useEffect(() => {
     if (!boot || boot.onboarding) return;
     void recovery
       .backupStatus()
-      .then((s: any) => setNeedRecovery(!!s && s.packages_created === 0))
-      .catch(() => setNeedRecovery(false));
+      .then((s: any) => setReminder(recoveryReminder(s)))
+      .catch(() => setReminder(null));
   }, [boot, route.page]);
   useEffect(() => {
     const on = () => setRoute(parseHash(window.location.hash));
@@ -158,6 +159,8 @@ export function App() {
     return (
       <div className="activate" aria-busy={!bootFailed}>
         <div className="activate-card">
+          {/* 主进程的“后台服务已停止”在启动占位页也看得到（复核 R2B-25） */}
+          {kernelNotice?.status === "stopped" && <p className="activate-error" role="alert">{kernelNotice.message}</p>}
           <p className="muted" role="status">
             {bootFailed ? "后台服务没有启动起来。可以点“重试”；仍不行请重新打开应用，或联系所内 IT 与客服。" : "正在启动…第一次打开需要十几秒。"}
           </p>
@@ -170,17 +173,29 @@ export function App() {
       </div>
     );
   }
-  if (boot.onboarding) return <ActivatePage initial={boot.onboarding} onRefresh={loadBoot} />;
+  if (boot.onboarding) return <ActivatePage initial={boot.onboarding} onRefresh={loadBoot} notice={kernelNotice?.status === "stopped" ? (kernelNotice.message ?? "后台服务已停止") : ""} />;
   return (
     <div className="shell">
       <Sidebar route={route} />
       <div className="shell-main">
         {kernelNotice && <div className={`banner ${kernelNotice.status === "stopped" ? "banner-red" : "banner-orange"} kernel-banner`}>{kernelNotice.message ?? "后台服务正在恢复…"}</div>}
         {update && !updateDismissed && route.page !== "run" && route.page !== "review" && <UpdateBanner status={update} onDismiss={() => setUpdateDismissed(true)} />}
-        {needRecovery && (route.page === "home" || route.page === "matters") && (
+        {boot.restoredAt && Date.now() - Date.parse(boot.restoredAt) < 14 * 86400_000 && route.page === "home" && (
           <div className="banner banner-orange">
-            完成开通的最后一步：生成恢复包并设置备份。不做的话，这台电脑坏了或丢了，案件数据将无法找回。{" "}
-            <button className="btn-link" onClick={() => nav("/connections/device")}>
+            这台电脑是从备份恢复的（{new Date(boot.restoredAt).toLocaleDateString("zh-CN")}）。如果原来那台电脑丢了或被偷，请马上告诉律所管理员：当前版本不能单独停用原电脑，管理员会为你重新办理入组。
+          </div>
+        )}
+        {reminder && (reminder.everywhere ? route.page !== "run" && route.page !== "review" : route.page === "home" || route.page === "matters") && (
+          <div className={`banner ${reminder.tone === "red" ? "banner-red" : "banner-orange"}`}>
+            {reminder.text}{" "}
+            <button
+              className="btn-link"
+              onClick={() => {
+                nav("/connections/device");
+                // 滚到“恢复与备份”那一行（复核 R2B-23）
+                setTimeout(() => document.getElementById("recovery-backup")?.scrollIntoView({ block: "center" }), 300);
+              }}
+            >
               去设置 →
             </button>
           </div>

@@ -124,7 +124,8 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   const items: string[] = data?.lawyer_checklist?.items ?? [];
   // 成果里不在本机法规库的引用（第 13 批）：系统核对不了，律师逐条人工核对后勾选才能签发
   // 成果的引用核对（第 13 批复核 B13-U01/U02/U03）：分组列出、逐类勾选、勾选不齐不能签发
-  const cneeds = citationNeeds(data?.completeness?.artifact_citations);
+  const runCases = Number(data?.completeness?.run_case_offline ?? 0) || 0;
+  const cneeds = citationNeeds(data?.completeness?.artifact_citations, runCases);
   const [cticks, setCticks] = useState<CitationTicks>({ cases: false, outside: false, unchecked: false });
   const act = useCallback(
     async (decision: "approved" | "rejected") => {
@@ -240,7 +241,8 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                       <li key={i}>{c.raw}</li>
                     ))}
                   </ul>
-                  {cneeds.counts.cases > Math.min(20, cneeds.cases.length) && <div className="muted">另有 {cneeds.counts.cases - Math.min(20, cneeds.cases.length)} 个，见成果原文。</div>}
+                  {cneeds.counts.cases - runCases > Math.min(20, cneeds.cases.length) && <div className="muted">另有 {cneeds.counts.cases - runCases - Math.min(20, cneeds.cases.length)} 个，见成果原文。</div>}
+                  {runCases > 0 && <div className="muted">另有 {runCases} 个出现在本次任务用到的材料里，见材料原文。</div>}
                   <label>
                     <input type="checkbox" checked={cticks.cases} onChange={(e) => setCticks((t) => ({ ...t, cases: e.target.checked }))} /> 已逐个核对上面的案号
                   </label>
@@ -262,7 +264,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
               )}
               {cneeds.unchecked && (
                 <div className="banner banner-orange">
-                  这份文件的引用系统没有核对（格式不认识或读取出错），请人工核对文中的法条与案号。
+                  系统读不出这份文件的文字（例如图片、扫描件、PDF），没有核对其中的引用。如果文中有法条或案号，请人工核对；没有的话勾选即可。
                   <label>
                     <input type="checkbox" checked={cticks.unchecked} onChange={(e) => setCticks((t) => ({ ...t, unchecked: e.target.checked }))} /> 这份文件的引用已人工核对
                   </label>

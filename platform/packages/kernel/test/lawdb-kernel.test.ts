@@ -58,16 +58,20 @@ test("案号 → 未核实（离线）→ 签发拦截；改引核验在 lawdb �
 
   const art = d.artifacts.find((a: any) => a.kind === "s1_opinion");
 
-  // 完整性单 blockers 含「未核实（离线）」
+  // 完整性单 blockers 写明材料里的离线案号须逐个核对并勾选（第 14 批第二轮复核 R2B-27：与成果里的案号同一口径）
   const comp = await inv("review.completeness", { artifact_version_id: art.artifact_version_id });
-  assert.ok(comp.blockers.some((b: string) => /未核实（离线）/.test(b)), JSON.stringify(comp.blockers));
+  assert.ok(comp.blockers.some((b: string) => /个案号系统离线无法核实/.test(b)), JSON.stringify(comp.blockers));
+  assert.ok(comp.completeness.run_case_offline > 0);
 
-  // 签发被拦截（unverified_citations 409）
+  // 不勾选：签发被拦截（unverified_citations 409）
   await inv("review.submit", { artifact_version_id: art.artifact_version_id });
   await assert.rejects(
     () => inv("review.approve", { artifact_version_id: art.artifact_version_id, decision: "approved", expected_sha256: art.sha256 }),
-    (e: any) => e.code === "unverified_citations" && /未核实（离线）/.test(e.message),
+    (e: any) => e.code === "unverified_citations" && /已逐个核对案号/.test(e.message),
   );
+  // 勾选“已逐个核对案号”后，案号这一项不再拦（成果自身的引用核验另有门禁）
+  const after = await inv("review.approve", { artifact_version_id: art.artifact_version_id, decision: "approved", expected_sha256: art.sha256, checklist: { citations_cases_checked: true, citations_outside_registry_checked: true, citations_unverifiable_checked: true } }).catch((e: any) => e);
+  assert.ok(!(after instanceof Error) || !/已逐个核对案号/.test(String((after as Error).message)), String((after as Error)?.message ?? ""));
 });
 
 test("无未核实引用时：签发与导出（export 动作校验）照常", { timeout: 240_000 }, async () => {

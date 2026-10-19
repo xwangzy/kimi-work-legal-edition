@@ -12,10 +12,11 @@ test("路由表：缺省 32,000；环境变量可分别调整；越界值不采�
   const d = buildRoutes({});
   assert.equal(d["legal/k3"]!.maxOutputTokens, 32_000);
   assert.equal(d["legal/k2.6"]!.maxOutputTokens, 32_000);
-  const e = buildRoutes({ ZR_MODEL_K3_MAX_TOKENS: "64000", ZR_MODEL_K26_MAX_TOKENS: "16000" });
-  assert.equal(e["legal/k3"]!.maxOutputTokens, 64_000);
+  const e = buildRoutes({ ZR_MODEL_K3_MAX_TOKENS: "40000", ZR_MODEL_K26_MAX_TOKENS: "16000" });
+  assert.equal(e["legal/k3"]!.maxOutputTokens, 40_000);
   assert.equal(e["legal/k2.6"]!.maxOutputTokens, 16_000);
   assert.equal(buildRoutes({ ZR_MODEL_K3_MAX_TOKENS: "9999999" })["legal/k3"]!.maxOutputTokens, 32_000);
+  assert.equal(buildRoutes({ ZR_MODEL_K3_MAX_TOKENS: "64000" })["legal/k3"]!.maxOutputTokens, 32_000, "超过引擎压缩预留（50,000）的值不采用（复核 R2B-32）");
 });
 
 test("请求未给 max_tokens 用路由的上限；给了以请求为准", () => {

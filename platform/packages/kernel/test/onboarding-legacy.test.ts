@@ -51,6 +51,7 @@ test("成员入组在本机没有生效（复核 B13-K02）：暂存损坏 → �
     const st = (await k.invoke("onboarding.status")) as any;
     assert.equal(st.mode, "unactivated");
     assert.equal(st.last_failure.code, "unreadable");
+    assert.ok(!(st.legacy_workspaces ?? []).includes("jf-firm"), "这次启动新建的空工作区已删除，不被当成以前留下的数据（复核 R2B-26）");
     const after = (await k.invoke("onboarding.reset")) as any;
     assert.equal(after.last_failure, undefined, "重新输入即清除");
   } finally {

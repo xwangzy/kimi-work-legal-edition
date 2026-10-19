@@ -87,7 +87,7 @@ import { estimatePoints, scenarioCap } from "../services/estimate.ts";
 import { docxRenderReport } from "../tools/tools/docx.ts";
 import { extractParagraphs, renderDocxHtml, renderXlsxHtml } from "@zr-legal/docx-engine";
 import { isToolOperationInFlight } from "../local-server.ts";
-import { artifactCitationBlock, checkArtifactCitations, uncheckedCitations, type ArtifactCitationCheck } from "../services/artifact-citations.ts";
+import { artifactCitationBlock, checkArtifactCitations, CITATIONS_CASES_CHECK_KEY, uncheckedCitations, type ArtifactCitationCheck } from "../services/artifact-citations.ts";
 
 export interface ApiDeps {
   db: KernelDb;
@@ -1788,12 +1788,14 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           egress: egressSummary,
           // 成果文件自身的引用核验（第 13 批）：签发门禁同一判定
           artifact_citations: artCitations,
+          // 本次运行在材料里核到的离线案号（第 14 批第二轮复核 R2B-27：与成果里的案号同一口径——逐个核对并勾选后可签发）
+          run_case_offline: unverifiedOffline,
         },
         lawyer_checklist: { skill: lawyerChecklist.length ? skillId : null, items: lawyerChecklist },
         blockers: [
           ...(fileOk ? [] : ["文件完整性校验失败"]),
           ...(openItems.length > 0 ? ["存在未决项，签发人须逐项确认"] : []),
-          ...(unverifiedOffline > 0 ? [`存在 ${unverifiedOffline} 条未核实（离线）的引用（案号离线未核），不得签发，联网补核或改引后再提交`] : []),
+          ...(unverifiedOffline > 0 ? [`材料里有 ${unverifiedOffline} 个案号系统离线无法核实，须逐个在裁判文书网等官方来源核对并勾选后才能签发`] : []),
           ...(artCitations && artCitations.wrong > 0 ? [`成果里有 ${artCitations.wrong} 条引用核对不通过（条号不存在、已改号或当时没有有效版本），改正后再签发`] : []),
           ...(artCitations && artCitations.unverified_offline > 0 ? [`成果里有 ${artCitations.unverified_offline} 个案号系统离线无法核实，须逐个核对并勾选后才能签发`] : []),
           ...(artCitations && artCitations.outside_registry > 0 ? [`成果里有 ${artCitations.outside_registry} 条引用不在本机法规库里，须逐条人工核对并勾选后才能签发`] : []),
@@ -1828,9 +1830,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
 
       if (decision === "approved") {
         // 未核实（离线）的引用不得进入签发版（§9/第 5 篇 §2.1：案号离线未核 → 阻断签发）
+        // 运行里在材料中核到的离线案号（第 14 批第二轮复核 R2B-27）：与成果里的案号同一口径——律师逐个核对并勾选后可签发（D-98 扩展，待拍板）
         const unverified = unverifiedOfflineCount(db, art.run_id);
-        if (unverified > 0) {
-          throw new DomainError("unverified_citations", `存在 ${unverified} 条未核实（离线）的引用（案号离线未核）：该引用不得进入签发版。联网补核或改引后再签发`, 409, {
+        if (unverified > 0 && checklistObj[CITATIONS_CASES_CHECK_KEY] !== true) {
+          throw new DomainError("unverified_citations", `材料里有 ${unverified} 个案号系统离线无法核实：请逐个在裁判文书网等官方来源核对，在复核页勾选“已逐个核对案号”后再签发`, 409, {
             unverified_offline: unverified,
           });
         }

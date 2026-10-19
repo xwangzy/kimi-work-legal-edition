@@ -171,6 +171,14 @@ async function runSmoke(win) {
     }
     if (mounted === 0) throw new SmokeFailure("renderer_not_mounted"); // 页面空白：脚本未能加载
     result.checks.renderer_mounted = "ok";
+    // 越过启动占位（复核 R2B-24 / B13-K01）：启动占位页也“有子节点”——要等到激活页或主界面之一真正出现
+    let booted = false;
+    for (let i = 0; i < 240 && !booted; i++) {
+      booted = (await win.webContents.executeJavaScript("!!document.querySelector('.activate-title, .shell') && !document.querySelector('.activate[aria-busy=\"true\"]')").catch(() => false)) === true;
+      if (!booted) await new Promise((r) => setTimeout(r, 250));
+    }
+    if (!booted) throw new SmokeFailure("ui_boot_stuck");
+    result.checks.ui_boot = "ok";
     // 随包运行时全部文件的摘要（复核 B4-A01）：冒烟里同步等结果
     const digestProblems = await verifyRuntimeInBackground(runtimeManifest);
     if (digestProblems.length) {
@@ -251,7 +259,7 @@ async function startKernel() {
       keyResult.code === "unavailable"
         ? "Windows 的数据保护服务当前不可用，应用无法加密保存您的案件数据，因此不会启动。\n\n请重新启动电脑后再试；若仍出现，请联系所内 IT。"
         : "本机案件数据的密钥无法解开（常见于更换 Windows 账户、重置系统密码或迁移电脑之后）。为避免数据丢失，应用没有做任何改动。\n\n" +
-            "请联系所内 IT 或客服，使用“设备恢复包”或律所恢复流程找回数据。\n\n" +
+            "请联系所内 IT 或客服：可以用“恢复包”（设置 → 本机与安全 → 恢复与备份里生成的那份）和备份在激活页“从备份恢复”。\n\n" +
             `技术信息：${keyResult.code}（${keyResult.message}）`,
     );
     restart.quitting = true;
@@ -261,6 +269,7 @@ async function startKernel() {
   let dbKey = keyResult.key;
   // 安装包形态：上游地址与钉住集只认随包的 release.json（审计 S5）；内核环境按白名单构造、数据目录与入口写定（复核 B3-A02、C-A15）
   const release = releaseConfig();
+  kernelStopped = false;
   kernel = utilityProcess.fork(bundle, [], {
     env: kernelChildEnv({
       packaged: app.isPackaged,
@@ -373,6 +382,7 @@ async function startKernel() {
     const now = Date.now();
     restart.times = restart.times.filter((t) => now - t < 120_000);
     if (restart.times.length >= 5) {
+      kernelStopped = true;
       broadcastStatus({ status: "stopped", message: "后台服务多次异常退出，已停止自动重启。请重新打开应用；若仍出现，请联系所内 IT 或客服。" });
       return;
     }
@@ -450,8 +460,11 @@ function fromAppMainFrame(e) {
 }
 
 /** 等内核子进程出现（至多 timeoutMs；正在退出时立即放弃）。 */
+/** 内核已停止（多次异常退出、按身份重启时拉起失败）：界面调用立即失败，不再每次空等 60 秒（复核 R2B-25）。 */
+let kernelStopped = false;
 function whenKernel(timeoutMs) {
   if (kernel) return Promise.resolve(kernel);
+  if (kernelStopped) return Promise.resolve(null);
   const until = Date.now() + timeoutMs;
   return new Promise((resolve) => {
     const tick = () => {
@@ -490,7 +503,7 @@ function wireIpc() {
     const exts = Array.isArray(opts && opts.extensions) ? opts.extensions.filter((x) => typeof x === "string" && /^[a-z0-9]{1,8}$/i.test(x)).slice(0, 20) : [];
     const r = await dialog.showOpenDialog(win, {
       properties: ["openFile", ...(opts && opts.multiple === false ? [] : ["multiSelections"]), "dontAddToRecent"],
-      ...(exts.length ? { filters: [{ name: "材料", extensions: exts }] } : {}),
+      ...(exts.length ? { filters: [{ name: exts.length === 1 && exts[0] === "kwlr" ? "恢复包" : "材料", extensions: exts }] } : {}),
     });
     if (r.canceled) return [];
     const fs = require("node:fs");
@@ -900,7 +913,10 @@ const identityRestart = createIdentityRestart({
   },
   exiting: () => appExiting,
   broadcast: (p) => broadcastStatus(p),
-  onError: () => slog.event("MAIN_KERNEL_IDENTITY_RESTART_FAILED", {}),
+  onError: () => {
+    kernelStopped = true;
+    slog.event("MAIN_KERNEL_IDENTITY_RESTART_FAILED", {});
+  },
 });
 async function restartKernelForIdentity() {
   if (identityRestarting) return;

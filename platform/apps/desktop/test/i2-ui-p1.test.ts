@@ -139,6 +139,9 @@ test("#8 律师层文件不出现研发用语（执行域、跨边界、出站�
     "pages/Home.tsx",
     "pages/Deliverables.tsx",
     "pages/Review.tsx",
+    // 第 14 批第二轮复核 R2B-20：恢复与备份、激活页
+    "components/RecoveryBackup.tsx",
+    "pages/Activate.tsx",
   ].map((f) => join(SRC, f));
   files.push(fileURLToPath(new URL("../../../packages/kernel/src/services/interaction-cards.ts", import.meta.url)));
   const BANNED = /执行域|跨边界|出站闸门|Playbook|确定性工作流|检索上游|事项账本|计点/;

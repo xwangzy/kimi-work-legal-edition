@@ -19,6 +19,7 @@ const ERROR_CODES = new Set([
   "ocr_unavailable",
   "renderer_load_timeout",
   "renderer_not_mounted",
+  "ui_boot_stuck",
   "internal",
 ]);
 

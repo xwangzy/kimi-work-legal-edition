@@ -261,12 +261,12 @@ export function shareFromText(text: string): Uint8Array {
   let data = "";
   rows.forEach((row, li) => {
     const clean = row.toUpperCase().replace(/[\s-]/g, "");
-    for (const ch of clean) if (B32_DECODE[ch] === undefined) throw Object.assign(new KeysError("share_line", `第 ${li + 1} 行含无法识别的字符「${ch}」`), { line: li + 1 });
+    for (const ch of clean) if (B32_DECODE[ch] === undefined) throw Object.assign(new KeysError("share_line", `${prefix} 下面的第 ${li + 1} 行含无法识别的字符「${ch}」`), { line: li + 1 });
     const normalized = [...clean].map((ch) => B32[B32_DECODE[ch]!]).join("");
     const want = li < expectedRows - 1 ? LINE_CHARS : expectedChars - LINE_CHARS * (expectedRows - 1);
-    if (normalized.length !== want + 1) throw Object.assign(new KeysError("share_line", `第 ${li + 1} 行的字符数不对（应为 ${want} 个字符加 1 位行校验）`), { line: li + 1 });
+    if (normalized.length !== want + 1) throw Object.assign(new KeysError("share_line", `${prefix} 下面的第 ${li + 1} 行的字符数不对（应为 ${want} 个字符加 1 位行校验）`), { line: li + 1 });
     const body = normalized.slice(0, want);
-    if (lineCheck(body, li) !== normalized[want]) throw Object.assign(new KeysError("share_line", `第 ${li + 1} 行可能抄错了，请核对这一行`), { line: li + 1 });
+    if (lineCheck(body, li) !== normalized[want]) throw Object.assign(new KeysError("share_line", `${prefix} 下面的第 ${li + 1} 行可能抄错了，请核对这一行`), { line: li + 1 });
     data += body;
   });
   return checked(fromBase32(data, byteLength), prefix);

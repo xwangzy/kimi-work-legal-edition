@@ -33,8 +33,10 @@ export interface CitationTicks {
   unchecked: boolean;
 }
 
-export function citationNeeds(ac: ArtifactCitations | null | undefined): CitationNeeds {
-  const none = { wrong: 0, cases: 0, outside: 0 };
+/** runCases：本次运行在材料里核到的离线案号（与成果里的案号同一个勾选，复核 R2B-27）。 */
+export function citationNeeds(ac: ArtifactCitations | null | undefined, runCases = 0): CitationNeeds {
+  const rc = Number.isFinite(runCases) && runCases > 0 ? runCases : 0;
+  const none = { wrong: 0, cases: rc, outside: 0 };
   if (!ac) return { wrong: [], cases: [], outside: [], counts: none, unchecked: false };
   if (!ac.checked) return { wrong: [], cases: [], outside: [], counts: none, unchecked: true };
   const items = Array.isArray(ac.items) ? ac.items : [];
@@ -46,7 +48,7 @@ export function citationNeeds(ac: ArtifactCitations | null | undefined): Citatio
     wrong,
     cases,
     outside,
-    counts: { wrong: Math.max(n(ac.wrong), wrong.length), cases: Math.max(n(ac.unverified_offline), cases.length), outside: Math.max(n(ac.outside_registry), outside.length) },
+    counts: { wrong: Math.max(n(ac.wrong), wrong.length), cases: Math.max(n(ac.unverified_offline), cases.length) + rc, outside: Math.max(n(ac.outside_registry), outside.length) },
     unchecked: false,
   };
 }

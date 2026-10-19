@@ -170,6 +170,12 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       rmSync(activationFilePath(config.dataRoot), { force: true });
       writeJoinFailure(config.dataRoot, sj.rejected ?? "missing");
       db.close();
+      // 这次启动新建的工作区一并删除（复核 R2B-26）：它没有律所身份（只有本次建的空账本），留着会被当成“以前留下的数据”、也挡住对同一律所的“从备份恢复”
+      try {
+        rmSync(config.workspaceDir, { recursive: true, force: true });
+      } catch {
+        // 日志文件还开着（Windows）：留到下次，内容只有空账本
+      }
       throw new DomainError("conflict", "入组没有完成：管理员批准的结果核对不通过。请重新打开应用，用邀请码再申请一次", 409);
     }
   }
@@ -968,7 +974,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       const sealed = sealRecoveryPackage(content, config.activation?.firm_name ?? config.firmSlug);
       const w = writeExportFile(target, sealed.bytes, config.dataRoot);
       auditLocal("recovery.package_created", device.deviceId);
-      return { file_name: w.name, code_text: sealed.codeText, set_id: sealed.setId, includes_firm_root: !!content.firm_root };
+      return { file_name: w.name, code_text: sealed.codeText, set_id: sealed.setId, includes_firm_root: !!content.firm_root, created_at: content.created_at, firm_name: config.activation?.firm_name ?? config.firmSlug };
     };
     api["recovery.verify_package"] = (p) => {
       const file = String(p?.file ?? "");
@@ -1061,6 +1067,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       // 内容签名公钥来源（第 13 批，评审 Z4 P0-3）：dev = 开发公钥（测试构建），release = 正式公钥
       content_key: config.contentKeyDev ? "dev" : "release",
       activation: config.onboarding ? null : activationInfo(config, firm, identity),
+      // 这台电脑何时从备份恢复（复核 R2A-14 / R2B-22：界面据此提醒“原电脑丢了请找管理员”）
+      restored_from_backup_at: config.onboarding ? null : (db.get<{ at: string }>(`SELECT created_at AS at FROM audit_events WHERE action = 'device.restored_from_backup' AND tenant_id = ? ORDER BY audit_event_id DESC LIMIT 1`, [identity.tenantId])?.at ?? null),
     });
   }
 

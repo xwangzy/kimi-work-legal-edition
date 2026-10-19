@@ -37,7 +37,9 @@ function groupCode(raw: string): string {
  * 或 2 分钟还没打开，都告诉律师怎么办（onStuck），不再一直显示“正在打开…”。
  */
 async function waitForActivated(onStuck: (text: string) => void): Promise<void> {
-  for (let i = 0; i < 120; i++) {
+  // 按经过的时间判断（复核 R2B-25：内核不在时每次查询可能要等很久，按轮数会拖到几十分钟）
+  const until = Date.now() + 120_000;
+  while (Date.now() < until) {
     await new Promise((r) => setTimeout(r, 1000));
     try {
       const st = await api.kernelStatus();
@@ -57,8 +59,21 @@ async function waitForActivated(onStuck: (text: string) => void): Promise<void> 
   onStuck("还没有打开成功。请关闭并重新打开应用；若仍如此，请联系所内 IT。");
 }
 
-export function ActivatePage({ initial, onRefresh }: { initial: Status; onRefresh: () => void }) {
+export function ActivatePage({ initial, onRefresh, notice = "" }: { initial: Status; onRefresh: () => void; notice?: string }) {
   const [status, setStatus] = useState<Status>(initial);
+  // 主进程报“后台服务已停止”（拉起失败、多次异常退出）：激活页直接说明，不再让律师空等（复核 R2B-25）
+  if (notice) {
+    return (
+      <Frame>
+        <p className="activate-error" role="alert">
+          {notice}
+        </p>
+        <button className="btn-primary" onClick={() => window.location.reload()}>
+          重试
+        </button>
+      </Frame>
+    );
+  }
   if (status.mode === "member_pending") return <WaitApproval status={status} onReset={async () => setStatus((await onboarding.reset()) as Status)} onRefresh={onRefresh} />;
   return <EnterCode onPending={(s) => setStatus(s)} legacy={status.legacy_workspaces ?? []} failed={status.last_failure ? failureText(status.last_failure.code) : ""} />;
 }
@@ -198,13 +213,20 @@ function RestoreFromBackup({ onBack, onDone, onStuck }: { onBack: () => void; on
         ...(ack.legacy ? { legacy_ack: true } : {}),
         ...(ack.older ? { older_ack: true } : {}),
       });
-      onDone(`已恢复「${r.firm?.name ?? "本所"}」的数据（备份于 ${String(r.backup_at ?? "").slice(0, 10)}），正在打开…`);
+      // 按本机时间显示到分钟，并说明这之后的工作不在备份里（复核 R2B-22）
+      const at = r.backup_at ? new Date(String(r.backup_at)).toLocaleString("zh-CN", { hour12: false }).slice(0, -3) : "";
+      onDone(`已恢复「${r.firm?.name ?? "本所"}」的数据（备份于 ${at}；这之后在原电脑上做的工作没有恢复${r.skipped_newer ? "，较新的几份备份不完整，用的是能用的最近一份" : ""}），正在打开…`);
       void waitForActivated(onStuck);
     } catch (e) {
       const why = ((e as { detail?: { code?: string } }).detail ?? {}).code;
       if (why === "legacy_present") setNeedAck((n) => ({ ...n, legacy: true }));
       if (why === "backup_older") setNeedAck((n) => ({ ...n, older: true }));
-      setErr((e as Error).message || "恢复没有完成");
+      // 安装包形态下选好的文件与文件夹是一次性的（用过即失效）：失败后清空，请律师重新选（复核 R2B-07）
+      if (dialogs) {
+        setPkg(null);
+        setFolder(null);
+      }
+      setErr(`${(e as Error).message || "恢复没有完成"}${dialogs ? "（请重新选择恢复包和备份位置后再点“恢复”）" : ""}`);
     } finally {
       setBusy(false);
     }
@@ -212,7 +234,7 @@ function RestoreFromBackup({ onBack, onDone, onStuck }: { onBack: () => void; on
   return (
     <Frame>
       <h1 className="activate-title">从备份恢复</h1>
-      <p className="activate-lead">需要三样东西：恢复包文件、备份所在的位置（例如 U 盘）、打印或抄下的恢复码。</p>
+      <p className="activate-lead">需要三样东西：恢复包文件、备份所在的位置（选 U 盘或文件夹本身即可，里面有一个 KimiWorkLegal-backup 文件夹）、打印或抄下的恢复码。恢复期间请不要关闭应用或拔出 U 盘。</p>
       {dialogs ? (
         <div className="activate-actions">
           <button className="btn-ghost" onClick={() => void recovery.pickPackageFile().then((f) => f && setPkg({ handle: f.handle, name: f.name }))}>
@@ -235,7 +257,7 @@ function RestoreFromBackup({ onBack, onDone, onStuck }: { onBack: () => void; on
         </>
       )}
       <label className="field">
-        <span>恢复码（含第一行 KWR1）</span>
+        <span>恢复码（第一行 KWR1 也照抄）</span>
         <textarea className="activate-code" rows={4} value={code} onChange={(e) => setCode(e.target.value)} spellCheck={false} autoComplete="off" />
       </label>
       {err && (

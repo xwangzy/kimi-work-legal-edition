@@ -88,7 +88,7 @@ function listEntries(buf: Buffer): ReadEntry[] {
 
 function inflateEntry(e: ReadEntry): Buffer {
   if (e.method === 0) {
-    if (e.compressed.length !== e.size) throw new DomainError("unsupported_file", "ZIP 条目大小与声明不符", 422);
+    if (e.compressed.length > e.size) throw new DomainError("unsupported_file", "文件已损坏（压缩包条目比声明的大）", 422);
     return Buffer.from(e.compressed);
   }
   if (e.method === 8) {
@@ -96,10 +96,12 @@ function inflateEntry(e: ReadEntry): Buffer {
     try {
       // 输出上限 = 声明大小 + 1：实际解压出更多即判为压缩炸弹（不再无上限解压到内存）
       out = inflateRawSync(e.compressed, { maxOutputLength: e.size + 1 });
-    } catch {
-      throw new DomainError("unsupported_file", "解压后大小与声明不符（疑似压缩炸弹）或数据损坏", 422);
+    } catch (err) {
+      const tooBig = (err as NodeJS.ErrnoException)?.code === "ERR_BUFFER_TOO_LARGE" || /maxOutputLength|buffer|too large/i.test(String((err as Error)?.message));
+      throw new DomainError("unsupported_file", tooBig ? "解压后比声明的大（疑似压缩炸弹），已拒收" : "文件已损坏，打不开", 422);
     }
-    if (out.length !== e.size) throw new DomainError("unsupported_file", "解压后大小与声明不符（疑似压缩炸弹）", 422);
+    // 只拒收“比声明的大”（炸弹）；比声明的小是写入器缺陷或损坏，照常读（复核 R2B-30）
+    if (out.length > e.size) throw new DomainError("unsupported_file", "解压后比声明的大（疑似压缩炸弹），已拒收", 422);
     return out;
   }
   throw new DomainError("unsupported_file", `不支持的 ZIP 压缩方式 ${e.method}`, 422);

@@ -802,6 +802,9 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .done-files .done-file-list li { display: flex; align-items: center; gap: 8px; }
 .menu-group { font-size: var(--fs-xs); color: var(--text-secondary); padding: 8px 10px 2px; border-top: 1px solid var(--border-subtle); margin-top: 4px; }
 .tab-more { min-width: 40px; }
-.recovery-code { white-space: pre; display: block; font-size: var(--fs-md); line-height: 1.7; }
-@media print { body * { visibility: hidden; } .recovery-code, .recovery-code * { visibility: visible; } .recovery-code { position: fixed; top: 40px; left: 40px; background: none; } }
+.recovery-code { white-space: pre; display: block; font-size: var(--fs-md); line-height: 1.7; list-style: none; padding-left: 0; user-select: none; -webkit-user-select: none; }
+.recovery-no { display: inline-block; min-width: 2em; color: var(--text-secondary); }
+.recovery-print-head { font-weight: 600; margin-bottom: 6px; }
+/* 打印只露出恢复码卡片（抬头、编号行、创始提示），其余页面内容不打（复核 R2A-04、R2B-21） */
+@media print { body * { visibility: hidden; } .recovery-print, .recovery-print * { visibility: visible; } .recovery-print .no-print { display: none !important; } .recovery-print { position: fixed; top: 40px; left: 40px; background: none; border: none; box-shadow: none; } }
 
