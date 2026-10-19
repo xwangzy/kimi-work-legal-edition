@@ -162,6 +162,12 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
     <main className="main">
       <div className="review-page">
         <button className="btn-link back" onClick={() => nav("/deliverables")}>← 交付件</button>
+        {/* 复核 B13-U10：从复核页回到产出这份成果的任务过程 */}
+        {data?.run_id && data?.matter_id && (
+          <button className="btn-link back" onClick={() => nav(`/run/${data.run_id}/${data.matter_id}`)}>
+            查看任务过程
+          </button>
+        )}
         <div className="page-head">
           <h1 className="page-title" title={data?.filename ?? ""}>{title ?? data?.filename ?? "…"}</h1>
           {data && (

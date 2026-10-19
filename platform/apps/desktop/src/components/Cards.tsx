@@ -149,7 +149,7 @@ export function ApprovalCardView({ card, tokenMap, busy, onDecide }: {
       {taskOk && (
         <label className="cc-check">
           <input type="checkbox" checked={forTask} onChange={(e) => setForTask(e.target.checked)} />
-          {isSearchCred ? "这个任务后面的检索都这样处理，不再问我" : "这个任务后面的同类操作不再问我"}
+          {isSearchCred ? "这个任务后面的检索都按改写后的说法发出，不再问我" : "这个任务后面的同类操作不再问我"}
         </label>
       )}
       {isSearchCred && generalizedOk && originalOk && card.preview.send_original !== undefined && (

@@ -67,6 +67,10 @@ test("#3 继续工作的胶囊写下一步：意见待处理（橙）> 待你复
   assert.deepEqual(nextStepPill({ status: "succeeded", openOpinions: 0, pendingReview: 1, artifacts: 2 }), { text: "待你复核", tone: "pill-blue" });
   assert.deepEqual(nextStepPill({ status: "succeeded", openOpinions: 0, pendingReview: 0, artifacts: 2 }), { text: "可以下载", tone: "pill-green" });
   assert.deepEqual(nextStepPill({ status: "succeeded" }), { text: "已完成", tone: "pill-green" });
+  // 复核 B13-U09：未签发的草稿不标绿色“可以下载”
+  assert.deepEqual(nextStepPill({ status: "succeeded", openOpinions: 0, pendingReview: 0, artifacts: 2, drafts: 1, approved: 1 }), { text: "草稿待提交复核", tone: "pill-blue" });
+  assert.deepEqual(nextStepPill({ status: "succeeded", openOpinions: 0, pendingReview: 0, artifacts: 2, drafts: 0, approved: 2 }), { text: "可以下载", tone: "pill-green" });
+  assert.equal(nextStepPill({ status: "succeeded", artifacts: 1, drafts: 0, approved: 0 }).text, "已完成", "没有已签发的就不说可以下载");
   assert.deepEqual(nextStepPill({ status: "failed" }), { text: "需要重试", tone: "pill-red" });
   assert.deepEqual(nextStepPill({ status: "timed_out" }), { text: "需要重试", tone: "pill-red" });
   assert.deepEqual(nextStepPill({ status: "waiting_approval", openOpinions: 3 }), { text: "等待你确认", tone: "pill-orange" });

@@ -139,7 +139,7 @@ export function buildApprovalCard(p: PendingApproval, ctx: CardContext): { card:
     const why = l3a
       ? "这是敏感事项：每一条检索都要你确认，而且只能换成一般说法再查。"
       : needsCredential
-        ? "检索词里有当事人名称，建议换成一般说法（如“某公司”）再查。"
+        ? "检索词里有当事人名称或代号，建议换成一般说法（如“某公司”）再查。"
         : reason === "manual_mode"
           ? "手动档：每一次联网检索都先问你。"
           : "这一次检索需要你确认。";

@@ -1769,6 +1769,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       return {
         artifact_version_id: art.artifact_version_id,
         matter_id: art.matter_id,
+        // 复核页“查看任务过程”入口（复核 B13-U10）
+        run_id: art.run_id ?? null,
         filename: art.filename,
         sha256: art.sha256,
         status: art.status,

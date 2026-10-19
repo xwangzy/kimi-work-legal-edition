@@ -149,6 +149,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
           openOpinions: rc ? Math.max(0, rc.progress.total - rc.progress.decided) : 0,
           pendingReview: mine.filter((a) => a.status === "pending_review").length,
           artifacts: mine.length,
+          drafts: mine.filter((a) => a.status === "draft").length,
+          approved: mine.filter((a) => a.status === "approved").length,
         };
       }
       if (live) setFacts(out);
