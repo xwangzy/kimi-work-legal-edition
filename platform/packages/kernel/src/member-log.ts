@@ -338,10 +338,11 @@ function deviceRevoked(db: KernelDb, deviceId: string): boolean {
 /** 设备被吊销的时刻（本机吊销记录与控制面墓碑取较早者；不知道时为 null）。 */
 export function revokedAtOf(db: KernelDb, deviceId: string): string | null {
   const a = db.get<{ t: string | null }>(`SELECT revoked_at AS t FROM devices WHERE device_id = ? AND status = 'revoked'`, [deviceId])?.t ?? null;
-  const b = db.get<{ t: string | null }>(`SELECT MIN(revoked_at) AS t FROM cp_revoked_devices WHERE device_id = ?`, [deviceId])?.t ?? null;
+  // 墓碑可能有多条：全部取出、规范化之后再取最早（第五轮复核 S12A-31/S12A-18 残留：SQL 里按字符串取 MIN 发生在规范化之前）
+  const bs = db.all<{ t: string | null }>(`SELECT revoked_at AS t FROM cp_revoked_devices WHERE device_id = ?`, [deviceId]).map((r) => r.t);
   // 只认合格的时刻（复核 S12A-18：墓碑时刻不合格时不用）
   // 规范成 UTC 再比较（第四轮复核 S12A-18：带时区偏移的时刻按字符串比较会错）
-  return [a, b].filter((x): x is string => !!x && Number.isFinite(Date.parse(x))).map((x) => new Date(x).toISOString()).sort()[0] ?? null;
+  return [a, ...bs].filter((x): x is string => !!x && Number.isFinite(Date.parse(x))).map((x) => new Date(x).toISOString()).sort()[0] ?? null;
 }
 
 /**
@@ -551,12 +552,45 @@ function computeView(deps: ChainDeps, matterId: string, opts: { liveBefore?: Map
     const a = anc.get(e.id)!;
     return project(tentative.filter((x) => a.has(x.id)), anc).get(user)?.role === "owner";
   };
+  // 报复另须“看见了降级者在降级之前的全部作为”（第五轮复核 S12A-26：否则被降级者把报复的前序选在降级者另一条事件之前，
+  // 那条事件按“移出优先”被拒收、降级他的事件作为后代一并失效——他仍是负责人）。普通的互相降级双方历史相同，两条照样都成立
+  // 以降级者对他的第一次降级为准（先降级、再移出的两步里，第二步晚于报复本就看不到）
+  const sawPrior = (e: StoredEvent, d: StoredEvent) => {
+    const ad = anc.get(d.id)!;
+    let first = d;
+    for (const x of ad) {
+      const xe = events.get(x)!;
+      if (xe.member === d.member && xe.p.kind === "member" && String(xe.p.body.user) === e.member && xe.p.body.role !== "owner" && anc.get(first.id)!.has(x)) first = xe;
+    }
+    const ae = anc.get(e.id)!;
+    for (const x of anc.get(first.id)!) if (events.get(x)!.member === d.member && !ae.has(x)) return false;
+    return true;
+  };
   const retaliation = (e: StoredEvent, d: StoredEvent) =>
     e.p.kind === "member" &&
     String(e.p.body.user) === d.member &&
     e.p.body.role !== "owner" &&
-    (typeof e.p.body.role === "string" || (e.p.body.role === null && !ownerInPast(e, d.member)));
-  const pass3 = (base: StoredEvent[]) => {
+    (typeof e.p.body.role === "string" || (e.p.body.role === null && !ownerInPast(e, d.member))) &&
+    sawPrior(e, d);
+  const pass3 = (allBase: StoredEvent[]) => {
+    // 先剔除“没看见降级者此前作为”的反向降级（第五轮复核 S12A-26）：Y 对 X 的降级 e 与 X 对 Y 的降级 d 并发，而 e 的因果过去里缺少
+    // X 在 d 之前的事件——e 不算降级、直接拒收（否则它会让 X 那些事件按“移出优先”被拒，d 作为后代一并失效）
+    const pre = new Map<string, EventStatus>();
+    const trueDemotion = (e: StoredEvent) => e.p.kind === "member" && e.p.body.role !== "owner" && ownerInPast(e, String(e.p.body.user));
+    const dems = allBase.filter(trueDemotion);
+    for (const e of dems) {
+      for (const d of dems) {
+        if (String(e.p.body.user) !== d.member || String(d.p.body.user) !== e.member || !concurrent(e, d)) continue;
+        if (!sawPrior(e, d)) pre.set(e.id, { s: "rejected", why: "author_demoted_concurrently" });
+        // 第三位负责人看到 d 之后已对这两人之一做过成员操作，e 却不在其因果过去里：不再成立（第五轮复核 S12A-28：
+        // 冲突解除之后，被降级者再补写一条报复就能重新制造冲突、或在解除者的决定之后悄悄降级对方）
+        else if (allBase.some((v) => v.p.kind === "member" && (String(v.p.body.user) === e.member || String(v.p.body.user) === d.member) &&
+          v.member !== e.member && v.member !== d.member && ownerInPast(v, v.member) && anc.get(v.id)!.has(d.id) && !anc.get(v.id)!.has(e.id)))
+          pre.set(e.id, { s: "rejected", why: "author_demoted_concurrently" });
+      }
+    }
+    withDescendants(pre, allBase);
+    const base = allBase.filter((e) => !pre.has(e.id));
     const judge = (demotions: Map<string, StoredEvent[]>, exemptDemotions: boolean) => {
       const nb = new Map<string, EventStatus>();
       for (const e of base) {
@@ -573,10 +607,10 @@ function computeView(deps: ChainDeps, matterId: string, opts: { liveBefore?: Map
     for (let iter = 0; iter < 8; iter++) {
       const nb = judge(demotionsOf(alive), false);
       const next = base.filter((e) => !nb.has(e.id));
-      if (next.length === alive.length && next.every((e, i) => e.id === alive[i]!.id)) return nb;
+      if (next.length === alive.length && next.every((e, i) => e.id === alive[i]!.id)) return new Map([...pre, ...nb]);
       alive = next;
     }
-    return judge(demotionsOf(base), true);
+    return new Map([...pre, ...judge(demotionsOf(base), true)]);
   };
   // 第二、三遍合起来迭代（复核 S12A-14/23、S12B-49）：认可只算上一轮最终成立的事件；第三遍据以拒收的降级若改判不成立，它造成的拒收随之撤回。至多 4 轮
   let bad = new Map<string, EventStatus>();
@@ -687,9 +721,13 @@ export function applyProjection(deps: ChainDeps, matterId: string, view: ChainVi
       );
     }
   }
-  // 起点没有列出、链上也从未出现的本机行：按已移出处理（锚定者的成员关系为准）
+  // 起点没有列出、链上也从未出现的本机行：按已移出处理（锚定者的成员关系为准）。
+  // 例外是本机用户自己的行：链上出现过、只是加他的事件不成立（被拒收）时不动（第五轮复核 S12A-26 第 3 条：本机行被标为已移出
+  // 即触发本机擦除，擦除只凭成立的移出事件）。他不在投影里，轮换与补包裹都按投影，不会包给他
+  const self = deps.keyctx?.device.cert.memberId;
+  const selfNamed = !!self && [...view.events.values()].some((e) => e.p.kind === "member" && String(e.p.body.user) === self);
   for (const r of db.all<{ user_id: string }>(`SELECT user_id FROM matter_members WHERE matter_id = ? AND removed_at IS NULL`, [matterId])) {
-    if (view.members.has(r.user_id) || pendingUsers.has(r.user_id)) continue;
+    if (view.members.has(r.user_id) || pendingUsers.has(r.user_id) || (r.user_id === self && selfNamed)) continue;
     db.run(`UPDATE matter_members SET removed_at = ?, removed_lamport = ?, author_sig = NULL, author_cert = NULL WHERE matter_id = ? AND user_id = ?`, [nowIso(), view.root.p.lamport, matterId, r.user_id]);
   }
 }
@@ -1051,10 +1089,12 @@ export function chainHealth(deps: ChainDeps, matterId: string, view: ChainView):
     for (const d2 of demotes) {
       if (d1.id >= d2.id || d1.member !== String(d2.p.body.user) || d2.member !== String(d1.p.body.user)) continue;
       if (view.anc.get(d1.id)!.has(d2.id) || view.anc.get(d2.id)!.has(d1.id)) continue;
-      // 解除只认第三位在册负责人在两条之后亲手做的成员操作（第四轮复核 S12B-46：自动补轮换不算——否则冲突从未出现就被“解除”）
+      // 解除只认第三位在册负责人在两条之后、针对冲突双方之一亲手做的成员操作（第四轮复核 S12B-46；第五轮 S12A-28/S12B-58：
+      // 给无关的人改角色、授权节点不算——第三位负责人须明确决定留谁）
       const resolved = view.valid.some(
         (v) =>
           v.p.kind === "member" &&
+          (String(v.p.body.user) === d1.member || String(v.p.body.user) === d2.member) &&
           v.member !== d1.member &&
           v.member !== d2.member &&
           view.members.get(v.member)?.role === "owner" &&
@@ -1075,12 +1115,26 @@ export function chainHealth(deps: ChainDeps, matterId: string, view: ChainView):
     const via = db.get<{ via_member: string | null }>(`SELECT via_member FROM member_events WHERE event_id = ?`, [e.id])?.via_member;
     if (!via || !effectiveMembers.has(via)) continue;
     // 负责人此后对同一成员做过成员操作（重做或确认保留），或轮换出了更高的纪元，即不再提示（第四轮复核 S12A-22/S12B-48：不再是“任何负责人写过任何事件”）
+    // 第五轮复核 S12A-30/S12B-60：按因果（v 写在 F 所依据的状态之后：以 F 的全部前序为祖先），不按 lamport；
+    // 轮换类只认新纪元确实排除了 F 要排除的设备
+    const afterBasis = (v: StoredEvent) => e.p.prev.every((x) => view.anc.get(v.id)!.has(x));
+    const fExcluded = (k?.excluded ?? []).map(String);
     const handled =
       (removal &&
         view.valid.some(
-          (v) => v.p.kind === "member" && String(v.p.body.user) === String(e.p.body.user) && v.p.lamport > e.p.lamport && view.members.get(v.member)?.role === "owner" && !deviceRevoked(db, v.p.author_device),
+          (v) =>
+            v.p.kind === "member" &&
+            String(v.p.body.user) === String(e.p.body.user) &&
+            v.member !== String(e.p.body.user) &&
+            afterBasis(v) &&
+            view.members.get(v.member)?.role === "owner" &&
+            !deviceRevoked(db, v.p.author_device),
         )) ||
-      (!removal && !!k && view.maxEpoch > k.epoch);
+      (!removal &&
+        !!k &&
+        [...view.epochs.entries()].some(
+          ([n, info]) => n > k.epoch && afterBasis(info.winner) && fExcluded.every((d) => !info.wraps.has(d)),
+        ));
     if (!handled) h.revokedChanges.push(e);
   }
   return h;

@@ -71,7 +71,7 @@ import type { AsyncMutex } from "../mutex.ts";
 import { currentTenantEpoch, ensureNodeDevice, getDeviceKeys, stageDeviceRecovery, type KernelKeyContext } from "../devices.ts";
 import { archivedCertsOf, certVerifying, rowPayloadHash, verifyCertSignature } from "../ledger-signer.ts";
 import { syncExport, syncImport, syncStatus, type SyncDeps } from "../sync-engine.ts";
-import { addOrUpdateMember, chainSummary, chainView, hasChain, rebootstrapMatter, refreshChain, rotateChainKey, writeEvent, writeGenesis } from "../member-log.ts";
+import { addOrUpdateMember, chainSummary, chainView, hasChain, keyFingerprint, rebootstrapMatter, refreshChain, rotateChainKey, writeEvent, writeGenesis } from "../member-log.ts";
 import { docxHeaderFooterTexts, parseDocument } from "../services/parser.ts";
 import { detectClassifiedMarking, type ClassifiedFinding } from "../services/classified-marking.ts";
 import { restoreArtifactBytes } from "../services/export-restore.ts";
@@ -3070,6 +3070,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const recWrap = db.get<{ wrapped_key: string }>(`SELECT wrapped_key FROM matter_keys WHERE matter_id = ? AND epoch = ? AND wrapped_for = 'recovery'`, [matter.matter_id, epoch]);
       if (!recWrap) throw notFound("该事项的恢复托管包裹行");
       const matterKey = unwrapMatterKey(recWrap.wrapped_key, combined.privateKeyPem);
+      // 托管包裹须是该纪元胜者那把（第五轮复核 S12B-57：本机的托管行可能仍是落选那把，覆盖后本机落到落选的密钥）
+      if (hasChain(db, matter.matter_id)) {
+        const fp = chainView(chainDeps(id), matter.matter_id).epochs.get(epoch)?.decl.fp;
+        if (fp && keyFingerprint(matterKey) !== fp) {
+          return { ok: false as const, reason: `本机的恢复托管包裹不是成员链上纪元 ${epoch} 声明的那把（多为并发轮换落选、胜者的段还没到）：请先同步再恢复` };
+        }
+      }
       const rotate = p?.rotate === true;
       if (rotate) refreshChain(chainDeps(id), matter.matter_id);
       // 团队事项的新纪元只认负责人签发的包裹（D-93）：非负责人轮换不会传播，还会与负责人下次轮换撞纪元号（第二轮复核 S11A-20）
@@ -3079,6 +3086,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const revokeDeviceIds: string[] = Array.isArray(p?.revoke_device_ids) ? p.revoke_device_ids.map(String) : [];
       let rotatedEpoch = epoch;
       db.tx(() => {
+        // 本机原有的那一行先留进密钥历史（第五轮复核 S12B-57：覆盖后用它封过的材料块解不开）
+        db.run(
+          `INSERT OR IGNORE INTO matter_key_history (matter_id, epoch, wrapped_for, wrapped_key, replaced_at)
+           SELECT matter_id, epoch, wrapped_for, wrapped_key, ? FROM matter_keys WHERE matter_id = ? AND epoch = ? AND wrapped_for = ?`,
+          [nowIso(), matter.matter_id, epoch, keyctx.device.deviceId],
+        );
         db.run(`INSERT OR REPLACE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key) VALUES (?,?,?,?)`, [
           matter.matter_id,
           epoch,

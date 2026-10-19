@@ -6,9 +6,18 @@
 -- matter_key_history：本机某纪元的密钥被链上胜出的那把替换时，原先那把留在这里（第四轮复核 S12A-24/S12B-44：
 --   用它封过的材料块仍要解得开，导出前按段的纪元重封）。
 
-ALTER TABLE member_rewinds ADD COLUMN active integer NOT NULL DEFAULT 1;
+-- 按“建新表再复制”重建 member_rewinds（第五轮复核 S12B-59：跑过第三轮那一版 0043 的开发库已有 active 列，ALTER 会报重复列）
+CREATE TABLE member_rewinds_new (
+  event_id  text PRIMARY KEY,
+  matter_id text NOT NULL,
+  at        text NOT NULL,
+  active    integer NOT NULL DEFAULT 1
+);
+INSERT INTO member_rewinds_new (event_id, matter_id, at) SELECT event_id, matter_id, at FROM member_rewinds;
+DROP TABLE member_rewinds;
+ALTER TABLE member_rewinds_new RENAME TO member_rewinds;
 
-CREATE TABLE matter_key_history (
+CREATE TABLE IF NOT EXISTS matter_key_history (
   matter_id   text NOT NULL,
   epoch       integer NOT NULL,
   wrapped_for text NOT NULL,

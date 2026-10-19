@@ -92,6 +92,8 @@ const ownedBy = (sid: string, dev: string) => SEGMENT_ID_RE.test(sid) && sid.sta
 
 class RelayError extends Error {
   readonly code: string;
+  /** 本机自己判出的错误（不是中继或闸门回的；第五轮复核 S12A-29：中继回的同名代码不触发本机的作废与重出）。 */
+  local = false;
   /** “事项不存在”回复里带的重置代数（第四轮复核 S11B-36/37）。 */
   readonly gen: number | null;
   /** “中继已重建”回复里带的实例编号（第六轮复核 S11B-50）。 */
@@ -405,7 +407,11 @@ export class ShareRelaySync {
           if (r.t !== RELAY_BLOB_TABLE) continue;
           const ref = r.row as unknown as RelayBlobRef;
           const env = readFileSync(join(this.d.blobs.dir, ...r.pk.split("/")));
-          if (sha256Hex(env) !== ref.sha256) throw new RelayError("local_blob_changed");
+          if (sha256Hex(env) !== ref.sha256) {
+            const err = new RelayError("local_blob_changed");
+            err.local = true;
+            throw err;
+          }
           // 单份材料超过中继“每设备未登记字节”上限（缺省 2 GiB）登记不上：直接标卡住并显示（第三轮复核 S11B-33a；分块续传在 G1）
           if (env.length > RELAY_SINGLE_BLOB_MAX) throw new RelayError("segment_too_large");
           const parts = relayChunks(env);
@@ -473,20 +479,25 @@ export class ShareRelaySync {
         }
         // 段引用的材料块在本机已被重封（第四轮复核 S12B-51：成员链的纪元改变后导出前按段的纪元重封）：这一段作废，
         // 退回导出水位、下一次按新的块重新出段（否则每次上传都报 local_blob_changed、无限重试）
-        if (code === "local_blob_changed") {
+        if (code === "local_blob_changed" && e instanceof RelayError && e.local) {
           rmSync(c.path, { force: true });
           this.d.db.run(`DELETE FROM relay_outbox WHERE segment_id = ?`, [sid]);
-          const at = seg.header.created_at;
-          this.d.db.run(`UPDATE relay_export_state SET last_export_at = ?, last_always_digest = NULL WHERE matter_id = ? AND last_export_at > ?`, [
-            new Date(Date.parse(at) - 1).toISOString(),
-            mid,
-            new Date(Date.parse(at) - 1).toISOString(),
-          ]);
+          // 退到这一段里最早一行的时刻（第五轮复核 S12B-55：原先退到段的生成时刻，段里的行永远不再发出）；读不出段体则全量
+          const times = (rows ?? [])
+            .map((r) => (r.row as { created_at?: unknown; updated_at?: unknown }).created_at ?? (r.row as { updated_at?: unknown }).updated_at)
+            .filter((t): t is string => typeof t === "string" && Number.isFinite(Date.parse(t)))
+            .map((t) => new Date(t).toISOString())
+            .sort();
+          const to = times[0] ? new Date(Date.parse(times[0]) - 1).toISOString() : "0000";
+          this.d.db.run(`UPDATE relay_export_state SET last_export_at = ?, last_always_digest = NULL WHERE matter_id = ? AND last_export_at > ?`, [to, mid, to]);
           report.errors.pop();
           continue;
         }
         // 中继说本机控制成员过期（本机以为自己是控制成员，提升纪元却被拒）：清掉、重取历史得知新的控制成员（第四轮复核 S12A-12）
-        if (code === "epoch_not_established" && this.controllerOf(mid) === this.d.keyctx.device.cert.memberId) {
+        // 至多每 10 分钟一次（第五轮复核 S12A-29：中继反复回这个代码不能让本机反复从头重取历史）
+        const lastRefresh = Number(this.kv(`ctl_refresh_${mid}`)) || 0;
+        if (code === "epoch_not_established" && this.controllerOf(mid) === this.d.keyctx.device.cert.memberId && this.now() - lastRefresh > 600_000) {
+          this.setKv(`ctl_refresh_${mid}`, String(this.now()));
           this.d.db.run(`UPDATE relay_matters SET controller = NULL, known = 1 WHERE matter_id = ?`, [mid]);
           this.refetchHistory(mid);
         }

@@ -23,7 +23,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { canonicalJson, signSyncWith, unwrapMatterKey, verifyBytes, type DeviceCertificate } from "@zr-legal/keys";
 import { checkSealed, keyRowsSigned, openSegmentBody, parseSegment, scanSegments, sealSegment, writeSegment, writeShareBlob, type KeyRow, type SegmentFile, type SyncRow } from "@zr-legal/sync";
 import type { KernelDb } from "./db.ts";
-import type { BlobStore } from "./blobs.ts";
+import { blobHeaderOf, type BlobStore } from "./blobs.ts";
 import { assertIncomingEventAcceptable, appendAuditEvent, deviceTombstoned, verifyCertSignature } from "./ledger-signer.ts";
 import type { KernelKeyContext } from "./devices.ts";
 import {
@@ -351,6 +351,7 @@ export function syncExport(
     // 每行与它引用的块清单行为一个单元（拆段时不分开）；单元记引用的新材料字节
     // “总是附带的行”合成一个单元放在最前（第四轮：首同步要在同一段里同时看到事项行与全部成员行，拆开会让引导失败）
     const units: { rows: SyncRow[]; blobBytes: number }[] = [{ rows: rows.filter((r) => ALWAYS_TABLES.has(r.t)), blobBytes: 0 }];
+    let blobFailure: string | null = null;
     const seenRel = new Set<string>();
     for (const r of rows) {
       if (ALWAYS_TABLES.has(r.t)) continue;
@@ -362,23 +363,43 @@ export function syncExport(
       if (seenRel.has(rel)) continue;
       seenRel.add(rel);
       // 发出之前按此刻的加密纪元重封（第四轮复核 S12B-44/45：暂停期间、或用落选与不成立的纪元封的块，原样发出会让被移出者解得开、
-      // 在册成员却解不开）；块名不变
+      // 在册成员却解不开）；块名不变。只重封本机写的行引用的块、或用链上没有声明（含落选那把）的纪元封的块——同事的旧纪元块不动
+      // （第五轮复核 S12B-56：否则一次全量重发把全所的旧块都重新加密、中继存储随之增长）；重封或写共享副本失败：这个事项本轮不发
+      // （第五轮复核 S12B-54：原样发出会让被移出者解得开）
+      const mine = originOf(db, r.t, String(r.pk), keyctx.device.deviceId).device === keyctx.device.deviceId;
       try {
-        if (rel.split("/")[0] === m.matter_id) deps.blobs.reseal(uri);
-      } catch {
-        // 解不开或此刻没有可用纪元：原样（接收方核对不过即不收）
+        if (rel.split("/")[0] === m.matter_id) {
+          const view = hasChain(db, m.matter_id) ? chainView(deps, m.matter_id) : null;
+          deps.blobs.reseal(uri, (epoch) => mine || !view || !view.epochs.has(epoch));
+        }
+      } catch (e) {
+        blobFailure = e instanceof Error ? e.message.slice(0, 120) : String(e);
+        break;
       }
       const src = join(deps.blobs.dir, ...rel.split("/"));
       if (!existsSync(src)) continue;
       const [scope, sha] = rel.split("/");
       if (!relay) {
-        writeShareBlob(args.shareDir, tenantId, scope!, sha!, readFileSync(src));
+        const mineEnv = readFileSync(src);
+        const ours = blobHeaderOf(mineEnv)?.epoch ?? 0;
+        try {
+          // 共享副本只在本机这一份的纪元不低于它时覆盖（第五轮复核 S12A-27）
+          writeShareBlob(args.shareDir, tenantId, scope!, sha!, mineEnv, (existing) => (blobHeaderOf(existing)?.epoch ?? 0) <= ours);
+        } catch (e) {
+          blobFailure = e instanceof Error ? e.message.slice(0, 120) : String(e);
+          break;
+        }
         continue;
       }
       const env = readFileSync(src);
       const ref: RelayBlobRef = { sha256: createHash("sha256").update(env).digest("hex"), size: env.length, chunks: relayChunks(env).map((c) => c.cid) };
       unit.rows.push({ t: RELAY_BLOB_TABLE, pk: rel, src_device: keyctx.device.deviceId, src_lamport: toLamport, row: ref as unknown as Record<string, unknown> });
       unit.blobBytes += env.length;
+    }
+    if (blobFailure) {
+      // 材料块重封或写共享副本失败：这个事项本轮不发、水位不动，下次再试（第五轮复核 S12B-54）
+      result.chainErrors.push(`${m.matter_id}：材料块处理失败（${blobFailure}）`);
+      continue;
     }
     // 中继介质按段体大小与引用的新材料字节拆成按顺序的多段（第二轮复核 S11B-21：一段引用的材料不超过中继
     // “每设备未登记字节”上限的一半，否则永远登记不上）；段编号里的时间递增，摄取按编号先后，依赖的行总在被依赖的行之后
