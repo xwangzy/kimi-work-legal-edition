@@ -15,13 +15,15 @@
  * { "role": "control-plane|gateway|search|dist|support|notify|relay",
  *   "listen": { "host": "0.0.0.0", "port": 8443 },
  *   "tls": { "cert_file": "...", "key_file": "..." },
- *   "service_secret_file": "...",                         // 服务间凭据（G1 改 mTLS）
+ *   "service_secret_file": "...",                         // 服务间凭据（G1 改 mTLS）；至少 32 字节随机：64 位以上十六进制或 43 位以上 base64url
+ *   "max_connections": 10000,                             // 可选：并发连接上限（缺省 10000）
  *   "control_plane": { "url": "https://cp...", "keys_file": "cp-public-keys.json" },   // 订阅吊销集（控制面以外的角色）
  *   "seat_keys_file": "seat-public-keys.json",          // 席位令牌验签公钥（控制面以外的角色）
  *   "data_dir": "...",                                  // 分发、支持、通知、中继的存储根；控制面的状态与审计也放这里
  *   // 控制面：
  *   "envelope_key": { "kid": "cp-prod-1", "private_key_file": "..." }, "seat_key": { "kid": "seat-prod-1", "private_key_file": "..." },
  *   "state_key_file": "...",                             // 32 字节十六进制
+ *   "code_pepper_file": "...",                           // 开通码 HMAC 胡椒，32 字节十六进制（与签名密钥分开，KMS 挂载；复核 A-15 起必填）
  *   // 网关 / 检索：
  *   "upstream": { "base_url": "https://api.moonshot.cn/v1", "api_key_file": "..." },
  *   "content_safety_policy_file": "...",                 // 网关可选
@@ -80,7 +82,12 @@ const dataDir = (sub) => {
 
 let svc;
 let feed = null;
-const serviceSecret = () => read(cfg.service_secret_file, "service_secret_file");
+// 服务间凭据强度（复核 A-15）：至少 32 字节随机——64 位以上十六进制或 43 位以上 base64url
+const serviceSecret = () => {
+  const s = read(cfg.service_secret_file, "service_secret_file");
+  if (!/^[0-9a-f]{64,}$/i.test(s) && !/^[A-Za-z0-9_-]{43,}$/.test(s)) fail("service_secret_file 须为至少 32 字节的随机值（64 位以上十六进制或 43 位以上 base64url）");
+  return s;
+};
 
 if (cfg.role === "control-plane") {
   const cpMod = await import(join(root, "services/control-plane/src/index.ts"));
@@ -96,8 +103,12 @@ if (cfg.role === "control-plane") {
     keys: { envelope: pair(cfg.envelope_key, "envelope_key"), seat: pair(cfg.seat_key, "seat_key") },
     serviceSecret: serviceSecret(),
     stateStore: cpMod.fileStateStore(join(dir, "state"), { key: Buffer.from(stateKey, "hex"), requireKey: true }),
-    // 开通码 HMAC 的胡椒（复核 A-06）：与签名密钥分开，由 KMS 挂载；未给出时按信封私钥派生（轮换信封密钥会让在途码失效）
-    ...(cfg.code_pepper_file ? { codePepper: Buffer.from(read(cfg.code_pepper_file, "code_pepper_file"), "hex") } : {}),
+    // 开通码 HMAC 的胡椒（复核 A-06/A-15）：与签名密钥分开，由 KMS 挂载；生产入口必填（按信封私钥派生会让信封密钥轮换时在途码全部失效）
+    codePepper: (() => {
+      const p = read(cfg.code_pepper_file, "code_pepper_file");
+      if (!/^[0-9a-f]{64}$/i.test(p)) fail("code_pepper_file 须为 32 字节十六进制");
+      return Buffer.from(p, "hex");
+    })(),
     auditLog: cpMod.createAuditLog({ file: join(dir, "audit.jsonl") }),
   }).server;
 } else {
@@ -142,6 +153,16 @@ if (cfg.role === "control-plane") {
 // 同一个请求处理函数挂到 HTTPS 服务上（服务模块不变；定时器随原服务对象的 close 事件清理）
 const handlers = svc.listeners("request");
 const server = tls ? createHttpsServer(tls, (req, res) => handlers.forEach((h) => h(req, res))) : svc;
+// 服务器级参数（复核 A-15）：不再全用 Node 缺省——压低慢速连接与连接耗尽的风险；大包上传的角色放宽整请求时限
+server.headersTimeout = 20_000;
+server.requestTimeout = ["relay", "dist", "support"].includes(cfg.role) ? 300_000 : 60_000;
+server.keepAliveTimeout = 5_000;
+server.maxConnections = Number.isInteger(cfg.max_connections) && cfg.max_connections > 0 ? cfg.max_connections : 10_000;
+// 畸形请求：回 400 后断开，不打印请求内容
+server.on("clientError", (_err, socket) => {
+  if (socket.writable) socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+  else socket.destroy();
+});
 await new Promise((ok, no) => {
   server.once("error", no);
   server.listen(port, host, ok);

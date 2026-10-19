@@ -75,11 +75,15 @@ test("按配置起控制面与检索服务（HTTPS）：检索服务取到签名
   const pem = (k: { privateKey: { export(o: object): string | Buffer } }) => String(k.privateKey.export({ format: "pem", type: "pkcs8" }));
   const env1 = generateKeyPairSync("ed25519");
   const seat1 = generateKeyPairSync("ed25519");
-  const secret = write("service-secret", randomBytes(24).toString("base64url"));
+  const secret = write("service-secret", randomBytes(32).toString("hex"));
   const tls = { cert_file: join(dir, "tls.crt"), key_file: join(dir, "tls.key") };
   // 控制面状态未封装：拒绝
   const unsealed = runOnce({ role: "control-plane", listen: { host: "127.0.0.1", port: 0 }, tls, service_secret_file: secret, data_dir: dir, envelope_key: { kid: "cp-t1", private_key_file: write("env.pem", pem(env1)) }, seat_key: { kid: "seat-t1", private_key_file: write("seat.pem", pem(seat1)) } });
   assert.match(unsealed.stderr, /state_key_file/);
+  // 开通码胡椒缺失、服务间凭据太弱：拒绝（复核 A-15）
+  const cpBase = { role: "control-plane", listen: { host: "127.0.0.1", port: 0 }, tls, data_dir: dir, envelope_key: { kid: "cp-t1", private_key_file: join(dir, "env.pem") }, seat_key: { kid: "seat-t1", private_key_file: join(dir, "seat.pem") }, state_key_file: write("state0.key", randomBytes(32).toString("hex")) };
+  assert.match(runOnce({ ...cpBase, service_secret_file: secret }).stderr, /code_pepper_file/);
+  assert.match(runOnce({ ...cpBase, service_secret_file: write("weak", "short-secret"), code_pepper_file: write("pep0", randomBytes(32).toString("hex")) }).stderr, /service_secret_file 须为至少 32 字节/);
   const cp = await start({
     role: "control-plane",
     listen: { host: "127.0.0.1", port: 0 },
@@ -89,6 +93,7 @@ test("按配置起控制面与检索服务（HTTPS）：检索服务取到签名
     envelope_key: { kid: "cp-t1", private_key_file: join(dir, "env.pem") },
     seat_key: { kid: "seat-t1", private_key_file: join(dir, "seat.pem") },
     state_key_file: write("state.key", randomBytes(32).toString("hex")),
+    code_pepper_file: write("pepper.key", randomBytes(32).toString("hex")),
   });
   const cpKeys = write("cp-keys.json", JSON.stringify({ "cp-t1": String(env1.publicKey.export({ format: "pem", type: "spki" })) }));
   const seatKeys = write("seat-keys.json", JSON.stringify({ "seat-t1": String(seat1.publicKey.export({ format: "pem", type: "spki" })) }));

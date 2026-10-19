@@ -212,7 +212,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
               )}
               {data.blockers.length > 0 && <div className="banner banner-orange">签发前须处理：{data.blockers.join("；")}</div>}
 
-              {cneeds.wrong.length > 0 && (
+              {cneeds.counts.wrong > 0 && (
                 <div className="banner banner-red">
                   这些引用核对不通过，要先改正再签发：
                   <ul>
@@ -223,9 +223,10 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                       </li>
                     ))}
                   </ul>
+                  {cneeds.counts.wrong > Math.min(20, cneeds.wrong.length) && <div className="muted">另有 {cneeds.counts.wrong - Math.min(20, cneeds.wrong.length)} 条，见成果原文。</div>}
                 </div>
               )}
-              {cneeds.cases.length > 0 && (
+              {cneeds.counts.cases > 0 && (
                 <div className="banner banner-orange">
                   这些案号系统离线核对不了，请逐个在裁判文书网等官方来源核对：
                   <ul>
@@ -233,12 +234,13 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                       <li key={i}>{c.raw}</li>
                     ))}
                   </ul>
+                  {cneeds.counts.cases > Math.min(20, cneeds.cases.length) && <div className="muted">另有 {cneeds.counts.cases - Math.min(20, cneeds.cases.length)} 个，见成果原文。</div>}
                   <label>
                     <input type="checkbox" checked={cticks.cases} onChange={(e) => setCticks((t) => ({ ...t, cases: e.target.checked }))} /> 已逐个核对上面的案号
                   </label>
                 </div>
               )}
-              {cneeds.outside.length > 0 && (
+              {cneeds.counts.outside > 0 && (
                 <div className="banner banner-orange">
                   这些引用不在本机法规库里，系统没法自动核对，请逐条查原文核对：
                   <ul>
@@ -246,7 +248,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                       <li key={i}>{c.raw}</li>
                     ))}
                   </ul>
-                  {cneeds.outside.length > 20 && <div className="muted">另有 {cneeds.outside.length - 20} 条，见成果原文。</div>}
+                  {cneeds.counts.outside > Math.min(20, cneeds.outside.length) && <div className="muted">另有 {cneeds.counts.outside - Math.min(20, cneeds.outside.length)} 条，见成果原文。</div>}
                   <label>
                     <input type="checkbox" checked={cticks.outside} onChange={(e) => setCticks((t) => ({ ...t, outside: e.target.checked }))} /> 已逐条人工核对上面的引用
                   </label>

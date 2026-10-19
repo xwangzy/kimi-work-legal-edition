@@ -842,7 +842,7 @@
         "packages/kernel/test/matter-lifecycle.test.ts",
         "packages/kernel/test/privacy-residency.test.ts"
       ],
-      "residual": "事项标题与客户、相对方名称为原文（界面要显示）；同一 Windows 账户下能拿到数据库主密钥的程序可解",
+      "residual": "事项标题与客户、相对方名称为原文（界面要显示）；律所成员姓名原文（users.display_name，含管理员邀请时填写的被邀请人姓名；复核 A-17）；同一 Windows 账户下能拿到数据库主密钥的程序可解",
       "owner": "研发-内核"
     },
     {

@@ -302,7 +302,8 @@ function Page({ route }: { route: Route }) {
     case "run":
       return <RunView key={route.runId} runId={route.runId} matterId={route.matterId} />;
     case "review":
-      return <ReviewPage artifactId={route.artifactId} />;
+      // key：换一份成果即重建页面，上一份的勾选不带到下一份（复核 A-13）
+      return <ReviewPage key={route.artifactId} artifactId={route.artifactId} />;
     case "deliverables":
       return <DeliverablesPage />;
     case "methods":

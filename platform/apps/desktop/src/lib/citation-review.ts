@@ -21,6 +21,8 @@ export interface CitationNeeds {
   wrong: CitationItem[];
   cases: CitationItem[];
   outside: CitationItem[];
+  /** 各类条数按内核计数（复核 A-13：条目列表最多 200 条，判断要不要勾选不能只看截断后的列表）。 */
+  counts: { wrong: number; cases: number; outside: number };
   /** 系统没有核对这份文件（格式不认识、读取出错）。 */
   unchecked: boolean;
 }
@@ -32,23 +34,34 @@ export interface CitationTicks {
 }
 
 export function citationNeeds(ac: ArtifactCitations | null | undefined): CitationNeeds {
-  if (!ac) return { wrong: [], cases: [], outside: [], unchecked: false };
-  if (!ac.checked) return { wrong: [], cases: [], outside: [], unchecked: true };
+  const none = { wrong: 0, cases: 0, outside: 0 };
+  if (!ac) return { wrong: [], cases: [], outside: [], counts: none, unchecked: false };
+  if (!ac.checked) return { wrong: [], cases: [], outside: [], counts: none, unchecked: true };
   const items = Array.isArray(ac.items) ? ac.items : [];
-  return { wrong: items.filter((i) => i.kind === "wrong"), cases: items.filter((i) => i.kind === "case"), outside: items.filter((i) => i.kind === "outside"), unchecked: false };
+  const wrong = items.filter((i) => i.kind === "wrong");
+  const cases = items.filter((i) => i.kind === "case");
+  const outside = items.filter((i) => i.kind === "outside");
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  return {
+    wrong,
+    cases,
+    outside,
+    counts: { wrong: Math.max(n(ac.wrong), wrong.length), cases: Math.max(n(ac.unverified_offline), cases.length), outside: Math.max(n(ac.outside_registry), outside.length) },
+    unchecked: false,
+  };
 }
 
 /** 交给内核的勾选键（只放需要的；与内核门禁同名）。 */
 export function citationChecklist(n: CitationNeeds, t: CitationTicks): Record<string, boolean> {
   return {
-    ...(n.cases.length > 0 ? { citations_cases_checked: t.cases } : {}),
-    ...(n.outside.length > 0 ? { citations_outside_registry_checked: t.outside } : {}),
+    ...(n.counts.cases > 0 ? { citations_cases_checked: t.cases } : {}),
+    ...(n.counts.outside > 0 ? { citations_outside_registry_checked: t.outside } : {}),
     ...(n.unchecked ? { citations_unverifiable_checked: t.unchecked } : {}),
   };
 }
 
 /** 引用这一项是否允许签发：有核对不通过的不行；其余各类都须勾选。 */
 export function citationsAllowSign(n: CitationNeeds, t: CitationTicks): boolean {
-  if (n.wrong.length > 0) return false;
-  return (n.cases.length === 0 || t.cases) && (n.outside.length === 0 || t.outside) && (!n.unchecked || t.unchecked);
+  if (n.counts.wrong > 0) return false;
+  return (n.counts.cases === 0 || t.cases) && (n.counts.outside === 0 || t.outside) && (!n.unchecked || t.unchecked);
 }

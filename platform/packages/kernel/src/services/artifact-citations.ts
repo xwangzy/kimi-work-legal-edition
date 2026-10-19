@@ -62,7 +62,8 @@ export function artifactText(filename: string, bytes: Buffer): string | "format"
 function classify(v: CitationVerdict): ArtifactCitationCheck["items"][number]["kind"] {
   if (v.state === CitationState.unverifiedOffline) return "case";
   if (v.state !== CitationState.intercepted) return "ok";
-  return v.reasons.some((r) => r.startsWith("unknown_source:")) ? "outside" : "wrong";
+  // 错误优先（复核 A-13）：同一引用既有“法规库外”又有定性错误理由时按错误处理；没有理由也按错误（失败关闭）
+  return v.reasons.length > 0 && v.reasons.every((r) => r.startsWith("unknown_source:")) ? "outside" : "wrong";
 }
 
 export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Buffer, asOf: string): ArtifactCitationCheck {
