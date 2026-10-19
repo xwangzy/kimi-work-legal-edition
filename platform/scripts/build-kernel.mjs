@@ -4,14 +4,16 @@
  * 用法：node scripts/build-kernel.mjs [--watch]
  */
 import { build, context } from "esbuild";
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash, createPublicKey } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 
-// 迁移脚本随制品分发（CJS 制品按 __dirname/migrations 解析）
+// 迁移脚本随制品分发（CJS 制品按 __dirname/migrations 解析）。先清空目标目录：迁移改过名（如 0045 → 0050）时，
+// 旧副本留在制品旁会被当成另一条迁移再执行一次
 mkdirSync(`${root}apps/desktop/electron`, { recursive: true });
+rmSync(`${root}apps/desktop/electron/migrations`, { recursive: true, force: true });
 cpSync(`${root}packages/kernel/src/migrations`, `${root}apps/desktop/electron/migrations`, { recursive: true });
 
 // 内容签名公钥（第 13 批，评审 Z4 P0-3；复核 A-14/B13-O05 起按公钥指纹识别开发公钥）：正式发布经 KWL_CONTENT_SIGNING_PUB_FILE 给出生产公钥
