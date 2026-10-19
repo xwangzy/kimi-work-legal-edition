@@ -13,7 +13,8 @@
  * - `POST /v1/relay/matters/<事项>/segments`     登记一段；
  * - `GET  /v1/relay/changes/<游标>[/wait]`       本设备是读者的事项的新段（`/wait` 无新段时至多等 25 秒）；
  * - `POST /v1/relay/matters/<事项>/control` 控制成员移交（第 12 批，D-94 在链上表达）：只有当前控制成员可调用，请求体 `{to}`；
- *   接收者须在该事项上登记过段（是读者成员）。客户端另在成员链上写 control 事件，让成员设备知道。
+ *   接收者须在该事项上登记过段、且有一台当前是读者、没有被吊销的设备；原样重试（回复丢失）回成功。登记日志记移交双方、发起设备与时刻。
+ *   客户端另在成员链上写 control 事件，让成员设备知道。
  * - `GET  /v1/relay/matters/<事项>/segments/<游标>` 某事项的全部段（新成员、加回的成员取历史；中继上没有该事项回 404 matter_unknown）；
  * - `GET  /v1/relay/matters/<事项>/chunks/<cid>` 取块（只给读者、只给已登记段引用的块）；
  * - 运营 `DELETE /v1/relay/ops/tenants/<租户>`（律所退约整体删除）与 `DELETE /v1/relay/ops/tenants/<租户>/matters/<事项>`
@@ -98,6 +99,8 @@ interface MatterState {
   segs: Map<string, SegEntry>;
   /** 已被登记段引用的块。 */
   committed: Set<string>;
+  /** 最近一次控制成员移交（第 12 批第三轮复核 S12A-12：回复丢失后原样重试即成功）。 */
+  lastControl?: { by: string; to: string };
 }
 interface ChunkInfo {
   size: number;
@@ -220,15 +223,22 @@ interface ControlRecord {
   to: string;
   by: string;
   at: string;
+  /** 发起设备（第三轮复核 S12A-18；旧记录没有）。 */
+  dev?: string;
 }
 function validControl(x: unknown): x is ControlRecord {
   const r = x as ControlRecord;
-  return !!r && r.k === "control" && MATTER_ID_RE.test(String(r.mid)) && MEMBER_ID_RE.test(String(r.to)) && MEMBER_ID_RE.test(String(r.by)) && isoOk(r.at);
+  return (
+    !!r && r.k === "control" && MATTER_ID_RE.test(String(r.mid)) && MEMBER_ID_RE.test(String(r.to)) && MEMBER_ID_RE.test(String(r.by)) && isoOk(r.at) && (r.dev === undefined || DEVICE_ID_RE.test(String(r.dev)))
+  );
 }
 /** 按日志先后应用移交：只有当时的控制成员发起的才生效（事项被重置过则不在）。 */
 function applyControl(t: TenantState, r: ControlRecord): void {
   const m = t.matters.get(r.mid);
-  if (m && m.controller === r.by) m.controller = r.to;
+  if (m && m.controller === r.by) {
+    m.controller = r.to;
+    m.lastControl = { by: r.by, to: r.to };
+  }
 }
 
 function validReset(x: unknown): x is ResetRecord {
@@ -630,11 +640,14 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       if (!m.readers.has(c.dev)) throw new HttpError(403, "not_reader");
       const gen = t.resets.get(mid) ?? 0;
       if (b.gen !== undefined && b.gen !== gen) return send(res, 409, { error: "matter_reset", gen });
+      // 回复丢失后原样重试（复核 S12A-12）：最近一次移交正是这一次即回成功
+      if (c.uid !== m.controller && m.lastControl?.by === c.uid && m.lastControl.to === b.to && m.controller === b.to) return send(res, 200, { ok: true, controller: m.controller });
       if (c.uid !== m.controller) throw new HttpError(403, "not_controller");
       if (b.to === m.controller) return send(res, 200, { ok: true, controller: m.controller });
       // 接收者须在该事项上登记过段、且他的某台设备当前仍是读者（第二轮复核：只看“登记过”会把控制权交给已被移出的成员，事项从此锁死）
-      if (![...m.segs.values()].some((e) => e.uid === b.to && !t.gone.has(e.seq) && m.readers.has(e.dev))) throw new HttpError(409, "to_not_reader");
-      const rec: ControlRecord = { k: "control", mid, to: b.to, by: c.uid, at: iso() };
+      // 接收者须有一台当前是读者、且没有被吊销的设备（复核 S12A-11：只剩已吊销设备的负责人接手后，事项在中继上锁死）
+      if (![...m.segs.values()].some((e) => e.uid === b.to && !t.gone.has(e.seq) && m.readers.has(e.dev) && !revoked(c.tid, e.dev))) throw new HttpError(409, "to_not_reader");
+      const rec: ControlRecord = { k: "control", mid, to: b.to, by: c.uid, at: iso(), dev: c.dev };
       appendJournal(t, Buffer.from(`${JSON.stringify(rec)}\n`, "utf8"));
       applyControl(t, rec);
       return send(res, 200, { ok: true, controller: m.controller });

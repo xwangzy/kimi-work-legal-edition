@@ -17,6 +17,8 @@ export interface BlobCipher {
   decrypt(envelope: Buffer): Buffer;
   /** 清除内存里该事项的密钥（事项删除后；之后再读该事项的块即报“本机不持钥”）。 */
   forget?(matterId: string): void;
+  /** 此刻写入该事项的块所用的纪元（第 12 批复核 S12B-31/32：链模式按链上已声明的纪元）。 */
+  currentEpoch?(matterId: string): number;
 }
 
 const MAGIC = Buffer.from("KWB1");
@@ -124,6 +126,25 @@ export class BlobStore {
     const name = /^blob:\/\/[A-Za-z0-9_.-]{1,128}\/([0-9a-f]{64})$/.exec(storageUri)?.[1];
     if (name && createHash("sha256").update(plain).digest("hex") !== name) throw new Error("块内容与名称不符（可能被替换），已拒绝读取");
     return plain;
+  }
+
+  /**
+   * 按此刻的加密纪元重封一个块（第 12 批复核 S12B-32：本机用链上不成立的纪元封过的块，重发前改用链上已声明的纪元）。
+   * 块名是明文摘要、不变；纪元相同则不动。返回是否重封。
+   */
+  reseal(storageUri: string, need?: (epoch: number) => boolean): boolean {
+    const m = /^blob:\/\/([A-Za-z0-9_.-]{1,128})\/([0-9a-f]{64})$/.exec(storageUri);
+    if (!m || m[1] === "_shared" || !this.cipher?.currentEpoch) return false;
+    const path = join(this.dir, m[1]!, m[2]!);
+    if (!existsSync(path)) return false;
+    const raw = readFileSync(path);
+    const h = blobHeaderOf(raw);
+    if (!h || h.epoch === this.cipher.currentEpoch(m[1]!) || (need && !need(h.epoch))) return false;
+    const plain = this.read(storageUri);
+    const tmp = join(this.dir, m[1]!, `.${m[2]!}.${process.pid}.reseal.tmp`);
+    writeFileSync(tmp, this.cipher.encrypt(m[1]!, plain));
+    renameSync(tmp, path);
+    return true;
   }
 
   /** 一份块文件的字节解开后是否与块名相符（同步摄取复制块之前核对；解不开也算不符）。rel = “作用域/明文摘要”。 */

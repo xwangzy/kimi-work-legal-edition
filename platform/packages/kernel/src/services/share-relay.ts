@@ -316,7 +316,7 @@ export class ShareRelaySync {
     if (why) return this.empty(why);
     const report = this.empty();
     try {
-      report.exported = syncExport(this.d, {
+      const ex = syncExport(this.d, {
         shareDir: this.outbox,
         medium: "relay",
         ...(this.d.partBytes ? { partBytes: this.d.partBytes } : {}),
@@ -329,7 +329,10 @@ export class ShareRelaySync {
           return [seen, relay].filter((x): x is string => !!x).sort()[0] ?? null;
         },
         relayFullResend: (mid) => !!this.d.db.get(`SELECT 1 AS x FROM relay_matters WHERE matter_id = ? AND resend_full = 1`, [mid]),
-      }).segments.length;
+      });
+      report.exported = ex.segments.length;
+      // 成员链自动处置失败如实记下（第三轮复核 S12B-40：原先只在返回值里，后台同步丢掉）
+      this.setKv("chain_last_error", ex.chainErrors[0] ?? "");
     } catch {
       // 导出失败（磁盘满、读块失败等）也如实记下（复核 S11B-04②）
       report.errors.push("export_failed");
@@ -1081,9 +1084,18 @@ export class ShareRelaySync {
     const why = this.blocked();
     if (why) throw new RelayError(why);
     const gen = this.d.db.get<{ gen: number }>(`SELECT gen FROM relay_matters WHERE matter_id = ?`, [matterId])?.gen ?? 0;
-    const r = await this.call({ step: "control", matter_id: matterId, to, gen, instance: this.kv("instance") ?? "" });
-    this.noteMatter(matterId, { known: true, controller: r.json?.controller });
-    return { controller: String(r.json?.controller ?? "") };
+    try {
+      const r = await this.call({ step: "control", matter_id: matterId, to, gen, instance: this.kv("instance") ?? "" });
+      this.noteMatter(matterId, { known: true, controller: r.json?.controller });
+      return { controller: String(r.json?.controller ?? "") };
+    } catch (e) {
+      // 中继说本机已不是控制成员：本机记的控制成员过期了（例如上一次移交的回复丢失）——清掉、重取历史得知新的控制成员（复核 S12A-12）
+      if (e instanceof RelayError && e.code === "not_controller") {
+        this.d.db.run(`UPDATE relay_matters SET controller = NULL, known = 1 WHERE matter_id = ?`, [matterId]);
+        this.refetchHistory(matterId);
+      }
+      throw e;
+    }
   }
 
   /** 重新取该事项的历史（第 12 批“本机重新引导该事项”之后）。 */
@@ -1138,6 +1150,8 @@ export class ShareRelaySync {
       deferred: existsSync(this.ready) ? readdirSync(this.ready).filter((d) => SEGMENT_ID_RE.test(d) && existsSync(join(this.ready, d, this.d.tenantId, "segments"))).length : 0,
       retrying: this.d.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM relay_retry`, [])?.n ?? 0,
       dropped_total: Number(this.kv("dropped_total")) || 0,
+      // 成员链自动处置最近一次失败的原因（没有为空）
+      chain_last_error: this.kv("chain_last_error") || null,
       matters: this.d.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM relay_matters`, [])?.n ?? 0,
     };
   }

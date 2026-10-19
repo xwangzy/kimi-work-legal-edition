@@ -33,6 +33,7 @@ import { ContentUpdater, LawdbHolder, contentKeyTable, contentKeysFromEnv, markP
 import { totalmem } from "node:os";
 import { createBlobCipher } from "./blob-cipher.ts";
 import { syncExport, syncImport } from "./sync-engine.ts";
+import { chainEncryptEpoch, hasChain } from "./member-log.ts";
 import { createLegalWorkflow, expireOrphanedAgentWaits } from "./executor/executor.ts";
 import { createKapAgentClient, type KapAgentClient, type KapMatterPolicy } from "./executor/kap-agent-client.ts";
 import type { AgentClient } from "./executor/agent-client.ts";
@@ -153,7 +154,12 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const firmPolicy = (): FirmPolicyInput => firmPolicyInputOf(governance.effectivePolicy().body);
 
   // 材料块按事项密钥加密（§5.1 收尾：hash 按明文寻址、落盘密文、读路径透明解密）
-  const blobs = new BlobStore(config.blobDir, createBlobCipher({ db, deviceId: device.deviceId, encPrivateKeyPem: device.keys.encPrivateKeyPem }));
+  // 链模式按链上已声明的纪元（第 12 批复核 S12B-31/32）：keyctx 在后面才建好，这里延迟取
+  const chainEpochRef: { fn: ((mid: string) => number | null | undefined) | null } = { fn: null };
+  const blobs = new BlobStore(
+    config.blobDir,
+    createBlobCipher({ db, deviceId: device.deviceId, encPrivateKeyPem: device.keys.encPrivateKeyPem, chainEpoch: (mid) => chainEpochRef.fn?.(mid) }),
+  );
 
   // 法规库加载留痕（§6.4 审计只记元数据：版本与签名状态，不记正文）
   {
@@ -395,6 +401,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     dict: join(config.ocrModelDir, "ppocrv5_dict.txt"),
   };
   const keyctx = { signer, device, firm, keysDir };
+  chainEpochRef.fn = (mid) => (config.legacyMemberRows || !hasChain(db, mid) ? undefined : chainEncryptEpoch({ db, keyctx, tenantId: identity.tenantId }, mid));
   // 无事项问答（第 04 篇 §5.3；W1）：当事人词典检查在本机；问题经出站闸门的问答路由（/q/<会话>）发往网关，不带事项编号；
   // 离线 mock 提供方时在本机模拟（不出站）
   const qaGate = createGateProvider({
@@ -706,7 +713,9 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       if (governance.exitMode()) return;
       try {
         const relayControl = { foreign: (mid: string) => shareRelay.foreignController(mid), controller: (mid: string) => shareRelay.controllerOf(mid) };
-        syncExport({ db, blobs, keyctx, tenantId: identity.tenantId, relayControl, legacyMemberRows: config.legacyMemberRows }, { shareDir });
+        const ex = syncExport({ db, blobs, keyctx, tenantId: identity.tenantId, relayControl, legacyMemberRows: config.legacyMemberRows }, { shareDir });
+        // 成员链自动处置失败（第三轮复核 S12B-40）：记运行事件（只有事项编号与原因代码）
+        if (ex.chainErrors.length > 0) slog.event("KERNEL_MEMBER_LOG_MAINTAIN_FAILED", { count: ex.chainErrors.length });
         syncImport({ db, blobs, keyctx, tenantId: identity.tenantId, relayControl, legacyMemberRows: config.legacyMemberRows }, { shareDir });
         void purgeLocalAgentData(false).catch(() => {});
         lastSyncTickError = "";

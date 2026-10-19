@@ -2848,12 +2848,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       refreshChain(chainDeps(id), matter.matter_id);
       requireMatterOwner(db, matter.matter_id, id, "中继控制成员移交需要事项负责人角色");
+      // 有同步告警时不移交（复核 S12A-13：待定事件可能正改变谁是负责人）
+      if (db.get(`SELECT 1 AS x FROM sync_alerts WHERE matter_id = ? AND kind <> 'revoked_change'`, [matter.matter_id])) throw forbidden("这个事项有团队同步告警，处理之前不能移交中继控制成员");
       if (!deps.shareRelay) throw new DomainError("provider_unavailable", "共享中继未启用", 503);
       if (!hasChain(db, matter.matter_id)) throw validation("该事项还没有成员链：本机同步一次（锚定）后再移交");
       const to = String(p?.to_user ?? "");
       if (deps.shareRelay.controllerOf(matter.matter_id) !== id.userId) throw forbidden("只有中继上的控制成员（最先经中继同步该事项的负责人）可以移交");
       if (to === id.userId) throw validation("不能移交给自己");
-      if (!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [matter.matter_id, to])) throw validation("只能移交给本事项在册的负责人（须先把对方设为负责人）");
+      // 对方按成员链（不是投影）须是在册负责人（复核 S12A-13）
+      if (chainView(chainDeps(id), matter.matter_id).members.get(to)?.role !== "owner") throw validation("只能移交给本事项在册的负责人（须先把对方设为负责人）");
       // 先按链核一次本人仍是负责人（复核 S12B-24：先改中继、后写链，写链失败时中继上其实已移交）
       if (chainView(chainDeps(id), matter.matter_id).members.get(id.userId)?.role !== "owner") throw forbidden("这台电脑按成员链已不是负责人，不能移交（请先同步）");
       let controller: string;
@@ -2861,7 +2864,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         controller = (await deps.shareRelay.handoffControl(matter.matter_id, to)).controller;
       } catch (e) {
         const code = (e as { code?: string })?.code ?? "relay_push_failed";
-        if (code === "to_not_reader") throw validation("对方还没有经中继同步过这个事项：请对方先打开并同步一次，再移交");
+        if (code === "to_not_reader") throw validation("对方还没有经中继同步过这个事项，或他的电脑已不在这个事项的读者里（含已停用）：请对方先打开并同步一次，再移交");
+        if (code === "not_controller") throw forbidden("中继上的控制成员已不是你（可能上一次移交已经生效）：这台电脑正在向中继重新确认，请稍后查看");
         throw new DomainError("provider_unavailable", `中继暂时不能办理移交（${code}），请稍后再试`, 503);
       }
       let chainNote = "移交已记入成员链";

@@ -257,7 +257,9 @@ test("吊销标记之后，被吊销设备再写的事件拒收；标记之前�
   await kD.inv("sync.import", { share_dir: share });
   assert.equal((await log(kD, m)).find((e) => e.event_id === late.event_id)?.reason, "revoked_after_mark");
   assert.ok(roles(kD, m).some((x) => x.user_id === usr("dave") && x.live), "dave 仍在");
-  assert.deepEqual(alerts(kD, m), []);
+  // 吊销后才收到的移出与伪造的分不开：只提示、不暂停（复核 S12A-10）
+  assert.deepEqual(alerts(kD, m), ["revoked_change"]);
+  assert.deepEqual((await kD.inv("sync.export", { share_dir: dir("rvc"), matter_id: m })).pausedConflict, [], "不暂停");
 });
 
 test("节点授权与撤销都记入成员链：撤销即移出节点并轮换", async () => {
@@ -380,7 +382,7 @@ test("S12A-01：已有起点一律不切换——被移出的创建者再签一�
   assert.deepEqual(alerts(kD, m), [], "已移出者签的起点不暂停别人");
 });
 
-test("S12A-02：被移出的共同负责人在旧链头上降级移出他的人——移出照样成立，他读不到之后的内容（互相降级两条都成立）", async () => {
+test("S12A-02：被移出的共同负责人在旧链头上降级移出他的人——移出照样成立、记互相降级告警并暂停，他读不到之后的内容", async () => {
   const m = await newMatter(kA, "反降级");
   await kA.inv("matters.members.add", { matter_id: m, user_id: usr("carol"), matter_role: "owner" });
   await kA.inv("matters.members.add", { matter_id: m, user_id: usr("dave") });
@@ -395,7 +397,9 @@ test("S12A-02：被移出的共同负责人在旧链头上降级移出他的人�
   await kC.inv("sync.export", { share_dir: sb, matter_id: m });
   await kD.inv("sync.import", { share_dir: sb });
   await kD.inv("sync.import", { share_dir: sa });
-  assert.ok(roles(kD, m).some((x) => x.user_id === usr("carol") && !x.live), "carol 仍被移出");
+  // 互相降级（复核 S12B-33）：两条都成立，记 member_conflict、暂停发出；在第三位负责人处置之前不据此移出本机成员行（不触发擦除）
+  assert.ok(alerts(kD, m).includes("member_conflict"), String(alerts(kD, m)));
+  assert.ok((await log(kD, m)).some((e) => e.user === usr("carol") && e.role === null && e.status === "valid"), "A 的移出成立");
   await imp(kD, m, "丁.txt", "dave 之后写的");
   const sd = dir("rd");
   await kD.inv("sync.export", { share_dir: sd, matter_id: m });

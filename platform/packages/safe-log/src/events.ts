@@ -45,6 +45,8 @@ export const EVENTS = {
   KERNEL_SYNC_TIMER_FAILED: { level: "warn", fields: { ...ERR } },
   KERNEL_REMINDER_TICK_FAILED: { level: "warn", fields: { ...ERR } },
   KERNEL_RELAY_PUSH_FAILED: { level: "warn", fields: { ...ERR } },
+  /** 成员链自动处置（锚定、补轮换、补包裹、吊销标记）失败的事项数（第 12 批第三轮复核 S12B-40）。 */
+  KERNEL_MEMBER_LOG_MAINTAIN_FAILED: { level: "warn", fields: { count: "int" } },
   /** 云端送来、核对不通过而丢弃的提醒条数（解不开、签名不符、发出设备已吊销等；第 10 批 S9）。 */
   REMINDER_REJECTED: { level: "warn", fields: { count: "int" } },
   KERNEL_NODE_ENQUEUE_EXPORT_FAILED: { level: "warn", fields: { ...ERR } },

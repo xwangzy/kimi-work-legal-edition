@@ -62,3 +62,13 @@ test("第 12 批：成员链的四种告警写明暂停发出与出路，起点�
   assert.match(syncAlertText({ kind: "root_conflict", title: null, peer_member: "usr_y" }), /usr_y/);
   assert.match(syncAlertText({ kind: "root_conflict", title: null }), /本机重新引导/);
 });
+
+test("第 12 批第三轮：互相降级与停用设备的变更未生效两种告警写明出路", () => {
+  const c = syncAlertText({ kind: "member_conflict", title: "丙案", peer_member: "usr_z", peer_name: "张律师" });
+  assert.match(c, /「丙案」/);
+  assert.match(c, /张律师/);
+  assert.match(c, /暂停发出/);
+  const r = syncAlertText({ kind: "revoked_change", title: "丙案" });
+  assert.match(r, /重做/);
+  assert.doesNotMatch(r, /暂停发出/, "只提示、不暂停");
+});

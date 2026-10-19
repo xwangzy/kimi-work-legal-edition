@@ -427,3 +427,27 @@ test("RA-14 第 12 批第二轮：控制成员移交的接收者须当前仍是�
   assert.equal((await writeSeg(base, mid, A(), "devA", { epoch: 2, readers: ["devA"] })).r.status, 200);
   assert.equal((await call(base, "POST", `/v1/relay/matters/${mid}/control`, A(), { to: "u-devB" })).json?.error, "to_not_reader");
 });
+
+test("RA-15 第 12 批第三轮：移交原样重试即成功（回复丢失）；接收者只剩已吊销设备时不收；日志记发起设备、重启读回", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kwl-ra-"));
+  const { base } = await start(dir);
+  const mid = newMid();
+  assert.equal((await writeSeg(base, mid, A(), "devA", { readers: ["devA", "devB", "devC"] })).r.status, 200);
+  assert.equal((await writeSeg(base, mid, B(), "devB", { readers: ["devA", "devB", "devC"] })).r.status, 200);
+  assert.equal((await writeSeg(base, mid, C(), "devC", { readers: ["devA", "devB", "devC"] })).r.status, 200);
+  // C 的设备被吊销：不能接手
+  revoked.add("devC");
+  try {
+    assert.equal((await call(base, "POST", `/v1/relay/matters/${mid}/control`, A(), { to: "u-devC" })).json?.error, "to_not_reader");
+  } finally {
+    revoked.delete("devC");
+  }
+  assert.deepEqual((await call(base, "POST", `/v1/relay/matters/${mid}/control`, A(), { to: "u-devB" })).json, { ok: true, controller: "u-devB" });
+  // 回复丢失后原样重试：成功
+  assert.deepEqual((await call(base, "POST", `/v1/relay/matters/${mid}/control`, A(), { to: "u-devB" })).json, { ok: true, controller: "u-devB" });
+  // 换个对象重试：不是控制成员
+  assert.equal((await call(base, "POST", `/v1/relay/matters/${mid}/control`, A(), { to: "u-devC" })).json?.error, "not_controller");
+  assert.ok(readFileSync(join(dir, "t", "t1", "journal.jsonl"), "utf8").includes('"dev":"devA"'), "移交记录记发起设备");
+  const { s: s2 } = await start(dir);
+  assert.equal(s2.tenant("t1")!.controller(mid), "u-devB");
+});

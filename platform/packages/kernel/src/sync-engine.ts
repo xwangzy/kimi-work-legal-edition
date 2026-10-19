@@ -17,7 +17,7 @@
  * 段体（按事项密钥加密）内另附 `_relay_blob` 行——引用的每个密文块的封装摘要、大小与切块摘要，供接收方取块与核对
  * （块在中继上按**密文**摘要寻址，明文内容摘要只在加密的段体里）；事项没有新内容时不出段（总是附带的用户、设备等行另按摘要比对）。
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { canonicalJson, signSyncWith, unwrapMatterKey, verifyBytes, type DeviceCertificate } from "@zr-legal/keys";
@@ -30,6 +30,7 @@ import {
   MEMBER_EVENTS_TABLE,
   acceptKeyRows,
   chainEncryptEpoch,
+  ownKeyIsWinner,
   adoptRoot,
   applyProjection,
   chainHealth,
@@ -276,7 +277,8 @@ export function syncExport(
     if (!matterKey) continue; // 本机不持钥（理论上不发生：成员设备才导得出）
     // 该事项有未解除的团队同步告警（同号纪元分叉、负责人无法确认）：不经同步发出新内容，免得被移出者读到
     // （失败即关闭，第六轮复核 S11A-51/52；第七轮起只看“有没有未解除的”，不看纪元高低——S11A-54/S11B-54）
-    if (db.get(`SELECT 1 AS x FROM sync_alerts WHERE matter_id = ?`, [m.matter_id])) {
+    // revoked_change 只提示、不暂停（复核 S12A-10：吊销后才收到的被吊销设备的移出，与伪造的分不开——暂停会被被盗设备利用）
+    if (db.get(`SELECT 1 AS x FROM sync_alerts WHERE matter_id = ? AND kind <> 'revoked_change'`, [m.matter_id])) {
       result.pausedConflict.push(m.matter_id);
       // 成员链（第 12 批）：暂停期间仍只发“总是附带的行”（含成员链，不含任何内容）——负责人要收到链才能处置告警（补轮换、吊销标记）；
       // 链没变不重发。这些行以本机当前纪元加密：仍持有当前纪元密钥的被移出者能读到成员关系（不是事项内容，如实登记）
@@ -432,13 +434,32 @@ function mayRotate(deps: SyncDeps, matterId: string): boolean {
   return !deps.relayControl?.foreign(matterId);
 }
 
+/** 把本事项里用链上没有声明（或本机持有的是落选那把）的纪元封的材料块，按此刻的加密纪元重封。 */
+function resealUndeclared(deps: SyncDeps, matterId: string): void {
+  const dir = join(deps.blobs.dir, matterId);
+  if (!existsSync(dir)) return;
+  const view = chainView(deps, matterId);
+  const good = (epoch: number) => view.epochs.has(epoch) && ownKeyIsWinner(deps, matterId, view, epoch);
+  for (const f of readdirSync(dir)) {
+    if (!/^[0-9a-f]{64}$/.test(f)) continue;
+    try {
+      deps.blobs.reseal(`blob://${matterId}/${f}`, (epoch) => !good(epoch));
+    } catch {
+      // 解不开的块（本机没有那把密钥）不动
+    }
+  }
+}
+
 /** 链的自动处置（中继事项的处置者是控制成员）。 */
 function maintain(deps: SyncDeps, matterId: string): string | null {
   // 处置失败（写出的事件在链上不成立已回滚、库忙等）不影响其他事项的导出；原因返回给调用方记下（复核 S12B-26）
   try {
     const r = maintainChain(deps, matterId, { mayRotate: mayRotate(deps, matterId), rotator: deps.relayControl?.controller(matterId) ?? null });
-    // 本机用链上不成立的纪元发出过内容：从那次轮换起重发一次（复核 S12B-02/17/20）
-    if (r.rewindSince) rewindExport(deps.db, matterId, r.rewindSince);
+    // 本机用链上不成立的纪元发出过内容：从那次轮换起重发（复核 S12B-02/17/20/37）；用那把纪元封的材料块先按链上纪元重封（复核 S12B-32）
+    if (r.rewindSince) {
+      resealUndeclared(deps, matterId);
+      rewindExport(deps.db, matterId, r.rewindSince);
+    }
     return r.failed;
   } catch (e) {
     return e instanceof Error ? e.message.slice(0, 200) : String(e);
@@ -1140,8 +1161,9 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
       result.conflicts.length = mark.conflicts;
       result.originConflicts.length = mark.warnings;
       if (e instanceof BootstrapDeferred) result.originConflicts.push(`bootstrap_deferred:${h.segment_id}（${e.message || why || "签发成员按核验后的成员行不是负责人"}）`);
-      // 只收本机在册成员签发的段里的链（复核 S12A-05：所内任意设备塞一把包给本机的密钥，就能让这里存下任意事件）
-      if (chainRows.length > 0 && db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [h.matter_id, cert.memberId])) {
+      // 只收曾是本事项成员（含已被本机按链移出的）签发的段里的链：所内从未进过这个事项的设备塞来的不存（复核 S12A-05）；
+      // 不看“此刻是否在册”（复核 S12B-36：这恰由尚未收全的链决定——互相移出时先收到不同一方的设备会永久各认一套成员）
+      if (chainRows.length > 0 && db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ?`, [h.matter_id, cert.memberId])) {
         try {
           const stored = db.tx(() => storeIncomingEvents(deps, h.matter_id, chainRows, cert.memberId).stored);
           if (stored > 0 && hasChain(db, h.matter_id)) touchedChain.add(h.matter_id);
