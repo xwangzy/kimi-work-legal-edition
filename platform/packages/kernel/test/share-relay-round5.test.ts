@@ -54,7 +54,7 @@ const docs = async (k: K | TestKernel, mid: string): Promise<string[]> =>
   ((await k.inv("matters.get", { matter_id: mid }).catch(() => ({ documents: [] }))).documents as any[]).map((d) => d.filename).sort();
 const newMatter = async (title: string) => (await kA.inv("matters.create", { title, stance: "受让方", consent_status: "not_required", collab_scope: "team" })).matter.matter_id as string;
 
-test("S11B-41：升级前同步过的成员行（没有作者签名）在作者升级后发来同一内容时补上签名；共同负责人先登记中继、由他加的成员能引导", { timeout: 180_000 }, async () => {
+test("S11B-41（第 12 批）：成员行签名被抹掉不影响链模式；共同负责人先登记中继、由他加的成员能引导", { timeout: 180_000 }, async () => {
   const m = await newMatter("升级前的成员行");
   await kA.inv("matters.members.add", { matter_id: m, user_id: usr("bob"), matter_role: "owner" });
   await imp(kA, m, "A的材料.txt", "A 的材料");
@@ -66,8 +66,9 @@ test("S11B-41：升级前同步过的成员行（没有作者签名）在作者�
   await imp(kA, m, "升级后A又写的.txt", "x");
   await kA.inv("sync.export", { share_dir: share, matter_id: m });
   await kB.inv("sync.import", { share_dir: share });
-  const unsigned = kB.kernel.db.all(`SELECT user_id FROM matter_members WHERE matter_id = ? AND author_sig IS NULL`, [m]);
-  assert.deepEqual(unsigned, [], "B 本机的成员行都补上了作者签名");
+  // 第 12 批：有成员链的事项，成员行只是链的投影、不逐行签名（补签名的行规则断言见 member-log-legacy）；成员关系按链一致
+  const roles = (k: any) => k.kernel.db.all(`SELECT user_id, matter_role, removed_at IS NULL AS live FROM matter_members WHERE matter_id = ? ORDER BY user_id`, [m]);
+  assert.deepEqual(roles(kB), roles(kA), "B 的成员关系与 A 一致");
   await kB.inv("relay.sync");
   await kA.inv("relay.sync");
   assert.equal(cloud.relay.server.tenant(TID)!.controller(m), usr("bob"));

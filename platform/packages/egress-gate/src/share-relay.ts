@@ -2,12 +2,13 @@
  * 共享中继通道（第 11 批，v9.2 §5.1 S11 事项共享密文中继；与通知通道 notify-relay.ts 同一做法）。
  *
  * 内核不直接联网：团队事项的同步段与密文块由内核切成块后经 IPC 交给闸门，闸门发往**随客户端构建固定**的中继服务地址
- * （release.json 的 relay_base，钉住集同规则）。只有六种请求，请求都由闸门按固定形状重新拼出：
+ * （release.json 的 relay_base，钉住集同规则）。只有七种请求，请求都由闸门按固定形状重新拼出：
  *   ① 查缺 `POST /v1/relay/matters/<事项>/have`（只有块摘要）；
  *   ② 上传块 `PUT /v1/relay/matters/<事项>/chunks/<cid>`（≤ 4 MiB，**闸门按实际字节重算摘要**，与 cid 不符即不发）；
  *   ③ 登记段 `POST /v1/relay/matters/<事项>/segments`（段编号、段摘要与大小、块摘要、纪元、读者设备编号）；
  *   ④ 取新段 `GET /v1/relay/changes/<游标>[/wait]`；⑤ 取某事项历史 `GET /v1/relay/matters/<事项>/segments/<游标>`；
- *   ⑥ 取块 `GET /v1/relay/matters/<事项>/chunks/<cid>`（**闸门按收到的字节重算摘要**，与 cid 不符即判失败——云端不能换内容）。
+ *   ⑥ 取块 `GET /v1/relay/matters/<事项>/chunks/<cid>`（**闸门按收到的字节重算摘要**，与 cid 不符即判失败——云端不能换内容）；
+ *   ⑦ 控制成员移交 `POST /v1/relay/matters/<事项>/control`（第 12 批；只有接收者的成员编号与重置代数、实例编号）。
  * 凭据是控制面签发的**只限中继**的短期凭据（受众 relay），由内核随请求交来，闸门核对形态与载荷里的受众后附上；
  * 不跟随跳转；响应有上限；闸门不解析、不记录块内容。
  */
@@ -35,7 +36,8 @@ export type ShareRelayRequest =
     }
   | { step: "changes"; credential: string; since: number; wait: boolean }
   | { step: "history"; credential: string; matter_id: string; since: number }
-  | { step: "get_chunk"; credential: string; matter_id: string; cid: string };
+  | { step: "get_chunk"; credential: string; matter_id: string; cid: string }
+  | { step: "control"; credential: string; matter_id: string; to: string; gen: number; instance: string };
 /** 取块时 body_b64 是块字节（已核对摘要）；其余请求 body 是响应 JSON 文本。 */
 export type ShareRelayResult = { ok: true; status: number; body: string; body_b64?: string } | { ok: false; reason: string };
 
@@ -95,6 +97,12 @@ export function shareRelayAllowed(r: unknown): string | null {
       if (!Array.isArray(rd) || rd.length < 1 || rd.length > 1000 || rd.some((d) => typeof d !== "string" || !DEVICE_ID_RE.test(d)) || new Set(rd).size !== rd.length) return "relay_readers_invalid";
       return null;
     }
+    case "control":
+      if (!keysAre(x, "credential,gen,instance,matter_id,step,to")) return "relay_request_invalid";
+      if (!midOk) return "relay_matter_invalid";
+      if (typeof x.gen !== "number" || !Number.isSafeInteger(x.gen) || x.gen < 0) return "relay_request_invalid";
+      if (typeof x.instance !== "string" || !/^([0-9a-f]{24})?$/.test(x.instance)) return "relay_request_invalid";
+      return typeof x.to === "string" && DEVICE_ID_RE.test(x.to) ? null : "relay_member_invalid";
     case "changes":
       if (!keysAre(x, "credential,since,step,wait")) return "relay_request_invalid";
       return cursorOk(x.since) && typeof x.wait === "boolean" ? null : "relay_cursor_invalid";
@@ -169,6 +177,10 @@ export async function relayShare(
           instance: req.instance,
         }),
       };
+      break;
+    case "control":
+      path = `/v1/relay/matters/${req.matter_id}/control`;
+      init = { method: "POST", headers: json, body: JSON.stringify({ to: req.to, gen: req.gen, instance: req.instance }) };
       break;
     case "changes":
       path = `/v1/relay/changes/${req.since}${req.wait ? "/wait" : ""}`;

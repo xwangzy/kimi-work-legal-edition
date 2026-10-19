@@ -69,7 +69,7 @@ after(async () => {
   await kA.kernel.close();
 });
 
-test(`S11A-54：被移出的共同负责人再轮换一次，解除不了滞后设备的暂停发出，读不到它之后写的内容${BOB_SEES ? "（bob 也见过 A 的移出段、本机有告警）" : "（bob 没见过 A 的移出段）"}`, { timeout: 120_000 }, async () => {
+test(`S11A-54（第 12 批）：被移出的共同负责人不知道自己被移出时再做的成员变更与轮换在链上拒收，读不到滞后设备之后写的内容${BOB_SEES ? "（bob 也见过 A 的移出段、本机有告警）" : "（bob 没见过 A 的移出段）"}`, { timeout: 120_000 }, async () => {
   const { matter } = await kA.inv("matters.create", { title: "冲突绕过", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
   const mid = matter.matter_id;
   await kA.inv("matters.members.add", { matter_id: mid, user_id: usr("dave") });
@@ -92,38 +92,41 @@ test(`S11A-54：被移出的共同负责人再轮换一次，解除不了滞后�
   await kB.inv("matters.members.remove", { matter_id: mid, user_id: usr("erin") });
   const s3 = fresh("s3");
   await kB.inv("sync.export", { share_dir: s3, matter_id: mid });
-  // dave 先收 bob 的段、再收 A 的移出段：第六轮缓解生效（告警 + 暂停）
+  // dave 先收 bob 的段、再收 A 的移出段。第 12 批（成员链）：bob 并发的“移出 erin + 纪元 2”在链上拒收（移出优先于被移出者的并发操作），
+  // 没有分叉、不暂停
   await kD.inv("sync.import", { share_dir: s3 });
   await kD.inv("sync.import", { share_dir: s2 });
   const dAlerts1 = await alerts(kD);
   await importText(kD, mid, "丁-暂停中.txt", "dave 暂停期间写的内容");
   const ex1 = await kD.inv("sync.export", { share_dir: fresh("d1"), matter_id: mid });
   LOG("① dave 告警：", JSON.stringify(dAlerts1.map((a) => [a.kind, a.epoch])), "｜dave 导出：段数", ex1.segments.length, "暂停", JSON.stringify(ex1.pausedConflict));
-  assert.ok(dAlerts1.some((a) => a.matter_id === mid && a.kind === "epoch_conflict"), "前提：dave 上有纪元冲突告警");
-  assert.deepEqual(ex1.pausedConflict, [mid], "前提：dave 暂停发出");
+  assert.deepEqual(dAlerts1.filter((a) => a.matter_id === mid), [], "没有分叉告警");
+  assert.deepEqual(ex1.pausedConflict, [], "不暂停");
   if (BOB_SEES) {
-    await kB.inv("sync.import", { share_dir: s2 });
-    LOG("② bob 收到 A 的移出段后本机告警：", JSON.stringify((await alerts(kB)).map((a) => [a.kind, a.epoch])), "｜bob 成员表：", JSON.stringify(members(kB, mid)));
+    // bob 去收 A 的移出段：段用纪元 2 加密、没有给 bob 的包裹，bob 解不开——本机仍以为自己是负责人（与不去收相同）
+    const rb = await kB.inv("sync.import", { share_dir: s2 });
+    LOG("② bob 收 A 的移出段：", JSON.stringify(rb.dispositions.map((x: any) => x.outcome)));
   }
-  // bob 照着提示“移出后再加回任一成员”：加一位没登记设备的 frank、再移出 → 纪元 3（包裹给 bob 本机名单里的 A、bob、dave）
+  // bob 本机仍以为自己是负责人：加 frank、再移出 → 纪元 3；这些事件与他被降级并发，在 dave 上同样拒收
   await kB.inv("matters.members.add", { matter_id: mid, user_id: usr("frank") });
   const r3 = await kB.inv("matters.members.remove", { matter_id: mid, user_id: usr("frank") });
-  LOG("③ bob 再轮换：新纪元", r3.new_epoch, "包裹设备数", r3.devices_wrapped, "｜bob 告警：", JSON.stringify((await alerts(kB)).map((a) => [a.kind, a.epoch])));
+  LOG("③ bob 再轮换：新纪元", r3.new_epoch);
   const s5 = fresh("s5");
-  const bx = await kB.inv("sync.export", { share_dir: s5, matter_id: mid });
-  LOG("   bob 导出：段数", bx.segments.length, "暂停", JSON.stringify(bx.pausedConflict));
+  await kB.inv("sync.export", { share_dir: s5, matter_id: mid });
   const di = await kD.inv("sync.import", { share_dir: s5 });
-  const dAlerts2 = await alerts(kD);
-  LOG("④ dave 摄取 bob 的段：", JSON.stringify(di.dispositions.map((x: any) => x.outcome)), "｜dave 纪元：", JSON.stringify(epochs(kD, mid, dev("dave"))), "｜dave 告警：", JSON.stringify(dAlerts2.map((a) => [a.kind, a.epoch])));
-  LOG("   dave 成员表：", JSON.stringify(members(kD, mid)));
+  LOG("④ dave 摄取 bob 的段：", JSON.stringify(di.dispositions.map((x: any) => x.outcome)), "｜dave 纪元：", JSON.stringify(epochs(kD, mid, dev("dave"))));
+  assert.ok(!epochs(kD, mid, dev("dave")).some((e: number) => e >= 3), "dave 不收 bob 声明的纪元 3");
+  assert.ok(!members(kD, mid).some((m: any) => m.user_id === usr("frank") && !m.gone), "bob 加的 frank 不是成员");
+  assert.deepEqual((await alerts(kD)).filter((a) => a.matter_id === mid), [], "仍没有告警");
   await importText(kD, mid, "戊-解除后.txt", "dave 在告警被解除之后写的保密内容");
   const s6 = fresh("s6");
-  const ex2 = await kD.inv("sync.export", { share_dir: s6, matter_id: mid });
-  LOG("⑤ dave 导出：段数", ex2.segments.length, "暂停", JSON.stringify(ex2.pausedConflict));
+  await kD.inv("sync.export", { share_dir: s6, matter_id: mid });
   await kB.inv("sync.import", { share_dir: s6 });
   const leaked = textOf(kB, "戊-解除后.txt");
   const leakedPaused = textOf(kB, "丁-暂停中.txt");
   await kA.inv("sync.import", { share_dir: s6 });
-  LOG("⑥ 被移出的 bob 读到：", leaked, "｜暂停期间写的：", leakedPaused, "｜真负责人 A 读到：", textOf(kA, "戊-解除后.txt"));
-  assert.equal(leaked, null, "被移出的共同负责人不应凭再轮换一次解除滞后设备的暂停、读到它之后写的内容");
+  LOG("⑥ 被移出的 bob 读到：", leaked, "｜之前写的：", leakedPaused, "｜真负责人 A 读到：", textOf(kA, "戊-解除后.txt"));
+  assert.equal(leaked, null, "被移出的共同负责人读不到滞后设备之后写的内容");
+  assert.equal(leakedPaused, null);
+  assert.equal(textOf(kA, "戊-解除后.txt"), "dave 在告警被解除之后写的保密内容", "负责人读到");
 });

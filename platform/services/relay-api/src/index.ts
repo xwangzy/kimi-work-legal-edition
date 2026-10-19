@@ -12,6 +12,8 @@
  * - `PUT  /v1/relay/matters/<事项>/chunks/<cid>` 原始字节，服务端按实际字节重算摘要；
  * - `POST /v1/relay/matters/<事项>/segments`     登记一段；
  * - `GET  /v1/relay/changes/<游标>[/wait]`       本设备是读者的事项的新段（`/wait` 无新段时至多等 25 秒）；
+ * - `POST /v1/relay/matters/<事项>/control` 控制成员移交（第 12 批，D-94 在链上表达）：只有当前控制成员可调用，请求体 `{to}`；
+ *   接收者须在该事项上登记过段（是读者成员）。客户端另在成员链上写 control 事件，让成员设备知道。
  * - `GET  /v1/relay/matters/<事项>/segments/<游标>` 某事项的全部段（新成员、加回的成员取历史；中继上没有该事项回 404 matter_unknown）；
  * - `GET  /v1/relay/matters/<事项>/chunks/<cid>` 取块（只给读者、只给已登记段引用的块）；
  * - 运营 `DELETE /v1/relay/ops/tenants/<租户>`（律所退约整体删除）与 `DELETE /v1/relay/ops/tenants/<租户>/matters/<事项>`
@@ -211,6 +213,24 @@ function noteReset(t: TenantState, mid: string): void {
   t.resets.set(mid, (t.resets.get(mid) ?? 0) + 1);
 }
 
+/** 控制成员移交的记录（第 12 批；登记日志里与段登记交替出现，不占序号）。 */
+interface ControlRecord {
+  k: "control";
+  mid: string;
+  to: string;
+  by: string;
+  at: string;
+}
+function validControl(x: unknown): x is ControlRecord {
+  const r = x as ControlRecord;
+  return !!r && r.k === "control" && MATTER_ID_RE.test(String(r.mid)) && MEMBER_ID_RE.test(String(r.to)) && MEMBER_ID_RE.test(String(r.by)) && isoOk(r.at);
+}
+/** 按日志先后应用移交：只有当时的控制成员发起的才生效（事项被重置过则不在）。 */
+function applyControl(t: TenantState, r: ControlRecord): void {
+  const m = t.matters.get(r.mid);
+  if (m && m.controller === r.by) m.controller = r.to;
+}
+
 function validReset(x: unknown): x is ResetRecord {
   const r = x as ResetRecord;
   return !!r && r.k === "reset" && MATTER_ID_RE.test(String(r.mid)) && isoOk(r.at) && typeof r.operator === "string";
@@ -285,6 +305,11 @@ export function createRelayApi(o: RelayApiOptions): Server & {
           if (!validReset(e)) throw new Error(`中继登记日志有不合格的重置记录（租户 ${tid}）`);
           for (const x of t.entries) if (x.mid === e.mid) t.gone.add(x.seq);
           noteReset(t, e.mid);
+          continue;
+        }
+        if ((e as { k?: unknown })?.k === "control") {
+          if (!validControl(e)) throw new Error(`中继登记日志有不合格的移交记录（租户 ${tid}）`);
+          applyControl(t, e);
           continue;
         }
         if (!validEntry(e) || e.seq !== t.entries.length + 1) throw new Error(`中继登记日志有不合格的记录（租户 ${tid}）`);
@@ -583,6 +608,35 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       res.writeHead(200, { "content-type": "application/octet-stream", "cache-control": "no-store", "content-length": body.length });
       res.end(body);
       return;
+    }
+
+    // 控制成员移交（第 12 批）：只有当前控制成员可调用；接收者须在该事项上登记过段
+    const ctl = /^\/v1\/relay\/matters\/([^/]+)\/control$/.exec(raw);
+    if (ctl && method === "POST") {
+      const c = await device(req);
+      const mid = ctl[1]!;
+      if (!MATTER_ID_RE.test(mid)) throw new HttpError(400, "matter_invalid");
+      const t = tenantOf(c.tid);
+      const b = await readJson(req);
+      stillLive(t);
+      const keys = Object.keys(b).sort().join(",");
+      if (keys !== "to" && keys !== "gen,to" && keys !== "gen,instance,to") throw new HttpError(400, "body_invalid");
+      if (b.gen !== undefined && (typeof b.gen !== "number" || !Number.isSafeInteger(b.gen) || b.gen < 0)) throw new HttpError(400, "gen_invalid");
+      if (b.instance !== undefined && (typeof b.instance !== "string" || !/^([0-9a-f]{24})?$/.test(b.instance))) throw new HttpError(400, "instance_invalid");
+      if (b.instance && b.instance !== instance) return send(res, 409, { error: "relay_rebuilt", instance });
+      if (typeof b.to !== "string" || !MEMBER_ID_RE.test(b.to)) throw new HttpError(400, "to_invalid");
+      const m = t.matters.get(mid);
+      if (!m) return send(res, 404, t.resetReaders.get(mid)?.has(c.dev) ? { error: "matter_unknown", gen: t.resets.get(mid) ?? 0 } : { error: "matter_unknown" });
+      if (!m.readers.has(c.dev)) throw new HttpError(403, "not_reader");
+      const gen = t.resets.get(mid) ?? 0;
+      if (b.gen !== undefined && b.gen !== gen) return send(res, 409, { error: "matter_reset", gen });
+      if (c.uid !== m.controller) throw new HttpError(403, "not_controller");
+      if (b.to === m.controller) return send(res, 200, { ok: true, controller: m.controller });
+      if (![...m.segs.values()].some((e) => e.uid === b.to && !t.gone.has(e.seq))) throw new HttpError(409, "to_not_reader");
+      const rec: ControlRecord = { k: "control", mid, to: b.to, by: c.uid, at: iso() };
+      appendJournal(t, Buffer.from(`${JSON.stringify(rec)}\n`, "utf8"));
+      applyControl(t, rec);
+      return send(res, 200, { ok: true, controller: m.controller });
     }
 
     const segs = /^\/v1\/relay\/matters\/([^/]+)\/segments$/.exec(raw);

@@ -487,6 +487,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     blobs,
     keyctx,
     tenantId: identity.tenantId,
+    legacyMemberRows: config.legacyMemberRows,
     root: join(config.workspaceDir, "relay"),
     configured: () => gate.relayConfigured && !!controlPlane,
     allowed: () => governance.shareRelayAllowed(),
@@ -704,8 +705,9 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       // 退出模式（许可到期或未取得、本设备被吊销；第 02 篇 §10）：同步不可用
       if (governance.exitMode()) return;
       try {
-        syncExport({ db, blobs, keyctx, tenantId: identity.tenantId }, { shareDir });
-        syncImport({ db, blobs, keyctx, tenantId: identity.tenantId }, { shareDir });
+        const relayControl = { foreign: (mid: string) => shareRelay.foreignController(mid), controller: (mid: string) => shareRelay.controllerOf(mid) };
+        syncExport({ db, blobs, keyctx, tenantId: identity.tenantId, relayControl, legacyMemberRows: config.legacyMemberRows }, { shareDir });
+        syncImport({ db, blobs, keyctx, tenantId: identity.tenantId, relayControl, legacyMemberRows: config.legacyMemberRows }, { shareDir });
         void purgeLocalAgentData(false).catch(() => {});
         lastSyncTickError = "";
       } catch (e) {

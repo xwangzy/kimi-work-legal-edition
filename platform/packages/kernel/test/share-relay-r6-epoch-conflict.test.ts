@@ -71,7 +71,7 @@ after(async () => {
   await kA.kernel.close();
 });
 
-test(`S11A-51（S11A-43 残余）：被移出的共同负责人用同号轮换把纪元密钥塞进滞后设备时，纪元分叉持久可见、滞后设备暂停发出${SAW ? "（变体：dave 先见过 bob 是负责人）" : ""}`, { timeout: 120_000 }, async () => {
+test(`S11A-51（第 12 批解决）：被移出的共同负责人同号轮换，在链上拒收，滞后设备不再分叉${SAW ? "（变体：dave 先见过 bob 是负责人）" : ""}`, { timeout: 120_000 }, async () => {
   const { matter } = await kA.inv("matters.create", { title: "移出共同负责人", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
   const mid = matter.matter_id;
   await kA.inv("matters.members.add", { matter_id: mid, user_id: usr("dave") });
@@ -129,8 +129,10 @@ test(`S11A-51（S11A-43 残余）：被移出的共同负责人用同号轮换�
   const st2 = await kD.inv("sync.status", {});
   const row = (st2.matters ?? st2.items ?? []).find?.((m: any) => m.matter_id === mid);
   LOG("dave 写入后 sync.status 该事项：", JSON.stringify(row));
-  // 处置声称“同号纪元分叉会被检测并提示”：至少 sync.status 应能看出该事项有冲突
-  assert.ok((st2.alerts ?? []).some((a: any) => a.matter_id === mid && a.kind === "epoch_conflict"), "滞后设备上的纪元分叉在状态里可见（持久告警）");
+  // 第 12 批（成员链）：被移出的 bob 并发的“移出 erin + 纪元 2”在链上拒收（移出优先于被移出者的并发操作），纪元 2 只认 A 的声明，
+  // dave 换用 A 的密钥，不再有纪元分叉、不暂停；A 读得到 dave 之后写的内容
+  assert.deepEqual((st2.alerts ?? []).filter((a: any) => a.matter_id === mid), [], "链模式下没有分叉告警");
+  assert.equal(textOf(kA, "丁-移出后.txt"), "dave 在 bob 被移出之后写的保密内容", "负责人读到");
   void row;
   assert.equal(leaked, null, "被移出的成员读不到滞后设备之后写的内容（滞后设备暂停发出）");
 });

@@ -776,6 +776,9 @@ export const api = {
   // 团队事项经中软共享中继同步（第 11 批 S11）
   relayStatus: () => invoke<RelayStatus>("relay.status"),
   relaySync: () => invoke<{ push: RelayReport; pull: RelayReport; status: RelayStatus }>("relay.sync"),
+  // 成员链（第 12 批）：本机重新引导该事项；中继控制成员移交
+  matterSyncRebootstrap: (matterId: string) => invoke<{ matter_id: string; note: string }>("matters.sync_rebootstrap", { matter_id: matterId }),
+  matterRelayHandoff: (matterId: string, toUser: string) => invoke<{ matter_id: string; controller: string; note: string }>("matters.relay_handoff", { matter_id: matterId, to_user: toUser }),
   diagnosticsUploadPreview: () => invoke<SupportPreview>("diagnostics.upload_preview"),
   diagnosticsUploads: () => invoke<{ uploads: { upload_id: string; ticket: string | null; bytes: number; status: "pending" | "sent" | "failed" | "unknown"; error_code: string | null; created_at: string }[] }>("diagnostics.uploads"),
   diagnosticsUpload: (fileSha256: string) => invoke<{ ticket: string; expires_at: string | null; retention_days: number }>("diagnostics.upload", { file_sha256: fileSha256 }),

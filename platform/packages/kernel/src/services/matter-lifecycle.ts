@@ -235,6 +235,10 @@ export async function purgeMatter(
     d.db.run(`DELETE FROM sync_conflicts WHERE matter_id = ?`, [matterId]);
     // 团队同步告警（第七轮复核 S11A-57②：事项删除时一并清掉）
     d.db.run(`DELETE FROM sync_alerts WHERE matter_id = ?`, [matterId]);
+    // 成员链（第 12 批）：事件与起点随事项删除
+    d.db.run(`DELETE FROM member_events WHERE matter_id = ?`, [matterId]);
+    d.db.run(`DELETE FROM member_chain WHERE matter_id = ?`, [matterId]);
+    d.db.run(`DELETE FROM chain_paused_export WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM anon_matter_outbox WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM matter_token_conflicts WHERE matter_id = ?`, [matterId]);
     // 期限提醒：撤销并清空备注，交过云端的待云端删除；收到的提醒删除（第 10 批 S9）

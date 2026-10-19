@@ -1,5 +1,6 @@
-// 第 11 批第五轮复核 A 的复现转入（S11A-43）。第六轮起“段前负责人”规则撤回（复核 S11A-48/S11B-47），S11A-43 登记为残余（签名不带新鲜度，带因果链的成员日志在第 12 批）：
-// 用例改为断言缓解措施——滞后设备上的纪元分叉持久可见、本机暂停发出该事项，被移出者读不到滞后设备之后写的内容
+// 第 11 批第五轮复核 A 的复现转入（S11A-43）。第六轮起“段前负责人”规则撤回（复核 S11A-48/S11B-47），S11A-43 登记为残余；
+// 第 12 批（带因果链的成员日志）解决：移出优先于被移出者的并发操作——bob 不知道自己被移出时做的成员变更与轮换在链上拒收，
+// 纪元 2 只认 A 的声明；滞后设备之后写的内容被移出者读不到、负责人与仍在的成员读得到
 /**
  * 作者签名不带“新鲜度”：任何持有某行旧版本签名的设备都能转发它，接收方只按“比本机新”判断。
  * 被移出的共同负责人 bob 用**未改过的客户端**、只是不去收（或收不到）移出他的那一段，就能：
@@ -71,7 +72,7 @@ after(async () => {
   await kA.kernel.close();
 });
 
-test(`S11A-43（残余）：被移出的共同负责人借转发的旧签名行与同号轮换塞进滞后设备的纪元密钥，不会让他读到滞后设备之后写的内容${SAW ? "（变体：dave 先见过 bob 是负责人）" : ""}`, { timeout: 120_000 }, async () => {
+test(`S11A-43（第 12 批解决）：被移出的共同负责人借转发的旧签名行与同号轮换塞进滞后设备的纪元密钥，不会让他读到滞后设备之后写的内容${SAW ? "（变体：dave 先见过 bob 是负责人）" : ""}`, { timeout: 120_000 }, async () => {
   const { matter } = await kA.inv("matters.create", { title: "移出共同负责人", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
   const mid = matter.matter_id;
   await kA.inv("matters.members.add", { matter_id: mid, user_id: usr("dave") });
@@ -111,18 +112,23 @@ test(`S11A-43（残余）：被移出的共同负责人借转发的旧签名行�
   LOG("bob 本机给 dave 的纪元 2 包裹：", JSON.stringify(wrapsOf(kB, mid, dev("dave"))));
   // dave 此后写的内容
   await importText(kD, mid, "丁-移出后.txt", "dave 在 bob 被移出之后写的保密内容");
+  // 第 12 批（成员链）：A 的“bob 降为编辑、移出 bob”与 bob 的“移出 erin + 纪元 2”是并发的——移出优先于被移出者的并发操作，
+  // bob 的事件拒收（author_demoted_concurrently），erin 仍在；纪元 2 只有 A 的声明，dave 先收下的 bob 的那把被 A 的替换；没有告警
+  const log = await kD.inv("matters.member_log", { matter_id: mid });
+  LOG("dave 的成员链：", JSON.stringify(log.events.map((e: any) => [e.kind, e.author_member.slice(-4), e.user?.slice(-4), e.status, e.reason])));
+  assert.ok(log.events.some((e: any) => e.author_member === usr("bob") && e.status === "rejected" && e.reason === "author_demoted_concurrently"), "bob 并发的移出拒收");
+  assert.deepEqual((await kD.inv("relay.status")).alerts.filter((a: any) => a.matter_id === mid), [], "没有告警");
+  assert.ok(members(kD, mid).some((m: any) => m.user_id === usr("erin") && !m.gone), "erin 仍是成员");
   const s4 = fresh("s4");
   await kD.inv("sync.export", { share_dir: s4, matter_id: mid });
-  const seg4 = readdirSync(s4, { recursive: true }).filter((x: any) => String(x).endsWith(".seg") || String(x).includes("seg"));
-  LOG("dave 发出：", JSON.stringify(seg4).slice(0, 200));
-  // 被移出的 bob 摄取 dave 的段
+  // 被移出的 bob 读不到；负责人 A 与仍是成员的 erin 读到
   const rb = await kB.inv("sync.import", { share_dir: s4 });
   LOG("bob 摄取 dave 的段：", JSON.stringify(rb.dispositions.map((x: any) => x.outcome)));
-  const leaked = textOf(kB, "丁-移出后.txt");
-  LOG("bob 本机读到的 dave 新材料正文：", leaked);
-  // 真负责人 A 摄取 dave 的段
-  const ra = await kA.inv("sync.import", { share_dir: s4 });
-  LOG("A 摄取 dave 的段：", JSON.stringify(ra.dispositions.map((x: any) => x.outcome)), "｜A 读到：", textOf(kA, "丁-移出后.txt"));
-  assert.equal(leaked, null, "被移出的成员不应读到移出之后其他成员写的内容");
-  assert.ok((await kD.inv("relay.status")).alerts.some((a: any) => a.matter_id === mid && a.kind === "epoch_conflict"), "滞后设备上的纪元分叉持久可见");
+  assert.equal(textOf(kB, "丁-移出后.txt"), null, "被移出的成员不应读到移出之后其他成员写的内容");
+  await kA.inv("sync.import", { share_dir: s4 });
+  assert.equal(textOf(kA, "丁-移出后.txt"), "dave 在 bob 被移出之后写的保密内容", "负责人读到");
+  await kE.inv("sync.import", { share_dir: s0 });
+  await kE.inv("sync.import", { share_dir: s2 });
+  await kE.inv("sync.import", { share_dir: s4 });
+  assert.equal(textOf(kE, "丁-移出后.txt"), "dave 在 bob 被移出之后写的保密内容", "仍是成员的 erin 读到");
 });

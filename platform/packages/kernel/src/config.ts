@@ -41,6 +41,11 @@ export interface KernelConfig {
   skillsManifestFile: string | null;
   /** 共享文件夹同步目录（ZR_SYNC_SHARE_DIR；配置后内核起同步定时器且 node_enqueue 内联导出）。 */
   syncShareDir?: string | undefined;
+  /**
+   * 模拟第 12 批之前的客户端（不写成员链、不锚定、不认段里的成员事件）：只在 node 测试运行器里生效（ZR_MEMBER_LOG=off），
+   * 用来覆盖仍然在用的第 11 批行规则（未锚定的事项、混合版本）。
+   */
+  legacyMemberRows: boolean;
   env: NodeJS.ProcessEnv;
 }
 
@@ -238,6 +243,7 @@ export function loadConfig(opts: KernelOptions = {}): KernelConfig {
     ocrModelDir,
     agentProfileFile,
     syncShareDir: env.ZR_SYNC_SHARE_DIR || undefined,
+    legacyMemberRows: env.ZR_MEMBER_LOG === "off" && !!process.env.NODE_TEST_CONTEXT,
     env,
   };
 }

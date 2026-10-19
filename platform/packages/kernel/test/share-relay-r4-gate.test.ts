@@ -108,17 +108,25 @@ test("② S11A-35（中继）：先经共享文件夹、后开中继，共同负
   assert.equal(write, "ok", "迟到成员应能写入");
 });
 
-test("③ S11A-35（中继，移交）：负责人移交给新加入的成员并把自己改为编辑——新负责人拿到事项", { timeout: 240_000 }, async () => {
+test("③ S11A-35（中继，移交；第 12 批）：负责人加新人为负责人、等对方同步后移交中继控制成员，新负责人把原负责人改为编辑——新负责人拿到事项", { timeout: 240_000 }, async () => {
   const { matter } = await kA.inv("matters.create", { title: "移交给新人", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
   const mid = matter.matter_id;
   await importText(kA, mid, "甲.txt", "甲");
   await kA.inv("relay.sync");
-  // 一次操作里完成移交（A 是控制成员，界面放行），然后发出
+  // 第 12 批：控制成员降级之前须先移交中继控制成员——对方须先经中继同步过该事项
   await kA.inv("matters.members.add", { matter_id: mid, user_id: usr("erin"), matter_role: "owner" });
-  await kA.inv("matters.members.add", { matter_id: mid, user_id: usr("test-lawyer"), matter_role: "editor" });
   await kA.inv("relay.sync");
+  await assert.rejects(kA.inv("matters.members.add", { matter_id: mid, user_id: usr("test-lawyer"), matter_role: "editor" }), /先把控制成员移交/);
   const e1 = await kE.inv("relay.sync");
   const e2 = await kE.inv("relay.sync");
+  await kE.inv("relay.sync");
+  await kA.inv("matters.relay_handoff", { matter_id: mid, to_user: usr("erin") });
+  // 移交之后由新的控制成员 erin 把 A 改为编辑
+  await kA.inv("relay.sync");
+  await kE.inv("relay.sync");
+  await kE.inv("matters.members.add", { matter_id: mid, user_id: usr("test-lawyer"), matter_role: "editor" });
+  await kE.inv("relay.sync");
+  await kA.inv("relay.sync");
   LOG("erin 收件：", JSON.stringify(e1.pull), JSON.stringify(e2.pull));
   LOG("erin 状态：", JSON.stringify(await kE.inv("relay.status")));
   LOG("erin 打开事项：", await docs(kE, mid));
@@ -142,8 +150,12 @@ test("④⑤ S11A-36/37：移交后按事项重置——创建者早期写入的
   await kB.inv("relay.sync");
   await kA.inv("relay.sync");
   await kC.inv("relay.sync");
-  // 移交：A 把自己改为编辑（carol 已是负责人）；此后 carol 调整成员被告知“请联系中软客服办理负责人交接”
-  await kA.inv("matters.members.add", { matter_id: mid, user_id: usr("test-lawyer"), matter_role: "editor" });
+  // 移交：A 先把中继控制成员移交给 carol（第 12 批），carol 再把 A 改为编辑；之后中继上的事项因故被运营重置
+  await kA.inv("matters.relay_handoff", { matter_id: mid, to_user: usr("carol") });
+  await kA.inv("relay.sync");
+  await kC.inv("relay.sync");
+  await kC.inv("matters.members.add", { matter_id: mid, user_id: usr("test-lawyer"), matter_role: "editor" });
+  await kC.inv("relay.sync");
   await kA.inv("relay.sync");
   await kC.inv("relay.sync");
   await kB.inv("relay.sync");

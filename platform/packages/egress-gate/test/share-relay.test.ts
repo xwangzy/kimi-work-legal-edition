@@ -29,7 +29,7 @@ const commit: ShareRelayRequest = {
   instance: "",
 };
 
-test("形状：六种请求合格；凭据须受众 relay；多一个字段、明文字段、坏编号一律不合格", () => {
+test("形状：六种请求（第 12 批起七种，见文末）合格；凭据须受众 relay；多一个字段、明文字段、坏编号一律不合格", () => {
   assert.equal(shareRelayAllowed(commit), null);
   assert.equal(shareRelayAllowed({ step: "have", credential, matter_id: MID, cids: [CID] }), null);
   assert.equal(shareRelayAllowed({ step: "put_chunk", credential, matter_id: MID, cid: CID, body_b64: chunk.toString("base64") }), null);
@@ -104,4 +104,23 @@ test("未配置不发；形状不合格不发；响应超限报错；连接被�
     throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } });
   }) as unknown as typeof fetch;
   assert.deepEqual(await relayShare({ step: "changes", credential, since: 0, wait: false }, { baseUrl: "https://r.example.cn", fetchImpl: refused }), { ok: false, reason: "relay_connect_failed" });
+});
+
+test("第 12 批控制成员移交：形状只有接收者成员编号、重置代数与实例编号；固定路径、请求由闸门重拼", async () => {
+  const ctl = { step: "control", credential, matter_id: MID, to: "usr_firm_bob", gen: 0, instance: "" };
+  assert.equal(shareRelayAllowed(ctl), null);
+  assert.equal(shareRelayAllowed({ ...ctl, to: "usr bob" }), "relay_member_invalid");
+  assert.equal(shareRelayAllowed({ ...ctl, title: "某某案" }), "relay_request_invalid", "明文字段不收");
+  assert.equal(shareRelayAllowed({ ...ctl, gen: -1 }), "relay_request_invalid");
+  assert.equal(shareRelayAllowed({ ...ctl, matter_id: "mat_x" }), "relay_matter_invalid");
+  const seen: { url: string; init: RequestInit }[] = [];
+  const fetchImpl = (async (url: string, init: RequestInit) => {
+    seen.push({ url, init });
+    return new Response('{"ok":true,"controller":"usr_firm_bob"}', { status: 200 });
+  }) as unknown as typeof fetch;
+  const sneaky = Object.assign(Object.create({ note: "x" }), ctl);
+  assert.equal((await relayShare(sneaky, { baseUrl: "https://relay.example-zr.cn/api/", fetchImpl })).ok, true);
+  assert.equal(seen[0]!.url, `https://relay.example-zr.cn/api/v1/relay/matters/${MID}/control`);
+  assert.equal(seen[0]!.init.method, "POST");
+  assert.deepEqual(JSON.parse(String(seen[0]!.init.body)), { to: "usr_firm_bob", gen: 0, instance: "" });
 });

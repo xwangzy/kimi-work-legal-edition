@@ -66,7 +66,7 @@ const alerts = (k: K | TestKernel, mid: string) => k.kernel.db.all<{ kind: strin
 const dir = (tag: string) => mkdtempSync(join(tmpdir(), `kwl-r7-${tag}-`));
 const newMatter = async (title: string) => (await kA.inv("matters.create", { title, stance: "受让方", consent_status: "not_required", collab_scope: "team" })).matter.matter_id as string;
 
-test("S11B-55：两位共同负责人并发轮换出同号纪元——一位负责人在本机重新轮换即清除本机冲突；其他设备在冲突另一方发来新纪元后解除并补发暂停期间的内容", { timeout: 240_000 }, async () => {
+test("S11B-55（第 12 批）：两位共同负责人并发移出不同成员、各自轮换出同号纪元——按成员链合并（两人都移出），由一位自动补轮换，另一位等新纪元后补发等待期间的内容", { timeout: 240_000 }, async () => {
   const m = await newMatter("并发轮换");
   await kA.inv("matters.members.add", { matter_id: m, user_id: usr("bob"), matter_role: "owner" });
   for (const u of ["carol", "dave"]) await kA.inv("matters.members.add", { matter_id: m, user_id: usr(u) });
@@ -82,21 +82,34 @@ test("S11B-55：两位共同负责人并发轮换出同号纪元——一位负�
   await kB.inv("sync.export", { share_dir: sb, matter_id: m });
   await kA.inv("sync.import", { share_dir: sb });
   await kB.inv("sync.import", { share_dir: sa });
-  assert.deepEqual(alerts(kA, m), ["epoch_conflict"]);
-  assert.deepEqual(alerts(kB, m), ["epoch_conflict"]);
-  await imp(kB, m, "bob暂停期间.txt", "bob 在暂停期间写的");
-  assert.deepEqual((await kB.inv("sync.export", { share_dir: dir("cbp"), matter_id: m })).pausedConflict, [m], "冲突期间暂停发出");
-  // A 在本机重新轮换（纪元冲突不拦负责人调整成员）：A 的冲突清除
-  await kA.inv("matters.members.remove", { matter_id: m, user_id: usr("dave") });
-  assert.deepEqual(alerts(kA, m), []);
+  // 两边的成员关系一致：carol、dave 都已移出（并发的移出都生效）
+  const gone = (k: K | TestKernel) => k.kernel.db.all<{ user_id: string }>(`SELECT user_id FROM matter_members WHERE matter_id = ? AND removed_at IS NOT NULL ORDER BY user_id`, [m]).map((r) => r.user_id);
+  assert.deepEqual(gone(kA), [usr("carol"), usr("dave")]);
+  assert.deepEqual(gone(kB), [usr("carol"), usr("dave")]);
+  assert.ok(!alerts(kA, m).includes("epoch_conflict") && !alerts(kB, m).includes("epoch_conflict"), "链模式下没有第 11 批的纪元冲突告警");
+  // 恰好一位（纪元 2 胜出声明的作者）自动补轮换到纪元 3；另一位等待（rekey_needed，只发成员链）
+  const top = (k: K | TestKernel) => k.kernel.db.get<{ e: number }>(`SELECT MAX(epoch) AS e FROM matter_keys WHERE matter_id = ? AND wrapped_for = ?`, [m, k === kA ? `dev_${FIRM}_test-lawyer` : `dev_${FIRM}_bob`])!.e;
+  const [rot, wait, rotShare, waitName] = top(kA) === 3 ? [kA, kB, sa, "bob"] : [kB, kA, sb, "test-lawyer"];
+  assert.equal(top(rot), 3, "胜出者补轮换到纪元 3");
+  void rotShare;
+  // 等待的一方此时写的内容暂不发出
+  await imp(wait, m, "等待期间.txt", "等待新纪元期间写的");
+  const pausedEx = await wait.inv("sync.export", { share_dir: dir("cw"), matter_id: m });
+  if (alerts(wait, m).length > 0) assert.deepEqual(pausedEx.pausedConflict, [m], "等待期间只发成员链");
+  // 补轮换的一方的新纪元送到 → 解除；等待期间的内容随后送达
   const s3 = dir("c3");
-  await kA.inv("sync.export", { share_dir: s3, matter_id: m });
-  await kB.inv("sync.import", { share_dir: s3 });
-  assert.deepEqual(alerts(kB, m), [], "冲突另一方（A）的新纪元送到后解除");
+  await rot.inv("sync.export", { share_dir: s3, matter_id: m });
+  await wait.inv("sync.import", { share_dir: s3 });
+  assert.deepEqual(alerts(wait, m), [], `新纪元送到后解除（${waitName}）`);
   const s4 = dir("c4");
-  assert.equal((await kB.inv("sync.export", { share_dir: s4, matter_id: m })).pausedConflict.length, 0);
-  await kA.inv("sync.import", { share_dir: s4 });
-  assert.ok((await docs(kA, m)).includes("bob暂停期间.txt"), "暂停期间写的内容随后送达");
+  assert.equal((await wait.inv("sync.export", { share_dir: s4, matter_id: m })).pausedConflict.length, 0);
+  await rot.inv("sync.import", { share_dir: s4 });
+  assert.ok((await docs(rot, m)).includes("等待期间.txt"), "等待期间写的内容随后送达");
+  // 被移出的 carol、dave 都读不到
+  for (const k of [kC, kD]) {
+    await k.inv("sync.import", { share_dir: s4 });
+    assert.equal(k.kernel.db.get(`SELECT 1 AS x FROM document_versions WHERE matter_id = ? AND filename = ?`, [m, "等待期间.txt"]), undefined, "被移出者读不到（本机库里没有）");
+  }
 });
 
 test("S11B-53：中继重建后，非负责人一段上传期间本机得知新实例编号，这一段仍按旧编号登记、被拒收，不抢先成为控制成员", { timeout: 240_000 }, async () => {
@@ -127,7 +140,8 @@ test("S11B-53：中继重建后，非负责人一段上传期间本机得知新�
   assert.equal(fresh.tenant(TID)?.controller(m) ?? null, null, "非负责人没有把事项登记到新中继上");
 });
 
-test("第六轮反向对照缺口 R64/R65：成员行序号比本机见过的最大值跳出上限即拒收；首同步延后在摄取结果里保留原因", { timeout: 180_000 }, async () => {
+// 第 12 批：有成员链的事项不采信段里的成员行（行规则下的原断言见 member-log-legacy）；迟到成员可从同事的段按链引导
+test("第六轮反向对照缺口 R64/R65（第 12 批）：改大成员行序号对链模式无效；迟到成员从同事的段按链引导", { timeout: 180_000 }, async () => {
   const m = await newMatter("序号跳跃");
   await kA.inv("matters.members.add", { matter_id: m, user_id: usr("bob") });
   const s1 = dir("j1");
@@ -138,9 +152,8 @@ test("第六轮反向对照缺口 R64/R65：成员行序号比本机见过的最
   await imp(kA, m, "触发导出.txt", "x");
   const s2 = dir("j2");
   await kA.inv("sync.export", { share_dir: s2, matter_id: m });
-  const r = await kB.inv("sync.import", { share_dir: s2 });
-  assert.ok((r.originConflicts as string[]).some((w) => w.includes("行序号跳跃过大")));
-  assert.ok((kB.kernel.db.get<{ l: number }>(`SELECT row_lamport AS l FROM matter_members WHERE matter_id = ? AND user_id = ?`, [m, usr("bob")])!.l) < 99999999);
+  await kB.inv("sync.import", { share_dir: s2 });
+  assert.ok((kB.kernel.db.get<{ l: number }>(`SELECT row_lamport AS l FROM matter_members WHERE matter_id = ? AND user_id = ?`, [m, usr("bob")])!.l) < 99999999, "段里的成员行不采信");
   // 首同步延后：dave 先只收到编辑 bob 的段（bob 不是负责人）→ 延后并说明原因
   const m2 = await newMatter("首同步延后");
   await kA.inv("matters.members.add", { matter_id: m2, user_id: usr("bob") });
@@ -152,5 +165,6 @@ test("第六轮反向对照缺口 R64/R65：成员行序号比本机见过的最
   const sb = dir("d2");
   await kB.inv("sync.export", { share_dir: sb, matter_id: m2 });
   const rd = await kD.inv("sync.import", { share_dir: sb });
-  assert.ok((rd.originConflicts as string[]).some((w) => w.startsWith("bootstrap_deferred:")), JSON.stringify(rd.originConflicts));
+  assert.deepEqual(rd.dispositions.map((x: any) => x.outcome), ["applied"], JSON.stringify(rd.originConflicts));
+  assert.ok(kD.kernel.db.get(`SELECT 1 AS x FROM matter_keys WHERE matter_id = ? AND wrapped_for = ?`, [m2, `dev_${FIRM}_dave`]), "按链引导、持钥");
 });

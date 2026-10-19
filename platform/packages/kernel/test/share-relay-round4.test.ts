@@ -228,7 +228,8 @@ test("第四轮反向对照 R32：同段里先出现“共同负责人加的人�
   assert.deepEqual(got, [usr("bob"), usr("carol"), usr("dave"), usr("test-lawyer")]);
 });
 
-test("第四轮反向对照 R34：旧版客户端转发的成员行没有作者签名时，后加入的成员不从这一段半引导（延后），等负责人的段后正常持钥", { timeout: 180_000 }, async () => {
+// 第 12 批：有成员链的事项，迟到成员从任何成员转发的段引导（链自证负责人与包裹）；行规则下的原断言见 member-log-legacy
+test("第四轮反向对照 R34（第 12 批）：成员行没有作者签名不影响链模式；后加入的成员从同事转发的段即可按链引导、持钥", { timeout: 180_000 }, async () => {
   const m = await newMatter("旧版转发");
   await kA.inv("matters.members.add", { matter_id: m, user_id: usr("bob") });
   await kA.inv("matters.members.add", { matter_id: m, user_id: usr("dave") });
@@ -241,10 +242,7 @@ test("第四轮反向对照 R34：旧版客户端转发的成员行没有作者�
   const s2 = mkdtempSync(join(tmpdir(), "kwl-r4-old2-"));
   await kB.inv("sync.export", { share_dir: s2, matter_id: m });
   await kD.inv("sync.import", { share_dir: s2 });
-  assert.equal(kD.kernel.db.get(`SELECT 1 AS x FROM matters WHERE matter_id = ?`, [m]), undefined, "只有同事段时延后，不半引导");
-  await kD.inv("sync.import", { share_dir: s1 });
-  await kD.inv("sync.import", { share_dir: s2 });
-  assert.ok(kD.kernel.db.get(`SELECT 1 AS x FROM matter_keys WHERE matter_id = ? AND wrapped_for = ?`, [m, `dev_${FIRM}_dave`]), "负责人的段到了之后持钥");
+  assert.ok(kD.kernel.db.get(`SELECT 1 AS x FROM matter_keys WHERE matter_id = ? AND wrapped_for = ?`, [m, `dev_${FIRM}_dave`]), "从同事的段按链引导、持钥");
   assert.deepEqual(await docs(kD, m), ["B写.txt"]);
 });
 

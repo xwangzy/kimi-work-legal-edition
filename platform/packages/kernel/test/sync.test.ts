@@ -233,7 +233,7 @@ test("应当-6：同步冲突的审计事件已上链（signed_events 见证）"
   assert.ok(witness, "conflict.detected 应有 signed_events 见证（统一上链路径）");
 });
 
-test("阻断-C 复刻（恶意内部人）：伪造大 lamport 成员行翻墓碑 → 拒收；owner 合法变更仍同步", { timeout: 180_000 }, async () => {
+test("阻断-C 复刻（恶意内部人）：伪造成员行与成员事件翻墓碑 → 不生效；owner 合法变更仍同步", { timeout: 180_000 }, async () => {
   const bobUserId = "usr_sync-firm_bob";
   // 场景：A 的事项 + bob 成员 → 同步到 B（bob 持 epoch-1 密钥）→ A 移出 bob（墓碑 epoch 2，bob 出局）
   const { matter } = await kA.inv("matters.create", { title: "实验C事项", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
@@ -277,9 +277,8 @@ test("阻断-C 复刻（恶意内部人）：伪造大 lamport 成员行翻墓�
   });
   writeSegment(shareDir, kA.kernel.identity.tenantId, "dev_sync-firm_bob", `seg_forged_${Date.now().toString(36)}`, forged);
 
-  const im = await kA.inv("sync.import", { share_dir: shareDir });
-  // bob 不是 owner——成员行整行拒收（member_row_rejected），墓碑不翻
-  assert.ok(im.originConflicts.some((w: string) => w.startsWith("member_row_rejected:")), `应记 member_row_rejected：${JSON.stringify(im.originConflicts)}`);
+  await kA.inv("sync.import", { share_dir: shareDir });
+  // 第 12 批：有成员链的事项只按链判断成员，段里的成员行一律不采信（行规则的断言见 member-log-legacy），墓碑不翻
   const tomb = kA.kernel.db.get<any>(`SELECT removed_at FROM matter_members WHERE matter_id = ? AND user_id = ?`, [matter.matter_id, bobUserId]);
   assert.ok(tomb.removed_at, "墓碑不被伪造行翻掉（阻断-C 闭合）");
 
@@ -310,9 +309,42 @@ test("阻断-C 复刻（恶意内部人）：伪造大 lamport 成员行翻墓�
     signer: bKeys.signPrivateKeyPem,
   });
   writeSegment(shareDir, kA.kernel.identity.tenantId, "dev_sync-firm_bob", `seg_forged2_${Date.now().toString(36)}`, forged2);
-  const im2 = await kA.inv("sync.import", { share_dir: shareDir });
-  assert.ok(im2.originConflicts.some((w: string) => w.includes("借名伪造拒收")), "借名变体同样拒收");
+  await kA.inv("sync.import", { share_dir: shareDir });
   assert.ok(kA.kernel.db.get<any>(`SELECT removed_at FROM matter_members WHERE matter_id = ? AND user_id = ?`, [matter.matter_id, bobUserId]).removed_at, "墓碑仍不翻");
+
+  // 链上的伪造：bob 以自己的设备签一条“bob 加回为编辑”的成员事件（引用当前链头）→ bob 不是负责人，链上拒收，墓碑不翻
+  const { canonicalJson, signSyncWith } = await import("@zr-legal/keys");
+  const { createHash } = await import("node:crypto");
+  const aView = (await kA.inv("matters.member_log", { matter_id: matter.matter_id })).events as any[];
+  const covered = new Set<string>();
+  const evRows = kA.kernel.db.all<any>(`SELECT event_id, payload FROM member_events WHERE matter_id = ?`, [matter.matter_id]);
+  for (const r of evRows) for (const p of JSON.parse(r.payload).prev) covered.add(p);
+  const head = aView.filter((e) => e.status === "valid" && !covered.has(e.event_id)).map((e) => e.event_id).sort();
+  const maxL = Math.max(...aView.filter((e) => head.includes(e.event_id)).map((e) => e.lamport));
+  const payload = { v: "kwl-member-event/1", tenant: kA.kernel.identity.tenantId, matter_id: matter.matter_id, kind: "member", prev: head, lamport: maxL + 1, author_device: "dev_sync-firm_bob", at: new Date().toISOString(), body: { user: bobUserId, role: "editor" } };
+  const eid = createHash("sha256").update(canonicalJson(payload)).digest("hex");
+  const forgedEvent = { event_id: eid, payload: canonicalJson(payload), sig: signSyncWith(bKeys.signPrivateKeyPem, new TextEncoder().encode(`kwl-member-event/1\n${eid}`)), author_cert: bCert.cert_json };
+  // 借名变体：作者写成 A 的设备、却由 bob 签名 → 证书与签名核验不通过
+  const payload2 = { ...payload, author_device: "dev_sync-firm_test-lawyer" };
+  const eid2 = createHash("sha256").update(canonicalJson(payload2)).digest("hex");
+  const forgedEvent2 = { event_id: eid2, payload: canonicalJson(payload2), sig: signSyncWith(bKeys.signPrivateKeyPem, new TextEncoder().encode(`kwl-member-event/1\n${eid2}`)), author_cert: bCert.cert_json };
+  const forged3 = sealSegment({
+    header: { segment_id: `seg_forged3_${Date.now().toString(36)}`, device_id: "dev_sync-firm_bob", matter_id: matter.matter_id, from_lamport: 1, to_lamport: 1, key_epoch: 1, event_count: 2, created_at: new Date().toISOString(), device_cert_json: bCert.cert_json },
+    keyRows: [],
+    rows: [
+      { t: "member_events", pk: eid, src_device: "dev_sync-firm_bob", src_lamport: 1, row: forgedEvent },
+      { t: "member_events", pk: eid2, src_device: "dev_sync-firm_bob", src_lamport: 1, row: forgedEvent2 },
+    ],
+    matterKey: k1,
+    signer: bKeys.signPrivateKeyPem,
+  });
+  writeSegment(shareDir, kA.kernel.identity.tenantId, "dev_sync-firm_bob", `seg_forged3_${Date.now().toString(36)}`, forged3);
+  const im3 = await kA.inv("sync.import", { share_dir: shareDir });
+  assert.ok(im3.originConflicts.some((w: string) => w.startsWith("member_event_rejected:")), `借名事件核验不通过：${JSON.stringify(im3.originConflicts)}`);
+  const log = (await kA.inv("matters.member_log", { matter_id: matter.matter_id })).events as any[];
+  assert.equal(log.find((e) => e.event_id === eid)?.reason, "author_not_owner", "bob 签的成员事件：作者不是负责人，链上拒收");
+  assert.equal(log.find((e) => e.event_id === eid2), undefined, "借名事件不入库");
+  assert.ok(kA.kernel.db.get<any>(`SELECT removed_at FROM matter_members WHERE matter_id = ? AND user_id = ?`, [matter.matter_id, bobUserId]).removed_at, "墓碑仍不翻（链）");
 
   // owner 设备的合法成员变更在 A 侧不被误拒（A 侧直接可见；经同步到留存成员的验证见「墓碑 B 侧传播」用例）
   const otherId = "usr_sync-firm_other2";

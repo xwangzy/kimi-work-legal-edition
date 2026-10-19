@@ -129,7 +129,8 @@ export class ShareRelaySync {
   private closed = false;
 
   constructor(d: ShareRelayDeps) {
-    this.d = d;
+    // 成员链（第 12 批）的锚定者与自动轮换看中继上的控制成员
+    this.d = d.relayControl ? d : { ...d, relayControl: { foreign: (mid) => this.foreignController(mid), controller: (mid) => this.controllerOf(mid) } };
     // 原子写与改名留下的临时文件（崩溃）：启动时清理（复核 S11B-14）
     for (const dir of [this.outbox, this.inbox, this.ready]) this.sweepTmp(dir);
   }
@@ -1070,6 +1071,30 @@ export class ShareRelaySync {
     if (row.controller === this.d.keyctx.device.cert.memberId) return null;
     // 策略回退（过期、认不出、没收到）：仍锁定，提示先联网更新策略
     return this.d.allowed() ? row.controller : "~";
+  }
+
+  /**
+   * 控制成员移交（第 12 批，D-94 在链上表达）：经闸门调用中继的移交接口（只有当前控制成员可以；接收者须在中继上登记过该事项的段），
+   * 成功后记下新的控制成员。失败抛出中继或闸门的原因代码。
+   */
+  async handoffControl(matterId: string, to: string): Promise<{ controller: string }> {
+    const why = this.blocked();
+    if (why) throw new RelayError(why);
+    const gen = this.d.db.get<{ gen: number }>(`SELECT gen FROM relay_matters WHERE matter_id = ?`, [matterId])?.gen ?? 0;
+    const r = await this.call({ step: "control", matter_id: matterId, to, gen, instance: this.kv("instance") ?? "" });
+    this.noteMatter(matterId, { known: true, controller: r.json?.controller });
+    return { controller: String(r.json?.controller ?? "") };
+  }
+
+  /** 重新取该事项的历史（第 12 批“本机重新引导该事项”之后）。 */
+  refetchHistory(matterId: string): void {
+    this.d.db.run(`UPDATE relay_matters SET history_state = 'pending', history_cursor = 0, history_next_at = NULL, history_attempts = 0 WHERE matter_id = ?`, [matterId]);
+  }
+
+  /** 中继告知的该事项控制成员（不知道或不经中继为 null）。 */
+  controllerOf(matterId: string): string | null {
+    if (!this.d.configured()) return null;
+    return this.d.db.get<{ controller: string | null }>(`SELECT controller FROM relay_matters WHERE matter_id = ?`, [matterId])?.controller ?? null;
   }
 
   /** 关闭：不再开始新的收发，等进行中的结束（至多 timeoutMs；复核 S11B-07）。 */

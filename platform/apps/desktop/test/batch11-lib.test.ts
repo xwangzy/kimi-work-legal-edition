@@ -51,3 +51,14 @@ test("第六轮：团队同步告警的说明（纪元冲突、负责人无法�
   assert.match(o, /自动恢复/);
   assert.doesNotMatch(o, /交接/, "不断言发生过交接（第七轮复核 S11A-55）");
 });
+
+test("第 12 批：成员链的四种告警写明暂停发出与出路，起点冲突写明另一方", () => {
+  for (const kind of ["chain_pending", "rekey_needed", "epoch_superseded", "root_conflict"]) {
+    const t = syncAlertText({ kind, title: "乙案", peer_member: "usr_y" });
+    assert.match(t, /「乙案」/);
+    assert.match(t, /暂停发出/);
+    assert.doesNotMatch(t, new RegExp(kind), "不露出内部代码");
+  }
+  assert.match(syncAlertText({ kind: "root_conflict", title: null, peer_member: "usr_y" }), /usr_y/);
+  assert.match(syncAlertText({ kind: "root_conflict", title: null }), /本机重新引导/);
+});

@@ -70,7 +70,8 @@ import { runModeOf, type Identity } from "../identity.ts";
 import type { AsyncMutex } from "../mutex.ts";
 import { currentTenantEpoch, ensureNodeDevice, getDeviceKeys, stageDeviceRecovery, type KernelKeyContext } from "../devices.ts";
 import { archivedCertsOf, certVerifying, rowPayloadHash, verifyCertSignature } from "../ledger-signer.ts";
-import { syncExport, syncImport, syncStatus } from "../sync-engine.ts";
+import { syncExport, syncImport, syncStatus, type SyncDeps } from "../sync-engine.ts";
+import { addOrUpdateMember, chainSummary, chainView, hasChain, rebootstrapMatter, refreshChain, rotateChainKey, writeEvent, writeGenesis } from "../member-log.ts";
 import { docxHeaderFooterTexts, parseDocument } from "../services/parser.ts";
 import { detectClassifiedMarking, type ClassifiedFinding } from "../services/classified-marking.ts";
 import { restoreArtifactBytes } from "../services/export-restore.ts";
@@ -613,6 +614,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           matterId,
           wrapMatterKey(matterKey, keyctx.firm.recoveryPublicKeyPem),
         ]);
+        // 团队事项的成员链起点（第 12 批；个人事项不同步、不写链）
+        if (scope === "team" && !config.legacyMemberRows) writeGenesis({ db, keyctx, tenantId: id.tenantId }, matterId, id.userId, matterKey);
       });
       audit(db, id, "matter.create", "matter", matterId, undefined, keyctx);
       // 事项匿名摘要（阶段 6；经控制面下发网关做二次检查，收敛 D-20）：只有匿名编号与数据级别、端点、依据是否齐备
@@ -1413,7 +1416,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       let inlineExported = false;
       if (config.syncShareDir) {
         try {
-          syncExport({ db, blobs, keyctx, tenantId: id.tenantId }, { shareDir: config.syncShareDir, matterId: matter.matter_id });
+          syncExport(syncDepsOf(id), { shareDir: config.syncShareDir, matterId: matter.matter_id });
           inlineExported = true;
         } catch (e) {
           slog.event("KERNEL_NODE_ENQUEUE_EXPORT_FAILED", errFields(e));
@@ -2577,6 +2580,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     // ─── 事项成员与密钥分发（§5.3：加入补包裹、移出轮换密钥） ───
     "matters.members.add": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      // 成员链（第 12 批）：先补写到期的吊销标记、刷新投影（下面的负责人检查读投影）
+      refreshChain(chainDeps(id), matter.matter_id);
       requireMatterOwner(db, matter.matter_id, id);
       requireRelayController(matter.matter_id, "加入成员");
       requireNoSyncAlert(matter.matter_id, "加入成员");
@@ -2586,6 +2591,24 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (!userId) throw validation("需要 user_id");
       const matterRole = String(p?.matter_role ?? "editor");
       if (!["owner", "editor", "reviewer", "issuer", "viewer"].includes(matterRole)) throw validation("matter_role 非法");
+      // 中继控制成员降为非负责人之前须先移交（第 12 批：否则此后谁都不能在中继上调整成员、轮换密钥）
+      if (matterRole !== "owner" && deps.shareRelay?.controllerOf(matter.matter_id) === userId) throw forbidden("对方是这个事项在中软共享中继上的控制成员：请先把控制成员移交给另一位负责人，再调整其角色");
+      // 成员链（第 12 批）：加人与改角色是成员事件，带对方在用设备在当前纪元的包裹摘要
+      if (hasChain(db, matter.matter_id)) {
+        const r = db.tx(() => {
+          db.run(`INSERT OR IGNORE INTO users (user_id, tenant_id, display_name) VALUES (?,?,?)`, [userId, id.tenantId, userId]);
+          db.run(`INSERT OR IGNORE INTO memberships (membership_id, tenant_id, user_id, role) VALUES (?,?,?,'lawyer')`, [newId("membership"), id.tenantId, userId]);
+          return addOrUpdateMember(chainDeps(id), matter.matter_id, userId, matterRole);
+        });
+        audit(db, id, "matter.member_add", "matter", matter.matter_id, userId, keyctx);
+        return {
+          matter_id: matter.matter_id,
+          user_id: userId,
+          epoch: r.epoch,
+          devices_wrapped: r.wrapped,
+          note: r.wrapped > 0 ? "已按当前密钥纪元为对方 active 设备补包裹（对方设备方可解事项密钥）；变更已记入成员链" : "对方尚无登记设备：其设备登记后需重新执行补包裹；变更已记入成员链",
+        };
+      }
       const epoch = currentMatterEpoch(db, matter.matter_id);
       const devices = db.all<{ device_id: string; enc_pub_pem: string }>(
         `SELECT device_id, enc_pub_pem FROM devices WHERE tenant_id = ? AND member_id = ? AND status = 'active'`,
@@ -2631,6 +2654,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
 
     "matters.members.remove": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      // 成员链（第 12 批）：先补写到期的吊销标记、刷新投影（下面的负责人检查读投影）
+      refreshChain(chainDeps(id), matter.matter_id);
       requireMatterOwner(db, matter.matter_id, id);
       requireRelayController(matter.matter_id, "移出成员");
       requireNoSyncAlert(matter.matter_id, "移出成员");
@@ -2640,6 +2665,18 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (target.matter_role === "owner") throw validation("不能移出事项负责人（须先移交负责人）");
       let newEpoch = 0;
       let wrapped = 0;
+      // 成员链（第 12 批）：移出与轮换写在同一条成员事件里（新纪元只包给链上未移出成员的在用设备）
+      if (hasChain(db, matter.matter_id)) {
+        const r = db.tx(() => rotateChainKey(chainDeps(id), matter.matter_id, { reason: `member.remove ${userId}`, memberChange: { user: userId, role: null } }));
+        audit(db, id, "matter.member_remove", "matter", matter.matter_id, userId, keyctx);
+        return {
+          matter_id: matter.matter_id,
+          removed: userId,
+          new_epoch: r.epoch,
+          devices_wrapped: r.wrapped,
+          note: "已轮换事项密钥（新纪元）：移出成员的设备拿不到新密钥；其历史签名与旧纪元包裹行保留；变更已记入成员链",
+        };
+      }
       const removeLamport = nextMemberLamport(db, matter.matter_id);
       db.tx(() => {
         // 墓碑（阻断项修复：行级 DELETE 会被同步回灌复活——removed_* + 作者权威 + 较新者胜）
@@ -2745,7 +2782,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       assertNotExitMode("同步");
       const shareDir = String(p?.share_dir ?? "");
       if (!shareDir) throw validation("需要 share_dir（律所自有共享目录，§7.2）");
-      const r = syncExport({ db, blobs, keyctx, tenantId: id.tenantId }, { shareDir, ...(p?.matter_id ? { matterId: String(p.matter_id) } : {}) });
+      const r = syncExport(syncDepsOf(id), { shareDir, ...(p?.matter_id ? { matterId: String(p.matter_id) } : {}) });
       audit(db, id, "sync.export", "tenant", id.tenantId, `${r.segments.length} 段 / ${r.rowsExported} 行`, keyctx);
       return {
         ...r,
@@ -2757,7 +2794,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       assertNotExitMode("同步");
       const shareDir = String(p?.share_dir ?? "");
       if (!shareDir) throw validation("需要 share_dir");
-      const r = syncImport({ db, blobs, keyctx, tenantId: id.tenantId }, { shareDir });
+      const r = syncImport(syncDepsOf(id), { shareDir });
       audit(db, id, "sync.import", "tenant", id.tenantId, `${r.segmentsApplied} 段应用 / ${r.rowsApplied} 行 / 冲突 ${r.conflicts.length}`, keyctx);
       return {
         ...r,
@@ -2767,6 +2804,73 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
 
     "sync.status": (p, id) => {
       return { ...syncStatus({ db, blobs, keyctx, tenantId: id.tenantId }, { ...(p?.share_dir ? { shareDir: String(p.share_dir) } : {}) }), alerts: syncAlertsView(db, keyctx.device.deviceId) };
+    },
+
+    // ─── 成员链（第 12 批；member-log.ts） ───
+    // 事项的成员链概况与事件列表（只有编号、种类、作者成员、逻辑时钟与状态；不含包裹）
+    "matters.member_log": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      const summary = chainSummary(chainDeps(id), matter.matter_id);
+      if (!summary.anchored) return { matter_id: matter.matter_id, ...summary, events: [] };
+      const v = chainView(chainDeps(id), matter.matter_id);
+      const events = [...v.events.values()]
+        .sort((a, b) => a.p.lamport - b.p.lamport || (a.id < b.id ? -1 : 1))
+        .map((e) => {
+          const st = v.status.get(e.id);
+          const b = e.p.body as Record<string, unknown>;
+          const key = b.key as { epoch?: number } | undefined;
+          return {
+            event_id: e.id,
+            kind: e.p.kind,
+            lamport: e.p.lamport,
+            at: e.p.at,
+            author_member: e.member,
+            author_device: e.p.author_device,
+            user: typeof b.user === "string" ? b.user : null,
+            role: b.role === undefined ? undefined : b.role,
+            epoch: key?.epoch ?? null,
+            status: st?.s ?? "pending",
+            reason: st && st.s !== "valid" ? st.why : null,
+            root: v.root?.id === e.id,
+          };
+        });
+      return { matter_id: matter.matter_id, ...summary, events };
+    },
+    // 中继控制成员移交（D-94 在链上表达）：本人须是中继上的控制成员，对方须是链上在册的负责人；先调中继（控制权以中继为准），成功后写 control 事件
+    "matters.relay_handoff": async (p, id) => {
+      assertNotExitMode("中继控制成员移交");
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      refreshChain(chainDeps(id), matter.matter_id);
+      requireMatterOwner(db, matter.matter_id, id, "中继控制成员移交需要事项负责人角色");
+      if (!deps.shareRelay) throw new DomainError("provider_unavailable", "共享中继未启用", 503);
+      if (!hasChain(db, matter.matter_id)) throw validation("该事项还没有成员链：本机同步一次（锚定）后再移交");
+      const to = String(p?.to_user ?? "");
+      if (deps.shareRelay.controllerOf(matter.matter_id) !== id.userId) throw forbidden("只有中继上的控制成员（最先经中继同步该事项的负责人）可以移交");
+      if (to === id.userId) throw validation("不能移交给自己");
+      if (!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [matter.matter_id, to])) throw validation("只能移交给本事项在册的负责人（须先把对方设为负责人）");
+      let controller: string;
+      try {
+        controller = (await deps.shareRelay.handoffControl(matter.matter_id, to)).controller;
+      } catch (e) {
+        const code = (e as { code?: string })?.code ?? "relay_push_failed";
+        if (code === "to_not_reader") throw validation("对方还没有经中继同步过这个事项：请对方先打开并同步一次，再移交");
+        throw new DomainError("provider_unavailable", `中继暂时不能办理移交（${code}），请稍后再试`, 503);
+      }
+      db.tx(() => writeEvent(chainDeps(id), matter.matter_id, "control", { to }));
+      audit(db, id, "matter.relay_handoff", "matter", matter.matter_id, to, keyctx);
+      return { matter_id: matter.matter_id, controller, note: "已移交中继控制成员：此后这个事项的成员调整与密钥轮换须由对方操作；移交已记入成员链" };
+    },
+    // 本机重新引导该事项（起点冲突、成员事件长期待定时的人工出路）：清本机成员链与已摄取标记，下次收到时按首同步规则重新采用起点
+    "matters.sync_rebootstrap": (p, id) => {
+      const matterId = String(p?.matter_id ?? "");
+      const m = db.get<{ collab_scope: string; lifecycle: string }>(`SELECT collab_scope, lifecycle FROM matters WHERE matter_id = ? AND tenant_id = ?`, [matterId, id.tenantId]);
+      // 本机曾是该事项成员即可（被伪造的链移出的成员也要能重新引导）
+      if (!m || !db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ?`, [matterId, id.userId])) throw new DomainError("not_found", "事项不存在或无权查看", 404);
+      if (m.collab_scope !== "team" || m.lifecycle === "purged") throw validation("只有团队事项可以重新引导");
+      rebootstrapMatter(db, matterId);
+      deps.shareRelay?.refetchHistory(matterId);
+      audit(db, id, "matter.sync_rebootstrap", "matter", matterId, undefined, keyctx);
+      return { matter_id: matterId, note: "已清除本机的成员链：下次收到该事项的同步段时按首次同步的规则重新确认负责人（经中继的事项只认中继上最先同步它的负责人）" };
     },
 
     // ─── 团队事项经中软共享中继同步（第 11 批 S11；services/share-relay.ts） ───
@@ -2788,6 +2892,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     // ─── 节点逐事项授权（§5.3 服务成员；v0 同机节点设备，跨机器加入流程 G1） ───
     "matters.node_authorize": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      // 成员链（第 12 批）：先补写到期的吊销标记、刷新投影（下面的负责人检查读投影）
+      refreshChain(chainDeps(id), matter.matter_id);
       requireMatterOwner(db, matter.matter_id, id);
       requireActiveMatter(db, matter.matter_id);
       // 当事人限制（L3b：strict 或当事人拒绝云端处理的记录）强制不授权节点（律所执行器不处理 L3b；复核 A 范围外观察）
@@ -2806,6 +2912,23 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         node = { deviceId: nd.deviceId, keys: nd.keys, memberId: nd.memberId };
       }
       const nodeEncPub = node.encPublicKeyPem ?? node.keys!.encPublicKeyPem;
+      // 成员链（第 12 批）：节点是服务成员（viewer），授权是成员事件 + 节点设备在当前纪元的包裹摘要
+      if (hasChain(db, matter.matter_id) && node.memberId) {
+        const nodeMember = node.memberId;
+        const r = db.tx(() => {
+          db.run(`INSERT OR IGNORE INTO users (user_id, tenant_id, display_name) VALUES (?,?,?)`, [nodeMember, id.tenantId, nodeMember]);
+          const out = addOrUpdateMember(chainDeps(id), matter.matter_id, nodeMember, "viewer", [{ device_id: node.deviceId, enc_pub_pem: nodeEncPub }]);
+          db.run(`UPDATE matters SET node_allowed = 1 WHERE matter_id = ?`, [matter.matter_id]);
+          return out;
+        });
+        audit(db, id, "matter.node_authorize", "matter", matter.matter_id, node.deviceId, keyctx);
+        return {
+          matter_id: matter.matter_id,
+          node_device_id: node.deviceId,
+          epoch: r.epoch,
+          note: "已把当前纪元事项密钥包裹给节点设备（节点由此可解本事项新内容；伦理墙事项与 strict 事项不可授权）；授权已记入成员链",
+        };
+      }
       const epoch = currentMatterEpoch(db, matter.matter_id);
       const myWrap = db.get<{ wrapped_key: string }>(`SELECT wrapped_key FROM matter_keys WHERE matter_id = ? AND epoch = ? AND wrapped_for = ?`, [
         matter.matter_id,
@@ -2838,8 +2961,30 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
 
     "matters.node_revoke": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      // 成员链（第 12 批）：先补写到期的吊销标记、刷新投影（下面的负责人检查读投影）
+      refreshChain(chainDeps(id), matter.matter_id);
       requireMatterOwner(db, matter.matter_id, id);
-      const node = db.get<{ device_id: string }>(`SELECT device_id FROM devices WHERE device_id = ?`, [`node_${config.firmSlug}`]);
+      const node = db.get<{ device_id: string; member_id: string }>(`SELECT device_id, member_id FROM devices WHERE device_id = ?`, [`node_${config.firmSlug}`]);
+      // 成员链（第 12 批）：包裹摘要已在链上、成员设备会互相转发，只删本机那一行收不回——改为移出节点成员并轮换
+      if (hasChain(db, matter.matter_id)) {
+        const nodeMember = node?.member_id;
+        const isMember = !!nodeMember && !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matter.matter_id, nodeMember]);
+        if (isMember) {
+          requireRelayController(matter.matter_id, "撤销节点授权");
+          requireNoSyncAlert(matter.matter_id, "撤销节点授权");
+        }
+        const r = db.tx(() => {
+          const out = isMember ? rotateChainKey(chainDeps(id), matter.matter_id, { reason: `node.revoke ${node!.device_id}`, memberChange: { user: nodeMember!, role: null } }) : null;
+          db.run(`UPDATE matters SET node_allowed = 0 WHERE matter_id = ?`, [matter.matter_id]);
+          return out;
+        });
+        audit(db, id, "matter.node_revoke", "matter", matter.matter_id, undefined, keyctx);
+        return {
+          matter_id: matter.matter_id,
+          ...(r ? { new_epoch: r.epoch } : {}),
+          note: r ? "已移出节点并轮换事项密钥（节点解不开新内容；其曾持有的旧纪元密钥无法远程收回，如实告知）；撤销已记入成员链" : "节点不是本事项成员，已关闭节点授权",
+        };
+      }
       db.tx(() => {
         if (node) {
           const epoch = currentMatterEpoch(db, matter.matter_id);
@@ -2876,6 +3021,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (!recWrap) throw notFound("该事项的恢复托管包裹行");
       const matterKey = unwrapMatterKey(recWrap.wrapped_key, combined.privateKeyPem);
       const rotate = p?.rotate === true;
+      if (rotate) refreshChain(chainDeps(id), matter.matter_id);
       // 团队事项的新纪元只认负责人签发的包裹（D-93）：非负责人轮换不会传播，还会与负责人下次轮换撞纪元号（第二轮复核 S11A-20）
       if (rotate) requireMatterOwner(db, matter.matter_id, id, "轮换事项密钥需要事项负责人角色（团队事项的新纪元只认负责人签发的包裹）");
       if (rotate) requireRelayController(matter.matter_id, "轮换事项密钥");
@@ -2889,7 +3035,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           keyctx.device.deviceId,
           wrapMatterKey(matterKey, keyctx.device.keys.encPublicKeyPem),
         ]);
-        if (rotate) {
+        if (rotate && hasChain(db, matter.matter_id)) {
+          // 成员链（第 12 批）：轮换是链上的 rekey 事件（新纪元只包给链上未移出成员的在用设备，减去 revoke_device_ids）
+          rotatedEpoch = rotateChainKey(chainDeps(id), matter.matter_id, {
+            reason: `recovery.restore rotate${revokeDeviceIds.length > 0 ? `（吊销候选 ${revokeDeviceIds.join("/")}）` : ""}`,
+            exclude: new Set(revokeDeviceIds),
+          }).epoch;
+        } else if (rotate) {
           // 设备丢失场景的推荐路径：先吊销旧设备并 rotate——新纪元密钥只包裹给
           // 「有效成员（墓碑过滤）减去 revoke_device_ids」的 active 设备 + recovery（旧设备解不开新内容）
           // 新纪元号取库里已有的最高纪元之后（不与任何已有纪元撞号）
@@ -3182,6 +3334,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     const row = db2.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matterId, id.userId]);
     if (!row) throw forbidden("你不是该事项成员（或已被移出）");
     if (row.matter_role === "viewer") throw forbidden("viewer 角色只读：该操作需要编辑及以上角色（最小权限）");
+  }
+
+  /** 成员链与同步引擎的依赖（第 12 批：带中继上的控制成员，锚定者与自动轮换据此判断）。 */
+  function chainDeps(id: Identity): { db: KernelDb; keyctx: KernelKeyContext; tenantId: string } {
+    return { db, keyctx, tenantId: id.tenantId };
+  }
+  function syncDepsOf(id: Identity): SyncDeps {
+    const sr = deps.shareRelay;
+    return { db, blobs, keyctx, tenantId: id.tenantId, legacyMemberRows: config.legacyMemberRows, ...(sr ? { relayControl: { foreign: (mid: string) => sr.foreignController(mid), controller: (mid: string) => sr.controllerOf(mid) } } : {}) };
   }
 
   /** 本机 lamport 递增（墓碑/成员行的行级时钟，与签名链同源）。 */

@@ -26,12 +26,35 @@ import type { KernelDb } from "./db.ts";
 import type { BlobStore } from "./blobs.ts";
 import { assertIncomingEventAcceptable, appendAuditEvent, deviceTombstoned, verifyCertSignature } from "./ledger-signer.ts";
 import type { KernelKeyContext } from "./devices.ts";
+import {
+  MEMBER_EVENTS_TABLE,
+  acceptKeyRows,
+  adoptRoot,
+  applyProjection,
+  chainHealth,
+  chainView,
+  exportEventRows,
+  hasChain,
+  maintainChain,
+  rebootstrapPending,
+  refreshChainAlerts,
+  segmentKeyDeclared,
+  storeIncomingEvents,
+  writeAnchor,
+} from "./member-log.ts";
 
 export interface SyncDeps {
   db: KernelDb;
   blobs: BlobStore;
   keyctx: KernelKeyContext;
   tenantId: string;
+  /**
+   * 中软共享中继上的控制成员（第 12 批：锚定者与自动轮换据此判断；不经中继的事项两者都返回 null）。
+   * foreign：控制成员不是本人时返回其编号（"?" 还不知道、"~" 策略回退），可以操作返回 null；controller：已知的控制成员。
+   */
+  relayControl?: { foreign(matterId: string): string | null; controller(matterId: string): string | null };
+  /** 模拟第 12 批之前的客户端（只在测试里；见 config.legacyMemberRows）。 */
+  legacyMemberRows?: boolean;
 }
 
 export interface SyncExportResult {
@@ -85,7 +108,7 @@ export interface SyncImportResult {
 }
 
 /** 每段都会附带的行（与事项内容是否变化无关）：中继介质按它们的摘要判断是否需要出段。 */
-const ALWAYS_TABLES = new Set(["users", "matters", "devices", "im_bindings", "matter_members"]);
+const ALWAYS_TABLES = new Set(["users", "matters", "devices", "im_bindings", "matter_members", MEMBER_EVENTS_TABLE]);
 
 /** 摄取时记来源设备（sync_row_origin）的表：中继介质只发来源是本机的行。 */
 const ORIGIN_TABLES = new Set(["runs", "document_versions", "artifact_versions"]);
@@ -145,6 +168,8 @@ function collectRows(db: KernelDb, matterId: string, deviceId: string, lamport: 
   for (const r of db.all(`SELECT * FROM users WHERE tenant_id = ?`, [tenantId])) push("users", (r as any).user_id, r as Record<string, unknown>);
   const matter = db.get(`SELECT * FROM matters WHERE matter_id = ?`, [matterId]);
   if (matter) push("matters", matterId, matter as Record<string, unknown>);
+  // 成员事件链每段全量附带（第 12 批；接收方先处理链、再处理其余行）
+  for (const e of exportEventRows(db, matterId)) push(MEMBER_EVENTS_TABLE, e.event_id, e as unknown as Record<string, unknown>);
   // 成员行每段都附带全部（第三轮复核 S11A-28：迟到加入的成员由此认出负责人与在册成员；原作者随行保留）
   for (const r of db.all(`SELECT * FROM matter_members WHERE matter_id = ?`, [matterId])) {
     const m = r as any;
@@ -238,6 +263,8 @@ export function syncExport(
       result.skippedPersonal.push(m.matter_id);
       continue;
     }
+    // 成员链（第 12 批）：没有起点的存量事项由锚定者锚定；有链的做自动处置（吊销标记、补轮换），告警随之重写
+    prepareChain(deps, m.matter_id);
     const epoch = currentMatterEpoch(db, m.matter_id, keyctx.device.deviceId);
     const matterKey = resolveMatterKey(db, m.matter_id, epoch, keyctx.device.deviceId, keyctx.device.keys.encPrivateKeyPem);
     if (!matterKey) continue; // 本机不持钥（理论上不发生：成员设备才导得出）
@@ -245,6 +272,9 @@ export function syncExport(
     // （失败即关闭，第六轮复核 S11A-51/52；第七轮起只看“有没有未解除的”，不看纪元高低——S11A-54/S11B-54）
     if (db.get(`SELECT 1 AS x FROM sync_alerts WHERE matter_id = ?`, [m.matter_id])) {
       result.pausedConflict.push(m.matter_id);
+      // 成员链（第 12 批）：暂停期间仍只发“总是附带的行”（含成员链，不含任何内容）——负责人要收到链才能处置告警（补轮换、吊销标记）；
+      // 链没变不重发。这些行以本机当前纪元加密：仍持有当前纪元密钥的被移出者能读到成员关系（不是事项内容，如实登记）
+      if (hasChain(db, m.matter_id)) exportChainOnly(deps, m.matter_id, { shareDir: args.shareDir, relay, epoch, matterKey, certJson: deviceCertJson, result });
       continue;
     }
     const state = db.get<{ last_export_lamport: number; last_export_at: string | null; last_always_digest?: string | null }>(`SELECT * FROM ${stateTable} WHERE matter_id = ?`, [m.matter_id]);
@@ -269,7 +299,8 @@ export function syncExport(
       }
     }
     const fromLamport = (state?.last_export_lamport ?? 0) + 1;
-    signOwnMemberRows(deps, m.matter_id, deviceCertJson);
+    // 链模式下成员行只是投影、不再逐行签名（接收方不采信）；未锚定的事项沿用第 11 批的行签名
+    if (!hasChain(db, m.matter_id)) signOwnMemberRows(deps, m.matter_id, deviceCertJson);
     let rows = collectRows(db, m.matter_id, keyctx.device.deviceId, toLamport, since);
     // 中继介质（第三轮复核 S11B-28/29/30 后的规则，取代按内容摘要比对）：
     // ①“总是附带的行”（事项行、全部成员行、用户行、IM 绑定、本机设备行）每段都带、不过滤——迟到成员与新设备据此引导事项、认出负责人；
@@ -288,6 +319,8 @@ export function syncExport(
       if (r.t === "users") return String(r.pk) === ownUser;
       if (r.t === "matters") return originOf(db, "matters", String(r.pk), keyctx.device.deviceId).device === keyctx.device.deviceId;
       if (r.t === "matter_members") return (r.row as { author_device?: unknown }).author_device === keyctx.device.deviceId;
+      // 成员事件不论谁写的都触发（第 12 批）：链要尽快传到所有成员设备，作者离线时由收到的成员转发；收敛于各设备的链一致
+      if (r.t === MEMBER_EVENTS_TABLE) return true;
       return true;
     };
     // 中继介质：只有总是附带的行、且其中会触发出段的与上次出段时相同 → 不出段（否则每个周期都会给每个团队事项写一段）
@@ -377,6 +410,86 @@ export function syncExport(
     writeState(m.matter_id, toLamport, exportAt, alwaysDigest);
   }
   return result;
+}
+
+// ─── 成员链（第 12 批） ───
+
+/** 只经共享文件夹的存量事项的锚定者：本机认得的在册负责人里，事项创建者（仍是负责人时），否则成员编号最小者。 */
+function folderAnchorer(db: KernelDb, matterId: string): string | null {
+  const owners = db.all<{ user_id: string }>(`SELECT user_id FROM matter_members WHERE matter_id = ? AND matter_role = 'owner' AND removed_at IS NULL ORDER BY user_id`, [matterId]).map((r) => r.user_id);
+  const createdBy = db.get<{ created_by: string }>(`SELECT created_by FROM matters WHERE matter_id = ?`, [matterId])?.created_by;
+  return createdBy && owners.includes(createdBy) ? createdBy : (owners[0] ?? null);
+}
+
+/** 本机能否在该事项上轮换（中继事项须是控制成员；不经中继的事项看本机是不是负责人由链判断）。 */
+function mayRotate(deps: SyncDeps, matterId: string): boolean {
+  return !deps.relayControl?.foreign(matterId);
+}
+
+/** 链的自动处置（中继事项的处置者是控制成员）。 */
+function maintain(deps: SyncDeps, matterId: string): { rotated: boolean } {
+  return maintainChain(deps, matterId, { mayRotate: mayRotate(deps, matterId), rotator: deps.relayControl?.controller(matterId) ?? null });
+}
+
+/**
+ * 导出前的链准备：没有起点（也没有被要求重新引导）的团队事项，本机成员是锚定者（中继事项为控制成员，否则见 folderAnchorer）即锚定；
+ * 有链的做自动处置（maintainChain）。
+ */
+export function prepareChain(deps: SyncDeps, matterId: string): void {
+  const { db, keyctx } = deps;
+  if (deps.legacyMemberRows) return;
+  if (!hasChain(db, matterId)) {
+    if (rebootstrapPending(db, matterId)) return;
+    const foreign = deps.relayControl?.foreign(matterId) ?? null;
+    if (foreign === "?" || foreign === "~") return;
+    const anchorer = deps.relayControl?.controller(matterId) ?? folderAnchorer(db, matterId);
+    if (anchorer !== keyctx.device.cert.memberId) return;
+    db.tx(() => writeAnchor(deps, matterId));
+    if (!hasChain(db, matterId)) return;
+  }
+  const r = maintain(deps, matterId);
+  if (r.rotated) rewindExport(db, matterId, null);
+}
+
+/**
+ * 退回导出水位，重发本机写的内容（第 12 批：本机的纪元密钥在分叉中落选、改用胜者或再轮换之后，之前用落选密钥加密发出的内容别人解不开）。
+ * since 为空时退回到最早（全部重发；合并规则幂等）。
+ */
+function rewindExport(db: KernelDb, matterId: string, since: string | null): void {
+  const to = since ?? "0000";
+  db.run(`UPDATE sync_state SET last_export_at = ? WHERE matter_id = ? AND (last_export_at IS NULL OR last_export_at > ?)`, [to, matterId, to]);
+  db.run(`UPDATE relay_export_state SET last_export_at = ?, last_always_digest = NULL WHERE matter_id = ? AND (last_export_at IS NULL OR last_export_at > ?)`, [to, matterId, to]);
+}
+
+/** 暂停发出期间只发成员链与其余“总是附带的行”的段（第 12 批；见 syncExport）。 */
+function exportChainOnly(
+  deps: SyncDeps,
+  matterId: string,
+  o: { shareDir: string; relay: boolean; epoch: number; matterKey: Uint8Array; certJson: string; result: SyncExportResult },
+): void {
+  const { db, keyctx, tenantId } = deps;
+  const medium = o.relay ? "relay" : "folder";
+  const head = db.get<{ l: number | null }>(`SELECT MAX(lamport) AS l FROM signed_events WHERE matter_id = ?`, [matterId])?.l ?? 1;
+  // 水位取未来：只收“总是附带的行”
+  let rows = collectRows(db, matterId, keyctx.device.deviceId, head, "9999");
+  if (o.relay) rows = rows.filter((r) => r.t !== "devices" || String(r.pk) === keyctx.device.deviceId);
+  const digest = createHash("sha256").update(canonicalJson(rows.filter((r) => r.t === MEMBER_EVENTS_TABLE).map((r) => r.pk))).digest("hex");
+  if (db.get<{ digest: string }>(`SELECT digest FROM chain_paused_export WHERE matter_id = ? AND medium = ?`, [matterId, medium])?.digest === digest) return;
+  const keyRows = db.all<KeyRow>(`SELECT matter_id, epoch, wrapped_for, wrapped_key, created_at FROM matter_keys WHERE matter_id = ?`, [matterId]);
+  const segmentId = `seg_${keyctx.device.deviceId}_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
+  const sealed = sealSegment({
+    header: { segment_id: segmentId, device_id: keyctx.device.deviceId, matter_id: matterId, from_lamport: head, to_lamport: head, key_epoch: o.epoch, event_count: rows.length, created_at: nowIso(), device_cert_json: o.certJson },
+    keyRows,
+    rows,
+    matterKey: o.matterKey,
+    signer: keyctx.device.signer,
+  });
+  o.result.segments.push(writeSegment(o.shareDir, tenantId, keyctx.device.deviceId, segmentId, sealed));
+  o.result.rowsExported += rows.length;
+  db.run(
+    `INSERT INTO chain_paused_export (matter_id, medium, digest, at) VALUES (?,?,?,?) ON CONFLICT(matter_id, medium) DO UPDATE SET digest = excluded.digest, at = excluded.at`,
+    [matterId, medium, digest, nowIso()],
+  );
 }
 
 // ─── 摄取 ───
@@ -757,6 +870,7 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
     // 同一设备、同一序号区间的分段（中继介质大段拆分）按段编号先后（编号里的时间递增）
     .sort((a, b) => a.seg.header.from_lamport - b.seg.header.from_lamport || a.seg.header.device_id.localeCompare(b.seg.header.device_id) || a.seg.header.segment_id.localeCompare(b.seg.header.segment_id));
 
+  const touchedChain = new Set<string>();
   for (const cand of parsed) {
     const seg = cand.seg;
     const h = seg.header;
@@ -776,15 +890,20 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
     // 解 body 的密钥：先查本机 matter_keys；没有则从本段 key_rows 中找面向本机的包裹（内存中解，不落库——
     // matter_keys 行外键依赖 matters 行，须随事务在 matters 行之后落库）
     let matterKey = resolveMatterKey(db, h.matter_id, seg.body.epoch, keyctx.device.deviceId, keyctx.device.keys.encPrivateKeyPem);
-    if (!matterKey) {
-      const forUs = (seg.key_rows ?? []).find((kr) => kr.wrapped_for === keyctx.device.deviceId && kr.epoch === seg.body.epoch);
-      if (forUs) {
-        try {
-          matterKey = unwrapMatterKey(forUs.wrapped_key, keyctx.device.keys.encPrivateKeyPem);
-        } catch {
-          matterKey = null;
-        }
+    const forUs = (seg.key_rows ?? []).find((kr) => kr.wrapped_for === keyctx.device.deviceId && kr.epoch === seg.body.epoch);
+    let segKey: Uint8Array | null = null;
+    if (forUs) {
+      try {
+        segKey = unwrapMatterKey(forUs.wrapped_key, keyctx.device.keys.encPrivateKeyPem);
+      } catch {
+        segKey = null;
       }
+    }
+    // 用的是段里面向本机的包裹（本机没有该纪元的密钥，或本机那把是分叉的输家）：链模式下须链上认可（在事务里核）
+    let keyFromSegment = false;
+    if (!matterKey && segKey) {
+      matterKey = segKey;
+      keyFromSegment = true;
     }
     if (!matterKey) {
       result.skippedNoKey.push(h.matter_id);
@@ -794,11 +913,21 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
     }
     let rows: SyncRow[];
     try {
-      rows = openSegmentBody(seg, matterKey);
+      try {
+        rows = openSegmentBody(seg, matterKey);
+      } catch (e) {
+        // 本机该纪元的密钥解不开，而段里有面向本机的另一把：可能本机那把在并发轮换中落选（第 12 批），换用段里的（链上核过才算数）
+        if (!segKey || keyFromSegment || !hasChain(db, h.matter_id)) throw e;
+        rows = openSegmentBody(seg, segKey);
+        matterKey = segKey;
+        keyFromSegment = true;
+      }
     } catch {
       // 本机已有这个纪元的密钥却解不开：同号纪元分叉（第五轮复核 S11A-43②），如实记下
       // 只记在册成员签发的段（所内任意设备伪造一段不能制造告警噪声，第六轮复核 S11A-51）；持久记下、界面可见，未解决前本机暂停发出该事项
+      // 链模式（第 12 批）：纪元由链上声明，分叉的输家发来的段静默略过，不记第 11 批的告警
       if (
+        !hasChain(db, h.matter_id) &&
         resolveMatterKey(db, h.matter_id, seg.body.epoch, keyctx.device.deviceId, keyctx.device.keys.encPrivateKeyPem) &&
         // 只记本机认得的在册负责人签发的段（第七轮复核 S11A-56：只读成员伪造一段不能让全体成员停发）
         db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [h.matter_id, cert.memberId])
@@ -847,53 +976,90 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
     };
     // 整段回滚时，本段计入的条数与告警一并撤回（第五轮复核 S11B-45e）
     const mark = { rows: result.rowsApplied, conflicts: result.conflicts.length, warnings: result.originConflicts.length };
+    // 段里的成员事件（第 12 批）：自带签名、可独立核验——这一段的内容即使延后，链也先存下（并发轮换的输家发来的段里，正有胜者需要的链）
+    const chainRows = deps.legacyMemberRows ? [] : rows.filter((r) => r.t === MEMBER_EVENTS_TABLE).map((r) => r.row);
     try {
     db.tx(() => {
       const applied: SyncRow[] = [];
       for (const r of rows) {
         // 中继介质的块清单行只供取块，不落库；成员行在下面按因果顺序整批处理
-        if (r.t === "devices" || r.t === RELAY_BLOB_TABLE || r.t === "matter_members") continue;
+        if (r.t === "devices" || r.t === RELAY_BLOB_TABLE || r.t === "matter_members" || r.t === MEMBER_EVENTS_TABLE) continue;
         if (applyRow(deps, r, ctx)) {
           result.rowsApplied += 1;
           applied.push(r);
         }
       }
       const creator = ctx.bootstrap ? String((rows.find((x) => x.t === "matters")?.row as any)?.created_by ?? "") || null : null;
-      // 本段之前本机认得的负责人：只用来判断“转发者是否可信”（吊销设备写的行，第五轮复核 S11A-42）
-      const ownersBefore = new Set(db.all<{ user_id: string }>(`SELECT user_id FROM matter_members WHERE matter_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [h.matter_id]).map((x) => x.user_id));
-      const mem = applyMemberRows(deps, rows, {
+      const memberCtx = () => ({
         warnings: ctx.warnings,
         matterId: h.matter_id,
         segDeviceId: h.device_id,
         segCert: cert,
         bootstrap: ctx.bootstrap,
         creator,
-        forwarderTrusted: ctx.bootstrap || ownersBefore.has(cert.memberId),
+        // 本段之前本机认得的负责人：只用来判断“转发者是否可信”（吊销设备写的行，第五轮复核 S11A-42）
+        forwarderTrusted:
+          ctx.bootstrap ||
+          !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [h.matter_id, cert.memberId]),
       });
-      result.rowsApplied += mem.applied;
-      const signerOwner = !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [h.matter_id, cert.memberId]);
-      // 首同步：签发成员按核验过的成员行须是负责人，或本段里有它以负责人身份做的成员变更（同一段里移交）；否则整段回滚、延后
-      // （第三轮复核 S11A-28 的闸门移到这里——按能落库的行判，不按段里写了什么判，第四轮复核 S11A-35）
-      if (ctx.bootstrap && !signerOwner && !mem.signerActed) throw new BootstrapDeferred();
-      // key_rows 随事务落库（matters 行已在库，外键满足）——只收被签名覆盖、属于本事项、由负责人签发的（复核 S11A-02）：
-      // 签发者按本段应用之后是负责人，或本段里以负责人身份做过成员变更（移交与加人在同一段，第四轮 S11A-35③）
-      const keyRowsOk = keyRowsSigned(seg) && (signerOwner || mem.signerActed);
-      for (const kr of keyRowsOk ? (seg.key_rows ?? []) : []) {
-        if (kr.matter_id !== h.matter_id || !Number.isSafeInteger(kr.epoch) || kr.epoch < 1) continue;
-        // 同一纪元、同一设备已有不同的包裹：两位负责人各自轮换出了同号纪元（或被移出者用旧状态轮换），不静默忽略（第五轮复核 S11A-43②）
-        const had = db.get<{ wrapped_key: string }>(`SELECT wrapped_key FROM matter_keys WHERE matter_id = ? AND epoch = ? AND wrapped_for = ?`, [kr.matter_id, kr.epoch, kr.wrapped_for]);
-        if (had && had.wrapped_key !== kr.wrapped_key && kr.wrapped_for === keyctx.device.deviceId && !sameMatterKey(had.wrapped_key, kr.wrapped_key, keyctx.device.keys.encPrivateKeyPem)) {
-          ctx.warnings.push(`epoch_conflict:${kr.matter_id}/${kr.epoch}（本机已有该纪元的另一把密钥，签发设备 ${h.device_id}）`);
-          noteSyncAlert(db, kr.matter_id, "epoch_conflict", kr.epoch, `本机已有纪元 ${kr.epoch} 的另一把密钥，负责人设备 ${h.device_id} 签发了不同的一把`, h.device_id, cert.memberId);
-        }
-        db.run(`INSERT OR IGNORE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key, created_at) VALUES (?,?,?,?,?)`, [
-          kr.matter_id,
-          kr.epoch,
-          kr.wrapped_for,
-          kr.wrapped_key,
-          kr.created_at,
-        ]);
+      // ── 成员链（第 12 批）：段里带链即存下核验通过的事件；本机有起点的事项只按链判断成员与包裹 ──
+      const reboot = rebootstrapPending(db, h.matter_id);
+      if (chainRows.length > 0) {
+        const st = storeIncomingEvents(deps, h.matter_id, chainRows, cert.memberId);
+        if (st.bad > 0) ctx.warnings.push(`member_event_rejected:${h.matter_id}（${st.bad} 条成员事件核验不通过）`);
       }
+      let mem = { applied: 0, signerActed: false };
+      // 未锚定、非首同步：先按第 11 批的行规则处理成员行（本机可能由此认出锚定者是负责人），再尝试采用起点
+      if (!hasChain(db, h.matter_id) && !reboot && !ctx.bootstrap) mem = applyMemberRows(deps, rows, memberCtx());
+      if (chainRows.length > 0 || hasChain(db, h.matter_id)) adoptRoot(deps, h.matter_id, ctx.bootstrap || reboot);
+      if (hasChain(db, h.matter_id)) {
+        const view = chainView(deps, h.matter_id);
+        applyProjection(deps, h.matter_id, view);
+        // 解这一段用的是段里面向本机的包裹：须是链上声明的那一把（首同步的闸门；被移出者或同所他人塞来的密钥不算）
+        if (keyFromSegment && !(forUs && segmentKeyDeclared(deps, view, seg.body.epoch, forUs.wrapped_key, matterKey!))) {
+          throw new BootstrapDeferred(`段里面向本机的纪元 ${seg.body.epoch} 包裹没有链上声明`);
+        }
+        // 包裹按链上声明落库（任何成员都可以转发；被签名覆盖的才看）
+        if (keyRowsSigned(seg)) {
+          const k = acceptKeyRows(deps, h.matter_id, view, seg.key_rows ?? []);
+          // 本机那把落选、换成了胜者：之前用落选密钥发出的内容别人解不开，重发本机写的
+          if (k.replacedSelf.length > 0) rewindExport(db, h.matter_id, null);
+        }
+        refreshChainAlerts(deps, h.matter_id, chainHealth(deps, h.matter_id, view));
+        touchedChain.add(h.matter_id);
+      } else if (reboot || (ctx.bootstrap && chainRows.length > 0)) {
+        // 被要求重新引导、或首同步的段带链却采用不了起点：不回退到第 11 批的行规则；成员行与包裹都不收
+        if (ctx.bootstrap) throw new BootstrapDeferred("成员链的起点暂不能采用（起点作者不是负责人，或中继上的控制成员不符）");
+        if (keyFromSegment) throw new BootstrapDeferred("本机正在重新引导该事项，段里的包裹须等链的起点采用后核对");
+      } else {
+        if (ctx.bootstrap) mem = applyMemberRows(deps, rows, memberCtx());
+        result.rowsApplied += mem.applied;
+        const signerOwner = !!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [h.matter_id, cert.memberId]);
+        // 首同步：签发成员按核验过的成员行须是负责人，或本段里有它以负责人身份做的成员变更（同一段里移交）；否则整段回滚、延后
+        // （第三轮复核 S11A-28 的闸门移到这里——按能落库的行判，不按段里写了什么判，第四轮复核 S11A-35）
+        if (ctx.bootstrap && !signerOwner && !mem.signerActed) throw new BootstrapDeferred();
+        // key_rows 随事务落库（matters 行已在库，外键满足）——只收被签名覆盖、属于本事项、由负责人签发的（复核 S11A-02）：
+        // 签发者按本段应用之后是负责人，或本段里以负责人身份做过成员变更（移交与加人在同一段，第四轮 S11A-35③）
+        const keyRowsOk = keyRowsSigned(seg) && (signerOwner || mem.signerActed);
+        for (const kr of keyRowsOk ? (seg.key_rows ?? []) : []) {
+          if (kr.matter_id !== h.matter_id || !Number.isSafeInteger(kr.epoch) || kr.epoch < 1) continue;
+          // 同一纪元、同一设备已有不同的包裹：两位负责人各自轮换出了同号纪元（或被移出者用旧状态轮换），不静默忽略（第五轮复核 S11A-43②）
+          const had = db.get<{ wrapped_key: string }>(`SELECT wrapped_key FROM matter_keys WHERE matter_id = ? AND epoch = ? AND wrapped_for = ?`, [kr.matter_id, kr.epoch, kr.wrapped_for]);
+          if (had && had.wrapped_key !== kr.wrapped_key && kr.wrapped_for === keyctx.device.deviceId && !sameMatterKey(had.wrapped_key, kr.wrapped_key, keyctx.device.keys.encPrivateKeyPem)) {
+            ctx.warnings.push(`epoch_conflict:${kr.matter_id}/${kr.epoch}（本机已有该纪元的另一把密钥，签发设备 ${h.device_id}）`);
+            noteSyncAlert(db, kr.matter_id, "epoch_conflict", kr.epoch, `本机已有纪元 ${kr.epoch} 的另一把密钥，负责人设备 ${h.device_id} 签发了不同的一把`, h.device_id, cert.memberId);
+          }
+          db.run(`INSERT OR IGNORE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key, created_at) VALUES (?,?,?,?,?)`, [
+            kr.matter_id,
+            kr.epoch,
+            kr.wrapped_for,
+            kr.wrapped_key,
+            kr.created_at,
+          ]);
+        }
+      }
+      // 链模式下（含本段才采用起点的）：采用之前按旧规则处理的成员行计入条数
+      if (hasChain(db, h.matter_id) || reboot) result.rowsApplied += mem.applied;
       // 引用的密文块：从介质复制进本机块库（同一份密文）。复制前核对“解开后的明文摘要 = 块名”（密钥已随本事务落库）：
       // 不符的不复制；本机已有同名块但核对不符（被预先放入）的，用核对通过的这一份替换（第 11 批复核 S11A-01，两种介质都适用）
       for (const r of rows) {
@@ -939,7 +1105,15 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
       result.rowsApplied = mark.rows;
       result.conflicts.length = mark.conflicts;
       result.originConflicts.length = mark.warnings;
-      if (e instanceof BootstrapDeferred) result.originConflicts.push(`bootstrap_deferred:${h.segment_id}（${why ?? "签发成员按核验后的成员行不是负责人"}）`);
+      if (e instanceof BootstrapDeferred) result.originConflicts.push(`bootstrap_deferred:${h.segment_id}（${e.message || why || "签发成员按核验后的成员行不是负责人"}）`);
+      if (chainRows.length > 0) {
+        try {
+          const stored = db.tx(() => storeIncomingEvents(deps, h.matter_id, chainRows, cert.memberId).stored);
+          if (stored > 0 && hasChain(db, h.matter_id)) touchedChain.add(h.matter_id);
+        } catch {
+          // 存链失败不影响延后
+        }
+      }
       throw e;
     }
     result.segmentsApplied += 1;
@@ -948,6 +1122,15 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
       // BootstrapDeferred 与其他摄取异常一样：整段回滚、延后
       result.segmentsSkipped += 1;
       out("deferred");
+    }
+  }
+  // 链的自动处置（吊销标记、补轮换、告警）：在每段的事务之外做
+  for (const mid of touchedChain) {
+    try {
+      const r = maintain(deps, mid);
+      if (r.rotated) rewindExport(db, mid, null);
+    } catch (e) {
+      result.originConflicts.push(`member_log_maintain_failed:${mid}（${e instanceof Error ? e.message : String(e)}）`);
     }
   }
   return result;

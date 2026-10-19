@@ -33,6 +33,20 @@ export function TeamShare() {
       setBusy(false);
     }
   };
+  // 第 12 批：清除这台电脑上该事项的成员链，下次收到时按首次同步的规则重新确认负责人（内容与密钥不动）
+  const rebootstrap = async (matterId: string, title: string | null) => {
+    if (!window.confirm(`重新引导「${title ?? matterId}」：这台电脑会清除该事项的成员记录链，下次同步时按最先同步该事项的负责人重新确认成员。内容与密钥不受影响。继续？`)) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      setMsg((await api.matterSyncRebootstrap(matterId)).note);
+      setSt(await api.relayStatus());
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const counts = [
     st.pending_upload ? `${st.pending_upload} 条改动待发出` : "",
     st.stuck ? `${st.stuck_matters ?? 1} 个事项有改动发不出去` : "",
@@ -50,6 +64,14 @@ export function TeamShare() {
         {alerts.map((a) => (
           <div key={`${a.matter_id}-${a.kind}-${a.epoch}`} className="sync-alert">
             {syncAlertText(a)}
+            {(a.kind === "root_conflict" || a.kind === "chain_pending") && (
+              <>
+                {" "}
+                <button className="btn btn-sm" disabled={busy} onClick={() => void rebootstrap(a.matter_id, a.title)}>
+                  本机重新引导
+                </button>
+              </>
+            )}
           </div>
         ))}
         {st.blocked === "not_allowed" && st.policy_fallback && <span>这台电脑的律所策略已过期或尚未收到：经中软中继的团队共享暂停，联网更新律所策略后自动恢复。</span>}

@@ -1,4 +1,4 @@
-// 第 11 批第六轮复核 A 的复现转入（修正前为失败，修正后为回归用例；残余项改为断言告警可见、不外泄）。原注：复核 A 第六轮 · 复现 S11A-52（共享文件夹介质，未改过的客户端，没有攻击者）
+// 第 11 批第六轮复核 A 的复现转入（第 11 批为残余、断言告警可见；第 12 批成员链解决，改为断言认出新负责人）。原注：复核 A 第六轮 · 复现 S11A-52（共享文件夹介质，未改过的客户端，没有攻击者）
 /**
  * 第五轮 S11A-42 处置只覆盖“首同步”：已有事项的滞后设备，转发者须在“段前负责人”里才收吊销作者写的行。
  * 创建者 A 把 carol 升为负责人（交接），随即 A 的电脑被吊销（离所）。成员 dave 那几天没开机：
@@ -69,7 +69,7 @@ const learnRevoked = (k: any, d: string) => {
   k.kernel.db.run(`UPDATE devices SET status = 'revoked', revoked_at = ? WHERE device_id = ?`, [new Date().toISOString(), d]);
 };
 
-test("S11A-52（残余）：交接后创建者设备被吊销，当时离线的成员设备认不出新负责人时告警可见、暂停发出，被移出者读不到该设备之后写的内容", { timeout: 120_000 }, async () => {
+test("S11A-52（第 12 批解决）：交接后创建者设备被吊销，当时离线的成员设备按成员链认出新负责人，被移出者读不到该设备之后写的内容", { timeout: 120_000 }, async () => {
   const { matter } = await kA.inv("matters.create", { title: "交接时离线", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
   const mid = matter.matter_id;
   await kA.inv("matters.members.add", { matter_id: mid, user_id: usr("dave") });
@@ -103,8 +103,14 @@ test("S11A-52（残余）：交接后创建者设备被吊销，当时离线的�
   await kE.inv("sync.import", { share_dir: share });
   const leaked = textOf(kE, "丁-移出后.txt");
   LOG("被移出的 erin 读到：", leaked);
-  // 第六轮处置（残余，带因果链的成员日志在第 12 批）：dave 仍认不出 carol，但告警持久可见、本机暂停发出该事项，被移出者读不到
+  // 第 12 批（成员链）：carol 得知 A 被吊销后先写吊销标记，把 A 在吊销之前写的事件（含“carol 是负责人”）固定在链上；
+  // dave 按链认出 carol、收下纪元 2、读到 carol 的新内容，没有告警；被移出的 erin 读不到 dave 之后写的内容，carol 读得到
   const st = await kD.inv("relay.status");
-  assert.ok((st.alerts ?? []).some((a: any) => a.matter_id === mid && a.kind === "owner_unverifiable"), "负责人无法确认的告警可见");
+  assert.deepEqual((st.alerts ?? []).filter((a: any) => a.matter_id === mid), [], "没有告警");
+  assert.ok(members(kD, mid).some((m: any) => m.user_id === usr("carol") && m.matter_role === "owner" && !m.gone), "dave 认出新负责人 carol");
+  assert.equal(textOf(kD, "丙.txt"), "carol 移出 erin 之后写的内容", "dave 读到 carol 移出 erin 之后写的内容");
+  assert.ok(kC.kernel.db.get(`SELECT 1 AS x FROM member_events WHERE matter_id = ? AND kind = 'mark'`, [mid]), "carol 写了吊销标记");
   assert.equal(leaked, null, "被移出的成员不应读到移出之后其他成员写的内容");
+  await kC.inv("sync.import", { share_dir: share });
+  assert.equal(textOf(kC, "丁-移出后.txt"), "dave 在 erin 被移出之后写的保密内容", "新负责人读到 dave 之后写的内容");
 });

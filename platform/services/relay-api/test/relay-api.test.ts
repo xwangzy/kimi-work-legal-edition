@@ -393,3 +393,27 @@ test("RA-12 第六轮复核 S11A-50/S11B-50：非读者经登记接口也探测�
   const ok = await call(base, "POST", `/v1/relay/matters/${m2}/segments`, A(), { segment_id: sidOf("devA"), sha256: sha(seg), size: seg.length, chunks: [sha(seg)], blob_chunks: [], epoch: 1, readers: ["devA"], gen: 0, instance: s.instance });
   assert.equal(ok.status, 200);
 });
+
+test("RA-13 第 12 批控制成员移交：只有控制成员可移交；接收者须登记过该事项的段；移交后只有新控制成员能提升纪元；重启读回照旧", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "kwl-ra-"));
+  const { base } = await start(dir);
+  const mid = newMid();
+  assert.equal((await writeSeg(base, mid, A(), "devA", { readers: ["devA", "devB", "devC"] })).r.status, 200);
+  // 非控制成员不能移交；形状不对拒绝
+  assert.equal((await call(base, "POST", `/v1/relay/matters/${mid}/control`, B(), { to: "u-devB" })).json?.error, "not_controller");
+  assert.equal((await call(base, "POST", `/v1/relay/matters/${mid}/control`, A(), { to: "u-devB", extra: 1 })).status, 400);
+  assert.equal((await call(base, "POST", `/v1/relay/matters/${newMid()}/control`, A(), { to: "u-devB" })).json?.error, "matter_unknown");
+  // 接收者还没登记过段
+  assert.equal((await call(base, "POST", `/v1/relay/matters/${mid}/control`, A(), { to: "u-devB" })).json?.error, "to_not_reader");
+  assert.equal((await writeSeg(base, mid, B(), "devB", { readers: ["devA", "devB", "devC"] })).r.status, 200);
+  const ok = await call(base, "POST", `/v1/relay/matters/${mid}/control`, A(), { to: "u-devB", gen: 0 });
+  assert.deepEqual(ok.json, { ok: true, controller: "u-devB" });
+  // 原控制成员不能再提升纪元；新控制成员可以
+  assert.equal((await writeSeg(base, mid, A(), "devA", { epoch: 2, readers: ["devA", "devB"] })).r.json?.error, "epoch_not_established");
+  assert.equal((await writeSeg(base, mid, B(), "devB", { epoch: 2, readers: ["devA", "devB"] })).r.status, 200);
+  // 原控制成员不能再移交
+  assert.equal((await call(base, "POST", `/v1/relay/matters/${mid}/control`, A(), { to: "u-devA" })).json?.error, "not_controller");
+  // 重启读回：控制成员仍是 B
+  const { s: s2 } = await start(dir);
+  assert.equal(s2.tenant("t1")!.controller(mid), "u-devB");
+});
