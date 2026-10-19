@@ -153,7 +153,9 @@ export class OnboardingService {
 
   private pending(): OnboardingFile | null {
     const f = readJson<OnboardingFile>(join(this.root, ONBOARDING_FILE));
-    return f && f.v === 1 && f.stage === "member_pending" && MEMBER_SLUG_PATTERN.test(f.member_slug) ? f : null;
+    // firm_slug 也按律所标识字符集校验（复核 A 第 1 节补充：它用来拼 keys 目录）
+    const firmOk = typeof f?.firm_slug === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(f.firm_slug) && f.firm_slug !== PENDING_WORKSPACE_SLUG;
+    return f && f.v === 1 && f.stage === "member_pending" && MEMBER_SLUG_PATTERN.test(f.member_slug) && firmOk ? f : null;
   }
 
   private keysDirFor(firmSlug: string): string {

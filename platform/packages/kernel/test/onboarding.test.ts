@@ -7,7 +7,7 @@
 process.env.ZR_INTERNAL_SECRET = process.env.ZR_INTERNAL_SECRET ?? "onboarding-test-secret-0123456789abcd";
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { formatActivationCode } from "@zr-legal/firm-trust";
@@ -136,6 +136,11 @@ test("开通与成员入组：创始开通码 → 重启按律所身份运行；
   const seats = cloud.cp.ops.tenant(TID)!.seatsByUser;
   assert.ok(seats.has(st2.user_id), "成员取得席位");
   assert.equal(cloud.cp.ops.tenant(TID)!.devices.get(`dev_${FIRM}_${st2.user}`)?.cert.role, "lawyer");
+  // 复核 A-08：本机用户把 activation.json 的角色改成 admin 再重启——账本角色仍按证书，不被覆盖
+  const actPath = join(dirB, "activation.json");
+  writeFileSync(actPath, JSON.stringify({ ...JSON.parse(readFileSync(actPath, "utf8")), role: "admin" }));
+  b = await reboot(b, dirB);
+  assert.equal(((await b.invoke("kernel.status")) as any).member_role, "lawyer", "改 activation.json 不能把自己升为管理员");
 });
 
 test("控制面篡改：列表前换掉申请公钥 → 核对不通过、不能批准；取回时管理员 MAC 被换 → 成员机不采用；待激活模式其余方法一律 not_activated", { timeout: 240_000 }, async () => {

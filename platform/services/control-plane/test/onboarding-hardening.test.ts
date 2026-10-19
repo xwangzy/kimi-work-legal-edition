@@ -146,3 +146,13 @@ test("清理（复核 A-16）：提交申请即清空成员姓名；过期未用
   assert.equal([...t.joinRequests.values()].some((x) => x.activation_id === ra.activation_id), false, "申请记录一并删除");
   assert.equal((await post("/v1/activation/redeem", { code: b.code })).json.error.code, "code_invalid");
 });
+
+test("兑换限速（复核 A-07）：同一来源每分钟第 11 次回 429，下一分钟恢复；不设全平台桶", async () => {
+  clock = Math.ceil(clock / 60_000) * 60_000 + 60_000; // 新的一分钟
+  const codes: number[] = [];
+  for (let i = 0; i < 11; i++) codes.push((await post("/v1/activation/redeem", { code: "0000-0000-0000-0000-0000" })).status);
+  assert.deepEqual(codes.slice(0, 10), Array(10).fill(400));
+  assert.equal(codes[10], 429);
+  clock += 60_000;
+  assert.equal((await post("/v1/activation/redeem", { code: "0000-0000-0000-0000-0000" })).status, 400, "下一分钟恢复");
+});
