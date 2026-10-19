@@ -3,8 +3,9 @@
  * 按事项密钥 AES-256-GCM 加密落盘（本阶段收尾）：**hash 仍按明文内容寻址**（内容寻址语义不变），
  * 落盘字节为二进制封装 [4B magic "KWB1"][4B epoch LE][12B nonce][ct][16B tag]。
  * 挂载原件是只读引用（file://），不复制、不加密——只有导入副本与派生块加密。
- * 密钥轮换后：旧块仍用旧 epoch 解密（块头自带 epoch），新块用新 epoch；不重加密旧块
- * （旧成员曾持有旧密钥，重加密不改变既成事实，如实注释）。既有明文开发库可弃，不做迁移。
+ * 密钥轮换后：旧块仍用旧 epoch 解密（块头自带 epoch），新块用新 epoch；按已声明纪元胜者封的旧块不重加密
+ * （旧成员曾持有旧密钥，重加密不改变既成事实，如实注释）。例外（第 12 批成员链）：发出前，本机写的、或按链上未声明
+ * 纪元封的块按此刻的纪元重封，只向上、不向低纪元（`reseal`，第五轮复核 S12A-27/S12B-56）。既有明文开发库可弃，不做迁移。
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, existsSync } from "node:fs";
@@ -141,9 +142,18 @@ export class BlobStore {
     if (!existsSync(path)) return false;
     const raw = readFileSync(path);
     const h = blobHeaderOf(raw);
-    const current = this.cipher.sealedWithCurrent ? this.cipher.sealedWithCurrent(raw) : h?.epoch === this.cipher.currentEpoch(m[1]!);
-    if (!h || current || (need && !need(h.epoch))) return false;
-    const plain = this.read(storageUri);
+    if (!h) return false;
+    // 只向上重封（第五轮复核 S12A-27：块头纪元高于此刻纪元的不动——否则会把材料降到被移出者持有的纪元）
+    if (h.epoch > this.cipher.currentEpoch(m[1]!)) return false;
+    const current = this.cipher.sealedWithCurrent ? this.cipher.sealedWithCurrent(raw) : h.epoch === this.cipher.currentEpoch(m[1]!);
+    if (current || (need && !need(h.epoch))) return false;
+    // 本机解不开的块（没有那把密钥）不动；写入失败照常抛出，由调用方处理（第五轮复核 S12B-54）
+    let plain: Buffer;
+    try {
+      plain = this.read(storageUri);
+    } catch {
+      return false;
+    }
     const tmp = join(this.dir, m[1]!, `.${m[2]!}.${process.pid}.reseal.tmp`);
     writeFileSync(tmp, this.cipher.encrypt(m[1]!, plain));
     renameSync(tmp, path);

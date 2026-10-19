@@ -172,7 +172,7 @@ test("S12B-44：并发轮换落选后换成胜者密钥——落选那把留在�
   assert.equal(fresh.read(blobOf(kB, m, "乙-落选期间.txt")!).toString("utf8"), "bob 在收到胜者密钥之前写的");
 });
 
-test("S12B-46：两步报复时有第三位负责人——不自动轮换，记互相降级告警并暂停，第三位负责人人工调整后解除", { timeout: 180_000 }, async () => {
+test("S12B-46：两步报复时有第三位负责人——不自动轮换，记互相降级告警并暂停，第三位负责人针对双方之一人工调整后解除", { timeout: 180_000 }, async () => {
   const m = await newMatter(kA, "两步报复-第三位");
   await kA.inv("matters.members.add", { matter_id: m, user_id: usr("bob"), matter_role: "owner" });
   await kA.inv("matters.members.add", { matter_id: m, user_id: usr("carol"), matter_role: "owner" });
@@ -190,10 +190,29 @@ test("S12B-46：两步报复时有第三位负责人——不自动轮换，记�
   assert.ok(!lg.some((e) => e.kind === "rekey"), "不自动轮换");
   assert.ok(alerts(kC, m).includes("member_conflict"), String(alerts(kC, m)));
   assert.deepEqual((await kC.inv("sync.export", { share_dir: dir("c3"), matter_id: m })).pausedConflict, [m]);
-  // carol 人工处置（移出其中一人之外的任何成员操作都算，这里给 dave 改角色）后解除
+  // 无关的成员操作（给 dave 改角色）不解除（第五轮复核 S12A-28/S12B-58）
   await kC.inv("matters.members.add", { matter_id: m, user_id: usr("dave"), matter_role: "reviewer" });
+  await kC.inv("sync.export", { share_dir: dir("c3x"), matter_id: m });
+  assert.ok(alerts(kC, m).includes("member_conflict"), "无关操作不解除");
+  // carol 针对冲突双方之一明确决定（把 A 加回为编辑）后解除
+  await kC.inv("matters.members.add", { matter_id: m, user_id: usr("test-lawyer"), matter_role: "editor" });
   await kC.inv("sync.export", { share_dir: dir("c4"), matter_id: m });
   assert.ok(!alerts(kC, m).includes("member_conflict"), String(alerts(kC, m)));
+  // 解除之后 bob 再补写一条报复（前序与上一条相同、正文略改）：不再成立，不重新制造冲突（第五轮复核 S12A-28）
+  const { chainView, exportEventRows } = await import("../src/member-log.ts");
+  const deps = { db: kB.kernel.db, keyctx: undefined as any, tenantId: TID };
+  const vb = chainView(deps, m, { liveBefore: new Map() });
+  const db1 = [...vb.events.values()].find((e) => e.member === usr("bob") && e.p.kind === "member" && e.p.body.user === usr("test-lawyer") && e.p.body.role === "editor")!;
+  const bob = await deviceOf(kB, "bob");
+  const again = forgeEvent(bob, m, "member", db1.p.prev, db1.p.lamport, { user: usr("test-lawyer"), role: "viewer" });
+  const k1 = unwrapMatterKey(rawKey(kB, m, 1, bob.id)!, bob.keys.encPrivateKeyPem);
+  const sb = dir("again");
+  forgeSegment(sb, bob, m, 1, k1, [...exportEventRows(deps, m), again].map((e) => ({ t: "member_events", pk: e.event_id, row: e as any })));
+  await kC.inv("sync.import", { share_dir: sb });
+  const st = await statusOf(kC, m);
+  assert.ok(st.includes(`member:${usr("test-lawyer")}:viewer:rejected:author_demoted_concurrently`), String(st));
+  assert.ok(!alerts(kC, m).includes("member_conflict"), String(alerts(kC, m)));
+  assert.equal(role(kC, m, usr("test-lawyer"))?.matter_role, "editor", "carol 的决定不被推翻");
 });
 
 test("S12B-45：暂停期间写入的材料块在发出前按段的纪元重封，被移出者解不开", { timeout: 180_000 }, async () => {
@@ -224,4 +243,41 @@ test("S12B-45：暂停期间写入的材料块在发出前按段的纪元重封�
   const carol = await deviceOf(kC, "carol");
   const k2 = unwrapMatterKey(rawKey(kC, m, 2, carol.id)!, carol.keys.encPrivateKeyPem);
   assert.throws(() => openBlob(k2, env), "被移出的 carol 解不开");
+});
+
+test("S12A-26（第五轮复核 A）：被降级的负责人把报复的前序选在降级者另一条事件之前——报复不成立，降级者的作为与移出照常有效、不出冲突", { timeout: 180_000 }, async () => {
+  const m = await newMatter(kA, "回溯报复");
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("bob"), matter_role: "owner" });
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("carol"), matter_role: "editor" });
+  await pass(kA, [kB, kC], m);
+  // A 先加 frank（bob 没收到），再降级并移出 bob
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("frank"), matter_role: "editor" });
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("bob"), matter_role: "editor" });
+  await kA.inv("matters.members.remove", { matter_id: m, user_id: usr("bob") });
+  // bob 在旧链头上（看不到 A 加 frank）把 A 降为编辑
+  await kB.inv("matters.members.add", { matter_id: m, user_id: usr("test-lawyer"), matter_role: "editor" });
+  await pass(kB, [kC], m);
+  await pass(kA, [kC], m);
+  const st = (await log(kC, m)).map((e: any) => `${e.kind}:${e.user ?? ""}:${e.role ?? ""}:${e.status}:${e.reason ?? ""}`);
+  assert.ok(st.includes(`member:${usr("test-lawyer")}:editor:rejected:author_demoted_concurrently`), `回溯的报复不成立 ${st}`);
+  assert.equal(role(kC, m, usr("test-lawyer"))?.matter_role, "owner", "A 仍是负责人");
+  assert.equal(role(kC, m, usr("bob"))?.live, 0, "bob 被移出");
+  assert.equal(role(kC, m, usr("frank"))?.live, 1, "A 加的 frank 有效");
+  assert.ok(!alerts(kC, m).includes("member_conflict"), String(alerts(kC, m)));
+});
+
+test("S12A-26 第 3 条：加我的事件因作者被并发降级而不成立——本机自己的成员行不标为已移出（不触发擦除），他人设备上我不在册", { timeout: 180_000 }, async () => {
+  const m = await newMatter(kA, "加我的事件不成立");
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("bob"), matter_role: "owner" });
+  await pass(kA, [kB], m);
+  // A 加 dave；bob 没看到，同时把 A 降为编辑（A 没有降级 bob，不是报复）——A 的加人按“移出优先”不成立
+  await kA.inv("matters.members.add", { matter_id: m, user_id: usr("dave"), matter_role: "editor" });
+  await kB.inv("matters.members.add", { matter_id: m, user_id: usr("test-lawyer"), matter_role: "editor" });
+  await pass(kA, [kD], m);
+  assert.equal(role(kD, m, usr("dave"))?.live, 1, "dave 先收到 A 的段");
+  await pass(kB, [kD, kA], m);
+  const st = await statusOf(kD, m);
+  assert.ok(st.includes(`member:${usr("dave")}:editor:rejected:author_demoted_concurrently`), String(st));
+  assert.equal(role(kD, m, usr("dave"))?.live, 1, "dave 本机自己的行不动");
+  assert.notEqual(role(kA, m, usr("dave"))?.live, 1, "A 上 dave 不在册");
 });

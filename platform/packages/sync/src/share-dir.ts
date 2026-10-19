@@ -50,10 +50,15 @@ export function writeSegment(shareDir: string, tenantId: string, deviceId: strin
   return path;
 }
 
-export function writeShareBlob(shareDir: string, tenantId: string, scope: string, sha256: string, content: Buffer): string {
+export function writeShareBlob(shareDir: string, tenantId: string, scope: string, sha256: string, content: Buffer, replace?: (existing: Buffer) => boolean): string {
   const path = join(blobsDirOf(shareDir, tenantId), scope, sha256);
-  // 同名块内容不同即覆盖（第 12 批第四轮复核 S12A-24：本机按段的纪元重封过的块；块名是明文摘要，接收方读时核对）
-  if (!existsSync(path) || !readFileSync(path).equals(content)) atomicWriteFile(path, content);
+  // 同名块内容不同即覆盖（第 12 批第四轮复核 S12A-24：本机按段的纪元重封过的块；块名是明文摘要，接收方读时核对）；
+  // 调用方可以否决覆盖（第五轮复核 S12A-27：不用低纪元的副本覆盖高纪元的）
+  if (!existsSync(path)) atomicWriteFile(path, content);
+  else {
+    const existing = readFileSync(path);
+    if (!existing.equals(content) && (!replace || replace(existing))) atomicWriteFile(path, content);
+  }
   return path;
 }
 
