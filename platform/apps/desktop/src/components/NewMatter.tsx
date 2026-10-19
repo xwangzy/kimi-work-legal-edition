@@ -95,7 +95,7 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
           <small className="muted">{LEVELS.find((l) => l.v === f.confidentiality)?.hint}</small>
         </label>
         <label className="field">
-          <span>AI 模型通道</span>
+          <span>使用哪种 AI</span>
           <select value={f.model_endpoint} onChange={set("model_endpoint")}>
             {Object.entries(ENDPOINT_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>

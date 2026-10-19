@@ -32,20 +32,20 @@ function modelBadge(endpoint: string | null, fullPseudonym: boolean): string {
   const scope = fullPseudonym ? "证件、账户、联系方式、自然人姓名与机构名称已替换为代号" : "证件、账户、联系方式与自然人姓名已替换为代号";
   switch (endpoint) {
     case "byok":
-      return `模型推理中（律所自带密钥，直连月之暗面，不经中软；${scope}）`;
+      return `AI 正在处理（用律所自己的 Kimi 账号，不经中软；${scope}）`;
     case "private":
-      return "模型推理中（律所私有模型，不经中软）";
+      return "AI 正在处理（律所私有模型，不经中软）";
     case "mock":
-      return "模型推理中（本机模拟，不外发）";
+      return "AI 正在处理（本机示例，不外发）";
     default:
-      return `模型推理中（经中软网关；${scope}）`;
+      return `AI 正在处理（经中软；${scope}）`;
   }
 }
 
 /** 退出模式下暂停的任务：按原因写明会不会自动继续（复核 S6-C18）。 */
 function pausedLabel(code: string): string {
-  if (code === "device_revoked") return "已暂停（本设备已被吊销，不会继续）";
-  if (code === "control_plane_unconfigured") return "暂停（控制面地址未配置）";
+  if (code === "device_revoked") return "已暂停（这台电脑已被律所停用，不会继续）";
+  if (code === "control_plane_unconfigured") return "暂停（还没连上律所的服务，请联系管理员）";
   return "暂停（退出模式：恢复许可后自动继续）";
 }
 
@@ -75,7 +75,7 @@ export function currentBadges(f: BadgeFacts): Badge[] {
   const out: Badge[] = [];
   if (f.openTools.includes("Bash") || f.execOpen) out.push({ label: "本机 · 运行时隔离（W）", tone: "green" });
   if (f.openTools.includes("WebSearch") || (f.inflight?.search ?? 0) > 0) out.push({ label: "联网检索中（去标识查询经中软检索服务）", tone: "blue" });
-  if (f.openTools.includes("FetchURL") || (f.inflight?.fetch ?? 0) > 0) out.push({ label: "抓取公开网页中（本机经出站闸门）", tone: "blue" });
+  if (f.openTools.includes("FetchURL") || (f.inflight?.fetch ?? 0) > 0) out.push({ label: "正在打开公开网页", tone: "blue" });
   if ((f.inflight?.model ?? 0) > 0) out.push({ label: modelBadge(f.endpoint, f.fullPseudonym), tone: "blue" });
   if (out.length === 0) {
     const usesModel = f.scenario !== null && MODEL_SCENARIOS.has(f.scenario) && f.endpoint !== "none";

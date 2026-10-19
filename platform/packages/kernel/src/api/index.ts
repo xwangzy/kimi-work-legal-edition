@@ -3205,7 +3205,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         device_exports: exports_,
         device_imports: imports_,
         drill_completed: drills > 0,
-        note: "「开通流程强制完成一次恢复演练」的产品要求在 G1 激活流落实（此处如实报告演练计数）",
+        note: "开通时要试一次能否用找回资料打开案卷；这里如实显示已备份和试过的次数",
       };
     },
 

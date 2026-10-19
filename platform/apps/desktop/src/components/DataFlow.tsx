@@ -131,7 +131,7 @@ function parseNote(n: string | null): Record<string, any> {
 }
 
 function outcomeLabel(o: string | undefined): string {
-  return ({ sent: "已发出", blocked: "已拦截（未发出）", failed: "失败", unknown: "结果不明（待对账）", mock: "本机模拟" } as Record<string, string>)[o ?? "sent"] ?? o ?? "";
+  return ({ sent: "已发出", blocked: "已拦截（未发出）", failed: "失败", unknown: "不确定是否已发出（管理员会核实）", mock: "本机示例" } as Record<string, string>)[o ?? "sent"] ?? o ?? "";
 }
 
 export function reasonLabel(r: string): string {

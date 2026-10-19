@@ -40,7 +40,7 @@ export function MatterBoard({ matter, runs }: { matter: Matter; runs: any[] }) {
   return (
     <div className="board">
       <Widget title="期限">
-        {dates.length === 0 ? <p className="muted">事项头未填关键日期。</p> : dates.map(([k, v]) => <div key={k} className="w-row"><span>{k === "analysis_as_of" ? "分析截止日" : k}</span><b>{v}</b></div>)}
+        {dates.length === 0 ? <p className="muted">还没有填写关键日期（如开庭日、举证期限）。</p> : dates.map(([k, v]) => <div key={k} className="w-row"><span>{k === "analysis_as_of" ? "分析截止日" : k}</span><b>{v}</b></div>)}
       </Widget>
       <Widget title="待办">
         {waiting.length === 0 && pendingReview.length === 0 && <p className="muted">没有等你处理的事。</p>}

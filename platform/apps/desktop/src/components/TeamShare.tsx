@@ -1,17 +1,20 @@
 /**
- * 团队共享（第 11 批 S11；含复核 S11B-04 处置）：团队事项经中软共享中继在成员电脑之间同步（端到端加密，中软没有事项密钥）。
- * 发出与收到分别显示；“待发出 / 卡住 / 等密钥 / 等材料 / 稍后重试”分开计数；失败原因用律师看得懂的说法；显示期间每 15 秒刷新；
- * “立即同步”有错误时如实说明，不说“已是最新”。
+ * 团队共享（第 11 批 S11；含复核 S11B-04 处置；Z3 评审 #7、5.5）：团队事项经中软共享中继在成员电脑之间同步（端到端加密，中软没有事项密钥）。
+ * 律师层只有一行结论（正常 / 有几个事项暂停同步）和“立即同步”；发出与收取的明细、每条告警的长说明收进“详情”，只给管理员看。
+ * “重新同步成员名单”（原“本机重新引导”）只给管理员与事项负责人，用原位两步确认（不再用浏览器原生确认框）。
  */
 import { useEffect, useState } from "react";
 import { api, type RelayStatus } from "../api.ts";
-import { relayErrorText, syncAlertText, syncOutcomeText } from "../lib/relay-text.ts";
+import { relayErrorText, syncAlertSummary, syncAlertText, syncOutcomeText, teamShareLine } from "../lib/relay-text.ts";
 import { fmtTime } from "../lib/labels.ts";
+import { ConfirmButton } from "./ConfirmButton.tsx";
 
-export function TeamShare() {
+export function TeamShare({ admin = false }: { admin?: boolean }) {
   const [st, setSt] = useState<RelayStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  // 起点不同的事项：本人是否负责人（负责人也可以重新同步成员名单）
+  const [owners, setOwners] = useState<Record<string, boolean>>({});
   useEffect(() => {
     const load = () => void api.relayStatus().then(setSt).catch(() => setSt(null));
     load();
@@ -19,6 +22,17 @@ export function TeamShare() {
     return () => clearInterval(t);
   }, []);
   const alerts = st?.alerts ?? [];
+  const rootIds = alerts.filter((a) => a.kind === "root_conflict").map((a) => a.matter_id).join(",");
+  useEffect(() => {
+    if (!rootIds) return;
+    for (const id of rootIds.split(",")) {
+      if (id in owners) continue;
+      void api
+        .getMatter(id)
+        .then((r: any) => setOwners((o) => ({ ...o, [id]: r?.matter?.my_role === "owner" })))
+        .catch(() => setOwners((o) => ({ ...o, [id]: false })));
+    }
+  }, [rootIds]);
   if (!st || (st.blocked === "not_configured" && alerts.length === 0)) return null;
   const syncNow = async () => {
     setBusy(true);
@@ -34,8 +48,7 @@ export function TeamShare() {
     }
   };
   // 第 12 批：清除这台电脑上该事项的成员链，下次收到时按首次同步的规则重新确认负责人（内容与密钥不动）
-  const rebootstrap = async (matterId: string, title: string | null) => {
-    if (!window.confirm(`重新引导「${title ?? matterId}」：这台电脑会清除该事项的成员记录链，重新确认之前暂停发出该事项；之后只采用这台电脑记录里在册负责人发来的起点（经中软中继同步的事项只认中继上的控制成员）。内容与密钥不受影响。继续？`)) return;
+  const rebootstrap = async (matterId: string) => {
     setBusy(true);
     setMsg("");
     try {
@@ -50,7 +63,7 @@ export function TeamShare() {
   const counts = [
     st.pending_upload ? `${st.pending_upload} 条改动待发出` : "",
     st.stuck ? `${st.stuck_matters ?? 1} 个事项有改动发不出去` : "",
-    st.waiting_key ? `${st.waiting_key} 条同事的改动在等密钥（通常是成员资格还没送到）` : "",
+    st.waiting_key ? `${st.waiting_key} 条同事的改动在等负责人确认你的成员身份` : "",
     st.waiting_blob ? `${st.waiting_blob} 条同事的改动在等材料文件` : "",
     st.retrying || st.deferred ? `${(st.retrying ?? 0) + (st.deferred ?? 0)} 条稍后重试` : "",
   ].filter(Boolean);
@@ -61,38 +74,53 @@ export function TeamShare() {
     <div className="device-row">
       <div className="device-k">团队共享</div>
       <div>
+        <span>{teamShareLine(st)}</span>
         {alerts.map((a) => (
           <div key={`${a.matter_id}-${a.kind}-${a.epoch}`} className="sync-alert">
-            {syncAlertText(a)}
-            {a.kind === "root_conflict" && (
+            {syncAlertSummary(a)}
+            {a.kind === "root_conflict" && (admin || owners[a.matter_id]) && (
               <>
                 {" "}
-                <button className="btn btn-sm" disabled={busy} onClick={() => void rebootstrap(a.matter_id, a.title)}>
-                  本机重新引导
-                </button>
+                <ConfirmButton
+                  label="重新同步成员名单"
+                  className="btn btn-sm"
+                  danger={false}
+                  disabled={busy}
+                  question={`这台电脑会重新向负责人${a.peer_name ?? a.peer_member ? ` ${a.peer_name ?? a.peer_member} ` : ""}确认「${a.title ?? "这个事项"}」有哪些成员。期间这个事项暂停同步，内容不受影响。`}
+                  confirmLabel="重新同步"
+                  onConfirm={() => rebootstrap(a.matter_id)}
+                />
               </>
+            )}
+            {admin && (
+              <details className="muted">
+                <summary>详情</summary>
+                {syncAlertText(a)}
+              </details>
             )}
           </div>
         ))}
-        {st.blocked === "not_allowed" && st.policy_fallback && <span>这台电脑的律所策略已过期或尚未收到：经中软中继的团队共享暂停，联网更新律所策略后自动恢复。</span>}
-        {st.blocked === "not_allowed" && !st.policy_fallback && <span>本所未开启经中软中继的团队共享（由律所管理员在“管理”里开启）。团队事项仍可经律所指定的共享文件夹同步。</span>}
-        {st.blocked === "exit_mode" && <span className="pill pill-red">许可失效或这台电脑已停用：团队共享已暂停</span>}
         {st.blocked === null && (
           <>
-            <span>已开启：团队事项加密后经中软中继在成员电脑之间同步，中软没有事项密钥、看不到内容。</span>
-            <div className="muted">
-              上次发出 {st.push_last_ok_at ? fmtTime(st.push_last_ok_at) : "—"} · 上次收取 {st.pull_last_ok_at ? fmtTime(st.pull_last_ok_at) : "—"}
-              {counts.length > 0 ? ` · ${counts.join(" · ")}` : ""}
-            </div>
-            {stuckErr && <div className="muted">发不出去的原因：{stuckErr}（每 6 小时自动再试一次；点“立即同步”马上再试）</div>}
-            {st.dropped_total ? <div className="muted">另有 {st.dropped_total} 条同事的改动无法在这台电脑上处理（多为这台电脑加入事项之前的内容），已略过。</div> : null}
-            {pushErr && pushErr !== stuckErr && <div className="muted">发出：{pushErr}</div>}
-            {pullErr && <div className="muted">收取：{pullErr}</div>}
-            {st.chain_last_error && <div className="muted">成员记录自动处理没有完成（{st.chain_last_error.slice(0, 80)}），会在下次同步时再试</div>}
+            {" "}
             <button className="btn btn-sm" disabled={busy} onClick={() => void syncNow()}>
               {busy ? "正在同步…" : "立即同步"}
             </button>
             {msg && <span className="muted"> {msg}</span>}
+            {admin && (
+              <details className="muted">
+                <summary>同步明细（管理员）</summary>
+                <div>
+                  上次发出 {st.push_last_ok_at ? fmtTime(st.push_last_ok_at) : "—"} · 上次收取 {st.pull_last_ok_at ? fmtTime(st.pull_last_ok_at) : "—"}
+                  {counts.length > 0 ? ` · ${counts.join(" · ")}` : ""}
+                </div>
+                {stuckErr && <div>发不出去的原因：{stuckErr}（每 6 小时自动再试一次；点“立即同步”马上再试）</div>}
+                {st.dropped_total ? <div>另有 {st.dropped_total} 条同事的改动无法在这台电脑上处理（多为这台电脑加入事项之前的内容），已略过。</div> : null}
+                {pushErr && pushErr !== stuckErr && <div>发出：{pushErr}</div>}
+                {pullErr && <div>收取：{pullErr}</div>}
+                {st.chain_last_error && <div>成员记录自动处理没有完成（{st.chain_last_error.slice(0, 80)}），会在下次同步时再试</div>}
+              </details>
+            )}
           </>
         )}
       </div>

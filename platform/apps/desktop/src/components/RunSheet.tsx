@@ -7,7 +7,7 @@ import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
 import { MODE_LABELS, PREAUTH_LABELS } from "../lib/labels.ts";
 import type { ComposerValue } from "./Composer.tsx";
-import { METHODS } from "./Composer.tsx";
+import { SCENARIO_LABELS } from "../lib/labels.ts";
 import { Modal } from "./Modal.tsx";
 import { basisForConsent, ConsentQuestion, type ConsentAnswer } from "./Consent.tsx";
 import type { MatterBasis, SendSummaryView } from "../api.ts";
@@ -66,7 +66,6 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   const [errBusyRun, setErrBusyRun] = useState<string | null>(null);
   const [cur, setCur] = useState(pending);
   const { matter, value, estimate } = cur;
-  const method = METHODS.find((m) => m.scenario === value.scenario);
   const agent = value.scenario === "a1.agent_task";
   const blocked = !!estimate.data_where?.start_blocked;
   // 只有“依据待确认”可以原地修复；事项里另有进行中的任务、或处于退出模式时只说明原因并禁用开始
@@ -129,13 +128,13 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
         <dt>事项</dt>
         <dd>{matter.title}</dd>
         <dt>做什么</dt>
-        <dd>{cur.label ?? (agent ? "按你的描述处理" : method?.label) ?? value.scenario}{value.documentIds.length ? ` · 材料 ${value.documentIds.length} 份` : ""}</dd>
+        <dd>{cur.label ?? (agent ? "按你的描述处理" : SCENARIO_LABELS[value.scenario]) ?? value.scenario}{value.documentIds.length ? ` · 材料 ${value.documentIds.length} 份` : ""}</dd>
         {agent && (
           <>
             <dt>运行模式</dt>
             <dd>
               {MODE_LABELS[value.choice.mode]}
-              {value.choice.mode !== "chat" && value.choice.planFirst ? " · 先出计划" : ""}
+              {value.choice.mode !== "chat" && value.choice.planFirst ? " · 先给我看计划" : ""}
               {value.choice.mode === "auto" && value.choice.preauth.length > 0 ? `（预授权：${value.choice.preauth.map((p) => PREAUTH_LABELS[p] ?? p).join("；")}）` : ""}
             </dd>
           </>

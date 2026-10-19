@@ -113,7 +113,7 @@ export function MembersAdmin() {
                 复制
               </button>
             </div>
-            <p className="muted">{fmtTime(issued.expires_at)} 前有效，只能用一次。请通过微信或当面交给对方。</p>
+            <p className="muted">{fmtTime(issued.expires_at)} 前有效，只能用一次。请发给对方：他在自己的电脑上安装 Kimi Work 后输入这个码，然后会打电话把屏幕上的核对码读给你，你在“等你批准”里核对后批准。</p>
           </div>
         )}
         {msg && <p className="muted">{msg}</p>}
@@ -144,8 +144,8 @@ export function MembersAdmin() {
                   <td>
                     {r.local_invite ? (
                       <span className="settings-choice">
-                        <ConfirmButton label="批准" danger={false} className="btn-primary btn-sm" question="对方念的数字与这里一致吗？" confirmLabel="一致，批准" onConfirm={() => act(() => members.approve(r.id), `已批准${r.name ? ` ${r.name}` : ""}`)} />
-                        <ConfirmButton label="拒绝" question="拒绝后对方需要新的邀请码。" confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
+                        <ConfirmButton label="批准" danger={false} className="btn-primary btn-sm" question={`请先电话或当面联系${r.name ?? "对方"}，请他读出屏幕上的核对码，与这里逐位对照。号码一致吗？`} confirmLabel="已核对一致，批准" onConfirm={() => act(() => members.approve(r.id), `已批准${r.name ? ` ${r.name}` : ""}`)} />
+                        <ConfirmButton label="拒绝" question={`拒绝${r.name ? ` ${r.name} ` : ""}的申请？他需要新的邀请码才能再次申请。`} confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
                       </span>
                     ) : (
                       <span className="muted">请在发出邀请的电脑上处理</span>
@@ -156,6 +156,7 @@ export function MembersAdmin() {
             </tbody>
           </table>
         )}
+        {requests.length > 0 && <p className="muted">批准前，请先电话或当面联系对方，请他读出自己屏幕上的核对码，与这里逐位对照。号码对不上？不要批准，点“拒绝”，并联系中软客服。</p>}
       </div>
 
       <div className="panel">

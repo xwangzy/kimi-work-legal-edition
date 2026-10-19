@@ -59,7 +59,7 @@ export class MockProvider implements ChatProvider {
     const status = s?.status ?? 200;
     const messages = (Array.isArray(body.messages) ? body.messages : []) as { content?: unknown }[];
     const promptChars = JSON.stringify(messages).length;
-    const content = s?.content ?? `（mock）已收到 ${messages.length} 条消息。`;
+    const content = s?.content ?? `（示例回复）已收到 ${messages.length} 条消息。`;
     const usage = { prompt_tokens: Math.ceil(promptChars / 2), completion_tokens: Math.ceil(content.length / 2), total_tokens: 0, prompt_tokens_details: { cached_tokens: 0 } };
     usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
     const enc = new TextEncoder();

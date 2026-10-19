@@ -56,7 +56,7 @@ export function PartiesPanel({ matterId, onChanged, readOnly = false }: { matter
         <tbody>
           {(parties ?? []).map((p) => (
             <tr key={p.name}>
-              <td><b>{p.name}</b>{p.source === "matter_header" ? <small className="muted">（事项头）</small> : null}</td>
+              <td><b>{p.name}</b>{p.source === "matter_header" ? <small className="muted">（建事项时填写）</small> : null}</td>
               <td>{p.kind === "person" ? "自然人" : "机构"}</td>
               <td>{p.aliases.join("、") || "—"}</td>
               <td>

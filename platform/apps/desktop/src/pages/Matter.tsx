@@ -217,6 +217,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
             onImport={(f) => void upload(f, "import")}
             onSubmit={() => void submit()}
             busy={busy}
+            onPickScenario={(c) => nav(`/start/${c.id}/${matterId}`)}
             placeholder="在本事项内发起任务，例如：核验起诉状引用的法条是否现行有效"
           />
         </div>}
@@ -227,7 +228,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
               ["materials", `材料（${docs.length}）`],
               ["runs", `任务（${runs.length}）`],
               ["board", "看板"],
-              ["parties", "当事人词典"],
+              ["parties", "当事人名单"],
               ["egress", "数据去向"],
               ["lifecycle", "结案与删除"],
             ] as [Tab, string][]
@@ -259,7 +260,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                 <tbody>
                   {docs.map((d) => (
                     <tr key={d.document_version_id}>
-                      <td title={`${d.storage_mode === "mount" ? "只引用原文件（未复制）" : "已加密保存副本"} · 文件指纹 ${String(d.sha256 ?? "").slice(0, 12)}`}>{d.filename}{d.storage_mode === "mount" && <span className="tag tag-gray">引用</span>}</td>
+                      <td title={d.storage_mode === "mount" ? "只引用原文件（未复制）" : "已加密保存副本"}>{d.filename}{d.storage_mode === "mount" && <span className="tag tag-gray">引用</span>}</td>
                       <td>
                         {/* 材料用途（Y4 §5 D-4）：我方 / 对方 / 参考，写进任务的材料清单 */}
                         <select

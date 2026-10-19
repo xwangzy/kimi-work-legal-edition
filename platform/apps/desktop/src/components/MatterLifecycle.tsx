@@ -48,7 +48,7 @@ export function MatterLifecyclePanel({ matter, onChanged }: { matter: Matter; on
       const r = await api.archiveMatter(matter.matter_id, `结案归档-${matter.title.slice(0, 40)}.zip`);
       if (!r) return;
       const miss = r.missing.length ? `；${r.missing.length} 份未收入（${r.missing.map((m) => `${m.filename}：${m.reason}`).join("；")}）` : "";
-      setArchived(`已导出《${r.filename}》：${r.counts.materials ?? 0} 份原件、${r.counts.artifacts ?? 0} 份成果、${r.counts.signed_events ?? 0} 条签名事件${miss}。sha256 ${r.sha256.slice(0, 16)}…（留痕）`);
+      setArchived(`已导出《${r.filename}》：${r.counts.materials ?? 0} 份原件、${r.counts.artifacts ?? 0} 份成果${miss}。可交给第三方核对是否被改动（导出已留痕）。`);
     } catch (e) {
       setMsg((e as Error).message);
     } finally {
@@ -102,7 +102,7 @@ export function MatterLifecyclePanel({ matter, onChanged }: { matter: Matter; on
         <div className="card lifecycle-card">
           <h3>结案</h3>
           <p className="muted">
-            结案后本事项只读：不能再发起任务或添加材料；这台电脑上的助手会话、工作区与材料快照会清理，材料、成果与记录保留。
+            结案后本事项只读：不能再发起任务或添加材料；AI 处理时留下的临时文件会清理，材料、成果与记录保留。
             保留期满后可以删除本事项数据；需要继续工作时可以重新打开。
           </p>
           <label className="field">
@@ -122,7 +122,7 @@ export function MatterLifecyclePanel({ matter, onChanged }: { matter: Matter; on
       <div className="card lifecycle-card">
         <h3>导出结案归档</h3>
         <p className="muted">
-          一个 ZIP：导入的原件、成果（代号已还原）、风险卡与事实、签名事件链与签名清单，第三方不依赖本产品即可核对。归档含案卷原文与当事人信息，请保存到律所档案位置；导出会留痕，并写进日后的删除回执。
+          一个 ZIP：导入的原件、成果（代号已还原）、审查意见与事实、操作记录（第三方不依赖本产品就能核对是否被改过）。归档含案卷原文与当事人信息，请保存到律所档案位置；导出会留痕，并写进日后的删除证明。
         </p>
         <div className="modal-actions">
           <button className="btn-ghost" disabled={!owner || busy} onClick={() => void exportArchive()}>导出归档（ZIP）</button>
@@ -164,10 +164,10 @@ export function MatterLifecyclePanel({ matter, onChanged }: { matter: Matter; on
         <div className="card lifecycle-card lifecycle-danger">
           <h3>删除本事项数据</h3>
           {!archived && <div className="banner banner-orange">删除前建议先“导出结案归档”，按律所档案制度保存。</div>}
-          <p>删除后不可恢复。会删除：本机的事项密钥（残留的加密数据从此无法解开）、导入的材料副本、解析文本、代号对照、风险卡、事实、成果正文，以及记录里的文件名、任务目标与检索原文。</p>
+          <p>会删除这个事项在本机的全部内容（材料副本、代号对照、审查意见、事实、成果正文，以及记录里的文件名、任务目标与检索原文），删除后任何人都无法恢复。</p>
           <p className="muted">
-            不会删除：挂载的原件（在你自己的文件夹里）。审计与签名记录保留“做过什么”的元数据（时间、去向、字数），不再含内容。
-            已发给模型或检索服务的内容（均为代号化后的文字）无法撤回；团队事项在其他成员电脑上的副本须等对方上线后处理，回执会如实写明。
+            不会删除：挂载的原件（在你自己的文件夹里）。操作记录只保留“何时做过什么”（时间、去向、字数），不再含内容。
+            已发给模型或检索服务的内容（均为代号化后的文字）无法撤回；团队事项在其他成员电脑上的副本须等对方上线后处理，删除证明会如实写明。
           </p>
           {beforeRetention && (
             <>
@@ -218,7 +218,7 @@ export function DeletionReceipt({ view }: { view: DeletionReceiptView }) {
       <div className="lifecycle-status">
         <b>事项数据已删除</b>
         <span className="muted">删除于 {fmtTime(r.purged_at)}{r.early ? `（提前删除：${r.reason ?? ""}）` : ""}</span>
-        <span className={`tag ${view.signature_valid ? "tag-ok" : "tag-warn"}`}>{view.signature_valid ? "回执签名有效" : "回执签名无法核验"}</span>
+        <span className={`tag ${view.signature_valid ? "tag-ok" : "tag-warn"}`}>{view.signature_valid ? "删除证明有效" : "删除证明无法核对"}</span>
       </div>
       <table className="data">
         <thead><tr><th>副本所在</th><th>状态</th><th>说明</th></tr></thead>
@@ -241,7 +241,7 @@ export function DeletionReceipt({ view }: { view: DeletionReceiptView }) {
         </ul>
       </details>
       <div className="modal-actions">
-        <button className="btn-ghost" onClick={download}>保存删除回执（可离线验签）</button>
+        <button className="btn-ghost" onClick={download}>保存删除证明</button>
         {saved && <span className="muted"> {saved}</span>}
       </div>
     </section>
