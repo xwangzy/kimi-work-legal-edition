@@ -417,3 +417,13 @@ test("RA-13 第 12 批控制成员移交：只有控制成员可移交；接收�
   const { s: s2 } = await start(dir);
   assert.equal(s2.tenant("t1")!.controller(mid), "u-devB");
 });
+
+test("RA-14 第 12 批第二轮：控制成员移交的接收者须当前仍是读者（只登记过、已被纪元提升移出读者的不收）", async () => {
+  const { base } = await start(mkdtempSync(join(tmpdir(), "kwl-ra-")));
+  const mid = newMid();
+  assert.equal((await writeSeg(base, mid, A(), "devA", { readers: ["devA", "devB"] })).r.status, 200);
+  assert.equal((await writeSeg(base, mid, B(), "devB", { readers: ["devA", "devB"] })).r.status, 200);
+  // A 提升纪元、读者不再含 B（B 被移出）
+  assert.equal((await writeSeg(base, mid, A(), "devA", { epoch: 2, readers: ["devA"] })).r.status, 200);
+  assert.equal((await call(base, "POST", `/v1/relay/matters/${mid}/control`, A(), { to: "u-devB" })).json?.error, "to_not_reader");
+});

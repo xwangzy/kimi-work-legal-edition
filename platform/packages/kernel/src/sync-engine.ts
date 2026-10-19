@@ -29,6 +29,7 @@ import type { KernelKeyContext } from "./devices.ts";
 import {
   MEMBER_EVENTS_TABLE,
   acceptKeyRows,
+  chainEncryptEpoch,
   adoptRoot,
   applyProjection,
   chainHealth,
@@ -63,6 +64,8 @@ export interface SyncExportResult {
   rowsExported: number;
   /** 有未解决的纪元冲突、本机暂停发出的事项（第六轮复核 S11A-51/S11B-46）。 */
   pausedConflict: string[];
+  /** 成员链自动处置（锚定、补轮换、补包裹、吊销标记）失败的事项与原因（复核 S12B-26）。 */
+  chainErrors: string[];
 }
 
 /** 中继介质：每块大小（与中继服务的单块上限一致）。 */
@@ -235,7 +238,7 @@ export function syncExport(
   const matters = args.matterId
     ? db.all<any>(`SELECT * FROM matters WHERE matter_id = ? AND tenant_id = ?`, [args.matterId, tenantId])
     : db.all<any>(`SELECT * FROM matters WHERE tenant_id = ? AND status = 'active'`, [tenantId]);
-  const result: SyncExportResult = { segments: [], skippedPersonal: [], rowsExported: 0, pausedConflict: [] };
+  const result: SyncExportResult = { segments: [], skippedPersonal: [], rowsExported: 0, pausedConflict: [], chainErrors: [] };
   const deviceCertJson = JSON.stringify(keyctx.device.cert);
   const writeState = (matterId: string, toLamport: number, exportAt: string, alwaysDigest: string | null) => {
     if (relay) {
@@ -265,8 +268,10 @@ export function syncExport(
       continue;
     }
     // 成员链（第 12 批）：没有起点的存量事项由锚定者锚定；有链的做自动处置（吊销标记、补轮换），告警随之重写
-    prepareChain(deps, m.matter_id);
-    const epoch = currentMatterEpoch(db, m.matter_id, keyctx.device.deviceId);
+    const chainErr = prepareChain(deps, m.matter_id);
+    if (chainErr) result.chainErrors.push(`${m.matter_id}：${chainErr}`);
+    // 链模式：加密纪元取链上已声明、本机持有胜者密钥的最高纪元（复核 S12B-02/20）
+    const epoch = (hasChain(db, m.matter_id) ? chainEncryptEpoch(deps, m.matter_id) : null) ?? currentMatterEpoch(db, m.matter_id, keyctx.device.deviceId);
     const matterKey = resolveMatterKey(db, m.matter_id, epoch, keyctx.device.deviceId, keyctx.device.keys.encPrivateKeyPem);
     if (!matterKey) continue; // 本机不持钥（理论上不发生：成员设备才导得出）
     // 该事项有未解除的团队同步告警（同号纪元分叉、负责人无法确认）：不经同步发出新内容，免得被移出者读到
@@ -428,14 +433,15 @@ function mayRotate(deps: SyncDeps, matterId: string): boolean {
 }
 
 /** 链的自动处置（中继事项的处置者是控制成员）。 */
-function maintain(deps: SyncDeps, matterId: string): void {
-  // 处置失败（写出的事件在链上不成立已回滚、库忙等）不影响其他事项的导出
+function maintain(deps: SyncDeps, matterId: string): string | null {
+  // 处置失败（写出的事件在链上不成立已回滚、库忙等）不影响其他事项的导出；原因返回给调用方记下（复核 S12B-26）
   try {
     const r = maintainChain(deps, matterId, { mayRotate: mayRotate(deps, matterId), rotator: deps.relayControl?.controller(matterId) ?? null });
-    // 收回了本机在链上不成立的纪元：从那次轮换起重发本机写的内容（复核 S12B-02/17：只退到那一刻，不全量重发）
+    // 本机用链上不成立的纪元发出过内容：从那次轮换起重发一次（复核 S12B-02/17/20）
     if (r.rewindSince) rewindExport(deps.db, matterId, r.rewindSince);
-  } catch {
-    // 下一次导出或摄取再试
+    return r.failed;
+  } catch (e) {
+    return e instanceof Error ? e.message.slice(0, 200) : String(e);
   }
 }
 
@@ -443,23 +449,23 @@ function maintain(deps: SyncDeps, matterId: string): void {
  * 导出前的链准备：没有起点（也没有被要求重新引导）的团队事项，本机成员是锚定者（中继事项为控制成员，否则见 folderAnchorer）即锚定；
  * 有链的做自动处置（maintainChain）。
  */
-export function prepareChain(deps: SyncDeps, matterId: string): void {
+export function prepareChain(deps: SyncDeps, matterId: string): string | null {
   const { db, keyctx } = deps;
-  if (deps.legacyMemberRows) return;
+  if (deps.legacyMemberRows) return null;
   if (!hasChain(db, matterId)) {
-    if (rebootstrapPending(db, matterId)) return;
+    if (rebootstrapPending(db, matterId)) return null;
     const foreign = deps.relayControl?.foreign(matterId) ?? null;
-    if (foreign === "?" || foreign === "~") return;
+    if (foreign === "?" || foreign === "~") return null;
     const anchorer = deps.relayControl?.controller(matterId) ?? folderAnchorer(db, matterId);
-    if (anchorer !== keyctx.device.cert.memberId) return;
+    if (anchorer !== keyctx.device.cert.memberId) return null;
     try {
       db.tx(() => writeAnchor(deps, matterId));
-    } catch {
-      return;
+    } catch (e) {
+      return e instanceof Error ? e.message.slice(0, 200) : String(e);
     }
-    if (!hasChain(db, matterId)) return;
+    if (!hasChain(db, matterId)) return null;
   }
-  maintain(deps, matterId);
+  return maintain(deps, matterId);
 }
 
 /**
@@ -1156,7 +1162,8 @@ export function syncImport(deps: SyncDeps, args: { shareDir: string; bootstrapCo
   // 链的自动处置（吊销标记、补轮换、告警）：在每段的事务之外做
   for (const mid of touchedChain) {
     try {
-      maintain(deps, mid);
+      const err = maintain(deps, mid);
+      if (err) result.originConflicts.push(`member_log_maintain_failed:${mid}（${err}）`);
     } catch (e) {
       result.originConflicts.push(`member_log_maintain_failed:${mid}（${e instanceof Error ? e.message : String(e)}）`);
     }

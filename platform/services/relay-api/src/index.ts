@@ -632,7 +632,8 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       if (b.gen !== undefined && b.gen !== gen) return send(res, 409, { error: "matter_reset", gen });
       if (c.uid !== m.controller) throw new HttpError(403, "not_controller");
       if (b.to === m.controller) return send(res, 200, { ok: true, controller: m.controller });
-      if (![...m.segs.values()].some((e) => e.uid === b.to && !t.gone.has(e.seq))) throw new HttpError(409, "to_not_reader");
+      // 接收者须在该事项上登记过段、且他的某台设备当前仍是读者（第二轮复核：只看“登记过”会把控制权交给已被移出的成员，事项从此锁死）
+      if (![...m.segs.values()].some((e) => e.uid === b.to && !t.gone.has(e.seq) && m.readers.has(e.dev))) throw new HttpError(409, "to_not_reader");
       const rec: ControlRecord = { k: "control", mid, to: b.to, by: c.uid, at: iso() };
       appendJournal(t, Buffer.from(`${JSON.stringify(rec)}\n`, "utf8"));
       applyControl(t, rec);

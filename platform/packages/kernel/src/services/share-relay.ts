@@ -1155,7 +1155,10 @@ export function readersOf(seg: SegmentFile, own: string, db?: SyncDeps["db"]): s
 }
 
 /** 界面用的告警列表：带事项标题（本机库里的），只有编号、种类、纪元与计数。 */
-export function syncAlertsView(db: ShareRelayDeps["db"], _ownDeviceId?: string): { matter_id: string; title: string | null; kind: string; epoch: number; first_at: string; hits: number; peer_member: string | null }[] {
+export function syncAlertsView(
+  db: ShareRelayDeps["db"],
+  _ownDeviceId?: string,
+): { matter_id: string; title: string | null; kind: string; epoch: number; first_at: string; hits: number; peer_member: string | null; peer_name: string | null }[] {
   return activeSyncAlerts(db).map((a) => ({
     matter_id: a.matter_id,
     title: db.get<{ title: string }>(`SELECT title FROM matters WHERE matter_id = ?`, [a.matter_id])?.title ?? null,
@@ -1164,5 +1167,7 @@ export function syncAlertsView(db: ShareRelayDeps["db"], _ownDeviceId?: string):
     first_at: a.first_at,
     hits: a.hits,
     peer_member: a.peer_member,
+    // 界面显示姓名（复核 S12B-27）；本机不认识时为空，界面退回显示编号
+    peer_name: a.peer_member ? (db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE user_id = ?`, [a.peer_member])?.display_name ?? null) : null,
   }));
 }

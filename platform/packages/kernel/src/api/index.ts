@@ -2606,7 +2606,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           user_id: userId,
           epoch: r.epoch,
           devices_wrapped: r.wrapped,
-          note: r.wrapped > 0 ? "已按当前密钥纪元为对方 active 设备补包裹（对方设备方可解事项密钥）；变更已记入成员链" : "对方尚无登记设备：其设备登记后需重新执行补包裹；变更已记入成员链",
+          note:
+            r.wrapped > 0
+              ? "已按当前密钥纪元为对方 active 设备补包裹（对方设备方可解事项密钥）；变更已记入成员链"
+              : "变更已记入成员链；对方的设备（含之后登记的）由负责人的电脑在同步时自动补发密钥",
         };
       }
       const epoch = currentMatterEpoch(db, matter.matter_id);
@@ -2851,6 +2854,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (deps.shareRelay.controllerOf(matter.matter_id) !== id.userId) throw forbidden("只有中继上的控制成员（最先经中继同步该事项的负责人）可以移交");
       if (to === id.userId) throw validation("不能移交给自己");
       if (!db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND matter_role = 'owner' AND removed_at IS NULL`, [matter.matter_id, to])) throw validation("只能移交给本事项在册的负责人（须先把对方设为负责人）");
+      // 先按链核一次本人仍是负责人（复核 S12B-24：先改中继、后写链，写链失败时中继上其实已移交）
+      if (chainView(chainDeps(id), matter.matter_id).members.get(id.userId)?.role !== "owner") throw forbidden("这台电脑按成员链已不是负责人，不能移交（请先同步）");
       let controller: string;
       try {
         controller = (await deps.shareRelay.handoffControl(matter.matter_id, to)).controller;
@@ -2859,9 +2864,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (code === "to_not_reader") throw validation("对方还没有经中继同步过这个事项：请对方先打开并同步一次，再移交");
         throw new DomainError("provider_unavailable", `中继暂时不能办理移交（${code}），请稍后再试`, 503);
       }
-      db.tx(() => writeEvent(chainDeps(id), matter.matter_id, "control", { to }));
+      let chainNote = "移交已记入成员链";
+      try {
+        db.tx(() => writeEvent(chainDeps(id), matter.matter_id, "control", { to }));
+      } catch {
+        // 中继上已经移交（控制权以中继为准）；只是链上的记录没写成（等待中继答复期间本机被降级等）：如实说明，不报失败
+        chainNote = "成员链上的移交记录没有写成（这台电脑在移交期间已不是负责人），其他成员的电脑会从中继得知新的控制成员";
+      }
       audit(db, id, "matter.relay_handoff", "matter", matter.matter_id, to, keyctx);
-      return { matter_id: matter.matter_id, controller, note: "已移交中继控制成员：此后这个事项的成员调整与密钥轮换须由对方操作；移交已记入成员链" };
+      return { matter_id: matter.matter_id, controller, note: `已移交中继控制成员：此后这个事项的成员调整与密钥轮换须由对方操作；${chainNote}` };
     },
     // 本机重新引导该事项（起点冲突、成员事件长期待定时的人工出路）：清本机成员链与已摄取标记，下次收到时按首同步规则重新采用起点
     "matters.sync_rebootstrap": (p, id) => {

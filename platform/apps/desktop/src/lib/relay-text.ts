@@ -5,8 +5,10 @@ import type { RelayReport } from "../api.ts";
 
 /** 错误代码 → 律师看得懂的说法。 */
 /** 团队同步告警的说明（第六轮复核 S11A-51/52）。 */
-export function syncAlertText(a: { kind: string; title: string | null; peer_member?: string | null }): string {
+export function syncAlertText(a: { kind: string; title: string | null; peer_member?: string | null; peer_name?: string | null }): string {
   const t = a.title ? `「${a.title}」` : "一个团队事项";
+  // 显示姓名，本机不认识时退回成员编号（复核 S12B-27）
+  a = { ...a, peer_member: a.peer_name ?? a.peer_member ?? null };
   if (a.kind === "epoch_conflict")
     return `事项${t}的加密密钥在这台电脑与负责人${a.peer_member ? `（${a.peer_member}）` : ""}那里不一致（多为成员调整时这台电脑离线）：这台电脑暂停发出该事项的新改动，免得被移出的人读到。请这位负责人在其电脑上重新轮换密钥（例如移出后再加回任一成员），由他发出的新密钥送到后自动恢复；你是该事项的负责人时，也可以在这台电脑上重新轮换`;
   if (a.kind === "owner_unverifiable")
@@ -15,11 +17,11 @@ export function syncAlertText(a: { kind: string; title: string | null; peer_memb
   if (a.kind === "chain_pending")
     return `事项${t}有成员变更还在等确认（例如由已停用电脑做的变更，等在用的负责人确认；或部分变更还没送到）：这台电脑暂停发出该事项的新内容，只同步成员信息。在用的负责人同步一次后自动恢复；负责人都已离所时请联系中软客服`;
   if (a.kind === "rekey_needed")
-    return `事项${t}有成员已被移出，但当前密钥仍包含他（多为两位负责人同时调整成员）：这台电脑暂停发出该事项的新内容，等负责人${a.peer_member ? `（${a.peer_member}）` : ""}的电脑同步时自动换新密钥后恢复；超过一天未处理，其他负责人的电脑会接手（经中软中继同步的事项只能由中继上的控制成员处理）`;
+    return `事项${t}有成员已被移出，但当前密钥仍包含他（多为两位负责人同时调整成员）：这台电脑暂停发出该事项的新内容，等负责人${a.peer_member ? `（${a.peer_member}）` : ""}的电脑同步时自动换新密钥后恢复；超过一天未处理，其他每位负责人的电脑都会尝试接手（经中软中继同步的事项只能由中继上的控制成员处理）`;
   if (a.kind === "epoch_superseded")
     return `事项${t}的密钥在两位负责人同时调整成员时有了两把，这台电脑手里的这把没有被采用：暂停发出新内容，收到被采用的那把后自动恢复并补发；长期不恢复，请负责人在其电脑上再换一次密钥（移出后再加回任一成员）`;
   if (a.kind === "root_conflict")
-    return `事项${t}在这台电脑上的成员记录与${a.peer_member ? `负责人（${a.peer_member}）` : "另一位负责人"}发来的起点不同（多为升级时两台电脑各自整理了一次）：这台电脑暂停发出该事项的新内容。请与负责人核实后点“本机重新引导”：这台电脑清除该事项的成员记录链，之后只采用这台电脑记录里在册负责人发来的起点（经中软中继同步的事项只认中继上的控制成员）`;
+    return `事项${t}在这台电脑上的成员记录与${a.peer_member ? `负责人（${a.peer_member}）` : "另一位负责人"}发来的起点不同（多为升级时两台电脑各自整理了一次）：这台电脑暂停发出该事项的新内容。请与负责人核实后点“本机重新引导”：这台电脑放弃现在的起点，之后采用这台电脑记录里在册负责人发来的起点（经中软中继同步的事项只认中继上的控制成员；共享文件夹介质上取先收到的那一份）`;
   return `事项${t}的团队同步有异常（${a.kind}）`;
 }
 

@@ -138,7 +138,8 @@ test("S12B-02：本机的轮换合并后在链上不成立——收回那一纪�
   await pass(kB, [kA], m);
   assert.equal(role(kA, m, usr("test-lawyer"))?.matter_role, "editor");
   assert.ok(role(kA, m, usr("carol"))?.live, "A 的移出被拒收，carol 仍在");
-  assert.equal(ownEpoch(kA, m, dev("test-lawyer")), 1, "A 收回了链上没有声明的纪元 2");
+  // 复核 S12B-20 之后：密钥不删（这次轮换可能重新成立），加密改用链上声明的纪元 1
+  assert.equal((await kA.inv("matters.member_log", { matter_id: m })).encrypt_epoch, 1, "A 改用链上声明的纪元 1 加密");
   await imp(kA, m, "甲-降级后.txt", "A 降为编辑之后写的");
   await pass(kA, [kB, kC], m);
   assert.ok(hasDoc(kB, m, "甲-降级后.txt"), "负责人 bob 收到");
