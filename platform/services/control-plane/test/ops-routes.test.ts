@@ -173,6 +173,8 @@ test("路径按原样匹配：带查询串、点段的运营请求一律 404（�
   const none = await call("op_0001", "POST", "/v1/ops/tenants", { tid: "ten_gamma", edition: "team", seats: 1 }, { at: bareBase });
   assert.equal(none.status, 404);
   assert.equal(bare.ops.tenant("ten_gamma"), undefined);
+  // 守卫的受众须为控制面（复核 RA10A-15）
+  assert.throws(() => createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: "x".repeat(32), opsGuard: fileOpsGuard({ dir: mkdtempSync(join(tmpdir(), "kwl-cp-ops-x-")), audience: "support", roster: OPS.roster, rosterKeys: OPS.rosterKeys }) }), /受众须为 control-plane/);
 });
 
 test("输入校验与已有租户；吊销设备与席位走运维包装；访问审计写不进去即不执行", async () => {

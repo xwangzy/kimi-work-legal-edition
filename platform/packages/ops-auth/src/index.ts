@@ -17,7 +17,11 @@
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, type KeyObject } from "node:crypto";
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
-import { canonicalJson, signAlgOfPublicKey, signWithKey, verifyBytes } from "@zr-legal/keys";
+import { canonicalJson, signAlgOfPublicKey, signSyncWith, SoftwareSigner, verifyBytes, type SessionSigner } from "@zr-legal/keys";
+
+/** 签名者：私钥 PEM（命令行与测试）、KeyObject，或签名者对象（将来的硬件令牌）；一律经 keys 包的签名者签（KP-02）。 */
+export type OpsSigningKey = string | KeyObject | SessionSigner;
+const signWith = (k: OpsSigningKey, bytes: Uint8Array): string => signSyncWith(typeof k === "string" ? k : "signSync" in k ? k : new SoftwareSigner(k), bytes);
 
 /**
  * 权限：按接口授予。tenant.manage 开通与续订、tenant.terminate 终止订阅、activation.issue 发与作废创始开通码、
@@ -161,11 +165,11 @@ const publicPemOf = (k: string | KeyObject): string | null => {
 };
 
 /** 安全管理员签发名册（运营命令行与测试用）；内容不合规即抛错。 */
-export function signOpsRoster(body: OpsRosterBody, signer: { kid: string; privateKey: string | KeyObject }): SignedOpsRoster {
+export function signOpsRoster(body: OpsRosterBody, signer: { kid: string; privateKey: OpsSigningKey }): SignedOpsRoster {
   const why = validateOpsRosterBody(body);
   if (why) throw new Error(`运营名册不合规：${why}`);
   if (!OPS_KEY_ID_RE.test(signer.kid)) throw new Error("名册签名密钥编号不合规");
-  return { body, kid: signer.kid, sig: signWithKey(signer.privateKey, rosterBytes(body)) };
+  return { body, kid: signer.kid, sig: signWith(signer.privateKey, rosterBytes(body)) };
 }
 
 export type OpsRosterVerdict = { ok: true; body: OpsRosterBody; digest: string } | { ok: false; reason: string };
@@ -412,10 +416,10 @@ function requestBytes(p: OpsRequestParts & { deployment: string; audience: strin
 }
 
 /** 运营人员签请求（运营命令行与测试用）：私钥只在本人电脑（或带口令加密的私钥文件）里。 */
-export function signOpsRequest(p: OpsRequestParts & { deployment: string; audience: OpsAudience; operator: string; kid: string; privateKey: string | KeyObject; now?: number }): OpsRequestHeaders {
+export function signOpsRequest(p: OpsRequestParts & { deployment: string; audience: OpsAudience; operator: string; kid: string; privateKey: OpsSigningKey; now?: number }): OpsRequestHeaders {
   const ts = String(p.now ?? Date.now());
   const nonce = randomBytes(16).toString("base64url");
-  const sig = signWithKey(p.privateKey, requestBytes({ ...p, ts, nonce }));
+  const sig = signWith(p.privateKey, requestBytes({ ...p, ts, nonce }));
   return { "x-kwl-op": p.operator, "x-kwl-op-key": p.kid, "x-kwl-op-ts": ts, "x-kwl-op-nonce": nonce, "x-kwl-op-sig": sig };
 }
 

@@ -223,4 +223,16 @@ test("运营按人鉴权端到端：命令行生成密钥与名册 → 生产入
   // 没有配置 ops 的控制面：运营路径一律 404
   const plain = await start(cpCfg("plain", undefined));
   assert.equal((await rawGet(plain.port, "/v1/ops/tenants/ten_e2e")).status, 404);
+
+  // ─── 名册签名密钥轮换（复核 RA10B-04）：新公钥合并进公钥表 → 用旧公钥核验现有名册、新密钥签发 → 服务（重启后读新公钥表）接受，换版记录里有一条公钥表变化 ───
+  const sec2 = cli("roster-keygen", "--kid", "sec-2", "--out", join(dir, "sec2"), "--keys-file", keysFile);
+  assert.equal(sec2.status, 0, sec2.stderr);
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(keysFile, "utf8"))).sort(), ["sec-1", "sec-2"], "公钥表合并写入，旧编号不丢");
+  const rot = cli("roster", "renew", "--roster", roster, "--keys", keysFile, "--sign-key", join(dir, "sec2", "sec-2.key.pem"), "--sign-kid", "sec-2", "--out", roster);
+  assert.equal(rot.status, 0, rot.stderr);
+  assert.equal(JSON.parse(readFileSync(roster, "utf8")).kid, "sec-2");
+  assert.equal(cli("roster", "show", "--roster", roster, "--keys", keysFile).status, 0);
+  const rotated = await start(cpCfg("cp", ops));
+  assert.equal(call("op_0002", "GET", "/v1/ops/tenants/ten_e2e", undefined, { at: `http://127.0.0.1:${rotated.port}` }).json.status, 200);
+  assert.deepEqual(lines(join(cpDir, "ops", "roster-history.jsonl")).map((r) => r.event).slice(-2), ["roster_keys_changed", "roster_accepted"]);
 });
