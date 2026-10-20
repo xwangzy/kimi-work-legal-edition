@@ -384,8 +384,11 @@ export async function runBackup(d: BackupDeps): Promise<BackupState & { copied: 
     for (const name of readdirSync(target)) if (/\.tmp-[0-9a-f]{12}$/.test(name)) rmSync(join(target, name), { force: true });
     writeJsonFile(d.indexFile, { v: 1, entries: next });
     // 本次开始之后才记下的“待清旧代”（备份进行中删除了事项：本次的账本快照是删除之前的）留给下一次
-    const prunePending = st.prune_pending ? false : readBackupState(d.stateFile).prune_pending;
-    const out: BackupState = { ...st, location_id: locationId, prune_pending: prunePending, seq: m.seq, last_ok_at: m.at, last_error: null, last_files: files.length + 1, last_bytes: bytes };
+    const cur = readBackupState(d.stateFile);
+    const prunePending = st.prune_pending ? false : cur.prune_pending;
+    // 备份进行中律师换了备份位置（第一次备份可能要很久）：新设置为准，本次只算旧位置上的一次备份，不把位置改回去
+    const where = cur.dir === st.dir ? { location_id: locationId } : { dir: cur.dir, location_id: cur.location_id };
+    const out: BackupState = { ...st, ...where, prune_pending: prunePending, seq: m.seq, last_ok_at: m.at, last_error: null, last_files: files.length + 1, last_bytes: bytes };
     writeJsonFile(d.stateFile, out);
     d.onProgress?.({ done: list.length, total: list.length });
     return { ...out, copied };
@@ -393,8 +396,11 @@ export async function runBackup(d: BackupDeps): Promise<BackupState & { copied: 
     const code = e instanceof DomainError ? String(e.detail?.code ?? e.code) : String((e as NodeJS.ErrnoException)?.code ?? "backup_failed");
     try {
       // 退出或安装更新时取消不算失败（第 14 批余项：原先记下 cancelled，下次打开首页就是红色的“上次自动备份没有成功”）
+      const cur = readBackupState(d.stateFile);
       const lastError = code === "cancelled" ? st.last_error : code;
-      writeJsonFile(d.stateFile, { ...st, prune_pending: st.prune_pending || readBackupState(d.stateFile).prune_pending, last_error: lastError });
+      // 备份进行中换了备份位置：新设置为准，旧位置上的这次失败不记
+      if (cur.dir !== st.dir) writeJsonFile(d.stateFile, { ...cur, prune_pending: st.prune_pending || cur.prune_pending });
+      else writeJsonFile(d.stateFile, { ...st, prune_pending: st.prune_pending || cur.prune_pending, last_error: lastError });
     } catch {
       // 状态写不进去：本次备份本来就失败了
     }

@@ -103,3 +103,36 @@ test("退出或安装更新时取消备份（复核 R2B-04）：不写新的一�
   assert.equal(gens(), before, "取消即不写清单，上一代不受影响");
   assert.equal(((await k!.invoke("backup.status")) as any).last_error, null, "取消不记成失败");
 });
+
+test("备份进行中换了备份位置：新设置为准，这次备份结束时不把位置改回去", { timeout: 60_000 }, async () => {
+  const ws = k!.config.workspaceDir;
+  const stateFile = join(ws, "backup.json");
+  const oldDir = JSON.parse(readFileSync(stateFile, "utf8")).dir as string;
+  const newDisk = mkdtempSync(join(tmpdir(), "kwl-bkloc-new-"));
+  // 让备份在处理文件时停一下：借进度回调在中途换位置
+  const { runBackup } = await import("../src/services/backup.ts");
+  let switched = false;
+  await runBackup({
+    db: k!.db,
+    workspaceDir: ws,
+    dbFile: k!.config.dbFile,
+    dbKey: k!.config.dbKey,
+    tenantId: k!.identity.tenantId,
+    deviceId: "dev_bkloc-firm_lawyer",
+    sign: () => "sig",
+    stateFile,
+    indexFile: join(ws, "backup-index.json"),
+    insideDataRoot: () => false,
+    onProgress: () => {
+      if (switched) return;
+      switched = true;
+      void k!.invoke("backup.configure", { dir: newDisk });
+    },
+  });
+  assert.ok(switched, "备份中途换了位置");
+  const st = JSON.parse(readFileSync(stateFile, "utf8"));
+  assert.equal(st.dir, newDisk, "新设置为准");
+  assert.notEqual(st.dir, oldDir);
+  const marker = JSON.parse(readFileSync(join(newDisk, "KimiWorkLegal-backup", readdirSync(join(newDisk, "KimiWorkLegal-backup"))[0]!, "location.kwlm"), "utf8"));
+  assert.equal(st.location_id, marker.id, "编号是新位置的标记");
+});
