@@ -13,7 +13,7 @@
  * - 控制面形态（第 9 批 S3）：网关的额度改由控制面额度账本发放租约（开通时注入 KWL_POINTS 点，缺省 1 亿）；律所管理员可在客户端设月度上限。
  *   KWL_CP_AUDIT_FILE：运营审计流水落盘（JSON Lines，启动时验链）。
  * - KWL_SUPPORT_DIR=<目录>（第 9 批 S13）：同时拉起支持与诊断服务 v0（诊断包上传）。运营接口按人鉴权（v9.3 A-10，共享运营口令已停用）：
- *   给出 KWL_OPS_ROSTER=<运营名册> 与 KWL_OPS_ROSTER_KEYS=<名册签名公钥 JSON> 才开放（名册用 scripts/ops-cli.mjs 生成），否则运营路径 404。
+ *   给出 KWL_OPS_ROSTER=<运营名册> 与 KWL_OPS_ROSTER_KEYS=<名册签名公钥 JSON> 才开放（名册用 scripts/ops-cli.mjs 生成，部署标识 KWL_OPS_DEPLOYMENT，缺省 dev），否则运营路径 404。
  * - KWL_NOTIFY_DIR=<目录>（第 10 批 S9）：同时拉起通知与提醒服务 v0（期限提醒：只存触发时刻、接收设备与密文；凭据由控制面签发，须 KWL_CONTROL_PLANE=1）。
  * - KWL_ACTIVATION=1（第 13 批开通与成员入组；须 KWL_CONTROL_PLANE=1）：租户要求开通码，开发用创始开通码写进 <KWL_CLOUD_DIR>/founder-code.txt。
  * - KWL_RELAY_DIR=<目录>（第 11 批 S11）：同时拉起共享中继服务 v0（团队事项密文同步；按订阅核对律所策略 share_relay，须 KWL_CONTROL_PLANE=1）。
@@ -108,7 +108,7 @@ if (process.env.KWL_SUPPORT_DIR) {
     const oa = await import("../packages/ops-auth/src/index.ts");
     const { readFileSync } = await import("node:fs");
     const rosterKeys = new Map(Object.entries(JSON.parse(readFileSync(process.env.KWL_OPS_ROSTER_KEYS, "utf8"))));
-    opsGuard = oa.createOpsGuard({ audience: "support", roster: oa.fileRosterSource({ file: process.env.KWL_OPS_ROSTER, keys: rosterKeys }), nonces: oa.memoryNonceStore() });
+    opsGuard = oa.createOpsGuard({ audience: "support", roster: oa.fileRosterSource({ file: process.env.KWL_OPS_ROSTER, keys: rosterKeys, deployment: process.env.KWL_OPS_DEPLOYMENT ?? "dev" }), nonces: oa.memoryNonceStore() });
   }
   support = sa.createSupportApi({ dir: process.env.KWL_SUPPORT_DIR, keys, meterKey, ...(opsGuard ? { opsGuard } : {}), ...(feed ? { feed } : {}) });
   await new Promise((r) => support.listen(Number(process.env.KWL_SUPPORT_PORT ?? 0), "127.0.0.1", r));

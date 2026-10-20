@@ -30,10 +30,12 @@
  *   // 支持：
  *   "meter_key_file": "...",
  *   // 运营接口（控制面、支持、中继、通知可选；v9.3 A-10 按人鉴权，共享运营口令 ops_secret_file 已停用、配了即拒绝启动）：
- *   "ops": { "roster_file": "/etc/kwl/ops-roster.json",          // 安全管理员签名的运营名册（每人的签名公钥、权限、状态；换文件即生效）
- *            "roster_keys_file": "/etc/kwl/ops-roster-keys.json", // 名册签名公钥 { kid: PEM }
- *            "allow_cidrs": ["10.20.0.0/24"] } }                  // 运维网段（堡垒机出口）：来源不在其中的运营请求一律 404
- * 没有 ops：运营路径一律 404。名册版本记录、随机数与被拒记录在 <data_dir>/<角色>/ops/。
+ *   "ops": { "deployment": "prod",                              // 部署标识：名册与运营请求签名都绑定它
+ *            "roster_file": "/etc/kwl/ops-roster.json",          // 安全管理员签名的运营名册（每人的签名公钥、权限、状态；换文件即生效，至多 31 天须重签）
+ *            "roster_keys_file": "/etc/kwl/ops-roster-keys.json", // 名册签名公钥 { kid: PEM }（只收公钥）
+ *            "allow_cidrs": ["10.20.0.0/24"],                     // 运维网段（堡垒机出口）：来源不在其中的运营请求一律 404
+ *            "min_roster_version": 12 } }                         // 可选：新实例或数据目录重建时的名册版本下限
+ * 没有 ops：运营路径一律 404。名册版本记录、换版记录、随机数与被拒记录在 <data_dir>/<角色>/ops/；名册不可用时业务照常、运营接口 503。
  * 全部密钥文件除格式外还核“是不是随机生成的”（scripts/lib/secret-strength.mjs：拒绝重复、递增、单一字符类、占位词）；服务间凭据同一要求。
  *
  * 可观测性（v9.3 A-9；scripts/lib/obs.mjs）：每个角色都写访问日志与错误日志（按白名单、不记内容，`log_dir` 缺省为 `<data_dir>/obs`，必须有其一），
@@ -80,10 +82,25 @@ const insecure = cfg.insecure_loopback_for_test === true;
 if (insecure && host !== "127.0.0.1") fail("insecure_loopback_for_test 只许监听 127.0.0.1");
 if (!insecure && !cfg.tls) fail("生产入口只接受 HTTPS：缺少 tls.cert_file / tls.key_file");
 const tls = insecure ? null : { cert: read(cfg.tls.cert_file, "tls.cert_file"), key: read(cfg.tls.key_file, "tls.key_file"), minVersion: "TLSv1.2" };
+// 公钥表 { kid: PEM }：只收公钥（复核 RA10A-01 / RA10B-01：createPublicKey 也接受私钥 PEM，私钥放错位置要拒绝）；读不出、不是 JSON、PEM 不合法一律拒绝启动（RA10B-21）
 const pubMap = (file, what) => {
-  const raw = JSON.parse(read(file, what));
+  let raw;
+  try {
+    raw = JSON.parse(read(file, what));
+  } catch {
+    fail(`${what} 不是 JSON`);
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) fail(`${what} 须为 { 密钥编号: 公钥 PEM }`);
   const m = new Map();
-  for (const [kid, pem] of Object.entries(raw)) m.set(kid, createPublicKey(String(pem)));
+  for (const [kid, pem] of Object.entries(raw)) {
+    const s = String(pem);
+    if (/PRIVATE/i.test(s) || !/-----BEGIN PUBLIC KEY-----/.test(s)) fail(`${what} 里的 ${kid} 不是公钥（只能放公钥，私钥不得放到服务上）`);
+    try {
+      m.set(kid, createPublicKey(s));
+    } catch {
+      fail(`${what} 里的 ${kid} 不是合法的公钥`);
+    }
+  }
   if (m.size === 0) fail(`${what} 为空`);
   return m;
 };
@@ -113,38 +130,57 @@ const opsMod = await import(join(root, "packages/ops-auth/src/index.ts"));
 let opsGuard = null;
 /** 运维网段（null = 没有配置运营接口：运营路径一律 404）。 */
 let opsSources = null;
+/** 启动时名册不可用的原因（不拒绝启动，只让运营接口 503；可观测性建好后记一条错误日志）。 */
+let opsStartupProblem = null;
+/** 运营网段的合理性（复核 RA10A-10）：前缀不短于 IPv4 /8、IPv6 /32，合计覆盖不超过一个 /8（/32）；生产形态不许回环、未指定与链路本地地址。 */
+const FORBIDDEN_V4 = [["127.0.0.0", 8], ["0.0.0.0", 8], ["169.254.0.0", 16]];
+const FORBIDDEN_V6 = [["::1", 128], ["::", 128], ["fe80::", 10]];
 if (cfg.ops !== undefined) {
   if (!OPS_AUDIENCE[cfg.role]) fail(`${cfg.role} 没有运营接口，不要配置 ops`);
   const c = cfg.ops ?? {};
   if (typeof c.roster_file !== "string" || !c.roster_file) fail("缺少 ops.roster_file（运营名册）");
+  if (typeof c.deployment !== "string" || !opsMod.OPS_DEPLOYMENT_RE.test(c.deployment)) fail("缺少 ops.deployment（部署标识，例如 prod；名册与运营请求都绑定它）");
+  if (c.min_roster_version !== undefined && !(Number.isSafeInteger(c.min_roster_version) && c.min_roster_version >= 1)) fail("ops.min_roster_version 须为正整数");
   const rosterKeys = pubMap(c.roster_keys_file, "ops.roster_keys_file");
   if (!Array.isArray(c.allow_cidrs) || c.allow_cidrs.length === 0) fail("ops.allow_cidrs 须列出运维网段（堡垒机出口地址）");
   opsSources = new BlockList();
+  const forbidden = new BlockList();
+  for (const [a, n] of FORBIDDEN_V4) forbidden.addSubnet(a, n, "ipv4");
+  for (const [a, n] of FORBIDDEN_V6) forbidden.addSubnet(a, n, "ipv6");
+  let cover4 = 0n;
+  let cover6 = 0n;
   for (const x of c.allow_cidrs) {
     const [addr, bits, extra] = String(x).split("/");
     const v4 = isIPv4(addr ?? "");
     if (!v4 && !isIPv6(addr ?? "")) fail(`ops.allow_cidrs 里的 ${x} 不是网段`);
     const max = v4 ? 32 : 128;
+    const min = v4 ? 8 : 32;
     const n = bits === undefined ? max : Number(bits);
-    // 不许“全部来源”（/0）：运营接口只对运维网段开放
-    if (extra !== undefined || !Number.isInteger(n) || n < 1 || n > max) fail(`ops.allow_cidrs 里的 ${x} 前缀长度不合法（1–${max}，不许 /0）`);
+    // 不许“全部来源”及过宽的网段（含用两个 /1 拼出全部来源）：运营接口只对运维网段开放
+    if (extra !== undefined || !Number.isInteger(n) || n < min || n > max) fail(`ops.allow_cidrs 里的 ${x} 前缀长度不合法（${min}–${max}）`);
+    const one = new BlockList();
+    one.addSubnet(addr, n, v4 ? "ipv4" : "ipv6");
+    const hitsForbidden = forbidden.check(addr, v4 ? "ipv4" : "ipv6") || (v4 ? FORBIDDEN_V4 : FORBIDDEN_V6).some(([fa]) => one.check(fa, v4 ? "ipv4" : "ipv6"));
+    if (hitsForbidden && !insecure) fail(`ops.allow_cidrs 里的 ${x} 含回环、未指定或链路本地地址（前置代理、边车的地址都不得列入）`);
+    if (v4) cover4 += 1n << BigInt(32 - n);
+    else cover6 += 1n << BigInt(128 - n);
     opsSources.addSubnet(addr, n, v4 ? "ipv4" : "ipv6");
   }
+  if (cover4 > 1n << 24n || cover6 > 1n << 96n) fail("ops.allow_cidrs 合计覆盖过宽（IPv4 不超过一个 /8，IPv6 不超过一个 /32）");
   const opsDir = join(dataDir(cfg.role), "ops");
   mkdirSync(opsDir, { recursive: true, mode: 0o700 });
-  let roster;
-  try {
-    roster = opsMod.fileRosterSource({ file: c.roster_file, keys: rosterKeys, seenFile: join(opsDir, "roster-seen.json") });
-  } catch {
-    fail("运营名册的版本记录读不出（ops/roster-seen.json）");
-  }
+  // 名册状态（缺失、签名不符、回滚、过期、版本记录损坏）不拒绝启动：业务照常，运营接口 503（复核 RA10A-03：回滚保护不能成为停服开关）
+  const roster = opsMod.fileRosterSource({ file: c.roster_file, keys: rosterKeys, deployment: c.deployment, seenFile: join(opsDir, "roster-seen.json"), historyFile: join(opsDir, "roster-history.jsonl"), ...(c.min_roster_version !== undefined ? { minVersion: c.min_roster_version } : {}) });
   const first = roster.current();
-  if (!first.ok) fail(`运营名册不可用（${first.reason}）`);
+  if (!first.ok) {
+    opsStartupProblem = first.reason;
+    console.error(`[cloud-serve] 运营名册不可用（${first.reason}）：运营接口暂停，业务照常`);
+  }
   opsGuard = opsMod.createOpsGuard({
     audience: OPS_AUDIENCE[cfg.role],
     roster,
     nonces: opsMod.fileNonceStore(join(opsDir, "nonces.jsonl")),
-    // 被拒的运营请求（按分钟限量）：只有声称的运营编号、原因与路径
+    // 被拒的运营请求：签名核验通过之后的一律记，未核验的每分钟至多 60 条（超出的补记条数）；claimed 未经核验
     onReject: (r) => appendFileSync(join(opsDir, "rejects.jsonl"), `${JSON.stringify(r)}\n`, { mode: 0o600 }),
   });
 }
@@ -184,7 +220,7 @@ if (cfg.role === "control-plane") {
     codePepper: Buffer.from(secretFile(cfg.code_pepper_file, "code_pepper_file", "hex32"), "hex"),
     auditLog: cpMod.createAuditLog({ file: join(dir, "audit.jsonl") }),
     // 运营接口（A-10）：写操作照常进律所可见的运营审计流水（执行者为运营编号）；每个运营请求另记内部访问审计
-    ...(opsGuard ? { opsGuard, opsAccessLog: (r) => appendFileSync(join(dir, "ops", "access.jsonl"), `${JSON.stringify(r)}\n`, { mode: 0o600 }) } : {}),
+    ...(opsGuard ? { opsGuard, opsAccessLog: (r) => opsMod.appendLineSynced(join(dir, "ops", "access.jsonl"), r) } : {}),
   }).server;
 } else {
   // 控制面以外的角色：必须订阅控制面吊销集（评审 Z4 P0-7）
@@ -231,6 +267,7 @@ mkdirSync(logDir, { recursive: true, mode: 0o700 });
 const obs = createObs({ role: cfg.role, dir: logDir, retentionDays: Number.isInteger(cfg.log_retention_days) ? cfg.log_retention_days : 190, feed, certPem: tls?.cert ?? null });
 obs.prune();
 setInterval(() => obs.prune(), 6 * 3600_000).unref();
+if (opsStartupProblem) obs.recordError("ops_roster", { code: opsStartupProblem });
 for (const ev of ["uncaughtException", "unhandledRejection"]) {
   process.on(ev, (e) => {
     obs.recordError(ev === "uncaughtException" ? "uncaught" : "unhandled_rejection", e);

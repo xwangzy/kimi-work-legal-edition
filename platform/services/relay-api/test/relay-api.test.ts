@@ -13,7 +13,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devSeatKeyPair, issueSeatToken } from "@zr-legal/seat-token";
-import { devOpsRoster, fileOpsGuard } from "@zr-legal/ops-auth";
+import { devOpsRoster, fileOpsGuard } from "@zr-legal/ops-auth/testing";
 import { createRelayApi, RELAY_CHUNK_MAX, RELAY_UNCOMMITTED_TTL_MS, segmentOwnedBy, type RelayAccessRecord } from "../src/index.ts";
 
 const { privateKey, publicKey } = devSeatKeyPair();
@@ -25,10 +25,13 @@ const clock = Date.parse("2026-10-16T02:00:00.000Z");
 const servers: ReturnType<typeof createRelayApi>[] = [];
 
 /** 运营按人鉴权（v9.3 A-10）：op_0001 可重置与整体删除，op_0002 只能按事项重置。 */
-const OPS = devOpsRoster([
-  { id: "op_0001", perms: ["relay.reset", "tenant.purge"] },
-  { id: "op_0002", perms: ["relay.reset"] },
-]);
+const OPS = devOpsRoster(
+  [
+    { id: "op_0001", perms: ["relay.reset", "tenant.purge"] },
+    { id: "op_0002", perms: ["relay.reset"] },
+  ],
+  { issuedAt: clock },
+);
 const opsGuard = (dir: string) => fileOpsGuard({ dir: `${dir}-ops`, audience: "relay", roster: OPS.roster, rosterKeys: OPS.rosterKeys, now: () => clock });
 const opsDel = (base: string, path: string, who = "op_0001", extra: Record<string, string> = {}) =>
   fetch(`${base}${path}`, { method: "DELETE", headers: { ...OPS.sign(who, "relay", { method: "DELETE", path }, clock), ...extra } }).then(async (r) => ({ status: r.status, json: (await r.json()) as any }));
@@ -302,6 +305,13 @@ test("RA-09 运营：按租户整体删除、按事项重置（须按人运营�
   const mid = newMid();
   assert.equal((await writeSeg(base, mid, C(), "devC", { readers: ["devC"] })).r.status, 200);
   assert.equal((await writeSeg(base, mid, A(), "devA")).r.json.error, "not_reader");
+  // 不签名、签的是别的事项：都不能重置（复核 RA10B-12）
+  const unsigned = await fetch(`${base}/v1/relay/ops/tenants/t1/matters/${mid}`, { method: "DELETE" });
+  assert.equal(unsigned.status, 401);
+  const otherMid = newMid();
+  const wrong = await fetch(`${base}/v1/relay/ops/tenants/t1/matters/${mid}`, { method: "DELETE", headers: OPS.sign("op_0002", "relay", { method: "DELETE", path: `/v1/relay/ops/tenants/t1/matters/${otherMid}` }, clock) });
+  assert.equal(wrong.status, 401);
+  assert.equal(s.tenant("t1")!.controller(mid), "u-devC", "被拒的重置没有动事项");
   assert.equal((await opsDel(base, `/v1/relay/ops/tenants/t1/matters/${mid}`, "op_0002")).status, 200);
   assert.deepEqual([log.at(-1)!.action, log.at(-1)!.operator, log.at(-1)!.op_key], ["matter_reset", "op_0002", "k1"]);
   assert.equal((await call(base, "GET", "/v1/relay/changes/0", C())).json.items.length, 0, "重置后旧段不再可见");
@@ -321,6 +331,8 @@ test("RA-09 运营：按租户整体删除、按事项重置（须按人运营�
   assert.ok(existsSync(join(dir, "t", "t1")));
   assert.equal((await opsDel(again.base, "/v1/relay/ops/tenants/t1")).status, 200);
   assert.deepEqual([log.at(-1)!.action, log.at(-1)!.operator], ["tenant_purge", "op_0001"]);
+  assert.throws(() => createRelayApi({ dir: mkdtempSync(join(tmpdir(), "kwl-ra-")), keys, feed, opsSecret: "ops-secret-0123456789" } as never), /共享运营口令已停用/);
+  assert.throws(() => createRelayApi({ dir: mkdtempSync(join(tmpdir(), "kwl-ra-")), keys, feed, opsGuard: fileOpsGuard({ dir: mkdtempSync(join(tmpdir(), "kwl-ra-ops-")), audience: "notify", roster: OPS.roster, rosterKeys: OPS.rosterKeys }) }), /受众须为 relay/);
   assert.ok(!existsSync(join(dir, "t", "t1")));
   assert.equal((await call(again.base, "GET", "/v1/relay/changes/0", B())).json.items.length, 0);
 });

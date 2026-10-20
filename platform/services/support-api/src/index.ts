@@ -39,6 +39,8 @@ export interface SupportAccessRecord {
   operator: string | null;
   /** 运营用的密钥编号（运营访问时；丢失某把密钥后据此查它做过什么）。 */
   op_key?: string;
+  /** 授权所依据的运营名册版本（运营访问时）。 */
+  roster_version?: number;
   tid: string | null;
   /** 设备编号的服务端 HMAC（前 16 位）。 */
   dev: string | null;
@@ -205,11 +207,11 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
     return c;
   };
   /** 运营请求按人核验（签名、名册、随机数、权限）；没有配置运营守卫即按不存在处理。被拒的另记访问审计（守卫内按分钟限量）。 */
-  const opsAuth = (req: IncomingMessage, raw: string, perm: OpsPermission): { who: string; key: string } => {
+  const opsAuth = (req: IncomingMessage, raw: string, perm: OpsPermission): { who: string; key: string; rv: number } => {
     if (!o.opsGuard) throw Object.assign(new Error("not_found"), { status: 404 });
     try {
       const r = o.opsGuard.authorize(req.headers, { method: req.method ?? "GET", path: raw }, perm);
-      return { who: r.operator, key: r.kid };
+      return { who: r.operator, key: r.kid, rv: r.roster_version };
     } catch (e) {
       if (e instanceof OpsAuthError) throw Object.assign(new Error(e.code), { status: e.status });
       throw e;
@@ -295,7 +297,7 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
 
     // ─── 运营：列出、下载、删除（每次访问都记访问审计） ───
     if (method === "GET" && raw === "/v1/support/ops/packages") {
-      const { who, key } = opsAuth(req, raw, "support.read");
+      const { who, key, rv } = opsAuth(req, raw, "support.read");
       const list: Omit<TicketMeta, "upload_token_sha256">[] = [];
       for (const f of readdirSync(o.dir)) {
         const m = /^(SUP-[0-9A-Z-]+)\.json$/.exec(f);
@@ -305,27 +307,27 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
           list.push(rest);
         }
       }
-      access({ at: iso(), action: "list", ticket: null, operator: who, op_key: key, tid: null, dev: null, bytes: null, result: `ok:${list.length}` });
+      access({ at: iso(), action: "list", ticket: null, operator: who, op_key: key, roster_version: rv, tid: null, dev: null, bytes: null, result: `ok:${list.length}` });
       return send(res, 200, { packages: list });
     }
     const op = /^\/v1\/support\/ops\/packages\/(SUP-[0-9A-Z]{4}-[0-9A-Z]{4})$/.exec(raw);
     if (op && (method === "GET" || method === "DELETE")) {
-      const { who, key } = opsAuth(req, raw, method === "GET" ? "support.read" : "support.delete");
+      const { who, key, rv } = opsAuth(req, raw, method === "GET" ? "support.read" : "support.delete");
       const meta = readMeta(op[1]!);
       if (!meta?.uploaded_at) {
-        access({ at: iso(), action: method === "GET" ? "download" : "delete", ticket: op[1]!, operator: who, op_key: key, tid: null, dev: null, bytes: null, result: "not_found" });
+        access({ at: iso(), action: method === "GET" ? "download" : "delete", ticket: op[1]!, operator: who, op_key: key, roster_version: rv, tid: null, dev: null, bytes: null, result: "not_found" });
         return send(res, 404, { error: "not_found" });
       }
       // 运营操作先记访问审计、记不进去即不执行（复核 S9B-10）
       if (method === "DELETE") {
-        access({ at: iso(), action: "delete", ticket: meta.ticket, operator: who, op_key: key, tid: meta.tid, dev: meta.dev, bytes: meta.bytes, result: "ok" });
+        access({ at: iso(), action: "delete", ticket: meta.ticket, operator: who, op_key: key, roster_version: rv, tid: meta.tid, dev: meta.dev, bytes: meta.bytes, result: "ok" });
         rmSync(binPath(meta.ticket), { force: true });
         rmSync(metaPath(meta.ticket), { force: true });
         return send(res, 200, { ok: true });
       }
       const body = readRegular(binPath(meta.ticket));
       if (!body) return send(res, 404, { error: "not_found" });
-      access({ at: iso(), action: "download", ticket: meta.ticket, operator: who, op_key: key, tid: meta.tid, dev: meta.dev, bytes: body.byteLength, result: "ok" });
+      access({ at: iso(), action: "download", ticket: meta.ticket, operator: who, op_key: key, roster_version: rv, tid: meta.tid, dev: meta.dev, bytes: body.byteLength, result: "ok" });
       res.writeHead(200, {
         "content-type": "application/json; charset=utf-8",
         "cache-control": "no-store",

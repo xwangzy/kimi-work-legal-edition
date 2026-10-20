@@ -11,7 +11,7 @@ import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devSeatKeyPair, issueSeatToken } from "@zr-legal/seat-token";
-import { devOpsRoster, fileOpsGuard } from "@zr-legal/ops-auth";
+import { devOpsRoster, fileOpsGuard } from "@zr-legal/ops-auth/testing";
 import { createNotifyApi, NOTIFY_RETENTION_MS } from "../src/index.ts";
 
 const { privateKey, publicKey } = devSeatKeyPair();
@@ -225,10 +225,13 @@ test("NA-08 落盘：启动时删掉崩溃残留的临时状态文件；状态�
 test("NA-09 生产形态必须接吊销订阅；运营按租户整体删除（先记访问审计；按人运营签名与 tenant.purge 权限，共享口令不再接受；复核 S10A-13/15、v9.3 A-10）", async () => {
   assert.throws(() => createNotifyApi({ dir: mkdtempSync(join(tmpdir(), "kwl-na-")), keys, production: true }), /吊销订阅/);
   assert.throws(() => createNotifyApi({ dir: mkdtempSync(join(tmpdir(), "kwl-na-")), keys, feed, opsSecret: "ops-secret-0123456789" } as never), /共享运营口令已停用/);
-  const OPS = devOpsRoster([
-    { id: "op_0001", perms: ["tenant.purge"] },
-    { id: "op_0002", perms: ["support.read"] },
-  ]);
+  const OPS = devOpsRoster(
+    [
+      { id: "op_0001", perms: ["tenant.purge"] },
+      { id: "op_0002", perms: ["support.read"] },
+    ],
+    { issuedAt: clock },
+  );
   const guard = fileOpsGuard({ dir: mkdtempSync(join(tmpdir(), "kwl-na-ops-")), audience: "notify", roster: OPS.roster, rosterKeys: OPS.rosterKeys, now: () => clock });
   assert.throws(() => createNotifyApi({ dir: mkdtempSync(join(tmpdir(), "kwl-na-")), keys, feed, opsGuard: fileOpsGuard({ dir: mkdtempSync(join(tmpdir(), "kwl-na-ops-")), audience: "relay", roster: OPS.roster, rosterKeys: OPS.rosterKeys }) }), /受众须为 notify/);
   const access: any[] = [];

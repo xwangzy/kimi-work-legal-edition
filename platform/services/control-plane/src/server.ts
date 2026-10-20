@@ -22,7 +22,7 @@ import type { StateStore } from "./state-store.ts";
 import { createAuditLog, type AuditEntry, type AuditLog } from "./audit-log.ts";
 import { emptyQuota, grantPoints as quotaGrant, leaseQuota, QuotaError, quotaView, setCap as quotaSetCap, settleLease, type QuotaState } from "./quota.ts";
 import { canonicalJson, verifyBytes, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
-import { OpsAuthError, type OpsGuard, type OpsPermission } from "@zr-legal/ops-auth";
+import { OpsAuthError, type OpsAuthorized, type OpsGuard, type OpsPermission } from "@zr-legal/ops-auth";
 import { issueSeatToken, MIN_SEAT_TTL_SECONDS } from "@zr-legal/seat-token";
 import {
   activationCodeMac,
@@ -218,6 +218,8 @@ export interface CpOpsAccessRecord {
   action: string;
   operator: string;
   op_key: string;
+  /** 授权所依据的运营名册版本（复核 RA10A-07）。 */
+  roster_version: number;
   tid: string | null;
   target: string | null;
   /** requested（执行前）/ ok / rejected:<代码>。 */
@@ -229,8 +231,8 @@ export interface ControlPlaneOps {
   createTenant(o: { tid: string; edition: LicenseBody["edition"]; seats: number; subscriptionDays?: number; points?: number; name?: string; activationRequired?: boolean }): TenantRecord;
   /** 发创始开通码（交律所管理员）：返回码明文（只此一次）；云端只存 HMAC。 */
   issueActivationCode(tid: string, o: { member: { slug: string; name?: string }; ttlHours?: number }): { code: string; activation_id: string; expires_at: string };
-  /** 作废尚未消费的开通码 / 邀请码。 */
-  revokeActivationCode(tid: string, activationId: string): void;
+  /** 作废尚未消费的开通码 / 邀请码；by 为作废者（管理员设备编号；缺省为当前运维执行者）。 */
+  revokeActivationCode(tid: string, activationId: string, o?: { by?: string }): void;
   /**
    * 开通记录清理（复核 A-16；控制面每小时自动执行）：成员显示名只用于兑换时回显——已过期、已作废、已消费或已提交入组申请的码清空姓名；
    * 已结束（消费、作废、过期）超过 31 天、且没有待批准申请的码记录连同入组申请记录删除（批准后 30 天内仍可凭认领凭据取回证书）。
@@ -634,17 +636,17 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     issueActivationCode(tid, { member, ttlHours = 14 * 24 }) {
       return issueCode(tenantOf(tid), { kind: "founder", member: { slug: member.slug, name: member.name ?? null, role: "admin" }, ttlHours, by: opsActor.id });
     },
-    revokeActivationCode(tid, activationId) {
+    revokeActivationCode(tid, activationId, o2 = {}) {
       const t = tenantOf(tid);
       const r = t.activations.get(activationId);
       if (!r) throw new CpError(404, "activation_unknown", "没有这个开通码");
       if (r.status === "consumed") throw new CpError(409, "activation_consumed", "开通码已使用，不能作废（请改为吊销设备）");
       r.status = "revoked";
       r.member.name = null;
-      for (const jr of t.joinRequests.values()) if (jr.activation_id === r.id && jr.status === "pending") Object.assign(jr, { status: "rejected", decided_at: iso(), decided_by: opsActor.id });
+      for (const jr of t.joinRequests.values()) if (jr.activation_id === r.id && jr.status === "pending") Object.assign(jr, { status: "rejected", decided_at: iso(), decided_by: o2.by ?? opsActor.id });
     },
     setQuotaCap(tid, cap) {
-      quotaSetCap(tenantOf(tid).quota, cap, now(), null);
+      quotaSetCap(tenantOf(tid).quota, cap, now(), opsActor.id === "ops" ? null : opsActor.id);
     },
     sweepOnboarding() {
       const t0 = now();
@@ -723,7 +725,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           if (entry && tenants.has(tid)) audit({ ...entry, result: "ok" });
         } catch (e) {
           rollback();
-          if (entry && tenants.has(tid)) {
+          // 被拒记录同样按“租户 + 执行者 + 动作 + 分钟”限量（复核 RA10B-08：运营接口走网络后，被拒请求不能撑大律所的流水）
+          if (entry && tenants.has(tid) && rejectedAllowed(entry)) {
             try {
               auditLog.append({ ...entry, result: `rejected:${e instanceof CpError || e instanceof QuotaError ? e.code : "error"}` }, iso());
             } catch {
@@ -936,6 +939,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
 
   // ─── 运营接口（v9.3 A-10）：按人运营签名 + 权限；写操作经运维包装（审计执行者 = 运营编号），另记内部访问审计 ───
+  // 守卫的受众须为控制面（复核 RA10A-15：配错时签给支持服务的请求不能在这里通过）
+  if (o.opsGuard && o.opsGuard.audience !== "control-plane") throw new Error("运营守卫的受众须为 control-plane");
   const opsAccess = o.opsAccessLog ?? (() => {});
   const asOperator = <T>(id: string, fn: () => T): T => {
     opsActor = { kind: "ops", id };
@@ -949,9 +954,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (typeof v !== "number" || !Number.isSafeInteger(v) || v < lo || v > hi) throw new CpError(400, code, `${what}须为 ${lo}–${hi} 的整数`);
     return v;
   };
+  /** 发码者对外只给种类（复核 RA10B-05：管理员发的邀请码 created_by 是设备编号，其中有成员标识）。 */
+  const issuerKind = (by: string) => (by === "ops" || /^op_[0-9]+$/.test(by) ? by : "firm_admin");
   const tenantSummary = (t: TenantRecord) => {
     const q = quotaView(t.quota, now(), { detail: false, seatOwner: () => null, ownSid: null });
     const devs = [...t.devices.values()];
+    const all = [...t.activations.values()];
+    const invites = all.filter((r) => r.kind !== "founder");
     return {
       tid: t.tid,
       name: t.name ?? null,
@@ -964,21 +973,31 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       root_enrolled: t.root_public_key_pem !== null,
       devices: { active: devs.filter((d) => !d.revoked_at).length, revoked: devs.filter((d) => d.revoked_at).length, pre_revoked: t.preRevoked.size },
       seats_used: [...t.seatsByUser.values()].filter((x) => !x.revoked_at).length,
-      // 开通码与邀请码只给编号、种类、状态与时刻（不给成员标识与姓名）
-      activations: [...t.activations.values()].map((r) => ({ id: r.id, kind: r.kind, status: r.status, created_at: r.created_at, expires_at: r.expires_at, created_by: r.created_by })),
+      // 只列创始开通码（运营的事）；律所管理员发的成员邀请码只给计数（复核 RA10B-06）。不给成员标识与姓名
+      activations: all.filter((r) => r.kind === "founder").map((r) => ({ id: r.id, status: r.status, created_at: r.created_at, expires_at: r.expires_at, issued_by: issuerKind(r.created_by) })),
+      member_invitations: { total: invites.length, open: invites.filter((r) => r.status === "open").length },
       quota: { period: q.period, paused: q.paused, cap_monthly: q.cap_monthly, period_used: q.period_used, pool_remaining: t.quota.pool },
     };
   };
-  type OpsSpec = { perm: OpsPermission; action: string; tid: string | null; target: string | null; run: () => unknown };
-  const opsSpec = (method: string, p: string, b: Record<string, unknown>): OpsSpec | null => {
-    if (method === "POST" && p === "/v1/ops/tenants") {
-      const tid = typeof b.tid === "string" ? b.tid : "";
+  type OpsSpec = {
+    perm: OpsPermission;
+    action: string;
+    /** 租户与目标编号（内部访问审计用；开通时租户编号在请求体里）。 */
+    tid: (b: Record<string, unknown>) => string | null;
+    target: (b: Record<string, unknown>) => string | null;
+    run: (b: Record<string, unknown>, who: OpsAuthorized) => unknown;
+  };
+  /** 运营路由只按方法与路径确定（先鉴权、后解析请求体；复核 RA10B-21）。 */
+  const opsSpec = (method: string, p: string): OpsSpec | null => {
+    const none = () => null;
+    if (method === "POST" && p === "/v1/ops/tenants")
       return {
         perm: "tenant.manage",
         action: "tenant.create",
-        tid: /^[A-Za-z0-9_-]{1,64}$/.test(tid) ? tid : null,
-        target: null,
-        run: () => {
+        tid: (b) => (typeof b.tid === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(b.tid) ? b.tid : null),
+        target: none,
+        run: (b, who) => {
+          const tid = typeof b.tid === "string" ? b.tid : "";
           // 经运营接口开通的租户一律要求开通码（不能再开“知道租户编号即可抢先登记律所根”的口子）
           if (!firmSlugOf(tid)) throw new CpError(400, "tid_not_activatable", "租户编号须为 ten_<律所标识>");
           if (tenants.has(tid)) throw new CpError(409, "tenant_exists", "租户已存在");
@@ -986,25 +1005,27 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           const seats = intIn(b.seats, 1, 10_000, "seats_invalid", "席位数");
           const subscriptionDays = b.subscription_days === undefined ? 365 : intIn(b.subscription_days, 1, 3650, "days_invalid", "订阅天数");
           const points = b.points === undefined ? 0 : intIn(b.points, 0, Number.MAX_SAFE_INTEGER, "points_invalid", "点数");
+          // 开通时附带点数等于加量：另须 quota.manage（复核 RA10B-07）
+          if (points > 0 && !who.perms.includes("quota.manage")) throw new CpError(403, "ops_permission_denied", "开通时附带点数须有加量权限");
           if (b.name !== undefined && typeof b.name !== "string") throw new CpError(400, "tenant_name_invalid", "律所名称须为 1–40 个字符");
           const t = ops.createTenant({ tid, edition: b.edition, seats, subscriptionDays, points, ...(typeof b.name === "string" ? { name: b.name } : {}), activationRequired: true });
           return { ok: true, tenant: tenantSummary(t) };
         },
       };
-    }
     const m = /^\/v1\/ops\/tenants\/([A-Za-z0-9_-]{1,64})(?:\/(.+))?$/.exec(p);
     if (!m) return null;
     const tid = m[1]!;
     const rest = m[2] ?? "";
-    if (method === "GET" && rest === "") return { perm: "tenant.read", action: "tenant.read", tid, target: null, run: () => ({ tenant: tenantSummary(tenantOf(tid)) }) };
+    const at = () => tid;
+    if (method === "GET" && rest === "") return { perm: "tenant.read", action: "tenant.read", tid: at, target: none, run: () => ({ tenant: tenantSummary(tenantOf(tid)) }) };
     if (method !== "POST") return null;
     if (rest === "activation-codes")
       return {
         perm: "activation.issue",
         action: "activation.issue",
-        tid,
-        target: null,
-        run: () => {
+        tid: at,
+        target: none,
+        run: (b) => {
           if (typeof b.slug !== "string") throw new CpError(400, "member_slug_invalid", "成员标识只允许小写字母、数字、下划线与连字符");
           if (b.name !== undefined && typeof b.name !== "string") throw new CpError(400, "member_name_invalid", "成员姓名须为 1–40 个字符");
           const ttlHours = b.ttl_hours === undefined ? undefined : intIn(b.ttl_hours, 1, 14 * 24, "ttl_invalid", "有效小时数");
@@ -1013,63 +1034,91 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         },
       };
     const ac = /^activation-codes\/(act_[A-Za-z0-9_-]{16})\/revoke$/.exec(rest);
-    if (ac) return { perm: "activation.issue", action: "activation.revoke", tid, target: ac[1]!, run: () => (ops.revokeActivationCode(tid, ac[1]!), { ok: true }) };
-    if (rest === "renew") return { perm: "tenant.manage", action: "license.renew", tid, target: null, run: () => ({ ok: true, license: ops.renewLicense(tid, intIn(b.days, 1, 3650, "days_invalid", "续订天数")) }) };
-    if (rest === "terminate") return { perm: "tenant.manage", action: "license.terminate", tid, target: null, run: () => ({ ok: true, license: ops.terminateLicense(tid) }) };
-    if (rest === "points") return { perm: "quota.manage", action: "quota.grant", tid, target: null, run: () => (ops.grantPoints(tid, b.points as number), { ok: true }) };
-    if (rest === "cap") {
-      if (!("cap" in b)) return { perm: "quota.manage", action: "quota.cap_set", tid, target: null, run: () => { throw new CpError(400, "cap_invalid", "须给出 cap（点数，或 null 表示不设上限）"); } };
-      return { perm: "quota.manage", action: "quota.cap_set", tid, target: null, run: () => (ops.setQuotaCap(tid, b.cap as number | null), { ok: true }) };
-    }
+    if (ac)
+      return {
+        perm: "activation.issue",
+        action: "activation.revoke",
+        tid: at,
+        target: () => ac[1]!,
+        run: () => {
+          // 运营只作废创始开通码；律所管理员发的成员邀请码是律所自己的事（复核 RA10B-06）
+          if (tenantOf(tid).activations.get(ac[1]!)?.kind !== "founder") throw new CpError(404, "activation_unknown", "没有这个开通码");
+          ops.revokeActivationCode(tid, ac[1]!);
+          return { ok: true };
+        },
+      };
+    if (rest === "renew") return { perm: "tenant.manage", action: "license.renew", tid: at, target: none, run: (b) => ({ ok: true, license: ops.renewLicense(tid, intIn(b.days, 1, 3650, "days_invalid", "续订天数")) }) };
+    if (rest === "terminate") return { perm: "tenant.terminate", action: "license.terminate", tid: at, target: none, run: () => ({ ok: true, license: ops.terminateLicense(tid) }) };
+    if (rest === "points") return { perm: "quota.manage", action: "quota.grant", tid: at, target: none, run: (b) => (ops.grantPoints(tid, b.points as number), { ok: true }) };
+    if (rest === "cap")
+      return {
+        perm: "quota.cap",
+        action: "quota.cap_set",
+        tid: at,
+        target: none,
+        run: (b) => {
+          if (!("cap" in b)) throw new CpError(400, "cap_invalid", "须给出 cap（点数，或 null 表示不设上限）");
+          // 运营代设上限只能调低（复核 RA10A-17）：调高或取消律所已设的上限是放宽律所的管控，须律所管理员自己在客户端操作
+          const cur = tenantOf(tid).quota.cap_monthly;
+          if (cur !== null && (b.cap === null || (typeof b.cap === "number" && b.cap > cur))) throw new CpError(409, "cap_raise_by_firm_only", "调高或取消月度上限须由律所管理员操作");
+          ops.setQuotaCap(tid, b.cap as number | null);
+          return { ok: true };
+        },
+      };
     const dv = /^devices\/([^/]{1,200})\/revoke$/.exec(rest);
     if (dv)
       return {
         perm: "device.revoke",
         action: "device.revoke",
-        tid,
-        target: dv[1]!,
-        run: () => {
+        tid: at,
+        target: () => dv[1]!,
+        run: (b, who) => {
           const t = tenantOf(tid);
-          ops.revokeDevice(tid, dv[1]!, b.cert !== undefined ? { cert: b.cert } : {});
+          ops.revokeDevice(tid, dv[1]!, { ...(b.cert !== undefined ? { cert: b.cert } : {}), by: who.operator });
           return { ok: true, directory_version: t.directoryVersion };
         },
       };
     const st = /^seats\/([^/]{1,200})\/revoke$/.exec(rest);
-    if (st)
+    if (st) {
+      let uid = "";
+      try {
+        uid = decodeURIComponent(st[1]!);
+      } catch {
+        uid = "";
+      }
       return {
         perm: "device.revoke",
         action: "seat.revoke",
-        tid,
-        target: null,
+        tid: at,
+        // 内部访问审计记席位编号（复核 RA10B-18；成员编号不记）
+        target: () => tenants.get(tid)?.seatsByUser.get(uid)?.sid ?? null,
         run: () => {
           const t = tenantOf(tid);
-          let uid = "";
-          try {
-            uid = decodeURIComponent(st[1]!);
-          } catch {
-            throw new CpError(400, "seat_invalid", "成员编号不合法");
-          }
+          if (!uid) throw new CpError(400, "seat_invalid", "成员编号不合法");
           if (!t.seatsByUser.has(uid)) throw new CpError(404, "seat_unknown", "成员没有席位");
           ops.revokeSeat(tid, uid);
           return { ok: true, directory_version: t.directoryVersion };
         },
       };
+    }
     return null;
   };
+  const OPS_AUTH_MESSAGE: Record<number, string> = { 401: "运营凭据无效、已吊销或已过期", 403: "没有这项运营权限", 503: "运营名册暂不可用（运营接口暂停，业务不受影响）" };
   const opsRoute = (req: IncomingMessage, res: ServerResponse, method: string, path: string, p: string, raw: string): void => {
     if (!o.opsGuard) throw new CpError(404, "not_found", "没有这条路由");
     // 运营路径按请求行原样匹配（不认查询串、点段与编码）：生产入口按原样路径判断来源网段，规范化后才落到运营路由的写法一律不认
     if (path !== p) throw new CpError(404, "not_found", "没有这条路由");
-    const spec = opsSpec(method, p, method === "GET" ? {} : parseJson(raw));
+    const spec = opsSpec(method, p);
     if (!spec) throw new CpError(404, "not_found", "没有这条路由");
-    let who: { operator: string; kid: string };
+    let who: OpsAuthorized;
     try {
       who = o.opsGuard.authorize(req.headers, { method, path, body: raw }, spec.perm);
     } catch (e) {
-      if (e instanceof OpsAuthError) throw new CpError(e.status, e.code, "运营凭据无效、已吊销或没有这项权限");
+      if (e instanceof OpsAuthError) throw new CpError(e.status, e.code, OPS_AUTH_MESSAGE[e.status] ?? "运营凭据无效");
       throw e;
     }
-    const rec = { action: spec.action, operator: who.operator, op_key: who.kid, tid: spec.tid, target: spec.target };
+    const b = method === "GET" ? {} : parseJson(raw);
+    const rec = { action: spec.action, operator: who.operator, op_key: who.kid, roster_version: who.roster_version, tid: spec.tid(b), target: spec.target(b) };
     // 先记“已请求”：记不进去即不执行（与支持服务同一口径；读操作只有这一处审计）
     try {
       opsAccess({ at: iso(), ...rec, result: "requested" });
@@ -1078,7 +1127,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     let out: unknown;
     try {
-      out = asOperator(who.operator, spec.run);
+      out = asOperator(who.operator, () => spec.run(b, who));
     } catch (e) {
       try {
         opsAccess({ at: iso(), ...rec, result: `rejected:${e instanceof CpError || e instanceof QuotaError ? e.code : "error"}` });
@@ -1543,7 +1592,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       requireAdmin(dev);
       const r = t.activations.get(rir[1]!);
       if (!r || r.kind !== "member") throw new CpError(404, "activation_unknown", "没有这个邀请");
-      viaRoute(() => ops.revokeActivationCode(t.tid, r.id));
+      viaRoute(() => ops.revokeActivationCode(t.tid, r.id, { by: dev.cert.deviceId }));
       return send(res, 200, { ok: true });
     }
     if (method === "GET" && p === "/v1/join-requests") {

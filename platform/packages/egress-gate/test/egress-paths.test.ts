@@ -57,10 +57,23 @@ test("闸门里所有写外发路径的源文件都在登记表里（新加一�
   assert.ok(outboundPaths("packages/egress-gate/src/notify-relay.ts", nr).includes("/v1/notify/extra/{}"));
 });
 
-/** 登记表里的路径能否落到运营接口上（控制面白名单为正则，其余为模板，{} 按最坏情况取 "ops"）。 */
+/**
+ * 登记表里的路径能否落到运营接口上（复核 RA10B-09 加严）：控制面白名单为正则——正则源码里出现 ops 路径段即算，另对运营接口的全部子路径逐条试；
+ * 其余为模板，{} 按最坏情况取 "ops"。
+ */
 export function reachesOps(paths: string[], opsRe: RegExp): string[] {
-  const samples = ["/v1/ops", "/v1/ops/tenants", "/v1/ops/tenants/ten_x", "/v1/ops/tenants/ten_x/activation-codes", "/v1/support/ops/packages", "/v1/support/ops/packages/SUP-AAAA-BBBB", "/v1/relay/ops/tenants/t1", "/v1/notify/ops/tenants/t1"];
-  return paths.filter((p) => (p.startsWith("^") ? samples.some((s) => new RegExp(p).test(s)) : opsRe.test(p.replace(/\{\}/g, "ops"))));
+  const samples = [
+    "/v1/ops",
+    "/v1/ops/tenants",
+    "/v1/ops/tenants/ten_x",
+    ...["activation-codes", "activation-codes/act_AAAAAAAAAAAAAAAA/revoke", "renew", "terminate", "points", "cap", "devices/dev_x_y/revoke", "seats/u1/revoke"].map((x) => `/v1/ops/tenants/ten_x/${x}`),
+    "/v1/support/ops/packages",
+    "/v1/support/ops/packages/SUP-AAAA-BBBB",
+    "/v1/relay/ops/tenants/t1",
+    "/v1/relay/ops/tenants/t1/matters/mat_00000000-0000-4000-8000-000000000000",
+    "/v1/notify/ops/tenants/t1",
+  ];
+  return paths.filter((p) => (p.startsWith("^") ? /(?:\\\/|\/|\^)ops(?:\\\/|\/|\$|\b)/.test(p) || samples.some((s) => new RegExp(p).test(s)) : opsRe.test(p.replace(/\{\}/g, "ops"))));
 }
 
 test("律师电脑的闸门不外发到任何运营接口（v9.3 A-10：运营路径只给按人签名的运营，且只从运维网段进来）", async () => {
@@ -70,4 +83,5 @@ test("律师电脑的闸门不外发到任何运营接口（v9.3 A-10：运营�
   // 反向对照：往控制面白名单里加一条运营路径、往模板里加一条运营路径，都能被认出
   assert.deepEqual(reachesOps(["^\\/v1\\/ops\\/tenants\\/[^/]+$"], OPS_PATH_RE), ["^\\/v1\\/ops\\/tenants\\/[^/]+$"]);
   assert.deepEqual(reachesOps(["/v1/relay/{}/tenants/x"], OPS_PATH_RE), ["/v1/relay/{}/tenants/x"]);
+  for (const re of ["^\\/v1\\/ops\\/tenants\\/[^/]+\\/points$", "^\\/v1\\/[a-z]+\\/tenants\\/[^/]+\\/(?:renew|terminate)$", "^\\/v1\\/relay\\/ops\\/tenants\\/[^/]+\\/matters\\/[^/]+$"]) assert.deepEqual(reachesOps([re], OPS_PATH_RE), [re], `复核 RA10B-09 的漏网写法：${re}`);
 });

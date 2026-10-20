@@ -86,6 +86,8 @@ export interface NotifyAccessRecord {
   operator: string;
   /** 运营用的密钥编号。 */
   op_key: string;
+  /** 授权所依据的运营名册版本。 */
+  roster_version: number;
   tid: string;
   removed: number;
   result: string;
@@ -264,11 +266,11 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
     return c;
   };
   /** 运营请求按人核验（签名、名册、随机数、权限；v9.3 A-10）；没有配置运营守卫即按不存在处理。 */
-  const opsAuth = (req: IncomingMessage, raw: string, perm: OpsPermission): { who: string; key: string } => {
+  const opsAuth = (req: IncomingMessage, raw: string, perm: OpsPermission): { who: string; key: string; rv: number } => {
     if (!o.opsGuard) throw new HttpError(404, "not_found");
     try {
       const r = o.opsGuard.authorize(req.headers, { method: req.method ?? "GET", path: raw }, perm);
-      return { who: r.operator, key: r.kid };
+      return { who: r.operator, key: r.kid, rv: r.roster_version };
     } catch (e) {
       if (e instanceof OpsAuthError) throw new HttpError(e.status, e.code);
       throw e;
@@ -471,11 +473,11 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
     // ─── 运营：律所退约时按租户整体删除（先记访问审计，记不进去即不删；复核 S10A-15） ───
     const opsTenant = /^\/v1\/notify\/ops\/tenants\/([A-Za-z0-9_-]{1,80})$/.exec(raw);
     if (opsTenant && method === "DELETE") {
-      const { who, key } = opsAuth(req, raw, "tenant.purge");
+      const { who, key, rv } = opsAuth(req, raw, "tenant.purge");
       const tid = opsTenant[1]!;
       const removedR = [...byKey].filter(([, r]) => r.tid === tid);
       const removedT = [...tombs].filter(([, t]) => t.tid === tid);
-      access({ at: iso(), action: "tenant_purge", operator: who, op_key: key, tid, removed: removedR.length, result: "ok" });
+      access({ at: iso(), action: "tenant_purge", operator: who, op_key: key, roster_version: rv, tid, removed: removedR.length, result: "ok" });
       for (const [k] of removedR) byKey.delete(k);
       for (const [k] of removedT) tombs.delete(k);
       try {
@@ -484,7 +486,7 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
         for (const [k, r] of removedR) byKey.set(k, r);
         for (const [k, t] of removedT) tombs.set(k, t);
         try {
-          access({ at: iso(), action: "tenant_purge", operator: who, op_key: key, tid, removed: 0, result: "rolled_back:state_persist_failed" });
+          access({ at: iso(), action: "tenant_purge", operator: who, op_key: key, roster_version: rv, tid, removed: 0, result: "rolled_back:state_persist_failed" });
         } catch {
           // 访问审计不可用：生产由告警处理
         }

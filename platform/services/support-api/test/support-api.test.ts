@@ -12,15 +12,18 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devSeatKeyPair, issueSeatToken } from "@zr-legal/seat-token";
-import { devOpsRoster, fileOpsGuard } from "@zr-legal/ops-auth";
+import { devOpsRoster, fileOpsGuard } from "@zr-legal/ops-auth/testing";
 import { createSupportApi, SUPPORT_MAX_BYTES, TICKETS_PER_DEVICE_PER_DAY, type SupportAccessRecord } from "../src/index.ts";
 
 const { privateKey, publicKey } = devSeatKeyPair();
 const keys = new Map([["k1", publicKey]]);
-const OPS = devOpsRoster([
-  { id: "op_0001", perms: ["support.read", "support.delete"] },
-  { id: "op_0002", perms: ["support.read"] },
-]);
+const OPS = devOpsRoster(
+  [
+    { id: "op_0001", perms: ["support.read", "support.delete"] },
+    { id: "op_0002", perms: ["support.read"] },
+  ],
+  { issuedAt: Date.parse("2026-10-15T08:00:00Z") },
+);
 const guardFor = () => fileOpsGuard({ dir: mkdtempSync(join(tmpdir(), "kwl-support-ops-")), audience: "support", roster: OPS.roster, rosterKeys: OPS.rosterKeys, now: () => clock });
 const METER = Buffer.alloc(32, 7);
 const allowed = new Set(["t_ok"]);
@@ -178,4 +181,5 @@ test("每设备每天 10 张按存储计（重启同一密钥不清零）；吊�
   assert.ok(access.some((r) => r.action === "expire" && r.ticket === t.ticket));
   assert.throws(() => createSupportApi({ dir, keys, production: true }), /meterKey/);
   assert.throws(() => createSupportApi({ dir, keys, meterKey: METER, opsSecret: "ops-secret-0123456789" } as never), /共享运营口令已停用/);
+  assert.throws(() => createSupportApi({ dir, keys, meterKey: METER, opsGuard: fileOpsGuard({ dir: mkdtempSync(join(tmpdir(), "kwl-support-ops-")), audience: "relay", roster: OPS.roster, rosterKeys: OPS.rosterKeys }) }), /受众须为 support/);
 });

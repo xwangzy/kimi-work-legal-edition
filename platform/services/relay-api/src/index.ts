@@ -138,6 +138,8 @@ export interface RelayAccessRecord {
   operator: string;
   /** 运营用的密钥编号。 */
   op_key: string;
+  /** 授权所依据的运营名册版本。 */
+  roster_version: number;
   tid: string;
   mid?: string;
   removed_bytes: number;
@@ -446,11 +448,11 @@ export function createRelayApi(o: RelayApiOptions): Server & {
     return c;
   };
   /** 运营请求按人核验（签名、名册、随机数、权限；v9.3 A-10）；没有配置运营守卫即按不存在处理。 */
-  const opsAuth = (req: IncomingMessage, raw: string, perm: OpsPermission): { who: string; key: string } => {
+  const opsAuth = (req: IncomingMessage, raw: string, perm: OpsPermission): { who: string; key: string; rv: number } => {
     if (!o.opsGuard) throw new HttpError(404, "not_found");
     try {
       const r = o.opsGuard.authorize(req.headers, { method: req.method ?? "GET", path: raw }, perm);
-      return { who: r.operator, key: r.kid };
+      return { who: r.operator, key: r.kid, rv: r.roster_version };
     } catch (e) {
       if (e instanceof OpsAuthError) throw new HttpError(e.status, e.code);
       throw e;
@@ -800,13 +802,13 @@ export function createRelayApi(o: RelayApiOptions): Server & {
     // ─── 运营：律所退约时按租户整体删除；中继上的事项状态异常时按事项重置（先记访问审计，记不进去即不删） ───
     const opsMatter = /^\/v1\/relay\/ops\/tenants\/([A-Za-z0-9_-]{1,80})\/matters\/([^/]+)$/.exec(raw);
     if (opsMatter && method === "DELETE") {
-      const { who, key } = opsAuth(req, raw, "relay.reset");
+      const { who, key, rv } = opsAuth(req, raw, "relay.reset");
       const [tid, mid] = [opsMatter[1]!, opsMatter[2]!];
       if (!MATTER_ID_RE.test(mid)) throw new HttpError(400, "matter_invalid");
       const t = tenantOf(tid);
       let bytes = 0;
       for (const [k, cinfo] of t.chunks) if (k.startsWith(`${mid}/`)) bytes += cinfo.size;
-      access({ at: iso(), action: "matter_reset", operator: who, op_key: key, tid, mid, removed_bytes: bytes, result: "ok" });
+      access({ at: iso(), action: "matter_reset", operator: who, op_key: key, roster_version: rv, tid, mid, removed_bytes: bytes, result: "ok" });
       const rec: ResetRecord = { k: "reset", mid, at: iso(), operator: who };
       appendJournal(t, Buffer.from(`${JSON.stringify(rec)}\n`, "utf8"));
       for (const x of t.entries) if (x.mid === mid) t.gone.add(x.seq);
@@ -822,11 +824,11 @@ export function createRelayApi(o: RelayApiOptions): Server & {
     }
     const opsTenant = /^\/v1\/relay\/ops\/tenants\/([A-Za-z0-9_-]{1,80})$/.exec(raw);
     if (opsTenant && method === "DELETE") {
-      const { who, key } = opsAuth(req, raw, "tenant.purge");
+      const { who, key, rv } = opsAuth(req, raw, "tenant.purge");
       const tid = opsTenant[1]!;
       const t = tenants.get(tid);
       const bytes = t?.bytes ?? 0;
-      access({ at: iso(), action: "tenant_purge", operator: who, op_key: key, tid, removed_bytes: bytes, result: "ok" });
+      access({ at: iso(), action: "tenant_purge", operator: who, op_key: key, roster_version: rv, tid, removed_bytes: bytes, result: "ok" });
       // 先标记“删除中”，在途请求读完请求体后放弃（复核 S11A-09）
       if (t) t.purging = true;
       tenants.delete(tid);

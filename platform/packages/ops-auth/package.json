@@ -5,7 +5,8 @@
   "type": "module",
   "description": "运营按人鉴权（v9.3 A-10；Y2 §3.12 运营控制台“堡垒机 + 双因素 + 三权分立”的研发侧）：安全管理员签名的运营名册（每人一把或几把签名公钥、权限、按人或按密钥吊销、版本只增）+ 运营请求签名（绑定服务、方法、路径、请求体、时刻与随机数）；云端只存公钥",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
   },
   "dependencies": {
     "@zr-legal/keys": "*"

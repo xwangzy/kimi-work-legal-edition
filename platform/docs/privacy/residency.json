@@ -799,7 +799,7 @@
       "memory": "内核（控制面客户端、律所治理）",
       "disk": "账本 firm_policies / firm_connectors / firm_trust / cp_documents / cp_high_water / cp_pending_actions / cp_revoked_devices / cp_alerts / cp_audit_records / cp_audit_signed_page / seats / member_removals / anon_matter_outbox / support_uploads（SQLCipher；只有编号、版本、签名文档、计数与错误代码，匿名事项摘要只含事项密级与策略指纹，不含标题与当事人）；cp_alerts 另有告警说明文字（≤ 600 字：设备编号、成员编号、事项编号、版本号，吊销后终止任务失败一条另带 120 字以内的异常信息；不含姓名原文与事项标题——成员编号由律所或运营设定，创始成员的可能是姓名拼音；第 14 批核实复核 A-17 ②）",
       "local_channels": "内核 ↔ 闸门（Node IPC，控制面通道）",
-      "network": "经出站闸门控制面通道：设备公钥与证书、席位申请、匿名事项摘要、本机吊销；中软控制面保存租户、设备目录、席位、额度池与按席位的点数用量（不含内容）、运营审计流水（动作代码、执行者编号、目标编号与结果；中软运营的操作记到按人的运营编号——工号形态 op_…、不是姓名，v9.3 A-10，律所本机留存的流水里同样是运营编号）；移出成员（第 14 批续 B-10）时按成员编号向中软发“释放席位”请求（/v1/seats/<成员编号>/revoke；断网或失败时记在 member_removals，随下次控制面同步重试；第 15 批复核 R15A-16）",
+      "network": "经出站闸门控制面通道：设备公钥与证书、席位申请、匿名事项摘要、本机吊销；中软控制面保存租户、设备目录、席位、额度池与按席位的点数用量（不含内容）、运营审计流水（动作代码、执行者编号、目标编号与结果；中软运营的操作记到按人的运营编号——op_ 加数字工号、不是姓名（名册校验强制），v9.3 A-10，律所本机留存的流水里同样是运营编号）；移出成员（第 14 批续 B-10）时按成员编号向中软发“释放席位”请求（/v1/seats/<成员编号>/revoke；断网或失败时记在 member_removals，随下次控制面同步重试；第 15 批复核 R15A-16）",
       "logs_dumps": "运行记录只记事件码；审计只记动作与编号",
       "form": [
         "sqlcipher",
@@ -1172,7 +1172,7 @@
   "out_of_scope": {
     "apps/firm-node/": "所内节点（无界面服务，律所服务器上的存储与日志另行规定）",
     "packages/im-connectors/": "所内节点 IM 连接器",
-    "packages/ops-auth/": "中软云端运营按人鉴权（v9.3 A-10；只在云端服务与运营命令行里用，律师电脑上的内核、闸门与客户端都不引用——ops-auth.test.ts 门禁）：写的是云端的运营名册版本记录与运营请求随机数，不含律所数据",
+    "packages/ops-auth/": "中软云端运营按人鉴权（v9.3 A-10；只在云端服务与运营命令行里用，律师电脑上的内核、闸门与客户端都不引用——ops-auth.test.ts 门禁）：写的是云端的运营名册版本记录、名册换版记录与运营请求随机数（只供用例与开发的 testing.ts 另写一份名册副本），不含律所数据",
     "services/": "中软云端服务（Y2 第 6 章：只计量不留案件内容）；例外：支持服务（services/support-api）保存律师逐次确认上传的脱敏诊断包 7 天（不含案件内容，内容见第 13 类与“数据去向说明”）",
     "packages/kap-host/vendor/": "Kimi Code 引擎制品（kap-embed.mjs）：引擎的持久化经宿主注入的种子（SealedFileStorageService、事件日志 JournalIo、broker）改写为 KWE1 密文；制品内直接文件写入由 static-surface.test.ts 按输入文件另行锁定，不在本扫描内"
   },
