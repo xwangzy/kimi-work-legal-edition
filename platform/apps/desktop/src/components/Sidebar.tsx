@@ -14,14 +14,14 @@ interface Item {
 }
 
 // 侧栏收敛（Z3 评审 IA-1、IA-2、#9）：“看板”与首页、事项页重复，“方法与模板”与首页场景卡重复，不再占一级入口；
-// #/boards、#/methods 两个路由保留（首页“更多场景 →”进入方法与模板；事项页有本事项看板）
+// #/boards、#/methods 两个路由保留（首页“更多场景 →”进入方法与模板；事项页有本事项看板）。
+// “设置”收进底部用户卡（Z3 IA-6、#9：姓名、律所名、齿轮；“本机运行 · 防护正常”降为卡片里的一行小字）
 const ITEMS: Item[] = [
   { key: "home", label: "新建任务", icon: Icon.plus, href: "/" },
   { key: "matters", label: "事项", icon: Icon.folder, href: "/matters" },
   { key: "deliverables", label: "交付件", icon: Icon.file, href: "/deliverables" },
   { key: "reminders", label: "期限提醒", icon: Icon.bell, href: "/reminders" },
   { key: "chat", label: "问答", icon: Icon.chat, href: "/chat" },
-  { key: "connections", label: "设置", icon: Icon.plug, href: "/connections" },
 ];
 
 export function Sidebar({ route }: { route: Route }) {
@@ -32,6 +32,7 @@ export function Sidebar({ route }: { route: Route }) {
   // 执行域标注由能力账本推出（复核 S5-A10：W 不可用时如实写“未隔离：不运行代码”）
   const [execOk, setExecOk] = useState<boolean | null>(true);
   const [tick, setTick] = useState(0);
+  const [me, setMe] = useState<{ name: string | null; firm: string | null; admin: boolean } | null>(null);
   useEffect(() => onDataChanged(() => setTick((t) => t + 1)), []);
   // 任务状态变化（开始等待、结束）时刷新侧栏状态点；运行中另每 5 秒刷新一次
   useEffect(() => onKernelEvent((m) => (m?.type === "run.updated" || m?.type === "run.settled" || m?.type === "reminder.due" ? setTick((t) => t + 1) : undefined)), []);
@@ -53,7 +54,10 @@ export function Sidebar({ route }: { route: Route }) {
     api.remindersUnread().then((r) => setUnreadReminders(r.unread)).catch(() => {});
     api
       .kernelStatus()
-      .then((s) => setStatus({ gate: s.egress_gate ? true : false, unresolved: s.egress_gate?.unresolved ?? 0 }))
+      .then((s) => {
+        setStatus({ gate: s.egress_gate ? true : false, unresolved: s.egress_gate?.unresolved ?? 0 });
+        setMe({ name: s.activation?.member?.name ?? null, firm: s.activation?.firm?.name ?? null, admin: s.member_role === "firm_admin" || s.member_role === "partner" });
+      })
       .catch(() => setStatus({ gate: null, unresolved: 0 }));
     api
       .capabilities()
@@ -116,12 +120,22 @@ export function Sidebar({ route }: { route: Route }) {
           </button>
         ))}
       </div>
-      <button className="sidebar-foot" onClick={() => nav("/connections/device")} title="本机与安全">
-        <span className={`dot ${footTone}`} />
-        <span>
-          {footTitle}
-          {footNote && <small>{footNote}</small>}
+      <button className={`sidebar-foot${route.page === "connections" ? " active" : ""}`} onClick={() => nav(footTone === "dot-ok" ? "/connections" : "/connections/device")} title="设置">
+        <span className="user-avatar" aria-hidden="true">
+          {(me?.name ?? me?.firm ?? "我").slice(0, 1)}
         </span>
+        <span className="user-text">
+          <b>{me?.name ?? "本机"}</b>
+          <small>{me?.firm ?? "开发形态"}</small>
+          <small>
+            <span className={`dot ${footTone}`} /> {footTitle}
+            {footNote ? `：${footNote}` : ""}
+          </small>
+        </span>
+        <span className="user-gear" aria-hidden="true">
+          {Icon.gear()}
+        </span>
+        <span className="sr-only">设置</span>
       </button>
     </aside>
   );

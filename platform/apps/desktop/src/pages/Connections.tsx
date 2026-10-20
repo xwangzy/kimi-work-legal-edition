@@ -548,7 +548,8 @@ function DeviceTab({ caps, gate, mySafety, recovery, admin }: { caps: Capabiliti
 
 /** 管理（ST-1、ST-4）：律所策略、用量与上限、中软侧操作记录、诊断（工程细节）、召回评测（律所内）。 */
 function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[]; unresolved: any[]; onReconciled: () => void; im: any[]; recovery: any }) {
-  const [sub, setSub] = useState<"members" | "policy" | "usage" | "cp_audit" | "diagnostics" | "recall">("members");
+  // 子标签收敛（Z3 评审 #7.3、I2 遗留）：诊断与替换准确度测试是给律所 IT 与中软运维用的，收进“技术支持”
+  const [sub, setSub] = useState<"members" | "policy" | "usage" | "cp_audit" | "support">("members");
   return (
     <div>
       <div className="tabs" role="tablist" aria-label="管理">
@@ -556,10 +557,9 @@ function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[];
           [
             ["members", "成员"],
             ["policy", "律所策略"],
-            ["usage", "用量与上限"],
-            ["cp_audit", "中软侧操作记录"],
-            ["diagnostics", "诊断"],
-            ["recall", "替换准确度测试"],
+            ["usage", "用量"],
+            ["cp_audit", "操作记录"],
+            ["support", "技术支持"],
           ] as const
         ).map(([k, label]) => (
           <button key={k} role="tab" aria-selected={sub === k} className={`tab${sub === k ? " active" : ""}`} onClick={() => setSub(k)}>
@@ -571,8 +571,19 @@ function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[];
       {sub === "policy" && <PolicyTab />}
       {sub === "usage" && <UsagePanel />}
       {sub === "cp_audit" && <CpAuditPanel />}
-      {sub === "diagnostics" && <DiagnosticsTab {...props} />}
-      {sub === "recall" && <RecallEvalPanel />}
+      {sub === "support" && (
+        <>
+          <p className="muted">这里是给律所 IT 和中软客服看的技术细节：一般不用打开。</p>
+          <details>
+            <summary>诊断</summary>
+            <DiagnosticsTab {...props} />
+          </details>
+          <details>
+            <summary>替换准确度测试</summary>
+            <RecallEvalPanel />
+          </details>
+        </>
+      )}
     </div>
   );
 }
