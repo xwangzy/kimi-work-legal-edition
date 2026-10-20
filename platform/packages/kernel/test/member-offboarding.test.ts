@@ -125,7 +125,7 @@ test("离所交接：个人事项导出归档、团队事项交负责人与中�
   assert.equal((await kA.inv("members.roster")).members.find((x: any) => x.member_id === usr("carol")).status, "devices_stopped");
   // 不能在这台电脑上停用它自己（复核 R15A-03）
   await assert.rejects(kA.inv("devices.revoke", { device_id: roster.members.find((x: any) => x.is_me).devices[0].device_id }), /不能在这台电脑上停用它自己/);
-  // 只有开通律所（持有律所根）的电脑能移出成员
+  // “只有开通律所（持有律所根）的电脑能移出成员”这里测不出来：只有 alice 一位管理员（处置表 R15A-03 记为无用例）
   // 中软暂时连不上：席位释放记下来，之后随同步自动重试（复核 R15A-11）
   cloud.setControlPlaneAvailable(false);
   const rm = await kA.inv("members.remove", { member_id: usr("carol") });
