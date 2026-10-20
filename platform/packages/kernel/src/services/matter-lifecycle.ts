@@ -32,6 +32,8 @@ export interface LifecycleDeps {
   signPublicKeyPem: string;
   /** 清理本机 Agent 数据（关闭引擎、删除 kap/<事项>、删除工作区密钥）；有进行中任务时抛错。 */
   purgeAgentData: (matterId: string) => Promise<void>;
+  /** 是否设置了本应用的自动备份位置（第 14 批：删除回执写明备份位置上的副本怎么处理）。 */
+  backupConfigured?: () => boolean;
 }
 
 interface MatterRow {
@@ -305,6 +307,13 @@ export async function purgeMatter(
           status: inventory.exports! > 0 ? "kept" : "none",
           note: inventory.exports! > 0 ? `${inventory.exports} 次导出或下载：文件在律师自己选择的位置，本产品无法删除，请按律所档案制度处理` : "没有导出或下载记录",
         },
+        d.backupConfigured?.()
+          ? {
+              where: "本应用的自动备份（设置 · 恢复与备份里选的备份位置）",
+              status: "pending",
+              note: "删除后立即再备份一次，成功后备份位置上只留新的一代：之前几代账本快照（里面还有本事项的密钥包裹）与本事项的块随之删除；备份位置当时不可用的，下次备份成功时删除。备份位置自身若保留旧版本（网盘版本历史、NAS 快照），旧版本连同恢复包与恢复码仍可解开本事项——请按律所保留期清理；换过备份位置的，旧位置上的备份不会被清理",
+            }
+          : { where: "本应用的自动备份（设置 · 恢复与备份里选的备份位置）", status: "none", note: "没有设置备份位置" },
         {
           // 第 02 篇 §9.13“备份待到期”：系统备份在律所自有系统中，本产品不控制（D-52）
           where: "电脑与律所的系统备份（Windows 系统还原点与卷影副本、文件历史、NAS 快照、备份软件）",

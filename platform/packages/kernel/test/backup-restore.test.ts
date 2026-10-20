@@ -57,6 +57,12 @@ test("备份 → 恢复包 → 新电脑从备份恢复：身份与数据与原�
   mkdirSync(join(dirA, "bk-firm", "kap", "m-test", "work"), { recursive: true });
   const stable = randomBytes(64); // 各代备份都引用的同一个对象
   writeFileSync(join(dirA, "bk-firm", "kap", "m-test", "work", "NAMECANARY-起诉状.docx"), stable);
+  // 不进备份的路径（复核 R2A-13）：入组/认领暂存、设备导出、运行期日志与套接字、执行域临时目录、写到一半的文件
+  const skipped = ["keys/join-pending.json", "keys/activation-claim.json", "recovery/device-export.kwlr", "logs/kernel.log", "run/planted-state", "kap/m-test/w-tmp/x.bin", "kap/m-test/work/半成品.docx.part"];
+  for (const rel of skipped) {
+    mkdirSync(join(dirA, "bk-firm", rel, ".."), { recursive: true });
+    writeFileSync(join(dirA, "bk-firm", rel), randomBytes(32));
+  }
 
   // 备份位置不能在数据目录里（含经链接指进去的）
   await assert.rejects(a.invoke("backup.configure", { dir: dirA }), (e: any) => e.code === "validation");
@@ -174,6 +180,8 @@ test("备份 → 恢复包 → 新电脑从备份恢复：身份与数据与原�
   // 再恢复一次（这次选的是 KimiWorkLegal-backup 文件夹），主进程采用成功（以旧主密钥重启）：事项与材料原文都在
   await restore({}, join(backupDir, "KimiWorkLegal-backup"));
   await new Promise((res) => setTimeout(res, 600));
+  for (const rel of skipped) assert.ok(!existsSync(join(dirN, "bk-firm", rel)), `不进备份的路径没有被恢复出来：${rel}`);
+  assert.ok(existsSync(join(dirN, "bk-firm", "kap", "m-test", "work", "NAMECANARY-起诉状.docx")), "对照：普通工作区文件恢复出来了");
   await closeK(n);
   const n2 = await kernelAt(dirN, { dbKey: keyA, onboarding: true });
   const st2 = (await n2.invoke("kernel.status")) as any;

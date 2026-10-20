@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 import { existsSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { signSyncWith, verifyBytes, verifyDeviceCertificate } from "@zr-legal/keys";
 import { collectRecoveryContent, openRecoveryPackage, peekRecoveryPackage, sealRecoveryPackage } from "./services/recovery-package.ts";
-import { cleanupRestoreStaging, configureBackup, readBackupState, RESTORED_MARKER, restoreFromBackup, runBackup, type BackupDeps } from "./services/backup.ts";
+import { cleanupRestoreStaging, configureBackup, markPrunePending, readBackupState, RESTORED_MARKER, restoreFromBackup, runBackup, type BackupDeps } from "./services/backup.ts";
 import { writeExportFile } from "./services/export-file.ts";
 
 import { EgressGate, type DestinationKind } from "@zr-legal/egress";
@@ -618,6 +618,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const shutdownHooks: (() => void)[] = [];
   const api = createApi({
     purgeAgentData: purgeAgentDataFor,
+    backupConfigured: () => !!readBackupState(join(config.workspaceDir, "backup.json")).dir,
     onShutdown: (fn) => shutdownHooks.push(fn),
     skills: skillsBundle,
     content: contentUpdater,
@@ -1058,13 +1059,17 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
             backupTimer.unref();
           }, (5 + Math.random() * 10) * 60_000);
     backupFirst?.unref();
-    // 删除事项后立即再备份一次（复核 R2A-10）：备份位置上的旧账本快照（仍有该事项的密钥包裹）与该事项的块随之删除
+    // 删除事项后（复核 R2A-10）：记“待清旧代”并立即再备份一次——这次成功后备份位置上只留新的一代，旧几代账本快照（仍有该事项的密钥包裹）
+    // 与该事项的块随之删除；正有一次备份在跑（它的账本快照是删除之前的），等它结束再备份一次；备份位置不可用时标记留到下次成功
     const purge = api["matters.purge"];
     if (purge) {
       api["matters.purge"] = async (p, id) => {
         const r = await purge(p, id);
-        const st = readBackupState(backupDeps.stateFile);
-        if (st.dir && !revoked()) backgroundBackup();
+        if (markPrunePending(backupDeps.stateFile) && !revoked()) {
+          const inFlight = backupRun;
+          if (inFlight) void inFlight.catch(() => {}).finally(backgroundBackup);
+          else backgroundBackup();
+        }
         return r;
       };
     }

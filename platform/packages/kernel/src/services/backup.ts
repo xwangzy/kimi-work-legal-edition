@@ -16,8 +16,9 @@
  * - 异步执行（复核 R2B-04）：读写用异步文件接口、每处理一批文件让出事件循环，界面与任务照常响应；退出与安装更新前可取消（AbortSignal）。
  * - 恢复：先验签名、解密清单，再逐个读出对象、核对摘要、写进数据根下的暂存目录，全部通过后整体改名就位（读与核同一份字节，R2A-12）；
  *   任何一步失败都删掉暂存，不留残余（R2A-15）。
- * 删除事项后内核立即再备份一次（R2A-10），备份位置上的旧账本快照与该事项的块随之删除；备份位置若保留旧版本（网盘版本历史、NAS 快照），
- * 旧版本连同恢复包与恢复码仍能解开——删除回执如实写明。
+ * 删除事项后（R2A-10）：状态里记“待清旧代”（prune_pending），内核立即再备份一次，这一次成功后**只留新的一代**——保留的旧几代账本快照里
+ * 还有该事项的密钥包裹，不清掉就谈不上删除（第 14 批余项：7 代保留〔R2B-03〕原先让删除承诺落空）。备份位置当时不可用、或删除时正有一次备份在跑，
+ * 标记留着，下一次成功的备份再清。备份位置若自身保留旧版本（网盘版本历史、NAS 快照），旧版本连同恢复包与恢复码仍能解开——删除回执如实写明。
  * 备份盘标记（复核 R2B-06）：选定位置时在设备目录里写 location.kwlm（随机编号，不含任何身份），编号同时记进本机状态；
  * 每次备份先核对标记——U 盘拔掉后同一个盘符换成了别的 U 盘、读卡器或手机，标记对不上就停下、报“备份盘不是原来那块”，
  * 不在别的盘上新建任何东西（原先每次都逐级建目录，备份会悄悄写到律师不知道的盘上）。
@@ -63,6 +64,8 @@ export interface BackupState {
   dir: string | null;
   /** 备份盘标记的编号（复核 R2B-06）；第 14 批第二轮之前设置的位置没有，第一次备份时按“已有备份即认”补上。 */
   location_id: string | null;
+  /** 删除过事项、还没清掉旧几代（R2A-10）：下一次成功的备份只留新的一代。 */
+  prune_pending: boolean;
   seq: number;
   last_ok_at: string | null;
   last_error: string | null;
@@ -156,6 +159,7 @@ export function readBackupState(stateFile: string): BackupState {
     return {
       dir: typeof s.dir === "string" ? s.dir : null,
       location_id: typeof s.location_id === "string" && LOCATION_ID.test(s.location_id) ? s.location_id : null,
+      prune_pending: s.prune_pending === true,
       seq: Number(s.seq) || 0,
       last_ok_at: s.last_ok_at ?? null,
       last_error: s.last_error ?? null,
@@ -163,11 +167,19 @@ export function readBackupState(stateFile: string): BackupState {
       last_bytes: Number(s.last_bytes) || 0,
     };
   } catch {
-    return { dir: null, location_id: null, seq: 0, last_ok_at: null, last_error: null, last_files: 0, last_bytes: 0 };
+    return { dir: null, location_id: null, prune_pending: false, seq: 0, last_ok_at: null, last_error: null, last_files: 0, last_bytes: 0 };
   }
 }
 
 const LOCATION_ID = /^[0-9a-f]{32}$/;
+
+/** 删除事项后调用（R2A-10）：记“待清旧代”，下一次成功的备份只留新的一代。没有设置备份位置时什么也不做。 */
+export function markPrunePending(stateFile: string): boolean {
+  const st = readBackupState(stateFile);
+  if (!st.dir) return false;
+  writeJsonFile(stateFile, { ...st, prune_pending: true });
+  return true;
+}
 
 /** 读备份盘标记（不存在、是链接或格式不对即 null）。 */
 function readLocationMarker(target: string): string | null {
@@ -354,10 +366,11 @@ export async function runBackup(d: BackupDeps): Promise<BackupState & { copied: 
     const tmp = tmpName(mfPath);
     await writeFile(tmp, JSON.stringify(mf), { flag: "wx", mode: 0o600 });
     await renameRetry(tmp, mfPath);
-    // 4. 只保留最近几代；删除不再被任何保留的清单引用的对象与残留临时文件
+    // 4. 只保留最近几代（删除过事项后只留新的这一代，R2A-10）；删除不再被任何保留的清单引用的对象与残留临时文件
     const gens = generations(target);
+    const keepGens = st.prune_pending ? 1 : KEEP_GENERATIONS;
     const keep = new Set<string>([ledger.sha256, ...files.map((f) => f.sha256)]);
-    for (const g of gens.slice(1, KEEP_GENERATIONS)) {
+    for (const g of gens.slice(1, keepGens)) {
       try {
         const om = decryptManifest(g.file, keys.manifest, target, null);
         keep.add(om.ledger.sha256);
@@ -366,18 +379,20 @@ export async function runBackup(d: BackupDeps): Promise<BackupState & { copied: 
         // 解不开的旧清单（损坏）：它引用的对象不再保留
       }
     }
-    for (const g of gens.slice(KEEP_GENERATIONS)) rmSync(g.file, { force: true });
+    for (const g of gens.slice(keepGens)) rmSync(g.file, { force: true });
     for (const name of readdirSync(objects)) if (!keep.has(name) && (/^[0-9a-f]{64}$/.test(name) || /\.tmp-[0-9a-f]{12}$/.test(name))) rmSync(join(objects, name), { force: true });
     for (const name of readdirSync(target)) if (/\.tmp-[0-9a-f]{12}$/.test(name)) rmSync(join(target, name), { force: true });
     writeJsonFile(d.indexFile, { v: 1, entries: next });
-    const out: BackupState = { ...st, location_id: locationId, seq: m.seq, last_ok_at: m.at, last_error: null, last_files: files.length + 1, last_bytes: bytes };
+    // 本次开始之后才记下的“待清旧代”（备份进行中删除了事项：本次的账本快照是删除之前的）留给下一次
+    const prunePending = st.prune_pending ? false : readBackupState(d.stateFile).prune_pending;
+    const out: BackupState = { ...st, location_id: locationId, prune_pending: prunePending, seq: m.seq, last_ok_at: m.at, last_error: null, last_files: files.length + 1, last_bytes: bytes };
     writeJsonFile(d.stateFile, out);
     d.onProgress?.({ done: list.length, total: list.length });
     return { ...out, copied };
   } catch (e) {
     const code = e instanceof DomainError ? String(e.detail?.code ?? e.code) : String((e as NodeJS.ErrnoException)?.code ?? "backup_failed");
     try {
-      writeJsonFile(d.stateFile, { ...st, last_error: code });
+      writeJsonFile(d.stateFile, { ...st, prune_pending: st.prune_pending || readBackupState(d.stateFile).prune_pending, last_error: code });
     } catch {
       // 状态写不进去：本次备份本来就失败了
     }

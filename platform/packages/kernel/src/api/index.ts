@@ -131,6 +131,8 @@ export interface ApiDeps {
   content?: ContentUpdater;
   /** 清理一个事项的本机 Agent 数据与工作区密钥（结案、删除时调用；有进行中任务时抛错）。 */
   purgeAgentData?: (matterId: string) => Promise<void>;
+  /** 是否设置了本应用的自动备份位置（删除回执用）。 */
+  backupConfigured?: () => boolean;
   /** 登记内核关闭前要执行的冲刷（例如未到期的还原审计窗口）。 */
   onShutdown?: (fn: () => void) => void;
   /** 期限提醒（第 10 批 S9）。 */
@@ -365,6 +367,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     signer: keyctx.device.signer,
     signPublicKeyPem: keyctx.device.cert.signPublicKeyPem,
     purgeAgentData: deps.purgeAgentData ?? (async () => {}),
+    ...(deps.backupConfigured ? { backupConfigured: deps.backupConfigured } : {}),
   });
   /** 删除回执（含签名与签名设备证书，可离线验签：证书由律所根公钥签发）。 */
   const receiptView = (matterId: string) => {
