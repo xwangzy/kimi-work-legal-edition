@@ -7,7 +7,8 @@
  * - 经出站闸门发往法律模型网关（中软不保存问答内容）；**历史只在本机**（qa_* 表；界面显示时按会话令牌表还原）；
  * - 模型调用经注入的 ask（闸门 /q/<会话> 路由），本模块不含任何网络代码。
  */
-import { randomBytes } from "node:crypto";
+import { localToday } from "./local-date.ts";
+import { createHash, randomBytes } from "node:crypto";
 import { MatterTokenizer, restoreTokens, type TokenEntry } from "@zr-legal/tokenizer";
 import { newId } from "@zr-legal/domain";
 import type { KernelDb } from "../db.ts";
@@ -31,7 +32,11 @@ export interface QaCitations {
   wrong: number;
   outside: number;
   cases: number;
-  items: { raw: string; kind: "wrong" | "case" | "outside" | "ok"; reason: string | null }[];
+  items: { raw: string; kind: "wrong" | "case" | "outside" | "ok"; reason: string | null; partial?: boolean }[];
+  /** 核到了、但只核到条号的条数（复核 R15B-05）。 */
+  partial?: number;
+  /** 写了“第X条”却没认出是哪部法的处数（复核 R15B-02）。 */
+  unrecognized?: number;
   registry: string;
   as_of: string;
   /** 核对本身出错：界面说“没有核对成功，请自行核对”，不当成没有引用。 */
@@ -131,22 +136,34 @@ export class QaChatService {
    * 回答里的引用（B-6）：与成果签发门禁同一口径离线核对——条号不对、法规库外、案号离线、已核到。每次显示时现算（法规库更新后结论跟着变），
    * 不存结论；出错按“没有核对”处理，不显示成“没问题”。
    */
+  /** 显示时现算的结论按“回答原文 + 法规库版本 + 日期”缓存（复核 R15B-16：长会话每次打开不再全部重算）。 */
+  private readonly citeCache = new Map<string, QaCitations | null>();
+
   private citations(text: string): QaCitations | null {
     if (!this.d.lawdb) return null;
-    const asOf = new Date().toISOString().slice(0, 10);
+    const asOf = localToday();
+    const key = `${this.d.lawdb.packageVersion}\u0000${asOf}\u0000${createHash("sha256").update(text).digest("hex")}`;
+    if (this.citeCache.has(key)) return this.citeCache.get(key)!;
     try {
       const c = checkArtifactCitations(this.d.lawdb, "answer.md", Buffer.from(text, "utf8"), asOf);
-      if (!c.checked || c.total === 0) return null;
-      return {
-        total: c.total,
-        verified: c.verified,
-        wrong: c.wrong,
-        outside: c.outside_registry,
-        cases: c.unverified_offline,
-        items: c.items.map((i) => ({ raw: i.raw, kind: i.kind, reason: i.reason })),
-        registry: c.registry_coverage,
-        as_of: asOf,
-      };
+      const out: QaCitations | null =
+        !c.checked || (c.total === 0 && !c.unrecognized)
+          ? null
+          : {
+              total: c.total,
+              verified: c.verified,
+              wrong: c.wrong,
+              outside: c.outside_registry,
+              cases: c.unverified_offline,
+              items: c.items.map((i) => ({ raw: i.raw, kind: i.kind, reason: i.reason, ...(i.partial ? { partial: true } : {}) })),
+              partial: c.partial ?? 0,
+              unrecognized: c.unrecognized ?? 0,
+              registry: c.registry_coverage,
+              as_of: asOf,
+            };
+      if (this.citeCache.size > 500) this.citeCache.clear();
+      this.citeCache.set(key, out);
+      return out;
     } catch {
       return { total: 0, verified: 0, wrong: 0, outside: 0, cases: 0, items: [], registry: "", as_of: asOf, unchecked: true };
     }

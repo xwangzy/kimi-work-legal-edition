@@ -6,6 +6,7 @@ export interface CitationItem {
   raw: string;
   kind: "wrong" | "case" | "outside" | "ok";
   reason: string | null;
+  partial?: boolean;
 }
 
 export interface ArtifactCitations {
@@ -14,6 +15,8 @@ export interface ArtifactCitations {
   wrong: number;
   unverified_offline: number;
   outside_registry: number;
+  partial?: number;
+  unrecognized?: number;
   items: CitationItem[];
 }
 
@@ -25,6 +28,9 @@ export interface CitationNeeds {
   counts: { wrong: number; cases: number; outside: number };
   /** 系统没有核对这份文件（格式不认识、读取出错）。 */
   unchecked: boolean;
+  /** 只核到条号的条数、没认出是哪部法的“第X条”处数（只提示，复核 R15B-02/05）。 */
+  partial: number;
+  unrecognized: number;
 }
 
 export interface CitationTicks {
@@ -37,8 +43,8 @@ export interface CitationTicks {
 export function citationNeeds(ac: ArtifactCitations | null | undefined, runCases = 0): CitationNeeds {
   const rc = Number.isFinite(runCases) && runCases > 0 ? runCases : 0;
   const none = { wrong: 0, cases: rc, outside: 0 };
-  if (!ac) return { wrong: [], cases: [], outside: [], counts: none, unchecked: false };
-  if (!ac.checked) return { wrong: [], cases: [], outside: [], counts: none, unchecked: true };
+  if (!ac) return { wrong: [], cases: [], outside: [], counts: none, unchecked: false, partial: 0, unrecognized: 0 };
+  if (!ac.checked) return { wrong: [], cases: [], outside: [], counts: none, unchecked: true, partial: 0, unrecognized: 0 };
   const items = Array.isArray(ac.items) ? ac.items : [];
   const wrong = items.filter((i) => i.kind === "wrong");
   const cases = items.filter((i) => i.kind === "case");
@@ -50,6 +56,8 @@ export function citationNeeds(ac: ArtifactCitations | null | undefined, runCases
     outside,
     counts: { wrong: Math.max(n(ac.wrong), wrong.length), cases: Math.max(n(ac.unverified_offline), cases.length) + rc, outside: Math.max(n(ac.outside_registry), outside.length) },
     unchecked: false,
+    partial: n(ac.partial),
+    unrecognized: n(ac.unrecognized),
   };
 }
 

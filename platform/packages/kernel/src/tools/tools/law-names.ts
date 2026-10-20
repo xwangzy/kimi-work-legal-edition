@@ -107,8 +107,10 @@ export const BARE_NAMES: readonly string[] = Object.keys(LAW_ALIASES)
 
 /** 名称 → 查法规库时依次尝试的写法：原样、简称表的全称、加或去“中华人民共和国”前缀；圆括号统一为全角，序号“（一）”与“一”互通。 */
 export function lawNameCandidates(name: string): string[] {
-  const raw = name.replace(/\s+/g, "").replace(/〈/g, "《").replace(/〉/g, "》").replace(/\(/g, "（").replace(/\)/g, "）");
-  const out = new Set<string>([raw]);
+  const full = name.replace(/\s+/g, "").replace(/〈/g, "《").replace(/〉/g, "》").replace(/\(/g, "（").replace(/\)/g, "）");
+  // 标题末尾的版本括注（“公司法（2018年修正）”）去掉再查（复核 R15B-02）
+  const raw = full.replace(/（[^（）]*(?:年|修订|修正)[^（）]*）$/, "");
+  const out = new Set<string>([full, raw]);
   const short = raw.replace(/^中华人民共和国/, "");
   const key = short.replace(/[（）]/g, "");
   for (const k of [short, key]) if (LAW_ALIASES[k]) out.add(LAW_ALIASES[k]!);

@@ -265,22 +265,29 @@ export class Lawdb {
     };
   }
 
+  /** 归一名称 → 版本行（包只读，首次查询时建一次；复核 R15B-16：收录上百部法规后不再每次全表解析别名）。 */
+  private nameIndex: Map<string, LawVersionRow[]> | null = null;
+
   /** 名称归一后按法名/别名匹配全部版本（施行日升序）。 */
   findLawVersions(nameOrAlias: string): LawVersionRow[] {
     const n = normalizeLawName(nameOrAlias);
     if (!n) return [];
-    const rows = this.db
-      .prepare(
-        `SELECT v.*, l.law_name, l.aliases_json FROM law_versions v JOIN laws l ON l.law_id = v.law_id
-          ORDER BY v.effective`,
-      )
-      .all() as any[];
-    return rows
-      .filter((r) => {
+    if (!this.nameIndex) {
+      const idx = new Map<string, LawVersionRow[]>();
+      const rows = this.db
+        .prepare(
+          `SELECT v.*, l.law_name, l.aliases_json FROM law_versions v JOIN laws l ON l.law_id = v.law_id
+            ORDER BY v.effective`,
+        )
+        .all() as any[];
+      for (const r of rows) {
         const aliases: string[] = JSON.parse(r.aliases_json ?? "[]");
-        return normalizeLawName(r.law_name) === n || aliases.some((a) => normalizeLawName(a) === n);
-      })
-      .map((r) => ({ ...r, aliases: JSON.parse(r.aliases_json ?? "[]") })) as LawVersionRow[];
+        const row = { ...r, aliases } as LawVersionRow;
+        for (const key of new Set([normalizeLawName(r.law_name), ...aliases.map((a) => normalizeLawName(a))])) idx.set(key, [...(idx.get(key) ?? []), row]);
+      }
+      this.nameIndex = idx;
+    }
+    return (this.nameIndex.get(n) ?? []).map((r) => ({ ...r }));
   }
 
   /** 注册库内名称检索（法名/别名包含即命中；现行优先）。 */

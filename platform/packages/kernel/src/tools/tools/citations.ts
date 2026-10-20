@@ -35,20 +35,31 @@ export interface RawCitation {
  */
 const NUM = "[零〇一二两三四五六七八九十百千\\d]{1,12}";
 const SMALL = "[一二三四五六七八九十\\d]{1,4}";
-const REF = `第(${NUM})条(之[一二三四五六七八九十]{1,3})?(?:第(${SMALL})款)?(?:第(${SMALL})项|第?[（(](${SMALL})[)）]项)?`;
-const PART = "([^，。；：、,;:《》〈〉\\n]{0,24}?)";
+// 数字两侧允许空白（“第 585 条”，复核 R15B-02）
+const REF = `第\\s*(${NUM})\\s*条(之[一二三四五六七八九十]{1,3})?(?:\\s*第\\s*(${SMALL})\\s*款)?(?:\\s*第\\s*(${SMALL})\\s*项|\\s*第?[（(](${SMALL})[)）]项)?`;
+const PART = "([^，。；：、,;:《》〈〉\\n]{0,40}?)";
 const TITLE_RE = new RegExp(`《((?:[^《》〈〉\\n]|〈[^〈〉\\n]{1,40}〉){2,80}?)》${PART}${REF}`, "g");
 const LIST_RE = new RegExp(`^\\s*(?:、|，|,|和|及|以及|与|或者|或|至|到|—|－|-|～|~)\\s*${REF}`);
 const BARE_RE = BARE_NAMES.length > 0 ? new RegExp(`((?:中华人民共和国)?(?:${BARE_NAMES.join("|")}))${PART}${REF}`, "g") : null;
+// 回指词前面须是标点、空白或句首（复核 R15B-04：否则“劳动合同法第X条”里的“同法第X条”会再提一次）
+const SAME_LAW_RE = new RegExp(`(?<![一-鿿])(?:该法|同法|上述法律|前述法律)${REF}`, "g");
+/** 被引的法名（不论带不带条号），供“该法 / 同法”回指（复核 R15B-04：取最近提到的那部，不取最近带条号的那处）。 */
+const TITLE_MENTION_RE = /《((?:[^《》〈〉\n]|〈[^〈〉\n]{1,40}〉){2,80}?)》/g;
+const BARE_MENTION_RE = BARE_NAMES.length > 0 ? new RegExp(`(?:中华人民共和国)?(?:${BARE_NAMES.join("|")})`, "g") : null;
 
-const SAME_LAW_RE = new RegExp(`(?:该法|同法|上述法律|前述法律)${REF}`, "g");
+/**
+ * 书名号里是合同、章程、函件、内部文件这类（《股权转让协议》第七条、《员工手册》第十五条）不是法：不当引用提取，免得都落到“须人工核对”。
+ * 末尾的括注（《补充协议（二）》《公司章程（2021年修订）》）先去掉再比；“纪要”不排除（《九民纪要》要核）。复核 R15B-13。
+ */
+const DOC_TITLE_RE = /(协议|协议书|合同|合同书|章程|意向书|承诺函|确认函|通知书|备忘录|说明书|报告|清单|附件|手册|制度|规程|决议|委托书|起诉状|答辩状|申请书|意见书|招标文件|投标文件|文件)$/;
+const isDocTitle = (title: string) => DOC_TITLE_RE.test(title.replace(/\s*[（(][^（）()]{1,30}[)）]\s*$/, ""));
 
-/** 书名号里是合同、章程、函件这类文件（《股权转让协议》第七条）不是法：不当引用提取，免得都落到“法规库外、须人工核对”。 */
-const DOC_TITLE_RE = /(协议|协议书|合同|合同书|章程|意向书|承诺函|确认函|通知书|备忘录|说明书|报告|清单|附件)$/;
+/** 标题后面可以带的括注：版本（“（2023年修订）”）或文号（“（法释〔2020〕17号）”），复核 R15B-02。 */
+const VERSION_NOTE_RE = /[（(][^（）()]{0,30}(?:年|修订|修正|法释|〔|号)[^（）()]{0,20}[）)]/g;
 
-/** 编章名只许出现“编、分编、章、节、总则、分则、附则”与序号（否则多半是正文里别的话，宁可不提取也不张冠李戴）。 */
+/** 编章名只许出现“编、分编、章、节、总则、分则、附则”与序号（否则多半是正文里别的话，宁可不提取也不张冠李戴）；版本或文号括注先去掉。 */
 function partOk(part: string): boolean {
-  const p = part.replace(/\s+/g, "");
+  const p = part.replace(VERSION_NOTE_RE, "").replace(/\s+/g, "");
   return p === "" || (/(编|章|节|总则|分则|附则|通则)/.test(p) && !/[条款项]/.test(p) && p.length <= 20);
 }
 
@@ -94,46 +105,97 @@ function followers(text: string, from: number, law: string, titleRaw: string, ou
   }
 }
 
+/** 逐个匹配；被判不通过的匹配只跳过一个字再找（复核 R15B-04：不吞掉后面的真引用）。 */
+function* scan(re: RegExp, text: string): Generator<RegExpExecArray, void, boolean | undefined> {
+  const g = new RegExp(re.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = g.exec(text))) {
+    const accepted = yield m;
+    if (!accepted) g.lastIndex = m.index + 1;
+  }
+}
+
 export function extractCitations(text: string): RawCitation[] {
   const t = foldNestedTitles(text);
   const out: RawCitation[] = [];
   const covered: [number, number][] = [];
-  for (const m of t.matchAll(TITLE_RE)) {
-    if (!partOk(m[2]!) || DOC_TITLE_RE.test(m[1]!)) continue;
-    const r = refOf(m, 3);
-    if (!r) continue;
-    const start = m.index ?? 0;
-    const end = start + m[0].length;
-    const law = m[1]!;
-    out.push({ raw: text.slice(start, end), law, offset: start, ...r });
-    covered.push([start, end]);
-    followers(t, end, law, `《${law}》`, out);
+  const titles = scan(TITLE_RE, t);
+  for (let it = titles.next(); !it.done; ) {
+    const m = it.value;
+    let ok = false;
+    if (partOk(m[2]!) && !isDocTitle(m[1]!)) {
+      const r = refOf(m, 3);
+      if (r) {
+        const start = m.index;
+        const end = start + m[0].length;
+        out.push({ raw: text.slice(start, end), law: m[1]!, offset: start, ...r });
+        covered.push([start, end]);
+        followers(t, end, m[1]!, `《${m[1]!}》`, out);
+        ok = true;
+      }
+    }
+    it = titles.next(ok);
   }
   const inTitle = (i: number) => covered.some(([a, b]) => i >= a && i < b);
   // 没有书名号的“民法典第585条”（不在已提取的书名号引用里、前一个字不是书名号）
   if (BARE_RE) {
-    for (const m of t.matchAll(BARE_RE)) {
-      const start = m.index ?? 0;
-      if (inTitle(start) || t[start - 1] === "《" || t[start - 1] === "〈") continue;
-      if (!partOk(m[2]!)) continue;
-      const r = refOf(m, 3);
-      if (!r) continue;
-      const end = start + m[0].length;
-      const law = `${m[1]!}`.replace(/^中华人民共和国/, "");
-      out.push({ raw: text.slice(start, end), law, offset: start, ...r });
-      covered.push([start, end]);
-      followers(t, end, law, law, out);
+    const bare = scan(BARE_RE, t);
+    for (let it = bare.next(); !it.done; ) {
+      const m = it.value;
+      const start = m.index;
+      let ok = false;
+      if (!inTitle(start) && t[start - 1] !== "《" && t[start - 1] !== "〈" && partOk(m[2]!)) {
+        const r = refOf(m, 3);
+        if (r) {
+          const end = start + m[0].length;
+          const law = `${m[1]!}`.replace(/^中华人民共和国/, "");
+          out.push({ raw: text.slice(start, end), law, offset: start, ...r });
+          covered.push([start, end]);
+          followers(t, end, law, law, out);
+          ok = true;
+        }
+      }
+      it = bare.next(ok);
     }
   }
-  // “该法 / 同法第X条”：指在它之前最近一处被引的法
+  // “该法 / 同法第X条”：指在它之前最近提到的那部法（带不带条号都算；合同等文件标题不算）
+  const mentions: { at: number; law: string }[] = [];
+  for (const m of t.matchAll(TITLE_MENTION_RE)) if (!isDocTitle(m[1]!)) mentions.push({ at: m.index ?? 0, law: m[1]! });
+  if (BARE_MENTION_RE) for (const m of t.matchAll(BARE_MENTION_RE)) if (!inTitleMention(t, m.index ?? 0)) mentions.push({ at: m.index ?? 0, law: m[0].replace(/^中华人民共和国/, "") });
   for (const m of t.matchAll(SAME_LAW_RE)) {
     const start = m.index ?? 0;
-    const prev = out.filter((c) => c.offset < start).sort((a, b) => b.offset - a.offset)[0];
+    const prev = mentions.filter((x) => x.at < start).sort((a, b) => b.at - a.at)[0];
     if (!prev) continue;
     const r = refOf(m, 1);
     if (r) out.push({ raw: text.slice(start, start + m[0].length), law: prev.law, offset: start, ...r });
   }
   return out.sort((a, b) => a.offset - b.offset);
+}
+
+/** 这个位置是不是在某个书名号标题里面（无书名号法名的“提到”不算书名号里的字）。 */
+function inTitleMention(t: string, at: number): boolean {
+  const open = t.lastIndexOf("《", at);
+  if (open < 0) return false;
+  const close = t.lastIndexOf("》", at);
+  return close < open;
+}
+
+/**
+ * 写了“第X条”却没被认出是哪部法的地方（复核 R15B-02 兜底）：问答与复核页如实说“有 N 处没认出，请自行核对”，不显示成“没有引用”。
+ * 前面紧挨着合同、协议、章程、“本 / 该 / 前”等的（“本合同第七条”）是文件内部条款，不算。
+ */
+export function unrecognizedArticleRefs(text: string, found: RawCitation[]): number {
+  const t = foldNestedTitles(text);
+  const spans = found.map((c) => [c.offset, c.offset + c.raw.length] as const);
+  let n = 0;
+  for (const m of t.matchAll(/第\s*[零〇一二两三四五六七八九十百千\d]{1,12}\s*条/g)) {
+    const at = m.index ?? 0;
+    if (spans.some(([a, b]) => at >= a && at < b)) continue;
+    const before = t.slice(Math.max(0, at - 10), at);
+    if (/(合同|协议|章程|细则|手册|制度|决议|办法|规则|本|该|前|上|下|其|此)[^，。；\n]{0,4}$/.test(before)) continue;
+    n += 1;
+  }
+  return n;
 }
 
 /**
@@ -287,7 +349,9 @@ function verifyOne(lawdb: Lawdb, rc: RawCitation, asOf: string, topicHint: strin
   }
   // 款、项（B-7）：有条文正文时按正文的段落与“（一）”列项核对是否存在；正文未采集只核到条，如实注明（只在本机计数，正文不出本函数）
   const notes: string[] = [];
-  if (rc.paragraph || rc.item) {
+  // “第X条之一”：法规库按条号计数，款项只能拿基础条比——不比，如实写“只核到条”（复核 R15B-03）
+  if (rc.suffix && (rc.paragraph || rc.item)) notes.push(`subdivision_unchecked:“第${intToCn(rc.article)}条${rc.suffix}”的款项没有核对`);
+  if (!rc.suffix && (rc.paragraph || rc.item)) {
     const body = lawdb.getArticle(v.lsv_id, rc.article);
     const where = `第${intToCn(rc.article)}条${rc.paragraph ? `第${intToCn(rc.paragraph)}款` : ""}${rc.item ? `第（${intToCn(rc.item)}）项` : ""}`;
     if (!body) notes.push(`subdivision_unchecked:法规库只收了条号、没有${where}的正文，款项没有核对`);

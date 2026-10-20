@@ -251,10 +251,13 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
               )}
               {cneeds.counts.outside > 0 && (
                 <div className="banner banner-orange">
-                  这些引用不在本机法规库里，系统没法自动核对，请逐条查原文核对：
+                  这些引用系统没法核对（不在本机法规库里，或款项、适用版本与法规库对不上），请逐条查原文核对：
                   <ul>
                     {cneeds.outside.slice(0, 20).map((c, i) => (
-                      <li key={i}>{c.raw}</li>
+                      <li key={i}>
+                        {c.raw}
+                        {c.reason ? <span className="muted">：{c.reason}</span> : null}
+                      </li>
                     ))}
                   </ul>
                   {cneeds.counts.outside > Math.min(20, cneeds.outside.length) && <div className="muted">另有 {cneeds.counts.outside - Math.min(20, cneeds.outside.length)} 条，见成果原文。</div>}
@@ -263,6 +266,8 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                   </label>
                 </div>
               )}
+              {cneeds.partial > 0 && <p className="muted">另有 {cneeds.partial} 条引用只核到条号，款项没有核对（法规库没有这一条的正文）。</p>}
+              {cneeds.unrecognized > 0 && <p className="muted">文中另有 {cneeds.unrecognized} 处“第X条”系统没认出是哪部法规，请自行核对。</p>}
               {cneeds.unchecked && (
                 <div className="banner banner-orange">
                   系统读不出这份文件的文字（例如图片、扫描件、PDF），没有核对其中的引用。如果文中有法条或案号，请人工核对；没有的话勾选即可。

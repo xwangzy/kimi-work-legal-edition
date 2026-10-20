@@ -148,8 +148,8 @@ function CitationCheck({ c }: { c: QaCitationsView }) {
       <ul>
         {c.items.map((i, n) => (
           <li key={n}>
-            <span className="mono">{i.raw}</span> · {QA_CITATION_KIND[i.kind]}
-            {i.reason && i.kind !== "ok" ? `：${i.reason}` : ""}
+            <span className="mono">{i.raw}</span> · {i.partial ? "核到（只核到条号）" : QA_CITATION_KIND[i.kind]}
+            {i.reason && (i.kind !== "ok" || i.partial) ? `：${i.reason}` : ""}
           </li>
         ))}
       </ul>

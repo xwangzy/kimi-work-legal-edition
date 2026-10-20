@@ -11,6 +11,7 @@
  * - 修订稿：只把“接受”与“修改后接受”的卡交给结构化补丁引擎（structured-patch.ts）在原件副本上写原生修订——
  *   任一条不能定位即整体返回预览并逐卡说明原因，律师可选择跳过这些卡后再生成（不做模糊替换、不写半个文件）。
  */
+import { localToday } from "./local-date.ts";
 import { DomainError, newId, notFound, sha256Hex } from "@zr-legal/domain";
 import { extractParagraphs } from "@zr-legal/docx-engine";
 import type { Lawdb } from "@zr-legal/lawdb";
@@ -127,7 +128,7 @@ function asOfFor(db: KernelDb, matterId: string): string {
   } catch {
     // 缺省今天
   }
-  return new Date().toISOString().slice(0, 10);
+  return localToday();
 }
 
 interface BasisItem {

@@ -4,6 +4,7 @@
  * 所内节点都走这同一份方法表。签发已接入设备签名（§6.3）；审计事件入签名 hash 链（§6.4）；
  * 策略事件的签发人角色签名在同步阶段接入（当前经审计事件上链留痕）。
  */
+import { localToday } from "../services/local-date.ts";
 import { createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
 import { errFields, slog } from "@zr-legal/safe-log";
 import { readFileSync, lstatSync, mkdirSync, statSync, writeFileSync } from "node:fs";
@@ -340,11 +341,11 @@ function artifactCitationsFor(db: KernelDb, blobs: BlobStore, lawdb: Lawdb, art:
   try {
     const m = db.get<{ key_dates: string | null }>(`SELECT key_dates FROM matters WHERE matter_id = ?`, [art.matter_id]);
     const kd = parseJson<Record<string, unknown>>(m?.key_dates ?? "{}", {});
-    const asOf = typeof kd.analysis_as_of === "string" && /^\d{4}-\d{2}-\d{2}$/.test(kd.analysis_as_of) ? kd.analysis_as_of : new Date().toISOString().slice(0, 10);
+    const asOf = typeof kd.analysis_as_of === "string" && /^\d{4}-\d{2}-\d{2}$/.test(kd.analysis_as_of) ? kd.analysis_as_of : localToday();
     return checkArtifactCitations(lawdb, String(art.filename), blobs.read(String(art.storage_uri)), asOf);
   } catch {
     // 出错不放行（复核 B13-U02）：按“系统没有核对”处理，须人工核对勾选
-    return uncheckedCitations("error", lawdb.packageVersion, new Date().toISOString().slice(0, 10));
+    return uncheckedCitations("error", lawdb.packageVersion, localToday());
   }
 }
 
@@ -1882,7 +1883,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           ...(unverifiedOffline > 0 ? [`材料里有 ${unverifiedOffline} 个案号系统离线无法核实，须逐个在裁判文书网等官方来源核对并勾选后才能签发`] : []),
           ...(artCitations && artCitations.wrong > 0 ? [`成果里有 ${artCitations.wrong} 条引用核对不通过（条号不存在、已改号或当时没有有效版本），改正后再签发`] : []),
           ...(artCitations && artCitations.unverified_offline > 0 ? [`成果里有 ${artCitations.unverified_offline} 个案号系统离线无法核实，须逐个核对并勾选后才能签发`] : []),
-          ...(artCitations && artCitations.outside_registry > 0 ? [`成果里有 ${artCitations.outside_registry} 条引用不在本机法规库里，须逐条人工核对并勾选后才能签发`] : []),
+          ...(artCitations && artCitations.outside_registry > 0 ? [`成果里有 ${artCitations.outside_registry} 条引用系统没法核对（不在本机法规库里，或款项、适用版本对不上），须逐条人工核对并勾选后才能签发`] : []),
           ...(artCitations && !artCitations.checked ? ["这份文件的引用系统没有核对（格式不认识或读取出错），须人工核对并勾选后才能签发"] : []),
           ...(art.version === latest.v ? [] : ["已有更新版本，本版不得签发（批准不跨版本）"]),
         ],

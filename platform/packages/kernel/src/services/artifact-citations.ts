@@ -15,7 +15,7 @@
 import { CitationState } from "@zr-legal/domain";
 import { extractParagraphs, mapParagraphs, readZipText, xlsxToText } from "@zr-legal/docx-engine";
 import type { Lawdb } from "@zr-legal/lawdb";
-import { citationsVerify, type CitationVerdict } from "../tools/tools/citations.ts";
+import { citationsVerify, extractCitations, unrecognizedArticleRefs, type CitationVerdict } from "../tools/tools/citations.ts";
 
 export interface ArtifactCitationCheck {
   /** 能取到文字的成果才核验（xlsx、图片等为 false）；false 时须人工核对（不放行）。 */
@@ -31,7 +31,11 @@ export interface ArtifactCitationCheck {
   outside_registry: number;
   /** 已核到来源或版本的条数。 */
   verified: number;
-  items: { raw: string; state: CitationVerdict["state"]; reason: string | null; kind: "wrong" | "case" | "outside" | "ok" }[];
+  items: { raw: string; state: CitationVerdict["state"]; reason: string | null; kind: "wrong" | "case" | "outside" | "ok"; partial?: boolean }[];
+  /** 核到了、但只核到条号（款项或“之X”没核）的条数（复核 R15B-05）。 */
+  partial?: number;
+  /** 写了“第X条”却没认出是哪部法的处数（复核 R15B-02；只提示、不拦签发）。 */
+  unrecognized?: number;
   registry_coverage: string;
   as_of: string;
 }
@@ -59,19 +63,44 @@ export function artifactText(filename: string, bytes: Buffer): string | "format"
   return "format";
 }
 
+/**
+ * 须律师人工核对、勾选后可签发的理由（复核 R15B-03、R15B-14）：法规库没收、款项与本机正文对不上（可能是正文排版）、
+ * 适用时点没有有效版本（已废止的旧法按时间效力规定仍可正当引用）。条号超出总条数、已改号仍是定性错误。
+ */
+const MANUAL_REASONS = ["unknown_source:", "paragraph_out_of_range:", "item_out_of_range:", "no_applicable_version:"];
+
 function classify(v: CitationVerdict): ArtifactCitationCheck["items"][number]["kind"] {
   if (v.state === CitationState.unverifiedOffline) return "case";
   if (v.state !== CitationState.intercepted) return "ok";
-  // 错误优先（复核 A-13）：同一引用既有“法规库外”又有定性错误理由时按错误处理；没有理由也按错误（失败关闭）
-  return v.reasons.length > 0 && v.reasons.every((r) => r.startsWith("unknown_source:")) ? "outside" : "wrong";
+  // 错误优先（复核 A-13）：同一引用既有须人工核对的理由又有定性错误理由时按错误处理；没有理由也按错误（失败关闭）
+  return v.reasons.length > 0 && v.reasons.every((r) => MANUAL_REASONS.some((p) => r.startsWith(p))) ? "outside" : "wrong";
+}
+
+/** 每条核对结果给律师看的一句话（复核 R15B-15：不出现条文编号、注册库、版本编号这类说法）。 */
+export function reasonText(v: Pick<CitationVerdict, "reasons" | "state" | "suggestion">): string | null {
+  const codes = v.reasons.map((r) => r.split(":")[0]);
+  if (v.state === CitationState.unverifiedOffline) return "案号系统离线没法核对：请到裁判文书网等官方来源逐个核对";
+  if (codes.includes("article_out_of_range")) return "条号超出这部法规的总条数";
+  if (codes.includes("renumbered")) return v.suggestion ? `适用的版本里这一条已改号：${v.suggestion.replace(/（[^（）]*施行版本）/, "")}` : "适用的版本里这一条已改号";
+  if (codes.includes("unknown_source")) return "本机法规库没有收录这部法规，系统没法核对";
+  if (codes.includes("no_applicable_version")) return "适用时点没有有效版本（可能已废止或尚未施行），请人工核对适用依据";
+  if (codes.includes("paragraph_out_of_range")) return "条号核到了，但本机法规库里这一条没有这么多款（也可能是正文排版），请人工核对";
+  if (codes.includes("item_out_of_range")) return "条号核到了，但本机法规库里这一款没有这么多项（也可能是正文排版），请人工核对";
+  if (codes.includes("subdivision_unchecked") || codes.includes("suffix_unchecked")) return "只核到条号，款项没有核对";
+  return v.state === CitationState.intercepted ? "核对不通过" : null;
 }
 
 export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Buffer, asOf: string): ArtifactCitationCheck {
   const text = artifactText(filename, bytes);
   const base: ArtifactCitationCheck = { checked: false, total: 0, wrong: 0, unverified_offline: 0, outside_registry: 0, verified: 0, items: [], registry_coverage: lawdb.packageVersion, as_of: asOf };
   if (text === "format" || text === "error") return { ...base, unchecked_reason: text };
-  const r = citationsVerify(lawdb, { text: text.slice(0, 2_000_000), as_of: asOf });
-  const items = r.verdicts.map((v) => ({ raw: v.raw, state: v.state, reason: v.reasons[0]?.split(":").slice(1).join(":") || null, kind: classify(v) }));
+  const body = text.slice(0, 2_000_000);
+  const r = citationsVerify(lawdb, { text: body, as_of: asOf });
+  const items = r.verdicts.map((v) => {
+    const kind = classify(v);
+    const partial = kind === "ok" && v.reasons.some((x) => x.startsWith("subdivision_unchecked:") || x.startsWith("suffix_unchecked:"));
+    return { raw: v.raw, state: v.state, reason: reasonText(v), kind, ...(partial ? { partial: true } : {}) };
+  });
   return {
     ...base,
     checked: true,
@@ -80,6 +109,8 @@ export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Bu
     unverified_offline: items.filter((i) => i.kind === "case").length,
     outside_registry: items.filter((i) => i.kind === "outside").length,
     verified: items.filter((i) => i.kind === "ok").length,
+    partial: items.filter((i) => i.partial).length,
+    unrecognized: unrecognizedArticleRefs(body, extractCitations(body)),
     items: items.slice(0, 200),
     registry_coverage: r.registry_coverage,
   };
@@ -107,7 +138,7 @@ export function artifactCitationBlock(c: ArtifactCitationCheck, checklist: Recor
     return { code: "case", message: `成果里有 ${c.unverified_offline} 个案号系统离线无法核实：请逐个在裁判文书网等官方来源核对，在复核页勾选“已逐个核对案号”后再签发` };
   }
   if (c.outside_registry > 0 && checklist[CITATIONS_MANUAL_CHECK_KEY] !== true) {
-    return { code: "outside", message: `成果里有 ${c.outside_registry} 条引用不在本机法规库里，系统没法自动核对：请逐条人工核对，在复核页勾选“已逐条人工核对”后再签发` };
+    return { code: "outside", message: `成果里有 ${c.outside_registry} 条引用系统没法核对（不在本机法规库里，或款项、适用版本对不上）：请逐条人工核对，在复核页勾选“已逐条人工核对”后再签发` };
   }
   return null;
 }

@@ -56,8 +56,31 @@ const CORPUS: [string, Want[]][] = [
   ["《消费者权益保护法》第五十五条第一款", [["消费者权益保护法", 55, 1]]],
   ["《民法典》总则编第一百四十三条", [["民法典", 143]]],
   ["《民法典》第563条第1款第（4）项", [["民法典", 563, 1, 4]]],
+  // 复核 R15B-02：版本或文号括注、数字两侧空格、标题里带版本
+  ["依据《中华人民共和国公司法》（2023年修订）第二十条", [["中华人民共和国公司法", 20]]],
+  ["《最高人民法院关于审理民间借贷案件适用法律若干问题的规定》（法释〔2020〕17号）第二十五条", [["最高人民法院关于审理民间借贷案件适用法律若干问题的规定", 25]]],
+  ["按照民法典第 585 条", [["民法典", 585]]],
+  ["《公司法（2018年修正）》第二十条", [["公司法（2018年修正）", 20]]],
+  // 复核 R15B-04：不重复、不吞掉后面的真引用、“该法”指最近提到的法
+  ["依据劳动合同法第三十九条解除合同", [["劳动合同法", 39]]],
+  ["依据劳动法和劳动合同法第三十九条", [["劳动合同法", 39]]],
+  ["根据《民法典》第五百条，《公司法》对此另有规定，该法第二十条", [["民法典", 500], ["公司法", 20]]],
 ];
-const NEGATIVE = ["公司法务部第三条意见已收到", "第五条 保密", "根据合同第三条约定", "本协议第七条另有约定", "《股权转让协议》第七条", "《公司章程》第十二条", "合同法律顾问第二次会议"];
+const NEGATIVE = [
+  "公司法务部第三条意见已收到",
+  "第五条 保密",
+  "根据合同第三条约定",
+  "本协议第七条另有约定",
+  "《股权转让协议》第七条",
+  "《公司章程》第十二条",
+  "合同法律顾问第二次会议",
+  // 复核 R15B-13：内部文件与带括注的合同、章程标题
+  "《员工手册》第十五条",
+  "《考勤管理制度》第三条",
+  "《股东会决议》第二条",
+  "《补充协议（二）》第三条",
+  "《公司章程（2021年修订）》第五条",
+];
 
 const key = (law: string, a: number, p?: number | null, i?: number | null) => `${law}|${a}|${p ?? ""}|${i ?? ""}`;
 
@@ -66,7 +89,10 @@ test("B-7 引用提取语料召回 ≥ 95%（款、项、编章、无书名号�
   let hit = 0;
   const misses: string[] = [];
   for (const [text, exp] of CORPUS) {
-    const got = new Set(extractCitations(text).map((c) => key(c.law, c.article, c.paragraph, c.item)));
+    const list = extractCitations(text).map((c) => key(c.law, c.article, c.paragraph, c.item));
+    // 按数组比条数（复核 R15B-04：不能有重复）
+    assert.equal(list.length, exp.length, `${text} → 提到 ${list.join("；")}`);
+    const got = new Set(list);
     for (const w of exp) {
       want += 1;
       if (got.has(key(...w))) hit += 1;
@@ -119,4 +145,41 @@ test("B-7 款项核对：正文已采集的按段落与列项核对，没采集�
   assert.equal(v("刑法第一百二十条之一").state, CitationState.intercepted, "刑法不在演示法规库：法规库外");
   const suffix = citationsVerify(lawdb, { citations: [], text: "《民法典》第五百零九条之一", as_of: "2026-10-01" }).verdicts[0]!;
   assert.ok(suffix.reasons.some((r) => r.startsWith("suffix_unchecked:")));
+});
+
+test("复核 R15B-02/03/05/14：版本括注能查到法规库；款项对不上与无适用版本归“须人工核对”；之X只核到条；没认出的“第X条”计数；北京时间", async () => {
+  const { checkArtifactCitations } = await import("../src/services/artifact-citations.ts");
+  const { unrecognizedArticleRefs } = await import("../src/tools/tools/citations.ts");
+  const { localToday } = await import("../src/services/local-date.ts");
+  const repo = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
+  const signerPub = (JSON.parse(readFileSync(repo("content/keys/content-signing-dev.pub.json"), "utf8")) as { publicKeyPem: string }).publicKeyPem;
+  const lawdb = openLawdb(repo("content/lawdb/dist/lawdb.sqlite"), { expectedSignerPubPem: signerPub });
+  const chk = (t: string, asOf = "2026-10-01") => checkArtifactCitations(lawdb, "a.md", Buffer.from(t), asOf);
+  // 标题带版本括注：去掉再查
+  assert.equal(chk("《民法典（2020年）》第五百零九条").items[0]!.kind, "ok");
+  // 款项对不上：须人工核对（可勾选），不是定性错误；说明是律师能懂的话
+  const p4 = chk("《民法典》第五百八十五条第四款");
+  assert.equal(p4.items[0]!.kind, "outside");
+  assert.equal(p4.wrong, 0);
+  assert.match(p4.items[0]!.reason!, /没有这么多款/);
+  // 之X 带款项：不拿基础条比，核到但只核到条号
+  const sx = chk("《民法典》第五百八十五条之一第二款");
+  assert.equal(sx.items[0]!.kind, "ok");
+  assert.equal(sx.items[0]!.partial, true);
+  assert.equal(sx.partial, 1);
+  // 款项正文未采集：核到、只核到条号
+  assert.equal(chk("《民法典》第五百零一条第二款").partial, 1);
+  // 适用时点没有有效版本：须人工核对（律师写明适用依据后可签发）
+  const old = chk("《民法典》第五百零九条", "2019-01-01");
+  assert.equal(old.items[0]!.kind, "outside");
+  assert.match(old.items[0]!.reason!, /没有有效版本/);
+  // 条号超出总条数仍是定性错误
+  assert.equal(chk("《民法典》第一千三百条").wrong, 1);
+  // 理由不出现工程用语
+  for (const t of ["《宇宙法》第一条", "（2023）最高法民终123号", "《民法典》第一千三百条"]) for (const i of chk(t).items) assert.doesNotMatch(i.reason ?? "", /§|注册库|签发版|lsv_/);
+  // 没认出的“第X条”：合同条款不算
+  assert.equal(unrecognizedArticleRefs("依照第五百八十五条处理；本合同第七条另有约定。", []), 1);
+  assert.equal(chk("依照第五百八十五条处理").unrecognized, 1);
+  // 北京时间
+  assert.equal(localToday(new Date("2026-08-31T17:00:00Z")), "2026-09-01");
 });

@@ -28,10 +28,10 @@ test("B-6 回答里的引用逐条核对：核到、条款对不上、法规库�
   assert.ok(a1.citations, "含法条的回答带核验标记");
   assert.equal(a1.citations!.total, 4);
   assert.equal(a1.citations!.verified, 1);
-  assert.equal(a1.citations!.wrong, 1, "第五百八十五条只有三款");
-  assert.equal(a1.citations!.outside, 1, "公司法不在演示法规库");
+  assert.equal(a1.citations!.wrong, 0, "款项对不上归“须人工核对”（复核 R15B-03）");
+  assert.equal(a1.citations!.outside, 2, "第五百八十五条只有三款 + 公司法不在演示法规库");
   assert.equal(a1.citations!.cases, 1);
-  assert.deepEqual(a1.citations!.items.map((i) => i.kind), ["ok", "wrong", "outside", "case"]);
+  assert.deepEqual(a1.citations!.items.map((i) => i.kind), ["ok", "outside", "outside", "case"]);
   const r2 = await qa.send({ conversationId: r1.conversation_id, text: "还有别的办法吗？" }, TID, UID);
   const a2 = r2.messages.filter((m) => m.role === "assistant")[1]!;
   assert.equal(a2.citations, undefined, "没有引用：不带标记");
