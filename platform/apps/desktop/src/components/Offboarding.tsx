@@ -5,7 +5,7 @@
  */
 import { useState } from "react";
 import { api, members, type OffboardingItem } from "../api.ts";
-import { memberLabel, offboardingRow, offboardingSummary } from "../lib/offboarding.ts";
+import { memberLabel, offboardArchiveName, offboardingRow, offboardingSummary } from "../lib/offboarding.ts";
 import { fmtTime } from "../lib/labels.ts";
 
 export function Offboarding() {
@@ -36,8 +36,8 @@ export function Offboarding() {
   };
   const archive = (it: OffboardingItem) =>
     act(it.matter_id, async () => {
-      const r = await api.archiveMatter(it.matter_id, `离所归档-${it.title.slice(0, 40)}.zip`);
-      return r ? `已导出：${r.filename}。请交给律所或接手的同事保管。` : null;
+      const r = await api.archiveMatter(it.matter_id, offboardArchiveName(it.matter_id));
+      return r ? `已导出：${r.filename}（里面是明文案卷）。请交给律所或接手的同事保管，不要存到个人网盘。` : null;
     });
   const handoff = (it: OffboardingItem, to: string) => act(it.matter_id, async () => (await members.offboardHandoff(it.matter_id, to)).note);
   return (

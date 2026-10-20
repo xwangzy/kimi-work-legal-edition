@@ -176,7 +176,7 @@ test("设备恢复负例：明文字段改成本机编号、证书被改、私�
     assert.equal(readFileSync(join(ws.keysDir, "device.json"), "utf8"), before, "拒绝时不改 device.json");
 
     // ⑤ 已吊销设备：拒绝，状态仍为吊销
-    await inv("devices.revoke", { device_id: ex.device_id, reason: "测试：设备丢失" });
+    await inv("devices.revoke", { device_id: ex.device_id, reason: "测试：设备丢失", self: true });
     await assert.rejects(() => inv("recovery.import_device", { file: out, password: PW }), (e: any) => e.code === "conflict" && /已被律所吊销/.test(e.message));
     const row = k.db.get<{ status: string; revoked_at: string | null }>(`SELECT status, revoked_at FROM devices WHERE device_id = ?`, [ex.device_id]);
     assert.equal(row?.status, "revoked");
@@ -202,7 +202,7 @@ test("暂存后到重启前设备被吊销（复核 B4-R09）：重启时复核�
     k = await ws.open();
     const temp = getDeviceKeys(ws.keysDir);
     assert.equal((await inv("recovery.import_device", { file: backup, password: PW })).staged, true);
-    await inv("devices.revoke", { device_id: deviceId, reason: "测试：暂存后吊销" });
+    await inv("devices.revoke", { device_id: deviceId, reason: "测试：暂存后吊销", self: true });
     await k.close();
     k = await ws.open();
     assert.equal(getDeviceKeys(ws.keysDir).encPublicKeyPem, temp.encPublicKeyPem, "恢复未生效");

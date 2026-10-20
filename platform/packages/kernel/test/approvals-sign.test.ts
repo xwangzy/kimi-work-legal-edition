@@ -85,7 +85,7 @@ test("设备签名签发与离线验证", { timeout: 240_000 }, async () => {
   assert.equal(v3.overall, "valid");
 
   // 签发后吊销该设备 → revoked_after_signing（签名仍有效，状态如实报告）
-  await inv("devices.revoke", { device_id: ok.signer_device_id, reason: "测试：签发后吊销" });
+  await inv("devices.revoke", { device_id: ok.signer_device_id, reason: "测试：签发后吊销", self: true });
   const v4 = await inv("approvals.verify", { approval_id: ok.approval_id });
   assert.equal(v4.signer_status, "revoked_after_signing", JSON.stringify(v4));
   assert.equal(v4.signature_valid, true);

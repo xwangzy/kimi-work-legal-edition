@@ -254,17 +254,17 @@ function MemberRoster() {
         <td>{fmtTime(m.joined_at)}</td>
         <td>
           {devices.length === 0 ? "—" : `${devices.length} 台`}
-          {data?.can_remove && devices.length > 0 && (
+          {devices.length > 0 && (
             <details className="muted">
               <summary>电脑</summary>
               {devices.map((d) => (
                 <div key={d.device_id}>
                   {fmtTime(d.created_at)} 加入{d.this_device ? "（这台）" : ""}{" "}
-                  {!d.this_device && !m.is_me && (
+                  {!d.this_device && (
                     <ConfirmButton
                       label="停用这台电脑"
                       className="btn-ghost btn-danger btn-sm"
-                      question={`停用后，${memberLabel(m)} 这台电脑不能再打开本所事项；他换新电脑需要重新申请加入。`}
+                      question={`停用后，${m.is_me ? "你的" : `${memberLabel(m)} 的`}这台电脑不能再同步、用 AI、签发或导出（上面已有的内容无法远程删除）；换新电脑需要重新申请加入。`}
                       confirmLabel="停用"
                       disabled={busy}
                       onConfirm={() => run(() => members.revokeDevice(d.device_id))}
@@ -277,14 +277,14 @@ function MemberRoster() {
         </td>
         <td>{memberStatusText(m)}</td>
         <td>
-          {data?.can_remove && !m.is_me && m.status === "active" && (
+          {data?.can_remove && !m.is_me && m.status !== "removed" && (
             <button className="btn-ghost btn-danger btn-sm" disabled={busy} onClick={() => void ask(m)}>
               移出律所…
             </button>
           )}
           {data?.can_remove && m.status === "removed" && m.removal && !m.removal.seat_released && (
             <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => members.remove(m.member_id))}>
-              再试一次释放席位
+              现在再试一次
             </button>
           )}
         </td>
@@ -340,7 +340,7 @@ function MemberRoster() {
           {msg}
         </p>
       )}
-      {!data?.can_remove && list.length > 0 && <p className="muted">停用电脑、移出成员要在管理员的电脑上操作。</p>}
+      {!data?.can_remove && list.length > 0 && <p className="muted">移出成员要在开通律所的那台电脑上操作（和批准新成员是同一台）；停用某一台电脑可以在任一管理员或合伙人的电脑上做。</p>}
     </div>
   );
 }

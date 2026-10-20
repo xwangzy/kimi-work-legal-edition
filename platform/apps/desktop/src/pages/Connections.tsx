@@ -19,6 +19,7 @@ import { TeamShare } from "../components/TeamShare.tsx";
 import { MembersAdmin } from "../components/MembersAdmin.tsx";
 import { RecoveryBackup } from "../components/RecoveryBackup.tsx";
 import { Offboarding } from "../components/Offboarding.tsx";
+import { DepartedMembers } from "../components/DepartedMembers.tsx";
 import { DocStyle } from "../components/DocStyle.tsx";
 
 const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
@@ -466,6 +467,7 @@ function DeviceTab({ caps, gate, mySafety, recovery, admin }: { caps: Capabiliti
           </div>
         )}
         <TeamShare admin={admin} />
+        <DepartedMembers />
         <Offboarding />
         <div className="device-row">
           <div className="device-k">最近一次自检</div>

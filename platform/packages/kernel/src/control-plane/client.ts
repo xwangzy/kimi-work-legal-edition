@@ -274,6 +274,14 @@ export class ControlPlaneClient {
         this.d.gov.markActionResult(a.action_id, PERMANENT_ACTION_ERRORS.has(r.error) ? "failed" : "retry", r.error);
       }
     }
+    // 移出成员时没释放成的席位（复核 R15A-11）：随同步重试；对方从没拿到过席位按已释放
+    for (const uid of this.d.gov.pendingSeatReleases()) {
+      if (!/^[A-Za-z0-9_-]{1,200}$/.test(uid)) continue;
+      const r = await this.call("POST", `/v1/seats/${uid}/revoke`, {});
+      const released = r.ok || r.error === "seat_unknown";
+      this.d.gov.markSeatRelease(uid, released, released ? null : r.error);
+      if (released) sent += 1;
+    }
     return sent;
   }
 

@@ -1004,7 +1004,12 @@ export const members = {
   roster: () => invoke<{ members: RosterMember[]; can_remove: boolean }>("members.roster"),
   removalPreview: (memberId: string) => invoke<{ member_id: string; name: string | null; is_me: boolean; active_devices: number; matters: { matter_id: string; title: string; relay_controller: boolean }[] }>("members.removal_preview", { member_id: memberId }),
   remove: (memberId: string) => invoke<{ devices_revoked: number; seat_released: boolean; note: string }>("members.remove", { member_id: memberId }),
-  revokeDevice: (deviceId: string) => invoke<{ note: string }>("devices.revoke", { device_id: deviceId, reason: "管理员停用这台电脑" }),
+  revokeDevice: async (deviceId: string) => {
+    const r = await invoke<{ note: string; lawyer_note?: string }>("devices.revoke", { device_id: deviceId, reason: "管理员停用这台电脑" });
+    return { note: r.lawyer_note ?? r.note };
+  },
+  departedInMatters: () => invoke<{ items: { matter_id: string; title: string; user_id: string; name: string | null; removed_from_firm: boolean }[] }>("members.departed_in_matters"),
+  removeDepartedFromMatter: (matterId: string, userId: string) => invoke<{ note: string }>("matters.members.remove", { matter_id: matterId, user_id: userId, confirm_departed: true }),
   // 本人离所交接：清单与“交给同事”
   offboarding: () => invoke<{ matters: OffboardingItem[]; pending: number }>("members.offboarding"),
   offboardHandoff: (matterId: string, toUser: string) => invoke<{ relay: "done" | "not_needed" | "pending"; owner_set: boolean; note: string; item: OffboardingItem }>("members.offboard_handoff", { matter_id: matterId, to_user: toUser }),
@@ -1015,7 +1020,8 @@ export interface RosterMember {
   name: string | null;
   role: string;
   is_me: boolean;
-  status: "active" | "removed";
+  /** removed：走过“移出律所”；devices_stopped：电脑都停用了但没移出（席位还占着）。 */
+  status: "active" | "removed" | "devices_stopped";
   joined_at: string;
   devices: { device_id: string; status: string; created_at: string; revoked_at: string | null; this_device: boolean }[];
   removal: { removed_at: string; seat_released: boolean; seat_error: string | null } | null;
@@ -1026,6 +1032,7 @@ export interface OffboardingItem {
   title: string;
   scope: "personal" | "team";
   status: "ok" | "needs_archive" | "needs_owner" | "needs_handoff";
+  closed?: boolean;
   colleagues: { user_id: string; name: string | null; role: string }[];
   archived_at?: string | null;
   relay_controller?: boolean;

@@ -7,7 +7,7 @@ import type { OffboardingItem, RosterMember } from "../api.ts";
 /** 交接清单的一行：现在的状态与要做的事。 */
 export function offboardingRow(it: OffboardingItem): { state: string; action: "archive" | "handoff" | "none"; candidates: OffboardingItem["colleagues"] } {
   if (it.colleagues.length === 0) {
-    const where = it.scope === "team" ? "事项里已没有在用的同事" : "只在这台电脑上";
+    const where = it.closed ? "已结案" : it.scope === "team" ? "事项里已没有在用的同事" : "只在这台电脑上";
     if (it.status === "ok") return { state: `${where} · 已导出归档`, action: "none", candidates: [] };
     return { state: `${where} · ${it.archived_at ? "导出后又有改动，要重新导出" : "还没有导出归档"}`, action: "archive", candidates: [] };
   }
@@ -28,7 +28,7 @@ export function offboardingSummary(r: { matters: OffboardingItem[]; pending: num
 export function removalLines(p: { name: string | null; active_devices: number; matters: { title: string; relay_controller: boolean }[] }): string[] {
   const who = p.name ?? "这位同事";
   const lines = [
-    `移出后，${who} 的${p.active_devices > 1 ? ` ${p.active_devices} 台` : ""}电脑都不能再打开本所事项，并释放 1 个席位。已经复制或导出的文件收不回来。`,
+    `移出后，${who} 的${p.active_devices > 1 ? ` ${p.active_devices} 台` : ""}电脑不能再同步、不能用 AI、不能签发或导出，并释放 1 个席位。他电脑上已有的事项仍在那台电脑上，无法远程删除——请按律所制度收回电脑；已经复制或导出的文件也收不回来。`,
     `请先确认 ${who} 已在自己电脑的“设置 · 本机与安全 · 离所交接”里交接完：只在他电脑上的事项要导出归档交给律所；这台电脑看不到他自己的事项。`,
   ];
   if (p.matters.length > 0) {
@@ -41,7 +41,8 @@ export function removalLines(p: { name: string | null; active_devices: number; m
 
 /** 成员表的状态一栏。 */
 export function memberStatusText(m: Pick<RosterMember, "status" | "is_me" | "removal">): string {
-  if (m.status === "removed") return m.removal && !m.removal.seat_released ? "已移出 · 席位还没有释放" : "已移出";
+  if (m.status === "removed") return m.removal && !m.removal.seat_released ? "已移出 · 席位还没有释放（会自动再试）" : "已移出";
+  if (m.status === "devices_stopped") return "电脑都已停用（还在律所，席位未释放）";
   return m.is_me ? "正常（你）" : "正常";
 }
 
@@ -50,4 +51,9 @@ export function memberLabel(m: Pick<RosterMember, "name" | "member_id" | "is_me"
   if (m.name) return m.name;
   if (m.is_me) return "你";
   return `成员 ${m.member_id.slice(-6)}`;
+}
+
+/** 离所归档的建议文件名（复核 R15A-15）：不带事项标题（常含当事人名称），用事项编号后六位与日期。 */
+export function offboardArchiveName(matterId: string, today = new Date()): string {
+  return `离所归档-${matterId.replace(/[^A-Za-z0-9]/g, "").slice(-6)}-${today.toISOString().slice(0, 10)}.zip`;
 }

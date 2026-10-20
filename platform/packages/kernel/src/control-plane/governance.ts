@@ -1065,6 +1065,18 @@ export class FirmGovernance {
    * 未完成的待同步动作（复核 S6-A22、S6-B31）：待发送（自动重试）/ 已提交、待控制面目录确认 / 控制面拒绝（不自动重试，需人工处理）。
    * includeFailed：手动“立即同步”时连同控制面拒绝过的一起重发。
    */
+  /** 管理员移出成员后还没释放的席位（复核 R15A-11：随每次同步自动重试，不靠管理员回来再点）。 */
+  pendingSeatReleases(): string[] {
+    return this.d.db.all<{ member_id: string }>(`SELECT member_id FROM member_removals WHERE tenant_id = ? AND seat_released_at IS NULL`, [this.d.tenantId]).map((r) => r.member_id);
+  }
+
+  markSeatRelease(memberId: string, released: boolean, error: string | null): void {
+    this.d.db.run(
+      `UPDATE member_removals SET seat_released_at = CASE WHEN ? = 1 THEN ? ELSE seat_released_at END, seat_error = ? WHERE tenant_id = ? AND member_id = ?`,
+      [released ? 1 : 0, new Date(this.now()).toISOString(), released ? null : error, this.d.tenantId, memberId],
+    );
+  }
+
   pendingActions(o: { includeFailed?: boolean } = {}): PendingAction[] {
     return this.d.db.all<PendingAction>(
       `SELECT action_id, kind, target, attempts, last_error, submitted_at, failed_at FROM cp_pending_actions WHERE tenant_id = ? AND done_at IS NULL ${o.includeFailed ? "" : "AND failed_at IS NULL"} ORDER BY action_id`,

@@ -95,7 +95,7 @@ test("密钥纪元：吊销撤权 + 成员加移的密钥分发", { timeout: 120
   // ── 吊销与撤权校验 ──
   const before1 = await inv("devices.list");
   assert.equal(before1.tenant_epoch, 1);
-  const rv = await inv("devices.revoke", { device_id: hostDeviceId, reason: "测试吊销" });
+  const rv = await inv("devices.revoke", { device_id: hostDeviceId, reason: "测试吊销", self: true });
   assert.equal(rv.tenant_epoch, 2);
   assert.ok(db.get(`SELECT 1 AS x FROM key_epochs WHERE scope = 'tenant' AND scope_id = ? AND epoch = 2`, [tenantId]));
   assert.ok(db.get(`SELECT 1 AS x FROM audit_events WHERE action = 'device.revoke' AND object_id = ?`, [hostDeviceId]));

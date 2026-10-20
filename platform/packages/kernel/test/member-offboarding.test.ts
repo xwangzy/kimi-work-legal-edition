@@ -117,25 +117,44 @@ test("离所交接：个人事项导出归档、团队事项交负责人与中�
   await assert.rejects(kA.inv("members.remove", { member_id: usr("test-lawyer") }), /不能移出自己/);
   await assert.rejects(kA.inv("members.remove", { member_id: usr("nobody") }), /成员/);
 
+  // 停用电脑不等于移出律所（复核 R15A-02）：只停用了电脑的人显示“电脑都已停用”，席位还占着，仍可移出
+  const carolDevice = carol.devices[0].device_id as string;
+  const stop = await kA.inv("devices.revoke", { device_id: carolDevice, reason: "丢失" });
+  assert.match(stop.lawyer_note, /已停用这台电脑/);
+  assert.doesNotMatch(stop.lawyer_note, /纪元|吊销|验签/);
+  assert.equal((await kA.inv("members.roster")).members.find((x: any) => x.member_id === usr("carol")).status, "devices_stopped");
+  // 不能在这台电脑上停用它自己（复核 R15A-03）
+  await assert.rejects(kA.inv("devices.revoke", { device_id: roster.members.find((x: any) => x.is_me).devices[0].device_id }), /不能在这台电脑上停用它自己/);
+  // 只有开通律所（持有律所根）的电脑能移出成员
+  // 中软暂时连不上：席位释放记下来，之后随同步自动重试（复核 R15A-11）
+  cloud.setControlPlaneAvailable(false);
   const rm = await kA.inv("members.remove", { member_id: usr("carol") });
-  assert.equal(rm.devices_revoked, 1);
-  assert.equal(rm.seat_released, true, rm.note);
-  assert.deepEqual(rm.control_plane, ["synced"]);
-  const after = (await kA.inv("members.roster")).members.find((x: any) => x.member_id === usr("carol"));
+  cloud.setControlPlaneAvailable(true);
+  assert.equal(rm.devices_revoked, 0, "电脑此前已停用");
+  assert.equal(rm.seat_released, false);
+  assert.match(rm.note, /之后每次同步会自动再试/);
+  let after = (await kA.inv("members.roster")).members.find((x: any) => x.member_id === usr("carol"));
   assert.equal(after.status, "removed");
-  assert.equal(after.removal.seat_released, true);
-  // 再点一次是幂等的（席位已释放、电脑都已停用）
+  assert.equal(after.removal.seat_released, false);
+  await kA.inv("control_plane.sync");
+  after = (await kA.inv("members.roster")).members.find((x: any) => x.member_id === usr("carol"));
+  assert.equal(after.removal.seat_released, true, "同步时自动释放了席位");
+  // 再点一次是幂等的
   assert.equal((await kA.inv("members.remove", { member_id: usr("carol") })).devices_revoked, 0);
 
-  // carol 的电脑：下次与控制面同步即进入退出模式，不能再同步或交接
+  // carol 的电脑：下次与控制面同步即进入退出模式，不能再同步、交接，也不能再把事项导出成明文（复核 R15A-04）；应用内预览照常
   await kC.inv("control_plane.sync");
   await assert.rejects(kC.inv("relay.sync"), /不可用/);
   await assert.rejects(kC.inv("members.offboard_handoff", { matter_id: m2, to_user: usr("bob") }), /不可用/);
+  await assert.rejects(kC.inv("matters.archive", { matter_id: p1 }), /已被律所停用/);
 
-  // 交接过的事项：bob 能把 carol 移出（轮换密钥），新内容照常同步
+  // 交接过的事项：bob 的电脑提醒“还有电脑已全部停用的成员”（复核 R15A-05）；bob 不知道 carol 是否已离所——须明确确认（复核 R15A-01）
   await kB.inv("control_plane.sync");
   await kB.inv("relay.sync");
-  const r = await kB.inv("matters.members.remove", { matter_id: m1, user_id: usr("carol") });
+  const departed = await kB.inv("members.departed_in_matters");
+  assert.deepEqual(departed.items.map((x: any) => x.matter_id).sort(), [m1, m2].sort());
+  await assert.rejects(kB.inv("matters.members.remove", { matter_id: m1, user_id: usr("carol") }), /确认他已离所/);
+  const r = await kB.inv("matters.members.remove", { matter_id: m1, user_id: usr("carol"), confirm_departed: true });
   assert.ok(r.new_epoch > 1);
   await imp(kB, m1, "移出后.txt", "carol 离所之后");
   assert.ok((await kB.inv("relay.sync")).push.uploaded > 0, "新纪元的内容照常发出");
