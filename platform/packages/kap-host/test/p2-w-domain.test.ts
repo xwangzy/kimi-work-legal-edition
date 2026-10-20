@@ -3,7 +3,7 @@
  *
  * 宿主（KapRuntime + 事项引擎 + W 执行域工厂）在本进程内运行；模型是 Unix 套接字上的假 OpenAI 兼容服务。
  * 覆盖：Bash 端到端（标准库 Python 数据任务）；单一路径命名空间（Bash ⇄ Read/Write/Grep 同一路径）；系统提示中的受限 bash 说明；
- * cwd 越界与超时档位的策略拒绝；前台超时转后台；运行取消传播到执行域；执行域起不来时失败关闭。
+ * cwd 越界与超时档位的策略拒绝；前台超时转后台；后台命令完成通知续接（复核 B13-C03）；运行取消传播到执行域；执行域起不来时失败关闭。
  */
 import { test, before, after, describe } from "node:test";
 import assert from "node:assert/strict";
@@ -210,6 +210,59 @@ describe("P2：Bash 经 DI 进入 W-core", () => {
     await new Promise((x) => setTimeout(x, 500));
     assert.equal(existsSync(join(engine.workDir, "迟到.txt")), false);
     assert.equal(existsSync(join(engine.workDir, "中间.txt")), false, "被终止的命令的内存层改动不提交");
+  });
+});
+
+describe("P2：后台命令完成通知续接（复核 B13-C03；Kimi Code 2.2.0 WaitFor）", () => {
+  /** 主回合派出后台命令即结束；后台命令完成后引擎以 <notification type="task.completed"> 开新回合。 */
+  const notifyScript = (M: string) => (body: any): FakeStep => {
+    if (!firstUser(body).includes(M)) return { text: "（无关请求）" };
+    if (!answeredIds(body).has(`${M}_0`)) return { toolCalls: [{ id: `${M}_0`, name: "Bash", args: { command: "sleep 2; echo 完成 > 通知.txt", run_in_background: true, description: "后台命令" } }] };
+    const note = (body.messages ?? []).some((m: any) => m.role === "user" && /<notification\b[^>]*type="task\.completed"[^>]*source_kind="background_task"/.test(String(m.content)));
+    return { text: note ? `${M}-NOTIFY-TURN 后台命令已完成，汇总如下。` : "已派出后台命令，完成后汇总。" };
+  };
+
+  test("后台命令完成后的通知回合仍归同一运行（同一运行令牌）：两个主回合都结束才收尾，终态成功、最终文字取自通知回合", { timeout: 120_000 }, async () => {
+    const mid = "m_bash_notify";
+    const engine = await runtime.matterEngine(mid);
+    const M = "P2NOTIFY";
+    model.setScript(notifyScript(M));
+    const r = await runtime.startRun({ matter_id: mid, goal: `${M} 后台命令`, mode: "auto", plan_first: false }, DESKTOP);
+    // 第一个主回合结束时后台命令还在跑：运行不判终态
+    const deadline = Date.now() + 30_000;
+    while (!runtime.events(r.run_id, 0, DESKTOP).events.some((e) => e.type === "run.turn_ended")) {
+      if (Date.now() > deadline) throw new Error("第一个主回合没有结束");
+      await new Promise((x) => setTimeout(x, 50));
+    }
+    assert.ok(!TERMINAL.includes(runtime.events(r.run_id, 0, DESKTOP).status), "后台命令完成前不判终态");
+    const done = await waitStatus(runtime, r.run_id, (s) => TERMINAL.includes(s), 60_000);
+    assert.equal(done.status, "succeeded", JSON.stringify(done.events.map((e) => e.type)));
+    const types = done.events.map((e) => e.type);
+    assert.equal(types.filter((t) => t === "run.turn_started").length, 2, "通知开了第二个主回合，仍在这个运行里");
+    assert.equal(types.filter((t) => t === "run.turn_ended").length, 2);
+    assert.ok(types.lastIndexOf("run.turn_ended") < types.indexOf("run.succeeded"), "第二个主回合结束后才收尾");
+    const fin = done.events.find((e) => e.type === "run.succeeded")!;
+    assert.match(String(fin.payload.final_text), new RegExp(`${M}-NOTIFY-TURN`), "最终文字取自通知回合");
+    // 通知回合的模型请求带的是同一运行的令牌
+    const noteReq = model.requests.find((q) => firstUser(q.body).includes(M) && JSON.stringify(q.body.messages).includes("task.completed"))!;
+    assert.ok(noteReq, "通知回合发出了模型请求");
+    assert.match(String(noteReq.auth), new RegExp(`tok-${r.run_id}`));
+    assert.equal(readFileSync(join(engine.workDir, "通知.txt"), "utf8"), "完成\n", "后台命令的写入经提交落盘");
+  });
+
+  test("等后台命令的时间计入工作时限：时限短于后台命令时，在等待期间按超时失败收尾、中止会话，不等通知回合", { timeout: 120_000 }, async () => {
+    const mid = "m_bash_notify_late";
+    await runtime.matterEngine(mid);
+    const M = "P2NOTIFYLATE";
+    model.setScript(notifyScript(M));
+    const t0 = Date.now();
+    const r = await runtime.startRun({ matter_id: mid, goal: `${M} 后台命令`, mode: "auto", plan_first: false, time_limit_ms: 1_000 }, DESKTOP);
+    const done = await waitStatus(runtime, r.run_id, (s) => TERMINAL.includes(s), 30_000);
+    assert.equal(done.status, "failed", JSON.stringify(done.events.map((e) => e.type)));
+    assert.equal(done.events.find((e) => e.type === "run.failed")!.payload.reason, "run_deadline_exceeded");
+    assert.ok(Date.now() - t0 < 2_000 + 1_500, "在后台命令（2 秒）完成之前就按超时收尾");
+    await new Promise((x) => setTimeout(x, 2_500));
+    assert.ok(!model.requests.some((q) => firstUser(q.body).includes(M) && JSON.stringify(q.body.messages).includes("task.completed")), "运行已终止：不再为通知开新回合");
   });
 });
 
