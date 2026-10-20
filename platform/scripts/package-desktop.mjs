@@ -165,14 +165,12 @@ log(`暂存完成 → ${stage}`);
 // 只有 release.json 明确写 "test_build": true（CI 与内部测试）才放行
 {
   const rel = existsSync(join(desktop, "electron/release.json")) ? JSON.parse(readFileSync(join(desktop, "electron/release.json"), "utf8")) : null;
-  // 按公钥指纹识别开发公钥（复核 A-14/B13-O05）：随包公钥与 release.json 的每把 content_keys 都核，标记只作辅助
-  const { createHash, createPublicKey } = await import("node:crypto");
-  const keyFp = (pem) => createHash("sha256").update(createPublicKey(pem).export({ type: "spki", format: "der" })).digest("hex");
-  const devFps = new Set();
+  // 按公钥指纹识别开发公钥（复核 A-14/B13-O05）：随包公钥与 release.json 的每把 content_keys 都核，标记只作辅助。
+  // 已知开发公钥 = 仓库登记表 ∪ 本机开发公钥 ∪ 构建内核时随包写下的清单（第 14 批第二轮复核 A 余项：原先只认构建机本机那一把）
+  const { keyFp, knownDevFingerprints } = await import("./lib/dev-content-keys.mjs");
+  const devFps = knownDevFingerprints(root);
   const fpFile = join(stage, "electron/lawdb/content-dev-fingerprints.json");
   if (existsSync(fpFile)) for (const f of JSON.parse(readFileSync(fpFile, "utf8"))) devFps.add(f);
-  const localDev = join(root, "content/keys/content-signing-dev.pub.json");
-  if (existsSync(localDev)) devFps.add(keyFp(JSON.parse(readFileSync(localDev, "utf8")).publicKeyPem));
   const bundledPub = JSON.parse(readFileSync(join(stage, "electron/lawdb/content-signing.pub.json"), "utf8"));
   const pubDev = bundledPub.dev === true || devFps.has(keyFp(bundledPub.publicKeyPem));
   const devExtra = (Array.isArray(rel?.content_keys) ? rel.content_keys : []).flatMap((k, i) => (typeof k === "string" && devFps.has(keyFp(k)) ? [i + 1] : []));

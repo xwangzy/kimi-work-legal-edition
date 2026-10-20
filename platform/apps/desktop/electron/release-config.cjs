@@ -82,6 +82,8 @@ function loadReleaseConfig(file) {
   }
   const env = {};
   const problems = [];
+  // 正式发布（放了 release.json 且未标 test_build；与打包门禁同一判据）：内核在安装包形态拒载开发内容签名公钥（复核 A-14 余项）
+  if (raw.test_build !== true) env.ZR_RELEASE_BUILD = "1";
   const pair = (baseKey, pinsKey, envBase, envPins) => {
     if (raw[baseKey] === undefined) return;
     const base = httpsUrl(raw[baseKey]);

@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path";
 import { signBytes, sha256B64 } from "@zr-legal/keys";
 import { LAWDB_SCHEMA_SQL, CONTENT_TABLES, computeContentSha256, signerKeyId } from "@zr-legal/lawdb";
+import { registerDevFingerprint } from "../../../scripts/lib/dev-content-keys.mjs";
 
 export function loadJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
@@ -21,6 +22,12 @@ export function ensureContentSigningKey(keysDir) {
   const pubFile = join(keysDir, "content-signing-dev.pub.json");
   if (existsSync(privFile)) {
     const raw = loadJson(privFile);
+    // 第 13 批之前生成的开发公钥文件没有 dev 标记（第 14 批第二轮复核 A 余项）：补上；指纹登记进仓库表
+    const pub = existsSync(pubFile) ? loadJson(pubFile) : null;
+    if (!pub || pub.dev !== true || pub.publicKeyPem !== raw.publicKeyPem) {
+      writeFileSync(pubFile, JSON.stringify({ _comment: "开发内容签名公钥（只用于开发与测试构建）", publicKeyPem: raw.publicKeyPem, dev: true }, null, 2));
+    }
+    registerDev(keysDir, raw.publicKeyPem);
     return { publicKeyPem: raw.publicKeyPem, privateKeyPem: raw.privateKeyPem, pubFile };
   }
   const pair = generateKeyPairSync("ed25519");
@@ -41,7 +48,16 @@ export function ensureContentSigningKey(keysDir) {
   );
   // dev:true（复核 A-14）：开发公钥文件自带标记；构建与打包另按公钥指纹识别（标记被去掉也认得出）
   writeFileSync(pubFile, JSON.stringify({ _comment: "开发内容签名公钥（只用于开发与测试构建）", publicKeyPem, dev: true }, null, 2));
+  registerDev(keysDir, publicKeyPem);
   return { publicKeyPem, privateKeyPem, pubFile };
+}
+
+/** 本机开发公钥指纹登记进仓库表 content/dev-content-key-fingerprints.json（复核 A-14 余项）；新登记时提示随代码提交。 */
+function registerDev(keysDir, publicKeyPem) {
+  const platformRoot = join(keysDir, "..", "..");
+  if (registerDevFingerprint(platformRoot, publicKeyPem, process.env.CI ? "CI 临时开发密钥（不必提交）" : undefined)) {
+    console.warn("[build-lawdb] 本机开发内容签名公钥的指纹已登记进 content/dev-content-key-fingerprints.json——请随代码提交（CI 上不必）");
+  }
 }
 
 export function createPackageDb(file) {

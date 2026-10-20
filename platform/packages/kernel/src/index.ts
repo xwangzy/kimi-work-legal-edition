@@ -122,11 +122,16 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   }
 
   // 法规库包（§9：签名只读 SQLite 包；验签/哈希不符即拒绝加载，不静默降级到任何种子）
+  if (config.contentKeyRefused) {
+    slog.event("KERNEL_CONTENT_KEY_DEV_REFUSED", {});
+    throw new DomainError("lawdb_invalid", "这个安装包带的是测试用的内容签名公钥，正式安装包不能使用：请向中软索取正式安装包", 422);
+  }
   if (!config.lawdbSignerPub) {
     throw new DomainError("lawdb_invalid", "未找到内容签名公钥：请先运行 npm run build:lawdb 生成法规库包与签名公钥（或设置 ZR_LAWDB_SIGNER_PUB）", 422);
   }
-  // 内容签名公钥表（随包公钥 + release.json 的 content_keys；kid 由公钥算出）与分发通道（第 8 批 S6/S7）
-  const contentKeys = contentKeyTable([config.lawdbSignerPub, ...contentKeysFromEnv(env.ZR_CONTENT_KEYS)], contentKeysFromEnv(env.ZR_CONTENT_KEYS_REVOKED));
+  if (config.contentKeysRefused > 0) slog.event("KERNEL_CONTENT_KEYS_DEV_DROPPED", { n: config.contentKeysRefused });
+  // 内容签名公钥表（随包公钥 + release.json 的 content_keys〔正式安装包已剔除开发公钥〕；kid 由公钥算出）与分发通道（第 8 批 S6/S7）
+  const contentKeys = contentKeyTable([config.lawdbSignerPub, ...config.contentKeysExtra], contentKeysFromEnv(env.ZR_CONTENT_KEYS_REVOKED));
   const distChannel = env.ZR_DIST_CHANNEL === "beta" ? "beta" : "stable";
   // 选用法规库：在线已装（账本登记、seq 高于随包）且本机核验通过才用，否则随包（只核验一次，返回已打开实例）；之后在线更新经 LawdbHolder 换用
   const lawdbChoice = selectLawdb({ db, workspaceDir: config.workspaceDir, channel: distChannel, keys: contentKeys, bundledFile: config.lawdbFile, bundledReleaseFile: join(dirname(config.lawdbFile), "lawdb.release.json") });
@@ -1066,6 +1071,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       onboarding: onboarding ? onboarding.status() : null,
       // 内容签名公钥来源（第 13 批，评审 Z4 P0-3）：dev = 开发公钥（测试构建），release = 正式公钥
       content_key: config.contentKeyDev ? "dev" : "release",
+      // 正式安装包从 content_keys 剔除的开发公钥把数（复核 A-14 余项）
+      ...(config.contentKeysRefused > 0 ? { content_keys_refused: config.contentKeysRefused } : {}),
       activation: config.onboarding ? null : activationInfo(config, firm, identity),
       // 这台电脑何时从备份恢复（复核 R2A-14 / R2B-22：界面据此提醒“原电脑丢了请找管理员”）
       restored_from_backup_at: config.onboarding ? null : (db.get<{ at: string }>(`SELECT created_at AS at FROM audit_events WHERE action = 'device.restored_from_backup' AND tenant_id = ? ORDER BY audit_event_id DESC LIMIT 1`, [identity.tenantId])?.at ?? null),

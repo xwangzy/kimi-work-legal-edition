@@ -281,7 +281,11 @@ export class OnboardingService {
     const { keys, signer } = generateJoinDeviceKeys();
     const deviceId = expectedJoinDeviceId(firmSlug, memberSlug);
     const proof = signer.signSync(joinProofBytes({ tid: j.tid, activationId: j.activation_id, deviceId, signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem }));
-    const mac = inviteMac(input.secret, joinMacBytes({ tid: j.tid, activationId: j.activation_id, deviceId, signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem, memberSlug, role }));
+    // 律所名称与本人姓名按兑换时看到的进 HMAC（复核 A-03 余项）：控制面换掉名称，管理员机按本机邀请记录核对即不通过
+    const mac = inviteMac(
+      input.secret,
+      joinMacBytes({ tid: j.tid, activationId: j.activation_id, deviceId, signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem, memberSlug, role, firmName, memberName }),
+    );
     const pendingPath = join(keysDir, "join-pending.json");
     const staged: JoinPending = { tid: j.tid, activation_id: j.activation_id, claim_secret: j.claim_secret, join_request_id: null, keys, invite_secret: input.secret };
     writeStagedSecret(pendingPath, staged);
@@ -358,7 +362,10 @@ export class OnboardingService {
       cert.encPublicKeyPem === st.keys.encPublicKeyPem;
     const fbOk = !!fb && typeof fb.recovery_public_key_pem === "string" && typeof fb.sig === "string" && verifyBytes(rootPub, firmBundleBytes(p.tid, rootPub, fb.recovery_public_key_pem), fb.sig);
     // 管理员用邀请码本机秘密段对批准结果做的 HMAC（复核 A-03）：控制面不知秘密，伪造不了律所根、证书与恢复托管公钥——不再首次信任
-    const macOk = typeof st.invite_secret === "string" && inviteMacValid(st.invite_secret, approvalMacBytes({ tid: p.tid, joinRequestId: p.join_request_id, cert, rootPublicKeyPem: rootPub, bundle: fb }), r.json.admin_mac);
+    // 管理员对律所名称与成员姓名的核对也在其中：与本机兑换时记下的不一致即不采用（activation.json 里的显示名因此经管理员确认）
+    const macOk =
+      typeof st.invite_secret === "string" &&
+      inviteMacValid(st.invite_secret, approvalMacBytes({ tid: p.tid, joinRequestId: p.join_request_id, cert, rootPublicKeyPem: rootPub, bundle: fb, firmName: p.firm_name, memberName: p.member_name }), r.json.admin_mac);
     if (!vr.ok || !same || !fbOk || !macOk) {
       slog.event("KERNEL_ONBOARDING_CERT_REJECTED", {});
       throw new DomainError("provider_unavailable", "收到的批准结果核对不通过，没有采用。请联系管理员重新批准；如反复出现请联系客服", 502);
@@ -415,6 +422,11 @@ export interface MembersDeps {
   keysDir: string;
   call: SignedCall | null;
   audit: (action: string, kind: string, objectId: string) => void;
+}
+
+/** 管理员本机记录的律所名称（与成员机兑换时的取法一致：激活记录里的名称，开发形态没有激活记录时用律所标识）。 */
+function firmNameOf(d: MembersDeps): string {
+  return d.config.activation?.firm_name ?? d.config.firmSlug;
 }
 
 function requireCp(d: MembersDeps): SignedCall {
@@ -512,7 +524,21 @@ export const membersApi = (d: MembersDeps) => {
           local.member_slug === snap.member_slug &&
           local.role === snap.role &&
           snap.device_id === expectedJoinDeviceId(d.config.firmSlug, snap.member_slug) &&
-          inviteMacValid(local.invite_secret, joinMacBytes({ tid: d.identity.tenantId, activationId: snap.activation_id, deviceId: snap.device_id, signPublicKeyPem: snap.sign_pub, encPublicKeyPem: snap.enc_pub, memberSlug: snap.member_slug, role: snap.role }), x.mac);
+          inviteMacValid(
+            local.invite_secret,
+            joinMacBytes({
+              tid: d.identity.tenantId,
+              activationId: snap.activation_id,
+              deviceId: snap.device_id,
+              signPublicKeyPem: snap.sign_pub,
+              encPublicKeyPem: snap.enc_pub,
+              memberSlug: snap.member_slug,
+              role: snap.role,
+              firmName: firmNameOf(d),
+              memberName: local.display_name,
+            }),
+            x.mac,
+          );
         if (verified) snapshots.set(snap.id, snap);
         return {
           id: snap.id,
@@ -560,7 +586,10 @@ export const membersApi = (d: MembersDeps) => {
         // 经签名者签（签名者表面门禁 KP-02：keys 包外不直接按私钥签名）
         sig: new SoftwareSigner(root.privateKeyPem).signSync(firmBundleBytes(d.identity.tenantId, root.publicKeyPem, d.firm.recoveryPublicKeyPem)),
       };
-      const adminMac = inviteMac(local.invite_secret, approvalMacBytes({ tid: d.identity.tenantId, joinRequestId: snap.id, cert, rootPublicKeyPem: root.publicKeyPem, bundle }));
+      const adminMac = inviteMac(
+        local.invite_secret,
+        approvalMacBytes({ tid: d.identity.tenantId, joinRequestId: snap.id, cert, rootPublicKeyPem: root.publicKeyPem, bundle, firmName: firmNameOf(d), memberName: local.display_name }),
+      );
       const r = await call("POST", `/v1/join-requests/${id}/approve`, { cert, firm_bundle: bundle, admin_mac: adminMac });
       if (!r.ok) cpFail(r);
       d.db.tx(() => {

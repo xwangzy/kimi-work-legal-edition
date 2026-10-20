@@ -175,7 +175,7 @@ test("成员入组：管理员发邀请 → 凭邀请码提交申请（持有证
     sign_pub: o.signPub ?? mk.signPublicKeyPem,
     enc_pub: mk.encPublicKeyPem,
     proof: signBytes(o.proofKey ?? mk.signPrivateKeyPem, joinProofBytes({ tid, activationId: red.json.activation_id, deviceId, signPublicKeyPem: o.signPub ?? mk.signPublicKeyPem, encPublicKeyPem: mk.encPublicKeyPem })),
-    mac: inviteMac(S, joinMacBytes({ tid, activationId: red.json.activation_id, deviceId, signPublicKeyPem: o.signPub ?? mk.signPublicKeyPem, encPublicKeyPem: mk.encPublicKeyPem, memberSlug: "zhang", role: "lawyer" })),
+    mac: inviteMac(S, joinMacBytes({ tid, activationId: red.json.activation_id, deviceId, signPublicKeyPem: o.signPub ?? mk.signPublicKeyPem, encPublicKeyPem: mk.encPublicKeyPem, memberSlug: "zhang", role: "lawyer", firmName: red.json.firm.name, memberName: red.json.member.name })),
   });
   // 持有证明不对：拒绝
   const bad = await post("/v1/join-requests", body({ proofKey: generateDeviceKeys().signPrivateKeyPem }));
@@ -220,7 +220,7 @@ test("成员入组：管理员发邀请 → 凭邀请码提交申请（持有证
   const bundle = { recovery_public_key_pem: recoveryPub, sig: signBytes(f.root.privateKeyPem, firmBundleBytes(tid, f.root.publicKeyPem, recoveryPub)) };
   // 缺管理员 MAC：拒绝
   assert.equal((await f.call("POST", `/v1/join-requests/${item.id}/approve`, { cert: good, firm_bundle: bundle })).json.error.code, "admin_mac_missing");
-  const adminMac = inviteMac(S, approvalMacBytes({ tid, joinRequestId: item.id, cert: good, rootPublicKeyPem: f.root.publicKeyPem, bundle }));
+  const adminMac = inviteMac(S, approvalMacBytes({ tid, joinRequestId: item.id, cert: good, rootPublicKeyPem: f.root.publicKeyPem, bundle, firmName: red.json.firm.name, memberName: red.json.member.name }));
   const ap = await f.call("POST", `/v1/join-requests/${item.id}/approve`, { cert: good, firm_bundle: bundle, admin_mac: adminMac });
   assert.equal(ap.status, 200, JSON.stringify(ap.json));
   const got = await post(`/v1/join-requests/${jr.json.join_request_id}/fetch`, { tid, claim_secret: red.json.claim_secret });

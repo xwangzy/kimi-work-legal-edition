@@ -5,10 +5,30 @@
  */
 import { build, context } from "esbuild";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createHash, createPublicKey } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { keyFp, knownDevFingerprints } from "./lib/dev-content-keys.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
+
+// 内容签名公钥（第 13 批，评审 Z4 P0-3；复核 A-14/B13-O05 起按公钥指纹识别开发公钥）：正式发布经 KWL_CONTENT_SIGNING_PUB_FILE 给出生产公钥
+// （私钥在签名服务/硬件模块）；未给出时随包开发公钥并写明 dev:true。指向的文件即使去掉了 dev 标记，只要公钥在开发公钥登记表里
+// （仓库 content/dev-content-key-fingerprints.json ∪ 本机开发公钥）也拒绝。
+// 门禁放在最前面、任何写盘之前（第 14 批第二轮复核 A 余项：原先先清空并重写了制品旁的迁移目录才判门禁），也不在下面的 try 里——
+// 门禁失败必须让构建失败，不能被“未找到 lawdb 产物”的警告吞掉。
+const devPubFile = `${root}content/keys/content-signing-dev.pub.json`;
+const devFps = [...knownDevFingerprints(root)];
+const prodPub = process.env.KWL_CONTENT_SIGNING_PUB_FILE;
+let pubSrc = null;
+if (prodPub) {
+  pubSrc = JSON.parse(readFileSync(prodPub, "utf8"));
+  if (typeof pubSrc.publicKeyPem !== "string" || !pubSrc.publicKeyPem.includes("BEGIN PUBLIC KEY")) throw new Error("KWL_CONTENT_SIGNING_PUB_FILE 缺少 publicKeyPem");
+  if (pubSrc.dev || devFps.includes(keyFp(pubSrc.publicKeyPem))) throw new Error("KWL_CONTENT_SIGNING_PUB_FILE 指向的是开发公钥（标记或公钥指纹在开发公钥登记表里）");
+}
+if (process.argv.includes("--check-content-key")) {
+  // 只核门禁、不构建（测试用：不改任何制品）
+  console.log("[build-kernel] 内容签名公钥门禁通过");
+  process.exit(0);
+}
 
 // 迁移脚本随制品分发（CJS 制品按 __dirname/migrations 解析）。先清空目标目录：迁移改过名（如 0045 → 0050）时，
 // 旧副本留在制品旁会被当成另一条迁移再执行一次
@@ -16,26 +36,12 @@ mkdirSync(`${root}apps/desktop/electron`, { recursive: true });
 rmSync(`${root}apps/desktop/electron/migrations`, { recursive: true, force: true });
 cpSync(`${root}packages/kernel/src/migrations`, `${root}apps/desktop/electron/migrations`, { recursive: true });
 
-// 内容签名公钥（第 13 批，评审 Z4 P0-3；复核 A-14/B13-O05 起按公钥指纹识别开发公钥）：正式发布经 KWL_CONTENT_SIGNING_PUB_FILE 给出生产公钥
-// （私钥在签名服务/硬件模块）；未给出时随包开发公钥并写明 dev:true。指向的文件即使去掉了 dev 标记，只要公钥是本机开发公钥也拒绝。
-// 这一段在下面的 try 之外：门禁失败必须让构建失败，不能被“未找到 lawdb 产物”的警告吞掉。
-const keyFp = (pem) => createHash("sha256").update(createPublicKey(pem).export({ type: "spki", format: "der" })).digest("hex");
-const devPubFile = `${root}content/keys/content-signing-dev.pub.json`;
-const devFps = existsSync(devPubFile) ? [keyFp(JSON.parse(readFileSync(devPubFile, "utf8")).publicKeyPem)] : [];
-const prodPub = process.env.KWL_CONTENT_SIGNING_PUB_FILE;
-let pubSrc = null;
-if (prodPub) {
-  pubSrc = JSON.parse(readFileSync(prodPub, "utf8"));
-  if (typeof pubSrc.publicKeyPem !== "string" || !pubSrc.publicKeyPem.includes("BEGIN PUBLIC KEY")) throw new Error("KWL_CONTENT_SIGNING_PUB_FILE 缺少 publicKeyPem");
-  if (pubSrc.dev || devFps.includes(keyFp(pubSrc.publicKeyPem))) throw new Error("KWL_CONTENT_SIGNING_PUB_FILE 指向的是开发公钥（标记或公钥指纹与本机开发公钥相同）");
-}
-
 // 法规库包与内容签名公钥随制品分发（§9：签名只读 SQLite 包随客户端；须先 npm run build:lawdb）
 // 内核按候选路径 <bundle>/lawdb/lawdb.sqlite 解析；开发形态回退仓库 content/lawdb/dist。
 try {
   cpSync(`${root}content/lawdb/dist/lawdb.sqlite`, `${root}apps/desktop/electron/lawdb/lawdb.sqlite`, { recursive: true });
   cpSync(`${root}content/lawdb/dist/lawdb.manifest.json`, `${root}apps/desktop/electron/lawdb/lawdb.manifest.json`, { recursive: true });
-  // 随包公钥；旁边写构建机开发公钥的指纹（内核据此判断 content_key 是否为 dev，打包脚本据此拒收正式发布）
+  // 随包公钥；旁边写全部已知开发公钥的指纹（登记表 ∪ 构建机本机；内核据此判断 content_key 是否为 dev、正式安装包里拒载，打包脚本据此拒收正式发布）
   const bundled = pubSrc ?? { ...JSON.parse(readFileSync(devPubFile, "utf8")), dev: true };
   mkdirSync(`${root}apps/desktop/electron/lawdb`, { recursive: true });
   writeFileSync(`${root}apps/desktop/electron/lawdb/content-signing.pub.json`, JSON.stringify({ publicKeyPem: bundled.publicKeyPem, ...(bundled.dev ? { dev: true } : {}) }, null, 2));

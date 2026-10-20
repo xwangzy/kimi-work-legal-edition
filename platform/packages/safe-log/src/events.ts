@@ -39,6 +39,9 @@ export const EVENTS = {
   KERNEL_CLOSED: { level: "info", fields: {} },
   KERNEL_SKILLS_UNAVAILABLE: { level: "warn", fields: {} },
   KERNEL_RECOVERY_REJECTED: { level: "warn", fields: {} },
+  /** 正式安装包里的开发内容签名公钥（复核 A-14 余项）：随包公钥是开发公钥即拒载；content_keys 里的开发公钥剔除并记把数。 */
+  KERNEL_CONTENT_KEY_DEV_REFUSED: { level: "error", fields: {} },
+  KERNEL_CONTENT_KEYS_DEV_DROPPED: { level: "warn", fields: { n: "int" } },
   /** 开通与成员入组（第 13 批）：只记发生了什么，不记码、律所或成员。 */
   KERNEL_ONBOARDING_REDEEM_FAILED: { level: "warn", fields: {} },
   KERNEL_ONBOARDING_ACTIVATED: { level: "info", fields: {} },

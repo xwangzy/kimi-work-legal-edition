@@ -69,7 +69,8 @@ test("不合法：http 地址、只有一把钉住、钉住形态错误都不进
     control_plane_pins: [P1, "sha256/short"],
   }));
   assert.equal(r.problems.length, 3);
-  assert.deepEqual(r.env, {});
+  assert.deepEqual(r.env, { ZR_RELEASE_BUILD: "1" }, "不合法的上游不进环境；放了 release.json 且未标 test_build 即正式发布");
+  assert.equal(loadReleaseConfig(write("test-build.json", { test_build: true })).env.ZR_RELEASE_BUILD, undefined, "测试构建不标正式发布");
   assert.deepEqual(loadReleaseConfig(join(dir, "missing.json")), { env: {}, problems: [], update: null });
   assert.deepEqual(loadReleaseConfig(write("garbage.json", "{")).problems, ["release.json 无法解析"]);
 });

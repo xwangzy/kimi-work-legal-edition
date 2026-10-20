@@ -33,6 +33,15 @@ export interface KernelConfig {
   lawdbSignerPub: string;
   /** 内容签名公钥是不是开发公钥（第 13 批：开发公钥的私钥在开发机上，不能用于对外发布；状态如实报告）。 */
   contentKeyDev: boolean;
+  /**
+   * 正式安装包（安装包形态 + release.json 未标 test_build）里随包的内容签名公钥是开发公钥：拒载（lawdbSignerPub 置空，内核启动即报错），
+   * 复核 A-14 余项——打包门禁之外的最后一道。
+   */
+  contentKeyRefused: boolean;
+  /** release.json 的 content_keys（轮换用的新公钥）；正式安装包里已剔除开发公钥。 */
+  contentKeysExtra: string[];
+  /** 正式安装包里从 content_keys 剔除的开发公钥把数。 */
+  contentKeysRefused: number;
   /** OCR 模型目录（§8.1：PP-OCRv5 mobile 三模型 + 字典；缺失时 OCR 路径如实报不可用）。 */
   ocrModelDir: string;
   /** 签名法律 Agent profile 路径（§4.3：A1 任务注入 agentFiles；验签失败任务失败关闭）。 */
@@ -230,11 +239,20 @@ export function contentKeyFingerprint(publicKeyPem: string): string | null {
 }
 
 /**
- * 已知开发公钥指纹：构建内核时写在随包公钥旁（content-dev-fingerprints.json，即构建机的开发公钥），开发形态再加上仓库开发公钥。
+ * 已知开发公钥指纹：构建内核时写在随包公钥旁（content-dev-fingerprints.json：仓库登记表 ∪ 构建机本机开发公钥），
+ * 开发形态再加上仓库登记表 content/dev-content-key-fingerprints.json 与本机开发公钥。
  * 内核据此判断 content_key 是否为 dev——不只看文件里的 dev 标记（复制一份开发公钥、去掉标记也认得出）。
  */
-function devContentFingerprints(dirs: (string | undefined)[], devPub: string | undefined): Set<string> {
+function devContentFingerprints(dirs: (string | undefined)[], devPub: string | undefined, repoTable: string | undefined): Set<string> {
   const out = new Set<string>();
+  if (repoTable && existsSync(repoTable)) {
+    try {
+      const t = JSON.parse(readFileSync(repoTable, "utf8")) as { fingerprints?: { fp?: unknown }[] };
+      for (const e of t.fingerprints ?? []) if (typeof e?.fp === "string" && /^[0-9a-f]{64}$/.test(e.fp)) out.add(e.fp);
+    } catch {
+      /* 登记表损坏：构建与打包门禁会报错，这里只少认几把 */
+    }
+  }
   for (const d of dirs) {
     if (!d) continue;
     try {
@@ -255,7 +273,10 @@ function devContentFingerprints(dirs: (string | undefined)[], devPub: string | u
   return out;
 }
 
-function resolveLawdb(env: NodeJS.ProcessEnv, workspaceDir: string): { lawdbFile: string; lawdbSignerPub: string; contentKeyDev: boolean } {
+function resolveLawdb(
+  env: NodeJS.ProcessEnv,
+  workspaceDir: string,
+): { lawdbFile: string; lawdbSignerPub: string; contentKeyDev: boolean; contentKeyRefused: boolean; contentKeysExtra: string[]; contentKeysRefused: number } {
   const bundleDir = typeof __dirname !== "undefined" ? __dirname : undefined;
   // Electron 安装包形态：法规库经 extraResources 放在 resources/lawdb/（asar 外的真文件）。bundleDir 在 asar 内——
   // 原生 SQLite 走 OS 层打不开 asar 虚拟路径，而 Electron 补丁过的 fs.existsSync 对 asar 路径却返回 true，
@@ -270,7 +291,7 @@ function resolveLawdb(env: NodeJS.ProcessEnv, workspaceDir: string): { lawdbFile
     "";
 
   const devPub = repoContentPath("keys", "content-signing-dev.pub.json");
-  const devFps = devContentFingerprints([resourcesLawdb, bundleDir ? join(bundleDir, "lawdb") : undefined], devPub);
+  const devFps = devContentFingerprints([resourcesLawdb, bundleDir ? join(bundleDir, "lawdb") : undefined], devPub, repoContentPath("dev-content-key-fingerprints.json"));
   const isDev = (pem: string) => {
     const fp = contentKeyFingerprint(pem);
     return fp !== null && devFps.has(fp);
@@ -290,14 +311,25 @@ function resolveLawdb(env: NodeJS.ProcessEnv, workspaceDir: string): { lawdbFile
       }
     }
   }
-  // release.json 的 content_keys（轮换用的新公钥）里混进开发公钥，同样报 dev（复核 A-14：这条路径原先不经任何门禁）
+  // 正式安装包（安装包形态 + release.json 未标 test_build）：开发公钥一律不信任（复核 A-14 余项：原先只报 dev、照常加载）
+  const releaseBuild = env.ZR_REQUIRE_CONTROL_PLANE === "1" && env.ZR_RELEASE_BUILD === "1";
+  let contentKeyRefused = false;
+  if (releaseBuild && contentKeyDev) {
+    lawdbSignerPub = "";
+    contentKeyRefused = true;
+  }
+  // release.json 的 content_keys（轮换用的新公钥）里混进开发公钥：开发形态与测试构建报 dev；正式安装包剔除（复核 A-14：这条路径原先不经任何门禁）
+  let extra: string[] = [];
   try {
-    const extra = JSON.parse(env.ZR_CONTENT_KEYS ?? "[]") as unknown;
-    if (Array.isArray(extra) && extra.some((k) => typeof k === "string" && isDev(k))) contentKeyDev = true;
+    const raw = JSON.parse(env.ZR_CONTENT_KEYS ?? "[]") as unknown;
+    if (Array.isArray(raw)) extra = raw.filter((k): k is string => typeof k === "string");
   } catch {
     /* 格式由 release-config 把关 */
   }
-  return { lawdbFile, lawdbSignerPub, contentKeyDev };
+  const extraDev = extra.filter((k) => isDev(k));
+  if (extraDev.length && !releaseBuild) contentKeyDev = true;
+  const contentKeysExtra = releaseBuild ? extra.filter((k) => !isDev(k)) : extra;
+  return { lawdbFile, lawdbSignerPub, contentKeyDev, contentKeyRefused, contentKeysExtra, contentKeysRefused: releaseBuild ? extraDev.length : 0 };
 }
 
 /**
@@ -320,7 +352,7 @@ export function loadConfig(opts: KernelOptions = {}): KernelConfig {
   const onboarding = !explicit && !activation && (env.ZR_ONBOARDING === "1" || env.ZR_REQUIRE_CONTROL_PLANE === "1");
   const firmSlug = checkSlug("律所标识", opts.firmSlug ?? env.ZR_FIRM_SLUG ?? (onboarding ? PENDING_WORKSPACE_SLUG : activation?.firm_slug) ?? "demo-firm");
   const workspaceDir = join(root, firmSlug);
-  const { lawdbFile, lawdbSignerPub, contentKeyDev } = resolveLawdb(env, workspaceDir);
+  const { lawdbFile, lawdbSignerPub, contentKeyDev, contentKeyRefused, contentKeysExtra, contentKeysRefused } = resolveLawdb(env, workspaceDir);
   const ocrModelDir = env.ZR_OCR_MODEL_DIR ?? firstExisting([repoContentPath("ocr-models")]) ?? join(workspaceDir, "ocr-models");
   const bundleDir = typeof __dirname !== "undefined" ? __dirname : undefined;
   const agentProfileFile =
@@ -359,6 +391,9 @@ export function loadConfig(opts: KernelOptions = {}): KernelConfig {
     lawdbFile,
     lawdbSignerPub,
     contentKeyDev,
+    contentKeyRefused,
+    contentKeysExtra,
+    contentKeysRefused,
     ocrModelDir,
     agentProfileFile,
     syncShareDir: env.ZR_SYNC_SHARE_DIR || undefined,

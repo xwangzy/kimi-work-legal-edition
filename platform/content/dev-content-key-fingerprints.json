@@ -1,0 +1,10 @@
+{
+  "_comment": "开发内容签名公钥指纹登记表（复核 A-14）：SPKI DER 的 sha256。构建（build-kernel）、打包（package-desktop）与内核按此表识别开发公钥——正式发布不得随包或信任其中任何一把，正式安装包里的内核拒载。开发机首次生成开发密钥时由 npm run build:lawdb 自动追加，请随代码提交；只增不删（旧开发公钥签过的内容可能还在别处）。",
+  "fingerprints": [
+    {
+      "fp": "6f9fabd9f765b004978e295a2fc27e28d9d2125fca3c0566ac9f0aa4e80dfd44",
+      "added": "2026-10-20",
+      "note": "主开发机开发密钥（2026-10-02 生成；各 worktree 共用）"
+    }
+  ]
+}

@@ -65,17 +65,33 @@ export function splitInvitationInput(input: unknown): { code: string; secret: st
 
 const inviteKey = (secret: string) => Buffer.from(hkdfSync("sha256", Buffer.from(secret, "utf8"), Buffer.from("kwl"), Buffer.from("kwl-invite-mac/1"), 32));
 
-/** 入组申请的待 MAC 字节（成员机算、管理员机核）：租户、码记录、设备编号、两把公钥、成员标识与角色。 */
-export function joinMacBytes(o: { tid: string; activationId: string; deviceId: string; signPublicKeyPem: string; encPublicKeyPem: string; memberSlug: string; role: string }): Buffer {
+/**
+ * 入组申请的待 MAC 字节（成员机算、管理员机核）：租户、码记录、设备编号、两把公钥、成员标识与角色，以及成员机兑换时看到的
+ * 律所名称与本人姓名（第 14 批复核 A-03 余项：显示名也进核对——控制面在兑换应答里换掉名称，管理员机按本机记录核对即不通过）。
+ */
+export function joinMacBytes(o: {
+  tid: string;
+  activationId: string;
+  deviceId: string;
+  signPublicKeyPem: string;
+  encPublicKeyPem: string;
+  memberSlug: string;
+  role: string;
+  firmName: string;
+  memberName: string | null;
+}): Buffer {
   return Buffer.from(
-    `kwl-join-mac/1\n${canonicalJson({ tid: o.tid, activation_id: o.activationId, device_id: o.deviceId, sign_pub: o.signPublicKeyPem, enc_pub: o.encPublicKeyPem, member_slug: o.memberSlug, role: o.role })}`,
+    `kwl-join-mac/2\n${canonicalJson({ tid: o.tid, activation_id: o.activationId, device_id: o.deviceId, sign_pub: o.signPublicKeyPem, enc_pub: o.encPublicKeyPem, member_slug: o.memberSlug, role: o.role, firm_name: o.firmName, member_name: o.memberName })}`,
     "utf8",
   );
 }
 
-/** 批准结果的待 MAC 字节（管理员机算、成员机核）：证书、律所根公钥与律所公钥包。 */
-export function approvalMacBytes(o: { tid: string; joinRequestId: string; cert: unknown; rootPublicKeyPem: string; bundle: unknown }): Buffer {
-  return Buffer.from(`kwl-approval-mac/1\n${canonicalJson({ tid: o.tid, join_request_id: o.joinRequestId, cert: o.cert, root_public_key_pem: o.rootPublicKeyPem, bundle: o.bundle })}`, "utf8");
+/** 批准结果的待 MAC 字节（管理员机算、成员机核）：证书、律所根公钥与律所公钥包，以及管理员本机记录的律所名称与成员姓名。 */
+export function approvalMacBytes(o: { tid: string; joinRequestId: string; cert: unknown; rootPublicKeyPem: string; bundle: unknown; firmName: string; memberName: string | null }): Buffer {
+  return Buffer.from(
+    `kwl-approval-mac/2\n${canonicalJson({ tid: o.tid, join_request_id: o.joinRequestId, cert: o.cert, root_public_key_pem: o.rootPublicKeyPem, bundle: o.bundle, firm_name: o.firmName, member_name: o.memberName })}`,
+    "utf8",
+  );
 }
 
 export function inviteMac(secret: string, bytes: Uint8Array): string {

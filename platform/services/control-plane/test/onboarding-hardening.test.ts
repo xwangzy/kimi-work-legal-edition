@@ -67,7 +67,7 @@ function joinBody(tid: string, red: any, o: { deviceId?: string; secret?: string
     sign_pub: mk.signPublicKeyPem,
     enc_pub: enc,
     proof: signBytes(mk.signPrivateKeyPem, joinProofBytes({ tid, activationId: red.activation_id, deviceId, signPublicKeyPem: mk.signPublicKeyPem, encPublicKeyPem: enc })),
-    ...(S ? { mac: inviteMac(S, joinMacBytes({ tid, activationId: red.activation_id, deviceId, signPublicKeyPem: mk.signPublicKeyPem, encPublicKeyPem: enc, memberSlug: red.member.slug, role: red.member.role })) } : {}),
+    ...(S ? { mac: inviteMac(S, joinMacBytes({ tid, activationId: red.activation_id, deviceId, signPublicKeyPem: mk.signPublicKeyPem, encPublicKeyPem: enc, memberSlug: red.member.slug, role: red.member.role, firmName: red.firm.name, memberName: red.member.name })) } : {}),
   };
 }
 
