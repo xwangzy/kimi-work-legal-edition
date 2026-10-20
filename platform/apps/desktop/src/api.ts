@@ -56,8 +56,11 @@ async function chooseSaveTarget(name: string, content: "case" | "none" = "case")
   return null;
 }
 
-/** 材料的常见扩展名（选择对话框的过滤器）。 */
-export const MATERIAL_EXTENSIONS = ["docx", "pdf", "txt", "md", "png", "jpg", "jpeg", "xlsx", "csv"];
+/**
+ * 材料的常见扩展名（选择对话框的过滤器）。旧版 Word / WPS / Excel 与 RTF 也让选（B-11）：选了会逐个告诉律师“请另存为 docx / xlsx 再导入”，
+ * 而不是在对话框里看不见、以为文件丢了。
+ */
+export const MATERIAL_EXTENSIONS = ["docx", "pdf", "txt", "md", "png", "jpg", "jpeg", "xlsx", "csv", "doc", "wps", "xls", "et", "rtf"];
 /** web 开发形态文件输入框的同一组扩展名（复核 S5B-10）。 */
 export const MATERIAL_ACCEPT = MATERIAL_EXTENSIONS.map((e) => `.${e}`).join(",");
 

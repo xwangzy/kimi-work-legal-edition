@@ -16,7 +16,30 @@ export interface ParseOutcome {
 }
 
 // v0.1.1：DOCX 取可见文字（修订删除、移动原位置不计入；复核 B3-B14、C-B04）——新旧解析版本可按此区分
-const PARSER_VERSION = "v0.1.1-crude";
+// v0.1.2（v9.3 第 15 批 B-11）：DOCX 表格按行输出“| 单元格 | 单元格 |”，不再每个单元格各占一行
+const PARSER_VERSION = "v0.1.2-crude";
+
+/**
+ * 旧版 Office 与 WPS 格式（B-11；评审 Z1“.doc/.wps 不支持”）：本机不带格式转换程序，按扩展名或文件头（OLE 复合文档 D0CF11E0、RTF）认出来，
+ * 请律师在 Word / WPS / Excel 里另存为新格式后再导入——说清楚怎么做，而不是只报“不支持的文件类型”。
+ */
+const LEGACY_FORMATS: { ext: RegExp; kind: string; to: string }[] = [
+  { ext: /\.(doc|dot|wps|wpt)$/, kind: "旧版 Word 或 WPS 文字", to: "Word 文档（.docx）" },
+  { ext: /\.(xls|xlt|et|ett)$/, kind: "旧版 Excel 或 WPS 表格", to: "Excel 工作簿（.xlsx）" },
+  { ext: /\.(ppt|dps)$/, kind: "演示文稿", to: "PDF" },
+  { ext: /\.rtf$/, kind: "RTF 文档", to: "Word 文档（.docx）" },
+];
+
+function legacyFormat(lower: string, buf: Buffer): { kind: string; to: string } | null {
+  const byExt = LEGACY_FORMATS.find((f) => f.ext.test(lower));
+  if (byExt) return byExt;
+  // 改了扩展名的旧格式文件（例如 .doc 改名成 .docx）：看文件头
+  if (buf.length >= 8 && buf.readUInt32BE(0) === 0xd0cf11e0 && buf.readUInt32BE(4) === 0xa1b11ae1) {
+    return lower.endsWith(".xlsx") ? LEGACY_FORMATS[1]! : LEGACY_FORMATS[0]!;
+  }
+  if (buf.subarray(0, 5).toString("latin1") === "{\\rtf") return LEGACY_FORMATS[3]!;
+  return null;
+}
 
 /**
  * 纯文本解码（复核 B3-A07）：UTF-8（含 BOM）优先；UTF-16 按 BOM；不是合法 UTF-8 时按 GB18030 解（本地政府与企业导出的 TXT 常见）——
@@ -38,6 +61,10 @@ export function decodePlainText(buf: Buffer): { text: string; encoding: "utf-8" 
 
 export function parseDocument(filename: string, mime: string, buf: Buffer): ParseOutcome {
   const lower = filename.toLowerCase();
+  const legacy = legacyFormat(lower, buf);
+  if (legacy) {
+    throw new DomainError("unsupported_file", `这是${legacy.kind}格式，本机读不了：请用 Word、WPS 或 Excel 打开它，“另存为”${legacy.to}后再导入`, 422, { legacy_format: true });
+  }
   if (mime.startsWith("text/") || lower.endsWith(".txt") || lower.endsWith(".md") || lower.endsWith(".csv")) {
     const decoded = decodePlainText(buf);
     return {
@@ -58,7 +85,7 @@ export function parseDocument(filename: string, mime: string, buf: Buffer): Pars
     return {
       text,
       pageCount: null,
-      qualityFlags: ["v0_crude_docx_parser", "no_page_anchors", "tables_flattened", "comments_revisions_ignored"],
+      qualityFlags: ["v0_crude_docx_parser", "no_page_anchors", ...(/<w:tbl\b/.test(xml) ? ["tables_as_rows"] : []), "comments_revisions_ignored"],
       parser: "docx-crude",
       parserVersion: PARSER_VERSION,
     };
@@ -118,7 +145,35 @@ export function docxXmlToText(xml: string, o: { keepDeleted?: boolean } = {}): s
         .replace(/<w:(del|moveFrom)\b[^>]*\/>/g, "")
         .replace(/<w:(del|moveFrom)\b[^>]*>[\s\S]*?<\/w:\1>/g, "")
         .replace(/<w:delText\b[^>]*>[\s\S]*?<\/w:delText>/g, "");
-  return visible
+  // 表格（B-11）：由内向外逐个换成占位符，每张表按行写成“| 单元格 | 单元格 |”；单元格里的多段用空格连起，嵌套表压成一格
+  const tables: string[] = [];
+  let body = visible;
+  const INNER_TABLE = /<w:tbl\b[^>]*>((?:(?!<w:tbl\b)[\s\S])*?)<\/w:tbl>/;
+  for (let guard = 0; guard < 500 && INNER_TABLE.test(body); guard += 1) {
+    body = body.replace(INNER_TABLE, (_m, inner: string) => {
+      const rows = [...inner.matchAll(/<w:tr\b[^>]*>([\s\S]*?)<\/w:tr>/g)].map((r) =>
+        [...r[1]!.matchAll(/<w:tc\b[^>]*>([\s\S]*?)<\/w:tc>/g)].map((c) => restoreTables(inlineText(c[1]!), tables, true).replace(/\s*\n+\s*/g, " ").replace(/\|/g, "｜").trim()),
+      );
+      tables.push(rows.filter((r) => r.length > 0).map((r) => `| ${r.join(" | ")} |`).join("\n"));
+      return `<w:p>\u0000T${tables.length - 1}\u0000</w:p>`;
+    });
+  }
+  return restoreTables(inlineText(body), tables)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** 表格占位符换回表格文字（嵌套表在单元格里压成一行，各行用“；”隔开）。 */
+function restoreTables(text: string, tables: string[], nested = false): string {
+  return text.replace(/\u0000T(\d+)\u0000/g, (_m, i: string) => {
+    const t = restoreTables(tables[Number(i)] ?? "", tables, true);
+    return nested ? t.replace(/\n/g, "；") : t;
+  });
+}
+
+/** 段落与制表、换行 → 文字（不含表格：表格已换成占位符）。 */
+function inlineText(xml: string): string {
+  return xml
     .replace(/<w:tab\b[^>]*\/>/g, "\t")
     .replace(/<w:br\b[^>]*\/>/g, "\n")
     .replace(/<\/w:p>/g, "\n")
@@ -127,7 +182,5 @@ export function docxXmlToText(xml: string, o: { keepDeleted?: boolean } = {}): s
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .replace(/&apos;/g, "'");
 }
