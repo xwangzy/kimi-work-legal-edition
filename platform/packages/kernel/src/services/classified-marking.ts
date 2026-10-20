@@ -5,6 +5,7 @@
  * 页眉页脚或文件名中。检测原则——**宁可多拦、不可漏放，但不误伤日常法律文本**：
  *
  * - 命中（拒绝导入）：“绝密/机密/秘密”紧跟星形符号（★☆✩✪✫✬✭✮✯✰✱✲✳✴✵✶✷✸✹✺）；或紧跟保密期限（启用前、长期、N年、N个月）且位于行首；
+ *   行首含表格单元格的开头，密级与期限分在相邻两格也算（复核 R15B-08）；
  *   ASCII 星号“*”（OCR 常把★识别成它）只在密级词前不是汉字、且星号后不是另一个星号时算（复核 B3-A06：Markdown 粗体“**商业秘密**”、
  *   脚注“商业秘密*”不误拦）；允许字间与符号前后的空白（排版加空格、分散对齐、竖排逐字换行、OCR 断行）；
  *   检测前做 NFKC 规范化并剔除不可见格式字符（零宽空格、软连字符、BOM 等；复核 B3-A07）；
@@ -32,6 +33,12 @@ const GAP = "[\\s\\u3000]{0,6}";
 const spaced = (word: string) => [...word].join(GAP);
 const LEVELS: readonly ClassifiedLevel[] = ["绝密", "机密", "秘密"];
 const PERIOD = `(?:启用前|长期|[0-9０-９一二三四五六七八九十]{1,3}${GAP}(?:年|个${GAP}月))`;
+/**
+ * “行首”也包括表格单元格的开头（复核 R15B-08）：DOCX 表格按行读成“| 单元格 | 单元格 |”，公文版头（份号、密级、紧急程度）常用表格排；
+ * 密级和期限分在相邻两格时，中间夹着“ | ”。全角“｜”在规范化时已折成“|”。
+ */
+const LINE_START = "(?:^|\\n|\\|)[\\s\\u3000]*";
+const CELL_GAP = "[\\s\\u3000|]{0,8}";
 
 /** NFKC（全角折半角、兼容字形归一；全角星号 ＊ → *）并剔除不可见格式字符（\p{Cf}：零宽空格、软连字符、BOM、方向控制等）。 */
 function normalize(s: string): string {
@@ -52,11 +59,11 @@ function scanOne(text: string, where: ClassifiedFinding["where"]): ClassifiedFin
       continue;
     }
     // 无星形符号（OCR 丢失）但带保密期限：只认行首（文件名整体视为一行）——“商业秘密三年”之类行中用语因此不命中
-    if (new RegExp(`(?:^|\\n)[\\s\\u3000]*${spaced(level)}${GAP}${PERIOD}`).test(t)) out.push({ kind: "state_secret", level, where });
+    if (new RegExp(`${LINE_START}${spaced(level)}${CELL_GAP}${PERIOD}`).test(t)) out.push({ kind: "state_secret", level, where });
   }
   if (out.length === 0) {
     if (starPattern("内部").test(t)) out.push({ kind: "internal", level: "内部", where });
-    else if (new RegExp(`(?:^|\\n)[\\s\\u3000]*${spaced("工作秘密")}`).test(t)) out.push({ kind: "internal", level: "工作秘密", where });
+    else if (new RegExp(`${LINE_START}${spaced("工作秘密")}`).test(t)) out.push({ kind: "internal", level: "工作秘密", where });
   }
   return out;
 }

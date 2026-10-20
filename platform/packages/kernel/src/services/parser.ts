@@ -30,13 +30,27 @@ const LEGACY_FORMATS: { ext: RegExp; kind: string; to: string }[] = [
   { ext: /\.rtf$/, kind: "RTF 文档", to: "Word 文档（.docx）" },
 ];
 
-function legacyFormat(lower: string, buf: Buffer): { kind: string; to: string } | null {
+const isOle = (buf: Buffer) => buf.length >= 8 && buf.readUInt32BE(0) === 0xd0cf11e0 && buf.readUInt32BE(4) === 0xa1b11ae1;
+/** 复合文档目录项名是 UTF-16LE：设了打开密码的 .docx / .xlsx（及权限保护的文件）外层也是复合文档，里面是这两项（复核 R15A-17、R15B-18）。 */
+const OLE_ENCRYPTED = [Buffer.from("EncryptedPackage", "utf16le"), Buffer.from("EncryptionInfo", "utf16le")];
+/** Outlook 邮件（.msg）的属性流名都以“__substg1.0_”开头。 */
+const OLE_MSG = Buffer.from("__substg1.0_", "utf16le");
+
+type Unreadable = { kind: string; to: string } | { message: string; detail: Record<string, unknown> };
+
+function legacyFormat(lower: string, buf: Buffer): Unreadable | null {
+  const ole = isOle(buf);
+  // 先认出“设了打开密码”和“邮件”：按旧版格式提示另存，律师照做后仍然导不进
+  if (ole && OLE_ENCRYPTED.some((m) => buf.includes(m))) {
+    return { message: "这份文件设了打开密码（或权限保护），本机读不了：请在 Word、WPS 或 Excel 里去掉打开密码后另存一份，再导入", detail: { password_protected: true } };
+  }
+  if (/\.msg$/.test(lower) || (ole && buf.includes(OLE_MSG))) {
+    return { message: "这是 Outlook 邮件（.msg），本机读不了：请在 Outlook 里打开它，另存为 PDF（附件请单独保存）后再导入", detail: { email_message: true } };
+  }
   const byExt = LEGACY_FORMATS.find((f) => f.ext.test(lower));
   if (byExt) return byExt;
   // 改了扩展名的旧格式文件（例如 .doc 改名成 .docx）：看文件头
-  if (buf.length >= 8 && buf.readUInt32BE(0) === 0xd0cf11e0 && buf.readUInt32BE(4) === 0xa1b11ae1) {
-    return lower.endsWith(".xlsx") ? LEGACY_FORMATS[1]! : LEGACY_FORMATS[0]!;
-  }
+  if (ole) return lower.endsWith(".xlsx") ? LEGACY_FORMATS[1]! : LEGACY_FORMATS[0]!;
   if (buf.subarray(0, 5).toString("latin1") === "{\\rtf") return LEGACY_FORMATS[3]!;
   return null;
 }
@@ -62,6 +76,7 @@ export function decodePlainText(buf: Buffer): { text: string; encoding: "utf-8" 
 export function parseDocument(filename: string, mime: string, buf: Buffer): ParseOutcome {
   const lower = filename.toLowerCase();
   const legacy = legacyFormat(lower, buf);
+  if (legacy && "message" in legacy) throw new DomainError("unsupported_file", legacy.message, 422, legacy.detail);
   if (legacy) {
     throw new DomainError("unsupported_file", `这是${legacy.kind}格式，本机读不了：请用 Word、WPS 或 Excel 打开它，“另存为”${legacy.to}后再导入`, 422, { legacy_format: true });
   }
@@ -145,22 +160,43 @@ export function docxXmlToText(xml: string, o: { keepDeleted?: boolean } = {}): s
         .replace(/<w:(del|moveFrom)\b[^>]*\/>/g, "")
         .replace(/<w:(del|moveFrom)\b[^>]*>[\s\S]*?<\/w:\1>/g, "")
         .replace(/<w:delText\b[^>]*>[\s\S]*?<\/w:delText>/g, "");
-  // 表格（B-11）：由内向外逐个换成占位符，每张表按行写成“| 单元格 | 单元格 |”；单元格里的多段用空格连起，嵌套表压成一格
+  // 表格（B-11）：每张表按行写成“| 单元格 | 单元格 |”，换成占位符；单元格里的多段用空格连起，嵌套表压成一格
   const tables: string[] = [];
-  let body = visible;
-  const INNER_TABLE = /<w:tbl\b[^>]*>((?:(?!<w:tbl\b)[\s\S])*?)<\/w:tbl>/;
-  for (let guard = 0; guard < 500 && INNER_TABLE.test(body); guard += 1) {
-    body = body.replace(INNER_TABLE, (_m, inner: string) => {
-      const rows = [...inner.matchAll(/<w:tr\b[^>]*>([\s\S]*?)<\/w:tr>/g)].map((r) =>
-        [...r[1]!.matchAll(/<w:tc\b[^>]*>([\s\S]*?)<\/w:tc>/g)].map((c) => restoreTables(inlineText(c[1]!), tables, true).replace(/\s*\n+\s*/g, " ").replace(/\|/g, "｜").trim()),
-      );
-      tables.push(rows.filter((r) => r.length > 0).map((r) => `| ${r.join(" | ")} |`).join("\n"));
-      return `<w:p>\u0000T${tables.length - 1}\u0000</w:p>`;
-    });
-  }
+  const body = tablesToPlaceholders(visible, tables);
   return restoreTables(inlineText(body), tables)
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/**
+ * 一遍扫完全文（复核 R15B-19：原先每张表都对全文做一次正则替换，几百张表的审计报告会长时间占住内核，且 500 张以后悄悄退回旧格式）：
+ * 遇到 <w:tbl> 开一层，遇到 </w:tbl> 把这一层（里面的嵌套表已换成占位符）写成表格文字、在上一层留占位符。
+ * 多余的结束标签丢掉；没闭合的表，内容照常当正文。
+ */
+function tablesToPlaceholders(xml: string, tables: string[]): string {
+  const stack: string[] = [""];
+  let last = 0;
+  for (const m of xml.matchAll(/<(\/?)w:tbl\b[^>]*>/g)) {
+    stack[stack.length - 1] += xml.slice(last, m.index);
+    last = m.index! + m[0].length;
+    if (m[0].endsWith("/>")) continue;
+    if (!m[1]) {
+      stack.push("");
+      continue;
+    }
+    if (stack.length === 1) continue;
+    tables.push(tableText(stack.pop()!, tables));
+    stack[stack.length - 1] += `<w:p>\u0000T${tables.length - 1}\u0000</w:p>`;
+  }
+  stack[stack.length - 1] += xml.slice(last);
+  return stack.join("");
+}
+
+function tableText(inner: string, tables: string[]): string {
+  const rows = [...inner.matchAll(/<w:tr\b[^>]*>([\s\S]*?)<\/w:tr>/g)].map((r) =>
+    [...r[1]!.matchAll(/<w:tc\b[^>]*>([\s\S]*?)<\/w:tc>/g)].map((c) => restoreTables(inlineText(c[1]!), tables, true).replace(/\s*\n+\s*/g, " ").replace(/\|/g, "｜").trim()),
+  );
+  return rows.filter((r) => r.length > 0).map((r) => `| ${r.join(" | ")} |`).join("\n");
 }
 
 /** 表格占位符换回表格文字（嵌套表在单元格里压成一行，各行用“；”隔开）。 */

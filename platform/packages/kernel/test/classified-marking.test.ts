@@ -37,6 +37,12 @@ describe("检测规则", () => {
     for (const t of ["机\u200b密★1年", "机\u00ad密★1年", "机    密★", "\ufeff绝密★启用前", "秘密*1年", "（附件）\n秘密*"]) assert.equal(secret(t).length, 1, JSON.stringify(t));
   });
 
+  test("复核 R15B-08：表格按行读出后，单元格开头与相邻两格的无星号写法照样命中", () => {
+    for (const t of ["| 份号 000123 | 机密 1年 | 特急 |", "| 机密 | 1年 |", "| 份号 | 秘密 ｜ 6个月 |", "正文\n| 绝密 | 启用前 |"]) assert.equal(secret(t).length, 1, t);
+    for (const t of ["| 商业秘密 | 3年 |", "| 保密内容 | 技术秘密 | 期限 5 年 |", "| 秘密 | 期限 | 3年 |"]) assert.deepEqual(secret(t), [], t);
+    assert.equal(detectClassifiedMarking({ filename: "a.docx", text: "| 工作秘密 | 会议纪要 |" })[0]?.level, "工作秘密");
+  });
+
   test("不误拦：日常法律文本", () => {
     for (const t of [
       "乙方应对甲方的商业秘密承担保密义务，保密期限三年。",
@@ -125,6 +131,27 @@ describe("导入入口", () => {
     assert.match(String(ok.marking_notice), /内部/);
     const plain = await inv("materials.import", { matter_id: matter.matter_id, filename: "协议.txt", data_base64: Buffer.from("乙方对甲方的商业秘密负有保密义务").toString("base64"), mime: "text/plain" });
     assert.equal(plain.marking_notice, null);
+  });
+
+  test("复核 R15B-08：版头用表格排的 DOCX——密级与期限分在两格也拒绝；表格里的“工作秘密”有提示", async () => {
+    const { inv } = tk;
+    const { matter } = await inv("matters.create", { title: "表格版头", stance: "原告", consent_status: "not_required" });
+    const cell = (t: string) => `<w:tc><w:p><w:r><w:t>${t}</w:t></w:r></w:p></w:tc>`;
+    const doc = (...cells: string[]) =>
+      writeZip([
+        { name: "[Content_Types].xml", data: Buffer.from('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>') },
+        { name: "word/document.xml", data: Buffer.from(`<w:document xmlns:w="w"><w:body><w:tbl><w:tr>${cells.map(cell).join("")}</w:tr></w:tbl><w:p><w:r><w:t>关于某事项的通知</w:t></w:r></w:p></w:body></w:document>`) },
+      ]);
+    const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    for (const cells of [["000123", "机密 1年"], ["机密", "1年"]]) {
+      await assert.rejects(
+        () => inv("materials.import", { matter_id: matter.matter_id, filename: "通知.docx", data_base64: doc(...cells).toString("base64"), mime }),
+        (e: any) => e.code === "classified_material",
+        cells.join("/"),
+      );
+    }
+    const ok = await inv("materials.import", { matter_id: matter.matter_id, filename: "纪要.docx", data_base64: doc("工作秘密", "会议纪要").toString("base64"), mime });
+    assert.match(String(ok.marking_notice), /工作秘密/);
   });
 
   test("重新解析才发现密级标志：隔离——副本块、解析文本与派生的风险卡删除，不能再用于任务与预览（复核 B3-A05）", async () => {

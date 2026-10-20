@@ -57,6 +57,34 @@ test("B-11 旧格式：按扩展名与文件头认出，提示另存为新格式
   }
 });
 
+test("复核 R15A-17、R15B-18：设了打开密码的 Office 文件、Outlook 邮件各给各的提示，不说成“旧版格式”", () => {
+  const head = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+  // 复合文档目录项名是 UTF-16LE；这里只放文件头与目录项名，足以区分
+  const ole = (...names: string[]) => Buffer.concat([head, Buffer.alloc(504), ...names.map((n) => Buffer.concat([Buffer.from(n, "utf16le"), Buffer.alloc(64 - n.length * 2)]))]);
+  const enc = ole("Root Entry", "EncryptionInfo", "EncryptedPackage");
+  for (const name of ["合同.docx", "流水.xlsx", "改了名.doc"]) {
+    assert.throws(() => parseDocument(name, "", enc), (e: any) => /设了打开密码/.test(e.message) && !/旧版/.test(e.message) && e.detail?.password_protected === true, name);
+  }
+  const msg = ole("Root Entry", "__substg1.0_0037001F", "__substg1.0_1000001F");
+  for (const name of ["邮件.msg", "改了名的邮件.doc"]) {
+    assert.throws(() => parseDocument(name, "", msg), (e: any) => /Outlook 邮件.*另存为 PDF/.test(e.message) && e.detail?.email_message === true, name);
+  }
+  // 普通旧版 Word 文件照旧
+  assert.throws(() => parseDocument("起诉状.doc", "", ole("Root Entry", "WordDocument")), (e: any) => /旧版 Word/.test(e.message));
+});
+
+test("复核 R15B-19：表格一遍解析——几百张表很快读完、全部按行输出（没有 500 张的上限）；多余或缺失的结束标签不丢正文", () => {
+  const many = Array.from({ length: 800 }, (_, i) => p(`第${i + 1}节`) + tbl(tr(tc("科目"), tc("金额")), tr(tc(`项${i + 1}`), tc(`${i + 1} 元`)))).join("");
+  const t0 = performance.now();
+  const text = docxXmlToText(doc(many));
+  const ms = performance.now() - t0;
+  assert.ok(ms < 2000, `800 张表用时 ${ms.toFixed(0)} ms`);
+  assert.equal((text.match(/^\| 科目 \| 金额 \|$/gm) ?? []).length, 800, "第 800 张也按行输出");
+  assert.match(text, /\| 项800 \| 800 元 \|/);
+  assert.equal(docxXmlToText(doc(p("甲") + "</w:tbl>" + p("乙"))), "甲\n乙");
+  assert.equal(docxXmlToText(doc(p("甲") + "<w:tbl><w:tr><w:tc>" + p("格") + p("乙"))), "甲\n格\n乙");
+});
+
 test("B-11 事项导入：旧格式给出另存提示；带表格的 DOCX 导入后可读到按行的表格", async () => {
   tk = await makeKernel();
   const m = (await tk.inv("matters.create", { title: "表格导入", stance: "买方", consent_status: "not_required" })).matter.matter_id as string;
