@@ -57,6 +57,35 @@ function httpsGet(port: number, path: string, ca: string): Promise<{ status: num
 
 const haveOpenssl = spawnSync("openssl", ["version"]).status === 0;
 
+test("密钥文件强度（复核 A-15 余项）：真随机的值都通过；重复、递增、单一字符类、占位词、字节过于集中一律拒绝", async () => {
+  // @ts-expect-error 脚本工具模块（.mjs，无类型声明）
+  const { weakSecretReason } = await import("../../../scripts/lib/secret-strength.mjs");
+  for (let i = 0; i < 3000; i++) {
+    assert.equal(weakSecretReason(randomBytes(32).toString("hex"), "hex32"), null);
+    assert.equal(weakSecretReason(randomBytes(32).toString("hex"), "random32"), null);
+    assert.equal(weakSecretReason(randomBytes(32).toString("base64url"), "random32"), null);
+    assert.equal(weakSecretReason(randomBytes(48).toString("base64url"), "random32"), null);
+  }
+  const weak: [string, "hex32" | "random32", RegExp][] = [
+    ["0".repeat(64), "hex32", /重复/],
+    ["0123456789abcdef".repeat(4), "random32", /重复/],
+    ["deadbeef".repeat(8), "hex32", /重复/],
+    ["a1".repeat(32), "hex32", /重复/],
+    [`0123456789${randomBytes(27).toString("hex")}`, "hex32", /连续递增/],
+    ["1234567890".repeat(6) + "1234", "hex32", /连续递增|重复/],
+    ["9".repeat(30) + "8".repeat(34), "hex32", /只有数字/],
+    ["abcdef".repeat(10) + "abcd", "hex32", /只有字母/],
+    ["changeme-changeme-changeme-changeme-changeme", "random32", /占位词/],
+    ["my-service-secret-for-kimi-work-legal-prod-2026", "random32", /占位词/],
+    ["thisisalowercaseonlyphrasewithnouppercaseatall", "random32", /大写与小写/],
+    // 只从 8 个字节值里随机挑（不重复成段、数字字母都有）：取值过于集中
+    [Array.from(randomBytes(32), (b) => ["1a", "2b", "3c", "4d", "5e", "6f", "70", "81"][b & 7]).join(""), "hex32", /集中/],
+    ["short", "random32", /至少 32 字节/],
+    ["g".repeat(64), "hex32", /32 字节十六进制/],
+  ];
+  for (const [v, kind, why] of weak) assert.match(String(weakSecretReason(v, kind)), why, `${v.slice(0, 24)}… 应被拒绝`);
+});
+
 test("拒绝启动：缺 TLS、缺吊销订阅、缺真实上游密钥、角色不对；测试例外只许回环", () => {
   const noTls = runOnce({ role: "dist", listen: { host: "0.0.0.0", port: 18443 } });
   assert.notEqual(noTls.status, 0);
@@ -84,6 +113,10 @@ test("按配置起控制面与检索服务（HTTPS）：检索服务取到签名
   const cpBase = { role: "control-plane", listen: { host: "127.0.0.1", port: 0 }, tls, data_dir: dir, envelope_key: { kid: "cp-t1", private_key_file: join(dir, "env.pem") }, seat_key: { kid: "seat-t1", private_key_file: join(dir, "seat.pem") }, state_key_file: write("state0.key", randomBytes(32).toString("hex")) };
   assert.match(runOnce({ ...cpBase, service_secret_file: secret }).stderr, /code_pepper_file/);
   assert.match(runOnce({ ...cpBase, service_secret_file: write("weak", "short-secret"), code_pepper_file: write("pep0", randomBytes(32).toString("hex")) }).stderr, /service_secret_file 须为至少 32 字节/);
+  // 格式对、但明显是手填的低熵值：服务间凭据、胡椒、状态封装密钥一律拒绝（第 14 批第二轮复核 A 余项）
+  assert.match(runOnce({ ...cpBase, service_secret_file: write("weak2", "0123456789abcdef".repeat(4)), code_pepper_file: join(dir, "pep0") }).stderr, /service_secret_file 由同一片段重复而成/);
+  assert.match(runOnce({ ...cpBase, service_secret_file: secret, code_pepper_file: write("pep-weak", "0".repeat(64)) }).stderr, /code_pepper_file 由同一片段重复而成/);
+  assert.match(runOnce({ ...cpBase, state_key_file: write("state-weak", "9".repeat(32) + "8".repeat(32)), service_secret_file: secret, code_pepper_file: join(dir, "pep0") }).stderr, /state_key_file .*不是随机生成/);
   const cp = await start({
     role: "control-plane",
     listen: { host: "127.0.0.1", port: 0 },

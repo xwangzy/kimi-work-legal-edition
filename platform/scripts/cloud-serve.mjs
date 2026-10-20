@@ -29,12 +29,14 @@
  *   "content_safety_policy_file": "...",                 // 网关可选
  *   // 支持：
  *   "ops_secret_file": "...", "meter_key_file": "..." }
+ * 全部密钥文件除格式外还核“是不是随机生成的”（scripts/lib/secret-strength.mjs：拒绝重复、递增、单一字符类、占位词）；运营凭据与服务间凭据同一要求。
  */
 import { createPrivateKey, createPublicKey } from "node:crypto";
 import { createServer as createHttpsServer } from "node:https";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { weakSecretReason } from "./lib/secret-strength.mjs";
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const i = process.argv.indexOf("--config");
@@ -82,12 +84,15 @@ const dataDir = (sub) => {
 
 let svc;
 let feed = null;
-// 服务间凭据强度（复核 A-15）：至少 32 字节随机——64 位以上十六进制或 43 位以上 base64url
-const serviceSecret = () => {
-  const s = read(cfg.service_secret_file, "service_secret_file");
-  if (!/^[0-9a-f]{64,}$/i.test(s) && !/^[A-Za-z0-9_-]{43,}$/.test(s)) fail("service_secret_file 须为至少 32 字节的随机值（64 位以上十六进制或 43 位以上 base64url）");
+// 密钥文件强度（复核 A-15；第 14 批第二轮复核 A 余项）：格式与长度之外，拒绝重复、递增、只有一类字符、占位词等明显手填的值
+const secretFile = (f, what, kind) => {
+  const s = read(f, what);
+  const why = weakSecretReason(s, kind);
+  if (why) fail(`${what} ${why}（建议用 openssl rand -hex 32 生成）`);
   return s;
 };
+// 服务间凭据：至少 32 字节随机——64 位以上十六进制或 43 位以上 base64url
+const serviceSecret = () => secretFile(cfg.service_secret_file, "service_secret_file", "random32");
 
 if (cfg.role === "control-plane") {
   const cpMod = await import(join(root, "services/control-plane/src/index.ts"));
@@ -96,19 +101,14 @@ if (cfg.role === "control-plane") {
     const privateKey = createPrivateKey(read(k.private_key_file, `${what}.private_key_file`));
     return { kid: String(k.kid), privateKey, publicKey: createPublicKey(privateKey) };
   };
-  const stateKey = read(cfg.state_key_file, "state_key_file");
-  if (!/^[0-9a-f]{64}$/i.test(stateKey)) fail("state_key_file 须为 32 字节十六进制");
+  const stateKey = secretFile(cfg.state_key_file, "state_key_file", "hex32");
   const dir = dataDir("control-plane");
   svc = cpMod.createControlPlane({
     keys: { envelope: pair(cfg.envelope_key, "envelope_key"), seat: pair(cfg.seat_key, "seat_key") },
     serviceSecret: serviceSecret(),
     stateStore: cpMod.fileStateStore(join(dir, "state"), { key: Buffer.from(stateKey, "hex"), requireKey: true }),
     // 开通码 HMAC 的胡椒（复核 A-06/A-15）：与签名密钥分开，由 KMS 挂载；生产入口必填（按信封私钥派生会让信封密钥轮换时在途码全部失效）
-    codePepper: (() => {
-      const p = read(cfg.code_pepper_file, "code_pepper_file");
-      if (!/^[0-9a-f]{64}$/i.test(p)) fail("code_pepper_file 须为 32 字节十六进制");
-      return Buffer.from(p, "hex");
-    })(),
+    codePepper: Buffer.from(secretFile(cfg.code_pepper_file, "code_pepper_file", "hex32"), "hex"),
     auditLog: cpMod.createAuditLog({ file: join(dir, "audit.jsonl") }),
   }).server;
 } else {
@@ -138,15 +138,14 @@ if (cfg.role === "control-plane") {
     svc = da.createDistApi({ dir: dataDir("dist"), keys: seatKeys, feed });
   } else if (cfg.role === "support") {
     const sa = await import(join(root, "services/support-api/src/index.ts"));
-    const meterKey = read(cfg.meter_key_file, "meter_key_file");
-    if (!/^[0-9a-f]{64}$/i.test(meterKey)) fail("meter_key_file 须为 32 字节十六进制");
-    svc = sa.createSupportApi({ dir: dataDir("support"), keys: seatKeys, meterKey: Buffer.from(meterKey, "hex"), opsSecret: read(cfg.ops_secret_file, "ops_secret_file"), feed });
+    const meterKey = secretFile(cfg.meter_key_file, "meter_key_file", "hex32");
+    svc = sa.createSupportApi({ dir: dataDir("support"), keys: seatKeys, meterKey: Buffer.from(meterKey, "hex"), opsSecret: secretFile(cfg.ops_secret_file, "ops_secret_file", "random32"), feed });
   } else if (cfg.role === "notify") {
     const na = await import(join(root, "services/notify-api/src/index.ts"));
     svc = na.createNotifyApi({ dir: dataDir("notify"), keys: seatKeys, feed });
   } else {
     const ra = await import(join(root, "services/relay-api/src/index.ts"));
-    svc = ra.createRelayApi({ dir: dataDir("relay"), keys: seatKeys, feed, opsSecret: read(cfg.ops_secret_file, "ops_secret_file") });
+    svc = ra.createRelayApi({ dir: dataDir("relay"), keys: seatKeys, feed, opsSecret: secretFile(cfg.ops_secret_file, "ops_secret_file", "random32") });
   }
 }
 
