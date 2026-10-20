@@ -11,6 +11,7 @@
 import { CitationState, DomainError, type CitationState as CitationStateT } from "@zr-legal/domain";
 import { versionAt, type Lawdb } from "@zr-legal/lawdb";
 import { cnToInt, intToCn } from "./cn-numerals.ts";
+import { BARE_NAMES, lawNameCandidates } from "./law-names.ts";
 
 export interface RawCitation {
   raw: string;
@@ -18,9 +19,122 @@ export interface RawCitation {
   articleText: string;
   article: number;
   offset: number;
+  /** 款、项（B-7）：有正文时核对是否存在，正文未采集时如实写“款项未核”。 */
+  paragraph?: number | null;
+  item?: number | null;
+  /** “第X条之一”的“之一”：法规库按条号计数，之X条只核到基础条号。 */
+  suffix?: string | null;
 }
 
-const CITATION_RE = /《([^》]{2,40})》第([零一二三四五六七八九十百千\d]{1,12})条/g;
+/**
+ * 引用提取（v9.3 第 15 批 B-7；评审 Z1 P1-6：此前只认“《法名》第X条”，款、编、无书名号、司法解释全称都漏）：
+ * - 书名号标题至多 80 字，标题里套的书名号（〈〉或误写的《》）都认；标题与条号之间可以有“合同编”“第三编第一分编”这类编章名；
+ * - 条号后可带“之一”“第X款”“第X项 / 第（X）项”；同一法名后的“、第Y条”“至第Y条”“和第Y条”逐条提取；
+ * - 没有书名号的“民法典第585条”“依照公司法第二十条”按简称表提取（只限“××法”“民法典”）；“该法 / 同法第X条”指上一部被引的法。
+ * 覆盖边界如实：英美 citation、地方性法规无书名号的写法、只写“第二款”不写条号的回指不提取。
+ */
+const NUM = "[零〇一二两三四五六七八九十百千\\d]{1,12}";
+const SMALL = "[一二三四五六七八九十\\d]{1,4}";
+const REF = `第(${NUM})条(之[一二三四五六七八九十]{1,3})?(?:第(${SMALL})款)?(?:第(${SMALL})项|第?[（(](${SMALL})[)）]项)?`;
+const PART = "([^，。；：、,;:《》〈〉\\n]{0,24}?)";
+const TITLE_RE = new RegExp(`《((?:[^《》〈〉\\n]|〈[^〈〉\\n]{1,40}〉){2,80}?)》${PART}${REF}`, "g");
+const LIST_RE = new RegExp(`^\\s*(?:、|，|,|和|及|以及|与|或者|或|至|到|—|－|-|～|~)\\s*${REF}`);
+const BARE_RE = BARE_NAMES.length > 0 ? new RegExp(`((?:中华人民共和国)?(?:${BARE_NAMES.join("|")}))${PART}${REF}`, "g") : null;
+
+const SAME_LAW_RE = new RegExp(`(?:该法|同法|上述法律|前述法律)${REF}`, "g");
+
+/** 书名号里是合同、章程、函件这类文件（《股权转让协议》第七条）不是法：不当引用提取，免得都落到“法规库外、须人工核对”。 */
+const DOC_TITLE_RE = /(协议|协议书|合同|合同书|章程|意向书|承诺函|确认函|通知书|备忘录|说明书|报告|清单|附件)$/;
+
+/** 编章名只许出现“编、分编、章、节、总则、分则、附则”与序号（否则多半是正文里别的话，宁可不提取也不张冠李戴）。 */
+function partOk(part: string): boolean {
+  const p = part.replace(/\s+/g, "");
+  return p === "" || (/(编|章|节|总则|分则|附则|通则)/.test(p) && !/[条款项]/.test(p) && p.length <= 20);
+}
+
+/** 标题里误写的嵌套书名号改成〈〉、全角数字改半角（都是等长替换，位置不变）：《最高人民法院关于适用《中华人民共和国民事诉讼法》的解释》。 */
+function foldNestedTitles(text: string): string {
+  let depth = 0;
+  let out = "";
+  for (const ch of text) {
+    if (ch === "《") {
+      out += depth >= 1 ? "〈" : ch;
+      depth += 1;
+    } else if (ch === "》" && depth > 0) {
+      depth -= 1;
+      out += depth >= 1 ? "〉" : ch;
+    } else if (ch >= "０" && ch <= "９") {
+      out += String.fromCharCode(ch.charCodeAt(0) - 0xfee0);
+    } else {
+      if (ch === "\n") depth = 0;
+      out += ch;
+    }
+  }
+  return out;
+}
+
+const smallInt = (s: string | undefined): number | null => (s ? cnToInt(s) : null);
+
+function refOf(m: RegExpMatchArray | RegExpExecArray, at: number): Omit<RawCitation, "raw" | "law" | "offset"> | null {
+  const articleText = m[at]!;
+  const article = cnToInt(articleText.replace(/〇/g, "零").replace(/两/g, "二"));
+  if (article === null) return null;
+  return { articleText, article, suffix: m[at + 1] ?? null, paragraph: smallInt(m[at + 2]), item: smallInt(m[at + 3] ?? m[at + 4]) };
+}
+
+/** 一处引用之后紧跟的“、第Y条 / 至第Y条”（同一部法）。 */
+function followers(text: string, from: number, law: string, titleRaw: string, out: RawCitation[]): void {
+  let pos = from;
+  for (let i = 0; i < 50; i += 1) {
+    const m = LIST_RE.exec(text.slice(pos, pos + 120));
+    if (!m) return;
+    const r = refOf(m, 1);
+    if (r) out.push({ raw: `${titleRaw}${m[0].replace(/^\s*(?:、|，|,|和|及|以及|与|或者|或|至|到|—|－|-|～|~)\s*/, "")}`, law, offset: pos + m.index!, ...r });
+    pos += m[0].length;
+  }
+}
+
+export function extractCitations(text: string): RawCitation[] {
+  const t = foldNestedTitles(text);
+  const out: RawCitation[] = [];
+  const covered: [number, number][] = [];
+  for (const m of t.matchAll(TITLE_RE)) {
+    if (!partOk(m[2]!) || DOC_TITLE_RE.test(m[1]!)) continue;
+    const r = refOf(m, 3);
+    if (!r) continue;
+    const start = m.index ?? 0;
+    const end = start + m[0].length;
+    const law = m[1]!;
+    out.push({ raw: text.slice(start, end), law, offset: start, ...r });
+    covered.push([start, end]);
+    followers(t, end, law, `《${law}》`, out);
+  }
+  const inTitle = (i: number) => covered.some(([a, b]) => i >= a && i < b);
+  // 没有书名号的“民法典第585条”（不在已提取的书名号引用里、前一个字不是书名号）
+  if (BARE_RE) {
+    for (const m of t.matchAll(BARE_RE)) {
+      const start = m.index ?? 0;
+      if (inTitle(start) || t[start - 1] === "《" || t[start - 1] === "〈") continue;
+      if (!partOk(m[2]!)) continue;
+      const r = refOf(m, 3);
+      if (!r) continue;
+      const end = start + m[0].length;
+      const law = `${m[1]!}`.replace(/^中华人民共和国/, "");
+      out.push({ raw: text.slice(start, end), law, offset: start, ...r });
+      covered.push([start, end]);
+      followers(t, end, law, law, out);
+    }
+  }
+  // “该法 / 同法第X条”：指在它之前最近一处被引的法
+  for (const m of t.matchAll(SAME_LAW_RE)) {
+    const start = m.index ?? 0;
+    const prev = out.filter((c) => c.offset < start).sort((a, b) => b.offset - a.offset)[0];
+    if (!prev) continue;
+    const r = refOf(m, 1);
+    if (r) out.push({ raw: text.slice(start, start + m[0].length), law: prev.law, offset: start, ...r });
+  }
+  return out.sort((a, b) => a.offset - b.offset);
+}
 
 /**
  * 案号粗粒度提取（如实说明覆盖边界）：只覆盖「(20xx 或 （20xx 开头、以「号」收尾」的中文案号形态，
@@ -28,16 +142,6 @@ const CITATION_RE = /《([^》]{2,40})》第([零一二三四五六七八九十�
  * 不覆盖：无「号」收尾的引用、英美 citation、非诉讼编号变体、括号内非 20xx 年份——未覆盖形态按未提取处理（不伪造核验结论）。
  */
 const CASE_NO_RE = /[（(]20\d{2}[）)][0-9A-Za-z一-龥]{1,15}?号/g;
-
-export function extractCitations(text: string): RawCitation[] {
-  const out: RawCitation[] = [];
-  for (const m of text.matchAll(CITATION_RE)) {
-    const article = cnToInt(m[2]!);
-    if (article === null) continue;
-    out.push({ raw: m[0], law: m[1]!, articleText: m[2]!, article, offset: m.index ?? 0 });
-  }
-  return out;
-}
 
 export function extractCaseNumbers(text: string): string[] {
   return [...text.matchAll(CASE_NO_RE)].map((m) => m[0]);
@@ -144,7 +248,12 @@ function verifyOne(lawdb: Lawdb, rc: RawCitation, asOf: string, topicHint: strin
     historical_note: null,
     checked_at: checkedAt,
   };
-  const rows = lawdb.findLawVersions(rc.law);
+  let rows = lawdb.findLawVersions(rc.law);
+  // 简称、去或加“中华人民共和国”、标题里的〈〉（B-7）：原样查不到再按候选写法查
+  for (const name of lawNameCandidates(rc.law)) {
+    if (rows.length > 0) break;
+    rows = lawdb.findLawVersions(name);
+  }
   if (rows.length === 0) {
     base.reasons.push("unknown_source:注册库中不存在该法源，无法核实来源");
     return base;
@@ -176,8 +285,48 @@ function verifyOne(lawdb: Lawdb, rc: RawCitation, asOf: string, topicHint: strin
       return base;
     }
   }
+  // 款、项（B-7）：有条文正文时按正文的段落与“（一）”列项核对是否存在；正文未采集只核到条，如实注明（只在本机计数，正文不出本函数）
+  const notes: string[] = [];
+  if (rc.paragraph || rc.item) {
+    const body = lawdb.getArticle(v.lsv_id, rc.article);
+    const where = `第${intToCn(rc.article)}条${rc.paragraph ? `第${intToCn(rc.paragraph)}款` : ""}${rc.item ? `第（${intToCn(rc.item)}）项` : ""}`;
+    if (!body) notes.push(`subdivision_unchecked:法规库只收了条号、没有${where}的正文，款项没有核对`);
+    else {
+      const st = articleStructure(body);
+      if (rc.paragraph && rc.paragraph > st.length) {
+        base.reasons.push(`paragraph_out_of_range:第 ${rc.article} 条只有 ${st.length} 款，没有第 ${rc.paragraph} 款`);
+        return base;
+      }
+      if (rc.item) {
+        const items = rc.paragraph ? st[rc.paragraph - 1]! : (st.find((n) => n > 0) ?? 0);
+        if (rc.item > items) {
+          base.reasons.push(`item_out_of_range:${rc.paragraph ? `第 ${rc.article} 条第 ${rc.paragraph} 款` : `第 ${rc.article} 条`}${items > 0 ? `只有 ${items} 项` : "没有分项"}，没有第 ${rc.item} 项`);
+          return base;
+        }
+      }
+    }
+  }
+  if (rc.suffix) notes.push(`suffix_unchecked:法规库按条号计数，“第${intToCn(rc.article)}条${rc.suffix}”只核到第${intToCn(rc.article)}条`);
   // 来源与版本均已核；内容是否支持命题不由确定性工具判断
   base.state = CitationState.supportPending;
-  base.reasons.push("source_and_version_verified:来源与适用版本已核，内容支持待判");
+  base.reasons.push("source_and_version_verified:来源与适用版本已核，内容支持待判", ...notes);
   return base;
+}
+
+/**
+ * 条文结构：每款下有几项。款 = 不以“（一）”这类序号开头的段落；项 = 跟在某款后面、以“（一）”开头的段落。
+ * 整段在全角括号里、括号里不是序号的是编者注（例如演示文本说明），不算款。
+ */
+export function articleStructure(body: string): number[] {
+  const out: number[] = [];
+  for (const line of body.split(/\n+/).map((x) => x.trim()).filter(Boolean)) {
+    if (/^（[一二三四五六七八九十]{1,3}）/.test(line)) {
+      if (out.length === 0) out.push(0);
+      out[out.length - 1]! += 1;
+      continue;
+    }
+    if (/^（[^）]*）$/.test(line)) continue;
+    out.push(0);
+  }
+  return out;
 }
