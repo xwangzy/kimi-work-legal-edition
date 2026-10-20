@@ -2780,7 +2780,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const userId = String(p?.user_id ?? "");
       const target = db.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matter.matter_id, userId]);
       if (!target) throw notFound("事项成员");
-      // 已离所的负责人（他的电脑已全部停用，B-10）可以由其他负责人直接移出：他已不能再操作，留着只会让事项永远带着一位找不到的负责人
+      // 已离所的负责人（他的电脑已全部停用，B-10）可以由其他负责人直接移出：他已不能再操作，留着只会让事项一直挂着一位找不到的负责人
       const targetDevices = db.all<{ status: string }>(`SELECT status FROM devices WHERE tenant_id = ? AND member_id = ? AND role <> 'node'`, [id.tenantId, userId]);
       const departed = targetDevices.length > 0 && targetDevices.every((d) => d.status !== "active");
       if (target.matter_role === "owner" && !departed) throw validation("不能移出事项负责人（须先移交负责人）");
