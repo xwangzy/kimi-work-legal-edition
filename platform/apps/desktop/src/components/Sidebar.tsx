@@ -4,6 +4,7 @@ import { api, onKernelEvent, type Matter } from "../api.ts";
 import { nav, type Route } from "../App.tsx";
 import { Icon } from "./Icons.tsx";
 import { onDataChanged } from "../lib/events.ts";
+import { userCardText } from "../lib/user-card.ts";
 
 interface Item {
   key: Route["page"];
@@ -68,6 +69,7 @@ export function Sidebar({ route }: { route: Route }) {
   const footTitle = status.gate === null ? "正在启动…" : status.unresolved > 0 ? "有联网记录需要核对" : execOk === false ? "本机运行 · 代码分析暂不可用" : "本机运行 · 防护正常";
   const footNote = status.gate === null ? "" : status.unresolved > 0 ? `${status.unresolved} 条因中断无法确认是否发出` : execOk === false ? "其余功能正常" : "";
   const footTone = status.gate === null ? "dot-off" : status.unresolved > 0 || execOk === false ? "dot-warn" : "dot-ok";
+  const card = userCardText(me, { title: footTitle, note: footNote });
   const activeMatter = route.page === "matter" || route.page === "run" ? route.matterId : null;
   // 任务执行态收为图标栏，给三栏（材料 | 进度 | 预览）让出宽度
   const compact = route.page === "run";
@@ -120,13 +122,15 @@ export function Sidebar({ route }: { route: Route }) {
           </button>
         ))}
       </div>
-      <button className={`sidebar-foot${route.page === "connections" ? " active" : ""}`} onClick={() => nav(footTone === "dot-ok" ? "/connections" : "/connections/device")} title="设置">
+      <button className={`sidebar-foot${route.page === "connections" ? " active" : ""}`} onClick={() => nav(footTone === "dot-ok" ? "/connections" : "/connections/device")} title={card.tooltip}>
         <span className="user-avatar" aria-hidden="true">
-          {(me?.name ?? me?.firm ?? "我").slice(0, 1)}
+          {card.avatar}
+          {/* 侧栏收窄时只剩头像：状态点挂在头像右上角（复核 R15B-23） */}
+          <span className={`dot avatar-dot ${footTone}`} />
         </span>
         <span className="user-text">
-          <b>{me?.name ?? "本机"}</b>
-          <small>{me?.firm ?? "开发形态"}</small>
+          <b>{card.name}</b>
+          {card.firm && <small>{card.firm}</small>}
           <small>
             <span className={`dot ${footTone}`} /> {footTitle}
             {footNote ? `：${footNote}` : ""}

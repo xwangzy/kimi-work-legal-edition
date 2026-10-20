@@ -114,6 +114,15 @@ test("备份 → 恢复包 → 新电脑从备份恢复：身份与数据与原�
   assert.equal(st.packages_created, 1);
   assert.equal(st.recent_packages.length, 1);
   assert.ok(st.packages_verified >= 1);
+  assert.equal(st.latest_package_verified, true);
+  // 复核 R15B-25：再生成一份后，“试一下”回到未完成；试开旧的那份不算，试开新的那份才算
+  const pkgPath2 = join(outDir, "恢复包-2.kwlr");
+  const pk2 = (await a.invoke("recovery.create_package", { path: pkgPath2 })) as any;
+  assert.equal(((await a.invoke("backup.status")) as any).latest_package_verified, false);
+  await a.invoke("recovery.verify_package", { file: pkgPath, code: pk.code_text });
+  assert.equal(((await a.invoke("backup.status")) as any).latest_package_verified, false, "试开旧的不算");
+  await a.invoke("recovery.verify_package", { file: pkgPath2, code: pk2.code_text });
+  assert.equal(((await a.invoke("backup.status")) as any).latest_package_verified, true);
   await closeK(a);
 
   // ── 新电脑：待激活模式，另一把主密钥；本机还有一个以前留下的工作区 ──

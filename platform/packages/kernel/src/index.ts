@@ -961,19 +961,37 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     const notRevoked = () => {
       if (revoked()) throw new DomainError("conflict", "本设备已被吊销：不能再备份或生成恢复包", 409);
     };
-    const auditLocal = (action: string, objectId: string) => {
-      appendAuditEvent(db, signer, { tenantId: identity.tenantId, actorId: identity.userId, action, kind: "device", objectId, matterId: null });
+    const auditLocal = (action: string, objectId: string, detailHash?: string) => {
+      appendAuditEvent(db, signer, { tenantId: identity.tenantId, actorId: identity.userId, action, kind: "device", objectId, matterId: null, detailHash });
       if (action.startsWith("recovery.")) pkgStats = null;
     };
     // 恢复包生成与试解的次数、最近几次生成的时刻：只在启动后第一次与每次生成/试解之后数一遍审计表（复核 R2B-23：界面每次换页都查
     // backup.status，原先每次对 audit_events 做三次按动作的扫描）。最近几次的时刻供律师对照手里的纸销毁不用的那份（R2A-01）
-    let pkgStats: { created: number; verified: number; recent: string[] } | null = null;
+    // 审计里记恢复包的套号摘要（不记套号本身）：开通向导的“试一下”要对上最新生成的那一份（复核 R15B-25：重新生成后要再试一次）
+    const packageMark = (setId: string) => createHash("sha256").update(`kwl-recovery-set:${setId}`).digest("hex");
+    let pkgStats: { created: number; verified: number; latestVerified: boolean; recent: string[] } | null = null;
     const packageStats = () =>
-      (pkgStats ??= {
-        created: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_events WHERE action = 'recovery.package_created' AND tenant_id = ?`, [identity.tenantId])!.n,
-        verified: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_events WHERE action = 'recovery.package_verified' AND tenant_id = ?`, [identity.tenantId])!.n,
-        recent: db.all<{ at: string }>(`SELECT created_at AS at FROM audit_events WHERE action = 'recovery.package_created' AND tenant_id = ? ORDER BY audit_event_id DESC LIMIT 5`, [identity.tenantId]).map((r) => r.at),
-      });
+      (pkgStats ??= (() => {
+        const last = db.get<{ id: number; h: string | null }>(
+          `SELECT audit_event_id AS id, detail_hash AS h FROM audit_events WHERE action = 'recovery.package_created' AND tenant_id = ? ORDER BY audit_event_id DESC LIMIT 1`,
+          [identity.tenantId],
+        );
+        // 升级前生成的恢复包没有摘要：退回按先后判断（最近一次生成之后试过）
+        const latestVerified = !last
+          ? false
+          : !!db.get(
+              last.h
+                ? `SELECT 1 FROM audit_events WHERE action = 'recovery.package_verified' AND tenant_id = ? AND detail_hash = ?`
+                : `SELECT 1 FROM audit_events WHERE action = 'recovery.package_verified' AND tenant_id = ? AND audit_event_id > ?`,
+              [identity.tenantId, last.h ?? last.id],
+            );
+        return {
+          created: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_events WHERE action = 'recovery.package_created' AND tenant_id = ?`, [identity.tenantId])!.n,
+          verified: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_events WHERE action = 'recovery.package_verified' AND tenant_id = ?`, [identity.tenantId])!.n,
+          latestVerified,
+          recent: db.all<{ at: string }>(`SELECT created_at AS at FROM audit_events WHERE action = 'recovery.package_created' AND tenant_id = ? ORDER BY audit_event_id DESC LIMIT 5`, [identity.tenantId]).map((r) => r.at),
+        };
+      })());
     api["recovery.create_package"] = (p) => {
       notRevoked();
       const target = String(p?.path ?? "");
@@ -994,7 +1012,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       });
       const sealed = sealRecoveryPackage(content, config.activation?.firm_name ?? config.firmSlug);
       const w = writeExportFile(target, sealed.bytes, config.dataRoot);
-      auditLocal("recovery.package_created", device.deviceId);
+      auditLocal("recovery.package_created", device.deviceId, packageMark(sealed.setId));
       return { file_name: w.name, code_text: sealed.codeText, set_id: sealed.setId, includes_firm_root: !!content.firm_root, created_at: content.created_at, firm_name: config.activation?.firm_name ?? config.firmSlug };
     };
     api["recovery.verify_package"] = (p) => {
@@ -1005,7 +1023,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       const outer = peekRecoveryPackage(bytes);
       const c = openRecoveryPackage(bytes, String(p?.code ?? ""));
       const sameDevice = c.device.device_id === device.deviceId && c.device.keys.signPublicKeyPem === device.cert.signPublicKeyPem;
-      auditLocal("recovery.package_verified", device.deviceId);
+      auditLocal("recovery.package_verified", device.deviceId, packageMark(outer.set_id));
       return { ok: true, same_device: sameDevice, created_at: outer.created_at, includes_db_key: !!c.db_master_key, includes_firm_root: !!c.firm_root };
     };
     // 同一时刻只跑一次备份（定时器、“立即备份”、删除事项后的补备份共用）；退出时取消（复核 R2B-04）
@@ -1027,9 +1045,9 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     };
     api["backup.status"] = () => {
       const st = readBackupState(backupDeps.stateFile);
-      const { created: pk, verified: pv, recent } = packageStats();
+      const { created: pk, verified: pv, latestVerified, recent } = packageStats();
       const staleDays = st.last_ok_at ? Math.floor((Date.now() - Date.parse(st.last_ok_at)) / 86400_000) : null;
-      return { configured: !!st.dir, last_ok_at: st.last_ok_at, last_error: st.last_error, stale_days: staleDays, running: backupProgress, files: st.last_files, bytes: st.last_bytes, packages_created: pk, packages_verified: pv, recent_packages: recent, revoked: revoked() };
+      return { configured: !!st.dir, last_ok_at: st.last_ok_at, last_error: st.last_error, stale_days: staleDays, running: backupProgress, files: st.last_files, bytes: st.last_bytes, packages_created: pk, packages_verified: pv, latest_package_verified: latestVerified, recent_packages: recent, revoked: revoked() };
     };
     api["backup.configure"] = (p) => {
       notRevoked();

@@ -52,7 +52,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--focus-ring); }
 .sidebar-foot .user-text { flex: 1; min-width: 0; }
 .sidebar-foot .user-text b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-foot .user-gear { flex: none; color: var(--text-secondary); padding-top: 4px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: 0 0 8px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: 0 0 8px; }
+/* 侧栏用户卡（复核 R15B-23）：文字里的状态点与文字对齐；头像上的状态点只在侧栏收窄时出现 */
+.sidebar-foot small .dot { margin: 0 2px 0 0; vertical-align: 1px; }
+.sidebar-foot .user-avatar { position: relative; }
+.sidebar-foot .avatar-dot { display: none; position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; margin: 0; border: 2px solid var(--bg-sidebar); box-sizing: border-box; }
+.sidebar.compact .sidebar-foot .avatar-dot { display: block; }
 .dot-ok { background: var(--status-success-solid); } .dot-warn { background: var(--status-warning-solid); } .dot-off { background: var(--status-neutral-solid); }
 .sidebar.compact { width: 60px; flex-basis: 60px; padding: 14px 8px 10px; align-items: center; }
 .sidebar.compact .brand { padding: 4px 0 14px; }
@@ -378,6 +383,7 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
   .sidebar { width: 60px; flex-basis: 60px; padding: 14px 8px 10px; align-items: center; }
   .sidebar .brand { padding: 4px 0 14px; }
   .sidebar .brand > span:not(.brand-mark), .sidebar .nav-label, .sidebar .phase, .sidebar .sidebar-section, .sidebar .sidebar-list, .sidebar .sidebar-foot > span:not(.user-avatar) { display: none; }
+  .sidebar .sidebar-foot .avatar-dot { display: block; }
   .sidebar .nav-item { justify-content: center; padding: 9px; position: relative; }
   .sidebar .badge { position: absolute; top: 0; right: -2px; padding: 0 5px; font-size: var(--fs-xs); line-height: 16px; }
   .main { padding: 24px 20px 32px; }
