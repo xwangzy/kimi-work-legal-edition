@@ -95,6 +95,27 @@ test("B-4 文书版式：设置、模板、下载时套版式、Markdown 下载 
   assert.equal((await inv("doc_style.clear_template")).template, null);
   assert.match(part(Buffer.from((await inv("artifacts.download", { artifact_version_id: gen.id })).data_base64, "base64"), "word/header1.xml"), /示例律师事务所/);
 
+  // 复核 R15A-09：拿真实文书当模板——正文不存进账本；页眉像具体案件的信息时提醒
+  const caseTpl = writeRawZip([
+    { name: "[Content_Types].xml", data: Buffer.from("<Types/>") },
+    { name: "word/styles.xml", data: Buffer.from(`<w:styles xmlns:w="${W}"><w:style w:type="paragraph" w:default="1" w:styleId="a"><w:name w:val="Normal"/></w:style></w:styles>`) },
+    { name: "word/document.xml", data: Buffer.from(`<w:document xmlns:w="${W}" xmlns:r="${R}"><w:body><w:p><w:r><w:t>甲公司借款给乙公司的旧代理词正文</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rId1"/></w:sectPr></w:body></w:document>`) },
+    { name: "word/_rels/document.xml.rels", data: Buffer.from(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${R}/header" Target="header1.xml"/></Relationships>`) },
+    { name: "word/header1.xml", data: Buffer.from(`<w:hdr xmlns:w="${W}"><w:p><w:r><w:t>（2025）京01民初123号 代理词</w:t></w:r></w:p></w:hdr>`) },
+  ]);
+  const vc = await inv("doc_style.set_template", { filename: "旧代理词.docx", data_base64: caseTpl.toString("base64") });
+  assert.equal(vc.template.looks_case_specific, true);
+  assert.match(vc.template.header_text, /民初123号/);
+  const stored = kernel.db.get<{ template: Buffer }>(`SELECT template FROM firm_doc_style WHERE tenant_id = ?`, [ident.tenantId])!.template;
+  assert.ok(!JSON.stringify([...readZipEntries(Buffer.from(stored))].map(([, v]) => v.toString("utf8"))).includes("旧代理词正文"), "模板正文没有存进账本");
+  await inv("doc_style.clear_template");
+  // 下载套了版式：审计里记版式摘要（复核 R15A-12）
+  const styledAudits = kernel.db.all(`SELECT 1 AS x FROM audit_events WHERE action = 'artifact.styled' AND object_id = ?`, [gen.id]);
+  assert.ok(styledAudits.length >= 1);
+  // 样张按面板上还没保存的选项生成（复核 R15B-22）
+  const draftSample = Buffer.from((await inv("doc_style.sample", { draft: { letterhead: "custom", letterhead_name: "还没保存的所名" } })).data_base64, "base64");
+  assert.match(part(draftSample, "word/header1.xml"), /还没保存的所名/);
+
   // 样张：按当前版式生成一页虚构内容
   const sample = Buffer.from((await inv("doc_style.sample")).data_base64, "base64");
   assert.match(part(sample, "word/header1.xml"), /示例律师事务所/);

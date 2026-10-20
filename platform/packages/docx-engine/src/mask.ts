@@ -3,6 +3,7 @@
  * 与修订写入的区别：不留修订标记（脱敏件/化名件不得通过修订痕迹泄露原文）。
  * 未找到的遮盖目标：如实计入 notFound，不静默跳过。
  */
+import { dropHouseMark } from "./house-style.ts";
 import { DomainError } from "@zr-legal/domain";
 import { readZipEntries, writeZip } from "./zip.ts";
 import { escapeXml, mapParagraphs } from "./textmap.ts";
@@ -68,5 +69,6 @@ export function maskDocxText(docx: Buffer, masks: TextMask[]): MaskResult {
     if (!foundAny) notFound.push(mask.find.slice(0, 40));
   }
   files.set("word/document.xml", Buffer.from(xml, "utf8"));
+  dropHouseMark(files);
   return { docx: writeZip([...files.entries()].map(([name, data]) => ({ name, data }))), replaced, notFound };
 }

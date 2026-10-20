@@ -1,4 +1,5 @@
 /** 文档属性净化：脱敏件/对外件不得携带原作者姓名等元数据；保留生成标识。 */
+import { dropHouseMark } from "./house-style.ts";
 import { readZipEntries, writeZip } from "./zip.ts";
 
 export function scrubDocProps(docx: Buffer, creator = "Kimi Work 法律行业发行版"): Buffer {
@@ -13,5 +14,6 @@ export function scrubDocProps(docx: Buffer, creator = "Kimi Work 法律行业发
     xml = xml.replace(/<Manager>[\s\S]*?<\/Manager>/, "<Manager></Manager>");
     files.set(name, Buffer.from(xml, "utf8"));
   }
+  dropHouseMark(files);
   return writeZip([...files.entries()].map(([name, data]) => ({ name, data })));
 }

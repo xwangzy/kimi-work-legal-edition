@@ -1678,12 +1678,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       let filename = String(art.filename);
       // 文书版式（B-4）：导出时套本机的函头、字体与律所模板——本产品生成的 Word 重新套版式；Markdown / 文本成果可“下载 Word”。预览不套
       if (p?.restore !== false) {
-        const { style, template } = houseStyleFor(db, id.tenantId, config.activation?.firm_name ?? null);
-        if (/\.docx$/i.test(filename) && isHouseStyled(out)) out = restyleDocx(out, style, template);
-        else if (p?.as === "docx" && /\.(md|markdown|txt)$/i.test(filename)) {
+        const { style, template, digest } = houseStyleFor(db, id.tenantId, config.activation?.firm_name ?? null);
+        let styled = false;
+        if (/\.docx$/i.test(filename) && isHouseStyled(out)) {
+          out = restyleDocx(out, style, template);
+          styled = true;
+        } else if (p?.as === "docx" && /\.(md|markdown|txt)$/i.test(filename)) {
           out = createStyledDocx(markdownToBlocks(out.toString("utf8")), style, template);
           filename = filename.replace(/\.(md|markdown|txt)$/i, ".docx");
+          styled = true;
         }
+        if (styled) audit(db, id, "artifact.styled", "artifact", art.artifact_version_id, digest, keyctx);
       }
       const changed = !out.equals(buf);
       // 桌面客户端：导出直写到律师选定的位置（还原真名的明文只落在那里；Y5 P1-4）；预览（restore:false）不接受保存位置
@@ -1732,7 +1737,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
     // 样张：一页虚构内容按当前版式生成，律师打开看看函头、字体、页码对不对
     "doc_style.sample": (p, id) => {
-      const { style, template } = houseStyleFor(db, id.tenantId, config.activation?.firm_name ?? null);
+      // 界面上还没保存的选项也能出样张（复核 R15B-22）
+      const draft = p?.draft && typeof p.draft === "object" ? (p.draft as Record<string, unknown>) : undefined;
+      const { style, template } = houseStyleFor(db, id.tenantId, config.activation?.firm_name ?? null, draft);
       const out = createStyledDocx(markdownToBlocks(DOC_STYLE_SAMPLE), style, template);
       const saved = p?.save_path ? writeExportFile(String(p.save_path), out, config.workspaceDir) : null;
       return { filename: saved?.name ?? "文书版式样张.docx", ...(saved ? { saved: true } : { data_base64: out.toString("base64") }) };

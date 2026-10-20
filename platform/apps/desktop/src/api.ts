@@ -401,7 +401,7 @@ export interface DocStyleView {
   effective_letterhead: string | null;
   body: "song-xiaosi" | "fangsong-san";
   page_numbers: boolean;
-  template: { name: string; sha256: string; updated_at: string } | null;
+  template: { name: string; sha256: string; updated_at: string; header_text: string; footer_text: string; looks_case_specific: boolean } | null;
 }
 
 export interface ChatMessage {
@@ -700,10 +700,11 @@ export const api = {
     return invoke<DocStyleView>("doc_style.set_template", { data_base64, filename: fallback.name });
   },
   clearDocTemplate: () => invoke<DocStyleView>("doc_style.clear_template"),
-  downloadDocStyleSample: async (): Promise<boolean> => {
+  /** 样张按面板上当前的选项生成（还没保存也行，复核 R15B-22）。 */
+  downloadDocStyleSample: async (draft?: Partial<Pick<DocStyleView, "letterhead" | "letterhead_name" | "letterhead_lines" | "body" | "page_numbers">>): Promise<boolean> => {
     const target = await chooseSaveTarget("文书版式样张.docx");
     if (target === null) return false;
-    const r = await invoke<{ filename: string; data_base64?: string }>("doc_style.sample", target ? { save_handle: target.handle } : {});
+    const r = await invoke<{ filename: string; data_base64?: string }>("doc_style.sample", { ...(draft ? { draft } : {}), ...(target ? { save_handle: target.handle } : {}) });
     if (!target && r.data_base64) browserDownload(r.data_base64, r.filename, "application/octet-stream");
     return true;
   },

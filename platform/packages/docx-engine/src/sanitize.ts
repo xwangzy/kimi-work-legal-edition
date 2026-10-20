@@ -3,6 +3,7 @@
  * 清除隐藏批注、历史修订、作者属性；接受修订以定稿文本为准。
  * 注意：不得误删依法应保留的生成标识（AIGC 标识在 manifest 与文件属性保留）。
  */
+import { dropHouseMark } from "./house-style.ts";
 import { readZipEntries, writeZip } from "./zip.ts";
 
 const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -50,6 +51,7 @@ export function sanitizeDocx(docx: Buffer): SanitizeResult {
     files.set("docProps/core.xml", Buffer.from(c, "utf8"));
   }
 
+  dropHouseMark(files);
   const out = writeZip([...files.entries()].map(([name, data]) => ({ name, data })));
   return { docx: out, removed: { comments, deletionsAccepted, insertionsAccepted } };
 }

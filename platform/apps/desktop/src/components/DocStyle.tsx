@@ -47,7 +47,15 @@ export function DocStyle() {
         <div className="muted">下载的 Word（意见书、报告、备忘录）按这里的版式排好：A4、标题居中、正文首行缩进、页码、落款右对齐。只影响这台电脑下载的文件；你上传的原件和对方合同的修订稿不动。</div>
         {v.template ? (
           <div className="card">
-            正在用律所模板「{v.template.name}」（{fmtTime(v.template.updated_at)} 上传）：页眉页脚、徽标和样式都取自模板，下面的函头设置不再使用。
+            正在用律所模板「{v.template.name}」（{fmtTime(v.template.updated_at)} 上传）：页眉页脚、徽标、字体和页面设置都取自模板，下面的函头与正文字体设置不再使用。
+            {(v.template.header_text || v.template.footer_text) && (
+              <div className="muted">
+                模板页眉：{v.template.header_text || "（无文字）"}；页脚：{v.template.footer_text || "（无文字）"}
+              </div>
+            )}
+            {v.template.looks_case_specific && (
+              <p className="banner banner-orange">模板的页眉页脚里像是有具体案件的信息（案号、“诉”或文件名）。这些文字会印到之后每一份下载的 Word 上，包括别的客户的文书——请换一份干净的模板。</p>
+            )}
             <div className="card-actions">
               <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => api.clearDocTemplate(), "已移除律所模板")}>
                 移除模板
@@ -85,7 +93,7 @@ export function DocStyle() {
             )}
           </>
         )}
-        <div className="settings-choice" role="radiogroup" aria-label="正文字体">
+        {!v.template && <div className="settings-choice" role="radiogroup" aria-label="正文字体">
           <span>正文</span>
           {(
             [
@@ -97,7 +105,7 @@ export function DocStyle() {
               {l}
             </button>
           ))}
-        </div>
+        </div>}
         <label>
           <input type="checkbox" checked={draft.page_numbers} onChange={(e) => set({ page_numbers: e.target.checked })} /> 页脚加“第 X 页 共 Y 页”
         </label>
@@ -105,7 +113,7 @@ export function DocStyle() {
           <button className="btn-primary btn-sm" disabled={busy} onClick={() => void run(() => api.setDocStyle({ letterhead: draft.letterhead, letterhead_name: draft.letterhead_name, letterhead_lines: draft.letterhead_lines, body: draft.body, page_numbers: draft.page_numbers }), "已保存")}>
             保存
           </button>
-          <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => api.downloadDocStyleSample(), "样张已保存，打开看看")}>
+          <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => api.downloadDocStyleSample({ letterhead: draft.letterhead, letterhead_name: draft.letterhead_name, letterhead_lines: draft.letterhead_lines, body: draft.body, page_numbers: draft.page_numbers }), "样张已保存（按面板上现在的选项），打开看看")}>
             下载样张
           </button>
           <button className="btn-ghost btn-sm" disabled={busy} onClick={() => (window.zrKernel?.pickFiles ? void run(() => api.setDocTemplate(), "已用律所模板") : fileRef.current?.click())}>

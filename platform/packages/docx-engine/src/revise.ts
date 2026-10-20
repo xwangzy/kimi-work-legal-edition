@@ -5,6 +5,7 @@
  * - 锚点歧义（多处匹配且无提示）拒绝自动写入；
  * - 删除文本进 w:delText、新增进 w:ins，作者与日期如实标记（AI 建议 ≠ 律师批准）。
  */
+import { dropHouseMark } from "./house-style.ts";
 import { DomainError, sha256Hex } from "@zr-legal/domain";
 import { readZipEntries, writeZip } from "./zip.ts";
 import { escapeXml, findInParagraph, mapParagraphs } from "./textmap.ts";
@@ -54,6 +55,7 @@ export function applyRevisionsToDocx(docx: Buffer, plan: RevisionPlan): ApplyRes
   }
 
   files.set("word/document.xml", Buffer.from(xml, "utf8"));
+  dropHouseMark(files);
   const out = writeZip([...files.entries()].map(([name, data]) => ({ name, data })));
   return { docx: out, applied };
 }
