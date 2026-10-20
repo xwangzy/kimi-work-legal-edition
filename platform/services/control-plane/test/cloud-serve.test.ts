@@ -7,7 +7,8 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { request } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,7 +29,7 @@ const write = (name: string, content: string) => {
 const cfgFile = (name: string, cfg: unknown) => write(name, JSON.stringify(cfg));
 const runOnce = (cfg: unknown) => spawnSync(process.execPath, [script, "--config", cfgFile(`c-${Math.random().toString(36).slice(2)}.json`, cfg)], { encoding: "utf8", timeout: 30_000 });
 
-function start(cfg: unknown, env: NodeJS.ProcessEnv = {}): Promise<{ port: number; proc: ChildProcess }> {
+function start(cfg: unknown, env: NodeJS.ProcessEnv = {}): Promise<{ port: number; proc: ChildProcess; out: () => string }> {
   const proc = spawn(process.execPath, [script, "--config", cfgFile(`s-${Math.random().toString(36).slice(2)}.json`, cfg)], { env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
   kids.push(proc);
   return new Promise((ok, no) => {
@@ -36,7 +37,7 @@ function start(cfg: unknown, env: NodeJS.ProcessEnv = {}): Promise<{ port: numbe
     proc.stdout!.on("data", (d) => {
       out += d;
       const m = /已就绪（https [^:]+:(\d+)/.exec(out);
-      if (m) ok({ port: Number(m[1]), proc });
+      if (m) ok({ port: Number(m[1]), proc, out: () => out });
     });
     proc.stderr!.on("data", (d) => (out += d));
     proc.on("exit", (c) => no(new Error(`退出 ${c}：${out}`)));
@@ -52,6 +53,30 @@ function httpsGet(port: number, path: string, ca: string): Promise<{ status: num
     });
     req.on("error", no);
     req.end("{}");
+  });
+}
+
+function httpsCall(port: number, method: string, path: string, ca: string): Promise<{ status: number; body: string }> {
+  return new Promise((ok, no) => {
+    const req = request({ host: "127.0.0.1", port, path, method, ca }, (res) => {
+      let b = "";
+      res.on("data", (d) => (b += d));
+      res.on("end", () => ok({ status: res.statusCode ?? 0, body: b }));
+    });
+    req.on("error", no);
+    req.end();
+  });
+}
+
+function httpGet(port: number, path: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string }> {
+  return new Promise((ok, no) => {
+    const req = httpRequest({ host: "127.0.0.1", port, path, method: "GET", headers }, (res) => {
+      let b = "";
+      res.on("data", (d) => (b += d));
+      res.on("end", () => ok({ status: res.statusCode ?? 0, body: b }));
+    });
+    req.on("error", no);
+    req.end();
   });
 }
 
@@ -132,10 +157,33 @@ test("按配置起控制面与检索服务（HTTPS）：检索服务取到签名
   const seatKeys = write("seat-keys.json", JSON.stringify({ "seat-t1": String(seat1.publicKey.export({ format: "pem", type: "spki" })) }));
   // 检索服务：控制面公钥不对 → 首次取不到吊销集 → 拒绝启动
   const wrongKeys = write("cp-keys-wrong.json", JSON.stringify({ "cp-t1": String(generateKeyPairSync("ed25519").publicKey.export({ format: "pem", type: "spki" })) }));
-  const base = { role: "search", listen: { host: "127.0.0.1", port: 0 }, tls, service_secret_file: secret, control_plane: { url: `https://127.0.0.1:${cp.port}`, keys_file: cpKeys }, seat_keys_file: seatKeys, upstream: { api_key_file: write("upstream.key", "sk-test-not-used") } };
+  const noLogs = { role: "search", listen: { host: "127.0.0.1", port: 0 }, tls, service_secret_file: secret, control_plane: { url: `https://127.0.0.1:${cp.port}`, keys_file: cpKeys }, seat_keys_file: seatKeys, upstream: { api_key_file: write("upstream.key", "sk-test-not-used") } };
+  // 可观测性（A-9）：没有日志位置拒绝启动；指标监听在回环以外又没有令牌也拒绝
+  assert.match(spawnSync(process.execPath, [script, "--config", cfgFile("search-nolog.json", noLogs)], { encoding: "utf8", env: { ...process.env, NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") }, timeout: 30_000 }).stderr, /log_dir 或 data_dir/);
+  const logDir = join(dir, "search-obs");
+  const metricsToken = randomBytes(32).toString("hex");
+  const base = { ...noLogs, log_dir: logDir, metrics: { host: "127.0.0.1", port: 0, token_file: write("metrics.token", metricsToken) } };
+  assert.match(spawnSync(process.execPath, [script, "--config", cfgFile("search-metrics-open.json", { ...base, metrics: { host: "0.0.0.0", port: 0 } })], { encoding: "utf8", env: { ...process.env, NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") }, timeout: 30_000 }).stderr, /metrics\.token_file/);
   const bad = spawnSync(process.execPath, [script, "--config", cfgFile("search-bad.json", { ...base, control_plane: { ...base.control_plane, keys_file: wrongKeys } })], { encoding: "utf8", env: { ...process.env, NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") }, timeout: 30_000 });
   assert.match(bad.stderr, /首次取不到控制面吊销集/);
   const search = await start(base, { NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") });
-  const res = await httpsGet(search.port, "/search", ca);
+  const res = await httpsGet(search.port, `/search?q=${encodeURIComponent("张三借款")}`, ca);
   assert.equal(res.status, 401, res.body);
+  // 健康检查由入口应答；指标在单独的监听上、要令牌
+  assert.deepEqual(await httpsCall(search.port, "GET", "/healthz", ca), { status: 200, body: '{"ok":true}' });
+  assert.equal((await httpsCall(search.port, "GET", "/readyz", ca)).status, 200);
+  const metricsPort = Number(/指标 (\d+)/.exec(search.out())?.[1]);
+  assert.ok(metricsPort > 0, search.out());
+  assert.equal((await httpGet(metricsPort, "/metrics")).status, 401);
+  const m = await httpGet(metricsPort, "/metrics", { authorization: `Bearer ${metricsToken}` });
+  assert.equal(m.status, 200);
+  assert.match(m.body, /kwl_requests_total\{role="search",code_class="4xx"\} 1/);
+  assert.match(m.body, /kwl_feed_age_seconds\{role="search"\}/);
+  assert.match(m.body, /kwl_tls_cert_expiry_seconds\{role="search"\} \d+/);
+  // 访问日志：只有白名单字段，查询串里的内容不落盘
+  await new Promise((r) => setTimeout(r, 100));
+  const accessFile = readdirSync(logDir).find((f) => f.startsWith("access-"))!;
+  const lines = readFileSync(join(logDir, accessFile), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  assert.ok(lines.some((l) => l.path === "/search" && l.status === 401));
+  assert.ok(!readFileSync(join(logDir, accessFile), "utf8").includes(encodeURIComponent("张三")) && !readFileSync(join(logDir, accessFile), "utf8").includes("q="), "查询串不落盘");
 });

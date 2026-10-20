@@ -354,7 +354,8 @@ export function createRelayApi(o: RelayApiOptions): Server & {
       tenants.set(tid, load(tid));
     } catch (e) {
       badTenants.add(tid);
-      console.error(`[relay] 租户 ${tid} 读回失败，暂不可用：${(e as Error).message}`);
+      // 只记错误代码（A-9 日志门禁：异常消息里可能带内容）
+      console.error(`[relay] 租户 ${tid} 读回失败，暂不可用（${typeof (e as { code?: unknown }).code === "string" ? (e as { code: string }).code : (e as Error).name}）`);
     }
   }
   const tenantOf = (tid: string): TenantState => {

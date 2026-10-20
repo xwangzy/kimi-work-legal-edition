@@ -30,13 +30,19 @@
  *   // 支持：
  *   "ops_secret_file": "...", "meter_key_file": "..." }
  * 全部密钥文件除格式外还核“是不是随机生成的”（scripts/lib/secret-strength.mjs：拒绝重复、递增、单一字符类、占位词）；运营凭据与服务间凭据同一要求。
+ *
+ * 可观测性（v9.3 A-9；scripts/lib/obs.mjs）：每个角色都写访问日志与错误日志（按白名单、不记内容，`log_dir` 缺省为 `<data_dir>/obs`，必须有其一），
+ * 保留 `log_retention_days` 天（缺省 190）；/healthz 与 /readyz 由入口应答；指标另起监听 `metrics`：
+ *   "metrics": { "host": "127.0.0.1", "port": 9464, "token_file": "..." }   // 监听回环以外的地址必须给令牌（至少 32 字节随机）
  */
 import { createPrivateKey, createPublicKey } from "node:crypto";
 import { createServer as createHttpsServer } from "node:https";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createServer as createHttpServer } from "node:http";
 import { weakSecretReason } from "./lib/secret-strength.mjs";
+import { createObs } from "./lib/obs.mjs";
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const i = process.argv.indexOf("--config");
@@ -149,9 +155,29 @@ if (cfg.role === "control-plane") {
   }
 }
 
+// 可观测性（A-9）：访问日志与指标包住服务的请求处理；健康检查由入口应答；进程级异常只记代码
+const logDir = typeof cfg.log_dir === "string" && cfg.log_dir ? cfg.log_dir : typeof cfg.data_dir === "string" && cfg.data_dir ? join(cfg.data_dir, "obs") : null;
+if (!logDir) fail("缺少 log_dir 或 data_dir（访问日志与错误日志的位置）");
+mkdirSync(logDir, { recursive: true, mode: 0o700 });
+const obs = createObs({ role: cfg.role, dir: logDir, retentionDays: Number.isInteger(cfg.log_retention_days) ? cfg.log_retention_days : 190, feed, certPem: tls?.cert ?? null });
+obs.prune();
+setInterval(() => obs.prune(), 6 * 3600_000).unref();
+for (const ev of ["uncaughtException", "unhandledRejection"]) {
+  process.on(ev, (e) => {
+    obs.recordError(ev === "uncaughtException" ? "uncaught" : "unhandled_rejection", e);
+    process.exit(1);
+  });
+}
+
 // 同一个请求处理函数挂到 HTTPS 服务上（服务模块不变；定时器随原服务对象的 close 事件清理）
 const handlers = svc.listeners("request");
-const server = tls ? createHttpsServer(tls, (req, res) => handlers.forEach((h) => h(req, res))) : svc;
+const handle = obs.wrap((req, res) => handlers.forEach((h) => h(req, res)));
+let server = svc;
+if (tls) server = createHttpsServer(tls, handle);
+else {
+  svc.removeAllListeners("request");
+  svc.on("request", handle);
+}
 // 服务器级参数（复核 A-15）：不再全用 Node 缺省——压低慢速连接与连接耗尽的风险；大包上传的角色放宽整请求时限
 server.headersTimeout = 20_000;
 server.requestTimeout = ["relay", "dist", "support"].includes(cfg.role) ? 300_000 : 60_000;
@@ -166,9 +192,25 @@ await new Promise((ok, no) => {
   server.once("error", no);
   server.listen(port, host, ok);
 });
-console.log(`[cloud-serve] ${cfg.role} 已就绪（${tls ? "https" : "http 仅测试"} ${host}:${server.address().port}）`);
+// 指标监听（A-9）：只有计数与时效；监听回环以外的地址必须带令牌
+let metricsServer = null;
+if (cfg.metrics) {
+  const mHost = String(cfg.metrics.host ?? "127.0.0.1");
+  const mPort = Number(cfg.metrics.port);
+  if (!Number.isInteger(mPort) || mPort < 0 || mPort > 65535) fail("metrics.port 不合法");
+  const loopback = mHost === "127.0.0.1" || mHost === "::1" || mHost === "localhost";
+  const token = cfg.metrics.token_file ? secretFile(cfg.metrics.token_file, "metrics.token_file", "random32") : null;
+  if (!loopback && !token) fail("指标监听在回环以外的地址时必须配置 metrics.token_file");
+  metricsServer = createHttpServer(obs.metricsHandler(token));
+  await new Promise((ok, no) => {
+    metricsServer.once("error", no);
+    metricsServer.listen(mPort, mHost, ok);
+  });
+}
+console.log(`[cloud-serve] ${cfg.role} 已就绪（${tls ? "https" : "http 仅测试"} ${host}:${server.address().port}${metricsServer ? `；指标 ${metricsServer.address().port}` : ""}）`);
 const stop = () => {
   feed?.stop?.();
+  metricsServer?.close();
   server.close(() => {
     if (server !== svc) svc.emit("close");
     process.exit(0);
