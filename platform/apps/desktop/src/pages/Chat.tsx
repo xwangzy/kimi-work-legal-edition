@@ -9,6 +9,7 @@ import { api, type ChatMessage } from "../api.ts";
 import { nav } from "../App.tsx";
 import { Icon } from "../components/Icons.tsx";
 import { Markdown } from "../components/Markdown.tsx";
+import { QA_CITATION_KIND, qaCitationLine, type QaCitationsView } from "../lib/qa-citations.ts";
 import { fmtShortTime } from "../lib/labels.ts";
 
 export function ChatPage({ conversationId }: { conversationId?: string | undefined }) {
@@ -97,6 +98,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
           {messages.map((m) => (
             <div key={m.message_id} className={`msg msg-${m.role}`}>
               {m.role === "assistant" ? <Markdown text={m.text} /> : <div className="msg-text">{m.text}</div>}
+              {m.citations && <CitationCheck c={m.citations} />}
               <div className="msg-meta">{fmtShortTime(m.created_at)}</div>
             </div>
           ))}
@@ -134,5 +136,23 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
         </div>
       </main>
     </div>
+  );
+}
+
+/** 回答下面的引用核对（B-6）：一行结论，点开逐条看。 */
+function CitationCheck({ c }: { c: QaCitationsView }) {
+  const line = qaCitationLine(c);
+  return (
+    <details className={`msg-cite msg-cite-${line.tone}`}>
+      <summary>{line.text}</summary>
+      <ul>
+        {c.items.map((i, n) => (
+          <li key={n}>
+            <span className="mono">{i.raw}</span> · {QA_CITATION_KIND[i.kind]}
+            {i.reason && i.kind !== "ok" ? `：${i.reason}` : ""}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }

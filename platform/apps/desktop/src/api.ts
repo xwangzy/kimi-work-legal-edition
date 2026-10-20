@@ -395,6 +395,8 @@ export interface ChatMessage {
   role: "user" | "assistant" | "notice";
   text: string;
   created_at: string;
+  /** 回答里的引用离线核对结果（B-6）；没有引用时不带。 */
+  citations?: import("./lib/qa-citations.ts").QaCitationsView;
 }
 
 export interface Capabilities {

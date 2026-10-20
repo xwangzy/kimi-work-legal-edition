@@ -805,6 +805,11 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .recovery-code { white-space: pre; display: block; font-size: var(--fs-md); line-height: 1.7; list-style: none; padding-left: 0; user-select: none; -webkit-user-select: none; }
 .recovery-no { display: inline-block; min-width: 2em; color: var(--text-secondary); }
 .recovery-print-head { font-weight: 600; margin-bottom: 6px; }
+/* 问答回答下的引用核对（第 15 批 B-6） */
+.msg-cite { margin-top: 6px; font-size: var(--fs-sm); color: var(--text-secondary); }
+.msg-cite ul { margin: 4px 0 0; padding-left: 18px; }
+.msg-cite-bad summary { color: var(--status-danger-text); }
+.msg-cite-warn summary { color: var(--status-warning-text); }
 /* 开通向导的三步（第 14 批续） */
 .welcome-steps { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 8px; }
 .welcome-steps li.done b { color: var(--status-success-text); }

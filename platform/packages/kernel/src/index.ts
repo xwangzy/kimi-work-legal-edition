@@ -489,6 +489,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const qa = new QaChatService({
     db,
     tokens,
+    lawdb,
     ask: async (input) => {
       const route = broker.resolveRoute(env.ZR_QA_ROUTE ?? "legal/k3");
       const req = { model: route.alias, messages: input.messages };

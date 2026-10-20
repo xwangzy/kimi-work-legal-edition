@@ -13,12 +13,29 @@ import { newId } from "@zr-legal/domain";
 import type { KernelDb } from "../db.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { dataLevelOf } from "../egress/gate-host.ts";
+import type { Lawdb } from "@zr-legal/lawdb";
+import { checkArtifactCitations } from "./artifact-citations.ts";
 
 export interface QaMessageView {
   message_id: string;
   role: "user" | "assistant" | "notice";
   text: string;
   created_at: string;
+  /** 回答里的引用按本机法规库离线核对的结果（v9.3 第 15 批 B-6；评审 Z1 P1-5）；没有引用时不带。 */
+  citations?: QaCitations;
+}
+
+export interface QaCitations {
+  total: number;
+  verified: number;
+  wrong: number;
+  outside: number;
+  cases: number;
+  items: { raw: string; kind: "wrong" | "case" | "outside" | "ok"; reason: string | null }[];
+  registry: string;
+  as_of: string;
+  /** 核对本身出错：界面说“没有核对成功，请自行核对”，不当成没有引用。 */
+  unchecked?: boolean;
 }
 
 export interface QaBlocked {
@@ -39,11 +56,14 @@ export interface QaDeps {
   db: KernelDb;
   tokens: MatterTokenStore;
   ask(input: QaAskInput): Promise<string>;
+  /** 本机法规库：回答里的引用与签发门禁同一口径离线核对（只在本机，不出站）。 */
+  lawdb?: Lawdb;
 }
 
 const SYSTEM_PROMPT = [
   "你是律师使用的法律问答助手，回答中国法律问题。",
   "回答要准确、简洁，引用法律条文时写明法律名称与条号，并提示需核验现行有效性；不确定时明确说明。",
+  "引用法条一律写成《法律或司法解释全称》第X条（需要时加第X款、第X项），便于逐条核对。",
   "问题中形如〔自然人·XXXXXX〕〔账号·XXXXXX〕的内容是代号，请原样使用，不要猜测其真实内容。",
   "这是无事项问答：不涉及具体案件材料；如需处理具体案件，请提示律师在事项内处理。",
 ].join("\n");
@@ -100,7 +120,36 @@ export class QaChatService {
     const table = this.table(c.conversation_id);
     return this.d.db
       .all<QaMessageView>(`SELECT message_id, role, text, created_at FROM qa_messages WHERE conversation_id = ? ORDER BY seq`, [conversationId])
-      .map((m) => ({ ...m, text: restoreTokens(m.text, table).text }));
+      .map((m) => {
+        const text = restoreTokens(m.text, table).text;
+        const citations = m.role === "assistant" ? this.citations(text) : null;
+        return citations ? { ...m, text, citations } : { ...m, text };
+      });
+  }
+
+  /**
+   * 回答里的引用（B-6）：与成果签发门禁同一口径离线核对——条号不对、法规库外、案号离线、已核到。每次显示时现算（法规库更新后结论跟着变），
+   * 不存结论；出错按“没有核对”处理，不显示成“没问题”。
+   */
+  private citations(text: string): QaCitations | null {
+    if (!this.d.lawdb) return null;
+    const asOf = new Date().toISOString().slice(0, 10);
+    try {
+      const c = checkArtifactCitations(this.d.lawdb, "answer.md", Buffer.from(text, "utf8"), asOf);
+      if (!c.checked || c.total === 0) return null;
+      return {
+        total: c.total,
+        verified: c.verified,
+        wrong: c.wrong,
+        outside: c.outside_registry,
+        cases: c.unverified_offline,
+        items: c.items.map((i) => ({ raw: i.raw, kind: i.kind, reason: i.reason })),
+        registry: c.registry_coverage,
+        as_of: asOf,
+      };
+    } catch {
+      return { total: 0, verified: 0, wrong: 0, outside: 0, cases: 0, items: [], registry: "", as_of: asOf, unchecked: true };
+    }
   }
 
   /**
