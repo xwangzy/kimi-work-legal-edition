@@ -767,7 +767,7 @@ export const api = {
       | { status: "applied"; artifact_version_id: string; filename: string; applied: number; skipped: string[] }
       | { status: "preview"; reason: string; conflicts: { index: number; reason: string; detail?: string; card_id: string | null }[]; skipped: string[] }
     >("riskcards.redline", { matter_id: matterId, document_version_id: documentVersionId, ...o }),
-  facts: (matterId: string, f: { run_id?: string } = {}) => invoke<{ facts: FactRow[] }>("facts.list", { matter_id: matterId, ...f }),
+  facts: (matterId: string, f: { run_id?: string; status?: "proposed" | "confirmed" | "rejected" } = {}) => invoke<{ facts: FactRow[] }>("facts.list", { matter_id: matterId, ...f }),
   decideFact: (matterId: string, factId: string, decision: "confirm" | "reject" | "reset", statement?: string) =>
     invoke<{ fact: FactRow }>("facts.decide", { matter_id: matterId, fact_id: factId, decision, ...(statement ? { statement } : {}) }),
   listArtifacts: (matterId: string) => invoke<{ artifacts: any[] }>("artifacts.list", { matter_id: matterId }),

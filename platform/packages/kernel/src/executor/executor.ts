@@ -21,7 +21,8 @@ import { WORKER_ID, type WorkflowContext } from "../queue.ts";
 import { runEventPayloadHash, type LedgerSigner } from "../ledger-signer.ts";
 import { invokeTool } from "../tools/registry.ts";
 import { buildS1Deliverables, type ToolIdentity } from "./deliverables.ts";
-import { buildS2Deliverables, extractFacts, persistAnchors } from "./casefile.ts";
+import { buildS2Deliverables, extractFacts, factSubmissions, persistAnchors } from "./casefile.ts";
+import { FACT_LIMITS, submitFacts } from "../services/review-cards.ts";
 import type { AgentCancelOutcome, AgentClient } from "./agent-client.ts";
 import { slimAgentPayload } from "./run-progress.ts";
 import { runCapabilities, runModeOf } from "../identity.ts";
@@ -741,13 +742,19 @@ async function runS2Scenario(ctx: Ctx, runId: string, attemptId: string): Promis
       }),
     );
     const n = persistAnchors(db, facts);
-    recordToolOperation(db, runId, attemptId, "facts.extract", "deterministic", { docs: materials.length, facts: facts.length }, "succeeded");
+    // 抽出的事实以“材料记载、待律师确认”写进事实表（复核 R15B-01）：第二段“争点与证据分析”只用律师在事实表里确认过的
+    const subs = factSubmissions(materials, facts).slice(0, FACT_LIMITS.perRun);
+    for (let i = 0; i < subs.length; i += FACT_LIMITS.perCall) {
+      submitFacts({ db, blobs: ctx.deps.blobs }, { tenantId: run.tenant_id, matterId: run.matter_id, runId }, { facts: subs.slice(i, i + FACT_LIMITS.perCall) });
+    }
+    recordToolOperation(db, runId, attemptId, "facts.extract", "deterministic", { docs: materials.length, facts: facts.length, submitted: subs.length }, "succeeded");
     appendEvent(ctx.deps, runId, attemptId, 30, "facts.extracted", {
       dates: facts.filter((f) => f.kind === "date").length,
       amounts: facts.filter((f) => f.kind === "amount").length,
       parties: facts.filter((f) => f.kind === "party").length,
       anchors_persisted: n,
-      note: "类型标签均为材料记载；推断与证明力由律师完成",
+      facts_submitted: subs.length,
+      note: "类型标签均为材料记载，已放进事实表待你确认；推断与证明力由律师完成",
       where: "本机",
     });
     return facts.length;

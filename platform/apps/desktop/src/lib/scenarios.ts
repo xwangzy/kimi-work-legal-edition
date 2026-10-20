@@ -77,7 +77,7 @@ export const SCENARIOS: ScenarioCard[] = [
     id: "issues",
     line: "litigation",
     title: "争点与证据分析",
-    gives: "整理好并经你确认的事实（先做“整理案卷”，在事实表里确认）",
+    gives: "经你确认的事实（先做“整理案卷”，再到事项页“事实”里逐条确认）",
     gets: ["争点—证据矩阵.xlsx（要件、证据、缺口、对方抗辩）", "补证清单（动作、责任人）"],
     scenario: "a1.agent_task",
     skill: "issue-evidence-matrix",

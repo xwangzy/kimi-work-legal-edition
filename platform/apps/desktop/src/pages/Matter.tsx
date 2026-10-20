@@ -12,6 +12,7 @@ import { PartiesPanel } from "../components/Parties.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { reasonLabel } from "../components/DataFlow.tsx";
 import { DEST_LABELS, fmtTime, RUN_STATUS_LABELS, SCENARIO_LABELS, parseFlagsText } from "../lib/labels.ts";
+import { FactsPanel } from "../components/FactsPanel.tsx";
 import { decideMatterTab } from "../lib/matter-tab.ts";
 import { MatterBoard } from "./Boards.tsx";
 import { MatterDeliverables } from "./Deliverables.tsx";
@@ -19,7 +20,7 @@ import { MatterLifecyclePanel } from "../components/MatterLifecycle.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 
-type Tab = "materials" | "runs" | "board" | "deliverables" | "parties" | "egress" | "lifecycle";
+type Tab = "materials" | "facts" | "runs" | "board" | "deliverables" | "parties" | "egress" | "lifecycle";
 
 export function MatterPage({ matterId }: { matterId: string }) {
   const [matter, setMatter] = useState<Matter | null>(null);
@@ -242,6 +243,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
             [
               ["board", "概览"],
               ["materials", `材料（${docs.length}）`],
+              ["facts", "事实"],
               ["runs", `任务（${runs.length}）`],
               ["deliverables", "交付件"],
               ["parties", "当事人名单"],
@@ -348,6 +350,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
         )}
         {tab === "board" && <MatterBoard matter={matter} runs={runs} />}
         {tab === "deliverables" && <MatterDeliverables matterId={matterId} />}
+        {tab === "facts" && <FactsPanel matterId={matterId} docs={docs} readOnly={closed} />}
         {tab === "parties" && <PartiesPanel matterId={matterId} onChanged={reload} readOnly={closed} />}
         {tab === "egress" && <MatterEgress matterId={matterId} />}
         {tab === "lifecycle" && <MatterLifecyclePanel matter={matter} onChanged={reload} />}

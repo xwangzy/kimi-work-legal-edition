@@ -71,4 +71,20 @@ test("S2: 案卷整理六件交付 + 锚点入库 + 不擅自认定证明力", {
   const timeline = artifacts.find((a: any) => a.kind === "s2_timeline");
   const buf = await downloadArtifact(inv, timeline.artifact_version_id);
   assert.ok(buf.length > 0);
+
+  // 复核 R15B-01：抽出的事实以“材料记载、待确认”进事实表（按句合并、带日期与金额、原文可定位）；律师确认后“争点与证据分析”能读到
+  const { facts } = await inv("facts.list", { matter_id: matter.matter_id });
+  assert.ok(facts.length >= 4, `facts=${facts.length}`);
+  for (const f of facts) {
+    assert.equal(f.status, "proposed");
+    assert.equal(f.kind, "claimed");
+  }
+  const signed = facts.find((f: any) => f.statement.includes("签订本合同"));
+  assert.equal(signed.occurred_on, "2024-03-15");
+  assert.equal(signed.amount_yuan, 500000);
+  assert.equal(signed.anchor_status, "located");
+  assert.equal(facts.filter((f: any) => f.statement.includes("签订本合同")).length, 1, "同一句的日期与金额合并成一条");
+  for (const f of facts.slice(0, 2)) await inv("facts.decide", { matter_id: matter.matter_id, fact_id: f.fact_id, decision: "confirm" });
+  assert.equal((await inv("facts.list", { matter_id: matter.matter_id, status: "confirmed" })).facts.length, 2);
+  assert.equal(run.status, "succeeded");
 });

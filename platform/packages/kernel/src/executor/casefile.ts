@@ -177,6 +177,57 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
   return out;
 }
 
+/** S2 抽出的事实交给事实表（v9.3 复核 R15B-01）：按“同一份材料的同一句”合并，句子原文作引文，日期、金额、主体作字段；类型一律“材料记载”。 */
+export interface FactSubmission {
+  statement: string;
+  kind: "claimed";
+  occurred_on: string | null;
+  amount_yuan: number | null;
+  party: string | null;
+  document_version_id: string;
+  quote: string;
+}
+
+const SENTENCE_END = /[。；！？\n]/;
+
+/** 事实所在的句子（不超过 200 字：过长时取命中处前后各 80 字）。 */
+function sentenceAround(text: string, start: number, end: number): { start: number; end: number } {
+  let a = start;
+  while (a > 0 && !SENTENCE_END.test(text[a - 1]!)) a -= 1;
+  let b = end;
+  while (b < text.length && !SENTENCE_END.test(text[b]!)) b += 1;
+  if (b < text.length && text[b] !== "\n") b += 1;
+  if (b - a > 200) {
+    a = Math.max(a, start - 80);
+    b = Math.min(b, end + 80);
+  }
+  while (a < b && /\s/.test(text[a]!)) a += 1;
+  while (b > a && /\s/.test(text[b - 1]!)) b -= 1;
+  return { start: a, end: b };
+}
+
+export function factSubmissions(materials: { document_version_id: string; text: string }[], facts: FactRow[]): FactSubmission[] {
+  const byKey = new Map<string, FactSubmission & { order: number }>();
+  const textOf = new Map(materials.map((m) => [m.document_version_id, m.text]));
+  for (const f of facts.slice().sort((x, y) => x.char_start - y.char_start)) {
+    const text = textOf.get(f.document_version_id);
+    if (text === undefined) continue;
+    const s = sentenceAround(text, f.char_start, f.char_end);
+    const key = `${f.document_version_id}\u0000${s.start}`;
+    const quote = text.slice(s.start, s.end);
+    if (!quote.trim()) continue;
+    let row = byKey.get(key);
+    if (!row) {
+      row = { statement: quote, kind: "claimed", occurred_on: null, amount_yuan: null, party: null, document_version_id: f.document_version_id, quote, order: byKey.size };
+      byKey.set(key, row);
+    }
+    if (f.kind === "date" && !row.occurred_on && /^\d{4}-\d{2}-\d{2}$/.test(f.normalized)) row.occurred_on = f.normalized;
+    if (f.kind === "amount" && row.amount_yuan === null) row.amount_yuan = Number.parseFloat(f.normalized);
+    if (f.kind === "party" && !row.party) row.party = f.normalized.split("=")[1] ?? null;
+  }
+  return [...byKey.values()].sort((x, y) => x.order - y.order).map(({ order: _o, ...r }) => r);
+}
+
 /** 锚点入库（§4.3 EvidenceAnchor：关键事实可定位——锚点错误为阻断项的验收基础；file_page 为文件页码）。 */
 export function persistAnchors(db: KernelDb, facts: FactRow[]): number {
   let n = 0;

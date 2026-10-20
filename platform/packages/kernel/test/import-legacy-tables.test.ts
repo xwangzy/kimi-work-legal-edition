@@ -69,3 +69,12 @@ test("B-11 事项导入：旧格式给出另存提示；带表格的 DOCX 导入
   );
   assert.match(row?.content ?? "", /\| 第一期 \| 30 万元 \|/);
 });
+
+test("复核 R15B-07：表格按行读取后，跨单元格或含“｜”的摘录在定位视图里仍能定位", async () => {
+  const { locateQuote } = await import("../src/services/review-cards.ts");
+  // 定位视图里每个单元格各占一段；材料快照里是“| 第一期 | 300,000 元 |”，原有的“|”写成“｜”
+  const view = "付款安排如下：\n期次\n金额\n第一期\n300,000 元\nA|B\n以上金额含税。";
+  assert.equal(locateQuote(view, "第一期 | 300,000 元").status, "located");
+  assert.equal(locateQuote(view, "A｜B").status, "located");
+  assert.equal(locateQuote(view, "第二期 | 300,000 元").status, "not_found");
+});

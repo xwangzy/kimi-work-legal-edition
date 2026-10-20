@@ -86,6 +86,16 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const needDocs = Math.max(0, card.minMaterials - docIds.length);
   const canPartial = canStartPartial(card) && needDocs > 0;
   const ready = !!matter && docsReady && missing.length === 0 && (needDocs === 0 || (canPartial && partial)) && (card.scenario !== "a1.agent_task" || goal.length > 0);
+  // “争点与证据分析”只用确认过的事实（复核 R15B-01）：事项里还没有确认过的，开始前就说清楚
+  const [confirmedFacts, setConfirmedFacts] = useState<number | null>(null);
+  useEffect(() => {
+    setConfirmedFacts(null);
+    if (card.skill !== "issue-evidence-matrix" || !matter) return;
+    void api
+      .facts(matter.matter_id, { status: "confirmed" })
+      .then((r) => setConfirmedFacts(r.facts.length))
+      .catch(() => setConfirmedFacts(null));
+  }, [card.skill, matter?.matter_id]);
   // 整理案卷（确定性流程）的“已知争点”直接交给争点矩阵框架（B-5）
   const issues = useMemo(() => (card.scenario === "s2.case_file" ? splitIssues(String(values.issues ?? "")) : []), [card.scenario, values]);
   const value = useMemo(() => ({ goal, scenario: card.scenario, documentIds: docIds, choice: defaultChoice(policy), ...(issues.length > 0 ? { issues } : {}) }), [goal, card.scenario, docIds, policy, issues]);
@@ -320,6 +330,9 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
               mustReview={estimate.estimate.data_where.block_kind === "suspects"}
               onReviewed={() => setReestimateTick((n) => n + 1)}
             />
+          )}
+          {confirmedFacts === 0 && (
+            <p className="banner banner-orange">这个事项还没有确认过的事实：AI 只能列出要件框架。先做“整理案卷”，再到事项页“事实”里逐条确认。</p>
           )}
           <p className="ss-note muted">结果都是草稿，需要你复核后使用。{card.scenario === "a1.agent_task" ? "处理中需要联网或用到当事人信息时，会先问你。" : ""}</p>
         </section>

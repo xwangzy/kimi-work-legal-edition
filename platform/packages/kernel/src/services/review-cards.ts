@@ -101,15 +101,17 @@ export function locateQuote(view: string, quote: string): { status: "located" | 
     const second = view.indexOf(quote, first + 1);
     return { status: second >= 0 ? "ambiguous" : "located", start: first, end: first + quote.length };
   }
-  // 忽略空白比较：建立去空白视图 → 原位置映射
+  // 忽略空白与表格分隔符比较：建立去空白视图 → 原位置映射（复核 R15B-07：材料快照里表格按行写成“| 单元格 | 单元格 |”，
+  // 单元格里原有的“|”写成“｜”；定位视图里每格各占一段——两边的分隔都不计）
+  const SKIP = /[\s|｜]/;
   const map: number[] = [];
   let compact = "";
   for (let i = 0; i < view.length; i++) {
-    if (/\s/.test(view[i]!)) continue;
+    if (SKIP.test(view[i]!)) continue;
     compact += view[i];
     map.push(i);
   }
-  const q = quote.replace(/\s+/g, "");
+  const q = quote.replace(/[\s|｜]+/g, "");
   if (!q) return { status: "not_found", start: null, end: null };
   const at = compact.indexOf(q);
   if (at < 0) return { status: "not_found", start: null, end: null };
