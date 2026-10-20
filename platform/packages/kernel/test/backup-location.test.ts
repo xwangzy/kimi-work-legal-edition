@@ -74,3 +74,32 @@ test("备份盘标记：换了盘即停、不在别的盘上写东西；插回�
   assert.equal(((await k.invoke("backup.run")) as any).ok, true);
   assert.ok(existsSync(join(root, devDir!, "location.kwlm")));
 });
+
+test("退出或安装更新时取消备份（复核 R2B-04）：不写新的一代，也不记成失败（下次打开不报“上次没有成功”）", { timeout: 60_000 }, async () => {
+  const { runBackup } = await import("../src/services/backup.ts");
+  const ws = k!.config.workspaceDir;
+  const disk = JSON.parse(readFileSync(join(ws, "backup.json"), "utf8")).dir as string;
+  const devDir = join(disk, "KimiWorkLegal-backup", readdirSync(join(disk, "KimiWorkLegal-backup"))[0]!);
+  const gens = () => readdirSync(devDir).filter((n) => /^manifest-\d{8}\.kwlb$/.test(n)).length;
+  const before = gens();
+  const ac = new AbortController();
+  ac.abort();
+  await assert.rejects(
+    runBackup({
+      db: k!.db,
+      workspaceDir: ws,
+      dbFile: k!.config.dbFile,
+      dbKey: k!.config.dbKey,
+      tenantId: k!.identity.tenantId,
+      deviceId: "dev_bkloc-firm_lawyer",
+      sign: () => "unused",
+      stateFile: join(ws, "backup.json"),
+      indexFile: join(ws, "backup-index.json"),
+      insideDataRoot: () => false,
+      signal: ac.signal,
+    }),
+    (e: any) => e.code === "cancelled",
+  );
+  assert.equal(gens(), before, "取消即不写清单，上一代不受影响");
+  assert.equal(((await k!.invoke("backup.status")) as any).last_error, null, "取消不记成失败");
+});

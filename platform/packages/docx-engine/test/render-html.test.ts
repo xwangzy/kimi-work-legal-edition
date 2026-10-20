@@ -48,3 +48,14 @@ test("XLSX 预览只解压表格本身（复核 B13-O01 余项）：图片条目
   const r = renderXlsxHtml(zip);
   assert.match(r.html, /见图一/);
 });
+
+test("ZIP 条目实际比声明的小（写入器缺陷或损坏，复核 R2B-30）：照常读出；只拒收比声明的大", () => {
+  const xlsx = createXlsx([{ name: "小", rows: [["甲"], ["乙"]] }]);
+  const sig = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
+  const name = Buffer.from("xl/worksheets/sheet1.xml");
+  let cd = xlsx.indexOf(sig);
+  while (cd >= 0 && !xlsx.subarray(cd + 46, cd + 46 + name.length).equals(name)) cd = xlsx.indexOf(sig, cd + 4);
+  assert.ok(cd >= 0);
+  xlsx.writeUInt32LE(xlsx.readUInt32LE(cd + 24) + 100, cd + 24); // 声明比实际大 100 字节
+  assert.match(renderXlsxHtml(xlsx).html, /乙/);
+});

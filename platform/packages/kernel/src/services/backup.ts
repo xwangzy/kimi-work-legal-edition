@@ -392,7 +392,9 @@ export async function runBackup(d: BackupDeps): Promise<BackupState & { copied: 
   } catch (e) {
     const code = e instanceof DomainError ? String(e.detail?.code ?? e.code) : String((e as NodeJS.ErrnoException)?.code ?? "backup_failed");
     try {
-      writeJsonFile(d.stateFile, { ...st, prune_pending: st.prune_pending || readBackupState(d.stateFile).prune_pending, last_error: code });
+      // 退出或安装更新时取消不算失败（第 14 批余项：原先记下 cancelled，下次打开首页就是红色的“上次自动备份没有成功”）
+      const lastError = code === "cancelled" ? st.last_error : code;
+      writeJsonFile(d.stateFile, { ...st, prune_pending: st.prune_pending || readBackupState(d.stateFile).prune_pending, last_error: lastError });
     } catch {
       // 状态写不进去：本次备份本来就失败了
     }
