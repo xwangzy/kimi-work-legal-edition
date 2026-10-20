@@ -35,17 +35,51 @@ export function filePageOf(text: string, charStart: number): number | null {
   return page;
 }
 
+// 年月日之间允许空白（PDF、OCR 文本常见“2023 年 3 月 5 日”，复核 R15B-17）
 const DATE_RES = [
-  /(\d{4})年(\d{1,2})月(\d{1,2})日/g,
+  /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/g,
   /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/g,
 ];
-/** 中文数字日期：二〇二三年三月五日、二零二三年十二月三十一日。 */
-const CN_DATE_RE = /([〇零○一二三四五六七八九]{4})年([一二三四五六七八九十]{1,2})月([一二三四五六七八九十]{1,3})日/g;
-/** 没有年份的日期：3月5日、三月五日（前面紧挨着“年”或数字的不算，那是完整日期的一部分）。 */
-const NO_YEAR_RE = /(?<![年\d〇零○一二三四五六七八九十])(\d{1,2}|[一二三四五六七八九十]{1,2})月(\d{1,2}|[一二三四五六七八九十]{1,3})日/g;
-const AMOUNT_RE = /(人民币|￥|¥)?\s*([\d,]+(?:\.\d+)?)\s*(万元|元)/g;
-/** 大写或中文数字金额：人民币壹拾万元整、壹佰贰拾叁万肆仟伍佰元、十万元、三千五百元（须以“元”结尾，可带角分与“整”）。 */
-const CN_AMOUNT_RE = /(人民币)?([零〇壹贰叁肆伍陆柒捌玖拾佰仟萬万亿億两一二三四五六七八九十百千]{1,20})元(?:([零〇壹贰叁肆伍陆柒捌玖一二三四五六七八九])角)?(?:([零〇壹贰叁肆伍陆柒捌玖一二三四五六七八九])分)?(整|正)?/g;
+/** 中文数字日期：二〇二三年三月五日、二零二三年十二月三十一日、二〇二三年元月五日。 */
+const CN_DATE_RE = /([〇零○一二三四五六七八九]{4})年(元|[一二三四五六七八九十]{1,2})月([一二三四五六七八九十]{1,3})日/g;
+/** 没有年份的日期：3月5日、三月五日、元月八日（前面紧挨着“年”或数字的不算，那是完整日期的一部分）。 */
+const NO_YEAR_RE = /(?<![年\d〇零○一二三四五六七八九十\s])(\d{1,2}|元|[一二三四五六七八九十]{1,2})月(\d{1,2}|[一二三四五六七八九十]{1,3})日/g;
+/** 相对年份的日期：同年 / 次年 / 当年 / 今年 / 去年……3月5日——年份不明，原文里带着相对年份（复核 R15B-17）。 */
+const RELATIVE_DATE_RE = /(同年|次年|当年|今年|去年|上年|翌年|前年|本年)\s*(\d{1,2}|元|[一二三四五六七八九十]{1,2})\s*月\s*(\d{1,2}|[一二三四五六七八九十]{1,3})\s*日/g;
+const AMOUNT_RE = /(人民币|￥|¥)?\s*(?<![\d.])([\d,]+(?:\.\d+)?)\s*(万元|元)/g;
+/** 阿拉伯数字与千、百、万、亿混写：5千元、3万5千元、3百万元、2千万元（复核 R15B-06）。 */
+const MIXED_AMOUNT_RE = /(人民币|￥|¥)?\s*(?<![\d.])((?:\d+(?:\.\d+)?[千百万亿])+\d*)\s*元/g;
+/**
+ * 大写或中文数字金额：人民币壹拾万元整、壹佰贰拾叁万肆仟伍佰元、十万元、三千五百元（须以“元 / 圆”结尾，可带角分与“整”）。
+ * 前面紧挨着数字、“数 / 几 / 上 / 近 / 逾 / 余 / 约”或别的数字的不算（“5千元”“数千万元”，复核 R15B-06）。
+ */
+const CN_AMOUNT_RE = /(人民币)?(?<![\d.数几上近逾余约零〇壹贰叁肆伍陆柒捌玖拾佰仟萬万亿億两一二三四五六七八九十百千])([零〇壹贰叁肆伍陆柒捌玖拾佰仟萬万亿億两一二三四五六七八九十百千]{1,20})[元圆](?:([零〇壹贰叁肆伍陆柒捌玖一二三四五六七八九])角)?(?:([零〇壹贰叁肆伍陆柒捌玖一二三四五六七八九])分)?(整|正)?/g;
+/** 只有一个小写数字加“元”（“一元”“二元”）时要有金额语境，免得“统一元”“二元结构”“三元食品”被当成金额。 */
+const MONEY_CONTEXT = /(人民币|金额|价款|货款|借款|款项|支付|共计|合计|计|赔偿|费用|租金|利息|罚款)\s*$/;
+
+/** 阿拉伯数字与单位混写 → 元：3万5千 = 35000、2千万 = 20000000。 */
+export function mixedAmountToNumber(s: string): number | null {
+  let total = 0;
+  let section = 0;
+  let current: number | null = null;
+  for (const m of s.matchAll(/(\d+(?:\.\d+)?)|([千百万亿])/g)) {
+    if (m[1]) {
+      current = Number(m[1]);
+      continue;
+    }
+    const u = m[2]!;
+    if (u === "千" || u === "百") {
+      section += (current ?? 1) * (u === "千" ? 1000 : 100);
+      current = null;
+    } else {
+      total += (section + (current ?? 0)) * (u === "万" ? 1e4 : 1e8);
+      section = 0;
+      current = null;
+    }
+  }
+  const v = total + section + (current ?? 0);
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
 
 const CN_DIGIT: Record<string, number> = { 零: 0, 〇: 0, "○": 0, 壹: 1, 一: 1, 贰: 2, 二: 2, 两: 2, 叁: 3, 三: 3, 肆: 4, 四: 4, 伍: 5, 五: 5, 陆: 6, 六: 6, 柒: 7, 七: 7, 捌: 8, 八: 8, 玖: 9, 九: 9 };
 const CN_UNIT: Record<string, number> = { 拾: 10, 十: 10, 佰: 100, 百: 100, 仟: 1000, 千: 1000 };
@@ -125,20 +159,32 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
       });
     }
   }
+  const monthOf = (t: string) => (t === "元" ? 1 : /^\d+$/.test(t) ? Number(t) : cnAmountToInt(t));
   for (const m of text.matchAll(CN_DATE_RE)) {
-    const [y, mo, d] = [cnYear(m[1]!), cnAmountToInt(m[2]!), cnAmountToInt(m[3]!)];
+    const [y, mo, d] = [cnYear(m[1]!), monthOf(m[2]!), cnAmountToInt(m[3]!)];
     if (y === null || mo === null || d === null || mo < 1 || mo > 12 || d < 1 || d > 31) continue;
     push("date", m, `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
   }
+  for (const m of text.matchAll(RELATIVE_DATE_RE)) {
+    const [mo, d] = [monthOf(m[2]!), smallCn(m[3]!)];
+    if (mo === null || d === null || mo < 1 || mo > 12 || d < 1 || d > 31) continue;
+    push("date", m, `年份不明-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+  }
   for (const m of text.matchAll(NO_YEAR_RE)) {
-    const [mo, d] = [smallCn(m[1]!), smallCn(m[2]!)];
+    const [mo, d] = [monthOf(m[1]!), smallCn(m[2]!)];
     if (mo === null || d === null || mo < 1 || mo > 12 || d < 1 || d > 31) continue;
     // 不猜年份：归一值以“年份不明”开头，时间线上排在有年份的事实之后
     push("date", m, `年份不明-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
   }
+  for (const m of text.matchAll(MIXED_AMOUNT_RE)) {
+    if (!/[千百]|万\d/.test(m[2]!)) continue; // 纯“数字 + 万元 / 元”由下面的规则处理
+    const v = mixedAmountToNumber(m[2]!);
+    if (v !== null) push("amount", m, `${v} 元`);
+  }
   for (const m of text.matchAll(CN_AMOUNT_RE)) {
     const yuan = cnAmountToInt(m[2]!);
     if (yuan === null || yuan === 0) continue;
+    if (m[2]!.length === 1 && !m[1] && !MONEY_CONTEXT.test(text.slice(Math.max(0, m.index! - 8), m.index!))) continue;
     const jiao = m[3] ? (CN_DIGIT[m[3]] ?? 0) : 0;
     const fen = m[4] ? (CN_DIGIT[m[4]] ?? 0) : 0;
     push("amount", m, `${Math.round((yuan + jiao / 10 + fen / 100) * 100) / 100} 元`);
@@ -160,6 +206,23 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
       assertion: "material_record",
     });
   }
+  // 同一笔金额的大写与小写（“人民币壹拾万元整（小写：100,000元）”）是一件事：相距 20 字以内且金额相等的合并成一条，原文涵盖两处（复核 R15B-17）
+  const amounts = out.filter((f) => f.kind === "amount").sort((a, b) => a.char_start - b.char_start);
+  const drop = new Set<FactRow>();
+  for (let i = 0; i < amounts.length; i += 1) {
+    const a = amounts[i]!;
+    if (drop.has(a)) continue;
+    for (let j = i + 1; j < amounts.length; j += 1) {
+      const b = amounts[j]!;
+      if (b.char_start - a.char_end > 20) break;
+      if (!drop.has(b) && b.normalized === a.normalized) {
+        a.char_end = Math.max(a.char_end, b.char_end);
+        a.text = text.slice(a.char_start, a.char_end);
+        drop.add(b);
+      }
+    }
+  }
+  for (let i = out.length - 1; i >= 0; i -= 1) if (drop.has(out[i]!)) out.splice(i, 1);
   for (const m of text.matchAll(PARTY_RE)) {
     out.push({
       kind: "party",

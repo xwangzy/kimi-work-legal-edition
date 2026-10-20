@@ -27,10 +27,28 @@ test("B-5 日期：中文数字日期、没有年份的日期（不猜年份）�
 });
 
 test("B-5 金额：大写（含角分与“整”）、中文数字、阿拉伯数字；同额不合并", () => {
-  assert.deepEqual(norm("借款人民币壹拾万元整（小写：100,000元）。", "amount"), ["100000 元", "100000 元"]);
+  // 同一笔金额的大写与小写合并成一条，原文涵盖两处（复核 R15B-17）
+  assert.deepEqual(norm("借款人民币壹拾万元整（小写：100,000元）。", "amount"), ["100000 元"]);
+  assert.equal(facts("借款人民币壹拾万元整（小写：100,000元）。")[0]!.text, "人民币壹拾万元整（小写：100,000元");
   assert.deepEqual(norm("货款壹佰贰拾叁万肆仟伍佰元伍角陆分", "amount"), ["1234500.56 元"]);
   assert.deepEqual(norm("违约金十万元，另付三千五百元", "amount"), ["100000 元", "3500 元"]);
   const f = facts("借款人民币壹拾万元整");
   assert.equal(f[0]!.text, "人民币壹拾万元整");
   assert.equal(f[0]!.assertion, "material_record");
+});
+
+test("复核 R15B-06/17：阿拉伯数字与千百万混写、约数与“二元结构”不提、圆、元月、相对年份、年月日间空白", async () => {
+  const { mixedAmountToNumber } = await import("../src/executor/casefile.ts");
+  assert.equal(mixedAmountToNumber("3万5千"), 35000);
+  assert.equal(mixedAmountToNumber("3百万"), 3000000);
+  assert.equal(mixedAmountToNumber("2千万"), 20000000);
+  assert.equal(mixedAmountToNumber("1亿2千万"), 120000000);
+  assert.deepEqual(norm("借款5千元，另欠3万5千元", "amount"), ["5000 元", "35000 元"]);
+  assert.deepEqual(norm("损失数千万元，涉及几十万元、上百万元的款项", "amount"), [], "约数不当确数");
+  assert.deepEqual(norm("统一元素与二元结构，北京三元食品", "amount"), [], "不是金额");
+  assert.deepEqual(norm("支付三元", "amount"), ["3 元"], "有金额语境的单字仍算");
+  assert.deepEqual(norm("货款壹仟圆整", "amount"), ["1000 元"]);
+  assert.deepEqual(norm("二〇二三年元月五日签约", "date"), ["2023-01-05"]);
+  assert.deepEqual(norm("同年3月5日交货，次年五月十日付款", "date"), ["年份不明-03-05", "年份不明-05-10"]);
+  assert.deepEqual(norm("2023 年 3 月 5 日签订", "date"), ["2023-03-05"]);
 });

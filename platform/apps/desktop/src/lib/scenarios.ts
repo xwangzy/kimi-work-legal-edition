@@ -59,7 +59,8 @@ export const SCENARIOS: ScenarioCard[] = [
     title: "整理案卷",
     gives: "起诉材料、证据、往来函件（可多份）",
     // 第一段（B-5）：在这台电脑上按规则整理，不调用 AI；争点矩阵只按你给的争点列框架，拆要件、挂证据接着做“争点与证据分析”
-    gets: ["证据目录.xlsx", "事实时间线.xlsx", "争点—证据矩阵框架.xlsx", "补证清单"],
+    // 与实际文件名一致（复核 R15B-17）
+    gets: ["证据目录.xlsx", "事实时间轴.xlsx", "争点证据矩阵.xlsx（框架）", "补证清单.docx"],
     scenario: "s2.case_file",
     verb: "开始整理",
     goal: "",
