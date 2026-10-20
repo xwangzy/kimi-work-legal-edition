@@ -68,6 +68,14 @@ test("驻留面清单：每行字段齐全、形态已定义、强制点符号�
   assert.deepEqual(problems, [], problems.join("；"));
 });
 
+test("第 28 类（恢复与备份）口径防回退（第 14 批第二轮复核 R2A-02/01/14/10、R2B-06；R2A-04 记在第 13、17 类）", () => {
+  const r28 = residency.rows.find((r) => r.id === 28)!;
+  for (const w of ["律所根", "恢复份额", "不能作废", "轮换在 G1", "同一设备身份", "版本历史"]) assert.ok(r28.residual.includes(w), `第 28 类 residual 应写明“${w}”`);
+  for (const w of ["不透明编号", "加密清单", "location.kwlm"]) assert.ok(r28.disk.includes(w), `第 28 类 disk 应写明“${w}”`);
+  assert.ok(residency.rows.find((r) => r.id === 13)!.residual.includes("恢复码"), "第 13 类（崩溃转储）写明可能含恢复码");
+  assert.ok(residency.rows.find((r) => r.id === 17)!.residual.includes("恢复码"), "第 17 类（打印与导出副本）写明恢复码卡片的打印残余");
+});
+
 test("写盘面：生产源码的写盘点与清单 write_points 逐一相符（新增未登记的写盘点即失败）", () => {
   const scanned = new Map<string, string[]>();
   for (const f of productionSources({ outOfScope: Object.keys(residency.out_of_scope) })) {

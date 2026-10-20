@@ -75,6 +75,8 @@ export interface Kernel {
   queue: TaskQueue;
   /** 内部（测试与设备页用）：出站闸门的内核侧（拉起、授权、去向记录）。 */
   gate: KernelGate;
+  /** 内部（测试用）：是否挂了在线内容更新的定时检查（复核 B13-K04：待激活模式不挂）。 */
+  contentCheckScheduled: boolean;
   /** 撤权擦除（审计 S3 1-4）：清理本机律师已不是成员的事项的 Agent 数据与工作区密钥；返回处理的事项。同步后与启动时自动执行。 */
   purgeRevokedAgentData(): Promise<string[]>;
   onBroadcast(cb: (msg: Record<string, unknown>) => void): void;
@@ -957,7 +959,19 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     const notRevoked = () => {
       if (revoked()) throw new DomainError("conflict", "本设备已被吊销：不能再备份或生成恢复包", 409);
     };
-    const auditLocal = (action: string, objectId: string) => appendAuditEvent(db, signer, { tenantId: identity.tenantId, actorId: identity.userId, action, kind: "device", objectId, matterId: null });
+    const auditLocal = (action: string, objectId: string) => {
+      appendAuditEvent(db, signer, { tenantId: identity.tenantId, actorId: identity.userId, action, kind: "device", objectId, matterId: null });
+      if (action.startsWith("recovery.")) pkgStats = null;
+    };
+    // 恢复包生成与试解的次数、最近几次生成的时刻：只在启动后第一次与每次生成/试解之后数一遍审计表（复核 R2B-23：界面每次换页都查
+    // backup.status，原先每次对 audit_events 做三次按动作的扫描）。最近几次的时刻供律师对照手里的纸销毁不用的那份（R2A-01）
+    let pkgStats: { created: number; verified: number; recent: string[] } | null = null;
+    const packageStats = () =>
+      (pkgStats ??= {
+        created: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_events WHERE action = 'recovery.package_created' AND tenant_id = ?`, [identity.tenantId])!.n,
+        verified: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_events WHERE action = 'recovery.package_verified' AND tenant_id = ?`, [identity.tenantId])!.n,
+        recent: db.all<{ at: string }>(`SELECT created_at AS at FROM audit_events WHERE action = 'recovery.package_created' AND tenant_id = ? ORDER BY audit_event_id DESC LIMIT 5`, [identity.tenantId]).map((r) => r.at),
+      });
     api["recovery.create_package"] = (p) => {
       notRevoked();
       const target = String(p?.path ?? "");
@@ -1011,10 +1025,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     };
     api["backup.status"] = () => {
       const st = readBackupState(backupDeps.stateFile);
-      const pk = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_events WHERE action = 'recovery.package_created' AND tenant_id = ?`, [identity.tenantId])!.n;
-      const pv = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_events WHERE action = 'recovery.package_verified' AND tenant_id = ?`, [identity.tenantId])!.n;
-      // 最近几次生成恢复包的时刻（复核 R2A-01：以前生成的包仍然有效，律师对照手里的纸销毁不用的那份）
-      const recent = db.all<{ at: string }>(`SELECT created_at AS at FROM audit_events WHERE action = 'recovery.package_created' AND tenant_id = ? ORDER BY audit_event_id DESC LIMIT 5`, [identity.tenantId]).map((r) => r.at);
+      const { created: pk, verified: pv, recent } = packageStats();
       const staleDays = st.last_ok_at ? Math.floor((Date.now() - Date.parse(st.last_ok_at)) / 86400_000) : null;
       return { configured: !!st.dir, last_ok_at: st.last_ok_at, last_error: st.last_error, stale_days: staleDays, running: backupProgress, files: st.last_files, bytes: st.last_bytes, packages_created: pk, packages_verified: pv, recent_packages: recent, revoked: revoked() };
     };
@@ -1092,6 +1103,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     queue,
     signer,
     gate,
+    contentCheckScheduled: contentTimer !== null,
     purgeRevokedAgentData: () => purgeLocalAgentData(false),
     async invoke(method: string, params: unknown = {}): Promise<unknown> {
       if (config.onboarding && !ONBOARDING_METHODS.has(method)) throw new DomainError("not_activated", "这台电脑还没有激活：请先输入中软给的开通码或律所发的邀请码", 409);

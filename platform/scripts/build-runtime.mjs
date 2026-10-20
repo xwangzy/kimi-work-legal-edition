@@ -156,6 +156,15 @@ const noPty = {
     b.onLoad({ filter: /.*/, namespace: "kwl-stub" }, () => ({ contents: 'export function spawn(){ throw new Error("终端在本产品中不可用"); }', loader: "js" }));
   },
 };
+// 随包的 kap-embed 制品须与它的 BUILD.json 一致（第 13 批复核 A-18 ③）：旧的或手改过的嵌入制品不得打进运行时——
+// 静态面与漂移门禁核的是 BUILD.json 记下的那一份
+{
+  const embedDir = join(root, "packages/kap-host/vendor/kap-embed");
+  const meta = JSON.parse(readFileSync(join(embedDir, "BUILD.json"), "utf8"));
+  const got = createHash("sha256").update(readFileSync(join(embedDir, "kap-embed.mjs"))).digest("hex");
+  if (got !== meta.bundle_sha256) throw new Error(`kap-embed.mjs 与 BUILD.json 记录的制品摘要不符（${got.slice(0, 12)}… ≠ ${String(meta.bundle_sha256).slice(0, 12)}…）：先运行 node scripts/build-kap-embed.mjs`);
+  console.log(`[build-runtime] kap-embed：上游 ${String(meta.upstream_commit).slice(0, 9)}，制品摘要与 BUILD.json 一致`);
+}
 // 宿主内检索用 re2js（MIT，纯 JS）：随宿主一起打包进 main.mjs
 await build({ ...common, entryPoints: [join(root, "packages/kap-host/src/main.ts")], outfile: join(out, "kap-host/main.mjs"), external: ["just-bash"], plugins: [noPty] });
 await build({ ...common, entryPoints: [join(root, "packages/kap-host/src/search/search-worker.ts")], outfile: join(out, "kap-host/search-worker.mjs") });

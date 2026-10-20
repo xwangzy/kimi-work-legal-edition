@@ -58,3 +58,26 @@ test("成员入组在本机没有生效（复核 B13-K02）：暂存损坏 → �
     await k.close();
   }
 });
+
+test("待激活模式不挂在线内容更新的定时检查（复核 B13-K04；第 13 批处置表原称此测试已有、实际没有，第 14 批补上）；同样配置的正常模式会挂", { timeout: 120_000 }, async () => {
+  const { createKernel } = await import("../src/index.ts");
+  // 配了分发地址与席位：定时检查的其他前提都满足，只差“是不是待激活”
+  const env: Record<string, string | undefined> = { ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off", ZR_BACKUP_TIMER: "off", ZR_DIST_BASE: "https://dist.invalid", ZR_SEAT_TOKEN: "seat-placeholder" };
+  delete env.ZR_FIRM_SLUG;
+  delete env.ZR_USER_SLUG;
+  delete env.ZR_CONTENT_CHECK_MS;
+  const pending = await createKernel({ dataDir: mkdtempSync(join(tmpdir(), "kwl-k04-p-")), dbKey: randomBytes(32).toString("base64"), env: { ...env, ZR_ONBOARDING: "1" } as NodeJS.ProcessEnv });
+  try {
+    assert.equal(((await pending.invoke("onboarding.status")) as any).mode, "unactivated");
+    assert.equal(pending.gate.distConfigured, true, "分发已配置");
+    assert.equal(pending.contentCheckScheduled, false, "待激活模式不检查内容更新");
+  } finally {
+    await pending.close();
+  }
+  const normal = await createKernel({ dataDir: mkdtempSync(join(tmpdir(), "kwl-k04-n-")), dbKey: randomBytes(32).toString("base64"), firmSlug: "k04-firm", userSlug: "u", env: env as NodeJS.ProcessEnv });
+  try {
+    assert.equal(normal.contentCheckScheduled, true, "对照：正常模式在同样配置下会挂定时检查");
+  } finally {
+    await normal.close();
+  }
+});

@@ -6,7 +6,7 @@
  * 输出只含白名单元素（p、h1–h3、table/tr/td/th、ins、del、sup、ol/li、section、strong、em、span），不带任何属性以外的链接与外部资源；
  * 文字一律 HTML 转义。界面再经隔离框架（sandbox="" + CSP）渲染，代号在隔离框架里按事项令牌表还原。
  */
-import { readZipEntries, readZipSelected } from "./zip.ts";
+import { readZipSelected } from "./zip.ts";
 import { unescapeXml } from "./textmap.ts";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -114,7 +114,8 @@ function paragraphHtml(pXml: string, commentNo: Map<string, number>): string {
 }
 
 export function renderDocxHtml(docx: Buffer): { html: string; paragraphs: number; revisions: number; comments: number; truncated: boolean } {
-  const files = readZipEntries(docx);
+  // 只解压正文与批注（复核 B13-O01 余项：图片等不解压，与 XLSX 预览同一做法）
+  const files = readZipSelected(docx, (n) => n === "word/document.xml" || n === "word/comments.xml");
   const xml = files.get("word/document.xml")?.toString("utf8");
   if (!xml) throw new Error("DOCX 缺少 word/document.xml");
   const comments = commentsOf(files);
@@ -178,8 +179,11 @@ function colIndex(ref: string): number {
   return n - 1;
 }
 
+/** 预览只解压共享字符串、工作簿与各表（复核 B13-O01 余项：原先解压全部条目，含 xl/media 下的图片）。 */
+const PREVIEW_PARTS = (n: string) => n === "xl/sharedStrings.xml" || n === "xl/workbook.xml" || /^xl\/worksheets\/sheet\d+\.xml$/.test(n);
+
 export function renderXlsxHtml(xlsx: Buffer): { html: string; sheets: number; truncated: boolean } {
-  const files = readZipEntries(xlsx);
+  const files = readZipSelected(xlsx, PREVIEW_PARTS);
   const shared: string[] = [];
   const sst = files.get("xl/sharedStrings.xml")?.toString("utf8");
   if (sst) for (const si of sst.matchAll(/<si>([\s\S]*?)<\/si>/g)) shared.push([...si[1]!.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((t) => unescapeXml(t[1]!)).join(""));

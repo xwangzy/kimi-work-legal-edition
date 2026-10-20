@@ -6,6 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,13 +14,15 @@ import { fileURLToPath } from "node:url";
 const VENDOR = fileURLToPath(new URL("../vendor/kap-embed/", import.meta.url));
 const inputs = JSON.parse(readFileSync(`${VENDOR}inputs.json`, "utf8")) as { file: string; processImports: string[]; networkImports: string[]; httpClientImports: string[] }[];
 const bundle = readFileSync(`${VENDOR}kap-embed.mjs`, "utf8");
-const build = JSON.parse(readFileSync(`${VENDOR}BUILD.json`, "utf8")) as { upstream_commit: string; inputs: number };
+const build = JSON.parse(readFileSync(`${VENDOR}BUILD.json`, "utf8")) as { upstream_commit: string; inputs: number; bundle_sha256: string };
 
 const strip = (f: string) => f.replace(/^third_party\/kimi-code\//, "").replace(/node_modules\/\.pnpm\/[^/]+\/node_modules\//, "npm:");
 
 test("制品锁定上游提交 472192c34（@moonshot-ai/kimi-code@2.2.0，发布分支 tag）", () => {
   assert.match(build.upstream_commit, /^472192c34c1efad89a369870eff0da0b708ce9bb$/);
   assert.equal(build.inputs, inputs.length);
+  // 本表核的就是 BUILD.json 记下的那一份制品（复核 A-18 ③；打包随包运行时 build-runtime.mjs 也按同一摘要拒收不符的制品）
+  assert.equal(createHash("sha256").update(readFileSync(`${VENDOR}kap-embed.mjs`)).digest("hex"), build.bundle_sha256);
 });
 
 test("ZP-17：node:child_process 只出现在默认进程服务（由种子替换为执行域路由）", () => {
