@@ -104,7 +104,11 @@ export function RecoveryBackup() {
             恢复包：{st?.packages_created ? `已生成 ${st.packages_created} 次，试过 ${st.packages_verified} 次` : "未生成"}
             {" · "}
             自动备份：{st?.configured ? (st.last_ok_at ? `最近一次 ${fmtTime(st.last_ok_at)}${days !== null && days >= 3 ? `（已 ${days} 天没有成功备份）` : ""}` : "还没有成功过") : "未设置"}
-            {st?.last_error ? "（上次没有成功，请检查备份位置是否插好、空间是否够）" : ""}
+            {st?.last_error === "location_changed"
+              ? "（备份盘不是原来那块：请插回原来的备份盘，或重新选择备份位置）"
+              : st?.last_error
+                ? "（上次没有成功，请检查备份位置是否插好、空间是否够）"
+                : ""}
           </div>
           {running && <div className="muted" role="status">正在备份：{running.total ? `已处理 ${running.done} / ${running.total} 个文件` : "正在准备"}。可以继续工作，请不要拔出备份用的移动硬盘。</div>}
           <div className="muted">恢复包和恢复码要分开放（例如恢复包放 U 盘，恢复码打印后锁进柜子）；两样在一起，就等于这台电脑的全部数据。备份的内容都是加密的。第一次备份要把全部案卷复制一遍，可能需要较长时间。</div>

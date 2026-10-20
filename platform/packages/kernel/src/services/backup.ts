@@ -18,6 +18,9 @@
  *   任何一步失败都删掉暂存，不留残余（R2A-15）。
  * 删除事项后内核立即再备份一次（R2A-10），备份位置上的旧账本快照与该事项的块随之删除；备份位置若保留旧版本（网盘版本历史、NAS 快照），
  * 旧版本连同恢复包与恢复码仍能解开——删除回执如实写明。
+ * 备份盘标记（复核 R2B-06）：选定位置时在设备目录里写 location.kwlm（随机编号，不含任何身份），编号同时记进本机状态；
+ * 每次备份先核对标记——U 盘拔掉后同一个盘符换成了别的 U 盘、读卡器或手机，标记对不上就停下、报“备份盘不是原来那块”，
+ * 不在别的盘上新建任何东西（原先每次都逐级建目录，备份会悄悄写到律师不知道的盘上）。
  */
 import { constants, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { copyFile, readFile, rename as renameAsync, writeFile } from "node:fs/promises";
@@ -32,6 +35,8 @@ const KEEP_GENERATIONS = 7;
 const manifestName = (seq: number) => `manifest-${String(seq).padStart(8, "0")}.kwlb`;
 const MANIFEST_RE = /^manifest-(\d{8})\.kwlb$/;
 const OBJECTS = "objects";
+/** 备份盘标记（复核 R2B-06）：设备目录里的随机编号文件。 */
+const LOCATION_MARKER = "location.kwlm";
 export const RESTORED_MARKER = ".restored-from-backup.json";
 /**
  * 不进备份的路径（相对工作区）：运行期日志与套接字、临时文件、账本本体（另行快照）、日志盐、入组/认领/设备恢复暂存、
@@ -56,6 +61,8 @@ const SKIP = [
 
 export interface BackupState {
   dir: string | null;
+  /** 备份盘标记的编号（复核 R2B-06）；第 14 批第二轮之前设置的位置没有，第一次备份时按“已有备份即认”补上。 */
+  location_id: string | null;
   seq: number;
   last_ok_at: string | null;
   last_error: string | null;
@@ -146,10 +153,63 @@ export interface BackupDeps {
 export function readBackupState(stateFile: string): BackupState {
   try {
     const s = JSON.parse(readFileSync(stateFile, "utf8")) as BackupState;
-    return { dir: typeof s.dir === "string" ? s.dir : null, seq: Number(s.seq) || 0, last_ok_at: s.last_ok_at ?? null, last_error: s.last_error ?? null, last_files: Number(s.last_files) || 0, last_bytes: Number(s.last_bytes) || 0 };
+    return {
+      dir: typeof s.dir === "string" ? s.dir : null,
+      location_id: typeof s.location_id === "string" && LOCATION_ID.test(s.location_id) ? s.location_id : null,
+      seq: Number(s.seq) || 0,
+      last_ok_at: s.last_ok_at ?? null,
+      last_error: s.last_error ?? null,
+      last_files: Number(s.last_files) || 0,
+      last_bytes: Number(s.last_bytes) || 0,
+    };
   } catch {
-    return { dir: null, seq: 0, last_ok_at: null, last_error: null, last_files: 0, last_bytes: 0 };
+    return { dir: null, location_id: null, seq: 0, last_ok_at: null, last_error: null, last_files: 0, last_bytes: 0 };
   }
+}
+
+const LOCATION_ID = /^[0-9a-f]{32}$/;
+
+/** 读备份盘标记（不存在、是链接或格式不对即 null）。 */
+function readLocationMarker(target: string): string | null {
+  const f = join(target, LOCATION_MARKER);
+  try {
+    if (!existsSync(f) || lstatSync(f).isSymbolicLink()) return null;
+    const x = JSON.parse(readFileSync(f, "utf8")) as { v?: number; id?: unknown };
+    return x.v === 1 && typeof x.id === "string" && LOCATION_ID.test(x.id) ? x.id : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLocationMarker(target: string, id: string): void {
+  writeJsonFile(join(target, LOCATION_MARKER), { v: 1, id });
+}
+
+/** 备份盘不是原来那块（复核 R2B-06）：错误代码 location_changed 进状态，界面据此提醒。 */
+function locationChanged(): DomainError {
+  return new DomainError(
+    "conflict",
+    "备份盘不是原来那块（可能插的是另一只 U 盘，或原来的备份被移走、删掉了），这次没有备份：请插回原来的备份盘；要换一块，请在“恢复与备份”里重新选择备份位置",
+    409,
+    { code: "location_changed" },
+  );
+}
+
+/**
+ * 核对备份盘标记；返回本次应记进状态的编号。在任何建目录、写文件之前调用。
+ * 没有记过编号的旧设置：设备目录里已有备份（清单）即认作原来那块并补写标记；什么都没有就请律师重新选一次。
+ */
+function checkLocation(st: BackupState, target: string): string {
+  const marker = readLocationMarker(target);
+  if (st.location_id) {
+    if (marker !== st.location_id) throw locationChanged();
+    return marker;
+  }
+  if (generations(target).length === 0) throw locationChanged();
+  if (marker) return marker;
+  const id = randomBytes(16).toString("hex");
+  writeLocationMarker(target, id);
+  return id;
 }
 
 function writeJsonFile(file: string, value: unknown): void {
@@ -166,10 +226,22 @@ function realBackupDir(dir: string, insideDataRoot: (p: string) => boolean): str
   return real;
 }
 
+/**
+ * 选定备份位置：建好设备目录、写（或沿用）备份盘标记，编号记进本机状态（复核 R2B-06）。
+ * 同一块盘上已有本设备的备份（例如换电脑恢复之后重新选回原来的 U 盘）：沿用它的标记，接着备份。
+ */
 export function configureBackup(d: BackupDeps, dir: string): BackupState {
   if (!d.dbKey) throw new DomainError("conflict", "开发形态（未加密的开发库）不能设置备份", 409);
-  realBackupDir(dir, d.insideDataRoot);
-  const s = { ...readBackupState(d.stateFile), dir, last_error: null };
+  const real = realBackupDir(dir, d.insideDataRoot);
+  ensureRealDir(join(real, BACKUP_DIRNAME));
+  const target = backupTargetOf(real, d.dbKey, d.tenantId, d.deviceId);
+  ensureRealDir(target);
+  let id = readLocationMarker(target);
+  if (!id) {
+    id = randomBytes(16).toString("hex");
+    writeLocationMarker(target, id);
+  }
+  const s = { ...readBackupState(d.stateFile), dir, location_id: id, last_error: null };
   writeJsonFile(d.stateFile, s);
   return s;
 }
@@ -217,8 +289,11 @@ export async function runBackup(d: BackupDeps): Promise<BackupState & { copied: 
   };
   try {
     const dir = realBackupDir(st.dir, d.insideDataRoot);
-    ensureRealDir(join(dir, BACKUP_DIRNAME));
     const target = backupTargetOf(dir, d.dbKey, d.tenantId, d.deviceId);
+    // 先核对备份盘标记，再建目录写文件：对不上就停下，不在别的盘上留任何东西（复核 R2B-06）
+    for (const p of [join(dir, BACKUP_DIRNAME), target]) if (existsSync(p) && lstatSync(p).isSymbolicLink()) throw new DomainError("validation", "备份位置里有链接、联接点或同名文件，已停止备份：请换一个备份位置，或请所内 IT 检查", 400);
+    const locationId = checkLocation(st, target);
+    ensureRealDir(join(dir, BACKUP_DIRNAME));
     ensureRealDir(target);
     const objects = join(target, OBJECTS);
     ensureRealDir(objects);
@@ -295,12 +370,12 @@ export async function runBackup(d: BackupDeps): Promise<BackupState & { copied: 
     for (const name of readdirSync(objects)) if (!keep.has(name) && (/^[0-9a-f]{64}$/.test(name) || /\.tmp-[0-9a-f]{12}$/.test(name))) rmSync(join(objects, name), { force: true });
     for (const name of readdirSync(target)) if (/\.tmp-[0-9a-f]{12}$/.test(name)) rmSync(join(target, name), { force: true });
     writeJsonFile(d.indexFile, { v: 1, entries: next });
-    const out: BackupState = { ...st, seq: m.seq, last_ok_at: m.at, last_error: null, last_files: files.length + 1, last_bytes: bytes };
+    const out: BackupState = { ...st, location_id: locationId, seq: m.seq, last_ok_at: m.at, last_error: null, last_files: files.length + 1, last_bytes: bytes };
     writeJsonFile(d.stateFile, out);
     d.onProgress?.({ done: list.length, total: list.length });
     return { ...out, copied };
   } catch (e) {
-    const code = e instanceof DomainError ? e.code : String((e as NodeJS.ErrnoException)?.code ?? "backup_failed");
+    const code = e instanceof DomainError ? String(e.detail?.code ?? e.code) : String((e as NodeJS.ErrnoException)?.code ?? "backup_failed");
     try {
       writeJsonFile(d.stateFile, { ...st, last_error: code });
     } catch {
