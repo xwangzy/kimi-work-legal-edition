@@ -1,0 +1,96 @@
+{
+  "_comment": "闸门每个外发通道发往云端的路径逐条登记（v9.3 A-12；评审 Z4 P0-11“通道 ↔ 清单”）。门禁 packages/egress-gate/test/egress-paths.test.ts：源码里提取的路径须与这里逐条一致；classes 为驻留面清单 residency.json 的数据类编号。cp-relay 与 dist-relay 是路径白名单正则（源码原样），其余是源码拼出的路径（${…} 记作 {}）。",
+  "channels": {
+    "packages/egress-gate/src/cp-relay.ts": {
+      "what": "控制面通道：开通与入组、设备登记与吊销、席位与许可、律所策略与连接器、租户盐、匿名事项摘要、用量与运营审计",
+      "classes": [
+        24,
+        25
+      ],
+      "paths": [
+        "^\\/v1\\/activation\\/redeem$",
+        "^\\/v1\\/anon-matters\\/[A-Za-z0-9_-]{16,64}$",
+        "^\\/v1\\/audit\\?after=\\d{1,15}&limit=\\d{1,3}$",
+        "^\\/v1\\/connectors$",
+        "^\\/v1\\/connectors\\/[a-z][a-z0-9_-]{1,40}$",
+        "^\\/v1\\/devices\\/[A-Za-z0-9_-]{1,200}\\/revoke$",
+        "^\\/v1\\/devices\\/register$",
+        "^\\/v1\\/directory$",
+        "^\\/v1\\/drafts$",
+        "^\\/v1\\/drafts\\/drf_[0-9a-f]{16}(?:\\/signatures|\\/publish)?$",
+        "^\\/v1\\/enroll$",
+        "^\\/v1\\/invitations$",
+        "^\\/v1\\/invitations\\/act_[A-Za-z0-9_-]{16}\\/revoke$",
+        "^\\/v1\\/join-requests$",
+        "^\\/v1\\/join-requests\\/jr_[A-Za-z0-9_-]{16}\\/(?:fetch|approve|reject|withdraw)$",
+        "^\\/v1\\/license$",
+        "^\\/v1\\/notify-token$",
+        "^\\/v1\\/policy$",
+        "^\\/v1\\/quota$",
+        "^\\/v1\\/quota\\/cap$",
+        "^\\/v1\\/relay-token$",
+        "^\\/v1\\/seat-token$",
+        "^\\/v1\\/seats\\/[A-Za-z0-9_-]{1,200}\\/revoke$",
+        "^\\/v1\\/support-token$",
+        "^\\/v1\\/tenant-salt$"
+      ]
+    },
+    "packages/egress-gate/src/dist-relay.ts": {
+      "what": "内容分发通道：签名法规库与方法模板的清单与包文件（public，不带事项信息）",
+      "classes": [
+        19
+      ],
+      "paths": [
+        "^\\/dist\\/(lawdb|skills)\\/(stable|beta)\\/(latest\\.json|files\\/(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._-]{0,119})$"
+      ]
+    },
+    "packages/egress-gate/src/notify-relay.ts": {
+      "what": "通知通道：期限提醒的密文（第 10 批 S9）",
+      "classes": [
+        22
+      ],
+      "paths": [
+        "/v1/notify/ack",
+        "/v1/notify/defer",
+        "/v1/notify/due",
+        "/v1/reminders/{}"
+      ]
+    },
+    "packages/egress-gate/src/share-relay.ts": {
+      "what": "共享中继通道：团队事项的密文段与块（第 11/12 批 S11）",
+      "classes": [
+        23
+      ],
+      "paths": [
+        "/v1/relay/changes/{}{}",
+        "/v1/relay/matters/{}/chunks/{}",
+        "/v1/relay/matters/{}/control",
+        "/v1/relay/matters/{}/have",
+        "/v1/relay/matters/{}/segments",
+        "/v1/relay/matters/{}/segments/{}"
+      ]
+    },
+    "packages/egress-gate/src/support-relay.ts": {
+      "what": "支持通道：脱敏诊断包（第 9 批 S13）",
+      "classes": [
+        13
+      ],
+      "paths": [
+        "/v1/support/packages/{}",
+        "/v1/support/tickets"
+      ]
+    },
+    "packages/egress-gate/src/server.ts": {
+      "what": "模型与无事项问答：令牌化后的请求经法律模型网关（检索服务按配置地址直发，不拼路径）",
+      "classes": [
+        9,
+        10,
+        27
+      ],
+      "paths": [
+        "/chat/completions",
+        "/qa/chat/completions"
+      ]
+    }
+  }
+}
