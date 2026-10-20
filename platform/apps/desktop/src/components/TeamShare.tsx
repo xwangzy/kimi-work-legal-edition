@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, type RelayStatus } from "../api.ts";
-import { relayErrorText, syncAlertSummary, syncAlertText, syncOutcomeText, teamShareLine } from "../lib/relay-text.ts";
+import { canResyncMembers, relayErrorText, syncAlertSummary, syncAlertText, syncOutcomeText, teamShareLine } from "../lib/relay-text.ts";
 import { fmtTime } from "../lib/labels.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
 
@@ -78,7 +78,7 @@ export function TeamShare({ admin = false }: { admin?: boolean }) {
         {alerts.map((a) => (
           <div key={`${a.matter_id}-${a.kind}-${a.epoch}`} className="sync-alert">
             {syncAlertSummary(a)}
-            {a.kind === "root_conflict" && (admin || owners[a.matter_id]) && (
+            {a.kind === "root_conflict" && canResyncMembers(admin, owners[a.matter_id]) && (
               <>
                 {" "}
                 <ConfirmButton

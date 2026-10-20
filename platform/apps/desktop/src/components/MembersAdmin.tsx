@@ -4,9 +4,10 @@
  * 批准：同事在新装的客户端输入邀请码后，这里出现待批准申请；请对方念出他屏幕上的 12 位数字，与这里一致再批准。
  */
 import { useEffect, useState } from "react";
-import { members } from "../api.ts";
+import { members, type RosterMember } from "../api.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
 import { fmtTime } from "../lib/labels.ts";
+import { memberLabel, memberStatusText, removalLines } from "../lib/offboarding.ts";
 
 const ROLES: [string, string][] = [
   ["lawyer", "律师"],
@@ -161,6 +162,8 @@ export function MembersAdmin() {
         {requests.length > 0 && <p className="muted">批准前，请先电话或当面联系对方，请他读出自己屏幕上的核对码，与这里逐位对照。号码对不上？不要批准，点“拒绝”，并联系中软客服。</p>}
       </div>
 
+      <MemberRoster />
+
       <div className="panel">
         <div className="section-title">发出的邀请</div>
         {invitations.length === 0 ? (
@@ -191,6 +194,153 @@ export function MembersAdmin() {
         )}
         {data?.firm_check_code && <p className="muted">本所核对码：{data.firm_check_code}（同事加入后，他的“设置 · 本机与安全”里应显示同一串数字）</p>}
       </div>
+    </div>
+  );
+}
+
+/**
+ * 成员（B-10）：按中软签名的设备目录列出本所成员与他们的电脑。管理员可以停用某一台电脑（丢失、换机），或把人移出律所
+ * （停用他的全部电脑、释放席位）。移出前提醒对方先在自己电脑上做“离所交接”——这台电脑看不到他自己的事项。
+ */
+function MemberRoster() {
+  const [data, setData] = useState<{ members: RosterMember[]; can_remove: boolean } | null>(null);
+  const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+  const [asking, setAsking] = useState<{ member: RosterMember; lines: string[]; ack: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = () =>
+    members
+      .roster()
+      .then((d) => {
+        setData(d);
+        setErr("");
+      })
+      .catch((e: Error) => setErr(e.message));
+  useEffect(() => {
+    void load();
+  }, []);
+  const ask = async (m: RosterMember) => {
+    setMsg("");
+    try {
+      const p = await members.removalPreview(m.member_id);
+      setAsking({ member: m, lines: removalLines({ ...p, name: memberLabel(m) }), ack: false });
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
+  };
+  const run = async (fn: () => Promise<{ note: string }>) => {
+    setBusy(true);
+    setMsg("");
+    try {
+      setMsg((await fn()).note);
+      setAsking(null);
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+      void load();
+    }
+  };
+  if (err && !data) return null;
+  const list = data?.members ?? [];
+  const active = list.filter((m) => m.status === "active");
+  const removed = list.filter((m) => m.status === "removed");
+  const row = (m: RosterMember) => {
+    const devices = m.devices.filter((d) => d.status === "active");
+    return (
+      <tr key={m.member_id}>
+        <td>{memberLabel(m)}</td>
+        <td>{ROLE_LABEL[m.role] ?? m.role}</td>
+        <td>{fmtTime(m.joined_at)}</td>
+        <td>
+          {devices.length === 0 ? "—" : `${devices.length} 台`}
+          {data?.can_remove && devices.length > 0 && (
+            <details className="muted">
+              <summary>电脑</summary>
+              {devices.map((d) => (
+                <div key={d.device_id}>
+                  {fmtTime(d.created_at)} 加入{d.this_device ? "（这台）" : ""}{" "}
+                  {!d.this_device && !m.is_me && (
+                    <ConfirmButton
+                      label="停用这台电脑"
+                      className="btn-ghost btn-danger btn-sm"
+                      question={`停用后，${memberLabel(m)} 这台电脑不能再打开本所事项；他换新电脑需要重新申请加入。`}
+                      confirmLabel="停用"
+                      disabled={busy}
+                      onConfirm={() => run(() => members.revokeDevice(d.device_id))}
+                    />
+                  )}
+                </div>
+              ))}
+            </details>
+          )}
+        </td>
+        <td>{memberStatusText(m)}</td>
+        <td>
+          {data?.can_remove && !m.is_me && m.status === "active" && (
+            <button className="btn-ghost btn-danger btn-sm" disabled={busy} onClick={() => void ask(m)}>
+              移出律所…
+            </button>
+          )}
+          {data?.can_remove && m.status === "removed" && m.removal && !m.removal.seat_released && (
+            <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => members.remove(m.member_id))}>
+              再试一次释放席位
+            </button>
+          )}
+        </td>
+      </tr>
+    );
+  };
+  return (
+    <div className="panel">
+      <div className="section-title">成员（{active.length}）</div>
+      {list.length === 0 ? (
+        <p className="muted">还没有取到本所的成员名单（连上中软后自动更新）。</p>
+      ) : (
+        <table className="members-table">
+          <thead>
+            <tr>
+              <th>姓名</th>
+              <th>角色</th>
+              <th>加入时间</th>
+              <th>在用电脑</th>
+              <th>状态</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {active.map(row)}
+            {removed.map(row)}
+          </tbody>
+        </table>
+      )}
+      {asking && (
+        <div className="card" role="alertdialog" aria-label={`移出 ${memberLabel(asking.member)}`}>
+          <div className="section-title">移出 {memberLabel(asking.member)}？</div>
+          {asking.lines.map((l, i) => (
+            <p key={i} className={i === 0 ? "" : "muted"}>
+              {l}
+            </p>
+          ))}
+          <label>
+            <input type="checkbox" checked={asking.ack} onChange={(e) => setAsking({ ...asking, ack: e.target.checked })} /> {memberLabel(asking.member)} 已交接完，或律所决定不再等
+          </label>
+          <div className="card-actions">
+            <button className="btn-ghost btn-danger" disabled={!asking.ack || busy} onClick={() => void run(() => members.remove(asking.member.member_id))}>
+              {busy ? "正在移出…" : "移出律所"}
+            </button>
+            <button className="btn-ghost" onClick={() => setAsking(null)}>
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+      {msg && (
+        <p className="muted" role="status">
+          {msg}
+        </p>
+      )}
+      {!data?.can_remove && list.length > 0 && <p className="muted">停用电脑、移出成员要在管理员的电脑上操作。</p>}
     </div>
   );
 }

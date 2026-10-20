@@ -39,6 +39,11 @@ export function syncAlertSummary(a: { title: string | null; peer_member?: string
   return `${t}暂时不能同步给同事，负责人${who ? ` ${who} ` : ""}处理后会自动恢复。`;
 }
 
+/** “重新同步成员名单”（原“本机重新引导”）只给管理员与该事项的负责人（评审 Z4 §五第 4 项、P1-4）。纯函数。 */
+export function canResyncMembers(admin: boolean, isMatterOwner: boolean | undefined): boolean {
+  return admin || isMatterOwner === true;
+}
+
 /** 律师层一行状态（Z3 评审 5.5）：正常 / 有 n 个事项暂停同步 / 暂停原因一句话。纯函数。 */
 export function teamShareLine(st: { blocked: string | null; alerts?: unknown[] | null; stuck?: number | null; stuck_matters?: number | null; policy_fallback?: boolean | null }): string {
   const n = st.alerts?.length ?? 0;

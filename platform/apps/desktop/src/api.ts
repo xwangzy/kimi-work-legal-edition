@@ -960,4 +960,33 @@ export const members = {
   approve: (joinRequestId: string) => invoke<any>("members.approve", { join_request_id: joinRequestId }),
   reject: (joinRequestId: string) => invoke<any>("members.reject", { join_request_id: joinRequestId }),
   revokeInvitation: (activationId: string) => invoke<any>("members.revoke_invitation", { activation_id: activationId }),
+  // 成员离所（B-10）：成员列表、移出前提醒、移出律所（停用全部电脑 + 释放席位）、停用一台电脑
+  roster: () => invoke<{ members: RosterMember[]; can_remove: boolean }>("members.roster"),
+  removalPreview: (memberId: string) => invoke<{ member_id: string; name: string | null; is_me: boolean; active_devices: number; matters: { matter_id: string; title: string; relay_controller: boolean }[] }>("members.removal_preview", { member_id: memberId }),
+  remove: (memberId: string) => invoke<{ devices_revoked: number; seat_released: boolean; note: string }>("members.remove", { member_id: memberId }),
+  revokeDevice: (deviceId: string) => invoke<{ note: string }>("devices.revoke", { device_id: deviceId, reason: "管理员停用这台电脑" }),
+  // 本人离所交接：清单与“交给同事”
+  offboarding: () => invoke<{ matters: OffboardingItem[]; pending: number }>("members.offboarding"),
+  offboardHandoff: (matterId: string, toUser: string) => invoke<{ relay: "done" | "not_needed" | "pending"; owner_set: boolean; note: string; item: OffboardingItem }>("members.offboard_handoff", { matter_id: matterId, to_user: toUser }),
 };
+
+export interface RosterMember {
+  member_id: string;
+  name: string | null;
+  role: string;
+  is_me: boolean;
+  status: "active" | "removed";
+  joined_at: string;
+  devices: { device_id: string; status: string; created_at: string; revoked_at: string | null; this_device: boolean }[];
+  removal: { removed_at: string; seat_released: boolean; seat_error: string | null } | null;
+}
+
+export interface OffboardingItem {
+  matter_id: string;
+  title: string;
+  scope: "personal" | "team";
+  status: "ok" | "needs_archive" | "needs_owner" | "needs_handoff";
+  colleagues: { user_id: string; name: string | null; role: string }[];
+  archived_at?: string | null;
+  relay_controller?: boolean;
+}

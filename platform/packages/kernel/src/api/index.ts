@@ -2986,12 +2986,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           // 中继只把管理权交给在这个事项里发出过改动的电脑（证明对方真的在用、拿得到密钥）：被动成员要先同步一次自己的改动
           pendingNote =
             (e as DomainError).detail?.reason === "to_not_reader"
-              ? `要等 ${displayNameOf(to)} 的电脑在这个事项里同步过一次自己的改动（例如导入一份材料或改一处内容）才能交出——请对方做完后，回到这里再点一次`
+              ? `要等 ${displayNameOf(to, "这位同事")} 的电脑在这个事项里同步过一次自己的改动（例如导入一份材料或改一处内容）才能交出——请对方做完后，回到这里再点一次`
               : (e as Error).message;
         }
       }
       audit(db, id, "member.offboard_handoff", "matter", matter.matter_id, to, keyctx);
-      const who = displayNameOf(to);
+      const who = displayNameOf(to, "这位同事");
       return {
         matter_id: matter.matter_id,
         to_user: to,
@@ -3671,7 +3671,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         ? db
             .all<{ user_id: string; matter_role: string }>(`SELECT user_id, matter_role FROM matter_members WHERE matter_id = ? AND removed_at IS NULL AND user_id <> ? ORDER BY added_at`, [m.matter_id, id.userId])
             .filter((x) => hasActiveDevice(id.tenantId, x.user_id))
-            .map((x) => ({ user_id: x.user_id, name: displayNameOf(x.user_id), role: x.matter_role }))
+            .map((x) => ({ user_id: x.user_id, name: displayNameOf(x.user_id, null), role: x.matter_role }))
         : [];
     const base = { matter_id: m.matter_id, title: m.title, scope: m.collab_scope === "team" ? "team" : "personal", colleagues };
     if (colleagues.length === 0) {
