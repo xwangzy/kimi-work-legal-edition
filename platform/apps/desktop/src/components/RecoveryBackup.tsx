@@ -23,7 +23,7 @@ export function numberedCodeLines(code: string): { no: number | null; text: stri
   return rows.map((text, i) => ({ no: i === 0 ? null : i, text }));
 }
 
-export function RecoveryBackup() {
+export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
   const [st, setSt] = useState<any | null>(null);
   const [created, setCreated] = useState<Created | null>(null);
   const [copied, setCopied] = useState(false);
@@ -59,6 +59,7 @@ export function RecoveryBackup() {
       poll.current = null;
       setBusy(false);
       void load();
+      onChanged?.();
     }
   };
 

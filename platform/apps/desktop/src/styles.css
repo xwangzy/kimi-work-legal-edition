@@ -805,6 +805,9 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .recovery-code { white-space: pre; display: block; font-size: var(--fs-md); line-height: 1.7; list-style: none; padding-left: 0; user-select: none; -webkit-user-select: none; }
 .recovery-no { display: inline-block; min-width: 2em; color: var(--text-secondary); }
 .recovery-print-head { font-weight: 600; margin-bottom: 6px; }
+/* 开通向导的三步（第 14 批续） */
+.welcome-steps { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 8px; }
+.welcome-steps li.done b { color: var(--status-success-text); }
 /* 打印只露出恢复码卡片（抬头、编号行、创始提示），其余页面内容不打（复核 R2A-04、R2B-21） */
 @media print { body * { visibility: hidden; } .recovery-print, .recovery-print * { visibility: visible; } .recovery-print .no-print { display: none !important; } .recovery-print { position: fixed; top: 40px; left: 40px; background: none; border: none; box-shadow: none; } }
 

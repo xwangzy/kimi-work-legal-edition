@@ -36,7 +36,7 @@ function groupCode(raw: string): string {
  * 激活完成后内核按新身份重启：等它就绪再刷新页面。复核 B13-K02：入组在本机没有生效（内核回到待激活并报 last_failure）
  * 或 2 分钟还没打开，都告诉律师怎么办（onStuck），不再一直显示“正在打开…”。
  */
-async function waitForActivated(onStuck: (text: string) => void): Promise<void> {
+async function waitForActivated(onStuck: (text: string) => void, landing = "#/"): Promise<void> {
   // 按经过的时间判断（复核 R2B-25：内核不在时每次查询可能要等很久，按轮数会拖到几十分钟）
   const until = Date.now() + 120_000;
   while (Date.now() < until) {
@@ -44,7 +44,7 @@ async function waitForActivated(onStuck: (text: string) => void): Promise<void> 
     try {
       const st = await api.kernelStatus();
       if (st && !st.onboarding) {
-        window.location.hash = "#/";
+        window.location.hash = landing;
         window.location.reload();
         return;
       }
@@ -117,7 +117,8 @@ function EnterCode({ onPending, legacy, failed }: { onPending: (s: Status) => vo
       const r = await onboarding.redeem(code);
       if (r.kind === "founder") {
         setDone(`已为「${r.firm?.name ?? "本所"}」激活，正在打开…`);
-        void waitForActivated(stuck);
+        // 开通向导（B 第 14 批续）：激活后先到“开通的最后一步”（恢复包、试一下、备份位置），再进首页
+        void waitForActivated(stuck, "#/welcome");
       } else {
         onPending({ mode: "member_pending", firm: r.firm, member: r.member, check_code: r.check_code, requested_at: new Date().toISOString() });
       }
@@ -305,7 +306,7 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
           if (!alive.current) return;
           setRejected(true);
           setNote(t);
-        });
+        }, "#/welcome");
       } else if (r.last_check === "rejected") {
         setRejected(true);
         setNote(r.message ?? "管理员没有批准这次申请");

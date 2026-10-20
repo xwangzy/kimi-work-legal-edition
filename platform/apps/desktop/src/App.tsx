@@ -21,6 +21,7 @@ import { ChatPage } from "./pages/Chat.tsx";
 import { NotOpenPage } from "./pages/NotOpen.tsx";
 import { RemindersPage } from "./pages/Reminders.tsx";
 import { ActivatePage } from "./pages/Activate.tsx";
+import { WelcomePage } from "./pages/Welcome.tsx";
 import { updateBannerView } from "./lib/update-banner.ts";
 
 /** 设置页的标签（UIUX 增量评审 ST-5）：律师版四页 + 管理员“管理”。 */
@@ -38,7 +39,8 @@ export type Route =
   | { page: "reminders"; newForMatter?: string }
   | { page: "inbox" }
   | { page: "connections"; tab: SettingsTab }
-  | { page: "chat"; conversationId?: string };
+  | { page: "chat"; conversationId?: string }
+  | { page: "welcome" };
 
 export function parseHash(hash: string): Route {
   const h = hash.replace(/^#\/?/, "");
@@ -74,6 +76,9 @@ export function parseHash(hash: string): Route {
       return { page: "connections", tab: a === "device" || a === "visibility" || a === "sources" || a === "admin" ? a : a === "data" ? "sources" : a === "policy" ? "admin" : "general" };
     case "chat":
       return a ? { page: "chat", conversationId: a } : { page: "chat" };
+    // 开通向导：激活后的“最后一步”（恢复包、试一下、备份位置），之后进首页看示例事项
+    case "welcome":
+      return { page: "welcome" };
     default:
       return { page: "home" };
   }
@@ -185,18 +190,19 @@ export function App() {
             这台电脑是从备份恢复的（{new Date(boot.restoredAt).toLocaleDateString("zh-CN")}）。如果原来那台电脑丢了或被偷，请马上告诉律所管理员：当前版本不能单独停用原电脑，管理员会为你重新办理入组。
           </div>
         )}
-        {reminder && (reminder.everywhere ? route.page !== "run" && route.page !== "review" : route.page === "home" || route.page === "matters") && (
+        {reminder && route.page !== "welcome" && (reminder.everywhere ? route.page !== "run" && route.page !== "review" : route.page === "home" || route.page === "matters") && (
           <div className={`banner ${reminder.tone === "red" ? "banner-red" : "banner-orange"}`}>
             {reminder.text}{" "}
             <button
               className="btn-link"
               onClick={() => {
+                // 还没有恢复包：回到开通向导一步一步做；其余情形到“设置 · 本机与安全”并滚到“恢复与备份”那一行（复核 R2B-23）
+                if (reminder.kind === "package") return nav("/welcome");
                 nav("/connections/device");
-                // 滚到“恢复与备份”那一行（复核 R2B-23）
                 setTimeout(() => document.getElementById("recovery-backup")?.scrollIntoView({ block: "center" }), 300);
               }}
             >
-              去设置 →
+              {reminder.kind === "package" ? "去完成 →" : "去设置 →"}
             </button>
           </div>
         )}
@@ -333,6 +339,8 @@ function Page({ route }: { route: Route }) {
       return <ChatPage conversationId={route.conversationId} />;
     case "reminders":
       return <RemindersPage {...(route.newForMatter ? { newForMatter: route.newForMatter } : {})} />;
+    case "welcome":
+      return <WelcomePage />;
     case "inbox":
       return <NotOpenPage title="收件区" phase="" lines={["收件区即将推出：手机和工作群发来的文件先放这里，再归入事项。"]} />;
   }
