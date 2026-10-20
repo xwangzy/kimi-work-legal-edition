@@ -142,6 +142,13 @@ export interface ApiDeps {
 }
 
 type Handler = (params: any, id: Identity) => unknown | Promise<unknown>;
+/** 离所交接清单的一件事项（members.offboarding）。 */
+interface OffboardingMatterRow {
+  matter_id: string;
+  title: string;
+  collab_scope: string;
+  created_at: string;
+}
 type FirmGovernance = import("../control-plane/governance.ts").FirmGovernance;
 type ControlPlaneClient = import("../control-plane/client.ts").ControlPlaneClient;
 
@@ -2704,7 +2711,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const userId = String(p?.user_id ?? "");
       const target = db.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matter.matter_id, userId]);
       if (!target) throw notFound("事项成员");
-      if (target.matter_role === "owner") throw validation("不能移出事项负责人（须先移交负责人）");
+      // 已离所的负责人（他的电脑已全部停用，B-10）可以由其他负责人直接移出：他已不能再操作，留着只会让事项永远带着一位找不到的负责人
+      const targetDevices = db.all<{ status: string }>(`SELECT status FROM devices WHERE tenant_id = ? AND member_id = ? AND role <> 'node'`, [id.tenantId, userId]);
+      const departed = targetDevices.length > 0 && targetDevices.every((d) => d.status !== "active");
+      if (target.matter_role === "owner" && !departed) throw validation("不能移出事项负责人（须先移交负责人）");
       let newEpoch = 0;
       let wrapped = 0;
       // 成员链（第 12 批）：移出与轮换写在同一条成员事件里（新纪元只包给链上未移出成员的在用设备）
@@ -2907,7 +2917,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         controller = (await deps.shareRelay.handoffControl(matter.matter_id, to)).controller;
       } catch (e) {
         const code = (e as { code?: string })?.code ?? "relay_push_failed";
-        if (code === "to_not_reader") throw validation("对方还没有经中继同步过这个事项，或他的电脑已不在这个事项的读者里（含已停用）：请对方先打开并同步一次，再移交");
+        if (code === "to_not_reader") throw validation("对方还没有经中继同步过这个事项，或他的电脑已不在这个事项的读者里（含已停用）：请对方先打开并同步一次，再移交", { reason: "to_not_reader" });
         if (code === "not_controller") throw forbidden("中继上的控制成员已不是你（可能上一次移交已经生效）：这台电脑正在向中继重新确认，请稍后查看");
         throw new DomainError("provider_unavailable", `中继暂时不能办理移交（${code}），请稍后再试`, 503);
       }
@@ -2932,6 +2942,163 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       deps.shareRelay?.refetchHistory(matterId);
       audit(db, id, "matter.sync_rebootstrap", "matter", matterId, undefined, keyctx);
       return { matter_id: matterId, note: "已清除本机的成员链：重新确认之前暂停发出该事项；之后只采用本机记录里在册负责人发来的起点（经中继的事项只认中继上的控制成员）" };
+    },
+
+    // ─── 成员离所（v9.3 第 14 批续 B-10；评审 Z4 §五第 5 项、P1-8；D-94）───
+    // 离所的人在自己电脑上做“离所交接”：只在这台电脑上的事项导出归档交给律所；团队事项把负责人与中继控制交给同事。
+    // 管理员在成员页“移出律所”：停用对方全部电脑、释放席位。每台电脑只知道自己参与的事项，所以交接只能由离所的人本人做。
+    "members.offboarding": (_p, id) => {
+      const rows = db.all<OffboardingMatterRow>(
+        `SELECT m.matter_id, m.title, m.collab_scope, m.created_at FROM matters m
+           JOIN matter_members mm ON mm.matter_id = m.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL AND mm.matter_role = 'owner'
+          WHERE m.tenant_id = ? AND m.status = 'active' AND m.lifecycle <> 'purged'
+            AND m.matter_id NOT IN (SELECT matter_id FROM sample_matters WHERE removed_at IS NULL)
+          ORDER BY m.created_at`,
+        [id.userId, id.tenantId],
+      );
+      const matters = rows.map((m) => offboardingItem(m, id));
+      return { matters, pending: matters.filter((x) => x.status !== "ok").length };
+    },
+    // 团队事项交给一位同事：对方还不是负责人就先设为负责人（成员事件），本人是中继上的控制成员就再移交控制（先设负责人、后移交，中继拒绝时如实返回）
+    "members.offboard_handoff": async (p, id) => {
+      assertNotExitMode("离所交接");
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterOwner(db, matter.matter_id, id, "只有事项负责人能把事项交给同事");
+      if (matter.collab_scope !== "team") throw validation("这个事项只在你的电脑上：请导出归档，交给律所或接手的同事");
+      const to = String(p?.to_user ?? "");
+      if (!to || to === id.userId) throw validation("请选择接手的同事");
+      const row = db.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matter.matter_id, to]);
+      if (!row) throw validation("对方不是这个事项的成员：只能交给事项里的同事");
+      if (!hasActiveDevice(id.tenantId, to)) throw validation("对方的电脑都已停用，不能接手");
+      let ownerSet = false;
+      if (row.matter_role !== "owner") {
+        await api["matters.members.add"]!({ matter_id: matter.matter_id, user_id: to, matter_role: "owner" }, id);
+        ownerSet = true;
+      }
+      let relay: "done" | "not_needed" | "pending" = "not_needed";
+      let pendingNote: string | null = null;
+      if (deps.shareRelay?.controllerOf(matter.matter_id) === id.userId) {
+        try {
+          await api["matters.relay_handoff"]!({ matter_id: matter.matter_id, to_user: to }, id);
+          relay = "done";
+        } catch (e) {
+          relay = "pending";
+          // 中继只把管理权交给在这个事项里发出过改动的电脑（证明对方真的在用、拿得到密钥）：被动成员要先同步一次自己的改动
+          pendingNote =
+            (e as DomainError).detail?.reason === "to_not_reader"
+              ? `要等 ${displayNameOf(to)} 的电脑在这个事项里同步过一次自己的改动（例如导入一份材料或改一处内容）才能交出——请对方做完后，回到这里再点一次`
+              : (e as Error).message;
+        }
+      }
+      audit(db, id, "member.offboard_handoff", "matter", matter.matter_id, to, keyctx);
+      const who = displayNameOf(to);
+      return {
+        matter_id: matter.matter_id,
+        to_user: to,
+        owner_set: ownerSet,
+        relay,
+        item: offboardingItem(matter, id),
+        note:
+          relay === "pending"
+            ? `${ownerSet ? `已把 ${who} 设为负责人；` : ""}同事之间同步的管理权还没有交出去：${pendingNote}`
+            : `已交给 ${who}${relay === "done" ? "（含同事之间同步的管理权）" : ""}`,
+      };
+    },
+    // 成员列表（管理员与合伙人）：按控制面签名的设备目录（本机设备表）汇总，姓名取本机记录（本机发出的邀请、事项成员）；所内节点不列
+    "members.roster": (_p, id) => {
+      requireFirmAdmin(id);
+      const devs = db.all<{ device_id: string; member_id: string; role: string; status: string; revoked_at: string | null; created_at: string }>(
+        `SELECT device_id, member_id, role, status, revoked_at, created_at FROM devices WHERE tenant_id = ? AND role <> 'node' ORDER BY created_at`,
+        [id.tenantId],
+      );
+      const removals = new Map(
+        db.all<{ member_id: string; removed_at: string; seat_released_at: string | null; seat_error: string | null }>(
+          `SELECT member_id, removed_at, seat_released_at, seat_error FROM member_removals WHERE tenant_id = ?`,
+          [id.tenantId],
+        ).map((r) => [r.member_id, r]),
+      );
+      const byMember = new Map<string, typeof devs>();
+      for (const d of devs) byMember.set(d.member_id, [...(byMember.get(d.member_id) ?? []), d]);
+      const members = [...byMember].map(([memberId, list]) => {
+        const active = list.filter((d) => d.status === "active");
+        const latest = (active.length > 0 ? active : list).at(-1)!;
+        const rm = removals.get(memberId);
+        return {
+          member_id: memberId,
+          name: displayNameOf(memberId, null),
+          role: latest.role,
+          is_me: memberId === id.userId,
+          status: active.length > 0 ? "active" : "removed",
+          joined_at: list[0]!.created_at,
+          devices: list.map((d) => ({ device_id: d.device_id, status: d.status, created_at: d.created_at, revoked_at: d.revoked_at, this_device: d.device_id === keyctx.device.deviceId })),
+          removal: rm ? { removed_at: rm.removed_at, seat_released: !!rm.seat_released_at, seat_error: rm.seat_error } : null,
+        };
+      });
+      return { members, can_remove: canRemoveMembers(id) };
+    },
+    // 移出前要提醒的事（本机知道的部分）：他还负责、且没有别的在用负责人或他是中继控制成员的团队事项；他还有几台在用电脑
+    "members.removal_preview": (p, id) => {
+      requireFirmAdmin(id);
+      const uid = String(p?.member_id ?? "");
+      const devices = db.all<{ device_id: string }>(`SELECT device_id FROM devices WHERE tenant_id = ? AND member_id = ? AND status = 'active' AND role <> 'node'`, [id.tenantId, uid]);
+      const matters = db
+        .all<{ matter_id: string; title: string }>(
+          `SELECT m.matter_id, m.title FROM matters m JOIN matter_members mm ON mm.matter_id = m.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL AND mm.matter_role = 'owner'
+            WHERE m.tenant_id = ? AND m.status = 'active' AND m.lifecycle <> 'purged' AND m.collab_scope = 'team'`,
+          [uid, id.tenantId],
+        )
+        .filter((m) => {
+          const otherOwner = db
+            .all<{ user_id: string }>(`SELECT user_id FROM matter_members WHERE matter_id = ? AND matter_role = 'owner' AND removed_at IS NULL AND user_id <> ?`, [m.matter_id, uid])
+            .some((o) => hasActiveDevice(id.tenantId, o.user_id));
+          return !otherOwner || deps.shareRelay?.controllerOf(m.matter_id) === uid;
+        })
+        .map((m) => ({ matter_id: m.matter_id, title: m.title, relay_controller: deps.shareRelay?.controllerOf(m.matter_id) === uid }));
+      return { member_id: uid, name: displayNameOf(uid, null), is_me: uid === id.userId, active_devices: devices.length, matters };
+    },
+    // 移出律所（管理员设备）：逐台停用（与“停用这台电脑”同一路径：本机吊销 + 控制面），再释放席位；席位当时释放不了就记下，可再点一次
+    "members.remove": async (p, id) => {
+      requireAdminDevice(id);
+      assertNotExitMode("移出成员");
+      const uid = String(p?.member_id ?? "");
+      if (!/^[A-Za-z0-9_-]{1,200}$/.test(uid)) throw validation("成员编号不合法");
+      // 不能移出自己（律所至少有 1 位管理员也由此保证：操作者本人就是管理员）
+      if (uid === id.userId) throw validation("不能移出自己");
+      const devs = db.all<{ device_id: string }>(`SELECT device_id FROM devices WHERE tenant_id = ? AND member_id = ? AND role <> 'node'`, [id.tenantId, uid]);
+      if (devs.length === 0) throw notFound("成员");
+      const cp: string[] = [];
+      for (const d of db.all<{ device_id: string }>(`SELECT device_id FROM devices WHERE tenant_id = ? AND member_id = ? AND status = 'active' AND role <> 'node'`, [id.tenantId, uid])) {
+        const r = (await api["devices.revoke"]!({ device_id: d.device_id, reason: "成员离所" }, id)) as { control_plane?: string };
+        cp.push(r.control_plane ?? "not_configured");
+      }
+      let seatError: string | null = null;
+      if (deps.controlPlane) {
+        const r = await deps.controlPlane.request("POST", `/v1/seats/${uid}/revoke`, {}).catch(() => ({ ok: false as const, error: "cp_unreachable" }));
+        // 对方从没拿到过席位：没有要释放的
+        if (!r.ok && r.error !== "seat_unknown") seatError = r.error;
+      } else seatError = "not_configured";
+      const now = new Date().toISOString();
+      db.run(
+        `INSERT INTO member_removals (tenant_id, member_id, removed_at, removed_by, devices_revoked, seat_released_at, seat_error) VALUES (?,?,?,?,?,?,?)
+         ON CONFLICT(tenant_id, member_id) DO UPDATE SET devices_revoked = member_removals.devices_revoked + excluded.devices_revoked,
+           seat_released_at = COALESCE(member_removals.seat_released_at, excluded.seat_released_at), seat_error = excluded.seat_error`,
+        [id.tenantId, uid, now, id.userId, cp.length, seatError ? null : now, seatError],
+      );
+      audit(db, id, "member.remove", "member", uid, undefined, keyctx);
+      const unconfirmed = cp.filter((s) => s !== "synced" && s !== "not_configured").length;
+      return {
+        member_id: uid,
+        devices_revoked: cp.length,
+        control_plane: cp,
+        seat_released: !seatError,
+        note: [
+          cp.length > 0 ? `已停用 ${cp.length} 台电脑` : "他的电脑此前都已停用",
+          unconfirmed > 0 ? `其中 ${unconfirmed} 台中软还没有确认，联网后自动重试` : "",
+          seatError ? "席位还没有释放（连不上中软），请稍后在成员页再点一次“移出律所”" : "已释放 1 个席位",
+        ]
+          .filter(Boolean)
+          .join("；"),
+      };
     },
 
     // ─── 团队事项经中软共享中继同步（第 11 批 S11；services/share-relay.ts） ───
@@ -3478,6 +3645,50 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     throw forbidden(`这台电脑暂时无法确认这个事项的负责人：${what}暂不可用；在用的负责人同步一次后自动恢复，若负责人都已离所请联系中软客服`);
   }
 
+  function hasActiveDevice(tenantId: string, userId: string): boolean {
+    return !!db.get(`SELECT 1 AS x FROM devices WHERE tenant_id = ? AND member_id = ? AND status = 'active' AND role <> 'node'`, [tenantId, userId]);
+  }
+
+  /** 本机记下的姓名（本机发出的邀请、事项成员、本人激活记录）；不认识时退回成员编号（fallback 传 null 则返回 null）。 */
+  function displayNameOf(userId: string, fallback: string | null = userId): string | null {
+    if (userId === keyctx.device.cert.memberId && config.activation?.member_name) return config.activation.member_name;
+    const n = db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE user_id = ?`, [userId])?.display_name;
+    return n && n !== userId ? n : fallback;
+  }
+
+  function canRemoveMembers(id: Identity): boolean {
+    const role = db.get<{ role: string }>(`SELECT role FROM memberships WHERE tenant_id = ? AND user_id = ?`, [id.tenantId, id.userId])?.role;
+    return role === "firm_admin" && keyctx.device.cert.role === "admin" && !!deps.controlPlane;
+  }
+
+  /**
+   * 离所交接的一件事项（B-10）：只在这台电脑上的事项（或团队里已没有在用同事的）看最近一次导出归档之后有没有新改动；
+   * 团队事项看还有没有别的在用负责人、本人是不是中继上的控制成员。
+   */
+  function offboardingItem(m: OffboardingMatterRow, id: Identity): Record<string, unknown> & { status: "ok" | "needs_archive" | "needs_owner" | "needs_handoff" } {
+    const colleagues =
+      m.collab_scope === "team"
+        ? db
+            .all<{ user_id: string; matter_role: string }>(`SELECT user_id, matter_role FROM matter_members WHERE matter_id = ? AND removed_at IS NULL AND user_id <> ? ORDER BY added_at`, [m.matter_id, id.userId])
+            .filter((x) => hasActiveDevice(id.tenantId, x.user_id))
+            .map((x) => ({ user_id: x.user_id, name: displayNameOf(x.user_id), role: x.matter_role }))
+        : [];
+    const base = { matter_id: m.matter_id, title: m.title, scope: m.collab_scope === "team" ? "team" : "personal", colleagues };
+    if (colleagues.length === 0) {
+      const archivedAt = db.get<{ at: string | null }>(`SELECT MAX(created_at) AS at FROM audit_events WHERE action = 'matter.archive_exported' AND object_kind = 'matter' AND object_id = ?`, [m.matter_id])?.at ?? null;
+      const changed = [
+        m.created_at,
+        db.get<{ at: string | null }>(`SELECT MAX(created_at) AS at FROM document_versions WHERE matter_id = ?`, [m.matter_id])?.at,
+        db.get<{ at: string | null }>(`SELECT MAX(created_at) AS at FROM artifact_versions WHERE matter_id = ?`, [m.matter_id])?.at,
+        db.get<{ at: string | null }>(`SELECT MAX(updated_at) AS at FROM runs WHERE matter_id = ?`, [m.matter_id])?.at,
+      ].reduce<string>((a, b) => (b && b > a ? b : a), "");
+      return { ...base, status: archivedAt && archivedAt >= changed ? "ok" : "needs_archive", archived_at: archivedAt };
+    }
+    const relayController = deps.shareRelay?.controllerOf(m.matter_id) === id.userId;
+    const otherOwner = colleagues.some((c) => c.role === "owner");
+    return { ...base, status: !otherOwner ? "needs_owner" : relayController ? "needs_handoff" : "ok", relay_controller: relayController };
+  }
+
   function requireRelayController(matterId: string, what: string): void {
     const ctl = deps.shareRelay?.foreignController(matterId);
     if (!ctl) return;
@@ -3488,6 +3699,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     // 第三轮复核 S11A-31：控制成员已不是在册负责人（移交、被移出）或根本不是本事项成员（被抢先登记）时，如实说明须找中软客服
     if (!row) throw forbidden(`这个事项在中软共享中继上的状态异常（登记者不是本事项成员）：${what}暂时不能经中继同步，请联系中软客服重置该事项`);
     if (row.removed_at || row.matter_role !== "owner") throw forbidden(`这个事项经中软共享中继同步，中继上的控制成员（${name}）已不是负责人：${what}暂时不能经中继同步，请联系中软客服办理交接`);
+    // B-10：控制成员没交接就离所了（他的电脑已全部停用）——别让负责人去找一个找不到的人
+    const ctlDevices = db.all<{ status: string }>(`SELECT status FROM devices WHERE member_id = ? AND role <> 'node'`, [ctl]);
+    if (ctlDevices.length > 0 && ctlDevices.every((d) => d.status !== "active")) throw forbidden(`这个事项经中软共享中继同步，中继上的控制成员（${name}）的电脑已全部停用（多为离所时没有交接）：${what}暂时不能经中继同步，请联系中软客服办理交接`);
     throw forbidden(`这个事项经中软共享中继同步：${what}须由中继上的控制成员（${name}）在其电脑上操作，或请对方先把控制成员移交给你`);
   }
 
