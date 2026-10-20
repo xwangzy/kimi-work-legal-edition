@@ -2,6 +2,7 @@
  * 任务执行态（第 03 篇 §4.3 三栏：左 材料与覆盖；中 计划、进度、澄清、确认卡、子任务；右 成果预览与文件历史；§8.3 执行域徽标；§8.4 数据去向卡）。
  * 事件先落本机事项账本，本页按游标续读；离开本页不会取消任务。确认卡独立于聊天文本（模型文本里的“已批准”不触发权限）。
  */
+import { downloadPlan } from "../lib/download.ts";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, onKernelEvent, type ApprovalCard, type QuestionCard, type RunEvent, type RunMode, type RunProgress, type SendSummaryView, type UnresolvedOperation } from "../api.ts";
@@ -63,9 +64,9 @@ function homeLine(): BusinessLine | null {
   }
 }
 
-/** 下载按钮按文件类型说清下载的是什么（D-2）。 */
+/** 下载按钮按文件类型说清下载的是什么（D-2）；Markdown 成果下载成 Word（B-4）。 */
 function downloadLabel(filename: string): string {
-  return /\.docx$/i.test(filename) ? "下载 Word" : /\.xlsx$/i.test(filename) ? "下载 Excel" : /\.pdf$/i.test(filename) ? "下载 PDF" : "下载";
+  return downloadPlan(filename).label;
 }
 
 export function RunView({ runId, matterId }: { runId: string; matterId: string }) {

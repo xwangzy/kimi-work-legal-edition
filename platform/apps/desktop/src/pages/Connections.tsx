@@ -19,6 +19,7 @@ import { TeamShare } from "../components/TeamShare.tsx";
 import { MembersAdmin } from "../components/MembersAdmin.tsx";
 import { RecoveryBackup } from "../components/RecoveryBackup.tsx";
 import { Offboarding } from "../components/Offboarding.tsx";
+import { DocStyle } from "../components/DocStyle.tsx";
 
 const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
 
@@ -131,6 +132,7 @@ function GeneralTab({ version }: { version: string | null }) {
             <div className="muted">深色模式下，Word/Excel 成果预览与审查原文仍按纸面白显示，便于对照打印稿；打印一律按浅色。</div>
           </div>
         </div>
+        <DocStyle />
         <div className="device-row">
           <div className="device-k">提醒</div>
           <div>

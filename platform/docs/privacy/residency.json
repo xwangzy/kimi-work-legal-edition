@@ -554,7 +554,7 @@
       "id": 19,
       "data": "设置与本机标记",
       "memory": "主进程、内核、渲染",
-      "disk": "release.json 在 asar 内；律所策略与事项设置在账本；渲染 localStorage 只存登记的偏好键；管道盐、非内容索引版本标记；签名的法规库与方法模板（public；在线更新的副本在 <工作区>/content/，选用以账本登记与签名通道清单 seq 为准，迁移 0029）；示例事项标记 sample_matters（迁移 0028，虚构内容，移除后留墓碑行）",
+      "disk": "release.json 在 asar 内；律所策略与事项设置在账本；渲染 localStorage 只存登记的偏好键；管道盐、非内容索引版本标记；签名的法规库与方法模板（public；在线更新的副本在 <工作区>/content/，选用以账本登记与签名通道清单 seq 为准，迁移 0029）；示例事项标记 sample_matters（迁移 0028，虚构内容，移除后留墓碑行）；文书版式 firm_doc_style（迁移 0052：函头名称与地址电话、正文字体字号、页码、律所上传的 Word 模板字节，SQLCipher；不含案件内容）",
       "local_channels": "—",
       "network": "策略来自控制面（签名链）；法规库与方法模板更新经出站闸门分发通道（地址随构建固定、钉住，只带席位令牌，不带事项信息）",
       "logs_dumps": "—",
@@ -578,6 +578,10 @@
         {
           "file": "packages/kernel/src/services/content-updates.ts",
           "symbol": "ContentUpdater"
+        },
+        {
+          "file": "packages/kernel/src/services/doc-style.ts",
+          "symbol": "setDocTemplate"
         }
       ],
       "tests": [
@@ -585,7 +589,8 @@
         "packages/kernel/test/pipe-salt.test.ts",
         "packages/kernel/test/skills-bundle.test.ts",
         "packages/kernel/test/privacy-residency.test.ts",
-        "packages/kernel/test/content-updates.test.ts"
+        "packages/kernel/test/content-updates.test.ts",
+        "packages/kernel/test/doc-style.test.ts"
       ],
       "residual": "Local Storage 为明文 leveldb（只存偏好与版本号）；在线更新装上的法规库与方法模板副本在 <工作区>/content/（本人可写）：启动时核验，核验通过后到下次启动之间被本机改动的页会被直接读到（复核 S8A-12）",
       "owner": "研发-桌面"

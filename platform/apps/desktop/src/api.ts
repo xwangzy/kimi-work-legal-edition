@@ -2,6 +2,7 @@
  * 内核 API 客户端（v9 第 04 篇 §3.3：界面只见业务运行时 API；§1.1：渲染进程经主进程 IPC 调用，不直连任何网络地址）。
  * Electron：preload 暴露的 zrKernel.invoke；web 开发：开发桥（127.0.0.1:7720，仅开发，带令牌）。
  */
+import { downloadPlan } from "./lib/download.ts";
 import { GENERIC_FAILURE } from "./lib/errors.ts";
 
 declare global {
@@ -393,6 +394,16 @@ export interface SuspectView {
   occurrences: number;
 }
 
+export interface DocStyleView {
+  letterhead: "auto" | "custom" | "none";
+  letterhead_name: string | null;
+  letterhead_lines: string[];
+  effective_letterhead: string | null;
+  body: "song-xiaosi" | "fangsong-san";
+  page_numbers: boolean;
+  template: { name: string; sha256: string; updated_at: string } | null;
+}
+
 export interface ChatMessage {
   message_id: string;
   role: "user" | "assistant" | "notice";
@@ -665,11 +676,35 @@ export const api = {
 
   // 成果
   /** 下载成果（还原真名）：桌面客户端由内核直接写到律师选定的位置（不经浏览器下载、不进“最近使用”）。返回 false = 律师取消。 */
+  /** 下载成果（Markdown 成果下载成套好版式的 Word，见 lib/download.ts）；返回 false = 律师取消。 */
   downloadArtifact: async (artifactVersionId: string, filename: string): Promise<boolean> => {
-    const target = await chooseSaveTarget(filename);
+    const plan = downloadPlan(filename);
+    const target = await chooseSaveTarget(plan.saveName);
     if (target === null) return false;
-    const r = await invoke<{ filename: string; sha256: string; data_base64?: string; saved?: boolean }>("artifacts.download", { artifact_version_id: artifactVersionId, ...(target ? { save_handle: target.handle } : {}) });
-    if (!target && r.data_base64) browserDownload(r.data_base64, filename, "application/octet-stream");
+    const r = await invoke<{ filename: string; sha256: string; data_base64?: string; saved?: boolean }>("artifacts.download", { artifact_version_id: artifactVersionId, ...(plan.as ? { as: plan.as } : {}), ...(target ? { save_handle: target.handle } : {}) });
+    if (!target && r.data_base64) browserDownload(r.data_base64, r.filename, "application/octet-stream");
+    return true;
+  },
+  // 文书版式（B-4）：本机导出 Word 的函头、字体字号、页码与律所模板
+  docStyle: () => invoke<DocStyleView>("doc_style.get"),
+  setDocStyle: (body: Partial<Pick<DocStyleView, "letterhead" | "letterhead_name" | "letterhead_lines" | "body" | "page_numbers">>) => invoke<DocStyleView>("doc_style.set", body),
+  /** 上传律所 Word 模板：桌面客户端经系统对话框；开发形态退回文件输入框传字节。返回 null = 取消。 */
+  setDocTemplate: async (fallback?: File | null): Promise<DocStyleView | null> => {
+    if (window.zrKernel?.pickFiles) {
+      const f = ((await window.zrKernel.pickFiles({ extensions: ["dotx", "docx"], multiple: false })) ?? [])[0];
+      if (!f) return null;
+      return invoke<DocStyleView>("doc_style.set_template", { file_handle: f.handle, filename: f.name });
+    }
+    if (!fallback) return null;
+    const data_base64 = btoa(Array.from(new Uint8Array(await fallback.arrayBuffer()), (b) => String.fromCharCode(b)).join(""));
+    return invoke<DocStyleView>("doc_style.set_template", { data_base64, filename: fallback.name });
+  },
+  clearDocTemplate: () => invoke<DocStyleView>("doc_style.clear_template"),
+  downloadDocStyleSample: async (): Promise<boolean> => {
+    const target = await chooseSaveTarget("文书版式样张.docx");
+    if (target === null) return false;
+    const r = await invoke<{ filename: string; data_base64?: string }>("doc_style.sample", target ? { save_handle: target.handle } : {});
+    if (!target && r.data_base64) browserDownload(r.data_base64, r.filename, "application/octet-stream");
     return true;
   },
   /** Windows 环境自检（v9.2 §3.7；Y5 P1-6）：只读；Windows 之外为“不适用”。 */

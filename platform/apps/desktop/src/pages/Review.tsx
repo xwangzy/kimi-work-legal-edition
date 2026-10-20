@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.ts";
 import { nav } from "../App.tsx";
+import { downloadPlan } from "../lib/download.ts";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { artifactName } from "../lib/labels.ts";
@@ -173,7 +174,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
           <h1 className="page-title" title={data?.filename ?? ""}>{title ?? data?.filename ?? "…"}</h1>
           {data && (
             <button className="btn-ghost" onClick={download}>
-              {/\.docx$/i.test(data.filename) ? "下载 Word" : /\.xlsx$/i.test(data.filename) ? "下载 Excel" : "下载"}
+              {downloadPlan(data.filename).label}
             </button>
           )}
         </div>

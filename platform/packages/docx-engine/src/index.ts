@@ -6,6 +6,7 @@ export * from "./revise.ts";
 export * from "./compare.ts";
 export * from "./sanitize.ts";
 export * from "./create.ts";
+export * from "./house-style.ts";
 export * from "./mask.ts";
 export * from "./xlsx.ts";
 export * from "./props.ts";

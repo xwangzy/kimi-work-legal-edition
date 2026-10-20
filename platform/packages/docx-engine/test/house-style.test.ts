@@ -1,0 +1,129 @@
+/**
+ * 律所版式（v9.3 第 15 批 B-4；评审 Z1 P1-1）：生成的 Word 带 A4 页面、字体字号、标题居中、页码、落款右对齐；
+ * 导出时按律所设置加函头或套律所模板（样式与页眉页脚取自模板，徽标图片一并带上）；只有本产品生成的文件会被重新套版式；写出零外取引用。
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { createDocx, createStyledDocx, extractParagraphs, findExternalRefs, HOUSE_STYLE_MARK, isHouseStyled, markdownToBlocks, readTemplate, readZipEntries, restyleDocx, writeRawZip } from "../src/index.ts";
+
+const text = (buf: Buffer, part: string) => readZipEntries(buf).get(part)?.toString("utf8") ?? "";
+
+test("B-4 生成的 Word：A4 与公文页边距、样式表、页脚页码、标记；正文顺序不变", () => {
+  const d = createDocx("法律意见书", [{ heading: "一、事实", paragraphs: ["甲公司于 2026 年签约。", "乙公司未付款。"] }]);
+  const doc = text(d, "word/document.xml");
+  assert.match(doc, /<w:pgSz w:w="11906" w:h="16838"\/>/);
+  assert.match(doc, /<w:pgMar w:top="2098" w:right="1474" w:bottom="1984" w:left="1587"/);
+  assert.match(doc, /<w:pStyle w:val="KwlTitle"\/>/);
+  assert.match(text(d, "word/styles.xml"), /w:eastAsia="宋体"[\s\S]*<w:sz w:val="24"\/>/, "缺省宋体小四");
+  const footer = text(d, "word/footer1.xml");
+  assert.match(footer, /第 [\s\S]*w:instr=" PAGE "[\s\S]*页 共 [\s\S]*w:instr=" NUMPAGES "/);
+  assert.ok(isHouseStyled(d));
+  assert.match(text(d, "docProps/core.xml"), new RegExp(HOUSE_STYLE_MARK));
+  assert.deepEqual(extractParagraphs(d).map((p) => p.text), ["法律意见书", "一、事实", "甲公司于 2026 年签约。", "乙公司未付款。"]);
+  assert.deepEqual(findExternalRefs(readZipEntries(d)), []);
+  assert.equal(text(d, "word/header1.xml"), "", "没有函头设置：不加页眉");
+});
+
+test("B-4 Markdown → 正文块：标题、章节层级、列表、表格、加粗、落款右对齐", () => {
+  const md = [
+    "# 关于甲公司股权转让的法律意见书",
+    "",
+    "## 一、基本事实",
+    "甲公司持有**乙公司 60%** 股权，见[工商档案](#a)。",
+    "### （一）出资",
+    "- 已实缴 300 万元",
+    "1. 第二期未缴",
+    "",
+    "| 股东 | 比例 |",
+    "|---|---|",
+    "| 甲公司 | 60% |",
+    "",
+    "## 二、结论",
+    "建议补足出资。",
+    "",
+    "某某律师事务所",
+    "承办律师：张三",
+    "2026年10月20日",
+  ].join("\n");
+  const b = markdownToBlocks(md);
+  assert.deepEqual(
+    b.map((x) => x.kind),
+    ["title", "h1", "p", "h2", "li", "li", "table", "h1", "p", "right", "right", "right"],
+  );
+  const p = b[2] as { kind: "p"; runs: { text: string; bold?: boolean }[] };
+  assert.deepEqual(p.runs, [{ text: "甲公司持有" }, { text: "乙公司 60%", bold: true }, { text: " 股权，见工商档案。" }]);
+  const t = b[6] as { kind: "table"; rows: { text: string }[][][] };
+  assert.deepEqual(t.rows.map((r) => r.map((c) => c.map((x) => x.text).join(""))), [["股东", "比例"], ["甲公司", "60%"]]);
+  // 没有一级标题时，最高一级的 ## 当一级标题
+  assert.deepEqual(markdownToBlocks("## 甲\n正文\n### 乙").map((x) => x.kind), ["h1", "p", "h2"]);
+  // 正文中间提到律所名称不右对齐（只认文末）
+  assert.equal(markdownToBlocks("某某律师事务所接受委托。\n\n## 分析\n正文").at(0)!.kind, "p");
+  const docx = createStyledDocx(b);
+  assert.match(text(docx, "word/document.xml"), /<w:tbl>[\s\S]*<w:tblBorders>/);
+  assert.match(text(docx, "word/document.xml"), /<w:pStyle w:val="KwlRight"\/>[\s\S]*2026年10月20日/);
+});
+
+test("B-4 导出时套律所函头与字体；不是本产品生成的文件原样返回", () => {
+  const d = createDocx("律师函", [{ heading: "", paragraphs: ["贵司拖欠货款。"] }]);
+  const styled = restyleDocx(d, { letterhead: { name: "示例律师事务所", lines: ["北京市朝阳区某路 1 号 · 010-12345678"] }, body: "fangsong-san", pageNumbers: true });
+  const hdr = text(styled, "word/header1.xml");
+  assert.match(hdr, /示例律师事务所/);
+  assert.match(hdr, /北京市朝阳区某路 1 号/);
+  assert.match(hdr, /<w:bottom w:val="single"/, "函头下有横线");
+  assert.match(text(styled, "word/styles.xml"), /w:eastAsia="仿宋"[\s\S]*<w:sz w:val="32"\/>/, "仿宋三号");
+  assert.match(text(styled, "word/styles.xml"), /<w:spacing w:line="560" w:lineRule="exact"\/>/, "固定行距 28 磅");
+  assert.deepEqual(extractParagraphs(styled).map((p) => p.text), extractParagraphs(d).map((p) => p.text), "正文不变");
+  assert.match(text(styled, "word/document.xml"), /<w:headerReference w:type="default" r:id="rIdHeader"\/>/);
+  // 不要页码
+  assert.equal(text(restyleDocx(d, { letterhead: null, body: "song-xiaosi", pageNumbers: false }), "word/footer1.xml"), "");
+  // 律师上传的原件（没有标记）：不动
+  const foreign = writeRawZip([
+    { name: "[Content_Types].xml", data: Buffer.from("<Types/>") },
+    { name: "word/document.xml", data: Buffer.from(`<w:document xmlns:w="x"><w:body><w:p/></w:body></w:document>`) },
+  ]);
+  assert.equal(restyleDocx(foreign, { letterhead: { name: "甲", lines: [] }, body: "song-xiaosi", pageNumbers: true }), foreign);
+});
+
+test("B-4 律所模板：样式按名称对应、页眉（含徽标图片）与页脚取自模板；模板里的外部链接图片去掉", () => {
+  const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+  const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+  const tpl = writeRawZip([
+    { name: "[Content_Types].xml", data: Buffer.from("<Types/>") },
+    {
+      name: "word/styles.xml",
+      data: Buffer.from(
+        `<w:styles xmlns:w="${W}"><w:style w:type="paragraph" w:default="1" w:styleId="a"><w:name w:val="Normal"/><w:rPr><w:rFonts w:eastAsia="方正仿宋_GBK"/></w:rPr></w:style>` +
+          `<w:style w:type="paragraph" w:styleId="1"><w:name w:val="heading 1"/><w:basedOn w:val="a"/></w:style><w:style w:type="paragraph" w:styleId="a5"><w:name w:val="Title"/></w:style></w:styles>`,
+      ),
+    },
+    { name: "word/document.xml", data: Buffer.from(`<w:document xmlns:w="${W}" xmlns:r="${R}"><w:body><w:p/><w:sectPr><w:headerReference w:type="default" r:id="rId8"/><w:footerReference w:type="default" r:id="rId9"/></w:sectPr></w:body></w:document>`) },
+    { name: "word/_rels/document.xml.rels", data: Buffer.from(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId8" Type="${R}/header" Target="header2.xml"/><Relationship Id="rId9" Type="${R}/footer" Target="footer3.xml"/></Relationships>`) },
+    { name: "word/header2.xml", data: Buffer.from(`<w:hdr xmlns:w="${W}" xmlns:r="${R}"><w:p><w:r><w:drawing><a:blip xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" r:embed="rIdLogo"/></w:drawing><w:t>衡序律师事务所</w:t></w:r></w:p><w:p><w:r><w:drawing><a:blip xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" r:link="rIdTrack"/></w:drawing></w:r></w:p></w:hdr>`) },
+    { name: "word/_rels/header2.xml.rels", data: Buffer.from(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdLogo" Type="${R}/image" Target="media/logo.png"/><Relationship Id="rIdTrack" Type="${R}/image" Target="http://tracker.example/t.png" TargetMode="External"/></Relationships>`) },
+    { name: "word/footer3.xml", data: Buffer.from(`<w:ftr xmlns:w="${W}"><w:p><w:r><w:t>地址：上海市某路</w:t></w:r></w:p></w:ftr>`) },
+    { name: "word/media/logo.png", data: png },
+  ]);
+  const t = readTemplate(tpl);
+  assert.ok(t);
+  assert.deepEqual(t!.ids, { h1: "1", title: "a5" });
+  const d = createDocx("法律意见书", [{ heading: "一、事实", paragraphs: ["正文。"] }]);
+  const out = restyleDocx(d, { letterhead: { name: "不应出现", lines: [] }, body: "song-xiaosi", pageNumbers: true }, t);
+  const doc = text(out, "word/document.xml");
+  assert.match(doc, /<w:pStyle w:val="a5"\/>[\s\S]*法律意见书/, "标题用模板的 Title 样式");
+  assert.match(doc, /<w:pStyle w:val="1"\/>[\s\S]*一、事实/, "一级标题用模板的 heading 1");
+  assert.match(doc, /<w:pStyle w:val="KwlBody"\/>/, "模板没有的正文样式用本产品的");
+  const styles = text(out, "word/styles.xml");
+  assert.match(styles, /方正仿宋_GBK/, "模板字体");
+  assert.match(styles, /w:styleId="KwlBody"[\s\S]*<w:basedOn w:val="a"\/>/, "注入的样式基于模板的缺省段落样式");
+  assert.match(text(out, "word/header1.xml"), /衡序律师事务所/, "页眉取自模板，不用函头设置");
+  assert.doesNotMatch(text(out, "word/header1.xml"), /不应出现/);
+  assert.match(text(out, "word/footer1.xml"), /地址：上海市某路/);
+  assert.ok(readZipEntries(out).get("word/media/logo.png")?.equals(png), "徽标图片带上");
+  assert.match(text(out, "[Content_Types].xml"), /<Default Extension="png" ContentType="image\/png"\/>/);
+  assert.doesNotMatch(text(out, "word/_rels/header1.xml.rels"), /tracker\.example/, "外部链接图片去掉");
+  assert.deepEqual(findExternalRefs(readZipEntries(out)), []);
+  assert.deepEqual(extractParagraphs(out).map((p) => p.text), ["法律意见书", "一、事实", "正文。"]);
+  // 读不出的模板：null（导出照常用本产品版式）
+  assert.equal(readTemplate(Buffer.from("不是 zip")), null);
+});

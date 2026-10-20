@@ -6,7 +6,7 @@
  */
 import { createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
 import { errFields, slog } from "@zr-legal/safe-log";
-import { readFileSync, lstatSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFileSync, lstatSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { writeExportFile } from "../services/export-file.ts";
 import type { CpAuditRecord } from "@zr-legal/firm-trust";
@@ -85,7 +85,8 @@ import { adjudicate, compareAnnotations, normalizeDocs, openEvalBytes, openEvalF
 import { isImage, isPdf, ocrReady, parseWithPipeline } from "../services/parse-pipeline.ts";
 import { estimatePoints, scenarioCap } from "../services/estimate.ts";
 import { docxRenderReport } from "../tools/tools/docx.ts";
-import { extractParagraphs, renderDocxHtml, renderXlsxHtml } from "@zr-legal/docx-engine";
+import { createStyledDocx, extractParagraphs, isHouseStyled, markdownToBlocks, renderDocxHtml, renderXlsxHtml, restyleDocx } from "@zr-legal/docx-engine";
+import { docStyleView, houseStyleFor, setDocStyle, setDocTemplate } from "../services/doc-style.ts";
 import { isToolOperationInFlight } from "../local-server.ts";
 import { artifactCitationBlock, checkArtifactCitations, CITATIONS_CASES_CHECK_KEY, uncheckedCitations, type ArtifactCitationCheck } from "../services/artifact-citations.ts";
 
@@ -151,6 +152,25 @@ interface OffboardingMatterRow {
 }
 type FirmGovernance = import("../control-plane/governance.ts").FirmGovernance;
 type ControlPlaneClient = import("../control-plane/client.ts").ControlPlaneClient;
+
+/** 文书版式样张（虚构内容）。 */
+const DOC_STYLE_SAMPLE = [
+  "# 关于某某公司股权转让事项的法律意见书（样张）",
+  "## 一、基本事实",
+  "根据委托人提供的材料，甲公司持有乙公司 60% 的股权。以下内容为虚构，仅用于查看版式。",
+  "## 二、法律分析",
+  "### （一）转让限制",
+  "依据《中华人民共和国公司法》的有关规定，股东向股东以外的人转让股权，应当书面通知其他股东。",
+  "| 事项 | 结论 |",
+  "|---|---|",
+  "| 优先购买权 | 需取得其他股东书面放弃 |",
+  "## 三、结论",
+  "建议在签署前完成上述程序。",
+  "",
+  "某某律师事务所",
+  "承办律师：某某",
+  "2026年10月20日",
+].join("\n");
 
 const SCENARIOS = new Set(["s1.contract_review", "s1b.draft_compare", "s2.case_file", "s6.redaction", "a1.agent_task"]);
 const MAX_BYTES = 100 * 1024 * 1024; // 与 IM 100MB 口径一致
@@ -1648,19 +1668,68 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (r?.changed || (r && r.unresolved.length > 0)) {
         audit(db, id, "artifact.exported", "artifact", art.artifact_version_id, sha256Hex(JSON.stringify({ restored: r.restored, unresolved: r.unresolved.length })), keyctx);
       }
-      const out = r?.changed ? r.bytes : buf;
+      let out = r?.changed ? r.bytes : buf;
+      let filename = String(art.filename);
+      // 文书版式（B-4）：导出时套本机的函头、字体与律所模板——本产品生成的 Word 重新套版式；Markdown / 文本成果可“下载 Word”。预览不套
+      if (p?.restore !== false) {
+        const { style, template } = houseStyleFor(db, id.tenantId, config.activation?.firm_name ?? null);
+        if (/\.docx$/i.test(filename) && isHouseStyled(out)) out = restyleDocx(out, style, template);
+        else if (p?.as === "docx" && /\.(md|markdown|txt)$/i.test(filename)) {
+          out = createStyledDocx(markdownToBlocks(out.toString("utf8")), style, template);
+          filename = filename.replace(/\.(md|markdown|txt)$/i, ".docx");
+        }
+      }
+      const changed = !out.equals(buf);
       // 桌面客户端：导出直写到律师选定的位置（还原真名的明文只落在那里；Y5 P1-4）；预览（restore:false）不接受保存位置
       const saved = p?.save_path && p?.restore !== false ? writeExportFile(String(p.save_path), out, config.workspaceDir) : null;
       if (saved) audit(db, id, "artifact.saved", "artifact", art.artifact_version_id, sha256Hex(out), keyctx);
       return {
-        filename: saved?.name ?? art.filename,
+        filename: saved?.name ?? filename,
         sha256: art.sha256,
-        exported_sha256: r?.changed ? sha256Hex(out) : art.sha256,
+        exported_sha256: changed ? sha256Hex(out) : art.sha256,
         tokens_restored: r?.restored ?? 0,
         unresolved_tokens: r?.unresolved.length ?? 0,
         size_bytes: out.length,
         ...(saved ? { saved: true } : { data_base64: out.toString("base64") }),
       };
+    },
+
+    // ─── 文书版式（v9.3 第 15 批 B-4）：本机导出 Word 时的函头、字体字号、页码与律所模板 ───
+    "doc_style.get": (_p, id) => docStyleView(db, id.tenantId, config.activation?.firm_name ?? null),
+    "doc_style.set": (p, id) => {
+      setDocStyle(db, id.tenantId, p ?? {});
+      audit(db, id, "doc_style.set", "tenant", id.tenantId, undefined, keyctx);
+      return docStyleView(db, id.tenantId, config.activation?.firm_name ?? null);
+    },
+    // 上传律所模板：桌面客户端经系统对话框（主进程把句柄换成 file），开发形态传 data_base64
+    "doc_style.set_template": (p, id) => {
+      let bytes: Buffer;
+      let name: string;
+      if (p?.file) {
+        const file = String(p.file);
+        if (statSync(file).size > 5 * 1024 * 1024) throw new DomainError("validation", "模板文件过大（上限 5 MB）：请去掉模板里的大图片后再上传", 422);
+        bytes = readFileSync(file);
+        name = String(p?.filename ?? file.split(/[\\/]/).pop() ?? "律所模板");
+      } else if (typeof p?.data_base64 === "string") {
+        bytes = Buffer.from(p.data_base64, "base64");
+        name = String(p?.filename ?? "律所模板");
+      } else throw validation("请选择模板文件");
+      if (!/\.(dotx|docx)$/i.test(name)) throw new DomainError("unsupported_file", "请上传 Word 模板（.dotx）或用作模板的 Word 文档（.docx）", 422);
+      const r = setDocTemplate(db, id.tenantId, name, bytes);
+      audit(db, id, "doc_style.template_set", "tenant", id.tenantId, r.sha256 ?? undefined, keyctx);
+      return docStyleView(db, id.tenantId, config.activation?.firm_name ?? null);
+    },
+    "doc_style.clear_template": (_p, id) => {
+      setDocTemplate(db, id.tenantId, null, null);
+      audit(db, id, "doc_style.template_cleared", "tenant", id.tenantId, undefined, keyctx);
+      return docStyleView(db, id.tenantId, config.activation?.firm_name ?? null);
+    },
+    // 样张：一页虚构内容按当前版式生成，律师打开看看函头、字体、页码对不对
+    "doc_style.sample": (p, id) => {
+      const { style, template } = houseStyleFor(db, id.tenantId, config.activation?.firm_name ?? null);
+      const out = createStyledDocx(markdownToBlocks(DOC_STYLE_SAMPLE), style, template);
+      const saved = p?.save_path ? writeExportFile(String(p.save_path), out, config.workspaceDir) : null;
+      return { filename: saved?.name ?? "文书版式样张.docx", ...(saved ? { saved: true } : { data_base64: out.toString("base64") }) };
     },
 
     /** Office 成果的应用内预览（UIUX P0-3）：内核渲染为白名单 HTML（修订显示为插入/删除，批注列在文末）；代号由界面在隔离框架内还原。 */

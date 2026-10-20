@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
+import { downloadPlan } from "../lib/download.ts";
 import { artifactName, AUDIENCE_LABELS, fmtRelative, fmtTime } from "../lib/labels.ts";
 import { groupDeliverables } from "../lib/deliverables.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
@@ -128,7 +129,7 @@ export function DeliverablesPage() {
                     <td title={fmtTime(r.created_at)}>{fmtRelative(r.created_at)}</td>
                     <td className="dl-actions" onClick={(e) => e.stopPropagation()}>
                       <button className="btn-link" onClick={() => nav(`/review/${r.artifact_version_id}`)}>预览</button>
-                      <button className="btn-link" onClick={() => void download(r)}>{/\.docx$/i.test(r.filename) ? "下载 Word" : /\.xlsx$/i.test(r.filename) ? "下载 Excel" : "下载"}</button>
+                      <button className="btn-link" onClick={() => void download(r)}>{downloadPlan(r.filename).label}</button>
                       {r.status === "draft" && (
                         <button className="btn-link" disabled={busyId === r.artifact_version_id} onClick={() => void submit(r)}>提交复核</button>
                       )}
@@ -183,7 +184,7 @@ export function MatterDeliverables({ matterId }: { matterId: string }) {
                       .catch((e) => setErr((e as Error).message))
                   }
                 >
-                  {/\.docx$/i.test(r.filename) ? "下载 Word" : /\.xlsx$/i.test(r.filename) ? "下载 Excel" : "下载"}
+                  {downloadPlan(r.filename).label}
                 </button>
               </td>
             </tr>
