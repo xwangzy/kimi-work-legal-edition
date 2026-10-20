@@ -777,9 +777,10 @@
       "tests": [
         "packages/kernel/test/onboarding.test.ts",
         "services/control-plane/test/onboarding.test.ts",
-        "services/control-plane/test/onboarding-hardening.test.ts"
+        "services/control-plane/test/onboarding-hardening.test.ts",
+        "packages/kernel/test/onboarding-tamper.test.ts"
       ],
-      "residual": "创始设备仍持律所根（D-41 未变，根私钥离线分持见 C6）；律所核对码作为辅助的人工核对；入组申请与批准经邀请码本机秘密段（80 bit，只在管理员电脑与成员手里）做双向 HMAC，控制面替换申请公钥或证书会被双方识破；邀请码连同秘密段一起泄露给第三方时，第三方可抢先入组（管理员核对入组核对码可发现）；activation.json 明文含本人与律所显示名",
+      "residual": "创始设备仍持律所根（D-41 未变，根私钥离线分持见 C6）；律所核对码作为辅助的人工核对；入组申请与批准经邀请码本机秘密段（80 bit，只在管理员电脑与成员手里）做双向 HMAC（覆盖两把公钥、成员与角色、证书、律所根与恢复托管公钥，以及律所名称与成员姓名——第 14 批第二轮复核 A-03 余项），控制面替换其中任何一项都会被双方识破；邀请码连同秘密段一起泄露给第三方时，第三方可抢先入组（管理员核对入组核对码可发现）；activation.json 明文含本人与律所显示名（成员机的显示名经管理员的 MAC 确认）",
       "owner": "研发-内核"
     },
     {
