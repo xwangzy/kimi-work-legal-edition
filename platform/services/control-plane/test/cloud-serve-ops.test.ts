@@ -142,6 +142,9 @@ test("运营按人鉴权端到端：命令行生成密钥与名册 → 生产入
   for (const bad of [["0.0.0.0/0"], ["0.0.0.0/1", "128.0.0.0/1"], ["10.0.0.0/7"]]) assert.match(runOnce(cpCfg("r2", { ...ops, allow_cidrs: bad })).stderr, /前缀长度不合法/, bad.join(","));
   assert.match(runOnce(cpCfg("r2", { ...ops, allow_cidrs: ["10.0.0.0/8", "11.0.0.0/8"] })).stderr, /合计覆盖过宽/);
   assert.match(runOnce(cpCfg("r3", { ...ops, allow_cidrs: [] })).stderr, /运维网段/);
+  // 生产形态（TLS，不是回环测试例外）：回环、链路本地地址不能列为运维网段（前置代理、边车多在这些地址上）
+  const tlsCfg = (allow: string[]) => ({ ...cpCfg("r6", { ...ops, allow_cidrs: allow }), insecure_loopback_for_test: undefined, listen: { host: "0.0.0.0", port: 0 }, tls: { cert_file: write("fake.crt", "x"), key_file: write("fake.key", "x") } });
+  for (const bad of [["127.0.0.1/32"], ["169.254.1.0/24"], ["10.20.0.0/24", "::1"]]) assert.match(runOnce(tlsCfg(bad)).stderr, /含回环、未指定或链路本地地址/, bad.join(","));
   assert.match(runOnce(cpCfg("r3", { ...ops, deployment: undefined })).stderr, /ops\.deployment/);
   const privKeys = write("priv-keys.json", JSON.stringify({ "sec-1": readFileSync(join(dir, "sec", "sec-1.key.pem"), "utf8") }));
   assert.match(runOnce(cpCfg("r4", { ...ops, roster_keys_file: privKeys })).stderr, /不是公钥/);
