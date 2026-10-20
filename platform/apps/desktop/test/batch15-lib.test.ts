@@ -21,3 +21,19 @@ test("B-4 上传律所模板、下载样张：主进程把对话框句柄换成�
   assert.deepEqual(resolveFileParams("doc_style.sample", { save_handle: "h1", save_path: "/tmp/x" }, store).params, { save_path: "/Users/x/save.dotx" });
   assert.ok(resolveFileParams("doc_style.set_template", { file_handle: "bad" }, store).error);
 });
+
+test("B-5 整理案卷两段：第一段按规则整理（可带已知争点），第二段“争点与证据分析”用 issue-evidence-matrix 方法，完成后接着做", async () => {
+  const { SCENARIOS, NEXT_STEPS, splitIssues, buildGoal } = await import("../src/lib/scenarios.ts");
+  const casefile = SCENARIOS.find((c) => c.id === "casefile")!;
+  const issues = SCENARIOS.find((c) => c.id === "issues")!;
+  assert.equal(casefile.scenario, "s2.case_file");
+  assert.ok(casefile.gets.some((g) => g.includes("框架")), "不再承诺 AI 对应");
+  assert.ok(casefile.steps.some((s) => s.includes("不调用 AI")));
+  assert.equal(issues.scenario, "a1.agent_task");
+  assert.equal(issues.skill, "issue-evidence-matrix");
+  assert.equal(NEXT_STEPS.casefile?.[0], "issues", "整理案卷完成后第一个建议就是第二段");
+  assert.ok(!casefile.intents.some((w) => w.length === 1 && w[0] === "争点"), "说“争点”时引到第二段");
+  assert.ok(issues.intents.some((w) => w.length === 1 && w[0] === "争点"));
+  assert.deepEqual(splitIssues("货款是否付清；违约金是否过高\n违约金是否过高;  "), ["货款是否付清", "违约金是否过高"]);
+  assert.equal(buildGoal(issues, { claims: "支付货款 120 万元", side: "原告 / 申请人" }, ""), "请梳理争点与证据：拟主张或需应对的请求为支付货款 120 万元；我方诉讼地位：原告 / 申请人。只采用我已确认的事实，不评估胜诉率。");
+});

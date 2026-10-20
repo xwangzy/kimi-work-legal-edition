@@ -55,6 +55,7 @@ export async function prepareStart(matter: Matter, value: ComposerValue, o: { sk
     extra.current_document_version_id = value.documentIds[1];
   }
   if (value.goal.trim()) extra.goal = value.goal.trim();
+  if (value.scenario === "s2.case_file" && value.issues?.length) extra.issues = value.issues;
   const estimate = await api.estimate(matter.matter_id, { scenario: value.scenario, document_version_ids: value.documentIds, ...extra });
   return { matter, value, estimate: estimate as PendingStart["estimate"], ...(o.skill ? { skill: o.skill } : {}), ...(o.label ? { label: o.label } : {}) };
 }

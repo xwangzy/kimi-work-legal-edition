@@ -2,7 +2,9 @@
  * S2 案卷整理（第 3 篇 S2）：入库 → 事实抽取（带锚点）→ 时间轴 → 目录/矩阵/补证/质量报告。
  *
  * 诚实边界（v0 确定性版）：
- * - 事实抽取只覆盖正则可判的日期/金额/主体，类型标签一律“材料记载”（不推断）；
+ * - 事实抽取只覆盖规则可判的日期/金额/主体，类型标签一律“材料记载”（不推断）；v9.3 第 15 批 B-5 补：中文数字日期（二〇二三年三月五日）、
+ *   大写与中文数字金额（人民币壹拾万元整、十万元）、没有年份的日期（3月5日：不猜年份，时间线上排在最后并写明“年份不明”）；
+ * - 争点的拆解与证据对应是第二段（“争点与证据分析”，Agent + issue-evidence-matrix 方法），这里只按律师给的争点列框架；
  * - 争点矩阵为骨架（争点由律师填写/确认），不擅自认定证明力（专项零违例）；
  * - 同日同额不自动合并（专项零违例）；
  * - 原件永不修改；解析失败只交目录与缺口，停止实体结论（§2.6）。
@@ -37,12 +39,73 @@ const DATE_RES = [
   /(\d{4})年(\d{1,2})月(\d{1,2})日/g,
   /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/g,
 ];
+/** 中文数字日期：二〇二三年三月五日、二零二三年十二月三十一日。 */
+const CN_DATE_RE = /([〇零○一二三四五六七八九]{4})年([一二三四五六七八九十]{1,2})月([一二三四五六七八九十]{1,3})日/g;
+/** 没有年份的日期：3月5日、三月五日（前面紧挨着“年”或数字的不算，那是完整日期的一部分）。 */
+const NO_YEAR_RE = /(?<![年\d〇零○一二三四五六七八九十])(\d{1,2}|[一二三四五六七八九十]{1,2})月(\d{1,2}|[一二三四五六七八九十]{1,3})日/g;
 const AMOUNT_RE = /(人民币|￥|¥)?\s*([\d,]+(?:\.\d+)?)\s*(万元|元)/g;
+/** 大写或中文数字金额：人民币壹拾万元整、壹佰贰拾叁万肆仟伍佰元、十万元、三千五百元（须以“元”结尾，可带角分与“整”）。 */
+const CN_AMOUNT_RE = /(人民币)?([零〇壹贰叁肆伍陆柒捌玖拾佰仟萬万亿億两一二三四五六七八九十百千]{1,20})元(?:([零〇壹贰叁肆伍陆柒捌玖一二三四五六七八九])角)?(?:([零〇壹贰叁肆伍陆柒捌玖一二三四五六七八九])分)?(整|正)?/g;
+
+const CN_DIGIT: Record<string, number> = { 零: 0, 〇: 0, "○": 0, 壹: 1, 一: 1, 贰: 2, 二: 2, 两: 2, 叁: 3, 三: 3, 肆: 4, 四: 4, 伍: 5, 五: 5, 陆: 6, 六: 6, 柒: 7, 七: 7, 捌: 8, 八: 8, 玖: 9, 九: 9 };
+const CN_UNIT: Record<string, number> = { 拾: 10, 十: 10, 佰: 100, 百: 100, 仟: 1000, 千: 1000 };
+const CN_BIG: Record<string, number> = { 万: 1e4, 萬: 1e4, 亿: 1e8, 億: 1e8 };
+
+/** 中文数字（大写或小写，含万、亿）→ 整数；认不出返回 null。 */
+export function cnAmountToInt(s: string): number | null {
+  let total = 0;
+  let section = 0;
+  let digit = 0;
+  let seen = false;
+  for (const ch of s) {
+    if (ch in CN_DIGIT) {
+      digit = CN_DIGIT[ch]!;
+      seen = true;
+    } else if (ch in CN_UNIT) {
+      // “十二”“一万零十”：单位前没有数字（或只有零）按一计
+      section += (digit === 0 ? 1 : digit) * CN_UNIT[ch]!;
+      digit = 0;
+      seen = true;
+    } else if (ch in CN_BIG) {
+      total += (section + digit) * CN_BIG[ch]!;
+      section = 0;
+      digit = 0;
+    } else return null;
+  }
+  const v = total + section + digit;
+  return seen ? v : null;
+}
+
+/** 年份逐位：二〇二三 → 2023。 */
+function cnYear(s: string): number | null {
+  let y = 0;
+  for (const ch of s) {
+    const d = CN_DIGIT[ch];
+    if (d === undefined) return null;
+    y = y * 10 + d;
+  }
+  return y;
+}
+
+const smallCn = (s: string): number | null => (/^\d+$/.test(s) ? Number(s) : cnAmountToInt(s));
 const PARTY_RE = /(甲方|乙方|丙方|委托方|受托方|借款人|出借人|担保人)[:：]\s*([^\s，。；、（）()]{2,30})/g;
 
 export function extractFacts(doc: { document_version_id: string; parse_version_id: string; filename: string; text: string }): FactRow[] {
   const out: FactRow[] = [];
   const { text } = doc;
+  const push = (kind: FactRow["kind"], m: RegExpMatchArray, normalized: string) =>
+    out.push({
+      kind,
+      text: m[0],
+      normalized,
+      document_version_id: doc.document_version_id,
+      parse_version_id: doc.parse_version_id,
+      filename: doc.filename,
+      char_start: m.index!,
+      file_page: filePageOf(text, m.index!),
+      char_end: m.index! + m[0].length,
+      assertion: "material_record",
+    });
   for (const re of DATE_RES) {
     for (const m of text.matchAll(re)) {
       const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
@@ -61,6 +124,24 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
         assertion: "material_record",
       });
     }
+  }
+  for (const m of text.matchAll(CN_DATE_RE)) {
+    const [y, mo, d] = [cnYear(m[1]!), cnAmountToInt(m[2]!), cnAmountToInt(m[3]!)];
+    if (y === null || mo === null || d === null || mo < 1 || mo > 12 || d < 1 || d > 31) continue;
+    push("date", m, `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+  }
+  for (const m of text.matchAll(NO_YEAR_RE)) {
+    const [mo, d] = [smallCn(m[1]!), smallCn(m[2]!)];
+    if (mo === null || d === null || mo < 1 || mo > 12 || d < 1 || d > 31) continue;
+    // 不猜年份：归一值以“年份不明”开头，时间线上排在有年份的事实之后
+    push("date", m, `年份不明-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+  }
+  for (const m of text.matchAll(CN_AMOUNT_RE)) {
+    const yuan = cnAmountToInt(m[2]!);
+    if (yuan === null || yuan === 0) continue;
+    const jiao = m[3] ? (CN_DIGIT[m[3]] ?? 0) : 0;
+    const fen = m[4] ? (CN_DIGIT[m[4]] ?? 0) : 0;
+    push("amount", m, `${Math.round((yuan + jiao / 10 + fen / 100) * 100) / 100} 元`);
   }
   for (const m of text.matchAll(AMOUNT_RE)) {
     const value = Number(m[2]!.replace(/,/g, ""));
@@ -162,7 +243,8 @@ export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
     ["发生日期", "事件/金额", "类型", "来源文件", "原文", "锚点(字符区间)", "陈述性质"],
     ...dates
       .slice()
-      .sort((a, b) => a.normalized.localeCompare(b.normalized))
+      // 年份不明的排在最后（不猜年份）
+      .sort((a, b) => Number(a.normalized.startsWith("年份不明")) - Number(b.normalized.startsWith("年份不明")) || a.normalized.localeCompare(b.normalized))
       .map((f) => [f.normalized, f.text, "日期", f.filename, f.text, `${f.char_start}-${f.char_end}`, "材料记载"] as (string | number | null)[]),
     ...amounts.map((f) => ["（日期未明）", f.normalized, "金额", f.filename, f.text, `${f.char_start}-${f.char_end}`, "材料记载"] as (string | number | null)[]),
   ];
@@ -173,12 +255,12 @@ export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
     ...input.materials.map((m, i) => [`E${i + 1}`, m.filename, "委托人提供（待确认）", "未知", "电子复制件", "", ""] as (string | number | null)[]),
   ];
 
-  // 争点—证据矩阵骨架
+  // 争点—证据矩阵框架：按律师给的争点列行；拆要件、挂证据是第二段“争点与证据分析”（Agent）的事
   const matrixRows: (string | number | null)[][] = [
     ["争点", "要件", "举证责任", "支持证据（锚点）", "反对证据", "缺口", "证明力意见（律师填写）"],
     ...(input.issues.length > 0
-      ? input.issues.map((issue) => [issue, "（待律师拆解）", "（待确认）", "", "", "", ""] as (string | number | null)[])
-      : [["（争点待律师填写）", "", "", "", "", "", ""]] as (string | number | null)[][]),
+      ? input.issues.map((issue) => [issue, "（待拆解：可接着做“争点与证据分析”）", "（待确认）", "", "", "", ""] as (string | number | null)[])
+      : [["（争点待填写：可接着做“争点与证据分析”，由 AI 按你确认的事实拆要件、挂证据）", "", "", "", "", "", ""]] as (string | number | null)[][]),
   ];
 
   // 补证清单（质量缺陷 → 补证动作；页级 OCR 质量如实列出——低质量页可见、可重扫、可人工纠正）

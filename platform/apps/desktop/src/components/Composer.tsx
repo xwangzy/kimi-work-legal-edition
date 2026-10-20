@@ -13,6 +13,8 @@ export interface ComposerValue {
   scenario: string;
   documentIds: string[];
   choice: ModeChoice;
+  /** 整理案卷的“已知争点”（B-5）：交给争点矩阵框架。 */
+  issues?: string[];
 }
 
 export function Composer(props: {

@@ -58,14 +58,38 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "litigation",
     title: "整理案卷",
     gives: "起诉材料、证据、往来函件（可多份）",
-    gets: ["证据目录.xlsx", "事实时间线.xlsx", "争点—证据矩阵.xlsx"],
+    // 第一段（B-5）：在这台电脑上按规则整理，不调用 AI；争点矩阵只按你给的争点列框架，拆要件、挂证据接着做“争点与证据分析”
+    gets: ["证据目录.xlsx", "事实时间线.xlsx", "争点—证据矩阵框架.xlsx", "补证清单"],
     scenario: "s2.case_file",
     verb: "开始整理",
     goal: "",
-    fields: [],
+    fields: [{ key: "issues", label: "已知争点（可空，用“；”或换行隔开）", kind: "text", placeholder: "例如：货款是否已付清；违约金是否过高" }],
     minMaterials: 1,
-    steps: ["逐份读取材料并标出识别不全的页", "按时间整理事实并标出处", "列出证据目录与争点—证据对应", "列出缺口与待补证据"],
-    intents: [["证据", "目录"], ["整理", "案卷"], ["时间线"], ["时间轴"], ["争点"]],
+    steps: [
+      "逐份读取材料并标出识别不全的页",
+      "按时间整理日期、金额与主体并标出处（在这台电脑上按规则整理，不调用 AI）",
+      "列出证据目录；争点—证据矩阵按你给的争点列框架",
+      "列出缺口与待补证据；接着可做“争点与证据分析”",
+    ],
+    intents: [["证据", "目录"], ["整理", "案卷"], ["时间线"], ["时间轴"]],
+  },
+  {
+    id: "issues",
+    line: "litigation",
+    title: "争点与证据分析",
+    gives: "整理好并经你确认的事实（先做“整理案卷”，在事实表里确认）",
+    gets: ["争点—证据矩阵.xlsx（要件、证据、缺口、对方抗辩）", "补证清单（动作、责任人）"],
+    scenario: "a1.agent_task",
+    skill: "issue-evidence-matrix",
+    verb: "开始分析",
+    goal: "请梳理争点与证据：拟主张或需应对的请求为{claims}；我方诉讼地位：{side}。只采用我已确认的事实，不评估胜诉率。",
+    fields: [
+      { key: "claims", label: "拟主张或需应对的请求", kind: "text", required: true, placeholder: "例如：支付货款 120 万元及逾期利息" },
+      { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人"] },
+    ],
+    minMaterials: 0,
+    steps: ["只用你在事实表里确认过的事实（没有确认的单列出来请你确认）", "按请求拆成要件，标出一般由哪一方举证", "把事实与证据挂到要件下，标出证据薄弱和没有证据的", "列出对方可能的抗辩和补证动作"],
+    intents: [["争点"], ["证据", "支撑"], ["补证"], ["要件"]],
   },
   {
     id: "amount",
@@ -311,13 +335,19 @@ export const SCENARIOS: ScenarioCard[] = [
   },
 ];
 
+/** “已知争点”文本 → 争点列表（“；”、分号或换行隔开；去空、去重，至多 20 条、每条 200 字）。 */
+export function splitIssues(text: string): string[] {
+  return [...new Set(text.split(/[；;\n]+/).map((x) => x.trim().slice(0, 200)).filter(Boolean))].slice(0, 20);
+}
+
 /** 按律师填写生成任务说明：空字段所在的分句省略。 */
 /**
  * 完成后“接着做”（UIUX 增量评审 D-4）：场景 → 下一步常做的场景（诉讼链：整理案卷 → 金额测算 → 起草起诉状；审合同 → 给不同受众的版本……）。
  * 只列已有的场景卡；点开的是下一场景的开始面板（同一事项），材料在面板里照常勾选。
  */
 export const NEXT_STEPS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  casefile: ["amount", "pleading"],
+  casefile: ["issues", "amount", "pleading"],
+  issues: ["pleading", "amount"],
   "labor-response": ["research-lit", "pleading"],
   amount: ["pleading", "demand-lit"],
   pleading: ["case-report"],
