@@ -193,6 +193,30 @@ interface PendingApproval {
   decision: PolicyDecisionRecord | null;
 }
 
+/** kap-server 任务列表的线上形态（只取这里用到的字段）。 */
+interface WireTask {
+  status?: string;
+  run_in_background?: boolean;
+  completed_at?: string;
+}
+
+/**
+ * 后台命令的完成通知还没开回合（复核 B13-C03 的竞态；v9.3 合并后全量在负载下复现）：引擎先把任务记为完成，
+ * 再在几次异步之后把通知送进会话、开一个新的主回合——两者之间会话不忙、也没有在跑的任务，不能在这个空档里落定终态
+ * （否则运行按第一个回合的文字收尾，通知回合落在运行之外被中止）。
+ * - 后台任务在最近一个主回合结束之后才完成：通知回合必然要来，最多等 15 秒；
+ * - 在回合进行中完成：通知多半已并进那个回合，只给回合结束后 1 秒的余量（防两者几乎同时）。
+ * 线上形态不带“通知被压下”的标记，所以都设了上限；被取消的任务不等（取消多由宿主发起，运行已有终态）。
+ */
+export function backgroundNoticeDue(tasks: readonly WireTask[], turnStartedAt: number, turnEndedAt: number, now: number): boolean {
+  return tasks.some((t) => {
+    if (t.run_in_background === false || (t.status !== "completed" && t.status !== "failed") || !t.completed_at) return false;
+    const endedAt = Date.parse(t.completed_at);
+    if (!Number.isFinite(endedAt) || endedAt < turnStartedAt) return false;
+    return endedAt > turnEndedAt ? now < endedAt + 15_000 : now < turnEndedAt + 1_000;
+  });
+}
+
 interface RunRecord {
   runId: string;
   matterId: string;
@@ -208,6 +232,9 @@ interface RunRecord {
   questions: Set<string>;
   turnId: number | null;
   mainTurnOpen: boolean;
+  /** 最近一个主回合开始、结束的时刻（宿主时钟；判断后台命令的完成通知是否还没开回合）。 */
+  lastTurnStartedAt: number;
+  lastTurnEndedAt: number;
   /** 最近一个主回合结束时裁定的结果（会话空闲后才落定为终态）。 */
   pendingOutcome: { status: RuntimeRunStatus; payload: Record<string, unknown> } | null;
   settling: boolean;
@@ -440,6 +467,8 @@ export class KapRuntime {
       questions: new Set(),
       turnId: null,
       mainTurnOpen: false,
+      lastTurnStartedAt: 0,
+      lastTurnEndedAt: 0,
       pendingOutcome: null,
       settling: false,
       // 工作时限以内核下发为准（复核 S5-B08：内核可调的时限不被宿主缺省值截短）；未下发时用宿主缺省（30 分钟）；上限不超过总时长
@@ -524,6 +553,7 @@ export class KapRuntime {
     switch (e.type) {
       case "turn.started":
         run.mainTurnOpen = true;
+        run.lastTurnStartedAt = Date.now();
         if (run.turnId === null && typeof p.turnId === "number") run.turnId = p.turnId;
         this.push(run, "run.turn_started", { turn_id: p.turnId });
         break;
@@ -579,6 +609,7 @@ export class KapRuntime {
         break;
       case "turn.ended": {
         run.mainTurnOpen = false;
+        run.lastTurnEndedAt = Date.now();
         const reason = String(p.reason ?? "");
         const decision = resolveAgentOutcome({
           hostStatus: reason === "completed" ? "succeeded" : reason === "cancelled" ? "cancelled" : "failed",
@@ -689,7 +720,8 @@ export class KapRuntime {
         if (TERMINAL.has(run.status) || run.mainTurnOpen) return;
         const backgroundRunning = (tasks.items as { status?: string }[]).some((t) => t.status === "running");
         const goalActive = !!goal && (goal as { status?: string }).status === "active";
-        if (status && !status.busy && !backgroundRunning && !goalActive && run.pendingOutcome) {
+        const noticeDue = backgroundNoticeDue(tasks.items as WireTask[], run.lastTurnStartedAt, run.lastTurnEndedAt, Date.now());
+        if (status && !status.busy && !backgroundRunning && !goalActive && !noticeDue && run.pendingOutcome) {
           this.finish(run, engine, run.pendingOutcome.status, run.pendingOutcome.payload);
           return;
         }

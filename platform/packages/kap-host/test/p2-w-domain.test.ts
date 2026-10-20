@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { getGlobalDispatcher, setGlobalDispatcher, type Dispatcher } from "undici";
 import { ManifestRegistry } from "@zr-legal/host-policy";
 import { configureTrustedRipgrep } from "../vendor/kap-embed/kap-embed.mjs";
-import { KapRuntime, type RuntimeRunStatus } from "../src/runtime.ts";
+import { KapRuntime, backgroundNoticeDue, type RuntimeRunStatus } from "../src/runtime.ts";
 import { HostEgressDispatcher } from "../src/host-egress.ts";
 import { wCoreFactory } from "../src/w-domain.ts";
 import { placeholderShellPath } from "../src/seeds.ts";
@@ -248,6 +248,27 @@ describe("P2：后台命令完成通知续接（复核 B13-C03；Kimi Code 2.2.0
     assert.ok(noteReq, "通知回合发出了模型请求");
     assert.match(String(noteReq.auth), new RegExp(`tok-${r.run_id}`));
     assert.equal(readFileSync(join(engine.workDir, "通知.txt"), "utf8"), "完成\n", "后台命令的写入经提交落盘");
+  });
+
+  test("通知回合还没开时不落定（合并后全量在负载下复现的竞态）：后台任务在回合结束后完成就等通知回合，最多 15 秒；回合中完成的只留 1 秒余量", () => {
+    const iso = (ms: number) => new Date(ms).toISOString();
+    const T0 = 1_000_000; // 回合开始
+    const T1 = T0 + 500; // 回合结束
+    const done = (endedAt: number, extra: Record<string, unknown> = {}) => ({ status: "completed", run_in_background: true, completed_at: iso(endedAt), ...extra });
+    // 回合结束之后才完成：通知回合必然要来——在上限之内都要等
+    assert.equal(backgroundNoticeDue([done(T1 + 2_000)], T0, T1, T1 + 2_100), true);
+    assert.equal(backgroundNoticeDue([done(T1 + 2_000)], T0, T1, T1 + 2_000 + 14_000), true);
+    assert.equal(backgroundNoticeDue([done(T1 + 2_000)], T0, T1, T1 + 2_000 + 15_001), false, "超过上限不再等");
+    assert.equal(backgroundNoticeDue([done(T1 + 2_000, { status: "failed" })], T0, T1, T1 + 2_100), true, "失败的后台命令同样有通知");
+    // 回合进行中完成：只留回合结束后 1 秒
+    assert.equal(backgroundNoticeDue([done(T0 + 100)], T0, T1, T1 + 500), true);
+    assert.equal(backgroundNoticeDue([done(T0 + 100)], T0, T1, T1 + 1_001), false);
+    // 不等：上一个回合之前就完成的、还在跑的（另有判断）、前台命令、被取消的
+    assert.equal(backgroundNoticeDue([done(T0 - 1)], T0, T1, T1 + 10), false);
+    assert.equal(backgroundNoticeDue([{ status: "running", run_in_background: true }], T0, T1, T1 + 10), false);
+    assert.equal(backgroundNoticeDue([done(T1 + 2_000, { run_in_background: false })], T0, T1, T1 + 2_100), false);
+    assert.equal(backgroundNoticeDue([done(T1 + 2_000, { status: "cancelled" })], T0, T1, T1 + 2_100), false);
+    assert.equal(backgroundNoticeDue([], T0, T1, T1 + 10), false);
   });
 
   test("等后台命令的时间计入工作时限：时限短于后台命令时，在等待期间按超时失败收尾、中止会话，不等通知回合", { timeout: 120_000 }, async () => {
