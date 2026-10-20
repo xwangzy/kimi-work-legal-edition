@@ -3751,7 +3751,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         db.get<{ at: string | null }>(`SELECT MAX(created_at) AS at FROM artifact_versions WHERE matter_id = ?`, [m.matter_id])?.at,
         db.get<{ at: string | null }>(`SELECT MAX(updated_at) AS at FROM runs WHERE matter_id = ?`, [m.matter_id])?.at,
       ].reduce<string>((a, b) => (b && b > a ? b : a), "");
-      return { ...base, status: archivedAt && archivedAt >= changed ? "ok" : "needs_archive", archived_at: archivedAt };
+      // 严格早于导出才算导出过（同一毫秒里的改动按“导出后又有改动”处理——宁可多导一次，不漏）
+      return { ...base, status: archivedAt && changed < archivedAt ? "ok" : "needs_archive", archived_at: archivedAt };
     }
     const relayController = deps.shareRelay?.controllerOf(m.matter_id) === id.userId;
     const otherOwner = colleagues.some((c) => c.role === "owner");

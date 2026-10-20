@@ -73,7 +73,7 @@ test("B-4 导出时套律所函头与字体；不是本产品生成的文件原�
   assert.match(text(styled, "word/styles.xml"), /w:eastAsia="仿宋"[\s\S]*<w:sz w:val="32"\/>/, "仿宋三号");
   assert.match(text(styled, "word/styles.xml"), /<w:spacing w:line="560" w:lineRule="exact"\/>/, "固定行距 28 磅");
   assert.deepEqual(extractParagraphs(styled).map((p) => p.text), extractParagraphs(d).map((p) => p.text), "正文不变");
-  assert.match(text(styled, "word/document.xml"), /<w:headerReference w:type="default" r:id="rIdHeader"\/>/);
+  assert.match(text(styled, "word/document.xml"), /<w:headerReference w:type="default" r:id="rIdKwlHeader"\/>/);
   // 不要页码
   assert.equal(text(restyleDocx(d, { letterhead: null, body: "song-xiaosi", pageNumbers: false }), "word/footer1.xml"), "");
   // 律师上传的原件（没有标记）：不动
@@ -126,4 +126,30 @@ test("B-4 律所模板：样式按名称对应、页眉（含徽标图片）与�
   assert.deepEqual(extractParagraphs(out).map((p) => p.text), ["法律意见书", "一、事实", "正文。"]);
   // 读不出的模板：null（导出照常用本产品版式）
   assert.equal(readTemplate(Buffer.from("不是 zip")), null);
+});
+
+test("B-4 重新套版式只换样式、页眉页脚与页面设置：批注、修订、关系与其他部件原样保留；示例合同与清洁稿不带标记", async () => {
+  const { applyRevisionsToDocx, textToDocx } = await import("../src/index.ts");
+  const { createHash } = await import("node:crypto");
+  const d = createDocx("借款合同", [{ heading: "正文", paragraphs: ["借款人应于三日内付款。"] }]);
+  const anchor = "三日内";
+  const rev = applyRevisionsToDocx(d, {
+    baselineHash: createHash("sha256").update(d).digest("hex"),
+    ops: [{ opId: "op-1", anchor: { originalText: anchor }, originalHash: createHash("sha256").update(anchor).digest("hex"), newText: "五个工作日内", comment: "付款期限延长", author: "测试" }],
+  }).docx;
+  assert.match(text(rev, "word/comments.xml"), /付款期限延长/);
+  const out = restyleDocx(rev, { letterhead: { name: "示例律师事务所", lines: [] }, body: "song-xiaosi", pageNumbers: true });
+  assert.match(text(out, "word/comments.xml"), /付款期限延长/, "批注还在");
+  assert.match(text(out, "word/_rels/document.xml.rels"), /comments/, "批注的关系还在");
+  assert.match(text(out, "[Content_Types].xml"), /comments\+xml/, "批注的内容类型还在");
+  const doc = text(out, "word/document.xml");
+  assert.match(doc, /<w:ins\b[\s\S]*五个工作日内/);
+  assert.match(doc, /<w:del\b[\s\S]*三日内/);
+  assert.match(text(out, "word/header1.xml"), /示例律师事务所/);
+  assert.equal((doc.match(/<w:sectPr\b/g) ?? []).length, 1);
+  assert.equal((text(out, "word/_rels/document.xml.rels").match(/\/styles"/g) ?? []).length, 1, "样式表关系只有一条");
+  assert.deepEqual(findExternalRefs(readZipEntries(out)), []);
+  // 不带标记：示例合同、清洁稿
+  assert.equal(isHouseStyled(createDocx("示例合同", [{ heading: "", paragraphs: ["甲"] }], { mark: false })), false);
+  assert.equal(isHouseStyled(textToDocx("清洁稿")), false);
 });

@@ -12,7 +12,7 @@
  * 律师上传的原件、对方合同的修订稿一律不动。写出经 writeZip（去除打开时会外取的引用；模板里的链接图片、附加模板等一并去掉）。
  */
 import { posix } from "node:path";
-import { readZipEntries, writeZip, type ZipEntryOut } from "./zip.ts";
+import { readZipEntries, readZipSelected, writeZip, type ZipEntryOut } from "./zip.ts";
 import { escapeXml } from "./textmap.ts";
 
 export interface Run {
@@ -141,13 +141,12 @@ function footerXml(): string {
 <w:ftr xmlns:w="${W}" xmlns:r="${R}"><w:p><w:pPr><w:jc w:val="center"/></w:pPr>${run("第 ")}${field("PAGE")}${run(" 页 共 ")}${field("NUMPAGES")}${run(" 页")}</w:p></w:ftr>`;
 }
 
-function coreXml(): string {
+function coreXml(mark = true): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
 <dc:creator>Kimi Work 法律行业发行版（AI 辅助起草，经律师复核）</dc:creator>
 <cp:lastModifiedBy></cp:lastModifiedBy>
-<cp:category>${HOUSE_STYLE_MARK}</cp:category>
-</cp:coreProperties>`;
+${mark ? `<cp:category>${HOUSE_STYLE_MARK}</cp:category>\n` : ""}</cp:coreProperties>`;
 }
 
 // ─── 律所模板（.dotx / .docx）───
@@ -229,100 +228,139 @@ function mergeStyles(t: TemplateParts, style: HouseStyle): string {
   return t.styles.replace(/<\/w:styles>\s*$/, `${add.join("")}</w:styles>`);
 }
 
-/**
- * 正文 + 版式 → DOCX。bodyXml 里的样式写本产品编号；有模板时换成模板里同名样式的编号。
- */
-export function buildStyledDocx(bodyXml: string, style: HouseStyle, template: TemplateParts | null = null): Buffer {
-  const files: ZipEntryOut[] = [];
-  const ct: string[] = [];
-  const defaults = new Set<string>();
-  const rels: string[] = [];
-  let body = bodyXml;
-  let stylesXml = ourStylesXml(style);
-  if (template) {
-    stylesXml = mergeStyles(template, style);
-    for (const role of Object.keys(IDS) as Role[]) {
-      const id = template.ids[role];
-      if (id) body = body.replaceAll(`<w:pStyle w:val="${IDS[role]}"/>`, `<w:pStyle w:val="${id}"/>`);
-    }
-  }
-  files.push({ name: "word/styles.xml", data: Buffer.from(stylesXml, "utf8") });
-  ct.push(`<Override PartName="/word/styles.xml" ContentType="${CT_STYLES}"/>`);
-  rels.push(`<Relationship Id="rIdStyles" Type="${R}/styles" Target="styles.xml"/>`);
+/** 版式涉及的部件：样式表、页眉页脚（函头 / 页码，或模板的）、模板的图片、主题与编号；以及新的页面设置与样式编号对应。 */
+interface StyledParts {
+  files: ZipEntryOut[];
+  rels: string[];
+  overrides: string[];
+  defaults: Set<string>;
+  sect: string;
+  idMap: Partial<Record<Role, string>>;
+}
+
+function styledParts(style: HouseStyle, template: TemplateParts | null, have: { theme: boolean; numbering: boolean } = { theme: false, numbering: false }): StyledParts {
+  const parts: StyledParts = { files: [], rels: [], overrides: [], defaults: new Set(), sect: "", idMap: {} };
+  const addPart = (name: string, data: Buffer, type: string, relType: string, rid: string) => {
+    parts.files.push({ name: `word/${name}`, data });
+    parts.overrides.push(`<Override PartName="/word/${name}" ContentType="${type}"/>`);
+    parts.rels.push(`<Relationship Id="${rid}" Type="${R}/${relType}" Target="${name}"/>`);
+  };
+  addPart("styles.xml", Buffer.from(template ? mergeStyles(template, style) : ourStylesXml(style), "utf8"), CT_STYLES, "styles", "rIdKwlStyles");
   let headerRef = "";
   let footerRef = "";
-  const addPart = (name: string, data: Buffer, type: string, relType: string, rid: string) => {
-    files.push({ name: `word/${name}`, data });
-    ct.push(`<Override PartName="/word/${name}" ContentType="${type}"/>`);
-    rels.push(`<Relationship Id="${rid}" Type="${R}/${relType}" Target="${name}"/>`);
-  };
   if (template?.header) {
-    addPart("header1.xml", template.header.xml, CT_HEADER, "header", "rIdHeader");
-    if (template.header.rels) files.push({ name: "word/_rels/header1.xml.rels", data: template.header.rels });
-    headerRef = `<w:headerReference w:type="default" r:id="rIdHeader"/>`;
+    addPart("header1.xml", template.header.xml, CT_HEADER, "header", "rIdKwlHeader");
+    if (template.header.rels) parts.files.push({ name: "word/_rels/header1.xml.rels", data: template.header.rels });
+    headerRef = `<w:headerReference w:type="default" r:id="rIdKwlHeader"/>`;
   } else if (style.letterhead) {
-    addPart("header1.xml", Buffer.from(headerXml(style.letterhead), "utf8"), CT_HEADER, "header", "rIdHeader");
-    headerRef = `<w:headerReference w:type="default" r:id="rIdHeader"/>`;
+    addPart("header1.xml", Buffer.from(headerXml(style.letterhead), "utf8"), CT_HEADER, "header", "rIdKwlHeader");
+    headerRef = `<w:headerReference w:type="default" r:id="rIdKwlHeader"/>`;
   }
   if (template?.footer) {
-    addPart("footer1.xml", template.footer.xml, CT_FOOTER, "footer", "rIdFooter");
-    if (template.footer.rels) files.push({ name: "word/_rels/footer1.xml.rels", data: template.footer.rels });
-    footerRef = `<w:footerReference w:type="default" r:id="rIdFooter"/>`;
+    addPart("footer1.xml", template.footer.xml, CT_FOOTER, "footer", "rIdKwlFooter");
+    if (template.footer.rels) parts.files.push({ name: "word/_rels/footer1.xml.rels", data: template.footer.rels });
+    footerRef = `<w:footerReference w:type="default" r:id="rIdKwlFooter"/>`;
   } else if (style.pageNumbers) {
-    addPart("footer1.xml", Buffer.from(footerXml(), "utf8"), CT_FOOTER, "footer", "rIdFooter");
-    footerRef = `<w:footerReference w:type="default" r:id="rIdFooter"/>`;
+    addPart("footer1.xml", Buffer.from(footerXml(), "utf8"), CT_FOOTER, "footer", "rIdKwlFooter");
+    footerRef = `<w:footerReference w:type="default" r:id="rIdKwlFooter"/>`;
   }
   if (template) {
     for (const [name, data] of template.media) {
-      if (files.some((f) => f.name === `word/${name}`)) continue;
-      files.push({ name: `word/${name}`, data });
+      if (parts.files.some((f) => f.name === `word/${name}`)) continue;
+      parts.files.push({ name: `word/${name}`, data });
       const ext = name.split(".").pop()!.toLowerCase();
-      if (IMAGE_TYPES[ext]) defaults.add(`<Default Extension="${ext}" ContentType="${IMAGE_TYPES[ext]}"/>`);
+      if (IMAGE_TYPES[ext]) parts.defaults.add(`<Default Extension="${ext}" ContentType="${IMAGE_TYPES[ext]}"/>`);
     }
-    if (template.theme) addPart("theme/theme1.xml", template.theme, CT_THEME, "theme", "rIdTheme");
-    if (template.numbering) addPart("numbering.xml", template.numbering, CT_NUMBERING, "numbering", "rIdNumbering");
+    // 原文件已有主题、编号的不换（正文的编号引用的是原来的编号定义）
+    if (template.theme && !have.theme) addPart("theme/theme1.xml", template.theme, CT_THEME, "theme", "rIdKwlTheme");
+    if (template.numbering && !have.numbering) addPart("numbering.xml", template.numbering, CT_NUMBERING, "numbering", "rIdKwlNumbering");
+    for (const role of Object.keys(IDS) as Role[]) if (template.ids[role]) parts.idMap[role] = template.ids[role];
   }
-  const sect = `<w:sectPr>${headerRef}${footerRef}<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="${MARGINS.top}" w:right="${MARGINS.right}" w:bottom="${MARGINS.bottom}" w:left="${MARGINS.left}" w:header="${MARGINS.header}" w:footer="${MARGINS.footer}" w:gutter="0"/><w:cols w:space="425"/></w:sectPr>`;
-  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="${W}" xmlns:r="${R}"><w:body>${body}${sect}</w:body></w:document>`;
-  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${[...defaults].join("")}<Override PartName="/word/document.xml" ContentType="${CT_DOC}"/><Override PartName="/docProps/core.xml" ContentType="${CT_CORE}"/>${ct.join("")}</Types>`;
-  const pkgRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+  parts.sect = `<w:sectPr>${headerRef}${footerRef}<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="${MARGINS.top}" w:right="${MARGINS.right}" w:bottom="${MARGINS.bottom}" w:left="${MARGINS.left}" w:header="${MARGINS.header}" w:footer="${MARGINS.footer}" w:gutter="0"/><w:cols w:space="425"/></w:sectPr>`;
+  return parts;
+}
+
+function applyIdMap(body: string, idMap: Partial<Record<Role, string>>): string {
+  let out = body;
+  for (const [role, id] of Object.entries(idMap) as [Role, string][]) out = out.replaceAll(`<w:pStyle w:val="${IDS[role]}"/>`, `<w:pStyle w:val="${id}"/>`);
+  return out;
+}
+
+const PKG_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${R}/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`;
-  const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+const relsXml = (rels: string[]) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels.join("")}</Relationships>`;
+
+/**
+ * 正文 + 版式 → DOCX。bodyXml 里的样式写本产品编号；有模板时换成模板里同名样式的编号。
+ */
+export function buildStyledDocx(bodyXml: string, style: HouseStyle, template: TemplateParts | null = null, o: { mark?: boolean } = {}): Buffer {
+  const parts = styledParts(style, template);
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="${W}" xmlns:r="${R}"><w:body>${applyIdMap(bodyXml, parts.idMap)}${parts.sect}</w:body></w:document>`;
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${[...parts.defaults].join("")}<Override PartName="/word/document.xml" ContentType="${CT_DOC}"/><Override PartName="/docProps/core.xml" ContentType="${CT_CORE}"/>${parts.overrides.join("")}</Types>`;
   return writeZip([
     { name: "[Content_Types].xml", data: Buffer.from(contentTypes, "utf8") },
-    { name: "_rels/.rels", data: Buffer.from(pkgRels, "utf8") },
-    { name: "docProps/core.xml", data: Buffer.from(coreXml(), "utf8") },
+    { name: "_rels/.rels", data: Buffer.from(PKG_RELS, "utf8") },
+    { name: "docProps/core.xml", data: Buffer.from(coreXml(o.mark !== false), "utf8") },
     { name: "word/document.xml", data: Buffer.from(documentXml, "utf8") },
-    { name: "word/_rels/document.xml.rels", data: Buffer.from(docRels, "utf8") },
-    ...files,
+    { name: "word/_rels/document.xml.rels", data: Buffer.from(relsXml(parts.rels), "utf8") },
+    ...parts.files,
   ]);
 }
 
-/** 正文块 → 套好版式的 DOCX。 */
-export function createStyledDocx(blocks: DocBlock[], style: HouseStyle = DEFAULT_HOUSE_STYLE, template: TemplateParts | null = null): Buffer {
-  return buildStyledDocx(blocksToBodyXml(blocks), style, template);
+/** 正文块 → 套好版式的 DOCX。mark=false 时不带本产品标记（例如示例合同、清洁稿：导出时不套函头）。 */
+export function createStyledDocx(blocks: DocBlock[], style: HouseStyle = DEFAULT_HOUSE_STYLE, template: TemplateParts | null = null, o: { mark?: boolean } = {}): Buffer {
+  return buildStyledDocx(blocksToBodyXml(blocks), style, template, o);
 }
 
 /** 是不是本产品生成、可以重新套版式的文件（看 core.xml 的标记）。 */
 export function isHouseStyled(docx: Buffer): boolean {
   try {
-    const files = readZipEntries(docx);
+    const files = readZipSelected(docx, (n) => n === "docProps/core.xml");
     return (files.get("docProps/core.xml")?.toString("utf8") ?? "").includes(`<cp:category>${HOUSE_STYLE_MARK}</cp:category>`);
   } catch {
     return false;
   }
 }
 
-/** 导出时重新套版式（律所函头、字体、模板）：只换样式、页眉页脚与页面，正文段落原样保留；不是本产品生成的文件原样返回。 */
+/**
+ * 导出时重新套版式（律所函头、字体、模板）：在原包上**只换**样式表、页眉页脚与最后的页面设置，其余部件（批注、脚注、图片、修订、编号）原样保留——
+ * 修订稿的批注与修订痕迹不受影响。不是本产品生成的文件、或正文里有多个分节（各节各有页眉页脚引用）的，原样返回。
+ */
 export function restyleDocx(docx: Buffer, style: HouseStyle, template: TemplateParts | null = null): Buffer {
   if (!isHouseStyled(docx)) return docx;
-  const xml = readZipEntries(docx).get("word/document.xml")?.toString("utf8") ?? "";
-  const m = /<w:body>([\s\S]*?)(?:<w:sectPr\b[\s\S]*?<\/w:sectPr>|<w:sectPr\/>)?\s*<\/w:body>/.exec(xml);
-  if (!m) return docx;
-  return buildStyledDocx(m[1]!, style, template);
+  const files = readZipEntries(docx);
+  const docXml = files.get("word/document.xml")?.toString("utf8");
+  const ctRaw = files.get("[Content_Types].xml")?.toString("utf8");
+  if (!docXml || !ctRaw) return docx;
+  if ((docXml.match(/<w:sectPr\b/g) ?? []).length > 1) return docx;
+  const relsName = "word/_rels/document.xml.rels";
+  let rels = files.get(relsName)?.toString("utf8") ?? relsXml([]);
+  let ct = ctRaw;
+  // 去掉原来的样式表与页眉页脚（及其关系文件、内容类型）
+  for (const m of [...rels.matchAll(/<Relationship\b[^>]*>/g)]) {
+    const type = attrOf(m[0], "Type") ?? "";
+    if (!/\/(styles|header|footer)$/.test(type)) continue;
+    const target = attrOf(m[0], "Target") ?? "";
+    const full = posix.normalize(`word/${target}`);
+    files.delete(full);
+    files.delete(`word/_rels/${full.slice("word/".length)}.rels`);
+    ct = ct.replace(new RegExp(`<Override\\b[^>]*PartName="/${full.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"[^>]*/>`, "i"), "");
+    rels = rels.replace(m[0], "");
+  }
+  const has = (t: string) => new RegExp(`Type="[^"]*/${t}"`).test(rels);
+  const parts = styledParts(style, template, { theme: has("theme"), numbering: has("numbering") });
+  for (const f of parts.files) files.set(f.name, f.data);
+  rels = rels.replace(/<\/Relationships>\s*$/, `${parts.rels.join("")}</Relationships>`);
+  ct = ct.replace(/<\/Types>\s*$/, `${[...parts.defaults].filter((d) => !ct.includes(d)).join("")}${parts.overrides.join("")}</Types>`);
+  let body = applyIdMap(docXml, parts.idMap).replace(/<w:sectPr\b[\s\S]*?<\/w:sectPr>|<w:sectPr\/>/, parts.sect);
+  if (!/<w:document\b[^>]*xmlns:r=/.test(body)) body = body.replace(/<w:document\b/, `<w:document xmlns:r="${R}"`);
+  files.set("word/document.xml", Buffer.from(body, "utf8"));
+  files.set(relsName, Buffer.from(rels, "utf8"));
+  files.set("[Content_Types].xml", Buffer.from(ct, "utf8"));
+  return writeZip([...files].map(([name, data]) => ({ name, data })));
 }
 
 // ─── Markdown → 正文块（Agent 写的备忘录、意见书导出成 Word）───

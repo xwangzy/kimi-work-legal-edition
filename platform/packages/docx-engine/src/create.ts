@@ -9,16 +9,17 @@ export interface ReportSection {
   paragraphs: string[];
 }
 
-export function createDocx(title: string, sections: ReportSection[]): Buffer {
+/** mark=false：不带本产品标记，导出时不套函头（示例合同、清洁稿这类不是律所出具的文件）。 */
+export function createDocx(title: string, sections: ReportSection[], o: { mark?: boolean } = {}): Buffer {
   const blocks: DocBlock[] = title ? [{ kind: "title", text: title }] : [];
   for (const s of sections) {
     if (s.heading) blocks.push({ kind: "h1", text: s.heading });
     for (const p of s.paragraphs) blocks.push({ kind: "p", runs: [{ text: p }] });
   }
-  return createStyledDocx(blocks);
+  return createStyledDocx(blocks, undefined, null, o);
 }
 
 /** 纯文本 → DOCX（清洁稿从文本重建的降级路径；主路径是修订稿接受全部修订）。 */
 export function textToDocx(text: string): Buffer {
-  return createDocx("", [{ heading: "", paragraphs: text.split(/\n+/) }]);
+  return createDocx("", [{ heading: "", paragraphs: text.split(/\n+/) }], { mark: false });
 }

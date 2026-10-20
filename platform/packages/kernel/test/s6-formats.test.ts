@@ -6,8 +6,8 @@
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { createDocx, readZipEntries, writeRawZip } from "@zr-legal/docx-engine";
-import { makeKernel, importText, runScenario, type TestKernel } from "./helpers.ts";
+import { createDocx, createXlsx, readZipEntries, writeRawZip } from "@zr-legal/docx-engine";
+import { makeKernel, importBytes, importText, runScenario, type TestKernel } from "./helpers.ts";
 import { neutralizeCsvFormulas } from "../src/tools/tools/docx.ts";
 import { verifyOfficeArtifact } from "../src/executor/executor.ts";
 
@@ -48,8 +48,10 @@ test("S6 处理 CSV：零命中与有遮盖两条路径都中和公式单元格�
   assert.ok(!/(^|[,\n])=/.test(all), "没有以 = 开头的单元格");
   assert.ok(!all.includes("13800138000"), "电话已遮盖");
 
-  const rtf = await importText(inv, matter.matter_id, "旧格式.rtf", "{\\rtf1 测试}");
-  const r2 = await runScenario(inv, matter.matter_id, "s6.redaction", { document_version_ids: [rtf.document_version_id] });
+  // 旧格式（RTF）在导入时就明确拒绝、提示另存（第 15 批 B-11）；S6 自己对不支持的格式（这里用 XLSX）同样明确拒绝
+  await assert.rejects(importText(inv, matter.matter_id, "旧格式.rtf", "{\\rtf1 测试}"), /另存为/);
+  const xlsx = await importBytes(inv, matter.matter_id, "台账.xlsx", createXlsx([{ name: "台账", rows: [["项目", "金额"], ["甲", 100]] }]), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  const r2 = await runScenario(inv, matter.matter_id, "s6.redaction", { document_version_ids: [xlsx.document_version_id] });
   assert.equal(r2.run.status, "failed");
   assert.match(String(r2.events.find((e: any) => e.type === "run.failed")?.payload.error ?? ""), /只处理 DOCX 与纯文本/);
   assert.ok(!r2.artifacts.some((a: any) => a.kind === "s6_redacted"), "不原样输出原件");
