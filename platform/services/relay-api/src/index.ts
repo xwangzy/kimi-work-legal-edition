@@ -17,8 +17,9 @@
  *   客户端另在成员链上写 control 事件，让成员设备知道。
  * - `GET  /v1/relay/matters/<事项>/segments/<游标>` 某事项的全部段（新成员、加回的成员取历史；中继上没有该事项回 404 matter_unknown）；
  * - `GET  /v1/relay/matters/<事项>/chunks/<cid>` 取块（只给读者、只给已登记段引用的块）；
- * - 运营 `DELETE /v1/relay/ops/tenants/<租户>`（律所退约整体删除）与 `DELETE /v1/relay/ops/tenants/<租户>/matters/<事项>`
- *   （中继上的事项状态异常时按事项重置，例如被抢先登记；复核 S11A-04）。都须运营凭据与操作人，先记访问审计。
+ * - 运营 `DELETE /v1/relay/ops/tenants/<租户>`（律所退约整体删除，权限 tenant.purge）与 `DELETE /v1/relay/ops/tenants/<租户>/matters/<事项>`
+ *   （中继上的事项状态异常时按事项重置，例如被抢先登记；复核 S11A-04；权限 relay.reset）。都须按人运营签名（v9.3 A-10），
+ *   先记访问审计（运营编号与密钥编号取自核验过的签名）。
  *
  * 写入规则（复核 S11A-03/04、S11B-01/02）：
  * - 段编号必须是 `seg_<写入设备>_<时间>_<8 位十六进制>` 的完整格式（只能以自己的设备写段，前缀相同的设备不会混淆）；
@@ -31,13 +32,14 @@
  * v0 偏离（如实，D-90/D-91）：存储为本地目录（块文件 + 每租户一份只追加的登记日志，fsync 后才回复；写入失败截回原长度；
  * 某个租户的日志损坏只让该租户不可用）；保留期不按律所策略自动删除；未登记的块 24 小时后按残留删除。
  */
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync, closeSync, existsSync, fstatSync, fsyncSync, ftruncateSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, truncateSync, writeFileSync, writeSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import type { KeyObject } from "node:crypto";
 import type { GatewayFeedView } from "@zr-legal/firm-trust";
 import { verifySeatToken, SeatTokenError, type SeatClaims } from "@zr-legal/seat-token";
+import { OpsAuthError, type OpsGuard, type OpsPermission } from "@zr-legal/ops-auth";
 
 /** 事项编号：`mat_` + UUID（随机生成，不含事项名或时间）。 */
 export const MATTER_ID_RE = /^mat_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -132,7 +134,10 @@ interface TenantState {
 export interface RelayAccessRecord {
   at: string;
   action: "tenant_purge" | "matter_reset";
+  /** 运营编号（取自核验过的签名）。 */
   operator: string;
+  /** 运营用的密钥编号。 */
+  op_key: string;
   tid: string;
   mid?: string;
   removed_bytes: number;
@@ -148,7 +153,8 @@ export interface RelayApiOptions {
   allowAllTenants?: boolean;
   tenantMaxBytes?: number;
   devicePendingBytes?: number;
-  opsSecret?: string;
+  /** 运营按人鉴权（v9.3 A-10，`@zr-legal/ops-auth`）：没有 = 运营接口不开放（404）。共享运营口令已停用。 */
+  opsGuard?: OpsGuard;
   accessLog?: (r: RelayAccessRecord) => void;
   production?: boolean;
   now?: () => number;
@@ -273,7 +279,8 @@ export function createRelayApi(o: RelayApiOptions): Server & {
   const production = o.production ?? process.env.NODE_ENV === "production";
   if (production && !o.feed) throw new Error("生产形态必须接控制面订阅（吊销集与律所策略）");
   if (production && o.allowAllTenants) throw new Error("生产形态不得跳过律所策略核对");
-  if (o.opsSecret !== undefined && o.opsSecret.length < 16) throw new Error("opsSecret 至少 16 个字符");
+  if ((o as { opsSecret?: unknown }).opsSecret !== undefined) throw new Error("共享运营口令已停用（v9.3 A-10）：改用 opsGuard（按人运营凭据）");
+  if (o.opsGuard && o.opsGuard.audience !== "relay") throw new Error("运营守卫的受众须为 relay");
   const tenantMax = o.tenantMaxBytes ?? RELAY_DEFAULT_TENANT_BYTES;
   const devicePendingMax = o.devicePendingBytes ?? RELAY_DEFAULT_DEVICE_PENDING_BYTES;
   const waitMs = o.waitMs ?? RELAY_WAIT_MS;
@@ -438,15 +445,16 @@ export function createRelayApi(o: RelayApiOptions): Server & {
     if (!(await policyOk(c.tid))) throw new HttpError(403, "relay_not_allowed");
     return c;
   };
-  const opsAuth = (req: IncomingMessage): string => {
-    if (!o.opsSecret) throw new HttpError(404, "not_found");
-    const tok = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization ?? ""))?.[1] ?? "";
-    const a = Buffer.from(tok);
-    const b = Buffer.from(o.opsSecret);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) throw new HttpError(401, "ops_auth_invalid");
-    const who = String(req.headers["x-kwl-operator"] ?? "");
-    if (!/^[A-Za-z0-9_.-]{2,64}$/.test(who)) throw new HttpError(400, "operator_required");
-    return who;
+  /** 运营请求按人核验（签名、名册、随机数、权限；v9.3 A-10）；没有配置运营守卫即按不存在处理。 */
+  const opsAuth = (req: IncomingMessage, raw: string, perm: OpsPermission): { who: string; key: string } => {
+    if (!o.opsGuard) throw new HttpError(404, "not_found");
+    try {
+      const r = o.opsGuard.authorize(req.headers, { method: req.method ?? "GET", path: raw }, perm);
+      return { who: r.operator, key: r.kid };
+    } catch (e) {
+      if (e instanceof OpsAuthError) throw new HttpError(e.status, e.code);
+      throw e;
+    }
   };
 
   const readJson = async (req: IncomingMessage): Promise<Record<string, unknown>> => {
@@ -792,13 +800,13 @@ export function createRelayApi(o: RelayApiOptions): Server & {
     // ─── 运营：律所退约时按租户整体删除；中继上的事项状态异常时按事项重置（先记访问审计，记不进去即不删） ───
     const opsMatter = /^\/v1\/relay\/ops\/tenants\/([A-Za-z0-9_-]{1,80})\/matters\/([^/]+)$/.exec(raw);
     if (opsMatter && method === "DELETE") {
-      const who = opsAuth(req);
+      const { who, key } = opsAuth(req, raw, "relay.reset");
       const [tid, mid] = [opsMatter[1]!, opsMatter[2]!];
       if (!MATTER_ID_RE.test(mid)) throw new HttpError(400, "matter_invalid");
       const t = tenantOf(tid);
       let bytes = 0;
       for (const [k, cinfo] of t.chunks) if (k.startsWith(`${mid}/`)) bytes += cinfo.size;
-      access({ at: iso(), action: "matter_reset", operator: who, tid, mid, removed_bytes: bytes, result: "ok" });
+      access({ at: iso(), action: "matter_reset", operator: who, op_key: key, tid, mid, removed_bytes: bytes, result: "ok" });
       const rec: ResetRecord = { k: "reset", mid, at: iso(), operator: who };
       appendJournal(t, Buffer.from(`${JSON.stringify(rec)}\n`, "utf8"));
       for (const x of t.entries) if (x.mid === mid) t.gone.add(x.seq);
@@ -814,11 +822,11 @@ export function createRelayApi(o: RelayApiOptions): Server & {
     }
     const opsTenant = /^\/v1\/relay\/ops\/tenants\/([A-Za-z0-9_-]{1,80})$/.exec(raw);
     if (opsTenant && method === "DELETE") {
-      const who = opsAuth(req);
+      const { who, key } = opsAuth(req, raw, "tenant.purge");
       const tid = opsTenant[1]!;
       const t = tenants.get(tid);
       const bytes = t?.bytes ?? 0;
-      access({ at: iso(), action: "tenant_purge", operator: who, tid, removed_bytes: bytes, result: "ok" });
+      access({ at: iso(), action: "tenant_purge", operator: who, op_key: key, tid, removed_bytes: bytes, result: "ok" });
       // 先标记“删除中”，在途请求读完请求体后放弃（复核 S11A-09）
       if (t) t.purging = true;
       tenants.delete(tid);

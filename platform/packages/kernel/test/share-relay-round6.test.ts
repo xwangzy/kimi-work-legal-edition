@@ -66,7 +66,7 @@ test("S11B-50：中继重建后，最近确认过的非负责人带旧实例编�
   const old = cloud.relay.server;
   old.closeAllConnections();
   await new Promise<void>((r) => old.close(() => r()));
-  fresh = createRelayApi({ dir: mkdtempSync(join(tmpdir(), "kwl-relay-rebuilt-")), keys: publicKeyMap(cloud.cp.publicKeys.seat), feed: cloud.feed, opsSecret: cloud.relay.opsSecret, accessLog: () => {} });
+  fresh = createRelayApi({ dir: mkdtempSync(join(tmpdir(), "kwl-relay-rebuilt-")), keys: publicKeyMap(cloud.cp.publicKeys.seat), feed: cloud.feed, opsGuard: cloud.relay.opsGuard, accessLog: () => {} });
   await new Promise<void>((r) => fresh!.listen(port, "127.0.0.1", () => r()));
   await imp(kC, mid, "C2.txt", "C2（重建后）");
   await kC.inv("relay.sync");

@@ -52,7 +52,7 @@ const docs = async (k: any, mid: string): Promise<string[] | string> =>
 const entries = () => cloud.relay.server.tenant(TID)?.entries ?? [];
 const recheckNow = (k: any) => k.kernel.db.run(`DELETE FROM relay_kv WHERE k = 'history_recheck_at'`);
 const resetMatter = (mid: string) =>
-  fetch(`${cloud.relay.base}/v1/relay/ops/tenants/${TID}/matters/${mid}`, { method: "DELETE", headers: { authorization: `Bearer ${cloud.relay.opsSecret}`, "x-kwl-operator": "ops.r4a" } });
+  fetch(`${cloud.relay.base}/v1/relay/ops/tenants/${TID}/matters/${mid}`, { method: "DELETE", headers: cloud.relay.opsHeaders("DELETE", `/v1/relay/ops/tenants/${TID}/matters/${mid}`) });
 
 before(async () => {
   cloud = await startCloudCp({ tenant: TID });

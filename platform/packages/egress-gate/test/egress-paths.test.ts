@@ -56,3 +56,18 @@ test("闸门里所有写外发路径的源文件都在登记表里（新加一�
   const nr = read("packages/egress-gate/src/notify-relay.ts").replace('path = "/v1/notify/due";', 'path = "/v1/notify/due";\n    path = `/v1/notify/extra/${x}`;');
   assert.ok(outboundPaths("packages/egress-gate/src/notify-relay.ts", nr).includes("/v1/notify/extra/{}"));
 });
+
+/** 登记表里的路径能否落到运营接口上（控制面白名单为正则，其余为模板，{} 按最坏情况取 "ops"）。 */
+export function reachesOps(paths: string[], opsRe: RegExp): string[] {
+  const samples = ["/v1/ops", "/v1/ops/tenants", "/v1/ops/tenants/ten_x", "/v1/ops/tenants/ten_x/activation-codes", "/v1/support/ops/packages", "/v1/support/ops/packages/SUP-AAAA-BBBB", "/v1/relay/ops/tenants/t1", "/v1/notify/ops/tenants/t1"];
+  return paths.filter((p) => (p.startsWith("^") ? samples.some((s) => new RegExp(p).test(s)) : opsRe.test(p.replace(/\{\}/g, "ops"))));
+}
+
+test("律师电脑的闸门不外发到任何运营接口（v9.3 A-10：运营路径只给按人签名的运营，且只从运维网段进来）", async () => {
+  const { OPS_PATH_RE } = await import("@zr-legal/ops-auth");
+  const all = Object.values(registry.channels).flatMap((c) => c.paths);
+  assert.deepEqual(reachesOps(all, OPS_PATH_RE), [], "闸门白名单或外发模板落到了运营路径上");
+  // 反向对照：往控制面白名单里加一条运营路径、往模板里加一条运营路径，都能被认出
+  assert.deepEqual(reachesOps(["^\\/v1\\/ops\\/tenants\\/[^/]+$"], OPS_PATH_RE), ["^\\/v1\\/ops\\/tenants\\/[^/]+$"]);
+  assert.deepEqual(reachesOps(["/v1/relay/{}/tenants/x"], OPS_PATH_RE), ["/v1/relay/{}/tenants/x"]);
+});

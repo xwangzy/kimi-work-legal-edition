@@ -50,7 +50,7 @@ test("管理员开启后：预览 → 确认上传，中软收到的字节就是
   await assert.rejects(() => tk.inv("diagnostics.upload", { file_sha256: "0".repeat(64) }), (e: any) => e.code === "validation");
   const r = await tk.inv("diagnostics.upload", { file_sha256: p.file_sha256 });
   assert.match(r.ticket, /^SUP-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
-  const dl = await fetch(`${cloud.support.base}/v1/support/ops/packages/${r.ticket}`, { headers: { authorization: `Bearer ${cloud.support.opsSecret}`, "x-kwl-operator": "ops.test" } });
+  const dl = await fetch(`${cloud.support.base}/v1/support/ops/packages/${r.ticket}`, { headers: cloud.support.opsHeaders("GET", `/v1/support/ops/packages/${r.ticket}`) });
   assert.equal(dl.status, 200);
   const got = Buffer.from(await dl.arrayBuffer());
   assert.equal(createHash("sha256").update(got).digest("hex"), p.file_sha256, "中软收到的字节就是预览的那一份");

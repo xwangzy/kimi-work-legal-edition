@@ -11,6 +11,7 @@ import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devSeatKeyPair, issueSeatToken } from "@zr-legal/seat-token";
+import { devOpsRoster, fileOpsGuard } from "@zr-legal/ops-auth";
 import { createNotifyApi, NOTIFY_RETENTION_MS } from "../src/index.ts";
 
 const { privateKey, publicKey } = devSeatKeyPair();
@@ -221,23 +222,39 @@ test("NA-08 落盘：启动时删掉崩溃残留的临时状态文件；状态�
   assert.throws(() => createNotifyApi({ dir: bad, keys, now: () => clock }), /不合格/);
 });
 
-test("NA-09 生产形态必须接吊销订阅；运营按租户整体删除（先记访问审计；凭据与操作人缺一不可；复核 S10A-13/15）", async () => {
+test("NA-09 生产形态必须接吊销订阅；运营按租户整体删除（先记访问审计；按人运营签名与 tenant.purge 权限，共享口令不再接受；复核 S10A-13/15、v9.3 A-10）", async () => {
   assert.throws(() => createNotifyApi({ dir: mkdtempSync(join(tmpdir(), "kwl-na-")), keys, production: true }), /吊销订阅/);
+  assert.throws(() => createNotifyApi({ dir: mkdtempSync(join(tmpdir(), "kwl-na-")), keys, feed, opsSecret: "ops-secret-0123456789" } as never), /共享运营口令已停用/);
+  const OPS = devOpsRoster([
+    { id: "op_0001", perms: ["tenant.purge"] },
+    { id: "op_0002", perms: ["support.read"] },
+  ]);
+  const guard = fileOpsGuard({ dir: mkdtempSync(join(tmpdir(), "kwl-na-ops-")), audience: "notify", roster: OPS.roster, rosterKeys: OPS.rosterKeys, now: () => clock });
+  assert.throws(() => createNotifyApi({ dir: mkdtempSync(join(tmpdir(), "kwl-na-")), keys, feed, opsGuard: fileOpsGuard({ dir: mkdtempSync(join(tmpdir(), "kwl-na-ops-")), audience: "relay", roster: OPS.roster, rosterKeys: OPS.rosterKeys }) }), /受众须为 notify/);
   const access: any[] = [];
-  const s = createNotifyApi({ dir: mkdtempSync(join(tmpdir(), "kwl-na-")), keys, feed, now: () => clock, opsSecret: "ops-secret-0123456789", accessLog: (r) => void access.push(r) });
+  const s = createNotifyApi({ dir: mkdtempSync(join(tmpdir(), "kwl-na-")), keys, feed, now: () => clock, opsGuard: guard, accessLog: (r) => void access.push(r) });
   servers.push(s);
   await new Promise<void>((r) => s.listen(0, "127.0.0.1", () => r()));
   const base = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
   const fire = minute(clock + 3600_000);
   await call(base, "PUT", `/v1/reminders/${RID}`, cred(), { fire_at: fire, version: 1, targets: [{ dev: "devA", ct: CT("A") }] });
   await call(base, "PUT", `/v1/reminders/${RID}`, cred({ tid: "t2" }), { fire_at: fire, version: 1, targets: [{ dev: "devA", ct: CT("A") }] });
-  const ops = (h: Record<string, string>) => fetch(`${base}/v1/notify/ops/tenants/t1`, { method: "DELETE", headers: h });
-  assert.equal((await ops({ authorization: "Bearer wrong-secret-000000000" , "x-kwl-operator": "op.a" })).status, 401);
-  assert.equal((await ops({ authorization: "Bearer ops-secret-0123456789" })).status, 400);
-  const r = await ops({ authorization: "Bearer ops-secret-0123456789", "x-kwl-operator": "op.a" });
+  const path = "/v1/notify/ops/tenants/t1";
+  const ops = (h: Record<string, string>) => fetch(`${base}${path}`, { method: "DELETE", headers: h });
+  const old = await ops({ authorization: "Bearer ops-secret-0123456789", "x-kwl-operator": "op.a" });
+  assert.deepEqual([old.status, ((await old.json()) as any).error], [401, "ops_auth_missing"], "共享口令 + 自报操作人不再接受");
+  const denied = await ops(OPS.sign("op_0002", "notify", { method: "DELETE", path }, clock));
+  assert.deepEqual([denied.status, ((await denied.json()) as any).error], [403, "ops_permission_denied"]);
+  // 签给中继的同一路径形态请求拿到通知服务用：签名绑定受众
+  const cross = await ops(OPS.sign("op_0001", "relay", { method: "DELETE", path }, clock));
+  assert.equal(cross.status, 401);
+  assert.equal(s.snapshot().length, 2, "被拒的请求一条都没删");
+  const h = OPS.sign("op_0001", "notify", { method: "DELETE", path }, clock);
+  const r = await ops(h);
   assert.deepEqual(await r.json(), { ok: true, removed: 1 });
+  assert.equal((await ops(h)).status, 401, "同一请求不能重放");
   assert.deepEqual(s.snapshot().map((x) => x.tid), ["t2"], "只删该租户");
-  assert.deepEqual(access.map((a) => [a.action, a.operator, a.tid, a.removed]), [["tenant_purge", "op.a", "t1", 1]]);
+  assert.deepEqual(access.map((a) => [a.action, a.operator, a.op_key, a.tid, a.removed]), [["tenant_purge", "op_0001", "k1", "t1", 1]]);
 });
 
 test("NA-10 撤销也计入每日写入次数；为不存在的编号建墓碑计入租户上限（复核 S10A-21）", async () => {

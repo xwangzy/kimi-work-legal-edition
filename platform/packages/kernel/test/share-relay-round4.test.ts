@@ -60,7 +60,7 @@ const docs = async (k: K | TestKernel, mid: string): Promise<string[]> =>
 const entries = () => cloud.relay.server.tenant(TID)?.entries ?? [];
 const recheckNow = (k: K | TestKernel) => k.kernel.db.run(`DELETE FROM relay_kv WHERE k = 'history_recheck_at'`);
 const reset = async (m: string) => {
-  const r = await fetch(`${cloud.relay.base}/v1/relay/ops/tenants/${TID}/matters/${m}`, { method: "DELETE", headers: { authorization: `Bearer ${cloud.relay.opsSecret}`, "x-kwl-operator": "ops.test" } });
+  const r = await fetch(`${cloud.relay.base}/v1/relay/ops/tenants/${TID}/matters/${m}`, { method: "DELETE", headers: cloud.relay.opsHeaders("DELETE", `/v1/relay/ops/tenants/${TID}/matters/${m}`) });
   assert.equal(r.status, 200);
 };
 const newMatter = async (title: string) => (await kA.inv("matters.create", { title, stance: "受让方", consent_status: "not_required", collab_scope: "team" })).matter.matter_id as string;

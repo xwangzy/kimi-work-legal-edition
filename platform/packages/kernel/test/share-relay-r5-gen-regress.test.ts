@@ -37,7 +37,7 @@ const importText = (k: any, mid: string, filename: string, text: string) =>
   k.inv("materials.import", { matter_id: mid, filename, data_base64: Buffer.from(text, "utf8").toString("base64"), mime: "text/plain" });
 const entries = () => cloud.relay.server.tenant(TID)?.entries ?? [];
 const ops = (path: string) =>
-  fetch(`${cloud.relay.base}/v1/relay/ops/tenants/${TID}${path}`, { method: "DELETE", headers: { authorization: `Bearer ${cloud.relay.opsSecret}`, "x-kwl-operator": "ops.r5a" } });
+  fetch(`${cloud.relay.base}/v1/relay/ops/tenants/${TID}${path}`, { method: "DELETE", headers: cloud.relay.opsHeaders("DELETE", `/v1/relay/ops/tenants/${TID}${path}`) });
 const outboxOf = (k: any, mid: string) => scanSegments(join(k.kernel.config.workspaceDir, "relay", "outbox"), TID).candidates.filter((c: any) => c.content.includes(mid)).length;
 
 before(async () => {

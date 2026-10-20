@@ -10,20 +10,21 @@
  * - `GET /v1/notify/due`：本设备已到时、未确认、未暂缓的提醒（按触发时刻，每次至多 50 条）；
  * - `POST /v1/notify/ack`：确认收到（按编号 + 版本）；
  * - `POST /v1/notify/defer`：本设备暂时不能判断的条目（发出设备未知、提前送达等）暂缓到给定时刻再给——不堵住后面的提醒（复核 S10A-03）；
- * - 运营 `DELETE /v1/notify/ops/tenants/<租户>`（运营凭据 + 操作人，先记访问审计）：律所退约时整体删除（复核 S10A-15）。
+ * - 运营 `DELETE /v1/notify/ops/tenants/<租户>`（按人运营签名、权限 tenant.purge，v9.3 A-10；先记访问审计）：律所退约时整体删除（复核 S10A-15）。
  * 凭据只收控制面签发的**只限通知服务**的短期凭据（受众 notify）。生产形态必须接吊销订阅（复核 S10A-13）。
  * 保存期：触发后 7 天删除（启动时与每小时清扫）；接收设备被吊销的，其密文随清扫删除、也取不到。
  *
  * v0 偏离（如实，D-83/D-84）：投递为设备轮询（客户端在线时约每分钟一次，经出站闸门）；存储为本地目录里的一份状态文件
  * （临时文件 + fsync + 改名 + 目录 fsync，回复前完成；生产为 PostgreSQL 调度表 + 延迟队列 + 主备选主）。
  */
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { appendFileSync, closeSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import type { KeyObject } from "node:crypto";
 import type { GatewayFeedView } from "@zr-legal/firm-trust";
 import { verifySeatToken, SeatTokenError, type SeatClaims } from "@zr-legal/seat-token";
+import { OpsAuthError, type OpsGuard, type OpsPermission } from "@zr-legal/ops-auth";
 
 export const REMINDER_ID_RE = /^rmd_[0-9a-f]{24}$/;
 export const DEVICE_ID_RE = /^[A-Za-z0-9_-]{1,200}$/;
@@ -81,7 +82,10 @@ interface State {
 export interface NotifyAccessRecord {
   at: string;
   action: "tenant_purge";
+  /** 运营编号（取自核验过的签名）。 */
   operator: string;
+  /** 运营用的密钥编号。 */
+  op_key: string;
   tid: string;
   removed: number;
   result: string;
@@ -92,8 +96,8 @@ export interface NotifyApiOptions {
   keys: ReadonlyMap<string, KeyObject>;
   /** 吊销集；生产形态必须提供（复核 S10A-13：否则被吊销的设备在凭据有效期内仍能取提醒）。 */
   feed?: Pick<GatewayFeedView, "revokedDevice" | "revokedSeat">;
-  /** 运营凭据（启用“按租户整体删除”；G0 共享密钥，生产为运维网络 + 堡垒机 + 双因素）。 */
-  opsSecret?: string;
+  /** 运营按人鉴权（v9.3 A-10，`@zr-legal/ops-auth`；启用“按租户整体删除”）：没有 = 运营接口不开放（404）。共享运营口令已停用。 */
+  opsGuard?: OpsGuard;
   /** 运营访问审计（缺省写 <dir>/access.jsonl）。 */
   accessLog?: (r: NotifyAccessRecord) => void;
   /** 生产形态（缺省按 NODE_ENV=production）：必须给 feed。 */
@@ -141,7 +145,8 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
   const now = o.now ?? Date.now;
   const iso = (t = now()) => new Date(t).toISOString();
   if (!o.feed && (o.production ?? process.env.NODE_ENV === "production")) throw new Error("生产形态必须接控制面吊销订阅（feed）");
-  if (o.opsSecret !== undefined && o.opsSecret.length < 16) throw new Error("opsSecret 至少 16 个字符");
+  if ((o as { opsSecret?: unknown }).opsSecret !== undefined) throw new Error("共享运营口令已停用（v9.3 A-10）：改用 opsGuard（按人运营凭据）");
+  if (o.opsGuard && o.opsGuard.audience !== "notify") throw new Error("运营守卫的受众须为 notify");
   mkdirSync(o.dir, { recursive: true, mode: 0o700 });
   const statePath = join(o.dir, "reminders.json");
   const access = o.accessLog ?? ((r: NotifyAccessRecord) => appendFileSync(join(o.dir, "access.jsonl"), `${JSON.stringify(r)}\n`, { mode: 0o600 }));
@@ -258,15 +263,16 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
     if (revoked(c.tid, c.dev) || o.feed?.revokedSeat(c.sid)) throw new HttpError(401, "credential_revoked");
     return c;
   };
-  const opsAuth = (req: IncomingMessage): string => {
-    if (!o.opsSecret) throw new HttpError(404, "not_found");
-    const tok = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization ?? ""))?.[1] ?? "";
-    const a = Buffer.from(tok);
-    const b = Buffer.from(o.opsSecret);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) throw new HttpError(401, "ops_auth_invalid");
-    const who = String(req.headers["x-kwl-operator"] ?? "");
-    if (!/^[A-Za-z0-9_.-]{2,64}$/.test(who)) throw new HttpError(400, "operator_required");
-    return who;
+  /** 运营请求按人核验（签名、名册、随机数、权限；v9.3 A-10）；没有配置运营守卫即按不存在处理。 */
+  const opsAuth = (req: IncomingMessage, raw: string, perm: OpsPermission): { who: string; key: string } => {
+    if (!o.opsGuard) throw new HttpError(404, "not_found");
+    try {
+      const r = o.opsGuard.authorize(req.headers, { method: req.method ?? "GET", path: raw }, perm);
+      return { who: r.operator, key: r.kid };
+    } catch (e) {
+      if (e instanceof OpsAuthError) throw new HttpError(e.status, e.code);
+      throw e;
+    }
   };
 
   const readJson = async (req: IncomingMessage): Promise<Record<string, unknown>> => {
@@ -465,11 +471,11 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
     // ─── 运营：律所退约时按租户整体删除（先记访问审计，记不进去即不删；复核 S10A-15） ───
     const opsTenant = /^\/v1\/notify\/ops\/tenants\/([A-Za-z0-9_-]{1,80})$/.exec(raw);
     if (opsTenant && method === "DELETE") {
-      const who = opsAuth(req);
+      const { who, key } = opsAuth(req, raw, "tenant.purge");
       const tid = opsTenant[1]!;
       const removedR = [...byKey].filter(([, r]) => r.tid === tid);
       const removedT = [...tombs].filter(([, t]) => t.tid === tid);
-      access({ at: iso(), action: "tenant_purge", operator: who, tid, removed: removedR.length, result: "ok" });
+      access({ at: iso(), action: "tenant_purge", operator: who, op_key: key, tid, removed: removedR.length, result: "ok" });
       for (const [k] of removedR) byKey.delete(k);
       for (const [k] of removedT) tombs.delete(k);
       try {
@@ -478,7 +484,7 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
         for (const [k, r] of removedR) byKey.set(k, r);
         for (const [k, t] of removedT) tombs.set(k, t);
         try {
-          access({ at: iso(), action: "tenant_purge", operator: who, tid, removed: 0, result: "rolled_back:state_persist_failed" });
+          access({ at: iso(), action: "tenant_purge", operator: who, op_key: key, tid, removed: 0, result: "rolled_back:state_persist_failed" });
         } catch {
           // 访问审计不可用：生产由告警处理
         }

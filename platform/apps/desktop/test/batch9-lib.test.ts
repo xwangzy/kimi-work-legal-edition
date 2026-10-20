@@ -53,6 +53,7 @@ test("操作记录：动作、执行者、对象、结果都有中文；未知�
   assert.equal(auditActionLabel("x.unknown"), "x.unknown");
   assert.equal(auditActorLabel({ actor: { kind: "device", id: "dev_firm_zhang" }, actor_name: "张律师" }), "张律师（设备 dev_firm_zhang）");
   assert.equal(auditActorLabel({ actor: { kind: "ops", id: "ops" }, actor_name: null }), "中软运营");
+  assert.equal(auditActorLabel({ actor: { kind: "ops", id: "op_0001" }, actor_name: null }), "中软运营（op_0001）", "运营按人鉴权（A-10）：记到具体的运营人员");
   assert.equal(auditActorLabel({ actor: { kind: "root", id: "ten_x" }, actor_name: null }), "律所根密钥（开通）");
   assert.equal(auditTargetLabel({ target: null, target_name: null }), "—");
   assert.match(auditTargetLabel({ target: "dev_firm_a_very_long_device_identifier", target_name: null }), /…/);

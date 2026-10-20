@@ -129,7 +129,7 @@ test("S11B-53：中继重建后，非负责人一段上传期间本机得知新�
   const old = cloud.relay.server;
   old.closeAllConnections();
   await new Promise<void>((r) => old.close(() => r()));
-  fresh = createRelayApi({ dir: mkdtempSync(join(tmpdir(), "kwl-relay-rebuilt7-")), keys: publicKeyMap(cloud.cp.publicKeys.seat), feed: cloud.feed, opsSecret: cloud.relay.opsSecret, accessLog: () => {} });
+  fresh = createRelayApi({ dir: mkdtempSync(join(tmpdir(), "kwl-relay-rebuilt7-")), keys: publicKeyMap(cloud.cp.publicKeys.seat), feed: cloud.feed, opsGuard: cloud.relay.opsGuard, accessLog: () => {} });
   await new Promise<void>((r) => fresh!.listen(port, "127.0.0.1", () => r()));
   await imp(kC, m, "C.txt", "C");
   // 上传块期间：模拟后台收件得知新实例编号（只改本机记下的编号）

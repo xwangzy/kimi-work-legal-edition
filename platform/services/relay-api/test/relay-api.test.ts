@@ -13,6 +13,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devSeatKeyPair, issueSeatToken } from "@zr-legal/seat-token";
+import { devOpsRoster, fileOpsGuard } from "@zr-legal/ops-auth";
 import { createRelayApi, RELAY_CHUNK_MAX, RELAY_UNCOMMITTED_TTL_MS, segmentOwnedBy, type RelayAccessRecord } from "../src/index.ts";
 
 const { privateKey, publicKey } = devSeatKeyPair();
@@ -23,6 +24,14 @@ const feed = { revokedDevice: (_t: string, d: string) => revoked.has(d), revoked
 const clock = Date.parse("2026-10-16T02:00:00.000Z");
 const servers: ReturnType<typeof createRelayApi>[] = [];
 
+/** 运营按人鉴权（v9.3 A-10）：op_0001 可重置与整体删除，op_0002 只能按事项重置。 */
+const OPS = devOpsRoster([
+  { id: "op_0001", perms: ["relay.reset", "tenant.purge"] },
+  { id: "op_0002", perms: ["relay.reset"] },
+]);
+const opsGuard = (dir: string) => fileOpsGuard({ dir: `${dir}-ops`, audience: "relay", roster: OPS.roster, rosterKeys: OPS.rosterKeys, now: () => clock });
+const opsDel = (base: string, path: string, who = "op_0001", extra: Record<string, string> = {}) =>
+  fetch(`${base}${path}`, { method: "DELETE", headers: { ...OPS.sign(who, "relay", { method: "DELETE", path }, clock), ...extra } }).then(async (r) => ({ status: r.status, json: (await r.json()) as any }));
 async function start(dir: string, extra: Partial<Parameters<typeof createRelayApi>[0]> = {}) {
   const s = createRelayApi({ dir, keys, feed, now: () => clock, waitMs: 1_500, ...extra });
   servers.push(s);
@@ -285,33 +294,33 @@ test("RA-08 存储上限：超出租户上限即拒绝", async () => {
   assert.equal((await putChunk(base, mid, A(), randomBytes(3000))).json.error, "tenant_storage_full");
 });
 
-test("RA-09 运营：按租户整体删除、按事项重置（须运营凭据与操作人，先记访问审计）；重置后事项可由合法成员重新登记", async () => {
+test("RA-09 运营：按租户整体删除、按事项重置（须按人运营签名与相应权限，先记访问审计，记到运营编号）；重置后事项可由合法成员重新登记", async () => {
   const dir = mkdtempSync(join(tmpdir(), "kwl-ra-"));
   const log: RelayAccessRecord[] = [];
-  const opsSecret = "ops-secret-0123456789";
-  const { base, s } = await start(dir, { opsSecret, accessLog: (r) => void log.push(r) });
-  const ops = (path: string, h: Record<string, string>) => fetch(`${base}${path}`, { method: "DELETE", headers: h }).then(async (r) => ({ status: r.status, json: (await r.json()) as any }));
-  const auth = { authorization: `Bearer ${opsSecret}`, "x-kwl-operator": "ops.zhang" };
+  const { base, s } = await start(dir, { opsGuard: opsGuard(dir), accessLog: (r) => void log.push(r) });
   // 复核 S11A-04：非成员 C 抢先登记事项（只有自己是读者）→ 运营按事项重置 → 合法负责人 A 重新登记
   const mid = newMid();
   assert.equal((await writeSeg(base, mid, C(), "devC", { readers: ["devC"] })).r.status, 200);
   assert.equal((await writeSeg(base, mid, A(), "devA")).r.json.error, "not_reader");
-  assert.equal((await ops(`/v1/relay/ops/tenants/t1/matters/${mid}`, auth)).status, 200);
-  assert.equal(log.at(-1)!.action, "matter_reset");
+  assert.equal((await opsDel(base, `/v1/relay/ops/tenants/t1/matters/${mid}`, "op_0002")).status, 200);
+  assert.deepEqual([log.at(-1)!.action, log.at(-1)!.operator, log.at(-1)!.op_key], ["matter_reset", "op_0002", "k1"]);
   assert.equal((await call(base, "GET", "/v1/relay/changes/0", C())).json.items.length, 0, "重置后旧段不再可见");
   assert.equal((await writeSeg(base, mid, A(), "devA")).r.status, 200);
   assert.equal(s.tenant("t1")!.controller(mid), "u-devA");
   // 重置记录随登记日志读回
   s.closeAllConnections();
   await new Promise<void>((r) => s.close(() => r()));
-  const again = await start(dir, { opsSecret, accessLog: (r) => void log.push(r) });
+  const again = await start(dir, { opsGuard: opsGuard(dir), accessLog: (r) => void log.push(r) });
   assert.equal(again.s.tenant("t1")!.controller(mid), "u-devA");
   assert.equal((await call(again.base, "GET", "/v1/relay/changes/0", B())).json.items.length, 1);
   const del = (h: Record<string, string>) => fetch(`${again.base}/v1/relay/ops/tenants/t1`, { method: "DELETE", headers: h }).then(async (r) => ({ status: r.status, json: (await r.json()) as any }));
   assert.equal((await del({ authorization: "Bearer wrong-secret-0123456" })).status, 401);
-  assert.equal((await del({ authorization: `Bearer ${opsSecret}` })).json.error, "operator_required");
-  assert.equal((await del(auth)).status, 200);
-  assert.equal(log.at(-1)!.action, "tenant_purge");
+  assert.equal((await del({ authorization: "Bearer ops-secret-0123456789", "x-kwl-operator": "ops.zhang" })).json.error, "ops_auth_missing", "共享口令不再接受（A-10）");
+  const denied = await opsDel(again.base, "/v1/relay/ops/tenants/t1", "op_0002");
+  assert.deepEqual([denied.status, denied.json.error], [403, "ops_permission_denied"], "只有重置权限的运营不能整体删除");
+  assert.ok(existsSync(join(dir, "t", "t1")));
+  assert.equal((await opsDel(again.base, "/v1/relay/ops/tenants/t1")).status, 200);
+  assert.deepEqual([log.at(-1)!.action, log.at(-1)!.operator], ["tenant_purge", "op_0001"]);
   assert.ok(!existsSync(join(dir, "t", "t1")));
   assert.equal((await call(again.base, "GET", "/v1/relay/changes/0", B())).json.items.length, 0);
 });
@@ -342,15 +351,13 @@ test("RA-10 登记日志写入失败（复核 S11A-08）：截回写入前的长
 
 test("RA-11 重置代数（第四轮复核 S11B-36/37）：重置后取历史回 404 并带代数；带旧代数的登记回 409 matter_reset；取新段与历史都带代数；重启读回照旧", async () => {
   const dir = mkdtempSync(join(tmpdir(), "kwl-ra-"));
-  const opsSecret = "ops-secret-0123456789";
-  const { base, s } = await start(dir, { opsSecret, accessLog: () => {} });
+  const { base, s } = await start(dir, { opsGuard: opsGuard(dir), accessLog: () => {} });
   const mid = newMid();
   const first = await writeSeg(base, mid, A(), "devA", { gen: 0 });
   assert.equal(first.r.status, 200);
   assert.equal(first.r.json.gen, undefined, "登记成功的回复不带代数（第六轮复核 S11A-50）");
   assert.equal((await call(base, "GET", "/v1/relay/changes/0", B())).json.items[0].gen, 0);
-  const r = await fetch(`${base}/v1/relay/ops/tenants/t1/matters/${mid}`, { method: "DELETE", headers: { authorization: `Bearer ${opsSecret}`, "x-kwl-operator": "ops.zhang" } });
-  assert.equal(r.status, 200);
+  assert.equal((await opsDel(base, `/v1/relay/ops/tenants/t1/matters/${mid}`)).status, 200);
   assert.deepEqual((await call(base, "GET", `/v1/relay/matters/${mid}/segments/0`, A())).json, { error: "matter_unknown", gen: 1 });
   assert.deepEqual((await call(base, "GET", `/v1/relay/matters/${mid}/segments/0`, C())).json, { error: "matter_unknown" }, "重置前不是读者的同所设备探测不到重置（第五轮复核 S11A-46）");
   // 还不知道重置的设备（例如非负责人）带旧代数登记：拒收，事项不会被它重新建起来
@@ -367,18 +374,16 @@ test("RA-11 重置代数（第四轮复核 S11B-36/37）：重置后取历史回
   assert.equal((await writeSeg(base, mid, A(), "devA")).r.status, 200);
   s.closeAllConnections();
   await new Promise<void>((done) => s.close(() => done()));
-  const again = await start(dir, { opsSecret, accessLog: () => {} });
+  const again = await start(dir, { opsGuard: opsGuard(dir), accessLog: () => {} });
   assert.equal((await call(again.base, "GET", `/v1/relay/matters/${mid}/segments/0`, A())).json.gen, 1, "重置记录随登记日志读回");
 });
 
 test("RA-12 第六轮复核 S11A-50/S11B-50：非读者经登记接口也探测不到重置代数；客户端带的实例编号与本中继不同即回 409 relay_rebuilt", async () => {
   const dir = mkdtempSync(join(tmpdir(), "kwl-ra-"));
-  const opsSecret = "ops-secret-0123456789";
-  const { base, s } = await start(dir, { opsSecret, accessLog: () => {} });
+  const { base, s } = await start(dir, { opsGuard: opsGuard(dir), accessLog: () => {} });
   const mid = newMid();
   assert.equal((await writeSeg(base, mid, A(), "devA", { gen: 0 })).r.status, 200);
-  const r = await fetch(`${base}/v1/relay/ops/tenants/t1/matters/${mid}`, { method: "DELETE", headers: { authorization: `Bearer ${opsSecret}`, "x-kwl-operator": "ops.zhang" } });
-  assert.equal(r.status, 200);
+  assert.equal((await opsDel(base, `/v1/relay/ops/tenants/t1/matters/${mid}`)).status, 200);
   // 非读者 C 带假代数登记：不核对代数（不告知），按块缺失或新建事项处理
   const probe = await writeSeg(base, mid, C(), "devC", { gen: 7, readers: ["devC"] });
   assert.notEqual(probe.r.json?.error, "matter_reset");

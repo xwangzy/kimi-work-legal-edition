@@ -13,6 +13,7 @@ import { createSearchService, MockSearchProvider, type SearchMeterRecord } from 
 import { createSupportApi, type SupportAccessRecord } from "@zr-legal/support-api";
 import { createNotifyApi } from "@zr-legal/notify-api";
 import { createRelayApi } from "@zr-legal/relay-api";
+import { devOpsRoster, fileOpsGuard, type OpsGuard, type OpsRequestHeaders } from "@zr-legal/ops-auth";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,12 +29,12 @@ export interface CloudCp {
   gatewayMeter: MeterRecord[];
   searchMeter: SearchMeterRecord[];
   feed: GatewayFeedSubscriber;
-  /** 支持服务（第 9 批 S13；诊断包上传）：存储目录、运营凭据与访问审计。 */
-  support: { dir: string; opsSecret: string; base: string; access: SupportAccessRecord[] };
+  /** 支持服务（第 9 批 S13；诊断包上传）：存储目录、访问审计与按人运营签名（v9.3 A-10，运营编号 op_test）。 */
+  support: { dir: string; base: string; access: SupportAccessRecord[]; opsHeaders(method: string, path: string): OpsRequestHeaders };
   /** 通知服务（第 10 批 S9；期限提醒）：存储目录与服务（用例可看云端保存了什么）。 */
   notify: { dir: string; base: string; server: ReturnType<typeof createNotifyApi>; setSkew(ms: number): void };
   /** 共享中继（第 11 批 S11；团队事项密文同步）：存储目录与服务（用例可看中继上保存了什么）。 */
-  relay: { dir: string; base: string; server: ReturnType<typeof createRelayApi>; opsSecret: string };
+  relay: { dir: string; base: string; server: ReturnType<typeof createRelayApi>; opsGuard: OpsGuard; opsHeaders(method: string, path: string): OpsRequestHeaders };
   /** 网关的额度租约（用例可 flush 后核对控制面账本）。 */
   quota: LeaseQuota;
   gatewayUrl: string;
@@ -79,8 +80,10 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
   const searchSvc: Server = createSearchService({ keys: seatKeys, provider: search, meter: { append: (r) => void searchMeter.push(r) }, feed });
   const supportDir = mkdtempSync(join(tmpdir(), "kwl-support-"));
   const supportAccess: SupportAccessRecord[] = [];
-  const opsSecret = `ops-${Math.random().toString(36).slice(2)}-secret`;
-  const supportSvc = createSupportApi({ dir: supportDir, keys: seatKeys, feed, opsSecret, accessLog: (r) => void supportAccess.push(r) });
+  // 运营按人鉴权（v9.3 A-10）：一位测试运营，签名各自绑定支持与中继
+  const OPS = devOpsRoster([{ id: "op_test", perms: ["support.read", "support.delete", "relay.reset", "tenant.purge"] }]);
+  const opsGuardFor = (audience: "support" | "relay") => fileOpsGuard({ dir: mkdtempSync(join(tmpdir(), `kwl-${audience}-ops-`)), audience, roster: OPS.roster, rosterKeys: OPS.rosterKeys });
+  const supportSvc = createSupportApi({ dir: supportDir, keys: seatKeys, feed, opsGuard: opsGuardFor("support"), accessLog: (r) => void supportAccess.push(r) });
   await new Promise<void>((r) => gateway.listen(0, "127.0.0.1", () => r()));
   await new Promise<void>((r) => searchSvc.listen(0, "127.0.0.1", () => r()));
   await new Promise<void>((r) => supportSvc.listen(0, "127.0.0.1", () => r()));
@@ -93,8 +96,8 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
   const notifyBase = `http://127.0.0.1:${(notifySvc.address() as AddressInfo).port}`;
   // 共享中继（第 11 批 S11）：按订阅核对律所策略（share_relay）
   const relayDir = mkdtempSync(join(tmpdir(), "kwl-relay-"));
-  const relayOps = `relay-ops-${Math.random().toString(36).slice(2)}-secret`;
-  const relaySvc = createRelayApi({ dir: relayDir, keys: seatKeys, feed, opsSecret: relayOps, accessLog: () => {} });
+  const relayOps = opsGuardFor("relay");
+  const relaySvc = createRelayApi({ dir: relayDir, keys: seatKeys, feed, opsGuard: relayOps, accessLog: () => {} });
   await new Promise<void>((r) => relaySvc.listen(0, "127.0.0.1", () => r()));
   const relayBase = `http://127.0.0.1:${(relaySvc.address() as AddressInfo).port}`;
   const supportBase = `http://127.0.0.1:${(supportSvc.address() as AddressInfo).port}`;
@@ -121,7 +124,7 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
     searchMeter,
     feed,
     quota,
-    support: { dir: supportDir, opsSecret, base: supportBase, access: supportAccess },
+    support: { dir: supportDir, base: supportBase, access: supportAccess, opsHeaders: (method, path) => OPS.sign("op_test", "support", { method, path }) },
     notify: {
       dir: notifyDir,
       base: notifyBase,
@@ -130,7 +133,7 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
         notifySkew = ms;
       },
     },
-    relay: { dir: relayDir, base: relayBase, server: relaySvc, opsSecret: relayOps },
+    relay: { dir: relayDir, base: relayBase, server: relaySvc, opsGuard: relayOps, opsHeaders: (method, path) => OPS.sign("op_test", "relay", { method, path }) },
     gatewayUrl,
     seatFor: (c) => issueSeatToken({ ...c, kid: keys.seat.kid }, keys.seat.privateKey),
     setControlPlaneAvailable(on) {

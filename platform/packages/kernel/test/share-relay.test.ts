@@ -513,7 +513,7 @@ test("第三轮 S11A-30：运营按事项重置后，负责人的电脑发现中
   await importText(kA, m9, "重置前.txt", "重置前的材料");
   await kA.inv("relay.sync");
   assert.ok(entries().some((e) => e.mid === m9));
-  const r = await fetch(`${cloud.relay.base}/v1/relay/ops/tenants/${TID}/matters/${m9}`, { method: "DELETE", headers: { authorization: `Bearer ${cloud.relay.opsSecret}`, "x-kwl-operator": "ops.test" } });
+  const r = await fetch(`${cloud.relay.base}/v1/relay/ops/tenants/${TID}/matters/${m9}`, { method: "DELETE", headers: cloud.relay.opsHeaders("DELETE", `/v1/relay/ops/tenants/${TID}/matters/${m9}`) });
   assert.equal(r.status, 200);
   // 到了定期核对时刻：负责人发现中继上没有了，清掉导出水位，下一次发件重新全量
   kA.kernel.db.run(`DELETE FROM relay_kv WHERE k = 'history_recheck_at'`);

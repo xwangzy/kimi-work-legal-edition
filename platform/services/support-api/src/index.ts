@@ -6,7 +6,8 @@
  *   每台设备每天至多 10 张；
  * - `PUT /v1/support/packages/<工单号>`（席位令牌 + `x-kwl-upload-token` + `x-kwl-content-sha256`）：上传诊断包本体（≤ 2 MiB，
  *   摘要须与声明一致；同一工单只收一次）；
- * - 运营（`/v1/support/ops/…`，运营凭据 + `x-kwl-operator`）：列出、下载、删除；**每次访问都记访问审计**（谁、何时、哪张工单、做了什么）；
+ * - 运营（`/v1/support/ops/…`，按人运营签名，v9.3 A-10）：列出（support.read）、下载（support.read）、删除（support.delete）；
+ *   **每次访问都记访问审计**（哪位运营、用哪把密钥、何时、哪张工单、做了什么）；被拒的运营请求由运营守卫另记（按分钟限量）；
  * - 保存 7 天后删除（启动时与每小时清扫）；
  * - 本服务只认席位令牌与律所策略（订阅控制面），不解析诊断包内容（内容由客户端按白名单生成并自证不含事项信息）；
  *   计量与访问审计只有租户、设备编号的服务端密钥 HMAC、工单号与字节数。
@@ -19,6 +20,7 @@ import { join } from "node:path";
 import type { KeyObject } from "node:crypto";
 import type { GatewayFeedView } from "@zr-legal/firm-trust";
 import { verifySeatToken, SeatTokenError, type SeatClaims } from "@zr-legal/seat-token";
+import { OpsAuthError, type OpsGuard, type OpsPermission } from "@zr-legal/ops-auth";
 
 export const SUPPORT_MAX_BYTES = 2 * 1024 * 1024;
 export const SUPPORT_RETENTION_MS = 7 * 24 * 3600_000;
@@ -33,8 +35,10 @@ export interface SupportAccessRecord {
   /** upload / list / download / delete / expire。 */
   action: string;
   ticket: string | null;
-  /** 运营账号（运营访问时）或 null。 */
+  /** 运营编号（运营访问时，取自核验过的签名，不是自报）或 null。 */
   operator: string | null;
+  /** 运营用的密钥编号（运营访问时；丢失某把密钥后据此查它做过什么）。 */
+  op_key?: string;
   tid: string | null;
   /** 设备编号的服务端 HMAC（前 16 位）。 */
   dev: string | null;
@@ -47,8 +51,8 @@ export interface SupportApiOptions {
   keys: ReadonlyMap<string, KeyObject>;
   /** 吊销集与律所策略（support_upload）；没有订阅即一律不允许上传（失败关闭）。 */
   feed?: Pick<GatewayFeedView, "revokedDevice" | "revokedSeat" | "supportUploadAllowed"> & { refresh?: () => Promise<void> };
-  /** 运营凭据（G0 共享密钥；生产为运维网络 + 堡垒机 + 双因素）。 */
-  opsSecret: string;
+  /** 运营按人鉴权（v9.3 A-10，`@zr-legal/ops-auth`）：没有 = 运营接口不开放（404）。共享运营口令已停用。 */
+  opsGuard?: OpsGuard;
   /** 访问审计（缺省写 <dir>/access.jsonl）。 */
   accessLog?: (r: SupportAccessRecord) => void;
   meterKey?: Buffer;
@@ -89,7 +93,8 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
   const iso = (t = now()) => new Date(t).toISOString();
   if (o.meterKey && o.meterKey.byteLength < 32) throw new Error("meterKey 至少 32 字节");
   if (!o.meterKey && (o.production ?? process.env.NODE_ENV === "production")) throw new Error("生产形态必须配置 meterKey（设备编号 HMAC 密钥，由 KMS 下发）");
-  if (!o.opsSecret || o.opsSecret.length < 16) throw new Error("opsSecret 至少 16 个字符");
+  if ((o as { opsSecret?: unknown }).opsSecret !== undefined) throw new Error("共享运营口令已停用（v9.3 A-10）：改用 opsGuard（按人运营凭据）");
+  if (o.opsGuard && o.opsGuard.audience !== "support") throw new Error("运营守卫的受众须为 support");
   const meterKey = o.meterKey ?? randomBytes(32);
   mkdirSync(o.dir, { recursive: true, mode: 0o700 });
   const access = o.accessLog ?? ((r: SupportAccessRecord) => appendFileSync(join(o.dir, "access.jsonl"), `${JSON.stringify(r)}\n`, { mode: 0o600 }));
@@ -199,14 +204,16 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
     if (o.feed?.revokedDevice(c.tid, c.dev) || o.feed?.revokedSeat(c.sid)) throw Object.assign(new Error("seat_revoked"), { status: 401 });
     return c;
   };
-  const opsAuth = (req: IncomingMessage): string => {
-    const tok = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization ?? ""))?.[1] ?? "";
-    const a = Buffer.from(tok);
-    const b = Buffer.from(o.opsSecret);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) throw Object.assign(new Error("ops_auth_invalid"), { status: 401 });
-    const who = String(req.headers["x-kwl-operator"] ?? "");
-    if (!/^[A-Za-z0-9_.-]{2,64}$/.test(who)) throw Object.assign(new Error("operator_required"), { status: 400 });
-    return who;
+  /** 运营请求按人核验（签名、名册、随机数、权限）；没有配置运营守卫即按不存在处理。被拒的另记访问审计（守卫内按分钟限量）。 */
+  const opsAuth = (req: IncomingMessage, raw: string, perm: OpsPermission): { who: string; key: string } => {
+    if (!o.opsGuard) throw Object.assign(new Error("not_found"), { status: 404 });
+    try {
+      const r = o.opsGuard.authorize(req.headers, { method: req.method ?? "GET", path: raw }, perm);
+      return { who: r.operator, key: r.kid };
+    } catch (e) {
+      if (e instanceof OpsAuthError) throw Object.assign(new Error(e.code), { status: e.status });
+      throw e;
+    }
   };
   const readBody = async (req: IncomingMessage, max: number): Promise<Buffer> => {
     const chunks: Buffer[] = [];
@@ -288,7 +295,7 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
 
     // ─── 运营：列出、下载、删除（每次访问都记访问审计） ───
     if (method === "GET" && raw === "/v1/support/ops/packages") {
-      const who = opsAuth(req);
+      const { who, key } = opsAuth(req, raw, "support.read");
       const list: Omit<TicketMeta, "upload_token_sha256">[] = [];
       for (const f of readdirSync(o.dir)) {
         const m = /^(SUP-[0-9A-Z-]+)\.json$/.exec(f);
@@ -298,27 +305,27 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
           list.push(rest);
         }
       }
-      access({ at: iso(), action: "list", ticket: null, operator: who, tid: null, dev: null, bytes: null, result: `ok:${list.length}` });
+      access({ at: iso(), action: "list", ticket: null, operator: who, op_key: key, tid: null, dev: null, bytes: null, result: `ok:${list.length}` });
       return send(res, 200, { packages: list });
     }
     const op = /^\/v1\/support\/ops\/packages\/(SUP-[0-9A-Z]{4}-[0-9A-Z]{4})$/.exec(raw);
     if (op && (method === "GET" || method === "DELETE")) {
-      const who = opsAuth(req);
+      const { who, key } = opsAuth(req, raw, method === "GET" ? "support.read" : "support.delete");
       const meta = readMeta(op[1]!);
       if (!meta?.uploaded_at) {
-        access({ at: iso(), action: method === "GET" ? "download" : "delete", ticket: op[1]!, operator: who, tid: null, dev: null, bytes: null, result: "not_found" });
+        access({ at: iso(), action: method === "GET" ? "download" : "delete", ticket: op[1]!, operator: who, op_key: key, tid: null, dev: null, bytes: null, result: "not_found" });
         return send(res, 404, { error: "not_found" });
       }
       // 运营操作先记访问审计、记不进去即不执行（复核 S9B-10）
       if (method === "DELETE") {
-        access({ at: iso(), action: "delete", ticket: meta.ticket, operator: who, tid: meta.tid, dev: meta.dev, bytes: meta.bytes, result: "ok" });
+        access({ at: iso(), action: "delete", ticket: meta.ticket, operator: who, op_key: key, tid: meta.tid, dev: meta.dev, bytes: meta.bytes, result: "ok" });
         rmSync(binPath(meta.ticket), { force: true });
         rmSync(metaPath(meta.ticket), { force: true });
         return send(res, 200, { ok: true });
       }
       const body = readRegular(binPath(meta.ticket));
       if (!body) return send(res, 404, { error: "not_found" });
-      access({ at: iso(), action: "download", ticket: meta.ticket, operator: who, tid: meta.tid, dev: meta.dev, bytes: body.byteLength, result: "ok" });
+      access({ at: iso(), action: "download", ticket: meta.ticket, operator: who, op_key: key, tid: meta.tid, dev: meta.dev, bytes: body.byteLength, result: "ok" });
       res.writeHead(200, {
         "content-type": "application/json; charset=utf-8",
         "cache-control": "no-store",

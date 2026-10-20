@@ -28,8 +28,13 @@
  *   "upstream": { "base_url": "https://api.moonshot.cn/v1", "api_key_file": "..." },
  *   "content_safety_policy_file": "...",                 // 网关可选
  *   // 支持：
- *   "ops_secret_file": "...", "meter_key_file": "..." }
- * 全部密钥文件除格式外还核“是不是随机生成的”（scripts/lib/secret-strength.mjs：拒绝重复、递增、单一字符类、占位词）；运营凭据与服务间凭据同一要求。
+ *   "meter_key_file": "...",
+ *   // 运营接口（控制面、支持、中继、通知可选；v9.3 A-10 按人鉴权，共享运营口令 ops_secret_file 已停用、配了即拒绝启动）：
+ *   "ops": { "roster_file": "/etc/kwl/ops-roster.json",          // 安全管理员签名的运营名册（每人的签名公钥、权限、状态；换文件即生效）
+ *            "roster_keys_file": "/etc/kwl/ops-roster-keys.json", // 名册签名公钥 { kid: PEM }
+ *            "allow_cidrs": ["10.20.0.0/24"] } }                  // 运维网段（堡垒机出口）：来源不在其中的运营请求一律 404
+ * 没有 ops：运营路径一律 404。名册版本记录、随机数与被拒记录在 <data_dir>/<角色>/ops/。
+ * 全部密钥文件除格式外还核“是不是随机生成的”（scripts/lib/secret-strength.mjs：拒绝重复、递增、单一字符类、占位词）；服务间凭据同一要求。
  *
  * 可观测性（v9.3 A-9；scripts/lib/obs.mjs）：每个角色都写访问日志与错误日志（按白名单、不记内容，`log_dir` 缺省为 `<data_dir>/obs`，必须有其一），
  * 保留 `log_retention_days` 天（缺省 190）；/healthz 与 /readyz 由入口应答；指标另起监听 `metrics`：
@@ -37,7 +42,8 @@
  */
 import { createPrivateKey, createPublicKey } from "node:crypto";
 import { createServer as createHttpsServer } from "node:https";
-import { mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { BlockList, isIPv4, isIPv6 } from "node:net";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createHttpServer } from "node:http";
@@ -100,6 +106,67 @@ const secretFile = (f, what, kind) => {
 // 服务间凭据：至少 32 字节随机——64 位以上十六进制或 43 位以上 base64url
 const serviceSecret = () => secretFile(cfg.service_secret_file, "service_secret_file", "random32");
 
+// ─── 运营按人鉴权（v9.3 A-10）：安全管理员签名的运营名册 + 每人自己的签名密钥；只接受运维网段来的运营请求 ───
+if (cfg.ops_secret_file !== undefined) fail("ops_secret_file 已停用（v9.3 A-10 运营按人鉴权）：改为配置 ops.roster_file、ops.roster_keys_file、ops.allow_cidrs（见 docs/部署-云端生产入口.md）");
+const OPS_AUDIENCE = { "control-plane": "control-plane", support: "support", relay: "relay", notify: "notify" };
+const opsMod = await import(join(root, "packages/ops-auth/src/index.ts"));
+let opsGuard = null;
+/** 运维网段（null = 没有配置运营接口：运营路径一律 404）。 */
+let opsSources = null;
+if (cfg.ops !== undefined) {
+  if (!OPS_AUDIENCE[cfg.role]) fail(`${cfg.role} 没有运营接口，不要配置 ops`);
+  const c = cfg.ops ?? {};
+  if (typeof c.roster_file !== "string" || !c.roster_file) fail("缺少 ops.roster_file（运营名册）");
+  const rosterKeys = pubMap(c.roster_keys_file, "ops.roster_keys_file");
+  if (!Array.isArray(c.allow_cidrs) || c.allow_cidrs.length === 0) fail("ops.allow_cidrs 须列出运维网段（堡垒机出口地址）");
+  opsSources = new BlockList();
+  for (const x of c.allow_cidrs) {
+    const [addr, bits, extra] = String(x).split("/");
+    const v4 = isIPv4(addr ?? "");
+    if (!v4 && !isIPv6(addr ?? "")) fail(`ops.allow_cidrs 里的 ${x} 不是网段`);
+    const max = v4 ? 32 : 128;
+    const n = bits === undefined ? max : Number(bits);
+    // 不许“全部来源”（/0）：运营接口只对运维网段开放
+    if (extra !== undefined || !Number.isInteger(n) || n < 1 || n > max) fail(`ops.allow_cidrs 里的 ${x} 前缀长度不合法（1–${max}，不许 /0）`);
+    opsSources.addSubnet(addr, n, v4 ? "ipv4" : "ipv6");
+  }
+  const opsDir = join(dataDir(cfg.role), "ops");
+  mkdirSync(opsDir, { recursive: true, mode: 0o700 });
+  let roster;
+  try {
+    roster = opsMod.fileRosterSource({ file: c.roster_file, keys: rosterKeys, seenFile: join(opsDir, "roster-seen.json") });
+  } catch {
+    fail("运营名册的版本记录读不出（ops/roster-seen.json）");
+  }
+  const first = roster.current();
+  if (!first.ok) fail(`运营名册不可用（${first.reason}）`);
+  opsGuard = opsMod.createOpsGuard({
+    audience: OPS_AUDIENCE[cfg.role],
+    roster,
+    nonces: opsMod.fileNonceStore(join(opsDir, "nonces.jsonl")),
+    // 被拒的运营请求（按分钟限量）：只有声称的运营编号、原因与路径
+    onReject: (r) => appendFileSync(join(opsDir, "rejects.jsonl"), `${JSON.stringify(r)}\n`, { mode: 0o600 }),
+  });
+}
+/** 运营路径（原样与规范化后任一命中即算）只放行运维网段来的请求。 */
+const opsPathBlocked = (req) => {
+  const raw = String(req.url ?? "/").split("?")[0];
+  let norm = raw;
+  try {
+    norm = new URL(String(req.url ?? "/"), "http://entry").pathname;
+  } catch {
+    // 解析不了：按原样判
+  }
+  if (!opsMod.OPS_PATH_RE.test(raw) && !opsMod.OPS_PATH_RE.test(norm)) return false;
+  if (!opsSources) return true;
+  let a = String(req.socket?.remoteAddress ?? "");
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(a);
+  if (mapped) a = mapped[1];
+  if (isIPv4(a)) return !opsSources.check(a, "ipv4");
+  if (isIPv6(a)) return !opsSources.check(a, "ipv6");
+  return true;
+};
+
 if (cfg.role === "control-plane") {
   const cpMod = await import(join(root, "services/control-plane/src/index.ts"));
   const pair = (k, what) => {
@@ -116,6 +183,8 @@ if (cfg.role === "control-plane") {
     // 开通码 HMAC 的胡椒（复核 A-06/A-15）：与签名密钥分开，由 KMS 挂载；生产入口必填（按信封私钥派生会让信封密钥轮换时在途码全部失效）
     codePepper: Buffer.from(secretFile(cfg.code_pepper_file, "code_pepper_file", "hex32"), "hex"),
     auditLog: cpMod.createAuditLog({ file: join(dir, "audit.jsonl") }),
+    // 运营接口（A-10）：写操作照常进律所可见的运营审计流水（执行者为运营编号）；每个运营请求另记内部访问审计
+    ...(opsGuard ? { opsGuard, opsAccessLog: (r) => appendFileSync(join(dir, "ops", "access.jsonl"), `${JSON.stringify(r)}\n`, { mode: 0o600 }) } : {}),
   }).server;
 } else {
   // 控制面以外的角色：必须订阅控制面吊销集（评审 Z4 P0-7）
@@ -145,13 +214,13 @@ if (cfg.role === "control-plane") {
   } else if (cfg.role === "support") {
     const sa = await import(join(root, "services/support-api/src/index.ts"));
     const meterKey = secretFile(cfg.meter_key_file, "meter_key_file", "hex32");
-    svc = sa.createSupportApi({ dir: dataDir("support"), keys: seatKeys, meterKey: Buffer.from(meterKey, "hex"), opsSecret: secretFile(cfg.ops_secret_file, "ops_secret_file", "random32"), feed });
+    svc = sa.createSupportApi({ dir: dataDir("support"), keys: seatKeys, meterKey: Buffer.from(meterKey, "hex"), feed, ...(opsGuard ? { opsGuard } : {}) });
   } else if (cfg.role === "notify") {
     const na = await import(join(root, "services/notify-api/src/index.ts"));
-    svc = na.createNotifyApi({ dir: dataDir("notify"), keys: seatKeys, feed });
+    svc = na.createNotifyApi({ dir: dataDir("notify"), keys: seatKeys, feed, ...(opsGuard ? { opsGuard } : {}) });
   } else {
     const ra = await import(join(root, "services/relay-api/src/index.ts"));
-    svc = ra.createRelayApi({ dir: dataDir("relay"), keys: seatKeys, feed, opsSecret: secretFile(cfg.ops_secret_file, "ops_secret_file", "random32") });
+    svc = ra.createRelayApi({ dir: dataDir("relay"), keys: seatKeys, feed, ...(opsGuard ? { opsGuard } : {}) });
   }
 }
 
@@ -171,7 +240,15 @@ for (const ev of ["uncaughtException", "unhandledRejection"]) {
 
 // 同一个请求处理函数挂到 HTTPS 服务上（服务模块不变；定时器随原服务对象的 close 事件清理）
 const handlers = svc.listeners("request");
-const handle = obs.wrap((req, res) => handlers.forEach((h) => h(req, res)));
+const handle = obs.wrap((req, res) => {
+  // 运营路径只对运维网段开放（A-10；堡垒机本身依赖云选型，D-106）：其他来源与未配置运营接口时一律 404，不进服务
+  if (opsPathBlocked(req)) {
+    res.writeHead(404, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+    res.end('{"error":"not_found"}');
+    return;
+  }
+  handlers.forEach((h) => h(req, res));
+});
 let server = svc;
 if (tls) server = createHttpsServer(tls, handle);
 else {

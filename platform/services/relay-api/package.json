@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@zr-legal/firm-trust": "*",
+    "@zr-legal/ops-auth": "*",
     "@zr-legal/seat-token": "*"
   }
 }

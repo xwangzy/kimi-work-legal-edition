@@ -87,7 +87,7 @@ test("S11B-42：非负责人的段上传期间本机发现重置，登记仍按�
   await imp(kA, m, "A.txt", "A");
   await kA.inv("relay.sync");
   await kC.inv("relay.sync");
-  const r = await fetch(`${cloud.relay.base}/v1/relay/ops/tenants/${TID}/matters/${m}`, { method: "DELETE", headers: { authorization: `Bearer ${cloud.relay.opsSecret}`, "x-kwl-operator": "ops.test" } });
+  const r = await fetch(`${cloud.relay.base}/v1/relay/ops/tenants/${TID}/matters/${m}`, { method: "DELETE", headers: cloud.relay.opsHeaders("DELETE", `/v1/relay/ops/tenants/${TID}/matters/${m}`) });
   assert.equal(r.status, 200);
   await imp(kC, m, "C写的.txt", "C");
   // C 上传块期间（登记之前），模拟后台收件在这期间发现了重置、把本机代数改成新值

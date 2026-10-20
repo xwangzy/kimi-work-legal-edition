@@ -87,7 +87,8 @@ export function auditActorLabel(r: Pick<CpAuditRow, "actor" | "actor_name">): st
     case "root":
       return "律所根密钥（开通）";
     case "ops":
-      return "中软运营";
+      // 经运营接口的操作记到具体的运营人员（v9.3 A-10：运营编号是工号，不是姓名）；早先的与进程内的记录只有笼统的“中软运营”
+      return r.actor.id === "ops" ? "中软运营" : `中软运营（${shortId(r.actor.id)}）`;
     default:
       return "中软服务";
   }
