@@ -49,6 +49,8 @@ if (ids.length === 0) throw new Error("没有任何 SKILL.md");
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(join(trusted, "skills"), { recursive: true });
 cpSync(join(here, "AGENTS.md"), join(trusted, "AGENTS.md"));
+// 第三方许可（v9.4 评审 S1 §3：融合上游 MIT 方法骨架须随分发保留版权与许可声明），一并签名
+if (existsSync(join(here, "THIRD_PARTY_LICENSES"))) cpSync(join(here, "THIRD_PARTY_LICENSES"), join(trusted, "THIRD_PARTY_LICENSES"), { recursive: true });
 const skills = [];
 for (const id of ids) {
   const file = join(here, id, "SKILL.md");
