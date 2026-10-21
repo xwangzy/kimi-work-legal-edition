@@ -332,6 +332,35 @@ export interface BuiltS2 {
   qualityNotes: string[];
 }
 
+/** 交付件文件名里的日期（v9.4：原来是任务编号尾巴“-b35186”，律师看不懂；同一天重复生成时由下载对话框处理重名）。 */
+export function fileDay(d: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** 原文位置：Word 与纯文本没有页码时按“第几字”标注（律师能在原文里数到）。 */
+function charPos(start: number, end: number): string {
+  return `第 ${start + 1}–${end} 字`;
+}
+
+/** 读取情况（律师话）：有读不出或识别不清的页时写出页数。 */
+function readingLabel(m: { pages?: { pageNo: number; quality?: string }[] }): string {
+  const bad = (m.pages ?? []).filter((p) => p.quality === "unreadable").length;
+  const low = (m.pages ?? []).filter((p) => p.quality === "low").length;
+  if (bad > 0) return `有 ${bad} 页读不出`;
+  if (low > 0) return `有 ${low} 页识别不清`;
+  return "已读取";
+}
+
+/** 解析器内部标记 → 律师看得懂的备注（与界面 lib/labels.ts 的读取说明同口径；未知标记不显示）。 */
+function qualityRemark(flags: string[]): string {
+  const notes: string[] = [];
+  if (flags.includes("v0_crude_docx_parser") || flags.includes("comments_revisions_ignored")) notes.push("只读了正文文字（批注、修订痕迹未读）");
+  if (flags.includes("tables_as_rows")) notes.push("表格按行读取");
+  if (flags.some((f) => /ocr/i.test(f))) notes.push("扫描件经文字识别");
+  return notes.join("；") || "—";
+}
+
 export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
   const facts = input.materials.flatMap((m) =>
     extractFacts({ document_version_id: m.document_version_id, parse_version_id: m.parse_version_id, filename: m.filename, text: m.text }),
@@ -340,30 +369,29 @@ export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
   const amounts = facts.filter((f) => f.kind === "amount");
   const parties = facts.filter((f) => f.kind === "party");
 
-  // 案卷总目录（文件 ID/原名/hash/页数/可读状态；页数未知显式写出，不编造）
+  // 案卷总目录（编号/文件名/页数/读取情况；页数未知显式写出，不编造）。v9.4：律师要把它交给合伙人或客户——
+  // 不再出现 sha256、字符数与解析器内部标记（完整性信息留在成果清单 manifest 里）
   const catalogRows: (string | number | null)[][] = [
-    ["文件ID", "原名", "sha256(前16)", "大小(字符)", "页数", "原件/复制件", "可读状态", "质量标记"],
+    ["编号", "文件名", "页数", "原件/复制件", "读取情况", "备注"],
     ...input.materials.map((m, i) => [
       `D${i + 1}`,
       m.filename,
-      m.sha256.slice(0, 16),
-      m.chars,
-      m.page_count != null ? m.page_count : "未知（v0 解析未计页）",
+      m.page_count != null ? m.page_count : /\.docx$/i.test(m.filename) ? "Word 文件不分页" : "未计页",
       "电子复制件",
-      "已解析",
-      (m.quality_flags ?? []).join(";") || "无",
+      readingLabel(m),
+      qualityRemark(m.quality_flags ?? []),
     ] as (string | number | null)[]),
   ];
 
   // 事实时间轴（按发生日排序；同一事实不合并；保留来源与锚点）
   const timelineRows: (string | number | null)[][] = [
-    ["发生日期", "事件/金额", "类型", "来源文件", "原文", "锚点(字符区间)", "陈述性质"],
+    ["发生日期", "事件/金额", "类型", "来源文件", "原文", "原文位置", "陈述性质"],
     ...dates
       .slice()
       // 年份不明的排在最后（不猜年份）
       .sort((a, b) => Number(a.normalized.startsWith("年份不明")) - Number(b.normalized.startsWith("年份不明")) || a.normalized.localeCompare(b.normalized))
-      .map((f) => [f.normalized, f.text, "日期", f.filename, f.text, `${f.char_start}-${f.char_end}`, "材料记载"] as (string | number | null)[]),
-    ...amounts.map((f) => ["（日期未明）", f.normalized, "金额", f.filename, f.text, `${f.char_start}-${f.char_end}`, "材料记载"] as (string | number | null)[]),
+      .map((f) => [f.normalized, f.text, "日期", f.filename, f.text, charPos(f.char_start, f.char_end), "材料记载"] as (string | number | null)[]),
+    ...amounts.map((f) => ["（日期未明）", f.normalized, "金额", f.filename, f.text, charPos(f.char_start, f.char_end), "材料记载"] as (string | number | null)[]),
   ];
 
   // 证据目录（证明目的留空待律师填写——不擅自认定证明力）
@@ -386,18 +414,15 @@ export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
   for (const m of input.materials) {
     const flags = m.quality_flags ?? [];
     if (flags.includes("no_page_anchors")) {
-      qualityNotes.push(`《${m.filename}》：v0 解析无页锚点，引用定位以字符区间代替`);
-    }
-    if (flags.includes("v0_crude_docx_parser")) {
-      supplementRows.push(`《${m.filename}》：建议以文档服务重解析生成页锚点（正式版）`);
+      qualityNotes.push(`《${m.filename}》：Word 文件不分页，引用位置按“第几字”标注`);
     }
     for (const pg of m.pages ?? []) {
       if (pg.quality === "unreadable") {
-        qualityNotes.push(`《${m.filename}》第 ${pg.pageNo} 页：不可读（${pg.note ?? "OCR 失败/未就绪"}）`);
+        qualityNotes.push(`《${m.filename}》第 ${pg.pageNo} 页：读不出（${pg.note ?? "文字识别失败或未就绪"}）`);
         supplementRows.push(`《${m.filename}》第 ${pg.pageNo} 页：不可读——请重扫或人工誊录后重新导入（不伪造文本）`);
       } else if (pg.quality === "low") {
-        qualityNotes.push(`《${m.filename}》第 ${pg.pageNo} 页：低质量（${pg.note ?? "OCR 置信度低"}）`);
-        supplementRows.push(`《${m.filename}》第 ${pg.pageNo} 页：OCR 质量低——建议重扫或用 materials.reparse 重解析/人工纠正（生成新解析版本）`);
+        qualityNotes.push(`《${m.filename}》第 ${pg.pageNo} 页：识别不清（${pg.note ?? "文字识别把握不高"}）`);
+        supplementRows.push(`《${m.filename}》第 ${pg.pageNo} 页：识别不清——建议重新扫描，或在材料页手工更正识别出的文字（原件不变）`);
       }
     }
   }
@@ -407,35 +432,35 @@ export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
   const files: BuiltS2["files"] = [
     {
       kind: "s2_catalog",
-      filename: `案卷总目录-${input.runId.slice(-6)}.xlsx`,
+      filename: `案卷总目录-${fileDay()}.xlsx`,
       bytes: createXlsx([{ name: "案卷总目录", rows: catalogRows }]),
       manifest: { files: input.materials.length },
     },
     {
       kind: "s2_timeline",
-      filename: `事实时间轴-${input.runId.slice(-6)}.xlsx`,
+      filename: `事实时间轴-${fileDay()}.xlsx`,
       bytes: createXlsx([{ name: "事实时间轴", rows: timelineRows }]),
       manifest: { dates: dates.length, amounts: amounts.length, note: "同日同额不自动合并；每条独立行" },
     },
     {
       kind: "s2_evidence_catalog",
-      filename: `证据目录-${input.runId.slice(-6)}.xlsx`,
+      filename: `证据目录-${fileDay()}.xlsx`,
       bytes: createXlsx([{ name: "证据目录", rows: evidenceRows }]),
       manifest: { note: "证明目的/待证事实由律师填写（不擅自认定证明力）" },
     },
     {
       kind: "s2_matrix",
-      filename: `争点证据矩阵-${input.runId.slice(-6)}.xlsx`,
+      filename: `争点证据矩阵-${fileDay()}.xlsx`,
       bytes: createXlsx([{ name: "争点证据矩阵", rows: matrixRows }]),
       manifest: { issues: input.issues.length, note: "骨架：争点/要件/举证责任由律师确认" },
     },
     {
       kind: "s2_supplement",
-      filename: `补证清单-${input.runId.slice(-6)}.docx`,
+      filename: `补证清单-${fileDay()}.docx`,
       bytes: createDocx("补证清单（草稿）", [
         {
           heading: "一、材料质量缺陷与建议",
-          paragraphs: supplementRows.length > 0 ? supplementRows : ["本次材料未发现需补正的质量缺陷（按 v0 解析口径）。"],
+          paragraphs: supplementRows.length > 0 ? supplementRows : ["本次材料没有发现需要重扫或补正的页。"],
         },
         { heading: "二、待补材料", paragraphs: ["（由律师按争点矩阵缺口补充）"] },
       ]),
@@ -443,12 +468,12 @@ export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
     },
     {
       kind: "s2_quality_report",
-      filename: `材料质量报告-${input.runId.slice(-6)}.docx`,
+      filename: `材料质量报告-${fileDay()}.docx`,
       bytes: createDocx("材料质量报告", [
         {
           heading: "一、入库概况",
           paragraphs: [
-            `文件 ${input.materials.length} 份；抽取事实：日期 ${dates.length} 条、金额 ${amounts.length} 条、主体 ${parties.length} 条（全部带字符锚点入库）。`,
+            `文件 ${input.materials.length} 份；摘出日期 ${dates.length} 条、金额 ${amounts.length} 条、主体 ${parties.length} 条（每条都标了原文位置）。`,
             `事项：${input.matter.title}；立场：${input.matter.stance}。`,
           ],
         },
@@ -456,8 +481,8 @@ export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
           heading: "二、质量与降级说明",
           paragraphs: [
             ...(qualityNotes.length > 0 ? qualityNotes : ["无"]),
-            "事实抽取 v0 为确定性规则（日期/金额/主体），行为与法律关系抽取待真实模型与律师确认；解析失败的文件只进目录不进实体结论。",
-            "原件永不修改；OCR 纠正将生成新解析版本。",
+            "这一步在这台电脑上按规则摘出日期、金额与主体，不调用 AI；行为与法律关系要接着做“争点与证据分析”并由律师确认。读不出的文件只列入目录，不进入任何结论。",
+            "原件不会被修改；手工更正识别文字会另存一版。",
           ],
         },
       ]),

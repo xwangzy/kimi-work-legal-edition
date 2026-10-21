@@ -150,7 +150,7 @@ export function reasonLabel(r: string): string {
     media_requires_approval: "图像原样送模型须确认",
     unknown_content_block: "未知内容类型",
     aborted: "已中止",
-    seat_unavailable: "席位未取得或已失效",
+    seat_unavailable: "本所账号暂不可用",
     search_upstream_unavailable: "检索服务暂不可用",
     query_empty_after_generalization: "去掉当事人信息后查询为空",
   };

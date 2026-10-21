@@ -78,7 +78,7 @@ export const TERMINAL_STATUSES = ["succeeded", "partial", "failed", "cancelled",
 export const SCENARIO_LABELS: Record<string, string> = {
   "s1.contract_review": "合同审查",
   "s1b.draft_compare": "回稿比对",
-  "s2.case_file": "材料整理",
+  "s2.case_file": "整理案卷",
   "s6.redaction": "对外脱敏",
   "a1.agent_task": "通用任务",
 };
@@ -118,6 +118,13 @@ export const ARTIFACT_LABELS: Record<string, string> = {
   s1_issue_table: "条款问题表",
   s1b_report: "回稿比对报告",
   s1b_diff_table: "回稿差异表",
+  // 整理案卷的六份成果（v9.4：原来显示带任务编号尾巴的文件名）
+  s2_catalog: "案卷总目录",
+  s2_timeline: "事实时间轴",
+  s2_evidence_catalog: "证据目录",
+  s2_matrix: "争点证据矩阵（框架）",
+  s2_supplement: "补证清单",
+  s2_quality_report: "材料质量报告",
   s6_redacted: "脱敏件",
   s6_report: "脱敏报告",
   a1_agent_draft: "助手草稿",
@@ -134,8 +141,8 @@ export const ARTIFACT_LABELS: Record<string, string> = {
 export const AUDIENCE_LABELS: Record<string, string> = { internal: "内部", client: "客户", counterparty: "相对方", court: "法院" };
 
 export const DEST_LABELS: Record<string, string> = {
-  legal_gateway: "Kimi 模型（经中软法律模型网关）",
-  maas_model: "Kimi 模型（经中软网关）",
+  legal_gateway: "Kimi 模型（经中软安全通道）",
+  maas_model: "Kimi 模型（经中软安全通道）",
   byok_model: "Kimi 模型（律所自带密钥，不经中软）",
   private_model: "律所私有模型",
   search_service: "中软检索服务",

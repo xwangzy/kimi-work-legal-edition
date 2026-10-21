@@ -10,7 +10,14 @@ import { Modal } from "./Modal.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 import { Select } from "./Select.tsx";
 
-const STANCES = ["原告", "被告", "申请人", "被申请人", "第三人", "受让方", "转让方", "买方", "卖方", "出租人", "承租人", "投资方", "目标公司", "常年顾问", "其他"];
+// 我方立场（v9.4：补上劳动争议、借贷担保、委托服务、建设工程与二审的立场——S1 评审 §2.4；按业务类型分组提示）
+const STANCE_GROUPS: [string, string[]][] = [
+  ["诉讼仲裁", ["原告", "被告", "上诉人", "被上诉人", "申请人", "被申请人", "第三人"]],
+  ["劳动争议", ["用人单位", "劳动者"]],
+  ["交易与合同", ["买方", "卖方", "受让方", "转让方", "出租人", "承租人", "出借人", "借款人", "保证人", "委托方", "服务方", "发包人", "承包人", "投资方", "目标公司"]],
+  ["顾问", ["常年顾问", "其他"]],
+];
+const STANCE_OPTIONS = STANCE_GROUPS.flatMap(([hint, list]) => list.map((s) => ({ value: s, label: s, hint })));
 const LEVELS = [
   { v: "normal", label: "一般", hint: "委托事项中的合同、函件、案卷、意见书" },
   { v: "high", label: "敏感", hint: "敏感个人信息、刑事卷宗等：公司名称也替换为代号，每条联网检索都要你确认" },
@@ -72,7 +79,7 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
         </label>
         <label className="field">
           <span>我方立场</span>
-          <Select aria-label="我方立场" value={f.stance} onChange={(v) => set("stance")({ target: { value: v } })} options={STANCES.map((s) => ({ value: s, label: s }))} />
+          <Select aria-label="我方立场" value={f.stance} onChange={(v) => set("stance")({ target: { value: v } })} options={STANCE_OPTIONS} />
         </label>
       </div>
       <ConsentQuestion

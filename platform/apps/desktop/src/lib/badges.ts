@@ -68,7 +68,7 @@ export function currentBadges(f: BadgeFacts): Badge[] {
     case "budget_paused":
       return [{ label: "预算暂停（等你决定）", tone: "orange" }];
     case "reconciling":
-      return [{ label: "待人工对账（出站结果不明）", tone: "orange" }];
+      return [{ label: "发送结果不确定，待核实", tone: "orange" }];
     default:
       break;
   }

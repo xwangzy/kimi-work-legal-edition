@@ -13,6 +13,8 @@ export interface SearchItem {
   href: string;
 }
 
+const LEGACY_SCENARIO_NAMES: Record<string, string> = { "s2.case_file": "材料整理" };
+
 /** 给内核的标签：场景卡名（按方法模板与场景）与交付件名（按种类），任务与交付件也能按这些名称搜到。 */
 export function searchLabels(): Record<string, string> {
   const out: Record<string, string> = {};
@@ -25,6 +27,8 @@ export function searchLabels(): Record<string, string> {
     const cur = out[`scenario:${k}`];
     out[`scenario:${k}`] = cur && !cur.includes(v) ? `${cur} ${v}` : (cur ?? v);
   }
+  // 旧叫法仍能搜到（v9.4 起任务表统一用卡片名“整理案卷”）
+  for (const [k, v] of Object.entries(LEGACY_SCENARIO_NAMES)) if (!out[`scenario:${k}`]!.includes(v)) out[`scenario:${k}`] += ` ${v}`;
   for (const [k, v] of Object.entries(ARTIFACT_LABELS)) out[`kind:${k}`] = v;
   return out;
 }

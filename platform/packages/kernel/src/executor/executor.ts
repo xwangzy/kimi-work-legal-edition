@@ -21,7 +21,7 @@ import { WORKER_ID, type WorkflowContext } from "../queue.ts";
 import { runEventPayloadHash, type LedgerSigner } from "../ledger-signer.ts";
 import { invokeTool } from "../tools/registry.ts";
 import { buildS1Deliverables, type ToolIdentity } from "./deliverables.ts";
-import { buildS2Deliverables, extractFacts, factSubmissions, persistAnchors } from "./casefile.ts";
+import { buildS2Deliverables, extractFacts, fileDay, factSubmissions, persistAnchors } from "./casefile.ts";
 import { FACT_LIMITS, submitFacts } from "../services/review-cards.ts";
 import type { AgentCancelOutcome, AgentClient } from "./agent-client.ts";
 import { slimAgentPayload } from "./run-progress.ts";
@@ -651,7 +651,7 @@ async function runS1bScenario(ctx: Ctx, runId: string, attemptId: string): Promi
     )) as any;
     registerArtifact(ctx, run, runId, attemptId, {
       kind: "s1b_report",
-      filename: `回稿比对报告-${runId.slice(-6)}.docx`,
+      filename: `回稿比对报告-${fileDay()}.docx`,
       sha256: report.sha256,
       storage_uri: report.storage_uri,
       manifest: { baseline: cmp.baseline_sha256, current: cmp.current_sha256, stats: cmp.stats },
@@ -664,7 +664,7 @@ async function runS1bScenario(ctx: Ctx, runId: string, attemptId: string): Promi
     const stored = blobs.put(createXlsx([{ name: "回稿差异表", rows }]), run.matter_id);
     registerArtifact(ctx, run, runId, attemptId, {
       kind: "s1b_diff_table",
-      filename: `回稿差异表-${runId.slice(-6)}.xlsx`,
+      filename: `回稿差异表-${fileDay()}.xlsx`,
       sha256: stored.sha256,
       storage_uri: stored.storage_uri,
       manifest: { rows: rows.length - 1 },
@@ -720,7 +720,7 @@ async function runS6Scenario(ctx: Ctx, runId: string, attemptId: string): Promis
     )) as any;
     registerArtifact(ctx, run, runId, attemptId, {
       kind: "s6_report",
-      filename: `脱敏报告-${runId.slice(-6)}.docx`,
+      filename: `脱敏报告-${fileDay()}.docx`,
       sha256: report.sha256,
       storage_uri: report.storage_uri,
       manifest: { note: "脱敏报告（内部稿）" },
@@ -1077,7 +1077,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
         const isFile = a.kind === "workspace_file";
         const artifactVersionId = registerArtifact(ctx, run, runId, attemptId, {
           kind: isFile ? "a1_workspace_file" : outcomeStatus === "partial" ? "a1_agent_draft_partial" : "a1_agent_draft",
-          filename: isFile ? workspaceArtifactName(a.filename) : `agent草稿-${runId.slice(-6)}${outcomeStatus === "partial" ? "-部分完成" : ""}.md`,
+          filename: isFile ? workspaceArtifactName(a.filename) : `草稿-${fileDay()}${outcomeStatus === "partial" ? "-部分完成" : ""}.md`,
           sha256: stored.sha256,
           storage_uri: stored.storage_uri,
           manifest: {

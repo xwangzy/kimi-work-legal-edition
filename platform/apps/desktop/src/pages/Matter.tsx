@@ -383,7 +383,7 @@ function BasisDialog({ basis, endpoint, onClose, onSave }: { basis: MatterBasis;
   const [b, setB] = useState(basis);
   return (
     <Modal title="四项依据" onClose={onClose} wide>
-      <p className="muted">数据准入分四项记录；任一项“待确认”时，本事项只运行不出站的本机能力。变更留痕。</p>
+      <p className="muted">四项依据分别记录；任一项“待确认”时，本事项只能用不需要联网的本机功能。改动都有记录。</p>
       <BasisEditor basis={b} endpoint={endpoint} onChange={setB} />
       <div className="modal-actions">
         <button className="btn-ghost" onClick={onClose}>取消</button>
@@ -403,8 +403,8 @@ function MatterEgress({ matterId }: { matterId: string }) {
   if (!records) return <p className="muted">载入中…</p>;
   return (
     <section>
-      {unresolved.length > 0 && <div className="banner banner-orange">有 {unresolved.length} 条出站结果不明（预写后中断），已进入人工对账。</div>}
-      {records.length === 0 && <p className="muted">本事项尚无出站记录：原件与成果留在这台电脑上。</p>}
+      {unresolved.length > 0 && <div className="banner banner-orange">有 {unresolved.length} 条记录不确定是否已经发出（发送途中软件中断），请在下面逐条核实。</div>}
+      {records.length === 0 && <p className="muted">本事项还没有发出过任何内容：原件与成果都在这台电脑上。</p>}
       {records.length > 0 && (
         <table className="data">
           <thead><tr><th>时间</th><th>去向</th><th>结果</th><th>字数</th><th>代号</th><th>说明</th></tr></thead>

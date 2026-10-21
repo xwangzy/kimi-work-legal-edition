@@ -49,7 +49,7 @@ export function PartiesPanel({ matterId, onChanged, readOnly = false }: { matter
     <fieldset className="parties fieldset-plain" disabled={readOnly}>
       <p className="muted">
         词典里的名称与别名在发给模型、检索与抓取前替换为代号或被拦截（自然人默认替换；机构名称{fullPseudonym ? "在本事项也替换（全部化名）" : "默认保留"}）。
-        漏识别的姓名仍会出站——请核对词典，尤其是敏感事项。
+        没识别出来的姓名会按原文发出——请核对名单，尤其是敏感事项。
       </p>
       {err && <div className="banner banner-red">{err}</div>}
       <table className="data">
