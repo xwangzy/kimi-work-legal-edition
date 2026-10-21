@@ -177,7 +177,8 @@ test("事项列表（v9.2 §4.4；Y4 M-1）：相对时间与进展胶囊", asyn
   assert.equal(fmtRelative("2026-10-14T07:00:00Z", now), "5 小时前");
   assert.equal(fmtRelative("2026-10-13T10:00:00Z", now), "昨天");
   assert.equal(fmtRelative("2026-10-04T10:00:00Z", now), "10 天前");
-  assert.match(fmtRelative("2026-01-04T10:00:00Z", now), /^2026-01-0[34]$/);
+  assert.match(fmtRelative("2026-01-04T10:00:00Z", now), /^1月[34]日$/);
+  assert.match(fmtRelative("2025-01-04T10:00:00Z", now), /^2025年1月[34]日$/);
   assert.equal(fmtRelative(null, now), "—");
   assert.deepEqual(matterProgress({ waiting: 1, running: 2, pending_review: 3 }).map((p) => p.text), ["1 项等你确认", "2 个任务进行中", "3 份待签发"]);
   assert.deepEqual(matterProgress({ waiting: 0, running: 0 }), []);

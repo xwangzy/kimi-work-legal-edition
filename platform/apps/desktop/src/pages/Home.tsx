@@ -12,7 +12,7 @@ import { NewMatterDialog } from "../components/NewMatter.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { ScenarioStart } from "../components/ScenarioStart.tsx";
 import { LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
-import { fmtRelative, fmtTime, SCENARIO_LABELS } from "../lib/labels.ts";
+import { fmtTime, fmtWhen, SCENARIO_LABELS } from "../lib/labels.ts";
 import { nextStepPill, type RunFacts } from "../lib/next-step.ts";
 import { backendDownText } from "../lib/errors.ts";
 
@@ -299,7 +299,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
                     <span className="recent-goal">{r.goal || SCENARIO_LABELS[r.scenario] || "任务"}</span>
                     <span className="muted">{r.matter_title}</span>
                     <span className={`pill ${pill.tone}`}>{pill.text}</span>
-                    <span className="muted recent-time" title={fmtTime(r.updated_at)}>{fmtRelative(r.updated_at)}</span>
+                    <span className="muted recent-time" title={fmtTime(r.updated_at)}>{fmtWhen(r.updated_at)}</span>
                   </button>
                 </li>
                 );

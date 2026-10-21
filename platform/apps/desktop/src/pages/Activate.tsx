@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, onboarding, recovery } from "../api.ts";
 import { setAsideAutoOpen, setAsideNotice } from "../lib/activate-text.ts";
+import { fmtTime } from "../lib/labels.ts";
 
 /** 律师在恢复页点过“返回”的那个目录（每个查看者本机记一下；读写失败按没点过）。 */
 const DISMISS_KEY = "kwl.setAside.dismissed";
@@ -254,7 +255,7 @@ function RestoreFromBackup({ onBack, onDone, onStuck, notice = "" }: { onBack: (
         ...(ack.older ? { older_ack: true } : {}),
       });
       // 按本机时间显示到分钟，并说明这之后的工作不在备份里（复核 R2B-22）
-      const at = r.backup_at ? new Date(String(r.backup_at)).toLocaleString("zh-CN", { hour12: false }).slice(0, -3) : "";
+      const at = r.backup_at ? fmtTime(String(r.backup_at)) : "";
       onDone(`已恢复「${r.firm?.name ?? "本所"}」的数据（备份于 ${at}；这之后在原电脑上做的工作没有恢复${r.skipped_newer ? "，较新的几份备份不完整，用的是能用的最近一份" : ""}），正在打开…`);
       void waitForActivated(onStuck);
     } catch (e) {

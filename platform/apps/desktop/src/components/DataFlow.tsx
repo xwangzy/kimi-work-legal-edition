@@ -4,7 +4,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, type EgressRecord, type EgressSummary } from "../api.ts";
-import { DEST_LABELS, fmtShortTime } from "../lib/labels.ts";
+import { DEST_LABELS, fmtTime, fmtWhen } from "../lib/labels.ts";
 import { tokens as renderTokens } from "./Markdown.tsx";
 
 export function DataFlowCard({ runId, tokenMap, refreshKey }: { runId: string; tokenMap?: Map<string, string | null>; refreshKey?: unknown }) {
@@ -68,7 +68,7 @@ export function DataFlowCard({ runId, tokenMap, refreshKey }: { runId: string; t
               <div key={r.record_id} className={`df-rec df-${r.outcome ?? "sent"}`}>
                 <div className="df-rec-head">
                   <b>{DEST_LABELS[r.destination_kind] ?? r.destination_kind}</b>
-                  <span className="muted">{fmtShortTime(r.created_at)} · {outcomeLabel(r.outcome)}</span>
+                  <span className="muted" title={fmtTime(r.created_at)}>{fmtWhen(r.created_at)} · {outcomeLabel(r.outcome)}</span>
                 </div>
                 {note.purpose === "model" && (
                   <div className="df-line">{r.segments} 个文本片段 · {r.chars.toLocaleString()} 字 · 代号 {Object.values(r.pseudonym_counts ?? {}).reduce((a: number, b: any) => a + Number(b), 0)} 处{note.model ? ` · ${note.model}` : ""}</div>

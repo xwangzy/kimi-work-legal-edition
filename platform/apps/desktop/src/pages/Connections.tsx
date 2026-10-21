@@ -10,7 +10,7 @@ import { api, updates, type Capabilities, type ContentCheckResult, type ContentS
 import { quotaLawyerLine } from "../lib/firm-usage.ts";
 import { CONTENT_CHECK_FAILED, CONTENT_PANEL_NOTE, contentCheckLine, contentSourceLine, contentStaleLine } from "../lib/content-labels.ts";
 import { nav, type SettingsTab } from "../App.tsx";
-import { fmtTime, groupDigits } from "../lib/labels.ts";
+import { fmtDate, fmtTime, groupDigits } from "../lib/labels.ts";
 import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
 import { RecallEvalPanel } from "./RecallEval.tsx";
 import { CpAuditPanel, UsagePanel } from "./FirmUsage.tsx";
@@ -212,7 +212,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
           <b>数据去向说明</b>
           <span className="muted">
             {" "}
-            · {firm ? `${firm} · ` : ""}本所当前设置 · {new Date().toLocaleDateString("zh-CN")}
+            · {firm ? `${firm} · ` : ""}本所当前设置 · {fmtDate(Date.now())}
           </span>
         </div>
         <button className="btn btn-sm no-print" onClick={() => window.print()}>

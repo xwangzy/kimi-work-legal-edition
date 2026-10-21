@@ -10,7 +10,7 @@ import { nav } from "../App.tsx";
 import { Icon } from "../components/Icons.tsx";
 import { Markdown } from "../components/Markdown.tsx";
 import { QA_CITATION_KIND, qaCitationLine, type QaCitationsView } from "../lib/qa-citations.ts";
-import { fmtShortTime } from "../lib/labels.ts";
+import { fmtTime, fmtWhen } from "../lib/labels.ts";
 
 export function ChatPage({ conversationId }: { conversationId?: string | undefined }) {
   const [list, setList] = useState<{ conversation_id: string; title: string; updated_at: string }[]>([]);
@@ -99,7 +99,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
             <div key={m.message_id} className={`msg msg-${m.role}`}>
               {m.role === "assistant" ? <Markdown text={m.text} /> : <div className="msg-text">{m.text}</div>}
               {m.citations && <CitationCheck c={m.citations} />}
-              <div className="msg-meta">{fmtShortTime(m.created_at)}</div>
+              <div className="msg-meta" title={fmtTime(m.created_at)}>{fmtWhen(m.created_at)}</div>
             </div>
           ))}
           {blocked && (

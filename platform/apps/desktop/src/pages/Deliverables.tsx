@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
 import { downloadPlan } from "../lib/download.ts";
-import { artifactName, AUDIENCE_LABELS, fmtRelative, fmtTime } from "../lib/labels.ts";
+import { artifactName, AUDIENCE_LABELS, fmtTime, fmtWhen } from "../lib/labels.ts";
 import { groupByTask, groupDeliverables, taskCountText, taskGroupLabel } from "../lib/deliverables.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 
@@ -124,7 +124,7 @@ export function DeliverablesPage() {
                 {groupByTask(g.rows).flatMap((t) => [
                   <tr key={`task-${t.run_id ?? "none"}`} className="dl-task">
                     <td colSpan={6}>
-                      <span>{taskGroupLabel(t, fmtTime)}</span>
+                      <span>{taskGroupLabel(t, (iso) => fmtWhen(iso))}</span>
                       {/* 组头写这次任务一共几份（复核 RB16B-11：状态筛选之后只显示一部分时说清） */}
                       <span className="muted"> · {taskCountText(t.rows.length, rows.filter((r) => r.matter_id === g.matter_id && (r.run_id ?? null) === t.run_id).length)}</span>
                       {t.run_id && (
@@ -140,7 +140,7 @@ export function DeliverablesPage() {
                       <td>v{r.version}</td>
                       <td>{STATUS_LABELS[r.status] ?? r.status}</td>
                       <td>{r.audience ? AUDIENCE_LABELS[r.audience] ?? r.audience : "—"}</td>
-                      <td title={fmtTime(r.created_at)}>{fmtRelative(r.created_at)}</td>
+                      <td title={fmtTime(r.created_at)}>{fmtWhen(r.created_at)}</td>
                       <td className="dl-actions" onClick={(e) => e.stopPropagation()}>
                         <button className="btn-link" onClick={() => nav(`/review/${r.artifact_version_id}`)}>预览</button>
                         <button className="btn-link" onClick={() => void download(r)}>{downloadPlan(r.filename).label}</button>
@@ -185,7 +185,7 @@ export function MatterDeliverables({ matterId }: { matterId: string }) {
           {groupByTask(rows).flatMap((t) => [
             <tr key={`task-${t.run_id ?? "none"}`} className="dl-task">
               <td colSpan={5}>
-                <span>{taskGroupLabel(t, fmtTime)}</span>
+                <span>{taskGroupLabel(t, (iso) => fmtWhen(iso))}</span>
                 <span className="muted"> · {t.rows.length} 份</span>
                 {t.run_id && (
                   <button className="btn-link" onClick={() => nav(`/run/${t.run_id}/${matterId}`)}>
@@ -199,7 +199,7 @@ export function MatterDeliverables({ matterId }: { matterId: string }) {
               <td title={r.filename}><b>{r.display}</b></td>
               <td>v{r.version}</td>
               <td>{STATUS_LABELS[r.status] ?? r.status}</td>
-              <td title={fmtTime(r.created_at)}>{fmtRelative(r.created_at)}</td>
+              <td title={fmtTime(r.created_at)}>{fmtWhen(r.created_at)}</td>
               <td className="dl-actions" onClick={(e) => e.stopPropagation()}>
                 <button className="btn-link" onClick={() => nav(`/review/${r.artifact_version_id}`)}>预览</button>
                 <button

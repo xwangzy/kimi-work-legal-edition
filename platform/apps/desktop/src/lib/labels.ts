@@ -139,10 +139,40 @@ export const CITE_STATE_LABELS: Record<string, string> = {
 
 export const EFFECTIVENESS_LABELS: Record<string, string> = { valid: "现行有效", amended: "已修改", repealed: "已废止" };
 
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const ymd = (d: Date) => `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+const hm = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+
+/** 完整时刻（有效期、签发时刻、悬停提示）：“2026年10月19日 14:40”，律师层不显示秒，不用斜杠（Z3 #14）。纯函数。 */
 export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("zh-CN", { hour12: false });
+  return Number.isNaN(d.getTime()) ? iso : `${ymd(d)} ${hm(d)}`;
+}
+
+/** 只要日期：“2026年10月19日”。纯函数。 */
+export function fmtDate(iso: string | number | Date | null | undefined): string {
+  if (iso === null || iso === undefined || iso === "") return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? String(iso) : ymd(d);
+}
+
+/**
+ * 列表里的时刻（Z3 #14）：今天写“刚刚 / n 分钟前 / 14:40”，今年写“10月19日 14:40”，往年写“2025年10月19日”；
+ * 悬停用 fmtTime 给完整时刻。纯函数。
+ */
+export function fmtWhen(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "—";
+  const d = new Date(t);
+  const n = new Date(now);
+  const min = Math.floor((now - t) / 60_000);
+  if (min >= 0 && min < 1) return "刚刚";
+  if (min >= 0 && min < 60) return `${min} 分钟前`;
+  if (d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()) return hm(d);
+  if (d.getFullYear() === n.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日 ${hm(d)}`;
+  return ymd(d);
 }
 
 /** 相对时间（事项列表“最近活动”）：刚刚 / N 分钟前 / N 小时前 / 昨天 / N 天前 / 日期。纯函数。 */
@@ -159,7 +189,7 @@ export function fmtRelative(iso: string | null | undefined, now = Date.now()): s
   if (d === 1) return "昨天";
   if (d < 30) return `${d} 天前`;
   const dt = new Date(t);
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  return dt.getFullYear() === new Date(now).getFullYear() ? `${dt.getMonth() + 1}月${dt.getDate()}日` : ymd(dt);
 }
 
 /** 事项进展（事项列表；Y4 M-1）：等你确认 / 进行中 / 待签发，没有则为空数组。纯函数。 */
@@ -180,10 +210,11 @@ export function stepTime(at: string | undefined, level: "lawyer" | "detail", now
   return { text: level === "lawyer" ? fmtRelative(at, now) : fmtShortTime(at), title: fmtTime(at) };
 }
 
+/** 时分秒：只用于“处理细节”层（执行页细节、诊断），律师层用 fmtWhen。 */
 export function fmtShortTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleTimeString("zh-CN", { hour12: false });
+  return Number.isNaN(d.getTime()) ? iso : `${hm(d)}:${pad2(d.getSeconds())}`;
 }
 
 /** 立场与法域的显示（经接口或旧版本写入的英文代码也显示为中文；中文原样）。 */

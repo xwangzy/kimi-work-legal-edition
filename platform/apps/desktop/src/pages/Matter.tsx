@@ -11,7 +11,7 @@ import { defaultChoice } from "../components/ModeSelector.tsx";
 import { PartiesPanel } from "../components/Parties.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { reasonLabel } from "../components/DataFlow.tsx";
-import { DEST_LABELS, fmtTime, RUN_STATUS_LABELS, SCENARIO_LABELS, parseFlagsText } from "../lib/labels.ts";
+import { DEST_LABELS, fmtTime, fmtWhen, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, parseFlagsText } from "../lib/labels.ts";
 import { FactsPanel } from "../components/FactsPanel.tsx";
 import { decideMatterTab } from "../lib/matter-tab.ts";
 import { sampleBannerText } from "../lib/scenarios.ts";
@@ -315,7 +315,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                           "—"
                         )}
                       </td>
-                      <td className="nowrap">{fmtTime(d.created_at)}</td>
+                      <td className="nowrap" title={fmtTime(d.created_at)}>{fmtWhen(d.created_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -340,8 +340,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
                     <tr key={r.run_id} className="row-link" onClick={() => nav(`/run/${r.run_id}/${matterId}`)}>
                       <td>{SCENARIO_LABELS[r.scenario] ?? r.scenario}{r.goal ? ` · ${String(r.goal).slice(0, 40)}` : ""}</td>
                       <td>{RUN_STATUS_LABELS[r.status] ?? r.status}</td>
-                      <td>{r.mode ?? "—"}</td>
-                      <td>{fmtTime(r.created_at)}</td>
+                      <td>{r.mode ? (MODE_LABELS[r.mode as keyof typeof MODE_LABELS] ?? r.mode) : "—"}</td>
+                      <td className="nowrap" title={fmtTime(r.created_at)}>{fmtWhen(r.created_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -412,7 +412,7 @@ function MatterEgress({ matterId }: { matterId: string }) {
               }
               return (
                 <tr key={r.record_id}>
-                  <td>{fmtTime(r.created_at)}</td>
+                  <td className="nowrap" title={fmtTime(r.created_at)}>{fmtWhen(r.created_at)}</td>
                   <td>{DEST_LABELS[r.destination_kind] ?? r.destination_kind}</td>
                   <td>{r.outcome === "blocked" ? "已拦截" : r.outcome === "failed" ? "失败" : r.outcome === "unknown" ? "结果不明" : "已发出"}</td>
                   <td>{r.chars.toLocaleString()}</td>
