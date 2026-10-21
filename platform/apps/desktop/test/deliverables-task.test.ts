@@ -1,6 +1,6 @@
 /**
  * 交付件按“事项 → 一次任务”分组（v9.3 P2 / Astra M-3）：同一任务的成果成组列出，组按最新一份的先后；组名为场景卡名称 + 开始时刻；
- * 没有所属任务的归“示例与手工登记”。内核的成果列表带上任务的场景、方法模板与开始时刻（源码对照）。
+ * 没有所属任务的归“其他（工作台生成、示例或手工登记）”。内核的成果列表带上任务的场景、方法模板与开始时刻（源码对照）。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -20,7 +20,7 @@ test("同一任务成组、保持新的在前；没有任务的单独一组", ()
   const fmt = (iso: string) => iso.slice(5, 16).replace("T", " ");
   assert.match(taskGroupLabel(g[0]!, fmt), /审.*合同.* · 10-21 02:00$/, "方法模板任务按场景卡名称");
   assert.match(taskGroupLabel(g[1]!, fmt), / · 10-20 02:00$/);
-  assert.equal(taskGroupLabel(g[2]!, fmt), "示例与手工登记");
+  assert.equal(taskGroupLabel(g[2]!, fmt), "其他（工作台生成、示例或手工登记）");
   assert.equal(taskGroupLabel({ run_id: "run_x", scenario: "unknown", skill: null, started_at: null }, fmt), "任务");
   assert.deepEqual(groupByTask([]), []);
 });

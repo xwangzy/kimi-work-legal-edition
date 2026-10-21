@@ -27,7 +27,7 @@ export interface TaskGroupRow {
 
 /**
  * 一个事项里的交付件再按“一次任务”分组（Astra M-3）：同一任务生成的修订稿、意见书、清单成组列出；组按其中最新一份的先后排列，
- * 组名由调用方给（场景卡名称 + 开始时刻）。没有所属任务的（示例事项、手工登记）归入一组 run_id = null。纯函数。
+ * 组名由调用方给（场景卡名称 + 开始时刻）。没有所属任务的（工作台直接生成、示例事项、手工登记）归入一组 run_id = null。纯函数。
  */
 export function groupByTask<T extends TaskGroupRow>(rows: T[]): { run_id: string | null; scenario: string | null; skill: string | null; started_at: string | null; rows: T[] }[] {
   const out: { run_id: string | null; scenario: string | null; skill: string | null; started_at: string | null; rows: T[] }[] = [];
@@ -45,9 +45,9 @@ export function groupByTask<T extends TaskGroupRow>(rows: T[]): { run_id: string
   return out;
 }
 
-/** 任务组的名称：场景卡名称（审合同、整理案卷……）+ 开始时刻；没有所属任务的叫“示例与手工登记”。 */
+/** 任务组的名称：场景卡名称（审合同、整理案卷……）+ 开始时刻；没有所属任务的（工作台直接生成的修订稿、示例、手工登记）归“其他”。 */
 export function taskGroupLabel(g: { run_id: string | null; scenario: string | null; skill: string | null; started_at: string | null }, fmt: (iso: string) => string): string {
-  if (!g.run_id) return "示例与手工登记";
+  if (!g.run_id) return "其他（工作台生成、示例或手工登记）";
   const card = scenarioOfRun({ scenario: g.scenario, input_snapshot: { skill: g.skill } });
   const name = card?.title ?? (g.scenario ? SCENARIO_LABELS[g.scenario] : undefined) ?? "任务";
   return g.started_at ? `${name} · ${fmt(g.started_at)}` : name;
