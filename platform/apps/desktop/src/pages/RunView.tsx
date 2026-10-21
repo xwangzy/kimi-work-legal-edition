@@ -24,6 +24,7 @@ import { busyRunOfError } from "../lib/start-block.ts";
 import { methodLine, methodShort } from "../lib/run-method.ts";
 import { Select } from "../components/Select.tsx";
 import { rightCollapsed, rightTabs, type RightTab } from "../lib/run-pane.ts";
+import { Breadcrumb } from "../components/Breadcrumb.tsx";
 
 /** 页面标题：任务目标前 24 字（律师能区分多个任务）；没有目标时用场景名。 */
 function runTitle(run: any): string {
@@ -479,6 +480,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
       </aside>
 
       <section className="exec-mid">
+        <Breadcrumb items={[{ label: "事项", href: "/matters" }, { label: matter?.title ?? "事项", href: `/matter/${matterId}` }, { label: "任务" }]} />
         <div className="exec-head">
           <div>
             <h1 className="page-title" title={run?.goal ?? run?.input_snapshot?.goal ?? undefined}>{runTitle(run)}</h1>

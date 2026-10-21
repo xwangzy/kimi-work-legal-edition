@@ -908,3 +908,8 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .section-note { font-size: var(--fs-xs); font-weight: 400; margin-left: 8px; }
 .reminders-note p { margin: 0 0 4px; }
 .reminders-note details { margin-bottom: 8px; }
+
+/* 顶部面包屑（Z3 #31 前半） */
+.breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; font-size: var(--fs-xs); color: var(--text-secondary); margin: 0 0 6px; }
+.breadcrumb .btn-link { font-size: inherit; padding: 0; }
+.crumb-sep { margin: 0 6px; color: var(--text-secondary); }

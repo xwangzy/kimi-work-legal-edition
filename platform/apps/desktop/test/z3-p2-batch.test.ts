@@ -104,3 +104,8 @@ test("I2 遗留：应用内询问没有挂载时按“不同意”处理（不�
   assert.equal(await ask({ title: "t", body: "b", yes: "仍保存在这里", no: "换一个位置" }), true);
   setAskHost(null);
 });
+
+test("#31 前半：事项页、任务页、交付件详情页有面包屑（余项续复核 RC-B-18）", () => {
+  for (const f of ["pages/Matter.tsx", "pages/RunView.tsx", "pages/Review.tsx"]) assert.match(src(f), /<Breadcrumb items=\{\[/, f);
+  assert.match(src("components/Breadcrumb.tsx"), /aria-label="位置"/);
+});

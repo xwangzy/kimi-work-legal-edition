@@ -147,6 +147,7 @@ test("#8 律师层文件不出现研发用语（执行域、跨边界、出站�
     "components/SearchPalette.tsx",
     "components/ReviewWorkbench.tsx",
     "components/Select.tsx",
+    "components/Breadcrumb.tsx",
     "pages/RunView.tsx",
     "pages/Reminders.tsx",
     "lib/run-method.ts",

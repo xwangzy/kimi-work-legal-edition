@@ -7,6 +7,7 @@ import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { artifactName, fmtTime } from "../lib/labels.ts";
 import { blankPagesText, partialPagesText } from "../lib/citation-review.ts";
 import { citationChecklist, citationNeeds, citationsAllowSign, type CitationTicks } from "../lib/citation-review.ts";
+import { Breadcrumb } from "../components/Breadcrumb.tsx";
 
 /** 成果状态 → 律师称呼。 */
 const STATUS_TEXT: Record<string, string> = {
@@ -189,6 +190,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
             查看任务过程
           </button>
         )}
+        <Breadcrumb items={[{ label: "交付件", href: "/deliverables" }, { label: title ?? data?.filename ?? "…" }]} />
         <div className="page-head">
           <h1 className="page-title" title={data?.filename ?? ""}>{title ?? data?.filename ?? "…"}</h1>
           {data && (

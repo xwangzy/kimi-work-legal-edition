@@ -21,6 +21,7 @@ import { MatterLifecyclePanel } from "../components/MatterLifecycle.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 import { RolePills } from "../components/Select.tsx";
+import { Breadcrumb } from "../components/Breadcrumb.tsx";
 
 type Tab = "materials" | "facts" | "runs" | "board" | "deliverables" | "parties" | "egress" | "lifecycle";
 
@@ -173,6 +174,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
   return (
     <main className="main">
       <div className="main-wide">
+        <Breadcrumb items={[{ label: "事项", href: "/matters" }, { label: matter.title }]} />
         <div className="page-head">
           <h1 className="page-title">{matter.title}</h1>
           {!closed && !matter.is_sample && (
