@@ -39,7 +39,7 @@ export const BASIS_FIELDS: { key: "engagement" | "personal_info" | "sensitive" |
 export const BASIS_VALUE_LABELS: Record<BasisValue, string> = { confirmed: "已确认", pending: "待确认", not_applicable: "不适用" };
 
 export const ENDPOINT_LABELS: Record<string, string> = {
-  standard: "Kimi AI（经安全通道，发送前遮盖姓名证件）",
+  standard: "Kimi AI（经中软转发，发送前姓名证件换成代号）",
   byok: "律所自有 Kimi 账号",
   private: "律所私有模型",
   none: "不使用模型",

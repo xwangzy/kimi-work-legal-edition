@@ -68,5 +68,7 @@ test("v9.4 名实相符：每张卡的方法模板都存在；卡上固定的方
     assert.ok(existsSync(file), `${c.id} → ${c.skill} 没有 SKILL.md`);
     const declared = (/^arguments:\s*\[([^\]]*)\]/m.exec(readFileSync(file, "utf8"))?.[1] ?? "").split(",").map((x) => x.trim()).filter(Boolean);
     for (const k of Object.keys(c.args ?? {})) assert.ok(declared.includes(k), `${c.id}：固定参数 ${k} 不在 ${c.skill} 的 arguments（${declared.join("、")}）里`);
+    // 律师填写的字段不能与固定参数同名，否则会把固定的模式或立场覆盖掉（复核 Q1-10）
+    for (const f of c.fields) assert.ok(!(f.key in (c.args ?? {})), `${c.id}：字段 ${f.key} 与固定参数同名`);
   }
 });

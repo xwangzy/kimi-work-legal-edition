@@ -37,7 +37,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
         ? { icon: Icon.question, label: "AI 暂不可用：客户同意待确认", tone: "pill-orange" }
         : level === "L3a"
           ? { icon: Icon.shield, label: "敏感事项 · 全部化名 · 每条检索都要你确认", tone: "pill-blue" }
-          : { icon: Icon.shield, label: `可用 AI · 姓名证件发送前遮盖${fullPseudonym ? " · 公司名称也遮盖" : ""}`, tone: "pill-green" };
+          : { icon: Icon.shield, label: `可用 AI · 姓名证件发送前换成代号${fullPseudonym ? " · 公司名称也换" : ""}`, tone: "pill-green" };
   return (
     <div className="matter-head">
       <div className="mh-row">

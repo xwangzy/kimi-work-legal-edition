@@ -338,7 +338,7 @@ export function fileDay(d: Date = new Date()): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-/** 原文位置：Word 与纯文本没有页码时按“第几字”标注（律师能在原文里数到）。 */
+/** 原文位置：Word 与纯文本没有页码时按“第几字”标注——按读取后的文字计数（表格按行展开、空白归并），与 Word 的字数统计可能略有出入（复核 Q1-21）。 */
 function charPos(start: number, end: number): string {
   return `第 ${start + 1}–${end} 字`;
 }
@@ -414,7 +414,7 @@ export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
   for (const m of input.materials) {
     const flags = m.quality_flags ?? [];
     if (flags.includes("no_page_anchors")) {
-      qualityNotes.push(`《${m.filename}》：Word 文件不分页，引用位置按“第几字”标注`);
+      qualityNotes.push(`《${m.filename}》：Word 文件不分页，引用位置按“第几字”标注（按读取后的文字计数，与 Word 字数统计可能略有出入）`);
     }
     for (const pg of m.pages ?? []) {
       if (pg.quality === "unreadable") {

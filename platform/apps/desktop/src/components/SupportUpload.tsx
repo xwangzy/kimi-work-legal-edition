@@ -56,7 +56,7 @@ export function SupportUpload({ allowed, configured }: { allowed: boolean | null
       {unavailable ? null : !preview ? (
         <div className="banner-actions">
           <button className="btn btn-sm" disabled={busy} onClick={() => void open()}>
-            {busy ? "正在生成…" : "发给 Kimi Work 客服…"}
+            {busy ? "正在生成…" : "发给 Kimi Work 客服（中软国际运营）…"}
           </button>
         </div>
       ) : (
@@ -71,7 +71,7 @@ export function SupportUpload({ allowed, configured }: { allowed: boolean | null
           {blocked ? (
             <div className="banner banner-gray">{blocked}</div>
           ) : (
-            <div className="muted">发送后会给你一个工单号，请转告客服。报告只保存 7 天，每次查看都有记录。</div>
+            <div className="muted">报告发到中软国际运营的 Kimi Work 客服；发送后会给你一个工单号，请转告客服。报告只保存 7 天，每次查看都有记录。</div>
           )}
           <div className="banner-actions">
             {!blocked && (

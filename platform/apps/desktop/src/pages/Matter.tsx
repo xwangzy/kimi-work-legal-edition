@@ -33,6 +33,23 @@ export function MatterPage({ matterId }: { matterId: string }) {
   // 事项页标签（Z3 评审 IA-4、#10）：打开事项默认停在“概览”；还没有材料的新事项停在“材料”；律师点过标签后不再自动切换
   const [tab, setTabRaw] = useState<Tab>("materials");
   const [moreOpen, setMoreOpen] = useState(false);
+  // “⋯”菜单：点外面或按 Esc 关闭（复核 Q1-20）
+  const moreRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [moreOpen]);
   // 复核 B13-U04：只在每个事项首次拿到材料列表时定一次，之后材料数变化（如拖入第一份材料）不再自动跳走
   const tabTouched = useRef(false);
   const tabDecidedFor = useRef<string | null>(null);
@@ -269,12 +286,12 @@ export function MatterPage({ matterId }: { matterId: string }) {
             <button role="tab" aria-selected className="tab active">{tab === "parties" ? "当事人名单" : tab === "egress" ? "数据去向记录" : "结案与删除"}</button>
           )}
           <span className="spacer" />
-          <span className="tab-more-wrap">
+          <span className="tab-more-wrap" ref={moreRef}>
             <button className="tab tab-more" aria-haspopup="menu" aria-expanded={moreOpen} aria-label="更多：当事人名单、数据去向记录、结案与删除" onClick={() => setMoreOpen((v) => !v)}>
               ⋯
             </button>
             {moreOpen && (
-              <div className="popover tab-more-menu" role="menu" onMouseLeave={() => setMoreOpen(false)}>
+              <div className="popover tab-more-menu" role="menu">
                 {(
                   [
                     ["parties", "当事人名单"],

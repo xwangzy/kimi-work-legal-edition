@@ -71,3 +71,12 @@ test("门禁本身有效：带研发用语的样本会被拦下（反向对照�
   assert.ok(visibleTexts("const z = '文件的 Sha256 校验';").some((t) => BANNED.test(t)), "单引号字符串、不分大小写（复核 Q1-25）");
   assert.ok(visibleTexts("const w = `已用 ocr 识别 ${n} 页`;").some((t) => BANNED.test(t)));
 });
+
+test("中文与 Kimi 之间留空格（复核 Q1-16）", () => {
+  const hits: string[] = [];
+  for (const f of files(SRC)) {
+    const rel = relative(SRC, f).split("\\").join("/");
+    for (const t of visibleTexts(readFileSync(f, "utf8"))) if (/[一-鿿]Kimi/.test(t)) hits.push(`${rel}：${t.slice(0, 60)}`);
+  }
+  assert.deepEqual(hits, []);
+});
