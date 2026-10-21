@@ -21,6 +21,7 @@ import { currentBadges } from "../lib/badges.ts";
 import { engineHeartbeatMs, hasProgress, mergeProgress, phaseLine, progressActivityKey, progressTexts, silenceMs, stallThresholdMs, progressView, type ProgressViewModel } from "../lib/progress.ts";
 import { buildSteps, groupSubtaskSteps, keyStepKeys, sentByToolCall, toolLabel, type SentInfo, type Step } from "../lib/timeline.ts";
 import { busyRunOfError } from "../lib/start-block.ts";
+import { methodLine } from "../lib/run-method.ts";
 
 /** 页面标题：任务目标前 24 字（律师能区分多个任务）；没有目标时用场景名。 */
 function runTitle(run: any): string {
@@ -106,10 +107,16 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const [heartbeat, setHeartbeat] = useState(0);
   // 方法模板名 → 中文名（时间线“已按方法模板《…》执行”）
   const [skillTitles, setSkillTitles] = useState<Record<string, string>>({});
+  // 方法模板版本（Z3 评审 D-7 / §8.2 #26：数据去向底部写“方法：审合同 v1.1.0”）
+  const [skillVersions, setSkillVersions] = useState<Record<string, string>>({});
   useEffect(() => {
     api
       .listSkills()
-      .then((r: any) => setSkillTitles(Object.fromEntries(((r?.skills ?? []) as any[]).map((k) => [String(k.id), String(k.title ?? k.id)]))))
+      .then((r: any) => {
+        const list = (r?.skills ?? []) as any[];
+        setSkillTitles(Object.fromEntries(list.map((k) => [String(k.id), String(k.title ?? k.id)])));
+        setSkillVersions(Object.fromEntries(list.map((k) => [String(k.id), String(k.version ?? "")])));
+      })
       .catch(() => {});
   }, []);
   const [followText, setFollowText] = useState("");
@@ -860,7 +867,12 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               ))}
             </>
           )}
-          {tab === "egress" && <DataFlowCard runId={runId} tokenMap={tokenMap} refreshKey={events.length} />}
+          {tab === "egress" && (
+            <>
+              <DataFlowCard runId={runId} tokenMap={tokenMap} refreshKey={events.length} />
+              {methodLine(run, skillTitles, skillVersions) && <p className="muted run-method">{methodLine(run, skillTitles, skillVersions)}</p>}
+            </>
+          )}
           {tab === "citations" && <Citations ev={citationEvent} />}
           {tab === "record" && run && (
             <table className="data">
@@ -1023,3 +1035,4 @@ function ProgressPanel({ vm, tokenMap }: { vm: ProgressViewModel; tokenMap: Map<
     </div>
   );
 }
+

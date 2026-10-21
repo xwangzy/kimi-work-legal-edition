@@ -8,6 +8,9 @@ import { ModeSelector, type ModeChoice } from "./ModeSelector.tsx";
 import { SCENARIO_LABELS, stanceLabel } from "../lib/labels.ts";
 import { LINE_LABELS, SCENARIOS, type BusinessLine, type ScenarioCard } from "../lib/scenarios.ts";
 
+/** 发送快捷键的写法：macOS 写 ⌘ + Enter，其余写 Ctrl + Enter。 */
+const SEND_KEY = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform) ? "⌘ + Enter" : "Ctrl + Enter";
+
 export interface ComposerValue {
   goal: string;
   scenario: string;
@@ -117,7 +120,9 @@ export function Composer(props: {
         )}
         {/* 固定步骤的流程不适用运行模式（复核 S5-A07）；也不再显示研发用语胶囊（Z3 评审 3.1） */}
         {value.scenario === "a1.agent_task" && <ModeSelector policy={props.policy} value={value.choice} onChange={(choice) => onChange({ ...value, choice })} />}
-        <button className="send" disabled={!canSend} onClick={props.onSubmit} aria-label="发送">
+        {/* 可以发送时提示快捷键（Z3 §8.2 #32）；不能发送时按钮变灰 */}
+        {canSend && <span className="send-hint muted" aria-hidden="true">{SEND_KEY}</span>}
+        <button className="send" disabled={!canSend} onClick={props.onSubmit} aria-label="发送" title={`发送（${SEND_KEY}）`}>
           <Icon.send />
         </button>
       </div>
