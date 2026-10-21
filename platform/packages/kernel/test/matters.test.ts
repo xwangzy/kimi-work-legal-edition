@@ -34,13 +34,15 @@ test("estimate 含数据去向预览：待取得事项给出拦截预警，本�
   const est2 = await inv("runs.estimate", { matter_id: ok.matter_id, scenario: "s1.contract_review", document_version_ids: [doc2.document_version_id] });
   assert.match(est2.data_where.preview, /^将发送：/);
   assert.match(est2.data_where.preview, /替换为代号/);
-  assert.match(est2.data_where.preview, /数据去向卡/);
+  assert.match(est2.data_where.preview, /每一次发送都记在本任务的“数据去向”里/);
+  assert.doesNotMatch(est2.data_where.preview, /令牌化|出站|上游|网关/, "完整说明也用律师话（v9.4）");
+  assert.ok(est2.data_where.bullets.length >= 3 && est2.data_where.bullets.every((b: string) => [...b].length <= 40), "要点每句 ≤ 40 字（v9.4 U1 §3.3）");
   // 隐私安全增量评审 P0-3：如实写明以原文发送的类别与上游留存口径
   assert.match(est2.data_where.preview, /以原文发送的有：机构名称、案情事实、金额、日期、条款文字与案号（未能识别的姓名也会以原文发送）/);
-  assert.match(est2.data_where.preview, /上游是否留存以模型服务企业协议为准/);
+  assert.match(est2.data_where.preview, /AI 服务方是否保存，以其企业协议为准/);
   assert.equal(est2.data_where.warning, null);
   const estLocal = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "s6.redaction", document_version_ids: [doc.document_version_id] });
-  assert.match(estLocal.data_where.preview, /本机完成/);
+  assert.match(estLocal.data_where.preview, /全部在这台电脑上完成/);
   assert.equal(estLocal.data_where.warning, null);
 });
 

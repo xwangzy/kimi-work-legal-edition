@@ -160,8 +160,8 @@ test("当事人拒绝云端处理的记录按当事人限制（L3b）处理：�
   assert.equal(got.matter.data_level, "L3b");
   assert.equal(got.matter.basis_complete, true, "只拒绝云端时可用律所私有端点推理（第 02 篇 §8.2 L3b 行）");
   const est = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
-  assert.match(est.data_where.preview, /律所私有模型/);
-  assert.match(est.data_where.preview, /联网检索不可用（当事人限制 L3b）/);
+  assert.match(est.data_where.preview, /律所自己的 AI/);
+  assert.match(est.data_where.preview, /不联网检索（客户要求不上云）/);
   // 无事项问答：命中该事项当事人按 L3b 拦截
   const r = await inv("chat.send", { text: "戊建材有限公司的买卖合同违约金怎么算？" });
   assert.equal(r.blocked?.reason, "l3b_party");

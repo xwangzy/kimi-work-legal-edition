@@ -1264,10 +1264,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       estimates.set(estimateId, { estimate_id: estimateId, matter_id: matterId, scenario: p.scenario, points: est.points, expires: Date.now() + est.valid_seconds * 1000, input: p });
       // 数据去向预览（§15.2：先预估、后确认——预计点数与数据去向同时展示）。按强制点的实际结果生成（复核 S5-A08）：不会发送时写“不会发送：原因”
       const endpointLabels: Record<string, string> = {
-        standard: "Kimi 模型（经中软法律模型网关）",
-        byok: "Kimi 模型（律所自带密钥，直连月之暗面，不经中软）",
-        private: "律所私有模型（不经中软）",
-        none: "不使用模型（仅本机能力）",
+        standard: "Kimi AI（经中软安全通道）",
+        byok: "Kimi AI（律所自己的账号，直连月之暗面，不经中软）",
+        private: "律所自己的 AI（不经中软）",
+        none: "不用 AI（只用本机功能）",
       };
       const usesModel = p.scenario === "s1.contract_review" || p.scenario === "a1.agent_task";
       const level = dataLevelOf(matter.confidentiality, matter.consent_status);
@@ -1283,10 +1283,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           : "以原文发送的有：机构名称、案情事实、金额、日期、条款文字与案号（未能识别的姓名也会以原文发送）";
       const retentionNote =
         matter.model_endpoint === "private"
-          ? "上游为律所私有模型，留存由律所决定"
+          ? "律所自己的 AI，是否保存由律所决定"
           : matter.model_endpoint === "byok"
-            ? "上游是否留存以律所与模型厂商的协议为准"
-            : "上游是否留存以模型服务企业协议为准（协议状态见“设置 → 数据去向说明”）";
+            ? "AI 服务方是否保存，以律所与厂商的协议为准"
+            : "AI 服务方是否保存，以其企业协议为准（协议状态见“设置 → 数据去向说明”）";
       const pseudonymScope =
         level === "L3a" || matter.full_pseudonym === 1
           ? "证件、账户、联系方式、自然人姓名与机构名称在发送前全部替换为代号（全部化名）"
@@ -1295,10 +1295,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         p.scenario !== "a1.agent_task"
           ? ""
           : level === "L3b"
-            ? "；联网检索不可用（当事人限制 L3b）"
+            ? "；不联网检索（客户要求不上云）"
             : level === "L3a"
-            ? "；联网检索只能以改写后的一般性查询发出，且每一条都须你确认"
-            : "；联网检索默认只发出令牌化并去除已知当事人名称的查询；含当事人名称的查询须你逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）";
+            ? "；联网检索只发改写后的一般性查询，每一条都先问你"
+            : "；联网检索默认先把姓名证件换成代号、去掉已知当事人名称再发出；要带当事人名称查时须你逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）";
       // “将发送什么”（v9.2 §3.3–3.4；P1-10、P1-11 ③）：同一套事项令牌化器离线预跑（不出站、不写回令牌表），给出替换计数与疑似未替换的姓名；
       // L3a 事项还有未核对的疑似姓名时不能发起（发起时内核再核一次）
       let sendSummary: SendSummary | null = null;
@@ -1329,10 +1329,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         preview: exitMode
           ? `不会发送：${exitMode.message}`
           : !usesModel
-            ? "本场景全部步骤在本机完成，不调用模型、无外发"
+            ? "全部在这台电脑上完成：不用 AI，不发送任何内容"
             : blockReason
               ? `不会发送：${blockReason}`
-              : `将发送：${docIds.length ? `${docIds.length} 份文档中任务涉及的内容` : "任务说明与按需读取的材料内容"}→ ${endpointLabels[matter.model_endpoint] ?? matter.model_endpoint}；${pseudonymScope}；${plainNote}${searchNote}；${retentionNote}；每一次出站都记入数据去向卡`,
+              : `将发送：${docIds.length ? `${docIds.length} 份文档中任务涉及的内容` : "任务说明与按需读取的材料内容"}→ ${endpointLabels[matter.model_endpoint] ?? matter.model_endpoint}；${pseudonymScope}；${plainNote}${searchNote}；${retentionNote}；每一次发送都记在本任务的“数据去向”里`,
         warning: exitMode
           ? exitMode.message
           : busyMessage

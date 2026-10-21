@@ -136,7 +136,7 @@ export function tokens(text: string, map?: Map<string, string | null>): ReactNod
     s.kind === "text" ? (
       <Fragment key={i}>{s.text}</Fragment>
     ) : s.value ? (
-      <span key={i} className="tok-restored" title={`代号 ${s.token}（只在本机界面还原）`}>{s.value}</span>
+      <span key={i} className="tok-restored" title={`代号 ${s.token}：真名只在你的电脑上显示`}>{s.value}</span>
     ) : (
       <span key={i} className="tok-raw" title="未能还原的代号（未知或冲突代号不还原）">{s.token}</span>
     ),
