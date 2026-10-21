@@ -89,3 +89,18 @@ test("#22 工作台协议条：我方 · 审查要点及版本 · 法域 · 已�
   const wb = src("components/ReviewWorkbench.tsx");
   assert.match(wb, /closest\?\.\('\[role="listbox"\]'\)/, "下拉列表里键入不触发工作台快捷键");
 });
+
+test("I2 遗留：保存位置提示不用浏览器原生确认框；开通向导与主界面都挂了应用内询问", () => {
+  assert.doesNotMatch(src("api.ts"), /window\.confirm\(/);
+  const app = src("App.tsx");
+  assert.equal((app.match(/<AskHost \/>/g) ?? []).length, 2);
+});
+
+test("I2 遗留：应用内询问没有挂载时按“不同意”处理（不会静默保存到同步盘）", async () => {
+  const { ask, setAskHost } = await import("../src/lib/ask.ts");
+  setAskHost(null);
+  assert.equal(await ask({ title: "t", body: "b", yes: "y", no: "n" }), false);
+  setAskHost(async (r) => r.yes === "仍保存在这里");
+  assert.equal(await ask({ title: "t", body: "b", yes: "仍保存在这里", no: "换一个位置" }), true);
+  setAskHost(null);
+});

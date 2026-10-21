@@ -32,7 +32,7 @@ test("#14 fmtTime / fmtDate：完整时刻到分钟，不带秒、不用斜杠",
 test("#14 门禁：律师层页面与组件不直接用 toLocaleString / toLocaleDateString / toLocaleTimeString 格式化时刻", () => {
   const root = join(import.meta.dirname, "..", "src");
   const hits: string[] = [];
-  for (const dir of ["pages", "components"]) {
+  for (const dir of ["pages", "components", "."]) {
     for (const f of readdirSync(join(root, dir))) {
       if (!f.endsWith(".tsx") && !f.endsWith(".ts")) continue;
       const src = readFileSync(join(root, dir, f), "utf8");

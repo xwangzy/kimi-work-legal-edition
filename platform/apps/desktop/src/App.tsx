@@ -24,6 +24,8 @@ import { ActivatePage } from "./pages/Activate.tsx";
 import { WelcomePage } from "./pages/Welcome.tsx";
 import { updateBannerView } from "./lib/update-banner.ts";
 import { SearchPalette } from "./components/SearchPalette.tsx";
+import { AskHost } from "./components/AskHost.tsx";
+import { fmtDate } from "./lib/labels.ts";
 
 /** 设置页的标签（UIUX 增量评审 ST-5）：律师版四页 + 管理员“管理”。 */
 export type SettingsTab = "general" | "visibility" | "sources" | "device" | "admin";
@@ -196,7 +198,14 @@ export function App() {
       </div>
     );
   }
-  if (boot.onboarding) return <ActivatePage initial={boot.onboarding} onRefresh={loadBoot} notice={kernelNotice?.status === "stopped" ? (kernelNotice.message ?? "后台服务已停止") : ""} />;
+  if (boot.onboarding)
+    return (
+      <>
+        <ActivatePage initial={boot.onboarding} onRefresh={loadBoot} notice={kernelNotice?.status === "stopped" ? (kernelNotice.message ?? "后台服务已停止") : ""} />
+        {/* 开通向导里导出恢复包也会问保存位置（lib/ask.ts） */}
+        <AskHost />
+      </>
+    );
   return (
     <div className="shell">
       <Sidebar route={route} />
@@ -205,7 +214,7 @@ export function App() {
         {update && !updateDismissed && route.page !== "run" && route.page !== "review" && <UpdateBanner status={update} onDismiss={() => setUpdateDismissed(true)} />}
         {boot.restoredAt && Date.now() - Date.parse(boot.restoredAt) < 14 * 86400_000 && route.page === "home" && (
           <div className="banner banner-orange">
-            这台电脑是从备份恢复的（{new Date(boot.restoredAt).toLocaleDateString("zh-CN")}）。如果原来那台电脑丢了或被偷，请马上告诉律所管理员：当前版本不能单独停用原电脑，管理员会为你重新办理入组。
+            这台电脑是从备份恢复的（{fmtDate(boot.restoredAt)}）。如果原来那台电脑丢了或被偷，请马上告诉律所管理员：当前版本不能单独停用原电脑，管理员会为你重新办理入组。
           </div>
         )}
         {reminder && route.page !== "welcome" && (reminder.everywhere ? route.page !== "run" && route.page !== "review" : route.page === "home" || route.page === "matters") && (
@@ -229,6 +238,7 @@ export function App() {
         </ErrorBoundary>
       </div>
       {searching && <SearchPalette onClose={() => setSearching(false)} />}
+      <AskHost />
     </div>
   );
 }

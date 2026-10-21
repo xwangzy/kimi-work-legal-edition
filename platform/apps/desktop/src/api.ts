@@ -4,6 +4,7 @@
  */
 import { downloadPlan } from "./lib/download.ts";
 import { GENERIC_FAILURE } from "./lib/errors.ts";
+import { ask } from "./lib/ask.ts";
 
 declare global {
   interface Window {
@@ -52,7 +53,7 @@ async function chooseSaveTarget(name: string, content: "case" | "none" = "case")
     if (!s) return null;
     if (!s.risk) return s;
     const what = content === "case" ? "文件会以原文（含当事人真实名称）同步或保存到其他设备上" : "文件会同步或保存到其他设备上（文件本身不含案件内容）";
-    if (window.confirm(`${SAVE_PLACE[s.risk]}：${what}。\n\n点“确定”仍保存在这里；点“取消”换一个位置。`)) return s;
+    if (await ask({ title: "保存位置提示", body: `${SAVE_PLACE[s.risk]}：${what}。`, yes: "仍保存在这里", no: "换一个位置" })) return s;
   }
   return null;
 }
