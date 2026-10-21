@@ -585,11 +585,12 @@ export function lineMismatchText(card: Pick<ScenarioCard, "line" | "title">, mat
  * done 已整理 / running 正在整理 / failed 或没有任务时写“整理未完成”。
  */
 export function sampleBannerText(m: { stance?: string | null } | null | undefined, casefile: "done" | "running" | "failed" | null = "done"): string {
+  // v9.4（U1 §3.5 #2）：一行说完——材料是虚构的、现在到哪一步、下一步去哪（原来 121 字）
   if (matterLine(m) === "litigation") {
-    const head = "这是示例事项：合同、送货签收单、对账确认函与往来函件都是虚构的，只在这台电脑上，不会发给任何人。";
-    if (casefile === "done") return `${head}已在这台电脑上按规则整理出证据目录、事实时间轴与争点框架（不调用 AI）；可以在“事实”里逐条确认，再试“争点与证据分析”或“案情分析与诉讼策略”。`;
-    if (casefile === "running") return `${head}正在这台电脑上按规则整理证据目录、事实时间轴与争点框架（不调用 AI），稍候即可在“事实”里逐条确认。`;
-    return `${head}本机整理还没有完成：可以在“任务”里重试，或用“整理案卷”重新整理（不调用 AI）。`;
+    const head = "示例事项：材料是虚构的，只在这台电脑上。";
+    if (casefile === "done") return `${head}已在这台电脑上按规则整理出证据目录和时间轴，去“事实”逐条确认后，可试“争点与证据分析”或“案情分析与诉讼策略”。`;
+    if (casefile === "running") return `${head}正在这台电脑上按规则整理证据目录和时间轴，稍候去“事实”逐条确认。`;
+    return `${head}本机整理还没有完成：可在“任务”里重试，或重新用“整理案卷”。`;
   }
-  return "这是示例事项：合同与审查意见都是虚构的，只在这台电脑上，不会发给任何人。可以在“材料”里打开审查意见，试着逐条决定并生成修订稿。";
+  return "示例事项：合同与审查意见是虚构的，只在这台电脑上。去“材料”打开审查意见，逐条决定后生成修订稿。";
 }

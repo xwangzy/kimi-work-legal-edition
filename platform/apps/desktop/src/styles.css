@@ -163,6 +163,12 @@ button.chip:active, :is(button, summary, label).pill:active, .alias-chip:active 
 .menu-empty { padding: 8px 10px; color: var(--text-secondary); font-size: var(--fs-sm); }
 .menu-new { border-top: 1px solid var(--border-subtle); border-radius: 0 0 var(--r-sm) var(--r-sm); margin-top: 4px; }
 .matter-composer { margin: 14px 0 6px; }
+/* 事项页输入框（v9.4 U1 #9）：没在输入时收成一行，点进去或有文字时才展开工具栏——标签内容上移约 120px */
+.matter-composer:not(:focus-within):not(.has-text) textarea { min-height: 28px; height: 28px; overflow: hidden; }
+.matter-composer:not(:focus-within):not(.has-text) .composer-bar, .matter-composer:not(:focus-within):not(.has-text) .composer-context { display: none; }
+.matter-composer:not(:focus-within):not(.has-text) .composer { padding: 8px 14px; box-shadow: none; }
+.tab-more-wrap { position: relative; }
+.tab-more-menu { position: absolute; right: 0; top: 100%; z-index: 20; min-width: 180px; }
 
 /* ── 运行模式选择器 ── */
 .mode-selector { position: relative; }

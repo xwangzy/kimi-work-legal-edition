@@ -23,6 +23,7 @@ test("意图建议：最具体者优先；答辩状、仲裁申请书不引到�
 test("示例事项说明按业务线（Z3 #27）", async () => {
   const { sampleBannerText } = await import("../src/lib/scenarios.ts");
   assert.match(sampleBannerText({ stance: "原告" }), /证据目录.*案情分析与诉讼策略/);
+  assert.ok([...sampleBannerText({ stance: "原告" })].length <= 75, "示例横幅一行说完（v9.4 U1 §3.3）");
   assert.match(sampleBannerText({ stance: "受让方" }), /审查意见/);
 });
 

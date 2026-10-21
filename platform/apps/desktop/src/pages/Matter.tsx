@@ -32,6 +32,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
   const [policy, setPolicy] = useState<RunPolicyView | null>(null);
   // 事项页标签（Z3 评审 IA-4、#10）：打开事项默认停在“概览”；还没有材料的新事项停在“材料”；律师点过标签后不再自动切换
   const [tab, setTabRaw] = useState<Tab>("materials");
+  const [moreOpen, setMoreOpen] = useState(false);
   // 复核 B13-U04：只在每个事项首次拿到材料列表时定一次，之后材料数变化（如拖入第一份材料）不再自动跳走
   const tabTouched = useRef(false);
   const tabDecidedFor = useRef<string | null>(null);
@@ -235,7 +236,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
             <button className="btn-link" onClick={() => setTab("lifecycle")}>结案与删除</button>
           </div>
         )}
-        {!closed && <div className="matter-composer">
+        {!closed && <div className={`matter-composer${value.goal.trim() ? " has-text" : ""}`}>
           <Composer
             matterId={matterId}
             stance={matter?.stance}
@@ -251,7 +252,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
           />
         </div>}
         {msg && <p className="muted" style={{ whiteSpace: "pre-line" }}>{msg}</p>}
-        <div className="tabs tabs-line">
+        {/* 事项页标签（v9.4 U1 #9）：日常五个；当事人名单、数据去向记录、结案与删除收进“⋯” */}
+        <div className="tabs tabs-line" role="tablist" aria-label="事项">
           {(
             [
               ["board", "概览"],
@@ -259,17 +261,34 @@ export function MatterPage({ matterId }: { matterId: string }) {
               ["facts", "事实"],
               ["runs", `任务（${runs.length}）`],
               ["deliverables", "交付件"],
-              ["parties", "当事人名单"],
-              ["egress", "数据去向"],
             ] as [Tab, string][]
           ).map(([k, l]) => (
-            <button key={k} className={`tab${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{l}</button>
+            <button key={k} role="tab" aria-selected={tab === k} className={`tab${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{l}</button>
           ))}
+          {(tab === "parties" || tab === "egress" || tab === "lifecycle") && (
+            <button role="tab" aria-selected className="tab active">{tab === "parties" ? "当事人名单" : tab === "egress" ? "数据去向记录" : "结案与删除"}</button>
+          )}
           <span className="spacer" />
-          {/* 不可逆操作不放在日常浏览路径上：结案与删除收进“⋯”（点 2 次才到删除） */}
-          <button className={`tab tab-more${tab === "lifecycle" ? " active" : ""}`} title="结案与删除" aria-label="更多：结案与删除" onClick={() => setTab("lifecycle")}>
-            {tab === "lifecycle" ? "结案与删除" : "⋯"}
-          </button>
+          <span className="tab-more-wrap">
+            <button className="tab tab-more" aria-haspopup="menu" aria-expanded={moreOpen} aria-label="更多：当事人名单、数据去向记录、结案与删除" onClick={() => setMoreOpen((v) => !v)}>
+              ⋯
+            </button>
+            {moreOpen && (
+              <div className="popover tab-more-menu" role="menu" onMouseLeave={() => setMoreOpen(false)}>
+                {(
+                  [
+                    ["parties", "当事人名单"],
+                    ["egress", "数据去向记录"],
+                    ["lifecycle", "结案与删除"],
+                  ] as [Tab, string][]
+                ).map(([k, l]) => (
+                  <button key={k} role="menuitem" className="menu-item" onClick={() => { setTab(k); setMoreOpen(false); }}>
+                    <span className="menu-label">{l}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </span>
         </div>
         {tab === "materials" && (
           <section>

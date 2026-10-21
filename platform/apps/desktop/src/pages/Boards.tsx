@@ -41,7 +41,19 @@ export function MatterBoard({ matter, runs }: { matter: Matter; runs: any[] }) {
   return (
     <div className="board">
       <Widget title="期限">
-        {dates.length === 0 ? <p className="muted">还没有填写关键日期（如开庭日、举证期限）。</p> : dates.map(([k, v]) => <div key={k} className="w-row"><span>{k === "analysis_as_of" ? "分析截止日" : k}</span><b>{v}</b></div>)}
+        {/* 空状态给动作（v9.4 U1 §3.4）：“填期限”直接打开本事项的设提醒表单 */}
+        {dates.length === 0 ? (
+          <p className="muted">
+            开庭日、举证期限填在这里，到时提醒你。{" "}
+            {(matter.lifecycle ?? "active") === "active" && !matter.is_sample && (
+              <button className="btn-link" onClick={() => nav(`/reminders/new/${encodeURIComponent(matter.matter_id)}`)}>
+                填期限
+              </button>
+            )}
+          </p>
+        ) : (
+          dates.map(([k, v]) => <div key={k} className="w-row"><span>{k === "analysis_as_of" ? "分析截止日" : k}</span><b>{v}</b></div>)
+        )}
       </Widget>
       <Widget title="待办">
         {waiting.length === 0 && pendingReview.length === 0 && <p className="muted">没有等你处理的事。</p>}
@@ -65,11 +77,12 @@ export function MatterBoard({ matter, runs }: { matter: Matter; runs: any[] }) {
           </button>
         ))}
       </Widget>
-      <Widget title="联网记录">
-        <div className="w-row"><span>已发出</span><b>{egress.sent}</b></div>
-        <div className="w-row"><span>已拦下（没有发出）</span><b>{egress.blocked}</b></div>
-        <div className="w-row"><span>需要核对</span><b>{egress.unknown}</b></div>
-      </Widget>
+      {/* 发送记录不再常驻概览（v9.4 U1 #9：律师不需要每天看监控指标）；只有需要核实时才出现，完整记录在“⋯ → 数据去向记录” */}
+      {egress.unknown > 0 && (
+        <Widget title="需要你核实">
+          <p>{egress.unknown} 条记录不确定是否已经发出，请在“⋯ → 数据去向记录”里逐条核实。</p>
+        </Widget>
+      )}
     </div>
   );
 }
