@@ -9,7 +9,7 @@
 import { scrollBehavior } from "../lib/ui-prefs.ts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { acceptPreview } from "../lib/accept-preview.ts";
-import { firstOpenCard, nextOpenCard, stepCard } from "../lib/workbench.ts";
+import { agreementParts, firstOpenCard, nextOpenCard, stepCard } from "../lib/workbench.ts";
 import { api, type RiskCard, type RiskProgress } from "../api.ts";
 import { CITE_STATE_LABELS } from "../lib/labels.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
@@ -45,9 +45,11 @@ interface Props {
   onClose: () => void;
   /** 修订稿生成后（成果已登记）通知上层刷新成果列表。 */
   onRedline?: (artifactVersionId: string) => void;
+  /** 协议条（Z3 #22、D-2）：我方立场、审查要点（方法模板与版本）、法域；已显示为中文。 */
+  agreement?: { stance?: string | null; method?: string | null; jurisdiction?: string | null };
 }
 
-export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly = false, backLabel = "← 返回任务", onClose, onRedline }: Props) {
+export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly = false, backLabel = "← 返回任务", onClose, onRedline, agreement }: Props) {
   const [onlyRun, setOnlyRun] = useState(false);
   const runFilter = onlyRun && runId ? runId : undefined;
   const [cards, setCards] = useState<RiskCard[]>([]);
@@ -195,7 +197,8 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      // 统一下拉框的弹出列表里键入首字是跳转，不是快捷键（Z3 #15）
+      if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT" || t.isContentEditable || t.closest?.('[role="listbox"]'))) return;
       const k = e.key.toLowerCase();
       if (k === "j" || k === "k") {
         const id = stepCard(visible.map((c) => c.card_id), active, k === "j" ? 1 : -1);
@@ -228,10 +231,10 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
         <div className="wb-title">
           <button className="btn-link" onClick={onClose}>{backLabel}</button>
           <h1 className="page-title">审查工作台{documentVersionId ? (doc ? ` · ${doc.filename}` : "") : " · 未关联合同的意见"}</h1>
-          {progress && (
-            <div className="wb-progress" aria-live="polite">
-              已处理 {progress.decided}/{progress.total}
-              {progress.high_open > 0 ? <span className="sev-text-high"> · {progress.high_open} 项重大风险待处理</span> : null}
+          {(progress || agreement) && (
+            <div className="wb-progress wb-agreement" aria-live="polite">
+              {agreementParts({ ...agreement, decided: progress?.decided, total: progress?.total }).join(" · ")}
+              {progress && progress.high_open > 0 ? <span className="sev-text-high"> · {progress.high_open} 项重大风险待处理</span> : null}
             </div>
           )}
         </div>

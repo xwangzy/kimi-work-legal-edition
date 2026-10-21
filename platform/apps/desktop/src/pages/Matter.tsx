@@ -11,7 +11,7 @@ import { defaultChoice } from "../components/ModeSelector.tsx";
 import { PartiesPanel } from "../components/Parties.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { reasonLabel } from "../components/DataFlow.tsx";
-import { DEST_LABELS, fmtTime, fmtWhen, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, parseFlagsText } from "../lib/labels.ts";
+import { DEST_LABELS, fmtTime, fmtWhen, jurisdictionLabel, MODE_LABELS, parseFlagsText, RUN_STATUS_LABELS, SCENARIO_LABELS, stanceLabel } from "../lib/labels.ts";
 import { FactsPanel } from "../components/FactsPanel.tsx";
 import { decideMatterTab } from "../lib/matter-tab.ts";
 import { sampleBannerText } from "../lib/scenarios.ts";
@@ -142,6 +142,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
       <ReviewWorkbench
         matterId={matterId}
         documentVersionId={workbench.doc}
+        agreement={{ stance: matter?.stance ? stanceLabel(matter.stance) : null, jurisdiction: matter?.jurisdiction ? jurisdictionLabel(matter.jurisdiction) : null }}
         readOnly={matter?.lifecycle !== undefined && matter.lifecycle !== "active"}
         backLabel="← 返回事项"
         onClose={() => {

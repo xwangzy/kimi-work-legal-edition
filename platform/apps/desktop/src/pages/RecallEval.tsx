@@ -190,7 +190,7 @@ function Annotate({ st }: { st: EvalState }) {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       // 在输入框里打字时不当快捷键（复核 S6B-06）
       const t = e.target as HTMLElement | null;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable || t.closest?.('[role="listbox"]'))) return;
       if (e.key === "Escape") {
         setPending(null);
         return;

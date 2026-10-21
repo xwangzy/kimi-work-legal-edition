@@ -31,3 +31,16 @@ export function stepCard(visibleIds: readonly string[], current: string | null, 
   if (i < 0) return visibleIds[dir === 1 ? 0 : visibleIds.length - 1]!;
   return visibleIds[Math.max(0, Math.min(visibleIds.length - 1, i + dir))]!;
 }
+
+/**
+ * 工作台协议条（Z3 #22、D-2）：标题下一行写“我方：受让方 · 审查要点：合同审查（风险卡） v1.1.1 · 中国内地 · 已处理 0/4”。
+ * 缺的项不写（不编造）；只有进度时也给一行。纯函数。
+ */
+export function agreementParts(p: { stance?: string | null; method?: string | null; jurisdiction?: string | null; decided?: number; total?: number }): string[] {
+  const out: string[] = [];
+  if (p.stance) out.push(`我方：${p.stance}`);
+  if (p.method) out.push(`审查要点：${p.method}`);
+  if (p.jurisdiction) out.push(p.jurisdiction);
+  if (typeof p.total === "number" && p.total > 0) out.push(`已处理 ${p.decided ?? 0}/${p.total}`);
+  return out;
+}

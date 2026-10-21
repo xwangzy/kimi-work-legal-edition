@@ -14,14 +14,14 @@ import { Icon } from "../components/Icons.tsx";
 import { Markdown, tokens as renderTokens } from "../components/Markdown.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
-import { ARTIFACT_STATUS_LABELS, artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, stepTime, TERMINAL_STATUSES } from "../lib/labels.ts";
+import { ARTIFACT_STATUS_LABELS, artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, jurisdictionLabel, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, stanceLabel, stepTime, TERMINAL_STATUSES } from "../lib/labels.ts";
 import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
 import { currentBadges } from "../lib/badges.ts";
 import { engineHeartbeatMs, hasProgress, mergeProgress, phaseLine, progressActivityKey, progressTexts, silenceMs, stallThresholdMs, progressView, type ProgressViewModel } from "../lib/progress.ts";
 import { buildSteps, groupSubtaskSteps, keyStepKeys, mergeRepeatSteps, sentByToolCall, toolLabel, type SentInfo, type Step } from "../lib/timeline.ts";
 import { busyRunOfError } from "../lib/start-block.ts";
-import { methodLine } from "../lib/run-method.ts";
+import { methodLine, methodShort } from "../lib/run-method.ts";
 import { Select } from "../components/Select.tsx";
 import { rightCollapsed, rightTabs, type RightTab } from "../lib/run-pane.ts";
 
@@ -447,6 +447,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
         matterId={matterId}
         documentVersionId={workbench.doc}
         runId={runId}
+        agreement={{ stance: matter?.stance ? stanceLabel(matter.stance) : null, method: methodShort(run, skillTitles, skillVersions), jurisdiction: matter?.jurisdiction ? jurisdictionLabel(matter.jurisdiction) : null }}
         readOnly={(matter?.lifecycle ?? "active") !== "active"}
         onClose={() => {
           setWorkbench(null);

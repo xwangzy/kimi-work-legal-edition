@@ -77,3 +77,15 @@ test("I2 遗留：执行位置徽标不出现“运行时隔离（W）”", () =
   const labels = currentBadges({ status: "running", openTools: ["Bash"], execOpen: false } as any).map((b) => b.label);
   assert.ok(!labels.some((l) => /（W）|运行时隔离/.test(l)), labels.join("、"));
 });
+
+test("#22 工作台协议条：我方 · 审查要点及版本 · 法域 · 已处理 n/m；缺的项不写", async () => {
+  const { agreementParts } = await import("../src/lib/workbench.ts");
+  const { methodShort } = await import("../src/lib/run-method.ts");
+  const method = methodShort({ input_snapshot: JSON.stringify({ skill: "contract-review" }) }, { "contract-review": "合同审查（风险卡）" }, { "contract-review": "1.1.1" });
+  assert.equal(method, "合同审查（风险卡） v1.1.1");
+  assert.equal(agreementParts({ stance: "受让方", method, jurisdiction: "中国内地", decided: 0, total: 4 }).join(" · "), "我方：受让方 · 审查要点：合同审查（风险卡） v1.1.1 · 中国内地 · 已处理 0/4");
+  assert.deepEqual(agreementParts({ decided: 1, total: 2 }), ["已处理 1/2"]);
+  assert.equal(methodShort({ input_snapshot: {} }, {}, {}), null);
+  const wb = src("components/ReviewWorkbench.tsx");
+  assert.match(wb, /closest\?\.\('\[role="listbox"\]'\)/, "下拉列表里键入不触发工作台快捷键");
+});
