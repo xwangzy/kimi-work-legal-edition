@@ -478,7 +478,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
           </div>
         ))}
         {loaded && loaded.requested > 0 && (
-          <p className="muted">已读 {loaded.loaded}/{loaded.requested} 份{loaded.failed ? `，${loaded.failed} 份无法解析（未静默跳过）` : ""}。</p>
+          <p className="muted">已读 {loaded.loaded}/{loaded.requested} 份{loaded.failed ? `，${loaded.failed} 份读不了（已列出，可换成 Word 或 PDF）` : ""}。</p>
         )}
       </aside>
 
@@ -511,7 +511,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                         <span className="mat-name" title={d.filename}>{d.filename}</span>
                       </div>
                     ))}
-                    {loaded && <div className="muted">已读 {loaded.loaded}/{loaded.requested} 份{loaded.failed ? `，${loaded.failed} 份无法解析（未静默跳过）` : ""}。</div>}
+                    {loaded && <div className="muted">已读 {loaded.loaded}/{loaded.requested} 份{loaded.failed ? `，${loaded.failed} 份读不了（已列出，可换成 Word 或 PDF）` : ""}。</div>}
                     <div className="muted">在这台电脑上处理 · 原件不会被修改 · 结果都是草稿</div>
                   </div>
                 )}

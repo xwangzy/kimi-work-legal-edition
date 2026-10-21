@@ -54,7 +54,7 @@ export function ConsentQuestion({
       {allowRefuse && (
         <label className="consent-opt">
           <input type="radio" checked={answer === "refused"} onChange={() => pick("refused")} />
-          <span>客户明确不同意使用云端 AI<small>本事项只在这台电脑上处理，不使用云端模型与联网检索</small></span>
+          <span>客户明确不同意使用云端 AI<small>本事项只在这台电脑上处理：不用 AI，不联网查询</small></span>
         </label>
       )}
       {answer === "consented" && (

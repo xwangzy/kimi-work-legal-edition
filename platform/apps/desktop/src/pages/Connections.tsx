@@ -177,7 +177,7 @@ function GeneralTab({ version }: { version: string }) {
                 </button>
               ))}
             </div>
-            <div className="muted">深色模式下，Word/Excel 成果预览与审查原文仍按纸面白显示，便于对照打印稿；打印一律按浅色。</div>
+            <div className="muted">深色模式下，文书预览仍是白纸，便于对照打印稿。</div>
           </div>
         </div>
         <DocStyle />
@@ -185,8 +185,11 @@ function GeneralTab({ version }: { version: string }) {
         <div className="device-row">
           <div className="device-k">提醒</div>
           <div>
-            任务需要你确认或回答问题、而 Kimi Work 不在前台时，会发一条系统通知并闪烁任务栏。通知只写“有一个任务在等你确认”，不写事项内容。
-            <div className="muted">如不想收到，可在 Windows“设置 → 系统 → 通知”里关闭 Kimi Work 的通知。</div>
+            有任务等你确认时，系统会通知你；通知里不写事项内容。
+            <details className="quiet-details">
+              <summary>怎么关闭</summary>
+              在 Windows“设置 → 系统 → 通知”里关闭 Kimi Work 的通知。
+            </details>
           </div>
         </div>
         <div className="device-row">

@@ -44,7 +44,7 @@ export function DocStyle() {
     <div className="device-row" id="doc-style">
       <div className="device-k">文书版式</div>
       <div>
-        <div className="muted">下载的 Word（意见书、报告、备忘录）按这里的版式排好：A4、标题居中、正文首行缩进、页码、落款右对齐。只影响这台电脑下载的文件；你上传的原件和对方合同的修订稿不动。</div>
+        <div className="muted">下载的意见书、报告、备忘录按这里的版式排版；原件和对方合同不受影响。版式细节看“下载样张”。</div>
         {v.template ? (
           <div className="card">
             正在用律所模板「{v.template.name}」（{fmtTime(v.template.updated_at)} 上传）：页眉页脚、徽标、字体和页面设置都取自模板，下面的函头与正文字体设置不再使用。

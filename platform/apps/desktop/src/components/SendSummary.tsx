@@ -44,7 +44,7 @@ export function SendSummary({
   }, [documentIds, preview]);
   return (
     <div className="send-summary" aria-label="将发送什么">
-      {followup && <div className="muted">追问时，上一轮的对话内容（已换成代号的形态）也会作为上下文再次发给 AI。</div>}
+      {followup && <div className="muted">追问时，上一轮对话（已换成代号）也会一起发给 AI。</div>}
       <div>
         {summary.docs > 0 ? `${summary.docs} 份材料约 ${summary.chars.toLocaleString()} 字` : `任务说明约 ${summary.chars.toLocaleString()} 字`}
         {summary.truncated ? "（只统计了前一部分）" : ""}：{replacedLine(summary)}

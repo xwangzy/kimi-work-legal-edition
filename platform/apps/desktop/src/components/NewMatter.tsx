@@ -21,7 +21,7 @@ const STANCE_OPTIONS = STANCE_GROUPS.flatMap(([hint, list]) => list.map((s) => (
 const LEVELS = [
   { v: "normal", label: "一般", hint: "委托事项中的合同、函件、案卷、意见书" },
   { v: "high", label: "敏感", hint: "敏感个人信息、刑事卷宗等：公司名称也替换为代号，每条联网检索都要你确认" },
-  { v: "strict", label: "客户要求不上云", hint: "只在这台电脑上处理，不使用云端模型与联网检索" },
+  { v: "strict", label: "客户要求不上云", hint: "只在这台电脑上处理：不用 AI，不联网查询" },
 ];
 
 export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (m: Matter) => void }) {
@@ -90,7 +90,7 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
         endpoint={f.model_endpoint}
         sensitiveMatter={f.confidentiality === "high"}
       />
-      <button type="button" className="btn-link" onClick={() => setMore((v) => !v)}>{more ? "收起更多设置" : "更多设置（密级、法域、模型、分析截止日）"}</button>
+      <button type="button" className="btn-link" onClick={() => setMore((v) => !v)}>{more ? "收起更多设置" : "更多设置（保密程度、法域、AI 服务、资料截止日）"}</button>
       {more && (
         <div className="form-grid">
         <label className="field">

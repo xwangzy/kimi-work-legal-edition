@@ -42,7 +42,7 @@ export function DataFlowCard({ runId, tokenMap, refreshKey }: { runId: string; t
       <p className="df-sentence">{sum.sentence}</p>
       <div className="df-grid">
         {/* 律师语言（v9.2 §4.4；Y4 #19 / 10-13 P1-12）：说“发给谁、换掉了什么、有没有没发出去的”，不出现系统术语 */}
-        <Stat k="发给 AI 模型（次）" v={sum.model.requests} sub={`共约 ${sum.model.chars.toLocaleString()} 字（含给 AI 的工作说明）`} />
+        <Stat k="发给 AI（次）" v={sum.model.requests} sub={`共约 ${sum.model.chars.toLocaleString()} 字（含给 AI 的工作说明）`} />
         <Stat k="换成代号（处）" v={Object.values(sum.model.tokens_present).reduce((a, b) => a + b, 0)} sub="姓名、证件号、账号、联系方式等" />
         <Stat k="联网查资料（次）" v={sum.search.sent} sub={`去掉当事人名称 ${sum.search.generalized} · 经你确认按原文 ${sum.search.confirmed_original} · 没有发出 ${sum.search.blocked}`} />
         <Stat k="打开网页（页）" v={sum.fetch.pages} sub={`${sum.fetch.domains.length} 个网站 · 没有打开 ${sum.fetch.blocked}`} />
@@ -147,7 +147,7 @@ export function reasonLabel(r: string): string {
     redirect_domain_not_allowlisted: "跳转到未经确认的域名",
     address_not_public: "目标不是公网地址",
     basis_pending_no_egress: "依据待确认",
-    media_requires_approval: "图像原样送模型须确认",
+    media_requires_approval: "图片会原样发给 AI，需要你确认",
     unknown_content_block: "未知内容类型",
     aborted: "已中止",
     seat_unavailable: "本所账号暂不可用",

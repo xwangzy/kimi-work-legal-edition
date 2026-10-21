@@ -190,7 +190,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
         </div>
       ) : consentBlocked ? (
         <div className="consent-fix">
-          <p>这个任务需要用到 AI 模型。开始前请确认：</p>
+          <p>这个任务会用到 AI，请确认：</p>
           <ConsentQuestion answer={consent} onAnswer={setConsent} basis={basis} onBasis={setBasis} endpoint={matter.model_endpoint} sensitiveMatter={sensitive} allowRefuse={false} />
         </div>
       ) : (

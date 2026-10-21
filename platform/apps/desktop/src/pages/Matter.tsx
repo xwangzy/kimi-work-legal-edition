@@ -389,7 +389,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
           onSave={(b) => {
             setBasisOpen(false);
             // 同意状态由内核按四项派生（不由界面直接改写——复核 S5-A09）
-            void patch({ basis: b }, basisComplete(b) ? "四项依据已齐备（留痕）：可使用模型与联网能力" : "依据有待确认项（留痕）：本事项只运行本机能力");
+            void patch({ basis: b }, basisComplete(b) ? "四项授权已齐：可以用 AI 和联网查询（已记录）" : "还有授权待确认（已记录）：本事项暂时只能用不联网的本机功能");
           }}
         />
       )}

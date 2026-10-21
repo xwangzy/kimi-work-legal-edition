@@ -38,7 +38,7 @@ export function toolLabel(name: string): string {
 }
 
 const SKIP_REASONS: Record<string, string> = {
-  format: "格式不支持",
+  format: "这种文件暂时读不了",
   too_large: "文件过大",
   limit: "超过数量上限",
   instructions: "助手指令文件，不作为交付件",
@@ -427,18 +427,18 @@ const OUTCOME_REASON_LABELS: Record<string, string> = {
   unknown_status: "状态无法识别",
   exit_code_mismatch: "退出状态与报告不一致",
   artifact_hash_mismatch: "成果校验不一致",
-  content_filtered: "内容被模型服务拦截",
+  content_filtered: "AI 服务拒绝处理这段内容",
   length_truncated: "回答在长度上限处被截断",
   host_reported_partial: "助手声明部分完成",
   turn_not_completed: "这一轮没有正常结束",
   missing_artifact: "没有产出可交付的内容",
-  finish_reason_unknown: "模型没有给出确定的结束原因",
-  finish_reason_unreported: "模型没有上报结束原因",
+  finish_reason_unknown: "AI 中途停止，原因不明，可以重新运行",
+  finish_reason_unreported: "AI 中途停止，原因不明，可以重新运行",
   workspace_commit_incomplete: "部分文件没有写入工作区",
   run_deadline_exceeded: "超过工作时限",
   run_wall_deadline_exceeded: "超过总时长上限",
   prompt_rejected: "任务没有被助手受理",
-  host_exited: "本机助手进程退出",
+  host_exited: "处理意外中断，可以重新运行",
   start_failed: "启动失败",
   unknown_task: "任务不存在",
 };
