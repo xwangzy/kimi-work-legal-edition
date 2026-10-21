@@ -11,6 +11,7 @@ const { createUrlPolicy } = require("./url-policy.cjs");
 const { APP_INDEX_URL, handleAppProtocol, registerAppScheme } = require("./app-protocol.cjs");
 const { resolveBundledRuntime, verifyRuntimeDigests } = require("./runtime-paths.cjs");
 const { adoptDbKey, loadOrCreateDbKey, purgeOldDumps } = require("./secret-store.cjs");
+const { quarantineUnreadable } = require("./unreadable-data.cjs");
 const { kernelChildEnv, loadReleaseConfig } = require("./release-config.cjs");
 const { initUpdater } = require("./updater.cjs");
 const { parseSmokeArg, writeSmokeResult, SmokeFailure } = require("./smoke-io.cjs");
@@ -80,6 +81,52 @@ async function loadDbKey() {
   if (!r.ok) return r;
   if (r.warning) slog.event("MAIN_DBKEY_DEV_PLAINTEXT", {});
   return r;
+}
+
+/**
+ * 主密钥解封失败（v9.3 主文 §9 第 7 项，复核 R2B-10）：给“退出 / 用恢复包恢复”。后者再确认一次，把打不开的数据改名到
+ * `<数据根>/.unreadable-<时刻>/`（unreadable-data.cjs，不删除）后返回 true——调用方重新拉起内核：没有主密钥文件即生成新的，
+ * 没有激活记录即以待激活模式启动，激活页直接打开“从备份恢复”（内核报告 set_aside）。
+ */
+async function offerSetAsideAndRestore(keyResult) {
+  const first = await dialog.showMessageBox({
+    type: "error",
+    title: "无法打开本机加密数据",
+    message: "本机案件数据的密钥无法解开",
+    detail:
+      "常见于重置 Windows 账户密码、重装系统后还原用户目录。应用没有做任何改动。\n\n" +
+      "如果你有恢复包、恢复码和备份（设置 → 本机与安全 → 恢复与备份里生成的那些），可以选“用恢复包恢复”。拿不准时请先退出，联系所内 IT。\n\n" +
+      `技术信息：${keyResult.code}`,
+    buttons: ["退出", "用恢复包恢复…"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  if (first.response !== 1) return false;
+  const second = await dialog.showMessageBox({
+    type: "warning",
+    title: "用恢复包恢复",
+    message: "先把打不开的数据移到一边，再从备份恢复",
+    detail:
+      `这台电脑上打不开的数据不会删除，会移到：\n${path.join(DATA_DIR, ".unreadable-<时刻>")}\n是否保留、何时清理由所内 IT 决定。\n\n` +
+      "接下来需要：恢复包文件、恢复码、备份所在的移动硬盘或文件夹。",
+    buttons: ["取消", "移到一边并恢复"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  if (second.response !== 1) return false;
+  const r = quarantineUnreadable({ dataDir: DATA_DIR, keyFile: path.join(app.getPath("userData"), "ledger-key") });
+  if (r.ok) {
+    slog.event("MAIN_DATA_SET_ASIDE", { code: "ok", moved: r.moved.length });
+    return true;
+  }
+  slog.event("MAIN_DATA_SET_ASIDE_FAILED", { code: r.code, moved: r.moved.length });
+  dialog.showErrorBox(
+    "没能把数据移到一边",
+    `已移动 ${r.moved.length} 项，其余保持原样；应用不会继续。请联系所内 IT 手工处理（数据目录：${DATA_DIR}）。\n\n技术信息：${r.code}`,
+  );
+  return false;
 }
 
 /**
@@ -254,14 +301,14 @@ async function startKernel() {
       return;
     }
     // 不以明文库启动、不覆盖密钥：给出律师与 IT 都能照做的说明
-    dialog.showErrorBox(
-      "无法打开本机加密数据",
-      keyResult.code === "unavailable"
-        ? "Windows 的数据保护服务当前不可用，应用无法加密保存您的案件数据，因此不会启动。\n\n请重新启动电脑后再试；若仍出现，请联系所内 IT。"
-        : "本机案件数据的密钥无法解开（常见于更换 Windows 账户、重置系统密码或迁移电脑之后）。为避免数据丢失，应用没有做任何改动。\n\n" +
-            "请联系所内 IT 或客服：可以用“恢复包”（设置 → 本机与安全 → 恢复与备份里生成的那份）和备份在激活页“从备份恢复”。\n\n" +
-            `技术信息：${keyResult.code}（${keyResult.message}）`,
-    );
+    if (keyResult.code === "unseal_failed" && (await offerSetAsideAndRestore(keyResult))) return startKernel();
+    if (keyResult.code !== "unseal_failed")
+      dialog.showErrorBox(
+        "无法打开本机加密数据",
+        keyResult.code === "unavailable"
+          ? "Windows 的数据保护服务当前不可用，应用无法加密保存您的案件数据，因此不会启动。\n\n请重新启动电脑后再试；若仍出现，请联系所内 IT。"
+          : `应用无法在这台电脑上保存数据库密钥，因此不会启动。请检查磁盘空间与权限后再试；若仍出现，请联系所内 IT。\n\n技术信息：${keyResult.code}`,
+      );
     restart.quitting = true;
     app.quit();
     return;

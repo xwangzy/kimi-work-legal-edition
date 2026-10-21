@@ -1,10 +1,10 @@
 /** 左侧栏（第 03 篇 §4.1：Kimi Work 入口 → 发行版入口）。未开放的入口不占一级导航；状态用律师语言，只在异常时变色（UIUX P0-6）。 */
 import { useEffect, useState, type ReactNode } from "react";
-import { api, onKernelEvent, type Matter } from "../api.ts";
+import { api, members, onKernelEvent, type Matter } from "../api.ts";
 import { nav, type Route } from "../App.tsx";
 import { Icon } from "./Icons.tsx";
 import { onDataChanged } from "../lib/events.ts";
-import { userCardText } from "../lib/user-card.ts";
+import { sidebarFoot, userCardText } from "../lib/user-card.ts";
 
 interface Item {
   key: Route["page"];
@@ -34,6 +34,8 @@ export function Sidebar({ route }: { route: Route }) {
   const [execOk, setExecOk] = useState<boolean | null>(true);
   const [tick, setTick] = useState(0);
   const [me, setMe] = useState<{ name: string | null; firm: string | null; admin: boolean } | null>(null);
+  // 有入组申请等这台电脑批准（B-3 余项）：只问管理员电脑；内核 60 秒内复用上次结果
+  const [joins, setJoins] = useState(0);
   useEffect(() => onDataChanged(() => setTick((t) => t + 1)), []);
   // 任务状态变化（开始等待、结束）时刷新侧栏状态点；运行中另每 5 秒刷新一次
   useEffect(() => onKernelEvent((m) => (m?.type === "run.updated" || m?.type === "run.settled" || m?.type === "reminder.due" ? setTick((t) => t + 1) : undefined)), []);
@@ -57,7 +59,15 @@ export function Sidebar({ route }: { route: Route }) {
       .kernelStatus()
       .then((s) => {
         setStatus({ gate: s.egress_gate ? true : false, unresolved: s.egress_gate?.unresolved ?? 0 });
-        setMe({ name: s.activation?.member?.name ?? null, firm: s.activation?.firm?.name ?? null, admin: s.member_role === "firm_admin" || s.member_role === "partner" });
+        const admin = s.member_role === "firm_admin" || s.member_role === "partner";
+        setMe({ name: s.activation?.member?.name ?? null, firm: s.activation?.firm?.name ?? null, admin });
+        // 没有控制面时内核直接报 0，不联网
+        if (admin)
+          members
+            .attention()
+            .then((a) => setJoins(a.pending_joins))
+            .catch(() => setJoins(0));
+        else setJoins(0);
       })
       .catch(() => setStatus({ gate: null, unresolved: 0 }));
     api
@@ -66,9 +76,8 @@ export function Sidebar({ route }: { route: Route }) {
       .catch(() => {});
   }, [route.page, tick]);
   // 底部状态：正常时一句“本机运行 · 防护正常”；只有出问题时变色并说明（技术细节在“设置 · 本机与安全”）
-  const footTitle = status.gate === null ? "正在启动…" : status.unresolved > 0 ? "有联网记录需要核对" : execOk === false ? "本机运行 · 代码分析暂不可用" : "本机运行 · 防护正常";
-  const footNote = status.gate === null ? "" : status.unresolved > 0 ? `${status.unresolved} 条因中断无法确认是否发出` : execOk === false ? "其余功能正常" : "";
-  const footTone = status.gate === null ? "dot-off" : status.unresolved > 0 || execOk === false ? "dot-warn" : "dot-ok";
+  const foot = sidebarFoot({ gate: status.gate, unresolved: status.unresolved, execOk, pendingJoins: joins });
+  const { title: footTitle, note: footNote, tone: footTone } = foot;
   const card = userCardText(me, { title: footTitle, note: footNote });
   const activeMatter = route.page === "matter" || route.page === "run" ? route.matterId : null;
   // 任务执行态收为图标栏，给三栏（材料 | 进度 | 预览）让出宽度
@@ -122,7 +131,7 @@ export function Sidebar({ route }: { route: Route }) {
           </button>
         ))}
       </div>
-      <button className={`sidebar-foot${route.page === "connections" ? " active" : ""}`} onClick={() => nav(footTone === "dot-ok" ? "/connections" : "/connections/device")} title={card.tooltip}>
+      <button className={`sidebar-foot${route.page === "connections" ? " active" : ""}`} onClick={() => nav(foot.href)} title={card.tooltip}>
         <span className="user-avatar" aria-hidden="true">
           {card.avatar}
           {/* 侧栏收窄时只剩头像：状态点挂在头像右上角（复核 R15B-23） */}

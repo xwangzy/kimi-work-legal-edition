@@ -92,6 +92,9 @@ export const EVENTS = {
   /** 从备份恢复时采用旧电脑的数据库主密钥（第 14 批）：只记结果。 */
   MAIN_ADOPT_KEY_DONE: { level: "info", fields: {} },
   MAIN_ADOPT_KEY_REJECTED: { level: "warn", fields: { reason: ["not_onboarding", "key_invalid", "unavailable", "write_failed"] } },
+  /** 主密钥解封失败后律师选了“用恢复包恢复”：打不开的数据改名到 .unreadable-<时刻>/（v9.3 主文 §9 第 7 项）；只记结果与移动项数。 */
+  MAIN_DATA_SET_ASIDE: { level: "warn", fields: { code: ["ok"], moved: "int" } },
+  MAIN_DATA_SET_ASIDE_FAILED: { level: "error", fields: { code: ["exists", "cross_device", "move_failed"], moved: "int" } },
   MAIN_NOTIFY_FAILED: { level: "warn", fields: { ...ERR } },
   MAIN_CRASH_DIR_FAILED: { level: "warn", fields: { ...ERR } },
   MAIN_RUNTIME_PROBLEM: { level: "error", fields: { count: "int", stage: ["startup", "background"] } },

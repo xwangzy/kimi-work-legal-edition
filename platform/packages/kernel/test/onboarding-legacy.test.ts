@@ -81,3 +81,42 @@ test("待激活模式不挂在线内容更新的定时检查（复核 B13-K04；
     await normal.close();
   }
 });
+
+test("主密钥解封失败后移到一边（v9.3 主文 §9 第 7 项，复核 R2B-10）：换新主密钥以待激活启动、报 set_aside、不把移走的当旧工作区；对照：不移走则打不开", { timeout: 120_000 }, async () => {
+  const { createRequire } = await import("node:module");
+  const { quarantineUnreadable } = createRequire(import.meta.url)("../../../apps/desktop/electron/unreadable-data.cjs") as {
+    quarantineUnreadable: (o: { dataDir: string; keyFile: string; now?: number }) => { ok: boolean; moved: string[] };
+  };
+  const dir = mkdtempSync(join(tmpdir(), "kwl-setaside-"));
+  const { createKernel } = await import("../src/index.ts");
+  const base: Record<string, string | undefined> = { ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off", ZR_BACKUP_TIMER: "off" };
+  delete base.ZR_FIRM_SLUG;
+  delete base.ZR_USER_SLUG;
+  // 原来那台电脑上的数据：以主密钥 A 建好的工作区 + 激活记录
+  const keyA = randomBytes(32).toString("base64");
+  const first = await createKernel({ dataDir: dir, dbKey: keyA, firmSlug: "sa-firm", userSlug: "u-1", env: base as NodeJS.ProcessEnv });
+  await first.close();
+  writeFileSync(
+    join(dir, "activation.json"),
+    JSON.stringify({ v: 1, tid: "ten_sa-firm", firm_slug: "sa-firm", firm_name: "某律所", member_slug: "u-1", member_name: null, role: "admin", kind: "founder", activated_at: new Date().toISOString() }),
+  );
+  // DPAPI 坏了：主进程只能生成新主密钥 B
+  const keyB = randomBytes(32).toString("base64");
+  const env = { ...base, ZR_ONBOARDING: "1" } as NodeJS.ProcessEnv;
+  await assert.rejects(createKernel({ dataDir: dir, dbKey: keyB, env }), "对照：激活记录与旧工作区还在时，新主密钥打不开");
+  const keyFile = join(dir, ".electron", "ledger-key");
+  mkdirSync(join(dir, ".electron"), { recursive: true });
+  writeFileSync(keyFile, "包裹的旧主密钥");
+  const r = quarantineUnreadable({ dataDir: dir, keyFile, now: Date.parse("2026-10-21T08:30:05Z") });
+  assert.equal(r.ok, true);
+  const k = await createKernel({ dataDir: dir, dbKey: keyB, env });
+  try {
+    const st = (await k.invoke("onboarding.status")) as any;
+    assert.equal(st.mode, "unactivated");
+    assert.deepEqual(st.set_aside, [".unreadable-2026-10-21T08-30-05Z"]);
+    assert.deepEqual(st.legacy_workspaces, [], "移走的不再当作“以前留下的数据”（从备份恢复时不必再勾选确认）");
+    assert.ok(existsSync(join(dir, ".unreadable-2026-10-21T08-30-05Z", "sa-firm", "ledger.db")), "原来的数据还在");
+  } finally {
+    await k.close();
+  }
+});

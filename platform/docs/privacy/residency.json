@@ -604,7 +604,7 @@
       "id": 20,
       "data": "密钥材料（DB 主密钥、设备签名/加密私钥、律所根私钥、事项密钥、工作区密钥）",
       "memory": "主进程（DB 主密钥交付后置 null）、内核、kap-host（区密钥只在内存）",
-      "disk": "userData/ledger-key（dpapi）；userData/ledger-key.prev-<时刻>（从备份恢复采用旧电脑主密钥时把本机原主密钥的 DPAPI 包裹复制留档，不自动删除：本机以前留下的数据要用它才能打开；第 14 批复核 R2A-05/R2B-15）；keys/*.json（kwl_sealed）；matter_keys、工作区密钥包裹（sqlcipher 内再以设备公钥包裹）；设备恢复包（scrypt）",
+      "disk": "userData/ledger-key（dpapi）；userData/ledger-key.prev-<时刻>（从备份恢复采用旧电脑主密钥时把本机原主密钥的 DPAPI 包裹复制留档，不自动删除：本机以前留下的数据要用它才能打开；第 14 批复核 R2A-05/R2B-15）；<数据根>/.unreadable-<时刻>/ledger-key 及同目录里的激活记录与工作区（主密钥解封失败、律师选“用恢复包恢复”时改名到这里，不删除；原主密钥找不回来时这些密文已不可读，由所内 IT 决定清理；v9.3 主文 §9 第 7 项）；keys/*.json（kwl_sealed）；matter_keys、工作区密钥包裹（sqlcipher 内再以设备公钥包裹）；设备恢复包（scrypt）",
       "local_channels": "kernel.init 一次性消息；区密钥随每次运行经 IPC 下发",
       "network": "否",
       "logs_dumps": "内核/主进程转储可能含密钥（3 天）",
@@ -945,6 +945,11 @@
         28
       ],
       "reason": "数据库主密钥 DPAPI 包裹文件（原子写，解封失败不覆盖）；采用恢复的主密钥：新包裹先写 .next、原文件复制留档为 .prev-<时刻>、再原子替换"
+    },
+    "apps/desktop/electron/unreadable-data.cjs": {
+      "apis": ["renameSync", "writeFileSync"],
+      "rows": [8, 20, 24],
+      "reason": "主密钥解封失败、律师选“用恢复包恢复”后（v9.3 主文 §9 第 7 项）：激活记录、入组与恢复中间记录、有账本的工作区、DPAPI 包裹的主密钥文件**改名**到 <数据根>/.unreadable-<时刻>/（不删除、不复制、跨卷即停）；另写一份不含案件信息的说明.txt"
     },
     "apps/desktop/electron/smoke-io.cjs": {
       "apis": [

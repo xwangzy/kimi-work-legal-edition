@@ -926,6 +926,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   });
   api["members.invite"] = (p) => members.invite(p ?? {});
   api["members.list"] = () => members.list();
+  api["members.attention"] = () => members.attention();
   api["members.approve"] = (p) => members.approve(p ?? {});
   api["members.reject"] = (p) => members.reject(p ?? {});
   api["members.revoke_invitation"] = (p) => members.revokeInvitation(p ?? {});

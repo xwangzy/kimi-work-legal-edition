@@ -6,6 +6,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { api, onboarding, recovery } from "../api.ts";
+import { setAsideNotice } from "../lib/activate-text.ts";
 
 type Status = {
   mode: "unactivated" | "member_pending";
@@ -16,6 +17,8 @@ type Status = {
   restarting?: boolean;
   legacy_workspaces?: string[];
   last_failure?: { code: string; at: string };
+  /** 主密钥解封失败后移到一边的目录名（新的在前；v9.3 主文 §9 第 7 项）。 */
+  set_aside?: string[];
 };
 
 const JOIN_FAILED_TEXT = "入组没有完成：管理员批准的结果在这台电脑上核对不通过。请向管理员重新要一个邀请码，再输入一次；若反复出现，请联系所内 IT。";
@@ -75,7 +78,14 @@ export function ActivatePage({ initial, onRefresh, notice = "" }: { initial: Sta
     );
   }
   if (status.mode === "member_pending") return <WaitApproval status={status} onReset={async () => setStatus((await onboarding.reset()) as Status)} onRefresh={onRefresh} />;
-  return <EnterCode onPending={(s) => setStatus(s)} legacy={status.legacy_workspaces ?? []} failed={status.last_failure ? failureText(status.last_failure.code) : ""} />;
+  return (
+    <EnterCode
+      onPending={(s) => setStatus(s)}
+      legacy={status.legacy_workspaces ?? []}
+      failed={status.last_failure ? failureText(status.last_failure.code) : ""}
+      setAside={status.set_aside?.[0] ?? null}
+    />
+  );
 }
 
 function Frame({ children }: { children: React.ReactNode }) {
@@ -97,7 +107,7 @@ function Frame({ children }: { children: React.ReactNode }) {
   );
 }
 
-function EnterCode({ onPending, legacy, failed }: { onPending: (s: Status) => void; legacy: string[]; failed: string }) {
+function EnterCode({ onPending, legacy, failed, setAside }: { onPending: (s: Status) => void; legacy: string[]; failed: string; setAside: string | null }) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(failed);
@@ -107,7 +117,8 @@ function EnterCode({ onPending, legacy, failed }: { onPending: (s: Status) => vo
     setErr(t);
   };
   const [done, setDone] = useState<string | null>(null);
-  const [restoring, setRestoring] = useState(false);
+  // 刚把打不开的数据移到一边（主进程对话框里选了“用恢复包恢复”）：直接打开从备份恢复
+  const [restoring, setRestoring] = useState(setAside !== null && !failed);
   const ready = [20, 36].includes(code.replace(/-/g, "").length);
   const submit = async () => {
     if (!ready || busy) return;
@@ -136,7 +147,7 @@ function EnterCode({ onPending, legacy, failed }: { onPending: (s: Status) => vo
       </Frame>
     );
   }
-  if (restoring) return <RestoreFromBackup onBack={() => setRestoring(false)} onDone={setDone} onStuck={stuck} />;
+  if (restoring) return <RestoreFromBackup onBack={() => setRestoring(false)} onDone={setDone} onStuck={stuck} notice={setAside ? setAsideNotice(setAside) : ""} />;
   return (
     <Frame>
       <h1 className="activate-title">欢迎使用</h1>
@@ -192,7 +203,7 @@ function EnterCode({ onPending, legacy, failed }: { onPending: (s: Status) => vo
 }
 
 /** 从备份恢复（第 14 批）：恢复包 + 备份位置 + 恢复码 → 与原来那台电脑相同的身份与数据。 */
-function RestoreFromBackup({ onBack, onDone, onStuck }: { onBack: () => void; onDone: (s: string) => void; onStuck: (t: string) => void }) {
+function RestoreFromBackup({ onBack, onDone, onStuck, notice = "" }: { onBack: () => void; onDone: (s: string) => void; onStuck: (t: string) => void; notice?: string }) {
   const dialogs = recovery.hasDialogs();
   const [pkg, setPkg] = useState<{ handle?: string; name: string; path?: string } | null>(null);
   const [folder, setFolder] = useState<{ handle?: string; name: string; path?: string } | null>(null);
@@ -235,6 +246,11 @@ function RestoreFromBackup({ onBack, onDone, onStuck }: { onBack: () => void; on
   return (
     <Frame>
       <h1 className="activate-title">从备份恢复</h1>
+      {notice && (
+        <p className="activate-notice" role="note">
+          {notice}
+        </p>
+      )}
       <p className="activate-lead">需要三样东西：恢复包文件、备份所在的位置（选 U 盘或文件夹本身即可，里面有一个 KimiWorkLegal-backup 文件夹）、打印或抄下的恢复码。恢复期间请不要关闭应用或拔出 U 盘。</p>
       {dialogs ? (
         <div className="activate-actions">

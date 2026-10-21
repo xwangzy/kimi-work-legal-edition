@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { userCardText } from "../src/lib/user-card.ts";
+import { sidebarFoot, userCardText } from "../src/lib/user-card.ts";
 
 test("用户卡文字：还没取到状态时不说“本机 / 开发形态”；悬停提示带本机状态", () => {
   const foot = { title: "有联网记录需要核对", note: "2 条因中断无法确认是否发出" };
@@ -32,4 +32,18 @@ test("样式：状态点 inline-block；头像上的状态点只在收窄（图�
   const src = readFileSync(fileURLToPath(new URL("../src/components/Sidebar.tsx", import.meta.url)), "utf8");
   assert.match(src, /className=\{`dot avatar-dot \$\{footTone\}`\}/);
   assert.match(src, /title=\{card\.tooltip\}/);
+});
+
+test("用户卡底部一行（v9.3 B-3 余项）：有入组申请等批准时亮橙点、点开到“管理 · 成员”；联网记录需要核对更要紧", () => {
+  const ok = { gate: true, unresolved: 0, execOk: true, pendingJoins: 0 };
+  assert.deepEqual(sidebarFoot(ok), { title: "本机运行 · 防护正常", note: "", tone: "dot-ok", href: "/connections" });
+  const joins = sidebarFoot({ ...ok, pendingJoins: 2 });
+  assert.equal(joins.tone, "dot-warn");
+  assert.equal(joins.title, "有 2 位同事等你批准入组");
+  assert.equal(joins.href, "/connections/admin");
+  const both = sidebarFoot({ ...ok, pendingJoins: 2, unresolved: 1 });
+  assert.equal(both.title, "有联网记录需要核对");
+  assert.equal(both.href, "/connections/device");
+  assert.equal(sidebarFoot({ ...ok, gate: null, pendingJoins: 3 }).tone, "dot-off", "启动中不提前报");
+  assert.equal(sidebarFoot({ ...ok, execOk: false }).note, "其余功能正常");
 });

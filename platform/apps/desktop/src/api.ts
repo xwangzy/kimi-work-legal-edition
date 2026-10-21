@@ -997,6 +997,8 @@ export const recovery = {
 /** 成员管理（管理员）：邀请、待批准申请、批准与拒绝。 */
 export const members = {
   list: () => invoke<any>("members.list"),
+  /** 侧栏提醒：有几份入组申请等这台电脑批准（内核 60 秒内复用上次结果）。 */
+  attention: () => invoke<{ pending_joins: number }>("members.attention"),
   invite: (name: string, role: string) => invoke<any>("members.invite", { name, role }),
   approve: (joinRequestId: string) => invoke<any>("members.approve", { join_request_id: joinRequestId }),
   reject: (joinRequestId: string) => invoke<any>("members.reject", { join_request_id: joinRequestId }),

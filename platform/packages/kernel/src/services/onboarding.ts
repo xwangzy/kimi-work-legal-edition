@@ -191,7 +191,31 @@ export class OnboardingService {
       };
     }
     const failed = readJoinFailure(this.root);
-    return { mode: "unactivated", restarting: this.restarting, legacy_workspaces: this.legacyWorkspaces(), ...(failed ? { last_failure: failed } : {}) };
+    const setAside = this.setAside();
+    return {
+      mode: "unactivated",
+      restarting: this.restarting,
+      legacy_workspaces: this.legacyWorkspaces(),
+      ...(failed ? { last_failure: failed } : {}),
+      ...(setAside.length ? { set_aside: setAside } : {}),
+    };
+  }
+
+  /**
+   * 主进程因主密钥解封失败而移到一边的目录（`<数据根>/.unreadable-<时刻>/`，v9.3 主文 §9 第 7 项）：只报目录名、新的在前；
+   * 激活页据此直接打开“从备份恢复”，并告诉律师原来的数据在哪、没有删除。
+   */
+  private setAside(): string[] {
+    try {
+      return readdirSync(this.root, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && /^\.unreadable-[0-9TZ-]{1,40}$/.test(e.name))
+        .map((e) => e.name)
+        .sort()
+        .reverse()
+        .slice(0, 5);
+    } catch {
+      return [];
+    }
   }
 
   /**
@@ -470,6 +494,9 @@ interface LocalInvite {
 /** 正常模式的成员管理（管理员设备）。 */
 export const membersApi = (d: MembersDeps) => {
   const snapshots = new Map<string, JoinSnapshot>();
+  // 侧栏提醒的上次结果（B-3 余项）：60 秒内复用；批准、拒绝、刷新成员页后作废
+  let attentionCache: { at: number; n: number } | null = null;
+  const ATTENTION_TTL_MS = 60_000;
   const inviteOf = (activationId: string) =>
     d.db.get<LocalInvite>(`SELECT activation_id, member_slug, role, display_name, invite_secret, status FROM member_invitations WHERE activation_id = ? AND tenant_id = ?`, [activationId, d.identity.tenantId]);
   return {
@@ -552,7 +579,26 @@ export const membersApi = (d: MembersDeps) => {
           verified,
         };
       });
+      attentionCache = { at: Date.now(), n: requests.filter((x) => x.verified).length };
       return { invitations, join_requests: requests, firm_check_code: firmCheckCode(d.identity.tenantId, d.firm.rootPublicKeyPem) };
+    },
+
+    /**
+     * 侧栏用户卡的提醒（v9.3 B-3 余项）：有几份入组申请等这台电脑批准——只数本机发出、仍有效的邀请对应的申请（别的管理员电脑发出的这里批不了）。
+     * 不动 list() 的批准快照（批准只认律师在成员页核对过的那一份）；60 秒内复用上次结果（侧栏切页、运行中每 5 秒都会问）；
+     * 没有控制面、不是管理员、联不上一律报 0，不报错。
+     */
+    async attention(): Promise<{ pending_joins: number }> {
+      if (!d.call) return { pending_joins: 0 };
+      if (attentionCache && Date.now() - attentionCache.at < ATTENTION_TTL_MS) return { pending_joins: attentionCache.n };
+      const r = await d.call("GET", "/v1/join-requests").catch(() => null);
+      if (!r || !r.ok || !Array.isArray(r.json?.join_requests)) return { pending_joins: attentionCache?.n ?? 0 };
+      const n = (r.json.join_requests as any[]).filter((x) => {
+        const local = inviteOf(String(x.activation_id));
+        return !!local && local.status === "open" && local.member_slug === String(x.member_slug);
+      }).length;
+      attentionCache = { at: Date.now(), n };
+      return { pending_joins: n };
     },
 
     /** 批准：只用列表时核对过的快照（复核 A-01）；成员编号与角色取本机邀请记录；证书 + 律所公钥包 + 用秘密段对批准结果做的 HMAC。 */
@@ -597,6 +643,7 @@ export const membersApi = (d: MembersDeps) => {
         d.db.run(`INSERT OR IGNORE INTO memberships (membership_id, tenant_id, user_id, role) VALUES (?, ?, ?, ?)`, [`membership_${snap.member_slug}`, d.identity.tenantId, userId, MEMBERSHIP_ROLE[local.role as Role]]);
       });
       snapshots.delete(id);
+      attentionCache = null;
       d.audit("member.join_approve", "device", snap.device_id);
       return { ok: true, status: "approved" };
     },
@@ -608,6 +655,7 @@ export const membersApi = (d: MembersDeps) => {
       const r = await call("POST", `/v1/join-requests/${id}/reject`, {});
       if (!r.ok) cpFail(r);
       snapshots.delete(id);
+      attentionCache = null;
       d.audit("member.join_reject", "join_request", id);
       return { ok: true, status: "rejected" };
     },

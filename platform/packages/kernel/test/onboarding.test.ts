@@ -107,6 +107,8 @@ test("开通与成员入组：创始开通码 → 重启按律所身份运行；
   const ob = readFileSync(join(dirB, "onboarding.json"), "utf8");
   assert.ok(!/PRIVATE KEY|claim_secret/.test(ob));
 
+  // 侧栏提醒（v9.3 B-3 余项）：管理员电脑报 1 份待批准；先问提醒、再列成员页，不影响随后的批准
+  assert.deepEqual(await a.invoke("members.attention"), { pending_joins: 1 });
   // 管理员机列出：核对码与成员机一致
   const list = (await a.invoke("members.list")) as any;
   assert.equal(list.join_requests.length, 1);
@@ -115,7 +117,9 @@ test("开通与成员入组：创始开通码 → 重启按律所身份运行；
   assert.equal(jr.name, "张律师");
   assert.equal(jr.local_invite, true);
   assert.equal(jr.verified, true, "申请的 HMAC 用本机邀请记录的秘密段核对通过");
+  assert.deepEqual(await a.invoke("members.attention"), { pending_joins: 1 }, "列成员页之后再问提醒：不清空批准快照");
   await a.invoke("members.approve", { join_request_id: jr.id });
+  assert.deepEqual(await a.invoke("members.attention"), { pending_joins: 0 }, "批准后提醒立即消失（不等 60 秒缓存）");
 
   const restartB = nextRestart(b);
   const chk = (await b.invoke("onboarding.check")) as any;
