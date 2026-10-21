@@ -79,7 +79,7 @@ import { restoreArtifactBytes } from "../services/export-restore.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
 import { buildRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
-import { SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, sampleContract } from "../services/sample-matter.ts";
+import { LIT_SAMPLE_ISSUES, LIT_SAMPLE_TITLE, SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, litigationSampleMaterials, sampleContract } from "../services/sample-matter.ts";
 import { probeEnvironment, type EnvProbeResult } from "../services/env-probe.ts";
 import { firstLineTitle, isTitledFilename } from "../services/artifact-title.ts";
 import { adjudicate, compareAnnotations, normalizeDocs, openEvalBytes, openEvalFile, parseDecisions, reportFileText, runRecallEval, workFileText } from "../services/recall-eval.ts";
@@ -715,17 +715,20 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
 
     // ─── 示例事项（v9.2 §4.4；Y4 §5 D-6、#24）：虚构内容、本机生成、不联网；每台设备只自动放入一次，移除后不再放入 ───
     "samples.status": (_p, id) => {
-      const r = db.get<{ matter_id: string; removed_at: string | null }>(
-        `SELECT s.matter_id, s.removed_at FROM sample_matters s JOIN matters m ON m.matter_id = s.matter_id WHERE m.tenant_id = ? ORDER BY s.installed_at DESC LIMIT 1`,
+      // 非诉、诉讼两件示例（Z3 #27）：matter_id 为第一件还在的（兼容旧调用方），matter_ids 为全部还在的
+      const rows = db.all<{ matter_id: string; removed_at: string | null }>(
+        `SELECT s.matter_id, s.removed_at FROM sample_matters s JOIN matters m ON m.matter_id = s.matter_id WHERE m.tenant_id = ? ORDER BY s.installed_at, s.rowid`,
         [id.tenantId],
       );
-      return { installed: !!r && !r.removed_at, removed: !!r?.removed_at, matter_id: r && !r.removed_at ? r.matter_id : null };
+      const live = rows.filter((r) => !r.removed_at).map((r) => r.matter_id);
+      return { installed: live.length > 0, removed: rows.some((r) => !!r.removed_at), matter_id: live[0] ?? null, matter_ids: live };
     },
     "samples.install": async (_p, id) => {
       const prior = db.get<{ matter_id: string; removed_at: string | null }>(
         `SELECT s.matter_id, s.removed_at FROM sample_matters s JOIN matters m ON m.matter_id = s.matter_id WHERE m.tenant_id = ? LIMIT 1`,
         [id.tenantId],
       );
+      // 只要放过任何一件示例（含已移除的）就不再放入（两件示例同时放入，见下）
       if (prior) return { matter_id: prior.removed_at ? null : prior.matter_id, installed: false };
       const created = (await api["matters.create"]!({ title: SAMPLE_TITLE, stance: "受让方", client_name: "乙投资有限公司（示例）", counterparty: "甲科技有限公司（示例）", consent_status: "not_required" }, id)) as { matter: { matter_id: string } };
       const mid = created.matter.matter_id;
@@ -734,7 +737,25 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       db.run(`INSERT INTO document_roles (document_version_id, matter_id, role, set_by) VALUES (?,?,?,?)`, [doc.document_version_id, mid, "theirs", id.userId]);
       submitRiskCards({ db, blobs, ...(tokens ? { tokens } : {}) }, { tenantId: id.tenantId, matterId: mid, runId: null }, { document_version_id: doc.document_version_id, cards: SAMPLE_CARDS.map((c) => ({ ...c })) });
       audit(db, id, "sample.installed", "matter", mid, undefined, keyctx);
-      return { matter_id: mid, installed: true };
+      // 诉讼线示例（Z3 #27）：四份合成材料，再在本机按规则跑一次“整理案卷”（确定性流程，不调用 AI、不联网）；
+      // 整理失败不影响放入——材料还在，律师可以自己点“整理案卷”
+      const lit = (await api["matters.create"]!({ title: LIT_SAMPLE_TITLE, stance: "原告", client_name: "丁贸易有限公司（示例）", counterparty: "戊制造有限公司（示例）", consent_status: "not_required" }, id)) as { matter: { matter_id: string } };
+      const litId = lit.matter.matter_id;
+      db.run(`INSERT INTO sample_matters (matter_id) VALUES (?)`, [litId]);
+      const litDocs: string[] = [];
+      for (const f of litigationSampleMaterials()) {
+        const d = (await api["materials.import"]!({ matter_id: litId, filename: f.filename, data_base64: f.data.toString("base64"), mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }, id)) as { document_version_id: string };
+        db.run(`INSERT INTO document_roles (document_version_id, matter_id, role, set_by) VALUES (?,?,?,?)`, [d.document_version_id, litId, "ours", id.userId]);
+        litDocs.push(d.document_version_id);
+      }
+      try {
+        const est = (await api["runs.estimate"]!({ matter_id: litId, scenario: "s2.case_file", document_version_ids: litDocs, issues: LIT_SAMPLE_ISSUES }, id)) as { estimate_id?: string };
+        if (est.estimate_id) await api["runs.start"]!({ matter_id: litId, estimate_id: est.estimate_id, idempotency_key: `sample-casefile-${litId}` }, id);
+      } catch {
+        // 见上
+      }
+      audit(db, id, "sample.installed", "matter", litId, undefined, keyctx);
+      return { matter_id: mid, matter_ids: [mid, litId], installed: true };
     },
     "samples.remove": async (p, id) => {
       const mid = String(p?.matter_id ?? "");

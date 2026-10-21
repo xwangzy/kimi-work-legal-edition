@@ -94,6 +94,25 @@ export const SCENARIOS: ScenarioCard[] = [
     steps: ["只用你在事实表里确认过的事实（没有确认的单列出来请你确认）", "按请求拆成要件，标出一般由哪一方举证", "把事实与证据挂到要件下，标出证据薄弱和没有证据的", "列出对方可能的抗辩和补证动作"],
     intents: [["争点"], ["证据", "支撑"], ["补证"], ["要件"]],
   },
+  // Z3 评审 §2.4、§8 P2 #28：诉讼线原来没有“案情分析 / 诉讼策略”，律师动笔写文书之前要先看清争点、证据强弱与风险
+  {
+    id: "case-analysis",
+    line: "litigation",
+    title: "案情分析与诉讼策略",
+    gives: "案卷材料或“整理案卷”的成果（证据目录、事实时间轴）",
+    gets: ["案情分析备忘录（内部稿）.docx（争点、证据强弱、诉讼风险、下一步建议）"],
+    scenario: "a1.agent_task",
+    skill: "case-analysis",
+    verb: "开始分析",
+    goal: "请分析案情并提出诉讼策略建议：我方目标为{goal}；我方地位：{side}。未确认的事实请标出，不评估胜诉率。",
+    fields: [
+      { key: "goal", label: "我方目标", kind: "text", required: true, placeholder: "例如：追回货款 120 万元及违约金" },
+      { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人", "尚未起诉"] },
+    ],
+    minMaterials: 1,
+    steps: ["读案卷材料与已整理的事实（没有确认的事实会标出）", "归纳争点，逐个写出双方证据的强弱和理由", "列出诉讼风险与等级（只做定性，不给胜诉率）", "按优先级给出下一步：补证、程序动作、文书、是否发函或协商"],
+    intents: [["案情", "分析"], ["诉讼策略"], ["怎么打"], ["诉讼", "风险"], ["案子", "风险"]],
+  },
   {
     id: "amount",
     line: "litigation",
@@ -408,7 +427,8 @@ export function splitIssues(text: string): string[] {
  * 只列已有的场景卡；点开的是下一场景的开始面板（同一事项），材料在面板里照常勾选。
  */
 export const NEXT_STEPS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  casefile: ["issues", "amount", "pleading"],
+  casefile: ["issues", "case-analysis", "amount"],
+  "case-analysis": ["issues", "pleading", "defense"],
   issues: ["pleading", "defense", "amount"],
   defense: ["cross-exam", "agency"],
   "cross-exam": ["agency"],
@@ -546,4 +566,11 @@ export function lineMismatchText(card: Pick<ScenarioCard, "line" | "title">, mat
   const l = matterLine(matter);
   if (!l || l === card.line) return null;
   return `这是${LINE_LABELS[l]}事项。确定在这里做「${card.title}」吗？`;
+}
+
+/** 示例事项顶部的说明（Z3 #27：非诉、诉讼两件示例各写各的试法）。 */
+export function sampleBannerText(m: { stance?: string | null } | null | undefined): string {
+  if (matterLine(m) === "litigation")
+    return "这是示例事项：合同、送货签收单、对账确认函与往来函件都是虚构的，只在这台电脑上，不会发给任何人。已在这台电脑上按规则整理出证据目录、事实时间轴与争点框架（不调用 AI）；可以在“事实”里逐条确认，再试“争点与证据分析”或“案情分析与诉讼策略”。";
+  return "这是示例事项：合同与审查意见都是虚构的，只在这台电脑上，不会发给任何人。可以在“材料”里打开审查意见，试着逐条决定并生成修订稿。";
 }

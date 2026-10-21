@@ -14,6 +14,7 @@ import { reasonLabel } from "../components/DataFlow.tsx";
 import { DEST_LABELS, fmtTime, RUN_STATUS_LABELS, SCENARIO_LABELS, parseFlagsText } from "../lib/labels.ts";
 import { FactsPanel } from "../components/FactsPanel.tsx";
 import { decideMatterTab } from "../lib/matter-tab.ts";
+import { sampleBannerText } from "../lib/scenarios.ts";
 import { MatterBoard } from "./Boards.tsx";
 import { MatterDeliverables } from "./Deliverables.tsx";
 import { MatterLifecyclePanel } from "../components/MatterLifecycle.tsx";
@@ -180,7 +181,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
         </div>
         {matter.is_sample && (
           <div className="banner banner-gray">
-            这是示例事项：合同与审查意见都是虚构的，只在这台电脑上，不会发给任何人。可以在“材料”里打开审查意见，试着逐条决定并生成修订稿。
+            {sampleBannerText(matter)}
             <div className="banner-actions">
               <button
                 className="btn btn-sm"

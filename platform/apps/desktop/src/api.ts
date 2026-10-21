@@ -583,7 +583,7 @@ export const api = {
   // 事项
   listMatters: () => invoke<{ matters: Matter[] }>("matters.list"),
   /** 示例事项（v9.2 §4.4；Y4 §5 D-6）：首次使用放入一次；移除后不再放入。 */
-  installSample: () => invoke<{ matter_id: string | null; installed: boolean }>("samples.install", {}),
+  installSample: () => invoke<{ matter_id: string | null; matter_ids?: string[]; installed: boolean }>("samples.install", {}),
   removeSample: (matterId: string) => invoke<{ removed: boolean }>("samples.remove", { matter_id: matterId }),
   createMatter: (body: Record<string, unknown>) => invoke<{ matter: Matter }>("matters.create", body),
   getMatter: (id: string) => invoke<{ matter: Matter; documents: any[]; run_policy?: RunPolicyView; runs?: any[] }>("matters.get", { matter_id: id }),
