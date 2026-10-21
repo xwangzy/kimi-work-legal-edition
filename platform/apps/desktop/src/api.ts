@@ -787,6 +787,14 @@ export const api = {
     invoke<any>("review.approve", { artifact_version_id: artifactVersionId, ...body }),
   deliver: (body: { artifact_version_id: string; action: "download" | "external_send" | "archive"; audience?: string }) => invoke<any>("deliveries.create", body),
   pending: () => invoke<{ pending: any[]; count: number }>("pending.list"),
+  /** 全局搜索（余项续复核 RC-A-05、RC-B-06/07）：内核里按标题找，只返回命中的几条。 */
+  searchTitles: (q: string, labels: Record<string, string>) =>
+    invoke<{
+      matters: { matter_id: string; title: string; sub: string; last_at: string | null }[];
+      runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; skill: string | null; goal: string; updated_at: string }[];
+      deliverables: { artifact_version_id: string; matter_id: string; matter_title: string; kind: string; version: number; filename: string; title: string | null; created_at: string }[];
+      truncated: { runs: boolean; deliverables: boolean };
+    }>("search.titles", { q, labels }),
   recentRuns: (limit = 5) =>
     invoke<{ runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; goal: string; skill?: string | null }[]; waiting: { run_id: string; matter_id: string }[] }>("runs.list_recent", { limit }),
 

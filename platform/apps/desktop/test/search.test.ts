@@ -1,32 +1,52 @@
 /**
- * 全局搜索（Z3 评审 §8.2 #31）：每个词都要命中；标题开头命中排前；按事项、任务、交付件分组；空查询不出结果。Ctrl / ⌘ + K 打开（源码对照）。
+ * 全局搜索（Z3 评审 §8.2 #31；余项续复核 RC-B-06/08）：匹配在内核（search.titles），界面只排三组。
+ * 任务标题带目标、副标题带事项与时刻；交付件带版本；Ctrl / ⌘ + K 打开（macOS 只认 ⌘），开通向导里不开；输入法组字不当选择。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { searchItems, type SearchItem } from "../src/lib/search.ts";
+import { searchGroups, searchLabels } from "../src/lib/search.ts";
 
-const items: SearchItem[] = [
-  { kind: "matter", title: "甲公司股权转让", sub: "乙投资 / 甲科技", href: "/matter/m1", at: "2026-10-20" },
-  { kind: "matter", title: "买卖合同纠纷（原告）", sub: "丙公司", href: "/matter/m2", at: "2026-10-21" },
-  { kind: "run", title: "审合同", sub: "甲公司股权转让", href: "/run/r1/m1", at: "2026-10-20" },
-  { kind: "deliverable", title: "审查意见书（内部稿）", sub: "甲公司股权转让", href: "/review/a1", at: "2026-10-20" },
-  { kind: "deliverable", title: "修订稿（原生修订）", sub: "买卖合同纠纷（原告）", href: "/review/a2", at: "2026-10-21" },
-];
-
-test("按词命中、分组、标题开头优先", () => {
-  const g = searchItems("甲公司", items);
-  assert.deepEqual(g.map((x) => [x.kind, x.items.map((i) => i.href)]), [["matter", ["/matter/m1"]], ["run", ["/run/r1/m1"]], ["deliverable", ["/review/a1"]]]);
-  assert.deepEqual(searchItems("修订 买卖", items).map((x) => x.items.map((i) => i.href)), [["/review/a2"]], "两个词都要命中（副标题也算）");
-  assert.equal(searchItems("合同", items)[0]!.items[0]!.href, "/matter/m2");
-  assert.deepEqual(searchItems("   ", items), []);
-  assert.deepEqual(searchItems("没有的东西", items), []);
+test("分组：同一事项的几次任务按目标区分；交付件带版本与时刻", () => {
+  const now = new Date(2026, 9, 21, 16, 0).getTime();
+  const at = new Date(2026, 9, 20, 15, 2).toISOString();
+  const g = searchGroups(
+    {
+      matters: [{ matter_id: "m1", title: "甲公司股权转让", sub: "乙投资" }],
+      runs: [
+        { run_id: "r1", matter_id: "m1", matter_title: "甲公司股权转让", scenario: "a1.agent_task", skill: "contract-review", goal: "审查股权转让协议 v1", updated_at: at },
+        { run_id: "r2", matter_id: "m1", matter_title: "甲公司股权转让", scenario: "a1.agent_task", skill: "contract-review", goal: "审查对方回稿", updated_at: at },
+      ],
+      deliverables: [{ artifact_version_id: "a1", matter_id: "m1", matter_title: "甲公司股权转让", kind: "revision_draft", version: 2, filename: "x.docx", title: null, created_at: at }],
+    },
+    now,
+  );
+  assert.deepEqual(g.map((x) => x.kind), ["matter", "run", "deliverable"]);
+  const runs = g[1]!.items.map((x) => x.title);
+  assert.notEqual(runs[0], runs[1], "两次任务标题不同");
+  assert.match(runs[0]!, /审查股权转让协议 v1/);
+  assert.equal(g[1]!.items[0]!.sub, "甲公司股权转让 · 10月20日 15:02");
+  assert.match(g[2]!.items[0]!.title, /第 2 版$/);
+  assert.deepEqual(searchGroups({ matters: [], runs: [], deliverables: [] }), []);
 });
 
-test("Ctrl / ⌘ + K 打开搜索；侧栏有搜索入口", () => {
+test("给内核的标签含场景卡名与交付件名", () => {
+  const l = searchLabels();
+  assert.ok(l["skill:contract-review"]);
+  assert.ok(l["kind:revision_draft"] || l["kind:s1_redline"]);
+});
+
+test("Ctrl / ⌘ + K 打开搜索（macOS 只认 ⌘、开通向导里不开）；侧栏有入口；组字时不当选择；Esc 不连带关掉底下的对话框", () => {
   const app = readFileSync(fileURLToPath(new URL("../src/App.tsx", import.meta.url)), "utf8");
-  assert.match(app, /e\.key\.toLowerCase\(\) === "k"/);
+  assert.match(app, /e\.key\.toLowerCase\(\) === "k" && !onboardingRef\.current/);
+  assert.match(app, /\/Mac\/i\.test\(navigator\.platform\) \? e\.metaKey && !e\.ctrlKey/);
   assert.match(app, /<SearchPalette/);
   assert.match(readFileSync(fileURLToPath(new URL("../src/components/Sidebar.tsx", import.meta.url)), "utf8"), /kwl:search/);
+  const pal = readFileSync(fileURLToPath(new URL("../src/components/SearchPalette.tsx", import.meta.url)), "utf8");
+  assert.match(pal, /isComposing\) return/);
+  assert.match(pal, /aria-modal="true"/);
+  assert.match(pal, /stopPropagation\(\);\s*onClose\(\)/);
+  assert.match(pal, /api\s*\.searchTitles\(/);
+  assert.doesNotMatch(pal, /restoreTokens|listArtifacts/, "不再在界面里批量取交付件并还原代号（复核 RC-A-05）");
 });

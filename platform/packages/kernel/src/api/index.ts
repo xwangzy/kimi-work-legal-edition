@@ -90,6 +90,7 @@ import { createStyledDocx, extractParagraphs, isHouseStyled, markdownToBlocks, r
 import { docStyleView, houseStyleFor, setDocStyle, setDocTemplate } from "../services/doc-style.ts";
 import { isToolOperationInFlight } from "../local-server.ts";
 import { artifactCitationBlock, checkArtifactCitations, CITATIONS_CASES_CHECK_KEY, uncheckedCitations, type ArtifactCitationCheck } from "../services/artifact-citations.ts";
+import { rankTitles, type TitleCandidate } from "../services/title-search.ts";
 
 export interface ApiDeps {
   db: KernelDb;
@@ -604,6 +605,37 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   deps.onShutdown?.(() => {
     for (const m of restoreMeter.values()) closeRestoreWindow(m);
     restoreMeter.clear();
+  });
+  /** 全局搜索的还原计量（余项续复核 RC-A-05）：每人每分钟一条 search.titles_restored（次数、条数、涉及几个事项），不按事项记“取原文”。 */
+  type SearchWindow = { start: number; calls: number; restored: number; matters: Set<string>; identity: Identity; closed: boolean };
+  const searchMeter = new Map<string, SearchWindow>();
+  const closeSearchWindow = (w: SearchWindow) => {
+    if (w.closed) return;
+    w.closed = true;
+    if (w.restored > 0) {
+      try {
+        audit(db, w.identity, "search.titles_restored", "user", w.identity.userId, sha256Hex(JSON.stringify({ calls: w.calls, restored: w.restored, matters: w.matters.size, window_start: new Date(w.start).toISOString() })), keyctx);
+      } catch {
+        // 审计写入失败不影响搜索（签名链另有告警）
+      }
+    }
+  };
+  function searchRestoreWindow(identity: Identity): SearchWindow {
+    const cur = searchMeter.get(identity.userId);
+    if (cur && Date.now() - cur.start < 60_000) return cur;
+    if (cur) closeSearchWindow(cur);
+    const w: SearchWindow = { start: Date.now(), calls: 0, restored: 0, matters: new Set(), identity, closed: false };
+    searchMeter.set(identity.userId, w);
+    const t = setTimeout(() => {
+      if (searchMeter.get(identity.userId) === w) searchMeter.delete(identity.userId);
+      closeSearchWindow(w);
+    }, 60_000);
+    t.unref?.();
+    return w;
+  }
+  deps.onShutdown?.(() => {
+    for (const w of searchMeter.values()) closeSearchWindow(w);
+    searchMeter.clear();
   });
 
   const api: Record<string, Handler> = {
@@ -2184,6 +2216,88 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         [deliveryId, art.artifact_version_id, id.tenantId, art.matter_id, audience, art.sha256, action, linkedApprovalId, id.userId, String(p?.note ?? "")],
       );
       return { delivery_id: deliveryId, action, package_sha256: art.sha256, status: action === "external_send" ? "issued" : art.status };
+    },
+
+    /**
+     * 全局搜索（Z3 §8.2 #31；余项续复核 RC-A-05、RC-B-06/07）：在本人能看到的全部事项、任务与交付件里按标题找，
+     * 只返回命中的几条（每类至多 6 条）。代号只在内核里还原用于匹配，命中且返回的才带原文；还原按“每人每分钟一条”另记
+     * search.titles_restored（不混进按事项计的“取原文”审计）。不联网。labels：界面的场景名与交付件名（按 skill: / scenario: / kind: 键）。
+     */
+    "search.titles": (p, id) => {
+      const q = String(p?.q ?? "").slice(0, 100);
+      const empty = { matters: [], runs: [], deliverables: [], truncated: { runs: false, deliverables: false } };
+      if (!q.trim()) return empty;
+      const labels: Record<string, string> = p?.labels && typeof p.labels === "object" && !Array.isArray(p.labels) ? Object.fromEntries(Object.entries(p.labels as Record<string, unknown>).filter(([, v]) => typeof v === "string").slice(0, 500).map(([k, v]) => [k, String(v).slice(0, 40)])) : {};
+      const restoreFor = (matterId: string, text: string) => (tokens && text.includes("〔") ? tokens.restore(matterId, text) : { text, restored: 0 });
+      const matters = db.all<{ matter_id: string; title: string; client_name: string | null; counterparty: string | null; created_at: string; last_at: string | null }>(
+        `SELECT m.matter_id, m.title, m.client_name, m.counterparty, m.created_at,
+                (SELECT MAX(r.updated_at) FROM runs r WHERE r.matter_id = m.matter_id) AS last_at
+           FROM matters m JOIN matter_members mm ON mm.matter_id = m.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL
+          WHERE m.tenant_id = ? AND m.status = 'active' AND m.lifecycle <> 'purged'`,
+        [id.userId, id.tenantId],
+      );
+      const titleOf = new Map(matters.map((m) => [m.matter_id, m.title]));
+      const RUN_CAP = 3000;
+      const runs = db.all<{ run_id: string; matter_id: string; scenario: string; updated_at: string; input_snapshot: string | null }>(
+        `SELECT r.run_id, r.matter_id, r.scenario, r.updated_at, r.input_snapshot
+           FROM runs r JOIN matter_members mm ON mm.matter_id = r.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL
+           JOIN matters m ON m.matter_id = r.matter_id
+          WHERE r.tenant_id = ? AND m.status = 'active' AND m.lifecycle <> 'purged' ORDER BY r.updated_at DESC LIMIT ?`,
+        [id.userId, id.tenantId, RUN_CAP + 1],
+      );
+      const ART_CAP = 5000;
+      const arts = db.all<{ artifact_version_id: string; matter_id: string; kind: string; version: number; filename: string; storage_uri: string; created_at: string }>(
+        `SELECT a.artifact_version_id, a.matter_id, a.kind, a.version, a.filename, a.storage_uri, a.created_at
+           FROM artifact_versions a JOIN matter_members mm ON mm.matter_id = a.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL
+           JOIN matters m ON m.matter_id = a.matter_id
+          WHERE m.tenant_id = ? AND m.status = 'active' AND m.lifecycle <> 'purged' ORDER BY a.created_at DESC LIMIT ?`,
+        [id.userId, id.tenantId, ART_CAP + 1],
+      );
+      const cands: TitleCandidate[] = [
+        ...matters.map((m) => ({ kind: "matter" as const, title: m.title, sub: [m.client_name, m.counterparty].filter(Boolean).join(" / "), at: m.last_at ?? m.created_at, ref: { matter_id: m.matter_id } })),
+        ...runs.slice(0, RUN_CAP).map((r) => {
+          const snap = parseJson<any>(r.input_snapshot, {});
+          const skill = typeof snap?.skill === "string" ? snap.skill : null;
+          const label = (skill ? labels[`skill:${skill}`] : undefined) ?? labels[`scenario:${r.scenario}`] ?? "";
+          const goal = String(snap?.goal ?? "").replace(/\s+/g, " ").trim();
+          return { kind: "run" as const, title: goal || label || "任务", sub: titleOf.get(r.matter_id) ?? "", extra: label, at: r.updated_at, ref: { run_id: r.run_id, matter_id: r.matter_id, scenario: r.scenario, skill, goal } };
+        }),
+        ...arts.slice(0, ART_CAP).map((a) => {
+          const title = artifactTitle(a.artifact_version_id, a.filename, a.storage_uri);
+          const label = labels[`kind:${a.kind}`] ?? "";
+          return { kind: "deliverable" as const, title: title ?? (label || a.filename), sub: titleOf.get(a.matter_id) ?? "", extra: `${label} ${a.filename}`, at: a.created_at, ref: { artifact_version_id: a.artifact_version_id, matter_id: a.matter_id, kind: a.kind, version: a.version, filename: a.filename, title } };
+        }),
+      ];
+      // 代号形态的标题先在内核里还原再匹配（只在内存里；命中的才返回）
+      for (const c of cands) {
+        if (c.kind === "matter" || !c.title.includes("〔")) continue;
+        c.title = restoreFor(String(c.ref.matter_id), c.title).text;
+      }
+      const hit = rankTitles(q, cands);
+      let restored = 0;
+      const touched = new Set<string>();
+      const runsOut = hit.run.map((c) => {
+        const g = restoreFor(String(c.ref.matter_id), String(c.ref.goal ?? ""));
+        if (g.restored) (restored += g.restored), touched.add(String(c.ref.matter_id));
+        return { run_id: c.ref.run_id, matter_id: c.ref.matter_id, matter_title: c.sub, scenario: c.ref.scenario, skill: c.ref.skill, goal: g.text.slice(0, 30), updated_at: c.at };
+      });
+      const delivOut = hit.deliverable.map((c) => {
+        const t = c.ref.title ? restoreFor(String(c.ref.matter_id), String(c.ref.title)) : null;
+        if (t?.restored) (restored += t.restored), touched.add(String(c.ref.matter_id));
+        return { artifact_version_id: c.ref.artifact_version_id, matter_id: c.ref.matter_id, matter_title: c.sub, kind: c.ref.kind, version: c.ref.version, filename: c.ref.filename, title: t?.text ?? null, created_at: c.at };
+      });
+      if (restored > 0) {
+        const w = searchRestoreWindow(id);
+        w.calls += 1;
+        w.restored += restored;
+        for (const m of touched) w.matters.add(m);
+      }
+      return {
+        matters: hit.matter.map((c) => ({ matter_id: c.ref.matter_id, title: c.title, sub: c.sub, last_at: c.at })),
+        runs: runsOut,
+        deliverables: delivOut,
+        truncated: { runs: runs.length > RUN_CAP, deliverables: arts.length > ART_CAP },
+      };
     },
 
     // 首页“等你处理 / 继续工作”（UIUX 增量评审 H-1）：本人能看到的事项里最近的任务（只给目标前 24 字与状态，不含正文）

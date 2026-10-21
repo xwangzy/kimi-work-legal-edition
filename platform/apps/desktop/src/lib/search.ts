@@ -1,37 +1,54 @@
 /**
- * 全局搜索（Z3 评审 §8.2 #31，10-13 遗留）：在本机已取到的事项、任务、交付件里按标题找（纯函数；不联网、不进账本搜索全文）。
- * 每个词（空格隔开）都要出现在标题或副标题里；标题开头命中 > 标题包含 > 只在副标题；同分按最近活动。
+ * 全局搜索（Z3 评审 §8.2 #31）：匹配在内核里做（search.titles；余项续复核 RC-A-05、RC-B-06/07/09），这里只把结果排成三组。纯函数。
+ * 任务用目标作标题（同一事项的几次任务分得清），交付件标题后带“第 N 版”，副标题写所在事项与时刻。
  */
+import { artifactName, ARTIFACT_LABELS, fmtWhen, SCENARIO_LABELS } from "./labels.ts";
+import { SCENARIOS, scenarioOfRun } from "./scenarios.ts";
+
 export type SearchKind = "matter" | "run" | "deliverable";
 export interface SearchItem {
   kind: SearchKind;
   title: string;
-  /** 副标题（事项的客户与相对方、任务与交付件所在的事项）。 */
   sub: string;
   href: string;
-  /** 最近活动（ISO 时刻），同分时新的在前。 */
-  at?: string | null;
 }
 
-const norm = (s: string) => s.toLowerCase().replace(/\s+/g, "");
-
-export function searchItems(query: string, items: readonly SearchItem[], limitPerKind = 6): { kind: SearchKind; items: SearchItem[] }[] {
-  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (terms.length === 0) return [];
-  const scored: { it: SearchItem; score: number }[] = [];
-  for (const it of items) {
-    const t = norm(it.title);
-    const all = `${t}${norm(it.sub)}`;
-    if (!terms.every((w) => all.includes(w))) continue;
-    const first = terms[0]!;
-    const score = t.startsWith(first) ? 3 : terms.every((w) => t.includes(w)) ? 2 : 1;
-    scored.push({ it, score });
+/** 给内核的标签：场景卡名（按方法模板与场景）与交付件名（按种类），任务与交付件也能按这些名称搜到。 */
+export function searchLabels(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const c of SCENARIOS) {
+    if (c.skill && !out[`skill:${c.skill}`]) out[`skill:${c.skill}`] = c.title;
+    if (c.scenario !== "a1.agent_task" && !out[`scenario:${c.scenario}`]) out[`scenario:${c.scenario}`] = c.title;
   }
-  scored.sort((a, b) => b.score - a.score || String(b.it.at ?? "").localeCompare(String(a.it.at ?? "")));
-  const order: SearchKind[] = ["matter", "run", "deliverable"];
-  return order
-    .map((kind) => ({ kind, items: scored.filter((x) => x.it.kind === kind).slice(0, limitPerKind).map((x) => x.it) }))
-    .filter((g) => g.items.length > 0);
+  for (const [k, v] of Object.entries(SCENARIO_LABELS)) out[`scenario:${k}`] ??= v;
+  for (const [k, v] of Object.entries(ARTIFACT_LABELS)) out[`kind:${k}`] = v;
+  return out;
+}
+
+export function searchGroups(
+  r: {
+    matters: { matter_id: string; title: string; sub: string }[];
+    runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; skill: string | null; goal: string; updated_at: string }[];
+    deliverables: { artifact_version_id: string; matter_id: string; matter_title: string; kind: string; version: number; filename: string; title: string | null; created_at: string }[];
+  },
+  now = Date.now(),
+): { kind: SearchKind; items: SearchItem[] }[] {
+  const groups: { kind: SearchKind; items: SearchItem[] }[] = [
+    { kind: "matter", items: r.matters.map((m) => ({ kind: "matter" as const, title: m.title, sub: m.sub, href: `/matter/${m.matter_id}` })) },
+    {
+      kind: "run",
+      items: r.runs.map((x) => {
+        const card = scenarioOfRun({ scenario: x.scenario, input_snapshot: { skill: x.skill } });
+        const label = card?.title ?? SCENARIO_LABELS[x.scenario] ?? "任务";
+        return { kind: "run" as const, title: x.goal ? `${label}：${x.goal}` : label, sub: `${x.matter_title} · ${fmtWhen(x.updated_at, now)}`, href: `/run/${x.run_id}/${x.matter_id}` };
+      }),
+    },
+    {
+      kind: "deliverable",
+      items: r.deliverables.map((x) => ({ kind: "deliverable" as const, title: `${artifactName(x)} · 第 ${x.version} 版`, sub: `${x.matter_title} · ${fmtWhen(x.created_at, now)}`, href: `/review/${x.artifact_version_id}` })),
+    },
+  ];
+  return groups.filter((g) => g.items.length > 0);
 }
 
 export const SEARCH_KIND_LABEL: Readonly<Record<SearchKind, string>> = { matter: "事项", run: "任务", deliverable: "交付件" };

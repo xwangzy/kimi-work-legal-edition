@@ -2,7 +2,7 @@
  * 桌面客户端外壳（v9 第 03 篇 §4：Kimi Work 版式——左侧栏 + 主区；任务执行态为 侧栏 | 对话 | 预览 三栏）。
  * 路由用 hash（渲染进程不导航到任何外部地址）。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { api, onKernelEvent, recovery, updates, type UpdateStatus } from "./api.ts";
@@ -131,14 +131,19 @@ export function App() {
   const [kernelNotice, setKernelNotice] = useState<{ status: string; message?: string } | null>(null);
   // 全局搜索（Z3 §8.2 #31）：Ctrl / ⌘ + K 打开；侧栏“搜索”按钮发 kwl:search 事件
   const [searching, setSearching] = useState(false);
+  // 开通向导里不开搜索（面板只在主界面渲染；否则在向导里按过 ⌘K，进主界面会自己弹出来）
+  const onboardingRef = useRef(true);
+  onboardingRef.current = boot === null || !!boot.onboarding;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
+      // macOS 只认 ⌘ + K（文本框里系统自带的 Ctrl + K 是删除到行尾）；其余系统认 Ctrl + K（余项续复核 RC-B-08）
+      const mod = /Mac/i.test(navigator.platform) ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k" && !onboardingRef.current) {
         e.preventDefault();
         setSearching(true);
       }
     };
-    const onOpen = () => setSearching(true);
+    const onOpen = () => !onboardingRef.current && setSearching(true);
     window.addEventListener("keydown", onKey);
     window.addEventListener("kwl:search", onOpen);
     return () => {
