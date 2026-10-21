@@ -49,12 +49,8 @@ export function estimatePoints(input: EstimateInput): Estimate {
     points: Math.min(raw, t.cap),
     breakdown,
     valid_seconds: 900,
-    assumptions: [
-      `单任务上限 ${t.cap} 点`,
-      "页数为解析页数；无页数材料按 0 页计",
-      "平台失败不扣点；取消按已发生动作结算",
-      "v0 费率表，试点实测后校准",
-    ],
+    // 律师看得懂的两句（v9.4：原来的“v0 费率表，试点实测后校准”“页数为解析页数”是研发口径，不再显示）
+    assumptions: [`这类任务最多 ${t.cap} 点`, "因软件或服务出错没做完的不扣点；你中途取消的，只扣已经做完的部分"],
   };
 }
 

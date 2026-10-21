@@ -52,9 +52,8 @@ export function SupportUpload({ allowed, configured }: { allowed: boolean | null
     preview && (!preview.allowed ? "律所没有开启“上传诊断包给中软支持”：你仍可以导出文件，按所内要求发送。" : !preview.configured ? "这台电脑没有配置中软支持服务：请导出文件，按所内要求发送。" : preview.too_large ? "诊断包超过 2 MB，无法上传：请导出文件，按所内要求发送。" : null);
   return (
     <div className="support-upload">
-      {unavailable ? (
-        <div className="muted">上传给中软支持：{unavailable}</div>
-      ) : !preview ? (
+      {/* 律所未开启或未配置时律师做不了什么：不再单独占一行（v9.4 认知减负）；导出文件的路径就在上面 */}
+      {unavailable ? null : !preview ? (
         <div className="banner-actions">
           <button className="btn btn-sm" disabled={busy} onClick={() => void open()}>
             {busy ? "正在生成…" : "上传给中软支持…"}

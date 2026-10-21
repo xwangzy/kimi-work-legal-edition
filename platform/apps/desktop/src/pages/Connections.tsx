@@ -7,11 +7,12 @@
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { useEffect, useState } from "react";
 import { notifyDataChanged } from "../lib/events.ts";
-import { api, updates, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft, type QuotaStatus } from "../api.ts";
+import { api, recovery as recoveryApi, updates, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft, type QuotaStatus } from "../api.ts";
 import { quotaLawyerLine } from "../lib/firm-usage.ts";
 import { CONTENT_CHECK_FAILED, CONTENT_PANEL_NOTE, contentCheckLine, contentSourceLine, contentStaleLine } from "../lib/content-labels.ts";
 import { nav, type SettingsTab } from "../App.tsx";
 import { displayVersion, fmtDate, fmtTime, groupDigits } from "../lib/labels.ts";
+import { backupTile, deviceSafetyTile } from "../lib/device-status.ts";
 import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
 import { RecallEvalPanel } from "./RecallEval.tsx";
 import { CpAuditPanel, UsagePanel } from "./FirmUsage.tsx";
@@ -76,7 +77,7 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
         {tab === "general" && <GeneralTab version={displayVersion(status?.app_version, status?.version)} />}
         {tab === "visibility" && <VisibilityTab gate={gate} im={im} recovery={recovery} firm={status?.firm_name ?? null} syncOn={!!status?.sync_configured} />}
         {tab === "sources" && <SourcesTab gate={gate} lawdb={lawdb} im={im} onLawdbChanged={() => api.lawdbStatus().then(setLawdb).catch(() => {})} />}
-        {tab === "device" && <DeviceTab caps={caps} gate={gate} mySafety={mySafety} recovery={recovery} admin={isAdmin} />}
+        {tab === "device" && <DeviceTab caps={caps} gate={gate} mySafety={mySafety} admin={isAdmin} />}
         {tab === "admin" &&
           (status === null ? null : isAdmin ? (
             <AdminTab caps={caps} gate={gate} devices={devices} unresolved={unresolved} onReconciled={load} im={im} recovery={recovery} />
@@ -426,32 +427,23 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
 
 /** 本机与安全（ST-1 律师版）：四行结论 + 电脑环境 + 遇到问题；工程细节在“管理 → 诊断”。 */
 /** 本所与本人（第 13 批）：经开通码或邀请码激活的电脑显示律所核对码，新成员可与管理员核对。 */
-function ActivationRow() {
-  const [a, setA] = useState<any | null>(null);
-  useEffect(() => {
-    api.kernelStatus().then((st: any) => setA(st?.activation ?? null)).catch(() => setA(null));
-  }, []);
-  if (!a) return null;
-  return (
-    <div className="device-row">
-      <div className="device-k">本所</div>
-      <div>
-        <b>{a.firm?.name}</b>
-        {a.member?.name ? ` · ${a.member.name}` : ""}
-        <div className="muted">律所核对码 <span className="mono">{a.firm_check_code}</span>：与管理员“设置 · 管理 · 成员”页底部的数字一致，说明你加入的是本所。</div>
-      </div>
-    </div>
-  );
-}
-
-function DeviceTab({ caps, gate, mySafety, recovery, admin }: { caps: Capabilities | null; gate: any; mySafety: string | null; recovery: any; admin: boolean }) {
+/**
+ * 本机与安全（v9.4 重排）：先给三句结论（案卷安全、备份、本所），再按“备份与恢复 / 账号与团队 / 遇到问题”三块组织；
+ * 只给 IT 看的内容（电脑环境自检、诊断包里有什么）一律折叠。律师层不出现“执行域、出站闸门、中继、吊销”等研发用语。
+ */
+function DeviceTab({ caps, gate, mySafety, admin }: { caps: Capabilities | null; gate: any; mySafety: string | null; admin: boolean }) {
   const [busy, setBusy] = useState(false);
   const [diag, setDiag] = useState<{ open: boolean; msg: string }>({ open: false, msg: "" });
   const [env, setEnv] = useState<Record<string, any> | null>(null);
   const [cp, setCp] = useState<ControlPlaneStatus | null>(null);
   const [quota, setQuota] = useState<QuotaStatus | null>(null);
+  const [backup, setBackup] = useState<any | null>(null);
+  const [firm, setFirm] = useState<any | null>(null);
+  const loadBackup = () => recoveryApi.backupStatus().then(setBackup).catch(() => setBackup(null));
   useEffect(() => {
     api.envProbe().then(setEnv).catch(() => setEnv(null));
+    api.kernelStatus().then((st: any) => setFirm(st?.activation ?? null)).catch(() => setFirm(null));
+    void loadBackup();
     api
       .controlPlaneStatus()
       .then((c) => {
@@ -462,46 +454,46 @@ function DeviceTab({ caps, gate, mySafety, recovery, admin }: { caps: Capabiliti
   }, []);
   const domainOk = !!caps && !/不可用|未启用|失败/.test(String(caps.execution_domain.status ?? ""));
   const envWarn = env && env.platform === "win32" ? envLines(env).filter((l) => l.warn).length : 0;
+  const safe = deviceSafetyTile(domainOk, !!gate);
+  const bk = backupTile(backup);
   return (
     <div className="device">
-      <div className="panel">
-        <div className="device-row">
-          <div className="device-k">本机防护</div>
-          <div>
-            {domainOk ? "✓ " : ""}案卷加密保存在这台电脑上；AI 在这台电脑上做计算时不能联网，只能看本事项的文件。
-            {!domainOk && <div className="muted">计算环境暂不可用：需要计算的任务会停下并说明原因。</div>}
+      <div className="status-tiles" role="list" aria-label="本机状态">
+        <StatusTile tone={safe.tone} title="案卷安全" line={safe.line} />
+        <StatusTile tone={bk.tone} title="备份" line={bk.line} action={bk.tone === "ok" ? undefined : { label: "去设置", href: "recovery-backup" }} />
+        <StatusTile tone="info" title="本所" line={firm?.firm?.name ? `${firm.firm.name}${firm.member?.name ? ` · ${firm.member.name}` : ""}` : "未加入律所（单机使用）"} />
+      </div>
+
+      <section className="panel device-section" aria-labelledby="sec-backup">
+        <h2 className="section-h" id="sec-backup">备份与恢复</h2>
+        <RecoveryBackup onChanged={() => void loadBackup()} />
+      </section>
+
+      <section className="panel device-section" aria-labelledby="sec-team">
+        <h2 className="section-h" id="sec-team">账号与团队</h2>
+        {firm && (
+          <div className="device-row">
+            <div className="device-k">本所</div>
+            <div>
+              <b>{firm.firm?.name}</b>
+              {firm.member?.name ? ` · ${firm.member.name}` : ""}
+              <details className="quiet-details">
+                <summary>律所核对码</summary>
+                <span className="mono">{firm.firm_check_code}</span>：与管理员“设置 · 管理 · 成员”页底部的数字一致，说明你加入的是本所。
+              </details>
+            </div>
           </div>
-        </div>
-        <div className="device-row">
-          <div className="device-k">联网通道</div>
-          <div>
-            {gate ? "✓ " : ""}模型、检索与网页只经 Kimi Work 自己的联网通道发出，每一次都记在“数据去向”里。
-          </div>
-        </div>
-        <ActivationRow />
-        <RecoveryBackup />
-        <div className="device-row">
-          <div className="device-k">核对码</div>
-          <div>
-            <details>
-              <summary className="muted">换电脑或管理员要求核对时才需要（点开查看）</summary>
-              <b className="mono safety-code">{mySafety ? groupDigits(mySafety) : "—"}</b>
-              <div className="muted">请在电话或当面把这串数字读给对方；对方屏幕上的一致才确认。</div>
-            </details>
-          </div>
-        </div>
-        {/* 律所设置与许可（复核 S6B-08：拆分后普通律师也要看得到许可是否有效、是否处于退出状态） */}
+        )}
         {cp && cp.mode === "control_plane" && (
           <div className="device-row">
-            <div className="device-k">律所设置</div>
+            <div className="device-k">使用许可</div>
             <div>
               {cp.exit_mode ? (
                 <span className="pill pill-red">{cp.exit_mode.message}</span>
               ) : (
                 <>
-                  {cp.license?.state === "valid" ? `许可有效${cp.license.expires_at ? `，至 ${fmtTime(cp.license.expires_at)}` : ""}` : cp.license?.state === "expired" ? "许可已到期" : "尚未取得许可"}
-                  {" · "}
-                  {cp.policy?.source === "control_plane" ? `本所策略第 ${cp.policy.version} 版` : "按最严设置运行（尚未取得或已不能使用本所策略）"}
+                  {cp.license?.state === "valid" ? `有效${cp.license.expires_at ? `，至 ${fmtDate(cp.license.expires_at)}` : ""}` : cp.license?.state === "expired" ? "已到期" : "尚未取得"}
+                  {cp.policy?.source === "control_plane" ? "" : <div className="muted">还没有取得本所规则，暂按最严的设置运行。</div>}
                 </>
               )}
             </div>
@@ -515,82 +507,103 @@ function DeviceTab({ caps, gate, mySafety, recovery, admin }: { caps: Capabiliti
         )}
         <TeamShare admin={admin} />
         <DepartedMembers />
+        <div className="device-row">
+          <div className="device-k">换电脑</div>
+          <div>
+            <details className="quiet-details">
+              <summary>核对码（管理员要求核对时才需要）</summary>
+              <b className="mono safety-code">{mySafety ? groupDigits(mySafety) : "—"}</b>
+              <div className="muted">请在电话里或当面把这串数字读给对方；对方屏幕上的一致才确认。</div>
+            </details>
+          </div>
+        </div>
         <Offboarding />
-        <div className="device-row">
-          <div className="device-k">最近一次自检</div>
-          <div>
-            {env?.checked_at ? fmtTime(env.checked_at) : "—"}
-            {envWarn > 0 && <span className="pill pill-orange"> {envWarn} 项需要 IT 处理（见下）</span>}
+      </section>
+
+      {/* 脱敏诊断包（v9.2 §3.6）：律师主动导出交给支持团队；内容白名单 + 导出前自证 + 设备签名。说明折叠，默认只一句 */}
+      <section className="panel device-section diag-panel" aria-labelledby="sec-help">
+        <h2 className="section-h" id="sec-help">遇到问题</h2>
+        <p>
+          导出一份诊断信息交给所内 IT 或客服。<b>不含任何事项名称、当事人、材料和成果。</b>
+        </p>
+        {!diag.open ? (
+          <div className="banner-actions">
+            <button className="btn btn-sm" onClick={() => setDiag({ open: true, msg: "" })}>
+              导出诊断信息
+            </button>
           </div>
-        </div>
+        ) : (
+          <div className="banner-actions">
+            <button
+              className="btn-primary btn-sm"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  const r = await api.exportDiagnostics();
+                  if (!r) {
+                    setDiag({ open: false, msg: "" });
+                    return;
+                  }
+                  setDiag({ open: false, msg: `已保存 ${r.filename}（${Math.ceil(r.bytes / 1024)} KB）。请按所内要求发给 IT 或客服。` });
+                } catch (e) {
+                  setDiag({ open: false, msg: (e as Error).message });
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              确认导出
+            </button>{" "}
+            <button className="btn btn-sm" onClick={() => setDiag({ open: false, msg: "" })}>
+              取消
+            </button>
+          </div>
+        )}
+        {diag.msg && <div className="muted">{diag.msg}</div>}
+        <SupportUpload allowed={gate ? !!gate.support_upload_allowed : null} configured={gate ? !!gate.support_configured : null} />
+        <details className="quiet-details">
+          <summary>诊断信息里有什么</summary>
+          软件版本、运行环境、后台服务状态、最近任务的状态与错误代码、联网次数、近 7 天的运行记录（只有事件代码、时间与次数）、电脑环境自检结果（含杀毒软件名称）与各类数据的条数。导出前软件会自动核对，发现可能含有当事人信息就不导出。导出的文件能证明出自这台电脑。
+        </details>
+        {/* Windows 环境自检（v9.2 §3.7；Y5 P1-6）：只提示会让“本机加密保存”打折扣的系统设置，读不到的写“未知”；给 IT 看，默认折叠 */}
+        {env && env.platform === "win32" && (
+          <details className="quiet-details" open={envWarn > 0}>
+            <summary>
+              电脑环境（给 IT 看）{envWarn > 0 ? <span className="pill pill-orange">{envWarn} 项需要 IT 处理</span> : null}
+              {env.checked_at ? <span className="muted"> · 最近检查 {fmtTime(env.checked_at)}</span> : null}
+            </summary>
+            <ul className="plain-list">
+              {envLines(env).map((l) => (
+                <li key={l.k} className={l.warn ? "env-warn" : undefined}>
+                  {l.k}：{l.v}
+                </li>
+              ))}
+            </ul>
+            <button className="btn btn-sm" onClick={() => void api.envProbe(true).then(setEnv).catch(() => {})}>
+              重新检查
+            </button>
+          </details>
+        )}
+      </section>
+    </div>
+  );
+}
+
+/** 本机与安全顶部的三块结论（v9.4）。tone：ok 绿 / warn 橙 / info 灰。 */
+function StatusTile({ tone, title, line, action }: { tone: "ok" | "warn" | "info"; title: string; line: string; action?: { label: string; href: string } }) {
+  return (
+    <div className={`status-tile status-tile-${tone}`} role="listitem">
+      <div className="status-tile-title">
+        <span className="status-tile-dot" aria-hidden="true">{tone === "ok" ? "✓" : tone === "warn" ? "!" : "·"}</span>
+        {title}
       </div>
-      {/* Windows 环境自检（v9.2 §3.7；Y5 P1-6）：只提示会让“本机加密保存”打折扣的系统设置，读不到的写“未知” */}
-      {env && env.platform === "win32" && (
-        <div className="panel">
-          <div className="device-row">
-            <div className="device-k">电脑环境</div>
-            <div>
-              <ul className="plain-list">
-                {envLines(env).map((l) => (
-                  <li key={l.k} className={l.warn ? "env-warn" : undefined}>
-                    {l.k}：{l.v}
-                  </li>
-                ))}
-              </ul>
-              <button className="btn btn-sm" onClick={() => void api.envProbe(true).then(setEnv).catch(() => {})}>
-                重新检查
-              </button>
-            </div>
-          </div>
-        </div>
+      <div className="status-tile-line">{line}</div>
+      {action && (
+        <button className="btn-link" onClick={() => document.getElementById(action.href)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+          {action.label} →
+        </button>
       )}
-      {/* 脱敏诊断包（v9.2 §3.6）：律师主动导出交给支持团队；内容白名单 + 导出前自证 + 设备签名 */}
-      <div className="panel diag-panel">
-        <div className="device-row">
-          <div className="device-k">遇到问题</div>
-          <div>
-            导出一份诊断信息交给所内 IT 或客服：只包含软件版本、运行环境、后台服务状态、最近任务的状态与错误代码、联网次数统计、近 7 天的运行记录（事件代码、时间与次数），以及电脑环境自检结果（含杀毒软件产品名）与各类数据的条数，
-            <b>不包含任何事项名称、当事人、材料、成果与任务内容</b>；导出前软件会自动核对，发现可能含有当事人信息即不导出。
-            {!diag.open ? (
-              <div className="banner-actions">
-                <button className="btn btn-sm" onClick={() => setDiag({ open: true, msg: "" })}>
-                  导出诊断信息
-                </button>
-              </div>
-            ) : (
-              <div className="banner-actions">
-                <button
-                  className="btn-primary btn-sm"
-                  disabled={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    try {
-                      const r = await api.exportDiagnostics();
-                      if (!r) {
-                        setDiag({ open: false, msg: "" });
-                        return;
-                      }
-                      setDiag({ open: false, msg: `已保存 ${r.filename}（${Math.ceil(r.bytes / 1024)} KB）。文件可以证明出自这台电脑，请按所内要求发给 IT 或客服。` });
-                    } catch (e) {
-                      setDiag({ open: false, msg: (e as Error).message });
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  确认导出
-                </button>{" "}
-                <button className="btn btn-sm" onClick={() => setDiag({ open: false, msg: "" })}>
-                  取消
-                </button>
-              </div>
-            )}
-            {diag.msg && <div className="muted">{diag.msg}</div>}
-            <SupportUpload allowed={gate ? !!gate.support_upload_allowed : null} configured={gate ? !!gate.support_configured : null} />
-          </div>
-        </div>
-      </div>
-      {recovery && <p className="muted">找回资料：{Number(recovery.device_exports ?? 0) > 0 || recovery.drill_completed ? "已备份 ✓" : "还没有备份，请联系律所管理员"}</p>}
     </div>
   );
 }

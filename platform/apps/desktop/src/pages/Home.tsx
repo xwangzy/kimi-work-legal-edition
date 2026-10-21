@@ -11,7 +11,7 @@ import { defaultChoice } from "../components/ModeSelector.tsx";
 import { NewMatterDialog } from "../components/NewMatter.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { ScenarioStart } from "../components/ScenarioStart.tsx";
-import { LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
+import { cardGets, cardGives, LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
 import { fmtTime, fmtWhen, SCENARIO_LABELS } from "../lib/labels.ts";
 import { nextStepPill, type RunFacts } from "../lib/next-step.ts";
 import { backendDownText } from "../lib/errors.ts";
@@ -263,22 +263,15 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
           <div className="cards scenario-cards">
             {SCENARIOS.filter((c) => c.line === line).map((c) => (
               <button key={c.id} className="card scenario-card" aria-label={`${c.title}：给 ${c.gives}；得到 ${c.gets.join("、")}`} onClick={() => openCard(c)}>
-                <div className="title">
-                  {c.title}
-                </div>
-                <div className="desc">
-                  <span className="sc-k">给</span>
-                  {c.gives}
-                </div>
-                <div className="desc">
-                  <span className="sc-k">得</span>
-                  {c.gets.join("、")}
-                </div>
+                {/* v9.4 卡片减负：标题 → 交付件（不带扩展名与括注）→ 需要什么（一行、灰字）；完整口径在开始面板 */}
+                <div className="title">{c.title}</div>
+                <div className="sc-gets">{cardGets(c)}</div>
+                <div className="sc-gives">需要：{cardGives(c)}</div>
               </button>
             ))}
             <button className="card scenario-card scenario-more" onClick={() => nav("/methods")}>
               <div className="title">更多场景 →</div>
-              <div className="desc">全部方法与模板，按业务线和交付件查找</div>
+              <div className="sc-gives">全部方法与模板，按业务线和交付件查找</div>
             </button>
           </div>
         </section>

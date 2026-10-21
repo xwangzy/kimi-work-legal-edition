@@ -14,7 +14,7 @@ import { Icon } from "../components/Icons.tsx";
 import { Markdown, tokens as renderTokens } from "../components/Markdown.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
-import { ARTIFACT_STATUS_LABELS, artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, jurisdictionLabel, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, stanceLabel, stepTime, TERMINAL_STATUSES } from "../lib/labels.ts";
+import { ARTIFACT_STATUS_LABELS, artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, jurisdictionLabel, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, stanceLabel, stepTime, stripMarkdownInline, TERMINAL_STATUSES } from "../lib/labels.ts";
 import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
 import { currentBadges } from "../lib/badges.ts";
@@ -48,11 +48,12 @@ function openToolsOf(events: RunEvent[]): { openTools: string[]; execOpen: boole
 }
 
 
-/** 正文前三行（去掉 Markdown 标题符号），用于中栏摘要（UIUX 增量评审 D-1）。 */
+/** 正文前三行（去掉 Markdown 标题、列表、表格与行内记号），用于中栏摘要（UIUX 增量评审 D-1；v9.4 走查：摘要里露出“**须核验**”）。 */
 function summaryLines(text: string): string[] {
   return text
     .split(/\r?\n/)
-    .map((l) => l.replace(/^#+\s*|^[-*]\s+/, "").trim())
+    .filter((l) => !/^\s*\|/.test(l) && !/^\s*[-:| ]{3,}\s*$/.test(l))
+    .map((l) => stripMarkdownInline(l.replace(/^\s*(#+\s*|[-*+]\s+|>\s*)/, "")).trim())
     .filter((l) => l.length > 0)
     .slice(0, 3)
     .map((l) => cutKeepingTokens(l, 80));

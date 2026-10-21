@@ -92,9 +92,23 @@ export function artifactName(a: { kind: string; filename: string; title?: string
   const agentKind = ["a1_workspace_file", "agent_table", "agent_report", "a1_agent_draft", "a1_agent_draft_partial"].includes(a.kind);
   if (!agentKind) return ARTIFACT_LABELS[a.kind] ?? a.filename;
   const t = a.title ? (restore ? restore(a.title) : a.title) : null;
-  // 助手草稿有标题时写“标题（草稿）”，没有标题时沿用固定名称
-  if (a.kind === "a1_agent_draft" || a.kind === "a1_agent_draft_partial") return t ? `${t}（${a.kind === "a1_agent_draft" ? "草稿" : "部分完成"}）` : ARTIFACT_LABELS[a.kind]!;
+  // 助手草稿有标题时写“标题（草稿）”，没有标题时沿用固定名称；标题自己已带“（草稿）”时不再重复（v9.4 走查：“研究备忘（草稿）（草稿）”）
+  if (a.kind === "a1_agent_draft" || a.kind === "a1_agent_draft_partial") {
+    if (!t) return ARTIFACT_LABELS[a.kind]!;
+    const bare = stripMarkdownInline(t).replace(/[（(]\s*(草稿|初稿|内部稿)\s*[）)]\s*$/, "").trim();
+    return `${bare}（${a.kind === "a1_agent_draft" ? "草稿" : "部分完成"}）`;
+  }
   return t ?? a.filename;
+}
+
+/** 去掉行内 Markdown 记号（粗体、斜体、行内代码、链接），用于摘要与标题这类纯文字位置。 */
+export function stripMarkdownInline(s: string): string {
+  return s
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/(^|[^*])\*(?!\s)([^*]+?)\*(?!\*)/g, "$1$2")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
 }
 
 export const ARTIFACT_LABELS: Record<string, string> = {

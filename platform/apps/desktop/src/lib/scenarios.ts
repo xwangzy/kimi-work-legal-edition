@@ -51,6 +51,16 @@ export interface ScenarioCard {
   notFor?: string[];
 }
 
+/** 卡片上的交付件一行（v9.4）：去掉扩展名与括注，用“ · ”连接；完整名称在开始面板与 aria-label 里。 */
+export function cardGets(c: Pick<ScenarioCard, "gets">): string {
+  return c.gets.map((g) => g.replace(/（[^）]*）/g, "").replace(/\.(docx|xlsx|pptx|md|pdf)\b/gi, "").trim()).filter(Boolean).join(" · ");
+}
+
+/** 卡片上的“需要”一行（v9.4）：去掉括注里的先后顺序说明（开始面板里有）。 */
+export function cardGives(c: Pick<ScenarioCard, "gives">): string {
+  return c.gives.replace(/（[^）]*）/g, "").trim();
+}
+
 const CONTRACT_TYPES = ["股权转让", "买卖", "服务 / 技术服务", "借款与担保", "其他（通用辅助）"];
 
 export const SCENARIOS: ScenarioCard[] = [

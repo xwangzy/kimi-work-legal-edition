@@ -1306,9 +1306,25 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         sendSummary = summarizeSend(db, tokens, matterId, docIds, String(p?.goal ?? ""), level === "L3a" || matter.full_pseudonym === 1, { fullScan: level === "L3a", extraTexts: [String(matter.stance ?? ""), String(matter.jurisdiction ?? "")] }).summary;
       }
       const suspectsBlock = level === "L3a" && (sendSummary?.suspects.unreviewed ?? 0) > 0;
+      // 律师先看的三四句短话（v9.4 认知减负：确认卡默认只显示要点，完整说明 preview 收进“查看明细”）；口径与 preview 一致，不另立规则
+      const shortEndpoint: Record<string, string> = { standard: "Kimi 模型", byok: "律所自有的 Kimi 账号", private: "律所私有模型", none: "不使用模型" };
+      const fullPseudonym = level === "L3a" || matter.full_pseudonym === 1;
+      const bullets: string[] = exitMode
+        ? [`不会发送：${exitMode.message}`]
+        : !usesModel
+          ? ["全部在这台电脑上完成，不发送任何内容"]
+          : blockReason
+            ? [`不会发送：${blockReason}`]
+            : [
+                `发给${/^[A-Za-z]/.test(shortEndpoint[matter.model_endpoint] ?? "") ? " " : ""}${shortEndpoint[matter.model_endpoint] ?? "模型"}：${docIds.length ? `${docIds.length} 份材料里任务用到的内容` : "任务说明和需要读的材料"}`,
+                fullPseudonym ? "发送前，姓名、公司名称、证件号、账号都换成代号" : "发送前，自然人姓名、证件号、账号、电话换成代号；公司名称保留",
+                ...(p.scenario !== "a1.agent_task" ? [] : level === "L3b" ? ["不联网检索"] : level === "L3a" ? ["联网检索每一条都先问你"] : ["检索词里出现当事人名称时，先问你"]),
+                "每一次发送都记在本任务的“数据去向”里",
+              ];
       const dataWhere = {
         model_endpoint: matter.model_endpoint,
         consent_status: matter.consent_status,
+        bullets,
         ...(sendSummary ? { send_summary: sendSummary } : {}),
         preview: exitMode
           ? `不会发送：${exitMode.message}`

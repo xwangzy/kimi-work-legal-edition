@@ -27,7 +27,7 @@ export interface PendingStart {
     points: number;
     points_display: string;
     assumptions: string[];
-    data_where?: { preview?: string; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | null; busy_run_id?: string; send_summary?: SendSummaryView };
+    data_where?: { preview?: string; bullets?: string[]; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | null; busy_run_id?: string; send_summary?: SendSummaryView };
   };
 }
 
@@ -140,16 +140,34 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
             </dd>
           </>
         )}
-        <dt>预计花费</dt>
-        <dd>{estimate.points_display}</dd>
-        <dt>内容会发给谁</dt>
+        <dt>预计用量</dt>
         <dd>
-          {estimate.data_where?.preview ?? "—"}
-          {estimate.data_where?.send_summary && (
-            <SendSummary matterId={matter.matter_id} summary={estimate.data_where.send_summary} documentIds={value.documentIds} goal={value.goal} mustReview={suspectsBlocked} onReviewed={() => void reestimate()} />
-          )}
+          {estimate.points_display.replace(/^预计 /, "约 ")}
+          {estimate.assumptions.length > 0 && <div className="muted sheet-note">{estimate.assumptions.join("；")}</div>}
         </dd>
       </dl>
+      {/* 发送说明（v9.4 认知减负）：默认只列三四句要点，完整口径收进“完整说明” */}
+      <section className="sheet-privacy" aria-label="发送什么、发给谁">
+        <div className="sheet-privacy-title">发送什么、发给谁</div>
+        {estimate.data_where?.bullets?.length ? (
+          <ul className="sheet-points">
+            {estimate.data_where.bullets.map((b, i) => (
+              <li key={i}>{b}</li>
+            ))}
+          </ul>
+        ) : (
+          <p>{estimate.data_where?.preview ?? "—"}</p>
+        )}
+        {estimate.data_where?.send_summary && (
+          <SendSummary matterId={matter.matter_id} summary={estimate.data_where.send_summary} documentIds={value.documentIds} goal={value.goal} mustReview={suspectsBlocked} onReviewed={() => void reestimate()} />
+        )}
+        {estimate.data_where?.bullets?.length && estimate.data_where.preview ? (
+          <details className="sheet-detail">
+            <summary>完整说明</summary>
+            <p>{estimate.data_where.preview}</p>
+          </details>
+        ) : null}
+      </section>
       {blocked && !consentBlocked ? (
         <div className="banner banner-orange">
           {estimate.data_where?.warning ?? "现在不能开始这个任务。"}
@@ -174,11 +192,6 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
         </div>
       ) : (
         estimate.data_where?.warning && <div className="banner banner-orange">{estimate.data_where.warning}</div>
-      )}
-      {estimate.assumptions.length > 0 && (
-        <ul className="sheet-notes">
-          {estimate.assumptions.map((a, i) => <li key={i}>{a}</li>)}
-        </ul>
       )}
       {err && (
         <div className="banner banner-red">
