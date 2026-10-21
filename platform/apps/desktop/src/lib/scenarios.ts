@@ -587,7 +587,7 @@ export function lineMismatchText(card: Pick<ScenarioCard, "line" | "title">, mat
 export function sampleBannerText(m: { stance?: string | null } | null | undefined, casefile: "done" | "running" | "failed" | null = "done"): string {
   // v9.4（U1 §3.5 #2）：一行说完——材料是虚构的、现在到哪一步、下一步去哪（原来 121 字）
   if (matterLine(m) === "litigation") {
-    const head = "示例事项：材料是虚构的，只在这台电脑上。";
+    const head = "示例事项：材料虚构，只在这台电脑上。";
     if (casefile === "done") return `${head}已在这台电脑上按规则整理出证据目录和时间轴：去“事实”逐条确认，再试“争点与证据分析”或“案情分析与诉讼策略”。`;
     if (casefile === "running") return `${head}正在这台电脑上按规则整理证据目录和时间轴，稍候去“事实”逐条确认。`;
     return `${head}本机整理还没有完成：可在“任务”里重试，或重新用“整理案卷”。`;
