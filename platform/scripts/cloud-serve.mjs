@@ -24,11 +24,12 @@
  *   "signer": { "url": "https://cp-signer:8443", "client_cert_file": "...", "client_key_file": "...", "ca_file": "...", "servername": "cp-signer" },
  *   "state_key_file": "...",                             // 32 字节十六进制
  *   // 可选（A-7 一主多备）：状态存 PostgreSQL、防重放随机数存 Redis；不配即单实例文件（<data_dir>/control-plane/state.1/.2）
- *   "state_store": { "kind": "postgres", "url": "postgres://kwl_cp@db.internal:5432/kwl", "password_file": "...", "ca_file": "..." },
+ *   "state_store": { "kind": "postgres", "url": "postgres://kwl_cp@db.internal:5432/kwl", "password_file": "...", "ca_file": "...", "init": true },   // init 只在首次部署（空库）
  *   "nonce_store": { "kind": "redis", "url": "rediss://cache.internal:6379", "password_file": "...", "ca_file": "..." },
  *   "code_pepper_file": "...",                           // 开通码 HMAC 胡椒，32 字节十六进制（与签名密钥分开，KMS 挂载；复核 A-15 起必填）
  *   // 签名服务 cp-signer（A-8；签名区、无公网，只收控制面的 mTLS）：
  *   "environment": "prod",                              // 密钥编号须为 <用途>-<环境>-<编号>（cp-prod-2612a、seat-prod-2612a、seat-relay-prod-2612a）
+ *   "init_ledger": true,                                // 只在首次部署：签名账不存在时新建；之后账本不在即拒绝启动
  *   "tls": { "cert_file": "...", "key_file": "...", "client_ca_file": "..." },   // 只认这个 CA 签发的客户端证书
  *   "allowed_callers": ["spiffe://kwl/prod/cp-api"],    // 客户端证书的 URI SAN（或 CN）
  *   "keys": { "envelope": { "kid": "cp-prod-2612a", "private_key_file": "..." }, "seat": { "kid": "seat-prod-2612a", "private_key_file": "..." },
@@ -53,7 +54,7 @@
  * 保留 `log_retention_days` 天（缺省 190）；/healthz 与 /readyz 由入口应答；指标另起监听 `metrics`：
  *   "metrics": { "host": "127.0.0.1", "port": 9464, "token_file": "..." }   // 监听回环以外的地址必须给令牌（至少 32 字节随机）
  */
-import { createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
+import { createPrivateKey, createPublicKey, hkdfSync, randomBytes } from "node:crypto";
 import { hostname } from "node:os";
 import { createServer as createHttpsServer } from "node:https";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
@@ -251,6 +252,8 @@ if (cfg.role === "cp-signer") {
   const signer = signerMod.createSignerService({
     keys: { envelope: signPair(ks.envelope, "keys.envelope", "cp"), seat: signPair(ks.seat, "keys.seat", "seat"), seatAudiences: audiences },
     ledgerFile: join(dataDir("cp-signer"), "ledger.jsonl"),
+    // 首次部署显式初始化签名账（"init_ledger": true）；之后账本不在即拒绝启动（复核 RB16A-01：整本删除也能发现）
+    initLedger: cfg.init_ledger === true,
     allowedCallers: callers,
     insecureForTest: insecure,
   });
@@ -261,7 +264,13 @@ if (cfg.role === "cp-signer") {
       const [op, kind = "-", result = "-"] = k.split("/");
       return [{ op, kind, result }, n];
     });
-    return [{ name: "kwl_signer_requests_total", help: "签名与拒签次数（按操作、种类、结果）", type: "counter", values }];
+    const lg = signer.metrics().ledger;
+    return [
+      { name: "kwl_signer_requests_total", help: "签名与拒签次数（按操作、种类、结果）", type: "counter", values },
+      // 签名账末行序号（外部锚点：监控系统记下的序号只增不减，变小即账本被截尾；复核 RB16A-01）与是否已损坏
+      { name: "kwl_signer_ledger_seq", help: "签名账末行序号（只增不减；变小即被截尾）", type: "gauge", values: [[{}, lg.seq]] },
+      { name: "kwl_signer_ledger_broken", help: "签名账写入失败且截不回去（1 = 已停签）", type: "gauge", values: [[{}, lg.broken ? 1 : 0]] },
+    ];
   };
 } else if (cfg.role === "control-plane") {
   const cpMod = await import(join(root, "services/control-plane/src/index.ts"));
@@ -303,7 +312,7 @@ if (cfg.role === "cp-signer") {
     }
     console.log(`[cloud-serve] control-plane 正在等待成为主实例（状态库 PostgreSQL）`);
     try {
-      stateStore = await cpMod.openPgStateStore({ pg: conn, key: Buffer.from(stateKey, "hex"), holder: `${hostname()}-${process.pid}-${randomBytes(3).toString("hex")}` });
+      stateStore = await cpMod.openPgStateStore({ pg: conn, key: Buffer.from(stateKey, "hex"), holder: `${hostname()}-${process.pid}-${randomBytes(3).toString("hex")}`, initEmpty: ss.init === true });
     } catch (e) {
       fail(`连不上状态库或等待主实例失败（${e?.code ?? "unreachable"}）`);
     }
@@ -324,11 +333,9 @@ if (cfg.role === "cp-signer") {
         if (u.password) fail("nonce_store.url 里不要写口令（放 password_file）");
         ro = { host: u.host, port: u.port, ...(u.username ? { username: u.username } : {}), password: rpw, tls: { ca: read(ns.ca_file, "nonce_store.ca_file") } };
       }
-      try {
-        nonceMirror = await cpMod.openRedisNonceMirror({ redis: ro });
-      } catch {
-        fail("连不上 nonce_store（Redis）");
-      }
+      // Redis 连不上不拒绝启动（复核 RB16A-09）：照常服务、降级为状态快照里的随机数，计失败并按需重连；键名为 HMAC（密钥由状态封装密钥派生）
+      nonceMirror = await cpMod.openRedisNonceMirror({ redis: ro, hmacKey: Buffer.from(hkdfSync("sha256", Buffer.from(stateKey, "hex"), Buffer.alloc(0), "kwl-cp-nonce-mirror/1", 32)) });
+      if (!nonceMirror.stats().connected) console.error("[cloud-serve] 防重放随机数镜像（Redis）暂时连不上：照常服务，按需重连");
     }
   } else {
     if (cfg.nonce_store !== undefined) fail("nonce_store 只用于一主多备（须同时配置 state_store）");
@@ -382,6 +389,13 @@ if (cfg.role === "cp-signer") {
   if (!feed.lastOk) fail("首次取不到控制面吊销集（控制面不可达或签名不符）");
   feed.start(15_000);
   const seatKeys = pubMap(cfg.seat_keys_file, "seat_keys_file");
+  // 席位公钥表按角色只放该受众的密钥（复核 RB16A-16）：通用服务（网关、检索、分发）不许放受众密钥；支持、通知、中继不许放别的受众的密钥——
+  // 否则一把受众密钥泄露后可签出被别的服务接受的令牌，按受众拆分就失去意义（密钥编号形如 seat-<受众>-<环境>-<编号>，签名服务强制）
+  const ROLE_AUD = { support: "support", notify: "notify", relay: "relay" };
+  for (const kid of seatKeys.keys()) {
+    const aud = /^seat-(support|notify|relay)-/.exec(kid)?.[1] ?? null;
+    if (aud && aud !== ROLE_AUD[cfg.role]) fail(`seat_keys_file 里的 ${kid} 是“${aud}”受众的席位公钥，${cfg.role} 不能信任它（每个服务只放自己受众的公钥）`);
+  }
   if (cfg.role === "gateway") {
     const gw = await import(join(root, "services/legal-gateway/src/index.ts"));
     if (!cfg.upstream?.api_key_file) fail("网关只接真实上游：缺少 upstream.api_key_file");
@@ -436,7 +450,16 @@ if (cfg.role === "cp-signer") {
         fail(`连不上对象存储（${e?.code ?? "unreachable"}）`);
       }
     }
-    svc = sa.createSupportApi({ dir: dataDir("support"), keys: seatKeys, meterKey: Buffer.from(meterKey, "hex"), feed, ...(blobs ? { blobs } : {}), ...(opsGuard ? { opsGuard } : {}) });
+    const support = sa.createSupportApi({ dir: dataDir("support"), keys: seatKeys, meterKey: Buffer.from(meterKey, "hex"), feed, ...(blobs ? { blobs } : {}), ...(opsGuard ? { opsGuard } : {}) });
+    svc = support;
+    // 到期清扫（复核 RB16A-12）：删不掉的计失败；7 天删除承诺靠它与桶生命周期规则兜底
+    serviceMetrics = () => {
+      const m = support.metrics();
+      return [
+        { name: "kwl_support_sweep_failures_total", help: "诊断包到期清扫删不掉的次数", type: "counter", values: [[{}, m.sweep_failures]] },
+        { name: "kwl_support_expired_total", help: "到期删除的诊断包", type: "counter", values: [[{}, m.expired]] },
+      ];
+    };
   } else if (cfg.role === "notify") {
     const na = await import(join(root, "services/notify-api/src/index.ts"));
     const notify = na.createNotifyApi({ dir: dataDir("notify"), keys: seatKeys, feed, ...(opsGuard ? { opsGuard } : {}) });

@@ -227,3 +227,55 @@ test("诊断包本体经对象存储接口（v9.3 A-11）：上传进对象存�
     api2.close();
   }
 });
+
+test("复核 RB16A-11/12：包本体是符号链接时下载得 404（不跟随）；对象存储删不掉时清扫逐条继续、计失败", async () => {
+  const { symlinkSync } = await import("node:fs");
+  const d3 = mkdtempSync(join(tmpdir(), "kwl-support-link-"));
+  const api3 = createSupportApi({ dir: d3, keys, feed, opsGuard: guardFor(), meterKey: METER, accessLog: () => {}, now: () => clock });
+  await new Promise<void>((r) => api3.listen(0, "127.0.0.1", () => r()));
+  const b3 = `http://127.0.0.1:${(api3.address() as AddressInfo).port}`;
+  try {
+    const t = (await (await fetch(`${b3}/v1/support/tickets`, { method: "POST", headers: { authorization: `Bearer ${cred("t_ok", "dev_link")}` } })).json()) as any;
+    const body = pkg("dev_link");
+    const up = await fetch(`${b3}/v1/support/packages/${t.ticket}`, { method: "PUT", headers: { authorization: `Bearer ${cred("t_ok", "dev_link")}`, "x-kwl-upload-token": t.upload_token, "x-kwl-content-sha256": createHash("sha256").update(body).digest("hex") }, body });
+    assert.equal(up.status, 200);
+    // 把包本体换成指向别处的符号链接
+    const { rmSync } = await import("node:fs");
+    writeFileSync(join(d3, "secret.txt"), "不该被下载的内容");
+    rmSync(join(d3, `${t.ticket}.bin`));
+    symlinkSync(join(d3, "secret.txt"), join(d3, `${t.ticket}.bin`));
+    assert.equal((await ops(`/v1/support/ops/packages/${t.ticket}`, "GET", "op_0001", b3)).status, 404);
+  } finally {
+    api3.close();
+  }
+  // 删不掉的对象：逐条继续、计失败
+  let deletes = 0;
+  const objects = new Map<string, Buffer>([["SUP-AAAA-0001.bin", Buffer.from("x")], ["SUP-AAAA-0002.bin", Buffer.from("y")]]);
+  const failing = {
+    kind: "s3" as const,
+    async put() {},
+    async get() {
+      return null;
+    },
+    async delete(k: string) {
+      deletes += 1;
+      if (k === "SUP-AAAA-0001.bin") throw new Error("AccessDenied");
+      objects.delete(k);
+    },
+    async list() {
+      return [...objects.keys()].map((key) => ({ key, size: 1, mtime: clock - 2 * 3600_000 }));
+    },
+  };
+  const d4 = mkdtempSync(join(tmpdir(), "kwl-support-sweep-"));
+  const api4 = createSupportApi({ dir: d4, blobs: failing, keys, feed, meterKey: METER, accessLog: () => {}, now: () => clock });
+  try {
+    await new Promise((r) => setTimeout(r, 50)); // 启动时的那一轮清扫
+    assert.ok(!objects.has("SUP-AAAA-0002.bin"), "第一个删不掉，第二个照样删了");
+    assert.equal(api4.metrics().sweep_failures, 1);
+    assert.equal(await api4.sweep(), 0);
+    assert.equal(api4.metrics().sweep_failures, 2, "删不掉的每轮都计失败");
+    assert.ok(deletes >= 3);
+  } finally {
+    api4.close();
+  }
+});

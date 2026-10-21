@@ -94,7 +94,7 @@ function newTicket(): string {
 
 const sha256 = (b: Buffer | string) => createHash("sha256").update(b).digest("hex");
 
-export function createSupportApi(o: SupportApiOptions): Server & { sweep(): Promise<number> } {
+export function createSupportApi(o: SupportApiOptions): Server & { sweep(): Promise<number>; metrics(): { sweep_failures: number; expired: number } } {
   const now = o.now ?? Date.now;
   const iso = (t = now()) => new Date(t).toISOString();
   if (o.meterKey && o.meterKey.byteLength < 32) throw new Error("meterKey 至少 32 字节");
@@ -152,7 +152,10 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): Prom
     renameSync(tmp, path);
   };
 
-  /** 删除到期的工单与包（启动时与每小时）；返回删除张数。 */
+  // 清扫计数（复核 RB16A-12：对象存储删不掉时不再静默——逐条处理、计失败，指标导出）
+  let sweepFailures = 0;
+  let expiredTotal = 0;
+  /** 删除到期的工单与包（启动时与每小时）；返回删除张数。单条失败不中止整轮。 */
   const sweep = async (): Promise<number> => {
     let n = 0;
     const t = now();
@@ -174,18 +177,34 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): Prom
       const meta = readMeta(m[1]!, true);
       if (!meta || Date.parse(meta.expires_at) <= t) {
         // 先删包本体、再删元数据：本体删不掉时元数据留着，下个周期再删（不留下没有元数据、无人清扫的本体）
-        await blobs.delete(binKey(m[1]!));
+        try {
+          await blobs.delete(binKey(m[1]!));
+        } catch {
+          sweepFailures += 1;
+          continue;
+        }
         rmSync(metaPath(m[1]!), { force: true });
         access({ at: iso(), action: "expire", ticket: m[1]!, operator: null, tid: meta?.tid ?? null, dev: meta?.dev ?? null, bytes: meta?.bytes ?? null, result: "deleted" });
+        expiredTotal += 1;
         n++;
       }
     }
     // 没有元数据的孤立包本体（超过 1 小时）：删除
-    for (const b of await blobs.list("")) {
+    let listed: { key: string; mtime: number }[] = [];
+    try {
+      listed = await blobs.list("");
+    } catch {
+      sweepFailures += 1;
+    }
+    for (const b of listed) {
       const m = /^(SUP-[0-9A-Z-]+)\.bin$/.exec(b.key);
       if (!m || readRegular(metaPath(m[1]!)) || t - b.mtime <= 3600_000) continue;
-      await blobs.delete(b.key);
-      n++;
+      try {
+        await blobs.delete(b.key);
+        n++;
+      } catch {
+        sweepFailures += 1;
+      }
     }
     return n;
   };
@@ -360,5 +379,5 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): Prom
     });
   });
   server.on("close", () => clearInterval(timer));
-  return Object.assign(server, { sweep });
+  return Object.assign(server, { sweep, metrics: () => ({ sweep_failures: sweepFailures, expired: expiredTotal }) });
 }

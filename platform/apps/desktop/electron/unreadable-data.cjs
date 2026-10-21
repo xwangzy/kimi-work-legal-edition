@@ -13,8 +13,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-/** 数据根下与身份、入组、恢复有关的记录文件（与内核 config.ts / services/onboarding.ts 同名）。 */
-const RECORD_FILES = ["activation.json", "activation.pending.json", "onboarding-failed.json"];
+/** 数据根下与身份、入组、恢复有关的记录文件（与内核 config.ts / services/onboarding.ts 同名；onboarding.json 为成员待批准记录，复核 RB16A-14）。 */
+const RECORD_FILES = ["activation.json", "activation.pending.json", "onboarding.json", "onboarding-failed.json"];
 /** 律所标识与工作区目录名同一规则（config.ts SLUG_PATTERN）。 */
 const SLUG = /^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/;
 const PREFIX = ".unreadable-";
@@ -30,7 +30,8 @@ const README = (at) =>
     "",
     `移动时刻：${at}`,
     "原因：这台电脑上的数据库密钥无法解开（常见于重置 Windows 账户密码、重装系统后还原用户目录）。",
-    "这里的案件数据仍是加密的，只有原来的密钥才能打开；应用已改为从备份恢复。",
+    "这里的案件数据仍是加密的，只有原来的密钥才能打开；但激活记录（activation.json 等）是明文，含律所名称与本人显示名。",
+    "应用已改为从备份恢复。",
     "",
     "是否保留、何时清理，由所内 IT 决定。请勿把本目录拷给他人。",
     "",
@@ -53,9 +54,10 @@ function quarantineUnreadable({ dataDir, keyFile, now = Date.now() }) {
     fs.writeFileSync(path.join(dir, "说明.txt"), README(new Date(now).toISOString()), { flag: "wx" });
     for (const f of RECORD_FILES) if (fs.existsSync(path.join(dataDir, f))) move(path.join(dataDir, f), f);
     for (const e of fs.readdirSync(dataDir, { withFileTypes: true })) {
-      // 只移有账本的工作区（含待激活占位工作区）；以点开头的（本目录与以前移过的）不动
+      // 只移有账本或有密钥目录的工作区（含待激活占位工作区、只有入组暂存密钥的成员工作区——那些密钥按旧主密钥封装，复核 RB16A-14）；
+      // 以点开头的（本目录与以前移过的）不动
       if (!e.isDirectory() || !SLUG.test(e.name)) continue;
-      if (!fs.existsSync(path.join(dataDir, e.name, "ledger.db"))) continue;
+      if (!fs.existsSync(path.join(dataDir, e.name, "ledger.db")) && !fs.existsSync(path.join(dataDir, e.name, "keys"))) continue;
       move(path.join(dataDir, e.name), e.name);
     }
     if (fs.existsSync(keyFile)) move(keyFile, path.basename(keyFile));

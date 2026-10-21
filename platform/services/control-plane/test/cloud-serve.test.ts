@@ -133,7 +133,7 @@ test("按配置起控制面与检索服务（HTTPS）：检索服务取到签名
   const tls = { cert_file: join(dir, "tls.crt"), key_file: join(dir, "tls.key") };
   // 签名服务（A-8）：私钥只在这里；只收 mTLS（自签名证书兼作客户端证书的签发 CA，调用方身份为 CN 127.0.0.1）
   const signerKeys = { envelope: { kid: "cp-test-t1", private_key_file: write("env.pem", pem(env1)) }, seat: { kid: "seat-test-t1", private_key_file: write("seat.pem", pem(seat1)) } };
-  const signerBase = { role: "cp-signer", environment: "test", listen: { host: "127.0.0.1", port: 0 }, tls: { ...tls, client_ca_file: join(dir, "tls.crt") }, data_dir: dir, allowed_callers: ["127.0.0.1"], keys: signerKeys };
+  const signerBase = { role: "cp-signer", environment: "test", init_ledger: true, listen: { host: "127.0.0.1", port: 0 }, tls: { ...tls, client_ca_file: join(dir, "tls.crt") }, data_dir: dir, allowed_callers: ["127.0.0.1"], keys: signerKeys };
   assert.match(runOnce({ ...signerBase, keys: { ...signerKeys, envelope: { ...signerKeys.envelope, kid: "cp-prod-t1" } } }).stderr, /keys\.envelope\.kid 须为 cp-test-/, "密钥编号的环境与部署不符");
   assert.match(runOnce({ ...signerBase, allowed_callers: [] }).stderr, /allowed_callers/);
   assert.match(runOnce({ ...signerBase, tls }).stderr, /client_ca_file/, "签名服务只收 mTLS");
@@ -177,6 +177,9 @@ test("按配置起控制面与检索服务（HTTPS）：检索服务取到签名
   assert.match(spawnSync(process.execPath, [script, "--config", cfgFile("search-metrics-open.json", { ...base, metrics: { host: "0.0.0.0", port: 0 } })], { encoding: "utf8", env: { ...process.env, NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") }, timeout: 30_000 }).stderr, /metrics\.token_file/);
   const bad = spawnSync(process.execPath, [script, "--config", cfgFile("search-bad.json", { ...base, control_plane: { ...base.control_plane, keys_file: wrongKeys } })], { encoding: "utf8", env: { ...process.env, NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") }, timeout: 30_000 });
   assert.match(bad.stderr, /首次取不到控制面吊销集/);
+  // 席位公钥表按角色只放该受众的密钥（复核 RB16A-16）：检索服务（通用）里放了通知受众的公钥即拒绝启动
+  const audKeys = write("seat-keys-aud.json", JSON.stringify({ "seat-test-t1": String(seat1.publicKey.export({ format: "pem", type: "spki" })), "seat-notify-test-t1": String(generateKeyPairSync("ed25519").publicKey.export({ format: "pem", type: "spki" })) }));
+  assert.match(spawnSync(process.execPath, [script, "--config", cfgFile("search-audkey.json", { ...base, seat_keys_file: audKeys })], { encoding: "utf8", env: { ...process.env, NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") }, timeout: 30_000 }).stderr, /seat-notify-test-t1 是“notify”受众的席位公钥，search 不能信任它/);
   const search = await start(base, { NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") });
   const res = await httpsGet(search.port, `/search?q=${encodeURIComponent("张三借款")}`, ca);
   assert.equal(res.status, 401, res.body);

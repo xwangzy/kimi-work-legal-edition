@@ -104,6 +104,8 @@ test("主密钥解封失败后移到一边（v9.3 主文 §9 第 7 项，复核 
   const keyB = randomBytes(32).toString("base64");
   const env = { ...base, ZR_ONBOARDING: "1" } as NodeJS.ProcessEnv;
   await assert.rejects(createKernel({ dataDir: dir, dbKey: keyB, env }), "对照：激活记录与旧工作区还在时，新主密钥打不开");
+  // 成员待批准记录也在（复核 RB16A-14：原先漏移，移完后会停在“等待批准”）
+  writeFileSync(join(dir, "onboarding.json"), JSON.stringify({ v: 1, firm_name: "某律所", member_name: "张律师", role: "lawyer", check_code: "123 456 789 012", created_at: new Date().toISOString() }));
   const keyFile = join(dir, ".electron", "ledger-key");
   mkdirSync(join(dir, ".electron"), { recursive: true });
   writeFileSync(keyFile, "包裹的旧主密钥");
@@ -115,6 +117,7 @@ test("主密钥解封失败后移到一边（v9.3 主文 §9 第 7 项，复核 
     assert.equal(st.mode, "unactivated");
     assert.deepEqual(st.set_aside, [".unreadable-2026-10-21T08-30-05Z"]);
     assert.deepEqual(st.legacy_workspaces, [], "移走的不再当作“以前留下的数据”（从备份恢复时不必再勾选确认）");
+    assert.equal(existsSync(join(dir, "onboarding.json")), false, "待批准记录也已移走：不会停在“等待批准”");
     assert.ok(existsSync(join(dir, ".unreadable-2026-10-21T08-30-05Z", "sa-firm", "ledger.db")), "原来的数据还在");
   } finally {
     await k.close();

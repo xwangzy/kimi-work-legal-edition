@@ -19,6 +19,8 @@ const flag = new Int32Array(sab);
 let conn: PgConn | null = null;
 let leader = false;
 let lost: string | null = null;
+let probe: ReturnType<typeof setInterval> | null = null;
+let probing = false;
 
 const SCHEMA = [
   `CREATE SCHEMA IF NOT EXISTS kwl_cp`,
@@ -32,6 +34,11 @@ const SCHEMA = [
      tag text NOT NULL,
      data text NOT NULL,
      saved_at timestamptz NOT NULL DEFAULT now())`,
+  // 初始化标记（复核 RB16A-10）：与第一次写状态同一条语句写入；有标记而没有状态行即拒绝启动（库被清空或错指向）
+  `CREATE TABLE IF NOT EXISTS kwl_cp.meta (
+     id smallint PRIMARY KEY CHECK (id = 1),
+     initialized_at timestamptz NOT NULL DEFAULT now(),
+     initialized_by text NOT NULL)`,
   // 主实例交接记录（只有实例标识与事件）
   `CREATE TABLE IF NOT EXISTS kwl_cp.leader_log (
      at timestamptz NOT NULL DEFAULT now(),
@@ -57,20 +64,43 @@ const handlers: Record<string, (...a: any[]) => Promise<unknown>> = {
     leader = true;
     for (const s of SCHEMA) await conn.query(s);
     await conn.query(`INSERT INTO kwl_cp.leader_log (holder, event) VALUES ($1, 'acquired')`, [holder]);
+    // 主实例探测（复核 RB16A-07）：每 2 秒确认连接还在、锁还在本会话手里；查询带超时，静默断连时置 lost（入口据此退出重选）
+    probe = setInterval(() => {
+      if (!conn || !leader || probing) return;
+      probing = true;
+      conn
+        .query(`SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid() AND granted`)
+        .then((r) => {
+          if (r.rows[0]?.[0] === "0") {
+            lost = "lock_lost";
+            leader = false;
+          }
+        })
+        .catch(() => {
+          lost = lost ?? "probe_failed";
+          leader = false;
+        })
+        .finally(() => (probing = false));
+    }, 2_000);
     return true;
   },
   async load() {
     if (!conn || !leader) throw Object.assign(new Error(lost ?? "不是主实例"), { code: lost ?? "not_leader" });
     const r = await conn.query(`SELECT seq, format, iv, tag, data FROM kwl_cp.state WHERE id = 1`);
-    if (!r.rows.length) return null;
+    if (!r.rows.length) {
+      const m = await conn.query(`SELECT 1 FROM kwl_cp.meta WHERE id = 1`);
+      return { empty: true, initialized: m.rows.length > 0 };
+    }
     const [seq, format, iv, tag, data] = r.rows[0]!;
     return { seq: Number(seq), format, iv, tag, data };
   },
   /** 写下一代：只有库里仍是 prevSeq 时才写（别的实例写过即围栏失败）。 */
   async save(prevSeq: number, seq: number, format: string, iv: string, tag: string, data: string) {
     if (!conn || !leader) throw Object.assign(new Error(lost ?? "不是主实例"), { code: lost ?? "not_leader" });
+    // 初始化标记与状态同一条语句写入（数据修改型 CTE，原子）
     const r = await conn.query(
-      `INSERT INTO kwl_cp.state AS s (id, seq, holder, format, iv, tag, data, saved_at) VALUES (1, $1, $2, $3, $4, $5, $6, now())
+      `WITH m AS (INSERT INTO kwl_cp.meta (id, initialized_by) VALUES (1, $2) ON CONFLICT (id) DO NOTHING)
+       INSERT INTO kwl_cp.state AS s (id, seq, holder, format, iv, tag, data, saved_at) VALUES (1, $1, $2, $3, $4, $5, $6, now())
        ON CONFLICT (id) DO UPDATE SET seq = EXCLUDED.seq, holder = EXCLUDED.holder, format = EXCLUDED.format, iv = EXCLUDED.iv, tag = EXCLUDED.tag, data = EXCLUDED.data, saved_at = now()
        WHERE s.seq = $7`,
       [seq, holder, format, iv, tag, data, prevSeq],
@@ -86,6 +116,8 @@ const handlers: Record<string, (...a: any[]) => Promise<unknown>> = {
     return { leader, lost };
   },
   async release() {
+    if (probe) clearInterval(probe);
+    probe = null;
     if (conn && leader) {
       try {
         await conn.query(`INSERT INTO kwl_cp.leader_log (holder, event) VALUES ($1, 'released')`, [holder]);

@@ -88,7 +88,7 @@ test("线协议：SCRAM-SHA-256 认证；口令错误被拒；参数单独传、
 test("状态存储：只存密文；重开读回最新一代；密钥不符拒绝启动", { skip }, async () => {
   const key = randomBytes(32);
   const db = await freshDb("t101");
-  const a = await openPgStateStore({ pg: pg(db), key, holder: "inst-a", lockId: "101" });
+  const a = await openPgStateStore({ pg: pg(db), key, holder: "inst-a", lockId: "101", initEmpty: true });
   assert.equal(a.load(), null);
   a.save(JSON.stringify({ v: 1, n: 1, salt: "租户盐-明文不应落库" }));
   a.save(JSON.stringify({ v: 1, n: 2, salt: "租户盐-明文不应落库" }));
@@ -105,12 +105,27 @@ test("状态存储：只存密文；重开读回最新一代；密钥不符拒�
   const wrong = await openPgStateStore({ pg: pg(db), key: randomBytes(32), holder: "inst-c", lockId: "101" });
   assert.throws(() => wrong.load(), /无法校验/);
   await wrong.close();
+  // 空库须显式初始化；初始化过而状态行不见了一律拒绝（复核 RB16A-10）
+  const db2 = await freshDb("t101b");
+  const e1 = await openPgStateStore({ pg: pg(db2), key, holder: "inst-d", lockId: "111" });
+  assert.throws(() => e1.load(), /空的：首次部署须显式初始化/);
+  await e1.close();
+  const e2 = await openPgStateStore({ pg: pg(db2), key, holder: "inst-e", lockId: "111", initEmpty: true });
+  assert.equal(e2.load(), null);
+  e2.save(JSON.stringify({ v: 1 }));
+  await e2.close();
+  const adm = await connectPg(pg(db2));
+  await adm.query("DELETE FROM kwl_cp.state");
+  await adm.close();
+  const e3 = await openPgStateStore({ pg: pg(db2), key, holder: "inst-f", lockId: "111", initEmpty: true });
+  assert.throws(() => e3.load(), /已初始化过，但状态行不见了/, "即使配了 init 也不从空状态开始");
+  await e3.close();
 });
 
 test("一主多备：备实例等锁；主实例正常退出后接手并读到最新状态；别的实例写过即围栏，之后的写全部失败", { skip }, async () => {
   const key = randomBytes(32);
   const db = await freshDb("t202");
-  const a = await openPgStateStore({ pg: pg(db), key, holder: "inst-a", lockId: "202" });
+  const a = await openPgStateStore({ pg: pg(db), key, holder: "inst-a", lockId: "202", initEmpty: true });
   a.load();
   let bReady = false;
   const bp = openPgStateStore({ pg: pg(db), key, holder: "inst-b", lockId: "202", pollMs: 100 }).then((s) => ((bReady = true), s));
@@ -143,8 +158,9 @@ test("端到端：主实例崩溃（连接被断、未正常关闭）后备实�
     return `http://127.0.0.1:${(cp.server.address() as AddressInfo).port}`;
   };
   // 主实例 A（状态在 PostgreSQL、随机数另写 Redis）
-  const storeA = await openPgStateStore({ pg: pg(db), key, holder: "cp-a", lockId: "303" });
-  const mirrorA = await openRedisNonceMirror({ redis: redisOpts(), prefix: "t303:" });
+  const storeA = await openPgStateStore({ pg: pg(db), key, holder: "cp-a", lockId: "303", initEmpty: true });
+  const hmacKey = randomBytes(32);
+  const mirrorA = await openRedisNonceMirror({ redis: redisOpts(), prefix: "t303:", hmacKey });
   const cpA = createControlPlane({ keys, serviceSecret: "s".repeat(40), stateStore: storeA, nonceMirror: mirrorA });
   const baseA = await listen(cpA);
   const tid = "ten_pg";
@@ -190,8 +206,13 @@ test("端到端：主实例崩溃（连接被断、未正常关闭）后备实�
   await storeC.close();
   // 接 Redis 的新主实例 B：同一个重放被拒
   const storeB = await openPgStateStore({ pg: pg(db), key, holder: "cp-b", lockId: "303" });
-  const mirrorB = await openRedisNonceMirror({ redis: redisOpts(), prefix: "t303:" });
-  assert.ok(mirrorB.initial.length >= 1);
+  const mirrorB = await openRedisNonceMirror({ redis: redisOpts(), prefix: "t303:", hmacKey });
+  assert.ok(mirrorB.stats().loaded >= 1);
+  // Redis 里的键是 HMAC：读不出租户与设备编号（复核 RB16A-08）
+  const rc = await connectRedis(redisOpts());
+  const ks = ((await rc.command("SCAN", "0", "MATCH", "t303:*", "COUNT", 1000)) as [string, string[]])[1];
+  rc.close();
+  assert.ok(ks.length >= 1 && ks.every((k) => /^t303:[0-9a-f]{64}$/.test(k)), ks.join(","));
   const cpB = createControlPlane({ keys, serviceSecret: "s".repeat(40), stateStore: storeB, nonceMirror: mirrorB });
   const baseB = await listen(cpB);
   try {
@@ -242,7 +263,7 @@ test("生产入口一主多备：第二个控制面进程等锁、不监听；�
     return { proc, port, out: () => out };
   };
   try {
-    const signer = run("signer404", { role: "cp-signer", environment: "test", listen: { host: "127.0.0.1", port: 0 }, insecure_loopback_for_test: true, data_dir: join(dir, "s404"), keys: { envelope: { kid: "cp-test-a", private_key_file: w("e404.pem", pem(generateKeyPairSync("ed25519"))) }, seat: { kid: "seat-test-a", private_key_file: w("s404.pem", pem(generateKeyPairSync("ed25519"))) } } });
+    const signer = run("signer404", { role: "cp-signer", environment: "test", init_ledger: true, listen: { host: "127.0.0.1", port: 0 }, insecure_loopback_for_test: true, data_dir: join(dir, "s404"), keys: { envelope: { kid: "cp-test-a", private_key_file: w("e404.pem", pem(generateKeyPairSync("ed25519"))) }, seat: { kid: "seat-test-a", private_key_file: w("s404.pem", pem(generateKeyPairSync("ed25519"))) } } });
     const signerPort = await signer.port;
     const stateKey = w("sk404", randomBytes(32).toString("hex"));
     const cpCfg = (n: string) => ({
@@ -254,7 +275,7 @@ test("生产入口一主多备：第二个控制面进程等锁、不监听；�
       signer: { url: `http://127.0.0.1:${signerPort}` },
       state_key_file: stateKey,
       code_pepper_file: w(`pep404`, randomBytes(32).toString("hex")),
-      state_store: { kind: "postgres", socket_dir: dir, port, user: "kwl", database: db, password_file: w("pgpw404", pgPassword) },
+      state_store: { kind: "postgres", socket_dir: dir, port, user: "kwl", database: db, password_file: w("pgpw404", pgPassword), init: true },
       nonce_store: { kind: "redis", socket_path: join(dir, "r.sock"), password_file: w("rpw404", redisPassword) },
     });
     const a = run("cpa", cpCfg("a"));

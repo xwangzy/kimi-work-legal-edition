@@ -34,6 +34,11 @@ export interface PgStateStoreOptions {
   /** 备实例轮询锁的间隔（缺省 2 秒）与最长等待（缺省不限）。 */
   pollMs?: number;
   maxWaitMs?: number;
+  /**
+   * 库里没有状态（也没有初始化标记）时允许以空状态启动——只用于首次部署（生产入口 `state_store.init: true`）；
+   * 否则拒绝启动：连接串错指向空库或新库，等于撤销全部吊销（复核 RB16A-10）。有标记而没有状态行一律拒绝。
+   */
+  initEmpty?: boolean;
 }
 
 export interface PgStateStore extends StateStore {
@@ -108,8 +113,10 @@ export async function openPgStateStore(o: PgStateStoreOptions): Promise<PgStateS
   return {
     holder: o.holder,
     load() {
-      const row = callSync("load") as { seq: number; format: string; iv: string; tag: string; data: string } | null;
-      if (!row) {
+      const row = callSync("load") as { seq: number; format: string; iv: string; tag: string; data: string } | { empty: true; initialized: boolean };
+      if ("empty" in row) {
+        if (row.initialized) throw new Error("控制面状态库已初始化过，但状态行不见了（被清空或连错了库），拒绝启动");
+        if (!o.initEmpty) throw new Error("控制面状态库是空的：首次部署须显式初始化（state_store.init），否则可能连错了库，拒绝启动");
         seq = 0;
         return null;
       }

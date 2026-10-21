@@ -43,6 +43,8 @@ export interface SignerServiceOptions {
   keys: ControlPlaneKeys;
   /** 签名账文件（生产在数据目录；外送 WORM 随 A-11）。 */
   ledgerFile?: string;
+  /** 签名账不存在时新建（首次部署显式初始化；否则文件不在即拒绝启动，复核 RB16A-01）。 */
+  initLedger?: boolean;
   ledger?: SignerLedger;
   /** 允许的调用方身份（mTLS 客户端证书的 URI SAN，如 spiffe://kwl/prod/cp-api；或 CN）。 */
   allowedCallers: string[];
@@ -58,6 +60,8 @@ export interface SignerMetrics {
   /** 按“操作/种类/结果”计数（指标监听导出；签名速率异常由告警规则对照 7 日基线）。 */
   counts: Record<string, number>;
   last_ok_at: string | null;
+  /** 签名账末行（外部锚点：对账核对外部见过的末行仍是本账的前缀，发现截尾；复核 RB16A-01）。 */
+  ledger: { seq: number; hash: string; broken: boolean };
 }
 
 export interface SignerService {
@@ -179,7 +183,7 @@ export function createSignerService(o: SignerServiceOptions): SignerService {
       verifySeatToken(tok, new Map([[k.kid, k.publicKey]]), { now: at, ...(aud ? { audience: aud } : {}) });
     }
   }
-  const ledger = o.ledger ?? (o.ledgerFile ? openSignerLedger(o.ledgerFile) : null);
+  const ledger = o.ledger ?? (o.ledgerFile ? openSignerLedger(o.ledgerFile, { createIfMissing: !!o.initLedger }) : null);
   if (!ledger) throw new Error("签名服务须有签名账（ledgerFile）");
   const counts: Record<string, number> = {};
   let lastOkAt: string | null = null;
@@ -230,9 +234,11 @@ export function createSignerService(o: SignerServiceOptions): SignerService {
     const requestId = typeof b.request_id === "string" && REQUEST_ID.test(b.request_id) ? b.request_id : null;
     const tid = typeof b.tid === "string" && TID_RE.test(b.tid) ? b.tid : isObj(b.body) && typeof b.body.tid === "string" && TID_RE.test(b.body.tid) ? b.body.tid : null;
     const kind = op === "envelope" ? (typeof b.kind === "string" && b.kind.length <= 64 ? b.kind : null) : null;
+    // 计数键只用登记过的种类与受众（复核 RB16A-03：调用方原文进计数键会让已攻陷的 cp-api 撑大内存与指标）
+    const kindKey = op === "envelope" ? (kind && (ENVELOPE_KINDS as readonly string[]).includes(kind) ? kind : "invalid") : b.aud === undefined ? "general" : (SEAT_AUDIENCES as readonly unknown[]).includes(b.aud) ? String(b.aud) : "invalid";
     const bodySha = op === "envelope" ? sha(JSON.stringify(b.body ?? null)) : null;
     const reject = (status: number, reason: string, kid: string | null = null): never => {
-      count(`${op}/${kind ?? (typeof b.aud === "string" ? b.aud : "general")}/rejected`);
+      count(`${op}/${kindKey}/rejected`);
       // 拒签也记账：记不进去照样拒（本来就不签）
       try {
         ledger.append({ request_id: requestId ?? "-", caller, op, kind, kid, tid, body_sha256: bodySha, signed_sha256: null, result: "rejected", reason }, new Date(at).toISOString());
@@ -276,7 +282,7 @@ export function createSignerService(o: SignerServiceOptions): SignerService {
       count(`${op}/ledger_unavailable`);
       throw new Reject(503, "ledger_unavailable");
     }
-    count(`${op}/${kind ?? (op === "seat_token" ? ((b.aud as string | undefined) ?? "general") : "-")}/ok`);
+    count(`${op}/${kindKey}/ok`);
     lastOkAt = new Date(at).toISOString();
     return reply(res, 200, out);
   };
@@ -298,7 +304,7 @@ export function createSignerService(o: SignerServiceOptions): SignerService {
   return {
     server,
     publicKeys,
-    metrics: () => ({ counts: { ...counts }, last_ok_at: lastOkAt }),
+    metrics: () => ({ counts: { ...counts }, last_ok_at: lastOkAt, ledger: { ...ledger.head(), broken: ledger.broken?.() ?? false } }),
     close: () => server.close(),
   };
 }

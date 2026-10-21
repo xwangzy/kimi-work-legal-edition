@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sign } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { fsyncSync, ftruncateSync, mkdtempSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import { createServer as createHttpsServer } from "node:https";
 import { request as httpsRequest } from "node:https";
 import type { AddressInfo } from "node:net";
@@ -45,7 +45,7 @@ async function post(base: string, path: string, body: unknown): Promise<{ status
 test("与进程内签名逐字节相同：信封与四类席位令牌；客户端照常验过；受众令牌由各自的密钥签、通用公钥表验不过", async () => {
   const keys = devControlPlaneKeys({ audiences: true });
   const dir = tmp();
-  const svc = createSignerService({ keys, ledgerFile: join(dir, "ledger.jsonl"), allowedCallers: [], insecureForTest: true });
+  const svc = createSignerService({ keys, ledgerFile: join(dir, "ledger.jsonl"), initLedger: true, allowedCallers: [], insecureForTest: true });
   const base = await listen(svc);
   const remote = await connectRemoteSigner({ url: base, insecureLoopbackForTest: true });
   const local = localSigner(keys);
@@ -83,7 +83,7 @@ test("与进程内签名逐字节相同：信封与四类席位令牌；客户�
 test("拒签并记账：未登记种类、夹带原始字节、时刻偏差、有效期超限、文档不合格、受众不认、字段越界", async () => {
   const keys = devControlPlaneKeys({ audiences: true });
   const dir = tmp();
-  const svc = createSignerService({ keys, ledgerFile: join(dir, "ledger.jsonl"), allowedCallers: [], insecureForTest: true });
+  const svc = createSignerService({ keys, ledgerFile: join(dir, "ledger.jsonl"), initLedger: true, allowedCallers: [], insecureForTest: true });
   const base = await listen(svc);
   try {
     const now = Date.now();
@@ -127,7 +127,7 @@ test("签名账：被改动即不启动；记不进去就不签（503、没有�
   const keys = devControlPlaneKeys();
   const dir = tmp();
   const file = join(dir, "ledger.jsonl");
-  const svc = createSignerService({ keys, ledgerFile: file, allowedCallers: [], insecureForTest: true });
+  const svc = createSignerService({ keys, ledgerFile: file, initLedger: true, allowedCallers: [], insecureForTest: true });
   const base = await listen(svc);
   const now = Date.now();
   const body = { tid: "ten_l", device_id: "dev_l", revoked_at: new Date(now).toISOString() };
@@ -140,8 +140,8 @@ test("签名账：被改动即不启动；记不进去就不签（503、没有�
   assert.equal(verifySignerLedger(readFileSync(file, "utf8")).ok, false);
   assert.throws(() => createSignerService({ keys, ledgerFile: file, allowedCallers: [], insecureForTest: true }), /签名账核验不通过/);
   // 账本写不进去：不交出签名
-  const good = openSignerLedger(join(tmp(), "ledger.jsonl"));
-  const broken = { append: () => { throw new Error("磁盘满"); }, head: good.head, close: good.close };
+  const good = openSignerLedger(join(tmp(), "ledger.jsonl"), { createIfMissing: true });
+  const broken = { append: () => { throw new Error("磁盘满"); }, head: good.head, broken: () => false, close: good.close };
   const svc2 = createSignerService({ keys, ledger: broken, allowedCallers: [], insecureForTest: true });
   const base2 = await listen(svc2);
   try {
@@ -156,7 +156,7 @@ test("签名账：被改动即不启动；记不进去就不签（503、没有�
 
 test("控制面接签名服务：设备照常取许可、目录与四类凭据；进程内没有私钥（ops.seal 不可用、胡椒必须另给）；签名服务停了回 503", async () => {
   const keys = devControlPlaneKeys({ audiences: true });
-  const svc = createSignerService({ keys, ledgerFile: join(tmp(), "ledger.jsonl"), allowedCallers: [], insecureForTest: true });
+  const svc = createSignerService({ keys, ledgerFile: join(tmp(), "ledger.jsonl"), initLedger: true, allowedCallers: [], insecureForTest: true });
   const sbase = await listen(svc);
   const signer: CpSigner = await connectRemoteSigner({ url: sbase, insecureLoopbackForTest: true });
   assert.throws(() => createControlPlane({ signer, serviceSecret: "s".repeat(40) }), /胡椒/);
@@ -245,7 +245,7 @@ test("mTLS：只认登记的调用方证书；别的证书 403、不带证书握
   leaf("other", "subjectAltName=URI:spiffe://kwl/test/gateway\n");
   const f = (n: string) => readFileSync(join(dir, n), "utf8");
   const keys = devControlPlaneKeys();
-  const svc = createSignerService({ keys, ledgerFile: join(dir, "ledger.jsonl"), allowedCallers: ["spiffe://kwl/test/cp-api"] });
+  const svc = createSignerService({ keys, ledgerFile: join(dir, "ledger.jsonl"), initLedger: true, allowedCallers: ["spiffe://kwl/test/cp-api"] });
   const handler = svc.server.listeners("request")[0] as (...a: unknown[]) => void;
   const https = createHttpsServer({ cert: f("signer.crt"), key: f("signer.key"), ca: f("ca.crt"), requestCert: true, rejectUnauthorized: true, minVersion: "TLSv1.2" }, handler);
   await new Promise<void>((r) => https.listen(0, "127.0.0.1", () => r()));
@@ -271,5 +271,137 @@ test("mTLS：只认登记的调用方证书；别的证书 403、不带证书握
     https.closeAllConnections();
     https.close();
     svc.close();
+  }
+});
+
+test("签名账（复核 RB16A-01/02）：账本不在且没有显式初始化即拒绝启动；写一半或 fsync 失败截回上一条、链不错位；截不回去即停签；末行序号经指标给外部对账", async () => {
+  const keys = devControlPlaneKeys();
+  const dir = tmp();
+  const file = join(dir, "ledger.jsonl");
+  assert.throws(() => createSignerService({ keys, ledgerFile: file, allowedCallers: [], insecureForTest: true }), /签名账不存在/, "整本被删也能发现");
+  // 写入原语注入：第 2 次写只写进一半然后报错、第 3 次 fsync 报错
+  let writes = 0;
+  let fsyncs = 0;
+  const io = {
+    writeSync: (fd: number, buf: Buffer, off: number) => {
+      writes += 1;
+      if (writes === 2) {
+        writeSync(fd, buf.subarray(off, off + 10));
+        throw Object.assign(new Error("ENOSPC"), { code: "ENOSPC" });
+      }
+      return writeSync(fd, buf, off);
+    },
+    fsyncSync: (fd: number) => {
+      fsyncs += 1;
+      if (fsyncs === 4) throw Object.assign(new Error("EIO"), { code: "EIO" });
+      fsyncSync(fd);
+    },
+    ftruncateSync,
+  };
+  const lg = openSignerLedger(file, { createIfMissing: true, io });
+  const rec = (n: string) => ({ request_id: n, caller: "c", op: "envelope" as const, kind: "kwl-license", kid: "k", tid: null, body_sha256: null, signed_sha256: "s", result: "ok" as const, reason: null });
+  lg.append(rec("r1"), "t");
+  assert.throws(() => lg.append(rec("r2"), "t"), /ENOSPC/, "写一半：报错");
+  lg.append(rec("r3"), "t");
+  assert.throws(() => lg.append(rec("r4"), "t"), /EIO/, "fsync 失败：报错（这一行已截掉）");
+  lg.append(rec("r5"), "t");
+  const v = verifySignerLedger(readFileSync(file, "utf8"));
+  assert.ok(v.ok && v.seq === 3, "只留下 r1、r3、r5 三条完整记录，序号连续");
+  assert.deepEqual(readFileSync(file, "utf8").trim().split("\n").map((l) => JSON.parse(l).request_id), ["r1", "r3", "r5"]);
+  assert.equal(lg.head().seq, 3);
+  // 截不回去：置损坏，之后一律拒绝
+  const lg2 = openSignerLedger(join(dir, "l2.jsonl"), { createIfMissing: true, io: { writeSync: () => { throw new Error("EIO"); }, fsyncSync, ftruncateSync: () => { throw new Error("EBADF"); } } });
+  assert.throws(() => lg2.append(rec("x"), "t"), /EIO/);
+  assert.equal(lg2.broken(), true);
+  assert.throws(() => lg2.append(rec("y"), "t"), /已损坏/);
+  // 指标给出末行序号（外部记下的序号变小即被截尾）
+  const svc = createSignerService({ keys, ledgerFile: join(dir, "l3.jsonl"), initLedger: true, allowedCallers: [], insecureForTest: true });
+  const base = await listen(svc);
+  try {
+    await post(base, "/v1/sign/envelope", { request_id: "req-metric-1", req_now: Date.now(), kind: "kwl-device-revoked", body: { tid: "ten_m", device_id: "dev_m", revoked_at: new Date().toISOString() } });
+    await post(base, "/v1/sign/seat-token", { request_id: "req-metric-2", req_now: Date.now(), tid: "ten_m", uid: "u", sid: "s", dev: "d", aud: "x".repeat(5000), ttl_s: 900 });
+    const m = svc.metrics();
+    assert.equal(m.ledger.seq, 2);
+    assert.equal(m.ledger.broken, false);
+    assert.deepEqual(Object.keys(m.counts).sort(), ["envelope/kwl-device-revoked/ok", "seat_token/invalid/rejected"], "计数键只用登记过的种类与受众（RB16A-03）");
+  } finally {
+    svc.close();
+  }
+});
+
+test("远程签名者先验回复再交付（复核 RB16A-04）；等签名期间席位被吊销则不交付令牌（RB16A-05）", async () => {
+  // 签名服务报的公钥表与实际签名用的私钥对不上（轮换配错或被替换）：控制面这一侧即报 reply_invalid，不把验不过的信封与令牌交给设备
+  const keys = devControlPlaneKeys();
+  const other = devControlPlaneKeys();
+  const { createServer: mkServer } = await import("node:http");
+  const { signerPublicKeys } = await import("../../control-plane/src/index.ts");
+  const { sealEnvelope } = await import("@zr-legal/firm-trust");
+  const { issueSeatToken } = await import("@zr-legal/seat-token");
+  const fake = mkServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      res.setHeader("content-type", "application/json");
+      if (req.url === "/v1/public-keys") return res.end(JSON.stringify(signerPublicKeys(keys)));
+      const b = JSON.parse(raw);
+      if (req.url === "/v1/sign/envelope") {
+        const e = sealEnvelope(b.kind, b.body, { kid: keys.envelope.kid, privateKey: other.envelope.privateKey });
+        return res.end(JSON.stringify({ envelope: { kind: e.kind, kid: e.kid, sig: e.sig } }));
+      }
+      // 席位令牌：签对了，但把席位编号换掉
+      return res.end(JSON.stringify({ token: issueSeatToken({ tid: b.tid, uid: b.uid, sid: "seat_other", dev: b.dev, kid: keys.seat.kid }, keys.seat.privateKey, b.ttl_s, b.req_now) }));
+    });
+  });
+  await new Promise<void>((r) => fake.listen(0, "127.0.0.1", () => r()));
+  try {
+    const remote = await connectRemoteSigner({ url: `http://127.0.0.1:${(fake.address() as AddressInfo).port}`, insecureLoopbackForTest: true });
+    const now = Date.now();
+    await assert.rejects(remote.sealEnvelope("kwl-device-revoked", { tid: "ten_x", device_id: "dev_x", revoked_at: new Date(now).toISOString() }, now), (e: any) => e.code === "reply_invalid");
+    await assert.rejects(remote.issueSeatToken({ tid: "ten_x", uid: "u", sid: "seat_1", dev: "dev_x", ttlSeconds: SEAT_TTL_DEFAULT_SECONDS, at: now }), (e: any) => e.code === "reply_invalid", "字段与申请不一致");
+    remote.close?.();
+  } finally {
+    fake.close();
+  }
+  // 等签名期间席位被吊销：交付前再核一次，回 403、不给令牌
+  const k2 = devControlPlaneKeys();
+  const local = localSigner(k2);
+  let cpRef: ReturnType<typeof createControlPlane> | null = null;
+  const slow: CpSigner = {
+    ...local,
+    mode: "local",
+    sealEnvelope: local.sealEnvelope,
+    publicKeys: local.publicKeys,
+    async issueSeatToken(r) {
+      cpRef!.ops.revokeSeat(r.tid, r.uid);
+      return local.issueSeatToken(r);
+    },
+  };
+  const cp = createControlPlane({ signer: slow, serviceSecret: "s".repeat(40), codePepper: Buffer.alloc(32, 3) });
+  cpRef = cp;
+  await new Promise<void>((r) => cp.server.listen(0, "127.0.0.1", () => r()));
+  const cbase = `http://127.0.0.1:${(cp.server.address() as AddressInfo).port}`;
+  try {
+    const tid = "ten_race";
+    cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 2 });
+    const root = generateFirmRoot();
+    const ts = Date.now();
+    const proof = sign(null, enrollProofBytes(tid, root.publicKeyPem, ts), root.privateKeyPem).toString("base64url");
+    await fetch(`${cbase}/v1/enroll`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ tid, root_public_key_pem: root.publicKeyPem, ts, proof }) });
+    const dk = generateDeviceKeys();
+    const cert = issueDeviceCertificate(root.privateKeyPem, { certId: "cert_race", memberId: "usr_race", deviceId: "dev_race", role: "lawyer", signPublicKeyPem: dk.signPublicKeyPem, encPublicKeyPem: dk.encPublicKeyPem, issuedAt: new Date(Date.now() - 60_000).toISOString(), expiresAt: new Date(Date.now() + 86400_000).toISOString() });
+    const call = async (method: string, path: string, body?: unknown) => {
+      const raw = body === undefined ? "" : JSON.stringify(body);
+      const h = signDeviceRequest({ method, path, body: raw, tid, deviceId: "dev_race", signPrivateKeyPem: dk.signPrivateKeyPem });
+      const r = await fetch(`${cbase}${path}`, { method, headers: { ...h, ...(raw ? { "content-type": "application/json" } : {}) }, ...(raw ? { body: raw } : {}) });
+      return { status: r.status, json: (await r.json()) as any };
+    };
+    assert.equal((await call("POST", "/v1/devices/register", { tid, cert })).status, 200);
+    const r = await call("POST", "/v1/seat-token");
+    assert.equal(r.status, 403);
+    assert.equal(r.json.error.code, "seat_revoked");
+    assert.equal(r.json.token, undefined);
+  } finally {
+    cp.server.closeAllConnections();
+    await new Promise<void>((r) => cp.server.close(() => r()));
   }
 });

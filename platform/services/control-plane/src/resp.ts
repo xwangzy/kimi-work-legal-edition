@@ -13,6 +13,8 @@ export interface RedisOptions {
   password?: string;
   tls?: { ca: string; servername?: string };
   connectTimeoutMs?: number;
+  /** 单条命令的上限（缺省 2 秒）：超时即断开、全部待回复的命令失败（Redis 挂起时不无限积压；复核 RB16A-17）。 */
+  commandTimeoutMs?: number;
 }
 
 export type RespValue = string | number | null | RespValue[] | RespError;
@@ -92,13 +94,18 @@ export async function connectRedis(o: RedisOptions): Promise<RedisConn> {
     });
   });
   sock.setNoDelay(true);
+  if (!o.socketPath) sock.setKeepAlive(true, 10_000);
+  const cmdTimeout = o.commandTimeoutMs ?? 2_000;
   let buf: Buffer = Buffer.alloc(0);
-  const pending: { resolve: (v: RespValue) => void; reject: (e: Error) => void }[] = [];
+  const pending: { resolve: (v: RespValue) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }[] = [];
   let dead: Error | null = null;
   const fail = (e: Error) => {
     if (dead) return;
     dead = e;
-    for (const p of pending.splice(0)) p.reject(e);
+    for (const p of pending.splice(0)) {
+      clearTimeout(p.timer);
+      p.reject(e);
+    }
   };
   sock.on("data", (c: Buffer) => {
     buf = buf.length ? Buffer.concat([buf, c]) : c;
@@ -109,6 +116,7 @@ export async function connectRedis(o: RedisOptions): Promise<RedisConn> {
         buf = buf.subarray(r.next);
         const p = pending.shift();
         if (!p) continue;
+        clearTimeout(p.timer);
         if (r.v instanceof RespError) p.reject(r.v);
         else p.resolve(r.v);
       }
@@ -122,8 +130,15 @@ export async function connectRedis(o: RedisOptions): Promise<RedisConn> {
   const conn: RedisConn = {
     command(...args) {
       if (dead) return Promise.reject(dead);
+      // 待回复过多（Redis 挂起而连接没断）：不再发送，直接失败
+      if (pending.length >= 10_000) return Promise.reject(new RespError("Redis 待回复的命令过多"));
       return new Promise((resolve, reject) => {
-        pending.push({ resolve, reject });
+        const timer = setTimeout(() => {
+          sock.destroy();
+          fail(new RespError("Redis 命令超时"));
+        }, cmdTimeout);
+        timer.unref();
+        pending.push({ resolve, reject, timer });
         sock.write(encode(args));
       });
     },

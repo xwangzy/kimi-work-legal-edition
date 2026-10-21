@@ -200,10 +200,10 @@ export interface ControlPlaneOptions {
   /** 状态持久化（state-store.ts 文件两代交替；pg-state-store.ts PostgreSQL 一主多备）：未给出 = 只在内存（开发与测试）。 */
   stateStore?: StateStore;
   /**
-   * 防重放随机数的外部副本（v9.3 A-7，nonce-mirror.ts 存 Redis）：启动时并入 initial（换主实例不丢最近的随机数）；
+   * 防重放随机数的外部副本（v9.3 A-7，nonce-mirror.ts 存 Redis）：seen 查打开时读回的随机数（换主实例不丢最近的随机数）；
    * 每见到一个新随机数即 record（异步，失败只计数，降级为状态快照里的随机数）。
    */
-  nonceMirror?: { readonly initial?: Iterable<[string, number]>; record(key: string, exp: number): void };
+  nonceMirror?: { seen?(key: string): boolean; record(key: string, exp: number): void };
   /** 运营审计流水（S14 v0，audit-log.ts）：未给出 = 只在内存。 */
   auditLog?: AuditLog;
   /**
@@ -423,14 +423,21 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const seatToken = async (t: TenantRecord, dev: DeviceRecord, sid: string, ttlSeconds: number, aud?: SeatAudience) => {
     const at = now();
     const token = await signer.issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid, dev: dev.cert.deviceId, ...(aud ? { aud } : {}), ttlSeconds, at });
+    // 等签名期间可能已被吊销（复核 RB16A-05：签名是一次网络往返，原先同步段内的“先查后签”不再原子）：交付前按当前状态再核一次
+    const cur = tenants.get(t.tid);
+    const seatNow = cur?.seatsByUser.get(dev.cert.memberId);
+    const devNow = cur?.devices.get(dev.cert.deviceId);
+    if (!cur || !devNow || devNow.revoked_at) throw new CpError(403, "device_revoked", "设备已吊销");
+    if (!seatNow || seatNow.sid !== sid || seatNow.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
+    if (!licenseValid(cur)) throw new CpError(402, "license_expired", "许可已到期：不签发");
     return { token, expires_at: iso(at + ttlSeconds * 1000) };
   };
 
-  for (const [k, exp] of o.nonceMirror?.initial ?? []) if (exp > now() && exp > (nonces.get(k) ?? 0)) nonces.set(k, exp);
   const seenNonce = (key: string): boolean => {
     const t = now();
     if (nonces.size > 20_000) for (const [k, exp] of nonces) if (exp < t) nonces.delete(k);
-    if (nonces.has(key)) return true;
+    // 换主实例时从 Redis 读回的随机数按 HMAC 比较（镜像里没有原文，复核 RB16A-08）
+    if (nonces.has(key) || o.nonceMirror?.seen?.(key)) return true;
     nonces.set(key, t + 10 * 60_000);
     noncesDirty = true;
     o.nonceMirror?.record(key, t + 10 * 60_000);

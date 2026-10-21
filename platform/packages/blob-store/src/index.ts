@@ -9,7 +9,7 @@
  * 键名只允许 `[A-Za-z0-9._/-]`、不得以 / 开头、不得含 `..`——调用方的编号直接拼进键名，不能借此跳出前缀。
  */
 import { createHash, createHmac, randomBytes } from "node:crypto";
-import { closeSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
+import { closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
 import { request as httpsRequest } from "node:https";
 import { request as httpRequest } from "node:http";
 import { dirname, join, relative, sep } from "node:path";
@@ -64,7 +64,8 @@ export function fsBlobStore(dir: string): BlobStore {
     async get(key) {
       try {
         const p = pathOf(key);
-        if (!statSync(p).isFile()) return null;
+        // 只读普通文件、不跟随符号链接（复核 RB16A-11，与支持服务的 readRegular 同一口径，复核 S9B-09）
+        if (!lstatSync(p).isFile()) return null;
         return readFileSync(p);
       } catch {
         return null;

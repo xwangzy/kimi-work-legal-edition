@@ -20,6 +20,8 @@ export interface PgConnOptions {
   /** TLS：生产必填（只信这个 CA；servername 缺省为 host）。 */
   tls?: { ca: string; servername?: string };
   connectTimeoutMs?: number;
+  /** 单条查询的上限（缺省 30 秒）：超时即断开连接（连接静默失效时不永远挂住；复核 RB16A-07）。 */
+  queryTimeoutMs?: number;
   applicationName?: string;
 }
 
@@ -95,6 +97,8 @@ async function openSocket(o: PgConnOptions): Promise<Socket> {
     const t = setTimeout(() => s.destroy(new PgError("timeout", "连接数据库超时")), timeout);
     s.once("connect", () => {
       clearTimeout(t);
+      // TCP keepalive：对端宿主断电、链路静默丢包时操作系统会探测并断开（复核 RB16A-07）
+      if (!o.socketDir) s.setKeepAlive(true, 10_000);
       resolve(s);
     });
     s.once("error", (e) => {
@@ -161,7 +165,7 @@ export async function connectPg(o: PgConnOptions): Promise<PgConn> {
   // ─── 启动与认证 ───
   const params = Buffer.concat([cstr("user"), cstr(o.user), cstr("database"), cstr(o.database), cstr("application_name"), cstr(o.applicationName ?? "kwl-control-plane"), cstr("client_encoding"), cstr("UTF8"), Buffer.from([0])]);
   sock.write(Buffer.concat([int32(params.length + 8), int32(196608), params]));
-  let scram: { clientFirstBare: string; nonce: string; password: string; authMessage?: string; saltedPassword?: Buffer } | null = null;
+  let scram: { clientFirstBare: string; nonce: string; password: string; authMessage?: string; saltedPassword?: Buffer; verified?: boolean } | null = null;
   for (;;) {
     const m = await recv();
     if (m.type === "E") {
@@ -171,7 +175,14 @@ export async function connectPg(o: PgConnOptions): Promise<PgConn> {
     if (m.type === "Z") break;
     if (m.type !== "R") continue;
     const code = m.body.readInt32BE(0);
-    if (code === 0) continue; // AuthenticationOk
+    if (code === 0) {
+      // AuthenticationOk：发起了 SCRAM 就必须先核过服务端签名（复核 RB16A-06：跳过最终消息直接回 OK 的假冒数据库）
+      if (scram && !scram.verified) {
+        sock.destroy();
+        throw new PgError("auth_failed", "数据库没有出示 SCRAM 服务端签名");
+      }
+      continue;
+    }
     if (code === 3 || code === 5) {
       sock.destroy();
       throw new PgError("auth_method_refused", "数据库要求明文或 MD5 口令：只接受 SCRAM-SHA-256");
@@ -193,7 +204,8 @@ export async function connectPg(o: PgConnOptions): Promise<PgConn> {
       const serverFirst = m.body.subarray(4).toString("utf8");
       const attrs = Object.fromEntries(serverFirst.split(",").map((kv) => [kv.slice(0, 1), kv.slice(2)]));
       const iter = Number(attrs.i);
-      if (!attrs.r?.startsWith(scram.nonce) || !attrs.s || !Number.isSafeInteger(iter) || iter < 4096) {
+      // 服务端随机数须在客户端随机数之后另有内容；迭代次数设上限（过大会让工作线程长时间卡在派生上）
+      if (!attrs.r?.startsWith(scram.nonce) || attrs.r.length <= scram.nonce.length || !attrs.s || !Number.isSafeInteger(iter) || iter < 4096 || iter > 1_000_000) {
         sock.destroy();
         throw new PgError("auth_failed", "数据库的 SCRAM 回应不合格");
       }
@@ -219,6 +231,7 @@ export async function connectPg(o: PgConnOptions): Promise<PgConn> {
         sock.destroy();
         throw new PgError("auth_failed", "数据库的 SCRAM 服务端签名不符");
       }
+      scram.verified = true;
       continue;
     }
     sock.destroy();
@@ -237,33 +250,39 @@ export async function connectPg(o: PgConnOptions): Promise<PgConn> {
     sock.write(Buffer.concat([msg("P", Buffer.concat([cstr(""), cstr(sql), int16(0)])), msg("B", bind), msg("D", Buffer.concat([Buffer.from("P"), cstr("")])), msg("E", Buffer.concat([cstr(""), int32(0)])), msg("S", Buffer.alloc(0))]));
     const out: PgResult = { fields: [], rows: [], command: "" };
     let err: PgError | null = null;
-    for (;;) {
-      const m = await recv();
-      if (m.type === "E") err = parseError(m.body);
-      else if (m.type === "T") {
-        const n = m.body.readInt16BE(0);
-        let i = 2;
-        for (let k = 0; k < n; k++) {
-          const end = m.body.indexOf(0, i);
-          out.fields.push(m.body.subarray(i, end).toString("utf8"));
-          i = end + 1 + 18;
-        }
-      } else if (m.type === "D") {
-        const n = m.body.readInt16BE(0);
-        let i = 2;
-        const row: (string | null)[] = [];
-        for (let k = 0; k < n; k++) {
-          const len = m.body.readInt32BE(i);
-          i += 4;
-          if (len < 0) row.push(null);
-          else {
-            row.push(m.body.subarray(i, i + len).toString("utf8"));
-            i += len;
+    const timer = setTimeout(() => sock.destroy(new PgError("timeout", "数据库查询超时")), o.queryTimeoutMs ?? 30_000);
+    timer.unref();
+    try {
+      for (;;) {
+        const m = await recv();
+        if (m.type === "E") err = parseError(m.body);
+        else if (m.type === "T") {
+          const n = m.body.readInt16BE(0);
+          let i = 2;
+          for (let k = 0; k < n; k++) {
+            const end = m.body.indexOf(0, i);
+            out.fields.push(m.body.subarray(i, end).toString("utf8"));
+            i = end + 1 + 18;
           }
-        }
-        out.rows.push(row);
-      } else if (m.type === "C") out.command = m.body.subarray(0, m.body.length - 1).toString("utf8");
-      else if (m.type === "Z") break;
+        } else if (m.type === "D") {
+          const n = m.body.readInt16BE(0);
+          let i = 2;
+          const row: (string | null)[] = [];
+          for (let k = 0; k < n; k++) {
+            const len = m.body.readInt32BE(i);
+            i += 4;
+            if (len < 0) row.push(null);
+            else {
+              row.push(m.body.subarray(i, i + len).toString("utf8"));
+              i += len;
+            }
+          }
+          out.rows.push(row);
+        } else if (m.type === "C") out.command = m.body.subarray(0, m.body.length - 1).toString("utf8");
+        else if (m.type === "Z") break;
+      }
+    } finally {
+      clearTimeout(timer);
     }
     if (err) throw err;
     return out;

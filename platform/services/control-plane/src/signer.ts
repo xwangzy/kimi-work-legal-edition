@@ -11,8 +11,8 @@
 import { createPublicKey, randomUUID, type KeyObject } from "node:crypto";
 import { request as httpsRequest, Agent } from "node:https";
 import { request as httpRequest } from "node:http";
-import { sealEnvelope, type CpEnvelope } from "@zr-legal/firm-trust";
-import { issueSeatToken } from "@zr-legal/seat-token";
+import { openEnvelope, publicKeyMap, sealEnvelope, type CpEnvelope } from "@zr-legal/firm-trust";
+import { issueSeatToken, verifySeatToken } from "@zr-legal/seat-token";
 
 export interface CpKeyPair {
   kid: string;
@@ -200,18 +200,32 @@ export async function connectRemoteSigner(o: RemoteSignerOptions): Promise<CpSig
     seat_general: String(pk.seat_general ?? ""),
   };
   if (!pub.seat[pub.seat_general]) throw new Error("签名服务没有报通用席位密钥");
+  // 交付前先用签名服务报的公钥验一遍回复（复核 RB16A-04）：签名服务配错密钥或被替换时在控制面这一侧就报错，而不是让全部设备验签失败
+  const envKeys = publicKeyMap(pub.envelope);
+  const seatKeys = publicKeyMap(pub.seat);
   return {
     mode: "remote",
     async sealEnvelope(kind, body, reqNow) {
       const r = await call("POST", "/v1/sign/envelope", { request_id: randomUUID(), req_now: reqNow, kind, body });
       const e = r?.envelope;
       if (!e || e.kind !== kind || typeof e.kid !== "string" || !pub.envelope[e.kid] || typeof e.sig !== "string") throw new SignerUnavailableError("reply_malformed");
-      // 回复里的文档必须与提交的逐字一致（签名服务只签、不改）
-      return { kind, kid: e.kid, body, sig: e.sig };
+      // 签名须对提交的文档成立（按设备收到的 JSON 形态核：与设备验签同一口径）
+      const env = { kind, kid: e.kid, body, sig: e.sig };
+      if (!openEnvelope(JSON.parse(JSON.stringify(env)), kind, envKeys).ok) throw new SignerUnavailableError("reply_invalid");
+      return env;
     },
     async issueSeatToken(r) {
       const j = await call("POST", "/v1/sign/seat-token", { request_id: randomUUID(), req_now: r.at, tid: r.tid, uid: r.uid, sid: r.sid, dev: r.dev, ...(r.aud ? { aud: r.aud } : {}), ttl_s: r.ttlSeconds });
       if (typeof j?.token !== "string" || !j.token.startsWith("zst1.")) throw new SignerUnavailableError("reply_malformed");
+      // 令牌须能验过，且字段与申请的一致（租户、成员、席位、设备、受众、有效期）
+      let c;
+      try {
+        c = verifySeatToken(j.token, seatKeys, { now: r.at, ...(r.aud ? { audience: r.aud } : {}) });
+      } catch {
+        throw new SignerUnavailableError("reply_invalid");
+      }
+      const audOk = r.aud ? c.aud?.length === 1 && c.aud[0] === r.aud && c.kid === (pub.seat_audiences[r.aud] ?? pub.seat_general) : c.aud === undefined && c.kid === pub.seat_general;
+      if (c.tid !== r.tid || c.uid !== r.uid || c.sid !== r.sid || c.dev !== r.dev || c.exp - c.iat !== r.ttlSeconds || !audOk) throw new SignerUnavailableError("reply_invalid");
       return j.token;
     },
     publicKeys: () => pub,

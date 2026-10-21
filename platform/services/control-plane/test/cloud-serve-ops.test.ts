@@ -126,12 +126,13 @@ test("运营按人鉴权端到端：命令行生成密钥与名册 → 生产入
   const signer = await start({
     role: "cp-signer",
     environment: "test",
+    init_ledger: true,
     listen: { host: "127.0.0.1", port: 0 },
     insecure_loopback_for_test: true,
     data_dir: join(dir, "signer"),
     keys: { envelope: { kid: "cp-test-t1", private_key_file: write("env.pem", pem(env1)) }, seat: { kid: "seat-test-t1", private_key_file: write("seat.pem", pem(seat1)) } },
   });
-  assert.match(runOnce({ role: "cp-signer", environment: "test", listen: { host: "127.0.0.1", port: 0 }, insecure_loopback_for_test: true, data_dir: join(dir, "signer2"), ops: { deployment: "e2e" }, keys: {} }).stderr, /cp-signer 没有运营接口/);
+  assert.match(runOnce({ role: "cp-signer", environment: "test", init_ledger: true, listen: { host: "127.0.0.1", port: 0 }, insecure_loopback_for_test: true, data_dir: join(dir, "signer2"), ops: { deployment: "e2e" }, keys: {} }).stderr, /cp-signer 没有运营接口/);
   const cpCfg = (dataDir: string, ops: unknown) => ({
     role: "control-plane",
     listen: { host: "127.0.0.1", port: 0 },
