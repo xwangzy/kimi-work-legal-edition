@@ -66,16 +66,40 @@ export type PatchResult =
     }
   | {
       status: "preview";
-      reason: "document_version_superseded" | "not_docx" | "conflicts" | "no_patches";
+      /** dry_run：只试定位、全部成立（不写文件，见 dryRun）。 */
+      reason: "document_version_superseded" | "not_docx" | "conflicts" | "no_patches" | "dry_run";
       conflicts: PatchConflict[];
       preview: PatchPreviewItem[];
+      /** 只在 dryRun 时给出：原件的段落（原文）与每条补丁在段落里的落点（与生成修订稿同一套定位）。 */
+      paragraphs?: string[];
+      spans?: PatchSpan[];
     };
+
+/** 补丁在原件段落里的落点（段落序号、起止位置，均按原文计）。 */
+export interface PatchSpan {
+  index: number;
+  para: number;
+  start: number;
+  end: number;
+  /** 被替换的原文与新文本（原文形态）。 */
+  old: string;
+  new: string;
+}
 
 const AUTHOR = "Kimi Work 法律助手（AI 建议，待律师确认）";
 
 export function applyStructuredPatches(
   deps: { db: KernelDb; blobs: BlobStore; tokens: MatterTokenStore },
-  input: { matter_id: string; document_version_id: string; patches: StructuredPatch[]; created_by: string; run_id?: string | null; author?: string },
+  input: {
+    matter_id: string;
+    document_version_id: string;
+    patches: StructuredPatch[];
+    created_by: string;
+    run_id?: string | null;
+    author?: string;
+    /** 只试定位与重叠检查、合并试写一遍，不登记成果（工作台“接受后”预览，余项续复核 RC-B-01）。 */
+    dryRun?: boolean;
+  },
 ): PatchResult {
   const { db, blobs, tokens } = deps;
   const doc = db.get<{ document_version_id: string; matter_id: string; tenant_id: string; filename: string; sha256: string; storage_uri: string }>(
@@ -150,7 +174,7 @@ export function applyStructuredPatches(
     }
     return at;
   };
-  const spans: { index: number; para: number; start: number; end: number }[] = [];
+  const spans: PatchSpan[] = [];
   for (const op of ops) {
     const index = Number(op.opId.slice(1));
     try {
@@ -165,7 +189,7 @@ export function applyStructuredPatches(
     const cands = paragraphs.map((t, i) => ({ i, at: nth(t, op.anchor.originalText, occ) })).filter((c) => c.at >= 0);
     const hint = op.anchor.paragraphHint;
     const target = cands.length === 1 ? cands[0] : hint ? (cands.find((c) => paragraphs[c.i]!.includes(hint)) ?? cands[0]) : cands[0];
-    if (target) spans.push({ index, para: target.i, start: target.at, end: target.at + op.anchor.originalText.length });
+    if (target) spans.push({ index, para: target.i, start: target.at, end: target.at + op.anchor.originalText.length, old: op.anchor.originalText, new: op.newText });
   }
   for (let i = 0; i < spans.length; i++) {
     for (let j = i + 1; j < spans.length; j++) {
@@ -176,6 +200,18 @@ export function applyStructuredPatches(
   }
   const bad = new Set(conflicts.map((c) => c.index));
   for (const item of preview) item.ok = !bad.has(item.index);
+  if (input.dryRun) {
+    // 逐条成立时再合并试写一遍（与真正生成时同一步）：合并失败即整体不成立
+    if (conflicts.length === 0) {
+      try {
+        applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops });
+      } catch (e) {
+        for (const item of preview) item.ok = false;
+        conflicts.push({ index: 0, reason: "apply_failed", detail: (e as Error).message.slice(0, 200) });
+      }
+    }
+    return { status: "preview", reason: conflicts.length > 0 ? "conflicts" : "dry_run", conflicts: conflicts.sort((x, y) => x.index - y.index), preview, paragraphs, spans: spans.filter((x) => !bad.has(x.index)) };
+  }
   if (conflicts.length > 0) return { status: "preview", reason: "conflicts", conflicts: conflicts.sort((x, y) => x.index - y.index), preview };
 
   let out: Buffer;

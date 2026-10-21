@@ -878,7 +878,11 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .wb-view-btn.active { border-color: var(--paper-focus); box-shadow: inset 0 0 0 1px var(--paper-focus); }
 .wb-view-note { font-family: var(--font-sans); font-size: var(--fs-xs); color: var(--text-on-paper-muted); }
 .wb-ins { text-decoration: none; background: var(--hl-revision); box-shadow: inset 0 -2px 0 var(--paper-focus); border-radius: var(--r-xs); padding: 0 1px; color: var(--text-on-paper); cursor: pointer; }
-.wb-ins.mark-active { outline: 2px solid var(--accent); outline-offset: 1px; }
+.wb-edit { cursor: pointer; border-radius: var(--r-xs); }
+.wb-edit.mark-active, .wb-edit:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.wb-edit .wb-ins { cursor: inherit; }
+.wb-del { text-decoration: line-through; text-decoration-color: var(--risk-high); color: var(--text-on-paper-muted); background: transparent; }
+.wb-skipped { font-family: var(--font-sans); font-size: var(--fs-xs); margin: 4px 0 10px; padding-left: 18px; color: var(--text-on-paper-muted); }
 
 /* 统一下拉框与材料用途胶囊（Z3 #15、V-c）：36px 高、8px 圆角、令牌边框；选中态黑底白字（V-b） */
 .select-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; height: 36px; min-width: 120px; max-width: 100%; padding: 0 10px 0 12px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--bg-surface); color: var(--text-primary); text-align: left; }

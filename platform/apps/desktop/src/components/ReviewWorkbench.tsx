@@ -8,7 +8,7 @@
  */
 import { scrollBehavior } from "../lib/ui-prefs.ts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { acceptPreview } from "../lib/accept-preview.ts";
+import { kernelPreview, localPreview, type AcceptPreview } from "../lib/accept-preview.ts";
 import { agreementParts, firstOpenCard, nextOpenCard, stepCard } from "../lib/workbench.ts";
 import { api, type RiskCard, type RiskProgress } from "../api.ts";
 import { CITE_STATE_LABELS } from "../lib/labels.ts";
@@ -108,17 +108,34 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
     [cards, plain],
   );
 
-  // 接受后预览：本机按已接受的卡渲染（与修订稿同一口径），不生成文件
-  const preview = useMemo(
-    () =>
-      doc
-        ? acceptPreview(
-            doc.paragraphs,
-            cards.map((c) => ({ card_id: c.card_id, seq: c.seq, status: c.status, anchor_status: c.anchor_status, anchor_text: plain(c.anchor_text), suggestion: plain(c.suggestion), final_text: plain(c.final_text) })),
-          )
-        : null,
-    [doc, cards, plain],
-  );
+  // 接受后预览（余项续复核 RC-B-01）：Word 材料由内核按生成修订稿的同一套定位算出落点；非 Word 材料本机定位、仅供参考
+  const [kernelView, setKernelView] = useState<{ status: string; preview: AcceptPreview } | null>(null);
+  useEffect(() => {
+    // 按钮上的“n 处修改”也要按内核口径，所以不等切到“接受后”才取
+    if (!documentVersionId) return;
+    let live = true;
+    api
+      .previewRedline(matterId, documentVersionId, runFilter ? { run_id: runFilter } : {})
+      .then((r) => live && setKernelView({ status: r.status, preview: kernelPreview(r.paragraphs, r.cards) }))
+      .catch(() => live && setKernelView(null));
+    return () => {
+      live = false;
+    };
+  }, [matterId, documentVersionId, runFilter, cards]);
+  const docOnly = kernelView?.status === "not_docx" || kernelView?.status === "document_version_superseded";
+  const preview = useMemo((): AcceptPreview | null => {
+    if (!doc) return null;
+    if (kernelView && (kernelView.status === "ok" || kernelView.status === "conflicts")) return kernelView.preview;
+    if (kernelView?.status === "no_patches") return { paragraphs: doc.paragraphs.map((p) => [{ text: p }]), applied: 0, skipped: kernelView.preview.skipped };
+    return localPreview(
+      doc.paragraphs,
+      cards.map((c) => ({ card_id: c.card_id, seq: c.seq, status: c.status, anchor_status: c.anchor_status, anchor_text: plain(c.anchor_text), suggestion: plain(c.suggestion), final_text: plain(c.final_text) })),
+    );
+  }, [doc, cards, plain, kernelView]);
+  const cardLabel = (id: string) => {
+    const card = cards.find((x) => x.card_id === id);
+    return card ? `${card.clause_ref ? clauseLabel(card.clause_ref) : `第 ${card.seq} 项`}：${plain(card.issue).slice(0, 20)}` : "（未知卡片）";
+  };
 
   const setNature = async (card: RiskCard, nature: RiskNature) => {
     setBusy(true);
@@ -294,27 +311,54 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
           {!documentVersionId && <p className="muted">这些意见没有关联到具体合同（例如条款来自任务说明或聊天内容）：可以逐张决定，不参与修订稿。</p>}
           {documentVersionId && !doc && <p className="muted">正在载入合同原文…</p>}
           {doc && preview && (
-            <div className="wb-doc-view" role="tablist" aria-label="文档显示">
-              <button role="tab" aria-selected={view === "original"} className={`wb-view-btn${view === "original" ? " active" : ""}`} onClick={() => setView("original")}>原文</button>
-              <button role="tab" aria-selected={view === "after"} className={`wb-view-btn${view === "after" ? " active" : ""}`} onClick={() => setView("after")}>接受后{preview.applied > 0 ? `（${preview.applied} 处修改）` : ""}</button>
+            <div className="wb-doc-view" role="group" aria-label="文档显示">
+              <button aria-pressed={view === "original"} className={`wb-view-btn${view === "original" ? " active" : ""}`} onClick={() => setView("original")}>原文</button>
+              <button aria-pressed={view === "after"} className={`wb-view-btn${view === "after" ? " active" : ""}`} onClick={() => setView("after")}>接受后{preview.applied > 0 ? `（${preview.applied} 处修改）` : ""}</button>
               {view === "after" && (
                 <span className="wb-view-note">
-                  只在这台电脑上按已接受的建议显示，不是正式修订稿
-                  {preview.skipped.length > 0 ? `；${preview.skipped.map((x) => `第 ${x.seq} 项`).join("、")}未体现（${[...new Set(preview.skipped.map((x) => x.reason))].join("、")}），以生成的修订稿为准` : ""}
+                  {kernelView?.status === "not_docx"
+                    ? "这份材料不是 Word 文件，不能生成修订稿；下面按已接受的建议在本机显示，仅供参考"
+                    : kernelView?.status === "document_version_superseded"
+                      ? "这份合同已有更新的版本，修订稿要在新版本上生成；下面仅供参考"
+                      : docOnly || !kernelView
+                        ? "按已接受的建议显示，不是正式修订稿"
+                        : "按生成修订稿的同一套定位显示，不是正式修订稿"}
                 </span>
               )}
             </div>
           )}
+          {view === "after" && preview && preview.skipped.length > 0 && (
+            // 没体现的逐项说明原因，点一下定位到那张卡（余项续复核 RC-B-03）
+            <ul className="wb-skipped">
+              {preview.skipped.map((x) => (
+                <li key={x.card_id}>
+                  <button className="btn-link" onClick={() => focusCard(x.card_id)}>{cardLabel(x.card_id)}</button>
+                  <span className="muted">：{x.reason}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           {view === "original" && doc?.paragraphs.map((p, i) => (p.trim() ? <p key={i}>{highlight(p, marks, active, hover, focusCard, setHover)}</p> : <br key={i} />))}
           {view === "after" &&
             preview?.paragraphs.map((segs, i) =>
-              segs.some((x) => x.text.trim() || x.ins) ? (
+              segs.some((x) => x.text.trim() || x.edit) ? (
                 <p key={i}>
                   {segs.map((x, j) =>
-                    x.ins ? (
-                      <ins key={j} className={`wb-ins${active === x.ins.cardId ? " mark-active" : ""}`} title={x.ins.was ? `第 ${x.ins.seq} 项 · 原文：${x.ins.was}` : `第 ${x.ins.seq} 项 · 新增`} onClick={() => focusCard(x.ins!.cardId)}>
-                        {x.text || "（删除）"}
-                      </ins>
+                    x.edit ? (
+                      // 与 Word 原生修订同样子：删掉的原文加删除线、新文本加下划线；可用键盘聚焦，回车定位到卡（余项续复核 RC-B-02）
+                      <span
+                        key={j}
+                        role="button"
+                        tabIndex={0}
+                        className={`wb-edit${active === x.edit.cardId ? " mark-active" : ""}`}
+                        title={cardLabel(x.edit.cardId)}
+                        aria-label={`${cardLabel(x.edit.cardId)}。${x.edit.del ? `删去：${x.edit.del}` : ""}${x.edit.del && x.edit.ins ? "；" : ""}${x.edit.ins ? `改为：${x.edit.ins}` : ""}`}
+                        onClick={() => focusCard(x.edit!.cardId)}
+                        onKeyDown={(e) => e.key === "Enter" && focusCard(x.edit!.cardId)}
+                      >
+                        {x.edit.del && <del className="wb-del">{x.edit.del}</del>}
+                        {x.edit.ins && <ins className="wb-ins">{x.edit.ins}</ins>}
+                      </span>
                     ) : (
                       x.text
                     ),

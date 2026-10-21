@@ -175,3 +175,50 @@ test("在带修订痕迹的回稿上生成修订稿（复核 C-B14）：修改�
   assert.match(xml, /十二个月/);
   assert.match(xml, /w:author="对方律师"/, "对方原有的修订保留");
 });
+
+test("“接受后”预览与修订稿同一口径（余项续复核 RC-B-01/02）：锚点重叠但改动段不重叠的两处都落；多处的卡写明会被拦下；改后与原文相同的不改动", { timeout: 60_000 }, async () => {
+  const { matter } = await tk.inv("matters.create", { title: "预览口径", stance: "受让方", consent_status: "agreed" });
+  const doc = await importBytes(
+    tk.inv,
+    matter.matter_id,
+    "转让协议.docx",
+    createDocx("协议", [{ heading: "二", paragraphs: ["2.2 受让方应于协议签署后五日内一次性支付全部价款。", "2.3 价款以银行转账支付。", "2.4 价款以银行转账支付。"] }]),
+    DOCX,
+  );
+  const t = liveTaskIdentity(tk, matter.matter_id, "preview");
+  submitRiskCards(deps(), { tenantId: t.tid, matterId: matter.matter_id, runId: t.rid }, {
+    document_version_id: doc.document_version_id,
+    cards: [
+      { anchor_text: "协议签署后五日内一次性", severity: "mid", issue: "期限短", suggestion: "协议签署后十日内一次性" },
+      { anchor_text: "一次性支付全部价款", severity: "mid", issue: "一次付清", suggestion: "分两期支付全部价款" },
+      { anchor_text: "价款以银行转账支付。", severity: "low", issue: "支付方式", suggestion: "价款以银行转账方式支付。" },
+      { anchor_text: "受让方应于", severity: "low", issue: "确认一下", suggestion: "" },
+    ],
+  });
+  const cards = (await tk.inv("riskcards.list", { matter_id: matter.matter_id, document_version_id: doc.document_version_id })).cards as any[];
+  const by = (issue: string) => cards.find((c) => c.issue === issue)!;
+  for (const c of cards.filter((c) => c.issue !== "确认一下")) await tk.inv("riskcards.decide", { matter_id: matter.matter_id, card_id: c.card_id, decision: "accept" });
+  // 没有建议时“修改后接受”只确认了原文：不改动
+  await tk.inv("riskcards.decide", { matter_id: matter.matter_id, card_id: by("确认一下").card_id, decision: "modify", final_text: "受让方应于" });
+  const pv = await tk.inv("riskcards.preview_redline", { matter_id: matter.matter_id, document_version_id: doc.document_version_id });
+  assert.equal(pv.status, "conflicts", "多处的那张会让修订稿被拦下");
+  const res = new Map(pv.cards.map((c: any) => [c.card_id, c]));
+  const a = res.get(by("期限短").card_id) as any;
+  const b = res.get(by("一次付清").card_id) as any;
+  assert.ok(a.ok && b.ok, "锚点重叠、改动段不重叠：两处都落（复核复现的例子）");
+  assert.equal(pv.paragraphs[a.para].slice(a.start, a.end), a.old);
+  assert.ok(a.end <= b.start, "两处改动段不交叠");
+  assert.deepEqual([res.get(by("支付方式").card_id)].map((x: any) => [x.ok, x.reason]), [[false, "anchor_ambiguous"]]);
+  assert.deepEqual([res.get(by("确认一下").card_id)].map((x: any) => [x.ok, x.reason]), [[false, "unchanged"]]);
+  // 预览不登记成果
+  assert.equal((await tk.inv("artifacts.list", { matter_id: matter.matter_id })).artifacts.filter((x: any) => x.kind === "revision_draft").length, 0);
+  // 真正生成：多处那张被拦下；跳过它后两处都写进修订稿，“只确认原文”的那张不写空修订
+  const red = await tk.inv("riskcards.redline", { matter_id: matter.matter_id, document_version_id: doc.document_version_id });
+  assert.equal(red.status, "preview");
+  assert.deepEqual(red.conflicts.map((c: any) => c.card_id), [by("支付方式").card_id]);
+  const ok = await tk.inv("riskcards.redline", { matter_id: matter.matter_id, document_version_id: doc.document_version_id, skip_card_ids: [by("支付方式").card_id] });
+  assert.equal(ok.status, "applied", JSON.stringify(ok));
+  assert.equal(ok.applied, 2);
+  const pv2 = await tk.inv("riskcards.preview_redline", { matter_id: matter.matter_id, document_version_id: doc.document_version_id });
+  assert.equal(pv2.cards.filter((c: any) => c.ok).length, 2, "预览与修订稿写进去的处数一致");
+});

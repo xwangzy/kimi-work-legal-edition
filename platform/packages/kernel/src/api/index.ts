@@ -78,7 +78,7 @@ import { detectClassifiedMarking, type ClassifiedFinding } from "../services/cla
 import { restoreArtifactBytes } from "../services/export-restore.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
-import { buildRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
+import { buildRedlineFromCards, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
 import { LIT_SAMPLE_ISSUES, LIT_SAMPLE_TITLE, SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, litigationSampleMaterials, sampleContract } from "../services/sample-matter.ts";
 import { probeEnvironment, type EnvProbeResult } from "../services/env-probe.ts";
 import { firstLineTitle, isTitledFilename } from "../services/artifact-title.ts";
@@ -2446,6 +2446,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const card = setRiskCardNature(db, matter.matter_id, { card_id: p?.card_id, nature: p?.nature });
       audit(db, id, "riskcard.nature_set", "risk_card", card.card_id, sha256Hex(JSON.stringify({ nature: card.nature })), keyctx);
       return { card };
+    },
+    // 工作台“接受后”预览（余项续复核 RC-B-01）：与生成修订稿同一套定位与重叠检查，只读、不登记成果、不写审计（每次决定后都会刷新）
+    "riskcards.preview_redline": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      if (!tokens) throw new DomainError("provider_unavailable", "令牌化工作区未启用", 503);
+      return previewRedlineFromCards({ db, blobs, tokens, lawdb }, { matter_id: matter.matter_id, document_version_id: String(p?.document_version_id ?? ""), run_id: typeof p?.run_id === "string" ? p.run_id : null });
     },
     "riskcards.redline": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);

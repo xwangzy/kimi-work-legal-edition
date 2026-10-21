@@ -5,6 +5,7 @@
 import { downloadPlan } from "./lib/download.ts";
 import { GENERIC_FAILURE } from "./lib/errors.ts";
 import { ask } from "./lib/ask.ts";
+import type { KernelPreviewCard } from "./lib/accept-preview.ts";
 
 declare global {
   interface Window {
@@ -766,6 +767,9 @@ export const api = {
   setRiskCardNature: (matterId: string, cardId: string, nature: "must" | "should" | "negotiable") => invoke<{ card: RiskCard }>("riskcards.set_nature", { matter_id: matterId, card_id: cardId, nature }),
   decideRiskCard: (matterId: string, cardId: string, decision: "accept" | "modify" | "reject" | "reset", finalText?: string) =>
     invoke<{ card: RiskCard }>("riskcards.decide", { matter_id: matterId, card_id: cardId, decision, ...(finalText ? { final_text: finalText } : {}) }),
+  /** “接受后”预览：与生成修订稿同一套定位（只读，余项续复核 RC-B-01）。 */
+  previewRedline: (matterId: string, documentVersionId: string, o: { run_id?: string } = {}) =>
+    invoke<{ status: "ok" | "conflicts" | "not_docx" | "document_version_superseded" | "no_patches"; paragraphs: string[]; cards: KernelPreviewCard[] }>("riskcards.preview_redline", { matter_id: matterId, document_version_id: documentVersionId, ...o }),
   buildRedline: (matterId: string, documentVersionId: string, o: { run_id?: string; skip_card_ids?: string[] } = {}) =>
     invoke<
       | { status: "applied"; artifact_version_id: string; filename: string; applied: number; skipped: string[] }

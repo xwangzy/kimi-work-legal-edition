@@ -19,7 +19,7 @@ import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { citationsVerify } from "../tools/tools/citations.ts";
-import { applyStructuredPatches, type PatchResult, type StructuredPatch } from "./structured-patch.ts";
+import { applyStructuredPatches, type PatchConflict, type PatchResult, type StructuredPatch } from "./structured-patch.ts";
 
 export const RISK_CARD_LIMITS = { perCall: 60, perRun: 300, field: 4_000, anchor: 2_000 } as const;
 export const FACT_LIMITS = { perCall: 120, perRun: 600, field: 2_000 } as const;
@@ -478,12 +478,16 @@ function currentAnchor(deps: ReviewDeps & { tokens: MatterTokenStore }, matterId
  * 修订稿：接受与修改后接受的卡 → 结构化补丁 → 原件副本上的原生修订（草稿成果）。
  * 有卡不能定位时整体返回预览，逐卡给出原因；律师可带 skip_card_ids 跳过后再生成。
  */
-export function buildRedlineFromCards(
+/**
+ * 修订稿与“接受后”预览共用的计划（余项续复核 RC-B-01：两处同一口径）：取接受与修改后接受的卡，按位置排序，
+ * 逐张求当前锚点与最小修改范围；改后文本与原文相同的卡（例如没有建议时“修改后接受”只确认了一下原文）不进修订稿（RC-B-02）。
+ */
+function planRedline(
   deps: ReviewDeps & { tokens: MatterTokenStore },
-  input: { matter_id: string; document_version_id: string; run_id?: string | null; skip_card_ids?: readonly string[]; created_by: string },
-): { result: PatchResult; cards: { card_id: string; index: number }[]; skipped: string[] } {
+  input: { matter_id: string; document_version_id: string; run_id?: string | null; skip_card_ids?: readonly string[] },
+): { cards: RiskCardRow[]; patches: StructuredPatch[]; unchanged: RiskCardRow[] } {
   const skip = new Set(input.skip_card_ids ?? []);
-  const cards = listRiskCards(deps.db, input.matter_id, {
+  const all = listRiskCards(deps.db, input.matter_id, {
     document_version_id: input.document_version_id,
     status: ["accepted", "modified"],
     ...(input.run_id ? { run_id: input.run_id } : {}),
@@ -491,23 +495,75 @@ export function buildRedlineFromCards(
     .filter((c) => !skip.has(c.card_id))
     // 知悉、不改动的卡不进修订稿——否则空的建议文本会被当成“删除这段原文”
     .filter(changesDocument);
-  if (cards.length === 0) throw new DomainError("validation", "没有需要写进修订稿的修改：请先在工作台接受有建议文本的卡，或修改后接受", 422);
   // 按文档中的位置排序（结构化补丁对重叠另行检查）
-  cards.sort((a, b) => (a.anchor_start ?? 1e12) - (b.anchor_start ?? 1e12));
-  const view = documentView(deps, input.matter_id, input.document_version_id).view;
-  const patches: StructuredPatch[] = cards.map((c) => {
+  all.sort((a, b) => (a.anchor_start ?? 1e12) - (b.anchor_start ?? 1e12));
+  const view = all.length > 0 ? documentView(deps, input.matter_id, input.document_version_id).view : "";
+  const cards: RiskCardRow[] = [];
+  const patches: StructuredPatch[] = [];
+  const unchanged: RiskCardRow[] = [];
+  for (const c of all) {
     const basis = c.basis.length > 0 ? `（依据：${c.basis.map((b) => `《${b.law}》${b.article ? `第${b.article}条` : ""}`).join("、")}）` : "";
     // 律师改写的文本是原文：先按本事项令牌化成与视图同一形态，再与引文比出最小修改范围（结构化补丁引擎会把代号还原回原文）
-    const full = c.status === "modified" ? (deps.tokens.tokenize(input.matter_id, c.final_text ?? "").text) : (c.suggestion ?? "");
-    const m = minimalEdit(currentAnchor(deps, input.matter_id, c.anchor_text, view), full, view);
-    return {
+    const full = c.status === "modified" ? deps.tokens.tokenize(input.matter_id, c.final_text ?? "").text : (c.suggestion ?? "");
+    const anchor = currentAnchor(deps, input.matter_id, c.anchor_text, view);
+    if (full === anchor) {
+      unchanged.push(c);
+      continue;
+    }
+    const m = minimalEdit(anchor, full, view);
+    cards.push(c);
+    patches.push({
       anchor: m.anchor,
       expected_text_hash: sha256Hex(m.anchor),
       proposed_text: m.proposed,
       ...(c.clause_ref ? { paragraph_hint: c.clause_ref } : {}),
       comment: `${c.severity === "high" ? "【重大】" : c.severity === "mid" ? "【一般】" : "【提示】"}${c.issue}${basis}${c.status === "modified" ? "（律师已修改）" : ""}`,
-    };
+    });
+  }
+  return { cards, patches, unchanged };
+}
+
+/** 预览里每张会改动合同的卡的结果：落点（原文坐标）或不能写进修订稿的原因。 */
+export type RedlinePreviewCard =
+  | { card_id: string; ok: true; para: number; start: number; end: number; old: string; new: string }
+  | { card_id: string; ok: false; reason: "unchanged" | PatchConflict["reason"] };
+
+/**
+ * 工作台“接受后”预览（余项续复核 RC-B-01）：与生成修订稿同一套计划、定位、最小修改范围与重叠检查，但不写文件、不登记成果。
+ * 返回原件段落（原文）与逐卡落点；文档层面不能生成（不是 Word、已有新版本、没有要改的）时给出原因。
+ */
+export function previewRedlineFromCards(
+  deps: ReviewDeps & { tokens: MatterTokenStore },
+  input: { matter_id: string; document_version_id: string; run_id?: string | null },
+): { status: "ok" | "conflicts" | "not_docx" | "document_version_superseded" | "no_patches"; paragraphs: string[]; cards: RedlinePreviewCard[] } {
+  const plan = planRedline(deps, input);
+  const unchanged: RedlinePreviewCard[] = plan.unchanged.map((c) => ({ card_id: c.card_id, ok: false, reason: "unchanged" }));
+  if (plan.cards.length === 0) return { status: "no_patches", paragraphs: [], cards: unchanged };
+  const r = applyStructuredPatches(
+    { db: deps.db, blobs: deps.blobs, tokens: deps.tokens },
+    { matter_id: input.matter_id, document_version_id: input.document_version_id, patches: plan.patches, created_by: "preview", run_id: null, author: LAWYER_APPROVED_AUTHOR, dryRun: true },
+  );
+  if (r.status !== "preview" || r.reason === "not_docx" || r.reason === "document_version_superseded" || r.reason === "no_patches") {
+    return { status: r.status === "preview" && r.reason !== "conflicts" && r.reason !== "dry_run" ? r.reason : "no_patches", paragraphs: [], cards: unchanged };
+  }
+  const conflict = new Map(r.conflicts.map((c) => [c.index, c.reason]));
+  const spans = new Map((r.spans ?? []).map((x) => [x.index, x]));
+  const cards: RedlinePreviewCard[] = plan.cards.map((c, i) => {
+    const bad = conflict.get(i);
+    const sp = spans.get(i);
+    if (bad || !sp) return { card_id: c.card_id, ok: false, reason: bad ?? "anchor_not_found" };
+    return { card_id: c.card_id, ok: true, para: sp.para, start: sp.start, end: sp.end, old: sp.old, new: sp.new };
   });
+  return { status: r.reason === "conflicts" ? "conflicts" : "ok", paragraphs: r.paragraphs ?? [], cards: [...cards, ...unchanged] };
+}
+
+export function buildRedlineFromCards(
+  deps: ReviewDeps & { tokens: MatterTokenStore },
+  input: { matter_id: string; document_version_id: string; run_id?: string | null; skip_card_ids?: readonly string[]; created_by: string },
+): { result: PatchResult; cards: { card_id: string; index: number }[]; skipped: string[] } {
+  const skip = new Set(input.skip_card_ids ?? []);
+  const { cards, patches } = planRedline(deps, input);
+  if (cards.length === 0) throw new DomainError("validation", "没有需要写进修订稿的修改：请先在工作台接受有建议文本的卡，或修改后接受（改后与原文相同的不算）", 422);
   // 修订稿归哪次任务（复核 RB16B-10）：没指定时，写进去的卡都来自同一次任务就挂到那次任务（交付件按任务分组时与意见书、清单在一组）
   const runs = new Set(cards.map((c) => c.run_id));
   const attributedRun = input.run_id ?? (runs.size === 1 ? ([...runs][0] ?? null) : null);
