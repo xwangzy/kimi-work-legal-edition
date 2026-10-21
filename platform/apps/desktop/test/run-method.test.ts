@@ -16,9 +16,11 @@ test("方法与版本：方法模板任务写名称与版本；快照是字符�
   assert.equal(methodLine(null, {}, {}), null);
 });
 
-test("输入框：可发送时提示快捷键；不能发送时按钮变灰", () => {
+test("输入框：可发送时提示快捷键；不能发送时按钮变灰并写原因；问答页写明回车发送（余项续复核 RC-B-15）", () => {
   const src = readFileSync(fileURLToPath(new URL("../src/components/Composer.tsx", import.meta.url)), "utf8");
-  assert.match(src, /canSend && <span className="send-hint/);
+  assert.match(src, /canSend \? `\$\{SEND_KEY\} 发送` : blockedReason/);
+  assert.match(src, /"先选事项" : "先写任务目标"/);
+  assert.match(readFileSync(fileURLToPath(new URL("../src/pages/Chat.tsx", import.meta.url)), "utf8"), /回车发送 · Shift \+ 回车换行/);
   const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
   assert.match(css, /\.send:disabled \{/);
 });

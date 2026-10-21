@@ -183,7 +183,14 @@ export function MatterPage({ matterId }: { matterId: string }) {
         </div>
         {matter.is_sample && (
           <div className="banner banner-gray">
-            {sampleBannerText(matter)}
+            {sampleBannerText(
+              matter,
+              (() => {
+                // 诉讼示例按本机“整理案卷”任务的状态说明（余项续复核 RC-B-13）
+                const cf = runs.find((r) => r.scenario === "s2.case_file");
+                return !cf ? null : cf.status === "succeeded" || cf.status === "partial" ? "done" : ["failed", "cancelled"].includes(cf.status) ? "failed" : "running";
+              })(),
+            )}
             <div className="banner-actions">
               <button
                 className="btn btn-sm"

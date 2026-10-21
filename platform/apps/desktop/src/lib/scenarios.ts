@@ -107,11 +107,13 @@ export const SCENARIOS: ScenarioCard[] = [
     goal: "请分析案情并提出诉讼策略建议：我方目标为{goal}；我方地位：{side}。未确认的事实请标出，不评估胜诉率。",
     fields: [
       { key: "goal", label: "我方目标", kind: "text", required: true, placeholder: "例如：追回货款 120 万元及违约金" },
-      { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人", "尚未起诉"] },
+      { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人", "尚未起诉（我方拟起诉）", "尚未起诉（对方可能起诉）"] },
     ],
     minMaterials: 1,
     steps: ["读案卷材料与已整理的事实（没有确认的事实会标出）", "归纳争点，逐个写出双方证据的强弱和理由", "列出诉讼风险与等级（只做定性，不给胜诉率）", "按优先级给出下一步：补证、程序动作、文书、是否发函或协商"],
-    intents: [["案情", "分析"], ["诉讼策略"], ["怎么打"], ["诉讼", "风险"], ["案子", "风险"]],
+    // “诉讼风险”须同时说到案子本身（复核 RC-B-12：“审查这份合同的诉讼风险”是审合同；劳动争议走劳动仲裁应对）
+    intents: [["案情", "分析"], ["诉讼策略"], ["怎么打"], ["案件", "诉讼", "风险"], ["起诉", "风险"], ["被诉", "风险"], ["案子", "风险"]],
+    notFor: ["劳动", "审查这份", "审合同", "签了", "签订后"],
   },
   {
     id: "amount",
@@ -568,9 +570,16 @@ export function lineMismatchText(card: Pick<ScenarioCard, "line" | "title">, mat
   return `这是${LINE_LABELS[l]}事项。确定在这里做「${card.title}」吗？`;
 }
 
-/** 示例事项顶部的说明（Z3 #27：非诉、诉讼两件示例各写各的试法）。 */
-export function sampleBannerText(m: { stance?: string | null } | null | undefined): string {
-  if (matterLine(m) === "litigation")
-    return "这是示例事项：合同、送货签收单、对账确认函与往来函件都是虚构的，只在这台电脑上，不会发给任何人。已在这台电脑上按规则整理出证据目录、事实时间轴与争点框架（不调用 AI）；可以在“事实”里逐条确认，再试“争点与证据分析”或“案情分析与诉讼策略”。";
+/**
+ * 示例事项顶部的说明（Z3 #27：非诉、诉讼两件示例各写各的试法）。诉讼示例按本机“整理案卷”任务的状态写（余项续复核 RC-B-13）：
+ * done 已整理 / running 正在整理 / failed 或没有任务时写“整理未完成”。
+ */
+export function sampleBannerText(m: { stance?: string | null } | null | undefined, casefile: "done" | "running" | "failed" | null = "done"): string {
+  if (matterLine(m) === "litigation") {
+    const head = "这是示例事项：合同、送货签收单、对账确认函与往来函件都是虚构的，只在这台电脑上，不会发给任何人。";
+    if (casefile === "done") return `${head}已在这台电脑上按规则整理出证据目录、事实时间轴与争点框架（不调用 AI）；可以在“事实”里逐条确认，再试“争点与证据分析”或“案情分析与诉讼策略”。`;
+    if (casefile === "running") return `${head}正在这台电脑上按规则整理证据目录、事实时间轴与争点框架（不调用 AI），稍候即可在“事实”里逐条确认。`;
+    return `${head}本机整理还没有完成：可以在“任务”里重试，或用“整理案卷”重新整理（不调用 AI）。`;
+  }
   return "这是示例事项：合同与审查意见都是虚构的，只在这台电脑上，不会发给任何人。可以在“材料”里打开审查意见，试着逐条决定并生成修订稿。";
 }

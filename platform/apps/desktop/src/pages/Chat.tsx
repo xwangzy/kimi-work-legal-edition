@@ -131,7 +131,9 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
           />
           <div className="composer-bar">
             <span className="spacer" />
-            <button className="send" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="发送"><Icon.send /></button>
+            {/* 问答页回车发送，与任务输入框（Ctrl / ⌘ + 回车）不同：写明（余项续复核 RC-B-15） */}
+            <span className="send-hint muted" aria-hidden="true">回车发送 · Shift + 回车换行</span>
+            <button className="send" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="发送" title="发送（回车）"><Icon.send /></button>
           </div>
         </div>
       </main>

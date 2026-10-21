@@ -6,6 +6,7 @@
  */
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { useEffect, useState } from "react";
+import { notifyDataChanged } from "../lib/events.ts";
 import { api, updates, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft, type QuotaStatus } from "../api.ts";
 import { quotaLawyerLine } from "../lib/firm-usage.ts";
 import { CONTENT_CHECK_FAILED, CONTENT_PANEL_NOTE, contentCheckLine, contentSourceLine, contentStaleLine } from "../lib/content-labels.ts";
@@ -87,6 +88,50 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
   );
 }
 
+/** 示例事项（余项续复核 RC-B-13）：诉讼示例上线前已经放过非诉示例的电脑，在这里补放一次诉讼示例；放过（含已移除）就不再显示。 */
+function SampleRow() {
+  const [offer, setOffer] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  useEffect(() => {
+    api
+      .sampleStatus()
+      .then((st) => setOffer(!st.litigation_offered && (st.installed || st.removed)))
+      .catch(() => setOffer(false));
+  }, []);
+  if (!offer && !msg) return null;
+  return (
+    <div className="device-row">
+      <div className="device-k">示例事项</div>
+      <div>
+        {msg || "可以放入一件诉讼示例（买卖合同纠纷，原告方；材料虚构，只在这台电脑上），试“整理案卷”“争点与证据分析”“案情分析与诉讼策略”。"}
+        {offer && (
+          <div>
+            <button
+              className="btn btn-sm"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void api
+                  .installSample("litigation")
+                  .then((r) => {
+                    setOffer(false);
+                    setMsg(r.installed ? "已放入诉讼示例，可以在“事项”里找到它。" : "这台电脑已经放过诉讼示例。");
+                    if (r.installed) notifyDataChanged();
+                  })
+                  .catch((e) => setMsg((e as Error).message))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              放入诉讼示例
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function GeneralTab({ version }: { version: string }) {
   const [zoom, setZoom] = useState(readUiZoom());
   const [theme, setTheme] = useState(readUiTheme());
@@ -135,6 +180,7 @@ function GeneralTab({ version }: { version: string }) {
           </div>
         </div>
         <DocStyle />
+        <SampleRow />
         <div className="device-row">
           <div className="device-k">提醒</div>
           <div>

@@ -11,7 +11,7 @@ process.env.ZR_INTERNAL_SECRET = process.env.ZR_INTERNAL_SECRET ?? "sample-matte
 test("示例事项：放入一次、卡片定位、无出站；标为示例；移除后不再放入", { timeout: 120_000 }, async () => {
   const tk = await makeKernel({}, "sample-firm");
   try {
-    assert.deepEqual(await tk.inv("samples.status", {}), { installed: false, removed: false, matter_id: null, matter_ids: [] });
+    assert.deepEqual(await tk.inv("samples.status", {}), { installed: false, removed: false, matter_id: null, matter_ids: [], litigation_offered: false });
     const r = await tk.inv("samples.install", {});
     assert.equal(r.installed, true);
     const again = await tk.inv("samples.install", {});
@@ -50,11 +50,34 @@ test("示例事项：放入一次、卡片定位、无出站；标为示例；�
     const half = await tk.inv("samples.status", {});
     assert.deepEqual([half.installed, half.removed, half.matter_id], [true, true, litId], "移除一件，另一件还在");
     await tk.inv("samples.remove", { matter_id: litId });
-    assert.deepEqual(await tk.inv("samples.status", {}), { installed: false, removed: true, matter_id: null, matter_ids: [] });
+    assert.deepEqual(await tk.inv("samples.status", {}), { installed: false, removed: true, matter_id: null, matter_ids: [], litigation_offered: true });
     const after = await tk.inv("samples.install", {});
     assert.equal(after.installed, false, "移除后不再自动放入");
     assert.equal(after.matter_id, null);
     await assert.rejects(() => tk.inv("samples.remove", { matter_id: "mat_x" }), (e: any) => e.code === "validation");
+  } finally {
+    await tk.kernel.close();
+  }
+});
+
+test("只放诉讼示例（余项续复核 RC-B-13）：已放过非诉示例的电脑可补放一次；放过后不再提示", { timeout: 120_000 }, async () => {
+  const tk = await makeKernel({}, "sample-lit-firm");
+  try {
+    // 模拟诉讼示例上线前的老电脑：只有非诉示例
+    const { matter } = await tk.inv("matters.create", { title: "甲公司股权转让（示例）", stance: "受让方", consent_status: "not_required" });
+    tk.kernel.db.run(`INSERT INTO sample_matters (matter_id) VALUES (?)`, [matter.matter_id]);
+    assert.equal((await tk.inv("samples.status", {})).litigation_offered, false);
+    assert.equal((await tk.inv("samples.install", {})).installed, false, "整套示例不再放入");
+    const r = await tk.inv("samples.install", { kind: "litigation" });
+    assert.equal(r.installed, true);
+    assert.equal(r.matter_ids.length, 1);
+    const st = await tk.inv("samples.status", {});
+    assert.equal(st.litigation_offered, true);
+    assert.equal(st.matter_ids.length, 2);
+    assert.equal((await tk.inv("samples.install", { kind: "litigation" })).installed, false, "只补放一次");
+    const lit = await tk.inv("matters.get", { matter_id: r.matter_id });
+    assert.equal(lit.documents.length, 4);
+    assert.equal((await waitRun(tk.inv, lit.runs[0].run_id, 90_000)).run.status, "succeeded");
   } finally {
     await tk.kernel.close();
   }

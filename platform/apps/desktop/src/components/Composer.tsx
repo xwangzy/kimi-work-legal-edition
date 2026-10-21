@@ -57,6 +57,7 @@ export function Composer(props: {
   }, [menu]);
   const matter = props.matters?.find((m) => m.matter_id === props.matterId) ?? null;
   const canSend = !props.busy && !!props.matterId && (value.goal.trim().length > 0 || value.scenario !== "a1.agent_task");
+  const blockedReason = props.busy ? "正在发起…" : !props.matterId ? "先选事项" : "先写任务目标";
   return (
     <div className="composer" ref={boxRef}>
       {/* 事项上下文行（Z3 #12、M-4）：发起前一眼看到在哪个事项下工作；底栏不再放事项胶囊 */}
@@ -127,9 +128,9 @@ export function Composer(props: {
         <span className="spacer" />
         {/* 固定步骤的流程不适用运行模式（复核 S5-A07）；也不再显示研发用语胶囊（Z3 评审 3.1） */}
         {value.scenario === "a1.agent_task" && <ModeSelector policy={props.policy} value={value.choice} onChange={(choice) => onChange({ ...value, choice })} />}
-        {/* 可以发送时提示快捷键（Z3 §8.2 #32）；不能发送时按钮变灰 */}
-        {canSend && <span className="send-hint muted" aria-hidden="true">{SEND_KEY}</span>}
-        <button className="send" disabled={!canSend} onClick={props.onSubmit} aria-label="发送" title={`发送（${SEND_KEY}）`}>
+        {/* 可以发送时提示快捷键（Z3 §8.2 #32）；不能发送时写原因（余项续复核 RC-B-15） */}
+        <span className="send-hint muted" aria-live="polite">{canSend ? `${SEND_KEY} 发送` : blockedReason}</span>
+        <button className="send" disabled={!canSend} onClick={props.onSubmit} aria-label={canSend ? "发送" : `发送（${blockedReason}）`} title={canSend ? `发送（${SEND_KEY}）` : blockedReason}>
           <Icon.send />
         </button>
       </div>

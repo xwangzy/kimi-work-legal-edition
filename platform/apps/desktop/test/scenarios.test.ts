@@ -25,3 +25,24 @@ test("示例事项说明按业务线（Z3 #27）", async () => {
   assert.match(sampleBannerText({ stance: "原告" }), /证据目录.*案情分析与诉讼策略/);
   assert.match(sampleBannerText({ stance: "受让方" }), /审查意见/);
 });
+
+test("意图建议不把审合同、劳动争议引到案情分析（余项续复核 RC-B-12）", async () => {
+  const { suggestScenario } = await import("../src/lib/scenarios.ts");
+  assert.notEqual(suggestScenario("审查这份合同的诉讼风险")?.id, "case-analysis");
+  assert.notEqual(suggestScenario("这份合同签了以后有什么诉讼风险")?.id, "case-analysis");
+  assert.equal(suggestScenario("员工申请劳动仲裁，帮我分析案情")?.id, "labor-response");
+  assert.equal(suggestScenario("这个劳动仲裁案子风险大吗")?.id, "labor-response");
+  assert.equal(suggestScenario("帮我分析一下这个买卖合同纠纷的案情")?.id, "case-analysis");
+  assert.equal(suggestScenario("被起诉了，风险在哪里")?.id, "case-analysis");
+});
+
+test("示例事项说明按整理任务状态写；我方地位分清拟起诉与可能被诉（余项续复核 RC-B-13）", async () => {
+  const { sampleBannerText, SCENARIOS } = await import("../src/lib/scenarios.ts");
+  const lit = { stance: "原告" };
+  assert.match(sampleBannerText(lit, "done"), /已在这台电脑上按规则整理出/);
+  assert.match(sampleBannerText(lit, "running"), /正在这台电脑上按规则整理/);
+  assert.match(sampleBannerText(lit, "failed"), /整理还没有完成/);
+  assert.doesNotMatch(sampleBannerText(lit, null), /已在这台电脑上按规则整理出/);
+  const side = SCENARIOS.find((c) => c.id === "case-analysis")!.fields!.find((f) => f.key === "side")!;
+  assert.ok(side.options!.includes("尚未起诉（我方拟起诉）") && side.options!.includes("尚未起诉（对方可能起诉）"));
+});

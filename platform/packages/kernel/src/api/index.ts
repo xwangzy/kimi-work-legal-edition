@@ -638,6 +638,41 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     searchMeter.clear();
   });
 
+  /**
+   * 这台电脑（本律所）放过诉讼示例没有（含已移除的；放过就不再提示）。删除后事项名会被擦除，所以也按条数认：
+   * 诉讼示例上线后两件示例一起放入，放过两件即放过诉讼示例。
+   */
+  const litigationSampleOffered = (id: Identity): boolean => {
+    const r = db.get<{ n: number; lit: number }>(
+      `SELECT COUNT(*) AS n, SUM(CASE WHEN m.title = ? THEN 1 ELSE 0 END) AS lit FROM sample_matters s JOIN matters m ON m.matter_id = s.matter_id WHERE m.tenant_id = ?`,
+      [LIT_SAMPLE_TITLE, id.tenantId],
+    );
+    return !!r && (r.n >= 2 || (r.lit ?? 0) > 0);
+  };
+  /**
+   * 诉讼线示例（Z3 #27）：四份合成材料，再在本机按规则跑一次“整理案卷”（确定性流程，不调用 AI、不联网）；
+   * 整理失败不影响放入——材料还在，律师可以自己点“整理案卷”（示例说明按整理任务的状态写，余项续复核 RC-B-13）。
+   */
+  async function installLitigationSample(id: Identity): Promise<string> {
+    const lit = (await api["matters.create"]!({ title: LIT_SAMPLE_TITLE, stance: "原告", client_name: "丁贸易有限公司（示例）", counterparty: "戊制造有限公司（示例）", consent_status: "not_required" }, id)) as { matter: { matter_id: string } };
+    const litId = lit.matter.matter_id;
+    db.run(`INSERT INTO sample_matters (matter_id) VALUES (?)`, [litId]);
+    const litDocs: string[] = [];
+    for (const f of litigationSampleMaterials()) {
+      const d = (await api["materials.import"]!({ matter_id: litId, filename: f.filename, data_base64: f.data.toString("base64"), mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }, id)) as { document_version_id: string };
+      db.run(`INSERT INTO document_roles (document_version_id, matter_id, role, set_by) VALUES (?,?,?,?)`, [d.document_version_id, litId, "ours", id.userId]);
+      litDocs.push(d.document_version_id);
+    }
+    try {
+      const est = (await api["runs.estimate"]!({ matter_id: litId, scenario: "s2.case_file", document_version_ids: litDocs, issues: LIT_SAMPLE_ISSUES }, id)) as { estimate_id?: string };
+      if (est.estimate_id) await api["runs.start"]!({ matter_id: litId, estimate_id: est.estimate_id, idempotency_key: `sample-casefile-${litId}` }, id);
+    } catch {
+      // 见上
+    }
+    audit(db, id, "sample.installed", "matter", litId, undefined, keyctx);
+    return litId;
+  }
+
   const api: Record<string, Handler> = {
     // ─── 事项（§15.2 matters.create/update） ───
     "matters.create": (body, id) => {
@@ -753,9 +788,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         [id.tenantId],
       );
       const live = rows.filter((r) => !r.removed_at).map((r) => r.matter_id);
-      return { installed: live.length > 0, removed: rows.some((r) => !!r.removed_at), matter_id: live[0] ?? null, matter_ids: live };
+      return { installed: live.length > 0, removed: rows.some((r) => !!r.removed_at), matter_id: live[0] ?? null, matter_ids: live, litigation_offered: litigationSampleOffered(id) };
     },
-    "samples.install": async (_p, id) => {
+    "samples.install": async (p, id) => {
+      // 只放诉讼示例（余项续复核 RC-B-13）：诉讼示例上线前已经放过非诉示例的电脑，从设置里补放一次
+      if (p?.kind === "litigation") {
+        if (litigationSampleOffered(id)) return { matter_id: null, matter_ids: [], installed: false };
+        const litId = await installLitigationSample(id);
+        return { matter_id: litId, matter_ids: [litId], installed: true };
+      }
       const prior = db.get<{ matter_id: string; removed_at: string | null }>(
         `SELECT s.matter_id, s.removed_at FROM sample_matters s JOIN matters m ON m.matter_id = s.matter_id WHERE m.tenant_id = ? LIMIT 1`,
         [id.tenantId],
@@ -769,24 +810,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       db.run(`INSERT INTO document_roles (document_version_id, matter_id, role, set_by) VALUES (?,?,?,?)`, [doc.document_version_id, mid, "theirs", id.userId]);
       submitRiskCards({ db, blobs, ...(tokens ? { tokens } : {}) }, { tenantId: id.tenantId, matterId: mid, runId: null }, { document_version_id: doc.document_version_id, cards: SAMPLE_CARDS.map((c) => ({ ...c })) });
       audit(db, id, "sample.installed", "matter", mid, undefined, keyctx);
-      // 诉讼线示例（Z3 #27）：四份合成材料，再在本机按规则跑一次“整理案卷”（确定性流程，不调用 AI、不联网）；
-      // 整理失败不影响放入——材料还在，律师可以自己点“整理案卷”
-      const lit = (await api["matters.create"]!({ title: LIT_SAMPLE_TITLE, stance: "原告", client_name: "丁贸易有限公司（示例）", counterparty: "戊制造有限公司（示例）", consent_status: "not_required" }, id)) as { matter: { matter_id: string } };
-      const litId = lit.matter.matter_id;
-      db.run(`INSERT INTO sample_matters (matter_id) VALUES (?)`, [litId]);
-      const litDocs: string[] = [];
-      for (const f of litigationSampleMaterials()) {
-        const d = (await api["materials.import"]!({ matter_id: litId, filename: f.filename, data_base64: f.data.toString("base64"), mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }, id)) as { document_version_id: string };
-        db.run(`INSERT INTO document_roles (document_version_id, matter_id, role, set_by) VALUES (?,?,?,?)`, [d.document_version_id, litId, "ours", id.userId]);
-        litDocs.push(d.document_version_id);
-      }
-      try {
-        const est = (await api["runs.estimate"]!({ matter_id: litId, scenario: "s2.case_file", document_version_ids: litDocs, issues: LIT_SAMPLE_ISSUES }, id)) as { estimate_id?: string };
-        if (est.estimate_id) await api["runs.start"]!({ matter_id: litId, estimate_id: est.estimate_id, idempotency_key: `sample-casefile-${litId}` }, id);
-      } catch {
-        // 见上
-      }
-      audit(db, id, "sample.installed", "matter", litId, undefined, keyctx);
+      const litId = await installLitigationSample(id);
       return { matter_id: mid, matter_ids: [mid, litId], installed: true };
     },
     "samples.remove": async (p, id) => {
