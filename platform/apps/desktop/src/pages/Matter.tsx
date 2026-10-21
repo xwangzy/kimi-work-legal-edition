@@ -228,6 +228,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
         {!closed && <div className="matter-composer">
           <Composer
             matterId={matterId}
+            stance={matter?.stance}
             documents={docs.filter((d) => !d.quarantined_at)}
             policy={policy}
             value={value}

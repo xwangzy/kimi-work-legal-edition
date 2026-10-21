@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type RunPolicyView } from "../api.ts";
 import { Icon } from "./Icons.tsx";
 import { ModeSelector, type ModeChoice } from "./ModeSelector.tsx";
-import { SCENARIO_LABELS, stanceLabel } from "../lib/labels.ts";
+import { clipTitle, SCENARIO_LABELS, stanceLabel } from "../lib/labels.ts";
 import { LINE_LABELS, SCENARIOS, type BusinessLine, type ScenarioCard } from "../lib/scenarios.ts";
 
 /** 发送快捷键的写法：macOS 写 ⌘ + Enter，其余写 Ctrl + Enter。 */
@@ -24,6 +24,8 @@ export function Composer(props: {
   matters?: Matter[];
   matterId: string | null;
   onMatterChange?: (id: string | null) => void;
+  /** 事项页内的输入框（没有 matters）：顶部行显示“本事项”与我方立场。 */
+  stance?: string | null;
   onNewMatter?: () => void;
   documents: { document_version_id: string; filename: string }[];
   policy: RunPolicyView | null | undefined;
@@ -57,6 +59,18 @@ export function Composer(props: {
   const canSend = !props.busy && !!props.matterId && (value.goal.trim().length > 0 || value.scenario !== "a1.agent_task");
   return (
     <div className="composer" ref={boxRef}>
+      {/* 事项上下文行（Z3 #12、M-4）：发起前一眼看到在哪个事项下工作；底栏不再放事项胶囊 */}
+      <div className="composer-context">
+        {props.matters ? (
+          <button className="ctx-matter" onClick={() => setMenu(menu === "matter" ? null : "matter")} title={matter ? matter.title : "选择事项"} aria-haspopup="listbox" aria-expanded={menu === "matter"}>
+            <Icon.folder /> 事项：<span className="ctx-title">{matter ? clipTitle(matter.title) : "选择事项"}</span> <Icon.down />
+          </button>
+        ) : (
+          <span className="ctx-matter ctx-static"><Icon.folder /> 事项：{props.matterId ? "本事项" : "未选择事项"}</span>
+        )}
+        <span className="spacer" />
+        {(matter?.stance ?? props.stance) ? <span className="ctx-stance muted">我方：{stanceLabel(matter?.stance ?? props.stance)}</span> : null}
+      </div>
       <textarea
         placeholder={props.placeholder ?? "描述要处理的法律工作，例如：审查这份股权转让协议，我方为受让方"}
         value={value.goal}
@@ -111,13 +125,6 @@ export function Composer(props: {
           }}
         />
         <span className="spacer" />
-        {props.matters ? (
-          <button className="chip" onClick={() => setMenu(menu === "matter" ? null : "matter")} title="当前事项">
-            <Icon.folder /> {matter ? matter.title : "选择事项"} <Icon.down />
-          </button>
-        ) : (
-          <span className="chip chip-static" title="当前事项"><Icon.folder /> {props.matterId ? "本事项" : "未选择事项"}</span>
-        )}
         {/* 固定步骤的流程不适用运行模式（复核 S5-A07）；也不再显示研发用语胶囊（Z3 评审 3.1） */}
         {value.scenario === "a1.agent_task" && <ModeSelector policy={props.policy} value={value.choice} onChange={(choice) => onChange({ ...value, choice })} />}
         {/* 可以发送时提示快捷键（Z3 §8.2 #32）；不能发送时按钮变灰 */}
@@ -187,7 +194,7 @@ export function Composer(props: {
         </div>
       )}
       {menu === "matter" && props.matters && (
-        <div className="popover composer-menu">
+        <div className="popover composer-menu composer-menu-top">
           <div className="menu-title">事项</div>
           {props.matters.map((m) => (
             <button

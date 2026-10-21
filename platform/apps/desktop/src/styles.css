@@ -120,6 +120,13 @@ button.card:hover { border-color: var(--border-hover); background: var(--bg-hove
 /* ── 输入框（Composer） ── */
 .composer { position: relative; border: 1px solid var(--border-default); border-radius: var(--radius-input); background: var(--bg-surface); box-shadow: var(--shadow-input); padding: 12px 14px 10px; }
 .composer textarea { width: 100%; border: 0; outline: 0; resize: none; font-size: var(--fs-md); line-height: 1.7; min-height: 76px; padding: 2px; background: transparent; border-radius: 0; }
+/* 输入框顶部事项上下文行（Z3 #12、M-4） */
+.composer-context { display: flex; align-items: center; gap: 8px; padding: 0 0 8px; margin-bottom: 6px; border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-sm); }
+.ctx-matter { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 2px 6px 2px 2px; border-radius: var(--r-sm); color: var(--text-strong); min-width: 0; max-width: 70%; }
+button.ctx-matter:hover { background: var(--bg-hover); }
+.ctx-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; font-weight: 500; }
+.ctx-stance { white-space: nowrap; }
+.composer-menu.composer-menu-top { top: 40px; }
 .composer-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
 .composer-bar { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
 .composer-bar .spacer, .spacer { flex: 1; }

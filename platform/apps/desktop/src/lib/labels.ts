@@ -280,3 +280,9 @@ export function parseFlagsText(flags: readonly string[]): string {
   if (notes.length === 0) return unknown ? "已读取（有提示）" : "已读取";
   return `已读取：${notes.join("；")}${unknown ? "（另有提示）" : ""}`;
 }
+
+/** 输入框顶部事项名（Z3 #12、M-4）：超过 max 字截断加“…”，悬停看全称。纯函数。 */
+export function clipTitle(title: string, max = 28): string {
+  const chars = [...title];
+  return chars.length > max ? `${chars.slice(0, max).join("")}…` : title;
+}
