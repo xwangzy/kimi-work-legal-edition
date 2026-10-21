@@ -8,7 +8,7 @@ import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
 import { downloadPlan } from "../lib/download.ts";
 import { artifactName, AUDIENCE_LABELS, fmtRelative, fmtTime } from "../lib/labels.ts";
-import { groupDeliverables } from "../lib/deliverables.ts";
+import { groupByTask, groupDeliverables, taskGroupLabel } from "../lib/deliverables.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 
 const STATUS_LABELS: Record<string, string> = { draft: "草稿", pending_review: "待复核", approved: "已签发", rejected: "已退回", superseded: "已被替代" };
@@ -120,22 +120,36 @@ export function DeliverablesPage() {
                     <span className="muted"> · {g.rows.length} 份</span>
                   </td>
                 </tr>
-                {g.rows.map((r: any) => (
-                  <tr key={r.artifact_version_id} className="row-link" onClick={() => nav(`/review/${r.artifact_version_id}`)}>
-                    <td title={r.filename}><b>{r.display}</b></td>
-                    <td>v{r.version}</td>
-                    <td>{STATUS_LABELS[r.status] ?? r.status}</td>
-                    <td>{r.audience ? AUDIENCE_LABELS[r.audience] ?? r.audience : "—"}</td>
-                    <td title={fmtTime(r.created_at)}>{fmtRelative(r.created_at)}</td>
-                    <td className="dl-actions" onClick={(e) => e.stopPropagation()}>
-                      <button className="btn-link" onClick={() => nav(`/review/${r.artifact_version_id}`)}>预览</button>
-                      <button className="btn-link" onClick={() => void download(r)}>{downloadPlan(r.filename).label}</button>
-                      {r.status === "draft" && (
-                        <button className="btn-link" disabled={busyId === r.artifact_version_id} onClick={() => void submit(r)}>提交复核</button>
+                {/* 事项下再按“一次任务”分组（Astra M-3）：这次要交给客户的那几份成组列出 */}
+                {groupByTask(g.rows).flatMap((t) => [
+                  <tr key={`task-${t.run_id ?? "none"}`} className="dl-task">
+                    <td colSpan={6}>
+                      <span>{taskGroupLabel(t, fmtTime)}</span>
+                      <span className="muted"> · {t.rows.length} 份</span>
+                      {t.run_id && (
+                        <button className="btn-link" onClick={() => nav(`/run/${t.run_id}/${g.matter_id}`)}>
+                          看这次任务
+                        </button>
                       )}
                     </td>
-                  </tr>
-                ))}
+                  </tr>,
+                  ...t.rows.map((r: any) => (
+                    <tr key={r.artifact_version_id} className="row-link dl-in-task" onClick={() => nav(`/review/${r.artifact_version_id}`)}>
+                      <td title={r.filename}><b>{r.display}</b></td>
+                      <td>v{r.version}</td>
+                      <td>{STATUS_LABELS[r.status] ?? r.status}</td>
+                      <td>{r.audience ? AUDIENCE_LABELS[r.audience] ?? r.audience : "—"}</td>
+                      <td title={fmtTime(r.created_at)}>{fmtRelative(r.created_at)}</td>
+                      <td className="dl-actions" onClick={(e) => e.stopPropagation()}>
+                        <button className="btn-link" onClick={() => nav(`/review/${r.artifact_version_id}`)}>预览</button>
+                        <button className="btn-link" onClick={() => void download(r)}>{downloadPlan(r.filename).label}</button>
+                        {r.status === "draft" && (
+                          <button className="btn-link" disabled={busyId === r.artifact_version_id} onClick={() => void submit(r)}>提交复核</button>
+                        )}
+                      </td>
+                    </tr>
+                  )),
+                ])}
               </tbody>
             ))}
           </table>
@@ -167,8 +181,20 @@ export function MatterDeliverables({ matterId }: { matterId: string }) {
       <table className="data deliverables">
         <thead><tr><th>成果</th><th>版本</th><th>状态</th><th>生成</th><th className="dl-actions-h">操作</th></tr></thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.artifact_version_id} className="row-link" onClick={() => nav(`/review/${r.artifact_version_id}`)}>
+          {groupByTask(rows).flatMap((t) => [
+            <tr key={`task-${t.run_id ?? "none"}`} className="dl-task">
+              <td colSpan={5}>
+                <span>{taskGroupLabel(t, fmtTime)}</span>
+                <span className="muted"> · {t.rows.length} 份</span>
+                {t.run_id && (
+                  <button className="btn-link" onClick={() => nav(`/run/${t.run_id}/${matterId}`)}>
+                    看这次任务
+                  </button>
+                )}
+              </td>
+            </tr>,
+            ...t.rows.map((r: any) => (
+            <tr key={r.artifact_version_id} className="row-link dl-in-task" onClick={() => nav(`/review/${r.artifact_version_id}`)}>
               <td title={r.filename}><b>{r.display}</b></td>
               <td>v{r.version}</td>
               <td>{STATUS_LABELS[r.status] ?? r.status}</td>
@@ -188,7 +214,8 @@ export function MatterDeliverables({ matterId }: { matterId: string }) {
                 </button>
               </td>
             </tr>
-          ))}
+            )),
+          ])}
         </tbody>
       </table>
     </>

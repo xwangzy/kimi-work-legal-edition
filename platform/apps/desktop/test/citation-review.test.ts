@@ -1,6 +1,8 @@
 /** 复核页引用核对的分组与签发判定（第 13 批复核 B13-U01/U02/U03）：与内核签发门禁同一判定、同名勾选键。 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { citationChecklist, citationNeeds, citationsAllowSign } from "../src/lib/citation-review.ts";
 
 const ac = (items: { raw: string; kind: "wrong" | "case" | "outside" | "ok" }[], checked = true) => ({
@@ -50,4 +52,15 @@ test("复核 R2B-27：运行里在材料中核到的离线案号与成果里的�
   assert.equal(citationsAllowSign(n, { ...none, cases: true }), true);
   assert.equal(citationNeeds(null, 1).counts.cases, 1);
   assert.equal(citationsAllowSign(citationNeeds(null, 1), none), false);
+});
+
+test("签发页（Astra M-2）：没通过的系统检查项可直接去处理；有材料缺口须勾选“已向客户说明”才能签发；显示复核人或签发人", () => {
+  const src = readFileSync(fileURLToPath(new URL("../src/pages/Review.tsx", import.meta.url)), "utf8");
+  assert.match(src, /去看材料/);
+  assert.match(src, /去核对/);
+  assert.match(src, /看最新版本/);
+  assert.match(src, /gaps_disclosed: gapsAck/);
+  assert.match(src, /\(gaps > 0 && !gapsAck\)/, "缺口没确认时签发按钮不可用");
+  assert.match(src, /复核人：/);
+  assert.match(src, /签发人：/);
 });

@@ -111,3 +111,39 @@ test("DOCX 的脚注与页眉也核验（复核 A-12）；XLSX 成果取单元�
   assert.equal(x.checked, true);
   assert.equal(x.verified, 1);
 });
+
+test("材料缺口（Astra M-2）：任务有没读到的材料时，签发须勾选“缺口已告知客户”并写进签发记录；复核页给出缺口数与复核人", { timeout: 120_000 }, async () => {
+  const { liveTaskIdentity } = await import("./helpers.ts");
+  const t2 = await makeKernel({}, "gaps-firm");
+  try {
+    const { inv, kernel } = t2;
+    const { matter } = await inv("matters.create", { title: "材料缺口", stance: "受让方", consent_status: "not_required", key_dates: { analysis_as_of: "2026-10-01" } });
+    const live = liveTaskIdentity(t2, matter.matter_id, "gaps");
+    kernel.db.run(`INSERT INTO run_events (run_id, seq, type, payload) VALUES (?, 1, 'materials.loaded', ?)`, [live.rid, JSON.stringify({ loaded: 2, requested: 3, failed: 1 })]);
+    const { randomUUID } = await import("node:crypto");
+    const bytes = createDocx("意见", [{ heading: "正文", paragraphs: ["没有引用的审查意见。"] }]);
+    const { sha256, storage_uri } = kernel.blobs.put(bytes, matter.matter_id);
+    const id = `artv_${randomUUID()}`;
+    kernel.db.run(
+      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, audience, version, filename, sha256, storage_uri, status, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?, 'pending_review', ?)`,
+      [id, kernel.identity.tenantId, matter.matter_id, live.rid, "test_gaps", "internal", 1, "意见.docx", sha256, storage_uri, kernel.identity.userId],
+    );
+    const comp = await inv("review.completeness", { artifact_version_id: id });
+    assert.equal(comp.material_gaps, 1);
+    assert.ok("name" in comp.reviewer, "复核人（本机本人）");
+    assert.equal(comp.approved_by, null);
+    await assert.rejects(
+      () => inv("review.approve", { artifact_version_id: id, decision: "approved", expected_sha256: sha256, checklist: {} }),
+      (e: any) => e.code === "material_gaps_undisclosed" && /1 份材料没有读到/.test(e.message),
+    );
+    await assert.rejects(() => inv("review.approve", { artifact_version_id: id, decision: "approved", expected_sha256: sha256, checklist: { gaps_disclosed: "yes" } }), (e: any) => e.code === "material_gaps_undisclosed", "只认布尔 true");
+    await inv("review.approve", { artifact_version_id: id, decision: "approved", expected_sha256: sha256, checklist: { gaps_disclosed: true, material_gaps: 1 } });
+    const rec = kernel.db.get<{ checklist: string }>(`SELECT checklist FROM approvals WHERE artifact_version_id = ? AND decision = 'approved'`, [id])!;
+    assert.equal(JSON.parse(rec.checklist).gaps_disclosed, true, "缺口确认写进签发记录");
+    const after = await inv("review.completeness", { artifact_version_id: id });
+    assert.ok(after.approved_by && typeof after.approved_by.at === "string", "签发后显示签发人与时刻");
+  } finally {
+    await t2.kernel.close();
+  }
+});

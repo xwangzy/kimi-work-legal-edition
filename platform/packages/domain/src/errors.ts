@@ -37,6 +37,8 @@ export const FaultCode = {
   lawdbInvalid: "lawdb_invalid",
   sourceActionDenied: "source_action_denied",
   unverifiedCitations: "unverified_citations",
+  /** Astra M-2：任务有没读到的材料，签发须勾选“缺口已告知客户”。 */
+  materialGapsUndisclosed: "material_gaps_undisclosed",
   // 控制面与许可（v9 阶段 6；第 02 篇 §10 退出模式）
   exitMode: "exit_mode",
   /** 第 13 批：本机尚未用开通码 / 邀请码激活（待激活模式只开放开通相关方法）。 */

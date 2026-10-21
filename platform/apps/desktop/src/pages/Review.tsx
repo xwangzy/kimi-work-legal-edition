@@ -4,7 +4,7 @@ import { nav } from "../App.tsx";
 import { downloadPlan } from "../lib/download.ts";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
-import { artifactName } from "../lib/labels.ts";
+import { artifactName, fmtTime } from "../lib/labels.ts";
 import { citationChecklist, citationNeeds, citationsAllowSign, type CitationTicks } from "../lib/citation-review.ts";
 
 /** 成果状态 → 律师称呼。 */
@@ -26,13 +26,17 @@ function openItemText(it: any): string {
   return typeof it === "string" ? it : "有一项需要你确认的事项";
 }
 
-type Check = { label: string; ok: boolean | null; text: string };
+/** fix：没通过的项可以直接去处理的地方（Astra M-2）。 */
+type Check = { label: string; ok: boolean | null; text: string; fix?: "materials" | "citations" | "version" };
 
 /** 系统已核对的事实（来自内核完整性单；只陈述结果）。 */
 function systemChecks(c: any, latest: boolean): Check[] {
   const out: Check[] = [];
   const m = c.materials ?? {};
-  if (m.requested !== undefined) out.push({ label: "材料读取", ok: Number(m.failed ?? 0) === 0 && Number(m.loaded) === Number(m.requested), text: `已读 ${m.loaded}/${m.requested} 份${Number(m.failed ?? 0) > 0 ? `，${m.failed} 份没有读到` : ""}` });
+  if (m.requested !== undefined) {
+    const ok = Number(m.failed ?? 0) === 0 && Number(m.loaded) === Number(m.requested);
+    out.push({ label: "材料读取", ok, text: `已读 ${m.loaded}/${m.requested} 份${Number(m.failed ?? 0) > 0 ? `，${m.failed} 份没有读到` : ""}`, ...(ok ? {} : { fix: "materials" as const }) });
+  }
   else out.push({ label: "材料读取", ok: null, text: "不是任务产出（无材料读取记录）" });
   const ct = c.citations ?? {};
   if (ct.total !== undefined) {
@@ -40,11 +44,12 @@ function systemChecks(c: any, latest: boolean): Check[] {
     out.push({
       label: "引用核验",
       ok: bad === 0,
+      ...(bad === 0 ? {} : { fix: "citations" as const }),
       text: `共 ${ct.total} 条${Number(ct.intercepted ?? 0) > 0 ? `，${ct.intercepted} 条被拦下` : ""}${Number(ct.unverified_offline ?? 0) > 0 ? `，${ct.unverified_offline} 条离线未能核实` : ""}${ct.as_of ? `（法规版本截至 ${ct.as_of}）` : ""}`,
     });
   } else out.push({ label: "引用核验", ok: null, text: "本成果没有引用核验记录" });
   out.push({ label: "文件未被改动", ok: c.file_integrity === "ok", text: c.file_integrity === "ok" ? "与生成时一致" : "与生成时不一致，不能签发" });
-  out.push({ label: "版本", ok: latest, text: latest ? "这是最新版本" : "已有更新版本，本版不能签发" });
+  out.push({ label: "版本", ok: latest, text: latest ? "这是最新版本" : "已有更新版本，本版不能签发", ...(latest ? {} : { fix: "version" as const }) });
   out.push({ label: "受众", ok: null, text: c.audience_check });
   out.push({ label: "AI 辅助标识", ok: null, text: "文档属性中已标明 AI 辅助起草" });
   if (c.egress?.note) out.push({ label: "数据去向", ok: null, text: c.egress.note });
@@ -61,6 +66,8 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [ack, setAck] = useState(false);
+  // 材料缺口已告知客户（Astra M-2）：有没读到的材料时，签发须勾选，写进签发留痕
+  const [gapsAck, setGapsAck] = useState(false);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [preview, setPreview] = useState<{ text: string; office: boolean } | null>(null);
   const [tokenMap, setTokenMap] = useState<Map<string, string | null>>(new Map());
@@ -127,6 +134,13 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   // 成果的引用核对（第 13 批复核 B13-U01/U02/U03）：分组列出、逐类勾选、勾选不齐不能签发
   const runCases = Number(data?.completeness?.run_case_offline ?? 0) || 0;
   const cneeds = citationNeeds(data?.completeness?.artifact_citations, runCases);
+  const gaps = Number(data?.material_gaps ?? 0) || 0;
+  /** 没通过的项“去处理”（Astra M-2）：材料回到任务过程、引用滚到下面的引用核对、版本回到事项的交付件。 */
+  const goFix = (k: NonNullable<Check["fix"]>) => {
+    if (k === "materials" && data?.run_id) nav(`/run/${data.run_id}/${data.matter_id}`);
+    else if (k === "citations") document.getElementById("review-citations")?.scrollIntoView({ block: "start" });
+    else nav(`/matter/${data.matter_id}`);
+  };
   const [cticks, setCticks] = useState<CitationTicks>({ cases: false, outside: false, unchecked: false });
   const act = useCallback(
     async (decision: "approved" | "rejected") => {
@@ -143,6 +157,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
             lawyer_items: items.length,
             skill: data.lawyer_checklist?.skill ?? null,
             ...citationChecklist(cneeds, cticks),
+            ...(gaps > 0 ? { gaps_disclosed: gapsAck, material_gaps: gaps } : {}),
             at: new Date().toISOString(),
           },
         });
@@ -153,7 +168,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
         setBusy(false);
       }
     },
-    [artifactId, data, ack, checked, items.length, reload, cneeds, cticks],
+    [artifactId, data, ack, checked, items.length, reload, cneeds, cticks, gapsAck],
   );
 
   const latest = !!data?.is_latest_version;
@@ -204,6 +219,11 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                     <span className="check-mark" aria-hidden="true">{c.ok === false ? "✕" : c.ok ? "✓" : "·"}</span>
                     <span>
                       <b>{c.label}</b>：{c.text}
+                      {c.fix && (c.fix !== "materials" || data.run_id) && (
+                        <button className="btn-link check-fix" onClick={() => goFix(c.fix!)}>
+                          {c.fix === "materials" ? "去看材料" : c.fix === "citations" ? "去核对" : "看最新版本"}
+                        </button>
+                      )}
                     </span>
                   </li>
                 ))}
@@ -219,6 +239,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                 </div>
               )}
               {data.blockers.length > 0 && <div className="banner banner-orange">签发前须处理：{data.blockers.join("；")}</div>}
+              <div id="review-citations" />
 
               {cneeds.counts.wrong > 0 && (
                 <div className="banner banner-red">
@@ -306,6 +327,12 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
               ) : (
                 <p className="muted">本成果没有对应的方法模板自检清单。请按所内质量要求核对。</p>
               )}
+              {gaps > 0 && (
+                <label className="review-ack">
+                  <input type="checkbox" checked={gapsAck} onChange={(e) => setGapsAck(e.target.checked)} />
+                  本次有 {gaps} 份材料没有读到：缺口已保留在报告中，已向客户说明（会写进签发记录）
+                </label>
+              )}
               <label className="review-ack">
                 <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
                 我已实质复核全部内容{openItems.length > 0 ? "与需要确认的事项" : ""}（点选不等于复核，系统会记录这次确认）
@@ -319,7 +346,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                     提交复核
                   </button>
                 ) : (
-                  <button className="btn-primary" disabled={busy || !pending || !ack || !latest || !citationsAllowSign(cneeds, cticks)} onClick={() => void act("approved")}>
+                  <button className="btn-primary" disabled={busy || !pending || !ack || !latest || !citationsAllowSign(cneeds, cticks) || (gaps > 0 && !gapsAck)} onClick={() => void act("approved")}>
                     确认签发
                   </button>
                 )}
@@ -328,6 +355,11 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                   下载（留痕）
                 </button>
               </div>
+              {/* 复核人署名（Astra M-2）：签发前显示本人，签发后显示签发人与时刻；复核完成不代表合同已签署或建议必然适用 */}
+              <p className="muted review-signer">
+                {data.approved_by ? `签发人：${data.approved_by.name ?? "本所成员"}（${fmtTime(data.approved_by.at)}）` : `复核人：${data.reviewer?.name ?? "本机用户"}`}
+                。复核签发不代表合同已签署，也不代表建议必然适用。
+              </p>
               {note && <p className="muted">{note}</p>}
               {!pending && !draft && <p className="muted">只有“待你复核”的成果可以签发或退回。</p>}
               <details className="review-proof">

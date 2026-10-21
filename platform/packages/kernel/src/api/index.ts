@@ -1648,9 +1648,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "artifacts.list": (p, id) => {
       const matterId = String(p?.matter_id ?? "");
       requireMatterAccess(db, matterId, id);
+      // 带上所属任务的场景、方法模板与开始时刻（Astra M-3：交付件按“事项 → 一次任务”分组，律师关心的是这次要交出去的那几份）
       const rows = db.all<Record<string, unknown>>(
-        `SELECT artifact_version_id, run_id, kind, version, audience, status, filename, sha256, created_at, storage_uri
-           FROM artifact_versions WHERE matter_id = ? ORDER BY kind, version DESC`,
+        `SELECT a.artifact_version_id, a.run_id, a.kind, a.version, a.audience, a.status, a.filename, a.sha256, a.created_at, a.storage_uri,
+                r.scenario AS run_scenario, json_extract(CASE WHEN json_valid(r.input_snapshot) THEN r.input_snapshot ELSE '{}' END, '$.skill') AS run_skill, r.created_at AS run_created_at
+           FROM artifact_versions a LEFT JOIN runs r ON r.run_id = a.run_id
+          WHERE a.matter_id = ? ORDER BY a.kind, a.version DESC`,
         [matterId],
       );
       // 交付件按内容命名（UIUX 增量评审 D-2）：Markdown/文本成果取第一行标题（令牌形态，界面还原代号）；成果不可变，按版本缓存
@@ -1816,6 +1819,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       return { artifact_version_id: art.artifact_version_id, status: "pending_review" };
     },
 
+    /**
+     * 本次任务的材料有没有读全（Astra M-2）：任务登记的 materials.loaded 里有没读到的、或读到的少于要求的。
+     * 有缺口时签发须勾选“缺口已告知客户”（checklist.gaps_disclosed），并写进签发留痕。
+     */
     "review.completeness": (p, id) => {
       const art = artifactOut(requireArtifact(db, String(p?.artifact_version_id ?? ""), id));
       // 完整性单（§5.3）：材料覆盖 / 建议处理 / 引用核验 / 未决项 / 受众 / 确切文件 hash / 数据去向
@@ -1884,6 +1891,14 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           run_case_offline: unverifiedOffline,
         },
         lawyer_checklist: { skill: lawyerChecklist.length ? skillId : null, items: lawyerChecklist },
+        // 材料缺口（Astra M-2）：有缺口时签发须勾选“缺口已告知客户”
+        material_gaps: materialGapCount(db, art.run_id ?? null),
+        // 复核人（Astra M-2）：签发区显示“复核人：{姓名}”——这台电脑的本人；已签发的显示签发人
+        reviewer: { name: displayNameOf(id.userId, null) },
+        approved_by: (() => {
+          const a = db.get<{ approver_id: string; created_at: string }>(`SELECT approver_id, created_at FROM approvals WHERE artifact_version_id = ? AND decision = 'approved' ORDER BY created_at DESC LIMIT 1`, [art.artifact_version_id]);
+          return a ? { name: displayNameOf(a.approver_id), at: a.created_at } : null;
+        })(),
         blockers: [
           ...(fileOk ? [] : ["文件完整性校验失败"]),
           ...(openItems.length > 0 ? ["存在未决项，签发人须逐项确认"] : []),
@@ -1923,6 +1938,11 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (decision === "approved") {
         // 未核实（离线）的引用不得进入签发版（§9/第 5 篇 §2.1：案号离线未核 → 阻断签发）
         // 运行里在材料中核到的离线案号（第 14 批第二轮复核 R2B-27）：与成果里的案号同一口径——律师逐个核对并勾选后可签发（D-98 扩展，待拍板）
+        // 材料缺口（Astra M-2）：没读全的材料须律师确认“缺口已保留在报告中、已向客户说明”，写进签发留痕
+        const gaps = materialGapCount(db, art.run_id);
+        if (gaps > 0 && checklistObj.gaps_disclosed !== true) {
+          throw new DomainError("material_gaps_undisclosed", `本次任务有 ${gaps} 份材料没有读到：请在复核页勾选“缺口已保留在报告中，已向客户说明”后再签发`, 409, { material_gaps: gaps });
+        }
         const unverified = unverifiedOfflineCount(db, art.run_id);
         if (unverified > 0 && checklistObj[CITATIONS_CASES_CHECK_KEY] !== true) {
           throw new DomainError("unverified_citations", `材料里有 ${unverified} 个案号系统离线无法核实：请逐个在裁判文书网等官方来源核对，在复核页勾选“已逐个核对案号”后再签发`, 409, {
@@ -3739,6 +3759,21 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   function nextLocalLamport(db2: KernelDb): number {
     const r = db2.get<{ l: number | null }>(`SELECT MAX(lamport) AS l FROM signed_events`, []);
     return (r?.l ?? 0) + 1;
+  }
+
+  /**
+   * 本次任务的材料缺口（Astra M-2）：最后一次 materials.loaded 里没读到的份数（失败的 + 要求了没读到的）。
+   * 有缺口时签发须勾选“缺口已告知客户”（checklist.gaps_disclosed），写进签发留痕。
+   */
+  function materialGapCount(db2: KernelDb, runId: string | null): number {
+    if (!runId) return 0;
+    const e = db2.get<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'materials.loaded' ORDER BY seq DESC LIMIT 1`, [runId]);
+    if (!e) return 0;
+    const m = parseJson<any>(e.payload, {});
+    const requested = Number(m.requested ?? 0) || 0;
+    const loaded = Number(m.loaded ?? 0) || 0;
+    const failed = Number(m.failed ?? 0) || 0;
+    return Math.max(failed, requested - loaded, 0);
   }
 
   /** 成果引用面板中「未核实（离线）」的引用数（citations.verified 事件 payload；案号离线未核 → 签发门禁）。 */
