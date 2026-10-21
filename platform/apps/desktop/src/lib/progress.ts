@@ -7,6 +7,8 @@ import type { RunProgress } from "../api.ts";
 export interface ProgressViewModel {
   /** 模型重试中（取代“正在处理…”的说明）。 */
   retry: string | null;
+  /** 第几次重试（界面据此在第 3 次起显示“停止，稍后再试”）。 */
+  retryAttempt?: number;
   todo: { title: string; done: number; total: number; items: { mark: string; text: string; state: "done" | "doing" | "todo" }[] } | null;
   subagents: { title: string; items: { text: string; state: string; summary: string | null; failed: boolean }[] } | null;
   tasks: { title: string; items: string[] } | null;
@@ -23,7 +25,9 @@ export function progressView(p: RunProgress | null | undefined): ProgressViewMod
   const vm = { ...empty };
   if (p.retry) {
     const of = p.retry.max > 0 ? `（第 ${p.retry.attempt}/${p.retry.max} 次）` : "";
-    vm.retry = `模型服务暂时没有响应，正在自动重试${of}…已完成的步骤不会丢失；如长时间没有进展，可以取消后稍后重新运行。`;
+    // v9.4（U1 §3.5 #9）：短句；第 3 次起界面另给“停止，稍后再试”按钮（retryStoppable）
+    vm.retry = `AI 服务暂时没有回应，正在重试${of}。已完成的部分不会丢。`;
+    vm.retryAttempt = p.retry.attempt;
   }
   if (p.todo.length > 0) {
     const done = p.todo.filter((t) => t.status === "done").length;
@@ -57,8 +61,14 @@ export function progressView(p: RunProgress | null | undefined): ProgressViewMod
 }
 
 /** 有没有值得显示的过程信息（空快照不渲染面板）。 */
+/** 过程面板有没有内容可放（v9.4：重试提示只在时间线里显示，不再单独撑起一个空面板——U1 截图 u1-46 的“空白长条”）。 */
 export function hasProgress(vm: ProgressViewModel): boolean {
-  return Boolean(vm.retry || vm.todo || vm.subagents || vm.tasks || vm.notes.length || vm.compaction);
+  return Boolean(vm.todo || vm.subagents || vm.tasks || vm.notes.length || vm.compaction);
+}
+
+/** 重试到第 3 次起，给律师一个“停止，稍后再试”的出口。纯函数。 */
+export function retryStoppable(vm: ProgressViewModel): boolean {
+  return !!vm.retry && (vm.retryAttempt ?? 0) >= 3;
 }
 
 /** 过程快照里需要还原代号的文字（面板渲染的每一段模型文字都必须在其中——复核 B4-B03 用例核对）。 */

@@ -18,7 +18,7 @@ import { ARTIFACT_STATUS_LABELS, artifactName, CITE_STATE_LABELS, EFFECTIVENESS_
 import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
 import { currentBadges } from "../lib/badges.ts";
-import { engineHeartbeatMs, hasProgress, mergeProgress, phaseLine, progressActivityKey, progressTexts, silenceMs, stallThresholdMs, progressView, type ProgressViewModel } from "../lib/progress.ts";
+import { engineHeartbeatMs, hasProgress, mergeProgress, phaseLine, progressActivityKey, progressTexts, retryStoppable, silenceMs, stallThresholdMs, progressView, type ProgressViewModel } from "../lib/progress.ts";
 import { buildSteps, groupSubtaskSteps, keyStepKeys, mergeRepeatSteps, sentByToolCall, toolLabel, type SentInfo, type Step } from "../lib/timeline.ts";
 import { busyRunOfError } from "../lib/start-block.ts";
 import { methodLine, methodShort } from "../lib/run-method.ts";
@@ -310,6 +310,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     [approvals, questions],
   );
   const [showAllCards, setShowAllCards] = useState(false);
+  const [showAllFiles, setShowAllFiles] = useState(false);
+  const unreviewed = artifacts.filter((a) => a.status === "draft" || a.status === "pending_review").length;
   const [showDetail, setShowDetail] = useState(false);
   const steps = showDetail ? allSteps : allSteps.filter((x) => x.level === "lawyer");
   const hiddenSteps = allSteps.length - allSteps.filter((x) => x.level === "lawyer").length;
@@ -486,8 +488,13 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
           <div>
             <h1 className="page-title" title={run?.goal ?? run?.input_snapshot?.goal ?? undefined}>{runTitle(run)}</h1>
             <div className="exec-sub">
-              <span className={`pill ${terminal ? (status === "succeeded" ? "pill-green" : "pill-gray") : status.startsWith("waiting") ? "pill-orange" : "pill-blue"}`}>{RUN_STATUS_LABELS[status] ?? status}</span>
-              {!status.startsWith("waiting") && badges.map((b) => <span key={b.label} className={`pill pill-${b.tone}`}>{b.label}</span>)}
+              {/* 完成但草稿还没复核时，胶囊写下一步（v9.4 U1 §1.4：原来一律“已完成”，下面却是 6 份待复核） */}
+              {status === "succeeded" && unreviewed > 0 ? (
+                <span className="pill pill-orange" title="任务已完成；成果都是草稿，等你复核">{unreviewed} 份待复核</span>
+              ) : (
+                <span className={`pill ${terminal ? (status === "succeeded" ? "pill-green" : "pill-gray") : status.startsWith("waiting") ? "pill-orange" : "pill-blue"}`}>{RUN_STATUS_LABELS[status] ?? status}</span>
+              )}
+              {!status.startsWith("waiting") && badges.map((b) => <span key={b.label} className={`pill pill-${b.tone}`} title={b.title}>{b.label}</span>)}
               {/* 原左栏“在哪里处理”每个任务都一样，收成一枚胶囊（Z3 #29） */}
               <span className="pill pill-gray" title="原件不会被修改；结果都是草稿，须律师复核">原件不改 · 结果是草稿</span>
               {/* 窄屏（≤1280px）左栏收起时的材料入口（UIUX 增量评审 N-1） */}
@@ -535,7 +542,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             ← 接着上一轮
           </button>
         )}
-        {(run?.goal ?? run?.input_snapshot?.goal) && <div className="goal-bubble">{renderTokens(String(run.goal ?? run.input_snapshot.goal), tokenMap)}</div>}
+        {/* 标题已是律师原话时不再用气泡重复一遍（v9.4 U1 §1.4）；原话超过 30 字被截断时才显示全文 */}
+        {(run?.goal ?? run?.input_snapshot?.goal) && String(run.goal ?? run.input_snapshot.goal).replace(/\s+/g, " ").trim().length > 30 && <div className="goal-bubble">{renderTokens(String(run.goal ?? run.input_snapshot.goal), tokenMap)}</div>}
         <div className="timeline">
           {groupSubtaskSteps(steps).map((it) =>
             it.kind === "step" ? (
@@ -564,6 +572,25 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               <span className="step-dot" />
               <div className="step-body muted">
                 {pv.retry ?? (silentFor > stallThresholdMs(progress) ? "已经有一阵子没有新进展了。任务仍在运行；如果长时间没有变化，可以取消后重新运行。" : phaseLine(progress, now, toolLabel) ?? "正在处理…")}
+                {retryStoppable(pv) && run && (
+                  <div className="banner-actions">
+                    <ConfirmButton
+                      label="停止，稍后再试"
+                      question="先停止这个任务？已完成的部分不会丢，稍后可以重新运行。"
+                      confirmLabel="停止"
+                      keepLabel="继续等"
+                      onConfirm={async () => {
+                        try {
+                          const cur = await api.getRun(runId);
+                          await api.cancelRun(runId, cur.run.status_version);
+                          await refresh();
+                        } catch (e) {
+                          setErr((e as Error).message);
+                        }
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -705,7 +732,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
           <div className="card done-files">
             <div className="title">本任务生成了 {artifacts.length} 份文件（草稿）</div>
             <ul className="done-file-list">
-              {artifacts.slice(0, 4).map((a, i) => (
+              {/* 份数与列出的行数一致（v9.4 U1 #8）：多于 6 份时先列 6 份，其余点“全部”展开 */}
+              {(showAllFiles ? artifacts : artifacts.slice(0, 6)).map((a) => (
                 <li key={a.artifact_version_id}>
                   <button
                     className="btn-link"
@@ -718,12 +746,17 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                     {artifactName(a, (t) => restoredPlain(t, tokenMap))}
                   </button>
                   <span className="spacer" />
-                  <button className={i === 0 ? "btn-primary btn-sm" : "btn-ghost btn-sm"} onClick={() => downloadOne(a)}>
+                  <button className="btn-ghost btn-sm" onClick={() => downloadOne(a)}>
                     {downloadLabel(String(a.filename ?? ""))}
                   </button>
                 </li>
               ))}
             </ul>
+            {artifacts.length > 6 && !showAllFiles && (
+              <button className="btn-link" onClick={() => setShowAllFiles(true)}>
+                全部 {artifacts.length} 份 →
+              </button>
+            )}
           </div>
         )}
         {/* 接着做（D-4）：同一事项下打开下一场景的开始面板 */}
@@ -865,13 +898,13 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               {artifacts.length > 1 && (
                 // 原“文件历史”标签并入这里（Z3 #11）
                 <details className="pane-fold">
-                  <summary>版本记录（{artifacts.length}）</summary>
+                  <summary>本任务的文件（{artifacts.length}）</summary>
                   {artifacts.map((a) => (
                     <div key={a.artifact_version_id} className="hist-row">
                       <div>
                         <b>{artifactName(a, (t) => restoredPlain(t, tokenMap))}</b> <span className="tag tag-gray">v{a.version}</span> <span className="tag tag-gray">{ARTIFACT_STATUS_LABELS[a.status] ?? "状态未知"}</span>
                       </div>
-                      <div className="muted" title={`文件指纹 ${String(a.sha256 ?? "").slice(0, 16)}…`}>{fmtTime(a.created_at)}</div>
+                      <div className="muted">{fmtTime(a.created_at)}</div>
                     </div>
                   ))}
                 </details>

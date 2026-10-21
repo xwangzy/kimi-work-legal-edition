@@ -1,7 +1,7 @@
 /** 执行态过程信息的律师文案（K7-P，apps/desktop/src/lib/progress.ts）：空快照不显示；重试、清单、子任务、后台任务、整理各有一行说明。 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hasProgress, progressView } from "../src/lib/progress.ts";
+import { hasProgress, progressView, retryStoppable } from "../src/lib/progress.ts";
 
 const base = { todo: [], subagents: [], tasks: [], notes: [], compaction: { count: 0, running: false, blocked: false, last_at: null, tokens_before: null, tokens_after: null }, skills: [], retry: null };
 
@@ -21,7 +21,10 @@ test("K7-P 过程信息：空快照不渲染；重试取代“正在处理…”
     compaction: { count: 2, running: false, blocked: false, last_at: null, tokens_before: 1, tokens_after: 1 },
   } as any);
   assert.ok(hasProgress(vm));
-  assert.match(vm.retry!, /正在自动重试（第 2\/5 次）/);
+  assert.match(vm.retry!, /正在重试（第 2\/5 次）/);
+  assert.equal(retryStoppable(vm), false, "第 2 次还不给停止按钮");
+  assert.equal(hasProgress(progressView({ ...base, retry: { attempt: 3, max: 10, status_code: 503, at: "" } } as any)), false, "只有重试时不撑起空面板（v9.4 U1 #7）");
+  assert.equal(retryStoppable(progressView({ ...base, retry: { attempt: 3, max: 10, status_code: 503, at: "" } } as any)), true);
   assert.equal(vm.todo!.title, "助手的工作清单（1/3）");
   assert.deepEqual(vm.todo!.items.map((x) => x.mark), ["✓", "●", "○"]);
   assert.equal(vm.subagents!.title, "同时进行 1 项核对");

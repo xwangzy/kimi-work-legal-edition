@@ -42,8 +42,8 @@ const labels = (f: Partial<BadgeFacts>) => currentBadges({ ...base, ...f }).map(
 
 test("执行位置徽标：由事实生成——排队、恢复、预算暂停、等待各有文案；“模型推理中”只在有在途模型请求时出现，去向按端点、代号范围按全部化名", () => {
   assert.deepEqual(labels({ status: "queued" }), ["排队中"]);
-  assert.deepEqual(labels({ status: "recovering" }), ["恢复中（从最后检查点继续）"]);
-  assert.deepEqual(labels({ status: "budget_paused" }), ["预算暂停（等你决定）"]);
+  assert.deepEqual(labels({ status: "recovering" }), ["恢复中"]);
+  assert.deepEqual(labels({ status: "budget_paused" }), ["用量已到上限"]);
   assert.deepEqual(labels({ status: "waiting_approval" }), ["等待你确认"]);
   assert.deepEqual(labels({ status: "waiting_device" }), ["等待电脑上线"]);
   assert.deepEqual(labels({ status: "succeeded" }), []);
@@ -55,17 +55,21 @@ test("执行位置徽标：由事实生成——排队、恢复、预算暂停�
   assert.deepEqual(labels({ status: "waiting_approval", exitMode: "license_expired" }), ["等待你确认"]);
   assert.deepEqual(labels({ status: "queued", exitMode: null }), ["排队中"]);
   // 没有在途模型请求：不写“模型推理中”
-  assert.deepEqual(labels({}), ["本机处理中"]);
-  assert.deepEqual(labels({ scenario: "s6.redaction" }), ["本机处理中（本场景不调用模型、不联网）"]);
+  assert.deepEqual(labels({}), ["AI 处理中"], "用 AI 的任务不再写“本机处理中”（v9.4 U1 #7）");
+  assert.deepEqual(labels({ scenario: "s6.redaction" }), ["本机处理中"]);
+  assert.match(currentBadges({ ...base, scenario: "s6.redaction" })[0]!.title!, /不用 AI、不联网/);
   // 在途模型请求：按端点写去向，按全部化名写代号范围
-  assert.match(labels({ inflight: { model: 1, search: 0, fetch: 0 } })[0]!, /AI 正在处理（经中软；证件、账户、联系方式与自然人姓名已替换为代号/);
-  assert.match(labels({ inflight: { model: 1, search: 0, fetch: 0 }, fullPseudonym: true })[0]!, /自然人姓名与机构名称已替换为代号/);
-  assert.match(labels({ inflight: { model: 1, search: 0, fetch: 0 }, endpoint: "byok" })[0]!, /律所自己的 Kimi 账号.*不经中软/);
-  assert.match(labels({ inflight: { model: 1, search: 0, fetch: 0 }, endpoint: "private" })[0]!, /律所私有模型/);
+  const titles = (f: Partial<BadgeFacts>) => currentBadges({ ...base, ...f }).map((b) => b.title ?? "");
+  assert.deepEqual(labels({ inflight: { model: 1, search: 0, fetch: 0 } }), ["AI 处理中"]);
+  assert.match(titles({ inflight: { model: 1, search: 0, fetch: 0 } })[0]!, /发给 Kimi AI；姓名、证件、账号、联系方式已换成代号/);
+  assert.match(titles({ inflight: { model: 1, search: 0, fetch: 0 }, fullPseudonym: true })[0]!, /公司名称已换成代号/);
+  assert.match(titles({ inflight: { model: 1, search: 0, fetch: 0 }, endpoint: "byok" })[0]!, /律所自己的 Kimi 账号/);
+  assert.match(titles({ inflight: { model: 1, search: 0, fetch: 0 }, endpoint: "private" })[0]!, /律所自己的 AI/);
   // 执行域与检索、抓取
-  assert.deepEqual(labels({ openTools: ["Bash"] }), ["在这台电脑上计算（不联网）"]);
-  assert.ok(labels({ inflight: { model: 0, search: 1, fetch: 0 } }).some((l) => l.startsWith("联网检索中")));
-  assert.ok(labels({ openTools: ["FetchURL"] }).some((l) => l.startsWith("正在打开公开网页")));
+  assert.deepEqual(labels({ openTools: ["Bash"] }), ["本机计算中"]);
+  assert.ok(labels({ inflight: { model: 0, search: 1, fetch: 0 } }).some((l) => l.startsWith("联网查询中")));
+  assert.ok(currentBadges({ ...base }).every((b) => [...b.label].length <= 6), "胶囊 ≤ 6 字（U1 §3.3）");
+  assert.ok(labels({ openTools: ["FetchURL"] }).some((l) => l.startsWith("打开网页中")));
 });
 
 // ─── 第 4 批复核 B 的界面纯函数 ───

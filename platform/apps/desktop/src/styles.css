@@ -75,10 +75,18 @@ input:focus, select:focus, textarea:focus { border-color: var(--focus-ring); }
 .page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .page-head .page-title { margin: 0; flex: 1 1 auto; white-space: nowrap; }
 .search { width: 260px; }
-.hero-title { font-size: var(--fs-2xl); font-weight: 600; text-align: center; margin: 9vh 0 22px; letter-spacing: 0.5px; }
+.hero-title { font-size: var(--fs-2xl); font-weight: 600; text-align: center; margin: 6vh 0 20px; letter-spacing: 0.5px; }
 .home-msg { text-align: center; white-space: pre-line; }
 .section-title { font-size: var(--fs-base); font-weight: 600; margin: 26px 0 8px; }
 .muted { color: var(--text-secondary); font-size: var(--fs-sm); }
+/* v9.4 视觉基础（U1 §3.6）：复选框与单选框跟黑白选中态一致；折叠三角换成线性箭头（胶囊与时间线步骤不加） */
+input[type="checkbox"], input[type="radio"] { accent-color: var(--btn-primary); }
+details > summary { cursor: pointer; }
+details > summary:not(.pill):not(:has(.step-dot)) { list-style: none; }
+details > summary:not(.pill):not(:has(.step-dot))::-webkit-details-marker { display: none; }
+details > summary:not(.pill):not(:has(.step-dot))::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 8px 2px 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 120ms ease; vertical-align: middle; }
+details[open] > summary:not(.pill):not(:has(.step-dot))::before { transform: rotate(45deg); }
+.pill svg { width: 13px; height: 13px; flex: 0 0 auto; }
 .mono { font-family: var(--font-mono); font-size: var(--fs-xs); }
 .foot-note { margin-top: 28px; }
 .panel { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); padding: 16px 18px; background: var(--bg-surface); }
@@ -645,6 +653,17 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 /* 首页“等你处理 / 继续工作”（UIUX 增量评审 H-1） */
 .todo-strip { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 12px 0 4px; padding: 9px 12px; border-radius: var(--r-sm); background: var(--risk-mid-bg); border: 1px solid var(--status-warning-border); font-size: var(--fs-base); }
 .recent-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+/* 首页“今天”（v9.4）：三列——等你处理 / 近期期限 / 继续工作；每列最多 3 行，空列一句话 */
+.today { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); margin: var(--sp-4) 0 var(--sp-2); }
+.today-col { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-surface); padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.today-h { display: flex; justify-content: space-between; align-items: center; font-size: var(--fs-sm); font-weight: 600; color: var(--text-secondary); margin-bottom: var(--sp-1); }
+.today-row { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-width: 0; text-align: left; border: 0; background: none; border-radius: var(--r-sm); padding: 6px var(--sp-2); margin: 0 calc(-1 * var(--sp-2)); font-size: var(--fs-base); color: var(--text-primary); }
+.today-row:hover { background: var(--bg-hover); }
+.today-row-strong { font-weight: 600; }
+.today-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.banner .banner-later { margin-left: var(--sp-3); color: var(--text-secondary); }
+.today-empty { margin: 0; font-size: var(--fs-sm); color: var(--text-secondary); }
+@media (max-width: 980px) { .today { grid-template-columns: minmax(0, 1fr); } }
 .recent-row { width: 100%; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) auto auto; gap: 12px; align-items: center; text-align: left; background: none; border: 0; border-radius: var(--r-sm); padding: 8px 10px; font-size: var(--fs-base); }
 .recent-row:hover { background: var(--bg-hover); }
 .recent-goal { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

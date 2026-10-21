@@ -4,7 +4,7 @@
  * 卡片写“给什么 → 得到什么”，点开是两段式开始面板。所有场景尚未通过法律质量门槛：卡片上不逐张标“试用”，场景区标题旁统一写一行（Z3 #16、V-a）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Matter, type MaterialFile, type RunPolicyView } from "../api.ts";
+import { api, type Matter, type MaterialFile, type ReminderItem, type RunPolicyView } from "../api.ts";
 import { nav } from "../App.tsx";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
 import { defaultChoice } from "../components/ModeSelector.tsx";
@@ -12,9 +12,10 @@ import { NewMatterDialog } from "../components/NewMatter.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { ScenarioStart } from "../components/ScenarioStart.tsx";
 import { cardGets, cardGives, LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
-import { fmtTime, fmtWhen, SCENARIO_LABELS } from "../lib/labels.ts";
+import { fmtTime, SCENARIO_LABELS } from "../lib/labels.ts";
 import { nextStepPill, type RunFacts } from "../lib/next-step.ts";
 import { backendDownText } from "../lib/errors.ts";
+import { dueText, dueTone, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
 
 const LINE_KEY = "kwl.home.line";
 function savedLine(): BusinessLine {
@@ -42,6 +43,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   // 等你处理 / 继续工作（UIUX 增量评审 H-1）
   const [recent, setRecent] = useState<{ run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; goal: string }[]>([]);
   const [waiting, setWaiting] = useState<{ run_id: string; matter_id: string }[]>([]);
+  // 今天（v9.4 U1 #3）：近期期限也放到首页首屏
+  const [deadlines, setDeadlines] = useState<ReminderItem[]>([]);
   const [newMatter, setNewMatter] = useState(false);
   const [sheet, setSheet] = useState<PendingStart | null>(null);
   const [msg, setMsg] = useState("");
@@ -110,6 +113,10 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   useEffect(() => {
     loadMatters();
     api.pending().then((r) => setPendingReview(r.pending)).catch(() => {});
+    api
+      .reminders()
+      .then((r) => setDeadlines(upcomingDeadlines(r.reminders)))
+      .catch(() => setDeadlines([]));
     api
       .recentRuns(5)
       .then((r) => {
@@ -233,20 +240,68 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
           </div>
         )}
 
-        {(waiting.length > 0 || pendingReview.length > 0) && (
-          <div className="todo-strip" role="status">
-            <span className="act-dot act-wait" aria-hidden="true" />
-            {waiting.length > 0 && (
-              <button className="btn-link" onClick={() => nav(`/run/${waiting[0]!.run_id}/${waiting[0]!.matter_id}`)}>
-                {waiting.length} 个任务在等你确认或回答 →
-              </button>
-            )}
-            {pendingReview.length > 0 && (
-              <button className="btn-link" onClick={() => nav(pendingReview.length === 1 ? `/review/${pendingReview[0].artifact_version_id}` : "/deliverables")}>
-                {pendingReview.length} 份草稿待你复核 →
-              </button>
-            )}
-          </div>
+        {/* 今天（v9.4 U1 #3）：首屏回答“今天要处理什么”——等你处理、近期期限、继续工作；三块都空时不显示 */}
+        {(waiting.length > 0 || pendingReview.length > 0 || deadlines.length > 0 || recent.length > 0) && (
+          <section className="today" aria-label="今天">
+            <div className="today-col">
+              <div className="today-h">等你处理</div>
+              {waiting.length === 0 && pendingReview.length === 0 ? (
+                <p className="today-empty">没有等你确认或复核的事。</p>
+              ) : (
+                <>
+                  {waiting.length > 0 && (
+                    <button className="today-row today-row-strong" onClick={() => nav(`/run/${waiting[0]!.run_id}/${waiting[0]!.matter_id}`)}>
+                      <span className="act-dot act-wait" aria-hidden="true" />
+                      {waiting.length} 个任务等你确认或回答
+                    </button>
+                  )}
+                  {pendingReview.length > 0 && (
+                    <button className="today-row" onClick={() => nav(pendingReview.length === 1 ? `/review/${pendingReview[0].artifact_version_id}` : "/deliverables")}>
+                      {pendingReview.length} 份草稿待你复核
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="today-col">
+              <div className="today-h">近期期限</div>
+              {deadlines.length === 0 ? (
+                <p className="today-empty">
+                  14 天内没有期限。<button className="btn-link" onClick={() => nav("/reminders")}>设期限</button>
+                </p>
+              ) : (
+                deadlines.slice(0, 3).map((d) => (
+                  <button key={d.reminder_id} className="today-row" onClick={() => nav(`/matter/${d.matter_id}`)} title={`${d.due_date} · ${d.matter_title}`}>
+                    <span className={`pill pill-${dueTone(d.due_date) === "red" ? "red" : dueTone(d.due_date) === "orange" ? "orange" : "gray"}`}>{dueText(d.due_date)}</span>
+                    <span className="today-text">{d.note || reminderKindLabel(d.kind)} · {d.matter_title}</span>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="today-col">
+              <div className="today-h">
+                继续工作
+                {recent.length > 3 && matterId && (
+                  <button className="btn-link" onClick={() => nav(`/matter/${matterId}`)}>
+                    全部 →
+                  </button>
+                )}
+              </div>
+              {recent.length === 0 ? (
+                <p className="today-empty">还没有任务。</p>
+              ) : (
+                recent.slice(0, 3).map((r) => {
+                  const pill = nextStepPill(facts[r.run_id] ?? { status: r.status });
+                  return (
+                    <button key={r.run_id} className="today-row" onClick={() => nav(`/run/${r.run_id}/${r.matter_id}`)} title={`${r.matter_title} · ${fmtTime(r.updated_at)}`}>
+                      <span className="today-text">{r.goal || SCENARIO_LABELS[r.scenario] || "任务"}</span>
+                      <span className={`pill ${pill.tone}`}>{pill.text}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </section>
         )}
 
         <section className="lines">
@@ -275,33 +330,6 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
             </button>
           </div>
         </section>
-        {recent.length > 0 && (
-          <section>
-            <div className="section-title section-title-row">
-              继续工作
-              {matterId && (
-                <button className="btn-link" onClick={() => nav(`/matter/${matterId}`)}>
-                  本事项全部任务 →
-                </button>
-              )}
-            </div>
-            <ul className="recent-list">
-              {recent.map((r) => {
-                const pill = nextStepPill(facts[r.run_id] ?? { status: r.status });
-                return (
-                <li key={r.run_id}>
-                  <button className="recent-row" onClick={() => nav(`/run/${r.run_id}/${r.matter_id}`)}>
-                    <span className="recent-goal">{r.goal || SCENARIO_LABELS[r.scenario] || "任务"}</span>
-                    <span className="muted">{r.matter_title}</span>
-                    <span className={`pill ${pill.tone}`}>{pill.text}</span>
-                    <span className="muted recent-time" title={fmtTime(r.updated_at)}>{fmtWhen(r.updated_at)}</span>
-                  </button>
-                </li>
-                );
-              })}
-            </ul>
-          </section>
-        )}
         <p className="muted foot-note">
           也可以直接在上面描述任务。更多方法见 <button className="btn-link" onClick={() => nav("/methods")}>方法与模板</button>。
         </p>

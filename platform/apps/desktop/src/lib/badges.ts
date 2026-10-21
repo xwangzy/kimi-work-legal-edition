@@ -21,24 +21,26 @@ export interface BadgeFacts {
 }
 
 export interface Badge {
+  /** 胶囊文字（v9.4：≤ 6 字；说明放 title，悬停可见）。 */
   label: string;
   tone: "green" | "blue" | "orange" | "gray";
+  title?: string;
 }
 
 const TERMINAL = ["succeeded", "partial", "failed", "cancelled", "timed_out", "expired"];
 const MODEL_SCENARIOS = new Set(["a1.agent_task", "s1.contract_review"]);
 
-function modelBadge(endpoint: string | null, fullPseudonym: boolean): string {
-  const scope = fullPseudonym ? "证件、账户、联系方式、自然人姓名与机构名称已替换为代号" : "证件、账户、联系方式与自然人姓名已替换为代号";
+function modelScope(endpoint: string | null, fullPseudonym: boolean): string {
+  const scope = fullPseudonym ? "姓名、证件、账号、联系方式和公司名称已换成代号" : "姓名、证件、账号、联系方式已换成代号";
   switch (endpoint) {
     case "byok":
-      return `AI 正在处理（用律所自己的 Kimi 账号，不经中软；${scope}）`;
+      return `用律所自己的 Kimi 账号；${scope}`;
     case "private":
-      return "AI 正在处理（律所私有模型，不经中软）";
+      return "用律所自己的 AI";
     case "mock":
-      return "AI 正在处理（本机示例，不外发）";
+      return "示例，没有发出";
     default:
-      return `AI 正在处理（经中软；${scope}）`;
+      return `发给 Kimi AI；${scope}`;
   }
 }
 
@@ -64,22 +66,23 @@ export function currentBadges(f: BadgeFacts): Badge[] {
     case "validating":
       return [{ label: "排队中", tone: "gray" }];
     case "recovering":
-      return [{ label: "恢复中（从最后检查点继续）", tone: "gray" }];
+      return [{ label: "恢复中", tone: "gray", title: "软件中断过，正从中断的地方继续" }];
     case "budget_paused":
-      return [{ label: "预算暂停（等你决定）", tone: "orange" }];
+      return [{ label: "用量已到上限", tone: "orange", title: "等你决定是否继续" }];
     case "reconciling":
-      return [{ label: "发送结果不确定，待核实", tone: "orange" }];
+      return [{ label: "待核实", tone: "orange", title: "有一次发送结果不确定，请在“数据去向”里核实" }];
     default:
       break;
   }
   const out: Badge[] = [];
-  if (f.openTools.includes("Bash") || f.execOpen) out.push({ label: "在这台电脑上计算（不联网）", tone: "green" });
-  if (f.openTools.includes("WebSearch") || (f.inflight?.search ?? 0) > 0) out.push({ label: "联网检索中（去标识查询经中软检索服务）", tone: "blue" });
-  if (f.openTools.includes("FetchURL") || (f.inflight?.fetch ?? 0) > 0) out.push({ label: "正在打开公开网页", tone: "blue" });
-  if ((f.inflight?.model ?? 0) > 0) out.push({ label: modelBadge(f.endpoint, f.fullPseudonym), tone: "blue" });
+  if (f.openTools.includes("Bash") || f.execOpen) out.push({ label: "本机计算中", tone: "green", title: "在这台电脑上计算，不联网" });
+  if (f.openTools.includes("WebSearch") || (f.inflight?.search ?? 0) > 0) out.push({ label: "联网查询中", tone: "blue", title: "查询已去掉当事人名称" });
+  if (f.openTools.includes("FetchURL") || (f.inflight?.fetch ?? 0) > 0) out.push({ label: "打开网页中", tone: "blue", title: "只打开公开网页" });
+  if ((f.inflight?.model ?? 0) > 0) out.push({ label: "AI 处理中", tone: "blue", title: modelScope(f.endpoint, f.fullPseudonym) });
   if (out.length === 0) {
     const usesModel = f.scenario !== null && MODEL_SCENARIOS.has(f.scenario) && f.endpoint !== "none";
-    out.push({ label: usesModel ? "本机处理中" : "本机处理中（本场景不调用模型、不联网）", tone: "green" });
+    // v9.4（U1 #7）：用 AI 的任务写“AI 处理中”，原来一律“本机处理中”，与正文“AI 服务重试”自相矛盾
+    out.push(usesModel ? { label: "AI 处理中", tone: "blue", title: modelScope(f.endpoint, f.fullPseudonym) } : { label: "本机处理中", tone: "green", title: "这一步在这台电脑上完成，不用 AI、不联网" });
   }
   return out;
 }

@@ -12,7 +12,7 @@ import { MatterPage } from "./pages/Matter.tsx";
 import { RunView } from "./pages/RunView.tsx";
 import { ReviewPage } from "./pages/Review.tsx";
 import { bootRetryDelay } from "./lib/boot-gate.ts";
-import { recoveryReminder } from "./lib/recovery-reminder.ts";
+import { localDay, recoveryReminder, reminderSnoozed } from "./lib/recovery-reminder.ts";
 import { DeliverablesPage } from "./pages/Deliverables.tsx";
 import { MethodsPage } from "./pages/Methods.tsx";
 import { BoardsPage } from "./pages/Boards.tsx";
@@ -26,6 +26,9 @@ import { updateBannerView } from "./lib/update-banner.ts";
 import { SearchPalette } from "./components/SearchPalette.tsx";
 import { AskHost } from "./components/AskHost.tsx";
 import { fmtDate } from "./lib/labels.ts";
+
+/** “明天提醒”记在这台电脑的本地偏好（v9.4）。 */
+const SNOOZE_KEY = "kwl.recovery.snooze_until";
 
 /** 设置页的标签（UIUX 增量评审 ST-5）：律师版四页 + 管理员“管理”。 */
 export type SettingsTab = "general" | "visibility" | "sources" | "device" | "admin";
@@ -115,6 +118,22 @@ export function App() {
   useEffect(loadBoot, []);
   // 恢复与备份的提醒（第 14 批；第二轮复核 R2B-05）：缺恢复包、缺备份位置只在首页与事项页提醒；备份失败、多日未成功在各页都提醒
   const [reminder, setReminder] = useState<ReturnType<typeof recoveryReminder>>(null);
+  const [snoozedUntil, setSnoozedUntil] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(SNOOZE_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const snooze = () => {
+    const until = localDay(1);
+    setSnoozedUntil(until);
+    try {
+      localStorage.setItem(SNOOZE_KEY, until);
+    } catch {
+      // 本地偏好写不进去时只在本次打开期间生效
+    }
+  };
   useEffect(() => {
     if (!boot || boot.onboarding) return;
     void recovery
@@ -222,7 +241,7 @@ export function App() {
             这台电脑是从备份恢复的（{fmtDate(boot.restoredAt)}）。如果原来那台电脑丢了或被偷，请马上告诉律所管理员：当前版本不能单独停用原电脑，管理员会为你重新办理入组。
           </div>
         )}
-        {reminder && route.page !== "welcome" && (reminder.everywhere ? route.page !== "run" && route.page !== "review" : route.page === "home" || route.page === "matters") && (
+        {reminder && route.page !== "welcome" && !reminderSnoozed(reminder, snoozedUntil, localDay()) && (reminder.everywhere ? route.page !== "run" && route.page !== "review" : route.page === "home" || route.page === "matters") && (
           <div className={`banner ${reminder.tone === "red" ? "banner-red" : "banner-orange"}`}>
             {reminder.text}{" "}
             <button
@@ -236,6 +255,11 @@ export function App() {
             >
               {reminder.kind === "package" ? "去完成 →" : "去设置 →"}
             </button>
+            {reminder.tone === "orange" && (
+              <button className="btn-link banner-later" onClick={snooze}>
+                明天提醒
+              </button>
+            )}
           </div>
         )}
         <ErrorBoundary key={routeKey} routeLabel={route.page}>

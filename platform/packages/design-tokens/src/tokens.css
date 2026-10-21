@@ -214,7 +214,7 @@
   /* 排版：阅读区 16px/1.75；表格区 13px/1.6；字重只用 400/500/600 */
   --font-reading-size: var(--fs-lg);
   --font-reading-leading: 1.75;
-  --font-table-size: var(--fs-sm);
+  --font-table-size: var(--fs-base); /* v9.4：表格是律师的主要阅读区（材料、交付件），由 13px 提到 14px */
   --font-table-leading: 1.6;
   --font-sans: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
   /* 文书纸面版式（v9.2 §4.4；Y4 §5 D-8）：DOCX 预览、审查工作台原文 */
@@ -222,6 +222,15 @@
   --doc-size: var(--fs-lg);
   --doc-leading: 1.9;
   --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+
+  /* 间距 7 级（v9.4，U1 §3.6）：新写的组件样式只用这几档，不再出现 5、7、9px 这类零散值 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
 
   /* 圆角 5 级（Y4 V-3）：代号胶囊与标签 / 按钮、输入框、列表项 / 卡片 / 输入框主体与弹窗 / 胶囊 */
   --r-xs: 4px;

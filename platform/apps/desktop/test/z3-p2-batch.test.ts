@@ -109,3 +109,12 @@ test("#31 前半：事项页、任务页、交付件详情页有面包屑（余�
   for (const f of ["pages/Matter.tsx", "pages/RunView.tsx", "pages/Review.tsx"]) assert.match(src(f), /<Breadcrumb items=\{\[/, f);
   assert.match(src("components/Breadcrumb.tsx"), /aria-label="位置"/);
 });
+
+test("v9.4 U1 #12：连续生成的草稿合成一行，名称放说明；单份不合并", () => {
+  const mk = (k: string, name: string) => ({ key: k, level: "lawyer" as const, icon: "ok" as const, title: `草稿已生成：${name}（待复核）` });
+  const merged = mergeRepeatSteps([mk("a", "证据目录"), mk("b", "事实时间轴"), mk("c", "补证清单")]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]!.title, "生成 3 份草稿，待你复核");
+  assert.equal(merged[0]!.detail, "证据目录、事实时间轴、补证清单");
+  assert.equal(mergeRepeatSteps([mk("a", "证据目录")])[0]!.title, "草稿已生成：证据目录（待复核）");
+});

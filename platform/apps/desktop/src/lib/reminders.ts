@@ -108,3 +108,14 @@ export function defaultForm(now = Date.now()): { kind: string; due_date: string;
 export function reminderLine(cloudConfigured: boolean): string {
   return cloudConfigured ? "到时在这台电脑上提醒；电脑关机时也会送到你登记的其他设备。" : "到时在这台电脑上提醒；电脑关机时不会提醒。";
 }
+
+/** 首页“今天”的近期期限（v9.4）：未结案事项、未撤销、14 天内（含已过 3 天内未处理的），按到期日排序。纯函数。 */
+export function upcomingDeadlines<T extends { due_date: string; cloud_state: string; matter_lifecycle: string }>(items: T[], now = Date.now(), withinDays = 14): T[] {
+  return items
+    .filter((r) => r.matter_lifecycle === "active" && r.cloud_state !== "cancelled" && r.cloud_state !== "cancel_pending")
+    .filter((r) => {
+      const d = daysUntil(r.due_date, now);
+      return d >= -3 && d <= withinDays;
+    })
+    .sort((a, b) => a.due_date.localeCompare(b.due_date));
+}

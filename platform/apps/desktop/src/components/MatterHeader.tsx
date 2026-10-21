@@ -6,6 +6,7 @@
 import type { Matter, MatterBasis, RunPolicyView } from "../api.ts";
 import { BASIS_FIELDS, BASIS_VALUE_LABELS, ENDPOINT_LABELS } from "../lib/labels.ts";
 import { jurisdictionLabel, stanceLabel } from "../lib/labels.ts";
+import { Icon } from "./Icons.tsx";
 
 export function basisComplete(b: MatterBasis | undefined): boolean {
   if (!b) return false;
@@ -31,12 +32,12 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
   const fullPseudonym = !!matter.full_pseudonym || level === "L3a";
   const protect =
     refused || level === "L3b"
-      ? { icon: "⛔", label: "客户要求不上云 · 只用本机功能", tone: "pill-red" }
+      ? { icon: Icon.lock, label: "客户要求不上云 · 只用本机功能", tone: "pill-red" }
       : !complete
-        ? { icon: "⚠", label: "AI 暂不可用：客户同意待确认", tone: "pill-orange" }
+        ? { icon: Icon.question, label: "AI 暂不可用：客户同意待确认", tone: "pill-orange" }
         : level === "L3a"
-          ? { icon: "🛡", label: "敏感事项 · 全部化名 · 每条检索都要你确认", tone: "pill-blue" }
-          : { icon: "🛡", label: `可用 AI · 个人信息发送前替换${fullPseudonym ? " · 公司名称也替换" : ""}`, tone: "pill-green" };
+          ? { icon: Icon.shield, label: "敏感事项 · 全部化名 · 每条检索都要你确认", tone: "pill-blue" }
+          : { icon: Icon.shield, label: `可用 AI · 姓名证件发送前遮盖${fullPseudonym ? " · 公司名称也遮盖" : ""}`, tone: "pill-green" };
   return (
     <div className="matter-head">
       <div className="mh-row">
@@ -52,12 +53,12 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
         {/* 保护状态（UIUX 增量评审 §3.2）：一个胶囊说清“能不能用 AI、发出去前替换了什么”，展开四行；技术细节在设置页 */}
         <details className="protect">
           <summary className={`pill ${protect.tone}`} aria-label={`保护状态：${protect.label}`}>
-            <span aria-hidden="true">{protect.icon}</span> {protect.label} ▾
+            <protect.icon /> {protect.label} <Icon.down />
           </summary>
           <div className="protect-pop" role="group" aria-label="本事项的保护状态">
             <div className="protect-line">
               <span className="protect-k">客户同意</span>
-              <span>{refused ? "客户要求不上云（已记录）" : complete ? "已记录" : "待确认：模型与联网检索都不会发生，只用本机功能"}</span>
+              <span>{refused ? "客户要求不上云（已记录）" : complete ? "已记录" : "客户同意还没记录：暂时只能用不联网的本机功能"}</span>
               {onEditBasis && !refused && (
                 <button className="btn-link" onClick={onEditBasis}>
                   {complete ? "调整" : "去确认"}

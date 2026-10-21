@@ -75,6 +75,8 @@ export interface Step {
   meta?: string;
   agent?: string;
   detail?: string;
+  /** 合并后的草稿名（v9.4：连续“草稿已生成”合成一行）。 */
+  drafts?: string[];
 }
 
 /** 时间线的一行：普通步骤，或同一子任务的若干步骤合成的一组（Y4 #33：子任务折叠，默认只显示一行）。 */
@@ -91,8 +93,16 @@ const MERGEABLE_TITLES = new Set(["阅读材料", "找出风险"]);
  */
 export function mergeRepeatSteps(steps: Step[], riskTotal?: number): Step[] {
   const out: Step[] = [];
+  const DRAFT = /^草稿已生成：(.*)（待复核）$/;
   for (const s of steps) {
     const prev = out[out.length - 1];
+    // 连续生成多份草稿合成一行“生成 n 份草稿，待你复核”，名称放进说明（v9.4 U1 #12：原来 6 行逐份列出）
+    const m = s.level === "lawyer" ? DRAFT.exec(s.title) : null;
+    if (m && prev && prev.level === "lawyer" && prev.agent === s.agent && (prev.drafts || DRAFT.test(prev.title))) {
+      const names = [...(prev.drafts ?? [DRAFT.exec(prev.title)![1]!]), m[1]!];
+      out[out.length - 1] = { ...prev, title: `生成 ${names.length} 份草稿，待你复核`, drafts: names, detail: names.join("、"), at: s.at ?? prev.at };
+      continue;
+    }
     if (prev && s.level === "lawyer" && MERGEABLE_TITLES.has(s.title) && prev.title === s.title && prev.agent === s.agent && prev.level === "lawyer") {
       const icon = prev.icon === "fail" || s.icon === "fail" ? "fail" : prev.icon === "wait" || s.icon === "wait" ? "wait" : "ok";
       out[out.length - 1] = { ...prev, icon, at: s.at ?? prev.at, detail: prev.detail ?? s.detail };
