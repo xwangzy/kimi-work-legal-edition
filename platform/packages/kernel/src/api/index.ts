@@ -1973,6 +1973,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         material_gap_files: materialGaps(db, art.run_id ?? null).files,
         // 页级读不清（v9.3 主文 §9 第 9 项，按建议默认：只列出、不要求勾选）：本次任务用到的材料里识别不清或读不出的页
         partial_pages: partialPages(db, art.run_id ?? null),
+        read_truncated: truncatedReads(db, art.run_id ?? null),
         // 复核人（Astra M-2）：签发区显示“复核人：{姓名}”——这台电脑的本人（本人没有签发权时不显示）；已签发、已退回的显示签发人、退回人。
         // 姓名不认识时为 null（界面写“本所其他成员”），不回落成成员编号（复核 RB16B-06/09）
         reviewer: (() => {
@@ -3968,23 +3969,43 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   function materialGapCount(db2: KernelDb, runId: string | null): number {
     return materialGaps(db2, runId).count;
   }
-  /** 本次任务快照里每份材料最新解析版本中 quality ≠ ok 的页（最多列 20 份、每份 30 页）。 */
-  function partialPages(db2: KernelDb, runId: string | null): { filename: string; pages: number[]; total: number }[] {
+  /**
+   * 本次任务读的材料里 quality ≠ ok 的页（最多列 20 份、每份 30 页；余项续复核 RC-B-04/05）：
+   * - 按任务当时读的那一版解析结果（materials.loaded 记下的 parse_version_id；老任务没有记录时退回最新一版），已隔离的材料不列；
+   * - 分两类：pages 为识别不清或读不出的页；blank 为几乎没有文字的页（文本层不足 20 字、OCR 空文本：多为空白页、印章页、签署页）。
+   * 只统计任务开始时提供的材料（Agent 用工具另读的材料不在内）。
+   */
+  function partialPages(db2: KernelDb, runId: string | null): { filename: string; pages: number[]; total: number; blank: number }[] {
     if (!runId) return [];
     const r = db2.get<{ input_snapshot: string | null }>(`SELECT input_snapshot FROM runs WHERE run_id = ?`, [runId]);
     const ids: string[] = parseJson<any>(r?.input_snapshot ?? "{}", {})?.document_version_ids ?? [];
-    const out: { filename: string; pages: number[]; total: number }[] = [];
+    const ev = db2.get<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'materials.loaded' ORDER BY seq DESC LIMIT 1`, [runId]);
+    const readVersion = new Map<string, string>(
+      (parseJson<any>(ev?.payload ?? "{}", {})?.parse_versions ?? []).filter((x: any) => typeof x?.document_version_id === "string" && typeof x?.parse_version_id === "string").map((x: any) => [x.document_version_id, x.parse_version_id]),
+    );
+    const out: { filename: string; pages: number[]; total: number; blank: number }[] = [];
     for (const id of ids.slice(0, 200)) {
-      const pv = db2.get<{ parse_version_id: string; filename: string }>(
-        `SELECT pv.parse_version_id, dv.filename FROM parse_versions pv JOIN document_versions dv ON dv.document_version_id = pv.document_version_id WHERE pv.document_version_id = ? ORDER BY pv.created_at DESC LIMIT 1`,
-        [id],
-      );
-      if (!pv) continue;
-      const pages = db2.all<{ page_no: number }>(`SELECT page_no FROM parse_pages WHERE parse_version_id = ? AND quality <> 'ok' ORDER BY page_no`, [pv.parse_version_id]).map((x) => x.page_no);
-      if (pages.length) out.push({ filename: pv.filename, pages: pages.slice(0, 30), total: pages.length });
+      const dv = db2.get<{ filename: string; quarantined_at: string | null }>(`SELECT filename, quarantined_at FROM document_versions WHERE document_version_id = ?`, [id]);
+      if (!dv || dv.quarantined_at) continue;
+      const pvId =
+        readVersion.get(id) ??
+        db2.get<{ parse_version_id: string }>(`SELECT parse_version_id FROM parse_versions WHERE document_version_id = ? ORDER BY created_at DESC LIMIT 1`, [id])?.parse_version_id;
+      if (!pvId) continue;
+      const rows = db2.all<{ page_no: number; note: string | null }>(`SELECT page_no, note FROM parse_pages WHERE parse_version_id = ? AND quality <> 'ok' ORDER BY page_no`, [pvId]);
+      const isBlank = (note: string | null) => /^文本层仅 \d+ 字符|^OCR 空文本/.test(note ?? "");
+      const unclear = rows.filter((x) => !isBlank(x.note)).map((x) => x.page_no);
+      const blank = rows.length - unclear.length;
+      if (unclear.length || blank) out.push({ filename: dv.filename, pages: unclear.slice(0, 30), total: unclear.length, blank });
       if (out.length >= 20) break;
     }
     return out;
+  }
+  /** 本次任务只读了前 5 万字的材料（余项续复核 RC-B-05 顺带项）。 */
+  function truncatedReads(db2: KernelDb, runId: string | null): string[] {
+    if (!runId) return [];
+    const ev = db2.get<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'materials.loaded' ORDER BY seq DESC LIMIT 1`, [runId]);
+    const t = parseJson<any>(ev?.payload ?? "{}", {})?.truncated;
+    return Array.isArray(t) ? t.filter((x: unknown): x is string => typeof x === "string").slice(0, 20) : [];
   }
 
   /** 材料缺口的份数与文件名（文件名只在新版本记录的事件里有；复核 RB16B-07）。 */

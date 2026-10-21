@@ -142,7 +142,24 @@ test("材料缺口（Astra M-2）：任务有没读到的材料时，签发须�
     for (const [n, q] of [[1, "ok"], [2, "low"], [3, "unreadable"]] as const) kernel.db.run(`INSERT INTO parse_pages (parse_version_id, page_no, kind, quality) VALUES (?, ?, 'scanned', ?)`, [pv.parse_version_id, n, q]);
     kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ document_version_ids: [doc.document_version_id] }), live.rid]);
     const comp2 = await inv("review.completeness", { artifact_version_id: id });
-    assert.deepEqual(comp2.partial_pages, [{ filename: "扫描合同.docx", pages: [2, 3], total: 2 }]);
+    assert.deepEqual(comp2.partial_pages, [{ filename: "扫描合同.docx", pages: [2, 3], total: 2, blank: 0 }]);
+    // 余项续复核 RC-B-04：几乎没有文字的页（OCR 空文本、文本层不足 20 字）单独计数，不算“读不清”
+    kernel.db.run(`INSERT INTO parse_pages (parse_version_id, page_no, kind, quality, note) VALUES (?, 4, 'scanned', 'low', 'OCR 空文本（可能为空白页、印章页或识别失败）')`, [pv.parse_version_id]);
+    kernel.db.run(`INSERT INTO parse_pages (parse_version_id, page_no, kind, quality, note) VALUES (?, 5, 'text', 'low', '文本层仅 3 字符')`, [pv.parse_version_id]);
+    assert.deepEqual((await inv("review.completeness", { artifact_version_id: id })).partial_pages, [{ filename: "扫描合同.docx", pages: [2, 3], total: 2, blank: 2 }]);
+    // RC-B-05：按任务当时读的那一版解析结果；之后重新解析出的新版本不影响
+    kernel.db.run(`INSERT INTO parse_versions (parse_version_id, document_version_id, parser, parser_version, text_uri, created_at) VALUES ('pv_newer', ?, 'test', '1', 'x', '2999-01-01T00:00:00.000Z')`, [doc.document_version_id]);
+    kernel.db.run(`INSERT INTO parse_pages (parse_version_id, page_no, kind, quality) VALUES ('pv_newer', 1, 'scanned', 'ok')`);
+    assert.equal((await inv("review.completeness", { artifact_version_id: id })).partial_pages.length, 0, "老任务没有记录版本：退回最新一版（全部清楚）");
+    kernel.db.run(`INSERT INTO run_events (run_id, seq, type, payload) VALUES (?, 2, 'materials.loaded', ?)`, [live.rid, JSON.stringify({ loaded: 1, requested: 1, failed: 0, parse_versions: [{ document_version_id: doc.document_version_id, parse_version_id: pv.parse_version_id }], truncated: ["扫描合同.docx"] })]);
+    const comp3 = await inv("review.completeness", { artifact_version_id: id });
+    assert.deepEqual(comp3.partial_pages, [{ filename: "扫描合同.docx", pages: [2, 3], total: 2, blank: 2 }], "按任务记下的版本列页");
+    assert.deepEqual(comp3.read_truncated, ["扫描合同.docx"]);
+    // 已隔离的材料不列
+    kernel.db.run(`UPDATE document_versions SET quarantined_at = '2026-10-21T00:00:00Z' WHERE document_version_id = ?`, [doc.document_version_id]);
+    assert.deepEqual((await inv("review.completeness", { artifact_version_id: id })).partial_pages, []);
+    kernel.db.run(`UPDATE document_versions SET quarantined_at = NULL WHERE document_version_id = ?`, [doc.document_version_id]);
+    kernel.db.run(`DELETE FROM run_events WHERE run_id = ? AND seq = 2`, [live.rid]);
     assert.ok("name" in comp.reviewer, "复核人（本机本人）");
     assert.equal(comp.approved_by, null);
     await assert.rejects(

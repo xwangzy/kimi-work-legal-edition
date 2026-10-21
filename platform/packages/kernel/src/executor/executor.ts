@@ -309,6 +309,9 @@ async function stepLoadMaterials(ctx: Ctx, runId: string, attemptId: string): Pr
     failed,
     files: out.map((m) => ({ name: m.filename, chars: m.chars, quality: m.quality_flags })),
     ...(missing.length ? { missing } : {}),
+    // 本次读的是哪一版解析结果、哪几份只读了前 5 万字（复核页按这一版列读不清的页；余项续复核 RC-B-05）
+    parse_versions: out.map((m) => ({ document_version_id: m.document_version_id, parse_version_id: m.parse_version_id })),
+    ...(out.some((m) => m.chars > 50_000) ? { truncated: out.filter((m) => m.chars > 50_000).map((m) => m.filename) } : {}),
   });
   return out;
 }

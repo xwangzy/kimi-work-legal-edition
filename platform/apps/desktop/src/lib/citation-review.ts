@@ -77,7 +77,9 @@ export function citationsAllowSign(n: CitationNeeds, t: CitationTicks): boolean 
 }
 
 /** 页级读不清的一句话：“2 份共 5 页（合同.pdf 第 3、4 页；…）”。页号连成区间，最多列 3 份。 */
-export function partialPagesText(list: { filename: string; pages: number[]; total: number }[]): string {
+export function partialPagesText(all: { filename: string; pages: number[]; total: number }[]): string {
+  // 只数识别不清、读不出的页（几乎没有文字的页另写一句，余项续复核 RC-B-04）
+  const list = all.filter((x) => x.total > 0);
   const total = list.reduce((n, x) => n + x.total, 0);
   const span = (ps: number[]) => {
     const out: string[] = [];
@@ -91,4 +93,10 @@ export function partialPagesText(list: { filename: string; pages: number[]; tota
   };
   const shown = list.slice(0, 3).map((x) => `${x.filename} 第 ${span(x.pages)} 页${x.total > x.pages.length ? " 等" : ""}`);
   return `${list.length} 份共 ${total} 页（${shown.join("；")}${list.length > 3 ? "；另有 " + (list.length - 3) + " 份" : ""}）`;
+}
+
+/** 几乎没有文字的页（空白页、印章页、签署页）：只写总数，不算“读不清”（余项续复核 RC-B-04）；没有返回空串。 */
+export function blankPagesText(list: { blank?: number }[]): string {
+  const n = list.reduce((k, x) => k + (x.blank ?? 0), 0);
+  return n > 0 ? `另有 ${n} 页几乎没有文字（多为空白页、印章页或签署页），没有算作读不清` : "";
 }

@@ -5,7 +5,7 @@ import { downloadPlan } from "../lib/download.ts";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { artifactName, fmtTime } from "../lib/labels.ts";
-import { partialPagesText } from "../lib/citation-review.ts";
+import { blankPagesText, partialPagesText } from "../lib/citation-review.ts";
 import { citationChecklist, citationNeeds, citationsAllowSign, type CitationTicks } from "../lib/citation-review.ts";
 
 /** 成果状态 → 律师称呼。 */
@@ -234,10 +234,15 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                 ))}
               </ul>
               {/* 页级读不清（§9 第 9 项默认做法）：只列出、不要求勾选；律师据此决定是否核对原件 */}
-              {(data.partial_pages ?? []).length > 0 && (
+              {(data.partial_pages ?? []).some((x: any) => x.total > 0) && (
                 <div className="banner banner-gray" role="note">
                   部分页读不清：{partialPagesText(data.partial_pages)}。结论可能没有覆盖这些页，必要时请核对原件。
                 </div>
+              )}
+              {(blankPagesText(data.partial_pages ?? []) || (data.read_truncated ?? []).length > 0) && (
+                <p className="muted">
+                  {[blankPagesText(data.partial_pages ?? []), (data.read_truncated ?? []).length > 0 ? `${(data.read_truncated as string[]).join("、")} 较长，只读了前 5 万字` : ""].filter(Boolean).join("；")}。
+                </p>
               )}
               {openItems.length > 0 && (
                 <div className="banner banner-orange">

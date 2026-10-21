@@ -75,3 +75,10 @@ test("页级读不清（v9.3 主文 §9 第 9 项默认做法）：只列出份�
   const src = readFileSync(fileURLToPath(new URL("../src/pages/Review.tsx", import.meta.url)), "utf8");
   assert.match(src, /部分页读不清/);
 });
+
+test("几乎没有文字的页单独一句，不算读不清（余项续复核 RC-B-04）", async () => {
+  const { blankPagesText } = await import("../src/lib/citation-review.ts");
+  assert.equal(partialPagesText([{ filename: "合同.pdf", pages: [], total: 0 }, { filename: "证据.pdf", pages: [2], total: 1 }]), "1 份共 1 页（证据.pdf 第 2 页）");
+  assert.equal(blankPagesText([{ blank: 2 }, { blank: 1 }]), "另有 3 页几乎没有文字（多为空白页、印章页或签署页），没有算作读不清");
+  assert.equal(blankPagesText([{ blank: 0 }, {}]), "");
+});
