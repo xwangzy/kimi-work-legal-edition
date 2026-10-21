@@ -61,8 +61,8 @@ export function Sidebar({ route }: { route: Route }) {
         setStatus({ gate: s.egress_gate ? true : false, unresolved: s.egress_gate?.unresolved ?? 0 });
         const admin = s.member_role === "firm_admin" || s.member_role === "partner";
         setMe({ name: s.activation?.member?.name ?? null, firm: s.activation?.firm?.name ?? null, admin });
-        // 没有控制面时内核直接报 0，不联网
-        if (admin)
+        // 只有管理员能批准入组（控制面只认管理员证书；复核 RB16B-18：合伙人不问）；没有控制面或本机没有有效邀请时内核直接报 0，不联网
+        if (s.member_role === "firm_admin")
           members
             .attention()
             .then((a) => setJoins(a.pending_joins))

@@ -23,6 +23,7 @@ import type { BlobStore } from "../blobs.ts";
 import type { KernelDb } from "../db.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { restoreArtifactBytes } from "./export-restore.ts";
+import { defaultNature } from "./review-cards.ts";
 
 export const ARCHIVE_FORMAT = "kwl-matter-archive/1";
 /** 单个归档的上限（解密后的原件与成果合计）。超出请律师分批（按材料）导出——v0 在内存里组包。 */
@@ -173,7 +174,9 @@ export function buildMatterArchive(d: ArchiveDeps, matterId: string, opts: { by:
     category: c.category,
     issue: restoreText(c.issue),
     basis: parseJson(c.basis, []),
-    nature: c.nature ?? null,
+    // 与工作台同一口径：没标的按类别推定并注明（复核 RB16B-03）
+    nature: c.nature ?? defaultNature(c.category, c.severity, !!(c.suggestion ?? "").trim()),
+    nature_inferred: !c.nature,
     suggestion: restoreText(c.suggestion),
     fallback: restoreText(c.fallback),
     bottom_line: restoreText(c.bottom_line),

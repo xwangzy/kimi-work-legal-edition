@@ -8,7 +8,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setAsideNotice } from "../src/lib/activate-text.ts";
+import { setAsideAutoOpen, setAsideNotice } from "../src/lib/activate-text.ts";
 
 const require = createRequire(import.meta.url);
 const { quarantineUnreadable, listSetAside } = require("../electron/unreadable-data.cjs") as {
@@ -86,4 +86,14 @@ test("激活页的说明：说清原来的数据在哪、没有删除、下一�
   assert.match(t, /没有删除/);
   assert.match(t, /恢复包/);
   assert.doesNotMatch(t, /DPAPI|密钥|主密钥|ledger/);
+});
+
+test("激活页只在刚移走（24 小时内）且没点过“返回”时自动打开从备份恢复；唯一管理员的指引（复核 RB16B-20/21）", () => {
+  const dir = ".unreadable-2026-10-21T08-30-05Z";
+  const t = Date.parse("2026-10-21T08:30:05Z");
+  assert.equal(setAsideAutoOpen(dir, t + 3600_000, null), true);
+  assert.equal(setAsideAutoOpen(dir, t + 25 * 3600_000, null), false, "超过 24 小时不再自动打开");
+  assert.equal(setAsideAutoOpen(dir, t + 3600_000, dir), false, "点过返回的不再自动打开");
+  assert.equal(setAsideAutoOpen(".unreadable-bad", t, null), false);
+  assert.match(setAsideNotice(dir), /唯一的管理员/);
 });

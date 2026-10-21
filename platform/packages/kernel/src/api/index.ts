@@ -78,7 +78,7 @@ import { detectClassifiedMarking, type ClassifiedFinding } from "../services/cla
 import { restoreArtifactBytes } from "../services/export-restore.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
-import { buildRedlineFromCards, decideFact, decideRiskCard, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
+import { buildRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
 import { SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, sampleContract } from "../services/sample-matter.ts";
 import { probeEnvironment, type EnvProbeResult } from "../services/env-probe.ts";
 import { firstLineTitle, isTitledFilename } from "../services/artifact-title.ts";
@@ -1893,12 +1893,31 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         lawyer_checklist: { skill: lawyerChecklist.length ? skillId : null, items: lawyerChecklist },
         // 材料缺口（Astra M-2）：有缺口时签发须勾选“缺口已告知客户”
         material_gaps: materialGapCount(db, art.run_id ?? null),
-        // 复核人（Astra M-2）：签发区显示“复核人：{姓名}”——这台电脑的本人；已签发的显示签发人
-        reviewer: { name: displayNameOf(id.userId, null) },
+        material_gap_files: materialGaps(db, art.run_id ?? null).files,
+        // 复核人（Astra M-2）：签发区显示“复核人：{姓名}”——这台电脑的本人（本人没有签发权时不显示）；已签发、已退回的显示签发人、退回人。
+        // 姓名不认识时为 null（界面写“本所其他成员”），不回落成成员编号（复核 RB16B-06/09）
+        reviewer: (() => {
+          try {
+            requireIssuerRole(db, art.matter_id, id);
+            return { name: displayNameOf(id.userId, null) };
+          } catch {
+            return null;
+          }
+        })(),
         approved_by: (() => {
           const a = db.get<{ approver_id: string; created_at: string }>(`SELECT approver_id, created_at FROM approvals WHERE artifact_version_id = ? AND decision = 'approved' ORDER BY created_at DESC LIMIT 1`, [art.artifact_version_id]);
-          return a ? { name: displayNameOf(a.approver_id), at: a.created_at } : null;
+          return a ? { name: displayNameOf(a.approver_id, null), at: a.created_at } : null;
         })(),
+        rejected_by: (() => {
+          if (art.status !== "rejected") return null;
+          const a = db.get<{ approver_id: string; created_at: string }>(`SELECT approver_id, created_at FROM approvals WHERE artifact_version_id = ? AND decision = 'rejected' ORDER BY created_at DESC LIMIT 1`, [art.artifact_version_id]);
+          return a ? { name: displayNameOf(a.approver_id, null), at: a.created_at } : null;
+        })(),
+        // “看最新版本”直达最新版的复核页（复核 RB16B-07）
+        latest_artifact_version_id:
+          art.version === latest.v
+            ? art.artifact_version_id
+            : (db.get<{ id: string }>(`SELECT artifact_version_id AS id FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = ? ORDER BY version DESC LIMIT 1`, [art.matter_id, art.kind, art.audience])?.id ?? null),
         blockers: [
           ...(fileOk ? [] : ["文件完整性校验失败"]),
           ...(openItems.length > 0 ? ["存在未决项，签发人须逐项确认"] : []),
@@ -2389,6 +2408,14 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const card = decideRiskCard(db, matter.matter_id, id.userId, { card_id: p?.card_id, decision: p?.decision, final_text: p?.final_text });
       // 审计只记卡号与决定（不记条款文字）
       audit(db, id, "riskcard.decided", "risk_card", card.card_id, sha256Hex(JSON.stringify({ decision: card.status })), keyctx);
+      return { card };
+    },
+    // 律师改风险卡的性质（复核 RB16B-03）：审计只记卡号与新性质
+    "riskcards.set_nature": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const card = setRiskCardNature(db, matter.matter_id, { card_id: p?.card_id, nature: p?.nature });
+      audit(db, id, "riskcard.nature_set", "risk_card", card.card_id, sha256Hex(JSON.stringify({ nature: card.nature })), keyctx);
       return { card };
     },
     "riskcards.redline": (p, id) => {
@@ -3766,14 +3793,19 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
    * 有缺口时签发须勾选“缺口已告知客户”（checklist.gaps_disclosed），写进签发留痕。
    */
   function materialGapCount(db2: KernelDb, runId: string | null): number {
-    if (!runId) return 0;
+    return materialGaps(db2, runId).count;
+  }
+  /** 材料缺口的份数与文件名（文件名只在新版本记录的事件里有；复核 RB16B-07）。 */
+  function materialGaps(db2: KernelDb, runId: string | null): { count: number; files: string[] } {
+    if (!runId) return { count: 0, files: [] };
     const e = db2.get<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'materials.loaded' ORDER BY seq DESC LIMIT 1`, [runId]);
-    if (!e) return 0;
+    if (!e) return { count: 0, files: [] };
     const m = parseJson<any>(e.payload, {});
     const requested = Number(m.requested ?? 0) || 0;
     const loaded = Number(m.loaded ?? 0) || 0;
     const failed = Number(m.failed ?? 0) || 0;
-    return Math.max(failed, requested - loaded, 0);
+    const files = Array.isArray(m.missing) ? m.missing.map((x: any) => (typeof x?.filename === "string" ? x.filename : null)).filter((x: string | null): x is string => !!x) : [];
+    return { count: Math.max(failed, requested - loaded, 0), files };
   }
 
   /** 成果引用面板中「未核实（离线）」的引用数（citations.verified 事件 payload；案号离线未核 → 签发门禁）。 */

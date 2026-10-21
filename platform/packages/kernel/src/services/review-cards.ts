@@ -168,10 +168,13 @@ function runSeqBase(db: KernelDb, table: "risk_cards" | "matter_facts", matterId
 
 // ─── 风险卡 ───
 
-/** 没有标性质的卡（Agent 没给、或第 15 批之前的卡）按类别与严重程度推定。 */
-export function defaultNature(category: string, severity: string): "must" | "should" | "negotiable" {
+/**
+ * 没有标性质的卡（Agent 没给、或第 15 批之前的卡）按类别与严重程度推定——只在读出时推定、标 nature_inferred，库里不存推定值（复核 RB16B-03）。
+ * 没有建议文本的提示性卡（只提示、不建议改动）不推定为“必须修改”（复核 RB16B-04）。
+ */
+export function defaultNature(category: string, severity: string, hasSuggestion = true): "must" | "should" | "negotiable" {
   if (category === "commercial") return "negotiable";
-  return category === "legal" && severity === "high" ? "must" : "should";
+  return category === "legal" && severity === "high" && hasSuggestion ? "must" : "should";
 }
 
 export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { document_version_id?: unknown; cards?: unknown }) {
@@ -182,7 +185,7 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
   const view = docId ? documentView(deps, scope.matterId, docId) : null;
   const base = runSeqBase(deps.db, "risk_cards", scope.matterId, scope.runId);
   if (base.count + cards.length > RISK_CARD_LIMITS.perRun) throw new DomainError("validation", `本任务风险卡已达上限 ${RISK_CARD_LIMITS.perRun}`, 422);
-  const out: { card_id: string; seq: number; anchor_status: string; basis_checks: string[]; duplicate_of?: string }[] = [];
+  const out: { card_id: string; seq: number; anchor_status: string; basis_checks: string[]; duplicate_of?: string; updated?: string }[] = [];
   let seqOffset = 0;
   deps.db.tx(() => {
     cards.forEach((c: any, i: number) => {
@@ -192,8 +195,8 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
       const severity = ["high", "mid", "low"].includes(c?.severity) ? (c.severity as string) : null;
       if (!severity) throw new DomainError("validation", `第 ${i + 1} 张卡 severity 须为 high/mid/low`, 422);
       const category = ["legal", "commercial", "both"].includes(c?.category) ? (c.category as string) : "legal";
-      // 建议的性质（Astra M-1）：没给时按类别与严重程度推定——纯商业条件为“可谈判”，高风险的法律问题为“必须修改”，其余“建议修改”
-      const nature = ["must", "should", "negotiable"].includes(c?.nature) ? (c.nature as string) : defaultNature(category, severity);
+      // 建议的性质（Astra M-1）：只存 Agent 给的；没给的读出时再推定（nature_inferred）
+      const nature = ["must", "should", "negotiable"].includes(c?.nature) ? (c.nature as string) : null;
       const found = view ? locateQuote(view.view, anchor) : { status: "no_document" as const, start: null, end: null };
       // 规范锚点（复核 B3-B04）：定位到的视图原文（空白与 Agent 原话可能不同），修订稿一律用它；Agent 原话另存
       const canonical = view && found.start !== null && found.end !== null ? view.view.slice(found.start, found.end) : anchor;
@@ -208,7 +211,16 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
           )
         : undefined;
       if (dup) {
-        out.push({ card_id: dup.card_id, seq: dup.seq, anchor_status: dup.anchor_status, basis_checks: [], duplicate_of: dup.card_id });
+        // 为补全梯度或改判性质重新提交（复核 RB16B-02）：旧卡仍待处理时补写这几项；律师已处理的卡不改
+        const old = deps.db.get<{ status: string; nature: string | null; fallback: string | null; bottom_line: string | null }>(`SELECT status, nature, fallback, bottom_line FROM risk_cards WHERE card_id = ?`, [dup.card_id])!;
+        const upd = {
+          nature: nature ?? old.nature,
+          fallback: optStr(c?.fallback, RISK_CARD_LIMITS.field) ?? old.fallback,
+          bottom_line: optStr(c?.bottom_line, RISK_CARD_LIMITS.field) ?? old.bottom_line,
+        };
+        const changed = upd.nature !== old.nature || upd.fallback !== old.fallback || upd.bottom_line !== old.bottom_line;
+        if (changed && old.status === "proposed") deps.db.run(`UPDATE risk_cards SET nature = ?, fallback = ?, bottom_line = ? WHERE card_id = ?`, [upd.nature, upd.fallback, upd.bottom_line, dup.card_id]);
+        out.push({ card_id: dup.card_id, seq: dup.seq, anchor_status: dup.anchor_status, basis_checks: [], duplicate_of: dup.card_id, ...(changed ? { updated: old.status === "proposed" ? "ladder_or_nature" : "lawyer_decided_not_updated" } : {}) });
         seqOffset--;
         return;
       }
@@ -252,7 +264,9 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
   const cross = out.filter((x) => x.anchor_status === "cross_paragraph").length;
   const dups = out.filter((x) => x.duplicate_of).length;
   const notes: string[] = [];
-  if (dups > 0) notes.push(`${dups} 张卡与本合同已有的卡完全相同，未重复新增（回报的是已有卡的编号）`);
+  const updated = out.filter((x) => x.updated === "ladder_or_nature").length;
+  const locked = out.filter((x) => x.updated === "lawyer_decided_not_updated").length;
+  if (dups > 0) notes.push(`${dups} 张卡的锚点、问题与首选与已有卡相同，未重复新增（回报的是已有卡的编号）${updated ? `；其中 ${updated} 张已补写性质或梯度` : ""}${locked ? `；${locked} 张律师已处理，未更新` : ""}`);
   if (notFound + ambiguous > 0) notes.push(`${notFound} 张卡的引文在文档中找不到、${ambiguous} 张出现多处：请改为逐字摘录（可附条款号 clause_ref），找不到的卡律师只能手工处理`);
   if (cross > 0) notes.push(`${cross} 张卡的引文跨了段落：修订按段落写入，请把这些卡按段落拆开重新提交（每张卡的引文只取一段之内）`);
   return {
@@ -286,8 +300,10 @@ export interface RiskCardRow {
   fallback: string | null;
   /** 底线（Astra M-1）。 */
   bottom_line: string | null;
-  /** must 必须修改 / should 建议修改 / negotiable 可谈判（第 15 批之前的卡按类别推定）。 */
+  /** must 必须修改 / should 建议修改 / negotiable 可谈判（没标的按类别推定，见 nature_inferred）。 */
   nature: "must" | "should" | "negotiable";
+  /** 性质是推定的（Agent 没给、律师也没改过）。 */
+  nature_inferred: boolean;
   needs_client_decision: boolean;
   assumptions: string | null;
   status: string;
@@ -322,7 +338,8 @@ function cardOut(r: any): RiskCardRow {
     suggestion: r.suggestion,
     fallback: r.fallback,
     bottom_line: r.bottom_line ?? null,
-    nature: ["must", "should", "negotiable"].includes(r.nature) ? r.nature : defaultNature(r.category, r.severity),
+    nature: ["must", "should", "negotiable"].includes(r.nature) ? r.nature : defaultNature(r.category, r.severity, !!(r.suggestion ?? "").trim()),
+    nature_inferred: !["must", "should", "negotiable"].includes(r.nature),
     needs_client_decision: r.needs_client_decision === 1,
     assumptions: r.assumptions,
     status: r.status,
@@ -374,6 +391,17 @@ export function decideRiskCard(db: KernelDb, matterId: string, userId: string, i
     status === "proposed" ? null : now,
     id,
   ]);
+  return cardOut(db.get<any>(`SELECT * FROM risk_cards WHERE card_id = ?`, [id]));
+}
+
+/** 律师改性质（复核 RB16B-03：推定或 Agent 判错的，律师能纠正；只改性质，不动状态与文本）。 */
+export function setRiskCardNature(db: KernelDb, matterId: string, input: { card_id?: unknown; nature?: unknown }): RiskCardRow {
+  const id = str(input.card_id, 80);
+  const row = db.get<any>(`SELECT * FROM risk_cards WHERE card_id = ?`, [id]);
+  if (!row || row.matter_id !== matterId) throw notFound("风险卡");
+  const nature = String(input.nature ?? "");
+  if (!["must", "should", "negotiable"].includes(nature)) throw new DomainError("validation", "nature 须为 must / should / negotiable", 422);
+  db.run(`UPDATE risk_cards SET nature = ? WHERE card_id = ?`, [nature, id]);
   return cardOut(db.get<any>(`SELECT * FROM risk_cards WHERE card_id = ?`, [id]));
 }
 
@@ -480,11 +508,14 @@ export function buildRedlineFromCards(
       comment: `${c.severity === "high" ? "【重大】" : c.severity === "mid" ? "【一般】" : "【提示】"}${c.issue}${basis}${c.status === "modified" ? "（律师已修改）" : ""}`,
     };
   });
+  // 修订稿归哪次任务（复核 RB16B-10）：没指定时，写进去的卡都来自同一次任务就挂到那次任务（交付件按任务分组时与意见书、清单在一组）
+  const runs = new Set(cards.map((c) => c.run_id));
+  const attributedRun = input.run_id ?? (runs.size === 1 ? ([...runs][0] ?? null) : null);
   // 成果登记与决定快照同一事务（复核 C-B09）：不会出现没有决定记录的“律师审定”修订稿
   return deps.db.tx(() => {
     const result = applyStructuredPatches(
       { db: deps.db, blobs: deps.blobs, tokens: deps.tokens },
-      { matter_id: input.matter_id, document_version_id: input.document_version_id, patches, created_by: input.created_by, run_id: input.run_id ?? null, author: LAWYER_APPROVED_AUTHOR },
+      { matter_id: input.matter_id, document_version_id: input.document_version_id, patches, created_by: input.created_by, run_id: attributedRun, author: LAWYER_APPROVED_AUTHOR },
     );
     if (result.status === "applied") {
       // 修订稿绑定生成时律师的逐卡决定（复核 B3-B05）：“律师审定”的作者标注有可核对的依据；之后改了决定，这份修订稿的记录不变

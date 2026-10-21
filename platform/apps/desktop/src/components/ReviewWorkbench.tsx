@@ -12,7 +12,7 @@ import { firstOpenCard, nextOpenCard, stepCard } from "../lib/workbench.ts";
 import { api, type RiskCard, type RiskProgress } from "../api.ts";
 import { CITE_STATE_LABELS } from "../lib/labels.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
-import { ladderRows, NATURE_LABEL, NATURE_PILL, natureOf } from "../lib/risk-ladder.ts";
+import { ladderRows, NATURE_LABEL, NATURE_PILL, natureOf, natureText, type RiskNature } from "../lib/risk-ladder.ts";
 
 const SEVERITY: Record<RiskCard["severity"], { label: string; cls: string }> = {
   high: { label: "重大", cls: "sev-high" },
@@ -102,6 +102,18 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
     [cards, plain],
   );
 
+  const setNature = async (card: RiskCard, nature: RiskNature) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.setRiskCardNature(matterId, card.card_id, nature);
+      await load();
+    } catch (e) {
+      setMsg({ tone: "err", text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
   const decide = async (card: RiskCard, decision: "accept" | "modify" | "reject" | "reset", finalText?: string) => {
     setBusy(true);
     setMsg(null);
@@ -296,7 +308,9 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
               >
                 <button className="rc-head" aria-expanded={open} onClick={() => setActive(open ? null : c.card_id)}>
                   <span className={`rc-sev ${sev.cls}`}>{sev.label}</span>
-                  <span className={`pill ${NATURE_PILL[natureOf(c)]}`}>{NATURE_LABEL[natureOf(c)]}</span>
+                  <span className={`pill ${NATURE_PILL[natureOf(c)]}`} title={c.nature_inferred ? "按类别与严重程度推定，可在展开后修改" : undefined}>
+                    {natureText(c)}
+                  </span>
                   {c.clause_ref && <span className="rc-ref">{clauseLabel(c.clause_ref)}</span>}
                   <span className="rc-issue">{plain(c.issue)}</span>
                   <span className={`rc-status rc-status-${c.status}`}>{c.status === "accepted" && !c.suggestion ? "已知悉" : STATUS_LABEL[c.status]}</span>
@@ -311,6 +325,27 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                         {c.needs_client_decision && <span className="tag tag-beta">需客户决定</span>}
                       </span>
                     </div>
+                    {/* 性质可由律师改（复核 RB16B-03）：推定的或 Agent 判错的 */}
+                    {!readOnly && (
+                      <div className="rc-row">
+                        <span className="rc-k">性质</span>
+                        <span>
+                          <select
+                            aria-label="建议的性质"
+                            value={natureOf(c)}
+                            disabled={busy}
+                            onChange={(e) => void setNature(c, e.target.value as RiskNature)}
+                          >
+                            {(Object.keys(NATURE_LABEL) as RiskNature[]).map((k) => (
+                              <option key={k} value={k}>
+                                {NATURE_LABEL[k]}
+                              </option>
+                            ))}
+                          </select>
+                          {c.nature_inferred && <span className="muted"> 按类别推定，请确认</span>}
+                        </span>
+                      </div>
+                    )}
                     <div className="rc-row">
                       <span className="rc-k">合同原文</span>
                       <span className="rc-quote">

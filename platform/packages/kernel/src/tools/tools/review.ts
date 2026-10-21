@@ -109,6 +109,7 @@ export function riskcardsList(ctx: InvokeCtx, p: { document_version_id?: string;
       issue: c.issue,
       basis: c.basis.map((b) => ({ law: b.law, article: b.article, check: b.check })),
       nature: c.nature,
+      nature_inferred: c.nature_inferred,
       suggestion: c.suggestion,
       fallback: c.fallback,
       bottom_line: c.bottom_line,

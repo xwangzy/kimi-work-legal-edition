@@ -63,4 +63,8 @@ test("签发页（Astra M-2）：没通过的系统检查项可直接去处理�
   assert.match(src, /\(gaps > 0 && !gapsAck\)/, "缺口没确认时签发按钮不可用");
   assert.match(src, /复核人：/);
   assert.match(src, /签发人：/);
+  assert.match(src, /退回人：/, "已退回的显示退回人（复核 RB16B-09）");
+  assert.match(src, /我已知悉，结论没有覆盖这些材料/, "内部稿不要求声明“已向客户说明”（复核 RB16B-08）");
+  assert.match(src, /本所其他成员/);
+  assert.match(src, /latest_artifact_version_id/, "看最新版本直达最新版（复核 RB16B-07）");
 });

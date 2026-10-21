@@ -420,7 +420,7 @@ test("复核 S9A-22、S9A-23、S9B-21：证书未变的重复登记顺带分配�
   assert.equal((await b.call("POST", "/v1/seat-token", {})).status, 429, "第 13 张被限速");
 });
 
-test("客户端版本分布（v9.3 P3）：按 30 天内报到、未吊销的设备计；不合格的版本号不记；没报过版本的归 unknown；同一天同版本不改写状态", async () => {
+test("客户端版本分布（v9.3 P3）：按 30 天内报到、未吊销的设备计；不合格或没报的版本记为 legacy；同一天同版本不改写状态", async () => {
   const tid = "ten_cv";
   cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 5 });
   await enroll(tid);
@@ -434,8 +434,8 @@ test("客户端版本分布（v9.3 P3）：按 30 天内报到、未吊销的设
   const v = cp.metrics().client_versions;
   assert.equal(v["0.9.3"], 1);
   assert.equal(v["0.9.2-beta.1"], 1);
-  assert.ok((v.unknown ?? 0) >= 1, "没报过合格版本的设备归 unknown");
-  assert.equal(cp.ops.tenant(tid)!.devices.get("dev_cv_c")!.client_version, undefined);
+  assert.ok((v.legacy ?? 0) >= 1, "没报合格版本的设备记为 legacy，也只按 30 天内报到计（复核 RB16B-22；同一控制面上前面用例登记的设备也在其中）");
+  assert.equal(cp.ops.tenant(tid)!.devices.get("dev_cv_c")!.client_version, "legacy");
   // 升级：版本改写；吊销的不再计入
   assert.equal((await reg(b, { version: "0.9.3" })).status, 200);
   assert.equal(cp.metrics().client_versions["0.9.3"], 2);

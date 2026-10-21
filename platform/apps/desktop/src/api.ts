@@ -761,6 +761,8 @@ export const api = {
   /** 材料全文（审查工作台左栏；按段落）。 */
   materialText: (documentVersionId: string) => invoke<{ filename: string; paragraphs: string[] }>("materials.text", { document_version_id: documentVersionId }),
   riskCards: (matterId: string, f: { run_id?: string; document_version_id?: string | null } = {}) => invoke<{ cards: RiskCard[]; progress: RiskProgress }>("riskcards.list", { matter_id: matterId, ...f }),
+  /** 律师改风险卡的性质（复核 RB16B-03）。 */
+  setRiskCardNature: (matterId: string, cardId: string, nature: "must" | "should" | "negotiable") => invoke<{ card: RiskCard }>("riskcards.set_nature", { matter_id: matterId, card_id: cardId, nature }),
   decideRiskCard: (matterId: string, cardId: string, decision: "accept" | "modify" | "reject" | "reset", finalText?: string) =>
     invoke<{ card: RiskCard }>("riskcards.decide", { matter_id: matterId, card_id: cardId, decision, ...(finalText ? { final_text: finalText } : {}) }),
   buildRedline: (matterId: string, documentVersionId: string, o: { run_id?: string; skip_card_ids?: string[] } = {}) =>
@@ -883,6 +885,8 @@ export interface RiskCard {
   bottom_line?: string | null;
   /** 建议的性质（Astra M-1）：must 必须修改 / should 建议修改 / negotiable 可谈判。 */
   nature?: "must" | "should" | "negotiable";
+  /** 性质是按类别推定的（Agent 没给、律师也没改过）。 */
+  nature_inferred?: boolean;
   needs_client_decision: boolean;
   assumptions: string | null;
   status: "proposed" | "accepted" | "modified" | "rejected";

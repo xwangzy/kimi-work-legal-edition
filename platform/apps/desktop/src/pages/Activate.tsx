@@ -6,7 +6,17 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { api, onboarding, recovery } from "../api.ts";
-import { setAsideNotice } from "../lib/activate-text.ts";
+import { setAsideAutoOpen, setAsideNotice } from "../lib/activate-text.ts";
+
+/** 律师在恢复页点过“返回”的那个目录（每个查看者本机记一下；读写失败按没点过）。 */
+const DISMISS_KEY = "kwl.setAside.dismissed";
+const readDismissed = (): string | null => {
+  try {
+    return localStorage.getItem(DISMISS_KEY);
+  } catch {
+    return null;
+  }
+};
 
 type Status = {
   mode: "unactivated" | "member_pending";
@@ -118,7 +128,7 @@ function EnterCode({ onPending, legacy, failed, setAside }: { onPending: (s: Sta
   };
   const [done, setDone] = useState<string | null>(null);
   // 刚把打不开的数据移到一边（主进程对话框里选了“用恢复包恢复”）：直接打开从备份恢复
-  const [restoring, setRestoring] = useState(setAside !== null && !failed);
+  const [restoring, setRestoring] = useState(setAside !== null && !failed && setAsideAutoOpen(setAside, Date.now(), readDismissed()));
   const ready = [20, 36].includes(code.replace(/-/g, "").length);
   const submit = async () => {
     if (!ready || busy) return;
@@ -147,7 +157,25 @@ function EnterCode({ onPending, legacy, failed, setAside }: { onPending: (s: Sta
       </Frame>
     );
   }
-  if (restoring) return <RestoreFromBackup onBack={() => setRestoring(false)} onDone={setDone} onStuck={stuck} notice={setAside ? setAsideNotice(setAside) : ""} />;
+  if (restoring)
+    return (
+      <RestoreFromBackup
+        onBack={() => {
+          // 点过“返回”就不再自动带回恢复页（复核 RB16B-20）
+          if (setAside) {
+            try {
+              localStorage.setItem(DISMISS_KEY, setAside);
+            } catch {
+              // 存不下：下次仍会自动打开，不影响使用
+            }
+          }
+          setRestoring(false);
+        }}
+        onDone={setDone}
+        onStuck={stuck}
+        notice={setAside ? setAsideNotice(setAside) : ""}
+      />
+    );
   return (
     <Frame>
       <h1 className="activate-title">欢迎使用</h1>

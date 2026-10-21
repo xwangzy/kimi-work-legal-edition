@@ -27,7 +27,7 @@ export const SAMPLE_CARDS = [
     severity: "high",
     category: "both",
     issue: "价款在股权变更登记之前一次性付清：若之后无法完成变更登记，受让方要先付款再追讨，风险全部在受让方。",
-    nature: "must",
+    nature: "should",
     suggestion: "受让方应于目标股权变更登记完成后五个工作日内支付全部价款",
     fallback: "协议签署后支付百分之三十，变更登记完成后支付其余百分之七十",
     bottom_line: "协议签署后支付不超过百分之五十，且转让方提供等额担保",
@@ -51,7 +51,7 @@ export const SAMPLE_CARDS = [
     nature: "negotiable",
     suggestion: "提交受让方所在地人民法院诉讼解决",
     fallback: "提交被告所在地人民法院诉讼解决",
-    bottom_line: "接受转让方所在地法院管辖，但约定适用简易程序的送达地址与电子送达",
+    bottom_line: "接受转让方所在地法院管辖，但约定双方的送达地址与电子送达方式",
     needs_client_decision: true,
   },
 ] as const;

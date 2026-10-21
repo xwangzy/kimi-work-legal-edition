@@ -119,7 +119,7 @@ test("材料缺口（Astra M-2）：任务有没读到的材料时，签发须�
     const { inv, kernel } = t2;
     const { matter } = await inv("matters.create", { title: "材料缺口", stance: "受让方", consent_status: "not_required", key_dates: { analysis_as_of: "2026-10-01" } });
     const live = liveTaskIdentity(t2, matter.matter_id, "gaps");
-    kernel.db.run(`INSERT INTO run_events (run_id, seq, type, payload) VALUES (?, 1, 'materials.loaded', ?)`, [live.rid, JSON.stringify({ loaded: 2, requested: 3, failed: 1 })]);
+    kernel.db.run(`INSERT INTO run_events (run_id, seq, type, payload) VALUES (?, 1, 'materials.loaded', ?)`, [live.rid, JSON.stringify({ loaded: 2, requested: 3, failed: 1, missing: [{ document_version_id: "dv_x", filename: "附件三-资产清单.pdf" }] })]);
     const { randomUUID } = await import("node:crypto");
     const bytes = createDocx("意见", [{ heading: "正文", paragraphs: ["没有引用的审查意见。"] }]);
     const { sha256, storage_uri } = kernel.blobs.put(bytes, matter.matter_id);
@@ -131,6 +131,8 @@ test("材料缺口（Astra M-2）：任务有没读到的材料时，签发须�
     );
     const comp = await inv("review.completeness", { artifact_version_id: id });
     assert.equal(comp.material_gaps, 1);
+    assert.deepEqual(comp.material_gap_files, ["附件三-资产清单.pdf"], "签发页列出没读到的文件（复核 RB16B-07）");
+    assert.equal(comp.latest_artifact_version_id, id);
     assert.ok("name" in comp.reviewer, "复核人（本机本人）");
     assert.equal(comp.approved_by, null);
     await assert.rejects(
@@ -143,6 +145,7 @@ test("材料缺口（Astra M-2）：任务有没读到的材料时，签发须�
     assert.equal(JSON.parse(rec.checklist).gaps_disclosed, true, "缺口确认写进签发记录");
     const after = await inv("review.completeness", { artifact_version_id: id });
     assert.ok(after.approved_by && typeof after.approved_by.at === "string", "签发后显示签发人与时刻");
+    assert.notEqual(after.approved_by.name, kernel.identity.userId, "姓名不认识时为 null，不回落成成员编号（复核 RB16B-06）");
   } finally {
     await t2.kernel.close();
   }

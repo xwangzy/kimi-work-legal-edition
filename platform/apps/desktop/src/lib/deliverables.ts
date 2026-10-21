@@ -52,3 +52,8 @@ export function taskGroupLabel(g: { run_id: string | null; scenario: string | nu
   const name = card?.title ?? (g.scenario ? SCENARIO_LABELS[g.scenario] : undefined) ?? "任务";
   return g.started_at ? `${name} · ${fmt(g.started_at)}` : name;
 }
+
+/** 组头的份数：筛选后只显示一部分时写“本次 N 份，此处显示 M 份”（复核 RB16B-11）。 */
+export function taskCountText(shown: number, total: number): string {
+  return total > shown ? `本次 ${total} 份，此处显示 ${shown} 份` : `${shown} 份`;
+}

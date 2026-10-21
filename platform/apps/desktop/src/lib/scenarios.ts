@@ -47,6 +47,8 @@ export interface ScenarioCard {
   steps: string[];
   /** 意图建议的关键词（命中即建议；词组内全部出现才算）。 */
   intents: string[][];
+  /** 命中这些词时不建议本卡（方法模板明确不支持的情形，例如答辩状卡不接二审、仲裁、行政、劳动答辩；复核 RB16B-16）。 */
+  notFor?: string[];
 }
 
 const CONTRACT_TYPES = ["股权转让", "买卖", "服务 / 技术服务", "借款与担保", "其他（通用辅助）"];
@@ -141,14 +143,18 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "defense-draft",
     verb: "开始起草",
-    goal: "请起草民事答辩状。收到起诉状副本的日期：{received_on}；总体意见：{stance}。只采用我已确认的事实。",
+    goal: "请起草民事答辩状（一审）。收到起诉状副本的日期：{received_on}；被告在境内有无住所：{domicile}；总体意见：{stance}。只采用我已确认的事实。",
     fields: [
       { key: "received_on", label: "收到起诉状副本的日期", kind: "date" },
+      // 被告在境内没有住所的，答辩期为三十日（复核 RB16B-13）
+      { key: "domicile", label: "被告在境内有无住所", kind: "select", options: ["有", "没有（答辩期三十日）"] },
       { key: "stance", label: "总体意见", kind: "select", options: ["全部不认可", "部分认可", "待确认（先问我）"] },
     ],
     minMaterials: 1,
-    steps: ["读起诉状，拆出每项诉讼请求与主张的事实", "逐项写出我方意见与理由，只用你确认过的事实", "核对引用的法条", "列出答辩期届满日、管辖异议与反诉等核对项"],
+    steps: ["读起诉状，拆出每项诉讼请求与主张的事实", "先提示：要提管辖权异议的，须在答辩期内、实体答辩之前提出", "逐项写出我方意见与理由，只用你确认过的事实", "列出答辩期届满日、时效抗辩、反诉等核对项"],
     intents: [["答辩状"], ["答辩", "写"], ["准备", "答辩"]],
+    // 模板只做民商事一审答辩（复核 RB16B-16）
+    notFor: ["二审", "上诉", "仲裁", "行政", "劳动", "再审"],
   },
   {
     id: "cross-exam",
@@ -159,8 +165,11 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "cross-exam-opinion",
     verb: "开始起草",
-    goal: "请对对方证据逐项起草质证意见。开庭或证据交换日期：{hearing_on}。{extra}",
+    goal: "请对对方证据逐项起草质证意见。我方诉讼地位：{side}；举证期限届满日：{proof_deadline}；开庭或证据交换日期：{hearing_on}。{extra}",
     fields: [
+      // 质证对象是“对方”，开头不写死原告（复核 RB16B-14）；鉴定、证人出庭、调查取证申请以举证期限为准
+      { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人"], required: true },
+      { key: "proof_deadline", label: "举证期限届满日", kind: "date" },
       { key: "hearing_on", label: "开庭或证据交换日期", kind: "date" },
       { key: "extra", label: "已知疑点", kind: "text", placeholder: "可选，例如：证据 3 的签章与合同不一致" },
     ],
@@ -177,10 +186,10 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "agency-statement",
     verb: "开始起草",
-    goal: "请起草代理词。法庭归纳的争议焦点：{focus}。只采用我已确认的事实与已质证的证据，不评估胜诉率。",
-    fields: [{ key: "focus", label: "争议焦点", kind: "text", required: true, placeholder: "用“；”隔开，例如：货款是否已付清；违约金是否过高" }],
+    goal: "请起草代理词。法庭归纳的争议焦点：{focus_points}。只采用我已确认的事实与已质证的证据，不评估胜诉率。",
+    fields: [{ key: "focus_points", label: "争议焦点", kind: "text", required: true, placeholder: "用“；”隔开，例如：货款是否已付清；违约金是否过高" }],
     minMaterials: 0,
-    steps: ["按法庭归纳的焦点逐个论证", "事实只用你确认的、证据只用已质证的，注明出处", "核对引用的法条与案例", "写成代理词与对照表"],
+    steps: ["按法庭归纳的焦点逐个论证", "事实只用你确认的、证据只用已质证的，注明出处", "核对引用的法条；案例只用你提供的", "写成代理词与对照表"],
     intents: [["代理词"], ["代理意见"]],
   },
   {
@@ -400,7 +409,7 @@ export function splitIssues(text: string): string[] {
  */
 export const NEXT_STEPS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   casefile: ["issues", "amount", "pleading"],
-  issues: ["pleading", "defense", "cross-exam"],
+  issues: ["pleading", "defense", "amount"],
   defense: ["cross-exam", "agency"],
   "cross-exam": ["agency"],
   agency: ["case-report"],
@@ -464,6 +473,7 @@ export function suggestScenario(goal: string): ScenarioCard | null {
   let best: ScenarioCard | null = null;
   let bestScore = 0;
   for (const c of SCENARIOS) {
+    if (c.notFor?.some((w) => g.includes(w))) continue;
     for (const words of c.intents) {
       if (!words.every((w) => g.includes(w))) continue;
       const score = words.join("").length;

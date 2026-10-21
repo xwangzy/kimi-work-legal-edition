@@ -494,9 +494,45 @@ interface LocalInvite {
 /** 正常模式的成员管理（管理员设备）。 */
 export const membersApi = (d: MembersDeps) => {
   const snapshots = new Map<string, JoinSnapshot>();
-  // 侧栏提醒的上次结果（B-3 余项）：60 秒内复用；批准、拒绝、刷新成员页后作废
+  // 侧栏提醒的上次结果（B-3 余项）：60 秒内复用（失败也缓存，复核 RB16B-18）；批准、拒绝、刷新成员页后作废
   let attentionCache: { at: number; n: number } | null = null;
   const ATTENTION_TTL_MS = 60_000;
+  /** 一份入组申请能不能在这台电脑上批准（成员页与侧栏提醒同一判定，复核 RB16B-19）：本机发出的有效邀请、成员与角色一致、设备编号合规、HMAC 核对通过。 */
+  const checkJoin = (x: any): { local: LocalInvite | undefined; snap: JoinSnapshot; verified: boolean } => {
+    const local = inviteOf(String(x.activation_id));
+    const snap: JoinSnapshot = {
+      id: String(x.id),
+      activation_id: String(x.activation_id),
+      member_slug: String(x.member_slug),
+      role: String(x.role) as Role,
+      device_id: String(x.device_id),
+      sign_pub: String(x.sign_pub),
+      enc_pub: String(x.enc_pub),
+      check_code: joinCheckCode({ tid: d.identity.tenantId, deviceId: String(x.device_id), signPublicKeyPem: String(x.sign_pub), encPublicKeyPem: String(x.enc_pub) }),
+    };
+    const verified =
+      !!local &&
+      local.status === "open" &&
+      local.member_slug === snap.member_slug &&
+      local.role === snap.role &&
+      snap.device_id === expectedJoinDeviceId(d.config.firmSlug, snap.member_slug) &&
+      inviteMacValid(
+        local.invite_secret,
+        joinMacBytes({
+          tid: d.identity.tenantId,
+          activationId: snap.activation_id,
+          deviceId: snap.device_id,
+          signPublicKeyPem: snap.sign_pub,
+          encPublicKeyPem: snap.enc_pub,
+          memberSlug: snap.member_slug,
+          role: snap.role,
+          firmName: firmNameOf(d),
+          memberName: local.display_name,
+        }),
+        x.mac,
+      );
+    return { local, snap, verified };
+  };
   const inviteOf = (activationId: string) =>
     d.db.get<LocalInvite>(`SELECT activation_id, member_slug, role, display_name, invite_secret, status FROM member_invitations WHERE activation_id = ? AND tenant_id = ?`, [activationId, d.identity.tenantId]);
   return {
@@ -515,6 +551,7 @@ export const membersApi = (d: MembersDeps) => {
         d.db.run(`INSERT INTO member_invitations (activation_id, tenant_id, member_slug, role, display_name, invite_secret) VALUES (?,?,?,?,?,?)`, [String(r.json.activation_id), d.identity.tenantId, slug, role, name, secret]);
         d.db.run(`INSERT OR IGNORE INTO users (user_id, tenant_id, display_name) VALUES (?, ?, ?)`, [userId, d.identity.tenantId, name]);
       });
+      attentionCache = null;
       d.audit("member.invite", "member", userId);
       return { ok: true, code: formatActivationCode(`${String(r.json.code)}${secret}`), expires_at: r.json.expires_at, activation_id: r.json.activation_id, member: { name, role } };
     },
@@ -534,38 +571,7 @@ export const membersApi = (d: MembersDeps) => {
       });
       snapshots.clear();
       const requests = (jr.json.join_requests as any[]).map((x) => {
-        const local = inviteOf(String(x.activation_id));
-        const snap: JoinSnapshot = {
-          id: String(x.id),
-          activation_id: String(x.activation_id),
-          member_slug: String(x.member_slug),
-          role: String(x.role) as Role,
-          device_id: String(x.device_id),
-          sign_pub: String(x.sign_pub),
-          enc_pub: String(x.enc_pub),
-          check_code: joinCheckCode({ tid: d.identity.tenantId, deviceId: String(x.device_id), signPublicKeyPem: String(x.sign_pub), encPublicKeyPem: String(x.enc_pub) }),
-        };
-        const verified =
-          !!local &&
-          local.status === "open" &&
-          local.member_slug === snap.member_slug &&
-          local.role === snap.role &&
-          snap.device_id === expectedJoinDeviceId(d.config.firmSlug, snap.member_slug) &&
-          inviteMacValid(
-            local.invite_secret,
-            joinMacBytes({
-              tid: d.identity.tenantId,
-              activationId: snap.activation_id,
-              deviceId: snap.device_id,
-              signPublicKeyPem: snap.sign_pub,
-              encPublicKeyPem: snap.enc_pub,
-              memberSlug: snap.member_slug,
-              role: snap.role,
-              firmName: firmNameOf(d),
-              memberName: local.display_name,
-            }),
-            x.mac,
-          );
+        const { local, snap, verified } = checkJoin(x);
         if (verified) snapshots.set(snap.id, snap);
         return {
           id: snap.id,
@@ -591,12 +597,19 @@ export const membersApi = (d: MembersDeps) => {
     async attention(): Promise<{ pending_joins: number }> {
       if (!d.call) return { pending_joins: 0 };
       if (attentionCache && Date.now() - attentionCache.at < ATTENTION_TTL_MS) return { pending_joins: attentionCache.n };
+      // 本机没有仍有效的邀请：不可能有能在这里批准的申请，不联网（绝大多数时间如此，复核 RB16B-18）
+      const open = d.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM member_invitations WHERE tenant_id = ? AND status = 'open'`, [d.identity.tenantId])?.n ?? 0;
+      if (open === 0) {
+        attentionCache = { at: Date.now(), n: 0 };
+        return { pending_joins: 0 };
+      }
       const r = await d.call("GET", "/v1/join-requests").catch(() => null);
-      if (!r || !r.ok || !Array.isArray(r.json?.join_requests)) return { pending_joins: attentionCache?.n ?? 0 };
-      const n = (r.json.join_requests as any[]).filter((x) => {
-        const local = inviteOf(String(x.activation_id));
-        return !!local && local.status === "open" && local.member_slug === String(x.member_slug);
-      }).length;
+      if (!r || !r.ok || !Array.isArray(r.json?.join_requests)) {
+        // 联不上或被拒（不是管理员证书）也缓存 60 秒：不让侧栏每 5 秒打一次控制面
+        attentionCache = { at: Date.now(), n: attentionCache?.n ?? 0 };
+        return { pending_joins: attentionCache.n };
+      }
+      const n = (r.json.join_requests as any[]).filter((x) => checkJoin(x).verified).length;
       attentionCache = { at: Date.now(), n };
       return { pending_joins: n };
     },
@@ -667,6 +680,7 @@ export const membersApi = (d: MembersDeps) => {
       const r = await call("POST", `/v1/invitations/${id}/revoke`, {});
       if (!r.ok) cpFail(r);
       d.db.run(`UPDATE member_invitations SET status = 'revoked', decided_at = ? WHERE activation_id = ? AND status = 'open'`, [new Date().toISOString(), id]);
+      attentionCache = null;
       d.audit("member.invite_revoke", "invitation", id);
       return { ok: true };
     },

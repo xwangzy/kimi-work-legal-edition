@@ -8,7 +8,7 @@ import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
 import { downloadPlan } from "../lib/download.ts";
 import { artifactName, AUDIENCE_LABELS, fmtRelative, fmtTime } from "../lib/labels.ts";
-import { groupByTask, groupDeliverables, taskGroupLabel } from "../lib/deliverables.ts";
+import { groupByTask, groupDeliverables, taskCountText, taskGroupLabel } from "../lib/deliverables.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 
 const STATUS_LABELS: Record<string, string> = { draft: "草稿", pending_review: "待复核", approved: "已签发", rejected: "已退回", superseded: "已被替代" };
@@ -125,7 +125,8 @@ export function DeliverablesPage() {
                   <tr key={`task-${t.run_id ?? "none"}`} className="dl-task">
                     <td colSpan={6}>
                       <span>{taskGroupLabel(t, fmtTime)}</span>
-                      <span className="muted"> · {t.rows.length} 份</span>
+                      {/* 组头写这次任务一共几份（复核 RB16B-11：状态筛选之后只显示一部分时说清） */}
+                      <span className="muted"> · {taskCountText(t.rows.length, rows.filter((r) => r.matter_id === g.matter_id && (r.run_id ?? null) === t.run_id).length)}</span>
                       {t.run_id && (
                         <button className="btn-link" onClick={() => nav(`/run/${t.run_id}/${g.matter_id}`)}>
                           看这次任务

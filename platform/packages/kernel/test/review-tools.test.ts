@@ -95,7 +95,24 @@ test("工具链：材料目录 → 风险卡与事实 → 表格与文书成果 
   assert.equal(byRef("7.3").fallback, "本协议项下的任何争议，提交被告所在地人民法院诉讼解决。");
   assert.match(byRef("7.3").bottom_line, /〔自然人/, "底线同样按代号形态交回 Agent");
   assert.equal(byRef("7.1").nature, "should", "category both、没给性质：建议修改");
+  assert.equal(byRef("7.1").nature_inferred, true, "推定的标出来");
+  assert.equal(byRef("7.3").nature_inferred, false);
   assert.equal(byRef(null).nature, "should");
+  assert.equal(tk.kernel.db.get<{ nature: string | null }>(`SELECT nature FROM risk_cards WHERE clause_ref = '7.1'`)!.nature, null, "库里不存推定值（复核 RB16B-03）");
+  // 为补全梯度重新提交同一张卡（复核 RB16B-02）：仍待处理的卡补写性质与梯度，回报说清
+  const resub = await call("riskcards.submit", {
+    document_version_id: doc.document_version_id,
+    cards: [{ clause_ref: "7.1", anchor_text: `转让方${nameToken}逾期办理变更登记的，每日按转让价款的万分之一支付违约金。`, severity: "high", category: "both", nature: "negotiable", issue: `转让方${nameToken}逾期变更登记的违约金过低，与受让方付款违约责任明显不对等。`, suggestion: `转让方${nameToken}逾期办理变更登记的，每日按转让价款的千分之五支付违约金；逾期超过三十日的，受让方有权解除合同。`, fallback: "每日按万分之五" }],
+  });
+  assert.equal(resub.cards[0].updated, "ladder_or_nature");
+  assert.match(resub.note, /已补写性质或梯度/);
+  const after7 = (await call("riskcards.list", {})).cards.find((c: any) => c.clause_ref === "7.1");
+  assert.equal(after7.nature, "negotiable");
+  assert.equal(after7.fallback, "每日按万分之五");
+  // 律师改性质（复核 RB16B-03）
+  const set = await tk.inv("riskcards.set_nature", { matter_id: matter.matter_id, card_id: after7.card_id, nature: "must" });
+  assert.equal(set.card.nature, "must");
+  assert.equal(set.card.nature_inferred, false);
   const ui = (await tk.inv("riskcards.list", { matter_id: matter.matter_id })).cards;
   assert.equal(ui.find((c: any) => c.clause_ref === "7.3").nature, "negotiable", "界面接口同样带性质（文字按代号形态交给界面、渲染时还原）");
   // 第 15 批之前的卡（库里没有性质）：读出时推定
@@ -141,6 +158,8 @@ test("工具链：材料目录 → 风险卡与事实 → 表格与文书成果 
   await tk.inv("riskcards.decide", { matter_id: matter.matter_id, card_id: c73.card_id, decision: "reject" });
   const red = await tk.inv("riskcards.redline", { matter_id: matter.matter_id, document_version_id: doc.document_version_id });
   assert.equal(red.status, "applied", JSON.stringify(red));
+  // 写进去的卡都来自这次任务：修订稿挂到这次任务，交付件按任务分组时与意见书、清单在一组（复核 RB16B-10）
+  assert.equal(tk.kernel.db.get<{ run_id: string | null }>(`SELECT run_id FROM artifact_versions WHERE artifact_version_id = ?`, [red.artifact_version_id])!.run_id, live.rid);
   const redDl = await tk.inv("artifacts.download", { artifact_version_id: red.artifact_version_id });
   const xml = readZipText(Buffer.from(redDl.data_base64, "base64"), "word/document.xml") ?? "";
   assert.match(xml, /<w:ins /);

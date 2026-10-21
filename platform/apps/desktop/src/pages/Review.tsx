@@ -135,11 +135,13 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   const runCases = Number(data?.completeness?.run_case_offline ?? 0) || 0;
   const cneeds = citationNeeds(data?.completeness?.artifact_citations, runCases);
   const gaps = Number(data?.material_gaps ?? 0) || 0;
+  const internalOnly = data?.audience === "internal";
   /** 没通过的项“去处理”（Astra M-2）：材料回到任务过程、引用滚到下面的引用核对、版本回到事项的交付件。 */
   const goFix = (k: NonNullable<Check["fix"]>) => {
-    if (k === "materials" && data?.run_id) nav(`/run/${data.run_id}/${data.matter_id}`);
+    // 材料：到事项的材料页（重新解析与识别在那里；没读到的文件名在下面列出，复核 RB16B-07）
+    if (k === "materials") nav(`/matter/${data.matter_id}`);
     else if (k === "citations") document.getElementById("review-citations")?.scrollIntoView({ block: "start" });
-    else nav(`/matter/${data.matter_id}`);
+    else nav(data?.latest_artifact_version_id && data.latest_artifact_version_id !== data.artifact_version_id ? `/review/${data.latest_artifact_version_id}` : `/matter/${data.matter_id}`);
   };
   const [cticks, setCticks] = useState<CitationTicks>({ cases: false, outside: false, unchecked: false });
   const act = useCallback(
@@ -157,7 +159,8 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
             lawyer_items: items.length,
             skill: data.lawyer_checklist?.skill ?? null,
             ...citationChecklist(cneeds, cticks),
-            ...(gaps > 0 ? { gaps_disclosed: gapsAck, material_gaps: gaps } : {}),
+            // 内部稿与对外稿的确认语不同（复核 RB16B-08）：内部稿只确认“已知悉、结论未覆盖”，对外稿确认“缺口已在文件中写明、随文件告知客户”
+            ...(gaps > 0 ? { gaps_disclosed: gapsAck, material_gaps: gaps, gaps_statement: internalOnly ? "acknowledged_not_covered" : "disclosed_in_document" } : {}),
             at: new Date().toISOString(),
           },
         });
@@ -219,7 +222,8 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                     <span className="check-mark" aria-hidden="true">{c.ok === false ? "✕" : c.ok ? "✓" : "·"}</span>
                     <span>
                       <b>{c.label}</b>：{c.text}
-                      {c.fix && (c.fix !== "materials" || data.run_id) && (
+                      {c.fix === "materials" && (data.material_gap_files ?? []).length > 0 && <span className="muted">（没读到：{(data.material_gap_files as string[]).slice(0, 5).join("、")}）</span>}
+                      {c.fix && (
                         <button className="btn-link check-fix" onClick={() => goFix(c.fix!)}>
                           {c.fix === "materials" ? "去看材料" : c.fix === "citations" ? "去核对" : "看最新版本"}
                         </button>
@@ -330,7 +334,9 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
               {gaps > 0 && (
                 <label className="review-ack">
                   <input type="checkbox" checked={gapsAck} onChange={(e) => setGapsAck(e.target.checked)} />
-                  本次有 {gaps} 份材料没有读到：缺口已保留在报告中，已向客户说明（会写进签发记录）
+                  {internalOnly
+                    ? `本次有 ${gaps} 份材料没有读到：我已知悉，结论没有覆盖这些材料（会写进签发记录）`
+                    : `本次有 ${gaps} 份材料没有读到：缺口已在文件中写明，将随文件告知客户（会写进签发记录）`}
                 </label>
               )}
               <label className="review-ack">
@@ -357,8 +363,14 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
               </div>
               {/* 复核人署名（Astra M-2）：签发前显示本人，签发后显示签发人与时刻；复核完成不代表合同已签署或建议必然适用 */}
               <p className="muted review-signer">
-                {data.approved_by ? `签发人：${data.approved_by.name ?? "本所成员"}（${fmtTime(data.approved_by.at)}）` : `复核人：${data.reviewer?.name ?? "本机用户"}`}
-                。复核签发不代表合同已签署，也不代表建议必然适用。
+                {data.approved_by
+                  ? `签发人：${data.approved_by.name ?? "本所其他成员"}（${fmtTime(data.approved_by.at)}）。`
+                  : data.rejected_by
+                    ? `退回人：${data.rejected_by.name ?? "本所其他成员"}（${fmtTime(data.rejected_by.at)}）。`
+                    : data.reviewer
+                      ? `复核人：${data.reviewer.name ?? "本机用户"}。`
+                      : ""}
+                复核签发不代表文书已提交、合同已签署，也不代表观点或建议必然被采纳。
               </p>
               {note && <p className="muted">{note}</p>}
               {!pending && !draft && <p className="muted">只有“待你复核”的成果可以签发或退回。</p>}

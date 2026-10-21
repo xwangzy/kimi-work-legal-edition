@@ -269,6 +269,8 @@ async function stepLoadMaterials(ctx: Ctx, runId: string, attemptId: string): Pr
   const docIds: string[] = inputSnapshot(run)?.document_version_ids ?? [];
   const out: MaterialSlice[] = [];
   let failed = 0;
+  // 没读到的材料（复核 RB16B-07：签发页直接列出是哪几份，而不是只给份数）
+  const missing: { document_version_id: string; filename: string | null }[] = [];
   for (const docId of docIds) {
     const r = db.get<any>(
       `SELECT dv.document_version_id, dv.filename, dv.sha256, pv.parse_version_id, pv.quality_flags, pv.page_count, pt.content
@@ -281,6 +283,7 @@ async function stepLoadMaterials(ctx: Ctx, runId: string, attemptId: string): Pr
     );
     if (!r) {
       failed += 1;
+      missing.push({ document_version_id: docId, filename: db.get<{ filename: string }>(`SELECT filename FROM document_versions WHERE document_version_id = ?`, [docId])?.filename ?? null });
       continue;
     }
     const pages = db.all<{ page_no: number; quality: string; note: string | null }>(
@@ -305,6 +308,7 @@ async function stepLoadMaterials(ctx: Ctx, runId: string, attemptId: string): Pr
     loaded: out.length,
     failed,
     files: out.map((m) => ({ name: m.filename, chars: m.chars, quality: m.quality_flags })),
+    ...(missing.length ? { missing } : {}),
   });
   return out;
 }

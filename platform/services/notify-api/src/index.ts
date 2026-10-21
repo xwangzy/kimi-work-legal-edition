@@ -147,7 +147,10 @@ function validTomb(t: unknown): t is Tombstone {
 export interface NotifyMetrics {
   acks: number;
   defers: number;
+  /** 过触发时刻 15 分钟仍未确认的份数（含合盖离线的电脑，看趋势用）。 */
   overdue_targets: number;
+  /** 其中设备近 10 分钟拉取过、仍未确认的（投递积压告警看这个；复核 RB16B-23）。 */
+  overdue_online_targets: number;
   scheduled_targets: number;
 }
 
@@ -155,6 +158,8 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
   const now = o.now ?? Date.now;
   let acks = 0;
   let defers = 0;
+  /** 设备最近一次拉取到时提醒的时刻（只在内存；投递积压按在线设备计）。 */
+  const lastPull = new Map<string, number>();
   const iso = (t = now()) => new Date(t).toISOString();
   if (!o.feed && (o.production ?? process.env.NODE_ENV === "production")) throw new Error("生产形态必须接控制面吊销订阅（feed）");
   if ((o as { opsSecret?: unknown }).opsSecret !== undefined) throw new Error("共享运营口令已停用（v9.3 A-10）：改用 opsGuard（按人运营凭据）");
@@ -437,6 +442,8 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
     if (method === "GET" && raw === "/v1/notify/due") {
       const c = credential(req);
       const t = now();
+      if (lastPull.size > 50_000) lastPull.clear();
+      lastPull.set(`${c.tid}\u0000${c.dev}`, t);
       const due: { id: string; version: number; fire_at: string; ct: string }[] = [];
       for (const r of byKey.values()) {
         if (r.tid !== c.tid) continue;
@@ -523,16 +530,20 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
     metrics: (): NotifyMetrics => {
       const t = now();
       let overdue = 0;
+      let overdueOnline = 0;
       let scheduled = 0;
       for (const r of byKey.values()) {
         const fire = Date.parse(r.fire_at);
-        for (const tg of Object.values(r.targets)) {
+        for (const [dev, tg] of Object.entries(r.targets)) {
           if (tg.delivered_at) continue;
           if (fire > t) scheduled += 1;
-          else if (t - fire > 15 * 60_000 && !(tg.defer_until && Date.parse(tg.defer_until) > t)) overdue += 1;
+          else if (t - fire > 15 * 60_000 && !(tg.defer_until && Date.parse(tg.defer_until) > t)) {
+            overdue += 1;
+            if (t - (lastPull.get(`${r.tid}\u0000${dev}`) ?? 0) < 10 * 60_000) overdueOnline += 1;
+          }
         }
       }
-      return { acks, defers, overdue_targets: overdue, scheduled_targets: scheduled };
+      return { acks, defers, overdue_targets: overdue, overdue_online_targets: overdueOnline, scheduled_targets: scheduled };
     },
     snapshot: () => [...byKey.values()].map((r) => structuredClone(r)),
     tombstones: () => [...tombs.values()].map((t) => structuredClone(t)),

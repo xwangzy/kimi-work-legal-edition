@@ -470,7 +470,8 @@ if (cfg.role === "cp-signer") {
       return [
         { name: "kwl_notify_acks_total", help: "提醒确认收到的份数", type: "counter", values: [[{}, m.acks]] },
         { name: "kwl_notify_defers_total", help: "提醒暂缓的份数", type: "counter", values: [[{}, m.defers]] },
-        { name: "kwl_notify_overdue_targets", help: "过触发时刻 15 分钟仍未确认的接收设备份数", type: "gauge", values: [[{}, m.overdue_targets]] },
+        { name: "kwl_notify_overdue_targets", help: "过触发时刻 15 分钟仍未确认的份数（含离线电脑，看趋势）", type: "gauge", values: [[{}, m.overdue_targets]] },
+        { name: "kwl_notify_overdue_online_targets", help: "设备近 10 分钟拉取过却仍未确认的份数（投递积压告警用）", type: "gauge", values: [[{}, m.overdue_online_targets]] },
         { name: "kwl_notify_scheduled_targets", help: "尚未到时的接收设备份数", type: "gauge", values: [[{}, m.scheduled_targets]] },
       ];
     };

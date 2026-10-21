@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { groupByTask, taskGroupLabel } from "../src/lib/deliverables.ts";
+import { groupByTask, taskCountText, taskGroupLabel } from "../src/lib/deliverables.ts";
 
 test("同一任务成组、保持新的在前；没有任务的单独一组", () => {
   const rows = [
@@ -31,4 +31,9 @@ test("交付件页与事项页都按任务分组；内核成果列表带任务�
   assert.match(page, /看这次任务/);
   const kernel = readFileSync(fileURLToPath(new URL("../../../packages/kernel/src/api/index.ts", import.meta.url)), "utf8");
   assert.match(kernel, /r\.scenario AS run_scenario, json_extract\(.*'\$\.skill'\) AS run_skill, r\.created_at AS run_created_at/);
+});
+
+test("组头份数：筛选后只显示一部分时说清本次一共几份（复核 RB16B-11）", () => {
+  assert.equal(taskCountText(1, 3), "本次 3 份，此处显示 1 份");
+  assert.equal(taskCountText(2, 2), "2 份");
 });

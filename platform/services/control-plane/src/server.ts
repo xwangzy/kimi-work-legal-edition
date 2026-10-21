@@ -1245,12 +1245,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         t.devices.set(cert.deviceId, { cert, registered_at: iso(), revoked_at: null });
         t.directoryVersion += 1;
       }
-      // 客户端版本（v9.3 P3）：只记版本号与日期；版本变了或换了一天才改写（每台设备每天至多一次写入）
+      // 客户端版本（v9.3 P3）：只记版本号与日期；版本变了或换了一天才改写（每台设备每天至多一次写入）。
+      // 没报版本（第 16 批之前的客户端）也记报到日期，版本记为 legacy——统计只数 30 天内报到的（复核 RB16B-22）
       const clientVer = typeof (b.client as { version?: unknown } | undefined)?.version === "string" ? String((b.client as { version: string }).version) : null;
-      if (clientVer && CLIENT_VERSION_RE.test(clientVer)) {
+      {
         const rec = t.devices.get(cert.deviceId)!;
+        const v = clientVer && CLIENT_VERSION_RE.test(clientVer) ? clientVer : "legacy";
         const today = iso().slice(0, 10);
-        if (rec.client_version !== clientVer || rec.client_seen_on !== today) Object.assign(rec, { client_version: clientVer, client_seen_on: today });
+        if (rec.client_version !== v || rec.client_seen_on !== today) Object.assign(rec, { client_version: v, client_seen_on: today });
       }
       // 席位：成员没有席位且许可内仍有余量时自动分配（G0；生产由管理员在控制台分配）
       if (!t.seatsByUser.has(cert.memberId) && cert.role !== "node") {
@@ -1763,8 +1765,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       for (const t of tenants.values())
         for (const d of t.devices.values()) {
           if (d.revoked_at) continue;
-          const v = d.client_version && d.client_seen_on && d.client_seen_on >= since ? d.client_version : d.client_version ? null : "unknown";
-          if (v) byVersion.set(v, (byVersion.get(v) ?? 0) + 1);
+          // 只数 30 天内报到过的；第 16 批之后从未报到的设备（关机多时、已不用）不计入（复核 RB16B-22）
+          if (!d.client_version || !d.client_seen_on || d.client_seen_on < since) continue;
+          byVersion.set(d.client_version, (byVersion.get(d.client_version) ?? 0) + 1);
         }
       const sorted = [...byVersion].sort((a, b) => b[1] - a[1]);
       const versions: Record<string, number> = Object.fromEntries(sorted.slice(0, 20));

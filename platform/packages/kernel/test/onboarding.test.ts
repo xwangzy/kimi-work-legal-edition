@@ -83,6 +83,8 @@ test("开通与成员入组：创始开通码 → 重启按律所身份运行；
   assert.equal(founderRec.status, "consumed");
 
   // ── 管理员邀请成员 ──
+  // 本机还没有发过邀请：侧栏提醒直接报 0、不问控制面（复核 RB16B-18）；发了邀请后缓存作废
+  assert.deepEqual(await a.invoke("members.attention"), { pending_joins: 0 });
   const invite = (await a.invoke("members.invite", { name: "张律师", role: "lawyer" })) as any;
   assert.match(invite.code, /^[0-9A-Z]{4}(-[0-9A-Z]{4}){8}$/, "邀请码 36 位：控制面码 + 管理员本机核对段");
   // 只输入前 20 位（缺本机核对段）：拒绝
