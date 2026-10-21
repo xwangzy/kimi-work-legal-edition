@@ -5,12 +5,11 @@
 import { useEffect, useState } from "react";
 import { nav } from "../App.tsx";
 import { api } from "../api.ts";
-import { LINE_LABELS, SCENARIOS, type BusinessLine } from "../lib/scenarios.ts";
+import { cardGets, cardGives, LINE_LABELS, SCENARIOS, type BusinessLine } from "../lib/scenarios.ts";
 
 type Skill = { id: string; title: string; description: string; version: string; tier: string; lines: string[] };
 
 const LINES: BusinessLine[] = ["litigation", "transactional", "inhouse"];
-const TIER_HINT = "试用：结果是草稿，须律师复核；方法模板尚未经本所质量验收";
 
 /** 模板标题里的档位说明另由标签表达（“· 试用（通用辅助）”不重复显示）。 */
 const cleanTitle = (t: string) => t.replace(/\s*·\s*试用.*$/, "");
@@ -34,7 +33,7 @@ export function MethodsPage() {
     <main className="main">
       <div className="main-wide">
         <h1 className="page-title">方法与模板</h1>
-        <p className="muted">所有结果都是草稿，需要律师复核后使用。</p>
+        <p className="muted">全部在试用阶段：结果是草稿，须律师复核后使用。</p>
 
         <div className="card card-static methods-free">
           <div className="title">自由描述任务</div>
@@ -52,11 +51,10 @@ export function MethodsPage() {
               {SCENARIOS.filter((c) => c.line === line).map((c) => (
                 // 卡片要么整卡可点、要么只有一个明确按钮（Y4 V-5）：与首页场景卡一致，整卡可点
                 <button key={c.id} className="card method-card" aria-label={`开始：${c.title}`} onClick={() => nav(`/start/${c.id}`)}>
-                  <span className="title">
-                    {c.title} <span className="tag tag-trial" title={TIER_HINT}>试用</span>
-                  </span>
-                  <span className="desc clamp-2">给：{c.gives}</span>
-                  <span className="desc clamp-2">得：{c.gets.join("、")}</span>
+                  {/* v9.4 U1 #16：档位在页首统一说一次；卡面与首页同一套写法（交付件一行 + 需要什么一行） */}
+                  <span className="title">{c.title}</span>
+                  <span className="sc-gets">{cardGets(c)}</span>
+                  <span className="sc-gives">需要：{cardGives(c)}</span>
                   <span className="method-go">开始 →</span>
                 </button>
               ))}
@@ -74,8 +72,8 @@ export function MethodsPage() {
             {skills.map((s) => (
               <button key={s.id} className="card method-card" aria-label={`${cleanTitle(s.title)}：在首页描述任务`} onClick={() => nav("/")}>
                 <span className="title">
-                  {cleanTitle(s.title)}{" "}
-                  {s.tier === "production" ? <span className="tag tag-ok">可用</span> : <span className="tag tag-trial" title={TIER_HINT}>试用</span>}
+                  {cleanTitle(s.title)}
+                  {s.tier === "production" && <span className="tag tag-ok"> 可用</span>}
                 </span>
                 <span className="desc clamp-2">{s.description}</span>
                 {s.lines.length > 0 && <span className="desc">适用：{s.lines.join(" · ")}</span>}

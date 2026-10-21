@@ -63,6 +63,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   const [msg, setMsg] = useState<{ tone: "ok" | "warn" | "err"; text: string; conflicts?: { card_id: string | null; detail?: string }[]; artifact?: string } | null>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
   // 原文与卡片的悬停联动（W-3）
+  const [natureEdit, setNatureEdit] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   // 文档区“原文 / 接受后”（Z3 M-5）
   const [view, setView] = useState<"original" | "after">("original");
@@ -384,7 +385,8 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
               </button>
             ))}
           </div>
-          {!readOnly && cards.length > 0 && <div className="wb-keys muted">快捷键：J / K 切换 · A 接受 · E 修改 · N 不采纳</div>}
+          {/* 快捷键收进悬停提示（v9.4 U1 #14），不再常驻一行 */}
+          {!readOnly && cards.length > 0 && <div className="wb-keys muted" title="J / K 切换 · A 接受 · E 修改 · N 不采纳">键盘快捷键</div>}
           {visible.length === 0 && <p className="muted">没有符合条件的风险项。</p>}
           {visible.map((c) => {
             const sev = SEVERITY[c.severity];
@@ -410,11 +412,12 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                 </button>
                 {open && (
                   <div className="rc-body">
+                    {/* 同一句话不出现两次（v9.4 U1 #14）：标题放得下全文时，这一行只放类别 */}
                     <div className="rc-row">
-                      <span className="rc-k">问题判断</span>
+                      <span className="rc-k">{[...plain(c.issue)].length > 40 ? "问题判断" : "类别"}</span>
                       <span>
-                        {plain(c.issue)}
-                        <span className="tag tag-gray">{CATEGORY_LABEL[c.category]}</span>
+                        {[...plain(c.issue)].length > 40 && plain(c.issue)}
+                        <span className="tag tag-gray" title={c.category === "both" ? "既是法律问题，也涉及商业条件" : undefined}>{CATEGORY_LABEL[c.category]}</span>
                         {c.needs_client_decision && <span className="tag tag-beta">需客户决定</span>}
                       </span>
                     </div>
@@ -423,14 +426,27 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                       <div className="rc-row">
                         <span className="rc-k">性质</span>
                         <span>
-                          <Select
-                            className="select-sm"
-                            aria-label="建议的性质"
-                            value={natureOf(c)}
-                            disabled={busy}
-                            onChange={(v) => void setNature(c, v as RiskNature)}
-                            options={(Object.keys(NATURE_LABEL) as RiskNature[]).map((k) => ({ value: k, label: NATURE_LABEL[k] }))}
-                          />
+                          {/* 性质先作胶囊显示，点“改”才出下拉框（v9.4 U1 #14：下拉框像是在让律师改 AI 的分类） */}
+                          {natureEdit === c.card_id ? (
+                            <Select
+                              className="select-sm"
+                              aria-label="建议的性质"
+                              value={natureOf(c)}
+                              disabled={busy}
+                              onChange={(v) => {
+                                setNatureEdit(null);
+                                void setNature(c, v as RiskNature);
+                              }}
+                              options={(Object.keys(NATURE_LABEL) as RiskNature[]).map((k) => ({ value: k, label: NATURE_LABEL[k] }))}
+                            />
+                          ) : (
+                            <>
+                              <span className={`pill ${NATURE_PILL[natureOf(c)]}`}>{NATURE_LABEL[natureOf(c)]}</span>{" "}
+                              <button className="btn-link" disabled={busy} onClick={() => setNatureEdit(c.card_id)}>
+                                改
+                              </button>
+                            </>
+                          )}
                           {c.nature_inferred && <span className="muted"> 按类别推定，请确认</span>}
                         </span>
                       </div>

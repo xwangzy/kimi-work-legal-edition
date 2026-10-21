@@ -183,26 +183,26 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   return (
     <main className="main">
       <div className="review-page">
-        <button className="btn-link back" onClick={() => nav("/deliverables")}>← 交付件</button>
-        {/* 复核 B13-U10：从复核页回到产出这份成果的任务过程 */}
-        {data?.run_id && data?.matter_id && (
-          <button className="btn-link back" onClick={() => nav(`/run/${data.run_id}/${data.matter_id}`)}>
-            查看任务过程
-          </button>
-        )}
+        {/* 只留面包屑一套返回（v9.4 U1 #13）；“查看任务过程”移到标题右侧（复核 B13-U10） */}
         <Breadcrumb items={[{ label: "交付件", href: "/deliverables" }, { label: title ?? data?.filename ?? "…" }]} />
         <div className="page-head">
           <h1 className="page-title" title={data?.filename ?? ""}>{title ?? data?.filename ?? "…"}</h1>
-          {data && (
-            <button className="btn-ghost" onClick={download}>
-              {downloadPlan(data.filename).label}
-            </button>
-          )}
+          <span className="page-head-actions">
+            {data?.run_id && data?.matter_id && (
+              <button className="btn-link" onClick={() => nav(`/run/${data.run_id}/${data.matter_id}`)}>
+                查看任务过程
+              </button>
+            )}
+            {data && (
+              <button className="btn-ghost" onClick={download}>
+                {downloadPlan(data.filename).label}
+              </button>
+            )}
+          </span>
         </div>
         {data && (
           <p className="muted">
-            第 {data.version} 版 · {STATUS_TEXT[data.status] ?? "状态未知"}
-            {draft ? " · 这是草稿：提交复核后才能签发" : ""}
+            {STATUS_TEXT[data.status] ?? "状态未知"} · 第 {data.version} 版{draft ? " · 提交复核后才能签发" : ""}
           </p>
         )}
         {err && <div className="banner banner-red">{err}</div>}
@@ -319,7 +319,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
               <div className="section-title">你来核对</div>
               {items.length > 0 ? (
                 <>
-                  <p className="muted">取自本次所用方法模板的质量自检。勾选只记录你的人工核对，不代表系统验证。</p>
+                  <p className="muted">按本所方法的检查项逐条核对；勾选表示你已人工核对。</p>
                   <ul className="lawyer-checks">
                     {items.map((t, i) => (
                       <li key={i}>
@@ -343,7 +343,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                   </ul>
                 </>
               ) : (
-                <p className="muted">本成果没有对应的方法模板自检清单。请按所内质量要求核对。</p>
+                <p className="muted">这类文件没有固定检查项，请按所内要求核对。</p>
               )}
               {gaps > 0 && (
                 <label className="review-ack">
@@ -371,8 +371,8 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                   </button>
                 )}
                 <span className="spacer" />
-                <button className="btn-ghost" onClick={download}>
-                  下载（留痕）
+                <button className="btn-ghost" onClick={download} title="下载会记入事项记录">
+                  下载
                 </button>
               </div>
               {/* 复核人署名（Astra M-2）：签发前显示本人，签发后显示签发人与时刻；复核完成不代表合同已签署或建议必然适用 */}
@@ -382,16 +382,16 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                   : data.rejected_by
                     ? `退回人：${data.rejected_by.name ?? "本所其他成员"}（${fmtTime(data.rejected_by.at)}）。`
                     : data.reviewer
-                      ? `复核人：${data.reviewer.name ?? "本机用户"}。`
+                      ? `复核人：${data.reviewer.name ?? "你"}。`
                       : ""}
                 复核签发不代表文书已提交、合同已签署，也不代表观点或建议必然被采纳。
               </p>
               {note && <p className="muted">{note}</p>}
               {!pending && !draft && <p className="muted">只有“待你复核”的成果可以签发或退回。</p>}
               <details className="review-proof">
-                <summary className="muted">签发凭证</summary>
-                <p className="muted">签发的就是这一份文件；之后再改会生成新版本，需要重新签发。对外发送、导出与改权限只能由你在这台电脑上操作。内部稿不得外发。</p>
-                <p className="muted mono">文件指纹 {data.sha256.slice(0, 16)}…（第三方可据此核对文件是否被改过）</p>
+                <summary className="muted">签发记录</summary>
+                <p className="muted">签发的就是这一份文件；签发后再改会生成新版本，要重新签发。内部稿不能发给客户。</p>
+                <p className="muted">可核对是否被改过：<span className="mono">{data.sha256.slice(0, 16)}…</span></p>
               </details>
             </aside>
           </div>
