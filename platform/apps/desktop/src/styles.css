@@ -836,3 +836,12 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 /* 打印只露出恢复码卡片（抬头、编号行、创始提示），其余页面内容不打（复核 R2A-04、R2B-21） */
 @media print { body * { visibility: hidden; } .recovery-print, .recovery-print * { visibility: visible; } .recovery-print .no-print { display: none !important; } .recovery-print { position: fixed; top: 40px; left: 40px; background: none; border: none; box-shadow: none; } }
 
+
+/* ── 全局搜索（Z3 §8.2 #31） ── */
+.search-palette { width: min(620px, 92vw); padding: 10px; align-self: start; margin-top: 12vh; }
+.search-input { width: 100%; font-size: var(--fs-lg); padding: 10px 12px; border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-main); color: var(--text-primary); }
+.search-input:focus { outline: none; box-shadow: var(--focus-ring); }
+.search-results { max-height: 56vh; overflow: auto; margin-top: 8px; }
+.search-row { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 7px 10px; border-radius: var(--r-sm); color: var(--text-primary); }
+.search-row.active { background: var(--bg-hover); }
+.nav-kbd { margin-left: auto; font-size: var(--fs-xs); }

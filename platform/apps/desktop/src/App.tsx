@@ -23,6 +23,7 @@ import { RemindersPage } from "./pages/Reminders.tsx";
 import { ActivatePage } from "./pages/Activate.tsx";
 import { WelcomePage } from "./pages/Welcome.tsx";
 import { updateBannerView } from "./lib/update-banner.ts";
+import { SearchPalette } from "./components/SearchPalette.tsx";
 
 /** 设置页的标签（UIUX 增量评审 ST-5）：律师版四页 + 管理员“管理”。 */
 export type SettingsTab = "general" | "visibility" | "sources" | "device" | "admin";
@@ -126,6 +127,23 @@ export function App() {
   }, []);
   // 后台服务状态（主进程在内核意外退出并自动恢复时广播）：顶部横幅提示，不弹窗打断
   const [kernelNotice, setKernelNotice] = useState<{ status: string; message?: string } | null>(null);
+  // 全局搜索（Z3 §8.2 #31）：Ctrl / ⌘ + K 打开；侧栏“搜索”按钮发 kwl:search 事件
+  const [searching, setSearching] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearching(true);
+      }
+    };
+    const onOpen = () => setSearching(true);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("kwl:search", onOpen);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("kwl:search", onOpen);
+    };
+  }, []);
   useEffect(
     () =>
       onKernelEvent((m) => {
@@ -210,6 +228,7 @@ export function App() {
           <Page route={route} />
         </ErrorBoundary>
       </div>
+      {searching && <SearchPalette onClose={() => setSearching(false)} />}
     </div>
   );
 }

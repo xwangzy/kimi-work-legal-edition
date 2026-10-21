@@ -105,6 +105,11 @@ export function Sidebar({ route }: { route: Route }) {
           );
         })}
       </nav>
+      <button className="nav-item nav-search" onClick={() => window.dispatchEvent(new Event("kwl:search"))} title="搜索事项、任务、交付件">
+        <span className="nav-icon">{Icon.search()}</span>
+        <span className="nav-label">搜索</span>
+        <span className="nav-kbd muted">{/Mac/i.test(navigator.platform) ? "⌘K" : "Ctrl K"}</span>
+      </button>
       <div className="sidebar-section">最近事项</div>
       <div className="sidebar-list">
         {matters.length === 0 && <div className="sidebar-empty">还没有事项</div>}

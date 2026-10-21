@@ -2167,7 +2167,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
 
     // 首页“等你处理 / 继续工作”（UIUX 增量评审 H-1）：本人能看到的事项里最近的任务（只给目标前 24 字与状态，不含正文）
     "runs.list_recent": (p, id) => {
-      const limit = Math.max(1, Math.min(20, Number(p?.limit ?? 5) || 5));
+      // 全局搜索（Z3 §8.2 #31）一次取至多 100 条
+      const limit = Math.max(1, Math.min(100, Number(p?.limit ?? 5) || 5));
       const rows = db.all<{ run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; input_snapshot: string | null }>(
         `SELECT r.run_id, r.matter_id, m.title AS matter_title, r.scenario, r.status, r.updated_at, r.input_snapshot
            FROM runs r JOIN matters m ON m.matter_id = r.matter_id
@@ -2190,6 +2191,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           status: r.status,
           updated_at: r.updated_at,
           goal: String(parseJson<any>(r.input_snapshot, {})?.goal ?? "").replace(/\s+/g, " ").slice(0, 24),
+          // 方法模板（界面按它找场景卡名称）
+          skill: typeof parseJson<any>(r.input_snapshot, {})?.skill === "string" ? parseJson<any>(r.input_snapshot, {}).skill : null,
         })),
         waiting: waiting.map((w) => ({ run_id: w.run_id, matter_id: w.matter_id })),
       };

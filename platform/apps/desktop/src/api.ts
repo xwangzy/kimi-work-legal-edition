@@ -783,7 +783,7 @@ export const api = {
   deliver: (body: { artifact_version_id: string; action: "download" | "external_send" | "archive"; audience?: string }) => invoke<any>("deliveries.create", body),
   pending: () => invoke<{ pending: any[]; count: number }>("pending.list"),
   recentRuns: (limit = 5) =>
-    invoke<{ runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; goal: string }[]; waiting: { run_id: string; matter_id: string }[] }>("runs.list_recent", { limit }),
+    invoke<{ runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; goal: string; skill?: string | null }[]; waiting: { run_id: string; matter_id: string }[] }>("runs.list_recent", { limit }),
 
   // 数据去向
   egressRecords: (args: { runId?: string; matterId?: string }) => invoke<{ records: EgressRecord[] }>("egress.records", args.runId ? { run_id: args.runId } : { matter_id: args.matterId }),
