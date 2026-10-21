@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { citationChecklist, citationNeeds, citationsAllowSign } from "../src/lib/citation-review.ts";
+import { citationChecklist, citationNeeds, citationsAllowSign, partialPagesText } from "../src/lib/citation-review.ts";
 
 const ac = (items: { raw: string; kind: "wrong" | "case" | "outside" | "ok" }[], checked = true) => ({
   checked,
@@ -67,4 +67,11 @@ test("签发页（Astra M-2）：没通过的系统检查项可直接去处理�
   assert.match(src, /我已知悉，结论没有覆盖这些材料/, "内部稿不要求声明“已向客户说明”（复核 RB16B-08）");
   assert.match(src, /本所其他成员/);
   assert.match(src, /latest_artifact_version_id/, "看最新版本直达最新版（复核 RB16B-07）");
+});
+
+test("页级读不清（v9.3 主文 §9 第 9 项默认做法）：只列出份数、页数与页码区间，不要求勾选", () => {
+  assert.equal(partialPagesText([{ filename: "合同.pdf", pages: [3, 4, 5, 9], total: 4 }]), "1 份共 4 页（合同.pdf 第 3–5、9 页）");
+  assert.equal(partialPagesText([{ filename: "a.pdf", pages: [1], total: 40 }]), "1 份共 40 页（a.pdf 第 1 页 等）");
+  const src = readFileSync(fileURLToPath(new URL("../src/pages/Review.tsx", import.meta.url)), "utf8");
+  assert.match(src, /部分页读不清/);
 });

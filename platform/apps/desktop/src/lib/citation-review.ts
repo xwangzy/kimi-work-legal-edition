@@ -75,3 +75,20 @@ export function citationsAllowSign(n: CitationNeeds, t: CitationTicks): boolean 
   if (n.counts.wrong > 0) return false;
   return (n.counts.cases === 0 || t.cases) && (n.counts.outside === 0 || t.outside) && (!n.unchecked || t.unchecked);
 }
+
+/** 页级读不清的一句话：“2 份共 5 页（合同.pdf 第 3、4 页；…）”。页号连成区间，最多列 3 份。 */
+export function partialPagesText(list: { filename: string; pages: number[]; total: number }[]): string {
+  const total = list.reduce((n, x) => n + x.total, 0);
+  const span = (ps: number[]) => {
+    const out: string[] = [];
+    for (let i = 0; i < ps.length; ) {
+      let j = i;
+      while (j + 1 < ps.length && ps[j + 1] === ps[j]! + 1) j++;
+      out.push(i === j ? `${ps[i]}` : `${ps[i]}–${ps[j]}`);
+      i = j + 1;
+    }
+    return out.join("、");
+  };
+  const shown = list.slice(0, 3).map((x) => `${x.filename} 第 ${span(x.pages)} 页${x.total > x.pages.length ? " 等" : ""}`);
+  return `${list.length} 份共 ${total} 页（${shown.join("；")}${list.length > 3 ? "；另有 " + (list.length - 3) + " 份" : ""}）`;
+}

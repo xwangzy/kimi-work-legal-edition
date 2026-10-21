@@ -133,6 +133,16 @@ test("材料缺口（Astra M-2）：任务有没读到的材料时，签发须�
     assert.equal(comp.material_gaps, 1);
     assert.deepEqual(comp.material_gap_files, ["附件三-资产清单.pdf"], "签发页列出没读到的文件（复核 RB16B-07）");
     assert.equal(comp.latest_artifact_version_id, id);
+    assert.deepEqual(comp.partial_pages, [], "快照里没有材料：没有页级读不清");
+    // 快照里有一份材料、第 2、3 页识别不清：复核页列出（只列、不要求勾选）
+    const { importBytes } = await import("./helpers.ts");
+    const doc = await importBytes(inv, matter.matter_id, "扫描合同.docx", createDocx("合同", [{ heading: "一", paragraphs: ["正文"] }]), "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    const pv = kernel.db.get<{ parse_version_id: string }>(`SELECT parse_version_id FROM parse_versions WHERE document_version_id = ? ORDER BY created_at DESC LIMIT 1`, [doc.document_version_id])!;
+    kernel.db.run(`DELETE FROM parse_pages WHERE parse_version_id = ?`, [pv.parse_version_id]);
+    for (const [n, q] of [[1, "ok"], [2, "low"], [3, "unreadable"]] as const) kernel.db.run(`INSERT INTO parse_pages (parse_version_id, page_no, kind, quality) VALUES (?, ?, 'scanned', ?)`, [pv.parse_version_id, n, q]);
+    kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ document_version_ids: [doc.document_version_id] }), live.rid]);
+    const comp2 = await inv("review.completeness", { artifact_version_id: id });
+    assert.deepEqual(comp2.partial_pages, [{ filename: "扫描合同.docx", pages: [2, 3], total: 2 }]);
     assert.ok("name" in comp.reviewer, "复核人（本机本人）");
     assert.equal(comp.approved_by, null);
     await assert.rejects(

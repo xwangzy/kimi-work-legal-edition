@@ -1894,6 +1894,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         // 材料缺口（Astra M-2）：有缺口时签发须勾选“缺口已告知客户”
         material_gaps: materialGapCount(db, art.run_id ?? null),
         material_gap_files: materialGaps(db, art.run_id ?? null).files,
+        // 页级读不清（v9.3 主文 §9 第 9 项，按建议默认：只列出、不要求勾选）：本次任务用到的材料里识别不清或读不出的页
+        partial_pages: partialPages(db, art.run_id ?? null),
         // 复核人（Astra M-2）：签发区显示“复核人：{姓名}”——这台电脑的本人（本人没有签发权时不显示）；已签发、已退回的显示签发人、退回人。
         // 姓名不认识时为 null（界面写“本所其他成员”），不回落成成员编号（复核 RB16B-06/09）
         reviewer: (() => {
@@ -3795,6 +3797,25 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   function materialGapCount(db2: KernelDb, runId: string | null): number {
     return materialGaps(db2, runId).count;
   }
+  /** 本次任务快照里每份材料最新解析版本中 quality ≠ ok 的页（最多列 20 份、每份 30 页）。 */
+  function partialPages(db2: KernelDb, runId: string | null): { filename: string; pages: number[]; total: number }[] {
+    if (!runId) return [];
+    const r = db2.get<{ input_snapshot: string | null }>(`SELECT input_snapshot FROM runs WHERE run_id = ?`, [runId]);
+    const ids: string[] = parseJson<any>(r?.input_snapshot ?? "{}", {})?.document_version_ids ?? [];
+    const out: { filename: string; pages: number[]; total: number }[] = [];
+    for (const id of ids.slice(0, 200)) {
+      const pv = db2.get<{ parse_version_id: string; filename: string }>(
+        `SELECT pv.parse_version_id, dv.filename FROM parse_versions pv JOIN document_versions dv ON dv.document_version_id = pv.document_version_id WHERE pv.document_version_id = ? ORDER BY pv.created_at DESC LIMIT 1`,
+        [id],
+      );
+      if (!pv) continue;
+      const pages = db2.all<{ page_no: number }>(`SELECT page_no FROM parse_pages WHERE parse_version_id = ? AND quality <> 'ok' ORDER BY page_no`, [pv.parse_version_id]).map((x) => x.page_no);
+      if (pages.length) out.push({ filename: pv.filename, pages: pages.slice(0, 30), total: pages.length });
+      if (out.length >= 20) break;
+    }
+    return out;
+  }
+
   /** 材料缺口的份数与文件名（文件名只在新版本记录的事件里有；复核 RB16B-07）。 */
   function materialGaps(db2: KernelDb, runId: string | null): { count: number; files: string[] } {
     if (!runId) return { count: 0, files: [] };
