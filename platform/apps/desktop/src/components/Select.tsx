@@ -173,6 +173,7 @@ export function RolePills(p: { value: MaterialRole | null | undefined; onChange:
             type="button"
             role="radio"
             aria-checked={on}
+            aria-label={r.label}
             className={`role-pill role-${r.value}${on ? " on" : ""}`}
             disabled={p.disabled}
             title={on ? `再点一下取消“${r.label}”` : `标为${r.label}材料`}

@@ -20,7 +20,11 @@ export function searchLabels(): Record<string, string> {
     if (c.skill && !out[`skill:${c.skill}`]) out[`skill:${c.skill}`] = c.title;
     if (c.scenario !== "a1.agent_task" && !out[`scenario:${c.scenario}`]) out[`scenario:${c.scenario}`] = c.title;
   }
-  for (const [k, v] of Object.entries(SCENARIO_LABELS)) out[`scenario:${k}`] ??= v;
+  // 同一流程在卡片与任务表里叫法不同（“整理案卷” / “材料整理”）：两个名字都能搜到（只用于匹配，显示由界面另算）
+  for (const [k, v] of Object.entries(SCENARIO_LABELS)) {
+    const cur = out[`scenario:${k}`];
+    out[`scenario:${k}`] = cur && !cur.includes(v) ? `${cur} ${v}` : (cur ?? v);
+  }
   for (const [k, v] of Object.entries(ARTIFACT_LABELS)) out[`kind:${k}`] = v;
   return out;
 }

@@ -35,6 +35,8 @@ test("给内核的标签含场景卡名与交付件名", () => {
   const l = searchLabels();
   assert.ok(l["skill:contract-review"]);
   assert.ok(l["kind:revision_draft"] || l["kind:s1_redline"]);
+  assert.match(l["scenario:s2.case_file"]!, /整理案卷/);
+  assert.match(l["scenario:s2.case_file"]!, /材料整理/, "任务表里的叫法也能搜到（走查发现）");
 });
 
 test("Ctrl / ⌘ + K 打开搜索（macOS 只认 ⌘、开通向导里不开）；侧栏有入口；组字时不当选择；Esc 不连带关掉底下的对话框", () => {
