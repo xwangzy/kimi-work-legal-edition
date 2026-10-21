@@ -324,6 +324,7 @@ async function startKernel() {
       processEnv: process.env,
       release,
       paths: { dataDir: DATA_DIR, gateEntry, kapEntry },
+      appVersion: app.getVersion(),
       runtimeEnv: restart.runtimeEnv,
     }),
     // 内核 stdout/stderr 进内存环形缓冲（上限 16KB）：内核崩溃在 asar 加载期只有这里可见——

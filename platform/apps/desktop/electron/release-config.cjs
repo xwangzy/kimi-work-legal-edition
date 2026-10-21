@@ -179,6 +179,8 @@ function kernelChildEnv(o) {
     ...(o.packaged ? { ZR_REQUIRE_CONTROL_PLANE: "1", ZR_AT_REST: "required" } : {}),
     ...(o.isDev ? {} : { ZR_KERNEL_TCP: "off" }),
     ZR_KERNEL_DATA_DIR: pick("ZR_KERNEL_DATA_DIR", o.paths.dataDir),
+    // 客户端版本（v9.3 P3 版本分布统计）：只认数字点分加短后缀
+    ...(typeof o.appVersion === "string" && /^\d{1,4}\.\d{1,4}\.\d{1,6}(?:-[0-9a-z.]{1,20})?$/.test(o.appVersion) ? { ZR_APP_VERSION: o.appVersion } : {}),
     ...(o.packaged
       ? {}
       : {

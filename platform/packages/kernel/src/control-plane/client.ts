@@ -46,6 +46,11 @@ export interface ControlPlaneClientDeps {
   activationClaim?: () => { activation_id: string; claim_secret: string } | null;
   onEnrolled?: () => void;
   now?: () => number;
+  /**
+   * 客户端版本（v9.3 P3：客户端版本分布统计——控制面轮换签名密钥前要看旧版本活跃设备的比例，设计 §4.7）：
+   * 随设备登记请求体一起发出（请求体在设备签名覆盖之内）；不合格的不发。
+   */
+  clientVersion?: string | null;
   /** 每次同步结束后（内核据此在退出模式解除后恢复暂停的任务；复核 S6-B34）。 */
   onSynced?: (report: SyncReport) => void;
 }
@@ -54,6 +59,9 @@ export interface ControlPlaneClientDeps {
  * 同步间隔上限（复核 S6-A21）：席位令牌签发 96 小时、剩余不足 73 小时即续期，“控制面停机后仍有 ≥ 72 小时”依赖同步间隔 ≤ 1 小时。
  */
 export const SYNC_MAX_INTERVAL_MS = 3600 * 1000;
+
+/** 客户端版本号：数字点分，可带短后缀（与控制面同一口径）。 */
+export const CLIENT_VERSION_RE = /^\d{1,4}\.\d{1,4}\.\d{1,6}(?:-[0-9a-z.]{1,20})?$/;
 
 /** 控制面拒绝、重发也不会成功的错误：不自动重试，界面写明原因、需人工处理（复核 S6-A22）。 */
 // 控制面暂时无法核实尚未登记的设备（cert_required / cert_invalid / pre_revocation_limit）不在此列：自动重试，
@@ -156,7 +164,8 @@ export class ControlPlaneClient {
 
   /** 设备登记（幂等）；租户根公钥未入组时先开通（G0）。 */
   private async register(): Promise<string> {
-    const body = { tid: this.d.tenantId, cert: this.d.device.cert };
+    const v = this.d.clientVersion;
+    const body = { tid: this.d.tenantId, cert: this.d.device.cert, ...(v && CLIENT_VERSION_RE.test(v) ? { client: { version: v } } : {}) };
     let r = await this.call("POST", "/v1/devices/register", body);
     if (!r.ok && r.error === "root_not_enrolled") {
       const root = this.d.firmRoot?.() ?? null;

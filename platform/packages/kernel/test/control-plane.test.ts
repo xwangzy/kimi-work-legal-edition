@@ -22,7 +22,7 @@ let firstReport: any;
 
 before(async () => {
   cloud = await startCloudCp({ tenant: TID });
-  tk = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "upstream" }, FIRM);
+  tk = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "upstream", ZR_APP_VERSION: "0.9.3" }, FIRM);
   firstStatus = await tk.inv("control_plane.status");
   firstReport = await tk.inv("control_plane.sync");
 });
@@ -52,6 +52,11 @@ test("开通同步：设备登记、许可、租户盐、目录、最严模板�
   const t = cloud.cp.ops.tenant(TID)!;
   assert.ok(t.root_public_key_pem, "律所根公钥已入组");
   assert.ok(t.devices.has(`dev_${FIRM}_test-lawyer`), "本机设备已登记");
+  // 客户端版本分布（v9.3 P3）：版本随签名的登记请求上报，控制面只记版本号与日期
+  const rec = t.devices.get(`dev_${FIRM}_test-lawyer`)!;
+  assert.equal(rec.client_version, "0.9.3");
+  assert.equal(rec.client_seen_on, new Date().toISOString().slice(0, 10));
+  assert.equal(cloud.cp.metrics().client_versions["0.9.3"], 1);
   const salt = tk.kernel.db.get<{ salt_b64: string }>(`SELECT salt_b64 FROM tenant_salts WHERE tenant_id = ? AND purpose = 'anon_matter'`, [TID])!;
   assert.equal(salt.salt_b64, t.salt_b64, "匿名事项编号用控制面下发的租户盐（同一律所各设备一致）");
   const seatDoc = tk.kernel.db.get<{ body_json: string }>(`SELECT body_json FROM cp_documents WHERE tenant_id = ? AND kind = 'seat'`, [TID])!;

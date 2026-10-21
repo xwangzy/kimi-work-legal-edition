@@ -369,6 +369,8 @@ if (cfg.role === "cp-signer") {
   serviceMetrics = () => [
     ...(storeMetrics ? storeMetrics() : []),
     { name: "kwl_cp_quota_leases_total", help: "额度租约（按结果：发放、受限、拒发原因、回报）", type: "counter", values: Object.entries(cpInstance.metrics().quota).map(([k, n]) => [{ result: k.replace(":", "_") }, n]) },
+    // 客户端版本分布（v9.3 P3）：30 天内报到过、未吊销的设备数；轮换签名密钥前看旧版本占比
+    { name: "kwl_cp_client_devices", help: "活跃设备按客户端版本（30 天内报到、未吊销）", type: "gauge", values: Object.entries(cpInstance.metrics().client_versions).map(([v, n]) => [{ version: v }, n]) },
   ];
 } else {
   // 控制面以外的角色：必须订阅控制面吊销集（评审 Z4 P0-7）

@@ -337,6 +337,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
               return null;
             }
           },
+          // 客户端版本（主进程从安装包取，经 ZR_APP_VERSION 给内核）：随登记请求上报，控制面只做版本分布统计
+          clientVersion: env.ZR_APP_VERSION ?? null,
           // 第 13 批：经开通码激活的创始设备首次登记根公钥时出示认领凭据，登记成功即删除暂存
           activationClaim: () => readActivationClaim(keysDir),
           onEnrolled: () => dropActivationClaim(keysDir),

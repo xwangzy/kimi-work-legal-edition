@@ -84,6 +84,9 @@ export interface DeviceRecord {
   cert: DeviceCertificate;
   registered_at: string;
   revoked_at: string | null;
+  /** 客户端版本（v9.3 P3 版本分布统计；随签名的登记请求上报）与最近一次报到的日期（只到日，避免每次同步都改写状态）。 */
+  client_version?: string;
+  client_seen_on?: string;
 }
 
 export interface SeatRecord {
@@ -264,8 +267,8 @@ export interface ControlPlaneOps {
 export interface ControlPlane {
   server: Server;
   ops: ControlPlaneOps;
-  /** 服务内部指标（额度租约按结果计数）。 */
-  metrics(): { quota: Record<string, number> };
+  /** 服务内部指标（额度租约按结果计数；客户端版本分布）。 */
+  metrics(): { quota: Record<string, number>; client_versions: Record<string, number> };
   /** seat = 全部席位公钥（通用 + 各受众）；seatFor(受众) = 只给那一受众服务的公钥表（A-8 按受众拆分）。 */
   publicKeys: { envelope: Record<string, string>; seat: Record<string, string>; seatFor(aud?: SeatAudience): Record<string, string> };
 }
@@ -282,6 +285,9 @@ class CpError extends Error {
     this.extra = extra;
   }
 }
+
+/** 客户端版本号：数字点分，可带短后缀（与内核 control-plane/client.ts 同一口径）。 */
+const CLIENT_VERSION_RE = /^\d{1,4}\.\d{1,4}\.\d{1,6}(?:-[0-9a-z.]{1,20})?$/;
 
 /** 每租户预先吊销的设备数上限（复核 S6-C09：防止目录被撑过通道响应上限）。 */
 const MAX_PRE_REVOKED = 1000;
@@ -1232,6 +1238,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         t.devices.set(cert.deviceId, { cert, registered_at: iso(), revoked_at: null });
         t.directoryVersion += 1;
       }
+      // 客户端版本（v9.3 P3）：只记版本号与日期；版本变了或换了一天才改写（每台设备每天至多一次写入）
+      const clientVer = typeof (b.client as { version?: unknown } | undefined)?.version === "string" ? String((b.client as { version: string }).version) : null;
+      if (clientVer && CLIENT_VERSION_RE.test(clientVer)) {
+        const rec = t.devices.get(cert.deviceId)!;
+        const today = iso().slice(0, 10);
+        if (rec.client_version !== clientVer || rec.client_seen_on !== today) Object.assign(rec, { client_version: clientVer, client_seen_on: today });
+      }
       // 席位：成员没有席位且许可内仍有余量时自动分配（G0；生产由管理员在控制台分配）
       if (!t.seatsByUser.has(cert.memberId) && cert.role !== "node") {
         const active = [...t.seatsByUser.values()].filter((s) => !s.revoked_at).length;
@@ -1736,7 +1749,22 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   return {
     server,
     ops,
-    metrics: () => ({ quota: { ...quotaCounts } }),
+    metrics: () => {
+      // 客户端版本分布（v9.3 P3；设计 §4.7 轮换签名密钥前看“旧版本活跃设备 < 1%”）：只数未吊销、30 天内报到过的设备；至多 20 个版本，其余归 other
+      const since = new Date(now() - 30 * DAY_MS).toISOString().slice(0, 10);
+      const byVersion = new Map<string, number>();
+      for (const t of tenants.values())
+        for (const d of t.devices.values()) {
+          if (d.revoked_at) continue;
+          const v = d.client_version && d.client_seen_on && d.client_seen_on >= since ? d.client_version : d.client_version ? null : "unknown";
+          if (v) byVersion.set(v, (byVersion.get(v) ?? 0) + 1);
+        }
+      const sorted = [...byVersion].sort((a, b) => b[1] - a[1]);
+      const versions: Record<string, number> = Object.fromEntries(sorted.slice(0, 20));
+      const rest = sorted.slice(20).reduce((n, [, c]) => n + c, 0);
+      if (rest) versions.other = (versions.other ?? 0) + rest;
+      return { quota: { ...quotaCounts }, client_versions: versions };
+    },
     publicKeys: { envelope: pk.envelope, seat: pk.seat, seatFor: (aud?: SeatAudience) => ({ [aud ? (pk.seat_audiences[aud] ?? pk.seat_general) : pk.seat_general]: pk.seat[aud ? (pk.seat_audiences[aud] ?? pk.seat_general) : pk.seat_general]! }) },
   };
 }
