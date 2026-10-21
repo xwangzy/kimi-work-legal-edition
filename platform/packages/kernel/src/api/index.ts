@@ -1409,6 +1409,24 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (typeof p.skill !== "string" || !installed.includes(p.skill)) throw validation("方法模板不存在或未安装（请在“方法与模板”页查看可用模板）");
         skill = p.skill;
       }
+      // 场景卡字段作为方法参数显式传给 Agent（v9.4 S1 §6.2 第 10 项：原来只拼进任务说明的文字里，真实模型可能读不到）。
+      // 只收简单键值：≤ 8 项，键为小写字母与下划线，值为字符串（多选用“、”连接），每项 ≤ 300 字
+      let skillArgs: Record<string, string> | undefined;
+      if (p?.skill_args !== undefined && p?.skill_args !== null) {
+        if (!skill) throw validation("方法参数只能和方法模板一起使用");
+        if (typeof p.skill_args !== "object" || Array.isArray(p.skill_args)) throw validation("skill_args 须为对象");
+        const entries = Object.entries(p.skill_args as Record<string, unknown>);
+        if (entries.length > 8) throw validation("方法参数至多 8 项");
+        skillArgs = {};
+        for (const [k, v] of entries) {
+          if (!/^[a-z][a-z_]{0,31}$/.test(k)) throw validation(`方法参数名不合法：${k}`);
+          const val = Array.isArray(v) ? v.map(String).join("、") : typeof v === "string" ? v : null;
+          if (val === null) throw validation(`方法参数 ${k} 须为文字`);
+          if ([...val].length > 300) throw validation(`方法参数 ${k} 超过 300 字`);
+          if (val.trim()) skillArgs[k] = val.trim();
+        }
+        if (Object.keys(skillArgs).length === 0) skillArgs = undefined;
+      }
 
       // 追问（集成核查 P1-1）：在本事项、本人发起、已完成的上一次 Agent 运行的会话上继续
       let followup: { followup_of: string; continue_session_id: string } | undefined;
@@ -1470,7 +1488,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           matterId,
           est.scenario,
           String(p.idempotency_key),
-          JSON.stringify({ ...est.input, estimate_id: est.estimate_id, goal: p?.goal, topic_hint: p?.topic_hint ?? est.input.topic_hint, ...(runOptions ? { run_options: runOptions } : {}), ...(skill ? { skill, ...skillSnapshot(deps.skills, skill) } : {}), ...(followup ?? {}) }),
+          JSON.stringify({ ...est.input, estimate_id: est.estimate_id, goal: p?.goal, topic_hint: p?.topic_hint ?? est.input.topic_hint, ...(runOptions ? { run_options: runOptions } : {}), ...(skill ? { skill, ...skillSnapshot(deps.skills, skill) } : {}), ...(skillArgs ? { skill_args: skillArgs } : {}), ...(followup ?? {}) }),
           Math.min(est.points, budgetCap),
           Math.min(est.points, budgetCap),
           est.estimate_id,

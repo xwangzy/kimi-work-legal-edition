@@ -541,6 +541,17 @@ export function nextScenarios(card: ScenarioCard | null): ScenarioCard[] {
   return (NEXT_STEPS[card.id] ?? []).flatMap((id) => SCENARIOS.filter((c) => c.id === id)).slice(0, 3);
 }
 
+/** 卡片字段 → 方法参数（v9.4：显式传给 Agent，不只拼进任务说明）。空值不传；多选用“、”连接；每项至多 300 字。纯函数。 */
+export function skillArgsOf(card: Pick<ScenarioCard, "fields">, values: Record<string, string | string[]>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of card.fields) {
+    const v = values[f.key];
+    const s = (Array.isArray(v) ? v.join("、") : (v ?? "")).trim();
+    if (s && /^[a-z][a-z_]{0,31}$/.test(f.key)) out[f.key] = [...s].slice(0, 300).join("");
+  }
+  return out;
+}
+
 export function buildGoal(card: ScenarioCard, values: Record<string, string | string[]>, extra: string): string {
   const parts = card.goal.split(/(?<=[。；])/);
   const out = parts

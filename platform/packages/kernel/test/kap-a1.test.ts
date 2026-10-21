@@ -169,6 +169,31 @@ test("方法模板（Kimi Code Skills，核查 P0-5）：签名包作为可信�
   }
 });
 
+test("方法参数（v9.4 S1 §6.2 第 10 项）：场景卡字段作为参数显式写进模型看到的方法说明；参数名不合法、未带方法模板时拒绝", { timeout: 180_000 }, async () => {
+  const { inv } = tk;
+  const { matter } = await inv("matters.create", { title: "kap 方法参数", stance: "原告", consent_status: "not_required" });
+  const M = "KAPARGS";
+  let firstUser = "";
+  cloud.model.script = (body) => {
+    const msgs = Array.isArray(body.messages) ? (body.messages as { role?: string; content?: unknown }[]) : [];
+    const first = JSON.stringify(msgs.find((m) => m.role === "user")?.content ?? "");
+    if (!first.includes(M)) return null;
+    firstUser = first;
+    return { content: "已收到参数。" };
+  };
+  try {
+    const est = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
+    await assert.rejects(() => inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-args-bad-${Date.now()}`, goal: `${M} x`, skill: "citation-check", skill_args: { "Bad-Key": "x" } }), /方法参数名不合法/);
+    await assert.rejects(() => inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-args-noskill-${Date.now()}`, goal: `${M} x`, skill_args: { when: "2025-06" } }), /只能和方法模板一起使用/);
+    const run = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-args-${Date.now()}`, goal: `${M} 核对引用`, skill: "citation-check", skill_args: { when: "2025-06", focus: ["付款", "违约责任"] }, plan_first: false, mode: "default" });
+    const { run: fin, events } = await waitRun(inv, run.run_id, 150_000);
+    assert.equal(fin.status, "succeeded", JSON.stringify(events.map((e: any) => e.type)));
+    assert.match(firstUser, /方法参数：when=2025-06；focus=付款、违约责任。/, firstUser.slice(0, 400));
+  } finally {
+    cloud.model.script = null;
+  }
+});
+
 test("追问（Kimi Code 集成核查 P1-1）：在上一次运行的会话上继续，模型看得到上一轮的问答；新一轮有自己的记录；跨事项与未完成的任务不能追问", { timeout: 240_000 }, async () => {
   const { inv } = tk;
   const { matter } = await inv("matters.create", { title: "kap 追问", stance: "原告", consent_status: "not_required" });

@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type RunPolicyView } from "../api.ts";
 import type { ScenarioCard } from "../lib/scenarios.ts";
-import { buildGoal, canStartPartial, LINE_LABELS, lineMismatchText, missingMaterialsText, splitIssues } from "../lib/scenarios.ts";
+import { buildGoal, canStartPartial, LINE_LABELS, lineMismatchText, missingMaterialsText, skillArgsOf, splitIssues } from "../lib/scenarios.ts";
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { defaultChoice } from "./ModeSelector.tsx";
@@ -102,7 +102,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   // 整理案卷（确定性流程）的“已知争点”直接交给争点矩阵框架（B-5）
   const issues = useMemo(() => (card.scenario === "s2.case_file" ? splitIssues(String(values.issues ?? "")) : []), [card.scenario, values]);
   const value = useMemo(() => ({ goal, scenario: card.scenario, documentIds: docIds, choice: defaultChoice(policy), ...(issues.length > 0 ? { issues } : {}) }), [goal, card.scenario, docIds, policy, issues]);
-  const opts = useMemo(() => ({ ...(card.skill ? { skill: card.skill } : {}), label: card.title }), [card]);
+  const opts = useMemo(() => ({ ...(card.skill ? { skill: card.skill } : {}), label: card.title, ...(card.skill ? { skillArgs: skillArgsOf(card, values) } : {}) }), [card, values]);
 
   // 疑似姓名核对之后重新估价
   const [reestimateTick, setReestimateTick] = useState(0);
