@@ -73,7 +73,7 @@ export function currentBadges(f: BadgeFacts): Badge[] {
       break;
   }
   const out: Badge[] = [];
-  if (f.openTools.includes("Bash") || f.execOpen) out.push({ label: "本机 · 运行时隔离（W）", tone: "green" });
+  if (f.openTools.includes("Bash") || f.execOpen) out.push({ label: "在这台电脑上计算（不联网）", tone: "green" });
   if (f.openTools.includes("WebSearch") || (f.inflight?.search ?? 0) > 0) out.push({ label: "联网检索中（去标识查询经中软检索服务）", tone: "blue" });
   if (f.openTools.includes("FetchURL") || (f.inflight?.fetch ?? 0) > 0) out.push({ label: "正在打开公开网页", tone: "blue" });
   if ((f.inflight?.model ?? 0) > 0) out.push({ label: modelBadge(f.endpoint, f.fullPseudonym), tone: "blue" });

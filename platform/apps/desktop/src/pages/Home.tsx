@@ -1,7 +1,7 @@
 /**
  * 首页（第 03 篇 §4.2；用户拍板按律师业务线组织；UIUX P0-2 / Demo 融合 §4.1–4.2）：
  * 输入框在上（描述任务即可，命中业务场景时给出建议、不自动切换）；下面按业务线（诉讼仲裁 / 非诉 / 企业法务）各 5 张场景卡，
- * 卡片写“给什么 → 得到什么”，点开是两段式开始面板。所有场景尚未通过法律质量门槛，统一标“试用”。
+ * 卡片写“给什么 → 得到什么”，点开是两段式开始面板。所有场景尚未通过法律质量门槛：卡片上不逐张标“试用”，场景区标题旁统一写一行（Z3 #16、V-a）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Matter, type MaterialFile, type RunPolicyView } from "../api.ts";
@@ -250,7 +250,9 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
         )}
 
         <section className="lines">
-          <div className="section-title">从业务场景开始</div>
+          <div className="section-title section-title-row">
+            从业务场景开始 <span className="muted section-note">全部场景试用中 · 结果须律师复核</span>
+          </div>
           <div className="line-tabs" role="tablist" aria-label="业务线">
             {(Object.keys(LINE_LABELS) as BusinessLine[]).map((l) => (
               <button key={l} role="tab" aria-selected={line === l} className={`line-tab${line === l ? " active" : ""}`} onClick={() => chooseLine(l)}>
@@ -260,9 +262,9 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
           </div>
           <div className="cards scenario-cards">
             {SCENARIOS.filter((c) => c.line === line).map((c) => (
-              <button key={c.id} className="card scenario-card" aria-label={`${c.title}（试用）：给 ${c.gives}；得到 ${c.gets.join("、")}`} onClick={() => openCard(c)}>
+              <button key={c.id} className="card scenario-card" aria-label={`${c.title}：给 ${c.gives}；得到 ${c.gets.join("、")}`} onClick={() => openCard(c)}>
                 <div className="title">
-                  {c.title} <span className="tag tag-beta">试用</span>
+                  {c.title}
                 </div>
                 <div className="desc">
                   <span className="sc-k">给</span>
@@ -308,7 +310,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
           </section>
         )}
         <p className="muted foot-note">
-          所有场景都在试用阶段：结果是草稿，须律师复核后使用。也可以直接在上面描述任务。更多方法见 <button className="btn-link" onClick={() => nav("/methods")}>方法与模板</button>。
+          也可以直接在上面描述任务。更多方法见 <button className="btn-link" onClick={() => nav("/methods")}>方法与模板</button>。
         </p>
       </div>
       {sheet && <RunSheet pending={sheet} onClose={() => setSheet(null)} />}

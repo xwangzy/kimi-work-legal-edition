@@ -103,3 +103,8 @@ export function audienceText(a: string, collabTeam: boolean): string {
 export function defaultForm(now = Date.now()): { kind: string; due_date: string; days_before: number; remind_time: string; note: string; audience: "me" | "team" } {
   return { kind: "hearing", due_date: new Date(now + BJ + 7 * 86_400_000).toISOString().slice(0, 10), days_before: 3, remind_time: "09:00", note: "", audience: "me" };
 }
+
+/** 期限提醒页的一句话（Z3 #18 / 3.6）：已连接中软通知服务与未连接各一句。纯函数。 */
+export function reminderLine(cloudConfigured: boolean): string {
+  return cloudConfigured ? "到时在这台电脑上提醒；电脑关机时也会送到你登记的其他设备。" : "到时在这台电脑上提醒；电脑关机时不会提醒。";
+}

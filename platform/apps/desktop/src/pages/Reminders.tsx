@@ -8,7 +8,7 @@ import { nav } from "../App.tsx";
 import { Modal } from "../components/Modal.tsx";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
-import { audienceText, bjToday, cloudStateText, daysUntil, defaultForm, dueText, dueTone, REMINDER_KINDS, reminderKindLabel, rejectReasonText, scheduleLine } from "../lib/reminders.ts";
+import { audienceText, bjToday, cloudStateText, daysUntil, defaultForm, dueText, dueTone, REMINDER_KINDS, reminderKindLabel, rejectReasonText, reminderLine, scheduleLine } from "../lib/reminders.ts";
 import { Select } from "../components/Select.tsx";
 
 const DAYS_CHOICES = [0, 1, 2, 3, 5, 7, 10, 14, 30];
@@ -65,14 +65,19 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
         </div>
         {err && <div className="banner banner-red">{err}</div>}
         {data && (
-          <p className="muted">
-            {data.cloud.configured
-              ? "到时在这台电脑上提醒；电脑关机时，由中软通知服务送到你的其他设备（选了“事项成员”的也送到他们的设备）。中软只知道提醒时间和接收设备，期限类型、事项和备注在这台电脑上加密，中软看不到。"
-              : "到时在这台电脑上提醒。没有连接中软通知服务：电脑关机或应用没开时不会提醒。"}
-            {data.cloud.configured && data.cloud.last && !data.cloud.last.ok && " 刚才没能和中软通知服务完成同步，稍后自动重试（这台电脑上照常提醒）。"}
-            {/* 复核 S10B-06：提醒只保存在建立它的电脑上 */}
-            {" 提醒保存在这台电脑上：换电脑要重新设置；这台电脑停用后，它设的提醒在其他设备上也不再响。"}
-          </p>
+          <div className="muted reminders-note">
+            {/* Z3 #18 / 3.6：按是否连接各写一句，机制说明收进折叠 */}
+            <p>{reminderLine(data.cloud.configured)}</p>
+            {data.cloud.configured && data.cloud.last && !data.cloud.last.ok && <p>刚才没能和中软通知服务完成同步，稍后自动重试（这台电脑上照常提醒）。</p>}
+            <details>
+              <summary>提醒是怎么送到的</summary>
+              {data.cloud.configured
+                ? "电脑关机时，由中软通知服务送到你的其他设备（选了“事项成员”的也送到他们的设备）。中软只知道提醒时间和接收设备，期限类型、事项和备注在这台电脑上加密，中软看不到。"
+                : "没有连接中软通知服务：电脑关机或应用没开时不会提醒。"}
+              {/* 复核 S10B-06：提醒只保存在建立它的电脑上 */}
+              {" 提醒保存在这台电脑上：换电脑要重新设置；这台电脑停用后，它设的提醒在其他设备上也不再响。"}
+            </details>
+          </div>
         )}
         {data && data.rejected.length > 0 && (
           <p className="muted">

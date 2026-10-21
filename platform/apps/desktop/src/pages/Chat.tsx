@@ -88,7 +88,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
               {/* 空态给出可点击的示例问题（Y4 C-2） */}
               <div className="chat-examples">
                 {["股权转让中，未实缴出资股东的补足责任如何认定？", "买卖合同逾期付款违约金过高时，法院一般如何调整？", "劳动合同到期不续签，用人单位需要支付经济补偿吗？"].map((q) => (
-                  <button key={q} className="chip" onClick={() => setText(q)}>
+                  <button key={q} className="chip chat-example" onClick={() => setText(q)}>
                     {q}
                   </button>
                 ))}

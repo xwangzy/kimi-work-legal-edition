@@ -10,7 +10,7 @@ import { api, updates, type Capabilities, type ContentCheckResult, type ContentS
 import { quotaLawyerLine } from "../lib/firm-usage.ts";
 import { CONTENT_CHECK_FAILED, CONTENT_PANEL_NOTE, contentCheckLine, contentSourceLine, contentStaleLine } from "../lib/content-labels.ts";
 import { nav, type SettingsTab } from "../App.tsx";
-import { fmtDate, fmtTime, groupDigits } from "../lib/labels.ts";
+import { displayVersion, fmtDate, fmtTime, groupDigits } from "../lib/labels.ts";
 import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
 import { RecallEvalPanel } from "./RecallEval.tsx";
 import { CpAuditPanel, UsagePanel } from "./FirmUsage.tsx";
@@ -72,8 +72,8 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
           ))}
         </div>
         {err && <div className="banner banner-red">{err}</div>}
-        {tab === "general" && <GeneralTab version={status?.version ?? null} />}
-        {tab === "visibility" && <VisibilityTab gate={gate} im={im} recovery={recovery} firm={status?.firm ?? null} syncOn={!!status?.sync_configured} />}
+        {tab === "general" && <GeneralTab version={displayVersion(status?.app_version, status?.version)} />}
+        {tab === "visibility" && <VisibilityTab gate={gate} im={im} recovery={recovery} firm={status?.firm_name ?? null} syncOn={!!status?.sync_configured} />}
         {tab === "sources" && <SourcesTab gate={gate} lawdb={lawdb} im={im} onLawdbChanged={() => api.lawdbStatus().then(setLawdb).catch(() => {})} />}
         {tab === "device" && <DeviceTab caps={caps} gate={gate} mySafety={mySafety} recovery={recovery} admin={isAdmin} />}
         {tab === "admin" &&
@@ -87,7 +87,7 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
   );
 }
 
-function GeneralTab({ version }: { version: string | null }) {
+function GeneralTab({ version }: { version: string }) {
   const [zoom, setZoom] = useState(readUiZoom());
   const [theme, setTheme] = useState(readUiTheme());
   return (
@@ -144,7 +144,7 @@ function GeneralTab({ version }: { version: string | null }) {
         </div>
         <div className="device-row">
           <div className="device-k">版本</div>
-          <div>{version ?? "—"}</div>
+          <div>{version}</div>
         </div>
       </div>
     </div>
@@ -594,13 +594,26 @@ function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[];
 function DiagnosticsTab({ caps, gate, devices, unresolved, onReconciled, im, recovery }: { caps: Capabilities | null; gate: any; devices: any[]; unresolved: any[]; onReconciled: () => void; im: any[]; recovery: any }) {
   const [busy, setBusy] = useState(false);
   const [logLevel, setLogLevel] = useState<string | null>(null);
+  const [build, setBuild] = useState("");
   const [msg, setMsg] = useState("");
   useEffect(() => {
-    api.kernelStatus().then((st: any) => setLogLevel(typeof st?.log_level === "string" ? st.log_level : null)).catch(() => setLogLevel(null));
+    api
+      .kernelStatus()
+      .then((st: any) => {
+        setLogLevel(typeof st?.log_level === "string" ? st.log_level : null);
+        setBuild([st?.app_version ? `安装包 ${st.app_version}` : "开发形态", st?.version ? `内核 ${st.version}` : ""].filter(Boolean).join(" · "));
+      })
+      .catch(() => setLogLevel(null));
   }, []);
   return (
     <div className="device">
       <div className="panel">
+        {build && (
+          <div className="device-row">
+            <div className="device-k">版本标记</div>
+            <div className="mono">{build}</div>
+          </div>
+        )}
         <div className="device-row">
           <div className="device-k">代码运行</div>
           <div>

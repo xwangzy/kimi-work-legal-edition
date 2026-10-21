@@ -2308,6 +2308,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const endpoints = { standard: !!up?.model, byok: !!up?.byok, private: !!up?.private };
       return {
         version: "v5.0.0-g0",
+        // 安装包版本（主进程经 ZR_APP_VERSION 给出；开发形态为 null）与开通时的律所名称：律师层显示用（Z3 #20、#30）
+        app_version: config.env.ZR_APP_VERSION ?? null,
+        firm_name: config.activation?.firm_name ?? null,
         workspace_dir: config.workspaceDir,
         firm: config.firmSlug,
         user: config.userSlug,

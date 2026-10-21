@@ -19,7 +19,7 @@ import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "
 import { nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
 import { currentBadges } from "../lib/badges.ts";
 import { engineHeartbeatMs, hasProgress, mergeProgress, phaseLine, progressActivityKey, progressTexts, silenceMs, stallThresholdMs, progressView, type ProgressViewModel } from "../lib/progress.ts";
-import { buildSteps, groupSubtaskSteps, keyStepKeys, sentByToolCall, toolLabel, type SentInfo, type Step } from "../lib/timeline.ts";
+import { buildSteps, groupSubtaskSteps, keyStepKeys, mergeRepeatSteps, sentByToolCall, toolLabel, type SentInfo, type Step } from "../lib/timeline.ts";
 import { busyRunOfError } from "../lib/start-block.ts";
 import { methodLine } from "../lib/run-method.ts";
 import { Select } from "../components/Select.tsx";
@@ -28,7 +28,8 @@ import { rightCollapsed, rightTabs, type RightTab } from "../lib/run-pane.ts";
 /** 页面标题：任务目标前 24 字（律师能区分多个任务）；没有目标时用场景名。 */
 function runTitle(run: any): string {
   const goal = String(run?.goal ?? run?.input_snapshot?.goal ?? "").replace(/\s+/g, " ").trim();
-  if (goal) return goal.length > 24 ? `${goal.slice(0, 24)}…` : goal;
+  // 任务名太长时只显示目标的前 30 个字，悬停看全文（Z3 #21、V-g）；标题允许完整折行
+  if (goal) return goal.length > 30 ? `${goal.slice(0, 30)}…` : goal;
   return SCENARIO_LABELS[run?.scenario] ?? "任务";
 }
 
@@ -280,7 +281,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
       .then((r) => setSent(sentByToolCall(r.records)))
       .catch(() => {});
   }, [networkDone, runId]);
-  const allSteps = useMemo(() => buildSteps(events, skillTitles, sent), [events, skillTitles, sent]);
+  const allSteps = useMemo(() => mergeRepeatSteps(buildSteps(events, skillTitles, sent), risk?.total), [events, skillTitles, sent, risk?.total]);
   // 律师层只在关键步骤显示时刻（Y4 R-12，复核 S7B-06）
   const keySteps = useMemo(() => keyStepKeys(allSteps), [allSteps]);
   const pv = useMemo(() => progressView(progress), [progress]);
@@ -471,11 +472,9 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             <span className="mat-name" title={d.filename}>{d.filename}</span>
           </div>
         ))}
-        {loaded && (
+        {loaded && loaded.requested > 0 && (
           <p className="muted">已读 {loaded.loaded}/{loaded.requested} 份{loaded.failed ? `，${loaded.failed} 份无法解析（未静默跳过）` : ""}。</p>
         )}
-        <div className="pane-title">在哪里处理</div>
-        <p className="muted">在这台电脑上处理 · 原件不会被修改 · 结果都是草稿</p>
       </aside>
 
       <section className="exec-mid">
@@ -485,6 +484,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             <div className="exec-sub">
               <span className={`pill ${terminal ? (status === "succeeded" ? "pill-green" : "pill-gray") : status.startsWith("waiting") ? "pill-orange" : "pill-blue"}`}>{RUN_STATUS_LABELS[status] ?? status}</span>
               {!status.startsWith("waiting") && badges.map((b) => <span key={b.label} className={`pill pill-${b.tone}`}>{b.label}</span>)}
+              {/* 原左栏“在哪里处理”每个任务都一样，收成一枚胶囊（Z3 #29） */}
+              <span className="pill pill-gray" title="原件不会被修改；结果都是草稿，须律师复核">原件不改 · 结果是草稿</span>
               {/* 窄屏（≤1280px）左栏收起时的材料入口（UIUX 增量评审 N-1） */}
               <span className="narrow-only mats-chip-wrap">
                 <button className="pill pill-gray" aria-expanded={matsOpen} onClick={() => setMatsOpen((v) => !v)}>

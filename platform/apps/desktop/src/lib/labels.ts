@@ -286,3 +286,15 @@ export function clipTitle(title: string, max = 28): string {
   const chars = [...title];
   return chars.length > max ? `${chars.slice(0, max).join("")}…` : title;
 }
+
+/**
+ * 设置 · 通用的版本号（Z3 #30、V-i）：律师层显示安装包版本“5.0.0”，不显示内部构建标记（如“-g0”）；
+ * 开发形态没有安装包版本时写“开发版”。原始标记只在“管理 → 技术支持 → 诊断”显示。纯函数。
+ */
+export function displayVersion(appVersion: string | null | undefined, kernelVersion: string | null | undefined): string {
+  const pick = appVersion || kernelVersion;
+  if (!pick) return "—";
+  const m = /^v?(\d+\.\d+\.\d+)/.exec(pick);
+  if (!m) return "—";
+  return appVersion ? m[1]! : `${m[1]}（开发版）`;
+}

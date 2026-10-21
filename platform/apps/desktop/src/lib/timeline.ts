@@ -47,14 +47,14 @@ const SKIP_REASONS: Record<string, string> = {
 
 /** 法律工具的中文名（律师层；原始工具名只在“处理细节”里出现）。 */
 const LEGAL_TOOL_LABELS: Record<string, string> = {
-  "materials.read_excerpt": "查阅材料原文",
+  "materials.read_excerpt": "阅读材料",
   "law.get_version": "查法条版本",
   "law.search": "检索法规",
   "citations.verify": "核对引用",
   "calc.interest": "计算利息与违约金",
   "redact.scan": "检查个人信息",
-  "materials.list": "查看材料目录",
-  "riskcards.submit": "提交风险项",
+  "materials.list": "阅读材料",
+  "riskcards.submit": "找出风险",
   "riskcards.list": "查看审查结论",
   "facts.submit": "整理事实",
   "facts.list": "查看事实",
@@ -81,6 +81,28 @@ export interface Step {
 export type TimelineItem =
   | { kind: "step"; step: Step; label?: string }
   | { kind: "sub"; key: string; agent: string; label: string; steps: Step[]; failed: boolean; done: boolean };
+
+/** 连续多次只算一步的律师层动作（Z3 #29）：看目录、读原文都是“阅读材料”；每张风险卡一次提交合成“找出 n 处风险”。 */
+const MERGEABLE_TITLES = new Set(["阅读材料", "找出风险"]);
+
+/**
+ * 合并连续的同类步骤（Z3 #29）：同一子任务里紧挨着的“阅读材料”“找出风险”合成一行；
+ * 有风险卡总数时写“找出 n 处风险”。只合并律师层工具步骤，不碰联网与确认。纯函数。
+ */
+export function mergeRepeatSteps(steps: Step[], riskTotal?: number): Step[] {
+  const out: Step[] = [];
+  for (const s of steps) {
+    const prev = out[out.length - 1];
+    if (prev && s.level === "lawyer" && MERGEABLE_TITLES.has(s.title) && prev.title === s.title && prev.agent === s.agent && prev.level === "lawyer") {
+      const icon = prev.icon === "fail" || s.icon === "fail" ? "fail" : prev.icon === "wait" || s.icon === "wait" ? "wait" : "ok";
+      out[out.length - 1] = { ...prev, icon, at: s.at ?? prev.at, detail: prev.detail ?? s.detail };
+      continue;
+    }
+    out.push(s);
+  }
+  if (riskTotal && riskTotal > 0) return out.map((s) => (s.title === "找出风险" && s.icon !== "wait" ? { ...s, title: `找出 ${riskTotal} 处风险` } : s));
+  return out;
+}
 
 /** 联网步骤不折叠：律师要能直接看到“实际发出什么”（复核 S7B-05）。 */
 const NETWORK_TITLES = new Set(["联网查资料", "打开网页"]);

@@ -63,7 +63,7 @@ test("执行位置徽标：由事实生成——排队、恢复、预算暂停�
   assert.match(labels({ inflight: { model: 1, search: 0, fetch: 0 }, endpoint: "byok" })[0]!, /律所自己的 Kimi 账号.*不经中软/);
   assert.match(labels({ inflight: { model: 1, search: 0, fetch: 0 }, endpoint: "private" })[0]!, /律所私有模型/);
   // 执行域与检索、抓取
-  assert.deepEqual(labels({ openTools: ["Bash"] }), ["本机 · 运行时隔离（W）"]);
+  assert.deepEqual(labels({ openTools: ["Bash"] }), ["在这台电脑上计算（不联网）"]);
   assert.ok(labels({ inflight: { model: 0, search: 1, fetch: 0 } }).some((l) => l.startsWith("联网检索中")));
   assert.ok(labels({ openTools: ["FetchURL"] }).some((l) => l.startsWith("正在打开公开网页")));
 });
