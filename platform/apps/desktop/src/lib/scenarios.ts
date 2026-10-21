@@ -51,6 +51,8 @@ export interface ScenarioCard {
   notFor?: string[];
   /** 三条业务线都常用（v9.4 S1 §5.5）：首页放在业务线卡片下方的“通用”一行，不在每条线各复制一张。line 仍用于挑默认事项。 */
   general?: boolean;
+  /** 卡片固定的方法参数（v9.4：同一方法的不同卡，例如劳动争议的“仲裁应对 / 解除前评估”）；与律师填写的字段一起作为方法参数传给 Agent。 */
+  args?: Record<string, string>;
 }
 
 /** 卡片上的交付件一行（v9.4）：去掉扩展名与括注，用“ · ”连接；完整名称在开始面板与 aria-label 里。 */
@@ -63,7 +65,8 @@ export function cardGives(c: Pick<ScenarioCard, "gives">): string {
   return c.gives.replace(/（[^）]*）/g, "").trim();
 }
 
-const CONTRACT_TYPES = ["股权转让", "买卖", "服务 / 技术服务", "借款与担保", "其他（通用辅助）"];
+// 与 contract-review/references/contract-types.md 的十类一致（v9.4 合同审查补六类）；其他类型只按通用必查点审
+const CONTRACT_TYPES = ["股权转让", "买卖", "服务 / 技术服务", "借款与担保", "租赁", "建设工程施工", "保密与竞业限制", "技术开发", "劳动合同（用人单位）", "投资协议（增资 / 股权收购）", "其他（通用辅助）"];
 
 export const SCENARIOS: ScenarioCard[] = [
   // ── 诉讼仲裁 ──
@@ -226,6 +229,57 @@ export const SCENARIOS: ScenarioCard[] = [
     intents: [["代理词"], ["代理意见"]],
   },
   {
+    // v9.4（S1 §5.2 #1）：接案第一步——访谈纪要、材料清单，加紧急期限与利益冲突待核主体（intake-notes v1.2）
+    id: "intake-lit",
+    line: "litigation",
+    title: "新案受理与访谈",
+    gives: "访谈记录或笔记、客户初步材料",
+    gets: ["访谈纪要.docx", "材料收集清单.xlsx", "紧急期限与冲突待核清单.xlsx"],
+    scenario: "a1.agent_task",
+    skill: "intake-notes",
+    allowPartial: true,
+    verb: "开始整理",
+    goal: "请根据访谈记录整理访谈纪要与材料收集清单，并列出紧急期限与需要做利益冲突检索的主体；案件类型：{case_type}。",
+    fields: [{ key: "case_type", label: "案件类型", kind: "select", options: ["买卖合同", "借款与担保", "建设工程", "股权与公司", "劳动争议", "侵权", "其他"] }],
+    minMaterials: 1,
+    steps: ["整理客户陈述的事实（一律标“客户陈述”）", "列出需要客户提供的材料", "找出可能紧急的期限（只列起算事实，不推算日期）", "列出全部主体，供本所做利益冲突检索（系统不判断有无冲突）"],
+    intents: [["新案"], ["接案"], ["受理", "访谈"]],
+  },
+  {
+    // v9.4 新增（S1 §5.2 #5）：管辖与时效（procedure-check）；届满日交 calc.deadline，起算不明只给分支
+    id: "procedure",
+    line: "litigation",
+    title: "管辖与时效核查",
+    gives: "争议解决条款、催告 / 对账 / 确认函等带日期的材料",
+    gets: ["管辖与时效核查表.xlsx（候选法院或机构、时效与程序期限、待核分支）"],
+    scenario: "a1.agent_task",
+    skill: "procedure-check",
+    verb: "开始核查",
+    goal: "请核查管辖与诉讼时效：拟主张的请求为{claims}。",
+    fields: [{ key: "claims", label: "拟主张的请求", kind: "text", required: true, placeholder: "例如：支付货款 50 万元及逾期利息" }],
+    minMaterials: 1,
+    steps: ["逐字摘出争议解决条款，核对协议管辖或仲裁条款是否有效", "列出法定连接点与候选法院或机构", "整理时效起算、中断的事实与证据", "期限届满日由期限工具计算；起算不明时只给分支"],
+    intents: [["管辖"], ["诉讼时效"], ["时效", "过了"], ["时效", "核查"]],
+  },
+  {
+    // v9.4 新增：劳动者一方的仲裁申请（labor-dispute，模式 = 仲裁申请）
+    id: "labor-apply",
+    line: "litigation",
+    title: "劳动仲裁申请（劳动者一方）",
+    gives: "劳动合同、工资与考勤记录、解除通知等",
+    gets: ["应主张的请求与金额表.xlsx", "举证责任与证据清单.xlsx", "仲裁申请要点.docx"],
+    scenario: "a1.agent_task",
+    skill: "labor-dispute",
+    args: { mode: "仲裁申请", side: "劳动者" },
+    allowPartial: true,
+    verb: "开始梳理",
+    goal: "请为劳动者梳理应主张的全部仲裁请求、时效与证据：{situation}。",
+    fields: [{ key: "situation", label: "基本情况", kind: "text", required: true, placeholder: "例如：2026 年 8 月被口头辞退，未签书面合同，有加班" }],
+    minMaterials: 1,
+    steps: ["按事实逐项核对应主张的请求，避免漏项", "时效分两类列出（劳动报酬与其他）", "按法定规则列举证责任与要补的证据", "测算金额并写明公式与基数（草稿，待复核）"],
+    intents: [["劳动者", "仲裁"], ["代理", "劳动者"], ["替员工", "仲裁"]],
+  },
+  {
     id: "research-lit",
     line: "litigation",
     general: true,
@@ -365,6 +419,62 @@ export const SCENARIOS: ScenarioCard[] = [
     intents: [["脱敏"], ["对外版"], ["客户版"], ["去掉", "批注"]],
   },
   {
+    // v9.4 新增（S1 §5.3 #4）：起草合同（contract-draft）
+    id: "contract-draft",
+    line: "transactional",
+    title: "起草合同",
+    gives: "交易要点或条款清单；本所范本（可选）",
+    gets: ["合同草稿.docx", "起草说明与待定事项.xlsx"],
+    scenario: "a1.agent_task",
+    skill: "contract-draft",
+    allowPartial: true,
+    verb: "开始起草",
+    goal: "请起草一份{type}合同，我方立场以事项为准；交易要点：{points}。",
+    fields: [
+      { key: "type", label: "合同类型", kind: "select", options: CONTRACT_TYPES, required: true },
+      { key: "points", label: "交易要点", kind: "text", placeholder: "主体、标的、价款与支付、交付验收、期限……缺的会列为待定事项" },
+    ],
+    minMaterials: 0,
+    steps: ["确认交易要点，缺的列为“待定事项”，不编造", "有本所范本先用范本", "起草后做一致性检查（定义、金额大小写、日期、互引、附件）", "写起草说明：关键条款为什么这样写、对方可能怎么改"],
+    intents: [["起草", "合同"], ["拟", "合同"], ["起草", "协议"]],
+  },
+  {
+    // v9.4 新增（S1 §5.3 #5、#6）：尽职调查两阶段（due-diligence）
+    id: "dd-list",
+    line: "transactional",
+    title: "尽调清单与访谈提纲",
+    gives: "交易简介；已有的目标公司资料（可选）",
+    gets: ["尽调清单.xlsx（红旗问题在前）", "可直接发对方的资料清单", "访谈提纲.docx"],
+    scenario: "a1.agent_task",
+    skill: "due-diligence",
+    args: { stage: "清单" },
+    verb: "开始列清单",
+    goal: "请为这笔{deal_type}交易列出尽调清单、可直接发给对方的资料清单与访谈提纲；关注重点：{focus}。",
+    fields: [
+      { key: "deal_type", label: "交易类型", kind: "select", options: ["股权收购", "增资", "资产收购", "其他"], required: true },
+      { key: "focus", label: "关注重点", kind: "text", placeholder: "例如：出资是否实缴、核心资质、未决诉讼" },
+    ],
+    minMaterials: 0,
+    steps: ["先写交易保护问题：买什么、怕什么、靠什么保护", "红旗问题放在最前", "分模块列核查事项，每项落到具体文件", "访谈提纲只问书面查不到的"],
+    intents: [["尽调"], ["尽职调查"], ["尽调", "清单"]],
+  },
+  {
+    id: "dd-findings",
+    line: "transactional",
+    title: "尽调发现与报告（内部稿）",
+    gives: "数据室材料、访谈纪要、你在外部系统查到的工商 / 涉诉 / 执行结果",
+    gets: ["尽调发现表.xlsx", "尽调报告（内部稿）.docx", "交易文件条款建议"],
+    scenario: "a1.agent_task",
+    skill: "due-diligence",
+    args: { stage: "发现" },
+    verb: "开始整理",
+    goal: "请根据数据室材料、访谈纪要和导入的外部查询结果整理尽调发现与内部报告；交易类型：{deal_type}。",
+    fields: [{ key: "deal_type", label: "交易类型", kind: "select", options: ["股权收购", "增资", "资产收购", "其他"], required: true }],
+    minMaterials: 1,
+    steps: ["每个发现写四要素：事实与材料位置、法律后果、对交易的影响、处理方案", "处理方案落到交易文件条款（先决条件、陈述保证、特别赔偿、价款调整）", "“核查受限”的事项单独列出", "客户与目标公司的陈述标“陈述”，不写成已核实"],
+    intents: [["尽调", "报告"], ["尽调", "发现"]],
+  },
+  {
     id: "research-deal",
     line: "transactional",
     title: "交易法规研究",
@@ -467,22 +577,56 @@ export const SCENARIOS: ScenarioCard[] = [
     intents: [["汇报"], ["进展", "报告"]],
   },
   {
+    // v9.4（S1 §0 第 6 条）：原来挂在通用案卷整理上，名不副实；改用劳动争议方法（模式 = 仲裁应对，立场 = 用人单位）
     id: "labor-response",
     line: "inhouse",
-    title: "劳动争议应诉准备",
-    gives: "仲裁申请书与员工档案材料",
-    gets: ["事实时间线.xlsx", "证据与材料缺口清单"],
+    title: "劳动仲裁应对",
+    gives: "仲裁申请书、劳动合同、工资与考勤、解除文件、规章制度",
+    gets: ["劳动争议应对方案.docx", "请求项与敞口表.xlsx", "举证责任与证据清单.xlsx"],
     scenario: "a1.agent_task",
-    skill: "casefile-organize",
+    skill: "labor-dispute",
+    args: { mode: "仲裁应对", side: "用人单位" },
     verb: "开始准备",
-    goal: "请为劳动争议应诉整理材料：员工请求为{claim}；开庭日：{hearing}。",
+    goal: "请为劳动仲裁应诉做应对方案：员工请求为{claim}；开庭日：{hearing}。",
     fields: [
       { key: "claim", label: "员工请求", kind: "text", required: true, placeholder: "一句话即可" },
       { key: "hearing", label: "仲裁开庭日", kind: "date" },
     ],
     minMaterials: 1,
-    steps: ["整理劳动关系与争议事实", "对照请求列出公司需要的证据", "列出缺口与时间要求"],
+    steps: ["逐项回应员工请求，核对漏项", "时效分两类列出；举证责任按法定规则分配", "逐条查解除是否合法（理由、制度程序与公示、通知工会、送达）", "测算敞口并写明公式（草稿，待复核）"],
     intents: [["劳动", "仲裁"], ["员工", "仲裁"], ["劳动争议"]],
+  },
+  {
+    id: "labor-termination",
+    line: "inhouse",
+    title: "解除员工前的风险评估",
+    gives: "拟解除的理由与证据、规章制度及其制定公示材料",
+    gets: ["解除风险评估.docx", "解除程序核对清单.xlsx", "敞口情景表.xlsx"],
+    scenario: "a1.agent_task",
+    skill: "labor-dispute",
+    args: { mode: "解除前评估", side: "用人单位" },
+    verb: "开始评估",
+    goal: "请评估拟解除这名员工的风险与程序：解除理由为{reason}。",
+    fields: [{ key: "reason", label: "解除理由", kind: "select", options: ["严重违反规章制度", "不能胜任工作", "医疗期满不能工作", "客观情况重大变化", "经济性裁员", "其他"], required: true }],
+    minMaterials: 1,
+    steps: ["核对解除理由与法定依据是否对得上", "检查规章制度是否经民主程序并公示", "列出通知工会、送达等程序步骤", "列出合法与违法解除两种情景的敞口（不替公司定金额）"],
+    intents: [["解除", "员工"], ["辞退"], ["开除", "员工"]],
+  },
+  {
+    // v9.4 新增（S1 §5.4 #2）：企业收到起诉状或仲裁申请后的第一步——程序期限与管辖（procedure-check）
+    id: "suit-received",
+    line: "inhouse",
+    title: "收到起诉或仲裁：第一步",
+    gives: "起诉状或仲裁申请书、相关合同",
+    gets: ["程序期限表（答辩、举证、管辖异议）", "管辖核查", "内部通报要点"],
+    scenario: "a1.agent_task",
+    skill: "procedure-check",
+    verb: "开始核查",
+    goal: "公司收到了起诉状或仲裁申请书（收到日期：{received_on}）：请列出答辩、举证、管辖异议等程序期限并核查管辖。",
+    fields: [{ key: "received_on", label: "收到日期", kind: "date", required: true }],
+    minMaterials: 1,
+    steps: ["确认收到日期与文书类型", "期限届满日由期限工具计算，附计算过程", "核查管辖与是否有仲裁条款", "列出内部通报与需要外部律师的事项"],
+    intents: [["收到", "起诉状"], ["收到", "仲裁申请"], ["收到", "传票"]],
   },
 ];
 
@@ -503,7 +647,15 @@ export const NEXT_STEPS: Readonly<Record<string, readonly string[]>> = Object.fr
   defense: ["cross-exam", "agency"],
   "cross-exam": ["agency"],
   agency: ["case-report"],
-  "labor-response": ["research-lit", "pleading"],
+  "labor-response": ["research-lit", "citation-audit"],
+  "labor-termination": ["labor-response"],
+  "labor-apply": ["amount", "research-lit"],
+  "intake-lit": ["casefile", "procedure"],
+  procedure: ["amount", "pleading"],
+  "suit-received": ["case-analysis", "defense"],
+  "contract-draft": ["contract-review", "audience-pack"],
+  "dd-list": ["dd-findings"],
+  "dd-findings": ["contract-draft", "research-deal"],
   amount: ["pleading", "demand-lit"],
   pleading: ["case-report"],
   "research-lit": ["citation-audit", "pleading", "demand-lit"],
@@ -542,8 +694,8 @@ export function nextScenarios(card: ScenarioCard | null): ScenarioCard[] {
 }
 
 /** 卡片字段 → 方法参数（v9.4：显式传给 Agent，不只拼进任务说明）。空值不传；多选用“、”连接；每项至多 300 字。纯函数。 */
-export function skillArgsOf(card: Pick<ScenarioCard, "fields">, values: Record<string, string | string[]>): Record<string, string> {
-  const out: Record<string, string> = {};
+export function skillArgsOf(card: Pick<ScenarioCard, "fields" | "args">, values: Record<string, string | string[]>): Record<string, string> {
+  const out: Record<string, string> = { ...(card.args ?? {}) };
   for (const f of card.fields) {
     const v = values[f.key];
     const s = (Array.isArray(v) ? v.join("、") : (v ?? "")).trim();

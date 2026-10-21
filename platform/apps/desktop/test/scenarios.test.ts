@@ -9,7 +9,12 @@ test("意图建议：最具体者优先；答辩状、仲裁申请书不引到�
   assert.equal(suggestScenario("帮我起草一份民事起诉状")?.id, "pleading");
   assert.equal(suggestScenario("核对起诉状里的引用是否有效")?.id, "citation-audit", "引用核对有了自己的卡（v9.4 S1 §6.1 第 1 项）");
   assert.equal(suggestScenario("帮我检索类案"), null, "案例库未开通：不再把“类案”引到法规研究（v9.4）");
-  assert.equal(suggestScenario("做一份尽调清单"), null, "尽调方法上线前不引到访谈纪要（v9.4）");
+  assert.equal(suggestScenario("做一份尽调清单")?.id, "dd-list", "尽调有了自己的方法（v9.4）");
+  assert.equal(suggestScenario("整理尽调发现写报告")?.id, "dd-findings");
+  assert.equal(suggestScenario("帮我起草一份买卖合同")?.id, "contract-draft");
+  assert.equal(suggestScenario("这个案子诉讼时效过了吗")?.id, "procedure");
+  assert.equal(suggestScenario("准备辞退一名员工有什么风险")?.id, "labor-termination");
+  assert.equal(suggestScenario("公司收到起诉状了怎么办")?.id, "suit-received");
   assert.equal(suggestScenario("对方回稿改了哪些")?.id, "redraft");
   assert.equal(suggestScenario("写一份修订说明给客户")?.id, "redline-notes");
   assert.equal(suggestScenario("帮我写一份答辩状")?.id, "defense", "答辩状有了自己的卡（v9.3 诉讼线文书），不引到起诉状");
@@ -50,4 +55,18 @@ test("示例事项说明按整理任务状态写；我方地位分清拟起诉�
   assert.doesNotMatch(sampleBannerText(lit, null), /已在这台电脑上按规则整理出/);
   const side = SCENARIOS.find((c) => c.id === "case-analysis")!.fields!.find((f) => f.key === "side")!;
   assert.ok(side.options!.includes("尚未起诉（我方拟起诉）") && side.options!.includes("尚未起诉（对方可能起诉）"));
+});
+
+test("v9.4 名实相符：每张卡的方法模板都存在；卡上固定的方法参数都是该模板声明的参数", async () => {
+  const { readFileSync, existsSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const { SCENARIOS } = await import("../src/lib/scenarios.ts");
+  const root = fileURLToPath(new URL("../../../content/skills/", import.meta.url));
+  for (const c of SCENARIOS) {
+    if (!c.skill) continue;
+    const file = `${root}${c.skill}/SKILL.md`;
+    assert.ok(existsSync(file), `${c.id} → ${c.skill} 没有 SKILL.md`);
+    const declared = (/^arguments:\s*\[([^\]]*)\]/m.exec(readFileSync(file, "utf8"))?.[1] ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+    for (const k of Object.keys(c.args ?? {})) assert.ok(declared.includes(k), `${c.id}：固定参数 ${k} 不在 ${c.skill} 的 arguments（${declared.join("、")}）里`);
+  }
 });
