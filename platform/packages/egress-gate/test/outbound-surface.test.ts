@@ -43,7 +43,7 @@ const COMPUTED_ALLOWED: Readonly<Record<string, string>> = Object.freeze({
 /** 不在律师电脑 Agent 链路上的目录（如实列出，不计入本扫描）。 */
 const OUT_OF_SCOPE: Readonly<Record<string, string>> = Object.freeze({
   "services/": "中软云端服务 v0（法律模型网关、检索服务、控制面与其订阅器）：部署在云端，本机测试以回环端口模拟",
-  "packages/blob-store/": "中软云端对象存储接口（v9.3 A-11；只在云端服务里用，律师电脑上的代码不引用——blob-store.test.ts 门禁）",
+  "packages/blob-store/": "中软云端对象存储接口（v9.3 A-11；诊断包本体与签名账外送；只在云端服务里用，律师电脑上的代码不引用——blob-store.test.ts 门禁）",
   "packages/im-connectors/": "律所节点 IM 连接器（v5 原型，钉钉 Stream WebSocket）：运行在所内节点；v9 G2 改经中软 im-isv，不在律师电脑 Agent 链路",
   "apps/firm-node/": "所内节点（同上）",
   "apps/desktop/electron/": "Electron 主进程：除自动更新（updater.cjs，D-58，见下方专门用例）外不发起网络连接；对渲染会话做网络层拦截，见 desktop 安全检查用例",

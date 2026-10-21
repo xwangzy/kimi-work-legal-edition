@@ -413,20 +413,23 @@ test("签名账外送（复核 RB16A-01 余项）：按批写到对象存储；�
   const dir = tmp();
   const file = join(dir, "ledger.jsonl");
   const store = fsBlobStore(join(dir, "worm"));
-  const archiver = startLedgerArchiver({ archive: store, archivedSeq: 0, intervalMs: 3_600_000 });
+  const archiver = startLedgerArchiver({ archive: store, ledgerFile: file, intervalMs: 3_600_000 });
   const svc = createSignerService({ keys, ledgerFile: file, initLedger: true, archiver, allowedCallers: [], insecureForTest: true });
   const base = await listen(svc);
   try {
     for (let i = 0; i < 3; i++) await post(base, "/v1/sign/envelope", { request_id: `req-arch-${i}0`, req_now: Date.now(), kind: "kwl-device-revoked", body: { tid: "ten_a", device_id: "dev_a", revoked_at: new Date().toISOString() } });
     await archiver.flush();
-    assert.deepEqual(svc.metrics().archive, { pending: 0, archived_seq: 3, failures: 0 });
-    assert.deepEqual((await store.list("signer-ledger/")).map((x) => x.key), ["signer-ledger/000000000001-000000000003.jsonl"]);
+    assert.deepEqual(svc.metrics().archive, { pending: 0, archived_seq: 3, failures: 0, conflict: false });
+    const keysNow = (await store.list("signer-ledger/")).map((x) => x.key);
+    assert.equal(keysNow.length, 1);
+    assert.match(keysNow[0]!, /^signer-ledger\/000000000001-000000000003-0{16}-[0-9a-f]{16}\.jsonl$/, "键名带首行 prev 与末行哈希（复核 RC-A-01）");
   } finally {
-    archiver.stop();
+    await archiver.stop();
     svc.close();
   }
   const text = readFileSync(file, "utf8");
-  assert.deepEqual(await checkLedgerAgainstArchive(text, store), { ok: true, archivedSeq: 3 });
+  const ok = await checkLedgerAgainstArchive(text, store);
+  assert.ok(ok.ok && ok.archivedSeq === 3 && ok.localSeq === 3 && ok.archivedOffset === Buffer.byteLength(text));
   const lines = text.trim().split("\n");
   const cut = await checkLedgerAgainstArchive(`${lines.slice(0, 2).join("\n")}\n`, store);
   assert.ok(!cut.ok && /被截尾/.test(cut.reason), "截掉末行：外部锚点发现");
@@ -439,7 +442,7 @@ test("签名账外送（复核 RB16A-01 余项）：按批写到对象存储；�
   assert.ok(!t2.ok);
   // 外送一直失败：积压到上限即停签（503）
   const failing = { kind: "s3" as const, put: async () => { throw new Error("down"); }, get: async () => null, delete: async () => {}, list: async () => [] };
-  const a2 = startLedgerArchiver({ archive: failing, archivedSeq: 0, intervalMs: 3_600_000, maxPending: 2 });
+  const a2 = startLedgerArchiver({ archive: failing, ledgerFile: join(dir, "l2.jsonl"), intervalMs: 3_600_000, maxPending: 2 });
   const svc2 = createSignerService({ keys, ledgerFile: join(dir, "l2.jsonl"), initLedger: true, archiver: a2, allowedCallers: [], insecureForTest: true });
   const base2 = await listen(svc2);
   try {
@@ -450,7 +453,147 @@ test("签名账外送（复核 RB16A-01 余项）：按批写到对象存储；�
     assert.equal(r.status, 503);
     assert.equal(r.json.error, "ledger_archive_backlog");
   } finally {
-    a2.stop();
+    await a2.stop(10);
     svc2.close();
   }
+});
+
+/** 模拟版本化 + 对象锁的桶：删除只加删除标记、覆盖写成为新的当前版本（复核 RC-A-01 的威胁模型）；条件写已存在即 exists。 */
+function versionedStore() {
+  const versions = new Map<string, { body: Buffer | null }[]>();
+  const live = (k: string) => {
+    const v = versions.get(k);
+    return v && v[v.length - 1]!.body ? v[v.length - 1]!.body : null;
+  };
+  return {
+    versions,
+    store: {
+      kind: "s3" as const,
+      keyPrefix: "",
+      async put(k: string, b: Buffer) {
+        versions.set(k, [...(versions.get(k) ?? []), { body: b }]);
+      },
+      async putIfAbsent(k: string, b: Buffer) {
+        if (live(k)) return "exists" as const;
+        versions.set(k, [...(versions.get(k) ?? []), { body: b }]);
+        return "created" as const;
+      },
+      async get(k: string) {
+        return live(k);
+      },
+      async delete(k: string) {
+        versions.set(k, [...(versions.get(k) ?? []), { body: null }]);
+      },
+      async list(p: string) {
+        return [...versions.keys()].filter((k) => k.startsWith(p) && live(k)).map((key) => ({ key, size: live(key)!.length, mtime: 1 }));
+      },
+      async listVersions(p: string) {
+        return [...versions.entries()].filter(([k]) => k.startsWith(p)).flatMap(([key, vs]) => vs.map((v, i) => ({ key, versionId: String(i), latest: i === vs.length - 1, deleteMarker: v.body === null })));
+      },
+    },
+  };
+}
+
+test("签名账外送（余项续复核 RC-A-01/02/06）：删除标记、覆盖写、批次接不上一律拒绝启动；重启补送尾巴；同一批重试不重叠", async () => {
+  const { checkLedgerAgainstArchive, startLedgerArchiver } = await import("../src/index.ts");
+  const keys = devControlPlaneKeys();
+  const dir = tmp();
+  const file = join(dir, "ledger.jsonl");
+  const v = versionedStore();
+  const sign = (base: string, i: number) => post(base, "/v1/sign/envelope", { request_id: `req-ver-${i}0`, req_now: Date.now(), kind: "kwl-device-revoked", body: { tid: "ten_a", device_id: "dev_a", revoked_at: new Date().toISOString() } });
+  // 第一轮：记 3 行并外送；再记 2 行后停机（停机时限时补送）
+  let a = startLedgerArchiver({ archive: v.store, ledgerFile: file, intervalMs: 3_600_000 });
+  let svc = createSignerService({ keys, ledgerFile: file, initLedger: true, archiver: a, allowedCallers: [], insecureForTest: true });
+  let base = await listen(svc);
+  for (let i = 1; i <= 3; i++) await sign(base, i);
+  await a.flush();
+  for (let i = 4; i <= 5; i++) await sign(base, i);
+  // 模拟被 kill：不调 stop，尾巴（第 4、5 行）没送出去
+  svc.close();
+  let text = readFileSync(file, "utf8");
+  let chk = await checkLedgerAgainstArchive(text, v.store);
+  assert.ok(chk.ok && chk.archivedSeq === 3 && chk.localSeq === 5);
+  // 重启：从账本文件读出第 4、5 行立刻补送（复核 RC-A-02）
+  a = startLedgerArchiver({ archive: v.store, ledgerFile: file, start: { seq: chk.archivedSeq, hash: chk.archivedHash, offset: chk.archivedOffset }, headSeq: chk.localSeq, intervalMs: 3_600_000 });
+  await a.flush();
+  assert.equal(a.stats().archived_seq, 5);
+  svc = createSignerService({ keys, ledgerFile: file, archiver: a, allowedCallers: [], insecureForTest: true });
+  base = await listen(svc);
+  await sign(base, 6);
+  await a.stop(2_000);
+  svc.close();
+  assert.equal(a.stats().archived_seq, 6, "停机时限时补送尾巴");
+  text = readFileSync(file, "utf8");
+  chk = await checkLedgerAgainstArchive(text, v.store);
+  assert.ok(chk.ok && chk.archivedSeq === 6);
+  const batchKeys = [...v.versions.keys()].sort();
+  assert.equal(batchKeys.length, 3);
+  const lines = text.trim().split("\n");
+
+  // ① 删掉后面的批（只加删除标记）再截尾：拒绝
+  const v1 = versionedStore();
+  for (const [k, vs] of v.versions) v1.versions.set(k, [...vs]);
+  await v1.store.delete(batchKeys[2]!);
+  const r1 = await checkLedgerAgainstArchive(`${lines.slice(0, 5).join("\n")}\n`, v1.store);
+  assert.ok(!r1.ok && /删除标记/.test(r1.reason), JSON.stringify(r1));
+  // ② 改第 2 行、重算链并覆盖写第一批：同一键有两个版本，拒绝
+  const v2 = versionedStore();
+  for (const [k, vs] of v.versions) v2.versions.set(k, [...vs]);
+  await v2.store.put(batchKeys[0]!, Buffer.from("x"));
+  const r2 = await checkLedgerAgainstArchive(text, v2.store);
+  assert.ok(!r2.ok && /覆盖/.test(r2.reason));
+  // ③ 没有版本列举的存储：中间一批被换成接不上的键也发现（批与批首尾相接）
+  const { fsBlobStore } = await import("@zr-legal/blob-store");
+  const fsStore = fsBlobStore(join(dir, "fs"));
+  for (const k of batchKeys) await fsStore.put(k, (await v.store.get(k))!);
+  assert.ok((await checkLedgerAgainstArchive(text, fsStore)).ok);
+  await fsStore.delete(batchKeys[1]!);
+  const r3 = await checkLedgerAgainstArchive(text, fsStore);
+  assert.ok(!r3.ok && /不连续/.test(r3.reason));
+  // ④ 中间批的末行与本机不同（本机账本整本重算过链）：按键名里的末行哈希发现，不必下载
+  const forged = lines.map((l) => JSON.parse(l));
+  forged[1].tid = "ten_x";
+  const { createHash } = await import("node:crypto");
+  let prev = "0".repeat(64);
+  const relinked = forged.map((r) => {
+    r.prev = prev;
+    const line = JSON.stringify(r);
+    prev = createHash("sha256").update(line).digest("hex");
+    return line;
+  });
+  const r4 = await checkLedgerAgainstArchive(`${relinked.join("\n")}\n`, v.store);
+  assert.ok(!r4.ok && /账本被改过/.test(r4.reason));
+  // ⑤ 外送位置里同名对象内容不同（有人抢先写了）：外送器停签
+  const probe = versionedStore();
+  const ap = startLedgerArchiver({ archive: probe.store, ledgerFile: file, headSeq: 6, intervalMs: 3_600_000 });
+  await ap.flush();
+  await ap.stop(10);
+  const preKey = [...probe.versions.keys()][0]!;
+  const v5 = versionedStore();
+  await v5.store.put(preKey, Buffer.from("别人写的"));
+  const a5 = startLedgerArchiver({ archive: v5.store, ledgerFile: file, headSeq: 6, intervalMs: 3_600_000 });
+  await a5.flush();
+  assert.equal(a5.stats().conflict, true);
+  assert.equal(a5.blocked(), true);
+  await a5.stop(10);
+  // ⑥ 同一批重试：第一次写进去了但回复丢了 → 第二次 exists 且内容相同 → 视为成功，不写出重叠的批
+  const v6 = versionedStore();
+  let lose = true;
+  const flaky = { ...v6.store, async putIfAbsent(k: string, b: Buffer) {
+    const r = await v6.store.putIfAbsent(k, b);
+    if (lose) {
+      lose = false;
+      throw new Error("回复丢了");
+    }
+    return r;
+  } };
+  const a6 = startLedgerArchiver({ archive: flaky, ledgerFile: file, headSeq: 6, intervalMs: 3_600_000, now: () => 1e15 });
+  await a6.flush();
+  assert.equal(a6.stats().archived_seq, 0);
+  assert.equal(a6.stats().failures, 1);
+  await a6.flush();
+  assert.equal(a6.stats().archived_seq, 6);
+  assert.equal([...v6.versions.keys()].length, 1, "同一批键名不变");
+  assert.ok((await checkLedgerAgainstArchive(text, v6.store)).ok);
+  await a6.stop(10);
 });

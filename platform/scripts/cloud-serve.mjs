@@ -239,8 +239,9 @@ async function blobStoreFrom(bs, what, defaultPrefix) {
   } catch (e) {
     fail(`${what} 配置不合规（${e?.message ?? "格式"}）`);
   }
+  // 连通性探测只列一个不存在的前缀（不全量列举，复核 RC-A-07）
   try {
-    await store.list("");
+    await store.list("__probe__/");
   } catch (e) {
     fail(`连不上对象存储（${e?.code ?? "unreachable"}）`);
   }
@@ -249,6 +250,8 @@ async function blobStoreFrom(bs, what, defaultPrefix) {
 
 let serviceMetrics = null;
 let readyCheck = null;
+/** 停机前要做完的事（限时；如签名账外送补送尾巴，复核 RC-A-02）。 */
+const stopHooks = [];
 let cpInstance = null;
 if (cfg.role === "cp-signer") {
   // ─── 签名服务（A-8）：私钥只在这里；只签登记过的种类与合格的文档，签名账记不进去就不签 ───
@@ -281,8 +284,24 @@ if (cfg.role === "cp-signer") {
   // 签名账外送（复核 RB16A-01 余项）：配了 ledger_archive 即启动时与已外送的比对（本机账本被截尾、换成旧副本或改过即拒绝启动），之后按批外送
   const ledgerFile = join(dataDir("cp-signer"), "ledger.jsonl");
   let archiver;
+  // 生产形态必须配外送（复核 RC-A-03：漏配即没有外部锚点，截尾发现不了）
+  if (env === "prod" && cfg.ledger_archive === undefined) fail("生产形态（environment = prod）必须配置 ledger_archive（签名账外送）");
   if (cfg.ledger_archive !== undefined) {
+    if (cfg.blob_store !== undefined && cfg.ledger_archive.bucket === cfg.blob_store.bucket) fail("ledger_archive 不得与 blob_store 共用一个桶（诊断包桶有到期规则）");
     const store = await blobStoreFrom(cfg.ledger_archive, "ledger_archive", "signer-ledger");
+    // 外送桶须开版本控制与对象锁、没有作用于外送前缀的到期规则（复核 RC-A-01）；读不到配置也拒绝启动
+    // 只有本机回环测试形态（假对象存储）可以跳过这一步
+    let guards = null;
+    try {
+      guards = await store.guards();
+    } catch (e) {
+      if (!insecure) fail(`读不到签名账外送桶的配置（${e?.code ?? "unreachable"}）`);
+    }
+    if (guards) {
+      const blobMod = await import(join(root, "packages/blob-store/src/index.ts"));
+      const problems = blobMod.archiveGuardProblems(guards, `${store.keyPrefix ?? ""}signer-ledger/`);
+      if (problems.length && !insecure) fail(`签名账外送桶不合要求：${problems.join("；")}`);
+    }
     const { existsSync } = await import("node:fs");
     const text = existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : "";
     let chk;
@@ -292,8 +311,11 @@ if (cfg.role === "cp-signer") {
       fail(`签名账外送位置读不出（${e?.code ?? "unreachable"}）`);
     }
     if (!chk.ok) fail(`签名账与已外送的对不上：${chk.reason}`);
-    archiver = signerMod.startLedgerArchiver({ archive: store, archivedSeq: chk.archivedSeq });
+    // 从账本文件读待外送的行：上次没送出去的尾巴启动即补送（复核 RC-A-02）
+    const maxPending = Number.isInteger(cfg.ledger_archive.max_pending) && cfg.ledger_archive.max_pending > 0 ? cfg.ledger_archive.max_pending : undefined;
+    archiver = signerMod.startLedgerArchiver({ archive: store, ledgerFile, start: { seq: chk.archivedSeq, hash: chk.archivedHash, offset: chk.archivedOffset }, headSeq: chk.localSeq, ...(maxPending ? { maxPending } : {}) });
   }
+  stopHooks.push(() => archiver?.stop(5_000));
   const signer = signerMod.createSignerService({
     ...(archiver ? { archiver } : {}),
     keys: { envelope: signPair(ks.envelope, "keys.envelope", "cp"), seat: signPair(ks.seat, "keys.seat", "seat"), seatAudiences: audiences },
@@ -316,10 +338,12 @@ if (cfg.role === "cp-signer") {
       // 签名账末行序号（外部锚点：监控系统记下的序号只增不减，变小即账本被截尾；复核 RB16A-01）与是否已损坏
       { name: "kwl_signer_ledger_seq", help: "签名账末行序号（只增不减；变小即被截尾）", type: "gauge", values: [[{}, lg.seq]] },
       { name: "kwl_signer_ledger_broken", help: "签名账写入失败且截不回去（1 = 已停签）", type: "gauge", values: [[{}, lg.broken ? 1 : 0]] },
+      { name: "kwl_signer_ledger_archive_configured", help: "签名账外送是否配置（0 = 没有外部锚点）", type: "gauge", values: [[{}, signer.metrics().archive ? 1 : 0]] },
       ...(signer.metrics().archive
         ? [
             { name: "kwl_signer_ledger_archived_seq", help: "签名账已外送到的序号", type: "gauge", values: [[{}, signer.metrics().archive.archived_seq]] },
             { name: "kwl_signer_ledger_archive_pending", help: "签名账待外送行数（积压过多即停签）", type: "gauge", values: [[{}, signer.metrics().archive.pending]] },
+            { name: "kwl_signer_ledger_archive_conflict", help: "外送位置的对象与本机账本不符（1 = 已停签待查）", type: "gauge", values: [[{}, signer.metrics().archive.conflict ? 1 : 0]] },
           ]
         : []),
     ];
@@ -480,14 +504,15 @@ if (cfg.role === "cp-signer") {
     let lifecycleOk = null;
     if (cfg.blob_store !== undefined) {
       blobs = await blobStoreFrom(cfg.blob_store, "blob_store", "support");
-      // 桶的生命周期规则是 7 天删除承诺的兜底（复核 RB16A-12）：没有就告警，不拒绝启动
+      // 桶的生命周期规则是 7 天删除承诺的兜底（复核 RB16A-12）：须真有覆盖诊断包前缀、≤ 8 天到期（版本化桶还要删非当前版本）的规则（复核 RC-A-04）；没有就告警，不拒绝启动
+      const blobMod = await import(join(root, "packages/blob-store/src/index.ts"));
       try {
-        const lc = await blobs.lifecycle?.();
-        lifecycleOk = !!lc && lc.rules > 0;
+        const g = await blobs.guards?.();
+        lifecycleOk = !!g && blobMod.supportLifecycleOk(g, `${blobs.keyPrefix ?? ""}support/`, 8);
       } catch {
         lifecycleOk = false;
       }
-      if (!lifecycleOk) console.error("[cloud-serve] 诊断包桶没有读到生命周期规则：7 天删除只靠服务清扫，请在 IaC 里配置");
+      if (!lifecycleOk) console.error("[cloud-serve] 诊断包桶没有覆盖诊断包、8 天内到期的生命周期规则：7 天删除只靠服务清扫，请在 IaC 里配置");
     }
     const support = sa.createSupportApi({ dir: dataDir("support"), keys: seatKeys, meterKey: Buffer.from(meterKey, "hex"), feed, ...(blobs ? { blobs } : {}), ...(opsGuard ? { opsGuard } : {}) });
     svc = support;
@@ -497,7 +522,7 @@ if (cfg.role === "cp-signer") {
       return [
         { name: "kwl_support_sweep_failures_total", help: "诊断包到期清扫删不掉的次数", type: "counter", values: [[{}, m.sweep_failures]] },
         { name: "kwl_support_expired_total", help: "到期删除的诊断包", type: "counter", values: [[{}, m.expired]] },
-        ...(lifecycleOk === null ? [] : [{ name: "kwl_support_bucket_lifecycle_ok", help: "诊断包桶读到了生命周期规则（0 = 没有兜底删除）", type: "gauge", values: [[{}, lifecycleOk ? 1 : 0]] }]),
+        ...(lifecycleOk === null ? [] : [{ name: "kwl_support_bucket_lifecycle_ok", help: "诊断包桶有覆盖诊断包前缀、8 天内到期的生命周期规则（0 = 没有兜底删除）", type: "gauge", values: [[{}, lifecycleOk ? 1 : 0]] }]),
       ];
     };
   } else if (cfg.role === "notify") {
@@ -583,8 +608,10 @@ if (cfg.metrics) {
   });
 }
 console.log(`[cloud-serve] ${cfg.role} 已就绪（${tls ? "https" : "http 仅测试"} ${host}:${server.address().port}${metricsServer ? `；指标 ${metricsServer.address().port}` : ""}）`);
-const stop = () => {
+const stop = async () => {
   feed?.stop?.();
+  // 先限时做完停机前的事（签名账外送补送尾巴），再关服务
+  await Promise.allSettled(stopHooks.map((h) => h()));
   metricsServer?.close();
   server.close(() => {
     if (server !== svc) svc.emit("close");

@@ -137,6 +137,11 @@ test("按配置起控制面与检索服务（HTTPS）：检索服务取到签名
   assert.match(runOnce({ ...signerBase, keys: { ...signerKeys, envelope: { ...signerKeys.envelope, kid: "cp-prod-t1" } } }).stderr, /keys\.envelope\.kid 须为 cp-test-/, "密钥编号的环境与部署不符");
   assert.match(runOnce({ ...signerBase, allowed_callers: [] }).stderr, /allowed_callers/);
   assert.match(runOnce({ ...signerBase, tls }).stderr, /client_ca_file/, "签名服务只收 mTLS");
+  // 签名账外送（余项续复核 RC-A-03）：生产形态必须配；不得与诊断包共用桶；外送位置连不上即拒绝启动
+  const archiveCfg = { kind: "s3", endpoint: "https://127.0.0.1:1", bucket: "kwl-ledger", region: "cn-north-4", kms_key_id: "kms-ledger", access_key_id_file: write("ak", "AKIDEXAMPLE"), secret_access_key_file: write("sk", "secret-example") };
+  assert.match(runOnce({ ...signerBase, environment: "prod" }).stderr, /必须配置 ledger_archive/);
+  assert.match(runOnce({ ...signerBase, ledger_archive: archiveCfg, blob_store: { ...archiveCfg } }).stderr, /不得与 blob_store 共用一个桶/);
+  assert.match(runOnce({ ...signerBase, ledger_archive: archiveCfg }).stderr, /连不上对象存储/);
   assert.match(runOnce({ ...signerBase, keys: { ...signerKeys, seat: { kid: "seat-test-t2", private_key_file: write("ec.pem", String(generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ format: "pem", type: "pkcs8" }))) } } }).stderr, /Ed25519/);
   const signer = await start(signerBase);
   const signerRef = { url: `https://127.0.0.1:${signer.port}`, client_cert_file: join(dir, "tls.crt"), client_key_file: join(dir, "tls.key"), ca_file: join(dir, "tls.crt") };

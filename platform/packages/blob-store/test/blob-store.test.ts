@@ -51,10 +51,19 @@ function fakeS3(o: { dropSse?: boolean } = {}) {
       const [, bucket, ...rest] = path.split("/");
       if (bucket !== "kwl-test") return void res.writeHead(404).end("<Error><Code>NoSuchBucket</Code></Error>");
       const key = rest.join("/");
-      if (req.method === "PUT") {
+      if (req.method === "PUT" && req.headers["if-none-match"] === "*" && objects.has(key)) {
+        res.writeHead(412).end("<Error><Code>PreconditionFailed</Code></Error>");
+      } else if (req.method === "PUT") {
         const sse = req.headers["x-amz-server-side-encryption"] as string | undefined;
         objects.set(key, { body, at: Date.now(), sse });
         res.writeHead(200, o.dropSse || !sse ? {} : { "x-amz-server-side-encryption": sse }).end();
+      } else if (req.method === "GET" && !key && "versioning" in query) {
+        res.writeHead(200).end("<VersioningConfiguration><Status>Enabled</Status></VersioningConfiguration>");
+      } else if (req.method === "GET" && !key && "object-lock" in query) {
+        res.writeHead(404).end("<Error><Code>ObjectLockConfigurationNotFoundError</Code></Error>");
+      } else if (req.method === "GET" && !key && "versions" in query) {
+        const prefix = query.prefix ?? "";
+        res.writeHead(200).end(`<ListVersionsResult><IsTruncated>false</IsTruncated>${[...objects.keys()].filter((k) => k.startsWith(prefix)).sort().map((k) => `<Version><Key>${k}</Key><VersionId>v1</VersionId><IsLatest>true</IsLatest></Version>`).join("")}<DeleteMarker><Key>${prefix}gone.bin</Key><VersionId>v2</VersionId><IsLatest>true</IsLatest></DeleteMarker></ListVersionsResult>`);
       } else if (req.method === "GET" && !key && "lifecycle" in query) {
         res.writeHead(200).end("<LifecycleConfiguration><Rule><ID>support-8d</ID><Status>Enabled</Status><Expiration><Days>8</Days></Expiration></Rule><Rule><Status>Disabled</Status></Rule></LifecycleConfiguration>");
       } else if (req.method === "GET" && key) {
@@ -105,6 +114,17 @@ test("S3 兼容：写、读、列（分页）、删对着核签名的假服务�
     await exercise(store);
     assert.ok([...s3.objects.keys()].every((k) => k.startsWith("prod/")), "键名都在前缀下");
     assert.deepEqual(await store.lifecycle!(), { rules: 1, expirationDays: [8] }, "只数启用的规则（复核 RB16A-12）");
+    // 条件写、版本列举、桶防护（余项续复核 RC-A-01/04）
+    assert.equal(await store.putIfAbsent!("ledger/a.jsonl", Buffer.from("一")), "created");
+    assert.equal(await store.putIfAbsent!("ledger/a.jsonl", Buffer.from("二")), "exists");
+    assert.equal((await store.get("ledger/a.jsonl"))!.toString(), "一", "已存在不覆盖");
+    const vers = await store.listVersions!("ledger/");
+    assert.deepEqual(vers.map((x) => [x.key, x.deleteMarker]), [["ledger/a.jsonl", false], ["ledger/gone.bin", true]]);
+    const g = await store.guards!();
+    assert.equal(g.versioning, "Enabled");
+    assert.equal(g.objectLock, false);
+    assert.equal(g.rules.length, 1);
+    assert.equal(store.keyPrefix, "prod/");
     const puts = s3.seen.filter((x) => x.method === "PUT");
     assert.ok(puts.length >= 4 && puts.every((x) => x.sse === "aws:kms" && x.kms === "kms-key-support"));
     // 密钥不对：假服务回 403，写入失败
@@ -159,4 +179,35 @@ test("门禁：律师电脑上的代码（内核、闸门、客户端等）不�
   for (const pkg of readdirSync(join(root, "packages"))) if (pkg !== "blob-store") walk(join(root, "packages", pkg, "src"));
   for (const app of readdirSync(join(root, "apps"))) for (const sub of ["src", "electron"]) walk(join(root, "apps", app, sub));
   assert.deepEqual(hits, []);
+});
+
+test("生命周期与外送桶防护的判定（余项续复核 RC-A-01、RC-A-04）", async () => {
+  const { parseLifecycle, supportLifecycleOk, archiveGuardProblems } = await import("../src/index.ts");
+  const rules = parseLifecycle(
+    "<LifecycleConfiguration>" +
+      "<Rule><ID>to-ia</ID><Status>Enabled</Status><Filter><Prefix>prod/support/</Prefix></Filter><Transition><Days>30</Days></Transition></Rule>" +
+      "<Rule><ID>sup-8</ID><Status>Enabled</Status><Filter><Prefix>prod/support/</Prefix></Filter><Expiration><Days>8</Days></Expiration><NoncurrentVersionExpiration><NoncurrentDays>1</NoncurrentDays></NoncurrentVersionExpiration></Rule>" +
+      "<Rule><ID>off</ID><Status>Disabled</Status><Expiration><Days>1</Days></Expiration></Rule>" +
+    "</LifecycleConfiguration>",
+  );
+  assert.deepEqual(rules.map((r) => [r.id, r.prefix, r.expirationDays, r.noncurrentDays]), [["to-ia", "prod/support/", null, null], ["sup-8", "prod/support/", 8, 1]]);
+  const g = (over: object = {}) => ({ versioning: "Enabled" as const, objectLock: true, rules, ...over });
+  assert.equal(supportLifecycleOk(g(), "prod/support/"), true);
+  assert.equal(supportLifecycleOk(g({ rules: [rules[0]!] }), "prod/support/"), false, "只有转低频存储的规则不算兜底删除");
+  assert.equal(supportLifecycleOk(g({ rules: [{ ...rules[1]!, prefix: "prod/other/" }] }), "prod/support/"), false, "前缀不覆盖诊断包");
+  assert.equal(supportLifecycleOk(g({ rules: [{ ...rules[1]!, expirationDays: 30 }] }), "prod/support/"), false, "天数超过 8 天");
+  assert.equal(supportLifecycleOk(g({ rules: [{ ...rules[1]!, noncurrentDays: null }] }), "prod/support/"), false, "版本化桶要删非当前版本");
+  assert.equal(supportLifecycleOk(g({ versioning: null, rules: [{ ...rules[1]!, noncurrentDays: null }] }), "prod/support/"), true);
+  assert.deepEqual(archiveGuardProblems(g({ rules: [] }), "prod/signer-ledger/"), []);
+  assert.deepEqual(archiveGuardProblems(g({ versioning: "Suspended", objectLock: false, rules: [] }), "prod/signer-ledger/"), ["桶没有开版本控制", "桶没有开对象锁"]);
+  assert.equal(archiveGuardProblems(g(), "prod/signer-ledger/").length, 0, "只作用于诊断包前缀的规则不影响外送");
+  assert.equal(archiveGuardProblems(g({ rules: [{ ...rules[1]!, prefix: "" }] }), "prod/signer-ledger/").length, 1, "整桶到期规则会让外送对象到期");
+});
+
+test("本地目录：条件写已存在即 exists，不覆盖", async () => {
+  const store = fsBlobStore(mkdtempSync(join(tmpdir(), "kwl-blob-ine-")));
+  assert.equal(await store.putIfAbsent!("a/b.jsonl", Buffer.from("一")), "created");
+  assert.equal(await store.putIfAbsent!("a/b.jsonl", Buffer.from("二")), "exists");
+  assert.equal((await store.get("a/b.jsonl"))!.toString(), "一");
+  assert.deepEqual((await store.list("a/")).map((x) => x.key), ["a/b.jsonl"], "不留临时文件");
 });
