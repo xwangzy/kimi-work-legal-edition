@@ -197,4 +197,10 @@ test("按配置起控制面与检索服务（HTTPS）：检索服务取到签名
   const lines = readFileSync(join(logDir, accessFile), "utf8").trim().split("\n").map((l) => JSON.parse(l));
   assert.ok(lines.some((l) => l.path === "/search" && l.status === 401));
   assert.ok(!readFileSync(join(logDir, accessFile), "utf8").includes(encodeURIComponent("张三")) && !readFileSync(join(logDir, accessFile), "utf8").includes("q="), "查询串不落盘");
+  // 支持服务的对象存储（A-11）：没有 KMS 密钥编号、连不上对象存储一律拒绝启动
+  const supportBase = { role: "support", listen: { host: "127.0.0.1", port: 0 }, tls, service_secret_file: secret, control_plane: { url: `https://127.0.0.1:${cp.port}`, keys_file: cpKeys }, seat_keys_file: seatKeys, data_dir: join(dir, "sup"), meter_key_file: write("meter.key", randomBytes(32).toString("hex")) };
+  const blob = { kind: "s3", endpoint: "https://127.0.0.1:1", bucket: "kwl-test", region: "cn-north-4", access_key_id_file: write("ak", "AKIDEXAMPLE"), secret_access_key_file: write("sk", randomBytes(30).toString("base64")) };
+  const sEnv = { encoding: "utf8" as const, env: { ...process.env, NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") }, timeout: 30_000 };
+  assert.match(spawnSync(process.execPath, [script, "--config", cfgFile("sup-nokms.json", { ...supportBase, blob_store: blob })], sEnv).stderr, /kms_key_id 必填/);
+  assert.match(spawnSync(process.execPath, [script, "--config", cfgFile("sup-down.json", { ...supportBase, blob_store: { ...blob, kms_key_id: "kms-1" } })], sEnv).stderr, /连不上对象存储/);
 });

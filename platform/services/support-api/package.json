@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@zr-legal/blob-store": "*",
     "@zr-legal/firm-trust": "*",
     "@zr-legal/ops-auth": "*",
     "@zr-legal/seat-token": "*"

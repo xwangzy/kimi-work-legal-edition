@@ -38,6 +38,8 @@
  *   "content_safety_policy_file": "...",                 // 网关可选
  *   // 支持：
  *   "meter_key_file": "...",
+ *   "blob_store": { "kind": "s3", "endpoint": "https://obs.cn-north-4.myhuaweicloud.com", "bucket": "kwl-prod-support", "region": "cn-north-4", "prefix": "support",
+ *                   "access_key_id_file": "...", "secret_access_key_file": "...", "kms_key_id": "...", "ca_file": "..." },   // 可选（A-11）：诊断包本体进对象存储，每个对象 SSE-KMS
  *   // 运营接口（控制面、支持、中继、通知可选；v9.3 A-10 按人鉴权，共享运营口令 ops_secret_file 已停用、配了即拒绝启动）：
  *   "ops": { "deployment": "prod",                              // 部署标识：名册与运营请求签名都绑定它
  *            "roster_file": "/etc/kwl/ops-roster.json",          // 安全管理员签名的运营名册（每人的签名公钥、权限、状态；换文件即生效，至多 31 天须重签）
@@ -388,7 +390,34 @@ if (cfg.role === "cp-signer") {
   } else if (cfg.role === "support") {
     const sa = await import(join(root, "services/support-api/src/index.ts"));
     const meterKey = secretFile(cfg.meter_key_file, "meter_key_file", "hex32");
-    svc = sa.createSupportApi({ dir: dataDir("support"), keys: seatKeys, meterKey: Buffer.from(meterKey, "hex"), feed, ...(opsGuard ? { opsGuard } : {}) });
+    // 诊断包本体进对象存储（A-11）：每个对象 SSE-KMS（不带密钥编号即拒绝启动）；启动时列一次，连不上即不服务
+    let blobs;
+    if (cfg.blob_store !== undefined) {
+      const bs = cfg.blob_store;
+      if (bs?.kind !== "s3") fail("blob_store.kind 只支持 s3");
+      if (typeof bs.kms_key_id !== "string" || !bs.kms_key_id) fail("blob_store.kms_key_id 必填（每个对象服务端加密 SSE-KMS）");
+      const blobMod = await import(join(root, "packages/blob-store/src/index.ts"));
+      try {
+        blobs = blobMod.s3BlobStore({
+          endpoint: String(bs.endpoint ?? ""),
+          bucket: String(bs.bucket ?? ""),
+          region: String(bs.region ?? ""),
+          prefix: typeof bs.prefix === "string" && bs.prefix ? bs.prefix : "support",
+          credentials: { accessKeyId: read(bs.access_key_id_file, "blob_store.access_key_id_file"), secretAccessKey: read(bs.secret_access_key_file, "blob_store.secret_access_key_file") },
+          sse: { kmsKeyId: bs.kms_key_id },
+          ...(bs.ca_file ? { ca: read(bs.ca_file, "blob_store.ca_file") } : {}),
+          allowInsecureForTest: insecure,
+        });
+      } catch (e) {
+        fail(`blob_store 配置不合规（${e?.message ?? "格式"}）`);
+      }
+      try {
+        await blobs.list("");
+      } catch (e) {
+        fail(`连不上对象存储（${e?.code ?? "unreachable"}）`);
+      }
+    }
+    svc = sa.createSupportApi({ dir: dataDir("support"), keys: seatKeys, meterKey: Buffer.from(meterKey, "hex"), feed, ...(blobs ? { blobs } : {}), ...(opsGuard ? { opsGuard } : {}) });
   } else if (cfg.role === "notify") {
     const na = await import(join(root, "services/notify-api/src/index.ts"));
     svc = na.createNotifyApi({ dir: dataDir("notify"), keys: seatKeys, feed, ...(opsGuard ? { opsGuard } : {}) });

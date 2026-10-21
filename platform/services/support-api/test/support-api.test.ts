@@ -175,11 +175,55 @@ test("每设备每天 10 张按存储计（重启同一密钥不清零）；吊�
   utimesSync(join(dir, "SUP-YYYY-YYYY.bin"), old, old);
   clock += 7 * 24 * 3600_000 + 1;
   assert.equal((await ops(`/v1/support/ops/packages/${t.ticket}`)).status, 404, "到期后、清扫前也取不到（复核 S9B-09）");
-  assert.ok(api.sweep() >= 3);
+  assert.ok((await api.sweep()) >= 3);
   const left = readdirSync(dir);
   assert.equal(left.some((f) => f.startsWith(t.ticket) || f.startsWith("SUP-ZZZZ") || f.startsWith("SUP-YYYY")), false);
   assert.ok(access.some((r) => r.action === "expire" && r.ticket === t.ticket));
   assert.throws(() => createSupportApi({ dir, keys, production: true }), /meterKey/);
   assert.throws(() => createSupportApi({ dir, keys, meterKey: METER, opsSecret: "ops-secret-0123456789" } as never), /共享运营口令已停用/);
   assert.throws(() => createSupportApi({ dir, keys, meterKey: METER, opsGuard: fileOpsGuard({ dir: mkdtempSync(join(tmpdir(), "kwl-support-ops-")), audience: "relay", roster: OPS.roster, rosterKeys: OPS.rosterKeys }) }), /受众须为 support/);
+});
+
+test("诊断包本体经对象存储接口（v9.3 A-11）：上传进对象存储、本地目录只有元数据；运营下载与删除、到期清扫都经它；写不进对象存储时工单不作废、可重试", async () => {
+  const objects = new Map<string, { body: Buffer; mtime: number }>();
+  let failPut = 1;
+  const blobs = {
+    kind: "s3" as const,
+    async put(key: string, data: Buffer) {
+      if (failPut-- > 0) throw new Error("对象存储暂不可用");
+      objects.set(key, { body: data, mtime: clock });
+    },
+    async get(key: string) {
+      return objects.get(key)?.body ?? null;
+    },
+    async delete(key: string) {
+      objects.delete(key);
+    },
+    async list(prefix: string) {
+      return [...objects].filter(([k]) => k.startsWith(prefix)).map(([key, v]) => ({ key, size: v.body.length, mtime: v.mtime }));
+    },
+  };
+  const d2 = mkdtempSync(join(tmpdir(), "kwl-support-blob-"));
+  const api2 = createSupportApi({ dir: d2, blobs, keys, feed, opsGuard: guardFor(), meterKey: METER, accessLog: () => {}, now: () => clock });
+  await new Promise<void>((r) => api2.listen(0, "127.0.0.1", () => r()));
+  const b2 = `http://127.0.0.1:${(api2.address() as AddressInfo).port}`;
+  try {
+    const t = (await (await fetch(`${b2}/v1/support/tickets`, { method: "POST", headers: { authorization: `Bearer ${cred("t_ok", "dev_blob")}` } })).json()) as any;
+    const put = () =>
+      fetch(`${b2}/v1/support/packages/${t.ticket}`, { method: "PUT", headers: { authorization: `Bearer ${cred("t_ok", "dev_blob")}`, "x-kwl-upload-token": t.upload_token, "x-kwl-content-sha256": createHash("sha256").update(pkg("dev_blob")).digest("hex") }, body: pkg("dev_blob") });
+    assert.equal((await put()).status, 500, "对象存储暂不可用");
+    assert.equal((await put()).status, 200, "工单没有作废：同一令牌重试成功");
+    assert.ok(objects.has(`${t.ticket}.bin`));
+    assert.ok(!readdirSync(d2).some((f) => f.endsWith(".bin")), "本地目录没有包本体");
+    const dl = await ops(`/v1/support/ops/packages/${t.ticket}`, "GET", "op_0001", b2);
+    assert.equal(dl.status, 200);
+    assert.deepEqual(Buffer.from(await dl.arrayBuffer()), pkg("dev_blob"));
+    objects.set("SUP-QQQQ-QQQQ.bin", { body: Buffer.from("孤立"), mtime: clock - 2 * 3600_000 });
+    assert.equal((await ops(`/v1/support/ops/packages/${t.ticket}`, "DELETE", "op_0001", b2)).status, 200);
+    assert.ok(!objects.has(`${t.ticket}.bin`));
+    assert.equal(await api2.sweep(), 1, "没有元数据的孤立本体超过 1 小时即删");
+    assert.equal(objects.size, 0);
+  } finally {
+    api2.close();
+  }
 });

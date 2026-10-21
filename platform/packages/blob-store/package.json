@@ -1,0 +1,10 @@
+{
+  "name": "@zr-legal/blob-store",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "云端对象存储接口（v9.3 A-11）：本地目录与 S3 兼容接口（AWS 签名第 4 版、每个对象服务端加密），供支持服务的诊断包（与之后的中继密文块）使用；不引第三方 SDK",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

@@ -11,7 +11,8 @@
  * - 保存 7 天后删除（启动时与每小时清扫）；
  * - 本服务只认席位令牌与律所策略（订阅控制面），不解析诊断包内容（内容由客户端按白名单生成并自证不含事项信息）；
  *   计量与访问审计只有租户、设备编号的服务端密钥 HMAC、工单号与字节数。
- * 存储 v0 为本地目录（生产为对象存储 + 服务端加密 + 生命周期规则，见 Y2 §3.13）。
+ * 存储：工单元数据在本地目录（小、驱动工单逻辑）；诊断包本体经对象存储接口（v9.3 A-11，`@zr-legal/blob-store`）——
+ * 缺省本地目录（与之前同一路径），生产可配 S3 兼容对象存储（每个对象服务端加密 SSE-KMS，桶的生命周期规则 7 天兜底删除）。
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -21,6 +22,7 @@ import type { KeyObject } from "node:crypto";
 import type { GatewayFeedView } from "@zr-legal/firm-trust";
 import { verifySeatToken, SeatTokenError, type SeatClaims } from "@zr-legal/seat-token";
 import { OpsAuthError, type OpsGuard, type OpsPermission } from "@zr-legal/ops-auth";
+import { fsBlobStore, type BlobStore } from "@zr-legal/blob-store";
 
 export const SUPPORT_MAX_BYTES = 2 * 1024 * 1024;
 export const SUPPORT_RETENTION_MS = 7 * 24 * 3600_000;
@@ -50,6 +52,8 @@ export interface SupportAccessRecord {
 
 export interface SupportApiOptions {
   dir: string;
+  /** 诊断包本体的存放处（A-11）：缺省为 dir 本身（<工单号>.bin，与之前同一路径）；生产可给 S3 兼容对象存储。 */
+  blobs?: BlobStore;
   keys: ReadonlyMap<string, KeyObject>;
   /** 吊销集与律所策略（support_upload）；没有订阅即一律不允许上传（失败关闭）。 */
   feed?: Pick<GatewayFeedView, "revokedDevice" | "revokedSeat" | "supportUploadAllowed"> & { refresh?: () => Promise<void> };
@@ -90,7 +94,7 @@ function newTicket(): string {
 
 const sha256 = (b: Buffer | string) => createHash("sha256").update(b).digest("hex");
 
-export function createSupportApi(o: SupportApiOptions): Server & { sweep(): number } {
+export function createSupportApi(o: SupportApiOptions): Server & { sweep(): Promise<number> } {
   const now = o.now ?? Date.now;
   const iso = (t = now()) => new Date(t).toISOString();
   if (o.meterKey && o.meterKey.byteLength < 32) throw new Error("meterKey 至少 32 字节");
@@ -105,7 +109,8 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
   const uploading = new Set<string>();
 
   const metaPath = (t: string) => join(o.dir, `${t}.json`);
-  const binPath = (t: string) => join(o.dir, `${t}.bin`);
+  const blobs = o.blobs ?? fsBlobStore(o.dir);
+  const binKey = (t: string) => `${t}.bin`;
   /** 只读普通文件（不跟随符号链接；复核 S9B-09）。 */
   const readRegular = (path: string): Buffer | null => {
     try {
@@ -148,12 +153,12 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
   };
 
   /** 删除到期的工单与包（启动时与每小时）；返回删除张数。 */
-  const sweep = (): number => {
+  const sweep = async (): Promise<number> => {
     let n = 0;
     const t = now();
     for (const f of readdirSync(o.dir)) {
-      // 崩溃留下的临时文件（超过 1 小时）与没有元数据的孤立包本体一并删除（复核 S9B-09）
-      if (/\.tmp-[0-9a-f]+$/.test(f) || (/^SUP-[0-9A-Z-]+\.bin$/.test(f) && !readRegular(join(o.dir, f.replace(/\.bin$/, ".json"))))) {
+      // 崩溃留下的元数据临时文件（超过 1 小时）一并删除（复核 S9B-09）
+      if (/\.tmp-[0-9a-f]+$/.test(f)) {
         try {
           if (t - lstatSync(join(o.dir, f)).mtimeMs > 3600_000) {
             rmSync(join(o.dir, f), { force: true });
@@ -168,21 +173,26 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
       if (!m) continue;
       const meta = readMeta(m[1]!, true);
       if (!meta || Date.parse(meta.expires_at) <= t) {
-        rmSync(binPath(m[1]!), { force: true });
+        // 先删包本体、再删元数据：本体删不掉时元数据留着，下个周期再删（不留下没有元数据、无人清扫的本体）
+        await blobs.delete(binKey(m[1]!));
         rmSync(metaPath(m[1]!), { force: true });
         access({ at: iso(), action: "expire", ticket: m[1]!, operator: null, tid: meta?.tid ?? null, dev: meta?.dev ?? null, bytes: meta?.bytes ?? null, result: "deleted" });
         n++;
       }
     }
+    // 没有元数据的孤立包本体（超过 1 小时）：删除
+    for (const b of await blobs.list("")) {
+      const m = /^(SUP-[0-9A-Z-]+)\.bin$/.exec(b.key);
+      if (!m || readRegular(metaPath(m[1]!)) || t - b.mtime <= 3600_000) continue;
+      await blobs.delete(b.key);
+      n++;
+    }
     return n;
   };
-  sweep();
+  void sweep().catch(() => {});
   const timer = setInterval(() => {
-    try {
-      sweep();
-    } catch {
-      // 下个周期再试
-    }
+    // 下个周期再试
+    void sweep().catch(() => {});
   }, 3600_000);
   timer.unref();
 
@@ -281,7 +291,7 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
         if (!doc || doc.format !== "kwl-diagnostics/1" || doc.signer_device !== c.dev) return fail(400, "package_invalid");
         const fresh = readMeta(meta.ticket);
         if (!fresh || fresh.uploaded_at) return fail(409, "ticket_used");
-        writeAtomic(binPath(meta.ticket), body);
+        await blobs.put(binKey(meta.ticket), body);
         writeAtomic(metaPath(meta.ticket), JSON.stringify({ ...meta, uploaded_at: iso(), bytes: body.byteLength, content_sha256: declared, upload_token_sha256: "used" }));
         // 包已保存：访问审计写不进去也回 200（复核 S9B-10：否则客户端以为失败、重试得 409，中软实际已持有）
         try {
@@ -321,11 +331,11 @@ export function createSupportApi(o: SupportApiOptions): Server & { sweep(): numb
       // 运营操作先记访问审计、记不进去即不执行（复核 S9B-10）
       if (method === "DELETE") {
         access({ at: iso(), action: "delete", ticket: meta.ticket, operator: who, op_key: key, roster_version: rv, tid: meta.tid, dev: meta.dev, bytes: meta.bytes, result: "ok" });
-        rmSync(binPath(meta.ticket), { force: true });
+        await blobs.delete(binKey(meta.ticket));
         rmSync(metaPath(meta.ticket), { force: true });
         return send(res, 200, { ok: true });
       }
-      const body = readRegular(binPath(meta.ticket));
+      const body = await blobs.get(binKey(meta.ticket));
       if (!body) return send(res, 404, { error: "not_found" });
       access({ at: iso(), action: "download", ticket: meta.ticket, operator: who, op_key: key, roster_version: rv, tid: meta.tid, dev: meta.dev, bytes: body.byteLength, result: "ok" });
       res.writeHead(200, {
