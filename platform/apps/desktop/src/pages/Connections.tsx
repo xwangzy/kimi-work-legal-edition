@@ -21,6 +21,7 @@ import { RecoveryBackup } from "../components/RecoveryBackup.tsx";
 import { Offboarding } from "../components/Offboarding.tsx";
 import { DepartedMembers } from "../components/DepartedMembers.tsx";
 import { DocStyle } from "../components/DocStyle.tsx";
+import { Select } from "../components/Select.tsx";
 
 const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
 
@@ -1097,11 +1098,7 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
         <div>
           <label>
             运行模式上限{" "}
-            <select value={maxMode} onChange={(e) => setMaxMode(e.target.value)}>
-              {(["chat", "manual", "default", "auto"] as const).map((m) => (
-                <option key={m} value={m}>{MODE_TEXT[m]}</option>
-              ))}
-            </select>
+            <Select value={maxMode} onChange={setMaxMode} options={(["chat", "manual", "default", "auto"] as const).map((m) => ({ value: m, label: MODE_TEXT[m] ?? m }))} />
           </label>{" "}
           <label>
             <input type="checkbox" checked={preSearch && maxMode === "auto"} disabled={maxMode !== "auto"} onChange={(e) => setPreSearch(e.target.checked)} /> 自动档可预授权“泛化后放行的检索”

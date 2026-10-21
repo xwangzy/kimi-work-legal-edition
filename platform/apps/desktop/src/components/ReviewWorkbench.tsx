@@ -14,6 +14,7 @@ import { api, type RiskCard, type RiskProgress } from "../api.ts";
 import { CITE_STATE_LABELS } from "../lib/labels.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { ladderRows, NATURE_LABEL, NATURE_PILL, natureOf, natureText, type RiskNature } from "../lib/risk-ladder.ts";
+import { Select } from "./Select.tsx";
 
 const SEVERITY: Record<RiskCard["severity"], { label: string; cls: string }> = {
   high: { label: "重大", cls: "sev-high" },
@@ -375,18 +376,14 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                       <div className="rc-row">
                         <span className="rc-k">性质</span>
                         <span>
-                          <select
+                          <Select
+                            className="select-sm"
                             aria-label="建议的性质"
                             value={natureOf(c)}
                             disabled={busy}
-                            onChange={(e) => void setNature(c, e.target.value as RiskNature)}
-                          >
-                            {(Object.keys(NATURE_LABEL) as RiskNature[]).map((k) => (
-                              <option key={k} value={k}>
-                                {NATURE_LABEL[k]}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={(v) => void setNature(c, v as RiskNature)}
+                            options={(Object.keys(NATURE_LABEL) as RiskNature[]).map((k) => ({ value: k, label: NATURE_LABEL[k] }))}
+                          />
                           {c.nature_inferred && <span className="muted"> 按类别推定，请确认</span>}
                         </span>
                       </div>

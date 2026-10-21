@@ -7,6 +7,7 @@ import { useState } from "react";
 import { api, members, type OffboardingItem } from "../api.ts";
 import { memberLabel, offboardArchiveName, offboardingRow, offboardingSummary } from "../lib/offboarding.ts";
 import { fmtTime } from "../lib/labels.ts";
+import { Select } from "./Select.tsx";
 
 export function Offboarding() {
   const [data, setData] = useState<{ matters: OffboardingItem[]; pending: number } | null>(null);
@@ -81,13 +82,12 @@ export function Offboarding() {
                             <span className="muted">没有可以接手的负责人：请先在事项里把一位同事设为负责人</span>
                           ) : (
                             <span className="settings-choice">
-                              <select value={to} onChange={(e) => setPick((p) => ({ ...p, [it.matter_id]: e.target.value }))} aria-label="交给谁">
-                                {row.candidates.map((c) => (
-                                  <option key={c.user_id} value={c.user_id}>
-                                    {memberLabel({ name: c.name, member_id: c.user_id, is_me: false })}
-                                  </option>
-                                ))}
-                              </select>
+                              <Select
+                                aria-label="交给谁"
+                                value={to}
+                                onChange={(v) => setPick((p) => ({ ...p, [it.matter_id]: v }))}
+                                options={row.candidates.map((c) => ({ value: c.user_id, label: memberLabel({ name: c.name, member_id: c.user_id, is_me: false }) }))}
+                              />
                               <button className="btn-ghost btn-sm" disabled={busy !== null || !to} onClick={() => void handoff(it, to)}>
                                 {busy === it.matter_id ? "正在交接…" : "交给他"}
                               </button>

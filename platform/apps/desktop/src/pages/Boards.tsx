@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
 import { fmtRelative, RUN_STATUS_LABELS, SCENARIO_LABELS } from "../lib/labels.ts";
+import { Select } from "../components/Select.tsx";
 
 export const MAX_BOARDS = 2;
 export const MAX_WIDGETS = 20;
@@ -127,9 +128,7 @@ export function BoardsPage() {
         </div>
         <div className="section-title board-head">
           事项看板
-          <select value={matterId ?? ""} onChange={(e) => setMatterId(e.target.value || null)}>
-            {matters.map((m) => <option key={m.matter_id} value={m.matter_id}>{m.title}</option>)}
-          </select>
+          <Select aria-label="事项" value={matterId ?? ""} onChange={(v) => setMatterId(v || null)} placeholder="选择事项" options={matters.map((m) => ({ value: m.matter_id, label: m.title }))} />
         </div>
         {matter ? <MatterBoard matter={matter} runs={runs} /> : <p className="muted">还没有事项。</p>}
       </div>

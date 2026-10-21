@@ -8,6 +8,7 @@ import { ENDPOINT_LABELS } from "../lib/labels.ts";
 import { ConsentQuestion, type ConsentAnswer } from "./Consent.tsx";
 import { Modal } from "./Modal.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
+import { Select } from "./Select.tsx";
 
 const STANCES = ["原告", "被告", "申请人", "被申请人", "第三人", "受让方", "转让方", "买方", "卖方", "出租人", "承租人", "投资方", "目标公司", "常年顾问", "其他"];
 const LEVELS = [
@@ -71,7 +72,7 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
         </label>
         <label className="field">
           <span>我方立场</span>
-          <select value={f.stance} onChange={set("stance")}>{STANCES.map((s) => <option key={s}>{s}</option>)}</select>
+          <Select aria-label="我方立场" value={f.stance} onChange={(v) => set("stance")({ target: { value: v } })} options={STANCES.map((s) => ({ value: s, label: s }))} />
         </label>
       </div>
       <ConsentQuestion
@@ -91,14 +92,12 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
         </label>
         <label className="field">
           <span>密级</span>
-          <select value={f.confidentiality} onChange={set("confidentiality")}>{LEVELS.map((l) => <option key={l.v} value={l.v}>{l.label}</option>)}</select>
+          <Select aria-label="敏感程度" value={f.confidentiality} onChange={(v) => set("confidentiality")({ target: { value: v } })} options={LEVELS.map((l) => ({ value: l.v, label: l.label }))} />
           <small className="muted">{LEVELS.find((l) => l.v === f.confidentiality)?.hint}</small>
         </label>
         <label className="field">
           <span>使用哪种 AI</span>
-          <select value={f.model_endpoint} onChange={set("model_endpoint")}>
-            {Object.entries(ENDPOINT_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </select>
+          <Select aria-label="使用哪种 AI" value={f.model_endpoint} onChange={(v) => set("model_endpoint")({ target: { value: v } })} options={Object.entries(ENDPOINT_LABELS).map(([v, l]) => ({ value: v, label: l }))} />
         </label>
         <label className="field">
           <span>分析截止日（可选）</span>

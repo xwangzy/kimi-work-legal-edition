@@ -8,6 +8,7 @@ import { members, type RosterMember } from "../api.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
 import { fmtTime } from "../lib/labels.ts";
 import { memberLabel, memberStatusText, removalLines } from "../lib/offboarding.ts";
+import { Select } from "./Select.tsx";
 
 const ROLES: [string, string][] = [
   ["lawyer", "律师"],
@@ -91,13 +92,7 @@ export function MembersAdmin() {
           </label>
           <label className="field">
             <span>角色</span>
-            <select value={role} onChange={(e) => setRole(e.target.value)}>
-              {ROLES.map(([k, l]) => (
-                <option key={k} value={k}>
-                  {l}
-                </option>
-              ))}
-            </select>
+            <Select aria-label="角色" value={role} onChange={setRole} options={ROLES.map(([k, l]) => ({ value: k, label: l }))} />
           </label>
           <button type="submit" className="btn-primary" disabled={!name.trim() || busy}>
             {busy ? "正在生成…" : "生成邀请码"}

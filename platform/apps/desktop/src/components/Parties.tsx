@@ -5,6 +5,7 @@
 import { ConfirmButton } from "./ConfirmButton.tsx";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api.ts";
+import { Select } from "./Select.tsx";
 
 interface PartyView {
   name: string;
@@ -95,10 +96,7 @@ export function PartiesPanel({ matterId, onChanged, readOnly = false }: { matter
       </table>
       <div className="party-add">
         <input placeholder="名称（关联方、证人、员工等）" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-        <select value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as "person" | "org" })}>
-          <option value="person">自然人</option>
-          <option value="org">机构</option>
-        </select>
+        <Select aria-label="类型" value={draft.kind} onChange={(v) => setDraft({ ...draft, kind: v as "person" | "org" })} options={[{ value: "person", label: "自然人" }, { value: "org", label: "机构" }]} />
         <input placeholder="别名（顿号分隔，可空）" value={draft.aliases} onChange={(e) => setDraft({ ...draft, aliases: e.target.value })} />
         <button
           className="btn-ghost"

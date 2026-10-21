@@ -20,6 +20,7 @@ import { MatterDeliverables } from "./Deliverables.tsx";
 import { MatterLifecyclePanel } from "../components/MatterLifecycle.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
+import { RolePills } from "../components/Select.tsx";
 
 type Tab = "materials" | "facts" | "runs" | "board" | "deliverables" | "parties" | "egress" | "lifecycle";
 
@@ -286,23 +287,17 @@ export function MatterPage({ matterId }: { matterId: string }) {
                       <td title={d.storage_mode === "mount" ? "只引用原文件（未复制）" : "已加密保存副本"}>{d.filename}{d.storage_mode === "mount" && <span className="tag tag-gray">引用</span>}</td>
                       <td>
                         {/* 材料用途（Y4 §5 D-4）：我方 / 对方 / 参考，写进任务的材料清单 */}
-                        <select
-                          aria-label={`${d.filename} 的用途`}
-                          value={d.role ?? ""}
+                        <RolePills
+                          name={d.filename}
+                          value={d.role}
                           disabled={closed}
-                          onChange={(e) => {
-                            const v = e.target.value as "" | "ours" | "theirs" | "reference";
+                          onChange={(v) => {
                             void api
-                              .setMaterialRole(d.document_version_id, v || null)
+                              .setMaterialRole(d.document_version_id, v)
                               .then(reload)
                               .catch((err) => setMsg((err as Error).message));
                           }}
-                        >
-                          <option value="">未标</option>
-                          <option value="ours">我方</option>
-                          <option value="theirs">对方</option>
-                          <option value="reference">参考</option>
-                        </select>
+                        />
                       </td>
                       <td>{(Number(d.size_bytes ?? 0) / 1024).toFixed(1)} KB</td>
                       <td>{d.quarantined_at ? <span className="tag tag-warn">已隔离（国家秘密标志）</span> : parseFlagsText(d.quality_flags ?? [])}</td>

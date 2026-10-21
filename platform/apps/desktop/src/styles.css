@@ -515,6 +515,8 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .ss-doc { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); padding: 4px 6px; border-radius: var(--r-sm); cursor: pointer; }
 .ss-doc.on { background: var(--accent-bg); }
 .ss-doc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-doc-row { display: flex; align-items: center; gap: 8px; }
+.ss-doc-row .ss-doc { flex: 1; min-width: 0; }
 .ss-add { align-self: flex-start; padding: 2px 0; font-size: var(--fs-sm); }
 .ss-need { color: var(--status-warning-text); font-size: var(--fs-sm); }
 .ss-field { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: center; font-size: var(--fs-sm); }
@@ -853,3 +855,24 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .wb-view-note { font-family: var(--font-sans); font-size: var(--fs-xs); color: var(--text-on-paper-muted); }
 .wb-ins { text-decoration: none; background: var(--hl-revision); box-shadow: inset 0 -2px 0 var(--paper-focus); border-radius: var(--r-xs); padding: 0 1px; color: var(--text-on-paper); cursor: pointer; }
 .wb-ins.mark-active { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* 统一下拉框与材料用途胶囊（Z3 #15、V-c）：36px 高、8px 圆角、令牌边框；选中态黑底白字（V-b） */
+.select-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; height: 36px; min-width: 120px; max-width: 100%; padding: 0 10px 0 12px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--bg-surface); color: var(--text-primary); text-align: left; }
+.select-trigger:hover:not(:disabled) { border-color: var(--border-hover); }
+.select-trigger:focus-visible, .select-trigger[aria-expanded="true"] { border-color: var(--focus-ring); box-shadow: 0 0 0 3px var(--focus-glow); outline: none; }
+.select-trigger:disabled { background: var(--bg-muted); color: var(--text-secondary); }
+.select-trigger.is-placeholder .select-value { color: var(--text-secondary); }
+.select-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.select-trigger.select-sm { height: 30px; min-width: 88px; font-size: var(--fs-sm); }
+.select-list { position: fixed; z-index: 60; max-height: 280px; overflow-y: auto; margin: 0; padding: 6px; list-style: none; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--r-md); box-shadow: var(--shadow-md); outline: none; }
+.select-list.up { transform: translateY(-100%); }
+.select-option { display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; border-radius: var(--r-sm); cursor: default; white-space: nowrap; }
+.select-option.active { background: var(--bg-hover); }
+.select-option.selected { font-weight: 500; }
+.select-option.disabled { color: var(--text-secondary); }
+.select-hint { font-size: var(--fs-xs); color: var(--text-secondary); }
+.role-pills { display: inline-flex; gap: 4px; }
+.role-pill { border: 1px solid var(--border-subtle); background: var(--bg-surface); color: var(--text-secondary); border-radius: var(--r-full); padding: 1px 9px; font-size: var(--fs-xs); line-height: 20px; }
+.role-pill:hover:not(:disabled) { border-color: var(--border-hover); color: var(--text-primary); }
+.role-pill.on { background: var(--btn-primary); border-color: var(--btn-primary); color: var(--btn-primary-text); }
+.role-pill:disabled { opacity: 0.6; }

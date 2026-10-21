@@ -9,6 +9,7 @@ import { Modal } from "../components/Modal.tsx";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 import { audienceText, bjToday, cloudStateText, daysUntil, defaultForm, dueText, dueTone, REMINDER_KINDS, reminderKindLabel, rejectReasonText, scheduleLine } from "../lib/reminders.ts";
+import { Select } from "../components/Select.tsx";
 
 const DAYS_CHOICES = [0, 1, 2, 3, 5, 7, 10, 14, 30];
 
@@ -258,24 +259,11 @@ function ReminderForm({ reminder, matterId, onClose, onSaved }: { reminder?: Rem
       <div className="form-grid">
         <label className="field field-wide">
           <span>事项</span>
-          <select value={f.matter_id} disabled={!!reminder} onChange={(e) => setF({ ...f, matter_id: e.target.value })}>
-            {matters.length === 0 && <option value="">（没有进行中的事项）</option>}
-            {matters.map((m) => (
-              <option key={m.matter_id} value={m.matter_id}>
-                {m.title}
-              </option>
-            ))}
-          </select>
+          <Select value={f.matter_id} disabled={!!reminder} onChange={(v) => setF({ ...f, matter_id: v })} placeholder={matters.length === 0 ? "（没有进行中的事项）" : "请选择事项"} options={matters.map((m) => ({ value: m.matter_id, label: m.title }))} />
         </label>
         <label className="field">
           <span>期限类型</span>
-          <select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}>
-            {REMINDER_KINDS.map((k) => (
-              <option key={k.value} value={k.value}>
-                {k.label}
-              </option>
-            ))}
-          </select>
+          <Select value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={REMINDER_KINDS.map((k) => ({ value: k.value, label: k.label }))} />
         </label>
         <label className="field">
           <span>期限日</span>
@@ -283,13 +271,7 @@ function ReminderForm({ reminder, matterId, onClose, onSaved }: { reminder?: Rem
         </label>
         <label className="field">
           <span>提前几天提醒</span>
-          <select value={f.days_before} onChange={(e) => setF({ ...f, days_before: Number(e.target.value) })}>
-            {DAYS_CHOICES.map((d) => (
-              <option key={d} value={d}>
-                {d === 0 ? "当天" : `提前 ${d} 天`}
-              </option>
-            ))}
-          </select>
+          <Select value={String(f.days_before)} onChange={(v) => setF({ ...f, days_before: Number(v) })} options={DAYS_CHOICES.map((d) => ({ value: String(d), label: d === 0 ? "当天" : `提前 ${d} 天` }))} />
         </label>
         <label className="field">
           <span>几点提醒（北京时间）</span>

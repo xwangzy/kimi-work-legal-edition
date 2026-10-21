@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { api, type EvalAgreement, type EvalCategory, type EvalDecision, type EvalDoc } from "../api.ts";
 import { Markdown } from "../components/Markdown.tsx";
 import { addSpan, CATEGORY_LABEL, EVAL_CATEGORIES, fmtRatio, mergeDocs, nextPersonId, personsOf, removeSpan, segments, updateSpan } from "../lib/eval-annotate.ts";
+import { Select } from "../components/Select.tsx";
 
 interface EvalState {
   docs: EvalDoc[];
@@ -290,28 +291,16 @@ function Annotate({ st }: { st: EvalState }) {
             <div className="ev-quote">{doc.text.slice(act.start, act.end)}</div>
             <label className="ev-field">
               类别
-              <select value={act.category} onChange={(e) => replaceDoc(updateSpan(doc, active!, { category: e.target.value as EvalCategory }))}>
-                {EVAL_CATEGORIES.map((c) => (
-                  <option key={c.key} value={c.key}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+              <Select value={act.category} onChange={(v) => replaceDoc(updateSpan(doc, active!, { category: v as EvalCategory }))} options={EVAL_CATEGORIES.map((c) => ({ value: c.key, label: c.label }))} />
             </label>
             {act.category === "person" && (
               <label className="ev-field">
                 是谁
-                <select
+                <Select
                   value={act.person_id ?? ""}
-                  onChange={(e) => replaceDoc(updateSpan(doc, active!, { person_id: e.target.value === "__new" ? nextPersonId(doc.spans) : e.target.value }))}
-                >
-                  {persons.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.id} · {p.first}（{p.mentions} 处）
-                    </option>
-                  ))}
-                  <option value="__new">另一个人</option>
-                </select>
+                  onChange={(v) => replaceDoc(updateSpan(doc, active!, { person_id: v === "__new" ? nextPersonId(doc.spans) : v }))}
+                  options={[...persons.map((p) => ({ value: p.id, label: `${p.id} · ${p.first}（${p.mentions} 处）` })), { value: "__new", label: "另一个人" }]}
+                />
               </label>
             )}
             <button
@@ -330,12 +319,16 @@ function Annotate({ st }: { st: EvalState }) {
             <div className="section-title ev-st">本文书</div>
             <label className="ev-field">
               来源
-              <select value={doc.source} onChange={(e) => replaceDoc({ ...doc, source: e.target.value })}>
-                <option value="firm_onsite">律所进所评测</option>
-                <option value="public_judgment">公开裁判文书</option>
-                <option value="independent_synthetic">独立撰写的仿真材料</option>
-                <option value="hard_cases">困难集</option>
-              </select>
+              <Select
+                value={doc.source}
+                onChange={(v) => replaceDoc({ ...doc, source: v })}
+                options={[
+                  { value: "firm_onsite", label: "律所进所评测" },
+                  { value: "public_judgment", label: "公开裁判文书" },
+                  { value: "independent_synthetic", label: "独立撰写的仿真材料" },
+                  { value: "hard_cases", label: "困难集" },
+                ]}
+              />
             </label>
             <div className="muted ev-small">
               自然人 {persons.length} 人，标注 {doc.spans.length} 处

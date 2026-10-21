@@ -22,6 +22,7 @@ import { engineHeartbeatMs, hasProgress, mergeProgress, phaseLine, progressActiv
 import { buildSteps, groupSubtaskSteps, keyStepKeys, sentByToolCall, toolLabel, type SentInfo, type Step } from "../lib/timeline.ts";
 import { busyRunOfError } from "../lib/start-block.ts";
 import { methodLine } from "../lib/run-method.ts";
+import { Select } from "../components/Select.tsx";
 
 /** 页面标题：任务目标前 24 字（律师能区分多个任务）；没有目标时用场景名。 */
 function runTitle(run: any): string {
@@ -844,13 +845,13 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               )}
               {artifactsLoaded && artifacts.length === 0 && <p className="muted">{terminal ? "本任务没有生成文件；结论见左侧回复。" : "任务完成后，生成的文件会出现在这里。"}</p>}
               {artifacts.length > 0 && (
-                <select className="artifact-select" value={selected ?? ""} onChange={(e) => setSelected(e.target.value)} aria-label="选择交付件">
-                  {artifacts.map((a) => (
-                    <option key={a.artifact_version_id} value={a.artifact_version_id}>
-                      {artifactName(a, (t) => restoredPlain(t, tokenMap))} · v{a.version}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  className="artifact-select"
+                  value={selected ?? ""}
+                  onChange={setSelected}
+                  aria-label="选择交付件"
+                  options={artifacts.map((a) => ({ value: a.artifact_version_id, label: `${artifactName(a, (t) => restoredPlain(t, tokenMap))} · v${a.version}` }))}
+                />
               )}
               {selected && preview && <SafePreview filename={preview.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} />}
               {selected && <ArtifactActions artifact={artifacts.find((a) => a.artifact_version_id === selected)} onError={setErr} primary={!hasRiskEntry} />}

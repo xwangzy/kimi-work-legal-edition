@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { api, type DeletionReceiptView, type Matter, type MatterLifecycle } from "../api.ts";
 import { fmtTime } from "../lib/labels.ts";
 import { notifyDataChanged } from "../lib/events.ts";
+import { Select } from "./Select.tsx";
 
 const YEAR_CHOICES = [1, 3, 5, 10, 15, 20, 30];
 const COPY_STATUS: Record<string, string> = { deleted: "已删除", pending: "待处理", irrevocable: "不可撤回", kept: "保留（未删除）", none: "不涉及" };
@@ -107,11 +108,7 @@ export function MatterLifecyclePanel({ matter, onChanged }: { matter: Matter; on
           </p>
           <label className="field">
             <span>保留期</span>
-            <select aria-label="保留期" value={years} onChange={(e) => setYears(Number(e.target.value))} disabled={!owner || busy}>
-              {YEAR_CHOICES.map((y) => (
-                <option key={y} value={y}>{y} 年</option>
-              ))}
-            </select>
+            <Select aria-label="保留期" value={String(years)} onChange={(v) => setYears(Number(v))} disabled={!owner || busy} options={YEAR_CHOICES.map((y) => ({ value: String(y), label: `${y} 年` }))} />
           </label>
           <div className="modal-actions">
             <button className="btn-primary" disabled={!owner || busy} onClick={() => void act(() => api.closeMatter(matter.matter_id, years), `已结案，保留 ${years} 年（留痕）`)}>结案</button>

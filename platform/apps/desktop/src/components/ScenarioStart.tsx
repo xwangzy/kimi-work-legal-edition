@@ -13,6 +13,7 @@ import { defaultChoice } from "./ModeSelector.tsx";
 import { launchRun, prepareStart, RunSheet, type PendingStart } from "./RunSheet.tsx";
 import { SendSummary } from "./SendSummary.tsx";
 import { stanceLabel } from "../lib/labels.ts";
+import { RolePills, Select, type MaterialRole } from "./Select.tsx";
 
 interface Props {
   card: ScenarioCard;
@@ -24,7 +25,7 @@ interface Props {
   onNewMatter: () => void;
   /** documents 属于哪个事项（切换事项后，新事项的材料到达前不重置勾选）。 */
   documentsFor: string | null;
-  documents: { document_version_id: string; filename: string }[];
+  documents: { document_version_id: string; filename: string; role?: MaterialRole | null }[];
   policy: RunPolicyView | null;
   /** 从输入框带来的任务描述（作为补充要求）。 */
   initialExtra?: string;
@@ -50,6 +51,8 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const [values, setValues] = useState<Record<string, string | string[]>>({});
   const [extra, setExtra] = useState(initialExtra ?? "");
   const [docIds, setDocIds] = useState<string[]>(() => preselect(card, documents));
+  /** 本面板里刚改过的用途（未刷新事项材料前先按这里显示；保存失败即撤回）。 */
+  const [roles, setRoles] = useState<Record<string, MaterialRole | null>>({});
   const [how, setHow] = useState(false);
   const [estimate, setEstimate] = useState<PendingStart | null>(null);
   const [estErr, setEstErr] = useState("");
@@ -205,7 +208,8 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
               {documents.map((d) => {
                 const on = docIds.includes(d.document_version_id);
                 return (
-                  <label key={d.document_version_id} className={`ss-doc${on ? " on" : ""}`}>
+                  <div key={d.document_version_id} className="ss-doc-row">
+                  <label className={`ss-doc${on ? " on" : ""}`}>
                     <input
                       type="checkbox"
                       aria-label={d.filename}
@@ -215,6 +219,19 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
                     <span className="ss-doc-name">{d.filename}</span>
                     {card.scenario === "s1b.draft_compare" && on && <span className="tag tag-gray">{order(d.document_version_id) === 1 ? "基线稿" : "对方回稿"}</span>}
                   </label>
+                  {/* 勾选材料时顺手标用途（Z3 #15、D-4 余项），与材料表同一份数据 */}
+                  <RolePills
+                    name={d.filename}
+                    value={d.document_version_id in roles ? roles[d.document_version_id] : d.role}
+                    onChange={(v) => {
+                      setRoles((r) => ({ ...r, [d.document_version_id]: v }));
+                      void api.setMaterialRole(d.document_version_id, v).catch(() => setRoles((r) => {
+                        const { [d.document_version_id]: _, ...rest } = r;
+                        return rest;
+                      }));
+                    }}
+                  />
+                  </div>
                 );
               })}
               <button className="btn-link ss-add" onClick={() => void pickMaterials(fileRef.current, onImport)}>＋ 添加文件</button>
@@ -256,12 +273,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
                 {f.required ? <span className="ss-req" aria-label="必填">*</span> : null}
               </span>
               {f.kind === "select" ? (
-                <select aria-label={f.label} value={String(values[f.key] ?? "")} onChange={(e) => setField(f.key, e.target.value)}>
-                  <option value="">请选择</option>
-                  {f.options!.map((o) => (
-                    <option key={o} value={o}>{o}</option>
-                  ))}
-                </select>
+                <Select aria-label={f.label} value={String(values[f.key] ?? "")} onChange={(v) => setField(f.key, v)} options={f.options!.map((o) => ({ value: o, label: o }))} />
               ) : f.kind === "multi" ? (
                 <span className="ss-multi">
                   {f.options!.map((o) => {
