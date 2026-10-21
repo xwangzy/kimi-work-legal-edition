@@ -32,7 +32,7 @@ import {
 } from "@zr-legal/domain";
 import { pendingBasisLabels, type EgressGate } from "@zr-legal/egress";
 import { countTokens, MatterTokenizer } from "@zr-legal/tokenizer";
-import { skillQualityChecklist, type SkillsBundleStatus } from "../skills-bundle.ts";
+import { skillQualityChecklist, skillSnapshot, type SkillsBundleStatus } from "../skills-bundle.ts";
 import type { ContentUpdater } from "../services/content-updates.ts";
 import type { ModelBroker } from "@zr-legal/model-broker";
 import type { Lawdb } from "@zr-legal/lawdb";
@@ -1430,7 +1430,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           matterId,
           est.scenario,
           String(p.idempotency_key),
-          JSON.stringify({ ...est.input, estimate_id: est.estimate_id, goal: p?.goal, topic_hint: p?.topic_hint ?? est.input.topic_hint, ...(runOptions ? { run_options: runOptions } : {}), ...(skill ? { skill } : {}), ...(followup ?? {}) }),
+          JSON.stringify({ ...est.input, estimate_id: est.estimate_id, goal: p?.goal, topic_hint: p?.topic_hint ?? est.input.topic_hint, ...(runOptions ? { run_options: runOptions } : {}), ...(skill ? { skill, ...skillSnapshot(deps.skills, skill) } : {}), ...(followup ?? {}) }),
           Math.min(est.points, budgetCap),
           Math.min(est.points, budgetCap),
           est.estimate_id,

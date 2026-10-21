@@ -166,3 +166,10 @@ export function skillQualityChecklist(dir: string, skillId: string): string[] {
   return out;
 }
 
+
+/** 任务开始时方法模板的标题、版本与模板包摘要（余项续复核 RC-A-09、RC-B-14）：写进任务快照，事后看得到“当时按哪一版做的”。纯函数。 */
+export function skillSnapshot(bundle: SkillsBundleStatus | undefined, skill: string): { skill_title?: string; skill_version?: string; skills_sha256?: string } {
+  if (!bundle || !bundle.ok) return {};
+  const x = bundle.skills.find((s) => s.id === skill);
+  return { ...(x ? { skill_title: x.title, skill_version: x.version } : {}), skills_sha256: bundle.contentSha256 };
+}

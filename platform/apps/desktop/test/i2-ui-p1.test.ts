@@ -143,9 +143,21 @@ test("#8 律师层文件不出现研发用语（执行域、跨边界、出站�
     // 第 14 批第二轮复核 R2B-20：恢复与备份、激活页
     "components/RecoveryBackup.tsx",
     "pages/Activate.tsx",
+    // 余项续复核 RC-B-17：本批新增或改动的律师层文件
+    "components/SearchPalette.tsx",
+    "components/ReviewWorkbench.tsx",
+    "components/Select.tsx",
+    "pages/RunView.tsx",
+    "pages/Reminders.tsx",
+    "lib/run-method.ts",
+    "lib/scenarios.ts",
+    "lib/accept-preview.ts",
+    "lib/citation-review.ts",
+    "lib/search.ts",
+    "lib/reminders.ts",
   ].map((f) => join(SRC, f));
   files.push(fileURLToPath(new URL("../../../packages/kernel/src/services/interaction-cards.ts", import.meta.url)));
-  const BANNED = /执行域|跨边界|出站闸门|Playbook|确定性工作流|检索上游|事项账本|计点/;
+  const BANNED = /执行域|跨边界|出站闸门|Playbook|确定性工作流|检索上游|事项账本|计点|分发|运行时隔离/;
   const hits: string[] = [];
   for (const f of files) for (const t of visibleTexts(f)) if (/[一-鿿]/.test(t) && BANNED.test(t)) hits.push(`${f.slice(SRC.length)}：${t.slice(0, 60)}`);
   assert.deepEqual(hits, []);

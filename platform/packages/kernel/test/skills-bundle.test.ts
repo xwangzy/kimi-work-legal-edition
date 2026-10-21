@@ -92,3 +92,14 @@ test("复核页“你来核对”（v9.2 §4.4、Y4 §5 D-3）：每个方法模
   assert.deepEqual(skillQualityChecklist(r.dir, "no-such-skill"), []);
 });
 
+
+test("任务快照记下方法模板的标题、版本与模板包摘要（余项续复核 RC-A-09、RC-B-14）", async () => {
+  const { skillSnapshot } = await import("../src/skills-bundle.ts");
+  const bundle = { ok: true as const, dir: "/x", contentSha256: "ab".repeat(32), skills: [{ id: "contract-review", title: "合同审查（风险卡）", version: "1.1.1" }] as any };
+  assert.deepEqual(skillSnapshot(bundle, "contract-review"), { skill_title: "合同审查（风险卡）", skill_version: "1.1.1", skills_sha256: "ab".repeat(32) });
+  assert.deepEqual(skillSnapshot(bundle, "gone"), { skills_sha256: "ab".repeat(32) });
+  assert.deepEqual(skillSnapshot({ ok: false, reason: "x" } as any, "contract-review"), {});
+  assert.deepEqual(skillSnapshot(undefined, "contract-review"), {});
+  const api = (await import("node:fs")).readFileSync(new URL("../src/api/index.ts", import.meta.url), "utf8");
+  assert.match(api, /\.\.\.\(skill \? \{ skill, \.\.\.skillSnapshot\(deps\.skills, skill\) \} : \{\}\)/, "runs.start 把快照写进 input_snapshot");
+});
