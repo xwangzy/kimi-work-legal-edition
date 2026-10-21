@@ -17,6 +17,8 @@ import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const STMT_CACHE_MAX = 500;
+
 export class KernelDb {
   readonly db: InstanceType<typeof Database>;
 
@@ -81,16 +83,35 @@ export class KernelDb {
     }
   }
 
+  /**
+   * 预编译语句按 SQL 文本缓存（v9.3 性能项实测）：原来每次 run/get/all 都新建一条语句，本机语句要等垃圾回收才释放，
+   * JS 堆感受不到压力——整理 1000 份材料、写 12 万条锚点时进程内存冲到约 1.3 GB。只缓存最近用过的 STMT_CACHE_MAX 条。
+   */
+  private readonly stmts = new Map<string, ReturnType<InstanceType<typeof Database>["prepare"]>>();
+
+  private stmt(sql: string): ReturnType<InstanceType<typeof Database>["prepare"]> {
+    let st = this.stmts.get(sql);
+    if (st) {
+      // 最近使用的放到末尾，超出上限时从最早的开始丢
+      this.stmts.delete(sql);
+    } else {
+      st = this.db.prepare(sql);
+      if (this.stmts.size >= STMT_CACHE_MAX) this.stmts.delete(this.stmts.keys().next().value!);
+    }
+    this.stmts.set(sql, st);
+    return st;
+  }
+
   run(sql: string, params: unknown[] = []): { changes: number; lastInsertRowid: number | bigint } {
-    return this.db.prepare(sql).run(...(params as any[]));
+    return this.stmt(sql).run(...(params as any[]));
   }
 
   get<T = any>(sql: string, params: unknown[] = []): T | undefined {
-    return this.db.prepare(sql).get(...(params as any[])) as T | undefined;
+    return this.stmt(sql).get(...(params as any[])) as T | undefined;
   }
 
   all<T = any>(sql: string, params: unknown[] = []): T[] {
-    return this.db.prepare(sql).all(...(params as any[])) as T[];
+    return this.stmt(sql).all(...(params as any[])) as T[];
   }
 
   /** 事务：只包同步代码段（模型调用等异步动作不得放在事务内）。 */
@@ -110,6 +131,7 @@ export class KernelDb {
   }
 
   close(): void {
+    this.stmts.clear();
     this.db.close();
   }
 }

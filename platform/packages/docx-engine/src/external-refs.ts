@@ -26,6 +26,8 @@ const FETCHING_FIELD = /^\s*(?:INCLUDEPICTURE|INCLUDETEXT|INCLUDE|LINK|DDEAUTO|D
 /** 任意命名空间前缀（含无前缀）。 */
 const P = "(?:[A-Za-z_][\\w.-]*:)?";
 
+const HREF_SRC_ATTR = new RegExp(`\\s${P}(?:href|src)\\s*=\\s*("([^"]*)"|'([^']*)')`, "g");
+
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -135,8 +137,9 @@ function scan(files: Map<string, Buffer>, strip: boolean): ExternalRefFinding[] 
     let xml = orig;
 
     // 3) 值为外部地址的 href / src 属性（VML 的 o:href、src 等；任意元素、任意前缀）
-    xml = xml.replace(/<[A-Za-z_][\w.:-]*\b[^>]*>/g, (tag) =>
-      tag.replace(new RegExp(`\\s${P}(?:href|src)\\s*=\\s*("([^"]*)"|'([^']*)')`, "g"), (m, _q, a, b) => {
+    // 大表格（十几万行的时间轴）逐标签扫描：正则只建一次；不含 href / src 的标签原样返回（属性名区分大小写，与正则同一口径）
+    if (xml.includes("href") || xml.includes("src")) xml = xml.replace(/<[A-Za-z_][\w.:-]*\b[^>]*>/g, (tag) =>
+      !tag.includes("href") && !tag.includes("src") ? tag : tag.replace(HREF_SRC_ATTR, (m, _q, a, b) => {
         const v = decodeXml(a ?? b ?? "");
         if (!URLISH.test(v)) return m;
         found.push({ part: name, kind: "vml_href", target: v });

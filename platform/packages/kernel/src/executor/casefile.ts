@@ -293,16 +293,19 @@ export function factSubmissions(materials: { document_version_id: string; text: 
 
 /** 锚点入库（§4.3 EvidenceAnchor：关键事实可定位——锚点错误为阻断项的验收基础；file_page 为文件页码）。 */
 export function persistAnchors(db: KernelDb, facts: FactRow[]): number {
-  let n = 0;
-  for (const f of facts) {
-    db.run(
-      `INSERT INTO evidence_anchors (anchor_id, parse_version_id, page, paragraph, char_start, char_end, text_hash, file_page)
-       VALUES (?,?,NULL,NULL,?,?,?,?)`,
-      [newId("evidenceAnchor"), f.parse_version_id, f.char_start, f.char_end, sha256Hex(f.text), f.file_page],
-    );
-    n++;
-  }
-  return n;
+  // 同一事务写入（大案卷十几万条锚点：逐条自动提交要几秒，且中途失败会留下半截锚点）
+  return db.tx(() => {
+    let n = 0;
+    for (const f of facts) {
+      db.run(
+        `INSERT INTO evidence_anchors (anchor_id, parse_version_id, page, paragraph, char_start, char_end, text_hash, file_page)
+         VALUES (?,?,NULL,NULL,?,?,?,?)`,
+        [newId("evidenceAnchor"), f.parse_version_id, f.char_start, f.char_end, sha256Hex(f.text), f.file_page],
+      );
+      n++;
+    }
+    return n;
+  });
 }
 
 export interface S2DeliverableInput {

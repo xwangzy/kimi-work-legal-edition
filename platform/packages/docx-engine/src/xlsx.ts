@@ -34,22 +34,21 @@ function colName(i: number): string {
   return s;
 }
 
-function sheetXml(spec: SheetSpec): string {
-  const rows = spec.rows
-    .map((row, ri) => {
-      const cells = row
-        .map((cell, ci) => {
-          if (cell === null || cell === undefined || cell === "") return "";
-          const ref = `${colName(ci)}${ri + 1}`;
-          if (typeof cell === "number") return `<c r="${ref}"><v>${cell}</v></c>`;
-          return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(String(cell))}</t></is></c>`;
-        })
-        .join("");
-      return `<row r="${ri + 1}">${cells}</row>`;
-    })
-    .join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows}</sheetData></worksheet>`;
+/** 逐行编码成字节再拼接（十几万行的时间轴不再先拼成一个几十 MB 的字符串，峰值内存降一个量级）。 */
+function sheetXml(spec: SheetSpec): Buffer {
+  const parts: Buffer[] = [Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>`, "utf8")];
+  spec.rows.forEach((row, ri) => {
+    let cells = "";
+    row.forEach((cell, ci) => {
+      if (cell === null || cell === undefined || cell === "") return;
+      const ref = `${colName(ci)}${ri + 1}`;
+      cells += typeof cell === "number" ? `<c r="${ref}"><v>${cell}</v></c>` : `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(String(cell))}</t></is></c>`;
+    });
+    parts.push(Buffer.from(`<row r="${ri + 1}">${cells}</row>`, "utf8"));
+  });
+  parts.push(Buffer.from("</sheetData></worksheet>", "utf8"));
+  return Buffer.concat(parts);
 }
 
 export function createXlsx(sheets: SheetSpec[]): Buffer {
@@ -67,6 +66,6 @@ export function createXlsx(sheets: SheetSpec[]): Buffer {
     { name: "_rels/.rels", data: Buffer.from(ROOT_RELS, "utf8") },
     { name: "xl/workbook.xml", data: Buffer.from(workbook, "utf8") },
     { name: "xl/_rels/workbook.xml.rels", data: Buffer.from(wbRels, "utf8") },
-    ...sheets.map((s, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: Buffer.from(sheetXml(s), "utf8") })),
+    ...sheets.map((s, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: sheetXml(s) })),
   ]);
 }

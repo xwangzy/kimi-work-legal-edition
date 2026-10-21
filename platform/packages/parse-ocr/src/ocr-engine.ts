@@ -57,6 +57,9 @@ export class PpuOcrEngine implements OcrEngine {
         charactersDictionary: this.paths.dict,
       },
       processing: { engine: this.engine },
+      // 关掉 onnxruntime 的 CPU 内存池与内存模式（v9.3 性能项实测，20 页扫描件：峰值 1623 → 1247 MB，耗时 +7%）；
+      // 限线程数省得不多、慢六成，不改
+      session: { enableCpuMemArena: false, enableMemPattern: false },
     });
     await service.initialize();
     this.service = service;

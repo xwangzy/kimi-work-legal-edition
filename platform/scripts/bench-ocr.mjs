@@ -1,6 +1,6 @@
 /**
  * OCR 基准（探针 8 数据点；方案 §13：扫描件 OCR 每页目标 ≤2 秒、进程峰值内存 ≤1GB）：
- * 生成 20 页扫描件 PDF（合成文字图）→ 真实模型走隔离解析进程 → 记录总耗时/页均/峰值 rss。
+ * 生成 20 页（BENCH_PAGES 可改）扫描件 PDF（合成文字图）→ 真实模型走隔离解析进程 → 记录总耗时/页均/峰值 rss。
  *
  * ⚠️ 口径如实标注：macOS arm64 开发机实测，**非 Windows i5 验收数据**（探针 8 的正式验收
  * 在 Windows 参考机上做）；合成文字图与真实扫描件难度不同，仅作量级参考。
@@ -23,7 +23,7 @@ for (const p of Object.values(modelPaths)) {
   if (!existsSync(p)) throw new Error(`模型缺失：${p}（先运行 npm run fetch:ocr-models）`);
 }
 
-const PAGES = 20;
+const PAGES = Number(process.env.BENCH_PAGES ?? 20);
 const W = 1240;
 const H = 1754;
 const fontPath = ["/System/Library/Fonts/Hiragino Sans GB.ttc", "/System/Library/Fonts/STHeiti Medium.ttc"].find((p) => existsSync(p));
@@ -66,7 +66,7 @@ const hitPages = r.pages.filter((p) => p.text.includes("保密")).length;
 const meanScore = r.pages.reduce((n, p) => n + (p.meanScore ?? 0), 0) / r.pages.length;
 
 const result = {
-  benchmark: "ocr-20-pages-scanned-pdf",
+  benchmark: `ocr-${PAGES}-pages-scanned-pdf`,
   caveat: "macOS arm64 开发机实测，非 Windows i5 验收数据（探针 8 正式验收在 Windows 参考机）；合成文字图仅作量级参考",
   machine: { platform: process.platform, arch: process.arch, node: process.version },
   pages: r.pageCount,
@@ -82,7 +82,7 @@ const result = {
 };
 const outDir = join(root, "output");
 mkdirSync(outDir, { recursive: true });
-const outFile = join(outDir, `bench-ocr-${new Date().toISOString().slice(0, 10)}.json`);
+const outFile = join(outDir, `bench-ocr-${PAGES}p-${new Date().toISOString().slice(0, 10)}.json`);
 writeFileSync(outFile, JSON.stringify(result, null, 2) + "\n");
 console.log(JSON.stringify(result, null, 2));
 console.log(`[bench-ocr] 已写入 ${outFile}`);
