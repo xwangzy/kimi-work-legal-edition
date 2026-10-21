@@ -1178,6 +1178,7 @@
     "apps/firm-node/": "所内节点（无界面服务，律所服务器上的存储与日志另行规定）",
     "packages/im-connectors/": "所内节点 IM 连接器",
     "packages/ops-auth/": "中软云端运营按人鉴权（v9.3 A-10；只在云端服务与运营命令行里用，律师电脑上的内核、闸门与客户端都不引用——ops-auth.test.ts 门禁）：写的是云端的运营名册版本记录、名册换版记录与运营请求随机数（只供用例与开发的 testing.ts 另写一份名册副本），不含律所数据",
+    "packages/blob-store/": "中软云端对象存储接口（v9.3 A-11；本地目录或 S3 兼容对象存储）：只在云端服务里用，律师电脑上的内核、闸门与客户端都不引用（blob-store.test.ts 门禁）；存的是支持服务的诊断包本体（第 13 类、“数据去向说明”），不含案件内容",
     "services/": "中软云端服务（Y2 第 6 章：只计量不留案件内容）；例外：支持服务（services/support-api）保存律师逐次确认上传的脱敏诊断包 7 天（不含案件内容，内容见第 13 类与“数据去向说明”）",
     "packages/kap-host/vendor/": "Kimi Code 引擎制品（kap-embed.mjs）：引擎的持久化经宿主注入的种子（SealedFileStorageService、事件日志 JournalIo、broker）改写为 KWE1 密文；制品内直接文件写入由 static-surface.test.ts 按输入文件另行锁定，不在本扫描内"
   },

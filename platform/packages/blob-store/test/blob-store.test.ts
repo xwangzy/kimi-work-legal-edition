@@ -8,10 +8,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { checkKey, fsBlobStore, s3BlobStore, signV4, type BlobStore } from "../src/index.ts";
 
 const CREDS = { accessKeyId: "AKIAIOSFODNN7EXAMPLE", secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" };
@@ -133,4 +134,26 @@ test("本地目录：同一套行为；列举不含写到一半的临时文件�
   assert.ok(existsSync(join(dir, "support", "SUP-AAAA-0001.bin")));
   assert.ok(!readdirSync(join(dir, "support")).some((n) => /\.tmp-/.test(n) && !n.endsWith("0a1b2c3d")), "正常写入不留临时文件");
   for (const k of ["/abs", "a/../b", "a b", ""]) assert.throws(() => checkKey(k), /键名不合规/);
+});
+
+test("门禁：律师电脑上的代码（内核、闸门、客户端等）不引用本包——驻留面与出网面清单把本包列为云端的前提", () => {
+  const root = fileURLToPath(new URL("../../../", import.meta.url));
+  const hits: string[] = [];
+  const walk = (d: string) => {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.name === "node_modules" || e.name === "vendor" || e.name === "dist" || e.name === "test") continue;
+      const p = join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(ts|tsx|mjs|cjs|js)$/.test(e.name) && /blob-store/.test(readFileSync(p, "utf8"))) hits.push(p.slice(root.length));
+    }
+  };
+  for (const pkg of readdirSync(join(root, "packages"))) if (pkg !== "blob-store") walk(join(root, "packages", pkg, "src"));
+  for (const app of readdirSync(join(root, "apps"))) for (const sub of ["src", "electron"]) walk(join(root, "apps", app, sub));
+  assert.deepEqual(hits, []);
 });
