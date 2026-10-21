@@ -45,6 +45,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   const [waiting, setWaiting] = useState<{ run_id: string; matter_id: string }[]>([]);
   // 今天（v9.4 U1 #3）：近期期限也放到首页首屏
   const [deadlines, setDeadlines] = useState<ReminderItem[]>([]);
+  // 读期限失败时不能说“14 天内没有期限”（复核 Q1-17）
+  const [deadlinesFailed, setDeadlinesFailed] = useState(false);
   const [newMatter, setNewMatter] = useState(false);
   const [sheet, setSheet] = useState<PendingStart | null>(null);
   const [msg, setMsg] = useState("");
@@ -115,8 +117,14 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     api.pending().then((r) => setPendingReview(r.pending)).catch(() => {});
     api
       .reminders()
-      .then((r) => setDeadlines(upcomingDeadlines(r.reminders)))
-      .catch(() => setDeadlines([]));
+      .then((r) => {
+        setDeadlines(upcomingDeadlines(r.reminders));
+        setDeadlinesFailed(false);
+      })
+      .catch(() => {
+        setDeadlines([]);
+        setDeadlinesFailed(true);
+      });
     api
       .recentRuns(5)
       .then((r) => {
@@ -265,7 +273,11 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
             </div>
             <div className="today-col">
               <div className="today-h">近期期限</div>
-              {deadlines.length === 0 ? (
+              {deadlinesFailed ? (
+                <p className="today-empty">
+                  期限暂时读不出来。<button className="btn-link" onClick={() => nav("/reminders")}>去期限提醒查看</button>
+                </p>
+              ) : deadlines.length === 0 ? (
                 <p className="today-empty">
                   14 天内没有期限。<button className="btn-link" onClick={() => nav("/reminders")}>设期限</button>
                 </p>

@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calcDeadline, type CalcDeadlineParams } from "../src/tools/tools/deadline.ts";
+import { calcDeadline, notCollectedWarning, type CalcDeadlineParams } from "../src/tools/tools/deadline.ts";
 import { CN_HOLIDAYS, dayStatus, isRestDay } from "../src/tools/tools/cn-holidays.ts";
 import { findTool, validateParams } from "../src/tools/registry.ts";
 import { LEGAL_MCP_TOOLS } from "@zr-legal/domain";
@@ -45,9 +45,9 @@ const SAMPLES: Sample[] = [
   { name: "20 五个工作日跨劳动节并计入调休上班日", input: work("2026-04-30", 5), expect: "2026-05-11", why: "05-01 至 05-05 放假；05-06①、05-07②、05-08③、05-09（周六调休上班）④，05-10 周日跳过，05-11⑤" },
   { name: "21 五个工作日跨春节并计入调休上班日", input: work("2026-02-11", 5), expect: "2026-02-25", why: "02-12①、02-13②、02-14（周六调休上班）③，02-15 至 02-23 放假，02-24④、02-25⑤" },
   { name: "22 五个工作日跨国庆", input: work("2026-09-29", 5), expect: "2026-10-12", why: "09-30①，10-01 至 10-07 放假，10-08②、10-09③、10-10（周六调休上班）④，10-11 周日跳过，10-12⑤" },
-  { name: "23 末日所在年份未收录（2027）→ warning，只按周末", input: civil("2026-12-17", "day", 15), expect: "2027-01-01", why: "12-17 + 15 = 2027-01-01（周五）；2027 年节假日未收录，只按周末判断，不顺延（实际可能是元旦假期，须律师核对）", warnYears: [2027] },
+  { name: "23 末日所在年份未收录（2027）→ 按放假办法固定日期假日顺延 + warning（v9.4 复核 Q1-01）", input: civil("2026-12-17", "day", 15), expect: "2027-01-04", why: "12-17 + 15 = 2027-01-01（周五）：元旦是放假办法规定的固定日期假日 → 01-02、01-03 周末 → 01-04（周一）；2027 年调休与农历节日未知，须律师核对", warnYears: [2027] },
   { name: "24 未收录年份（2023）末日周六按周末顺延 → warning", input: civil("2023-03-03", "day", 15), expect: "2023-03-20", why: "03-03 + 15 = 03-18（周六），只按周末顺延至 03-20（周一）", warnYears: [2023] },
-  { name: "25 工作日跨入未收录年份 → warning", input: work("2026-12-30", 5), expect: "2027-01-06", why: "12-31①，2027-01-01（周五，未收录只按周末）②，01-02–03 周末跳过，01-04③、01-05④、01-06⑤", warnYears: [2027] },
+  { name: "25 工作日跨入未收录年份 → 元旦按固定日期假日跳过 + warning", input: work("2026-12-30", 5), expect: "2027-01-07", why: "12-31①，2027-01-01 元旦（放假办法固定日期）跳过，01-02–03 周末跳过，01-04②、01-05③、01-06④、01-07⑤", warnYears: [2027] },
 ];
 
 for (const s of SAMPLES) {
@@ -58,9 +58,12 @@ for (const s of SAMPLES) {
     assert.equal(r.start_precision, "day");
     const notCollected = r.holiday_source.years_used.filter((u) => u.status === "not_collected").map((u) => u.year);
     assert.deepEqual(notCollected, s.warnYears ?? [], "未收录年份如实列出");
-    assert.equal(r.warnings.length, (s.warnYears ?? []).length);
+    // 届满日是调休上班的周末时另有一条警告（v9.4 复核 Q1-02）
+    const adjusted = dayStatus(s.expect).kind === "adjusted_workday";
+    assert.equal(r.warnings.length, (s.warnYears ?? []).length + (adjusted ? 1 : 0), JSON.stringify(r.warnings));
+    if (adjusted) assert.ok(r.warnings.some((w) => /调休上班的周末/.test(w)));
     for (const y of s.warnYears ?? []) {
-      assert.ok(r.warnings.some((w) => w === `${y} 年法定节假日未收录，只按周末顺延，须律师按当年国务院办公厅放假通知核对`), `缺少 ${y} 年 warning`);
+      assert.ok(r.warnings.some((w) => w === notCollectedWarning(y, s.input.rule)), `缺少 ${y} 年 warning`);
     }
     // 过程可复核：起算日、名义末日或计数、届满日都写在过程里
     assert.ok(r.steps[0]!.includes(s.input.start), "过程第一步写起算日");
@@ -178,4 +181,17 @@ test("calc.deadline 在对 Agent 开放的工具清单内", () => {
   assert.equal(t.sideEffect, "read");
   assert.equal(t.resource, "pure");
   assert.equal(t.version, "1");
+});
+
+test("v9.4 复核 Q1-01/02：未收录年份按放假办法的固定日期假日处理；届满日是调休上班的周末时给警告", () => {
+  const a = calcDeadline(civil("2026-12-17", "day", 15));
+  assert.notEqual(a.deadline, "2027-01-01", "元旦不能是届满日");
+  assert.equal(dayStatus("2027-01-01").kind, "holiday");
+  assert.equal(dayStatus("2027-05-02").kind, "holiday", "2025 年起劳动节 2 天");
+  assert.equal(dayStatus("2027-10-03").kind, "holiday");
+  assert.equal(dayStatus("2023-05-02").kind, "workday", "2025 年前劳动节 1 天（2023 未收录）");
+  const b = calcDeadline(civil("2024-04-03", "day", 1));
+  assert.equal(b.deadline, "2024-04-07");
+  assert.ok(b.warnings.some((w) => /调休上班的周末/.test(w)), JSON.stringify(b.warnings));
+  assert.ok(b.steps.some((x) => /调休上班日.*不再顺延/.test(x)));
 });

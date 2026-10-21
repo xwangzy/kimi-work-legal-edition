@@ -141,3 +141,11 @@ test("law.get_article 与 calc.deadline 已登记在签名锁文件里并对 Age
   assert.equal(t.resource, "lawdb");
   assert.equal(t.version, "1");
 });
+
+test("v9.4 复核 Q1-05/06：“之 N”条如实返回取不到（不报写法错误、不引导改传主条号）；as_of 须为真实日期", () => {
+  const r = lawGetArticle(lawdb, { law: "民法典", article: "第一百二十条之一" });
+  assert.equal(r.found, false);
+  assert.equal(r.reason, "article_suffix_unsupported");
+  assert.equal(r.text, undefined);
+  assert.throws(() => lawGetArticle(lawdb, { law: "民法典", article: 585, as_of: "2026-13-45" }), /真实日期/);
+});

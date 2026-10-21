@@ -93,10 +93,16 @@ function cnMonth(y: number, m: number): string {
 }
 
 /** 一天为何是休假日（写进过程，律师可复核）。 */
+/** 未收录年份的警告（v9.4 复核 Q1-01、Q1-03：按规则区分“顺延”与“计数”，写明已按固定日期假日处理、哪些仍未知）。 */
+export function notCollectedWarning(year: number, rule: DeadlineRule): string {
+  const how = rule === "workday" ? "只跳过周末与放假办法规定的固定日期假日（元旦、劳动节、国庆）计数" : "只按周末与放假办法规定的固定日期假日（元旦、劳动节、国庆）顺延";
+  return `${year} 年放假安排未收录：${how}，春节、清明、端午、中秋与调休未知，须律师按当年国务院办公厅放假通知核对`;
+}
+
 function restReason(date: string): string {
   const s = dayStatus(date);
   if (s.kind === "holiday") return `${s.name}假期 ${s.span!.from} 至 ${s.span!.to}`;
-  if (s.kind === "weekend") return `${WEEKDAY[weekdayOf(date)]}公休日${s.covered ? "" : "（该年节假日表未收录，只能按周末判断）"}`;
+  if (s.kind === "weekend") return `${WEEKDAY[weekdayOf(date)]}公休日${s.covered ? "" : "（该年节假日安排未收录）"}`;
   return "";
 }
 
@@ -139,7 +145,7 @@ function runCivil(start: string, unit: Exclude<DeadlineUnit, "workday">, n: numb
     steps.push(
       s.kind === "adjusted_workday"
         ? `名义末日 ${wd(d)}是调休上班日（${s.name}），不是法定休假日，不顺延`
-        : `名义末日 ${wd(d)}是工作日${s.covered ? "" : "（该年节假日表未收录，只按周末判断）"}，不顺延`,
+        : `名义末日 ${wd(d)}是工作日${s.covered ? "" : "（该年节假日安排未收录，只按周末与放假办法固定日期假日判断）"}，不顺延`,
     );
   } else {
     const reasons: string[] = [];
@@ -151,6 +157,8 @@ function runCivil(start: string, unit: Exclude<DeadlineUnit, "workday">, n: numb
     }
     steps.push(`名义末日 ${wd(nominal)}是法定休假日（${reasons.join("；")}）`);
     steps.push(`顺延：休假日至 ${addDays(d, -1)} 结束，以次日 ${wd(d)}为期间最后一日（民法典第二百零三条第一款）`);
+    // 顺延后落在调休上班的周末：写明不再顺延（v9.4 复核 Q1-02；调用方另给警告）
+    if (dayStatus(d).kind === "adjusted_workday") steps.push(`${wd(d)}是调休上班日（${dayStatus(d).name}），不是法定休假日，不再顺延`);
   }
   steps.push(`期间届满日：${wd(d)}，当日二十四时截止；有业务时间的，以停止业务活动的时间为截止时间（民法典第二百零三条第二款）`);
   return { deadline: d, steps, years };
@@ -261,7 +269,11 @@ export function calcDeadline(params: CalcDeadlineParams): CalcDeadlineResult {
       : { year: y, status: "not_collected" as const };
   });
   for (const u of used) {
-    if (u.status === "not_collected") warnings.push(`${u.year} 年法定节假日未收录，只按周末顺延，须律师按当年国务院办公厅放假通知核对`);
+    if (u.status === "not_collected") warnings.push(notCollectedWarning(u.year, p.rule));
+  }
+  // 届满日是调休上班的周末（v9.4 复核 Q1-02）：实务通说不顺延，但个别法院把握不同——稳妥起见提示以前一个工作日为准
+  if (deadline && dayStatus(deadline).kind === "adjusted_workday") {
+    warnings.push(`届满日 ${deadline} 是调休上班的周末：按通说不顺延，但个别法院把握不同，稳妥起见以前一个工作日为准`);
   }
 
   return {

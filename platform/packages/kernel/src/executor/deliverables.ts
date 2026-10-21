@@ -10,6 +10,7 @@ import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
 import { docxApplyRevisions, docxRenderReport, docxSanitize } from "../tools/tools/docx.ts";
 import { parseDocument } from "../services/parser.ts";
+import { fileDay } from "./casefile.ts";
 
 export interface ToolIdentity {
   tid: string;
@@ -202,7 +203,7 @@ export function buildS1Deliverables(
   }, args.matterId);
   artifacts.push({
     kind: "s1_opinion",
-    filename: `审查意见书（内部稿）-${args.runId.slice(-6)}.docx`,
+    filename: `审查意见书（内部稿）-${fileDay()}.docx`,
     sha256: opinion.sha256,
     storage_uri: opinion.storage_uri,
     manifest: { audience: "internal", note: "内部稿；客户版经受众净化与签发后生成" },
@@ -226,7 +227,7 @@ export function buildS1Deliverables(
   const xlsxStored = blobs.put(createXlsx([{ name: "条款问题表", rows: issueRows }]), args.matterId);
   artifacts.push({
     kind: "s1_issue_table",
-    filename: `条款问题表-${args.runId.slice(-6)}.xlsx`,
+    filename: `条款问题表-${fileDay()}.xlsx`,
     sha256: xlsxStored.sha256,
     storage_uri: xlsxStored.storage_uri,
     manifest: { rows: issueRows.length - 1 },

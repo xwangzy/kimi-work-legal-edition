@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
 import { fmtRelative, RUN_STATUS_LABELS, SCENARIO_LABELS } from "../lib/labels.ts";
+import { dueText, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
+import type { ReminderItem } from "../api.ts";
 import { Select } from "../components/Select.tsx";
 
 export const MAX_BOARDS = 2;
@@ -23,8 +25,11 @@ function Widget({ title, children }: { title: string; children: React.ReactNode 
 export function MatterBoard({ matter, runs }: { matter: Matter; runs: any[] }) {
   const [pendingReview, setPendingReview] = useState<any[]>([]);
   const [egress, setEgress] = useState<{ sent: number; blocked: number; unknown: number }>({ sent: 0, blocked: 0, unknown: 0 });
+  // 期限卡同时列本事项的期限提醒（复核 Q1-18：“填期限”打开的是提醒表单，填完回来卡片要能看到）
+  const [reminders, setReminders] = useState<ReminderItem[]>([]);
   useEffect(() => {
     api.pending().then((r) => setPendingReview(r.pending.filter((p: any) => !p.matter_id || p.matter_id === matter.matter_id))).catch(() => {});
+    api.reminders(matter.matter_id).then((r) => setReminders(upcomingDeadlines(r.reminders, Date.now(), 3650))).catch(() => setReminders([]));
     api
       .egressRecords({ matterId: matter.matter_id })
       .then((r) =>
@@ -42,7 +47,13 @@ export function MatterBoard({ matter, runs }: { matter: Matter; runs: any[] }) {
     <div className="board">
       <Widget title="期限">
         {/* 空状态给动作（v9.4 U1 §3.4）：“填期限”直接打开本事项的设提醒表单 */}
-        {dates.length === 0 ? (
+        {reminders.slice(0, 3).map((r) => (
+          <div key={r.reminder_id} className="w-row">
+            <span>{r.note || reminderKindLabel(r.kind)}</span>
+            <b title={r.due_date}>{dueText(r.due_date)}</b>
+          </div>
+        ))}
+        {dates.length === 0 && reminders.length === 0 ? (
           <p className="muted">
             开庭日、举证期限填在这里，到时提醒你。{" "}
             {(matter.lifecycle ?? "active") === "active" && !matter.is_sample && (

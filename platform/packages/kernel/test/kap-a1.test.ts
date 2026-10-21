@@ -185,10 +185,13 @@ test("方法参数（v9.4 S1 §6.2 第 10 项）：场景卡字段作为参数�
     const est = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
     await assert.rejects(() => inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-args-bad-${Date.now()}`, goal: `${M} x`, skill: "citation-check", skill_args: { "Bad-Key": "x" } }), /方法参数名不合法/);
     await assert.rejects(() => inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-args-noskill-${Date.now()}`, goal: `${M} x`, skill_args: { when: "2025-06" } }), /只能和方法模板一起使用/);
-    const run = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-args-${Date.now()}`, goal: `${M} 核对引用`, skill: "citation-check", skill_args: { when: "2025-06", focus: ["付款", "违约责任"] }, plan_first: false, mode: "default" });
+    // 方法参数里的当事人姓名随提示词一起换成代号（复核 Q1-09：参数若改走不令牌化的路径，这条会失败）
+    await inv("matters.parties.upsert", { matter_id: matter.matter_id, name: "欧阳娜娜", kind: "person" });
+    const run = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-args-${Date.now()}`, goal: `${M} 核对引用`, skill: "citation-check", skill_args: { when: "2025-06", focus: ["付款", "违约责任"], who: "欧阳娜娜" }, plan_first: false, mode: "default" });
     const { run: fin, events } = await waitRun(inv, run.run_id, 150_000);
     assert.equal(fin.status, "succeeded", JSON.stringify(events.map((e: any) => e.type)));
-    assert.match(firstUser, /方法参数：when=2025-06；focus=付款、违约责任。/, firstUser.slice(0, 400));
+    assert.match(firstUser, /方法参数：when=2025-06；focus=付款、违约责任；who=/, firstUser.slice(0, 400));
+    assert.doesNotMatch(firstUser, /欧阳娜娜/, "方法参数里的自然人姓名不得以原文到达模型");
   } finally {
     cloud.model.script = null;
   }

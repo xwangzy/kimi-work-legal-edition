@@ -36,7 +36,13 @@ test("estimate 含数据去向预览：待取得事项给出拦截预警，本�
   assert.match(est2.data_where.preview, /替换为代号/);
   assert.match(est2.data_where.preview, /每一次发送都记在本任务的“数据去向”里/);
   assert.doesNotMatch(est2.data_where.preview, /令牌化|出站|上游|网关/, "完整说明也用律师话（v9.4）");
-  assert.ok(est2.data_where.bullets.length >= 3 && est2.data_where.bullets.every((b: string) => [...b].length <= 40), "要点每句 ≤ 40 字（v9.4 U1 §3.3）");
+  assert.ok(est2.data_where.bullets.length <= 5 && est2.data_where.bullets.every((b: string) => [...b].length <= 40), "要点至多 5 句、每句 ≤ 40 字（v9.4 U1 §3.3）");
+  // 复核 Q1-11：要点不能只说替换了什么——按原文发送的类别、没认出的姓名、服务方是否保存、经谁转发，都要在要点里
+  const pts = est2.data_where.bullets.join("\n");
+  assert.match(pts, /按原文/);
+  assert.match(pts, /没认出的姓名也按原文/);
+  assert.match(pts, /是否保存/);
+  assert.match(pts, /经中软转发/);
   // 隐私安全增量评审 P0-3：如实写明以原文发送的类别与上游留存口径
   assert.match(est2.data_where.preview, /以原文发送的有：机构名称、案情事实、金额、日期、条款文字与案号（未能识别的姓名也会以原文发送）/);
   assert.match(est2.data_where.preview, /AI 服务方是否保存，以其企业协议为准/);

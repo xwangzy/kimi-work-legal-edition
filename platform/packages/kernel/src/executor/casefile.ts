@@ -402,7 +402,7 @@ export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
 
   // 争点—证据矩阵框架：按律师给的争点列行；拆要件、挂证据是第二段“争点与证据分析”（Agent）的事
   const matrixRows: (string | number | null)[][] = [
-    ["争点", "要件", "举证责任", "支持证据（锚点）", "反对证据", "缺口", "证明力意见（律师填写）"],
+    ["争点", "要件", "举证责任", "支持证据（原文位置）", "反对证据", "缺口", "证明力意见（律师填写）"],
     ...(input.issues.length > 0
       ? input.issues.map((issue) => [issue, "（待拆解：可接着做“争点与证据分析”）", "（待确认）", "", "", "", ""] as (string | number | null)[])
       : [["（争点待填写：可接着做“争点与证据分析”，由 AI 按你确认的事实拆要件、挂证据）", "", "", "", "", "", ""]] as (string | number | null)[][]),

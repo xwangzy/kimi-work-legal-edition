@@ -329,8 +329,8 @@ export class Lawdb {
 
   /**
    * 条文正文；未采集返回 null（条号存在性以 total_articles 为准——如实区分「条号存在」与「正文已采集」）。
-   * 任何把法条正文送入模型上下文的路径必须先 assertAction(source, 'model')——当前无此类调用面
-   * （核验结果不含正文），新增路径时强制（Source Registry §2.2：不让模型补全未获授权的全文）。
+   * 任何把法条正文送入模型上下文的路径必须先 assertAction(source, 'model')。现有调用面：法律工具 law.get_article
+   * （kernel tools/law.ts 的 lawGetArticle，返回正文前先后检查 quote 与 model）；新增路径时同样强制（Source Registry §2.2：不让模型补全未获授权的全文）。
    */
   getArticle(lsvId: string, articleNo: number): string | null {
     const r = this.db.prepare(`SELECT text FROM articles WHERE lsv_id = ? AND article_no = ?`).get(lsvId, articleNo) as { text: string } | undefined;

@@ -92,8 +92,8 @@ export interface LawGetArticleParams {
 
 export interface LawArticleResult {
   found: boolean;
-  /** found=false 时的原因：库外法源 / 该时点无适用版本 / 条号超出该版本条数 / 条号存在但正文未采集。 */
-  reason?: "law_not_in_lawdb" | "no_applicable_version" | "article_not_exist" | "text_not_collected";
+  /** found=false 时的原因：库外法源 / 该时点无适用版本 / 条号超出该版本条数 / 条号存在但正文未采集 / “之 N”条（按整数条号存储，取不到）。 */
+  reason?: "law_not_in_lawdb" | "no_applicable_version" | "article_not_exist" | "text_not_collected" | "article_suffix_unsupported";
   law_name?: string;
   lsv_id?: string;
   effective?: string;
@@ -142,10 +142,16 @@ function findRows(lawdb: Lawdb, law: string): LawVersionRow[] {
 export function lawGetArticle(lawdb: Lawdb, params: LawGetArticleParams): LawArticleResult {
   const law = typeof params?.law === "string" ? params.law.trim() : "";
   if (!law) throw new DomainError("validation", "law.get_article 需要 law（法名或简称）", 422);
+  // “第一百二十条之一”这类条号（v9.4 复核 Q1-05）：法规库按整数条号存储，不能取；如实说明，不报“写法不对”——否则模型会改传 120、拿到别的条文
+  if (typeof params.article === "string" && /之[一二三四五六七八九十]+\s*$/.test(params.article.replace(/[款项目]$/, "").trim())) {
+    return { found: false, reason: "article_suffix_unsupported", as_of: params.as_of ?? localToday(), note: "该条为“之 N”条，法规库按整数条号存储，不提供文本：须律师查官方文本核对；不要改用主条号代替", checked_at: new Date().toISOString() };
+  }
   const articleNo = parseArticleNo(params.article);
   if (articleNo === null) throw new DomainError("validation", "law.get_article 的 article 须为条号整数或“第五百八十五条”这类写法", 422);
   const asOf = params.as_of ?? localToday();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new DomainError("validation", "law.get_article 的 as_of 须为 YYYY-MM-DD", 422);
+  // 真实日期才收（v9.4 复核 Q1-06：原来 2026-13-45 也能过，按字符串比较选版本）
+  const asOfDate = new Date(`${asOf}T00:00:00Z`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf) || Number.isNaN(asOfDate.getTime()) || asOfDate.toISOString().slice(0, 10) !== asOf) throw new DomainError("validation", "law.get_article 的 as_of 须为真实日期 YYYY-MM-DD", 422);
   const checkedAt = new Date().toISOString();
   const rows = findRows(lawdb, law);
   if (rows.length === 0) {

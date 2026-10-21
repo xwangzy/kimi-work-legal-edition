@@ -125,8 +125,24 @@ export interface DayStatus {
   name?: string;
   /** 放假区间（holiday 时）。 */
   span?: { from: string; to: string };
-  /** 该年节假日表是否已收录（未收录时只按周末判断）。 */
+  /** 该年节假日表是否已收录（未收录时只按周末与放假办法的固定日期假日判断）。 */
   covered: boolean;
+  /** 未收录年份里按《全国年节及纪念日放假办法》认定的固定日期假日（v9.4 复核 Q1-01）。 */
+  fixed?: boolean;
+}
+
+/**
+ * 《全国年节及纪念日放假办法》规定日期固定（公历）的全体公民假日：未收录当年放假通知的年份至少认这些天是休假日（v9.4 复核 Q1-01：
+ * 原来只按周末判断，跨年期间会把 1 月 1 日当成届满日）。2025 年起劳动节 2 天（5 月 1、2 日）；此前 1 天。
+ * 春节（含除夕）、清明、端午、中秋按农历或节气，日期不固定；调休安排也只能看当年通知——未收录年份里这些一律未知，由调用方写警告。
+ */
+function fixedHoliday(date: string): string | null {
+  const y = Number(date.slice(0, 4));
+  const md = date.slice(5);
+  if (md === "01-01") return "元旦";
+  if (md === "05-01" || (y >= 2025 && md === "05-02")) return "劳动节";
+  if (md === "10-01" || md === "10-02" || md === "10-03") return "国庆节";
+  return null;
 }
 
 /** 0=周日 … 6=周六（UTC 计算，日期字符串无时区）。 */
@@ -143,6 +159,9 @@ export function dayStatus(date: string): DayStatus {
     if (off) return { kind: "holiday", name: off.name, span: { from: off.from, to: off.to }, covered: true };
     const w = y.workdays.find((x) => x.date === date);
     if (w) return { kind: "adjusted_workday", name: w.name, covered: true };
+  } else {
+    const f = fixedHoliday(date);
+    if (f) return { kind: "holiday", name: `${f}（放假办法固定日期）`, span: { from: date, to: date }, covered: false, fixed: true };
   }
   return { kind: weekend ? "weekend" : "workday", covered: !!y };
 }

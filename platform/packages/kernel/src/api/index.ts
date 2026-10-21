@@ -1306,8 +1306,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         sendSummary = summarizeSend(db, tokens, matterId, docIds, String(p?.goal ?? ""), level === "L3a" || matter.full_pseudonym === 1, { fullScan: level === "L3a", extraTexts: [String(matter.stance ?? ""), String(matter.jurisdiction ?? "")] }).summary;
       }
       const suspectsBlock = level === "L3a" && (sendSummary?.suspects.unreviewed ?? 0) > 0;
-      // 律师先看的三四句短话（v9.4 认知减负：确认卡默认只显示要点，完整说明 preview 收进“查看明细”）；口径与 preview 一致，不另立规则
-      const shortEndpoint: Record<string, string> = { standard: "Kimi 模型", byok: "律所自有的 Kimi 账号", private: "律所私有模型", none: "不使用模型" };
+      // 律师先看的几句短话（v9.4 认知减负：确认卡默认只显示要点，完整说明 preview 收进“完整说明”）。口径与 preview 一致，不另立规则；
+      // 复核 Q1-11：要点不能只说“替换了什么”——按原文发送的类别、没认出的姓名按原文发、服务方是否保存，都要在要点里（隐私安全增量评审 P0-3）
+      const route: Record<string, string> = { standard: "发给 Kimi AI（经中软转发）", byok: "发给律所自己的 Kimi 账号（不经中软）", private: "发给律所自己的 AI（不经中软）", none: "不使用 AI" };
       const fullPseudonym = level === "L3a" || matter.full_pseudonym === 1;
       const bullets: string[] = exitMode
         ? [`不会发送：${exitMode.message}`]
@@ -1316,10 +1317,11 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           : blockReason
             ? [`不会发送：${blockReason}`]
             : [
-                `发给${/^[A-Za-z]/.test(shortEndpoint[matter.model_endpoint] ?? "") ? " " : ""}${shortEndpoint[matter.model_endpoint] ?? "模型"}：${docIds.length ? `${docIds.length} 份材料里任务用到的内容` : "任务说明和需要读的材料"}`,
-                fullPseudonym ? "发送前，姓名、公司名称、证件号、账号都换成代号" : "发送前，自然人姓名、证件号、账号、电话换成代号；公司名称保留",
-                ...(p.scenario !== "a1.agent_task" ? [] : level === "L3b" ? ["不联网检索"] : level === "L3a" ? ["联网检索每一条都先问你"] : ["检索词里出现当事人名称时，先问你"]),
-                "每一次发送都记在本任务的“数据去向”里",
+                `${route[matter.model_endpoint] ?? "发给 AI"}：${docIds.length ? `${docIds.length} 份材料里用到的内容` : "任务说明和用到的材料"}`,
+                fullPseudonym ? "姓名、公司名、证件号、账号先换成代号" : "姓名、证件号、账号、电话先换成代号",
+                fullPseudonym ? "案情、金额、日期、条款按原文；没认出的姓名也按原文" : "公司名、案情、金额、日期、条款按原文；没认出的姓名也按原文",
+                ...(p.scenario !== "a1.agent_task" ? [] : level === "L3b" ? ["不联网检索"] : level === "L3a" ? ["联网检索每一条都先问你"] : ["联网检索先去掉当事人名称；要带名称查时逐条问你"]),
+                `${matter.model_endpoint === "private" ? "是否保存由律所决定" : "服务方是否保存，以其企业协议为准"}；每次发送都有记录`,
               ];
       const dataWhere = {
         model_endpoint: matter.model_endpoint,
@@ -1469,7 +1471,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       // 放在幂等重放与参数、追问条件校验之后：更具体的原因先报
       // L3a 事项：疑似未替换的姓名核对完才能发起（估价之后材料或名单可能变了，界面的禁用也可能被绕过）
       if ((est.scenario === "a1.agent_task" || est.scenario === "s1.contract_review") && tokens && dataLevelOf(matter.confidentiality, matter.consent_status) === "L3a") {
-        const s = summarizeSend(db, tokens, matterId, (est.input.document_version_ids as string[] | undefined) ?? [], String(p?.goal ?? est.input.goal ?? ""), true, { fullScan: true, extraTexts: [String(matter.stance ?? ""), String(matter.jurisdiction ?? "")] }).summary;
+        // 方法参数也会发给模型（v9.4 复核 Q1-08）：一并核对，不假设前端已把它们拼进任务说明
+        const s = summarizeSend(db, tokens, matterId, (est.input.document_version_ids as string[] | undefined) ?? [], String(p?.goal ?? est.input.goal ?? ""), true, { fullScan: true, extraTexts: [String(matter.stance ?? ""), String(matter.jurisdiction ?? ""), ...Object.values(skillArgs ?? {})] }).summary;
         if (s.suspects.unreviewed > 0) throw validation(`这是敏感事项：还有 ${s.suspects.unreviewed} 处像姓名的文字没有核对，核对完才能开始`, { start_blocked: true, block_kind: "suspects" });
       }
       if (est.scenario === "a1.agent_task") {

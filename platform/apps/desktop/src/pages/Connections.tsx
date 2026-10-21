@@ -459,7 +459,7 @@ function DeviceTab({ caps, gate, mySafety, admin }: { caps: Capabilities | null;
   }, []);
   const domainOk = !!caps && !/不可用|未启用|失败/.test(String(caps.execution_domain.status ?? ""));
   const envWarn = env && env.platform === "win32" ? envLines(env).filter((l) => l.warn).length : 0;
-  const safe = deviceSafetyTile(domainOk, !!gate);
+  const safe = deviceSafetyTile(domainOk, !!gate, { envWarn, exitMessage: cp?.exit_mode?.message ?? null });
   const bk = backupTile(backup);
   return (
     <div className="device">
