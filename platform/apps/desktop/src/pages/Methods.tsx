@@ -48,7 +48,7 @@ export function MethodsPage() {
           <section key={line} aria-label={LINE_LABELS[line]}>
             <div className="methods-line">{LINE_LABELS[line]}</div>
             <div className="cards">
-              {SCENARIOS.filter((c) => c.line === line).map((c) => (
+              {SCENARIOS.filter((c) => c.line === line && !c.general).map((c) => (
                 // 卡片要么整卡可点、要么只有一个明确按钮（Y4 V-5）：与首页场景卡一致，整卡可点
                 <button key={c.id} className="card method-card" aria-label={`开始：${c.title}`} onClick={() => nav(`/start/${c.id}`)}>
                   {/* v9.4 U1 #16：档位在页首统一说一次；卡面与首页同一套写法（交付件一行 + 需要什么一行） */}
@@ -61,6 +61,20 @@ export function MethodsPage() {
             </div>
           </section>
         ))}
+
+        <section aria-label="三条线通用">
+          <div className="methods-line">三条线通用</div>
+          <div className="cards">
+            {SCENARIOS.filter((c) => c.general).map((c) => (
+              <button key={c.id} className="card method-card" aria-label={`开始：${c.title}`} onClick={() => nav(`/start/${c.id}`)}>
+                <span className="title">{c.title}</span>
+                <span className="sc-gets">{cardGets(c)}</span>
+                <span className="sc-gives">需要：{cardGives(c)}</span>
+                <span className="method-go">开始 →</span>
+              </button>
+            ))}
+          </div>
+        </section>
 
         <div className="section-title">通用方法模板</div>
         <p className="muted">在任务里描述需求即可，助手会按合适的模板工作；也可以直接写“按《{cleanTitle(skills?.[0]?.title ?? "法律研究备忘录")}》的方法”。</p>

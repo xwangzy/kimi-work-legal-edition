@@ -49,6 +49,8 @@ export interface ScenarioCard {
   intents: string[][];
   /** 命中这些词时不建议本卡（方法模板明确不支持的情形，例如答辩状卡不接二审、仲裁、行政、劳动答辩；复核 RB16B-16）。 */
   notFor?: string[];
+  /** 三条业务线都常用（v9.4 S1 §5.5）：首页放在业务线卡片下方的“通用”一行，不在每条线各复制一张。line 仍用于挑默认事项。 */
+  general?: boolean;
 }
 
 /** 卡片上的交付件一行（v9.4）：去掉扩展名与括注，用“ · ”连接；完整名称在开始面板与 aria-label 里。 */
@@ -226,9 +228,11 @@ export const SCENARIOS: ScenarioCard[] = [
   {
     id: "research-lit",
     line: "litigation",
-    title: "类案与法律研究",
+    general: true,
+    // v9.4（S1 §0 第 6 条）：案例库尚未开通，卡名不再写“类案”
+    title: "法规研究备忘录",
     gives: "研究问题（可附材料）",
-    gets: ["研究备忘录.docx", "来源与引用核验表"],
+    gets: ["研究备忘录.docx", "来源目录（来源多于 10 条时）"],
     scenario: "a1.agent_task",
     skill: "legal-research-memo",
     verb: "开始研究",
@@ -238,12 +242,32 @@ export const SCENARIOS: ScenarioCard[] = [
       { key: "when", label: "事件时点", kind: "text", placeholder: "用于判断适用哪一版法律，可空" },
     ],
     minMaterials: 0,
-    steps: ["拆解问题与适用时点", "检索法规（联网检索会先去掉当事人信息）", "逐条核对引用是否现行有效", "写成研究备忘录"],
-    intents: [["研究"], ["检索"], ["类案"], ["法条", "有效"], ["现行有效"], ["核对", "引用"], ["核验", "引用"], ["引用", "法条"]],
+    steps: ["拆解问题与适用时点", "检索法规（联网检索会先去掉当事人信息）", "逐条核对引用是否现行有效", "写成研究备忘录（案例库尚未开通：只做法规研究）"],
+    intents: [["研究"], ["检索"], ["法规", "研究"], ["现行有效", "法规"]],
+    // 案例库尚未开通：说“类案、案例”时不建议本卡，免得律师以为能检索案例
+    notFor: ["类案", "案例"],
+  },
+  {
+    // v9.4 新增（S1 §6.1 第 1 项）：“核对起诉状里的引用”不再被引到研究备忘录——那个方法自己写明不核已有文稿
+    id: "citation-audit",
+    line: "litigation",
+    general: true,
+    title: "文稿体检：引用与论证",
+    gives: "一份文稿（我方、对方或助手起草的）",
+    gets: ["引用核验表.xlsx（存在、适用、支持三项）", "改引建议（待你确认）"],
+    scenario: "a1.agent_task",
+    skill: "citation-check",
+    verb: "开始核对",
+    goal: "请核对这份文稿里的法律引用与论证；事件发生时点：{when}。",
+    fields: [{ key: "when", label: "事件时点", kind: "text", placeholder: "用于判断适用哪一版法律，可空" }],
+    minMaterials: 1,
+    steps: ["逐条抽出文稿里的法条、司法解释与案例引用", "核对是否存在、按事件时点是否适用", "对照条文原文看能否支持结论（库外的标“支持待判”）", "列出改引建议，由你确认"],
+    intents: [["核对", "引用"], ["核验", "引用"], ["引用", "法条"], ["法条", "有效"], ["现行有效"], ["文稿", "体检"]],
   },
   {
     id: "demand-lit",
     line: "litigation",
+    general: true,
     title: "律师函 / 催告函",
     gives: "合同与往来记录",
     gets: ["函件草稿.docx", "发送前核对清单"],
@@ -280,9 +304,25 @@ export const SCENARIOS: ScenarioCard[] = [
     intents: [["审查", "合同"], ["审合同"], ["审查", "协议"], ["审核", "合同"], ["修改", "合同"], ["风险", "合同"]],
   },
   {
+    // v9.4（S1 §0 第 5 条）：原“回稿比对”卡走本机比对、不重审，卡上却写“只对改动部分重新审查”——拆成两张，名实相符
     id: "redraft",
     line: "transactional",
-    title: "回稿比对",
+    title: "对方回稿：比对与重审",
+    gives: "我方上一稿 + 对方回稿（两份 Word）",
+    gets: ["变更清单.xlsx（含没标修订的静默改动、我方修改采纳情况）", "新问题进审查工作台", "回稿意见（草稿）"],
+    scenario: "a1.agent_task",
+    skill: "redraft-review",
+    verb: "开始重审",
+    goal: "请比对我方上一稿与对方回稿，并只对改动部分重新审查（材料按勾选顺序：第一份是我方上一稿，第二份是对方回稿）；重点关注：{focus}。",
+    fields: [{ key: "focus", label: "重点关注", kind: "multi", options: ["付款", "交割 / 验收", "违约责任", "知识产权", "保密", "争议解决"] }],
+    minMaterials: 2,
+    steps: ["逐段比对两稿，标出对方没用修订标记的改动", "核对我方上一轮的修改有没有被采纳", "只对改动部分重新审查，新问题放进审查工作台", "写回稿意见"],
+    intents: [["回稿"], ["对方", "修改"], ["对方", "回稿"]],
+  },
+  {
+    id: "redraft-local",
+    line: "transactional",
+    title: "回稿比对（不用 AI）",
     gives: "我方基线稿 + 对方回稿（两份 Word）",
     gets: ["回稿比对报告", "差异表（含未标修订的静默改动）"],
     scenario: "s1b.draft_compare",
@@ -290,12 +330,29 @@ export const SCENARIOS: ScenarioCard[] = [
     goal: "",
     fields: [],
     minMaterials: 2,
-    steps: ["逐段比对两稿", "标出对方未用修订标记的改动", "只对改动部分重新审查"],
-    intents: [["回稿"], ["对方", "修改"], ["比对"], ["对比", "版本"]],
+    steps: ["在这台电脑上逐段比对两稿（不用 AI）", "标出对方未用修订标记的改动", "列出差异表；要重审改动请用“对方回稿：比对与重审”"],
+    intents: [["比对"], ["对比", "版本"]],
+  },
+  {
+    // v9.4 新增（S1 §6.1 第 2 项）：审完合同的最后一公里——给客户和对方的修订说明、内部谈判要点
+    id: "redline-notes",
+    line: "transactional",
+    title: "修订说明与谈判要点",
+    gives: "已在审查工作台处理过的意见",
+    gets: ["修订说明（致客户 / 致对方）.docx", "谈判要点（内部）"],
+    scenario: "a1.agent_task",
+    skill: "contract-redline",
+    verb: "开始撰写",
+    goal: "请根据审查工作台里已接受或修改后接受的意见，写{audience}的修订说明，并整理内部谈判要点。",
+    fields: [{ key: "audience", label: "给谁看", kind: "select", options: ["致客户", "致对方", "致客户与致对方两版"], required: true }],
+    minMaterials: 0,
+    steps: ["只取你接受或修改后接受的意见（修改过的用你的文字）", "写致客户或致对方的修订说明（致对方版不写底线与内部评估）", "整理内部谈判要点：首选、可退让、需客户决定"],
+    intents: [["修订说明"], ["谈判要点"], ["修改说明"]],
   },
   {
     id: "audience-pack",
     line: "transactional",
+    general: true,
     title: "客户版与对外脱敏",
     gives: "要发出的文件",
     gets: ["脱敏件（无修订痕迹）", "脱敏报告"],
@@ -336,7 +393,7 @@ export const SCENARIOS: ScenarioCard[] = [
     fields: [{ key: "who", label: "访谈对象角色", kind: "text", placeholder: "例如：公司财务负责人" }],
     minMaterials: 1,
     steps: ["整理访谈要点与待核实事项", "列出需要客户提供的材料", "生成纪要与清单"],
-    intents: [["访谈"], ["纪要"], ["材料清单"], ["尽调", "清单"]],
+    intents: [["访谈"], ["纪要"], ["材料清单"]],
   },
   // ── 企业法务 ──
   {
@@ -348,7 +405,7 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "contract-review",
     verb: "开始审核",
-    goal: "请从公司角度审核这份{type}合同，结合公司常见管理要求提示风险；重点关注：{focus}。",
+    goal: "请从公司角度审核这份{type}合同；重点关注：{focus}。",
     fields: [
       { key: "type", label: "合同类型", kind: "select", options: CONTRACT_TYPES, required: true },
       { key: "focus", label: "重点关注", kind: "multi", options: ["付款", "验收", "违约责任", "知识产权", "保密", "数据合规"] },
@@ -378,16 +435,17 @@ export const SCENARIOS: ScenarioCard[] = [
   {
     id: "demand-inhouse",
     line: "inhouse",
-    title: "履约风险与催告函",
+    title: "履约问题与催告函",
     gives: "合同与履约记录",
-    gets: ["风险提示", "催告函草稿.docx"],
+    // v9.4（S1 §0 第 6 条）：方法只出函件与依据核对，不出“风险提示”——卡上不承诺方法没有的东西
+    gets: ["履约事实与依据核对表", "催告函（草稿）.docx"],
     scenario: "a1.agent_task",
     skill: "demand-letter",
     verb: "开始处理",
-    goal: "请就以下履约问题提示风险并起草催告函：{issue}。",
+    goal: "请就以下履约问题梳理履约事实与依据，并起草催告函：{issue}。",
     fields: [{ key: "issue", label: "履约节点或违约事项", kind: "text", required: true }],
     minMaterials: 1,
-    steps: ["对照合同条款梳理履约事实", "提示风险与可采取的措施", "起草催告函"],
+    steps: ["对照合同条款梳理履约事实", "核对依据，列出发送前要确认的事项", "起草催告函（期限按合同或你给的写，不自行推算）"],
     intents: [["履约"], ["逾期", "交货"], ["对方", "违约"]],
   },
   {
@@ -405,7 +463,7 @@ export const SCENARIOS: ScenarioCard[] = [
       { key: "as_of", label: "截至日期", kind: "date" },
     ],
     minMaterials: 1,
-    steps: ["整理程序进展与关键事实", "评估风险与金额区间", "写成一页汇报与附表"],
+    steps: ["整理程序进展与关键事实", "列出主要风险与已确认的金额口径", "写成一页汇报与附表"],
     intents: [["汇报"], ["进展", "报告"]],
   },
   {
@@ -448,10 +506,13 @@ export const NEXT_STEPS: Readonly<Record<string, readonly string[]>> = Object.fr
   "labor-response": ["research-lit", "pleading"],
   amount: ["pleading", "demand-lit"],
   pleading: ["case-report"],
-  "research-lit": ["pleading", "demand-lit"],
+  "research-lit": ["citation-audit", "pleading", "demand-lit"],
+  "citation-audit": ["pleading", "agency"],
   "demand-lit": ["case-report"],
   intake: ["research-lit", "casefile"],
-  "contract-review": ["audience-pack", "redraft"],
+  "contract-review": ["redline-notes", "redraft", "audience-pack"],
+  "redline-notes": ["redraft", "audience-pack"],
+  redraft: ["redline-notes", "audience-pack"],
   "contract-review-inhouse": ["audience-pack", "compliance-qa"],
   "research-deal": ["contract-review"],
   "compliance-qa": ["demand-inhouse"],
@@ -530,9 +591,10 @@ export function missingMaterialsText(card: Pick<ScenarioCard, "scenario" | "skil
   return `还需要选择 ${need} 份材料`;
 }
 
-const LITIGATION_STANCES = new Set(["原告", "被告", "申请人", "被申请人", "第三人", "上诉人", "被上诉人", "plaintiff", "defendant"]);
-const TRANSACTIONAL_STANCES = new Set(["受让方", "转让方", "买方", "卖方", "出租人", "承租人", "出租方", "承租方", "投资方", "目标公司", "buyer", "seller", "lessee", "lessor"]);
-const INHOUSE_STANCES = new Set(["常年顾问"]);
+const LITIGATION_STANCES = new Set(["原告", "被告", "申请人", "被申请人", "第三人", "上诉人", "被上诉人", "劳动者", "plaintiff", "defendant"]);
+const TRANSACTIONAL_STANCES = new Set(["受让方", "转让方", "买方", "卖方", "出租人", "承租人", "出租方", "承租方", "投资方", "目标公司", "出借人", "借款人", "保证人", "委托方", "服务方", "发包人", "承包人", "buyer", "seller", "lessee", "lessor"]);
+// 用人单位立场多是企业法务线（劳动仲裁应对、解除前评估）；劳动者一方归诉讼仲裁线（v9.4 新增立场）
+const INHOUSE_STANCES = new Set(["常年顾问", "用人单位"]);
 
 /**
  * 事项属于哪条业务线（Z3 评审 #1）：事项本身没有业务线字段，按立场推断（诉讼立场 → 诉讼仲裁；交易立场 → 非诉；常年顾问 → 企业法务）；

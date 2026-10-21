@@ -316,7 +316,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
             ))}
           </div>
           <div className="cards scenario-cards">
-            {SCENARIOS.filter((c) => c.line === line).map((c) => (
+            {SCENARIOS.filter((c) => c.line === line && !c.general).map((c) => (
               <button key={c.id} className="card scenario-card" aria-label={`${c.title}：给 ${c.gives}；得到 ${c.gets.join("、")}`} onClick={() => openCard(c)}>
                 {/* v9.4 卡片减负：标题 → 交付件（不带扩展名与括注）→ 需要什么（一行、灰字）；完整口径在开始面板 */}
                 <div className="title">{c.title}</div>
@@ -324,9 +324,18 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
                 <div className="sc-gives">需要：{cardGives(c)}</div>
               </button>
             ))}
-            <button className="card scenario-card scenario-more" onClick={() => nav("/methods")}>
-              <div className="title">更多场景 →</div>
-              <div className="sc-gives">全部方法与模板，按业务线和交付件查找</div>
+          </div>
+          {/* 三条业务线都常用的四张（v9.4 S1 §5.5）：研究、文稿体检、函件、对外版——放在一行，不在每条线各复制一张 */}
+          <div className="general-row" aria-label="通用">
+            <span className="general-label">通用</span>
+            {SCENARIOS.filter((c) => c.general).map((c) => (
+              <button key={c.id} className="chip general-chip" title={`得到：${cardGets(c)}；需要：${cardGives(c)}`} onClick={() => openCard(c)}>
+                {c.title}
+              </button>
+            ))}
+            <span className="spacer" />
+            <button className="btn-link" onClick={() => nav("/methods")}>
+              全部方法 →
             </button>
           </div>
         </section>

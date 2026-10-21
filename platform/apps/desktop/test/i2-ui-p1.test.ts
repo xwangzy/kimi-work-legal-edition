@@ -49,7 +49,8 @@ test("#1 业务线不一致只提醒、不阻断：诉讼事项上做审合同�
 
 test("#4 缺材料能否先开始：13 张卡里只有起草起诉状、律师函、访谈纪要可以；审合同没有合同只提示“请先添加合同”", () => {
   // 第 15 批 B-5 新增“争点与证据分析”（整理案卷的第二段）；v9.3 诉讼线文书新增答辩状、质证意见、代理词（都要材料或不需要材料，不走“先开始”）；Z3 #28 新增案情分析与诉讼策略（要材料）
-  assert.equal(SCENARIOS.length, 20);
+  // v9.4：新增文稿体检、修订说明与谈判要点、回稿拆成“比对与重审”和“比对（不用 AI）”两张
+  assert.equal(SCENARIOS.length, 23);
   const partial = SCENARIOS.filter((c) => canStartPartial(c)).map((c) => c.id).sort();
   assert.deepEqual(partial, ["demand-lit", "intake", "pleading"]);
   // 真正会出现“先开始”的（需要材料且允许先开始）只有访谈纪要；审合同两张卡都不允许
@@ -59,7 +60,7 @@ test("#4 缺材料能否先开始：13 张卡里只有起草起诉状、律师�
   // 确定性流程即使声明也不能先开始
   assert.equal(canStartPartial({ allowPartial: true, scenario: "s2.case_file" }), false);
   assert.equal(missingMaterialsText(card("contract-review"), 1), "请先添加合同");
-  assert.equal(missingMaterialsText(card("redraft"), 2), "请依次勾选基线稿与对方回稿");
+  assert.equal(missingMaterialsText(card("redraft-local"), 2), "请依次勾选基线稿与对方回稿");
   assert.equal(missingMaterialsText(card("case-report"), 1), "还需要选择 1 份材料");
 });
 

@@ -670,6 +670,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .today-row-strong { font-weight: 600; }
 .today-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .banner .banner-later { margin-left: var(--sp-3); color: var(--text-secondary); }
+.general-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.general-label { font-size: var(--fs-sm); color: var(--text-secondary); margin-right: var(--sp-1); }
 .today-empty { margin: 0; font-size: var(--fs-sm); color: var(--text-secondary); }
 @media (max-width: 980px) { .today { grid-template-columns: minmax(0, 1fr); } }
 .recent-row { width: 100%; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1.4fr) auto auto; gap: 12px; align-items: center; text-align: left; background: none; border: 0; border-radius: var(--r-sm); padding: 8px 10px; font-size: var(--fs-base); }
