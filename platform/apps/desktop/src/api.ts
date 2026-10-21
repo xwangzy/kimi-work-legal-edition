@@ -875,8 +875,14 @@ export interface RiskCard {
   category: "legal" | "commercial" | "both";
   issue: string;
   basis: { law: string; article: number | null; note: string | null; check: string; matched: string | null }[];
+  /** 首选。 */
   suggestion: string | null;
+  /** 可退让。 */
   fallback: string | null;
+  /** 底线（Astra M-1）。 */
+  bottom_line?: string | null;
+  /** 建议的性质（Astra M-1）：must 必须修改 / should 建议修改 / negotiable 可谈判。 */
+  nature?: "must" | "should" | "negotiable";
   needs_client_decision: boolean;
   assumptions: string | null;
   status: "proposed" | "accepted" | "modified" | "rejected";

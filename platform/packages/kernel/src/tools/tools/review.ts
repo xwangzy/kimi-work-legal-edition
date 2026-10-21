@@ -108,8 +108,10 @@ export function riskcardsList(ctx: InvokeCtx, p: { document_version_id?: string;
       category: c.category,
       issue: c.issue,
       basis: c.basis.map((b) => ({ law: b.law, article: b.article, check: b.check })),
+      nature: c.nature,
       suggestion: c.suggestion,
       fallback: c.fallback,
+      bottom_line: c.bottom_line,
       needs_client_decision: c.needs_client_decision,
       // 没有建议文本的“接受”是知悉、不改动（复核 C-B07）：单独标出，不能当成“我方提出过的修改”
       lawyer_status: c.status === "accepted" && !(c.suggestion ?? "").trim() ? "acknowledged" : c.status,

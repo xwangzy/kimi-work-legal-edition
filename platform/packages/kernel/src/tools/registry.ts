@@ -321,10 +321,11 @@ export const TOOLS: readonly ToolDef[] = [
     name: "riskcards.submit",
     title: "提交风险卡",
     description:
-      "把合同审查发现的问题作为结构化风险卡提交到律师的审查工作台（不要只写在正文里）。anchor_text 必须逐字摘自合同原文（与材料快照一致，含代号），便于定位与生成原生修订；suggestion 是替换 anchor_text 的建议条款全文（不改则省略）；basis 列法律依据（法名 + 条号，内核离线核验）。",
+      "把合同审查发现的问题作为结构化风险卡提交到律师的审查工作台（不要只写在正文里）。anchor_text 必须逐字摘自合同原文（与材料快照一致，含代号），便于定位与生成原生修订；basis 列法律依据（法名 + 条号，内核离线核验）。" +
+      "nature 标明建议的性质：must 必须修改（法律硬伤、律所红线）/ should 建议修改 / negotiable 可谈判（商业条件）。谈判梯度三级：suggestion 首选（替换 anchor_text 的建议条款全文，不改则省略）→ fallback 可退让 → bottom_line 底线（低于它建议客户不签）；商业条件尽量给全三级。",
     sideEffect: "write_draft",
     resource: "matter_work",
-    version: "1",
+    version: "2",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -347,8 +348,10 @@ export const TOOLS: readonly ToolDef[] = [
                 type: "array",
                 items: { type: "object", additionalProperties: false, required: ["law"], properties: { law: { type: "string" }, article: { type: "integer", minimum: 1 }, note: { type: "string" } } },
               },
+              nature: { type: "string", enum: ["must", "should", "negotiable"] },
               suggestion: { type: "string" },
               fallback: { type: "string" },
+              bottom_line: { type: "string" },
               needs_client_decision: { type: "boolean" },
               assumptions: { type: "string" },
             },

@@ -168,6 +168,12 @@ function runSeqBase(db: KernelDb, table: "risk_cards" | "matter_facts", matterId
 
 // ─── 风险卡 ───
 
+/** 没有标性质的卡（Agent 没给、或第 15 批之前的卡）按类别与严重程度推定。 */
+export function defaultNature(category: string, severity: string): "must" | "should" | "negotiable" {
+  if (category === "commercial") return "negotiable";
+  return category === "legal" && severity === "high" ? "must" : "should";
+}
+
 export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { document_version_id?: unknown; cards?: unknown }) {
   const cards = Array.isArray(input.cards) ? input.cards : [];
   if (cards.length === 0) throw new DomainError("validation", "cards 不能为空", 422);
@@ -186,6 +192,8 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
       const severity = ["high", "mid", "low"].includes(c?.severity) ? (c.severity as string) : null;
       if (!severity) throw new DomainError("validation", `第 ${i + 1} 张卡 severity 须为 high/mid/low`, 422);
       const category = ["legal", "commercial", "both"].includes(c?.category) ? (c.category as string) : "legal";
+      // 建议的性质（Astra M-1）：没给时按类别与严重程度推定——纯商业条件为“可谈判”，高风险的法律问题为“必须修改”，其余“建议修改”
+      const nature = ["must", "should", "negotiable"].includes(c?.nature) ? (c.nature as string) : defaultNature(category, severity);
       const found = view ? locateQuote(view.view, anchor) : { status: "no_document" as const, start: null, end: null };
       // 规范锚点（复核 B3-B04）：定位到的视图原文（空白与 Agent 原话可能不同），修订稿一律用它；Agent 原话另存
       const canonical = view && found.start !== null && found.end !== null ? view.view.slice(found.start, found.end) : anchor;
@@ -209,8 +217,8 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
       const seq = base.next + i + seqOffset;
       deps.db.run(
         `INSERT INTO risk_cards (card_id, tenant_id, matter_id, run_id, document_version_id, seq, clause_ref, anchor_text, anchor_quote, anchor_start, anchor_end, anchor_status,
-           severity, category, issue, basis, suggestion, fallback, needs_client_decision, assumptions)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           severity, category, issue, basis, suggestion, fallback, needs_client_decision, assumptions, nature, bottom_line)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           id,
           scope.tenantId,
@@ -232,6 +240,8 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
           optStr(c?.fallback, RISK_CARD_LIMITS.field),
           c?.needs_client_decision === true ? 1 : 0,
           optStr(c?.assumptions, RISK_CARD_LIMITS.field),
+          nature,
+          optStr(c?.bottom_line, RISK_CARD_LIMITS.field),
         ],
       );
       out.push({ card_id: id, seq, anchor_status: loc.status, basis_checks: basis.map((b) => b.check) });
@@ -270,8 +280,14 @@ export interface RiskCardRow {
   category: string;
   issue: string;
   basis: BasisItem[];
+  /** 首选（替换锚点的建议条款）。 */
   suggestion: string | null;
+  /** 可退让。 */
   fallback: string | null;
+  /** 底线（Astra M-1）。 */
+  bottom_line: string | null;
+  /** must 必须修改 / should 建议修改 / negotiable 可谈判（第 15 批之前的卡按类别推定）。 */
+  nature: "must" | "should" | "negotiable";
   needs_client_decision: boolean;
   assumptions: string | null;
   status: string;
@@ -305,6 +321,8 @@ function cardOut(r: any): RiskCardRow {
     basis,
     suggestion: r.suggestion,
     fallback: r.fallback,
+    bottom_line: r.bottom_line ?? null,
+    nature: ["must", "should", "negotiable"].includes(r.nature) ? r.nature : defaultNature(r.category, r.severity),
     needs_client_decision: r.needs_client_decision === 1,
     assumptions: r.assumptions,
     status: r.status,

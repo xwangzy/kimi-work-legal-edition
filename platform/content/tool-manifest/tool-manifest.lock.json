@@ -160,7 +160,7 @@
     },
     {
       "name": "riskcards.submit",
-      "version": "1",
+      "version": "2",
       "sideEffect": "write_draft",
       "resource": "matter_work",
       "purposes": [
@@ -170,7 +170,7 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "ea49997da68711470eef63dae3a845141a20f6bf02a877462236ce45af786773"
+      "schemaHash": "4174cd2a4c4b8232281851877528aa34fdb7f5823614addafafa1be8948a954b"
     },
     {
       "name": "riskcards.list",

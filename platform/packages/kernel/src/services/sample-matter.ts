@@ -27,8 +27,10 @@ export const SAMPLE_CARDS = [
     severity: "high",
     category: "both",
     issue: "价款在股权变更登记之前一次性付清：若之后无法完成变更登记，受让方要先付款再追讨，风险全部在受让方。",
+    nature: "must",
     suggestion: "受让方应于目标股权变更登记完成后五个工作日内支付全部价款",
     fallback: "协议签署后支付百分之三十，变更登记完成后支付其余百分之七十",
+    bottom_line: "协议签署后支付不超过百分之五十，且转让方提供等额担保",
   },
   {
     clause_ref: "7.1",
@@ -36,7 +38,9 @@ export const SAMPLE_CARDS = [
     severity: "mid",
     category: "legal",
     issue: "逾期付款违约金按日千分之五计，明显偏高，且与转让方违约时只赔“直接损失”不对等。",
+    nature: "should",
     suggestion: "每日按应付未付金额的万分之三支付违约金，累计不超过应付未付金额的百分之十",
+    fallback: "每日按应付未付金额的万分之五支付违约金，累计不超过应付未付金额的百分之二十",
   },
   {
     clause_ref: "9.1",
@@ -44,7 +48,10 @@ export const SAMPLE_CARDS = [
     severity: "low",
     category: "commercial",
     issue: "管辖法院约定在转让方所在地，受让方诉讼成本较高。是否争取需由客户决定。",
+    nature: "negotiable",
     suggestion: "提交受让方所在地人民法院诉讼解决",
+    fallback: "提交被告所在地人民法院诉讼解决",
+    bottom_line: "接受转让方所在地法院管辖，但约定适用简易程序的送达地址与电子送达",
     needs_client_decision: true,
   },
 ] as const;

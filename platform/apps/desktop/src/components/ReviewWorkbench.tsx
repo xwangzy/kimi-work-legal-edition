@@ -12,6 +12,7 @@ import { firstOpenCard, nextOpenCard, stepCard } from "../lib/workbench.ts";
 import { api, type RiskCard, type RiskProgress } from "../api.ts";
 import { CITE_STATE_LABELS } from "../lib/labels.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
+import { ladderRows, NATURE_LABEL, NATURE_PILL, natureOf } from "../lib/risk-ladder.ts";
 
 const SEVERITY: Record<RiskCard["severity"], { label: string; cls: string }> = {
   high: { label: "重大", cls: "sev-high" },
@@ -71,7 +72,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       const first = firstOpenCard(r.cards);
       if (first) setActive(first);
     }
-    const all = r.cards.flatMap((c) => [c.anchor_text, c.issue, c.suggestion ?? "", c.fallback ?? "", c.assumptions ?? ""]).join("\n");
+    const all = r.cards.flatMap((c) => [c.anchor_text, c.issue, c.suggestion ?? "", c.fallback ?? "", c.bottom_line ?? "", c.assumptions ?? ""]).join("\n");
     if (all.includes("〔")) setMap(await restoreTokens(matterId, all));
     return r.cards;
   }, [matterId, documentVersionId, runFilter]);
@@ -295,6 +296,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
               >
                 <button className="rc-head" aria-expanded={open} onClick={() => setActive(open ? null : c.card_id)}>
                   <span className={`rc-sev ${sev.cls}`}>{sev.label}</span>
+                  <span className={`pill ${NATURE_PILL[natureOf(c)]}`}>{NATURE_LABEL[natureOf(c)]}</span>
                   {c.clause_ref && <span className="rc-ref">{clauseLabel(c.clause_ref)}</span>}
                   <span className="rc-issue">{plain(c.issue)}</span>
                   <span className={`rc-status rc-status-${c.status}`}>{c.status === "accepted" && !c.suggestion ? "已知悉" : STATUS_LABEL[c.status]}</span>
@@ -318,12 +320,13 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                         {c.anchor_status === "cross_paragraph" && <span className="rc-warn">这段原文跨了段落，修订稿不能自动写入，生成时需跳过，可在 Word 中手工修改</span>}
                       </span>
                     </div>
-                    {(c.status === "modified" ? c.final_text : c.suggestion) && (
-                      <div className="rc-row">
-                        <span className="rc-k">{c.status === "modified" ? "你的修改" : "建议改为"}</span>
-                        <span className="rc-suggest">{c.status === "modified" ? c.final_text : plain(c.suggestion)}</span>
+                    {/* 谈判梯度（Astra M-1）：首选 → 可退让 → 底线；只有一级时仍叫“建议改为” */}
+                    {ladderRows(c).map((row) => (
+                      <div key={row.key} className="rc-row">
+                        <span className="rc-k">{row.label}</span>
+                        <span className={row.key === "mine" || row.key === "first" ? "rc-suggest" : undefined}>{row.key === "mine" ? row.text : plain(row.text)}</span>
                       </div>
-                    )}
+                    ))}
                     {c.basis.length > 0 && (
                       <div className="rc-row">
                         <span className="rc-k">依据</span>
@@ -335,12 +338,6 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                             </span>
                           ))}
                         </span>
-                      </div>
-                    )}
-                    {c.fallback && (
-                      <div className="rc-row">
-                        <span className="rc-k">可退让方案</span>
-                        <span>{plain(c.fallback)}</span>
                       </div>
                     )}
                     {c.assumptions && (

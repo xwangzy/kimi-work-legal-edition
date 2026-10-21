@@ -73,11 +73,34 @@ test("工具链：材料目录 → 风险卡与事实 → 表格与文书成果 
         basis: [{ law: "中华人民共和国民法典", article: 585 }],
         suggestion: `转让方${nameToken}逾期办理变更登记的，每日按转让价款的千分之五支付违约金；逾期超过三十日的，受让方有权解除合同。`,
       },
-      { clause_ref: "7.3", anchor_text: "本协议项下的任何争议，提交转让方所在地人民法院诉讼解决。", severity: "mid", issue: "管辖约定对受让方不利", suggestion: "本协议项下的任何争议，提交受让方所在地人民法院诉讼解决。" },
+      {
+        clause_ref: "7.3",
+        anchor_text: "本协议项下的任何争议，提交转让方所在地人民法院诉讼解决。",
+        severity: "mid",
+        category: "commercial",
+        nature: "negotiable",
+        issue: "管辖约定对受让方不利",
+        suggestion: "本协议项下的任何争议，提交受让方所在地人民法院诉讼解决。",
+        fallback: "本协议项下的任何争议，提交被告所在地人民法院诉讼解决。",
+        bottom_line: `接受转让方所在地法院，但须约定${nameToken}的送达地址`,
+      },
       { anchor_text: "合同中并不存在的这句话", severity: "low", issue: "示例：找不到的引文" },
     ],
   });
   assert.deepEqual(sub.cards.map((c: any) => c.anchor_status), ["located", "located", "not_found"]);
+  // 建议的性质与谈判梯度（Astra M-1）：给了就存；没给按类别与严重程度推定（高风险法律问题 = 必须修改，其余建议修改，纯商业 = 可谈判）
+  const listed = await call("riskcards.list", {});
+  const byRef = (r: string | null) => listed.cards.find((c: any) => c.clause_ref === r);
+  assert.equal(byRef("7.3").nature, "negotiable");
+  assert.equal(byRef("7.3").fallback, "本协议项下的任何争议，提交被告所在地人民法院诉讼解决。");
+  assert.match(byRef("7.3").bottom_line, /〔自然人/, "底线同样按代号形态交回 Agent");
+  assert.equal(byRef("7.1").nature, "should", "category both、没给性质：建议修改");
+  assert.equal(byRef(null).nature, "should");
+  const ui = (await tk.inv("riskcards.list", { matter_id: matter.matter_id })).cards;
+  assert.equal(ui.find((c: any) => c.clause_ref === "7.3").nature, "negotiable", "界面接口同样带性质（文字按代号形态交给界面、渲染时还原）");
+  // 第 15 批之前的卡（库里没有性质）：读出时推定
+  tk.kernel.db.run(`UPDATE risk_cards SET nature = NULL WHERE clause_ref = '7.3'`);
+  assert.equal((await call("riskcards.list", {})).cards.find((c: any) => c.clause_ref === "7.3").nature, "negotiable", "纯商业条件推定为可谈判");
   assert.ok(["version_verified", "support_pending", "source_verified"].includes(sub.cards[0].basis_checks[0]), `依据经离线核验：${sub.cards[0].basis_checks[0]}`);
 
   // 3. 事实：Agent 不能标“律师确认”
