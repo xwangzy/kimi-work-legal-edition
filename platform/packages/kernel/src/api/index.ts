@@ -78,7 +78,7 @@ import { detectClassifiedMarking, type ClassifiedFinding } from "../services/cla
 import { restoreArtifactBytes } from "../services/export-restore.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
-import { buildRedlineFromCards, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
+import { buildRedlineFromCards, cardPages, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
 import { LIT_SAMPLE_ISSUES, LIT_SAMPLE_TITLE, SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, litigationSampleMaterials, sampleContract } from "../services/sample-matter.ts";
 import { probeEnvironment, type EnvProbeResult } from "../services/env-probe.ts";
 import { firstLineTitle, isTitledFilename } from "../services/artifact-title.ts";
@@ -2568,7 +2568,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "riskcards.list": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       const cards = listRiskCards(db, matter.matter_id, { run_id: p?.run_id, document_version_id: p?.document_version_id, status: p?.status });
-      return { cards, progress: riskCardProgress(cards) };
+      // 按页解析的材料（PDF 等）给出页码，卡片显示“第 x 条 · 第 y 页”（余项续复核 RC-B-18）
+      const pages = typeof p?.document_version_id === "string" && p.document_version_id ? cardPages({ db, blobs, ...(tokens ? { tokens } : {}) }, matter.matter_id, p.document_version_id, cards) : new Map<string, number>();
+      return { cards: pages.size ? cards.map((c) => (pages.has(c.card_id) ? { ...c, page: pages.get(c.card_id) } : c)) : cards, progress: riskCardProgress(cards) };
     },
     "riskcards.decide": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);

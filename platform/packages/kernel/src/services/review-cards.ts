@@ -352,6 +352,30 @@ function cardOut(r: any): RiskCardRow {
 
 const SEVERITY_ORDER = "CASE severity WHEN 'high' THEN 0 WHEN 'mid' THEN 1 ELSE 2 END";
 
+/**
+ * 卡片在原件里的页码（Z3 M-5 / 余项续复核 RC-B-18）：PDF 等按页解析的材料，解析文本以换页符分隔，锚点起点之前有几个换页符即第几页；
+ * Word 没有版面页码，返回空（卡片只显示条款号）。纯读，不改卡。
+ */
+export function cardPages(deps: ReviewDeps, matterId: string, documentVersionId: string, cards: readonly Pick<RiskCardRow, "card_id" | "anchor_start" | "anchor_status">[]): Map<string, number> {
+  const out = new Map<string, number>();
+  const doc = deps.db.get<{ filename: string }>(`SELECT filename FROM document_versions WHERE document_version_id = ?`, [documentVersionId]);
+  if (!doc || doc.filename.toLowerCase().endsWith(".docx")) return out;
+  let view: string;
+  try {
+    view = documentView(deps, matterId, documentVersionId).view;
+  } catch {
+    return out;
+  }
+  if (!view.includes("\f")) return out;
+  for (const c of cards) {
+    if (c.anchor_status !== "located" || c.anchor_start === null || c.anchor_start === undefined) continue;
+    let page = 1;
+    for (let i = view.indexOf("\f"); i >= 0 && i < c.anchor_start; i = view.indexOf("\f", i + 1)) page++;
+    out.set(c.card_id, page);
+  }
+  return out;
+}
+
 export function listRiskCards(db: KernelDb, matterId: string, f: { run_id?: unknown; document_version_id?: unknown; status?: unknown } = {}): RiskCardRow[] {
   const where = ["matter_id = ?"];
   const args: unknown[] = [matterId];

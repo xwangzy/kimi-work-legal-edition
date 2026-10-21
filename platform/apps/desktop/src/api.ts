@@ -884,6 +884,8 @@ export interface RiskCard {
   anchor_quote?: string | null;
   seq: number;
   clause_ref: string | null;
+  /** 原件页码（只有按页解析的材料，如 PDF；Word 没有）。 */
+  page?: number;
   anchor_text: string;
   anchor_status: "located" | "ambiguous" | "not_found" | "no_document" | "cross_paragraph";
   anchor_start: number | null;

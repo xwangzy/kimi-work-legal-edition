@@ -404,7 +404,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                   <span className={`pill ${NATURE_PILL[natureOf(c)]}`} title={c.nature_inferred ? "按类别与严重程度推定，可在展开后修改" : undefined}>
                     {natureText(c)}
                   </span>
-                  {c.clause_ref && <span className="rc-ref">{clauseLabel(c.clause_ref)}</span>}
+                  {(c.clause_ref || c.page) && <span className="rc-ref">{[c.clause_ref ? clauseLabel(c.clause_ref) : null, c.page ? `第 ${c.page} 页` : null].filter(Boolean).join(" · ")}</span>}
                   <span className="rc-issue">{plain(c.issue)}</span>
                   <span className={`rc-status rc-status-${c.status}`}>{c.status === "accepted" && !c.suggestion ? "已知悉" : STATUS_LABEL[c.status]}</span>
                 </button>

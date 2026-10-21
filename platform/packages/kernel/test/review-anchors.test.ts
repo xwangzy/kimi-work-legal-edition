@@ -222,3 +222,21 @@ test("“接受后”预览与修订稿同一口径（余项续复核 RC-B-01/02
   const pv2 = await tk.inv("riskcards.preview_redline", { matter_id: matter.matter_id, document_version_id: doc.document_version_id });
   assert.equal(pv2.cards.filter((c: any) => c.ok).length, 2, "预览与修订稿写进去的处数一致");
 });
+
+test("按页解析的材料：卡片带原件页码；Word 不带（余项续复核 RC-B-18）", { timeout: 60_000 }, async () => {
+  const { importText } = await import("./helpers.ts");
+  const { matter } = await tk.inv("matters.create", { title: "页码", stance: "买方", consent_status: "agreed" });
+  const doc = await importText(tk.inv, matter.matter_id, "扫描合同.txt", "第一页：合同封面\f第二页：1.1 货款于交货后九十日内支付。\f第三页：2.1 质保期为六个月。");
+  const pv = tk.kernel.db.get<{ content: string }>(`SELECT pt.content FROM parse_versions pv JOIN parse_texts pt ON pt.parse_version_id = pv.parse_version_id WHERE pv.document_version_id = ?`, [doc.document_version_id])!;
+  if (!pv.content.includes("\f")) return; // 文本解析不保留换页符时无页码可算（PDF 解析才保留）
+  const t = liveTaskIdentity(tk, matter.matter_id, "pages");
+  submitRiskCards(deps(), { tenantId: t.tid, matterId: matter.matter_id, runId: t.rid }, {
+    document_version_id: doc.document_version_id,
+    cards: [
+      { anchor_text: "货款于交货后九十日内支付。", severity: "high", issue: "账期", suggestion: "货款于交货后三十日内支付。", clause_ref: "1.1" },
+      { anchor_text: "质保期为六个月。", severity: "mid", issue: "质保", suggestion: "质保期为十二个月。" },
+    ],
+  });
+  const cards = (await tk.inv("riskcards.list", { matter_id: matter.matter_id, document_version_id: doc.document_version_id })).cards as any[];
+  assert.deepEqual(Object.fromEntries(cards.map((c) => [c.issue, c.page])), { 账期: 2, 质保: 3 });
+});
