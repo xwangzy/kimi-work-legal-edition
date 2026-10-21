@@ -185,7 +185,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
           )}
         </div>
         {matter.is_sample && (
-          <div className="banner banner-gray">
+          <div className="banner banner-gray banner-inline">
             {sampleBannerText(
               matter,
               (() => {

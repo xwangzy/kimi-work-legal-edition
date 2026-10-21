@@ -669,6 +669,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .today-row:hover { background: var(--bg-hover); }
 .today-row-strong { font-weight: 600; }
 .today-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.banner-inline { display: flex; align-items: center; gap: var(--sp-3); }
+.banner-inline .banner-actions { margin: 0 0 0 auto; flex: 0 0 auto; }
 .banner .banner-later { margin-left: var(--sp-3); color: var(--text-secondary); }
 .general-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
 .general-label { font-size: var(--fs-sm); color: var(--text-secondary); margin-right: var(--sp-1); }
