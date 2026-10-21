@@ -9,7 +9,7 @@ import { diagSectionLabels } from "../lib/firm-usage.ts";
 import { fmtTime } from "../lib/labels.ts";
 
 type UploadRow = Awaited<ReturnType<typeof api.diagnosticsUploads>>["uploads"][number];
-const STATUS_TEXT: Readonly<Record<UploadRow["status"], string>> = { pending: "进行中", sent: "已上传", failed: "没有送出", unknown: "结果不明（中软可能已收到）" };
+const STATUS_TEXT: Readonly<Record<UploadRow["status"], string>> = { pending: "进行中", sent: "已上传", failed: "没有送出", unknown: "不确定是否已发出" };
 
 export function SupportUpload({ allowed, configured }: { allowed: boolean | null; configured: boolean | null }) {
   const [preview, setPreview] = useState<SupportPreview | null>(null);
@@ -47,22 +47,22 @@ export function SupportUpload({ allowed, configured }: { allowed: boolean | null
     }
   };
   // 律所未开启 / 未配置：不必生成整份诊断包再说明（复核 S9B-15）
-  const unavailable = allowed === false ? "律所没有开启这一项（由律所管理员在律所策略里开启）：请导出文件，按所内要求发送。" : configured === false ? "这台电脑没有配置中软支持服务：请导出文件，按所内要求发送。" : null;
+  const unavailable = allowed === false ? "律所没有开启这一项（由律所管理员在律所策略里开启）：请导出文件，按所内要求发送。" : configured === false ? "这台电脑没有接通客服：请导出文件，按所内要求发送。" : null;
   const blocked =
-    preview && (!preview.allowed ? "律所没有开启“上传诊断包给中软支持”：你仍可以导出文件，按所内要求发送。" : !preview.configured ? "这台电脑没有配置中软支持服务：请导出文件，按所内要求发送。" : preview.too_large ? "诊断包超过 2 MB，无法上传：请导出文件，按所内要求发送。" : null);
+    preview && (!preview.allowed ? "律所没有开启“发给 Kimi Work 客服”：你仍可以导出文件，按所内要求发送。" : !preview.configured ? "这台电脑没有接通客服：请导出文件，按所内要求发送。" : preview.too_large ? "诊断包超过 2 MB，无法上传：请导出文件，按所内要求发送。" : null);
   return (
     <div className="support-upload">
       {/* 律所未开启或未配置时律师做不了什么：不再单独占一行（v9.4 认知减负）；导出文件的路径就在上面 */}
       {unavailable ? null : !preview ? (
         <div className="banner-actions">
           <button className="btn btn-sm" disabled={busy} onClick={() => void open()}>
-            {busy ? "正在生成…" : "上传给中软支持…"}
+            {busy ? "正在生成…" : "发给 Kimi Work 客服…"}
           </button>
         </div>
       ) : (
         <div className="panel">
           <div>
-            将上传 <b>{Math.ceil(preview.summary.bytes / 1024)} KB</b>：{diagSectionLabels(preview.summary.sections).join("、")}。内容与“导出诊断信息”相同，确认后上传的就是这一份；中软同时看得到这台电脑的网络地址。
+            将上传 <b>{Math.ceil(preview.summary.bytes / 1024)} KB</b>：{diagSectionLabels(preview.summary.sections).join("、")}。内容与“导出诊断信息”相同，确认后上传的就是这一份；客服同时看得到这台电脑的网络地址。
           </div>
           <details>
             <summary>展开查看将上传的完整内容</summary>
@@ -71,7 +71,7 @@ export function SupportUpload({ allowed, configured }: { allowed: boolean | null
           {blocked ? (
             <div className="banner banner-gray">{blocked}</div>
           ) : (
-            <div className="muted">上传后得到一个工单号，请转告支持人员；中软只保存 7 天，中软内部记录每次查看。</div>
+            <div className="muted">发送后会给你一个工单号，请转告客服。报告只保存 7 天，每次查看都有记录。</div>
           )}
           <div className="banner-actions">
             {!blocked && (
@@ -87,7 +87,7 @@ export function SupportUpload({ allowed, configured }: { allowed: boolean | null
       )}
       {done && (
         <div className="banner">
-          已上传。工单号 <b className="mono">{done.ticket}</b>：请把它告诉支持人员；中软 7 天后自动删除。
+          已上传。工单号 <b className="mono">{done.ticket}</b>：请把它告诉客服；7 天后自动删除。
         </div>
       )}
       {msg && <div className="muted">{msg}</div>}

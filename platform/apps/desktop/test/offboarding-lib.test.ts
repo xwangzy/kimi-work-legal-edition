@@ -41,7 +41,7 @@ test("B-10 清单顶上的一句话与移出前提醒", () => {
   assert.match(none[1]!, /离所交接/);
   const two = removalLines({ name: null, active_devices: 2, matters: [{ title: "甲案", relay_controller: true }] });
   assert.match(two[0]!, /这位同事 的 2 台电脑不能再同步/);
-  assert.match(two[2]!, /「甲案」.*联系中软客服/);
+  assert.match(two[2]!, /「甲案」.*联系 Kimi Work 客服/);
   for (const t of [...none, ...two, offboardingSummary({ matters: [item({})], pending: 1 })]) assert.doesNotMatch(t, JARGON);
   for (const s of ["needs_archive", "needs_owner", "needs_handoff", "ok"] as const) {
     for (const scope of ["personal", "team"] as const) assert.doesNotMatch(offboardingRow(item({ scope, status: s, colleagues: s === "needs_archive" ? [] : [amy] })).state, JARGON);

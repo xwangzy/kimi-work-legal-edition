@@ -7,7 +7,7 @@ import type { ContentCheckResult, ContentStatus } from "../api.ts";
 const KIND = { lawdb: "法规库", skills: "方法模板" } as const;
 
 /** 面板说明（复核 S8B-13①：不出现“签名”“席位凭据”）。 */
-export const CONTENT_PANEL_NOTE = "法规库与方法模板由中软发布，下载后在本机核对无误才使用；只用本所的使用授权，不发送任何案件信息";
+export const CONTENT_PANEL_NOTE = "法规库与方法模板由 Kimi Work 发布，下载后在这台电脑上核对无误才使用；更新时不发送任何案件信息";
 /** 调用“检查更新”本身失败（复核 S8B-03）。 */
 export const CONTENT_CHECK_FAILED = "这次没有检查成功，继续用当前版本，可稍后再试";
 /** 超过这么久没能确认“已是最新”就提示（复核 S8A-13：清单有效期最长 90 天，取其 2/3）。 */
@@ -17,7 +17,7 @@ export const STALE_AFTER_MS = 60 * 86_400_000;
 export function contentSourceLine(kind: "lawdb" | "skills", st: ContentStatus | null): string | null {
   const s = st?.[kind];
   if (!s || !s.source) return null;
-  if (kind === "skills" && st?.skills?.revoked_pending_restart && !st.skills.pending) return `${KIND[kind]}：在线更新的版本（已被中软撤回，下次打开 Kimi Work 时换回随安装包的版本）`;
+  if (kind === "skills" && st?.skills?.revoked_pending_restart && !st.skills.pending) return `${KIND[kind]}：在线更新的版本（已被撤回，下次打开 Kimi Work 时换回随安装包的版本）`;
   const base = `${KIND[kind]}：${s.source === "installed" ? "在线更新的版本" : "随安装包的版本"}`;
   if (kind === "skills" && st?.skills?.pending) return `${base}；已下载新版本，下次打开 Kimi Work 时生效`;
   if (kind === "lawdb" && st?.lawdb?.pending) return `${base}；已下载新版本，进行中的任务结束后启用`;
@@ -47,7 +47,7 @@ export function contentCheckLine(r: ContentCheckResult | null | undefined): stri
     case "rollback_ignored":
       return `更新服务给出的版本比本机现有的旧，已忽略（${k}继续用当前版本）`;
     case "reverted":
-      return `中软撤回了当前版本，${k}${r.kind === "skills" ? "下次打开时换回随安装包的版本" : "已换回随安装包的版本"}`;
+      return `当前版本已被撤回，${k}${r.kind === "skills" ? "下次打开时换回随安装包的版本" : "已换回随安装包的版本"}`;
     case "rejected":
       return `下载的${k}没有通过核对，已丢弃，继续用当前版本；如反复出现请联系管理员`;
     case "failed":

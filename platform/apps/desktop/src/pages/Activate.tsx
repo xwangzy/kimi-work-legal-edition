@@ -356,7 +356,7 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
         setRejected(true);
         setNote(r.message ?? "管理员没有批准这次申请");
       } else if (r.last_check === "unreachable") {
-        setNote(r.message ?? "暂时连不上中软服务，稍后会自动重试");
+        setNote(r.message ?? "暂时连不上 Kimi Work 服务，稍后自动再试");
       } else if (manual) {
         setNote("还在等管理员批准");
       }

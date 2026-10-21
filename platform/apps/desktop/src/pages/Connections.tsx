@@ -267,6 +267,8 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
           打印或另存为 PDF
         </button>
       </div>
+      {/* 律师层其他地方统一说“Kimi Work 服务 / 客服”；这一页是给客户看的披露，按实际运营方写，第一次出现时说清是谁（v9.4 U1 #6） */}
+      <p className="vis-who">下文的“中软”指中软国际：Kimi Work 法律版的云端服务由它运营，AI 请求、联网查询、团队共享与提醒经它的服务器转发或保存。</p>
       <div className="vis-cols">
         <section className="vis-col vis-local" aria-label="只在你的电脑上">
           <h3>只在你的电脑上</h3>
@@ -302,7 +304,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
       </ul>
       {/* 本机密钥保护的如实说明（调研 Y5 §7.3 建议原文的律师版） */}
       <details className="vis-more">
-        <summary>本机密钥保护（当前版本）</summary>
+        <summary>加密保存的局限（建议所内 IT 看一下）</summary>
         <ol className="plain-list muted">
           <li>案件数据在本机加密保存，解密密钥受 Windows 数据保护（DPAPI）保护、与你的 Windows 账户绑定；以同一账户运行的其他程序（包括恶意软件）技术上可以调用同一保护机制，使用域账户的律所，域管理员按 Windows 的设计也具备恢复能力。</li>
           <li>设备签名与解密密钥目前由软件保存，尚未存放在电脑的安全芯片（TPM）中。</li>

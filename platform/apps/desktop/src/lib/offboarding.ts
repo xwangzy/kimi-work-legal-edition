@@ -33,7 +33,7 @@ export function removalLines(p: { name: string | null; active_devices: number; m
   ];
   if (p.matters.length > 0) {
     lines.push(
-      `这台电脑知道 ${who} 还负责下面 ${p.matters.length} 个同事一起办的事项、还没交给别人：${p.matters.map((m) => `「${m.title}」`).join("、")}。没交接就移出，这些事项以后加人、移人要联系中软客服。`,
+      `这台电脑知道 ${who} 还负责下面 ${p.matters.length} 个同事一起办的事项、还没交给别人：${p.matters.map((m) => `「${m.title}」`).join("、")}。没交接就移出，这些事项以后加人、移人要联系 Kimi Work 客服。`,
     );
   }
   return lines;

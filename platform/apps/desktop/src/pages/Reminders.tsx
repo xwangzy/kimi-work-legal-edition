@@ -68,12 +68,12 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
           <div className="muted reminders-note">
             {/* Z3 #18 / 3.6：按是否连接各写一句，机制说明收进折叠 */}
             <p>{reminderLine(data.cloud.configured)}</p>
-            {data.cloud.configured && data.cloud.last && !data.cloud.last.ok && <p>刚才没能和中软通知服务完成同步，稍后自动重试（这台电脑上照常提醒）。</p>}
+            {data.cloud.configured && data.cloud.last && !data.cloud.last.ok && <p>发到其他设备的提醒暂时没送出，稍后自动再试；这台电脑照常提醒。</p>}
             <details>
               <summary>提醒是怎么送到的</summary>
               {data.cloud.configured
-                ? "电脑关机时，由中软通知服务送到你的其他设备（选了“事项成员”的也送到他们的设备）。中软只知道提醒时间和接收设备，期限类型、事项和备注在这台电脑上加密，中软看不到。"
-                : "没有连接中软通知服务：电脑关机或应用没开时不会提醒。"}
+                ? "电脑关机时，由提醒服务送到你的其他设备（选了“事项成员”的也送到他们的设备）。服务方只知道提醒时间和接收设备，期限类型、事项和备注在这台电脑上加密，服务方看不到。"
+                : "只在这台电脑上提醒：关机或没打开 Kimi Work 时不会提醒。"}
               {/* 复核 S10B-06：提醒只保存在建立它的电脑上 */}
               {" 提醒保存在这台电脑上：换电脑要重新设置；这台电脑停用后，它设的提醒在其他设备上也不再响。"}
             </details>
@@ -152,7 +152,7 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
                       )}
                       <ConfirmButton
                         label="撤销"
-                        question="撤销后这条提醒不再响；交给中软通知服务的也一并删除。"
+                        question="撤销后这条提醒不再响；已发到其他设备的也一并撤回。"
                         confirmLabel="撤销提醒"
                         onConfirm={async () => {
                           try {

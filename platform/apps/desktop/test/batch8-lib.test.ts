@@ -30,7 +30,7 @@ test("来源行：随安装包/在线更新；待生效与撤回待生效如实�
   assert.match(contentSourceLine("lawdb", { configured: true, lawdb: { source: "bundled", seq: 0, version: "g0.x", pending: { seq: 4, version: "y" }, last_check: null } })!, /任务结束后启用/);
   assert.match(contentSourceLine("skills", { configured: true, skills: { source: "bundled", seq: 0, version: "x", pending: { seq: 4, version: "y" }, last_check: null } })!, /下次打开 Kimi Work 时生效/);
   const revoked = contentSourceLine("skills", { configured: true, skills: { source: "installed", seq: 4, version: "x", pending: null, revoked_pending_restart: true, last_check: null } })!;
-  assert.match(revoked, /已被中软撤回.*换回随安装包/);
+  assert.match(revoked, /已被撤回.*换回随安装包/);
   assert.equal(contentSourceLine("lawdb", { configured: false }), null);
 });
 

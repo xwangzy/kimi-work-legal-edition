@@ -81,8 +81,8 @@ export function cloudStateText(state: string, configured: boolean, o: { targets?
     if (others === 0) return { text: "目前只有这台电脑：关机时不会提醒（之后在其他设备登录，还没到时的提醒会自动补发过去）", tone: "plain" };
     return { text: o.audience === "team" ? `电脑关机时，事项成员与你的其他设备共 ${others} 台也会收到` : `电脑关机时，你的其他 ${others} 台设备也会收到`, tone: "ok" };
   }
-  if (state === "pending") return { text: "正在交给中软通知服务…（联网后自动完成）", tone: "plain" };
-  if (state === "failed") return { text: "没能交给中软通知服务：这台电脑上照常提醒", tone: "warn" };
+  if (state === "pending") return { text: "正在发到你的其他设备…（联网后自动完成）", tone: "plain" };
+  if (state === "failed") return { text: "没能发到其他设备：这台电脑上照常提醒", tone: "warn" };
   return { text: "", tone: "plain" };
 }
 

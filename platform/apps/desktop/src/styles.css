@@ -426,6 +426,7 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
   .status-tiles, .steps3 { grid-template-columns: minmax(0, 1fr); }
 }
 .visibility p { line-height: 1.8; }
+.vis-who { margin: 0 0 var(--sp-3); color: var(--text-secondary); font-size: var(--fs-sm); }
 .visibility-table td { line-height: 1.7; }
 
 /* ── 问答 ── */
