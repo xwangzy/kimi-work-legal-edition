@@ -143,8 +143,18 @@ function validTomb(t: unknown): t is Tombstone {
   return !!x && TENANT_RE.test(String(x.tid)) && REMINDER_ID_RE.test(String(x.id)) && typeof x.owner === "string" && Number.isSafeInteger(x.version) && isoOk(x.expires_at);
 }
 
-export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number; snapshot(): StoredReminder[]; tombstones(): Tombstone[] } {
+/** 提醒投递指标（v9.3 A-9 余项）：确认与暂缓次数；当前已过触发时刻 15 分钟仍未确认的接收设备份数（投递积压）与尚未到时的份数。 */
+export interface NotifyMetrics {
+  acks: number;
+  defers: number;
+  overdue_targets: number;
+  scheduled_targets: number;
+}
+
+export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number; snapshot(): StoredReminder[]; tombstones(): Tombstone[]; metrics(): NotifyMetrics } {
   const now = o.now ?? Date.now;
+  let acks = 0;
+  let defers = 0;
   const iso = (t = now()) => new Date(t).toISOString();
   if (!o.feed && (o.production ?? process.env.NODE_ENV === "production")) throw new Error("生产形态必须接控制面吊销订阅（feed）");
   if ((o as { opsSecret?: unknown }).opsSecret !== undefined) throw new Error("共享运营口令已停用（v9.3 A-10）：改用 opsGuard（按人运营凭据）");
@@ -467,6 +477,8 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
           throw e;
         }
       }
+      if (isDefer) defers += undo.length;
+      else acks += undo.length;
       return send(res, 200, isDefer ? { ok: true, deferred: undo.length } : { ok: true, acked: undo.length });
     }
 
@@ -508,6 +520,20 @@ export function createNotifyApi(o: NotifyApiOptions): Server & { sweep(): number
   server.on("close", () => clearInterval(timer));
   return Object.assign(server, {
     sweep,
+    metrics: (): NotifyMetrics => {
+      const t = now();
+      let overdue = 0;
+      let scheduled = 0;
+      for (const r of byKey.values()) {
+        const fire = Date.parse(r.fire_at);
+        for (const tg of Object.values(r.targets)) {
+          if (tg.delivered_at) continue;
+          if (fire > t) scheduled += 1;
+          else if (t - fire > 15 * 60_000 && !(tg.defer_until && Date.parse(tg.defer_until) > t)) overdue += 1;
+        }
+      }
+      return { acks, defers, overdue_targets: overdue, scheduled_targets: scheduled };
+    },
     snapshot: () => [...byKey.values()].map((r) => structuredClone(r)),
     tombstones: () => [...tombs.values()].map((t) => structuredClone(t)),
   });

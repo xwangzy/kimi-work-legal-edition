@@ -264,6 +264,8 @@ export interface ControlPlaneOps {
 export interface ControlPlane {
   server: Server;
   ops: ControlPlaneOps;
+  /** 服务内部指标（额度租约按结果计数）。 */
+  metrics(): { quota: Record<string, number> };
   /** seat = 全部席位公钥（通用 + 各受众）；seatFor(受众) = 只给那一受众服务的公钥表（A-8 按受众拆分）。 */
   publicKeys: { envelope: Record<string, string>; seat: Record<string, string>; seatFor(aud?: SeatAudience): Record<string, string> };
 }
@@ -405,6 +407,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   onboardingSweep.unref();
   // 席位令牌签发 96 小时（复核 S6-A01）：客户端剩余不足 73 小时即续期，任何时刻控制面停机后都还有 ≥ 72 小时可用（第 02 篇 §10、§13 第 10 条）
   const seatTtl = Math.max(MIN_SEAT_TTL_SECONDS, o.seatTtlSeconds ?? SEAT_TTL_DEFAULT_SECONDS);
+  /** 额度租约的服务内部指标（v9.3 A-9 余项）：发放、受限（月度上限 / 池余额）、拒发原因、回报次数。 */
+  const quotaCounts: Record<string, number> = {};
+  const quotaCount = (k: string) => (quotaCounts[k] = (quotaCounts[k] ?? 0) + 1);
   const signer: CpSigner = o.signer ?? (o.keys ? localSigner(o.keys) : (null as never));
   if (!signer) throw new Error("控制面须给出签名者（signer）或进程内密钥（keys）");
   const seal = <T>(kind: EnvelopeKind, body: T): Promise<CpEnvelope<T>> => signer.sealEnvelope(kind, body, now());
@@ -1373,7 +1378,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const t = tenantOf(String(b.tid ?? ""));
       // 许可到期或已终止：不再发放（与席位令牌同一口径）
       if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不发放额度");
-      const l = leaseQuota(t.quota, { want: b.want, holder: b.holder, ttl_ms: b.ttl_ms, need: b.need }, now());
+      let l: ReturnType<typeof leaseQuota>;
+      try {
+        l = leaseQuota(t.quota, { want: b.want, holder: b.holder, ttl_ms: b.ttl_ms, need: b.need }, now());
+      } catch (e) {
+        quotaCount(`lease_denied:${e instanceof QuotaError && /^[a-z_]{1,40}$/.test(e.code) ? e.code : "other"}`);
+        throw e;
+      }
+      quotaCount(l.limited_by ? `lease_limited:${l.limited_by}` : "lease_ok");
       return send(res, 200, { lease_id: l.lease_id, points: l.points, expires_at: l.expires_at, limited_by: l.limited_by });
     }
     if (method === "POST" && p === "/v1/quota/settle") {
@@ -1381,6 +1393,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const b = parseJson(raw);
       const t = tenantOf(String(b.tid ?? ""));
       const r = settleLease(t.quota, { lease_id: b.lease_id, holder: b.holder, usage: b.usage, final: b.final }, now());
+      quotaCount("settle_ok");
       return send(res, 200, { ok: true, ...r });
     }
 
@@ -1723,6 +1736,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   return {
     server,
     ops,
+    metrics: () => ({ quota: { ...quotaCounts } }),
     publicKeys: { envelope: pk.envelope, seat: pk.seat, seatFor: (aud?: SeatAudience) => ({ [aud ? (pk.seat_audiences[aud] ?? pk.seat_general) : pk.seat_general]: pk.seat[aud ? (pk.seat_audiences[aud] ?? pk.seat_general) : pk.seat_general]! }) },
   };
 }

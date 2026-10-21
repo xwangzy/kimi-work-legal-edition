@@ -18,7 +18,7 @@ describe("法律模型网关 v0", () => {
   const { privateKey, publicKey } = devSeatKeyPair();
   const keys = new Map([["k1", publicKey]]);
   const seat = (tid = "t1", dev = "d1") => issueSeatToken({ tid, uid: "u1", sid: `s-${tid}`, dev, kid: "k1" }, privateKey);
-  let server: Server;
+  let server: ReturnType<typeof createLegalGateway>;
   let base: string;
   let meterPath: string;
   const provider = new MockProvider();
@@ -159,10 +159,19 @@ describe("法律模型网关 v0", () => {
   });
 
   test("留存（第 06 篇 T13）：计量日志只有元数据——正文、错误体都不落盘；预占与结算成对出现", async () => {
+    const before = server.metrics();
     provider.script = () => ({ status: 500 });
     const r = await chat({ model: "legal/k2.6", messages: [{ role: "user", content: SECRET_TEXT }] });
     assert.equal(r.status, 500);
+    // 上游限流单列（A-9 余项）
+    provider.script = () => ({ status: 429 });
+    assert.equal((await chat({ model: "legal/k2.6", messages: [{ role: "user", content: "限流" }] })).status, 429);
     provider.script = null;
+    const after = server.metrics();
+    assert.equal(after.upstream["5xx"] - before.upstream["5xx"], 1);
+    assert.equal(after.upstream["429"] - before.upstream["429"], 1);
+    assert.ok(after.upstream["2xx"] >= 1);
+    assert.ok(!JSON.stringify(after).includes(SECRET_TEXT), "指标里只有计数");
     const log = readFileSync(meterPath, "utf8");
     assert.ok(!log.includes(SECRET_TEXT) && !log.includes("孙悦") && !log.includes("mock upstream error"), "计量日志不得含正文或错误体");
     const recs = log.trim().split("\n").map((l) => JSON.parse(l) as { kind: string; requestId: string; reason: string | null });

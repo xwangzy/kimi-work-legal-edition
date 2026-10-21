@@ -142,3 +142,22 @@ test("A-9 日志门禁：云端服务与生产入口的 console 输出不带异�
   assert.ok(files.length >= 9, `扫到的文件太少（${files.length}）`);
   assert.deepEqual(hits, []);
 });
+
+test("A-9 服务内部指标：只输出合规的指标名、类型与标签值（不合规的整条丢弃）；取指标出错不影响其余指标", async () => {
+  // @ts-expect-error 脚本工具模块（.mjs，无类型声明）
+  const { createObs } = await import("../../../scripts/lib/obs.mjs");
+  const obs = createObs({
+    role: "gateway",
+    serviceMetrics: () => [
+      { name: "kwl_gateway_upstream_responses_total", help: "上游回复", type: "counter", values: [[{ code_class: "429" }, 3], [{ code_class: "张三 的案子" }, 1], [{ code_class: "5xx" }, Number.NaN]] },
+      { name: "evil_metric", type: "counter", values: [[{}, 1]] },
+      { name: "kwl_x", type: "histogram", values: [[{}, 1]] },
+    ],
+  });
+  const text = obs.metricsText();
+  assert.match(text, /kwl_gateway_upstream_responses_total\{role="gateway",code_class="429"\} 3/);
+  assert.doesNotMatch(text, /张三|evil_metric|kwl_x|NaN/);
+  const broken = createObs({ role: "notify", serviceMetrics: () => { throw new Error("内部错误 带内容"); } });
+  assert.match(broken.metricsText(), /kwl_requests_total|kwl_in_flight_requests/);
+  assert.doesNotMatch(broken.metricsText(), /内部错误/);
+});

@@ -182,6 +182,9 @@ test("额度 HTTP：租约与回报只认服务凭据；成员只看本所与自
   // 许可终止：不再发放
   cp.ops.terminateLicense(tid);
   assert.equal((await service("/v1/quota/lease", { tid, want: 1, holder: "gw-2" })).json.error.code, "license_expired");
+  // 额度租约指标（A-9 余项）：发放、按上限受限、按上限拒发、回报；许可到期在发放之前就拒绝，不计入租约
+  const q = cp.metrics().quota;
+  assert.ok((q.lease_ok ?? 0) >= 2 && q["lease_limited:cap"] === 1 && q["lease_denied:cap_reached"] === 1 && (q.settle_ok ?? 0) >= 1, JSON.stringify(q));
 });
 
 test("运营审计流水：运营与设备的写操作逐条入链（吊销只记一次、重复登记不记、拒绝也记）；管理员与合伙人可取、律师不可；控制面签名 + 律所侧验链", async () => {

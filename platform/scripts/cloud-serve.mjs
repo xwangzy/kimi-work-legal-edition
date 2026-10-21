@@ -219,6 +219,7 @@ const opsPathBlocked = (req) => {
 
 let serviceMetrics = null;
 let readyCheck = null;
+let cpInstance = null;
 if (cfg.role === "cp-signer") {
   // ─── 签名服务（A-8）：私钥只在这里；只签登记过的种类与合格的文档，签名账记不进去就不签 ───
   const env = String(cfg.environment ?? "");
@@ -351,7 +352,8 @@ if (cfg.role === "cp-signer") {
       ];
     };
   }
-  svc = cpMod.createControlPlane({
+  const storeMetrics = serviceMetrics;
+  cpInstance = cpMod.createControlPlane({
     signer,
     serviceSecret: serviceSecret(),
     stateStore,
@@ -361,7 +363,13 @@ if (cfg.role === "cp-signer") {
     auditLog: cpMod.createAuditLog({ file: join(dir, "audit.jsonl") }),
     // 运营接口（A-10）：写操作照常进律所可见的运营审计流水（执行者为运营编号）；每个运营请求另记内部访问审计
     ...(opsGuard ? { opsGuard, opsAccessLog: (r) => opsMod.appendLineSynced(join(dir, "ops", "access.jsonl"), r) } : {}),
-  }).server;
+  });
+  svc = cpInstance.server;
+  // 额度租约指标（A-9 余项）与状态库指标并列
+  serviceMetrics = () => [
+    ...(storeMetrics ? storeMetrics() : []),
+    { name: "kwl_cp_quota_leases_total", help: "额度租约（按结果：发放、受限、拒发原因、回报）", type: "counter", values: Object.entries(cpInstance.metrics().quota).map(([k, n]) => [{ result: k.replace(":", "_") }, n]) },
+  ];
 } else {
   // 控制面以外的角色：必须订阅控制面吊销集（评审 Z4 P0-7）
   if (!cfg.control_plane?.url || !String(cfg.control_plane.url).startsWith(insecure ? "http" : "https://")) fail("必须配置 control_plane.url（https）以订阅吊销集");
@@ -378,7 +386,16 @@ if (cfg.role === "cp-signer") {
     const provider = new gw.MoonshotProvider({ apiKey: read(cfg.upstream.api_key_file, "upstream.api_key_file"), ...(cfg.upstream.base_url ? { baseUrl: String(cfg.upstream.base_url) } : {}) });
     const quota = new gw.LeaseQuota({ ledger: gw.httpLedger({ baseUrl: String(cfg.control_plane.url).replace(/\/+$/, ""), serviceSecret: serviceSecret() }), holder: `gw-${host}-${port}` });
     const contentSafety = cfg.content_safety_policy_file ? new gw.ContentSafety(JSON.parse(read(cfg.content_safety_policy_file, "content_safety_policy_file"))) : undefined;
-    svc = gw.createLegalGateway({ keys: seatKeys, provider, routes: gw.DEFAULT_ROUTES, meter: gw.fileMeter(join(dataDir("gateway"), "meter.jsonl")), quota, feed, ...(contentSafety ? { contentSafety } : {}) });
+    const gateway = gw.createLegalGateway({ keys: seatKeys, provider, routes: gw.DEFAULT_ROUTES, meter: gw.fileMeter(join(dataDir("gateway"), "meter.jsonl")), quota, feed, ...(contentSafety ? { contentSafety } : {}) });
+    svc = gateway;
+    // 上游状态（429 单列）与网关自己的拒绝原因（额度、排队超时等）（A-9 余项）
+    serviceMetrics = () => {
+      const m = gateway.metrics();
+      return [
+        { name: "kwl_gateway_upstream_responses_total", help: "上游回复（按状态类别，429 单列；error = 没有回复）", type: "counter", values: Object.entries(m.upstream).map(([c, n]) => [{ code_class: c }, n]) },
+        { name: "kwl_gateway_rejects_total", help: "网关拒绝（按原因代码）", type: "counter", values: Object.entries(m.rejects).map(([c, n]) => [{ reason: c }, n]) },
+      ];
+    };
   } else if (cfg.role === "search") {
     const ss = await import(join(root, "services/search-service/src/index.ts"));
     if (!cfg.upstream?.api_key_file) fail("检索服务只接真实上游：缺少 upstream.api_key_file");
@@ -420,7 +437,18 @@ if (cfg.role === "cp-signer") {
     svc = sa.createSupportApi({ dir: dataDir("support"), keys: seatKeys, meterKey: Buffer.from(meterKey, "hex"), feed, ...(blobs ? { blobs } : {}), ...(opsGuard ? { opsGuard } : {}) });
   } else if (cfg.role === "notify") {
     const na = await import(join(root, "services/notify-api/src/index.ts"));
-    svc = na.createNotifyApi({ dir: dataDir("notify"), keys: seatKeys, feed, ...(opsGuard ? { opsGuard } : {}) });
+    const notify = na.createNotifyApi({ dir: dataDir("notify"), keys: seatKeys, feed, ...(opsGuard ? { opsGuard } : {}) });
+    svc = notify;
+    // 提醒投递（A-9 余项）：确认、暂缓次数；过触发时刻 15 分钟仍未确认的份数（投递积压告警）
+    serviceMetrics = () => {
+      const m = notify.metrics();
+      return [
+        { name: "kwl_notify_acks_total", help: "提醒确认收到的份数", type: "counter", values: [[{}, m.acks]] },
+        { name: "kwl_notify_defers_total", help: "提醒暂缓的份数", type: "counter", values: [[{}, m.defers]] },
+        { name: "kwl_notify_overdue_targets", help: "过触发时刻 15 分钟仍未确认的接收设备份数", type: "gauge", values: [[{}, m.overdue_targets]] },
+        { name: "kwl_notify_scheduled_targets", help: "尚未到时的接收设备份数", type: "gauge", values: [[{}, m.scheduled_targets]] },
+      ];
+    };
   } else {
     const ra = await import(join(root, "services/relay-api/src/index.ts"));
     svc = ra.createRelayApi({ dir: dataDir("relay"), keys: seatKeys, feed, ...(opsGuard ? { opsGuard } : {}) });

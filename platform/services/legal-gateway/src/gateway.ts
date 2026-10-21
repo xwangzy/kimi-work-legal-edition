@@ -195,8 +195,21 @@ export function extractUsage(text: string): { input: number; output: number; cac
   return found;
 }
 
-export function createLegalGateway(o: GatewayOptions): Server {
+/** 网关的服务内部指标（v9.3 A-9 余项）：只有计数——上游按状态类别（429 单列）、网关自己拒绝的原因代码。 */
+export interface GatewayMetrics {
+  upstream: Record<"2xx" | "429" | "4xx" | "5xx" | "error", number>;
+  rejects: Record<string, number>;
+}
+
+export function createLegalGateway(o: GatewayOptions): Server & { metrics(): GatewayMetrics } {
   const quota: QuotaSource = o.quota ?? new MapQuota(o.budgets ?? new Map());
+  const upstreamCounts: GatewayMetrics["upstream"] = { "2xx": 0, "429": 0, "4xx": 0, "5xx": 0, error: 0 };
+  const rejectCounts: Record<string, number> = {};
+  const countReject = (code: string) => {
+    // 原因代码是本模块里的固定标识；超出预期形状的归为 other（指标标签不能承载任意值）
+    const k = /^[a-z0-9_]{1,48}$/.test(code) ? code : "other";
+    rejectCounts[k] = (rejectCounts[k] ?? 0) + 1;
+  };
   const gates = new Map<string, TenantGate>();
   const gateFor = (tid: string) => {
     let g = gates.get(tid);
@@ -243,6 +256,7 @@ export function createLegalGateway(o: GatewayOptions): Server {
       return parts.length ? parts.join(";") : null;
     };
     const reject = (status: number, code: string, message: string, model: string | null = null): never => {
+      countReject(code);
       o.meter.append({ at: new Date().toISOString(), clientRequestId, kind: "reject", requestId, tid: seat.tid, sid: seat.sid, anonMatter: anon, model, status, reserved: 0, inputTokens: null, outputTokens: null, cachedTokens: null, latencyMs: Date.now() - started, reason: code, safety: safetyField() });
       throw new GwError(status, code, message);
     };
@@ -308,6 +322,7 @@ export function createLegalGateway(o: GatewayOptions): Server {
       release = await gateFor(seat.tid).acquire(o.queueTimeoutMs ?? 30_000);
     } catch (e) {
       quota.refund(hold);
+      if (e instanceof GwError) countReject(e.code);
       throw e;
     }
     if (ac.signal.aborted) {
@@ -417,6 +432,11 @@ export function createLegalGateway(o: GatewayOptions): Server {
       }
     } finally {
       release();
+      if (status === null) upstreamCounts.error += 1;
+      else if (status === 429) upstreamCounts["429"] += 1;
+      else if (status >= 200 && status < 300) upstreamCounts["2xx"] += 1;
+      else if (status >= 400 && status < 500) upstreamCounts["4xx"] += 1;
+      else upstreamCounts["5xx"] += 1;
       const actual = usage ? points(usage.input + usage.output, route!) : status === 200 ? reserved : 0;
       quota.settle(hold, seat.sid, actual);
       o.meter.append({
@@ -471,7 +491,7 @@ export function createLegalGateway(o: GatewayOptions): Server {
     });
   }
 
-  return createServer((req, res) => {
+  const server = createServer((req, res) => {
     // HTTP 层访问日志（阶段 7 复核 S7-B03/B04）：每个请求一条，含鉴权失败与未知路由——红队判定以它为准，不只看计量
     if (o.accessLog) {
       const at = new Date().toISOString();
@@ -495,4 +515,5 @@ export function createLegalGateway(o: GatewayOptions): Server {
       else send(res, ge.status, { error: { type: "kwl_gateway", code: ge.code, message: ge.message } });
     });
   });
+  return Object.assign(server, { metrics: (): GatewayMetrics => ({ upstream: { ...upstreamCounts }, rejects: { ...rejectCounts } }) });
 }

@@ -92,7 +92,7 @@ export async function connectRedis(o: RedisOptions): Promise<RedisConn> {
     });
   });
   sock.setNoDelay(true);
-  let buf = Buffer.alloc(0);
+  let buf: Buffer = Buffer.alloc(0);
   const pending: { resolve: (v: RespValue) => void; reject: (e: Error) => void }[] = [];
   let dead: Error | null = null;
   const fail = (e: Error) => {

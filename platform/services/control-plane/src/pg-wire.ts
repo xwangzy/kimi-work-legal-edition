@@ -60,7 +60,7 @@ const msg = (type: string, payload: Buffer) => Buffer.concat([Buffer.from(type, 
 
 /** 读服务端消息的缓冲：按“类型 + 长度”切出完整消息。 */
 class Reader {
-  private buf = Buffer.alloc(0);
+  private buf: Buffer = Buffer.alloc(0);
   push(c: Buffer) {
     this.buf = this.buf.length ? Buffer.concat([this.buf, c]) : c;
   }

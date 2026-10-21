@@ -77,7 +77,7 @@ test("NA-01 凭据：只收受众 notify；通用席位令牌、支持凭据、�
 
 test("NA-02 登记 → 到时才取得到 → 只给目标设备 → 按版本确认；云端只存触发时刻、设备编号与密文", async () => {
   const dir = mkdtempSync(join(tmpdir(), "kwl-na-"));
-  const { base } = await start(dir);
+  const { base, s } = await start(dir);
   const fire = minute(clock + 10 * 60_000);
   const put = await call(base, "PUT", `/v1/reminders/${RID}`, cred(), { fire_at: fire, version: 1, targets: [{ dev: "devA", ct: CT("A") }, { dev: "devB", ct: CT("B") }] });
   assert.equal(put.status, 200, JSON.stringify(put.json));
@@ -90,6 +90,11 @@ test("NA-02 登记 → 到时才取得到 → 只给目标设备 → 按版本�
   // 旧版本的确认不算数
   assert.equal((await call(base, "POST", "/v1/notify/ack", cred({ dev: "devB" }), { items: [{ id: RID, version: 0 }] })).json.acked, 0);
   assert.equal((await call(base, "POST", "/v1/notify/ack", cred({ dev: "devB" }), { items: [{ id: RID, version: 1 }] })).json.acked, 1);
+  // 投递指标（A-9 余项）：确认 1 份；另一份刚过触发时刻 1 分钟，还不算积压；过 15 分钟算
+  assert.deepEqual(s.metrics(), { acks: 1, defers: 0, overdue_targets: 0, scheduled_targets: 0 });
+  clock += 15 * 60_000;
+  assert.equal(s.metrics().overdue_targets, 1);
+  clock -= 15 * 60_000;
   assert.deepEqual((await call(base, "GET", "/v1/notify/due", cred({ dev: "devB" }))).json.items, [], "确认后不再给");
   assert.equal((await call(base, "GET", "/v1/notify/due", cred({ dev: "devA" }))).json.items.length, 1, "另一台设备的仍在");
   // 落盘内容只有触发时刻、设备编号、密文与投递状态

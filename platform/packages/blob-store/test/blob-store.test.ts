@@ -28,7 +28,7 @@ test("签名第 4 版：与 AWS 文档 GET Object 示例的签名逐字一致", 
 /** 本地假 S3：重算签名核对（密钥不同即 403）、写入须带 SSE-KMS 头、列举按前缀分页。dropSse：模拟不做加密的实现。 */
 function fakeS3(o: { dropSse?: boolean } = {}) {
   const objects = new Map<string, { body: Buffer; at: number; sse: string | undefined }>();
-  const seen: { method: string; sse?: string; kms?: string }[] = [];
+  const seen: { method: string; sse: string | undefined; kms: string | undefined }[] = [];
   const server = createServer((req: IncomingMessage, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
