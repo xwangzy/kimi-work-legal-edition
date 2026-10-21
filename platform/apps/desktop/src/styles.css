@@ -226,6 +226,13 @@ dl.sheet dd { margin: 0; }
 .exec-mid { flex: 1; min-width: 0; overflow: auto; padding: 20px 28px 32px; }
 .exec-right { flex: 0 0 var(--preview-width); max-width: 640px; border-left: 1px solid var(--border-subtle); background: var(--bg-sidebar); display: flex; flex-direction: column; min-width: 0; }
 .exec-right .tabs { padding: 8px 12px 0; border-bottom: 1px solid var(--border-subtle); }
+/* 右栏收起（Z3 #11）：没有成果时只留 56px 窄条，中栏放到 760px */
+.exec-right.exec-right-collapsed { flex: 0 0 56px; max-width: 56px; align-items: stretch; }
+.pane-strip { display: flex; flex-direction: column; align-items: center; gap: 6px; border: 0; background: transparent; padding: 16px 0; color: var(--text-secondary); font-size: var(--fs-xs); writing-mode: horizontal-tb; }
+.pane-strip:hover { color: var(--text-primary); background: var(--bg-hover); }
+.exec-pane-collapsed .exec-mid > * { max-width: 760px; }
+.pane-fold { margin-top: 14px; font-size: var(--fs-sm); }
+.pane-fold > summary { cursor: pointer; color: var(--text-secondary); }
 .exec-right .tab-body { flex: 1; overflow: auto; padding: 14px 16px; }
 .pane-title { font-size: var(--fs-xs); color: var(--text-secondary); margin: 14px 0 6px; font-weight: 500; }
 .mat-row { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); padding: 4px 0; }

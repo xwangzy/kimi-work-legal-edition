@@ -52,6 +52,9 @@ export const LEVEL_LABELS: Record<string, string> = {
   L3b: "客户要求不上云",
 };
 
+/** 成果状态（交付件页、执行页版本记录同一份）。 */
+export const ARTIFACT_STATUS_LABELS: Record<string, string> = { draft: "草稿", pending_review: "待复核", approved: "已签发", rejected: "已退回", superseded: "已被替代" };
+
 export const RUN_STATUS_LABELS: Record<string, string> = {
   created: "已创建",
   validating: "校验中",

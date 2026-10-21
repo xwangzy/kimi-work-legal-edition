@@ -7,11 +7,11 @@ import { useEffect, useRef, useState } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
 import { downloadPlan } from "../lib/download.ts";
-import { artifactName, AUDIENCE_LABELS, fmtTime, fmtWhen } from "../lib/labels.ts";
+import { ARTIFACT_STATUS_LABELS, artifactName, AUDIENCE_LABELS, fmtTime, fmtWhen } from "../lib/labels.ts";
 import { groupByTask, groupDeliverables, taskCountText, taskGroupLabel } from "../lib/deliverables.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 
-const STATUS_LABELS: Record<string, string> = { draft: "草稿", pending_review: "待复核", approved: "已签发", rejected: "已退回", superseded: "已被替代" };
+const STATUS_LABELS = ARTIFACT_STATUS_LABELS;
 
 export function DeliverablesPage() {
   const [matters, setMatters] = useState<Matter[]>([]);

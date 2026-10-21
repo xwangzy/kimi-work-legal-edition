@@ -14,7 +14,7 @@ import { Icon } from "../components/Icons.tsx";
 import { Markdown, tokens as renderTokens } from "../components/Markdown.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
-import { artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, stepTime, TERMINAL_STATUSES } from "../lib/labels.ts";
+import { ARTIFACT_STATUS_LABELS, artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, stepTime, TERMINAL_STATUSES } from "../lib/labels.ts";
 import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
 import { currentBadges } from "../lib/badges.ts";
@@ -23,6 +23,7 @@ import { buildSteps, groupSubtaskSteps, keyStepKeys, sentByToolCall, toolLabel, 
 import { busyRunOfError } from "../lib/start-block.ts";
 import { methodLine } from "../lib/run-method.ts";
 import { Select } from "../components/Select.tsx";
+import { rightCollapsed, rightTabs, type RightTab } from "../lib/run-pane.ts";
 
 /** 页面标题：任务目标前 24 字（律师能区分多个任务）；没有目标时用场景名。 */
 function runTitle(run: any): string {
@@ -44,7 +45,6 @@ function openToolsOf(events: RunEvent[]): { openTools: string[]; execOpen: boole
   return { openTools: [...open.values()], execOpen };
 }
 
-type RightTab = "review" | "artifact" | "history" | "egress" | "citations" | "record";
 
 /** 正文前三行（去掉 Markdown 标题符号），用于中栏摘要（UIUX 增量评审 D-1）。 */
 function summaryLines(text: string): string[] {
@@ -96,6 +96,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const [artifactsLoaded, setArtifactsLoaded] = useState(false);
   // 律师是否自己点过右栏标签（有风险卡时缺省显示审查摘要，D-3；点过之后不再自动切换）
   const tabTouched = useRef(false);
+  /** 律师手动展开过收起的右栏（Z3 #11）。 */
+  const [paneOpened, setPaneOpened] = useState(false);
   // 窄屏材料弹出层（N-1）
   const [matsOpen, setMatsOpen] = useState(false);
   /** 打开的审查工作台：doc 为 null 表示“未关联合同的意见”。 */
@@ -319,6 +321,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     exitMode,
   });
   const citationEvent = useMemo(() => [...events].reverse().find((e) => e.type === "citations.verified"), [events]);
+  const paneCollapsed = rightCollapsed({ artifactsLoaded, artifactCount: artifacts.length, hasRisk: !!risk, hasCitations: !!citationEvent, userExpanded: paneOpened });
   const inputDocs = useMemo(() => {
     let ids: string[] = [];
     try {
@@ -457,7 +460,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   }
 
   return (
-    <div className="exec">
+    <div className={`exec${paneCollapsed ? " exec-pane-collapsed" : ""}`}>
       <aside className="exec-left">
         <button className="btn-link back" onClick={() => nav(`/matter/${matterId}`)}>← 返回事项</button>
         <div className="pane-title">本次用到的材料</div>
@@ -789,18 +792,17 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
         )}
       </section>
 
+      {paneCollapsed ? (
+        <aside className="exec-right exec-right-collapsed">
+          <button className="pane-strip" onClick={() => setPaneOpened(true)} title="展开右栏：成果、引用与数据去向" aria-label="展开右栏（成果 0）">
+            <Icon.file />
+            <span>成果 0</span>
+          </button>
+        </aside>
+      ) : (
       <aside className="exec-right">
         <div className="tabs">
-          {(
-            [
-              ...(risk ? ([["review", "审查摘要"]] as [RightTab, string][]) : []),
-              ["artifact", "成果"],
-              ["history", "文件历史"],
-              ["egress", "数据去向"],
-              ["citations", `引用${Number(citationEvent?.payload?.intercepted ?? 0) > 0 ? ` · ${citationEvent!.payload.intercepted} 条无法核实` : ""}`],
-              ["record", "记录"],
-            ] as [RightTab, string][]
-          ).map(([k, l]) => (
+          {rightTabs({ hasRisk: !!risk, intercepted: Number(citationEvent?.payload?.intercepted ?? 0) }).map(([k, l]) => (
             <button
               key={k}
               className={`tab${tab === k ? " active" : ""}`}
@@ -855,39 +857,47 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               )}
               {selected && preview && <SafePreview filename={preview.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} />}
               {selected && <ArtifactActions artifact={artifacts.find((a) => a.artifact_version_id === selected)} onError={setErr} primary={!hasRiskEntry} />}
-            </>
-          )}
-          {tab === "history" && (
-            <>
-              {artifacts.length === 0 && <p className="muted">尚无文件。</p>}
-              {artifacts.map((a) => (
-                <div key={a.artifact_version_id} className="hist-row">
-                  <div><b>{a.filename}</b> <span className="tag tag-gray">v{a.version}</span> <span className="tag tag-gray">{a.status}</span></div>
-                  <div className="muted mono">{String(a.sha256 ?? "").slice(0, 16)}… · {fmtTime(a.created_at)}</div>
-                </div>
-              ))}
+              {artifacts.length > 1 && (
+                // 原“文件历史”标签并入这里（Z3 #11）
+                <details className="pane-fold">
+                  <summary>版本记录（{artifacts.length}）</summary>
+                  {artifacts.map((a) => (
+                    <div key={a.artifact_version_id} className="hist-row">
+                      <div>
+                        <b>{artifactName(a, (t) => restoredPlain(t, tokenMap))}</b> <span className="tag tag-gray">v{a.version}</span> <span className="tag tag-gray">{ARTIFACT_STATUS_LABELS[a.status] ?? "状态未知"}</span>
+                      </div>
+                      <div className="muted" title={`文件指纹 ${String(a.sha256 ?? "").slice(0, 16)}…`}>{fmtTime(a.created_at)}</div>
+                    </div>
+                  ))}
+                </details>
+              )}
             </>
           )}
           {tab === "egress" && (
             <>
               <DataFlowCard runId={runId} tokenMap={tokenMap} refreshKey={events.length} />
               {methodLine(run, skillTitles, skillVersions) && <p className="muted run-method">{methodLine(run, skillTitles, skillVersions)}</p>}
+              {run && (
+                // 原“记录”标签并入这里（Z3 #11）
+                <details className="pane-fold">
+                  <summary>任务记录</summary>
+                  <table className="data">
+                    <tbody>
+                      <tr><th>任务编号</th><td className="mono">{run.run_id}</td></tr>
+                      <tr><th>状态</th><td>{RUN_STATUS_LABELS[run.status] ?? run.status}</td></tr>
+                      <tr><th>点数</th><td>预留 {run.points_reserved} / 已扣 {run.points_charged}</td></tr>
+                      <tr><th>发起</th><td>{fmtTime(run.created_at)}</td></tr>
+                      {run.reason && <tr><th>原因</th><td>{reasonLabel(String(run.reason))}</td></tr>}
+                    </tbody>
+                  </table>
+                </details>
+              )}
             </>
           )}
           {tab === "citations" && <Citations ev={citationEvent} />}
-          {tab === "record" && run && (
-            <table className="data">
-              <tbody>
-                <tr><th>任务</th><td className="mono">{run.run_id}</td></tr>
-                <tr><th>状态</th><td>{RUN_STATUS_LABELS[run.status] ?? run.status}</td></tr>
-                <tr><th>点数</th><td>预留 {run.points_reserved} / 已扣 {run.points_charged}</td></tr>
-                <tr><th>发起</th><td>{fmtTime(run.created_at)}</td></tr>
-                {run.reason && <tr><th>原因</th><td>{reasonLabel(String(run.reason))}</td></tr>}
-              </tbody>
-            </table>
-          )}
         </div>
       </aside>
+      )}
     </div>
   );
 }
