@@ -1166,7 +1166,8 @@
       "kwl.update.rejected-seen": "已知道未通过核验的版本号",
       "kwl.ui.theme": "设置 → 通用 → 外观（浅色/深色；跟随系统时不存）",
       "kwl.ui.zoom": "设置 → 通用 → 字号（标准/大/特大）",
-      "kwl.setAside.dismissed": "激活页：律师在“从备份恢复”点过“返回”的那个移到一边的目录名（.unreadable-<时刻>，只有时刻、不含身份或案件信息；复核 RB16B-20）"
+      "kwl.setAside.dismissed": "激活页：律师在“从备份恢复”点过“返回”的那个移到一边的目录名（.unreadable-<时刻>，只有时刻、不含身份或案件信息；复核 RB16B-20）",
+      "kwl.recovery.snooze_until": "首页与事项页的备份提醒点了“明天提醒”：记到哪一天（本地日期 YYYY-MM-DD）之前不显示；只对橙色提醒生效，备份失败、备份盘不对等红色提醒不能推迟；不含身份或案件信息（v9.4）"
     },
     "files": [
       "apps/desktop/src/App.tsx",
