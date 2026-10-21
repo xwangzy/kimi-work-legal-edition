@@ -1,7 +1,8 @@
 /**
  * 事项账本存储（方案 v5.0 第 4 篇 §5.1/§5.2）：SQLite + 页级加密。
  *
- * - 驱动：better-sqlite3-multiple-ciphers（N-API，SQLCipher v4 格式；V3 一手核验）。
+ * - 驱动：better-sqlite3-multiple-ciphers（N-API）。页级加密算法是该驱动的缺省 **ChaCha20-Poly1305（sqleet / chacha20）**——
+ *   不是早先注释写的“SQLCipher v4”（v9.3 国密套件评估实测更正）；现显式钉住 chacha20：驱动升级若改了缺省，已有账本不会因此打不开。
  *   页级加密已接线：数据库主密钥由 Electron safeStorage 异步 API 解封后一次性交付内核
  *   （§5.1；开发可用 ZR_DB_KEY，README 注明仅开发用）。
  * - 同步 API：内核是单进程，同步驱动省去连接池；事务只包同步代码段。
@@ -23,7 +24,8 @@ export class KernelDb {
     mkdirSync(dirname(file), { recursive: true });
     this.db = new Database(file);
     if (opts.key) {
-      // G0 第 3–4 周启用：页级加密（SQLCipher v4）；key 由 safeStorage 解封后传入
+      // 页级加密（ChaCha20-Poly1305，驱动缺省值显式钉住；须在 key 之前设）；key 由 safeStorage 解封后传入
+      this.db.pragma("cipher = 'chacha20'");
       this.db.pragma(`key = '${opts.key.replace(/'/g, "''")}'`);
     }
     this.db.pragma("journal_mode = WAL");

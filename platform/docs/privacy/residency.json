@@ -6,7 +6,7 @@
   "forms": {
     "plain": "明文（真实值）",
     "token_plain": "令牌明文：证件/账户/联系方式/住址/车牌/已识别姓名为代号，其余（机构名、案情、金额、日期、L2 案号、漏识别姓名）为原文",
-    "sqlcipher": "账本页级加密（SQLCipher v4，主密钥经 DPAPI 包裹）",
+    "sqlcipher": "账本页级加密（SQLite3MultipleCiphers 的 ChaCha20-Poly1305，算法在代码里显式钉住；主密钥经 DPAPI 包裹。形态名沿用 sqlcipher）",
     "block_cipher": "块密文：事项密钥 AES-256-GCM、按纪元，事项密钥包裹给设备加密公钥",
     "kwe1": "KWE1：分块 AES-256-GCM / 逐条认证追加日志，每设备每事项工作区密钥按区派生",
     "kwl_sealed": "kwl-sealed/1：HKDF(数据库主密钥) 派生密钥 AES-256-GCM 封装",
