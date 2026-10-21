@@ -8,6 +8,7 @@
  */
 import { scrollBehavior } from "../lib/ui-prefs.ts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { acceptPreview } from "../lib/accept-preview.ts";
 import { firstOpenCard, nextOpenCard, stepCard } from "../lib/workbench.ts";
 import { api, type RiskCard, type RiskProgress } from "../api.ts";
 import { CITE_STATE_LABELS } from "../lib/labels.ts";
@@ -60,6 +61,8 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
   // 原文与卡片的悬停联动（W-3）
   const [hover, setHover] = useState<string | null>(null);
+  // 文档区“原文 / 接受后”（Z3 M-5）
+  const [view, setView] = useState<"original" | "after">("original");
   // 首次载入后自动展开第一张未处理的卡（W-1）；之后由律师操作决定
   const autoOpened = useRef(false);
 
@@ -100,6 +103,18 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
         .map((c) => ({ id: c.card_id, text: plain(c.anchor_text), sev: c.severity, status: c.status }))
         .filter((m) => m.text.length >= 2),
     [cards, plain],
+  );
+
+  // 接受后预览：本机按已接受的卡渲染（与修订稿同一口径），不生成文件
+  const preview = useMemo(
+    () =>
+      doc
+        ? acceptPreview(
+            doc.paragraphs,
+            cards.map((c) => ({ card_id: c.card_id, seq: c.seq, status: c.status, anchor_status: c.anchor_status, anchor_text: plain(c.anchor_text), suggestion: plain(c.suggestion), final_text: plain(c.final_text) })),
+          )
+        : null,
+    [doc, cards, plain],
   );
 
   const setNature = async (card: RiskCard, nature: RiskNature) => {
@@ -274,7 +289,37 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
         <section className="wb-doc" aria-label="合同原文">
           {!documentVersionId && <p className="muted">这些意见没有关联到具体合同（例如条款来自任务说明或聊天内容）：可以逐张决定，不参与修订稿。</p>}
           {documentVersionId && !doc && <p className="muted">正在载入合同原文…</p>}
-          {doc?.paragraphs.map((p, i) => (p.trim() ? <p key={i}>{highlight(p, marks, active, hover, focusCard, setHover)}</p> : <br key={i} />))}
+          {doc && preview && (
+            <div className="wb-doc-view" role="tablist" aria-label="文档显示">
+              <button role="tab" aria-selected={view === "original"} className={`wb-view-btn${view === "original" ? " active" : ""}`} onClick={() => setView("original")}>原文</button>
+              <button role="tab" aria-selected={view === "after"} className={`wb-view-btn${view === "after" ? " active" : ""}`} onClick={() => setView("after")}>接受后{preview.applied > 0 ? `（${preview.applied} 处修改）` : ""}</button>
+              {view === "after" && (
+                <span className="wb-view-note">
+                  只在这台电脑上按已接受的建议显示，不是正式修订稿
+                  {preview.skipped.length > 0 ? `；${preview.skipped.map((x) => `第 ${x.seq} 项`).join("、")}未体现（${[...new Set(preview.skipped.map((x) => x.reason))].join("、")}），以生成的修订稿为准` : ""}
+                </span>
+              )}
+            </div>
+          )}
+          {view === "original" && doc?.paragraphs.map((p, i) => (p.trim() ? <p key={i}>{highlight(p, marks, active, hover, focusCard, setHover)}</p> : <br key={i} />))}
+          {view === "after" &&
+            preview?.paragraphs.map((segs, i) =>
+              segs.some((x) => x.text.trim() || x.ins) ? (
+                <p key={i}>
+                  {segs.map((x, j) =>
+                    x.ins ? (
+                      <ins key={j} className={`wb-ins${active === x.ins.cardId ? " mark-active" : ""}`} title={x.ins.was ? `第 ${x.ins.seq} 项 · 原文：${x.ins.was}` : `第 ${x.ins.seq} 项 · 新增`} onClick={() => focusCard(x.ins!.cardId)}>
+                        {x.text || "（删除）"}
+                      </ins>
+                    ) : (
+                      x.text
+                    ),
+                  )}
+                </p>
+              ) : (
+                <br key={i} />
+              ),
+            )}
         </section>
         <section className="wb-cards" aria-label="风险卡">
           <div className="wb-filters" role="tablist">
