@@ -49,9 +49,11 @@ const SKIP_REASONS: Record<string, string> = {
 const LEGAL_TOOL_LABELS: Record<string, string> = {
   "materials.read_excerpt": "阅读材料",
   "law.get_version": "查法条版本",
+  "law.get_article": "查看条文原文",
   "law.search": "检索法规",
   "citations.verify": "核对引用",
   "calc.interest": "计算利息与违约金",
+  "calc.deadline": "计算期限",
   "redact.scan": "检查个人信息",
   "materials.list": "阅读材料",
   "riskcards.submit": "找出风险",

@@ -32,6 +32,20 @@
       "schemaHash": "10798ac8d2df2a3150d204e10be2e4fb12cc89650fb68e3a6d3b4b38e1914e26"
     },
     {
+      "name": "law.get_article",
+      "version": "1",
+      "sideEffect": "read",
+      "resource": "lawdb",
+      "purposes": [
+        "legal_analysis",
+        "contract_review",
+        "case_file",
+        "legal_research",
+        "drafting"
+      ],
+      "schemaHash": "5ec4542867313a7bdb18796246914ae9ea5509502fe75757aec85b9ea1087afd"
+    },
+    {
       "name": "citations.verify",
       "version": "1",
       "sideEffect": "read",
@@ -58,6 +72,20 @@
         "drafting"
       ],
       "schemaHash": "9497b0f3ab69cf8dcd055f7c73fd7b3d46f275b9ee4b8bcf78a42c1ed2e85654"
+    },
+    {
+      "name": "calc.deadline",
+      "version": "1",
+      "sideEffect": "read",
+      "resource": "pure",
+      "purposes": [
+        "legal_analysis",
+        "contract_review",
+        "case_file",
+        "legal_research",
+        "drafting"
+      ],
+      "schemaHash": "a87e68ad5df2950d803c7699f89f5f70de9f509ec0bf72999131a8af66f8bc20"
     },
     {
       "name": "redact.scan",

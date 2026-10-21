@@ -344,7 +344,7 @@ function charPos(start: number, end: number): string {
 }
 
 /** 读取情况（律师话）：有读不出或识别不清的页时写出页数。 */
-function readingLabel(m: { pages?: { pageNo: number; quality?: string }[] }): string {
+function readingLabel(m: { pages?: { pageNo: number; quality?: string }[] | undefined }): string {
   const bad = (m.pages ?? []).filter((p) => p.quality === "unreadable").length;
   const low = (m.pages ?? []).filter((p) => p.quality === "low").length;
   if (bad > 0) return `有 ${bad} 页读不出`;

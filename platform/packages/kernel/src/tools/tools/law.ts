@@ -4,7 +4,9 @@
  * 数据源为签名法规库包（@zr-legal/lawdb）；注册库没有就明说，故障不伪造法源（§4.1 W3）。
  */
 import { DomainError } from "@zr-legal/domain";
-import { versionAt, type Lawdb } from "@zr-legal/lawdb";
+import { versionAt, type Lawdb, type LawVersionRow } from "@zr-legal/lawdb";
+import { cnToInt } from "./cn-numerals.ts";
+import { lawNameCandidates } from "./law-names.ts";
 
 export interface LawGetVersionParams {
   law: string; // 法名或简称（名称归一：书名号/空白/全半角不敏感）
@@ -78,4 +80,120 @@ export function lawSearch(lawdb: Lawdb, params: { query: string }): { results: {
     if (src) lawdb.assertAction(src, "search");
   }
   return { results: hits };
+}
+
+// ─── law.get_article：取条文原文（v9.4 评审 S1 §6.2 第 4 项） ───
+
+export interface LawGetArticleParams {
+  law: string; // 法名或简称（与 law.get_version 同一归一；查不到再按简称表、加去“中华人民共和国”前缀查）
+  article: number | string; // 585、"585"、"第585条"、"第五百八十五条"（带“第二款”等时按条返回全文）
+  as_of?: string; // 适用时点 YYYY-MM-DD，缺省为今天
+}
+
+export interface LawArticleResult {
+  found: boolean;
+  /** found=false 时的原因：库外法源 / 该时点无适用版本 / 条号超出该版本条数 / 条号存在但正文未采集。 */
+  reason?: "law_not_in_lawdb" | "no_applicable_version" | "article_not_exist" | "text_not_collected";
+  law_name?: string;
+  lsv_id?: string;
+  effective?: string;
+  superseded?: string | null;
+  effectiveness?: string;
+  article_no?: number;
+  /** 条文原文（法规库采集文本，逐字；库内没有就不给，绝不补写）。 */
+  text?: string;
+  /** 来源可信度（Source Registry 原样返回；demo_seed 为演示数据，不得引用）。 */
+  reliability?: string;
+  source_license_id?: string;
+  license_note?: string;
+  as_of: string;
+  note: string;
+  checked_at: string;
+}
+
+const CN_NUM = "0-9零〇一二两三四五六七八九十百千";
+const ARTICLE_RE = new RegExp(`^第?([${CN_NUM}]+)条?((?:第[${CN_NUM}]+[款项目])*)$`);
+
+/** 条号写法 → 整数（数字、阿拉伯数字串、“第五百八十五条”“第585条”；“第二款”等下级单位只认不取）。 */
+export function parseArticleNo(article: unknown): number | null {
+  if (typeof article === "number") return Number.isInteger(article) && article >= 1 ? article : null;
+  if (typeof article !== "string") return null;
+  const t = article.replace(/\s+/g, "").replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
+  const m = ARTICLE_RE.exec(t);
+  if (!m) return null;
+  const n = cnToInt(m[1]!.replace(/〇/g, "零").replace(/两/g, "二"));
+  return n !== null && n >= 1 && n <= 9999 ? n : null;
+}
+
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function findRows(lawdb: Lawdb, law: string): LawVersionRow[] {
+  let rows = lawdb.findLawVersions(law);
+  for (const name of lawNameCandidates(law)) {
+    if (rows.length > 0) break;
+    rows = lawdb.findLawVersions(name);
+  }
+  return rows;
+}
+
+export function lawGetArticle(lawdb: Lawdb, params: LawGetArticleParams): LawArticleResult {
+  const law = typeof params?.law === "string" ? params.law.trim() : "";
+  if (!law) throw new DomainError("validation", "law.get_article 需要 law（法名或简称）", 422);
+  const articleNo = parseArticleNo(params.article);
+  if (articleNo === null) throw new DomainError("validation", "law.get_article 的 article 须为条号整数或“第五百八十五条”这类写法", 422);
+  const asOf = params.as_of ?? localToday();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new DomainError("validation", "law.get_article 的 as_of 须为 YYYY-MM-DD", 422);
+  const checkedAt = new Date().toISOString();
+  const rows = findRows(lawdb, law);
+  if (rows.length === 0) {
+    return { found: false, reason: "law_not_in_lawdb", article_no: articleNo, as_of: asOf, note: "法规库未收录该法源：不提供条文文本，须律师查官方文本核对", checked_at: checkedAt };
+  }
+  const v = versionAt(rows, asOf);
+  if (!v) {
+    return {
+      found: false,
+      reason: "no_applicable_version",
+      law_name: rows[0]!.law_name,
+      article_no: articleNo,
+      as_of: asOf,
+      note: `法规库内该法在 ${asOf} 没有适用版本（库内版本施行日：${rows.map((r) => r.effective).join("、")}）`,
+      checked_at: checkedAt,
+    };
+  }
+  const base = {
+    law_name: v.law_name,
+    lsv_id: v.lsv_id,
+    effective: v.effective,
+    superseded: v.superseded,
+    effectiveness: v.effectiveness,
+    article_no: articleNo,
+    source_license_id: v.source_license_id,
+    as_of: asOf,
+    checked_at: checkedAt,
+  };
+  if (articleNo > v.total_articles) {
+    return { found: false, reason: "article_not_exist", ...base, note: `该版本共 ${v.total_articles} 条，第 ${articleNo} 条不存在` };
+  }
+  const text = lawdb.getArticle(v.lsv_id, articleNo);
+  if (text === null) {
+    return { found: false, reason: "text_not_collected", ...base, note: "条号存在，但法规库尚未采集该条正文：不提供文本，须律师查官方文本核对" };
+  }
+  // 引用原文与送入模型上下文两个动作都要来源授权（Source Registry §2.2；Lawdb.getArticle 注释：送模型前须 assertAction model）
+  lawdb.assertAction(v.source_license_id, "quote");
+  lawdb.assertAction(v.source_license_id, "model");
+  const reliability = lawdb.getSource(v.source_license_id)?.reliability ?? "";
+  return {
+    found: true,
+    ...base,
+    text,
+    reliability,
+    license_note: lawdb.licenseNoteOf(v.source_license_id),
+    note:
+      reliability === "demo_seed"
+        ? "演示数据（reliability=demo_seed），不得作为正式引用；正式引用以官方公报文本为准"
+        : "法规库采集原文；是否支持结论由律师比对判断（本工具不判支持）",
+  };
 }

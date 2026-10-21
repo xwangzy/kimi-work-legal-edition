@@ -14,9 +14,10 @@ import { loadSignedToolLock, registryFromLock, verifyToolsAgainstLock, type Tool
 import type { Lawdb } from "@zr-legal/lawdb";
 import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
-import { lawGetVersion, lawSearch } from "./tools/law.ts";
+import { lawGetArticle, lawGetVersion, lawSearch } from "./tools/law.ts";
 import { citationsVerify } from "./tools/citations.ts";
 import { calcInterest } from "./tools/calc.ts";
+import { calcDeadline } from "./tools/deadline.ts";
 import { redactScan } from "./tools/redact.ts";
 import { materialsReadExcerpt } from "./tools/materials.ts";
 import { docxApplyRevisions, docxCompare, docxRenderReport, docxSanitize, redactApply } from "./tools/docx.ts";
@@ -84,6 +85,26 @@ export const TOOLS: readonly ToolDef[] = [
     invoke: (p, ctx) => lawSearch(ctx.lawdb, p),
   },
   {
+    name: "law.get_article",
+    title: "取条文原文",
+    description:
+      "按法名（或简称）、条号与适用时点取法规库内该条原文，版本选择与 law.get_version 一致。article 可写 585 或“第五百八十五条”。库外法源、该时点无适用版本、条号不存在或正文未采集时返回 found=false，不提供任何文本——不得凭记忆补写条文。reliability=demo_seed 为演示数据，不得作为正式引用。本工具只给原文，不判断是否支持结论。",
+    sideEffect: "read",
+    resource: "lawdb",
+    version: "1",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["law", "article"],
+      properties: {
+        law: { type: "string" },
+        article: { oneOf: [{ type: "integer", minimum: 1 }, { type: "string" }] },
+        as_of: dateSchema,
+      },
+    },
+    invoke: (p, ctx) => lawGetArticle(ctx.lawdb, p),
+  },
+  {
     name: "citations.verify",
     title: "引用核验",
     description: "抽取文本中的法条引用并做四态核验（来源已核/版本已核/支持待判；无法核实则拦截并可见），支持改引建议。",
@@ -146,6 +167,34 @@ export const TOOLS: readonly ToolDef[] = [
       },
     },
     invoke: (p) => calcInterest(p),
+  },
+  {
+    name: "calc.deadline",
+    title: "期间计算（法定期间与工作日）",
+    description:
+      "确定性计算期间届满日并给出逐步过程、所用法条与节假日数据来源。start 为起算事实发生日（YYYY-MM-DD；只知道月份时写 YYYY-MM，只返回区间、deadline 为 null）。rule=civil：民法典第二百至二百零四条（开始当日不计入；按月、年以到期月对应日为末日，无对应日取月末；末日为周末或法定节假日顺延，调休上班日不顺延），period.unit 用 day / month / year；rule=workday：法律明确规定按工作日计算的期间（如行政处罚法第八十五条），period.unit 用 workday。不处理中止、中断与在途时间；warnings 非空时须原样告知律师。",
+    sideEffect: "read",
+    resource: "pure",
+    version: "1",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["start", "period", "rule"],
+      properties: {
+        start: { type: "string", pattern: "^\\d{4}-\\d{2}(-\\d{2})?$" },
+        period: {
+          type: "object",
+          additionalProperties: false,
+          required: ["unit", "n"],
+          properties: {
+            unit: { type: "string", enum: ["day", "month", "year", "workday"] },
+            n: { type: "integer", minimum: 1 },
+          },
+        },
+        rule: { type: "string", enum: ["civil", "workday"] },
+      },
+    },
+    invoke: (p) => calcDeadline(p),
   },
   {
     name: "redact.scan",
