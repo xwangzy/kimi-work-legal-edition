@@ -81,6 +81,8 @@ test("离所交接：个人事项导出归档、团队事项交负责人与中�
   assert.equal(itemOf(await kC.inv("members.offboarding"), p1).status, "ok");
   await imp(kC, p1, "导出后又加的.txt", "新材料");
   assert.equal(itemOf(await kC.inv("members.offboarding"), p1).status, "needs_archive", "导出之后又有改动：要重新导出");
+  // 内核把与导出同一毫秒的改动按“导出后又有改动”处理（宁可多导一次）；数据库提速后导入与导出可能落在同一毫秒，等时钟走过再导出
+  await new Promise((r) => setTimeout(r, 5));
   await kC.inv("matters.archive", { matter_id: p1 });
   assert.equal(itemOf(await kC.inv("members.offboarding"), p1).status, "ok");
   // 只在本机的事项不能“交给同事”
