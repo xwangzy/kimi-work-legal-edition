@@ -6,7 +6,7 @@ when_to_use: 事项中已有一批诉讼、仲裁或纠纷材料（首次整理�
 arguments: [perspective]
 kwl:
   id: casefile-organize
-  version: 1.0.0
+  version: 1.0.1
   lines: [诉讼仲裁, 企业法务]
   chain: casefile
   tier: beta
@@ -21,7 +21,7 @@ kwl:
 ## 1. 适用范围
 - **交付**：①事实行（`facts.submit` 提交到事实时间线，律师逐条确认）；②《案卷总目录》.xlsx；③《事实时间线》.xlsx；④《缺口清单》.xlsx。
 - **增量整理**：事项中已有事实行时（`facts.list` 有返回），只处理新增材料，不重复提交；律师要求换视角（`$perspective`，如“按付款线索”“按某一方的行为”）时，只重排时间线，不重复提交事实。
-- **不适用**：请求权要件分解与补证（→ `issue-evidence-matrix`）；起诉状（→ `pleading-draft`）；金额计算（→ `amount-calc`）；质证意见（未开放）。
+- **不适用**：请求权要件分解与补证（→ `issue-evidence-matrix`）；起诉状（→ `pleading-draft`）；金额计算（→ `amount-calc`）；质证意见（→ `cross-exam-opinion`）。
 
 ## 2. 输入与前置检查
 1. 调用 `materials.list`，得到全部材料：`in_this_task`、`snapshot_index`、`quality`、`page_count`、`superseded`。这是覆盖清单的唯一依据。

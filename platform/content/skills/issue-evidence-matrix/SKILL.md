@@ -6,7 +6,7 @@ when_to_use: 事项中已有律师确认的事实（事实时间线），需要�
 arguments: [claims]
 kwl:
   id: issue-evidence-matrix
-  version: 1.0.0
+  version: 1.0.1
   lines: [诉讼仲裁, 企业法务]
   chain: casefile
   tier: beta
@@ -21,7 +21,7 @@ kwl:
 ## 1. 适用范围
 - **交付**：《争点—证据矩阵》.xlsx，含工作表“要件矩阵”“抗辩与反驳”“补证清单”“未纳入事实”“依据与核验”。
 - **事实来源**：只有 `facts.list` 中 lawyer_status = confirmed 的事实可以作为“已有证据支撑的事实”进入矩阵；其余事实只列在“未纳入事实”中，提醒律师确认。
-- **不适用**：案卷编目与时间线（→ `casefile-organize`）；起诉状（→ `pleading-draft`）；金额计算（→ `amount-calc`）；对方证据的质证意见（未开放）；胜诉可能性评估（不做）。
+- **不适用**：案卷编目与时间线（→ `casefile-organize`）；起诉状（→ `pleading-draft`）；金额计算（→ `amount-calc`）；对方证据的质证意见（→ `cross-exam-opinion`）；胜诉可能性评估（不做）。
 
 ## 2. 输入与前置检查
 1. 调用 `facts.list`（先取全部，再区分 confirmed 与未确认），并调用 `materials.list` 取得材料名称与识别质量，用于证据列回链。
