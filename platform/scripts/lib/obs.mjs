@@ -124,6 +124,19 @@ export function createObs(o) {
         ok = false;
         reason = "feed_stale";
       }
+      // 服务自报的就绪（控制面：仍是主实例、状态库连接正常——A-7）；原因只取机器代码
+      if (ok && typeof o.ready === "function") {
+        let r = true;
+        try {
+          r = o.ready();
+        } catch {
+          r = "ready_check_failed";
+        }
+        if (r !== true) {
+          ok = false;
+          reason = typeof r === "string" && /^[a-z_]{1,40}$/.test(r) ? r : "not_ready";
+        }
+      }
     }
     res.writeHead(ok ? 200 : 503, { "content-type": "application/json", "cache-control": "no-store" });
     res.end(JSON.stringify(ok ? { ok: true } : { ok: false, reason }));
@@ -192,6 +205,22 @@ export function createObs(o) {
     if (certExpiry !== null) lines.push("# HELP kwl_tls_cert_expiry_seconds 服务证书剩余有效期", "# TYPE kwl_tls_cert_expiry_seconds gauge", `kwl_tls_cert_expiry_seconds{${L}} ${Math.round((certExpiry - now()) / 1000)}`);
     lines.push("# TYPE kwl_process_errors_total counter", ...[...errors].map(([c, n]) => `kwl_process_errors_total{${L},code="${c}"} ${n}`));
     lines.push("# TYPE kwl_log_write_errors_total counter", `kwl_log_write_errors_total{${L}} ${writeErrors}`);
+    // 服务内部指标（A-9 余项：签名速率、上游限流、额度与提醒投递）：只有计数；指标名与标签值按白名单字符集，不合规的整条丢弃
+    let extra = [];
+    try {
+      extra = typeof o.serviceMetrics === "function" ? o.serviceMetrics() : [];
+    } catch {
+      extra = [];
+    }
+    for (const m of Array.isArray(extra) ? extra : []) {
+      if (!m || !/^kwl_[a-z0-9_]{1,60}$/.test(m.name) || !["counter", "gauge"].includes(m.type)) continue;
+      const rows = (Array.isArray(m.values) ? m.values : []).filter(
+        ([labels, v]) => Number.isFinite(v) && Object.entries(labels ?? {}).every(([k, x]) => /^[a-z_]{1,30}$/.test(k) && /^[a-z0-9_.\/-]{1,60}$/.test(String(x))),
+      );
+      if (m.help && /^[^\n]{1,120}$/.test(m.help)) lines.push(`# HELP ${m.name} ${m.help}`);
+      lines.push(`# TYPE ${m.name} ${m.type}`);
+      for (const [labels, v] of rows) lines.push(`${m.name}{${[L, ...Object.entries(labels ?? {}).map(([k, x]) => `${k}="${x}"`)].join(",")}} ${v}`);
+    }
     return `${lines.join("\n")}\n`;
   };
 

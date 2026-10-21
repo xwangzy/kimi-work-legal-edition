@@ -120,16 +120,25 @@ test("运营按人鉴权端到端：命令行生成密钥与名册 → 生产入
   const env1 = generateKeyPairSync("ed25519");
   const seat1 = generateKeyPairSync("ed25519");
   const secret = write("ss", randomBytes(32).toString("hex"));
-  const cpKeysFile = write("cp-keys.json", JSON.stringify({ "cp-t1": String(env1.publicKey.export({ format: "pem", type: "spki" })) }));
-  const seatKeysFile = write("seat-keys.json", JSON.stringify({ "seat-t1": String(seat1.publicKey.export({ format: "pem", type: "spki" })) }));
+  const cpKeysFile = write("cp-keys.json", JSON.stringify({ "cp-test-t1": String(env1.publicKey.export({ format: "pem", type: "spki" })) }));
+  const seatKeysFile = write("seat-keys.json", JSON.stringify({ "seat-test-t1": String(seat1.publicKey.export({ format: "pem", type: "spki" })) }));
+  // 签名服务（A-8）：控制面进程不持签名私钥（回环测试例外下走明文）
+  const signer = await start({
+    role: "cp-signer",
+    environment: "test",
+    listen: { host: "127.0.0.1", port: 0 },
+    insecure_loopback_for_test: true,
+    data_dir: join(dir, "signer"),
+    keys: { envelope: { kid: "cp-test-t1", private_key_file: write("env.pem", pem(env1)) }, seat: { kid: "seat-test-t1", private_key_file: write("seat.pem", pem(seat1)) } },
+  });
+  assert.match(runOnce({ role: "cp-signer", environment: "test", listen: { host: "127.0.0.1", port: 0 }, insecure_loopback_for_test: true, data_dir: join(dir, "signer2"), ops: { deployment: "e2e" }, keys: {} }).stderr, /cp-signer 没有运营接口/);
   const cpCfg = (dataDir: string, ops: unknown) => ({
     role: "control-plane",
     listen: { host: "127.0.0.1", port: 0 },
     insecure_loopback_for_test: true,
     service_secret_file: secret,
     data_dir: join(dir, dataDir),
-    envelope_key: { kid: "cp-t1", private_key_file: write("env.pem", pem(env1)) },
-    seat_key: { kid: "seat-t1", private_key_file: write("seat.pem", pem(seat1)) },
+    signer: { url: `http://127.0.0.1:${signer.port}` },
     // 同一数据目录重启时沿用同一把状态封装密钥与胡椒
     state_key_file: once(`state-${dataDir}.key`),
     code_pepper_file: once(`pep-${dataDir}.key`),

@@ -23,7 +23,8 @@ import { createAuditLog, type AuditEntry, type AuditLog } from "./audit-log.ts";
 import { emptyQuota, grantPoints as quotaGrant, leaseQuota, QuotaError, quotaView, setCap as quotaSetCap, settleLease, type QuotaState } from "./quota.ts";
 import { canonicalJson, verifyBytes, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
 import { OpsAuthError, type OpsAuthorized, type OpsGuard, type OpsPermission } from "@zr-legal/ops-auth";
-import { issueSeatToken, MIN_SEAT_TTL_SECONDS } from "@zr-legal/seat-token";
+import { MIN_SEAT_TTL_SECONDS } from "@zr-legal/seat-token";
+import { localSigner, SignerUnavailableError, type ControlPlaneKeys, type CpSigner, type EnvelopeKind, type SeatAudience } from "./signer.ts";
 import {
   activationCodeMac,
   claimSecretHash,
@@ -42,7 +43,6 @@ import {
   enrollProofBytes,
   policyRelaxations,
   policySigningBytes,
-  sealEnvelope,
   strictestTemplate,
   validateConnectorDoc,
   validatePolicyBody,
@@ -66,24 +66,18 @@ import {
   type CpAuditPage,
 } from "@zr-legal/firm-trust";
 
-export interface CpKeyPair {
-  kid: string;
-  privateKey: KeyObject;
-  publicKey: KeyObject;
-}
+export type { ControlPlaneKeys, CpKeyPair } from "./signer.ts";
 
-export interface ControlPlaneKeys {
-  /** 控制面文档信封签名密钥（许可、目录、盐、策略外层、连接器目录、网关订阅）。 */
-  envelope: CpKeyPair;
-  /** 席位令牌签发密钥（网关、检索服务离线验签）。 */
-  seat: CpKeyPair;
-}
-
-/** 开发与测试用：生成控制面的两对密钥（生产在 KMS，公钥随客户端与网关构建固定）。 */
-export function devControlPlaneKeys(): ControlPlaneKeys {
+/**
+ * 开发与测试用：生成控制面的密钥（生产在签名服务 cp-signer，公钥随客户端与网关构建固定）。
+ * `audiences: true` 另为支持、通知、中继各生成一把受众席位密钥（A-8 按受众拆分）。
+ */
+export function devControlPlaneKeys(o: { audiences?: boolean } = {}): ControlPlaneKeys {
   const e = generateKeyPairSync("ed25519");
   const s = generateKeyPairSync("ed25519");
-  return { envelope: { kid: "cp-dev1", ...e }, seat: { kid: "seat-dev1", ...s } };
+  const keys: ControlPlaneKeys = { envelope: { kid: "cp-dev1", ...e }, seat: { kid: "seat-dev1", ...s } };
+  if (o.audiences) keys.seatAudiences = { support: { kid: "seat-support-dev1", ...generateKeyPairSync("ed25519") }, notify: { kid: "seat-notify-dev1", ...generateKeyPairSync("ed25519") }, relay: { kid: "seat-relay-dev1", ...generateKeyPairSync("ed25519") } };
+  return keys;
 }
 
 export interface DeviceRecord {
@@ -188,7 +182,10 @@ export interface TenantRecord {
 }
 
 export interface ControlPlaneOptions {
-  keys: ControlPlaneKeys;
+  /** 进程内签名密钥（开发、测试、单机试点）；与 signer 二选一。 */
+  keys?: ControlPlaneKeys;
+  /** 签名者（v9.3 A-8）：生产入口为独立签名服务的 mTLS 客户端（connectRemoteSigner），控制面进程不持私钥。 */
+  signer?: CpSigner;
   /** 网关与检索服务订阅凭据（G0：共享密钥；生产为 mTLS）。 */
   serviceSecret: string;
   /** 席位令牌有效期（秒；不低于 72 小时）。 */
@@ -197,8 +194,13 @@ export interface ControlPlaneOptions {
   maxBodyBytes?: number;
   /** 每租户预先吊销的设备数上限（缺省 1000；用例可调小）。 */
   maxPreRevoked?: number;
-  /** 状态持久化（试点形态，state-store.ts）：未给出 = 只在内存（开发与测试）。 */
+  /** 状态持久化（state-store.ts 文件两代交替；pg-state-store.ts PostgreSQL 一主多备）：未给出 = 只在内存（开发与测试）。 */
   stateStore?: StateStore;
+  /**
+   * 防重放随机数的外部副本（v9.3 A-7，nonce-mirror.ts 存 Redis）：启动时并入 initial（换主实例不丢最近的随机数）；
+   * 每见到一个新随机数即 record（异步，失败只计数，降级为状态快照里的随机数）。
+   */
+  nonceMirror?: { readonly initial?: Iterable<[string, number]>; record(key: string, exp: number): void };
   /** 运营审计流水（S14 v0，audit-log.ts）：未给出 = 只在内存。 */
   auditLog?: AuditLog;
   /**
@@ -250,7 +252,10 @@ export interface ControlPlaneOps {
   /** 运营代设月度上限（律所管理员通常在客户端自己设；null = 不设上限）。 */
   setQuotaCap(tid: string, cap: number | null): void;
   tenant(tid: string): TenantRecord | undefined;
-  /** 用控制面自己的信封密钥签任意文档（演练“控制面被攻破”时攻击者同样能做到）。 */
+  /**
+   * 用控制面自己的信封密钥签任意文档（演练“控制面被攻破”时攻击者同样能做到）。只有进程内签名者有：
+   * 接独立签名服务（生产入口）时抛错——签名服务只签登记过的种类与合格的文档（A-8）。
+   */
   seal<T>(kind: string, body: T): CpEnvelope<T>;
   /** 网关订阅版本递增（直接改了存储之后调用）。 */
   touch(): void;
@@ -259,7 +264,8 @@ export interface ControlPlaneOps {
 export interface ControlPlane {
   server: Server;
   ops: ControlPlaneOps;
-  publicKeys: { envelope: Record<string, string>; seat: Record<string, string> };
+  /** seat = 全部席位公钥（通用 + 各受众）；seatFor(受众) = 只给那一受众服务的公钥表（A-8 按受众拆分）。 */
+  publicKeys: { envelope: Record<string, string>; seat: Record<string, string>; seatFor(aud?: SeatAudience): Record<string, string> };
 }
 
 class CpError extends Error {
@@ -399,14 +405,24 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   onboardingSweep.unref();
   // 席位令牌签发 96 小时（复核 S6-A01）：客户端剩余不足 73 小时即续期，任何时刻控制面停机后都还有 ≥ 72 小时可用（第 02 篇 §10、§13 第 10 条）
   const seatTtl = Math.max(MIN_SEAT_TTL_SECONDS, o.seatTtlSeconds ?? SEAT_TTL_DEFAULT_SECONDS);
-  const seal = <T>(kind: string, body: T): CpEnvelope<T> => sealEnvelope(kind, body, o.keys.envelope);
+  const signer: CpSigner = o.signer ?? (o.keys ? localSigner(o.keys) : (null as never));
+  if (!signer) throw new Error("控制面须给出签名者（signer）或进程内密钥（keys）");
+  const seal = <T>(kind: EnvelopeKind, body: T): Promise<CpEnvelope<T>> => signer.sealEnvelope(kind, body, now());
+  /** 席位令牌与各服务专用凭据：签发时刻与回复里的到期时刻由同一时刻推出（云端持久化与 KMS 设计 v1 F-3）。 */
+  const seatToken = async (t: TenantRecord, dev: DeviceRecord, sid: string, ttlSeconds: number, aud?: SeatAudience) => {
+    const at = now();
+    const token = await signer.issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid, dev: dev.cert.deviceId, ...(aud ? { aud } : {}), ttlSeconds, at });
+    return { token, expires_at: iso(at + ttlSeconds * 1000) };
+  };
 
+  for (const [k, exp] of o.nonceMirror?.initial ?? []) if (exp > now() && exp > (nonces.get(k) ?? 0)) nonces.set(k, exp);
   const seenNonce = (key: string): boolean => {
     const t = now();
     if (nonces.size > 20_000) for (const [k, exp] of nonces) if (exp < t) nonces.delete(k);
     if (nonces.has(key)) return true;
     nonces.set(key, t + 10 * 60_000);
     noncesDirty = true;
+    o.nonceMirror?.record(key, t + 10 * 60_000);
     return false;
   };
 
@@ -419,9 +435,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const licenseValid = (t: TenantRecord): boolean => Date.parse(t.subscription_until) > now();
 
   // ─── 开通与入组（第 13 批） ───
+  // 接独立签名服务时控制面没有信封私钥：胡椒必须另给（生产入口本来就必填，D-102）
+  if (!o.codePepper && !signer.envelopePrivateKey) throw new Error("接独立签名服务时须给出开通码胡椒（codePepper）");
   const codePepper: Buffer = o.codePepper
     ? Buffer.from(o.codePepper)
-    : Buffer.from(hkdfSync("sha256", o.keys.envelope.privateKey.export({ format: "der", type: "pkcs8" }), Buffer.alloc(0), "kwl-cp-code-pepper/1", 32));
+    : Buffer.from(hkdfSync("sha256", signer.envelopePrivateKey!.export({ format: "der", type: "pkcs8" }), Buffer.alloc(0), "kwl-cp-code-pepper/1", 32));
   if (codePepper.byteLength !== 32) throw new Error("开通码胡椒须为 32 字节");
   /** 律所标识 = 租户编号去掉 ten_ 前缀（与内核 identity.ts 的 ten_<律所标识> 对应）；不合规的租户不能发开通码。 */
   const firmSlugOf = (tid: string): string | null => (/^ten_[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(tid) ? tid.slice(4) : null);
@@ -676,7 +694,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       return { names_cleared: names, records_removed: removed };
     },
     tenant: (tid) => tenants.get(tid),
-    seal,
+    seal(kind, body) {
+      if (!signer.sealSync) throw new Error("接独立签名服务时不能在进程内签任意文档（A-8）");
+      return signer.sealSync(kind, body);
+    },
     touch() {
       feedVersion += 1;
     },
@@ -844,7 +865,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
    * 已吊销设备的签名请求（签名仍用它登记时的公钥核验）→ 403 + 控制面签名的吊销通知（复核 S6-A02、S6-B01）：
    * 设备据此进入退出模式。只有签名有效的请求才拿得到通知（通知本身只是收紧信号）。
    */
-  const revokedNotice = (req: IncomingMessage, path: string, raw: string): never | void => {
+  const revokedNotice = async (req: IncomingMessage, path: string, raw: string): Promise<void> => {
     const v = verifyDeviceRequest(req.headers, { method: req.method ?? "GET", path, body: raw }, {
       publicKeyFor: (tid, deviceId) => {
         const d = tenants.get(tid)?.devices.get(deviceId);
@@ -856,14 +877,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (!v.ok) return;
     const d = tenants.get(v.tid)!.devices.get(v.deviceId)!;
     const body: DeviceRevocationNotice = { tid: v.tid, device_id: v.deviceId, revoked_at: d.revoked_at! };
-    throw new CpError(403, "device_revoked", "设备已吊销", { notice: seal("kwl-device-revoked", body) });
+    throw new CpError(403, "device_revoked", "设备已吊销", { notice: await seal("kwl-device-revoked", body) });
   };
 
   /** 设备签名请求核验 → 设备记录（未吊销）；已吊销设备得到签名的吊销通知。 */
-  const authDevice = (req: IncomingMessage, path: string, raw: string): { t: TenantRecord; dev: DeviceRecord } => {
+  const authDevice = async (req: IncomingMessage, path: string, raw: string): Promise<{ t: TenantRecord; dev: DeviceRecord }> => {
     const v = verifyDeviceRequest(req.headers, { method: req.method ?? "GET", path, body: raw }, { publicKeyFor: devicePub, now: now(), seenNonce });
     if (!v.ok) {
-      if (v.reason === "device_unknown_or_revoked") revokedNotice(req, path, raw);
+      if (v.reason === "device_unknown_or_revoked") await revokedNotice(req, path, raw);
       // 时钟偏差：附控制面当前时间，客户端据此告警“本机时钟快 / 慢约几分钟”（复核 S6-B37）
       throw new CpError(401, v.reason, "设备签名无效、设备未登记或已吊销", v.reason === "device_auth_stale" ? { server_time: iso() } : undefined);
     }
@@ -1199,7 +1220,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const revokedAt = existing?.revoked_at ?? t.preRevoked.get(cert.deviceId)?.revoked_at ?? null;
       if (revokedAt) {
         const body: DeviceRevocationNotice = { tid: t.tid, device_id: cert.deviceId, revoked_at: revokedAt };
-        throw new CpError(403, "device_revoked", "设备已吊销", { notice: seal("kwl-device-revoked", body) });
+        throw new CpError(403, "device_revoked", "设备已吊销", { notice: await seal("kwl-device-revoked", body) });
       }
       const changed = !existing || existing.cert.signature !== cert.signature;
       if (changed) {
@@ -1343,7 +1364,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // ─── 网关与检索服务订阅（服务间凭据） ───
     if (method === "GET" && p === "/v1/feed/gateway") {
       requireService(req);
-      return send(res, 200, seal("kwl-gateway-feed", feedBody()));
+      return send(res, 200, await seal("kwl-gateway-feed", feedBody()));
     }
     // ─── 额度租约（S3 v0）：网关领取一段点数、本地扣减、按租约回报累计用量（服务间凭据） ───
     if (method === "POST" && p === "/v1/quota/lease") {
@@ -1364,15 +1385,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
 
     // 以下一律设备签名
-    const { t, dev } = authDevice(req, path, raw);
+    const { t, dev } = await authDevice(req, path, raw);
     const mark = (action: string, target: string | null = null) =>
       auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "device", id: dev.cert.deviceId, fp: certFingerprint(dev.cert) }, action, target }, written: false });
 
-    if (method === "GET" && p === "/v1/directory") return send(res, 200, seal("kwl-device-directory", directoryBody(t)));
-    if (method === "GET" && p === "/v1/license") return send(res, 200, seal("kwl-license", issueLicense(t)));
+    if (method === "GET" && p === "/v1/directory") return send(res, 200, await seal("kwl-device-directory", directoryBody(t)));
+    if (method === "GET" && p === "/v1/license") return send(res, 200, await seal("kwl-license", issueLicense(t)));
     if (method === "GET" && p === "/v1/tenant-salt") {
       const body: TenantSaltBody = { tid: t.tid, purpose: "anon_matter", salt_b64: t.salt_b64, issued_at: t.created_at };
-      return send(res, 200, seal("kwl-tenant-salt", body));
+      return send(res, 200, await seal("kwl-tenant-salt", body));
     }
     if (method === "POST" && p === "/v1/seat-token") {
       mark("seat_token.issue", t.seatsByUser.get(dev.cert.memberId)?.sid ?? null);
@@ -1381,10 +1402,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
-      // 签发时刻与回复里的到期时刻由同一时刻推出（云端持久化与 KMS 设计 v1 F-3）
-      const at = now();
-      const token = issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid: seat.sid, dev: dev.cert.deviceId, kid: o.keys.seat.kid }, o.keys.seat.privateKey, seatTtl, at);
-      return send(res, 200, { token, expires_at: iso(at + seatTtl * 1000) });
+      return send(res, 200, await seatToken(t, dev, seat.sid, seatTtl));
     }
     // 支持服务专用的短期凭据（第 9 批复核 S9B-03）：受众只有 "support"、15 分钟；网关、检索、分发拒收——诊断包上传不再把通用席位令牌交给支持域
     if (method === "POST" && p === "/v1/support-token") {
@@ -1394,9 +1412,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
-      const at = now();
-      const token = issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid: seat.sid, dev: dev.cert.deviceId, kid: o.keys.seat.kid, aud: ["support"] }, o.keys.seat.privateKey, SUPPORT_TOKEN_TTL_SECONDS, at);
-      return send(res, 200, { token, expires_at: iso(at + SUPPORT_TOKEN_TTL_SECONDS * 1000) });
+      return send(res, 200, await seatToken(t, dev, seat.sid, SUPPORT_TOKEN_TTL_SECONDS, "support"));
     }
     // 通知服务专用凭据（第 10 批 S9）：受众只有 "notify"；网关、检索、分发、支持服务都拒收——期限提醒的密文与投递不用通用席位令牌
     if (method === "POST" && p === "/v1/notify-token") {
@@ -1406,9 +1422,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
-      const at = now();
-      const token = issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid: seat.sid, dev: dev.cert.deviceId, kid: o.keys.seat.kid, aud: ["notify"] }, o.keys.seat.privateKey, NOTIFY_TOKEN_TTL_SECONDS, at);
-      return send(res, 200, { token, expires_at: iso(at + NOTIFY_TOKEN_TTL_SECONDS * 1000) });
+      return send(res, 200, await seatToken(t, dev, seat.sid, NOTIFY_TOKEN_TTL_SECONDS, "notify"));
     }
     // 共享中继专用凭据（第 11 批 S11）：受众只有 "relay"；网关、检索、分发、支持、通知服务都拒收——团队事项的密文同步不用通用席位令牌。
     // 是否允许按律所策略由中继服务核对（订阅里的 share_relay）；这里只看席位与许可
@@ -1419,17 +1433,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
-      const at = now();
-      const token = issueSeatToken({ tid: t.tid, uid: dev.cert.memberId, sid: seat.sid, dev: dev.cert.deviceId, kid: o.keys.seat.kid, aud: ["relay"] }, o.keys.seat.privateKey, RELAY_TOKEN_TTL_SECONDS, at);
-      return send(res, 200, { token, expires_at: iso(at + RELAY_TOKEN_TTL_SECONDS * 1000) });
+      return send(res, 200, await seatToken(t, dev, seat.sid, RELAY_TOKEN_TTL_SECONDS, "relay"));
     }
-    if (method === "GET" && p === "/v1/policy") return send(res, 200, seal("kwl-firm-policy-current", t.policy));
+    if (method === "GET" && p === "/v1/policy") return send(res, 200, await seal("kwl-firm-policy-current", t.policy));
     // ─── 本所用量与上限（S3 v0）：成员看本所本月用量、上限与自己的用量；管理员与合伙人另看按成员明细与池余额 ───
     if (method === "GET" && p === "/v1/quota") {
       const detail = dev.cert.role === "admin" || dev.cert.role === "partner";
       const owner = new Map([...t.seatsByUser.values()].map((x) => [x.sid, x.uid]));
       const view = quotaView(t.quota, now(), { detail, seatOwner: (sid) => owner.get(sid) ?? null, ownSid: t.seatsByUser.get(dev.cert.memberId)?.sid ?? null });
-      return send(res, 200, seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), ...view }));
+      return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), ...view }));
     }
     if (method === "PUT" && p === "/v1/quota/cap") {
       mark("quota.cap_set");
@@ -1448,10 +1460,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const limit = Number(url.searchParams.get("limit") ?? "500");
       if (!Number.isSafeInteger(after) || after < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new CpError(400, "audit_range_invalid", "分页参数不合法");
       const page: CpAuditPage = { tid: t.tid, records: auditLog.list(t.tid, after, limit), head: auditLog.head(t.tid), issued_at: iso() };
-      return send(res, 200, seal("kwl-cp-audit-page", page));
+      return send(res, 200, await seal("kwl-cp-audit-page", page));
     }
     if (method === "GET" && p === "/v1/connectors") {
-      return send(res, 200, seal("kwl-firm-connectors", { tid: t.tid, version: t.connectorsVersion, issued_at: iso(), entries: [...t.connectors.values()] }));
+      return send(res, 200, await seal("kwl-firm-connectors", { tid: t.tid, version: t.connectorsVersion, issued_at: iso(), entries: [...t.connectors.values()] }));
     }
     if (method === "PUT" && p.startsWith("/v1/anon-matters/")) {
       const anon = decodeURIComponent(p.slice("/v1/anon-matters/".length));
@@ -1673,7 +1685,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       } catch {
         // 回滚失败不影响应答
       }
-      const ce = e instanceof CpError ? e : e instanceof QuotaError ? new CpError(e.status, e.code, e.message) : new CpError(500, "control_plane_error", "控制面错误");
+      const ce =
+        e instanceof CpError
+          ? e
+          : e instanceof QuotaError
+            ? new CpError(e.status, e.code, e.message)
+            : e instanceof SignerUnavailableError
+              ? new CpError(503, "signer_unavailable", "控制面签名服务暂不可用，请稍后重试")
+              : new CpError(500, "control_plane_error", "控制面错误");
       const ctx = auditCtx.get(res);
       if (ctx && (ctx.written || rejectedAllowed(ctx.entry))) {
         try {
@@ -1700,11 +1719,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
   });
 
-  const pem = (k: KeyObject) => k.export({ format: "pem", type: "spki" }).toString();
+  const pk = signer.publicKeys();
   return {
     server,
     ops,
-    publicKeys: { envelope: { [o.keys.envelope.kid]: pem(o.keys.envelope.publicKey) }, seat: { [o.keys.seat.kid]: pem(o.keys.seat.publicKey) } },
+    publicKeys: { envelope: pk.envelope, seat: pk.seat, seatFor: (aud?: SeatAudience) => ({ [aud ? (pk.seat_audiences[aud] ?? pk.seat_general) : pk.seat_general]: pk.seat[aud ? (pk.seat_audiences[aud] ?? pk.seat_general) : pk.seat_general]! }) },
   };
 }
 

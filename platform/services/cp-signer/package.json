@@ -1,0 +1,16 @@
+{
+  "name": "@zr-legal/cp-signer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "控制面签名服务（v9.3 A-8；云端持久化与 KMS 设计 v1 §4）：只接受结构化签名请求（登记过的信封种类、席位令牌字段），按种类核对后签名；mTLS 调用方核对；签名账哈希链、记不进去不签",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@zr-legal/control-plane": "*",
+    "@zr-legal/firm-trust": "*",
+    "@zr-legal/keys": "*",
+    "@zr-legal/seat-token": "*"
+  }
+}

@@ -131,11 +131,23 @@ test("按配置起控制面与检索服务（HTTPS）：检索服务取到签名
   const seat1 = generateKeyPairSync("ed25519");
   const secret = write("service-secret", randomBytes(32).toString("hex"));
   const tls = { cert_file: join(dir, "tls.crt"), key_file: join(dir, "tls.key") };
+  // 签名服务（A-8）：私钥只在这里；只收 mTLS（自签名证书兼作客户端证书的签发 CA，调用方身份为 CN 127.0.0.1）
+  const signerKeys = { envelope: { kid: "cp-test-t1", private_key_file: write("env.pem", pem(env1)) }, seat: { kid: "seat-test-t1", private_key_file: write("seat.pem", pem(seat1)) } };
+  const signerBase = { role: "cp-signer", environment: "test", listen: { host: "127.0.0.1", port: 0 }, tls: { ...tls, client_ca_file: join(dir, "tls.crt") }, data_dir: dir, allowed_callers: ["127.0.0.1"], keys: signerKeys };
+  assert.match(runOnce({ ...signerBase, keys: { ...signerKeys, envelope: { ...signerKeys.envelope, kid: "cp-prod-t1" } } }).stderr, /keys\.envelope\.kid 须为 cp-test-/, "密钥编号的环境与部署不符");
+  assert.match(runOnce({ ...signerBase, allowed_callers: [] }).stderr, /allowed_callers/);
+  assert.match(runOnce({ ...signerBase, tls }).stderr, /client_ca_file/, "签名服务只收 mTLS");
+  assert.match(runOnce({ ...signerBase, keys: { ...signerKeys, seat: { kid: "seat-test-t2", private_key_file: write("ec.pem", String(generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ format: "pem", type: "pkcs8" }))) } } }).stderr, /Ed25519/);
+  const signer = await start(signerBase);
+  const signerRef = { url: `https://127.0.0.1:${signer.port}`, client_cert_file: join(dir, "tls.crt"), client_key_file: join(dir, "tls.key"), ca_file: join(dir, "tls.crt") };
+  // 控制面进程不得持签名私钥（A-8）
+  assert.match(runOnce({ role: "control-plane", listen: { host: "127.0.0.1", port: 0 }, tls, service_secret_file: secret, data_dir: dir, envelope_key: { kid: "cp-t1", private_key_file: join(dir, "env.pem") }, seat_key: { kid: "seat-t1", private_key_file: join(dir, "seat.pem") } }).stderr, /不得持有签名私钥/);
+  assert.match(runOnce({ role: "control-plane", listen: { host: "127.0.0.1", port: 0 }, tls, service_secret_file: secret, data_dir: dir }).stderr, /缺少 signer/);
   // 控制面状态未封装：拒绝
-  const unsealed = runOnce({ role: "control-plane", listen: { host: "127.0.0.1", port: 0 }, tls, service_secret_file: secret, data_dir: dir, envelope_key: { kid: "cp-t1", private_key_file: write("env.pem", pem(env1)) }, seat_key: { kid: "seat-t1", private_key_file: write("seat.pem", pem(seat1)) } });
+  const unsealed = runOnce({ role: "control-plane", listen: { host: "127.0.0.1", port: 0 }, tls, service_secret_file: secret, data_dir: dir, signer: signerRef });
   assert.match(unsealed.stderr, /state_key_file/);
   // 开通码胡椒缺失、服务间凭据太弱：拒绝（复核 A-15）
-  const cpBase = { role: "control-plane", listen: { host: "127.0.0.1", port: 0 }, tls, data_dir: dir, envelope_key: { kid: "cp-t1", private_key_file: join(dir, "env.pem") }, seat_key: { kid: "seat-t1", private_key_file: join(dir, "seat.pem") }, state_key_file: write("state0.key", randomBytes(32).toString("hex")) };
+  const cpBase = { role: "control-plane", listen: { host: "127.0.0.1", port: 0 }, tls, data_dir: dir, signer: signerRef, state_key_file: write("state0.key", randomBytes(32).toString("hex")) };
   assert.match(runOnce({ ...cpBase, service_secret_file: secret }).stderr, /code_pepper_file/);
   assert.match(runOnce({ ...cpBase, service_secret_file: write("weak", "short-secret"), code_pepper_file: write("pep0", randomBytes(32).toString("hex")) }).stderr, /service_secret_file 须为至少 32 字节/);
   // 格式对、但明显是手填的低熵值：服务间凭据、胡椒、状态封装密钥一律拒绝（第 14 批第二轮复核 A 余项）
@@ -148,15 +160,14 @@ test("按配置起控制面与检索服务（HTTPS）：检索服务取到签名
     tls,
     service_secret_file: secret,
     data_dir: dir,
-    envelope_key: { kid: "cp-t1", private_key_file: join(dir, "env.pem") },
-    seat_key: { kid: "seat-t1", private_key_file: join(dir, "seat.pem") },
+    signer: signerRef,
     state_key_file: write("state.key", randomBytes(32).toString("hex")),
     code_pepper_file: write("pepper.key", randomBytes(32).toString("hex")),
   });
-  const cpKeys = write("cp-keys.json", JSON.stringify({ "cp-t1": String(env1.publicKey.export({ format: "pem", type: "spki" })) }));
-  const seatKeys = write("seat-keys.json", JSON.stringify({ "seat-t1": String(seat1.publicKey.export({ format: "pem", type: "spki" })) }));
+  const cpKeys = write("cp-keys.json", JSON.stringify({ "cp-test-t1": String(env1.publicKey.export({ format: "pem", type: "spki" })) }));
+  const seatKeys = write("seat-keys.json", JSON.stringify({ "seat-test-t1": String(seat1.publicKey.export({ format: "pem", type: "spki" })) }));
   // 检索服务：控制面公钥不对 → 首次取不到吊销集 → 拒绝启动
-  const wrongKeys = write("cp-keys-wrong.json", JSON.stringify({ "cp-t1": String(generateKeyPairSync("ed25519").publicKey.export({ format: "pem", type: "spki" })) }));
+  const wrongKeys = write("cp-keys-wrong.json", JSON.stringify({ "cp-test-t1": String(generateKeyPairSync("ed25519").publicKey.export({ format: "pem", type: "spki" })) }));
   const noLogs = { role: "search", listen: { host: "127.0.0.1", port: 0 }, tls, service_secret_file: secret, control_plane: { url: `https://127.0.0.1:${cp.port}`, keys_file: cpKeys }, seat_keys_file: seatKeys, upstream: { api_key_file: write("upstream.key", "sk-test-not-used") } };
   // 可观测性（A-9）：没有日志位置拒绝启动；指标监听在回环以外又没有令牌也拒绝
   assert.match(spawnSync(process.execPath, [script, "--config", cfgFile("search-nolog.json", noLogs)], { encoding: "utf8", env: { ...process.env, NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") }, timeout: 30_000 }).stderr, /log_dir 或 data_dir/);

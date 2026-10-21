@@ -1,5 +1,10 @@
 export * from "./server.ts";
+export * from "./signer.ts";
 export * from "./feed-subscriber.ts";
 export * from "./state-store.ts";
+export * from "./pg-state-store.ts";
+export * from "./nonce-mirror.ts";
+export { connectPg, parsePgUrl, PgError, type PgConn, type PgConnOptions } from "./pg-wire.ts";
+export { connectRedis, parseRedisUrl, type RedisOptions } from "./resp.ts";
 export * from "./audit-log.ts";
 export * from "./quota.ts";

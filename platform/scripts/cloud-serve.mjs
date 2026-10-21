@@ -12,7 +12,7 @@
  * 启动日志只有角色、端口与“已就绪”，不含任何密钥、租户或请求内容。
  *
  * 配置（JSON）：
- * { "role": "control-plane|gateway|search|dist|support|notify|relay",
+ * { "role": "control-plane|cp-signer|gateway|search|dist|support|notify|relay",
  *   "listen": { "host": "0.0.0.0", "port": 8443 },
  *   "tls": { "cert_file": "...", "key_file": "..." },
  *   "service_secret_file": "...",                         // 服务间凭据（G1 改 mTLS）；至少 32 字节随机：64 位以上十六进制或 43 位以上 base64url
@@ -20,10 +20,19 @@
  *   "control_plane": { "url": "https://cp...", "keys_file": "cp-public-keys.json" },   // 订阅吊销集（控制面以外的角色）
  *   "seat_keys_file": "seat-public-keys.json",          // 席位令牌验签公钥（控制面以外的角色）
  *   "data_dir": "...",                                  // 分发、支持、通知、中继的存储根；控制面的状态与审计也放这里
- *   // 控制面：
- *   "envelope_key": { "kid": "cp-prod-1", "private_key_file": "..." }, "seat_key": { "kid": "seat-prod-1", "private_key_file": "..." },
+ *   // 控制面（v9.3 A-8：控制面进程不持签名私钥，配了 envelope_key / seat_key 即拒绝启动；一律经签名服务）：
+ *   "signer": { "url": "https://cp-signer:8443", "client_cert_file": "...", "client_key_file": "...", "ca_file": "...", "servername": "cp-signer" },
  *   "state_key_file": "...",                             // 32 字节十六进制
+ *   // 可选（A-7 一主多备）：状态存 PostgreSQL、防重放随机数存 Redis；不配即单实例文件（<data_dir>/control-plane/state.1/.2）
+ *   "state_store": { "kind": "postgres", "url": "postgres://kwl_cp@db.internal:5432/kwl", "password_file": "...", "ca_file": "..." },
+ *   "nonce_store": { "kind": "redis", "url": "rediss://cache.internal:6379", "password_file": "...", "ca_file": "..." },
  *   "code_pepper_file": "...",                           // 开通码 HMAC 胡椒，32 字节十六进制（与签名密钥分开，KMS 挂载；复核 A-15 起必填）
+ *   // 签名服务 cp-signer（A-8；签名区、无公网，只收控制面的 mTLS）：
+ *   "environment": "prod",                              // 密钥编号须为 <用途>-<环境>-<编号>（cp-prod-2612a、seat-prod-2612a、seat-relay-prod-2612a）
+ *   "tls": { "cert_file": "...", "key_file": "...", "client_ca_file": "..." },   // 只认这个 CA 签发的客户端证书
+ *   "allowed_callers": ["spiffe://kwl/prod/cp-api"],    // 客户端证书的 URI SAN（或 CN）
+ *   "keys": { "envelope": { "kid": "cp-prod-2612a", "private_key_file": "..." }, "seat": { "kid": "seat-prod-2612a", "private_key_file": "..." },
+ *             "seat_audiences": { "support": { ... }, "notify": { ... }, "relay": { ... } } },   // 席位密钥按受众拆分；缺的受众用通用席位密钥
  *   // 网关 / 检索：
  *   "upstream": { "base_url": "https://api.moonshot.cn/v1", "api_key_file": "..." },
  *   "content_safety_policy_file": "...",                 // 网关可选
@@ -42,7 +51,8 @@
  * 保留 `log_retention_days` 天（缺省 190）；/healthz 与 /readyz 由入口应答；指标另起监听 `metrics`：
  *   "metrics": { "host": "127.0.0.1", "port": 9464, "token_file": "..." }   // 监听回环以外的地址必须给令牌（至少 32 字节随机）
  */
-import { createPrivateKey, createPublicKey } from "node:crypto";
+import { createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
+import { hostname } from "node:os";
 import { createServer as createHttpsServer } from "node:https";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { BlockList, isIPv4, isIPv6 } from "node:net";
@@ -65,7 +75,7 @@ try {
 } catch {
   fail("配置文件读不出或不是 JSON");
 }
-const ROLES = ["control-plane", "gateway", "search", "dist", "support", "notify", "relay"];
+const ROLES = ["control-plane", "cp-signer", "gateway", "search", "dist", "support", "notify", "relay"];
 if (!ROLES.includes(cfg.role)) fail(`role 须为 ${ROLES.join(" / ")}`);
 const read = (f, what) => {
   if (typeof f !== "string" || !f) fail(`缺少 ${what}`);
@@ -82,6 +92,8 @@ const insecure = cfg.insecure_loopback_for_test === true;
 if (insecure && host !== "127.0.0.1") fail("insecure_loopback_for_test 只许监听 127.0.0.1");
 if (!insecure && !cfg.tls) fail("生产入口只接受 HTTPS：缺少 tls.cert_file / tls.key_file");
 const tls = insecure ? null : { cert: read(cfg.tls.cert_file, "tls.cert_file"), key: read(cfg.tls.key_file, "tls.key_file"), minVersion: "TLSv1.2" };
+// 签名服务只收 mTLS：客户端证书必须由 client_ca_file 签发（握手层拒绝），再按 allowed_callers 核对身份（A-8）
+if (cfg.role === "cp-signer" && tls) Object.assign(tls, { ca: read(cfg.tls.client_ca_file, "tls.client_ca_file"), requestCert: true, rejectUnauthorized: true });
 // 公钥表 { kid: PEM }：只收公钥（复核 RA10A-01 / RA10B-01：createPublicKey 也接受私钥 PEM，私钥放错位置要拒绝）；读不出、不是 JSON、PEM 不合法一律拒绝启动（RA10B-21）
 const pubMap = (file, what) => {
   let raw;
@@ -203,19 +215,145 @@ const opsPathBlocked = (req) => {
   return true;
 };
 
-if (cfg.role === "control-plane") {
-  const cpMod = await import(join(root, "services/control-plane/src/index.ts"));
-  const pair = (k, what) => {
+let serviceMetrics = null;
+let readyCheck = null;
+if (cfg.role === "cp-signer") {
+  // ─── 签名服务（A-8）：私钥只在这里；只签登记过的种类与合格的文档，签名账记不进去就不签 ───
+  const env = String(cfg.environment ?? "");
+  if (!/^(prod|stg|dev|test)$/.test(env)) fail("environment 须为 prod / stg / dev / test（密钥编号按环境区分）");
+  if (cfg.control_plane || cfg.service_secret_file || cfg.ops) fail("签名服务不订阅吊销集、不用服务间凭据、没有运营接口：删去 control_plane / service_secret_file / ops");
+  const callers = Array.isArray(cfg.allowed_callers) ? cfg.allowed_callers.map(String).filter((x) => /^(spiffe:\/\/[A-Za-z0-9._\/-]{1,200}|[A-Za-z0-9._-]{1,64})$/.test(x)) : [];
+  if (!insecure && (callers.length === 0 || callers.length !== cfg.allowed_callers.length)) fail("allowed_callers 须列出控制面的客户端证书身份（spiffe://… 或 CN）");
+  const kidRe = new RegExp(`^(cp|seat|seat-support|seat-notify|seat-relay)-${env}-[0-9a-z]{1,16}$`);
+  const seen = new Set();
+  const signPair = (k, what, use) => {
     if (!k?.kid || !k?.private_key_file) fail(`缺少 ${what}.kid / ${what}.private_key_file`);
-    const privateKey = createPrivateKey(read(k.private_key_file, `${what}.private_key_file`));
-    return { kid: String(k.kid), privateKey, publicKey: createPublicKey(privateKey) };
+    const kid = String(k.kid);
+    if (!kidRe.test(kid) || !kid.startsWith(`${use}-`)) fail(`${what}.kid 须为 ${use}-${env}-<编号>（密钥编号按用途与环境区分，云端持久化与 KMS 设计 §4.5）`);
+    if (seen.has(kid)) fail(`密钥编号重复：${kid}`);
+    seen.add(kid);
+    let privateKey;
+    try {
+      privateKey = createPrivateKey(read(k.private_key_file, `${what}.private_key_file`));
+    } catch {
+      fail(`${what}.private_key_file 不是合法的私钥`);
+    }
+    if (privateKey.asymmetricKeyType !== "ed25519") fail(`${what} 须为 Ed25519 私钥`);
+    return { kid, privateKey, publicKey: createPublicKey(privateKey) };
   };
+  const ks = cfg.keys ?? {};
+  const audiences = {};
+  for (const a of ["support", "notify", "relay"]) if (ks.seat_audiences?.[a]) audiences[a] = signPair(ks.seat_audiences[a], `keys.seat_audiences.${a}`, `seat-${a}`);
+  const signerMod = await import(join(root, "services/cp-signer/src/index.ts"));
+  const signer = signerMod.createSignerService({
+    keys: { envelope: signPair(ks.envelope, "keys.envelope", "cp"), seat: signPair(ks.seat, "keys.seat", "seat"), seatAudiences: audiences },
+    ledgerFile: join(dataDir("cp-signer"), "ledger.jsonl"),
+    allowedCallers: callers,
+    insecureForTest: insecure,
+  });
+  svc = signer.server;
+  // 签名速率（A-9 余项）：按操作、种类、结果计数；告警规则对照 7 日基线
+  serviceMetrics = () => {
+    const values = Object.entries(signer.metrics().counts).map(([k, n]) => {
+      const [op, kind = "-", result = "-"] = k.split("/");
+      return [{ op, kind, result }, n];
+    });
+    return [{ name: "kwl_signer_requests_total", help: "签名与拒签次数（按操作、种类、结果）", type: "counter", values }];
+  };
+} else if (cfg.role === "control-plane") {
+  const cpMod = await import(join(root, "services/control-plane/src/index.ts"));
+  // 控制面进程不持签名私钥（A-8）：信封与席位令牌一律经签名服务；ops.seal 在这一形态下不可用
+  if (cfg.envelope_key || cfg.seat_key) fail("控制面进程不得持有签名私钥（v9.3 A-8）：删去 envelope_key / seat_key，改为配置 signer 指向签名服务 cp-signer");
+  const sc = cfg.signer ?? fail("缺少 signer（签名服务地址与 mTLS 客户端证书）");
+  if (!insecure && !String(sc.url ?? "").startsWith("https://")) fail("signer.url 须为 https://（mTLS）");
+  let signer;
+  try {
+    signer = await cpMod.connectRemoteSigner({
+      url: String(sc.url),
+      ...(insecure && String(sc.url).startsWith("http://127.0.0.1")
+        ? { insecureLoopbackForTest: true }
+        : { tls: { cert: read(sc.client_cert_file, "signer.client_cert_file"), key: read(sc.client_key_file, "signer.client_key_file"), ca: read(sc.ca_file, "signer.ca_file"), ...(sc.servername ? { servername: String(sc.servername) } : {}) } }),
+    });
+  } catch (e) {
+    fail(`连不上签名服务或它的公钥表不合格（${e?.code ?? "unreachable"}）`);
+  }
   const stateKey = secretFile(cfg.state_key_file, "state_key_file", "hex32");
   const dir = dataDir("control-plane");
+  // 状态库（A-7）：PostgreSQL 一主多备——等成为主实例之后才对外服务；不配即单实例文件
+  let stateStore;
+  let nonceMirror;
+  if (cfg.state_store !== undefined) {
+    const ss = cfg.state_store;
+    if (ss?.kind !== "postgres") fail("state_store.kind 只支持 postgres");
+    const pw = secretFile(ss.password_file, "state_store.password_file", "random32");
+    let conn;
+    if (insecure && typeof ss.socket_dir === "string") conn = { socketDir: ss.socket_dir, port: Number(ss.port ?? 5432), user: String(ss.user ?? ""), database: String(ss.database ?? "postgres"), password: pw };
+    else {
+      let u;
+      try {
+        u = cpMod.parsePgUrl(String(ss.url ?? ""));
+      } catch {
+        fail("state_store.url 须为 postgres://用户@主机:端口/库（口令放 password_file）");
+      }
+      if (u.password) fail("state_store.url 里不要写口令（放 password_file）");
+      conn = { ...u, password: pw, tls: { ca: read(ss.ca_file, "state_store.ca_file") } };
+    }
+    console.log(`[cloud-serve] control-plane 正在等待成为主实例（状态库 PostgreSQL）`);
+    try {
+      stateStore = await cpMod.openPgStateStore({ pg: conn, key: Buffer.from(stateKey, "hex"), holder: `${hostname()}-${process.pid}-${randomBytes(3).toString("hex")}` });
+    } catch (e) {
+      fail(`连不上状态库或等待主实例失败（${e?.code ?? "unreachable"}）`);
+    }
+    if (cfg.nonce_store !== undefined) {
+      const ns = cfg.nonce_store;
+      if (ns?.kind !== "redis") fail("nonce_store.kind 只支持 redis");
+      const rpw = secretFile(ns.password_file, "nonce_store.password_file", "random32");
+      let ro;
+      if (insecure && typeof ns.socket_path === "string") ro = { socketPath: ns.socket_path, password: rpw };
+      else {
+        let u;
+        try {
+          u = cpMod.parseRedisUrl(String(ns.url ?? ""));
+        } catch {
+          fail("nonce_store.url 须为 rediss://主机:端口（口令放 password_file）");
+        }
+        if (!u.tls) fail("nonce_store.url 须为 rediss://（TLS）");
+        if (u.password) fail("nonce_store.url 里不要写口令（放 password_file）");
+        ro = { host: u.host, port: u.port, ...(u.username ? { username: u.username } : {}), password: rpw, tls: { ca: read(ns.ca_file, "nonce_store.ca_file") } };
+      }
+      try {
+        nonceMirror = await cpMod.openRedisNonceMirror({ redis: ro });
+      } catch {
+        fail("连不上 nonce_store（Redis）");
+      }
+    }
+  } else {
+    if (cfg.nonce_store !== undefined) fail("nonce_store 只用于一主多备（须同时配置 state_store）");
+    stateStore = cpMod.fileStateStore(join(dir, "state"), { key: Buffer.from(stateKey, "hex"), requireKey: true });
+  }
+  if (stateStore.healthy) {
+    // 失去主实例身份（连接断、被围栏）：退出进程，由编排重启后重新参加选主（不在不确定的状态上继续服务）
+    readyCheck = () => (stateStore.healthy() ? true : "state_store_lost");
+    setInterval(() => {
+      if (!stateStore.healthy()) {
+        console.error("[cloud-serve] 控制面失去主实例身份或状态库连接，退出");
+        process.exit(1);
+      }
+    }, 5_000).unref();
+    serviceMetrics = () => {
+      const st = stateStore.stats();
+      const nm = nonceMirror?.stats();
+      return [
+        { name: "kwl_cp_state_saves_total", help: "控制面状态写入次数（按结果）", type: "counter", values: [[{ result: "ok" }, st.saves], [{ result: "failed" }, st.failures]] },
+        ...(nm ? [{ name: "kwl_cp_nonce_mirror_total", help: "防重放随机数写入 Redis（按结果）", type: "counter", values: [[{ result: "ok" }, nm.recorded], [{ result: "failed" }, nm.failures]] }] : []),
+      ];
+    };
+  }
   svc = cpMod.createControlPlane({
-    keys: { envelope: pair(cfg.envelope_key, "envelope_key"), seat: pair(cfg.seat_key, "seat_key") },
+    signer,
     serviceSecret: serviceSecret(),
-    stateStore: cpMod.fileStateStore(join(dir, "state"), { key: Buffer.from(stateKey, "hex"), requireKey: true }),
+    stateStore,
+    ...(nonceMirror ? { nonceMirror } : {}),
     // 开通码 HMAC 的胡椒（复核 A-06/A-15）：与签名密钥分开，由 KMS 挂载；生产入口必填（按信封私钥派生会让信封密钥轮换时在途码全部失效）
     codePepper: Buffer.from(secretFile(cfg.code_pepper_file, "code_pepper_file", "hex32"), "hex"),
     auditLog: cpMod.createAuditLog({ file: join(dir, "audit.jsonl") }),
@@ -264,7 +402,7 @@ if (cfg.role === "control-plane") {
 const logDir = typeof cfg.log_dir === "string" && cfg.log_dir ? cfg.log_dir : typeof cfg.data_dir === "string" && cfg.data_dir ? join(cfg.data_dir, "obs") : null;
 if (!logDir) fail("缺少 log_dir 或 data_dir（访问日志与错误日志的位置）");
 mkdirSync(logDir, { recursive: true, mode: 0o700 });
-const obs = createObs({ role: cfg.role, dir: logDir, retentionDays: Number.isInteger(cfg.log_retention_days) ? cfg.log_retention_days : 190, feed, certPem: tls?.cert ?? null });
+const obs = createObs({ role: cfg.role, dir: logDir, retentionDays: Number.isInteger(cfg.log_retention_days) ? cfg.log_retention_days : 190, feed, certPem: tls?.cert ?? null, serviceMetrics, ready: readyCheck });
 obs.prune();
 setInterval(() => obs.prune(), 6 * 3600_000).unref();
 if (opsStartupProblem) obs.recordError("ops_roster", { code: opsStartupProblem });
