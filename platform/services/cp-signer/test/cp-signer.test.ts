@@ -405,3 +405,52 @@ test("远程签名者先验回复再交付（复核 RB16A-04）；等签名期�
     await new Promise<void>((r) => cp.server.close(() => r()));
   }
 });
+
+test("签名账外送（复核 RB16A-01 余项）：按批写到对象存储；启动比对发现截尾、换旧副本与改行；外送一直失败积压过多即停签", async () => {
+  const { checkLedgerAgainstArchive, startLedgerArchiver } = await import("../src/index.ts");
+  const { fsBlobStore } = await import("@zr-legal/blob-store");
+  const keys = devControlPlaneKeys();
+  const dir = tmp();
+  const file = join(dir, "ledger.jsonl");
+  const store = fsBlobStore(join(dir, "worm"));
+  const archiver = startLedgerArchiver({ archive: store, archivedSeq: 0, intervalMs: 3_600_000 });
+  const svc = createSignerService({ keys, ledgerFile: file, initLedger: true, archiver, allowedCallers: [], insecureForTest: true });
+  const base = await listen(svc);
+  try {
+    for (let i = 0; i < 3; i++) await post(base, "/v1/sign/envelope", { request_id: `req-arch-${i}0`, req_now: Date.now(), kind: "kwl-device-revoked", body: { tid: "ten_a", device_id: "dev_a", revoked_at: new Date().toISOString() } });
+    await archiver.flush();
+    assert.deepEqual(svc.metrics().archive, { pending: 0, archived_seq: 3, failures: 0 });
+    assert.deepEqual((await store.list("signer-ledger/")).map((x) => x.key), ["signer-ledger/000000000001-000000000003.jsonl"]);
+  } finally {
+    archiver.stop();
+    svc.close();
+  }
+  const text = readFileSync(file, "utf8");
+  assert.deepEqual(await checkLedgerAgainstArchive(text, store), { ok: true, archivedSeq: 3 });
+  const lines = text.trim().split("\n");
+  const cut = await checkLedgerAgainstArchive(`${lines.slice(0, 2).join("\n")}\n`, store);
+  assert.ok(!cut.ok && /被截尾/.test(cut.reason), "截掉末行：外部锚点发现");
+  assert.ok(!(await checkLedgerAgainstArchive("", store)).ok, "整本删除后从头新建：发现");
+  // 改了最后一行（重算链也没用：与已外送的同序号行不同）
+  const tampered = JSON.parse(lines[2]!);
+  tampered.tid = "ten_x";
+  const rechained = [lines[0], lines[1], JSON.stringify(tampered)].join("\n") + "\n";
+  const t2 = await checkLedgerAgainstArchive(rechained, store);
+  assert.ok(!t2.ok);
+  // 外送一直失败：积压到上限即停签（503）
+  const failing = { kind: "s3" as const, put: async () => { throw new Error("down"); }, get: async () => null, delete: async () => {}, list: async () => [] };
+  const a2 = startLedgerArchiver({ archive: failing, archivedSeq: 0, intervalMs: 3_600_000, maxPending: 2 });
+  const svc2 = createSignerService({ keys, ledgerFile: join(dir, "l2.jsonl"), initLedger: true, archiver: a2, allowedCallers: [], insecureForTest: true });
+  const base2 = await listen(svc2);
+  try {
+    const sign = (i: number) => post(base2, "/v1/sign/envelope", { request_id: `req-back-${i}0`, req_now: Date.now(), kind: "kwl-device-revoked", body: { tid: "ten_a", device_id: "dev_a", revoked_at: new Date().toISOString() } });
+    assert.equal((await sign(1)).status, 200);
+    assert.equal((await sign(2)).status, 200);
+    const r = await sign(3);
+    assert.equal(r.status, 503);
+    assert.equal(r.json.error, "ledger_archive_backlog");
+  } finally {
+    a2.stop();
+    svc2.close();
+  }
+});

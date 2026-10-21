@@ -29,6 +29,8 @@ export interface BlobStore {
   /** 不存在也算成功。 */
   delete(key: string): Promise<void>;
   list(prefix: string): Promise<BlobInfo[]>;
+  /** 桶的生命周期规则（只有对象存储有；读不到规则为 rules: 0）。 */
+  lifecycle?(): Promise<{ rules: number; expirationDays: number[] }>;
 }
 
 const KEY_RE = /^(?!\/)(?!.*\.\.)[A-Za-z0-9._\/-]{1,512}$/;
@@ -244,6 +246,14 @@ export function s3BlobStore(o: S3BlobStoreOptions): BlobStore {
     async delete(key) {
       const r = await call("DELETE", `${prefix}${checkKey(key)}`, {}, null);
       if (r.status !== 204 && r.status !== 200 && r.status !== 404) throw new BlobStoreError(`s3_${errCode(r.body)}`, `对象存储删除失败（${r.status}）`);
+    },
+    async lifecycle() {
+      const r = await call("GET", null, { lifecycle: "" }, null);
+      if (r.status === 404) return { rules: 0, expirationDays: [] };
+      if (r.status !== 200) throw new BlobStoreError(`s3_${errCode(r.body)}`, `读不到桶的生命周期规则（${r.status}）`);
+      const xml = r.body.toString("utf8");
+      const rules = [...xml.matchAll(/<Rule>([\s\S]*?)<\/Rule>/g)].filter((m) => /<Status>Enabled<\/Status>/.test(m[1]!));
+      return { rules: rules.length, expirationDays: rules.map((m) => Number(/<Expiration>[\s\S]*?<Days>(\d+)<\/Days>/.exec(m[1]!)?.[1] ?? NaN)).filter(Number.isFinite) };
     },
     async list(p) {
       const out: BlobInfo[] = [];

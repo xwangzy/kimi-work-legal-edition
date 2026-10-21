@@ -55,6 +55,8 @@ function fakeS3(o: { dropSse?: boolean } = {}) {
         const sse = req.headers["x-amz-server-side-encryption"] as string | undefined;
         objects.set(key, { body, at: Date.now(), sse });
         res.writeHead(200, o.dropSse || !sse ? {} : { "x-amz-server-side-encryption": sse }).end();
+      } else if (req.method === "GET" && !key && "lifecycle" in query) {
+        res.writeHead(200).end("<LifecycleConfiguration><Rule><ID>support-8d</ID><Status>Enabled</Status><Expiration><Days>8</Days></Expiration></Rule><Rule><Status>Disabled</Status></Rule></LifecycleConfiguration>");
       } else if (req.method === "GET" && key) {
         const ob = objects.get(key);
         if (!ob) return void res.writeHead(404).end("<Error><Code>NoSuchKey</Code></Error>");
@@ -102,6 +104,7 @@ test("S3 兼容：写、读、列（分页）、删对着核签名的假服务�
     const store = s3BlobStore({ endpoint: `http://127.0.0.1:${(s3.server.address() as AddressInfo).port}`, bucket: "kwl-test", region: "cn-north-4", credentials: CREDS, sse: { kmsKeyId: "kms-key-support" }, prefix: "prod", allowInsecureForTest: true });
     await exercise(store);
     assert.ok([...s3.objects.keys()].every((k) => k.startsWith("prod/")), "键名都在前缀下");
+    assert.deepEqual(await store.lifecycle!(), { rules: 1, expirationDays: [8] }, "只数启用的规则（复核 RB16A-12）");
     const puts = s3.seen.filter((x) => x.method === "PUT");
     assert.ok(puts.length >= 4 && puts.every((x) => x.sse === "aws:kms" && x.kms === "kms-key-support"));
     // 密钥不对：假服务回 403，写入失败

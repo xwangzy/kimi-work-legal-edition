@@ -30,6 +30,7 @@
  *   // 签名服务 cp-signer（A-8；签名区、无公网，只收控制面的 mTLS）：
  *   "environment": "prod",                              // 密钥编号须为 <用途>-<环境>-<编号>（cp-prod-2612a、seat-prod-2612a、seat-relay-prod-2612a）
  *   "init_ledger": true,                                // 只在首次部署：签名账不存在时新建；之后账本不在即拒绝启动
+ *   "ledger_archive": { "kind": "s3", ... , "kms_key_id": "..." },   // 可选：签名账外送 WORM 桶（外部锚点；字段同 blob_store，prefix 缺省 signer-ledger）
  *   "tls": { "cert_file": "...", "key_file": "...", "client_ca_file": "..." },   // 只认这个 CA 签发的客户端证书
  *   "allowed_callers": ["spiffe://kwl/prod/cp-api"],    // 客户端证书的 URI SAN（或 CN）
  *   "keys": { "envelope": { "kid": "cp-prod-2612a", "private_key_file": "..." }, "seat": { "kid": "seat-prod-2612a", "private_key_file": "..." },
@@ -218,6 +219,34 @@ const opsPathBlocked = (req) => {
   return true;
 };
 
+/** 对象存储配置（S3 兼容；每对象 SSE-KMS，kms_key_id 必填）：启动时列一次，连不上即拒绝启动。 */
+async function blobStoreFrom(bs, what, defaultPrefix) {
+  if (bs?.kind !== "s3") fail(`${what}.kind 只支持 s3`);
+  if (typeof bs.kms_key_id !== "string" || !bs.kms_key_id) fail(`${what}.kms_key_id 必填（每个对象服务端加密 SSE-KMS）`);
+  const blobMod = await import(join(root, "packages/blob-store/src/index.ts"));
+  let store;
+  try {
+    store = blobMod.s3BlobStore({
+      endpoint: String(bs.endpoint ?? ""),
+      bucket: String(bs.bucket ?? ""),
+      region: String(bs.region ?? ""),
+      prefix: typeof bs.prefix === "string" && bs.prefix ? bs.prefix : defaultPrefix,
+      credentials: { accessKeyId: read(bs.access_key_id_file, `${what}.access_key_id_file`), secretAccessKey: read(bs.secret_access_key_file, `${what}.secret_access_key_file`) },
+      sse: { kmsKeyId: bs.kms_key_id },
+      ...(bs.ca_file ? { ca: read(bs.ca_file, `${what}.ca_file`) } : {}),
+      allowInsecureForTest: insecure,
+    });
+  } catch (e) {
+    fail(`${what} 配置不合规（${e?.message ?? "格式"}）`);
+  }
+  try {
+    await store.list("");
+  } catch (e) {
+    fail(`连不上对象存储（${e?.code ?? "unreachable"}）`);
+  }
+  return store;
+}
+
 let serviceMetrics = null;
 let readyCheck = null;
 let cpInstance = null;
@@ -249,9 +278,26 @@ if (cfg.role === "cp-signer") {
   const audiences = {};
   for (const a of ["support", "notify", "relay"]) if (ks.seat_audiences?.[a]) audiences[a] = signPair(ks.seat_audiences[a], `keys.seat_audiences.${a}`, `seat-${a}`);
   const signerMod = await import(join(root, "services/cp-signer/src/index.ts"));
+  // 签名账外送（复核 RB16A-01 余项）：配了 ledger_archive 即启动时与已外送的比对（本机账本被截尾、换成旧副本或改过即拒绝启动），之后按批外送
+  const ledgerFile = join(dataDir("cp-signer"), "ledger.jsonl");
+  let archiver;
+  if (cfg.ledger_archive !== undefined) {
+    const store = await blobStoreFrom(cfg.ledger_archive, "ledger_archive", "signer-ledger");
+    const { existsSync } = await import("node:fs");
+    const text = existsSync(ledgerFile) ? readFileSync(ledgerFile, "utf8") : "";
+    let chk;
+    try {
+      chk = await signerMod.checkLedgerAgainstArchive(text, store);
+    } catch (e) {
+      fail(`签名账外送位置读不出（${e?.code ?? "unreachable"}）`);
+    }
+    if (!chk.ok) fail(`签名账与已外送的对不上：${chk.reason}`);
+    archiver = signerMod.startLedgerArchiver({ archive: store, archivedSeq: chk.archivedSeq });
+  }
   const signer = signerMod.createSignerService({
+    ...(archiver ? { archiver } : {}),
     keys: { envelope: signPair(ks.envelope, "keys.envelope", "cp"), seat: signPair(ks.seat, "keys.seat", "seat"), seatAudiences: audiences },
-    ledgerFile: join(dataDir("cp-signer"), "ledger.jsonl"),
+    ledgerFile,
     // 首次部署显式初始化签名账（"init_ledger": true）；之后账本不在即拒绝启动（复核 RB16A-01：整本删除也能发现）
     initLedger: cfg.init_ledger === true,
     allowedCallers: callers,
@@ -270,6 +316,12 @@ if (cfg.role === "cp-signer") {
       // 签名账末行序号（外部锚点：监控系统记下的序号只增不减，变小即账本被截尾；复核 RB16A-01）与是否已损坏
       { name: "kwl_signer_ledger_seq", help: "签名账末行序号（只增不减；变小即被截尾）", type: "gauge", values: [[{}, lg.seq]] },
       { name: "kwl_signer_ledger_broken", help: "签名账写入失败且截不回去（1 = 已停签）", type: "gauge", values: [[{}, lg.broken ? 1 : 0]] },
+      ...(signer.metrics().archive
+        ? [
+            { name: "kwl_signer_ledger_archived_seq", help: "签名账已外送到的序号", type: "gauge", values: [[{}, signer.metrics().archive.archived_seq]] },
+            { name: "kwl_signer_ledger_archive_pending", help: "签名账待外送行数（积压过多即停签）", type: "gauge", values: [[{}, signer.metrics().archive.pending]] },
+          ]
+        : []),
     ];
   };
 } else if (cfg.role === "control-plane") {
@@ -425,30 +477,17 @@ if (cfg.role === "cp-signer") {
     const meterKey = secretFile(cfg.meter_key_file, "meter_key_file", "hex32");
     // 诊断包本体进对象存储（A-11）：每个对象 SSE-KMS（不带密钥编号即拒绝启动）；启动时列一次，连不上即不服务
     let blobs;
+    let lifecycleOk = null;
     if (cfg.blob_store !== undefined) {
-      const bs = cfg.blob_store;
-      if (bs?.kind !== "s3") fail("blob_store.kind 只支持 s3");
-      if (typeof bs.kms_key_id !== "string" || !bs.kms_key_id) fail("blob_store.kms_key_id 必填（每个对象服务端加密 SSE-KMS）");
-      const blobMod = await import(join(root, "packages/blob-store/src/index.ts"));
+      blobs = await blobStoreFrom(cfg.blob_store, "blob_store", "support");
+      // 桶的生命周期规则是 7 天删除承诺的兜底（复核 RB16A-12）：没有就告警，不拒绝启动
       try {
-        blobs = blobMod.s3BlobStore({
-          endpoint: String(bs.endpoint ?? ""),
-          bucket: String(bs.bucket ?? ""),
-          region: String(bs.region ?? ""),
-          prefix: typeof bs.prefix === "string" && bs.prefix ? bs.prefix : "support",
-          credentials: { accessKeyId: read(bs.access_key_id_file, "blob_store.access_key_id_file"), secretAccessKey: read(bs.secret_access_key_file, "blob_store.secret_access_key_file") },
-          sse: { kmsKeyId: bs.kms_key_id },
-          ...(bs.ca_file ? { ca: read(bs.ca_file, "blob_store.ca_file") } : {}),
-          allowInsecureForTest: insecure,
-        });
-      } catch (e) {
-        fail(`blob_store 配置不合规（${e?.message ?? "格式"}）`);
+        const lc = await blobs.lifecycle?.();
+        lifecycleOk = !!lc && lc.rules > 0;
+      } catch {
+        lifecycleOk = false;
       }
-      try {
-        await blobs.list("");
-      } catch (e) {
-        fail(`连不上对象存储（${e?.code ?? "unreachable"}）`);
-      }
+      if (!lifecycleOk) console.error("[cloud-serve] 诊断包桶没有读到生命周期规则：7 天删除只靠服务清扫，请在 IaC 里配置");
     }
     const support = sa.createSupportApi({ dir: dataDir("support"), keys: seatKeys, meterKey: Buffer.from(meterKey, "hex"), feed, ...(blobs ? { blobs } : {}), ...(opsGuard ? { opsGuard } : {}) });
     svc = support;
@@ -458,6 +497,7 @@ if (cfg.role === "cp-signer") {
       return [
         { name: "kwl_support_sweep_failures_total", help: "诊断包到期清扫删不掉的次数", type: "counter", values: [[{}, m.sweep_failures]] },
         { name: "kwl_support_expired_total", help: "到期删除的诊断包", type: "counter", values: [[{}, m.expired]] },
+        ...(lifecycleOk === null ? [] : [{ name: "kwl_support_bucket_lifecycle_ok", help: "诊断包桶读到了生命周期规则（0 = 没有兜底删除）", type: "gauge", values: [[{}, lifecycleOk ? 1 : 0]] }]),
       ];
     };
   } else if (cfg.role === "notify") {

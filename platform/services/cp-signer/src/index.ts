@@ -36,8 +36,10 @@ import {
   type SeatAudience,
 } from "../../control-plane/src/signer.ts";
 import { openSignerLedger, type SignerLedger } from "./ledger.ts";
+import type { LedgerArchiver } from "./archive.ts";
 
 export { openSignerLedger, verifySignerLedger, type SignerLedger, type SignerLedgerRecord } from "./ledger.ts";
+export { checkLedgerAgainstArchive, startLedgerArchiver, type LedgerArchiver } from "./archive.ts";
 
 export interface SignerServiceOptions {
   keys: ControlPlaneKeys;
@@ -45,6 +47,8 @@ export interface SignerServiceOptions {
   ledgerFile?: string;
   /** 签名账不存在时新建（首次部署显式初始化；否则文件不在即拒绝启动，复核 RB16A-01）。 */
   initLedger?: boolean;
+  /** 签名账外送（外部锚点，archive.ts）：每条记账成功的行交给它；积压过多即停签。 */
+  archiver?: LedgerArchiver;
   ledger?: SignerLedger;
   /** 允许的调用方身份（mTLS 客户端证书的 URI SAN，如 spiffe://kwl/prod/cp-api；或 CN）。 */
   allowedCallers: string[];
@@ -62,6 +66,8 @@ export interface SignerMetrics {
   last_ok_at: string | null;
   /** 签名账末行（外部锚点：对账核对外部见过的末行仍是本账的前缀，发现截尾；复核 RB16A-01）。 */
   ledger: { seq: number; hash: string; broken: boolean };
+  /** 外送：已外送到的序号、积压行数、失败次数（没有外送时为 null）。 */
+  archive: { archived_seq: number; pending: number; failures: number } | null;
 }
 
 export interface SignerService {
@@ -241,7 +247,8 @@ export function createSignerService(o: SignerServiceOptions): SignerService {
       count(`${op}/${kindKey}/rejected`);
       // 拒签也记账：记不进去照样拒（本来就不签）
       try {
-        ledger.append({ request_id: requestId ?? "-", caller, op, kind, kid, tid, body_sha256: bodySha, signed_sha256: null, result: "rejected", reason }, new Date(at).toISOString());
+        const rec = ledger.append({ request_id: requestId ?? "-", caller, op, kind, kid, tid, body_sha256: bodySha, signed_sha256: null, result: "rejected", reason }, new Date(at).toISOString());
+        o.archiver?.push(JSON.stringify(rec));
       } catch {
         // 账本不可写：拒签本身不受影响；下一次签名会因写不进而拒绝
       }
@@ -276,8 +283,14 @@ export function createSignerService(o: SignerServiceOptions): SignerService {
       out = { token: signed };
     }
     // 先记账、后交付：记不进去就不签（失败关闭）
+    // 外送积压过多（对象存储一直写不进）：没有外部锚点就不签
+    if (o.archiver?.blocked()) {
+      count(`${op}/archive_backlog`);
+      throw new Reject(503, "ledger_archive_backlog");
+    }
     try {
-      ledger.append({ request_id: requestId!, caller, op, kind, kid, tid, body_sha256: bodySha, signed_sha256: sha(signed), result: "ok", reason: null }, new Date(at).toISOString());
+      const rec = ledger.append({ request_id: requestId!, caller, op, kind, kid, tid, body_sha256: bodySha, signed_sha256: sha(signed), result: "ok", reason: null }, new Date(at).toISOString());
+      o.archiver?.push(JSON.stringify(rec));
     } catch {
       count(`${op}/ledger_unavailable`);
       throw new Reject(503, "ledger_unavailable");
@@ -304,7 +317,7 @@ export function createSignerService(o: SignerServiceOptions): SignerService {
   return {
     server,
     publicKeys,
-    metrics: () => ({ counts: { ...counts }, last_ok_at: lastOkAt, ledger: { ...ledger.head(), broken: ledger.broken?.() ?? false } }),
+    metrics: () => ({ counts: { ...counts }, last_ok_at: lastOkAt, ledger: { ...ledger.head(), broken: ledger.broken?.() ?? false }, archive: o.archiver ? o.archiver.stats() : null }),
     close: () => server.close(),
   };
 }

@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@zr-legal/blob-store": "*",
     "@zr-legal/control-plane": "*",
     "@zr-legal/firm-trust": "*",
     "@zr-legal/keys": "*",
