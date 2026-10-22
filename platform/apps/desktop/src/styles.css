@@ -163,11 +163,8 @@ button.chip:active, :is(button, summary, label).pill:active, .alias-chip:active 
 .menu-desc { font-size: var(--fs-xs); color: var(--text-secondary); }
 .menu-empty { padding: 8px 10px; color: var(--text-secondary); font-size: var(--fs-sm); }
 .menu-new { border-top: 1px solid var(--border-subtle); border-radius: 0 0 var(--r-sm) var(--r-sm); margin-top: 4px; }
-.matter-composer { margin: 14px 0 6px; }
-/* 事项页输入框（v9.4 U1 #9）：没在输入时收成一行，点进去或有文字时才展开工具栏——标签内容上移约 120px */
-.matter-composer:not(:focus-within):not(.has-text) textarea { min-height: 28px; height: 28px; overflow: hidden; }
-.matter-composer:not(:focus-within):not(.has-text) .composer-bar, .matter-composer:not(:focus-within):not(.has-text) .composer-context { display: none; }
-.matter-composer:not(:focus-within):not(.has-text) .composer { padding: 8px 14px; box-shadow: none; }
+/* 事项页输入框（v9.4 第 20 批 G-09）：不常驻，标题行“发起任务”展开 */
+.matter-composer { margin: var(--sp-3) 0 var(--sp-1); }
 .tab-more-wrap { position: relative; }
 .tab-more-menu { position: absolute; right: 0; top: 100%; z-index: 20; min-width: 180px; }
 
@@ -216,7 +213,7 @@ button.chip:active, :is(button, summary, label).pill:active, .alias-chip:active 
 
 /* ── 标签页与表格 ── */
 .tabs { display: flex; gap: 2px; }
-.tabs-line { border-bottom: 1px solid var(--border-subtle); margin: 18px 0 12px; }
+.tabs-line { border-bottom: 1px solid var(--border-subtle); margin: var(--sp-4) 0 var(--sp-3); }
 .tab { border: 0; background: transparent; padding: 8px 12px; font-size: var(--fs-base); color: var(--text-secondary); border-bottom: 2px solid transparent; }
 .tab.active { color: var(--text-primary); border-bottom-color: var(--text-primary); font-weight: 500; }
 table.data { width: 100%; border-collapse: collapse; font-size: var(--font-table-size); line-height: var(--font-table-leading); font-variant-numeric: tabular-nums; }
@@ -393,6 +390,32 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .w-row { display: flex; justify-content: space-between; font-size: var(--fs-sm); padding: 2px 0; }
 .w-link { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 3px 0; font-size: var(--fs-sm); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .w-link:hover { color: var(--accent-text); }
+/* 阶段条与待办（v9.4 第 20 批，C1 §3.2） */
+.stage-strip { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-5); margin: 0 0 var(--sp-3); }
+.stage-line { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
+.stage-step { border: 1px solid var(--border-subtle); background: var(--bg-surface); border-radius: var(--r-full); padding: 2px var(--sp-3); font-size: var(--fs-sm); color: var(--text-secondary); }
+.stage-step.on { background: var(--btn-primary); color: var(--btn-primary-text); border-color: var(--btn-primary); }
+.stage-step:hover:not(.on):not(:disabled) { background: var(--bg-hover); }
+.stage-facts { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); font-size: var(--fs-sm); color: var(--text-secondary); }
+.stage-facts b { color: var(--text-primary); font-weight: 500; }
+.stage-edit label { display: flex; align-items: center; gap: var(--sp-2); }
+.widget:has(.todos) { grid-column: span 2; }
+.todos { display: flex; flex-direction: column; gap: 2px; }
+.todo-row { display: flex; align-items: center; gap: var(--sp-2); padding: 3px 0; font-size: var(--fs-sm); min-width: 0; }
+.todo-derived { border: 0; background: transparent; text-align: left; width: 100%; color: var(--text-primary); }
+.todo-derived:hover .todo-title { color: var(--accent-text); }
+.todo-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-meta { flex: 0 0 auto; color: var(--text-secondary); font-size: var(--fs-xs); }
+.todo-due { flex: 0 0 auto; font-size: var(--fs-xs); color: var(--text-secondary); }
+.todo-due.due-red { color: var(--status-danger-text); }
+.todo-due.due-orange { color: var(--status-warning-text); }
+.todo-del { font-size: var(--fs-xs); visibility: hidden; }
+.todo-row:hover .todo-del, .todo-del:focus { visibility: visible; }
+.todo-done .todo-title { color: var(--text-secondary); text-decoration: line-through; }
+.todo-add { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-2); }
+.todo-add-row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.todos > .btn-link { align-self: flex-start; }
+.todo-done-toggle { font-size: var(--fs-xs); }
 
 /* ── 设备与“中软看得到什么” ── */
 .device-row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }

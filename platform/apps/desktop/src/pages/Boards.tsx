@@ -9,6 +9,7 @@ import { fmtRelative, RUN_STATUS_LABELS, SCENARIO_LABELS } from "../lib/labels.t
 import { dueText, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
 import type { ReminderItem } from "../api.ts";
 import { Select } from "../components/Select.tsx";
+import { MatterTodos, StageStrip } from "../components/MatterOverview.tsx";
 
 export const MAX_BOARDS = 2;
 export const MAX_WIDGETS = 20;
@@ -22,13 +23,11 @@ function Widget({ title, children }: { title: string; children: React.ReactNode 
   );
 }
 
-export function MatterBoard({ matter, runs }: { matter: Matter; runs: any[] }) {
-  const [pendingReview, setPendingReview] = useState<any[]>([]);
+export function MatterBoard({ matter, runs, onChanged }: { matter: Matter; runs: any[]; onChanged?: () => void }) {
   const [egress, setEgress] = useState<{ sent: number; blocked: number; unknown: number }>({ sent: 0, blocked: 0, unknown: 0 });
   // 期限卡同时列本事项的期限提醒（复核 Q1-18：“填期限”打开的是提醒表单，填完回来卡片要能看到）
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
   useEffect(() => {
-    api.pending().then((r) => setPendingReview(r.pending.filter((p: any) => !p.matter_id || p.matter_id === matter.matter_id))).catch(() => {});
     api.reminders(matter.matter_id).then((r) => setReminders(upcomingDeadlines(r.reminders, Date.now(), 3650))).catch(() => setReminders([]));
     api
       .egressRecords({ matterId: matter.matter_id })
@@ -42,9 +41,16 @@ export function MatterBoard({ matter, runs }: { matter: Matter; runs: any[] }) {
       .catch(() => {});
   }, [matter.matter_id]);
   const dates = Object.entries(matter.key_dates ?? {}).filter(([, v]) => !!v);
-  const waiting = runs.filter((r) => r.status === "waiting_approval" || r.status === "waiting_input");
+  const readOnly = (matter.lifecycle ?? "active") !== "active" || !!matter.is_sample;
   return (
+    <>
+    {/* 阶段条与事件时点（v9.4 第 20 批 S-08、C1 §3.2）：当前阶段由律师点选 */}
+    <StageStrip matter={matter} readOnly={readOnly || !onChanged} onChanged={onChanged ?? (() => {})} />
     <div className="board">
+      {/* 待办（C1 §3.2）：做什么、谁做、谁复核、期限；AI 完成的任务自动变成“待你复核” */}
+      <Widget title="待办">
+        <MatterTodos matter={matter} readOnly={readOnly} />
+      </Widget>
       <Widget title="期限">
         {/* 空状态给动作（v9.4 U1 §3.4）：“填期限”直接打开本事项的设提醒表单 */}
         {reminders.slice(0, 3).map((r) => (
@@ -66,21 +72,8 @@ export function MatterBoard({ matter, runs }: { matter: Matter; runs: any[] }) {
           dates.map(([k, v]) => <div key={k} className="w-row"><span>{k === "analysis_as_of" ? "分析截止日" : k}</span><b>{v}</b></div>)
         )}
       </Widget>
-      <Widget title="待办">
-        {waiting.length === 0 && pendingReview.length === 0 && <p className="muted">没有等你处理的事。</p>}
-        {waiting.map((r) => (
-          <button key={r.run_id} className="w-link" onClick={() => nav(`/run/${r.run_id}/${matter.matter_id}`)}>
-            {SCENARIO_LABELS[r.scenario] ?? r.scenario} · {RUN_STATUS_LABELS[r.status]}
-          </button>
-        ))}
-        {pendingReview.map((p) => (
-          <button key={p.artifact_version_id} className="w-link" onClick={() => nav(`/review/${p.artifact_version_id}`)}>
-            待复核：{p.filename}
-          </button>
-        ))}
-      </Widget>
-      <Widget title="最近任务">
-        {runs.length === 0 && <p className="muted">还没有任务。</p>}
+      <Widget title="最近 AI 记录">
+        {runs.length === 0 && <p className="muted">还没有 AI 记录。</p>}
         {runs.slice(0, 6).map((r) => (
           // 任务以目标前 20 字区分（Y4 B-2）；没有目标的显示场景名；时间用相对时间
           <button key={r.run_id} className="w-link" onClick={() => nav(`/run/${r.run_id}/${matter.matter_id}`)}>
@@ -95,6 +88,7 @@ export function MatterBoard({ matter, runs }: { matter: Matter; runs: any[] }) {
         </Widget>
       )}
     </div>
+    </>
   );
 }
 
@@ -154,7 +148,7 @@ export function BoardsPage() {
           事项看板
           <Select aria-label="事项" value={matterId ?? ""} onChange={(v) => setMatterId(v || null)} placeholder="选择事项" options={matters.map((m) => ({ value: m.matter_id, label: m.title }))} />
         </div>
-        {matter ? <MatterBoard matter={matter} runs={runs} /> : <p className="muted">还没有事项。</p>}
+        {matter ? <MatterBoard matter={matter} runs={runs} onChanged={() => void api.getMatter(matter.matter_id).then((r) => setMatter(r.matter)).catch(() => {})} /> : <p className="muted">还没有事项。</p>}
       </div>
     </main>
   );

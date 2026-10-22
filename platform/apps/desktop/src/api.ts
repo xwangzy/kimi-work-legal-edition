@@ -202,6 +202,10 @@ export interface Matter {
   consent_status: "agreed" | "pending" | "refused" | "not_required";
   node_allowed?: 0 | 1;
   key_dates?: Record<string, string> | null;
+  /** 程序阶段、事件时点（YYYY-MM-DD 或 YYYY-MM）、地域（v9.4 S-08，律师填写）。 */
+  stage?: string | null;
+  event_date?: string | null;
+  region?: string | null;
   data_level?: "L0" | "L1" | "L2" | "L3a" | "L3b";
   basis?: MatterBasis;
   /** 四项依据是否齐备（内核判定；当事人拒绝记录优先）。 */
@@ -218,6 +222,37 @@ export interface Matter {
   /** 本人在事项中的角色（matters.get）。 */
   my_role?: "owner" | "editor" | "viewer";
   created_at: string;
+}
+
+/** 事项待办（v9.4 第 20 批，C1 §3.2）。 */
+export interface TodoInput {
+  title: string;
+  assignee_kind: "me" | "assistant" | "colleague" | "ai";
+  assignee_name?: string | null;
+  reviewer_name?: string | null;
+  due_date?: string | null;
+}
+export interface TodoRow extends TodoInput {
+  todo_id: string;
+  status: "open" | "done";
+  created_at: string;
+  done_at: string | null;
+}
+export interface DerivedTodo {
+  kind: "run_waiting" | "drafts_to_review" | "to_sign";
+  goal: string;
+  scenario: string | null;
+  filename: string | null;
+  done_by_ai: boolean;
+  run_id: string | null;
+  artifact_version_id: string | null;
+  count: number;
+  at: string;
+}
+export interface TodoList {
+  open: TodoRow[];
+  done: TodoRow[];
+  derived: DerivedTodo[];
 }
 
 export interface MatterLifecycle {
@@ -795,6 +830,10 @@ export const api = {
   outlines: (matterId: string, runId: string) => invoke<{ outlines: import("./lib/outline.ts").OutlineView[] }>("outlines.list", { matter_id: matterId, run_id: runId }),
   decideOutline: (matterId: string, outlineId: string, decisions: { arg_id: string; keep: boolean; claim?: string; basis_keep?: number[] }[], note: string) =>
     invoke<{ outline: import("./lib/outline.ts").OutlineView }>("outlines.decide", { matter_id: matterId, outline_id: outlineId, decisions, ...(note ? { note } : {}) }),
+  todos: (matterId: string) => invoke<TodoList>("todos.list", { matter_id: matterId }),
+  createTodo: (matterId: string, body: TodoInput) => invoke<{ todo: TodoRow }>("todos.create", { matter_id: matterId, ...body }),
+  updateTodo: (matterId: string, todoId: string, patch: Partial<TodoInput> & { done?: boolean }) => invoke<{ todo: TodoRow }>("todos.update", { matter_id: matterId, todo_id: todoId, patch }),
+  deleteTodo: (matterId: string, todoId: string) => invoke<{ ok: true }>("todos.delete", { matter_id: matterId, todo_id: todoId }),
   facts: (matterId: string, f: { run_id?: string; status?: "proposed" | "confirmed" | "rejected" } = {}) => invoke<{ facts: FactRow[] }>("facts.list", { matter_id: matterId, ...f }),
   decideFact: (matterId: string, factId: string, decision: "confirm" | "reject" | "reset", statement?: string) =>
     invoke<{ fact: FactRow }>("facts.decide", { matter_id: matterId, fact_id: factId, decision, ...(statement ? { statement } : {}) }),

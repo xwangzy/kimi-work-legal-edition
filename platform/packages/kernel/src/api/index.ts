@@ -78,6 +78,7 @@ import { detectClassifiedMarking, type ClassifiedFinding } from "../services/cla
 import { restoreArtifactBytes } from "../services/export-restore.ts";
 import { decideOutline, listOutlines, scrubOutlineFacts } from "../services/argument-outlines.ts";
 import { createTable, decideCell, exportTable, getTable, listTables, TABLE_TEMPLATES } from "../services/review-tables.ts";
+import { createTodo, deleteTodo, derivedTodos, listTodos, updateTodo } from "../services/matter-todos.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
 import { buildRedlineFromCards, cardPages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
@@ -91,6 +92,7 @@ import { docxRenderReport } from "../tools/tools/docx.ts";
 import { createStyledDocx, extractParagraphs, isHouseStyled, markdownToBlocks, renderDocxHtml, renderXlsxHtml, restyleDocx } from "@zr-legal/docx-engine";
 import { docStyleView, houseStyleFor, setDocStyle, setDocTemplate } from "../services/doc-style.ts";
 import { isToolOperationInFlight } from "../local-server.ts";
+import { MATTER_STAGES } from "../services/matter-facts.ts";
 import { artifactCitationBlock, checkArtifactCitations, CITATIONS_CASES_CHECK_KEY, uncheckedCitations, type ArtifactCitationCheck } from "../services/artifact-citations.ts";
 import { rankTitles, type TitleCandidate } from "../services/title-search.ts";
 
@@ -197,6 +199,32 @@ function parseJson<T>(v: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/** 阶段、事件时点（YYYY-MM-DD 或只到月 YYYY-MM）、地域的入参校验；undefined 表示没给，null 或空串表示清空。 */
+function matterFactsFrom(body: any): { stage?: string | null; event_date?: string | null; region?: string | null } {
+  const out: { stage?: string | null; event_date?: string | null; region?: string | null } = {};
+  if (body?.stage !== undefined) {
+    const v = body.stage === null || body.stage === "" ? null : body.stage;
+    if (v !== null && !(MATTER_STAGES as readonly string[]).includes(v)) throw validation(`stage 须为 ${MATTER_STAGES.join("/")}`);
+    out.stage = v;
+  }
+  if (body?.event_date !== undefined) {
+    const v = body.event_date === null || body.event_date === "" ? null : String(body.event_date);
+    if (v !== null) {
+      const m = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(v);
+      const month = m ? Number(m[2]) : 0;
+      const day = m?.[3] ? Number(m[3]) : 1;
+      if (!m || month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(Number(m[1]), month, 0)).getUTCDate()) throw validation("event_date 须为 YYYY-MM-DD 或只到月 YYYY-MM");
+    }
+    out.event_date = v;
+  }
+  if (body?.region !== undefined) {
+    const v = body.region === null ? null : String(body.region).trim();
+    if (v !== null && v.length > 20) throw validation("region 至多 20 字");
+    out.region = v || null;
+  }
+  return out;
 }
 
 function matterOut(m: any): any {
@@ -342,10 +370,11 @@ function liveAgentRunOf(db: KernelDb, matterId: string): { run_id: string; goal:
 /** 成果文件的引用核验（第 13 批）：适用时点取事项的分析截止日，缺省今天。 */
 function artifactCitationsFor(db: KernelDb, blobs: BlobStore, lawdb: Lawdb, art: { matter_id: string; filename: string; storage_uri: string }): ArtifactCitationCheck | null {
   try {
-    const m = db.get<{ key_dates: string | null }>(`SELECT key_dates FROM matters WHERE matter_id = ?`, [art.matter_id]);
+    const m = db.get<{ key_dates: string | null; event_date: string | null; region: string | null }>(`SELECT key_dates, event_date, region FROM matters WHERE matter_id = ?`, [art.matter_id]);
     const kd = parseJson<Record<string, unknown>>(m?.key_dates ?? "{}", {});
     const asOf = typeof kd.analysis_as_of === "string" && /^\d{4}-\d{2}-\d{2}$/.test(kd.analysis_as_of) ? kd.analysis_as_of : localToday();
-    return checkArtifactCitations(lawdb, String(art.filename), blobs.read(String(art.storage_uri)), asOf);
+    // 事件时点与地域（v9.4 S-08）：实体法按事件时点复核适用版本、地方性规定按地域复核
+    return checkArtifactCitations(lawdb, String(art.filename), blobs.read(String(art.storage_uri)), asOf, { event_date: m?.event_date ?? null, region: m?.region ?? null });
   } catch {
     // 出错不放行（复核 B13-U02）：按“系统没有核对”处理，须人工核对勾选
     return uncheckedCitations("error", lawdb.packageVersion, localToday());
@@ -693,12 +722,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (basisJson && consent !== "refused") consent = basisCompleteOf({ basis: basisJson }) ? "agreed" : "pending";
       if (!Object.values(ConsentStatus).includes(consent)) throw validation(`consent_status 须为 ${Object.values(ConsentStatus).join("/")}`);
       if (body.confidentiality !== undefined && !["normal", "high", "strict"].includes(body.confidentiality)) throw validation("confidentiality 须为 normal / high / strict");
+      const facts = matterFactsFrom(body);
       const matterId = newId("matter");
       db.tx(() => {
         db.run(
           `INSERT INTO matters (matter_id, tenant_id, title, client_name, counterparty, stance, jurisdiction,
-                                key_dates, confidentiality, model_endpoint, collab_scope, consent_status, created_by, basis)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                                key_dates, confidentiality, model_endpoint, collab_scope, consent_status, created_by, basis, stage, event_date, region)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
             matterId,
             id.tenantId,
@@ -714,6 +744,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
             consent,
             id.userId,
             basisJson,
+            facts.stage ?? null,
+            facts.event_date ?? null,
+            facts.region ?? null,
           ],
         );
         db.run(
@@ -745,7 +778,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "matters.list": (_p, id) => {
       const rows = db.all(
         `SELECT m.matter_id, m.title, m.client_name, m.counterparty, m.stance, m.jurisdiction, m.confidentiality,
-                m.model_endpoint, m.collab_scope, m.consent_status, m.basis, m.full_pseudonym, m.key_dates, m.status, m.created_at,
+                m.model_endpoint, m.collab_scope, m.consent_status, m.basis, m.full_pseudonym, m.key_dates, m.status, m.created_at, m.stage, m.event_date, m.region,
                 m.lifecycle, m.closed_at, m.retention_until, m.legal_hold, m.legal_hold_reason, m.purged_at
            FROM matters m JOIN matter_members mm ON mm.matter_id = m.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL
           WHERE m.tenant_id = ? AND m.status = 'active' AND (m.lifecycle <> 'purged' OR ? = 1) ORDER BY m.created_at DESC LIMIT 100`,
@@ -867,6 +900,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (body.key_dates !== undefined) {
         fields.push(`key_dates = ?`);
         values.push(JSON.stringify(body.key_dates));
+      }
+      for (const [k, v] of Object.entries(matterFactsFrom(body))) {
+        fields.push(`${k} = ?`);
+        values.push(v);
       }
       // 四项依据（W1，收敛偏离 D-21；复核 S5-A09）：分项记录时 consent_status 只由四项派生（显式给出的同意状态不覆盖派生值）；
       // 当事人拒绝云端处理的记录保留——须律师核实后单独清除（consent_status: pending），不随补录四项而静默翻转
@@ -2048,6 +2085,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           ...(artCitations && artCitations.unverified_offline > 0 ? [`成果里有 ${artCitations.unverified_offline} 个案号系统离线无法核实，须逐个核对并勾选后才能签发`] : []),
           ...(artCitations && artCitations.outside_registry > 0 ? [`成果里有 ${artCitations.outside_registry} 条引用系统没法核对（不在本机法规库里，或款项、适用版本对不上），须逐条人工核对并勾选后才能签发`] : []),
           ...(artCitations && !artCitations.checked ? ["这份文件的引用系统没有核对（格式不认识或读取出错），须人工核对并勾选后才能签发"] : []),
+          ...(artCitations && (artCitations.timing ?? 0) > 0 ? [`成果里有 ${artCitations.timing} 条引用要按事件时点或地域核对，须逐条核对并勾选后才能签发`] : []),
           ...(art.version === latest.v ? [] : ["已有更新版本，本版不得签发（批准不跨版本）"]),
         ],
       };
@@ -2094,7 +2132,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         const ac = artifactCitationsFor(db, blobs, lawdb, art as any);
         const acBlock = ac ? artifactCitationBlock(ac, checklistObj) : null;
         if (acBlock) {
-          throw new DomainError("unverified_citations", acBlock.message, 409, { artifact_citations: { code: acBlock.code, wrong: ac!.wrong, unverified_offline: ac!.unverified_offline, outside_registry: ac!.outside_registry } });
+          throw new DomainError("unverified_citations", acBlock.message, 409, { artifact_citations: { code: acBlock.code, wrong: ac!.wrong, unverified_offline: ac!.unverified_offline, outside_registry: ac!.outside_registry, timing: ac!.timing ?? 0 } });
         }
         // 设备签名签发（§6.3）：绑定最终字节 hash——重算成果内容，与登记不符即拒签
         let actual: string;
@@ -2124,7 +2162,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           assurance_level: "device_signature",
           // 系统核验结果摘要（复核 A-12）：签进签发记录的是内核自己算的计数，不是界面提交的核对单；律师勾选了哪些人工核对见 completeness_hash
           citation_check: ac
-            ? { checked: ac.checked, total: ac.total, verified: ac.verified, wrong: ac.wrong, case_offline: ac.unverified_offline, outside_registry: ac.outside_registry, registry_coverage: ac.registry_coverage }
+            ? { checked: ac.checked, total: ac.total, verified: ac.verified, wrong: ac.wrong, case_offline: ac.unverified_offline, outside_registry: ac.outside_registry, event_time: ac.timing ?? 0, event_date: ac.event_date ?? null, registry_coverage: ac.registry_coverage }
             : null,
           signed_at: new Date().toISOString(),
         });
@@ -2721,6 +2759,33 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const d = outline.decisions ?? [];
       audit(db, id, "outline.confirmed", "argument_outline", outline.outline_id, sha256Hex(JSON.stringify({ kept: d.filter((x) => x.keep).length, dropped: d.filter((x) => !x.keep).length, edited: d.filter((x) => x.claim).length })), keyctx);
       return { outline };
+    },
+    // 事项待办（v9.4 第 20 批，C1 §3.2）：手工待办 + 从任务与成果推出的待办；文字为律师原文，审计不记文字
+    "todos.list": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      return { ...listTodos(db, matter.matter_id), derived: derivedTodos(db, matter.matter_id) };
+    },
+    "todos.create": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const todo = createTodo(db, { tenant_id: matter.tenant_id, matter_id: matter.matter_id, created_by: id.userId, title: p?.title, assignee_kind: p?.assignee_kind, assignee_name: p?.assignee_name, reviewer_name: p?.reviewer_name, due_date: p?.due_date });
+      audit(db, id, "todo.created", "todo", todo.todo_id, undefined, keyctx);
+      return { todo };
+    },
+    "todos.update": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const patch = (p?.patch ?? {}) as Record<string, unknown>;
+      const todo = updateTodo(db, matter.matter_id, id.userId, String(p?.todo_id ?? ""), patch);
+      audit(db, id, "todo.updated", "todo", todo.todo_id, sha256Hex(JSON.stringify({ fields: Object.keys(patch).sort(), status: todo.status })), keyctx);
+      return { todo };
+    },
+    "todos.delete": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      deleteTodo(db, matter.matter_id, String(p?.todo_id ?? ""));
+      audit(db, id, "todo.deleted", "todo", String(p?.todo_id ?? ""), undefined, keyctx);
+      return { ok: true };
     },
     "facts.list": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);

@@ -154,6 +154,9 @@ export interface LawVersionRow {
   law_id: string;
   law_name: string;
   aliases: string[];
+  /** 法规层级与适用地域（laws 表；“全国”或省市名，v9.4 S-08 按事项地域核对地方性法规）。 */
+  law_level?: string;
+  law_region?: string;
   promulgated: string;
   effective: string;
   superseded: string | null;
@@ -276,7 +279,7 @@ export class Lawdb {
       const idx = new Map<string, LawVersionRow[]>();
       const rows = this.db
         .prepare(
-          `SELECT v.*, l.law_name, l.aliases_json FROM law_versions v JOIN laws l ON l.law_id = v.law_id
+          `SELECT v.*, l.law_name, l.aliases_json, l.level AS law_level, l.region AS law_region FROM law_versions v JOIN laws l ON l.law_id = v.law_id
             ORDER BY v.effective`,
         )
         .all() as any[];

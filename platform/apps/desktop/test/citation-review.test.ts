@@ -18,7 +18,7 @@ test("分组：核对不通过、案号、法规库外分开列；系统没核�
   const n = citationNeeds(ac([{ raw: "A", kind: "wrong" }, { raw: "B", kind: "case" }, { raw: "C", kind: "outside" }, { raw: "D", kind: "ok" }]));
   assert.deepEqual([n.wrong.map((x) => x.raw), n.cases.map((x) => x.raw), n.outside.map((x) => x.raw), n.unchecked], [["A"], ["B"], ["C"], false]);
   assert.equal(citationNeeds(ac([], false)).unchecked, true);
-  assert.deepEqual(citationNeeds(null), { wrong: [], cases: [], outside: [], counts: { wrong: 0, cases: 0, outside: 0 }, unchecked: false, partial: 0, unrecognized: 0 });
+  assert.deepEqual(citationNeeds(null), { wrong: [], cases: [], outside: [], timing: [], counts: { wrong: 0, cases: 0, outside: 0, timing: 0 }, eventDate: null, unchecked: false, partial: 0, unrecognized: 0 });
 });
 
 test("复核 A-13：条目列表截断（法规库外的都在第 200 条之后）时按内核计数仍要求勾选，不让律师无路可走", () => {

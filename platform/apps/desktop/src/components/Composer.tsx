@@ -35,6 +35,8 @@ export function Composer(props: {
   onSubmit: () => void;
   busy?: boolean;
   placeholder?: string;
+  /** 打开时把光标放进输入框（事项页点“发起任务”后展开）。 */
+  autoFocus?: boolean;
   /**
    * “/ 方法”菜单选中一个业务场景（Z3 评审 IA-2、#8：菜单与首页场景卡同一份名单 lib/scenarios.ts）：
    * 打开该场景的开始面板。未提供时菜单只有“自由描述”。
@@ -73,6 +75,7 @@ export function Composer(props: {
         {(matter?.stance ?? props.stance) ? <span className="ctx-stance muted">我方：{stanceLabel(matter?.stance ?? props.stance)}</span> : null}
       </div>
       <textarea
+        autoFocus={props.autoFocus}
         placeholder={props.placeholder ?? "描述要处理的法律工作，例如：审查这份股权转让协议，我方为受让方"}
         value={value.goal}
         onChange={(e) => {

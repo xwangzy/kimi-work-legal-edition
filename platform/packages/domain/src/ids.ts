@@ -35,6 +35,8 @@ export const IdPrefix = {
   outline: "otl",
   reviewTable: "rtb",
   reviewCell: "rtc",
+  // v9.4 第 20 批：事项待办（C1 §3.2）
+  todo: "tdo",
 } as const;
 
 export type IdPrefixKey = keyof typeof IdPrefix;

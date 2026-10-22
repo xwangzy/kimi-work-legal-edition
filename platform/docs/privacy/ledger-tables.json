@@ -7,6 +7,9 @@
     "approvals": [
       12
     ],
+    "argument_outlines": [
+      7
+    ],
     "artifact_payloads": [
       7
     ],
@@ -15,9 +18,6 @@
     ],
     "attempts": [
       26
-    ],
-    "argument_outlines": [
-      7
     ],
     "audit_events": [
       8
@@ -130,6 +130,9 @@
     ],
     "matter_suspect_reviews": [
       3
+    ],
+    "matter_todos": [
+      7
     ],
     "matter_token_conflicts": [
       3

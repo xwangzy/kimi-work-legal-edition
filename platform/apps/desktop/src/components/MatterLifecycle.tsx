@@ -19,6 +19,16 @@ const INVENTORY_LABELS: Record<string, string> = {
   tokens: "代号对照",
   risk_cards: "风险卡",
   facts: "事实行",
+  // v9.4：此前这几项在删除清单里直接露出英文键名（第 20 批补齐）
+  outlines: "论点提纲",
+  review_tables: "审阅表",
+  review_cells: "审阅表格子",
+  todos: "待办",
+  reminders: "期限提醒",
+  reminders_cloud: "提醒服务上可能有副本的提醒",
+  reminders_elsewhere: "可能已送到其他设备的提醒",
+  relay: "团队共享里的事项",
+  exports: "已导出或下载过的文件（在你保存的位置，需自行删除）",
   key_wrappings: "密钥包裹",
   egress_records: "数据去向记录（保留元数据）",
   egress_sent: "已发出的请求",
@@ -233,7 +243,7 @@ export function DeletionReceipt({ view }: { view: DeletionReceiptView }) {
         <summary>删除清单</summary>
         <ul className="plain-list">
           {Object.entries(r.inventory).map(([k, n]) => (
-            <li key={k}>{INVENTORY_LABELS[k] ?? k}：{n}</li>
+            <li key={k}>{INVENTORY_LABELS[k] ?? "其他记录"}：{n}</li>
           ))}
         </ul>
       </details>

@@ -9,6 +9,7 @@ import { ConsentQuestion, type ConsentAnswer } from "./Consent.tsx";
 import { Modal } from "./Modal.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 import { Select } from "./Select.tsx";
+import { eventDateProblem, STAGE_LABELS, stagesFor } from "../lib/matter-stage.ts";
 
 // 我方立场（v9.4：补上劳动争议、借贷担保、委托服务、建设工程与二审的立场——S1 评审 §2.4；按业务类型分组提示）
 const STANCE_GROUPS: [string, string[]][] = [
@@ -25,7 +26,7 @@ const LEVELS = [
 ];
 
 export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (m: Matter) => void }) {
-  const [f, setF] = useState({ title: "", client_name: "", counterparty: "", stance: "原告", jurisdiction: "中国大陆", confidentiality: "normal", model_endpoint: "standard", analysis_as_of: "" });
+  const [f, setF] = useState({ title: "", client_name: "", counterparty: "", stance: "原告", jurisdiction: "中国大陆", confidentiality: "normal", model_endpoint: "standard", analysis_as_of: "", stage: "", event_date: "", region: "" });
   const [basis, setBasis] = useState<MatterBasis>({ engagement: "pending", personal_info: "pending", sensitive: "not_applicable", subprocessor: "pending" });
   const [consent, setConsent] = useState<ConsentAnswer>("not_yet");
   const [more, setMore] = useState(false);
@@ -38,6 +39,8 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
   };
   const submit = async () => {
     if (!f.title.trim()) return setErr("请填写事项名称");
+    const ep = eventDateProblem(f.event_date);
+    if (ep) return setErr(`事件时点：${ep}`);
     setBusy(true);
     setErr("");
     try {
@@ -53,6 +56,10 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
         // 同意状态由内核按四项派生；转委托与次处理者在标准端点下不能“不适用”
         basis: { ...basis, subprocessor: basis.subprocessor === "not_applicable" && f.model_endpoint !== "private" && f.model_endpoint !== "none" ? "pending" : basis.subprocessor },
         key_dates: f.analysis_as_of ? { analysis_as_of: f.analysis_as_of } : {},
+        // 程序阶段、事件时点、地域（v9.4 S-08）：没填不传
+        ...(f.stage ? { stage: f.stage } : {}),
+        ...(f.event_date.trim() ? { event_date: f.event_date.trim() } : {}),
+        ...(f.region.trim() ? { region: f.region.trim() } : {}),
       });
       notifyDataChanged();
       onCreated(r.matter);
@@ -81,6 +88,10 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
           <span>我方立场</span>
           <Select aria-label="我方立场" value={f.stance} onChange={(v) => set("stance")({ target: { value: v } })} options={STANCE_OPTIONS} />
         </label>
+        <label className="field">
+          <span>当前阶段（可空）</span>
+          <Select aria-label="当前阶段" value={f.stage} placeholder="不填" onChange={(v) => set("stage")({ target: { value: v } })} options={[{ value: "", label: "不填" }, ...stagesFor(f.stance).map((s) => ({ value: s, label: STAGE_LABELS[s] }))]} />
+        </label>
       </div>
       <ConsentQuestion
         answer={consent}
@@ -90,9 +101,18 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
         endpoint={f.model_endpoint}
         sensitiveMatter={f.confidentiality === "high"}
       />
-      <button type="button" className="btn-link" onClick={() => setMore((v) => !v)}>{more ? "收起更多设置" : "更多设置（保密程度、法域、AI 服务、资料截止日）"}</button>
+      <button type="button" className="btn-link" onClick={() => setMore((v) => !v)}>{more ? "收起更多设置" : "更多设置（事件时点、地域、保密程度、AI 服务、资料截止日）"}</button>
       {more && (
         <div className="form-grid">
+        <label className="field">
+          <span>事件时点（可空）</span>
+          <input value={f.event_date} onChange={set("event_date")} placeholder="如 2023-05 或 2023-05-06" />
+          <small className="muted">{eventDateProblem(f.event_date) ?? "纠纷或交易的主要事实发生的时间；签发前按当时的版本核对引用"}</small>
+        </label>
+        <label className="field">
+          <span>地域（可空）</span>
+          <input value={f.region} onChange={set("region")} placeholder="如 上海市" maxLength={20} />
+        </label>
         <label className="field">
           <span>法域</span>
           <input value={f.jurisdiction} onChange={set("jurisdiction")} />

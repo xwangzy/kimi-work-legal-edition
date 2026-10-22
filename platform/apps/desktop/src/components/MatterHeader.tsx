@@ -7,6 +7,7 @@ import type { Matter, MatterBasis, RunPolicyView } from "../api.ts";
 import { BASIS_FIELDS, BASIS_VALUE_LABELS, ENDPOINT_LABELS } from "../lib/labels.ts";
 import { jurisdictionLabel, stanceLabel } from "../lib/labels.ts";
 import { Icon } from "./Icons.tsx";
+import { STAGE_LABELS, type Stage } from "../lib/matter-stage.ts";
 
 export function basisComplete(b: MatterBasis | undefined): boolean {
   if (!b) return false;
@@ -45,6 +46,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
         <Field k="相对方" v={matter.counterparty ?? "—"} />
         <Field k="立场" v={stanceLabel(matter.stance)} />
         <Field k="法域" v={jurisdictionLabel(matter.jurisdiction)} />
+        {matter.stage && matter.stage in STAGE_LABELS && <Field k="阶段" v={STAGE_LABELS[matter.stage as Stage]} />}
         {dates.slice(0, 2).map(([k, v]) => (
           <Field key={k} k={k === "analysis_as_of" ? "分析截止日" : k} v={v} />
         ))}

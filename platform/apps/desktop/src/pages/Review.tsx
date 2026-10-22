@@ -145,7 +145,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
     else if (k === "citations") document.getElementById("review-citations")?.scrollIntoView({ block: "start" });
     else nav(data?.latest_artifact_version_id && data.latest_artifact_version_id !== data.artifact_version_id ? `/review/${data.latest_artifact_version_id}` : `/matter/${data.matter_id}`);
   };
-  const [cticks, setCticks] = useState<CitationTicks>({ cases: false, outside: false, unchecked: false });
+  const [cticks, setCticks] = useState<CitationTicks>({ cases: false, outside: false, unchecked: false, timing: false });
   const act = useCallback(
     async (decision: "approved" | "rejected") => {
       setBusy(true);
@@ -302,6 +302,23 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                   {cneeds.counts.outside > Math.min(20, cneeds.outside.length) && <div className="muted">另有 {cneeds.counts.outside - Math.min(20, cneeds.outside.length)} 条，见成果原文。</div>}
                   <label>
                     <input type="checkbox" checked={cticks.outside} onChange={(e) => setCticks((t) => ({ ...t, outside: e.target.checked }))} /> 已逐条人工核对上面的引用
+                  </label>
+                </div>
+              )}
+              {cneeds.counts.timing > 0 && (
+                <div className="banner banner-orange">
+                  {cneeds.eventDate ? `本事项的事件时点是 ${cneeds.eventDate}。` : ""}这些引用要按事件发生时的版本或本事项的地域再核对一次：
+                  <ul>
+                    {cneeds.timing.slice(0, 20).map((c, i) => (
+                      <li key={i}>
+                        {c.raw}
+                        <span className="muted">：{c.timing}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {cneeds.counts.timing > Math.min(20, cneeds.timing.length) && <div className="muted">另有 {cneeds.counts.timing - Math.min(20, cneeds.timing.length)} 条，见成果原文。</div>}
+                  <label>
+                    <input type="checkbox" checked={cticks.timing === true} onChange={(e) => setCticks((t) => ({ ...t, timing: e.target.checked }))} /> 已按事件时点和地域核对上面的引用
                   </label>
                 </div>
               )}

@@ -75,7 +75,10 @@ test("结案只读 → 保全阻止删除 → 提前删除须写原因 → 删�
   const { submitOutline, decideOutline } = await import("../src/services/argument-outlines.ts");
   const ol = submitOutline({ db: tk.kernel.db }, { tenantId: live.tid, matterId: mid, runId: live.rid }, { doc_kind: "起诉状", arguments: [{ claim: "被告应付款" }] });
   decideOutline(tk.kernel.db, mid, live.uid, { outline_id: ol.outline_id, decisions: [{ arg_id: "a1", keep: true, claim: `被告应付款${CANARY}` }], note: `补充${CANARY}` });
-  for (const t of ["review_tables", "review_cells", "argument_outlines"]) assert.ok(scanDb(CANARY).some((h) => h.startsWith(t)), `前置：${t} 里确有金丝雀`);
+  // v9.4 第 20 批：待办（律师原文）与事项地域也在删除范围内
+  await tk.inv("todos.create", { matter_id: mid, title: `约${CANARY}见面`, assignee_kind: "colleague", assignee_name: "王律师", reviewer_name: "李律师", due_date: "2030-01-02" });
+  await tk.inv("matters.update", { matter_id: mid, patch: { stage: "negotiation", event_date: "2025-03", region: `${CANARY}市`.slice(0, 20) } });
+  for (const t of ["review_tables", "review_cells", "argument_outlines", "matter_todos", "matters"]) assert.ok(scanDb(CANARY).some((h) => h.startsWith(t)), `前置：${t} 里确有金丝雀`);
   assert.ok(scanDb(CANARY).length > 0, "前置：删除前库里确有内容");
   assert.ok(diskScan(tk.dir, CANARY, [mountDir]).length > 0, "前置：删除前磁盘上确有内容（扫描本身有效）");
 

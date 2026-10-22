@@ -14,7 +14,9 @@
  */
 import { CitationState } from "@zr-legal/domain";
 import { extractParagraphs, mapParagraphs, readZipText, xlsxToText } from "@zr-legal/docx-engine";
-import type { Lawdb } from "@zr-legal/lawdb";
+import { versionAt, type Lawdb } from "@zr-legal/lawdb";
+import { eventDateRange, isProceduralLaw } from "./matter-facts.ts";
+import { lawNameCandidates } from "../tools/tools/law-names.ts";
 import { citationsVerify, extractCitations, unrecognizedArticleRefs, type CitationVerdict } from "../tools/tools/citations.ts";
 
 export interface ArtifactCitationCheck {
@@ -31,7 +33,13 @@ export interface ArtifactCitationCheck {
   outside_registry: number;
   /** 已核到来源或版本的条数。 */
   verified: number;
-  items: { raw: string; state: CitationVerdict["state"]; reason: string | null; kind: "wrong" | "case" | "outside" | "ok"; partial?: boolean }[];
+  items: { raw: string; state: CitationVerdict["state"]; reason: string | null; kind: "wrong" | "case" | "outside" | "ok"; partial?: boolean; timing?: string }[];
+  /**
+   * 按事件时点与地域须律师核对的条数（v9.4 S-08）：事件发生时这部法尚未施行、当时适用的是另一版本、地方性法规的地域与事项不符。
+   * 每条在 items[].timing 写一句话；只在事项填了事件时点或地域时才核。
+   */
+  timing?: number;
+  event_date?: string | null;
   /** 核到了、但只核到条号（款项或“之X”没核）的条数（复核 R15B-05）。 */
   partial?: number;
   /** 写了“第X条”却没认出是哪部法的处数（复核 R15B-02；只提示、不拦签发）。 */
@@ -90,16 +98,61 @@ export function reasonText(v: Pick<CitationVerdict, "reasons" | "state" | "sugge
   return v.state === CitationState.intercepted ? "核对不通过" : null;
 }
 
-export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Buffer, asOf: string): ArtifactCitationCheck {
+/**
+ * 按事件时点与地域复核一条已核过的法条引用（v9.4 S-08）：返回须律师核对的一句话，没有问题返回 null。
+ * - 程序法从新：民事诉讼法、仲裁法等不按事件时点核；
+ * - 事件发生时还没施行（如 2019 年的合同纠纷引民法典）→ 须按时间效力规定核对能否适用；
+ * - 事件时点适用的版本与现行版本不同 → 须核对引的是哪一版、条号与内容是否对得上；只到月且当月内版本有变化的如实说；
+ * - 地方性法规的地域与事项地域不同 → 须核对是否适用。
+ */
+export function timingNote(lawdb: Pick<Lawdb, "findLawVersions">, law: string, article: number, asOf: string, eventDate: string | null, region: string | null): string | null {
+  let rows = lawdb.findLawVersions(law);
+  for (const name of lawNameCandidates(law)) {
+    if (rows.length > 0) break;
+    rows = lawdb.findLawVersions(name);
+  }
+  if (rows.length === 0) return null;
+  const name = rows[0]!.law_name;
+  const lawRegion = rows[0]!.law_region ?? "";
+  if (region && lawRegion && lawRegion !== "全国" && !region.includes(lawRegion) && !lawRegion.includes(region)) {
+    return `这是${lawRegion}的地方性规定，本事项地域是${region}：请核对是否适用`;
+  }
+  const range = eventDateRange(eventDate);
+  if (!range || isProceduralLaw(name)) return null;
+  const now = versionAt(rows, asOf);
+  const atFrom = versionAt(rows, range.from);
+  const atTo = versionAt(rows, range.to);
+  const when = eventDate!;
+  if (!atFrom && !atTo) {
+    // 法规库可能没收早期版本：不说“还没有施行”，只说库里没有当时有效的版本
+    const first = rows[0]!.effective;
+    return first > range.to
+      ? `本机法规库里这部法规最早的版本 ${first} 起施行，事件发生时（${when}）没有有效版本：请按时间效力规定核对当时适用的法律或版本`
+      : `事件发生时（${when}）这部法规没有有效版本（可能已废止）：请核对适用依据`;
+  }
+  if (range.monthOnly && atFrom?.lsv_id !== atTo?.lsv_id) return `事件时点只到月（${when}），当月内这部法规的版本有变化：请按具体日期核对适用哪一版`;
+  const at = atTo ?? atFrom!;
+  if (now && at.lsv_id !== now.lsv_id) {
+    if (article > at.total_articles) return `事件发生时（${when}）适用的是 ${at.effective} 施行的版本，那一版没有第 ${article} 条：请核对是否引了现行版本的条号`;
+    return `事件发生时（${when}）适用的是 ${at.effective} 施行的版本，不是现行版本：请核对条号与内容是否按当时的版本引用`;
+  }
+  return null;
+}
+
+export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Buffer, asOf: string, matter: { event_date?: string | null; region?: string | null } = {}): ArtifactCitationCheck {
   const text = artifactText(filename, bytes);
   const base: ArtifactCitationCheck = { checked: false, total: 0, wrong: 0, unverified_offline: 0, outside_registry: 0, verified: 0, items: [], registry_coverage: lawdb.packageVersion, as_of: asOf };
   if (text === "format" || text === "error") return { ...base, unchecked_reason: text };
   const body = text.slice(0, 2_000_000);
   const r = citationsVerify(lawdb, { text: body, as_of: asOf });
+  const eventDate = matter.event_date ?? null;
+  const region = matter.region ?? null;
   const items = r.verdicts.map((v) => {
     const kind = classify(v);
     const partial = kind === "ok" && v.reasons.some((x) => x.startsWith("subdivision_unchecked:") || x.startsWith("suffix_unchecked:"));
-    return { raw: v.raw, state: v.state, reason: reasonText(v), kind, ...(partial ? { partial: true } : {}) };
+    // 只复核系统核到了的法条（核对不通过的先改；库外的本来就要人工核）
+    const timing = kind === "ok" && v.kind === "statute" && v.article !== null && (eventDate || region) ? timingNote(lawdb, v.law_input, v.article, asOf, eventDate, region) : null;
+    return { raw: v.raw, state: v.state, reason: reasonText(v), kind, ...(partial ? { partial: true } : {}), ...(timing ? { timing } : {}) };
   });
   return {
     ...base,
@@ -110,6 +163,8 @@ export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Bu
     outside_registry: items.filter((i) => i.kind === "outside").length,
     verified: items.filter((i) => i.kind === "ok").length,
     partial: items.filter((i) => i.partial).length,
+    timing: items.filter((i) => i.timing).length,
+    event_date: eventDate,
     unrecognized: unrecognizedArticleRefs(body, extractCitations(body)),
     items: items.slice(0, 200),
     registry_coverage: r.registry_coverage,
@@ -120,6 +175,8 @@ export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Bu
 export const CITATIONS_MANUAL_CHECK_KEY = "citations_outside_registry_checked";
 export const CITATIONS_CASES_CHECK_KEY = "citations_cases_checked";
 export const CITATIONS_UNVERIFIABLE_CHECK_KEY = "citations_unverifiable_checked";
+/** 按事件时点与地域须核对的引用（v9.4 S-08）。 */
+export const CITATIONS_EVENT_TIME_CHECK_KEY = "citations_event_time_checked";
 
 /** 系统读不出文字时的核验结果（复核 B13-U02：出错不放行）。 */
 export function uncheckedCitations(reason: "format" | "error", registry: string, asOf: string): ArtifactCitationCheck {
@@ -127,7 +184,7 @@ export function uncheckedCitations(reason: "format" | "error", registry: string,
 }
 
 /** 签发门禁：返回阻止签发的理由（null = 可以签发）。 */
-export function artifactCitationBlock(c: ArtifactCitationCheck, checklist: Record<string, unknown>): { code: "wrong" | "case" | "outside" | "unchecked"; message: string } | null {
+export function artifactCitationBlock(c: ArtifactCitationCheck, checklist: Record<string, unknown>): { code: "wrong" | "case" | "outside" | "unchecked" | "timing"; message: string } | null {
   if (!c.checked) {
     return checklist[CITATIONS_UNVERIFIABLE_CHECK_KEY] === true
       ? null
@@ -139,6 +196,9 @@ export function artifactCitationBlock(c: ArtifactCitationCheck, checklist: Recor
   }
   if (c.outside_registry > 0 && checklist[CITATIONS_MANUAL_CHECK_KEY] !== true) {
     return { code: "outside", message: `成果里有 ${c.outside_registry} 条引用系统没法核对（不在本机法规库里，或款项、适用版本对不上）：请逐条人工核对，在复核页勾选“已逐条人工核对”后再签发` };
+  }
+  if ((c.timing ?? 0) > 0 && checklist[CITATIONS_EVENT_TIME_CHECK_KEY] !== true) {
+    return { code: "timing", message: `成果里有 ${c.timing} 条引用要按事件时点或地域核对（事件发生时尚未施行、当时适用另一版本，或地方性规定的地域不符）：请逐条核对，在复核页勾选“已按事件时点和地域核对”后再签发` };
   }
   return null;
 }

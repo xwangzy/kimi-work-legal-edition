@@ -66,6 +66,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
   }, [matter?.matter_id, docs.length]);
   const [value, setValue] = useState<ComposerValue>({ goal: "", scenario: "a1.agent_task", documentIds: [], choice: defaultChoice(null) });
   const [sheet, setSheet] = useState<PendingStart | null>(null);
+  // 输入框不常驻（v9.4 第 20 批 G-09：1280×720 下标签内容起点 ≤ 260px）：标题行“发起任务”展开；写了字的不收起
+  const [composerOpen, setComposerOpen] = useState(false);
   // 材料标签：列表 / 表格审阅（v9.4 第 19 批 C-01：不加导航，只加视图）
   const [matView, setMatView] = useState<"list" | "table">("list");
   const [basisOpen, setBasisOpen] = useState(false);
@@ -219,11 +221,18 @@ export function MatterPage({ matterId }: { matterId: string }) {
         <Breadcrumb items={[{ label: "事项", href: "/matters" }, { label: matter.title }]} />
         <div className="page-head">
           <h1 className="page-title">{matter.title}</h1>
-          {!closed && !matter.is_sample && (
-            <button className="btn-ghost" onClick={() => nav(`/reminders/new/${encodeURIComponent(matterId)}`)}>
-              设提醒
-            </button>
-          )}
+          <div className="page-head-actions">
+            {!closed && (
+              <button className="btn" aria-expanded={composerOpen || !!value.goal.trim()} onClick={() => setComposerOpen((v) => !v || !!value.goal.trim())}>
+                发起任务
+              </button>
+            )}
+            {!closed && !matter.is_sample && (
+              <button className="btn-ghost" onClick={() => nav(`/reminders/new/${encodeURIComponent(matterId)}`)}>
+                设提醒
+              </button>
+            )}
+          </div>
         </div>
         {matter.is_sample && (
           <div className="banner banner-gray banner-inline">
@@ -277,8 +286,9 @@ export function MatterPage({ matterId }: { matterId: string }) {
             <button className="btn-link" onClick={() => setTab("lifecycle")}>结案与删除</button>
           </div>
         )}
-        {!closed && <div className={`matter-composer${value.goal.trim() ? " has-text" : ""}`}>
+        {!closed && (composerOpen || !!value.goal.trim()) && <div className="matter-composer has-text">
           <Composer
+            autoFocus
             matterId={matterId}
             stance={matter?.stance}
             documents={docs.filter((d) => !d.quarantined_at)}
@@ -300,7 +310,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
               ["board", "概览"],
               ["materials", `材料（${docs.length}）`],
               ["facts", "事实"],
-              ["runs", `任务（${runs.length}）`],
+              // “任务”改名“AI 记录”（C1 §3.2）：它是 AI 运行流水，待办在概览里
+              ["runs", `AI 记录（${runs.length}）`],
               ["deliverables", "交付件"],
             ] as [Tab, string][]
           ).map(([k, l]) => (
@@ -404,7 +415,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
         )}
         {tab === "runs" && (
           <section>
-            {runs.length === 0 && <p className="muted">还没有任务。</p>}
+            {runs.length === 0 && <p className="muted">还没有 AI 记录。</p>}
             {runs.length > 0 && (
               <table className="data">
                 <thead><tr><th>任务</th><th>状态</th><th>模式</th><th>发起</th></tr></thead>
@@ -422,7 +433,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
             )}
           </section>
         )}
-        {tab === "board" && <MatterBoard matter={matter} runs={runs} />}
+        {tab === "board" && <MatterBoard matter={matter} runs={runs} onChanged={reload} />}
         {tab === "deliverables" && <MatterDeliverables matterId={matterId} />}
         {tab === "facts" && <FactsPanel matterId={matterId} docs={docs} readOnly={closed} />}
         {tab === "parties" && <PartiesPanel matterId={matterId} onChanged={reload} readOnly={closed} />}
