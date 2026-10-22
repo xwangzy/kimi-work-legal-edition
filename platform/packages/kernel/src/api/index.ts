@@ -93,7 +93,7 @@ import { createStyledDocx, extractParagraphs, isHouseStyled, markdownToBlocks, r
 import { docStyleView, houseStyleFor, setDocStyle, setDocTemplate } from "../services/doc-style.ts";
 import { isToolOperationInFlight } from "../local-server.ts";
 import { MATTER_STAGES } from "../services/matter-facts.ts";
-import { artifactCitationBlock, checkArtifactCitations, CITATIONS_CASES_CHECK_KEY, uncheckedCitations, type ArtifactCitationCheck } from "../services/artifact-citations.ts";
+import { artifactCitationBlock, checkArtifactCitations, CITATIONS_CASES_CHECK_KEY, uncheckedCitations, withDecisions, type ArtifactCitationCheck, type CitationDecision } from "../services/artifact-citations.ts";
 import { rankTitles, type TitleCandidate } from "../services/title-search.ts";
 
 export interface ApiDeps {
@@ -368,13 +368,16 @@ function liveAgentRunOf(db: KernelDb, matterId: string): { run_id: string; goal:
 }
 
 /** 成果文件的引用核验（第 13 批）：适用时点取事项的分析截止日，缺省今天。 */
-function artifactCitationsFor(db: KernelDb, blobs: BlobStore, lawdb: Lawdb, art: { matter_id: string; filename: string; storage_uri: string }): ArtifactCitationCheck | null {
+function artifactCitationsFor(db: KernelDb, blobs: BlobStore, lawdb: Lawdb, art: { artifact_version_id: string; matter_id: string; filename: string; storage_uri: string }): ArtifactCitationCheck | null {
   try {
     const m = db.get<{ key_dates: string | null; event_date: string | null; region: string | null }>(`SELECT key_dates, event_date, region FROM matters WHERE matter_id = ?`, [art.matter_id]);
     const kd = parseJson<Record<string, unknown>>(m?.key_dates ?? "{}", {});
     const asOf = typeof kd.analysis_as_of === "string" && /^\d{4}-\d{2}-\d{2}$/.test(kd.analysis_as_of) ? kd.analysis_as_of : localToday();
     // 事件时点与地域（v9.4 S-08）：实体法按事件时点复核适用版本、地方性规定按地域复核
-    return checkArtifactCitations(lawdb, String(art.filename), blobs.read(String(art.storage_uri)), asOf, { event_date: m?.event_date ?? null, region: m?.region ?? null });
+    const c = checkArtifactCitations(lawdb, String(art.filename), blobs.read(String(art.storage_uri)), asOf, { event_date: m?.event_date ?? null, region: m?.region ?? null });
+    // 律师对每处引用支持性的逐条决定（C-03）：只认本成果版本的
+    const decisions = new Map(db.all<{ cite_key: string; decision: CitationDecision }>(`SELECT cite_key, decision FROM citation_decisions WHERE artifact_version_id = ?`, [art.artifact_version_id]).map((r) => [r.cite_key, r.decision] as const));
+    return withDecisions(c, decisions);
   } catch {
     // 出错不放行（复核 B13-U02）：按“系统没有核对”处理，须人工核对勾选
     return uncheckedCitations("error", lawdb.packageVersion, localToday());
@@ -2085,10 +2088,43 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           ...(artCitations && artCitations.unverified_offline > 0 ? [`成果里有 ${artCitations.unverified_offline} 个案号系统离线无法核实，须逐个核对并勾选后才能签发`] : []),
           ...(artCitations && artCitations.outside_registry > 0 ? [`成果里有 ${artCitations.outside_registry} 条引用系统没法核对（不在本机法规库里，或款项、适用版本对不上），须逐条人工核对并勾选后才能签发`] : []),
           ...(artCitations && !artCitations.checked ? ["这份文件的引用系统没有核对（格式不认识或读取出错），须人工核对并勾选后才能签发"] : []),
+          ...(artCitations && (artCitations.unsupported ?? 0) > 0 ? [`成果里有 ${artCitations.unsupported} 条引用你标为不支持，改正后再签发`] : []),
+          ...(artCitations && (artCitations.support_pending ?? 0) > 0 ? [`成果里有 ${artCitations.support_pending} 条引用的支持性待你逐条确认（确认支持或我已知悉）`] : []),
           ...(artCitations && (artCitations.timing ?? 0) > 0 ? [`成果里有 ${artCitations.timing} 条引用要按事件时点或地域核对，须逐条核对并勾选后才能签发`] : []),
           ...(art.version === latest.v ? [] : ["已有更新版本，本版不得签发（批准不跨版本）"]),
         ],
       };
+    },
+
+    /**
+     * 论断—依据对照（v9.4 第 20 批 C-03）：成果里每处引用的论断原句、条文原文、三层状态与律师的逐条决定。
+     * 只读；执行页右栏“引用”与成果预览角标用。
+     */
+    "artifacts.citations": (p, id) => {
+      const art = requireArtifact(db, String(p?.artifact_version_id ?? ""), id);
+      return { citations: artifactCitationsFor(db, blobs, lawdb, art as any) };
+    },
+    /** 律师逐条决定一处引用的支持性（确认支持 / 标为不支持 / 我已知悉；decision 为 null 即撤回）。只对未签发的版本；审计不记引用原文。 */
+    "citations.decide": (p, id) => {
+      const art = requireArtifact(db, String(p?.artifact_version_id ?? ""), id);
+      requireMatterWriter(db, art.matter_id, id);
+      if (!["draft", "pending_review", "pending_verification"].includes(String(art.status))) throw new DomainError("conflict", "这份成果已签发或已退回，不能再改引用的决定", 409);
+      const key = String(p?.cite_key ?? "");
+      const decision = p?.decision ?? null;
+      if (decision !== null && !["supported", "unsupported", "acknowledged"].includes(decision)) throw validation("decision 须为 supported / unsupported / acknowledged 或 null");
+      const ac = artifactCitationsFor(db, blobs, lawdb, art as any);
+      const item = ac?.items.find((i) => i.key === key);
+      if (!item) throw new DomainError("not_found", "这份成果里没有这处引用（文件可能已更新）", 404);
+      if (item.kind !== "ok") throw new DomainError("conflict", "这处引用系统没有核到来源与版本：先按上面的提示处理", 409);
+      if (decision === null) db.run(`DELETE FROM citation_decisions WHERE artifact_version_id = ? AND cite_key = ?`, [art.artifact_version_id, key]);
+      else
+        db.run(
+          `INSERT INTO citation_decisions (artifact_version_id, cite_key, decision, decided_by, decided_at) VALUES (?,?,?,?,?)
+           ON CONFLICT (artifact_version_id, cite_key) DO UPDATE SET decision = excluded.decision, decided_by = excluded.decided_by, decided_at = excluded.decided_at`,
+          [art.artifact_version_id, key, decision, id.userId, new Date().toISOString()],
+        );
+      audit(db, id, "citation.decided", "artifact_version", art.artifact_version_id, sha256Hex(JSON.stringify({ decision })), keyctx);
+      return { citations: artifactCitationsFor(db, blobs, lawdb, art as any) };
     },
 
     "review.approve": (p, id) => {
@@ -2132,7 +2168,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         const ac = artifactCitationsFor(db, blobs, lawdb, art as any);
         const acBlock = ac ? artifactCitationBlock(ac, checklistObj) : null;
         if (acBlock) {
-          throw new DomainError("unverified_citations", acBlock.message, 409, { artifact_citations: { code: acBlock.code, wrong: ac!.wrong, unverified_offline: ac!.unverified_offline, outside_registry: ac!.outside_registry, timing: ac!.timing ?? 0 } });
+          throw new DomainError("unverified_citations", acBlock.message, 409, { artifact_citations: { code: acBlock.code, wrong: ac!.wrong, unverified_offline: ac!.unverified_offline, outside_registry: ac!.outside_registry, timing: ac!.timing ?? 0, support_pending: ac!.support_pending ?? 0, unsupported: ac!.unsupported ?? 0 } });
         }
         // 设备签名签发（§6.3）：绑定最终字节 hash——重算成果内容，与登记不符即拒签
         let actual: string;
@@ -2162,7 +2198,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           assurance_level: "device_signature",
           // 系统核验结果摘要（复核 A-12）：签进签发记录的是内核自己算的计数，不是界面提交的核对单；律师勾选了哪些人工核对见 completeness_hash
           citation_check: ac
-            ? { checked: ac.checked, total: ac.total, verified: ac.verified, wrong: ac.wrong, case_offline: ac.unverified_offline, outside_registry: ac.outside_registry, event_time: ac.timing ?? 0, event_date: ac.event_date ?? null, registry_coverage: ac.registry_coverage }
+            ? { checked: ac.checked, total: ac.total, verified: ac.verified, wrong: ac.wrong, case_offline: ac.unverified_offline, outside_registry: ac.outside_registry, event_time: ac.timing ?? 0, event_date: ac.event_date ?? null, support_confirmed: ac.items.filter((i) => i.decision === "supported").length, support_acknowledged: ac.items.filter((i) => i.decision === "acknowledged").length, registry_coverage: ac.registry_coverage }
             : null,
           signed_at: new Date().toISOString(),
         });

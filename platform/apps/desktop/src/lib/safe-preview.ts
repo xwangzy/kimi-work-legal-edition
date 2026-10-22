@@ -30,9 +30,19 @@ function isDataUrl(v: string): boolean {
 const PAPER_STYLE = "body{font-family:'Source Han Serif SC','Noto Serif CJK SC','Songti SC',SimSun,serif;font-size:16px;line-height:1.9;color:#1f1d1a;background:#fffdf9;margin:24px 40px;}";
 
 /** 预览框架的基础样式（框架内取不到本页令牌：颜色值手抄自 tokens.css 的 --p-ink、--p-white、--p-blue-600，style-tokens.test.ts 核对相等）。 */
-const BASE_STYLE = "body{font-family:'Segoe UI','Microsoft YaHei UI','Microsoft YaHei',-apple-system,'PingFang SC',sans-serif;font-size:14px;line-height:1.7;color:#0e1219;background:#ffffff;margin:16px;} .kwl-link{color:#0a66d1;text-decoration:underline dotted;cursor:default;} img{max-width:100%;}";
+const BASE_STYLE = "body{font-family:'Segoe UI','Microsoft YaHei UI','Microsoft YaHei',-apple-system,'PingFang SC',sans-serif;font-size:14px;line-height:1.7;color:#0e1219;background:#ffffff;margin:16px;} .kwl-link{color:#0a66d1;text-decoration:underline dotted;cursor:default;} img{max-width:100%;} .kwl-cite{font-size:11px;font-weight:600;padding:0 2px;border-radius:4px;cursor:help;} .kwl-cite-red{color:#b42318;} .kwl-cite-orange{color:#b54708;} .kwl-cite-gray{color:#8f8a84;} .kwl-cite-confirmed{color:#5925dc;} .kwl-cite-ack{color:#0e1219;border:1px solid #8f8a84;}";
 
-export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | null>, o: { paper?: boolean } = {}): string {
+/** 成果预览里的引用角标（v9.4 第 20 批 C-03）：raw 第 n 次出现处加角标，颜色取三层里最弱的一层，悬停（title）看三层状态与原文。 */
+export interface PreviewCite {
+  raw: string;
+  /** 本处引用在成果里第几次出现（与内核 key 的 #n 一致）。 */
+  nth: number;
+  mark: string;
+  tone: "red" | "gray" | "orange" | "confirmed" | "ack";
+  title: string;
+}
+
+export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | null>, o: { paper?: boolean; cites?: PreviewCite[] } = {}): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   for (const tag of DROP_ELEMENTS) for (const el of Array.from(doc.querySelectorAll(tag))) el.remove();
   for (const a of Array.from(doc.querySelectorAll("a[href]"))) a.setAttribute("data-kwl-href", a.getAttribute("href") ?? "");
@@ -67,6 +77,44 @@ export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | nu
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const t = n.nodeValue ?? "";
       if (t.includes("〔")) n.nodeValue = t.replace(TOKEN_RE, (m) => tokenMap.get(m) ?? m);
+    }
+  }
+  // 引用角标：只在单个文字节点里找得到的引用上加（跨格式片段拆开的找不到就不加，右栏列表仍然完整）；引用原文里没有代号，放在代号还原之后
+  if (o.cites && o.cites.length > 0 && doc.body) {
+    const byRaw = new Map<string, PreviewCite[]>();
+    for (const c of o.cites) byRaw.set(c.raw, [...(byRaw.get(c.raw) ?? []), c]);
+    const seen = new Map<string, number>();
+    const nodes: Text[] = [];
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text);
+    const raws = [...byRaw.keys()].sort((a, b) => b.length - a.length);
+    for (const node of nodes) {
+      let rest = node.nodeValue ?? "";
+      if (!raws.some((r) => rest.includes(r))) continue;
+      const frag = doc.createDocumentFragment();
+      for (;;) {
+        let at = -1;
+        let hit = "";
+        for (const r of raws) {
+          const i = rest.indexOf(r);
+          if (i >= 0 && (at < 0 || i < at)) [at, hit] = [i, r];
+        }
+        if (at < 0) break;
+        frag.append(doc.createTextNode(rest.slice(0, at + hit.length)));
+        const nth = (seen.get(hit) ?? 0) + 1;
+        seen.set(hit, nth);
+        const c = byRaw.get(hit)!.find((x) => x.nth === nth);
+        if (c) {
+          const sup = doc.createElement("sup");
+          sup.className = `kwl-cite kwl-cite-${c.tone}`;
+          sup.title = c.title;
+          sup.textContent = c.mark;
+          frag.append(sup);
+        }
+        rest = rest.slice(at + hit.length);
+      }
+      frag.append(doc.createTextNode(rest));
+      node.replaceWith(frag);
     }
   }
   const body = doc.body?.innerHTML ?? "";

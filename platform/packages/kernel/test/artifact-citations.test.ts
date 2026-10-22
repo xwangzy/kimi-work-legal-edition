@@ -177,3 +177,71 @@ test("材料缺口（Astra M-2）：任务有没读到的材料时，签发须�
     await t2.kernel.close();
   }
 });
+
+test("论断—依据（v9.4 第 20 批 C-03）：每处引用给出论断原句与条文原文；同一引用两次出现分开编号", () => {
+  const text = "第一部分。被告逾期付款，依据《民法典》第五百八十五条应支付违约金；另依《民法典》第五百八十五条可请求调整！参见（2023）最高法民终123号。";
+  const c = checkArtifactCitations(lawdb, "备忘录.md", Buffer.from(text), "2026-10-01");
+  const [a, b, k] = c.items;
+  assert.equal(a!.key, "《民法典》第五百八十五条#1");
+  assert.equal(b!.key, "《民法典》第五百八十五条#2");
+  assert.equal(a!.claim, "被告逾期付款，依据《民法典》第五百八十五条应支付违约金；");
+  assert.equal(b!.claim, "另依《民法典》第五百八十五条可请求调整！");
+  assert.match(a!.article_text!, /^当事人可以约定一方违约时/);
+  assert.equal(a!.law_name, "中华人民共和国民法典");
+  assert.equal(a!.effective, "2021-01-01");
+  assert.equal(k!.kind, "case");
+  assert.equal(k!.claim, "参见（2023）最高法民终123号。");
+  assert.equal(c.support_pending, 2);
+});
+
+test("论断—依据签发门禁（C-03，C1 §4.4）：系统核到的每条都要逐条决定；标为不支持须改正；已签发后不能再改；新版本重新决定", { timeout: 120_000 }, async () => {
+  const t3 = await makeKernel({}, "claims-firm");
+  try {
+    const { inv, kernel } = t3;
+    const { matter } = await inv("matters.create", { title: "论断依据", stance: "原告", consent_status: "not_required", key_dates: { analysis_as_of: "2026-10-01" } });
+    const { randomUUID } = await import("node:crypto");
+    const reg = (text: string, version = 1) => {
+      const bytes = createDocx("成果", [{ heading: "正文", paragraphs: [text] }]);
+      const { sha256, storage_uri } = kernel.blobs.put(bytes, matter.matter_id);
+      const id = `artv_${randomUUID()}`;
+      kernel.db.run(
+        `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, audience, version, filename, sha256, storage_uri, status, created_by)
+         VALUES (?,?,?,?,?,?,?,?,?,?, 'pending_review', ?)`,
+        [id, kernel.identity.tenantId, matter.matter_id, null, "test_claims", "internal", version, "起诉状.docx", sha256, storage_uri, kernel.identity.userId],
+      );
+      return { id, sha256 };
+    };
+    const v1 = reg("依据《民法典》第五百八十五条，被告应支付违约金。《民法典》第五百零九条要求全面履行。《公司法》第一百八十八条规定忠实义务。");
+    const { citations } = await inv("artifacts.citations", { artifact_version_id: v1.id });
+    assert.equal(citations.support_pending, 2);
+    const [k585, k509, kOut] = citations.items.map((i: any) => i.key);
+    const approve = (sha: string, id: string) => inv("review.approve", { artifact_version_id: id, decision: "approved", expected_sha256: sha, checklist: { [CITATIONS_MANUAL_CHECK_KEY]: true } });
+    await assert.rejects(approve(v1.sha256, v1.id), (e: any) => e.detail?.artifact_citations?.code === "support");
+    // 库外的引用不能在这里决定（先按人工核对处理）
+    await assert.rejects(inv("citations.decide", { artifact_version_id: v1.id, cite_key: kOut, decision: "supported" }), (e: any) => e.code === "conflict");
+    await assert.rejects(inv("citations.decide", { artifact_version_id: v1.id, cite_key: "不存在#1", decision: "supported" }), (e: any) => e.code === "not_found");
+    await assert.rejects(inv("citations.decide", { artifact_version_id: v1.id, cite_key: k585, decision: "maybe" }), (e: any) => e.code === "validation");
+    await inv("citations.decide", { artifact_version_id: v1.id, cite_key: k585, decision: "supported" });
+    const after = (await inv("citations.decide", { artifact_version_id: v1.id, cite_key: k509, decision: "unsupported" })).citations;
+    assert.equal(after.unsupported, 1);
+    assert.equal(after.support_pending, 0);
+    const comp = await inv("review.completeness", { artifact_version_id: v1.id });
+    assert.ok(comp.blockers.some((b: string) => b.includes("标为不支持")));
+    await assert.rejects(approve(v1.sha256, v1.id), (e: any) => e.detail?.artifact_citations?.code === "unsupported");
+    // 撤回决定 → 回到待判；改为“我已知悉” → 可签发
+    assert.equal((await inv("citations.decide", { artifact_version_id: v1.id, cite_key: k509, decision: null })).citations.support_pending, 1);
+    await inv("citations.decide", { artifact_version_id: v1.id, cite_key: k509, decision: "acknowledged" });
+    await approve(v1.sha256, v1.id);
+    const cc = JSON.parse(kernel.db.get<{ signed_payload: string }>(`SELECT signed_payload FROM approvals WHERE artifact_version_id = ? AND decision = 'approved'`, [v1.id])!.signed_payload).citation_check;
+    assert.equal(cc.support_confirmed, 1);
+    assert.equal(cc.support_acknowledged, 1);
+    await assert.rejects(inv("citations.decide", { artifact_version_id: v1.id, cite_key: k585, decision: "unsupported" }), (e: any) => e.code === "conflict", "已签发的不能再改");
+    // 审计不记引用原文
+    assert.ok(!JSON.stringify(kernel.db.all(`SELECT * FROM audit_events WHERE action = 'citation.decided'`, [])).includes("民法典"));
+    // 新版本（同一成果系列）：决定不继承
+    const v2 = reg("依据《民法典》第五百八十五条，被告应支付违约金。", 2);
+    assert.equal((await inv("artifacts.citations", { artifact_version_id: v2.id })).citations.support_pending, 1);
+  } finally {
+    await t3.kernel.close().catch(() => {});
+  }
+});

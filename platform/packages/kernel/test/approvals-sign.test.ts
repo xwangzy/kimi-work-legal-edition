@@ -8,7 +8,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { verifyBytes, verifyDeviceCertificate } from "@zr-legal/keys";
-import { makeKernel, runScenario, importText, DEMO_CONTRACT, type TestKernel } from "./helpers.ts";
+import { decideAllCitations, makeKernel, runScenario, importText, DEMO_CONTRACT, type TestKernel } from "./helpers.ts";
 
 let tk: TestKernel;
 // 跨测试共享（test 1 产出，后续测试复用）
@@ -33,6 +33,8 @@ test("设备签名签发与离线验证", { timeout: 240_000 }, async () => {
 
   // im_witnessed 本机不可自证 → 422
   await inv("review.submit", { artifact_version_id: art.artifact_version_id });
+  // C-03：引用支持性先逐条决定（否则先被支持性门禁挡下，测不到保证等级）
+  await decideAllCitations(inv, art.artifact_version_id);
   await assert.rejects(
     () => inv("review.approve", { artifact_version_id: art.artifact_version_id, decision: "approved", expected_sha256: art.sha256, assurance_level: "im_witnessed" }),
     (e: any) => /device_signature|im_witnessed/.test(e.message),

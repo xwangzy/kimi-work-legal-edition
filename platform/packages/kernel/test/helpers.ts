@@ -144,3 +144,14 @@ export async function waitRunAnswering(
     await new Promise((r) => setTimeout(r, 200));
   }
 }
+
+/**
+ * 签发前逐条决定成果里每处系统核到的引用（v9.4 第 20 批 C-03 签发必过项）：测别的门禁的用例用它把支持性这一项走完。
+ * 返回决定了几条。
+ */
+export async function decideAllCitations(inv: (m: string, p?: any) => Promise<any>, artifactVersionId: string, decision: "supported" | "acknowledged" = "supported"): Promise<number> {
+  const { citations } = await inv("artifacts.citations", { artifact_version_id: artifactVersionId });
+  const keys: string[] = (citations?.items ?? []).filter((i: any) => i.kind === "ok" && !i.decision).map((i: any) => i.key);
+  for (const cite_key of keys) await inv("citations.decide", { artifact_version_id: artifactVersionId, cite_key, decision });
+  return keys.length;
+}

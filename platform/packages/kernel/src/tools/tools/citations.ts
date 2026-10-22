@@ -209,6 +209,11 @@ export function extractCaseNumbers(text: string): string[] {
   return [...text.matchAll(CASE_NO_RE)].map((m) => m[0]);
 }
 
+/** 案号在文字里的位置（与 extractCaseNumbers 同序；成果的论断—依据对照取原句用）。 */
+export function caseNumberOffsets(text: string): number[] {
+  return [...text.matchAll(CASE_NO_RE)].map((m) => m.index ?? -1);
+}
+
 export interface CitationVerifyParams {
   text?: string;
   citations?: { law: string; article: number }[];

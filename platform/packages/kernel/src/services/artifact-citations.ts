@@ -17,7 +17,7 @@ import { extractParagraphs, mapParagraphs, readZipText, xlsxToText } from "@zr-l
 import { versionAt, type Lawdb } from "@zr-legal/lawdb";
 import { eventDateRange, isProceduralLaw } from "./matter-facts.ts";
 import { lawNameCandidates } from "../tools/tools/law-names.ts";
-import { citationsVerify, extractCitations, unrecognizedArticleRefs, type CitationVerdict } from "../tools/tools/citations.ts";
+import { caseNumberOffsets, citationsVerify, extractCitations, unrecognizedArticleRefs, type CitationVerdict } from "../tools/tools/citations.ts";
 
 export interface ArtifactCitationCheck {
   /** 能取到文字的成果才核验（xlsx、图片等为 false）；false 时须人工核对（不放行）。 */
@@ -33,7 +33,28 @@ export interface ArtifactCitationCheck {
   outside_registry: number;
   /** 已核到来源或版本的条数。 */
   verified: number;
-  items: { raw: string; state: CitationVerdict["state"]; reason: string | null; kind: "wrong" | "case" | "outside" | "ok"; partial?: boolean; timing?: string }[];
+  items: {
+    raw: string;
+    state: CitationVerdict["state"];
+    reason: string | null;
+    kind: "wrong" | "case" | "outside" | "ok";
+    partial?: boolean;
+    timing?: string;
+    /**
+     * 论断—依据对照（v9.4 第 20 批 C-03；评审 C1 §4）：key 是这处引用在本成果里的稳定编号（原文 + 第几次出现）；
+     * claim 是成果里含这处引用的那句话（令牌形态，界面还原）；law_name / effective 是核到的法规与版本施行日；
+     * article_text 是法规库里的条文原文（公开法律文本，库里没有正文为 null）；decision 是律师的逐条决定。
+     */
+    key?: string;
+    claim?: string;
+    law_name?: string | null;
+    effective?: string | null;
+    article_text?: string | null;
+    decision?: CitationDecision | null;
+  }[];
+  /** 支持性：系统核到来源与版本、还没有律师逐条决定的条数；律师标为不支持的条数（C-03 签发必过项）。 */
+  support_pending?: number;
+  unsupported?: number;
   /**
    * 按事件时点与地域须律师核对的条数（v9.4 S-08）：事件发生时这部法尚未施行、当时适用的是另一版本、地方性法规的地域与事项不符。
    * 每条在 items[].timing 写一句话；只在事项填了事件时点或地域时才核。
@@ -46,6 +67,22 @@ export interface ArtifactCitationCheck {
   unrecognized?: number;
   registry_coverage: string;
   as_of: string;
+}
+
+/** 律师对一处引用支持性的决定：确认支持 / 标为不支持（须改正）/ 我已知悉（看过、由律师自己负责）。 */
+export type CitationDecision = "supported" | "unsupported" | "acknowledged";
+
+/** 含这处引用的那句话：往前到上一个句号、问号、叹号、分号或换行，往后到下一个；至多 160 字。 */
+export function claimAround(text: string, offset: number, len: number): string {
+  if (offset < 0) return "";
+  const stops = /[。！？；\n!?;]/;
+  let a = offset;
+  while (a > 0 && !stops.test(text[a - 1]!) && offset - a < 120) a -= 1;
+  let b = offset + len;
+  while (b < text.length && !stops.test(text[b]!) && b - offset < 160) b += 1;
+  if (b < text.length && stops.test(text[b]!) && text[b] !== "\n") b += 1;
+  const s = text.slice(a, b).replace(/^[\s#>*\-|]+/, "").replace(/\s+/g, " ").trim();
+  return s.length > 160 ? `${s.slice(0, 159)}…` : s;
 }
 
 /** DOCX 正文以外也会写引用的部件（复核 A-12）。 */
@@ -147,12 +184,23 @@ export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Bu
   const r = citationsVerify(lawdb, { text: body, as_of: asOf });
   const eventDate = matter.event_date ?? null;
   const region = matter.region ?? null;
-  const items = r.verdicts.map((v) => {
+  // 引用在成果文字里的位置（法条按提取顺序与核验结果一一对应，案号随后；C-03 取论断原句）
+  const statuteRaws = extractCitations(body);
+  const caseOffsets = caseNumberOffsets(body);
+  const seen = new Map<string, number>();
+  let caseIdx = 0;
+  const items = r.verdicts.map((v, i) => {
+    const offset = v.kind === "case" ? (caseOffsets[caseIdx++] ?? -1) : (statuteRaws[i]?.offset ?? -1);
+    const n = (seen.get(v.raw) ?? 0) + 1;
+    seen.set(v.raw, n);
+    const versionRow = v.lsv_id ? lawdb.findLawVersions(v.matched_law_name ?? v.law_input).find((x) => x.lsv_id === v.lsv_id) : undefined;
+    const articleText = v.lsv_id && v.article !== null && v.kind === "statute" ? lawdb.getArticle(v.lsv_id, v.article) : null;
+    const pair = { key: `${v.raw}#${n}`, claim: claimAround(body, offset, v.raw.length), law_name: v.matched_law_name, effective: versionRow?.effective ?? null, article_text: articleText ? articleText.slice(0, 400) : null };
     const kind = classify(v);
     const partial = kind === "ok" && v.reasons.some((x) => x.startsWith("subdivision_unchecked:") || x.startsWith("suffix_unchecked:"));
     // 只复核系统核到了的法条（核对不通过的先改；库外的本来就要人工核）
     const timing = kind === "ok" && v.kind === "statute" && v.article !== null && (eventDate || region) ? timingNote(lawdb, v.law_input, v.article, asOf, eventDate, region) : null;
-    return { raw: v.raw, state: v.state, reason: reasonText(v), kind, ...(partial ? { partial: true } : {}), ...(timing ? { timing } : {}) };
+    return { raw: v.raw, state: v.state, reason: reasonText(v), kind, ...(partial ? { partial: true } : {}), ...(timing ? { timing } : {}), ...pair };
   });
   return {
     ...base,
@@ -164,6 +212,8 @@ export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Bu
     verified: items.filter((i) => i.kind === "ok").length,
     partial: items.filter((i) => i.partial).length,
     timing: items.filter((i) => i.timing).length,
+    support_pending: items.filter((i) => i.kind === "ok").length,
+    unsupported: 0,
     event_date: eventDate,
     unrecognized: unrecognizedArticleRefs(body, extractCitations(body)),
     items: items.slice(0, 200),
@@ -183,8 +233,20 @@ export function uncheckedCitations(reason: "format" | "error", registry: string,
   return { checked: false, unchecked_reason: reason, total: 0, wrong: 0, unverified_offline: 0, outside_registry: 0, verified: 0, items: [], registry_coverage: registry, as_of: asOf };
 }
 
+/**
+ * 合进律师的逐条决定（C-03）：只认本成果版本、本条编号的决定；支持待判 = 系统核到了、律师还没决定的；标为不支持的单独计数。
+ * 条目列表至多 200 条：超出的部分没法逐条决定，按支持待判计（签发前须在原文核对后分批处理——实际成果很少超过）。
+ */
+export function withDecisions(c: ArtifactCitationCheck, decisions: Map<string, CitationDecision>): ArtifactCitationCheck {
+  if (!c.checked) return c;
+  const items = c.items.map((i) => ({ ...i, decision: i.key ? (decisions.get(i.key) ?? null) : null }));
+  const okTotal = c.verified;
+  const decided = items.filter((i) => i.kind === "ok" && (i.decision === "supported" || i.decision === "acknowledged")).length;
+  return { ...c, items, support_pending: Math.max(0, okTotal - decided - items.filter((i) => i.kind === "ok" && i.decision === "unsupported").length), unsupported: items.filter((i) => i.kind === "ok" && i.decision === "unsupported").length };
+}
+
 /** 签发门禁：返回阻止签发的理由（null = 可以签发）。 */
-export function artifactCitationBlock(c: ArtifactCitationCheck, checklist: Record<string, unknown>): { code: "wrong" | "case" | "outside" | "unchecked" | "timing"; message: string } | null {
+export function artifactCitationBlock(c: ArtifactCitationCheck, checklist: Record<string, unknown>): { code: "wrong" | "case" | "outside" | "unchecked" | "timing" | "unsupported" | "support"; message: string } | null {
   if (!c.checked) {
     return checklist[CITATIONS_UNVERIFIABLE_CHECK_KEY] === true
       ? null
@@ -200,5 +262,8 @@ export function artifactCitationBlock(c: ArtifactCitationCheck, checklist: Recor
   if ((c.timing ?? 0) > 0 && checklist[CITATIONS_EVENT_TIME_CHECK_KEY] !== true) {
     return { code: "timing", message: `成果里有 ${c.timing} 条引用要按事件时点或地域核对（事件发生时尚未施行、当时适用另一版本，或地方性规定的地域不符）：请逐条核对，在复核页勾选“已按事件时点和地域核对”后再签发` };
   }
+  // 支持性（C-03，评审 C1 §4.4）：标为不支持的须先改正；系统核到的每一条都要律师逐条点“确认支持”或“我已知悉”
+  if ((c.unsupported ?? 0) > 0) return { code: "unsupported", message: `成果里有 ${c.unsupported} 条引用你标为不支持：请先改正（删除或替换）再签发` };
+  if ((c.support_pending ?? 0) > 0) return { code: "support", message: `成果里有 ${c.support_pending} 条引用的支持性还没确认：请在复核页逐条点“确认支持”或“我已知悉”后再签发` };
   return null;
 }

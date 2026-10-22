@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.ts";
 import { nav } from "../App.tsx";
 import { downloadPlan } from "../lib/download.ts";
@@ -6,7 +6,8 @@ import { SafePreview } from "../components/SafePreview.tsx";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { artifactName, fmtTime } from "../lib/labels.ts";
 import { blankPagesText, partialPagesText } from "../lib/citation-review.ts";
-import { citationChecklist, citationNeeds, citationsAllowSign, type CitationTicks } from "../lib/citation-review.ts";
+import { citationChecklist, citationNeeds, citationsAllowSign, previewCites, type ArtifactCitations, type CitationTicks } from "../lib/citation-review.ts";
+import { CitationClaims } from "../components/CitationClaims.tsx";
 import { Breadcrumb } from "../components/Breadcrumb.tsx";
 
 /** 成果状态 → 律师称呼。 */
@@ -135,7 +136,13 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   // 成果里不在本机法规库的引用（第 13 批）：系统核对不了，律师逐条人工核对后勾选才能签发
   // 成果的引用核对（第 13 批复核 B13-U01/U02/U03）：分组列出、逐类勾选、勾选不齐不能签发
   const runCases = Number(data?.completeness?.run_case_offline ?? 0) || 0;
-  const cneeds = citationNeeds(data?.completeness?.artifact_citations, runCases);
+  // 论断—依据的逐条决定（C-03）：决定后用内核返回的最新核验结果，不必整页重载
+  // 律师点开或收起过就按律师的（决定完最后一条不自动收起）
+  const [claimsOpen, setClaimsOpen] = useState<boolean | null>(null);
+  const [claimsOverride, setClaimsOverride] = useState<{ id: string; c: ArtifactCitations | null } | null>(null);
+  const artCites: ArtifactCitations | null | undefined = claimsOverride && claimsOverride.id === data?.artifact_version_id ? claimsOverride.c : data?.completeness?.artifact_citations;
+  const cneeds = citationNeeds(artCites, runCases);
+  const cites = useMemo(() => (artCites?.checked ? previewCites(artCites.items ?? [], (t) => restoredPlain(t, tokenMap)) : undefined), [artCites, tokenMap]);
   const gaps = Number(data?.material_gaps ?? 0) || 0;
   const internalOnly = data?.audience === "internal";
   /** 没通过的项“去处理”（Astra M-2）：材料回到任务过程、引用滚到下面的引用核对、版本回到事项的交付件。 */
@@ -212,7 +219,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
               {preview === null ? (
                 <div className="muted">正在加载预览…</div>
               ) : preview.text ? (
-                <SafePreview filename={data.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} />
+                <SafePreview filename={data.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} {...(cites ? { cites } : {})} />
               ) : (
                 <div className="muted">这种文件不能在应用内预览，请下载后打开。</div>
               )}
@@ -321,6 +328,25 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                     <input type="checkbox" checked={cticks.timing === true} onChange={(e) => setCticks((t) => ({ ...t, timing: e.target.checked }))} /> 已按事件时点和地域核对上面的引用
                   </label>
                 </div>
+              )}
+              {artCites?.checked && (artCites.items ?? []).length > 0 && (
+                <details className="pane-fold" open={claimsOpen ?? (cneeds.counts.supportPending > 0 || cneeds.counts.unsupported > 0)} onToggle={(e) => setClaimsOpen(e.currentTarget.open)}>
+                  <summary>
+                    论断与依据
+                    {cneeds.counts.supportPending > 0 ? `（${cneeds.counts.supportPending} 条待你逐条确认）` : cneeds.counts.unsupported > 0 ? `（${cneeds.counts.unsupported} 条标为不支持，须先改正）` : ""}
+                  </summary>
+                  <CitationClaims
+                    artifactVersionId={data.artifact_version_id}
+                    citations={artCites}
+                    tokenMap={tokenMap}
+                    readOnly={!["draft", "pending_review", "pending_verification"].includes(data.status)}
+                    onChanged={(c) => {
+                      setClaimsOverride({ id: data.artifact_version_id, c });
+                      // 签发前须处理的清单也要跟着变
+                      reload();
+                    }}
+                  />
+                </details>
               )}
               {cneeds.partial > 0 && <p className="muted">另有 {cneeds.partial} 条引用只核到条号，款项没有核对（法规库没有这一条的正文）。</p>}
               {cneeds.unrecognized > 0 && <p className="muted">文中另有 {cneeds.unrecognized} 处“第X条”系统没认出是哪部法规，请自行核对。</p>}

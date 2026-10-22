@@ -5,7 +5,7 @@
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { makeKernel, runScenario, importText, DEMO_CONTRACT, type TestKernel } from "./helpers.ts";
+import { decideAllCitations, makeKernel, runScenario, importText, DEMO_CONTRACT, type TestKernel } from "./helpers.ts";
 
 let tk: TestKernel;
 
@@ -32,6 +32,7 @@ test("签名事件链：覆盖、篡改检测与检查点", { timeout: 240_000 }
   assert.equal(d.run.status, "succeeded");
   const art = d.artifacts.find((a: any) => a.kind === "s1_opinion");
   await inv("review.submit", { artifact_version_id: art.artifact_version_id });
+  await decideAllCitations(inv, art.artifact_version_id);
   const ok = await inv("review.approve", { artifact_version_id: art.artifact_version_id, decision: "approved", expected_sha256: art.sha256, checklist: { reviewed_open_items: true } });
   assert.equal(ok.assurance_level, "device_signature");
 

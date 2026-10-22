@@ -1017,6 +1017,32 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .outline-claim textarea { flex: 1; min-width: 0; }
 .outline-basis, .outline-facts { list-style: none; margin: var(--sp-1) 0 0; padding-left: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-sm); }
 .outline-basis .cite-state { margin-left: var(--sp-2); }
+/* 论断—依据与引用角标（v9.4 第 20 批 C-03）：颜色取三层里最弱的一层；律师确认沿用“律师已确认”的颜色，系统核过的不显示成认可色 */
+.cite-mark { font-size: var(--fs-xs); font-weight: 600; padding: 0 2px; cursor: help; }
+.cite-tone-red { color: var(--cite-intercepted); }
+.cite-tone-orange { color: var(--cite-support-pending); }
+.cite-tone-gray { color: var(--text-secondary); }
+.cite-tone-confirmed { color: var(--cite-lawyer-confirmed); }
+.cite-tone-ack { color: var(--text-primary); border: 1px solid var(--border-strong); border-radius: var(--r-xs); }
+.claims { display: flex; flex-direction: column; gap: var(--sp-3); }
+.claims-summary { font-size: var(--fs-sm); color: var(--text-secondary); }
+.claim { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); padding: var(--sp-2) var(--sp-3); background: var(--bg-surface); }
+.claim-red { border-color: var(--status-danger-border); }
+.claim-head { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); }
+.claim-tone { font-size: var(--fs-xs); border-radius: var(--r-xs); padding: 0 5px; }
+.claim-tone-red { color: var(--cite-intercepted); background: var(--risk-high-bg); }
+.claim-tone-orange { color: var(--cite-support-pending); background: var(--risk-low-bg); }
+.claim-tone-gray { color: var(--text-secondary); background: var(--bg-hover); }
+.claim-tone-confirmed { color: var(--cite-lawyer-confirmed); background: var(--status-purple-bg); }
+.claim-tone-ack { color: var(--text-primary); border: 1px solid var(--border-strong); }
+.claim-raw { font-weight: 500; }
+.claim-cols { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); margin: var(--sp-2) 0; font-size: var(--fs-sm); }
+.claim-k { font-size: var(--fs-xs); color: var(--text-secondary); margin-bottom: 2px; }
+.claim-article { display: block; max-height: 7.5em; overflow: auto; white-space: pre-line; }
+.claim-layers { font-size: var(--fs-xs); }
+.claim-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); flex-wrap: wrap; }
+.claim-actions .btn.on { background: var(--btn-primary); color: var(--btn-primary-text); border-color: var(--btn-primary); }
+.exec-right .claim-cols { grid-template-columns: 1fr; }
 .outline-article { margin: var(--sp-1) 0 0; padding: var(--sp-2) var(--sp-3); border-left: 3px solid var(--border-subtle); background: var(--bg-surface); white-space: pre-wrap; color: var(--text-secondary); }
 .outline-dropped, .outline-dropped textarea { color: var(--text-secondary); }
 .outline-dropped textarea { text-decoration: line-through; }

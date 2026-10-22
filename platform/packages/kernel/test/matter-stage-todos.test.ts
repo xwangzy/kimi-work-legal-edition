@@ -13,7 +13,7 @@ import { openLawdb } from "@zr-legal/lawdb";
 import { createDocx } from "@zr-legal/docx-engine";
 import { artifactCitationBlock, checkArtifactCitations, CITATIONS_EVENT_TIME_CHECK_KEY, timingNote } from "../src/services/artifact-citations.ts";
 import { eventDateRange, isProceduralLaw, matterFactsLine } from "../src/services/matter-facts.ts";
-import { liveTaskIdentity, makeKernel, type TestKernel } from "./helpers.ts";
+import { decideAllCitations, liveTaskIdentity, makeKernel, type TestKernel } from "./helpers.ts";
 
 const repo = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
 const signerPub = (JSON.parse(readFileSync(repo("content/keys/content-signing-dev.pub.json"), "utf8")) as { publicKeyPem: string }).publicKeyPem;
@@ -28,7 +28,7 @@ test("事件时点：2019 年的事实引民法典须核对；2023 年的不用�
   const text = "依据《民法典》第五百八十五条，违约金可以调整。《劳动合同法》第四十七条规定经济补偿。";
   const none = checkArtifactCitations(lawdb, "备忘录.md", Buffer.from(text), "2026-10-01");
   assert.equal(none.timing, 0, "没填事件时点：不按时点核");
-  assert.equal(artifactCitationBlock(none, {}), null);
+  assert.equal(artifactCitationBlock(none, {})?.code, "support", "C-03：系统核到的引用还要律师逐条决定支持性");
 
   const old = checkArtifactCitations(lawdb, "备忘录.md", Buffer.from(text), "2026-10-01", { event_date: "2019-05-06" });
   assert.equal(old.verified, 2, "系统核验结果不变");
@@ -41,7 +41,7 @@ test("事件时点：2019 年的事实引民法典须核对；2023 年的不用�
   assert.equal(old.event_date, "2019-05-06");
   assert.equal(artifactCitationBlock(old, {})?.code, "timing");
   assert.equal(artifactCitationBlock(old, { [CITATIONS_EVENT_TIME_CHECK_KEY]: "yes" })?.code, "timing", "只认布尔 true");
-  assert.equal(artifactCitationBlock(old, { [CITATIONS_EVENT_TIME_CHECK_KEY]: true }), null);
+  assert.equal(artifactCitationBlock(old, { [CITATIONS_EVENT_TIME_CHECK_KEY]: true })?.code, "support", "时点勾过后到支持性这一项");
 
   const recent = checkArtifactCitations(lawdb, "备忘录.md", Buffer.from(text), "2026-10-01", { event_date: "2023-05" });
   assert.equal(recent.timing, 0, "只到月也能核：2023-05 民法典已施行");
@@ -114,6 +114,7 @@ test("事项阶段、事件时点、地域：校验、读写、清空；签发�
     () => inv("review.approve", { artifact_version_id: id, decision: "approved", expected_sha256: sha256, checklist: {} }),
     (e: any) => e.code === "unverified_citations" && e.detail?.artifact_citations?.code === "timing",
   );
+  assert.equal(await decideAllCitations(inv, id), 1);
   await inv("review.approve", { artifact_version_id: id, decision: "approved", expected_sha256: sha256, checklist: { [CITATIONS_EVENT_TIME_CHECK_KEY]: true } });
   const signed = kernel.db.get<{ signed_payload: string }>(`SELECT signed_payload FROM approvals WHERE artifact_version_id = ? AND decision = 'approved'`, [id])!;
   const cc = JSON.parse(signed.signed_payload).citation_check;

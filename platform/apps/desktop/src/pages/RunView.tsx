@@ -24,6 +24,8 @@ import { busyRunOfError } from "../lib/start-block.ts";
 import { methodLine, methodShort } from "../lib/run-method.ts";
 import { Select } from "../components/Select.tsx";
 import { rightCollapsed, rightTabs, type RightTab } from "../lib/run-pane.ts";
+import { previewCites, type ArtifactCitations } from "../lib/citation-review.ts";
+import { CitationClaims } from "../components/CitationClaims.tsx";
 import { Breadcrumb } from "../components/Breadcrumb.tsx";
 import { OutlineConfirm } from "../components/OutlineConfirm.tsx";
 import { confirmAndAnswer, outlineAnswer, outlineQuestion, type OutlineView } from "../lib/outline.ts";
@@ -269,6 +271,21 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
       .then((r) => setPreview({ filename: a.filename, text: new TextDecoder().decode(Uint8Array.from(atob(r.data_base64), (c) => c.charCodeAt(0))) }))
       .catch((e) => setErr(e.message));
   }, [selected, artifacts]);
+  // 论断—依据（v9.4 第 20 批 C-03）：选中成果的逐处引用；预览加角标、右栏“引用”列对照
+  const [claims, setClaims] = useState<{ id: string; c: ArtifactCitations | null } | null>(null);
+  useEffect(() => {
+    if (!selected) return;
+    let live = true;
+    api
+      .artifactCitations(selected)
+      .then((r) => live && setClaims({ id: selected, c: r.citations }))
+      .catch(() => live && setClaims({ id: selected, c: null }));
+    return () => {
+      live = false;
+    };
+  }, [selected]);
+  const selClaims = claims && claims.id === selected ? claims.c : null;
+  const previewMarks = useMemo(() => (selClaims?.checked ? previewCites(selClaims.items ?? [], (t) => restoredPlain(t, tokenMap)) : undefined), [selClaims, tokenMap]);
 
   // 退出模式下排队与恢复中的任务暂停（复核 S6-C12、S6-C22）：随任务状态变化重新读取，徽标如实显示
   useEffect(() => {
@@ -944,7 +961,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                   options={artifacts.map((a) => ({ value: a.artifact_version_id, label: `${artifactName(a, (t) => restoredPlain(t, tokenMap))} · v${a.version}` }))}
                 />
               )}
-              {selected && preview && <SafePreview filename={preview.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} />}
+              {selected && preview && <SafePreview filename={preview.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} {...(previewMarks ? { cites: previewMarks } : {})} />}
               {selected && <ArtifactActions artifact={artifacts.find((a) => a.artifact_version_id === selected)} onError={setErr} primary={!hasRiskEntry} />}
               {artifacts.length > 1 && (
                 // 原“文件历史”标签并入这里（Z3 #11）
@@ -983,7 +1000,26 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               )}
             </>
           )}
-          {tab === "citations" && <Citations ev={citationEvent} />}
+          {tab === "citations" && (
+            <>
+              {/* 论断—依据（C-03，替换原来只列引用的清单）：选中成果里的每处引用；材料的核验结果放在下面 */}
+              {selected && (
+                <CitationClaims
+                  artifactVersionId={selected}
+                  citations={selClaims}
+                  tokenMap={tokenMap}
+                  readOnly={!["draft", "pending_review", "pending_verification"].includes(String(artifacts.find((a) => a.artifact_version_id === selected)?.status ?? ""))}
+                  onChanged={(c) => setClaims({ id: selected, c })}
+                />
+              )}
+              {citationEvent && (
+                <details className="pane-fold">
+                  <summary>材料里的引用核验</summary>
+                  <Citations ev={citationEvent} />
+                </details>
+              )}
+            </>
+          )}
         </div>
       </aside>
       )}

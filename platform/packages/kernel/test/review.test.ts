@@ -2,7 +2,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createDocx } from "@zr-legal/docx-engine";
-import { makeKernel, runScenario, importBytes, type TestKernel } from "./helpers.ts";
+import { decideAllCitations, makeKernel, runScenario, importBytes, type TestKernel } from "./helpers.ts";
 
 let tk: TestKernel;
 
@@ -70,6 +70,7 @@ test("复核签发全链路（含版本失效与外发门禁）", { timeout: 240
 
   // 批准最新版 v2
   await inv("review.submit", { artifact_version_id: v2.artifact_version_id });
+  await decideAllCitations(inv, v2.artifact_version_id);
   const ok = await inv("review.approve", {
     artifact_version_id: v2.artifact_version_id,
     decision: "approved",

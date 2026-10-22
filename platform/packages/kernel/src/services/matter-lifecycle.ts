@@ -217,6 +217,7 @@ export async function purgeMatter(
     d.db.run(`DELETE FROM review_tables WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM argument_outlines WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM matter_todos WHERE matter_id = ?`, [matterId]);
+    d.db.run(`DELETE FROM citation_decisions WHERE artifact_version_id IN (SELECT artifact_version_id FROM artifact_versions WHERE matter_id = ?)`, [matterId]);
     d.db.run(`DELETE FROM artifact_payloads WHERE artifact_version_id IN (SELECT artifact_version_id FROM artifact_versions WHERE matter_id = ?)`, [matterId]);
     // 签名业务行（运行事件、去向记录）里的内容：登记删除清单后清除（链复核按清单报告“已清除”，清单摘要进签名的删除审计事件）；
     // 去向记录保留目的地、时间、结果、字数与代号计数，去掉备注（检索原文、URL、裁决）与材料文件名

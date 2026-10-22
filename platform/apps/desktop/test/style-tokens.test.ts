@@ -210,6 +210,10 @@ test("手抄的令牌值必须等于 tokens.css（S8B-11）：隔离预览框架
   assert.match(paper, new RegExp(`color:${tokenValue("--p-paper-ink")};background:${tokenValue("--p-paper")}`, "i"));
   assert.match(base!, new RegExp(`color:${tokenValue("--p-ink")};background:${tokenValue("--p-white")}`, "i"));
   assert.match(base!, new RegExp(`\\.kwl-link\\{color:${tokenValue("--p-blue-600")}`, "i"));
+  // 引用角标（v9.4 第 20 批 C-03）：框架内取不到令牌，手抄值须与 tokens.css 一致
+  for (const [cls, tok] of [["red", "--p-red-700"], ["orange", "--p-orange-700"], ["gray", "--p-gray-500"], ["confirmed", "--p-purple-700"]] as const) {
+    assert.match(base!, new RegExp(`\\.kwl-cite-${cls}\\{color:${tokenValue(tok)};`, "i"), cls);
+  }
   const main = readFileSync(join(root, "electron/main.cjs"), "utf8");
   const bg = /shouldUseDarkColors \? "(#[0-9a-f]{6})" : "(#[0-9a-f]{6})"/i.exec(main);
   assert.ok(bg, "窗口首帧底色写法变了，请同步本用例");

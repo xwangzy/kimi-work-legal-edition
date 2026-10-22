@@ -18,7 +18,7 @@ test("分组：核对不通过、案号、法规库外分开列；系统没核�
   const n = citationNeeds(ac([{ raw: "A", kind: "wrong" }, { raw: "B", kind: "case" }, { raw: "C", kind: "outside" }, { raw: "D", kind: "ok" }]));
   assert.deepEqual([n.wrong.map((x) => x.raw), n.cases.map((x) => x.raw), n.outside.map((x) => x.raw), n.unchecked], [["A"], ["B"], ["C"], false]);
   assert.equal(citationNeeds(ac([], false)).unchecked, true);
-  assert.deepEqual(citationNeeds(null), { wrong: [], cases: [], outside: [], timing: [], counts: { wrong: 0, cases: 0, outside: 0, timing: 0 }, eventDate: null, unchecked: false, partial: 0, unrecognized: 0 });
+  assert.deepEqual(citationNeeds(null), { wrong: [], cases: [], outside: [], timing: [], counts: { wrong: 0, cases: 0, outside: 0, timing: 0, supportPending: 0, unsupported: 0 }, eventDate: null, unchecked: false, partial: 0, unrecognized: 0 });
 });
 
 test("复核 A-13：条目列表截断（法规库外的都在第 200 条之后）时按内核计数仍要求勾选，不让律师无路可走", () => {
@@ -81,4 +81,39 @@ test("几乎没有文字的页单独一句，不算读不清（余项续复核 R
   assert.equal(partialPagesText([{ filename: "合同.pdf", pages: [], total: 0 }, { filename: "证据.pdf", pages: [2], total: 1 }]), "1 份共 1 页（证据.pdf 第 2 页）");
   assert.equal(blankPagesText([{ blank: 2 }, { blank: 1 }]), "另有 3 页几乎没有文字（多为空白页、印章页或签署页），没有算作读不清");
   assert.equal(blankPagesText([{ blank: 0 }, {}]), "");
+});
+
+test("论断—依据（C-03）：颜色取最弱一层、律师确认与系统核验分开；排序先要处理的；汇总只写不为 0 的；支持性没处理完不能签", async () => {
+  const { citeTone, sortClaims, claimsSummary, previewCites, markOf } = await import("../src/lib/citation-review.ts");
+  const items = [
+    { raw: "A", kind: "ok" as const, reason: null, key: "A#1", decision: "supported" as const },
+    { raw: "B", kind: "ok" as const, reason: null, key: "B#1" },
+    { raw: "C", kind: "outside" as const, reason: "库外", key: "C#1" },
+    { raw: "D", kind: "wrong" as const, reason: "条号超出", key: "D#1" },
+    { raw: "E", kind: "ok" as const, reason: null, key: "E#1", decision: "acknowledged" as const },
+    { raw: "A", kind: "ok" as const, reason: null, key: "A#2", decision: "unsupported" as const },
+  ];
+  assert.deepEqual(items.map(citeTone), ["confirmed", "orange", "gray", "red", "ack", "red"]);
+  assert.deepEqual(sortClaims(items).map((i) => i.key), ["D#1", "A#2", "B#1", "C#1", "E#1", "A#1"]);
+  assert.equal(claimsSummary(items), "6 处引用：律师已确认 1 · 律师已知悉 1 · 支持待判 1 · 系统没法核对 1 · 不通过或不支持 2");
+  const marks = previewCites(items);
+  assert.deepEqual(marks.map((m) => [m.raw, m.nth, m.mark]), [["A", 1, "①"], ["B", 1, "②"], ["C", 1, "③"], ["D", 1, "④"], ["E", 1, "⑤"], ["A", 2, "⑥"]]);
+  assert.match(marks[1]!.title, /支持 待判/);
+  assert.equal(markOf(21), "[21]");
+  const n = citationNeeds({ checked: true, wrong: 0, unverified_offline: 0, outside_registry: 0, support_pending: 1, unsupported: 0, items: [] });
+  assert.equal(citationsAllowSign(n, none), false);
+  const u = citationNeeds({ checked: true, wrong: 0, unverified_offline: 0, outside_registry: 0, support_pending: 0, unsupported: 1, items: [] });
+  assert.equal(citationsAllowSign(u, none), false);
+  assert.equal(citationsAllowSign(citationNeeds({ checked: true, wrong: 0, unverified_offline: 0, outside_registry: 0, support_pending: 0, unsupported: 0, items: [] }), none), true);
+});
+
+test("预览角标（C-03）：Markdown 与隔离框架都按“第几次出现”加角标；框架里的角标有悬停说明、不带脚本", async () => {
+  const src = readFileSync(new URL("../src/components/Markdown.tsx", import.meta.url), "utf8");
+  assert.ok(src.includes("cite-mark cite-tone-") && src.includes("x.nth === nth"));
+  const sp = readFileSync(new URL("../src/lib/safe-preview.ts", import.meta.url), "utf8");
+  assert.ok(sp.includes('sup.className = `kwl-cite kwl-cite-${c.tone}`') && sp.includes("sup.title = c.title"));
+  const rv = readFileSync(new URL("../src/pages/RunView.tsx", import.meta.url), "utf8");
+  assert.ok(rv.includes("<CitationClaims") && rv.includes("cites: previewMarks"));
+  const review = readFileSync(new URL("../src/pages/Review.tsx", import.meta.url), "utf8");
+  assert.ok(review.includes("<CitationClaims") && review.includes("{ cites }"));
 });

@@ -830,6 +830,10 @@ export const api = {
   outlines: (matterId: string, runId: string) => invoke<{ outlines: import("./lib/outline.ts").OutlineView[] }>("outlines.list", { matter_id: matterId, run_id: runId }),
   decideOutline: (matterId: string, outlineId: string, decisions: { arg_id: string; keep: boolean; claim?: string; basis_keep?: number[] }[], note: string) =>
     invoke<{ outline: import("./lib/outline.ts").OutlineView }>("outlines.decide", { matter_id: matterId, outline_id: outlineId, decisions, ...(note ? { note } : {}) }),
+  // 论断—依据（v9.4 第 20 批 C-03）
+  artifactCitations: (artifactVersionId: string) => invoke<{ citations: import("./lib/citation-review.ts").ArtifactCitations | null }>("artifacts.citations", { artifact_version_id: artifactVersionId }),
+  decideCitation: (artifactVersionId: string, citeKey: string, decision: "supported" | "unsupported" | "acknowledged" | null) =>
+    invoke<{ citations: import("./lib/citation-review.ts").ArtifactCitations | null }>("citations.decide", { artifact_version_id: artifactVersionId, cite_key: citeKey, decision }),
   todos: (matterId: string) => invoke<TodoList>("todos.list", { matter_id: matterId }),
   createTodo: (matterId: string, body: TodoInput) => invoke<{ todo: TodoRow }>("todos.create", { matter_id: matterId, ...body }),
   updateTodo: (matterId: string, todoId: string, patch: Partial<TodoInput> & { done?: boolean }) => invoke<{ todo: TodoRow }>("todos.update", { matter_id: matterId, todo_id: todoId, patch }),
