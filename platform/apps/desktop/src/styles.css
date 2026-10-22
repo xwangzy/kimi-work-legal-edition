@@ -1068,13 +1068,14 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .tr-context { white-space: pre-wrap; background: var(--bg-subtle); border-radius: var(--r-sm); padding: var(--sp-2); max-height: 12em; overflow: auto; }
 .tr-context mark { background: var(--status-warning-bg-soft); color: var(--text-primary); }
 .wb-batch { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-1) 0 var(--sp-2); }
-.rc-batch { float: left; margin: var(--sp-3) 0 0 var(--sp-2); }
+.rc-batch { display: flex; align-items: center; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3) 0; font-size: var(--fs-caption); color: var(--text-secondary); }
 .rc-falsepos { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .wb-view { margin-bottom: var(--sp-2); }
 .wb-changes { display: flex; flex-direction: column; gap: var(--sp-3); }
 .wb-change { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); padding: var(--sp-2) var(--sp-3); background: var(--bg-surface); font-size: var(--fs-body); }
 .wb-change-head { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-2); }
 .wb-change-cols { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+.wb-change-card .rc-issue { flex: 1 1 100%; white-space: normal; overflow: visible; }
 .wb-change-card { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); border-top: 1px solid var(--border-subtle); margin-top: var(--sp-2); padding-top: var(--sp-2); }
 .wb-doc-view.mat-view { position: static; background: none; border: 0; padding: 0; margin: 0 0 var(--sp-2); }
 

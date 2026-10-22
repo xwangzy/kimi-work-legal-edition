@@ -121,3 +121,16 @@ test("执行页两栏（U1 §3.2）：没有左栏，材料收成标题下的“
   const tokens = readFileSync(new URL("../../../packages/design-tokens/src/tokens.css", import.meta.url), "utf8");
   for (const t of ["--fs-meta", "--fs-caption", "--fs-body", "--fs-reading", "--fs-h1"]) assert.ok(tokens.includes(`${t}:`), t);
 });
+
+test("恢复我方只替换锚点那一截：条款号等前后文不重复写入；前后也被改了就不给按钮", async () => {
+  const { restoreOursText } = await import("../src/lib/workbench.ts");
+  assert.equal(restoreOursText("8.1 买方应于验收合格后九十日内支付货款。", "8.1 买方应于验收合格后三十日内支付货款。", "买方应于验收合格后九十日内支付货款。"), "买方应于验收合格后三十日内支付货款。");
+  assert.equal(restoreOursText("8.2 逾期付款的，按日万分之五支付违约金。", "8.2 逾期付款的，按日万分之三支付违约金。", "按日万分之五支付违约金"), "按日万分之三支付违约金");
+  assert.equal(restoreOursText("9.1 甲方应于九十日内付款。", "8.1 甲方应于三十日内付款。", "甲方应于九十日内付款。"), null, "条款号也改了：对不上");
+  assert.equal(restoreOursText("新增一段。", "", "新增一段。"), null, "对方新增的段落没有我方原稿");
+});
+
+test("批量接受后“撤回本批”仍在（走查发现：本批接受完已没有可勾的卡，整行曾被隐藏）", () => {
+  const w = src("components/ReviewWorkbench.tsx");
+  assert.ok(w.includes("|| (lastBatch?.ids.length ?? 0) > 0) && ("), "有本批就显示这一行");
+});

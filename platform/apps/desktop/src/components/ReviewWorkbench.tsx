@@ -10,7 +10,7 @@ import { nav } from "../App.tsx";
 import { scrollBehavior } from "../lib/ui-prefs.ts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { kernelPreview, localPreview, type AcceptPreview } from "../lib/accept-preview.ts";
-import { agreementParts, batchEligible, firstOpenCard, nextOpenCard, stepCard } from "../lib/workbench.ts";
+import { agreementParts, batchEligible, firstOpenCard, restoreOursText, nextOpenCard, stepCard } from "../lib/workbench.ts";
 import { api, type RiskCard, type RiskProgress } from "../api.ts";
 import { CITE_STATE_LABELS } from "../lib/labels.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
@@ -550,9 +550,12 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                         {!readOnly && c.status === "proposed" && (
                           <span className="rc-actions">
                             <button className="btn-ghost" disabled={busy} title="接受对方的改动：这条意见不采纳，合同按对方改稿" onClick={() => void decide(c, "reject")}>接受对方</button>
-                            {ch.base_text && (
-                              <button className="btn-ghost" disabled={busy} title="把这一处改回我方原稿（以修订写入）" onClick={() => void decide(c, "modify", plain(ch.base_text))}>恢复我方</button>
-                            )}
+                            {(() => {
+                              const ours = restoreOursText(ch.cur_text, ch.base_text, c.anchor_text);
+                              return ours ? (
+                                <button className="btn-ghost" disabled={busy} title="把这一处改回我方原稿（以修订写入）" onClick={() => void decide(c, "modify", plain(ours))}>恢复我方</button>
+                              ) : null;
+                            })()}
                             {c.fallback?.trim() && (
                               <button className="btn-ghost" disabled={busy} title="改用可退让一级的文本" onClick={() => void decide(c, "accept", undefined, "fallback")}>改用退让文本</button>
                             )}
@@ -583,10 +586,10 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
             ))}
           </div>
           {/* 批量接受（C1 §2.2 第 5 条）：只对提示级和前后不一致类开放；重大、必须修改、缺失、需客户决定的不能勾 */}
-          {!readOnly && cards.some((c) => batchEligible({ ...c, nature: natureOf(c) })) && (
+          {!readOnly && (cards.some((c) => batchEligible({ ...c, nature: natureOf(c) })) || (lastBatch?.ids.length ?? 0) > 0) && (
             <div className="wb-batch">
               {!batchMode ? (
-                <button className="btn-link" onClick={() => { setBatchMode(true); setPicked(new Set(cards.filter((c) => batchEligible({ ...c, nature: natureOf(c) })).map((c) => c.card_id))); }}>
+                cards.some((c) => batchEligible({ ...c, nature: natureOf(c) })) && <button className="btn-link" onClick={() => { setBatchMode(true); setPicked(new Set(cards.filter((c) => batchEligible({ ...c, nature: natureOf(c) })).map((c) => c.card_id))); }}>
                   批量接受提示级与前后不一致（{cards.filter((c) => batchEligible({ ...c, nature: natureOf(c) })).length} 项）
                 </button>
               ) : (
@@ -625,6 +628,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                       aria-label={`一起接受：${plain(c.issue)}`}
                       onChange={(e) => setPicked((s0) => { const n = new Set(s0); if (e.target.checked) n.add(c.card_id); else n.delete(c.card_id); return n; })}
                     />
+                    一起接受
                   </label>
                 )}
                 <button className="rc-head" aria-expanded={open} onClick={() => setActive(open ? null : c.card_id)}>

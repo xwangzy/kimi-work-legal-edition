@@ -54,3 +54,17 @@ export function batchEligible(c: { status: string; suggestion?: string | null; k
   if (c.kind === "missing" || !!c.needs_client_decision || c.nature === "must" || c.severity === "high") return false;
   return c.severity === "low" || c.kind === "consistency";
 }
+
+/**
+ * 对方改动模式的“恢复我方”（v9.4 第 20 批）：卡的锚点只是改动段落里的一截（不含条款号等），替换文本也只能是我方原稿里对应的那一截——
+ * 改稿里锚点前后的文字在原稿里原样存在时，取原稿去掉同样的前后缀；对不上（前后也被改了）返回 null，不给这个按钮，免得把条款号重复写进去。
+ */
+export function restoreOursText(curText: string, baseText: string, anchor: string): string | null {
+  const at = curText.indexOf(anchor);
+  if (at < 0 || !baseText) return null;
+  const prefix = curText.slice(0, at);
+  const suffix = curText.slice(at + anchor.length);
+  if (!baseText.startsWith(prefix) || !baseText.endsWith(suffix) || baseText.length < prefix.length + suffix.length) return null;
+  const mid = baseText.slice(prefix.length, baseText.length - suffix.length);
+  return mid.trim() ? mid : null;
+}
