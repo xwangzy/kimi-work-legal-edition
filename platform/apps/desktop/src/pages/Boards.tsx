@@ -11,6 +11,7 @@ import type { ReminderItem } from "../api.ts";
 import { Select } from "../components/Select.tsx";
 import { MatterTodos, PendingChecks, StageStrip } from "../components/MatterOverview.tsx";
 import { ReviewRulesWidget, TemplateMethods } from "../components/MatterSetup.tsx";
+import { matterLine } from "../lib/scenarios.ts";
 import type { PendingCheck } from "../api.ts";
 
 export const MAX_BOARDS = 2;
@@ -80,10 +81,12 @@ export function MatterBoard({ matter, runs, onChanged, onGo }: { matter: Matter;
           dates.map(([k, v]) => <div key={k} className="w-row"><span>{k === "analysis_as_of" ? "分析截止日" : k}</span><b>{v}</b></div>)
         )}
       </Widget>
-      {/* 本事项的审查要点（v9.4 第 22 批，C1 #21、#22）：审合同按它判“偏离” */}
-      <Widget title="审查要点">
-        <ReviewRulesWidget matter={matter} readOnly={readOnly || !onChanged} />
-      </Widget>
+      {/* 本事项的审查要点（v9.4 第 22 批，C1 #21、#22）：审合同按它判“偏离”；诉讼事项不显示（走查：对诉讼律师是噪音） */}
+      {matterLine(matter) !== "litigation" && (
+        <Widget title="审查要点">
+          <ReviewRulesWidget matter={matter} readOnly={readOnly || !onChanged} />
+        </Widget>
+      )}
       <Widget title="最近 AI 记录">
         {runs.length === 0 && <p className="muted">还没有 AI 记录。</p>}
         {runs.slice(0, 6).map((r) => (

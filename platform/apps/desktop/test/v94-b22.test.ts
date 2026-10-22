@@ -59,6 +59,8 @@ test("材料初判：一句话写类型、合同类型与篇幅；按立场建�
   assert.equal(triageSuggestion(t("judgment_first"), { stance: "原告" })?.id, "appeal");
   assert.equal(triageSuggestion(t("judgment_final"), { stance: "原告" })?.id, "enforcement");
   assert.equal(triageSuggestion(t("judgment_final"), { stance: "被告" }), null, "被执行一方不建议申请执行");
+  assert.equal(triageSuggestion(t("judgment_first"), { stance: "买方" }), null, "非诉事项里的判决是参考材料，不建议上诉（走查）");
+  assert.equal(triageSuggestion(t("award"), { stance: "常年顾问" }), null);
   assert.equal(triageSuggestion(t("other"), { stance: "原告" }), null);
   const kernel = readFileSync(repo("packages/kernel/src/services/material-triage.ts"), "utf8");
   for (const k of ["contract", "supplement", "complaint", "labor_application", "judgment_first", "judgment_final", "award", "mediation", "policy"]) assert.ok(kernel.includes(`  ${k}: "`), `内核有 ${k}`);

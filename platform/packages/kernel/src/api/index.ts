@@ -83,7 +83,7 @@ import { createTodo, deleteTodo, derivedTodos, listTodos, updateTodo } from "../
 import { triageMatter } from "../services/material-triage.ts";
 import { holidaySource } from "../tools/tools/cn-holidays.ts";
 import { planTemplate, applyTemplateTodos, templatesView } from "../services/matter-templates.ts";
-import { activeRules, discardDraft, listRuleSets, retireRules, RULES_SKILLS, saveRules, snapshotOf } from "../services/review-rules.ts";
+import { activeRules, discardDraft, listRuleSets, retireRules, RULES_SKILLS, saveRules, snapshotOf, type RulesSnapshot } from "../services/review-rules.ts";
 import { getWritingPrefs, hasPrefs, setWritingPrefs } from "../services/writing-prefs.ts";
 import { pendingChecks, unsignedLatestArtifacts } from "../services/pending-checks.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
@@ -1512,7 +1512,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (p?.review_rules !== undefined && p?.review_rules !== null && typeof p.review_rules !== "boolean") throw validation("review_rules 须为 true / false");
       const rulesActive = skill && RULES_SKILLS.includes(skill) && p?.review_rules !== false ? activeRules(db, matter.matter_id) : null;
       if (p?.review_rules === true && !rulesActive) throw validation(skill && RULES_SKILLS.includes(skill) ? "这个事项还没有在用的审查要点" : "这个方法不按审查要点审");
-      const rulesSnap = rulesActive ? snapshotOf(rulesActive) : null;
+      let rulesSnap: RulesSnapshot | null = rulesActive ? snapshotOf(rulesActive) : null;
       const prefsNow = est.scenario === "a1.agent_task" ? getWritingPrefs(db, id.tenantId, id.userId) : null;
       const prefsSnap = prefsNow && hasPrefs(prefsNow) ? prefsNow : null;
 
@@ -1532,6 +1532,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         const sid = started ? parseJson<any>(started.payload, {})?.session_id : null;
         if (typeof sid !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(sid)) throw validation("上一次任务没有可继续的对话记录，请新建任务");
         followup = { followup_of: prev.run_id, continue_session_id: sid };
+        // 追问在原会话上继续，模型看到的是原任务那一版要点：沿用原任务的快照（之后改过要点也不换），“要点 n”的核对才对得上
+        const prevRules = parseJson<any>(prev.input_snapshot, {})?.review_rules;
+        rulesSnap = p?.review_rules === false || !prevRules || typeof prevRules !== "object" ? null : (prevRules as RulesSnapshot);
         // 档位沿用上一轮（复核 B3-B09）：律师选过“问答（只读）”，追问不能静默变成可写；要提高档位须明确选择（mode_raise_confirmed）并留痕
         const prevMode = runModeOf(prev.input_snapshot);
         if (p?.mode === undefined) {

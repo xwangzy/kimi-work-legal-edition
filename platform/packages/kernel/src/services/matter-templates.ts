@@ -77,7 +77,7 @@ export const MATTER_TEMPLATES: readonly MatterTemplate[] = [
       start_key: "收到起诉状",
       deadline_key: "答辩期届满",
       period: { unit: "day", n: 15 },
-      todo: "提交答辩状（管辖异议也在此前提出）",
+      todo: "提交答辩状；管辖异议也在此前提出",
       basis: "《民事诉讼法》第一百二十八条：被告在收到起诉状副本之日起十五日内提出答辩状；第一百三十条：对管辖权有异议的，应当在提交答辩状期间提出。被告在境内没有住所的期间另有规定，请自行核对。",
     },
   },

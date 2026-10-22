@@ -44,8 +44,8 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
     setTplId(id);
     setTplStart("");
     const t = templates.find((x) => x.id === id);
-    // 立场跟着类型走（律师仍可改）
-    if (t && !t.stances.includes(f.stance)) setF((cur) => ({ ...cur, stance: t.stances[0]! }));
+    // 立场与阶段跟着类型走（律师仍可改；阶段下拉框显示的就是创建后的阶段）
+    if (t) setF((cur) => ({ ...cur, stance: t.stances.includes(cur.stance) ? cur.stance : t.stances[0]!, stage: t.stage ?? cur.stage }));
   };
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -127,7 +127,7 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
         </label>
         <label className="field">
           <span>当前阶段（可空）</span>
-          <Select aria-label="当前阶段" value={f.stage} placeholder="不填" onChange={(v) => set("stage")({ target: { value: v } })} options={[{ value: "", label: "不填" }, ...stagesFor(f.stance).map((s) => ({ value: s, label: STAGE_LABELS[s] }))]} />
+          <Select aria-label="当前阶段" value={f.stage} placeholder="不填" onChange={(v) => set("stage")({ target: { value: v } })} options={[{ value: "", label: "不填" }, ...stagesFor(f.stance, f.stage).map((s) => ({ value: s, label: STAGE_LABELS[s] }))]} />
         </label>
       </div>
       <ConsentQuestion

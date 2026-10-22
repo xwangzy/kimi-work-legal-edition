@@ -219,6 +219,14 @@ test("审查要点与写作偏好（v9.4 第 22 批）：审合同的任务把�
       const { run: fin, events } = await waitRun(inv, run.run_id, 150_000);
       assert.equal(fin.status, "succeeded", JSON.stringify(events.map((e: any) => e.type)));
     }
+    // 追问沿用原任务那一版要点（之后改过要点也不换；模型会话里看到的是原来那一版）
+    const first = tk.kernel.db.get<{ run_id: string }>(`SELECT run_id FROM runs WHERE matter_id = ? AND input_snapshot LIKE '%按要点%' ORDER BY created_at LIMIT 1`, [matter.matter_id])!.run_id;
+    await inv("review_rules.save", { matter_id: matter.matter_id, title: "客户采购标准", rules: [{ topic: "付款", standard: "验收合格后三十日内付款" }] });
+    const est2 = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
+    const fu = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est2.estimate_id, idempotency_key: `kap-rules-fu-${Date.now()}`, goal: `${M} 追问`, skill: "contract-review", followup_of: first, plan_first: false, mode: "default" });
+    const fuSnap = JSON.parse(tk.kernel.db.get<{ input_snapshot: string }>(`SELECT input_snapshot FROM runs WHERE run_id = ?`, [fu.run_id])!.input_snapshot);
+    assert.equal(fuSnap.review_rules.version, 1, "追问沿用原任务的第 1 版");
+    await waitRun(inv, fu.run_id, 150_000);
     const withRules = seen.find((x) => x.includes("按要点"))!;
     const without = seen.find((x) => x.includes("不用要点"))!;
     assert.match(withRules, /【本事项审查要点 第 1 版「客户采购标准」/);

@@ -23,12 +23,13 @@ export function triageSuggestion(t: MaterialTriage, matter: Pick<Matter, "stance
       return stance === "被告" ? pick("defense") : null;
     case "labor_application":
       return stance === "用人单位" ? pick("labor-response") : null;
+    // 判决、裁决类只在诉讼事项里建议（非诉、企业法务事项里它们多是参考材料；走查发现在采购合同审查事项里建议“起草上诉状”不合适）
     case "judgment_first":
-      return pick("appeal");
+      return matterLine(matter) === "litigation" ? pick("appeal") : null;
     case "judgment_final":
     case "award":
     case "mediation":
-      return stance === "被告" || stance === "被申请人" || stance === "被上诉人" ? null : pick("enforcement");
+      return matterLine(matter) !== "litigation" || stance === "被告" || stance === "被申请人" || stance === "被上诉人" ? null : pick("enforcement");
     case "policy":
       return pick("policy-review");
     default:
