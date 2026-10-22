@@ -35,6 +35,8 @@ export interface CellView {
   lawyer_value: string | null;
   /** 最后改动时刻：确认时带回，格子在此后被助手重填过就拒绝（复核 Q2-05）。 */
   updated_at?: string;
+  /** 引文在原件里的页码（按页解析的材料；v9.4 第 22 批）。 */
+  page?: number;
 }
 
 export const CELL_STATE_TEXT: Readonly<Record<CellState, string>> = {

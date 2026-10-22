@@ -497,6 +497,7 @@ export function TableReview({ matterId, docs, readOnly, onFill, onAsk, onExporte
                   <span className="rc-k">原文</span>
                   <span className="rc-quote">
                     {plain(sel.cell.quote)}
+                    {sel.cell.page && <span className="muted">（第 {sel.cell.page} 页）</span>}
                     {sel.cell.anchor_status === "not_found" && <span className="rc-warn">这段原文在材料里找不到，请打开原件核对</span>}
                     {sel.cell.anchor_status !== "not_found" && ctx?.cell !== sel.cell.cell_id && (
                       <button className="btn-link" onClick={() => void run(async () => { const r = await api.tableCellContext(matterId, grid.table.table_id, sel.cell!.cell_id); const all = `${r.before}${r.quote}${r.after}`; if (all.includes("〔")) { const more = await restoreTokens(matterId, all); setMap((m) => new Map([...m, ...more])); } setCtx({ cell: sel.cell!.cell_id, ...r }); })}>

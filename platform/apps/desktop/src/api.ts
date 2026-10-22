@@ -208,6 +208,8 @@ export interface Matter {
   stage?: string | null;
   event_date?: string | null;
   region?: string | null;
+  /** 新建事项时选的事项类型（v9.4 第 22 批）：概览里据此给“推荐的方法”。 */
+  template_id?: string | null;
   data_level?: "L0" | "L1" | "L2" | "L3a" | "L3b";
   basis?: MatterBasis;
   /** 四项依据是否齐备（内核判定；当事人拒绝记录优先）。 */
@@ -440,7 +442,64 @@ export interface DocStyleView {
   effective_letterhead: string | null;
   body: "song-xiaosi" | "fangsong-san";
   page_numbers: boolean;
+  /** Word 修订里显示的作者名（v9.4 第 22 批）；空 = 缺省“律师审定（Kimi Work 辅助起草）”。 */
+  redline_author: string | null;
   template: { name: string; sha256: string; updated_at: string; header_text: string; footer_text: string; looks_case_specific: boolean } | null;
+}
+
+/** 事项模板（v9.4 第 22 批，内核 services/matter-templates.ts）。 */
+export interface MatterTemplate {
+  id: string;
+  title: string;
+  line: "litigation" | "transactional" | "inhouse";
+  hint: string;
+  stances: string[];
+  stage: string | null;
+  todos: { title: string }[];
+  scenarios: string[];
+  start_fact?: { label: string; start_key: string; deadline_key: string; period: { unit: string; n: number }; todo: string; basis: string };
+}
+
+/** 本事项的审查要点（v9.4 第 22 批，内核 services/review-rules.ts）。 */
+export interface ReviewRule {
+  no: number;
+  topic: string;
+  standard: string;
+  fallback: string | null;
+  red_line: string | null;
+}
+export interface RuleSet {
+  rule_set_id: string;
+  version: number | null;
+  title: string;
+  rules: ReviewRule[];
+  status: "active" | "superseded" | "retired" | "draft";
+  source: "lawyer" | "ai_draft";
+  run_id: string | null;
+  created_at: string;
+}
+export interface RuleSets {
+  active: RuleSet | null;
+  drafts: RuleSet[];
+  history: RuleSet[];
+}
+
+/** 我的写作偏好（v9.4 第 22 批）：只存格式与文风。 */
+export interface WritingPrefs {
+  signature: string | null;
+  citation: "full" | "short" | null;
+  notes: string | null;
+}
+
+/** 材料初判（v9.4 第 22 批）：本机按规则判断，只做建议。 */
+export interface MaterialTriage {
+  document_version_id: string;
+  kind: string;
+  label: string;
+  contract_type: string | null;
+  chars: number;
+  pages: number | null;
+  size: "short" | "medium" | "long";
 }
 
 export interface ChatMessage {
@@ -625,7 +684,9 @@ export const api = {
   installSample: (kind?: "litigation") => invoke<{ matter_id: string | null; matter_ids?: string[]; installed: boolean }>("samples.install", kind ? { kind } : {}),
   sampleStatus: () => invoke<{ installed: boolean; removed: boolean; matter_ids: string[]; litigation_offered: boolean }>("samples.status", {}),
   removeSample: (matterId: string) => invoke<{ removed: boolean }>("samples.remove", { matter_id: matterId }),
-  createMatter: (body: Record<string, unknown>) => invoke<{ matter: Matter }>("matters.create", body),
+  createMatter: (body: Record<string, unknown>) =>
+    invoke<{ matter: Matter; template_applied?: { template_id: string; todos: number; deadline: { date: string; steps: string[]; warnings: string[] } | null } }>("matters.create", body),
+  matterTemplates: () => invoke<{ templates: MatterTemplate[] }>("matters.templates"),
   getMatter: (id: string) => invoke<{ matter: Matter; documents: any[]; run_policy?: RunPolicyView; runs?: any[] }>("matters.get", { matter_id: id }),
   updateMatter: (id: string, patch: Record<string, unknown>) => invoke<{ matter: Matter }>("matters.update", { matter_id: id, patch }),
   // 数据生命周期（结案 → 保留期 → 删除；法律保全）
@@ -693,7 +754,7 @@ export const api = {
   listSuspects: (matterId: string, documentVersionIds: string[], goal?: string) => invoke<{ suspects: SuspectView[]; summary: SendSummaryView }>("matters.suspects.list", { matter_id: matterId, document_version_ids: documentVersionIds, ...(goal ? { goal } : {}) }),
   reviewSuspects: (matterId: string, items: { value: string; decision: "name" | "not_name" }[]) =>
     invoke<{ added_to_parties: number; dismissed: number; rejected: string[] }>("matters.suspects.review", { matter_id: matterId, items }),
-  startRun: (matterId: string, body: { estimate_id: string; idempotency_key: string; goal?: string; topic_hint?: string; mode?: RunMode; plan_first?: boolean; preauthorizations?: Preauthorization[]; skill?: string; followup_of?: string; mode_raise_confirmed?: boolean }) =>
+  startRun: (matterId: string, body: { estimate_id: string; idempotency_key: string; goal?: string; topic_hint?: string; mode?: RunMode; plan_first?: boolean; preauthorizations?: Preauthorization[]; skill?: string; skill_args?: Record<string, string>; review_rules?: boolean; followup_of?: string; mode_raise_confirmed?: boolean }) =>
     invoke<{ run_id: string; status: string; mode?: RunMode }>("runs.start", { matter_id: matterId, ...body }),
   getRun: (runId: string) =>
     invoke<{ run: any; artifacts: any[]; inflight?: { model: number; search: number; fetch: number }; unresolved_operations?: UnresolvedOperation[] }>("runs.get", { run_id: runId }),
@@ -749,7 +810,9 @@ export const api = {
   },
   // 文书版式（B-4）：本机导出 Word 的函头、字体字号、页码与律所模板
   docStyle: () => invoke<DocStyleView>("doc_style.get"),
-  setDocStyle: (body: Partial<Pick<DocStyleView, "letterhead" | "letterhead_name" | "letterhead_lines" | "body" | "page_numbers">>) => invoke<DocStyleView>("doc_style.set", body),
+  setDocStyle: (body: Partial<Pick<DocStyleView, "letterhead" | "letterhead_name" | "letterhead_lines" | "body" | "page_numbers" | "redline_author">>) => invoke<DocStyleView>("doc_style.set", body),
+  writingPrefs: () => invoke<WritingPrefs>("writing_prefs.get"),
+  setWritingPrefs: (body: Partial<WritingPrefs>) => invoke<WritingPrefs>("writing_prefs.set", body),
   /** 上传律所 Word 模板：桌面客户端经系统对话框；开发形态退回文件输入框传字节。返回 null = 取消。 */
   setDocTemplate: async (fallback?: File | null): Promise<DocStyleView | null> => {
     if (window.zrKernel?.pickFiles) {
@@ -879,6 +942,11 @@ export const api = {
   decideCitation: (artifactVersionId: string, citeKey: string, decision: "supported" | "unsupported" | "acknowledged" | null) =>
     invoke<{ citations: import("./lib/citation-review.ts").ArtifactCitations | null }>("citations.decide", { artifact_version_id: artifactVersionId, cite_key: citeKey, decision }),
   todos: (matterId: string) => invoke<TodoList>("todos.list", { matter_id: matterId }),
+  reviewRules: (matterId: string) => invoke<RuleSets>("review_rules.get", { matter_id: matterId }),
+  saveReviewRules: (matterId: string, body: { title: string; rules: Omit<ReviewRule, "no">[]; base_version: number | null; from_draft?: string }) => invoke<RuleSets & { saved: RuleSet }>("review_rules.save", { matter_id: matterId, ...body }),
+  retireReviewRules: (matterId: string) => invoke<RuleSets>("review_rules.retire", { matter_id: matterId }),
+  discardRulesDraft: (matterId: string, ruleSetId: string) => invoke<RuleSets>("review_rules.discard_draft", { matter_id: matterId, rule_set_id: ruleSetId }),
+  materialTriage: (matterId: string) => invoke<{ items: MaterialTriage[] }>("materials.triage", { matter_id: matterId }),
   pendingChecks: (matterId: string) => invoke<{ checks: PendingCheck[]; total: number }>("matters.pending_checks", { matter_id: matterId }),
   createTodo: (matterId: string, body: TodoInput) => invoke<{ todo: TodoRow }>("todos.create", { matter_id: matterId, ...body }),
   updateTodo: (matterId: string, todoId: string, patch: Partial<TodoInput> & { done?: boolean }) => invoke<{ todo: TodoRow }>("todos.update", { matter_id: matterId, todo_id: todoId, patch }),
@@ -1020,6 +1088,8 @@ export interface RiskCard {
   /** 判断依据来源：法律强制 / 本所或客户规则 / 通用建议；本批之前的卡为空。 */
   rule_source?: "law" | "firm_rule" | "general" | null;
   rule_ref?: string | null;
+  /** 卡片引用的本事项审查要点（v9.4 第 22 批）：任务发起时那一版的要点原文。 */
+  rule_text?: { version: number; title: string } & ReviewRule;
   /** 缺失卡：查过的说法与文件；材料里其实找得到的说法（非空即可能误报）。 */
   searched_terms?: string[];
   searched_docs?: string[];
@@ -1055,6 +1125,8 @@ export interface FactRow {
   quote: string | null;
   anchor_status: string;
   status: "proposed" | "confirmed" | "rejected";
+  /** 引文在原件里的页码（按页解析的材料；v9.4 第 22 批）。 */
+  page?: number;
 }
 
 export interface ContentCheckResult {

@@ -81,6 +81,7 @@ import { decideOutline, listOutlines, scrubOutlineFacts } from "../services/argu
 import { addColumn, cellContext, createTable, decideCell, draftFromTable, exportTable, getTable, ledgerReminderCandidates, listTables, pushCellsToFacts, removeColumn, TABLE_TEMPLATES } from "../services/review-tables.ts";
 import { createTodo, deleteTodo, derivedTodos, listTodos, updateTodo } from "../services/matter-todos.ts";
 import { triageMatter } from "../services/material-triage.ts";
+import { holidaySource } from "../tools/tools/cn-holidays.ts";
 import { planTemplate, applyTemplateTodos, templatesView } from "../services/matter-templates.ts";
 import { activeRules, discardDraft, listRuleSets, retireRules, RULES_SKILLS, saveRules, snapshotOf } from "../services/review-rules.ts";
 import { getWritingPrefs, hasPrefs, setWritingPrefs } from "../services/writing-prefs.ts";
@@ -3515,10 +3516,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       // 覆盖范围如实说（第 13 批，评审 Z1）：收录不足 50 部即“演示范围”——多数引用无法自动核对，复核页要求逐条人工核对
       const level = st.laws_count < 50 ? "sample" : st.laws_count < 300 ? "partial" : "standard";
       const scope = level === "sample" ? `目前只收录 ${st.laws_count} 部法律法规、${st.articles_count} 条正文（演示范围），多数引用无法自动核对` : `收录 ${st.laws_count} 部 / ${st.versions_count} 个版本`;
+      // 期限计算用的节假日表：随法规库签名分发的，还是应用内置的（v9.4 第 22 批，偏离 D-128 回归计划）
+      const hs = holidaySource();
+      const hy = hs.years_covered;
+      const holidays = { from: hs.from, years: hy, text: `节假日表 ${hy.length ? `${hy[0]}—${hy[hy.length - 1]} 年` : "未收录"}（${hs.from === "package" ? "随法规库更新" : "应用内置"}）` };
       return {
         ...st,
         coverage: { level, laws: st.laws_count, articles: st.articles_count },
-        display: `${scope} · 法规库最后更新 ${st.built_at.slice(0, 10)} · 签名有效`,
+        holidays,
+        display: `${scope} · 法规库最后更新 ${st.built_at.slice(0, 10)} · 签名有效 · ${holidays.text}`,
       };
     },
 

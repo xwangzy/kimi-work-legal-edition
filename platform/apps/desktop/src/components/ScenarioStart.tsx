@@ -4,7 +4,10 @@
  * “这个方法会怎么做”默认折叠。主按钮写动词（开始审查 / 开始整理…），按下即发起；依据未齐等需要处理的情况转到发起确认。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type RunPolicyView } from "../api.ts";
+import { api, MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type RuleSet, type RunPolicyView } from "../api.ts";
+import { matterFactHints, RULES_SKILLS, type HintField } from "../lib/matter-hints.ts";
+import { eventDateProblem, STAGE_LABELS, stagesFor } from "../lib/matter-stage.ts";
+import { notifyDataChanged } from "../lib/events.ts";
 import type { ScenarioCard } from "../lib/scenarios.ts";
 import { buildGoal, canStartPartial, LINE_LABELS, lineMismatchText, missingMaterialsText, skillArgsOf, splitIssues } from "../lib/scenarios.ts";
 import { Icon } from "./Icons.tsx";
@@ -102,7 +105,34 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   // 整理案卷（确定性流程）的“已知争点”直接交给争点矩阵框架（B-5）
   const issues = useMemo(() => (card.scenario === "s2.case_file" ? splitIssues(String(values.issues ?? "")) : []), [card.scenario, values]);
   const value = useMemo(() => ({ goal, scenario: card.scenario, documentIds: docIds, choice: defaultChoice(policy), ...(issues.length > 0 ? { issues } : {}) }), [goal, card.scenario, docIds, policy, issues]);
-  const opts = useMemo(() => ({ ...(card.skill ? { skill: card.skill } : {}), label: card.title, ...(card.skill ? { skillArgs: skillArgsOf(card, values) } : {}) }), [card, values]);
+  // 本事项审查要点（v9.4 第 22 批，C1 #21）：审合同、回稿重审、起草合同缺省按在用的那一版；律师可本次不用
+  const [rules, setRules] = useState<RuleSet | null>(null);
+  const [useRules, setUseRules] = useState(true);
+  useEffect(() => {
+    setRules(null);
+    if (!matter || !card.skill || !RULES_SKILLS.includes(card.skill)) return;
+    let live = true;
+    void api
+      .reviewRules(matter.matter_id)
+      .then((r) => live && setRules(r.active))
+      .catch(() => live && setRules(null));
+    return () => {
+      live = false;
+    };
+  }, [matter?.matter_id, card.skill]);
+  // 我的写作偏好（C1 #29）：设了的话 AI 任务都按它写，这里说一句
+  const [hasPrefs, setHasPrefs] = useState(false);
+  useEffect(() => {
+    if (card.scenario !== "a1.agent_task") return;
+    void api
+      .writingPrefs()
+      .then((p) => setHasPrefs(!!(p.signature || p.citation || p.notes)))
+      .catch(() => setHasPrefs(false));
+  }, [card.scenario]);
+  // 补全提示（C1 #24）：这个方法用得到、事项还没填的事件时点 / 地域 / 阶段；不拦着开始
+  const [filled, setFilled] = useState<Partial<Record<HintField, string>>>({});
+  const hints = matterFactHints(card.skill, matter ? { ...matter, ...filled } : null);
+  const opts = useMemo(() => ({ ...(card.skill ? { skill: card.skill } : {}), label: card.title, ...(card.skill ? { skillArgs: skillArgsOf(card, values) } : {}), ...(rules && !useRules ? { reviewRules: false } : {}) }), [card, values, rules, useRules]);
 
   // 疑似姓名核对之后重新估价
   const [reestimateTick, setReestimateTick] = useState(0);
@@ -192,6 +222,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
           {matter && <span className="muted">我方：{stanceLabel(matter.stance)}</span>}
         </div>
         {matter && lineMismatchText(card, matter) && <div className="muted ss-mismatch">{lineMismatchText(card, matter)}</div>}
+        {matter && hints.length > 0 && <FactHints matter={matter} hints={hints} onSaved={(f, v) => setFilled((cur) => ({ ...cur, [f]: v }))} />}
         {!matter && (
           <div className="ss-need">
             还没有{LINE_LABELS[card.line]}事项。先新建一个事项（写明客户和我方立场），再开始{card.title}。{" "}
@@ -291,6 +322,12 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
               )}
             </label>
           ))}
+          {rules && (
+            <label className="ss-rules">
+              <input type="checkbox" checked={useRules} onChange={(e) => setUseRules(e.target.checked)} />
+              按本事项审查要点「{rules.title}」第 {rules.version} 版（{rules.rules.length} 条）{card.skill === "contract-draft" ? "起草" : "审查"}
+            </label>
+          )}
           <label className="ss-field">
             <span className="ss-label">补充要求（可选）</span>
             <input type="text" aria-label="补充要求" value={extra} placeholder="例如：重点看交割前提条件" onChange={(e) => setExtra(e.target.value)} />
@@ -346,6 +383,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
           {confirmedFacts === 0 && (
             <p className="banner banner-orange">这个事项还没有确认过的事实：AI 只能列出要件框架。先做“整理案卷”，再到事项页“事实”里逐条确认。</p>
           )}
+          {hasPrefs && <p className="ss-note muted">按你的写作偏好写（设置 · 通用里可改）。</p>}
           <p className="ss-note muted">结果都是草稿，需要你复核后使用。{card.scenario === "a1.agent_task" ? "处理中需要联网或用到当事人信息时，会先问你。" : ""}</p>
         </section>
         {err && <div className="banner banner-red">{err}</div>}
@@ -358,5 +396,60 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** 补全提示（v9.4 第 22 批，C1 #24）：一行说缺什么、为什么；点“填写”就地补上（写进事项，与概览阶段条同一份）。 */
+function FactHints({ matter, hints, onSaved }: { matter: Matter; hints: ReturnType<typeof matterFactHints>; onSaved: (f: HintField, v: string) => void }) {
+  const [open, setOpen] = useState<HintField | null>(null);
+  const [v, setV] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async (f: HintField, value: string) => {
+    const val = value.trim();
+    if (!val) return;
+    if (f === "event_date" && eventDateProblem(val)) return setErr(eventDateProblem(val)!);
+    setBusy(true);
+    setErr("");
+    try {
+      await api.updateMatter(matter.matter_id, { [f]: val });
+      notifyDataChanged();
+      onSaved(f, val);
+      setOpen(null);
+      setV("");
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const readOnly = (matter.lifecycle ?? "active") !== "active" || !!matter.is_sample;
+  return (
+    <div className="ss-hints muted">
+      {hints.map((h) => (
+        <div key={h.field} className="ss-hint-row">
+          这件事项还没填{h.label}：{h.why}。
+          {!readOnly && open !== h.field && (
+            <button className="btn-link" onClick={() => { setOpen(h.field); setV(""); setErr(""); }}>
+              填写
+            </button>
+          )}
+          {open === h.field && (
+            <span className="ss-hint-edit">
+              {h.field === "stage" ? (
+                <Select aria-label={h.label} value={v} placeholder="选一个阶段" onChange={(x) => void save("stage", x)} options={stagesFor(matter.stance).map((st) => ({ value: st, label: STAGE_LABELS[st] }))} />
+              ) : (
+                <>
+                  <input aria-label={h.label} value={v} onChange={(e) => setV(e.target.value)} placeholder={h.field === "event_date" ? "2023-05 或 2023-05-06" : "如 上海市"} maxLength={h.field === "region" ? 20 : 10} size={14} />
+                  <button className="btn btn-sm" disabled={busy || !v.trim()} onClick={() => void save(h.field, v)}>保存</button>
+                </>
+              )}
+              <button className="btn-link" onClick={() => setOpen(null)}>取消</button>
+            </span>
+          )}
+        </div>
+      ))}
+      {err && <div className="ss-need">{err}</div>}
+    </div>
   );
 }

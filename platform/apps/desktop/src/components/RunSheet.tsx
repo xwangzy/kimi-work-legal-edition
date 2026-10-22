@@ -24,6 +24,8 @@ export interface PendingStart {
   label?: string;
   /** 场景卡字段（方法参数；v9.4 显式传给 Agent）。 */
   skillArgs?: Record<string, string>;
+  /** 本事项审查要点（v9.4 第 22 批）：false = 本次不按要点审；缺省由内核按方法决定。 */
+  reviewRules?: boolean;
   estimate: {
     estimate_id: string;
     points: number;
@@ -43,6 +45,7 @@ export async function launchRun(p: PendingStart): Promise<string> {
     ...(agent ? { mode: p.value.choice.mode, plan_first: p.value.choice.mode === "chat" ? false : p.value.choice.planFirst, preauthorizations: p.value.choice.mode === "auto" ? p.value.choice.preauth : [] } : {}),
     ...(agent && p.skill ? { skill: p.skill } : {}),
     ...(agent && p.skill && p.skillArgs && Object.keys(p.skillArgs).length > 0 ? { skill_args: p.skillArgs } : {}),
+    ...(agent && p.skill && p.reviewRules === false ? { review_rules: false } : {}),
   });
   notifyDataChanged();
   nav(`/run/${run.run_id}/${p.matter.matter_id}`);
@@ -50,7 +53,7 @@ export async function launchRun(p: PendingStart): Promise<string> {
 }
 
 /** 预估（失败抛出内核原因，例如场景须有材料）。 */
-export async function prepareStart(matter: Matter, value: ComposerValue, o: { skill?: string; label?: string; skillArgs?: Record<string, string> } = {}): Promise<PendingStart> {
+export async function prepareStart(matter: Matter, value: ComposerValue, o: { skill?: string; label?: string; skillArgs?: Record<string, string>; reviewRules?: boolean } = {}): Promise<PendingStart> {
   const extra: Record<string, unknown> = {};
   if (value.scenario === "s1b.draft_compare") {
     if (value.documentIds.length < 2) throw new Error("回稿比对需要选择两份文档：先选基线稿，再选回稿");
@@ -60,7 +63,7 @@ export async function prepareStart(matter: Matter, value: ComposerValue, o: { sk
   if (value.goal.trim()) extra.goal = value.goal.trim();
   if (value.scenario === "s2.case_file" && value.issues?.length) extra.issues = value.issues;
   const estimate = await api.estimate(matter.matter_id, { scenario: value.scenario, document_version_ids: value.documentIds, ...extra });
-  return { matter, value, estimate: estimate as PendingStart["estimate"], ...(o.skill ? { skill: o.skill } : {}), ...(o.label ? { label: o.label } : {}), ...(o.skillArgs ? { skillArgs: o.skillArgs } : {}) };
+  return { matter, value, estimate: estimate as PendingStart["estimate"], ...(o.skill ? { skill: o.skill } : {}), ...(o.label ? { label: o.label } : {}), ...(o.skillArgs ? { skillArgs: o.skillArgs } : {}), ...(o.reviewRules !== undefined ? { reviewRules: o.reviewRules } : {}) };
 }
 
 export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose: () => void }) {
@@ -80,7 +83,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   const reestimate = async () => {
     setErr("");
     try {
-      setCur(await prepareStart(matter, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}) }));
+      setCur(await prepareStart(matter, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}), ...(cur.reviewRules !== undefined ? { reviewRules: cur.reviewRules } : {}) }));
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -95,7 +98,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
     try {
       await api.updateMatter(matter.matter_id, { basis });
       notifyDataChanged();
-      const fresh = await prepareStart({ ...matter, basis }, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}) });
+      const fresh = await prepareStart({ ...matter, basis }, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}), ...(cur.reviewRules !== undefined ? { reviewRules: cur.reviewRules } : {}) });
       setCur(fresh);
       if (fresh.estimate.data_where?.start_blocked) {
         setErr(afterConsentNotice(fresh.estimate.data_where.block_kind, sensitive));

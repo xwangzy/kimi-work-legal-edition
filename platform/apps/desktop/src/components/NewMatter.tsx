@@ -2,8 +2,10 @@
  * 新建事项（第 03 篇 §5 步骤 5：填写或确认四项依据；第 02 篇 §8.1：数据准入不是一个“已同意”勾选框，四项分别记录）。
  * 任一项“待确认”时，该事项只运行不出站的本机能力。
  */
-import { useState } from "react";
-import { api, type Matter, type MatterBasis } from "../api.ts";
+import { useEffect, useState } from "react";
+import { api, type Matter, type MatterBasis, type MatterTemplate } from "../api.ts";
+import { loadTemplates } from "./MatterSetup.tsx";
+import { LINE_LABELS } from "../lib/scenarios.ts";
 import { ENDPOINT_LABELS } from "../lib/labels.ts";
 import { ConsentQuestion, type ConsentAnswer } from "./Consent.tsx";
 import { Modal } from "./Modal.tsx";
@@ -30,6 +32,21 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
   const [basis, setBasis] = useState<MatterBasis>({ engagement: "pending", personal_info: "pending", sensitive: "not_applicable", subprocessor: "pending" });
   const [consent, setConsent] = useState<ConsentAnswer>("not_yet");
   const [more, setMore] = useState(false);
+  // 事项类型（v9.4 第 22 批，C1 #20）：选了就预置阶段、待办与常用方法；要起算日的（如收到起诉状之日）推出届满日
+  const [templates, setTemplates] = useState<MatterTemplate[]>([]);
+  const [tplId, setTplId] = useState("");
+  const [tplStart, setTplStart] = useState("");
+  useEffect(() => {
+    void loadTemplates().then(setTemplates).catch(() => setTemplates([]));
+  }, []);
+  const tpl = templates.find((t) => t.id === tplId) ?? null;
+  const pickTemplate = (id: string) => {
+    setTplId(id);
+    setTplStart("");
+    const t = templates.find((x) => x.id === id);
+    // 立场跟着类型走（律师仍可改）
+    if (t && !t.stances.includes(f.stance)) setF((cur) => ({ ...cur, stance: t.stances[0]! }));
+  };
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => {
@@ -60,6 +77,8 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
         ...(f.stage ? { stage: f.stage } : {}),
         ...(f.event_date.trim() ? { event_date: f.event_date.trim() } : {}),
         ...(f.region.trim() ? { region: f.region.trim() } : {}),
+        ...(tpl ? { template_id: tpl.id } : {}),
+        ...(tpl?.start_fact && tplStart ? { template_start: tplStart } : {}),
       });
       notifyDataChanged();
       onCreated(r.matter);
@@ -72,6 +91,24 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
   return (
     <Modal title="新建事项" onClose={onClose} wide>
       <div className="form-grid">
+        <label className="field field-wide">
+          <span>事项类型（可空）</span>
+          <Select
+            aria-label="事项类型"
+            value={tplId}
+            placeholder="不选"
+            onChange={pickTemplate}
+            options={[{ value: "", label: "不选" }, ...templates.map((t) => ({ value: t.id, label: t.title, hint: LINE_LABELS[t.line] }))]}
+          />
+          {tpl && <small className="muted">{tpl.hint}。会预置阶段、{tpl.todos.length + (tpl.start_fact && tplStart ? 1 : 0)} 条待办和常用方法，之后都可以改。</small>}
+        </label>
+        {tpl?.start_fact && (
+          <label className="field field-wide">
+            <span>{tpl.start_fact.label}（可空）</span>
+            <input type="date" value={tplStart} onChange={(e) => setTplStart(e.target.value)} aria-label={tpl.start_fact.label} />
+            <small className="muted">填了就按法定期间推出“{tpl.start_fact.deadline_key}”，写进关键日期和待办（不会自动设提醒）。{tpl.start_fact.basis}</small>
+          </label>
+        )}
         <label className="field field-wide">
           <span>事项名称</span>
           <input autoFocus value={f.title} onChange={set("title")} placeholder="例如：甲公司股权转让（受让方）" />

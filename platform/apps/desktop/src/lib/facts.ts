@@ -8,10 +8,11 @@ export function factCounts(facts: Pick<FactRow, "status">[]): { proposed: number
 }
 
 /** 出处：材料名 + 能否在材料里定位到原文。 */
-export function factSourceText(f: Pick<FactRow, "document_version_id" | "anchor_status">, fileOf: Map<string, string>): string {
+export function factSourceText(f: Pick<FactRow, "document_version_id" | "anchor_status" | "page">, fileOf: Map<string, string>): string {
   if (!f.document_version_id) return "没有关联材料";
   const name = fileOf.get(f.document_version_id) ?? "材料";
-  if (f.anchor_status === "located") return name;
+  // 按页解析的材料（PDF 等）带页码（v9.4 第 22 批）；Word 没有版面页码
+  if (f.anchor_status === "located") return f.page ? `${name} 第 ${f.page} 页` : name;
   if (f.anchor_status === "ambiguous") return `${name}（原文出现多处）`;
   return `${name}（没有找到原文，确认前请核对）`;
 }

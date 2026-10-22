@@ -91,7 +91,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       const first = firstOpenCard(r.cards);
       if (first) setActive(first);
     }
-    const all = r.cards.flatMap((c) => [c.anchor_text, c.issue, c.suggestion ?? "", c.fallback ?? "", c.bottom_line ?? "", c.assumptions ?? "", c.rule_ref ?? "", ...(c.searched_terms ?? []), ...(c.searched_docs ?? []), ...(c.related ?? []).map((x) => x.quote)]).join("\n");
+    const all = r.cards.flatMap((c) => [c.anchor_text, c.issue, c.suggestion ?? "", c.fallback ?? "", c.bottom_line ?? "", c.assumptions ?? "", c.rule_ref ?? "", c.rule_text?.standard ?? "", c.rule_text?.fallback ?? "", c.rule_text?.red_line ?? "", c.rule_text?.title ?? "", ...(c.searched_terms ?? []), ...(c.searched_docs ?? []), ...(c.related ?? []).map((x) => x.quote)]).join("\n");
     if (all.includes("〔")) setMap(await restoreTokens(matterId, all));
     return r.cards;
   }, [matterId, documentVersionId, runFilter]);
@@ -696,6 +696,14 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                         <span>
                           {c.rule_source && <span className="tag tag-gray">{RULE_SOURCE_LABEL[c.rule_source]}</span>}
                           {c.rule_ref && <> {plain(c.rule_ref)}</>}
+                          {/* 引用的本事项审查要点（v9.4 第 22 批）：任务发起时那一版的原文 */}
+                          {c.rule_text && (
+                            <span className="rc-rule-text">
+                              「{plain(c.rule_text.title)}」第 {c.rule_text.version} 版要点 {c.rule_text.no}：{plain(c.rule_text.topic)}——我方标准：{plain(c.rule_text.standard)}
+                              {c.rule_text.fallback && <>；可退让：{plain(c.rule_text.fallback)}</>}
+                              {c.rule_text.red_line && <>；不可谈：{plain(c.rule_text.red_line)}</>}
+                            </span>
+                          )}
                         </span>
                       </div>
                     )}

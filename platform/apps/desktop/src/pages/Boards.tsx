@@ -10,6 +10,7 @@ import { dueText, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.
 import type { ReminderItem } from "../api.ts";
 import { Select } from "../components/Select.tsx";
 import { MatterTodos, PendingChecks, StageStrip } from "../components/MatterOverview.tsx";
+import { ReviewRulesWidget, TemplateMethods } from "../components/MatterSetup.tsx";
 import type { PendingCheck } from "../api.ts";
 
 export const MAX_BOARDS = 2;
@@ -47,6 +48,8 @@ export function MatterBoard({ matter, runs, onChanged, onGo }: { matter: Matter;
     <>
     {/* 阶段条与事件时点（v9.4 第 20 批 S-08、C1 §3.2）：当前阶段由律师点选 */}
     <StageStrip matter={matter} readOnly={readOnly || !onChanged} onChanged={onChanged ?? (() => {})} />
+    {/* 事项类型的常用方法（v9.4 第 22 批，C1 #20） */}
+    <TemplateMethods matter={matter} readOnly={readOnly} />
     <div className="board">
       {/* 待办（C1 §3.2）：做什么、谁做、谁复核、期限；AI 完成的任务自动变成“待你复核” */}
       <Widget title="待办">
@@ -76,6 +79,10 @@ export function MatterBoard({ matter, runs, onChanged, onGo }: { matter: Matter;
         ) : (
           dates.map(([k, v]) => <div key={k} className="w-row"><span>{k === "analysis_as_of" ? "分析截止日" : k}</span><b>{v}</b></div>)
         )}
+      </Widget>
+      {/* 本事项的审查要点（v9.4 第 22 批，C1 #21、#22）：审合同按它判“偏离” */}
+      <Widget title="审查要点">
+        <ReviewRulesWidget matter={matter} readOnly={readOnly || !onChanged} />
       </Widget>
       <Widget title="最近 AI 记录">
         {runs.length === 0 && <p className="muted">还没有 AI 记录。</p>}

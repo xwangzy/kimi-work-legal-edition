@@ -2,7 +2,8 @@
  * 事项页（第 03 篇 §4.4 事项头常显；材料、任务、看板、当事人词典、数据去向）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, pickMaterials, type EgressRecord, type Matter, type MaterialFile, type MatterBasis, type RunPolicyView } from "../api.ts";
+import { api, pickMaterials, type EgressRecord, type Matter, type MaterialFile, type MaterialTriage, type MatterBasis, type RunPolicyView } from "../api.ts";
+import { triageSuggestion, triageText } from "../lib/material-triage.ts";
 import { nav } from "../App.tsx";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
 import { BasisEditor, basisComplete, MatterHeader } from "../components/MatterHeader.tsx";
@@ -77,6 +78,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
   /** 每份材料的审查意见（复核 B3-B20：事项页的工作台入口，跨任务汇总）；null 键 = 未关联合同的意见。 */
   const [review, setReview] = useState<Map<string | null, { total: number; open: number }>>(new Map());
   const [workbench, setWorkbench] = useState<{ doc: string | null } | null>(null);
+  /** 材料初判（v9.4 第 22 批，C1 #28）：本机按规则认出的文书类型与篇幅，只做建议。 */
+  const [triage, setTriage] = useState<Map<string, MaterialTriage>>(new Map());
   const mountRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
@@ -91,6 +94,10 @@ export function MatterPage({ matterId }: { matterId: string }) {
         setValue((v) => ({ ...v, choice: v.goal || v.documentIds.length ? v.choice : defaultChoice(r.run_policy) }));
       })
       .catch((e) => setMsg(e.message));
+    api
+      .materialTriage(matterId)
+      .then((r) => setTriage(new Map(r.items.map((t) => [t.document_version_id, t]))))
+      .catch(() => setTriage(new Map()));
     api
       .riskCards(matterId)
       .then((r) => {
@@ -390,7 +397,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
             </div>}
             {matView === "list" && docs.length > 0 && (
               <table className="data">
-                <thead><tr><th>文件</th><th>用途</th><th>大小</th><th>读取</th><th>审查意见</th><th>时间</th></tr></thead>
+                <thead><tr><th>文件</th><th>用途</th><th>初判</th><th>读取</th><th>审查意见</th><th>时间</th></tr></thead>
                 <tbody>
                   {docs.map((d) => (
                     <tr key={d.document_version_id}>
@@ -409,7 +416,20 @@ export function MatterPage({ matterId }: { matterId: string }) {
                           }}
                         />
                       </td>
-                      <td>{(Number(d.size_bytes ?? 0) / 1024).toFixed(1)} KB</td>
+                      <td title={`${(Number(d.size_bytes ?? 0) / 1024).toFixed(1)} KB · 本机按文件名与开头文字判断，仅供参考`}>
+                        {triage.get(d.document_version_id) ? (
+                          <>
+                            {triageText(triage.get(d.document_version_id)!)}
+                            {!closed && triageSuggestion(triage.get(d.document_version_id)!, matter) && (
+                              <button className="btn-link mat-suggest" onClick={() => nav(`/start/${triageSuggestion(triage.get(d.document_version_id)!, matter)!.id}/${matterId}`)}>
+                                {triageSuggestion(triage.get(d.document_version_id)!, matter)!.title}
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          `${(Number(d.size_bytes ?? 0) / 1024).toFixed(1)} KB`
+                        )}
+                      </td>
                       <td>{d.quarantined_at ? <span className="tag tag-warn">已隔离（国家秘密标志）</span> : parseFlagsText(d.quality_flags ?? [])}</td>
                       <td>
                         {review.get(d.document_version_id) ? (

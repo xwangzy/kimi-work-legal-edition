@@ -1098,3 +1098,20 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .dl-pack > td { padding: 0 0 var(--sp-2); }
 .dl-pack-card { display: flex; flex-direction: column; gap: var(--sp-1); }
 .dl-pack-row { font-size: var(--fs-body); }
+
+/* v9.4 第 22 批：事项类型的常用方法、审查要点、开始面板的要点开关与补全提示、材料初判 */
+.tpl-methods { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--sp-2) 0; font-size: var(--fs-caption); }
+.rules-w { display: flex; flex-direction: column; gap: var(--sp-1); }
+.rules-list { margin: 0; padding-left: var(--sp-5); font-size: var(--fs-body); }
+.rules-list li { margin: 2px 0; }
+.rules-red { color: var(--status-warning-text); }
+.rules-draft { align-items: center; gap: var(--sp-2); }
+.w-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: var(--sp-1); }
+.rules-edit input, .rules-edit textarea { width: 100%; box-sizing: border-box; font-size: var(--fs-body); }
+.rules-edit td { vertical-align: top; }
+.ss-rules { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); margin: var(--sp-2) 0; }
+.ss-hints { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-caption); margin: var(--sp-1) 0 var(--sp-2); }
+.ss-hint-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.ss-hint-edit { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.rc-rule-text { display: block; margin-top: 2px; color: var(--text-secondary); font-size: var(--fs-caption); }
+.mat-suggest { display: block; font-size: var(--fs-caption); }

@@ -138,9 +138,11 @@ export function useSignedHolidays(docs: readonly unknown[], source: string): { u
   return { used: [...next.keys()].sort((a, b) => a - b), rejected };
 }
 /** 当前节假日表的出处与收录年份（内置与法规库包合并）。 */
-export function holidaySource(): { table: string; years_covered: number[] } {
+export function holidaySource(): { table: string; years_covered: number[]; from: "package" | "builtin" } {
   const years = [...new Set([...byYear.keys(), ...signed.keys()])].sort((a, b) => a - b);
   return {
+    // 律师在“资料来源”里看到的是随包还是内置（偏离 D-128 的回归计划）
+    from: signedFrom ? "package" : "builtin",
     table: signedFrom
       ? `全国法定节假日与调休表（随法规库包 ${signedFrom} 签名分发；逐年按国务院办公厅部分节假日安排通知的中国政府网原文核对）`
       : "全国法定节假日与调休表（内核内置；逐年按国务院办公厅部分节假日安排通知的中国政府网原文核对）",

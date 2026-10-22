@@ -283,3 +283,10 @@ test("事项删除时审查要点一并删除；归档包里有审查要点", as
   await inv("matters.purge", { matter_id: m, confirm_title: "删除要点", early: true, reason: "用例" });
   assert.equal(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM matter_review_rules WHERE matter_id = ?`, [m])!.n, 0);
 });
+
+test("法规库状态写明节假日表是随法规库更新的还是应用内置的（偏离 D-128 回归计划）", async () => {
+  const st = await tk.inv("lawdb.status");
+  assert.ok(["package", "builtin"].includes(st.holidays.from));
+  assert.ok(st.holidays.years.includes(2026));
+  assert.match(st.display, /节假日表 \d{4}—\d{4} 年（(随法规库更新|应用内置)）/);
+});

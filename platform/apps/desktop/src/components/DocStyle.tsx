@@ -109,8 +109,14 @@ export function DocStyle() {
         <label>
           <input type="checkbox" checked={draft.page_numbers} onChange={(e) => set({ page_numbers: e.target.checked })} /> 页脚加“第 X 页 共 Y 页”
         </label>
+        {/* 修订署名（v9.4 第 22 批，C1 #4）：Word 修订里显示的作者名；对外版修订稿发出前请再看一遍 */}
+        <label className="field">
+          <span>修订署名（Word 修订里显示的作者）</span>
+          <input value={draft.redline_author ?? ""} maxLength={30} placeholder="律师审定（Kimi Work 辅助起草）" onChange={(e) => set({ redline_author: e.target.value || null })} aria-label="修订署名" />
+          <small className="muted">不填用括号里的缺省写法。写本所名称或执业律师姓名时，对方打开修订稿能看到。</small>
+        </label>
         <div className="settings-choice">
-          <button className="btn-primary btn-sm" disabled={busy} onClick={() => void run(() => api.setDocStyle({ letterhead: draft.letterhead, letterhead_name: draft.letterhead_name, letterhead_lines: draft.letterhead_lines, body: draft.body, page_numbers: draft.page_numbers }), "已保存")}>
+          <button className="btn-primary btn-sm" disabled={busy} onClick={() => void run(() => api.setDocStyle({ letterhead: draft.letterhead, letterhead_name: draft.letterhead_name, letterhead_lines: draft.letterhead_lines, body: draft.body, page_numbers: draft.page_numbers, redline_author: draft.redline_author ?? "" }), "已保存")}>
             保存
           </button>
           <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => api.downloadDocStyleSample({ letterhead: draft.letterhead, letterhead_name: draft.letterhead_name, letterhead_lines: draft.letterhead_lines, body: draft.body, page_numbers: draft.page_numbers }), "样张已保存（按面板上现在的选项），打开看看")}>

@@ -23,6 +23,7 @@ import { RecoveryBackup } from "../components/RecoveryBackup.tsx";
 import { Offboarding } from "../components/Offboarding.tsx";
 import { DepartedMembers } from "../components/DepartedMembers.tsx";
 import { DocStyle } from "../components/DocStyle.tsx";
+import { WritingPrefs } from "../components/WritingPrefs.tsx";
 import { Select } from "../components/Select.tsx";
 
 const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
@@ -181,6 +182,7 @@ function GeneralTab({ version }: { version: string }) {
           </div>
         </div>
         <DocStyle />
+        <WritingPrefs />
         <SampleRow />
         <div className="device-row">
           <div className="device-k">提醒</div>
