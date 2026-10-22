@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { basisStateText, decisionsOf, emptyDraft, keptCount, outlineAnswer, outlineQuestion, type OutlineView } from "../src/lib/outline.ts";
+import { basisStateText, confirmAndAnswer, decisionsOf, emptyDraft, keptCount, outlineAnswer, outlineQuestion, type OutlineView } from "../src/lib/outline.ts";
 
 const o: Pick<OutlineView, "items"> = {
   items: [
@@ -43,9 +43,20 @@ test("依据说法：系统核过的不说成你认可；拦截与未核实写�
   assert.match(basisStateText({ check: "support_pending", article_text: "x", demo: true }), /演示数据/);
 });
 
-test("任务页源码：确认题并进提纲卡；先记决定再代答", () => {
+test("确认的先后：先记决定再代答；没有确认题只记决定；代答失败时决定已记下、错误照常抛出（复核 Q2-20）", async () => {
+  const log: string[] = [];
+  assert.equal(await confirmAndAnswer({ decide: async () => void log.push("decide"), answer: async () => void log.push("answer") }), "decided_and_answered");
+  assert.deepEqual(log, ["decide", "answer"]);
+  assert.equal(await confirmAndAnswer({ decide: async () => void log.push("d2"), answer: null }), "decided_only");
+  await assert.rejects(confirmAndAnswer({ decide: async () => void log.push("d3"), answer: async () => Promise.reject(new Error("问题不存在或已处理")) }), /问题不存在/);
+  assert.equal(log.at(-1), "d3");
+  let answered = false;
+  await assert.rejects(confirmAndAnswer({ decide: async () => Promise.reject(new Error("至少留一条")), answer: async () => void (answered = true) }), /至少留一条/);
+  assert.equal(answered, false, "决定没记下就不代答");
+});
+
+test("任务页源码：确认题并进提纲卡；确认走 confirmAndAnswer", () => {
   const src = readFileSync(fileURLToPath(new URL("../src/pages/RunView.tsx", import.meta.url)), "utf8");
   assert.match(src, /questions\.filter\(\(q\) => q\.question_id !== outlineQ\?\.question_id\)/);
-  const confirm = src.slice(src.indexOf("const confirmOutline"), src.indexOf("const stopOutline"));
-  assert.ok(confirm.indexOf("api.decideOutline") < confirm.indexOf("api.answer"), "先记下律师决定，再答确认题");
+  assert.match(src, /confirmAndAnswer\(\{\s*decide: \(\) => api\.decideOutline/);
 });

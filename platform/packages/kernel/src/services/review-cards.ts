@@ -232,7 +232,7 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
   const view = docId ? documentView(deps, scope.matterId, docId) : null;
   const base = runSeqBase(deps.db, "risk_cards", scope.matterId, scope.runId);
   if (base.count + cards.length > RISK_CARD_LIMITS.perRun) throw new DomainError("validation", `本任务风险卡已达上限 ${RISK_CARD_LIMITS.perRun}`, 422);
-  const out: { card_id: string; seq: number; anchor_status: string; basis_checks: string[]; duplicate_of?: string; updated?: string; searched_found?: string[] }[] = [];
+  const out: { card_id: string; seq: number; anchor_status: string; basis_checks: string[]; duplicate_of?: string; updated?: string; searched_found?: string[]; no_anchor?: true }[] = [];
   let seqOffset = 0;
   deps.db.tx(() => {
     cards.forEach((c: any, i: number) => {
@@ -274,8 +274,18 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
           fallback: optStr(c?.fallback, RISK_CARD_LIMITS.field) ?? old.fallback,
           bottom_line: optStr(c?.bottom_line, RISK_CARD_LIMITS.field) ?? old.bottom_line,
         };
-        const changed = upd.nature !== old.nature || upd.fallback !== old.fallback || upd.bottom_line !== old.bottom_line;
+        let changed = upd.nature !== old.nature || upd.fallback !== old.fallback || upd.bottom_line !== old.bottom_line;
         if (changed && old.status === "proposed") deps.db.run(`UPDATE risk_cards SET nature = ?, fallback = ?, bottom_line = ? WHERE card_id = ?`, [upd.nature, upd.fallback, upd.bottom_line, dup.card_id]);
+        // 缺失卡重新提交（补了查过的说法或补交了材料，复核 Q2-21）：仍待处理时合并说法并重新复查
+        if (kind === "missing" && old.status === "proposed") {
+          const prev = jsonList(deps.db.get<{ t: string | null }>(`SELECT searched_terms AS t FROM risk_cards WHERE card_id = ?`, [dup.card_id])?.t);
+          const terms = [...new Set([...prev, ...searchedTerms])].slice(0, 30);
+          if (terms.length !== prev.length) {
+            const found = recheckMissing(deps, scope, docId, view?.view ?? null, terms);
+            deps.db.run(`UPDATE risk_cards SET searched_terms = ?, searched_found = ? WHERE card_id = ?`, [JSON.stringify(terms), JSON.stringify(found), dup.card_id]);
+            changed = true;
+          }
+        }
         out.push({ card_id: dup.card_id, seq: dup.seq, anchor_status: dup.anchor_status, basis_checks: [], duplicate_of: dup.card_id, ...(changed ? { updated: old.status === "proposed" ? "ladder_or_nature" : "lawyer_decided_not_updated" } : {}) });
         seqOffset--;
         return;
@@ -320,10 +330,11 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
           kind === "missing" ? JSON.stringify(searchedFound) : null,
         ],
       );
-      out.push({ card_id: id, seq, anchor_status: loc.status, basis_checks: basis.map((b) => b.check), ...(searchedFound.length > 0 ? { searched_found: searchedFound.map((f) => f.term) } : {}) });
+      out.push({ card_id: id, seq, anchor_status: loc.status, basis_checks: basis.map((b) => b.check), ...(searchedFound.length > 0 ? { searched_found: searchedFound.map((f) => f.term) } : {}), ...(!anchor ? { no_anchor: true as const } : {}) });
     });
   });
-  const notFound = out.filter((x) => x.anchor_status === "not_found").length;
+  // 没写插入位置的缺失卡本来就没有锚点，不算“引文找不到”（复核 Q2-07）
+  const notFound = out.filter((x) => x.anchor_status === "not_found" && !x.no_anchor).length;
   const ambiguous = out.filter((x) => x.anchor_status === "ambiguous").length;
   const cross = out.filter((x) => x.anchor_status === "cross_paragraph").length;
   const dups = out.filter((x) => x.duplicate_of).length;
@@ -331,7 +342,8 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
   const updated = out.filter((x) => x.updated === "ladder_or_nature").length;
   const locked = out.filter((x) => x.updated === "lawyer_decided_not_updated").length;
   if (dups > 0) notes.push(`${dups} 张卡的锚点、问题与首选与已有卡相同，未重复新增（回报的是已有卡的编号）${updated ? `；其中 ${updated} 张已补写性质或梯度` : ""}${locked ? `；${locked} 张律师已处理，未更新` : ""}`);
-  if (notFound + ambiguous > 0) notes.push(`${notFound} 张卡的引文在文档中找不到、${ambiguous} 张出现多处：请改为逐字摘录（可附条款号 clause_ref），找不到的卡律师只能手工处理`);
+  if (notFound + ambiguous > 0)
+    notes.push(`${[notFound ? `${notFound} 张卡的引文在文档中找不到` : "", ambiguous ? `${ambiguous} 张出现多处` : ""].filter(Boolean).join("、")}：请改为逐字摘录（可附条款号 clause_ref），找不到的卡律师只能手工处理`);
   const maybeFalse = out.filter((x) => x.searched_found?.length).length;
   if (maybeFalse > 0) notes.push(`${maybeFalse} 张缺失卡列的说法在材料里其实找得到（见各卡 searched_found）：请复核是否误报，确属误报的不要提交；工作台会把这些卡标为“可能误报”`);
   if (cross > 0) notes.push(`${cross} 张卡的引文跨了段落：修订按段落写入，请把这些卡按段落拆开重新提交（每张卡的引文只取一段之内）`);
@@ -541,7 +553,9 @@ export function acceptedText(c: Pick<RiskCardRow, "suggestion"> & Partial<Pick<R
 }
 
 /** 接受后会写进修订稿的卡：修改后接受，或接受且有（所选一级的）建议文本。没有建议文本的“接受”是知悉、不改动（复核 B3-B25）。 */
-export function changesDocument(c: Pick<RiskCardRow, "status" | "suggestion"> & Partial<Pick<RiskCardRow, "fallback" | "chosen_level">>): boolean {
+export function changesDocument(c: Pick<RiskCardRow, "status" | "suggestion"> & Partial<Pick<RiskCardRow, "fallback" | "chosen_level" | "kind" | "anchor_status">>): boolean {
+  // 缺失卡只有插入位置定位到唯一一处才写进修订稿（复核 Q2-07：“生成修订稿（n 项）”不把只进意见表的卡算进去）
+  if (c.kind === "missing" && c.anchor_status !== undefined && c.anchor_status !== "located") return false;
   return c.status === "modified" || (c.status === "accepted" && !!acceptedText(c).trim());
 }
 
@@ -622,21 +636,22 @@ function planRedline(
   input: { matter_id: string; document_version_id: string; run_id?: string | null; skip_card_ids?: readonly string[]; audience?: RedlineAudience },
 ): { cards: RiskCardRow[]; patches: StructuredPatch[]; unchanged: RiskCardRow[]; no_insert_point: RiskCardRow[] } {
   const skip = new Set(input.skip_card_ids ?? []);
-  const all = listRiskCards(deps.db, input.matter_id, {
+  let all = listRiskCards(deps.db, input.matter_id, {
     document_version_id: input.document_version_id,
     status: ["accepted", "modified"],
     ...(input.run_id ? { run_id: input.run_id } : {}),
   })
-    .filter((c) => !skip.has(c.card_id))
-    // 知悉、不改动的卡不进修订稿——否则空的建议文本会被当成“删除这段原文”
-    .filter(changesDocument);
+    .filter((c) => !skip.has(c.card_id));
+  // 接受了但插不进去的缺失卡（没写位置、找不到、出现多处）：只进意见表，预览里分别说明（复核 Q2-07）
+  const noInsertPoint = all.filter((c) => c.kind === "missing" && c.anchor_status !== "located" && (c.status === "modified" || !!acceptedText(c).trim()));
+  // 知悉、不改动的卡不进修订稿——否则空的建议文本会被当成“删除这段原文”
+  all = all.filter(changesDocument);
   // 按文档中的位置排序（结构化补丁对重叠另行检查）
   all.sort((a, b) => (a.anchor_start ?? 1e12) - (b.anchor_start ?? 1e12));
   const view = all.length > 0 ? documentView(deps, input.matter_id, input.document_version_id).view : "";
   const cards: RiskCardRow[] = [];
   const patches: StructuredPatch[] = [];
   const unchanged: RiskCardRow[] = [];
-  const noInsertPoint: RiskCardRow[] = [];
   const internal = (input.audience ?? "internal") === "internal";
   for (const c of all) {
     const basis = c.basis.length > 0 ? `（依据：${c.basis.map((b) => `《${b.law}》${b.article ? `第${b.article}条` : ""}`).join("、")}）` : "";
@@ -647,10 +662,6 @@ function planRedline(
     const comment = internal ? `${KIND_TAG[c.kind]}${c.severity === "high" ? "【重大】" : c.severity === "mid" ? "【一般】" : "【提示】"}${c.issue}${rule}${basis}${c.status === "modified" ? "（律师已修改）" : c.chosen_level === "fallback" ? "（选用可退让方案）" : ""}` : undefined;
     if (c.kind === "missing") {
       // 缺失条款：在 insert_after 段落之后插入新段落；没给插入位置或找不到的，只进意见表（预览里写明）
-      if (!c.anchor_text || c.anchor_status !== "located") {
-        noInsertPoint.push(c);
-        continue;
-      }
       const at = currentAnchor(deps, input.matter_id, c.anchor_text, view);
       cards.push(c);
       patches.push({ anchor: at, expected_text_hash: sha256Hex(at), proposed_text: full, insert_after: true, ...(c.clause_ref ? { paragraph_hint: c.clause_ref } : {}), ...(comment ? { comment } : {}) });
@@ -682,7 +693,11 @@ const KIND_TAG: Readonly<Record<RiskCardKind, string>> = { risk: "", missing: "�
 /** 预览里每张会改动合同的卡的结果：落点（原文坐标）或不能写进修订稿的原因。 */
 export type RedlinePreviewCard =
   | { card_id: string; ok: true; para: number; start: number; end: number; old: string; new: string; insert?: true }
-  | { card_id: string; ok: false; reason: "unchanged" | "no_insert_point" | PatchConflict["reason"] };
+  | { card_id: string; ok: false; reason: "unchanged" | InsertPointReason | PatchConflict["reason"] };
+
+type InsertPointReason = "no_insert_point" | "insert_point_not_found" | "insert_point_ambiguous";
+const insertPointReason = (c: Pick<RiskCardRow, "anchor_text" | "anchor_status">): InsertPointReason =>
+  !c.anchor_text ? "no_insert_point" : c.anchor_status === "ambiguous" ? "insert_point_ambiguous" : "insert_point_not_found";
 
 /**
  * 工作台“接受后”预览（余项续复核 RC-B-01）：与生成修订稿同一套计划、定位、最小修改范围与重叠检查，但不写文件、不登记成果。
@@ -695,7 +710,7 @@ export function previewRedlineFromCards(
   const plan = planRedline(deps, input);
   const unchanged: RedlinePreviewCard[] = [
     ...plan.unchanged.map((c): RedlinePreviewCard => ({ card_id: c.card_id, ok: false, reason: "unchanged" })),
-    ...plan.no_insert_point.map((c): RedlinePreviewCard => ({ card_id: c.card_id, ok: false, reason: "no_insert_point" })),
+    ...plan.no_insert_point.map((c): RedlinePreviewCard => ({ card_id: c.card_id, ok: false, reason: insertPointReason(c) })),
   ];
   if (plan.cards.length === 0) return { status: "no_patches", paragraphs: [], cards: unchanged };
   const r = applyStructuredPatches(

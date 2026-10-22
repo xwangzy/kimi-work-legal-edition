@@ -19,6 +19,8 @@ export interface SkillInfo {
   title: string;
   description: string;
   tools_required: string[];
+  /** 文书类方法（v9.4 第 19 批 C-04，复核 Q2-03/Q2-17）：起草前须提交论点提纲并经律师确认。 */
+  requires_outline?: boolean;
 }
 
 export interface SkillsManifest {
@@ -168,8 +170,8 @@ export function skillQualityChecklist(dir: string, skillId: string): string[] {
 
 
 /** 任务开始时方法模板的标题、版本与模板包摘要（余项续复核 RC-A-09、RC-B-14）：写进任务快照，事后看得到“当时按哪一版做的”。纯函数。 */
-export function skillSnapshot(bundle: SkillsBundleStatus | undefined, skill: string): { skill_title?: string; skill_version?: string; skills_sha256?: string } {
+export function skillSnapshot(bundle: SkillsBundleStatus | undefined, skill: string): { skill_title?: string; skill_version?: string; skills_sha256?: string; skill_requires_outline?: true } {
   if (!bundle || !bundle.ok) return {};
   const x = bundle.skills.find((s) => s.id === skill);
-  return { ...(x ? { skill_title: x.title, skill_version: x.version } : {}), skills_sha256: bundle.contentSha256 };
+  return { ...(x ? { skill_title: x.title, skill_version: x.version } : {}), ...(x?.requires_outline ? { skill_requires_outline: true as const } : {}), skills_sha256: bundle.contentSha256 };
 }

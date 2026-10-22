@@ -26,6 +26,8 @@ CREATE TABLE review_cells (
   anchor_status text,
   note          text,
   state         text NOT NULL CHECK (state IN ('ai','not_found','unreadable','conflict','verified','edited')),
+  -- 助手最后一次填写时的状态（ai / conflict / not_found）：律师撤回时回到它，“有冲突”不丢（复核 Q2-09）
+  ai_state      text CHECK (ai_state IS NULL OR ai_state IN ('ai','not_found','conflict')),
   lawyer_value  text,
   run_id        text REFERENCES runs(run_id),
   decided_by    text,

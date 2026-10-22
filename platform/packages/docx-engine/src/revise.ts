@@ -38,6 +38,8 @@ export function applyRevisionsToDocx(docx: Buffer, plan: RevisionPlan): ApplyRes
   for (const op of plan.ops) {
     xml = applyOne(xml, op, comments, () => idSeq++, applied);
   }
+  // 段后插入用的临时标记（同一段后的多条插入按先后接在一起；插入的新段落不参与后续锚点匹配）写完即去掉
+  xml = xml.replace(/ kwl-(?:anchor|ins)="\d+"/g, "");
 
   if (comments.length > 0) {
     ensureCommentsInfrastructure(files);
@@ -70,7 +72,8 @@ function applyOne(
   if (sha256Hex(op.anchor.originalText) !== op.originalHash) {
     throw new DomainError("anchor_mismatch", `修订 ${op.opId} 原文 hash 校验失败`, 422, { opId: op.opId });
   }
-  const paras = mapParagraphs(xml);
+  // 本次写入里新插入的段落不算候选（复核 Q2-06：补充条款里恰好含后面某张卡的锚点时不会多出一处匹配）
+  const paras = mapParagraphs(xml).filter((p) => !/^<w:p\b[^>]*\skwl-ins="/.test(xml.slice(p.xmlStart, p.xmlStart + 200)));
   const candidates = paras.filter((p) => findInParagraph(p, op.anchor.originalText, op.anchor.occurrence ?? 0) !== null);
   let target = candidates[0];
   if (op.anchor.paragraphHint && candidates.length > 1) {
@@ -175,7 +178,20 @@ function insertParagraphsAfter(
     );
   });
   applied.push({ opId: op.opId, status: "applied", paragraphIndex: target.index });
-  return xml.slice(0, target.xmlEnd) + paras.join("") + xml.slice(target.xmlEnd);
+  // 同一段之后已经插过的（复核 Q2-04）：接在它们后面，最终顺序与写入顺序一致；目标段落打上编号，写完统一去掉
+  const head = /^<w:p\b[^>]*>/.exec(paraXml)![0];
+  const known = /\skwl-anchor="(\d+)"/.exec(head)?.[1];
+  const k = known ?? String((xml.match(/ kwl-anchor="/g) ?? []).length + 1);
+  const tagged = paras.map((p) => p.replace(/^<w:p>/, `<w:p kwl-ins="${k}">`));
+  let out = known ? xml : xml.slice(0, target.xmlStart) + head.replace(/>$/, ` kwl-anchor="${k}">`) + xml.slice(target.xmlStart + head.length);
+  let at = target.xmlEnd + (known ? 0 : ` kwl-anchor="${k}"`.length);
+  for (;;) {
+    const m = /^<w:p\b[^>]*>[\s\S]*?<\/w:p>/.exec(out.slice(at));
+    if (!m || !m[0].startsWith(`<w:p kwl-ins="${k}">`)) break;
+    at += m[0].length;
+  }
+  out = out.slice(0, at) + tagged.join("") + out.slice(at);
+  return out;
 }
 
 function nextIdSeed(xml: string): number {

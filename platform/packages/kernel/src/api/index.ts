@@ -76,7 +76,7 @@ import { addOrUpdateMember, chainSummary, chainView, hasChain, keyFingerprint, r
 import { docxHeaderFooterTexts, parseDocument } from "../services/parser.ts";
 import { detectClassifiedMarking, type ClassifiedFinding } from "../services/classified-marking.ts";
 import { restoreArtifactBytes } from "../services/export-restore.ts";
-import { decideOutline, listOutlines } from "../services/argument-outlines.ts";
+import { decideOutline, listOutlines, scrubOutlineFacts } from "../services/argument-outlines.ts";
 import { createTable, decideCell, exportTable, getTable, listTables, TABLE_TEMPLATES } from "../services/review-tables.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
@@ -527,6 +527,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         db.run(`DELETE FROM parse_pages WHERE parse_version_id IN (${PVS})`, [id]);
         db.run(`DELETE FROM evidence_anchors WHERE parse_version_id IN (${PVS})`, [id]);
         db.run(`DELETE FROM risk_cards WHERE document_version_id = ?`, [id]);
+        // 审阅表里这份材料的格子（逐字引文与提取的值，复核 Q2-02）；论点提纲里抄过来的、据此材料的事实文字一并抹去
+        db.run(`DELETE FROM review_cells WHERE document_version_id = ?`, [id]);
+        scrubOutlineFacts(db, doc.matter_id, db.all<{ fact_id: string }>(`SELECT fact_id FROM matter_facts WHERE document_version_id = ?`, [id]).map((f) => f.fact_id));
         db.run(`DELETE FROM matter_facts WHERE document_version_id = ?`, [id]);
         db.run(`UPDATE document_versions SET quarantined_at = ?, quarantine_reason = ? WHERE document_version_id = ?`, [nowIso(), reason, id]);
       }
@@ -2692,7 +2695,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "tables.decide_cell": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterWriter(db, matter.matter_id, id);
-      const cell = decideCell(db, matter.matter_id, id.userId, { table_id: p?.table_id, cell_id: p?.cell_id, document_version_id: p?.document_version_id, column: p?.column, decision: p?.decision, value: p?.value });
+      const cell = decideCell(db, matter.matter_id, id.userId, { table_id: p?.table_id, cell_id: p?.cell_id, document_version_id: p?.document_version_id, column: p?.column, decision: p?.decision, value: p?.value, expected_updated_at: p?.expected_updated_at });
       // 审计只记格子号与决定（不记值）
       audit(db, id, "review_cell.decided", "review_cell", cell.cell_id, sha256Hex(JSON.stringify({ state: cell.state })), keyctx);
       return { cell };

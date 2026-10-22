@@ -9,6 +9,7 @@
  * - 预算：入队预留、成功结算、失败/取消释放；
  * - 恢复：步骤检查点 + 幂等（事件 seq 唯一约束 INSERT OR IGNORE），崩溃后从最后检查点继续。
  */
+import { outlineOpenItems } from "../services/argument-outlines.ts";
 import { DomainError, RUN_TRANSITIONS, RunStatus, canTransitionRun, isTerminalRun, newId, sha256Hex } from "@zr-legal/domain";
 import { replaceDirectIdentifiers } from "@zr-legal/pseudonym";
 import { findExternalRefs, readZipEntries } from "@zr-legal/docx-engine";
@@ -1080,6 +1081,8 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
         const isFile = a.kind === "workspace_file";
         const artifactVersionId = registerArtifact(ctx, run, runId, attemptId, {
           kind: isFile ? "a1_workspace_file" : outcomeStatus === "partial" ? "a1_agent_draft_partial" : "a1_agent_draft",
+          // 起草前论点没经律师确认就从工作区或最终回复产出的（复核 Q2-03）：标未决项，签发前须处理
+          open_items: outlineOpenItems(db, runId),
           filename: isFile ? workspaceArtifactName(a.filename) : `草稿-${fileDay()}${outcomeStatus === "partial" ? "-部分完成" : ""}.md`,
           sha256: stored.sha256,
           storage_uri: stored.storage_uri,

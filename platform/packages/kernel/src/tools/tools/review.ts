@@ -123,7 +123,7 @@ export function riskcardsList(ctx: InvokeCtx, p: { document_version_id?: string;
       chosen_level: c.status === "accepted" ? c.chosen_level : null,
       adopted_text: c.status === "modified" ? null : changesDocument(c) ? acceptedText(c) : null,
       // 没有建议文本的“接受”是知悉、不改动（复核 C-B07）：单独标出，不能当成“我方提出过的修改”
-      lawyer_status: c.status === "accepted" && !(c.suggestion ?? "").trim() ? "acknowledged" : c.status,
+      lawyer_status: c.status === "accepted" && !acceptedText(c).trim() ? "acknowledged" : c.status,
       changes_document: changesDocument(c),
       lawyer_text: c.final_text,
     })),

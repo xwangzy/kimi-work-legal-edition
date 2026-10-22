@@ -85,7 +85,11 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
   const decide = (body: Parameters<typeof api.decideCell>[2]) =>
     run(async () => {
       if (!grid) return;
-      await api.decideCell(matterId, grid.table.table_id, body);
+      // 格子在你打开后被助手重填过（复核 Q2-05）：内核拒绝，这里刷新出新值让你重新核对
+      await api.decideCell(matterId, grid.table.table_id, body).catch(async (e) => {
+        await loadGrid();
+        throw e;
+      });
       setEdit(null);
       await loadGrid();
       await loadTables();
@@ -287,7 +291,7 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
                       <button
                         className="btn-primary"
                         disabled={busy || !!formatProblem(sel.col, edit)}
-                        onClick={() => void decide(sel.cell ? { cell_id: sel.cell.cell_id, decision: "edit", value: edit.trim() } : { document_version_id: sel.doc!.document_version_id, column: sel.col!.key, decision: "edit", value: edit.trim() })}
+                        onClick={() => void decide(sel.cell ? { cell_id: sel.cell.cell_id, decision: "edit", value: edit.trim(), ...(sel.cell.updated_at ? { expected_updated_at: sel.cell.updated_at } : {}) } : { document_version_id: sel.doc!.document_version_id, column: sel.col!.key, decision: "edit", value: edit.trim() })}
                       >
                         保存
                       </button>
@@ -299,7 +303,7 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
                 ) : (
                   <div className="rc-actions">
                     {sel.cell && sel.cell.state !== "verified" && sel.cell.state !== "edited" && (
-                      <button className="btn-primary" disabled={busy} onClick={() => void decide({ cell_id: sel.cell!.cell_id, decision: "verify" })}>
+                      <button className="btn-primary" disabled={busy} onClick={() => void decide({ cell_id: sel.cell!.cell_id, decision: "verify", ...(sel.cell!.updated_at ? { expected_updated_at: sel.cell!.updated_at } : {}) })}>
                         {sel.cell.value ? "确认" : "确认没有"}
                       </button>
                     )}

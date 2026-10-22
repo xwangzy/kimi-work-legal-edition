@@ -46,6 +46,8 @@ export const SKIP_REASON_TEXT: Record<string, string> = {
   anchor_empty: "没有原文，生成修订稿时会被拦下",
   apply_failed: "无法写成修订，生成修订稿时会被拦下",
   no_insert_point: "没有写明插在哪里，只进审查意见表，请在 Word 中手工补上",
+  insert_point_not_found: "插入位置在合同里找不到，只进审查意见表，请在 Word 中手工补上",
+  insert_point_ambiguous: "插入位置在合同里出现多处，只进审查意见表，请在 Word 中手工补上",
 };
 export const skipReasonText = (r: string) => SKIP_REASON_TEXT[r] ?? "无法写进修订稿";
 

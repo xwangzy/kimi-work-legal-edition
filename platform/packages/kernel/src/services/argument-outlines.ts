@@ -243,9 +243,57 @@ export function decideOutline(db: KernelDb, matterId: string, userId: string, in
   return rowOut(db.get<any>(`SELECT * FROM argument_outlines WHERE outline_id = ?`, [id]));
 }
 
-/** 门禁：本任务有待律师确认的提纲时不能生成文书（C1 §1：先确认论点与依据再写）。 */
+/** 材料隔离时（复核 Q2-02）：提纲里抄过来的、来自被删事实的文字换成说明，不留原句。 */
+export function scrubOutlineFacts(db: KernelDb, matterId: string, factIds: readonly string[]): void {
+  if (factIds.length === 0) return;
+  const gone = new Set(factIds);
+  for (const r of db.all<{ outline_id: string; items: string }>(`SELECT outline_id, items FROM argument_outlines WHERE matter_id = ?`, [matterId])) {
+    let items: OutlineItem[];
+    try {
+      items = JSON.parse(r.items) as OutlineItem[];
+    } catch {
+      continue;
+    }
+    let hit = false;
+    for (const x of items)
+      for (const f of x.facts)
+        if (f.fact_id && gone.has(f.fact_id)) {
+          f.statement = "（所依据的材料已隔离，这条事实已删除）";
+          f.confirmed = false;
+          hit = true;
+        }
+    if (hit) db.run(`UPDATE argument_outlines SET items = ? WHERE outline_id = ?`, [JSON.stringify(items), r.outline_id]);
+  }
+}
+
+/**
+ * 本任务的论点确认状态（复核 Q2-03）：有待确认的提纲 → pending；文书类方法（快照 skill_requires_outline）却没有已确认的提纲 → missing；
+ * 其余 → ok（没有提纲的非文书任务不受影响）。
+ */
+export function outlineState(db: KernelDb, runId: string | null | undefined): "ok" | "pending" | "missing" {
+  if (!runId) return "ok";
+  const r = db.get<{ proposed: number; confirmed: number }>(
+    `SELECT SUM(status = 'proposed') AS proposed, SUM(status = 'confirmed') AS confirmed FROM argument_outlines WHERE run_id = ?`,
+    [runId],
+  );
+  if ((r?.proposed ?? 0) > 0) return "pending";
+  let requires = false;
+  try {
+    requires = JSON.parse(db.get<{ input_snapshot: string | null }>(`SELECT input_snapshot FROM runs WHERE run_id = ?`, [runId])?.input_snapshot ?? "{}")?.skill_requires_outline === true;
+  } catch {
+    requires = false;
+  }
+  return requires && !(r?.confirmed ?? 0) ? "missing" : "ok";
+}
+
+/** 门禁：文书工具在论点与依据经律师确认之前拒绝生成文书（C1 §1：先确认论点与依据再写）。 */
 export function assertOutlineSettled(db: KernelDb, runId: string | null | undefined): void {
-  if (!runId) return;
-  const pending = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM argument_outlines WHERE run_id = ? AND status = 'proposed'`, [runId])!.n;
-  if (pending > 0) throw new DomainError("conflict", "论点与依据还在等律师确认：请先用提问工具请律师确认，确认后用 outline.get 读取确认版再生成文书", 409);
+  const st = outlineState(db, runId);
+  if (st === "pending") throw new DomainError("conflict", "论点与依据还在等律师确认：请先用提问工具请律师确认，确认后用 outline.get 读取确认版再生成文书", 409);
+  if (st === "missing") throw new DomainError("conflict", "这是文书类方法：请先用 outline.submit 提交论点与依据，经律师确认后再生成文书", 409);
+}
+
+/** 工作区文件或最终回复登记为成果时，论点没经确认的标一条未决项（复核 Q2-03：文书工具之外的出口；签发前须逐项处理）。 */
+export function outlineOpenItems(db: KernelDb, runId: string): { kind: string; note: string }[] {
+  return outlineState(db, runId) === "ok" ? [] : [{ kind: "outline_unconfirmed", note: "这份成果产出时，论点与依据还没经你确认：请核对论点与依据后再签发" }];
 }

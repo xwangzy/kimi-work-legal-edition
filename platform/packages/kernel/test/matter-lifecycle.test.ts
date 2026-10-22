@@ -67,6 +67,15 @@ test("结案只读 → 保全阻止删除 → 提前删除须写原因 → 删�
   writeFileSync(mountPath, "补充协议：付款期限延长至六十日。");
   await tk.inv("materials.mount", { matter_id: mid, path: mountPath, filename: "补充协议.txt", mime: "text/plain" });
   await runScenario(tk.inv, mid, "s1.contract_review", { document_version_ids: [doc.document_version_id] }, 120_000);
+  // v9.4 第 19 批（复核 Q2-01）：审阅表（律师改的值为原文）与论点提纲（律师改写的论点与补充要求为原文）也在删除范围内
+  const { table } = await tk.inv("tables.create", { matter_id: mid, template: "contract_ledger", columns: ["contract_name"], document_version_ids: [doc.document_version_id], title: `台账${CANARY}` });
+  await tk.inv("tables.decide_cell", { matter_id: mid, table_id: table.table_id, document_version_id: doc.document_version_id, column: "contract_name", decision: "edit", value: `采购合同${CANARY}` });
+  const live = liveTaskIdentity(tk, mid, "purge_outline");
+  tk.kernel.db.run(`UPDATE runs SET status = 'succeeded' WHERE run_id = ?`, [live.rid]);
+  const { submitOutline, decideOutline } = await import("../src/services/argument-outlines.ts");
+  const ol = submitOutline({ db: tk.kernel.db }, { tenantId: live.tid, matterId: mid, runId: live.rid }, { doc_kind: "起诉状", arguments: [{ claim: "被告应付款" }] });
+  decideOutline(tk.kernel.db, mid, live.uid, { outline_id: ol.outline_id, decisions: [{ arg_id: "a1", keep: true, claim: `被告应付款${CANARY}` }], note: `补充${CANARY}` });
+  for (const t of ["review_tables", "review_cells", "argument_outlines"]) assert.ok(scanDb(CANARY).some((h) => h.startsWith(t)), `前置：${t} 里确有金丝雀`);
   assert.ok(scanDb(CANARY).length > 0, "前置：删除前库里确有内容");
   assert.ok(diskScan(tk.dir, CANARY, [mountDir]).length > 0, "前置：删除前磁盘上确有内容（扫描本身有效）");
 

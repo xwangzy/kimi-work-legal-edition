@@ -10,6 +10,7 @@ kwl:
   lines: [诉讼仲裁]
   chain: casefile
   tier: beta
+  requires_outline: true
   tools_required: [facts.list, materials.list, docx.render_report, xlsx.render_table]
   tools_optional: [materials.read_excerpt, law.search, law.get_version, citations.verify, calc.deadline, outline.submit, outline.get]
   outputs: [民事起诉状（草稿）.docx, 证据目录.xlsx, 提交前核对清单.xlsx]
@@ -89,6 +90,7 @@ kwl:
 
 ## 8. 依赖缺失时的降级
 - `outline.submit` / `outline.get` 不可用：在回报中先列出论点与依据，请律师确认后再起草；不得跳过确认直接出文书。
+- `docx.render_report` 因“论点与依据还在等律师确认”被拒：等律师确认后再调用；**不得**改用 `kwl-docx create`、工作区文件或最终回复绕过确认（这样产出的文书会被标为“论点未经确认”，签发前须逐项处理）。
 - `facts.list` 不可用或关键事实未确认：只交付《提交前核对清单》和待确认事实清单，不起草起诉状正文。
 - 金额未确认：起诉状照常起草，金额处写“【金额待测算确认】”，并建议运行 `amount-calc`。
 - `docx.render_report` / `xlsx.render_table` 不可用：用受限命令行 `kwl-docx create` / `kwl-xlsx create` 生成，并在文件开头注明“未经文书工具生成，格式待整理”。

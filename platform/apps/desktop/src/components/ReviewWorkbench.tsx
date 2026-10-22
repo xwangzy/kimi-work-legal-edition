@@ -81,7 +81,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       const first = firstOpenCard(r.cards);
       if (first) setActive(first);
     }
-    const all = r.cards.flatMap((c) => [c.anchor_text, c.issue, c.suggestion ?? "", c.fallback ?? "", c.bottom_line ?? "", c.assumptions ?? "", c.rule_ref ?? "", ...(c.searched_terms ?? [])]).join("\n");
+    const all = r.cards.flatMap((c) => [c.anchor_text, c.issue, c.suggestion ?? "", c.fallback ?? "", c.bottom_line ?? "", c.assumptions ?? "", c.rule_ref ?? "", ...(c.searched_terms ?? []), ...(c.searched_docs ?? [])]).join("\n");
     if (all.includes("〔")) setMap(await restoreTokens(matterId, all));
     return r.cards;
   }, [matterId, documentVersionId, runFilter]);
@@ -461,7 +461,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                     {natureText(c)}
                   </span>
                   {kindOf(c) !== "risk" && <span className="pill pill-gray">{KIND_LABEL[kindOf(c)]}</span>}
-                  {(c.searched_found?.length ?? 0) > 0 && <span className="pill pill-orange" title="查过的说法在材料里找得到">可能误报</span>}
+                  {(c.searched_found?.length ?? 0) > 0 && <span className="pill pill-orange" title="查过的说法在材料里出现过，可能已有约定">可能误报</span>}
                   {(c.clause_ref || c.page) && <span className="rc-ref">{[c.clause_ref ? clauseLabel(c.clause_ref) : null, c.page ? `第 ${c.page} 页` : null].filter(Boolean).join(" · ")}</span>}
                   <span className="rc-issue">{plain(c.issue)}</span>
                   <span className={`rc-status rc-status-${c.status}`}>
@@ -525,10 +525,10 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                         <span className="rc-k">查过</span>
                         <span>
                           {(c.searched_terms ?? []).map((t) => plain(t)).join("、") || "（没有列出）"}
-                          {(c.searched_docs?.length ?? 0) > 0 && <span className="muted">（{c.searched_docs!.join("、")}）</span>}
+                          {(c.searched_docs?.length ?? 0) > 0 && <span className="muted">（{c.searched_docs!.map((d) => plain(d)).join("、")}）</span>}
                           {(c.searched_found?.length ?? 0) > 0 && (
                             <span className="rc-warn">
-                              材料里其实有：{c.searched_found!.map((f) => `“${plain(f.term)}”（${f.filename}）`).join("、")}——请先核对是否已有约定
+                              材料里出现了这些说法：{c.searched_found!.map((f) => `“${plain(f.term)}”（${plain(f.filename)}）`).join("、")}——请先核对是否已有约定
                             </span>
                           )}
                         </span>
@@ -538,8 +538,11 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                       <span className="rc-k">{kindOf(c) === "missing" ? "插在哪里" : "合同原文"}</span>
                       <span className="rc-quote">
                         {kindOf(c) === "missing" ? (c.anchor_text ? <>在“{plain(c.anchor_text)}”这一段之后</> : <span className="muted">没有写明插在哪里：只进审查意见表，请在 Word 中手工补上</span>) : plain(c.anchor_text)}
-                        {c.anchor_status === "not_found" && !!c.anchor_text && <span className="rc-warn">未能在合同中找到这段原文，生成修订稿时需跳过，可在 Word 中手工修改</span>}
-                        {c.anchor_status === "ambiguous" && <span className="rc-warn">这段原文在合同中出现多处，生成时按条款号定位</span>}
+                        {kindOf(c) === "missing" && !!c.anchor_text && c.anchor_status !== "located" && (
+                          <span className="rc-warn">{c.anchor_status === "ambiguous" ? "插入位置在合同中出现多处" : "插入位置在合同中找不到"}：只进审查意见表，请在 Word 中手工补上</span>
+                        )}
+                        {kindOf(c) !== "missing" && c.anchor_status === "not_found" && !!c.anchor_text && <span className="rc-warn">未能在合同中找到这段原文，生成修订稿时需跳过，可在 Word 中手工修改</span>}
+                        {kindOf(c) !== "missing" && c.anchor_status === "ambiguous" && <span className="rc-warn">这段原文在合同中出现多处，生成时按条款号定位</span>}
                         {c.anchor_status === "cross_paragraph" && <span className="rc-warn">这段原文跨了段落，修订稿不能自动写入，生成时需跳过，可在 Word 中手工修改</span>}
                       </span>
                     </div>

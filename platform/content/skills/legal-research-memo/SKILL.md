@@ -10,6 +10,7 @@ kwl:
   lines: [诉讼仲裁, 非诉, 企业法务]
   chain: research
   tier: beta
+  requires_outline: true
   tools_required: [law.search, law.get_version, citations.verify]
   tools_optional: [docx.render_report, xlsx.render_table, materials.list, materials.read_excerpt, facts.list, outline.submit, outline.get]
   outputs: [研究备忘录.docx, 来源目录.xlsx]
@@ -77,4 +78,5 @@ kwl:
 
 ## 8. 依赖缺失时的降级
 - `outline.submit` / `outline.get` 不可用：在回报中先列出论点与依据，请律师确认后再起草；不得跳过确认直接出文书。
+- `docx.render_report` 因“论点与依据还在等律师确认”被拒：等律师确认后再调用；**不得**改用 `kwl-docx create`、工作区文件或最终回复绕过确认（这样产出的文书会被标为“论点未经确认”，签发前须逐项处理）。
 citations.verify 不可用时，只交付“研究笔记”（标题不得为“备忘录”），所有命题标“来源未核验”，并提示律师核验后再使用。

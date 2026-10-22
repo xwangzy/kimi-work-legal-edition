@@ -161,18 +161,63 @@ test("缺失条款写进修订稿（段后插入）；没给插入位置的只�
   assert.deepEqual(art, { kind: "review_table", status: "draft" });
 });
 
-test("同一段之后插两处：判为重叠，请合并（否则先后次序会颠倒）", { timeout: 60_000 }, async () => {
+test("同一段之后插两处：两条都写入、按卡的先后排；同一段里一插一改都写入；补充条款含后面某张卡的锚点也能生成（复核 Q2-04 / Q2-06）", { timeout: 60_000 }, async () => {
   const s = await setup("同处插入");
   submitRiskCards(s.deps, s.scope, {
     document_version_id: s.doc.document_version_id,
     cards: [
-      { kind: "missing", insert_after: "双方对本合同内容", searched_terms: ["保密期限"], severity: "mid", issue: "甲", suggestion: "12.2 甲。" },
-      { kind: "missing", insert_after: "负有保密义务。", searched_terms: ["保密范围"], severity: "mid", issue: "乙", suggestion: "12.3 乙。" },
+      { kind: "missing", insert_after: "双方对本合同内容", searched_terms: ["保密期限"], severity: "mid", issue: "甲", suggestion: "12.2 保密期限五年。" },
+      // 改写排在插入之前提交：合并写入时仍须先插后改，否则插入位置的原文已被改掉
+      { anchor_text: "负有保密义务", severity: "high", issue: "丙", suggestion: "负有保密及不竞争义务" },
+      { kind: "missing", insert_after: "负有保密义务。", searched_terms: ["保密范围"], severity: "mid", issue: "乙", suggestion: "12.3 争议提交卖方所在地人民法院诉讼解决。" },
+      { anchor_text: "争议提交卖方所在地人民法院诉讼解决。", severity: "mid", issue: "丁", suggestion: "争议提交买方所在地人民法院诉讼解决。" },
     ],
   });
   const m = s.matter.matter_id;
   for (const c of (await tk.inv("riskcards.list", { matter_id: m })).cards) await tk.inv("riskcards.decide", { matter_id: m, card_id: c.card_id, decision: "accept" });
   const r = await tk.inv("riskcards.redline", { matter_id: m, document_version_id: s.doc.document_version_id });
-  assert.equal(r.status, "preview");
-  assert.ok(r.conflicts.some((c: any) => c.reason === "overlap" && /插在同一段之后/.test(c.detail)), JSON.stringify(r.conflicts));
+  assert.equal(r.status, "applied", JSON.stringify(r));
+  const buf = Buffer.from((await tk.inv("artifacts.download", { artifact_version_id: r.artifact_version_id })).data_base64, "base64");
+  const paras = extractParagraphs(buf).map((p) => p.text);
+  const at = paras.indexOf("12.1 双方对本合同内容负有保密及不竞争义务。");
+  assert.ok(at >= 0, paras.join(" / "));
+  assert.deepEqual(paras.slice(at + 1, at + 3), ["12.2 保密期限五年。", "12.3 争议提交卖方所在地人民法院诉讼解决。"], "按卡的先后接在一起");
+  assert.ok(paras.includes("15.1 争议提交买方所在地人民法院诉讼解决。"), "原文那一处照常改；插入的条款不算多出来的匹配");
+  assert.doesNotMatch(readZipText(buf, "word/document.xml") ?? "", /kwl-(anchor|ins)/, "临时标记不留在文件里");
+});
+
+test("复核 Q2-07 / Q2-08 / Q2-21：没写插入位置的缺失卡不算“引文找不到”；插不进去的缺失卡不计入“写进修订稿”的项数、预览分原因；只有可退让且选了的卡对 Agent 不是“知悉”；缺失卡重新提交时合并说法并重新复查", { timeout: 60_000 }, async () => {
+  const s = await setup("Q2 一般项");
+  const m = s.matter.matter_id;
+  const r = submitRiskCards(s.deps, s.scope, {
+    document_version_id: s.doc.document_version_id,
+    cards: [
+      { kind: "missing", searched_terms: ["不可抗力"], severity: "low", issue: "无插入位置", suggestion: "不可抗力条款。" },
+      { kind: "missing", insert_after: "保密", searched_terms: ["保密期限"], severity: "low", issue: "插入位置多处", suggestion: "保密期限五年。" },
+      { anchor_text: "争议提交卖方所在地人民法院诉讼解决。", severity: "low", issue: "只有可退让", fallback: "争议提交被告所在地人民法院诉讼解决。" },
+    ],
+  });
+  assert.doesNotMatch(r.note, /引文在文档中找不到/, JSON.stringify(r.note));
+  assert.match(r.note, /1 张出现多处/, "插入位置出现多处的照常提示");
+  const cards = (await tk.inv("riskcards.list", { matter_id: m })).cards as any[];
+  for (const c of cards) await tk.inv("riskcards.decide", { matter_id: m, card_id: c.card_id, decision: "accept", ...(c.issue === "只有可退让" ? { level: "fallback" } : {}) });
+  const prog = (await tk.inv("riskcards.list", { matter_id: m, document_version_id: s.doc.document_version_id })).progress;
+  assert.equal(prog.accepted, 1, "两张插不进去的缺失卡不算会写进修订稿");
+  const pv = await tk.inv("riskcards.preview_redline", { matter_id: m, document_version_id: s.doc.document_version_id });
+  const reason = (issue: string) => pv.cards.find((x: any) => x.card_id === cards.find((c) => c.issue === issue).card_id)?.reason;
+  assert.equal(reason("无插入位置"), "no_insert_point");
+  assert.equal(reason("插入位置多处"), "insert_point_ambiguous");
+  // Agent 读到的状态与“是否改动合同”一致
+  const { riskcardsList } = await import("../src/tools/tools/review.ts");
+  const agentView = riskcardsList({ claims: { mid: m, tid: s.scope.tenantId, rid: s.scope.runId }, db: tk.kernel.db, blobs: tk.kernel.blobs } as any, {});
+  const fb = agentView.cards.find((c: any) => c.issue === "只有可退让");
+  assert.equal(fb!.lawyer_status, "accepted");
+  assert.equal(fb!.changes_document, true);
+  // 缺失卡重新提交：合并说法并重新复查（补充协议一里有“知识产权”）
+  submitRiskCards(s.deps, s.scope, { document_version_id: s.doc.document_version_id, cards: [{ kind: "missing", searched_terms: ["著作权"], severity: "mid", issue: "知识产权归属", suggestion: "成果归买方。" }] });
+  const again = submitRiskCards(s.deps, s.scope, { document_version_id: s.doc.document_version_id, cards: [{ kind: "missing", searched_terms: ["知识产权"], severity: "mid", issue: "知识产权归属", suggestion: "成果归买方。" }] });
+  assert.ok(again.cards[0]!.duplicate_of);
+  const ip = (await tk.inv("riskcards.list", { matter_id: m })).cards.find((c: any) => c.issue === "知识产权归属");
+  assert.deepEqual(ip.searched_terms, ["著作权", "知识产权"]);
+  assert.deepEqual(ip.searched_found.map((f: any) => f.term), ["知识产权"], "重新复查");
 });

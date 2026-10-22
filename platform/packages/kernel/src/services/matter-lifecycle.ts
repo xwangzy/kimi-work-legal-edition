@@ -170,6 +170,10 @@ export async function purgeMatter(
     tokens: count(`SELECT COUNT(*) AS n FROM matter_tokens WHERE matter_id = ?`),
     risk_cards: count(`SELECT COUNT(*) AS n FROM risk_cards WHERE matter_id = ?`),
     facts: count(`SELECT COUNT(*) AS n FROM matter_facts WHERE matter_id = ?`),
+    // v9.4 第 19 批：论点提纲与审阅表（律师改写的论点、补充要求、格子值与表名为原文；复核 Q2-01）
+    outlines: count(`SELECT COUNT(*) AS n FROM argument_outlines WHERE matter_id = ?`),
+    review_tables: count(`SELECT COUNT(*) AS n FROM review_tables WHERE matter_id = ?`),
+    review_cells: count(`SELECT COUNT(*) AS n FROM review_cells WHERE table_id IN (SELECT table_id FROM review_tables WHERE matter_id = ?)`),
     key_wrappings: count(`SELECT COUNT(*) AS n FROM matter_keys WHERE matter_id = ?`),
     egress_records: count(`SELECT COUNT(*) AS n FROM egress_records WHERE matter_id = ?`),
     egress_sent: count(`SELECT COUNT(*) AS n FROM egress_records WHERE matter_id = ? AND outcome = 'sent'`),
@@ -208,6 +212,9 @@ export async function purgeMatter(
     d.db.run(`DELETE FROM document_roles WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM risk_cards WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM matter_facts WHERE matter_id = ?`, [matterId]);
+    d.db.run(`DELETE FROM review_cells WHERE table_id IN (SELECT table_id FROM review_tables WHERE matter_id = ?)`, [matterId]);
+    d.db.run(`DELETE FROM review_tables WHERE matter_id = ?`, [matterId]);
+    d.db.run(`DELETE FROM argument_outlines WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM artifact_payloads WHERE artifact_version_id IN (SELECT artifact_version_id FROM artifact_versions WHERE matter_id = ?)`, [matterId]);
     // 签名业务行（运行事件、去向记录）里的内容：登记删除清单后清除（链复核按清单报告“已清除”，清单摘要进签名的删除审计事件）；
     // 去向记录保留目的地、时间、结果、字数与代号计数，去掉备注（检索原文、URL、裁决）与材料文件名

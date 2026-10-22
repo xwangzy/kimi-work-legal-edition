@@ -114,7 +114,11 @@ export interface CellRow {
   run_id: string | null;
   decided_by: string | null;
   decided_at: string | null;
+  /** 最后一次改动时刻：律师确认时带回，格子在此后被助手重填过就拒绝（复核 Q2-05）。 */
+  updated_at: string;
 }
+
+const CELL_COLS = "cell_id, document_version_id, col_key, value, quote, anchor_status, note, state, lawyer_value, run_id, decided_by, decided_at, updated_at";
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
@@ -195,11 +199,12 @@ export function getTable(db: KernelDb, matterId: string, tableId: string): { tab
   const r = db.get<any>(`SELECT * FROM review_tables WHERE table_id = ?`, [tableId]);
   if (!r || r.matter_id !== matterId) throw notFound("表格");
   const table = tableOut(r);
-  const cells = db.all<CellRow>(
-    `SELECT cell_id, document_version_id, col_key, value, quote, anchor_status, note, state, lawyer_value, run_id, decided_by, decided_at FROM review_cells WHERE table_id = ?`,
-    [tableId],
-  );
-  const docs = table.document_version_ids.map((id) => ({ document_version_id: id, filename: db.get<{ filename: string }>(`SELECT filename FROM document_versions WHERE document_version_id = ?`, [id])?.filename ?? "" }));
+  const cells = db.all<CellRow>(`SELECT ${CELL_COLS} FROM review_cells WHERE table_id = ?`, [tableId]);
+  // 已隔离（国家秘密标志）的材料整行不显示、不导出、不能再填（复核 Q2-02；隔离时格子已删除）
+  const docs = table.document_version_ids
+    .map((id) => db.get<{ document_version_id: string; filename: string; quarantined_at: string | null }>(`SELECT document_version_id, filename, quarantined_at FROM document_versions WHERE document_version_id = ?`, [id]))
+    .filter((d): d is { document_version_id: string; filename: string; quarantined_at: string | null } => !!d && !d.quarantined_at)
+    .map((d) => ({ document_version_id: d.document_version_id, filename: d.filename }));
   return { table, cells, docs };
 }
 
@@ -239,12 +244,12 @@ export function fillCells(
   input: { table_id?: unknown; cells?: unknown },
 ): { written: number; locked: number; rejected: { document_version_id: string; column: string; reason: string }[]; quote_not_found: number; note: string } {
   const tableId = str(input.table_id, 80);
-  const { table } = getTable(deps.db, scope.matterId, tableId);
+  const { table, docs: liveDocs } = getTable(deps.db, scope.matterId, tableId);
   const cells = Array.isArray(input.cells) ? input.cells : [];
   if (cells.length === 0) throw new DomainError("validation", "cells 不能为空", 422);
   if (cells.length > TABLE_LIMITS.cellsPerCall) throw new DomainError("validation", `一次至多 ${TABLE_LIMITS.cellsPerCall} 格，请分批`, 422);
   const cols = new Map(table.columns.map((c) => [c.key, c]));
-  const docs = new Set(table.document_version_ids);
+  const docs = new Set(liveDocs.map((d) => d.document_version_id));
   const views = new Map<string, string>();
   const rejected: { document_version_id: string; column: string; reason: string }[] = [];
   let written = 0;
@@ -274,8 +279,11 @@ export function fillCells(
         continue;
       }
       if (existing?.state === "unreadable") {
-        reject("这份材料读不出文字：不填，留给律师看原件");
-        continue;
+        // 材料重新识别后能读了（复核 Q2-10）：解锁这一格；仍读不出的照旧不收
+        if (unreadable(deps.db, doc)) {
+          reject("这份材料读不出文字：不填，留给律师看原件");
+          continue;
+        }
       }
       let state: CellState;
       let anchor: string | null = null;
@@ -300,11 +308,11 @@ export function fillCells(
         if (anchor === "not_found") notFoundQuotes++;
         state = status === "conflict" ? "conflict" : "ai";
       }
-      const args = [status === "not_found" ? null : value, status === "not_found" ? null : quote, anchor, note, state, scope.runId];
+      const args = [status === "not_found" ? null : value, status === "not_found" ? null : quote, anchor, note, state, state, scope.runId];
       if (existing)
-        deps.db.run(`UPDATE review_cells SET value = ?, quote = ?, anchor_status = ?, note = ?, state = ?, run_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE cell_id = ?`, [...args, existing.cell_id]);
+        deps.db.run(`UPDATE review_cells SET value = ?, quote = ?, anchor_status = ?, note = ?, state = ?, ai_state = ?, run_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE cell_id = ?`, [...args, existing.cell_id]);
       else
-        deps.db.run(`INSERT INTO review_cells (cell_id, table_id, document_version_id, col_key, value, quote, anchor_status, note, state, run_id) VALUES (?,?,?,?,?,?,?,?,?,?)`, [newId("reviewCell"), tableId, doc, key, ...args]);
+        deps.db.run(`INSERT INTO review_cells (cell_id, table_id, document_version_id, col_key, value, quote, anchor_status, note, state, ai_state, run_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, [newId("reviewCell"), tableId, doc, key, ...args]);
       written++;
     }
   });
@@ -316,16 +324,16 @@ export function fillCells(
 }
 
 /** 律师核格：确认（verify）/ 改值（edit，原 AI 值保留）/ 撤回（reset，回到 AI 值，可被重跑覆盖）。 */
-export function decideCell(db: KernelDb, matterId: string, userId: string, input: { table_id?: unknown; cell_id?: unknown; document_version_id?: unknown; column?: unknown; decision?: unknown; value?: unknown }): CellRow {
+export function decideCell(db: KernelDb, matterId: string, userId: string, input: { table_id?: unknown; cell_id?: unknown; document_version_id?: unknown; column?: unknown; decision?: unknown; value?: unknown; expected_updated_at?: unknown }): CellRow {
   const tableId = str(input.table_id, 80);
-  const { table } = getTable(db, matterId, tableId);
+  const { table, docs } = getTable(db, matterId, tableId);
   let cell = input.cell_id ? db.get<any>(`SELECT * FROM review_cells WHERE cell_id = ? AND table_id = ?`, [str(input.cell_id, 80), tableId]) : null;
   const decision = String(input.decision ?? "");
   if (!cell && decision === "edit") {
     // 律师直接填一个空格子（AI 还没填或没找到）
     const doc = str(input.document_version_id, 80);
     const key = str(input.column, 40);
-    if (!table.document_version_ids.includes(doc) || !table.columns.some((c) => c.key === key)) throw notFound("格子");
+    if (!docs.some((d) => d.document_version_id === doc) || !table.columns.some((c) => c.key === key)) throw notFound("格子");
     cell = db.get<any>(`SELECT * FROM review_cells WHERE table_id = ? AND document_version_id = ? AND col_key = ?`, [tableId, doc, key]);
     if (!cell) {
       const id = newId("reviewCell");
@@ -334,27 +342,29 @@ export function decideCell(db: KernelDb, matterId: string, userId: string, input
     }
   }
   if (!cell) throw notFound("格子");
+  if (!docs.some((d) => d.document_version_id === cell.document_version_id)) throw notFound("格子");
+  // 律师看着的是哪一版（复核 Q2-05）：这格在律师打开后被助手重填过，就不能把没看到的新值标成“已核”
+  if (typeof input.expected_updated_at === "string" && input.expected_updated_at && input.expected_updated_at !== cell.updated_at)
+    throw new DomainError("conflict", "这一格刚被助手更新过，请重新核对后再确认", 409);
   const now = new Date().toISOString();
   if (decision === "verify") {
     if (cell.state === "unreadable" || cell.state === "not_found") {
       // “确认没有”：律师核过原件，确实没有这一项
-      db.run(`UPDATE review_cells SET state = 'verified', lawyer_value = NULL, decided_by = ?, decided_at = ? WHERE cell_id = ?`, [userId, now, cell.cell_id]);
-    } else db.run(`UPDATE review_cells SET state = 'verified', decided_by = ?, decided_at = ? WHERE cell_id = ?`, [userId, now, cell.cell_id]);
+      db.run(`UPDATE review_cells SET state = 'verified', lawyer_value = NULL, decided_by = ?, decided_at = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE cell_id = ?`, [userId, now, cell.cell_id]);
+    } else db.run(`UPDATE review_cells SET state = 'verified', decided_by = ?, decided_at = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE cell_id = ?`, [userId, now, cell.cell_id]);
   } else if (decision === "edit") {
     const value = str(input.value, TABLE_LIMITS.value);
     if (!value) throw new DomainError("validation", "改值要填写新的值", 422);
     const col = table.columns.find((c) => c.key === cell.col_key)!;
     const bad = checkFormat(col, value);
     if (bad) throw new DomainError("validation", bad, 422);
-    db.run(`UPDATE review_cells SET state = 'edited', lawyer_value = ?, decided_by = ?, decided_at = ? WHERE cell_id = ?`, [value, userId, now, cell.cell_id]);
+    db.run(`UPDATE review_cells SET state = 'edited', lawyer_value = ?, decided_by = ?, decided_at = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE cell_id = ?`, [value, userId, now, cell.cell_id]);
   } else if (decision === "reset") {
-    const back: CellState = cell.value ? "ai" : unreadable(db, cell.document_version_id) ? "unreadable" : "not_found";
-    db.run(`UPDATE review_cells SET state = ?, lawyer_value = NULL, decided_by = NULL, decided_at = NULL WHERE cell_id = ?`, [back, cell.cell_id]);
+    // 回到助手最后一次填写时的状态（“有冲突”不丢，复核 Q2-09）；助手没填过的按材料能否读取判断
+    const back: CellState = cell.ai_state ?? (cell.value ? "ai" : unreadable(db, cell.document_version_id) ? "unreadable" : "not_found");
+    db.run(`UPDATE review_cells SET state = ?, lawyer_value = NULL, decided_by = NULL, decided_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE cell_id = ?`, [back, cell.cell_id]);
   } else throw new DomainError("validation", "decision 须为 verify / edit / reset", 422);
-  return db.get<CellRow>(
-    `SELECT cell_id, document_version_id, col_key, value, quote, anchor_status, note, state, lawyer_value, run_id, decided_by, decided_at FROM review_cells WHERE cell_id = ?`,
-    [cell.cell_id],
-  )!;
+  return db.get<CellRow>(`SELECT ${CELL_COLS} FROM review_cells WHERE cell_id = ?`, [cell.cell_id])!;
 }
 
 /** Agent 读表：列与填写说明、材料、每格状态（锁定的给出律师的值，便于综合时引用）。 */

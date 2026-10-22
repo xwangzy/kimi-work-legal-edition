@@ -63,7 +63,7 @@ for (const id of ids) {
   const bad = req.filter((t) => !LEGAL_MCP_TOOLS.includes(t));
   if (bad.length) throw new Error(`${file}：tools_required 含 Agent 调不到的工具：${bad.join("、")}`);
   cpSync(join(here, id), join(trusted, "skills", id), { recursive: true, filter: (s) => !/[\\/](evals|examples)([\\/]|$)/.test(s) });
-  skills.push({ id, version: fm.kwl.version ?? "0.0.0", tier: fm.kwl.tier ?? "beta", lines: fm.kwl.lines ?? [], tools_required: req, title: (/^# (.+)$/m.exec(text) ?? [])[1] ?? id, description: fm.description });
+  skills.push({ id, version: fm.kwl.version ?? "0.0.0", tier: fm.kwl.tier ?? "beta", lines: fm.kwl.lines ?? [], tools_required: req, ...(fm.kwl.requires_outline === "true" ? { requires_outline: true } : {}), title: (/^# (.+)$/m.exec(text) ?? [])[1] ?? id, description: fm.description });
 }
 
 function list(dir) {

@@ -18,13 +18,13 @@ import { startCloudV0, type CloudV0 } from "./cloud-v0.ts";
 import { decideOutline, latestOutline } from "../src/services/argument-outlines.ts";
 
 const repo = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
-const manifest = JSON.parse(readFileSync(repo("content/skills/dist/skills.manifest.json"), "utf8")) as { skills: { id: string; title: string; tools_required: string[] }[] };
+const manifest = JSON.parse(readFileSync(repo("content/skills/dist/skills.manifest.json"), "utf8")) as { skills: { id: string; title: string; tools_required: string[]; requires_outline?: boolean }[] };
 const frontArgs = (id: string): string[] => {
   const m = /^arguments:\s*\[([^\]]*)\]/m.exec(readFileSync(repo(`content/skills/${id}/SKILL.md`), "utf8"));
   return m ? m[1]!.split(",").map((s) => s.trim()).filter(Boolean) : [];
 };
-/** 文书类方法（C-04）：起草前须提交论点提纲并经律师确认。 */
-const DRAFTING = new Set(["pleading-draft", "defense-draft", "agency-statement", "legal-research-memo"]);
+/** 文书类方法（C-04）：起草前须提交论点提纲并经律师确认；从方法元数据读（复核 Q2-17：新增文书方法漏标时，下面的用例会失败）。 */
+const DRAFTING = new Set(manifest.skills.filter((s) => s.requires_outline).map((s) => s.id));
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const CLAUSE = "8.1 买方应于验收合格后九十日内支付货款。";
 const mcp = (name: string) => `mcp__legal__${name.replace(/\./g, "_")}`;
@@ -98,6 +98,10 @@ function argsFor(tool: string, skill: string): Record<string, unknown> {
 type Msg = { role?: string; tool_call_id?: string; content?: unknown };
 const msgs = (body: Record<string, unknown>): Msg[] => (Array.isArray(body.messages) ? (body.messages as Msg[]) : []);
 const text = (c: unknown) => (typeof c === "string" ? c : JSON.stringify(c ?? ""));
+
+test("文书类方法都标了 requires_outline（起诉状、答辩状、代理词、研究备忘录）", () => {
+  for (const id of ["pleading-draft", "defense-draft", "agency-statement", "legal-research-memo"]) assert.ok(DRAFTING.has(id), id);
+});
 
 test("方法包里每个方法都有契约用例的参数准备（新增方法或工具时这里先失败）", () => {
   assert.ok(manifest.skills.length >= 22);
@@ -183,6 +187,8 @@ for (const s of manifest.skills) {
       if (required.includes("facts.submit")) assert.ok(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM matter_facts WHERE run_id = ?`, [run.run_id])!.n >= 1, `${s.id}：事实进事实标签`);
       if (required.includes("table.fill")) assert.ok(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM review_cells WHERE run_id = ?`, [run.run_id])!.n >= 1, `${s.id}：审阅表格子写入`);
       if (DRAFTING.has(s.id)) assert.equal(latestOutline(tk.kernel.db, run.run_id)?.status, "confirmed", `${s.id}：论点提纲经确认后才出文书`);
+      // 走完确认的黄金路径：最终回复登记的草稿不带“论点未经确认”
+      for (const a of fin.artifacts) assert.ok(!JSON.stringify(a.open_items ?? []).includes("outline_unconfirmed"), `${s.id}：${a.kind} 不应标论点未经确认`);
     } finally {
       cloud.model.script = null;
     }
@@ -213,6 +219,30 @@ test("反向：文书类方法跳过论点确认直接出文书，会被拦下�
     assert.match(results.get("n2") ?? "", TOOL_FAILED, "契约用例的失败判据认得出真实的工具失败");
     assert.doesNotMatch(results.get("n1") ?? "", TOOL_FAILED, "成功的调用不被误判");
     assert.equal(fin.artifacts.filter((a: any) => a.kind === "agent_report").length, 0);
+  } finally {
+    cloud.model.script = null;
+  }
+});
+
+test("反向（复核 Q2-03）：文书类方法不交提纲直接出文书被拒；只写在最终回复里的文书标“论点未经确认”", { timeout: 200_000 }, async () => {
+  const marker = "SKCNOOUTLINE";
+  const results = new Map<string, string>();
+  cloud.model.script = (body) => {
+    if (!text(msgs(body).find((m) => m.role === "user")?.content).includes(marker)) return null;
+    for (const m of msgs(body)) if (m.role === "tool" && typeof m.tool_call_id === "string") results.set(m.tool_call_id, text(m.content));
+    if (!results.has("r1")) return { toolCalls: [{ id: "r1", name: mcp("docx.render_report"), args: argsFor("docx.render_report", "pleading-draft") }] };
+    return { content: "民事起诉状（草稿）\n诉讼请求：一、判令被告支付货款。" };
+  };
+  try {
+    const est = await tk.inv("runs.estimate", { matter_id: matterId, scenario: "a1.agent_task", document_version_ids: [ids.doc] });
+    const run = await tk.inv("runs.start", { matter_id: matterId, estimate_id: est.estimate_id, idempotency_key: `skc-noo-${Date.now()}`, goal: `${marker} x`, skill: "pleading-draft", plan_first: false, mode: "default" });
+    const fin = await waitRunAnswering(tk.inv, run.run_id, () => ({ decision: "approve", scope: "once" }), 180_000);
+    assert.match(results.get("r1") ?? "", /先用 outline\.submit 提交论点与依据/);
+    assert.equal(fin.artifacts.filter((a: any) => a.kind === "agent_report").length, 0);
+    const draft = fin.artifacts.find((a: any) => a.kind === "a1_agent_draft");
+    assert.ok(draft, "最终回复登记为草稿");
+    const row = tk.kernel.db.get<{ open_items: string }>(`SELECT open_items FROM artifact_versions WHERE artifact_version_id = ?`, [draft.artifact_version_id])!;
+    assert.match(row.open_items, /outline_unconfirmed/, "论点未经确认的标未决项，签发前须处理");
   } finally {
     cloud.model.script = null;
   }

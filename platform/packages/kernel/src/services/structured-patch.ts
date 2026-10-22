@@ -91,6 +91,9 @@ export interface PatchSpan {
 
 const AUTHOR = "Kimi Work 法律助手（AI 建议，待律师确认）";
 
+/** 合并写入时先做段后插入（不改原有段落文字），再做替换：替换不会把插入的锚点改掉（复核 Q2-06）；各自保持原先后次序。 */
+const insertsFirst = (ops: readonly RevisionOp[]): RevisionOp[] => [...ops.filter((o) => o.insertAfter), ...ops.filter((o) => !o.insertAfter)];
+
 export function applyStructuredPatches(
   deps: { db: KernelDb; blobs: BlobStore; tokens: MatterTokenStore },
   input: {
@@ -201,9 +204,9 @@ export function applyStructuredPatches(
     for (let j = i + 1; j < spans.length; j++) {
       const a = spans[i]!;
       const b = spans[j]!;
-      // 段后插入的锚点也不能被别的修改改掉（否则合并时找不到插入位置）；同一段之后插两处，先后次序会颠倒——要求合并成一张卡
+      // 段后插入不改锚点所在段落、合并写入时先于替换（见下）：插入与其他补丁不算重叠；同一段之后的多条插入按先后接在一起（复核 Q2-04/Q2-06）
+      if (a.insert || b.insert) continue;
       if (a.para === b.para && a.start < b.end && b.start < a.end) conflicts.push({ index: b.index, reason: "overlap", detail: `与第 ${a.index + 1} 条补丁的锚点重叠` });
-      else if (a.insert && b.insert && a.para === b.para) conflicts.push({ index: b.index, reason: "overlap", detail: `与第 ${a.index + 1} 条补丁插在同一段之后，请合并为一条` });
     }
   }
   const bad = new Set(conflicts.map((c) => c.index));
@@ -212,7 +215,7 @@ export function applyStructuredPatches(
     // 逐条成立时再合并试写一遍（与真正生成时同一步）：合并失败即整体不成立
     if (conflicts.length === 0) {
       try {
-        applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops });
+        applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops: insertsFirst(ops) });
       } catch (e) {
         for (const item of preview) item.ok = false;
         conflicts.push({ index: 0, reason: "apply_failed", detail: (e as Error).message.slice(0, 200) });
@@ -224,7 +227,7 @@ export function applyStructuredPatches(
 
   let out: Buffer;
   try {
-    out = applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops }).docx;
+    out = applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops: insertsFirst(ops) }).docx;
   } catch (e) {
     // 逐条成立而合并失败（例如前一条的修订改变了后一条的定位）：整体预览
     for (const item of preview) item.ok = false;

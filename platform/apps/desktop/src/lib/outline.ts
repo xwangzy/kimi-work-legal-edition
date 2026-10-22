@@ -81,6 +81,17 @@ export function outlineAnswer(m: NonNullable<ReturnType<typeof outlineQuestion>>
   return { [m.qid]: m.stop ? { kind: "single", option_id: m.stop } : { kind: "other", text: "先不起草" } };
 }
 
+/**
+ * 任务页“确认并开始起草”的先后（复核 Q2-20）：先记下律师的逐条决定，再替律师答 Agent 的确认题。
+ * 代答失败时决定已经记下（提纲为已确认），错误照常抛给界面——Agent 下次读取 outline.get 即得确认版，律师也可以在提问卡上自己答。
+ */
+export async function confirmAndAnswer(o: { decide: () => Promise<unknown>; answer: (() => Promise<unknown>) | null }): Promise<"decided_and_answered" | "decided_only"> {
+  await o.decide();
+  if (!o.answer) return "decided_only";
+  await o.answer();
+  return "decided_and_answered";
+}
+
 /** 依据的核验说法（律师层）：库外与拦截的写明，系统核过的不说成“律师认可”。 */
 export function basisStateText(b: Pick<OutlineBasisView, "check" | "article_text" | "demo">): string {
   if (b.check === "intercepted") return "核对未通过（条号或法名不对，或法规库里没有）";

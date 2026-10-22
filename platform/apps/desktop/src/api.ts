@@ -788,7 +788,7 @@ export const api = {
     invoke<{ table: import("./lib/table-review.ts").TableView }>("tables.create", { matter_id: matterId, ...body }),
   table: (matterId: string, tableId: string) =>
     invoke<{ table: import("./lib/table-review.ts").TableView; cells: import("./lib/table-review.ts").CellView[]; docs: { document_version_id: string; filename: string }[] }>("tables.get", { matter_id: matterId, table_id: tableId }),
-  decideCell: (matterId: string, tableId: string, body: { cell_id?: string; document_version_id?: string; column?: string; decision: "verify" | "edit" | "reset"; value?: string }) =>
+  decideCell: (matterId: string, tableId: string, body: { cell_id?: string; document_version_id?: string; column?: string; decision: "verify" | "edit" | "reset"; value?: string; expected_updated_at?: string }) =>
     invoke<{ cell: import("./lib/table-review.ts").CellView }>("tables.decide_cell", { matter_id: matterId, table_id: tableId, ...body }),
   exportTable: (matterId: string, tableId: string) => invoke<{ artifact_version_id: string; filename: string; rows: number }>("tables.export", { matter_id: matterId, table_id: tableId }),
   /** 起草前的论点与依据（C-04）：任务页逐条确认。 */

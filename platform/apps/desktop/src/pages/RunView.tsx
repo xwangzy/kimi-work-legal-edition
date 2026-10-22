@@ -26,7 +26,7 @@ import { Select } from "../components/Select.tsx";
 import { rightCollapsed, rightTabs, type RightTab } from "../lib/run-pane.ts";
 import { Breadcrumb } from "../components/Breadcrumb.tsx";
 import { OutlineConfirm } from "../components/OutlineConfirm.tsx";
-import { outlineAnswer, outlineQuestion, type OutlineView } from "../lib/outline.ts";
+import { confirmAndAnswer, outlineAnswer, outlineQuestion, type OutlineView } from "../lib/outline.ts";
 
 /** 页面标题：任务目标前 24 字（律师能区分多个任务）；没有目标时用场景名。 */
 function runTitle(run: any): string {
@@ -460,8 +460,10 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     setBusy(true);
     setErr("");
     try {
-      await api.decideOutline(matterId, outline.outline_id, decisions, note);
-      if (outlineQ) await api.answer(runId, outlineQ.question_id, outlineAnswer(outlineQ, true), stateVersion);
+      await confirmAndAnswer({
+        decide: () => api.decideOutline(matterId, outline.outline_id, decisions, note),
+        answer: outlineQ ? () => api.answer(runId, outlineQ.question_id, outlineAnswer(outlineQ, true), stateVersion) : null,
+      });
       await refresh();
     } catch (e) {
       setErr((e as Error).message);

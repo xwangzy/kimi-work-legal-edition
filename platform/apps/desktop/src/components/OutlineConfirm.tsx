@@ -24,7 +24,7 @@ export function OutlineConfirm({ outline, plain, busy, canStop, onConfirm, onSto
   return (
     <div className="card outline-card" role="region" aria-label="起草前确认论点与依据">
       <div className="card-title">起草前请确认：{outline.doc_kind}的论点与依据</div>
-      <p className="muted">助手按你留下的论点起草；删掉的不写，改写的按你的写法，去掉的依据不引。确认之前不会生成文书。</p>
+      <p className="muted">助手按你留下的论点起草；删掉的不写，改写的按你的写法，去掉的依据不引。确认之前文书工具不会出文书；助手若绕过确认产出文书，会标为“论点未经确认”，签发前须处理。</p>
       <ol className="outline-list">
         {outline.items.map((x) => {
           const dropped = !!d.drop[x.arg_id];

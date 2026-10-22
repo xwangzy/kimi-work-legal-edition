@@ -141,3 +141,82 @@ test("跨事项：别的事项的表与材料不可用", { timeout: 60_000 }, as
   const { table } = await tk.inv("tables.create", { matter_id: b.matter_id, template: "contract_ledger", document_version_ids: [doc.document_version_id] });
   await assert.rejects(tk.inv("tables.get", { matter_id: a.matter_id, table_id: table.table_id }), /不存在|无权/);
 });
+
+// ─── 复核 Q2 处置 ───
+
+test("Q2-02 材料隔离：这份材料的格子删除、整行不显示不导出、不能再填；提纲里抄来的事实文字抹去", { timeout: 60_000 }, async () => {
+  const { matter } = await tk.inv("matters.create", { title: "隔离", stance: "原告", consent_status: "agreed" });
+  const m = matter.matter_id;
+  const a = await importText(tk.inv, m, "甲.txt", "甲合同全文：总价人民币 50 万元，签署于 2025 年 6 月。");
+  const b = await importText(tk.inv, m, "乙.txt", "乙合同全文：总价人民币 80 万元，签署于 2025 年 7 月。金丝雀KWLQ202");
+  const { table } = await tk.inv("tables.create", { matter_id: m, template: "contract_ledger", columns: ["contract_name"], document_version_ids: [a.document_version_id, b.document_version_id] });
+  const live = liveTaskIdentity(tk, m, "q202");
+  const { fillCells } = await import("../src/services/review-tables.ts");
+  fillCells({ db: tk.kernel.db, blobs: tk.kernel.blobs }, { matterId: m, runId: live.rid }, { table_id: table.table_id, cells: [
+    { document_version_id: a.document_version_id, column: "contract_name", value: "甲合同", quote: "甲合同全文" },
+    { document_version_id: b.document_version_id, column: "contract_name", value: "乙合同金丝雀KWLQ202", quote: "金丝雀KWLQ202" },
+  ] });
+  // 提纲里引用了据乙材料的事实
+  tk.kernel.db.run(`INSERT INTO matter_facts (fact_id, tenant_id, matter_id, seq, statement, kind, document_version_id, anchor_status, status) VALUES ('fct_q202', ?, ?, 1, '乙合同总价 80 万元 金丝雀KWLQ202', 'claimed', ?, 'no_document', 'proposed')`, [live.tid, m, b.document_version_id]);
+  const { submitOutline } = await import("../src/services/argument-outlines.ts");
+  submitOutline({ db: tk.kernel.db }, { tenantId: live.tid, matterId: m, runId: live.rid }, { doc_kind: "起诉状", arguments: [{ claim: "甲", facts: [{ fact_id: "fct_q202" }] }] });
+  // 重新解析才发现密级标志 → 隔离（与 classified-marking 用例同一做法）
+  const marked = tk.kernel.blobs.put(Buffer.from("机密★1年\n乙合同全文 金丝雀KWLQ202"), m);
+  tk.kernel.db.run(`UPDATE document_versions SET sha256 = ?, storage_uri = ? WHERE document_version_id = ?`, [marked.sha256, marked.storage_uri, b.document_version_id]);
+  await assert.rejects(tk.inv("materials.reparse", { document_version_id: b.document_version_id }), (e: any) => e.code === "classified_material");
+  assert.equal(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM review_cells WHERE document_version_id = ?`, [b.document_version_id])!.n, 0, "格子删除");
+  const grid = await tk.inv("tables.get", { matter_id: m, table_id: table.table_id });
+  assert.deepEqual(grid.docs.map((d: any) => d.filename), ["甲.txt"], "整行不显示");
+  const r = fillCells({ db: tk.kernel.db, blobs: tk.kernel.blobs }, { matterId: m, runId: live.rid }, { table_id: table.table_id, cells: [{ document_version_id: b.document_version_id, column: "contract_name", value: "x", quote: "x" }] });
+  assert.equal(r.rejected[0]?.reason, "这份材料不在表里", "不能再填");
+  const ex = await tk.inv("tables.export", { matter_id: m, table_id: table.table_id });
+  const sheet = readZipText(Buffer.from((await tk.inv("artifacts.download", { artifact_version_id: ex.artifact_version_id })).data_base64, "base64"), "xl/worksheets/sheet1.xml") ?? "";
+  assert.doesNotMatch(sheet, /乙/);
+  const items = tk.kernel.db.get<{ items: string }>(`SELECT items FROM argument_outlines WHERE run_id = ?`, [live.rid])!.items;
+  assert.doesNotMatch(items, /KWLQ202/, "提纲里抄来的事实文字抹去");
+  assert.match(items, /所依据的材料已隔离/);
+});
+
+test("Q2-05 过期确认：格子在律师打开后被助手重填过，按旧版本确认被拒、仍是待核；按新版本可确认", { timeout: 60_000 }, async () => {
+  const { matter } = await tk.inv("matters.create", { title: "过期确认", stance: "原告", consent_status: "agreed" });
+  const m = matter.matter_id;
+  const a = await importText(tk.inv, m, "甲.txt", "甲合同全文：总价人民币 120 万元，分三期支付，验收合格后付清。");
+  const { table } = await tk.inv("tables.create", { matter_id: m, template: "contract_ledger", columns: ["payment_milestones"], document_version_ids: [a.document_version_id] });
+  const live = liveTaskIdentity(tk, m, "q205");
+  const { fillCells } = await import("../src/services/review-tables.ts");
+  const fill = (v: string) => fillCells({ db: tk.kernel.db, blobs: tk.kernel.blobs }, { matterId: m, runId: live.rid }, { table_id: table.table_id, cells: [{ document_version_id: a.document_version_id, column: "payment_milestones", value: v, quote: "总价人民币 120 万元" }] });
+  fill("120 万元");
+  const seen = (await tk.inv("tables.get", { matter_id: m, table_id: table.table_id })).cells[0];
+  await new Promise((r) => setTimeout(r, 5));
+  const second = fill("999 万元");
+  assert.equal(second.written, 1, JSON.stringify(second));
+  const after2 = (await tk.inv("tables.get", { matter_id: m, table_id: table.table_id })).cells[0];
+  assert.notEqual(after2.updated_at, seen.updated_at, JSON.stringify([seen, after2]));
+  await assert.rejects(tk.inv("tables.decide_cell", { matter_id: m, table_id: table.table_id, cell_id: seen.cell_id, decision: "verify", expected_updated_at: seen.updated_at }), /刚被助手更新过/);
+  const now = (await tk.inv("tables.get", { matter_id: m, table_id: table.table_id })).cells[0];
+  assert.equal(now.state, "ai");
+  assert.equal((await tk.inv("tables.decide_cell", { matter_id: m, table_id: table.table_id, cell_id: now.cell_id, decision: "verify", expected_updated_at: now.updated_at })).cell.state, "verified");
+});
+
+test("Q2-09 / Q2-10：撤回回到“有冲突”；材料重新识别能读后，读取差的格子可以填", { timeout: 60_000 }, async () => {
+  const { matter } = await tk.inv("matters.create", { title: "撤回与重新识别", stance: "原告", consent_status: "agreed" });
+  const m = matter.matter_id;
+  const a = await importText(tk.inv, m, "甲.txt", "甲合同全文：签署于 2025 年 6 月；另页写 2025 年 7 月签署。");
+  const blank = await importText(tk.inv, m, "扫描件.txt", " ");
+  const { table } = await tk.inv("tables.create", { matter_id: m, template: "contract_ledger", columns: ["signed_on"], document_version_ids: [a.document_version_id, blank.document_version_id] });
+  const live = liveTaskIdentity(tk, m, "q209");
+  const { fillCells } = await import("../src/services/review-tables.ts");
+  const deps = { db: tk.kernel.db, blobs: tk.kernel.blobs };
+  fillCells(deps, { matterId: m, runId: live.rid }, { table_id: table.table_id, cells: [{ document_version_id: a.document_version_id, column: "signed_on", status: "conflict", value: "2025-06", quote: "签署于 2025 年 6 月", note: "另页写 7 月" }] });
+  let cell = (await tk.inv("tables.get", { matter_id: m, table_id: table.table_id })).cells.find((c: any) => c.document_version_id === a.document_version_id);
+  await tk.inv("tables.decide_cell", { matter_id: m, table_id: table.table_id, cell_id: cell.cell_id, decision: "verify" });
+  cell = (await tk.inv("tables.decide_cell", { matter_id: m, table_id: table.table_id, cell_id: cell.cell_id, decision: "reset" })).cell;
+  assert.equal(cell.state, "conflict", "撤回回到有冲突");
+  // 读取差：先拒；模拟重新识别后能读，再填就收
+  const try1 = fillCells(deps, { matterId: m, runId: live.rid }, { table_id: table.table_id, cells: [{ document_version_id: blank.document_version_id, column: "signed_on", value: "2025-08", quote: "2025 年 8 月" }] });
+  assert.equal(try1.written, 0);
+  const pv = tk.kernel.db.get<{ parse_version_id: string }>(`SELECT parse_version_id FROM parse_versions WHERE document_version_id = ? ORDER BY created_at DESC LIMIT 1`, [blank.document_version_id])!.parse_version_id;
+  tk.kernel.db.run(`UPDATE parse_texts SET content = ? WHERE parse_version_id = ?`, ["重新识别后的扫描件正文：本合同于 2025 年 8 月签署。", pv]);
+  const try2 = fillCells(deps, { matterId: m, runId: live.rid }, { table_id: table.table_id, cells: [{ document_version_id: blank.document_version_id, column: "signed_on", value: "2025-08", quote: "2025 年 8 月" }] });
+  assert.equal(try2.written, 1);
+});
