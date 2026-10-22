@@ -1,7 +1,7 @@
 /**
  * law.get_article（v9.4 评审 S1 §6.2 第 4 项验收）：库内条文返回原文且版本与 law.get_version 一致；
  * 库外 100% found:false 且不给文本；条号数字、中文写法都能解析；as_of 选版本正确；来源授权不足即停。
- * 法源数据来自签名法规库包（content/lawdb/dist，npm test 的 pretest 会先行构建）。
+ * 法源数据来自签名法规库测试夹具（content/lawdb/test-fixtures，含虚构的《律师法》2026 修正本以测时点选版本；npm test 的 pretest 会先行构建）。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -14,7 +14,7 @@ import { findTool, legalToolLockProblems, legalToolManifests, validateParams } f
 
 const repo = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
 const signerPub = (JSON.parse(readFileSync(repo("content/keys/content-signing-dev.pub.json"), "utf8")) as { publicKeyPem: string }).publicKeyPem;
-const lawdb = openLawdb(repo("content/lawdb/dist/lawdb.sqlite"), { expectedSignerPubPem: signerPub });
+const lawdb = openLawdb(repo("content/lawdb/test-fixtures/lawdb-renumber-demo.sqlite"), { expectedSignerPubPem: signerPub });
 
 test("law.get_article: 库内条文返回原文，版本与 law.get_version 一致", () => {
   const asOf = "2026-10-01";

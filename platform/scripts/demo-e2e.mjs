@@ -17,6 +17,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 process.env.ZR_INTERNAL_SECRET = process.env.ZR_INTERNAL_SECRET ?? "demo-e2e-secret-0123456789abcdef";
 
@@ -45,7 +46,8 @@ const kernel = await createKernel({
   dataDir: dir,
   firmSlug: "demo-firm",
   userSlug: "demo-lawyer",
-  env: { ...process.env, ZR_MODEL_PROVIDER: "mock" },
+  // 改号拦截演示用测试夹具法规库（含虚构的《律师法》2026 修正本，不随包分发；v9.4 第 19 批 S-07）
+  env: { ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_LAWDB_FILE: process.env.ZR_LAWDB_FILE ?? fileURLToPath(new URL("../content/lawdb/test-fixtures/lawdb-renumber-demo.sqlite", import.meta.url)) },
 });
 const inv = (m, p) => kernel.invoke(m, p);
 const waitRun = async (runId, timeoutMs = 60_000) => {

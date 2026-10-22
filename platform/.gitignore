@@ -22,6 +22,7 @@ apps/desktop/dev/.bridge-token
 # 法规库构建产物与开发内容签名密钥（首跑构建生成；生产密钥在硬件模块/云签名，不入仓）
 content/keys/
 content/lawdb/dist/
+content/lawdb/test-fixtures/
 # 本机 OCR 模型文件（npm run fetch:ocr-models 拉取；随安装包分发，不入 git）
 content/ocr-models/
 

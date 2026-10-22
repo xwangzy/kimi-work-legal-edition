@@ -10,7 +10,7 @@
     "region": "全国",
     "firm_limit": null,
     "concurrency_limit": null,
-    "citation_requirement": "官方公报标准文本人工采集自建（著作权法第五条、立法法第六十二/七十八条）。G0 示例数据集：《律师法》2026 修正文本为演示演绎，非真实采集；公报期号/页码为示例值，待法律工程采集校准。",
+    "citation_requirement": "官方公报标准文本人工采集自建（著作权法第五条、立法法第六十二/七十八条）。G0 示例数据集：公报期号/页码为示例值，待法律工程采集校准。",
     "deletion_obligation": null,
     "acquired_at": "2026-10-02",
     "reliability": "demo_seed",

@@ -1,7 +1,8 @@
 /**
  * 法规库包（方案 v5.0 第 4 篇 §9、第 5 篇 §2）：签名验签拒载、名称归一、时点取版本、
  * 条号迁移、Source Registry 动作强制、增量包 apply 与 base 校验、重复构建确定性。
- * 依赖 content/lawdb/dist 产物（npm test 的 pretest 会先行构建）。
+ * 依赖 content/lawdb/dist 产物与 test-fixtures 夹具（npm test 的 pretest 会先行构建）。
+ * 随包法规库不含虚构版本（v9.4 第 19 批 S-07）；条号迁移用夹具（随包种子 + 虚构的《律师法》2026 修正本）测。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -18,6 +19,7 @@ const repo = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.u
 const PUB = (JSON.parse(readFileSync(repo("content/keys/content-signing-dev.pub.json"), "utf8")) as { publicKeyPem: string }).publicKeyPem;
 const BASE = repo("content/lawdb/dist/lawdb.sqlite");
 const INCR = repo("content/lawdb/dist/incr/lawdb-incr-arbitration.sqlite");
+const FIXTURE = repo("content/lawdb/test-fixtures/lawdb-renumber-demo.sqlite");
 
 function manifestOf(file: string): LawdbManifest {
   return JSON.parse(readFileSync(file.replace(/\.sqlite$/, ".manifest.json"), "utf8")) as LawdbManifest;
@@ -37,8 +39,8 @@ test("加载验签 ok：status 与签名内容一致、重复构建确定", () =
   const st = db.status();
   assert.equal(st.signature_valid, true);
   assert.equal(st.laws_count, 3);
-  assert.equal(st.versions_count, 4);
-  assert.equal(st.articles_count, 8);
+  assert.equal(st.versions_count, 3);
+  assert.equal(st.articles_count, 7);
   assert.match(st.package_version, /^g0\./);
   db.close();
   // content hash 重算 = manifest 声明（确定性：同源同 hash；package_meta 的 built_at 不进签名）
@@ -72,14 +74,28 @@ test("名称归一：书名号/空白/全半角不敏感", () => {
   assert.equal(normalizeLawName("《律师法》"), normalizeLawName("律师法"));
   const db = openLawdb(BASE, { expectedSignerPubPem: PUB });
   for (const q of ["律师法", "《律师法》", " 律师 法 ", "中华人民共和国律师法", "《中华人民共和国律师法》"]) {
-    assert.equal(db.findLawVersions(q).length, 2, `「${q}」应命中 2 个版本`);
+    assert.equal(db.findLawVersions(q).length, 1, `「${q}」应命中 1 个版本`);
   }
   assert.equal(db.findLawVersions("不存在的法").length, 0);
   db.close();
 });
 
-test("时点取版本：2026-08-31→2017 版；2026-10-01→2026 版；条号迁移查询", () => {
+test("S-07 随包法规库不含虚构版本：《律师法》只有 2017 修正本且为现行，没有条号迁移，没有“演示演绎”文本", () => {
   const db = openLawdb(BASE, { expectedSignerPubPem: PUB });
+  const rows = db.findLawVersions("律师法");
+  assert.deepEqual(rows.map((r) => [r.lsv_id, r.effectiveness, r.superseded]), [["lsv_lawyers_2017", "valid", null]]);
+  assert.equal(versionAt(rows, "2026-10-01")!.lsv_id, "lsv_lawyers_2017");
+  db.close();
+  const raw = new Database(BASE, { readonly: true });
+  assert.equal((raw.prepare(`SELECT COUNT(*) AS c FROM renumbering`).get() as { c: number }).c, 0);
+  assert.equal((raw.prepare(`SELECT COUNT(*) AS c FROM law_versions WHERE gazette_issue LIKE '%演绎%' OR lsv_id = 'lsv_lawyers_2026'`).get() as { c: number }).c, 0);
+  assert.equal((raw.prepare(`SELECT COUNT(*) AS c FROM articles WHERE text LIKE '%演绎%'`).get() as { c: number }).c, 0);
+  assert.equal((raw.prepare(`SELECT COUNT(*) AS c FROM source_registry WHERE citation_requirement LIKE '%演绎%'`).get() as { c: number }).c, 0);
+  raw.close();
+});
+
+test("时点取版本（夹具）：2026-08-31→2017 版；2026-10-01→2026 版；条号迁移查询", () => {
+  const db = openLawdb(FIXTURE, { expectedSignerPubPem: PUB });
   const rows = db.findLawVersions("律师法");
   assert.equal(versionAt(rows, "2026-08-31")!.lsv_id, "lsv_lawyers_2017");
   assert.equal(versionAt(rows, "2026-10-01")!.lsv_id, "lsv_lawyers_2026");
@@ -181,10 +197,10 @@ test("增量伪造（dev 私钥真签名、声明的合并 hash 与真实合并�
   const raw = new Database(copy, { readonly: true });
   const n = (sql: string) => (raw.prepare(sql).get() as { c: number }).c;
   assert.equal(n(`SELECT COUNT(*) AS c FROM laws`), 3);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions`), 4);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM articles`), 8);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM article_topics`), 10);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM renumbering`), 2);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions`), 3);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM articles`), 7);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM article_topics`), 8);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM renumbering`), 0);
   assert.equal(n(`SELECT COUNT(*) AS c FROM source_registry`), 2);
   assert.equal(n(`SELECT COUNT(*) AS c FROM laws WHERE law_id = 'law_arbitration'`), 0, "增量行不得残留");
   assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions WHERE lsv_id = 'lsv_arbitration_2017'`), 0);

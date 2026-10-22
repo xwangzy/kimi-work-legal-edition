@@ -2,7 +2,15 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Kernel } from "../src/index.ts";
+
+/**
+ * 测试夹具法规库（v9.4 第 19 批 S-07）：随包种子 + 虚构的《律师法》2026 修正本与 38→41 条号迁移，只用来测“改号拦截与改引建议”。
+ * 随包法规库（content/lawdb/dist）不再含虚构版本；内核用例缺省用夹具，测随包内容的用例显式指 dist。
+ */
+export const LAWDB_FIXTURE = fileURLToPath(new URL("../../../content/lawdb/test-fixtures/lawdb-renumber-demo.sqlite", import.meta.url));
+export const LAWDB_SHIPPED = fileURLToPath(new URL("../../../content/lawdb/dist/lawdb.sqlite", import.meta.url));
 
 process.env.ZR_INTERNAL_SECRET = process.env.ZR_INTERNAL_SECRET ?? "kwl-test-secret-0123456789abcdef";
 
@@ -20,7 +28,7 @@ export async function makeKernel(env: Record<string, string> = {}, slug = "test-
     firmSlug: slug,
     userSlug: "test-lawyer",
     // 唯一引擎是 kap-host（K9-1：SDK 宿主已退役）；须跑通模型请求的用例另起云端 v0（cloud-v0.ts）并传其环境
-    env: { ...process.env, ZR_MODEL_PROVIDER: "mock", ...env },
+    env: { ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_LAWDB_FILE: process.env.ZR_LAWDB_FILE ?? LAWDB_FIXTURE, ...env },
   });
   return { kernel, dir, inv: (m, p) => kernel.invoke(m, p) };
 }

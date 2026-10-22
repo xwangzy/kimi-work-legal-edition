@@ -1,5 +1,5 @@
 /** 法律工具单测（由 tool-gateway 测试平移；引用核验/中文数字/法源版本/利息计算/直接标识符扫描）。
- * 法源数据来自签名法规库包（content/lawdb/dist，npm test 的 pretest 会先行构建）。 */
+ * 法源数据来自签名法规库测试夹具（content/lawdb/test-fixtures：随包种子 + 虚构的《律师法》2026 修正本，只测改号机制；npm test 的 pretest 会先行构建）。 */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -14,7 +14,7 @@ import { CitationState } from "@zr-legal/domain";
 
 const repo = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
 const signerPub = (JSON.parse(readFileSync(repo("content/keys/content-signing-dev.pub.json"), "utf8")) as { publicKeyPem: string }).publicKeyPem;
-const lawdb = openLawdb(repo("content/lawdb/dist/lawdb.sqlite"), { expectedSignerPubPem: signerPub });
+const lawdb = openLawdb(repo("content/lawdb/test-fixtures/lawdb-renumber-demo.sqlite"), { expectedSignerPubPem: signerPub });
 
 test("cn-numerals: 基础转换", () => {
   assert.equal(cnToInt("三十八"), 38);
