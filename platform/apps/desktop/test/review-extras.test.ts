@@ -134,3 +134,10 @@ test("批量接受后“撤回本批”仍在（走查发现：本批接受完�
   const w = src("components/ReviewWorkbench.tsx");
   assert.ok(w.includes("|| (lastBatch?.ids.length ?? 0) > 0) && ("), "有本批就显示这一行");
 });
+
+test("新成果类型有中文名：意见表 Word 版、证据目录与尽调发现按文件名（去扩展名）", async () => {
+  const { artifactName, ARTIFACT_LABELS } = await import("../src/lib/labels.ts");
+  assert.equal(artifactName({ kind: "review_table_docx", filename: "采购合同（审查意见表）.docx" }), "采购合同（审查意见表）");
+  assert.equal(artifactName({ kind: "evidence_index", filename: "证据目录（证据清单）.docx" }), "证据目录（证据清单）");
+  for (const k of ["review_table_docx", "evidence_index", "dd_findings"]) assert.ok(ARTIFACT_LABELS[k], k);
+});
