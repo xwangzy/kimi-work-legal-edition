@@ -77,6 +77,9 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   const [lastBatch, setLastBatch] = useState<{ batch: string; ids: string[] } | null>(null);
   const [falsePos, setFalsePos] = useState<{ id: string; term: string } | null>(null);
   const [tableFormat, setTableFormat] = useState<"xlsx" | "docx">("xlsx");
+  // 对方改动模式（C1 §2.2 第 7 条）：有基线（本次回稿审查任务的我方上一稿）时可切到“只看对方改动”
+  const [cardsView, setCardsView] = useState<"all" | "changes">("all");
+  const [counter, setCounter] = useState<Awaited<ReturnType<typeof api.counterChanges>> | null>(null);
 
   const load = useCallback(async (): Promise<RiskCard[]> => {
     const r = await api.riskCards(matterId, { document_version_id: documentVersionId, ...(runFilter ? { run_id: runFilter } : {}) });
@@ -91,6 +94,23 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
     if (all.includes("〔")) setMap(await restoreTokens(matterId, all));
     return r.cards;
   }, [matterId, documentVersionId, runFilter]);
+
+  useEffect(() => {
+    if (!documentVersionId || !runId) return setCounter(null);
+    void api
+      .counterChanges(matterId, documentVersionId, { run_id: runId })
+      .then(async (r) => {
+        setCounter(r);
+        if (r.available) {
+          const all = r.changes.flatMap((c) => [c.base_text, c.cur_text]).join("\n");
+          if (all.includes("〔")) {
+            const more = await restoreTokens(matterId, all);
+            setMap((m0) => new Map([...m0, ...more]));
+          }
+        }
+      })
+      .catch(() => setCounter(null));
+  }, [matterId, documentVersionId, runId]);
 
   useEffect(() => {
     void load().catch((e) => setMsg({ tone: "err", text: (e as Error).message }));
@@ -482,6 +502,65 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
             )}
         </section>
         <section className="wb-cards" aria-label="风险卡">
+          {counter?.available && (
+            <div className="seg wb-view" role="tablist" aria-label="看什么">
+              <button role="tab" aria-selected={cardsView === "all"} className={`seg-btn${cardsView === "all" ? " on" : ""}`} onClick={() => setCardsView("all")}>审全文</button>
+              <button role="tab" aria-selected={cardsView === "changes"} className={`seg-btn${cardsView === "changes" ? " on" : ""}`} onClick={() => setCardsView("changes")}>
+                只看对方改动（{counter.changes.length}）
+              </button>
+            </div>
+          )}
+          {cardsView === "changes" && counter?.available ? (
+            <div className="wb-changes">
+              <p className="muted">
+                和我方上一稿《{counter.baseline_filename}》比：改 {counter.stats.modified} · 增 {counter.stats.added} · 删 {counter.stats.deleted}
+                {counter.stats.silent > 0 ? ` · 其中 ${counter.stats.silent} 处没有修订痕迹（静默改动）` : ""}。比对按段落，表格、页眉页脚和脚注的改动请抽查。
+              </p>
+              {counter.changes.map((ch) => (
+                <div key={ch.index} className="wb-change">
+                  <div className="wb-change-head">
+                    <span className="pill pill-gray">{ch.type === "added" ? "对方新增" : ch.type === "deleted" ? "对方删除" : "对方修改"}</span>
+                    {ch.silent && <span className="pill pill-orange" title="回稿里这一处没有留修订痕迹">静默改动</span>}
+                  </div>
+                  <div className="wb-change-cols">
+                    <div>
+                      <div className="claim-k">我方原稿</div>
+                      {ch.base_text ? plain(ch.base_text) : <span className="muted">（没有）</span>}
+                    </div>
+                    <div>
+                      <div className="claim-k">对方改稿</div>
+                      {ch.cur_text ? plain(ch.cur_text) : <span className="muted">（对方删去了这一段）</span>}
+                    </div>
+                  </div>
+                  {ch.card_ids.length === 0 && <div className="muted">这一处没有提出意见。</div>}
+                  {ch.card_ids.map((cid) => {
+                    const c = cards.find((x) => x.card_id === cid);
+                    if (!c) return null;
+                    return (
+                      <div key={cid} className="wb-change-card">
+                        <span className="rc-issue">{plain(c.issue)}</span>
+                        <span className={`rc-status rc-status-${c.status}`}>{STATUS_LABEL[c.status]}</span>
+                        {!readOnly && c.status === "proposed" && (
+                          <span className="rc-actions">
+                            <button className="btn-ghost" disabled={busy} title="接受对方的改动：这条意见不采纳，合同按对方改稿" onClick={() => void decide(c, "reject")}>接受对方</button>
+                            {ch.base_text && (
+                              <button className="btn-ghost" disabled={busy} title="把这一处改回我方原稿（以修订写入）" onClick={() => void decide(c, "modify", plain(ch.base_text))}>恢复我方</button>
+                            )}
+                            {c.fallback?.trim() && (
+                              <button className="btn-ghost" disabled={busy} title="改用可退让一级的文本" onClick={() => void decide(c, "accept", undefined, "fallback")}>改用退让文本</button>
+                            )}
+                            <button className="btn-link" onClick={() => { setCardsView("all"); focusCard(c.card_id); }}>看整张卡</button>
+                          </span>
+                        )}
+                        {!readOnly && c.status !== "proposed" && <button className="btn-link" disabled={busy} onClick={() => void decide(c, "reset")}>撤回决定</button>}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          ) : (
+          <>
           <div className="wb-filters" role="tablist">
             {(
               [
@@ -712,6 +791,8 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
               </div>
             );
           })}
+          </>
+          )}
         </section>
       </div>
     </div>

@@ -276,3 +276,34 @@ test("v9.4 第 20 批 C-02 残余：批量接受只收提示级与前后不一�
   const x = await tk.inv("riskcards.export_table", { matter_id: m, document_version_id: s.doc.document_version_id });
   assert.match(x.filename, /\.xlsx$/, "缺省仍是 Excel");
 });
+
+test("对方改动模式（C1 §2.2 第 7 条）：按回稿审查任务的基线比对，每处改动给出我方原稿与对方改稿，锚点在改动段的卡挂上；没有基线不可用", { timeout: 60_000 }, async () => {
+  const { matter } = await tk.inv("matters.create", { title: "回稿", stance: "买方", consent_status: "agreed" });
+  const m = matter.matter_id;
+  const ours = await importBytes(tk.inv, m, "采购合同（我方稿）.docx", createDocx("采购合同", [{ heading: "第八条", paragraphs: ["8.1 买方应于验收合格后三十日内支付货款。", "8.2 逾期付款的，按日万分之三支付违约金。"] }]), DOCX);
+  const theirs = await importBytes(tk.inv, m, "采购合同（对方回稿）.docx", createDocx("采购合同", [{ heading: "第八条", paragraphs: ["8.1 买方应于验收合格后九十日内支付货款。", "8.2 逾期付款的，按日万分之三支付违约金。"] }]), DOCX);
+  const live = liveTaskIdentity(tk, m, "redraft");
+  tk.kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ goal: "回稿", skill: "redraft-review", skill_args: { baseline: ours.document_version_id, current: theirs.document_version_id }, document_version_ids: [ours.document_version_id, theirs.document_version_id] }), live.rid]);
+  submitRiskCards({ db: tk.kernel.db, blobs: tk.kernel.blobs }, { tenantId: live.tid, matterId: m, runId: live.rid }, {
+    document_version_id: theirs.document_version_id,
+    cards: [
+      { anchor_text: "买方应于验收合格后九十日内支付货款。", severity: "high", issue: "【未采纳我方修改】付款期限改回九十日", suggestion: "买方应于验收合格后三十日内支付货款。" },
+      { anchor_text: "按日万分之三支付违约金", severity: "low", issue: "未改动段落的卡" },
+    ],
+  });
+  const none = await tk.inv("riskcards.counter_changes", { matter_id: m, document_version_id: theirs.document_version_id });
+  assert.equal(none.available, false, "没有基线");
+  const r = await tk.inv("riskcards.counter_changes", { matter_id: m, document_version_id: theirs.document_version_id, run_id: live.rid });
+  assert.equal(r.available, true);
+  assert.equal(r.baseline_filename, "采购合同（我方稿）.docx");
+  assert.equal(r.stats.modified, 1);
+  const ch = r.changes.find((c: any) => c.type === "modified");
+  assert.match(ch.base_text, /三十日/);
+  assert.match(ch.cur_text, /九十日/);
+  assert.equal(ch.silent, true, "没有修订痕迹的改动是静默改动");
+  const cards = (await tk.inv("riskcards.list", { matter_id: m })).cards as any[];
+  assert.deepEqual(ch.card_ids, [cards.find((c) => c.issue.startsWith("【未采纳")).card_id]);
+  // 律师指定基线也可以；基线与当前同一份不可用
+  assert.equal((await tk.inv("riskcards.counter_changes", { matter_id: m, document_version_id: theirs.document_version_id, baseline_document_version_id: ours.document_version_id })).available, true);
+  assert.equal((await tk.inv("riskcards.counter_changes", { matter_id: m, document_version_id: theirs.document_version_id, baseline_document_version_id: theirs.document_version_id })).available, false);
+});

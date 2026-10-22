@@ -66,3 +66,9 @@ test("工作台：批量勾选与撤回本批、缺失卡“误报：其实有�
   const w = src("components/ReviewWorkbench.tsx");
   for (const s of ["接受所选", "撤回本批", "误报：其实有", "驳回并记住", "意见表 Word", "对外版只有修订，不带批注、理由、规则号和底线"]) assert.ok(w.includes(s), s);
 });
+
+test("对方改动模式：有基线时可切“只看对方改动”，每处并排我方原稿与对方改稿，卡上三个动作（接受对方 / 恢复我方 / 改用退让文本）", () => {
+  const w = src("components/ReviewWorkbench.tsx");
+  for (const s of ["只看对方改动", "我方原稿", "对方改稿", "静默改动", "接受对方", "恢复我方", "改用退让文本", "api.counterChanges"]) assert.ok(w.includes(s), s);
+  assert.ok(/counter\?\.available && \(/.test(w), "没有基线时不出切换");
+});

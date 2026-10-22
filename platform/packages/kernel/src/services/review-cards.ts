@@ -13,7 +13,7 @@
  */
 import { localToday } from "./local-date.ts";
 import { DomainError, newId, notFound, sha256Hex } from "@zr-legal/domain";
-import { createStyledDocx, createXlsx, extractParagraphs } from "@zr-legal/docx-engine";
+import { compareDocx, createStyledDocx, createXlsx, extractParagraphs } from "@zr-legal/docx-engine";
 import type { Lawdb } from "@zr-legal/lawdb";
 import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
@@ -1054,4 +1054,50 @@ export function decideBatch(db: KernelDb, matterId: string, userId: string, inpu
     return { batch: str(input.batch, 80), accepted: [], refused: [], undone: back.map((c) => c.card_id) };
   }
   throw new DomainError("validation", "action 须为 accept / undo", 422);
+}
+
+/**
+ * 对方改动模式（v9.4 第 20 批，评审 C1 §2.2 第 7 条、§1 #6）：工作台“只看对方改动”。基线（我方上一稿）取律师指定的，
+ * 或本次回稿审查任务的方法参数 baseline；与本合同段落级比对，每处改动给出我方原稿与对方改稿（令牌形态，界面还原），
+ * 并把锚点落在改动段落里的风险卡挂到那一处。没有基线时 available=false。
+ */
+export function counterChanges(
+  deps: ReviewDeps & { tokens: MatterTokenStore },
+  input: { matter_id: string; document_version_id: string; run_id?: string | null; baseline_document_version_id?: string | null },
+): { available: false } | { available: true; baseline_document_version_id: string; baseline_filename: string; stats: { added: number; deleted: number; modified: number; silent: number }; changes: { index: number; type: string; silent: boolean; base_text: string; cur_text: string; card_ids: string[] }[] } {
+  let baseline = input.baseline_document_version_id ?? null;
+  if (!baseline && input.run_id) {
+    try {
+      const snap = JSON.parse(deps.db.get<{ input_snapshot: string | null }>(`SELECT input_snapshot FROM runs WHERE run_id = ? AND matter_id = ?`, [input.run_id, input.matter_id])?.input_snapshot ?? "{}");
+      if (snap?.skill === "redraft-review" && typeof snap?.skill_args?.baseline === "string") baseline = snap.skill_args.baseline;
+    } catch {
+      baseline = null;
+    }
+  }
+  if (!baseline || baseline === input.document_version_id) return { available: false };
+  const load = (id: string) => {
+    const d = deps.db.get<{ filename: string; storage_uri: string; matter_id: string; quarantined_at: string | null }>(`SELECT filename, storage_uri, matter_id, quarantined_at FROM document_versions WHERE document_version_id = ?`, [id]);
+    if (!d || d.matter_id !== input.matter_id || d.quarantined_at) throw notFound("材料");
+    if (!d.filename.toLowerCase().endsWith(".docx")) throw new DomainError("validation", "只能比对 Word 文件", 422);
+    return d;
+  };
+  const b = load(baseline);
+  const c = load(input.document_version_id);
+  const r = compareDocx(deps.blobs.read(b.storage_uri), deps.blobs.read(c.storage_uri));
+  const tok = (t: string) => deps.tokens.tokenize(input.matter_id, t).text;
+  const squash = (x: string) => x.replace(/\s+/g, "");
+  const cards = listRiskCards(deps.db, input.matter_id, { document_version_id: input.document_version_id, ...(input.run_id ? { run_id: input.run_id } : {}) });
+  const changes = r.changes.slice(0, 500).map((ch, index) => {
+    const cur = tok(ch.curText);
+    const sq = squash(cur);
+    return {
+      index,
+      type: ch.type,
+      silent: ch.silent,
+      base_text: tok(ch.baseText),
+      cur_text: cur,
+      card_ids: ch.type === "deleted" ? [] : cards.filter((k) => k.anchor_text && sq.includes(squash(k.anchor_text))).map((k) => k.card_id),
+    };
+  });
+  return { available: true, baseline_document_version_id: baseline, baseline_filename: b.filename, stats: r.stats, changes };
 }

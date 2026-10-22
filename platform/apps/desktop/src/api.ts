@@ -839,6 +839,11 @@ export const api = {
   // 工作台残余（v9.4 第 20 批，C1 §2.2）
   decideRiskBatch: (matterId: string, cardIds: string[], action: "accept" | "undo", batch?: string) =>
     invoke<{ batch: string; accepted: string[]; refused: string[]; undone: string[] }>("riskcards.decide_batch", { matter_id: matterId, card_ids: cardIds, action, ...(batch ? { batch } : {}) }),
+  counterChanges: (matterId: string, documentVersionId: string, o: { run_id?: string; baseline_document_version_id?: string } = {}) =>
+    invoke<
+      | { available: false }
+      | { available: true; baseline_document_version_id: string; baseline_filename: string; stats: { added: number; deleted: number; modified: number; silent: number }; changes: { index: number; type: "added" | "deleted" | "modified"; silent: boolean; base_text: string; cur_text: string; card_ids: string[] }[] }
+    >("riskcards.counter_changes", { matter_id: matterId, document_version_id: documentVersionId, ...o }),
   rejectMissing: (matterId: string, cardId: string, term?: string) => invoke<{ card: RiskCard; remembered: string | null }>("riskcards.reject_missing", { matter_id: matterId, card_id: cardId, ...(term ? { term } : {}) }),
   /** 起草前的论点与依据（C-04）：任务页逐条确认。 */
   outlines: (matterId: string, runId: string) => invoke<{ outlines: import("./lib/outline.ts").OutlineView[] }>("outlines.list", { matter_id: matterId, run_id: runId }),

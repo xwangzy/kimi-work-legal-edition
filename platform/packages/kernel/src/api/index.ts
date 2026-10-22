@@ -81,7 +81,7 @@ import { addColumn, cellContext, createTable, decideCell, draftFromTable, export
 import { createTodo, deleteTodo, derivedTodos, listTodos, updateTodo } from "../services/matter-todos.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
-import { buildRedlineFromCards, decideBatch, rejectMissingCard, cardPages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
+import { buildRedlineFromCards, counterChanges, decideBatch, rejectMissingCard, cardPages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
 import { LIT_SAMPLE_ISSUES, LIT_SAMPLE_TITLE, SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, litigationSampleMaterials, sampleContract } from "../services/sample-matter.ts";
 import { probeEnvironment, type EnvProbeResult } from "../services/env-probe.ts";
 import { firstLineTitle, isTitledFilename } from "../services/artifact-title.ts";
@@ -2703,6 +2703,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const r = decideBatch(db, matter.matter_id, id.userId, { card_ids: p?.card_ids, action: p?.action, batch: p?.batch });
       audit(db, id, "riskcard.batch_decided", "matter", matter.matter_id, sha256Hex(JSON.stringify({ action: p?.action, accepted: r.accepted.length, undone: r.undone.length, refused: r.refused.length })), keyctx);
       return r;
+    },
+    // 对方改动模式（v9.4 第 20 批，C1 §2.2 第 7 条）：只读；文字为令牌形态
+    "riskcards.counter_changes": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      if (!tokens) throw new DomainError("provider_unavailable", "令牌化工作区未启用", 503);
+      return counterChanges({ db, blobs, tokens, lawdb }, { matter_id: matter.matter_id, document_version_id: String(p?.document_version_id ?? ""), run_id: typeof p?.run_id === "string" ? p.run_id : null, baseline_document_version_id: typeof p?.baseline_document_version_id === "string" && p.baseline_document_version_id ? p.baseline_document_version_id : null });
     },
     // 缺失卡误报：驳回并记住材料里实际的说法（C1 §2.2 第 2 条）；审计不记说法文字
     "riskcards.reject_missing": (p, id) => {
