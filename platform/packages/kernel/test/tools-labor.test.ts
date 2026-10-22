@@ -36,14 +36,23 @@ test("经济补偿：不封顶、三倍封顶（年限最高十二年）、低�
   assert.ok(c.warnings.some((w) => w.includes("三倍封顶")), "没给当地平均工资");
 });
 
+test("解除日含当日（复核 Q3-03）：入职 1 月 1 日、6 月 30 日解除是满六个月；整年到 12 月 31 日", () => {
+  const m = (start: string, end: string) => calcLabor({ start_date: start, end_date: end, kind: "compensation", avg_monthly_wage_yuan: 10000, local_avg_monthly_wage_yuan: 10000 }).months_of_wage;
+  assert.equal(m("2026-01-01", "2026-06-30"), 1, "满六个月按一年");
+  assert.equal(m("2026-01-01", "2026-06-29"), 0.5, "差一天不满六个月");
+  assert.equal(m("2020-07-01", "2025-12-31"), 6, "五年半按六年");
+  assert.equal(m("2023-01-01", "2025-12-31"), 3, "整三年");
+  assert.ok(calcLabor({ start_date: "2023-01-01", end_date: "2025-12-31", kind: "compensation", avg_monthly_wage_yuan: 1, local_avg_monthly_wage_yuan: 1 }).steps.some((x) => x.includes("（含当日）")));
+});
+
 test("2008 年分段：经济补偿只算 2008 年以后并警告；违法解除赔偿金自用工之日起算、二倍", () => {
-  const n = calcLabor({ start_date: "2005-01-01", end_date: "2026-01-01", kind: "compensation", avg_monthly_wage_yuan: 8000, local_avg_monthly_wage_yuan: 10000 });
+  const n = calcLabor({ start_date: "2005-01-01", end_date: "2025-12-31", kind: "compensation", avg_monthly_wage_yuan: 8000, local_avg_monthly_wage_yuan: 10000 });
   assert.equal(n.service.from, "2008-01-01");
   assert.equal(n.months_of_wage, 18);
   assert.equal(n.compensation_yuan, 144000);
   assert.ok(n.warnings.some((w) => w.includes("2008")));
   assert.ok(n.basis.includes("《中华人民共和国劳动合同法》第九十七条第三款"));
-  const u = calcLabor({ start_date: "2005-01-01", end_date: "2026-01-01", kind: "unlawful", avg_monthly_wage_yuan: 8000, local_avg_monthly_wage_yuan: 10000 });
+  const u = calcLabor({ start_date: "2005-01-01", end_date: "2025-12-31", kind: "unlawful", avg_monthly_wage_yuan: 8000, local_avg_monthly_wage_yuan: 10000 });
   assert.equal(u.service.from, "2005-01-01");
   assert.equal(u.months_of_wage, 21);
   assert.equal(u.compensation_yuan, 21 * 8000 * 2);
@@ -52,10 +61,10 @@ test("2008 年分段：经济补偿只算 2008 年以后并警告；违法解除
 });
 
 test("代通知金按上一个月工资；没给时按平均工资并警告；输入校验", () => {
-  const a = calcLabor({ start_date: "2024-01-01", end_date: "2025-01-01", kind: "compensation", avg_monthly_wage_yuan: 9000, local_avg_monthly_wage_yuan: 10000, notice_in_lieu: true, last_month_wage_yuan: 9500 });
+  const a = calcLabor({ start_date: "2024-01-01", end_date: "2024-12-31", kind: "compensation", avg_monthly_wage_yuan: 9000, local_avg_monthly_wage_yuan: 10000, notice_in_lieu: true, last_month_wage_yuan: 9500 });
   assert.equal(a.notice_pay_yuan, 9500);
   assert.equal(a.total_yuan, 9000 + 9500);
-  const b = calcLabor({ start_date: "2024-01-01", end_date: "2025-01-01", kind: "compensation", avg_monthly_wage_yuan: 9000, notice_in_lieu: true });
+  const b = calcLabor({ start_date: "2024-01-01", end_date: "2024-12-31", kind: "compensation", avg_monthly_wage_yuan: 9000, notice_in_lieu: true });
   assert.equal(b.notice_pay_yuan, 9000);
   assert.ok(b.warnings.some((w) => w.includes("上一个月")));
   assert.throws(() => calcLabor({ start_date: "2025-01-01", end_date: "2024-01-01", kind: "compensation", avg_monthly_wage_yuan: 1 }), /晚于/);

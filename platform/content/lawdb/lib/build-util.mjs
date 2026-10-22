@@ -8,7 +8,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { signBytes, sha256B64 } from "@zr-legal/keys";
-import { LAWDB_SCHEMA_SQL, CONTENT_TABLES, computeContentSha256, signerKeyId } from "@zr-legal/lawdb";
+import { LAWDB_SCHEMA_SQL, CONTENT_TABLES, computeContentSha256, computeHolidaysSha256, signerKeyId } from "@zr-legal/lawdb";
 import { registerDevFingerprint } from "../../../scripts/lib/dev-content-keys.mjs";
 
 export function loadJson(path) {
@@ -153,7 +153,9 @@ export function manifestPathFor(file) {
  */
 export function signAndWriteManifest(db, file, { kind, baseVersion, builtAt, privateKeyPem, publicKeyPem, purpose }) {
   const contentSha256 = computeContentSha256(db);
-  const packageVersion = `g0.${contentSha256.slice(0, 12)}`;
+  // 节假日表单独签名（v9.4 第 21 批，复核 Q3-02）；包版本号把它也算进去——只改节假日表也是一个新版本，内容分发才会推
+  const holidaysSha256 = computeHolidaysSha256(db);
+  const packageVersion = `g0.${(holidaysSha256 ? sha256B64(`${contentSha256}\n${holidaysSha256}`) : contentSha256).slice(0, 12)}`;
   setPackageMeta(db, packageVersion, builtAt, baseVersion ? { base_version: baseVersion } : {});
   const manifest = {
     kind,
@@ -164,6 +166,7 @@ export function signAndWriteManifest(db, file, { kind, baseVersion, builtAt, pri
     signature: signBytes(privateKeyPem, new TextEncoder().encode(purpose ? `${contentSha256}\n${purpose}` : contentSha256)),
     signer_key_id: signerKeyId(publicKeyPem),
     ...(purpose ? { purpose } : {}),
+    ...(holidaysSha256 ? { holidays_sha256: holidaysSha256, holidays_signature: signBytes(privateKeyPem, new TextEncoder().encode(`${holidaysSha256}\nholidays`)) } : {}),
   };
   writeFileSync(manifestPathFor(file), JSON.stringify(manifest, null, 2) + "\n");
   return manifest;

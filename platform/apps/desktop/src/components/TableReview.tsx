@@ -251,7 +251,7 @@ export function TableReview({ matterId, docs, readOnly, onFill, onAsk, onExporte
         <div className="card tr-create" role="region" aria-label="问这张表">
           <div className="tr-field">
             <span className="rc-k">问什么</span>
-            <input value={ask} maxLength={300} onChange={(e) => setAsk(e.target.value)} placeholder="例如：哪些合同有控制权变更条款？到期日在明年上半年的有几份？" aria-label="问这张表的问题" />
+            <input className="tr-ask" value={ask} maxLength={300} onChange={(e) => setAsk(e.target.value)} placeholder="例如：哪些合同有控制权变更条款？到期日在明年上半年的有几份？" aria-label="问这张表的问题" />
           </div>
           <div className="card-actions">
             <button className="btn-primary" disabled={busy || !ask.trim()} onClick={() => { onAsk(grid.table, ask.trim()); setAsk(null); }}>

@@ -245,6 +245,8 @@ export interface RelatedQuote {
   quote: string;
   relation: "amends" | "conflicts" | "refers";
   anchor_status: "located" | "ambiguous" | "not_found";
+  /** 那份材料后来带国家秘密标志被隔离：原文已抹去（复核 Q3-01）。 */
+  quarantined?: boolean;
 }
 export const RELATED_LIMIT = 5;
 
@@ -252,8 +254,19 @@ export const RELATED_LIMIT = 5;
  * 跨文件审查（v9.4 第 21 批，评审 C1 §2 第 7 项）：卡片可附至多 5 段同一事项其他文件的逐字原文；须是本事项、未隔离、且不是本卡所在的那份文件。
  * 每段在那份文件的视图里定位（同风险卡锚点一套口径），找不到照收、标出。
  */
-function relatedQuotes(deps: ReviewDeps, matterId: string, docId: string | null, raw: unknown, i: number): RelatedQuote[] {
+function relatedQuotes(deps: ReviewDeps, scope: ToolScope, docId: string | null, raw: unknown, i: number): RelatedQuote[] {
   if (raw === undefined || raw === null) return [];
+  const matterId = scope.matterId;
+  // 只认本任务选入的材料（复核 Q3-10：与缺失复查同一口径，不让 Agent 拿文字去“探测”没交给本任务的材料）；没有快照的任务不限
+  let allowed: Set<string> | null = null;
+  if (scope.runId) {
+    try {
+      const snap = JSON.parse(deps.db.get<{ input_snapshot: string | null }>(`SELECT input_snapshot FROM runs WHERE run_id = ?`, [scope.runId])?.input_snapshot ?? "{}");
+      if (Array.isArray(snap?.document_version_ids) && snap.document_version_ids.length > 0) allowed = new Set(snap.document_version_ids.map(String));
+    } catch {
+      allowed = null;
+    }
+  }
   if (!Array.isArray(raw)) throw new DomainError("validation", `第 ${i + 1} 张卡的 related 须为数组`, 422);
   if (raw.length > RELATED_LIMIT) throw new DomainError("validation", `第 ${i + 1} 张卡的 related 至多 ${RELATED_LIMIT} 段`, 422);
   const views = new Map<string, { view: string; filename: string }>();
@@ -262,12 +275,31 @@ function relatedQuotes(deps: ReviewDeps, matterId: string, docId: string | null,
     const quote = str(x?.quote, RISK_CARD_LIMITS.anchor);
     if (!other || !quote) throw new DomainError("validation", `第 ${i + 1} 张卡的 related 第 ${j + 1} 段缺少 document_version_id 或 quote`, 422);
     if (other === docId) throw new DomainError("validation", `第 ${i + 1} 张卡的 related 第 ${j + 1} 段就是本卡所在的文件：同一份文件里的另一处请写进 issue，或提交“前后不一致”类卡`, 422);
+    if (allowed && !allowed.has(other)) throw new DomainError("validation", `第 ${i + 1} 张卡的 related 第 ${j + 1} 段引用的材料不在本任务选入的材料里`, 422);
     if (!views.has(other)) views.set(other, documentView(deps, matterId, other));
     const v = views.get(other)!;
     const loc = locateQuote(v.view, quote);
     const relation = ["amends", "conflicts", "refers"].includes(x?.relation) ? (x.relation as RelatedQuote["relation"]) : "refers";
     return { document_version_id: other, filename: v.filename, quote: loc.start !== null && loc.end !== null ? v.view.slice(loc.start, loc.end) : quote, relation, anchor_status: loc.status };
   });
+}
+
+/** 隔离材料时抹去别的卡上引用它的原文（复核 Q3-01）：保留文件名与关系，quote 清空并标 quarantined。返回改了几张卡。 */
+export function scrubRelatedQuotes(db: KernelDb, matterId: string, documentVersionId: string): number {
+  let n = 0;
+  for (const r of db.all<{ card_id: string; related: string }>(`SELECT card_id, related FROM risk_cards WHERE matter_id = ? AND related IS NOT NULL AND instr(related, ?) > 0`, [matterId, documentVersionId])) {
+    let list: RelatedQuote[];
+    try {
+      list = JSON.parse(r.related);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(list) || !list.some((x) => x?.document_version_id === documentVersionId)) continue;
+    const next = list.map((x) => (x.document_version_id === documentVersionId ? { ...x, quote: "", anchor_status: "not_found" as const, quarantined: true } : x));
+    db.run(`UPDATE risk_cards SET related = ? WHERE card_id = ?`, [JSON.stringify(next), r.card_id]);
+    n++;
+  }
+  return n;
 }
 
 export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { document_version_id?: unknown; cards?: unknown }) {
@@ -338,7 +370,7 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
         return;
       }
       const basis = verifyBasis(deps, scope.matterId, c?.basis);
-      const related = relatedQuotes(deps, scope.matterId, docId, c?.related, i);
+      const related = relatedQuotes(deps, scope, docId, c?.related, i);
       const searchedFound = kind === "missing" ? recheckMissing(deps, scope, docId, view?.view ?? null, searchedTerms) : [];
       const id = newId("riskCard");
       const seq = base.next + i + seqOffset;
@@ -614,7 +646,8 @@ export function decideRiskCard(db: KernelDb, matterId: string, userId: string, i
   if (level === "fallback" && status !== "accepted") throw new DomainError("validation", "只有“接受”可以选用可退让一级", 422);
   if (level === "fallback" && !(row.fallback ?? "").trim()) throw new DomainError("validation", "这张卡没有可退让一级", 422);
   const now = new Date().toISOString();
-  db.run(`UPDATE risk_cards SET status = ?, final_text = ?, decided_by = ?, decided_at = ?, chosen_level = ? WHERE card_id = ?`, [
+  // 单独处理一张卡即脱离批量接受的批次（复核 Q3-09）；批量接受在本函数之后再写批次号
+  db.run(`UPDATE risk_cards SET status = ?, final_text = ?, decided_by = ?, decided_at = ?, chosen_level = ?, decided_batch = NULL WHERE card_id = ?`, [
     status,
     finalText,
     status === "proposed" ? null : userId,
@@ -1117,16 +1150,23 @@ export function decideBatch(db: KernelDb, matterId: string, userId: string, inpu
     const ok = cards.filter(batchEligible);
     const batch = newId("cardBatch");
     db.tx(() => {
-      for (const c of ok) decideRiskCard(db, matterId, userId, { card_id: c.card_id, decision: "accept" });
+      for (const c of ok) {
+        decideRiskCard(db, matterId, userId, { card_id: c.card_id, decision: "accept" });
+        db.run(`UPDATE risk_cards SET decided_batch = ? WHERE card_id = ?`, [batch, c.card_id]);
+      }
     });
     return { batch, accepted: ok.map((c) => c.card_id), refused: ids.filter((x) => !ok.some((c) => c.card_id === x)), undone: [] };
   }
   if (action === "undo") {
-    const back = cards.filter((c) => c.status === "accepted" && c.decided_by === userId);
+    // 只撤这一批里、仍是批量接受状态的卡（复核 Q3-09）
+    const batch = str(input.batch, 80);
+    if (!batch) throw new DomainError("validation", "撤回本批须带批次号", 422);
+    const inBatch = new Set(db.all<{ card_id: string }>(`SELECT card_id FROM risk_cards WHERE matter_id = ? AND decided_batch = ? AND status = 'accepted'`, [matterId, batch]).map((r) => r.card_id));
+    const back = cards.filter((c) => inBatch.has(c.card_id) && c.decided_by === userId);
     db.tx(() => {
       for (const c of back) decideRiskCard(db, matterId, userId, { card_id: c.card_id, decision: "reset" });
     });
-    return { batch: str(input.batch, 80), accepted: [], refused: [], undone: back.map((c) => c.card_id) };
+    return { batch, accepted: [], refused: [], undone: back.map((c) => c.card_id) };
   }
   throw new DomainError("validation", "action 须为 accept / undo", 422);
 }

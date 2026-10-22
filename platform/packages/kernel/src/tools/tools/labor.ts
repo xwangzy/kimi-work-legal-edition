@@ -9,6 +9,7 @@
  *   没给当地平均工资时不核封顶并警告（各地口径不同，不凭记忆填）；
  * - 代通知金（第四十条，额外一个月工资）按上一个月的工资（实施条例第二十条）。
  * “六个月以上”含六个月（民法典第一千二百五十九条：“以上”包括本数）。
+ * end_date 是劳动关系的最后一日、含当日（复核 Q3-03：入职 2026-01-01、2026-06-30 解除是满六个月）——按 end_date 次日算整月。
  */
 import { DomainError } from "@zr-legal/domain";
 
@@ -52,7 +53,11 @@ function addMonths(d: string, n: number): string {
   return `${ny}-${String(nm).padStart(2, "0")}-${String(Math.min(day, last)).padStart(2, "0")}`;
 }
 
-/** 从 from 到 to 的整年、整月与余下天数。 */
+function nextDay(d: string): string {
+  return new Date(Date.parse(`${d}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+}
+
+/** 从 from 到 to（不含 to 当日）的整年、整月与余下天数。 */
 export function servicePeriod(from: string, to: string): { years: number; months: number; days: number } {
   let months = 0;
   while (addMonths(from, months + 1) <= to) months += 1;
@@ -99,9 +104,10 @@ export function calcLabor(p: CalcLaborParams): CalcLaborResult {
     steps.push(`经济补偿年限自 2008-01-01 起算；${p.start_date} 至 2007-12-31 的部分（${pre.years} 年 ${pre.months} 个月 ${pre.days} 天）按当时有关规定另算，本结果不含`);
     warnings.push("入职早于 2008-01-01：2008 年以前的工作年限是否、如何支付经济补偿按当时有关规定另算，本结果只含 2008 年以后的部分，须律师按当时规定与地方口径核算");
   }
-  const sp = servicePeriod(from, p.end_date);
+  // end_date 含当日：按次日算整月（servicePeriod 的终点不含当日）
+  const sp = servicePeriod(from, nextDay(p.end_date));
   let n = monthsOfWage(sp);
-  steps.push(`工作年限 ${from} 至 ${p.end_date}：${sp.years} 年 ${sp.months} 个月 ${sp.days} 天 → ${sp.years} 个月${n > sp.years ? ` + ${n - sp.years === 1 ? "1 个月（六个月以上不满一年按一年）" : "0.5 个月（不满六个月）"}` : ""} = ${n} 个月工资`);
+  steps.push(`工作年限 ${from} 至 ${p.end_date}（含当日）：${sp.years} 年 ${sp.months} 个月 ${sp.days} 天 → ${sp.years} 个月${n > sp.years ? ` + ${n - sp.years === 1 ? "1 个月（六个月以上不满一年按一年）" : "0.5 个月（不满六个月）"}` : ""} = ${n} 个月工资`);
 
   // 2. 月工资基数
   let base = wage;

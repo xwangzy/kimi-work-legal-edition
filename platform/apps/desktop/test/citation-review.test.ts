@@ -109,9 +109,9 @@ test("论断—依据（C-03）：颜色取最弱一层、律师确认与系统�
 
 test("预览角标（C-03）：Markdown 与隔离框架都按“第几次出现”加角标；框架里的角标有悬停说明、不带脚本", async () => {
   const src = readFileSync(new URL("../src/components/Markdown.tsx", import.meta.url), "utf8");
-  assert.ok(src.includes("cite-mark cite-tone-") && src.includes("x.nth === nth"));
+  assert.ok(src.includes("cite-mark cite-tone-") && src.includes("x.nth === h.nth") && src.includes("scanMarks("), "按共用扫描（cite-scan.ts）的第几次出现加角标");
   const sp = readFileSync(new URL("../src/lib/safe-preview.ts", import.meta.url), "utf8");
-  assert.ok(sp.includes('sup.className = `kwl-cite kwl-cite-${c.tone}`') && sp.includes("sup.title = c.title"));
+  assert.ok(sp.includes('sup.className = `kwl-cite kwl-cite-${c.tone}`') && sp.includes("sup.title = c.title") && sp.includes("scanMarks("));
   const rv = readFileSync(new URL("../src/pages/RunView.tsx", import.meta.url), "utf8");
   assert.ok(rv.includes("<CitationClaims") && rv.includes("cites: previewMarks"));
   const review = readFileSync(new URL("../src/pages/Review.tsx", import.meta.url), "utf8");

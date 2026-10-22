@@ -21,8 +21,9 @@ import { canonicalJson, sha256B64, verifyBytes } from "@zr-legal/keys";
 
 /**
  * 全国法定节假日与调休安排（v9.4 第 21 批；V9.4 主文 §3.2“节假日表随法规库签名分发”）：每年一行，doc 为该年国办通知的结构化录入
- * （来源 URL、发文字号、放假区间、调休上班日）。可选表：本批之前构建的包没有这张表，内容摘要照旧（不含它），仍能验签加载；
- * 有这张表的包，摘要覆盖它——改一天也验不过。期限计算优先用随包签名的这张表，没有时用程序内置的表。
+ * （来源 URL、发文字号、放假区间、调休上班日）。**不进法规内容摘要**（复核 Q3-02：否则第 21 批以前的客户端算出的摘要与清单不符，
+ * 会把新包当“被改动”拒收）——另由清单里的 holidays_sha256 + holidays_signature 单独签名（签“摘要 + \nholidays”）。
+ * 验不过（被改、缺签名、换了签名密钥）只是不用这张表，期限计算退回程序内置的表；法规内容照常可用。
  */
 export const HOLIDAYS_DDL = "CREATE TABLE IF NOT EXISTS holidays (year integer PRIMARY KEY, doc text NOT NULL);";
 
@@ -90,15 +91,22 @@ ${HOLIDAYS_DDL}
 `;
 
 /** 签名内容表（按此顺序逐行 canonicalJson 连接；package_meta 等易变内容不在其列）。 */
-export const CONTENT_TABLES: readonly { name: string; orderBy: string; optional?: boolean }[] = [
+export const CONTENT_TABLES: readonly { name: string; orderBy: string }[] = [
   { name: "laws", orderBy: "law_id" },
   { name: "law_versions", orderBy: "lsv_id" },
   { name: "articles", orderBy: "lsv_id, article_no" },
   { name: "article_topics", orderBy: "lsv_id, topic" },
   { name: "renumbering", orderBy: "law_id, from_lsv_id, to_lsv_id, topic" },
   { name: "source_registry", orderBy: "source_license_id" },
-  { name: "holidays", orderBy: "year", optional: true },
 ];
+
+/** 节假日表的摘要（与内容摘要同一写法；没有这张表或没有行时为 null）。 */
+export function computeHolidaysSha256(db: Db): string | null {
+  if (!hasTable(db, "holidays")) return null;
+  const rows = db.prepare(`SELECT * FROM holidays ORDER BY year`).all() as Record<string, unknown>[];
+  if (rows.length === 0) return null;
+  return sha256B64(rows.map((r) => `holidays:${canonicalJson(r)}`).join("\n"));
+}
 
 export interface LawdbManifest {
   kind: "full" | "incremental";
@@ -110,6 +118,9 @@ export interface LawdbManifest {
   signer_key_id: string;
   /** 测试夹具（v9.4 第 20 批，复核 Q2-19）：签名覆盖“内容摘要 + 用途”；运行时默认拒绝加载。 */
   purpose?: "test_fixture";
+  /** 节假日表的单独签名（v9.4 第 21 批，复核 Q3-02）：旧客户端不认这两个字段，照常按内容摘要验签。 */
+  holidays_sha256?: string;
+  holidays_signature?: string;
 }
 
 export function signerKeyId(publicKeyPem: string): string {
@@ -122,7 +133,6 @@ type Db = InstanceType<typeof Database>;
 export function computeContentSha256(db: Db): string {
   const lines: string[] = [];
   for (const t of CONTENT_TABLES) {
-    if (t.optional && !hasTable(db, t.name)) continue;
     const rows = db.prepare(`SELECT * FROM ${t.name} ORDER BY ${t.orderBy}`).all() as Record<string, unknown>[];
     for (const row of rows) lines.push(`${t.name}:${canonicalJson(row)}`);
   }
@@ -262,9 +272,12 @@ export class Lawdb {
     return this.manifest.content_sha256;
   }
 
-  /** 随包签名的节假日表（每年一份结构化录入；包里没有这张表时为空）。 */
+  /** 节假日表的单独签名验过了（openLawdb 设）；没验过的不交出去。 */
+  holidaysVerified = false;
+
+  /** 随包签名的节假日表（每年一份结构化录入；包里没有这张表、或单独签名验不过时为空）。 */
   holidays(): unknown[] {
-    if (!hasTable(this.db, "holidays")) return [];
+    if (!this.holidaysVerified || !hasTable(this.db, "holidays")) return [];
     return (this.db.prepare(`SELECT doc FROM holidays ORDER BY year`).all() as { doc: string }[]).flatMap((r) => {
       try {
         return [JSON.parse(r.doc)];
@@ -436,9 +449,8 @@ export class Lawdb {
     const incr = new Database(incrFile, { readonly: true });
     try {
       this.db.transaction(() => {
+        // 节假日表不随增量包更新（只随全量包；复核 Q3-02）：增量合并后保留底包的表与单独签名
         for (const t of CONTENT_TABLES) {
-          if (t.optional && !hasTable(incr, t.name)) continue;
-          if (t.name === "holidays") this.db.exec(HOLIDAYS_DDL);
           const rows = incr.prepare(`SELECT * FROM ${t.name}`).all() as Record<string, unknown>[];
           for (const row of rows) {
             const cols = Object.keys(row);
@@ -499,5 +511,13 @@ export function openLawdb(file: string, opts: OpenLawdbOptions): Lawdb {
     db.close();
     throw e;
   }
-  return new Lawdb(db, manifest, opts.writable === true, file);
+  const l = new Lawdb(db, manifest, opts.writable === true, file);
+  // 节假日表单独验签（复核 Q3-02）：验不过只是不用这张表
+  const hs = computeHolidaysSha256(db);
+  l.holidaysVerified =
+    hs !== null &&
+    manifest.holidays_sha256 === hs &&
+    typeof manifest.holidays_signature === "string" &&
+    verifyBytes(opts.expectedSignerPubPem, new TextEncoder().encode(`${hs}\nholidays`), manifest.holidays_signature);
+  return l;
 }

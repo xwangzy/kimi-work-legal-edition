@@ -1,13 +1,14 @@
 /**
  * v9.4 第 21 批（主文 §3.2“节假日表随法规库签名分发”）：
- * - 随包法规库里有节假日表，与内核内置表逐年一致；签名覆盖它——改一天就验不过；
+ * - 随包法规库里有节假日表，与内核内置表逐年一致；它有单独签名（复核 Q3-02：不进法规内容摘要，旧客户端照常验签加载新包）——
+ *   被改或缺签名只是不用这张表，法规内容照常可用；增量包合并后保留底包的表；
  * - 内核打开法规库时装入；同一年以包里的为准，包里多出的年份（例如次年安排发布后经内容更新补上）期限计算即可用；
- * - 形状不合格的年份不用；没有这张表的旧包照旧验签加载（内容摘要不含它）。
+ * - 形状不合格的年份不用。
  */
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3-multiple-ciphers";
-import { copyFileSync, mkdtempSync, readFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +20,7 @@ import { LawdbHolder } from "../src/services/content-updates.ts";
 const repo = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
 const PUB = (JSON.parse(readFileSync(repo("content/keys/content-signing-dev.pub.json"), "utf8")) as { publicKeyPem: string }).publicKeyPem;
 const BASE = repo("content/lawdb/dist/lawdb.sqlite");
+const INCR = repo("content/lawdb/dist/incr/lawdb-incr-arbitration.sqlite");
 const copyPair = (src: string) => {
   const dst = join(mkdtempSync(join(tmpdir(), "kwl-hol-")), "copy.sqlite");
   copyFileSync(src, dst);
@@ -30,7 +32,7 @@ after(() => {
   useSignedHolidays([], "");
 });
 
-test("随包节假日表与内置表逐年一致；签名覆盖", () => {
+test("随包节假日表与内置表逐年一致；单独签名：被改即不用（法规内容照常可用）", () => {
   const l = openLawdb(BASE, { expectedSignerPubPem: PUB });
   assert.deepEqual(l.holidays(), JSON.parse(JSON.stringify(CN_HOLIDAYS)));
   l.close();
@@ -40,17 +42,37 @@ test("随包节假日表与内置表逐年一致；签名覆盖", () => {
   doc.off[0].to = "2026-01-05";
   raw.prepare(`UPDATE holidays SET doc = ? WHERE year = 2026`).run(JSON.stringify(doc));
   raw.close();
-  assert.throws(() => openLawdb(t, { expectedSignerPubPem: PUB }), (e: any) => e.code === "lawdb_invalid");
+  const tampered = openLawdb(t, { expectedSignerPubPem: PUB });
+  assert.deepEqual(tampered.holidays(), [], "被改的节假日表不用");
+  assert.equal(tampered.status().laws_count, 3, "法规内容照常验签加载");
+  tampered.close();
+  // 清单里去掉单独签名（旧构建）：同样不用
+  const t2 = copyPair(BASE);
+  const mf = t2.replace(/\.sqlite$/, ".manifest.json");
+  const m = JSON.parse(readFileSync(mf, "utf8"));
+  delete m.holidays_signature;
+  writeFileSync(mf, JSON.stringify(m));
+  const nosig = openLawdb(t2, { expectedSignerPubPem: PUB });
+  assert.deepEqual(nosig.holidays(), []);
+  nosig.close();
 });
 
-test("没有节假日表的旧包：内容摘要不含它，照旧可算；holidays() 为空", () => {
+test("旧客户端看新包（复核 Q3-02）：节假日表不进法规内容摘要——去掉这张表摘要不变，旧版内核照常验签", () => {
   const t = copyPair(BASE);
   const raw = new Database(t);
-  const withTable = computeContentSha256(raw);
+  const before = computeContentSha256(raw);
   raw.exec(`DROP TABLE holidays`);
-  const without = computeContentSha256(raw);
+  const after = computeContentSha256(raw);
   raw.close();
-  assert.notEqual(withTable, without, "有表时摘要覆盖它");
+  assert.equal(before, after);
+  assert.equal(before, JSON.parse(readFileSync(BASE.replace(/\.sqlite$/, ".manifest.json"), "utf8")).content_sha256);
+});
+
+test("增量包合并后保留底包的节假日表与单独签名", () => {
+  const w = openLawdb(copyPair(BASE), { expectedSignerPubPem: PUB, writable: true });
+  w.applyIncremental(INCR, { expectedSignerPubPem: PUB });
+  assert.equal(w.holidays().length, 3);
+  w.close();
 });
 
 test("内核装入：法规库打开即用包里的表；包里多出的年份可用；不合格的年份不用", () => {

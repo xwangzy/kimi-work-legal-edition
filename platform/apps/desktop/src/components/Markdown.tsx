@@ -5,6 +5,7 @@
 import { Fragment, type ReactNode } from "react";
 import { splitTokens } from "../lib/tokens.ts";
 import type { PreviewCite } from "../lib/safe-preview.ts";
+import { scanMarks } from "../lib/cite-scan.ts";
 
 /** cites：成果里的引用角标（v9.4 第 20 批 C-03）——第 n 次出现的引用后加角标，颜色与悬停说明由调用方给。 */
 export function Markdown({ text, tokenMap, cites }: { text: string; tokenMap?: Map<string, string | null>; cites?: PreviewCite[] }) {
@@ -106,6 +107,7 @@ function renderBlock(b: Block, key: number, map?: Map<string, string | null>, cx
     case "quote":
       return <blockquote key={key}>{inline(b.text, map, cx)}</blockquote>;
     case "code":
+      countCites(b.text, cx);
       return <pre key={key}><code>{b.text}</code></pre>;
     case "hr":
       return <hr key={key} />;
@@ -130,37 +132,40 @@ function inline(text: string, map?: Map<string, string | null>, cx?: CiteCx): Re
   for (const m of text.matchAll(re)) {
     const at = m.index ?? 0;
     if (at > last) parts.push(<Fragment key={k++}>{withCites(text.slice(last, at), map, cx)}</Fragment>);
-    if (m[1] !== undefined) parts.push(<code key={k++}>{tokens(m[1], map)}</code>);
+    // 代码与链接文字不加角标，但照样数出现次数（复核 Q3-04）
+    if (m[1] !== undefined) {
+      countCites(m[1], cx);
+      parts.push(<code key={k++}>{tokens(m[1], map)}</code>);
+    }
     else if (m[2] !== undefined) parts.push(<strong key={k++}>{withCites(m[2], map, cx)}</strong>);
-    else parts.push(<span key={k++} className="md-link" title={m[4]}>{tokens(m[3] ?? "", map)}</span>);
+    else {
+      countCites(m[3] ?? "", cx);
+      parts.push(<span key={k++} className="md-link" title={m[4]}>{tokens(m[3] ?? "", map)}</span>);
+    }
     last = at + m[0].length;
   }
   if (last < text.length) parts.push(<Fragment key={k++}>{withCites(text.slice(last), map, cx)}</Fragment>);
   return parts;
 }
 
-/** 文字段里的引用后加角标（按出现先后数第几次，与内核编号一致）；没有角标时同 tokens。 */
+/** 只数出现次数、不加角标（代码、链接文字；复核 Q3-04：编号与内核一致）。 */
+function countCites(text: string, cx: CiteCx | undefined): void {
+  if (cx) scanMarks(text, cx.raws, cx.seen);
+}
+
+/** 文字段里的引用后加角标（按出现先后数第几次，与内核编号一致，见 lib/cite-scan.ts scanMarks）；没有角标时同 tokens。 */
 function withCites(text: string, map: Map<string, string | null> | undefined, cx: CiteCx | undefined): ReactNode {
   if (!cx || !cx.raws.some((r) => text.includes(r))) return tokens(text, map);
   const out: ReactNode[] = [];
-  let rest = text;
+  let last = 0;
   let k = 0;
-  for (;;) {
-    let at = -1;
-    let hit = "";
-    for (const r of cx.raws) {
-      const i = rest.indexOf(r);
-      if (i >= 0 && (at < 0 || i < at)) [at, hit] = [i, r];
-    }
-    if (at < 0) break;
-    out.push(<Fragment key={k++}>{tokens(rest.slice(0, at + hit.length), map)}</Fragment>);
-    const nth = (cx.seen.get(hit) ?? 0) + 1;
-    cx.seen.set(hit, nth);
-    const c = cx.cites.find((x) => x.raw === hit && x.nth === nth);
+  for (const h of scanMarks(text, cx.raws, cx.seen)) {
+    out.push(<Fragment key={k++}>{tokens(text.slice(last, h.end), map)}</Fragment>);
+    const c = cx.cites.find((x) => x.raw === h.raw && x.nth === h.nth);
     if (c) out.push(<sup key={k++} className={`cite-mark cite-tone-${c.tone}`} title={c.title}>{c.mark}</sup>);
-    rest = rest.slice(at + hit.length);
+    last = h.end;
   }
-  out.push(<Fragment key={k++}>{tokens(rest, map)}</Fragment>);
+  out.push(<Fragment key={k++}>{tokens(text.slice(last), map)}</Fragment>);
   return out;
 }
 

@@ -5,7 +5,7 @@
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { createDocx, createStyledDocx, extractParagraphs, paragraphCells, readZipText } from "@zr-legal/docx-engine";
+import { createDocx, createStyledDocx, extractParagraphs, paragraphCells, readZipEntries, readZipText } from "@zr-legal/docx-engine";
 import { importBytes, liveTaskIdentity, makeKernel, type TestKernel } from "./helpers.ts";
 import { submitRiskCards } from "../src/services/review-cards.ts";
 
@@ -61,6 +61,10 @@ test("跨文件审查与表格单元格锚点：related 定位、校验；工作
   assert.throws(() => submitRiskCards(deps, scope, { document_version_id: main.document_version_id, cards: [{ ...base, anchor_text: "买方应于验收合格后九十日内支付货款。", related: [{ document_version_id: main.document_version_id, quote: "第三条 价格见下表。" }] }] }), /本卡所在的文件/);
   assert.throws(() => submitRiskCards(deps, scope, { document_version_id: main.document_version_id, cards: [{ ...base, anchor_text: "买方应于验收合格后九十日内支付货款。", related: [{ document_version_id: foreign.document_version_id, quote: "无关条款。" }] }] }), (e: any) => e.code === "not_found");
   assert.throws(() => submitRiskCards(deps, scope, { document_version_id: main.document_version_id, cards: [{ ...base, anchor_text: "买方应于验收合格后九十日内支付货款。", related: Array.from({ length: 6 }, () => ({ document_version_id: sup.document_version_id, quote: "x" })) }] }), /至多 5 段/);
+  // 只认本任务选入的材料（复核 Q3-10）
+  const other2 = await importBytes(tk.inv, m, "附函.docx", createDocx("附函", [{ heading: "一", paragraphs: ["附函内容。"] }]), DOCX);
+  tk.kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ document_version_ids: [main.document_version_id, sup.document_version_id] }), live.rid]);
+  assert.throws(() => submitRiskCards(deps, scope, { document_version_id: main.document_version_id, cards: [{ ...base, anchor_text: "买方应于验收合格后九十日内支付货款。", related: [{ document_version_id: other2.document_version_id, quote: "附函内容。" }] }] }), /不在本任务选入的材料里/);
 
   const r = submitRiskCards(deps, scope, {
     document_version_id: main.document_version_id,
@@ -92,4 +96,29 @@ test("跨文件审查与表格单元格锚点：related 定位、校验；工作
   assert.ok(tc, "修订在表格单元格里");
   assert.match(tc!, /六十日/);
   assert.match(extractParagraphs(buf).map((p) => p.text).join("\n"), /验收后六十日内付清/);
+});
+
+test("隔离被引用的材料（复核 Q3-01）：别的卡上引用它的原文抹去，只留“来源已隔离”", { timeout: 60_000 }, async () => {
+  const { matter } = await tk.inv("matters.create", { title: "跨文件隔离", stance: "买方", consent_status: "agreed" });
+  const m = matter.matter_id;
+  const main = await importBytes(tk.inv, m, "采购合同.docx", createDocx("采购合同", [{ heading: "第八条", paragraphs: ["买方应于验收合格后九十日内支付货款。"] }]), DOCX);
+  const sup = await tk.inv("materials.import", { matter_id: m, filename: "补充协议.txt", data_base64: Buffer.from("补充协议：付款期限变更为一百二十日 金丝雀KWL-XFILE-7731").toString("base64"), mime: "text/plain" });
+  const live = liveTaskIdentity(tk, m, "xq");
+  submitRiskCards({ db: tk.kernel.db, blobs: tk.kernel.blobs }, { tenantId: live.tid, matterId: m, runId: live.rid }, {
+    document_version_id: main.document_version_id,
+    cards: [{ severity: "mid", issue: "【一致性】付款期限", anchor_text: "买方应于验收合格后九十日内支付货款。", related: [{ document_version_id: sup.document_version_id, quote: "付款期限变更为一百二十日 金丝雀KWL-XFILE-7731", relation: "amends" }] }],
+  });
+  // 重新解析才看到密级标志 → 隔离
+  const put = tk.kernel.blobs.put(Buffer.from("机密★1年\n补充协议：付款期限变更为一百二十日 金丝雀KWL-XFILE-7731"), m);
+  tk.kernel.db.run(`UPDATE document_versions SET sha256 = ?, storage_uri = ? WHERE document_version_id = ?`, [put.sha256, put.storage_uri, sup.document_version_id]);
+  await assert.rejects(tk.inv("materials.reparse", { document_version_id: sup.document_version_id }), (e: any) => e.code === "classified_material");
+  const card = (await tk.inv("riskcards.list", { matter_id: m, document_version_id: main.document_version_id })).cards[0];
+  assert.equal(card.related.length, 1);
+  assert.equal(card.related[0].quote, "");
+  assert.equal(card.related[0].quarantined, true);
+  assert.equal(JSON.stringify(tk.kernel.db.all(`SELECT related FROM risk_cards WHERE matter_id = ?`, [m])).includes("KWL-XFILE-7731"), false, "库里不再有那份材料的原文");
+  // 结案归档（复核 Q3-12）：风险卡带上跨文件引用；已隔离的只留文件名
+  const zip = Buffer.from((await tk.inv("matters.archive", { matter_id: m })).data_base64, "base64");
+  const rc = JSON.parse(readZipEntries(zip).get("review/risk-cards.json")!.toString("utf8"));
+  assert.deepEqual(rc[0].related, [{ filename: "补充协议.txt", relation: "amends", quote: "", anchor_status: "not_found", quarantined: true }]);
 });

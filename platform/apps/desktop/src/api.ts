@@ -1025,7 +1025,7 @@ export interface RiskCard {
   searched_docs?: string[];
   searched_found?: { term: string; filename: string }[];
   /** 跨文件审查（v9.4 第 21 批）：本卡引用的同一事项其他文件原文（补充协议、附件等）。 */
-  related?: { document_version_id: string; filename: string; quote: string; relation: "amends" | "conflicts" | "refers"; anchor_status: string }[];
+  related?: { document_version_id: string; filename: string; quote: string; relation: "amends" | "conflicts" | "refers"; anchor_status: string; quarantined?: boolean }[];
   /** 锚点在 Word 表格里时的位置（“表 2 第 3 行第 2 列（单价）”）。 */
   cell?: string;
   /** 接受时选用的一级（C-05）。 */

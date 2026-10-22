@@ -27,10 +27,15 @@ test("你来核对：勾上的条目原文签进签发记录；越界、重复�
   await inv("review.submit", { artifact_version_id: art.artifact_version_id });
   await decideAllCitations(inv, art.artifact_version_id);
   const base = { artifact_version_id: art.artifact_version_id, decision: "approved", expected_sha256: art.sha256 };
-  await assert.rejects(inv("review.approve", { ...base, checklist: { lawyer_checked: [items.length] } }), /对不上/);
-  await assert.rejects(inv("review.approve", { ...base, checklist: { lawyer_checked: [0, 0] } }), /对不上/);
-  await assert.rejects(inv("review.approve", { ...base, checklist: { lawyer_checked: ["0"] } }), /对不上/);
-  const ok = await inv("review.approve", { ...base, checklist: { lawyer_checked: [2, 0], reviewed_open_items: true } });
+  const h = c.lawyer_checklist.sha256;
+  assert.match(h, /^[0-9a-f]{64}$/);
+  // 清单在复核页打开后变了（复核 Q3-06）：带回的 sha256 对不上即拒签
+  await assert.rejects(inv("review.approve", { ...base, checklist: { lawyer_checked: [0], lawyer_checklist_sha256: "0".repeat(64) } }), /清单在你打开复核页后变了/);
+  await assert.rejects(inv("review.approve", { ...base, checklist: { lawyer_checked: [0] } }), /清单在你打开复核页后变了/);
+  await assert.rejects(inv("review.approve", { ...base, checklist: { lawyer_checked: [items.length], lawyer_checklist_sha256: h } }), /对不上/);
+  await assert.rejects(inv("review.approve", { ...base, checklist: { lawyer_checked: [0, 0], lawyer_checklist_sha256: h } }), /对不上/);
+  await assert.rejects(inv("review.approve", { ...base, checklist: { lawyer_checked: ["0"], lawyer_checklist_sha256: h } }), /对不上/);
+  const ok = await inv("review.approve", { ...base, checklist: { lawyer_checked: [2, 0], reviewed_open_items: true, lawyer_checklist_sha256: h } });
   const row = kernel.db.get<{ signed_payload: string; checklist: string }>(`SELECT signed_payload, checklist FROM approvals WHERE approval_id = ?`, [ok.approval_id])!;
   const signed = JSON.parse(row.signed_payload);
   assert.deepEqual(signed.lawyer_checklist, { skill: "contract-review", items: items.length, checked: [items[0], items[2]] });

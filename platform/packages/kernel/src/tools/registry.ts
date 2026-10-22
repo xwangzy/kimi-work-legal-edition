@@ -210,7 +210,7 @@ export const TOOLS: readonly ToolDef[] = [
     name: "calc.labor",
     title: "劳动经济补偿与赔偿金",
     description:
-      "确定性计算解除或终止劳动合同的经济补偿 N（kind=compensation，劳动合同法第四十七条）或违法解除赔偿金 2N（kind=unlawful，第八十七条、实施条例第二十五条），逐步写出年限、基数、三倍封顶与代通知金。" +
+      "确定性计算解除或终止劳动合同的经济补偿 N（kind=compensation，劳动合同法第四十七条）或违法解除赔偿金 2N（kind=unlawful，第八十七条、实施条例第二十五条），逐步写出年限、基数、三倍封顶与代通知金。start_date 写入职日（用工之日），end_date 写劳动关系的最后一日（含当日）。" +
       "月工资写解除前十二个月平均工资；当地上年度职工月平均工资、最低工资由律师或材料给出，不要凭记忆填；没给时结果带 warnings。2008 年以前的工作年限按当时规定另算，不在结果里。是否应当支付由律师判断，本工具只算数额；warnings 非空时须原样告知律师。",
     sideEffect: "read",
     resource: "pure",

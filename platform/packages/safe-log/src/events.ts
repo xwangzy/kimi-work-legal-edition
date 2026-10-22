@@ -100,6 +100,8 @@ export const EVENTS = {
   MAIN_RUNTIME_PROBLEM: { level: "error", fields: { count: "int", stage: ["startup", "background"] } },
   MAIN_SMOKE_FAILED: { level: "error", fields: { reason: "ident" } },
   MAIN_SAVE_FAILED: { level: "warn", fields: { ...ERR } },
+  // v9.4 第 21 批：用系统默认程序打开刚保存的成果失败
+  MAIN_OPEN_SAVED_FAILED: { level: "warn", fields: { ...ERR } },
   MAIN_UPDATE_WARN: { level: "warn", fields: {} },
   MAIN_UPDATE_FAILED: { level: "error", fields: {} },
 } as const satisfies Record<string, EventSpec>;

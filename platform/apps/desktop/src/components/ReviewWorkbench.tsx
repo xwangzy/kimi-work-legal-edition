@@ -719,8 +719,9 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                       <div key={j} className="rc-row">
                         <span className="rc-k">{RELATION_LABEL[x.relation] ?? "相关原文"}</span>
                         <span className="rc-quote">
-                          <span className="muted">《{x.filename}》</span>“{plain(x.quote)}”
-                          {x.anchor_status === "not_found" && <span className="rc-warn">这段原文在《{x.filename}》里找不到，请打开原件核对</span>}
+                          <span className="muted">《{x.filename}》</span>
+                          {x.quarantined ? <span className="rc-warn">这份材料带国家秘密标志、已隔离，原文不再显示</span> : <>“{plain(x.quote)}”</>}
+                          {!x.quarantined && x.anchor_status === "not_found" && <span className="rc-warn">这段原文在《{x.filename}》里找不到，请打开原件核对</span>}
                           {x.anchor_status === "ambiguous" && <span className="rc-warn">这段原文在《{x.filename}》里出现多处</span>}
                         </span>
                       </div>

@@ -188,6 +188,14 @@ export function buildMatterArchive(d: ArchiveDeps, matterId: string, opts: { by:
     searched_terms: parseJson<string[]>(c.searched_terms, []).map((t) => restoreText(t)),
     searched_found: parseJson(c.searched_found, []),
     chosen_level: c.chosen_level ?? null,
+    // v9.4 第 21 批（复核 Q3-12）：跨文件审查引用的其他文件原文（已隔离的只留文件名与“已隔离”）
+    related: parseJson<{ document_version_id: string; filename: string; quote: string; relation: string; anchor_status: string; quarantined?: boolean }[]>(c.related, []).map((r) => ({
+      filename: r.filename,
+      relation: r.relation,
+      quote: r.quarantined ? "" : restoreText(r.quote),
+      anchor_status: r.anchor_status,
+      ...(r.quarantined ? { quarantined: true } : {}),
+    })),
     status: c.status,
     final_text: c.final_text,
     decided_by: c.decided_by,

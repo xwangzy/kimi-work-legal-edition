@@ -40,30 +40,29 @@ export function artifactFactMarks(db: KernelDb, matterId: string, text: string):
   const byDay = new Map<string, typeof rows>();
   for (const r of rows) if (r.occurred_on && DAY.test(r.occurred_on)) byDay.set(r.occurred_on, [...(byDay.get(r.occurred_on) ?? []), r]);
   if (byDay.size === 0 || !text) return [];
-  // 每种写法 → 日期；成果里按出现先后扫描，同一位置只取最长的写法
-  const forms = [...byDay.keys()].flatMap((day) => dateForms(day).map((f) => [f, day] as const)).sort((a, b) => b[0].length - a[0].length);
-  const hits: { at: number; raw: string; day: string }[] = [];
-  const taken: [number, number][] = [];
-  for (const [f, day] of forms) {
-    for (let i = text.indexOf(f); i >= 0; i = text.indexOf(f, i + f.length)) {
-      const end = i + f.length;
-      if (taken.some(([a, b]) => i < b && end > a)) continue;
-      // 前后紧挨数字的不算（“12026 年…”、“2026-03-011”）
-      if (/\d/.test(text[i - 1] ?? "") || /\d/.test(text[end] ?? "")) continue;
-      taken.push([i, end]);
-      hits.push({ at: i, raw: f, day });
-    }
-  }
-  hits.sort((a, b) => a.at - b.at);
-  // nth 与界面一致：同一写法在全文里第几次出现（界面按文字顺序数，见 Markdown.withCites）
+  // 编号与界面一致（复核 Q3-04）：界面（apps/desktop/src/lib/cite-scan.ts scanMarks）按“最早出现、同位置最长写法优先、从左到右不重叠”
+  // 逐处数第几次出现——这里用同一规则扫全文；前后紧挨数字的（“2026.3.15”里的“2026.3.1”）照样计数，只是不加角标
+  const raws = [...new Set([...byDay.keys()].flatMap((day) => dateForms(day)))].sort((a, b) => b.length - a.length);
+  const dayOf = new Map([...byDay.keys()].flatMap((day) => dateForms(day).map((f) => [f, day] as const)));
   const seen = new Map<string, number>();
   const out: FactMark[] = [];
-  for (const h of hits) {
-    const nth = (seen.get(h.raw) ?? 0) + 1;
-    seen.set(h.raw, nth);
-    const facts = byDay.get(h.day)!;
+  let from = 0;
+  for (;;) {
+    let at = -1;
+    let hit = "";
+    for (const r of raws) {
+      const i = text.indexOf(r, from);
+      if (i >= 0 && (at < 0 || i < at)) [at, hit] = [i, r];
+    }
+    if (at < 0) break;
+    const end = at + hit.length;
+    const nth = (seen.get(hit) ?? 0) + 1;
+    seen.set(hit, nth);
+    from = end;
+    if (/\d/.test(text[at - 1] ?? "") || /\d/.test(text[end] ?? "")) continue;
+    const facts = byDay.get(dayOf.get(hit)!)!;
     out.push({
-      raw: h.raw,
+      raw: hit,
       nth,
       status: facts.some((f) => f.status === "confirmed") ? "confirmed" : "proposed",
       facts: facts.slice(0, 3).map((f) => ({ fact_id: f.fact_id, statement: f.statement, status: f.status as "confirmed" | "proposed", filename: f.filename, quote: f.quote })),

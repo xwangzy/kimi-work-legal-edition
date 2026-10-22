@@ -4,6 +4,7 @@
  * 只读、现算（状态只有一份，不另存一张表）；引用的逐条决定按成果版本由调用方补（要用本机法规库现算）。
  */
 import type { KernelDb } from "../db.ts";
+import { getTable, notApplicableKeys } from "./review-tables.ts";
 
 export type PendingKind = "facts" | "table_cells" | "risk_cards" | "outlines" | "open_items" | "citations";
 
@@ -44,17 +45,21 @@ export function pendingChecks(db: KernelDb, matterId: string): PendingCheck[] {
   const facts = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM matter_facts WHERE matter_id = ? AND status = 'proposed'`, [matterId])!.n;
   if (facts > 0) out.push({ kind: "facts", count: facts, text: `${facts} 条事实等你确认（确认过的才进文书）`, target: { tab: "facts" } });
 
-  for (const t of db.all<{ table_id: string; title: string; n: number }>(
-    `SELECT t.table_id, t.title, COUNT(c.cell_id) AS n FROM review_tables t JOIN review_cells c ON c.table_id = t.table_id
-      WHERE t.matter_id = ? AND c.state IN ('ai','conflict') GROUP BY t.table_id ORDER BY t.created_at`,
-    [matterId],
-  ))
-    out.push({ kind: "table_cells", count: t.n, text: `审阅表《${t.title}》有 ${t.n} 格没核`, target: { tab: "materials", view: "table", table_id: t.table_id } });
+  // 审阅表：没核的格子（AI 值、冲突），条件不满足（不适用）的不算（复核 Q3-05，与界面同一口径）
+  for (const t of db.all<{ table_id: string }>(`SELECT table_id FROM review_tables WHERE matter_id = ? ORDER BY created_at`, [matterId])) {
+    const { table, cells } = getTable(db, matterId, t.table_id);
+    const na = notApplicableKeys(table, cells);
+    const n = cells.filter((c) => (c.state === "ai" || c.state === "conflict") && !na.has(`${c.document_version_id}\u0000${c.col_key}`)).length;
+    if (n > 0) out.push({ kind: "table_cells", count: n, text: `审阅表《${table.title}》有 ${n} 格没核`, target: { tab: "materials", view: "table", table_id: table.table_id } });
+  }
 
   for (const c of db.all<{ document_version_id: string | null; filename: string | null; n: number; high: number }>(
     `SELECT r.document_version_id, d.filename, COUNT(*) AS n, SUM(CASE WHEN r.severity = 'high' THEN 1 ELSE 0 END) AS high
        FROM risk_cards r LEFT JOIN document_versions d ON d.document_version_id = r.document_version_id
-      WHERE r.matter_id = ? AND r.status = 'proposed' AND (d.quarantined_at IS NULL) GROUP BY r.document_version_id ORDER BY high DESC, n DESC`,
+      WHERE r.matter_id = ? AND r.status = 'proposed' AND (d.quarantined_at IS NULL)
+        -- 旧版本合同上的意见不算（复核 Q3-11：已有新版本取代的，按新版本重审）
+        AND NOT EXISTS (SELECT 1 FROM document_versions n WHERE n.supersedes = r.document_version_id)
+      GROUP BY r.document_version_id ORDER BY high DESC, n DESC`,
     [matterId],
   ))
     out.push({

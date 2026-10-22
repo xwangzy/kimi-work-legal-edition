@@ -553,7 +553,7 @@ function wireIpc() {
   ipcMain.handle("kwl:open-saved", async (e, handle) => {
     if (!fromAppMainFrame(e)) return { ok: false };
     const p = fileHandles.take(handle, "opensaved");
-    if (!p || !OPENABLE.test(p) || insideAppData(p, [app.getPath("userData")])) return { ok: false };
+    if (!p || !OPENABLE.test(p) || insideAppData(p, [app.getPath("userData"), DATA_DIR])) return { ok: false };
     try {
       if (!require("node:fs").statSync(p).isFile()) return { ok: false };
       const problem = await require("electron").shell.openPath(p);

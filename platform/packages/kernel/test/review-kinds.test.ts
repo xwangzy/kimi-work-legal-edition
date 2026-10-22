@@ -246,10 +246,15 @@ test("v9.4 第 20 批 C-02 残余：批量接受只收提示级与前后不一�
   assert.ok(r.batch.startsWith("cbt_"));
   let after = (await tk.inv("riskcards.list", { matter_id: m })).cards as any[];
   assert.equal(after.filter((c) => c.status === "accepted").length, 2);
+  // 批量接受后又单独处理过的卡（复核 Q3-09）：不随本批撤回；不带批次号、批次号不对的撤不了
+  await tk.inv("riskcards.decide", { matter_id: m, card_id: id("措辞"), decision: "reset" });
+  await tk.inv("riskcards.decide", { matter_id: m, card_id: id("措辞"), decision: "accept" });
+  await assert.rejects(tk.inv("riskcards.decide_batch", { matter_id: m, card_ids: r.accepted, action: "undo" }), /批次号/);
+  assert.equal((await tk.inv("riskcards.decide_batch", { matter_id: m, card_ids: r.accepted, action: "undo", batch: "cbt_other" })).undone.length, 0);
   const u = await tk.inv("riskcards.decide_batch", { matter_id: m, card_ids: r.accepted, action: "undo", batch: r.batch });
-  assert.equal(u.undone.length, 2);
+  assert.deepEqual(u.undone, [id("比例口径不一")], "只撤本批里仍是批量接受的那张");
   after = (await tk.inv("riskcards.list", { matter_id: m })).cards as any[];
-  assert.equal(after.filter((c) => c.status === "accepted").length, 0, "撤回本批");
+  assert.deepEqual(after.filter((c) => c.status === "accepted").map((c) => c.card_id), [id("措辞")], "单独接受的那张留下");
 
   // 误报：材料里写的是“知识产权归买方所有”——说法须在材料里出现过
   const miss = id("未约定成果归属");

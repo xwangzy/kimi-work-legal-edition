@@ -79,6 +79,7 @@ test("v9.4 第 21 批：原“即将推出”的八项有了卡，意图建议�
     ["帮我写一份上诉状", "appeal"],
     ["不服一审判决，准备上诉", "appeal"],
     ["帮我起草仲裁申请书", "arbitration-app"],
+    ["对方不执行合同，我们要申请仲裁", "arbitration-app"],
     ["准备开庭，列个庭审提纲", "hearing-outline"],
     ["起诉前先申请财产保全", "preservation"],
     ["判决生效了对方不付钱，申请强制执行", "enforcement"],

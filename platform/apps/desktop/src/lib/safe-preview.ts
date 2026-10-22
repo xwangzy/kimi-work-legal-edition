@@ -11,6 +11,7 @@
 
 import { TOKEN_RE } from "./tokens.ts";
 import { scrubCss } from "./css-scrub.ts";
+import { scanMarks } from "./cite-scan.ts";
 
 export { scrubCss };
 
@@ -89,21 +90,13 @@ export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | nu
     for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text);
     const raws = [...byRaw.keys()].sort((a, b) => b.length - a.length);
     for (const node of nodes) {
-      let rest = node.nodeValue ?? "";
-      if (!raws.some((r) => rest.includes(r))) continue;
+      const text = node.nodeValue ?? "";
+      if (!raws.some((r) => text.includes(r))) continue;
       const frag = doc.createDocumentFragment();
-      for (;;) {
-        let at = -1;
-        let hit = "";
-        for (const r of raws) {
-          const i = rest.indexOf(r);
-          if (i >= 0 && (at < 0 || i < at)) [at, hit] = [i, r];
-        }
-        if (at < 0) break;
-        frag.append(doc.createTextNode(rest.slice(0, at + hit.length)));
-        const nth = (seen.get(hit) ?? 0) + 1;
-        seen.set(hit, nth);
-        const c = byRaw.get(hit)!.find((x) => x.nth === nth);
+      let last = 0;
+      for (const h of scanMarks(text, raws, seen)) {
+        frag.append(doc.createTextNode(text.slice(last, h.end)));
+        const c = byRaw.get(h.raw)!.find((x) => x.nth === h.nth);
         if (c) {
           const sup = doc.createElement("sup");
           sup.className = `kwl-cite kwl-cite-${c.tone}`;
@@ -111,9 +104,9 @@ export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | nu
           sup.textContent = c.mark;
           frag.append(sup);
         }
-        rest = rest.slice(at + hit.length);
+        last = h.end;
       }
-      frag.append(doc.createTextNode(rest));
+      frag.append(doc.createTextNode(text.slice(last)));
       node.replaceWith(frag);
     }
   }

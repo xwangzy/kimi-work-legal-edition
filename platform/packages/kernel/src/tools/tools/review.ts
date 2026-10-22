@@ -135,6 +135,18 @@ export function tableGet(ctx: InvokeCtx, p: { table_id?: string }) {
 }
 
 export function tableFill(ctx: InvokeCtx, p: { table_id?: string; cells?: unknown[] }) {
+  // 问这张表的任务不改表（v9.4 第 21 批，复核 Q3-08：方法写了“不改表”，内核同样把关）
+  const s = scopeOf(ctx);
+  if (s.runId) {
+    const snap = ctx.db.get<{ input_snapshot: string | null }>(`SELECT input_snapshot FROM runs WHERE run_id = ?`, [s.runId])?.input_snapshot;
+    let mode: unknown = null;
+    try {
+      mode = JSON.parse(snap ?? "{}")?.skill_args?.mode;
+    } catch {
+      mode = null;
+    }
+    if (mode === "问表") throw new DomainError("forbidden", "这是“问这张表”的任务：只依据表里的格子回答，不改表（要填表请律师点“让助手填表”）", 403);
+  }
   return fillCells({ db: ctx.db, blobs: ctx.blobs, ...(ctx.tokens ? { tokens: ctx.tokens } : {}) }, scopeOf(ctx), p);
 }
 

@@ -247,6 +247,20 @@ export function columnApplies(col: TableColumn, condition: { state: CellState; v
   return effectiveValue(condition) === col.when.equals ? "yes" : "no";
 }
 
+/**
+ * 条件不满足（不适用）的格子编号集合（复核 Q3-05：待核清单、推为事实、台账提醒、导出与起草同一口径）。
+ * 键为“材料编号 \u0000 列编号”。
+ */
+export function notApplicableKeys(table: Pick<TableRow, "columns">, cells: readonly Pick<CellRow, "document_version_id" | "col_key" | "state" | "value" | "lawyer_value">[]): Set<string> {
+  const out = new Set<string>();
+  const conds = table.columns.filter((c) => c.when);
+  if (conds.length === 0) return out;
+  const at = new Map(cells.map((c) => [`${c.document_version_id}\u0000${c.col_key}`, c]));
+  const docs = new Set(cells.map((c) => c.document_version_id));
+  for (const d of docs) for (const col of conds) if (columnApplies(col, at.get(`${d}\u0000${col.when!.column}`)) === "no") out.add(`${d}\u0000${col.key}`);
+  return out;
+}
+
 /** 按列格式核对值：日期 YYYY-MM-DD 或 YYYY-MM；金额为数字（可带币种与单位）；是否为“是 / 否”；选项须在列表里。 */
 function checkFormat(c: TableColumn, value: string): string | null {
   if (c.format === "date" && !/^\d{4}-\d{2}(?:-\d{2})?$/.test(value)) return "日期写 YYYY-MM-DD，只知年月写 YYYY-MM";
@@ -550,7 +564,9 @@ function cellStatement(deps: { tokens?: MatterTokenStore }, matterId: string, co
 export function pushCellsToFacts(deps: { db: KernelDb; blobs: BlobStore; tokens?: MatterTokenStore }, scope: { tenantId: string; matterId: string; userId: string }, tableId: string, cellIds?: unknown): { pushed: number; already: number; not_verified: number } {
   const { table, cells, docs } = getTable(deps.db, scope.matterId, tableId);
   const want = Array.isArray(cellIds) ? new Set(cellIds.map(String)) : null;
-  const picked = cells.filter((c) => !want || want.has(c.cell_id));
+  // 不适用的格子（条件不满足）不推（复核 Q3-05）
+  const na = notApplicableKeys(table, cells);
+  const picked = cells.filter((c) => (!want || want.has(c.cell_id)) && !na.has(`${c.document_version_id}\u0000${c.col_key}`));
   let pushed = 0;
   let already = 0;
   let notVerified = 0;
@@ -659,8 +675,10 @@ export function ledgerReminderCandidates(db: KernelDb, matterId: string, tableId
   if (table.template !== "contract_ledger") throw new DomainError("validation", "只有合同台账可以据此设提醒", 422);
   const dateCols = table.columns.filter((c) => c.format === "date" && c.key !== "signed_on");
   const out: ReturnType<typeof ledgerReminderCandidates> = [];
+  const na = notApplicableKeys(table, cells);
   for (const d of docs)
     for (const col of dateCols) {
+      if (na.has(`${d.document_version_id}\u0000${col.key}`)) continue;
       const c = cells.find((x) => x.document_version_id === d.document_version_id && x.col_key === col.key);
       const v = c ? (c.state === "edited" ? c.lawyer_value : c.value) : null;
       if (!c || !v) continue;

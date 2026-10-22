@@ -203,6 +203,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
             reviewed_open_items: ack,
             lawyer_checked: [...checked].sort((a, b) => a - b),
             lawyer_items: items.length,
+            lawyer_checklist_sha256: data.lawyer_checklist?.sha256 ?? null,
             skill: data.lawyer_checklist?.skill ?? null,
             ...citationChecklist(cneeds, cticks),
             // 内部稿与对外稿的确认语不同（复核 RB16B-08）：内部稿只确认“已知悉、结论未覆盖”，对外稿确认“缺口已在文件中写明、随文件告知客户”

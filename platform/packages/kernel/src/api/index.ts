@@ -83,7 +83,7 @@ import { createTodo, deleteTodo, derivedTodos, listTodos, updateTodo } from "../
 import { pendingChecks, unsignedLatestArtifacts } from "../services/pending-checks.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
-import { buildRedlineFromCards, counterChanges, decideBatch, rejectMissingCard, cardCells, cardPages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
+import { buildRedlineFromCards, counterChanges, decideBatch, rejectMissingCard, cardCells, cardPages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, scrubRelatedQuotes, submitRiskCards } from "../services/review-cards.ts";
 import { LIT_SAMPLE_ISSUES, LIT_SAMPLE_TITLE, SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, litigationSampleMaterials, sampleContract } from "../services/sample-matter.ts";
 import { probeEnvironment, type EnvProbeResult } from "../services/env-probe.ts";
 import { firstLineTitle, isTitledFilename } from "../services/artifact-title.ts";
@@ -572,6 +572,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         db.run(`DELETE FROM parse_pages WHERE parse_version_id IN (${PVS})`, [id]);
         db.run(`DELETE FROM evidence_anchors WHERE parse_version_id IN (${PVS})`, [id]);
         db.run(`DELETE FROM risk_cards WHERE document_version_id = ?`, [id]);
+        // 别的合同的卡上跨文件引用了这份材料的原文（v9.4 第 21 批，复核 Q3-01）：抹去原文，只留“来源已隔离”
+        scrubRelatedQuotes(db, doc.matter_id, id);
         // 审阅表里这份材料的格子（逐字引文与提取的值，复核 Q2-02）；论点提纲里抄过来的、据此材料的事实文字一并抹去
         db.run(`DELETE FROM review_cells WHERE document_version_id = ?`, [id]);
         scrubOutlineFacts(db, doc.matter_id, db.all<{ fact_id: string }>(`SELECT fact_id FROM matter_facts WHERE document_version_id = ?`, [id]).map((f) => f.fact_id));
@@ -2055,7 +2057,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           // 本次运行在材料里核到的离线案号（第 14 批第二轮复核 R2B-27：与成果里的案号同一口径——逐个核对并勾选后可签发）
           run_case_offline: unverifiedOffline,
         },
-        lawyer_checklist: { skill: lawyerChecklist.length ? skillId : null, items: lawyerChecklist },
+        // sha256：签发时带回，清单在复核页打开后变了（方法包更新）就拒签（复核 Q3-06）
+        lawyer_checklist: { skill: lawyerChecklist.length ? skillId : null, items: lawyerChecklist, sha256: sha256Hex(JSON.stringify(lawyerChecklist)) },
         // 材料缺口（Astra M-2）：有缺口时签发须勾选“缺口已告知客户”
         material_gaps: materialGapCount(db, art.run_id ?? null),
         material_gap_files: materialGaps(db, art.run_id ?? null).files,
@@ -2160,6 +2163,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const rawTicks = Array.isArray(checklistObj.lawyer_checked) ? checklistObj.lawyer_checked : [];
       if (rawTicks.some((n) => !Number.isInteger(n) || (n as number) < 0 || (n as number) >= lc.items.length) || new Set(rawTicks).size !== rawTicks.length)
         throw validation("“你来核对”的勾选与本任务方法的自检清单对不上：请刷新复核页后重新勾选");
+      // 勾了的，清单须是律师看到的那一份（复核 Q3-06：复核页打开后方法包更新、条目顺序变了，序号会对上另一句话）
+      if (rawTicks.length > 0 && checklistObj.lawyer_checklist_sha256 !== sha256Hex(JSON.stringify(lc.items)))
+        throw validation("“你来核对”的清单在你打开复核页后变了（方法模板已更新）：请刷新复核页后重新勾选");
       const lawyerTicked = (rawTicks as number[]).slice().sort((a, b) => a - b).map((n) => lc.items[n]!);
       checklistObj.lawyer_checked_items = lawyerTicked;
       checklistObj.lawyer_items = lc.items.length;

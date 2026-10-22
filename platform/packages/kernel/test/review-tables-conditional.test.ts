@@ -80,3 +80,18 @@ test("条件列：建列核对、填表拒收不适用与待定、同批先填�
   await tk.inv("tables.remove_column", { matter_id: m, table_id: T, column: "custom_3", confirm: true });
   await tk.inv("tables.remove_column", { matter_id: m, table_id: T, column: "custom_1", confirm: true });
 });
+
+test("问这张表的任务不改表（复核 Q3-08）：table.fill 在 mode=问表 的任务里被拒；普通填表照常", { timeout: 60_000 }, async () => {
+  const { tableFill } = await import("../src/tools/tools/review.ts");
+  const { matter } = await tk.inv("matters.create", { title: "问表不改表", stance: "收购方", consent_status: "agreed" });
+  const m = matter.matter_id;
+  const a = await importBytes(tk.inv, m, "供货合同.docx", createDocx("供货合同", [{ heading: "一", paragraphs: ["合同总价为人民币 120 万元。"] }]), DOCX);
+  const T = (await tk.inv("tables.create", { matter_id: m, template: "dd_contract_summary", columns: ["amount"], document_version_ids: [a.document_version_id] })).table.table_id;
+  const live = liveTaskIdentity(tk, m, "ask");
+  const ctx = { claims: { tid: live.tid, mid: m, rid: live.rid } as any, db: tk.kernel.db, blobs: tk.kernel.blobs, lawdb: (tk.kernel as any).lawdb, tokens: (tk.kernel as any).tokens };
+  const cells = [{ document_version_id: a.document_version_id, column: "amount", value: "120 万元", quote: "合同总价为人民币 120 万元。" }];
+  tk.kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ skill: "tabular-review", skill_args: { table_id: T, mode: "问表" } }), live.rid]);
+  assert.throws(() => tableFill(ctx, { table_id: T, cells }), (e: any) => e.code === "forbidden" && /不改表/.test(e.message));
+  tk.kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ skill: "tabular-review", skill_args: { table_id: T } }), live.rid]);
+  assert.equal(tableFill(ctx, { table_id: T, cells }).written, 1);
+});

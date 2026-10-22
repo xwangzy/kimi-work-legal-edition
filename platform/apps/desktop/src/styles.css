@@ -1045,6 +1045,8 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .tr { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-2); }
 .tr-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .tr-create .tr-field { display: flex; gap: var(--sp-3); align-items: flex-start; }
+/* 问这张表（v9.4 第 21 批）：问题输入框占满一行 */
+.tr-create .tr-field .tr-ask { flex: 1; min-width: 0; }
 .tr-checks { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
 .tr-scroll { overflow-x: auto; max-width: 100%; }
 .tr-grid { min-width: 100%; table-layout: auto; }

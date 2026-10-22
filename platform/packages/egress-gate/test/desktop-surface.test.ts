@@ -143,7 +143,8 @@ test("预加载脚本只暴露最小接口；渲染进程源码里只有 api.ts 
   // updateStatus/installUpdate：自动更新（W7）只读状态与“重启并安装”（主进程另判：主框架、已下载且通过发布签名核验）
   // pickFiles/pickSave/saveText：主进程文件对话框（Y5 P1-4），只回一次性句柄与文件名
   // pickFolder（第 14 批：备份位置、从备份恢复）：同样只回一次性句柄
-  assert.deepEqual(exposed.sort(), ["fileHandleFor", "installUpdate", "invoke", "onEvent", "pickFiles", "pickFolder", "pickSave", "platform", "rendererNet", "saveText", "updateStatus"].sort());
+  // openSaved（v9.4 第 21 批：在 Word / WPS 中打开）：只认成果保存成功后主进程发的一次性句柄，页面给不了路径
+  assert.deepEqual(exposed.sort(), ["fileHandleFor", "installUpdate", "invoke", "onEvent", "openSaved", "pickFiles", "pickFolder", "pickSave", "platform", "rendererNet", "saveText", "updateStatus"].sort());
 });
 
 test("对外口径（第 02 篇 §12 禁用词；复核 S5-A03）：界面、确认卡、告知函与估价文字不出现绝对化承诺", () => {
