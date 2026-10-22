@@ -13,6 +13,11 @@ export interface RevisionOp {
   /** 原文 hash（sha256 of originalText）：不符即停止并转人工，不覆盖原件（§6.2） */
   originalHash: string;
   newText: string; // 空串 = 纯删除
+  /**
+   * 段后插入（v9.4 第 19 批 C-02 缺失条款）：不删锚点，在锚点所在段落之后插入新段落（newText 按换行分段），
+   * 新段落的段落标记与文字都标为插入修订——拒绝修订即恢复原样。段落格式沿用锚点段落（去掉分节与段落标记格式）。
+   */
+  insertAfter?: boolean | undefined;
   comment?: string | undefined; // 批注
   ruleId?: string | undefined; // 触发规则（规则 ID、版本）
   riskLevel?: "high" | "mid" | "low" | undefined;

@@ -13,7 +13,7 @@
  */
 import { localToday } from "./local-date.ts";
 import { DomainError, newId, notFound, sha256Hex } from "@zr-legal/domain";
-import { extractParagraphs } from "@zr-legal/docx-engine";
+import { createXlsx, extractParagraphs } from "@zr-legal/docx-engine";
 import type { Lawdb } from "@zr-legal/lawdb";
 import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
@@ -177,6 +177,53 @@ export function defaultNature(category: string, severity: string, hasSuggestion 
   return category === "legal" && severity === "high" && hasSuggestion ? "must" : "should";
 }
 
+export type RiskCardKind = "risk" | "missing" | "deviation" | "consistency";
+export type RuleSource = "law" | "firm_rule" | "general";
+const KINDS: readonly RiskCardKind[] = ["risk", "missing", "deviation", "consistency"];
+const RULE_SOURCES: readonly RuleSource[] = ["law", "firm_rule", "general"];
+
+const strList = (v: unknown, maxItems: number, maxLen: number): string[] =>
+  Array.isArray(v) ? [...new Set(v.map((x) => str(x, maxLen)).filter((x) => x.length > 0))].slice(0, maxItems) : [];
+
+/**
+ * 缺失卡的复查（评审 C1 §2.2 第 2 条“防误报的关键”）：Agent 说“查过这些说法都没有”，内核在本任务的每份材料视图里逐个再找一遍，
+ * 找到的写进 searched_found——工作台把这类卡标成“可能误报”，律师一眼看到“补充协议里其实有”。比较时忽略空白（同 locateQuote）。
+ */
+function recheckMissing(deps: ReviewDeps, scope: ToolScope, docId: string | null, mainView: string | null, terms: readonly string[]): { term: string; filename: string }[] {
+  if (terms.length === 0) return [];
+  const views: { filename: string; view: string }[] = [];
+  const ids = new Set<string>();
+  if (docId && mainView !== null) {
+    ids.add(docId);
+    views.push({ filename: deps.db.get<{ filename: string }>(`SELECT filename FROM document_versions WHERE document_version_id = ?`, [docId])?.filename ?? "", view: mainView });
+  }
+  if (scope.runId) {
+    try {
+      const snap = JSON.parse(deps.db.get<{ input_snapshot: string | null }>(`SELECT input_snapshot FROM runs WHERE run_id = ?`, [scope.runId])?.input_snapshot ?? "{}");
+      for (const id of Array.isArray(snap?.document_version_ids) ? snap.document_version_ids.map(String) : []) {
+        if (ids.has(id) || ids.size >= 20) continue;
+        ids.add(id);
+        try {
+          views.push(documentView(deps, scope.matterId, id));
+        } catch {
+          // 已隔离或不属于本事项的材料不查
+        }
+      }
+    } catch {
+      // 快照损坏：只查主合同
+    }
+  }
+  const squash = (x: string) => x.replace(/[\s|｜]+/g, "");
+  const found: { term: string; filename: string }[] = [];
+  for (const t of terms) {
+    const q = squash(t);
+    if (q.length < 2) continue;
+    const hit = views.find((v) => squash(v.view).includes(q));
+    if (hit) found.push({ term: t, filename: hit.filename });
+  }
+  return found;
+}
+
 export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { document_version_id?: unknown; cards?: unknown }) {
   const cards = Array.isArray(input.cards) ? input.cards : [];
   if (cards.length === 0) throw new DomainError("validation", "cards 不能为空", 422);
@@ -185,19 +232,28 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
   const view = docId ? documentView(deps, scope.matterId, docId) : null;
   const base = runSeqBase(deps.db, "risk_cards", scope.matterId, scope.runId);
   if (base.count + cards.length > RISK_CARD_LIMITS.perRun) throw new DomainError("validation", `本任务风险卡已达上限 ${RISK_CARD_LIMITS.perRun}`, 422);
-  const out: { card_id: string; seq: number; anchor_status: string; basis_checks: string[]; duplicate_of?: string; updated?: string }[] = [];
+  const out: { card_id: string; seq: number; anchor_status: string; basis_checks: string[]; duplicate_of?: string; updated?: string; searched_found?: string[] }[] = [];
   let seqOffset = 0;
   deps.db.tx(() => {
     cards.forEach((c: any, i: number) => {
-      const anchor = str(c?.anchor_text, RISK_CARD_LIMITS.anchor);
+      const kind: RiskCardKind = KINDS.includes(c?.kind) ? (c.kind as RiskCardKind) : "risk";
+      // 缺失卡的锚点是“插在哪一段之后”（insert_after，可省略——省略时只进意见表、不进修订稿）；其余类型锚点必填
+      const anchor = str(kind === "missing" ? (c?.insert_after ?? c?.anchor_text) : c?.anchor_text, RISK_CARD_LIMITS.anchor);
       const issue = str(c?.issue, RISK_CARD_LIMITS.field);
-      if (!anchor || !issue) throw new DomainError("validation", `第 ${i + 1} 张卡缺少 anchor_text 或 issue`, 422);
+      if ((!anchor && kind !== "missing") || !issue) throw new DomainError("validation", `第 ${i + 1} 张卡缺少 anchor_text 或 issue`, 422);
+      const searchedTerms = strList(c?.searched_terms, 30, 60);
+      const searchedDocs = strList(c?.searched_docs, 30, 200);
+      if (kind === "missing" && searchedTerms.length === 0)
+        throw new DomainError("validation", `第 ${i + 1} 张卡是缺失类：须在 searched_terms 列出查过的说法（例如“知识产权、著作权、成果归属”），律师据此判断是否误报`, 422);
+      const ruleRef = optStr(c?.rule_ref, 400);
+      if (kind === "deviation" && !ruleRef) throw new DomainError("validation", `第 ${i + 1} 张卡是偏离规则类：须在 rule_ref 写明偏离的规则（编号与要点）`, 422);
+      const ruleSource: RuleSource | null = RULE_SOURCES.includes(c?.rule_source) ? (c.rule_source as RuleSource) : kind === "deviation" ? "firm_rule" : null;
       const severity = ["high", "mid", "low"].includes(c?.severity) ? (c.severity as string) : null;
       if (!severity) throw new DomainError("validation", `第 ${i + 1} 张卡 severity 须为 high/mid/low`, 422);
       const category = ["legal", "commercial", "both"].includes(c?.category) ? (c.category as string) : "legal";
       // 建议的性质（Astra M-1）：只存 Agent 给的；没给的读出时再推定（nature_inferred）
       const nature = ["must", "should", "negotiable"].includes(c?.nature) ? (c.nature as string) : null;
-      const found = view ? locateQuote(view.view, anchor) : { status: "no_document" as const, start: null, end: null };
+      const found = !anchor ? { status: "not_found" as const, start: null, end: null } : view ? locateQuote(view.view, anchor) : { status: "no_document" as const, start: null, end: null };
       // 规范锚点（复核 B3-B04）：定位到的视图原文（空白与 Agent 原话可能不同），修订稿一律用它；Agent 原话另存
       const canonical = view && found.start !== null && found.end !== null ? view.view.slice(found.start, found.end) : anchor;
       const loc = found.status === "located" && canonical.includes("\n") ? { ...found, status: "cross_paragraph" as const } : found;
@@ -225,12 +281,14 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
         return;
       }
       const basis = verifyBasis(deps, scope.matterId, c?.basis);
+      const searchedFound = kind === "missing" ? recheckMissing(deps, scope, docId, view?.view ?? null, searchedTerms) : [];
       const id = newId("riskCard");
       const seq = base.next + i + seqOffset;
       deps.db.run(
         `INSERT INTO risk_cards (card_id, tenant_id, matter_id, run_id, document_version_id, seq, clause_ref, anchor_text, anchor_quote, anchor_start, anchor_end, anchor_status,
-           severity, category, issue, basis, suggestion, fallback, needs_client_decision, assumptions, nature, bottom_line)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           severity, category, issue, basis, suggestion, fallback, needs_client_decision, assumptions, nature, bottom_line,
+           kind, rule_source, rule_ref, searched_terms, searched_docs, searched_found)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           id,
           scope.tenantId,
@@ -254,9 +312,15 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
           optStr(c?.assumptions, RISK_CARD_LIMITS.field),
           nature,
           optStr(c?.bottom_line, RISK_CARD_LIMITS.field),
+          kind === "risk" ? null : kind,
+          ruleSource,
+          ruleRef,
+          kind === "missing" ? JSON.stringify(searchedTerms) : null,
+          kind === "missing" && searchedDocs.length > 0 ? JSON.stringify(searchedDocs) : null,
+          kind === "missing" ? JSON.stringify(searchedFound) : null,
         ],
       );
-      out.push({ card_id: id, seq, anchor_status: loc.status, basis_checks: basis.map((b) => b.check) });
+      out.push({ card_id: id, seq, anchor_status: loc.status, basis_checks: basis.map((b) => b.check), ...(searchedFound.length > 0 ? { searched_found: searchedFound.map((f) => f.term) } : {}) });
     });
   });
   const notFound = out.filter((x) => x.anchor_status === "not_found").length;
@@ -268,6 +332,8 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
   const locked = out.filter((x) => x.updated === "lawyer_decided_not_updated").length;
   if (dups > 0) notes.push(`${dups} 张卡的锚点、问题与首选与已有卡相同，未重复新增（回报的是已有卡的编号）${updated ? `；其中 ${updated} 张已补写性质或梯度` : ""}${locked ? `；${locked} 张律师已处理，未更新` : ""}`);
   if (notFound + ambiguous > 0) notes.push(`${notFound} 张卡的引文在文档中找不到、${ambiguous} 张出现多处：请改为逐字摘录（可附条款号 clause_ref），找不到的卡律师只能手工处理`);
+  const maybeFalse = out.filter((x) => x.searched_found?.length).length;
+  if (maybeFalse > 0) notes.push(`${maybeFalse} 张缺失卡列的说法在材料里其实找得到（见各卡 searched_found）：请复核是否误报，确属误报的不要提交；工作台会把这些卡标为“可能误报”`);
   if (cross > 0) notes.push(`${cross} 张卡的引文跨了段落：修订按段落写入，请把这些卡按段落拆开重新提交（每张卡的引文只取一段之内）`);
   return {
     submitted: out.length,
@@ -306,11 +372,31 @@ export interface RiskCardRow {
   nature_inferred: boolean;
   needs_client_decision: boolean;
   assumptions: string | null;
+  /** 类型：risk 风险 / missing 缺失 / deviation 偏离规则 / consistency 前后不一致。 */
+  kind: RiskCardKind;
+  /** 判断依据的来源：law 法律强制 / firm_rule 本所或客户规则 / general 通用建议；本批之前的卡为空。 */
+  rule_source: RuleSource | null;
+  rule_ref: string | null;
+  /** 缺失卡：查过的说法、查过的文件、内核复查时在材料里实际找到的说法（非空即可能误报）。 */
+  searched_terms: string[];
+  searched_docs: string[];
+  searched_found: { term: string; filename: string }[];
+  /** 律师接受时选用的一级（缺省首选）。 */
+  chosen_level: "suggestion" | "fallback";
   status: string;
   final_text: string | null;
   decided_by: string | null;
   decided_at: string | null;
   created_at: string;
+}
+
+function jsonList(raw: unknown): string[] {
+  try {
+    const v = JSON.parse(typeof raw === "string" ? raw : "[]");
+    return Array.isArray(v) ? v.map(String) : [];
+  } catch {
+    return [];
+  }
 }
 
 function cardOut(r: any): RiskCardRow {
@@ -342,6 +428,20 @@ function cardOut(r: any): RiskCardRow {
     nature_inferred: !["must", "should", "negotiable"].includes(r.nature),
     needs_client_decision: r.needs_client_decision === 1,
     assumptions: r.assumptions,
+    kind: KINDS.includes(r.kind) ? r.kind : "risk",
+    rule_source: RULE_SOURCES.includes(r.rule_source) ? r.rule_source : null,
+    rule_ref: r.rule_ref ?? null,
+    searched_terms: jsonList(r.searched_terms),
+    searched_docs: jsonList(r.searched_docs),
+    searched_found: (() => {
+      try {
+        const v = JSON.parse(r.searched_found ?? "[]");
+        return Array.isArray(v) ? v.filter((x: any) => x && typeof x.term === "string").map((x: any) => ({ term: String(x.term), filename: String(x.filename ?? "") })) : [];
+      } catch {
+        return [];
+      }
+    })(),
+    chosen_level: r.chosen_level === "fallback" ? "fallback" : "suggestion",
     status: r.status,
     final_text: r.final_text,
     decided_by: r.decided_by,
@@ -398,7 +498,7 @@ export function listRiskCards(db: KernelDb, matterId: string, f: { run_id?: unkn
   return db.all<any>(`SELECT * FROM risk_cards WHERE ${where.join(" AND ")} ORDER BY ${SEVERITY_ORDER}, COALESCE(anchor_start, 1e12), seq LIMIT 1000`, args).map(cardOut);
 }
 
-export function decideRiskCard(db: KernelDb, matterId: string, userId: string, input: { card_id?: unknown; decision?: unknown; final_text?: unknown }): RiskCardRow {
+export function decideRiskCard(db: KernelDb, matterId: string, userId: string, input: { card_id?: unknown; decision?: unknown; final_text?: unknown; level?: unknown }): RiskCardRow {
   const id = str(input.card_id, 80);
   const row = db.get<any>(`SELECT * FROM risk_cards WHERE card_id = ?`, [id]);
   if (!row || row.matter_id !== matterId) throw notFound("风险卡");
@@ -407,12 +507,18 @@ export function decideRiskCard(db: KernelDb, matterId: string, userId: string, i
   if (!status) throw new DomainError("validation", "decision 须为 accept / modify / reject / reset", 422);
   const finalText = status === "modified" ? str(input.final_text, RISK_CARD_LIMITS.field) : null;
   if (status === "modified" && !finalText) throw new DomainError("validation", "修改后接受需要填写修改后的条款文本", 422);
+  // 谈判梯度选用（C-05）：接受时可选“可退让”一级写进修订稿；底线只展示、不能选（评审 C1 §2.2 第 4 条）
+  const level = input.level === undefined || input.level === null || input.level === "" ? "suggestion" : String(input.level);
+  if (level !== "suggestion" && level !== "fallback") throw new DomainError("validation", "level 须为 suggestion（首选）或 fallback（可退让）；底线只供参考，不写进修订稿", 422);
+  if (level === "fallback" && status !== "accepted") throw new DomainError("validation", "只有“接受”可以选用可退让一级", 422);
+  if (level === "fallback" && !(row.fallback ?? "").trim()) throw new DomainError("validation", "这张卡没有可退让一级", 422);
   const now = new Date().toISOString();
-  db.run(`UPDATE risk_cards SET status = ?, final_text = ?, decided_by = ?, decided_at = ? WHERE card_id = ?`, [
+  db.run(`UPDATE risk_cards SET status = ?, final_text = ?, decided_by = ?, decided_at = ?, chosen_level = ? WHERE card_id = ?`, [
     status,
     finalText,
     status === "proposed" ? null : userId,
     status === "proposed" ? null : now,
+    status === "accepted" && level === "fallback" ? "fallback" : null,
     id,
   ]);
   return cardOut(db.get<any>(`SELECT * FROM risk_cards WHERE card_id = ?`, [id]));
@@ -429,9 +535,14 @@ export function setRiskCardNature(db: KernelDb, matterId: string, input: { card_
   return cardOut(db.get<any>(`SELECT * FROM risk_cards WHERE card_id = ?`, [id]));
 }
 
-/** 接受后会写进修订稿的卡：修改后接受，或接受且有建议文本。没有建议文本的“接受”是知悉、不改动（复核 B3-B25）。 */
-export function changesDocument(c: Pick<RiskCardRow, "status" | "suggestion">): boolean {
-  return c.status === "modified" || (c.status === "accepted" && !!(c.suggestion ?? "").trim());
+/** 接受时写进修订稿的文本（令牌形态）：选了可退让就用可退让，否则首选（C-05）。修改后接受的用律师改写的文本，不经此函数。 */
+export function acceptedText(c: Pick<RiskCardRow, "suggestion"> & Partial<Pick<RiskCardRow, "fallback" | "chosen_level">>): string {
+  return (c.chosen_level === "fallback" && (c.fallback ?? "").trim() ? c.fallback : c.suggestion) ?? "";
+}
+
+/** 接受后会写进修订稿的卡：修改后接受，或接受且有（所选一级的）建议文本。没有建议文本的“接受”是知悉、不改动（复核 B3-B25）。 */
+export function changesDocument(c: Pick<RiskCardRow, "status" | "suggestion"> & Partial<Pick<RiskCardRow, "fallback" | "chosen_level">>): boolean {
+  return c.status === "modified" || (c.status === "accepted" && !!acceptedText(c).trim());
 }
 
 /** 审查进度（工作台顶部）：总数、已处理、待处理中的重大风险数、会写进修订稿的项数、知悉不改的项数。 */
@@ -508,8 +619,8 @@ function currentAnchor(deps: ReviewDeps & { tokens: MatterTokenStore }, matterId
  */
 function planRedline(
   deps: ReviewDeps & { tokens: MatterTokenStore },
-  input: { matter_id: string; document_version_id: string; run_id?: string | null; skip_card_ids?: readonly string[] },
-): { cards: RiskCardRow[]; patches: StructuredPatch[]; unchanged: RiskCardRow[] } {
+  input: { matter_id: string; document_version_id: string; run_id?: string | null; skip_card_ids?: readonly string[]; audience?: RedlineAudience },
+): { cards: RiskCardRow[]; patches: StructuredPatch[]; unchanged: RiskCardRow[]; no_insert_point: RiskCardRow[] } {
   const skip = new Set(input.skip_card_ids ?? []);
   const all = listRiskCards(deps.db, input.matter_id, {
     document_version_id: input.document_version_id,
@@ -525,10 +636,26 @@ function planRedline(
   const cards: RiskCardRow[] = [];
   const patches: StructuredPatch[] = [];
   const unchanged: RiskCardRow[] = [];
+  const noInsertPoint: RiskCardRow[] = [];
+  const internal = (input.audience ?? "internal") === "internal";
   for (const c of all) {
     const basis = c.basis.length > 0 ? `（依据：${c.basis.map((b) => `《${b.law}》${b.article ? `第${b.article}条` : ""}`).join("、")}）` : "";
+    const rule = c.rule_ref ? `（规则：${c.rule_ref}）` : "";
     // 律师改写的文本是原文：先按本事项令牌化成与视图同一形态，再与引文比出最小修改范围（结构化补丁引擎会把代号还原回原文）
-    const full = c.status === "modified" ? deps.tokens.tokenize(input.matter_id, c.final_text ?? "").text : (c.suggestion ?? "");
+    const full = c.status === "modified" ? deps.tokens.tokenize(input.matter_id, c.final_text ?? "").text : acceptedText(c);
+    // 对外版（C1 §2.2 第 6 条）：只有修订、不带批注（理由、规则号、依据都是内部意见）
+    const comment = internal ? `${KIND_TAG[c.kind]}${c.severity === "high" ? "【重大】" : c.severity === "mid" ? "【一般】" : "【提示】"}${c.issue}${rule}${basis}${c.status === "modified" ? "（律师已修改）" : c.chosen_level === "fallback" ? "（选用可退让方案）" : ""}` : undefined;
+    if (c.kind === "missing") {
+      // 缺失条款：在 insert_after 段落之后插入新段落；没给插入位置或找不到的，只进意见表（预览里写明）
+      if (!c.anchor_text || c.anchor_status !== "located") {
+        noInsertPoint.push(c);
+        continue;
+      }
+      const at = currentAnchor(deps, input.matter_id, c.anchor_text, view);
+      cards.push(c);
+      patches.push({ anchor: at, expected_text_hash: sha256Hex(at), proposed_text: full, insert_after: true, ...(c.clause_ref ? { paragraph_hint: c.clause_ref } : {}), ...(comment ? { comment } : {}) });
+      continue;
+    }
     const anchor = currentAnchor(deps, input.matter_id, c.anchor_text, view);
     if (full === anchor) {
       unchanged.push(c);
@@ -541,16 +668,21 @@ function planRedline(
       expected_text_hash: sha256Hex(m.anchor),
       proposed_text: m.proposed,
       ...(c.clause_ref ? { paragraph_hint: c.clause_ref } : {}),
-      comment: `${c.severity === "high" ? "【重大】" : c.severity === "mid" ? "【一般】" : "【提示】"}${c.issue}${basis}${c.status === "modified" ? "（律师已修改）" : ""}`,
+      ...(comment ? { comment } : {}),
     });
   }
-  return { cards, patches, unchanged };
+  return { cards, patches, unchanged, no_insert_point: noInsertPoint };
 }
+
+/** 修订稿的两版（评审 C1 §2.2 第 6 条）：对外版只有修订；内部版另带批注（理由、规则、依据）供合伙人复核。 */
+export type RedlineAudience = "external" | "internal";
+
+const KIND_TAG: Readonly<Record<RiskCardKind, string>> = { risk: "", missing: "【缺失】", deviation: "【偏离规则】", consistency: "【前后不一致】" };
 
 /** 预览里每张会改动合同的卡的结果：落点（原文坐标）或不能写进修订稿的原因。 */
 export type RedlinePreviewCard =
-  | { card_id: string; ok: true; para: number; start: number; end: number; old: string; new: string }
-  | { card_id: string; ok: false; reason: "unchanged" | PatchConflict["reason"] };
+  | { card_id: string; ok: true; para: number; start: number; end: number; old: string; new: string; insert?: true }
+  | { card_id: string; ok: false; reason: "unchanged" | "no_insert_point" | PatchConflict["reason"] };
 
 /**
  * 工作台“接受后”预览（余项续复核 RC-B-01）：与生成修订稿同一套计划、定位、最小修改范围与重叠检查，但不写文件、不登记成果。
@@ -561,7 +693,10 @@ export function previewRedlineFromCards(
   input: { matter_id: string; document_version_id: string; run_id?: string | null },
 ): { status: "ok" | "conflicts" | "not_docx" | "document_version_superseded" | "no_patches"; paragraphs: string[]; cards: RedlinePreviewCard[] } {
   const plan = planRedline(deps, input);
-  const unchanged: RedlinePreviewCard[] = plan.unchanged.map((c) => ({ card_id: c.card_id, ok: false, reason: "unchanged" }));
+  const unchanged: RedlinePreviewCard[] = [
+    ...plan.unchanged.map((c): RedlinePreviewCard => ({ card_id: c.card_id, ok: false, reason: "unchanged" })),
+    ...plan.no_insert_point.map((c): RedlinePreviewCard => ({ card_id: c.card_id, ok: false, reason: "no_insert_point" })),
+  ];
   if (plan.cards.length === 0) return { status: "no_patches", paragraphs: [], cards: unchanged };
   const r = applyStructuredPatches(
     { db: deps.db, blobs: deps.blobs, tokens: deps.tokens },
@@ -576,17 +711,18 @@ export function previewRedlineFromCards(
     const bad = conflict.get(i);
     const sp = spans.get(i);
     if (bad || !sp) return { card_id: c.card_id, ok: false, reason: bad ?? "anchor_not_found" };
-    return { card_id: c.card_id, ok: true, para: sp.para, start: sp.start, end: sp.end, old: sp.old, new: sp.new };
+    return { card_id: c.card_id, ok: true, para: sp.para, start: sp.start, end: sp.end, old: sp.old, new: sp.new, ...(sp.insert ? { insert: true as const } : {}) };
   });
   return { status: r.reason === "conflicts" ? "conflicts" : "ok", paragraphs: r.paragraphs ?? [], cards: [...cards, ...unchanged] };
 }
 
 export function buildRedlineFromCards(
   deps: ReviewDeps & { tokens: MatterTokenStore },
-  input: { matter_id: string; document_version_id: string; run_id?: string | null; skip_card_ids?: readonly string[]; created_by: string },
-): { result: PatchResult; cards: { card_id: string; index: number }[]; skipped: string[] } {
+  input: { matter_id: string; document_version_id: string; run_id?: string | null; skip_card_ids?: readonly string[]; created_by: string; audience?: RedlineAudience },
+): { result: PatchResult; cards: { card_id: string; index: number }[]; skipped: string[]; no_insert_point: string[] } {
   const skip = new Set(input.skip_card_ids ?? []);
-  const { cards, patches } = planRedline(deps, input);
+  const audience: RedlineAudience = input.audience === "external" ? "external" : "internal";
+  const { cards, patches, no_insert_point } = planRedline(deps, { ...input, audience });
   if (cards.length === 0) throw new DomainError("validation", "没有需要写进修订稿的修改：请先在工作台接受有建议文本的卡，或修改后接受（改后与原文相同的不算）", 422);
   // 修订稿归哪次任务（复核 RB16B-10）：没指定时，写进去的卡都来自同一次任务就挂到那次任务（交付件按任务分组时与意见书、清单在一组）
   const runs = new Set(cards.map((c) => c.run_id));
@@ -595,7 +731,15 @@ export function buildRedlineFromCards(
   return deps.db.tx(() => {
     const result = applyStructuredPatches(
       { db: deps.db, blobs: deps.blobs, tokens: deps.tokens },
-      { matter_id: input.matter_id, document_version_id: input.document_version_id, patches, created_by: input.created_by, run_id: attributedRun, author: LAWYER_APPROVED_AUTHOR },
+      {
+        matter_id: input.matter_id,
+        document_version_id: input.document_version_id,
+        patches,
+        created_by: input.created_by,
+        run_id: attributedRun,
+        author: LAWYER_APPROVED_AUTHOR,
+        filename_suffix: audience === "external" ? "（修订稿·对外版）" : "（修订稿·内部版）",
+      },
     );
     if (result.status === "applied") {
       // 修订稿绑定生成时律师的逐卡决定（复核 B3-B05）：“律师审定”的作者标注有可核对的依据；之后改了决定，这份修订稿的记录不变
@@ -603,6 +747,8 @@ export function buildRedlineFromCards(
         card_id: c.card_id,
         run_id: c.run_id,
         status: c.status,
+        kind: c.kind,
+        chosen_level: c.status === "accepted" ? c.chosen_level : null,
         final_text_sha256: c.final_text ? sha256Hex(c.final_text) : null,
         decided_by: c.decided_by,
         decided_at: c.decided_at,
@@ -615,12 +761,90 @@ export function buildRedlineFromCards(
         manifest = {};
       }
       deps.db.run(`UPDATE artifact_versions SET manifest = ? WHERE artifact_version_id = ?`, [
-        JSON.stringify({ ...manifest, lawyer_decisions: decisions, lawyer_decisions_sha256: sha256Hex(JSON.stringify(decisions)), skipped_card_ids: [...skip] }),
+        JSON.stringify({ ...manifest, audience, lawyer_decisions: decisions, lawyer_decisions_sha256: sha256Hex(JSON.stringify(decisions)), skipped_card_ids: [...skip], no_insert_point_card_ids: no_insert_point.map((c) => c.card_id) }),
         result.artifact_version_id,
       ]);
     }
-    return { result, cards: cards.map((c, index) => ({ card_id: c.card_id, index })), skipped: [...skip] };
+    return { result, cards: cards.map((c, index) => ({ card_id: c.card_id, index })), skipped: [...skip], no_insert_point: no_insert_point.map((c) => c.card_id) };
   });
+}
+
+// ─── 审查意见表（评审 C1 §2.2 第 8 条：很多律师交给客户的是这张表，不是修订稿） ───
+
+const KIND_LABEL: Readonly<Record<RiskCardKind, string>> = { risk: "风险", missing: "缺失", deviation: "偏离规则", consistency: "前后不一致" };
+const RULE_SOURCE_LABEL: Readonly<Record<RuleSource, string>> = { law: "法律强制", firm_rule: "本所或客户规则", general: "通用建议（须律师判断）" };
+const SEVERITY_LABEL: Readonly<Record<string, string>> = { high: "重大", mid: "一般", low: "提示" };
+const NATURE_LABEL: Readonly<Record<string, string>> = { must: "必须修改", should: "建议修改", negotiable: "可谈判" };
+const DECISION_LABEL: Readonly<Record<string, string>> = { proposed: "待处理", accepted: "接受", modified: "修改后接受", rejected: "不采纳" };
+
+/**
+ * 导出审查意见表（XLSX，登记为本事项的草稿成果）：一行一张卡。单元格是令牌形态（律师改写的文本先按本事项令牌化），
+ * 下载时与其他成果一样按事项令牌表还原（export-restore）。律师决定一列如实写“待处理”，不替律师下结论。
+ */
+export function exportReviewTable(
+  deps: ReviewDeps & { tokens: MatterTokenStore },
+  input: { matter_id: string; document_version_id?: string | null; run_id?: string | null; created_by: string },
+): { artifact_version_id: string; filename: string; rows: number } {
+  const cards = listRiskCards(deps.db, input.matter_id, {
+    ...(input.document_version_id !== undefined ? { document_version_id: input.document_version_id } : {}),
+    ...(input.run_id ? { run_id: input.run_id } : {}),
+  });
+  if (cards.length === 0) throw new DomainError("validation", "没有可导出的审查意见", 422);
+  const tok = (t: string | null) => (t ? deps.tokens.tokenize(input.matter_id, t).text : "");
+  const header = ["序号", "条款", "类型", "等级", "性质", "问题", "判断依据来源", "规则", "法律依据", "合同原文 / 插入位置", "首选", "可退让", "建议底线（待客户定）", "需客户决定", "缺失核查", "律师决定", "写进修订稿的文本"];
+  const rows = cards.map((c, i) => [
+    i + 1,
+    c.clause_ref ?? "",
+    KIND_LABEL[c.kind],
+    SEVERITY_LABEL[c.severity] ?? c.severity,
+    `${NATURE_LABEL[c.nature] ?? c.nature}${c.nature_inferred ? "（推定）" : ""}`,
+    c.issue,
+    c.rule_source ? RULE_SOURCE_LABEL[c.rule_source] : "",
+    c.rule_ref ?? "",
+    c.basis.map((b) => `《${b.law}》${b.article ? `第${b.article}条` : ""}${b.check === "intercepted" ? "（已拦截）" : b.check === "unchecked" ? "（未核实）" : ""}`).join("；"),
+    c.anchor_text,
+    c.suggestion ?? "",
+    c.fallback ?? "",
+    c.bottom_line ?? "",
+    c.needs_client_decision ? "是" : "",
+    c.kind === "missing"
+      ? `查过：${c.searched_terms.join("、")}${c.searched_docs.length ? `（${c.searched_docs.join("、")}）` : ""}${c.searched_found.length ? `；材料里找到：${c.searched_found.map((f) => `${f.term}（${f.filename}）`).join("、")}——可能误报` : ""}`
+      : "",
+    `${DECISION_LABEL[c.status] ?? c.status}${c.status === "accepted" && c.chosen_level === "fallback" ? "（选用可退让）" : ""}`,
+    c.status === "modified" ? tok(c.final_text) : changesDocument(c) ? acceptedText(c) : "",
+  ]);
+  const buf = createXlsx([{ name: "审查意见", rows: [header, ...rows] }]);
+  const doc = input.document_version_id ? deps.db.get<{ filename: string }>(`SELECT filename FROM document_versions WHERE document_version_id = ?`, [input.document_version_id]) : undefined;
+  const base = (doc?.filename ?? "合同").replace(/\.[^.]+$/, "").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").slice(0, 60) || "合同";
+  const filename = `${base}（审查意见表）.xlsx`;
+  const matter = deps.db.get<{ tenant_id: string }>(`SELECT tenant_id FROM matters WHERE matter_id = ?`, [input.matter_id]);
+  if (!matter) throw notFound("事项");
+  const runs = new Set(cards.map((c) => c.run_id));
+  const runId = input.run_id ?? (runs.size === 1 ? ([...runs][0] ?? null) : null);
+  const kind = "review_table";
+  const stored = deps.blobs.put(buf, input.matter_id);
+  const id = newId("artifactVersion");
+  deps.db.tx(() => {
+    const v = deps.db.get<{ next: number }>(`SELECT COALESCE(MAX(version), 0) + 1 AS next FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = 'internal'`, [input.matter_id, kind])!;
+    deps.db.run(
+      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by)
+       VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,'[]',?,?)`,
+      [
+        id,
+        matter.tenant_id,
+        input.matter_id,
+        runId,
+        kind,
+        v.next,
+        filename,
+        stored.sha256,
+        stored.storage_uri,
+        JSON.stringify({ source_document_version_id: input.document_version_id ?? null, cards: cards.length, decisions_sha256: sha256Hex(JSON.stringify(cards.map((c) => [c.card_id, c.status, c.chosen_level]))) }),
+        input.created_by,
+      ],
+    );
+  });
+  return { artifact_version_id: id, filename, rows: cards.length };
 }
 
 // ─── 事实行 ───

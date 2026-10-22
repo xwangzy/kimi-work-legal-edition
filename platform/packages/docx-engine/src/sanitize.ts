@@ -20,6 +20,9 @@ export function sanitizeDocx(docx: Buffer): SanitizeResult {
 
   let deletionsAccepted = 0;
   let insertionsAccepted = 0;
+  // 段落标记上的修订（自闭合 <w:ins …/> / <w:del …/>，在 w:pPr 的 w:rPr 里）：接受即去掉标记——必须先于成对标记处理，
+  // 否则下面的成对正则会把自闭合标记当成开头、一直吞到后面别的修订的结束标记（v9.4 第 19 批：段后插入的新段落带这种标记）
+  xml = xml.replace(/<w:(?:ins|del)\b[^>]*\/>/g, "");
   // 接受删除：整段 w:del 移除
   xml = xml.replace(/<w:del\b[^>]*>[\s\S]*?<\/w:del>/g, () => {
     deletionsAccepted++;

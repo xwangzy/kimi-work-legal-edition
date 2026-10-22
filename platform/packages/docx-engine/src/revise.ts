@@ -8,7 +8,7 @@
 import { dropHouseMark } from "./house-style.ts";
 import { DomainError, sha256Hex } from "@zr-legal/domain";
 import { readZipEntries, writeZip } from "./zip.ts";
-import { escapeXml, findInParagraph, mapParagraphs } from "./textmap.ts";
+import { escapeXml, findInParagraph, mapParagraphs, type ParagraphMap } from "./textmap.ts";
 import type { AppliedRevision, RevisionOp, RevisionPlan } from "./revision-ops.ts";
 
 const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -87,6 +87,7 @@ function applyOne(
       opId: op.opId,
     });
   }
+  if (op.insertAfter) return insertParagraphsAfter(xml, target, op, comments, nextId, applied);
   const span = findInParagraph(target, op.anchor.originalText, op.anchor.occurrence ?? 0)!;
   const coverSegs = target.segments.filter((s) => !s.deleted && s.end > span.start && s.start < span.end);
   if (coverSegs.length === 0) {
@@ -134,6 +135,47 @@ function applyOne(
   const newParaXml = paraXml.slice(0, relStart) + parts.join("") + paraXml.slice(relEnd);
   applied.push({ opId: op.opId, status: "applied", paragraphIndex: target.index });
   return xml.slice(0, target.xmlStart) + newParaXml + xml.slice(target.xmlEnd);
+}
+
+/** 段后插入：新段落沿用目标段落的段落格式（去掉分节 w:sectPr、段落标记的 w:rPr 与已有修订标记），段落标记标为插入。 */
+function insertParagraphsAfter(
+  xml: string,
+  target: ParagraphMap,
+  op: RevisionOp,
+  comments: { id: number; author: string; date: string; text: string }[],
+  nextId: () => number,
+  applied: AppliedRevision[],
+): string {
+  const lines = op.newText.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length === 0) throw new DomainError("anchor_mismatch", `修订 ${op.opId} 插入的条款为空`, 422, { opId: op.opId });
+  const paraXml = xml.slice(target.xmlStart, target.xmlEnd);
+  const basePpr = (/<w:pPr>([\s\S]*?)<\/w:pPr>/.exec(paraXml)?.[1] ?? "")
+    .replace(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g, "")
+    .replace(/<w:rPr>[\s\S]*?<\/w:rPr>/g, "")
+    .replace(/<w:pPrChange\b[\s\S]*?<\/w:pPrChange>/g, "");
+  const rpr = target.segments.find((s) => !s.deleted)?.rPr ?? "";
+  const date = new Date().toISOString();
+  const author = escapeXml(op.author);
+  let commentId = -1;
+  if (op.comment) {
+    commentId = nextId();
+    comments.push({ id: commentId, author: op.author, date, text: op.comment });
+  }
+  const paras = lines.map((line, i) => {
+    const markId = nextId();
+    const insId = nextId();
+    const open = i === 0 && commentId >= 0 ? `<w:commentRangeStart w:id="${commentId}"/>` : "";
+    const close =
+      i === lines.length - 1 && commentId >= 0
+        ? `<w:commentRangeEnd w:id="${commentId}"/><w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="${commentId}"/></w:r>`
+        : "";
+    return (
+      `<w:p><w:pPr>${basePpr}<w:rPr><w:ins w:id="${markId}" w:author="${author}" w:date="${date}"/></w:rPr></w:pPr>${open}` +
+      `<w:ins w:id="${insId}" w:author="${author}" w:date="${date}"><w:r>${rpr}<w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r></w:ins>${close}</w:p>`
+    );
+  });
+  applied.push({ opId: op.opId, status: "applied", paragraphIndex: target.index });
+  return xml.slice(0, target.xmlEnd) + paras.join("") + xml.slice(target.xmlEnd);
 }
 
 function nextIdSeed(xml: string): number {

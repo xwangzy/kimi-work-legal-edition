@@ -13,7 +13,7 @@
 import { DomainError, newId, notFound } from "@zr-legal/domain";
 import { createXlsx } from "@zr-legal/docx-engine";
 import type { InvokeCtx } from "../registry.ts";
-import { changesDocument, listFacts, listRiskCards, submitFacts, submitRiskCards, riskCardProgress } from "../../services/review-cards.ts";
+import { acceptedText, changesDocument, listFacts, listRiskCards, submitFacts, submitRiskCards, riskCardProgress } from "../../services/review-cards.ts";
 
 function scopeOf(ctx: InvokeCtx): { tenantId: string; matterId: string; runId: string | null } {
   const mid = ctx.claims.mid;
@@ -114,6 +114,12 @@ export function riskcardsList(ctx: InvokeCtx, p: { document_version_id?: string;
       fallback: c.fallback,
       bottom_line: c.bottom_line,
       needs_client_decision: c.needs_client_decision,
+      kind: c.kind,
+      rule_source: c.rule_source,
+      rule_ref: c.rule_ref,
+      ...(c.kind === "missing" ? { searched_terms: c.searched_terms, searched_found: c.searched_found.map((f) => f.term) } : {}),
+      chosen_level: c.status === "accepted" ? c.chosen_level : null,
+      adopted_text: c.status === "modified" ? null : changesDocument(c) ? acceptedText(c) : null,
       // 没有建议文本的“接受”是知悉、不改动（复核 C-B07）：单独标出，不能当成“我方提出过的修改”
       lawyer_status: c.status === "accepted" && !(c.suggestion ?? "").trim() ? "acknowledged" : c.status,
       changes_document: changesDocument(c),

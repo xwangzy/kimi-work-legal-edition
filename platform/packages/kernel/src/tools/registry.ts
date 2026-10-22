@@ -371,10 +371,13 @@ export const TOOLS: readonly ToolDef[] = [
     title: "提交风险卡",
     description:
       "把合同审查发现的问题作为结构化风险卡提交到律师的审查工作台（不要只写在正文里）。anchor_text 必须逐字摘自合同原文（与材料快照一致，含代号），便于定位与生成原生修订；basis 列法律依据（法名 + 条号，内核离线核验）。" +
-      "nature 标明建议的性质：must 必须修改（法律硬伤、律所红线）/ should 建议修改 / negotiable 可谈判（商业条件）。谈判梯度三级：suggestion 首选（替换 anchor_text 的建议条款全文，不改则省略）→ fallback 可退让 → bottom_line 建议底线（供律师与客户商定的参考，最终由客户决定；不写“可签 / 不可签”结论）；商业条件尽量给全三级。",
+      "nature 标明建议的性质：must 必须修改（法律硬伤、律所红线）/ should 建议修改 / negotiable 可谈判（商业条件）。谈判梯度三级：suggestion 首选（替换 anchor_text 的建议条款全文，不改则省略）→ fallback 可退让 → bottom_line 建议底线（供律师与客户商定的参考，最终由客户决定；不写“可签 / 不可签”结论）；商业条件尽量给全三级。" +
+      "kind 分四类：risk 条款写了但不利（缺省）/ missing 该有的条款没有 / deviation 偏离本所或客户的审查规则 / consistency 定义、金额、日期、交叉引用前后不一致。" +
+      "missing 卡：不写 anchor_text，改写 insert_after（逐字摘自建议插入位置之前那一段的原文，可省略）、suggestion（要补的条款全文），并在 searched_terms 列出查过的说法、searched_docs 列出查过的文件——内核会在材料里逐个复查，找得到的会标“可能误报”。" +
+      "deviation 卡必须写 rule_ref（规则编号与要点）。rule_source 标明判断依据：law 法律强制 / firm_rule 本所或客户规则 / general 通用建议（没有规则时的意见，须律师判断）——不要把商业偏好写成法律强制。",
     sideEffect: "write_draft",
     resource: "matter_work",
-    version: "2",
+    version: "3",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -386,10 +389,16 @@ export const TOOLS: readonly ToolDef[] = [
           items: {
             type: "object",
             additionalProperties: false,
-            required: ["anchor_text", "severity", "issue"],
+            required: ["severity", "issue"],
             properties: {
+              kind: { type: "string", enum: ["risk", "missing", "deviation", "consistency"] },
               clause_ref: { type: "string" },
               anchor_text: { type: "string" },
+              insert_after: { type: "string" },
+              rule_source: { type: "string", enum: ["law", "firm_rule", "general"] },
+              rule_ref: { type: "string" },
+              searched_terms: { type: "array", maxItems: 30, items: { type: "string" } },
+              searched_docs: { type: "array", maxItems: 30, items: { type: "string" } },
               severity: { type: "string", enum: ["high", "mid", "low"] },
               category: { type: "string", enum: ["legal", "commercial", "both"] },
               issue: { type: "string" },
@@ -413,10 +422,10 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "riskcards.list",
     title: "读取风险卡",
-    description: "读取本事项的风险卡及律师的处理结果（lawyer_status：proposed 待处理 / accepted 接受 / modified 修改后接受（lawyer_text 为律师改写的条款）/ rejected 不采纳）。写修订稿时只采用 accepted 与 modified。",
+    description: "读取本事项的风险卡及律师的处理结果（lawyer_status：proposed 待处理 / accepted 接受 / modified 修改后接受（lawyer_text 为律师改写的条款）/ rejected 不采纳）。写修订稿时只采用 accepted 与 modified；accepted 的卡按 chosen_level 用首选或可退让（adopted_text 即律师选用的文本）。",
     sideEffect: "read",
     resource: "matter_work",
-    version: "1",
+    version: "2",
     inputSchema: {
       type: "object",
       additionalProperties: false,

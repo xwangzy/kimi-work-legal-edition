@@ -170,3 +170,56 @@ test("可见文字口径（复核 C-B03）：w:moveFrom 视同删除；段落标
   // 被移动的条款在视图中只出现一次（移到的新位置）
   assert.equal(paras.join("\n").split("被移走的条款。").length - 1, 1);
 });
+
+// ─── v9.4 第 19 批 C-02：缺失条款的段后插入 ───
+
+test("engine: 段后插入——新段落在锚点段落之后，段落标记与文字都是插入修订，锚点段落不动", () => {
+  const base = contractDocx();
+  const r = applyRevisionsToDocx(base, {
+    baselineHash: sha256Hex(base),
+    ops: [{ ...op({ originalText: "7.2 双方其他权利义务适用", newText: "7.3 本条约定的保密义务在本协议终止后继续有效。\n7.4 违反保密义务的，按第八条承担责任。", comment: "【缺失】未约定保密期限" }), insertAfter: true }],
+  });
+  assert.equal(r.applied.length, 1);
+  const texts = extractParagraphs(r.docx).map((p) => p.text);
+  const at = texts.findIndex((t) => t.startsWith("7.2 "));
+  assert.equal(texts[at], "7.2 双方其他权利义务适用《民法典》第五百零九条。", "锚点段落原样保留");
+  assert.equal(texts[at + 1], "7.3 本条约定的保密义务在本协议终止后继续有效。");
+  assert.equal(texts[at + 2], "7.4 违反保密义务的，按第八条承担责任。");
+  assert.ok(texts[at + 3]!.includes("第八条 违约责任"), "插在下一条之前");
+  const xml = readZipText(r.docx, "word/document.xml")!;
+  assert.equal(xml.match(/<w:rPr><w:ins w:id="\d+"[^>]*\/><\/w:rPr><\/w:pPr>/g)?.length, 2, "两个新段落的段落标记都标为插入");
+  assert.doesNotMatch(xml, /<w:delText/, "插入不删除任何原文");
+  assert.match(readZipText(r.docx, "word/comments.xml")!, /【缺失】未约定保密期限/);
+  // 净化（接受全部修订）：段落标记与文字都保留，XML 仍成对
+  const clean = sanitizeDocx(r.docx);
+  const cleanXml = readZipText(clean.docx, "word/document.xml")!;
+  assert.doesNotMatch(cleanXml, /<w:ins\b|<\/w:ins>/);
+  assert.equal((cleanXml.match(/<w:p\b/g) ?? []).length, (cleanXml.match(/<\/w:p>/g) ?? []).length);
+  assert.ok(extractParagraphs(clean.docx).some((p) => p.text === "7.4 违反保密义务的，按第八条承担责任。"));
+});
+
+test("engine: 段后插入与同段替换可同时写；空条款拒绝", () => {
+  const base = contractDocx();
+  const r = applyRevisionsToDocx(base, {
+    baselineHash: sha256Hex(base),
+    ops: [
+      op({ opId: "a", originalText: "全部损失", newText: "直接损失" }),
+      { ...op({ opId: "b", originalText: "8.1 任何一方违约", newText: "8.2 违约金以合同总价为限。" }), insertAfter: true },
+    ],
+  });
+  const texts = extractParagraphs(r.docx).map((p) => p.text);
+  assert.ok(texts.includes("8.1 任何一方违约，应赔偿对方由此遭受的直接损失。"));
+  assert.equal(texts.at(-1), "8.2 违约金以合同总价为限。");
+  assert.throws(() => applyRevisionsToDocx(base, { baselineHash: sha256Hex(base), ops: [{ ...op({ originalText: "8.1 任何一方违约", newText: " \n " }), insertAfter: true }] }), /插入的条款为空/);
+});
+
+test("engine: 净化器先处理自闭合的段落修订标记（否则会吞掉后面的修订、写坏 XML）", () => {
+  const base = contractDocx();
+  const ins = applyRevisionsToDocx(base, { baselineHash: sha256Hex(base), ops: [{ ...op({ opId: "x", originalText: "7.1 乙方", newText: "7.1A 新增一款。" }), insertAfter: true }] });
+  const both = applyRevisionsToDocx(ins.docx, { baselineHash: sha256Hex(ins.docx), ops: [op({ opId: "y", originalText: "全部损失", newText: "直接损失" })] });
+  const clean = sanitizeDocx(both.docx);
+  const texts = extractParagraphs(clean.docx).map((p) => p.text);
+  assert.ok(texts.includes("7.1A 新增一款。"));
+  assert.ok(texts.includes("8.1 任何一方违约，应赔偿对方由此遭受的直接损失。"), "后面的成对修订照常接受");
+  assert.ok(!texts.some((t) => t.includes("全部损失")));
+});

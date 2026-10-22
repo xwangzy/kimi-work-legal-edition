@@ -78,7 +78,7 @@ import { detectClassifiedMarking, type ClassifiedFinding } from "../services/cla
 import { restoreArtifactBytes } from "../services/export-restore.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
-import { buildRedlineFromCards, cardPages, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
+import { buildRedlineFromCards, cardPages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
 import { LIT_SAMPLE_ISSUES, LIT_SAMPLE_TITLE, SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, litigationSampleMaterials, sampleContract } from "../services/sample-matter.ts";
 import { probeEnvironment, type EnvProbeResult } from "../services/env-probe.ts";
 import { firstLineTitle, isTitledFilename } from "../services/artifact-title.ts";
@@ -2612,9 +2612,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "riskcards.decide": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterWriter(db, matter.matter_id, id);
-      const card = decideRiskCard(db, matter.matter_id, id.userId, { card_id: p?.card_id, decision: p?.decision, final_text: p?.final_text });
+      const card = decideRiskCard(db, matter.matter_id, id.userId, { card_id: p?.card_id, decision: p?.decision, final_text: p?.final_text, level: p?.level });
       // 审计只记卡号与决定（不记条款文字）
-      audit(db, id, "riskcard.decided", "risk_card", card.card_id, sha256Hex(JSON.stringify({ decision: card.status })), keyctx);
+      audit(db, id, "riskcard.decided", "risk_card", card.card_id, sha256Hex(JSON.stringify({ decision: card.status, level: card.status === "accepted" ? card.chosen_level : null })), keyctx);
       return { card };
     },
     // 律师改风险卡的性质（复核 RB16B-03）：审计只记卡号与新性质
@@ -2643,14 +2643,32 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           run_id: typeof p?.run_id === "string" ? p.run_id : null,
           skip_card_ids: Array.isArray(p?.skip_card_ids) ? p.skip_card_ids.map(String) : [],
           created_by: id.userId,
+          audience: p?.audience === "external" ? "external" : "internal",
         },
       );
       const byIndex = new Map(r.cards.map((c) => [c.index, c.card_id]));
       const conflicts = r.result.status === "preview" ? r.result.conflicts.map((c) => ({ ...c, card_id: byIndex.get(c.index) ?? null })) : [];
       audit(db, id, r.result.status === "applied" ? "riskcards.redline_applied" : "riskcards.redline_preview", "document_version", String(p?.document_version_id ?? ""), sha256Hex(JSON.stringify({ cards: r.cards.length, skipped: r.skipped.length, status: r.result.status })), keyctx);
       return r.result.status === "applied"
-        ? { status: "applied", artifact_version_id: r.result.artifact_version_id, filename: r.result.filename, applied: r.result.applied, skipped: r.skipped }
-        : { status: "preview", reason: r.result.reason, conflicts, skipped: r.skipped };
+        ? { status: "applied", artifact_version_id: r.result.artifact_version_id, filename: r.result.filename, applied: r.result.applied, skipped: r.skipped, no_insert_point: r.no_insert_point }
+        : { status: "preview", reason: r.result.reason, conflicts, skipped: r.skipped, no_insert_point: r.no_insert_point };
+    },
+    // 导出审查意见表（C1 §2.2 第 8 条）：草稿成果，下载时还原代号；审计只记卡数
+    "riskcards.export_table": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      if (!tokens) throw new DomainError("provider_unavailable", "令牌化工作区未启用", 503);
+      const r = exportReviewTable(
+        { db, blobs, tokens, lawdb },
+        {
+          matter_id: matter.matter_id,
+          ...(typeof p?.document_version_id === "string" && p.document_version_id ? { document_version_id: p.document_version_id } : p?.document_version_id === null ? { document_version_id: null } : {}),
+          run_id: typeof p?.run_id === "string" ? p.run_id : null,
+          created_by: id.userId,
+        },
+      );
+      audit(db, id, "riskcards.table_exported", "artifact_version", r.artifact_version_id, sha256Hex(JSON.stringify({ rows: r.rows })), keyctx);
+      return r;
     },
     "facts.list": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);

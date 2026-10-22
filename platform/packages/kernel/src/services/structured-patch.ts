@@ -30,6 +30,8 @@ export interface StructuredPatch {
   paragraph_hint?: string;
   /** 批注（令牌形态）。 */
   comment?: string;
+  /** 段后插入（v9.4 第 19 批 C-02 缺失条款）：不改锚点，在锚点所在段落之后插入 proposed_text（按换行分段）。 */
+  insert_after?: boolean;
 }
 
 export interface PatchConflict {
@@ -81,9 +83,10 @@ export interface PatchSpan {
   para: number;
   start: number;
   end: number;
-  /** 被替换的原文与新文本（原文形态）。 */
+  /** 被替换的原文与新文本（原文形态）。段后插入时 old 为锚点、new 为插入的条款，起止为锚点位置（用于重叠检查）。 */
   old: string;
   new: string;
+  insert?: true;
 }
 
 const AUTHOR = "Kimi Work 法律助手（AI 建议，待律师确认）";
@@ -99,6 +102,8 @@ export function applyStructuredPatches(
     author?: string;
     /** 只试定位与重叠检查、合并试写一遍，不登记成果（工作台“接受后”预览，余项续复核 RC-B-01）。 */
     dryRun?: boolean;
+    /** 成果文件名后缀（缺省“（修订建议）”；工作台对外版 / 内部版各有后缀）。 */
+    filename_suffix?: string;
   },
 ): PatchResult {
   const { db, blobs, tokens } = deps;
@@ -160,6 +165,7 @@ export function applyStructuredPatches(
       },
       originalHash: sha256Hex(a.text),
       newText: n.text,
+      ...(p.insert_after === true ? { insertAfter: true } : {}),
       ...(c ? { comment: c.text } : {}),
       author: input.author ?? AUTHOR,
     });
@@ -189,13 +195,15 @@ export function applyStructuredPatches(
     const cands = paragraphs.map((t, i) => ({ i, at: nth(t, op.anchor.originalText, occ) })).filter((c) => c.at >= 0);
     const hint = op.anchor.paragraphHint;
     const target = cands.length === 1 ? cands[0] : hint ? (cands.find((c) => paragraphs[c.i]!.includes(hint)) ?? cands[0]) : cands[0];
-    if (target) spans.push({ index, para: target.i, start: target.at, end: target.at + op.anchor.originalText.length, old: op.anchor.originalText, new: op.newText });
+    if (target) spans.push({ index, para: target.i, start: target.at, end: target.at + op.anchor.originalText.length, old: op.anchor.originalText, new: op.newText, ...(op.insertAfter ? { insert: true as const } : {}) });
   }
   for (let i = 0; i < spans.length; i++) {
     for (let j = i + 1; j < spans.length; j++) {
       const a = spans[i]!;
       const b = spans[j]!;
+      // 段后插入的锚点也不能被别的修改改掉（否则合并时找不到插入位置）；同一段之后插两处，先后次序会颠倒——要求合并成一张卡
       if (a.para === b.para && a.start < b.end && b.start < a.end) conflicts.push({ index: b.index, reason: "overlap", detail: `与第 ${a.index + 1} 条补丁的锚点重叠` });
+      else if (a.insert && b.insert && a.para === b.para) conflicts.push({ index: b.index, reason: "overlap", detail: `与第 ${a.index + 1} 条补丁插在同一段之后，请合并为一条` });
     }
   }
   const bad = new Set(conflicts.map((c) => c.index));
@@ -229,7 +237,7 @@ export function applyStructuredPatches(
   const artifactId = newId("artifactVersion");
   const kind = "revision_draft";
   const v = db.get<{ next: number }>(`SELECT COALESCE(MAX(version), 0) + 1 AS next FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = 'internal'`, [doc.matter_id, kind])!;
-  const filename = doc.filename.replace(/\.docx$/i, "（修订建议）.docx");
+  const filename = doc.filename.replace(/\.docx$/i, `${input.filename_suffix ?? "（修订建议）"}.docx`);
   const manifest = {
     source_document_version_id: doc.document_version_id,
     source_sha256: doc.sha256,

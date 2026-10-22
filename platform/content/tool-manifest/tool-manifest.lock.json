@@ -188,7 +188,7 @@
     },
     {
       "name": "riskcards.submit",
-      "version": "2",
+      "version": "3",
       "sideEffect": "write_draft",
       "resource": "matter_work",
       "purposes": [
@@ -198,11 +198,11 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "4174cd2a4c4b8232281851877528aa34fdb7f5823614addafafa1be8948a954b"
+      "schemaHash": "492fbef60b63c4fcb66eabd39412ce6196d07bd061d17935fd2d5fc958f523d7"
     },
     {
       "name": "riskcards.list",
-      "version": "1",
+      "version": "2",
       "sideEffect": "read",
       "resource": "matter_work",
       "purposes": [
