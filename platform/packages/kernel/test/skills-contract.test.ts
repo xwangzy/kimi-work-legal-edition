@@ -99,8 +99,8 @@ type Msg = { role?: string; tool_call_id?: string; content?: unknown };
 const msgs = (body: Record<string, unknown>): Msg[] => (Array.isArray(body.messages) ? (body.messages as Msg[]) : []);
 const text = (c: unknown) => (typeof c === "string" ? c : JSON.stringify(c ?? ""));
 
-test("文书类方法都标了 requires_outline（起诉状、答辩状、代理词、研究备忘录）", () => {
-  for (const id of ["pleading-draft", "defense-draft", "agency-statement", "legal-research-memo"]) assert.ok(DRAFTING.has(id), id);
+test("文书类方法都标了 requires_outline（起诉状、答辩状、代理词、研究备忘录；第 21 批：上诉状、仲裁申请书、财产保全、强制执行申请书）", () => {
+  for (const id of ["pleading-draft", "defense-draft", "agency-statement", "legal-research-memo", "appeal-draft", "arbitration-application", "preservation-application", "enforcement-application"]) assert.ok(DRAFTING.has(id), id);
 });
 
 test("方法包里每个方法都有契约用例的参数准备（新增方法或工具时这里先失败）", () => {

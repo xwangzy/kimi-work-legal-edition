@@ -79,7 +79,11 @@ test("入口：整理案卷精读版接 casefile-organize（视角作方法参�
   assert.equal(deep.skill, "casefile-organize");
   assert.equal(buildGoal(deep, {}, ""), "请逐份精读本事项的案卷材料，编目、按时间整理事实（每条附原文）并列出缺口。", "视角没填整句省略");
   assert.match(buildGoal(deep, { perspective: "按付款线索" }, ""), /时间线按“按付款线索”排列/);
-  assert.ok(COMING_SOON.length >= 8 && COMING_SOON.every((x) => !SCENARIOS.some((c) => c.title === x.title)));
+  // v9.4 第 21 批：原来灰显的八项都有了方法与场景卡，清空；以后再有灰显项时，仍不得与已有卡同名
+  assert.equal(COMING_SOON.length, 0);
+  assert.ok(COMING_SOON.every((x) => !SCENARIOS.some((c) => c.title === x.title)));
+  for (const t of ["起草上诉状", "起草仲裁申请书", "庭审提纲", "财产保全申请", "强制执行申请", "股东会与董事会文件", "交割清单", "规章制度审查"]) assert.ok(SCENARIOS.some((c) => c.title === t && c.skill), t);
+  assert.ok(src("pages/Home.tsx").includes("COMING_SOON.some((x) => x.line === line) &&"), "为空时首页不显示“即将推出”一行");
   assert.ok(src("pages/Methods.tsx").includes('aria-disabled="true"'));
   assert.ok(src("pages/Home.tsx").includes("即将推出："));
   assert.ok(src("components/ReviewWorkbench.tsx").includes("/start/redline-notes/${matterId}"));

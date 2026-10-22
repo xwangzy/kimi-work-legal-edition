@@ -33,7 +33,7 @@ test("有效签名包物化为只读可信区：AGENTS.md 与清单中的全部�
   }
   const manifest = JSON.parse(readFileSync(join(dist, "skills.manifest.json"), "utf8"));
   assert.equal(r.skills.length, manifest.skills.length, "物化的模板数 = 构建清单的模板数");
-  assert.equal(r.skills.length, 22, "第 15 批之后新增诉讼线三份：答辩状、质证意见、代理词；Z3 #28 新增案情分析与诉讼策略；v9.4 评审 S1 新增劳动争议、尽职调查、起草合同、管辖与时效核查；v9.4 第 19 批 C-01 新增表格审阅");
+  assert.equal(r.skills.length, 30, "第 15 批之后新增诉讼线三份：答辩状、质证意见、代理词；Z3 #28 新增案情分析与诉讼策略；v9.4 评审 S1 新增劳动争议、尽职调查、起草合同、管辖与时效核查；v9.4 第 19 批 C-01 新增表格审阅；v9.4 第 21 批新增上诉状、仲裁申请书、庭审提纲、财产保全、强制执行、股东会与董事会文件、交割清单、规章制度审查");
   for (const s of r.skills) assert.ok(existsSync(join(r.dir, "skills", s.id, "SKILL.md")), s.id);
   // 第二次复用同一目录
   const r2 = materializeSkillsBundle(copyDist(), signerPub, ws);
