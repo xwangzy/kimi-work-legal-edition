@@ -627,7 +627,9 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .followup-wrap { display: flex; flex-direction: column; gap: 8px; }
 .followup-confirm { border: 1px solid var(--border-subtle); border-radius: var(--r-sm); padding: 10px 12px; font-size: var(--fs-sm); display: flex; flex-direction: column; gap: 6px; background: var(--bg-surface); }
 .followup-confirm .modal-actions { margin-top: 2px; }
-.wb-head-actions { display: flex; align-items: center; gap: 12px; }
+.wb-head-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; }
+.wb-head-actions > button, .wb-head-actions > label { white-space: nowrap; }
+.wb-head-actions .wb-why { flex-basis: 100%; text-align: right; max-width: none; }
 .fieldset-plain { border: 0; margin: 0; padding: 0; min-width: 0; }
 
 /* 执行态过程面板（K7-P）：工作清单、子任务、后台任务、进展通知、上下文整理 */
@@ -1017,3 +1019,4 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .tr-cell-on { outline: 2px solid var(--accent); outline-offset: -2px; }
 .tr-detail { display: flex; flex-direction: column; gap: var(--sp-2); }
 .tr-detail .rc-edit input { width: 100%; }
+.wb-doc-view.mat-view { position: static; background: none; border: 0; padding: 0; margin: 0 0 var(--sp-2); }

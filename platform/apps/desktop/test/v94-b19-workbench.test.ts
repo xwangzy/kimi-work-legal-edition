@@ -56,7 +56,7 @@ test("梯度行：已接受时标出写进修订稿的那一级；缺失卡首�
 test("工作台源码：对外版缺省、导出审查意见表、可退让“用这一级”、缺失卡写查过的说法与可能误报", () => {
   const src = readFileSync(fileURLToPath(new URL("../src/components/ReviewWorkbench.tsx", import.meta.url)), "utf8");
   assert.match(src, /useState<"external" \| "internal">\("external"\)/, "缺省对外版");
-  assert.match(src, /对外版（只有修订）/);
+  assert.match(src, /label: "对外版" \}/);
   assert.match(src, /api\.exportReviewTable\(/);
   assert.match(src, /decide\(c, "accept", undefined, "fallback"\)/);
   assert.match(src, /row\.key === "fallback"/, "只有可退让一级能选（底线不能）");

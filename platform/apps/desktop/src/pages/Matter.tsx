@@ -334,7 +334,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
         {tab === "materials" && (
           <section>
             {docs.length > 0 && (
-              <div className="wb-doc-view" role="group" aria-label="材料显示方式">
+              <div className="wb-doc-view mat-view" role="group" aria-label="材料显示方式">
                 <button aria-pressed={matView === "list"} className={`wb-view-btn${matView === "list" ? " active" : ""}`} onClick={() => setMatView("list")}>列表</button>
                 <button aria-pressed={matView === "table"} className={`wb-view-btn${matView === "table" ? " active" : ""}`} onClick={() => setMatView("table")}>表格审阅</button>
               </div>

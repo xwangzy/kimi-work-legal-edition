@@ -223,7 +223,8 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
     setMsg(null);
     try {
       const r = await api.exportReviewTable(matterId, documentVersionId, runFilter ? { run_id: runFilter } : {});
-      setMsg({ tone: "ok", text: `已导出《${r.filename}》：${r.rows} 项意见，在交付件里下载。`, artifact: r.artifact_version_id });
+      // 不带“查看修订稿”按钮（那是修订稿的入口）：意见表在交付件里下载
+      setMsg({ tone: "ok", text: `已导出《${r.filename}》：${r.rows} 项意见，在交付件里下载。` });
       onRedline?.(r.artifact_version_id);
     } catch (e) {
       setMsg({ tone: "err", text: (e as Error).message });
@@ -303,13 +304,13 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
             <>
               <Select
                 className="select-sm"
-                aria-label="修订稿版本"
+                aria-label="修订稿版本：对外版只有修订，内部版另带理由与规则批注"
                 value={audience}
                 disabled={busy}
                 onChange={(v) => setAudience(v === "internal" ? "internal" : "external")}
                 options={[
-                  { value: "external", label: "对外版（只有修订）" },
-                  { value: "internal", label: "内部版（带理由与规则批注）" },
+                  { value: "external", label: "对外版" },
+                  { value: "internal", label: "内部版（带批注）" },
                 ]}
               />
               <button className={allDecided ? "btn-primary" : "btn-ghost"} disabled={busy || accepted === 0} onClick={() => void redline()} title={accepted === 0 ? "先接受或修改后接受至少一项" : undefined}>
