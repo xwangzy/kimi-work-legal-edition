@@ -11,7 +11,7 @@ import { defaultChoice } from "../components/ModeSelector.tsx";
 import { NewMatterDialog } from "../components/NewMatter.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { ScenarioStart } from "../components/ScenarioStart.tsx";
-import { cardGets, cardGives, LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
+import { cardGets, cardGives, COMING_SOON, LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
 import { fmtTime, SCENARIO_LABELS } from "../lib/labels.ts";
 import { nextStepPill, type RunFacts } from "../lib/next-step.ts";
 import { backendDownText } from "../lib/errors.ts";
@@ -337,6 +337,12 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
               </button>
             ))}
           </div>
+          {/* 即将推出（v9.4 第 20 批，S1 §5.1 第 4 条）：灰显、不能点，不挂到相近的方法上 */}
+          {COMING_SOON.some((x) => x.line === line) && (
+            <div className="coming-row muted" aria-label="即将推出">
+              即将推出：{COMING_SOON.filter((x) => x.line === line).map((x) => x.title).join(" · ")}
+            </div>
+          )}
           {/* 三条业务线都常用的四张（v9.4 S1 §5.5）：研究、文稿体检、函件、对外版——放在一行，不在每条线各复制一张 */}
           <div className="general-row" aria-label="通用">
             <span className="general-label">通用</span>

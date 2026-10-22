@@ -72,3 +72,17 @@ test("对方改动模式：有基线时可切“只看对方改动”，每处�
   for (const s of ["只看对方改动", "我方原稿", "对方改稿", "静默改动", "接受对方", "恢复我方", "改用退让文本", "api.counterChanges"]) assert.ok(w.includes(s), s);
   assert.ok(/counter\?\.available && \(/.test(w), "没有基线时不出切换");
 });
+
+test("入口：整理案卷精读版接 casefile-organize（视角作方法参数）；即将推出只灰显不能发起；工作台处理完直达修订说明；金额测算可选 LPR 倍数与劳动补偿", async () => {
+  const { SCENARIOS, COMING_SOON, buildGoal } = await import("../src/lib/scenarios.ts");
+  const deep = SCENARIOS.find((c) => c.id === "casefile-deep")!;
+  assert.equal(deep.skill, "casefile-organize");
+  assert.equal(buildGoal(deep, {}, ""), "请逐份精读本事项的案卷材料，编目、按时间整理事实（每条附原文）并列出缺口。", "视角没填整句省略");
+  assert.match(buildGoal(deep, { perspective: "按付款线索" }, ""), /时间线按“按付款线索”排列/);
+  assert.ok(COMING_SOON.length >= 8 && COMING_SOON.every((x) => !SCENARIOS.some((c) => c.title === x.title)));
+  assert.ok(src("pages/Methods.tsx").includes('aria-disabled="true"'));
+  assert.ok(src("pages/Home.tsx").includes("即将推出："));
+  assert.ok(src("components/ReviewWorkbench.tsx").includes("/start/redline-notes/${matterId}"));
+  const amount = SCENARIOS.find((c) => c.id === "amount")!;
+  assert.ok(amount.fields.some((f) => (f.options ?? []).includes("LPR 倍数（如上浮 50%）")));
+});

@@ -6,6 +6,7 @@
  * 卡片文字是事项令牌形态，这里按事项令牌表还原显示（只在本机界面）；律师改写的条款按原文保存。
  * 修订稿由内核按已接受的卡在原件副本上写原生修订——有卡定位不到时整体不写，列出是哪几张，律师可跳过后再生成。
  */
+import { nav } from "../App.tsx";
 import { scrollBehavior } from "../lib/ui-prefs.ts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { kernelPreview, localPreview, type AcceptPreview } from "../lib/accept-preview.ts";
@@ -380,6 +381,12 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                 生成修订稿{accepted > 0 ? `（${runFilter ? "本次任务 " : ""}${accepted} 项）` : ""}
               </button>
             </>
+          )}
+          {/* 全部处理完直达修订说明（V9.4 主文 §3.2）：已接受的修改整理成给客户或对方的说明与谈判要点 */}
+          {!readOnly && allDecided && accepted > 0 && (
+            <button className="btn-ghost" onClick={() => nav(`/start/redline-notes/${matterId}`)} title="把已接受的修改整理成修订说明与谈判要点">
+              写修订说明
+            </button>
           )}
           {!readOnly && cards.length > 0 && (
             <>

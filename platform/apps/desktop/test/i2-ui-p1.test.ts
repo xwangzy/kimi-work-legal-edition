@@ -50,7 +50,7 @@ test("#1 业务线不一致只提醒、不阻断：诉讼事项上做审合同�
 test("#4 缺材料能否先开始：13 张卡里只有起草起诉状、律师函、访谈纪要可以；审合同没有合同只提示“请先添加合同”", () => {
   // 第 15 批 B-5 新增“争点与证据分析”（整理案卷的第二段）；v9.3 诉讼线文书新增答辩状、质证意见、代理词（都要材料或不需要材料，不走“先开始”）；Z3 #28 新增案情分析与诉讼策略（要材料）
   // v9.4：新增文稿体检、修订说明与谈判要点、回稿拆成“比对与重审”和“比对（不用 AI）”两张
-  assert.equal(SCENARIOS.length, 31);
+  assert.equal(SCENARIOS.length, 32, "v9.4 第 20 批：加整理案卷（精读版）");
   // v9.4：新案受理、管辖与时效、劳动仲裁三张、起草合同、尽调两张、收到起诉第一步
   const partial = SCENARIOS.filter((c) => canStartPartial(c)).map((c) => c.id).sort();
   assert.deepEqual(partial, ["contract-draft", "demand-lit", "intake", "intake-lit", "labor-apply", "pleading"]);

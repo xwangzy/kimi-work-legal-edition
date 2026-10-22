@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { nav } from "../App.tsx";
 import { api } from "../api.ts";
-import { cardGets, cardGives, LINE_LABELS, SCENARIOS, type BusinessLine } from "../lib/scenarios.ts";
+import { cardGets, cardGives, COMING_SOON, LINE_LABELS, SCENARIOS, type BusinessLine } from "../lib/scenarios.ts";
 
 type Skill = { id: string; title: string; description: string; version: string; tier: string; lines: string[] };
 
@@ -57,6 +57,13 @@ export function MethodsPage() {
                   <span className="sc-gives">需要：{cardGives(c)}</span>
                   <span className="method-go">开始 →</span>
                 </button>
+              ))}
+              {/* 即将推出（S1 §5.1 第 4 条）：灰显卡，不能发起 */}
+              {COMING_SOON.filter((x) => x.line === line).map((x) => (
+                <div key={x.title} className="card method-card method-soon" aria-disabled="true">
+                  <span className="title">{x.title}</span>
+                  <span className="sc-gives">还没有对应的方法，即将推出</span>
+                </div>
               ))}
             </div>
           </section>

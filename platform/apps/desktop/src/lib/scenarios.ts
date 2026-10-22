@@ -55,6 +55,20 @@ export interface ScenarioCard {
   args?: Record<string, string>;
 }
 
+/**
+ * 即将推出（v9.4 第 20 批；评审 S1 §5.1 第 4 条：没有方法的业务不挂到相近的方法上，宁可灰显）。只展示、不能发起。
+ */
+export const COMING_SOON: readonly { line: BusinessLine; title: string }[] = [
+  { line: "litigation", title: "上诉状" },
+  { line: "litigation", title: "仲裁申请书" },
+  { line: "litigation", title: "庭审提纲" },
+  { line: "litigation", title: "财产保全申请" },
+  { line: "litigation", title: "强制执行申请" },
+  { line: "transactional", title: "股东会与董事会文件" },
+  { line: "transactional", title: "交割清单" },
+  { line: "inhouse", title: "规章制度审查" },
+];
+
 /** 卡片上的交付件一行（v9.4）：去掉扩展名与括注，用“ · ”连接；完整名称在开始面板与 aria-label 里。 */
 export function cardGets(c: Pick<ScenarioCard, "gets">): string {
   return c.gets.map((g) => g.replace(/（[^）]*）/g, "").replace(/\.(docx|xlsx|pptx|md|pdf)\b/gi, "").trim()).filter(Boolean).join(" · ");
@@ -90,6 +104,22 @@ export const SCENARIOS: ScenarioCard[] = [
       "列出缺口与待补证据；接着可做“争点与证据分析”",
     ],
     intents: [["证据", "目录"], ["整理", "案卷"], ["时间线"], ["时间轴"]],
+  },
+  // 整理案卷的 AI 精读版（v9.4 第 20 批，V9.4 主文 §3.2“精读版入口”）：本机规则版之外，逐份读、逐条提交带引文的事实给你确认
+  {
+    id: "casefile-deep",
+    line: "litigation",
+    title: "整理案卷（精读版）",
+    gives: "起诉材料、证据、往来函件（可多份）",
+    gets: ["案卷总目录.xlsx", "事实时间线.xlsx（材料载明、推论、待确认分列）", "缺口清单.xlsx", "带引文的事实（待你确认）"],
+    scenario: "a1.agent_task",
+    skill: "casefile-organize",
+    verb: "开始精读",
+    goal: "请逐份精读本事项的案卷材料，编目、按时间整理事实（每条附原文）并列出缺口。时间线按“{perspective}”排列。",
+    fields: [{ key: "perspective", label: "时间线的视角（可空）", kind: "text", placeholder: "例如：按付款线索；按对方的履约行为" }],
+    minMaterials: 1,
+    steps: ["列出全部材料与读取情况", "逐份阅读、编目，标出提供方与形成日期", "事实一事一行、附逐字引文，交你在“事实”里确认", "生成目录、时间线与缺口清单"],
+    intents: [["精读", "案卷"], ["整理", "事实", "引文"]],
   },
   {
     id: "issues",
@@ -141,9 +171,9 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始测算",
     goal: "请测算以下金额：{items}；计算截止日：{as_of}；利率口径：{rate}。",
     fields: [
-      { key: "items", label: "计算项目", kind: "multi", options: ["本金利息", "逾期违约金", "资金占用费"], required: true },
+      { key: "items", label: "计算项目", kind: "multi", options: ["本金利息", "逾期违约金", "资金占用费", "劳动经济补偿（N / 2N）"], required: true },
       { key: "as_of", label: "计算截止日", kind: "date" },
-      { key: "rate", label: "利率口径", kind: "select", options: ["按合同约定", "LPR 加点", "待确认（先问我）"] },
+      { key: "rate", label: "利率口径", kind: "select", options: ["按合同约定", "LPR 加点", "LPR 倍数（如上浮 50%）", "待确认（先问我）"] },
     ],
     minMaterials: 0,
     steps: ["从合同中找出计息约定（找不到会先问你）", "按本金变动分段，每段由计算工具算出", "列出抵扣、互斥项与调整风险", "生成可复算的计算明细表"],

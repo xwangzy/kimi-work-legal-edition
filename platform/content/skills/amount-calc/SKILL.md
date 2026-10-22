@@ -6,12 +6,12 @@ when_to_use: 有本金、付款记录与计息约定（或律师给定口径）�
 arguments: [as_of]
 kwl:
   id: amount-calc
-  version: 1.1.0
+  version: 1.2.0
   lines: [诉讼仲裁, 企业法务]
   chain: casefile
   tier: beta
   tools_required: [calc.interest, materials.read_excerpt]
-  tools_optional: [xlsx.render_table, facts.list, materials.list, law.get_version, citations.verify]
+  tools_optional: [xlsx.render_table, facts.list, materials.list, law.get_version, citations.verify, calc.labor]
   outputs: [计算明细.xlsx]
   source_lineage: [demo:scene-civil-pleading@v1.0, demo:scene-labor-calculation@v1.0, demo:scene-counsel-workforce-cost@v1.0]
 ---
@@ -20,12 +20,12 @@ kwl:
 
 ## 1. 适用范围
 - 交付：《计算明细》.xlsx 一个文件，工作表为“分段计算”“付款与抵扣”“汇总”“参数与假设”，情景测算时另加“情景草稿”。
-- 覆盖：固定年利率、一年期 LPR 加点（基点）计息；分段本金；部分清偿抵扣。
-- 不覆盖（明确告知律师）：劳动经济补偿、赔偿金、加班费；外币汇率；复利；迟延履行期间加倍部分；按 LPR **倍数**（如“上浮 50%”）计息——`calc.interest` 目前只支持“LPR 加点”，不得自行换算成加点或固定利率。
+- 覆盖：固定年利率、一年期 LPR 加点（基点）与 LPR 倍数（如“上浮 50%”写 `lpr_times` 1.5）计息；分段本金；部分清偿抵扣；劳动经济补偿 N 与违法解除赔偿金 2N 用 `calc.labor`（当地平均工资、最低工资只用律师或材料给的数）。
+- 不覆盖（明确告知律师）：加班费；外币汇率；复利；迟延履行期间加倍部分。LPR 倍数不得换算成加点或固定利率，直接用 `lpr_times`；`calc.interest` 返回 warnings（如计算区间越过已收录的 LPR 报价）时原样写进交付件。
 
 ## 2. 输入与前置检查
 1. 本金、交付或到期日、每笔付款（日期、金额）：先用 `facts.list` 取 lawyer_status = confirmed 的事实（含 amount_yuan、occurred_on），其次用律师在对话中给出的数据；只在材料中出现、律师未确认的，列入“参数与假设”并标“待律师确认”——可以先出情景草稿，**不得出正式表**。
-2. 计息依据：用 `materials.list` 找到合同，用 `materials.read_excerpt` 定位利率、违约金比例与起算条件；没有约定或约定不明时，用提问工具让律师选口径（约定固定利率 / LPR 加点 / 暂不主张），**不得默认使用“LPR 四倍”**。
+2. 计息依据：用 `materials.list` 找到合同，用 `materials.read_excerpt` 定位利率、违约金比例与起算条件；没有约定或约定不明时，用提问工具让律师选口径（约定固定利率 / LPR 加点 / LPR 倍数 / 暂不主张），**不得默认使用“LPR 四倍”**。
 3. 截止日：取 `$as_of` 或律师给定的日期；“暂计至实际清偿之日”与暂计金额分开写。
 4. 日数规则：律师未确认年日数（360/365）时两种都算，并列显示差额。
 5. 需要问律师的事项合并成一次提问，不超过 3 问（如：计息口径、抵扣顺序、年日数）。
@@ -58,7 +58,7 @@ kwl:
 ## 6. 质量自检
 - [ ] 每段金额都来自 calc.interest 的返回值，可按公式复算。
 - [ ] 正式表中没有未经律师确认的参数。
-- [ ] 没有把 LPR 四倍当作默认口径，也没有把 LPR 倍数擅自换算。
+- [ ] 没有把 LPR 四倍当作默认口径；LPR 倍数用 lpr_times，没有擅自换算成加点。
 - [ ] 互斥或可能重复的项目没有计入合计。
 - [ ] 日数规则与年日数已写明并经确认或并列展示。
 
