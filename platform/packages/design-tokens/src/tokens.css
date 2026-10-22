@@ -211,6 +211,18 @@
   --fs-lg: 16px;
   --fs-xl: 20px;
   --fs-2xl: 28px;
+  /*
+   * 按用途的字号令牌（v9.4 第 20 批，U1 §3.6）：组件只用用途令牌，不再直接写 --fs-sm；值仍落在上面 7 级上（不加新档）。
+   * 正文、表单、提示与说明 14px；次要说明、表头、胶囊 13px；时间计数 12px。U1 建议的 18px / 22px 两档未加，h2 / h1 沿用 16 / 20。
+   */
+  --fs-meta: var(--fs-xs);
+  --fs-caption: var(--fs-sm);
+  --fs-body: var(--fs-base);
+  --fs-reading: var(--fs-lg);
+  --fs-h3: var(--fs-lg);
+  --fs-h2: var(--fs-lg);
+  --fs-h1: var(--fs-xl);
+  --fs-hero: var(--fs-2xl);
   /* 排版：阅读区 16px/1.75；表格区 13px/1.6；字重只用 400/500/600 */
   --font-reading-size: var(--fs-lg);
   --font-reading-leading: 1.75;

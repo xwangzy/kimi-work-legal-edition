@@ -74,10 +74,11 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
       <main className="chat-main">
         {/* 一句话说清楚（Y4 C-1）；机制放进“了解更多” */}
         <div className="chat-notice">
-          问答不会读取事项材料。提到具体当事人时，建议到事项里提问。
+          {/* 首句先说能做什么（U1 §1.6：原来首屏第一句是“不会读取……”，太防御） */}
+          一般法律问题直接问；要结合案卷材料，到事项里发起任务。
           <details className="chat-more">
             <summary>了解更多</summary>
-            发送前，问题里能识别的姓名、证件号、账号、联系方式会换成代号（识别依靠规则与名单，可能有遗漏），并与你的事项当事人名单比对：涉及“客户要求不上云”事项的当事人会被拦下。问题经中软安全通道发给 Kimi 模型；问答记录只保存在这台电脑上。
+            发送前，问题里能识别的姓名、证件号、账号、联系方式会换成代号（识别依靠规则与名单，可能有遗漏），并与你的事项当事人名单比对：涉及“客户要求不上云”事项的当事人会被拦下。问答不读取事项材料。问题经 Kimi Work 的安全通道发给 Kimi 模型；问答记录只保存在这台电脑上。
           </details>
         </div>
         <div className="chat-messages">

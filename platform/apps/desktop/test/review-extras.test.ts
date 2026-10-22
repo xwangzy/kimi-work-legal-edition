@@ -86,3 +86,38 @@ test("入口：整理案卷精读版接 casefile-organize（视角作方法参�
   const amount = SCENARIOS.find((c) => c.id === "amount")!;
   assert.ok(amount.fields.some((f) => (f.options ?? []).includes("LPR 倍数（如上浮 50%）")));
 });
+
+test("管理员层说法（U1 §2.7）：控制面、吊销、连接器、白名单、出站闸门、中继、中软客服换成管理员说法；问答首句先说能做什么；开通页不写“中软”", () => {
+  const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").split("\n").map((l) => l.replace(/^\s*\/\/.*$/, "").replace(/\s\/\/ .*$/, "")).join("\n");
+  for (const f of ["components/MembersAdmin.tsx", "pages/FirmUsage.tsx", "lib/firm-usage.ts", "pages/Activate.tsx"]) {
+    const hits = strip(src(f)).match(/控制面|吊销|连接器|白名单|出站闸门|中继|中软客服/g) ?? [];
+    assert.deepEqual(hits, [], f);
+  }
+  const conn = strip(src("pages/Connections.tsx"));
+  assert.deepEqual(conn.match(/控制面|吊销|连接器|白名单|出站闸门|中软客服/g) ?? [], [], "Connections（数据去向说明里的“中软”保留）");
+  assert.ok(!/中软/.test(strip(src("pages/Activate.tsx"))), "开通页");
+  const chat = src("pages/Chat.tsx");
+  assert.ok(chat.includes("一般法律问题直接问"));
+  assert.ok(!chat.includes("中软安全通道"));
+});
+
+test("输入框模式（U1 §1.2）：胶囊只写一个短语；“先给我看计划 / 直接做”与“每步问我 / 放手做 / 只问答”并列成一张单选表", async () => {
+  const { modeChipLabel, modeOptions } = await import("../src/lib/mode-options.ts");
+  assert.equal(modeChipLabel({ mode: "default", planFirst: true }), "先给我看计划");
+  assert.equal(modeChipLabel({ mode: "default", planFirst: false }), "直接做");
+  assert.equal(modeChipLabel({ mode: "auto", planFirst: true }), "放手做");
+  assert.deepEqual(modeOptions(["manual", "default"]).map((o) => o.key), ["plan", "direct", "manual"]);
+  assert.ok(!src("components/ModeSelector.tsx").includes("· 先给我看计划") && src("components/ModeSelector.tsx").includes("modeChipLabel(value)"));
+  assert.ok(src("components/Composer.tsx").includes('blockedReason === "先写任务目标" ? "" : blockedReason'), "只缺目标时不重复写");
+});
+
+test("执行页两栏（U1 §3.2）：没有左栏，材料收成标题下的“材料 n 份 ▾”；字号按用途令牌（--fs-sm 不超过 40 处，正文类用 --fs-body）", () => {
+  const rv = src("pages/RunView.tsx");
+  assert.ok(!rv.includes('className="exec-left"'));
+  assert.ok(rv.includes('className="mats-chip-wrap"'));
+  const css = src("styles.css");
+  assert.ok((css.match(/font-size: var\(--fs-sm\)/g) ?? []).length <= 40);
+  for (const sel of [".muted {", ".field {", ".banner {"]) assert.match(css, new RegExp(`\\n\\${sel}[^}]*font-size: var\\(--fs-body\\)`), sel);
+  const tokens = readFileSync(new URL("../../../packages/design-tokens/src/tokens.css", import.meta.url), "utf8");
+  for (const t of ["--fs-meta", "--fs-caption", "--fs-body", "--fs-reading", "--fs-h1"]) assert.ok(tokens.includes(`${t}:`), t);
+});

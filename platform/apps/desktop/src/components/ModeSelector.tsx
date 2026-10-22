@@ -5,7 +5,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { Preauthorization, RunMode, RunPolicyView } from "../api.ts";
-import { MODE_HINTS, MODE_LABELS, PREAUTH_LABELS } from "../lib/labels.ts";
+import { PREAUTH_LABELS } from "../lib/labels.ts";
+import { isOn, modeChipLabel, modeOptions } from "../lib/mode-options.ts";
 import { Icon } from "./Icons.tsx";
 
 export interface ModeChoice {
@@ -36,32 +37,23 @@ export function ModeSelector({ policy, value, onChange, allowChat = true }: { po
   return (
     <div className="mode-selector" ref={ref}>
       <button className="chip" onClick={() => setOpen(!open)} aria-haspopup="listbox" aria-expanded={open}>
-        {MODE_LABELS[value.mode].replace("（推荐）", "")}
-        {value.mode !== "chat" && value.planFirst ? " · 先给我看计划" : ""}
+        {modeChipLabel(value)}
         <Icon.down />
       </button>
       {open && (
         <div className="popover mode-popover" role="listbox">
-          {order
-            .filter((m) => allowed.includes(m))
-            .map((m) => (
-              <button
-                key={m}
-                role="option"
-                aria-selected={value.mode === m}
-                className={`mode-option${value.mode === m ? " selected" : ""}`}
-                onClick={() => onChange({ ...value, mode: m, preauth: m === "auto" ? value.preauth : [] })}
-              >
-                <span className="mode-name">{MODE_LABELS[m]}</span>
-                <span className="mode-hint">{MODE_HINTS[m]}</span>
-              </button>
-            ))}
-          {value.mode !== "chat" && (
-            <label className="mode-toggle">
-              <input type="checkbox" checked={value.planFirst} onChange={(e) => onChange({ ...value, planFirst: e.target.checked })} />
-              先给我看计划（你确认后再开始做）
-            </label>
-          )}
+          {modeOptions(order.filter((m) => allowed.includes(m))).map((o) => (
+            <button
+              key={o.key}
+              role="option"
+              aria-selected={isOn(o, value)}
+              className={`mode-option${isOn(o, value) ? " selected" : ""}`}
+              onClick={() => onChange({ ...value, mode: o.mode, planFirst: o.planFirst, preauth: o.mode === "auto" ? value.preauth : [] })}
+            >
+              <span className="mode-name">{o.label}</span>
+              <span className="mode-hint">{o.hint}</span>
+            </button>
+          ))}
           {value.mode === "auto" && policy && (
             <div className="mode-auto">
               <div className="mode-auto-title">放手做：本任务的用量上限</div>

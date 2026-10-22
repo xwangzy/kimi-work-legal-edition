@@ -132,7 +132,8 @@ export function Composer(props: {
         {/* 固定步骤的流程不适用运行模式（复核 S5-A07）；也不再显示研发用语胶囊（Z3 评审 3.1） */}
         {value.scenario === "a1.agent_task" && <ModeSelector policy={props.policy} value={value.choice} onChange={(choice) => onChange({ ...value, choice })} />}
         {/* 可以发送时提示快捷键（Z3 §8.2 #32）；不能发送时写原因（余项续复核 RC-B-15） */}
-        <span className="send-hint muted" aria-live="polite">{canSend ? `${SEND_KEY} 发送` : blockedReason}</span>
+        {/* 只缺任务目标时不再写“先写任务目标”（占位符已经说了，U1 §1.2）；读屏标签与悬停仍说明原因 */}
+        <span className="send-hint muted" aria-live="polite">{canSend ? `${SEND_KEY} 发送` : blockedReason === "先写任务目标" ? "" : blockedReason}</span>
         <button className="send" disabled={!canSend} onClick={props.onSubmit} aria-label={canSend ? "发送" : `发送（${blockedReason}）`} title={canSend ? `发送（${SEND_KEY}）` : blockedReason}>
           <Icon.send />
         </button>

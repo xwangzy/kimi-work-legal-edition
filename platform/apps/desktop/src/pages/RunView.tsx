@@ -524,20 +524,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
 
   return (
     <div className={`exec${paneCollapsed ? " exec-pane-collapsed" : ""}`}>
-      <aside className="exec-left">
-        <button className="btn-link back" onClick={() => nav(`/matter/${matterId}`)}>← 返回事项</button>
-        <div className="pane-title">本次用到的材料</div>
-        {inputDocs.length === 0 && <p className="muted">没有指定材料：会按需读取本事项的材料。</p>}
-        {inputDocs.map((d) => (
-          <div key={d.document_version_id} className="mat-row">
-            <Icon.file />
-            <span className="mat-name" title={d.filename}>{d.filename}</span>
-          </div>
-        ))}
-        {loaded && loaded.requested > 0 && (
-          <p className="muted">已读 {loaded.loaded}/{loaded.requested} 份{loaded.failed ? `，${loaded.failed} 份读不了（已列出，可换成 Word 或 PDF）` : ""}。</p>
-        )}
-      </aside>
+      {/* 两栏（v9.4 第 20 批，U1 §3.2 页面模板“工作台”）：过程在左、成果在右；材料收成标题下的“材料 n 份 ▾” */}
 
       <section className="exec-mid">
         <Breadcrumb items={[{ label: "事项", href: "/matters" }, { label: matter?.title ?? "事项", href: `/matter/${matterId}` }, { label: "任务" }]} />
@@ -554,8 +541,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               {!status.startsWith("waiting") && badges.map((b) => <span key={b.label} className={`pill pill-${b.tone}`} title={b.title}>{b.label}</span>)}
               {/* 原左栏“在哪里处理”每个任务都一样，收成一枚胶囊（Z3 #29） */}
               <span className="pill pill-gray" title="原件不会被修改；结果都是草稿，须律师复核">原件不改 · 结果是草稿</span>
-              {/* 窄屏（≤1280px）左栏收起时的材料入口（UIUX 增量评审 N-1） */}
-              <span className="narrow-only mats-chip-wrap">
+              {/* 材料入口（UIUX 增量评审 N-1；第 20 批起各种宽度都用两栏，不再有左栏） */}
+              <span className="mats-chip-wrap">
                 <button className="pill pill-gray" aria-expanded={matsOpen} onClick={() => setMatsOpen((v) => !v)}>
                   材料 {inputDocs.length} 份 ▾
                 </button>

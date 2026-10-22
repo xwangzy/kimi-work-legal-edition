@@ -211,9 +211,9 @@ function EnterCode({ onPending, legacy, failed, setAside }: { onPending: (s: Sta
         </button>
       </form>
       <p id="activate-hint" className="muted activate-foot">
-        开通码由中软发给律所负责人；邀请码由律所管理员发给你。码只能用一次，过期请向发码人重新获取。
+        开通码由 Kimi Work 发给律所负责人；邀请码由律所管理员发给你。码只能用一次，过期请向发码人重新获取。
         <br />
-        没有码？请联系律所管理员；律所负责人还没收到开通码，请联系中软客服。
+        没有码？请联系律所管理员；律所负责人还没收到开通码，请联系 Kimi Work 客服。
         <br />
         开通时只需联网核对一次这个码；你的案卷不会上传。
       </p>

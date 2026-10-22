@@ -640,7 +640,7 @@ function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[];
       {sub === "cp_audit" && <CpAuditPanel />}
       {sub === "support" && (
         <>
-          <p className="muted">这里是给律所 IT 和中软客服看的技术细节：一般不用打开。</p>
+          <p className="muted">这里是给律所 IT 和 Kimi Work 客服看的技术细节：一般不用打开。</p>
           <details>
             <summary>诊断</summary>
             <DiagnosticsTab {...props} />
@@ -692,11 +692,11 @@ function DiagnosticsTab({ caps, gate, devices, unresolved, onReconciled, im, rec
         <div className="device-row">
           <div className="device-k">唯一出口</div>
           <div>
-            <b>{gate?.sole_exit ?? caps?.sole_exit ?? "应用层约束"}</b>：模型、检索、抓取只经出站闸门（独立进程）；执行域无网；渲染进程拦截一切外部请求。
+            <b>{gate?.sole_exit ?? caps?.sole_exit ?? "应用层约束"}</b>：模型、检索、抓取只经联网出口（独立进程）；执行域无网；渲染进程拦截一切外部请求。
           </div>
         </div>
         <div className="device-row">
-          <div className="device-k">出站闸门</div>
+          <div className="device-k">联网出口</div>
           <div>
             {gate ? <>{gate.running ? "运行中" : "已配置（按需拉起：下一次出站时启动）"} · 检索{gate.routes?.search ? "已接入" : "未接入"} · 抓取{gate.routes?.fetch ? "已接入" : "未接入"} · 已拉起 {gate.stats?.starts ?? 0} 次</> : "未启用（离线模拟提供方）"}
           </div>
@@ -780,7 +780,7 @@ function DiagnosticsTab({ caps, gate, devices, unresolved, onReconciled, im, rec
         <thead><tr><th>设备</th><th>角色</th><th>状态</th><th>登记</th></tr></thead>
         <tbody>
           {devices.map((d) => (
-            <tr key={d.device_id}><td className="mono" title={String(d.device_id)}>{shortId(String(d.device_id))}</td><td>{d.role}</td><td>{d.status === "revoked" ? "已吊销" : "有效"}</td><td>{fmtTime(d.created_at)}</td></tr>
+            <tr key={d.device_id}><td className="mono" title={String(d.device_id)}>{shortId(String(d.device_id))}</td><td>{d.role}</td><td>{d.status === "revoked" ? "已停用" : "有效"}</td><td>{fmtTime(d.created_at)}</td></tr>
           ))}
         </tbody>
       </table>
@@ -804,7 +804,7 @@ function TechnicalVisibility({ gate, im, recovery }: { gate: any; im: any[]; rec
     {
       situation: "法规库与方法模板的在线更新",
       enabled: contentOn,
-      sees: "每天一次（及手动“检查更新”）经出站闸门的检查与下载：席位令牌所含的租户、成员、席位与设备编号，本机 IP，检查时刻，所请求的通道清单与包文件名（文件名含版本；增量包还反映本机当前法规库版本）；分发服务保存下载记录（租户、设备编号的密钥摘要、类别、通道、文件名、时间）",
+      sees: "每天一次（及手动“检查更新”）经联网出口的检查与下载：席位令牌所含的租户、成员、席位与设备编号，本机 IP，检查时刻，所请求的通道清单与包文件名（文件名含版本；增量包还反映本机当前法规库版本）；分发服务保存下载记录（租户、设备编号的密钥摘要、类别、通道、文件名、时间）",
       notSees: "事项与案卷的任何内容、事项编号、查询与对话",
     },
     {
@@ -820,10 +820,10 @@ function TechnicalVisibility({ gate, im, recovery }: { gate: any; im: any[]; rec
       notSees: "期限类型、期限日本身、事项名称与编号、当事人、备注（在律师电脑上用接收设备的公钥加密、补齐长度、并由发出设备签名；中软解不开，也不能把一份密文挪给别的提醒或别的设备；撤销后迟到的旧版本登记会被云端拒收，但被攻破的云端仍可能重放一次已撤销的提醒）",
     },
     {
-      situation: "团队事项经中软共享中继同步",
+      situation: "团队事项经中软共享服务同步",
       enabled: !!gate?.relay_configured && (!!gate?.share_relay_allowed || relayUsed),
-      sees: "每个团队事项的匿名编号（随机生成）；每次改动的同步记录与引用的材料块，均为按事项密钥加密的密文，切成不超过 4 MiB 的块、按密文的摘要存放，材料的确切字节数可见（保存到律所退约整体删除；关闭开关后已保存的仍在；中继上的事项状态异常时中软运营可按事项重置——删除该事项在中继上的密文，各成员的电脑随后（至多 6 小时，点“立即同步”即时）重新上传本机写入的内容，已不再使用的电脑写过的不再上传；单个事项的团队删除指令待后续版本）；每条同步记录的编号、写入设备与写入成员编号、条数（行数）、事件序号区间、大小、时间与密钥纪元；能读取该事项的设备编号；同步记录明文部分里的写入设备证书（成员编号、角色、公钥——成员编号由律所设定，可能含姓名拼音）与面向各设备的密钥包裹（密文，含各纪元、已移出成员的设备与是否启用恢复托管，反映团队加入、移出的时间线）；取新改动的请求时刻（客户端在线时长轮询，反映电脑何时开机）；只限中继的短期凭据所含的租户、成员、席位与设备编号，本机 IP；签发中继凭据记入中软侧操作记录。设备被吊销后，在中继刷新吊销名单之前（通常 30 秒内、至多约 10 分钟）该设备仍可能取到新的密文",
-      notSees: "事项名称、当事人、材料原文与文件名、成果、任务内容（都在律师电脑上按事项密钥加密，中软没有事项密钥）；材料明文的摘要（中继只按密文摘要寻址）。成员电脑先核验同步记录的设备签名与证书链再取材料，材料按“解开后的摘要 = 名称”核对后才放进本机：被攻破的中继换掉的内容会被拒收，但它可以扣留、延迟或丢弃改动",
+      sees: "每个团队事项的匿名编号（随机生成）；每次改动的同步记录与引用的材料块，均为按事项密钥加密的密文，切成不超过 4 MiB 的块、按密文的摘要存放，材料的确切字节数可见（保存到律所退约整体删除；关闭开关后已保存的仍在；共享服务上的事项状态异常时中软运营可按事项重置——删除该事项在共享服务上的密文，各成员的电脑随后（至多 6 小时，点“立即同步”即时）重新上传本机写入的内容，已不再使用的电脑写过的不再上传；单个事项的团队删除指令待后续版本）；每条同步记录的编号、写入设备与写入成员编号、条数（行数）、事件序号区间、大小、时间与密钥纪元；能读取该事项的设备编号；同步记录明文部分里的写入设备证书（成员编号、角色、公钥——成员编号由律所设定，可能含姓名拼音）与面向各设备的密钥包裹（密文，含各纪元、已移出成员的设备与是否启用恢复托管，反映团队加入、移出的时间线）；取新改动的请求时刻（客户端在线时长轮询，反映电脑何时开机）；只限共享服务的短期凭据所含的租户、成员、席位与设备编号，本机 IP；签发共享服务凭据记入中软侧操作记录。设备被停用后，在共享服务刷新停用名单之前（通常 30 秒内、至多约 10 分钟）该设备仍可能取到新的密文",
+      notSees: "事项名称、当事人、材料原文与文件名、成果、任务内容（都在律师电脑上按事项密钥加密，中软没有事项密钥）；材料明文的摘要（共享服务只按密文摘要寻址）。成员电脑先核验同步记录的设备签名与证书链再取材料，材料按“解开后的摘要 = 名称”核对后才放进本机：被攻破的共享服务换掉的内容会被拒收，但它可以扣留、延迟或丢弃改动",
     },
     {
       situation: "自动更新",
@@ -834,7 +834,7 @@ function TechnicalVisibility({ gate, im, recovery }: { gate: any; im: any[]; rec
     {
       situation: "默认（本地事项 + 法律模型网关）",
       enabled: true,
-      sees: "账号、设备与执行域等级、席位、用量；匿名事项编号与推理调用元数据（保存）；匿名事项编号对应的数据级别、模型端点、依据是否齐备、事项策略版本计数与更新时间（保存，供网关二次检查）；律所策略与连接器登记（含抓取白名单追加的域名、连接器服务地址与工具清单）、设备证书（成员编号、角色、公钥）与管理员签名记录、设备与席位的吊销记录（含预先吊销的设备编号）（保存）；推理时任务涉及的文档内容（证件、账户、联系方式与自然人姓名替换为代号后过境，不落盘）；网关内容安全检查命中的类别编号与次数（随该次调用的元数据保存，含匿名事项编号与席位；不含命中的文字）",
+      sees: "账号、设备与执行域等级、席位、用量；匿名事项编号与推理调用元数据（保存）；匿名事项编号对应的数据级别、模型端点、依据是否齐备、事项策略版本计数与更新时间（保存，供网关二次检查）；律所策略与律所系统接入登记（含抓取允许访问的网站追加的域名、律所系统接入服务地址与工具清单）、设备证书（成员编号、角色、公钥）与管理员签名记录、设备与席位的停用记录（含预先停用的设备编号）（保存）；推理时任务涉及的文档内容（证件、账户、联系方式与自然人姓名替换为代号后过境，不落盘）；网关内容安全检查命中的类别编号与次数（随该次调用的元数据保存，含匿名事项编号与席位；不含命中的文字）",
       notSees: "落盘的案卷、成果、会话转录、令牌映射表、事项名称",
     },
     {
@@ -858,7 +858,7 @@ function TechnicalVisibility({ gate, im, recovery }: { gate: any; im: any[]; rec
     {
       situation: "使用无事项问答",
       enabled: !!gate,
-      sees: "问题文本（经出站闸门令牌化与当事人词典检查后过境，不保存）与发起席位",
+      sees: "问题文本（经联网出口令牌化与当事人词典检查后过境，不保存）与发起席位",
       notSees: "问答历史（只在本人设备）",
     },
     {
@@ -883,12 +883,12 @@ function TechnicalVisibility({ gate, im, recovery }: { gate: any; im: any[]; rec
 const AREA: Record<string, string> = {
   policy: "律所策略",
   directory: "设备目录",
-  connectors: "连接器",
+  connectors: "律所系统接入",
   license: "许可",
   salt: "租户盐",
   seat: "席位",
   drafts: "草稿",
-  revocation: "吊销",
+  revocation: "停用",
   clock: "时钟",
 };
 
@@ -901,19 +901,19 @@ const CP_ERROR_TEXT: Record<string, string> = {
   revoker_required: "本设备证书的角色不是管理员或合伙人",
   device_id_invalid: "设备编号不合法",
   cp_path_not_allowed: "设备编号不合法",
-  cp_unreachable: "控制面不可达",
-  cp_not_configured: "控制面地址未配置",
-  device_auth_stale: "本机时钟与控制面相差超过 5 分钟",
-  cert_required: "该设备尚未在控制面登记、本机也没有可核实的证书：它登记之后，本机下一次同步即补发吊销（缺省 10 分钟内；本机不在线时更久）",
-  cert_invalid: "该设备尚未在控制面登记、证书无法核实：它登记之后，本机下一次同步即补发吊销（缺省 10 分钟内；本机不在线时更久）",
-  pre_revocation_limit: "预先吊销已达上限：该设备登记之后，本机下一次同步即补发吊销（缺省 10 分钟内；本机不在线时更久）",
+  cp_unreachable: "Kimi Work 服务不可达",
+  cp_not_configured: "Kimi Work 服务地址未配置",
+  device_auth_stale: "本机时钟与 Kimi Work 服务相差超过 5 分钟",
+  cert_required: "该设备尚未在 Kimi Work 服务登记、本机也没有可核实的证书：它登记之后，本机下一次同步即补发停用（缺省 10 分钟内；本机不在线时更久）",
+  cert_invalid: "该设备尚未在 Kimi Work 服务登记、证书无法核实：它登记之后，本机下一次同步即补发停用（缺省 10 分钟内；本机不在线时更久）",
+  pre_revocation_limit: "预先停用已达上限：该设备登记之后，本机下一次同步即补发停用（缺省 10 分钟内；本机不在线时更久）",
 };
 
 /** 待同步动作的状态（复核 S6-A22、S6-B31）：区分“会自动重试”与“需人工处理”。 */
 function pendingActionText(a: { state?: string; last_error: string | null }): string {
   const why = a.last_error ? CP_ERROR_TEXT[a.last_error] ?? a.last_error : null;
-  if (a.state === "failed") return `控制面拒绝（${why ?? "原因不明"}）：不会自动重试，需人工处理——请由管理员或合伙人设备再次吊销该设备（控制面目录列为吊销后此项自动消除），或处理后点“立即同步”重发`;
-  if (a.state === "submitted") return "控制面已接受，待控制面签名的设备目录确认（每次同步自动核对）";
+  if (a.state === "failed") return `Kimi Work 服务拒绝（${why ?? "原因不明"}）：不会自动重试，需人工处理——请由管理员或合伙人设备再次停用该设备（Kimi Work 服务目录列为停用后此项自动消除），或处理后点“立即同步”重发`;
+  if (a.state === "submitted") return "Kimi Work 服务已接受，待 Kimi Work 服务签名的设备目录确认（每次同步自动核对）";
   return `待发送，联网后自动重试${why ? `（上次失败：${why}）` : ""}`;
 }
 
@@ -923,11 +923,11 @@ function relaxationText(r: string): string {
   const v = rest.join(":");
   if (k === "max_mode") return `运行模式上限放宽到“${v === "auto" ? "自动" : v}”`;
   if (k === "auto_preauthorization") return v === "search_generalized" ? "自动档可预授权：泛化后放行的检索" : `自动档可预授权：${v}`;
-  if (k === "fetch_allowlist") return `抓取白名单追加：${v}`;
+  if (k === "fetch_allowlist") return `抓取允许访问的网站追加：${v}`;
   if (k === "l3a_standard_model") return "敏感事项（L3a）可经标准端点推理（全部化名）";
   if (k === "support_upload") return "律师可把脱敏诊断包上传给中软支持（逐次预览、确认后上传；中软保存 7 天）";
-  if (k === "share_relay") return "团队事项可经中软共享中继同步（端到端加密，中软保存密文直到律所退约）";
-  if (k === "connector") return `登记连接器：${v}`;
+  if (k === "share_relay") return "团队事项可经中软共享服务同步（端到端加密，中软保存密文直到律所退约）";
+  if (k === "connector") return `登记律所系统接入：${v}`;
   return r;
 }
 
@@ -941,7 +941,7 @@ function policyLine(st: ControlPlaneStatus): string {
     if (p.fallback_reason === "unrecognized_newer") return "收到本机不认识的律所策略新版本（客户端需要升级）：已回退最严模板";
     return "尚未取得律所策略：按“产品基线 + 最严模板”运行";
   }
-  const who = p.signers.length > 0 ? `管理员 ${p.signers.join("、")} 设备签名` : "最严模板，控制面签发";
+  const who = p.signers.length > 0 ? `管理员 ${p.signers.join("、")} 设备签名` : "最严模板，Kimi Work 服务签发";
   return `律所策略 v${p.version}（${who}）· 有效至 ${fmtTime(p.expires_at ?? "")}`;
 }
 
@@ -984,7 +984,7 @@ function PolicyTab() {
             {pol && (
               <div className="muted">
                 运行模式上限：{pol.body.max_mode === "auto" ? "自动" : pol.body.max_mode === "default" ? "默认" : pol.body.max_mode === "manual" ? "手动" : "问答"} ·
-                抓取白名单追加：{pol.body.fetch_allowlist_extra.length > 0 ? pol.body.fetch_allowlist_extra.join("、") : "无（只用公开官方站点基线）"} ·
+                抓取允许访问的网站追加：{pol.body.fetch_allowlist_extra.length > 0 ? pol.body.fetch_allowlist_extra.join("、") : "无（只用公开官方站点基线）"} ·
                 敏感事项（L3a）经标准端点：{pol.body.l3a_standard_model === "allow" ? "已放开（全部化名）" : "不放开"}
               </div>
             )}
@@ -999,8 +999,8 @@ function PolicyTab() {
                 {st.license?.state === "valid" ? `有效至 ${fmtTime(st.license.expires_at ?? "")}（${st.license.edition === "firm" ? "律所版" : "团队版"}，${st.license.seats} 席）` : st.license?.state === "expired" ? "已到期：退出模式" : "尚未取得"}
                 <div className="muted">
                   {st.admin_threshold_pinned === false
-                    ? "管理员签名门限尚未固定（首次取得许可后按版本固定）：固定之前不接受任何放宽类策略与连接器登记。"
-                    : `放宽类策略与连接器登记须 ${st.admin_threshold ?? 1} 名管理员设备签名（首次取得许可时按版本固定，只升不降）。`}
+                    ? "管理员签名门限尚未固定（首次取得许可后按版本固定）：固定之前不接受任何放宽类策略与律所系统接入登记。"
+                    : `放宽类策略与律所系统接入登记须 ${st.admin_threshold ?? 1} 名管理员设备签名（首次取得许可时按版本固定，只升不降）。`}
                 </div>
               </div>
             </div>
@@ -1008,28 +1008,28 @@ function PolicyTab() {
               <div className="device-k">离线可用</div>
               <div>
                 {st.seat?.has_token && st.seat.expires_at ? `断网也能用到 ${fmtTime(st.seat.expires_at)}；联网后会自动延长` : "暂时用不了 Kimi 和联网检索（还没连上中软，或本所席位已失效），本机功能不受影响"}
-                <div className="muted">控制面不可达时，经标准端点的推理与联网检索可用到席位令牌到期（在线时自动续期，保持至少 72 小时）；本机能力不受影响。{st.directory?.expires_at ? `设备目录有效至 ${fmtTime(st.directory.expires_at)}。` : ""}</div>
+                <div className="muted">Kimi Work 服务不可达时，经标准端点的推理与联网检索可用到席位令牌到期（在线时自动续期，保持至少 72 小时）；本机能力不受影响。{st.directory?.expires_at ? `设备目录有效至 ${fmtTime(st.directory.expires_at)}。` : ""}</div>
               </div>
             </div>
             <div className="device-row">
-              <div className="device-k">控制面</div>
+              <div className="device-k">Kimi Work 服务</div>
               <div>
                 {st.last_sync ? `上次同步 ${fmtTime(st.last_sync.at)} · ${st.last_sync.ok ? "正常" : "部分未完成（本机已接受的内容继续有效）"}` : "尚未同步"}
-                {st.directory?.stale && <div className="muted">设备目录已过有效期仍未更新：已知的吊销保持，新的吊销信息可能不完整。</div>}
+                {st.directory?.stale && <div className="muted">设备目录已过有效期仍未更新：已知的停用保持，新的停用信息可能不完整。</div>}
                 {(st.pending_actions ?? []).length > 0 && (
                   <div className="muted">
-                    待同步到控制面（控制面签名的设备目录列为吊销之前，网关可能仍接受这些设备）：
+                    待同步到 Kimi Work 服务（Kimi Work 服务签名的设备目录列为停用之前，网关可能仍接受这些设备）：
                     <ul className="plain-list">
                       {st.pending_actions!.map((a) => (
                         <li key={`${a.kind}:${a.target}`}>
-                          {a.kind === "revoke_device" ? <span title={a.target}>吊销设备 {shortId(a.target)}</span> : a.kind}：{pendingActionText(a)}
+                          {a.kind === "revoke_device" ? <span title={a.target}>停用设备 {shortId(a.target)}</span> : a.kind}：{pendingActionText(a)}
                         </li>
                       ))}
                     </ul>
                   </div>
                 )}
                 <button className="btn-link" disabled={busy} onClick={() => act(() => api.controlPlaneSync(), "已同步")}>立即同步</button>
-                <div className="muted">控制面签名只证明“出自控制面”：放宽类策略、连接器登记与成员公钥另须本所管理员设备签名或律所根签发，本机逐项核验。</div>
+                <div className="muted">Kimi Work 服务的签名只证明“出自 Kimi Work 服务”：放宽类策略、律所系统接入登记与成员公钥另须本所管理员设备签名或律所根签发，本机逐项核验。</div>
               </div>
             </div>
           </>
@@ -1074,12 +1074,12 @@ function PolicyTab() {
           </table>
         </>
       )}
-      <div className="section-title">已登记的律所连接器</div>
+      <div className="section-title">已登记的律所系统接入</div>
       {(st.connectors ?? []).length === 0 ? (
-        <p className="muted">没有。连接器登记须管理员设备签名；律所策略回退最严模板时一律不可用。连接器的运行通道即将开放。</p>
+        <p className="muted">没有。律所系统接入登记须管理员设备签名；律所策略回退最严模板时一律不可用。律所系统接入的运行通道即将开放。</p>
       ) : (
         <table className="data">
-          <thead><tr><th>连接器</th><th>版本</th><th>服务地址</th><th>可接收至</th><th>工具数</th><th>签名管理员</th></tr></thead>
+          <thead><tr><th>律所系统接入</th><th>版本</th><th>服务地址</th><th>可接收至</th><th>工具数</th><th>签名管理员</th></tr></thead>
           <tbody>{st.connectors!.map((c) => <tr key={c.connector_id}><td>{c.name}</td><td>v{c.version}</td><td className="mono">{c.url ?? "—"}</td><td>{c.max_data_level}</td><td>{c.tools}</td><td>{c.signers.join("、")}</td></tr>)}</tbody>
         </table>
       )}
@@ -1087,12 +1087,12 @@ function PolicyTab() {
         <>
           <div className="section-title">待签名的草稿（管理员）</div>
           {drafts.length === 0 ? (
-            <p className="muted">没有待处理的草稿。目前没有网页控制台：律所策略在下方起草（连接器登记经接口起草）；签名在本机进行，签名前本机重算放宽项。同号草稿发布其中一份后，其余自动作废。</p>
+            <p className="muted">没有待处理的草稿。目前没有网页控制台：律所策略在下方起草（律所系统接入登记经接口起草）；签名在本机进行，签名前本机重算放宽项。同号草稿发布其中一份后，其余自动作废。</p>
           ) : (
             drafts.map((d) => (
               <div key={d.draft_id} className="panel">
                 <div className="device-row">
-                  <div className="device-k">{d.kind === "policy" ? `律所策略 v${d.doc.version}` : `连接器 v${d.doc.version}`}</div>
+                  <div className="device-k">{d.kind === "policy" ? `律所策略 v${d.doc.version}` : `律所系统接入 v${d.doc.version}`}</div>
                   <div>
                     <div className="muted mono">
                       {d.draft_id}
@@ -1133,7 +1133,7 @@ function DraftContent({ d }: { d: PolicyDraft }) {
         有效期：{fmtTime(String(doc.issued_at ?? ""))} 至 {fmtTime(String(doc.expires_at ?? ""))}
         <div className="muted">
           运行模式上限：{MODE_TEXT[String(b.max_mode)] ?? String(b.max_mode)} · 自动档可预授权：{Array.isArray(b.auto_preauthorizations) && b.auto_preauthorizations.length > 0 ? b.auto_preauthorizations.join("、") : "无"} ·
-          抓取白名单追加：{Array.isArray(b.fetch_allowlist_extra) && b.fetch_allowlist_extra.length > 0 ? b.fetch_allowlist_extra.join("、") : "无"} · 敏感事项（L3a）经标准端点：{b.l3a_standard_model === "allow" ? "放开" : "不放开"} · 上传诊断包给中软支持：{b.support_upload === "allow" ? "允许" : "不允许"} · 经中软中继的团队共享：{b.share_relay === "allow" ? "允许" : "不允许"}
+          抓取允许访问的网站追加：{Array.isArray(b.fetch_allowlist_extra) && b.fetch_allowlist_extra.length > 0 ? b.fetch_allowlist_extra.join("、") : "无"} · 敏感事项（L3a）经标准端点：{b.l3a_standard_model === "allow" ? "放开" : "不放开"} · 上传诊断包给中软支持：{b.support_upload === "allow" ? "允许" : "不允许"} · 经中软共享服务的团队共享：{b.share_relay === "allow" ? "允许" : "不允许"}
         </div>
       </div>
     );
@@ -1182,7 +1182,7 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
           </label>
           <div>
             <label>
-              抓取白名单追加（每行一个域名）
+              抓取允许访问的网站追加（每行一个域名）
               <textarea value={extra} onChange={(e) => setExtra(e.target.value)} rows={2} />
             </label>
           </div>
@@ -1193,15 +1193,15 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
             <input type="checkbox" checked={support} onChange={(e) => setSupport(e.target.checked)} /> 律师可把脱敏诊断包上传给中软支持
           </label>{" "}
           <label>
-            <input type="checkbox" checked={relay} onChange={(e) => setRelay(e.target.checked)} /> 团队事项可经中软共享中继同步（端到端加密）
+            <input type="checkbox" checked={relay} onChange={(e) => setRelay(e.target.checked)} /> 团队事项可经中软共享服务同步（端到端加密）
           </label>{" "}
           {relay && (
             <div className="muted">
-              开启后，团队事项的改动与材料加密后经中软中继在成员电脑之间同步：现有团队事项（含历史材料）会由各事项负责人的电脑加密上传；中软保存密文（没有事项密钥），能看到匿名事项编号、哪几台设备在同一事项及其加入与移出的时间、改动的条数、确切大小与时间；
+              开启后，团队事项的改动与材料加密后经中软共享服务在成员电脑之间同步：现有团队事项（含历史材料）会由各事项负责人的电脑加密上传；中软保存密文（没有事项密钥），能看到匿名事项编号、哪几台设备在同一事项及其加入与移出的时间、改动的条数、确切大小与时间；
               在本机删除事项不会删除中软上的副本；关闭这一项后，已保存的密文仍在中软，直到律所退约整体删除。
             </div>
           )}
-          {(support || relay) && <div className="banner banner-gray">勾选这一项后，尚未更新到最新版本的电脑会把整份律所策略当作“看不懂的新版本”，暂时按最严设置运行（自动档、预授权检索、抓取白名单追加、敏感事项放开都暂时不可用），直至更新。建议先确认全所电脑都已更新。</div>}
+          {(support || relay) && <div className="banner banner-gray">勾选这一项后，尚未更新到最新版本的电脑会把整份律所策略当作“看不懂的新版本”，暂时按最严设置运行（自动档、预授权检索、抓取允许访问的网站追加、敏感事项放开都暂时不可用），直至更新。建议先确认全所电脑都已更新。</div>}
           <label>
             有效期（天，≤ 30）{" "}
             <input type="number" min={1} max={30} value={ttl} onChange={(e) => setTtl(Math.max(1, Math.min(30, Number(e.target.value) || 30)))} />

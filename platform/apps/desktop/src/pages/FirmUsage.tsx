@@ -40,7 +40,7 @@ export function UsagePanel() {
   };
   if (err) return <div className="banner banner-red">{err}</div>;
   if (!q) return <p className="muted">读取中…</p>;
-  if (q.mode !== "control_plane") return <p className="muted">{q.note ?? "未配置控制面：不统计本所用量。"}</p>;
+  if (q.mode !== "control_plane") return <p className="muted">{q.note ?? "未配置 Kimi Work 服务：不统计本所用量。"}</p>;
   const ratio = capRatio(q);
   const parsed = capInput.trim() === "" ? null : Number(capInput.replace(/[,，\s]/g, ""));
   const capValid = parsed === null || (Number.isSafeInteger(parsed) && parsed >= 0);
@@ -170,7 +170,7 @@ export function CpAuditPanel() {
   if (err) return <div className="banner banner-red">{err}</div>;
   return (
     <div className="device">
-      <p className="muted">控制面上与本所有关的每个写操作（本所设备与中软运营）：谁、何时、做了什么、结果。本机核对过控制面签名与前后相接的哈希链才留存；中软之后改动或删除已给出的记录，本机会告警并保留原记录。记录里没有任何案件内容。</p>
+      <p className="muted">Kimi Work 服务上与本所有关的每个写操作（本所设备与中软运营）：谁、何时、做了什么、结果。本机核对过 Kimi Work 服务的签名与前后相接的哈希链才留存；中软之后改动或删除已给出的记录，本机会告警并保留原记录。记录里没有任何案件内容。</p>
       {fetchError && <div className={`banner ${fetchError.startsWith("cp_audit_") ? "banner-red" : "banner-gray"}`}>{auditFetchErrorText(fetchError)}</div>}
       {withheld && <div className="banner banner-red">中软侧的最高记录序号比给出的多：可能有记录未给出（已记告警）。请联系中软核对。</div>}
       {msg && <div className="banner">{msg}</div>}

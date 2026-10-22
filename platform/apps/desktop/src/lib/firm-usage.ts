@@ -50,11 +50,11 @@ const ACTIONS: Readonly<Record<string, string>> = {
   "device.register": "设备登记",
   "seat_token.issue": "签发席位凭据",
   "anon_summary.update": "更新事项匿名摘要",
-  "draft.create": "起草律所策略或连接器",
+  "draft.create": "起草律所策略或律所系统接入",
   "draft.sign": "管理员签名",
-  "draft.publish": "发布律所策略或连接器",
-  "connector.remove": "撤下连接器",
-  "device.revoke": "吊销设备",
+  "draft.publish": "发布律所策略或律所系统接入",
+  "connector.remove": "撤下律所系统接入",
+  "device.revoke": "停用设备",
   "seat.revoke": "收回席位",
   "seat.assign": "分配席位",
   "support_token.issue": "签发支持凭据（诊断包上传）",
@@ -105,7 +105,7 @@ const RESULT_CODES: Readonly<Record<string, string>> = {
   license_expired: "订阅已到期",
   no_seat: "没有席位",
   seat_revoked: "席位已收回",
-  device_revoked: "设备已吊销",
+  device_revoked: "设备已停用",
   cap_invalid: "上限不合法",
   draft_stale: "草稿已过时",
   admin_threshold_not_met: "管理员签名不足",
@@ -130,7 +130,7 @@ export function auditFetchErrorText(code: string): string {
     case "cp_audit_chain_invalid":
       return "中软侧返回的记录未通过哈希链核验：已拒收。";
     case "cp_audit_page_invalid":
-      return "中软侧返回的记录未通过控制面签名核验：已拒收。";
+      return "中软侧返回的记录未通过 Kimi Work 服务的签名核验：已拒收。";
     case "device_role_required":
       return "这台电脑的设备证书不是管理员或合伙人设备，中软不提供操作记录：下面是本机已留存的记录。";
     default:
