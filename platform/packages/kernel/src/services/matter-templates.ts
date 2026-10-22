@@ -12,6 +12,7 @@ import type { KernelDb } from "../db.ts";
 import { calcDeadline, type DeadlineUnit } from "../tools/tools/deadline.ts";
 import type { MatterStage } from "./matter-facts.ts";
 import { createTodo, type AssigneeKind } from "./matter-todos.ts";
+import { localToday } from "./local-date.ts";
 
 export interface MatterTemplate {
   id: string;
@@ -242,13 +243,16 @@ function startDateOf(v: unknown): string | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   const ok = !!m && Number(m[2]) >= 1 && Number(m[2]) <= 12 && Number(m[3]) >= 1 && Number(m[3]) <= new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).getUTCDate();
   if (!ok) throw new DomainError("validation", "起算日期须为 YYYY-MM-DD", 422);
+  // 起算事实是已经发生的事（收到起诉状、判决送达等）：晚于今天的多半是填错（复核 Q4 建议 3）
+  if (s > localToday()) throw new DomainError("validation", "起算日期不能晚于今天：填已经发生的日期（如实际收到起诉状的那天）", 422);
   return s;
 }
 
 export interface TemplatePlan {
   template: MatterTemplate;
   key_dates: Record<string, string>;
-  deadline: { date: string; steps: string[]; warnings: string[] } | null;
+  /** uncertain：届满日所在年份的放假安排未收录，或落在调休日上——日期须按当年放假通知核对（复核 Q4-05）。 */
+  deadline: { date: string; steps: string[]; warnings: string[]; uncertain: boolean } | null;
 }
 
 /** 创建事项之前算好：模板与起算日的校验、届满日（失败即拒绝创建，不留半个事项）。 */
@@ -267,14 +271,16 @@ export function planTemplate(templateId: unknown, start: unknown): TemplatePlan 
   return {
     template: t,
     key_dates: { [t.start_fact.start_key]: s, [t.start_fact.deadline_key]: r.deadline },
-    deadline: { date: r.deadline, steps: r.steps, warnings: (r as { warnings?: string[] }).warnings ?? [] },
+    deadline: { date: r.deadline, steps: r.steps, warnings: r.warnings, uncertain: r.holiday_source.years_used.some((y) => y.status === "not_collected") || r.warnings.some((w) => /调休/.test(w)) },
   };
 }
 
 /** 在创建事项的同一事务里写入模板的待办（届满日那条在最前）。 */
 export function applyTemplateTodos(db: KernelDb, plan: TemplatePlan, scope: { tenant_id: string; matter_id: string; created_by: string }): number {
   const rows: { title: string; assignee_kind?: AssigneeKind; due_date?: string }[] = [];
-  if (plan.deadline && plan.template.start_fact) rows.push({ title: `${plan.template.start_fact.todo}（${plan.template.start_fact.deadline_key}）`, due_date: plan.deadline.date });
+  // 届满日不确定的（放假安排未收录、落在调休日）在待办上写明，律师在概览里就看得到（复核 Q4-05：原来只在创建接口的返回里，界面丢了）
+  if (plan.deadline && plan.template.start_fact)
+    rows.push({ title: `${plan.template.start_fact.todo}（${plan.template.start_fact.deadline_key}${plan.deadline.uncertain ? "；须按当年放假通知核对" : ""}）`, due_date: plan.deadline.date });
   rows.push(...plan.template.todos);
   for (const r of rows) createTodo(db, { ...scope, title: r.title, assignee_kind: r.assignee_kind ?? "me", due_date: r.due_date ?? null });
   return rows.length;

@@ -83,7 +83,7 @@ import { createTodo, deleteTodo, derivedTodos, listTodos, updateTodo } from "../
 import { triageMatter } from "../services/material-triage.ts";
 import { holidaySource } from "../tools/tools/cn-holidays.ts";
 import { planTemplate, applyTemplateTodos, templatesView } from "../services/matter-templates.ts";
-import { activeRules, discardDraft, listRuleSets, retireRules, RULES_SKILLS, saveRules, snapshotOf, type RulesSnapshot } from "../services/review-rules.ts";
+import { activeRules, discardDraft, listRuleSets, retireRules, RULES_SKILLS, saveRules, snapshotOf, scrubRulesFromRuns, type RulesSnapshot } from "../services/review-rules.ts";
 import { getWritingPrefs, hasPrefs, setWritingPrefs } from "../services/writing-prefs.ts";
 import { pendingChecks, unsignedLatestArtifacts } from "../services/pending-checks.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
@@ -586,15 +586,19 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         db.run(`UPDATE document_versions SET quarantined_at = ?, quarantine_reason = ? WHERE document_version_id = ?`, [nowIso(), reason, id]);
       }
       // 隔离前已生成的成果：用过这些材料的任务的成果标出“待处置”（不自动删除——律师须决定成果是否含有涉密内容）
+      const usedRuns: string[] = [];
       for (const run of db.all<{ run_id: string; input_snapshot: string | null }>(`SELECT run_id, input_snapshot FROM runs WHERE matter_id = ?`, [doc.matter_id])) {
         const used = parseJson<any>(run.input_snapshot, {})?.document_version_ids;
         if (!Array.isArray(used) || !used.some((x: unknown) => ids.includes(String(x)))) continue;
+        usedRuns.push(run.run_id);
         for (const a of db.all<{ artifact_version_id: string; open_items: string }>(`SELECT artifact_version_id, open_items FROM artifact_versions WHERE run_id = ?`, [run.run_id])) {
           const items = parseJson<unknown[]>(a.open_items, []);
           items.push({ kind: "quarantined_source", note: "本成果引用的材料带国家秘密标志、已隔离：请按涉密载体规定核查本成果，确认前不得交付" });
           db.run(`UPDATE artifact_versions SET open_items = ? WHERE artifact_version_id = ?`, [JSON.stringify(items), a.artifact_version_id]);
         }
       }
+      // 从这些任务起草的审查要点（复核 Q4-02）：草稿删除，审定启用的版本清除内容、在用的停用——否则据涉密范本概括的条款会随之后每次审合同发出
+      scrubRulesFromRuns(db, doc.matter_id, usedRuns);
     });
     for (const s of same) {
       if (s.storage_mode !== "import") continue;
@@ -1510,6 +1514,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       // 本事项的审查要点（v9.4 第 22 批，C1 #21）：审合同、回稿重审、起草合同的任务缺省按在用的那一版（快照，之后改要点不影响本任务）；
       // review_rules:false 为本次不用。我的写作偏好（C1 #29）：Agent 任务都带上（快照）
       if (p?.review_rules !== undefined && p?.review_rules !== null && typeof p.review_rules !== "boolean") throw validation("review_rules 须为 true / false");
+      // 追问在原会话上继续，模型已看过原任务的要点：一律沿用原任务的快照，不能另选（复核 Q4-08）
+      if (typeof p?.followup_of === "string" && p.followup_of && p?.review_rules !== undefined && p?.review_rules !== null) throw validation("追问沿用原任务的审查要点，不能另选；要换要点请重新发起任务");
       const rulesActive = skill && RULES_SKILLS.includes(skill) && p?.review_rules !== false ? activeRules(db, matter.matter_id) : null;
       if (p?.review_rules === true && !rulesActive) throw validation(skill && RULES_SKILLS.includes(skill) ? "这个事项还没有在用的审查要点" : "这个方法不按审查要点审");
       let rulesSnap: RulesSnapshot | null = rulesActive ? snapshotOf(rulesActive) : null;
@@ -1534,7 +1540,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         followup = { followup_of: prev.run_id, continue_session_id: sid };
         // 追问在原会话上继续，模型看到的是原任务那一版要点：沿用原任务的快照（之后改过要点也不换），“要点 n”的核对才对得上
         const prevRules = parseJson<any>(prev.input_snapshot, {})?.review_rules;
-        rulesSnap = p?.review_rules === false || !prevRules || typeof prevRules !== "object" ? null : (prevRules as RulesSnapshot);
+        rulesSnap = !prevRules || typeof prevRules !== "object" ? null : (prevRules as RulesSnapshot);
         // 档位沿用上一轮（复核 B3-B09）：律师选过“问答（只读）”，追问不能静默变成可写；要提高档位须明确选择（mode_raise_confirmed）并留痕
         const prevMode = runModeOf(prev.input_snapshot);
         if (p?.mode === undefined) {
@@ -2979,7 +2985,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "review_rules.retire": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterWriter(db, matter.matter_id, id);
-      const r = retireRules(db, matter.matter_id);
+      const r = retireRules(db, matter.matter_id, p?.base_version);
       if (r.retired) audit(db, id, "review_rules.retired", "matter", matter.matter_id, undefined, keyctx);
       return listRuleSets(db, matter.matter_id);
     },
@@ -2993,7 +2999,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     // 我的写作偏好（v9.4 第 22 批，C1 #29）：只存格式与文风，按律师本人存在本机
     "writing_prefs.get": (_p, id) => getWritingPrefs(db, id.tenantId, id.userId),
     "writing_prefs.set": (p, id) => {
-      const prefs = setWritingPrefs(db, id.tenantId, id.userId, (p ?? {}) as Record<string, unknown>);
+      const prefs = setWritingPrefs(db, id.tenantId, id.userId, (p ?? {}) as Record<string, unknown>, tokens ? (mid, text) => tokens.partiesIn(mid, text) : undefined);
       audit(db, id, "writing_prefs.set", "user", id.userId, sha256Hex(JSON.stringify({ signature: !!prefs.signature, citation: prefs.citation, notes: !!prefs.notes })), keyctx);
       return prefs;
     },

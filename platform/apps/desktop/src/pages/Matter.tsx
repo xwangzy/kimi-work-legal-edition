@@ -420,7 +420,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                         {triage.get(d.document_version_id) ? (
                           <>
                             {triageText(triage.get(d.document_version_id)!)}
-                            {!closed && triageSuggestion(triage.get(d.document_version_id)!, matter) && (
+                            {!closed && !matter.is_sample && triageSuggestion(triage.get(d.document_version_id)!, matter) && (
                               <button className="btn-link mat-suggest" onClick={() => nav(`/start/${triageSuggestion(triage.get(d.document_version_id)!, matter)!.id}/${matterId}`)}>
                                 {triageSuggestion(triage.get(d.document_version_id)!, matter)!.title}
                               </button>

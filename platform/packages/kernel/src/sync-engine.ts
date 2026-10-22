@@ -198,7 +198,7 @@ function collectRows(deps: SyncDeps, matterId: string, deviceId: string, lamport
   )) {
     push("parse_texts", (r as any).parse_version_id, r as Record<string, unknown>);
   }
-  for (const r of db.all(`SELECT * FROM runs WHERE matter_id = ? AND updated_at > ?`, [matterId, w])) push("runs", (r as any).run_id, r as Record<string, unknown>);
+  for (const r of db.all(`SELECT * FROM runs WHERE matter_id = ? AND updated_at > ?`, [matterId, w])) push("runs", (r as any).run_id, withoutWritingPrefs(r as Record<string, unknown>));
   for (const r of db.all(`SELECT re.* FROM run_events re JOIN runs rn ON rn.run_id = re.run_id WHERE rn.matter_id = ? AND re.created_at > ?`, [matterId, w])) {
     push("run_events", String((r as any).event_id), r as Record<string, unknown>);
   }
@@ -1338,4 +1338,20 @@ export function syncStatus(deps: SyncDeps, args: { shareDir?: string }): Record<
     unresolved_conflicts: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM sync_conflicts WHERE resolved = 0`, [])!.n,
     note: "共享文件夹只是介质（§7.2）；本机 SQLite 即权威。由共享目录全量重放生成本机库为 G1 项。",
   };
+}
+
+/**
+ * 任务记录随团队事项同步时去掉发起人的写作偏好（v9.4 第 22 批，复核 Q4-07）：偏好是律师个人的格式设置（落款里有本人姓名），
+ * 不属于事项；同事的设备只需要知道这个任务做了什么。本事项的审查要点快照照常同步（它是事项内容，工作台要用它显示要点原文）。
+ */
+export function withoutWritingPrefs(row: Record<string, unknown>): Record<string, unknown> {
+  if (typeof row.input_snapshot !== "string" || !row.input_snapshot.includes("writing_prefs")) return row;
+  try {
+    const snap = JSON.parse(row.input_snapshot) as Record<string, unknown>;
+    if (!("writing_prefs" in snap)) return row;
+    delete snap.writing_prefs;
+    return { ...row, input_snapshot: JSON.stringify(snap) };
+  } catch {
+    return row;
+  }
 }

@@ -19,11 +19,13 @@ CREATE TABLE matter_review_rules (
   status      text NOT NULL CHECK (status IN ('active','superseded','retired','draft')),
   source      text NOT NULL CHECK (source IN ('lawyer','ai_draft')),
   run_id      text,
+  from_run_id text,
   created_by  text NOT NULL,
   created_at  text NOT NULL,
   UNIQUE (matter_id, version)
 );
 CREATE INDEX matter_review_rules_matter_idx ON matter_review_rules (matter_id, status);
+CREATE UNIQUE INDEX matter_review_rules_one_active ON matter_review_rules (matter_id) WHERE status = 'active';
 ALTER TABLE firm_doc_style ADD COLUMN redline_author text;
 CREATE TABLE user_writing_prefs (
   tenant_id  text NOT NULL,

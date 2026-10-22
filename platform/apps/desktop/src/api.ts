@@ -476,6 +476,7 @@ export interface RuleSet {
   status: "active" | "superseded" | "retired" | "draft";
   source: "lawyer" | "ai_draft";
   run_id: string | null;
+  from_run_id?: string | null;
   created_at: string;
 }
 export interface RuleSets {
@@ -685,7 +686,7 @@ export const api = {
   sampleStatus: () => invoke<{ installed: boolean; removed: boolean; matter_ids: string[]; litigation_offered: boolean }>("samples.status", {}),
   removeSample: (matterId: string) => invoke<{ removed: boolean }>("samples.remove", { matter_id: matterId }),
   createMatter: (body: Record<string, unknown>) =>
-    invoke<{ matter: Matter; template_applied?: { template_id: string; todos: number; deadline: { date: string; steps: string[]; warnings: string[] } | null } }>("matters.create", body),
+    invoke<{ matter: Matter; template_applied?: { template_id: string; todos: number; deadline: { date: string; steps: string[]; warnings: string[]; uncertain: boolean } | null } }>("matters.create", body),
   matterTemplates: () => invoke<{ templates: MatterTemplate[] }>("matters.templates"),
   getMatter: (id: string) => invoke<{ matter: Matter; documents: any[]; run_policy?: RunPolicyView; runs?: any[] }>("matters.get", { matter_id: id }),
   updateMatter: (id: string, patch: Record<string, unknown>) => invoke<{ matter: Matter }>("matters.update", { matter_id: id, patch }),
@@ -944,7 +945,7 @@ export const api = {
   todos: (matterId: string) => invoke<TodoList>("todos.list", { matter_id: matterId }),
   reviewRules: (matterId: string) => invoke<RuleSets>("review_rules.get", { matter_id: matterId }),
   saveReviewRules: (matterId: string, body: { title: string; rules: Omit<ReviewRule, "no">[]; base_version: number | null; from_draft?: string }) => invoke<RuleSets & { saved: RuleSet }>("review_rules.save", { matter_id: matterId, ...body }),
-  retireReviewRules: (matterId: string) => invoke<RuleSets>("review_rules.retire", { matter_id: matterId }),
+  retireReviewRules: (matterId: string, baseVersion: number | null) => invoke<RuleSets>("review_rules.retire", { matter_id: matterId, base_version: baseVersion }),
   discardRulesDraft: (matterId: string, ruleSetId: string) => invoke<RuleSets>("review_rules.discard_draft", { matter_id: matterId, rule_set_id: ruleSetId }),
   materialTriage: (matterId: string) => invoke<{ items: MaterialTriage[] }>("materials.triage", { matter_id: matterId }),
   pendingChecks: (matterId: string) => invoke<{ checks: PendingCheck[]; total: number }>("matters.pending_checks", { matter_id: matterId }),

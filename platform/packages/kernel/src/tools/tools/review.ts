@@ -157,7 +157,11 @@ export function outlineSubmit(ctx: InvokeCtx, p: { doc_kind?: string; title?: st
 
 /** 从本所或客户的范本起草审查要点（v9.4 第 22 批，C1 #22）：只存为草稿，律师审定启用后才用于审查。 */
 export function rulesPropose(ctx: InvokeCtx, p: { title?: string; rules?: unknown[] }) {
-  return proposeDraft(ctx.db, scopeOf(ctx), p);
+  // 只在“从范本整理审查要点”的任务里接受（复核 Q4 建议 1：否则材料里的指令可让审合同任务也交草稿、占满草稿上限）
+  const s = scopeOf(ctx);
+  const skill = s.runId ? parseSkill(ctx.db.get<{ input_snapshot: string | null }>(`SELECT input_snapshot FROM runs WHERE run_id = ?`, [s.runId])?.input_snapshot ?? null) : null;
+  if (skill !== "review-rules-draft") throw new DomainError("forbidden", "只有“从范本整理审查要点”的任务可以起草审查要点", 403);
+  return proposeDraft(ctx.db, s, p);
 }
 
 export function outlineGet(ctx: InvokeCtx) {
@@ -266,4 +270,13 @@ export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { na
     manifest: { tool: "xlsx.render_table", sheets: specs.map((s) => ({ name: s.name, rows: s.rows.length - 1, columns: s.rows[0]!.length })), note: "Agent 经工具生成的表格（草稿）；导出时按事项令牌表还原代号" },
   });
   return { ...reg, sha256: stored.sha256, sheets: specs.length, rows: specs.reduce((n, s) => n + s.rows.length - 1, 0) };
+}
+
+function parseSkill(snap: string | null): string | null {
+  try {
+    const v = JSON.parse(snap ?? "{}")?.skill;
+    return typeof v === "string" ? v : null;
+  } catch {
+    return null;
+  }
 }

@@ -59,9 +59,14 @@ test("事项模板：清单、创建时预置阶段与待办；起算日推出�
   await assert.rejects(inv("matters.create", { title: "x", stance: "买方", template_id: "deal-contract", template_start: "2026-10-09" }), /不需要起算日期/);
   await assert.rejects(inv("matters.create", { title: "x", stance: "被告", template_id: t.id, template_start: "2026-02-30" }), /YYYY-MM-DD/);
   assert.equal(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM matters`)!.n, before);
-  // 申请执行期间按年算
+  // 申请执行期间按年算；届满日落在节假日表未收录的年份，待办上写明须核对（复核 Q4-05）
   const e = await inv("matters.create", { title: "执行", stance: "申请人", consent_status: "agreed", template_id: "lit-enforcement", template_start: "2026-03-31" });
   assert.equal(e.matter.key_dates["申请执行期间届满"], calcDeadline({ start: "2026-03-31", period: { unit: "year", n: 2 }, rule: "civil" }).deadline);
+  assert.equal(e.template_applied.deadline.uncertain, true);
+  assert.match((await inv("todos.list", { matter_id: e.matter.matter_id })).open.find((x: any) => x.due_date).title, /须按当年放假通知核对/);
+  assert.doesNotMatch(first.title, /须按当年放假通知核对/, "2026 年已收录的不写");
+  // 起算日不能晚于今天
+  await assert.rejects(inv("matters.create", { title: "x", stance: "被告", template_id: t.id, template_start: "2099-01-01" }), /不能晚于今天/);
 });
 
 test("审查要点：保存出新版、旧版取代；并发保护；校验；停用；AI 草稿只存草稿、同任务取代、启用后才编号", async () => {
@@ -122,12 +127,14 @@ test("风险卡与审查要点：按任务快照核对“要点 n”；工作台
   const scope = { tenantId: live.tid, matterId: m, runId: live.rid };
   const deps = { db: tk.kernel.db, blobs: tk.kernel.blobs };
   const card = { kind: "deviation", rule_source: "firm_rule", anchor_text: "买方应于验收合格后九十日内支付货款。", severity: "mid", category: "commercial", issue: "【权利义务】付款期限长于要点" };
-  assert.throws(() => submitRiskCards(deps, scope, { document_version_id: doc.document_version_id, cards: [{ ...card, rule_ref: "本所标准：付款六十日" }] }), /要点 n/);
+  // 本所覆盖层或任务说明另给的规则不写“要点 n”，照常接受（复核 Q4-03）
+  submitRiskCards(deps, scope, { document_version_id: doc.document_version_id, cards: [{ ...card, issue: "【权利义务】按覆盖层", rule_ref: "R-12 付款期限不超过 60 日" }] });
   assert.throws(() => submitRiskCards(deps, scope, { document_version_id: doc.document_version_id, cards: [{ ...card, rule_ref: "要点 2：付款" }] }), /只有 1 条，没有要点 2/);
   submitRiskCards(deps, scope, { document_version_id: doc.document_version_id, cards: [{ ...card, rule_ref: "要点 1：付款" }] });
   // 之后改了要点，卡片仍显示任务当时那一版
   await inv("review_rules.save", { matter_id: m, title: "采购标准", rules: [{ topic: "付款", standard: "验收合格后三十日内付款" }] });
-  const c = listRiskCards(tk.kernel.db, m, { run_id: live.rid })[0]!;
+  const c = listRiskCards(tk.kernel.db, m, { run_id: live.rid }).find((x) => x.rule_ref?.startsWith("要点"))!;
+  assert.equal(listRiskCards(tk.kernel.db, m, { run_id: live.rid }).find((x) => x.rule_ref?.startsWith("R-12"))?.rule_text, undefined, "不是要点的不附要点原文");
   assert.equal(c.rule_text?.version, 1);
   assert.equal(c.rule_text?.standard, "验收合格后六十日内付款");
   assert.equal(c.rule_text?.fallback, "不超过七十五日");
@@ -228,6 +235,12 @@ test("材料初判：文书类型、合同类型、篇幅；证据里提到“�
   assert.equal(t("2025年股东会决议.pdf", "").kind, "corporate");
   assert.equal(t("发票.pdf", "增值税专用发票\n备注：依据双方签订的采购合同第三条").kind, "other", "证据正文提到合同不算合同");
   assert.equal(t("律师函.docx", "").kind, "letter");
+  // 复核 Q4-04 的五个样本：诉状、申请书正文开头提到判决、裁决、调解书，不能认成判决书等；证据目录不是合同
+  assert.equal(t("上诉状.pdf", "民事上诉状\n上诉人（原审被告）：甲公司\n被上诉人（原审原告）：乙公司\n上诉人因与被上诉人买卖合同纠纷一案，不服北京市朝阳区人民法院（2025）京0105民初123号民事判决书，现提起上诉。").kind, "appeal");
+  assert.equal(t("起诉状.docx", "民事起诉状\n原告：张三\n被告：某公司\n诉讼请求：\n原告不服北京市朝阳区劳动人事争议仲裁委员会京朝劳人仲字[2025]第1号仲裁裁决书，现起诉。").kind, "complaint");
+  assert.equal(t("答辩状.docx", "民事答辩状\n答辩人：某公司\n答辩人就原告诉答辩人一案，针对起诉状及（2024）京01民终5号民事判决书...").kind, "defense");
+  assert.equal(t("强制执行申请书.pdf", "强制执行申请书\n申请执行人：甲\n被执行人：乙\n申请执行依据：（2025）京0105民初1号民事调解书").kind, "application");
+  assert.deepEqual([t("证据目录.pdf", "证据目录\n证据一：采购合同\n证据二：发票").kind, t("材料.pdf", "证据一：采购合同\n证据二：发票").kind], ["evidence_list", "other"]);
   assert.equal(triageText("a.txt", "", 25_000, 12).size, "long");
   assert.equal(triageText("a.txt", "", 800, null).size, "short");
 
@@ -289,4 +302,105 @@ test("法规库状态写明节假日表是随法规库更新的还是应用内�
   assert.ok(["package", "builtin"].includes(st.holidays.from));
   assert.ok(st.holidays.years.includes(2026));
   assert.match(st.display, /节假日表 \d{4}—\d{4} 年（(随法规库更新|应用内置)）/);
+});
+
+// ─── 独立复核 Q4 处置 ───
+
+test("Q4-01：写作偏好按事项令牌词典查当事人（简称、别名也拦）；落款也查；中文金额、货币符号、方括号案号也拦", async () => {
+  const { inv } = tk;
+  await inv("matters.create", { title: "偏好别名", stance: "买方", client_name: "庚星科技有限公司", consent_status: "agreed" });
+  for (const [field, text, re] of [
+    ["notes", "对庚星科技语气要强硬", /当事人/],
+    ["signature", "代理庚星科技有限公司 张律师", /当事人/],
+    ["notes", "标的金额五十万元以上的写详细", /金额/],
+    ["notes", "合同金额写成￥1,000.00", /金额/],
+    ["notes", "参照京劳人仲字[2025]第1号的写法", /案号/],
+  ] as const)
+    await assert.rejects(inv("writing_prefs.set", { [field]: text }), (e: any) => e.code === "validation" && re.test(e.message), text);
+  // 本所名称与律师姓名不是当事人：落款照常保存
+  assert.equal((await inv("writing_prefs.set", { signature: "某某律师事务所 张律师" })).signature, "某某律师事务所 张律师");
+  await inv("writing_prefs.set", {});
+});
+
+test("Q4-02：隔离带密级标志的材料时，用过它的任务起草的审查要点草稿删除、据此启用的版本清除内容并停用、任务快照里的要点清空", { timeout: 60_000 }, async () => {
+  const { inv } = tk;
+  const { matter } = await inv("matters.create", { title: "隔离要点", stance: "买方", consent_status: "agreed" });
+  const m = matter.matter_id;
+  const tpl = await inv("materials.import", { matter_id: m, filename: "范本.txt", data_base64: Buffer.from("采购范本：验收后六十日付款 金丝雀KWL-Q402").toString("base64"), mime: "text/plain" });
+  const live = liveTaskIdentity(tk, m, "q402");
+  tk.kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ document_version_ids: [tpl.document_version_id], skill: "review-rules-draft" }), live.rid]);
+  const scope = { tenantId: live.tid, matterId: m, runId: live.rid };
+  const d1 = proposeDraft(tk.kernel.db, scope, { title: "范本整理", rules: [{ topic: "付款", standard: "验收后六十日 金丝雀KWL-Q402" }] });
+  const v1 = (await inv("review_rules.save", { matter_id: m, title: "范本整理", rules: [{ topic: "付款", standard: "验收后六十日 金丝雀KWL-Q402" }], from_draft: d1.rule_set_id })).saved;
+  assert.equal(v1.from_run_id, live.rid, "启用的版本记下起草它的任务");
+  // 律师在此基础上改了一版：来源沿用
+  const v2 = (await inv("review_rules.save", { matter_id: m, title: "范本整理", rules: [{ topic: "付款", standard: "验收后七十日 金丝雀KWL-Q402" }], base_version: 1 })).saved;
+  assert.equal(v2.from_run_id, live.rid);
+  proposeDraft(tk.kernel.db, scope, { title: "又一份", rules: [{ topic: "违约金", standard: "金丝雀KWL-Q402" }] });
+  // 另一个任务快照了第 2 版
+  const other = liveTaskIdentity(tk, m, "q402b");
+  tk.kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ review_rules: snapshotOf(v2) }), other.rid]);
+  // 重新解析看到密级标志 → 隔离
+  const put = tk.kernel.blobs.put(Buffer.from("机密★1年\n采购范本：验收后六十日付款 金丝雀KWL-Q402"), m);
+  tk.kernel.db.run(`UPDATE document_versions SET sha256 = ?, storage_uri = ? WHERE document_version_id = ?`, [put.sha256, put.storage_uri, tpl.document_version_id]);
+  await assert.rejects(inv("materials.reparse", { document_version_id: tpl.document_version_id }), (e: any) => e.code === "classified_material");
+  const l = await inv("review_rules.get", { matter_id: m });
+  assert.equal(l.active, null, "在用的那一版停用，不再快照进新任务");
+  assert.equal(l.drafts.length, 0);
+  assert.ok(l.history.every((h: any) => h.rules.length === 0 && /已隔离/.test(h.title)));
+  const leaked = tk.kernel.db.all(`SELECT title, rules FROM matter_review_rules WHERE matter_id = ?`, [m]).concat(tk.kernel.db.all(`SELECT input_snapshot FROM runs WHERE matter_id = ?`, [m]));
+  assert.equal(JSON.stringify(leaked).includes("KWL-Q402"), false, "库里的要点与任务快照不再有那份材料的内容");
+});
+
+test("Q4-08、Q4-09、建议 1：追问不能另选要点；停用核对版本；每个事项只有一版在用；只有“从范本整理”的任务能起草要点", async () => {
+  const { inv } = tk;
+  const { matter } = await inv("matters.create", { title: "复核杂项", stance: "买方", consent_status: "not_required" });
+  const m = matter.matter_id;
+  const est = await inv("runs.estimate", { matter_id: m, scenario: "a1.agent_task", document_version_ids: [] });
+  await assert.rejects(inv("runs.start", { matter_id: m, estimate_id: est.estimate_id, idempotency_key: `q408-${Date.now()}`, goal: "追问", skill: "contract-review", followup_of: "run_x", review_rules: false }), /追问沿用原任务的审查要点/);
+  await inv("review_rules.save", { matter_id: m, title: "标准", rules: [{ topic: "付款", standard: "六十日" }] });
+  await assert.rejects(inv("review_rules.retire", { matter_id: m, base_version: null }), (e: any) => e.code === "conflict");
+  assert.throws(() => tk.kernel.db.run(`INSERT INTO matter_review_rules (rule_set_id, tenant_id, matter_id, version, title, rules, sha256, status, source, created_by, created_at) VALUES ('rrs_x', 't', ?, 99, 'x', '[]', 'x', 'active', 'lawyer', 'u', 'now')`, [m]), /UNIQUE/);
+  assert.equal((await inv("review_rules.retire", { matter_id: m, base_version: 1 })).active, null);
+  const { rulesPropose } = await import("../src/tools/tools/review.ts");
+  const live = liveTaskIdentity(tk, m, "rp");
+  const ctx = (skill: string) => {
+    tk.kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ skill }), live.rid]);
+    return { claims: { tid: live.tid, mid: m, rid: live.rid }, db: tk.kernel.db } as any;
+  };
+  assert.throws(() => rulesPropose(ctx("contract-review"), { title: "x", rules: [{ topic: "a", standard: "b" }] }), (e: any) => e.code === "forbidden");
+  assert.equal(rulesPropose(ctx("review-rules-draft"), { title: "x", rules: [{ topic: "a", standard: "b" }] }).rules, 1);
+});
+
+test("Q4-11：新接口的权限——结案只读、移出成员后读写都拒绝", async () => {
+  const { inv } = tk;
+  const { matter } = await inv("matters.create", { title: "权限", stance: "买方", consent_status: "agreed" });
+  const m = matter.matter_id;
+  await inv("review_rules.save", { matter_id: m, title: "标准", rules: [{ topic: "付款", standard: "六十日" }] });
+  await inv("matters.close", { matter_id: m, retention_years: 1 });
+  assert.equal((await inv("review_rules.get", { matter_id: m })).active.version, 1, "结案后仍可看");
+  for (const [method, params] of [["review_rules.save", { title: "x", rules: [{ topic: "a", standard: "b" }] }], ["review_rules.retire", {}], ["review_rules.discard_draft", { rule_set_id: "rrs_x" }]] as const)
+    await assert.rejects(inv(method, { matter_id: m, ...params }), (e: any) => e.code === "conflict", `${method} 结案后拒绝`);
+  tk.kernel.db.run(`UPDATE matter_members SET removed_at = CURRENT_TIMESTAMP WHERE matter_id = ?`, [m]);
+  for (const method of ["review_rules.get", "materials.triage"]) await assert.rejects(inv(method, { matter_id: m }), (e: any) => ["forbidden", "not_found"].includes(e.code), `${method} 非成员拒绝`);
+});
+
+test("Q4-11：节假日表来源随法规库包换用而变（不是两种取值都放行）", async () => {
+  const { useSignedHolidays, CN_HOLIDAYS } = await import("../src/tools/tools/cn-holidays.ts");
+  useSignedHolidays([], "");
+  assert.equal((await tk.inv("lawdb.status")).holidays.from, "builtin");
+  useSignedHolidays([CN_HOLIDAYS.find((y) => y.year === 2026)], "测试包 1");
+  const st = await tk.inv("lawdb.status");
+  assert.equal(st.holidays.from, "package");
+  assert.match(st.display, /节假日表 2024—2026 年（随法规库更新）/);
+  useSignedHolidays([], "");
+});
+
+test("Q4-07：任务记录随团队事项同步时去掉发起人的写作偏好，审查要点快照保留", async () => {
+  const { withoutWritingPrefs } = await import("../src/sync-engine.ts");
+  const row = { run_id: "r", input_snapshot: JSON.stringify({ goal: "审一下", writing_prefs: { signature: "某所 张律师" }, review_rules: { version: 1 } }) };
+  const out = JSON.parse(String(withoutWritingPrefs(row).input_snapshot));
+  assert.equal(out.writing_prefs, undefined);
+  assert.deepEqual(out.review_rules, { version: 1 });
+  assert.equal(withoutWritingPrefs({ run_id: "r", input_snapshot: "{}" }).input_snapshot, "{}");
 });

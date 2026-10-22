@@ -91,7 +91,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       const first = firstOpenCard(r.cards);
       if (first) setActive(first);
     }
-    const all = r.cards.flatMap((c) => [c.anchor_text, c.issue, c.suggestion ?? "", c.fallback ?? "", c.bottom_line ?? "", c.assumptions ?? "", c.rule_ref ?? "", c.rule_text?.standard ?? "", c.rule_text?.fallback ?? "", c.rule_text?.red_line ?? "", c.rule_text?.title ?? "", ...(c.searched_terms ?? []), ...(c.searched_docs ?? []), ...(c.related ?? []).map((x) => x.quote)]).join("\n");
+    const all = r.cards.flatMap((c) => [c.anchor_text, c.issue, c.suggestion ?? "", c.fallback ?? "", c.bottom_line ?? "", c.assumptions ?? "", c.rule_ref ?? "", c.rule_text?.topic ?? "", c.rule_text?.standard ?? "", c.rule_text?.fallback ?? "", c.rule_text?.red_line ?? "", c.rule_text?.title ?? "", ...(c.searched_terms ?? []), ...(c.searched_docs ?? []), ...(c.related ?? []).map((x) => x.quote)]).join("\n");
     if (all.includes("〔")) setMap(await restoreTokens(matterId, all));
     return r.cards;
   }, [matterId, documentVersionId, runFilter]);

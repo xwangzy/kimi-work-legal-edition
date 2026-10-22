@@ -10,6 +10,7 @@ import { nav } from "../App.tsx";
 import { matterLine, SCENARIOS } from "../lib/scenarios.ts";
 import { notifyDataChanged } from "../lib/events.ts";
 import { Modal } from "./Modal.tsx";
+import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 
 let templatesCache: Promise<MatterTemplate[]> | null = null;
 /** 模板清单（内核给，同一会话只取一次）。 */
@@ -59,22 +60,35 @@ export function ReviewRulesWidget({ matter, readOnly }: { matter: Matter; readOn
   const [edit, setEdit] = useState<{ from: RuleSet | null; draft: RuleSet | null } | null>(null);
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState("");
+  // AI 草稿是令牌形态（复核 Q4-06）：显示前经同一受审计通道还原代号，律师核对的是原文；审定启用时存的也是还原后的原文
+  const [map, setMap] = useState<Map<string, string | null>>(new Map());
+  const plain = (t: string | null | undefined) => (t ? restoredPlain(t, map) : "");
+  const restoreAll = useCallback(
+    (r: RuleSets) => {
+      const all = [r.active, ...r.drafts, ...r.history].flatMap((x) => (x ? [x.title, ...x.rules.flatMap((y) => [y.topic, y.standard, y.fallback ?? "", y.red_line ?? ""])] : [])).join("\n");
+      if (all.includes("〔")) void restoreTokens(matter.matter_id, all).then((m) => setMap((m0) => new Map([...m0, ...m]))).catch(() => {});
+    },
+    [matter.matter_id],
+  );
   const reload = useCallback(() => {
     api
       .reviewRules(matter.matter_id)
       .then((r) => {
         setSets(r);
+        restoreAll(r);
         setFailed(false);
       })
       .catch(() => setFailed(true));
-  }, [matter.matter_id]);
+  }, [matter.matter_id, restoreAll]);
   useEffect(reload, [reload]);
   if (failed) return <p className="muted">审查要点没有读出来，请稍后再试。</p>;
   if (!sets) return <p className="muted">载入中…</p>;
   const act = async (f: () => Promise<RuleSets>) => {
     setErr("");
     try {
-      setSets(await f());
+      const r = await f();
+      setSets(r);
+      restoreAll(r);
       notifyDataChanged();
     } catch (e) {
       setErr((e as Error).message);
@@ -87,7 +101,7 @@ export function ReviewRulesWidget({ matter, readOnly }: { matter: Matter; readOn
         <>
           <div className="w-row">
             <span>
-              「{a.title}」第 {a.version} 版 · {a.rules.length} 条
+              「{plain(a.title)}」第 {a.version} 版 · {a.rules.length} 条
             </span>
             <button className="btn-link" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
               {open ? "收起" : "看要点"}
@@ -97,9 +111,9 @@ export function ReviewRulesWidget({ matter, readOnly }: { matter: Matter; readOn
             <ol className="rules-list">
               {a.rules.map((r) => (
                 <li key={r.no}>
-                  <b>{r.topic}</b>：{r.standard}
-                  {r.fallback && <span className="muted">；可退让：{r.fallback}</span>}
-                  {r.red_line && <span className="rules-red">；不可谈：{r.red_line}</span>}
+                  <b>{plain(r.topic)}</b>：{plain(r.standard)}
+                  {r.fallback && <span className="muted">；可退让：{plain(r.fallback)}</span>}
+                  {r.red_line && <span className="rules-red">；不可谈：{plain(r.red_line)}</span>}
                 </li>
               ))}
             </ol>
@@ -112,7 +126,7 @@ export function ReviewRulesWidget({ matter, readOnly }: { matter: Matter; readOn
       {sets.drafts.map((d) => (
         <div key={d.rule_set_id} className="w-row rules-draft">
           <span>
-            AI 起草的「{d.title}」· {d.rules.length} 条 <span className="tag tag-gray">草稿，还没启用</span>
+            AI 起草的「{plain(d.title)}」· {d.rules.length} 条 <span className="tag tag-gray">草稿，还没启用</span>
           </span>
           {!readOnly && (
             <span>
@@ -129,7 +143,7 @@ export function ReviewRulesWidget({ matter, readOnly }: { matter: Matter; readOn
             从范本整理
           </button>
           {a && (
-            <button className="btn-link" onClick={() => void act(() => api.retireReviewRules(matter.matter_id))}>
+            <button className="btn-link" onClick={() => void act(() => api.retireReviewRules(matter.matter_id, a.version))}>
               停用
             </button>
           )}
@@ -142,6 +156,7 @@ export function ReviewRulesWidget({ matter, readOnly }: { matter: Matter; readOn
           matterId={matter.matter_id}
           base={edit.from}
           draft={edit.draft}
+          plain={plain}
           activeVersion={a?.version ?? null}
           onClose={() => setEdit(null)}
           onSaved={(r) => {
@@ -156,9 +171,9 @@ export function ReviewRulesWidget({ matter, readOnly }: { matter: Matter; readOn
 }
 
 /** 编辑审查要点：逐条改、加、删、上移；保存为新的一版（审定草稿时草稿随之去掉）。 */
-export function RulesEditor({ matterId, base, draft, activeVersion, onClose, onSaved }: { matterId: string; base: RuleSet | null; draft: RuleSet | null; activeVersion: number | null; onClose: () => void; onSaved: (r: RuleSets) => void }) {
-  const [title, setTitle] = useState(draft ? draft.title.replace(/（草稿）$/, "") : (base?.title ?? ""));
-  const [rows, setRows] = useState<Row[]>(() => (base?.rules.length ? base.rules.map(({ no: _no, ...r }) => ({ ...r })) : [blankRow()]));
+export function RulesEditor({ matterId, base, draft, activeVersion, plain = (t) => t ?? "", onClose, onSaved }: { matterId: string; base: RuleSet | null; draft: RuleSet | null; activeVersion: number | null; plain?: (t: string | null | undefined) => string; onClose: () => void; onSaved: (r: RuleSets) => void }) {
+  const [title, setTitle] = useState(draft ? plain(draft.title).replace(/（草稿）$/, "") : plain(base?.title));
+  const [rows, setRows] = useState<Row[]>(() => (base?.rules.length ? base.rules.map((r) => ({ topic: plain(r.topic), standard: plain(r.standard), fallback: r.fallback ? plain(r.fallback) : null, red_line: r.red_line ? plain(r.red_line) : null })) : [blankRow()]));
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (i: number, k: keyof Row, v: string) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, [k]: k === "fallback" || k === "red_line" ? v || null : v } : r)));

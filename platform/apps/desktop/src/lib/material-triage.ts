@@ -32,6 +32,9 @@ export function triageSuggestion(t: MaterialTriage, matter: Pick<Matter, "stance
       return matterLine(matter) !== "litigation" || stance === "被告" || stance === "被申请人" || stance === "被上诉人" ? null : pick("enforcement");
     case "policy":
       return pick("policy-review");
+    // 证据目录（复核 Q4-04 新增的类型）：诉讼事项里建议整理案卷
+    case "evidence_list":
+      return matterLine(matter) === "litigation" ? pick("casefile") : null;
     default:
       return null;
   }

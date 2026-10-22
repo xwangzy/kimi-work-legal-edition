@@ -29,9 +29,9 @@ const clean = (v: unknown, max: number, field: string): string | null => {
   return s || null;
 };
 
-/** 像案情的写法：案号、金额、身份证号、手机号。 */
-const CASE_NO = /[（(]\s*\d{4}\s*[)）][^\s，。；]{1,20}号/;
-const AMOUNT = /\d[\d,，.]*\s*(元|万元|亿元)|人民币\s*\d/;
+/** 像案情的写法：案号（含劳动仲裁的方括号、六角括号写法）、金额（含中文数字与货币符号）、身份证号、手机号（复核 Q4-01）。 */
+const CASE_NO = /[（(\[〔【]\s*\d{4}\s*[)）\]〕】][^\s，。；]{1,20}号/;
+const AMOUNT = /\d[\d,，.]*\s*(元|万元|亿元)|[零〇一二两三四五六七八九十百千万亿壹贰叁肆伍陆柒捌玖拾佰仟]+\s*(元|万元|亿元)|人民币\s*[\d零〇一二两三四五六七八九十壹贰叁肆伍陆柒捌玖拾]|[￥¥]\s*\d/;
 const ID_LIKE = /\b\d{17}[\dXx]\b|\b1[3-9]\d{9}\b/;
 
 /** 本人事项里的当事人名称（委托人、相对方、当事人名单），用于拦下写进偏好的案情。名称至少 2 个字才比对。 */
@@ -78,7 +78,11 @@ export function getWritingPrefs(db: KernelDb, tenantId: string, userId: string):
   }
 }
 
-export function setWritingPrefs(db: KernelDb, tenantId: string, userId: string, input: Record<string, unknown>): WritingPrefs {
+/**
+ * partiesIn：事项令牌词典的当事人检查（与无事项问答同一口径，容忍简称、别名等写法变体；复核 Q4-01——只比完整名称时，
+ * “对丙科技要强硬”能存进偏好，再随别的事项的任务以原文发出，那个事项的令牌表不认识这个简称）。
+ */
+export function setWritingPrefs(db: KernelDb, tenantId: string, userId: string, input: Record<string, unknown>, partiesIn?: (matterId: string, text: string) => string[]): WritingPrefs {
   const prefs: WritingPrefs = {
     signature: clean(input.signature, PREFS_LIMITS.signature, "落款"),
     citation: input.citation === "full" || input.citation === "short" ? input.citation : input.citation === null || input.citation === undefined || input.citation === "" ? null : (() => {
@@ -86,11 +90,21 @@ export function setWritingPrefs(db: KernelDb, tenantId: string, userId: string, 
     })(),
     notes: clean(input.notes, PREFS_LIMITS.notes, "其他说明"),
   };
-  // 落款里本来就有本所名称与律师姓名，不按当事人名称拦；其他说明逐项核
+  // 落款与其他说明都核（复核 Q4-01：落款里写“代理丙科技有限公司”也是案情）；本所名称与律师姓名不是当事人，不会被拦
   const parties = partyNames(db, tenantId, userId);
+  const myMatters = partiesIn ? db.all<{ matter_id: string }>(`SELECT m.matter_id FROM matters m JOIN matter_members mm ON mm.matter_id = m.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL WHERE m.tenant_id = ? AND m.lifecycle <> 'purged'`, [userId, tenantId]) : [];
   for (const [field, text] of [["落款", prefs.signature], ["其他说明", prefs.notes]] as const) {
     if (!text) continue;
-    const p = field === "落款" ? caseLikeProblem(text, []) : caseLikeProblem(text, parties);
+    let p = caseLikeProblem(text, parties);
+    if (!p && partiesIn) {
+      for (const m of myMatters) {
+        const hit = partiesIn(m.matter_id, text)[0];
+        if (hit) {
+          p = `出现了你事项里的当事人（${hit}）`;
+          break;
+        }
+      }
+    }
     if (p) throw new DomainError("validation", `写作偏好只存格式与文风，不存案情：${field}里${p}。请删掉后再保存`, 422);
   }
   if (!prefs.signature && !prefs.citation && !prefs.notes) {

@@ -314,7 +314,7 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
   const out: { card_id: string; seq: number; anchor_status: string; basis_checks: string[]; duplicate_of?: string; updated?: string; searched_found?: string[]; no_anchor?: true }[] = [];
   let seqOffset = 0;
   let relatedMissing = 0;
-  // 本任务发起时快照的本事项审查要点（v9.4 第 22 批，C1 #21）：偏离要点的卡写“要点 n”，n 须在这一版里——不让卡片编出不存在的要点
+  // 本任务发起时快照的本事项审查要点（v9.4 第 22 批，C1 #21）：卡片写了“要点 n”的，n 须在这一版里——不让卡片编出不存在的要点
   const rulesSnap = runRulesSnapshot(deps.db, scope.runId);
   deps.db.tx(() => {
     cards.forEach((c: any, i: number) => {
@@ -330,9 +330,8 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
       const ruleRef = optStr(c?.rule_ref, 400);
       if (kind === "deviation" && !ruleRef) throw new DomainError("validation", `第 ${i + 1} 张卡是偏离规则类：须在 rule_ref 写明偏离的规则（编号与要点）`, 422);
       const ruleSource: RuleSource | null = RULE_SOURCES.includes(c?.rule_source) ? (c.rule_source as RuleSource) : kind === "deviation" ? "firm_rule" : null;
+      // 只核写了“要点 n”的卡（复核 Q4-03：本所覆盖层、任务说明里另给的规则也是 firm_rule，不能强制它们写成要点）
       const ruleNo = ruleNoOf(ruleRef);
-      if (rulesSnap && kind === "deviation" && ruleSource === "firm_rule" && ruleNo === null)
-        throw new DomainError("validation", `第 ${i + 1} 张卡：本任务按本事项审查要点第 ${rulesSnap.version} 版审，偏离要点的卡 rule_ref 写“要点 n：条款”`, 422);
       if (ruleNo !== null && !rulesSnap) throw new DomainError("validation", `第 ${i + 1} 张卡：本任务没有本事项审查要点，rule_ref 不要写“要点 ${ruleNo}”`, 422);
       if (ruleNo !== null && rulesSnap && (ruleNo < 1 || ruleNo > rulesSnap.rules.length))
         throw new DomainError("validation", `第 ${i + 1} 张卡：审查要点第 ${rulesSnap.version} 版只有 ${rulesSnap.rules.length} 条，没有要点 ${ruleNo}`, 422);
@@ -1133,7 +1132,7 @@ export function listFacts(db: KernelDb, matterId: string, f: { run_id?: unknown;
   }
   return db
     .all<any>(
-      `SELECT fact_id, run_id, seq, statement, kind, occurred_on, amount_yuan, party, document_version_id, quote, anchor_status, status, decided_by, decided_at
+      `SELECT fact_id, run_id, seq, statement, kind, occurred_on, amount_yuan, party, document_version_id, quote, anchor_status, anchor_start, status, decided_by, decided_at
          FROM matter_facts WHERE ${where.join(" AND ")} ORDER BY COALESCE(occurred_on, '9999'), seq LIMIT 2000`,
       args,
     )

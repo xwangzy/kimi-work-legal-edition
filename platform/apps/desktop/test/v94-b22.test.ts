@@ -62,8 +62,12 @@ test("材料初判：一句话写类型、合同类型与篇幅；按立场建�
   assert.equal(triageSuggestion(t("judgment_first"), { stance: "买方" }), null, "非诉事项里的判决是参考材料，不建议上诉（走查）");
   assert.equal(triageSuggestion(t("award"), { stance: "常年顾问" }), null);
   assert.equal(triageSuggestion(t("other"), { stance: "原告" }), null);
+  // 复核 Q4-04 新增的类型：证据目录在诉讼事项建议整理案卷；申请书不建议
+  assert.equal(triageSuggestion(t("evidence_list"), { stance: "原告" })?.id, "casefile");
+  assert.equal(triageSuggestion(t("evidence_list"), { stance: "买方" }), null);
+  assert.equal(triageSuggestion(t("application"), { stance: "申请人" }), null);
   const kernel = readFileSync(repo("packages/kernel/src/services/material-triage.ts"), "utf8");
-  for (const k of ["contract", "supplement", "complaint", "labor_application", "judgment_first", "judgment_final", "award", "mediation", "policy"]) assert.ok(kernel.includes(`  ${k}: "`), `内核有 ${k}`);
+  for (const k of ["contract", "supplement", "complaint", "labor_application", "judgment_first", "judgment_final", "award", "mediation", "policy", "evidence_list", "application"]) assert.ok(kernel.includes(`  ${k}: "`), `内核有 ${k}`);
 });
 
 test("引文页码：事实出处带页码（按页解析的材料）；Word 不写", () => {
@@ -80,4 +84,12 @@ test("设置：修订署名随文书版式保存；写作偏好只写格式与�
   const wp = src("components/WritingPrefs.tsx");
   assert.match(wp, /只写格式与文风，不写案情；会随任务说明一起发给 AI/);
   assert.match(src("pages/Connections.tsx"), /<DocStyle \/>\n\s*<WritingPrefs \/>/);
+});
+
+test("复核 Q4-06：审查要点显示前还原代号（AI 草稿是令牌形态），审定时编辑框里是还原后的原文；工作台还原清单含要点的条款", () => {
+  const ms = src("components/MatterSetup.tsx");
+  assert.match(ms, /restoreTokens\(matter\.matter_id, all\)/);
+  assert.match(ms, /topic: plain\(r\.topic\), standard: plain\(r\.standard\)/);
+  assert.match(src("components/ReviewWorkbench.tsx"), /c\.rule_text\?\.topic \?\? ""/);
+  assert.match(src("components/MatterSetup.tsx"), /retireReviewRules\(matter\.matter_id, a\.version\)/, "停用带版本号（Q4-09）");
 });

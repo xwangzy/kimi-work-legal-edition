@@ -40,6 +40,8 @@ export interface RuleSetView {
   source: "lawyer" | "ai_draft";
   run_id: string | null;
   sha256: string;
+  /** 由 AI 草稿审定而来时，起草它的任务（复核 Q4-02）。 */
+  from_run_id: string | null;
   created_at: string;
 }
 
@@ -91,7 +93,7 @@ function viewOf(r: any): RuleSetView {
   } catch {
     rules = [];
   }
-  return { rule_set_id: r.rule_set_id, version: r.version ?? null, title: r.title, rules, status: r.status, source: r.source, run_id: r.run_id ?? null, sha256: r.sha256, created_at: r.created_at };
+  return { rule_set_id: r.rule_set_id, version: r.version ?? null, title: r.title, rules, status: r.status, source: r.source, run_id: r.run_id ?? null, sha256: r.sha256, from_run_id: r.from_run_id ?? null, created_at: r.created_at };
 }
 
 export function activeRules(db: KernelDb, matterId: string): RuleSetView | null {
@@ -119,27 +121,32 @@ export function saveRules(db: KernelDb, scope: { tenantId: string; matterId: str
   if (input.base_version !== undefined && (input.base_version ?? null) !== (cur?.version ?? null)) {
     throw new DomainError("conflict", `审查要点已经有了第 ${cur?.version ?? "?"} 版：请刷新后再改`, 409);
   }
+  let fromRun: string | null = null;
   if (input.from_draft !== undefined && input.from_draft !== null) {
-    const d = db.get<{ status: string }>(`SELECT status FROM matter_review_rules WHERE rule_set_id = ? AND matter_id = ?`, [String(input.from_draft), scope.matterId]);
+    const d = db.get<{ status: string; run_id: string | null }>(`SELECT status, run_id FROM matter_review_rules WHERE rule_set_id = ? AND matter_id = ?`, [String(input.from_draft), scope.matterId]);
     if (!d || d.status !== "draft") throw notFound("这份草稿已不在（可能已启用或删除）");
+    fromRun = d.run_id;
     db.run(`DELETE FROM matter_review_rules WHERE rule_set_id = ?`, [String(input.from_draft)]);
   }
+  // 律师在审定的草稿基础上又改了一版：来源任务沿用上一版的（复核 Q4-02：来源材料被隔离时要能追到）
+  fromRun ??= cur?.from_run_id ?? null;
   const sha = shaOf(title, rules);
-  if (cur && cur.sha256 === sha) return cur;
+  if (cur && cur.sha256 === sha && fromRun === cur.from_run_id) return cur;
   const next = (db.get<{ v: number | null }>(`SELECT MAX(version) AS v FROM matter_review_rules WHERE matter_id = ?`, [scope.matterId])?.v ?? 0) + 1;
   if (cur) db.run(`UPDATE matter_review_rules SET status = 'superseded' WHERE rule_set_id = ?`, [cur.rule_set_id]);
   const id = newId("reviewRules");
   db.run(
-    `INSERT INTO matter_review_rules (rule_set_id, tenant_id, matter_id, version, title, rules, sha256, status, source, run_id, created_by, created_at)
-     VALUES (?,?,?,?,?,?,?, 'active', 'lawyer', NULL, ?, ?)`,
-    [id, scope.tenantId, scope.matterId, next, title, JSON.stringify(rules), sha, scope.userId, new Date().toISOString()],
+    `INSERT INTO matter_review_rules (rule_set_id, tenant_id, matter_id, version, title, rules, sha256, status, source, run_id, from_run_id, created_by, created_at)
+     VALUES (?,?,?,?,?,?,?, 'active', 'lawyer', NULL, ?, ?, ?)`,
+    [id, scope.tenantId, scope.matterId, next, title, JSON.stringify(rules), sha, fromRun, scope.userId, new Date().toISOString()],
   );
   return viewOf(db.get(`SELECT * FROM matter_review_rules WHERE rule_set_id = ?`, [id]));
 }
 
-/** 停用：之后发起的任务不再按要点审；历史版本保留。 */
-export function retireRules(db: KernelDb, matterId: string): { retired: boolean } {
+/** 停用：之后发起的任务不再按要点审；历史版本保留。base_version 给出时核对（复核 Q4-09：别处刚存的新版不被不知情地停用）。 */
+export function retireRules(db: KernelDb, matterId: string, baseVersion?: unknown): { retired: boolean } {
   const cur = activeRules(db, matterId);
+  if (baseVersion !== undefined && (baseVersion ?? null) !== (cur?.version ?? null)) throw new DomainError("conflict", `审查要点已经有了第 ${cur?.version ?? "?"} 版：请刷新后再操作`, 409);
   if (!cur) return { retired: false };
   db.run(`UPDATE matter_review_rules SET status = 'retired' WHERE rule_set_id = ?`, [cur.rule_set_id]);
   return { retired: true };
@@ -199,4 +206,31 @@ export function runRulesSnapshot(db: KernelDb, runId: string | null): RulesSnaps
   } catch {
     return null;
   }
+}
+
+/**
+ * 隔离带国家秘密标志的材料时（复核 Q4-02）：用过这份材料的任务起草的审查要点草稿删除；由这些草稿审定而来的版本清除内容
+ * （在用的改为停用，不再快照进新任务）；任务快照里的这些版本一并清空要点文字。返回清除的版本数。须在隔离事务里执行。
+ */
+export function scrubRulesFromRuns(db: KernelDb, matterId: string, runIds: readonly string[]): number {
+  if (runIds.length === 0) return 0;
+  const inList = runIds.map(() => "?").join(",");
+  db.run(`DELETE FROM matter_review_rules WHERE matter_id = ? AND status = 'draft' AND run_id IN (${inList})`, [matterId, ...runIds]);
+  const hit = db.all<{ rule_set_id: string }>(`SELECT rule_set_id FROM matter_review_rules WHERE matter_id = ? AND from_run_id IN (${inList})`, [matterId, ...runIds]).map((r) => r.rule_set_id);
+  if (hit.length === 0) return 0;
+  const title = "（来源材料已隔离，内容已清除）";
+  for (const id of hit)
+    db.run(`UPDATE matter_review_rules SET title = ?, rules = '[]', sha256 = ?, status = CASE status WHEN 'active' THEN 'retired' ELSE status END WHERE rule_set_id = ?`, [title, shaOf(title, []), id]);
+  for (const r of db.all<{ run_id: string; input_snapshot: string | null }>(`SELECT run_id, input_snapshot FROM runs WHERE matter_id = ? AND input_snapshot LIKE '%review_rules%'`, [matterId])) {
+    let snap: any;
+    try {
+      snap = JSON.parse(r.input_snapshot ?? "{}");
+    } catch {
+      continue;
+    }
+    if (!snap?.review_rules || !hit.includes(snap.review_rules.rule_set_id)) continue;
+    snap.review_rules = { ...snap.review_rules, title, rules: [] };
+    db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify(snap), r.run_id]);
+  }
+  return hit.length;
 }

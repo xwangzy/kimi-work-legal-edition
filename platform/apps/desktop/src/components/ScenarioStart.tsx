@@ -110,6 +110,8 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const [useRules, setUseRules] = useState(true);
   useEffect(() => {
     setRules(null);
+    // 换了事项回到缺省“按要点审”（复核 Q4 建议 2）
+    setUseRules(true);
     if (!matter || !card.skill || !RULES_SKILLS.includes(card.skill)) return;
     let live = true;
     void api
@@ -428,7 +430,7 @@ function FactHints({ matter, hints, onSaved }: { matter: Matter; hints: ReturnTy
     <div className="ss-hints muted">
       {hints.map((h) => (
         <div key={h.field} className="ss-hint-row">
-          这件事项还没填{h.label}：{h.why}。
+          这个事项还没填{h.label}：{h.why}。
           {!readOnly && open !== h.field && (
             <button className="btn-link" onClick={() => { setOpen(h.field); setV(""); setErr(""); }}>
               填写
