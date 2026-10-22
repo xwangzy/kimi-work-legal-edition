@@ -4,6 +4,7 @@
  * 所内节点都走这同一份方法表。签发已接入设备签名（§6.3）；审计事件入签名 hash 链（§6.4）；
  * 策略事件的签发人角色签名在同步阶段接入（当前经审计事件上链留痕）。
  */
+import { calcDeadline } from "../tools/tools/deadline.ts";
 import { localToday } from "../services/local-date.ts";
 import { createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
 import { errFields, slog } from "@zr-legal/safe-log";
@@ -4591,6 +4592,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       requireReminders();
       return { unread: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM reminder_inbox WHERE tenant_id = ? AND read_at IS NULL`, [id.tenantId])?.n ?? 0 };
     },
+    // 期限推算（v9.4 第 20 批）：设提醒时按法定期间推算届满日，与 Agent 的 calc.deadline 同一计算（纯函数，不读写账本）
+    "deadlines.compute": (p) => calcDeadline({ start: p?.start, period: p?.period, rule: p?.rule ?? "civil" } as any),
     "reminders.create": (p, id) => {
       const rs = requireReminders();
       const input = parseReminderInput(p, Date.now());

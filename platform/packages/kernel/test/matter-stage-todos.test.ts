@@ -209,3 +209,18 @@ test("Agent 的事项口径带上阶段、事件时点与地域（没填的不�
   assert.ok(src.includes("分析截止日=${ctxM.asOf}${ctxM.facts}\\n"), "A1 任务的事项口径");
   assert.ok(src.includes("分析截止日=${ctxM.asOf}${ctxM.facts}；场景"), "S1 默认路径的事项口径");
 });
+
+test("设提醒时按法定期间推算（deadlines.compute）：与 calc.deadline 同一计算，顺延节假日、只到月给区间", { timeout: 60_000 }, async () => {
+  const t3 = await makeKernel({}, "deadline-api-firm");
+  try {
+    const r = await t3.inv("deadlines.compute", { start: "2025-09-16", period: { unit: "day", n: 15 }, rule: "civil" });
+    assert.equal(r.deadline, "2025-10-09", "10 月 1 日届满遇国庆中秋假期（10 月 1—8 日）顺延至 10 月 9 日");
+    assert.ok(r.steps.length > 0);
+    const m = await t3.inv("deadlines.compute", { start: "2025-09", period: { unit: "day", n: 15 } });
+    assert.equal(m.deadline, null);
+    assert.ok(m.range);
+    await assert.rejects(t3.inv("deadlines.compute", { start: "2025-13-01", period: { unit: "day", n: 15 } }), (e: any) => e.code === "validation");
+  } finally {
+    await t3.kernel.close().catch(() => {});
+  }
+});

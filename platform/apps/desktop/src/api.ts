@@ -911,6 +911,9 @@ export const api = {
     }>("reminders.list", matterId ? { matter_id: matterId } : {}),
   remindersUnread: () => invoke<{ unread: number }>("reminders.unread"),
   reminderRetry: (reminderId: string) => invoke<ReminderItem>("reminders.retry", { reminder_id: reminderId }),
+  /** 按法定期间推算届满日（v9.4 第 20 批；内核 calc.deadline 同一计算）。 */
+  computeDeadline: (start: string, period: { unit: "day" | "month" | "year" | "workday"; n: number }, rule: "civil" | "workday" = "civil") =>
+    invoke<{ deadline: string | null; range: { earliest: string; latest: string } | null; steps: string[]; warnings?: string[] }>("deadlines.compute", { start, period, rule }),
   reminderCreate: (input: ReminderInput & { matter_id: string }) => invoke<ReminderItem>("reminders.create", { ...input }),
   reminderUpdate: (reminderId: string, input: ReminderInput) => invoke<ReminderItem>("reminders.update", { reminder_id: reminderId, ...input }),
   reminderCancel: (reminderId: string) => invoke<ReminderItem>("reminders.cancel", { reminder_id: reminderId }),

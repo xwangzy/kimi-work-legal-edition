@@ -8,7 +8,7 @@ import { nav } from "../App.tsx";
 import { Modal } from "../components/Modal.tsx";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
-import { audienceText, bjToday, cloudStateText, daysUntil, defaultForm, dueText, dueTone, REMINDER_KINDS, reminderKindLabel, rejectReasonText, reminderLine, scheduleLine } from "../lib/reminders.ts";
+import { audienceText, bjToday, cloudStateText, daysUntil, defaultForm, dueText, dueTone, importCandidates, PERIOD_PRESETS, REMINDER_KINDS, reminderKindLabel, rejectReasonText, reminderLine, scheduleLine, splitByDue, type ImportCandidate } from "../lib/reminders.ts";
 import { Select } from "../components/Select.tsx";
 
 const DAYS_CHOICES = [0, 1, 2, 3, 5, 7, 10, 14, 30];
@@ -52,6 +52,44 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
       .catch(() => {})
       .finally(() => void load());
   };
+  // 从事项导入（v9.4 第 20 批，V9.4 主文 §3.1“期限提醒：从事项关键日期一键导入”）：关键日期与待办期限，逐条勾选后创建
+  const [importing, setImporting] = useState<(ImportCandidate & { pick: boolean })[] | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+  const openImport = async () => {
+    try {
+      const ms = (await api.listMatters()).matters.filter((m) => (m.lifecycle ?? "active") === "active");
+      const todos = new Map<string, { title: string; due_date?: string | null; status: string }[]>();
+      for (const m of ms.slice(0, 100)) {
+        try {
+          todos.set(m.matter_id, (await api.todos(m.matter_id)).open);
+        } catch {
+          // 读不到某个事项的待办：只导入它的关键日期
+        }
+      }
+      const existing = new Set((data?.reminders ?? []).map((r) => `${r.matter_id}|${r.due_date}|${r.note}`));
+      setImporting(importCandidates(ms, todos, existing, bjToday()).map((c) => ({ ...c, pick: true })));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+  const doImport = async () => {
+    if (!importing) return;
+    setImportBusy(true);
+    let n = 0;
+    try {
+      for (const c of importing.filter((x) => x.pick)) {
+        await api.reminderCreate({ matter_id: c.matter_id, ...defaultForm(), kind: c.kind, due_date: c.due_date, note: c.label });
+        n += 1;
+      }
+      setImporting(null);
+      refreshThenSync();
+    } catch (e) {
+      setErr(`导入了 ${n} 条后出错：${(e as Error).message}`);
+    } finally {
+      setImportBusy(false);
+    }
+  };
+  const groups = splitByDue(data?.reminders ?? []);
   const unread = data?.inbox.filter((i) => !i.read_at) ?? [];
   const read = data?.inbox.filter((i) => !!i.read_at).slice(0, 20) ?? [];
   return (
@@ -59,9 +97,14 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
       <div className="main-wide">
         <div className="page-head">
           <h1 className="page-title">期限提醒</h1>
-          <button className="btn-primary" onClick={() => setEditing({})}>
-            设提醒
-          </button>
+          <div className="page-head-actions">
+            <button className="btn-ghost" onClick={() => void openImport()}>
+              从事项导入
+            </button>
+            <button className="btn-primary" onClick={() => setEditing({})}>
+              设提醒
+            </button>
+          </div>
         </div>
         {err && <div className="banner banner-red">{err}</div>}
         {data && (
@@ -101,8 +144,44 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
         </div>
 
         <div className="section-title">我设的提醒</div>
-        {data && data.reminders.length === 0 && <p className="muted">还没有设提醒。可以在这里设，也可以在事项页的“设提醒”里设。</p>}
+        {data && data.reminders.length === 0 && (
+          <p className="muted">
+            还没有设提醒。可以在这里设，也可以{" "}
+            <button className="btn-link" onClick={() => void openImport()}>
+              从事项的开庭日、待办期限导入
+            </button>
+            。
+          </p>
+        )}
+        {importing && (
+          <Modal title="从事项导入期限" onClose={() => setImporting(null)}>
+            {importing.length === 0 ? (
+              <p className="muted">事项里没有还没设提醒的未来日期（关键日期或待办期限）。</p>
+            ) : (
+              <div className="reminder-import">
+                {importing.map((c, i) => (
+                  <label key={`${c.matter_id}${c.due_date}${c.label}`} className="lifecycle-check">
+                    <input type="checkbox" checked={c.pick} onChange={(e) => setImporting(importing.map((x, j) => (j === i ? { ...x, pick: e.target.checked } : x)))} />
+                    {c.due_date} · {reminderKindLabel(c.kind)} · {c.label} <span className="muted">（{c.matter_title}{c.source === "todo" ? " · 待办" : ""}）</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <p className="muted">按“提前 3 天、上午 9 点、只提醒我”创建，之后可以逐条修改。日期以事项里填的为准，请核对。</p>
+            <div className="modal-actions">
+              <button className="btn-ghost" onClick={() => setImporting(null)}>取消</button>
+              <button className="btn-primary" disabled={importBusy || !importing.some((x) => x.pick)} onClick={() => void doImport()}>
+                导入 {importing.filter((x) => x.pick).length} 条
+              </button>
+            </div>
+          </Modal>
+        )}
         {data && data.reminders.length > 0 && (
+          <>
+          {groups.upcoming.length === 0 && <p className="muted">没有还没到期的提醒。</p>}
+          {[groups.upcoming, groups.past].map((list, gi) => list.length === 0 ? null : (
+          <details key={gi} className="reminder-group" open={gi === 0}>
+          <summary>{gi === 0 ? `还没到期（${list.length}）` : `已过期（${list.length}）`}</summary>
           <table className="data">
             <thead>
               <tr>
@@ -114,7 +193,7 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
               </tr>
             </thead>
             <tbody>
-              {data.reminders.map((r) => {
+              {list.map((r) => {
                 const cs = cloudStateText(r.cloud_state, data.cloud.configured, { targets: r.cloud_targets, audience: r.audience });
                 // 已结案的事项、期限已过的提醒只能撤销（复核 S10B-08）
                 const editable = r.matter_lifecycle === "active" && daysUntil(r.due_date) >= 0;
@@ -170,6 +249,9 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
               })}
             </tbody>
           </table>
+          </details>
+          ))}
+          </>
         )}
       </div>
       {editing && (
@@ -258,6 +340,17 @@ function ReminderForm({ reminder, matterId, onClose, onSaved }: { reminder?: Rem
       setBusy(false);
     }
   };
+  // 按法定期间推算（v9.4 第 20 批）：起算日 + 常用期间 → 内核 calc.deadline 算出届满日并附过程，律师点“用这个日期”才填入
+  const [calc, setCalc] = useState<{ start: string; preset: string; result: Awaited<ReturnType<typeof api.computeDeadline>> | null; err: string }>({ start: "", preset: PERIOD_PRESETS[0]!.id, result: null, err: "" });
+  const runCalc = async () => {
+    const p = PERIOD_PRESETS.find((x) => x.id === calc.preset)!;
+    try {
+      const r = await api.computeDeadline(calc.start.trim(), { unit: p.unit, n: p.n });
+      setCalc({ ...calc, result: r, err: "" });
+    } catch (e) {
+      setCalc({ ...calc, result: null, err: (e as Error).message });
+    }
+  };
   const noteLen = [...f.note].length;
   return (
     <Modal title={reminder ? "修改提醒" : "设提醒"} onClose={onClose}>
@@ -274,6 +367,44 @@ function ReminderForm({ reminder, matterId, onClose, onSaved }: { reminder?: Rem
           <span>期限日</span>
           <input type="date" min={bjToday()} value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} />
         </label>
+        {!reminder && (
+          <details className="field field-wide deadline-calc">
+            <summary>按法定期间推算期限日</summary>
+            <div className="deadline-calc-row">
+              <input value={calc.start} onChange={(e) => setCalc({ ...calc, start: e.target.value, result: null })} placeholder="起算日，如 2026-11-03（送达日等）" aria-label="起算日" />
+              <Select aria-label="期间" value={calc.preset} onChange={(v) => setCalc({ ...calc, preset: v, result: null })} options={PERIOD_PRESETS.map((p) => ({ value: p.id, label: p.label }))} />
+              <button className="btn btn-sm" disabled={!calc.start.trim()} onClick={() => void runCalc()}>推算</button>
+            </div>
+            {calc.err && <div className="banner banner-red">{calc.err}</div>}
+            {calc.result && (
+              <div className="deadline-calc-result">
+                {calc.result.deadline ? (
+                  <p>
+                    届满日 <b>{calc.result.deadline}</b>{" "}
+                    {calc.result.deadline > bjToday() ? (
+                      <button className="btn-link" onClick={() => { const p = PERIOD_PRESETS.find((x) => x.id === calc.preset)!; setF({ ...f, due_date: calc.result!.deadline!, kind: p.kind, note: f.note || p.label.replace(/（.*）/, "") }); }}>
+                        用这个日期
+                      </button>
+                    ) : (
+                      <span className="muted">已经过了</span>
+                    )}
+                  </p>
+                ) : (
+                  <p>起算日只到月：届满日在 {calc.result.range?.earliest} 至 {calc.result.range?.latest} 之间，查清具体日期后再推算。</p>
+                )}
+                <ul className="muted">
+                  {calc.result.steps.map((x, i) => (
+                    <li key={i}>{x}</li>
+                  ))}
+                </ul>
+                {(calc.result.warnings ?? []).map((w, i) => (
+                  <div key={i} className="banner banner-orange">{w}</div>
+                ))}
+                <p className="muted">期间规则以法律规定为准；不含在途时间、中止与中断。起算事实请你确认。</p>
+              </div>
+            )}
+          </details>
+        )}
         <label className="field">
           <span>提前几天提醒</span>
           <Select value={String(f.days_before)} onChange={(v) => setF({ ...f, days_before: Number(v) })} options={DAYS_CHOICES.map((d) => ({ value: String(d), label: d === 0 ? "当天" : `提前 ${d} 天` }))} />
@@ -298,7 +429,7 @@ function ReminderForm({ reminder, matterId, onClose, onSaved }: { reminder?: Rem
         </div>
       </div>
       {reminder?.fired && <div className="banner banner-orange">这条提醒已经响过：保存后会按新的时间再提醒一次{reminder.audience === "team" ? "（事项成员也会再收到）" : ""}。</div>}
-      <p className="muted">期限日由你核对填写，系统不推算法定期间、不顺延节假日。提醒保存在这台电脑上，换电脑需要重新设置。</p>
+      <p className="muted">期限日由你核对填写；用“按法定期间推算”时，系统按民法典的期间规则算并顺延节假日，过程列在上面。提醒保存在这台电脑上，换电脑需要重新设置。</p>
       {err && <div className="banner banner-red">{err}</div>}
       <div className="modal-actions">
         <button className="btn-ghost" onClick={onClose}>

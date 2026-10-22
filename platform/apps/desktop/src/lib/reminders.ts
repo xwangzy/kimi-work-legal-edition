@@ -119,3 +119,65 @@ export function upcomingDeadlines<T extends { due_date: string; cloud_state: str
     })
     .sort((a, b) => a.due_date.localeCompare(b.due_date));
 }
+
+// ─── v9.4 第 20 批：按法定期间推算届满日、从事项导入、过期分组 ───
+
+/** 常用法定期间（推算由内核 calc.deadline 做；期间规则以法律规定为准，起算事实由律师确认）。 */
+export const PERIOD_PRESETS: readonly { id: string; label: string; kind: string; unit: "day" | "month" | "year"; n: number }[] = [
+  { id: "appeal_judgment", label: "判决上诉期（15 日）", kind: "appeal", unit: "day", n: 15 },
+  { id: "appeal_ruling", label: "裁定上诉期（10 日）", kind: "appeal", unit: "day", n: 10 },
+  { id: "defense", label: "答辩期（15 日）", kind: "filing", unit: "day", n: 15 },
+  { id: "labor_suit", label: "劳动仲裁裁决后起诉（15 日）", kind: "filing", unit: "day", n: 15 },
+  { id: "labor_limit", label: "劳动争议仲裁时效（1 年）", kind: "limitation", unit: "year", n: 1 },
+  { id: "enforce", label: "申请执行期间（2 年）", kind: "limitation", unit: "year", n: 2 },
+  { id: "civil_limit", label: "一般诉讼时效（3 年）", kind: "limitation", unit: "year", n: 3 },
+];
+
+/** 事项关键日期的名字 → 期限类型（开庭、举证、上诉；其余“其他”）。 */
+export function kindForKey(key: string): string {
+  if (/开庭|庭审|hearing/i.test(key)) return "hearing";
+  if (/举证|证据|evidence/i.test(key)) return "evidence";
+  if (/上诉|appeal/i.test(key)) return "appeal";
+  if (/时效|limitation/i.test(key)) return "limitation";
+  if (/合同|到期|续约|contract/i.test(key)) return "contract";
+  return "other";
+}
+
+export interface ImportCandidate {
+  matter_id: string;
+  matter_title: string;
+  source: "key_date" | "todo";
+  label: string;
+  due_date: string;
+  kind: string;
+}
+
+/**
+ * 从事项导入的候选：关键日期（分析截止日不算）与待办期限；今天及以前的、已经设过同一天同一说明提醒的不列。
+ * existing：已有提醒的“事项|日期|说明”。
+ */
+export function importCandidates(
+  matters: readonly { matter_id: string; title: string; key_dates?: Record<string, string> | null; lifecycle?: string }[],
+  todos: ReadonlyMap<string, readonly { title: string; due_date?: string | null; status: string }[]>,
+  existing: ReadonlySet<string>,
+  today: string,
+): ImportCandidate[] {
+  const out: ImportCandidate[] = [];
+  for (const m of matters) {
+    if ((m.lifecycle ?? "active") !== "active") continue;
+    for (const [k, v] of Object.entries(m.key_dates ?? {})) {
+      if (k === "analysis_as_of" || !/^\d{4}-\d{2}-\d{2}$/.test(v ?? "") || v <= today) continue;
+      out.push({ matter_id: m.matter_id, matter_title: m.title, source: "key_date", label: k, due_date: v, kind: kindForKey(k) });
+    }
+    for (const t of todos.get(m.matter_id) ?? []) {
+      if (t.status !== "open" || !t.due_date || t.due_date <= today) continue;
+      out.push({ matter_id: m.matter_id, matter_title: m.title, source: "todo", label: t.title.slice(0, 60), due_date: t.due_date, kind: "other" });
+    }
+  }
+  return out.filter((c) => !existing.has(`${c.matter_id}|${c.due_date}|${c.label}`)).sort((a, b) => a.due_date.localeCompare(b.due_date));
+}
+
+/** 我设的提醒分两组：还没到期的（含今天）在前；已过期的收起（复核 Q1 未改项“提醒页过期分组”）。 */
+export function splitByDue<T extends { due_date: string }>(list: readonly T[], now = Date.now()): { upcoming: T[]; past: T[] } {
+  return { upcoming: list.filter((r) => daysUntil(r.due_date, now) >= 0), past: list.filter((r) => daysUntil(r.due_date, now) < 0) };
+}

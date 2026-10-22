@@ -1083,3 +1083,10 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .wb-change-cols { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
 .wb-change-card { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); border-top: 1px solid var(--border-subtle); margin-top: var(--sp-2); padding-top: var(--sp-2); }
 .wb-doc-view.mat-view { position: static; background: none; border: 0; padding: 0; margin: 0 0 var(--sp-2); }
+
+/* 期限提醒：按法定期间推算、从事项导入、过期分组（v9.4 第 20 批） */
+.deadline-calc summary { cursor: pointer; color: var(--accent-text); }
+.deadline-calc-row { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; margin-top: var(--sp-2); }
+.deadline-calc-result ul { margin: var(--sp-1) 0; padding-left: var(--sp-5); font-size: var(--fs-sm); }
+.reminder-import { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 50vh; overflow: auto; }
+.reminder-group > summary { cursor: pointer; margin: var(--sp-2) 0; color: var(--text-secondary); }

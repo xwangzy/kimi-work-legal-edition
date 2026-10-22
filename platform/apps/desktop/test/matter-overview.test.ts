@@ -64,3 +64,23 @@ test("复核页：按事件时点核对的引用单列一组，须勾选；勾�
   assert.ok(kernel.includes('CITATIONS_EVENT_TIME_CHECK_KEY = "citations_event_time_checked"'));
   assert.ok(src("pages/Review.tsx").includes("已按事件时点和地域核对上面的引用"));
 });
+
+test("期限提醒：从事项导入关键日期与待办期限（分析截止日、过去的、已设过的不列）；过期的分组收起；常用期间", async () => {
+  const { importCandidates, splitByDue, kindForKey, PERIOD_PRESETS } = await import("../src/lib/reminders.ts");
+  const ms = [
+    { matter_id: "m1", title: "甲案", key_dates: { analysis_as_of: "2026-12-01", 开庭日: "2026-11-20", 举证期限: "2026-10-01" } },
+    { matter_id: "m2", title: "乙案", key_dates: {}, lifecycle: "closed" },
+  ];
+  const todos = new Map([["m1", [{ title: "提交答辩状", due_date: "2026-11-05", status: "open" }, { title: "已完成的", due_date: "2026-11-06", status: "done" }]], ["m2", [{ title: "结案事项", due_date: "2026-12-01", status: "open" }]]]);
+  const c = importCandidates(ms, todos, new Set(["m1|2026-11-20|不同说明"]), "2026-10-22");
+  assert.deepEqual(c.map((x) => [x.due_date, x.label, x.kind, x.source]), [["2026-11-05", "提交答辩状", "other", "todo"], ["2026-11-20", "开庭日", "hearing", "key_date"]]);
+  assert.equal(importCandidates(ms, todos, new Set(["m1|2026-11-20|开庭日"]), "2026-10-22").length, 1, "已设过的不列");
+  assert.equal(kindForKey("举证期限"), "evidence");
+  const now = Date.parse("2026-10-22T04:00:00Z");
+  const g = splitByDue([{ due_date: "2026-10-21" }, { due_date: "2026-10-22" }, { due_date: "2026-11-01" }], now);
+  assert.deepEqual([g.upcoming.length, g.past.length], [2, 1]);
+  assert.ok(PERIOD_PRESETS.some((p) => p.label === "判决上诉期（15 日）" && p.unit === "day" && p.n === 15));
+  const page = readFileSync(new URL("../src/pages/Reminders.tsx", import.meta.url), "utf8");
+  assert.ok(page.includes("api.computeDeadline") && page.includes("用这个日期") && page.includes("从事项导入") && page.includes("已过期"));
+  assert.ok(!page.includes("系统不推算法定期间"), "说明与新功能一致");
+});
