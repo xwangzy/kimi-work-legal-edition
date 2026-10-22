@@ -984,3 +984,14 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; font-size: var(--fs-xs); color: var(--text-secondary); margin: 0 0 6px; }
 .breadcrumb .btn-link { font-size: inherit; padding: 0; }
 .crumb-sep { margin: 0 6px; color: var(--text-secondary); }
+
+/* 起草前确认论点与依据（v9.4 第 19 批 C-04） */
+.outline-card { margin-top: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
+.outline-list { margin: 0; padding-left: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-3); }
+.outline-claim { display: flex; align-items: flex-start; gap: var(--sp-2); }
+.outline-claim textarea { flex: 1; min-width: 0; }
+.outline-basis, .outline-facts { list-style: none; margin: var(--sp-1) 0 0; padding-left: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-sm); }
+.outline-basis .cite-state { margin-left: var(--sp-2); }
+.outline-article { margin: var(--sp-1) 0 0; padding: var(--sp-2) var(--sp-3); border-left: 3px solid var(--border-subtle); background: var(--bg-surface); white-space: pre-wrap; color: var(--text-secondary); }
+.outline-dropped, .outline-dropped textarea { color: var(--text-secondary); }
+.outline-dropped textarea { text-decoration: line-through; }

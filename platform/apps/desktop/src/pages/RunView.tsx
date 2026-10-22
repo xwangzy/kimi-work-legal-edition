@@ -25,6 +25,8 @@ import { methodLine, methodShort } from "../lib/run-method.ts";
 import { Select } from "../components/Select.tsx";
 import { rightCollapsed, rightTabs, type RightTab } from "../lib/run-pane.ts";
 import { Breadcrumb } from "../components/Breadcrumb.tsx";
+import { OutlineConfirm } from "../components/OutlineConfirm.tsx";
+import { outlineAnswer, outlineQuestion, type OutlineView } from "../lib/outline.ts";
 
 /** 页面标题：任务目标前 24 字（律师能区分多个任务）；没有目标时用场景名。 */
 function runTitle(run: any): string {
@@ -83,6 +85,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const [unresolved, setUnresolved] = useState<UnresolvedOperation[]>([]);
   const [approvals, setApprovals] = useState<ApprovalCard[]>([]);
   const [questions, setQuestions] = useState<QuestionCard[]>([]);
+  // 起草前的论点与依据（C-04）：本任务待确认的提纲
+  const [outline, setOutline] = useState<OutlineView | null>(null);
   const [stateVersion, setStateVersion] = useState<number | null>(null);
   const [egressInflight, setEgressInflight] = useState<{ model: number; search: number; fetch: number } | null>(null);
   const [matter, setMatter] = useState<any>(null);
@@ -183,6 +187,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
         const i = await api.interactions(runId).catch(() => ({ approvals: [], questions: [], state_version: null, live_text: null, progress: null }));
         setApprovals(i.approvals);
         setQuestions(i.questions);
+        const ol = await api.outlines(matterId, runId).catch(() => null);
+        setOutline(ol?.outlines.find((o) => o.status === "proposed") ?? null);
         setStateVersion(i.state_version ?? null);
         setLiveText(i.live_text ?? "");
         // 内容不变时保留原对象（复核 B4-B20：每秒轮询都会反序列化出新对象，引用变化让静默看门狗永远被重置）
@@ -192,6 +198,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
       } else {
         setApprovals([]);
         setQuestions([]);
+        setOutline(null);
         setLiveText("");
         setProgress(null);
         setHeartbeat(0);
@@ -227,8 +234,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
 
   // 代号只在界面还原（标题、计划、提问、预览）
   const texts = useMemo(
-    () => [preview?.text ?? "", liveText, ...progressTexts(progress), ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? "")), ...artifacts.map((a) => String(a.title ?? "")), ...(risk?.top.map((t) => t.issue) ?? [])].join("\n"),
-    [preview, liveText, progress, approvals, questions, events, artifacts, risk],
+    () => [preview?.text ?? "", liveText, ...progressTexts(progress), ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? "")), ...artifacts.map((a) => String(a.title ?? "")), ...(risk?.top.map((t) => t.issue) ?? []), ...(outline?.items.flatMap((x) => [x.claim, x.counter ?? "", ...x.basis.map((b) => b.note ?? ""), ...x.facts.map((f) => f.statement)]) ?? [])].join("\n"),
+    [preview, liveText, progress, approvals, questions, events, artifacts, risk, outline],
   );
   useEffect(() => {
     if (!texts.includes("〔")) return;
@@ -305,9 +312,11 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   }, [terminal]);
   // 引擎心跳（宿主转来）也算“还活着”：长时间思考或执行工具时不误报“没有新进展”
   const silentFor = !terminal && approvals.length === 0 && questions.length === 0 ? silenceMs(now, lastActivity, heartbeat) : 0;
+  // 提纲卡在时，Agent 为它提的那道确认题并进提纲卡（不让律师答两遍）
+  const outlineQ = useMemo(() => (outline ? outlineQuestion(questions) : null), [outline, questions]);
   const pendingCards = useMemo(
-    () => [...approvals.map((card) => ({ kind: "approval" as const, card })), ...questions.map((card) => ({ kind: "question" as const, card }))],
-    [approvals, questions],
+    () => [...approvals.map((card) => ({ kind: "approval" as const, card })), ...questions.filter((q) => q.question_id !== outlineQ?.question_id).map((card) => ({ kind: "question" as const, card }))],
+    [approvals, questions, outlineQ],
   );
   const [showAllCards, setShowAllCards] = useState(false);
   const [showAllFiles, setShowAllFiles] = useState(false);
@@ -437,6 +446,35 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     setErr("");
     try {
       await api.answer(runId, q.question_id, answers, stateVersion);
+      await refresh();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 确认提纲：先记下律师的逐条决定，再替律师答 Agent 的确认题（选“已确认”）；没有确认题时 Agent 下次读取 outline.get 即得确认版
+  const confirmOutline = async (decisions: Parameters<typeof api.decideOutline>[2], note: string) => {
+    if (!outline) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await api.decideOutline(matterId, outline.outline_id, decisions, note);
+      if (outlineQ) await api.answer(runId, outlineQ.question_id, outlineAnswer(outlineQ, true), stateVersion);
+      await refresh();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const stopOutline = async () => {
+    if (!outlineQ) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await api.answer(runId, outlineQ.question_id, outlineAnswer(outlineQ, false), stateVersion);
       await refresh();
     } catch (e) {
       setErr((e as Error).message);
@@ -693,6 +731,17 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               )}
             </div>
           </div>
+        )}
+        {outline && !terminal && (
+          <OutlineConfirm
+            key={outline.outline_id}
+            outline={outline}
+            plain={(t) => (t ? restoredPlain(t, tokenMap) : "")}
+            busy={busy}
+            canStop={!!outlineQ}
+            onConfirm={(d, n) => void confirmOutline(d, n)}
+            onStop={() => void stopOutline()}
+          />
         )}
         <div className="interactions">
           {/* 同一时间只展开一张（UIUX 增量评审 P0-F）：先到的先处理，其余折叠为“还有 N 项待确认”，可展开 */}

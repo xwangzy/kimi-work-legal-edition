@@ -6,12 +6,12 @@ when_to_use: 已开庭或证据交换完成、争议焦点已由法庭归纳（�
 arguments: [focus_points]
 kwl:
   id: agency-statement
-  version: 1.0.2
+  version: 1.1.0
   lines: [诉讼仲裁]
   chain: casefile
   tier: beta
   tools_required: [facts.list, materials.list, materials.read_excerpt, docx.render_report, xlsx.render_table]
-  tools_optional: [law.search, law.get_version, citations.verify]
+  tools_optional: [law.search, law.get_version, citations.verify, outline.submit, outline.get]
   outputs: [代理词（草稿）.docx, 争点与依据对照表.xlsx]
   source_lineage: [spec:v9.3主文§5.3诉讼线文书, skill:issue-evidence-matrix@1.0.0（要件与证据）]
 ---
@@ -36,7 +36,8 @@ kwl:
 2. **依据核验**：实体法条文用 `law.search` / `law.get_version` 按行为时定位，`citations.verify` 核验；核验不通过的不写条号；程序规定按第 2 节的写法。案例只引律师提供的（本产品没有案例检索与核验工具），写明案号与出处，不编造、不凭记忆补案号。
 3. **结论段**：按我方诉讼请求（或答辩意见）写明请求法院支持或驳回的具体事项，不写“必然”“一定”等判断。
 4. **对照表**：见第 5 节。
-5. **成文**：`docx.render_report` 生成代理词（title：`代理词（草稿）`），`xlsx.render_table` 生成对照表；回报中列出待律师确认的事实与证据。
+5. **起草前确认论点与依据**（成文之前必做）：用 `outline.submit` 提交拟写的论点（doc_kind 写“代理词”），每条附依据（法名 + 条号，note 写这条怎么支持该论点）与所用事实（引用 `facts.list` 的 fact_id）；再用提问工具请律师确认（问题写“论点与依据已列在任务页，请确认后选择”，选项依次为“已确认，按确认的论点起草”“先不起草”）。律师选第一项后用 `outline.get` 读取确认版，只按确认版写：删掉的论点不写，律师改写过的按律师的写法，去掉的依据不引；律师选“先不起草”即停止，回报提纲与待补事项。确认之前文书工具会拒绝生成。
+6. **成文**：`docx.render_report` 生成代理词（title：`代理词（草稿）`），`xlsx.render_table` 生成对照表；回报中列出待律师确认的事实与证据。
 
 ## 4. 工具调用约定
 | 工具 | 用途 | 关键参数 | 失败时 |
@@ -75,6 +76,7 @@ kwl:
 - 不外发、不签发。
 
 ## 8. 依赖缺失时的降级
+- `outline.submit` / `outline.get` 不可用：在回报中先列出论点与依据，请律师确认后再起草；不得跳过确认直接出文书。
 - 争议焦点不明且律师未给出：只交付焦点候选清单（标注“供律师确认”），不写论证。
 - `facts.list` 不可用或关键事实未确认：只交付焦点框架与待确认事实清单。
 - `docx.render_report` / `xlsx.render_table` 不可用：用受限命令行 `kwl-docx create` / `kwl-xlsx create` 生成，并在文件开头注明“未经文书工具生成，格式待整理”。

@@ -6,12 +6,12 @@ when_to_use: 事项已有律师确认的事实（事实时间线）和诉请金�
 arguments: [court]
 kwl:
   id: pleading-draft
-  version: 1.0.2
+  version: 1.1.0
   lines: [诉讼仲裁]
   chain: casefile
   tier: beta
   tools_required: [facts.list, materials.list, docx.render_report, xlsx.render_table]
-  tools_optional: [materials.read_excerpt, law.search, law.get_version, citations.verify, calc.deadline]
+  tools_optional: [materials.read_excerpt, law.search, law.get_version, citations.verify, calc.deadline, outline.submit, outline.get]
   outputs: [民事起诉状（草稿）.docx, 证据目录.xlsx, 提交前核对清单.xlsx]
   source_lineage: [demo:pleading@v1.3, demo:scene-civil-pleading@v1.0, spec:历史Demo评估与融合方案#3.2-7]
 ---
@@ -38,7 +38,8 @@ kwl:
 3. **写事实与理由**：按时间顺序写律师确认的事实：合同订立 → 我方履行 → 对方违约 → 催告与协商 → 损失或欠款；每段末尾注明对应证据编号（如“（见证据 3、证据 4）”）。理由部分简明写请求权基础与各项请求的依据，不写程序策略、不写对我方不利的分析。
 4. **证据目录**：从 `materials.list` 选出拟提交的证据，按事实顺序编号，写明证据名称、来源、页数、原件或复印件（待核）、证明目的、对应诉讼请求；识别不全的材料在备注中提示。
 5. **核对清单**：逐项写当前状态与来源（见第 5 节），未满足的标“待处理”。
-6. **成文**：用 `docx.render_report` 生成起诉状（title：`民事起诉状（草稿）`），用 `xlsx.render_table` 生成《证据目录》与《提交前核对清单》。回报中列出全部“【待填】”“【待确认】”项。
+6. **起草前确认论点与依据**（成文之前必做）：用 `outline.submit` 提交拟写的论点（doc_kind 写“民事起诉状”），每条附依据（法名 + 条号，note 写这条怎么支持该论点）与所用事实（引用 `facts.list` 的 fact_id）；再用提问工具请律师确认（问题写“论点与依据已列在任务页，请确认后选择”，选项依次为“已确认，按确认的论点起草”“先不起草”）。律师选第一项后用 `outline.get` 读取确认版，只按确认版写：删掉的论点不写，律师改写过的按律师的写法，去掉的依据不引；律师选“先不起草”即停止，回报提纲与待补事项。确认之前文书工具会拒绝生成。
+7. **成文**：用 `docx.render_report` 生成起诉状（title：`民事起诉状（草稿）`），用 `xlsx.render_table` 生成《证据目录》与《提交前核对清单》。回报中列出全部“【待填】”“【待确认】”项。
 
 ## 4. 工具调用约定
 | 工具 | 用途 | 关键参数 | 失败时 |
@@ -87,6 +88,7 @@ kwl:
 - 不外发、不签发。
 
 ## 8. 依赖缺失时的降级
+- `outline.submit` / `outline.get` 不可用：在回报中先列出论点与依据，请律师确认后再起草；不得跳过确认直接出文书。
 - `facts.list` 不可用或关键事实未确认：只交付《提交前核对清单》和待确认事实清单，不起草起诉状正文。
 - 金额未确认：起诉状照常起草，金额处写“【金额待测算确认】”，并建议运行 `amount-calc`。
 - `docx.render_report` / `xlsx.render_table` 不可用：用受限命令行 `kwl-docx create` / `kwl-xlsx create` 生成，并在文件开头注明“未经文书工具生成，格式待整理”。

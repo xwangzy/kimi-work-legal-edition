@@ -57,6 +57,8 @@ const LEGAL_TOOL_LABELS: Record<string, string> = {
   "redact.scan": "检查个人信息",
   "materials.list": "阅读材料",
   "riskcards.submit": "找出风险",
+  "outline.submit": "列出论点与依据",
+  "outline.get": "读取你确认的论点",
   "riskcards.list": "查看审查结论",
   "facts.submit": "整理事实",
   "facts.list": "查看事实",

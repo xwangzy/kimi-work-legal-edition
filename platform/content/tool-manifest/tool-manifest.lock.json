@@ -150,7 +150,7 @@
     },
     {
       "name": "docx.render_report",
-      "version": "2",
+      "version": "3",
       "sideEffect": "write_draft",
       "resource": "matter_work",
       "purposes": [
@@ -255,6 +255,34 @@
         "drafting"
       ],
       "schemaHash": "476d6857457f4398954c577ea71cb14a548bc07f70a2a8b91322de0ac8346dc7"
+    },
+    {
+      "name": "outline.submit",
+      "version": "1",
+      "sideEffect": "write_draft",
+      "resource": "matter_work",
+      "purposes": [
+        "legal_analysis",
+        "contract_review",
+        "case_file",
+        "legal_research",
+        "drafting"
+      ],
+      "schemaHash": "4af80ba0b3bcd72838e8264b830dffeb887a70354bf8f96ada6d035c812f1af0"
+    },
+    {
+      "name": "outline.get",
+      "version": "1",
+      "sideEffect": "read",
+      "resource": "matter_work",
+      "purposes": [
+        "legal_analysis",
+        "contract_review",
+        "case_file",
+        "legal_research",
+        "drafting"
+      ],
+      "schemaHash": "99334726611ccf58a148b0814696bfa6fe08c1b2d027e946beccf5a74331c9aa"
     }
   ]
 }

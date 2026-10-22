@@ -781,6 +781,10 @@ export const api = {
   /** 导出审查意见表（Excel 草稿成果，C1 §2.2 第 8 条）。 */
   exportReviewTable: (matterId: string, documentVersionId: string | null, o: { run_id?: string } = {}) =>
     invoke<{ artifact_version_id: string; filename: string; rows: number }>("riskcards.export_table", { matter_id: matterId, document_version_id: documentVersionId, ...o }),
+  /** 起草前的论点与依据（C-04）：任务页逐条确认。 */
+  outlines: (matterId: string, runId: string) => invoke<{ outlines: import("./lib/outline.ts").OutlineView[] }>("outlines.list", { matter_id: matterId, run_id: runId }),
+  decideOutline: (matterId: string, outlineId: string, decisions: { arg_id: string; keep: boolean; claim?: string; basis_keep?: number[] }[], note: string) =>
+    invoke<{ outline: import("./lib/outline.ts").OutlineView }>("outlines.decide", { matter_id: matterId, outline_id: outlineId, decisions, ...(note ? { note } : {}) }),
   facts: (matterId: string, f: { run_id?: string; status?: "proposed" | "confirmed" | "rejected" } = {}) => invoke<{ facts: FactRow[] }>("facts.list", { matter_id: matterId, ...f }),
   decideFact: (matterId: string, factId: string, decision: "confirm" | "reject" | "reset", statement?: string) =>
     invoke<{ fact: FactRow }>("facts.decide", { matter_id: matterId, fact_id: factId, decision, ...(statement ? { statement } : {}) }),

@@ -76,6 +76,7 @@ import { addOrUpdateMember, chainSummary, chainView, hasChain, keyFingerprint, r
 import { docxHeaderFooterTexts, parseDocument } from "../services/parser.ts";
 import { detectClassifiedMarking, type ClassifiedFinding } from "../services/classified-marking.ts";
 import { restoreArtifactBytes } from "../services/export-restore.ts";
+import { decideOutline, listOutlines } from "../services/argument-outlines.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
 import { buildRedlineFromCards, cardPages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
@@ -2669,6 +2670,20 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       );
       audit(db, id, "riskcards.table_exported", "artifact_version", r.artifact_version_id, sha256Hex(JSON.stringify({ rows: r.rows })), keyctx);
       return r;
+    },
+    // 起草前的论点与依据（v9.4 第 19 批 C-04）：任务页逐条确认；文字为令牌形态，界面还原显示
+    "outlines.list": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      return { outlines: listOutlines(db, matter.matter_id, { run_id: p?.run_id }) };
+    },
+    "outlines.decide": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const outline = decideOutline(db, matter.matter_id, id.userId, { outline_id: p?.outline_id, decisions: p?.decisions, note: p?.note });
+      // 审计只记提纲号与留删计数（不记论点文字）
+      const d = outline.decisions ?? [];
+      audit(db, id, "outline.confirmed", "argument_outline", outline.outline_id, sha256Hex(JSON.stringify({ kept: d.filter((x) => x.keep).length, dropped: d.filter((x) => !x.keep).length, edited: d.filter((x) => x.claim).length })), keyctx);
+      return { outline };
     },
     "facts.list": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);

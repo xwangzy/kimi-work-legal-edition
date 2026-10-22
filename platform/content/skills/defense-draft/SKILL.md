@@ -6,12 +6,12 @@ when_to_use: 我方为被告（或被申请人在法院程序中），已收到�
 arguments: [received_on]
 kwl:
   id: defense-draft
-  version: 1.0.2
+  version: 1.1.0
   lines: [诉讼仲裁]
   chain: casefile
   tier: beta
   tools_required: [facts.list, materials.list, materials.read_excerpt, docx.render_report, xlsx.render_table]
-  tools_optional: [law.search, law.get_version, citations.verify, calc.deadline]
+  tools_optional: [law.search, law.get_version, citations.verify, calc.deadline, outline.submit, outline.get]
   outputs: [民事答辩状（草稿）.docx, 答辩要点与证据对照表.xlsx, 提交前核对清单.xlsx]
   source_lineage: [spec:v9.3主文§5.3诉讼线文书, skill:pleading-draft@1.0.0（结构与禁止事项）]
 ---
@@ -38,7 +38,8 @@ kwl:
 2. **事实答辩**：对起诉状主张的事实逐段回应：认可的写“对……无异议”；不认可的写“与事实不符”，并给出我方确认的事实与证据编号；不知道的写“我方不清楚，请原告举证”。不得把未确认事实写成确定事实。
 3. **法律答辩**：抗辩权与免责事由（履行抗辩、诉讼时效、违约金过高请求调整、合同无效或已解除、主体不适格等）只在有已确认事实支撑时提出；诉讼时效抗辩须在一审提出（二审一般不再支持），有时效事实支撑的在本答辩状中写明。实体法条文用 `law.search` / `law.get_version` 按行为时定位，`citations.verify` 核验后再写；核验不通过的不写条号，列入核对清单。程序规定按第 2 节的写法。
 4. **对照表与核对清单**：见第 5 节。
-5. **成文**：`docx.render_report` 生成答辩状（title：`民事答辩状（草稿）`），`xlsx.render_table` 生成对照表与核对清单；回报中列出全部“【待填】”“【待确认】”与需律师决定的事项。
+5. **起草前确认论点与依据**（成文之前必做）：用 `outline.submit` 提交拟写的论点（doc_kind 写“民事答辩状”），每条附依据（法名 + 条号，note 写这条怎么支持该论点）与所用事实（引用 `facts.list` 的 fact_id）；再用提问工具请律师确认（问题写“论点与依据已列在任务页，请确认后选择”，选项依次为“已确认，按确认的论点起草”“先不起草”）。律师选第一项后用 `outline.get` 读取确认版，只按确认版写：删掉的论点不写，律师改写过的按律师的写法，去掉的依据不引；律师选“先不起草”即停止，回报提纲与待补事项。确认之前文书工具会拒绝生成。
+6. **成文**：`docx.render_report` 生成答辩状（title：`民事答辩状（草稿）`），`xlsx.render_table` 生成对照表与核对清单；回报中列出全部“【待填】”“【待确认】”与需律师决定的事项。
 
 ## 4. 工具调用约定
 | 工具 | 用途 | 关键参数 | 失败时 |
@@ -83,6 +84,7 @@ kwl:
 - 不外发、不签发。
 
 ## 8. 依赖缺失时的降级
+- `outline.submit` / `outline.get` 不可用：在回报中先列出论点与依据，请律师确认后再起草；不得跳过确认直接出文书。
 - 起诉状不在事项中或读不出：只交付《提交前核对清单》与所需材料清单，不起草正文。
 - `facts.list` 不可用或关键事实未确认：只交付答辩要点框架（逐项列出对方请求与需确认的事实），不写答辩事实。
 - `docx.render_report` / `xlsx.render_table` 不可用：用受限命令行 `kwl-docx create` / `kwl-xlsx create` 生成，并在文件开头注明“未经文书工具生成，格式待整理”。

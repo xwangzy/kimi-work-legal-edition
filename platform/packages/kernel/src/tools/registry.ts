@@ -21,7 +21,8 @@ import { calcDeadline } from "./tools/deadline.ts";
 import { redactScan } from "./tools/redact.ts";
 import { materialsReadExcerpt } from "./tools/materials.ts";
 import { docxApplyRevisions, docxCompare, docxRenderReport, docxSanitize, redactApply } from "./tools/docx.ts";
-import { factsList, factsSubmit, materialsList, registerToolArtifact, riskcardsList, riskcardsSubmit, xlsxRenderTable } from "./tools/review.ts";
+import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, riskcardsList, riskcardsSubmit, xlsxRenderTable } from "./tools/review.ts";
+import { assertOutlineSettled } from "../services/argument-outlines.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
 
@@ -312,10 +313,10 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "docx.render_report",
     title: "生成文书（DOCX）",
-    description: "按标题与段落结构生成 Word 文书（备忘录、意见书、函件、清单），登记为本任务的草稿成果交律师审阅；导出时按事项令牌表还原代号。",
+    description: "按标题与段落结构生成 Word 文书（备忘录、意见书、函件、清单），登记为本任务的草稿成果交律师审阅；导出时按事项令牌表还原代号。本任务有待律师确认的论点提纲（outline.submit）时拒绝生成，先等律师确认。",
     sideEffect: "write_draft",
     resource: "matter_work",
-    version: "2",
+    version: "3",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -334,6 +335,8 @@ export const TOOLS: readonly ToolDef[] = [
       },
     },
     invoke: async (p, ctx) => {
+      // 起草前的论点与依据还在等律师确认时不出文书（v9.4 第 19 批 C-04）
+      assertOutlineSettled(ctx.db, typeof ctx.claims.rid === "string" ? ctx.claims.rid : null);
       const r = docxRenderReport(ctx.blobs, p, ctx.claims.mid);
       // 任务内调用（Agent 经本机端点）：登记为草稿成果，律师在执行态与交付件页可见
       if (!ctx.claims.rid) return r;
@@ -436,6 +439,60 @@ export const TOOLS: readonly ToolDef[] = [
       },
     },
     invoke: (p, ctx) => riskcardsList(ctx, p),
+  },
+  {
+    name: "outline.submit",
+    title: "提交论点与依据（起草前确认）",
+    description:
+      "文书类任务（起诉状、答辩状、代理词、上诉状、法律研究备忘录等）在起草之前调用：逐条列出拟写的论点，每条附依据（法名 + 条号 + note 写这条怎么支持该论点）与所用事实（优先引用 facts.list 里的 fact_id）。" +
+      "内核离线核验每条依据并附上法规库里的条文原文，交律师在任务页逐条确认（留 / 删 / 改写、去掉不用的依据）。确认之前本任务不能生成文书；确认后用 outline.get 读取确认版，只按确认版起草。再次提交会取代前一份待确认的提纲。",
+    sideEffect: "write_draft",
+    resource: "matter_work",
+    version: "1",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["doc_kind", "arguments"],
+      properties: {
+        doc_kind: { type: "string" },
+        title: { type: "string" },
+        arguments: {
+          type: "array",
+          maxItems: 30,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["claim"],
+            properties: {
+              claim: { type: "string" },
+              basis: {
+                type: "array",
+                maxItems: 8,
+                items: { type: "object", additionalProperties: false, required: ["law"], properties: { law: { type: "string" }, article: { type: "integer", minimum: 1 }, note: { type: "string" } } },
+              },
+              facts: {
+                type: "array",
+                maxItems: 12,
+                items: { type: "object", additionalProperties: false, properties: { fact_id: { type: "string" }, statement: { type: "string" } } },
+              },
+              counter: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    invoke: (p, ctx) => outlineSubmit(ctx, p),
+  },
+  {
+    name: "outline.get",
+    title: "读取律师确认的论点与依据",
+    description:
+      "读取本任务最新的论点提纲：status=proposed 表示律师还没确认（此时不要起草）；status=confirmed 时 confirmed_arguments 是确认版——只按它起草：律师删掉的论点不写，lawyer_edited=true 的论点按律师的写法，只引用留下的依据；lawyer_note 是律师的补充要求。",
+    sideEffect: "read",
+    resource: "matter_work",
+    version: "1",
+    inputSchema: { type: "object", additionalProperties: false, properties: {} },
+    invoke: (_p, ctx) => outlineGet(ctx),
   },
   {
     name: "facts.submit",

@@ -22,6 +22,9 @@ export const LEGAL_MCP_TOOLS = [
   // 2026-10-21 v9.4 评审 S1 §6.2 第 4、9 项：取条文原文（论证支持比对）、期间计算（届满日附过程）
   "law.get_article",
   "calc.deadline",
+  // 2026-10-22 v9.4 第 19 批 C-04：起草前提交论点与依据、读取律师确认版
+  "outline.submit",
+  "outline.get",
 ] as const;
 
 export type LegalMcpToolName = (typeof LEGAL_MCP_TOOLS)[number];

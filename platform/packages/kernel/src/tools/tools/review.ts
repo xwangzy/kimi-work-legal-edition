@@ -13,6 +13,7 @@
 import { DomainError, newId, notFound } from "@zr-legal/domain";
 import { createXlsx } from "@zr-legal/docx-engine";
 import type { InvokeCtx } from "../registry.ts";
+import { confirmedView, latestOutline, submitOutline } from "../../services/argument-outlines.ts";
 import { acceptedText, changesDocument, listFacts, listRiskCards, submitFacts, submitRiskCards, riskCardProgress } from "../../services/review-cards.ts";
 
 function scopeOf(ctx: InvokeCtx): { tenantId: string; matterId: string; runId: string | null } {
@@ -125,6 +126,27 @@ export function riskcardsList(ctx: InvokeCtx, p: { document_version_id?: string;
       changes_document: changesDocument(c),
       lawyer_text: c.final_text,
     })),
+  };
+}
+
+export function outlineSubmit(ctx: InvokeCtx, p: { doc_kind?: string; title?: string; arguments?: unknown[] }) {
+  return submitOutline({ db: ctx.db, lawdb: ctx.lawdb }, scopeOf(ctx), p);
+}
+
+export function outlineGet(ctx: InvokeCtx) {
+  const s = scopeOf(ctx);
+  if (!s.runId) throw new DomainError("forbidden", "只有任务内的调用可以读取论点提纲", 403);
+  const o = latestOutline(ctx.db, s.runId);
+  if (!o) return { status: "none", note: "本任务还没有提交论点提纲：文书类任务请先用 outline.submit 提交" };
+  if (o.status !== "confirmed") return { status: o.status, outline_id: o.outline_id, note: "律师还没确认：请用提问工具请律师在任务页确认后再读取；确认之前不要起草" };
+  return {
+    status: "confirmed",
+    outline_id: o.outline_id,
+    doc_kind: o.doc_kind,
+    confirmed_arguments: confirmedView(o).map((a) => ({ ...a, basis: a.basis.map((b) => ({ law: b.law, article: b.article, note: b.note, check: b.check })) })),
+    dropped: (o.decisions ?? []).filter((d) => !d.keep).map((d) => d.arg_id),
+    lawyer_note: o.lawyer_note,
+    note: "只按 confirmed_arguments 起草；dropped 里的论点不写；事实中 confirmed=false 的在文书里标“待律师确认”。",
   };
 }
 

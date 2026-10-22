@@ -31,6 +31,10 @@ export const IdPrefix = {
   qaMessage: "qam",
   riskCard: "rkc",
   fact: "fct",
+  // v9.4 第 19 批：起草前的论点提纲（C-04）、表格审阅的表与格（C-01）
+  outline: "otl",
+  reviewTable: "rtb",
+  reviewCell: "rtc",
 } as const;
 
 export type IdPrefixKey = keyof typeof IdPrefix;
