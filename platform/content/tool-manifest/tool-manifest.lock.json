@@ -61,7 +61,7 @@
     },
     {
       "name": "calc.interest",
-      "version": "1",
+      "version": "2",
       "sideEffect": "read",
       "resource": "pure",
       "purposes": [
@@ -71,7 +71,7 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "9497b0f3ab69cf8dcd055f7c73fd7b3d46f275b9ee4b8bcf78a42c1ed2e85654"
+      "schemaHash": "7cb5d7102bbf85da6e5b9a6d4ca9593222476a73588c0f3a68fb878324f191a0"
     },
     {
       "name": "calc.deadline",
@@ -311,6 +311,20 @@
         "drafting"
       ],
       "schemaHash": "d40cc43d884454680481e57c9c4b123cb1cc82da2b0d8f1f97c5f585c1e462d7"
+    },
+    {
+      "name": "calc.labor",
+      "version": "1",
+      "sideEffect": "read",
+      "resource": "pure",
+      "purposes": [
+        "legal_analysis",
+        "contract_review",
+        "case_file",
+        "legal_research",
+        "drafting"
+      ],
+      "schemaHash": "a637652ecd4c477d8a329359f76bb1c234e2e5783934ff0088aa2be8fd37858a"
     }
   ]
 }

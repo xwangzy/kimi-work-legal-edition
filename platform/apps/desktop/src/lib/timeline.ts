@@ -54,6 +54,7 @@ const LEGAL_TOOL_LABELS: Record<string, string> = {
   "citations.verify": "核对引用",
   "calc.interest": "计算利息与违约金",
   "calc.deadline": "计算期限",
+  "calc.labor": "计算经济补偿",
   "redact.scan": "检查个人信息",
   "materials.list": "阅读材料",
   "riskcards.submit": "找出风险",

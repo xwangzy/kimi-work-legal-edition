@@ -28,6 +28,8 @@ export const LEGAL_MCP_TOOLS = [
   // 2026-10-22 v9.4 第 19 批 C-01：表格审阅（读表、逐格填值与引文；律师已核的格子不覆盖）
   "table.get",
   "table.fill",
+  // 2026-10-22 v9.4 第 20 批：劳动经济补偿与违法解除赔偿金（确定性计算，附过程）
+  "calc.labor",
 ] as const;
 
 export type LegalMcpToolName = (typeof LEGAL_MCP_TOOLS)[number];

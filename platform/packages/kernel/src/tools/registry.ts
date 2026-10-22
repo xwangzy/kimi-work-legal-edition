@@ -4,6 +4,7 @@
  * “平台对工具 schema 校验严格”（§4.1）——inputSchema 一律 additionalProperties:false。
  * 外发、签发、删除类工具根本不在注册表内（§6.2）。
  */
+import { calcLabor } from "./tools/labor.ts";
 import type { CapabilityClaims } from "@zr-legal/service-auth";
 import { DomainError } from "@zr-legal/domain";
 import { ManifestRegistry, type SideEffect, type ToolManifest, type ToolResource } from "@zr-legal/host-policy";
@@ -136,10 +137,11 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "calc.interest",
     title: "利息计算（LPR 分段）",
-    description: "确定性利息计算：分段保存起止日、日数、利率、年日数与舍入假设。",
+    description:
+      "确定性利息计算：分段保存起止日、日数、利率、年日数与舍入假设。rate 三种：fixed 固定年利率；lpr_plus 一年期 LPR 加基点；lpr_times 一年期 LPR 的倍数（如逾期付款违约金按 LPR 上浮 30%～50% 写 1.3～1.5，民间借贷保护上限四倍写 4）。warnings 非空时须原样告知律师。",
     sideEffect: "read",
     resource: "pure",
-    version: "1",
+    version: "2",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -162,6 +164,12 @@ export const TOOLS: readonly ToolDef[] = [
               additionalProperties: false,
               required: ["kind", "lpr_term", "plus_bp"],
               properties: { kind: { const: "lpr_plus" }, lpr_term: { const: "1Y" }, plus_bp: { type: "number" } },
+            },
+            {
+              type: "object",
+              additionalProperties: false,
+              required: ["kind", "lpr_term", "multiple"],
+              properties: { kind: { const: "lpr_times" }, lpr_term: { const: "1Y" }, multiple: { type: "number", exclusiveMinimum: 0, maximum: 4 } },
             },
           ],
         },
@@ -196,6 +204,32 @@ export const TOOLS: readonly ToolDef[] = [
       },
     },
     invoke: (p) => calcDeadline(p),
+  },
+  {
+    name: "calc.labor",
+    title: "劳动经济补偿与赔偿金",
+    description:
+      "确定性计算解除或终止劳动合同的经济补偿 N（kind=compensation，劳动合同法第四十七条）或违法解除赔偿金 2N（kind=unlawful，第八十七条、实施条例第二十五条），逐步写出年限、基数、三倍封顶与代通知金。" +
+      "月工资写解除前十二个月平均工资；当地上年度职工月平均工资、最低工资由律师或材料给出，不要凭记忆填；没给时结果带 warnings。2008 年以前的工作年限按当时规定另算，不在结果里。是否应当支付由律师判断，本工具只算数额；warnings 非空时须原样告知律师。",
+    sideEffect: "read",
+    resource: "pure",
+    version: "1",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["start_date", "end_date", "kind", "avg_monthly_wage_yuan"],
+      properties: {
+        start_date: dateSchema,
+        end_date: dateSchema,
+        kind: { type: "string", enum: ["compensation", "unlawful"] },
+        avg_monthly_wage_yuan: { type: "number", minimum: 0 },
+        local_avg_monthly_wage_yuan: { type: "number", minimum: 0 },
+        local_min_wage_yuan: { type: "number", minimum: 0 },
+        notice_in_lieu: { type: "boolean" },
+        last_month_wage_yuan: { type: "number", minimum: 0 },
+      },
+    },
+    invoke: (p) => calcLabor(p),
   },
   {
     name: "redact.scan",

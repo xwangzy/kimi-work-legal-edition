@@ -6,12 +6,12 @@ when_to_use: 劳动仲裁应诉、代为申请劳动仲裁、用人单位拟解�
 arguments: [side, mode]
 kwl:
   id: labor-dispute
-  version: 1.0.0
+  version: 1.1.0
   lines: [企业法务, 诉讼仲裁]
   chain: labor
   tier: beta
   tools_required: [materials.list, materials.read_excerpt, facts.list, xlsx.render_table, docx.render_report]
-  tools_optional: [facts.submit, law.search, law.get_version, law.get_article, citations.verify, calc.interest, calc.deadline]
+  tools_optional: [facts.submit, law.search, law.get_version, law.get_article, citations.verify, calc.interest, calc.deadline, calc.labor]
   outputs: [劳动争议应对方案.docx, 解除风险评估.docx, 请求项与敞口表.xlsx, 举证责任与证据清单.xlsx, 解除程序核对清单.xlsx]
   source_lineage: [upstream:legal-agent-skills@83df6b13:lit-labor-dispute, upstream:legal-agent-skills@83df6b13:expert-labor, upstream:legal-agent-skills@83df6b13:expert-labor-employer, upstream:legal-agent-skills@83df6b13:expert-labor-employee, spec:v9.4评审S1§6.1-5]
 ---
@@ -60,7 +60,7 @@ kwl:
    - 经济补偿：每满一年支付一个月工资，六个月以上不满一年按一年，不满六个月支付半个月；月工资为解除或终止前十二个月平均工资；**月工资高于当地上年度职工月平均工资三倍的，基数按三倍、且年限最高不超过十二年——十二年上限只在三倍封顶情形下适用**（劳动合同法第 47 条）。
    - 违法解除赔偿金为经济补偿标准的二倍，年限自用工之日起计算（劳动合同法第 87 条；实施条例第 25 条）。
    - 未签书面劳动合同二倍工资（第 82 条）、未休年休假工资（《职工带薪年休假条例》第 5 条：日工资收入的 300%，含已支付的正常工资部分——《企业职工带薪年休假实施办法》第 10 条，故差额通常为 200%）、加班费等按参考文件写公式。
-   - **金额由受限命令行用 Python decimal 计算**，交付件写明公式、基数来源（文件 · 位置或“律师提供”）、期间与取整规则，标“草稿 · 待复核（未经金额工具复算）”；利息类可用 `calc.interest`。入职或离职日只到月的，年限与金额给区间。
+   - **经济补偿 N 与违法解除赔偿金 2N 用 `calc.labor` 计算**（入职日、解除日、前十二个月平均工资；当地上年度职工月平均工资与最低工资只用律师或材料给出的数，没有就不填），把它返回的过程（steps）与 warnings 原样写进交付件；工具不可用时才由受限命令行用 Python decimal 计算，写明公式、基数来源（文件 · 位置或“律师提供”）、期间与取整规则，标“草稿 · 待复核（未经金额工具复算）”。2008 年以前的工作年限 `calc.labor` 不算，列入“待律师计算”。利息类用 `calc.interest`（LPR 倍数用 lpr_times）。入职或离职日只到月的，年限与金额给区间。
    - 敞口表只列情景与金额，**不替客户定和解金额或底线**。
 6. **程序路径**：按 `references/procedure-paths.md` 写明仲裁前置、管辖、答辩与开庭节点、终局裁决的不对称救济（劳动争议调解仲裁法第 47—50 条）与非终局裁决的起诉期限；各期限的届满日口径同第 2 步。
 7. **地方口径待核清单**：年休假工资性质与时效、二倍工资起算与时效、加班费与经济补偿的工资基数、社保损失的受案范围、当地上年度职工月平均工资与最低工资标准、竞业限制补偿标准。**不凭记忆写地方规定**；律师提供地方文件后再按文件写。
@@ -77,6 +77,7 @@ kwl:
 | law.get_article | 取条文原文核对前提条件（可选） | law，article，as_of | 不可用：依据写条号与要点，标“原文未核对” |
 | citations.verify | 核验所引条文 | citations，as_of | 不可用：方案首页写“依据未经核验”，条号后标“待核” |
 | calc.deadline | 时效、答辩、起诉、撤销申请等期限的届满日 | 起算事实日，期间，规则 | 不可用：只写起算事实与期间规则，届满日标“待律师计算” |
+| calc.labor | 经济补偿 N、违法解除赔偿金 2N、代通知金 | 入职日、解除日、kind、前十二个月平均工资，当地平均工资与最低工资（律师给的） | 不可用：受限命令行计算并写明公式，标“未经金额工具复算” |
 | calc.interest | 利息类金额（可选） | 本金、期间、利率口径 | 不可用：受限命令行计算并写明公式 |
 | docx.render_report | 应对方案 / 解除风险评估 | title，sections | 不可用：见第 8 节 |
 | xlsx.render_table | 各表 | title，sheets[{name, columns, rows}] | 不可用：见第 8 节 |
