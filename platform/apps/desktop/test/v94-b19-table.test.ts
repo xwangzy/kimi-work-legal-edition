@@ -46,3 +46,9 @@ test("材料页源码：列表 / 表格审阅切换；填表按表格审阅方�
   assert.match(tr, /撤回（助手可再填）/);
   assert.match(tr, /api\.exportTable\(/);
 });
+
+test("交付件名称：审查意见表与审阅表按文件名（去扩展名）", async () => {
+  const { artifactName } = await import("../src/lib/labels.ts");
+  assert.equal(artifactName({ kind: "review_table", filename: "采购合同（审查意见表）.xlsx" }), "采购合同（审查意见表）");
+  assert.equal(artifactName({ kind: "review_grid", filename: "合同尽调摘要（表格审阅）.xlsx" }), "合同尽调摘要（表格审阅）");
+});

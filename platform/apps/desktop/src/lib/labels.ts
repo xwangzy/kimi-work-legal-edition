@@ -90,6 +90,8 @@ export const SCENARIO_LABELS: Record<string, string> = {
  */
 export function artifactName(a: { kind: string; filename: string; title?: string | null }, restore?: (t: string) => string): string {
   const agentKind = ["a1_workspace_file", "agent_table", "agent_report", "a1_agent_draft", "a1_agent_draft_partial"].includes(a.kind);
+  // 审查意见表、审阅表按所审的合同或表命名（同一事项可有多份），用文件名去掉扩展名（v9.4 第 19 批）
+  if (a.kind === "review_table" || a.kind === "review_grid") return a.filename.replace(/\.xlsx$/i, "");
   if (!agentKind) return ARTIFACT_LABELS[a.kind] ?? a.filename;
   const t = a.title ? (restore ? restore(a.title) : a.title) : null;
   // 助手草稿有标题时写“标题（草稿）”，没有标题时沿用固定名称；标题自己已带“（草稿）”时不再重复（v9.4 走查：“研究备忘（草稿）（草稿）”）
@@ -131,6 +133,8 @@ export const ARTIFACT_LABELS: Record<string, string> = {
   a1_workspace_file: "工作区文件（草稿）",
   revision_draft: "修订稿（Word 修订痕迹）",
   agent_table: "表格（草稿）",
+  review_table: "审查意见表",
+  review_grid: "审阅表（Excel）",
   agent_report: "文书（草稿）",
   final_message: "助手回复",
   a1_agent_draft_partial: "助手草稿（部分完成）",
