@@ -14,7 +14,7 @@ import { CitationState } from "@zr-legal/domain";
 
 const repo = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
 const signerPub = (JSON.parse(readFileSync(repo("content/keys/content-signing-dev.pub.json"), "utf8")) as { publicKeyPem: string }).publicKeyPem;
-const lawdb = openLawdb(repo("content/lawdb/test-fixtures/lawdb-renumber-demo.sqlite"), { expectedSignerPubPem: signerPub });
+const lawdb = openLawdb(repo("content/lawdb/test-fixtures/lawdb-renumber-demo.sqlite"), { expectedSignerPubPem: signerPub, allowTestFixture: true });
 
 test("cn-numerals: 基础转换", () => {
   assert.equal(cnToInt("三十八"), 38);

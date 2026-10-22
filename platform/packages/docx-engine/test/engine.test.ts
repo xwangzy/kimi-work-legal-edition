@@ -223,3 +223,31 @@ test("engine: 净化器先处理自闭合的段落修订标记（否则会吞掉
   assert.ok(texts.includes("8.1 任何一方违约，应赔偿对方由此遭受的直接损失。"), "后面的成对修订照常接受");
   assert.ok(!texts.some((t) => t.includes("全部损失")));
 });
+
+test("净化：段落标记被删的段落与下一段合并（复核 Q2-15）；整段删除不留空段；连续几段依次并入；插入的段落标记照常保留段落", async () => {
+  const { mergeDeletedParagraphMarks, sanitizeDocx } = await import("../src/sanitize.ts");
+  const { readZipEntries, writeZip } = await import("../src/zip.ts");
+  const { extractParagraphs } = await import("../src/compare.ts");
+  const delMark = `<w:pPr><w:rPr><w:del w:id="9" w:author="对方" w:date="2026-10-01T00:00:00Z"/></w:rPr></w:pPr>`;
+  const insMark = `<w:pPr><w:rPr><w:ins w:id="8" w:author="对方" w:date="2026-10-01T00:00:00Z"/></w:rPr></w:pPr>`;
+  const r = (t: string) => `<w:r><w:t xml:space="preserve">${t}</w:t></w:r>`;
+  const bodyXml = [
+    `<w:p>${delMark}${r("甲")}</w:p>`,
+    `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${r("乙")}</w:p>`,
+    `<w:p>${delMark}<w:del w:id="1" w:author="对方"><w:r><w:delText>整段删掉</w:delText></w:r></w:del></w:p>`,
+    `<w:p>${delMark}${r("丙")}</w:p>`,
+    `<w:p>${r("丁")}</w:p>`,
+    `<w:p>${insMark}<w:ins w:id="2" w:author="对方">${r("新增段")}</w:ins></w:p>`,
+  ].join("");
+  const m = mergeDeletedParagraphMarks(bodyXml);
+  assert.equal(m.merged, 3);
+  assert.equal((m.xml.match(/<w:p\b/g) ?? []).length, 3, "6 段 → 甲乙一段、（删掉）丙丁一段、新增段");
+  assert.ok(m.xml.includes('<w:jc w:val="center"/>'), "合并后用下一段的段落属性");
+  // 走完整的净化：与“接受全部修订”一致
+  const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${bodyXml}</w:body></w:document>`;
+  const base = readZipEntries(createDocx("x", [{ heading: "", paragraphs: ["占位"] }]));
+  base.set("word/document.xml", Buffer.from(doc, "utf8"));
+  const out = sanitizeDocx(writeZip([...base].map(([name, data]) => ({ name, data }))));
+  assert.deepEqual(extractParagraphs(out.docx).map((p) => p.text), ["甲乙", "丙丁", "新增段"]);
+  assert.equal(mergeDeletedParagraphMarks(`<w:p>${delMark}${r("末段")}</w:p>`).merged, 0, "后面没有段落：不合并");
+});

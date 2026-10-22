@@ -27,6 +27,15 @@ test("归档：签名可核、文件 hash 一致、原件逐字节一致、代�
   const doc = await importText(tk.inv, matter.matter_id, "采购合同.txt", text);
   await runScenario(tk.inv, matter.matter_id, "s1.contract_review", { document_version_ids: [doc.document_version_id] }, 120_000);
 
+  // v9.4 第 20 批（复核 Q2-13）：审阅表（格子里有代号）、待办、阶段与事件时点一并归档
+  await tk.inv("matters.update", { matter_id: matter.matter_id, patch: { stage: "negotiation", event_date: "2025-06" } });
+  const { table } = await tk.inv("tables.create", { matter_id: matter.matter_id, template: "contract_ledger", columns: ["contract_name", "owner"], document_version_ids: [doc.document_version_id] });
+  const { fillCells } = await import("../src/services/review-tables.ts");
+  const tokenized = new MatterTokenStore(db).tokenize(matter.matter_id, "联系人电话 13912345678").text;
+  const live = await import("./helpers.ts").then((h) => h.liveTaskIdentity(tk, matter.matter_id, "arch"));
+  fillCells({ db, blobs: tk.kernel.blobs, tokens: new MatterTokenStore(db) }, { matterId: matter.matter_id, runId: live.rid }, { table_id: table.table_id, cells: [{ document_version_id: doc.document_version_id, column: "owner", value: tokenized, quote: tokenized }] });
+  await tk.inv("todos.create", { matter_id: matter.matter_id, title: "约甲公司签字", due_date: "2030-01-01" });
+
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const signPriv = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
   const signPub = publicKey.export({ type: "spki", format: "pem" }).toString();
@@ -64,6 +73,15 @@ test("归档：签名可核、文件 hash 一致、原件逐字节一致、代�
   }
   assert.equal(findTokens(files.get("review/risk-cards.json")!.toString("utf8")).length, 0);
   assert.ok(manifest.counts.artifacts >= 1);
+  const tables = JSON.parse(files.get("review/review-tables.json")!.toString("utf8"));
+  assert.equal(tables[0].cells[0].value, "联系人电话 13912345678", "审阅表格子的代号已还原");
+  assert.equal(findTokens(files.get("review/review-tables.json")!.toString("utf8")).length, 0);
+  assert.equal(JSON.parse(files.get("review/todos.json")!.toString("utf8"))[0].title, "约甲公司签字");
+  assert.ok(files.has("review/outlines.json") && files.has("review/citation-decisions.json"));
+  assert.equal(manifest.counts.review_tables, 1);
+  assert.equal(manifest.counts.todos, 1);
+  assert.equal(manifest.matter.event_date, "2025-06");
+  assert.equal(manifest.matter.stage, "negotiation");
   // 5. 链：每个 run_event 业务行能重算出见证的 payload_hash
   const lines = files.get("ledger.jsonl")!.toString("utf8").trim().split("\n").map((l) => JSON.parse(l));
   const signed = new Map(lines.filter((l) => l.type === "signed_event").map((l) => [`${l.kind}:${l.ref_id}`, l]));

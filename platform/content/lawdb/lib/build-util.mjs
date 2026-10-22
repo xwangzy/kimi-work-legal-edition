@@ -147,7 +147,11 @@ export function manifestPathFor(file) {
  * 计算内容 hash 并写 sidecar manifest（Ed25519 签名）。
  * package_version 取内容 hash 前缀（同源重复构建同版本同 hash，确定性可复现；built_at 在签名内容之外）。
  */
-export function signAndWriteManifest(db, file, { kind, baseVersion, builtAt, privateKeyPem, publicKeyPem }) {
+/**
+ * purpose = "test_fixture"（v9.4 第 20 批，复核 Q2-19）：测试夹具的签名覆盖“内容摘要 + 用途”，去掉用途字段即验签失败；
+ * 运行时默认拒绝加载夹具，只有显式允许（测试）才可用——将来生产签名即便复用本脚本，夹具也不会变成可加载的正式包。
+ */
+export function signAndWriteManifest(db, file, { kind, baseVersion, builtAt, privateKeyPem, publicKeyPem, purpose }) {
   const contentSha256 = computeContentSha256(db);
   const packageVersion = `g0.${contentSha256.slice(0, 12)}`;
   setPackageMeta(db, packageVersion, builtAt, baseVersion ? { base_version: baseVersion } : {});
@@ -157,8 +161,9 @@ export function signAndWriteManifest(db, file, { kind, baseVersion, builtAt, pri
     ...(baseVersion ? { base_version: baseVersion } : {}),
     built_at: builtAt,
     content_sha256: contentSha256,
-    signature: signBytes(privateKeyPem, new TextEncoder().encode(contentSha256)),
+    signature: signBytes(privateKeyPem, new TextEncoder().encode(purpose ? `${contentSha256}\n${purpose}` : contentSha256)),
     signer_key_id: signerKeyId(publicKeyPem),
+    ...(purpose ? { purpose } : {}),
   };
   writeFileSync(manifestPathFor(file), JSON.stringify(manifest, null, 2) + "\n");
   return manifest;

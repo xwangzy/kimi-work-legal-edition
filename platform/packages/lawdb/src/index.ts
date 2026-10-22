@@ -99,6 +99,8 @@ export interface LawdbManifest {
   content_sha256: string;
   signature: string;
   signer_key_id: string;
+  /** 测试夹具（v9.4 第 20 批，复核 Q2-19）：签名覆盖“内容摘要 + 用途”；运行时默认拒绝加载。 */
+  purpose?: "test_fixture";
 }
 
 export function signerKeyId(publicKeyPem: string): string {
@@ -138,7 +140,8 @@ function verifyAgainstManifest(db: Db, manifest: LawdbManifest, expectedSignerPu
   if (manifest.signer_key_id !== signerKeyId(expectedSignerPubPem)) {
     throw new DomainError("lawdb_invalid", `法规库签名者指纹（${manifest.signer_key_id}）与预期内容签名公钥不符，拒绝加载`, 422);
   }
-  if (!verifyBytes(expectedSignerPubPem, new TextEncoder().encode(manifest.content_sha256), manifest.signature)) {
+  const signed = manifest.purpose ? `${manifest.content_sha256}\n${manifest.purpose}` : manifest.content_sha256;
+  if (!verifyBytes(expectedSignerPubPem, new TextEncoder().encode(signed), manifest.signature)) {
     throw new DomainError("lawdb_invalid", "法规库签名验签失败（manifest 签名与内容签名公钥不符），拒绝加载", 422);
   }
   const actual = computeContentSha256(db);
@@ -441,6 +444,8 @@ export interface OpenLawdbOptions {
   manifestPath?: string;
   /** 可写打开（仅更新流程的可写副本用；运行时为只读）。 */
   writable?: boolean;
+  /** 允许加载测试夹具（只供测试；缺省拒绝）。 */
+  allowTestFixture?: boolean;
 }
 
 /** 打开并验签法规库包；任何失败抛 lawdb_invalid（不静默降级到任何种子）。 */
@@ -455,6 +460,10 @@ export function openLawdb(file: string, opts: OpenLawdbOptions): Lawdb {
   if (manifest.kind !== "full") {
     db.close();
     throw new DomainError("lawdb_invalid", `法规库包 manifest.kind 须为 full（增量包请走 applyIncremental）`, 422);
+  }
+  if (manifest.purpose !== undefined && !(manifest.purpose === "test_fixture" && opts.allowTestFixture === true)) {
+    db.close();
+    throw new DomainError("lawdb_invalid", "这是测试用的法规库夹具（含虚构条文），不能作为正式法规库加载", 422);
   }
   try {
     verifyAgainstManifest(db, manifest, opts.expectedSignerPubPem);

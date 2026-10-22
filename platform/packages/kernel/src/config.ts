@@ -29,6 +29,8 @@ export interface KernelConfig {
   userSlug: string;
   /** 法规库包文件（§9：签名只读 SQLite 包）。 */
   lawdbFile: string;
+  /** 允许把测试夹具法规库当随包库加载（只供测试：ZR_LAWDB_ALLOW_TEST_FIXTURE=1；安装包内核环境按白名单构造，不含此项）。 */
+  lawdbAllowTestFixture?: boolean;
   /** 内容签名公钥 PEM（验签法规库包；随客户端内置）。 */
   lawdbSignerPub: string;
   /** 内容签名公钥是不是开发公钥（第 13 批：开发公钥的私钥在开发机上，不能用于对外发布；状态如实报告）。 */
@@ -389,6 +391,7 @@ export function loadConfig(opts: KernelOptions = {}): KernelConfig {
     firmSlug,
     userSlug: checkSlug("成员标识", opts.userSlug ?? env.ZR_USER_SLUG ?? (onboarding ? "pending" : activation?.member_slug) ?? "demo-lawyer"),
     lawdbFile,
+    lawdbAllowTestFixture: env.ZR_LAWDB_ALLOW_TEST_FIXTURE === "1",
     lawdbSignerPub,
     contentKeyDev,
     contentKeyRefused,

@@ -14,7 +14,7 @@ import { findTool, legalToolLockProblems, legalToolManifests, validateParams } f
 
 const repo = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
 const signerPub = (JSON.parse(readFileSync(repo("content/keys/content-signing-dev.pub.json"), "utf8")) as { publicKeyPem: string }).publicKeyPem;
-const lawdb = openLawdb(repo("content/lawdb/test-fixtures/lawdb-renumber-demo.sqlite"), { expectedSignerPubPem: signerPub });
+const lawdb = openLawdb(repo("content/lawdb/test-fixtures/lawdb-renumber-demo.sqlite"), { expectedSignerPubPem: signerPub, allowTestFixture: true });
 
 test("law.get_article: 库内条文返回原文，版本与 law.get_version 一致", () => {
   const asOf = "2026-10-01";

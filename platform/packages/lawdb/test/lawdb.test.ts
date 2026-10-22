@@ -95,7 +95,7 @@ test("S-07 随包法规库不含虚构版本：《律师法》只有 2017 修正
 });
 
 test("时点取版本（夹具）：2026-08-31→2017 版；2026-10-01→2026 版；条号迁移查询", () => {
-  const db = openLawdb(FIXTURE, { expectedSignerPubPem: PUB });
+  const db = openLawdb(FIXTURE, { expectedSignerPubPem: PUB, allowTestFixture: true });
   const rows = db.findLawVersions("律师法");
   assert.equal(versionAt(rows, "2026-08-31")!.lsv_id, "lsv_lawyers_2017");
   assert.equal(versionAt(rows, "2026-10-01")!.lsv_id, "lsv_lawyers_2026");
@@ -210,4 +210,23 @@ test("增量伪造（dev 私钥真签名、声明的合并 hash 与真实合并�
   const check = openLawdb(copy, { expectedSignerPubPem: PUB });
   assert.equal(check.status().package_version, before);
   check.close();
+});
+
+test("测试夹具（复核 Q2-19）：缺省拒绝加载；去掉用途标记即验签失败；显式允许才可用；随包库不带用途标记", async () => {
+  const { readFileSync, writeFileSync, copyFileSync, mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  assert.throws(() => openLawdb(FIXTURE, { expectedSignerPubPem: PUB }), /测试用的法规库夹具/);
+  const ok = openLawdb(FIXTURE, { expectedSignerPubPem: PUB, allowTestFixture: true });
+  ok.close();
+  const dir = mkdtempSync(join(tmpdir(), "kwl-fixture-"));
+  const f = join(dir, "lawdb.sqlite");
+  copyFileSync(FIXTURE, f);
+  const m = JSON.parse(readFileSync(FIXTURE.replace(/\.sqlite$/, ".manifest.json"), "utf8"));
+  assert.equal(m.purpose, "test_fixture");
+  delete m.purpose;
+  writeFileSync(join(dir, "lawdb.manifest.json"), JSON.stringify(m));
+  assert.throws(() => openLawdb(f, { expectedSignerPubPem: PUB }), /验签失败/, "去掉用途标记冒充正式包：签名对不上");
+  const shipped = JSON.parse(readFileSync(repo("content/lawdb/dist/lawdb.manifest.json"), "utf8"));
+  assert.equal(shipped.purpose, undefined);
 });

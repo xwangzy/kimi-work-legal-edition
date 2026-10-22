@@ -40,20 +40,20 @@ function withFixture(laws, overlay) {
   return out;
 }
 
-function build(file, laws) {
+function build(file, laws, purpose) {
   const db = createPackageDb(file);
   db.transaction(() => {
     insertRegistry(db, registry);
     for (const law of laws) insertLaw(db, law);
   })();
-  const manifest = signAndWriteManifest(db, file, { kind: "full", builtAt: new Date().toISOString(), privateKeyPem: key.privateKeyPem, publicKeyPem: key.publicKeyPem });
+  const manifest = signAndWriteManifest(db, file, { kind: "full", builtAt: new Date().toISOString(), privateKeyPem: key.privateKeyPem, publicKeyPem: key.publicKeyPem, ...(purpose ? { purpose } : {}) });
   const summary = contentSummary(db);
   db.close();
   return { manifest, summary };
 }
 
 const { manifest, summary } = build(outFile, lawsDoc.laws);
-const fixture = build(fixtureFile, withFixture(lawsDoc.laws, fixtureDoc.overlay));
+const fixture = build(fixtureFile, withFixture(lawsDoc.laws, fixtureDoc.overlay), "test_fixture");
 
 // 自检：按运行时同一路径加载验签
 const check = openLawdb(outFile, { expectedSignerPubPem: key.publicKeyPem });

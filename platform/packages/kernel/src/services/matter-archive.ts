@@ -90,7 +90,7 @@ const README = `本归档由 Kimi Work 法律行业发行版在律师电脑上�
                      device_cert 为签名设备证书，approval_proof 为签发证明包
   materials/         导入的原件（与登记 hash 一致的原始字节）
   artifacts/         成果文件（代号已还原为原文）
-  review/            风险卡与事实行（代号已还原为原文）
+  review/            风险卡、事实行、论点提纲、审阅表、待办与引用的逐条决定（代号已还原为原文）
 
 核对步骤
   1. 用 firm-root.pem 核对 signer-cert.json 的签发签名；再用证书里的签名公钥核对 manifest.sig；
@@ -181,6 +181,13 @@ export function buildMatterArchive(d: ArchiveDeps, matterId: string, opts: { by:
     fallback: restoreText(c.fallback),
     bottom_line: restoreText(c.bottom_line),
     needs_client_decision: c.needs_client_decision === 1,
+    // v9.4 第 19 / 20 批：卡的类型、判断依据来源与规则、缺失卡查过的说法、所选一级
+    kind: c.kind ?? "risk",
+    rule_source: c.rule_source ?? null,
+    rule_ref: restoreText(c.rule_ref),
+    searched_terms: parseJson<string[]>(c.searched_terms, []).map((t) => restoreText(t)),
+    searched_found: parseJson(c.searched_found, []),
+    chosen_level: c.chosen_level ?? null,
     status: c.status,
     final_text: c.final_text,
     decided_by: c.decided_by,
@@ -202,6 +209,40 @@ export function buildMatterArchive(d: ArchiveDeps, matterId: string, opts: { by:
   }));
   add("review/risk-cards.json", Buffer.from(JSON.stringify(cards, null, 2), "utf8"));
   add("review/facts.json", Buffer.from(JSON.stringify(facts, null, 2), "utf8"));
+
+  // v9.4 第 20 批（复核 Q2-13）：论点提纲、审阅表、待办与引用的逐条决定也是事项工作底稿，一并归档（代号还原）
+  const deepRestore = (v: unknown): unknown => (typeof v === "string" ? restoreText(v) : Array.isArray(v) ? v.map(deepRestore) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deepRestore(x)])) : v);
+  const outlines = d.db.all<Record<string, any>>(`SELECT * FROM argument_outlines WHERE matter_id = ? ORDER BY created_at`, [matterId]).map((o) => ({
+    outline_id: o.outline_id,
+    run_id: o.run_id,
+    doc_kind: o.doc_kind,
+    title: restoreText(o.title),
+    status: o.status,
+    items: deepRestore(parseJson(o.items, [])),
+    decisions: parseJson(o.decisions, null),
+    lawyer_note: o.lawyer_note,
+    decided_by: o.decided_by,
+    decided_at: o.decided_at,
+  }));
+  const tables = d.db.all<Record<string, any>>(`SELECT * FROM review_tables WHERE matter_id = ? ORDER BY created_at`, [matterId]).map((t) => ({
+    table_id: t.table_id,
+    template: t.template,
+    title: t.title,
+    columns: parseJson(t.columns, []),
+    document_version_ids: parseJson(t.document_version_ids, []),
+    cells: d.db
+      .all<Record<string, any>>(`SELECT * FROM review_cells WHERE table_id = ? ORDER BY document_version_id, col_key`, [t.table_id])
+      .map((c) => ({ document_version_id: c.document_version_id, column: c.col_key, state: c.state, value: restoreText(c.value), quote: restoreText(c.quote), note: restoreText(c.note), lawyer_value: c.lawyer_value, decided_by: c.decided_by, decided_at: c.decided_at })),
+  }));
+  const todos = d.db.all<Record<string, any>>(`SELECT todo_id, title, assignee_kind, assignee_name, reviewer_name, due_date, status, created_at, done_at FROM matter_todos WHERE matter_id = ? ORDER BY created_at`, [matterId]);
+  const citeDecisions = d.db.all<Record<string, any>>(
+    `SELECT cd.artifact_version_id, cd.cite_key, cd.decision, cd.decided_by, cd.decided_at FROM citation_decisions cd JOIN artifact_versions av ON av.artifact_version_id = cd.artifact_version_id WHERE av.matter_id = ? ORDER BY cd.decided_at`,
+    [matterId],
+  );
+  add("review/outlines.json", Buffer.from(JSON.stringify(outlines, null, 2), "utf8"));
+  add("review/review-tables.json", Buffer.from(JSON.stringify(tables, null, 2), "utf8"));
+  add("review/todos.json", Buffer.from(JSON.stringify(todos, null, 2), "utf8"));
+  add("review/citation-decisions.json", Buffer.from(JSON.stringify(citeDecisions, null, 2), "utf8"));
 
   // 4. 签名事件链 + 业务行原样 + 设备证书 + 签发证明包
   const events = d.db.all<Record<string, any>>(`SELECT * FROM signed_events WHERE matter_id = ? ORDER BY seq`, [matterId]);
@@ -238,6 +279,9 @@ export function buildMatterArchive(d: ArchiveDeps, matterId: string, opts: { by:
       counterparty: m.counterparty,
       stance: m.stance,
       jurisdiction: m.jurisdiction,
+      stage: m.stage ?? null,
+      event_date: m.event_date ?? null,
+      region: m.region ?? null,
       confidentiality: m.confidentiality,
       lifecycle: m.lifecycle ?? "active",
       closed_at: m.closed_at ?? null,
@@ -254,6 +298,11 @@ export function buildMatterArchive(d: ArchiveDeps, matterId: string, opts: { by:
       artifacts: entries.filter((e) => e.name.startsWith("artifacts/")).length,
       risk_cards: cards.length,
       facts: facts.length,
+      outlines: outlines.length,
+      review_tables: tables.length,
+      review_cells: tables.reduce((n, t) => n + t.cells.length, 0),
+      todos: todos.length,
+      citation_decisions: citeDecisions.length,
       signed_events: events.length,
       unresolved_tokens: unresolved,
     },

@@ -136,7 +136,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const contentKeys = contentKeyTable([config.lawdbSignerPub, ...config.contentKeysExtra], contentKeysFromEnv(env.ZR_CONTENT_KEYS_REVOKED));
   const distChannel = env.ZR_DIST_CHANNEL === "beta" ? "beta" : "stable";
   // 选用法规库：在线已装（账本登记、seq 高于随包）且本机核验通过才用，否则随包（只核验一次，返回已打开实例）；之后在线更新经 LawdbHolder 换用
-  const lawdbChoice = selectLawdb({ db, workspaceDir: config.workspaceDir, channel: distChannel, keys: contentKeys, bundledFile: config.lawdbFile, bundledReleaseFile: join(dirname(config.lawdbFile), "lawdb.release.json") });
+  const lawdbChoice = selectLawdb({ db, workspaceDir: config.workspaceDir, channel: distChannel, keys: contentKeys, bundledFile: config.lawdbFile, bundledReleaseFile: join(dirname(config.lawdbFile), "lawdb.release.json"), ...(config.lawdbAllowTestFixture ? { allowTestFixture: true } : {}) });
   const lawdbHolder = new LawdbHolder(lawdbChoice.lawdb);
   const lawdb = lawdbHolder.proxy;
 

@@ -112,10 +112,10 @@ export function markProblem(db: KernelDb, kind: ContentKind, channel: DistChanne
 }
 
 /** 法规库包按其 sidecar 清单的 signer_key_id 取公钥打开（只读、验签与内容摘要）。 */
-export function openLawdbWithKeys(file: string, keys: ReadonlyMap<string, string>, o: { writable?: boolean } = {}): Lawdb {
+export function openLawdbWithKeys(file: string, keys: ReadonlyMap<string, string>, o: { writable?: boolean; allowTestFixture?: boolean } = {}): Lawdb {
   const kid = String(readJson(sidecarOf(file))?.signer_key_id ?? "");
   const pem = keys.get(kid) ?? [...keys.values()][0] ?? "";
-  return openLawdb(file, { expectedSignerPubPem: pem, ...(o.writable ? { writable: true } : {}) });
+  return openLawdb(file, { expectedSignerPubPem: pem, ...(o.writable ? { writable: true } : {}), ...(o.allowTestFixture ? { allowTestFixture: true } : {}) });
 }
 
 /** 有限次退避重试（复核 S8A-12：Windows 上杀软与索引服务常短暂占用新写的文件，改名与删除偶发 EPERM/EBUSY）。 */
@@ -136,7 +136,7 @@ function retrySync(fn: () => void, attempts = 5): void {
  * 启动时选用并打开法规库（复核 S8A-11：只核验一次，直接返回已打开实例）：已装（账本 active 行）seq 高于随包 seq 且本机核验通过才用；
  * 核验失败的已装副本标记问题、回到随包。随包也打不开时抛出（与原先“验签不符即拒绝加载”一致）。
  */
-export function selectLawdb(o: { db: KernelDb; workspaceDir: string; channel: DistChannel; keys: ReadonlyMap<string, string>; bundledFile: string; bundledReleaseFile: string | null }): {
+export function selectLawdb(o: { db: KernelDb; workspaceDir: string; channel: DistChannel; keys: ReadonlyMap<string, string>; bundledFile: string; bundledReleaseFile: string | null; allowTestFixture?: boolean }): {
   active: ActiveContent;
   bundled: ActiveContent;
   lawdb: Lawdb;
@@ -159,7 +159,8 @@ export function selectLawdb(o: { db: KernelDb; workspaceDir: string; channel: Di
     }
     markProblem(o.db, "lawdb", o.channel, row.seq, "本机核验失败（文件缺失或被改动）");
   }
-  return { active: bundled, bundled, lawdb: openLawdbWithKeys(o.bundledFile, o.keys), bundledStamped: bseq > 0 };
+  // 测试夹具只在显式允许时可作为“随包”库（复核 Q2-19；已装的更新包一律不允许）
+  return { active: bundled, bundled, lawdb: openLawdbWithKeys(o.bundledFile, o.keys, o.allowTestFixture ? { allowTestFixture: true } : {}), bundledStamped: bseq > 0 };
 }
 
 /** 启动时选用方法模板包：规则同法规库（物化失败的回退在内核入口，复核 S8A-08）。 */
