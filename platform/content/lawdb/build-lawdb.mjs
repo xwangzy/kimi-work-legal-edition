@@ -21,6 +21,8 @@ const fixtureFile = join(here, "test-fixtures", "lawdb-renumber-demo.sqlite");
 const key = ensureContentSigningKey(join(root, "content", "keys"));
 const registry = loadJson(join(here, "sources", "source_registry.json"));
 const lawsDoc = loadJson(join(here, "sources", "laws.json"));
+// 节假日表随法规库签名分发（v9.4 第 21 批）：每年一行，签名覆盖
+const holidaysDoc = loadJson(join(here, "sources", "holidays.json"));
 
 const fixtureDoc = loadJson(join(here, "sources", "test-fixtures", "renumber-demo.json"));
 
@@ -45,6 +47,7 @@ function build(file, laws, purpose) {
   db.transaction(() => {
     insertRegistry(db, registry);
     for (const law of laws) insertLaw(db, law);
+    for (const y of holidaysDoc.years) db.prepare(`INSERT INTO holidays (year, doc) VALUES (?, ?)`).run(y.year, JSON.stringify(y));
   })();
   const manifest = signAndWriteManifest(db, file, { kind: "full", builtAt: new Date().toISOString(), privateKeyPem: key.privateKeyPem, publicKeyPem: key.publicKeyPem, ...(purpose ? { purpose } : {}) });
   const summary = contentSummary(db);
@@ -64,5 +67,6 @@ console.log(`[build:lawdb] 内容签名公钥指纹: ${manifest.signer_key_id}`)
 console.log(`[build:lawdb] 产物: ${outFile}（+ lawdb.manifest.json）`);
 console.log(`[build:lawdb] 包版本: ${manifest.package_version} · ${st.laws_count} 部 / ${st.versions_count} 版本 / ${st.articles_count} 条正文`);
 console.log(`[build:lawdb] 内容表行数: ${JSON.stringify(summary)}`);
+console.log(`[build:lawdb] 节假日表: ${holidaysDoc.years.map((y) => y.year).join("、")} 年`);
 console.log(`[build:lawdb] 测试夹具（不随包）: ${fixtureFile} · 条号迁移 ${fixture.summary.renumbering ?? "?"} 组`);
 console.log(`[build:lawdb] 注意：G0 示例数据集（公报期号/页码为示例值；虚构的《律师法》2026 修正本只在测试夹具里）`);

@@ -18,7 +18,7 @@
  * 只到月的起算事实不补成某月 1 日：只给区间（最早 = 按该月 1 日算，最晚 = 按该月末日算）。
  */
 import { DomainError } from "@zr-legal/domain";
-import { CN_HOLIDAYS, dayStatus, holidayYear, isRestDay, weekdayOf } from "./cn-holidays.ts";
+import { dayStatus, holidaySource, holidayYear, isRestDay, weekdayOf } from "./cn-holidays.ts";
 
 export type DeadlineUnit = "day" | "month" | "year" | "workday";
 export type DeadlineRule = "civil" | "workday";
@@ -285,11 +285,7 @@ export function calcDeadline(params: CalcDeadlineParams): CalcDeadlineResult {
     range,
     steps,
     rules: p.rule === "workday" ? WORKDAY_RULES : CIVIL_RULES(unit),
-    holiday_source: {
-      table: "全国法定节假日与调休表（内核内置；逐年按国务院办公厅部分节假日安排通知的中国政府网原文核对）",
-      years_covered: CN_HOLIDAYS.map((y) => y.year),
-      years_used: used,
-    },
+    holiday_source: { ...holidaySource(), years_used: used },
     warnings,
     not_handled: NOT_HANDLED,
   };

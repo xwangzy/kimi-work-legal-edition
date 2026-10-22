@@ -6,12 +6,12 @@ when_to_use: 有本金、付款记录与计息约定（或律师给定口径）�
 arguments: [as_of]
 kwl:
   id: amount-calc
-  version: 1.2.0
+  version: 1.3.0
   lines: [诉讼仲裁, 企业法务]
   chain: casefile
   tier: beta
   tools_required: [calc.interest, materials.read_excerpt]
-  tools_optional: [xlsx.render_table, facts.list, materials.list, law.get_version, citations.verify, calc.labor]
+  tools_optional: [xlsx.render_table, facts.list, materials.list, law.get_version, citations.verify, calc.labor, calc.court_fee]
   outputs: [计算明细.xlsx]
   source_lineage: [demo:scene-civil-pleading@v1.0, demo:scene-labor-calculation@v1.0, demo:scene-counsel-workforce-cost@v1.0]
 ---
@@ -20,7 +20,7 @@ kwl:
 
 ## 1. 适用范围
 - 交付：《计算明细》.xlsx 一个文件，工作表为“分段计算”“付款与抵扣”“汇总”“参数与假设”，情景测算时另加“情景草稿”。
-- 覆盖：固定年利率、一年期 LPR 加点（基点）与 LPR 倍数（如“上浮 50%”写 `lpr_times` 1.5）计息；分段本金；部分清偿抵扣；劳动经济补偿 N 与违法解除赔偿金 2N 用 `calc.labor`（当地平均工资、最低工资只用律师或材料给的数）。
+- 覆盖：固定年利率、一年期 LPR 加点（基点）与 LPR 倍数（如“上浮 50%”写 `lpr_times` 1.5）计息；分段本金；部分清偿抵扣；劳动经济补偿 N 与违法解除赔偿金 2N 用 `calc.labor`（当地平均工资、最低工资只用律师或材料给的数）；律师要预估诉讼费用时用 `calc.court_fee`（案件受理费按诉讼请求金额分段累计，上诉按不服一审判决部分的上诉请求数额；申请执行费、保全申请费、支付令申请费；简易程序、调解或撤诉、反诉合并审理减半——几种情形只减一次），汇总表单列“预估诉讼费用（以法院交费通知为准）”，不计入诉请金额。
 - 不覆盖（明确告知律师）：加班费；外币汇率；复利；迟延履行期间加倍部分。LPR 倍数不得换算成加点或固定利率，直接用 `lpr_times`；`calc.interest` 返回 warnings（如计算区间越过已收录的 LPR 报价）时原样写进交付件。
 
 ## 2. 输入与前置检查
@@ -46,6 +46,7 @@ kwl:
 | facts.list | 律师确认的本金、日期、付款 | 不可用：用律师在对话中给出的数据；材料数据一律标“待律师确认” |
 | materials.list / materials.read_excerpt | 定位计息条款原文 | 读取失败：该依据标“未读取” |
 | citations.verify | 违约金调整等所引法条 | 不可用：标“依据待核实” |
+| calc.court_fee | 预估案件受理费与申请费 | 不可用：诉讼费一栏写“待律师按《诉讼费用交纳办法》计算”，不手算 |
 | xlsx.render_table | 生成计算明细 | 不可用：用受限命令行 `kwl-xlsx create` 生成，并注明“未经表格工具生成” |
 
 ## 5. 输出规格
@@ -61,6 +62,7 @@ kwl:
 - [ ] 没有把 LPR 四倍当作默认口径；LPR 倍数用 lpr_times，没有擅自换算成加点。
 - [ ] 互斥或可能重复的项目没有计入合计。
 - [ ] 日数规则与年日数已写明并经确认或并列展示。
+- [ ] 诉讼费用（如有）来自 calc.court_fee 的返回值，单列、写明“预估，以法院交费通知为准”，没有计入诉请金额。
 
 ## 7. 禁止事项
 - 不心算、不估算，不把工具结果四舍五入后再汇总。

@@ -14,7 +14,7 @@ import { agreementParts, batchEligible, firstOpenCard, restoreOursText, nextOpen
 import { api, type RiskCard, type RiskProgress } from "../api.ts";
 import { CITE_STATE_LABELS } from "../lib/labels.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
-import { adoptedText, KIND_LABEL, kindOf, ladderRows, NATURE_LABEL, NATURE_PILL, natureOf, natureText, RULE_SOURCE_LABEL, type RiskNature } from "../lib/risk-ladder.ts";
+import { adoptedText, KIND_LABEL, kindOf, ladderRows, NATURE_LABEL, NATURE_PILL, natureOf, natureText, RELATION_LABEL, RULE_SOURCE_LABEL, type RiskNature } from "../lib/risk-ladder.ts";
 import { Select } from "./Select.tsx";
 
 const SEVERITY: Record<RiskCard["severity"], { label: string; cls: string }> = {
@@ -91,7 +91,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       const first = firstOpenCard(r.cards);
       if (first) setActive(first);
     }
-    const all = r.cards.flatMap((c) => [c.anchor_text, c.issue, c.suggestion ?? "", c.fallback ?? "", c.bottom_line ?? "", c.assumptions ?? "", c.rule_ref ?? "", ...(c.searched_terms ?? []), ...(c.searched_docs ?? [])]).join("\n");
+    const all = r.cards.flatMap((c) => [c.anchor_text, c.issue, c.suggestion ?? "", c.fallback ?? "", c.bottom_line ?? "", c.assumptions ?? "", c.rule_ref ?? "", ...(c.searched_terms ?? []), ...(c.searched_docs ?? []), ...(c.related ?? []).map((x) => x.quote)]).join("\n");
     if (all.includes("〔")) setMap(await restoreTokens(matterId, all));
     return r.cards;
   }, [matterId, documentVersionId, runFilter]);
@@ -305,6 +305,8 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   const accepted = progress?.accepted ?? 0;
   const allDecided = !!progress && progress.total > 0 && progress.decided === progress.total;
   const openCount = cards.filter((c) => c.status === "proposed").length;
+  // 跨文件审查（v9.4 第 21 批）：卡片引用到的其他文件
+  const otherFiles = [...new Set(cards.flatMap((c) => (c.related ?? []).map((x) => x.filename)))];
   // 顶部按类型计数（C1 §2.2：缺失 n · 偏离规则 n），只列有的类型
   const kindCounts = (["missing", "deviation", "consistency"] as const).map((k) => [k, cards.filter((c) => kindOf(c) === k).length] as const).filter(([, n]) => n > 0);
 
@@ -352,6 +354,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
               {agreementParts({ ...agreement, decided: progress?.decided, total: progress?.total }).join(" · ")}
               {progress && progress.high_open > 0 ? <span className="sev-text-high"> · {progress.high_open} 项重大风险待处理</span> : null}
               {kindCounts.map(([k, n]) => ` · ${KIND_LABEL[k]} ${n}`).join("")}
+              {otherFiles.length > 0 && <span title={otherFiles.join("、")}> · 本次审查涉及 {otherFiles.length + 1} 份文件</span>}
             </div>
           )}
         </div>
@@ -638,7 +641,8 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                   </span>
                   {kindOf(c) !== "risk" && <span className="pill pill-gray">{KIND_LABEL[kindOf(c)]}</span>}
                   {(c.searched_found?.length ?? 0) > 0 && <span className="pill pill-orange" title="查过的说法在材料里出现过，可能已有约定">可能误报</span>}
-                  {(c.clause_ref || c.page) && <span className="rc-ref">{[c.clause_ref ? clauseLabel(c.clause_ref) : null, c.page ? `第 ${c.page} 页` : null].filter(Boolean).join(" · ")}</span>}
+                  {(c.clause_ref || c.page || c.cell) && <span className="rc-ref">{[c.clause_ref ? clauseLabel(c.clause_ref) : null, c.page ? `第 ${c.page} 页` : null, c.cell ?? null].filter(Boolean).join(" · ")}</span>}
+                  {(c.related?.length ?? 0) > 0 && <span className="pill pill-gray" title={c.related!.map((x) => x.filename).join("、")}>涉及 {new Set(c.related!.map((x) => x.document_version_id)).size + 1} 份文件</span>}
                   <span className="rc-issue">{plain(c.issue)}</span>
                   <span className={`rc-status rc-status-${c.status}`}>
                     {c.status === "accepted" && !adoptedText(c).trim() ? "已知悉" : c.status === "accepted" && c.chosen_level === "fallback" ? "已接受（可退让）" : STATUS_LABEL[c.status]}
@@ -710,6 +714,17 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                         </span>
                       </div>
                     )}
+                    {/* 跨文件审查（v9.4 第 21 批，C1 §2 第 7 项）：补充协议、附件里与本条相关的原文 */}
+                    {(c.related ?? []).map((x, j) => (
+                      <div key={j} className="rc-row">
+                        <span className="rc-k">{RELATION_LABEL[x.relation] ?? "相关原文"}</span>
+                        <span className="rc-quote">
+                          <span className="muted">《{x.filename}》</span>“{plain(x.quote)}”
+                          {x.anchor_status === "not_found" && <span className="rc-warn">这段原文在《{x.filename}》里找不到，请打开原件核对</span>}
+                          {x.anchor_status === "ambiguous" && <span className="rc-warn">这段原文在《{x.filename}》里出现多处</span>}
+                        </span>
+                      </div>
+                    ))}
                     <div className="rc-row">
                       <span className="rc-k">{kindOf(c) === "missing" ? "插在哪里" : "合同原文"}</span>
                       <span className="rc-quote">

@@ -26,7 +26,7 @@ test("未核与计数：已核、已改不算未核；空格算未核；原文�
   assert.equal(isOpen(undefined), true);
   const t = { columns: [{ key: "a" }, { key: "b" }] as any, document_version_ids: ["d1", "d2"] };
   const c = tableCounts(t, [cell({ state: "verified" }), cell({ state: "ai", anchor_status: "not_found" }), cell({ state: "edited", anchor_status: "not_found" })]);
-  assert.deepEqual(c, { total: 4, done: 2, conflict: 0, quoteMissing: 1, empty: 1 });
+  assert.deepEqual(c, { total: 4, done: 2, conflict: 0, quoteMissing: 1, empty: 1, na: 0 });
 });
 
 test("改值的格式提示与内核一致", () => {

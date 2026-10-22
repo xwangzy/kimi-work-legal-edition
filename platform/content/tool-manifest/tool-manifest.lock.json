@@ -188,7 +188,7 @@
     },
     {
       "name": "riskcards.submit",
-      "version": "3",
+      "version": "4",
       "sideEffect": "write_draft",
       "resource": "matter_work",
       "purposes": [
@@ -198,7 +198,7 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "492fbef60b63c4fcb66eabd39412ce6196d07bd061d17935fd2d5fc958f523d7"
+      "schemaHash": "49d0e7e4df50f8637f78c30c05f7a1f5db5dfda9540a489207ca93c98f87227d"
     },
     {
       "name": "riskcards.list",
@@ -325,6 +325,20 @@
         "drafting"
       ],
       "schemaHash": "a637652ecd4c477d8a329359f76bb1c234e2e5783934ff0088aa2be8fd37858a"
+    },
+    {
+      "name": "calc.court_fee",
+      "version": "1",
+      "sideEffect": "read",
+      "resource": "pure",
+      "purposes": [
+        "legal_analysis",
+        "contract_review",
+        "case_file",
+        "legal_research",
+        "drafting"
+      ],
+      "schemaHash": "b4be6e2d82f5723926dc6fa0d46d1fb50697f95843bb9f5db9e2ba5150a81d5c"
     }
   ]
 }

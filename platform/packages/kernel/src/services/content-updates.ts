@@ -12,6 +12,7 @@
  * 法规库换用（LawdbHolder）：没有任务在运行时即时换用；有任务时等任务都结束再换（S8A-10：成果清单记录的法规库版本须与核验所用一致）。
  * 方法模板包在下次打开时生效（Agent 宿主的可信区随宿主启动固定，D-76）。
  */
+import { useSignedHolidays } from "../tools/tools/cn-holidays.ts";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomBytes, randomInt } from "node:crypto";
@@ -183,11 +184,21 @@ export function selectSkills(o: { db: KernelDb; workspaceDir: string; channel: D
 }
 
 /** 法规库持有者：内核各处拿到的是同一个代理，换用时只换内部实例（调用都是同步的，换用与关闭旧实例之间不会有查询在途）。 */
+/** 法规库包里随包签名的节假日表装入期限计算（v9.4 第 21 批）；包里没有这张表时用内置的。 */
+function loadHolidays(l: Lawdb): void {
+  try {
+    useSignedHolidays(typeof l.holidays === "function" ? l.holidays() : [], l.packageVersion);
+  } catch {
+    useSignedHolidays([], "");
+  }
+}
+
 export class LawdbHolder {
   private cur: Lawdb;
   readonly proxy: Lawdb;
   constructor(initial: Lawdb) {
     this.cur = initial;
+    loadHolidays(initial);
     const self = this;
     this.proxy = new Proxy({} as Lawdb, {
       get(_t, k) {
@@ -203,6 +214,7 @@ export class LawdbHolder {
   swap(next: Lawdb): void {
     const old = this.cur;
     this.cur = next;
+    loadHolidays(next);
     old.close();
   }
 }

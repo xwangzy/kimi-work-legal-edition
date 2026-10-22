@@ -19,6 +19,8 @@ declare global {
       /** 选文件夹（第 14 批：备份位置、从备份恢复）。 */
       pickFolder?: () => Promise<{ handle: string; name: string; risk: SaveRisk | null } | null>;
       saveText?: (handle: string, text: string) => Promise<{ ok: boolean; name?: string }>;
+      /** 用系统默认程序打开刚保存的成果（v9.4 第 21 批）。 */
+      openSaved?: (handle: string) => Promise<{ ok: boolean; reason?: string }>;
       rendererNet?: () => Promise<{ blocked: number; last: string[] }>;
       updateStatus?: () => Promise<UpdateStatus | null>;
       installUpdate?: () => Promise<{ ok: boolean; reason?: string }>;
@@ -715,6 +717,28 @@ export const api = {
   // 成果
   /** 下载成果（还原真名）：桌面客户端由内核直接写到律师选定的位置（不经浏览器下载、不进“最近使用”）。返回 false = 律师取消。 */
   /** 下载成果（Markdown 成果下载成套好版式的 Word，见 lib/download.ts）；返回 false = 律师取消。 */
+  /**
+   * 在 Word / WPS 中打开（v9.4 第 21 批，主文 §3.2）：先存到律师选定的位置，再用系统默认程序打开那一份；给了要定位的一句话时复制到剪贴板，
+   * 在 Word 里按 Ctrl+F（Mac 为 ⌘F）粘贴即可跳到那里。开发形态（浏览器）只能下载，返回 opened=false。
+   */
+  openArtifactInOffice: async (artifactVersionId: string, filename: string, find?: string): Promise<{ saved: boolean; opened: boolean; copied: boolean }> => {
+    const plan = downloadPlan(filename);
+    const target = await chooseSaveTarget(plan.saveName);
+    if (target === null) return { saved: false, opened: false, copied: false };
+    const r = await invoke<{ filename: string; data_base64?: string; saved?: boolean; open_handle?: string }>("artifacts.download", { artifact_version_id: artifactVersionId, ...(plan.as ? { as: plan.as } : {}), ...(target ? { save_handle: target.handle } : {}) });
+    if (!target && r.data_base64) browserDownload(r.data_base64, r.filename, "application/octet-stream");
+    let copied = false;
+    if (find?.trim()) {
+      try {
+        await navigator.clipboard.writeText(find.trim());
+        copied = true;
+      } catch {
+        copied = false;
+      }
+    }
+    const opened = !!(r.open_handle && window.zrKernel?.openSaved && (await window.zrKernel.openSaved(r.open_handle)).ok);
+    return { saved: true, opened, copied };
+  },
   downloadArtifact: async (artifactVersionId: string, filename: string): Promise<boolean> => {
     const plan = downloadPlan(filename);
     const target = await chooseSaveTarget(plan.saveName);
@@ -827,7 +851,7 @@ export const api = {
     invoke<{ cell: import("./lib/table-review.ts").CellView }>("tables.decide_cell", { matter_id: matterId, table_id: tableId, ...body }),
   exportTable: (matterId: string, tableId: string) => invoke<{ artifact_version_id: string; filename: string; rows: number }>("tables.export", { matter_id: matterId, table_id: tableId }),
   // 表格审阅残余（v9.4 第 20 批，C1 §3.3）
-  tableAddColumn: (matterId: string, tableId: string, body: { label: string; hint: string; format: string; options?: string[] }) =>
+  tableAddColumn: (matterId: string, tableId: string, body: { label: string; hint: string; format: string; options?: string[]; when?: { column: string; equals: string } }) =>
     invoke<{ table: import("./lib/table-review.ts").TableView }>("tables.add_column", { matter_id: matterId, table_id: tableId, ...body }),
   tableRemoveColumn: (matterId: string, tableId: string, column: string, confirm = false) => invoke<{ table: import("./lib/table-review.ts").TableView }>("tables.remove_column", { matter_id: matterId, table_id: tableId, column, confirm }),
   tableCellContext: (matterId: string, tableId: string, cellId: string) =>
@@ -850,10 +874,12 @@ export const api = {
   decideOutline: (matterId: string, outlineId: string, decisions: { arg_id: string; keep: boolean; claim?: string; basis_keep?: number[] }[], note: string) =>
     invoke<{ outline: import("./lib/outline.ts").OutlineView }>("outlines.decide", { matter_id: matterId, outline_id: outlineId, decisions, ...(note ? { note } : {}) }),
   // 论断—依据（v9.4 第 20 批 C-03）
-  artifactCitations: (artifactVersionId: string) => invoke<{ citations: import("./lib/citation-review.ts").ArtifactCitations | null }>("artifacts.citations", { artifact_version_id: artifactVersionId }),
+  artifactCitations: (artifactVersionId: string) =>
+    invoke<{ citations: import("./lib/citation-review.ts").ArtifactCitations | null; facts?: import("./lib/citation-review.ts").FactMarkView[] }>("artifacts.citations", { artifact_version_id: artifactVersionId }),
   decideCitation: (artifactVersionId: string, citeKey: string, decision: "supported" | "unsupported" | "acknowledged" | null) =>
     invoke<{ citations: import("./lib/citation-review.ts").ArtifactCitations | null }>("citations.decide", { artifact_version_id: artifactVersionId, cite_key: citeKey, decision }),
   todos: (matterId: string) => invoke<TodoList>("todos.list", { matter_id: matterId }),
+  pendingChecks: (matterId: string) => invoke<{ checks: PendingCheck[]; total: number }>("matters.pending_checks", { matter_id: matterId }),
   createTodo: (matterId: string, body: TodoInput) => invoke<{ todo: TodoRow }>("todos.create", { matter_id: matterId, ...body }),
   updateTodo: (matterId: string, todoId: string, patch: Partial<TodoInput> & { done?: boolean }) => invoke<{ todo: TodoRow }>("todos.update", { matter_id: matterId, todo_id: todoId, patch }),
   deleteTodo: (matterId: string, todoId: string) => invoke<{ ok: true }>("todos.delete", { matter_id: matterId, todo_id: todoId }),
@@ -998,6 +1024,10 @@ export interface RiskCard {
   searched_terms?: string[];
   searched_docs?: string[];
   searched_found?: { term: string; filename: string }[];
+  /** 跨文件审查（v9.4 第 21 批）：本卡引用的同一事项其他文件原文（补充协议、附件等）。 */
+  related?: { document_version_id: string; filename: string; quote: string; relation: "amends" | "conflicts" | "refers"; anchor_status: string }[];
+  /** 锚点在 Word 表格里时的位置（“表 2 第 3 行第 2 列（单价）”）。 */
+  cell?: string;
   /** 接受时选用的一级（C-05）。 */
   chosen_level?: "suggestion" | "fallback";
   status: "proposed" | "accepted" | "modified" | "rejected";
@@ -1160,4 +1190,12 @@ export interface OffboardingItem {
   colleagues: { user_id: string; name: string | null; role: string }[];
   archived_at?: string | null;
   relay_controller?: boolean;
+}
+
+/** 统一待核清单的一项（v9.4 第 21 批，主文 §6.4）：还等律师做什么、去哪里做。 */
+export interface PendingCheck {
+  kind: "facts" | "table_cells" | "risk_cards" | "outlines" | "open_items" | "citations";
+  count: number;
+  text: string;
+  target: { tab: "facts" } | { tab: "materials"; view: "table"; table_id: string } | { workbench: string | null } | { run_id: string } | { artifact_version_id: string };
 }

@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld("zrKernel", {
   /** 选文件夹（第 14 批：备份位置、从备份恢复）：同样只回一次性句柄与文件夹名。 */
   pickFolder: () => ipcRenderer.invoke("kwl:pick-folder"),
   saveText: (handle, text) => ipcRenderer.invoke("kwl:save-text", handle, text),
+  /** 用系统默认程序打开刚保存的成果（v9.4 第 21 批）：只认保存成功后主进程发的一次性句柄。 */
+  openSaved: (handle) => ipcRenderer.invoke("kwl:open-saved", handle),
   /**
    * 拖放或文件框选中的文件 → 一次性句柄（复核 S5A-01）：路径只在 preload 与主进程之间（Electron 44 经 webUtils 从真实的 File 取得），
    * 页面拿不到也不能指定路径。

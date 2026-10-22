@@ -188,3 +188,35 @@ export function previewCites(items: CitationItem[], plain: (t: string) => string
       return { raw: i.raw, nth, mark: markOf(idx + 1), tone: citeTone(i), title: plain(`${head}\n来源 ${l.source} · 版本 ${l.version} · 支持 ${l.support}${body}`) };
     });
 }
+
+/** 成果里的事实角标（v9.4 第 21 批，C1 §4.3）：内核按日期对到事项的事实行。 */
+export interface FactMarkView {
+  raw: string;
+  nth: number;
+  status: "confirmed" | "proposed";
+  facts: { fact_id: string; statement: string; status: "confirmed" | "proposed"; filename: string | null; quote: string | null }[];
+}
+
+/** 事实角标：对上律师已确认的事实显示“已确认”（律师已确认色），只对上 AI 提交、还没确认的显示“未确认”（待判色）；悬停看事实原句与出处。 */
+export function previewFactMarks(marks: readonly FactMarkView[] | null | undefined, plain: (t: string) => string = (t) => t): import("./safe-preview.ts").PreviewCite[] {
+  return (marks ?? []).map((m) => ({
+    raw: m.raw,
+    nth: m.nth,
+    mark: m.status === "confirmed" ? "已确认" : "未确认",
+    tone: m.status === "confirmed" ? ("confirmed" as const) : ("orange" as const),
+    title: plain(
+      [
+        m.status === "confirmed" ? "已确认的事实（事项“事实”里律师确认过）" : "未经确认的事实：助手从材料里读到、律师还没确认，签发前请到事项“事实”里确认",
+        ...m.facts.map((f) => `· ${f.statement}${f.status === "confirmed" ? "" : "（未确认）"}${f.filename ? `\n  出处《${f.filename}》${f.quote ? `：“${f.quote.slice(0, 60)}${f.quote.length > 60 ? "…" : ""}”` : ""}` : ""}`),
+      ].join("\n"),
+    ),
+  }));
+}
+
+/** 事实角标的一行汇总：“文中 4 处日期对上事实：已确认 3 · 未确认 1”；没有时为空。 */
+export function factMarksSummary(marks: readonly FactMarkView[] | null | undefined): string {
+  const list = marks ?? [];
+  if (list.length === 0) return "";
+  const ok = list.filter((m) => m.status === "confirmed").length;
+  return `文中 ${list.length} 处日期对上事实：${[ok ? `已确认 ${ok}` : "", list.length - ok ? `未确认 ${list.length - ok}` : ""].filter(Boolean).join(" · ")}`;
+}

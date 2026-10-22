@@ -16,7 +16,7 @@ const { kernelChildEnv, loadReleaseConfig } = require("./release-config.cjs");
 const { initUpdater } = require("./updater.cjs");
 const { parseSmokeArg, writeSmokeResult, SmokeFailure } = require("./smoke-io.cjs");
 const { createIdentityRestart } = require("./identity-restart.cjs");
-const { createHandleStore, classifySaveTarget, resolveFileParams, acceptDroppedPath, insideAppData, safeSuggestedName } = require("./file-dialogs.cjs");
+const { createHandleStore, classifySaveTarget, resolveFileParams, acceptDroppedPath, insideAppData, safeSuggestedName, openableSaved, OPENABLE } = require("./file-dialogs.cjs");
 
 const DEV_SERVER = process.env.ZR_DESKTOP_DEV_URL ?? "http://127.0.0.1:5173";
 
@@ -539,10 +539,29 @@ function wireIpc() {
         new Promise((resolve) => {
           if (!k) return resolve({ ok: false, error: { code: "kernel_starting", message: "后台服务正在启动，请稍候" } });
           const id = ++rpcSeq;
-          pendingRpc.set(id, resolve);
+          pendingRpc.set(id, (reply) => {
+            // 成果存到律师选定的位置后，给一次性“打开”句柄（v9.4 第 21 批：在 Word / WPS 中打开）
+            const saved = openableSaved(String(method), r.params, reply);
+            if (saved) reply = { ...reply, result: { ...reply.result, open_handle: fileHandles.issue("opensaved", saved) } };
+            resolve(reply);
+          });
           k.postMessage({ id, method, params: r.params });
         }),
     );
+  });
+  // 用系统默认程序（Word / WPS / Excel）打开刚保存的成果：只认上面发的一次性句柄；路径在应用数据目录里、扩展名不对或文件不在的拒绝
+  ipcMain.handle("kwl:open-saved", async (e, handle) => {
+    if (!fromAppMainFrame(e)) return { ok: false };
+    const p = fileHandles.take(handle, "opensaved");
+    if (!p || !OPENABLE.test(p) || insideAppData(p, [app.getPath("userData")])) return { ok: false };
+    try {
+      if (!require("node:fs").statSync(p).isFile()) return { ok: false };
+      const problem = await require("electron").shell.openPath(p);
+      return problem ? { ok: false, reason: "no_app" } : { ok: true };
+    } catch (err) {
+      slog.event("MAIN_OPEN_SAVED_FAILED", errFields(err));
+      return { ok: false };
+    }
   });
   // 选择材料（v9.2 §3.7；Y5 P1-4）：系统对话框带 dontAddToRecent（不进“最近使用”与跳转列表）；只回句柄、文件名与大小
   ipcMain.handle("kwl:pick-files", async (e, opts) => {

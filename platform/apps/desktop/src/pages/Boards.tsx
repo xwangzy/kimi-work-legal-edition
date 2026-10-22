@@ -9,7 +9,8 @@ import { fmtRelative, RUN_STATUS_LABELS, SCENARIO_LABELS } from "../lib/labels.t
 import { dueText, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
 import type { ReminderItem } from "../api.ts";
 import { Select } from "../components/Select.tsx";
-import { MatterTodos, StageStrip } from "../components/MatterOverview.tsx";
+import { MatterTodos, PendingChecks, StageStrip } from "../components/MatterOverview.tsx";
+import type { PendingCheck } from "../api.ts";
 
 export const MAX_BOARDS = 2;
 export const MAX_WIDGETS = 20;
@@ -23,7 +24,7 @@ function Widget({ title, children }: { title: string; children: React.ReactNode 
   );
 }
 
-export function MatterBoard({ matter, runs, onChanged }: { matter: Matter; runs: any[]; onChanged?: () => void }) {
+export function MatterBoard({ matter, runs, onChanged, onGo }: { matter: Matter; runs: any[]; onChanged?: () => void; onGo?: (target: PendingCheck["target"]) => void }) {
   const [egress, setEgress] = useState<{ sent: number; blocked: number; unknown: number }>({ sent: 0, blocked: 0, unknown: 0 });
   // 期限卡同时列本事项的期限提醒（复核 Q1-18：“填期限”打开的是提醒表单，填完回来卡片要能看到）
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
@@ -50,6 +51,10 @@ export function MatterBoard({ matter, runs, onChanged }: { matter: Matter; runs:
       {/* 待办（C1 §3.2）：做什么、谁做、谁复核、期限；AI 完成的任务自动变成“待你复核” */}
       <Widget title="待办">
         <MatterTodos matter={matter} readOnly={readOnly} />
+      </Widget>
+      {/* 统一待核清单（v9.4 第 21 批，主文 §6.4）：还等你核什么、去哪里核 */}
+      <Widget title="待核">
+        <PendingChecks matter={matter} {...(onGo ? { onGo } : {})} />
       </Widget>
       <Widget title="期限">
         {/* 空状态给动作（v9.4 U1 §3.4）：“填期限”直接打开本事项的设提醒表单 */}

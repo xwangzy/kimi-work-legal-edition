@@ -4,7 +4,7 @@
  * - 待办：手工待办（做什么、谁做、谁复核、期限）+ 从任务与成果推出的待办（等你确认、AI 已完成待你复核、待签发）。
  */
 import { useCallback, useEffect, useState } from "react";
-import { api, type Matter, type TodoInput, type TodoList } from "../api.ts";
+import { api, type Matter, type PendingCheck, type TodoInput, type TodoList } from "../api.ts";
 import { nav } from "../App.tsx";
 import { SCENARIO_LABELS } from "../lib/labels.ts";
 import { ALL_STAGES, eventDateProblem, STAGE_LABELS, stagesFor, type Stage } from "../lib/matter-stage.ts";
@@ -102,6 +102,43 @@ export function StageStrip({ matter, readOnly, onChanged }: { matter: Matter; re
 }
 
 const EMPTY: TodoInput = { title: "", assignee_kind: "me", assignee_name: "", reviewer_name: "", due_date: "" };
+
+/**
+ * 统一待核清单（v9.4 第 21 批，主文 §6.4）：事实、审阅表、审查意见、论点、成果未决项、引用逐条决定一处列全，每项点了去处理。
+ * onGo 由事项页给（切到“事实”、材料的表格审阅、打开工作台）；任务与成果直接跳转。
+ */
+export function PendingChecks({ matter, onGo }: { matter: Matter; onGo?: (target: PendingCheck["target"]) => void }) {
+  const [list, setList] = useState<PendingCheck[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    api
+      .pendingChecks(matter.matter_id)
+      .then((r) => live && setList(r.checks))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [matter.matter_id]);
+  if (failed) return <p className="muted">待核清单没有读出来，请稍后再试。</p>;
+  if (!list) return <p className="muted">载入中…</p>;
+  if (list.length === 0) return <p className="muted">没有等你核的内容。</p>;
+  const go = (t: PendingCheck["target"]) => {
+    if ("run_id" in t) nav(`/run/${t.run_id}/${matter.matter_id}`);
+    else if ("artifact_version_id" in t) nav(`/review/${t.artifact_version_id}`);
+    else onGo?.(t);
+  };
+  return (
+    <div className="todos" role="list" aria-label="待核清单">
+      {list.map((c, i) => (
+        <button key={i} role="listitem" className="todo-row todo-derived" onClick={() => go(c.target)} disabled={!onGo && !("run_id" in c.target) && !("artifact_version_id" in c.target)}>
+          <span className="todo-title">{c.text}</span>
+          <span className="todo-meta">去处理</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function MatterTodos({ matter, readOnly }: { matter: Matter; readOnly: boolean }) {
   const [list, setList] = useState<TodoList | null>(null);

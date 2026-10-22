@@ -10,6 +10,8 @@ export interface TableColumnView {
   format: "text" | "date" | "money" | "yesno" | "choice";
   options?: string[];
   hint: string;
+  /** 条件列（v9.4 第 21 批）：只在同一行 column 列的值等于 equals 时才填。 */
+  when?: { column: string; equals: string };
 }
 export interface TableView {
   table_id: string;
@@ -64,15 +66,38 @@ export function cellText(c: CellView | undefined, plain: (s: string | null) => s
 /** “只看未核”：AI 值、冲突与空格都算未核；已核、已改不算。 */
 export const isOpen = (c: CellView | undefined) => !c || (c.state !== "verified" && c.state !== "edited");
 
-/** 表头一行的计数：共几格、已核几格、有冲突几格、引文找不到几格。纯函数。 */
-export function tableCounts(t: Pick<TableView, "columns" | "document_version_ids">, cells: readonly CellView[]): { total: number; done: number; conflict: number; quoteMissing: number; empty: number } {
-  const total = t.columns.length * t.document_version_ids.length;
+/**
+ * 条件列在这一行是否适用（与内核 columnApplies 同一口径）：yes / no（显示“不适用”，不算未核）/ pending（条件列还没填或有冲突）。
+ */
+export function columnApplies(col: Pick<TableColumnView, "when">, condition: CellView | undefined): "yes" | "no" | "pending" {
+  if (!col.when) return "yes";
+  if (!condition || condition.state === "conflict" || condition.state === "unreadable") return "pending";
+  if (condition.state === "not_found") return "no";
+  const v = condition.state === "edited" ? condition.lawyer_value : condition.value;
+  return v === col.when.equals ? "yes" : "no";
+}
+
+/** 条件列表头的说明：“只在 有违约金条款 为“是”时填”。 */
+export function whenText(col: Pick<TableColumnView, "when">, columns: readonly Pick<TableColumnView, "key" | "label">[]): string {
+  if (!col.when) return "";
+  return `只在“${columns.find((c) => c.key === col.when!.column)?.label ?? col.when.column}”为“${col.when.equals}”时填`;
+}
+
+/** 表头一行的计数：共几格、已核几格、有冲突几格、引文找不到几格；条件不满足（不适用）的格子不计。纯函数。 */
+export function tableCounts(t: Pick<TableView, "columns" | "document_version_ids">, cells: readonly CellView[]): { total: number; done: number; conflict: number; quoteMissing: number; empty: number; na: number } {
+  const at = new Map(cells.map((c) => [`${c.document_version_id}\u0000${c.col_key}`, c]));
+  const naAt = new Set<string>();
+  for (const d of t.document_version_ids)
+    for (const col of t.columns) if (col.when && columnApplies(col, at.get(`${d}\u0000${col.when.column}`)) === "no") naAt.add(`${d}\u0000${col.key}`);
+  const live = cells.filter((c) => !naAt.has(`${c.document_version_id}\u0000${c.col_key}`));
+  const total = t.columns.length * t.document_version_ids.length - naAt.size;
   return {
     total,
-    done: cells.filter((c) => c.state === "verified" || c.state === "edited").length,
-    conflict: cells.filter((c) => c.state === "conflict").length,
-    quoteMissing: cells.filter((c) => c.anchor_status === "not_found" && (c.state === "ai" || c.state === "conflict")).length,
-    empty: total - cells.length,
+    done: live.filter((c) => c.state === "verified" || c.state === "edited").length,
+    conflict: live.filter((c) => c.state === "conflict").length,
+    quoteMissing: live.filter((c) => c.anchor_status === "not_found" && (c.state === "ai" || c.state === "conflict")).length,
+    empty: total - live.length,
+    na: naAt.size,
   };
 }
 

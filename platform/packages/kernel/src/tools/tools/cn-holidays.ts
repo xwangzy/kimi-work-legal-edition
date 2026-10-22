@@ -112,8 +112,44 @@ export const CN_HOLIDAYS: readonly HolidayYear[] = [
 
 const byYear = new Map<number, HolidayYear>(CN_HOLIDAYS.map((y) => [y.year, y]));
 
+/**
+ * 随法规库包签名分发的节假日表（v9.4 第 21 批，主文 §3.2）：法规库包打开或更新换用时由内核装入，同一年以包里的为准
+ * （国办每年 10—11 月发布次年安排，靠内容更新就能补上，不必等应用升级）。逐年校验形状，不合格的那一年不用、照旧用内置的。
+ */
+let signed = new Map<number, HolidayYear>();
+let signedFrom: string | null = null;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+function validYear(x: any): x is HolidayYear {
+  if (!x || !Number.isInteger(x.year) || x.year < 2000 || x.year > 2100) return false;
+  if (![x.title, x.doc_no, x.published, x.url, x.verified_on].every((v) => typeof v === "string" && v)) return false;
+  if (!Array.isArray(x.off) || x.off.length === 0 || !Array.isArray(x.workdays)) return false;
+  const inYear = (d: unknown) => typeof d === "string" && DAY_RE.test(d) && Math.abs(Number(d.slice(0, 4)) - x.year) <= 1;
+  return x.off.every((o: any) => typeof o?.name === "string" && inYear(o.from) && inYear(o.to) && o.from <= o.to) && x.workdays.every((w: any) => typeof w?.name === "string" && inYear(w.date));
+}
+export function useSignedHolidays(docs: readonly unknown[], source: string): { used: number[]; rejected: number } {
+  const next = new Map<number, HolidayYear>();
+  let rejected = 0;
+  for (const d of docs) {
+    if (validYear(d)) next.set(d.year, Object.freeze({ ...d, verified_how: d.verified_how ?? "" }));
+    else rejected += 1;
+  }
+  signed = next;
+  signedFrom = next.size > 0 ? source : null;
+  return { used: [...next.keys()].sort((a, b) => a - b), rejected };
+}
+/** 当前节假日表的出处与收录年份（内置与法规库包合并）。 */
+export function holidaySource(): { table: string; years_covered: number[] } {
+  const years = [...new Set([...byYear.keys(), ...signed.keys()])].sort((a, b) => a - b);
+  return {
+    table: signedFrom
+      ? `全国法定节假日与调休表（随法规库包 ${signedFrom} 签名分发；逐年按国务院办公厅部分节假日安排通知的中国政府网原文核对）`
+      : "全国法定节假日与调休表（内核内置；逐年按国务院办公厅部分节假日安排通知的中国政府网原文核对）",
+    years_covered: years,
+  };
+}
+
 export function holidayYear(year: number): HolidayYear | undefined {
-  return byYear.get(year);
+  return signed.get(year) ?? byYear.get(year);
 }
 
 export type DayKind = "holiday" | "weekend" | "adjusted_workday" | "workday";

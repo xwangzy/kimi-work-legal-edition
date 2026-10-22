@@ -1065,6 +1065,10 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 /* v9.4 第 20 批：表格排序、自建列、看原文前后；工作台批量与误报 */
 .th-sort { border: 0; background: transparent; padding: 0; font: inherit; color: inherit; cursor: pointer; }
 .th-del { margin-left: var(--sp-1); font-size: var(--fs-xs); }
+/* v9.4 第 21 批：条件列（条件不满足显示“不适用”） */
+.tr-cell.cell-na { background: var(--bg-subtle); padding: 6px var(--sp-2); }
+.tr-cell.cell-na .tr-state { color: var(--status-neutral-text); }
+.th-when { display: block; font-weight: 400; font-size: var(--fs-xs); white-space: normal; max-width: 14em; }
 .tr-context { white-space: pre-wrap; background: var(--bg-subtle); border-radius: var(--r-sm); padding: var(--sp-2); max-height: 12em; overflow: auto; }
 .tr-context mark { background: var(--status-warning-bg-soft); color: var(--text-primary); }
 .wb-batch { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-1) 0 var(--sp-2); }
@@ -1087,3 +1091,8 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .reminder-group > summary { cursor: pointer; margin: var(--sp-2) 0; color: var(--text-secondary); }
 .coming-row { font-size: var(--fs-caption); margin: var(--sp-2) 0 0; }
 .method-soon { color: var(--text-secondary); background: var(--bg-subtle); cursor: default; border-style: dashed; }
+
+/* v9.4 第 21 批：预览交付包 */
+.dl-pack > td { padding: 0 0 var(--sp-2); }
+.dl-pack-card { display: flex; flex-direction: column; gap: var(--sp-1); }
+.dl-pack-row { font-size: var(--fs-body); }

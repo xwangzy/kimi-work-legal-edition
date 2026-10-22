@@ -120,3 +120,57 @@ export function findInParagraph(para: ParagraphMap, originalText: string, occurr
   }
   return { start: idx, end: idx + originalText.length };
 }
+
+/** 段落所在的表格单元格（v9.4 第 21 批，评审 C1 §2 第 8 项“表格里的条款也审”）：第几张表、第几行、第几列（均从 1 起），以及该列首行的文字（多为列名）。 */
+export interface CellPosition {
+  table: number;
+  row: number;
+  col: number;
+  header: string;
+}
+
+/**
+ * 每个段落（与 mapParagraphs 同一顺序）在不在表格单元格里；不在表格里的为 null。
+ * 嵌套表按最内层计位置、表号按出现顺序；首行文字取最内层表第一行同列单元格的可见文本（截 20 字）。
+ */
+export function paragraphCells(documentXml: string): (CellPosition | null)[] {
+  const paras = mapParagraphs(documentXml);
+  const TAG = /<(\/?)w:(tbl|tr|tc)\b[^>]*?(\/?)>/g;
+  type Frame = { table: number; row: number; col: number };
+  const stack: Frame[] = [];
+  let tables = 0;
+  const events = [...documentXml.matchAll(TAG)].filter((m) => m[3] !== "/");
+  const out: (CellPosition | null)[] = [];
+  const firstRow = new Map<string, string>();
+  let e = 0;
+  for (const p of paras) {
+    while (e < events.length && events[e]!.index! < p.xmlStart) {
+      const [, close, tag] = events[e]!;
+      if (!close) {
+        if (tag === "tbl") stack.push({ table: ++tables, row: 0, col: 0 });
+        else if (tag === "tr" && stack.length) {
+          stack.at(-1)!.row += 1;
+          stack.at(-1)!.col = 0;
+        } else if (tag === "tc" && stack.length) stack.at(-1)!.col += 1;
+      } else if (tag === "tbl") stack.pop();
+      e += 1;
+    }
+    const f = stack.at(-1);
+    if (!f || f.row === 0 || f.col === 0) {
+      out.push(null);
+      continue;
+    }
+    if (f.row === 1) {
+      const k = `${f.table}:${f.col}`;
+      firstRow.set(k, `${firstRow.get(k) ?? ""}${p.text}`);
+    }
+    out.push({ table: f.table, row: f.row, col: f.col, header: "" });
+  }
+  for (const c of out) if (c) c.header = (firstRow.get(`${c.table}:${c.col}`) ?? "").trim().slice(0, 20);
+  return out;
+}
+
+/** 单元格位置的律师说法：“表 2 第 3 行第 2 列（单价）”；首行本身不带列名。 */
+export function cellPositionLabel(c: CellPosition): string {
+  return `表 ${c.table} 第 ${c.row} 行第 ${c.col} 列${c.row > 1 && c.header ? `（${c.header}）` : ""}`;
+}

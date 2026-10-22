@@ -167,4 +167,17 @@ function acceptDroppedPath(p) {
   return true;
 }
 
-module.exports = { insideAppData, createHandleStore, classifySaveTarget, resolveFileParams, acceptDroppedPath, safeSuggestedName, mimeOf, HANDLE_TTL_MS, OPEN_METHODS, SAVE_METHODS, PATH_KEYS };
+/**
+ * 在 Word / WPS 中打开刚保存的成果（v9.4 第 21 批；主文 §3.2“Word / WPS 打开并定位”）：只对律师在对话框里选定位置、内核已写成功的
+ * Word / Excel / PDF 成果发一次性“打开”句柄——不在临时目录另写明文副本，打开的就是律师自己保存的那份。纯函数：返回可打开的路径或 null。
+ */
+const OPENABLE = /\.(docx|xlsx|pdf)$/i;
+function openableSaved(method, params, reply) {
+  if (method !== "artifacts.download") return null;
+  const p = params && typeof params.save_path === "string" ? params.save_path : null;
+  if (!p || !OPENABLE.test(p)) return null;
+  if (!reply || reply.ok !== true || !reply.result || reply.result.saved !== true) return null;
+  return p;
+}
+
+module.exports = { insideAppData, createHandleStore, classifySaveTarget, resolveFileParams, acceptDroppedPath, safeSuggestedName, mimeOf, openableSaved, OPENABLE, HANDLE_TTL_MS, OPEN_METHODS, SAVE_METHODS, PATH_KEYS };

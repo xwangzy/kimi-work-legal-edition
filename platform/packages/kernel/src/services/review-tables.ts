@@ -27,6 +27,8 @@ export interface TableColumn {
   options?: readonly string[];
   /** 给 Agent 的填写说明。 */
   hint: string;
+  /** 条件列（v9.4 第 21 批，C1 §3.3）：只在同一行的另一列（是否列或分类列）等于 equals 时才填，例如“违约金比例”只在“有违约金条款 = 是”时填。 */
+  when?: { column: string; equals: string };
 }
 export interface TableTemplate {
   id: "evidence_list" | "dd_contract_summary" | "contract_ledger";
@@ -225,6 +227,26 @@ function viewOf(deps: { db: KernelDb; blobs: BlobStore; tokens?: MatterTokenStor
   return deps.tokens ? deps.tokens.tokenizer(matterId).tokenize(plain).text : plain;
 }
 
+/** 格子的有效值：律师改过的用律师的值，已核用 AI 值，没找到、读取差没有值。 */
+function effectiveValue(c: { state: CellState; value: string | null; lawyer_value: string | null } | undefined): string | null {
+  if (!c) return null;
+  if (c.state === "edited") return c.lawyer_value;
+  if (c.state === "not_found" || c.state === "unreadable") return null;
+  return c.value;
+}
+
+/**
+ * 条件列在这一行是否适用（v9.4 第 21 批）：yes 适用；no 条件列的值不等于 equals（含没找到）——这一格不填、显示“不适用”；
+ * pending 条件列还没填或还是冲突——先填条件列。
+ */
+export function columnApplies(col: TableColumn, condition: { state: CellState; value: string | null; lawyer_value: string | null } | undefined): "yes" | "no" | "pending" {
+  if (!col.when) return "yes";
+  if (!condition || condition.state === "conflict") return "pending";
+  if (condition.state === "not_found") return "no";
+  if (condition.state === "unreadable") return "pending";
+  return effectiveValue(condition) === col.when.equals ? "yes" : "no";
+}
+
 /** 按列格式核对值：日期 YYYY-MM-DD 或 YYYY-MM；金额为数字（可带币种与单位）；是否为“是 / 否”；选项须在列表里。 */
 function checkFormat(c: TableColumn, value: string): string | null {
   if (c.format === "date" && !/^\d{4}-\d{2}(?:-\d{2})?$/.test(value)) return "日期写 YYYY-MM-DD，只知年月写 YYYY-MM";
@@ -277,6 +299,20 @@ export function fillCells(
       if (existing && LOCKED.has(existing.state)) {
         locked++;
         continue;
+      }
+      if (col.when) {
+        // 条件列：按同一行条件列的当前值判断（同一批里先填的条件格也算）
+        const cond = deps.db.get<{ state: CellState; value: string | null; lawyer_value: string | null }>(`SELECT state, value, lawyer_value FROM review_cells WHERE table_id = ? AND document_version_id = ? AND col_key = ?`, [tableId, doc, col.when.column]);
+        const ok = columnApplies(col, cond);
+        const condLabel = cols.get(col.when.column)?.label ?? col.when.column;
+        if (ok === "pending") {
+          reject(`这一列只在“${condLabel}”为“${col.when.equals}”时填：先填“${condLabel}”（同一批里放在前面）`);
+          continue;
+        }
+        if (ok === "no") {
+          reject(`“${condLabel}”不是“${col.when.equals}”，这一格不适用，不用填`);
+          continue;
+        }
       }
       if (existing?.state === "unreadable") {
         // 材料重新识别后能读了（复核 Q2-10）：解锁这一格；仍读不出的照旧不收
@@ -373,7 +409,7 @@ export function tableForAgent(db: KernelDb, matterId: string, tableId: string) {
   return {
     table_id: table.table_id,
     title: table.title,
-    columns: table.columns.map((c) => ({ column: c.key, label: c.label, format: c.format, ...(c.options ? { options: c.options } : {}), hint: c.hint })),
+    columns: table.columns.map((c) => ({ column: c.key, label: c.label, format: c.format, ...(c.options ? { options: c.options } : {}), hint: c.hint, ...(c.when ? { only_when: c.when } : {}) })),
     documents: docs.map((d) => ({ document_version_id: d.document_version_id, filename: d.filename, unreadable: cells.some((c) => c.document_version_id === d.document_version_id && c.state === "unreadable") })),
     cells: cells.map((c) => ({
       document_version_id: c.document_version_id,
@@ -381,8 +417,10 @@ export function tableForAgent(db: KernelDb, matterId: string, tableId: string) {
       state: c.state,
       locked: LOCKED.has(c.state),
       value: c.state === "edited" ? c.lawyer_value : c.value,
+      // 问表模式（v9.4 第 21 批）按格子的引文作答；律师改过的值没有引文
+      ...(c.quote && c.state !== "edited" ? { quote: c.quote } : {}),
     })),
-    note: "locked=true 的格子律师已核或已改，不要重填；unreadable 的材料不填。每格写 value 与逐字 quote（摘自该材料，含代号原样）；文件里确实没有的写 status=not_found；同一份材料两处说法不一的写 status=conflict 并在 note 写明两处。",
+    note: "locked=true 的格子律师已核或已改，不要重填；unreadable 的材料不填。每格写 value 与逐字 quote（摘自该材料，含代号原样）；文件里确实没有的写 status=not_found；同一份材料两处说法不一的写 status=conflict 并在 note 写明两处。带 only_when 的是条件列：只在同一行 only_when.column 的值等于 only_when.equals 时填，先填条件列（同一批里放在前面），条件不满足的不填。",
   };
 }
 
@@ -397,6 +435,7 @@ export function exportTable(deps: { db: KernelDb; blobs: BlobStore; tokens: Matt
     d.filename,
     ...table.columns.map((c) => {
       const cell = at.get(`${d.document_version_id}\u0000${c.key}`);
+      if (c.when && columnApplies(c, at.get(`${d.document_version_id}\u0000${c.when.column}`)) === "no") return "不适用";
       if (!cell) return "未填";
       if (cell.state === "edited") return deps.tokens.tokenize(matterId, cell.lawyer_value ?? "").text;
       if (cell.state === "verified") return cell.value ?? "（律师确认：没有）";
@@ -429,7 +468,7 @@ const FORMATS: readonly ColumnFormat[] = ["text", "date", "money", "yesno", "cho
  * 律师自己加一列（C1 §1 #12：用一句话建列，列有格式）：列名、填写说明（给助手看，必填）、格式（日期 / 金额 / 是否 / 分类 / 文字），分类要给选项。
  * 至多 15 列；列编号 custom_n。新列对已有材料都是空格，“让助手填表”时一并填。
  */
-export function addColumn(db: KernelDb, matterId: string, tableId: string, input: { label?: unknown; hint?: unknown; format?: unknown; options?: unknown }): TableRow {
+export function addColumn(db: KernelDb, matterId: string, tableId: string, input: { label?: unknown; hint?: unknown; format?: unknown; options?: unknown; when?: unknown }): TableRow {
   const { table } = getTable(db, matterId, tableId);
   const label = str(input.label, 20);
   const hint = str(input.hint, 200);
@@ -445,8 +484,21 @@ export function addColumn(db: KernelDb, matterId: string, tableId: string, input
     options = [...new Set(options)];
     if (options.length < 2 || options.length > 10) throw new DomainError("validation", "分类列要给 2～10 个选项", 422);
   }
+  // 条件列（v9.4 第 21 批）：条件只能挂在本表的是否列或分类列上，且条件列本身不能再带条件（不做连环条件）
+  let when: TableColumn["when"];
+  if (input.when !== undefined && input.when !== null) {
+    const w = input.when as { column?: unknown; equals?: unknown };
+    const on = table.columns.find((c) => c.key === str(w?.column, 40));
+    const equals = str(w?.equals, 20);
+    if (!on) throw new DomainError("validation", "条件里的列不在这张表里", 422);
+    if (on.format !== "yesno" && on.format !== "choice") throw new DomainError("validation", "条件只能按“是 / 否”列或分类列来定", 422);
+    if (on.when) throw new DomainError("validation", "条件列本身带条件：请按不带条件的列来定", 422);
+    const allowed = on.format === "yesno" ? ["是", "否"] : [...(on.options ?? [])];
+    if (!allowed.includes(equals)) throw new DomainError("validation", `条件的值只能是：${allowed.join(" / ")}`, 422);
+    when = { column: on.key, equals };
+  }
   const n = Math.max(0, ...table.columns.map((c) => (/^custom_(\d+)$/.exec(c.key) ? Number(/^custom_(\d+)$/.exec(c.key)![1]) : 0))) + 1;
-  const col: TableColumn = { key: `custom_${n}`, label, format, hint, ...(options ? { options } : {}) };
+  const col: TableColumn = { key: `custom_${n}`, label, format, hint, ...(options ? { options } : {}), ...(when ? { when } : {}) };
   db.run(`UPDATE review_tables SET columns = ? WHERE table_id = ?`, [JSON.stringify([...table.columns, col]), tableId]);
   return getTable(db, matterId, tableId).table;
 }
@@ -455,6 +507,8 @@ export function addColumn(db: KernelDb, matterId: string, tableId: string, input
 export function removeColumn(db: KernelDb, matterId: string, tableId: string, key: string, confirm: boolean): TableRow {
   const { table } = getTable(db, matterId, tableId);
   if (!/^custom_\d+$/.test(key) || !table.columns.some((c) => c.key === key)) throw new DomainError("validation", "只能去掉自己加的列", 422);
+  const dependent = table.columns.filter((c) => c.when?.column === key);
+  if (dependent.length > 0) throw new DomainError("conflict", `“${dependent.map((c) => c.label).join("、")}”按这一列定是否适用：先去掉那几列`, 409);
   const locked = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM review_cells WHERE table_id = ? AND col_key = ? AND state IN ('verified','edited')`, [tableId, key])!.n;
   if (locked > 0 && !confirm) throw new DomainError("conflict", `这一列有 ${locked} 格你已核或已改：确认后一并删除`, 409, { locked });
   db.tx(() => {
@@ -542,6 +596,8 @@ export function draftFromTable(deps: { db: KernelDb; blobs: BlobStore; tokens: M
   const at = new Map(cells.map((c) => [`${c.document_version_id}\u0000${c.col_key}`, c]));
   let open = 0;
   const text = (docId: string, key: string): string => {
+    const col = table.columns.find((x) => x.key === key);
+    if (col?.when && columnApplies(col, at.get(`${docId}\u0000${col.when.column}`)) === "no") return "不适用";
     const c = at.get(`${docId}\u0000${key}`);
     if (!c) {
       open += 1;

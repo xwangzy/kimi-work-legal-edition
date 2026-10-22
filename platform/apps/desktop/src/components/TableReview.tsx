@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
-import { CELL_STATE_CLASS, CELL_STATE_TEXT, cellText, COLUMN_FORMATS, draftLabel, formatProblem, isOpen, nextOpenCell, sortDocs, tableCounts, type CellView, type TableColumnView, type TableView } from "../lib/table-review.ts";
+import { CELL_STATE_CLASS, CELL_STATE_TEXT, cellText, columnApplies, COLUMN_FORMATS, draftLabel, formatProblem, isOpen, nextOpenCell, sortDocs, tableCounts, whenText, type CellView, type TableColumnView, type TableView } from "../lib/table-review.ts";
 import { notifyDataChanged } from "../lib/events.ts";
 import { Select } from "./Select.tsx";
 import { ConfirmButton } from "./ConfirmButton.tsx";
@@ -18,13 +18,17 @@ interface Props {
   readOnly: boolean;
   /** 让助手填表：上层按方法 tabular-review、表编号作方法参数、表里的材料发起任务（先估价确认）。 */
   onFill: (table: TableView) => void;
+  /** 问这张表（v9.4 第 21 批，C1 §3.3 跨表对话）：上层按方法 tabular-review、mode=问表发起任务（先估价确认），只依据表里的格子回答。 */
+  onAsk?: (table: TableView, question: string) => void;
   /** 导出后通知上层刷新交付件。 */
   onExported?: () => void;
+  /** 打开时选中这张表（待核清单点进来，v9.4 第 21 批）。 */
+  initialTable?: string | null;
 }
 
 type Template = { id: string; title: string; line: string; columns: TableColumnView[] };
 
-export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Props) {
+export function TableReview({ matterId, docs, readOnly, onFill, onAsk, onExported, initialTable }: Props) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [tables, setTables] = useState<TableView[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
@@ -40,14 +44,15 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [reviewMode, setReviewMode] = useState(false);
   const [ctx, setCtx] = useState<{ cell: string; located: boolean; before: string; quote: string; after: string } | null>(null);
-  const [newCol, setNewCol] = useState<{ label: string; hint: string; format: TableColumnView["format"]; options: string } | null>(null);
+  const [newCol, setNewCol] = useState<{ label: string; hint: string; format: TableColumnView["format"]; options: string; whenCol: string; whenEq: string } | null>(null);
+  const [ask, setAsk] = useState<string | null>(null);
   const [cands, setCands] = useState<{ document_version_id: string; filename: string; column: string; label: string; date: string | null; verified: boolean; note: string; pick: boolean; due: string }[] | null>(null);
 
   const loadTables = useCallback(async () => {
     const r = await api.tables(matterId);
     setTables(r.tables);
-    setCurrent((c) => c ?? r.tables[0]?.table_id ?? null);
-  }, [matterId]);
+    setCurrent((c) => c ?? (initialTable && r.tables.some((t) => t.table_id === initialTable) ? initialTable : null) ?? r.tables[0]?.table_id ?? null);
+  }, [matterId, initialTable]);
   const loadGrid = useCallback(async () => {
     if (!current) return setGrid(null);
     const g = await api.table(matterId, current);
@@ -65,6 +70,10 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
 
   const plain = useCallback((s: string | null) => (s ? restoredPlain(s, map) : ""), [map]);
   const cellAt = useMemo(() => new Map((grid?.cells ?? []).map((c) => [`${c.document_version_id}\u0000${c.col_key}`, c])), [grid]);
+  // 条件列（v9.4 第 21 批）：条件不满足的格子显示“不适用”，不算未核
+  const notApplicable = (doc: string, col: TableColumnView) => !!col.when && columnApplies(col, cellAt.get(`${doc}\u0000${col.when.column}`)) === "no";
+  const openAt = (doc: string, col: TableColumnView) => !notApplicable(doc, col) && isOpen(cellAt.get(`${doc}\u0000${col.key}`));
+  const condCols = (grid?.table.columns ?? []).filter((c) => (c.format === "yesno" || c.format === "choice") && !c.when);
   const usable = docs.filter((d) => !d.quarantined_at);
 
   const run = async (f: () => Promise<void>) => {
@@ -106,13 +115,13 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
   const tpl = templates.find((t) => t.id === creating?.template);
   const counts = grid ? tableCounts(grid.table, grid.cells) : null;
   const sel = picked && grid ? { doc: grid.docs.find((d) => d.document_version_id === picked.doc), col: grid.table.columns.find((c) => c.key === picked.col), cell: cellAt.get(`${picked.doc}\u0000${picked.col}`) } : null;
-  const filtered = (grid?.docs ?? []).filter((d) => !onlyOpen || grid!.table.columns.some((c) => isOpen(cellAt.get(`${d.document_version_id}\u0000${c.key}`))));
+  const filtered = (grid?.docs ?? []).filter((d) => !onlyOpen || grid!.table.columns.some((c) => openAt(d.document_version_id, c)));
   const rows = sortDocs(filtered, sort?.key ?? null, sort?.dir ?? 1, (d, k) => cellText(cellAt.get(`${d.document_version_id}\u0000${k}`), plain));
   const sortBy = (key: string) => setSort((cur) => (cur?.key === key ? (cur.dir === 1 ? { key, dir: -1 } : null) : { key, dir: 1 }));
   const sortMark = (key: string) => (sort?.key === key ? (sort.dir === 1 ? " ↑" : " ↓") : "");
   const step = (dir: 1 | -1) => {
     if (!grid) return;
-    const next = nextOpenCell(rows, grid.table.columns, (doc, col) => isOpen(cellAt.get(`${doc}\u0000${col}`)), picked, dir);
+    const next = nextOpenCell(rows, grid.table.columns, (doc, col) => openAt(doc, grid.table.columns.find((c) => c.key === col)!), picked, dir);
     if (next) {
       setPicked(next);
       setEdit(null);
@@ -187,6 +196,11 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
             <button className="btn-primary" disabled={busy} onClick={() => onFill(grid.table)}>
               让助手填表
             </button>
+            {onAsk && (
+              <button className={ask !== null ? "btn-primary" : "btn-ghost"} disabled={busy || (counts?.total ?? 0) === (counts?.empty ?? 0)} title={(counts?.total ?? 0) === (counts?.empty ?? 0) ? "先填表" : "只依据表里的格子回答，每个结论写明材料与列"} onClick={() => setAsk((v) => (v === null ? "" : null))}>
+                问这张表
+              </button>
+            )}
             <button
               className="btn-ghost"
               disabled={busy}
@@ -217,7 +231,7 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
             >
               推为事实
             </button>
-            <button className="btn-ghost" disabled={busy || grid.table.columns.length >= 15} onClick={() => setNewCol({ label: "", hint: "", format: "text", options: "" })}>
+            <button className="btn-ghost" disabled={busy || grid.table.columns.length >= 15} onClick={() => setNewCol({ label: "", hint: "", format: "text", options: "", whenCol: "", whenEq: "" })}>
               加一列
             </button>
             <button className={reviewMode ? "btn-primary" : "btn-ghost"} aria-pressed={reviewMode} onClick={() => { setReviewMode((v) => !v); if (!reviewMode && !picked) step(1); }} title="J / K 逐个未核的格子，A 确认，E 改值，Esc 退出">
@@ -233,6 +247,23 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
         )}
       </div>
       {msg && <div className={`banner ${msg.tone === "err" ? "banner-red" : "banner-green"}`}>{msg.text}</div>}
+      {ask !== null && grid && onAsk && (
+        <div className="card tr-create" role="region" aria-label="问这张表">
+          <div className="tr-field">
+            <span className="rc-k">问什么</span>
+            <input value={ask} maxLength={300} onChange={(e) => setAsk(e.target.value)} placeholder="例如：哪些合同有控制权变更条款？到期日在明年上半年的有几份？" aria-label="问这张表的问题" />
+          </div>
+          <div className="card-actions">
+            <button className="btn-primary" disabled={busy || !ask.trim()} onClick={() => { onAsk(grid.table, ask.trim()); setAsk(null); }}>
+              问
+            </button>
+            <button className="btn-ghost" disabled={busy} onClick={() => setAsk(null)}>
+              取消
+            </button>
+          </div>
+          <p className="muted">助手只看这张表里的格子回答，不改表；没核的格子在回答里标“待核”。表里没有的，建议你加一列后再填表。</p>
+        </div>
+      )}
       {reviewMode && <p className="muted">复核模式：J / K 到下一个、上一个未核的格子，A 确认，E 改值，Esc 退出。</p>}
       {newCol && grid && (
         <div className="card tr-create">
@@ -250,13 +281,34 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
             <Select className="select-sm" aria-label="格式" value={newCol.format} onChange={(v) => setNewCol({ ...newCol, format: v as TableColumnView["format"] })} options={COLUMN_FORMATS.map((f) => ({ value: f.value, label: f.label }))} />
             {newCol.format === "choice" && <input value={newCol.options} onChange={(e) => setNewCol({ ...newCol, options: e.target.value })} placeholder="选项用顿号隔开，如：买卖、租赁、服务" aria-label="选项" />}
           </div>
+          {condCols.length > 0 && (
+            <div className="tr-field">
+              <span className="rc-k">什么时候填</span>
+              <Select
+                className="select-sm"
+                aria-label="什么时候填"
+                value={newCol.whenCol}
+                onChange={(v) => setNewCol({ ...newCol, whenCol: v, whenEq: "" })}
+                options={[{ value: "", label: "每份材料都填" }, ...condCols.map((c) => ({ value: c.key, label: `只在“${c.label}”为…时填` }))]}
+              />
+              {newCol.whenCol && (
+                <Select
+                  className="select-sm"
+                  aria-label="条件的值"
+                  value={newCol.whenEq}
+                  onChange={(v) => setNewCol({ ...newCol, whenEq: v })}
+                  options={[{ value: "", label: "选一个值" }, ...(() => { const c = condCols.find((x) => x.key === newCol.whenCol)!; return (c.format === "yesno" ? ["是", "否"] : (c.options ?? [])).map((o) => ({ value: o, label: o })); })()]}
+                />
+              )}
+            </div>
+          )}
           <div className="card-actions">
             <button
               className="btn-primary"
-              disabled={busy || !newCol.label.trim() || !newCol.hint.trim()}
+              disabled={busy || !newCol.label.trim() || !newCol.hint.trim() || (!!newCol.whenCol && !newCol.whenEq)}
               onClick={() =>
                 void run(async () => {
-                  await api.tableAddColumn(matterId, grid.table.table_id, { label: newCol.label.trim(), hint: newCol.hint.trim(), format: newCol.format, ...(newCol.format === "choice" ? { options: newCol.options.split(/[、,，;；\s]+/).filter(Boolean) } : {}) });
+                  await api.tableAddColumn(matterId, grid.table.table_id, { label: newCol.label.trim(), hint: newCol.hint.trim(), format: newCol.format, ...(newCol.format === "choice" ? { options: newCol.options.split(/[、,，;；\s]+/).filter(Boolean) } : {}), ...(newCol.whenCol ? { when: { column: newCol.whenCol, equals: newCol.whenEq } } : {}) });
                   setNewCol(null);
                   await loadGrid();
                   await loadTables();
@@ -269,7 +321,7 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
               取消
             </button>
           </div>
-          <p className="muted">新列对每份材料都是空格；“让助手填表”时一并填写。</p>
+          <p className="muted">新列对每份材料都是空格；“让助手填表”时一并填写。只在某列为某个值时才填的，选“什么时候填”，其余材料显示“不适用”。</p>
         </div>
       )}
       {cands && (
@@ -363,6 +415,7 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
             {counts.conflict > 0 && ` · 有冲突 ${counts.conflict}`}
             {counts.quoteMissing > 0 && ` · 原文对不上 ${counts.quoteMissing}`}
             {counts.empty > 0 && ` · 还没填 ${counts.empty}`}
+            {counts.na > 0 && ` · 不适用 ${counts.na}`}
           </div>
           <div className="tr-scroll">
             <table className="data tr-grid">
@@ -372,8 +425,9 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
                     <button className="th-sort" onClick={() => sortBy("__doc")}>材料{sortMark("__doc")}</button>
                   </th>
                   {grid.table.columns.map((c) => (
-                    <th key={c.key} title={c.hint} aria-sort={sort?.key === c.key ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
+                    <th key={c.key} title={c.when ? `${c.hint}（${whenText(c, grid.table.columns)}）` : c.hint} aria-sort={sort?.key === c.key ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
                       <button className="th-sort" onClick={() => sortBy(c.key)}>{c.label}{sortMark(c.key)}</button>
+                      {c.when && <span className="th-when muted">{whenText(c, grid.table.columns)}</span>}
                       {!readOnly && c.key.startsWith("custom_") && (
                         <ConfirmButton
                           className="btn-link th-del"
@@ -401,6 +455,12 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
                     {grid.table.columns.map((c) => {
                       const cell = cellAt.get(`${d.document_version_id}\u0000${c.key}`);
                       const on = picked?.doc === d.document_version_id && picked.col === c.key;
+                      if (notApplicable(d.document_version_id, c))
+                        return (
+                          <td key={c.key} className="tr-cell cell-na" aria-label={`${d.filename} · ${c.label}：不适用（${whenText(c, grid.table.columns)}）`}>
+                            <span className="tr-state">不适用</span>
+                          </td>
+                        );
                       return (
                         <td key={c.key} className={`tr-cell ${cell ? CELL_STATE_CLASS[cell.state] : "cell-empty"}${on ? " tr-cell-on" : ""}`}>
                           <button className="tr-cell-btn" onClick={() => { setPicked(on ? null : { doc: d.document_version_id, col: c.key }); setCtx(null); }} aria-label={`${d.filename} · ${c.label}：${cell ? CELL_STATE_TEXT[cell.state] : "还没填"}`}>

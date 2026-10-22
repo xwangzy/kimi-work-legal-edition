@@ -6,7 +6,7 @@ import { SafePreview } from "../components/SafePreview.tsx";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { artifactName, fmtTime } from "../lib/labels.ts";
 import { blankPagesText, partialPagesText } from "../lib/citation-review.ts";
-import { citationChecklist, citationNeeds, citationsAllowSign, previewCites, type ArtifactCitations, type CitationTicks } from "../lib/citation-review.ts";
+import { citationChecklist, citationNeeds, citationsAllowSign, factMarksSummary, previewCites, previewFactMarks, type ArtifactCitations, type CitationTicks, type FactMarkView } from "../lib/citation-review.ts";
 import { CitationClaims } from "../components/CitationClaims.tsx";
 import { Breadcrumb } from "../components/Breadcrumb.tsx";
 
@@ -102,6 +102,17 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
         return api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" });
       })
       .catch((e) => setErr(e.message));
+  // 在 Word / WPS 中打开（v9.4 第 21 批）：存到你选的位置后用系统默认程序打开那一份；给了一句话就复制到剪贴板，Ctrl+F 粘贴即可定位
+  const openInOffice = (find?: string) =>
+    void api
+      .openArtifactInOffice(data.artifact_version_id, data.filename, find ? restoredPlain(find, tokenMap) : undefined)
+      .then((r) => {
+        if (!r.saved) return;
+        const where = r.copied ? "那句话已复制，在 Word 里按 Ctrl+F（Mac 为 ⌘F）粘贴即可找到。" : "";
+        setNote(r.opened ? `已保存并打开（真实名称已还原）。${where}下载已留痕。` : `已保存（真实名称已还原），请在保存的位置用 Word 打开。${where}下载已留痕。`);
+        return api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" });
+      })
+      .catch((e) => setErr(e.message));
   const submitForReview = async () => {
     setBusy(true);
     setErr("");
@@ -142,7 +153,33 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   const [claimsOverride, setClaimsOverride] = useState<{ id: string; c: ArtifactCitations | null } | null>(null);
   const artCites: ArtifactCitations | null | undefined = claimsOverride && claimsOverride.id === data?.artifact_version_id ? claimsOverride.c : data?.completeness?.artifact_citations;
   const cneeds = citationNeeds(artCites, runCases);
-  const cites = useMemo(() => (artCites?.checked ? previewCites(artCites.items ?? [], (t) => restoredPlain(t, tokenMap)) : undefined), [artCites, tokenMap]);
+  // 事实角标（v9.4 第 21 批，C1 §4.3）：文中日期对上事项事实行的，标“已确认 / 未确认”
+  const [factMarks, setFactMarks] = useState<{ id: string; m: FactMarkView[] } | null>(null);
+  useEffect(() => {
+    const id = data?.artifact_version_id;
+    if (!id) return;
+    let live = true;
+    api
+      .artifactCitations(id)
+      .then(async (r) => {
+        if (!live) return;
+        setFactMarks({ id, m: r.facts ?? [] });
+        const t = (r.facts ?? []).flatMap((x) => x.facts.flatMap((f) => [f.statement, f.quote ?? ""])).join("\n");
+        if (t.includes("〔") && data?.matter_id) {
+          const more = await restoreTokens(data.matter_id, t);
+          if (live) setTokenMap((m) => new Map([...m, ...more]));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [data?.artifact_version_id]);
+  const facts = factMarks && factMarks.id === data?.artifact_version_id ? factMarks.m : [];
+  const cites = useMemo(() => {
+    const marks = [...(artCites?.checked ? previewCites(artCites.items ?? [], (t) => restoredPlain(t, tokenMap)) : []), ...previewFactMarks(facts, (t) => restoredPlain(t, tokenMap))];
+    return marks.length > 0 ? marks : undefined;
+  }, [artCites, facts, tokenMap]);
   const gaps = Number(data?.material_gaps ?? 0) || 0;
   const internalOnly = data?.audience === "internal";
   /** 没通过的项“去处理”（Astra M-2）：材料回到任务过程、引用滚到下面的引用核对、版本回到事项的交付件。 */
@@ -205,6 +242,11 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                 {downloadPlan(data.filename).label}
               </button>
             )}
+            {data && /\.(docx|xlsx)$/i.test(data.filename) && (
+              <button className="btn-ghost" onClick={() => openInOffice()} title="保存到你选的位置，再用 Word / WPS 打开那一份">
+                在 {/\.xlsx$/i.test(data.filename) ? "Excel" : "Word"} 中打开
+              </button>
+            )}
           </span>
         </div>
         {data && (
@@ -222,6 +264,12 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                 <SafePreview filename={data.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} {...(cites ? { cites } : {})} />
               ) : (
                 <div className="muted">这种文件不能在应用内预览，请下载后打开。</div>
+              )}
+              {factMarksSummary(facts) && (
+                <p className="muted fact-marks-summary">
+                  {factMarksSummary(facts)}
+                  {facts.some((m) => m.status === "proposed") && "；“未确认”的请先到事项“事实”里确认或改正"}
+                </p>
               )}
             </section>
             <aside className="review-checks" aria-label="签发前检查">
@@ -339,6 +387,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                     artifactVersionId={data.artifact_version_id}
                     citations={artCites}
                     tokenMap={tokenMap}
+                    {...(/\.docx$/i.test(data.filename) ? { onLocate: (claim: string) => openInOffice(claim) } : {})}
                     readOnly={!["draft", "pending_review", "pending_verification"].includes(data.status)}
                     onChanged={(c) => {
                       setClaimsOverride({ id: data.artifact_version_id, c });

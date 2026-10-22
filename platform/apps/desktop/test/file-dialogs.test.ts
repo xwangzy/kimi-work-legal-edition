@@ -15,8 +15,10 @@ const fd = require("../electron/file-dialogs.cjs") as {
   insideAppData(t: string, roots: string[], platform?: string): boolean;
   safeSuggestedName(n: unknown): string;
   mimeOf(n: string): string;
+  openableSaved(method: string, params: unknown, reply: unknown): string | null;
   HANDLE_TTL_MS: number;
 };
+const { openableSaved } = fd;
 
 test("句柄：一次性、按类型、过期作废、格式不符即拒", () => {
   let t = 1_000;
@@ -116,4 +118,15 @@ test("选文件夹句柄（第 14 批）：备份位置与从备份恢复只认�
   // 恢复包只写到对话框选定的位置
   const save = store.issue("save", "/Users/a/Documents/恢复包.kwlr");
   assert.deepEqual(resolveFileParams("recovery.create_package", { save_handle: save, path: "/tmp/evil" }, store).params, { path: "/Users/a/Documents/恢复包.kwlr" });
+});
+
+test("在 Word / WPS 中打开（v9.4 第 21 批）：只对成果下载、律师选定位置、内核已写成功的 Word / Excel / PDF 给打开句柄", () => {
+  const ok = { ok: true, result: { saved: true } };
+  assert.equal(openableSaved("artifacts.download", { save_path: "/Users/x/Desktop/起诉状.docx" }, ok), "/Users/x/Desktop/起诉状.docx");
+  assert.equal(openableSaved("artifacts.download", { save_path: "C:\\Users\\x\\审阅表.XLSX" }, ok), "C:\\Users\\x\\审阅表.XLSX");
+  assert.equal(openableSaved("artifacts.download", { save_path: "/x/a.md" }, ok), null, "Markdown 不交给外部程序");
+  assert.equal(openableSaved("diagnostics.export", { save_path: "/x/a.pdf" }, ok), null, "只认成果下载");
+  assert.equal(openableSaved("artifacts.download", {}, { ok: true, result: { data_base64: "x" } }), null, "没写到律师选定的位置（开发形态回字节）");
+  assert.equal(openableSaved("artifacts.download", { save_path: "/x/a.docx" }, { ok: false, error: {} }), null, "内核写失败");
+  assert.equal(openableSaved("artifacts.download", { save_path: "/x/a.docx" }, { ok: true, result: {} }), null, "没有 saved 标记");
 });

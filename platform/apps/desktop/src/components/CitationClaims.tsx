@@ -10,13 +10,15 @@ import { tokens } from "./Markdown.tsx";
 
 const TONE_TEXT = { red: "不通过", gray: "没法核对", orange: "支持待判", confirmed: "律师已确认", ack: "律师已知悉" } as const;
 
-export function CitationClaims({ artifactVersionId, citations, tokenMap, readOnly, onChanged }: {
+export function CitationClaims({ artifactVersionId, citations, tokenMap, readOnly, onChanged, onLocate }: {
   artifactVersionId: string;
   citations: ArtifactCitations | null | undefined;
   tokenMap?: Map<string, string | null>;
   /** 已签发、已退回或没有权限：只看不改。 */
   readOnly?: boolean;
   onChanged?: (c: ArtifactCitations | null) => void;
+  /** 在 Word 中找到这句（v9.4 第 21 批）：上层保存并打开成果，把这句话复制到剪贴板。 */
+  onLocate?: (claim: string) => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState("");
@@ -57,6 +59,11 @@ export function CitationClaims({ artifactVersionId, citations, tokenMap, readOnl
               <div className="claim-text">
                 <div className="claim-k">成果里这样写</div>
                 {i.claim ? tokens(i.claim, tokenMap) : <span className="muted">（没有取到原句）</span>}
+                {i.claim && onLocate && (
+                  <button className="btn-link claim-locate" onClick={() => onLocate(i.claim!)} title="保存并用 Word 打开这份成果，这句话复制到剪贴板，Ctrl+F 粘贴即可找到">
+                    在 Word 中找到这句
+                  </button>
+                )}
               </div>
               <div className="claim-basis">
                 <div className="claim-k">{i.law_name ? `${i.law_name}${i.effective ? `（${i.effective} 施行版）` : ""}` : "依据"}</div>

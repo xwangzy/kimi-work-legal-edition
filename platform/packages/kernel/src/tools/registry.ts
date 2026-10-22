@@ -5,6 +5,7 @@
  * 外发、签发、删除类工具根本不在注册表内（§6.2）。
  */
 import { calcLabor } from "./tools/labor.ts";
+import { calcCourtFee } from "./tools/court-fee.ts";
 import type { CapabilityClaims } from "@zr-legal/service-auth";
 import { DomainError } from "@zr-legal/domain";
 import { ManifestRegistry, type SideEffect, type ToolManifest, type ToolResource } from "@zr-legal/host-policy";
@@ -232,6 +233,27 @@ export const TOOLS: readonly ToolDef[] = [
     invoke: (p) => calcLabor(p),
   },
   {
+    name: "calc.court_fee",
+    title: "诉讼费用",
+    description:
+      "确定性计算诉讼费用（《诉讼费用交纳办法》）：kind=case_property 财产案件受理费（分段累计，第十三条；上诉按不服一审判决部分的上诉请求数额）、enforcement 申请执行费、preservation 保全申请费（按实际保全的财产数额，最多 5000 元）、payment_order 支付令申请费（受理费标准的 1/3）、labor 劳动争议案件（每件 10 元）。" +
+      "reductions 写减半情形（mediation_or_withdrawal 调解或撤诉、simple_procedure 简易程序、counterclaim 反诉或第三人请求合并审理），只减半一次。逐段写出过程；结果是预估，以法院交费通知为准；warnings 非空时须原样告知律师。",
+    sideEffect: "read",
+    resource: "pure",
+    version: "1",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["kind"],
+      properties: {
+        kind: { type: "string", enum: ["case_property", "enforcement", "preservation", "payment_order", "labor"] },
+        amount_yuan: { type: "number", minimum: 0 },
+        reductions: { type: "array", maxItems: 3, items: { type: "string", enum: ["mediation_or_withdrawal", "simple_procedure", "counterclaim"] } },
+      },
+    },
+    invoke: (p) => calcCourtFee(p),
+  },
+  {
     name: "redact.scan",
     title: "直接标识符扫描",
     description: "确定性扫描身份证/手机号/银行卡/统一社会信用代码/邮箱/车牌；未覆盖类别如实列出。",
@@ -411,10 +433,11 @@ export const TOOLS: readonly ToolDef[] = [
       "nature 标明建议的性质：must 必须修改（法律硬伤、律所红线）/ should 建议修改 / negotiable 可谈判（商业条件）。谈判梯度三级：suggestion 首选（替换 anchor_text 的建议条款全文，不改则省略）→ fallback 可退让 → bottom_line 建议底线（供律师与客户商定的参考，最终由客户决定；不写“可签 / 不可签”结论）；商业条件尽量给全三级。" +
       "kind 分四类：risk 条款写了但不利（缺省）/ missing 该有的条款没有 / deviation 偏离本所或客户的审查规则 / consistency 定义、金额、日期、交叉引用前后不一致。" +
       "missing 卡：不写 anchor_text，改写 insert_after（逐字摘自建议插入位置之前那一段的原文，可省略）、suggestion（要补的条款全文），并在 searched_terms 列出查过的说法、searched_docs 列出查过的文件——内核会在材料里逐个复查，找得到的会标“可能误报”。" +
-      "deviation 卡必须写 rule_ref（规则编号与要点）。rule_source 标明判断依据：law 法律强制 / firm_rule 本所或客户规则 / general 通用建议（没有规则时的意见，须律师判断）——不要把商业偏好写成法律强制。",
+      "deviation 卡必须写 rule_ref（规则编号与要点）。rule_source 标明判断依据：law 法律强制 / firm_rule 本所或客户规则 / general 通用建议（没有规则时的意见，须律师判断）——不要把商业偏好写成法律强制。" +
+      "跨文件审查：同一事项有补充协议、附件、附函的，先读全，按各文件合起来的有效约定判断；卡片挂在本合同的条款上，related 附另一份文件的逐字原文（document_version_id、quote，relation：amends 变更或补充了本条 / conflicts 与本条不一致 / refers 本条援引的内容），内核在那份文件里定位。",
     sideEffect: "write_draft",
     resource: "matter_work",
-    version: "3",
+    version: "4",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -449,6 +472,16 @@ export const TOOLS: readonly ToolDef[] = [
               bottom_line: { type: "string" },
               needs_client_decision: { type: "boolean" },
               assumptions: { type: "string" },
+              related: {
+                type: "array",
+                maxItems: 5,
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["document_version_id", "quote"],
+                  properties: { document_version_id: { type: "string" }, quote: { type: "string" }, relation: { type: "string", enum: ["amends", "conflicts", "refers"] } },
+                },
+              },
             },
           },
         },

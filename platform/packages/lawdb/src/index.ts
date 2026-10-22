@@ -19,6 +19,13 @@ import { canonicalJson, sha256B64, verifyBytes } from "@zr-legal/keys";
 
 // ─── schema 与签名内容口径（构建脚本与运行时共用，单点定义） ───
 
+/**
+ * 全国法定节假日与调休安排（v9.4 第 21 批；V9.4 主文 §3.2“节假日表随法规库签名分发”）：每年一行，doc 为该年国办通知的结构化录入
+ * （来源 URL、发文字号、放假区间、调休上班日）。可选表：本批之前构建的包没有这张表，内容摘要照旧（不含它），仍能验签加载；
+ * 有这张表的包，摘要覆盖它——改一天也验不过。期限计算优先用随包签名的这张表，没有时用程序内置的表。
+ */
+export const HOLIDAYS_DDL = "CREATE TABLE IF NOT EXISTS holidays (year integer PRIMARY KEY, doc text NOT NULL);";
+
 export const LAWDB_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS laws (
   law_id text PRIMARY KEY,
@@ -79,16 +86,18 @@ CREATE TABLE IF NOT EXISTS source_registry (
   withdrawn_reason text
 );
 CREATE TABLE IF NOT EXISTS package_meta (key text PRIMARY KEY, value text NOT NULL);
+${HOLIDAYS_DDL}
 `;
 
 /** 签名内容表（按此顺序逐行 canonicalJson 连接；package_meta 等易变内容不在其列）。 */
-export const CONTENT_TABLES: readonly { name: string; orderBy: string }[] = [
+export const CONTENT_TABLES: readonly { name: string; orderBy: string; optional?: boolean }[] = [
   { name: "laws", orderBy: "law_id" },
   { name: "law_versions", orderBy: "lsv_id" },
   { name: "articles", orderBy: "lsv_id, article_no" },
   { name: "article_topics", orderBy: "lsv_id, topic" },
   { name: "renumbering", orderBy: "law_id, from_lsv_id, to_lsv_id, topic" },
   { name: "source_registry", orderBy: "source_license_id" },
+  { name: "holidays", orderBy: "year", optional: true },
 ];
 
 export interface LawdbManifest {
@@ -113,10 +122,15 @@ type Db = InstanceType<typeof Database>;
 export function computeContentSha256(db: Db): string {
   const lines: string[] = [];
   for (const t of CONTENT_TABLES) {
+    if (t.optional && !hasTable(db, t.name)) continue;
     const rows = db.prepare(`SELECT * FROM ${t.name} ORDER BY ${t.orderBy}`).all() as Record<string, unknown>[];
     for (const row of rows) lines.push(`${t.name}:${canonicalJson(row)}`);
   }
   return sha256B64(lines.join("\n"));
+}
+
+function hasTable(db: Db, name: string): boolean {
+  return !!db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(name);
 }
 
 function manifestPathFor(file: string): string {
@@ -246,6 +260,18 @@ export class Lawdb {
   /** 内容摘要（签名覆盖的对象；判断“内容是否相同”用它，不用不在签名内的版本号）。 */
   get contentSha256(): string {
     return this.manifest.content_sha256;
+  }
+
+  /** 随包签名的节假日表（每年一份结构化录入；包里没有这张表时为空）。 */
+  holidays(): unknown[] {
+    if (!hasTable(this.db, "holidays")) return [];
+    return (this.db.prepare(`SELECT doc FROM holidays ORDER BY year`).all() as { doc: string }[]).flatMap((r) => {
+      try {
+        return [JSON.parse(r.doc)];
+      } catch {
+        return [];
+      }
+    });
   }
 
   close(): void {
@@ -411,6 +437,8 @@ export class Lawdb {
     try {
       this.db.transaction(() => {
         for (const t of CONTENT_TABLES) {
+          if (t.optional && !hasTable(incr, t.name)) continue;
+          if (t.name === "holidays") this.db.exec(HOLIDAYS_DDL);
           const rows = incr.prepare(`SELECT * FROM ${t.name}`).all() as Record<string, unknown>[];
           for (const row of rows) {
             const cols = Object.keys(row);

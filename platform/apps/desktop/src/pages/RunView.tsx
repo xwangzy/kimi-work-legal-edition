@@ -24,7 +24,7 @@ import { busyRunOfError } from "../lib/start-block.ts";
 import { methodLine, methodShort } from "../lib/run-method.ts";
 import { Select } from "../components/Select.tsx";
 import { rightCollapsed, rightTabs, type RightTab } from "../lib/run-pane.ts";
-import { previewCites, type ArtifactCitations } from "../lib/citation-review.ts";
+import { previewCites, previewFactMarks, type ArtifactCitations, type FactMarkView } from "../lib/citation-review.ts";
 import { CitationClaims } from "../components/CitationClaims.tsx";
 import { Breadcrumb } from "../components/Breadcrumb.tsx";
 import { OutlineConfirm } from "../components/OutlineConfirm.tsx";
@@ -234,10 +234,11 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     return () => clearInterval(t);
   }, [terminal, refresh]);
 
-  // 代号只在界面还原（标题、计划、提问、预览）
+  // 代号只在界面还原（标题、计划、提问、预览；事实角标的悬停文字）
+  const [factText, setFactText] = useState("");
   const texts = useMemo(
-    () => [preview?.text ?? "", liveText, ...progressTexts(progress), ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? "")), ...artifacts.map((a) => String(a.title ?? "")), ...(risk?.top.map((t) => t.issue) ?? []), ...(outline?.items.flatMap((x) => [x.claim, x.counter ?? "", ...x.basis.map((b) => b.note ?? ""), ...x.facts.map((f) => f.statement)]) ?? [])].join("\n"),
-    [preview, liveText, progress, approvals, questions, events, artifacts, risk, outline],
+    () => [preview?.text ?? "", factText, liveText, ...progressTexts(progress), ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? "")), ...artifacts.map((a) => String(a.title ?? "")), ...(risk?.top.map((t) => t.issue) ?? []), ...(outline?.items.flatMap((x) => [x.claim, x.counter ?? "", ...x.basis.map((b) => b.note ?? ""), ...x.facts.map((f) => f.statement)]) ?? [])].join("\n"),
+    [preview, factText, liveText, progress, approvals, questions, events, artifacts, risk, outline],
   );
   useEffect(() => {
     if (!texts.includes("〔")) return;
@@ -272,20 +273,26 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
       .catch((e) => setErr(e.message));
   }, [selected, artifacts]);
   // 论断—依据（v9.4 第 20 批 C-03）：选中成果的逐处引用；预览加角标、右栏“引用”列对照
-  const [claims, setClaims] = useState<{ id: string; c: ArtifactCitations | null } | null>(null);
+  const [claims, setClaims] = useState<{ id: string; c: ArtifactCitations | null; facts?: FactMarkView[] } | null>(null);
   useEffect(() => {
     if (!selected) return;
     let live = true;
     api
       .artifactCitations(selected)
-      .then((r) => live && setClaims({ id: selected, c: r.citations }))
+      .then((r) => live && setClaims({ id: selected, c: r.citations, ...(r.facts ? { facts: r.facts } : {}) }))
       .catch(() => live && setClaims({ id: selected, c: null }));
     return () => {
       live = false;
     };
   }, [selected]);
   const selClaims = claims && claims.id === selected ? claims.c : null;
-  const previewMarks = useMemo(() => (selClaims?.checked ? previewCites(selClaims.items ?? [], (t) => restoredPlain(t, tokenMap)) : undefined), [selClaims, tokenMap]);
+  // 事实角标（v9.4 第 21 批，C1 §4.3）与引用角标一起加在预览里
+  const selFacts = claims && claims.id === selected ? claims.facts : undefined;
+  useEffect(() => setFactText((selFacts ?? []).flatMap((m) => m.facts.flatMap((f) => [f.statement, f.quote ?? ""])).join("\n")), [selFacts]);
+  const previewMarks = useMemo(() => {
+    const marks = [...(selClaims?.checked ? previewCites(selClaims.items ?? [], (t) => restoredPlain(t, tokenMap)) : []), ...previewFactMarks(selFacts, (t) => restoredPlain(t, tokenMap))];
+    return marks.length > 0 ? marks : undefined;
+  }, [selClaims, selFacts, tokenMap]);
 
   // 退出模式下排队与恢复中的任务暂停（复核 S6-C12、S6-C22）：随任务状态变化重新读取，徽标如实显示
   useEffect(() => {

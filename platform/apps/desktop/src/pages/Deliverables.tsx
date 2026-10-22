@@ -8,7 +8,7 @@ import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
 import { downloadPlan } from "../lib/download.ts";
 import { ARTIFACT_STATUS_LABELS, artifactName, AUDIENCE_LABELS, fmtTime, fmtWhen } from "../lib/labels.ts";
-import { groupByTask, groupDeliverables, taskCountText, taskGroupLabel } from "../lib/deliverables.ts";
+import { deliveryPackage, groupByTask, groupDeliverables, PACKAGE_REASON_TEXT, taskCountText, taskGroupLabel } from "../lib/deliverables.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 
 const STATUS_LABELS = ARTIFACT_STATUS_LABELS;
@@ -173,6 +173,17 @@ export function DeliverablesPage() {
 export function MatterDeliverables({ matterId }: { matterId: string }) {
   const [rows, setRows] = useState<any[] | null>(null);
   const [err, setErr] = useState("");
+  // 预览交付包（v9.4 第 21 批）：展开的是哪一次任务
+  const [pack, setPack] = useState<string | null>(null);
+  const [packNote, setPackNote] = useState("");
+  const download = (r: any) =>
+    api
+      .downloadArtifact(r.artifact_version_id, r.filename)
+      .then((saved) => (saved ? api.deliver({ artifact_version_id: r.artifact_version_id, action: "download" }).then(() => true) : false))
+      .catch((e) => {
+        setErr((e as Error).message);
+        return false;
+      });
   useEffect(() => {
     api
       .listArtifacts(matterId)
@@ -201,23 +212,63 @@ export function MatterDeliverables({ matterId }: { matterId: string }) {
                     看这次任务
                   </button>
                 )}
+                <button className="btn-link" aria-expanded={pack === (t.run_id ?? "")} onClick={() => { setPack(pack === (t.run_id ?? "") ? null : (t.run_id ?? "")); setPackNote(""); }}>
+                  预览交付包
+                </button>
               </td>
             </tr>,
+            ...(pack === (t.run_id ?? "")
+              ? [
+                  (() => {
+                    const p = deliveryPackage(t.rows);
+                    return (
+                      <tr key={`pack-${t.run_id ?? "none"}`} className="dl-pack">
+                        <td colSpan={4}>
+                          <div className="card dl-pack-card" role="region" aria-label="交付包">
+                            <div className="card-title">交付包：能交出去 {p.ready.length} 份{p.held.length > 0 ? ` · 不随包 ${p.held.length} 份` : ""}</div>
+                            {p.ready.length === 0 && <p className="muted">这次任务还没有能交出去的文件：对外的文件要先签发；内部稿不随包。</p>}
+                            {p.ready.map((r: any) => (
+                              <div key={r.artifact_version_id} className="dl-pack-row">
+                                <b>{r.display}</b>
+                                <span className="muted"> · 给{AUDIENCE_LABELS[r.audience] ?? r.audience} · 已签发{r.version > 1 ? ` · 第 ${r.version} 版` : ""}</span>
+                              </div>
+                            ))}
+                            {p.held.map(({ row, reason }) => (
+                              <div key={row.artifact_version_id} className="dl-pack-row muted">
+                                {row.display} · {PACKAGE_REASON_TEXT[reason]}
+                              </div>
+                            ))}
+                            {p.ready.length > 0 && (
+                              <div className="card-actions">
+                                <button
+                                  className="btn-primary"
+                                  onClick={() =>
+                                    void (async () => {
+                                      let n = 0;
+                                      for (const r of p.ready) if (await download(r)) n += 1;
+                                      setPackNote(n > 0 ? `已下载 ${n} 份，下载记录已写进本事项。发出前请再看一眼收件人与附件。` : "");
+                                    })()
+                                  }
+                                >
+                                  下载这 {p.ready.length} 份
+                                </button>
+                                {packNote && <span className="muted">{packNote}</span>}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })(),
+                ]
+              : []),
             ...t.rows.map((r: any) => (
             <tr key={r.artifact_version_id} className="row-link dl-in-task" onClick={() => nav(`/review/${r.artifact_version_id}`)}>
               <td title={r.filename}><b>{r.display}</b></td>
               <td><StatusPill r={r} /></td>
               <td title={fmtTime(r.created_at)}>{fmtWhen(r.created_at)}</td>
               <td className="dl-actions" onClick={(e) => e.stopPropagation()}>
-                <button
-                  className="btn-link"
-                  onClick={() =>
-                    void api
-                      .downloadArtifact(r.artifact_version_id, r.filename)
-                      .then((saved) => (saved ? api.deliver({ artifact_version_id: r.artifact_version_id, action: "download" }) : undefined))
-                      .catch((e) => setErr((e as Error).message))
-                  }
-                >
+                <button className="btn-link" onClick={() => void download(r)}>
                   {downloadPlan(r.filename).label}
                 </button>
               </td>

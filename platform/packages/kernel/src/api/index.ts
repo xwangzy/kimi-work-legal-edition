@@ -80,9 +80,10 @@ import { restoreArtifactBytes } from "../services/export-restore.ts";
 import { decideOutline, listOutlines, scrubOutlineFacts } from "../services/argument-outlines.ts";
 import { addColumn, cellContext, createTable, decideCell, draftFromTable, exportTable, getTable, ledgerReminderCandidates, listTables, pushCellsToFacts, removeColumn, TABLE_TEMPLATES } from "../services/review-tables.ts";
 import { createTodo, deleteTodo, derivedTodos, listTodos, updateTodo } from "../services/matter-todos.ts";
+import { pendingChecks, unsignedLatestArtifacts } from "../services/pending-checks.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
-import { buildRedlineFromCards, counterChanges, decideBatch, rejectMissingCard, cardPages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
+import { buildRedlineFromCards, counterChanges, decideBatch, rejectMissingCard, cardCells, cardPages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
 import { LIT_SAMPLE_ISSUES, LIT_SAMPLE_TITLE, SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, litigationSampleMaterials, sampleContract } from "../services/sample-matter.ts";
 import { probeEnvironment, type EnvProbeResult } from "../services/env-probe.ts";
 import { firstLineTitle, isTitledFilename } from "../services/artifact-title.ts";
@@ -94,7 +95,8 @@ import { createStyledDocx, extractParagraphs, isHouseStyled, markdownToBlocks, r
 import { docStyleView, houseStyleFor, setDocStyle, setDocTemplate } from "../services/doc-style.ts";
 import { isToolOperationInFlight } from "../local-server.ts";
 import { MATTER_STAGES } from "../services/matter-facts.ts";
-import { artifactCitationBlock, checkArtifactCitations, CITATIONS_CASES_CHECK_KEY, uncheckedCitations, withDecisions, type ArtifactCitationCheck, type CitationDecision } from "../services/artifact-citations.ts";
+import { artifactFactMarks, type FactMark } from "../services/artifact-facts.ts";
+import { artifactCitationBlock, artifactText, checkArtifactCitations, CITATIONS_CASES_CHECK_KEY, uncheckedCitations, withDecisions, type ArtifactCitationCheck, type CitationDecision } from "../services/artifact-citations.ts";
 import { rankTitles, type TitleCandidate } from "../services/title-search.ts";
 
 export interface ApiDeps {
@@ -366,6 +368,16 @@ function liveAgentRunOf(db: KernelDb, matterId: string): { run_id: string; goal:
   if (!r) return null;
   const goal = String(parseJson<any>(r.input_snapshot, {})?.goal ?? "").replace(/\s+/g, " ").slice(0, 24);
   return { run_id: r.run_id, goal };
+}
+
+/** 成果里的事实角标（v9.4 第 21 批，C1 §4.3）：按日期对到事项的事实行；读不出文字的成果没有角标。 */
+function artifactFactsFor(db: KernelDb, blobs: BlobStore, art: { matter_id: string; filename: string; storage_uri: string }): FactMark[] {
+  try {
+    const text = artifactText(String(art.filename), blobs.read(String(art.storage_uri)));
+    return text === "format" || text === "error" ? [] : artifactFactMarks(db, art.matter_id, text.slice(0, 2_000_000));
+  } catch {
+    return [];
+  }
 }
 
 /** 成果文件的引用核验（第 13 批）：适用时点取事项的分析截止日，缺省今天。 */
@@ -2016,14 +2028,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       )!;
       const egressSummary = art.run_id ? egressSummaryOf(art.run_id) : null;
       // “你来核对”（v9.2 §4.4；Y4 §5 D-3）：取本任务所用方法模板的质量自检清单；勾选只记录人工核对，不代表系统验证
-      let skillId: string | null = null;
-      if (art.run_id) {
-        const r = db.get<{ scenario: string; input_snapshot: string | null }>(`SELECT scenario, input_snapshot FROM runs WHERE run_id = ?`, [art.run_id]);
-        const snap = parseJson<any>(r?.input_snapshot ?? "{}", {});
-        skillId = typeof snap.skill === "string" ? snap.skill : r?.scenario === "s1.contract_review" ? "contract-review" : r?.scenario === "s1b.draft_compare" ? "redraft-review" : null;
-      }
-      const sk = deps.skills;
-      const lawyerChecklist = skillId && sk?.ok ? skillQualityChecklist(sk.dir, skillId) : [];
+      const { skillId, items: lawyerChecklist } = lawyerChecklistOf(art.run_id);
       const artCitations = artifactCitationsFor(db, blobs, lawdb, art as any);
       return {
         artifact_version_id: art.artifact_version_id,
@@ -2103,7 +2108,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
      */
     "artifacts.citations": (p, id) => {
       const art = requireArtifact(db, String(p?.artifact_version_id ?? ""), id);
-      return { citations: artifactCitationsFor(db, blobs, lawdb, art as any) };
+      return { citations: artifactCitationsFor(db, blobs, lawdb, art as any), facts: artifactFactsFor(db, blobs, art as any) };
     },
     /** 律师逐条决定一处引用的支持性（确认支持 / 标为不支持 / 我已知悉；decision 为 null 即撤回）。只对未签发的版本；审计不记引用原文。 */
     "citations.decide": (p, id) => {
@@ -2149,6 +2154,16 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const role = requireIssuerRole(db, art.matter_id, id);
       const approvalId = newId("approval");
       const checklistObj = (p?.checklist ?? {}) as Record<string, unknown>;
+      // “你来核对”的勾选写进签发记录时用条目原文（v9.4 第 21 批；评审 S1 §4“律师勾选项写入签发记录未核实”）：
+      // 界面只交序号，内核按本任务方法的自检清单换成原文；序号越界或重复的拒绝——记录里写的是律师当时看到、勾上的那几句话
+      const lc = lawyerChecklistOf(art.run_id);
+      const rawTicks = Array.isArray(checklistObj.lawyer_checked) ? checklistObj.lawyer_checked : [];
+      if (rawTicks.some((n) => !Number.isInteger(n) || (n as number) < 0 || (n as number) >= lc.items.length) || new Set(rawTicks).size !== rawTicks.length)
+        throw validation("“你来核对”的勾选与本任务方法的自检清单对不上：请刷新复核页后重新勾选");
+      const lawyerTicked = (rawTicks as number[]).slice().sort((a, b) => a - b).map((n) => lc.items[n]!);
+      checklistObj.lawyer_checked_items = lawyerTicked;
+      checklistObj.lawyer_items = lc.items.length;
+      checklistObj.skill = lc.items.length ? lc.skillId : null;
       const checklist = JSON.stringify(checklistObj);
 
       if (decision === "approved") {
@@ -2201,6 +2216,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           citation_check: ac
             ? { checked: ac.checked, total: ac.total, verified: ac.verified, wrong: ac.wrong, case_offline: ac.unverified_offline, outside_registry: ac.outside_registry, event_time: ac.timing ?? 0, event_date: ac.event_date ?? null, support_confirmed: ac.items.filter((i) => i.decision === "supported").length, support_acknowledged: ac.items.filter((i) => i.decision === "acknowledged").length, registry_coverage: ac.registry_coverage }
             : null,
+          // 律师人工核对的“你来核对”（v9.4 第 21 批）：方法、清单条数与勾上的条目原文；不代表系统验证
+          lawyer_checklist: { skill: lc.items.length ? lc.skillId : null, items: lc.items.length, checked: lawyerTicked },
           signed_at: new Date().toISOString(),
         });
         // 签发审批：对外可验证（TPM 直签的落点，W8 改异步，偏离 D-71）
@@ -2687,7 +2704,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const cards = listRiskCards(db, matter.matter_id, { run_id: p?.run_id, document_version_id: p?.document_version_id, status: p?.status });
       // 按页解析的材料（PDF 等）给出页码，卡片显示“第 x 条 · 第 y 页”（余项续复核 RC-B-18）
       const pages = typeof p?.document_version_id === "string" && p.document_version_id ? cardPages({ db, blobs, ...(tokens ? { tokens } : {}) }, matter.matter_id, p.document_version_id, cards) : new Map<string, number>();
-      return { cards: pages.size ? cards.map((c) => (pages.has(c.card_id) ? { ...c, page: pages.get(c.card_id) } : c)) : cards, progress: riskCardProgress(cards) };
+      // Word 表格里的条款（v9.4 第 21 批，C1 §2 第 8 项）：卡片显示“表 2 第 3 行第 2 列（单价）”
+      const cells = typeof p?.document_version_id === "string" && p.document_version_id ? cardCells({ db, blobs, ...(tokens ? { tokens } : {}) }, matter.matter_id, p.document_version_id, cards) : new Map<string, string>();
+      return {
+        cards: pages.size || cells.size ? cards.map((c) => ({ ...c, ...(pages.has(c.card_id) ? { page: pages.get(c.card_id) } : {}), ...(cells.has(c.card_id) ? { cell: cells.get(c.card_id) } : {}) })) : cards,
+        progress: riskCardProgress(cards),
+      };
     },
     "riskcards.decide": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
@@ -2810,7 +2832,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "tables.add_column": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterWriter(db, matter.matter_id, id);
-      const table = addColumn(db, matter.matter_id, String(p?.table_id ?? ""), { label: p?.label, hint: p?.hint, format: p?.format, options: p?.options });
+      const table = addColumn(db, matter.matter_id, String(p?.table_id ?? ""), { label: p?.label, hint: p?.hint, format: p?.format, options: p?.options, when: p?.when });
       audit(db, id, "review_table.column_added", "review_table", table.table_id, sha256Hex(JSON.stringify({ columns: table.columns.length })), keyctx);
       return { table };
     },
@@ -2859,6 +2881,19 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       return { outline };
     },
     // 事项待办（v9.4 第 20 批，C1 §3.2）：手工待办 + 从任务与成果推出的待办；文字为律师原文，审计不记文字
+    // 统一待核清单（v9.4 第 21 批，主文 §6.4）：事实、审阅表、审查意见、论点、成果未决项、引用逐条决定，一处列全
+    "matters.pending_checks": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      const checks = pendingChecks(db, matter.matter_id);
+      for (const a of unsignedLatestArtifacts(db, matter.matter_id)) {
+        if (!/\.(docx|md|txt|markdown)$/i.test(a.filename)) continue;
+        const c = artifactCitationsFor(db, blobs, lawdb, a);
+        const n = (c?.support_pending ?? 0) + (c?.unsupported ?? 0);
+        if (c?.checked && n > 0)
+          checks.push({ kind: "citations", count: n, text: `《${a.filename}》有 ${n} 处引用要逐条决定${c.unsupported ? `（${c.unsupported} 处标为不支持，须改正）` : ""}`, target: { artifact_version_id: a.artifact_version_id } });
+      }
+      return { checks, total: checks.reduce((k, x) => k + x.count, 0) };
+    },
     "todos.list": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       return { ...listTodos(db, matter.matter_id), derived: derivedTodos(db, matter.matter_id) };
@@ -4104,6 +4139,18 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         : { checkpoint: null, note: "链为空或链头未变，未重复检查点" };
     },
   };
+
+  /** 成果所属任务的方法与“你来核对”清单（v9.2 §4.4；Y4 §5 D-3）：复核页显示与签发记录同一份。 */
+  function lawyerChecklistOf(runId: string | null): { skillId: string | null; items: string[] } {
+    let skillId: string | null = null;
+    if (runId) {
+      const r = db.get<{ scenario: string; input_snapshot: string | null }>(`SELECT scenario, input_snapshot FROM runs WHERE run_id = ?`, [runId]);
+      const snap = parseJson<any>(r?.input_snapshot ?? "{}", {});
+      skillId = typeof snap.skill === "string" ? snap.skill : r?.scenario === "s1.contract_review" ? "contract-review" : r?.scenario === "s1b.draft_compare" ? "redraft-review" : null;
+    }
+    const sk = deps.skills;
+    return { skillId, items: skillId && sk?.ok ? skillQualityChecklist(sk.dir, skillId) : [] };
+  }
 
   function egressSummaryOf(runId: string): Record<string, unknown> {
     const recs = egress.listRecords({ runId });

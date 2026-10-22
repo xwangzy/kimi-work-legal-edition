@@ -11,6 +11,8 @@ export const NATURE_PILL: Readonly<Record<RiskNature, string>> = { must: "pill-r
 /** 卡的类型（v9.4 第 19 批 C-02，评审 C1 §2.2）：风险卡不另标胶囊，其余三类在标题行标出。 */
 export type RiskKind = "risk" | "missing" | "deviation" | "consistency";
 export const KIND_LABEL: Readonly<Record<RiskKind, string>> = { risk: "风险", missing: "缺失", deviation: "偏离规则", consistency: "前后不一致" };
+/** 跨文件审查（v9.4 第 21 批）：另一份文件的原文与本条的关系。 */
+export const RELATION_LABEL: Readonly<Record<string, string>> = { amends: "变更本条的", conflicts: "与本条不一致的", refers: "本条援引的" };
 /** 判断依据来源（三分，C1 §2.2 第 3 条）：律师据此分清哪些能和对方硬谈、哪些只是商业偏好。 */
 export const RULE_SOURCE_LABEL: Readonly<Record<"law" | "firm_rule" | "general", string>> = { law: "法律强制", firm_rule: "本所或客户规则", general: "通用建议，须你判断" };
 

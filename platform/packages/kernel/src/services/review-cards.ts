@@ -13,7 +13,7 @@
  */
 import { localToday } from "./local-date.ts";
 import { DomainError, newId, notFound, sha256Hex } from "@zr-legal/domain";
-import { compareDocx, createStyledDocx, createXlsx, extractParagraphs } from "@zr-legal/docx-engine";
+import { cellPositionLabel, compareDocx, createStyledDocx, createXlsx, extractParagraphs, paragraphCells, readZipText, type CellPosition } from "@zr-legal/docx-engine";
 import type { Lawdb } from "@zr-legal/lawdb";
 import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
@@ -238,6 +238,38 @@ function recheckMissing(deps: ReviewDeps, scope: ToolScope, docId: string | null
   return found;
 }
 
+/** 风险卡引用的另一份文件原文（跨文件审查）。relation：amends 变更或补充了本条 / conflicts 与本条不一致 / refers 本条援引的内容。 */
+export interface RelatedQuote {
+  document_version_id: string;
+  filename: string;
+  quote: string;
+  relation: "amends" | "conflicts" | "refers";
+  anchor_status: "located" | "ambiguous" | "not_found";
+}
+export const RELATED_LIMIT = 5;
+
+/**
+ * 跨文件审查（v9.4 第 21 批，评审 C1 §2 第 7 项）：卡片可附至多 5 段同一事项其他文件的逐字原文；须是本事项、未隔离、且不是本卡所在的那份文件。
+ * 每段在那份文件的视图里定位（同风险卡锚点一套口径），找不到照收、标出。
+ */
+function relatedQuotes(deps: ReviewDeps, matterId: string, docId: string | null, raw: unknown, i: number): RelatedQuote[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) throw new DomainError("validation", `第 ${i + 1} 张卡的 related 须为数组`, 422);
+  if (raw.length > RELATED_LIMIT) throw new DomainError("validation", `第 ${i + 1} 张卡的 related 至多 ${RELATED_LIMIT} 段`, 422);
+  const views = new Map<string, { view: string; filename: string }>();
+  return raw.map((x: any, j: number) => {
+    const other = str(x?.document_version_id, 80);
+    const quote = str(x?.quote, RISK_CARD_LIMITS.anchor);
+    if (!other || !quote) throw new DomainError("validation", `第 ${i + 1} 张卡的 related 第 ${j + 1} 段缺少 document_version_id 或 quote`, 422);
+    if (other === docId) throw new DomainError("validation", `第 ${i + 1} 张卡的 related 第 ${j + 1} 段就是本卡所在的文件：同一份文件里的另一处请写进 issue，或提交“前后不一致”类卡`, 422);
+    if (!views.has(other)) views.set(other, documentView(deps, matterId, other));
+    const v = views.get(other)!;
+    const loc = locateQuote(v.view, quote);
+    const relation = ["amends", "conflicts", "refers"].includes(x?.relation) ? (x.relation as RelatedQuote["relation"]) : "refers";
+    return { document_version_id: other, filename: v.filename, quote: loc.start !== null && loc.end !== null ? v.view.slice(loc.start, loc.end) : quote, relation, anchor_status: loc.status };
+  });
+}
+
 export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { document_version_id?: unknown; cards?: unknown }) {
   const cards = Array.isArray(input.cards) ? input.cards : [];
   if (cards.length === 0) throw new DomainError("validation", "cards 不能为空", 422);
@@ -248,6 +280,7 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
   if (base.count + cards.length > RISK_CARD_LIMITS.perRun) throw new DomainError("validation", `本任务风险卡已达上限 ${RISK_CARD_LIMITS.perRun}`, 422);
   const out: { card_id: string; seq: number; anchor_status: string; basis_checks: string[]; duplicate_of?: string; updated?: string; searched_found?: string[]; no_anchor?: true }[] = [];
   let seqOffset = 0;
+  let relatedMissing = 0;
   deps.db.tx(() => {
     cards.forEach((c: any, i: number) => {
       const kind: RiskCardKind = KINDS.includes(c?.kind) ? (c.kind as RiskCardKind) : "risk";
@@ -305,14 +338,15 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
         return;
       }
       const basis = verifyBasis(deps, scope.matterId, c?.basis);
+      const related = relatedQuotes(deps, scope.matterId, docId, c?.related, i);
       const searchedFound = kind === "missing" ? recheckMissing(deps, scope, docId, view?.view ?? null, searchedTerms) : [];
       const id = newId("riskCard");
       const seq = base.next + i + seqOffset;
       deps.db.run(
         `INSERT INTO risk_cards (card_id, tenant_id, matter_id, run_id, document_version_id, seq, clause_ref, anchor_text, anchor_quote, anchor_start, anchor_end, anchor_status,
            severity, category, issue, basis, suggestion, fallback, needs_client_decision, assumptions, nature, bottom_line,
-           kind, rule_source, rule_ref, searched_terms, searched_docs, searched_found)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           kind, rule_source, rule_ref, searched_terms, searched_docs, searched_found, related)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           id,
           scope.tenantId,
@@ -342,8 +376,10 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
           kind === "missing" ? JSON.stringify(searchedTerms) : null,
           kind === "missing" && searchedDocs.length > 0 ? JSON.stringify(searchedDocs) : null,
           kind === "missing" ? JSON.stringify(searchedFound) : null,
+          related.length > 0 ? JSON.stringify(related) : null,
         ],
       );
+      relatedMissing += related.filter((r) => r.anchor_status === "not_found").length;
       out.push({ card_id: id, seq, anchor_status: loc.status, basis_checks: basis.map((b) => b.check), ...(searchedFound.length > 0 ? { searched_found: searchedFound.map((f) => f.term) } : {}), ...(!anchor ? { no_anchor: true as const } : {}) });
     });
   });
@@ -360,6 +396,7 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
     notes.push(`${[notFound ? `${notFound} 张卡的引文在文档中找不到` : "", ambiguous ? `${ambiguous} 张出现多处` : ""].filter(Boolean).join("、")}：请改为逐字摘录（可附条款号 clause_ref），找不到的卡律师只能手工处理`);
   const maybeFalse = out.filter((x) => x.searched_found?.length).length;
   if (maybeFalse > 0) notes.push(`${maybeFalse} 张缺失卡列的说法在材料里其实找得到（见各卡 searched_found）：请复核是否误报，确属误报的不要提交；工作台会把这些卡标为“可能误报”`);
+  if (relatedMissing > 0) notes.push(`${relatedMissing} 处引用的另一份文件原文在那份文件里找不到：请改为逐字摘录，否则律师只能手工对照`);
   if (cross > 0) notes.push(`${cross} 张卡的引文跨了段落：修订按段落写入，请把这些卡按段落拆开重新提交（每张卡的引文只取一段之内）`);
   return {
     submitted: out.length,
@@ -407,6 +444,8 @@ export interface RiskCardRow {
   searched_terms: string[];
   searched_docs: string[];
   searched_found: { term: string; filename: string }[];
+  /** 跨文件审查（v9.4 第 21 批）：本卡引用的同一事项其他文件的原文（补充协议、附件等），内核已在那份文件里定位。 */
+  related: RelatedQuote[];
   /** 律师接受时选用的一级（缺省首选）。 */
   chosen_level: "suggestion" | "fallback";
   status: string;
@@ -467,6 +506,14 @@ function cardOut(r: any): RiskCardRow {
         return [];
       }
     })(),
+    related: (() => {
+      try {
+        const v = JSON.parse(r.related ?? "[]");
+        return Array.isArray(v) ? (v as RelatedQuote[]) : [];
+      } catch {
+        return [];
+      }
+    })(),
     chosen_level: r.chosen_level === "fallback" ? "fallback" : "suggestion",
     status: r.status,
     final_text: r.final_text,
@@ -498,6 +545,34 @@ export function cardPages(deps: ReviewDeps, matterId: string, documentVersionId:
     let page = 1;
     for (let i = view.indexOf("\f"); i >= 0 && i < c.anchor_start; i = view.indexOf("\f", i + 1)) page++;
     out.set(c.card_id, page);
+  }
+  return out;
+}
+
+/**
+ * 卡片锚点在 Word 表格里时的位置（v9.4 第 21 批，评审 C1 §2 第 8 项“表格里的条款也审”）：价格表、付款节点表、违约金比例常写在附件表格里，
+ * 卡片显示“表 2 第 3 行第 2 列（单价）”。Word 的文档视图是段落以换行连接，锚点起点之前的换行数即段落序号。纯读。
+ */
+export function cardCells(deps: ReviewDeps, matterId: string, documentVersionId: string, cards: readonly Pick<RiskCardRow, "card_id" | "anchor_start" | "anchor_status">[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const doc = deps.db.get<{ filename: string; storage_uri: string }>(`SELECT filename, storage_uri FROM document_versions WHERE document_version_id = ? AND matter_id = ?`, [documentVersionId, matterId]);
+  if (!doc || !doc.filename.toLowerCase().endsWith(".docx")) return out;
+  let cells: (CellPosition | null)[];
+  let view: string;
+  try {
+    const xml = readZipText(deps.blobs.read(doc.storage_uri), "word/document.xml");
+    if (!xml || !xml.includes("<w:tbl")) return out;
+    cells = paragraphCells(xml);
+    view = documentView(deps, matterId, documentVersionId).view;
+  } catch {
+    return out;
+  }
+  for (const c of cards) {
+    if (c.anchor_status !== "located" || c.anchor_start === null || c.anchor_start === undefined) continue;
+    let para = 0;
+    for (let i = view.indexOf("\n"); i >= 0 && i < c.anchor_start; i = view.indexOf("\n", i + 1)) para++;
+    const pos = cells[para];
+    if (pos) out.set(c.card_id, cellPositionLabel(pos));
   }
   return out;
 }

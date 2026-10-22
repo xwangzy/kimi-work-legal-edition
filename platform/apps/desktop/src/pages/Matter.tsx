@@ -70,6 +70,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
   const [composerOpen, setComposerOpen] = useState(false);
   // 材料标签：列表 / 表格审阅（v9.4 第 19 批 C-01：不加导航，只加视图）
   const [matView, setMatView] = useState<"list" | "table">("list");
+  const [tableFocus, setTableFocus] = useState<string | null>(null);
   const [basisOpen, setBasisOpen] = useState(false);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -152,6 +153,26 @@ export function MatterPage({ matterId }: { matterId: string }) {
           matter,
           { goal: `按审阅表《${t.title}》逐份材料、逐列填写，每格附原文；已核的格子不改`, scenario: "a1.agent_task", documentIds: t.document_version_ids, choice: value.choice },
           { skill: "tabular-review", label: "表格审阅", skillArgs: { table_id: t.table_id } },
+        ),
+      );
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 问这张表（v9.4 第 21 批，C1 §3.3 跨表对话）：同一方法的问表模式，只依据表里的格子回答，不改表
+  const askTable = async (t: TableView, question: string) => {
+    if (!matter) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      setSheet(
+        await prepareStart(
+          matter,
+          { goal: `只依据审阅表《${t.title}》里的格子回答：${question}（每个结论写明材料与列，没核的格子标待核；不改表）`, scenario: "a1.agent_task", documentIds: t.document_version_ids, choice: value.choice },
+          { skill: "tabular-review", label: "问这张表", skillArgs: { table_id: t.table_id, mode: "问表" } },
         ),
       );
     } catch (e) {
@@ -350,7 +371,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                 <button aria-pressed={matView === "table"} className={`wb-view-btn${matView === "table" ? " active" : ""}`} onClick={() => setMatView("table")}>表格审阅</button>
               </div>
             )}
-            {matView === "table" && docs.length > 0 && <TableReview matterId={matter.matter_id} docs={docs} readOnly={closed} onFill={(t) => void fillTable(t)} onExported={() => void reload()} />}
+            {matView === "table" && docs.length > 0 && <TableReview matterId={matter.matter_id} docs={docs} readOnly={closed} initialTable={tableFocus} onFill={(t) => void fillTable(t)} onAsk={(t, q) => void askTable(t, q)} onExported={() => void reload()} />}
             {matView === "list" && !closed && <div
               className="upload-zone"
               onDragOver={(e) => e.preventDefault()}
@@ -433,7 +454,22 @@ export function MatterPage({ matterId }: { matterId: string }) {
             )}
           </section>
         )}
-        {tab === "board" && <MatterBoard matter={matter} runs={runs} onChanged={reload} />}
+        {tab === "board" && (
+          <MatterBoard
+            matter={matter}
+            runs={runs}
+            onChanged={reload}
+            onGo={(t) => {
+              // 待核清单的去处（v9.4 第 21 批）：事实标签、材料的表格审阅、审查工作台
+              if ("tab" in t && t.tab === "facts") setTab("facts");
+              else if ("tab" in t && t.tab === "materials") {
+                setTab("materials");
+                setMatView("table");
+                setTableFocus(t.table_id);
+              } else if ("workbench" in t) setWorkbench({ doc: t.workbench });
+            }}
+          />
+        )}
         {tab === "deliverables" && <MatterDeliverables matterId={matterId} />}
         {tab === "facts" && <FactsPanel matterId={matterId} docs={docs} readOnly={closed} />}
         {tab === "parties" && <PartiesPanel matterId={matterId} onChanged={reload} readOnly={closed} />}

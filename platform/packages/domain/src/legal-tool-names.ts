@@ -30,6 +30,8 @@ export const LEGAL_MCP_TOOLS = [
   "table.fill",
   // 2026-10-22 v9.4 第 20 批：劳动经济补偿与违法解除赔偿金（确定性计算，附过程）
   "calc.labor",
+  // 2026-10-22 v9.4 第 21 批：诉讼费用（受理费、执行与保全申请费、支付令；确定性计算，附过程）
+  "calc.court_fee",
 ] as const;
 
 export type LegalMcpToolName = (typeof LEGAL_MCP_TOOLS)[number];
