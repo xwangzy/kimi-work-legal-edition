@@ -10,6 +10,8 @@ import { Modal } from "../components/Modal.tsx";
 import { defaultChoice } from "../components/ModeSelector.tsx";
 import { PartiesPanel } from "../components/Parties.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
+import { TableReview } from "../components/TableReview.tsx";
+import type { TableView } from "../lib/table-review.ts";
 import { reasonLabel } from "../components/DataFlow.tsx";
 import { DEST_LABELS, fmtTime, fmtWhen, jurisdictionLabel, MODE_LABELS, parseFlagsText, RUN_STATUS_LABELS, SCENARIO_LABELS, stanceLabel } from "../lib/labels.ts";
 import { FactsPanel } from "../components/FactsPanel.tsx";
@@ -64,6 +66,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
   }, [matter?.matter_id, docs.length]);
   const [value, setValue] = useState<ComposerValue>({ goal: "", scenario: "a1.agent_task", documentIds: [], choice: defaultChoice(null) });
   const [sheet, setSheet] = useState<PendingStart | null>(null);
+  // 材料标签：列表 / 表格审阅（v9.4 第 19 批 C-01：不加导航，只加视图）
+  const [matView, setMatView] = useState<"list" | "table">("list");
   const [basisOpen, setBasisOpen] = useState(false);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -130,6 +134,26 @@ export function MatterPage({ matterId }: { matterId: string }) {
       }
       setMsg(lines.join("\n"));
       reload();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 让助手填审阅表：表格审阅方法，表编号作方法参数，材料为表里的材料（照常先估价、确认）
+  const fillTable = async (t: TableView) => {
+    if (!matter) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      setSheet(
+        await prepareStart(
+          matter,
+          { goal: `按审阅表《${t.title}》逐份材料、逐列填写，每格附原文；已核的格子不改`, scenario: "a1.agent_task", documentIds: t.document_version_ids, choice: value.choice },
+          { skill: "tabular-review", label: "表格审阅", skillArgs: { table_id: t.table_id } },
+        ),
+      );
+    } catch (e) {
+      setMsg((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -309,7 +333,14 @@ export function MatterPage({ matterId }: { matterId: string }) {
         </div>
         {tab === "materials" && (
           <section>
-            {!closed && <div
+            {docs.length > 0 && (
+              <div className="wb-doc-view" role="group" aria-label="材料显示方式">
+                <button aria-pressed={matView === "list"} className={`wb-view-btn${matView === "list" ? " active" : ""}`} onClick={() => setMatView("list")}>列表</button>
+                <button aria-pressed={matView === "table"} className={`wb-view-btn${matView === "table" ? " active" : ""}`} onClick={() => setMatView("table")}>表格审阅</button>
+              </div>
+            )}
+            {matView === "table" && docs.length > 0 && <TableReview matterId={matter.matter_id} docs={docs} readOnly={closed} onFill={(t) => void fillTable(t)} onExported={() => void reload()} />}
+            {matView === "list" && !closed && <div
               className="upload-zone"
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
@@ -325,7 +356,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
               <input ref={importRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files, "import")} />
               <input ref={mountRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files, "mount")} />
             </div>}
-            {docs.length > 0 && (
+            {matView === "list" && docs.length > 0 && (
               <table className="data">
                 <thead><tr><th>文件</th><th>用途</th><th>大小</th><th>读取</th><th>审查意见</th><th>时间</th></tr></thead>
                 <tbody>
@@ -363,7 +394,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                 </tbody>
               </table>
             )}
-            {review.get(null) && (
+            {matView === "list" && review.get(null) && (
               <p className="muted">
                 另有 {review.get(null)!.total} 项审查意见未关联到具体合同：
                 <button className="btn-link" onClick={() => setWorkbench({ doc: null })}>逐项处理</button>

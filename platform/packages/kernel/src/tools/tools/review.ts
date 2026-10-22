@@ -14,6 +14,7 @@ import { DomainError, newId, notFound } from "@zr-legal/domain";
 import { createXlsx } from "@zr-legal/docx-engine";
 import type { InvokeCtx } from "../registry.ts";
 import { confirmedView, latestOutline, submitOutline } from "../../services/argument-outlines.ts";
+import { fillCells, tableForAgent } from "../../services/review-tables.ts";
 import { acceptedText, changesDocument, listFacts, listRiskCards, submitFacts, submitRiskCards, riskCardProgress } from "../../services/review-cards.ts";
 
 function scopeOf(ctx: InvokeCtx): { tenantId: string; matterId: string; runId: string | null } {
@@ -127,6 +128,14 @@ export function riskcardsList(ctx: InvokeCtx, p: { document_version_id?: string;
       lawyer_text: c.final_text,
     })),
   };
+}
+
+export function tableGet(ctx: InvokeCtx, p: { table_id?: string }) {
+  return tableForAgent(ctx.db, scopeOf(ctx).matterId, String(p.table_id ?? ""));
+}
+
+export function tableFill(ctx: InvokeCtx, p: { table_id?: string; cells?: unknown[] }) {
+  return fillCells({ db: ctx.db, blobs: ctx.blobs, ...(ctx.tokens ? { tokens: ctx.tokens } : {}) }, scopeOf(ctx), p);
 }
 
 export function outlineSubmit(ctx: InvokeCtx, p: { doc_kind?: string; title?: string; arguments?: unknown[] }) {

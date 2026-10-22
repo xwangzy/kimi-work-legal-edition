@@ -21,7 +21,7 @@ import { calcDeadline } from "./tools/deadline.ts";
 import { redactScan } from "./tools/redact.ts";
 import { materialsReadExcerpt } from "./tools/materials.ts";
 import { docxApplyRevisions, docxCompare, docxRenderReport, docxSanitize, redactApply } from "./tools/docx.ts";
-import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, riskcardsList, riskcardsSubmit, xlsxRenderTable } from "./tools/review.ts";
+import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, riskcardsList, riskcardsSubmit, tableFill, tableGet, xlsxRenderTable } from "./tools/review.ts";
 import { assertOutlineSettled } from "../services/argument-outlines.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
@@ -439,6 +439,52 @@ export const TOOLS: readonly ToolDef[] = [
       },
     },
     invoke: (p, ctx) => riskcardsList(ctx, p),
+  },
+  {
+    name: "table.get",
+    title: "读取审阅表",
+    description: "读取律师建的审阅表（表格审阅）：列（column 编号、列名、格式、填写说明）、材料（document_version_id）、每格状态。locked=true 的格子律师已核或已改，不要重填；unreadable 的材料读不出文字，不填。",
+    sideEffect: "read",
+    resource: "matter_work",
+    version: "1",
+    inputSchema: { type: "object", additionalProperties: false, required: ["table_id"], properties: { table_id: { type: "string" } } },
+    invoke: (p, ctx) => tableGet(ctx, p),
+  },
+  {
+    name: "table.fill",
+    title: "填写审阅表",
+    description:
+      "逐格填写审阅表：每格写 document_version_id、column、value（按列格式：日期 YYYY-MM-DD 或 YYYY-MM，是否填“是 / 否”，选项列只填给定选项）与 quote（逐字摘自该材料，含代号原样，律师据此回原文核对）。" +
+      "文件里确实没有的写 status=not_found（不写值）；同一份材料两处说法不一的写 status=conflict 并在 note 写明两处。律师已核、已改的格子不会被覆盖（回报 locked）；格式不对或没有引文的格子不收（回报 rejected）。",
+    sideEffect: "write_draft",
+    resource: "matter_work",
+    version: "1",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["table_id", "cells"],
+      properties: {
+        table_id: { type: "string" },
+        cells: {
+          type: "array",
+          maxItems: 400,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["document_version_id", "column"],
+            properties: {
+              document_version_id: { type: "string" },
+              column: { type: "string" },
+              status: { type: "string", enum: ["found", "not_found", "conflict"] },
+              value: { type: "string" },
+              quote: { type: "string" },
+              note: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    invoke: (p, ctx) => tableFill(ctx, p),
   },
   {
     name: "outline.submit",

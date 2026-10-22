@@ -283,6 +283,34 @@
         "drafting"
       ],
       "schemaHash": "99334726611ccf58a148b0814696bfa6fe08c1b2d027e946beccf5a74331c9aa"
+    },
+    {
+      "name": "table.get",
+      "version": "1",
+      "sideEffect": "read",
+      "resource": "matter_work",
+      "purposes": [
+        "legal_analysis",
+        "contract_review",
+        "case_file",
+        "legal_research",
+        "drafting"
+      ],
+      "schemaHash": "51fb3dab532def30f8f8c7731799ee5caeb8bf1ec67d3092afbd6a951c638a5f"
+    },
+    {
+      "name": "table.fill",
+      "version": "1",
+      "sideEffect": "write_draft",
+      "resource": "matter_work",
+      "purposes": [
+        "legal_analysis",
+        "contract_review",
+        "case_file",
+        "legal_research",
+        "drafting"
+      ],
+      "schemaHash": "d40cc43d884454680481e57c9c4b123cb1cc82da2b0d8f1f97c5f585c1e462d7"
     }
   ]
 }

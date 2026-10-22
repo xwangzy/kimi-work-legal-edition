@@ -77,6 +77,7 @@ import { docxHeaderFooterTexts, parseDocument } from "../services/parser.ts";
 import { detectClassifiedMarking, type ClassifiedFinding } from "../services/classified-marking.ts";
 import { restoreArtifactBytes } from "../services/export-restore.ts";
 import { decideOutline, listOutlines } from "../services/argument-outlines.ts";
+import { createTable, decideCell, exportTable, getTable, listTables, TABLE_TEMPLATES } from "../services/review-tables.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
 import { buildRedlineFromCards, cardPages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
@@ -2669,6 +2670,39 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         },
       );
       audit(db, id, "riskcards.table_exported", "artifact_version", r.artifact_version_id, sha256Hex(JSON.stringify({ rows: r.rows })), keyctx);
+      return r;
+    },
+    // 表格审阅（v9.4 第 19 批 C-01）：律师建表、逐格核；Agent 经 table.get / table.fill 填；文字为令牌形态，界面还原显示
+    "tables.templates": () => ({ templates: TABLE_TEMPLATES }),
+    "tables.list": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      return { tables: listTables(db, matter.matter_id) };
+    },
+    "tables.create": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const table = createTable(db, { tenant_id: matter.tenant_id, matter_id: matter.matter_id, template: p?.template, columns: p?.columns, document_version_ids: p?.document_version_ids, title: p?.title, created_by: id.userId });
+      audit(db, id, "review_table.created", "review_table", table.table_id, sha256Hex(JSON.stringify({ template: table.template, docs: table.document_version_ids.length, columns: table.columns.length })), keyctx);
+      return { table };
+    },
+    "tables.get": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      return getTable(db, matter.matter_id, String(p?.table_id ?? ""));
+    },
+    "tables.decide_cell": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const cell = decideCell(db, matter.matter_id, id.userId, { table_id: p?.table_id, cell_id: p?.cell_id, document_version_id: p?.document_version_id, column: p?.column, decision: p?.decision, value: p?.value });
+      // 审计只记格子号与决定（不记值）
+      audit(db, id, "review_cell.decided", "review_cell", cell.cell_id, sha256Hex(JSON.stringify({ state: cell.state })), keyctx);
+      return { cell };
+    },
+    "tables.export": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      if (!tokens) throw new DomainError("provider_unavailable", "令牌化工作区未启用", 503);
+      const r = exportTable({ db, blobs, tokens }, matter.matter_id, String(p?.table_id ?? ""), id.userId);
+      audit(db, id, "review_table.exported", "artifact_version", r.artifact_version_id, sha256Hex(JSON.stringify({ rows: r.rows })), keyctx);
       return r;
     },
     // 起草前的论点与依据（v9.4 第 19 批 C-04）：任务页逐条确认；文字为令牌形态，界面还原显示

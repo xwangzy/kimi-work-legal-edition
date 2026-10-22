@@ -25,6 +25,9 @@ export const LEGAL_MCP_TOOLS = [
   // 2026-10-22 v9.4 第 19 批 C-04：起草前提交论点与依据、读取律师确认版
   "outline.submit",
   "outline.get",
+  // 2026-10-22 v9.4 第 19 批 C-01：表格审阅（读表、逐格填值与引文；律师已核的格子不覆盖）
+  "table.get",
+  "table.fill",
 ] as const;
 
 export type LegalMcpToolName = (typeof LEGAL_MCP_TOOLS)[number];
