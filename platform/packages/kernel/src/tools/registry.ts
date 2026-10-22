@@ -23,7 +23,7 @@ import { calcDeadline } from "./tools/deadline.ts";
 import { redactScan } from "./tools/redact.ts";
 import { materialsReadExcerpt } from "./tools/materials.ts";
 import { docxApplyRevisions, docxCompare, docxRenderReport, docxSanitize, redactApply } from "./tools/docx.ts";
-import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, riskcardsList, riskcardsSubmit, tableFill, tableGet, xlsxRenderTable } from "./tools/review.ts";
+import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, rulesPropose, riskcardsList, riskcardsSubmit, tableFill, tableGet, xlsxRenderTable } from "./tools/review.ts";
 import { assertOutlineSettled } from "../services/argument-outlines.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
@@ -595,6 +595,35 @@ export const TOOLS: readonly ToolDef[] = [
       },
     },
     invoke: (p, ctx) => outlineSubmit(ctx, p),
+  },
+  {
+    name: "rules.propose",
+    title: "起草本事项的审查要点（草稿）",
+    description:
+      "从本所或客户的范本（标准合同、采购标准、往来定稿）整理审查要点：每条写条款（topic）、我方标准（standard）、可退让（fallback，可省略）、不可谈（red_line，可省略），按范本原文概括，不添加范本里没有的立场。" +
+      "只存为草稿交律师在事项概览“审查要点”里审定；律师启用之前，任何任务都不会按它审查。同一任务再次提交取代本任务上一份草稿。",
+    sideEffect: "write_draft",
+    resource: "matter_work",
+    version: "1",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["title", "rules"],
+      properties: {
+        title: { type: "string" },
+        rules: {
+          type: "array",
+          maxItems: 40,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["topic", "standard"],
+            properties: { topic: { type: "string" }, standard: { type: "string" }, fallback: { type: "string" }, red_line: { type: "string" } },
+          },
+        },
+      },
+    },
+    invoke: (p, ctx) => rulesPropose(ctx, p),
   },
   {
     name: "outline.get",

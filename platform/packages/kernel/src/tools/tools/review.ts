@@ -14,6 +14,7 @@ import { DomainError, newId, notFound } from "@zr-legal/domain";
 import { createXlsx } from "@zr-legal/docx-engine";
 import type { InvokeCtx } from "../registry.ts";
 import { confirmedView, latestOutline, submitOutline } from "../../services/argument-outlines.ts";
+import { proposeDraft } from "../../services/review-rules.ts";
 import { fillCells, tableForAgent } from "../../services/review-tables.ts";
 import { acceptedText, changesDocument, listFacts, listRiskCards, submitFacts, submitRiskCards, riskCardProgress } from "../../services/review-cards.ts";
 
@@ -152,6 +153,11 @@ export function tableFill(ctx: InvokeCtx, p: { table_id?: string; cells?: unknow
 
 export function outlineSubmit(ctx: InvokeCtx, p: { doc_kind?: string; title?: string; arguments?: unknown[] }) {
   return submitOutline({ db: ctx.db, lawdb: ctx.lawdb }, scopeOf(ctx), p);
+}
+
+/** 从本所或客户的范本起草审查要点（v9.4 第 22 批，C1 #22）：只存为草稿，律师审定启用后才用于审查。 */
+export function rulesPropose(ctx: InvokeCtx, p: { title?: string; rules?: unknown[] }) {
+  return proposeDraft(ctx.db, scopeOf(ctx), p);
 }
 
 export function outlineGet(ctx: InvokeCtx) {

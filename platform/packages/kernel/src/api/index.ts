@@ -80,10 +80,14 @@ import { restoreArtifactBytes } from "../services/export-restore.ts";
 import { decideOutline, listOutlines, scrubOutlineFacts } from "../services/argument-outlines.ts";
 import { addColumn, cellContext, createTable, decideCell, draftFromTable, exportTable, getTable, ledgerReminderCandidates, listTables, pushCellsToFacts, removeColumn, TABLE_TEMPLATES } from "../services/review-tables.ts";
 import { createTodo, deleteTodo, derivedTodos, listTodos, updateTodo } from "../services/matter-todos.ts";
+import { triageMatter } from "../services/material-triage.ts";
+import { planTemplate, applyTemplateTodos, templatesView } from "../services/matter-templates.ts";
+import { activeRules, discardDraft, listRuleSets, retireRules, RULES_SKILLS, saveRules, snapshotOf } from "../services/review-rules.ts";
+import { getWritingPrefs, hasPrefs, setWritingPrefs } from "../services/writing-prefs.ts";
 import { pendingChecks, unsignedLatestArtifacts } from "../services/pending-checks.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
-import { buildRedlineFromCards, counterChanges, decideBatch, rejectMissingCard, cardCells, cardPages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, scrubRelatedQuotes, submitRiskCards } from "../services/review-cards.ts";
+import { buildRedlineFromCards, counterChanges, decideBatch, rejectMissingCard, cardCells, cardPages, quotePages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, scrubRelatedQuotes, submitRiskCards } from "../services/review-cards.ts";
 import { LIT_SAMPLE_ISSUES, LIT_SAMPLE_TITLE, SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, litigationSampleMaterials, sampleContract } from "../services/sample-matter.ts";
 import { probeEnvironment, type EnvProbeResult } from "../services/env-probe.ts";
 import { firstLineTitle, isTitledFilename } from "../services/artifact-title.ts";
@@ -92,7 +96,7 @@ import { isImage, isPdf, ocrReady, parseWithPipeline } from "../services/parse-p
 import { estimatePoints, scenarioCap } from "../services/estimate.ts";
 import { docxRenderReport } from "../tools/tools/docx.ts";
 import { createStyledDocx, extractParagraphs, isHouseStyled, markdownToBlocks, renderDocxHtml, renderXlsxHtml, restyleDocx } from "@zr-legal/docx-engine";
-import { docStyleView, houseStyleFor, setDocStyle, setDocTemplate } from "../services/doc-style.ts";
+import { redlineAuthorOf, docStyleView, houseStyleFor, setDocStyle, setDocTemplate } from "../services/doc-style.ts";
 import { isToolOperationInFlight } from "../local-server.ts";
 import { MATTER_STAGES } from "../services/matter-facts.ts";
 import { artifactFactMarks, type FactMark } from "../services/artifact-facts.ts";
@@ -741,12 +745,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (!Object.values(ConsentStatus).includes(consent)) throw validation(`consent_status 须为 ${Object.values(ConsentStatus).join("/")}`);
       if (body.confidentiality !== undefined && !["normal", "high", "strict"].includes(body.confidentiality)) throw validation("confidentiality 须为 normal / high / strict");
       const facts = matterFactsFrom(body);
+      // 事项模板（v9.4 第 22 批，C1 #20）：先校验并算好届满日，失败即不创建；阶段没给时用模板的
+      const plan = planTemplate(body.template_id, body.template_start);
+      if (plan && facts.stage === undefined && plan.template.stage) facts.stage = plan.template.stage;
+      const keyDates = { ...(plan?.key_dates ?? {}), ...(body.key_dates ?? {}) };
       const matterId = newId("matter");
+      let todosAdded = 0;
       db.tx(() => {
         db.run(
           `INSERT INTO matters (matter_id, tenant_id, title, client_name, counterparty, stance, jurisdiction,
-                                key_dates, confidentiality, model_endpoint, collab_scope, consent_status, created_by, basis, stage, event_date, region)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                                key_dates, confidentiality, model_endpoint, collab_scope, consent_status, created_by, basis, stage, event_date, region, template_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
             matterId,
             id.tenantId,
@@ -755,7 +764,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
             body.counterparty ?? null,
             body.stance,
             body.jurisdiction ?? "内地民商事",
-            JSON.stringify(body.key_dates ?? {}),
+            JSON.stringify(keyDates),
             body.confidentiality ?? "normal",
             endpoint,
             scope,
@@ -765,6 +774,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
             facts.stage ?? null,
             facts.event_date ?? null,
             facts.region ?? null,
+            plan?.template.id ?? null,
           ],
         );
         db.run(
@@ -785,13 +795,19 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         ]);
         // 团队事项的成员链起点（第 12 批；个人事项不同步、不写链）
         if (scope === "team" && !config.legacyMemberRows) writeGenesis({ db, keyctx, tenantId: id.tenantId }, matterId, id.userId, matterKey);
+        if (plan) todosAdded = applyTemplateTodos(db, plan, { tenant_id: id.tenantId, matter_id: matterId, created_by: id.userId });
       });
-      audit(db, id, "matter.create", "matter", matterId, undefined, keyctx);
+      audit(db, id, "matter.create", "matter", matterId, plan ? sha256Hex(JSON.stringify({ template: plan.template.id, todos: todosAdded, deadline: !!plan.deadline })) : undefined, keyctx);
       // 事项匿名摘要（阶段 6；经控制面下发网关做二次检查，收敛 D-20）：只有匿名编号与数据级别、端点、依据是否齐备
       deps.governance?.enqueueSummary(matterId);
       void deps.controlPlane?.pushSummaries().catch(() => {});
-      return { matter: matterOut(db.get(`SELECT * FROM matters WHERE matter_id = ?`, [matterId])) };
+      return {
+        matter: matterOut(db.get(`SELECT * FROM matters WHERE matter_id = ?`, [matterId])),
+        ...(plan ? { template_applied: { template_id: plan.template.id, todos: todosAdded, deadline: plan.deadline } } : {}),
+      };
     },
+    // 事项模板清单（v9.4 第 22 批）：新建事项时选类型；概览里“推荐的方法”按模板的场景卡 id
+    "matters.templates": () => ({ templates: templatesView() }),
 
     "matters.list": (_p, id) => {
       const rows = db.all(
@@ -1490,6 +1506,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (Object.keys(skillArgs).length === 0) skillArgs = undefined;
       }
 
+      // 本事项的审查要点（v9.4 第 22 批，C1 #21）：审合同、回稿重审、起草合同的任务缺省按在用的那一版（快照，之后改要点不影响本任务）；
+      // review_rules:false 为本次不用。我的写作偏好（C1 #29）：Agent 任务都带上（快照）
+      if (p?.review_rules !== undefined && p?.review_rules !== null && typeof p.review_rules !== "boolean") throw validation("review_rules 须为 true / false");
+      const rulesActive = skill && RULES_SKILLS.includes(skill) && p?.review_rules !== false ? activeRules(db, matter.matter_id) : null;
+      if (p?.review_rules === true && !rulesActive) throw validation(skill && RULES_SKILLS.includes(skill) ? "这个事项还没有在用的审查要点" : "这个方法不按审查要点审");
+      const rulesSnap = rulesActive ? snapshotOf(rulesActive) : null;
+      const prefsNow = est.scenario === "a1.agent_task" ? getWritingPrefs(db, id.tenantId, id.userId) : null;
+      const prefsSnap = prefsNow && hasPrefs(prefsNow) ? prefsNow : null;
+
       // 追问（集成核查 P1-1）：在本事项、本人发起、已完成的上一次 Agent 运行的会话上继续
       let followup: { followup_of: string; continue_session_id: string } | undefined;
       let followupModeRaised: string | null = null;
@@ -1551,7 +1576,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           matterId,
           est.scenario,
           String(p.idempotency_key),
-          JSON.stringify({ ...est.input, estimate_id: est.estimate_id, goal: p?.goal, topic_hint: p?.topic_hint ?? est.input.topic_hint, ...(runOptions ? { run_options: runOptions } : {}), ...(skill ? { skill, ...skillSnapshot(deps.skills, skill) } : {}), ...(skillArgs ? { skill_args: skillArgs } : {}), ...(followup ?? {}) }),
+          JSON.stringify({ ...est.input, estimate_id: est.estimate_id, goal: p?.goal, topic_hint: p?.topic_hint ?? est.input.topic_hint, ...(runOptions ? { run_options: runOptions } : {}), ...(skill ? { skill, ...skillSnapshot(deps.skills, skill) } : {}), ...(skillArgs ? { skill_args: skillArgs } : {}), ...(rulesSnap ? { review_rules: rulesSnap } : {}), ...(prefsSnap ? { writing_prefs: prefsSnap } : {}), ...(followup ?? {}) }),
           Math.min(est.points, budgetCap),
           Math.min(est.points, budgetCap),
           est.estimate_id,
@@ -2774,6 +2799,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           skip_card_ids: Array.isArray(p?.skip_card_ids) ? p.skip_card_ids.map(String) : [],
           created_by: id.userId,
           audience: p?.audience === "external" ? "external" : "internal",
+          author: redlineAuthorOf(db, id.tenantId),
         },
       );
       const byIndex = new Map(r.cards.map((c) => [c.index, c.card_id]));
@@ -2816,7 +2842,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
     "tables.get": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
-      return getTable(db, matter.matter_id, String(p?.table_id ?? ""));
+      const t = getTable(db, matter.matter_id, String(p?.table_id ?? ""));
+      // 格子引文的页码（v9.4 第 22 批）：PDF 等按页解析的材料
+      const pages = quotePages({ db, blobs, ...(tokens ? { tokens } : {}) }, matter.matter_id, t.cells.filter((c) => c.quote).map((c) => ({ key: `${c.document_version_id}|${c.col_key}`, document_version_id: c.document_version_id, quote: c.quote })));
+      return { ...t, cells: t.cells.map((c) => (pages.has(`${c.document_version_id}|${c.col_key}`) ? { ...c, page: pages.get(`${c.document_version_id}|${c.col_key}`) } : c)) };
     },
     "tables.decide_cell": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
@@ -2926,9 +2955,50 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       audit(db, id, "todo.deleted", "todo", String(p?.todo_id ?? ""), undefined, keyctx);
       return { ok: true };
     },
+    // 材料初判（v9.4 第 22 批，C1 #28）：本机按规则认文书类型、合同类型与篇幅，只做建议，不调用 AI、不改原件
+    "materials.triage": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      return { items: triageMatter(db, matter.matter_id) };
+    },
+    // 本事项的审查要点（v9.4 第 22 批，C1 #21、#22）：律师写或审定启用；审合同的任务发起时快照在用的一版。文字不进审计，审计记版本与摘要
+    "review_rules.get": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      return listRuleSets(db, matter.matter_id);
+    },
+    "review_rules.save": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const v = db.tx(() => saveRules(db, { tenantId: matter.tenant_id, matterId: matter.matter_id, userId: id.userId }, { title: p?.title, rules: p?.rules, from_draft: p?.from_draft, base_version: p?.base_version }));
+      audit(db, id, "review_rules.saved", "matter", matter.matter_id, sha256Hex(JSON.stringify({ version: v.version, sha256: v.sha256, rules: v.rules.length, from_draft: !!p?.from_draft })), keyctx);
+      return { ...listRuleSets(db, matter.matter_id), saved: v };
+    },
+    "review_rules.retire": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const r = retireRules(db, matter.matter_id);
+      if (r.retired) audit(db, id, "review_rules.retired", "matter", matter.matter_id, undefined, keyctx);
+      return listRuleSets(db, matter.matter_id);
+    },
+    "review_rules.discard_draft": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      discardDraft(db, matter.matter_id, String(p?.rule_set_id ?? ""));
+      audit(db, id, "review_rules.draft_discarded", "matter", matter.matter_id, undefined, keyctx);
+      return listRuleSets(db, matter.matter_id);
+    },
+    // 我的写作偏好（v9.4 第 22 批，C1 #29）：只存格式与文风，按律师本人存在本机
+    "writing_prefs.get": (_p, id) => getWritingPrefs(db, id.tenantId, id.userId),
+    "writing_prefs.set": (p, id) => {
+      const prefs = setWritingPrefs(db, id.tenantId, id.userId, (p ?? {}) as Record<string, unknown>);
+      audit(db, id, "writing_prefs.set", "user", id.userId, sha256Hex(JSON.stringify({ signature: !!prefs.signature, citation: prefs.citation, notes: !!prefs.notes })), keyctx);
+      return prefs;
+    },
     "facts.list": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
-      return { facts: listFacts(db, matter.matter_id, { run_id: p?.run_id, status: p?.status }) };
+      const facts = listFacts(db, matter.matter_id, { run_id: p?.run_id, status: p?.status });
+      // 事实引文的页码（v9.4 第 22 批）：PDF 等按页解析的材料
+      const pages = quotePages({ db, blobs, ...(tokens ? { tokens } : {}) }, matter.matter_id, facts.filter((f) => f.anchor_status === "located").map((f) => ({ key: f.fact_id, document_version_id: f.document_version_id ?? null, start: (f as { anchor_start?: number | null }).anchor_start ?? null, quote: f.quote ?? null })));
+      return { facts: facts.map((f) => (pages.has(f.fact_id) ? { ...f, page: pages.get(f.fact_id) } : f)) };
     },
     "facts.decide": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);

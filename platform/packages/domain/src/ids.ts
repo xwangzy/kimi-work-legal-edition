@@ -40,6 +40,8 @@ export const IdPrefix = {
   // 缺失卡说法组（C-02 残余）、风险卡批量决定的批次
   synonym: "syn",
   cardBatch: "cbt",
+  // v9.4 第 22 批：本事项的审查要点（每一版与草稿）
+  reviewRules: "rrs",
 } as const;
 
 export type IdPrefixKey = keyof typeof IdPrefix;

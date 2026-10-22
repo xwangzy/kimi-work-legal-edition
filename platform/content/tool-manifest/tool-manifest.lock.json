@@ -339,6 +339,20 @@
         "drafting"
       ],
       "schemaHash": "b4be6e2d82f5723926dc6fa0d46d1fb50697f95843bb9f5db9e2ba5150a81d5c"
+    },
+    {
+      "name": "rules.propose",
+      "version": "1",
+      "sideEffect": "write_draft",
+      "resource": "matter_work",
+      "purposes": [
+        "legal_analysis",
+        "contract_review",
+        "case_file",
+        "legal_research",
+        "drafting"
+      ],
+      "schemaHash": "fa62de6124bb0e2a96de87bc0b174d950816b7037e2681e5635a059622169791"
     }
   ]
 }

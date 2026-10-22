@@ -11,6 +11,7 @@
  * - 修订稿：只把“接受”与“修改后接受”的卡交给结构化补丁引擎（structured-patch.ts）在原件副本上写原生修订——
  *   任一条不能定位即整体返回预览并逐卡说明原因，律师可选择跳过这些卡后再生成（不做模糊替换、不写半个文件）。
  */
+import { ruleNoOf, runRulesSnapshot, type ReviewRule, type RulesSnapshot } from "./review-rules.ts";
 import { localToday } from "./local-date.ts";
 import { DomainError, newId, notFound, sha256Hex } from "@zr-legal/domain";
 import { cellPositionLabel, compareDocx, createStyledDocx, createXlsx, extractParagraphs, paragraphCells, readZipText, type CellPosition } from "@zr-legal/docx-engine";
@@ -313,6 +314,8 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
   const out: { card_id: string; seq: number; anchor_status: string; basis_checks: string[]; duplicate_of?: string; updated?: string; searched_found?: string[]; no_anchor?: true }[] = [];
   let seqOffset = 0;
   let relatedMissing = 0;
+  // 本任务发起时快照的本事项审查要点（v9.4 第 22 批，C1 #21）：偏离要点的卡写“要点 n”，n 须在这一版里——不让卡片编出不存在的要点
+  const rulesSnap = runRulesSnapshot(deps.db, scope.runId);
   deps.db.tx(() => {
     cards.forEach((c: any, i: number) => {
       const kind: RiskCardKind = KINDS.includes(c?.kind) ? (c.kind as RiskCardKind) : "risk";
@@ -327,6 +330,12 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
       const ruleRef = optStr(c?.rule_ref, 400);
       if (kind === "deviation" && !ruleRef) throw new DomainError("validation", `第 ${i + 1} 张卡是偏离规则类：须在 rule_ref 写明偏离的规则（编号与要点）`, 422);
       const ruleSource: RuleSource | null = RULE_SOURCES.includes(c?.rule_source) ? (c.rule_source as RuleSource) : kind === "deviation" ? "firm_rule" : null;
+      const ruleNo = ruleNoOf(ruleRef);
+      if (rulesSnap && kind === "deviation" && ruleSource === "firm_rule" && ruleNo === null)
+        throw new DomainError("validation", `第 ${i + 1} 张卡：本任务按本事项审查要点第 ${rulesSnap.version} 版审，偏离要点的卡 rule_ref 写“要点 n：条款”`, 422);
+      if (ruleNo !== null && !rulesSnap) throw new DomainError("validation", `第 ${i + 1} 张卡：本任务没有本事项审查要点，rule_ref 不要写“要点 ${ruleNo}”`, 422);
+      if (ruleNo !== null && rulesSnap && (ruleNo < 1 || ruleNo > rulesSnap.rules.length))
+        throw new DomainError("validation", `第 ${i + 1} 张卡：审查要点第 ${rulesSnap.version} 版只有 ${rulesSnap.rules.length} 条，没有要点 ${ruleNo}`, 422);
       const severity = ["high", "mid", "low"].includes(c?.severity) ? (c.severity as string) : null;
       if (!severity) throw new DomainError("validation", `第 ${i + 1} 张卡 severity 须为 high/mid/low`, 422);
       const category = ["legal", "commercial", "both"].includes(c?.category) ? (c.category as string) : "legal";
@@ -472,6 +481,8 @@ export interface RiskCardRow {
   /** 判断依据的来源：law 法律强制 / firm_rule 本所或客户规则 / general 通用建议；本批之前的卡为空。 */
   rule_source: RuleSource | null;
   rule_ref: string | null;
+  /** 卡片引用的本事项审查要点（v9.4 第 22 批）：按任务快照的那一版；没引用或找不到时不给。 */
+  rule_text?: { version: number; title: string } & ReviewRule;
   /** 缺失卡：查过的说法、查过的文件、内核复查时在材料里实际找到的说法（非空即可能误报）。 */
   searched_terms: string[];
   searched_docs: string[];
@@ -582,6 +593,42 @@ export function cardPages(deps: ReviewDeps, matterId: string, documentVersionId:
 }
 
 /**
+ * 引文在原件里的页码（v9.4 第 22 批，主文 §8“条款页码”续）：事实与表格审阅的格子同风险卡一样，PDF 等按页解析的材料按换页符数页；
+ * 给了起点（事实的锚点）直接数，只有引文（格子）的先在同一视图里定位（唯一一处才算）。Word 没有版面页码，不给。纯读。
+ */
+export function quotePages(deps: ReviewDeps, matterId: string, items: readonly { key: string; document_version_id: string | null; start?: number | null; quote?: string | null }[]): Map<string, number> {
+  const out = new Map<string, number>();
+  const views = new Map<string, string | null>();
+  for (const it of items) {
+    if (!it.document_version_id) continue;
+    if (!views.has(it.document_version_id)) {
+      const doc = deps.db.get<{ filename: string }>(`SELECT filename FROM document_versions WHERE document_version_id = ? AND matter_id = ?`, [it.document_version_id, matterId]);
+      let v: string | null = null;
+      if (doc && !doc.filename.toLowerCase().endsWith(".docx")) {
+        try {
+          v = documentView(deps, matterId, it.document_version_id).view;
+        } catch {
+          v = null;
+        }
+      }
+      views.set(it.document_version_id, v && v.includes("\f") ? v : null);
+    }
+    const view = views.get(it.document_version_id);
+    if (!view) continue;
+    let start = typeof it.start === "number" ? it.start : null;
+    if (start === null && it.quote) {
+      const loc = locateQuote(view, it.quote);
+      start = loc.status === "located" ? loc.start : null;
+    }
+    if (start === null) continue;
+    let page = 1;
+    for (let i = view.indexOf("\f"); i >= 0 && i < start; i = view.indexOf("\f", i + 1)) page++;
+    out.set(it.key, page);
+  }
+  return out;
+}
+
+/**
  * 卡片锚点在 Word 表格里时的位置（v9.4 第 21 批，评审 C1 §2 第 8 项“表格里的条款也审”）：价格表、付款节点表、违约金比例常写在附件表格里，
  * 卡片显示“表 2 第 3 行第 2 列（单价）”。Word 的文档视图是段落以换行连接，锚点起点之前的换行数即段落序号。纯读。
  */
@@ -628,7 +675,18 @@ export function listRiskCards(db: KernelDb, matterId: string, f: { run_id?: unkn
     where.push(`status IN (${statuses.map(() => "?").join(",")})`);
     args.push(...statuses);
   }
-  return db.all<any>(`SELECT * FROM risk_cards WHERE ${where.join(" AND ")} ORDER BY ${SEVERITY_ORDER}, COALESCE(anchor_start, 1e12), seq LIMIT 1000`, args).map(cardOut);
+  const rows = db.all<any>(`SELECT * FROM risk_cards WHERE ${where.join(" AND ")} ORDER BY ${SEVERITY_ORDER}, COALESCE(anchor_start, 1e12), seq LIMIT 1000`, args).map(cardOut);
+  // 卡片引用的审查要点：按那个任务快照的版本附上要点原文（工作台“按什么判断”里显示；之后要点改了也照旧显示当时那一版）
+  const snaps = new Map<string, RulesSnapshot | null>();
+  for (const c of rows) {
+    const no = ruleNoOf(c.rule_ref);
+    if (no === null || !c.run_id) continue;
+    if (!snaps.has(c.run_id)) snaps.set(c.run_id, runRulesSnapshot(db, c.run_id));
+    const snap = snaps.get(c.run_id);
+    const rule = snap?.rules.find((r) => r.no === no);
+    if (snap && rule) c.rule_text = { version: snap.version, title: snap.title, ...rule };
+  }
+  return rows;
 }
 
 export function decideRiskCard(db: KernelDb, matterId: string, userId: string, input: { card_id?: unknown; decision?: unknown; final_text?: unknown; level?: unknown }): RiskCardRow {
@@ -855,7 +913,7 @@ export function previewRedlineFromCards(
 
 export function buildRedlineFromCards(
   deps: ReviewDeps & { tokens: MatterTokenStore },
-  input: { matter_id: string; document_version_id: string; run_id?: string | null; skip_card_ids?: readonly string[]; created_by: string; audience?: RedlineAudience },
+  input: { matter_id: string; document_version_id: string; run_id?: string | null; skip_card_ids?: readonly string[]; created_by: string; audience?: RedlineAudience; author?: string | null },
 ): { result: PatchResult; cards: { card_id: string; index: number }[]; skipped: string[]; no_insert_point: string[] } {
   const skip = new Set(input.skip_card_ids ?? []);
   const audience: RedlineAudience = input.audience === "external" ? "external" : "internal";
@@ -874,7 +932,8 @@ export function buildRedlineFromCards(
         patches,
         created_by: input.created_by,
         run_id: attributedRun,
-        author: LAWYER_APPROVED_AUTHOR,
+        // 修订署名（v9.4 第 22 批，C1 #4）：这台电脑设置的署名，没设用缺省
+        author: input.author || LAWYER_APPROVED_AUTHOR,
         filename_suffix: audience === "external" ? "（修订稿·对外版）" : "（修订稿·内部版）",
       },
     );

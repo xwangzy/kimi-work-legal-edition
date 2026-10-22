@@ -131,6 +131,9 @@
     "matter_parties": [
       3
     ],
+    "matter_review_rules": [
+      7
+    ],
     "matter_suspect_reviews": [
       3
     ],
@@ -298,6 +301,9 @@
     ],
     "usage_records": [
       26
+    ],
+    "user_writing_prefs": [
+      19
     ],
     "users": [
       26

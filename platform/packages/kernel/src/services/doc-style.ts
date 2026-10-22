@@ -18,6 +18,8 @@ export interface DocStyleView {
   effective_letterhead: string | null;
   body: HouseStyle["body"];
   page_numbers: boolean;
+  /** Word 修订里显示的作者名（v9.4 第 22 批，C1 #4）：空 = 缺省“律师审定（Kimi Work 辅助起草）”。 */
+  redline_author: string | null;
   /** 律所模板：页眉页脚里的文字给律师确认（复核 R15A-09）；looks_case_specific = 像是具体案件的信息（案号、“诉”、书名号标题等）。 */
   template: { name: string; sha256: string; updated_at: string; header_text: string; footer_text: string; looks_case_specific: boolean } | null;
 }
@@ -28,6 +30,7 @@ interface Row {
   letterhead_lines: string;
   body: HouseStyle["body"];
   page_numbers: number;
+  redline_author: string | null;
   template: Buffer | null;
   template_name: string | null;
   template_sha256: string | null;
@@ -46,7 +49,7 @@ const parseCached = (sha: string, bytes: Buffer): TemplateParts | null => {
 const CASE_LIKE = /[（(]\d{4}[)）][^\n]{1,15}号|诉|代理词|起诉状|答辩状|判决|《[^》]{2,40}》/;
 
 function rowOf(db: KernelDb, tenantId: string): Row | undefined {
-  return db.get<Row>(`SELECT letterhead, letterhead_name, letterhead_lines, body, page_numbers, template, template_name, template_sha256, updated_at FROM firm_doc_style WHERE tenant_id = ?`, [tenantId]);
+  return db.get<Row>(`SELECT letterhead, letterhead_name, letterhead_lines, body, page_numbers, redline_author, template, template_name, template_sha256, updated_at FROM firm_doc_style WHERE tenant_id = ?`, [tenantId]);
 }
 
 export function docStyleView(db: KernelDb, tenantId: string, firmName: string | null): DocStyleView {
@@ -61,6 +64,7 @@ export function docStyleView(db: KernelDb, tenantId: string, firmName: string | 
     effective_letterhead: effective,
     body: r?.body ?? "song-xiaosi",
     page_numbers: r ? r.page_numbers === 1 : true,
+    redline_author: r?.redline_author ?? null,
     template: (() => {
       if (!r?.template || !r.template_sha256) return null;
       const t = parseCached(r.template_sha256, r.template);
@@ -88,21 +92,27 @@ export function houseStyleFor(db: KernelDb, tenantId: string, firmName: string |
 
 const clean = (s: unknown, max: number): string => String(s ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max);
 
-function normalize(p: Record<string, unknown>): { letterhead: "auto" | "custom" | "none"; name: string; lines: string[]; body: HouseStyle["body"]; pageNumbers: number } {
+export const REDLINE_AUTHOR_MAX = 30;
+
+function normalize(p: Record<string, unknown>): { letterhead: "auto" | "custom" | "none"; name: string; lines: string[]; body: HouseStyle["body"]; pageNumbers: number; redlineAuthor: string | null } {
   const letterhead = p.letterhead === "custom" || p.letterhead === "none" ? p.letterhead : "auto";
   const name = clean(p.letterhead_name, 40);
   if (letterhead === "custom" && !name) throw new DomainError("validation", "请填写函头上的律所名称", 422);
   const lines = (Array.isArray(p.letterhead_lines) ? p.letterhead_lines : []).map((l) => clean(l, LINE_MAX)).filter(Boolean).slice(0, 2);
-  return { letterhead, name, lines, body: p.body === "fangsong-san" ? "fangsong-san" : "song-xiaosi", pageNumbers: p.page_numbers === false ? 0 : 1 };
+  const author = String(p.redline_author ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+  if ([...author].length > REDLINE_AUTHOR_MAX) throw new DomainError("validation", `修订署名至多 ${REDLINE_AUTHOR_MAX} 字`, 422);
+  return { letterhead, name, lines, body: p.body === "fangsong-san" ? "fangsong-san" : "song-xiaosi", pageNumbers: p.page_numbers === false ? 0 : 1, redlineAuthor: author || null };
 }
 
 export function setDocStyle(db: KernelDb, tenantId: string, p: Record<string, unknown>): void {
-  const { letterhead, name, lines, body, pageNumbers } = normalize(p);
+  const { letterhead, name, lines, body, pageNumbers, redlineAuthor } = normalize(p);
+  // 没带 redline_author 的旧调用不清掉已设的署名
+  const keepAuthor = p.redline_author === undefined;
   db.run(
-    `INSERT INTO firm_doc_style (tenant_id, letterhead, letterhead_name, letterhead_lines, body, page_numbers, updated_at) VALUES (?,?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    `INSERT INTO firm_doc_style (tenant_id, letterhead, letterhead_name, letterhead_lines, body, page_numbers, redline_author, updated_at) VALUES (?,?,?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'))
      ON CONFLICT(tenant_id) DO UPDATE SET letterhead = excluded.letterhead, letterhead_name = excluded.letterhead_name, letterhead_lines = excluded.letterhead_lines,
-       body = excluded.body, page_numbers = excluded.page_numbers, updated_at = excluded.updated_at`,
-    [tenantId, letterhead, name || null, JSON.stringify(lines), body, pageNumbers],
+       body = excluded.body, page_numbers = excluded.page_numbers, redline_author = ${keepAuthor ? "firm_doc_style.redline_author" : "excluded.redline_author"}, updated_at = excluded.updated_at`,
+    [tenantId, letterhead, name || null, JSON.stringify(lines), body, pageNumbers, keepAuthor ? null : redlineAuthor],
   );
 }
 
@@ -119,4 +129,9 @@ export function setDocTemplate(db: KernelDb, tenantId: string, name: string | nu
   if (!rowOf(db, tenantId)) setDocStyle(db, tenantId, {});
   db.run(`UPDATE firm_doc_style SET template = ?, template_name = ?, template_sha256 = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE tenant_id = ?`, [bytes, bytes ? clean(name, 80) || "律所模板" : null, sha, tenantId]);
   return { sha256: sha };
+}
+
+/** 修订稿用的作者名：这台电脑设置的修订署名；没设返回 null（调用方用缺省）。 */
+export function redlineAuthorOf(db: KernelDb, tenantId: string): string | null {
+  return rowOf(db, tenantId)?.redline_author ?? null;
 }

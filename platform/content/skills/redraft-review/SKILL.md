@@ -6,7 +6,7 @@ when_to_use: 事项中有我方发出的基线稿和对方回稿两份 DOCX，�
 arguments: [baseline, current]
 kwl:
   id: redraft-review
-  version: 1.0.1
+  version: 1.1.0
   lines: [非诉, 企业法务]
   chain: contract
   tier: beta
@@ -28,6 +28,7 @@ kwl:
 2. 无法确定哪份是基线时，用提问工具一次问清（**不超过 3 问**），例如：哪一份是我方最后发出的版本？对方是否声明“已接受全部修订”？本轮重点关注哪些条款？
 3. 基线稿不是我方最后发出的版本（例如是更早的内部稿）时，比对结果会混入我方自己的改动——在清单首部写明基线来源。
 4. 用 `riskcards.list`（status = accepted、modified）取得我方上一轮已提出的修改，用于采纳跟踪；只跟踪 `changes_document` 为 true 的卡——`lawyer_status` 为 acknowledged 的卡是律师“知悉、不改动”，不是我方提出的修改，不得据此判对方“未采纳”；读不到时跳过跟踪并说明。
+5. **本事项审查要点（v1.1）**：任务说明里有【本事项审查要点 第 n 版】的，对方改动后与某条要点不符的，出卡 `kind: deviation`、`rule_source: firm_rule`、`rule_ref` 写“要点 n：条款”；触及“不可谈”的 `nature: must`、`needs_client_decision: true`。要点没写到的改动照常定性。
 
 ## 3. 步骤
 1. **整稿比对**：调用 `docx.compare`（baseline_document_version_id、current_document_version_id）。记录 stats 与 `curHasTrackedChanges`；每一处 change 记下类型（added / deleted / modified）、基线与回稿段落位置、前后文本、`silent`（未被修订标记覆盖 = 静默改动）。

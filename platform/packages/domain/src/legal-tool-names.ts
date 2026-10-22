@@ -32,6 +32,8 @@ export const LEGAL_MCP_TOOLS = [
   "calc.labor",
   // 2026-10-22 v9.4 第 21 批：诉讼费用（受理费、执行与保全申请费、支付令；确定性计算，附过程）
   "calc.court_fee",
+  // 2026-10-22 v9.4 第 22 批：从范本起草本事项的审查要点（只存草稿，律师审定启用后才用于审查）
+  "rules.propose",
 ] as const;
 
 export type LegalMcpToolName = (typeof LEGAL_MCP_TOOLS)[number];

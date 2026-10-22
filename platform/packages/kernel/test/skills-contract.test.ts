@@ -88,6 +88,8 @@ function argsFor(tool: string, skill: string): Record<string, unknown> {
       return { table_id: ids.table };
     case "table.fill":
       return { table_id: ids.table, cells: [{ document_version_id: ids.doc, column: "contract_name", value: "采购合同", quote: "采购合同" }, { document_version_id: ids.doc, column: "signed_on", status: "not_found" }] };
+    case "rules.propose":
+      return { title: "本所采购合同标准（草稿）", rules: [{ topic: "付款", standard: "验收合格后六十日内付款", fallback: "不超过九十日", red_line: "不接受预付全款" }] };
     case "outline.submit":
       return { doc_kind: skill, arguments: [{ claim: "被告应支付货款", basis: [{ law: "中华人民共和国民法典", article: 509, note: "全面履行" }] }] };
     default:
@@ -185,6 +187,7 @@ for (const s of manifest.skills) {
       assert.ok(kinds.filter((k: string) => k === "agent_table").length >= want("xlsx.render_table"), `${s.id}：表格成果`);
       if (required.includes("riskcards.submit")) assert.ok(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM risk_cards WHERE run_id = ?`, [run.run_id])!.n >= 1, `${s.id}：风险卡进工作台`);
       if (required.includes("facts.submit")) assert.ok(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM matter_facts WHERE run_id = ?`, [run.run_id])!.n >= 1, `${s.id}：事实进事实标签`);
+      if (required.includes("rules.propose")) assert.ok(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM matter_review_rules WHERE run_id = ? AND status = 'draft'`, [run.run_id])!.n >= 1, `${s.id}：审查要点草稿交律师审定`);
       if (required.includes("table.fill")) assert.ok(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM review_cells WHERE run_id = ?`, [run.run_id])!.n >= 1, `${s.id}：审阅表格子写入`);
       if (DRAFTING.has(s.id)) assert.equal(latestOutline(tk.kernel.db, run.run_id)?.status, "confirmed", `${s.id}：论点提纲经确认后才出文书`);
       // 走完确认的黄金路径：最终回复登记的草稿不带“论点未经确认”

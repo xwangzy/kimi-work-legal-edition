@@ -251,6 +251,11 @@ export function buildMatterArchive(d: ArchiveDeps, matterId: string, opts: { by:
   add("review/review-tables.json", Buffer.from(JSON.stringify(tables, null, 2), "utf8"));
   add("review/todos.json", Buffer.from(JSON.stringify(todos, null, 2), "utf8"));
   add("review/citation-decisions.json", Buffer.from(JSON.stringify(citeDecisions, null, 2), "utf8"));
+  // v9.4 第 22 批：本事项的审查要点（全部版本与草稿；AI 草稿还原代号）
+  const ruleSets = d.db
+    .all<Record<string, any>>(`SELECT rule_set_id, version, title, rules, status, source, run_id, created_by, created_at FROM matter_review_rules WHERE matter_id = ? ORDER BY created_at`, [matterId])
+    .map((r) => ({ ...r, title: restoreText(r.title), rules: (parseJson(r.rules, []) as Record<string, unknown>[]).map((x) => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, typeof v === "string" ? restoreText(v) : v]))) }));
+  add("review/review-rules.json", Buffer.from(JSON.stringify(ruleSets, null, 2), "utf8"));
 
   // 4. 签名事件链 + 业务行原样 + 设备证书 + 签发证明包
   const events = d.db.all<Record<string, any>>(`SELECT * FROM signed_events WHERE matter_id = ? ORDER BY seq`, [matterId]);

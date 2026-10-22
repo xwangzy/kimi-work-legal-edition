@@ -197,6 +197,44 @@ test("方法参数（v9.4 S1 §6.2 第 10 项）：场景卡字段作为参数�
   }
 });
 
+test("审查要点与写作偏好（v9.4 第 22 批）：审合同的任务把发起时在用的要点与律师本人的写作偏好写进模型看到的说明，要点里的当事人姓名换成代号；review_rules:false 不带要点", { timeout: 240_000 }, async () => {
+  const { inv } = tk;
+  const { matter } = await inv("matters.create", { title: "kap 审查要点", stance: "买方", consent_status: "not_required" });
+  await inv("matters.parties.upsert", { matter_id: matter.matter_id, name: "司马青青", kind: "person" });
+  await inv("review_rules.save", { matter_id: matter.matter_id, title: "客户采购标准", rules: [{ topic: "付款", standard: "验收合格后六十日内付款，经司马青青书面确认", red_line: "不接受预付全款" }] });
+  await inv("writing_prefs.set", { signature: "某某律师事务所 律师", citation: "short" });
+  const M = "KAPRULES";
+  const seen: string[] = [];
+  cloud.model.script = (body) => {
+    const msgs = Array.isArray(body.messages) ? (body.messages as { role?: string; content?: unknown }[]) : [];
+    const first = JSON.stringify(msgs.find((m) => m.role === "user")?.content ?? "");
+    if (!first.includes(M)) return null;
+    if (!seen.includes(first)) seen.push(first);
+    return { content: "已收到要点。" };
+  };
+  try {
+    for (const rr of [undefined, false]) {
+      const est = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
+      const run = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-rules-${rr}-${Date.now()}`, goal: `${M} ${rr === false ? "不用要点" : "按要点"}`, skill: "contract-review", ...(rr === false ? { review_rules: false } : {}), plan_first: false, mode: "default" });
+      const { run: fin, events } = await waitRun(inv, run.run_id, 150_000);
+      assert.equal(fin.status, "succeeded", JSON.stringify(events.map((e: any) => e.type)));
+    }
+    const withRules = seen.find((x) => x.includes("按要点"))!;
+    const without = seen.find((x) => x.includes("不用要点"))!;
+    assert.match(withRules, /【本事项审查要点 第 1 版「客户采购标准」/);
+    assert.match(withRules, /1\. 付款：我方标准：验收合格后六十日内付款/);
+    assert.match(withRules, /不可谈：不接受预付全款/);
+    assert.doesNotMatch(withRules, /司马青青/, "要点里的自然人姓名不得以原文到达模型");
+    assert.match(withRules, /【写作偏好（律师本人设定/);
+    assert.match(withRules, /法条首次写全称/);
+    assert.doesNotMatch(without, /本事项审查要点/);
+    assert.match(without, /【写作偏好/, "写作偏好与要点无关，照样带上");
+  } finally {
+    cloud.model.script = null;
+    await inv("writing_prefs.set", {});
+  }
+});
+
 test("追问（Kimi Code 集成核查 P1-1）：在上一次运行的会话上继续，模型看得到上一轮的问答；新一轮有自己的记录；跨事项与未完成的任务不能追问", { timeout: 240_000 }, async () => {
   const { inv } = tk;
   const { matter } = await inv("matters.create", { title: "kap 追问", stance: "原告", consent_status: "not_required" });
