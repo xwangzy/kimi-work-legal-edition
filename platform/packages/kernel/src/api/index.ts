@@ -77,11 +77,11 @@ import { docxHeaderFooterTexts, parseDocument } from "../services/parser.ts";
 import { detectClassifiedMarking, type ClassifiedFinding } from "../services/classified-marking.ts";
 import { restoreArtifactBytes } from "../services/export-restore.ts";
 import { decideOutline, listOutlines, scrubOutlineFacts } from "../services/argument-outlines.ts";
-import { createTable, decideCell, exportTable, getTable, listTables, TABLE_TEMPLATES } from "../services/review-tables.ts";
+import { addColumn, cellContext, createTable, decideCell, draftFromTable, exportTable, getTable, ledgerReminderCandidates, listTables, pushCellsToFacts, removeColumn, TABLE_TEMPLATES } from "../services/review-tables.ts";
 import { createTodo, deleteTodo, derivedTodos, listTodos, updateTodo } from "../services/matter-todos.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
-import { buildRedlineFromCards, cardPages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
+import { buildRedlineFromCards, decideBatch, rejectMissingCard, cardPages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, submitRiskCards } from "../services/review-cards.ts";
 import { LIT_SAMPLE_ISSUES, LIT_SAMPLE_TITLE, SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, litigationSampleMaterials, sampleContract } from "../services/sample-matter.ts";
 import { probeEnvironment, type EnvProbeResult } from "../services/env-probe.ts";
 import { firstLineTitle, isTitledFilename } from "../services/artifact-title.ts";
@@ -2696,6 +2696,22 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       audit(db, id, "riskcard.decided", "risk_card", card.card_id, sha256Hex(JSON.stringify({ decision: card.status, level: card.status === "accepted" ? card.chosen_level : null })), keyctx);
       return { card };
     },
+    // 批量接受与撤回本批（v9.4 第 20 批，C1 §2.2 第 5 条）：边界由内核把关（只收提示级与前后不一致类）；审计只记卡数
+    "riskcards.decide_batch": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const r = decideBatch(db, matter.matter_id, id.userId, { card_ids: p?.card_ids, action: p?.action, batch: p?.batch });
+      audit(db, id, "riskcard.batch_decided", "matter", matter.matter_id, sha256Hex(JSON.stringify({ action: p?.action, accepted: r.accepted.length, undone: r.undone.length, refused: r.refused.length })), keyctx);
+      return r;
+    },
+    // 缺失卡误报：驳回并记住材料里实际的说法（C1 §2.2 第 2 条）；审计不记说法文字
+    "riskcards.reject_missing": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const r = rejectMissingCard({ db, blobs, ...(tokens ? { tokens } : {}), lawdb }, { tenantId: matter.tenant_id, matterId: matter.matter_id, userId: id.userId }, { card_id: p?.card_id, term: p?.term });
+      audit(db, id, "riskcard.decided", "risk_card", r.card.card_id, sha256Hex(JSON.stringify({ decision: "rejected", remembered: !!r.remembered })), keyctx);
+      return r;
+    },
     // 律师改风险卡的性质（复核 RB16B-03）：审计只记卡号与新性质
     "riskcards.set_nature": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
@@ -2744,6 +2760,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           ...(typeof p?.document_version_id === "string" && p.document_version_id ? { document_version_id: p.document_version_id } : p?.document_version_id === null ? { document_version_id: null } : {}),
           run_id: typeof p?.run_id === "string" ? p.run_id : null,
           created_by: id.userId,
+          format: p?.format === "docx" ? "docx" : "xlsx",
         },
       );
       audit(db, id, "riskcards.table_exported", "artifact_version", r.artifact_version_id, sha256Hex(JSON.stringify({ rows: r.rows })), keyctx);
@@ -2781,6 +2798,44 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const r = exportTable({ db, blobs, tokens }, matter.matter_id, String(p?.table_id ?? ""), id.userId);
       audit(db, id, "review_table.exported", "artifact_version", r.artifact_version_id, sha256Hex(JSON.stringify({ rows: r.rows })), keyctx);
       return r;
+    },
+    // 表格审阅残余（v9.4 第 20 批，C1 §3.3）：自建列、格子看原文、推为事实、据此起草、台账设提醒
+    "tables.add_column": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const table = addColumn(db, matter.matter_id, String(p?.table_id ?? ""), { label: p?.label, hint: p?.hint, format: p?.format, options: p?.options });
+      audit(db, id, "review_table.column_added", "review_table", table.table_id, sha256Hex(JSON.stringify({ columns: table.columns.length })), keyctx);
+      return { table };
+    },
+    "tables.remove_column": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const table = removeColumn(db, matter.matter_id, String(p?.table_id ?? ""), String(p?.column ?? ""), p?.confirm === true);
+      audit(db, id, "review_table.column_removed", "review_table", table.table_id, sha256Hex(JSON.stringify({ columns: table.columns.length })), keyctx);
+      return { table };
+    },
+    "tables.cell_context": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      return cellContext({ db, blobs, ...(tokens ? { tokens } : {}) }, matter.matter_id, String(p?.table_id ?? ""), String(p?.cell_id ?? ""));
+    },
+    "tables.push_facts": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const r = pushCellsToFacts({ db, blobs, ...(tokens ? { tokens } : {}) }, { tenantId: matter.tenant_id, matterId: matter.matter_id, userId: id.userId }, String(p?.table_id ?? ""), p?.cell_ids);
+      audit(db, id, "review_table.facts_pushed", "review_table", String(p?.table_id ?? ""), sha256Hex(JSON.stringify(r)), keyctx);
+      return r;
+    },
+    "tables.draft": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      if (!tokens) throw new DomainError("provider_unavailable", "令牌化工作区未启用", 503);
+      const r = draftFromTable({ db, blobs, tokens }, matter.matter_id, String(p?.table_id ?? ""), id.userId);
+      audit(db, id, "review_table.drafted", "artifact_version", r.artifact_version_id, sha256Hex(JSON.stringify({ open: r.open })), keyctx);
+      return r;
+    },
+    "tables.reminder_candidates": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      return { candidates: ledgerReminderCandidates(db, matter.matter_id, String(p?.table_id ?? ""), localToday()) };
     },
     // 起草前的论点与依据（v9.4 第 19 批 C-04）：任务页逐条确认；文字为令牌形态，界面还原显示
     "outlines.list": (p, id) => {

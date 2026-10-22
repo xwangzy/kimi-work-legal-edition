@@ -86,3 +86,53 @@ export function formatProblem(col: Pick<TableColumnView, "format" | "options">, 
   if (col.format === "money" && !/\d/.test(v)) return "金额须含数字";
   return null;
 }
+
+// ─── v9.4 第 20 批：C-01 残余（评审 C1 §3.3）───
+
+/** 按列排序：材料名或某列显示的值；空值排后；同值按原顺序。 */
+export function sortDocs<D extends { document_version_id: string; filename: string }>(
+  docs: readonly D[],
+  key: string | null,
+  dir: 1 | -1,
+  valueOf: (doc: D, key: string) => string,
+): D[] {
+  if (!key) return [...docs];
+  const v = (d: D) => (key === "__doc" ? d.filename : valueOf(d, key));
+  return docs
+    .map((d, i) => ({ d, i, v: v(d) }))
+    .sort((a, b) => (!a.v && b.v ? 1 : a.v && !b.v ? -1 : a.v === b.v ? a.i - b.i : a.v.localeCompare(b.v, "zh-Hans-CN", { numeric: true }) * dir))
+    .map((x) => x.d);
+}
+
+/** 复核模式（J/K）：从当前格往后（step=1）或往前（-1）找下一个未核的格子，按行优先；没有返回 null。 */
+export function nextOpenCell(
+  rows: readonly { document_version_id: string }[],
+  cols: readonly { key: string }[],
+  isOpenAt: (doc: string, col: string) => boolean,
+  cur: { doc: string; col: string } | null,
+  step: 1 | -1,
+): { doc: string; col: string } | null {
+  const all = rows.flatMap((r) => cols.map((c) => ({ doc: r.document_version_id, col: c.key })));
+  if (all.length === 0) return null;
+  const at = cur ? all.findIndex((x) => x.doc === cur.doc && x.col === cur.col) : -1;
+  for (let k = 1; k <= all.length; k += 1) {
+    const i = at < 0 ? (step === 1 ? k - 1 : all.length - k) : (at + step * k + all.length * k) % all.length;
+    const x = all[i]!;
+    if (isOpenAt(x.doc, x.col)) return x;
+  }
+  return null;
+}
+
+/** 自建列的格式选项（与内核同一组）。 */
+export const COLUMN_FORMATS: readonly { value: TableColumnView["format"]; label: string }[] = [
+  { value: "text", label: "文字摘录" },
+  { value: "date", label: "日期" },
+  { value: "money", label: "金额" },
+  { value: "yesno", label: "是 / 否" },
+  { value: "choice", label: "分类（给选项）" },
+];
+
+/** “据此起草”的按钮文字：证据清单 → 证据目录；尽调摘要 → 尽调发现；台账 → 设提醒。 */
+export function draftLabel(template: TableView["template"]): string {
+  return template === "evidence_list" ? "据此起草证据目录" : template === "dd_contract_summary" ? "据此起草尽调发现" : "据此设到期提醒";
+}

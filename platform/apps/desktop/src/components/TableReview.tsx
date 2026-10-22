@@ -7,8 +7,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
-import { CELL_STATE_CLASS, CELL_STATE_TEXT, cellText, formatProblem, isOpen, tableCounts, type CellView, type TableColumnView, type TableView } from "../lib/table-review.ts";
+import { CELL_STATE_CLASS, CELL_STATE_TEXT, cellText, COLUMN_FORMATS, draftLabel, formatProblem, isOpen, nextOpenCell, sortDocs, tableCounts, type CellView, type TableColumnView, type TableView } from "../lib/table-review.ts";
+import { notifyDataChanged } from "../lib/events.ts";
 import { Select } from "./Select.tsx";
+import { ConfirmButton } from "./ConfirmButton.tsx";
 
 interface Props {
   matterId: string;
@@ -34,6 +36,12 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  // v9.4 第 20 批（C1 §3.3）：按列排序、复核模式键盘、格子看原文前后、自建列、台账设提醒
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
+  const [reviewMode, setReviewMode] = useState(false);
+  const [ctx, setCtx] = useState<{ cell: string; located: boolean; before: string; quote: string; after: string } | null>(null);
+  const [newCol, setNewCol] = useState<{ label: string; hint: string; format: TableColumnView["format"]; options: string } | null>(null);
+  const [cands, setCands] = useState<{ document_version_id: string; filename: string; column: string; label: string; date: string | null; verified: boolean; note: string; pick: boolean; due: string }[] | null>(null);
 
   const loadTables = useCallback(async () => {
     const r = await api.tables(matterId);
@@ -98,7 +106,61 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
   const tpl = templates.find((t) => t.id === creating?.template);
   const counts = grid ? tableCounts(grid.table, grid.cells) : null;
   const sel = picked && grid ? { doc: grid.docs.find((d) => d.document_version_id === picked.doc), col: grid.table.columns.find((c) => c.key === picked.col), cell: cellAt.get(`${picked.doc}\u0000${picked.col}`) } : null;
-  const rows = (grid?.docs ?? []).filter((d) => !onlyOpen || grid!.table.columns.some((c) => isOpen(cellAt.get(`${d.document_version_id}\u0000${c.key}`))));
+  const filtered = (grid?.docs ?? []).filter((d) => !onlyOpen || grid!.table.columns.some((c) => isOpen(cellAt.get(`${d.document_version_id}\u0000${c.key}`))));
+  const rows = sortDocs(filtered, sort?.key ?? null, sort?.dir ?? 1, (d, k) => cellText(cellAt.get(`${d.document_version_id}\u0000${k}`), plain));
+  const sortBy = (key: string) => setSort((cur) => (cur?.key === key ? (cur.dir === 1 ? { key, dir: -1 } : null) : { key, dir: 1 }));
+  const sortMark = (key: string) => (sort?.key === key ? (sort.dir === 1 ? " ↑" : " ↓") : "");
+  const step = (dir: 1 | -1) => {
+    if (!grid) return;
+    const next = nextOpenCell(rows, grid.table.columns, (doc, col) => isOpen(cellAt.get(`${doc}\u0000${col}`)), picked, dir);
+    if (next) {
+      setPicked(next);
+      setEdit(null);
+      setCtx(null);
+    } else setMsg({ tone: "ok", text: "没有未核的格子了。" });
+  };
+  // 复核模式（沿用工作台快捷键）：J / K 逐个未核格子，A 确认，E 改值，Esc 退出；输入框里打字时不响应
+  useEffect(() => {
+    if (!reviewMode || readOnly) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "j") step(1);
+      else if (k === "k") step(-1);
+      else if (k === "escape") setReviewMode(false);
+      else if (sel?.cell && k === "a" && sel.cell.state !== "verified" && sel.cell.state !== "edited") void decide({ cell_id: sel.cell.cell_id, decision: "verify", ...(sel.cell.updated_at ? { expected_updated_at: sel.cell.updated_at } : {}) }).then(() => step(1));
+      else if (sel?.col && k === "e") setEdit(sel.cell?.state === "edited" ? (sel.cell.lawyer_value ?? "") : plain(sel.cell?.value ?? null));
+      else return;
+      e.preventDefault();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
+  const draft = () =>
+    run(async () => {
+      if (!grid) return;
+      if (grid.table.template === "contract_ledger") {
+        const r = await api.tableReminderCandidates(matterId, grid.table.table_id);
+        if (r.candidates.length === 0) return setMsg({ tone: "ok", text: "台账里还没有到期日：先填表、核对后再设提醒。" });
+        setCands(r.candidates.map((c) => ({ ...c, pick: c.verified && !!c.date, due: c.date ?? "" })));
+        return;
+      }
+      const r = await api.tableDraft(matterId, grid.table.table_id);
+      notifyDataChanged();
+      onExported?.();
+      setMsg({ tone: "ok", text: `已生成《${r.filename}》草稿，在交付件里复核${r.open > 0 ? `；其中 ${r.open} 处没核，已标“待核”` : ""}。` });
+    });
+  const createReminders = () =>
+    run(async () => {
+      if (!cands) return;
+      const chosen = cands.filter((c) => c.pick && /^\d{4}-\d{2}-\d{2}$/.test(c.due));
+      for (const c of chosen) await api.reminderCreate({ matter_id: matterId, kind: "contract", due_date: c.due, days_before: 30, remind_time: "09:00", audience: "me", note: `${c.filename.replace(/\.[^.]+$/, "")}${c.label}` });
+      setCands(null);
+      notifyDataChanged();
+      setMsg({ tone: "ok", text: `已设 ${chosen.length} 条到期提醒（提前 30 天），在“期限提醒”里可改。` });
+    });
 
   return (
     <div className="tr">
@@ -138,6 +200,29 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
             >
               导出 Excel
             </button>
+            <button className="btn-ghost" disabled={busy} onClick={() => void draft()} title="只用你核过的格子；没核的在成果里标“待核”">
+              {draftLabel(grid.table.template)}
+            </button>
+            <button
+              className="btn-ghost"
+              disabled={busy || (counts?.done ?? 0) === 0}
+              title={(counts?.done ?? 0) === 0 ? "先核对格子" : "已核、已改的格子送进“事实”，作为你确认过的事实"}
+              onClick={() =>
+                void run(async () => {
+                  const r = await api.tablePushFacts(matterId, grid.table.table_id);
+                  notifyDataChanged();
+                  setMsg({ tone: "ok", text: `推进“事实” ${r.pushed} 条${r.already ? `，${r.already} 条以前推过` : ""}${r.not_verified ? `；${r.not_verified} 格没核，没有推` : ""}。` });
+                })
+              }
+            >
+              推为事实
+            </button>
+            <button className="btn-ghost" disabled={busy || grid.table.columns.length >= 15} onClick={() => setNewCol({ label: "", hint: "", format: "text", options: "" })}>
+              加一列
+            </button>
+            <button className={reviewMode ? "btn-primary" : "btn-ghost"} aria-pressed={reviewMode} onClick={() => { setReviewMode((v) => !v); if (!reviewMode && !picked) step(1); }} title="J / K 逐个未核的格子，A 确认，E 改值，Esc 退出">
+              复核模式
+            </button>
           </>
         )}
         {grid && (
@@ -148,6 +233,68 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
         )}
       </div>
       {msg && <div className={`banner ${msg.tone === "err" ? "banner-red" : "banner-green"}`}>{msg.text}</div>}
+      {reviewMode && <p className="muted">复核模式：J / K 到下一个、上一个未核的格子，A 确认，E 改值，Esc 退出。</p>}
+      {newCol && grid && (
+        <div className="card tr-create">
+          <div className="card-title">加一列</div>
+          <div className="tr-field">
+            <span className="rc-k">列名</span>
+            <input value={newCol.label} maxLength={20} onChange={(e) => setNewCol({ ...newCol, label: e.target.value })} placeholder="例如：保证金" aria-label="列名" />
+          </div>
+          <div className="tr-field">
+            <span className="rc-k">要找什么</span>
+            <input value={newCol.hint} maxLength={200} onChange={(e) => setNewCol({ ...newCol, hint: e.target.value })} placeholder="例如：履约保证金金额；没有写“未约定”" aria-label="填写说明" />
+          </div>
+          <div className="tr-field">
+            <span className="rc-k">格式</span>
+            <Select className="select-sm" aria-label="格式" value={newCol.format} onChange={(v) => setNewCol({ ...newCol, format: v as TableColumnView["format"] })} options={COLUMN_FORMATS.map((f) => ({ value: f.value, label: f.label }))} />
+            {newCol.format === "choice" && <input value={newCol.options} onChange={(e) => setNewCol({ ...newCol, options: e.target.value })} placeholder="选项用顿号隔开，如：买卖、租赁、服务" aria-label="选项" />}
+          </div>
+          <div className="card-actions">
+            <button
+              className="btn-primary"
+              disabled={busy || !newCol.label.trim() || !newCol.hint.trim()}
+              onClick={() =>
+                void run(async () => {
+                  await api.tableAddColumn(matterId, grid.table.table_id, { label: newCol.label.trim(), hint: newCol.hint.trim(), format: newCol.format, ...(newCol.format === "choice" ? { options: newCol.options.split(/[、,，;；\s]+/).filter(Boolean) } : {}) });
+                  setNewCol(null);
+                  await loadGrid();
+                  await loadTables();
+                })
+              }
+            >
+              加上
+            </button>
+            <button className="btn-ghost" disabled={busy} onClick={() => setNewCol(null)}>
+              取消
+            </button>
+          </div>
+          <p className="muted">新列对每份材料都是空格；“让助手填表”时一并填写。</p>
+        </div>
+      )}
+      {cands && (
+        <div className="card tr-create" role="region" aria-label="据此设到期提醒">
+          <div className="card-title">据此设到期提醒（逐条确认）</div>
+          {cands.map((c, i) => (
+            <div key={`${c.document_version_id}${c.column}`} className="tr-field">
+              <label className="lifecycle-check">
+                <input type="checkbox" checked={c.pick} disabled={!c.verified} onChange={(e) => setCands(cands.map((x, j) => (j === i ? { ...x, pick: e.target.checked } : x)))} />
+                {c.filename} · {c.label}
+              </label>
+              <input type="date" value={c.due} aria-label={`${c.filename}的${c.label}`} onChange={(e) => setCands(cands.map((x, j) => (j === i ? { ...x, due: e.target.value } : x)))} />
+              <span className="muted">{!c.verified ? "这一格还没核，先核对" : c.note}</span>
+            </div>
+          ))}
+          <div className="card-actions">
+            <button className="btn-primary" disabled={busy || !cands.some((c) => c.pick && c.due)} onClick={() => void createReminders()}>
+              设提醒（{cands.filter((c) => c.pick && c.due).length} 条，提前 30 天）
+            </button>
+            <button className="btn-ghost" disabled={busy} onClick={() => setCands(null)}>
+              取消
+            </button>
+          </div>
+        </div>
+      )}
 
       {creating && tpl && (
         <div className="card tr-create">
@@ -221,10 +368,28 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
             <table className="data tr-grid">
               <thead>
                 <tr>
-                  <th>材料</th>
+                  <th aria-sort={sort?.key === "__doc" ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
+                    <button className="th-sort" onClick={() => sortBy("__doc")}>材料{sortMark("__doc")}</button>
+                  </th>
                   {grid.table.columns.map((c) => (
-                    <th key={c.key} title={c.hint}>
-                      {c.label}
+                    <th key={c.key} title={c.hint} aria-sort={sort?.key === c.key ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
+                      <button className="th-sort" onClick={() => sortBy(c.key)}>{c.label}{sortMark(c.key)}</button>
+                      {!readOnly && c.key.startsWith("custom_") && (
+                        <ConfirmButton
+                          className="btn-link th-del"
+                          label="去掉"
+                          question={`去掉“${c.label}”这一列？这一列已核、已改的格子一并删除`}
+                          confirmLabel="去掉这一列"
+                          disabled={busy}
+                          onConfirm={() =>
+                            run(async () => {
+                              await api.tableRemoveColumn(matterId, grid.table.table_id, c.key, true);
+                              await loadGrid();
+                              await loadTables();
+                            })
+                          }
+                        />
+                      )}
                     </th>
                   ))}
                 </tr>
@@ -238,7 +403,7 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
                       const on = picked?.doc === d.document_version_id && picked.col === c.key;
                       return (
                         <td key={c.key} className={`tr-cell ${cell ? CELL_STATE_CLASS[cell.state] : "cell-empty"}${on ? " tr-cell-on" : ""}`}>
-                          <button className="tr-cell-btn" onClick={() => setPicked(on ? null : { doc: d.document_version_id, col: c.key })} aria-label={`${d.filename} · ${c.label}：${cell ? CELL_STATE_TEXT[cell.state] : "还没填"}`}>
+                          <button className="tr-cell-btn" onClick={() => { setPicked(on ? null : { doc: d.document_version_id, col: c.key }); setCtx(null); }} aria-label={`${d.filename} · ${c.label}：${cell ? CELL_STATE_TEXT[cell.state] : "还没填"}`}>
                             <span className="tr-val">{cellText(cell, plain) || (cell ? "" : "—")}</span>
                             {cell && cell.state !== "verified" && cell.state !== "edited" && <span className="tr-state">{CELL_STATE_TEXT[cell.state]}</span>}
                           </button>
@@ -273,6 +438,27 @@ export function TableReview({ matterId, docs, readOnly, onFill, onExported }: Pr
                   <span className="rc-quote">
                     {plain(sel.cell.quote)}
                     {sel.cell.anchor_status === "not_found" && <span className="rc-warn">这段原文在材料里找不到，请打开原件核对</span>}
+                    {sel.cell.anchor_status !== "not_found" && ctx?.cell !== sel.cell.cell_id && (
+                      <button className="btn-link" onClick={() => void run(async () => { const r = await api.tableCellContext(matterId, grid.table.table_id, sel.cell!.cell_id); const all = `${r.before}${r.quote}${r.after}`; if (all.includes("〔")) { const more = await restoreTokens(matterId, all); setMap((m) => new Map([...m, ...more])); } setCtx({ cell: sel.cell!.cell_id, ...r }); })}>
+                        看原文前后
+                      </button>
+                    )}
+                  </span>
+                </div>
+              )}
+              {ctx && sel.cell && ctx.cell === sel.cell.cell_id && (
+                <div className="rc-row">
+                  <span className="rc-k">材料原文</span>
+                  <span className="tr-context">
+                    {ctx.located ? (
+                      <>
+                        {plain(ctx.before)}
+                        <mark>{plain(ctx.quote)}</mark>
+                        {plain(ctx.after)}
+                      </>
+                    ) : (
+                      <span className="rc-warn">这段原文在材料里找不到，请打开原件核对</span>
+                    )}
                   </span>
                 </div>
               )}

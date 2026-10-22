@@ -814,7 +814,7 @@ export const api = {
       | { status: "preview"; reason: string; conflicts: { index: number; reason: string; detail?: string; card_id: string | null }[]; skipped: string[]; no_insert_point?: string[] }
     >("riskcards.redline", { matter_id: matterId, document_version_id: documentVersionId, ...o }),
   /** 导出审查意见表（Excel 草稿成果，C1 §2.2 第 8 条）。 */
-  exportReviewTable: (matterId: string, documentVersionId: string | null, o: { run_id?: string } = {}) =>
+  exportReviewTable: (matterId: string, documentVersionId: string | null, o: { run_id?: string; format?: "xlsx" | "docx" } = {}) =>
     invoke<{ artifact_version_id: string; filename: string; rows: number }>("riskcards.export_table", { matter_id: matterId, document_version_id: documentVersionId, ...o }),
   /** 表格审阅（C-01）：建表、读表、逐格核、导出。 */
   tableTemplates: () => invoke<{ templates: { id: string; title: string; line: string; columns: import("./lib/table-review.ts").TableColumnView[] }[] }>("tables.templates"),
@@ -826,6 +826,20 @@ export const api = {
   decideCell: (matterId: string, tableId: string, body: { cell_id?: string; document_version_id?: string; column?: string; decision: "verify" | "edit" | "reset"; value?: string; expected_updated_at?: string }) =>
     invoke<{ cell: import("./lib/table-review.ts").CellView }>("tables.decide_cell", { matter_id: matterId, table_id: tableId, ...body }),
   exportTable: (matterId: string, tableId: string) => invoke<{ artifact_version_id: string; filename: string; rows: number }>("tables.export", { matter_id: matterId, table_id: tableId }),
+  // 表格审阅残余（v9.4 第 20 批，C1 §3.3）
+  tableAddColumn: (matterId: string, tableId: string, body: { label: string; hint: string; format: string; options?: string[] }) =>
+    invoke<{ table: import("./lib/table-review.ts").TableView }>("tables.add_column", { matter_id: matterId, table_id: tableId, ...body }),
+  tableRemoveColumn: (matterId: string, tableId: string, column: string, confirm = false) => invoke<{ table: import("./lib/table-review.ts").TableView }>("tables.remove_column", { matter_id: matterId, table_id: tableId, column, confirm }),
+  tableCellContext: (matterId: string, tableId: string, cellId: string) =>
+    invoke<{ located: boolean; before: string; quote: string; after: string; filename: string }>("tables.cell_context", { matter_id: matterId, table_id: tableId, cell_id: cellId }),
+  tablePushFacts: (matterId: string, tableId: string) => invoke<{ pushed: number; already: number; not_verified: number }>("tables.push_facts", { matter_id: matterId, table_id: tableId }),
+  tableDraft: (matterId: string, tableId: string) => invoke<{ artifact_version_id: string; filename: string; open: number }>("tables.draft", { matter_id: matterId, table_id: tableId }),
+  tableReminderCandidates: (matterId: string, tableId: string) =>
+    invoke<{ candidates: { document_version_id: string; filename: string; column: string; label: string; date: string | null; verified: boolean; note: string }[] }>("tables.reminder_candidates", { matter_id: matterId, table_id: tableId }),
+  // 工作台残余（v9.4 第 20 批，C1 §2.2）
+  decideRiskBatch: (matterId: string, cardIds: string[], action: "accept" | "undo", batch?: string) =>
+    invoke<{ batch: string; accepted: string[]; refused: string[]; undone: string[] }>("riskcards.decide_batch", { matter_id: matterId, card_ids: cardIds, action, ...(batch ? { batch } : {}) }),
+  rejectMissing: (matterId: string, cardId: string, term?: string) => invoke<{ card: RiskCard; remembered: string | null }>("riskcards.reject_missing", { matter_id: matterId, card_id: cardId, ...(term ? { term } : {}) }),
   /** 起草前的论点与依据（C-04）：任务页逐条确认。 */
   outlines: (matterId: string, runId: string) => invoke<{ outlines: import("./lib/outline.ts").OutlineView[] }>("outlines.list", { matter_id: matterId, run_id: runId }),
   decideOutline: (matterId: string, outlineId: string, decisions: { arg_id: string; keep: boolean; claim?: string; basis_keep?: number[] }[], note: string) =>

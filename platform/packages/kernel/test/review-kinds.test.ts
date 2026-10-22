@@ -221,3 +221,58 @@ test("复核 Q2-07 / Q2-08 / Q2-21：没写插入位置的缺失卡不算“引�
   assert.deepEqual(ip.searched_terms, ["著作权", "知识产权"]);
   assert.deepEqual(ip.searched_found.map((f: any) => f.term), ["知识产权"], "重新复查");
 });
+
+test("v9.4 第 20 批 C-02 残余：批量接受只收提示级与前后不一致类（重大、必须改、缺失、需客户决定不收）、撤回本批；误报驳回并记住说法（须在材料里出现）后同组缺失卡复查一起找；意见表 Word 版", { timeout: 60_000 }, async () => {
+  const s = await setup("批量与误报");
+  submitRiskCards(s.deps, s.scope, {
+    document_version_id: s.doc.document_version_id,
+    cards: [
+      { kind: "consistency", rule_source: "general", anchor_text: "按日万分之五支付违约金", severity: "mid", issue: "比例口径不一", suggestion: "按日万分之三支付违约金" },
+      { anchor_text: "逾期付款的", severity: "low", issue: "措辞", suggestion: "逾期支付的" },
+      { anchor_text: "买方应于验收合格后九十日内支付货款。", severity: "high", issue: "付款期限", suggestion: "三十日内" },
+      { anchor_text: "争议提交卖方所在地人民法院诉讼解决。", severity: "low", issue: "管辖", suggestion: "买方所在地", needs_client_decision: true },
+      { kind: "missing", searched_terms: ["成果归属", "工作成果"], severity: "low", issue: "未约定成果归属", suggestion: "工作成果归买方所有。" },
+      { anchor_text: "双方对本合同内容负有保密义务。", severity: "low", nature: "must", issue: "保密范围", suggestion: "双方对本合同内容及履行中知悉的商业秘密负有保密义务。" },
+      { anchor_text: "验收合格后", severity: "mid", nature: "negotiable", issue: "一般风险", suggestion: "到货后" },
+    ],
+  });
+  const m = s.matter.matter_id;
+  const cards = (await tk.inv("riskcards.list", { matter_id: m })).cards as any[];
+  const id = (issue: string) => cards.find((c) => c.issue === issue).card_id;
+  const all = cards.map((c) => c.card_id);
+  const r = await tk.inv("riskcards.decide_batch", { matter_id: m, card_ids: all, action: "accept" });
+  assert.deepEqual(new Set(r.accepted), new Set([id("比例口径不一"), id("措辞")]));
+  assert.equal(r.refused.length, 5, "一般级的普通风险卡也不进批量");
+  assert.ok(r.batch.startsWith("cbt_"));
+  let after = (await tk.inv("riskcards.list", { matter_id: m })).cards as any[];
+  assert.equal(after.filter((c) => c.status === "accepted").length, 2);
+  const u = await tk.inv("riskcards.decide_batch", { matter_id: m, card_ids: r.accepted, action: "undo", batch: r.batch });
+  assert.equal(u.undone.length, 2);
+  after = (await tk.inv("riskcards.list", { matter_id: m })).cards as any[];
+  assert.equal(after.filter((c) => c.status === "accepted").length, 0, "撤回本批");
+
+  // 误报：材料里写的是“知识产权归买方所有”——说法须在材料里出现过
+  const miss = id("未约定成果归属");
+  await assert.rejects(tk.inv("riskcards.reject_missing", { matter_id: m, card_id: id("措辞"), term: "x" }), /只有缺失类/);
+  await assert.rejects(tk.inv("riskcards.reject_missing", { matter_id: m, card_id: miss, term: "成果权属约定" }), /没找到/);
+  const rj = await tk.inv("riskcards.reject_missing", { matter_id: m, card_id: miss, term: "知识产权归买方" });
+  assert.equal(rj.card.status, "rejected");
+  assert.equal(rj.remembered, "知识产权归买方");
+  // 以后同组（“工作成果”）的缺失卡：复查连补的说法一起找，标可能误报
+  const again = submitRiskCards(s.deps, s.scope, { document_version_id: s.doc.document_version_id, cards: [{ kind: "missing", searched_terms: ["工作成果归属"], severity: "low", issue: "成果归属（另一次）", suggestion: "成果归买方。" }] });
+  assert.equal(again.cards[0]!.searched_found, undefined, "说法组不相交：不扩展");
+  const again2 = submitRiskCards(s.deps, s.scope, { document_version_id: s.doc.document_version_id, cards: [{ kind: "missing", searched_terms: ["工作成果", "成果所有权"], severity: "low", issue: "成果归属（第三次）", suggestion: "成果归买方。" }] });
+  assert.ok(again2.cards[0]!.searched_found?.includes("知识产权归买方"), "同组：律师补的说法一起找");
+  // 不记说法文字的审计
+  assert.ok(!JSON.stringify(tk.kernel.db.all(`SELECT * FROM audit_events WHERE action = 'riskcard.decided'`, [])).includes("知识产权归买方"));
+
+  // 意见表 Word 版
+  const w = await tk.inv("riskcards.export_table", { matter_id: m, document_version_id: s.doc.document_version_id, format: "docx" });
+  assert.match(w.filename, /（审查意见表）\.docx$/);
+  const art = tk.kernel.db.get<{ storage_uri: string; kind: string }>(`SELECT storage_uri, kind FROM artifact_versions WHERE artifact_version_id = ?`, [w.artifact_version_id])!;
+  assert.equal(art.kind, "review_table_docx");
+  const xml = readZipText(tk.kernel.blobs.read(art.storage_uri), "word/document.xml")!;
+  assert.ok(xml.includes("合同审查意见表") && xml.includes("判断依据") && xml.includes("付款期限"));
+  const x = await tk.inv("riskcards.export_table", { matter_id: m, document_version_id: s.doc.document_version_id });
+  assert.match(x.filename, /\.xlsx$/, "缺省仍是 Excel");
+});

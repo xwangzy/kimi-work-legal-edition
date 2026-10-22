@@ -9,7 +9,7 @@
 import { scrollBehavior } from "../lib/ui-prefs.ts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { kernelPreview, localPreview, type AcceptPreview } from "../lib/accept-preview.ts";
-import { agreementParts, firstOpenCard, nextOpenCard, stepCard } from "../lib/workbench.ts";
+import { agreementParts, batchEligible, firstOpenCard, nextOpenCard, stepCard } from "../lib/workbench.ts";
 import { api, type RiskCard, type RiskProgress } from "../api.ts";
 import { CITE_STATE_LABELS } from "../lib/labels.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
@@ -71,6 +71,12 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   const autoOpened = useRef(false);
   // 修订稿两版（C1 §2.2 第 6 条）：缺省对外版（只有修订，不带内部理由与规则）
   const [audience, setAudience] = useState<"external" | "internal">("external");
+  // v9.4 第 20 批（C1 §2.2 第 5、2、8 条）：批量接受的勾选与“撤回本批”、缺失卡误报驳回、意见表格式
+  const [batchMode, setBatchMode] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [lastBatch, setLastBatch] = useState<{ batch: string; ids: string[] } | null>(null);
+  const [falsePos, setFalsePos] = useState<{ id: string; term: string } | null>(null);
+  const [tableFormat, setTableFormat] = useState<"xlsx" | "docx">("xlsx");
 
   const load = useCallback(async (): Promise<RiskCard[]> => {
     const r = await api.riskCards(matterId, { document_version_id: documentVersionId, ...(runFilter ? { run_id: runFilter } : {}) });
@@ -196,7 +202,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       if (r.status === "applied") {
         setMsg({
           tone: "ok",
-          text: `已生成修订稿《${r.filename}》：${r.applied} 处修改以 Word 修订${audience === "internal" ? "和批注" : ""}写入（原件未改动）${r.skipped.length ? `；跳过 ${r.skipped.length} 项` : ""}${noPoint}。`,
+          text: `已生成${audience === "internal" ? "内部版" : "对外版"}修订稿《${r.filename}》：${r.applied} 处修改以 Word 修订${audience === "internal" ? "和批注" : ""}写入（原件未改动）${r.skipped.length ? `；跳过 ${r.skipped.length} 项` : ""}${noPoint}。${audience === "external" ? "对外版不含内部批注；发出前请再看一遍修订署名。" : "内部版带理由与规则批注，不要直接发给对方。"}`,
           artifact: r.artifact_version_id,
         });
         onRedline?.(r.artifact_version_id);
@@ -222,7 +228,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
     setBusy(true);
     setMsg(null);
     try {
-      const r = await api.exportReviewTable(matterId, documentVersionId, runFilter ? { run_id: runFilter } : {});
+      const r = await api.exportReviewTable(matterId, documentVersionId, { ...(runFilter ? { run_id: runFilter } : {}), format: tableFormat });
       // 不带“查看修订稿”按钮（那是修订稿的入口）：意见表在交付件里下载
       setMsg({ tone: "ok", text: `已导出《${r.filename}》：${r.rows} 项意见，在交付件里下载。` });
       onRedline?.(r.artifact_version_id);
@@ -232,6 +238,42 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       setBusy(false);
     }
   };
+
+  const runBusy = async (f: () => Promise<void>) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await f();
+    } catch (e) {
+      setMsg({ tone: "err", text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const acceptBatch = () =>
+    runBusy(async () => {
+      const r = await api.decideRiskBatch(matterId, [...picked], "accept");
+      setLastBatch({ batch: r.batch, ids: r.accepted });
+      setPicked(new Set());
+      setBatchMode(false);
+      await load();
+      setMsg({ tone: "ok", text: `已接受 ${r.accepted.length} 项${r.refused.length ? `；${r.refused.length} 项不能批量，请逐张处理` : ""}。` });
+    });
+  const undoBatch = () =>
+    runBusy(async () => {
+      if (!lastBatch) return;
+      const r = await api.decideRiskBatch(matterId, lastBatch.ids, "undo", lastBatch.batch);
+      setLastBatch(null);
+      await load();
+      setMsg({ tone: "ok", text: `已撤回本批 ${r.undone.length} 项，回到待处理。` });
+    });
+  const rejectFalsePositive = (card: RiskCard, term: string) =>
+    runBusy(async () => {
+      const r = await api.rejectMissing(matterId, card.card_id, term.trim() || undefined);
+      setFalsePos(null);
+      await load();
+      setMsg({ tone: "ok", text: r.remembered ? `已驳回，并记住说法“${r.remembered}”：以后同类缺失卡复查时一起找。` : "已按误报驳回。" });
+    });
 
   const focusCard = (id: string) => {
     setActive(id);
@@ -320,10 +362,25 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
             </>
           )}
           {!readOnly && cards.length > 0 && (
-            <button className="btn-ghost" disabled={busy} onClick={() => void exportTable()} title="条款、问题、类型、等级、规则、依据、建议与你的决定，一行一项">
-              导出审查意见表
-            </button>
+            <>
+              <Select
+                className="select-sm"
+                aria-label="审查意见表格式"
+                value={tableFormat}
+                disabled={busy}
+                onChange={(v) => setTableFormat(v === "docx" ? "docx" : "xlsx")}
+                options={[
+                  { value: "xlsx", label: "意见表 Excel" },
+                  { value: "docx", label: "意见表 Word" },
+                ]}
+              />
+              <button className="btn-ghost" disabled={busy} onClick={() => void exportTable()} title="条款、问题、类型、等级、规则、依据、建议与你的决定，一行一项">
+                导出审查意见表
+              </button>
+            </>
           )}
+          {/* 对外版的可见提示（C1 §2.2 第 6 条）：生成前就说清对外版里没有什么 */}
+          {documentVersionId && !readOnly && audience === "external" && <div className="wb-why muted">对外版只有修订，不带批注、理由、规则号和底线</div>}
           {/* 置灰原因与“先生成”（W-2）：未处理的卡不写进修订稿 */}
           {documentVersionId && !readOnly && progress && progress.total > 0 && !allDecided && (
             <div className="wb-why muted">
@@ -439,6 +496,25 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
               </button>
             ))}
           </div>
+          {/* 批量接受（C1 §2.2 第 5 条）：只对提示级和前后不一致类开放；重大、必须修改、缺失、需客户决定的不能勾 */}
+          {!readOnly && cards.some((c) => batchEligible({ ...c, nature: natureOf(c) })) && (
+            <div className="wb-batch">
+              {!batchMode ? (
+                <button className="btn-link" onClick={() => { setBatchMode(true); setPicked(new Set(cards.filter((c) => batchEligible({ ...c, nature: natureOf(c) })).map((c) => c.card_id))); }}>
+                  批量接受提示级与前后不一致（{cards.filter((c) => batchEligible({ ...c, nature: natureOf(c) })).length} 项）
+                </button>
+              ) : (
+                <>
+                  <span className="muted">勾选要一起接受的；重大、必须修改、缺失和需客户决定的不能勾</span>
+                  <button className="btn-primary" disabled={busy || picked.size === 0} onClick={() => void acceptBatch()}>接受所选 {picked.size} 项</button>
+                  <button className="btn-ghost" disabled={busy} onClick={() => { setBatchMode(false); setPicked(new Set()); }}>取消</button>
+                </>
+              )}
+              {lastBatch && lastBatch.ids.length > 0 && !batchMode && (
+                <button className="btn-link" disabled={busy} onClick={() => void undoBatch()}>撤回本批（{lastBatch.ids.length} 项）</button>
+              )}
+            </div>
+          )}
           {/* 快捷键收进悬停提示（v9.4 U1 #14），不再常驻一行 */}
           {!readOnly && cards.length > 0 && <div className="wb-keys muted" title="J / K 切换 · A 接受 · E 修改 · N 不采纳">键盘快捷键</div>}
           {visible.length === 0 && <p className="muted">没有符合条件的风险项。</p>}
@@ -455,6 +531,16 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                 onMouseEnter={() => hoverCard(c.card_id)}
                 onMouseLeave={() => setHover(null)}
               >
+                {batchMode && batchEligible({ ...c, nature: natureOf(c) }) && (
+                  <label className="rc-batch">
+                    <input
+                      type="checkbox"
+                      checked={picked.has(c.card_id)}
+                      aria-label={`一起接受：${plain(c.issue)}`}
+                      onChange={(e) => setPicked((s0) => { const n = new Set(s0); if (e.target.checked) n.add(c.card_id); else n.delete(c.card_id); return n; })}
+                    />
+                  </label>
+                )}
                 <button className="rc-head" aria-expanded={open} onClick={() => setActive(open ? null : c.card_id)}>
                   <span className={`rc-sev ${sev.cls}`}>{sev.label}</span>
                   <span className={`pill ${NATURE_PILL[natureOf(c)]}`} title={c.nature_inferred ? "按类别与严重程度推定，可在展开后修改" : undefined}>
@@ -601,6 +687,20 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                         )}
                         <button className="btn-ghost" disabled={busy} onClick={() => setEditing({ id: c.card_id, text: plain(c.suggestion) || plain(c.anchor_text) })}>修改后接受</button>
                         <button className="btn-ghost" disabled={busy} onClick={() => void decide(c, "reject")}>不采纳</button>
+                        {kindOf(c) === "missing" && falsePos?.id !== c.card_id && (
+                          <button className="btn-link" disabled={busy} onClick={() => setFalsePos({ id: c.card_id, term: "" })} title="材料里其实有：驳回，并把材料里的说法记下来，以后一起找">
+                            误报：其实有
+                          </button>
+                        )}
+                        {falsePos?.id === c.card_id && (
+                          <span className="rc-falsepos">
+                            <input value={falsePos.term} maxLength={30} onChange={(e) => setFalsePos({ id: c.card_id, term: e.target.value })} placeholder="材料里的说法，如：成果归甲方所有" aria-label="材料里实际的说法" />
+                            <button className="btn btn-sm" disabled={busy || (!!falsePos.term.trim() && falsePos.term.trim().length < 2)} onClick={() => void rejectFalsePositive(c, falsePos.term)}>
+                              {falsePos.term.trim() ? "驳回并记住" : "只驳回"}
+                            </button>
+                            <button className="btn-link" onClick={() => setFalsePos(null)}>取消</button>
+                          </span>
+                        )}
                       </div>
                     ) : (
                       <div className="rc-actions">

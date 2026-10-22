@@ -44,3 +44,13 @@ export function agreementParts(p: { stance?: string | null; method?: string | nu
   if (typeof p.total === "number" && p.total > 0) out.push(`已处理 ${p.decided ?? 0}/${p.total}`);
   return out;
 }
+
+/**
+ * 批量接受的边界（v9.4 第 20 批，C1 §2.2 第 5 条；与内核 review-cards.ts batchEligible 同一判定）：
+ * 只对“提示”级和前后不一致类开放；重大、必须修改、缺失、需客户决定、没有建议文本的不进批量。
+ */
+export function batchEligible(c: { status: string; suggestion?: string | null; kind?: string | null; needs_client_decision?: boolean | number | null; nature?: string | null; severity: string }): boolean {
+  if (c.status !== "proposed" || !(c.suggestion ?? "").trim()) return false;
+  if (c.kind === "missing" || !!c.needs_client_decision || c.nature === "must" || c.severity === "high") return false;
+  return c.severity === "low" || c.kind === "consistency";
+}

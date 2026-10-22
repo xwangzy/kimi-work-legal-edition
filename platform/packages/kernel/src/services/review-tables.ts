@@ -12,7 +12,7 @@
  * 文字按 Agent 提交时的令牌形态保存（同风险卡）；律师改写的值为原文（lawyer_value）。
  */
 import { DomainError, newId, notFound, sha256Hex } from "@zr-legal/domain";
-import { createXlsx, extractParagraphs } from "@zr-legal/docx-engine";
+import { createStyledDocx, createXlsx, extractParagraphs, type DocBlock } from "@zr-legal/docx-engine";
 import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
@@ -85,7 +85,7 @@ export const TABLE_TEMPLATES: readonly TableTemplate[] = [
   },
 ];
 
-export const TABLE_LIMITS = { docs: 200, cellsPerCall: 400, value: 1_000, quote: 1_000, tablesPerMatter: 50 } as const;
+export const TABLE_LIMITS = { docs: 200, cellsPerCall: 400, value: 1_000, quote: 1_000, tablesPerMatter: 50, columns: 15 } as const;
 
 export type CellState = "ai" | "not_found" | "unreadable" | "conflict" | "verified" | "edited";
 const LOCKED: ReadonlySet<CellState> = new Set(["verified", "edited"]);
@@ -419,4 +419,205 @@ export function exportTable(deps: { db: KernelDb; blobs: BlobStore; tokens: Matt
     );
   });
   return { artifact_version_id: id, filename, rows: docs.length };
+}
+
+// ─── v9.4 第 20 批：C-01 残余（评审 C1 §3.3）──────────────────────────────────────────────
+
+const FORMATS: readonly ColumnFormat[] = ["text", "date", "money", "yesno", "choice"];
+
+/**
+ * 律师自己加一列（C1 §1 #12：用一句话建列，列有格式）：列名、填写说明（给助手看，必填）、格式（日期 / 金额 / 是否 / 分类 / 文字），分类要给选项。
+ * 至多 15 列；列编号 custom_n。新列对已有材料都是空格，“让助手填表”时一并填。
+ */
+export function addColumn(db: KernelDb, matterId: string, tableId: string, input: { label?: unknown; hint?: unknown; format?: unknown; options?: unknown }): TableRow {
+  const { table } = getTable(db, matterId, tableId);
+  const label = str(input.label, 20);
+  const hint = str(input.hint, 200);
+  const format = String(input.format ?? "text") as ColumnFormat;
+  if (!label) throw new DomainError("validation", "请写列名", 422);
+  if (!hint) throw new DomainError("validation", "请写这一列要助手找什么、找不到时写什么（填写说明）", 422);
+  if (!FORMATS.includes(format)) throw new DomainError("validation", `格式须为 ${FORMATS.join(" / ")}`, 422);
+  if (table.columns.some((c) => c.label === label)) throw new DomainError("validation", "已有同名的列", 422);
+  if (table.columns.length >= TABLE_LIMITS.columns) throw new DomainError("validation", `一张表至多 ${TABLE_LIMITS.columns} 列`, 422);
+  let options: string[] | undefined;
+  if (format === "choice") {
+    options = (Array.isArray(input.options) ? input.options : []).map((o) => str(o, 20)).filter(Boolean);
+    options = [...new Set(options)];
+    if (options.length < 2 || options.length > 10) throw new DomainError("validation", "分类列要给 2～10 个选项", 422);
+  }
+  const n = Math.max(0, ...table.columns.map((c) => (/^custom_(\d+)$/.exec(c.key) ? Number(/^custom_(\d+)$/.exec(c.key)![1]) : 0))) + 1;
+  const col: TableColumn = { key: `custom_${n}`, label, format, hint, ...(options ? { options } : {}) };
+  db.run(`UPDATE review_tables SET columns = ? WHERE table_id = ?`, [JSON.stringify([...table.columns, col]), tableId]);
+  return getTable(db, matterId, tableId).table;
+}
+
+/** 去掉律师自己加的列（模板列不能去）；这一列已核、已改的格子一并删除——须明确确认。 */
+export function removeColumn(db: KernelDb, matterId: string, tableId: string, key: string, confirm: boolean): TableRow {
+  const { table } = getTable(db, matterId, tableId);
+  if (!/^custom_\d+$/.test(key) || !table.columns.some((c) => c.key === key)) throw new DomainError("validation", "只能去掉自己加的列", 422);
+  const locked = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM review_cells WHERE table_id = ? AND col_key = ? AND state IN ('verified','edited')`, [tableId, key])!.n;
+  if (locked > 0 && !confirm) throw new DomainError("conflict", `这一列有 ${locked} 格你已核或已改：确认后一并删除`, 409, { locked });
+  db.tx(() => {
+    db.run(`DELETE FROM review_cells WHERE table_id = ? AND col_key = ?`, [tableId, key]);
+    db.run(`UPDATE review_tables SET columns = ? WHERE table_id = ?`, [JSON.stringify(table.columns.filter((c) => c.key !== key)), tableId]);
+  });
+  return getTable(db, matterId, tableId).table;
+}
+
+/**
+ * 格子点开看原文（C1 §3.3“角标：点开在右侧预览原文并高亮那一段”）：引文在材料里的前后各约 200 字（令牌形态，界面还原）；
+ * 找不到引文时 located=false，只给引文本身。
+ */
+export function cellContext(deps: { db: KernelDb; blobs: BlobStore; tokens?: MatterTokenStore }, matterId: string, tableId: string, cellId: string): { located: boolean; before: string; quote: string; after: string; filename: string } {
+  const { docs } = getTable(deps.db, matterId, tableId);
+  const cell = deps.db.get<any>(`SELECT * FROM review_cells WHERE cell_id = ? AND table_id = ?`, [cellId, tableId]);
+  if (!cell || !docs.some((d) => d.document_version_id === cell.document_version_id)) throw notFound("格子");
+  const filename = docs.find((d) => d.document_version_id === cell.document_version_id)!.filename;
+  const quote = String(cell.quote ?? "");
+  if (!quote) return { located: false, before: "", quote: "", after: "", filename };
+  const view = viewOf(deps, matterId, cell.document_version_id);
+  const loc = locateQuote(view, quote);
+  if (loc.start === null || loc.end === null) return { located: false, before: "", quote, after: "", filename };
+  const a = Math.max(0, loc.start - 200);
+  const b = Math.min(view.length, loc.end + 200);
+  return { located: true, before: (a > 0 ? "…" : "") + view.slice(a, loc.start), quote: view.slice(loc.start, loc.end), after: view.slice(loc.end, b) + (b < view.length ? "…" : ""), filename };
+}
+
+/** 格子写成一句事实：“《采购合同》签署日：2026-03-01”；律师改过的用律师的值（令牌化后存，与事实行同一形态）。 */
+function cellStatement(deps: { tokens?: MatterTokenStore }, matterId: string, col: TableColumn, filename: string, cell: any): string {
+  const v = cell.state === "edited" ? (deps.tokens ? deps.tokens.tokenize(matterId, cell.lawyer_value ?? "").text : (cell.lawyer_value ?? "")) : (cell.value ?? "确认没有");
+  return `${filename.replace(/\.[^.]+$/, "")}：${col.label}为${v}`.slice(0, 1000);
+}
+
+/**
+ * 推为事实（C1 §3.3）：只推律师已核、已改的格子，作为律师已确认的事实行进“事实”标签（与事实确认流同一张表，不另起一套）；
+ * 日期列的值写进事实日期（只到月的照写）；已推过的不重复推。返回新推的条数与跳过的原因。
+ */
+export function pushCellsToFacts(deps: { db: KernelDb; blobs: BlobStore; tokens?: MatterTokenStore }, scope: { tenantId: string; matterId: string; userId: string }, tableId: string, cellIds?: unknown): { pushed: number; already: number; not_verified: number } {
+  const { table, cells, docs } = getTable(deps.db, scope.matterId, tableId);
+  const want = Array.isArray(cellIds) ? new Set(cellIds.map(String)) : null;
+  const picked = cells.filter((c) => !want || want.has(c.cell_id));
+  let pushed = 0;
+  let already = 0;
+  let notVerified = 0;
+  deps.db.tx(() => {
+    const base = deps.db.get<{ mx: number | null }>(`SELECT MAX(seq) AS mx FROM matter_facts WHERE matter_id = ? AND run_id IS NULL`, [scope.matterId])!.mx ?? 0;
+    for (const c of picked) {
+      const row = deps.db.get<any>(`SELECT * FROM review_cells WHERE cell_id = ?`, [c.cell_id])!;
+      if (row.state !== "verified" && row.state !== "edited") {
+        notVerified += 1;
+        continue;
+      }
+      if (row.fact_id && deps.db.get(`SELECT 1 AS x FROM matter_facts WHERE fact_id = ?`, [row.fact_id])) {
+        already += 1;
+        continue;
+      }
+      const col = table.columns.find((x) => x.key === row.col_key);
+      const doc = docs.find((d) => d.document_version_id === row.document_version_id);
+      if (!col || !doc) continue;
+      const value = row.state === "edited" ? String(row.lawyer_value ?? "") : String(row.value ?? "");
+      const occurredOn = col.format === "date" && /^\d{4}-\d{2}(?:-\d{2})?$/.test(value) ? value : null;
+      const loc = row.quote ? locateQuote(viewOf(deps, scope.matterId, row.document_version_id), row.quote) : { status: "not_found", start: null, end: null };
+      const id = newId("fact");
+      const now = new Date().toISOString();
+      pushed += 1;
+      deps.db.run(
+        `INSERT INTO matter_facts (fact_id, tenant_id, matter_id, run_id, seq, statement, kind, occurred_on, amount_yuan, party, document_version_id, quote, anchor_start, anchor_end, anchor_status, status, decided_by, decided_at)
+         VALUES (?,?,?,NULL,?,?, 'confirmed', ?, NULL, NULL, ?,?,?,?,?, 'confirmed', ?, ?)`,
+        [id, scope.tenantId, scope.matterId, base + pushed, cellStatement(deps, scope.matterId, col, doc.filename, row), occurredOn, row.document_version_id, row.quote ?? null, loc.start, loc.end, row.quote ? loc.status : "not_found", scope.userId, now],
+      );
+      deps.db.run(`UPDATE review_cells SET fact_id = ? WHERE cell_id = ?`, [id, row.cell_id]);
+    }
+  });
+  return { pushed, already, not_verified: notVerified };
+}
+
+/**
+ * 据此起草（C1 §3.3）：证据清单 → 证据目录（Word）；合同尽调摘要 → 尽调发现草稿（Word）。只用律师已核、已改的格子，
+ * 没核的照写但标“【待核】”，没找到、读取差如实写；成果是草稿，按普通成果复核签发。合同台账见 ledgerReminderCandidates。
+ */
+export function draftFromTable(deps: { db: KernelDb; blobs: BlobStore; tokens: MatterTokenStore }, matterId: string, tableId: string, createdBy: string): { artifact_version_id: string; filename: string; open: number } {
+  const { table, cells, docs } = getTable(deps.db, matterId, tableId);
+  if (table.template === "contract_ledger") throw new DomainError("validation", "合同台账用“据此设提醒”：逐条确认后创建期限提醒", 422);
+  const at = new Map(cells.map((c) => [`${c.document_version_id}\u0000${c.col_key}`, c]));
+  let open = 0;
+  const text = (docId: string, key: string): string => {
+    const c = at.get(`${docId}\u0000${key}`);
+    if (!c) {
+      open += 1;
+      return "【未填】";
+    }
+    if (c.state === "edited") return deps.tokens.tokenize(matterId, c.lawyer_value ?? "").text;
+    if (c.state === "verified") return c.value ?? "（经核没有）";
+    if (c.state === "not_found") {
+      open += 1;
+      return "【没找到，待核】";
+    }
+    if (c.state === "unreadable") {
+      open += 1;
+      return "【读取差，待核原件】";
+    }
+    open += 1;
+    return `${c.value ?? ""}${STATE_TEXT[c.state]}`;
+  };
+  const blocks: DocBlock[] = [];
+  let title: string;
+  if (table.template === "evidence_list") {
+    title = "证据目录";
+    blocks.push({ kind: "title", text: title });
+    const head = ["序号", ...table.columns.map((c) => c.label)];
+    blocks.push({ kind: "table", rows: [head.map((h) => [{ text: h, bold: true }]), ...docs.map((d, i) => [[{ text: String(i + 1) }], ...table.columns.map((c) => [{ text: text(d.document_version_id, c.key) }])])] });
+  } else {
+    title = "尽职调查发现（合同部分，内部稿）";
+    blocks.push({ kind: "title", text: title });
+    docs.forEach((d, i) => {
+      blocks.push({ kind: "h1", text: `${i + 1}. ${d.filename.replace(/\.[^.]+$/, "")}` });
+      for (const c of table.columns) blocks.push({ kind: "p", runs: [{ text: `${c.label}：`, bold: true }, { text: text(d.document_version_id, c.key) }] });
+    });
+  }
+  blocks.push({ kind: "p", runs: [{ text: open > 0 ? `说明：本稿依据审阅表《${table.title}》生成，其中 ${open} 处律师尚未核对，已标“待核”，签发前须逐项核对。` : `说明：本稿依据审阅表《${table.title}》生成，所列内容均经律师逐格核对。` }] });
+  const buf = createStyledDocx(blocks);
+  const matter = deps.db.get<{ tenant_id: string }>(`SELECT tenant_id FROM matters WHERE matter_id = ?`, [matterId])!;
+  const stored = deps.blobs.put(buf, matterId);
+  const id = newId("artifactVersion");
+  const kind = table.template === "evidence_list" ? "evidence_index" : "dd_findings";
+  const filename = `${title.replace(/（.*）/, "")}（${table.title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").slice(0, 30)}）.docx`;
+  const openItems = open > 0 ? [{ kind: "table_cells_unverified", count: open, note: `${open} 处来自审阅表的内容律师尚未核对` }] : [];
+  deps.db.tx(() => {
+    const v = deps.db.get<{ next: number }>(`SELECT COALESCE(MAX(version), 0) + 1 AS next FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = 'internal'`, [matterId, kind])!;
+    deps.db.run(
+      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by)
+       VALUES (?,?,?,NULL,?,?,NULL,'internal','draft',?,?,?,?,?,?)`,
+      [id, matter.tenant_id, matterId, kind, v.next, filename, stored.sha256, stored.storage_uri, JSON.stringify(openItems), JSON.stringify({ table_id: tableId, template: table.template, documents: docs.length, open_cells: open }), createdBy],
+    );
+  });
+  return { artifact_version_id: id, filename, open };
+}
+
+/**
+ * 合同台账 → 期限提醒的候选（C1 §3.3“逐条确认后创建”）：到期日列每份一条（律师已核、已改的才可勾选创建；
+ * 只到月或已过的不给日期，律师自己填）。不在这里创建：界面逐条确认后经 reminders.create 创建。
+ */
+export function ledgerReminderCandidates(db: KernelDb, matterId: string, tableId: string, today: string): { document_version_id: string; filename: string; column: string; label: string; date: string | null; verified: boolean; note: string }[] {
+  const { table, cells, docs } = getTable(db, matterId, tableId);
+  if (table.template !== "contract_ledger") throw new DomainError("validation", "只有合同台账可以据此设提醒", 422);
+  const dateCols = table.columns.filter((c) => c.format === "date" && c.key !== "signed_on");
+  const out: ReturnType<typeof ledgerReminderCandidates> = [];
+  for (const d of docs)
+    for (const col of dateCols) {
+      const c = cells.find((x) => x.document_version_id === d.document_version_id && x.col_key === col.key);
+      const v = c ? (c.state === "edited" ? c.lawyer_value : c.value) : null;
+      if (!c || !v) continue;
+      const full = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+      out.push({
+        document_version_id: d.document_version_id,
+        filename: d.filename,
+        column: col.key,
+        label: col.label,
+        date: full && full > today ? full : null,
+        verified: c.state === "verified" || c.state === "edited",
+        note: !full ? "只到月：请自己填具体日期" : full <= today ? "已经过了" : "",
+      });
+    }
+  return out;
 }

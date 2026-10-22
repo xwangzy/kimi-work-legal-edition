@@ -13,7 +13,7 @@
  */
 import { localToday } from "./local-date.ts";
 import { DomainError, newId, notFound, sha256Hex } from "@zr-legal/domain";
-import { createXlsx, extractParagraphs } from "@zr-legal/docx-engine";
+import { createStyledDocx, createXlsx, extractParagraphs } from "@zr-legal/docx-engine";
 import type { Lawdb } from "@zr-legal/lawdb";
 import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
@@ -189,6 +189,18 @@ const strList = (v: unknown, maxItems: number, maxLen: number): string[] =>
  * 缺失卡的复查（评审 C1 §2.2 第 2 条“防误报的关键”）：Agent 说“查过这些说法都没有”，内核在本任务的每份材料视图里逐个再找一遍，
  * 找到的写进 searched_found——工作台把这类卡标成“可能误报”，律师一眼看到“补充协议里其实有”。比较时忽略空白（同 locateQuote）。
  */
+/** 与这组说法有交集的说法组里律师补的说法（本所范围）。 */
+export function synonymsFor(db: KernelDb, tenantId: string, terms: readonly string[]): string[] {
+  if (terms.length === 0) return [];
+  const want = new Set(terms);
+  const out = new Set<string>();
+  for (const r of db.all<{ group_terms: string; term: string }>(`SELECT group_terms, term FROM missing_synonyms WHERE tenant_id = ? ORDER BY added_at LIMIT 2000`, [tenantId])) {
+    const g = jsonList(r.group_terms);
+    if (g.some((x) => want.has(x)) || want.has(r.term)) out.add(r.term);
+  }
+  return [...out].slice(0, 30);
+}
+
 function recheckMissing(deps: ReviewDeps, scope: ToolScope, docId: string | null, mainView: string | null, terms: readonly string[]): { term: string; filename: string }[] {
   if (terms.length === 0) return [];
   const views: { filename: string; view: string }[] = [];
@@ -215,7 +227,9 @@ function recheckMissing(deps: ReviewDeps, scope: ToolScope, docId: string | null
   }
   const squash = (x: string) => x.replace(/[\s|｜]+/g, "");
   const found: { term: string; filename: string }[] = [];
-  for (const t of terms) {
+  // 律师补进说法组的说法（C-02 残余，迁移 0061）：与本卡查过的说法有交集的组，连组里补的说法一起找
+  const extra = synonymsFor(deps.db, scope.tenantId, terms).filter((t) => !terms.includes(t));
+  for (const t of [...terms, ...extra]) {
     const q = squash(t);
     if (q.length < 2) continue;
     const hit = views.find((v) => squash(v.view).includes(q));
@@ -798,7 +812,7 @@ const DECISION_LABEL: Readonly<Record<string, string>> = { proposed: "待处理"
  */
 export function exportReviewTable(
   deps: ReviewDeps & { tokens: MatterTokenStore },
-  input: { matter_id: string; document_version_id?: string | null; run_id?: string | null; created_by: string },
+  input: { matter_id: string; document_version_id?: string | null; run_id?: string | null; created_by: string; format?: "xlsx" | "docx" },
 ): { artifact_version_id: string; filename: string; rows: number } {
   const cards = listRiskCards(deps.db, input.matter_id, {
     ...(input.document_version_id !== undefined ? { document_version_id: input.document_version_id } : {}),
@@ -828,15 +842,31 @@ export function exportReviewTable(
     `${DECISION_LABEL[c.status] ?? c.status}${c.status === "accepted" && c.chosen_level === "fallback" ? "（选用可退让）" : ""}`,
     c.status === "modified" ? tok(c.final_text) : changesDocument(c) ? acceptedText(c) : "",
   ]);
-  const buf = createXlsx([{ name: "审查意见", rows: [header, ...rows] }]);
+  // Word 版（C1 §2.2 第 8 条：很多律师交给客户的是这张表）：横排表放不下 17 列，按“条款 / 问题 / 类型与等级 / 依据 / 建议 / 律师决定”六列
+  const word = input.format === "docx";
+  const pick = (r: (string | number)[]) => [
+    String(r[1] || "—"),
+    String(r[5]),
+    `${r[2]} · ${r[3]} · ${r[4]}`,
+    [r[6] ? `${r[6]}` : "", r[7] ? `规则：${r[7]}` : "", r[8] ? `依据：${r[8]}` : ""].filter(Boolean).join("\n") || "—",
+    [r[10] ? `首选：${r[10]}` : "", r[11] ? `可退让：${r[11]}` : "", r[12] ? `建议底线（待客户定）：${r[12]}` : "", r[14] ? String(r[14]) : ""].filter(Boolean).join("\n") || "—",
+    `${r[15]}${r[16] ? `\n写入：${r[16]}` : ""}`,
+  ];
+  const buf = word
+    ? createStyledDocx([
+        { kind: "title", text: "合同审查意见表" },
+        { kind: "table", rows: [["条款", "问题", "类型与等级", "判断依据", "建议", "律师决定"].map((h) => [{ text: h, bold: true }]), ...rows.map((r) => pick(r).map((t) => [{ text: t }]))] },
+        { kind: "p", runs: [{ text: "说明：本表为律师审查意见，“建议底线”为内部参考，对外发送前请删去或确认客户已授权。" }] },
+      ])
+    : createXlsx([{ name: "审查意见", rows: [header, ...rows] }]);
   const doc = input.document_version_id ? deps.db.get<{ filename: string }>(`SELECT filename FROM document_versions WHERE document_version_id = ?`, [input.document_version_id]) : undefined;
   const base = (doc?.filename ?? "合同").replace(/\.[^.]+$/, "").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").slice(0, 60) || "合同";
-  const filename = `${base}（审查意见表）.xlsx`;
+  const filename = `${base}（审查意见表）.${word ? "docx" : "xlsx"}`;
   const matter = deps.db.get<{ tenant_id: string }>(`SELECT tenant_id FROM matters WHERE matter_id = ?`, [input.matter_id]);
   if (!matter) throw notFound("事项");
   const runs = new Set(cards.map((c) => c.run_id));
   const runId = input.run_id ?? (runs.size === 1 ? ([...runs][0] ?? null) : null);
-  const kind = "review_table";
+  const kind = word ? "review_table_docx" : "review_table";
   const stored = deps.blobs.put(buf, input.matter_id);
   const id = newId("artifactVersion");
   deps.db.tx(() => {
@@ -958,4 +988,70 @@ export function decideFact(db: KernelDb, matterId: string, userId: string, input
     db.run(`UPDATE matter_facts SET status = 'proposed', kind = CASE kind WHEN 'confirmed' THEN 'to_confirm' ELSE kind END, decided_by = NULL, decided_at = NULL WHERE fact_id = ?`, [id]);
   } else throw new DomainError("validation", "decision 须为 confirm / reject / reset", 422);
   return listFacts(db, matterId).find((f) => f.fact_id === id)!;
+}
+
+
+// ─── v9.4 第 20 批：工作台残余（评审 C1 §1 #9、§2.2 第 2、5、8 条）───
+
+/**
+ * 缺失卡误报：一键驳回，并把材料里实际用的说法补进本卡的说法组（以后同组缺失卡复查时一起找）。
+ * term 可空（只驳回）；说法 2～30 字，须在本任务的材料里确实出现过——防止把随手写的词记进规则。
+ */
+export function rejectMissingCard(deps: ReviewDeps, scope: { tenantId: string; matterId: string; userId: string }, input: { card_id?: unknown; term?: unknown }): { card: RiskCardRow; remembered: string | null } {
+  const id = str(input.card_id, 80);
+  const row = deps.db.get<any>(`SELECT * FROM risk_cards WHERE card_id = ?`, [id]);
+  if (!row || row.matter_id !== scope.matterId) throw notFound("风险卡");
+  if (row.kind !== "missing") throw new DomainError("validation", "只有缺失类的卡能按误报驳回并记住说法", 422);
+  const term = str(input.term, 30);
+  let remembered: string | null = null;
+  if (term) {
+    if (term.length < 2) throw new DomainError("validation", "说法至少 2 个字", 422);
+    const found = recheckMissing(deps, { tenantId: scope.tenantId, matterId: scope.matterId, runId: row.run_id ?? null } as ToolScope, row.document_version_id ?? null, row.document_version_id ? (() => {
+      try {
+        return documentView(deps, scope.matterId, row.document_version_id).view;
+      } catch {
+        return null;
+      }
+    })() : null, [term]);
+    if (found.length === 0) throw new DomainError("validation", `在这次审查的材料里没找到“${term}”：请照材料原文写`, 422);
+    const group = jsonList(row.searched_terms);
+    deps.db.run(`INSERT OR IGNORE INTO missing_synonyms (synonym_id, tenant_id, group_terms, term, added_by, added_at) VALUES (?,?,?,?,?,?)`, [newId("synonym"), scope.tenantId, JSON.stringify(group), term, scope.userId, new Date().toISOString()]);
+    remembered = term;
+  }
+  const card = decideRiskCard(deps.db, scope.matterId, scope.userId, { card_id: id, decision: "reject" });
+  return { card, remembered };
+}
+
+/** 批量接受的边界（C1 §2.2 第 5 条）：只对“提示”级和前后不一致类开放；重大、必须修改、缺失、需客户决定的不进批量。 */
+export function batchEligible(c: Pick<RiskCardRow, "severity" | "kind" | "nature" | "needs_client_decision" | "status" | "suggestion">): boolean {
+  if (c.status !== "proposed" || !(c.suggestion ?? "").trim()) return false;
+  if (c.kind === "missing" || c.needs_client_decision || c.nature === "must" || c.severity === "high") return false;
+  return c.severity === "low" || c.kind === "consistency";
+}
+
+/**
+ * 批量接受与撤回本批：accept 只收符合边界的卡（不符合的回报 refused，不整批失败）；undo 只把这一批里仍是“接受”的改回待处理。
+ * 批次号由内核给出，撤回时带回。
+ */
+export function decideBatch(db: KernelDb, matterId: string, userId: string, input: { card_ids?: unknown; action?: unknown; batch?: unknown }): { batch: string; accepted: string[]; refused: string[]; undone: string[] } {
+  const ids = Array.isArray(input.card_ids) ? [...new Set(input.card_ids.map((x) => str(x, 80)))].slice(0, 200) : [];
+  if (ids.length === 0) throw new DomainError("validation", "card_ids 不能为空", 422);
+  const action = String(input.action ?? "");
+  const cards = listRiskCards(db, matterId).filter((c) => ids.includes(c.card_id));
+  if (action === "accept") {
+    const ok = cards.filter(batchEligible);
+    const batch = newId("cardBatch");
+    db.tx(() => {
+      for (const c of ok) decideRiskCard(db, matterId, userId, { card_id: c.card_id, decision: "accept" });
+    });
+    return { batch, accepted: ok.map((c) => c.card_id), refused: ids.filter((x) => !ok.some((c) => c.card_id === x)), undone: [] };
+  }
+  if (action === "undo") {
+    const back = cards.filter((c) => c.status === "accepted" && c.decided_by === userId);
+    db.tx(() => {
+      for (const c of back) decideRiskCard(db, matterId, userId, { card_id: c.card_id, decision: "reset" });
+    });
+    return { batch: str(input.batch, 80), accepted: [], refused: [], undone: back.map((c) => c.card_id) };
+  }
+  throw new DomainError("validation", "action 须为 accept / undo", 422);
 }

@@ -220,3 +220,71 @@ test("Q2-09 / Q2-10：撤回回到“有冲突”；材料重新识别能读后�
   const try2 = fillCells(deps, { matterId: m, runId: live.rid }, { table_id: table.table_id, cells: [{ document_version_id: blank.document_version_id, column: "signed_on", value: "2025-08", quote: "2025 年 8 月" }] });
   assert.equal(try2.written, 1);
 });
+
+test("v9.4 第 20 批 C-01 残余：自建列（校验、上限、只能删自建列）→ 格子看原文前后文 → 推为事实（只推已核、不重复）→ 据此起草（未核标待核）→ 台账设提醒候选", { timeout: 120_000 }, async () => {
+  const { matter } = await tk.inv("matters.create", { title: "台账与证据", stance: "原告", consent_status: "agreed" });
+  const m = matter.matter_id;
+  const c1 = await importBytes(tk.inv, m, "采购合同.docx", createDocx("采购合同", [{ heading: "第一条", paragraphs: ["本合同自 2025-01-01 起至 2030-12-31 止。", "双方于 2025-01-01 签署本合同，合同总价为人民币 120 万元。"] }]), DOCX);
+  const c2 = await importBytes(tk.inv, m, "租赁合同.docx", createDocx("租赁合同", [{ heading: "第一条", paragraphs: ["租期至 2027-06 届满。"] }]), DOCX);
+  const { table } = await tk.inv("tables.create", { matter_id: m, template: "contract_ledger", columns: ["contract_name", "expires_on", "signed_on"], document_version_ids: [c1.document_version_id, c2.document_version_id] });
+  const T = table.table_id;
+  // 自建列
+  await assert.rejects(tk.inv("tables.add_column", { matter_id: m, table_id: T, label: "保证金" }), (e: any) => e.code === "validation" && /填写说明/.test(e.message));
+  await assert.rejects(tk.inv("tables.add_column", { matter_id: m, table_id: T, label: "类型", hint: "合同类型", format: "choice", options: ["买卖"] }), (e: any) => e.code === "validation");
+  await assert.rejects(tk.inv("tables.add_column", { matter_id: m, table_id: T, label: "到期日", hint: "x" }), /同名/);
+  const added = (await tk.inv("tables.add_column", { matter_id: m, table_id: T, label: "保证金", hint: "履约保证金金额，没有写“未约定”", format: "money" })).table;
+  assert.deepEqual(added.columns.map((c: any) => c.key), ["contract_name", "signed_on", "expires_on", "custom_1"]);
+  await assert.rejects(tk.inv("tables.remove_column", { matter_id: m, table_id: T, column: "expires_on" }), /只能去掉自己加的列/);
+  // 填格子（直接走服务，Agent 路径上一条用例已测）
+  const { fillCells } = await import("../src/services/review-tables.ts");
+  const live = liveTaskIdentity(tk, m, "table2");
+  const r = fillCells({ db: tk.kernel.db, blobs: tk.kernel.blobs, tokens: (tk.kernel as any).tokens }, { matterId: m, runId: live.rid }, { table_id: T, cells: [
+    { document_version_id: c1.document_version_id, column: "expires_on", value: "2030-12-31", quote: "本合同自 2025-01-01 起至 2030-12-31 止。" },
+    { document_version_id: c1.document_version_id, column: "signed_on", value: "2025-01-01", quote: "双方于 2025-01-01 签署本合同" },
+    { document_version_id: c2.document_version_id, column: "expires_on", value: "2027-06", quote: "租期至 2027-06 届满。" },
+    { document_version_id: c1.document_version_id, column: "custom_1", value: "120 万元", quote: "合同总价为人民币 120 万元" },
+  ] });
+  assert.equal(r.written, 4, "自建列也能填");
+  let grid = await tk.inv("tables.get", { matter_id: m, table_id: T });
+  const cell = (doc: string, col: string) => grid.cells.find((c: any) => c.document_version_id === doc && c.col_key === col);
+  // 原文前后文
+  const ctx = await tk.inv("tables.cell_context", { matter_id: m, table_id: T, cell_id: cell(c1.document_version_id, "signed_on").cell_id });
+  assert.equal(ctx.located, true);
+  assert.equal(ctx.quote, "双方于 2025-01-01 签署本合同");
+  assert.match(ctx.before, /2030-12-31 止。\n?$/);
+  assert.match(ctx.after, /^，合同总价/);
+  // 推为事实：没核的不推
+  assert.deepEqual(await tk.inv("tables.push_facts", { matter_id: m, table_id: T }), { pushed: 0, already: 0, not_verified: 4 });
+  await tk.inv("tables.decide_cell", { matter_id: m, table_id: T, cell_id: cell(c1.document_version_id, "signed_on").cell_id, decision: "verify" });
+  await tk.inv("tables.decide_cell", { matter_id: m, table_id: T, cell_id: cell(c1.document_version_id, "expires_on").cell_id, decision: "edit", value: "2030-12-30" });
+  const p1 = await tk.inv("tables.push_facts", { matter_id: m, table_id: T });
+  assert.equal(p1.pushed, 2);
+  assert.equal((await tk.inv("tables.push_facts", { matter_id: m, table_id: T })).already, 2, "不重复推");
+  const facts = (await tk.inv("facts.list", { matter_id: m })).facts;
+  const signed = facts.find((f: any) => f.statement.includes("签署日"));
+  assert.equal(signed.status, "confirmed");
+  assert.equal(signed.occurred_on, "2025-01-01");
+  assert.equal(signed.anchor_status, "located");
+  assert.ok(facts.some((f: any) => f.statement === "采购合同：到期日为2030-12-30"), "律师改的值");
+  // 去掉自建列：有已核格子须确认
+  grid = await tk.inv("tables.get", { matter_id: m, table_id: T });
+  await tk.inv("tables.decide_cell", { matter_id: m, table_id: T, cell_id: cell(c1.document_version_id, "custom_1").cell_id, decision: "verify" });
+  await assert.rejects(tk.inv("tables.remove_column", { matter_id: m, table_id: T, column: "custom_1" }), (e: any) => e.code === "conflict");
+  const removed = (await tk.inv("tables.remove_column", { matter_id: m, table_id: T, column: "custom_1", confirm: true })).table;
+  assert.equal(removed.columns.length, 3);
+  // 台账：设提醒候选（已过的、只到月的不给日期）；台账不能“据此起草”
+  const cand = (await tk.inv("tables.reminder_candidates", { matter_id: m, table_id: T })).candidates;
+  assert.deepEqual(cand.map((c: any) => [c.filename, c.column, c.date, c.verified]), [["采购合同.docx", "expires_on", "2030-12-30", true], ["租赁合同.docx", "expires_on", null, false]]);
+  assert.match(cand[1].note, /只到月/);
+  await assert.rejects(tk.inv("tables.draft", { matter_id: m, table_id: T }), /据此设提醒/);
+  // 证据清单 → 证据目录（Word）：未核的标待核，成果带未决项
+  const ev = (await tk.inv("tables.create", { matter_id: m, template: "evidence_list", columns: ["evidence_name", "formed_on"], document_version_ids: [c1.document_version_id] })).table;
+  fillCells({ db: tk.kernel.db, blobs: tk.kernel.blobs, tokens: (tk.kernel as any).tokens }, { matterId: m, runId: live.rid }, { table_id: ev.table_id, cells: [{ document_version_id: c1.document_version_id, column: "evidence_name", value: "《采购合同》", quote: "采购合同" }] });
+  const d = await tk.inv("tables.draft", { matter_id: m, table_id: ev.table_id });
+  assert.equal(d.open, 2, "一格没核、一格没填");
+  const art = tk.kernel.db.get<{ storage_uri: string; open_items: string; status: string }>(`SELECT storage_uri, open_items, status FROM artifact_versions WHERE artifact_version_id = ?`, [d.artifact_version_id])!;
+  assert.equal(art.status, "draft");
+  assert.equal(JSON.parse(art.open_items)[0].count, 2);
+  const xml = readZipText(tk.kernel.blobs.read(art.storage_uri), "word/document.xml")!;
+  assert.ok(xml.includes("证据目录") && xml.includes("【待核】") && xml.includes("【未填】"));
+});

@@ -37,6 +37,9 @@ export const IdPrefix = {
   reviewCell: "rtc",
   // v9.4 第 20 批：事项待办（C1 §3.2）
   todo: "tdo",
+  // 缺失卡说法组（C-02 残余）、风险卡批量决定的批次
+  synonym: "syn",
+  cardBatch: "cbt",
 } as const;
 
 export type IdPrefixKey = keyof typeof IdPrefix;
