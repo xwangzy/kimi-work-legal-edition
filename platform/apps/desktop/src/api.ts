@@ -766,16 +766,21 @@ export const api = {
   riskCards: (matterId: string, f: { run_id?: string; document_version_id?: string | null } = {}) => invoke<{ cards: RiskCard[]; progress: RiskProgress }>("riskcards.list", { matter_id: matterId, ...f }),
   /** 律师改风险卡的性质（复核 RB16B-03）。 */
   setRiskCardNature: (matterId: string, cardId: string, nature: "must" | "should" | "negotiable") => invoke<{ card: RiskCard }>("riskcards.set_nature", { matter_id: matterId, card_id: cardId, nature }),
-  decideRiskCard: (matterId: string, cardId: string, decision: "accept" | "modify" | "reject" | "reset", finalText?: string) =>
-    invoke<{ card: RiskCard }>("riskcards.decide", { matter_id: matterId, card_id: cardId, decision, ...(finalText ? { final_text: finalText } : {}) }),
+  /** level：接受时选用哪一级（C-05；缺省首选，可退让须卡上有）。 */
+  decideRiskCard: (matterId: string, cardId: string, decision: "accept" | "modify" | "reject" | "reset", finalText?: string, level?: "suggestion" | "fallback") =>
+    invoke<{ card: RiskCard }>("riskcards.decide", { matter_id: matterId, card_id: cardId, decision, ...(finalText ? { final_text: finalText } : {}), ...(level ? { level } : {}) }),
   /** “接受后”预览：与生成修订稿同一套定位（只读，余项续复核 RC-B-01）。 */
   previewRedline: (matterId: string, documentVersionId: string, o: { run_id?: string } = {}) =>
     invoke<{ status: "ok" | "conflicts" | "not_docx" | "document_version_superseded" | "no_patches"; paragraphs: string[]; cards: KernelPreviewCard[] }>("riskcards.preview_redline", { matter_id: matterId, document_version_id: documentVersionId, ...o }),
-  buildRedline: (matterId: string, documentVersionId: string, o: { run_id?: string; skip_card_ids?: string[] } = {}) =>
+  /** audience：对外版只有修订、内部版另带批注（C1 §2.2 第 6 条）。 */
+  buildRedline: (matterId: string, documentVersionId: string, o: { run_id?: string; skip_card_ids?: string[]; audience?: "external" | "internal" } = {}) =>
     invoke<
-      | { status: "applied"; artifact_version_id: string; filename: string; applied: number; skipped: string[] }
-      | { status: "preview"; reason: string; conflicts: { index: number; reason: string; detail?: string; card_id: string | null }[]; skipped: string[] }
+      | { status: "applied"; artifact_version_id: string; filename: string; applied: number; skipped: string[]; no_insert_point?: string[] }
+      | { status: "preview"; reason: string; conflicts: { index: number; reason: string; detail?: string; card_id: string | null }[]; skipped: string[]; no_insert_point?: string[] }
     >("riskcards.redline", { matter_id: matterId, document_version_id: documentVersionId, ...o }),
+  /** 导出审查意见表（Excel 草稿成果，C1 §2.2 第 8 条）。 */
+  exportReviewTable: (matterId: string, documentVersionId: string | null, o: { run_id?: string } = {}) =>
+    invoke<{ artifact_version_id: string; filename: string; rows: number }>("riskcards.export_table", { matter_id: matterId, document_version_id: documentVersionId, ...o }),
   facts: (matterId: string, f: { run_id?: string; status?: "proposed" | "confirmed" | "rejected" } = {}) => invoke<{ facts: FactRow[] }>("facts.list", { matter_id: matterId, ...f }),
   decideFact: (matterId: string, factId: string, decision: "confirm" | "reject" | "reset", statement?: string) =>
     invoke<{ fact: FactRow }>("facts.decide", { matter_id: matterId, fact_id: factId, decision, ...(statement ? { statement } : {}) }),
@@ -905,6 +910,17 @@ export interface RiskCard {
   nature_inferred?: boolean;
   needs_client_decision: boolean;
   assumptions: string | null;
+  /** 类型（C-02）：风险 / 缺失 / 偏离规则 / 前后不一致；旧内核没给时按风险。 */
+  kind?: "risk" | "missing" | "deviation" | "consistency";
+  /** 判断依据来源：法律强制 / 本所或客户规则 / 通用建议；本批之前的卡为空。 */
+  rule_source?: "law" | "firm_rule" | "general" | null;
+  rule_ref?: string | null;
+  /** 缺失卡：查过的说法与文件；材料里其实找得到的说法（非空即可能误报）。 */
+  searched_terms?: string[];
+  searched_docs?: string[];
+  searched_found?: { term: string; filename: string }[];
+  /** 接受时选用的一级（C-05）。 */
+  chosen_level?: "suggestion" | "fallback";
   status: "proposed" | "accepted" | "modified" | "rejected";
   final_text: string | null;
   decided_at: string | null;

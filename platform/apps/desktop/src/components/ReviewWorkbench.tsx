@@ -13,7 +13,7 @@ import { agreementParts, firstOpenCard, nextOpenCard, stepCard } from "../lib/wo
 import { api, type RiskCard, type RiskProgress } from "../api.ts";
 import { CITE_STATE_LABELS } from "../lib/labels.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
-import { ladderRows, NATURE_LABEL, NATURE_PILL, natureOf, natureText, type RiskNature } from "../lib/risk-ladder.ts";
+import { adoptedText, KIND_LABEL, kindOf, ladderRows, NATURE_LABEL, NATURE_PILL, natureOf, natureText, RULE_SOURCE_LABEL, type RiskNature } from "../lib/risk-ladder.ts";
 import { Select } from "./Select.tsx";
 
 const SEVERITY: Record<RiskCard["severity"], { label: string; cls: string }> = {
@@ -69,6 +69,8 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   const [view, setView] = useState<"original" | "after">("original");
   // 首次载入后自动展开第一张未处理的卡（W-1）；之后由律师操作决定
   const autoOpened = useRef(false);
+  // 修订稿两版（C1 §2.2 第 6 条）：缺省对外版（只有修订，不带内部理由与规则）
+  const [audience, setAudience] = useState<"external" | "internal">("external");
 
   const load = useCallback(async (): Promise<RiskCard[]> => {
     const r = await api.riskCards(matterId, { document_version_id: documentVersionId, ...(runFilter ? { run_id: runFilter } : {}) });
@@ -79,7 +81,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       const first = firstOpenCard(r.cards);
       if (first) setActive(first);
     }
-    const all = r.cards.flatMap((c) => [c.anchor_text, c.issue, c.suggestion ?? "", c.fallback ?? "", c.bottom_line ?? "", c.assumptions ?? ""]).join("\n");
+    const all = r.cards.flatMap((c) => [c.anchor_text, c.issue, c.suggestion ?? "", c.fallback ?? "", c.bottom_line ?? "", c.assumptions ?? "", c.rule_ref ?? "", ...(c.searched_terms ?? [])]).join("\n");
     if (all.includes("〔")) setMap(await restoreTokens(matterId, all));
     return r.cards;
   }, [matterId, documentVersionId, runFilter]);
@@ -130,7 +132,18 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
     if (kernelView?.status === "no_patches") return { paragraphs: doc.paragraphs.map((p) => [{ text: p }]), applied: 0, skipped: kernelView.preview.skipped };
     return localPreview(
       doc.paragraphs,
-      cards.map((c) => ({ card_id: c.card_id, seq: c.seq, status: c.status, anchor_status: c.anchor_status, anchor_text: plain(c.anchor_text), suggestion: plain(c.suggestion), final_text: plain(c.final_text) })),
+      cards.map((c) => ({
+        card_id: c.card_id,
+        seq: c.seq,
+        status: c.status,
+        anchor_status: c.anchor_status,
+        anchor_text: plain(c.anchor_text),
+        suggestion: plain(c.suggestion),
+        final_text: plain(c.final_text),
+        fallback: plain(c.fallback),
+        ...(c.chosen_level ? { chosen_level: c.chosen_level } : {}),
+        kind: kindOf(c),
+      })),
     );
   }, [doc, cards, plain, kernelView]);
   const cardLabel = (id: string) => {
@@ -150,11 +163,11 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       setBusy(false);
     }
   };
-  const decide = async (card: RiskCard, decision: "accept" | "modify" | "reject" | "reset", finalText?: string) => {
+  const decide = async (card: RiskCard, decision: "accept" | "modify" | "reject" | "reset", finalText?: string, level?: "fallback") => {
     setBusy(true);
     setMsg(null);
     try {
-      await api.decideRiskCard(matterId, card.card_id, decision, finalText);
+      await api.decideRiskCard(matterId, card.card_id, decision, finalText, level);
       setEditing(null);
       const fresh = await load();
       // 处理完自动展开下一张未处理的卡（W-1）；用刷新后的卡片集合，且只在当前过滤可见的卡里找（复核 S6B-11）
@@ -178,9 +191,14 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
     setBusy(true);
     setMsg(null);
     try {
-      const r = await api.buildRedline(matterId, documentVersionId, { ...(runFilter ? { run_id: runFilter } : {}), ...(skip.length ? { skip_card_ids: skip } : {}) });
+      const r = await api.buildRedline(matterId, documentVersionId, { audience, ...(runFilter ? { run_id: runFilter } : {}), ...(skip.length ? { skip_card_ids: skip } : {}) });
+      const noPoint = r.no_insert_point?.length ? `；${r.no_insert_point.length} 条补充条款没写明插在哪里，只在审查意见表里` : "";
       if (r.status === "applied") {
-        setMsg({ tone: "ok", text: `已生成修订稿《${r.filename}》：${r.applied} 处修改以 Word 原生修订和批注写入（原件未改动）${r.skipped.length ? `；跳过 ${r.skipped.length} 项` : ""}。`, artifact: r.artifact_version_id });
+        setMsg({
+          tone: "ok",
+          text: `已生成修订稿《${r.filename}》：${r.applied} 处修改以 Word 修订${audience === "internal" ? "和批注" : ""}写入（原件未改动）${r.skipped.length ? `；跳过 ${r.skipped.length} 项` : ""}${noPoint}。`,
+          artifact: r.artifact_version_id,
+        });
         onRedline?.(r.artifact_version_id);
       } else if (r.reason === "not_docx") {
         setMsg({ tone: "warn", text: "这份材料不是 Word 文件，不能直接写修订。可让助手把已接受的修改整理成《修订说明》。" });
@@ -200,6 +218,20 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
     }
   };
 
+  const exportTable = async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await api.exportReviewTable(matterId, documentVersionId, runFilter ? { run_id: runFilter } : {});
+      setMsg({ tone: "ok", text: `已导出《${r.filename}》：${r.rows} 项意见，在交付件里下载。`, artifact: r.artifact_version_id });
+      onRedline?.(r.artifact_version_id);
+    } catch (e) {
+      setMsg({ tone: "err", text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const focusCard = (id: string) => {
     setActive(id);
     setFilter("all");
@@ -209,6 +241,8 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   const accepted = progress?.accepted ?? 0;
   const allDecided = !!progress && progress.total > 0 && progress.decided === progress.total;
   const openCount = cards.filter((c) => c.status === "proposed").length;
+  // 顶部按类型计数（C1 §2.2：缺失 n · 偏离规则 n），只列有的类型
+  const kindCounts = (["missing", "deviation", "consistency"] as const).map((k) => [k, cards.filter((c) => kindOf(c) === k).length] as const).filter(([, n]) => n > 0);
 
   // 键盘（W-1）：J/K 切换卡片，A 接受，E 修改后接受，N 不采纳；在输入框里不响应
   useEffect(() => {
@@ -253,6 +287,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
             <div className="wb-progress wb-agreement" aria-live="polite">
               {agreementParts({ ...agreement, decided: progress?.decided, total: progress?.total }).join(" · ")}
               {progress && progress.high_open > 0 ? <span className="sev-text-high"> · {progress.high_open} 项重大风险待处理</span> : null}
+              {kindCounts.map(([k, n]) => ` · ${KIND_LABEL[k]} ${n}`).join("")}
             </div>
           )}
         </div>
@@ -265,9 +300,27 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
           )}
           {readOnly && <span className="muted">事项已结案（只读）</span>}
           {documentVersionId && !readOnly && (
-            <button className={allDecided ? "btn-primary" : "btn-ghost"} disabled={busy || accepted === 0} onClick={() => void redline()} title={accepted === 0 ? "先接受或修改后接受至少一项" : undefined}>
-              {/* 勾选“只看本次任务”时修订稿也只含本次任务的卡（复核 C-B06）：文案写明 */}
-              生成修订稿{accepted > 0 ? `（${runFilter ? "本次任务 " : ""}${accepted} 项）` : ""}
+            <>
+              <Select
+                className="select-sm"
+                aria-label="修订稿版本"
+                value={audience}
+                disabled={busy}
+                onChange={(v) => setAudience(v === "internal" ? "internal" : "external")}
+                options={[
+                  { value: "external", label: "对外版（只有修订）" },
+                  { value: "internal", label: "内部版（带理由与规则批注）" },
+                ]}
+              />
+              <button className={allDecided ? "btn-primary" : "btn-ghost"} disabled={busy || accepted === 0} onClick={() => void redline()} title={accepted === 0 ? "先接受或修改后接受至少一项" : undefined}>
+                {/* 勾选“只看本次任务”时修订稿也只含本次任务的卡（复核 C-B06）：文案写明 */}
+                生成修订稿{accepted > 0 ? `（${runFilter ? "本次任务 " : ""}${accepted} 项）` : ""}
+              </button>
+            </>
+          )}
+          {!readOnly && cards.length > 0 && (
+            <button className="btn-ghost" disabled={busy} onClick={() => void exportTable()} title="条款、问题、类型、等级、规则、依据、建议与你的决定，一行一项">
+              导出审查意见表
             </button>
           )}
           {/* 置灰原因与“先生成”（W-2）：未处理的卡不写进修订稿 */}
@@ -406,9 +459,13 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                   <span className={`pill ${NATURE_PILL[natureOf(c)]}`} title={c.nature_inferred ? "按类别与严重程度推定，可在展开后修改" : undefined}>
                     {natureText(c)}
                   </span>
+                  {kindOf(c) !== "risk" && <span className="pill pill-gray">{KIND_LABEL[kindOf(c)]}</span>}
+                  {(c.searched_found?.length ?? 0) > 0 && <span className="pill pill-orange" title="查过的说法在材料里找得到">可能误报</span>}
                   {(c.clause_ref || c.page) && <span className="rc-ref">{[c.clause_ref ? clauseLabel(c.clause_ref) : null, c.page ? `第 ${c.page} 页` : null].filter(Boolean).join(" · ")}</span>}
                   <span className="rc-issue">{plain(c.issue)}</span>
-                  <span className={`rc-status rc-status-${c.status}`}>{c.status === "accepted" && !c.suggestion ? "已知悉" : STATUS_LABEL[c.status]}</span>
+                  <span className={`rc-status rc-status-${c.status}`}>
+                    {c.status === "accepted" && !adoptedText(c).trim() ? "已知悉" : c.status === "accepted" && c.chosen_level === "fallback" ? "已接受（可退让）" : STATUS_LABEL[c.status]}
+                  </span>
                 </button>
                 {open && (
                   <div className="rc-body">
@@ -451,11 +508,36 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                         </span>
                       </div>
                     )}
+                    {/* 判断依据来源与规则（C1 §2.2 第 3 条）：法律强制不可谈，本所或客户规则可谈，通用建议须律师判断 */}
+                    {(c.rule_source || c.rule_ref) && (
+                      <div className="rc-row">
+                        <span className="rc-k">按什么判断</span>
+                        <span>
+                          {c.rule_source && <span className="tag tag-gray">{RULE_SOURCE_LABEL[c.rule_source]}</span>}
+                          {c.rule_ref && <> {plain(c.rule_ref)}</>}
+                        </span>
+                      </div>
+                    )}
+                    {/* 缺失卡说清为什么认为缺失（C1 §2.2 第 2 条）：查过哪些说法、哪些文件；材料里其实找得到的标出来 */}
+                    {kindOf(c) === "missing" && (
+                      <div className="rc-row">
+                        <span className="rc-k">查过</span>
+                        <span>
+                          {(c.searched_terms ?? []).map((t) => plain(t)).join("、") || "（没有列出）"}
+                          {(c.searched_docs?.length ?? 0) > 0 && <span className="muted">（{c.searched_docs!.join("、")}）</span>}
+                          {(c.searched_found?.length ?? 0) > 0 && (
+                            <span className="rc-warn">
+                              材料里其实有：{c.searched_found!.map((f) => `“${plain(f.term)}”（${f.filename}）`).join("、")}——请先核对是否已有约定
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    )}
                     <div className="rc-row">
-                      <span className="rc-k">合同原文</span>
+                      <span className="rc-k">{kindOf(c) === "missing" ? "插在哪里" : "合同原文"}</span>
                       <span className="rc-quote">
-                        {plain(c.anchor_text)}
-                        {c.anchor_status === "not_found" && <span className="rc-warn">未能在合同中找到这段原文，生成修订稿时需跳过，可在 Word 中手工修改</span>}
+                        {kindOf(c) === "missing" ? (c.anchor_text ? <>在“{plain(c.anchor_text)}”这一段之后</> : <span className="muted">没有写明插在哪里：只进审查意见表，请在 Word 中手工补上</span>) : plain(c.anchor_text)}
+                        {c.anchor_status === "not_found" && !!c.anchor_text && <span className="rc-warn">未能在合同中找到这段原文，生成修订稿时需跳过，可在 Word 中手工修改</span>}
                         {c.anchor_status === "ambiguous" && <span className="rc-warn">这段原文在合同中出现多处，生成时按条款号定位</span>}
                         {c.anchor_status === "cross_paragraph" && <span className="rc-warn">这段原文跨了段落，修订稿不能自动写入，生成时需跳过，可在 Word 中手工修改</span>}
                       </span>
@@ -464,7 +546,19 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                     {ladderRows(c).map((row) => (
                       <div key={row.key} className="rc-row">
                         <span className="rc-k">{row.label}</span>
-                        <span className={row.key === "mine" || row.key === "first" ? "rc-suggest" : undefined}>{row.key === "mine" ? row.text : plain(row.text)}</span>
+                        <span className={row.key === "mine" || row.key === "first" || row.chosen ? "rc-suggest" : undefined}>
+                          {row.key === "mine" ? row.text : plain(row.text)}
+                          {row.chosen && <span className="tag tag-gray"> 写进修订稿的是这一级</span>}
+                          {/* 梯度可选（C-05）：可退让也能一键接受；底线只供参考、不写进修订稿 */}
+                          {!readOnly && c.status === "proposed" && row.key === "fallback" && (
+                            <>
+                              {" "}
+                              <button className="btn-link" disabled={busy} onClick={() => void decide(c, "accept", undefined, "fallback")}>
+                                用这一级
+                              </button>
+                            </>
+                          )}
+                        </span>
                       </div>
                     ))}
                     {c.basis.length > 0 && (
@@ -497,7 +591,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                     ) : c.status === "proposed" ? (
                       <div className="rc-actions">
                         {c.suggestion ? (
-                          <button className="btn-primary" disabled={busy} onClick={() => void decide(c, "accept")}>接受</button>
+                          <button className="btn-primary" disabled={busy} onClick={() => void decide(c, "accept")}>{c.fallback?.trim() ? "接受首选" : kindOf(c) === "missing" ? "接受（补上这一条）" : "接受"}</button>
                         ) : (
                           <button className="btn-primary" disabled={busy} title="这项没有建议文本：知悉、合同不改动（不写进修订稿）" onClick={() => void decide(c, "accept")}>知悉（不改动）</button>
                         )}

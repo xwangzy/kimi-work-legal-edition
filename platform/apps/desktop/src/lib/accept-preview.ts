@@ -16,6 +16,10 @@ export interface PreviewCard {
   anchor_text: string;
   suggestion: string;
   final_text: string;
+  /** 可退让（还原后）与接受时选用的一级（C-05）。 */
+  fallback?: string;
+  chosen_level?: "suggestion" | "fallback";
+  kind?: string;
 }
 
 /** 一段文字；edit 为一处修改（del 被删的原文，ins 新文本，可能有一边为空）。 */
@@ -28,7 +32,7 @@ export interface AcceptPreview {
 }
 
 /** 内核预览里一张卡的结果（与内核 RedlinePreviewCard 同形）。 */
-export type KernelPreviewCard = { card_id: string; ok: true; para: number; start: number; end: number; old: string; new: string } | { card_id: string; ok: false; reason: string };
+export type KernelPreviewCard = { card_id: string; ok: true; para: number; start: number; end: number; old: string; new: string; insert?: true } | { card_id: string; ok: false; reason: string };
 
 /** 不能写进修订稿的原因（律师层）。unchanged 不会生成修订，其余在生成修订稿时会被拦下。 */
 export const SKIP_REASON_TEXT: Record<string, string> = {
@@ -41,13 +45,17 @@ export const SKIP_REASON_TEXT: Record<string, string> = {
   unknown_token: "含无法还原的代号，生成修订稿时会被拦下",
   anchor_empty: "没有原文，生成修订稿时会被拦下",
   apply_failed: "无法写成修订，生成修订稿时会被拦下",
+  no_insert_point: "没有写明插在哪里，只进审查意见表，请在 Word 中手工补上",
 };
 export const skipReasonText = (r: string) => SKIP_REASON_TEXT[r] ?? "无法写进修订稿";
 
 /** 会改动合同的卡（与内核 changesDocument 一致）。 */
-export function changesDocument(c: Pick<PreviewCard, "status" | "suggestion">): boolean {
-  return c.status === "modified" || (c.status === "accepted" && !!c.suggestion.trim());
+export function changesDocument(c: Pick<PreviewCard, "status" | "suggestion"> & Partial<Pick<PreviewCard, "fallback" | "chosen_level">>): boolean {
+  return c.status === "modified" || (c.status === "accepted" && !!adopted(c).trim());
 }
+
+/** 接受时写进修订稿的文本（与内核 acceptedText 一致）。 */
+const adopted = (c: Pick<PreviewCard, "suggestion"> & Partial<Pick<PreviewCard, "fallback" | "chosen_level">>) => (c.chosen_level === "fallback" && c.fallback?.trim() ? c.fallback : c.suggestion);
 
 function commonEdges(a: string, b: string): [number, number] {
   let p = 0;
@@ -81,15 +89,23 @@ function layout(paragraphs: readonly string[], edits: readonly Edit[]): PreviewS
   });
 }
 
-/** Word 材料：按内核给出的落点排版。纯函数。 */
+/** Word 材料：按内核给出的落点排版；缺失条款（段后插入）排成锚点段落之后的新段落，整段显示为插入。纯函数。 */
 export function kernelPreview(paragraphs: readonly string[], cards: readonly KernelPreviewCard[]): AcceptPreview {
   const edits: Edit[] = [];
+  const inserts = new Map<number, { cardId: string; text: string }[]>();
   const skipped: AcceptPreview["skipped"] = [];
   for (const c of cards) {
-    if (c.ok) edits.push({ para: c.para, start: c.start, end: c.end, old: c.old, text: c.new, cardId: c.card_id });
+    if (c.ok && c.insert) inserts.set(c.para, [...(inserts.get(c.para) ?? []), { cardId: c.card_id, text: c.new }]);
+    else if (c.ok) edits.push({ para: c.para, start: c.start, end: c.end, old: c.old, text: c.new, cardId: c.card_id });
     else skipped.push({ card_id: c.card_id, reason: skipReasonText(c.reason) });
   }
-  return { paragraphs: layout(paragraphs, edits), applied: edits.length, skipped };
+  const out: PreviewSeg[][] = [];
+  layout(paragraphs, edits).forEach((segs, i) => {
+    out.push(segs);
+    for (const ins of inserts.get(i) ?? [])
+      for (const line of ins.text.split(/\r?\n/).filter((l) => l.trim())) out.push([{ text: "", edit: { cardId: ins.cardId, del: "", ins: line.trim() } }]);
+  });
+  return { paragraphs: out, applied: edits.length + [...inserts.values()].reduce((n, l) => n + l.length, 0), skipped };
 }
 
 const squash = (s: string) => s.replace(/[\s　|]+/g, "");
@@ -119,7 +135,12 @@ export function localPreview(paragraphs: readonly string[], cards: readonly Prev
   const skipped: AcceptPreview["skipped"] = [];
   const edits: Edit[] = [];
   for (const c of [...cards].filter(changesDocument).sort((a, b) => a.seq - b.seq)) {
-    const next = c.status === "modified" ? c.final_text : c.suggestion;
+    // 缺失条款要插入新段落：非 Word 材料没有修订稿，本机预览不排（意见表里有）
+    if (c.kind === "missing") {
+      skipped.push({ card_id: c.card_id, reason: "补充条款只能写进 Word 修订稿" });
+      continue;
+    }
+    const next = c.status === "modified" ? c.final_text : adopted(c);
     if (next === c.anchor_text) {
       skipped.push({ card_id: c.card_id, reason: skipReasonText("unchanged") });
       continue;

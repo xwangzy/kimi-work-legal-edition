@@ -51,8 +51,8 @@ test("提交：四类卡入库；缺失卡必须列查过的说法、偏离卡�
   });
   assert.equal(r.submitted, 4);
   assert.deepEqual(r.cards.map((c: any) => c.anchor_status), ["located", "located", "not_found", "located"]);
-  assert.deepEqual(r.cards[2].searched_found, ["知识产权"], "补充协议一里有“知识产权”：复查找到");
-  assert.equal(r.cards[1].searched_found, undefined, "保密期限确实没有");
+  assert.deepEqual(r.cards[2]!.searched_found, ["知识产权"], "补充协议一里有“知识产权”：复查找到");
+  assert.equal(r.cards[1]!.searched_found, undefined, "保密期限确实没有");
   assert.match(r.note, /可能误报/);
   const cards = (await tk.inv("riskcards.list", { matter_id: s.matter.matter_id })).cards as any[];
   const by = (k: string) => cards.filter((c) => c.kind === k);
