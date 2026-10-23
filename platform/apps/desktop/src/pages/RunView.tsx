@@ -100,7 +100,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   // 中栏“审查意见”入口带主按钮时，同屏其余动作都降为次按钮（每屏最多一个主按钮，Y4 V-5）
   const hasRiskEntry = !!risk && risk.docs.length > 0;
   // 本任务最新的 Word 修订稿（审查意见全部处理完后，首屏主按钮下载它；Z3 评审 #3）
-  const revision = useMemo(() => [...artifacts].filter((a) => a.kind === "revision_draft").sort((a, b) => Number(b.version) - Number(a.version))[0] ?? null, [artifacts]);
+  const revision = useMemo(() => [...artifacts].filter((a) => a.kind === "revision_draft").sort((a, b) => Number(b.kind_version ?? b.version) - Number(a.kind_version ?? a.version))[0] ?? null, [artifacts]);
   // 成果是否已取过一次（D-5：区分“加载中”与“确实没有”）
   const [artifactsLoaded, setArtifactsLoaded] = useState(false);
   // 律师是否自己点过右栏标签（有风险卡时缺省显示审查摘要，D-3；点过之后不再自动切换）

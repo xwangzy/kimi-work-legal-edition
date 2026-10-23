@@ -166,8 +166,8 @@ export function derivedTodos(db: KernelDb, matterId: string): DerivedTodo[] {
   )) {
     outList.push({ kind: "run_waiting", goal: goalOf(r.input_snapshot), scenario: r.scenario, filename: null, done_by_ai: false, run_id: r.run_id, artifact_version_id: null, count: 1, at: r.updated_at ?? r.created_at });
   }
-  // 只看每个成果系列的最新版本（旧版本被取代的不算）
-  const latest = `NOT EXISTS (SELECT 1 FROM artifact_versions b WHERE b.matter_id = a.matter_id AND b.kind = a.kind AND b.audience = a.audience AND b.version > a.version)`;
+  // 只看每份文件的最新版本（旧版本被取代的不算；按同一份文件，复核 Q7-02）
+  const latest = `NOT EXISTS (SELECT 1 FROM artifact_versions b WHERE b.matter_id = a.matter_id AND b.kind = a.kind AND b.audience = a.audience AND b.lineage IS a.lineage AND b.version > a.version)`;
   for (const r of db.all<{ run_id: string; scenario: string; input_snapshot: string | null; n: number; at: string }>(
     `SELECT r.run_id, r.scenario, r.input_snapshot, COUNT(*) AS n, MAX(a.created_at) AS at
        FROM artifact_versions a JOIN runs r ON r.run_id = a.run_id

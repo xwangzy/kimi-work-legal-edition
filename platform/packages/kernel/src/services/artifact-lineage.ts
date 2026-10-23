@@ -2,18 +2,19 @@
  * 成果的“同一份文件”（v9.4 第 25 批走查发现）：版本原来按（事项、种类、受众）编号与比较——同一事项里两次 Agent 任务各出一份 Word，
  * 种类都是 agent_report，后一份就成了前一份的“新版本”：前一份不能签发（“已有更新版本”），已签发的验签变成无效，交付包也把它算作被取代。
  * 改为按 lineage 判断“有没有更新版本”：
- * - 任务产出的文件：同一事项里同名（去掉日期）的是同一份文件的各版——重审同一份合同、重新起草起诉状是新版，起诉状与证据目录各算各的；
- * - 任务的最终回复草稿（都叫“草稿-日期.md”）：按追问链（追问沿 followup_of 回到最初那次任务），不同任务的回复不是同一份；
- * - 审查工作台导出的意见表、修订建议：按所审的那份合同；
- * - 表格审阅导出的表与文书：按那张审阅表；
+ * - 内核场景的成果（审合同、整理案卷……）：同一场景、同一组输入材料、同名（去掉末尾日期）的是同一份——重审同一份合同是新版，审另一份合同不是；
+ * - Agent 用工具出的文件：同一条追问链（追问沿 followup_of 回到最初那次任务）里同名的是同一份；另起任务重写同名文书不算新版（复核 Q7-03：
+ *   “律师函”“审查意见书”这类通用名在一个事项里会出现多份不同的文件）；
+ * - 任务的最终回复草稿（都叫“草稿-日期.md”）：按追问链；
+ * - 审查工作台导出的意见表、修订建议：按所审的那份合同；表格审阅导出的表与文书：按那张审阅表；
  * - 没有 lineage 的（告知书、周报等每个事项一份的种类）照旧按种类。
  * 版本号仍按种类递增（库里的唯一约束不变）；界面显示的“第 n 版”是这份文件里的第几版。
  */
 import type { KernelDb } from "../db.ts";
 
-/** 文件名里的日期（fileDay 写的 2026-10-23）与“部分完成”不算文件身份：追问隔天再出、先部分后完整，仍是同一份。 */
+/** 文件名末尾的日期（fileDay 写的“-2026-10-23”）与“部分完成”不算文件身份：追问隔天再出、先部分后完整，仍是同一份。只去末尾的（复核 Q7-03：“2026-10-01会议纪要”与“2026-10-15会议纪要”是两份）。 */
 export function docNameKey(filename: string): string {
-  return filename.replace(/[-_ ]?\d{4}-\d{2}-\d{2}/g, "").replace(/-部分完成/g, "").trim();
+  return filename.replace(/-\d{4}-\d{2}-\d{2}(-部分完成)?(?=(\.[A-Za-z0-9]{1,8})?$)/, "").trim();
 }
 
 /** 追问链的第一次任务（沿 input_snapshot.followup_of 回溯；防环，至多 100 步）。 */
@@ -37,8 +38,25 @@ export function chainRoot(db: KernelDb, runId: string): string {
 
 /** 最终回复草稿的种类：按追问链区分（文件名都一样）。 */
 export const REPLY_DRAFT_KINDS: ReadonlySet<string> = new Set(["a1_agent_draft", "a1_agent_draft_partial"]);
-export const runLineage = (db: KernelDb, runId: string, kind: string, filename: string): string =>
-  REPLY_DRAFT_KINDS.has(kind) ? `run:${chainRoot(db, runId)}` : `name:${docNameKey(filename)}`;
+
+/**
+ * 任务产出的 lineage。byInputs：内核场景的成果按“场景 + 输入材料 + 文件名”（重审同一份合同是新版）；Agent 工具出的文件按追问链 + 文件名。
+ */
+export function runLineage(db: KernelDb, runId: string, kind: string, filename: string, opts: { byInputs?: boolean } = {}): string {
+  if (REPLY_DRAFT_KINDS.has(kind)) return `run:${chainRoot(db, runId)}`;
+  if (opts.byInputs) {
+    const r = db.get<{ scenario: string; input_snapshot: string | null }>(`SELECT scenario, input_snapshot FROM runs WHERE run_id = ?`, [runId]);
+    let ids: string[] = [];
+    try {
+      const v = JSON.parse(r?.input_snapshot ?? "{}")?.document_version_ids;
+      ids = Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+    } catch {
+      ids = [];
+    }
+    if (r && ids.length > 0) return `in:${r.scenario}|${[...new Set(ids)].sort().join(",")}|${docNameKey(filename)}`;
+  }
+  return `run:${chainRoot(db, runId)}|${docNameKey(filename)}`;
+}
 export const docLineage = (documentVersionId: string | null | undefined): string | null => (documentVersionId ? `doc:${documentVersionId}` : null);
 export const tableLineage = (tableId: string): string => `table:${tableId}`;
 

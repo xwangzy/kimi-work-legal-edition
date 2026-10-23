@@ -583,7 +583,7 @@ function registerArtifact(
       (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status,
        filename, sha256, storage_uri, open_items, manifest, created_by, lineage)
      VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,?,?,?,?)`,
-    [artifactId, run.tenant_id, run.matter_id, runId, art.kind, v.next, art.filename, art.sha256, art.storage_uri, JSON.stringify(art.open_items ?? []), JSON.stringify(manifest), run.created_by, runLineage(db, runId, art.kind, art.filename)],
+    [artifactId, run.tenant_id, run.matter_id, runId, art.kind, v.next, art.filename, art.sha256, art.storage_uri, JSON.stringify(art.open_items ?? []), JSON.stringify(manifest), run.created_by, runLineage(db, runId, art.kind, art.filename, { byInputs: true })],
   );
   appendEvent(ctx.deps, runId, attemptId, seq, "artifact.drafted", { artifact_version_id: artifactId, kind: art.kind, filename: art.filename, sha256: art.sha256 });
   return artifactId;

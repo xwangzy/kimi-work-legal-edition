@@ -7,7 +7,8 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { importText, liveTaskIdentity, makeKernel, type TestKernel } from "./helpers.ts";
+import { importBytes, importText, liveTaskIdentity, makeKernel, runScenario, type TestKernel } from "./helpers.ts";
+import { createDocx } from "@zr-legal/docx-engine";
 import { submitRiskCards } from "../src/services/review-cards.ts";
 
 let tk: TestKernel;
@@ -127,6 +128,9 @@ test("同一份文件才算新版本（走查发现）：别的任务的同类�
   assert.equal(docNameKey("草稿-2026-10-23.md"), "草稿.md");
   assert.equal(docNameKey("草稿-2026-10-24-部分完成.md"), "草稿.md");
   assert.equal(docNameKey("民事起诉状（草稿）.docx"), "民事起诉状（草稿）.docx");
+  // 只去末尾的日期（复核 Q7-03）
+  assert.equal(docNameKey("2026-10-01会议纪要.docx"), "2026-10-01会议纪要.docx");
+  assert.equal(docNameKey("协议（审查意见书）-2026-10-23.docx"), "协议（审查意见书）.docx");
 
   const { matter } = await inv("matters.create", { title: "成果版本", stance: "原告", consent_status: "agreed" });
   const reg = (rid: string, filename: string, kind = "agent_report") => {
@@ -163,10 +167,17 @@ test("同一份文件才算新版本（走查发现）：别的任务的同类�
   assert.equal((await inv("review.completeness", { artifact_version_id: pleading2.id })).version, 2);
   // 任务页的成果同样按同一份文件编号
   assert.equal((await inv("runs.get", { run_id: r3.rid })).artifacts[0].version, 2);
-  // 另起一个任务重新起草同名的起诉状：同一份文件的第 3 版
+  // 另起一个任务写了同名文书（“律师函”“审查意见书”这类通用名在一个事项里常有多份不同的文件；复核 Q7-03）：不算新版，各自第 1 版
   const pleading3 = reg(liveTaskIdentity(tk, matter.matter_id, "lin5").rid, "民事起诉状（草稿）.md");
-  assert.equal(stale(await inv("review.completeness", { artifact_version_id: pleading2.id })), true, "同名重出是新版");
-  assert.equal((await inv("review.completeness", { artifact_version_id: pleading3.id })).version, 3);
+  assert.equal(stale(await inv("review.completeness", { artifact_version_id: pleading2.id })), false, "另起任务的同名文书不算新版");
+  assert.equal((await inv("review.completeness", { artifact_version_id: pleading3.id })).version, 1);
+  // 事项首页的待核清单与“待你复核”（复核 Q7-02）：两份不同文件都在
+  const { unsignedLatestArtifacts } = await import("../src/services/pending-checks.ts");
+  const unsigned = unsignedLatestArtifacts(kernel.db, matter.matter_id, 50).map((a) => a.artifact_version_id);
+  assert.ok(unsigned.includes(pleading2.id) && unsigned.includes(pleading3.id) && !unsigned.includes(pleading.id), "待核清单按同一份文件取最新版");
+  const { derivedTodos } = await import("../src/services/matter-todos.ts");
+  const todoIds = derivedTodos(kernel.db, matter.matter_id).map((t) => t.artifact_version_id);
+  assert.ok(todoIds.includes(pleading2.id) && todoIds.includes(pleading3.id) && !todoIds.includes(pleading.id), "待签发的按同一份文件取最新版");
   // 走查原样：两个任务的最终回复草稿都叫“草稿-日期.md”，不是同一份；同一追问链里的才是
   const q1 = liveTaskIdentity(tk, matter.matter_id, "rep1");
   const reply1 = reg(q1.rid, "草稿-2026-10-23.md", "a1_agent_draft");
@@ -198,10 +209,9 @@ test("审查工作台导出的意见表按所审合同分开：审第二份合�
   assert.equal(rows.find((r) => r.artifact_version_id === b).is_latest, true);
 });
 
-test("迁移 0066 回填：最终回复草稿按任务、其余任务产出按去掉日期的文件名、意见表按所审合同、审阅表导出按表；告知书照旧按种类；与新写入的算法一致", async () => {
+test("迁移 0066 回填：最终回复草稿按任务、其余任务产出按任务 + 原文件名（只放宽）、意见表按所审合同、审阅表导出按表；告知书照旧按种类", async () => {
   const { inv, kernel } = tk;
   const { readFileSync } = await import("node:fs");
-  const { docNameKey } = await import("../src/services/artifact-lineage.ts");
   const { matter } = await inv("matters.create", { title: "回填", stance: "原告", consent_status: "agreed" });
   const live = liveTaskIdentity(tk, matter.matter_id, "bf");
   const rows: [string, string, string | null, Record<string, unknown>][] = [
@@ -226,27 +236,49 @@ test("迁移 0066 回填：最终回复草稿按任务、其余任务产出按�
   const lin = ids.map((id) => kernel.db.get<{ lineage: string | null }>(`SELECT lineage FROM artifact_versions WHERE artifact_version_id = ?`, [id])!.lineage);
   assert.equal(lin[0], `run:${live.rid}`);
   assert.equal(lin[1], `run:${live.rid}`);
-  assert.equal(lin[2], `name:${docNameKey("合同-2023版说明.docx")}`);
+  assert.equal(lin[2], `run:${live.rid}|合同-2023版说明.docx`, "回填不在 SQL 里去日期（复核 Q7-05）");
   assert.equal(lin[3], "doc:docv_x");
   assert.equal(lin[4], "table:tbl_y");
   assert.equal(lin[5], null);
 });
 
-test("迁移 0066 回填：带日期的文件名去掉日期后与新写入的算法一致", async () => {
+test("迁移 0066 回填：带日期、带“-20”的文件名原样作身份；manifest 不是 JSON 的行不让迁移失败（复核 Q7-05、Q7-08）", async () => {
   const { inv, kernel } = tk;
   const { readFileSync } = await import("node:fs");
-  const { docNameKey } = await import("../src/services/artifact-lineage.ts");
   const { matter } = await inv("matters.create", { title: "回填二", stance: "买方", consent_status: "agreed" });
   const live = liveTaskIdentity(tk, matter.matter_id, "bf2");
-  const id = `artv_${randomUUID()}`;
-  kernel.db.run(
-    `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, audience, version, filename, sha256, storage_uri, status, manifest, created_by, lineage)
-     VALUES (?,?,?,?,'s1_opinion','internal',7,'协议（审查意见书）-2026-10-23.docx',?,?,'draft','{}',?,NULL)`,
-    [id, kernel.identity.tenantId, matter.matter_id, live.rid, "0".repeat(64), "mem://x", kernel.identity.userId],
-  );
+  const put = (kind: string, filename: string, manifest: string) => {
+    const id = `artv_${randomUUID()}`;
+    kernel.db.run(
+      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, audience, version, filename, sha256, storage_uri, status, manifest, created_by, lineage)
+       VALUES (?,?,?,?,?,'internal',?,?,?,?,'draft',?,?,NULL)`,
+      [id, kernel.identity.tenantId, matter.matter_id, live.rid, kind, 800 + Math.floor(Math.random() * 1e6), filename, "0".repeat(64), "mem://x", manifest, kernel.identity.userId],
+    );
+    return id;
+  };
+  const ids = [put("s1_opinion", "协议（审查意见书）-2026-10-23.docx", "{}"), put("agent_report", "合同-2023-12版.docx", "{}"), put("review_table", "意见表.xlsx", "不是 JSON")];
   const sql = readFileSync(new URL("../src/migrations/0066_v94_artifact_lineage.sql", import.meta.url), "utf8");
-  for (const stmt of sql.split(/;\s*\n/).map((x) => x.replace(/--[^\n]*\n/g, "").trim()).filter((x) => x.startsWith("UPDATE"))) kernel.db.run(`${stmt} AND artifact_version_id = ?`, [id]);
-  assert.equal(kernel.db.get<{ lineage: string }>(`SELECT lineage FROM artifact_versions WHERE artifact_version_id = ?`, [id])!.lineage, `name:${docNameKey("协议（审查意见书）-2026-10-23.docx")}`);
+  for (const stmt of sql.split(/;\s*\n/).map((x) => x.replace(/--[^\n]*\n/g, "").trim()).filter((x) => x.startsWith("UPDATE"))) kernel.db.run(`${stmt} AND artifact_version_id IN (?,?,?)`, ids);
+  const lin = ids.map((id) => kernel.db.get<{ lineage: string }>(`SELECT lineage FROM artifact_versions WHERE artifact_version_id = ?`, [id])!.lineage);
+  assert.deepEqual(lin, [`run:${live.rid}|协议（审查意见书）-2026-10-23.docx`, `run:${live.rid}|合同-2023-12版.docx`, `run:${live.rid}|意见表.xlsx`]);
+});
+
+test("内核场景的成果按输入材料区分（复核 Q7-03）：同一事项审两份合同，两份意见书各是最新；重审同一份是新版", { timeout: 200_000 }, async () => {
+  const { inv } = tk;
+  const { matter } = await inv("matters.create", { title: "两份合同审查", stance: "买方", consent_status: "not_required", key_dates: { analysis_as_of: "2026-10-01" } });
+  const mk = (t: string) => importBytes(inv, matter.matter_id, `${t}.docx`, createDocx(t, [{ heading: "第七条", paragraphs: ["7.1 乙方应当承担保密义务。"] }]), "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+  const a = await mk("甲协议");
+  const b = await mk("乙协议");
+  const s1 = async (docId: string) => (await runScenario(inv, matter.matter_id, "s1.contract_review", { document_version_ids: [docId], topic_hint: "保密义务" }, 90_000)).artifacts.find((x: any) => x.kind === "s1_opinion");
+  const oa = await s1(a.document_version_id);
+  const ob = await s1(b.document_version_id);
+  const stale = async (id: string) => (await inv("review.completeness", { artifact_version_id: id })).blockers.some((x: string) => /已有更新版本/.test(x));
+  assert.equal(await stale(oa.artifact_version_id), false, "审另一份合同不让前一份意见书变旧");
+  assert.equal(ob.version, 1);
+  const oa2 = await s1(a.document_version_id);
+  assert.equal(oa2.version, 2);
+  assert.equal(await stale(oa.artifact_version_id), true, "重审同一份是新版");
+  assert.equal(await stale(ob.artifact_version_id), false);
 });
 
 test("签发记录显示不确认论点就签发的理由（走查：理由记下了却没处显示）", async () => {

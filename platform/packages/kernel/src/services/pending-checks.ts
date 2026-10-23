@@ -34,7 +34,7 @@ export function unsignedLatestArtifacts(db: KernelDb, matterId: string, limit = 
   return db.all(
     `SELECT a.artifact_version_id, a.matter_id, a.filename, a.storage_uri FROM artifact_versions a
       WHERE a.matter_id = ? AND a.status IN ('draft','pending_review','pending_verification')
-        AND a.version = (SELECT MAX(b.version) FROM artifact_versions b WHERE b.matter_id = a.matter_id AND b.kind = a.kind AND b.audience = a.audience)
+        AND a.version = (SELECT MAX(b.version) FROM artifact_versions b WHERE b.matter_id = a.matter_id AND b.kind = a.kind AND b.audience = a.audience AND b.lineage IS a.lineage)
       ORDER BY a.created_at DESC LIMIT ?`,
     [matterId, limit],
   );
@@ -76,7 +76,7 @@ export function pendingChecks(db: KernelDb, matterId: string): PendingCheck[] {
   for (const a of db.all<{ artifact_version_id: string; filename: string; open_items: string | null }>(
     `SELECT a.artifact_version_id, a.filename, a.open_items FROM artifact_versions a
       WHERE a.matter_id = ? AND a.status IN ('draft','pending_review','pending_verification')
-        AND a.version = (SELECT MAX(b.version) FROM artifact_versions b WHERE b.matter_id = a.matter_id AND b.kind = a.kind AND b.audience = a.audience)`,
+        AND a.version = (SELECT MAX(b.version) FROM artifact_versions b WHERE b.matter_id = a.matter_id AND b.kind = a.kind AND b.audience = a.audience AND b.lineage IS a.lineage)`,
     [matterId],
   )) {
     let items: { kind?: string; count?: number }[] = [];

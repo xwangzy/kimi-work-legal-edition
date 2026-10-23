@@ -41,3 +41,25 @@ test("令牌表里旧规则认出的“任务”：不再匹配新文字，旧�
   const dict = new MatterTokenizer({ matterKey: KEY, parties: [{ name: "任务", kind: "person" }] as any });
   assert.match(dict.tokenize("任务到场").text, /〔自然人·/);
 });
+
+test("复核 Q7-01 / Q7-04：音译名与含“项、监、劳”等字的真名照常整名认出；退役只针对列明的误认值", () => {
+  const cases: [string, string][] = [
+    ["证人阿不都热依木·买买提出庭作证。", "阿不都热依木·买买提"],
+    ["原告：理查德·史密斯，男。", "理查德·史密斯"],
+    ["证人约翰·理查兹出庭作证。", "约翰·理查兹"],
+    ["证人阿不来提·吐尔逊出庭作证。", "阿不来提·吐尔逊"],
+    ["证人艾力·阿不力孜出庭作证。", "艾力·阿不力孜"],
+    ["联系人：查尔斯·王，电话", "查尔斯·王"],
+    ["证人王项明说", "王项明"],
+    ["联系人：张小项，电话 1", "张小项"],
+    ["委托代理人李劳动律师到庭", "李劳动"],
+    ["王监军律师到庭", "王监军"],
+  ];
+  for (const [t, n] of cases) assert.deepEqual([...recognizeNames(t)], [n], t);
+  for (const v of ["阿不都热依木·买买提", "理查德·史密斯", "王项明", "王监军", "李劳动", "查尔斯·王"]) assert.equal(stillLooksLikeName(v), true, v);
+  // 以前认出、存在表里的音译名：仍当已知姓名匹配新文字
+  const old = new MatterTokenizer({ matterKey: KEY });
+  const e = old.tokenFor("person", "理查德·史密斯", "recognizer");
+  assert.equal(new MatterTokenizer({ matterKey: KEY, table: old.table() }).tokenize("理查德·史密斯签了字").text, `${e.token}签了字`);
+});
+
