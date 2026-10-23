@@ -47,6 +47,8 @@ export interface FirmTemplate {
 }
 
 const HIT_LABEL: Record<TemplateHitKind, string> = { party: "当事人", case_no: "案号", id_no: "证件号", phone: "电话", account: "账号", uscc: "信用代码", address: "住址", plate: "车牌", email: "邮箱", birth_date: "出生日期" };
+/** 范本里换上的占位符（复核 Q6-12）：照范本改时带进修改框的，换成本合同的写法前不能保存——界面先挡，内核再挡一道（律师直接调接口也一样）。 */
+export const TEMPLATE_PLACEHOLDER = new RegExp(`【(${Object.values(HIT_LABEL).join("|")})】`);
 export const HIT_KIND_TEXT: Record<TemplateHitKind, string> = { party: "像你事项里的当事人", case_no: "像案号", id_no: "像证件号", phone: "像电话号码", account: "像银行账号", uscc: "像统一社会信用代码", address: "像具体住址", plate: "像车牌号", email: "像邮箱", birth_date: "像出生日期" };
 /** 令牌化器的标识符类别 → 命中类别（复核 Q6-01：与发给 AI 前的令牌化同一套规则——全角数字、分组写法、座机、信用代码、住址都认）。 */
 const ID_KIND: Record<string, TemplateHitKind> = { id_number: "id_no", phone: "phone", account: "account", uscc: "uscc", address: "address", plate: "plate", email: "email", case_no: "case_no", birth_date: "birth_date" };

@@ -81,7 +81,7 @@ import { decideOutline, hasOutlineUnconfirmed, listOutlines, outlineUnconfirmedR
 import { addColumn, cellContext, createTable, decideCell, draftFromTable, exportTable, getTable, ledgerReminderCandidates, listTables, pushCellsToFacts, removeColumn, TABLE_TEMPLATES } from "../services/review-tables.ts";
 import { createTodo, deleteTodo, derivedTodos, listTodos, updateTodo } from "../services/matter-todos.ts";
 import { triageMatter } from "../services/material-triage.ts";
-import { findHits, getTemplate, HIT_KIND_TEXT, listTemplates, matchClauses, prepareTemplate, removeTemplate, replaceHits, saveTemplate, TEMPLATE_CONTRACT_TYPES, textHits } from "../services/firm-templates.ts";
+import { findHits, getTemplate, HIT_KIND_TEXT, listTemplates, matchClauses, prepareTemplate, removeTemplate, replaceHits, saveTemplate, TEMPLATE_CONTRACT_TYPES, TEMPLATE_PLACEHOLDER, textHits } from "../services/firm-templates.ts";
 import { holidaySource } from "../tools/tools/cn-holidays.ts";
 import { planTemplate, applyTemplateTodos, templatesView } from "../services/matter-templates.ts";
 import { activeRules, discardDraft, listRuleSets, retireRules, RULES_SKILLS, saveRules, snapshotOf, scrubRulesFromRuns, type RulesSnapshot } from "../services/review-rules.ts";
@@ -2775,6 +2775,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "riskcards.decide": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterWriter(db, matter.matter_id, id);
+      // 照本所范本改时带进来的【当事人】等占位符：换成本合同的写法前不能保存（复核 Q6-12，原来只在界面挡）
+      if (p?.decision === "modify" && typeof p?.final_text === "string" && TEMPLATE_PLACEHOLDER.test(p.final_text)) {
+        throw validation(`修改后的文字里还有${TEMPLATE_PLACEHOLDER.exec(p.final_text)![0]}这类范本占位符：请换成本合同的写法后再保存`);
+      }
       const card = decideRiskCard(db, matter.matter_id, id.userId, { card_id: p?.card_id, decision: p?.decision, final_text: p?.final_text, level: p?.level });
       // 审计只记卡号与决定（不记条款文字）
       audit(db, id, "riskcard.decided", "risk_card", card.card_id, sha256Hex(JSON.stringify({ decision: card.status, level: card.status === "accepted" ? card.chosen_level : null })), keyctx);
