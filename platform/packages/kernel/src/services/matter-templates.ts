@@ -253,10 +253,12 @@ export interface TemplatePlan {
   key_dates: Record<string, string>;
   /** uncertain：届满日所在年份的放假安排未收录，或落在调休日上——日期须按当年放假通知核对（复核 Q4-05）。 */
   deadline: { date: string; steps: string[]; warnings: string[]; uncertain: boolean } | null;
+  /** 我方立场不在模板的常见立场里（例如“合同纠纷一审（应诉）”配“原告”）：只提示，阶段、待办照常预置。 */
+  stance_mismatch: boolean;
 }
 
 /** 创建事项之前算好：模板与起算日的校验、届满日（失败即拒绝创建，不留半个事项）。 */
-export function planTemplate(templateId: unknown, start: unknown): TemplatePlan | null {
+export function planTemplate(templateId: unknown, start: unknown, stance?: unknown): TemplatePlan | null {
   if (templateId === undefined || templateId === null || templateId === "") {
     if (start !== undefined && start !== null && start !== "") throw new DomainError("validation", "没有选事项类型，不能填起算日期", 422);
     return null;
@@ -265,13 +267,18 @@ export function planTemplate(templateId: unknown, start: unknown): TemplatePlan 
   if (!t) throw new DomainError("validation", "事项类型不存在", 422);
   const s = startDateOf(start);
   if (s && !t.start_fact) throw new DomainError("validation", `“${t.title}”不需要起算日期`, 422);
-  if (!s || !t.start_fact) return { template: t, key_dates: {}, deadline: null };
+  // 模板不核对立场时，“合同纠纷一审（应诉）”配“原告”也照算答辩期（复核 Q4 建议 3）：期间是按模板的立场定的，立场对不上就不推届满日
+  const stanceMismatch = typeof stance === "string" && stance !== "" && !t.stances.includes(stance);
+  if (s && stanceMismatch)
+    throw new DomainError("validation", `“${t.title}”的期限按${t.stances.join("、")}一方推算，我方立场是“${stance}”：改选立场或事项类型，或者不填起算日期`, 422);
+  if (!s || !t.start_fact) return { template: t, key_dates: {}, deadline: null, stance_mismatch: stanceMismatch };
   const r = calcDeadline({ start: s, period: t.start_fact.period, rule: "civil" });
   if (!r.deadline) throw new DomainError("validation", "届满日没有算出来：请检查起算日期", 422);
   return {
     template: t,
     key_dates: { [t.start_fact.start_key]: s, [t.start_fact.deadline_key]: r.deadline },
     deadline: { date: r.deadline, steps: r.steps, warnings: r.warnings, uncertain: r.holiday_source.years_used.some((y) => y.status === "not_collected") || r.warnings.some((w) => /调休/.test(w)) },
+    stance_mismatch: false,
   };
 }
 

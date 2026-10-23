@@ -728,7 +728,7 @@ export const api = {
   sampleStatus: () => invoke<{ installed: boolean; removed: boolean; matter_ids: string[]; litigation_offered: boolean }>("samples.status", {}),
   removeSample: (matterId: string) => invoke<{ removed: boolean }>("samples.remove", { matter_id: matterId }),
   createMatter: (body: Record<string, unknown>) =>
-    invoke<{ matter: Matter; template_applied?: { template_id: string; todos: number; deadline: { date: string; steps: string[]; warnings: string[]; uncertain: boolean } | null } }>("matters.create", body),
+    invoke<{ matter: Matter; template_applied?: { template_id: string; todos: number; deadline: { date: string; steps: string[]; warnings: string[]; uncertain: boolean } | null; stance_mismatch?: boolean } }>("matters.create", body),
   matterTemplates: () => invoke<{ templates: MatterTemplate[] }>("matters.templates"),
   getMatter: (id: string) => invoke<{ matter: Matter; documents: any[]; run_policy?: RunPolicyView; runs?: any[] }>("matters.get", { matter_id: id }),
   updateMatter: (id: string, patch: Record<string, unknown>) => invoke<{ matter: Matter }>("matters.update", { matter_id: id, patch }),
@@ -1281,7 +1281,9 @@ export const members = {
   departedInMatters: () => invoke<{ items: { matter_id: string; title: string; user_id: string; name: string | null; removed_from_firm: boolean }[] }>("members.departed_in_matters"),
   removeDepartedFromMatter: (matterId: string, userId: string) => invoke<{ note: string }>("matters.members.remove", { matter_id: matterId, user_id: userId, confirm_departed: true }),
   // 本人离所交接：清单与“交给同事”
-  offboarding: () => invoke<{ matters: OffboardingItem[]; pending: number }>("members.offboarding"),
+  offboarding: () => invoke<{ matters: OffboardingItem[]; pending: number; personal?: { writing_prefs: boolean } }>("members.offboarding"),
+  // 离所时清除本人在这台电脑上的个人设置（写作偏好；复核 Q4 建议 3）
+  offboardClearPersonal: () => invoke<{ cleared: { writing_prefs: number }; note: string }>("members.offboard_clear_personal"),
   offboardHandoff: (matterId: string, toUser: string) => invoke<{ relay: "done" | "not_needed" | "pending"; owner_set: boolean; note: string; item: OffboardingItem }>("members.offboard_handoff", { matter_id: matterId, to_user: toUser }),
 };
 

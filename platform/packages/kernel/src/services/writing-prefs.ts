@@ -133,3 +133,13 @@ export function prefsPromptLine(p: WritingPrefs | null | undefined): string {
   ].filter(Boolean);
   return `【写作偏好（律师本人设定，只管格式与文风；与方法模板或任务说明冲突时以任务说明为准）】${parts.join("；")}。\n`;
 }
+
+/**
+ * 离所、设备移交时清除这位律师在这台电脑上的写作偏好（复核 Q4 建议 3：原来全库没有按人删除个人数据的路径）。
+ * 只删按人存的偏好；事项里的材料、成果与审计按律所留存规则走，不在这里删。返回删掉的条数。
+ */
+export function clearWritingPrefs(db: KernelDb, tenantId: string, userId: string): number {
+  const n = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM user_writing_prefs WHERE tenant_id = ? AND user_id = ?`, [tenantId, userId])?.n ?? 0;
+  if (n > 0) db.run(`DELETE FROM user_writing_prefs WHERE tenant_id = ? AND user_id = ?`, [tenantId, userId]);
+  return n;
+}

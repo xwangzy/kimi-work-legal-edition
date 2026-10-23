@@ -4,6 +4,8 @@
  * 每台设备只自动放入一次（移除后不再放入）；名称、条款与当事人均为虚构。
  */
 import { createDocx } from "@zr-legal/docx-engine";
+import { DomainError } from "@zr-legal/domain";
+import type { KernelDb } from "../db.ts";
 
 export const SAMPLE_TITLE = "示例 · 甲公司股权转让（受让方）";
 export const SAMPLE_FILENAME = "示例-股权转让协议.docx";
@@ -86,4 +88,13 @@ export function litigationSampleMaterials(): Array<{ filename: string; data: Buf
       { heading: "二、回函", paragraphs: ["2025年9月10日，戊制造有限公司（示例）回函称：部分传感器在使用中出现读数漂移，存在质量问题，待质量问题解决后再行付款。回函未附检测报告。"] },
     ]),
   ];
+}
+
+/**
+ * 示例事项只读（复核 Q4 建议 3：原来只有界面做了）：事项的阶段与事件时点、待办、审查要点、提醒不能在示例事项上改——
+ * 示例随时可删，写进去的东西会跟着没了；提醒还会交 Kimi Work 提醒服务送达。看材料、发起任务、核对照常。
+ */
+export function assertNotSample(db: KernelDb, matterId: string, what: string): void {
+  if (db.get(`SELECT 1 AS x FROM sample_matters WHERE matter_id = ? AND removed_at IS NULL`, [matterId]))
+    throw new DomainError("validation", `示例事项只用来看效果，不能${what}：请新建一个事项`, 422);
 }

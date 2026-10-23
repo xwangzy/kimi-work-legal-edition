@@ -124,6 +124,10 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
         <label className="field">
           <span>我方立场</span>
           <Select aria-label="我方立场" value={f.stance} onChange={(v) => set("stance")({ target: { value: v } })} options={STANCE_OPTIONS} />
+          {/* 立场与事项类型对不上（复核 Q4 建议 3）：期限按模板的一方推算，填了起算日的内核拒绝创建 */}
+          {tpl && !tpl.stances.includes(f.stance) && (
+            <small className="field-warn">“{tpl.title}”通常是{tpl.stances.join("、")}一方{tpl.start_fact ? "，期限也按这一方推算：立场不改的话请不要填起算日期" : ""}</small>
+          )}
         </label>
         <label className="field">
           <span>当前阶段（可空）</span>

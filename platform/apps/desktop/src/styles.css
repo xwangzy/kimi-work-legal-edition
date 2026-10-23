@@ -568,6 +568,7 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .rc-quote { background: var(--bg-subtle); border-radius: var(--r-sm); padding: 6px 8px; }
 .rc-suggest { background: var(--status-success-bg); border-radius: var(--r-sm); padding: 6px 8px; }
 .rc-warn { display: block; margin-top: 4px; color: var(--status-warning-text); font-size: var(--fs-body); }
+.field-warn { color: var(--status-warning-text); }
 .rc-basis { display: inline-flex; align-items: center; gap: 4px; margin: 0 10px 2px 0; }
 .rc-edit textarea { width: 100%; resize: vertical; }
 .rc-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -1111,8 +1112,16 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .rules-red { color: var(--status-warning-text); }
 .rules-draft { align-items: center; gap: var(--sp-2); }
 .w-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: var(--sp-1); }
-.rules-edit input, .rules-edit textarea { width: 100%; box-sizing: border-box; font-size: var(--fs-body); }
-.rules-edit td { vertical-align: top; }
+/* 审查要点编辑：每条一张卡、底部按钮固定（复核 Q4 建议 2） */
+.rules-cards { list-style: none; margin: 12px 0 8px; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.rule-card { border: 1px solid var(--border-subtle); border-radius: var(--r-md); padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
+.rule-card-head { display: flex; align-items: center; gap: var(--sp-2); }
+.rule-card-head input { flex: 1; min-width: 0; }
+.rule-no { color: var(--text-secondary); white-space: nowrap; }
+.rule-card-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+.rule-card textarea, .rule-card input { width: 100%; box-sizing: border-box; font-size: var(--fs-body); }
+.modal-actions-sticky { position: sticky; bottom: -16px; margin: 16px -18px -16px; padding: 12px 18px; background: var(--bg-elevated); border-top: 1px solid var(--border-subtle); align-items: center; }
+.modal-actions-sticky .banner { flex: 1; margin: 0; }
 .ss-rules { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); margin: var(--sp-2) 0; }
 .ss-hints { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-caption); margin: var(--sp-1) 0 var(--sp-2); }
 .ss-hint-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }

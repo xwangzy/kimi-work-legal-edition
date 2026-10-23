@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 import { DomainError, newId, notFound } from "@zr-legal/domain";
 import type { KernelDb } from "../db.ts";
+import { assertNotSample } from "./sample-matter.ts";
 
 export const RULES_LIMITS = { rules: 40, title: 40, topic: 40, field: 300, drafts: 5 } as const;
 
@@ -165,6 +166,7 @@ export function discardDraft(db: KernelDb, matterId: string, ruleSetId: string):
  */
 export function proposeDraft(db: KernelDb, scope: { tenantId: string; matterId: string; runId: string | null }, input: { title?: unknown; rules?: unknown }): { rule_set_id: string; rules: number; note: string } {
   if (!scope.runId) throw new DomainError("forbidden", "只有任务内的调用可以起草审查要点", 403);
+  assertNotSample(db, scope.matterId, "起草审查要点");
   const { title, rules } = normalizeRules(input);
   const id = newId("reviewRules");
   db.tx(() => {

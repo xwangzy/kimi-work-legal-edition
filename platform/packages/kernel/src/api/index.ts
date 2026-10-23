@@ -84,12 +84,12 @@ import { triageMatter } from "../services/material-triage.ts";
 import { holidaySource } from "../tools/tools/cn-holidays.ts";
 import { planTemplate, applyTemplateTodos, templatesView } from "../services/matter-templates.ts";
 import { activeRules, discardDraft, listRuleSets, retireRules, RULES_SKILLS, saveRules, snapshotOf, scrubRulesFromRuns, type RulesSnapshot } from "../services/review-rules.ts";
-import { getWritingPrefs, hasPrefs, setWritingPrefs } from "../services/writing-prefs.ts";
+import { clearWritingPrefs, getWritingPrefs, hasPrefs, setWritingPrefs } from "../services/writing-prefs.ts";
 import { pendingChecks, unsignedLatestArtifacts } from "../services/pending-checks.ts";
 import { buildMatterArchive } from "../services/matter-archive.ts";
 import { closeMatter, deletionReceiptOf, lifecycleOf, purgeMatter, reopenMatter, requireActiveMatter, RETENTION_YEARS, setLegalHold, verifyDeletionReceipt, type LifecycleDeps } from "../services/matter-lifecycle.ts";
 import { buildRedlineFromCards, counterChanges, decideBatch, rejectMissingCard, cardCells, cardPages, quotePages, exportReviewTable, previewRedlineFromCards, decideFact, decideRiskCard, setRiskCardNature, listFacts, listRiskCards, riskCardProgress, scrubRelatedQuotes, submitRiskCards } from "../services/review-cards.ts";
-import { LIT_SAMPLE_ISSUES, LIT_SAMPLE_TITLE, SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, litigationSampleMaterials, sampleContract } from "../services/sample-matter.ts";
+import { LIT_SAMPLE_ISSUES, LIT_SAMPLE_TITLE, SAMPLE_CARDS, SAMPLE_FILENAME, SAMPLE_TITLE, assertNotSample, litigationSampleMaterials, sampleContract } from "../services/sample-matter.ts";
 import { probeEnvironment, type EnvProbeResult } from "../services/env-probe.ts";
 import { firstLineTitle, isTitledFilename } from "../services/artifact-title.ts";
 import { adjudicate, compareAnnotations, normalizeDocs, openEvalBytes, openEvalFile, parseDecisions, reportFileText, runRecallEval, workFileText } from "../services/recall-eval.ts";
@@ -751,7 +751,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (body.confidentiality !== undefined && !["normal", "high", "strict"].includes(body.confidentiality)) throw validation("confidentiality 须为 normal / high / strict");
       const facts = matterFactsFrom(body);
       // 事项模板（v9.4 第 22 批，C1 #20）：先校验并算好届满日，失败即不创建；阶段没给时用模板的
-      const plan = planTemplate(body.template_id, body.template_start);
+      const plan = planTemplate(body.template_id, body.template_start, body.stance);
       if (plan && facts.stage === undefined && plan.template.stage) facts.stage = plan.template.stage;
       const keyDates = { ...(plan?.key_dates ?? {}), ...(body.key_dates ?? {}) };
       const matterId = newId("matter");
@@ -808,7 +808,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       void deps.controlPlane?.pushSummaries().catch(() => {});
       return {
         matter: matterOut(db.get(`SELECT * FROM matters WHERE matter_id = ?`, [matterId])),
-        ...(plan ? { template_applied: { template_id: plan.template.id, todos: todosAdded, deadline: plan.deadline } } : {}),
+        ...(plan ? { template_applied: { template_id: plan.template.id, todos: todosAdded, deadline: plan.deadline, stance_mismatch: plan.stance_mismatch } } : {}),
       };
     },
     // 事项模板清单（v9.4 第 22 批）：新建事项时选类型；概览里“推荐的方法”按模板的场景卡 id
@@ -940,7 +940,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         fields.push(`key_dates = ?`);
         values.push(JSON.stringify(body.key_dates));
       }
-      for (const [k, v] of Object.entries(matterFactsFrom(body))) {
+      const factPatch = Object.entries(matterFactsFrom(body));
+      // 阶段、事件时点、地域：示例事项不改（界面只读，内核同样拦；复核 Q4 建议 3）
+      if (factPatch.length > 0) assertNotSample(db, matter.matter_id, "改阶段、事件时点或地域");
+      for (const [k, v] of factPatch) {
         fields.push(`${k} = ?`);
         values.push(v);
       }
@@ -2946,6 +2949,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "todos.create": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterWriter(db, matter.matter_id, id);
+      assertNotSample(db, matter.matter_id, "加待办");
       const todo = createTodo(db, { tenant_id: matter.tenant_id, matter_id: matter.matter_id, created_by: id.userId, title: p?.title, assignee_kind: p?.assignee_kind, assignee_name: p?.assignee_name, reviewer_name: p?.reviewer_name, due_date: p?.due_date });
       audit(db, id, "todo.created", "todo", todo.todo_id, undefined, keyctx);
       return { todo };
@@ -2953,6 +2957,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "todos.update": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterWriter(db, matter.matter_id, id);
+      assertNotSample(db, matter.matter_id, "改待办");
       const patch = (p?.patch ?? {}) as Record<string, unknown>;
       const todo = updateTodo(db, matter.matter_id, id.userId, String(p?.todo_id ?? ""), patch);
       audit(db, id, "todo.updated", "todo", todo.todo_id, sha256Hex(JSON.stringify({ fields: Object.keys(patch).sort(), status: todo.status })), keyctx);
@@ -2961,6 +2966,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "todos.delete": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterWriter(db, matter.matter_id, id);
+      assertNotSample(db, matter.matter_id, "删待办");
       deleteTodo(db, matter.matter_id, String(p?.todo_id ?? ""));
       audit(db, id, "todo.deleted", "todo", String(p?.todo_id ?? ""), undefined, keyctx);
       return { ok: true };
@@ -2978,6 +2984,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "review_rules.save": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterWriter(db, matter.matter_id, id);
+      assertNotSample(db, matter.matter_id, "设审查要点");
       const v = db.tx(() => saveRules(db, { tenantId: matter.tenant_id, matterId: matter.matter_id, userId: id.userId }, { title: p?.title, rules: p?.rules, from_draft: p?.from_draft, base_version: p?.base_version }));
       audit(db, id, "review_rules.saved", "matter", matter.matter_id, sha256Hex(JSON.stringify({ version: v.version, sha256: v.sha256, rules: v.rules.length, from_draft: !!p?.from_draft })), keyctx);
       return { ...listRuleSets(db, matter.matter_id), saved: v };
@@ -2985,6 +2992,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "review_rules.retire": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterWriter(db, matter.matter_id, id);
+      assertNotSample(db, matter.matter_id, "停用审查要点");
       const r = retireRules(db, matter.matter_id, p?.base_version);
       if (r.retired) audit(db, id, "review_rules.retired", "matter", matter.matter_id, undefined, keyctx);
       return listRuleSets(db, matter.matter_id);
@@ -3674,7 +3682,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         [id.userId, id.tenantId],
       );
       const matters = rows.map((m) => offboardingItem(m, id));
-      return { matters, pending: matters.filter((x) => x.status !== "ok").length };
+      // 按人存在这台电脑上的个人设置（复核 Q4 建议 3）：交接清单最后一步，本人清除
+      const personal = { writing_prefs: hasPrefs(getWritingPrefs(db, id.tenantId, id.userId)) };
+      return { matters, pending: matters.filter((x) => x.status !== "ok").length, personal };
+    },
+    // 离所时清除本人在这台电脑上的个人设置（写作偏好）。电脑已停用（退出模式）时也能清：这是删除个人数据，不是新的处理
+    "members.offboard_clear_personal": (_p, id) => {
+      const writingPrefs = clearWritingPrefs(db, id.tenantId, id.userId);
+      audit(db, id, "member.offboard_clear_personal", "user", id.userId, sha256Hex(JSON.stringify({ writing_prefs: writingPrefs })), keyctx);
+      return { cleared: { writing_prefs: writingPrefs }, note: writingPrefs > 0 ? "已清除你在这台电脑上的写作偏好" : "这台电脑上没有你的写作偏好" };
     },
     // 团队事项交给一位同事：对方还不是负责人就先设为负责人（成员事件），本人是中继上的控制成员就再移交控制（先设负责人、后移交，中继拒绝时如实返回）
     "members.offboard_handoff": async (p, id) => {
@@ -3815,7 +3831,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
            devices_revoked = member_removals.devices_revoked + excluded.devices_revoked, seat_released_at = ?, seat_error = excluded.seat_error`,
         [id.tenantId, uid, now, id.userId, cp.length, seatReleasedAt, seatError, fresh ? 1 : 0, fresh ? 1 : 0, seatReleasedAt],
       );
-      audit(db, id, "member.remove", "member", uid, sha256Hex(JSON.stringify({ devices: cp.length, control_plane: cp, seat_released: !seatError, retry: !fresh })), keyctx);
+      // 他在这台电脑上按人存的个人设置一并清除（复核 Q4 建议 3；管理员电脑多半没有，共用电脑时才有）
+      const prefsCleared = clearWritingPrefs(db, id.tenantId, uid);
+      audit(db, id, "member.remove", "member", uid, sha256Hex(JSON.stringify({ devices: cp.length, control_plane: cp, seat_released: !seatError, retry: !fresh, writing_prefs_cleared: prefsCleared })), keyctx);
       const failed = cp.filter((s) => s === "failed").length;
       const waiting = cp.filter((s) => s === "pending" || s === "submitted").length;
       return {
@@ -4318,6 +4336,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   function reminderMatterGate(matterId: string, audience: "me" | "team", id: Identity, op: "create" | "update" = "create"): void {
     const m = requireMatterAccess(db, matterId, id);
     if ((m.lifecycle ?? "active") !== "active") throw validation(op === "update" ? "已结案的事项的提醒不能修改，可以撤销" : "已结案的事项不能设新提醒");
+    assertNotSample(db, matterId, op === "update" ? "改提醒" : "设提醒");
     if (audience === "team") {
       // 律师语言的报错（复核 S10B-12）：只读成员只能提醒自己
       const role = db.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matterId, id.userId])?.matter_role;

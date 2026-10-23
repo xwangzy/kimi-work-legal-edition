@@ -201,36 +201,39 @@ export function RulesEditor({ matterId, base, draft, activeVersion, plain = (t) 
         <span>名称</span>
         <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={40} placeholder="例如：客户甲采购标准" aria-label="审查要点名称" />
       </label>
-      <table className="data rules-edit">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>条款</th>
-            <th>我方标准</th>
-            <th>可退让（可空）</th>
-            <th>不可谈（可空）</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              <td>{i + 1}</td>
-              <td><input aria-label={`第 ${i + 1} 条条款`} value={r.topic} onChange={(e) => set(i, "topic", e.target.value)} maxLength={40} placeholder="付款期限" /></td>
-              <td><textarea aria-label={`第 ${i + 1} 条我方标准`} value={r.standard} onChange={(e) => set(i, "standard", e.target.value)} maxLength={300} rows={2} placeholder="验收合格后 60 日内付款" /></td>
-              <td><textarea aria-label={`第 ${i + 1} 条可退让`} value={r.fallback ?? ""} onChange={(e) => set(i, "fallback", e.target.value)} maxLength={300} rows={2} /></td>
-              <td><textarea aria-label={`第 ${i + 1} 条不可谈`} value={r.red_line ?? ""} onChange={(e) => set(i, "red_line", e.target.value)} maxLength={300} rows={2} /></td>
-              <td className="nowrap">
+      {/* 每条一张卡（复核 Q4 建议 2：原来是 760px 弹窗里的 6 列表格，每列约 150px，4～5 条后“启用 / 保存”要滚动才看得到） */}
+      <ol className="rules-cards">
+        {rows.map((r, i) => (
+          <li key={i} className="rule-card">
+            <div className="rule-card-head">
+              <span className="rule-no">第 {i + 1} 条</span>
+              <input aria-label={`第 ${i + 1} 条条款`} value={r.topic} onChange={(e) => set(i, "topic", e.target.value)} maxLength={40} placeholder="条款，如：付款期限" />
+              <span className="nowrap">
                 <button className="btn-link" disabled={i === 0} onClick={() => move(i)} aria-label={`第 ${i + 1} 条上移`}>上移</button>{" "}
                 <button className="btn-link" onClick={() => setRows((rs) => (rs.length <= 1 ? [blankRow()] : rs.filter((_, j) => j !== i)))} aria-label={`删除第 ${i + 1} 条`}>删除</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </span>
+            </div>
+            <label className="field">
+              <span>我方标准</span>
+              <textarea aria-label={`第 ${i + 1} 条我方标准`} value={r.standard} onChange={(e) => set(i, "standard", e.target.value)} maxLength={300} rows={2} placeholder="验收合格后 60 日内付款" />
+            </label>
+            <div className="rule-card-pair">
+              <label className="field">
+                <span>可退让（可空）</span>
+                <textarea aria-label={`第 ${i + 1} 条可退让`} value={r.fallback ?? ""} onChange={(e) => set(i, "fallback", e.target.value)} maxLength={300} rows={2} />
+              </label>
+              <label className="field">
+                <span>不可谈（可空）</span>
+                <textarea aria-label={`第 ${i + 1} 条不可谈`} value={r.red_line ?? ""} onChange={(e) => set(i, "red_line", e.target.value)} maxLength={300} rows={2} />
+              </label>
+            </div>
+          </li>
+        ))}
+      </ol>
       <button className="btn-link" disabled={rows.length >= 40} onClick={() => setRows((rs) => [...rs, blankRow()])}>＋ 加一条</button>
-      {err && <div className="banner banner-red">{err}</div>}
-      <div className="modal-actions">
+      {/* 底部按钮固定：条数多时不用滚到底才能启用或保存 */}
+      <div className="modal-actions modal-actions-sticky">
+        {err && <div className="banner banner-red">{err}</div>}
         <button className="btn-ghost" onClick={onClose}>取消</button>
         <button className="btn-primary" disabled={busy} onClick={() => void save()}>{draft ? "启用" : "保存"}</button>
       </div>

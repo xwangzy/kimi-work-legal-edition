@@ -10,7 +10,8 @@ import { fmtTime } from "../lib/labels.ts";
 import { Select } from "./Select.tsx";
 
 export function Offboarding() {
-  const [data, setData] = useState<{ matters: OffboardingItem[]; pending: number } | null>(null);
+  const [data, setData] = useState<{ matters: OffboardingItem[]; pending: number; personal?: { writing_prefs: boolean } } | null>(null);
+  const [personalNote, setPersonalNote] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -41,6 +42,17 @@ export function Offboarding() {
       return r ? `已导出：${r.filename}（里面是明文案卷）。请交给律所或接手的同事保管，不要存到个人网盘。` : null;
     });
   const handoff = (it: OffboardingItem, to: string) => act(it.matter_id, async () => (await members.offboardHandoff(it.matter_id, to)).note);
+  const clearPersonal = async () => {
+    setBusy("personal");
+    try {
+      setPersonalNote((await members.offboardClearPersonal()).note);
+      await load();
+    } catch (e) {
+      setPersonalNote((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
   return (
     <div className="device-row">
       <div className="device-k">离所交接</div>
@@ -99,6 +111,22 @@ export function Offboarding() {
                 })}
               </tbody>
             </table>
+          )}
+          {/* 最后一步：按人存在这台电脑上的个人设置（复核 Q4 建议 3）。事项的材料与成果按律所留存规则处理，这里不删 */}
+          {data && (
+            <p>
+              {data.personal?.writing_prefs ? (
+                <>
+                  你的写作偏好（落款、法条引用写法等）还在这台电脑上。交还电脑前请清除：{" "}
+                  <button className="btn-ghost btn-sm" disabled={busy !== null} onClick={() => void clearPersonal()}>
+                    {busy === "personal" ? "正在清除…" : "清除写作偏好"}
+                  </button>
+                </>
+              ) : (
+                <span className="muted">{personalNote || "这台电脑上没有你的写作偏好。"}</span>
+              )}
+              {data.personal?.writing_prefs && personalNote && <span className="muted" role="status"> {personalNote}</span>}
+            </p>
           )}
         </details>
       </div>

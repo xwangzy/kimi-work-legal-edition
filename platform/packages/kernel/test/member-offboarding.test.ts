@@ -129,8 +129,15 @@ test("离所交接：个人事项导出归档、团队事项交负责人与中�
   await assert.rejects(kA.inv("devices.revoke", { device_id: roster.members.find((x: any) => x.is_me).devices[0].device_id }), /不能在这台电脑上停用它自己/);
   // “只有开通律所（持有律所根）的电脑能移出成员”这里测不出来：只有 alice 一位管理员（处置表 R15A-03 记为无用例）
   // 中软暂时连不上：席位释放记下来，之后随同步自动重试（复核 R15A-11）
+  // 个人设置（复核 Q4 建议 3）：carol 在自己电脑上设了写作偏好；管理员电脑上也有一条她的（共用电脑的情形），移出时一并清除
+  await kC.inv("writing_prefs.set", { signature: "某某律师事务所 丙律师", citation: "short" });
+  assert.equal((await kC.inv("members.offboarding")).personal.writing_prefs, true);
+  kA.kernel.db.run(`INSERT INTO user_writing_prefs (tenant_id, user_id, prefs, updated_at) VALUES (?,?,?,?)`, [TID, usr("carol"), JSON.stringify({ signature: "共用电脑上的落款" }), new Date().toISOString()]);
+  kA.kernel.db.run(`INSERT INTO user_writing_prefs (tenant_id, user_id, prefs, updated_at) VALUES (?,?,?,?)`, [TID, usr("test-lawyer"), JSON.stringify({ signature: "管理员本人的落款" }), new Date().toISOString()]);
   cloud.setControlPlaneAvailable(false);
   const rm = await kA.inv("members.remove", { member_id: usr("carol") });
+  assert.equal(kA.kernel.db.get(`SELECT 1 AS x FROM user_writing_prefs WHERE user_id = ?`, [usr("carol")]), undefined, "移出时清除她在这台电脑上的写作偏好");
+  assert.ok(kA.kernel.db.get(`SELECT 1 AS x FROM user_writing_prefs WHERE user_id = ?`, [usr("test-lawyer")]), "别人的不动");
   cloud.setControlPlaneAvailable(true);
   assert.equal(rm.devices_revoked, 0, "电脑此前已停用");
   assert.equal(rm.seat_released, false);
@@ -148,6 +155,12 @@ test("离所交接：个人事项导出归档、团队事项交负责人与中�
   await kC.inv("control_plane.sync");
   await assert.rejects(kC.inv("relay.sync"), /不可用/);
   await assert.rejects(kC.inv("members.offboard_handoff", { matter_id: m2, to_user: usr("bob") }), /不可用/);
+  // 退出模式下仍能清除本人的个人设置（删除个人数据，不是新的处理）；清完清单显示没有
+  const cl = await kC.inv("members.offboard_clear_personal");
+  assert.equal(cl.cleared.writing_prefs, 1);
+  assert.equal((await kC.inv("members.offboarding")).personal.writing_prefs, false);
+  assert.deepEqual(await kC.inv("writing_prefs.get"), { signature: null, citation: null, notes: null });
+  assert.equal((await kC.inv("members.offboard_clear_personal")).cleared.writing_prefs, 0, "再点一次幂等");
   await assert.rejects(kC.inv("matters.archive", { matter_id: p1 }), /已被律所停用/);
 
   // 交接过的事项：bob 的电脑提醒“还有电脑已全部停用的成员”（复核 R15A-05）；bob 不知道 carol 是否已离所——须明确确认（复核 R15A-01）
