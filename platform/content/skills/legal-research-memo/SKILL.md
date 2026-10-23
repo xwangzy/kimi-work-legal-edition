@@ -6,13 +6,13 @@ when_to_use: 有明确的研究问题与事件时点；不用于预测胜诉率�
 arguments: [question]
 kwl:
   id: legal-research-memo
-  version: 1.2.0
+  version: 1.3.0
   lines: [诉讼仲裁, 非诉, 企业法务]
   chain: research
   tier: beta
   requires_outline: true
   tools_required: [law.search, law.get_version, citations.verify]
-  tools_optional: [docx.render_report, xlsx.render_table, materials.list, materials.read_excerpt, facts.list, outline.submit, outline.get]
+  tools_optional: [docx.render_report, xlsx.render_table, materials.list, materials.read_excerpt, facts.list, outline.submit, outline.get, law.get_article]
   outputs: [研究备忘录.docx, 来源目录.xlsx]
   source_lineage: [demo:research@v1.6, demo:scene-civil-strategy@v1.0, demo:scene-labor-local-cases@v1.0]
 ---
@@ -33,7 +33,7 @@ kwl:
 ## 3. 步骤
 1. 研究计划：子问题 → 可能的法源层级（法律、行政法规、司法解释、部门规章、地方）→ 检索词。
 2. 检索：`law.search` 找候选法源；对每个候选用 `law.get_version` 分别取事件时点版本与分析截止日版本；两者不同时分别写明，过渡规则不确定时标“待核实”。
-3. 命题对照：备忘录中的每一个法律命题都对应出处，并用 `citations.verify` 核验，记录核验状态。
+3. 命题对照：备忘录中的每一个法律命题都对应出处，并用 `citations.verify` 核验，记录核验状态。要判“已核验且支持命题”，须用 `law.get_article` 取该条原文与命题并列对照（条件、例外、适用范围）；取不到原文（不可用、库外或只取到部分）的，最多判“出处已核验但支持或适用待确认”，不凭记忆判断支持。
 4. 相反依据：每个子问题至少检索一次相反或限制性规定、例外条款；没有找到写“在本次资料范围内未检出”，不写“不存在”。
 5. **起草前确认论点与依据**（成文之前必做）：用 `outline.submit` 提交拟写的论点（doc_kind 写“法律研究备忘录”），每条附依据（法名 + 条号，note 写这条怎么支持该论点）与所用事实（引用 `facts.list` 的 fact_id）；再用提问工具请律师确认（问题写“论点与依据已列在任务页，请确认后选择”，选项依次为“已确认，按确认的论点起草”“先不起草”）。律师选第一项后用 `outline.get` 读取确认版，只按确认版写：删掉的论点不写，律师改写过的按律师的写法，去掉的依据不引；律师选“先不起草”即停止，回报提纲与待补事项。确认之前文书工具会拒绝生成。
 6. 成文：用 `docx.render_report` 生成备忘录（title：`研究备忘录-<主题>`；sections 按第 5 节六部分组织）；来源超过 10 条时用 `xlsx.render_table` 另出《来源目录》（title：`来源目录-<主题>`）。
@@ -44,6 +44,7 @@ kwl:
 | law.search | 候选法源 | 不可用：停止，只交付研究计划 |
 | law.get_version | 行为时法 / 现行法 | 未收录：写“法规库未收录”，不凭记忆补充 |
 | citations.verify | 命题出处核验 | 不可用：全部命题标“来源未核验”，不出“简答” |
+| law.get_article | 取条文原文判断是否支持命题 | 不可用或库外：相关命题最多判“出处已核验但支持或适用待确认” |
 | facts.list | 律师确认的事实（作为假设） | 不可用：只用律师在对话中给出的事实 |
 | materials.list / materials.read_excerpt | 引用事项材料原文与覆盖说明 | 读取失败：该处标“未读取” |
 | docx.render_report | 生成备忘录 | 不可用：用受限命令行 `kwl-docx create` 生成，并注明“未经文书工具生成” |

@@ -200,7 +200,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
         </div>
         <div className="composer chat-composer">
           <textarea
-            placeholder="输入法律问题（不要粘贴案件材料；涉及具体当事人请在事项内处理）"
+            placeholder="输入法律问题，例如：股东未经其他股东同意对外转让股权，合同是否有效？"
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {

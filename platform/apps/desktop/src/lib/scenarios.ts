@@ -18,6 +18,8 @@ export interface ScenarioField {
   options?: string[];
   placeholder?: string;
   required?: boolean;
+  /** 选了某个选项时改用别的卡（第 26 批）：选项 → 卡 id 与一句说明；开始面板据此提示并给“改用”按钮。 */
+  redirect?: Record<string, { card: string; text: string }>;
 }
 
 export interface ScenarioCard {
@@ -67,6 +69,11 @@ export function cardGets(c: Pick<ScenarioCard, "gets">): string {
   return c.gets.map((g) => g.replace(/（[^）]*）/g, "").replace(/\.(docx|xlsx|pptx|md|pdf)\b/gi, "").trim()).filter(Boolean).join(" · ");
 }
 
+/** 交付件的律师写法（第 26 批，评审 U2-26②）：去掉扩展名，保留括注（开始面板、意图建议、输入框菜单用）。 */
+export function getsPlain(c: Pick<ScenarioCard, "gets">): string[] {
+  return c.gets.map((g) => g.replace(/\.(docx|xlsx|pptx|md|pdf)\b/gi, "").trim()).filter(Boolean);
+}
+
 /** 卡片上的“需要”一行（v9.4）：去掉括注里的先后顺序说明（开始面板里有）。 */
 export function cardGives(c: Pick<ScenarioCard, "gives">): string {
   return c.gives.replace(/（[^）]*）/g, "").trim();
@@ -74,6 +81,43 @@ export function cardGives(c: Pick<ScenarioCard, "gives">): string {
 
 // 与 contract-review/references/contract-types.md 的十类一致（v9.4 合同审查补六类）；其他类型只按通用必查点审
 const CONTRACT_TYPES = ["股权转让", "买卖", "服务 / 技术服务", "借款与担保", "租赁", "建设工程施工", "保密与竞业限制", "技术开发", "劳动合同（用人单位）", "投资协议（增资 / 股权收购）", "其他（通用辅助）"];
+
+/** 选项指向别的卡时的提示（第 26 批）：第一个命中的字段；没有命中返回 null。 */
+export function fieldRedirect(card: Pick<ScenarioCard, "fields">, values: Record<string, string | string[]>): { card: ScenarioCard; text: string } | null {
+  for (const f of card.fields) {
+    const v = values[f.key];
+    const hit = typeof v === "string" ? f.redirect?.[v] : undefined;
+    const to = hit ? SCENARIOS.find((c) => c.id === hit.card) : undefined;
+    if (hit && to) return { card: to, text: hit.text };
+  }
+  return null;
+}
+
+/** 函件类型（与方法 demand-letter 的 references/letter-types.md 六类一致，第 26 批）。 */
+const LETTER_TYPES = ["催款律师函", "履行催告函", "解除前催告函", "解除通知", "向保证人主张权利通知", "停止侵权函"];
+
+/** 按文件名与事项名预选合同类型的关键词（第 26 批）：先具体后宽泛；猜不出不选，律师自己选。 */
+const CONTRACT_TYPE_HINTS: [RegExp, string][] = [
+  [/增资|投资协议|股权收购|认购协议/, "投资协议（增资 / 股权收购）"],
+  [/股权转让|股份转让/, "股权转让"],
+  [/保密协议|竞业/, "保密与竞业限制"],
+  [/技术开发|软件开发|开发合同/, "技术开发"],
+  [/劳动合同|聘用合同/, "劳动合同（用人单位）"],
+  [/施工|建设工程|工程承包/, "建设工程施工"],
+  [/借款|贷款|担保|保证合同|抵押|质押/, "借款与担保"],
+  [/租赁|出租|承租/, "租赁"],
+  [/采购|买卖|购销|供货|销售合同/, "买卖"],
+  [/服务合同|服务协议|技术服务|委托合同|咨询/, "服务 / 技术服务"],
+];
+
+/** 从所选合同的文件名（优先）与事项名猜合同类型；都猜不出返回 null。 */
+export function guessContractType(filenames: readonly string[], matterTitle = ""): string | null {
+  for (const text of [...filenames, matterTitle]) {
+    const hit = CONTRACT_TYPE_HINTS.find(([re]) => re.test(text));
+    if (hit) return hit[1];
+  }
+  return null;
+}
 
 export const SCENARIOS: ScenarioCard[] = [
   // ── 诉讼仲裁 ──
@@ -225,10 +269,12 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "appeal-draft",
     verb: "开始起草",
-    goal: "请起草民事上诉状（不服一审{ruling}）。判决书或裁定书的送达日期：{served_on}；上诉范围：{scope}。只采用我已确认的事实，不预测二审结果。",
+    goal: "请起草民事上诉状（不服一审{ruling}）。判决书或裁定书的送达日期：{served_on}；上诉范围：{scope}；上诉人在境内有无住所：{domicile}。只采用我已确认的事实，不预测二审结果。",
     fields: [
       { key: "ruling", label: "不服的是", kind: "select", options: ["判决", "裁定"], required: true },
       { key: "served_on", label: "判决书或裁定书的送达日期", kind: "date" },
+      // 第 26 批（评审 S2-15）：境内无住所的上诉期三十日，与答辩状同写法
+      { key: "domicile", label: "上诉人在境内有无住所", kind: "select", options: ["有", "没有（上诉期三十日）"] },
       { key: "scope", label: "上诉范围", kind: "select", options: ["全部判项", "部分判项（先问我）"] },
     ],
     minMaterials: 1,
@@ -308,9 +354,11 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "enforcement-application",
     verb: "开始起草",
-    goal: "请起草强制执行申请书，并计算执行标的（金额由计算工具算出，算不了的标待算）。法律文书生效日期：{effective_on}；对方已履行情况：{paid}。",
+    goal: "请起草强制执行申请书，并计算执行标的（金额由计算工具算出，算不了的标待算）。法律文书生效日期：{effective_on}；文书规定的履行期限最后一日：{due_on}；对方已履行情况：{paid}。",
     fields: [
       { key: "effective_on", label: "法律文书生效日期", kind: "date" },
+      // 第 26 批（评审 S2-17）：申请执行期间从履行期限最后一日起算（分期的从最后一期）
+      { key: "due_on", label: "履行期限最后一日（分期写最后一期）", kind: "date" },
       { key: "paid", label: "对方已履行情况", kind: "text", placeholder: "例如：2026 年 5 月付过 10 万元；没有付过" },
     ],
     minMaterials: 1,
@@ -381,8 +429,12 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "procedure-check",
     verb: "开始核查",
-    goal: "请核查管辖与诉讼时效：拟主张的请求为{claims}。",
-    fields: [{ key: "claims", label: "拟主张的请求", kind: "text", required: true, placeholder: "例如：支付货款 50 万元及逾期利息" }],
+    goal: "请核查管辖与诉讼时效：拟主张的请求为{claims}；我方：{side}。",
+    fields: [
+      { key: "claims", label: "拟主张的请求", kind: "text", required: true, placeholder: "例如：支付货款 50 万元及逾期利息" },
+      // 第 26 批（评审 S2 §3 第 9 条）：方法参数本来就有 side
+      { key: "side", label: "我方", kind: "select", options: ["拟起诉", "已被诉"] },
+    ],
     minMaterials: 1,
     steps: ["逐字摘出争议解决条款，核对协议管辖或仲裁条款是否有效", "列出法定连接点与候选法院或机构", "整理时效起算、中断的事实与证据", "期限届满日由期限工具计算；起算不明时只给分支"],
     intents: [["管辖"], ["诉讼时效"], ["时效", "过了"], ["时效", "核查"]],
@@ -455,14 +507,15 @@ export const SCENARIOS: ScenarioCard[] = [
     skill: "demand-letter",
     allowPartial: true,
     verb: "开始起草",
-    goal: "请起草{purpose}函件；期限要求：{deadline}。",
+    // 第 26 批（评审 S2-12）：字段键与方法参数 letter_type 一致（原来叫 purpose，方法收不到）；类型与方法的六类函件一致
+    goal: "请起草：{letter_type}；期限要求：{deadline}。",
     fields: [
-      { key: "purpose", label: "函件目的", kind: "select", options: ["催款", "催告履行", "解除通知", "其他"], required: true },
+      { key: "letter_type", label: "函件类型", kind: "select", options: LETTER_TYPES, required: true },
       { key: "deadline", label: "期限要求", kind: "text", placeholder: "例如：收函后 7 日内" },
     ],
     minMaterials: 0,
     steps: ["从材料中整理事实与依据", "起草函件正文", "核对引用", "列出发送前核对（收件人、送达方式、期限）"],
-    intents: [["律师函"], ["催告"], ["催款函"], ["解除通知"]],
+    intents: [["律师函"], ["催告"], ["催款函"], ["解除通知"], ["保证人", "主张"], ["保证期间"]],
   },
   // ── 非诉 ──
   {
@@ -745,8 +798,12 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "demand-letter",
     verb: "开始处理",
-    goal: "请就以下履约问题梳理履约事实与依据，并起草催告函：{issue}。",
-    fields: [{ key: "issue", label: "履约节点或违约事项", kind: "text", required: true }],
+    goal: "请就以下履约问题梳理履约事实与依据，并起草函件：{issue}。函件类型：{letter_type}。",
+    fields: [
+      { key: "issue", label: "履约节点或违约事项", kind: "text", required: true },
+      // 第 26 批（评审 S2-12）：可不选，方法会问
+      { key: "letter_type", label: "函件类型", kind: "select", options: LETTER_TYPES },
+    ],
     minMaterials: 1,
     steps: ["对照合同条款梳理履约事实", "核对依据，列出发送前要确认的事项", "起草催告函（期限按合同或你给的写，不自行推算）"],
     intents: [["履约"], ["逾期", "交货"], ["对方", "违约"]],
@@ -780,9 +837,11 @@ export const SCENARIOS: ScenarioCard[] = [
     skill: "labor-dispute",
     args: { mode: "仲裁应对", side: "用人单位" },
     verb: "开始准备",
-    goal: "请为劳动仲裁应诉做应对方案：员工请求为{claim}；开庭日：{hearing}。",
+    // 第 26 批（评审 S2-14）：问收到申请书副本的日期——劳动仲裁答辩期十日（调解仲裁法第三十条）
+    goal: "请为劳动仲裁应诉做应对方案：员工请求为{claim}；收到仲裁申请书副本的日期：{received_on}；开庭日：{hearing}。",
     fields: [
       { key: "claim", label: "员工请求", kind: "text", required: true, placeholder: "一句话即可" },
+      { key: "received_on", label: "收到申请书副本的日期", kind: "date" },
       { key: "hearing", label: "仲裁开庭日", kind: "date" },
     ],
     minMaterials: 1,
@@ -800,7 +859,7 @@ export const SCENARIOS: ScenarioCard[] = [
     args: { mode: "解除前评估", side: "用人单位" },
     verb: "开始评估",
     goal: "请评估拟解除这名员工的风险与程序：解除理由为{reason}。",
-    fields: [{ key: "reason", label: "解除理由", kind: "select", options: ["严重违反规章制度", "不能胜任工作", "医疗期满不能工作", "客观情况重大变化", "经济性裁员", "其他"], required: true }],
+    fields: [{ key: "reason", label: "解除理由", kind: "select", options: ["严重违反规章制度", "试用期间被证明不符合录用条件", "不能胜任工作", "医疗期满不能工作", "客观情况重大变化", "经济性裁员", "劳动合同期满终止（不续签）", "协商一致解除", "其他"], required: true }],
     minMaterials: 1,
     steps: ["核对解除理由与法定依据是否对得上", "检查规章制度是否经民主程序并公示", "列出通知工会、送达等程序步骤", "列出合法与违法解除两种情景的敞口（不替公司定金额）"],
     intents: [["解除", "员工"], ["辞退"], ["开除", "员工"]],
@@ -834,8 +893,13 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "procedure-check",
     verb: "开始核查",
-    goal: "公司收到了起诉状或仲裁申请书（收到日期：{received_on}）：请列出答辩、举证、管辖异议等程序期限并核查管辖。",
-    fields: [{ key: "received_on", label: "收到日期", kind: "date", required: true }],
+    // 第 26 批（评审 S2-03、S2-14）：先分清收到的是哪种文书——民诉、商事仲裁、劳动仲裁三套期限不互相套用
+    args: { side: "已被诉" },
+    goal: "公司收到了{doc_kind}（收到日期：{received_on}）：请列出答辩、举证、管辖异议等程序期限并核查管辖。",
+    fields: [
+      { key: "doc_kind", label: "收到的是", kind: "select", options: ["民事起诉状", "商事仲裁申请书", "劳动仲裁申请书"], required: true, redirect: { "劳动仲裁申请书": { card: "labor-response", text: "劳动仲裁的答辩期、时效与举证规则不同，请改用“劳动仲裁应对”" } } },
+      { key: "received_on", label: "收到日期", kind: "date", required: true },
+    ],
     minMaterials: 1,
     steps: ["确认收到日期与文书类型", "期限届满日由期限工具计算，附计算过程", "核查管辖与是否有仲裁条款", "列出内部通报与需要外部律师的事项"],
     intents: [["收到", "起诉状"], ["收到", "仲裁申请"], ["收到", "传票"]],

@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
-import { MODE_LABELS, PREAUTH_LABELS } from "../lib/labels.ts";
+import { materialsLine, MODE_LABELS, PREAUTH_LABELS } from "../lib/labels.ts";
 import type { ComposerValue } from "./Composer.tsx";
 import { SCENARIO_LABELS } from "../lib/labels.ts";
 import { Modal } from "./Modal.tsx";
@@ -26,12 +26,14 @@ export interface PendingStart {
   skillArgs?: Record<string, string>;
   /** 本事项审查要点（v9.4 第 22 批）：false = 本次不按要点审；缺省由内核按方法决定。 */
   reviewRules?: boolean;
+  /** 所选材料的文件名（第 26 批，评审 U2-23：确认卡回显用到哪几份，只在本机显示）。 */
+  docNames?: string[];
   estimate: {
     estimate_id: string;
     points: number;
     points_display: string;
     assumptions: string[];
-    data_where?: { preview?: string; bullets?: string[]; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | null; busy_run_id?: string; send_summary?: SendSummaryView };
+    data_where?: { preview?: string; bullets?: string[]; bullet_kinds?: string[]; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | null; busy_run_id?: string; send_summary?: SendSummaryView };
   };
 }
 
@@ -42,6 +44,8 @@ export async function launchRun(p: PendingStart): Promise<string> {
     estimate_id: p.estimate.estimate_id,
     idempotency_key: `${p.matter.matter_id}-${p.value.scenario}-${Date.now()}`,
     ...(p.value.goal.trim() ? { goal: p.value.goal.trim() } : {}),
+    // 任务名（第 26 批）：场景卡名等固定文字，列表与执行页标题用它；律师自己描述的任务不传，标题用描述
+    ...(p.label ? { title: p.label } : {}),
     ...(agent ? { mode: p.value.choice.mode, plan_first: p.value.choice.mode === "chat" ? false : p.value.choice.planFirst, preauthorizations: p.value.choice.mode === "auto" ? p.value.choice.preauth : [] } : {}),
     ...(agent && p.skill ? { skill: p.skill } : {}),
     ...(agent && p.skill && p.skillArgs && Object.keys(p.skillArgs).length > 0 ? { skill_args: p.skillArgs } : {}),
@@ -53,7 +57,7 @@ export async function launchRun(p: PendingStart): Promise<string> {
 }
 
 /** 预估（失败抛出内核原因，例如场景须有材料）。 */
-export async function prepareStart(matter: Matter, value: ComposerValue, o: { skill?: string; label?: string; skillArgs?: Record<string, string>; reviewRules?: boolean } = {}): Promise<PendingStart> {
+export async function prepareStart(matter: Matter, value: ComposerValue, o: { skill?: string; label?: string; skillArgs?: Record<string, string>; reviewRules?: boolean; docNames?: string[] } = {}): Promise<PendingStart> {
   const extra: Record<string, unknown> = {};
   if (value.scenario === "s1b.draft_compare") {
     if (value.documentIds.length < 2) throw new Error("回稿比对需要选择两份文档：先选基线稿，再选回稿");
@@ -63,7 +67,7 @@ export async function prepareStart(matter: Matter, value: ComposerValue, o: { sk
   if (value.goal.trim()) extra.goal = value.goal.trim();
   if (value.scenario === "s2.case_file" && value.issues?.length) extra.issues = value.issues;
   const estimate = await api.estimate(matter.matter_id, { scenario: value.scenario, document_version_ids: value.documentIds, ...extra });
-  return { matter, value, estimate: estimate as PendingStart["estimate"], ...(o.skill ? { skill: o.skill } : {}), ...(o.label ? { label: o.label } : {}), ...(o.skillArgs ? { skillArgs: o.skillArgs } : {}), ...(o.reviewRules !== undefined ? { reviewRules: o.reviewRules } : {}) };
+  return { matter, value, estimate: estimate as PendingStart["estimate"], ...(o.skill ? { skill: o.skill } : {}), ...(o.label ? { label: o.label } : {}), ...(o.skillArgs ? { skillArgs: o.skillArgs } : {}), ...(o.reviewRules !== undefined ? { reviewRules: o.reviewRules } : {}), ...(o.docNames ? { docNames: o.docNames } : {}) };
 }
 
 export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose: () => void }) {
@@ -83,7 +87,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   const reestimate = async () => {
     setErr("");
     try {
-      setCur(await prepareStart(matter, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}), ...(cur.reviewRules !== undefined ? { reviewRules: cur.reviewRules } : {}) }));
+      setCur(await prepareStart(matter, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}), ...(cur.reviewRules !== undefined ? { reviewRules: cur.reviewRules } : {}), ...(cur.docNames ? { docNames: cur.docNames } : {}) }));
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -98,7 +102,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
     try {
       await api.updateMatter(matter.matter_id, { basis });
       notifyDataChanged();
-      const fresh = await prepareStart({ ...matter, basis }, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}), ...(cur.reviewRules !== undefined ? { reviewRules: cur.reviewRules } : {}) });
+      const fresh = await prepareStart({ ...matter, basis }, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}), ...(cur.reviewRules !== undefined ? { reviewRules: cur.reviewRules } : {}), ...(cur.docNames ? { docNames: cur.docNames } : {}) });
       setCur(fresh);
       if (fresh.estimate.data_where?.start_blocked) {
         setErr(afterConsentNotice(fresh.estimate.data_where.block_kind, sensitive));
@@ -135,7 +139,21 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
         <dt>事项</dt>
         <dd>{matter.title}</dd>
         <dt>做什么</dt>
-        <dd>{cur.label ?? (agent ? "按你的描述处理" : SCENARIO_LABELS[value.scenario]) ?? value.scenario}{value.documentIds.length ? ` · 材料 ${value.documentIds.length} 份` : ""}</dd>
+        <dd>
+          {cur.label ?? (agent ? "按你的描述处理" : SCENARIO_LABELS[value.scenario]) ?? value.scenario}
+          {/* 回显任务说明（第 26 批，评审 U2-23）：确认卡要能用来核对“我要做的事”；最多两行，悬停看全文 */}
+          {value.goal.trim() && (
+            <div className="sheet-goal" title={value.goal.trim()}>
+              {value.goal.trim()}
+            </div>
+          )}
+        </dd>
+        {(value.documentIds.length > 0 || agent) && (
+          <>
+            <dt>材料</dt>
+            <dd>{materialsLine(value.documentIds.length, cur.docNames)}</dd>
+          </>
+        )}
         {agent && (
           <>
             <dt>运行模式</dt>
@@ -158,7 +176,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
         {estimate.data_where?.bullets?.length ? (
           <ul className="sheet-points">
             {estimate.data_where.bullets.map((b, i) => (
-              <li key={i}>{b}</li>
+              <li key={i} data-kind={estimate.data_where?.bullet_kinds?.[i] ?? undefined}>{b}</li>
             ))}
           </ul>
         ) : (
@@ -217,7 +235,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
           )}
         </div>
       )}
-      <div className="modal-actions">
+      <div className="modal-actions modal-actions-sticky">
         <button className="btn-ghost" onClick={onClose}>返回修改</button>
         {blocked && !consentBlocked ? (
           <button className="btn-primary" disabled>

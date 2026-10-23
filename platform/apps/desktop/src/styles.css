@@ -116,6 +116,11 @@ button.card:hover { border-color: var(--border-hover); background: var(--bg-hove
 /* 危险操作（Y4 V-5）：红字描边；执行前一律经 ConfirmButton 原位二次确认（复核 S7B-04） */
 .btn-danger { color: var(--status-danger-text); border-color: var(--status-danger-border); }
 .btn-danger:hover:not(:disabled) { background: var(--status-danger-bg); }
+/* 危险操作的确认（第 26 批，评审 U2-21）：红色实心，与“取消”分得开 */
+.btn-danger-solid { background: var(--status-danger-solid); color: var(--text-on-solid); border: 1px solid var(--status-danger-solid); border-radius: var(--r-sm); padding: 6px 14px; }
+.btn-danger-solid:hover:not(:disabled) { background: var(--status-danger-strong); border-color: var(--status-danger-strong); }
+.btn-danger-solid.btn-sm { padding: 4px 10px; }
+.confirm-dialog-q { margin: 0; line-height: 1.7; }
 .btn-link { background: none; border: 0; color: var(--accent-text); padding: 0 4px; }
 .btn-link:hover { text-decoration: underline; }
 .icon-btn { background: none; border: 0; padding: 4px; border-radius: var(--r-sm); display: inline-flex; }
@@ -245,6 +250,13 @@ dl.sheet dd { margin: 0; }
 .sheet-points { list-style: none; margin: 0; padding: 0; }
 .sheet-points li { position: relative; padding: 3px 0 3px 20px; font-size: var(--fs-base); line-height: 1.6; }
 .sheet-points li::before { content: "✓"; position: absolute; left: 2px; color: var(--status-valid); font-weight: 600; }
+/* 第 26 批：按性质用不同记号——经谁转发“→”、按原文发送橙点、联网与留存灰点、不能发送红色感叹号；换成代号与全在本机仍是绿勾 */
+.sheet-points li[data-kind="route"]::before { content: "→"; color: var(--text-secondary); font-weight: 400; }
+.sheet-points li[data-kind="plain"]::before,
+.sheet-points li[data-kind="search"]::before,
+.sheet-points li[data-kind="keep"]::before { content: ""; left: 5px; top: 12px; width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); }
+.sheet-points li[data-kind="plain"]::before { background: var(--status-warning-solid); }
+.sheet-points li[data-kind="blocked"]::before { content: "!"; color: var(--status-danger-text); }
 .sheet-privacy .send-summary { margin-top: 6px; padding: 6px 0 0; border: 0; border-top: 1px dashed var(--border-subtle); border-radius: 0; background: none; color: var(--text-secondary); }
 .sheet-detail { margin-top: 6px; }
 .sheet-detail summary { cursor: pointer; font-size: var(--fs-caption); color: var(--text-secondary); }
@@ -419,7 +431,7 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 /* ── 设备与“中软看得到什么” ── */
 .device-row { display: grid; grid-template-columns: 120px 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
 .device-row:last-child { border-bottom: 0; }
-.device-k { color: var(--text-secondary); }
+.device-k { color: var(--text-primary); font-weight: 500; } /* 第 26 批（U2-03）：一级标签不比块内子标签浅 */
 /* 本机与安全（v9.4）：顶部三块结论 + 分块；给 IT 看的内容折叠 */
 .device { display: flex; flex-direction: column; gap: 16px; }
 .status-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -620,6 +632,8 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .ss-add { align-self: flex-start; padding: 2px 0; font-size: var(--fs-caption); }
 .ss-need { color: var(--status-warning-text); font-size: var(--fs-body); }
 .ss-field { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: center; font-size: var(--fs-caption); }
+.ss-select { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.ss-guess { font-size: var(--fs-meta); }
 .ss-label { color: var(--text-strong); }
 .ss-req { color: var(--status-danger-text); margin-left: 2px; }
 .ss-multi { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -696,6 +710,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { border-color
 .today-row:hover { background: var(--bg-hover); }
 .today-row-strong { font-weight: 600; }
 .today-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.today-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.today-main .today-text { flex: none; }
+.today-sub { font-size: var(--fs-meta); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.review-summary-link { align-self: flex-start; padding: 0; }
 .banner-inline { display: flex; align-items: center; gap: var(--sp-3); }
 .banner-inline .banner-actions { margin: 0 0 0 auto; flex: 0 0 auto; }
 .banner .banner-later { margin-left: var(--sp-3); color: var(--text-secondary); }
@@ -1127,6 +1145,7 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .rule-card textarea, .rule-card input { width: 100%; box-sizing: border-box; font-size: var(--fs-body); }
 .modal-actions-sticky { position: sticky; bottom: 0; margin: 16px -18px -16px; padding: 12px 18px; background: var(--bg-elevated); border-top: 1px solid var(--border-subtle); align-items: center; }
 .modal-actions-sticky .banner { flex: 1; margin: 0; }
+.modal-actions-sticky .ss-foot-why { flex: 1; font-size: var(--fs-caption); }
 .ss-rules { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); margin: var(--sp-2) 0; }
 .ss-hints { display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-caption); margin: var(--sp-1) 0 var(--sp-2); }
 .ss-hint-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
@@ -1144,3 +1163,43 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .ft-clause-text { white-space: pre-wrap; color: var(--text-secondary); margin-top: 4px; }
 .rc-tpl { display: block; margin-bottom: 6px; }
 .rc-tpl-text { display: block; white-space: pre-wrap; color: var(--text-secondary); }
+
+/* 第 26 批（评审 U2-16）：技术版数据去向表在 1280 宽下右侧被裁掉——固定列宽、长句在格内折行 */
+table.data.visibility-table { table-layout: fixed; }
+table.data.visibility-table th:first-child, table.data.visibility-table td:first-child { width: 160px; }
+.device table.data.visibility-table td:nth-child(n), table.data.visibility-table td { overflow-wrap: anywhere; white-space: normal; }
+.tech-info { margin-top: var(--sp-5); }
+.tech-info > .plain-list { margin: var(--sp-2) 0 var(--sp-3); }
+/* 本机核对码（第 26 批，评审 U2-07）：4 位一组、两行、每组下标序号，16px */
+.safety-groups { display: grid; grid-template-columns: repeat(5, max-content); gap: var(--sp-2) var(--sp-4); margin: var(--sp-2) 0; }
+.safety-group { display: flex; flex-direction: column; align-items: center; }
+.safety-group b { font-size: var(--fs-reading); letter-spacing: 0.08em; }
+.safety-group small { font-size: var(--fs-meta); color: var(--text-secondary); }
+/* 设置表单（第 26 批，评审 U2-01）：块内“标签 | 控件”网格；标签与控件同一条中线，多行控件的标签顶对齐到输入框文字 */
+/* 标签顶对齐、按控件高度补上距，控件下面有说明时标签仍对着控件本身（32px 分段控件补 5px，输入框与下拉补 8px） */
+.settings-grid { display: grid; grid-template-columns: 88px minmax(0, 1fr); column-gap: var(--sp-4); row-gap: var(--sp-3); align-items: start; margin-top: var(--sp-3); }
+.settings-grid > .sg-k { color: var(--text-label); font-size: var(--fs-body); line-height: 22px; padding-top: 5px; }
+.settings-grid > .sg-k.sg-top { padding-top: 8px; }
+.settings-grid > .sg-v > textarea { width: min(100%, 560px); }
+.settings-grid > .sg-v.sg-select { align-items: stretch; max-width: 440px; }
+.settings-grid .switch-row { min-height: 32px; }
+.device-row > .seg { justify-self: start; }
+.settings-grid > .sg-v { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
+.settings-grid > .sg-v > input { width: min(100%, 440px); }
+.settings-grid .sg-help { font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.5; }
+.settings-grid .sg-off { color: var(--text-secondary); }
+.settings-grid .sg-confirm { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-caption); }
+.seg-lg .seg-btn { height: 32px; padding: 0 var(--sp-3); font-size: var(--fs-body); }
+.seg-btn:disabled { color: var(--text-secondary); cursor: default; }
+.seg-btn.on:disabled { background: var(--bg-muted); color: var(--text-secondary); }
+.settings-actions { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-4); }
+.device-k .unsaved { display: inline-block; margin-top: var(--sp-1); font-weight: 400; }
+/* 开关（第 26 批，评审 U2-01 / §1.5）：设置里的是 / 否 */
+.switch-row { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.switch { position: relative; width: 36px; height: 20px; flex: 0 0 auto; border: 0; border-radius: var(--r-full); background: var(--border-strong); padding: 0; cursor: pointer; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-on-solid); transition: transform 0.15s ease; }
+.switch[aria-checked="true"] { background: var(--btn-primary); }
+.switch[aria-checked="true"]::after { transform: translateX(16px); }
+.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* 确认卡回显任务说明（第 26 批，评审 U2-23）：最多两行 */
+.sheet-goal { margin-top: var(--sp-1); color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }

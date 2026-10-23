@@ -562,6 +562,8 @@ export interface Capabilities {
   sole_exit: string;
   gate: { running: boolean; routes: Record<string, boolean>; search_configured: boolean; fetch: string };
   rows: { capability: string; status: string; note: string }[];
+  /** 给律所看的本机功能一览（第 26 批）；老内核没有。 */
+  customer_rows?: { feature: string; status: string; note: string }[];
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -800,7 +802,7 @@ export const api = {
   listSuspects: (matterId: string, documentVersionIds: string[], goal?: string) => invoke<{ suspects: SuspectView[]; summary: SendSummaryView }>("matters.suspects.list", { matter_id: matterId, document_version_ids: documentVersionIds, ...(goal ? { goal } : {}) }),
   reviewSuspects: (matterId: string, items: { value: string; decision: "name" | "not_name" }[]) =>
     invoke<{ added_to_parties: number; dismissed: number; rejected: string[] }>("matters.suspects.review", { matter_id: matterId, items }),
-  startRun: (matterId: string, body: { estimate_id: string; idempotency_key: string; goal?: string; topic_hint?: string; mode?: RunMode; plan_first?: boolean; preauthorizations?: Preauthorization[]; skill?: string; skill_args?: Record<string, string>; review_rules?: boolean; followup_of?: string; mode_raise_confirmed?: boolean }) =>
+  startRun: (matterId: string, body: { estimate_id: string; idempotency_key: string; goal?: string; title?: string; topic_hint?: string; mode?: RunMode; plan_first?: boolean; preauthorizations?: Preauthorization[]; skill?: string; skill_args?: Record<string, string>; review_rules?: boolean; followup_of?: string; mode_raise_confirmed?: boolean }) =>
     invoke<{ run_id: string; status: string; mode?: RunMode }>("runs.start", { matter_id: matterId, ...body }),
   getRun: (runId: string) =>
     invoke<{ run: any; artifacts: any[]; inflight?: { model: number; search: number; fetch: number }; unresolved_operations?: UnresolvedOperation[] }>("runs.get", { run_id: runId }),
@@ -1032,12 +1034,12 @@ export const api = {
   searchTitles: (q: string, labels: Record<string, string>) =>
     invoke<{
       matters: { matter_id: string; title: string; sub: string; last_at: string | null }[];
-      runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; skill: string | null; goal: string; updated_at: string }[];
+      runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; skill: string | null; goal: string; title?: string | null; updated_at: string }[];
       deliverables: { artifact_version_id: string; matter_id: string; matter_title: string; kind: string; version: number; filename: string; title: string | null; created_at: string }[];
       truncated: { runs: boolean; deliverables: boolean };
     }>("search.titles", { q, labels }),
   recentRuns: (limit = 5) =>
-    invoke<{ runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; goal: string; skill?: string | null }[]; waiting: { run_id: string; matter_id: string }[] }>("runs.list_recent", { limit }),
+    invoke<{ runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; goal: string; title?: string | null; skill?: string | null }[]; waiting: { run_id: string; matter_id: string }[] }>("runs.list_recent", { limit }),
 
   // 数据去向
   egressRecords: (args: { runId?: string; matterId?: string }) => invoke<{ records: EgressRecord[] }>("egress.records", args.runId ? { run_id: args.runId } : { matter_id: args.matterId }),

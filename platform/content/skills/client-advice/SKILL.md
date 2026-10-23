@@ -6,12 +6,12 @@ when_to_use: 问题相对明确、篇幅一到三页的答复；不用于正式�
 arguments: [question]
 kwl:
   id: client-advice
-  version: 1.1.1
+  version: 1.2.0
   lines: [企业法务, 非诉]
   chain: research
   tier: beta
   tools_required: [law.search, law.get_version, citations.verify]
-  tools_optional: [docx.render_report, materials.list, materials.read_excerpt, facts.list]
+  tools_optional: [docx.render_report, materials.list, materials.read_excerpt, facts.list, law.get_article]
   outputs: [顾问答复.docx]
   source_lineage: [demo:scene-counsel-regulatory-response, demo:scene-counsel-business-risk]
 ---
@@ -28,7 +28,7 @@ kwl:
 3. 法域与时点取自事项口径。
 
 ## 3. 步骤
-1. 检索与核验：`law.search` 找依据，`law.get_version` 取现行版本，`citations.verify` 逐条核验。
+1. 检索与核验：`law.search` 找依据，`law.get_version` 取现行版本，`citations.verify` 逐条核验。结论所依的关键条文用 `law.get_article` 取原文，核对适用条件与例外后再下结论；取不到原文的，结论前加“初步”、依据标“原文未核对”，不凭记忆判断条文写了什么。
 2. 结论：先写一句话结论（“可以 / 不可以 / 有条件可以 / 存在不确定性”），再写条件。
 3. 限制与相反依据：写明结论在哪些事实变化下不成立，有无相反或限制性规定。
 4. 建议：给出可操作的下一步（需要准备什么、谁来做、何时前完成），以及需要客户决定的事项。
@@ -39,6 +39,7 @@ kwl:
 |---|---|---|
 | law.search / law.get_version | 依据与版本 | 未收录：写明“法规库未收录”，结论降为“需进一步研究” |
 | citations.verify | 核验引用 | 不可用：依据标“未核验”，结论前加“初步” |
+| law.get_article | 取关键条文原文核对条件与例外（可选） | 不可用或库外：结论前加“初步”，依据标“原文未核对” |
 | facts.list | 律师确认的事实 | 不可用：只用律师在对话中给出的事实，逐条列为假设 |
 | materials.list / materials.read_excerpt | 客户提供的材料 | 读取失败：在“事实假设”中注明未读取的材料 |
 | docx.render_report | 生成答复 | 不可用：用受限命令行 `kwl-docx create` 生成，并注明“未经文书工具生成” |

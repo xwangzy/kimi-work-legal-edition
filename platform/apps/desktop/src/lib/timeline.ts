@@ -3,7 +3,7 @@
  * 律师层（默认可见）与处理细节（默认收起；UIUX P0-4）分开；工程原因码经映射表转中文。
  */
 import type { RunEvent } from "../api.ts";
-import { ARTIFACT_LABELS, MODE_LABELS, RUN_STATUS_LABELS } from "./labels.ts";
+import { ARTIFACT_LABELS, methodName, MODE_LABELS, RUN_STATUS_LABELS } from "./labels.ts";
 
 export const TOOL_LABELS: Record<string, string> = {
   Read: "读取材料",
@@ -265,7 +265,8 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         const s = network ? sent.get(String(p.tool_call_id)) : undefined;
         steps.push({
           key: `${e.event_id}`,
-          level: "lawyer",
+          // 调用方法模板这一步收进处理细节（第 26 批）：下一条“按《…》的方法处理”已经说了，不再重复一行
+          level: name === "Skill" ? "detail" : "lawyer",
           icon: "wait",
           title: toolLabel(name),
           at,
@@ -293,9 +294,10 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
           key: `${e.event_id}`,
           level: "detail",
           icon: Number(p.exit_code ?? 0) === 0 ? "ok" : "fail",
-          title: `本机计算结束（退出码 ${p.exit_code ?? "—"}${p.duration_ms ? `，${Math.round(Number(p.duration_ms))} ms` : ""}）`,
+          // 律师话（第 26 批）：不写退出码与毫秒；退出码留在悬停里给 IT
+          title: `${Number(p.exit_code ?? 0) === 0 ? "本机计算完成" : "本机计算出错"}${p.duration_ms ? `（用时 ${Math.max(1, Math.round(Number(p.duration_ms) / 1000))} 秒）` : ""}`,
           at,
-          detail: p.commit ? `工作区提交：写入 ${p.commit.written ?? 0}，删除 ${p.commit.deleted ?? 0}${p.commit.conflicts ? `，冲突 ${p.commit.conflicts}` : ""}` : undefined,
+          detail: p.commit ? `写入 ${p.commit.written ?? 0} 个文件，删除 ${p.commit.deleted ?? 0} 个${p.commit.conflicts ? `，${p.commit.conflicts} 个与别处改动冲突` : ""}` : undefined,
         });
         break;
       case "agent.approval_requested":
@@ -330,7 +332,7 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         );
         break;
       case "agent.skill":
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "ok", title: `已按方法模板《${skillTitles[String(p.skill)] ?? String(p.skill)}》执行`, at });
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "ok", title: `按《${methodName(skillTitles[String(p.skill)] ?? String(p.skill))}》的方法处理`, at });
         break;
       case "agent.question":
         questionIndex.set(String(p.question_id), steps.length);

@@ -14,7 +14,7 @@ import { Icon } from "../components/Icons.tsx";
 import { Markdown, tokens as renderTokens } from "../components/Markdown.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
-import { ARTIFACT_STATUS_LABELS, artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, jurisdictionLabel, MODE_LABELS, RUN_STATUS_LABELS, SCENARIO_LABELS, stanceLabel, stepTime, stripMarkdownInline, TERMINAL_STATUSES } from "../lib/labels.ts";
+import { ARTIFACT_STATUS_LABELS, artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, jurisdictionLabel, MODE_LABELS, RUN_STATUS_LABELS, runName, stanceLabel, stepTime, stripMarkdownInline, TERMINAL_STATUSES } from "../lib/labels.ts";
 import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
 import { currentBadges } from "../lib/badges.ts";
@@ -30,12 +30,9 @@ import { Breadcrumb } from "../components/Breadcrumb.tsx";
 import { OutlineConfirm } from "../components/OutlineConfirm.tsx";
 import { confirmAndAnswer, outlineAnswer, outlineQuestion, type OutlineView } from "../lib/outline.ts";
 
-/** 页面标题：任务目标前 24 字（律师能区分多个任务）；没有目标时用场景名。 */
+/** 页面标题：场景卡名；律师自己描述的任务用描述前 30 字，悬停看全文（Z3 #21、V-g；第 26 批 runName）。 */
 function runTitle(run: any): string {
-  const goal = String(run?.goal ?? run?.input_snapshot?.goal ?? "").replace(/\s+/g, " ").trim();
-  // 任务名太长时只显示目标的前 30 个字，悬停看全文（Z3 #21、V-g）；标题允许完整折行
-  if (goal) return goal.length > 30 ? `${goal.slice(0, 30)}…` : goal;
-  return SCENARIO_LABELS[run?.scenario] ?? "任务";
+  return runName(run);
 }
 
 /** 宿主事件中在途的工具与执行域（执行位置徽标的事实之一）。 */
@@ -594,7 +591,16 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
           </button>
         )}
         {/* 标题已是律师原话时不再用气泡重复一遍（v9.4 U1 §1.4）；原话超过 30 字被截断时才显示全文 */}
-        {(run?.goal ?? run?.input_snapshot?.goal) && String(run.goal ?? run.input_snapshot.goal).replace(/\s+/g, " ").trim().length > 30 && <div className="goal-bubble">{renderTokens(String(run.goal ?? run.input_snapshot.goal), tokenMap)}</div>}
+        {/* 场景卡发起的任务（第 26 批）：标题是卡名，拼好的任务说明收进“任务说明”，要看再点开 */}
+        {(run?.goal ?? run?.input_snapshot?.goal) &&
+          (run?.input_snapshot?.title ? (
+            <details className="quiet-details goal-details">
+              <summary>任务说明</summary>
+              <div className="goal-bubble">{renderTokens(String(run.goal ?? run.input_snapshot.goal), tokenMap)}</div>
+            </details>
+          ) : (
+            String(run.goal ?? run.input_snapshot.goal).replace(/\s+/g, " ").trim().length > 30 && <div className="goal-bubble">{renderTokens(String(run.goal ?? run.input_snapshot.goal), tokenMap)}</div>
+          ))}
         <div className="timeline">
           {groupSubtaskSteps(steps).map((it) =>
             it.kind === "step" ? (
@@ -930,9 +936,9 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 ))}
               </ol>
               {risk.docs.length > 0 && (
-                // 中栏已有同一动作的主按钮：右栏这里只用次按钮（复核 S7B-01）
-                <button className="btn-ghost" onClick={() => setWorkbench({ doc: risk.docs[0]! })}>
-                  打开审查工作台
+                // 中栏已有同一动作的主按钮：右栏只放一条文字链接，不再是第二个同名按钮（复核 S7B-01；第 26 批评审 U2-32①）
+                <button className="btn-link review-summary-link" onClick={() => setWorkbench({ doc: risk.docs[0]! })}>
+                  全部 {risk.total} 条意见在审查工作台 →
                 </button>
               )}
             </div>

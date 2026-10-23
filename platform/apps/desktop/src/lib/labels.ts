@@ -97,11 +97,13 @@ export function artifactName(a: { kind: string; filename: string; title?: string
   const t = a.title ? (restore ? restore(a.title) : a.title) : null;
   // 助手草稿有标题时写“标题（草稿）”，没有标题时沿用固定名称；标题自己已带“（草稿）”时不再重复（v9.4 走查：“研究备忘（草稿）（草稿）”）
   if (a.kind === "a1_agent_draft" || a.kind === "a1_agent_draft_partial") {
-    if (!t) return ARTIFACT_LABELS[a.kind]!;
+    // 第一行是一句话（以句号等结尾，如“时间线草稿已生成。”）不是标题：用固定名称（第 26 批走查）
+    if (!t || /[。！？!?]\s*$/.test(t)) return ARTIFACT_LABELS[a.kind]!;
     const bare = stripMarkdownInline(t).replace(/[（(]\s*(草稿|初稿|内部稿)\s*[）)]\s*$/, "").trim();
     return `${bare}（${a.kind === "a1_agent_draft" ? "草稿" : "部分完成"}）`;
   }
-  return t ?? a.filename;
+  // 没有内容标题时用文件名，去掉扩展名（第 26 批走查：“案情时间线（草稿）.docx”；下载按钮已写明 Word / Excel）
+  return t ?? a.filename.replace(/\.(docx|xlsx|md|txt|csv|pdf)$/i, "");
 }
 
 /** 去掉行内 Markdown 记号（粗体、斜体、行内代码、链接），用于摘要与标题这类纯文字位置。 */
@@ -317,6 +319,33 @@ export function clipTitle(title: string, max = 28): string {
 }
 
 /**
+ * 任务名（第 26 批）：场景卡发起的任务用卡名（内核快照里的 title）；律师自己描述的任务用描述的前 max 字；都没有时用场景名。
+ * 不拿拼好的任务说明当标题（走查：执行页、首页“继续工作”的标题是“请审查这份买卖合同，我方立场以事项为准；”）。
+ */
+export function runName(r: { title?: string | null; goal?: string | null; scenario?: string | null; input_snapshot?: unknown } | null | undefined, max = 30): string {
+  const snap = r?.input_snapshot && typeof r.input_snapshot === "object" ? (r.input_snapshot as { title?: unknown; goal?: unknown }) : null;
+  const title = String(r?.title ?? (typeof snap?.title === "string" ? snap.title : "")).trim();
+  if (title) return title;
+  const goal = String(r?.goal ?? (typeof snap?.goal === "string" ? snap.goal : ""))
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[；;，,、：:]+$/, "");
+  if (goal) return clipTitle(goal, max);
+  return SCENARIO_LABELS[String(r?.scenario ?? "")] ?? "任务";
+}
+
+/**
+ * 方法名（第 26 批）：律师看到的方法名不带内部档位与机制词——“· 试用（通用辅助）”“（受限文书）”“（风险卡）”。
+ * 试用档位在“方法与模板”页另用标签说明；时间线、方法行、工作台协议条都用这个名字。
+ */
+export function methodName(title: string): string {
+  return title
+    .replace(/\s*·\s*试用.*$/, "")
+    .replace(/[（(](受限文书|风险卡)[）)]/g, "")
+    .trim();
+}
+
+/**
  * 设置 · 通用的版本号（Z3 #30、V-i）：律师层显示安装包版本“5.0.0”，不显示内部构建标记（如“-g0”）；
  * 开发形态没有安装包版本时写“开发版”。原始标记只在“管理 → 技术支持 → 诊断”显示。纯函数。
  */
@@ -326,4 +355,12 @@ export function displayVersion(appVersion: string | null | undefined, kernelVers
   const m = /^v?(\d+\.\d+\.\d+)/.exec(pick);
   if (!m) return "—";
   return appVersion ? m[1]! : `${m[1]}（开发版）`;
+}
+
+/** 确认卡的材料一行：至多列 3 个文件名，多了写“等 n 份”；没有指定材料时说按需读取。 */
+export function materialsLine(n: number, names?: string[]): string {
+  if (n === 0) return "没有指定：按需读取本事项的材料";
+  const list = (names ?? []).filter(Boolean);
+  if (list.length === 0) return `${n} 份`;
+  return `${list.slice(0, 3).join("、")}${n > 3 ? ` 等 ${n} 份` : ""}`;
 }

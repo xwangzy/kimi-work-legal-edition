@@ -48,7 +48,9 @@ test("#30 版本号：律师层显示“5.0.0”，内部构建标记只在诊�
 });
 
 test("#21 执行页标题：只截前 30 个字，并允许折行", () => {
-  assert.match(src("pages/RunView.tsx"), /goal\.length > 30 \? `\$\{goal\.slice\(0, 30\)\}…`/);
+  // 第 26 批：标题改由 runName 生成（场景卡名优先；律师描述的截前 30 字，见 v94-b26.test.ts）
+  assert.match(src("pages/RunView.tsx"), /return runName\(run\);/);
+  assert.match(src("lib/labels.ts"), /export function runName\(.*max = 30\)/);
   assert.match(css, /\.exec-head \.page-title \{ white-space: normal;/);
 });
 
@@ -82,8 +84,8 @@ test("#22 工作台协议条：我方 · 审查要点及版本 · 法域 · 已�
   const { agreementParts } = await import("../src/lib/workbench.ts");
   const { methodShort } = await import("../src/lib/run-method.ts");
   const method = methodShort({ input_snapshot: JSON.stringify({ skill: "contract-review" }) }, { "contract-review": "合同审查（风险卡）" }, { "contract-review": "1.1.1" });
-  assert.equal(method, "合同审查（风险卡） v1.1.1");
-  assert.equal(agreementParts({ stance: "受让方", method, jurisdiction: "中国内地", decided: 0, total: 4 }).join(" · "), "我方：受让方 · 审查要点：合同审查（风险卡） v1.1.1 · 中国内地 · 已处理 0/4");
+  assert.equal(method, "合同审查 v1.1.1", "第 26 批：方法名不带“（风险卡）”");
+  assert.equal(agreementParts({ stance: "受让方", method, jurisdiction: "中国内地", decided: 0, total: 4 }).join(" · "), "我方：受让方 · 审查要点：合同审查 v1.1.1 · 中国内地 · 已处理 0/4");
   assert.deepEqual(agreementParts({ decided: 1, total: 2 }), ["已处理 1/2"]);
   assert.equal(methodShort({ input_snapshot: {} }, {}, {}), null);
   const wb = src("components/ReviewWorkbench.tsx");

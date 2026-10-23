@@ -7,13 +7,14 @@ import { nav } from "../App.tsx";
 import { api } from "../api.ts";
 import { cardGets, cardGives, COMING_SOON, LINE_LABELS, SCENARIOS, type BusinessLine } from "../lib/scenarios.ts";
 import { FirmTemplates } from "../components/FirmTemplates.tsx";
+import { methodName } from "../lib/labels.ts";
 
 type Skill = { id: string; title: string; description: string; version: string; tier: string; lines: string[] };
 
 const LINES: BusinessLine[] = ["litigation", "transactional", "inhouse"];
 
 /** 模板标题里的档位说明另由标签表达（“· 试用（通用辅助）”不重复显示）。 */
-const cleanTitle = (t: string) => t.replace(/\s*·\s*试用.*$/, "");
+const cleanTitle = methodName;
 
 export function MethodsPage() {
   const [skills, setSkills] = useState<Skill[] | null>(null);

@@ -6,7 +6,7 @@ import { MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type Ru
 import { Icon } from "./Icons.tsx";
 import { ModeSelector, type ModeChoice } from "./ModeSelector.tsx";
 import { clipTitle, SCENARIO_LABELS, stanceLabel } from "../lib/labels.ts";
-import { LINE_LABELS, SCENARIOS, type BusinessLine, type ScenarioCard } from "../lib/scenarios.ts";
+import { getsPlain, LINE_LABELS, SCENARIOS, type BusinessLine, type ScenarioCard } from "../lib/scenarios.ts";
 
 /** 发送快捷键的写法：macOS 写 ⌘ + Enter，其余写 Ctrl + Enter。 */
 const SEND_KEY = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform) ? "⌘ + Enter" : "Ctrl + Enter";
@@ -167,7 +167,7 @@ export function Composer(props: {
                     }}
                   >
                     <span className="menu-label">{c.title}</span>
-                    <span className="menu-desc">给：{c.gives}　得：{c.gets.join("、")}</span>
+                    <span className="menu-desc">给：{c.gives}　得：{getsPlain(c).join("、")}</span>
                   </button>
                 ))}
               </div>

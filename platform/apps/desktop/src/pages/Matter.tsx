@@ -195,7 +195,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
     setMsg("");
     try {
       const v = value.documentIds.length === 0 && value.scenario !== "a1.agent_task" ? { ...value, documentIds: docs.filter((d) => !d.quarantined_at).map((d) => d.document_version_id) } : value;
-      setSheet(await prepareStart(matter, v));
+      setSheet(await prepareStart(matter, v, { docNames: docs.filter((d) => v.documentIds.includes(d.document_version_id)).map((d) => d.filename) }));
     } catch (e) {
       setMsg((e as Error).message);
     } finally {
@@ -463,7 +463,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                 <tbody>
                   {runs.map((r) => (
                     <tr key={r.run_id} className="row-link" onClick={() => nav(`/run/${r.run_id}/${matterId}`)}>
-                      <td>{SCENARIO_LABELS[r.scenario] ?? r.scenario}{r.goal ? ` · ${String(r.goal).slice(0, 40)}` : ""}</td>
+                      <td>{r.title ? r.title : `${SCENARIO_LABELS[r.scenario] ?? r.scenario}${r.goal ? ` · ${String(r.goal).slice(0, 40)}` : ""}`}</td>
                       <td>{RUN_STATUS_LABELS[r.status] ?? r.status}</td>
                       <td>{r.mode ? (MODE_LABELS[r.mode as keyof typeof MODE_LABELS] ?? r.mode) : "—"}</td>
                       <td className="nowrap" title={fmtTime(r.created_at)}>{fmtWhen(r.created_at)}</td>

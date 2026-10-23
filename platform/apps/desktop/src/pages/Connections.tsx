@@ -1,7 +1,8 @@
 /**
  * 设置（UIUX 增量评审 ST-1～ST-5、§3.5；v9 第 03 篇 §4.1、§8.5；第 02 篇 §12；第 04 篇 §5.1）。
  * 律师版四页：通用（字号、通知）/ 数据去向说明（三栏 + 现场生成的示例请求，可打印给客户）/ 资料来源 / 本机与安全；
- * 管理员另有“管理”：律所策略、用量与上限、中软侧操作记录、诊断（技术版数据去向表、能力账本、待对账出站、闸门与执行域细节、详细运行记录）、召回评测（律所内）。
+ * 管理员另有“管理”：律所策略、用量与上限、中软侧操作记录、诊断（首层律师话与本机功能一览；技术信息折叠里是执行域与出口细节、设备表、技术版数据去向；
+ * 能力账本原表只在开发形态显示，偏离 D-151）、召回评测（律所内）。
  * “管理”是否显示只是界面安排，授权一律由内核按角色逐个方法核验。
  */
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
@@ -142,13 +143,14 @@ function GeneralTab({ version }: { version: string }) {
       <div className="panel">
         <div className="device-row">
           <div className="device-k">字号</div>
-          <div className="settings-choice" role="radiogroup" aria-label="字号">
+          {/* 第 26 批（评审 U2 §1.4）：与文书版式同一种分段控件 */}
+          <div className="seg seg-lg" role="radiogroup" aria-label="字号">
             {UI_ZOOM_OPTIONS.map((o) => (
               <button
                 key={o.value}
                 role="radio"
                 aria-checked={zoom === o.value}
-                className={`q-option${zoom === o.value ? " on" : ""}`}
+                className={`seg-btn${zoom === o.value ? " on" : ""}`}
                 onClick={() => {
                   applyUiZoom(o.value, true);
                   setZoom(o.value);
@@ -162,13 +164,13 @@ function GeneralTab({ version }: { version: string }) {
         <div className="device-row">
           <div className="device-k">外观</div>
           <div>
-            <div className="settings-choice" role="radiogroup" aria-label="外观">
+            <div className="seg seg-lg" role="radiogroup" aria-label="外观">
               {UI_THEME_OPTIONS.map((o) => (
                 <button
                   key={o.value}
                   role="radio"
                   aria-checked={theme === o.value}
-                  className={`q-option${theme === o.value ? " on" : ""}`}
+                  className={`seg-btn${theme === o.value ? " on" : ""}`}
                   onClick={() => {
                     applyUiTheme(o.value, true);
                     setTheme(o.value);
@@ -225,7 +227,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
   ];
   const direct = [
     ...(gate?.fetch === "local" ? ["打开公开网页：网址由这台电脑直接发往该网站（不经中软）"] : []),
-    ...(im.length > 0 ? ["IM 收件：发给机器人的文字与文件经所用的 IM 平台传递"] : []),
+    ...(im.length > 0 ? ["从聊天工具转文件：发给机器人的文字与文件经所用的聊天平台（如企业微信）传递"] : []),
     ...(syncOn ? ["团队共享：经律所指定的共享文件夹同步（加密）"] : []),
   ];
   // 第 11 批 S11：团队共享经中软共享中继（本所策略开启且已配置）
@@ -251,7 +253,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
   const notEnabled = [
     ...(gate?.search_configured ? [] : ["联网检索"]),
     "法源与主体信息查询",
-    ...(im.length > 0 ? [] : ["IM 收件"]),
+    ...(im.length > 0 ? [] : ["从聊天工具转文件"]),
     ...(syncOn || relayOn ? [] : ["团队共享"]),
     ...(relayOn ? [] : ["同事之间同步（中软看不到内容）"]),
     ...(gate?.notify_configured ? [] : ["电脑关机时的期限提醒（现在只在这台电脑上提醒）"]),
@@ -352,7 +354,7 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
   const shown = (results ?? [content?.lawdb?.last_check, content?.skills?.last_check].filter(Boolean)) as ContentCheckResult[];
   const lines = shown.map((r) => contentCheckLine(r)).filter(Boolean) as string[];
   const lastAt = shown.map((r) => r.at).sort().at(-1) ?? null;
-  const rows: { name: string; state: "可用" | "部分可用" | "未开通" | "即将推出" | "不可用"; note: string; detail?: string }[] = [
+  const rows: { name: string; state: "可用" | "部分可用" | "未开通" | "即将推出" | "不可用"; note: string; detail?: string; more?: string }[] = [
     {
       name: "离线法规库",
       state: lawdb?.error ? "不可用" : lawdb?.coverage?.level === "sample" ? "部分可用" : "可用",
@@ -360,11 +362,12 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
       detail: lawdb?.error ? undefined : lawdb?.display,
     },
     { name: "Kimi 模型（经中软）", state: gate?.routes ? "可用" : "未开通", note: "一般事项可用；敏感事项须管理员放开并全部化名；客户要求不上云的事项不用" },
-    { name: "联网检索", state: gate?.search_configured ? "可用" : "未开通", note: "默认去掉当事人名称再发出；含当事人名称的查询须经办律师逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）" },
+    // 第 26 批（评审 U2-39）：首层一句结论，完整规则放“了解更多”（口径不删）
+    { name: "联网检索", state: gate?.search_configured ? "可用" : "未开通", note: "默认去掉当事人名称再查；要带名称查时逐条问你", more: "含当事人名称的查询须经办律师逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）。" },
     { name: "公开网页", state: gate?.fetch === "local" ? "可用" : "未开通", note: `只打开公开官方站点与律所允许的网站（${gate?.fetch_allowlist_size ?? 0} 个），新网站要你确认` },
     { name: "案例与工商查询", state: "即将推出", note: "经数据商合同接入" },
     { name: "律所自有系统（如 OA、案件管理）", state: "即将推出", note: "由管理员登记，按事项敏感程度放行" },
-    { name: "IM 收件", state: im.length > 0 ? "可用" : "即将推出", note: im.length > 0 ? "所内节点原型" : "文件进入本人收件区" },
+    { name: "从聊天工具转文件（如企业微信）", state: im.length > 0 ? "可用" : "即将推出", note: im.length > 0 ? "所内试用版" : "转给 Kimi Work 的文件进入本人收件区" },
   ];
   const tone = (s: string) => (s === "可用" ? "pill-green" : s === "不可用" ? "pill-red" : s === "部分可用" ? "pill-orange" : "pill-gray");
   return (
@@ -388,6 +391,12 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
               </td>
               <td>
                 {r.note}
+                {r.more && (
+                  <details className="muted">
+                    <summary>了解更多</summary>
+                    {r.more}
+                  </details>
+                )}
                 {r.detail && (
                   <details className="muted">
                     <summary>版本</summary>
@@ -433,7 +442,7 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
 }
 
 /** 本机与安全（ST-1 律师版）：四行结论 + 电脑环境 + 遇到问题；工程细节在“管理 → 诊断”。 */
-/** 本所与本人（第 13 批）：经开通码或邀请码激活的电脑显示律所核对码，新成员可与管理员核对。 */
+/** 本所与本人（第 13 批）：经开通码或邀请码激活的电脑显示本所识别码，新成员可与管理员核对。 */
 /**
  * 本机与安全（v9.4 重排）：先给三句结论（案卷安全、备份、本所），再按“备份与恢复 / 账号与团队 / 遇到问题”三块组织；
  * 只给 IT 看的内容（电脑环境自检、诊断包里有什么）一律折叠。律师层不出现“执行域、出站闸门、中继、吊销”等研发用语。
@@ -463,6 +472,7 @@ function DeviceTab({ caps, gate, mySafety, admin }: { caps: Capabilities | null;
   const envWarn = env && env.platform === "win32" ? envLines(env).filter((l) => l.warn).length : 0;
   const safe = deviceSafetyTile(domainOk, !!gate, { envWarn, exitMessage: cp?.exit_mode?.message ?? null });
   const bk = backupTile(backup);
+  const inFirm = !!firm?.firm?.name || cp?.mode === "control_plane";
   return (
     <div className="device">
       <div className="status-tiles" role="list" aria-label="本机状态">
@@ -485,7 +495,8 @@ function DeviceTab({ caps, gate, mySafety, admin }: { caps: Capabilities | null;
               <b>{firm.firm?.name}</b>
               {firm.member?.name ? ` · ${firm.member.name}` : ""}
               <details className="quiet-details">
-                <summary>律所核对码</summary>
+                {/* 第 26 批（评审 U2-06）：“核对码”原来指三样东西——本所的这串改叫“本所识别码” */}
+                <summary>本所识别码</summary>
                 <span className="mono">{firm.firm_check_code}</span>：与管理员“设置 · 管理 · 成员”页底部的数字一致，说明你加入的是本所。
               </details>
             </div>
@@ -512,19 +523,27 @@ function DeviceTab({ caps, gate, mySafety, admin }: { caps: Capabilities | null;
             <div>{quotaLawyerLine(quota)}</div>
           </div>
         )}
-        <TeamShare admin={admin} />
-        <DepartedMembers />
-        <div className="device-row">
-          <div className="device-k">换电脑</div>
-          <div>
-            <details className="quiet-details">
-              <summary>核对码（管理员要求核对时才需要）</summary>
-              <b className="mono safety-code">{mySafety ? groupDigits(mySafety) : "—"}</b>
-              <div className="muted">请在电话里或当面把这串数字读给对方；对方屏幕上的一致才确认。</div>
-            </details>
-          </div>
-        </div>
-        <Offboarding />
+        {/* 单机使用（没加入律所）时不显示离所交接、本机核对码这类只在律所里才有的事（第 26 批，评审 U2-08） */}
+        {inFirm ? (
+          <>
+            <TeamShare admin={admin} />
+            <DepartedMembers />
+            <div className="device-row">
+              <div className="device-k">本机核对码</div>
+              <div>
+                <div>管理员核对你这台电脑时（例如换电脑后重新登记），会请你在电话里读这串数字。</div>
+                <details className="quiet-details">
+                  <summary>显示本机核对码</summary>
+                  <SafetyCode code={mySafety} />
+                  <div className="muted">请在电话里或当面逐组读给对方；对方屏幕上的一致才确认。不要截图转发。</div>
+                </details>
+              </div>
+            </div>
+            <Offboarding />
+          </>
+        ) : (
+          <p className="muted">未加入律所。要和同事共享事项，请向律所管理员要邀请码。</p>
+        )}
       </section>
 
       {/* 脱敏诊断包（v9.2 §3.6）：律师主动导出交给支持团队；内容白名单 + 导出前自证 + 设备签名。说明折叠，默认只一句 */}
@@ -575,7 +594,8 @@ function DeviceTab({ caps, gate, mySafety, admin }: { caps: Capabilities | null;
         </details>
         {/* Windows 环境自检（v9.2 §3.7；Y5 P1-6）：只提示会让“本机加密保存”打折扣的系统设置，读不到的写“未知”；给 IT 看，默认折叠 */}
         {env && env.platform === "win32" && (
-          <details className="quiet-details" open={envWarn > 0}>
+          // 不自动展开（第 26 批，评审 U2-11）：律师只需知道要不要找 IT；明细给 IT，可一键复制
+          <details className="quiet-details">
             <summary>
               电脑环境（给 IT 看）{envWarn > 0 ? <span className="pill pill-orange">{envWarn} 项需要 IT 处理</span> : null}
               {env.checked_at ? <span className="muted"> · 最近检查 {fmtTime(env.checked_at)}</span> : null}
@@ -587,12 +607,42 @@ function DeviceTab({ caps, gate, mySafety, admin }: { caps: Capabilities | null;
                 </li>
               ))}
             </ul>
-            <button className="btn btn-sm" onClick={() => void api.envProbe(true).then(setEnv).catch(() => {})}>
-              重新检查
-            </button>
+            <div className="banner-actions">
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  const text = [`Kimi Work 法律版 电脑环境检查${env.checked_at ? `（${fmtTime(env.checked_at)}）` : ""}`, ...envLines(env).map((l) => `${l.warn ? "【需处理】" : ""}${l.k}：${l.v}`)].join("\n");
+                  void navigator.clipboard?.writeText(text).then(() => setDiag((x) => ({ ...x, msg: "已复制，可以直接发给所内 IT。" })), () => setDiag((x) => ({ ...x, msg: "复制没有成功，请截图这一段发给 IT。" })));
+                }}
+              >
+                复制给 IT 的说明
+              </button>
+              <button className="btn btn-sm" onClick={() => void api.envProbe(true).then(setEnv).catch(() => {})}>
+                重新检查
+              </button>
+            </div>
           </details>
         )}
       </section>
+    </div>
+  );
+}
+
+/**
+ * 本机核对码（第 26 批，评审 U2-07）：34 位按 4 位一组、分两行显示，每组下面标组序号，电话里读到第几组不会串行；
+ * 长度按 10-23 拍板不变，只改呈现。不给“复制”——核对要读出来。
+ */
+function SafetyCode({ code }: { code: string | null }) {
+  if (!code) return <b className="mono safety-code">—</b>;
+  const groups = groupDigits(code).split(" ");
+  return (
+    <div className="safety-groups" role="group" aria-label="本机核对码">
+      {groups.map((g, i) => (
+        <span key={i} className="safety-group">
+          <b className="mono">{g}</b>
+          <small>{i + 1}</small>
+        </span>
+      ))}
     </div>
   );
 }
@@ -661,6 +711,7 @@ function DiagnosticsTab({ caps, gate, devices, unresolved, onReconciled, im, rec
   const [busy, setBusy] = useState(false);
   const [logLevel, setLogLevel] = useState<string | null>(null);
   const [build, setBuild] = useState("");
+  const [appVersion, setAppVersion] = useState("");
   const [msg, setMsg] = useState("");
   useEffect(() => {
     api
@@ -668,39 +719,32 @@ function DiagnosticsTab({ caps, gate, devices, unresolved, onReconciled, im, rec
       .then((st: any) => {
         setLogLevel(typeof st?.log_level === "string" ? st.log_level : null);
         setBuild([st?.app_version ? `安装包 ${st.app_version}` : "开发形态", st?.version ? `内核 ${st.version}` : ""].filter(Boolean).join(" · "));
+        setAppVersion(displayVersion(st?.app_version, st?.version));
       })
       .catch(() => setLogLevel(null));
   }, []);
+  // 第 26 批（评审 U2-13、U2-14、U2-15）：首层是律师话与“本机功能一览”；执行域、唯一出口、联网出口这些说法收进“技术信息（给 IT）”；
+  // 研发台账（阶段代号、复核与偏离编号、内部实体名）只在开发形态显示
+  const execLine = caps?.execution_domain.available === false ? "这台电脑不运行 AI 写的代码" : "在隔离环境里运行：不能联网，只能看到本事项";
+  const custRows = caps?.customer_rows ?? [];
   return (
     <div className="device">
       <div className="panel">
-        {build && (
+        {appVersion && (
           <div className="device-row">
-            <div className="device-k">版本标记</div>
-            <div className="mono">{build}</div>
+            <div className="device-k">版本</div>
+            <div>Kimi Work 法律版 {appVersion}</div>
           </div>
         )}
         <div className="device-row">
-          <div className="device-k">代码运行</div>
-          <div>
-            <b>{caps?.execution_domain.label ?? "运行时隔离（W）"}</b>：{caps?.execution_domain.detail ?? "无网络、只见本事项；非操作系统沙箱"}
-            <div className="muted">状态：{caps?.execution_domain.status ?? "未知（内核未返回能力账本）"}</div>
-          </div>
+          <div className="device-k">AI 写的计算</div>
+          <div>{execLine}</div>
         </div>
         <div className="device-row">
-          <div className="device-k">系统强制（MXC）</div>
-          <div>本版本未提供（P3：Windows 11 进程容器，按设备条件提供）——数据分析增强不可用。</div>
-        </div>
-        <div className="device-row">
-          <div className="device-k">唯一出口</div>
+          <div className="device-k">联网</div>
           <div>
-            <b>{gate?.sole_exit ?? caps?.sole_exit ?? "应用层约束"}</b>：模型、检索、抓取只经联网出口（独立进程）；执行域无网；渲染进程拦截一切外部请求。
-          </div>
-        </div>
-        <div className="device-row">
-          <div className="device-k">联网出口</div>
-          <div>
-            {gate ? <>{gate.running ? "运行中" : "已配置（按需拉起：下一次出站时启动）"} · 检索{gate.routes?.search ? "已接入" : "未接入"} · 抓取{gate.routes?.fetch ? "已接入" : "未接入"} · 已拉起 {gate.stats?.starts ?? 0} 次</> : "未启用（离线模拟提供方）"}
+            只通过一个出口，每次都有记录。
+            {gate ? <span className="muted"> 联网检索{gate.routes?.search ? "已接入" : "未接入"} · 打开网页{gate.routes?.fetch ? "已接入" : "未接入"}</span> : <span className="muted"> 这台电脑没有接入联网出口</span>}
           </div>
         </div>
         {logLevel && (
@@ -726,19 +770,19 @@ function DiagnosticsTab({ caps, gate, devices, unresolved, onReconciled, im, rec
           </div>
         )}
       </div>
-      {caps && caps.rows.length > 0 && (
+      {custRows.length > 0 && (
         <>
-          <div className="section-title">能力账本（本设备）</div>
+          <div className="section-title">本机功能一览</div>
           <table className="data">
-            <thead><tr><th>能力</th><th>状态</th><th>说明</th></tr></thead>
-            <tbody>{caps.rows.map((r) => <tr key={r.capability}><td>{r.capability}</td><td>{r.status}</td><td className="muted">{r.note}</td></tr>)}</tbody>
+            <thead><tr><th>功能</th><th>这台电脑</th><th>说明</th></tr></thead>
+            <tbody>{custRows.map((r) => <tr key={r.feature}><td>{r.feature}</td><td>{r.status}</td><td className="muted">{r.note}</td></tr>)}</tbody>
           </table>
         </>
       )}
       {unresolved.length > 0 && (
         <>
-          <div className="section-title">结果不明的出站（待对账）</div>
-          <p className="muted">预写后闸门或内核中断，无法确定是否已发出。核实后登记结论（不重发、不改写原记录）。</p>
+          <div className="section-title">没能确认是否发出的内容</div>
+          <p className="muted">发送过程中软件中断，无法确定这些内容是否已经发出。请核实后登记结论（不会重发，也不改原来的记录）。</p>
           <table className="data">
             <thead><tr><th>时间</th><th>用途</th><th>去向</th><th>结论</th></tr></thead>
             <tbody>
@@ -777,17 +821,38 @@ function DiagnosticsTab({ caps, gate, devices, unresolved, onReconciled, im, rec
           </table>
         </>
       )}
-      <div className="section-title">设备</div>
-      <table className="data">
-        <thead><tr><th>设备</th><th>角色</th><th>状态</th><th>登记</th></tr></thead>
-        <tbody>
-          {devices.map((d) => (
-            <tr key={d.device_id}><td className="mono" title={String(d.device_id)}>{shortId(String(d.device_id))}</td><td>{d.role}</td><td>{d.status === "revoked" ? "已停用" : "有效"}</td><td>{fmtTime(d.created_at)}</td></tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="section-title">数据去向（技术版）</div>
-      <TechnicalVisibility gate={gate} im={im} recovery={recovery} />
+      <details className="quiet-details tech-info">
+        <summary>技术信息（给 IT）</summary>
+        <ul className="plain-list">
+          {build && <li>版本标记：<span className="mono">{build}</span></li>}
+          <li>
+            代码运行：{caps?.execution_domain.label ?? "运行时隔离（W）"}——{caps?.execution_domain.detail ?? "无网络、只见本事项；非操作系统沙箱"}；状态：{caps?.execution_domain.status ?? "未知"}
+          </li>
+          <li>系统级进程隔离（Windows 11 进程容器）：本版本未提供，数据分析增强不可用。</li>
+          <li>唯一出口：{gate?.sole_exit ?? caps?.sole_exit ?? "应用层约束"}——模型、检索、抓取只经联网出口（独立进程）；代码运行环境无网；界面进程拦截一切外部请求。</li>
+          <li>联网出口：{gate ? `${gate.running ? "运行中" : "已配置（下一次联网时启动）"}，已启动 ${gate.stats?.starts ?? 0} 次` : "未启用"}</li>
+        </ul>
+        <div className="section-title">已登记的电脑</div>
+        <table className="data">
+          <thead><tr><th>电脑</th><th>角色</th><th>状态</th><th>登记</th></tr></thead>
+          <tbody>
+            {devices.map((d) => (
+              <tr key={d.device_id}><td className="mono" title={String(d.device_id)}>{shortId(String(d.device_id))}</td><td>{DEVICE_ROLE_LABELS[String(d.role)] ?? "成员"}</td><td>{d.status === "revoked" ? "已停用" : "有效"}</td><td>{fmtTime(d.created_at)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+        {import.meta.env.DEV && caps && caps.rows.length > 0 && (
+          <>
+            <div className="section-title">能力账本（仅开发形态显示）</div>
+            <table className="data">
+              <thead><tr><th>能力</th><th>状态</th><th>说明</th></tr></thead>
+              <tbody>{caps.rows.map((r) => <tr key={r.capability}><td>{r.capability}</td><td>{r.status}</td><td className="muted">{r.note}</td></tr>)}</tbody>
+            </table>
+          </>
+        )}
+        <div className="section-title">数据去向（技术版）</div>
+        <TechnicalVisibility gate={gate} im={im} recovery={recovery} />
+      </details>
     </div>
   );
 }
@@ -877,7 +942,7 @@ function TechnicalVisibility({ gate, im, recovery }: { gate: any; im: any[]; rec
         <thead><tr><th>本所已启用的情形</th><th>中软看得到（过境或保存）</th><th>中软看不到</th></tr></thead>
         <tbody>{on.map((r) => <tr key={r.situation}><td><b>{r.situation}</b></td><td>{r.sees}</td><td>{r.notSees}</td></tr>)}</tbody>
       </table>
-      {im.length > 0 && <p className="muted">当前的 IM 绑定为所内节点原型，不经中软。</p>}
+      {im.length > 0 && <p className="muted">当前的聊天工具接入是所内试用版，不经中软。</p>}
     </>
   );
 }
@@ -893,6 +958,9 @@ const AREA: Record<string, string> = {
   revocation: "停用",
   clock: "时钟",
 };
+
+/** 设备的证书角色 → 中文（第 26 批，评审 U2-15：原来直接显示 admin）；与成员页同一套说法。 */
+const DEVICE_ROLE_LABELS: Record<string, string> = { firm_admin: "管理员", admin: "管理员", partner: "合伙人", lawyer: "律师", assistant: "助理", member: "成员" };
 
 /** 设备编号过长时截断并加省略号（悬停显示全称）。 */
 function shortId(id: string): string {
@@ -923,10 +991,10 @@ function pendingActionText(a: { state?: string; last_error: string | null }): st
 function relaxationText(r: string): string {
   const [k, ...rest] = r.split(":");
   const v = rest.join(":");
-  if (k === "max_mode") return `运行模式上限放宽到“${v === "auto" ? "自动" : v}”`;
-  if (k === "auto_preauthorization") return v === "search_generalized" ? "自动档可预授权：泛化后放行的检索" : `自动档可预授权：${v}`;
-  if (k === "fetch_allowlist") return `抓取允许访问的网站追加：${v}`;
-  if (k === "l3a_standard_model") return "敏感事项（L3a）可经标准端点推理（全部化名）";
+  if (k === "max_mode") return `AI 最高档位放宽到“${MODE_TEXT[v] ?? v}”`;
+  if (k === "auto_preauthorization") return v === "search_generalized" ? "“放手做”可以事先同意：去掉当事人名称后的检索" : `“放手做”可以事先同意：${v}`;
+  if (k === "fetch_allowlist") return `官方网站之外还可打开的网站：${v}`;
+  if (k === "l3a_standard_model") return "敏感事项可以用通用 AI 服务（全部化名）";
   if (k === "support_upload") return "律师可把脱敏诊断包上传给中软支持（逐次预览、确认后上传；中软保存 7 天）";
   if (k === "share_relay") return "团队事项可经中软共享服务同步（端到端加密，中软保存密文直到律所退约）";
   if (k === "connector") return `登记律所系统接入：${v}`;
@@ -938,12 +1006,12 @@ function policyLine(st: ControlPlaneStatus): string {
   if (!p) return "未知";
   if (p.source === "local_dev") return import.meta.env.DEV ? "开发形态：律所规则取本机配置项（未接入中软）" : "当前律所规则：中软默认（最严）";
   if (p.source === "strictest_fallback") {
-    if (p.fallback_reason === "expired") return `律所策略 v${p.version} 已于 ${fmtTime(p.expires_at ?? "")} 过期：已回退“产品基线 + 最严模板”（不比该策略宽）`;
+    if (p.fallback_reason === "expired") return `律所策略 v${p.version} 已于 ${fmtTime(p.expires_at ?? "")} 过期：已改按最严设置运行（不比原规则宽）`;
     if (p.fallback_reason === "signers_insufficient") return `确认律所规则（第 ${p.version} 版）的管理员不够了，暂时按最严规则执行`;
-    if (p.fallback_reason === "unrecognized_newer") return "收到本机不认识的律所策略新版本（客户端需要升级）：已回退最严模板";
-    return "尚未取得律所策略：按“产品基线 + 最严模板”运行";
+    if (p.fallback_reason === "unrecognized_newer") return "收到本机不认识的律所策略新版本（客户端需要升级）：暂时按最严设置运行";
+    return "尚未取得律所策略：按最严设置运行";
   }
-  const who = p.signers.length > 0 ? `管理员 ${p.signers.join("、")} 设备签名` : "最严模板，Kimi Work 服务签发";
+  const who = p.signers.length > 0 ? `管理员 ${p.signers.join("、")} 已确认` : "最严设置，Kimi Work 服务签发";
   return `律所策略 v${p.version}（${who}）· 有效至 ${fmtTime(p.expires_at ?? "")}`;
 }
 
@@ -985,12 +1053,12 @@ function PolicyTab() {
             <b>{policyLine(st)}</b>
             {pol && (
               <div className="muted">
-                运行模式上限：{pol.body.max_mode === "auto" ? "自动" : pol.body.max_mode === "default" ? "默认" : pol.body.max_mode === "manual" ? "手动" : "问答"} ·
-                抓取允许访问的网站追加：{pol.body.fetch_allowlist_extra.length > 0 ? pol.body.fetch_allowlist_extra.join("、") : "无（只用公开官方站点基线）"} ·
-                敏感事项（L3a）经标准端点：{pol.body.l3a_standard_model === "allow" ? "已放开（全部化名）" : "不放开"}
+                AI 最高档位：{MODE_TEXT[pol.body.max_mode] ?? pol.body.max_mode} ·
+                官方网站之外还可打开的网站：{pol.body.fetch_allowlist_extra.length > 0 ? pol.body.fetch_allowlist_extra.join("、") : "无（只限法院、政府等官方网站）"} ·
+                敏感事项用通用 AI 服务：{pol.body.l3a_standard_model === "allow" ? "可以（全部化名）" : "不可以"}
               </div>
             )}
-            {pol && pol.relaxations.length > 0 && <div className="muted">相对最严模板的放宽：{pol.relaxations.map(relaxationText).join("；")}</div>}
+            {pol && pol.relaxations.length > 0 && <div className="muted">比最严设置宽的地方：{pol.relaxations.map(relaxationText).join("；")}</div>}
           </div>
         </div>
         {st.mode === "control_plane" && (
@@ -1002,7 +1070,7 @@ function PolicyTab() {
                 <div className="muted">
                   {st.admin_threshold_pinned === false
                     ? "管理员签名门限尚未固定（首次取得许可后按版本固定）：固定之前不接受任何放宽类策略与律所系统接入登记。"
-                    : `放宽类策略与律所系统接入登记须 ${st.admin_threshold ?? 1} 名管理员设备签名（首次取得许可时按版本固定，只升不降）。`}
+                    : `放宽类策略与律所系统接入登记须 ${st.admin_threshold ?? 1} 名管理员在自己电脑上确认（首次取得许可时定下，只增不减）。`}
                 </div>
               </div>
             </div>
@@ -1010,7 +1078,7 @@ function PolicyTab() {
               <div className="device-k">离线可用</div>
               <div>
                 {st.seat?.has_token && st.seat.expires_at ? `断网也能用到 ${fmtTime(st.seat.expires_at)}；联网后会自动延长` : "暂时用不了 Kimi 和联网检索（还没连上中软，或本所席位已失效），本机功能不受影响"}
-                <div className="muted">Kimi Work 服务不可达时，经标准端点的推理与联网检索可用到席位令牌到期（在线时自动续期，保持至少 72 小时）；本机能力不受影响。{st.directory?.expires_at ? `设备目录有效至 ${fmtTime(st.directory.expires_at)}。` : ""}</div>
+                <div className="muted">Kimi Work 服务不可达时，AI 与联网检索还能用到本所席位凭证到期（联网时自动续期，至少留 72 小时）；本机能力不受影响。{st.directory?.expires_at ? `设备目录有效至 ${fmtTime(st.directory.expires_at)}。` : ""}</div>
               </div>
             </div>
             <div className="device-row">
@@ -1057,10 +1125,10 @@ function PolicyTab() {
       )}
       {(st.key_changes ?? []).length > 0 && (
         <>
-          <div className="section-title">成员设备公钥变更（核对安全码后才替换）</div>
-          <p className="muted">请与该成员当面或电话核对：请对方在自己电脑的“设置 → 本机与安全”里读出“核对码”，与下方一致才确认。确认前不会向新公钥包裹任何事项密钥；确认只影响本机今后向该设备包裹事项密钥。</p>
+          <div className="section-title">成员换了电脑密钥（核对本机核对码后才替换）</div>
+          <p className="muted">请与该成员当面或电话核对：请对方在自己电脑的“设置 → 本机与安全”里读出“本机核对码”，与下方一致才确认。确认前不会向新公钥包裹任何事项密钥；确认只影响本机今后向该设备包裹事项密钥。</p>
           <table className="data">
-            <thead><tr><th>成员</th><th>设备</th><th>对方读出的安全码</th></tr></thead>
+            <thead><tr><th>成员</th><th>设备</th><th>对方读出的本机核对码</th></tr></thead>
             <tbody>
               {st.key_changes!.map((k) => (
                 <tr key={k.device_id}>
@@ -1068,7 +1136,7 @@ function PolicyTab() {
                   <td className="mono" title={k.device_id}>{shortId(k.device_id)}</td>
                   <td>
                     <input value={codes[k.device_id] ?? ""} onChange={(e) => setCodes({ ...codes, [k.device_id]: e.target.value })} placeholder="请对方读出 30 位数字" />
-                    <button className="btn-link" disabled={busy || !(codes[k.device_id] ?? "").trim()} onClick={() => act(() => api.keyChangeConfirm(k.device_id, codes[k.device_id] ?? ""), "安全码一致：已替换公钥")}>本机比对</button>
+                    <button className="btn-link" disabled={busy || !(codes[k.device_id] ?? "").trim()} onClick={() => act(() => api.keyChangeConfirm(k.device_id, codes[k.device_id] ?? ""), "本机核对码一致：已换用对方的新密钥")}>本机比对</button>
                   </td>
                 </tr>
               ))}
@@ -1078,7 +1146,7 @@ function PolicyTab() {
       )}
       <div className="section-title">已登记的律所系统接入</div>
       {(st.connectors ?? []).length === 0 ? (
-        <p className="muted">没有。律所系统接入登记须管理员设备签名；律所策略回退最严模板时一律不可用。律所系统接入的运行通道即将开放。</p>
+        <p className="muted">没有。还没有接入本所系统（如 OA、案件管理）。接入须管理员在自己电脑上确认；本所规则失效、改按最严设置运行时一律不可用。</p>
       ) : (
         <table className="data">
           <thead><tr><th>律所系统接入</th><th>版本</th><th>服务地址</th><th>可接收至</th><th>工具数</th><th>签名管理员</th></tr></thead>
@@ -1102,11 +1170,11 @@ function PolicyTab() {
                     </div>
                     <DraftContent d={d} />
                     <div className="muted">
-                      放宽项（本机重算）：{!d.valid ? `未通过本机核验（${d.problem}）：不可签名` : d.relaxations.length > 0 ? d.relaxations.map(relaxationText).join("；") : "无（不比最严模板宽）"}
+                      比最严设置宽的地方（本机核对）：{!d.valid ? `未通过本机核验（${d.problem}）：不可签名` : d.relaxations.length > 0 ? d.relaxations.map(relaxationText).join("；") : "无（不比最严设置宽）"}
                     </div>
                     <div className="muted">已签名：{d.signed_by.map((x) => x.member_id).join("、") || "—"}</div>
                     {d.valid && !d.signed_by_me && d.digest && (
-                      <button className="btn-link" disabled={busy} onClick={() => act(() => api.policySign(d.draft_id, d.digest!), "已用本机管理员设备签名（签的是上面显示的完整内容）")}>
+                      <button className="btn-link" disabled={busy} onClick={() => act(() => api.policySign(d.draft_id, d.digest!), "已在这台管理员电脑上确认（确认的是上面显示的完整内容）")}>
                         核对无误，签名
                       </button>
                     )}
@@ -1123,7 +1191,8 @@ function PolicyTab() {
   );
 }
 
-const MODE_TEXT: Record<string, string> = { chat: "问答", manual: "手动", default: "默认", auto: "自动" };
+// 与律师在输入框里看到的档位同名（第 26 批，评审 U2-17）
+const MODE_TEXT: Record<string, string> = { chat: "只问答", manual: "每步问我", default: "标准", auto: "放手做" };
 
 /** 草稿的完整内容（所见即所签：管理员签名覆盖整份文档，签名前逐项展示）。 */
 function DraftContent({ d }: { d: PolicyDraft }) {
@@ -1134,8 +1203,8 @@ function DraftContent({ d }: { d: PolicyDraft }) {
       <div>
         有效期：{fmtTime(String(doc.issued_at ?? ""))} 至 {fmtTime(String(doc.expires_at ?? ""))}
         <div className="muted">
-          运行模式上限：{MODE_TEXT[String(b.max_mode)] ?? String(b.max_mode)} · 自动档可预授权：{Array.isArray(b.auto_preauthorizations) && b.auto_preauthorizations.length > 0 ? b.auto_preauthorizations.join("、") : "无"} ·
-          抓取允许访问的网站追加：{Array.isArray(b.fetch_allowlist_extra) && b.fetch_allowlist_extra.length > 0 ? b.fetch_allowlist_extra.join("、") : "无"} · 敏感事项（L3a）经标准端点：{b.l3a_standard_model === "allow" ? "放开" : "不放开"} · 上传诊断包给中软支持：{b.support_upload === "allow" ? "允许" : "不允许"} · 经中软共享服务的团队共享：{b.share_relay === "allow" ? "允许" : "不允许"}
+          运行模式上限：{MODE_TEXT[String(b.max_mode)] ?? String(b.max_mode)} · “放手做”可以事先同意：{Array.isArray(b.auto_preauthorizations) && b.auto_preauthorizations.length > 0 ? b.auto_preauthorizations.join("、") : "无"} ·
+          官方网站之外还可打开的网站：{Array.isArray(b.fetch_allowlist_extra) && b.fetch_allowlist_extra.length > 0 ? b.fetch_allowlist_extra.join("、") : "无"} · 敏感事项用通用 AI 服务：{b.l3a_standard_model === "allow" ? "放开" : "不放开"} · 上传诊断包给中软支持：{b.support_upload === "allow" ? "允许" : "不允许"} · 经中软共享服务的团队共享：{b.share_relay === "allow" ? "允许" : "不允许"}
         </div>
       </div>
     );
@@ -1180,16 +1249,16 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
             <Select value={maxMode} onChange={setMaxMode} options={(["chat", "manual", "default", "auto"] as const).map((m) => ({ value: m, label: MODE_TEXT[m] ?? m }))} />
           </label>{" "}
           <label>
-            <input type="checkbox" checked={preSearch && maxMode === "auto"} disabled={maxMode !== "auto"} onChange={(e) => setPreSearch(e.target.checked)} /> 自动档可预授权“泛化后放行的检索”
+            <input type="checkbox" checked={preSearch && maxMode === "auto"} disabled={maxMode !== "auto"} onChange={(e) => setPreSearch(e.target.checked)} /> “放手做”可以事先同意“去掉当事人名称后的检索”
           </label>
           <div>
             <label>
-              抓取允许访问的网站追加（每行一个域名）
+              官方网站之外，AI 还可以打开的网站（每行一个域名）
               <textarea value={extra} onChange={(e) => setExtra(e.target.value)} rows={2} />
             </label>
           </div>
           <label>
-            <input type="checkbox" checked={l3a} onChange={(e) => setL3a(e.target.checked)} /> 敏感事项（L3a）可经标准端点推理（全部化名强制）
+            <input type="checkbox" checked={l3a} onChange={(e) => setL3a(e.target.checked)} /> 敏感事项可以用通用 AI 服务（强制全部化名）
           </label>{" "}
           <label>
             <input type="checkbox" checked={support} onChange={(e) => setSupport(e.target.checked)} /> 律师可把脱敏诊断包上传给中软支持
@@ -1203,12 +1272,12 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
               在本机删除事项不会删除中软上的副本；关闭这一项后，已保存的密文仍在中软，直到律所退约整体删除。
             </div>
           )}
-          {(support || relay) && <div className="banner banner-gray">勾选这一项后，尚未更新到最新版本的电脑会把整份律所策略当作“看不懂的新版本”，暂时按最严设置运行（自动档、预授权检索、抓取允许访问的网站追加、敏感事项放开都暂时不可用），直至更新。建议先确认全所电脑都已更新。</div>}
+          {(support || relay) && <div className="banner banner-gray">勾选这一项后，尚未更新到最新版本的电脑会把整份律所策略当作“看不懂的新版本”，暂时按最严设置运行（“放手做”、事先同意的检索、额外允许打开的网站、敏感事项放开都暂时不可用），直至更新。建议先确认全所电脑都已更新。</div>}
           <label>
             有效期（天，≤ 30）{" "}
             <input type="number" min={1} max={30} value={ttl} onChange={(e) => setTtl(Math.max(1, Math.min(30, Number(e.target.value) || 30)))} />
           </label>
-          <div className="muted">比最严模板宽的任一项都须管理员设备签名后才生效（团队版 1 名、律所版 2 名）；起草后在上方核对完整内容再签名。</div>
+          <div className="muted">比最严设置宽的任一项都须管理员在自己电脑上确认后才生效（团队版 1 名、律所版 2 名）；起草后在上方核对完整内容再签名。</div>
           <button
             className="btn-link"
             disabled={busy}

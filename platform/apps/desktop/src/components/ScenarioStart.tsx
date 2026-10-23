@@ -8,8 +8,9 @@ import { api, MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, ty
 import { matterFactHints, RULES_SKILLS, type HintField } from "../lib/matter-hints.ts";
 import { eventDateProblem, STAGE_LABELS, stagesFor } from "../lib/matter-stage.ts";
 import { notifyDataChanged } from "../lib/events.ts";
+import { nav } from "../App.tsx";
 import type { ScenarioCard } from "../lib/scenarios.ts";
-import { buildGoal, canStartPartial, LINE_LABELS, lineMismatchText, missingMaterialsText, skillArgsOf, splitIssues } from "../lib/scenarios.ts";
+import { buildGoal, canStartPartial, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, skillArgsOf, splitIssues } from "../lib/scenarios.ts";
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { defaultChoice } from "./ModeSelector.tsx";
@@ -182,7 +183,22 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
 
   if (confirm) return <RunSheet pending={confirm} onClose={() => setConfirm(null)} />;
 
-  const setField = (k: string, v: string | string[]) => setValues((cur) => ({ ...cur, [k]: v }));
+  const setField = (k: string, v: string | string[]) => {
+    setGuessed(null);
+    setValues((cur) => ({ ...cur, [k]: v }));
+  };
+  // 合同类型按文件名预选（第 26 批）：律师没选过时，按所选合同的文件名与事项名猜；猜到了在下拉框下写“按文件名预选，可改”
+  const [guessed, setGuessed] = useState<string | null>(null);
+  const typeField = card.fields.find((f) => f.key === "type" && f.kind === "select" && f.options?.includes("其他（通用辅助）"));
+  useEffect(() => {
+    if (!typeField || !docsReady || values[typeField.key]) return;
+    const names = documents.filter((d) => docIds.includes(d.document_version_id)).map((d) => d.filename);
+    const g = guessContractType(names, matter?.title ?? "");
+    if (g && typeField.options!.includes(g)) {
+      setValues((cur) => (cur[typeField.key] ? cur : { ...cur, [typeField.key]: g }));
+      setGuessed(g);
+    }
+  }, [typeField, docsReady, documents, docIds, matter?.title, values]);
   const order = (id: string) => docIds.indexOf(id) + 1;
 
   return (
@@ -308,7 +324,10 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
                 {f.required ? <span className="ss-req" aria-label="必填">*</span> : null}
               </span>
               {f.kind === "select" ? (
-                <Select aria-label={f.label} value={String(values[f.key] ?? "")} onChange={(v) => setField(f.key, v)} options={f.options!.map((o) => ({ value: o, label: o }))} />
+                <span className="ss-select">
+                  <Select aria-label={f.label} value={String(values[f.key] ?? "")} onChange={(v) => setField(f.key, v)} options={f.options!.map((o) => ({ value: o, label: o }))} />
+                  {guessed && f === typeField && values[f.key] === guessed && <span className="ss-guess muted">按文件名预选，可改</span>}
+                </span>
               ) : f.kind === "multi" ? (
                 <span className="ss-multi">
                   {f.options!.map((o) => {
@@ -340,7 +359,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
         <section className="ss-sec">
           <div className="ss-h">你得到什么</div>
           <ul className="ss-gets">
-            {card.gets.map((g) => (
+            {getsPlain(card).map((g) => (
               <li key={g}>{g}</li>
             ))}
           </ul>
@@ -390,9 +409,22 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
           {hasPrefs && <p className="ss-note muted">按你的写作偏好写（设置 · 通用里可改）。</p>}
           <p className="ss-note muted">结果都是草稿，需要你复核后使用。{card.scenario === "a1.agent_task" ? "处理中需要联网或用到当事人信息时，会先问你。" : ""}</p>
         </section>
+        {/* 选项指向别的卡（第 26 批，评审 S2-03）：例如“收到的是劳动仲裁申请书”改用“劳动仲裁应对” */}
+        {fieldRedirect(card, values) && (
+          <div className="banner banner-orange">
+            {fieldRedirect(card, values)!.text}
+            <div className="banner-actions">
+              <button className="btn btn-sm" onClick={() => nav(`/start/${fieldRedirect(card, values)!.card.id}${matter ? `/${matter.matter_id}` : ""}`)}>
+                改用“{fieldRedirect(card, values)!.card.title}”
+              </button>
+            </div>
+          </div>
+        )}
         {sampleBlocked && <div className="banner banner-gray">示例事项只用来看效果，不能存审查要点：请在你自己的事项里整理。</div>}
         {err && <div className="banner banner-red">{err}</div>}
-        <div className="modal-actions">
+        {/* 底部按钮贴底（第 26 批走查：1280×720 下“开始审查”在首屏之外，要先滚到底才看得到）；还不能开始时左边写缺什么 */}
+        <div className="modal-actions modal-actions-sticky">
+          {!ready && !busy && (missing.length > 0 || needDocs > 0) && <span className="muted ss-foot-why">{missing.length > 0 ? `先填写：${missing.map((f) => f.label).join("、")}` : "先选择材料"}</span>}
           <button className="btn-ghost" onClick={onClose}>取消</button>
           {/* 还不能开始时（例如疑似姓名待核对）不占主按钮：同屏的主动作是待办那一步（复核 S7B-01） */}
           <button className={ready ? "btn-primary" : "btn-ghost"} disabled={busy || !ready} onClick={() => void start()}>

@@ -373,7 +373,9 @@ function liveAgentRunOf(db: KernelDb, matterId: string): { run_id: string; goal:
   );
   const r = rows[0];
   if (!r) return null;
-  const goal = String(parseJson<any>(r.input_snapshot, {})?.goal ?? "").replace(/\s+/g, " ").slice(0, 24);
+  const snap = parseJson<any>(r.input_snapshot, {});
+  // 提示里先用任务名（第 26 批），自由描述的任务用目标前 24 字
+  const goal = String((typeof snap?.title === "string" && snap.title) || snap?.goal || "").replace(/\s+/g, " ").slice(0, 24);
   return { run_id: r.run_id, goal };
 }
 
@@ -918,7 +920,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         [matter.matter_id],
       ).map((r: any) => {
         const snap = parseJson<any>(r.input_snapshot, {});
-        return { run_id: r.run_id, scenario: r.scenario, status: r.status, created_at: r.created_at, mode: snap?.run_options?.mode ?? null, goal: typeof snap?.goal === "string" ? snap.goal.slice(0, 120) : null };
+        return { run_id: r.run_id, scenario: r.scenario, status: r.status, created_at: r.created_at, mode: snap?.run_options?.mode ?? null, goal: typeof snap?.goal === "string" ? snap.goal.slice(0, 120) : null, title: typeof snap?.title === "string" ? snap.title : null };
       });
       const myRole = db.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matter.matter_id, id.userId])?.matter_role ?? null;
       const isSample = !!db.get(`SELECT 1 AS x FROM sample_matters WHERE matter_id = ? AND removed_at IS NULL`, [matter.matter_id]);
@@ -1411,10 +1413,18 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
                 ...(p.scenario !== "a1.agent_task" ? [] : level === "L3b" ? ["不联网检索"] : level === "L3a" ? ["联网检索每一条都先问你"] : ["联网检索先去掉当事人名称；要带名称查时逐条问你"]),
                 `${matter.model_endpoint === "private" ? "是否保存由律所决定" : "服务方是否保存，以其企业协议为准"}；每次发送都有记录`,
               ];
+      // 每句要点的性质（第 26 批）：界面按它用不同记号——换成代号的打勾、按原文发送的用橙点、经谁转发用箭头；
+      // 原来每句都是绿勾，“没认出的姓名也按原文”也打勾，读起来像“已保护”
+      const bulletKinds: ("route" | "protect" | "plain" | "search" | "keep" | "local" | "blocked")[] = exitMode || (usesModel && blockReason)
+        ? ["blocked"]
+        : !usesModel
+          ? ["local"]
+          : ["route", "protect", "plain", ...(p.scenario !== "a1.agent_task" ? [] : (["search"] as const)), "keep"];
       const dataWhere = {
         model_endpoint: matter.model_endpoint,
         consent_status: matter.consent_status,
         bullets,
+        bullet_kinds: bulletKinds,
         ...(sendSummary ? { send_summary: sendSummary } : {}),
         preview: exitMode
           ? `不会发送：${exitMode.message}`
@@ -1492,6 +1502,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         runOptions = { mode, plan_first: mode === "chat" ? false : p?.plan_first !== false, preauthorized: pre };
       }
 
+      // 任务名（第 26 批）：律师点的场景卡名，列表与执行页用它当标题，不再拿拼好的任务说明（“请审查这份买卖合同，我方立场以事项为准；”）当标题。
+      // 只存本机快照、不进提示词；固定文字，不含案情
+      const title = typeof p?.title === "string" ? p.title.replace(/\s+/g, " ").trim().slice(0, 40) : "";
       // 方法模板（首页业务场景卡；UIUX P0-2 / Demo 融合 §4）：只接受已验签安装的模板，Agent 按模板执行
       let skill: string | undefined;
       if (p?.skill !== undefined && p?.skill !== null && p?.skill !== "") {
@@ -1596,7 +1609,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           matterId,
           est.scenario,
           String(p.idempotency_key),
-          JSON.stringify({ ...est.input, estimate_id: est.estimate_id, goal: p?.goal, topic_hint: p?.topic_hint ?? est.input.topic_hint, ...(runOptions ? { run_options: runOptions } : {}), ...(skill ? { skill, ...skillSnapshot(deps.skills, skill) } : {}), ...(skillArgs ? { skill_args: skillArgs } : {}), ...(rulesSnap ? { review_rules: rulesSnap } : {}), ...(prefsSnap ? { writing_prefs: prefsSnap } : {}), ...(followup ?? {}) }),
+          JSON.stringify({ ...est.input, estimate_id: est.estimate_id, goal: p?.goal, ...(title ? { title } : {}), topic_hint: p?.topic_hint ?? est.input.topic_hint, ...(runOptions ? { run_options: runOptions } : {}), ...(skill ? { skill, ...skillSnapshot(deps.skills, skill) } : {}), ...(skillArgs ? { skill_args: skillArgs } : {}), ...(rulesSnap ? { review_rules: rulesSnap } : {}), ...(prefsSnap ? { writing_prefs: prefsSnap } : {}), ...(followup ?? {}) }),
           Math.min(est.points, budgetCap),
           Math.min(est.points, budgetCap),
           est.estimate_id,
@@ -2482,7 +2495,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           const skill = typeof snap?.skill === "string" ? snap.skill : null;
           const label = (skill ? labels[`skill:${skill}`] : undefined) ?? labels[`scenario:${r.scenario}`] ?? "";
           const goal = String(snap?.goal ?? "").replace(/\s+/g, " ").trim();
-          return { kind: "run" as const, title: goal || label || "任务", sub: titleOf.get(r.matter_id) ?? "", extra: label, at: r.updated_at, ref: { run_id: r.run_id, matter_id: r.matter_id, scenario: r.scenario, skill, goal } };
+          const named = typeof snap?.title === "string" ? snap.title : "";
+          return { kind: "run" as const, title: named || goal || label || "任务", sub: titleOf.get(r.matter_id) ?? "", extra: named ? `${label} ${goal}` : label, at: r.updated_at, ref: { run_id: r.run_id, matter_id: r.matter_id, scenario: r.scenario, skill, goal, title: named || null } };
         }),
         ...arts.slice(0, ART_CAP).map((a0) => {
           const a = { ...a0, version: fileVer.get(a0.artifact_version_id) ?? a0.version };
@@ -2502,7 +2516,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const runsOut = hit.run.map((c) => {
         const g = restoreFor(String(c.ref.matter_id), String(c.ref.goal ?? ""));
         if (g.restored) (restored += g.restored), touched.add(String(c.ref.matter_id));
-        return { run_id: c.ref.run_id, matter_id: c.ref.matter_id, matter_title: c.sub, scenario: c.ref.scenario, skill: c.ref.skill, goal: g.text.slice(0, 30), updated_at: c.at };
+        return { run_id: c.ref.run_id, matter_id: c.ref.matter_id, matter_title: c.sub, scenario: c.ref.scenario, skill: c.ref.skill, goal: g.text.slice(0, 30), title: c.ref.title ?? null, updated_at: c.at };
       });
       const delivOut = hit.deliverable.map((c) => {
         const t = c.ref.title ? restoreFor(String(c.ref.matter_id), String(c.ref.title)) : null;
@@ -2549,6 +2563,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           status: r.status,
           updated_at: r.updated_at,
           goal: String(parseJson<any>(r.input_snapshot, {})?.goal ?? "").replace(/\s+/g, " ").slice(0, 24),
+          // 任务名（第 26 批）：场景卡名；自由描述的任务没有，界面用 goal
+          title: typeof parseJson<any>(r.input_snapshot, {})?.title === "string" ? parseJson<any>(r.input_snapshot, {}).title : null,
           // 方法模板（界面按它找场景卡名称）
           skill: typeof parseJson<any>(r.input_snapshot, {})?.skill === "string" ? parseJson<any>(r.input_snapshot, {}).skill : null,
         })),
@@ -3388,7 +3404,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (!deps.governance) throw notFound("公钥变更");
       const r = deps.governance.confirmKeyChange(String(p?.device_id ?? ""), String(p?.safety_code ?? ""), id.userId);
       if (!r.ok) throw validation(r.reason);
-      return { ok: true, note: "已核对安全码并替换公钥：此后本机的事项密钥包裹使用新公钥" };
+      return { ok: true, note: "已核对本机核对码，换用对方电脑的新密钥：此后本机交给这台电脑的事项密钥用新密钥加密" };
     },
 
     // ─── 设备与密钥纪元（§5.3：吊销设备证书 → tenant 纪元递增；撤权校验不依赖时钟） ───

@@ -379,9 +379,9 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
     <Frame>
       <h1 className="activate-title">等待管理员批准</h1>
       <p className="activate-lead">
-        已向「{status.firm?.name ?? "律所"}」申请加入{who ? `（${who}）` : ""}。请打电话或当面联系管理员，把下面的核对码读给他；管理员核对一致后批准，这里会自动进入。
+        已向「{status.firm?.name ?? "律所"}」申请加入{who ? `（${who}）` : ""}。请打电话或当面联系管理员，把下面的入组核对码读给他；管理员核对一致后批准，这里会自动进入。
       </p>
-      <div className="activate-checkcode" aria-label="核对码">
+      <div className="activate-checkcode" aria-label="入组核对码">
         {status.check_code}
       </div>
       {note && (
@@ -407,7 +407,7 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
       </div>
       <details className="muted activate-foot">
         <summary>为什么要核对</summary>
-        确认申请加入的确实是你本人的这台电脑。核对码请通过电话或当面告知，不要截图转发。
+        确认申请加入的确实是你本人的这台电脑。入组核对码请通过电话或当面告知，不要截图转发。
       </details>
       <p className="muted activate-foot">批准后会自动打开，不用一直守在这里。申请 7 天内有效。</p>
     </Frame>

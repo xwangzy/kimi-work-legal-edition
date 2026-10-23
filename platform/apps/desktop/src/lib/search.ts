@@ -36,7 +36,7 @@ export function searchLabels(): Record<string, string> {
 export function searchGroups(
   r: {
     matters: { matter_id: string; title: string; sub: string }[];
-    runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; skill: string | null; goal: string; updated_at: string }[];
+    runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; skill: string | null; goal: string; title?: string | null; updated_at: string }[];
     deliverables: { artifact_version_id: string; matter_id: string; matter_title: string; kind: string; version: number; filename: string; title: string | null; created_at: string }[];
   },
   now = Date.now(),
@@ -48,7 +48,7 @@ export function searchGroups(
       items: r.runs.map((x) => {
         const card = scenarioOfRun({ scenario: x.scenario, input_snapshot: { skill: x.skill } });
         const label = card?.title ?? SCENARIO_LABELS[x.scenario] ?? "任务";
-        return { kind: "run" as const, title: x.goal ? `${label}：${x.goal}` : label, sub: `${x.matter_title} · ${fmtWhen(x.updated_at, now)}`, href: `/run/${x.run_id}/${x.matter_id}` };
+        return { kind: "run" as const, title: x.title ? x.title : x.goal ? `${label}：${x.goal}` : label, sub: `${x.matter_title} · ${fmtWhen(x.updated_at, now)}`, href: `/run/${x.run_id}/${x.matter_id}` };
       }),
     },
     {

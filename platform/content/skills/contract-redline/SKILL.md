@@ -6,7 +6,7 @@ when_to_use: 本事项已有风险卡且律师已处理（接受、修改后接�
 arguments: [audience]
 kwl:
   id: contract-redline
-  version: 1.1.0
+  version: 1.2.0
   lines: [非诉, 企业法务]
   chain: contract
   tier: beta
@@ -27,7 +27,7 @@ kwl:
 - **不适用**：从头审查（→ `contract-review`）；对方回稿（→ `redraft-review`）；对外发送（由律师完成）。
 
 ## 2. 输入与前置检查
-1. 调用 `riskcards.list`（status = accepted、modified），取得纳入范围的卡；另调用一次不带 status 的 `riskcards.list` 统计仍为 proposed（待处理）和 rejected（不采纳）的数量。
+1. 先确定本次说明针对哪一版合同（首轮为被审的原合同，回稿轮为对方回稿）：用 `materials.list` 找到它的 `document_version_id`；事项里不止一份合同或不止一轮审查、律师又没说针对哪一版时，与第 2 条的问题一并问。调用 `riskcards.list`（document_version_id = 该版本，status = accepted、modified），取得纳入范围的卡；另调用一次只带 document_version_id 的 `riskcards.list`，统计仍为 proposed（待处理）和 rejected（不采纳）的数量。**其他版本、其他轮次的卡不写进本次说明。**
 2. 仍有待处理的卡时，先告知律师“还有 N 张卡未处理，说明只覆盖已处理的卡”，并用提问工具确认是否继续（与其他问题合并，**一次不超过 3 问**）。
 3. 受众与用途不明时一并询问：说明给谁看（客户 / 对方 / 内部）？客户的决策人是否需要非法律语言版本？是否有需要回避的内部信息？
 4. 需要条款上下文时，用 `materials.list` 找到合同的 `parse_version_id`，再用 `materials.read_excerpt` 读取。
@@ -45,7 +45,7 @@ kwl:
 ## 4. 工具调用约定
 | 工具 | 用途 | 关键参数 | 失败时 |
 |---|---|---|---|
-| riskcards.list | 读取已处理的卡 | status: [accepted, modified] | 不可用：停止，告知律师无法读取处理结果，不凭记忆或正文重写 |
+| riskcards.list | 读取已处理的卡 | document_version_id（本次针对的版本），status: [accepted, modified] | 不可用：停止，告知律师无法读取处理结果，不凭记忆或正文重写 |
 | materials.list / materials.read_excerpt | 读条款上下文 | parse_version_id，区间 | 失败：只用卡内文本，说明中注明“未核对上下文” |
 | citations.verify | 核验说理中引用的条文 | citations[{law, article}]，as_of | 不可用：去掉条号或标“依据待核实” |
 | docx.render_report | 生成说明与要点 | title，sections | 不可用：见第 8 节 |
@@ -72,6 +72,7 @@ kwl:
 
 ## 6. 质量自检
 - [ ] 只纳入 accepted 和 modified 的卡；modified 的卡使用律师改写文本。
+- [ ] 只纳入本次针对的合同版本上的卡，没有混入上一轮或其他合同的卡。
 - [ ] 没有任何卡以外的新修改。
 - [ ] 锚点未定位的卡已标“需律师手工修改”。
 - [ ] 致对方版本中没有严重度、内部评估、底线、备选与客户决定事项。

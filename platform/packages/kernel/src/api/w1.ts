@@ -230,7 +230,20 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
       const exec = ledger.find((r) => r.family === "Shell 与代码执行");
       // 执行域标注由能力账本推出（复核 S5-A10）：W 可用 → 运行时隔离；本设备关闭 → 未隔离、不运行代码；宿主未启动 → 未知
       const available = exec ? exec.current !== "disabled" : null;
+      const g = gate ?? { running: false, routes: { search: false, fetch: false } };
+      const model = ledger.find((r) => r.family === "模型流式输出、工具调用、用量");
+      // 给律所看的“本机功能一览”（第 26 批，评审 U2-13）：固定几行律师话，状态只有“可用 / 未开启 / 本版本没有”三种；
+      // 上面的 rows 是研发台账（阶段代号、复核与偏离编号、内部实体名），界面只在开发形态显示，不给律所看
+      const customer_rows = [
+        { feature: "AI 起草、审查与问答", status: !model ? "未知" : model.current === "pending" ? "暂不可用" : "可用", note: "每次发给 AI 的内容都有记录" },
+        { feature: "读写本事项的材料与草稿", status: "可用", note: "原件只读；草稿可回到任一版" },
+        { feature: "AI 写的计算（如金额表）", status: available === null ? "未知" : available ? "可用" : "这台电脑未开启", note: available === false ? "不运行 AI 写的代码" : "在隔离环境里运行，不能联网" },
+        { feature: "联网检索", status: g.routes?.search ? "可用" : "未开启", note: "默认去掉当事人名称再查" },
+        { feature: "打开网页", status: g.routes?.fetch ? "可用" : "未开启", note: "只限官方网站与本所允许的网站" },
+        { feature: "操作网页与电脑", status: "本版本没有", note: "AI 不会替你点网页、操作电脑" },
+      ];
       return {
+        customer_rows,
         execution_domain: {
           available,
           label: available === false ? "未隔离：不运行代码（只运行可信工具）" : "运行时隔离（W）",
@@ -238,7 +251,7 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
             available === null
               ? "未知（Agent 宿主尚未启动；首次运行任务时自检）"
               : available
-                ? "可用：设备自检通过（P2 本机通过；正式验收待 Windows 真机与杀软矩阵）"
+                ? "可用：这台电脑自检通过"
                 : `本设备关闭：${String(exec?.note ?? "").split(/[。；]/)[0]}`,
           detail: available === false ? "执行域不可用时不在执行域之外运行模型生成的代码" : "无网络、只见本事项、原件只读、工作区可回滚；非操作系统沙箱",
         },

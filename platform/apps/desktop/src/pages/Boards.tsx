@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
-import { fmtRelative, RUN_STATUS_LABELS, SCENARIO_LABELS } from "../lib/labels.ts";
+import { fmtRelative, RUN_STATUS_LABELS, runName } from "../lib/labels.ts";
 import { dueText, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
 import type { ReminderItem } from "../api.ts";
 import { Select } from "../components/Select.tsx";
@@ -92,7 +92,7 @@ export function MatterBoard({ matter, runs, onChanged, onGo }: { matter: Matter;
         {runs.slice(0, 6).map((r) => (
           // 任务以目标前 20 字区分（Y4 B-2）；没有目标的显示场景名；时间用相对时间
           <button key={r.run_id} className="w-link" onClick={() => nav(`/run/${r.run_id}/${matter.matter_id}`)}>
-            {r.goal ? `${String(r.goal).slice(0, 20)}${String(r.goal).length > 20 ? "…" : ""}` : (SCENARIO_LABELS[r.scenario] ?? "任务")} · {RUN_STATUS_LABELS[r.status] ?? "状态未知"} · {fmtRelative(r.created_at)}
+            {runName(r, 20)} · {RUN_STATUS_LABELS[r.status] ?? "状态未知"} · {fmtRelative(r.created_at)}
           </button>
         ))}
       </Widget>

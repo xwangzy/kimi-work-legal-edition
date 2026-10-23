@@ -6,7 +6,7 @@ when_to_use: 事项中有我方发出的基线稿和对方回稿两份 DOCX，�
 arguments: [baseline, current]
 kwl:
   id: redraft-review
-  version: 1.1.0
+  version: 1.2.0
   lines: [非诉, 企业法务]
   chain: contract
   tier: beta
@@ -27,7 +27,7 @@ kwl:
 1. 调用 `materials.list`，确定基线稿（我方最后发出的版本）与回稿（对方返回的版本）的 `document_version_id`。两份都必须是 DOCX；`$baseline`、`$current` 已指定的直接使用。
 2. 无法确定哪份是基线时，用提问工具一次问清（**不超过 3 问**），例如：哪一份是我方最后发出的版本？对方是否声明“已接受全部修订”？本轮重点关注哪些条款？
 3. 基线稿不是我方最后发出的版本（例如是更早的内部稿）时，比对结果会混入我方自己的改动——在清单首部写明基线来源。
-4. 用 `riskcards.list`（status = accepted、modified）取得我方上一轮已提出的修改，用于采纳跟踪；只跟踪 `changes_document` 为 true 的卡——`lawyer_status` 为 acknowledged 的卡是律师“知悉、不改动”，不是我方提出的修改，不得据此判对方“未采纳”；读不到时跳过跟踪并说明。
+4. 用 `riskcards.list`（document_version_id = 上一轮被审的版本，即我方据以生成上一稿的那份文件；status = accepted、modified）取得我方上一轮已提出的修改，用于采纳跟踪——事项里有多轮卡时只取上一轮的，拿不准是哪一版时与第 2 条一并问；只跟踪 `changes_document` 为 true 的卡——`lawyer_status` 为 acknowledged 的卡是律师“知悉、不改动”，不是我方提出的修改，不得据此判对方“未采纳”；读不到时跳过跟踪并说明。
 5. **本事项审查要点（v1.1）**：任务说明里有【本事项审查要点 第 n 版】的，对方改动后与某条要点不符的，出卡 `kind: deviation`、`rule_source: firm_rule`、`rule_ref` 写“要点 n：条款”；触及“不可谈”的 `nature: must`、`needs_client_decision: true`。要点没写到的改动照常定性。
 
 ## 3. 步骤
@@ -49,7 +49,7 @@ kwl:
 | materials.list | 找到两份文件的版本 ID | 无 | 不可用：停止，请律师指明两份文件 |
 | docx.compare | 段落级整稿比对与静默改动检出 | baseline_document_version_id，current_document_version_id | 失败（非 DOCX、版本不存在）：如实告知原因；不得凭肉眼通读替代并声称“已全部比对” |
 | materials.read_excerpt | 读取改动上下文与受影响条款 | parse_version_id，区间 | 失败：该处标“上下文未读取” |
-| riskcards.list | 我方上一轮修改 | status: [accepted, modified] | 不可用：跳过采纳跟踪并说明 |
+| riskcards.list | 我方上一轮修改 | document_version_id（上一轮被审的版本），status: [accepted, modified] | 不可用：跳过采纳跟踪并说明 |
 | riskcards.submit | 提交重审发现的问题 | document_version_id = 回稿，cards[] | 锚点未定位：按回稿原文修正重交 |
 | citations.verify / law.get_version | 依据核验 | citations，as_of | 不可用：写“依据待核实” |
 | xlsx.render_table | 变更清单 | title，sheets | 不可用：见第 8 节 |

@@ -11,8 +11,8 @@ import { defaultChoice } from "../components/ModeSelector.tsx";
 import { NewMatterDialog } from "../components/NewMatter.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { ScenarioStart } from "../components/ScenarioStart.tsx";
-import { cardGets, cardGives, COMING_SOON, LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
-import { fmtTime, SCENARIO_LABELS } from "../lib/labels.ts";
+import { cardGets, cardGives, COMING_SOON, getsPlain, LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
+import { fmtTime, runName } from "../lib/labels.ts";
 import { nextStepPill, type RunFacts } from "../lib/next-step.ts";
 import { backendDownText } from "../lib/errors.ts";
 import { dueText, dueTone, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
@@ -182,7 +182,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     setMsg("");
     try {
       const v = value.documentIds.length === 0 && value.scenario !== "a1.agent_task" ? { ...value, documentIds: docs.map((d) => d.document_version_id) } : value;
-      setSheet(await prepareStart(matter, v));
+      setSheet(await prepareStart(matter, v, { docNames: docs.filter((d) => v.documentIds.includes(d.document_version_id)).map((d) => d.filename) }));
     } catch (e) {
       setMsg((e as Error).message);
     } finally {
@@ -233,7 +233,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
             suggestion
               ? {
                   title: suggestion.title,
-                  gets: suggestion.gets.join("、"),
+                  gets: getsPlain(suggestion).join("、"),
                   onUse: () => openCard(suggestion, value.goal),
                   onDismiss: () => setDismissed(suggestion.id),
                 }
@@ -306,7 +306,11 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
                   const pill = nextStepPill(facts[r.run_id] ?? { status: r.status });
                   return (
                     <button key={r.run_id} className="today-row" onClick={() => nav(`/run/${r.run_id}/${r.matter_id}`)} title={`${r.matter_title} · ${fmtTime(r.updated_at)}`}>
-                      <span className="today-text">{r.goal || SCENARIO_LABELS[r.scenario] || "任务"}</span>
+                      {/* 第 26 批（评审 U2-33）：多个事项同时在办时看得出是哪个案子 */}
+                      <span className="today-main">
+                        <span className="today-text">{runName(r)}</span>
+                        <small className="today-sub">{r.matter_title}</small>
+                      </span>
                       <span className={`pill ${pill.tone}`}>{pill.text}</span>
                     </button>
                   );
@@ -364,6 +368,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
       {sheet && <RunSheet pending={sheet} onClose={() => setSheet(null)} />}
       {starting && (
         <ScenarioStart
+          // 换卡（例如“改用劳动仲裁应对”）时重新挂载，上一张卡填的字段不带过去
+          key={starting.card.id}
           card={starting.card}
           matter={matters.find((m) => m.matter_id === starting.matterId) ?? null}
           matters={matters}

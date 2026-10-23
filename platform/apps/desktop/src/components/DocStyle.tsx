@@ -11,6 +11,7 @@ export function DocStyle() {
   const [draft, setDraft] = useState<DocStyleView | null>(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     void api
@@ -40,32 +41,69 @@ export function DocStyle() {
   };
   const lines = [draft.letterhead_lines[0] ?? "", draft.letterhead_lines[1] ?? ""];
   const set = (patch: Partial<DocStyleView>) => setDraft({ ...draft, ...patch });
+  const body = { letterhead: draft.letterhead, letterhead_name: draft.letterhead_name, letterhead_lines: draft.letterhead_lines, body: draft.body, page_numbers: draft.page_numbers };
+  // 有没保存的改动时在标题旁标“未保存”（第 26 批，评审 U2-02：原来改了不点保存就静默丢失）
+  const dirty =
+    draft.letterhead !== v.letterhead ||
+    (draft.letterhead_name ?? "") !== (v.letterhead_name ?? "") ||
+    lines[0] !== (v.letterhead_lines[0] ?? "") ||
+    lines[1] !== (v.letterhead_lines[1] ?? "") ||
+    draft.body !== v.body ||
+    draft.page_numbers !== v.page_numbers ||
+    (draft.redline_author ?? "") !== (v.redline_author ?? "");
+  const pickTemplate = () => (window.zrKernel?.pickFiles ? void run(() => api.setDocTemplate(), "已用律所模板") : fileRef.current?.click());
+  // 第 26 批（评审 U2-01）：一张“标签 | 控件”网格，标签与控件同一条中线；分段控件一种样子；页码用开关；律所模板是“版式来源”的一个选项，不和“保存”并排
   return (
     <div className="device-row" id="doc-style">
-      <div className="device-k">文书版式</div>
+      <div className="device-k">
+        文书版式
+        {dirty && <span className="pill pill-orange unsaved">未保存</span>}
+      </div>
       <div>
-        <div className="muted">下载的意见书、报告、备忘录按这里的版式排版；原件和对方合同不受影响。版式细节看“下载样张”。</div>
-        {v.template ? (
-          <div className="card">
-            正在用律所模板「{v.template.name}」（{fmtTime(v.template.updated_at)} 上传）：页眉页脚、徽标、字体和页面设置都取自模板，下面的函头与正文字体设置不再使用。
-            {(v.template.header_text || v.template.footer_text) && (
-              <div className="muted">
-                模板页眉：{v.template.header_text || "（无文字）"}；页脚：{v.template.footer_text || "（无文字）"}
-              </div>
-            )}
-            {v.template.looks_case_specific && (
-              <p className="banner banner-orange">模板的页眉页脚里像是有具体案件的信息（案号、“诉”或文件名）。这些文字会印到之后每一份下载的 Word 上，包括别的客户的文书——请换一份干净的模板。</p>
-            )}
-            <div className="card-actions">
-              <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => api.clearDocTemplate(), "已移除律所模板")}>
-                移除模板
+        <div className="muted">下载的意见书、报告、备忘录按这里排版；原件和对方合同不受影响。</div>
+        <div className="settings-grid">
+          <span className="sg-k">版式来源</span>
+          <div className="sg-v">
+            <div className="seg seg-lg" role="radiogroup" aria-label="版式来源">
+              <button role="radio" aria-checked={!v.template} className={`seg-btn${!v.template ? " on" : ""}`} disabled={busy} onClick={() => v.template && setConfirmClear(true)}>
+                按下面的设置
+              </button>
+              <button role="radio" aria-checked={!!v.template} className={`seg-btn${v.template ? " on" : ""}`} disabled={busy} onClick={() => !v.template && pickTemplate()}>
+                用律所 Word 模板
               </button>
             </div>
+            {v.template && (
+              <span className="sg-help">
+                正在用「{v.template.name}」（{fmtTime(v.template.updated_at)} 上传）：页眉页脚、徽标、字体和页面都取自模板。
+                <button className="btn-link" disabled={busy} onClick={pickTemplate}>
+                  换一个模板
+                </button>
+              </span>
+            )}
+            {v.template && (v.template.header_text || v.template.footer_text) && (
+              <span className="sg-help">
+                模板页眉：{v.template.header_text || "（无文字）"}；页脚：{v.template.footer_text || "（无文字）"}
+              </span>
+            )}
+            {v.template?.looks_case_specific && (
+              <p className="banner banner-orange">模板的页眉页脚里像是有具体案件的信息（案号、“诉”或文件名）。这些文字会印到之后每一份下载的 Word 上，包括别的客户的文书——请换一份干净的模板。</p>
+            )}
+            {confirmClear && (
+              <span className="sg-confirm">
+                不用律所模板，改按下面的设置？
+                <button className="btn btn-sm" disabled={busy} onClick={() => void run(() => api.clearDocTemplate(), "已移除律所模板，改按下面的设置").then(() => setConfirmClear(false))}>
+                  不用模板
+                </button>
+                <button className="btn-ghost btn-sm" onClick={() => setConfirmClear(false)}>
+                  取消
+                </button>
+              </span>
+            )}
           </div>
-        ) : (
-          <>
-            <div className="settings-choice" role="radiogroup" aria-label="函头">
-              <span>函头</span>
+
+          <span className={`sg-k${v.template ? " sg-off" : ""}`}>函头</span>
+          <div className={`sg-v${v.template ? " sg-off" : ""}`}>
+            <div className="seg seg-lg" role="radiogroup" aria-label="函头">
               {(
                 [
                   ["auto", v.effective_letterhead && v.letterhead === "auto" ? `本所名称（${v.effective_letterhead}）` : "本所名称"],
@@ -73,57 +111,71 @@ export function DocStyle() {
                   ["none", "不加"],
                 ] as const
               ).map(([k, l]) => (
-                <button key={k} role="radio" aria-checked={draft.letterhead === k} className={`q-option${draft.letterhead === k ? " on" : ""}`} onClick={() => set({ letterhead: k })}>
+                <button key={k} role="radio" aria-checked={draft.letterhead === k} disabled={!!v.template} className={`seg-btn${draft.letterhead === k ? " on" : ""}`} onClick={() => set({ letterhead: k })}>
                   {l}
                 </button>
               ))}
             </div>
-            {draft.letterhead === "custom" && (
-              <label className="field">
-                <span>函头上的名称</span>
-                <input value={draft.letterhead_name ?? ""} maxLength={40} onChange={(e) => set({ letterhead_name: e.target.value })} placeholder="例如：衡序律师事务所" />
-              </label>
-            )}
-            {draft.letterhead !== "none" && (
-              <label className="field">
-                <span>函头下的地址、电话（可空，至多两行）</span>
-                <input value={lines[0]} maxLength={60} onChange={(e) => set({ letterhead_lines: [e.target.value, lines[1]!] })} placeholder="地址：北京市朝阳区某路 1 号" />
-                <input value={lines[1]} maxLength={60} onChange={(e) => set({ letterhead_lines: [lines[0]!, e.target.value] })} placeholder="电话：010-12345678" />
-              </label>
-            )}
-          </>
-        )}
-        {!v.template && <div className="settings-choice" role="radiogroup" aria-label="正文字体">
-          <span>正文</span>
-          {(
-            [
-              ["song-xiaosi", "宋体小四（意见书、备忘录）"],
-              ["fangsong-san", "仿宋三号（起诉状、律师函）"],
-            ] as const
-          ).map(([k, l]) => (
-            <button key={k} role="radio" aria-checked={draft.body === k} className={`q-option${draft.body === k ? " on" : ""}`} onClick={() => set({ body: k })}>
-              {l}
-            </button>
-          ))}
-        </div>}
-        <label>
-          <input type="checkbox" checked={draft.page_numbers} onChange={(e) => set({ page_numbers: e.target.checked })} /> 页脚加“第 X 页 共 Y 页”
-        </label>
-        {/* 修订署名（v9.4 第 22 批，C1 #4）：Word 修订里显示的作者名；对外版修订稿发出前请再看一遍 */}
-        <label className="field">
-          <span>修订署名（Word 修订里显示的作者）</span>
-          <input value={draft.redline_author ?? ""} maxLength={30} placeholder="律师审定（Kimi Work 辅助起草）" onChange={(e) => set({ redline_author: e.target.value || null })} aria-label="修订署名" />
-          <small className="muted">{draft.redline_author ? "对外版和内部版都用这个署名，对方打开对外版修订稿能看到。" : v?.firm_name ? `不填时：对外版用本所名称“${v.firm_name}”，内部版用括号里的缺省写法。` : "不填用括号里的缺省写法。写本所名称或执业律师姓名时，对方打开修订稿能看到。"}</small>
-        </label>
-        <div className="settings-choice">
-          <button className="btn-primary btn-sm" disabled={busy} onClick={() => void run(() => api.setDocStyle({ letterhead: draft.letterhead, letterhead_name: draft.letterhead_name, letterhead_lines: draft.letterhead_lines, body: draft.body, page_numbers: draft.page_numbers, redline_author: draft.redline_author ?? "" }), "已保存")}>
+            {v.template && <span className="sg-help">用律所模板时，函头与正文字体按模板，这两行不生效。</span>}
+          </div>
+
+          {draft.letterhead === "custom" && !v.template && (
+            <>
+              <span className="sg-k">函头名称</span>
+              <div className="sg-v">
+                <input aria-label="函头上的名称" value={draft.letterhead_name ?? ""} maxLength={40} onChange={(e) => set({ letterhead_name: e.target.value })} placeholder="例如：衡序律师事务所" />
+              </div>
+            </>
+          )}
+          {draft.letterhead !== "none" && !v.template && (
+            <>
+              <span className="sg-k sg-top">地址电话</span>
+              <div className="sg-v">
+                <input aria-label="函头下第一行" value={lines[0]} maxLength={60} onChange={(e) => set({ letterhead_lines: [e.target.value, lines[1]!] })} placeholder="地址：北京市朝阳区某路 1 号" />
+                <input aria-label="函头下第二行" value={lines[1]} maxLength={60} onChange={(e) => set({ letterhead_lines: [lines[0]!, e.target.value] })} placeholder="电话：010-12345678" />
+                <span className="sg-help">印在函头下面，可空，至多两行。</span>
+              </div>
+            </>
+          )}
+
+          <span className={`sg-k${v.template ? " sg-off" : ""}`}>正文字体</span>
+          <div className={`sg-v${v.template ? " sg-off" : ""}`}>
+            <div className="seg seg-lg" role="radiogroup" aria-label="正文字体">
+              {(
+                [
+                  ["song-xiaosi", "宋体小四"],
+                  ["fangsong-san", "仿宋三号"],
+                ] as const
+              ).map(([k, l]) => (
+                <button key={k} role="radio" aria-checked={draft.body === k} disabled={!!v.template} className={`seg-btn${draft.body === k ? " on" : ""}`} onClick={() => set({ body: k })}>
+                  {l}
+                </button>
+              ))}
+            </div>
+            <span className="sg-help">意见书、备忘录常用宋体小四；起诉状、律师函常用仿宋三号。</span>
+          </div>
+
+          <span className="sg-k">页码</span>
+          <div className="sg-v">
+            <span className="switch-row">
+              <button role="switch" aria-checked={draft.page_numbers} aria-label="页码" className="switch" onClick={() => set({ page_numbers: !draft.page_numbers })} />
+              <span>页脚写“第 X 页 共 Y 页”</span>
+            </span>
+          </div>
+
+          {/* 修订署名（v9.4 第 22 批，C1 #4）：Word 修订里显示的作者名；对外版修订稿发出前请再看一遍 */}
+          <span className="sg-k sg-top">修订署名</span>
+          <div className="sg-v">
+            <input value={draft.redline_author ?? ""} maxLength={30} placeholder="律师审定（Kimi Work 辅助起草）" onChange={(e) => set({ redline_author: e.target.value || null })} aria-label="修订署名" />
+            <span className="sg-help">{draft.redline_author ? "Word 修订里显示的作者。对外版和内部版都用这个署名，对方打开对外版修订稿能看到。" : v?.firm_name ? `Word 修订里显示的作者。不填时：对外版用本所名称“${v.firm_name}”，内部版用框里的缺省写法。` : "Word 修订里显示的作者。不填用框里的缺省写法；写本所名称或律师姓名时，对方打开修订稿能看到。"}</span>
+          </div>
+        </div>
+        <div className="settings-actions">
+          <button className="btn-primary btn-sm" disabled={busy || !dirty} onClick={() => void run(() => api.setDocStyle({ ...body, redline_author: draft.redline_author ?? "" }), "已保存")}>
             保存
           </button>
-          <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => api.downloadDocStyleSample({ letterhead: draft.letterhead, letterhead_name: draft.letterhead_name, letterhead_lines: draft.letterhead_lines, body: draft.body, page_numbers: draft.page_numbers }), "样张已保存（按面板上现在的选项），打开看看")}>
-            下载样张
-          </button>
-          <button className="btn-ghost btn-sm" disabled={busy} onClick={() => (window.zrKernel?.pickFiles ? void run(() => api.setDocTemplate(), "已用律所模板") : fileRef.current?.click())}>
-            {v.template ? "换一个律所模板" : "用律所 Word 模板…"}
+          <button className="btn-link" disabled={busy} onClick={() => void run(() => api.downloadDocStyleSample(body), "样张已保存（按面板上现在的选项），打开看看")}>
+            下载样张看效果
           </button>
           <input
             ref={fileRef}

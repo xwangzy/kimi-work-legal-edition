@@ -109,7 +109,7 @@ export function MembersAdmin() {
                 复制
               </button>
             </div>
-            <p className="muted">{fmtTime(issued.expires_at)} 前有效，只能用一次。请发给对方：他在自己的电脑上安装 Kimi Work 后输入这个码，然后会打电话把屏幕上的核对码读给你，你在“等你批准”里核对后批准。</p>
+            <p className="muted">{fmtTime(issued.expires_at)} 前有效，只能用一次。请发给对方：他在自己的电脑上安装 Kimi Work 后输入这个码，然后会打电话把屏幕上的入组核对码读给你，你在“等你批准”里核对后批准。</p>
           </div>
         )}
         {msg && <p className="muted">{msg}</p>}
@@ -126,7 +126,7 @@ export function MembersAdmin() {
                 <th>姓名</th>
                 <th>角色</th>
                 <th>申请时间</th>
-                <th>核对码（请对方念出，一致再批准）</th>
+                <th>入组核对码（请对方念出，一致再批准）</th>
                 <th />
               </tr>
             </thead>
@@ -142,7 +142,7 @@ export function MembersAdmin() {
                       <span className="activate-error">这份申请在传送中被改动过，不要批准；请拒绝并重新发邀请，同时告知 Kimi Work 客服</span>
                     ) : r.local_invite ? (
                       <span className="settings-choice">
-                        <ConfirmButton label="批准" danger={false} className="btn-primary btn-sm" question={`请先电话或当面联系${r.name ?? "对方"}，请他读出屏幕上的核对码，与这里逐位对照。号码一致吗？`} confirmLabel="已核对一致，批准" onConfirm={() => act(() => members.approve(r.id), `已批准${r.name ? ` ${r.name}` : ""}`)} />
+                        <ConfirmButton label="批准" danger={false} className="btn-primary btn-sm" question={`请先电话或当面联系${r.name ?? "对方"}，请他读出屏幕上的入组核对码，与这里逐位对照。号码一致吗？`} confirmLabel="已核对一致，批准" onConfirm={() => act(() => members.approve(r.id), `已批准${r.name ? ` ${r.name}` : ""}`)} />
                         <ConfirmButton label="拒绝" question={`拒绝${r.name ? ` ${r.name} ` : ""}的申请？他需要新的邀请码才能再次申请。`} confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
                       </span>
                     ) : (
@@ -154,7 +154,7 @@ export function MembersAdmin() {
             </tbody>
           </table>
         )}
-        {requests.length > 0 && <p className="muted">批准前，请先电话或当面联系对方，请他读出自己屏幕上的核对码，与这里逐位对照。号码对不上？不要批准，点“拒绝”，并联系 Kimi Work 客服。</p>}
+        {requests.length > 0 && <p className="muted">批准前，请先电话或当面联系对方，请他读出自己屏幕上的入组核对码，与这里逐位对照。号码对不上？不要批准，点“拒绝”，并联系 Kimi Work 客服。</p>}
       </div>
 
       <MemberRoster />
@@ -187,7 +187,7 @@ export function MembersAdmin() {
             </tbody>
           </table>
         )}
-        {data?.firm_check_code && <p className="muted">本所核对码：{data.firm_check_code}（同事加入后，他的“设置 · 本机与安全”里应显示同一串数字）</p>}
+        {data?.firm_check_code && <p className="muted">本所识别码：{data.firm_check_code}（同事加入后，他的“设置 · 本机与安全”里应显示同一串数字）</p>}
       </div>
     </div>
   );

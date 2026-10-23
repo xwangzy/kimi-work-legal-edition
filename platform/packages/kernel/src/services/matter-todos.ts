@@ -145,7 +145,9 @@ export function listTodos(db: KernelDb, matterId: string): { open: TodoRow[]; do
 
 const goalOf = (snapshot: string | null): string => {
   try {
-    const g = JSON.parse(snapshot ?? "{}")?.goal;
+    // 场景卡发起的任务先用卡名（第 26 批），不拿拼好的任务说明当待办名
+    const snap = JSON.parse(snapshot ?? "{}");
+    const g = typeof snap?.title === "string" && snap.title ? snap.title : snap?.goal;
     return typeof g === "string" ? g.replace(/\s+/g, " ").slice(0, 40) : "";
   } catch {
     return "";

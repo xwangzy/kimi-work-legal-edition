@@ -3,6 +3,7 @@
  * 老任务没有记录时写“版本未记录（当前所用为 vX）”；模板已不在本机时用场景卡名或“已下架的方法模板”，不显示内部编号。
  */
 import { SCENARIOS } from "./scenarios.ts";
+import { methodName } from "./labels.ts";
 
 function snapOf(run: { input_snapshot?: unknown } | null): any {
   let snap: any = run?.input_snapshot;
@@ -22,7 +23,7 @@ function method(run: { input_snapshot?: unknown } | null, titles: Record<string,
   if (!id) return null;
   const title = (typeof snap.skill_title === "string" && snap.skill_title) || titles[id] || SCENARIOS.find((c) => c.skill === id)?.title || "已下架的方法模板";
   const recorded = typeof snap.skill_version === "string" && !!snap.skill_version;
-  return { title, version: recorded ? snap.skill_version : null, recorded, current: versions[id] ?? null };
+  return { title: methodName(title), version: recorded ? snap.skill_version : null, recorded, current: versions[id] ?? null };
 }
 
 /** 方法模板名称与版本，如“合同审查（风险卡） v1.1.1”；不是方法模板任务返回 null（工作台协议条用，Z3 #22）。 */
