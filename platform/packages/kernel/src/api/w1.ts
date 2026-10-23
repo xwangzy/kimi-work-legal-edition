@@ -181,6 +181,21 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
         throw new DomainError("not_found", (e as Error).message, 404);
       }
     },
+    // 删除本人的一个问答（问题、回答与令牌表；驻留面第 27 类“留存到律师删除”）；审计不记内容
+    "chat.delete": (p, id) => {
+      if (!d.qa) throw new DomainError("not_found", "问答未启用", 404);
+      const cid = String(p?.conversation_id ?? "");
+      try {
+        d.qa.delete(cid, id.tenantId, id.userId);
+      } catch (e) {
+        const code = (e as { code?: string }).code;
+        if (code === "not_found") throw new DomainError("not_found", (e as Error).message, 404);
+        if (code === "conflict") throw new DomainError("conflict", (e as Error).message, 409);
+        throw e;
+      }
+      d.audit(id, "qa.conversation_deleted", "qa_conversation", cid, "");
+      return { ok: true };
+    },
     "chat.send": async (p, id) => {
       if (!d.qa) throw new DomainError("not_found", "问答未启用", 404);
       try {
@@ -195,6 +210,7 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
         const code = (e as { code?: string }).code;
         if (code === "validation") throw invalid((e as Error).message);
         if (code === "not_found") throw new DomainError("not_found", (e as Error).message, 404);
+        if (code === "conflict") throw new DomainError("conflict", (e as Error).message, 409);
         throw e;
       }
     },

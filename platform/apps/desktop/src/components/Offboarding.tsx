@@ -112,22 +112,26 @@ export function Offboarding() {
               </tbody>
             </table>
           )}
-          {/* 最后一步：按人存在这台电脑上的个人设置（复核 Q4 建议 3）。事项的材料与成果按律所留存规则处理，这里不删 */}
-          {data && (
-            <p>
-              {data.personal?.writing_prefs ? (
-                <>
-                  你的写作偏好（落款、法条引用写法等）还在这台电脑上。交还电脑前请清除：{" "}
-                  <button className="btn-ghost btn-sm" disabled={busy !== null} onClick={() => void clearPersonal()}>
-                    {busy === "personal" ? "正在清除…" : "清除写作偏好"}
-                  </button>
-                </>
-              ) : (
-                <span className="muted">{personalNote || "这台电脑上没有你的写作偏好。"}</span>
-              )}
-              {data.personal?.writing_prefs && personalNote && <span className="muted" role="status"> {personalNote}</span>}
-            </p>
-          )}
+          {/* 最后一步：按人存在这台电脑上的写作偏好与问答记录（复核 Q4 建议 3）。事项的材料与成果按律所留存规则处理，这里不删 */}
+          {data && (() => {
+            const p = data.personal;
+            const what = [p?.writing_prefs ? "写作偏好（落款、法条引用写法等）" : "", p && p.qa_conversations > 0 ? `${p.qa_conversations} 个问答记录` : ""].filter(Boolean);
+            return (
+              <p>
+                {what.length > 0 ? (
+                  <>
+                    你的{what.join("和")}还在这台电脑上。交还电脑前请清除：{" "}
+                    <button className="btn-ghost btn-sm" disabled={busy !== null} onClick={() => void clearPersonal()}>
+                      {busy === "personal" ? "正在清除…" : "清除"}
+                    </button>
+                    {personalNote && <span className="muted" role="status"> {personalNote}</span>}
+                  </>
+                ) : (
+                  <span className="muted">{personalNote || "这台电脑上没有你的写作偏好和问答记录。"}</span>
+                )}
+              </p>
+            );
+          })()}
         </details>
       </div>
     </div>

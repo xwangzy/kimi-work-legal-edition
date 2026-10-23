@@ -937,6 +937,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         }
       }
       if (body.key_dates !== undefined) {
+        // 关键日期就是概览“期限”里显示的：示例事项同样不改（复核 Q5-09）
+        assertNotSample(db, matter.matter_id, "改关键日期");
         fields.push(`key_dates = ?`);
         values.push(JSON.stringify(body.key_dates));
       }
@@ -1514,6 +1516,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (Object.keys(skillArgs).length === 0) skillArgs = undefined;
       }
 
+      // 示例事项不能存审查要点：从范本整理的任务在开始前就拒绝，免得跑完才在最后一步失败（复核 Q5-03）
+      if (skill === "review-rules-draft") assertNotSample(db, matter.matter_id, "从范本整理审查要点");
       // 本事项的审查要点（v9.4 第 22 批，C1 #21）：审合同、回稿重审、起草合同的任务缺省按在用的那一版（快照，之后改要点不影响本任务）；
       // review_rules:false 为本次不用。我的写作偏好（C1 #29）：Agent 任务都带上（快照）
       if (p?.review_rules !== undefined && p?.review_rules !== null && typeof p.review_rules !== "boolean") throw validation("review_rules 须为 true / false");
@@ -3683,14 +3687,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       );
       const matters = rows.map((m) => offboardingItem(m, id));
       // 按人存在这台电脑上的个人设置（复核 Q4 建议 3）：交接清单最后一步，本人清除
-      const personal = { writing_prefs: hasPrefs(getWritingPrefs(db, id.tenantId, id.userId)) };
+      const personal = { writing_prefs: hasPrefs(getWritingPrefs(db, id.tenantId, id.userId)), qa_conversations: deps.qa?.count(id.tenantId, id.userId) ?? 0 };
       return { matters, pending: matters.filter((x) => x.status !== "ok").length, personal };
     },
-    // 离所时清除本人在这台电脑上的个人设置（写作偏好）。电脑已停用（退出模式）时也能清：这是删除个人数据，不是新的处理
+    // 离所时清除本人在这台电脑上按人存的数据：写作偏好与问答记录（驻留面第 27 类“留存到律师删除”）。
+    // 电脑已停用（退出模式）时也能清：这是删除个人数据，不是新的处理；事项里的材料、成果与已发起任务的输入快照按律所留存规则走，不在这里删
     "members.offboard_clear_personal": (_p, id) => {
       const writingPrefs = clearWritingPrefs(db, id.tenantId, id.userId);
-      audit(db, id, "member.offboard_clear_personal", "user", id.userId, sha256Hex(JSON.stringify({ writing_prefs: writingPrefs })), keyctx);
-      return { cleared: { writing_prefs: writingPrefs }, note: writingPrefs > 0 ? "已清除你在这台电脑上的写作偏好" : "这台电脑上没有你的写作偏好" };
+      const qaConversations = deps.qa?.clearAll(id.tenantId, id.userId) ?? 0;
+      audit(db, id, "member.offboard_clear_personal", "user", id.userId, sha256Hex(JSON.stringify({ writing_prefs: writingPrefs, qa_conversations: qaConversations })), keyctx);
+      const done = [writingPrefs > 0 ? "写作偏好" : "", qaConversations > 0 ? `${qaConversations} 个问答` : ""].filter(Boolean);
+      return { cleared: { writing_prefs: writingPrefs, qa_conversations: qaConversations }, note: done.length > 0 ? `已清除你在这台电脑上的${done.join("和")}` : "这台电脑上没有你的写作偏好和问答记录" };
     },
     // 团队事项交给一位同事：对方还不是负责人就先设为负责人（成员事件），本人是中继上的控制成员就再移交控制（先设负责人、后移交，中继拒绝时如实返回）
     "members.offboard_handoff": async (p, id) => {
@@ -3831,9 +3838,11 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
            devices_revoked = member_removals.devices_revoked + excluded.devices_revoked, seat_released_at = ?, seat_error = excluded.seat_error`,
         [id.tenantId, uid, now, id.userId, cp.length, seatReleasedAt, seatError, fresh ? 1 : 0, fresh ? 1 : 0, seatReleasedAt],
       );
-      // 他在这台电脑上按人存的个人设置一并清除（复核 Q4 建议 3；管理员电脑多半没有，共用电脑时才有）
+      // 他在这台电脑上按人存的数据一并清除（复核 Q4 建议 3）：写作偏好与问答记录。只有共用电脑时才会有——
+      // 他自己电脑上的要由他本人在离所交接的最后一步清除（复核 Q5-11）
       const prefsCleared = clearWritingPrefs(db, id.tenantId, uid);
-      audit(db, id, "member.remove", "member", uid, sha256Hex(JSON.stringify({ devices: cp.length, control_plane: cp, seat_released: !seatError, retry: !fresh, writing_prefs_cleared: prefsCleared })), keyctx);
+      const qaCleared = deps.qa?.clearAll(id.tenantId, uid) ?? 0;
+      audit(db, id, "member.remove", "member", uid, sha256Hex(JSON.stringify({ devices: cp.length, control_plane: cp, seat_released: !seatError, retry: !fresh, writing_prefs_cleared: prefsCleared, qa_cleared: qaCleared })), keyctx);
       const failed = cp.filter((s) => s === "failed").length;
       const waiting = cp.filter((s) => s === "pending" || s === "submitted").length;
       return {

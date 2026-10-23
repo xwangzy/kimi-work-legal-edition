@@ -21,8 +21,10 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   const [busy, setBusy] = useState(false);
   const [blocked, setBlocked] = useState<{ reason: string; message: string; matters?: { matter_id: string; title: string }[] } | null>(null);
   const [err, setErr] = useState("");
-  /** 正在回答的问题与到目前为止的回答（流式）。 */
-  const [pending, setPending] = useState<{ question: string; draft: string } | null>(null);
+  /** 删除这个问答：先问一句再删（删除后找不回来）。 */
+  const [askDelete, setAskDelete] = useState(false);
+  /** 正在回答的问题与到目前为止的回答（流式）；conv 是发问时所在的会话（新问答为 undefined）。 */
+  const [pending, setPending] = useState<{ question: string; draft: string; conv: string | undefined } | null>(null);
   const streamRef = useRef<string | null>(null);
   const convRef = useRef(conversationId);
   convRef.current = conversationId;
@@ -40,9 +42,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   );
   useEffect(() => {
     setBlocked(null);
-    // 换了会话：正在回答的那条不显示在别的会话里
-    streamRef.current = null;
-    setPending(null);
+    setAskDelete(false);
+    // 换了会话：正在回答的那条只在它自己的会话里显示；切回来时接着显示（复核 Q5-06：原来清掉了，回答到了也不刷新）
     if (!conversationId) {
       setMessages([]);
       return;
@@ -56,7 +57,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
 
   const send = async () => {
     const t = text.trim();
-    if (!t) return;
+    // 一次只问一个问题（复核 Q5-01：回车不看按钮是否灰着，回答生成中再回车会并发两问）
+    if (!t || streamRef.current) return;
     const from = conversationId;
     const streamId = `qs_${crypto.randomUUID().replace(/-/g, "")}`;
     streamRef.current = streamId;
@@ -64,7 +66,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
     setErr("");
     setBlocked(null);
     setText("");
-    setPending({ question: t, draft: "" });
+    setPending({ question: t, draft: "", conv: from });
     const settle = () => {
       if (streamRef.current !== streamId) return false;
       streamRef.current = null;
@@ -73,8 +75,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
     };
     try {
       const r = await api.chatSend({ ...(from ? { conversation_id: from } : {}), text: t, stream_id: streamId });
-      // 等回答期间换了会话：不把结果放进当前会话
-      if (!settle() || convRef.current !== from) {
+      // 等回答期间换了会话：不把结果放进别的会话；切回了这个会话的照常显示
+      if (!settle() || (convRef.current !== from && convRef.current !== r.conversation_id)) {
         if (!r.blocked) void loadList();
         return;
       }
@@ -95,6 +97,19 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
       setBusy(false);
     }
   };
+
+  const remove = async () => {
+    if (!conversationId) return;
+    try {
+      await api.chatDelete(conversationId);
+      setAskDelete(false);
+      await loadList();
+      nav("/chat");
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+  const answeringHere = !!pending && pending.conv === conversationId;
 
   return (
     <div className="chat">
@@ -117,8 +132,22 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
             发送前，问题里能识别的姓名、证件号、账号、联系方式会换成代号（识别依靠规则与名单，可能有遗漏），并与你的事项当事人名单比对：涉及“客户要求不上云”事项的当事人会被拦下。问答不读取事项材料。问题经 Kimi Work 的安全通道发给 Kimi 模型；问答记录只保存在这台电脑上。
           </details>
         </div>
+        {/* 问答记录只在这台电脑上，留存到你删除（驻留面第 27 类）：原来没有删除的入口 */}
+        {conversationId && !answeringHere && (
+          <div className="chat-tools">
+            {askDelete ? (
+              <span>
+                删除后找不回来。{" "}
+                <button className="btn-ghost btn-sm" onClick={() => void remove()}>删除</button>{" "}
+                <button className="btn-link" onClick={() => setAskDelete(false)}>取消</button>
+              </span>
+            ) : (
+              <button className="btn-link" onClick={() => setAskDelete(true)}>删除这个问答</button>
+            )}
+          </div>
+        )}
         <div className="chat-messages">
-          {messages.length === 0 && !blocked && !pending && (
+          {messages.length === 0 && !blocked && !(pending && pending.conv === conversationId) && (
             <div className="chat-empty">
               <h2>法律问答</h2>
               <p className="muted">可以这样问（点一下填入）：</p>
@@ -139,11 +168,14 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
               <div className="msg-meta" title={fmtTime(m.created_at)}>{fmtWhen(m.created_at)}</div>
             </div>
           ))}
-          {pending && (
+          {pending && pending.conv === conversationId && (
             <>
-              <div className="msg msg-user">
-                <div className="msg-text">{pending.question}</div>
-              </div>
+              {/* 切走再切回来时问题已从本机记录载入：不再重复显示 */}
+              {messages.at(-1)?.role !== "user" && (
+                <div className="msg msg-user">
+                  <div className="msg-text">{pending.question}</div>
+                </div>
+              )}
               <div className="msg msg-assistant" aria-live="polite" aria-busy="true">
                 {pending.draft ? <Markdown text={pending.draft} /> : <div className="msg-pending muted">正在回答…</div>}
               </div>

@@ -23,6 +23,8 @@ export interface MatterTemplate {
   hint: string;
   /** 常见的我方立场（第一个为缺省）；律师可另选。 */
   stances: string[];
+  /** 同一方的别的叫法（例如劳动仲裁里的“申请人”就是劳动者）：核对立场时也算相符（复核 Q5-04）。 */
+  stance_aliases?: string[];
   stage: MatterStage | null;
   todos: { title: string; assignee_kind?: AssigneeKind }[];
   /** 推荐的方法（首页场景卡 id，概览里一行）。 */
@@ -147,6 +149,7 @@ export const MATTER_TEMPLATES: readonly MatterTemplate[] = [
     line: "litigation",
     hint: "代理劳动者主张经济补偿、赔偿金、工资等",
     stances: ["劳动者"],
+    stance_aliases: ["申请人"],
     stage: "pre_filing",
     todos: [
       { title: "整理劳动合同、工资流水、解除通知等材料" },
@@ -169,6 +172,7 @@ export const MATTER_TEMPLATES: readonly MatterTemplate[] = [
     line: "inhouse",
     hint: "员工申请了劳动仲裁，公司应诉",
     stances: ["用人单位"],
+    stance_aliases: ["被申请人"],
     stage: "arbitration",
     todos: [
       { title: "收集劳动合同、考勤、工资发放与解除材料" },
@@ -268,7 +272,7 @@ export function planTemplate(templateId: unknown, start: unknown, stance?: unkno
   const s = startDateOf(start);
   if (s && !t.start_fact) throw new DomainError("validation", `“${t.title}”不需要起算日期`, 422);
   // 模板不核对立场时，“合同纠纷一审（应诉）”配“原告”也照算答辩期（复核 Q4 建议 3）：期间是按模板的立场定的，立场对不上就不推届满日
-  const stanceMismatch = typeof stance === "string" && stance !== "" && !t.stances.includes(stance);
+  const stanceMismatch = typeof stance === "string" && stance !== "" && !t.stances.includes(stance) && !(t.stance_aliases ?? []).includes(stance);
   if (s && stanceMismatch)
     throw new DomainError("validation", `“${t.title}”的期限按${t.stances.join("、")}一方推算，我方立场是“${stance}”：改选立场或事项类型，或者不填起算日期`, 422);
   if (!s || !t.start_fact) return { template: t, key_dates: {}, deadline: null, stance_mismatch: stanceMismatch };
@@ -295,5 +299,5 @@ export function applyTemplateTodos(db: KernelDb, plan: TemplatePlan, scope: { te
 
 /** 给界面的模板清单。 */
 export function templatesView(): MatterTemplate[] {
-  return MATTER_TEMPLATES.map((t) => ({ ...t, stances: [...t.stances], todos: t.todos.map((x) => ({ ...x })), scenarios: [...t.scenarios], ...(t.start_fact ? { start_fact: { ...t.start_fact, period: { ...t.start_fact.period } } } : {}) }));
+  return MATTER_TEMPLATES.map((t) => ({ ...t, stances: [...t.stances], ...(t.stance_aliases ? { stance_aliases: [...t.stance_aliases] } : {}), todos: t.todos.map((x) => ({ ...x })), scenarios: [...t.scenarios], ...(t.start_fact ? { start_fact: { ...t.start_fact, period: { ...t.start_fact.period } } } : {}) }));
 }

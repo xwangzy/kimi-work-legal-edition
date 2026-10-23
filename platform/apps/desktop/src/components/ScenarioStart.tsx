@@ -91,7 +91,9 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const missing = card.fields.filter((f) => f.required && !(Array.isArray(values[f.key]) ? (values[f.key] as string[]).length : String(values[f.key] ?? "").trim()));
   const needDocs = Math.max(0, card.minMaterials - docIds.length);
   const canPartial = canStartPartial(card) && needDocs > 0;
-  const ready = !!matter && docsReady && missing.length === 0 && (needDocs === 0 || (canPartial && partial)) && (card.scenario !== "a1.agent_task" || goal.length > 0);
+  // 示例事项不能存审查要点（复核 Q5-03）：从范本整理的任务在示例上不开始，免得跑完才在最后一步失败
+  const sampleBlocked = !!matter?.is_sample && card.skill === "review-rules-draft";
+  const ready = !!matter && !sampleBlocked && docsReady && missing.length === 0 && (needDocs === 0 || (canPartial && partial)) && (card.scenario !== "a1.agent_task" || goal.length > 0);
   // “争点与证据分析”只用确认过的事实（复核 R15B-01）：事项里还没有确认过的，开始前就说清楚
   const [confirmedFacts, setConfirmedFacts] = useState<number | null>(null);
   useEffect(() => {
@@ -388,6 +390,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
           {hasPrefs && <p className="ss-note muted">按你的写作偏好写（设置 · 通用里可改）。</p>}
           <p className="ss-note muted">结果都是草稿，需要你复核后使用。{card.scenario === "a1.agent_task" ? "处理中需要联网或用到当事人信息时，会先问你。" : ""}</p>
         </section>
+        {sampleBlocked && <div className="banner banner-gray">示例事项只用来看效果，不能存审查要点：请在你自己的事项里整理。</div>}
         {err && <div className="banner banner-red">{err}</div>}
         <div className="modal-actions">
           <button className="btn-ghost" onClick={onClose}>取消</button>

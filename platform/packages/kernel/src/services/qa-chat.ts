@@ -106,6 +106,12 @@ export async function collectStreamText(chunks: AsyncIterable<string>, onDelta?:
 const PARTIAL_INTERVAL_MS = 80;
 /** 代号最长约 17 个字符：末尾未闭合的“〔”在这个长度内先不推，免得界面闪一下代号。 */
 const OPEN_TOKEN_HOLD = 20;
+/**
+ * 回答末尾这么多字先不推（复核 Q5-02）：网关对流式输出逐块做内容安全检查，命中拦截类别时以错误事件结束；
+ * 一个词被拆在两块里时，前半截已经发出——留一段尾巴，命中词的前半截就到不了界面。回答正常结束后再推全文。
+ * 命中之前的文字仍会先显示、再换成“未能取得回答”（偏离 D-142，待拍板）。
+ */
+const TAIL_HOLD = 32;
 
 const SYSTEM_PROMPT = [
   "你是律师使用的法律问答助手，回答中国法律问题。",
@@ -119,6 +125,8 @@ const HISTORY_LIMIT = 20;
 
 export class QaChatService {
   private readonly d: QaDeps;
+  /** 正在回答的会话（复核 Q5-01）：同一会话一次只答一问——并发两问时两次回答抢同一个序号，先到的那条会丢。 */
+  private readonly answering = new Set<string>();
 
   constructor(d: QaDeps) {
     this.d = d;
@@ -126,6 +134,36 @@ export class QaChatService {
 
   list(tenantId: string, userId: string): { conversation_id: string; title: string; updated_at: string }[] {
     return this.d.db.all(`SELECT conversation_id, title, updated_at FROM qa_conversations WHERE tenant_id = ? AND user_id = ? ORDER BY updated_at DESC LIMIT 100`, [tenantId, userId]);
+  }
+
+  /**
+   * 删除本人的一个问答（问题、回答、令牌表一并删除）。驻留面写的是“问答历史在本机留存到律师删除”，原来没有删除的入口。
+   * 正在回答的会话不能删（回答回来时会写进一个已删的会话）。
+   */
+  delete(conversationId: string, tenantId: string, userId: string): void {
+    const c = this.conversation(conversationId, tenantId, userId);
+    if (this.answering.has(c.conversation_id)) throw Object.assign(new Error("这个问答还在回答：等它答完再删"), { code: "conflict" });
+    this.d.db.tx(() => {
+      this.d.db.run(`DELETE FROM qa_tokens WHERE conversation_id = ?`, [c.conversation_id]);
+      this.d.db.run(`DELETE FROM qa_messages WHERE conversation_id = ?`, [c.conversation_id]);
+      this.d.db.run(`DELETE FROM qa_conversations WHERE conversation_id = ?`, [c.conversation_id]);
+    });
+  }
+
+  /** 离所交接时清除本人在这台电脑上的全部问答（复核 Q4 建议 3）；正在回答的跳过。返回删掉的会话数。 */
+  clearAll(tenantId: string, userId: string): number {
+    let n = 0;
+    for (const c of this.d.db.all<{ conversation_id: string }>(`SELECT conversation_id FROM qa_conversations WHERE tenant_id = ? AND user_id = ?`, [tenantId, userId])) {
+      if (this.answering.has(c.conversation_id)) continue;
+      this.delete(c.conversation_id, tenantId, userId);
+      n++;
+    }
+    return n;
+  }
+
+  /** 本人在这台电脑上的问答会话数。 */
+  count(tenantId: string, userId: string): number {
+    return this.d.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM qa_conversations WHERE tenant_id = ? AND user_id = ?`, [tenantId, userId])?.n ?? 0;
   }
 
   private conversation(conversationId: string, tenantId: string, userId: string): { conversation_id: string; token_key_b64: string } {
@@ -238,7 +276,7 @@ export class QaChatService {
   }
 
   /** 部分回答的推送（节流、按会话令牌表还原）；没有 streamId 或没有推送通道时为 null。 */
-  private partialPublisher(streamId: string | undefined, conversationId: string): { push: (piece: string) => void; stop: () => void } | null {
+  private partialPublisher(streamId: string | undefined, conversationId: string): { push: (piece: string) => void; stop: () => void; finish: () => void } | null {
     const publish = this.d.onPartial;
     if (!publish || !streamId) return null;
     const table = this.table(conversationId);
@@ -250,9 +288,10 @@ export class QaChatService {
       timer = null;
       if (stopped) return;
       last = Date.now();
-      const open = raw.lastIndexOf("〔");
-      const shown = open >= 0 && raw.indexOf("〕", open) < 0 && raw.length - open < OPEN_TOKEN_HOLD ? raw.slice(0, open) : raw;
-      publish(streamId, restoreTokens(shown, table).text);
+      const base = raw.slice(0, Math.max(0, raw.length - TAIL_HOLD));
+      const open = base.lastIndexOf("〔");
+      const shown = open >= 0 && base.indexOf("〕", open) < 0 && base.length - open < OPEN_TOKEN_HOLD ? base.slice(0, open) : base;
+      if (shown) publish(streamId, restoreTokens(shown, table).text);
     };
     return {
       push: (piece) => {
@@ -266,6 +305,13 @@ export class QaChatService {
         stopped = true;
         if (timer) clearTimeout(timer);
         timer = null;
+      },
+      // 回答正常结束（网关已检查完全文）：推一次全文，再停
+      finish: () => {
+        if (timer) clearTimeout(timer);
+        timer = null;
+        if (!stopped && raw) publish(streamId, restoreTokens(raw, table).text);
+        stopped = true;
       },
     };
   }
@@ -290,6 +336,17 @@ export class QaChatService {
       ]);
     }
     const c = this.conversation(conversationId, tenantId, userId);
+    if (this.answering.has(c.conversation_id)) throw Object.assign(new Error("上一问还在回答：等它答完再问"), { code: "conflict" });
+    this.answering.add(c.conversation_id);
+    try {
+      return await this.answer(c, text, input.streamId, tenantId, userId);
+    } finally {
+      this.answering.delete(c.conversation_id);
+    }
+  }
+
+  /** 写入问题、取回答、写入回答或“未能取得回答”。序号写入时现取（复核 Q5-01）。 */
+  private async answer(c: ReturnType<QaChatService["conversation"]>, text: string, streamId: string | undefined, tenantId: string, userId: string): Promise<{ conversation_id: string; messages: QaMessageView[] }> {
     const tz = this.tokenizer(c);
     const q = tz.tokenize(text);
     this.persist(c.conversation_id, q.entries);
@@ -305,7 +362,7 @@ export class QaChatService {
         [c.conversation_id, HISTORY_LIMIT],
       )
       .reverse();
-    const partial = this.partialPublisher(input.streamId, c.conversation_id);
+    const partial = this.partialPublisher(streamId, c.conversation_id);
     let answer: string;
     try {
       answer = await this.d.ask({
@@ -317,20 +374,26 @@ export class QaChatService {
       });
     } catch (e) {
       partial?.stop();
-      this.d.db.run(`INSERT INTO qa_messages (message_id, conversation_id, seq, role, text) VALUES (?,?,?,?,?)`, [
-        newId("qaMessage"),
-        c.conversation_id,
-        seq0 + 2,
-        "notice",
-        `未能取得回答：${(e as Error).message}`,
-      ]);
-      this.d.db.run(`UPDATE qa_conversations SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE conversation_id = ?`, [c.conversation_id]);
+      this.addMessage(c.conversation_id, "notice", `未能取得回答：${(e as Error).message}`);
       return { conversation_id: c.conversation_id, messages: this.get(c.conversation_id, tenantId, userId) };
     }
-    partial?.stop();
-    // 模型回答原样保存（令牌形态；显示时还原）
-    this.d.db.run(`INSERT INTO qa_messages (message_id, conversation_id, seq, role, text) VALUES (?,?,?,?,?)`, [newId("qaMessage"), c.conversation_id, seq0 + 2, "assistant", answer]);
-    this.d.db.run(`UPDATE qa_conversations SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE conversation_id = ?`, [c.conversation_id]);
+    // 模型回答原样保存（令牌形态；显示时还原）；写不进去的记“未能取得回答”，不让回答悄悄丢掉
+    try {
+      this.addMessage(c.conversation_id, "assistant", answer);
+    } catch (e) {
+      partial?.stop();
+      this.addMessage(c.conversation_id, "notice", `未能取得回答：回答没有保存下来（${(e as Error).message}）`);
+      return { conversation_id: c.conversation_id, messages: this.get(c.conversation_id, tenantId, userId) };
+    }
+    partial?.finish();
     return { conversation_id: c.conversation_id, messages: this.get(c.conversation_id, tenantId, userId) };
+  }
+
+  private addMessage(conversationId: string, role: "assistant" | "notice", text: string): void {
+    this.d.db.tx(() => {
+      const seq = (this.d.db.get<{ n: number }>(`SELECT COALESCE(MAX(seq), 0) AS n FROM qa_messages WHERE conversation_id = ?`, [conversationId])?.n ?? 0) + 1;
+      this.d.db.run(`INSERT INTO qa_messages (message_id, conversation_id, seq, role, text) VALUES (?,?,?,?,?)`, [newId("qaMessage"), conversationId, seq, role, text]);
+      this.d.db.run(`UPDATE qa_conversations SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE conversation_id = ?`, [conversationId]);
+    });
   }
 }

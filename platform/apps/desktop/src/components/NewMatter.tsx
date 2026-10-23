@@ -45,7 +45,7 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
     setTplStart("");
     const t = templates.find((x) => x.id === id);
     // 立场与阶段跟着类型走（律师仍可改；阶段下拉框显示的就是创建后的阶段）
-    if (t) setF((cur) => ({ ...cur, stance: t.stances.includes(cur.stance) ? cur.stance : t.stances[0]!, stage: t.stage ?? cur.stage }));
+    if (t) setF((cur) => ({ ...cur, stance: t.stances.includes(cur.stance) || (t.stance_aliases ?? []).includes(cur.stance) ? cur.stance : t.stances[0]!, stage: t.stage ?? cur.stage }));
   };
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -125,7 +125,7 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
           <span>我方立场</span>
           <Select aria-label="我方立场" value={f.stance} onChange={(v) => set("stance")({ target: { value: v } })} options={STANCE_OPTIONS} />
           {/* 立场与事项类型对不上（复核 Q4 建议 3）：期限按模板的一方推算，填了起算日的内核拒绝创建 */}
-          {tpl && !tpl.stances.includes(f.stance) && (
+          {tpl && !tpl.stances.includes(f.stance) && !(tpl.stance_aliases ?? []).includes(f.stance) && (
             <small className="field-warn">“{tpl.title}”通常是{tpl.stances.join("、")}一方{tpl.start_fact ? "，期限也按这一方推算：立场不改的话请不要填起算日期" : ""}</small>
           )}
         </label>

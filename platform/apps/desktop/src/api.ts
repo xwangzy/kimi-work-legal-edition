@@ -496,6 +496,7 @@ export interface MatterTemplate {
   line: "litigation" | "transactional" | "inhouse";
   hint: string;
   stances: string[];
+  stance_aliases?: string[];
   stage: string | null;
   todos: { title: string }[];
   scenarios: string[];
@@ -1027,6 +1028,7 @@ export const api = {
   // 问答（无事项）
   chatList: () => invoke<{ conversations: { conversation_id: string; title: string; updated_at: string }[] }>("chat.list"),
   chatGet: (conversationId: string) => invoke<{ conversation_id: string; messages: ChatMessage[] }>("chat.get", { conversation_id: conversationId }),
+  chatDelete: (conversationId: string) => invoke<{ ok: true }>("chat.delete", { conversation_id: conversationId }),
   /** stream_id：本次发送的一次性编号，回答生成中的部分内容以 chat.delta 广播推送（onKernelEvent）。 */
   chatSend: (body: { conversation_id?: string; text: string; stream_id?: string }) =>
     invoke<{ conversation_id: string; messages: ChatMessage[]; blocked?: { reason: string; message: string; matters?: { matter_id: string; title: string }[] } }>("chat.send", body),
@@ -1281,9 +1283,9 @@ export const members = {
   departedInMatters: () => invoke<{ items: { matter_id: string; title: string; user_id: string; name: string | null; removed_from_firm: boolean }[] }>("members.departed_in_matters"),
   removeDepartedFromMatter: (matterId: string, userId: string) => invoke<{ note: string }>("matters.members.remove", { matter_id: matterId, user_id: userId, confirm_departed: true }),
   // 本人离所交接：清单与“交给同事”
-  offboarding: () => invoke<{ matters: OffboardingItem[]; pending: number; personal?: { writing_prefs: boolean } }>("members.offboarding"),
+  offboarding: () => invoke<{ matters: OffboardingItem[]; pending: number; personal?: { writing_prefs: boolean; qa_conversations: number } }>("members.offboarding"),
   // 离所时清除本人在这台电脑上的个人设置（写作偏好；复核 Q4 建议 3）
-  offboardClearPersonal: () => invoke<{ cleared: { writing_prefs: number }; note: string }>("members.offboard_clear_personal"),
+  offboardClearPersonal: () => invoke<{ cleared: { writing_prefs: number; qa_conversations: number }; note: string }>("members.offboard_clear_personal"),
   offboardHandoff: (matterId: string, toUser: string) => invoke<{ relay: "done" | "not_needed" | "pending"; owner_set: boolean; note: string; item: OffboardingItem }>("members.offboard_handoff", { matter_id: matterId, to_user: toUser }),
 };
 
