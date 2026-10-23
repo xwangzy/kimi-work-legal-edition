@@ -184,7 +184,13 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
     "chat.send": async (p, id) => {
       if (!d.qa) throw new DomainError("not_found", "问答未启用", 404);
       try {
-        return await d.qa.send({ ...(typeof p?.conversation_id === "string" && p.conversation_id ? { conversationId: p.conversation_id } : {}), text: String(p?.text ?? "") }, id.tenantId, id.userId);
+        // stream_id：界面生成的一次性编号，回答生成中的部分内容按它推送（chat.delta 广播）
+        const streamId = typeof p?.stream_id === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(p.stream_id) ? p.stream_id : undefined;
+        return await d.qa.send(
+          { ...(typeof p?.conversation_id === "string" && p.conversation_id ? { conversationId: p.conversation_id } : {}), text: String(p?.text ?? ""), ...(streamId ? { streamId } : {}) },
+          id.tenantId,
+          id.userId,
+        );
       } catch (e) {
         const code = (e as { code?: string }).code;
         if (code === "validation") throw invalid((e as Error).message);

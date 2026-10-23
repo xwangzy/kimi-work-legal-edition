@@ -5,7 +5,9 @@
  *   命中其他事项的当事人：拦截并给出“到事项中处理”的链接（方案为“提示”；事项内才有该事项的当事人词典、依据与审计规则——偏离 D-22）；
  * - 每个会话一把令牌密钥：问题中的证件、账户、联系方式与规则识别的自然人姓名在出站前替换为会话代号（闸门对请求体再做一次）；
  * - 经出站闸门发往法律模型网关（中软不保存问答内容）；**历史只在本机**（qa_* 表；界面显示时按会话令牌表还原）；
- * - 模型调用经注入的 ask（闸门 /q/<会话> 路由），本模块不含任何网络代码。
+ * - 模型调用经注入的 ask（闸门 /q/<会话> 路由），本模块不含任何网络代码；
+ * - 回答流式返回：ask 逐段回调，本模块按会话令牌表还原后经 onPartial 推给界面（节流；未闭合的代号先不推）。
+ *   只有完整结束的回答才保存；中途中断、内容安全拦截都按“未能取得回答”记，界面丢弃已显示的半截回答。
  */
 import { localToday } from "./local-date.ts";
 import { createHash, randomBytes } from "node:crypto";
@@ -55,6 +57,8 @@ export interface QaAskInput {
   userId: string;
   /** 已令牌化的对话（系统提示 + 历史 + 本次问题）。 */
   messages: { role: "system" | "user" | "assistant"; content: string }[];
+  /** 流式回答的增量（令牌形态）。 */
+  onDelta?: (piece: string) => void;
 }
 
 export interface QaDeps {
@@ -63,7 +67,45 @@ export interface QaDeps {
   ask(input: QaAskInput): Promise<string>;
   /** 本机法规库：回答里的引用与签发门禁同一口径离线核对（只在本机，不出站）。 */
   lawdb?: Lawdb;
+  /** 回答生成中的部分内容（已还原，到目前为止的全文）推给发起问题的界面；streamId 由界面给出。 */
+  onPartial?: (streamId: string, text: string) => void;
 }
+
+/**
+ * 读完一个流式回答（SSE data 负载，OpenAI 兼容）：逐段回调正文增量，返回全文。
+ * 错误事件（如网关内容安全拦截）与没有结束标志就断开的流一律抛错——半截回答不当成回答。
+ */
+export async function collectStreamText(chunks: AsyncIterable<string>, onDelta?: (piece: string) => void): Promise<string> {
+  let text = "";
+  let finished = false;
+  for await (const payload of chunks) {
+    if (payload === "[DONE]") {
+      finished = true;
+      continue;
+    }
+    let j: any;
+    try {
+      j = JSON.parse(payload);
+    } catch {
+      continue;
+    }
+    if (j?.error) throw new Error(String(j.error.message ?? j.error.code ?? "模型通道返回错误"));
+    const choice = j?.choices?.[0];
+    const piece = choice?.delta?.content;
+    if (typeof piece === "string" && piece.length > 0) {
+      text += piece;
+      onDelta?.(piece);
+    }
+    if (typeof choice?.finish_reason === "string") finished = true;
+  }
+  if (!finished) throw new Error("回答中途中断，请重试");
+  return text;
+}
+
+/** 推给界面的部分回答每隔多久最多一次。 */
+const PARTIAL_INTERVAL_MS = 80;
+/** 代号最长约 17 个字符：末尾未闭合的“〔”在这个长度内先不推，免得界面闪一下代号。 */
+const OPEN_TOKEN_HOLD = 20;
 
 const SYSTEM_PROMPT = [
   "你是律师使用的法律问答助手，回答中国法律问题。",
@@ -195,7 +237,40 @@ export class QaChatService {
     };
   }
 
-  async send(input: { conversationId?: string; text: string }, tenantId: string, userId: string): Promise<{ conversation_id: string; messages: QaMessageView[]; blocked?: QaBlocked }> {
+  /** 部分回答的推送（节流、按会话令牌表还原）；没有 streamId 或没有推送通道时为 null。 */
+  private partialPublisher(streamId: string | undefined, conversationId: string): { push: (piece: string) => void; stop: () => void } | null {
+    const publish = this.d.onPartial;
+    if (!publish || !streamId) return null;
+    const table = this.table(conversationId);
+    let raw = "";
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let last = 0;
+    let stopped = false;
+    const flush = () => {
+      timer = null;
+      if (stopped) return;
+      last = Date.now();
+      const open = raw.lastIndexOf("〔");
+      const shown = open >= 0 && raw.indexOf("〕", open) < 0 && raw.length - open < OPEN_TOKEN_HOLD ? raw.slice(0, open) : raw;
+      publish(streamId, restoreTokens(shown, table).text);
+    };
+    return {
+      push: (piece) => {
+        raw += piece;
+        if (timer || stopped) return;
+        const wait = PARTIAL_INTERVAL_MS - (Date.now() - last);
+        if (wait <= 0) flush();
+        else timer = setTimeout(flush, wait);
+      },
+      stop: () => {
+        stopped = true;
+        if (timer) clearTimeout(timer);
+        timer = null;
+      },
+    };
+  }
+
+  async send(input: { conversationId?: string; text: string; streamId?: string }, tenantId: string, userId: string): Promise<{ conversation_id: string; messages: QaMessageView[]; blocked?: QaBlocked }> {
     const text = String(input.text ?? "").trim();
     if (!text) throw Object.assign(new Error("问题为空"), { code: "validation" });
     if (text.length > 8000) throw Object.assign(new Error("问题过长（无事项问答不处理案件材料；请在事项内处理）"), { code: "validation" });
@@ -230,6 +305,7 @@ export class QaChatService {
         [c.conversation_id, HISTORY_LIMIT],
       )
       .reverse();
+    const partial = this.partialPublisher(input.streamId, c.conversation_id);
     let answer: string;
     try {
       answer = await this.d.ask({
@@ -237,8 +313,10 @@ export class QaChatService {
         tenantId,
         userId,
         messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history.map((m) => ({ role: m.role, content: m.text }))],
+        ...(partial ? { onDelta: partial.push } : {}),
       });
     } catch (e) {
+      partial?.stop();
       this.d.db.run(`INSERT INTO qa_messages (message_id, conversation_id, seq, role, text) VALUES (?,?,?,?,?)`, [
         newId("qaMessage"),
         c.conversation_id,
@@ -249,6 +327,7 @@ export class QaChatService {
       this.d.db.run(`UPDATE qa_conversations SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE conversation_id = ?`, [c.conversation_id]);
       return { conversation_id: c.conversation_id, messages: this.get(c.conversation_id, tenantId, userId) };
     }
+    partial?.stop();
     // 模型回答原样保存（令牌形态；显示时还原）
     this.d.db.run(`INSERT INTO qa_messages (message_id, conversation_id, seq, role, text) VALUES (?,?,?,?,?)`, [newId("qaMessage"), c.conversation_id, seq0 + 2, "assistant", answer]);
     this.d.db.run(`UPDATE qa_conversations SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE conversation_id = ?`, [c.conversation_id]);

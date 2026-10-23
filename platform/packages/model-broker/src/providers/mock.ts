@@ -164,7 +164,8 @@ export const mockProvider: Provider = {
   },
   async chatStream(route: RouteDef, req: ChatRequest, meta?: UpstreamMeta): Promise<ProviderStream> {
     const scripted = activeScript ? activeScript(req) : null;
-    const delayMs = scripted?.chunkDelayMs ?? 0;
+    // ZR_MOCK_STREAM_DELAY_MS：开发走查时让离线模拟的流式回答看得出逐段到达（缺省 0）
+    const delayMs = scripted?.chunkDelayMs ?? (Number(process.env.ZR_MOCK_STREAM_DELAY_MS) || 0);
     const result = respond(route, req, scripted);
     const requestId = result.requestId;
     const model = route.providerModel;

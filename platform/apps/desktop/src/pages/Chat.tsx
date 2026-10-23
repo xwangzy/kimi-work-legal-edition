@@ -2,10 +2,12 @@
  * 问答（无事项）（第 03 篇 §4.1、第 02 篇 §9.3 Chat 模式与 §12、第 04 篇 §5.3）：
  * 不读任何事项；问题经出站闸门令牌化，并做本人可见事项的当事人词典检查——命中当事人限制（L3b）事项的当事人即拦截，
  * 命中其他事项的当事人同样拦截并给出“到事项中处理”的链接（方案为“提示”，偏离 D-22）；服务端不持久化问答内容，历史只在本机。
+ * 回答流式显示：发送后问题先显示出来，回答按内核推送的部分内容（chat.delta）逐步显示；完成后换成保存下来的记录（含引用核对）。
+ * 中途中断或被拦截时丢弃半截回答，只显示“未能取得回答”。
  */
 import { scrollBehavior } from "../lib/ui-prefs.ts";
 import { useEffect, useRef, useState } from "react";
-import { api, type ChatMessage } from "../api.ts";
+import { api, onKernelEvent, type ChatMessage } from "../api.ts";
 import { nav } from "../App.tsx";
 import { Icon } from "../components/Icons.tsx";
 import { Markdown } from "../components/Markdown.tsx";
@@ -19,13 +21,28 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   const [busy, setBusy] = useState(false);
   const [blocked, setBlocked] = useState<{ reason: string; message: string; matters?: { matter_id: string; title: string }[] } | null>(null);
   const [err, setErr] = useState("");
+  /** 正在回答的问题与到目前为止的回答（流式）。 */
+  const [pending, setPending] = useState<{ question: string; draft: string } | null>(null);
+  const streamRef = useRef<string | null>(null);
+  const convRef = useRef(conversationId);
+  convRef.current = conversationId;
   const endRef = useRef<HTMLDivElement>(null);
   const loadList = () => api.chatList().then((r) => setList(r.conversations)).catch((e) => setErr(e.message));
   useEffect(() => {
     void loadList();
   }, []);
+  useEffect(
+    () =>
+      onKernelEvent((m) => {
+        if (m?.type === "chat.delta" && m.stream_id === streamRef.current && typeof m.text === "string") setPending((p) => (p ? { ...p, draft: m.text } : p));
+      }),
+    [],
+  );
   useEffect(() => {
     setBlocked(null);
+    // 换了会话：正在回答的那条不显示在别的会话里
+    streamRef.current = null;
+    setPending(null);
     if (!conversationId) {
       setMessages([]);
       return;
@@ -35,26 +52,45 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   useEffect(() => {
     // 新版 Chromium 的 scrollIntoView 返回 Promise：不能作为 effect 的返回值
     void endRef.current?.scrollIntoView({ behavior: scrollBehavior() });
-  }, [messages]);
+  }, [messages, pending]);
 
   const send = async () => {
     const t = text.trim();
     if (!t) return;
+    const from = conversationId;
+    const streamId = `qs_${crypto.randomUUID().replace(/-/g, "")}`;
+    streamRef.current = streamId;
     setBusy(true);
     setErr("");
     setBlocked(null);
+    setText("");
+    setPending({ question: t, draft: "" });
+    const settle = () => {
+      if (streamRef.current !== streamId) return false;
+      streamRef.current = null;
+      setPending(null);
+      return true;
+    };
     try {
-      const r = await api.chatSend({ ...(conversationId ? { conversation_id: conversationId } : {}), text: t });
+      const r = await api.chatSend({ ...(from ? { conversation_id: from } : {}), text: t, stream_id: streamId });
+      // 等回答期间换了会话：不把结果放进当前会话
+      if (!settle() || convRef.current !== from) {
+        if (!r.blocked) void loadList();
+        return;
+      }
       if (r.blocked) {
         setBlocked(r.blocked);
+        setText(t);
       } else {
-        setText("");
         setMessages(r.messages);
-        if (r.conversation_id !== conversationId) nav(`/chat/${r.conversation_id}`);
+        if (r.conversation_id !== from) nav(`/chat/${r.conversation_id}`);
         void loadList();
       }
     } catch (e) {
-      setErr((e as Error).message);
+      if (settle() && convRef.current === from) {
+        setErr((e as Error).message);
+        setText(t);
+      }
     } finally {
       setBusy(false);
     }
@@ -82,7 +118,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
           </details>
         </div>
         <div className="chat-messages">
-          {messages.length === 0 && !blocked && (
+          {messages.length === 0 && !blocked && !pending && (
             <div className="chat-empty">
               <h2>法律问答</h2>
               <p className="muted">可以这样问（点一下填入）：</p>
@@ -103,6 +139,16 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
               <div className="msg-meta" title={fmtTime(m.created_at)}>{fmtWhen(m.created_at)}</div>
             </div>
           ))}
+          {pending && (
+            <>
+              <div className="msg msg-user">
+                <div className="msg-text">{pending.question}</div>
+              </div>
+              <div className="msg msg-assistant" aria-live="polite" aria-busy="true">
+                {pending.draft ? <Markdown text={pending.draft} /> : <div className="msg-pending muted">正在回答…</div>}
+              </div>
+            </>
+          )}
           {blocked && (
             <div className={`banner ${blocked.reason === "l3b_party" ? "banner-red" : "banner-orange"}`}>
               {blocked.message}

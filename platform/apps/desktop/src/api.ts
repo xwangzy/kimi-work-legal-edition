@@ -144,9 +144,51 @@ export const updates = {
   install: async (): Promise<{ ok: boolean; reason?: string }> => (window.zrKernel?.installUpdate ? window.zrKernel.installUpdate() : { ok: false }),
 };
 
-/** 订阅内核广播（Electron）；web 开发桥无推送，调用方自行轮询。 */
+/** 订阅内核广播（Electron）；web 开发桥只推问答的部分回答（chat.delta），其余调用方自行轮询。 */
 export function onKernelEvent(cb: (msg: any) => void): () => void {
-  return window.zrKernel?.onEvent ? window.zrKernel.onEvent(cb) : () => {};
+  if (window.zrKernel?.onEvent) return window.zrKernel.onEvent(cb);
+  if (window.zrKernel) return () => {};
+  devListeners.add(cb);
+  openDevEvents();
+  return () => devListeners.delete(cb);
+}
+
+/** web 开发形态：开发桥 GET /events（逐行 JSON），全页共用一条连接；断开后下次订阅时重连。 */
+const devListeners = new Set<(msg: any) => void>();
+let devEventsOpen = false;
+function openDevEvents(): void {
+  if (devEventsOpen) return;
+  devEventsOpen = true;
+  void (async () => {
+    try {
+      const res = await fetch(BRIDGE.replace(/\/invoke$/, "/events"), { headers: BRIDGE_TOKEN ? { "x-kwl-token": BRIDGE_TOKEN } : {} });
+      const reader = res.body?.getReader();
+      if (!res.ok || !reader) return;
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let msg: unknown;
+          try {
+            msg = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          for (const l of devListeners) l(msg);
+        }
+      }
+    } catch {
+      // 开发桥未启动或已断开：不推送，调用方照常拿最终结果
+    } finally {
+      devEventsOpen = false;
+    }
+  })();
 }
 
 // ─── 类型 ───
@@ -985,7 +1027,8 @@ export const api = {
   // 问答（无事项）
   chatList: () => invoke<{ conversations: { conversation_id: string; title: string; updated_at: string }[] }>("chat.list"),
   chatGet: (conversationId: string) => invoke<{ conversation_id: string; messages: ChatMessage[] }>("chat.get", { conversation_id: conversationId }),
-  chatSend: (body: { conversation_id?: string; text: string }) =>
+  /** stream_id：本次发送的一次性编号，回答生成中的部分内容以 chat.delta 广播推送（onKernelEvent）。 */
+  chatSend: (body: { conversation_id?: string; text: string; stream_id?: string }) =>
     invoke<{ conversation_id: string; messages: ChatMessage[]; blocked?: { reason: string; message: string; matters?: { matter_id: string; title: string }[] } }>("chat.send", body),
 
   // 设备与连接

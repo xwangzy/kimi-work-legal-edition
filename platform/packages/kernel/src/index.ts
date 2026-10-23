@@ -52,7 +52,7 @@ import { basisCompleteOf, dataLevelOf } from "./egress/gate-host.ts";
 import { EgressApprovalStore } from "./services/egress-approvals.ts";
 import { screenSearchQuery } from "@zr-legal/egress-gate";
 import { createGateProvider, mockProvider } from "@zr-legal/model-broker";
-import { QaChatService } from "./services/qa-chat.ts";
+import { collectStreamText, QaChatService } from "./services/qa-chat.ts";
 import { ReminderService } from "./services/reminders.ts";
 import { ShareRelaySync } from "./services/share-relay.ts";
 import { mintTaskToken } from "./identity.ts";
@@ -483,7 +483,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const keyctx = { signer, device, firm, keysDir };
   chainEpochRef.fn = (mid) => (config.legacyMemberRows || !hasChain(db, mid) ? undefined : chainEncryptEpoch({ db, keyctx, tenantId: identity.tenantId }, mid));
   // 无事项问答（第 04 篇 §5.3；W1）：当事人词典检查在本机；问题经出站闸门的问答路由（/q/<会话>）发往网关，不带事项编号；
-  // 离线 mock 提供方时在本机模拟（不出站）
+  // 离线 mock 提供方时在本机模拟（不出站）；回答流式取回，部分内容经 chat.delta 广播给界面
   const qaGate = createGateProvider({
     socket: async () => (await gate.ensure()).socketPath,
     token: (task) => mintTaskToken({ tid: task.tid, uid: task.uid, mid: "qa", ...(task.rid ? { rid: task.rid } : {}), jti: `qa_${randomUUID()}`, scope: ["qa:chat"] }, 300),
@@ -494,11 +494,12 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     lawdb,
     ask: async (input) => {
       const route = broker.resolveRoute(env.ZR_QA_ROUTE ?? "legal/k3");
-      const req = { model: route.alias, messages: input.messages };
-      if (route.provider === "mock") return (await mockProvider.chat(route, req)).content ?? "";
+      const req = { model: route.alias, messages: input.messages, stream: true };
+      if (route.provider === "mock") return collectStreamText((await mockProvider.chatStream(route, req)).chunks, input.onDelta);
       const meta = { nonce: randomUUID(), clientIdempotencyId: `qa_${randomUUID()}`, task: { tid: input.tenantId, uid: input.userId, mid: "qa", rid: input.conversationId }, routePrefix: `/q/${encodeURIComponent(input.conversationId)}` };
-      return (await qaGate.chat(route, req, meta)).content ?? "";
+      return collectStreamText((await qaGate.chatStream(route, req, meta)).chunks, input.onDelta);
     },
+    onPartial: (streamId, text) => broadcastRef.current?.({ type: "chat.delta", stream_id: streamId, text }),
   });
 
   /** 清理一个事项的本机 Agent 数据（关闭引擎、删除会话、事件日志、工作区与材料快照），再删除本机的事项工作区密钥。有进行中任务时抛错。 */

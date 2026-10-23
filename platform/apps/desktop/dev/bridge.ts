@@ -1,6 +1,6 @@
 /**
  * Web 开发桥（仅开发模式）：浏览器调试时 Electron IPC 不可用，
- * 以最小 HTTP 包装内核 invoke（POST /invoke {method, params}）。
+ * 以最小 HTTP 包装内核 invoke（POST /invoke {method, params}）；GET /events 以逐行 JSON 推送问答的部分回答（chat.delta，与主进程转发的同一形状）。
  * 生产形态是 Electron utilityProcess IPC；本桥不进生产包。
  *
  * 只接受来自本机 vite 开发页（127.0.0.1:5173 / localhost:5173）且带开发桥令牌的请求（W1：审批、还原等接口在开发形态同样不能被其他网页调用）。
@@ -14,8 +14,14 @@ let kernel = await createKernel();
 console.log(`[bridge] kernel up, localPort=${kernel.localPort}, workspace=${kernel.config.workspaceDir}`);
 // 开通或入组完成（第 13 批）：与安装包主进程一样按 activation.json 重建内核；重建期间的请求等它就绪
 let ready: Promise<void> = Promise.resolve();
+const eventClients = new Set<import("node:http").ServerResponse>();
 const watchIdentity = (k: typeof kernel) =>
   k.onBroadcast((m) => {
+    if (m.type === "chat.delta" && typeof m.stream_id === "string" && typeof m.text === "string") {
+      const line = `${JSON.stringify({ type: "chat.delta", stream_id: m.stream_id, text: m.text })}\n`;
+      for (const c of eventClients) c.write(line);
+      return;
+    }
     // 从备份恢复（第 14 批）：开发形态没有 DPAPI，直接以恢复的主密钥重建内核（只在待激活模式）
     if (m.type === "kernel.adopt_master_key" && k.config.onboarding && typeof m.key === "string") process.env.ZR_DB_KEY = m.key;
     else if (m.type !== "kernel.restart_for_identity") return;
@@ -41,19 +47,27 @@ const server = createServer((req, res) => {
   }
   res.setHeader("access-control-allow-origin", origin);
   res.setHeader("vary", "origin");
-  res.setHeader("access-control-allow-methods", "POST,OPTIONS");
+  res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
   res.setHeader("access-control-allow-headers", "content-type,x-kwl-token");
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     return res.end();
   }
-  if (req.method !== "POST" || req.url !== "/invoke") {
+  const isEvents = req.method === "GET" && req.url === "/events";
+  if (!isEvents && (req.method !== "POST" || req.url !== "/invoke")) {
     res.writeHead(404);
     return res.end();
   }
   if (req.headers["x-kwl-token"] !== BRIDGE_TOKEN) {
     res.writeHead(401, { "content-type": "application/json" });
     return res.end(JSON.stringify({ ok: false, error: { code: "forbidden", message: "开发桥令牌不符" } }));
+  }
+  if (isEvents) {
+    res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" });
+    res.flushHeaders();
+    eventClients.add(res);
+    req.on("close", () => eventClients.delete(res));
+    return;
   }
   void (async () => {
     const chunks: Buffer[] = [];

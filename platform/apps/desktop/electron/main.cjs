@@ -413,6 +413,10 @@ async function startKernel() {
       for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", msg);
       notifyWaiting(msg);
     }
+    // 问答回答生成中的部分内容：只转发流编号与文字（界面按发起时生成的流编号认领）
+    if (msg && msg.type === "chat.delta" && typeof msg.stream_id === "string" && typeof msg.text === "string") {
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", { type: "chat.delta", stream_id: msg.stream_id, text: msg.text });
+    }
     // 期限提醒到时（第 10 批 S9）：只转发条数，系统通知只写“有 N 条期限提醒”
     if (msg && msg.type === "reminder.due" && Number.isInteger(msg.count) && msg.count > 0) {
       for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", { type: "reminder.due", count: msg.count });
