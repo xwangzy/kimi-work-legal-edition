@@ -54,6 +54,8 @@ const PATTERNS: [TemplateHit["kind"], RegExp][] = [
   ["email", /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g],
 ];
 
+const ORG_SUFFIX = /^(股份有限公司|有限责任公司|集团有限公司|有限公司|集团|公司|律师事务所)/;
+
 const clean = (v: unknown, max: number, field: string, required = false): string | null => {
   if (v === undefined || v === null || v === "") {
     if (required) throw new DomainError("validation", `请填写${field}`, 422);
@@ -109,7 +111,8 @@ export function findHits(clauses: readonly TemplateClause[], partySpans: (text: 
       seen.add(k);
       hits.push({ seq: c.seq, kind, text: t });
     };
-    for (const s of partySpans(c.text)) push("party", c.text.slice(s.start, s.end));
+    // 命中的是简称时连同后面的组织形式一起算（“丁贸易”+“有限公司”），占位符才不会留下半截名称
+    for (const s of partySpans(c.text)) push("party", c.text.slice(s.start, s.end + (ORG_SUFFIX.exec(c.text.slice(s.end))?.[0].length ?? 0)));
     for (const [kind, re] of PATTERNS) for (const m of c.text.matchAll(re)) push(kind, m[0]);
   }
   // 证件号同时像账号时只报一次（18 位）
@@ -185,11 +188,11 @@ export function listTemplates(db: KernelDb, tenantId: string): FirmTemplate[] {
   );
 }
 
-export function getTemplate(db: KernelDb, tenantId: string, templateId: string): { template: FirmTemplate; clauses: TemplateClause[] } {
+export function getTemplate(db: KernelDb, tenantId: string, templateId: string): { template: FirmTemplate; clauses: (TemplateClause & { body: string })[] } {
   const template = listTemplates(db, tenantId).find((t) => t.template_id === templateId);
   if (!template) throw new DomainError("not_found", "范本库里没有这份范本（可能已被删除）", 404);
   const clauses = db.all<TemplateClause>(`SELECT seq, heading, text FROM firm_template_clauses WHERE template_id = ? ORDER BY seq`, [templateId]);
-  return { template, clauses };
+  return { template, clauses: clauses.map((c) => ({ ...c, body: clauseBody(c.heading, c.text) })) };
 }
 
 export function removeTemplate(db: KernelDb, tenantId: string, templateId: string): void {
@@ -224,7 +227,16 @@ export interface TemplateMatch {
   seq: number;
   heading: string;
   text: string;
+  /** 正文：标题单独成段时去掉标题段（“照这条改”放进修改框的是这一段）。 */
+  body: string;
   score: number;
+}
+
+/** 条款正文：第一段就是标题（单独成段）且后面还有段落时去掉第一段；标题与正文写在一段里的不动。 */
+export function clauseBody(heading: string, text: string): string {
+  const lines = text.split("\n");
+  if (lines.length > 1 && lines[0]!.replace(/\s+/g, " ").trim() === heading) return lines.slice(1).join("\n");
+  return text;
 }
 
 /**
@@ -264,7 +276,7 @@ export function matchClauses(
     const sameType = !!query.contract_type && r.contract_type === query.contract_type;
     if (sameType) score += 0.05;
     const stanceDiffers = !!r.stance && r.stance !== "通用" && !!stance && !stance.includes(r.stance) && !r.stance.includes(stance);
-    return { template_id: r.template_id, title: r.title, contract_type: r.contract_type, stance: r.stance, stance_differs: stanceDiffers, same_type: sameType, seq: r.seq, heading: r.heading, text: r.text, score: Math.round(score * 1000) / 1000 };
+    return { template_id: r.template_id, title: r.title, contract_type: r.contract_type, stance: r.stance, stance_differs: stanceDiffers, same_type: sameType, seq: r.seq, heading: r.heading, text: r.text, body: clauseBody(r.heading, r.text), score: Math.round(score * 1000) / 1000 };
   });
   const perTemplate = new Map<string, number>();
   return scored

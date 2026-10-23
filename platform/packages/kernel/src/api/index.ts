@@ -97,7 +97,7 @@ import { adjudicate, compareAnnotations, normalizeDocs, openEvalBytes, openEvalF
 import { isImage, isPdf, ocrReady, parseWithPipeline } from "../services/parse-pipeline.ts";
 import { estimatePoints, scenarioCap } from "../services/estimate.ts";
 import { docxRenderReport } from "../tools/tools/docx.ts";
-import { createStyledDocx, extractParagraphs, isHouseStyled, markdownToBlocks, renderDocxHtml, renderXlsxHtml, restyleDocx } from "@zr-legal/docx-engine";
+import { createDocx, createStyledDocx, extractParagraphs, isHouseStyled, markdownToBlocks, renderDocxHtml, renderXlsxHtml, restyleDocx } from "@zr-legal/docx-engine";
 import { redlineAuthorOf, docStyleView, houseStyleFor, setDocStyle, setDocTemplate } from "../services/doc-style.ts";
 import { isToolOperationInFlight } from "../local-server.ts";
 import { MATTER_STAGES } from "../services/matter-facts.ts";
@@ -3071,6 +3071,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       removeTemplate(db, id.tenantId, tid);
       audit(db, id, "firm_template.removed", "firm_template", tid, undefined, keyctx);
       return { templates: listTemplates(db, id.tenantId) };
+    },
+    // 把一份范本放进事项作为参考材料（律师自己选的事项）：之后起草合同、从范本整理审查要点等方法按事项材料使用——这时才随任务发给 AI
+    "firm_templates.to_matter": async (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      requireMatterWriter(db, matter.matter_id, id);
+      const { template, clauses } = getTemplate(db, id.tenantId, String(p?.template_id ?? ""));
+      const bytes = createDocx(template.title, clauses.map((c) => ({ heading: "", paragraphs: c.text.split("\n") })), { mark: false });
+      const r = (await api["materials.import"]!({ matter_id: matter.matter_id, data_base64: bytes.toString("base64"), filename: `${template.title}（本所范本）.docx`, mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }, id)) as { document_version_id: string; filename?: string };
+      await api["materials.set_role"]!({ document_version_id: r.document_version_id, role: "reference" }, id);
+      audit(db, id, "firm_template.to_matter", "firm_template", template.template_id, r.document_version_id, keyctx);
+      return { document_version_id: r.document_version_id, filename: r.filename ?? `${template.title}（本所范本）.docx` };
     },
     // 审查工作台卡片的“本所范本对此条的写法”：只在本机比对，不发给 AI；同类合同的范本优先，立场不同的标出来
     "firm_templates.for_card": (p, id) => {

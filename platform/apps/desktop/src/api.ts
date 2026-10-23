@@ -933,7 +933,7 @@ export const api = {
   materialText: (documentVersionId: string) => invoke<{ filename: string; paragraphs: string[] }>("materials.text", { document_version_id: documentVersionId }),
   // 本所范本库（v9.4 第 24 批，C1 #23）：律师主动放入、去掉客户信息的范本；只在本机比对，不发给 AI
   firmTemplates: () => invoke<{ templates: FirmTemplate[]; contract_types: string[] }>("firm_templates.list"),
-  firmTemplate: (templateId: string) => invoke<{ template: FirmTemplate; clauses: { seq: number; heading: string; text: string }[] }>("firm_templates.get", { template_id: templateId }),
+  firmTemplate: (templateId: string) => invoke<{ template: FirmTemplate; clauses: { seq: number; heading: string; text: string; body: string }[] }>("firm_templates.get", { template_id: templateId }),
   /** 放入范本：file 为开发形态的文件输入框；桌面客户端经系统对话框（pick = true）；也可粘贴 text。返回 null = 取消选择文件。 */
   addFirmTemplate: async (meta: { title: string; contract_type: string; stance?: string; note?: string; replace_hits?: boolean }, src: { text: string } | { file: File } | { handle: string; name: string }): Promise<FirmTemplateAddResult> => {
     if ("text" in src) return invoke<FirmTemplateAddResult>("firm_templates.add", { ...meta, text: src.text });
@@ -946,6 +946,8 @@ export const api = {
     const f = ((await window.zrKernel.pickFiles({ extensions: ["docx", "txt"], multiple: false })) ?? [])[0];
     return f ? { handle: f.handle, name: f.name } : null;
   },
+  /** 把范本放进一个事项作为参考材料（之后起草合同等方法按事项材料使用，随任务发给 AI）。 */
+  firmTemplateToMatter: (templateId: string, matterId: string) => invoke<{ document_version_id: string; filename: string }>("firm_templates.to_matter", { template_id: templateId, matter_id: matterId }),
   removeFirmTemplate: (templateId: string) => invoke<{ templates: FirmTemplate[] }>("firm_templates.remove", { template_id: templateId }),
   templatesForCard: (matterId: string, cardId: string) => invoke<{ items: TemplateMatch[]; library_size: number }>("firm_templates.for_card", { matter_id: matterId, card_id: cardId }),
   riskCards: (matterId: string, f: { run_id?: string; document_version_id?: string | null } = {}) => invoke<{ cards: RiskCard[]; progress: RiskProgress }>("riskcards.list", { matter_id: matterId, ...f }),
@@ -1337,6 +1339,7 @@ export interface TemplateMatch {
   seq: number;
   heading: string;
   text: string;
+  body: string;
   score: number;
 }
 

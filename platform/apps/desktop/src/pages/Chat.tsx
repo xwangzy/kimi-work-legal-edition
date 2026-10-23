@@ -130,6 +130,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
           <details className="chat-more">
             <summary>了解更多</summary>
             发送前，问题里能识别的姓名、证件号、账号、联系方式会换成代号（识别依靠规则与名单，可能有遗漏），并与你的事项当事人名单比对：涉及“客户要求不上云”事项的当事人会被拦下。问答不读取事项材料。问题经 Kimi Work 的安全通道发给 Kimi 模型；问答记录只保存在这台电脑上。
+            {/* 内容安全说明（D-142，10-23 拍板接受“先显示后撤回”） */}
+            回答边生成边显示；如果被内容安全规则拦下，已经显示的部分会撤回，改为“未能取得回答”，这次回答不保存。
           </details>
         </div>
         {/* 问答记录只在这台电脑上，留存到你删除（驻留面第 27 类）：原来没有删除的入口 */}
@@ -211,8 +213,6 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
           <div className="composer-bar">
             <span className="spacer" />
             {/* 问答页回车发送，与任务输入框（Ctrl / ⌘ + 回车）不同：写明（余项续复核 RC-B-15） */}
-            {/* 内容安全说明（D-142，10-23 拍板接受“先显示后撤回”）：回答边生成边显示，被内容安全规则拦下时已显示的部分会撤回 */}
-            <span className="send-hint muted" title="回答边生成边显示；如果被内容安全规则拦下，已经显示的部分会撤回，改为“未能取得回答”，这次回答不保存。">回答边写边显示，被内容安全规则拦下时会撤回</span>
             <span className="send-hint muted" aria-hidden="true">回车发送 · Shift + 回车换行</span>
             <button className="send" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="发送" title="发送（回车）"><Icon.send /></button>
           </div>

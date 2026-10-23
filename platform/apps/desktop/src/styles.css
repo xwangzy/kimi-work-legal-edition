@@ -1143,4 +1143,4 @@ table.data.deliverables th.dl-actions-h { text-align: right; }
 .ft-clause-head { font-weight: 500; }
 .ft-clause-text { white-space: pre-wrap; color: var(--text-secondary); margin-top: 4px; }
 .rc-tpl { display: block; margin-bottom: 6px; }
-.rc-tpl-text { white-space: pre-wrap; color: var(--text-secondary); }
+.rc-tpl-text { display: block; white-space: pre-wrap; color: var(--text-secondary); }

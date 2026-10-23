@@ -16,6 +16,7 @@ export function FirmTemplates() {
   const [list, setList] = useState<FirmTemplate[] | null>(null);
   const [types, setTypes] = useState<string[]>([]);
   const [msg, setMsg] = useState("");
+  const [note, setNote] = useState("");
   const [adding, setAdding] = useState(false);
   const [viewing, setViewing] = useState<string | null>(null);
   const load = () =>
@@ -35,7 +36,12 @@ export function FirmTemplates() {
       <p className="muted">
         放入本所常用的合同范本（去掉客户信息）。审合同时，工作台的每张卡片会列出“本所范本对此条的写法”，可以照着改。范本存在这台电脑上，不发给 AI。
       </p>
-      {msg && <div className="banner banner-orange">{msg}</div>}
+      {msg && <div className="banner banner-red">{msg}</div>}
+      {note && (
+        <p className="muted" role="status">
+          {note}
+        </p>
+      )}
       {list === null ? (
         <p className="muted">载入中…</p>
       ) : list.length === 0 ? (
@@ -99,7 +105,8 @@ export function FirmTemplates() {
           onClose={() => setAdding(false)}
           onSaved={(t, replaced) => {
             setAdding(false);
-            setMsg(replaced > 0 ? `已放入「${t.title}」：${replaced} 处像客户信息的写法已换成占位符` : "");
+            setMsg("");
+            setNote(replaced > 0 ? `已放入「${t.title}」：${replaced} 处像客户信息的写法已换成占位符` : `已放入「${t.title}」`);
             load();
           }}
         />
@@ -235,22 +242,55 @@ function AddTemplate({ types, onClose, onSaved }: { types: string[]; onClose: ()
 function ViewTemplate({ templateId, onClose }: { templateId: string; onClose: () => void }) {
   const [data, setData] = useState<Awaited<ReturnType<typeof api.firmTemplate>> | null>(null);
   const [err, setErr] = useState("");
+  const [matters, setMatters] = useState<{ value: string; label: string }[]>([]);
+  const [to, setTo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState("");
   useEffect(() => {
     void api
       .firmTemplate(templateId)
       .then(setData)
       .catch((e) => setErr((e as Error).message));
+    void api
+      .listMatters()
+      .then((r) => setMatters(r.matters.filter((m) => m.lifecycle !== "closed" && m.lifecycle !== "purged").map((m) => ({ value: m.matter_id, label: m.title }))))
+      .catch(() => setMatters([]));
   }, [templateId]);
+  const put = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      const r = await api.firmTemplateToMatter(templateId, to);
+      setDone(`已放进事项的材料：${r.filename}（用途为“参考”）。在这个事项里起草合同、从范本整理审查要点时可以选用它；选用后会随任务发给 AI。`);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <Modal title={data ? `${data.template.title}（${data.template.contract_type}）` : "范本"} onClose={onClose} wide>
       {err && <div className="banner banner-red">{err}</div>}
       {!data && !err && <p className="muted">载入中…</p>}
+      {data && matters.length > 0 && (
+        <div className="settings-choice">
+          <Select aria-label="放进哪个事项" value={to} onChange={setTo} placeholder="放进哪个事项" options={matters} />
+          <button className="btn-ghost btn-sm" disabled={busy || !to} onClick={() => void put()}>
+            放进这个事项
+          </button>
+        </div>
+      )}
+      {done && (
+        <p className="muted" role="status">
+          {done}
+        </p>
+      )}
       {data && (
         <ol className="ft-clauses">
           {data.clauses.map((c) => (
             <li key={c.seq}>
               <div className="ft-clause-head">{c.heading}</div>
-              <div className="ft-clause-text">{c.text}</div>
+              <div className="ft-clause-text">{c.body}</div>
             </li>
           ))}
         </ol>

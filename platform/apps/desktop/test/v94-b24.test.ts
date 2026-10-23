@@ -28,7 +28,7 @@ test("修订署名：没填时说明对外版用本所名称、内部版用缺�
 });
 
 test("问答页写明流式回答被内容安全规则拦下时会撤回（D-142）", () => {
-  assert.match(src("pages/Chat.tsx"), /回答边写边显示，被内容安全规则拦下时会撤回/);
+  assert.match(src("pages/Chat.tsx"), /回答边生成边显示；如果被内容安全规则拦下，已经显示的部分会撤回，改为“未能取得回答”，这次回答不保存。\s*<\/details>/);
 });
 
 test("被停用的电脑：启动时提示、律师点了才清除（不自动清除），可以先不清除", () => {
@@ -48,6 +48,9 @@ test("本所范本库：方法与模板页有入口；放入走系统对话框�
   assert.match(f, /换成占位符后放入/);
   assert.match(f, /返回修改/);
   assert.match(f, /不发给 AI/);
+  // 放进事项：律师自己选事项；说明选用后会随任务发给 AI
+  assert.match(f, /api\.firmTemplateToMatter\(templateId, to\)/);
+  assert.match(f, /选用后会随任务发给 AI/);
   const store = { take: (h: unknown, kind: string) => (h === "h1" && kind === "open" ? "/Users/x/范本.docx" : null) };
   assert.deepEqual(resolveFileParams("firm_templates.add", { file_handle: "h1", filename: "范本.docx", file: "/etc/passwd", title: "t" }, store).params, { filename: "范本.docx", file: "/Users/x/范本.docx", title: "t" });
   assert.ok(resolveFileParams("firm_templates.add", { file_handle: "bad" }, store).error);
@@ -58,6 +61,6 @@ test("审查工作台：卡片展开时取本所范本，写明“本所范本�
   assert.match(w, /api\s*\.templatesForCard\(matterId, id\)/);
   assert.match(w, /<span className="rc-k">本所范本<\/span>/);
   assert.match(w, /立场不同/);
-  assert.match(w, /onClick=\{\(\) => setEditing\(\{ id: c\.card_id, text: m\.text \}\)\}/);
-  assert.match(w, /!readOnly && c\.status === "proposed" && \(\s*<button className="btn-link" disabled=\{busy\} title="把这一条放进修改框/);
+  assert.match(w, /onClick=\{\(\) => setEditing\(\{ id: c\.card_id, text: m\.body \}\)\}/);
+  assert.match(w, /!readOnly && c\.status === "proposed" && \(\s*<button className="btn-link" disabled=\{busy\} aria-label=\{`照《\$\{m\.title\}》\$\{m\.heading\}改`\}/);
 });

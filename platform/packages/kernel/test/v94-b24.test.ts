@@ -14,7 +14,7 @@ import { importBytes, importText, liveTaskIdentity, makeKernel, waitRun, type Te
 import { redlineAuthorOf } from "../src/services/doc-style.ts";
 import { hasOutlineUnconfirmed, outlineUnconfirmedReason } from "../src/services/argument-outlines.ts";
 import { estimatePoints, scenarioCap } from "../src/services/estimate.ts";
-import { findHits, matchClauses, replaceHits, splitClauses } from "../src/services/firm-templates.ts";
+import { clauseBody, findHits, matchClauses, replaceHits, splitClauses } from "../src/services/firm-templates.ts";
 import { submitRiskCards } from "../src/services/review-cards.ts";
 
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -163,6 +163,14 @@ test("查客户信息与换占位符：案号、证件号、手机号、账号�
   assert.equal(fixed[2]!.text, "第三条 主体\n【当事人】与【当事人】均为本合同当事人。");
   assert.match(fixed[1]!.text, /参照【案号】判决；身份证号 【证件号】/);
   assert.equal(findHits(fixed, spans).length, 0, "换完再查为空");
+  // 命中简称时连同后面的组织形式一起换（词典里是“丁贸易有限公司（示例）”，只认出了“丁贸易”）
+  const short = splitClauses("第一条 通知\n通知送达丁贸易有限公司。");
+  const h2 = findHits(short, (t) => (t.indexOf("丁贸易") >= 0 ? [{ start: t.indexOf("丁贸易"), end: t.indexOf("丁贸易") + 3 }] : []));
+  assert.deepEqual(h2.map((h) => h.text), ["丁贸易有限公司"]);
+  assert.equal(replaceHits(short, h2)[0]!.text, "第一条 通知\n通知送达【当事人】。");
+  // 正文：标题单独成段时去掉标题段；写在一段里的不动
+  assert.equal(clauseBody("第五条 付款", "第五条 付款\n买方应付款。"), "买方应付款。");
+  assert.equal(clauseBody("第五条 付款方式", "第五条 付款方式：买方应付款。"), "第五条 付款方式：买方应付款。");
 });
 
 test("本所范本库：放入时查出事项当事人（含简称）与客户信息、不保存；换占位符后保存；名称里有当事人拒绝；列表、查看、删除；审计不记正文", async () => {
@@ -228,6 +236,7 @@ test("审合同卡片的本所范本：付款卡列出范本的付款条款、�
   const pay = await inv("firm_templates.for_card", { matter_id: m, card_id: byIssue(/付款期限/).card_id });
   assert.equal(pay.library_size, 1);
   assert.equal(pay.items[0].heading, "第五条 付款", JSON.stringify(pay.items));
+  assert.equal(pay.items[0].body, "买方应于货物验收合格并收到合规发票后六十日内支付货款。", "照这条改放进修改框的是正文");
   assert.equal(pay.items[0].stance_differs, true, "买方范本对卖方事项标立场不同");
   assert.equal(pay.items[0].same_type, true, "材料初判为买卖合同");
   const conf = await inv("firm_templates.for_card", { matter_id: m, card_id: byIssue(/保密/).card_id });
@@ -235,6 +244,14 @@ test("审合同卡片的本所范本：付款卡列出范本的付款条款、�
   assert.ok(pay.items.length <= 3 && pay.items.every((x: any) => x.seq > 0), "首部不参与比对");
   assert.ok(!pay.items.some((x: any) => x.heading === "第十二条 保密"), "不相关的条款不列");
   await assert.rejects(inv("firm_templates.for_card", { matter_id: m, card_id: "rkc_nope" }), (e: any) => e.code === "not_found");
+  // 放进事项：成为参考材料（律师自己选的事项），文件名标“本所范本”，正文与范本一致；审计不记正文
+  const tid0 = (await inv("firm_templates.list")).templates[0].template_id;
+  const put = await inv("firm_templates.to_matter", { template_id: tid0, matter_id: m });
+  assert.equal(put.filename, "采购合同（买方版）（本所范本）.docx");
+  assert.equal(kernel.db.get<{ matter_id: string }>(`SELECT matter_id FROM document_versions WHERE document_version_id = ?`, [put.document_version_id])!.matter_id, m);
+  assert.equal(kernel.db.get<{ role: string }>(`SELECT role FROM document_roles WHERE document_version_id = ?`, [put.document_version_id])!.role, "reference");
+  assert.ok((await inv("materials.text", { document_version_id: put.document_version_id })).paragraphs.includes("买方应于货物验收合格并收到合规发票后六十日内支付货款。"));
+  await assert.rejects(inv("firm_templates.to_matter", { template_id: "ftp_nope", matter_id: m }), (e: any) => e.code === "not_found");
   // 纯函数：代号与条号不参与比对；库为空返回空
   assert.deepEqual(matchClauses(kernel.db, "ten_nobody", { text: "付款", contract_type: null, stance: null }), []);
   assert.deepEqual(matchClauses(kernel.db, tid, { text: "〔甲方1〕 第五条", contract_type: null, stance: null }), []);

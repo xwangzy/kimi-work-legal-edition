@@ -83,6 +83,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   const [counter, setCounter] = useState<Awaited<ReturnType<typeof api.counterChanges>> | null>(null);
   // 本所范本对此条的写法（v9.4 第 24 批，C1 #23）：展开卡片时在本机比对，按卡缓存；范本库为空时不显示
   const [tpl, setTpl] = useState<Map<string, TemplateMatch[]>>(new Map());
+  const [tplFull, setTplFull] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (!active || tpl.has(active)) return;
     const id = active;
@@ -784,13 +785,21 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                             <span key={`${m.template_id}:${m.seq}`} className="rc-tpl">
                               <span className="muted">《{m.title}》{m.heading}</span>
                               {m.stance_differs && <span className="tag tag-gray"> {m.stance}版，立场不同</span>}
-                              {!m.same_type && <span className="tag tag-gray"> {m.contract_type}</span>}
-                              <details>
-                                <summary className="muted">{[...m.text].length > 60 ? `${[...m.text].slice(0, 60).join("")}…` : m.text}</summary>
-                                <span className="rc-tpl-text">{m.text}</span>
-                              </details>
+                              {!m.same_type && <span className="tag tag-gray" title="范本的合同类型与这份合同不同"> {m.contract_type}</span>}
+                              <span className="rc-tpl-text">
+                                {[...m.body].length > 80 && !tplFull.has(`${c.card_id}:${m.template_id}:${m.seq}`) ? (
+                                  <>
+                                    {[...m.body].slice(0, 80).join("")}…{" "}
+                                    <button className="btn-link" onClick={() => setTplFull((x) => new Set(x).add(`${c.card_id}:${m.template_id}:${m.seq}`))}>
+                                      看全文
+                                    </button>
+                                  </>
+                                ) : (
+                                  m.body
+                                )}
+                              </span>
                               {!readOnly && c.status === "proposed" && (
-                                <button className="btn-link" disabled={busy} title="把这一条放进修改框，删改成适合本合同的写法后保存并接受" onClick={() => setEditing({ id: c.card_id, text: m.text })}>
+                                <button className="btn-link" disabled={busy} aria-label={`照《${m.title}》${m.heading}改`} title="把这一条放进修改框，删改成适合本合同的写法后保存并接受" onClick={() => setEditing({ id: c.card_id, text: m.body })}>
                                   照这条改
                                 </button>
                               )}
