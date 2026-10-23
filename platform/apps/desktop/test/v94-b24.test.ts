@@ -17,8 +17,9 @@ test("复核页：有“论点未经确认”时出理由输入框，理由不�
   assert.match(r, /const outlineOpen = data\?\.outline_unconfirmed === true;/);
   assert.match(r, /outlineOpen && \(\s*<label className="field review-reason">/);
   assert.match(r, /aria-label="不确认论点就签发的理由"/);
-  assert.match(r, /\(outlineOpen && \[\.\.\.outlineReason\.trim\(\)\]\.length < 4\)/);
-  assert.match(r, /\.\.\.\(outlineOpen \? \{ outline_unconfirmed_reason: outlineReason\.trim\(\) \} : \{\}\)/);
+  // 字数与内核同一算法（压空白后计，复核 Q6-09）
+  assert.match(r, /\(outlineOpen && \[\.\.\.outlineReason\.replace\(\/\\s\+\/g, " "\)\.trim\(\)\]\.length < 4\)/);
+
   assert.match(src("components/OutlineConfirm.tsx"), /签发时须写明不确认的理由/);
 });
 
@@ -47,10 +48,12 @@ test("本所范本库：方法与模板页有入口；放入走系统对话框�
   const f = src("components/FirmTemplates.tsx");
   assert.match(f, /换成占位符后放入/);
   assert.match(f, /返回修改/);
-  assert.match(f, /不发给 AI/);
+  // 如实写明哪些会发给 AI（复核 Q6-02、Q6-06）：范本库本身不发，照着改并接受的文字、放进事项的范本会随任务发出
+  assert.match(f, /范本库本身不发给 AI，但你照着改并接受的文字、放进事项的范本，会和事项里其他内容一样随任务发给 AI。/);
+  assert.match(f, /没在你事项里的客户名称查不出来/);
   // 放进事项：律师自己选事项；说明选用后会随任务发给 AI
   assert.match(f, /api\.firmTemplateToMatter\(templateId, to\)/);
-  assert.match(f, /选用后会随任务发给 AI/);
+  assert.match(f, /放进去后，这个事项里的 AI 任务可以读取它（会随任务发给 AI）/);
   const store = { take: (h: unknown, kind: string) => (h === "h1" && kind === "open" ? "/Users/x/范本.docx" : null) };
   assert.deepEqual(resolveFileParams("firm_templates.add", { file_handle: "h1", filename: "范本.docx", file: "/etc/passwd", title: "t" }, store).params, { filename: "范本.docx", file: "/Users/x/范本.docx", title: "t" });
   assert.ok(resolveFileParams("firm_templates.add", { file_handle: "bad" }, store).error);
@@ -61,6 +64,8 @@ test("审查工作台：卡片展开时取本所范本，写明“本所范本�
   assert.match(w, /api\s*\.templatesForCard\(matterId, id\)/);
   assert.match(w, /<span className="rc-k">本所范本<\/span>/);
   assert.match(w, /立场不同/);
+  // 占位符换成本合同的写法前不能保存（复核 Q6-12）
+  assert.match(w, /disabled=\{busy \|\| !editing\.text\.trim\(\) \|\| PLACEHOLDER\.test\(editing\.text\)\}/);
   assert.match(w, /onClick=\{\(\) => setEditing\(\{ id: c\.card_id, text: m\.body \}\)\}/);
   assert.match(w, /!readOnly && c\.status === "proposed" && \(\s*<button className="btn-link" disabled=\{busy\} aria-label=\{`照《\$\{m\.title\}》\$\{m\.heading\}改`\}/);
 });

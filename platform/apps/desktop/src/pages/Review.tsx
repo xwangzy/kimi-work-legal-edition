@@ -211,7 +211,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
             ...citationChecklist(cneeds, cticks),
             // 内部稿与对外稿的确认语不同（复核 RB16B-08）：内部稿只确认“已知悉、结论未覆盖”，对外稿确认“缺口已在文件中写明、随文件告知客户”
             ...(gaps > 0 ? { gaps_disclosed: gapsAck, material_gaps: gaps, gaps_statement: internalOnly ? "acknowledged_not_covered" : "disclosed_in_document" } : {}),
-            ...(outlineOpen ? { outline_unconfirmed_reason: outlineReason.trim() } : {}),
+            ...(outlineOpen ? { outline_unconfirmed_reason: outlineReason.replace(/\s+/g, " ").trim() } : {}),
             at: new Date().toISOString(),
           },
         });
@@ -469,7 +469,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                     提交复核
                   </button>
                 ) : (
-                  <button className="btn-primary" disabled={busy || !pending || !ack || !latest || !citationsAllowSign(cneeds, cticks) || (gaps > 0 && !gapsAck) || (outlineOpen && [...outlineReason.trim()].length < 4)} onClick={() => void act("approved")}>
+                  <button className="btn-primary" disabled={busy || !pending || !ack || !latest || !citationsAllowSign(cneeds, cticks) || (gaps > 0 && !gapsAck) || (outlineOpen && [...outlineReason.replace(/\s+/g, " ").trim()].length < 4)} onClick={() => void act("approved")}>
                     确认签发
                   </button>
                 )}

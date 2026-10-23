@@ -5,10 +5,12 @@
  * 放入时按条拆开（“第 X 条”“一、”“1.”开头的段起一条），逐条查像客户信息的写法：本人事项里的当事人（含简称、别名，
  * 按令牌词典查）、案号、证件号、手机号、银行账号、邮箱；查到的要么律师改好再放，要么一键换成【】占位符。
  * 审合同时，工作台的卡片按条款相似度列出“本所范本对此条的写法”（明确标“本所范本”，不叫“市场惯例”），律师可照着改。
- * 存在本机账本（SQLCipher，按律所；这台电脑上的成员共用，不同步、不上云）；不发给 AI。
+ * 存在本机账本（SQLCipher，按律所；这台电脑上的成员共用，不同步、不上云）；范本库本身不发给 AI——律师照着改并接受的文字
+ * （修改后接受的卡片文本）与放进事项的范本，和事项里其他内容一样随任务发出（复核 Q6-02、Q6-06）。
  */
 import { createHash } from "node:crypto";
 import { DomainError, newId } from "@zr-legal/domain";
+import { findIdentifiers } from "@zr-legal/tokenizer";
 import type { KernelDb } from "../db.ts";
 
 export const TEMPLATE_LIMITS = { title: 40, stance: 20, note: 200, clauses: 300, clause_chars: 4_000, total_chars: 200_000, templates: 200 } as const;
@@ -23,9 +25,11 @@ export interface TemplateClause {
   text: string;
 }
 
+export type TemplateHitKind = "party" | "case_no" | "id_no" | "phone" | "account" | "uscc" | "address" | "plate" | "email" | "birth_date";
+
 export interface TemplateHit {
   seq: number;
-  kind: "party" | "case_no" | "id_no" | "phone" | "account" | "email";
+  kind: TemplateHitKind;
   text: string;
 }
 
@@ -42,17 +46,10 @@ export interface FirmTemplate {
   created_at: string;
 }
 
-const HIT_LABEL: Record<TemplateHit["kind"], string> = { party: "当事人", case_no: "案号", id_no: "证件号", phone: "电话", account: "账号", email: "邮箱" };
-export const HIT_KIND_TEXT: Record<TemplateHit["kind"], string> = { party: "像你事项里的当事人", case_no: "像案号", id_no: "像证件号", phone: "像手机号", account: "像银行账号", email: "像邮箱" };
-
-/** 像客户信息的写法（与写作偏好同一口径，范本里的金额、比例、期限是条款内容，不拦）。 */
-const PATTERNS: [TemplateHit["kind"], RegExp][] = [
-  ["case_no", /[（(\[〔【]\s*\d{4}\s*[)）\]〕】][^\s，。；、]{1,20}号/g],
-  ["id_no", /(?<!\d)\d{17}[\dXx](?!\d)/g],
-  ["phone", /(?<!\d)1[3-9]\d{9}(?!\d)/g],
-  ["account", /(?<!\d)\d{16,19}(?!\d)/g],
-  ["email", /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g],
-];
+const HIT_LABEL: Record<TemplateHitKind, string> = { party: "当事人", case_no: "案号", id_no: "证件号", phone: "电话", account: "账号", uscc: "信用代码", address: "住址", plate: "车牌", email: "邮箱", birth_date: "出生日期" };
+export const HIT_KIND_TEXT: Record<TemplateHitKind, string> = { party: "像你事项里的当事人", case_no: "像案号", id_no: "像证件号", phone: "像电话号码", account: "像银行账号", uscc: "像统一社会信用代码", address: "像具体住址", plate: "像车牌号", email: "像邮箱", birth_date: "像出生日期" };
+/** 令牌化器的标识符类别 → 命中类别（复核 Q6-01：与发给 AI 前的令牌化同一套规则——全角数字、分组写法、座机、信用代码、住址都认）。 */
+const ID_KIND: Record<string, TemplateHitKind> = { id_number: "id_no", phone: "phone", account: "account", uscc: "uscc", address: "address", plate: "plate", email: "email", case_no: "case_no", birth_date: "birth_date" };
 
 const ORG_SUFFIX = /^(股份有限公司|有限责任公司|集团有限公司|有限公司|集团|公司|律师事务所)/;
 
@@ -68,16 +65,26 @@ const clean = (v: unknown, max: number, field: string, required = false): string
   return s || null;
 };
 
-/** 起一条的段：“第八条”“第 8 条”“八、”“8.”“8、”（“8.1”这类下一级不算）。 */
-const HEADING = /^(第\s*[一二三四五六七八九十百零〇\d]+\s*条|[一二三四五六七八九十]+、|\d{1,3}\s*[、.．](?!\d))/;
+/**
+ * 起一条的段，分三级：“第八条”“第 8 条” > “八、” > “8.”“8、”（“8.1”这类下一级不算）。
+ * 只按全文里出现的最高一级起条（复核 Q6-03：“第五条 付款”下面的“1、”“2、”是条内的款项，不能各起一条）。
+ */
+const LEVELS = [/^第\s*[一二三四五六七八九十百零〇\d]+\s*条/, /^[一二三四五六七八九十]+、/, /^\d{1,3}\s*[、.．](?!\d)/];
+
+/** 条款标题：取到第一个标点为止，至多 30 字。 */
+export function headingOf(p: string): string {
+  const one = p.replace(/\s+/g, " ");
+  const m = /^[^：:，,。；;]{1,30}/.exec(one);
+  return [...(m?.[0] ?? one)].slice(0, 30).join("").replace(/[：:，,。；;]$/, "").trim();
+}
 
 /** 纯函数：范本全文 → 条款。没有一处像条款标题的，按段落各成一条。 */
 export function splitClauses(text: string): TemplateClause[] {
   const paras = text.replace(/\r\n?/g, "\n").split("\n").map((l) => l.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, " ").trim()).filter(Boolean);
-  const label = (p: string) => [...p.replace(/\s+/g, " ")].slice(0, 30).join("").replace(/[：:，,。；;]$/, "");
   const out: TemplateClause[] = [];
-  if (!paras.some((p) => HEADING.test(p))) {
-    paras.forEach((p, i) => out.push({ seq: i + 1, heading: label(p), text: p }));
+  const level = LEVELS.find((re) => paras.some((p) => re.test(p)));
+  if (!level) {
+    paras.forEach((p, i) => out.push({ seq: i + 1, heading: headingOf(p), text: p }));
     return out;
   }
   let cur: { heading: string; lines: string[] } | null = null;
@@ -86,11 +93,9 @@ export function splitClauses(text: string): TemplateClause[] {
     if (cur) out.push({ seq: out.length + 1, heading: cur.heading, text: cur.lines.join("\n") });
   };
   for (const p of paras) {
-    if (HEADING.test(p)) {
+    if (level.test(p)) {
       flush();
-      // 标题段较长（标题与正文写在一段里）时取到第一个标点为止
-      const m = /^[^：:，,。；;]{1,30}/.exec(p.replace(/\s+/g, " "));
-      cur = { heading: label(m?.[0] ?? p), lines: [p] };
+      cur = { heading: headingOf(p), lines: [p] };
     } else if (cur) cur.lines.push(p);
     else head.push(p);
   }
@@ -100,26 +105,44 @@ export function splitClauses(text: string): TemplateClause[] {
   return out;
 }
 
-/** 纯函数：逐条查像客户信息的写法。parties：本人事项里的当事人名称（含简称、别名）命中。 */
+/**
+ * 纯函数：查一段文字里像客户信息的写法。partySpans：本人事项当事人（含简称、别名）的命中位置；
+ * 标识符与发给 AI 前的令牌化同一套规则（findIdentifiers，含案号）。返回去重的命中原文。
+ */
+export function textHits(text: string, partySpans: (text: string) => { start: number; end: number }[]): { kind: TemplateHitKind; text: string }[] {
+  const out: { kind: TemplateHitKind; text: string }[] = [];
+  const seen = new Set<string>();
+  const push = (kind: TemplateHitKind, t: string) => {
+    const k = `${kind}:${t}`;
+    if (!t || seen.has(k)) return;
+    seen.add(k);
+    out.push({ kind, text: t });
+  };
+  // 命中的是简称时连同后面的组织形式一起算（“丁贸易”+“有限公司”），占位符才不会留下半截名称
+  const parties = partySpans(text).map((s) => ({ start: s.start, end: s.end + (ORG_SUFFIX.exec(text.slice(s.end))?.[0].length ?? 0) }));
+  for (const s of parties) push("party", text.slice(s.start, s.end));
+  for (const h of findIdentifiers(text, parties, { caseNumbers: true })) {
+    const kind = ID_KIND[h.category];
+    if (kind) push(kind, h.value);
+  }
+  return out;
+}
+
+/** 纯函数：逐条查（正文与标题都查）。 */
 export function findHits(clauses: readonly TemplateClause[], partySpans: (text: string) => { start: number; end: number }[]): TemplateHit[] {
   const hits: TemplateHit[] = [];
   for (const c of clauses) {
     const seen = new Set<string>();
-    const push = (kind: TemplateHit["kind"], t: string) => {
-      const k = `${kind}:${t}`;
-      if (seen.has(k)) return;
-      seen.add(k);
-      hits.push({ seq: c.seq, kind, text: t });
-    };
-    // 命中的是简称时连同后面的组织形式一起算（“丁贸易”+“有限公司”），占位符才不会留下半截名称
-    for (const s of partySpans(c.text)) push("party", c.text.slice(s.start, s.end + (ORG_SUFFIX.exec(c.text.slice(s.end))?.[0].length ?? 0)));
-    for (const [kind, re] of PATTERNS) for (const m of c.text.matchAll(re)) push(kind, m[0]);
+    for (const h of [...textHits(c.text, partySpans), ...textHits(c.heading, partySpans)]) {
+      if (seen.has(`${h.kind}:${h.text}`)) continue;
+      seen.add(`${h.kind}:${h.text}`);
+      hits.push({ seq: c.seq, ...h });
+    }
   }
-  // 证件号同时像账号时只报一次（18 位）
-  return hits.filter((h) => !(h.kind === "account" && hits.some((x) => x.seq === h.seq && x.kind === "id_no" && x.text === h.text)));
+  return hits;
 }
 
-/** 把查到的地方换成【当事人】【案号】等占位符（长的先换，免得短的先换掉一截）。 */
+/** 把查到的地方换成【当事人】【案号】等占位符（长的先换，免得短的先换掉一截）；标题按换过的正文重取（复核 Q6-04：截断的标题会留下名称片段）。 */
 export function replaceHits(clauses: readonly TemplateClause[], hits: readonly TemplateHit[]): TemplateClause[] {
   return clauses.map((c) => {
     let text = c.text;
@@ -128,6 +151,7 @@ export function replaceHits(clauses: readonly TemplateClause[], hits: readonly T
       text = text.split(h.text).join(`【${HIT_LABEL[h.kind]}】`);
       heading = heading.split(h.text).join(`【${HIT_LABEL[h.kind]}】`);
     }
+    if (c.seq > 0 && text !== c.text) heading = headingOf(text.split("\n")[0] ?? heading);
     return { ...c, heading, text };
   });
 }
@@ -215,7 +239,32 @@ function grams(s: string): Set<string> {
 }
 
 /** 标题里的关键词（去掉“第 X 条”与序号）：如“付款”“违约责任”。 */
-const headingWord = (h: string) => h.replace(HEADING, "").replace(/[\s：:、.．]/g, "").slice(0, 12);
+const headingWord = (h: string) => LEVELS.reduce((x, re) => x.replace(re, ""), h).replace(/[\s：:、.．（）()]/g, "").slice(0, 12);
+/** 太泛的条款标题不加分（复核 Q6-07：“其他”“未尽事宜”会挂到任何卡片下）。 */
+const GENERIC_HEADING = /^(其他|其它|附则|总则|定义|释义|一般规定|未尽事宜|其他约定|其他事项|通知|生效|附件|合同生效|文本|份数)/;
+
+type ClauseRow = { template_id: string; title: string; contract_type: string; stance: string | null; seq: number; heading: string; text: string };
+/** 库的二元组与逆文档频率按库的内容缓存（复核 Q6-11：每点一张卡都全库重算会卡住内核）；库变了（增删）签名就变。 */
+let libCache: { key: string; rows: ClauseRow[]; docs: Set<string>[]; norms: number[]; w: (x: string) => number } | null = null;
+function library(db: KernelDb, tenantId: string): NonNullable<typeof libCache> | null {
+  const sig = db.get<{ s: string | null }>(`SELECT group_concat(template_id || ':' || sha256) AS s FROM (SELECT template_id, sha256 FROM firm_templates WHERE tenant_id = ? ORDER BY template_id)`, [tenantId])?.s ?? "";
+  if (!sig) return null;
+  const key = `${tenantId}|${sig}`;
+  if (libCache?.key === key) return libCache;
+  const rows = db.all<ClauseRow>(
+    `SELECT t.template_id, t.title, t.contract_type, t.stance, c.seq, c.heading, c.text FROM firm_template_clauses c JOIN firm_templates t ON t.template_id = c.template_id
+      WHERE t.tenant_id = ? AND c.seq > 0`,
+    [tenantId],
+  );
+  const docs = rows.map((r) => grams(`${r.heading}\n${r.text}`));
+  const df = new Map<string, number>();
+  for (const g of docs) for (const x of g) df.set(x, (df.get(x) ?? 0) + 1);
+  const n = rows.length;
+  const w = (x: string) => Math.log(1 + n / (df.get(x) ?? 0.5));
+  const norms = docs.map((d) => Math.sqrt([...d].reduce((a, x) => a + w(x) ** 2, 0)));
+  libCache = { key, rows, docs, norms, w };
+  return libCache;
+}
 
 export interface TemplateMatch {
   template_id: string;
@@ -249,19 +298,11 @@ export function matchClauses(
   query: { text: string; contract_type: string | null; stance: string | null },
   limit = 3,
 ): TemplateMatch[] {
-  const rows = db.all<{ template_id: string; title: string; contract_type: string; stance: string | null; seq: number; heading: string; text: string }>(
-    `SELECT t.template_id, t.title, t.contract_type, t.stance, c.seq, c.heading, c.text FROM firm_template_clauses c JOIN firm_templates t ON t.template_id = c.template_id
-      WHERE t.tenant_id = ? AND c.seq > 0`,
-    [tenantId],
-  );
-  if (rows.length === 0) return [];
+  const lib = library(db, tenantId);
+  if (!lib || lib.rows.length === 0) return [];
+  const { rows, docs, norms, w } = lib;
   const q = grams(query.text);
   if (q.size === 0) return [];
-  const docs = rows.map((r) => grams(`${r.heading}\n${r.text}`));
-  const df = new Map<string, number>();
-  for (const g of docs) for (const x of g) df.set(x, (df.get(x) ?? 0) + 1);
-  const n = rows.length;
-  const w = (x: string) => Math.log(1 + n / (df.get(x) ?? 0.5));
   const qNorm = Math.sqrt([...q].reduce((a, x) => a + w(x) ** 2, 0));
   const plainQuery = query.text.replace(/〔[^〕]{0,24}〕/g, "");
   const stance = (query.stance ?? "").trim();
@@ -269,10 +310,10 @@ export function matchClauses(
     const d = docs[i]!;
     let dot = 0;
     for (const x of q) if (d.has(x)) dot += w(x) ** 2;
-    const dNorm = Math.sqrt([...d].reduce((a, x) => a + w(x) ** 2, 0));
-    let score = dot / (qNorm * dNorm || 1);
+    let score = dot / (qNorm * norms[i]! || 1);
+    // 标题关键词加分只给本来就有些相似的条款（单靠标题词不能过门槛），太泛的标题不加
     const hw = headingWord(r.heading);
-    if ([...hw].length >= 2 && plainQuery.includes(hw)) score += 0.25;
+    if (score >= 0.06 && [...hw].length >= 2 && !GENERIC_HEADING.test(hw) && plainQuery.includes(hw)) score += 0.25;
     const sameType = !!query.contract_type && r.contract_type === query.contract_type;
     if (sameType) score += 0.05;
     const stanceDiffers = !!r.stance && r.stance !== "通用" && !!stance && !stance.includes(r.stance) && !r.stance.includes(stance);

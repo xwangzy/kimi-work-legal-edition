@@ -1,6 +1,7 @@
 /**
  * 本所范本库（v9.4 第 24 批；评审 C1 §1 #23，10-23 拍板）：律师主动放入、去掉客户信息的合同范本。
- * 审合同时，审查工作台的卡片会列出“本所范本对此条的写法”，可照着改。存在这台电脑，不同步、不发给 AI。
+ * 审合同时，审查工作台的卡片会列出“本所范本对此条的写法”，可照着改。存在这台电脑，不同步；范本库本身不发给 AI，
+ * 但照着改并接受的文字、放进事项的范本，会和事项里其他内容一样随任务发出（复核 Q6-02、Q6-06，界面如实写明）。
  * 放入时内核逐条查像客户信息的写法；查到的列给律师看，可以取消去改原文件，也可以一键换成【】占位符再放入。
  */
 import { useEffect, useRef, useState } from "react";
@@ -34,7 +35,7 @@ export function FirmTemplates() {
     <section aria-label="本所范本" id="firm-templates">
       <div className="section-title">本所范本</div>
       <p className="muted">
-        放入本所常用的合同范本（去掉客户信息）。审合同时，工作台的每张卡片会列出“本所范本对此条的写法”，可以照着改。范本存在这台电脑上，不发给 AI。
+        放入本所常用的合同范本（去掉客户信息）。审合同时，工作台的每张卡片会列出“本所范本对此条的写法”，可以照着改。范本存在这台电脑上，这台电脑上的同事都能看到；范本库本身不发给 AI，但你照着改并接受的文字、放进事项的范本，会和事项里其他内容一样随任务发给 AI。
       </p>
       {msg && <div className="banner banner-red">{msg}</div>}
       {note && (
@@ -223,7 +224,7 @@ function AddTemplate({ types, onClose, onSaved }: { types: string[]; onClose: ()
           ) : (
             <textarea className="ft-paste" rows={8} value={text} placeholder="粘贴范本正文：按“第一条”“一、”“1.”开头的段拆成条款" onChange={(e) => setText(e.target.value)} aria-label="范本正文" />
           )}
-          <p className="muted">放入前会逐条检查像客户名称、案号、证件号、电话、账号、邮箱的写法；查到的会先列给你看。</p>
+          <p className="muted">放入前会逐条检查：你事项里的当事人名称（含简称）、案号、证件号、电话、账号、信用代码、住址、邮箱；查到的会先列给你看。没在你事项里的客户名称查不出来，请自己再看一遍。</p>
           {err && <div className="banner banner-red">{err}</div>}
           <div className="settings-choice">
             <button className="btn-primary btn-sm" disabled={busy || !title.trim() || !type || !source} onClick={() => void submit(false)}>
@@ -261,7 +262,7 @@ function ViewTemplate({ templateId, onClose }: { templateId: string; onClose: ()
     setErr("");
     try {
       const r = await api.firmTemplateToMatter(templateId, to);
-      setDone(`已放进事项的材料：${r.filename}（用途为“参考”）。在这个事项里起草合同、从范本整理审查要点时可以选用它；选用后会随任务发给 AI。`);
+      setDone(`已放进事项的材料：${r.filename}（用途为“参考”）。这个事项里的 AI 任务可以读取它，读取的内容会随任务发给 AI。`);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -278,6 +279,7 @@ function ViewTemplate({ templateId, onClose }: { templateId: string; onClose: ()
           <button className="btn-ghost btn-sm" disabled={busy || !to} onClick={() => void put()}>
             放进这个事项
           </button>
+          <span className="muted">放进去后，这个事项里的 AI 任务可以读取它（会随任务发给 AI）</span>
         </div>
       )}
       {done && (

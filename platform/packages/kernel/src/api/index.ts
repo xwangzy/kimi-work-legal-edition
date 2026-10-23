@@ -81,7 +81,7 @@ import { decideOutline, hasOutlineUnconfirmed, listOutlines, outlineUnconfirmedR
 import { addColumn, cellContext, createTable, decideCell, draftFromTable, exportTable, getTable, ledgerReminderCandidates, listTables, pushCellsToFacts, removeColumn, TABLE_TEMPLATES } from "../services/review-tables.ts";
 import { createTodo, deleteTodo, derivedTodos, listTodos, updateTodo } from "../services/matter-todos.ts";
 import { triageMatter } from "../services/material-triage.ts";
-import { findHits, getTemplate, HIT_KIND_TEXT, listTemplates, matchClauses, prepareTemplate, removeTemplate, replaceHits, saveTemplate, TEMPLATE_CONTRACT_TYPES } from "../services/firm-templates.ts";
+import { findHits, getTemplate, HIT_KIND_TEXT, listTemplates, matchClauses, prepareTemplate, removeTemplate, replaceHits, saveTemplate, TEMPLATE_CONTRACT_TYPES, textHits } from "../services/firm-templates.ts";
 import { holidaySource } from "../tools/tools/cn-holidays.ts";
 import { planTemplate, applyTemplateTodos, templatesView } from "../services/matter-templates.ts";
 import { activeRules, discardDraft, listRuleSets, retireRules, RULES_SKILLS, saveRules, snapshotOf, scrubRulesFromRuns, type RulesSnapshot } from "../services/review-rules.ts";
@@ -3028,7 +3028,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       audit(db, id, "writing_prefs.set", "user", id.userId, sha256Hex(JSON.stringify({ signature: !!prefs.signature, citation: prefs.citation, notes: !!prefs.notes })), keyctx);
       return prefs;
     },
-    // 本所范本库（v9.4 第 24 批，C1 #23；10-23 拍板）：律师主动放入、去掉客户信息的范本；按律所存在这台电脑，不发给 AI。文字不进审计
+    // 本所范本库（v9.4 第 24 批，C1 #23；10-23 拍板）：律师主动放入、去掉客户信息的范本；按律所存在这台电脑；范本库本身不发给 AI（照着改并接受的文字、放进事项的范本随任务发出，复核 Q6-02）。文字不进审计
     "firm_templates.list": (_p, id) => ({ templates: listTemplates(db, id.tenantId), contract_types: TEMPLATE_CONTRACT_TYPES }),
     "firm_templates.get": (p, id) => getTemplate(db, id.tenantId, String(p?.template_id ?? "")),
     /**
@@ -3045,7 +3045,11 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (p?.file) {
           if (statSync(String(p.file)).size > 5 * 1024 * 1024) throw new DomainError("validation", "范本文件过大（上限 5 MB）", 422);
           bytes = readFileSync(String(p.file));
-        } else bytes = Buffer.from(String(p.data_base64), "base64");
+        } else {
+          // 开发形态传字节：同样 5 MB 上限（复核 Q6-11）
+          if (String(p.data_base64).length > Math.ceil((5 * 1024 * 1024 * 4) / 3) + 4) throw new DomainError("validation", "范本文件过大（上限 5 MB）", 422);
+          bytes = Buffer.from(String(p.data_base64), "base64");
+        }
         text = parseDocument(name, /\.txt$/i.test(name) ? "text/plain" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes).text;
         sourceName = name.slice(0, 120);
       } else if (typeof p?.text === "string") text = p.text;
@@ -3054,22 +3058,36 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const myMatters = tokens
         ? db.all<{ matter_id: string }>(`SELECT m.matter_id FROM matters m JOIN matter_members mm ON mm.matter_id = m.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL WHERE m.tenant_id = ? AND m.lifecycle <> 'purged'`, [id.userId, id.tenantId])
         : [];
-      const spans = (txt: string) => myMatters.flatMap((m) => tokens!.partySpansIn(m.matter_id, txt));
-      // 名称、说明里也不能有客户信息（列表里会显示）
-      const meta = findHits([{ seq: -1, heading: "", text: [t.title, t.stance ?? "", t.note ?? ""].join("\n") }], spans);
+      // 每个事项的当事人查找器只建一次（复核 Q6-11）
+      const finders = myMatters.map((m) => tokens!.partyFinder(m.matter_id));
+      const spans = (txt: string) => finders.flatMap((f) => f(txt));
+      // 名称、立场、说明里也不能有客户信息（列表里会显示）
+      const meta = textHits([t.title, t.stance ?? "", t.note ?? ""].join("\n"), spans);
       if (meta.length > 0) throw validation(`范本名称、立场或说明里${HIT_KIND_TEXT[meta[0]!.kind]}（${meta[0]!.text}）：请改成不指向具体客户的写法`);
+      // 原文件名常带客户名称（复核 Q6-05）：查到的不留文件名
+      if (sourceName && textHits(sourceName, spans).length > 0) sourceName = null;
       const hits = findHits(t.clauses, spans);
       if (hits.length > 0 && p?.replace_hits !== true) {
         return { status: "needs_cleanup", hits: hits.slice(0, 200).map((h) => ({ ...h, heading: t.clauses.find((c) => c.seq === h.seq)?.heading ?? "", reason: HIT_KIND_TEXT[h.kind] })), clauses: t.clauses.length };
       }
-      const saved = saveTemplate(db, { tenantId: id.tenantId, userId: id.userId }, hits.length > 0 ? { ...t, clauses: replaceHits(t.clauses, hits) } : t, sourceName);
+      const clauses = hits.length > 0 ? replaceHits(t.clauses, hits) : t.clauses;
+      // 换完再查一遍（复核 Q6-04）：还有的不保存
+      const left = hits.length > 0 ? findHits(clauses, spans) : [];
+      if (left.length > 0) throw validation(`换成占位符后仍有像客户信息的写法（${left[0]!.text}）：请改原文件后再放入`);
+      const saved = saveTemplate(db, { tenantId: id.tenantId, userId: id.userId }, { ...t, clauses }, sourceName);
       audit(db, id, "firm_template.added", "firm_template", saved.template_id, saved.sha256, keyctx);
       return { status: "saved", template: saved, replaced: hits.length };
     },
     "firm_templates.remove": (p, id) => {
       const tid = String(p?.template_id ?? "");
+      const { template } = getTemplate(db, id.tenantId, tid);
+      // 只有放入的人、律所管理员或合伙人能删（复核 Q6-13：这台电脑上的成员共用范本库）
+      if (template.created_by !== id.userId) {
+        const role = db.get<{ role: string }>(`SELECT role FROM memberships WHERE tenant_id = ? AND user_id = ?`, [id.tenantId, id.userId])?.role;
+        if (role !== "firm_admin" && role !== "partner") throw forbidden("只有放入这份范本的人、律所管理员或合伙人能删除");
+      }
       removeTemplate(db, id.tenantId, tid);
-      audit(db, id, "firm_template.removed", "firm_template", tid, undefined, keyctx);
+      audit(db, id, "firm_template.removed", "firm_template", tid, template.sha256, keyctx);
       return { templates: listTemplates(db, id.tenantId) };
     },
     // 把一份范本放进事项作为参考材料（律师自己选的事项）：之后起草合同、从范本整理审查要点等方法按事项材料使用——这时才随任务发给 AI

@@ -331,10 +331,10 @@ export class MatterTokenStore {
     return [...new Set(t.findParties(text).map((h) => h.value))];
   }
 
-  /** 文本里命中这个事项当事人（含简称、别名）的位置（本所范本库放入时换成占位符用）。 */
-  partySpansIn(matterId: string, text: string): { start: number; end: number }[] {
+  /** 这个事项当事人（含简称、别名）的查找器：返回文本里命中的位置（本所范本库放入时查客户信息用；一个事项只建一次，复核 Q6-11）。 */
+  partyFinder(matterId: string): (text: string) => { start: number; end: number }[] {
     const t = new MatterTokenizer({ matterKey: this.keyFor(matterId), parties: this.parties(matterId) });
-    return t.findParties(text).map((h) => ({ start: h.start, end: h.end }));
+    return (text) => t.findParties(text).map((h) => ({ start: h.start, end: h.end }));
   }
 }
 

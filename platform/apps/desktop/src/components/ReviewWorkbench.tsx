@@ -27,6 +27,9 @@ const CATEGORY_LABEL: Record<RiskCard["category"], string> = { legal: "法律风
 type Filter = "all" | "open" | "accepted" | "rejected";
 
 /** 条款号显示（复核 B3-B21）：Agent 可能写“8.2”“第 8.2 条（逾期付款）”或“违约责任”，不重复加“第…条”。 */
+/** 本所范本放入时换上的占位符（与内核 firm-templates 的 HIT_LABEL 同一组）。 */
+const PLACEHOLDER = /【(当事人|案号|证件号|电话|账号|信用代码|住址|车牌|邮箱|出生日期)】/;
+
 export function clauseLabel(ref: string | null | undefined): string {
   const r = (ref ?? "").trim();
   if (!r) return "";
@@ -830,8 +833,10 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                     {readOnly ? null : editing?.id === c.card_id ? (
                       <div className="rc-edit">
                         <textarea rows={4} value={editing.text} onChange={(e) => setEditing({ id: c.card_id, text: e.target.value })} aria-label="修改后的条款文本" />
+                        {/* 照本所范本改时带进来的占位符（复核 Q6-12）：换成本合同的写法前不能保存，免得【当事人】进修订稿 */}
+                        {PLACEHOLDER.test(editing.text) && <p className="rc-warn">修改框里还有【当事人】这类占位符：请换成本合同的写法后再保存</p>}
                         <div className="rc-actions">
-                          <button className="btn-primary" disabled={busy || !editing.text.trim()} onClick={() => void decide(c, "modify", editing.text.trim())}>保存并接受</button>
+                          <button className="btn-primary" disabled={busy || !editing.text.trim() || PLACEHOLDER.test(editing.text)} onClick={() => void decide(c, "modify", editing.text.trim())}>保存并接受</button>
                           <button className="btn-ghost" disabled={busy} onClick={() => setEditing(null)}>取消</button>
                         </div>
                       </div>

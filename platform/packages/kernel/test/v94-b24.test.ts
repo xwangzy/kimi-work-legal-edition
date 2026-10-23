@@ -256,3 +256,72 @@ test("审合同卡片的本所范本：付款卡列出范本的付款条款、�
   assert.deepEqual(matchClauses(kernel.db, "ten_nobody", { text: "付款", contract_type: null, stance: null }), []);
   assert.deepEqual(matchClauses(kernel.db, tid, { text: "〔甲方1〕 第五条", contract_type: null, stance: null }), []);
 });
+
+test("复核 Q6-01/03/04/10：全角与分组写法、座机、信用代码、住址都查出；末位 X 的身份证不另报账号；“第 X 条”下的“1、”不另起一条；换占位符后标题重取", () => {
+  const none = () => [];
+  const kinds = (t: string) => findHits(splitClauses(`第一条 联系\n${t}`), none).map((h) => `${h.kind}:${h.text}`);
+  assert.ok(kinds("联系电话 １３９００１３９０００。").some((k) => k.startsWith("phone:")), "全角手机号");
+  assert.ok(kinds("联系电话 139-0013-9000。").some((k) => k.startsWith("phone:")), "分组手机号");
+  assert.ok(kinds("座机 021-62345678。").some((k) => k.startsWith("phone:")), "座机");
+  assert.ok(kinds("统一社会信用代码 91310000MA1FL1234X。").some((k) => k.startsWith("uscc:")), JSON.stringify(kinds("统一社会信用代码 91310000MA1FL1234X。")));
+  assert.ok(kinds("住所：上海市浦东新区世纪大道100号。").some((k) => k.startsWith("address:")), "住址");
+  const idx = kinds("身份证号 11010119900101123X。");
+  assert.deepEqual(idx.filter((k) => !k.startsWith("id_no:")), [], `末位 X 的身份证只报证件号：${idx.join(" | ")}`);
+  // 条内款项不另起一条
+  const cs = splitClauses("第五条 付款\n1、买方应于验收合格后付款。\n2、逾期付款按日万分之三计违约金。\n第六条 交付\n卖方按期交货。");
+  assert.deepEqual(cs.map((c) => c.heading), ["第五条 付款", "第六条 交付"]);
+  assert.equal(clauseBody(cs[0]!.heading, cs[0]!.text), "1、买方应于验收合格后付款。\n2、逾期付款按日万分之三计违约金。");
+  // 标题被 30 字截断、截在名称中间：换完按正文重取标题，不留名称片段
+  const long = splitClauses("第九条 甲方应向某某某某某某某某某某某某某某某丁贸易有限公司支付服务费。");
+  const spans = (t: string) => (t.includes("丁贸易") ? [{ start: t.indexOf("丁贸易"), end: t.indexOf("丁贸易") + 3 }] : []);
+  const fixed = replaceHits(long, findHits(long, spans));
+  assert.doesNotMatch(fixed[0]!.heading, /丁贸|丁/);
+  assert.equal(findHits(fixed, spans).length, 0);
+});
+
+test("复核 Q6-07：太泛的条款标题（其他、未尽事宜）不靠标题词挂到卡片下", () => {
+  const { kernel } = tk;
+  const tid = `ten_q607_${randomUUID().slice(0, 6)}`;
+  const id = `ftp_${randomUUID()}`;
+  kernel.db.run(`INSERT INTO firm_templates (template_id, tenant_id, title, contract_type, stance, note, source_name, sha256, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`, [id, tid, "通用范本", "其他", null, null, null, "x", "u", new Date().toISOString()]);
+  kernel.db.run(`INSERT INTO firm_template_clauses (template_id, seq, heading, text) VALUES (?,?,?,?)`, [id, 1, "第十五条 其他", "第十五条 其他\n本合同未尽事宜，由双方另行协商。"]);
+  kernel.db.run(`INSERT INTO firm_template_clauses (template_id, seq, heading, text) VALUES (?,?,?,?)`, [id, 2, "第七条 违约责任", "第七条 违约责任\n逾期付款的，每日按应付未付金额的万分之三支付违约金。"]);
+  const r = matchClauses(kernel.db, tid, { text: "逾期付款违约金按日千分之五计，明显偏高；其他条款另议", contract_type: null, stance: null });
+  assert.deepEqual(r.map((x) => x.heading), ["第七条 违约责任"]);
+});
+
+test("复核 Q6-05/08：原文件名带当事人的不留；立场、说明里有客户信息拒绝；文件路径放入；理由传非字符串拒签；别的事项的卡号 404；删除审计记摘要", async () => {
+  const { inv, kernel } = tk;
+  const base = { title: "保密协议（通用）", contract_type: "保密与竞业限制" };
+  const text = "第一条 保密义务\n接收方对披露方的商业秘密负保密义务。";
+  await assert.rejects(inv("firm_templates.add", { ...base, stance: "丁贸易有限公司", text }), (e: any) => e.code === "validation" && /立场或说明/.test(e.message));
+  await assert.rejects(inv("firm_templates.add", { ...base, note: "联系 13900139000", text }), (e: any) => e.code === "validation");
+  const r = await inv("firm_templates.add", { ...base, data_base64: Buffer.from(text, "utf8").toString("base64"), filename: "丁贸易有限公司保密协议.txt" });
+  assert.equal(r.status, "saved");
+  assert.equal(r.template.source_name, null, "文件名带当事人的不留");
+  // 文件路径（桌面客户端经系统对话框换来的路径）
+  const { writeFileSync, mkdtempSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const f = join(mkdtempSync(join(tmpdir(), "kwl-ftp-")), "通用保密.txt");
+  writeFileSync(f, text, "utf8");
+  const r2 = await inv("firm_templates.add", { ...base, title: "保密协议（路径）", file: f, filename: "通用保密.txt" });
+  assert.equal(r2.template.source_name, "通用保密.txt");
+  await inv("firm_templates.remove", { template_id: r2.template.template_id });
+  const aud = kernel.db.get<{ payload_hash: string | null }>(`SELECT * FROM audit_events WHERE action = 'firm_template.removed' AND object_id = ?`, [r2.template.template_id]) as any;
+  assert.ok(aud && JSON.stringify(aud).includes(r2.template.sha256), "删除审计记范本摘要");
+  await inv("firm_templates.remove", { template_id: r.template.template_id });
+
+  // 别的事项的卡号
+  const { matter: a } = await inv("matters.create", { title: "Q6 甲", stance: "买方", consent_status: "agreed" });
+  const { matter: b } = await inv("matters.create", { title: "Q6 乙", stance: "买方", consent_status: "agreed" });
+  const doc = await importText(inv, a.matter_id, "合同.txt", "第一条 付款\n买方应于验收后付款。");
+  const live = liveTaskIdentity(tk, a.matter_id, "q608");
+  submitRiskCards({ db: kernel.db, blobs: kernel.blobs }, { tenantId: live.tid, matterId: a.matter_id, runId: live.rid }, { document_version_id: doc.document_version_id, cards: [{ anchor_text: "买方应于验收后付款。", severity: "low", category: "commercial", issue: "付款期限不明", suggestion: null }] });
+  const card = (await inv("riskcards.list", { matter_id: a.matter_id })).cards[0];
+  await assert.rejects(inv("firm_templates.for_card", { matter_id: b.matter_id, card_id: card.card_id }), (e: any) => e.code === "not_found");
+
+  // 理由传非字符串
+  assert.equal(outlineUnconfirmedReason({ toString: () => "看起来像理由" }), null);
+  assert.equal(outlineUnconfirmedReason(12345), null);
+});
