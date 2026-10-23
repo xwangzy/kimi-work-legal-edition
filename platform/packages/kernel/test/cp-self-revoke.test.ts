@@ -30,6 +30,9 @@ test("本设备被吊销：凭控制面签名的通知进入退出模式，清�
   const { inv } = tk;
   assert.equal((await inv("control_plane.sync")).report.ok, true);
   const { matter } = await inv("matters.create", { title: "吊销演练", stance: "原告", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" } });
+  // 吊销前本人在这台电脑上有写作偏好（v9.4 第 24 批 D-144：吊销后启动提示清除）
+  await inv("writing_prefs.set", { signature: "某某律师事务所 李律师" });
+  assert.equal((await inv("members.personal_status")).prompt_clear, false, "没被停用时不提示");
   cloud.model.script = (body) => {
     const first = JSON.stringify(msgs(body).find((m) => m.role === "user")?.content ?? "");
     if (!first.includes("CPSELFREVOKE")) return null;
@@ -70,5 +73,11 @@ test("本设备被吊销：凭控制面签名的通知进入退出模式，清�
   await assert.rejects(inv("recovery.create_package", { path: join(out, "恢复包.kwlr") }), (e: any) => e.code === "conflict" && /本设备已被吊销/.test(e.message));
   assert.deepEqual(readdirSync(out), [], "什么也没有写出");
   assert.equal((await inv("backup.status")).revoked, true, "界面据此不再提醒备份");
+  // D-144（10-23 拍板：只提示、不自动清除）：被停用后提示清除本人的个人数据；律师点清除后不再提示
+  const ps = await inv("members.personal_status");
+  assert.deepEqual(ps, { device_revoked: true, writing_prefs: true, qa_conversations: 0, prompt_clear: true });
+  assert.equal((await inv("writing_prefs.get")).signature, "某某律师事务所 李律师", "不自动清除");
+  assert.match((await inv("members.offboard_clear_personal")).note, /已清除你在这台电脑上的写作偏好/);
+  assert.equal((await inv("members.personal_status")).prompt_clear, false);
   cloud.model.script = null;
 });

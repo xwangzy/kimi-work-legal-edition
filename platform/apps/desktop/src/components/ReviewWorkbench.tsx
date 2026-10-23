@@ -11,7 +11,7 @@ import { scrollBehavior } from "../lib/ui-prefs.ts";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { kernelPreview, localPreview, type AcceptPreview } from "../lib/accept-preview.ts";
 import { agreementParts, batchEligible, firstOpenCard, restoreOursText, nextOpenCard, stepCard } from "../lib/workbench.ts";
-import { api, type RiskCard, type RiskProgress } from "../api.ts";
+import { api, type RiskCard, type RiskProgress, type TemplateMatch } from "../api.ts";
 import { CITE_STATE_LABELS } from "../lib/labels.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { adoptedText, KIND_LABEL, kindOf, ladderRows, NATURE_LABEL, NATURE_PILL, natureOf, natureText, RELATION_LABEL, RULE_SOURCE_LABEL, type RiskNature } from "../lib/risk-ladder.ts";
@@ -81,6 +81,16 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   // 对方改动模式（C1 §2.2 第 7 条）：有基线（本次回稿审查任务的我方上一稿）时可切到“只看对方改动”
   const [cardsView, setCardsView] = useState<"all" | "changes">("all");
   const [counter, setCounter] = useState<Awaited<ReturnType<typeof api.counterChanges>> | null>(null);
+  // 本所范本对此条的写法（v9.4 第 24 批，C1 #23）：展开卡片时在本机比对，按卡缓存；范本库为空时不显示
+  const [tpl, setTpl] = useState<Map<string, TemplateMatch[]>>(new Map());
+  useEffect(() => {
+    if (!active || tpl.has(active)) return;
+    const id = active;
+    void api
+      .templatesForCard(matterId, id)
+      .then((r) => setTpl((m) => new Map(m).set(id, r.items)))
+      .catch(() => setTpl((m) => new Map(m).set(id, [])));
+  }, [active, matterId, tpl]);
 
   const load = useCallback(async (): Promise<RiskCard[]> => {
     const r = await api.riskCards(matterId, { document_version_id: documentVersionId, ...(runFilter ? { run_id: runFilter } : {}) });
@@ -765,6 +775,30 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                         </span>
                       </div>
                     ))}
+                    {/* 本所范本（C1 #23）：律师放入的范本里相近的条款；明确是“本所范本”，不是市场惯例，也不是依据 */}
+                    {(tpl.get(c.card_id) ?? []).length > 0 && (
+                      <div className="rc-row">
+                        <span className="rc-k">本所范本</span>
+                        <span>
+                          {tpl.get(c.card_id)!.map((m) => (
+                            <span key={`${m.template_id}:${m.seq}`} className="rc-tpl">
+                              <span className="muted">《{m.title}》{m.heading}</span>
+                              {m.stance_differs && <span className="tag tag-gray"> {m.stance}版，立场不同</span>}
+                              {!m.same_type && <span className="tag tag-gray"> {m.contract_type}</span>}
+                              <details>
+                                <summary className="muted">{[...m.text].length > 60 ? `${[...m.text].slice(0, 60).join("")}…` : m.text}</summary>
+                                <span className="rc-tpl-text">{m.text}</span>
+                              </details>
+                              {!readOnly && c.status === "proposed" && (
+                                <button className="btn-link" disabled={busy} title="把这一条放进修改框，删改成适合本合同的写法后保存并接受" onClick={() => setEditing({ id: c.card_id, text: m.text })}>
+                                  照这条改
+                                </button>
+                              )}
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                    )}
                     {c.basis.length > 0 && (
                       <div className="rc-row">
                         <span className="rc-k">依据</span>

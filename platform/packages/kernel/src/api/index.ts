@@ -77,10 +77,11 @@ import { addOrUpdateMember, chainSummary, chainView, hasChain, keyFingerprint, r
 import { docxHeaderFooterTexts, parseDocument } from "../services/parser.ts";
 import { detectClassifiedMarking, type ClassifiedFinding } from "../services/classified-marking.ts";
 import { restoreArtifactBytes } from "../services/export-restore.ts";
-import { decideOutline, listOutlines, scrubOutlineFacts } from "../services/argument-outlines.ts";
+import { decideOutline, hasOutlineUnconfirmed, listOutlines, outlineUnconfirmedReason, scrubOutlineFacts } from "../services/argument-outlines.ts";
 import { addColumn, cellContext, createTable, decideCell, draftFromTable, exportTable, getTable, ledgerReminderCandidates, listTables, pushCellsToFacts, removeColumn, TABLE_TEMPLATES } from "../services/review-tables.ts";
 import { createTodo, deleteTodo, derivedTodos, listTodos, updateTodo } from "../services/matter-todos.ts";
 import { triageMatter } from "../services/material-triage.ts";
+import { findHits, getTemplate, HIT_KIND_TEXT, listTemplates, matchClauses, prepareTemplate, removeTemplate, replaceHits, saveTemplate, TEMPLATE_CONTRACT_TYPES } from "../services/firm-templates.ts";
 import { holidaySource } from "../tools/tools/cn-holidays.ts";
 import { planTemplate, applyTemplateTodos, templatesView } from "../services/matter-templates.ts";
 import { activeRules, discardDraft, listRuleSets, retireRules, RULES_SKILLS, saveRules, snapshotOf, scrubRulesFromRuns, type RulesSnapshot } from "../services/review-rules.ts";
@@ -1345,7 +1346,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         pages += r?.page_count ?? 0;
       }
       const est = estimatePoints({ scenario: p.scenario, material_count: docIds.length, total_pages: pages });
-      if (est.points === 0) throw validation(est.assumptions[0] ?? "不可估价");
+      if (est.points === 0 && !est.local) throw validation(est.assumptions[0] ?? "不可估价");
       const estimateId = newId("estimate");
       estimates.set(estimateId, { estimate_id: estimateId, matter_id: matterId, scenario: p.scenario, points: est.points, expires: Date.now() + est.valid_seconds * 1000, input: p });
       // 数据去向预览（§15.2：先预估、后确认——预计点数与数据去向同时展示）。按强制点的实际结果生成（复核 S5-A08）：不会发送时写“不会发送：原因”
@@ -1439,7 +1440,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         ...(busy ? { busy_run_id: busy.run_id } : {}),
         caps: { per_request_chars: 200_000, per_task_chars: 1_000_000 },
       };
-      return { estimate_id: estimateId, ...est, points_display: `预计 ${est.points} 点`, data_where: dataWhere };
+      return { estimate_id: estimateId, ...est, points_display: est.local ? "不调用 AI，不计点" : `预计 ${est.points} 点`, data_where: dataWhere };
     },
 
     "runs.start": async (p, id) => {
@@ -1462,9 +1463,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       }
       const est = estimates.get(String(p.estimate_id));
       if (!est || est.matter_id !== matterId || est.expires < Date.now()) throw validation("估算单不存在或已过期，请重新估价");
-      const budgetCap = Number(p?.budget_points ?? est.points);
       const cap = scenarioCap(est.scenario);
-      if (budgetCap <= 0 || budgetCap > cap) throw validation(`budget_points 超出单任务上限 ${cap}`);
+      // 本机流程不计点（10-23 拍板）：预留与实扣都是 0，忽略界面带来的 budget_points
+      const budgetCap = cap === 0 ? 0 : Number(p?.budget_points ?? est.points);
+      if (cap > 0 && (budgetCap <= 0 || budgetCap > cap)) throw validation(`budget_points 超出单任务上限 ${cap}`);
 
       // 幂等：同键同内容返回原任务（§15.2）
       const existing = db.get(`SELECT run_id, status, input_snapshot FROM runs WHERE tenant_id = ? AND idempotency_key = ?`, [id.tenantId, String(p.idempotency_key)]);
@@ -2131,9 +2133,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           art.version === latest.v
             ? art.artifact_version_id
             : (db.get<{ id: string }>(`SELECT artifact_version_id AS id FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = ? ORDER BY version DESC LIMIT 1`, [art.matter_id, art.kind, art.audience])?.id ?? null),
+        // 论点未经确认（10-23 拍板）：签发必过项——写一句不确认就签发的理由（进签发记录），或回任务页确认论点后重新生成
+        outline_unconfirmed: hasOutlineUnconfirmed(openItems),
         blockers: [
           ...(fileOk ? [] : ["文件完整性校验失败"]),
           ...(openItems.length > 0 ? ["存在未决项，签发人须逐项确认"] : []),
+          ...(hasOutlineUnconfirmed(openItems) ? ["论点与依据没经你确认就产出了这份成果：须写一句不确认就签发的理由（会写进签发记录），或回任务页确认论点后重新生成"] : []),
           ...(unverifiedOffline > 0 ? [`材料里有 ${unverifiedOffline} 个案号系统离线无法核实，须逐个在裁判文书网等官方来源核对并勾选后才能签发`] : []),
           ...(artCitations && artCitations.wrong > 0 ? [`成果里有 ${artCitations.wrong} 条引用核对不通过（条号不存在、已改号或当时没有有效版本），改正后再签发`] : []),
           ...(artCitations && artCitations.unverified_offline > 0 ? [`成果里有 ${artCitations.unverified_offline} 个案号系统离线无法核实，须逐个核对并勾选后才能签发`] : []),
@@ -2212,6 +2217,11 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       checklistObj.lawyer_checked_items = lawyerTicked;
       checklistObj.lawyer_items = lc.items.length;
       checklistObj.skill = lc.items.length ? lc.skillId : null;
+      // 论点未经确认（10-23 拍板）：不是硬阻断，签发须写理由；理由按内核清洗后的原文进签发记录，没有这一未决项的不记
+      const outlineOpen = hasOutlineUnconfirmed(parseJson<unknown[]>(art.open_items, []));
+      const outlineReason = outlineOpen ? outlineUnconfirmedReason(checklistObj.outline_unconfirmed_reason) : null;
+      if (outlineReason) checklistObj.outline_unconfirmed_reason = outlineReason;
+      else delete checklistObj.outline_unconfirmed_reason;
       const checklist = JSON.stringify(checklistObj);
 
       if (decision === "approved") {
@@ -2222,6 +2232,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (gaps > 0 && checklistObj.gaps_disclosed !== true) {
           throw new DomainError("material_gaps_undisclosed", `本次任务有 ${gaps} 份材料没有读到：请在复核页勾选“缺口已保留在报告中，已向客户说明”后再签发`, 409, { material_gaps: gaps });
         }
+        if (outlineOpen && !outlineReason) throw new DomainError("outline_unconfirmed", "这份成果产出时论点与依据没经你确认：请写一句不确认就签发的理由（至少 4 个字），或回任务页确认论点后重新生成", 409);
         const unverified = unverifiedOfflineCount(db, art.run_id);
         if (unverified > 0 && checklistObj[CITATIONS_CASES_CHECK_KEY] !== true) {
           throw new DomainError("unverified_citations", `材料里有 ${unverified} 个案号系统离线无法核实：请逐个在裁判文书网等官方来源核对，在复核页勾选“已逐个核对案号”后再签发`, 409, {
@@ -2266,6 +2277,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
             : null,
           // 律师人工核对的“你来核对”（v9.4 第 21 批）：方法、清单条数与勾上的条目原文；不代表系统验证
           lawyer_checklist: { skill: lc.items.length ? lc.skillId : null, items: lc.items.length, checked: lawyerTicked },
+          // 论点未经确认就签发的理由（10-23 拍板）；没有这一未决项为 null
+          outline_unconfirmed_reason: outlineReason,
           signed_at: new Date().toISOString(),
         });
         // 签发审批：对外可验证（TPM 直签的落点，W8 改异步，偏离 D-71）
@@ -2816,7 +2829,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           skip_card_ids: Array.isArray(p?.skip_card_ids) ? p.skip_card_ids.map(String) : [],
           created_by: id.userId,
           audience: p?.audience === "external" ? "external" : "internal",
-          author: redlineAuthorOf(db, id.tenantId),
+          author: redlineAuthorOf(db, id.tenantId, p?.audience === "external" ? "external" : "internal", config.activation?.firm_name ?? null),
         },
       );
       const byIndex = new Map(r.cards.map((c) => [c.index, c.card_id]));
@@ -3014,6 +3027,62 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const prefs = setWritingPrefs(db, id.tenantId, id.userId, (p ?? {}) as Record<string, unknown>, tokens ? (mid, text) => tokens.partiesIn(mid, text) : undefined);
       audit(db, id, "writing_prefs.set", "user", id.userId, sha256Hex(JSON.stringify({ signature: !!prefs.signature, citation: prefs.citation, notes: !!prefs.notes })), keyctx);
       return prefs;
+    },
+    // 本所范本库（v9.4 第 24 批，C1 #23；10-23 拍板）：律师主动放入、去掉客户信息的范本；按律所存在这台电脑，不发给 AI。文字不进审计
+    "firm_templates.list": (_p, id) => ({ templates: listTemplates(db, id.tenantId), contract_types: TEMPLATE_CONTRACT_TYPES }),
+    "firm_templates.get": (p, id) => getTemplate(db, id.tenantId, String(p?.template_id ?? "")),
+    /**
+     * 放入范本：文件（Word / 纯文本）或粘贴的文字。逐条查像客户信息的写法（本人全部事项的当事人含简称别名、案号、证件号、手机号、账号、邮箱）：
+     * 查到且没要求替换的不保存，返回 needs_cleanup 与命中清单；replace_hits = true 时换成【】占位符后保存。
+     */
+    "firm_templates.add": (p, id) => {
+      let text: string;
+      let sourceName: string | null = null;
+      if (p?.file || typeof p?.data_base64 === "string") {
+        const name = String(p?.filename ?? (p?.file ? String(p.file).split(/[\\/]/).pop() : "") ?? "");
+        if (!/\.(docx|txt)$/i.test(name)) throw new DomainError("unsupported_file", "请放入 Word 文档（.docx）或纯文本（.txt）；PDF 和扫描件请先转成 Word", 422);
+        let bytes: Buffer;
+        if (p?.file) {
+          if (statSync(String(p.file)).size > 5 * 1024 * 1024) throw new DomainError("validation", "范本文件过大（上限 5 MB）", 422);
+          bytes = readFileSync(String(p.file));
+        } else bytes = Buffer.from(String(p.data_base64), "base64");
+        text = parseDocument(name, /\.txt$/i.test(name) ? "text/plain" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes).text;
+        sourceName = name.slice(0, 120);
+      } else if (typeof p?.text === "string") text = p.text;
+      else throw validation("请选择范本文件或粘贴范本正文");
+      const t = prepareTemplate({ title: p?.title, contract_type: p?.contract_type, stance: p?.stance, note: p?.note, text });
+      const myMatters = tokens
+        ? db.all<{ matter_id: string }>(`SELECT m.matter_id FROM matters m JOIN matter_members mm ON mm.matter_id = m.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL WHERE m.tenant_id = ? AND m.lifecycle <> 'purged'`, [id.userId, id.tenantId])
+        : [];
+      const spans = (txt: string) => myMatters.flatMap((m) => tokens!.partySpansIn(m.matter_id, txt));
+      // 名称、说明里也不能有客户信息（列表里会显示）
+      const meta = findHits([{ seq: -1, heading: "", text: [t.title, t.stance ?? "", t.note ?? ""].join("\n") }], spans);
+      if (meta.length > 0) throw validation(`范本名称、立场或说明里${HIT_KIND_TEXT[meta[0]!.kind]}（${meta[0]!.text}）：请改成不指向具体客户的写法`);
+      const hits = findHits(t.clauses, spans);
+      if (hits.length > 0 && p?.replace_hits !== true) {
+        return { status: "needs_cleanup", hits: hits.slice(0, 200).map((h) => ({ ...h, heading: t.clauses.find((c) => c.seq === h.seq)?.heading ?? "", reason: HIT_KIND_TEXT[h.kind] })), clauses: t.clauses.length };
+      }
+      const saved = saveTemplate(db, { tenantId: id.tenantId, userId: id.userId }, hits.length > 0 ? { ...t, clauses: replaceHits(t.clauses, hits) } : t, sourceName);
+      audit(db, id, "firm_template.added", "firm_template", saved.template_id, saved.sha256, keyctx);
+      return { status: "saved", template: saved, replaced: hits.length };
+    },
+    "firm_templates.remove": (p, id) => {
+      const tid = String(p?.template_id ?? "");
+      removeTemplate(db, id.tenantId, tid);
+      audit(db, id, "firm_template.removed", "firm_template", tid, undefined, keyctx);
+      return { templates: listTemplates(db, id.tenantId) };
+    },
+    // 审查工作台卡片的“本所范本对此条的写法”：只在本机比对，不发给 AI；同类合同的范本优先，立场不同的标出来
+    "firm_templates.for_card": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      const card = db.get<{ document_version_id: string | null; kind: string | null; anchor_text: string; issue: string; suggestion: string | null; clause_ref: string | null }>(
+        `SELECT document_version_id, kind, anchor_text, issue, suggestion, clause_ref FROM risk_cards WHERE card_id = ? AND matter_id = ?`,
+        [String(p?.card_id ?? ""), matter.matter_id],
+      );
+      if (!card) throw notFound("卡片");
+      const contractType = card.document_version_id ? (triageMatter(db, matter.matter_id).find((x) => x.document_version_id === card.document_version_id)?.contract_type ?? null) : null;
+      const text = [card.clause_ref ?? "", card.issue, card.suggestion ?? "", card.kind === "missing" ? "" : card.anchor_text].join("\n");
+      return { items: matchClauses(db, id.tenantId, { text, contract_type: contractType, stance: matter.stance ?? null }), library_size: listTemplates(db, id.tenantId).length };
     },
     "facts.list": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
@@ -3689,6 +3758,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       // 按人存在这台电脑上的个人设置（复核 Q4 建议 3）：交接清单最后一步，本人清除
       const personal = { writing_prefs: hasPrefs(getWritingPrefs(db, id.tenantId, id.userId)), qa_conversations: deps.qa?.count(id.tenantId, id.userId) ?? 0 };
       return { matters, pending: matters.filter((x) => x.status !== "ok").length, personal };
+    },
+    // 被停用的电脑启动时的提示（D-144，10-23 拍板：只提示、不自动清除）：这台电脑已被律所停用，且本人在这台电脑上还有写作偏好或问答记录
+    "members.personal_status": (_p, id) => {
+      const revoked = deps.governance?.exitMode()?.code === "device_revoked";
+      const writingPrefs = hasPrefs(getWritingPrefs(db, id.tenantId, id.userId));
+      const qaConversations = deps.qa?.count(id.tenantId, id.userId) ?? 0;
+      return { device_revoked: revoked, writing_prefs: writingPrefs, qa_conversations: qaConversations, prompt_clear: revoked && (writingPrefs || qaConversations > 0) };
     },
     // 离所时清除本人在这台电脑上按人存的数据：写作偏好与问答记录（驻留面第 27 类“留存到律师删除”）。
     // 电脑已停用（退出模式）时也能清：这是删除个人数据，不是新的处理；事项里的材料、成果与已发起任务的输入快照按律所留存规则走，不在这里删

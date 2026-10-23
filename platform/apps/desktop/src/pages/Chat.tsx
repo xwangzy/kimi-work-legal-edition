@@ -211,6 +211,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
           <div className="composer-bar">
             <span className="spacer" />
             {/* 问答页回车发送，与任务输入框（Ctrl / ⌘ + 回车）不同：写明（余项续复核 RC-B-15） */}
+            {/* 内容安全说明（D-142，10-23 拍板接受“先显示后撤回”）：回答边生成边显示，被内容安全规则拦下时已显示的部分会撤回 */}
+            <span className="send-hint muted" title="回答边生成边显示；如果被内容安全规则拦下，已经显示的部分会撤回，改为“未能取得回答”，这次回答不保存。">回答边写边显示，被内容安全规则拦下时会撤回</span>
             <span className="send-hint muted" aria-hidden="true">回车发送 · Shift + 回车换行</span>
             <button className="send" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="发送" title="发送（回车）"><Icon.send /></button>
           </div>

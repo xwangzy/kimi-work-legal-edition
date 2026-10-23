@@ -42,6 +42,8 @@ export const IdPrefix = {
   cardBatch: "cbt",
   // v9.4 第 22 批：本事项的审查要点（每一版与草稿）
   reviewRules: "rrs",
+  // v9.4 第 24 批：本所范本库的一份范本（C1 #23）
+  firmTemplate: "ftp",
 } as const;
 
 export type IdPrefixKey = keyof typeof IdPrefix;

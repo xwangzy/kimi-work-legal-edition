@@ -297,3 +297,16 @@ export function assertOutlineSettled(db: KernelDb, runId: string | null | undefi
 export function outlineOpenItems(db: KernelDb, runId: string): { kind: string; note: string }[] {
   return outlineState(db, runId) === "ok" ? [] : [{ kind: "outline_unconfirmed", note: "这份成果产出时，论点与依据还没经你确认：请核对论点与依据后再签发" }];
 }
+
+/** 成果的未决项里有没有“论点未经确认”（10-23 拍板：签发必过项，须写理由）。 */
+export function hasOutlineUnconfirmed(openItems: unknown): boolean {
+  return Array.isArray(openItems) && openItems.some((x) => !!x && typeof x === "object" && (x as { kind?: unknown }).kind === "outline_unconfirmed");
+}
+
+/** 论点未经确认就签发的理由：去控制字符、压空白，4～200 字；不合格返回 null。 */
+export function outlineUnconfirmedReason(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const t = raw.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  if ([...t].length < 4) return null;
+  return [...t].slice(0, 200).join("");
+}

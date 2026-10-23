@@ -486,6 +486,8 @@ export interface DocStyleView {
   page_numbers: boolean;
   /** Word 修订里显示的作者名（v9.4 第 22 批）；空 = 缺省“律师审定（Kimi Work 辅助起草）”。 */
   redline_author: string | null;
+  /** 律所名称：修订署名不填时，对外版修订稿用它作作者名（10-23 拍板）。 */
+  firm_name?: string | null;
   template: { name: string; sha256: string; updated_at: string; header_text: string; footer_text: string; looks_case_specific: boolean } | null;
 }
 
@@ -929,6 +931,23 @@ export const api = {
     invoke<{ filename: string; html: string; kind: "docx" | "xlsx"; summary: Record<string, unknown> }>("artifacts.render_html", { artifact_version_id: artifactVersionId }),
   /** 材料全文（审查工作台左栏；按段落）。 */
   materialText: (documentVersionId: string) => invoke<{ filename: string; paragraphs: string[] }>("materials.text", { document_version_id: documentVersionId }),
+  // 本所范本库（v9.4 第 24 批，C1 #23）：律师主动放入、去掉客户信息的范本；只在本机比对，不发给 AI
+  firmTemplates: () => invoke<{ templates: FirmTemplate[]; contract_types: string[] }>("firm_templates.list"),
+  firmTemplate: (templateId: string) => invoke<{ template: FirmTemplate; clauses: { seq: number; heading: string; text: string }[] }>("firm_templates.get", { template_id: templateId }),
+  /** 放入范本：file 为开发形态的文件输入框；桌面客户端经系统对话框（pick = true）；也可粘贴 text。返回 null = 取消选择文件。 */
+  addFirmTemplate: async (meta: { title: string; contract_type: string; stance?: string; note?: string; replace_hits?: boolean }, src: { text: string } | { file: File } | { handle: string; name: string }): Promise<FirmTemplateAddResult> => {
+    if ("text" in src) return invoke<FirmTemplateAddResult>("firm_templates.add", { ...meta, text: src.text });
+    if ("handle" in src) return invoke<FirmTemplateAddResult>("firm_templates.add", { ...meta, file_handle: src.handle, filename: src.name });
+    const data_base64 = btoa(Array.from(new Uint8Array(await src.file.arrayBuffer()), (b) => String.fromCharCode(b)).join(""));
+    return invoke<FirmTemplateAddResult>("firm_templates.add", { ...meta, data_base64, filename: src.file.name });
+  },
+  pickTemplateFile: async (): Promise<{ handle: string; name: string } | null> => {
+    if (!window.zrKernel?.pickFiles) return null;
+    const f = ((await window.zrKernel.pickFiles({ extensions: ["docx", "txt"], multiple: false })) ?? [])[0];
+    return f ? { handle: f.handle, name: f.name } : null;
+  },
+  removeFirmTemplate: (templateId: string) => invoke<{ templates: FirmTemplate[] }>("firm_templates.remove", { template_id: templateId }),
+  templatesForCard: (matterId: string, cardId: string) => invoke<{ items: TemplateMatch[]; library_size: number }>("firm_templates.for_card", { matter_id: matterId, card_id: cardId }),
   riskCards: (matterId: string, f: { run_id?: string; document_version_id?: string | null } = {}) => invoke<{ cards: RiskCard[]; progress: RiskProgress }>("riskcards.list", { matter_id: matterId, ...f }),
   /** 律师改风险卡的性质（复核 RB16B-03）。 */
   setRiskCardNature: (matterId: string, cardId: string, nature: "must" | "should" | "negotiable") => invoke<{ card: RiskCard }>("riskcards.set_nature", { matter_id: matterId, card_id: cardId, nature }),
@@ -1285,9 +1304,41 @@ export const members = {
   // 本人离所交接：清单与“交给同事”
   offboarding: () => invoke<{ matters: OffboardingItem[]; pending: number; personal?: { writing_prefs: boolean; qa_conversations: number } }>("members.offboarding"),
   // 离所时清除本人在这台电脑上的个人设置（写作偏好；复核 Q4 建议 3）
+  // 被停用的电脑启动时提示清除本人个人数据（D-144，10-23 拍板：只提示）
+  personalStatus: () => invoke<{ device_revoked: boolean; writing_prefs: boolean; qa_conversations: number; prompt_clear: boolean }>("members.personal_status"),
   offboardClearPersonal: () => invoke<{ cleared: { writing_prefs: number; qa_conversations: number }; note: string }>("members.offboard_clear_personal"),
   offboardHandoff: (matterId: string, toUser: string) => invoke<{ relay: "done" | "not_needed" | "pending"; owner_set: boolean; note: string; item: OffboardingItem }>("members.offboard_handoff", { matter_id: matterId, to_user: toUser }),
 };
+
+export interface FirmTemplate {
+  template_id: string;
+  title: string;
+  contract_type: string;
+  stance: string | null;
+  note: string | null;
+  source_name: string | null;
+  clauses: number;
+  sha256: string;
+  created_by: string;
+  created_at: string;
+}
+
+export type FirmTemplateAddResult =
+  | { status: "saved"; template: FirmTemplate; replaced: number }
+  | { status: "needs_cleanup"; hits: { seq: number; heading: string; kind: string; text: string; reason: string }[]; clauses: number };
+
+export interface TemplateMatch {
+  template_id: string;
+  title: string;
+  contract_type: string;
+  stance: string | null;
+  stance_differs: boolean;
+  same_type: boolean;
+  seq: number;
+  heading: string;
+  text: string;
+  score: number;
+}
 
 export interface RosterMember {
   member_id: string;

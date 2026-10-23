@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { nav } from "../App.tsx";
 import { api } from "../api.ts";
 import { cardGets, cardGives, COMING_SOON, LINE_LABELS, SCENARIOS, type BusinessLine } from "../lib/scenarios.ts";
+import { FirmTemplates } from "../components/FirmTemplates.tsx";
 
 type Skill = { id: string; title: string; description: string; version: string; tier: string; lines: string[] };
 
@@ -104,9 +105,11 @@ export function MethodsPage() {
           </div>
         )}
 
+        <FirmTemplates />
+
         <div className="section-title">即将推出</div>
         <ul className="plain-list muted">
-          <li>本所规则与模板：由律所管理员审核发布后，所有律师可用。</li>
+          <li>本所规则与范本统一下发：由律所管理员审核发布后，所有律师的电脑都能用（现在的本所范本每台电脑各自放入）。</li>
           <li>个人模板：把常用做法保存为自己的模板。</li>
         </ul>
       </div>

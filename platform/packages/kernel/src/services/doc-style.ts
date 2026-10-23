@@ -20,6 +20,8 @@ export interface DocStyleView {
   page_numbers: boolean;
   /** Word 修订里显示的作者名（v9.4 第 22 批，C1 #4）：空 = 缺省“律师审定（Kimi Work 辅助起草）”。 */
   redline_author: string | null;
+  /** 激活记录里的律所名称（没激活为 null）：修订署名不填时，对外版修订稿用它作作者名（10-23 拍板）。 */
+  firm_name: string | null;
   /** 律所模板：页眉页脚里的文字给律师确认（复核 R15A-09）；looks_case_specific = 像是具体案件的信息（案号、“诉”、书名号标题等）。 */
   template: { name: string; sha256: string; updated_at: string; header_text: string; footer_text: string; looks_case_specific: boolean } | null;
 }
@@ -65,6 +67,7 @@ export function docStyleView(db: KernelDb, tenantId: string, firmName: string | 
     body: r?.body ?? "song-xiaosi",
     page_numbers: r ? r.page_numbers === 1 : true,
     redline_author: r?.redline_author ?? null,
+    firm_name: firmName,
     template: (() => {
       if (!r?.template || !r.template_sha256) return null;
       const t = parseCached(r.template_sha256, r.template);
@@ -131,7 +134,7 @@ export function setDocTemplate(db: KernelDb, tenantId: string, name: string | nu
   return { sha256: sha };
 }
 
-/** 修订稿用的作者名：这台电脑设置的修订署名；没设返回 null（调用方用缺省）。 */
-export function redlineAuthorOf(db: KernelDb, tenantId: string): string | null {
-  return rowOf(db, tenantId)?.redline_author ?? null;
+/** 修订稿用的作者名：这台电脑设置的修订署名；没设时对外版用本所名称（10-23 拍板），内部版返回 null（调用方用缺省）。 */
+export function redlineAuthorOf(db: KernelDb, tenantId: string, audience: "external" | "internal" = "internal", firmName: string | null = null): string | null {
+  return rowOf(db, tenantId)?.redline_author ?? (audience === "external" ? firmName : null);
 }

@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
-import { api, onKernelEvent, recovery, updates, type UpdateStatus } from "./api.ts";
+import { api, members, onKernelEvent, recovery, updates, type UpdateStatus } from "./api.ts";
 import { Home } from "./pages/Home.tsx";
 import { MattersPage } from "./pages/Matters.tsx";
 import { MatterPage } from "./pages/Matter.tsx";
@@ -141,6 +141,24 @@ export function App() {
       .then((s: any) => setReminder(recoveryReminder(s)))
       .catch(() => setReminder(null));
   }, [boot, route.page]);
+  // 被停用的电脑（D-144，10-23 拍板：只提示、不自动清除）：每次启动提示一次，律师自己决定是否清除写作偏好与问答记录
+  const [revokedPersonal, setRevokedPersonal] = useState<{ writing_prefs: boolean; qa_conversations: number } | null>(null);
+  const [revokedNote, setRevokedNote] = useState("");
+  useEffect(() => {
+    if (!boot || boot.onboarding) return;
+    void members
+      .personalStatus()
+      .then((s) => setRevokedPersonal(s.prompt_clear ? { writing_prefs: s.writing_prefs, qa_conversations: s.qa_conversations } : null))
+      .catch(() => setRevokedPersonal(null));
+  }, [boot]);
+  const clearRevokedPersonal = async () => {
+    try {
+      setRevokedNote((await members.offboardClearPersonal()).note);
+      setRevokedPersonal(null);
+    } catch (e) {
+      setRevokedNote(`没有清除成功：${(e as Error).message}`);
+    }
+  };
   useEffect(() => {
     const on = () => setRoute(parseHash(window.location.hash));
     window.addEventListener("hashchange", on);
@@ -236,6 +254,25 @@ export function App() {
       <div className="shell-main">
         {kernelNotice && <div className={`banner ${kernelNotice.status === "stopped" ? "banner-red" : "banner-orange"} kernel-banner`}>{kernelNotice.message ?? "后台服务正在恢复…"}</div>}
         {update && !updateDismissed && route.page !== "run" && route.page !== "review" && <UpdateBanner status={update} onDismiss={() => setUpdateDismissed(true)} />}
+        {revokedPersonal && (
+          <div className="banner banner-orange" role="status">
+            这台电脑已被律所停用。你在这台电脑上还有{[revokedPersonal.writing_prefs ? "写作偏好" : "", revokedPersonal.qa_conversations > 0 ? `${revokedPersonal.qa_conversations} 个问答` : ""].filter(Boolean).join("和")}，要清除吗？事项材料与成果按律所制度处理，这里不删。{" "}
+            <button className="btn-link" onClick={() => void clearRevokedPersonal()}>
+              清除我的个人数据
+            </button>
+            <button className="btn-link banner-later" onClick={() => setRevokedPersonal(null)}>
+              先不清除
+            </button>
+          </div>
+        )}
+        {revokedNote && !revokedPersonal && (
+          <div className="banner banner-neutral" role="status">
+            {revokedNote}{" "}
+            <button className="btn-link banner-later" onClick={() => setRevokedNote("")}>
+              知道了
+            </button>
+          </div>
+        )}
         {boot.restoredAt && Date.now() - Date.parse(boot.restoredAt) < 14 * 86400_000 && route.page === "home" && (
           <div className="banner banner-orange">
             这台电脑是从备份恢复的（{fmtDate(boot.restoredAt)}）。如果原来那台电脑丢了或被偷，请马上告诉律所管理员：当前版本不能单独停用原电脑，管理员会为你重新办理入组。

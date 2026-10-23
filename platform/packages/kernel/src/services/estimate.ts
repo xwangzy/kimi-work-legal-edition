@@ -15,18 +15,23 @@ export interface Estimate {
   breakdown: { item: string; points: number }[];
   valid_seconds: number;
   assumptions: string[];
+  /** 不调用 AI 的本机流程（10-23 拍板：不计点）：预计与实扣都是 0 点。 */
+  local?: true;
 }
 
-/** v0 费率：与第 3 篇规格卡对外点数对齐（S1 30 点起、S1b 10 点起、S2 40 点起、A1 上限 60）。 */
+/** v0 费率：与第 3 篇规格卡对外点数对齐（S1 30 点起、A1 上限 60）。 */
 const TABLE: Record<string, { base: number; per_doc: number; per_page: number; cap: number }> = {
   "s1.contract_review": { base: 30, per_doc: 10, per_page: 0.5, cap: 200 },
-  "s1b.draft_compare": { base: 10, per_doc: 4, per_page: 0.2, cap: 80 },
-  "s2.case_file": { base: 40, per_doc: 2, per_page: 0.3, cap: 300 },
-  "s6.redaction": { base: 5, per_doc: 2, per_page: 0.1, cap: 60 },
   "a1.agent_task": { base: 20, per_doc: 5, per_page: 0, cap: 60 }, // A1 默认单任务上限 60 点
 };
 
+/** 不调用 AI 的本机流程（回稿比对、整理案卷、对外脱敏件）：10-23 拍板不计点（原 S1b 10、S2 40、S6 5 点起）。 */
+const LOCAL = new Set(["s1b.draft_compare", "s2.case_file", "s6.redaction"]);
+
 export function estimatePoints(input: EstimateInput): Estimate {
+  if (LOCAL.has(input.scenario)) {
+    return { scenario: input.scenario, points: 0, breakdown: [], valid_seconds: 900, assumptions: [], local: true };
+  }
   const t = TABLE[input.scenario];
   if (!t) {
     return {
@@ -54,6 +59,7 @@ export function estimatePoints(input: EstimateInput): Estimate {
   };
 }
 
+/** 单任务点数上限；本机流程为 0（不计点）。 */
 export function scenarioCap(scenario: string): number {
   return TABLE[scenario]?.cap ?? 0;
 }

@@ -113,7 +113,7 @@ export function DocStyle() {
         <label className="field">
           <span>修订署名（Word 修订里显示的作者）</span>
           <input value={draft.redline_author ?? ""} maxLength={30} placeholder="律师审定（Kimi Work 辅助起草）" onChange={(e) => set({ redline_author: e.target.value || null })} aria-label="修订署名" />
-          <small className="muted">不填用括号里的缺省写法。写本所名称或执业律师姓名时，对方打开修订稿能看到。</small>
+          <small className="muted">{draft.redline_author ? "对外版和内部版都用这个署名，对方打开对外版修订稿能看到。" : v?.firm_name ? `不填时：对外版用本所名称“${v.firm_name}”，内部版用括号里的缺省写法。` : "不填用括号里的缺省写法。写本所名称或执业律师姓名时，对方打开修订稿能看到。"}</small>
         </label>
         <div className="settings-choice">
           <button className="btn-primary btn-sm" disabled={busy} onClick={() => void run(() => api.setDocStyle({ letterhead: draft.letterhead, letterhead_name: draft.letterhead_name, letterhead_lines: draft.letterhead_lines, body: draft.body, page_numbers: draft.page_numbers, redline_author: draft.redline_author ?? "" }), "已保存")}>

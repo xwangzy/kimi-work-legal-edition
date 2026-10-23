@@ -10,7 +10,7 @@ import { fmtTime } from "../lib/labels.ts";
 import { Select } from "./Select.tsx";
 
 export function Offboarding() {
-  const [data, setData] = useState<{ matters: OffboardingItem[]; pending: number; personal?: { writing_prefs: boolean } } | null>(null);
+  const [data, setData] = useState<{ matters: OffboardingItem[]; pending: number; personal?: { writing_prefs: boolean; qa_conversations: number } } | null>(null);
   const [personalNote, setPersonalNote] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState<string | null>(null);

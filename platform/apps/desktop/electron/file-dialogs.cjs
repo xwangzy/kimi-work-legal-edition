@@ -22,6 +22,8 @@ const OPEN_METHODS = new Map([
   ["onboarding.restore", "file"],
   // 第 15 批 B-4：上传律所 Word 模板
   ["doc_style.set_template", "file"],
+  // 本所范本库放入范本（v9.4 第 24 批）
+  ["firm_templates.add", "file"],
 ]);
 /** 选文件夹类方法（第 14 批）：文件夹句柄换成内核参数名。 */
 const FOLDER_METHODS = new Map([
