@@ -68,6 +68,8 @@ export interface PackageRow {
   version: number;
   audience?: string | null;
   status: string;
+  /** 内核按“同一份文件”判断的是否最新版（v9.4 第 25 批）；旧内核没有这一项时按种类推算。 */
+  is_latest?: boolean;
 }
 export type PackageReason = "internal" | "not_signed" | "superseded" | "rejected";
 export const PACKAGE_REASON_TEXT: Record<PackageReason, string> = {
@@ -85,7 +87,7 @@ export function deliveryPackage<T extends PackageRow>(rows: readonly T[]): { rea
   const ready: T[] = [];
   const held: { row: T; reason: PackageReason }[] = [];
   for (const r of rows) {
-    const isLatest = latest.get(`${r.kind}\u0000${r.audience ?? ""}`) === r.version;
+    const isLatest = typeof r.is_latest === "boolean" ? r.is_latest : latest.get(`${r.kind}\u0000${r.audience ?? ""}`) === r.version;
     const reason: PackageReason | null = !isLatest || r.status === "superseded" ? "superseded" : r.status === "rejected" ? "rejected" : r.status !== "approved" ? "not_signed" : (r.audience ?? "internal") === "internal" ? "internal" : null;
     if (reason) held.push({ row: r, reason });
     else ready.push(r);

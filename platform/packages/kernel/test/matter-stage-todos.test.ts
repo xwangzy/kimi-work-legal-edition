@@ -206,7 +206,7 @@ test("待办：增改删与完成；校验；AI 完成的任务推出“待你�
 
 test("Agent 的事项口径带上阶段、事件时点与地域（没填的不写）", async () => {
   const src = readFileSync(repo("packages/kernel/src/executor/executor.ts"), "utf8");
-  assert.ok(src.includes("分析截止日=${ctxM.asOf}${ctxM.facts}\\n"), "A1 任务的事项口径");
+  assert.ok(src.includes("分析截止日=${asOf}${facts}\\n"), "A1 任务的事项口径");
   assert.ok(src.includes("分析截止日=${ctxM.asOf}${ctxM.facts}；场景"), "S1 默认路径的事项口径");
 });
 

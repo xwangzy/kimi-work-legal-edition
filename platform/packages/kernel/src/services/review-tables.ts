@@ -17,6 +17,7 @@ import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { locateQuote } from "./review-cards.ts";
+import { tableLineage } from "./artifact-lineage.ts";
 
 export type ColumnFormat = "text" | "date" | "money" | "yesno" | "choice";
 export interface TableColumn {
@@ -466,9 +467,9 @@ export function exportTable(deps: { db: KernelDb; blobs: BlobStore; tokens: Matt
   deps.db.tx(() => {
     const v = deps.db.get<{ next: number }>(`SELECT COALESCE(MAX(version), 0) + 1 AS next FROM artifact_versions WHERE matter_id = ? AND kind = 'review_grid' AND audience = 'internal'`, [matterId])!;
     deps.db.run(
-      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by)
-       VALUES (?,?,?,NULL,'review_grid',?,NULL,'internal','draft',?,?,?,'[]',?,?)`,
-      [id, matter.tenant_id, matterId, v.next, filename, stored.sha256, stored.storage_uri, JSON.stringify({ table_id: tableId, template: table.template, documents: docs.length, columns: table.columns.length, verified_cells: verified, cells_sha256: sha256Hex(JSON.stringify(cells.map((c) => [c.cell_id, c.state]))) }), createdBy],
+      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by, lineage)
+       VALUES (?,?,?,NULL,'review_grid',?,NULL,'internal','draft',?,?,?,'[]',?,?,?)`,
+      [id, matter.tenant_id, matterId, v.next, filename, stored.sha256, stored.storage_uri, JSON.stringify({ table_id: tableId, template: table.template, documents: docs.length, columns: table.columns.length, verified_cells: verified, cells_sha256: sha256Hex(JSON.stringify(cells.map((c) => [c.cell_id, c.state]))) }), createdBy, tableLineage(tableId)],
     );
   });
   return { artifact_version_id: id, filename, rows: docs.length };
@@ -658,9 +659,9 @@ export function draftFromTable(deps: { db: KernelDb; blobs: BlobStore; tokens: M
   deps.db.tx(() => {
     const v = deps.db.get<{ next: number }>(`SELECT COALESCE(MAX(version), 0) + 1 AS next FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = 'internal'`, [matterId, kind])!;
     deps.db.run(
-      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by)
-       VALUES (?,?,?,NULL,?,?,NULL,'internal','draft',?,?,?,?,?,?)`,
-      [id, matter.tenant_id, matterId, kind, v.next, filename, stored.sha256, stored.storage_uri, JSON.stringify(openItems), JSON.stringify({ table_id: tableId, template: table.template, documents: docs.length, open_cells: open }), createdBy],
+      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by, lineage)
+       VALUES (?,?,?,NULL,?,?,NULL,'internal','draft',?,?,?,?,?,?,?)`,
+      [id, matter.tenant_id, matterId, kind, v.next, filename, stored.sha256, stored.storage_uri, JSON.stringify(openItems), JSON.stringify({ table_id: tableId, template: table.template, documents: docs.length, open_cells: open }), createdBy, tableLineage(tableId)],
     );
   });
   return { artifact_version_id: id, filename, open };

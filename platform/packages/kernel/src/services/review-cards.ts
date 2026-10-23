@@ -21,6 +21,7 @@ import type { BlobStore } from "../blobs.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { citationsVerify } from "../tools/tools/citations.ts";
 import { applyStructuredPatches, type PatchConflict, type PatchResult, type StructuredPatch } from "./structured-patch.ts";
+import { docLineage } from "./artifact-lineage.ts";
 
 export const RISK_CARD_LIMITS = { perCall: 60, perRun: 300, field: 4_000, anchor: 2_000 } as const;
 export const FACT_LIMITS = { perCall: 120, perRun: 600, field: 2_000 } as const;
@@ -1038,8 +1039,8 @@ export function exportReviewTable(
   deps.db.tx(() => {
     const v = deps.db.get<{ next: number }>(`SELECT COALESCE(MAX(version), 0) + 1 AS next FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = 'internal'`, [input.matter_id, kind])!;
     deps.db.run(
-      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by)
-       VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,'[]',?,?)`,
+      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by, lineage)
+       VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,'[]',?,?,?)`,
       [
         id,
         matter.tenant_id,
@@ -1052,6 +1053,7 @@ export function exportReviewTable(
         stored.storage_uri,
         JSON.stringify({ source_document_version_id: input.document_version_id ?? null, cards: cards.length, decisions_sha256: sha256Hex(JSON.stringify(cards.map((c) => [c.card_id, c.status, c.chosen_level]))) }),
         input.created_by,
+        docLineage(input.document_version_id),
       ],
     );
   });

@@ -17,6 +17,7 @@ import { confirmedView, latestOutline, submitOutline } from "../../services/argu
 import { proposeDraft } from "../../services/review-rules.ts";
 import { fillCells, tableForAgent } from "../../services/review-tables.ts";
 import { acceptedText, changesDocument, listFacts, listRiskCards, submitFacts, submitRiskCards, riskCardProgress } from "../../services/review-cards.ts";
+import { runLineage } from "../../services/artifact-lineage.ts";
 
 function scopeOf(ctx: InvokeCtx): { tenantId: string; matterId: string; runId: string | null } {
   const mid = ctx.claims.mid;
@@ -234,9 +235,9 @@ export function registerToolArtifact(
   ctx.db.tx(() => {
     const v = ctx.db.get<{ next: number }>(`SELECT COALESCE(MAX(version), 0) + 1 AS next FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = 'internal'`, [s.matterId, art.kind])!;
     ctx.db.run(
-      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by)
-       VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,'[]',?,?)`,
-      [id, run.tenant_id, s.matterId, s.runId, art.kind, v.next, art.filename, art.sha256, art.storage_uri, JSON.stringify(art.manifest), run.created_by],
+      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by, lineage)
+       VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,'[]',?,?,?)`,
+      [id, run.tenant_id, s.matterId, s.runId, art.kind, v.next, art.filename, art.sha256, art.storage_uri, JSON.stringify(art.manifest), run.created_by, runLineage(ctx.db, s.runId!, art.kind, art.filename)],
     );
   });
   return { artifact_version_id: id, filename: art.filename, reused: false };

@@ -11,6 +11,7 @@ import { matterLine, SCENARIOS } from "../lib/scenarios.ts";
 import { notifyDataChanged } from "../lib/events.ts";
 import { Modal } from "./Modal.tsx";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
+import { stripDraftMark } from "../lib/rules-title.ts";
 
 let templatesCache: Promise<MatterTemplate[]> | null = null;
 /** 模板清单（内核给，同一会话只取一次）。 */
@@ -172,7 +173,7 @@ export function ReviewRulesWidget({ matter, readOnly }: { matter: Matter; readOn
 
 /** 编辑审查要点：逐条改、加、删、上移；保存为新的一版（审定草稿时草稿随之去掉）。 */
 export function RulesEditor({ matterId, base, draft, activeVersion, plain = (t) => t ?? "", onClose, onSaved }: { matterId: string; base: RuleSet | null; draft: RuleSet | null; activeVersion: number | null; plain?: (t: string | null | undefined) => string; onClose: () => void; onSaved: (r: RuleSets) => void }) {
-  const [title, setTitle] = useState(draft ? plain(draft.title).replace(/（草稿）$/, "") : plain(base?.title));
+  const [title, setTitle] = useState(draft ? stripDraftMark(plain(draft.title)) : plain(base?.title));
   const [rows, setRows] = useState<Row[]>(() => (base?.rules.length ? base.rules.map((r) => ({ topic: plain(r.topic), standard: plain(r.standard), fallback: r.fallback ? plain(r.fallback) : null, red_line: r.red_line ? plain(r.red_line) : null })) : [blankRow()]));
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);

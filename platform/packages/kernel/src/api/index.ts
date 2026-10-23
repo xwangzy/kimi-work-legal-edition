@@ -104,6 +104,7 @@ import { MATTER_STAGES } from "../services/matter-facts.ts";
 import { artifactFactMarks, type FactMark } from "../services/artifact-facts.ts";
 import { artifactCitationBlock, artifactText, checkArtifactCitations, CITATIONS_CASES_CHECK_KEY, uncheckedCitations, withDecisions, type ArtifactCitationCheck, type CitationDecision } from "../services/artifact-citations.ts";
 import { rankTitles, type TitleCandidate } from "../services/title-search.ts";
+import { latestVersionOf, withFileVersions } from "../services/artifact-lineage.ts";
 
 export interface ApiDeps {
   db: KernelDb;
@@ -1611,11 +1612,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const run = requireRunAccess(db, String(p?.run_id ?? ""), id);
       const artifacts = db
         .all<Record<string, unknown>>(
-          `SELECT artifact_version_id, kind, version, audience, status, filename, sha256, created_at, storage_uri
+          `SELECT artifact_version_id, kind, version, audience, status, filename, sha256, created_at, storage_uri, lineage
              FROM artifact_versions WHERE run_id = ? ORDER BY created_at`,
           [run.run_id],
         )
         .map(({ storage_uri, ...r }) => ({ ...r, title: artifactTitle(String(r.artifact_version_id), String(r.filename), String(storage_uri)) }));
+      const artifactsOut = withFileVersions(db, run.matter_id, artifacts as any[]).map(({ lineage: _l, ...r }) => r);
       // 在途出站（闸门已预写、尚未补全的去向记录）：执行位置徽标据此显示“模型推理中/联网检索中”，不靠推断（复核 S5-A04）
       const open = db.all<{ destination_kind: string; n: number }>(
         `SELECT destination_kind, COUNT(*) AS n FROM egress_records WHERE run_id = ? AND completed = 0 AND outcome = 'sent' GROUP BY destination_kind`,
@@ -1633,7 +1635,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           ? db.all(`SELECT tool_operation_id, tool, operation, status, created_at FROM tool_operations WHERE run_id = ? AND status IN ('pending','unknown') ORDER BY created_at`, [run.run_id])
           : [];
       // is_mine：追问只对发起人显示（复核 B3-B13；内核同样只接受发起人追问）
-      return { run: { ...runOut(run), is_mine: run.created_by === id.userId }, artifacts, inflight, unresolved_operations };
+      return { run: { ...runOut(run), is_mine: run.created_by === id.userId }, artifacts: artifactsOut, inflight, unresolved_operations };
     },
 
     "runs.events": (p, id) => {
@@ -1868,7 +1870,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       requireMatterAccess(db, matterId, id);
       // 带上所属任务的场景、方法模板与开始时刻（Astra M-3：交付件按“事项 → 一次任务”分组，律师关心的是这次要交出去的那几份）
       const rows = db.all<Record<string, unknown>>(
-        `SELECT a.artifact_version_id, a.run_id, a.kind, a.version, a.audience, a.status, a.filename, a.sha256, a.created_at, a.storage_uri,
+        `SELECT a.artifact_version_id, a.run_id, a.kind, a.version, a.audience, a.status, a.filename, a.sha256, a.created_at, a.storage_uri, a.lineage,
                 r.scenario AS run_scenario, json_extract(CASE WHEN json_valid(r.input_snapshot) THEN r.input_snapshot ELSE '{}' END, '$.skill') AS run_skill, r.created_at AS run_created_at
            FROM artifact_versions a LEFT JOIN runs r ON r.run_id = a.run_id
           WHERE a.matter_id = ? ORDER BY a.kind, a.version DESC`,
@@ -1876,7 +1878,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       );
       // 交付件按内容命名（UIUX 增量评审 D-2）：Markdown/文本成果取第一行标题（令牌形态，界面还原代号）；成果不可变，按版本缓存
       return {
-        artifacts: rows.map(({ storage_uri, ...r }) => ({ ...r, title: artifactTitle(String(r.artifact_version_id), String(r.filename), String(storage_uri)) })),
+        // version 为这份文件的第几版、is_latest 为是否最新（v9.4 第 25 批：按同一份文件，不按种类）
+        artifacts: withFileVersions(db, matterId, rows as any[]).map(({ storage_uri, lineage: _l, ...r }) => ({ ...r, title: artifactTitle(String(r.artifact_version_id), String(r.filename), String(storage_uri)) })),
       };
     },
 
@@ -2068,10 +2071,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         fileOk = false;
       }
       const openItems = Array.isArray(art.open_items) ? art.open_items : [];
-      const latest = db.get<{ v: number }>(
-        `SELECT COALESCE(MAX(version), 0) AS v FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = ?`,
-        [art.matter_id, art.kind, art.audience],
-      )!;
+      const latest = { v: latestVersionOf(db, art) }; // 同一份文件的最新版（v9.4 第 25 批：原来按种类，别的任务的同类成果会把它算成旧版）
       const egressSummary = art.run_id ? egressSummaryOf(art.run_id) : null;
       // “你来核对”（v9.2 §4.4；Y4 §5 D-3）：取本任务所用方法模板的质量自检清单；勾选只记录人工核对，不代表系统验证
       const { skillId, items: lawyerChecklist } = lawyerChecklistOf(art.run_id);
@@ -2086,7 +2086,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         status: art.status,
         audience: art.audience,
         kind: art.kind,
-        version: art.version,
+        // 界面显示这份文件的第几版（版本号按种类编号，跨文件连续）
+        version: withFileVersions(db, art.matter_id, [art])[0]!.version,
         is_latest_version: art.version === latest.v,
         completeness: {
           materials,
@@ -2120,8 +2121,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           }
         })(),
         approved_by: (() => {
-          const a = db.get<{ approver_id: string; created_at: string }>(`SELECT approver_id, created_at FROM approvals WHERE artifact_version_id = ? AND decision = 'approved' ORDER BY created_at DESC LIMIT 1`, [art.artifact_version_id]);
-          return a ? { name: displayNameOf(a.approver_id, null), at: a.created_at } : null;
+          const a = db.get<{ approver_id: string; created_at: string; checklist: string | null }>(`SELECT approver_id, created_at, checklist FROM approvals WHERE artifact_version_id = ? AND decision = 'approved' ORDER BY created_at DESC LIMIT 1`, [art.artifact_version_id]);
+          // 不确认论点就签发的理由（10-23 拍板“理由进签发记录”；v9.4 第 25 批走查：记下了却没处显示）
+          const reason = parseJson<Record<string, unknown>>(a?.checklist ?? null, {})?.outline_unconfirmed_reason;
+          return a ? { name: displayNameOf(a.approver_id, null), at: a.created_at, outline_unconfirmed_reason: typeof reason === "string" && reason ? reason : null } : null;
         })(),
         rejected_by: (() => {
           if (art.status !== "rejected") return null;
@@ -2132,7 +2135,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         latest_artifact_version_id:
           art.version === latest.v
             ? art.artifact_version_id
-            : (db.get<{ id: string }>(`SELECT artifact_version_id AS id FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = ? ORDER BY version DESC LIMIT 1`, [art.matter_id, art.kind, art.audience])?.id ?? null),
+            : (db.get<{ id: string }>(`SELECT artifact_version_id AS id FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = ? AND lineage IS ? ORDER BY version DESC LIMIT 1`, [art.matter_id, art.kind, art.audience, art.lineage ?? null])?.id ?? null),
         // 论点未经确认（10-23 拍板）：签发必过项——写一句不确认就签发的理由（进签发记录），或回任务页确认论点后重新生成
         outline_unconfirmed: hasOutlineUnconfirmed(openItems),
         blockers: [
@@ -2194,10 +2197,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         throw new DomainError("approval_invalidated", "批准未绑定当前文件 hash（内容已变化或版本不符）", 409);
       }
       if (art.status !== "pending_review") throw new DomainError("conflict", `当前状态 ${art.status} 不能批准（须先提交复核）`, 409);
-      const latest = db.get<{ v: number }>(
-        `SELECT COALESCE(MAX(version), 0) AS v FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = ?`,
-        [art.matter_id, art.kind, art.audience],
-      )!;
+      const latest = { v: latestVersionOf(db, art) }; // 同一份文件的最新版（v9.4 第 25 批：原来按种类，别的任务的同类成果会把它算成旧版）
       if (art.version !== latest.v) {
         throw new DomainError("approval_invalidated", "已有更新版本：批准 A 版不能用于 B 版（§4.4）", 409);
       }
@@ -2369,10 +2369,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (device.status !== "revoked") signerStatus = "active";
         else signerStatus = Date.parse(device.revoked_at) <= Date.parse(signedAt) ? "revoked_before_signing" : "revoked_after_signing";
       }
-      const latest = db.get<{ v: number }>(
-        `SELECT COALESCE(MAX(version), 0) AS v FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = ?`,
-        [art.matter_id, art.kind, art.audience],
-      )!;
+      const latest = { v: latestVersionOf(db, art) }; // 同一份文件的最新版（v9.4 第 25 批：原来按种类，别的任务的同类成果会把它算成旧版）
       const bindingStillCurrent = art.version === latest.v && art.sha256 === ap.artifact_sha256;
       // IM 确认（节点见证）附加校验：受众必须在 internal/client（法院版/对方版必须设备签名）
       const isImWitnessed = ap.assurance_level === "im_witnessed";
@@ -2466,13 +2463,18 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         [id.userId, id.tenantId, RUN_CAP + 1],
       );
       const ART_CAP = 5000;
-      const arts = db.all<{ artifact_version_id: string; matter_id: string; kind: string; version: number; filename: string; storage_uri: string; created_at: string }>(
-        `SELECT a.artifact_version_id, a.matter_id, a.kind, a.version, a.filename, a.storage_uri, a.created_at
+      const arts = db.all<{ artifact_version_id: string; matter_id: string; kind: string; version: number; audience: string; filename: string; storage_uri: string; created_at: string }>(
+        `SELECT a.artifact_version_id, a.matter_id, a.kind, a.version, a.audience, a.filename, a.storage_uri, a.created_at
            FROM artifact_versions a JOIN matter_members mm ON mm.matter_id = a.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL
            JOIN matters m ON m.matter_id = a.matter_id
           WHERE m.tenant_id = ? AND m.status = 'active' AND m.lifecycle <> 'purged' ORDER BY a.created_at DESC LIMIT ?`,
         [id.userId, id.tenantId, ART_CAP + 1],
       );
+      // “第 n 版”按同一份文件（v9.4 第 25 批）：每个事项算一次
+      const fileVer = new Map<string, number>();
+      const byMatter = new Map<string, typeof arts>();
+      for (const a of arts.slice(0, ART_CAP)) byMatter.set(a.matter_id, [...(byMatter.get(a.matter_id) ?? []), a]);
+      for (const [mid, list] of byMatter) for (const r of withFileVersions(db, mid, list)) fileVer.set(r.artifact_version_id, r.version);
       const cands: TitleCandidate[] = [
         ...matters.map((m) => ({ kind: "matter" as const, title: m.title, sub: [m.client_name, m.counterparty].filter(Boolean).join(" / "), at: m.last_at ?? m.created_at, ref: { matter_id: m.matter_id } })),
         ...runs.slice(0, RUN_CAP).map((r) => {
@@ -2482,7 +2484,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           const goal = String(snap?.goal ?? "").replace(/\s+/g, " ").trim();
           return { kind: "run" as const, title: goal || label || "任务", sub: titleOf.get(r.matter_id) ?? "", extra: label, at: r.updated_at, ref: { run_id: r.run_id, matter_id: r.matter_id, scenario: r.scenario, skill, goal } };
         }),
-        ...arts.slice(0, ART_CAP).map((a) => {
+        ...arts.slice(0, ART_CAP).map((a0) => {
+          const a = { ...a0, version: fileVer.get(a0.artifact_version_id) ?? a0.version };
           const title = artifactTitle(a.artifact_version_id, a.filename, a.storage_uri);
           const label = labels[`kind:${a.kind}`] ?? "";
           return { kind: "deliverable" as const, title: title ?? (label || a.filename), sub: titleOf.get(a.matter_id) ?? "", extra: `${label} ${a.filename}`, at: a.created_at, ref: { artifact_version_id: a.artifact_version_id, matter_id: a.matter_id, kind: a.kind, version: a.version, filename: a.filename, title } };

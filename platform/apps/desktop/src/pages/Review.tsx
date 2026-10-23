@@ -450,10 +450,12 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                     : `本次有 ${gaps} 份材料没有读到：缺口已在文件中写明，将随文件告知客户（会写进签发记录）`}
                 </label>
               )}
-              {outlineOpen && (
+              {outlineOpen && pending && (
                 <label className="field review-reason">
                   <span>论点与依据没经你确认就产出了这份成果。不回任务页确认、直接签发的理由（会写进签发记录）</span>
                   <input value={outlineReason} maxLength={200} placeholder="例如：论点已在电话里与合伙人逐条核过" onChange={(e) => setOutlineReason(e.target.value)} aria-label="不确认论点就签发的理由" />
+                  {/* 不足 4 字时“确认签发”不可点，说一句为什么（第 25 批走查） */}
+                  {outlineReason.trim() !== "" && [...outlineReason.replace(/\s+/g, " ").trim()].length < 4 && <small className="muted">理由至少写 4 个字</small>}
                 </label>
               )}
               <label className="review-ack">
@@ -481,7 +483,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
               {/* 复核人署名（Astra M-2）：签发前显示本人，签发后显示签发人与时刻；复核完成不代表合同已签署或建议必然适用 */}
               <p className="muted review-signer">
                 {data.approved_by
-                  ? `签发人：${data.approved_by.name ?? "本所其他成员"}（${fmtTime(data.approved_by.at)}）。`
+                  ? `签发人：${data.approved_by.name ?? "本所其他成员"}（${fmtTime(data.approved_by.at)}）。${data.approved_by.outline_unconfirmed_reason ? `不确认论点就签发的理由：${data.approved_by.outline_unconfirmed_reason}。` : ""}`
                   : data.rejected_by
                     ? `退回人：${data.rejected_by.name ?? "本所其他成员"}（${fmtTime(data.rejected_by.at)}）。`
                     : data.reviewer

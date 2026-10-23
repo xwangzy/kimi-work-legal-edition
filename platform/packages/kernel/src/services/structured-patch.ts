@@ -16,6 +16,7 @@ import { findTokens } from "@zr-legal/tokenizer";
 import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
+import { docLineage } from "./artifact-lineage.ts";
 
 export interface StructuredPatch {
   /** 锚点：原件中要修改的原文（事项令牌形态，与 Agent 看到的一致）。 */
@@ -251,9 +252,9 @@ export function applyStructuredPatches(
   };
   db.run(
     `INSERT INTO artifact_versions
-      (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by)
-     VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,?,?,?)`,
-    [artifactId, doc.tenant_id, doc.matter_id, input.run_id ?? null, kind, v.next, filename, stored.sha256, stored.storage_uri, "[]", JSON.stringify(manifest), input.created_by],
+      (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by, lineage)
+     VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,?,?,?,?)`,
+    [artifactId, doc.tenant_id, doc.matter_id, input.run_id ?? null, kind, v.next, filename, stored.sha256, stored.storage_uri, "[]", JSON.stringify(manifest), input.created_by, docLineage(doc.document_version_id)],
   );
   return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview };
 }

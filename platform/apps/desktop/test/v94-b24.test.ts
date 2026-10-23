@@ -15,7 +15,7 @@ const src = (p: string) => readFileSync(new URL(`../src/${p}`, import.meta.url),
 test("复核页：有“论点未经确认”时出理由输入框，理由不足 4 字时“确认签发”不可点，理由随签发提交", () => {
   const r = src("pages/Review.tsx");
   assert.match(r, /const outlineOpen = data\?\.outline_unconfirmed === true;/);
-  assert.match(r, /outlineOpen && \(\s*<label className="field review-reason">/);
+  assert.match(r, /outlineOpen && pending && \(\s*<label className="field review-reason">/);
   assert.match(r, /aria-label="不确认论点就签发的理由"/);
   // 字数与内核同一算法（压空白后计，复核 Q6-09）
   assert.match(r, /\(outlineOpen && \[\.\.\.outlineReason\.replace\(\/\\s\+\/g, " "\)\.trim\(\)\]\.length < 4\)/);
