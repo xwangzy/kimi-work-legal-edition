@@ -18,12 +18,12 @@
  * - 令牌化降低风险，但不构成匿名化（第 02 篇 §8.3 末段）。
  */
 import { createHmac, hkdfSync } from "node:crypto";
-import { findNicknames, matchDictionary, matcherFor, nicknameSurname, recognizeNames, surnameOf } from "./names.ts";
+import { findNicknames, matchDictionary, matcherFor, nicknameSurname, recognizeNames, stillLooksLikeName, surnameOf } from "./names.ts";
 import { deriveOrgAliases, isGenericAlias, softenBreaks } from "./variants.ts";
 import { findIdentifiers, foldWidth, normalizeValue, type Hit, type IdentifierOptions } from "./patterns.ts";
 
 export { idCardValid, luhnValid, findIdentifiers, foldWidth, normalizeValue, type IdentifierOptions } from "./patterns.ts";
-export { findNicknames, nicknameSurname, recognizeNames } from "./names.ts";
+export { findNicknames, nicknameSurname, recognizeNames, stillLooksLikeName } from "./names.ts";
 export { suspectCounts, suspectedNames, type SuspectConfidence, type SuspectCue, type SuspectedName } from "./candidates.ts";
 export { deriveOrgAliases, extractDefinedAliases, foldText, foldWithMap, FOLD_VERSION, isGenericAlias, shapeFold, VariantMatcher } from "./variants.ts";
 
@@ -232,12 +232,15 @@ export class MatterTokenizer {
     const surnames = new Set<string>();
     const nickAllowed = new Set<string>();
     for (const p of this.parties) if (p.category === "person" || this.fullPseudonym) dict.push(p);
+    // 规则早先认出、现行规则不再认作姓名的表条目（“任务”“权利”；v9.4 第 25 批）：留在表里供还原，不再匹配新文字
+    const retired = (e: TokenEntry) => e.category === "person" && e.source === "recognizer" && !stillLooksLikeName(e.value);
     for (const e of this.byValue.values()) {
       if (e.category === "person" && nicknameSurname(e.value) !== null) continue;
+      if (retired(e)) continue;
       if (e.category === "person" || (e.category === "org" && this.fullPseudonym)) dict.push({ value: e.value, category: e.category });
     }
     for (const p of this.parties) if (p.category === "person") addSurname(surnames, nickAllowed, p.value);
-    for (const e of this.byValue.values()) if (e.category === "person") addSurname(surnames, nickAllowed, e.value);
+    for (const e of this.byValue.values()) if (e.category === "person" && !retired(e)) addSurname(surnames, nickAllowed, e.value);
     hits.push(...matchDictionary(text, dict, taken, "dictionary"));
     // 3) 规则识别的自然人姓名（本段识别出的姓名全文再匹配；昵称形态的交给第 4 步）
     if (this.recognize) {

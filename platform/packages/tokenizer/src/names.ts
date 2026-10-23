@@ -33,12 +33,22 @@ const STOP = new Set([
 // 复核 S6A-04：去掉“均、至、日、方”——“施工方”“甲方”“于近日”“均”这类功能写法太常见，宁可让“张晓方”的“方”照旧截短
 const NAME_OK = new Set([..."月年中之承元万章栋镇路庭书申"]);
 /** 名字（1–2 字）：都是汉字；STOP 字只允许作两字名的末字且须在 NAME_OK 内（单字名“王月”与“官方”“许可”难以区分，宁可不认）。 */
-const GIVEN_NOT = new Set(["双方", "各方", "对方", "我方", "他方", "己方", "一方", "三方", "多方", "四方", "八方", "本月", "当月", "次月", "每月", "当日", "次日", "本年", "当年", "次年"]);
+const GIVEN_NOT = new Set([
+  "双方", "各方", "对方", "我方", "他方", "己方", "一方", "三方", "多方", "四方", "八方", "本月", "当月", "次月", "每月", "当日", "次日", "本年", "当年", "次年",
+]);
+/** 角色与身份词不是名字（“由律师确认”“向股东转让”“董事和监事”；v9.4 第 25 批：方法正文与内核说明里的误认）。 */
+const ROLE_GIVEN = new Set(["律师", "法官", "股东", "董事", "监事", "员工", "职工"]);
+/**
+ * 不会出现在名字里的字（与 STOP 不同：不论边界都不放宽）：虚词、疑问词与法律文书常见动词的用字
+ * （“遇到时告知律师”“上诉范围须律师确认”“正文只写律师告知的”“内容待律师判断”“以哪一份为准时问律师”“合并成一项说明”）。
+ * v9.4 第 25 批：方法正文与内核说明随每个任务发出，这些误认会把“任务”“修订”一类词换成自然人代号。
+ */
+const NOT_GIVEN = new Set([..."且须只取写待按问询告哪些项赔偿监"]);
 const givenOk = (given: string, loose = true) => {
-  if (GIVEN_NOT.has(given)) return false;
+  if (GIVEN_NOT.has(given) || ROLE_GIVEN.has(given)) return false;
   const cs = [...given];
   // loose = 右边界是标点、文末、称谓或身份信息；言语动词与出庭类动词作右边界时不放宽（“李四方辩称”不能读成“李四方”）
-  return cs.length >= 1 && cs.every((c, i) => CJK.test(c) && (!STOP.has(c) || (loose && i === 1 && cs.length === 2 && NAME_OK.has(c))));
+  return cs.length >= 1 && cs.every((c, i) => CJK.test(c) && !NOT_GIVEN.has(c) && (!STOP.has(c) || (loose && i === 1 && cs.length === 2 && NAME_OK.has(c))));
 };
 
 /** 姓名之前若是这些字，优先取较短的候选（“和王明律师”取“王明”而不是“和王明”）。 */
@@ -72,6 +82,9 @@ const COMMON_WORDS = new Set([
   "单位", "单独", "单方", "单价", "盛世", "曲线", "路径", "路面", "游戏", "邓氏", "冷库", "席位", "党委", "党支部", "宫殿", "费用", "卜卦",
   "银行", "海运", "江河", "林地", "田地", "马路", "高度", "温度", "方向", "金属", "石头", "黄色", "龙头", "华人", "周边", "周末", "周年",
   "周期", "周转", "孙子", "孟子", "孔子", "庄子", "韩国", "秦朝", "宋朝", "唐朝", "明朝", "清朝", "汉族", "满族", "蒙古", "鲁迅", "苏联",
+  // 法律文书与方法正文里的常用词（v9.4 第 25 批：“律师的任务说明”“股东权利”“劳动者主张”“出租人解除权”“章程另有规定”曾被认成姓名）
+  "任务", "任何", "任意", "任职", "修改", "修订", "修正", "文稿", "文本", "关键", "单列", "文风", "解除", "权利", "权属", "权益", "权限",
+  "公示", "高管", "董监", "章程", "原样", "迟延", "劳动", "封闭", "容忍", "应付", "应收", "应诉",
 ]);
 
 /** 角色词后紧跟这些，说明是机构（“被告北京……有限公司”）。 */
@@ -101,6 +114,9 @@ const DOTTED_CUT_CHARS = new Set([..."向于在与和及等的为系是已将对
 const ORG_WORD_IN = /(?:有限责任公司|股份有限公司|有限公司|公司|集团|事务所|银行|支行|分行|医院|学校|大学|学院|研究院|研究所|委员会|政府|法院|检察院|公安局|派出所|中心|合作社|工作室|商行|商店|超市|酒店|宾馆|饭店|门市部|经营部)/;
 const ORG_AFTER = /^(?:律师|会计师)?(?:事务所|有限|股份|公司|集团|银行|医院|学校|大学|学院|研究|中心|基金|合伙|工作室|商行|酒店)/;
 
+/** 音译名不用的字：以间隔号分隔的清单（“涉及·不涉及·待确认”“材料载明·推论·待确认”“出庭·补充反证·调查取证”）不是音译名（v9.4 第 25 批）。 */
+const NOT_TRANSLIT = new Set([..."不及涉料载推论待果区间补充反证查调取庭结具材否是确认请求事实理由"]);
+
 function cutDottedTail(last: string): string {
   for (let p = 1; p < last.length; p++) {
     if (DOTTED_CUT_CHARS.has(last[p]!)) return last.slice(0, p);
@@ -126,6 +142,7 @@ function finishDotted(text: string, start: number, raw: string): string | null {
   if (last === full && CJK.test(text[start + raw.length] ?? "")) return null;
   const name = raw.slice(0, raw.length - segs[segs.length - 1]!.length) + last;
   if (name.length > 24 || ORG_WORD_IN.test(name) || ORG_AFTER.test(text.slice(start + name.length))) return null;
+  if ([...name].some((c) => NOT_TRANSLIT.has(c))) return null;
   return name;
 }
 
@@ -333,9 +350,9 @@ function readName(text: string, j: number): string | null {
   }
   const g1 = text[j + s];
   const g2 = text[j + s + 1];
-  if (!g1 || !CJK.test(g1) || STOP.has(g1)) return null;
+  if (!g1 || !CJK.test(g1) || STOP.has(g1) || NOT_GIVEN.has(g1) || (g2 && ROLE_GIVEN.has(g1 + g2))) return null;
   let len = s + 1;
-  if (g2 && CJK.test(g2) && !STOP.has(g2)) len = s + 2;
+  if (g2 && CJK.test(g2) && !STOP.has(g2) && !NOT_GIVEN.has(g2)) len = s + 2;
   const next = text[j + len] ?? "";
   // 姓名后紧跟标点或常见动词、介词：姓名到此为止；否则可能是机构名的开头（“张家港市……有限公司”）
   if (next !== "" && CJK.test(next) && !NAME_DELIM.has(next) && ORG_TAIL.test(text.slice(j))) return null;
@@ -384,6 +401,19 @@ function headerNames(text: string, out: Set<string>): void {
       break;
     }
   }
+}
+
+/**
+ * 规则早先认出、已存进事项令牌表的值，按现行规则还像不像姓名（v9.4 第 25 批）：旧规则把“任务”“权利”“时告知”一类认成过姓名，
+ * 这些条目留在表里（旧成果里的代号照常还原），但不再当作已知姓名去匹配新文字。只核现行规则新增的否定条件，不重跑上下文规则。
+ */
+export function stillLooksLikeName(value: string): boolean {
+  if (DOT_SPLIT.test(value)) return ![...value].some((c) => NOT_TRANSLIT.has(c));
+  const s = surnameAt(value, 0);
+  if (s === 0) return true;
+  const given = value.slice(s);
+  if (COMMON_WORDS.has(value.slice(0, 2)) || ROLE_GIVEN.has(given)) return false;
+  return ![...given].some((c) => NOT_GIVEN.has(c));
 }
 
 /** 规则识别出的候选姓名（去重；不含位置）。 */

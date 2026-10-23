@@ -113,7 +113,8 @@ const OPEN_TOKEN_HOLD = 20;
  */
 const TAIL_HOLD = 32;
 
-const SYSTEM_PROMPT = [
+/** 无事项问答的系统提示（v9.4 第 25 批导出：随每次问答发出，用例 `prompt-text-names` 核对不会被姓名规则误认）。 */
+export const QA_SYSTEM_PROMPT = [
   "你是律师使用的法律问答助手，回答中国法律问题。",
   "回答要准确、简洁，引用法律条文时写明法律名称与条号，并提示需核验现行有效性；不确定时明确说明。",
   "引用法条一律写成《法律或司法解释全称》第X条（需要时加第X款、第X项），便于逐条核对。",
@@ -369,7 +370,7 @@ export class QaChatService {
         conversationId: c.conversation_id,
         tenantId,
         userId,
-        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history.map((m) => ({ role: m.role, content: m.text }))],
+        messages: [{ role: "system", content: QA_SYSTEM_PROMPT }, ...history.map((m) => ({ role: m.role, content: m.text }))],
         ...(partial ? { onDelta: partial.push } : {}),
       });
     } catch (e) {
