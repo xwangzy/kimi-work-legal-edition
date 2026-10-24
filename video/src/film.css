@@ -1,0 +1,6 @@
+/* 片场全局：保证中文字体与抗锯齿，覆盖产品样式里依赖视口的规则 */
+html, body { background: #0a0b0d; }
+body { font-family: "PingFang SC", -apple-system, "SF Pro Text", sans-serif; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+/* 产品样式里 --font-sans 以 Windows 字体优先；片子在 macOS 渲染，统一落到苹方 */
+ .kw { --font-sans: "PingFang SC", -apple-system, "SF Pro Text", sans-serif; --font-doc: "Songti SC", "Source Han Serif SC", serif; }
+.film-window .main { overflow: hidden; }

@@ -1,0 +1,6 @@
+node_modules/
+out/
+.DS_Store
+# 生成物：配乐由 npm run music 生成；v1 成片只留在本机
+public/audio/score.wav
+archive/v1/*.mp4

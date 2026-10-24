@@ -1,0 +1,27 @@
+import { createRequire } from "node:module";
+import { writeFileSync } from "node:fs";
+const require = createRequire(import.meta.url);
+const pw = require("/Users/wangzeyu/.nvm/versions/node/v26.8.1/lib/node_modules/playwright");
+const out = process.argv[2]; const ids = JSON.parse(process.argv[3]);
+const base = "http://localhost:5220/";
+const b = await pw.chromium.launch();
+const mk = async (dark) => { const c = await b.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2, locale: "zh-CN", colorScheme: dark ? "dark" : "light" }); return c.newPage(); };
+let p = await mk(true);
+const dump = () => p.evaluate(() => {
+  document.querySelectorAll("textarea").forEach((t) => { t.textContent = t.value; });
+  document.querySelectorAll("input").forEach((i) => { if (i.type === "checkbox" || i.type === "radio") { if (i.checked) i.setAttribute("checked", ""); else i.removeAttribute("checked"); } else i.setAttribute("value", i.value); });
+  document.querySelectorAll("select").forEach((s) => { [...s.options].forEach((o) => { if (o.selected) o.setAttribute("selected", ""); else o.removeAttribute("selected"); }); });
+  document.querySelectorAll("details").forEach((d) => { if (d.open) d.setAttribute("open", ""); });
+  return { theme: document.documentElement.getAttribute("data-theme"), html: document.body.innerHTML, modal: !!document.querySelector(".modal-backdrop, .modal") };
+});
+const shot = async (n) => { await p.waitForTimeout(250); await p.screenshot({ path: `${out}/${n}.png` }); writeFileSync(`${out}/${n}.json`, JSON.stringify(await dump())); console.log("ok", n); };
+const step = async (name, fn) => { try { await fn(); } catch (e) { console.log("stepfail", name, e.message.split("\n")[0]); } };
+const go = async (h) => { await p.goto(base + h); await p.waitForTimeout(1600); };
+const clickText = async (sel, text) => { await p.locator(sel, { hasText: text }).first().click(); await p.waitForTimeout(700); };
+const RUN = process.argv[4];
+await step("banner", async () => { await go("#/"); const t = p.getByRole("button", { name: "明天提醒" }); if (await t.count()) { await t.click(); await p.waitForTimeout(500); } });
+await step("dflow", async () => { await go("#" + RUN); await clickText("[role=tab], .tabs button", "数据去向"); await shot("d04-run-数据去向"); });
+await step("ddev", async () => { await go("#/connections/device"); await shot("d05-device"); });
+await step("dvis", async () => { await go("#/connections/visibility"); await shot("d06-visibility"); });
+await step("dhome", async () => { await go("#/"); await shot("d01-home"); });
+await b.close();

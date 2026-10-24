@@ -1,0 +1,24 @@
+{
+  "name": "kimi-work-legal-film",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kimi Work 法律行业发行版 · 产品宣传片（Remotion 工程）",
+  "scripts": {
+    "music": "node scripts/make-music.mjs",
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts KimiWorkLegalFilm out/kimi-work-legal-film.mp4",
+    "still": "remotion still src/index.ts KimiWorkLegalFilm out/still.png",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.531",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.531"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "typescript": "5.9.3"
+  },
+  "type": "module"
+}
