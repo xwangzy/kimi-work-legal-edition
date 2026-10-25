@@ -30,6 +30,7 @@ export function MatterBoard({ matter, runs, onChanged, onGo }: { matter: Matter;
   const [egress, setEgress] = useState<{ sent: number; blocked: number; unknown: number }>({ sent: 0, blocked: 0, unknown: 0 });
   // 期限卡同时列本事项的期限提醒（复核 Q1-18：“填期限”打开的是提醒表单，填完回来卡片要能看到）
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
+  const [checks, setChecks] = useState(0);
   useEffect(() => {
     api.reminders(matter.matter_id).then((r) => setReminders(upcomingDeadlines(r.reminders, Date.now(), 3650))).catch(() => setReminders([]));
     api
@@ -51,15 +52,32 @@ export function MatterBoard({ matter, runs, onChanged, onGo }: { matter: Matter;
     <StageStrip matter={matter} readOnly={readOnly || !onChanged} onChanged={onChanged ?? (() => {})} />
     {/* 事项类型的常用方法（v9.4 第 22 批，C1 #20） */}
     <TemplateMethods matter={matter} readOnly={readOnly} />
-    <div className="board">
-      {/* 待办（C1 §3.2）：做什么、谁做、谁复核、期限；AI 完成的任务自动变成“待你复核” */}
-      <Widget title="待办">
-        <MatterTodos matter={matter} readOnly={readOnly} />
-      </Widget>
-      {/* 统一待核清单（v9.4 第 21 批，主文 §6.4）：还等你核什么、去哪里核 */}
-      <Widget title="待核">
-        <PendingChecks matter={matter} {...(onGo ? { onGo } : {})} />
-      </Widget>
+    {/* 固定两栏（第 27 批，评审 U2-29）：左边“等你处理”（待核 + 待办，与首页同名）与最近 AI 记录；右边期限、审查要点 */}
+    <div className="board-2col">
+      <div className="board-col">
+        <Widget title="等你处理">
+          {/* 统一待核清单（v9.4 第 21 批）在前：还等你核什么、去哪里核；没有时不占行 */}
+          <PendingChecks matter={matter} hideEmpty onCount={setChecks} {...(onGo ? { onGo } : {})} />
+          {/* 待办（C1 §3.2）：做什么、谁做、谁复核、期限；AI 完成的任务自动变成“待你复核” */}
+          <MatterTodos matter={matter} readOnly={readOnly} othersCount={checks} />
+        </Widget>
+        <Widget title="最近 AI 记录">
+          {runs.length === 0 && <p className="muted">还没有 AI 记录。</p>}
+          {runs.slice(0, 6).map((r) => (
+            // 任务以目标前 20 字区分（Y4 B-2）；没有目标的显示场景名；时间用相对时间
+            <button key={r.run_id} className="w-link" onClick={() => nav(`/run/${r.run_id}/${matter.matter_id}`)}>
+              {runName(r, 20)} · {RUN_STATUS_LABELS[r.status] ?? "状态未知"} · {fmtRelative(r.created_at)}
+            </button>
+          ))}
+        </Widget>
+        {/* 发送记录不再常驻概览（v9.4 U1 #9）；只有需要核实时才出现，完整记录在“⋯ → 数据去向记录” */}
+        {egress.unknown > 0 && (
+          <Widget title="需要你核实">
+            <p>{egress.unknown} 条记录不确定是否已经发出，请在“⋯ → 数据去向记录”里逐条核实。</p>
+          </Widget>
+        )}
+      </div>
+      <div className="board-col">
       <Widget title="期限">
         {/* 空状态给动作（v9.4 U1 §3.4）：“填期限”直接打开本事项的设提醒表单 */}
         {reminders.slice(0, 3).map((r) => (
@@ -87,21 +105,7 @@ export function MatterBoard({ matter, runs, onChanged, onGo }: { matter: Matter;
           <ReviewRulesWidget matter={matter} readOnly={readOnly || !onChanged} />
         </Widget>
       )}
-      <Widget title="最近 AI 记录">
-        {runs.length === 0 && <p className="muted">还没有 AI 记录。</p>}
-        {runs.slice(0, 6).map((r) => (
-          // 任务以目标前 20 字区分（Y4 B-2）；没有目标的显示场景名；时间用相对时间
-          <button key={r.run_id} className="w-link" onClick={() => nav(`/run/${r.run_id}/${matter.matter_id}`)}>
-            {runName(r, 20)} · {RUN_STATUS_LABELS[r.status] ?? "状态未知"} · {fmtRelative(r.created_at)}
-          </button>
-        ))}
-      </Widget>
-      {/* 发送记录不再常驻概览（v9.4 U1 #9：律师不需要每天看监控指标）；只有需要核实时才出现，完整记录在“⋯ → 数据去向记录” */}
-      {egress.unknown > 0 && (
-        <Widget title="需要你核实">
-          <p>{egress.unknown} 条记录不确定是否已经发出，请在“⋯ → 数据去向记录”里逐条核实。</p>
-        </Widget>
-      )}
+      </div>
     </div>
     </>
   );

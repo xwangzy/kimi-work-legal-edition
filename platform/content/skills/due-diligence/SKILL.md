@@ -6,12 +6,12 @@ when_to_use: 股权收购、增资、资产收购等交易的法律尽调；阶�
 arguments: [stage, deal_type, focus]
 kwl:
   id: due-diligence
-  version: 1.0.0
+  version: 1.1.0
   lines: [非诉]
   chain: dd
   tier: beta
   tools_required: [materials.list, materials.read_excerpt, xlsx.render_table, docx.render_report]
-  tools_optional: [facts.list, facts.submit, riskcards.submit, law.search, law.get_version, law.get_article, citations.verify, calc.interest]
+  tools_optional: [facts.list, facts.submit, riskcards.submit, law.search, law.get_version, law.get_article, citations.verify, calc.interest, calc.labor, calc.deadline]
   outputs: [尽调清单.xlsx, 访谈提纲.docx, 尽调发现表.xlsx, 尽调报告（内部稿）.docx]
   source_lineage: [upstream:legal-agent-skills@83df6b13:nonlit-due-diligence, upstream:legal-agent-skills@83df6b13:nonlit-dd-opinion, upstream:legal-agent-skills@83df6b13:expert-dd-transaction, spec:v9.4评审S1§6.1-6]
 ---
@@ -50,7 +50,7 @@ kwl:
 2. **逐模块核查**：读取材料原文，形成发现。每个发现按 `references/finding-template.md` 写四要素——
    - **事实**：写明材料定位（文件 · 页 · 条）；事实来源分“文件显示 / 目标公司陈述 / 访谈陈述（对象·日期）/ 律师导入的外部查询结果（渠道·查询日）/ 推论”，**陈述不写成已核实**；
    - **法律后果**：依据先用 `law.search`、`law.get_version` 定位，`citations.verify` 核验（需要看要件与例外的用 `law.get_article` 取原文）；核验不通过的写“依据待核实”；
-   - **对交易的影响**：能量化的写公式、基数来源、期间与口径，用受限命令行 Python `decimal` 计算，标“草稿 · 待复核”；量化所需数据缺失的写“待取得数据：……”，不估数；
+   - **对交易的影响**：能量化的写公式、基数来源、期间与口径；利息与违约金用 `calc.interest`，员工经济补偿与违法解除赔偿金用 `calc.labor`，期限届满日用 `calc.deadline`，把工具返回的过程写进发现；没有对应工具的（如欠缴社保估算、税款滞纳）才用受限命令行 Python `decimal` 计算，标“草稿 · 未经金额工具复算”；量化所需数据缺失的写“待取得数据：……”，不估数；
    - **处理方案**：落到交易文件的具体条款类型——交割先决条件、陈述与保证、特别赔偿、价款调整 / 分期 / 共管、交割后承诺；或交割前整改；解决不了的明确写“无法通过交易文件消除，需客户商业判断”。
 3. **分级**：交易障碍 / 重大问题 / 一般问题，每级写理由（对交易目的、价款、时间表的影响）。等级是供律师讨论的初步判断；**不为报告好看降级**，也不因立场有意抬高。
 4. **核查受限事项**（不可省略）：未提供、无法核实、仅有复印件、识别不全、期间不完整、外部查询未做的，逐项写 事项 / 原因 / 可能的风险 / 建议（继续索取、陈述保证覆盖、特别赔偿）。
@@ -67,7 +67,9 @@ kwl:
 | law.get_article | 取条文原文核对要件与例外（可选） | law，article，as_of | 不可用：依据后标“原文未核对” |
 | citations.verify | 核验所引条文 | citations，as_of | 不可用：报告首页写“依据未经核验”，条号后标“待核” |
 | riskcards.submit | 对重大合同具体条款出卡（律师要求时） | document_version_id，cards[] | 不可用：写入发现表，不改用正文冒充风险卡 |
-| calc.interest | 利息类量化（可选） | 本金、期间、利率口径 | 不可用：受限命令行计算并写明公式 |
+| calc.interest | 利息、违约金类量化（可选） | 本金、期间、利率口径 | 不可用：受限命令行计算并写明公式，标“未经金额工具复算” |
+| calc.labor | 员工经济补偿、违法解除赔偿金情景（可选） | 入职日、最后工作日、kind、前十二个月平均工资（当地平均与最低工资只用材料或律师给的数） | 不可用：写公式与“待测算”，不估数 |
+| calc.deadline | 交割前后义务、行政处罚整改等期限届满日（可选） | start，period，rule | 不可用：只写起算事实与期间，届满日标“待律师计算” |
 | xlsx.render_table | 尽调清单、发现表 | title，sheets[{name, columns, rows}] | 不可用：见第 8 节 |
 | docx.render_report | 访谈提纲、内部报告 | title，sections | 不可用：见第 8 节 |
 

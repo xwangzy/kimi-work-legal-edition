@@ -466,7 +466,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     ...(env.KWL_AGENT_HOST_NODE ? { runtime: env.KWL_AGENT_HOST_NODE } : {}),
   });
   const agentClient = kapAgentClient;
-  // A1 工作时限（不含等待律师的时间；W1）：缺省 10 分钟，本机配置可调
+  // A1 工作时限（不含等待律师的时间；W1）：缺省 25 分钟（第 27 批 D-152，原 10 分钟），本机配置可调
   const workLimit = Number(env.ZR_AGENT_WORK_LIMIT_MS);
   const agentWorkLimitMs = Number.isFinite(workLimit) && workLimit >= 1000 ? workLimit : undefined;
   // 总时长上限（含等待律师）：缺省 8 小时，本机配置可调（测试与律所策略）

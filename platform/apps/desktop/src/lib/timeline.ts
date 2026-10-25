@@ -2,8 +2,9 @@
  * 执行态时间线（第 03 篇 §4.3）：事件 → 律师看得懂的步骤（只说事实）。纯函数，可单测（复核 B4-B07/B4-B21/B4-B23 抽出自 RunView）。
  * 律师层（默认可见）与处理细节（默认收起；UIUX P0-4）分开；工程原因码经映射表转中文。
  */
-import type { RunEvent } from "../api.ts";
+import type { RunEvent, RunMode } from "../api.ts";
 import { ARTIFACT_LABELS, methodName, MODE_LABELS, RUN_STATUS_LABELS } from "./labels.ts";
+import { modeChipLabel } from "./mode-options.ts";
 
 export const TOOL_LABELS: Record<string, string> = {
   Read: "读取材料",
@@ -243,13 +244,15 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         steps.push({ key: `${e.event_id}`, icon: "ok", level: "detail", title: "助手已在本机启动", at });
         break;
       case "agent.started":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: `运行模式：${MODE_LABELS[p.mode as keyof typeof MODE_LABELS] ?? p.mode}${p.plan_first ? " · 先给我看计划" : ""}`, at, meta: `数据级别 ${p.data_level ?? "—"}` });
+        // 第 27 批（评审 U3-02）：与输入框的做法胶囊同名，不再写“运行模式：标准（推荐）· 先给我看计划”与“数据级别 L2”
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: `做法：${p.mode in MODE_LABELS ? modeChipLabel({ mode: p.mode as RunMode, planFirst: !!p.plan_first }) : String(p.mode ?? "—")}`, at });
         break;
       case "materials.loaded":
         steps.push({ key: `${e.event_id}`, level: "lawyer", icon: p.failed ? "fail" : "ok", title: Number(p.requested) === 0 ? "开始处理" : `已读完 ${p.loaded}/${p.requested} 份材料${p.failed ? `，${p.failed} 份无法读取` : ""}`, at });
         break;
       case "plan.created":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "内部步骤已排定", at, detail: (p.steps ?? []).join(" → ") });
+        // 内核的内部步骤（“启动 Agent 宿主（独立进程，非系统沙箱）→ 执行并镜像事件 → 结算”）对律师没有信息量，还会被读成安全缺陷：
+        // 不进时间线，只留在任务事件与诊断包里（第 27 批，评审 U3-02）
         break;
       case "agent.tool_started": {
         const name = String(p.tool ?? "");
@@ -454,4 +457,21 @@ export function outcomeReasonLabel(reason: string): string {
   if (OUTCOME_REASON_LABELS[reason]) return OUTCOME_REASON_LABELS[reason]!;
   // 宿主取消时的原因是人写的中文（例如“用户取消”）；英文原因码一律不直接显示
   return /^[\x00-\x7f]*$/.test(reason) ? "其他原因" : reason.slice(0, 40);
+}
+
+/**
+ * 沿用的成果（第 27 批，走查 W-5）：这次产出与本事项之前某次任务的成果逐字相同时，内核不再登记新版本，只记一条 artifact.reused。
+ * 执行页据此说明“结果与之前那次相同，沿用那份文件”并给出入口，不再显示“成果 0、没有生成文件”。同一份文件只列一次。纯函数。
+ */
+export function reusedArtifacts(events: readonly RunEvent[]): { artifact_version_id: string; first_run_id: string | null }[] {
+  const seen = new Set<string>();
+  const out: { artifact_version_id: string; first_run_id: string | null }[] = [];
+  for (const e of events) {
+    if (e.type !== "artifact.reused") continue;
+    const id = String(e.payload?.artifact_version_id ?? "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ artifact_version_id: id, first_run_id: e.payload?.first_run_id ? String(e.payload.first_run_id) : null });
+  }
+  return out;
 }

@@ -6,13 +6,13 @@ when_to_use: 事项已有律师确认的事实（事实时间线）和诉请金�
 arguments: [court]
 kwl:
   id: pleading-draft
-  version: 1.1.1
+  version: 1.2.0
   lines: [诉讼仲裁]
   chain: casefile
   tier: beta
   requires_outline: true
   tools_required: [facts.list, materials.list, docx.render_report, xlsx.render_table]
-  tools_optional: [materials.read_excerpt, law.search, law.get_version, citations.verify, calc.deadline, outline.submit, outline.get]
+  tools_optional: [materials.read_excerpt, law.search, law.get_version, citations.verify, calc.deadline, calc.court_fee, outline.submit, outline.get]
   outputs: [民事起诉状（草稿）.docx, 证据目录.xlsx, 提交前核对清单.xlsx]
   source_lineage: [demo:pleading@v1.3, demo:scene-civil-pleading@v1.0, spec:历史Demo评估与融合方案#3.2-7]
 ---
@@ -51,6 +51,7 @@ kwl:
 | law.search / law.get_version | 请求权基础与行为时法 | query；law + as_of | 未收录：不写条号，列入核对清单 |
 | citations.verify | 核验所引条文 | citations，as_of | 不可用：起诉状不写条号，核对清单注明 |
 | calc.deadline | 诉讼时效届满日（只进核对清单） | 起算事实日，期间，规则 | 不可用：只写起算事实与期间规则，届满日标“待律师计算” |
+| calc.court_fee | 预估预交的案件受理费（只进核对清单，可选） | kind = case_property，amount_yuan，reductions | 不可用：写“诉讼费由律师核算”，不手算 |
 | docx.render_report | 起诉状 | title，sections | 不可用：见第 8 节 |
 | xlsx.render_table | 证据目录、核对清单 | title，sheets | 不可用：见第 8 节 |
 
@@ -65,7 +66,7 @@ kwl:
 - 工作表“证据目录”：证据编号 / 证据名称 / 证据来源（我方·对方·第三方）/ 页数 / 原件或复印件（待核）/ 证明目的 / 对应诉讼请求 / 对应事实编号 / 备注。
 - 工作表“随附材料”：序号 / 材料 / 份数 / 状态（已备·待备）/ 说明（起诉状副本、主体资格证明、授权委托书、律师事务所函与执业证复印件、送达地址确认书等）。
 
-**《提交前核对清单》**（title：`提交前核对清单-<事项简称>`）列：序号 / 核对项 / 要求 / 当前状态 / 依据或来源 / 责任人 / 结论（留空）。核对项至少包括：当事人名称与身份信息完整一致；被告住所与送达地址；案由（由律师按民事案件案由规定确定）；地域管辖、级别管辖、专属管辖及合同中的协议管辖或仲裁条款；诉讼时效及中断事由（届满日由 `calc.deadline` 算出并附过程；工具不可用、或起算事实只到月或不确定时，只写起算事实与期间规则，届满日标“待律师计算”或给区间，不得自行推算）；诉讼请求与计算明细逐项一致、无互斥项重复主张；诉讼费由律师核算；证据目录与证据实物一致、页码连续；起诉状副本份数按被告人数；签名盖章与授权委托书；是否需要申请财产保全及担保；法院对起诉状格式（要素式、模板）的要求。
+**《提交前核对清单》**（title：`提交前核对清单-<事项简称>`）列：序号 / 核对项 / 要求 / 当前状态 / 依据或来源 / 责任人 / 结论（留空）。核对项至少包括：当事人名称与身份信息完整一致；被告住所与送达地址；案由（由律师按民事案件案由规定确定）；地域管辖、级别管辖、专属管辖及合同中的协议管辖或仲裁条款；诉讼时效及中断事由（届满日由 `calc.deadline` 算出并附过程；工具不可用、或起算事实只到月或不确定时，只写起算事实与期间规则，届满日标“待律师计算”或给区间，不得自行推算）；诉讼请求与计算明细逐项一致、无互斥项重复主张；预交的案件受理费用 `calc.court_fee`（kind = case_property，amount_yuan = 诉讼请求金额合计；适用简易程序等减半情形由律师确认）算出预估数并附过程，标“预估，以法院交费通知为准”，不写进诉讼请求金额；工具不可用的写“诉讼费由律师核算”；证据目录与证据实物一致、页码连续；起诉状副本份数按被告人数；签名盖章与授权委托书；是否需要申请财产保全及担保；法院对起诉状格式（要素式、模板）的要求。
 
 ## 6. 质量自检
 - [ ] 事实与理由中的每一句事实都来自律师确认的事实，并注明证据编号。

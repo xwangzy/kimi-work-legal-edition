@@ -289,6 +289,8 @@ export interface DerivedTodo {
   goal: string;
   scenario: string | null;
   filename: string | null;
+  /** 待签发那条的成果种类（第 27 批）。 */
+  artifact_kind?: string;
   done_by_ai: boolean;
   run_id: string | null;
   artifact_version_id: string | null;

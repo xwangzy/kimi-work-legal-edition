@@ -111,7 +111,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
       )}
       {basis && !complete && !refused && (
         <div className="mh-note">
-          {BASIS_FIELDS.filter((f) => basis[f.key] === "pending").map((f) => f.label).join("、")}待确认：模型推理、联网检索与抓取都不会发生，只运行解析、比对、脱敏、法条核验等本机能力。
+          {BASIS_FIELDS.filter((f) => basis[f.key] === "pending").map((f) => f.label).join("、")}待确认：确认前不会把材料发给 AI，也不会联网查询；只能用本机功能（读材料、比对、脱敏、核对法条）。
           {onConsentNotice && (
             <button className="btn-link" onClick={onConsentNotice}>
               生成告知函（草稿）

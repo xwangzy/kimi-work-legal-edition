@@ -63,3 +63,28 @@ test("复核 Q7-01 / Q7-04：音译名与含“项、监、劳”等字的真名
   assert.equal(new MatterTokenizer({ matterKey: KEY, table: old.table() }).tokenize("理查德·史密斯签了字").text, `${e.token}签了字`);
 });
 
+
+test("“承担任何……”不是“担任 + 姓名”（第 27 批真实模型走查：“不承担任何间接损失”的“何间接”曾被认成姓名）；真正的“担任”照常认", async () => {
+  const { recognizeNames } = await import("../src/names.ts");
+  for (const t of ["卖方在本合同项下的全部赔偿责任以已收取价款的 10% 为限，且不承担任何间接损失、利润损失。", "乙方不承担任何间接或附带损失。", "买方不承担任何连带责任。"]) {
+    assert.deepEqual([...recognizeNames(t)], [], t);
+  }
+  assert.ok(recognizeNames("由公司股东会选举产生，担任：张明月，任期三年。").has("张明月"), "“担任：姓名”照常认出");
+});
+
+test("合同里“角色词 + 常用词”不是姓名（第 27 批真实模型走查：卖方严重违约、买方严格按照、乙方全面履行、承租人连续两个月）；早先误认进令牌表的这些值不再匹配新文字", async () => {
+  const { recognizeNames } = await import("../src/names.ts");
+  for (const t of ["卖方严重违约的，买方有权解除合同。", "买方严格按照约定验收。", "乙方全面履行合同义务。", "承租人连续两个月未付租金的，出租人可以解除。", "卖方严重迟延交付的。"]) {
+    assert.deepEqual([...recognizeNames(t)], [], t);
+  }
+  assert.ok(recognizeNames("卖方：严明，男，1980 年出生。").has("严明"), "真名照常认出");
+  assert.ok(recognizeNames("证人连晓峰出庭作证。").has("连晓峰"));
+  // 复核 Q8-01：有明确边界或强证据时，以这四个词开头的真名照常认出（只在“角色词后没有边界”的那一支排除）
+  assert.ok(recognizeNames("原告：严重阳，男，1985 年出生。").has("严重阳"), "逗号边界");
+  assert.ok(recognizeNames("被告全面辩称，双方未约定。").has("全面"), "言语动词边界");
+  assert.ok(recognizeNames("本案由王严格律师代理。").has("王严格"), "称谓");
+  assert.ok(recognizeNames("被告：严格，女，汉族。").has("严格"), "两字真名");
+  assert.ok(recognizeNames("证人全面红出庭作证。").has("全面红"), "出庭类右边界");
+  for (const v of ["何间接", "严重违", "严重迟", "全面履", "连续两"]) assert.equal(stillLooksLikeName(v), false, v);
+  assert.equal(stillLooksLikeName("严格"), true, "两字值可能是以前认对的真名，不退役（复核 Q8-02）");
+});

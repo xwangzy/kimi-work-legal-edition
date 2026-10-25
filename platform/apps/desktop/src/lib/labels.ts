@@ -88,7 +88,7 @@ export const SCENARIO_LABELS: Record<string, string> = {
  * 交付件名称（UIUX 增量评审 D-2）：Agent 成果有内容标题（内核取第一行）时用标题，否则用文件名；工作流成果用固定名称。
  * 标题是令牌形态，传入 restore 才还原代号（下拉框里不能渲染胶囊）。
  */
-export function artifactName(a: { kind: string; filename: string; title?: string | null }, restore?: (t: string) => string): string {
+export function artifactName(a: { kind: string; filename: string; title?: string | null; run_title?: string | null; run_goal?: string | null }, restore?: (t: string) => string): string {
   const agentKind = ["a1_workspace_file", "agent_table", "agent_report", "a1_agent_draft", "a1_agent_draft_partial"].includes(a.kind);
   // 审查意见表、审阅表按所审的合同或表命名（同一事项可有多份），用文件名去掉扩展名（v9.4 第 19 批）
   // v9.4 第 20 批：意见表 Word 版、据审阅表起草的证据目录与尽调发现同样按文件名
@@ -98,7 +98,11 @@ export function artifactName(a: { kind: string; filename: string; title?: string
   // 助手草稿有标题时写“标题（草稿）”，没有标题时沿用固定名称；标题自己已带“（草稿）”时不再重复（v9.4 走查：“研究备忘（草稿）（草稿）”）
   if (a.kind === "a1_agent_draft" || a.kind === "a1_agent_draft_partial") {
     // 第一行是一句话（以句号等结尾，如“时间线草稿已生成。”）不是标题：用固定名称（第 26 批走查）
-    if (!t || /[。！？!?]\s*$/.test(t)) return ARTIFACT_LABELS[a.kind]!;
+    // 第 27 批（评审 U3-09）：这时用所属任务的名字（场景卡名或任务说明前 30 字），两次任务的草稿不再都叫“助手草稿”
+    if (!t || /[。！？!?]\s*$/.test(t)) {
+      const rn = a.run_title || (a.run_goal ?? "").trim() ? runName({ title: a.run_title ?? null, goal: a.run_goal ?? "" }) : null;
+      return rn ? `${rn}（${a.kind === "a1_agent_draft" ? "草稿" : "部分完成"}）` : ARTIFACT_LABELS[a.kind]!;
+    }
     const bare = stripMarkdownInline(t).replace(/[（(]\s*(草稿|初稿|内部稿)\s*[）)]\s*$/, "").trim();
     return `${bare}（${a.kind === "a1_agent_draft" ? "草稿" : "部分完成"}）`;
   }
@@ -151,9 +155,10 @@ export const ARTIFACT_LABELS: Record<string, string> = {
 export const AUDIENCE_LABELS: Record<string, string> = { internal: "内部", client: "客户", counterparty: "相对方", court: "法院" };
 
 export const DEST_LABELS: Record<string, string> = {
-  legal_gateway: "Kimi 模型（经中软安全通道）",
-  maas_model: "Kimi 模型（经中软安全通道）",
-  byok_model: "Kimi 模型（律所自带密钥，不经中软）",
+  // 第 27 批（评审 U3-19）：同一服务一个叫法，与开始前确认一致
+  legal_gateway: "Kimi AI（经中软转发）",
+  maas_model: "Kimi AI（经中软转发）",
+  byok_model: "Kimi AI（律所自己的账号，不经中软）",
   private_model: "律所私有模型",
   search_service: "中软检索服务",
   public_web: "公开网页（本机抓取）",

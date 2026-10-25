@@ -43,7 +43,7 @@ export interface ExecutorDeps {
   signer?: LedgerSigner | undefined;
   /** 事项令牌存储（v9 第 02 篇 §8.3–§8.4：送模型与 Agent 工作区的文本一律是事项令牌形态；缺省时退回 v5 规则遮蔽）。 */
   tokens?: MatterTokenStore | undefined;
-  /** A1 任务的工作时限（毫秒，不含等待律师确认或回答的时间；缺省 10 分钟；本机配置 ZR_AGENT_WORK_LIMIT_MS）。 */
+  /** A1 任务的工作时限（毫秒，不含等待律师确认或回答的时间；缺省 25 分钟，见 AGENT_WORK_LIMIT_MS；本机配置 ZR_AGENT_WORK_LIMIT_MS）。 */
   agentWorkLimitMs?: number | undefined;
   /** A1 任务的总时长上限（毫秒，含等待律师；缺省 8 小时；本机配置 ZR_AGENT_WALL_MS）。 */
   agentWallMs?: number | undefined;
@@ -974,7 +974,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   const identity = { tid: run.tenant_id, uid: run.created_by, mid: run.matter_id, rid: runId, aid: attemptId, fence };
   // 运行意图 → 工具用途（审查 R-09；复审 N-03）：由任务记录（场景）派生，与端点使用同一来源
   const { purpose, fx } = runCapabilities(run.scenario, runModeOf(run.input_snapshot));
-  const timeoutMs = ctx.deps.agentWorkLimitMs ?? 600_000;
+  const timeoutMs = ctx.deps.agentWorkLimitMs ?? AGENT_WORK_LIMIT_MS;
   const wallMs = ctx.deps.agentWallMs ?? AGENT_WALL_MS;
   const taskId = await (async () => {
     assertNotCancelled(db, runId);
@@ -1160,6 +1160,12 @@ class NeedsReconciliation extends Error {
  * 运行令牌的有效期按此上限签发（活性仍由端点与闸门逐次向内核复核，任务终止即失效）。
  */
 export const AGENT_WALL_MS = 8 * 60 * 60_000;
+/**
+ * A1 工作时限缺省值（不含等待律师确认或回答的时间；本机配置 ZR_AGENT_WORK_LIMIT_MS 可调）。
+ * 第 27 批（偏离 D-152）：原为 10 分钟。真实 K3 走查：审一份 11 条采购合同用时约 9.5 分钟（差一点超时），
+ * 劳动仲裁申请书在成文前就用满 10 分钟、以超时结束、没有出文书。花费另有点数上限兜住，时限只防失控，故放宽到 25 分钟（宿主上限 30 分钟以内）。
+ */
+export const AGENT_WORK_LIMIT_MS = 25 * 60_000;
 
 /** 非失败类终态（超时、过期）。 */
 class RunTerminal extends Error {

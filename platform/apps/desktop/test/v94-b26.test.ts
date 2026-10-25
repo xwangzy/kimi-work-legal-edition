@@ -95,7 +95,9 @@ test("开始面板与确认卡：底部按钮贴底（1280×720 不用滚到底�
 });
 
 test("确认卡要点：按性质用不同记号（换成代号打勾、按原文发送橙点、经谁转发箭头），不再一律绿勾", () => {
-  assert.match(read("../src/components/RunSheet.tsx"), /data-kind=\{estimate\.data_where\?\.bullet_kinds\?\.\[i\] \?\? undefined\}/);
+  // 第 27 批（评审 U3-01）：要点抽成共用组件 SendPoints，确认卡与开始面板都用它
+  assert.match(read("../src/components/SendPoints.tsx"), /data-kind=\{dataWhere\?\.bullet_kinds\?\.\[i\] \?\? undefined\}/);
+  assert.match(read("../src/components/RunSheet.tsx"), /<SendPoints dataWhere=\{estimate\.data_where\}>/);
   const css = read("../src/styles.css");
   for (const k of ["route", "plain", "keep", "blocked"]) assert.match(css, new RegExp(`\\.sheet-points li\\[data-kind="${k}"\\]::before`), k);
 });

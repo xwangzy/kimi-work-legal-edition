@@ -21,7 +21,9 @@ test("R-12 步骤时刻：律师层相对时间、处理细节时分秒，悬停
     { event_id: 2, seq: 2, type: "agent.started", payload: { mode: "default", data_level: "L2" }, created_at: at },
   ] as never);
   assert.equal(steps[0]!.at, at);
-  assert.equal(steps[1]!.meta, "数据级别 L2", "说明文字里没有时分秒");
+  // 第 27 批（评审 U3-02）：处理细节不再写“数据级别 L2”，做法与输入框胶囊同名
+  assert.equal(steps[1]!.title, "做法：直接做");
+  assert.equal(steps[1]!.meta, undefined, "说明文字里没有时分秒，也没有数据级别");
   assert.ok(steps.every((s) => !/\d{1,2}:\d{2}:\d{2}/.test(s.meta ?? "")));
 });
 

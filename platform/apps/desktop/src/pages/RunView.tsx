@@ -19,7 +19,7 @@ import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "
 import { nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
 import { currentBadges } from "../lib/badges.ts";
 import { engineHeartbeatMs, hasProgress, mergeProgress, phaseLine, progressActivityKey, progressTexts, retryStoppable, silenceMs, stallThresholdMs, progressView, type ProgressViewModel } from "../lib/progress.ts";
-import { buildSteps, groupSubtaskSteps, keyStepKeys, mergeRepeatSteps, sentByToolCall, toolLabel, type SentInfo, type Step } from "../lib/timeline.ts";
+import { buildSteps, groupSubtaskSteps, keyStepKeys, mergeRepeatSteps, reusedArtifacts, sentByToolCall, toolLabel, type SentInfo, type Step } from "../lib/timeline.ts";
 import { busyRunOfError } from "../lib/start-block.ts";
 import { methodLine, methodShort } from "../lib/run-method.ts";
 import { Select } from "../components/Select.tsx";
@@ -139,6 +139,17 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const cursor = useRef(0);
   const inflight = useRef(false);
   const terminal = TERMINAL_STATUSES.includes(status);
+  // 结果与之前某次任务逐字相同、沿用了那次的文件（第 27 批，走查 W-5）：不再只写“成果 0”
+  const reused = artifacts.length === 0 ? reusedArtifacts(events) : [];
+  // 本任务的成果名用本任务的名字补（第 27 批走查：执行页取成果的接口不带任务名，没有内容标题的助手草稿仍显示“助手草稿”）
+  const runSnap = (() => {
+    try {
+      return typeof run?.input_snapshot === "string" ? JSON.parse(run.input_snapshot) : (run?.input_snapshot ?? {});
+    } catch {
+      return {};
+    }
+  })();
+  const withRun = (a: any) => ({ ...a, run_title: a.run_title ?? runSnap.title ?? null, run_goal: a.run_goal ?? runSnap.goal ?? run?.goal ?? null });
   const downloadOne = (a: any) =>
     void api
       .downloadArtifact(a.artifact_version_id, a.filename)
@@ -527,7 +538,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   }
 
   return (
-    <div className={`exec${paneCollapsed ? " exec-pane-collapsed" : ""}`}>
+    // 第 27 批（评审 U3-11）：执行页也有 <main> 地标（读屏“跳到正文”；原来是唯一没有的主页面）
+    <main className={`exec${paneCollapsed ? " exec-pane-collapsed" : ""}`}>
       {/* 两栏（v9.4 第 20 批，U1 §3.2 页面模板“工作台”）：过程在左、成果在右；材料收成标题下的“材料 n 份 ▾” */}
 
       <section className="exec-mid">
@@ -795,6 +807,22 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             </button>
           </div>
         )}
+        {terminal && (status === "succeeded" || status === "partial") && reused.length > 0 && (
+          <div className="card done-files">
+            <div className="title">这次的结果与之前一次任务完全相同，沿用了那次的{reused.length > 1 ? ` ${reused.length} 份` : ""}文件</div>
+            <p className="muted">内容一字不差时不另存一份新版本，复核与签发都在原来那份上进行。</p>
+            <div className="banner-actions">
+              <button className="btn btn-sm" onClick={() => nav(`/review/${reused[0]!.artifact_version_id}`)}>
+                打开那份文件
+              </button>
+              {reused[0]!.first_run_id && (
+                <button className="btn-link" onClick={() => nav(`/run/${reused[0]!.first_run_id}/${matterId}`)}>
+                  看那次任务
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         {/* 首屏下载入口（Z3 评审 #3）：没有审查意见的任务，完成后在中栏直接列出成果，不必先切右栏 */}
         {terminal && !hasRiskEntry && (status === "succeeded" || status === "partial") && artifacts.length > 0 && (
           <div className="card done-files">
@@ -811,7 +839,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                       setTab("artifact");
                     }}
                   >
-                    {artifactName(a, (t) => restoredPlain(t, tokenMap))}
+                    {artifactName(withRun(a), (t) => restoredPlain(t, tokenMap))}
                   </button>
                   <span className="spacer" />
                   <button className="btn-ghost btn-sm" onClick={() => downloadOne(a)}>
@@ -951,14 +979,14 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                   <div className="skeleton-line short" />
                 </div>
               )}
-              {artifactsLoaded && artifacts.length === 0 && <p className="muted">{terminal ? "本任务没有生成文件；结论见左侧回复。" : "任务完成后，生成的文件会出现在这里。"}</p>}
+              {artifactsLoaded && artifacts.length === 0 && <p className="muted">{terminal ? (reused.length > 0 ? "结果与之前一次任务相同，沿用了那次的文件（见左侧）。" : "本任务没有生成文件；结论见左侧回复。") : "任务完成后，生成的文件会出现在这里。"}</p>}
               {artifacts.length > 0 && (
                 <Select
                   className="artifact-select"
                   value={selected ?? ""}
                   onChange={setSelected}
                   aria-label="选择交付件"
-                  options={artifacts.map((a) => ({ value: a.artifact_version_id, label: `${artifactName(a, (t) => restoredPlain(t, tokenMap))} · v${a.version}` }))}
+                  options={artifacts.map((a) => ({ value: a.artifact_version_id, label: `${artifactName(withRun(a), (t) => restoredPlain(t, tokenMap))} · v${a.version}` }))}
                 />
               )}
               {selected && preview && <SafePreview filename={preview.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} {...(previewMarks ? { cites: previewMarks } : {})} />}
@@ -970,7 +998,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                   {artifacts.map((a) => (
                     <div key={a.artifact_version_id} className="hist-row">
                       <div>
-                        <b>{artifactName(a, (t) => restoredPlain(t, tokenMap))}</b> <span className="tag tag-gray">v{a.version}</span> <span className="tag tag-gray">{ARTIFACT_STATUS_LABELS[a.status] ?? "状态未知"}</span>
+                        <b>{artifactName(withRun(a), (t) => restoredPlain(t, tokenMap))}</b> <span className="tag tag-gray">v{a.version}</span> <span className="tag tag-gray">{ARTIFACT_STATUS_LABELS[a.status] ?? "状态未知"}</span>
                       </div>
                       <div className="muted">{fmtTime(a.created_at)}</div>
                     </div>
@@ -1023,7 +1051,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
         </div>
       </aside>
       )}
-    </div>
+    </main>
   );
 }
 

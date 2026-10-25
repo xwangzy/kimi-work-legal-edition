@@ -1354,7 +1354,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       estimates.set(estimateId, { estimate_id: estimateId, matter_id: matterId, scenario: p.scenario, points: est.points, expires: Date.now() + est.valid_seconds * 1000, input: p });
       // 数据去向预览（§15.2：先预估、后确认——预计点数与数据去向同时展示）。按强制点的实际结果生成（复核 S5-A08）：不会发送时写“不会发送：原因”
       const endpointLabels: Record<string, string> = {
-        standard: "Kimi AI（经中软安全通道）",
+        // 第 27 批（评审 U3-19）：与要点同一叫法“经中软转发”
+        standard: "Kimi AI（经中软转发）",
         byok: "Kimi AI（律所自己的账号，直连月之暗面，不经中软）",
         private: "律所自己的 AI（不经中软）",
         none: "不用 AI（只用本机功能）",
@@ -1420,11 +1421,25 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         : !usesModel
           ? ["local"]
           : ["route", "protect", "plain", ...(p.scenario !== "a1.agent_task" ? [] : (["search"] as const)), "keep"];
+      // “完整说明”分行（第 27 批，评审 U2-25）：与下面 preview 同一组文字，只是一项一行，界面排成表；不会发送时不给，界面照旧显示 preview
+      const previewRows: { label: string; text: string }[] =
+        exitMode || !usesModel || blockReason
+          ? []
+          : [
+              { label: "发送什么", text: docIds.length ? `${docIds.length} 份文档中任务涉及的内容` : "任务说明与按需读取的材料内容" },
+              { label: "发给谁", text: endpointLabels[matter.model_endpoint] ?? matter.model_endpoint },
+              { label: "换成代号", text: pseudonymScope },
+              { label: "按原文发送", text: plainNote.replace(/^以原文发送的有：/, "") },
+              ...(searchNote ? [{ label: "联网检索", text: searchNote.replace(/^；/, "") }] : []),
+              { label: "是否保存", text: retentionNote },
+              { label: "记录", text: "每一次发送都记在本任务的“数据去向”里" },
+            ];
       const dataWhere = {
         model_endpoint: matter.model_endpoint,
         consent_status: matter.consent_status,
         bullets,
         bullet_kinds: bulletKinds,
+        ...(previewRows.length ? { preview_rows: previewRows } : {}),
         ...(sendSummary ? { send_summary: sendSummary } : {}),
         preview: exitMode
           ? `不会发送：${exitMode.message}`
@@ -1881,10 +1896,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "artifacts.list": (p, id) => {
       const matterId = String(p?.matter_id ?? "");
       requireMatterAccess(db, matterId, id);
-      // 带上所属任务的场景、方法模板与开始时刻（Astra M-3：交付件按“事项 → 一次任务”分组，律师关心的是这次要交出去的那几份）
+      // 带上所属任务的场景、方法模板与开始时刻（Astra M-3：交付件按“事项 → 一次任务”分组，律师关心的是这次要交出去的那几份）；
+      // 任务名与任务说明前 60 字（第 27 批，评审 U3-09：没有内容标题的助手草稿用任务名命名，不再都叫“助手草稿”；只在本机显示）
       const rows = db.all<Record<string, unknown>>(
         `SELECT a.artifact_version_id, a.run_id, a.kind, a.version, a.audience, a.status, a.filename, a.sha256, a.created_at, a.storage_uri, a.lineage,
-                r.scenario AS run_scenario, json_extract(CASE WHEN json_valid(r.input_snapshot) THEN r.input_snapshot ELSE '{}' END, '$.skill') AS run_skill, r.created_at AS run_created_at
+                r.scenario AS run_scenario, json_extract(CASE WHEN json_valid(r.input_snapshot) THEN r.input_snapshot ELSE '{}' END, '$.skill') AS run_skill, r.created_at AS run_created_at,
+                json_extract(CASE WHEN json_valid(r.input_snapshot) THEN r.input_snapshot ELSE '{}' END, '$.title') AS run_title,
+                substr(json_extract(CASE WHEN json_valid(r.input_snapshot) THEN r.input_snapshot ELSE '{}' END, '$.goal'), 1, 60) AS run_goal
            FROM artifact_versions a LEFT JOIN runs r ON r.run_id = a.run_id
           WHERE a.matter_id = ? ORDER BY a.kind, a.version DESC`,
         [matterId],

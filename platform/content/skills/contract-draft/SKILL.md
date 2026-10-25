@@ -6,7 +6,7 @@ when_to_use: 律师要求起草合同、协议或交易文件，事项中有交�
 arguments: [type, side]
 kwl:
   id: contract-draft
-  version: 1.1.0
+  version: 1.2.0
   lines: [非诉, 企业法务]
   chain: contract
   tier: beta

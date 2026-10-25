@@ -111,8 +111,9 @@ export function reminderLine(cloudConfigured: boolean): string {
 
 /** 首页“今天”的近期期限（v9.4）：未结案事项、未撤销、14 天内（含已过 3 天内未处理的），按到期日排序。纯函数。 */
 export function upcomingDeadlines<T extends { due_date: string; cloud_state: string; matter_lifecycle: string }>(items: T[], now = Date.now(), withinDays = 14): T[] {
+  // 列表只含有效的提醒；cancel_pending 是“云端旧副本正在删除”的有效提醒，照常列出（第 27 批复核 Q8-04：原先也滤掉，改过备注的期限会从首页消失）
   return items
-    .filter((r) => r.matter_lifecycle === "active" && r.cloud_state !== "cancelled" && r.cloud_state !== "cancel_pending")
+    .filter((r) => r.matter_lifecycle === "active" && r.cloud_state !== "cancelled")
     .filter((r) => {
       const d = daysUntil(r.due_date, now);
       return d >= -3 && d <= withinDays;
@@ -180,4 +181,36 @@ export function importCandidates(
 /** 我设的提醒分两组：还没到期的（含今天）在前；已过期的收起（复核 Q1 未改项“提醒页过期分组”）。 */
 export function splitByDue<T extends { due_date: string }>(list: readonly T[], now = Date.now()): { upcoming: T[]; past: T[] } {
   return { upcoming: list.filter((r) => daysUntil(r.due_date, now) >= 0), past: list.filter((r) => daysUntil(r.due_date, now) < 0) };
+}
+
+const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+/** 期限日写给人看（第 27 批，评审 U3 规则 11）：“10月28日 周三”，不是今年的加年份；ISO 写法只留在导出与悬停提示。纯函数。 */
+export function dueDateText(dueDate: string, now = Date.now()): string {
+  const [y, m, d] = dueDate.split("-").map(Number) as [number, number, number];
+  if (!y || !m || !d) return dueDate;
+  const wd = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]!;
+  const sameYear = bjToday(now).slice(0, 4) === String(y);
+  return `${sameYear ? "" : `${y}年`}${m}月${d}日 ${wd}`;
+}
+
+export type DueBucketKey = "today" | "week" | "later" | "past";
+const BUCKET_LABELS: Record<DueBucketKey, string> = { today: "今天到期", week: "7 天内", later: "以后", past: "已过期" };
+
+/**
+ * 按到期日看期限（第 27 批，评审 U2-36）：律师按日程看“今天 / 这周 / 以后”，不按提醒来源看。
+ * 列表里的都是有效提醒（内核只返回有效的）；cancel_pending 是云端旧副本正在删除的有效提醒，照常列出（复核 Q8-04）。
+ * 每组按到期日从近到远（已过期的从最近过期的排起）；空组不返回。纯函数。
+ */
+export function dueBuckets<T extends { due_date: string; cloud_state?: string }>(list: readonly T[], now = Date.now()): { key: DueBucketKey; label: string; items: T[] }[] {
+  const live = list.filter((r) => r.cloud_state !== "cancelled");
+  const keyOf = (r: T): DueBucketKey => {
+    const d = daysUntil(r.due_date, now);
+    return d < 0 ? "past" : d === 0 ? "today" : d <= 7 ? "week" : "later";
+  };
+  return (["today", "week", "later", "past"] as const)
+    .map((key) => {
+      const items = live.filter((r) => keyOf(r) === key).sort((a, b) => (key === "past" ? b.due_date.localeCompare(a.due_date) : a.due_date.localeCompare(b.due_date)));
+      return { key, label: BUCKET_LABELS[key], items };
+    })
+    .filter((g) => g.items.length > 0);
 }

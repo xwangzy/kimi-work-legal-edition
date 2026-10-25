@@ -14,7 +14,7 @@ import { ScenarioStart } from "../components/ScenarioStart.tsx";
 import { cardGets, cardGives, COMING_SOON, getsPlain, LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
 import { fmtTime, runName } from "../lib/labels.ts";
 import { nextStepPill, type RunFacts } from "../lib/next-step.ts";
-import { backendDownText } from "../lib/errors.ts";
+import { backendDownText, importFailText } from "../lib/errors.ts";
 import { dueText, dueTone, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
 
 const LINE_KEY = "kwl.home.line";
@@ -50,6 +50,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   const [newMatter, setNewMatter] = useState(false);
   const [sheet, setSheet] = useState<PendingStart | null>(null);
   const [msg, setMsg] = useState("");
+  // 导入没成功的文件单列、红色（第 27 批，评审 U3-04：原来与成功的混在一段灰字里，英文报错直接上屏）
+  const [failMsg, setFailMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [line, setLine] = useState<BusinessLine>(savedLine);
   // 开始面板：事项在面板里可切换（Z3 评审 #1）；matterId 为 null 表示默认“新建事项”
@@ -195,6 +197,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     setBusy(true);
     // 逐个导入：一份失败（例如带密级标志被拒）不影响其余文件，结果逐条告诉律师
     const lines: string[] = [];
+    const fails: string[] = [];
+    setFailMsg("");
     try {
       for (const f of Array.from(files)) {
         try {
@@ -202,10 +206,11 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
           setValue((v) => ({ ...v, documentIds: [...v.documentIds, r.document_version_id] }));
           lines.push(`已添加 ${f.name}（${r.chars.toLocaleString()} 字）${r.marking_notice ? `。${r.marking_notice}` : ""}`);
         } catch (e) {
-          lines.push(`${f.name} 未添加：${(e as Error).message}`);
+          fails.push(importFailText(f.name, (e as Error).message));
         }
       }
       setMsg(lines.join("\n"));
+      setFailMsg(fails.join("\n"));
       loadMatter(matterId);
     } finally {
       setBusy(false);
@@ -240,7 +245,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
               : null
           }
         />
-        {msg && <p className="muted home-msg">{msg}</p>}
+        {msg && <p className="muted home-msg" role="status" style={{ whiteSpace: "pre-line" }}>{msg}</p>}
+        {failMsg && <div className="banner banner-red home-msg" role="alert" style={{ whiteSpace: "pre-line" }}>{failMsg}</div>}
         {matters.length === 0 && (
           <div className="panel empty-panel">
             <p>先建一个事项：案卷在这台电脑上处理与保存。建事项时写明我方立场、敏感程度和客户授权情况。</p>
@@ -307,11 +313,14 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
                   return (
                     <button key={r.run_id} className="today-row" onClick={() => nav(`/run/${r.run_id}/${r.matter_id}`)} title={`${r.matter_title} · ${fmtTime(r.updated_at)}`}>
                       {/* 第 26 批（评审 U2-33）：多个事项同时在办时看得出是哪个案子 */}
+                      {/* 第 27 批（评审 U3-14）：状态胶囊与任务名同一行，事项名单独一行占满宽，不再被胶囊挤掉能区分案子的后半截 */}
                       <span className="today-main">
-                        <span className="today-text">{runName(r)}</span>
+                        <span className="today-line">
+                          <span className="today-text">{runName(r)}</span>
+                          <span className={`pill ${pill.tone}`}>{pill.text}</span>
+                        </span>
                         <small className="today-sub">{r.matter_title}</small>
                       </span>
-                      <span className={`pill ${pill.tone}`}>{pill.text}</span>
                     </button>
                   );
                 })

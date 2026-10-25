@@ -33,13 +33,15 @@ export function stepCard(visibleIds: readonly string[], current: string | null, 
 }
 
 /**
- * 工作台协议条（Z3 #22、D-2）：标题下一行写“我方：受让方 · 审查要点：合同审查（风险卡） v1.1.1 · 中国内地 · 已处理 0/4”。
+ * 工作台协议条（Z3 #22、D-2）：标题下一行写“我方：受让方 · 方法：合同审查 · 中国内地 · 已处理 0/4”（第 27 批起不写版本号）。
  * 缺的项不写（不编造）；只有进度时也给一行。纯函数。
  */
 export function agreementParts(p: { stance?: string | null; method?: string | null; jurisdiction?: string | null; decided?: number; total?: number }): string[] {
   const out: string[] = [];
   if (p.stance) out.push(`我方：${p.stance}`);
-  if (p.method) out.push(`审查要点：${p.method}`);
+  // 第 27 批（评审 U3-06）：写“方法”不写“审查要点”——“审查要点”在事项里指客户的审查标准，同词两义会让律师以为已按客户标准审过；
+  // 版本号不上屏（工作台协议条的悬停提示里有完整写法）
+  if (p.method) out.push(`方法：${p.method.replace(/\s*v\d+(\.\d+)*$/, "")}`);
   if (p.jurisdiction) out.push(p.jurisdiction);
   if (typeof p.total === "number" && p.total > 0) out.push(`已处理 ${p.decided ?? 0}/${p.total}`);
   return out;

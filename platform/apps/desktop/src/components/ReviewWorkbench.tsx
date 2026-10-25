@@ -362,9 +362,9 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       <div className="wb-head">
         <div className="wb-title">
           <button className="btn-link" onClick={onClose}>{backLabel}</button>
-          <h1 className="page-title">审查工作台{documentVersionId ? (doc ? ` · ${doc.filename}` : "") : " · 未关联合同的意见"}</h1>
+          <h1 className="page-title" title={doc?.filename}>审查工作台{documentVersionId ? (doc ? ` · ${String(doc.filename).replace(/\.(docx?|wps|pdf|txt|md|rtf)$/i, "")}` : "") : " · 未关联合同的意见"}</h1>
           {(progress || agreement) && (
-            <div className="wb-progress wb-agreement" aria-live="polite">
+            <div className="wb-progress wb-agreement" aria-live="polite" title={agreement?.method ? `方法：${agreement.method}` : undefined}>
               {agreementParts({ ...agreement, decided: progress?.decided, total: progress?.total }).join(" · ")}
               {progress && progress.high_open > 0 ? <span className="sev-text-high"> · {progress.high_open} 项重大风险待处理</span> : null}
               {kindCounts.map(([k, n]) => ` · ${KIND_LABEL[k]} ${n}`).join("")}

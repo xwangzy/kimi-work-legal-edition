@@ -29,10 +29,11 @@ const INVENTORY_LABELS: Record<string, string> = {
   reminders_elsewhere: "可能已送到其他设备的提醒",
   relay: "团队共享里的事项",
   exports: "已导出或下载过的文件（在你保存的位置，需自行删除）",
-  key_wrappings: "密钥包裹",
-  egress_records: "数据去向记录（保留元数据）",
+  key_wrappings: "加密钥匙（已销毁）",
+  egress_records: "数据去向记录（只留时间、去向和字数，不含内容）",
   egress_sent: "已发出的请求",
-  redacted_signed_rows: "签名记录中清除内容的行",
+  // 复核 Q8-05：清除的是带防篡改链的任务过程事件与数据去向记录里的内容，不是成果的签发记录
+  redacted_signed_rows: "任务过程与数据去向记录里已清除内容的条目（防篡改链保留）",
 };
 
 const day = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : "—");

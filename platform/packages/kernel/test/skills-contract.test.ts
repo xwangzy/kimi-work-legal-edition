@@ -16,6 +16,7 @@ import { createDocx } from "@zr-legal/docx-engine";
 import { importBytes, importText, makeKernel, waitRunAnswering, type TestKernel } from "./helpers.ts";
 import { startCloudV0, type CloudV0 } from "./cloud-v0.ts";
 import { decideOutline, latestOutline } from "../src/services/argument-outlines.ts";
+import { TOOLS } from "../src/tools/registry.ts";
 
 const repo = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
 const manifest = JSON.parse(readFileSync(repo("content/skills/dist/skills.manifest.json"), "utf8")) as { skills: { id: string; title: string; tools_required: string[]; requires_outline?: boolean }[] };
@@ -101,8 +102,21 @@ type Msg = { role?: string; tool_call_id?: string; content?: unknown };
 const msgs = (body: Record<string, unknown>): Msg[] => (Array.isArray(body.messages) ? (body.messages as Msg[]) : []);
 const text = (c: unknown) => (typeof c === "string" ? c : JSON.stringify(c ?? ""));
 
-test("文书类方法都标了 requires_outline（起诉状、答辩状、代理词、研究备忘录；第 21 批：上诉状、仲裁申请书、财产保全、强制执行申请书）", () => {
-  for (const id of ["pleading-draft", "defense-draft", "agency-statement", "legal-research-memo", "appeal-draft", "arbitration-application", "preservation-application", "enforcement-application"]) assert.ok(DRAFTING.has(id), id);
+test("文书类方法都标了 requires_outline（起诉状、答辩状、代理词、研究备忘录；第 21 批：上诉状、仲裁申请书、财产保全、强制执行申请书；评审 S3：劳动仲裁申请书与答辩书）", () => {
+  for (const id of ["pleading-draft", "defense-draft", "agency-statement", "legal-research-memo", "appeal-draft", "arbitration-application", "preservation-application", "enforcement-application", "labor-arbitration-draft"]) assert.ok(DRAFTING.has(id), id);
+});
+
+test("劳动仲裁申请书与答辩书（评审 S3）：参数先问文书类型；答辩期按工作日算的参数形状在期间工具上走得通", async () => {
+  assert.ok(manifest.skills.some((s) => s.id === "labor-arbitration-draft"), "方法包里有劳动仲裁文书方法");
+  assert.deepEqual(frontArgs("labor-arbitration-draft"), ["doc_kind", "side", "received_on", "claims"]);
+  const body = readFileSync(repo("content/skills/labor-arbitration-draft/SKILL.md"), "utf8");
+  assert.match(body, /rule = workday/, "答辩期十日按工作日（办案规则第八十条）交期间工具");
+  assert.match(body, /不收费/, "劳动争议仲裁不收费，核对清单不写仲裁费");
+  // 方法写的答辩期调用形状：start = 收到副本日，period = 10 个工作日，rule = workday
+  const tool = TOOLS.find((t) => t.name === "calc.deadline")!;
+  const r = (await tool.invoke({ start: "2026-09-28", period: { unit: "workday", n: 10 }, rule: "workday" }, {} as any)) as { deadline?: string | null };
+  assert.match(String(r.deadline), /^\d{4}-\d{2}-\d{2}$/, JSON.stringify(r).slice(0, 300));
+  assert.ok(String(r.deadline) >= "2026-10-12", `十个工作日不会早于按自然日算的结果：${r.deadline}`);
 });
 
 test("方法包里每个方法都有契约用例的参数准备（新增方法或工具时这里先失败）", () => {

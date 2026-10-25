@@ -10,7 +10,7 @@
  */
 import { DomainError } from "@zr-legal/domain";
 import type { KernelDb } from "../db.ts";
-import { calcDeadline, type DeadlineUnit } from "../tools/tools/deadline.ts";
+import { calcDeadline, type DeadlineRule, type DeadlineUnit } from "../tools/tools/deadline.ts";
 import type { MatterStage } from "./matter-facts.ts";
 import { createTodo, type AssigneeKind } from "./matter-todos.ts";
 import { localToday } from "./local-date.ts";
@@ -39,6 +39,8 @@ export interface MatterTemplate {
     /** 写进关键日期的名字（届满日）。 */
     deadline_key: string;
     period: { unit: DeadlineUnit; n: number };
+    /** 计算规则：缺省按民法典（civil）；法律或规章明定按工作日的期间用 workday（第 27 批：劳动仲裁答辩期）。 */
+    rule?: DeadlineRule;
     /** 届满日那条待办。 */
     todo: string;
     /** 依据与例外（律师看）。 */
@@ -185,9 +187,11 @@ export const MATTER_TEMPLATES: readonly MatterTemplate[] = [
       label: "收到仲裁申请书副本的日期",
       start_key: "收到仲裁申请书",
       deadline_key: "仲裁答辩期届满",
-      period: { unit: "day", n: 10 },
+      // 第 27 批（评审 S3-01，已对照中国政府网国家规章库原文）：办案规则第八十条“十日”指工作日——原来按自然日推算，届满日早了约一周
+      period: { unit: "workday", n: 10 },
+      rule: "workday",
       todo: "提交仲裁答辩书",
-      basis: "《劳动争议调解仲裁法》第三十条：被申请人收到仲裁申请书副本后，应当在十日内向劳动争议仲裁委员会提交答辩书；未提交答辩书的，不影响仲裁程序的进行。",
+      basis: "《劳动争议调解仲裁法》第三十条：被申请人收到仲裁申请书副本后，应当在十日内向劳动争议仲裁委员会提交答辩书；未提交答辩书的，不影响仲裁程序的进行。《劳动人事争议仲裁办案规则》第三十三条、第八十条：这里的“十日”指工作日。管辖异议、反申请须在答辩期满前提出（同规则第十条、第三十六条）。",
     },
   },
   {
@@ -277,7 +281,7 @@ export function planTemplate(templateId: unknown, start: unknown, stance?: unkno
   if (s && stanceMismatch)
     throw new DomainError("validation", `“${t.title}”的期限按${t.stances.join("、")}一方推算，我方立场是“${stance}”：改选立场或事项类型，或者不填起算日期`, 422);
   if (!s || !t.start_fact) return { template: t, key_dates: {}, deadline: null, stance_mismatch: stanceMismatch };
-  const r = calcDeadline({ start: s, period: t.start_fact.period, rule: "civil" });
+  const r = calcDeadline({ start: s, period: t.start_fact.period, rule: t.start_fact.rule ?? "civil" });
   if (!r.deadline) throw new DomainError("validation", "届满日没有算出来：请检查起算日期", 422);
   return {
     template: t,

@@ -89,6 +89,13 @@ const COMMON_WORDS = new Set([
   "封闭", "容忍",
 ]);
 
+/**
+ * 角色词后直接接、没有明确边界时，这些词是动词或副词的开头，不是姓名（第 27 批真实模型走查：合同里“卖方严重违约”“买方严格按照”
+ * “乙方全面履行”“承租人连续两个月”被读成“角色词 + 姓名”，模型收到“卖方〔自然人〕约”，违约门槛词丢了；490 句合同式短句里误认 70 句）。
+ * 复核 Q8-01：只在“没有明确边界”的那一支用——有标点、称谓、言语动词等强证据时（“原告：严重阳，男”“证人严格律师”）照常认出。
+ */
+const ROLE_FOLLOW_WORDS = new Set(["严重", "严格", "全面", "连续"]);
+
 /** 角色词后紧跟这些，说明是机构（“被告北京……有限公司”）。 */
 const ORG_TAIL = /^[一-龥A-Za-z0-9（）()]{0,16}?(?:有限责任公司|股份有限公司|有限公司|公司|集团|事务所|银行|支行|分行|医院|学校|大学|学院|研究院|研究所|委员会|政府|法院|检察院|公安局|派出所|中心|合作社|工作室|商行|商店|超市|酒店|宾馆|饭店|门市部|经营部|厂|店)/;
 
@@ -351,6 +358,7 @@ function readName(text: string, j: number): string | null {
     if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
     return text.slice(j, j + s + g);
   }
+  if (ROLE_FOLLOW_WORDS.has(text.slice(j, j + 2))) return null;
   const g1 = text[j + s];
   const g2 = text[j + s + 1];
   if (!g1 || !CJK.test(g1) || STOP.has(g1) || NOT_GIVEN.has(g1) || (g2 && ROLE_GIVEN.has(g1 + g2))) return null;
@@ -415,6 +423,9 @@ const KNOWN_MISREADS = new Set([
   "任务", "修改", "修订", "文稿", "关键", "单列", "文风", "解除", "解除权", "权利", "权属", "权益", "公示", "高管", "董监高", "章程另", "原样使", "迟延受",
   "封闭式", "容忍简", "劳动者", "明且", "时告知", "范围须", "由只取", "项只取", "文只写", "成一项", "时问", "时询问", "容待", "由律师", "师按", "明须",
   "向律师", "向股东", "向股", "和监事", "应赔偿", "查哪些", "都写了", "涉及·不涉及·待", "材料载明·推论·待", "工具结果·区间·待", "出庭·补充反证·调查取证",
+  // 第 27 批真实模型走查：合同正文里的误认（“不承担任何间接损失”“卖方严重违约”等）
+  // “严格”是两字值，可能是以前认对的真名（“被告：严格，女”），不退役（复核 Q8-02）
+  "何间接", "严重违", "严重迟", "全面履", "连续两",
 ]);
 export function stillLooksLikeName(value: string): boolean {
   return !KNOWN_MISREADS.has(value);
@@ -425,6 +436,9 @@ export function recognizeNames(text: string): Set<string> {
   const out = new Set<string>();
   ROLE_RE.lastIndex = 0;
   for (const m of text.matchAll(ROLE_RE)) {
+    // “担任”其实是“承担”的后一字加下一词的首字（“不承担任何间接损失”）：不是角色词（第 27 批真实模型走查：
+    // “何间接”被认成姓名，模型收到“不承担任〔自然人·1〕损失”，一条责任限制条款被改坏）
+    if (m[0].startsWith("担任") && text[m.index! - 1] === "承") continue;
     const j = skipSeparators(text, m.index! + m[0].length);
     // 音译名与拉丁字母姓名优先（否则“阿卜杜拉·买买提”会被截成“阿卜杜”）
     const special = readDottedAt(text, j) ?? readLatinAt(text, j);

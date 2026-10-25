@@ -33,6 +33,8 @@ export interface DerivedTodo {
   goal: string;
   scenario: string | null;
   filename: string | null;
+  /** 待签发那条的成果种类（第 27 批）：界面按它写成果名。 */
+  artifact_kind?: string;
   /** 谁做：等你确认、复核、签发都是“我”；草稿由 AI 完成。 */
   done_by_ai: boolean;
   run_id: string | null;
@@ -179,11 +181,13 @@ export function derivedTodos(db: KernelDb, matterId: string): DerivedTodo[] {
   )) {
     outList.push({ kind: "drafts_to_review", goal: goalOf(r.input_snapshot), scenario: r.scenario, filename: null, done_by_ai: true, run_id: r.run_id, artifact_version_id: null, count: r.n, at: r.at });
   }
-  for (const a of db.all<{ artifact_version_id: string; filename: string; created_at: string }>(
-    `SELECT a.artifact_version_id, a.filename, a.created_at FROM artifact_versions a WHERE a.matter_id = ? AND a.status = 'pending_review' AND ${latest} ORDER BY a.created_at DESC LIMIT 20`,
+  // 待签发的成果带上成果种类与所属任务名（第 27 批，评审 U3-10）：界面写“签发：修订稿（审合同）”，不再写“签发：草稿-2026-10-25.md”
+  for (const a of db.all<{ artifact_version_id: string; filename: string; kind: string; created_at: string; input_snapshot: string | null }>(
+    `SELECT a.artifact_version_id, a.filename, a.kind, a.created_at, r.input_snapshot FROM artifact_versions a LEFT JOIN runs r ON r.run_id = a.run_id
+      WHERE a.matter_id = ? AND a.status = 'pending_review' AND ${latest} ORDER BY a.created_at DESC LIMIT 20`,
     [matterId],
   )) {
-    outList.push({ kind: "to_sign", goal: "", scenario: null, filename: a.filename, done_by_ai: false, run_id: null, artifact_version_id: a.artifact_version_id, count: 1, at: a.created_at });
+    outList.push({ kind: "to_sign", goal: goalOf(a.input_snapshot), scenario: null, filename: a.filename, artifact_kind: a.kind, done_by_ai: false, run_id: null, artifact_version_id: a.artifact_version_id, count: 1, at: a.created_at });
   }
   return outList;
 }

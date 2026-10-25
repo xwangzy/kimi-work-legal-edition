@@ -85,7 +85,7 @@ test("#22 工作台协议条：我方 · 审查要点及版本 · 法域 · 已�
   const { methodShort } = await import("../src/lib/run-method.ts");
   const method = methodShort({ input_snapshot: JSON.stringify({ skill: "contract-review" }) }, { "contract-review": "合同审查（风险卡）" }, { "contract-review": "1.1.1" });
   assert.equal(method, "合同审查 v1.1.1", "第 26 批：方法名不带“（风险卡）”");
-  assert.equal(agreementParts({ stance: "受让方", method, jurisdiction: "中国内地", decided: 0, total: 4 }).join(" · "), "我方：受让方 · 审查要点：合同审查 v1.1.1 · 中国内地 · 已处理 0/4");
+  assert.equal(agreementParts({ stance: "受让方", method, jurisdiction: "中国内地", decided: 0, total: 4 }).join(" · "), "我方：受让方 · 方法：合同审查 · 中国内地 · 已处理 0/4", "第 27 批（评审 U3-06）：写“方法”、不上版本号");
   assert.deepEqual(agreementParts({ decided: 1, total: 2 }), ["已处理 1/2"]);
   assert.equal(methodShort({ input_snapshot: {} }, {}, {}), null);
   const wb = src("components/ReviewWorkbench.tsx");

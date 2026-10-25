@@ -16,6 +16,7 @@ import { Modal } from "./Modal.tsx";
 import { defaultChoice } from "./ModeSelector.tsx";
 import { launchRun, prepareStart, RunSheet, type PendingStart } from "./RunSheet.tsx";
 import { SendSummary } from "./SendSummary.tsx";
+import { SendPoints } from "./SendPoints.tsx";
 import { stanceLabel } from "../lib/labels.ts";
 import { RolePills, Select, type MaterialRole } from "./Select.tsx";
 
@@ -377,12 +378,6 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
             {estimate ? (
               <>
                 {estimate.estimate.points_display}
-                {estimate.estimate.data_where?.preview ? (
-                  <details className="ss-where">
-                    <summary className="muted">{estimate.estimate.data_where.preview.split("；")[0]}</summary>
-                    <span className="muted">{estimate.estimate.data_where.preview.split("；").slice(1).join("；")}</span>
-                  </details>
-                ) : null}
               </>
             ) : estErr ? (
               <span className="ss-need">{estErr}</span>
@@ -392,16 +387,21 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
               <span className="muted">{missing.length > 0 ? `请先填写：${missing.map((f) => f.label).join("、")}` : needDocs > 0 ? "请先选择材料" : ""}</span>
             )}
           </div>
-          {/* 发送摘要不放在 aria-live 区域里（复核 S5B-06：发送视图与核对表不应被整段朗读） */}
-          {matter && estimate?.estimate.data_where?.send_summary && (
-            <SendSummary
-              matterId={matter.matter_id}
-              summary={estimate.estimate.data_where.send_summary}
-              documentIds={docIds}
-              goal={goal}
-              mustReview={estimate.estimate.data_where.block_kind === "suspects"}
-              onReviewed={() => setReestimateTick((n) => n + 1)}
-            />
+          {/* 发送什么、发给谁：与开始前确认同一块（第 27 批，评审 U3-01：卡片路径原来只有一段折叠长句，风险句埋在括号里）。
+              发送摘要不放在 aria-live 区域里（复核 S5B-06：发送视图与核对表不应被整段朗读） */}
+          {matter && estimate && (
+            <SendPoints dataWhere={estimate.estimate.data_where}>
+              {estimate.estimate.data_where?.send_summary && (
+                <SendSummary
+                  matterId={matter.matter_id}
+                  summary={estimate.estimate.data_where.send_summary}
+                  documentIds={docIds}
+                  goal={goal}
+                  mustReview={estimate.estimate.data_where.block_kind === "suspects"}
+                  onReviewed={() => setReestimateTick((n) => n + 1)}
+                />
+              )}
+            </SendPoints>
           )}
           {confirmedFacts === 0 && (
             <p className="banner banner-orange">这个事项还没有确认过的事实：AI 只能列出要件框架。先做“整理案卷”，再到事项页“事实”里逐条确认。</p>
@@ -428,7 +428,8 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
           <button className="btn-ghost" onClick={onClose}>取消</button>
           {/* 还不能开始时（例如疑似姓名待核对）不占主按钮：同屏的主动作是待办那一步（复核 S7B-01） */}
           <button className={ready ? "btn-primary" : "btn-ghost"} disabled={busy || !ready} onClick={() => void start()}>
-            {card.verb}
+            {/* 第 27 批（评审 U3-49）：点了还要再确认的（依据未齐、去向有提醒）写“下一步”，直接开始的写动词 */}
+            {estimate && (estimate.estimate.data_where?.start_blocked || estimate.estimate.data_where?.warning) ? "下一步：确认" : card.verb}
           </button>
         </div>
       </div>

@@ -303,7 +303,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
       </div>
       <ul className="plain-list">
         <li>
-          与月之暗面“不用于训练、不保留”的书面确认：<b>待签署</b>（签署后此处显示日期）。在此之前，模型服务商一侧的保留以其企业协议为准。
+          与月之暗面“不用于训练、不保留”的书面确认：<b>待签署</b>。签署前，Kimi 服务方是否保存以其企业协议为准。
         </li>
         {gate?.search_configured && <li>联网检索默认去掉当事人名称再发出；含当事人名称的查询须经办律师逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）。</li>}
         <li>识别依靠规则与当事人名单，可能遗漏：<b>没有识别出的姓名会按原文发出</b>；每个任务的“数据去向”里可以逐条查看实际发出的内容。</li>
@@ -314,7 +314,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
         <summary>加密保存的局限（建议所内 IT 看一下）</summary>
         <ol className="plain-list muted">
           <li>案件数据在本机加密保存，解密密钥受 Windows 数据保护（DPAPI）保护、与你的 Windows 账户绑定；以同一账户运行的其他程序（包括恶意软件）技术上可以调用同一保护机制，使用域账户的律所，域管理员按 Windows 的设计也具备恢复能力。</li>
-          <li>设备签名与解密密钥目前由软件保存，尚未存放在电脑的安全芯片（TPM）中。</li>
+          <li>这台电脑的身份凭证与解密密钥目前由软件保存，尚未存放在电脑的安全芯片（TPM）中。</li>
           <li>律所恢复所需的根密钥目前保存在各成员的电脑上；律所版将改为线下分片保管。</li>
           <li>删除事项会销毁本机密钥并删除数据；Windows 还原点、文件历史和备份软件中的旧副本不在删除范围内。</li>
           <li>建议开启 BitLocker，并使用本机（非漫游、非重定向）的用户目录。</li>
@@ -358,10 +358,13 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
     {
       name: "离线法规库",
       state: lawdb?.error ? "不可用" : lawdb?.coverage?.level === "sample" ? "部分可用" : "可用",
-      note: lawdb?.error ? "法规库文件没有通过核对，已停用" : content?.configured ? "法条核验在本机完成；法规库可在线更新（见下方）" : "法条核验在本机完成，不联网",
+      // 第 27 批（评审 U3-21）：“部分可用”首句直接写收录了多少、缺什么，不让律师去“版本”折叠里找
+      note: lawdb?.error
+        ? "法规库文件没有通过核对，已停用"
+        : `${lawdb?.coverage?.level === "sample" ? `只收录 ${lawdb.coverage.laws ?? 0} 部法律法规、${lawdb.coverage.articles ?? 0} 条正文，不在库里的引用核对不了；` : ""}${content?.configured ? "法条核验在本机完成；法规库可在线更新（见下方）" : "法条核验在本机完成，不联网"}`,
       detail: lawdb?.error ? undefined : lawdb?.display,
     },
-    { name: "Kimi 模型（经中软）", state: gate?.routes ? "可用" : "未开通", note: "一般事项可用；敏感事项须管理员放开并全部化名；客户要求不上云的事项不用" },
+    { name: "Kimi AI（经中软转发）", state: gate?.routes ? "可用" : "未开通", note: "一般事项可用；敏感事项须管理员放开并全部化名；客户要求不上云的事项不用" },
     // 第 26 批（评审 U2-39）：首层一句结论，完整规则放“了解更多”（口径不删）
     { name: "联网检索", state: gate?.search_configured ? "可用" : "未开通", note: "默认去掉当事人名称再查；要带名称查时逐条问你", more: "含当事人名称的查询须经办律师逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）。" },
     { name: "公开网页", state: gate?.fetch === "local" ? "可用" : "未开通", note: `只打开公开官方站点与律所允许的网站（${gate?.fetch_allowlist_size ?? 0} 个），新网站要你确认` },
@@ -399,7 +402,7 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
                 )}
                 {r.detail && (
                   <details className="muted">
-                    <summary>版本</summary>
+                    <summary>收录范围与更新</summary>
                     {r.detail}
                   </details>
                 )}

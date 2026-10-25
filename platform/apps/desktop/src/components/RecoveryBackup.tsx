@@ -31,6 +31,7 @@ export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
   const [busy, setBusy] = useState(false);
   const [verifyCode, setVerifyCode] = useState("");
   const [verifyOpen, setVerifyOpen] = useState(false);
+  const [verifyByButton, setVerifyByButton] = useState(false);
   const [devPath, setDevPath] = useState("");
   const [syncNote, setSyncNote] = useState(false);
   const [placeNote, setPlaceNote] = useState<"" | "local" | "sync">("");
@@ -118,9 +119,12 @@ export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
             <b>试一下</b>
           </div>
           <p className="muted">用恢复码打开一次恢复包，确认真的能用。{step2 ? `已试过 ${st.packages_verified} 次。` : ""}</p>
-          <button className="btn-ghost btn-sm" disabled={busy || !step1} onClick={() => setVerifyOpen(true)}>
+          {/* 复核 Q8-10：只有律师点这个按钮打开时才把焦点放进输入框；生成恢复包后自动展开时不抢焦点（不越过只显示一次的恢复码与警告） */}
+          <button className="btn-ghost btn-sm" disabled={busy || !step1} onClick={() => { setVerifyByButton(true); setVerifyOpen(true); }}>
             试一下
           </button>
+          {/* 禁用要说原因（U2 §1.4） */}
+          {!step1 && <span className="muted steps3-why">先生成恢复包</span>}
         </li>
         <li className={step3 ? "done" : ""}>
           <div className="steps3-head">
@@ -195,16 +199,23 @@ export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
           </div>
         </div>
       )}
-      <details className="quiet-details" open={verifyOpen} onToggle={(e) => setVerifyOpen((e.target as HTMLDetailsElement).open)}>
-        <summary>试一下恢复包能不能用</summary>
-        <label className="field">
-          <span>输入恢复码（第一行 KWR1 也照抄）</span>
-          <textarea rows={4} value={verifyCode} onChange={(e) => setVerifyCode(e.target.value)} spellCheck={false} />
-        </label>
-        <button className="btn-ghost btn-sm" disabled={busy || verifyCode.trim().length < 10} onClick={() => void verify()}>
-          选择恢复包，打开试试
-        </button>
-      </details>
+      {/* 只留一个“试一下”入口（第 27 批，评审 U3-34）：第 2 步的按钮点开这里；原来下方还常驻一个同名折叠，展开是空文本框 */}
+      {verifyOpen && (
+        <section className="panel recovery-verify" aria-label="试一下恢复包">
+          <label className="field">
+            <span>恢复码（打印纸上的全部内容，含第一行）</span>
+            <textarea rows={4} value={verifyCode} onChange={(e) => setVerifyCode(e.target.value)} spellCheck={false} placeholder="KWR1-…" autoFocus={verifyByButton} />
+          </label>
+          <div className="settings-choice">
+            <button className="btn-primary btn-sm" disabled={busy || verifyCode.trim().length < 10} onClick={() => void verify()}>
+              选择恢复包，打开试试
+            </button>
+            <button className="btn-ghost btn-sm" onClick={() => { setVerifyOpen(false); setVerifyByButton(false); }}>
+              收起
+            </button>
+          </div>
+        </section>
+      )}
       {msg && <p className="muted" role="status">{msg}</p>}
       {syncNote && <p className="muted">提示：这个备份位置会同步到网盘或网络存储。备份的内容与文件名都是加密的，对方只看得到文件数量、大小与备份时间。</p>}
     </div>

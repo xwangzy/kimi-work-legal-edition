@@ -25,6 +25,7 @@ import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 import { RolePills } from "../components/Select.tsx";
 import { Breadcrumb } from "../components/Breadcrumb.tsx";
+import { importFailText } from "../lib/errors.ts";
 
 type Tab = "materials" | "facts" | "runs" | "board" | "deliverables" | "parties" | "egress" | "lifecycle";
 
@@ -74,6 +75,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
   const [tableFocus, setTableFocus] = useState<string | null>(null);
   const [basisOpen, setBasisOpen] = useState(false);
   const [msg, setMsg] = useState("");
+  // 导入没成功的文件单列、红色（第 27 批，评审 U3-04：原来与成功的混在一段灰字里，英文报错直接上屏）
+  const [failMsg, setFailMsg] = useState("");
   const [busy, setBusy] = useState(false);
   /** 每份材料的审查意见（复核 B3-B20：事项页的工作台入口，跨任务汇总）；null 键 = 未关联合同的意见。 */
   const [review, setReview] = useState<Map<string | null, { total: number; open: number }>>(new Map());
@@ -132,6 +135,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
     setMsg("");
     // 逐个处理：一份失败（例如带密级标志被拒）不影响其余文件，结果逐条告诉律师
     const lines: string[] = [];
+    const fails: string[] = [];
+    setFailMsg("");
     try {
       for (const f of Array.from(files)) {
         try {
@@ -139,10 +144,11 @@ export function MatterPage({ matterId }: { matterId: string }) {
           const how = mode === "import" ? "已添加（加密保存一份副本，原文件不改动）" : "已关联（只读引用原文件，不复制）";
           lines.push(`${f.name} ${how}，${Number(r.chars ?? 0).toLocaleString()} 字${r.marking_notice ? `。${r.marking_notice}` : ""}`);
         } catch (e) {
-          lines.push(`${f.name} 未添加：${(e as Error).message}`);
+          fails.push(importFailText(f.name, (e as Error).message));
         }
       }
       setMsg(lines.join("\n"));
+      setFailMsg(fails.join("\n"));
       reload();
     } finally {
       setBusy(false);
@@ -330,7 +336,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
             placeholder="在本事项内发起任务，例如：核验起诉状引用的法条是否现行有效"
           />
         </div>}
-        {msg && <p className="muted" style={{ whiteSpace: "pre-line" }}>{msg}</p>}
+        {msg && <p className="muted" role="status" style={{ whiteSpace: "pre-line" }}>{msg}</p>}
+        {failMsg && <div className="banner banner-red" role="alert" style={{ whiteSpace: "pre-line" }}>{failMsg}</div>}
         {/* 事项页标签（v9.4 U1 #9）：日常五个；当事人名单、数据去向记录、结案与删除收进“⋯” */}
         <div className="tabs tabs-line" role="tablist" aria-label="事项">
           {(
@@ -396,12 +403,14 @@ export function MatterPage({ matterId }: { matterId: string }) {
               <input ref={mountRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files, "mount")} />
             </div>}
             {matView === "list" && docs.length > 0 && (
-              <table className="data">
+              // 固定列宽（第 27 批，评审 U3-05）：1280 宽下“我方 / 对方 / 参考”曾逐字竖排折行；只有文件名列可以两行
+              <table className="data mat-table">
+                <colgroup><col /><col className="c-role" /><col className="c-triage" /><col className="c-read" /><col className="c-review" /><col className="c-time" /></colgroup>
                 <thead><tr><th>文件</th><th>用途</th><th>初判</th><th>读取</th><th>审查意见</th><th>时间</th></tr></thead>
                 <tbody>
                   {docs.map((d) => (
                     <tr key={d.document_version_id}>
-                      <td title={d.storage_mode === "mount" ? "只引用原文件（未复制）" : "已加密保存副本"}>{d.filename}{d.storage_mode === "mount" && <span className="tag tag-gray">引用</span>}</td>
+                      <td className="mat-name" title={`${d.filename}${d.storage_mode === "mount" ? "（只引用原文件，未复制）" : "（已加密保存副本）"}`}><span className="mat-name-text">{d.filename}</span>{d.storage_mode === "mount" && <span className="tag tag-gray">引用</span>}</td>
                       <td>
                         {/* 材料用途（Y4 §5 D-4）：我方 / 对方 / 参考，写进任务的材料清单 */}
                         <RolePills

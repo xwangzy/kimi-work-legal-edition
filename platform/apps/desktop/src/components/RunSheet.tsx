@@ -5,13 +5,15 @@
 import { useState } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
-import { materialsLine, MODE_LABELS, PREAUTH_LABELS } from "../lib/labels.ts";
+import { materialsLine, PREAUTH_LABELS } from "../lib/labels.ts";
+import { modeSheetText } from "../lib/mode-options.ts";
 import type { ComposerValue } from "./Composer.tsx";
 import { SCENARIO_LABELS } from "../lib/labels.ts";
 import { Modal } from "./Modal.tsx";
 import { basisForConsent, ConsentQuestion, type ConsentAnswer } from "./Consent.tsx";
 import type { MatterBasis, SendSummaryView } from "../api.ts";
 import { SendSummary } from "./SendSummary.tsx";
+import { SendPoints } from "./SendPoints.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 import { afterConsentNotice, busyRunOfError } from "../lib/start-block.ts";
 
@@ -33,7 +35,7 @@ export interface PendingStart {
     points: number;
     points_display: string;
     assumptions: string[];
-    data_where?: { preview?: string; bullets?: string[]; bullet_kinds?: string[]; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | null; busy_run_id?: string; send_summary?: SendSummaryView };
+    data_where?: { preview?: string; preview_rows?: { label: string; text: string }[]; bullets?: string[]; bullet_kinds?: string[]; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | null; busy_run_id?: string; send_summary?: SendSummaryView };
   };
 }
 
@@ -156,10 +158,10 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
         )}
         {agent && (
           <>
-            <dt>运行模式</dt>
+            {/* 第 27 批（评审 U3-03）：与输入框的做法胶囊同名，不再把“标准（推荐）”与“先给我看计划”叠在一起 */}
+            <dt>做法</dt>
             <dd>
-              {MODE_LABELS[value.choice.mode]}
-              {value.choice.mode !== "chat" && value.choice.planFirst ? " · 先给我看计划" : ""}
+              {modeSheetText({ mode: value.choice.mode, planFirst: value.choice.mode !== "chat" && value.choice.planFirst })}
               {value.choice.mode === "auto" && value.choice.preauth.length > 0 ? `（预授权：${value.choice.preauth.map((p) => PREAUTH_LABELS[p] ?? p).join("；")}）` : ""}
             </dd>
           </>
@@ -170,28 +172,12 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
           {estimate.assumptions.length > 0 && <div className="muted sheet-note">{estimate.assumptions.join("；")}</div>}
         </dd>
       </dl>
-      {/* 发送说明（v9.4 认知减负）：默认只列三四句要点，完整口径收进“完整说明” */}
-      <section className="sheet-privacy" aria-label="发送什么、发给谁">
-        <div className="sheet-privacy-title">发送什么、发给谁</div>
-        {estimate.data_where?.bullets?.length ? (
-          <ul className="sheet-points">
-            {estimate.data_where.bullets.map((b, i) => (
-              <li key={i} data-kind={estimate.data_where?.bullet_kinds?.[i] ?? undefined}>{b}</li>
-            ))}
-          </ul>
-        ) : (
-          <p>{estimate.data_where?.preview ?? "—"}</p>
-        )}
+      {/* 发送说明（v9.4 认知减负）：默认只列三四句要点，完整口径收进“完整说明”；与开始面板共用（第 27 批，评审 U3-01） */}
+      <SendPoints dataWhere={estimate.data_where}>
         {estimate.data_where?.send_summary && (
           <SendSummary matterId={matter.matter_id} summary={estimate.data_where.send_summary} documentIds={value.documentIds} goal={value.goal} mustReview={suspectsBlocked} onReviewed={() => void reestimate()} />
         )}
-        {estimate.data_where?.bullets?.length && estimate.data_where.preview ? (
-          <details className="sheet-detail">
-            <summary>完整说明</summary>
-            <p>{estimate.data_where.preview}</p>
-          </details>
-        ) : null}
-      </section>
+      </SendPoints>
       {blocked && !consentBlocked ? (
         <div className="banner banner-orange">
           {estimate.data_where?.warning ?? "现在不能开始这个任务。"}

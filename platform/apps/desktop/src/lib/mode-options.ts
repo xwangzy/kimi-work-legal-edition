@@ -27,5 +27,11 @@ export function modeChipLabel(v: { mode: RunMode; planFirst: boolean }): string 
   if (v.mode === "default") return v.planFirst ? "先给我看计划" : "直接做";
   return MODE_LABELS[v.mode].replace("（推荐）", "");
 }
+/** 开始前确认的“做法”一行（第 27 批，评审 U3-03）：胶囊同名 + 说明的第一分句，如“先给我看计划：先列出要做的步骤，你确认后再开始”。 */
+export function modeSheetText(v: { mode: RunMode; planFirst: boolean }): string {
+  const o = modeOptions(["chat", "manual", "default", "auto"]).find((x) => isOn(x, v));
+  const hint = (o?.hint ?? "").split(/[；;。]/)[0]?.trim();
+  return hint ? `${modeChipLabel(v)}：${hint}` : modeChipLabel(v);
+}
 export const isOn = (o: ModeOption, v: { mode: RunMode; planFirst: boolean }) => o.mode === v.mode && (o.mode !== "default" || o.planFirst === v.planFirst);
 

@@ -122,11 +122,12 @@ export function DeliverablesPage() {
         )}
         {shown.length > 0 && (
           <table className="data deliverables">
-            <thead><tr><th>成果</th><th>状态</th><th>生成</th><th className="dl-actions-h">操作</th></tr></thead>
+            {/* 按状态筛选时每行状态都一样：不成列（第 27 批，评审 U3-29 / 规则 5）；只有“全部”时显示 */}
+            <thead><tr><th>成果</th>{filter === "all" && <th>状态</th>}<th>生成</th><th className="dl-actions-h">操作</th></tr></thead>
             {groupDeliverables(shown).map((g) => (
               <tbody key={g.matter_id}>
                 <tr className="dl-group">
-                  <td colSpan={4}>
+                  <td colSpan={filter === "all" ? 4 : 3}>
                     <button className="btn-link" onClick={() => nav(`/matter/${g.matter_id}`)}>{g.matter_title}</button>
                     <span className="muted"> · {g.rows.length} 份</span>
                   </td>
@@ -134,7 +135,7 @@ export function DeliverablesPage() {
                 {/* 事项下再按“一次任务”分组（Astra M-3）：这次要交给客户的那几份成组列出 */}
                 {groupByTask(g.rows).flatMap((t) => [
                   <tr key={`task-${t.run_id ?? "none"}`} className="dl-task">
-                    <td colSpan={4}>
+                    <td colSpan={filter === "all" ? 4 : 3}>
                       <span>{taskGroupLabel(t, (iso) => fmtWhen(iso))}</span>
                       {/* 组头写这次任务一共几份（复核 RB16B-11：状态筛选之后只显示一部分时说清） */}
                       <span className="muted"> · {taskCountText(t.rows.length, rows.filter((r) => r.matter_id === g.matter_id && (r.run_id ?? null) === t.run_id).length)}</span>
@@ -147,15 +148,20 @@ export function DeliverablesPage() {
                   </tr>,
                   ...t.rows.map((r: any) => (
                     <tr key={r.artifact_version_id} className="row-link dl-in-task" onClick={() => nav(`/review/${r.artifact_version_id}`)}>
-                      <td title={r.filename}><b>{r.display}</b></td>
-                      <td><StatusPill r={r} /></td>
-                      <td title={fmtTime(r.created_at)}>{fmtWhen(r.created_at)}</td>
-                      {/* 每行只留下载与提交复核（v9.4 U1 #15）；点整行就是预览，不再另放“预览”链接 */}
+                      <td title={r.filename}>
+                        <b>{r.display}</b>
+                        {/* 状态列不显示时，版本与受众补在名称后（复核 Q8-13：已签发里给法院、给客户的要分得清） */}
+                        {filter !== "all" && r.audience && r.audience !== "internal" ? <span className="muted"> · 给{AUDIENCE_LABELS[r.audience] ?? r.audience}</span> : null}
+                        {filter !== "all" && r.version > 1 ? <span className="muted"> · 第 {r.version} 版</span> : null}
+                      </td>
+                      {filter === "all" && <td><StatusPill r={r} /></td>}
+                      <td className="nowrap" title={fmtTime(r.created_at)}>{fmtWhen(r.created_at)}</td>
+                      {/* 每行只留下载与提交复核（v9.4 U1 #15）；点整行就是预览。第 27 批（评审 U3-29）：改小按钮，一屏不再是十几个蓝色链接 */}
                       <td className="dl-actions" onClick={(e) => e.stopPropagation()}>
-                        <button className="btn-link" onClick={() => void download(r)}>{downloadPlan(r.filename).label}</button>
                         {r.status === "draft" && (
-                          <button className="btn-link" disabled={busyId === r.artifact_version_id} onClick={() => void submit(r)}>提交复核</button>
+                          <button className="btn-ghost btn-sm" disabled={busyId === r.artifact_version_id} onClick={() => void submit(r)}>提交复核</button>
                         )}
+                        <button className="btn-ghost btn-sm" aria-label={downloadPlan(r.filename).label} title={downloadPlan(r.filename).label} onClick={() => void download(r)}>下载</button>
                       </td>
                     </tr>
                   )),

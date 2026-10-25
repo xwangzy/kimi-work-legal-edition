@@ -32,7 +32,10 @@ test("待办说法：推出的待办写清谁做；手工待办只写填了的",
   const base = { goal: "", scenario: "a1.agent_task", filename: null, done_by_ai: true, run_id: "r", artifact_version_id: null, count: 2, at: "" };
   assert.deepEqual(derivedTodoText({ ...base, kind: "drafts_to_review", goal: "起草起诉状" }, () => "x"), { title: "复核 2 份草稿：起草起诉状", who: "AI 已完成 · 待你复核" });
   assert.equal(derivedTodoText({ ...base, kind: "run_waiting" }, () => "通用任务").title, "回答任务里的确认：通用任务");
-  assert.equal(derivedTodoText({ ...base, kind: "to_sign", filename: "意见书.docx" }, () => "x").title, "签发：意见书.docx");
+  // 第 27 批（评审 U3-10）：不带扩展名；有成果种类时用律师认得的名字，后面括上任务名
+  assert.equal(derivedTodoText({ ...base, kind: "to_sign", filename: "意见书.docx" }, () => "x").title, "签发：意见书");
+  assert.equal(derivedTodoText({ ...base, kind: "to_sign", filename: "草稿-2026-10-25.md", artifact_kind: "a1_agent_draft", goal: "整理时间线" }, () => "x").title, "签发：助手草稿（整理时间线）");
+  assert.equal(derivedTodoText({ ...base, kind: "to_sign", filename: "案情时间线.docx", artifact_kind: "a1_workspace_file", goal: "整理案卷" }, () => "x").title, "签发：案情时间线（整理案卷）");
   assert.equal(todoMeta({ assignee_kind: "me", assignee_name: null, reviewer_name: null }), "");
   assert.equal(todoMeta({ assignee_kind: "assistant", assignee_name: "小王", reviewer_name: "张律师" }), "助理小王做 · 张律师复核");
   assert.equal(todoMeta({ assignee_kind: "ai", assignee_name: null, reviewer_name: null }), "AI做");

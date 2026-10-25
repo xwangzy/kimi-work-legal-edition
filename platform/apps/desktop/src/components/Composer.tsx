@@ -49,6 +49,7 @@ export function Composer(props: {
   const [menu, setMenu] = useState<"method" | "material" | "matter" | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (!menu) return;
     const close = (e: MouseEvent) => {
@@ -75,6 +76,7 @@ export function Composer(props: {
         {(matter?.stance ?? props.stance) ? <span className="ctx-stance muted">我方：{stanceLabel(matter?.stance ?? props.stance)}</span> : null}
       </div>
       <textarea
+        ref={textRef}
         autoFocus={props.autoFocus}
         placeholder={props.placeholder ?? "描述要处理的法律工作，例如：审查这份股权转让协议，我方为受让方"}
         value={value.goal}
@@ -94,7 +96,16 @@ export function Composer(props: {
             这看起来是<b>「{props.suggestion.title}」</b>：会得到{props.suggestion.gets}。
           </span>
           <button className="btn-primary btn-sm" onClick={props.suggestion.onUse}>使用{props.suggestion.title}</button>
-          <button className="btn-link" onClick={props.suggestion.onDismiss}>仍按我的描述处理</button>
+          {/* 第 27 批走查：点完焦点回到输入框，⌘ / Ctrl + Enter 照常能发起（原来焦点停在这个按钮上，快捷键失效） */}
+          <button
+            className="btn-link"
+            onClick={() => {
+              props.suggestion?.onDismiss();
+              textRef.current?.focus();
+            }}
+          >
+            仍按我的描述处理
+          </button>
         </div>
       )}
       {(value.scenario !== "a1.agent_task" || value.documentIds.length > 0) && (

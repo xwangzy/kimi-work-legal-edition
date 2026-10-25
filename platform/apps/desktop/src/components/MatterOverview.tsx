@@ -107,22 +107,31 @@ const EMPTY: TodoInput = { title: "", assignee_kind: "me", assignee_name: "", re
  * 统一待核清单（v9.4 第 21 批，主文 §6.4）：事实、审阅表、审查意见、论点、成果未决项、引用逐条决定一处列全，每项点了去处理。
  * onGo 由事项页给（切到“事实”、材料的表格审阅、打开工作台）；任务与成果直接跳转。
  */
-export function PendingChecks({ matter, onGo }: { matter: Matter; onGo?: (target: PendingCheck["target"]) => void }) {
+export function PendingChecks({ matter, onGo, onCount, hideEmpty }: { matter: Matter; onGo?: (target: PendingCheck["target"]) => void; onCount?: (n: number) => void; hideEmpty?: boolean }) {
   const [list, setList] = useState<PendingCheck[] | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let live = true;
     api
       .pendingChecks(matter.matter_id)
-      .then((r) => live && setList(r.checks))
-      .catch(() => live && setFailed(true));
+      .then((r) => {
+        if (!live) return;
+        setList(r.checks);
+        onCount?.(r.checks.length);
+      })
+      .catch(() => {
+        if (!live) return;
+        setFailed(true);
+        // 复核 Q8-11：读失败时告诉同一块里的待办“不是没有”，免得紧接着写“没有等你处理的事”
+        onCount?.(-1);
+      });
     return () => {
       live = false;
     };
   }, [matter.matter_id]);
   if (failed) return <p className="muted">待核清单没有读出来，请稍后再试。</p>;
-  if (!list) return <p className="muted">载入中…</p>;
-  if (list.length === 0) return <p className="muted">没有等你核的内容。</p>;
+  if (!list) return hideEmpty ? null : <p className="muted">载入中…</p>;
+  if (list.length === 0) return hideEmpty ? null : <p className="muted">没有等你核的内容。</p>;
   const go = (t: PendingCheck["target"]) => {
     if ("run_id" in t) nav(`/run/${t.run_id}/${matter.matter_id}`);
     else if ("artifact_version_id" in t) nav(`/review/${t.artifact_version_id}`);
@@ -140,7 +149,7 @@ export function PendingChecks({ matter, onGo }: { matter: Matter; onGo?: (target
   );
 }
 
-export function MatterTodos({ matter, readOnly }: { matter: Matter; readOnly: boolean }) {
+export function MatterTodos({ matter, readOnly, othersCount = 0 }: { matter: Matter; readOnly: boolean; othersCount?: number }) {
   const [list, setList] = useState<TodoList | null>(null);
   const [failed, setFailed] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -187,7 +196,8 @@ export function MatterTodos({ matter, readOnly }: { matter: Matter; readOnly: bo
   const nothing = list.derived.length === 0 && list.open.length === 0;
   return (
     <div className="todos">
-      {nothing && !adding && <p className="muted">没有待办。AI 完成的任务会自动出现在这里，等你复核。</p>}
+      {/* 与上面的待核合在“等你处理”里（第 27 批，评审 U2-29）：两边都空时才说“没有” */}
+      {nothing && !adding && othersCount === 0 && <p className="muted">没有等你处理的事。AI 完成的任务会自动出现在这里，等你复核。</p>}
       {list.derived.map((d, i) => {
         const t = derivedTodoText(d, (s) => SCENARIO_LABELS[s] ?? "任务");
         return (
