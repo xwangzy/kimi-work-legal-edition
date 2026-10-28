@@ -6,7 +6,7 @@
  * - 当事人词典 = 事项头（委托人、相对方）+ matter_parties（关联方、证人、别名）；
  * - 还原（restore）只给可信界面渲染与文书引擎导出；Agent、工作区、代码与模型上下文一律只见代号。
  */
-import { deriveOrgAliases, extractDefinedAliases, isGenericAlias, MatterTokenizer, restoreTokens, type PartyEntry, type TokenEntry } from "@zr-legal/tokenizer";
+import { deriveOrgAliases, extractDefinedAliases, isGenericAlias, MatterTokenizer, restoreTokens, type PartyEntry, type TokenEntry, type TokenizeOptions } from "@zr-legal/tokenizer";
 import type { MatterEgressContext } from "@zr-legal/egress-gate";
 import type { KernelDb } from "../db.ts";
 import { dataLevelOf, headerPartyKind, newMatterTokenKey, partiesFromMatter } from "./gate-host.ts";
@@ -149,8 +149,8 @@ export class MatterTokenStore {
   }
 
   /** 令牌化一段文本并写回新条目（内核侧调用的便捷形式）。 */
-  tokenize(matterId: string, text: string): { text: string; replaced: number; counts: Partial<Record<TokenEntry["category"], number>> } {
-    const [r] = this.tokenizeAll(matterId, [text]);
+  tokenize(matterId: string, text: string, o: TokenizeOptions = {}): { text: string; replaced: number; counts: Partial<Record<TokenEntry["category"], number>> } {
+    const [r] = this.tokenizeAll(matterId, [text], o);
     return r!;
   }
 
@@ -163,12 +163,12 @@ export class MatterTokenStore {
     });
   }
 
-  /** 批量令牌化（同一令牌化器，跨文本稳定）并一次写回新条目。 */
-  tokenizeAll(matterId: string, texts: readonly string[]): { text: string; replaced: number; counts: Partial<Record<TokenEntry["category"], number>> }[] {
+  /** 批量令牌化（同一令牌化器，跨文本稳定）并一次写回新条目。`knownOnly`：模型写的文字只替换已知名单（D-157）。 */
+  tokenizeAll(matterId: string, texts: readonly string[], o: TokenizeOptions = {}): { text: string; replaced: number; counts: Partial<Record<TokenEntry["category"], number>> }[] {
     const tz = this.tokenizer(matterId);
     const before = new Set(tz.table().map((e) => e.token));
     const out = texts.map((t) => {
-      const r = tz.tokenize(t);
+      const r = tz.tokenize(t, o);
       return { text: r.text, replaced: r.replaced, counts: r.counts };
     });
     this.persist(matterId, tz.table().filter((e) => !before.has(e.token)));

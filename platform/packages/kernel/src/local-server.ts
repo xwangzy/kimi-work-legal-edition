@@ -21,6 +21,7 @@ import { argsHash, canonicalJson } from "@zr-legal/host-policy";
 import { newId } from "@zr-legal/domain";
 import { liveRunForClaims, tokenLiveness, type LiveRun } from "./identity.ts";
 import { authorizeToolCall } from "@zr-legal/host-policy";
+import { READBACK_MODEL_FIELDS, tokenizeByField, type ModelFieldRule } from "@zr-legal/egress-gate";
 import { TOOLS, findTool, invokeTool, legalToolLockProblems, legalToolManifests, manifestFor, validateParams } from "./tools/registry.ts";
 
 const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -61,16 +62,12 @@ export interface LocalServerDeps {
 /** 结构性字段（ID、摘要、地址、版本、枚举）：不做令牌化（避免把编号误当标识符替换）。 */
 const STRUCTURAL_KEY = /(?:^|_)(?:id|ids|hash|sha256|uri|version|kind|status|code|type|mime|as_of|date|severity|decision|state)$/i;
 
-/** 工具结果按事项令牌化（深度遍历字符串值；结构性字段原样）。 */
-export function tokenizeToolResult(value: unknown, tokenize: (s: string) => string, key: string | null = null): unknown {
-  if (typeof value === "string") return key && STRUCTURAL_KEY.test(key) ? value : tokenize(value);
-  if (Array.isArray(value)) return value.map((x) => tokenizeToolResult(x, tokenize, key));
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = tokenizeToolResult(v, tokenize, k);
-    return out;
-  }
-  return value;
+/**
+ * 工具结果按事项令牌化（深度遍历字符串值；结构性字段原样）。读回工具（riskcards.list 等）的结果里模型自己写的字段
+ * 只替换已知名单（`tokenize` 第二个参数为 true；规则见 @zr-legal/egress-gate READBACK_MODEL_FIELDS，D-157 第二步）。
+ */
+export function tokenizeToolResult(value: unknown, tokenize: (s: string, knownOnly: boolean) => string, rule: ModelFieldRule | null = null): unknown {
+  return tokenizeByField(value, (s, modelWritten, key) => (key && STRUCTURAL_KEY.test(key) ? s : tokenize(s, modelWritten)), rule);
 }
 
 function jsonrpcError(id: string | number | null, code: number, message: string) {
@@ -409,7 +406,9 @@ export async function startLocalServer(deps: LocalServerDeps, opts: { host?: str
         try {
           const raw = await invokeWithOutbox(name, args ?? {}, claims, run, t.signal);
           // 交回 Agent 之前令牌化（工作区与会话只见令牌；闸门出站时另行复扫，幂等）
-          const result = deps.tokens ? tokenizeToolResult(raw, (s) => deps.tokens!.tokenize(run.matterId, s).text) : raw;
+          const result = deps.tokens
+            ? tokenizeToolResult(raw, (s, knownOnly) => deps.tokens!.tokenize(run.matterId, s, knownOnly ? { knownOnly: true } : {}).text, READBACK_MODEL_FIELDS[name] ?? null)
+            : raw;
           return sendJson(res, 200, {
             jsonrpc: "2.0",
             id,

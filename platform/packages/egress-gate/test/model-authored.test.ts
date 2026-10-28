@@ -124,3 +124,100 @@ test("本机写入的 assistant 预填（partial / prefix 标记、位于末尾�
   assert.ok(!JSON.stringify(am[2]).includes("李明辉"));
   assert.deepEqual(persons(t3), ["李明辉"]);
 });
+
+// ── 第二步：读回工具的结果按字段（第 30 批真实复测：riskcards.list 交回的卡片建议学进“应开具、应完整、应完成”）──
+
+const call = (id: string, name: string) => ({ role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: "{}" } }] });
+const result = (id: string, body: unknown) => ({ role: "tool", tool_call_id: id, content: JSON.stringify(body, null, 2) });
+
+test("读回工具的 tool 消息按字段：卡片建议、未确认的事实、AI 填的格子、未改写的论点只替换已知名单；律师写的字段照常识别并学进令牌表", () => {
+  const t = new MatterTokenizer({ matterKey: KEY, parties: PARTIES });
+  const cards = {
+    progress: { total: 2 },
+    cards: [
+      { card_id: "rc_1", clause_ref: "3.3", anchor_text: "乙方收到款项后十五个工作日内向甲方开具等额增值税专用发票。", issue: "先收款后开票。", suggestion: "每期付款前，乙方应开具等额合法有效的增值税专用发票。", fallback: "乙方应完整交付源代码、文档及相关资料。", lawyer_text: null },
+      { card_id: "rc_2", clause_ref: "7.1", issue: "合同解除或终止后，乙方应完成工作、源代码、文档及数据的交接。", lawyer_text: "合同解除后十日内，乙方向甲方移交全部资料，由证人王建业签收。" },
+    ],
+  };
+  const facts = {
+    facts: [
+      { fact_id: "f1", statement: "乙方应开具发票而未开具。", party: "乙方", quote: "向甲方开具等额增值税专用发票", lawyer_status: "proposed" },
+      { fact_id: "f2", statement: "证人赵立新确认已收到全部资料。", lawyer_status: "confirmed" },
+    ],
+  };
+  const table = { table_id: "t1", title: "合同台账", cells: [{ column: "c1", state: "ai", value: "乙方应完整交付源代码", quote: "交付源代码" }, { column: "c2", state: "edited", value: "联系人：钱志远，电话另告" }] };
+  const outline = { status: "confirmed", confirmed_arguments: [{ arg_id: "a1", claim: "被告应开具发票", lawyer_edited: false, counter: "对方或称已开具" }, { arg_id: "a2", claim: "证人孙志强可证明交付事实", lawyer_edited: true }], lawyer_note: "联系人周文涛另行核实" };
+  const r = processChatPayload(
+    {
+      model: "legal/k3",
+      messages: [
+        { role: "user", content: "审查。" },
+        call("c1", "mcp__legal__riskcards_list"),
+        result("c1", cards),
+        call("c2", "mcp__legal__facts_list"),
+        result("c2", facts),
+        call("c3", "mcp__legal__table_get"),
+        result("c3", table),
+        call("c4", "mcp__legal__outline_get"),
+        result("c4", outline),
+        { role: "user", content: "继续。" },
+      ],
+    },
+    t,
+  );
+  assert.deepEqual(persons(t), ["孙志强", "周文涛", "王建业", "赵立新", "钱志远"].sort(), "只学进律师写的字段里的姓名");
+  const msgs = (r.body as any).messages;
+  const c = JSON.parse(msgs[2].content);
+  assert.equal(c.cards[0].suggestion, cards.cards[0]!.suggestion);
+  assert.equal(c.cards[0].fallback, cards.cards[0]!.fallback);
+  assert.equal(c.cards[1].issue, cards.cards[1]!.issue);
+  assert.ok(!c.cards[1].lawyer_text.includes("王建业"), c.cards[1].lawyer_text);
+  const f = JSON.parse(msgs[4].content);
+  assert.equal(f.facts[0].statement, facts.facts[0]!.statement);
+  assert.ok(!f.facts[1].statement.includes("赵立新"));
+  const tb = JSON.parse(msgs[6].content);
+  assert.equal(tb.cells[0].value, table.cells[0]!.value);
+  assert.ok(!tb.cells[1].value.includes("钱志远"));
+  const o = JSON.parse(msgs[8].content);
+  assert.equal(o.confirmed_arguments[0].claim, "被告应开具发票");
+  assert.ok(!o.confirmed_arguments[1].claim.includes("孙志强") && !o.lawyer_note.includes("周文涛"));
+});
+
+test("读回规则只认本请求里 assistant 调用的这四个工具：别的工具结果、解析不了的结果照常识别；Anthropic 形态的 tool_result 同样按字段", () => {
+  const t = new MatterTokenizer({ matterKey: KEY });
+  const prose = "每期付款前，乙方应开具等额合法有效的增值税专用发票。";
+  const r = processChatPayload(
+    {
+      model: "legal/k3",
+      messages: [
+        { role: "user", content: "审查。" },
+        call("c1", "mcp__legal__materials_read_excerpt"),
+        result("c1", { text: `证人王建业出庭作证。${prose}` }),
+        call("c2", "mcp__legal__riskcards_list"),
+        { role: "tool", tool_call_id: "c2", content: `证人赵立新称：${prose}` },
+        { role: "tool", tool_call_id: "c9", content: JSON.stringify({ cards: [{ suggestion: "由证人钱志远签收" }] }) },
+        { role: "user", content: "继续。" },
+      ],
+    },
+    t,
+  );
+  // 材料摘录（非读回工具）、读回工具但不是 JSON、没有对应调用的 tool 消息：照常识别
+  for (const n of ["王建业", "赵立新", "钱志远"]) assert.ok(persons(t).includes(n), n);
+  assert.ok(!JSON.stringify(r.body).includes("王建业"));
+  // Anthropic 形态
+  const t2 = new MatterTokenizer({ matterKey: KEY });
+  const a = processChatPayload(
+    {
+      model: "legal/k3",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "审查。" }] },
+        { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "mcp__legal__riskcards_list", input: {} }] },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: [{ type: "text", text: JSON.stringify({ cards: [{ suggestion: prose, lawyer_text: "由证人钱志远签收" }] }, null, 2) }] }] },
+      ],
+    },
+    t2,
+  );
+  assert.deepEqual(persons(t2), ["钱志远"]);
+  const back = JSON.parse((a.body as any).messages[2].content[0].content[0].text);
+  assert.equal(back.cards[0].suggestion, prose);
+});

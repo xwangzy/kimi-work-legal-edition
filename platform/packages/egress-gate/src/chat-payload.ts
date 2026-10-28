@@ -9,6 +9,9 @@
  *   当事人词典与令牌表里的姓名照常替换，但不做姓名识别、不学新姓名——模型只见过令牌化后的输入，它写的“应全额、任何、向乙”
  *   不应被学成姓名、再回过头把合同原文换成代号。本机写入的 assistant 预填（`partial` / `prefix`、或位于末尾的 assistant 消息）
  *   不是模型写的，照常识别；system、user、tool 消息与工具定义照常识别；
+ * - **读回工具的结果按字段**（第 30 批，D-157 第二步）：tool 消息（与 Anthropic 形态的 tool_result）若是本请求里 assistant 调用的
+ *   riskcards.list / facts.list / outline.get / table.get 的结果，按 JSON 解析后，模型自己写的字段（卡片建议、未确认的事实陈述、
+ *   未经律师改写的论点、AI 填的格子）只替换已知名单，律师写的字段与其余内容照常识别；解析不了的整段照常识别；
  * - 工作区本已是令牌形态，确定性令牌化幂等：同一值得到同一代号，跨轮稳定、前缀缓存不破；
  * - 工具调用参数（JSON 字符串）先解析再逐值令牌化（`\uXXXX` 转义写法同样识别），只在确有替换时重新序列化；
  * - **响应流不还原**（不在本模块）：引擎收到的永远是令牌形态；
@@ -17,6 +20,7 @@
  */
 import { createHash } from "node:crypto";
 import { suspectedNames, TOKEN_RE, tokenCategory, type MatterTokenizer, type TokenCategory } from "@zr-legal/tokenizer";
+import { READBACK_MODEL_FIELDS, readbackToolOf, tokenizeByField, type ModelFieldRule } from "./readback-fields.ts";
 
 export interface ChatPayloadReport {
   /** 处理后的请求体（只改文本值）。 */
@@ -57,11 +61,13 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): 
   const seen = new Map<string, "high" | "medium">();
   /** 正在处理模型写的 assistant 消息（D-157）：其中的字符串只替换已知名单。 */
   let modelAuthored = false;
-  const tok = (s: string): string => {
+  /** 正在处理读回工具的结果（D-157 第二步）：文字按 JSON 解析、按字段选档。 */
+  let readbackRule: ModelFieldRule | null = null;
+  const tok = (s: string, knownOnly = modelAuthored): string => {
     if (s.length === 0) return s;
     report.textChars += s.length;
     report.segments += 1;
-    const r = tokenizer.tokenize(s, modelAuthored ? { knownOnly: true } : {});
+    const r = tokenizer.tokenize(s, knownOnly ? { knownOnly: true } : {});
     report.replaced += r.replaced;
     for (const [k, v] of Object.entries(r.counts)) report.counts[k as TokenCategory] = (report.counts[k as TokenCategory] ?? 0) + (v ?? 0);
     TOKEN_RE.lastIndex = 0;
@@ -78,6 +84,35 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): 
     }
     return r.text;
   };
+
+  /** 读回工具的结果（JSON 文本）：模型写的字段只替换已知名单，其余照常；有替换才重新序列化（与内核同一缩进）。 */
+  const readback = (raw: string, rule: ModelFieldRule): string => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return tok(raw);
+    }
+    if (!parsed || typeof parsed !== "object") return tok(raw);
+    const before = JSON.stringify(parsed);
+    const out = tokenizeByField(parsed, (s, modelWritten) => tok(s, modelWritten), rule);
+    return JSON.stringify(out) === before ? raw : JSON.stringify(out, null, 2);
+  };
+  /** 消息与内容块里的正文文字。 */
+  const text = (s: string): string => (readbackRule ? readback(s, readbackRule) : tok(s));
+  /** 本请求里 assistant 发起的工具调用：调用 ID → 有读回规则的工具（结构字段，不看内容）。 */
+  const readbackCalls = new Map<string, ModelFieldRule>();
+  const noteCall = (id: unknown, name: unknown): void => {
+    const tool = readbackToolOf(name);
+    if (typeof id === "string" && tool) readbackCalls.set(id, READBACK_MODEL_FIELDS[tool]!);
+  };
+  const srcMessages = (input as { messages?: unknown }).messages;
+  for (const m of Array.isArray(srcMessages) ? srcMessages : []) {
+    if (!m || typeof m !== "object" || (m as { role?: unknown }).role !== "assistant") continue;
+    const { tool_calls: calls, content } = m as { tool_calls?: unknown; content?: unknown };
+    for (const c of Array.isArray(calls) ? calls : []) noteCall((c as { id?: unknown })?.id, (c as { function?: { name?: unknown } })?.function?.name);
+    for (const b of Array.isArray(content) ? content : []) if ((b as { type?: unknown })?.type === "tool_use") noteCall((b as { id?: unknown }).id, (b as { name?: unknown }).name);
+  }
 
   /** 内容子树：每一个字符串值都令牌化（键名不论）。 */
   const deep = (v: unknown): unknown => {
@@ -126,7 +161,7 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): 
 
   /** 内容块（消息 content 数组、tool_result 的 content、顶层 system 数组）。 */
   const block = (b: unknown, message: number): unknown => {
-    if (typeof b === "string") return tok(b);
+    if (typeof b === "string") return text(b);
     if (!b || typeof b !== "object" || Array.isArray(b)) return deep(b);
     const o = b as Record<string, unknown>;
     if (typeof o.type !== "string") return deep(o);
@@ -139,12 +174,20 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): 
       return o;
     }
     const out: Record<string, unknown> = {};
-    for (const [k, x] of Object.entries(o)) {
-      if (BLOCK_STRUCTURAL.has(k)) out[k] = x;
-      else if (k === "name" && o.type === "tool_use" && typeof x === "string") out[k] = x;
-      else if (k === "data" && o.type === "redacted_thinking") out[k] = x;
-      else if (k === "content") out[k] = Array.isArray(x) ? x.map((y) => block(y, message)) : block(x, message);
-      else out[k] = deep(x);
+    // Anthropic 形态：读回工具的 tool_result 内容按字段处理
+    const outer = readbackRule;
+    if (o.type === "tool_result" && typeof o.tool_use_id === "string") readbackRule = readbackCalls.get(o.tool_use_id) ?? null;
+    try {
+      for (const [k, x] of Object.entries(o)) {
+        if (BLOCK_STRUCTURAL.has(k)) out[k] = x;
+        else if (k === "name" && o.type === "tool_use" && typeof x === "string") out[k] = x;
+        else if (k === "data" && o.type === "redacted_thinking") out[k] = x;
+        else if (k === "content") out[k] = Array.isArray(x) ? x.map((y) => block(y, message)) : block(x, message);
+        else if (k === "text" && typeof x === "string") out[k] = text(x);
+        else out[k] = deep(x);
+      }
+    } finally {
+      readbackRule = outer;
     }
     return out;
   };
@@ -154,6 +197,7 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): 
     const mo = m as Record<string, unknown>;
     // 模型写的：assistant 角色，且不是本机写入的预填（partial / prefix 标记，或位于末尾——Anthropic 形态的预填）
     modelAuthored = mo.role === "assistant" && mo.partial !== true && mo.prefix !== true && index < count - 1;
+    readbackRule = mo.role === "tool" && typeof mo.tool_call_id === "string" ? (readbackCalls.get(mo.tool_call_id) ?? null) : null;
     try {
       const out: Record<string, unknown> = {};
       for (const [k, x] of Object.entries(mo)) {
@@ -166,6 +210,7 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): 
       return out;
     } finally {
       modelAuthored = false;
+      readbackRule = null;
     }
   };
 

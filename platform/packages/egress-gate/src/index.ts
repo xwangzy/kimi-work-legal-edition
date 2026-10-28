@@ -7,6 +7,7 @@ export { checkUrlStatic, isPublicAddress, DEFAULT_ALLOWED_PORTS } from "./url-gu
 export { gateFetch, FetchDenied, htmlToText } from "./fetcher.ts";
 export { screenSearchQuery, type DataLevel, type SearchVerdict } from "./search-guard.ts";
 export { processChatPayload } from "./chat-payload.ts";
+export { READBACK_MODEL_FIELDS, readbackToolOf, tokenizeByField, type ModelFieldRule } from "./readback-fields.ts";
 export { extractUsage } from "./usage.ts";
 export { OFFICIAL_SITE_BASELINE } from "./baseline.ts";
 export { checkUpstream, isLoopbackHost, normalizePins, PIN_RE, spkiPin, type TransportCheck, type TransportState } from "./tls-check.ts";
