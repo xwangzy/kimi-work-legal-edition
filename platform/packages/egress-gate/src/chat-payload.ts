@@ -5,6 +5,10 @@
  *   请求顶层的模型与采样参数、消息的角色与调用 ID、工具调用的 ID/类型/函数名、内容块的类型/ID/缓存控制/签名、工具定义的类型与名称原样；
  *   **其余一切字符串值**（消息内容、system、`messages[].name`、思考内容、工具描述、参数 schema、工具调用参数的每一个值、
  *   `stop`、`user`、元数据、未知字段）都经同一令牌化器——工具参数与 schema 内部不再有任何“结构键”豁免；
+ * - **模型自己写的内容只替换已知名单**（v9.4 第 30 批，D-157）：assistant 消息（正文、思考、工具调用参数、引用）的标识符照常替换，
+ *   当事人词典与令牌表里的姓名照常替换，但不做姓名识别、不学新姓名——模型只见过令牌化后的输入，它写的“应全额、任何、向乙”
+ *   不应被学成姓名、再回过头把合同原文换成代号。本机写入的 assistant 预填（`partial` / `prefix`、或位于末尾的 assistant 消息）
+ *   不是模型写的，照常识别；system、user、tool 消息与工具定义照常识别；
  * - 工作区本已是令牌形态，确定性令牌化幂等：同一值得到同一代号，跨轮稳定、前缀缓存不破；
  * - 工具调用参数（JSON 字符串）先解析再逐值令牌化（`\uXXXX` 转义写法同样识别），只在确有替换时重新序列化；
  * - **响应流不还原**（不在本模块）：引擎收到的永远是令牌形态；
@@ -51,11 +55,13 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): 
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("请求体不是对象");
   const report: ChatPayloadReport = { body: {}, textChars: 0, segments: 0, replaced: 0, counts: {}, present: {}, media: [], suspects: { high: 0, medium: 0 }, suspectValues: [] };
   const seen = new Map<string, "high" | "medium">();
+  /** 正在处理模型写的 assistant 消息（D-157）：其中的字符串只替换已知名单。 */
+  let modelAuthored = false;
   const tok = (s: string): string => {
     if (s.length === 0) return s;
     report.textChars += s.length;
     report.segments += 1;
-    const r = tokenizer.tokenize(s);
+    const r = tokenizer.tokenize(s, modelAuthored ? { knownOnly: true } : {});
     report.replaced += r.replaced;
     for (const [k, v] of Object.entries(r.counts)) report.counts[k as TokenCategory] = (report.counts[k as TokenCategory] ?? 0) + (v ?? 0);
     TOKEN_RE.lastIndex = 0;
@@ -143,17 +149,24 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): 
     return out;
   };
 
-  const message = (m: unknown, index: number): unknown => {
+  const message = (m: unknown, index: number, count: number): unknown => {
     if (!m || typeof m !== "object" || Array.isArray(m)) return deep(m);
-    const out: Record<string, unknown> = {};
-    for (const [k, x] of Object.entries(m as Record<string, unknown>)) {
-      if (MESSAGE_STRUCTURAL.has(k)) out[k] = x;
-      else if (k === "content") out[k] = x === null ? null : Array.isArray(x) ? x.map((y) => block(y, index)) : block(x, index);
-      else if (k === "tool_calls" && Array.isArray(x)) out[k] = x.map(toolCall);
-      else if (k === "function_call") out[k] = toolCall(x);
-      else out[k] = deep(x);
+    const mo = m as Record<string, unknown>;
+    // 模型写的：assistant 角色，且不是本机写入的预填（partial / prefix 标记，或位于末尾——Anthropic 形态的预填）
+    modelAuthored = mo.role === "assistant" && mo.partial !== true && mo.prefix !== true && index < count - 1;
+    try {
+      const out: Record<string, unknown> = {};
+      for (const [k, x] of Object.entries(mo)) {
+        if (MESSAGE_STRUCTURAL.has(k)) out[k] = x;
+        else if (k === "content") out[k] = x === null ? null : Array.isArray(x) ? x.map((y) => block(y, index)) : block(x, index);
+        else if (k === "tool_calls" && Array.isArray(x)) out[k] = x.map(toolCall);
+        else if (k === "function_call") out[k] = toolCall(x);
+        else out[k] = deep(x);
+      }
+      return out;
+    } finally {
+      modelAuthored = false;
     }
-    return out;
   };
 
   /** 工具定义：类型与名称原样；描述与参数 schema 全部令牌化。 */
@@ -173,7 +186,7 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): 
   const body: Record<string, unknown> = {};
   for (const [k, x] of Object.entries(src)) {
     if (TOP_STRUCTURAL.has(k)) body[k] = x;
-    else if (k === "messages" && Array.isArray(x)) body[k] = x.map((m, i) => message(m, i));
+    else if (k === "messages" && Array.isArray(x)) body[k] = x.map((m, i) => message(m, i, x.length));
     else if (k === "system") body[k] = Array.isArray(x) ? x.map((b) => block(b, -1)) : block(x, -1);
     else if ((k === "tools" || k === "functions") && Array.isArray(x)) body[k] = x.map(toolDef);
     else if (k === "response_format" && x && typeof x === "object" && !Array.isArray(x)) {

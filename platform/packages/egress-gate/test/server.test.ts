@@ -240,4 +240,25 @@ describe("出站闸门服务", () => {
     const tok = fresh.find((e) => e.value === "欧阳娜娜")!.token;
     assert.ok(model.bodies.at(-1)!.body.includes(tok));
   });
+
+  test("D-157：assistant 消息里的助手意见不回写内核令牌表（只有工具结果里的新姓名回写）；按新表重建后合同原文原样到达模型", async () => {
+    authority.current = ctx({ tokenizer: { ...ctx().tokenizer, tableVersion: 30 } });
+    const before = authority.newTokens.length;
+    const args = JSON.stringify({ cards: [{ anchor_text: "甲方向乙方支付货款", issue: "问题：先收款后开票使甲方付款时无法核验发票合规性。", suggestion: "该条款对买方明显不利。" }] });
+    await call(socket, "/m/m1/v1/chat/completions", {
+      model: "kimi-k3",
+      messages: [
+        { role: "user", content: "审查采购合同。" },
+        { role: "assistant", content: "被告向原告支付违约金的请求缺乏依据；任何一方违约的，应承担责任。", tool_calls: [{ id: "c1", type: "function", function: { name: "riskcards_submit", arguments: args } }] },
+        { role: "tool", tool_call_id: "c1", content: "证人：李明辉，当庭作证。" },
+        { role: "user", content: "继续。" },
+      ],
+    });
+    const fresh = authority.newTokens.slice(before);
+    assert.deepEqual(fresh.filter((e) => e.category === "person").map((e) => e.value), ["李明辉"]);
+    authority.current = ctx({ tokenizer: { ...ctx().tokenizer, table: fresh, tableVersion: 31 } });
+    const contract = "3.1 乙方收到付款后五日内开具发票；如违约金明显过高，可请求调整。";
+    await call(socket, "/m/m1/v1/chat/completions", { model: "kimi-k3", messages: [{ role: "user", content: "逐字引用第3.1条。" }, { role: "tool", tool_call_id: "c2", content: contract }] });
+    assert.ok(model.bodies.at(-1)!.body.includes(contract), model.bodies.at(-1)!.body);
+  });
 });

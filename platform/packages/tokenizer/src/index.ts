@@ -15,6 +15,8 @@
  * - 冲突：不同值得到同一短编号时，后出现的值改用 10 位编号并记入事项令牌表（表随事项持久化后，冲突处理也稳定）；
  * - 幂等：已有的代号不再识别；对已令牌化的文本再做一次令牌化不改变内容；
  * - 自然人姓名靠当事人词典 + 规则识别（names.ts），**漏识别的姓名仍会出站**——漏识别率在合成测试集上如实报告；
+ * - 只替换已知名单（`tokenize(text, { knownOnly: true })`，v9.4 第 30 批 D-157）：标识符与词典、令牌表照常，不做规则识别、
+ *   不产生新的自然人条目——出站闸门对模型自己写的内容用这一档（模型只见过令牌化后的输入，它写的常用词不应被学成姓名）；
  * - 令牌化降低风险，但不构成匿名化（第 02 篇 §8.3 末段）。
  */
 import { createHmac, hkdfSync } from "node:crypto";
@@ -113,6 +115,16 @@ export interface MatterTokenizerOptions {
   caseNumbers?: boolean;
 }
 
+export interface TokenizeOptions {
+  /**
+   * 只替换已知名单（v9.4 第 30 批，D-157）：标识符照常；当事人词典与令牌表里未退役的自然人（全部化名时含机构）照常；
+   * 昵称只认词典与令牌表里已有的写法本身，不按已知姓氏派生新写法。不做规则识别，不产生新的自然人条目。
+   * 出站闸门对 assistant 消息（正文、思考、工具调用参数）用这一档：第 29 批真实走查里，助手意见中的“应全额、任何、向乙”
+   * 被认成姓名、学进令牌表，回过头把合同原文换成代号。
+   */
+  knownOnly?: boolean;
+}
+
 export class MatterTokenizer {
   private readonly key: Buffer;
   private readonly fullPseudonym: boolean;
@@ -209,7 +221,7 @@ export class MatterTokenizer {
     return [...s];
   }
 
-  tokenize(text: string): TokenizeResult {
+  tokenize(text: string, o: TokenizeOptions = {}): TokenizeResult {
     // 已释放的令牌化器密钥已清零：继续使用会产生错误的代号（失败关闭）
     if (this.disposed) throw new Error("令牌化器已释放");
     if (typeof text !== "string" || text.length === 0) return { text: text ?? "", entries: [], counts: {}, replaced: 0, spans: [] };
@@ -242,17 +254,22 @@ export class MatterTokenizer {
     for (const p of this.parties) if (p.category === "person") addSurname(surnames, nickAllowed, p.value);
     for (const e of this.byValue.values()) if (e.category === "person" && !retired(e)) addSurname(surnames, nickAllowed, e.value);
     hits.push(...matchDictionary(text, dict, taken, "dictionary"));
-    // 3) 规则识别的自然人姓名（本段识别出的姓名全文再匹配；昵称形态的交给第 4 步）
-    if (this.recognize) {
+    // 3) 规则识别的自然人姓名（本段识别出的姓名全文再匹配；昵称形态的交给第 4 步）。只替换已知名单时不做（D-157）
+    const knownOnly = o.knownOnly === true;
+    if (this.recognize && !knownOnly) {
       const masked = maskRanges(foldWidth(text), taken);
       const found = [...recognizeNames(masked)].filter((n) => !dict.some((d) => d.value === n));
       for (const n of found) addSurname(surnames, nickAllowed, n);
       const names = found.filter((n) => nicknameSurname(n) === null);
       hits.push(...matchDictionary(text, names.map((value) => ({ value, category: "person" as const })), taken, "recognizer"));
-      // 4) 昵称与职务称呼（老王、小李、王总、李工、陈经理……）：只在姓氏属于已知自然人（词典、令牌表、本段识别）时识别
-      if (surnames.size > 0 || nickAllowed.size > 0) {
+    }
+    // 4) 昵称与职务称呼（老王、小李、王总、李工、陈经理……）：只在姓氏属于已知自然人（词典、令牌表、本段识别）时识别；
+    //    只替换已知名单时只认词典与令牌表里已有的写法本身（“王总”在表里才换），不按已知姓氏派生新写法
+    if (this.recognize || knownOnly) {
+      const bySurname = knownOnly ? new Set<string>() : surnames;
+      if (bySurname.size > 0 || nickAllowed.size > 0) {
         const masked2 = maskRanges(foldWidth(text), taken);
-        for (const n of findNicknames(masked2, surnames, nickAllowed)) {
+        for (const n of findNicknames(masked2, bySurname, nickAllowed)) {
           if (taken.some((t) => n.start < t.end && n.end > t.start)) continue;
           hits.push({ category: "person", start: n.start, end: n.end, value: text.slice(n.start, n.end), source: "recognizer" });
           taken.push({ start: n.start, end: n.end });
