@@ -63,7 +63,11 @@ for (const id of ids) {
   const bad = req.filter((t) => !LEGAL_MCP_TOOLS.includes(t));
   if (bad.length) throw new Error(`${file}：tools_required 含 Agent 调不到的工具：${bad.join("、")}`);
   cpSync(join(here, id), join(trusted, "skills", id), { recursive: true, filter: (s) => !/[\\/](evals|examples)([\\/]|$)/.test(s) });
-  skills.push({ id, version: fm.kwl.version ?? "0.0.0", tier: fm.kwl.tier ?? "beta", lines: fm.kwl.lines ?? [], tools_required: req, ...(fm.kwl.requires_outline === "true" ? { requires_outline: true } : {}), title: (/^# (.+)$/m.exec(text) ?? [])[1] ?? id, description: fm.description });
+  // 主交付物（第 28 批）：outputs 的第一项。是 Word（.docx）时内核按它核对任务有没有交出文书，没有就不记“完成”——
+  // 所以这类方法必须把出 Word 的工具列为必需（第 28 批全量用例查出顾问答复、访谈纪要、研究备忘录三处只列为可选）
+  const primary = Array.isArray(fm.kwl.outputs) && fm.kwl.outputs.length > 0 ? String(fm.kwl.outputs[0]) : "";
+  if (/\.docx$/i.test(primary) && !req.some((t) => t === "docx.render_report" || t === "docx.revise")) throw new Error(`${file}：主交付物是 Word（${primary}），tools_required 须含 docx.render_report 或 docx.revise`);
+  skills.push({ id, version: fm.kwl.version ?? "0.0.0", tier: fm.kwl.tier ?? "beta", lines: fm.kwl.lines ?? [], tools_required: req, ...(fm.kwl.requires_outline === "true" ? { requires_outline: true } : {}), ...(primary ? { primary_output: primary } : {}), title: (/^# (.+)$/m.exec(text) ?? [])[1] ?? id, description: fm.description });
 }
 
 function list(dir) {

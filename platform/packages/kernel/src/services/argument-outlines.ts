@@ -243,6 +243,43 @@ export function decideOutline(db: KernelDb, matterId: string, userId: string, in
   return rowOut(db.get<any>(`SELECT * FROM argument_outlines WHERE outline_id = ?`, [id]));
 }
 
+/**
+ * 确认论点时一并确认事实（第 28 批）：律师在任务页的论点卡上就能确认论点引用的待确认事实，不必离开任务去事项页逐条确认——
+ * 真实走查里助手让律师“去事实时间线确认”，律师点了“已确认，继续”而事实状态没变，助手于是不出文书、只交了表格。
+ * 只取律师留下的论点引用的、本事项里仍为“待确认”的事实（已驳回的不翻）；返回事实编号，由调用方逐条确认并审计。
+ */
+export function outlineFactsToConfirm(db: KernelDb, matterId: string, outlineId: unknown, decisions: unknown): string[] {
+  const row = db.get<any>(`SELECT * FROM argument_outlines WHERE outline_id = ?`, [str(outlineId, 80)]);
+  if (!row || row.matter_id !== matterId || row.status !== "proposed") return [];
+  const dropped = new Set((Array.isArray(decisions) ? decisions : []).filter((d: any) => d?.keep === false).map((d: any) => String(d?.arg_id ?? "")));
+  const ids = new Set<string>();
+  for (const x of rowOut(row).items) if (!dropped.has(x.arg_id)) for (const f of x.facts) if (f.fact_id) ids.add(f.fact_id);
+  return [...ids].filter((fid) => db.get<{ status: string; matter_id: string }>(`SELECT status, matter_id FROM matter_facts WHERE fact_id = ?`, [fid])?.status === "proposed");
+}
+
+/** 提纲里抄过来的事实按事项事实表刷新“是否已确认”（助手读确认版时看到的是现状，不是提交那一刻）。 */
+export function refreshOutlineFacts(db: KernelDb, outlineId: string): void {
+  const r = db.get<{ items: string }>(`SELECT items FROM argument_outlines WHERE outline_id = ?`, [outlineId]);
+  if (!r) return;
+  let items: OutlineItem[];
+  try {
+    items = JSON.parse(r.items) as OutlineItem[];
+  } catch {
+    return;
+  }
+  let hit = false;
+  for (const x of items)
+    for (const f of x.facts) {
+      if (!f.fact_id) continue;
+      const confirmed = db.get<{ status: string }>(`SELECT status FROM matter_facts WHERE fact_id = ?`, [f.fact_id])?.status === "confirmed";
+      if (confirmed !== f.confirmed) {
+        f.confirmed = confirmed;
+        hit = true;
+      }
+    }
+  if (hit) db.run(`UPDATE argument_outlines SET items = ? WHERE outline_id = ?`, [JSON.stringify(items), outlineId]);
+}
+
 /** 材料隔离时（复核 Q2-02）：提纲里抄过来的、来自被删事实的文字换成说明，不留原句。 */
 export function scrubOutlineFacts(db: KernelDb, matterId: string, factIds: readonly string[]): void {
   if (factIds.length === 0) return;

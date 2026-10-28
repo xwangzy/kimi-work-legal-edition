@@ -67,8 +67,9 @@ test("engine: 修订写入生成原生 w:del/w:ins 与批注", () => {
   assert.equal(r.applied.length, 1);
   const xml = readZipText(r.docx, "word/document.xml")!;
   assert.match(xml, /<w:del\b[^>]*w:author="Kimi Work 法律发行版（AI 建议）"/);
-  assert.match(xml, /<w:delText[^>]*>《律师法》第三十八条<\/w:delText>/);
-  assert.match(xml, /<w:ins\b[^>]*>[\s\S]*?《中华人民共和国律师法》第四十一条/);
+  // 第 28 批：只标改动的字（相同的开头“《”、结尾“条”照原样保留）
+  assert.match(xml, /<w:delText[^>]*>律师法》第三十八<\/w:delText>/);
+  assert.match(xml, /<w:ins\b[^>]*>[\s\S]*?中华人民共和国律师法》第四十一/);
   assert.match(xml, /<w:commentReference/);
   const comments = readZipText(r.docx, "word/comments.xml")!;
   assert.match(comments, /第四十一条/);
@@ -143,7 +144,9 @@ test("engine: 受众净化——接受修订、清除批注与作者属性、保
   assert.ok(!/<w:del\b/.test(xml), "不得残留 w:del");
   assert.ok(!/<w:ins\b/.test(xml), "不得残留 w:ins");
   assert.ok(!/commentReference/.test(xml), "不得残留批注引用");
-  assert.ok(xml.includes("《律师法》第四十一条"), "定稿文本保留插入内容");
+  const finalText = extractParagraphs(clean.docx).map((p) => p.text).join("\n");
+  assert.ok(finalText.includes("《律师法》第四十一条"), "定稿文本保留插入内容");
+  assert.ok(!finalText.includes("第三十八条"), "被删的原文不在定稿里");
   assert.ok(!xml.includes("第三十八条规定的保密义务") || xml.includes("第四十一条"), "删除文本不得作为定稿");
   const core = readZipText(clean.docx, "docProps/core.xml")!;
   assert.match(core, /Kimi Work 法律行业发行版/); // 生成标识保留

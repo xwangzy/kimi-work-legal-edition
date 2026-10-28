@@ -49,3 +49,8 @@ export function buildAnswers(questions: readonly Q[], d: AnswerDraft): Record<st
     }),
   );
 }
+
+/** 选项文字的律师写法（第 28 批）：引擎的提问工具要求推荐项后缀英文“(Recommended)”，界面改写成“（推荐）”。纯函数。 */
+export function optionLabelText(label: string): string {
+  return label.replace(/\s*[（(]\s*recommended\s*[)）]\s*$/i, "（推荐）");
+}

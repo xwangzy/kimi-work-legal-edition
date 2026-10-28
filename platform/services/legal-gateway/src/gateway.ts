@@ -46,6 +46,8 @@ export interface MeterRecord {
   safety?: string | null;
   /** 上游的结束原因（stop / tool_calls / length …；复核 B13-C01：length 即输出被上限截断，验收报告据此给截断次数）。 */
   finishReason?: string | null;
+  /** 实际转发的上游型号（第 28 批：别名 legal/k3 背后是哪个 MaaS 型号，验收与对账据此核对）。 */
+  upstreamModel?: string | null;
 }
 
 /** HTTP 层访问记录（含 401/404/400 等未进入计量的请求；只有元数据，不含请求体）。 */
@@ -102,6 +104,24 @@ export const DEFAULT_ROUTES: Readonly<Record<string, ModelRoute>> = Object.freez
   "legal/k3": { upstreamModel: "kimi-k3", pointsPer1k: 4, defaultMaxTokens: 8192 },
   "legal/k2.6": { upstreamModel: "kimi-k2.6", pointsPer1k: 2, defaultMaxTokens: 8192 },
 });
+
+/**
+ * 按部署环境改写上游模型标识（第 28 批）：别名（legal/k3）是内核与计量看到的稳定名字，上游型号随中软 MaaS 开通情况变化
+ * （2026-10 起为 kimi-k3.1-pro）。KWL_UPSTREAM_K3 / KWL_UPSTREAM_K26 未设置即用缺省路由；只接受 MaaS 型号的字符集，防止把别的东西拼进请求体。
+ */
+export function routesFromEnv(env: Record<string, string | undefined>, base: Readonly<Record<string, ModelRoute>> = DEFAULT_ROUTES): Readonly<Record<string, ModelRoute>> {
+  const overrides: [string, string | undefined][] = [
+    ["legal/k3", env.KWL_UPSTREAM_K3],
+    ["legal/k2.6", env.KWL_UPSTREAM_K26],
+  ];
+  const out: Record<string, ModelRoute> = { ...base };
+  for (const [alias, model] of overrides) {
+    if (!model) continue;
+    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(model)) throw new Error(`上游模型标识格式不对：${alias}`);
+    out[alias] = { ...base[alias]!, upstreamModel: model };
+  }
+  return Object.freeze(out);
+}
 
 class GwError extends Error {
   readonly status: number;
@@ -455,6 +475,7 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
         cachedTokens: usage?.cached ?? null,
         latencyMs: Date.now() - started,
         finishReason,
+        upstreamModel: route!.upstreamModel,
         reason: blockedOut
           ? `content_blocked_output:${blockedOut}`
           : usage

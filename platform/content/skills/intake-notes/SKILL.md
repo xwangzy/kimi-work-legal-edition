@@ -6,12 +6,12 @@ when_to_use: 有访谈或沟通记录（文字），或新案受理时需要知�
 arguments: [case_type, side]
 kwl:
   id: intake-notes
-  version: 1.2.0
+  version: 1.2.1
   lines: [诉讼仲裁, 非诉, 企业法务]
   chain: intake
   tier: beta
-  tools_required: [materials.list, materials.read_excerpt]
-  tools_optional: [docx.render_report, xlsx.render_table, facts.submit, law.get_version, citations.verify]
+  tools_required: [materials.list, materials.read_excerpt, docx.render_report]
+  tools_optional: [xlsx.render_table, facts.submit, law.get_version, citations.verify]
   outputs: [访谈纪要.docx, 材料收集清单.xlsx, 紧急期限与冲突待核清单.xlsx]
   source_lineage: [demo:meeting-notes, demo:scenes#materialsRequired, upstream:legal-agent-skills@83df6b13:lit-case-intake, spec:v9.4评审S1§6.1-11]
 ---

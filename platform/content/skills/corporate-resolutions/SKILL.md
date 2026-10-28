@@ -6,20 +6,20 @@ when_to_use: 公司需要就增资减资、股权转让、修改章程、选举�
 arguments: [meeting, company_type]
 kwl:
   id: corporate-resolutions
-  version: 1.1.0
+  version: 1.2.0
   lines: [非诉, 企业法务]
   chain: corporate
   tier: beta
-  tools_required: [materials.list, materials.read_excerpt, docx.render_report, xlsx.render_table]
-  tools_optional: [facts.list, law.search, law.get_version, law.get_article, citations.verify, calc.deadline]
-  outputs: [会议通知（草稿）.docx, 决议（草稿）.docx, 签署页（草稿）.docx, 召集与表决核对表.xlsx]
+  tools_required: [materials.list, materials.read_excerpt, docx.render_report]
+  tools_optional: [facts.list, law.search, law.get_version, law.get_article, citations.verify, calc.deadline, xlsx.render_table]
+  outputs: [会议通知（草稿）.docx, 决议（草稿）.docx, 签署页（草稿）.docx, 召集与表决核对表.xlsx（附件）]
   source_lineage: [spec:v9.4第21批即将推出转正]
 ---
 
 # 股东会与董事会文件 · 试用
 
 ## 1. 适用范围
-- **交付**：①《会议通知（草稿）》.docx；②《决议（草稿）》.docx（股东会决议 / 董事会决议；书面一致同意的写成“股东决定”或“全体股东书面决定”）；③《签署页（草稿）》.docx；④《召集与表决核对表》.xlsx。
+- **交付**：①《会议通知（草稿）》.docx；②《决议（草稿）》.docx（股东会决议 / 董事会决议；书面一致同意的写成“股东决定”或“全体股东书面决定”）；③《签署页（草稿）》.docx；附件：④《召集与表决核对表》.xlsx。三份 Word 文件是主交付物，必须出；表格只是附件，不可用或来不及的，核对要点写进最终答复，**不能用表格代替会议文件**。
 - **会议**（`$meeting`）：股东会（定期 / 临时）/ 董事会（定期 / 临时）/ 全体股东书面一致同意 / 一人有限责任公司股东决定。**公司类型**（`$company_type`）：有限责任公司 / 非上市股份有限公司。
 - **称谓**：2023 年修订公司法统一使用“股东会”（不再写“股东大会”）；设审计委员会而不设监事会的，按章程写明。
 - **章程优先**：通知期限、表决比例、召集与主持、议事方式等，公司法允许章程另行规定的，**以律师提供的现行章程为准**；没有章程或章程版本不明时，只按法定规则写，并在核对表中逐项标“待核章程”。
@@ -43,22 +43,22 @@ kwl:
    - 签署页：逐个股东或董事一行（名称代号、表决权或职务、签名或盖章、日期留空）。
    **表决结果、出席情况一律留空或写“【以会议实际情况填写】”，不预填“全票通过”。**
 6. **效力风险提示**：按 `references/company-law-rules.md` 第三节，在核对表中写可能导致决议不成立、可撤销或无效的情形（未开会、未表决、出席或同意未达到比例、召集程序或表决方式违反法律或章程、内容违反章程或法律），以及决议作出后须办理的变更登记事项（只列事项，期限条号待核）。
-7. **成文**：`docx.render_report` 依次生成会议通知、决议、签署页（title 分别为 `会议通知（草稿）-<事项简称>`、`决议（草稿）-<事项简称>`、`签署页（草稿）-<事项简称>`）；`xlsx.render_table` 生成核对表。回报写清：适用的章程条款数、“待核章程”项数、表决门槛、是否有回避。
+7. **成文**：`docx.render_report` 依次生成会议通知、决议、签署页（title 写文件名称本身，如“关于召开<届次>股东会会议的通知”“<公司名称>股东会决议”“<决议名称>签署页”，不加“草稿”字样——文件名与文件属性会自动标草稿；首部与落款部分 heading 写空字符串，逐项审议事项或决议事项可用“一、<事项>”作 heading）；`xlsx.render_table` 生成附件《召集与表决核对表》（不可用或来不及的，核对要点写进最终答复）。回报写清：适用的章程条款数、“待核章程”项数、表决门槛、是否有回避。
 
 ## 4. 工具调用约定
 | 工具 | 用途 | 关键参数 | 失败时 |
 |---|---|---|---|
-| materials.list | 章程、股东名册、拟议事项材料 | 无 | 不可用：停止，只交付所需材料清单 |
+| materials.list | 章程、股东名册、拟议事项材料 | 无 | 不可用：按律师在对话中给出的信息照常起草，章程事项标“待核章程”，回报写明“未读取事项材料” |
 | materials.read_excerpt | 逐字摘录章程条款 | parse_version_id，区间 | 失败：该项标“待核章程” |
 | facts.list | 确认的持股与人员情况（可选） | confirmed_only = true | 不可用：比例写“材料记载”或“待确认” |
 | law.search / law.get_version / law.get_article | 定位公司法条文与版本 | query；law + as_of | 未收录：条号后标“【待律师核对】” |
 | citations.verify | 核验所引条文 | citations，as_of | 不可用：核对表首行写“依据未经核验” |
 | calc.deadline | 通知期限相关日期（可选） | start，period {unit: day, n}，rule civil | 不可用：日期标“待律师计算” |
 | docx.render_report | 通知、决议、签署页 | title，sections | 不可用：见第 8 节 |
-| xlsx.render_table | 核对表 | title，sheets | 不可用：见第 8 节 |
+| xlsx.render_table | 核对表（附件） | title，sheets | 不可用：核对要点写进最终答复 |
 
 ## 5. 输出规格
-**《召集与表决核对表》**（title：`召集与表决核对表-<事项简称>`）工作表：
+**附件《召集与表决核对表》**（title：`召集与表决核对表-<事项简称>`）工作表：
 - “事项与门槛”：序号 / 拟议事项 / 职权归属（股东会 · 董事会）/ 决议类型（普通 · 特别 · 担保 · 关联）/ 法定门槛（条号 · 核验状态）/ 章程规定（条号 · 原文）/ 适用门槛 / 待核。
 - “召集与通知”：项目（召集人 · 主持人 · 通知期限 · 通知方式 · 会议方式）/ 法定规则 / 章程规定 / 本次安排 / 是否满足 / 待核。
 - “表决名单”：股东或董事（代号）/ 出资比例或表决权或职务 / 是否关联回避 / 计入分母 / 来源。
@@ -86,4 +86,5 @@ kwl:
 - 没有章程：文件照常起草，所有可由章程另行规定的事项标“待核章程”，回报第一句提示“未提供章程”。
 - 股东名册或表决权比例缺失：表决名单写“待确认”，门槛只写规则不写计算结果。
 - `citations.verify` 不可用：照常起草，核对表首行写“依据未经核验”，条号后标“待核”。
-- `docx.render_report` / `xlsx.render_table` 不可用：用受限命令行 `kwl-docx create` / `kwl-xlsx create` 生成，并在文件开头注明“未经文书工具生成，格式待整理”。
+- `xlsx.render_table` 不可用：核对要点写进最终答复。
+- `docx.render_report` 不可用：用受限命令行 `kwl-docx create` 生成，并在文件开头注明“未经文书工具生成，格式待整理”。

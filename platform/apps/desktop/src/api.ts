@@ -1003,8 +1003,9 @@ export const api = {
   rejectMissing: (matterId: string, cardId: string, term?: string) => invoke<{ card: RiskCard; remembered: string | null }>("riskcards.reject_missing", { matter_id: matterId, card_id: cardId, ...(term ? { term } : {}) }),
   /** 起草前的论点与依据（C-04）：任务页逐条确认。 */
   outlines: (matterId: string, runId: string) => invoke<{ outlines: import("./lib/outline.ts").OutlineView[] }>("outlines.list", { matter_id: matterId, run_id: runId }),
-  decideOutline: (matterId: string, outlineId: string, decisions: { arg_id: string; keep: boolean; claim?: string; basis_keep?: number[] }[], note: string) =>
-    invoke<{ outline: import("./lib/outline.ts").OutlineView }>("outlines.decide", { matter_id: matterId, outline_id: outlineId, decisions, ...(note ? { note } : {}) }),
+  /** confirmFacts（第 28 批）：同时确认留下的论点引用的待确认事实。 */
+  decideOutline: (matterId: string, outlineId: string, decisions: { arg_id: string; keep: boolean; claim?: string; basis_keep?: number[] }[], note: string, confirmFacts = false) =>
+    invoke<{ outline: import("./lib/outline.ts").OutlineView; facts_confirmed?: number }>("outlines.decide", { matter_id: matterId, outline_id: outlineId, decisions, ...(note ? { note } : {}), ...(confirmFacts ? { confirm_facts: true } : {}) }),
   // 论断—依据（v9.4 第 20 批 C-03）
   artifactCitations: (artifactVersionId: string) =>
     invoke<{ citations: import("./lib/citation-review.ts").ArtifactCitations | null; facts?: import("./lib/citation-review.ts").FactMarkView[] }>("artifacts.citations", { artifact_version_id: artifactVersionId }),

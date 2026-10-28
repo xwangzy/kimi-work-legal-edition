@@ -11,10 +11,14 @@ export interface ReportSection {
 
 /** mark=false：不带本产品标记，导出时不套函头（示例合同、清洁稿这类不是律所出具的文件）。 */
 /** 只表示结构、不该印成小标题的节名（复核 R15B-09：律师函方法里的“落款与联系方式”）。 */
-const STRUCTURE_HEADING = /^(落款|落款与联系方式|署名|签署|签字|签名)$/;
+// 第 28 批：起诉状、答辩状等的“当事人”“首部”“结尾”只是方法里的分段，正式文书没有这些小标题
+const STRUCTURE_HEADING = /^(落款|落款与联系方式|署名|签署|签字|签名|当事人|当事人信息|当事人基本情况|首部|尾部|结尾|结尾部分)$/;
+/** 标题末尾的“（草稿）”不印进正文标题（草稿状态在文件名、文件属性与成果状态里；律师递交前不必再手工删）。 */
+const DRAFT_SUFFIX = /\s*[（(]草稿[）)]\s*$/;
 
 export function createDocx(title: string, sections: ReportSection[], o: { mark?: boolean } = {}): Buffer {
-  const blocks: DocBlock[] = title ? [{ kind: "title", text: title }] : [];
+  const shown = title.replace(DRAFT_SUFFIX, "");
+  const blocks: DocBlock[] = shown ? [{ kind: "title", text: shown }] : [];
   for (const s of sections) {
     if (s.heading && !STRUCTURE_HEADING.test(s.heading.trim())) blocks.push({ kind: "h1", text: s.heading });
     for (const p of s.paragraphs) blocks.push({ kind: "p", runs: [{ text: p }] });

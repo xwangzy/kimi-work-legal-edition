@@ -23,6 +23,7 @@ import { calcDeadline } from "./tools/deadline.ts";
 import { redactScan } from "./tools/redact.ts";
 import { materialsReadExcerpt } from "./tools/materials.ts";
 import { docxApplyRevisions, docxCompare, docxRenderReport, docxSanitize, redactApply } from "./tools/docx.ts";
+import { docxRevise } from "./tools/revise.ts";
 import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, rulesPropose, riskcardsList, riskcardsSubmit, tableFill, tableGet, xlsxRenderTable } from "./tools/review.ts";
 import { assertOutlineSettled } from "../services/argument-outlines.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
@@ -399,6 +400,41 @@ export const TOOLS: readonly ToolDef[] = [
       const title = String(p.title ?? "文书").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").trim().slice(0, 60) || "文书";
       return { ...r, ...registerToolArtifact(ctx, { kind: "agent_report", filename: `${title}.docx`, sha256: r.sha256, storage_uri: r.storage_uri, manifest: { tool: "docx.render_report", sections: Array.isArray(p.sections) ? p.sections.length : 0 } }) };
     },
+  },
+  {
+    name: "docx.revise",
+    title: "在原件上修订（修订稿 + 清洁稿）",
+    description:
+      "按律师意见修改已上传的 Word 原件：每处给出要改的原文（anchor，逐字照抄材料原文、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落），在原件副本上生成带修订痕迹的修订稿（保留原版式、编号、表格）与接受全部修订后的清洁稿，登记为本任务草稿成果；原件不变。dry_run=true 只试写：返回每个改到的段落改前与改后的整段文字，不生成文件，先读一遍再正式提交。任一处找不到或有歧义时整体不写，逐条返回原因，改正后重新提交。",
+    sideEffect: "write_draft",
+    resource: "matter_documents",
+    version: "1",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["document_version_id", "patches"],
+      properties: {
+        document_version_id: { type: "string" },
+        dry_run: { type: "boolean" },
+        patches: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["anchor", "proposed_text"],
+            properties: {
+              anchor: { type: "string" },
+              proposed_text: { type: "string" },
+              occurrence: { type: "integer", minimum: 0 },
+              paragraph_hint: { type: "string" },
+              comment: { type: "string" },
+              insert_after: { type: "boolean" },
+            },
+          },
+        },
+      },
+    },
+    invoke: async (p, ctx) => docxRevise(ctx, p),
   },
   {
     name: "redact.apply",

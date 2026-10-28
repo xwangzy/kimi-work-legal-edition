@@ -6,13 +6,13 @@ when_to_use: 有明确的研究问题与事件时点；不用于预测胜诉率�
 arguments: [question]
 kwl:
   id: legal-research-memo
-  version: 1.4.0
+  version: 1.4.1
   lines: [诉讼仲裁, 非诉, 企业法务]
   chain: research
   tier: beta
   requires_outline: true
-  tools_required: [law.search, law.get_version, citations.verify]
-  tools_optional: [docx.render_report, xlsx.render_table, materials.list, materials.read_excerpt, facts.list, outline.submit, outline.get, law.get_article]
+  tools_required: [law.search, law.get_version, citations.verify, docx.render_report]
+  tools_optional: [xlsx.render_table, materials.list, materials.read_excerpt, facts.list, outline.submit, outline.get, law.get_article]
   outputs: [研究备忘录.docx, 来源目录.xlsx]
   source_lineage: [demo:research@v1.6, demo:scene-civil-strategy@v1.0, demo:scene-labor-local-cases@v1.0]
 ---

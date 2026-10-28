@@ -4,6 +4,7 @@
  * 用法：node scripts/build-kernel.mjs [--watch]
  */
 import { build, context } from "esbuild";
+import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { keyFp, knownDevFingerprints } from "./lib/dev-content-keys.mjs";
@@ -28,6 +29,12 @@ if (process.argv.includes("--check-content-key")) {
   // 只核门禁、不构建（测试用：不改任何制品）
   console.log("[build-kernel] 内容签名公钥门禁通过");
   process.exit(0);
+}
+
+// 开发形态（第 28 批）：先按源文件重建签名内容包（方法模板、工具清单锁、Agent profile），再随制品复制——
+// 10-28 走查发现本机演示的桌面端带的还是 10-23 的方法包（源文件已改到第 27 批）。正式发布的内容包由签名服务产出，这里不碰
+if (!prodPub && existsSync(`${root}content/keys/content-signing-dev.json`)) {
+  for (const s of ["content/skills/build-skills.mjs", "content/tool-manifest/build-lock.mjs", "content/agent-profile/build-profile.mjs"]) execFileSync(process.execPath, [`${root}${s}`], { stdio: "inherit", cwd: root });
 }
 
 // 迁移脚本随制品分发（CJS 制品按 __dirname/migrations 解析）。先清空目标目录：迁移改过名（如 0045 → 0050）时，

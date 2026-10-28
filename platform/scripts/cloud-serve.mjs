@@ -478,7 +478,7 @@ if (cfg.role === "cp-signer") {
     const provider = new gw.MoonshotProvider({ apiKey: read(cfg.upstream.api_key_file, "upstream.api_key_file"), ...(cfg.upstream.base_url ? { baseUrl: String(cfg.upstream.base_url) } : {}) });
     const quota = new gw.LeaseQuota({ ledger: gw.httpLedger({ baseUrl: String(cfg.control_plane.url).replace(/\/+$/, ""), serviceSecret: serviceSecret() }), holder: `gw-${host}-${port}` });
     const contentSafety = cfg.content_safety_policy_file ? new gw.ContentSafety(JSON.parse(read(cfg.content_safety_policy_file, "content_safety_policy_file"))) : undefined;
-    const gateway = gw.createLegalGateway({ keys: seatKeys, provider, routes: gw.DEFAULT_ROUTES, meter: gw.fileMeter(join(dataDir("gateway"), "meter.jsonl")), quota, feed, ...(contentSafety ? { contentSafety } : {}) });
+    const gateway = gw.createLegalGateway({ keys: seatKeys, provider, routes: gw.routesFromEnv(process.env), meter: gw.fileMeter(join(dataDir("gateway"), "meter.jsonl")), quota, feed, ...(contentSafety ? { contentSafety } : {}) });
     svc = gateway;
     // 上游状态（429 单列）与网关自己的拒绝原因（额度、排队超时等）（A-9 余项）
     serviceMetrics = () => {

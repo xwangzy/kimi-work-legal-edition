@@ -114,16 +114,23 @@ function applyOne(
     comments.push({ id: commentId, author, date, text: op.comment });
     parts.push(`<w:commentRangeStart w:id="${commentId}"/>`);
   }
-  if (prefixText) parts.push(`<w:r>${rpr}<w:t xml:space="preserve">${escapeXml(prefixText)}</w:t></w:r>`);
-  parts.push(
-    `<w:del w:id="${delId}" w:author="${escapeXml(author)}" w:date="${date}"><w:r>${rpr}<w:delText xml:space="preserve">${escapeXml(op.anchor.originalText)}</w:delText></w:r></w:del>`,
-  );
-  if (op.newText) {
+  // 只标出真正改动的字（第 28 批）：锚点与新文本相同的开头、结尾照原样保留，中间一段删、一段插——
+  // 律师看修订稿时不必在整句删除与整句插入之间逐字比对
+  const { keepHead, removed, added, keepTail } = minimalChange(op.anchor.originalText, op.newText);
+  const before = prefixText + keepHead;
+  const after = keepTail + suffixText;
+  if (before) parts.push(`<w:r>${rpr}<w:t xml:space="preserve">${escapeXml(before)}</w:t></w:r>`);
+  if (removed) {
     parts.push(
-      `<w:ins w:id="${insId}" w:author="${escapeXml(author)}" w:date="${date}"><w:r>${rpr}<w:t xml:space="preserve">${escapeXml(op.newText)}</w:t></w:r></w:ins>`,
+      `<w:del w:id="${delId}" w:author="${escapeXml(author)}" w:date="${date}"><w:r>${rpr}<w:delText xml:space="preserve">${escapeXml(removed)}</w:delText></w:r></w:del>`,
     );
   }
-  if (suffixText) parts.push(`<w:r>${rpr}<w:t xml:space="preserve">${escapeXml(suffixText)}</w:t></w:r>`);
+  if (added) {
+    parts.push(
+      `<w:ins w:id="${insId}" w:author="${escapeXml(author)}" w:date="${date}"><w:r>${rpr}<w:t xml:space="preserve">${escapeXml(added)}</w:t></w:r></w:ins>`,
+    );
+  }
+  if (after) parts.push(`<w:r>${rpr}<w:t xml:space="preserve">${escapeXml(after)}</w:t></w:r>`);
   if (commentId >= 0) {
     parts.push(
       `<w:commentRangeEnd w:id="${commentId}"/><w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="${commentId}"/></w:r>`,
@@ -141,6 +148,26 @@ function applyOne(
 }
 
 /** 段后插入：新段落沿用目标段落的段落格式（去掉分节 w:sectPr、段落标记的 w:rPr 与已有修订标记），段落标记标为插入。 */
+/**
+ * 原文与新文本的最小改动：去掉相同的开头与结尾，只剩中间一段删除、一段插入。按码点切分（不拆开代理对）。
+ * 删除整段（新文本为空）时原样整段删除；新旧相同时不产生修订。纯函数。
+ */
+export function minimalChange(original: string, replacement: string): { keepHead: string; removed: string; added: string; keepTail: string } {
+  const a = Array.from(original);
+  const b = Array.from(replacement);
+  if (b.length === 0) return { keepHead: "", removed: original, added: "", keepTail: "" };
+  let head = 0;
+  while (head < a.length && head < b.length && a[head] === b[head]) head++;
+  let tail = 0;
+  while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+  return {
+    keepHead: a.slice(0, head).join(""),
+    removed: a.slice(head, a.length - tail).join(""),
+    added: b.slice(head, b.length - tail).join(""),
+    keepTail: a.slice(a.length - tail).join(""),
+  };
+}
+
 function insertParagraphsAfter(
   xml: string,
   target: ParagraphMap,

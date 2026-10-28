@@ -71,6 +71,8 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   const [ack, setAck] = useState(false);
   // 材料缺口已告知客户（Astra M-2）：有没读到的材料时，签发须勾选，写进签发留痕
   const [gapsAck, setGapsAck] = useState(false);
+  // 待补占位（第 28 批）：【待填】【待确认】等还在文件里时，签发须勾选“已知悉，发出前补齐”
+  const [placeholdersAck, setPlaceholdersAck] = useState(false);
   // 论点未经确认就签发的理由（10-23 拍板）：签发必过项，写进签发记录
   const [outlineReason, setOutlineReason] = useState("");
   const [checked, setChecked] = useState<Set<number>>(new Set());
@@ -183,6 +185,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
     return marks.length > 0 ? marks : undefined;
   }, [artCites, facts, tokenMap]);
   const gaps = Number(data?.material_gaps ?? 0) || 0;
+  const placeholders: { total: number; kinds: { text: string; n: number }[] } = data?.placeholders ?? { total: 0, kinds: [] };
   const internalOnly = data?.audience === "internal";
   const outlineOpen = data?.outline_unconfirmed === true;
   /** 没通过的项“去处理”（Astra M-2）：材料回到任务过程、引用滚到下面的引用核对、版本回到事项的交付件。 */
@@ -212,6 +215,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
             // 内部稿与对外稿的确认语不同（复核 RB16B-08）：内部稿只确认“已知悉、结论未覆盖”，对外稿确认“缺口已在文件中写明、随文件告知客户”
             ...(gaps > 0 ? { gaps_disclosed: gapsAck, material_gaps: gaps, gaps_statement: internalOnly ? "acknowledged_not_covered" : "disclosed_in_document" } : {}),
             ...(outlineOpen ? { outline_unconfirmed_reason: outlineReason.replace(/\s+/g, " ").trim() } : {}),
+            ...(placeholders.total > 0 ? { placeholders_acknowledged: placeholdersAck, placeholders: placeholders.total } : {}),
             at: new Date().toISOString(),
           },
         });
@@ -222,7 +226,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
         setBusy(false);
       }
     },
-    [artifactId, data, ack, checked, items.length, reload, cneeds, cticks, gapsAck, outlineOpen, outlineReason],
+    [artifactId, data, ack, checked, items.length, reload, cneeds, cticks, gapsAck, outlineOpen, outlineReason, placeholders.total, placeholdersAck],
   );
 
   const latest = !!data?.is_latest_version;
@@ -450,6 +454,12 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                     : `本次有 ${gaps} 份材料没有读到：缺口已在文件中写明，将随文件告知客户（会写进签发记录）`}
                 </label>
               )}
+              {placeholders.total > 0 && (
+                <label className="review-ack">
+                  <input type="checkbox" checked={placeholdersAck} onChange={(e) => setPlaceholdersAck(e.target.checked)} />
+                  {`文件里还有 ${placeholders.total} 处待补占位（${placeholders.kinds.slice(0, 3).map((k) => k.text).join("、")}等）：我已知悉，发出前在 Word 里补齐（会写进签发记录）`}
+                </label>
+              )}
               {outlineOpen && pending && (
                 <label className="field review-reason">
                   <span>论点与依据没经你确认就产出了这份成果。不回任务页确认、直接签发的理由（会写进签发记录）</span>
@@ -471,7 +481,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                     提交复核
                   </button>
                 ) : (
-                  <button className="btn-primary" disabled={busy || !pending || !ack || !latest || !citationsAllowSign(cneeds, cticks) || (gaps > 0 && !gapsAck) || (outlineOpen && [...outlineReason.replace(/\s+/g, " ").trim()].length < 4)} onClick={() => void act("approved")}>
+                  <button className="btn-primary" disabled={busy || !pending || !ack || !latest || !citationsAllowSign(cneeds, cticks) || (gaps > 0 && !gapsAck) || (placeholders.total > 0 && !placeholdersAck) || (outlineOpen && [...outlineReason.replace(/\s+/g, " ").trim()].length < 4)} onClick={() => void act("approved")}>
                     确认签发
                   </button>
                 )}

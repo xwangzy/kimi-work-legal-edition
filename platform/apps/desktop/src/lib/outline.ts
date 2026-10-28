@@ -56,6 +56,13 @@ export function decisionsOf(o: Pick<OutlineView, "items">, d: OutlineDraft, plai
   });
 }
 
+/** 留下的论点引用的、还没经律师确认的事实（去重；没有事实编号的不算——那是助手的转述，不能在这里确认）。纯函数。 */
+export function unconfirmedFactsOf(o: Pick<OutlineView, "items">, d: OutlineDraft): { fact_id: string; statement: string }[] {
+  const seen = new Map<string, string>();
+  for (const x of o.items) if (!d.drop[x.arg_id]) for (const f of x.facts) if (f.fact_id && !f.confirmed && !seen.has(f.fact_id)) seen.set(f.fact_id, f.statement);
+  return [...seen].map(([fact_id, statement]) => ({ fact_id, statement }));
+}
+
 /** 至少留一条（与内核一致）。 */
 export const keptCount = (o: Pick<OutlineView, "items">, d: OutlineDraft) => o.items.filter((x) => !d.drop[x.arg_id]).length;
 

@@ -223,7 +223,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "litigation",
     title: "起草起诉状",
     gives: "已整理的事实与金额（建议先做“整理案卷”“金额测算”）",
-    gets: ["民事起诉状（草稿）.docx", "提交前核对清单"],
+    gets: ["民事起诉状（草稿）.docx", "证据目录.xlsx（附件）", "提交前核对清单（附件）"],
     scenario: "a1.agent_task",
     skill: "pleading-draft",
     allowPartial: true,
@@ -236,7 +236,8 @@ export const SCENARIOS: ScenarioCard[] = [
     minMaterials: 0,
     steps: ["只采用你确认过的事实与金额", "写出诉讼请求、事实与理由", "核对引用的法条", "列出提交前核对清单"],
     // 模板只做民商事起诉状（复核 B3-B24）：答辩状另有卡（defense），仲裁申请书不引到这里
-    intents: [["起诉状"], ["起诉", "写"]],
+    // 第 28 批：带“起草”的说法更具体——“根据时间线起草起诉状”不再被同分的“整理案卷”抢走
+    intents: [["起诉状"], ["起诉", "写"], ["起草", "起诉状"], ["写", "起诉状"]],
   },
   // 诉讼线文书（v9.3 主文 §5.3）：答辩状、质证意见、代理词
   {
@@ -244,7 +245,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "litigation",
     title: "起草答辩状",
     gives: "对方起诉状 + 已确认的事实（建议先做“整理案卷”并确认事实）",
-    gets: ["民事答辩状（草稿）.docx", "答辩要点与证据对照表.xlsx", "提交前核对清单（答辩期、管辖异议、反诉）"],
+    gets: ["民事答辩状（草稿）.docx", "答辩要点与证据对照表.xlsx（附件）", "提交前核对清单（答辩期、管辖异议、反诉）"],
     scenario: "a1.agent_task",
     skill: "defense-draft",
     verb: "开始起草",
@@ -257,7 +258,7 @@ export const SCENARIOS: ScenarioCard[] = [
     ],
     minMaterials: 1,
     steps: ["读起诉状，拆出每项诉讼请求与主张的事实", "先提示：要提管辖权异议的，须在答辩期内、实体答辩之前提出", "逐项写出我方意见与理由，只用你确认过的事实", "列出答辩期届满日、时效抗辩、反诉等核对项"],
-    intents: [["答辩状"], ["答辩", "写"], ["准备", "答辩"]],
+    intents: [["答辩状"], ["答辩", "写"], ["准备", "答辩"], ["起草", "答辩状"], ["写", "答辩状"]],
     // 模板只做民商事一审答辩（复核 RB16B-16）
     notFor: ["二审", "上诉", "仲裁", "行政", "劳动", "再审"],
   },
@@ -267,7 +268,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "litigation",
     title: "起草上诉状",
     gives: "一审判决书或裁定书 + 已确认的事实",
-    gets: ["民事上诉状（草稿）.docx", "上诉理由与一审认定对照表.xlsx", "提交前核对清单（上诉期、上诉范围、副本份数）"],
+    gets: ["民事上诉状（草稿）.docx", "上诉理由与一审认定对照表.xlsx（附件）", "提交前核对清单（上诉期、上诉范围、副本份数）"],
     scenario: "a1.agent_task",
     skill: "appeal-draft",
     verb: "开始起草",
@@ -281,7 +282,7 @@ export const SCENARIOS: ScenarioCard[] = [
     ],
     minMaterials: 1,
     steps: ["读一审判决书，拆出查明的事实、本院认为与判决主文", "先列对照表：每处一审认定写我方意见与错在哪里", "上诉请求与判项逐项对应，理由只用你确认过的事实", "上诉期届满日由期限工具计算，列入提交前核对清单"],
-    intents: [["上诉状"], ["上诉", "写"], ["准备", "上诉"], ["提起", "上诉"], ["不服", "判决"], ["不服", "一审"]],
+    intents: [["上诉状"], ["上诉", "写"], ["准备", "上诉"], ["提起", "上诉"], ["不服", "判决"], ["不服", "一审"], ["起草", "上诉状"]],
     // 方法只做一审判决、裁定的上诉：被上诉人答辩、再审、撤销仲裁裁决、行政与刑事不引过来
     notFor: ["被上诉人", "二审答辩", "再审", "仲裁裁决", "行政", "刑事"],
   },
@@ -290,7 +291,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "litigation",
     title: "起草仲裁申请书",
     gives: "含仲裁条款的合同 + 已确认的事实与金额",
-    gets: ["仲裁申请书（草稿）.docx", "证据目录.xlsx", "提交前核对清单（仲裁协议、机构规则、时效）"],
+    gets: ["仲裁申请书（草稿）.docx", "证据目录.xlsx（附件）", "提交前核对清单（仲裁协议、机构规则、时效）"],
     scenario: "a1.agent_task",
     skill: "arbitration-application",
     verb: "开始起草",
@@ -301,7 +302,7 @@ export const SCENARIOS: ScenarioCard[] = [
     ],
     minMaterials: 1,
     steps: ["逐字摘出仲裁条款，核对仲裁意思、仲裁事项与选定的机构", "仲裁请求与金额只用你确认过的（没有测算的标待测算）", "按时间顺序写事实与理由，每段注明证据", "列出提交前核对：机构规则与收费以你提供的文件为准"],
-    intents: [["仲裁申请书"], ["申请", "仲裁"], ["提起", "仲裁"], ["商事仲裁"]],
+    intents: [["仲裁申请书"], ["申请", "仲裁"], ["提起", "仲裁"], ["商事仲裁"], ["起草", "仲裁申请书"]],
     // 劳动仲裁另有方法；收到仲裁申请、仲裁答辩、撤销或执行裁决都不是起草申请书
     // “执行”只挡申请执行、执行裁决（复核 Q3 建议：“对方不执行合同，要申请仲裁”不该被挡）
     notFor: ["劳动", "员工", "收到", "答辩", "撤销", "申请执行", "执行裁决", "强制执行"],
@@ -332,7 +333,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "litigation",
     title: "财产保全申请",
     gives: "诉讼或仲裁材料、你掌握的对方财产线索与担保安排",
-    gets: ["财产保全申请书（草稿）.docx", "保全财产线索与担保核对表.xlsx"],
+    gets: ["财产保全申请书（草稿）.docx", "保全财产线索与担保核对表.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "preservation-application",
     verb: "开始起草",
@@ -394,7 +395,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "litigation",
     title: "代理词",
     gives: "庭审笔录或庭审要点 + 已确认的事实",
-    gets: ["代理词（草稿）.docx", "争点与依据对照表.xlsx"],
+    gets: ["代理词（草稿）.docx", "争点与依据对照表.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "agency-statement",
     verb: "开始起草",
@@ -410,7 +411,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "litigation",
     title: "新案受理与访谈",
     gives: "访谈记录或笔记、客户初步材料",
-    gets: ["访谈纪要.docx", "材料收集清单.xlsx", "紧急期限与冲突待核清单.xlsx"],
+    gets: ["访谈纪要.docx", "材料收集清单.xlsx（附件）", "紧急期限与冲突待核清单.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "intake-notes",
     allowPartial: true,
@@ -466,7 +467,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "litigation",
     title: "劳动仲裁申请书",
     gives: "劳动合同、工资与考勤记录、解除通知；做过请求梳理的一并放进来",
-    gets: ["劳动仲裁申请书（草稿）.docx", "证据目录.xlsx", "提交前核对清单.xlsx"],
+    gets: ["劳动仲裁申请书（草稿）.docx", "证据目录.xlsx（附件）", "提交前核对清单.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "labor-arbitration-draft",
     args: { doc_kind: "申请书" },
@@ -487,7 +488,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "litigation",
     title: "劳动仲裁答辩书",
     gives: "对方的仲裁申请书副本与送达记录、劳动合同、工资与考勤、解除文件、规章制度",
-    gets: ["劳动仲裁答辩书（草稿）.docx", "证据目录.xlsx", "提交前核对清单.xlsx"],
+    gets: ["劳动仲裁答辩书（草稿）.docx", "证据目录.xlsx（附件）", "提交前核对清单.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "labor-arbitration-draft",
     args: { doc_kind: "答辩书" },
@@ -543,6 +544,24 @@ export const SCENARIOS: ScenarioCard[] = [
     intents: [["核对", "引用"], ["核验", "引用"], ["引用", "法条"], ["法条", "有效"], ["现行有效"], ["文稿", "体检"]],
   },
   {
+    // 第 28 批：在原件上改（修订稿 + 清洁稿）。此前“按我的意见改这份 Word”没有入口——自由描述时助手按合同审查做，只出风险卡与表格
+    id: "doc-revise",
+    line: "transactional",
+    general: true,
+    title: "按你的意见修改文书",
+    gives: "一份 Word 文书（合同、诉状、函件、制度等）+ 你的修改意见",
+    gets: ["修订稿.docx（保留原版式，修改以修订痕迹显示）", "清洁稿.docx（已接受全部修订）", "修改清单（在任务答复里）"],
+    scenario: "a1.agent_task",
+    skill: "doc-revise",
+    verb: "开始修改",
+    goal: "请按以下意见直接在原文上修改这份文书，给我修订稿和清洁稿：{opinion}",
+    fields: [{ key: "opinion", label: "修改意见", kind: "text", placeholder: "例如：付款改为 3-4-3 分期；验收期改为 15 个工作日；争议解决改为我方所在地法院", required: true }],
+    minMaterials: 1,
+    steps: ["读原文，把你的意见拆成逐处修改（连同定义、互引、附件）", "在原件副本上逐处修改，保留原版式、编号与表格", "生成带修订痕迹的修订稿和接受全部修订的清洁稿", "列出修改清单；你没提但发现的重大风险只提示、不擅自改"],
+    intents: [["修改", "合同"], ["修改", "这份"], ["修订稿"], ["清洁稿"], ["清洁版"], ["修订痕迹"], ["按", "意见", "修改"], ["帮我", "改"]],
+    notFor: ["起草", "比对", "回稿"],
+  },
+  {
     id: "demand-lit",
     line: "litigation",
     general: true,
@@ -580,7 +599,8 @@ export const SCENARIOS: ScenarioCard[] = [
     ],
     minMaterials: 1,
     steps: ["通读合同、标出结构", "按我方立场逐条找出风险，引用原文", "给出修改建议与可退让方案，核对依据", "把每项意见放进审查工作台，由你逐项决定"],
-    intents: [["审查", "合同"], ["审合同"], ["审查", "协议"], ["审核", "合同"], ["修改", "合同"], ["风险", "合同"]],
+    // 第 28 批：“修改合同”引到“按你的意见修改文书”（律师要的是改好的稿子，不是风险清单）
+    intents: [["审查", "合同"], ["审合同"], ["审查", "协议"], ["审核", "合同"], ["风险", "合同"]],
   },
   {
     // v9.4（S1 §0 第 5 条）：原“回稿比对”卡走本机比对、不重审，卡上却写“只对改动部分重新审查”——拆成两张，名实相符
@@ -665,7 +685,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "transactional",
     title: "起草合同",
     gives: "交易要点或条款清单；本所范本（可选）",
-    gets: ["合同草稿.docx", "起草说明与待定事项.xlsx"],
+    gets: ["合同草稿.docx", "起草说明与待定事项.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "contract-draft",
     allowPartial: true,
@@ -770,7 +790,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "transactional",
     title: "访谈纪要与材料清单",
     gives: "访谈录音转写或笔记",
-    gets: ["访谈纪要.docx", "材料收集清单.xlsx"],
+    gets: ["访谈纪要.docx", "材料收集清单.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "intake-notes",
     allowPartial: true,
@@ -861,7 +881,7 @@ export const SCENARIOS: ScenarioCard[] = [
     title: "案件进展汇报（给客户）",
     gives: "案件材料与最新进展（开庭、裁判、对方新提交的材料）",
     // 复核 Q8-06：与方法实际产出同名；读者按方法定位是客户方的非诉讼专业人士，不给“所内合伙人”选项
-    gets: ["案件进展汇报.docx", "进展与风险附表.xlsx"],
+    gets: ["案件进展汇报.docx", "进展与风险附表.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "case-report",
     verb: "开始撰写",
@@ -879,7 +899,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "inhouse",
     title: "重大案件进展汇报",
     gives: "案件材料与最新进展",
-    gets: ["管理层一页汇报.docx", "进展与风险附表.xlsx"],
+    gets: ["管理层一页汇报.docx", "进展与风险附表.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "case-report",
     verb: "开始撰写",
@@ -898,7 +918,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "inhouse",
     title: "劳动仲裁应对",
     gives: "仲裁申请书、劳动合同、工资与考勤、解除文件、规章制度",
-    gets: ["劳动争议应对方案.docx", "请求项与敞口表.xlsx", "举证责任与证据清单.xlsx"],
+    gets: ["劳动争议应对方案.docx", "请求项与敞口表.xlsx（附件）", "举证责任与证据清单.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "labor-dispute",
     args: { mode: "仲裁应对", side: "用人单位" },
@@ -921,7 +941,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "inhouse",
     title: "劳动仲裁答辩书",
     gives: "员工的仲裁申请书副本与送达记录、劳动合同、工资与考勤、解除文件、规章制度",
-    gets: ["劳动仲裁答辩书（草稿）.docx", "证据目录.xlsx", "提交前核对清单.xlsx"],
+    gets: ["劳动仲裁答辩书（草稿）.docx", "证据目录.xlsx（附件）", "提交前核对清单.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "labor-arbitration-draft",
     args: { doc_kind: "答辩书", side: "用人单位" },
@@ -941,7 +961,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "inhouse",
     title: "解除员工前的风险评估",
     gives: "拟解除的理由与证据、规章制度及其制定公示材料",
-    gets: ["解除风险评估.docx", "解除程序核对清单.xlsx", "敞口情景表.xlsx"],
+    gets: ["解除风险评估.docx", "解除程序核对清单.xlsx（附件）", "敞口情景表.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "labor-dispute",
     args: { mode: "解除前评估", side: "用人单位" },
@@ -1125,6 +1145,7 @@ export function canStartPartial(card: Pick<ScenarioCard, "allowPartial" | "scena
 export function missingMaterialsText(card: Pick<ScenarioCard, "scenario" | "skill">, need: number): string {
   if (card.scenario === "s1b.draft_compare") return "请依次勾选基线稿与对方回稿";
   if (card.skill === "contract-review") return "请先添加合同";
+  if (card.skill === "doc-revise") return "请先添加要修改的 Word 文书";
   return `还需要选择 ${need} 份材料`;
 }
 

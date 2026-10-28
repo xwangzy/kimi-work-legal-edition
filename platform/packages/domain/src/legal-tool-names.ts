@@ -34,6 +34,8 @@ export const LEGAL_MCP_TOOLS = [
   "calc.court_fee",
   // 2026-10-22 v9.4 第 22 批：从范本起草本事项的审查要点（只存草稿，律师审定启用后才用于审查）
   "rules.propose",
+  // 2026-10-28 第 28 批：在律师上传的 Word 原件副本上写修订（修订稿 + 清洁稿，写本事项草稿；原件不变）
+  "docx.revise",
 ] as const;
 
 export type LegalMcpToolName = (typeof LEGAL_MCP_TOOLS)[number];

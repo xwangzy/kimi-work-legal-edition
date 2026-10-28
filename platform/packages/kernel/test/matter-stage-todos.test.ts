@@ -76,6 +76,9 @@ test("按时点取版本：版本有变化、旧版没有这一条、只到月�
   assert.equal(eventDateRange("2024-13"), null);
   assert.equal(matterFactsLine({ stage: "first_instance", event_date: "2023-05", region: "上海市" }), "；程序阶段=一审；事件时点=2023-05（实体法按此时点取适用版本，程序法按现行版本）；地域=上海市");
   assert.equal(matterFactsLine({}), "");
+  // 第 28 批：委托人与相对方写进事项口径（空的不写）
+  assert.equal(matterFactsLine({ client_name: "杭州山河医疗器械有限公司", counterparty: " 深圳星移软件有限公司 " }), "；委托人=杭州山河医疗器械有限公司；相对方=深圳星移软件有限公司");
+  assert.equal(matterFactsLine({ client_name: "", counterparty: null }), "");
 });
 
 test("事项阶段、事件时点、地域：校验、读写、清空；签发前按事件时点核对并须勾选；签发记录写进核对计数", { timeout: 120_000 }, async () => {

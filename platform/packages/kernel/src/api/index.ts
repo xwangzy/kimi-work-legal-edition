@@ -77,7 +77,7 @@ import { addOrUpdateMember, chainSummary, chainView, hasChain, keyFingerprint, r
 import { docxHeaderFooterTexts, parseDocument } from "../services/parser.ts";
 import { detectClassifiedMarking, type ClassifiedFinding } from "../services/classified-marking.ts";
 import { restoreArtifactBytes } from "../services/export-restore.ts";
-import { decideOutline, hasOutlineUnconfirmed, listOutlines, outlineUnconfirmedReason, scrubOutlineFacts } from "../services/argument-outlines.ts";
+import { decideOutline, hasOutlineUnconfirmed, listOutlines, outlineFactsToConfirm, outlineUnconfirmedReason, refreshOutlineFacts, scrubOutlineFacts } from "../services/argument-outlines.ts";
 import { addColumn, cellContext, createTable, decideCell, draftFromTable, exportTable, getTable, ledgerReminderCandidates, listTables, pushCellsToFacts, removeColumn, TABLE_TEMPLATES } from "../services/review-tables.ts";
 import { createTodo, deleteTodo, derivedTodos, listTodos, updateTodo } from "../services/matter-todos.ts";
 import { triageMatter } from "../services/material-triage.ts";
@@ -97,11 +97,12 @@ import { adjudicate, compareAnnotations, normalizeDocs, openEvalBytes, openEvalF
 import { isImage, isPdf, ocrReady, parseWithPipeline } from "../services/parse-pipeline.ts";
 import { estimatePoints, scenarioCap } from "../services/estimate.ts";
 import { docxRenderReport } from "../tools/tools/docx.ts";
-import { createDocx, createStyledDocx, extractParagraphs, isHouseStyled, markdownToBlocks, renderDocxHtml, renderXlsxHtml, restyleDocx } from "@zr-legal/docx-engine";
+import { courtFilingStyle, createDocx, createStyledDocx, extractParagraphs, isCourtFiling, isHouseStyled, markdownToBlocks, renderDocxHtml, renderXlsxHtml, restyleDocx } from "@zr-legal/docx-engine";
 import { redlineAuthorOf, docStyleView, houseStyleFor, setDocStyle, setDocTemplate } from "../services/doc-style.ts";
 import { isToolOperationInFlight } from "../local-server.ts";
 import { MATTER_STAGES } from "../services/matter-facts.ts";
 import { artifactFactMarks, type FactMark } from "../services/artifact-facts.ts";
+import { placeholdersOf } from "../services/placeholders.ts";
 import { artifactCitationBlock, artifactText, checkArtifactCitations, CITATIONS_CASES_CHECK_KEY, uncheckedCitations, withDecisions, type ArtifactCitationCheck, type CitationDecision } from "../services/artifact-citations.ts";
 import { rankTitles, type TitleCandidate } from "../services/title-search.ts";
 import { latestVersionOf, withFileVersions } from "../services/artifact-lineage.ts";
@@ -1936,7 +1937,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         const { style, template, digest } = houseStyleFor(db, id.tenantId, config.activation?.firm_name ?? null);
         let styled = false;
         if (/\.docx$/i.test(filename) && isHouseStyled(out)) {
-          out = restyleDocx(out, style, template);
+          // 递交法院、仲裁机构的文书不套函头与律所模板（第 28 批）
+          out = isCourtFiling(filename) ? restyleDocx(out, courtFilingStyle(style), null) : restyleDocx(out, style, template);
           styled = true;
         } else if (p?.as === "docx" && /\.(md|markdown|txt)$/i.test(filename)) {
           out = createStyledDocx(markdownToBlocks(out.toString("utf8")), style, template);
@@ -2096,8 +2098,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         }
       }
       let fileOk = false;
+      let placeholders: ReturnType<typeof placeholdersOf> = { total: 0, kinds: [] };
       try {
-        fileOk = sha256Hex(blobs.read(String(art.storage_uri))) === art.sha256;
+        const bytes = blobs.read(String(art.storage_uri));
+        fileOk = sha256Hex(bytes) === art.sha256;
+        const text = fileOk ? artifactText(String(art.filename), bytes) : "error";
+        if (text !== "format" && text !== "error") placeholders = placeholdersOf(text);
       } catch {
         fileOk = false;
       }
@@ -2169,10 +2175,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
             : (db.get<{ id: string }>(`SELECT artifact_version_id AS id FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = ? AND lineage IS ? ORDER BY version DESC LIMIT 1`, [art.matter_id, art.kind, art.audience, art.lineage ?? null])?.id ?? null),
         // 论点未经确认（10-23 拍板）：签发必过项——写一句不确认就签发的理由（进签发记录），或回任务页确认论点后重新生成
         outline_unconfirmed: hasOutlineUnconfirmed(openItems),
+        // 待补占位（第 28 批）：【待填】【待确认】等还在文件里——签发须勾选“已知悉，发出前补齐”
+        placeholders,
         blockers: [
           ...(fileOk ? [] : ["文件完整性校验失败"]),
           ...(openItems.length > 0 ? ["存在未决项，签发人须逐项确认"] : []),
           ...(hasOutlineUnconfirmed(openItems) ? ["论点与依据没经你确认就产出了这份成果：须写一句不确认就签发的理由（会写进签发记录），或回任务页确认论点后重新生成"] : []),
+          ...(placeholders.total > 0 ? [`文件里还有 ${placeholders.total} 处待补占位（${placeholders.kinds.slice(0, 3).map((k) => k.text).join("、")}等）：发出前须补齐，签发时勾选“已知悉”`] : []),
           ...(unverifiedOffline > 0 ? [`材料里有 ${unverifiedOffline} 个案号系统离线无法核实，须逐个在裁判文书网等官方来源核对并勾选后才能签发`] : []),
           ...(artCitations && artCitations.wrong > 0 ? [`成果里有 ${artCitations.wrong} 条引用核对不通过（条号不存在、已改号或当时没有有效版本），改正后再签发`] : []),
           ...(artCitations && artCitations.unverified_offline > 0 ? [`成果里有 ${artCitations.unverified_offline} 个案号系统离线无法核实，须逐个核对并勾选后才能签发`] : []),
@@ -2263,6 +2272,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (gaps > 0 && checklistObj.gaps_disclosed !== true) {
           throw new DomainError("material_gaps_undisclosed", `本次任务有 ${gaps} 份材料没有读到：请在复核页勾选“缺口已保留在报告中，已向客户说明”后再签发`, 409, { material_gaps: gaps });
         }
+        // 待补占位（第 28 批）：须律师知悉；文件不可读时由下面的字节核对拦下
+        const ph = (() => {
+          try {
+            const t = artifactText(String(art.filename), blobs.read(String(art.storage_uri)));
+            return t === "format" || t === "error" ? 0 : placeholdersOf(t).total;
+          } catch {
+            return 0;
+          }
+        })();
+        if (ph > 0 && checklistObj.placeholders_acknowledged !== true)
+          throw new DomainError("placeholders_open", `文件里还有 ${ph} 处待补占位（【待填】【待确认】等）：请在复核页勾选“已知悉，发出前补齐”后再签发`, 409, { placeholders: ph });
         if (outlineOpen && !outlineReason) throw new DomainError("outline_unconfirmed", "这份成果产出时论点与依据没经你确认：请写一句不确认就签发的理由（至少 4 个字），或回任务页确认论点后重新生成", 409);
         const unverified = unverifiedOfflineCount(db, art.run_id);
         if (unverified > 0 && checklistObj[CITATIONS_CASES_CHECK_KEY] !== true) {
@@ -2980,11 +3000,19 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "outlines.decide": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterWriter(db, matter.matter_id, id);
-      const outline = decideOutline(db, matter.matter_id, id.userId, { outline_id: p?.outline_id, decisions: p?.decisions, note: p?.note });
+      // confirm_facts（第 28 批）：同一事务里先确认留下的论点引用的待确认事实，再确认提纲，提纲里的事实状态随之刷新
+      const { outline, factIds } = db.tx(() => {
+        const ids = p?.confirm_facts === true ? outlineFactsToConfirm(db, matter.matter_id, p?.outline_id, p?.decisions) : [];
+        for (const fid of ids) decideFact(db, matter.matter_id, id.userId, { fact_id: fid, decision: "confirm" });
+        const o = decideOutline(db, matter.matter_id, id.userId, { outline_id: p?.outline_id, decisions: p?.decisions, note: p?.note });
+        if (ids.length > 0) refreshOutlineFacts(db, o.outline_id);
+        return { outline: ids.length > 0 ? (listOutlines(db, matter.matter_id, { run_id: o.run_id ?? undefined }).find((x) => x.outline_id === o.outline_id) ?? o) : o, factIds: ids };
+      });
+      for (const fid of factIds) audit(db, id, "fact.decided", "fact", fid, sha256Hex(JSON.stringify({ status: "confirmed", via: "outline" })), keyctx);
       // 审计只记提纲号与留删计数（不记论点文字）
       const d = outline.decisions ?? [];
-      audit(db, id, "outline.confirmed", "argument_outline", outline.outline_id, sha256Hex(JSON.stringify({ kept: d.filter((x) => x.keep).length, dropped: d.filter((x) => !x.keep).length, edited: d.filter((x) => x.claim).length })), keyctx);
-      return { outline };
+      audit(db, id, "outline.confirmed", "argument_outline", outline.outline_id, sha256Hex(JSON.stringify({ kept: d.filter((x) => x.keep).length, dropped: d.filter((x) => !x.keep).length, edited: d.filter((x) => x.claim).length, facts_confirmed: factIds.length })), keyctx);
+      return { outline, facts_confirmed: factIds.length };
     },
     // 事项待办（v9.4 第 20 批，C1 §3.2）：手工待办 + 从任务与成果推出的待办；文字为律师原文，审计不记文字
     // 统一待核清单（v9.4 第 21 批，主文 §6.4）：事实、审阅表、审查意见、论点、成果未决项、引用逐条决定，一处列全

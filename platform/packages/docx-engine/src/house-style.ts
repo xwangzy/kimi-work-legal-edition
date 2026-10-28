@@ -39,6 +39,18 @@ export interface HouseStyle {
 
 export const DEFAULT_HOUSE_STYLE: HouseStyle = { letterhead: null, body: "song-xiaosi", pageNumbers: true };
 
+/** 递交法院、仲裁机构的文书（按文件名判断；第 28 批）：导出时不套律所函头与律所模板，正文仿宋三号。 */
+const COURT_FILING = /(起诉状|反诉状|答辩状|上诉状|答辩书|申请书|代理词|质证意见|再审申请|保全申请|执行申请)/;
+
+export function isCourtFiling(filename: string): boolean {
+  return COURT_FILING.test(filename);
+}
+
+/** 递交法院的文书用的版式：去掉函头，正文仿宋三号，页码照旧。 */
+export function courtFilingStyle(style: HouseStyle): HouseStyle {
+  return { ...style, letterhead: null, body: "fangsong-san" };
+}
+
 /** 本产品生成的文件的标记（docProps/core.xml 的 cp:category）：只有带它的文件在导出时会重新套版式。 */
 export const HOUSE_STYLE_MARK = "kwl-house-style/1";
 

@@ -41,6 +41,8 @@ export const FaultCode = {
   materialGapsUndisclosed: "material_gaps_undisclosed",
   // v9.4 第 24 批：论点未经确认就签发，须写理由（10-23 拍板）
   outlineUnconfirmed: "outline_unconfirmed",
+  /** 第 28 批：签发版里还有【待填】【待确认】等占位，签发须勾选“已知悉，发出前补齐”。 */
+  placeholdersOpen: "placeholders_open",
   // 控制面与许可（v9 阶段 6；第 02 篇 §10 退出模式）
   exitMode: "exit_mode",
   /** 第 13 批：本机尚未用开通码 / 邀请码激活（待激活模式只开放开通相关方法）。 */

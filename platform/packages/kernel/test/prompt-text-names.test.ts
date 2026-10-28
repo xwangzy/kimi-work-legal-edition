@@ -67,7 +67,8 @@ test("工具说明与参数说明：没有一处被认成自然人姓名", () =>
 
 test("内核写的提示词框架（事项口径、方法、审查要点、写作偏好、追问）与问答系统提示：没有一处被认成自然人姓名", () => {
   const manifest = JSON.parse(readFileSync(repo("content/skills/dist/skills.manifest.json"), "utf8")) as { skills: { id: string }[] };
-  const facts = matterFactsLine({ stage: "first_instance", event_date: "2025-03", region: "上海" });
+  // 第 28 批：事项口径带委托人与相对方（公司名照写）——“委托人=”“相对方=”这几个字不能被认成姓名
+  const facts = matterFactsLine({ stage: "first_instance", event_date: "2025-03", region: "上海", client_name: "上海澄明数据科技有限公司", counterparty: "北京远帆信息技术有限公司" });
   const rules = rulesPromptBlock({ rule_set_id: "rs_x", version: 2, title: "采购合同审查要点", sha256: "x", rules: [{ no: 1, topic: "付款", standard: "验收合格后三十日内付款", fallback: "不超过六十日", red_line: "不接受预付全款" }] } as any);
   const prefs = prefsPromptLine({ signature: "本所律师", citation: "short", notes: "段落之间空一行" } as any);
   const texts: string[] = [QA_SYSTEM_PROMPT, rules, prefs];

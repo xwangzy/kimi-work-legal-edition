@@ -175,7 +175,7 @@ describe("法律模型网关 v0", () => {
     const log = readFileSync(meterPath, "utf8");
     assert.ok(!log.includes(SECRET_TEXT) && !log.includes("孙悦") && !log.includes("mock upstream error"), "计量日志不得含正文或错误体");
     const recs = log.trim().split("\n").map((l) => JSON.parse(l) as { kind: string; requestId: string; reason: string | null });
-    for (const k of Object.keys(recs[0]!)) assert.ok(["at", "kind", "requestId", "clientRequestId", "tid", "sid", "anonMatter", "model", "status", "reserved", "inputTokens", "outputTokens", "cachedTokens", "latencyMs", "reason", "safety", "finishReason"].includes(k), k); // safety：内容安全命中的类别编号与次数（v9.2 R11），不含文字；finishReason：上游结束原因（复核 B13-C01）
+    for (const k of Object.keys(recs[0]!)) assert.ok(["at", "kind", "requestId", "clientRequestId", "tid", "sid", "anonMatter", "model", "status", "reserved", "inputTokens", "outputTokens", "cachedTokens", "latencyMs", "reason", "safety", "finishReason", "upstreamModel"].includes(k), k); // safety：内容安全命中的类别编号与次数（v9.2 R11），不含文字；finishReason：上游结束原因（复核 B13-C01）；upstreamModel：实际转发的上游型号（第 28 批）
     const reserves = recs.filter((x) => x.kind === "reserve").map((x) => x.requestId);
     const settles = new Set(recs.filter((x) => x.kind === "settle").map((x) => x.requestId));
     for (const id of reserves) assert.ok(settles.has(id), `预占 ${id} 没有结算`);

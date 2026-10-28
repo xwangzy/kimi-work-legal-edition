@@ -162,6 +162,18 @@
       "schemaHash": "0be671e14e7e94d38838cd9a213a6c25310350838d8c774c34aa0b067db42538"
     },
     {
+      "name": "docx.revise",
+      "version": "1",
+      "sideEffect": "write_draft",
+      "resource": "matter_documents",
+      "purposes": [
+        "legal_analysis",
+        "drafting",
+        "contract_review"
+      ],
+      "schemaHash": "cc5ccff7c19d9dd28fd4fe408019d6a9f242a89ddf80e2979ac6ac1c79d710c1"
+    },
+    {
       "name": "redact.apply",
       "version": "1",
       "sideEffect": "write_draft",

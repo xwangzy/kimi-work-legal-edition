@@ -14,8 +14,9 @@ test("DOCX：标题、段落、修订（插入/删除）与批注", () => {
     ops: [{ opId: "1", anchor: { originalText: original }, originalHash: sha256Hex(original), newText: "三十日", comment: "账期过长", author: "律师审定" }],
   });
   const r = renderDocxHtml(docx);
-  assert.match(r.html, /<del title="律师审定">九十日<\/del>/);
-  assert.match(r.html, /<ins title="律师审定">三十日<\/ins>/);
+  // 第 28 批：只标改动的字（“九十日”→“三十日”删“九”插“三”）
+  assert.match(r.html, /<del title="律师审定">九<\/del>/);
+  assert.match(r.html, /<ins title="律师审定">三<\/ins>/);
   assert.match(r.html, /<li value="1"><strong>律师审定<\/strong>：账期过长<\/li>/);
   assert.match(r.html, /<sup class="kwl-cmt">\[1\]<\/sup>/);
   assert.equal(r.html.includes("<script>"), false);

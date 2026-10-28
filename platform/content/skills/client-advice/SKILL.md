@@ -6,12 +6,12 @@ when_to_use: 问题相对明确、篇幅一到三页的答复；不用于正式�
 arguments: [question]
 kwl:
   id: client-advice
-  version: 1.2.0
+  version: 1.2.1
   lines: [企业法务, 非诉]
   chain: research
   tier: beta
-  tools_required: [law.search, law.get_version, citations.verify]
-  tools_optional: [docx.render_report, materials.list, materials.read_excerpt, facts.list, law.get_article]
+  tools_required: [law.search, law.get_version, citations.verify, docx.render_report]
+  tools_optional: [materials.list, materials.read_excerpt, facts.list, law.get_article]
   outputs: [顾问答复.docx]
   source_lineage: [demo:scene-counsel-regulatory-response, demo:scene-counsel-business-risk]
 ---

@@ -265,7 +265,7 @@ export function restrictedBashNote(p: { workDir: string; materialsDir: string; c
     "- 没有网络：curl、wget、pip install、npm install 等都不可用，也不能安装任何软件；需要检索法规或网页时使用对应的专用工具。",
     "- python3 是 Python 3.13，只有标准库（csv、json、decimal、datetime、statistics、re、zipfile、xml 等）；pandas、numpy 只在数据分析增强环境中可用，当前不可用；Python 的 sqlite3 模块不可用，需要 SQL 时用 shell 的 sqlite3 命令。",
     "- 可用命令：常见文本与文件命令（ls、cat、head、tail、wc、sort、uniq、cut、tr、diff、find、xargs 等）、grep、sed、awk、jq、yq、xan（CSV）、sqlite3、tar、gzip。没有 git、node、docker。",
-    "- Word/Excel：交付律师的 Word 文书与表格优先用法律工具 docx.render_report、xlsx.render_table 生成（自动登记为草稿成果）；在命令行里处理时，DOCX 用可信命令 kwl-docx（text 读段落；create 由标准输入生成，\"## \" 开头为小节标题；compare 段落比对），XLSX 用 kwl-xlsx（create / from-csv）；运行 kwl-docx --help 查看用法。没有 python-docx、openpyxl。",
+    "- Word/Excel：交付律师的 Word 文书与表格优先用法律工具 docx.render_report、xlsx.render_table 生成（自动登记为草稿成果）；在命令行里处理时，DOCX 用可信命令 kwl-docx（text 读段落；create 由标准输入生成，\"## \" 开头为小节标题；compare 段落比对），XLSX 用 kwl-xlsx（create / from-csv）；运行 kwl-docx --help 查看用法。没有 python-docx、openpyxl。修改律师上传的 Word 原件用法律工具 docx.revise（在原件副本上出修订稿与清洁稿）；kwl-docx 不能写修订。",
     "- 数据规模：单个文件超过 128 MB 不能读入；经 python3 读写、或经 awk 等把内容整体处理的命令，单个文件约 64 MB 为限（超出即报错并按执行域资源上限处理，本次改动不写回）；含大量中文的数据在 20～30 MB 以上用 python3 整体读入就可能内存不足，请逐行处理、先用 split 分块，或导入 sqlite3。cat、awk 等把输出整体拼接的命令，单条输出约 64 MB 为限。回给你的命令输出超过 16 MB 会被截断，大量结果请写入文件再分段查看。",
     "- 写法提示：jq/yq 中的中文键写成 .[\"键名\"]；awk 以竖线分隔时写 -F'[|]'；Python 写 CSV 默认是 \\r\\n 换行。",
     `- 文件：事项工作区 ${p.workDir} 可读写；材料快照 ${p.materialsDir} 只读。命令结束后对工作区的改动才写回磁盘；若运行期间同一文件被其他操作修改或建立，命令的结果会另存为“执行冲突副本”。`,

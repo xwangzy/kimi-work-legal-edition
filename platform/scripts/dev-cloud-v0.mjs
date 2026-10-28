@@ -82,7 +82,7 @@ if (process.env.KWL_MOCK_SCRIPT && provider instanceof gw.MockProvider) {
 // 内容安全（v9.2 R11）：KWL_SAFETY_POLICY 指向策略 JSON（{version, categories:[{id, action, terms}]}）时启用；生产词库由内容安全团队签名下发
 const { readFileSync } = await import("node:fs");
 const contentSafety = process.env.KWL_SAFETY_POLICY ? new gw.ContentSafety(JSON.parse(readFileSync(process.env.KWL_SAFETY_POLICY, "utf8"))) : undefined;
-const gateway = gw.createLegalGateway({ keys, provider, routes: gw.DEFAULT_ROUTES, meter: gw.fileMeter(join(dir, "gateway-meter.jsonl")), ...(quota ? { quota } : { budgets: new Map([[tenant, 100_000_000]]) }), ...(feed ? { feed } : {}), ...(contentSafety ? { contentSafety } : {}) });
+const gateway = gw.createLegalGateway({ keys, provider, routes: gw.routesFromEnv(process.env), meter: gw.fileMeter(join(dir, "gateway-meter.jsonl")), ...(quota ? { quota } : { budgets: new Map([[tenant, 100_000_000]]) }), ...(feed ? { feed } : {}), ...(contentSafety ? { contentSafety } : {}) });
 const searchProvider =
   process.env.KWL_MOONSHOT_SEARCH === "1" && process.env.KWL_MOONSHOT_API_KEY
     ? new ss.MoonshotToolsSearchProvider({ apiKey: process.env.KWL_MOONSHOT_API_KEY, baseUrl: process.env.KWL_MOONSHOT_BASE })

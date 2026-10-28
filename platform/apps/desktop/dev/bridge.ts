@@ -5,9 +5,18 @@
  *
  * 只接受来自本机 vite 开发页（127.0.0.1:5173 / localhost:5173）且带开发桥令牌的请求（W1：审批、还原等接口在开发形态同样不能被其他网页调用）。
  */
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { createServer } from "node:http";
+import { fileURLToPath } from "node:url";
 import { createKernel } from "@zr-legal/kernel";
 import { bridgeToken } from "./bridge-token.ts";
+
+// 起内核前按源文件重建方法模板包与工具清单锁（第 28 批；约 1 秒）：浏览器联调用的始终是当前源文件，不会带着旧包跑
+const contentRoot = fileURLToPath(new URL("../../../", import.meta.url));
+if (existsSync(`${contentRoot}content/keys/content-signing-dev.json`)) {
+  for (const s of ["content/skills/build-skills.mjs", "content/tool-manifest/build-lock.mjs"]) execFileSync(process.execPath, [`${contentRoot}${s}`], { stdio: "inherit", cwd: contentRoot });
+}
 
 const PORT = Number(process.env.ZR_DEV_BRIDGE_PORT ?? 7720);
 let kernel = await createKernel();

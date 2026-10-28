@@ -23,8 +23,12 @@ export const STAGE_LABELS: Record<MatterStage, string> = {
 };
 
 /** 给 Agent 的事项口径附加段（没填的不写）。 */
-export function matterFactsLine(m: { stage?: string | null; event_date?: string | null; region?: string | null }): string {
+export function matterFactsLine(m: { stage?: string | null; event_date?: string | null; region?: string | null; client_name?: string | null; counterparty?: string | null }): string {
   const parts: string[] = [];
+  // 委托人与相对方（第 28 批）：起草合同、诉状时首部要用；真实走查里空白事项起草的合同首部写成【待填】。随整段提示词经事项令牌化器（自然人姓名换代号）
+  const name = (v: string | null | undefined) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 100) : "");
+  if (name(m.client_name)) parts.push(`委托人=${name(m.client_name)}`);
+  if (name(m.counterparty)) parts.push(`相对方=${name(m.counterparty)}`);
   if (m.stage && m.stage in STAGE_LABELS) parts.push(`程序阶段=${STAGE_LABELS[m.stage as MatterStage]}`);
   if (m.event_date) parts.push(`事件时点=${m.event_date}（实体法按此时点取适用版本，程序法按现行版本）`);
   if (m.region) parts.push(`地域=${m.region}`);

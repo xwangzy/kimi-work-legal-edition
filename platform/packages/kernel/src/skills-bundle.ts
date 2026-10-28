@@ -21,6 +21,8 @@ export interface SkillInfo {
   tools_required: string[];
   /** 文书类方法（v9.4 第 19 批 C-04，复核 Q2-03/Q2-17）：起草前须提交论点提纲并经律师确认。 */
   requires_outline?: boolean;
+  /** 主交付物（第 28 批，SKILL.md 前言 outputs 的第一项）：以 .docx 结尾的方法，任务结束时内核核对有没有交出 Word 文书。 */
+  primary_output?: string;
 }
 
 export interface SkillsManifest {
@@ -145,6 +147,23 @@ export function materializeSkillsBundle(manifestFile: string | null, signerPub: 
  * 方法模板的“质量自检”清单（复核页“你来核对”，v9.2 §4.4 / Y4 §5 D-3）：取签名可信区里该模板 SKILL.md 中标题含“质量自检”的一节的勾选项。
  * 只读验签后物化的可信区；模板编号须为登记的字符集，读不到或没有该节返回空。
  */
+/** 自检条目里的工具名与内部取值换成律师话（第 28 批：复核页“你来核对”直接给律师看，工作准则第 10 条不写工具名）。纯函数。 */
+const LAWYER_WORDS: readonly [RegExp, string][] = [
+  [/ ?`?calc\.deadline`? ?/g, "期限计算工具"],
+  [/ ?`?calc\.interest`? ?/g, "利息计算工具"],
+  [/ ?`?calc\.court_fee`? ?/g, "诉讼费计算工具"],
+  [/ ?`?calc\.labor`? ?/g, "劳动补偿计算工具"],
+  [/ ?`?citations\.verify`? ?/g, "引用核验"],
+  [/ ?`?materials\.list`? ?/g, "材料目录"],
+  [/ ?`?docx\.compare`? ?/g, "两稿比对"],
+  [/ ?`?facts\.list`? ?/g, "事实时间线"],
+  [/ ?\bintercepted\s*\/\s*unverified_offline\b ?/g, "核对未通过或离线未核实"],
+  [/ ?\bstats\b ?/g, "比对统计"],
+];
+export function lawyerWords(line: string): string {
+  return LAWYER_WORDS.reduce((t, [re, w]) => t.replace(re, w), line);
+}
+
 export function skillQualityChecklist(dir: string, skillId: string): string[] {
   if (!/^[a-z0-9-]{1,64}$/.test(skillId)) return [];
   let text = "";
@@ -162,7 +181,7 @@ export function skillQualityChecklist(dir: string, skillId: string): string[] {
       continue;
     }
     const m = inSection ? /^\s*-\s*\[[ xX]\]\s*(.+)$/.exec(line) : null;
-    if (m) out.push(m[1]!.trim().slice(0, 200));
+    if (m) out.push(lawyerWords(m[1]!.trim()).slice(0, 200));
     if (out.length >= 20) break;
   }
   return out;
@@ -170,8 +189,9 @@ export function skillQualityChecklist(dir: string, skillId: string): string[] {
 
 
 /** 任务开始时方法模板的标题、版本与模板包摘要（余项续复核 RC-A-09、RC-B-14）：写进任务快照，事后看得到“当时按哪一版做的”。纯函数。 */
-export function skillSnapshot(bundle: SkillsBundleStatus | undefined, skill: string): { skill_title?: string; skill_version?: string; skills_sha256?: string; skill_requires_outline?: true } {
+export function skillSnapshot(bundle: SkillsBundleStatus | undefined, skill: string): { skill_title?: string; skill_version?: string; skills_sha256?: string; skill_requires_outline?: true; skill_primary_output?: string } {
   if (!bundle || !bundle.ok) return {};
   const x = bundle.skills.find((s) => s.id === skill);
-  return { ...(x ? { skill_title: x.title, skill_version: x.version } : {}), ...(x?.requires_outline ? { skill_requires_outline: true as const } : {}), skills_sha256: bundle.contentSha256 };
+  const primary = typeof x?.primary_output === "string" ? x.primary_output.slice(0, 80) : "";
+  return { ...(x ? { skill_title: x.title, skill_version: x.version } : {}), ...(x?.requires_outline ? { skill_requires_outline: true as const } : {}), ...(primary ? { skill_primary_output: primary } : {}), skills_sha256: bundle.contentSha256 };
 }

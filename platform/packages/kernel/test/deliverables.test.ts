@@ -48,8 +48,9 @@ test("S1: DOCX 合同 → 修订稿/清洁稿/意见书/问题表（修订稿可
   const redline = artifacts.find((a: any) => a.kind === "s1_redline");
   const redlineBuf = await downloadArtifact(inv, redline.artifact_version_id);
   const xml = readZipText(redlineBuf, "word/document.xml")!;
-  assert.match(xml, /<w:delText[^>]*>《律师法》第三十八条<\/w:delText>/);
-  assert.match(xml, /<w:ins\b[^>]*>[\s\S]*?《中华人民共和国律师法》第四十一条/);
+  // 第 28 批：修订只标改动的字（相同的开头“《”、结尾“条”照原样保留）
+  assert.match(xml, /<w:delText[^>]*>律师法》第三十八<\/w:delText>/);
+  assert.match(xml, /<w:ins\b[^>]*>[\s\S]*?中华人民共和国律师法》第四十一/);
   assert.match(xml, /w:author="Kimi Work 法律发行版（AI 建议）"/);
 
   // 清洁稿：无修订痕迹、定稿文本正确
@@ -57,7 +58,7 @@ test("S1: DOCX 合同 → 修订稿/清洁稿/意见书/问题表（修订稿可
   const cleanBuf = await downloadArtifact(inv, cleanArt.artifact_version_id);
   const cleanXml = readZipText(cleanBuf, "word/document.xml")!;
   assert.ok(!/<w:del\b/.test(cleanXml) && !/<w:ins\b/.test(cleanXml));
-  assert.ok(cleanXml.includes("《中华人民共和国律师法》第四十一条"));
+  assert.ok(extractParagraphs(cleanBuf).map((p) => p.text).join("\n").includes("《中华人民共和国律师法》第四十一条"), "定稿文字（第 28 批起修订只标改动的字，接受后文字分在相邻的几段 run 里）");
 
   await downloadArtifact(inv, artifacts.find((a: any) => a.kind === "s1_opinion").artifact_version_id);
   await downloadArtifact(inv, artifacts.find((a: any) => a.kind === "s1_issue_table").artifact_version_id);

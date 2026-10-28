@@ -487,13 +487,13 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   };
 
   // 确认提纲：先记下律师的逐条决定，再替律师答 Agent 的确认题（选“已确认”）；没有确认题时 Agent 下次读取 outline.get 即得确认版
-  const confirmOutline = async (decisions: Parameters<typeof api.decideOutline>[2], note: string) => {
+  const confirmOutline = async (decisions: Parameters<typeof api.decideOutline>[2], note: string, confirmFacts: boolean) => {
     if (!outline) return;
     setBusy(true);
     setErr("");
     try {
       await confirmAndAnswer({
-        decide: () => api.decideOutline(matterId, outline.outline_id, decisions, note),
+        decide: () => api.decideOutline(matterId, outline.outline_id, decisions, note, confirmFacts),
         answer: outlineQ ? () => api.answer(runId, outlineQ.question_id, outlineAnswer(outlineQ, true), stateVersion) : null,
       });
       await refresh();
@@ -770,7 +770,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             plain={(t) => (t ? restoredPlain(t, tokenMap) : "")}
             busy={busy}
             canStop={!!outlineQ}
-            onConfirm={(d, n) => void confirmOutline(d, n)}
+            onConfirm={(d, n, f) => void confirmOutline(d, n, f)}
             onStop={() => void stopOutline()}
           />
         )}

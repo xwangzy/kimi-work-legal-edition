@@ -14,7 +14,7 @@ import type { ApprovalCard, QuestionAnswer, QuestionCard } from "../api.ts";
 import { Markdown, tokens as renderTokens } from "./Markdown.tsx";
 import { Icon } from "./Icons.tsx";
 import { sendView } from "../lib/query-diff.ts";
-import { buildAnswers, isAnswered, pickOption, typeOther, unansweredCount, type AnswerDraft } from "../lib/question-answers.ts";
+import { buildAnswers, isAnswered, optionLabelText, pickOption, typeOther, unansweredCount, type AnswerDraft } from "../lib/question-answers.ts";
 
 /** 卡片标题（动词短语，律师语言）。 */
 export const KIND_TITLES: Record<ApprovalCard["kind"], string> = {
@@ -203,7 +203,7 @@ export function QuestionCardView({ card, tokenMap, busy, onAnswer }: {
                   onClick={() => setDraft((d) => pickOption(d, q, o.id))}
                 >
                   <span>
-                    <span className="q-mark" aria-hidden="true">{on ? "✓" : q.multi_select ? "☐" : "○"}</span> {renderTokens(o.label, tokenMap)}
+                    <span className="q-mark" aria-hidden="true">{on ? "✓" : q.multi_select ? "☐" : "○"}</span> {renderTokens(optionLabelText(o.label), tokenMap)}
                   </span>
                   {o.description && <small>{renderTokens(o.description, tokenMap)}</small>}
                 </button>

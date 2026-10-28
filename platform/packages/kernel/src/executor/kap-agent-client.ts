@@ -355,7 +355,10 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
     task.reason = (e.payload.reason as string | null) ?? null;
     // 宿主按工作时限或总时长收尾时报 failed + 原因：内核按原因记为超时（与内核兜底一致；复核 S5-B08）
     task.status = terminal === "failed" && (task.reason === "run_deadline_exceeded" || task.reason === "run_wall_deadline_exceeded") ? "timed_out" : terminal;
-    task.error = terminal === "failed" ? String(e.payload.error ?? e.payload.reason ?? "failed") : null;
+    // 宿主报的错误可能是对象（{code, message}）：取文字，不写成“[object Object]”（第 28 批模型不可用演练）
+    const err = e.payload.error;
+    const errText = err && typeof err === "object" ? String((err as { message?: unknown; code?: unknown }).message ?? (err as { code?: unknown }).code ?? "") : err == null ? "" : String(err);
+    task.error = terminal === "failed" ? (errText || String(e.payload.reason ?? "failed")).slice(0, 300) : null;
     const text = String(e.payload.final_text ?? "");
     task.previewText = text.slice(-20_000);
     if ((terminal === "succeeded" || terminal === "partial") && text.trim()) {

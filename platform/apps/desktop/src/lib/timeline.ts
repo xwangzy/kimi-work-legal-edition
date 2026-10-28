@@ -68,7 +68,15 @@ const LEGAL_TOOL_LABELS: Record<string, string> = {
   "facts.list": "查看事实",
   "xlsx.render_table": "生成表格",
   "docx.render_report": "生成 Word 文书",
+  "docx.revise": "在原件上修订",
   "docx.compare": "比对两版合同",
+};
+
+/** 没交出文书的原因（与内核 primaryDeliverableMissing 的 cause 对应）。 */
+const PRIMARY_MISSING_CAUSES: Record<string, string> = {
+  outline_pending: "论点与依据还在等你确认，确认后在本任务里追问即可补出文书",
+  outline_missing: "助手没有先把论点与依据交你确认，可以在本任务里追问补出文书",
+  no_word_output: "助手只交了表格或文字说明，可以在本任务里追问补出文书",
 };
 
 export interface Step {
@@ -360,10 +368,15 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         });
         break;
       }
+      case "agent.primary_missing":
+        // 主交付物核对（第 28 批）：文书类方法没交出 Word 文书——如实告诉律师，任务记部分完成
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: `没有交出《${String(p.primary ?? "文书")}》`, at, detail: PRIMARY_MISSING_CAUSES[String(p.cause)] ?? "" });
+        break;
       case "agent.error":
         // 律师层只给一句可理解的说明（不显示英文错误与状态码）；原文进“处理细节”（UIUX 增量评审 P0-D）。
         // retryable 由内核保留（复核 B4-B21：此前被裁掉，“正在自动重试”永远不出现）
-        steps.push({ key: `${e.event_id}-l`, level: "lawyer", icon: "fail", title: p.retryable === true ? "AI 服务出了点问题，正在自动重试" : "这一步没有完成，任务会尽量继续", at });
+        // 模型通道不可达（provider.*，第 28 批演练）：直说 AI 服务连不上，不写“任务会尽量继续”
+        steps.push({ key: `${e.event_id}-l`, level: "lawyer", icon: "fail", title: p.retryable === true ? "AI 服务出了点问题，正在自动重试" : String(p.code ?? "").startsWith("provider.") ? "AI 服务连不上，这一步没有完成" : "这一步没有完成，任务会尽量继续", at });
         steps.push({ key: `${e.event_id}`, level: "detail", icon: "fail", title: "错误详情", at, detail: String(p.message ?? p.error ?? "") });
         break;
       case "agent.cancel_unconfirmed":

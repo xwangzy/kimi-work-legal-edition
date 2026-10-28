@@ -85,6 +85,8 @@ function argsFor(tool: string, skill: string): Record<string, unknown> {
       return { document_version_id: skill === "redraft-review" ? ids.doc2 : ids.doc, cards: [{ kind: "risk", anchor_text: skill === "redraft-review" ? "买方应于验收合格后一百二十日内支付货款。" : "买方应于验收合格后九十日内支付货款。", severity: "mid", category: "commercial", rule_source: "general", issue: `【权利义务】${skill} 示例意见`, suggestion: "买方应于验收合格后六十日内支付货款。" }] };
     case "docx.compare":
       return { baseline_document_version_id: ids.doc, current_document_version_id: ids.doc2 };
+    case "docx.revise":
+      return { document_version_id: ids.doc, patches: [{ anchor: "九十日内支付货款", proposed_text: "六十日内支付货款", comment: `${skill} 示例修改` }] };
     case "table.get":
       return { table_id: ids.table };
     case "table.fill":
@@ -199,6 +201,7 @@ for (const s of manifest.skills) {
       const want = (n: string) => required.filter((t) => t === n).length;
       assert.ok(kinds.filter((k: string) => k === "agent_report").length >= want("docx.render_report"), `${s.id}：文书成果`);
       assert.ok(kinds.filter((k: string) => k === "agent_table").length >= want("xlsx.render_table"), `${s.id}：表格成果`);
+      if (required.includes("docx.revise")) assert.ok(kinds.includes("revision_draft") && kinds.includes("revision_clean"), `${s.id}：修订稿与清洁稿`);
       if (required.includes("riskcards.submit")) assert.ok(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM risk_cards WHERE run_id = ?`, [run.run_id])!.n >= 1, `${s.id}：风险卡进工作台`);
       if (required.includes("facts.submit")) assert.ok(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM matter_facts WHERE run_id = ?`, [run.run_id])!.n >= 1, `${s.id}：事实进事实标签`);
       if (required.includes("rules.propose")) assert.ok(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM matter_review_rules WHERE run_id = ? AND status = 'draft'`, [run.run_id])!.n >= 1, `${s.id}：审查要点草稿交律师审定`);

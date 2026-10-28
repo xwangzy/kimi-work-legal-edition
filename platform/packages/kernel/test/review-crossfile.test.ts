@@ -94,7 +94,7 @@ test("跨文件审查与表格单元格锚点：related 定位、校验；工作
   const xml = readZipText(buf, "word/document.xml")!;
   const tc = [...xml.matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)].map((x) => x[0]).find((x) => x.includes("<w:ins"));
   assert.ok(tc, "修订在表格单元格里");
-  assert.match(tc!, /六十日/);
+  assert.match(tc!, /<w:ins\b[\s\S]*?六/, "第 28 批：单元格里只标改动的字（九 → 六）");
   assert.match(extractParagraphs(buf).map((p) => p.text).join("\n"), /验收后六十日内付清/);
 });
 

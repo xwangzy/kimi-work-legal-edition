@@ -152,8 +152,9 @@ test("B-4 重新套版式只换样式、页眉页脚与页面设置：批注、�
   assert.match(text(out, "word/_rels/document.xml.rels"), /comments/, "批注的关系还在");
   assert.match(text(out, "[Content_Types].xml"), /comments\+xml/, "批注的内容类型还在");
   const doc = text(out, "word/document.xml");
-  assert.match(doc, /<w:ins\b[\s\S]*五个工作日内/);
-  assert.match(doc, /<w:del\b[\s\S]*三日内/);
+  // 第 28 批：修订只标改动的字（“三”→“五个工作”，“日内”照原样）
+  assert.match(doc, /<w:ins\b[\s\S]*五个工作/);
+  assert.match(doc, /<w:del\b[\s\S]*>三</);
   assert.match(text(out, "word/header1.xml"), /示例律师事务所/);
   assert.equal((doc.match(/<w:sectPr\b/g) ?? []).length, 1);
   assert.equal((text(out, "word/_rels/document.xml.rels").match(/\/styles"/g) ?? []).length, 1, "样式表关系只有一条");

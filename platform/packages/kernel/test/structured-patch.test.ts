@@ -78,9 +78,10 @@ test("100 份合同的结构化补丁：令牌形态的锚点与新文本经令�
     const comments = readZipEntries(buf).get("word/comments.xml")?.toString("utf8") ?? "";
     const allText = `${xml}${comments}`;
     const wrongName = /〔(自然人|电话|证件号|账号)·/.test(allText);
-    const insOk = xml.includes(`${c.name}应于本合同签订之日起五个工作日内`) && comments.includes(`便于${c.name}安排资金`);
-    const delOk = xml.includes(`<w:delText xml:space="preserve">${c.name}应于本合同签订之日起三日内</w:delText>`);
+    // 第 28 批起修订只标改动的字：姓名在相同的开头里照原样保留（已还原为真名），删“三”、插“五个工作”
     const visible = extractParagraphs(buf).map((p) => p.text).join("\n");
+    const insOk = visible.includes(`${c.name}应于本合同签订之日起五个工作日内`) && /<w:ins\b[^>]*>(?:(?!<\/w:ins>)[\s\S])*五个工作/.test(xml) && comments.includes(`便于${c.name}安排资金`);
+    const delOk = xml.includes(`<w:delText xml:space="preserve">三</w:delText>`);
     if (!wrongName && insOk && delOk && visible.includes("实现债权的合理费用")) ok += 1;
     else failures.push(`${i}: wrongName=${wrongName} ins=${insOk} del=${delOk}`);
     // 原件不变（原件区只读）

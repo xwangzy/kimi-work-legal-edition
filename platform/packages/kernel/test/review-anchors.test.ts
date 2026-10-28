@@ -7,7 +7,7 @@
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { createDocx, readZipEntries, readZipText, writeZip } from "@zr-legal/docx-engine";
+import { createDocx, extractParagraphs, readZipEntries, readZipText, writeZip } from "@zr-legal/docx-engine";
 import { importBytes, liveTaskIdentity, makeKernel, type TestKernel } from "./helpers.ts";
 import { submitRiskCards } from "../src/services/review-cards.ts";
 
@@ -130,8 +130,11 @@ test("修订稿以文档为单位：两轮任务各接受一张卡，修订稿�
   assert.equal(red.status, "applied", JSON.stringify(red));
   const dl = await tk.inv("artifacts.download", { artifact_version_id: red.artifact_version_id });
   const xml = readZipText(Buffer.from(dl.data_base64, "base64"), "word/document.xml") ?? "";
-  assert.match(xml, /三十日/);
-  assert.match(xml, /十二个月/);
+  // 第 28 批：修订只标改动的字，新文字按可见文本核（接受修订后的读法）
+  const visible = extractParagraphs(Buffer.from(dl.data_base64, "base64")).map((p) => p.text).join("\n");
+  assert.match(visible, /三十日/);
+  assert.match(visible, /十二个月/);
+  assert.equal((xml.match(/<w:ins\b/g) ?? []).length >= 2, true, "两处修订都写进去了");
   const manifest = JSON.parse(tk.kernel.db.get<{ manifest: string }>(`SELECT manifest FROM artifact_versions WHERE artifact_version_id = ?`, [red.artifact_version_id])!.manifest);
   assert.equal(manifest.lawyer_decisions.length, 2);
   assert.deepEqual(new Set(manifest.lawyer_decisions.map((d: any) => d.run_id)), new Set([first.rid, second.rid]));
@@ -172,7 +175,8 @@ test("在带修订痕迹的回稿上生成修订稿（复核 C-B14）：修改�
   assert.equal(red.status, "applied", JSON.stringify(red));
   const dl = await tk.inv("artifacts.download", { artifact_version_id: red.artifact_version_id });
   const xml = readZipText(Buffer.from(dl.data_base64, "base64"), "word/document.xml") ?? "";
-  assert.match(xml, /十二个月/);
+  assert.match(extractParagraphs(Buffer.from(dl.data_base64, "base64")).map((p) => p.text).join("\n"), /质保期为十二个月/, "修改落在可见文字上（第 28 批起只标改动的字）");
+  assert.match(xml, /<w:ins\b[^>]*w:author="律师审定[^"]*"[^>]*>(?:(?!<\/w:ins>)[\s\S])*十二/, "插入的是改动的字");
   assert.match(xml, /w:author="对方律师"/, "对方原有的修订保留");
 });
 
