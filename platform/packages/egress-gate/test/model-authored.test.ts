@@ -128,7 +128,9 @@ test("本机写入的 assistant 预填（partial / prefix 标记、位于末尾�
 // ── 第二步：读回工具的结果按字段（第 30 批真实复测：riskcards.list 交回的卡片建议学进“应开具、应完整、应完成”）──
 
 const call = (id: string, name: string) => ({ role: "assistant", content: null, tool_calls: [{ id, type: "function", function: { name, arguments: "{}" } }] });
-const result = (id: string, body: unknown) => ({ role: "tool", tool_call_id: id, content: JSON.stringify(body, null, 2) });
+/** 引擎交给模型的 MCP 结果：一行“Wall time”，再是内核的 JSON（第 30 批真实复测所见）。 */
+const result = (id: string, body: unknown) => ({ role: "tool", tool_call_id: id, content: `Wall time: 0.025 seconds\n${JSON.stringify(body, null, 2)}` });
+const body = (s: string) => JSON.parse(s.slice(s.indexOf("\n{") + 1));
 
 test("读回工具的 tool 消息按字段：卡片建议、未确认的事实、AI 填的格子、未改写的论点只替换已知名单；律师写的字段照常识别并学进令牌表", () => {
   const t = new MatterTokenizer({ matterKey: KEY, parties: PARTIES });
@@ -167,23 +169,23 @@ test("读回工具的 tool 消息按字段：卡片建议、未确认的事实�
   );
   assert.deepEqual(persons(t), ["孙志强", "周文涛", "王建业", "赵立新", "钱志远"].sort(), "只学进律师写的字段里的姓名");
   const msgs = (r.body as any).messages;
-  const c = JSON.parse(msgs[2].content);
+  const c = body(msgs[2].content);
   assert.equal(c.cards[0].suggestion, cards.cards[0]!.suggestion);
   assert.equal(c.cards[0].fallback, cards.cards[0]!.fallback);
   assert.equal(c.cards[1].issue, cards.cards[1]!.issue);
   assert.ok(!c.cards[1].lawyer_text.includes("王建业"), c.cards[1].lawyer_text);
-  const f = JSON.parse(msgs[4].content);
+  const f = body(msgs[4].content);
   assert.equal(f.facts[0].statement, facts.facts[0]!.statement);
   assert.ok(!f.facts[1].statement.includes("赵立新"));
-  const tb = JSON.parse(msgs[6].content);
+  const tb = body(msgs[6].content);
   assert.equal(tb.cells[0].value, table.cells[0]!.value);
   assert.ok(!tb.cells[1].value.includes("钱志远"));
-  const o = JSON.parse(msgs[8].content);
+  const o = body(msgs[8].content);
   assert.equal(o.confirmed_arguments[0].claim, "被告应开具发票");
   assert.ok(!o.confirmed_arguments[1].claim.includes("孙志强") && !o.lawyer_note.includes("周文涛"));
 });
 
-test("读回规则只认本请求里 assistant 调用的这四个工具：别的工具结果、解析不了的结果照常识别；Anthropic 形态的 tool_result 同样按字段", () => {
+test("读回规则只认本请求里 assistant 调用的这四个工具：别的工具结果、没有对应调用的照常识别；读回结果解析不了（引擎截断）的只替换已知名单；Anthropic 形态同样按字段", () => {
   const t = new MatterTokenizer({ matterKey: KEY });
   const prose = "每期付款前，乙方应开具等额合法有效的增值税专用发票。";
   const r = processChatPayload(
@@ -192,17 +194,19 @@ test("读回规则只认本请求里 assistant 调用的这四个工具：别的
       messages: [
         { role: "user", content: "审查。" },
         call("c1", "mcp__legal__materials_read_excerpt"),
-        result("c1", { text: `证人王建业出庭作证。${prose}` }),
+        result("c1", { text: "证人王建业出庭作证。" }),
         call("c2", "mcp__legal__riskcards_list"),
-        { role: "tool", tool_call_id: "c2", content: `证人赵立新称：${prose}` },
+        // 超长被引擎截断：JSON 不完整、后面接存放说明（律师写的字段内核交回前已换成代号，这里只替换已知名单）
+        { role: "tool", tool_call_id: "c2", content: `Wall time: 0.031 seconds\n{\n  "cards": [\n    {\n      "suggestion": "${prose}"\n[...truncated]\n证人赵立新称已保存` },
         { role: "tool", tool_call_id: "c9", content: JSON.stringify({ cards: [{ suggestion: "由证人钱志远签收" }] }) },
         { role: "user", content: "继续。" },
       ],
     },
     t,
   );
-  // 材料摘录（非读回工具）、读回工具但不是 JSON、没有对应调用的 tool 消息：照常识别
-  for (const n of ["王建业", "赵立新", "钱志远"]) assert.ok(persons(t).includes(n), n);
+  // 材料摘录（非读回工具）、没有对应调用的 tool 消息：照常识别；截断的读回结果不学
+  assert.deepEqual(persons(t), ["王建业", "钱志远"].sort());
+  assert.ok((r.body as any).messages[4].content.includes(prose), "截断的读回结果里模型写的文字原样");
   assert.ok(!JSON.stringify(r.body).includes("王建业"));
   // Anthropic 形态
   const t2 = new MatterTokenizer({ matterKey: KEY });

@@ -11,7 +11,8 @@
  *   不是模型写的，照常识别；system、user、tool 消息与工具定义照常识别；
  * - **读回工具的结果按字段**（第 30 批，D-157 第二步）：tool 消息（与 Anthropic 形态的 tool_result）若是本请求里 assistant 调用的
  *   riskcards.list / facts.list / outline.get / table.get 的结果，按 JSON 解析后，模型自己写的字段（卡片建议、未确认的事实陈述、
- *   未经律师改写的论点、AI 填的格子）只替换已知名单，律师写的字段与其余内容照常识别；解析不了的整段照常识别；
+ *   未经律师改写的论点、AI 填的格子）只替换已知名单，律师写的字段与其余内容照常识别；引擎在 JSON 前加的“Wall time”行照常处理；
+ *   解析不了的（超长被引擎截断、出错说明）整段只替换已知名单——律师写的字段在内核交回 Agent 前已照常识别、换成代号；
  * - 工作区本已是令牌形态，确定性令牌化幂等：同一值得到同一代号，跨轮稳定、前缀缓存不破；
  * - 工具调用参数（JSON 字符串）先解析再逐值令牌化（`\uXXXX` 转义写法同样识别），只在确有替换时重新序列化；
  * - **响应流不还原**（不在本模块）：引擎收到的永远是令牌形态；
@@ -85,18 +86,25 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): 
     return r.text;
   };
 
-  /** 读回工具的结果（JSON 文本）：模型写的字段只替换已知名单，其余照常；有替换才重新序列化（与内核同一缩进）。 */
+  /**
+   * 读回工具的结果：引擎在内核的 JSON 前加一行“Wall time: … seconds”（第 30 批真实复测发现）。从第一个以 { 或 [ 开头的行起按 JSON 解析，
+   * 模型写的字段只替换已知名单，其余照常；有替换才重新序列化（与内核同一缩进）。解析不了的整段只替换已知名单（见文件头）。
+   */
   const readback = (raw: string, rule: ModelFieldRule): string => {
+    const m = /(?:^|\n)(?=[{[])/.exec(raw);
+    const at = m ? m.index + m[0].length : -1;
     let parsed: unknown;
     try {
-      parsed = JSON.parse(raw);
+      parsed = at >= 0 ? JSON.parse(raw.slice(at)) : undefined;
     } catch {
-      return tok(raw);
+      parsed = undefined;
     }
-    if (!parsed || typeof parsed !== "object") return tok(raw);
+    if (!parsed || typeof parsed !== "object") return tok(raw, true);
+    const head = raw.slice(0, at);
+    const headOut = tok(head);
     const before = JSON.stringify(parsed);
     const out = tokenizeByField(parsed, (s, modelWritten) => tok(s, modelWritten), rule);
-    return JSON.stringify(out) === before ? raw : JSON.stringify(out, null, 2);
+    return headOut === head && JSON.stringify(out) === before ? raw : headOut + JSON.stringify(out, null, 2);
   };
   /** 消息与内容块里的正文文字。 */
   const text = (s: string): string => (readbackRule ? readback(s, readbackRule) : tok(s));
