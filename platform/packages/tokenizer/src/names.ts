@@ -94,7 +94,16 @@ const COMMON_WORDS = new Set([
  * “乙方全面履行”“承租人连续两个月”被读成“角色词 + 姓名”，模型收到“卖方〔自然人〕约”，违约门槛词丢了；490 句合同式短句里误认 70 句）。
  * 复核 Q8-01：只在“没有明确边界”的那一支用——有标点、称谓、言语动词等强证据时（“原告：严重阳，男”“证人严格律师”）照常认出。
  */
-const ROLE_FOLLOW_WORDS = new Set(["严重", "严格", "全面", "连续"]);
+const ROLE_FOLLOW_WORDS = new Set(["严重", "严格", "全面", "连续", "任何"]);
+/**
+ * 角色词后直接接、没有明确边界时，以这些短语开头的不是姓名（第 29 批真实模型走查：股权转让协议“甲方应缴纳的个人所得税”
+ * “总经理，任期三年”被读成姓名，模型收到“甲方〔自然人〕的个人所得税”“〔自然人〕年”，以为条款文字缺失）。
+ * 同一批审查任务里，助手自己写的意见经出站令牌化时又认出“应全额、应负责、应依法、任何、向乙、由双、付款义、付清全、任职期、时生效”，
+ * 这些值进了事项令牌表后，合同原文里的“任何一方”“向乙方支付”在定位视图里被换成代号，5 张风险卡因此定位不到。
+ * 按短语收（“应保国”“付清华”这类真名不受影响），同样只用在没有明确边界的那一支。
+ */
+const ROLE_FOLLOW_PHRASES =
+  /^(?:应(?:缴纳|缴付|保证|遵守|遵循|全额|负责|依法|及时|立即|支付|承担|赔偿|返还|退还|确保|促使|协助|配合|提供|履行)|任期(?:届满|内|为|自|[一二三四五六七八九十两\d]+年)|任职期间|[向由](?:甲|乙|丙|双|对|一)方|[和与及](?:实际|联系)|付款义务|付清(?:全部|全款|余款|货款|价款|欠款|款项)|时生效)/;
 
 /** 角色词后紧跟这些，说明是机构（“被告北京……有限公司”）。 */
 const ORG_TAIL = /^[一-龥A-Za-z0-9（）()]{0,16}?(?:有限责任公司|股份有限公司|有限公司|公司|集团|事务所|银行|支行|分行|医院|学校|大学|学院|研究院|研究所|委员会|政府|法院|检察院|公安局|派出所|中心|合作社|工作室|商行|商店|超市|酒店|宾馆|饭店|门市部|经营部|厂|店)/;
@@ -106,6 +115,13 @@ const BOUNDARY = /[\s，。；：、“”"‘’（）()！？!?,.;:\u3000]/;
 
 const ROLE_RE = new RegExp(`(?:${ROLE_CUES.sort((a, b) => b.length - a.length).join("|")})(?:[一二三四五六七八九十]|\\d{1,2})?`, "g");
 const HONORIFIC_RE = new RegExp(`(?:${HONORIFICS.sort((a, b) => b.length - a.length).join("|")})`, "g");
+/**
+ * 介词、连词后面紧跟角色词或“对方 / 双方”：是“向原告支付”“由甲方承担”“和被告协商”，不是姓名“向原”“由甲”
+ * （第 29 批真实模型走查：起诉状里的“被告向原告支付”认出“向原”，学进事项令牌表后，材料里的“向原告”都被换成代号）。只用在没有明确边界的那一支。
+ */
+const ROLE_AFTER_FUNCTION = new RegExp(`^(?:${ROLE_CUES.join("|")}|[对双各一我他本]方|原审|原单位|原地址)`);
+/** “对方、双方、甲方……”里的“方”是名词，不是姓氏（第 29 批：“微信中对方亦确认”认出“方亦”）。 */
+const PARTY_FANG_BEFORE = new Set([..."对双各一我他本甲乙丙丁买卖"]);
 
 /** 姓名之后常见的字（动词、介词、助词）：姓名后紧跟它们，说明姓名到此为止。 */
 const NAME_DELIM = new Set([..."在于与和及等的向将已系为是因对同把被所曾自从经由以诉称签共均都也又还就并即则但而或认说表承确拒支付借欠归交收出购买卖租住现男女年月日作提要请不未没应可能会"]);
@@ -356,9 +372,12 @@ function readName(text: string, j: number): string | null {
     if (given.length !== g || !anchored || !givenOk(given, hard)) continue;
     // “姓氏”其实是前一个词的功能字（“向双方，”）：不认
     if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
+    // 列明退役的误认值即使有边界也不认（第 29 批：“到达甲方时生效，”）
+    if (!stillLooksLikeName(text.slice(j, j + s + g))) continue;
     return text.slice(j, j + s + g);
   }
-  if (ROLE_FOLLOW_WORDS.has(text.slice(j, j + 2))) return null;
+  if (ROLE_FOLLOW_WORDS.has(text.slice(j, j + 2)) || ROLE_FOLLOW_PHRASES.test(text.slice(j, j + 8))) return null;
+  if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && ROLE_AFTER_FUNCTION.test(text.slice(j + 1, j + 9))) return null;
   const g1 = text[j + s];
   const g2 = text[j + s + 1];
   if (!g1 || !CJK.test(g1) || STOP.has(g1) || NOT_GIVEN.has(g1) || (g2 && ROLE_GIVEN.has(g1 + g2))) return null;
@@ -426,6 +445,14 @@ const KNOWN_MISREADS = new Set([
   // 第 27 批真实模型走查：合同正文里的误认（“不承担任何间接损失”“卖方严重违约”等）
   // “严格”是两字值，可能是以前认对的真名（“被告：严格，女”），不退役（复核 Q8-02）
   "何间接", "严重违", "严重迟", "全面履", "连续两",
+  // 第 29 批真实模型走查：股权转让协议里的误认（“甲方应缴纳的个人所得税”“任期三年”“监事任期届满”）
+  "应缴纳", "任期三", "任期届", "应遵守",
+  "应全额", "应负责", "应依法", "任何", "任何披", "向乙", "由双", "付款义", "付清全", "任职期", "时生效",
+  // 同一形态（“乙方向甲方”“由对方承担”）：旧规则在其他事项里学进令牌表的同类值一并退役（货款纠纷事项里“向甲”仍在替换合同原文）
+  "向甲", "向丙", "向双", "向对", "向一", "由甲", "由乙", "由丙", "由对", "由一",
+  // 第 29 批复测：货款纠纷事项令牌表里旧规则学进的值（“被告向原告支付”“甲方向乙方采购”“对方亦确认”“法定代表人和联系方式”
+  // “和实际”“双方确认的封样”，以及把句点当间隔号读出的一段）仍在替换合同原文
+  "向原", "方采", "方亦", "和联", "和实", "封样", "元.保全费未发生不",
 ]);
 export function stillLooksLikeName(value: string): boolean {
   return !KNOWN_MISREADS.has(value);
@@ -466,6 +493,7 @@ export function recognizeNames(text: string): Set<string> {
       if (COMMON_WORDS.has(text.slice(j, j + 2)) || COMMON_WORDS.has(text.slice(j + 1, j + 3))) continue;
       // 较长候选的“姓氏”若其实是前一个词的功能字（“和王明律师”的“和”），放弃较长候选
       if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
+      if (text[j] === "方" && PARTY_FANG_BEFORE.has(text[j - 1] ?? "")) continue;
       tries.push(text.slice(j, k));
     }
     if (tries.length > 0) out.add(tries[0]!);
@@ -481,6 +509,7 @@ export function recognizeNames(text: string): Set<string> {
       const s = surnameAt(text, j);
       if (s === 0 || len - s < 1 || len - s > 2) continue;
       if (FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0 && s === 1) continue;
+      if (text[j] === "方" && PARTY_FANG_BEFORE.has(before)) continue;
       const given = text.slice(j + s, k);
       if (!givenOk(given, false)) continue;
       if (COMMON_WORDS.has(text.slice(j, j + 2))) continue;
@@ -488,6 +517,9 @@ export function recognizeNames(text: string): Set<string> {
       break;
     }
   }
+  // 列明退役的误认值任何一支都不出（第 29 批真实走查：“甲方向乙方采购”里“方采”先被令牌表换掉，“向乙”后面看不到“方”，
+  // 没有边界的那一支又把“向乙”认了出来，合同第 3.1、4.2、6.1 条的“向乙方”跟着被换成代号）
+  for (const n of out) if (!stillLooksLikeName(n)) out.delete(n);
   return out;
 }
 

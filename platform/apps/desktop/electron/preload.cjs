@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld("zrKernel", {
   /** 选文件夹（第 14 批：备份位置、从备份恢复）：同样只回一次性句柄与文件夹名。 */
   pickFolder: () => ipcRenderer.invoke("kwl:pick-folder"),
   saveText: (handle, text) => ipcRenderer.invoke("kwl:save-text", handle, text),
+  /** 把 Word 成果导出成 PDF（第 29 批）：主进程选保存位置、打印、写文件；只回文件名与“打开”句柄。 */
+  exportPdf: (artifactVersionId) => ipcRenderer.invoke("kwl:export-pdf", artifactVersionId),
   /** 用系统默认程序打开刚保存的成果（v9.4 第 21 批）：只认保存成功后主进程发的一次性句柄。 */
   openSaved: (handle) => ipcRenderer.invoke("kwl:open-saved", handle),
   /**

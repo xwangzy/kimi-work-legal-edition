@@ -53,6 +53,11 @@ export interface ScenarioCard {
   notFor?: string[];
   /** 三条业务线都常用（v9.4 S1 §5.5）：首页放在业务线卡片下方的“通用”一行，不在每条线各复制一张。line 仍用于挑默认事项。 */
   general?: boolean;
+  /**
+   * 本卡的主交付物（第 29 批）：方法前言 outputs 里的一项，缺省为第一项。同一方法的不同卡交付不同时写明（尽调“发现与报告”的主交付物是报告，不是清单），
+   * 内核据此核对任务有没有交出这份文书，没有就不记“完成”。
+   */
+  primary?: string;
   /** 卡片固定的方法参数（v9.4：同一方法的不同卡，例如劳动争议的“仲裁应对 / 解除前评估”）；与律师填写的字段一起作为方法参数传给 Agent。 */
   args?: Record<string, string>;
 }
@@ -140,7 +145,7 @@ export const SCENARIOS: ScenarioCard[] = [
       "列出证据目录；争点—证据矩阵按你给的争点列框架",
       "列出缺口与待补证据；接着可做“争点与证据分析”",
     ],
-    intents: [["证据", "目录"], ["整理", "案卷"], ["时间线"], ["时间轴"]],
+    intents: [["证据", "目录"], ["证据", "清单"], ["整理", "证据"], ["整理", "案卷"], ["时间线"], ["时间轴"]],
   },
   // 整理案卷的 AI 精读版（v9.4 第 20 批，V9.4 主文 §3.2“精读版入口”）：本机规则版之外，逐份读、逐条提交带引文的事实给你确认
   {
@@ -162,12 +167,12 @@ export const SCENARIOS: ScenarioCard[] = [
     id: "issues",
     line: "litigation",
     title: "争点与证据分析",
-    gives: "经你确认的事实（先做“整理案卷”，再到事项页“事实”里逐条确认）",
+    gives: "案卷材料或“整理案卷”的成果（事实已确认最好；未确认的也能先做，评估标“初步判断”）",
     gets: ["争点—证据矩阵.xlsx（要件、证据、缺口、对方抗辩）", "补证清单（动作、责任人）"],
     scenario: "a1.agent_task",
     skill: "issue-evidence-matrix",
     verb: "开始分析",
-    goal: "请梳理争点与证据：拟主张或需应对的请求为{claims}；我方诉讼地位：{side}。只采用我已确认的事实，不评估胜诉率。",
+    goal: "请梳理争点与证据：拟主张或需应对的请求为{claims}；我方诉讼地位：{side}。有我确认过的事实时只用确认的事实；还没有确认的，用材料载明的事实并标【未确认】，评估写“初步判断”。不评估胜诉率。",
     fields: [
       { key: "claims", label: "拟主张或需应对的请求", kind: "text", required: true, placeholder: "例如：支付货款 120 万元及逾期利息" },
       { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人"] },
@@ -234,7 +239,7 @@ export const SCENARIOS: ScenarioCard[] = [
       { key: "extra", label: "补充要求", kind: "text", placeholder: "可选" },
     ],
     minMaterials: 0,
-    steps: ["只采用你确认过的事实与金额", "写出诉讼请求、事实与理由", "核对引用的法条", "列出提交前核对清单"],
+    steps: ["确认过的事实与金额照写，未确认的标【待确认】", "写出诉讼请求、事实与理由", "核对引用的法条", "列出提交前核对清单"],
     // 模板只做民商事起诉状（复核 B3-B24）：答辩状另有卡（defense），仲裁申请书不引到这里
     // 第 28 批：带“起草”的说法更具体——“根据时间线起草起诉状”不再被同分的“整理案卷”抢走
     intents: [["起诉状"], ["起诉", "写"], ["起草", "起诉状"], ["写", "起诉状"]],
@@ -249,7 +254,7 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "defense-draft",
     verb: "开始起草",
-    goal: "请起草民事答辩状（一审）。收到起诉状副本的日期：{received_on}；被告在境内有无住所：{domicile}；总体意见：{stance}。只采用我已确认的事实。",
+    goal: "请起草民事答辩状（一审）。收到起诉状副本的日期：{received_on}；被告在境内有无住所：{domicile}；总体意见：{stance}。我确认过的事实照写；材料载明但我还没确认的标【待确认】，材料没有的写【待填】，不要推测。",
     fields: [
       { key: "received_on", label: "收到起诉状副本的日期", kind: "date" },
       // 被告在境内没有住所的，答辩期为三十日（复核 RB16B-13）
@@ -272,7 +277,7 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "appeal-draft",
     verb: "开始起草",
-    goal: "请起草民事上诉状（不服一审{ruling}）。判决书或裁定书的送达日期：{served_on}；上诉范围：{scope}；上诉人在境内有无住所：{domicile}。只采用我已确认的事实，不预测二审结果。",
+    goal: "请起草民事上诉状（不服一审{ruling}）。判决书或裁定书的送达日期：{served_on}；上诉范围：{scope}；上诉人在境内有无住所：{domicile}。我确认过的事实照写，材料载明但未确认的标【待确认】，不预测二审结果。",
     fields: [
       { key: "ruling", label: "不服的是", kind: "select", options: ["判决", "裁定"], required: true },
       { key: "served_on", label: "判决书或裁定书的送达日期", kind: "date" },
@@ -295,7 +300,7 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "arbitration-application",
     verb: "开始起草",
-    goal: "请起草商事仲裁申请书，先核对仲裁协议。仲裁机构：{institution}；仲裁请求：{claims}。只采用我已确认的事实与金额，仲裁规则与收费以我提供的机构文件为准。",
+    goal: "请起草商事仲裁申请书，先核对仲裁协议。仲裁机构：{institution}；仲裁请求：{claims}。我确认过的事实与金额照写，材料载明但未确认的标【待确认】，仲裁规则与收费以我提供的机构文件为准。",
     fields: [
       { key: "institution", label: "仲裁机构", kind: "text", placeholder: "以合同约定为准，可空" },
       { key: "claims", label: "仲裁请求", kind: "text", placeholder: "例如：支付货款 50 万元及逾期利息" },
@@ -316,7 +321,7 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "hearing-outline",
     verb: "开始准备",
-    goal: "请准备开庭用的庭审提纲（陈述要点、举证质证顺序、发问提纲、辩论要点），只采用我已确认的事实，不预测庭审结果。开庭日期：{hearing_on}；我方地位：{side}；争议焦点：{focus_points}。",
+    goal: "请准备开庭用的庭审提纲（陈述要点、举证质证顺序、发问提纲、辩论要点），事实分清“律师确认”与“材料记载”，不预测庭审结果。开庭日期：{hearing_on}；我方地位：{side}；争议焦点：{focus_points}。",
     fields: [
       { key: "hearing_on", label: "开庭日期", kind: "date" },
       { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人", "上诉人", "被上诉人"], required: true },
@@ -399,7 +404,7 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "agency-statement",
     verb: "开始起草",
-    goal: "请起草代理词。法庭归纳的争议焦点：{focus_points}。只采用我已确认的事实与已质证的证据，不评估胜诉率。",
+    goal: "请起草代理词。法庭归纳的争议焦点：{focus_points}。事实以我确认过的与已质证的证据为准，未确认的标【待确认】，不评估胜诉率。",
     fields: [{ key: "focus_points", label: "争议焦点", kind: "text", required: true, placeholder: "用“；”隔开，例如：货款是否已付清；违约金是否过高" }],
     minMaterials: 0,
     steps: ["按法庭归纳的焦点逐个论证", "事实只用你确认的、证据只用已质证的，注明出处", "核对引用的法条；案例只用你提供的", "写成代理词与对照表"],
@@ -522,7 +527,7 @@ export const SCENARIOS: ScenarioCard[] = [
     ],
     minMaterials: 0,
     steps: ["拆解问题与适用时点", "检索法规（联网检索会先去掉当事人信息）", "逐条核对引用是否现行有效", "写成研究备忘录（案例库尚未开通：只做法规研究）"],
-    intents: [["研究"], ["检索"], ["法规", "研究"], ["现行有效", "法规"]],
+    intents: [["研究"], ["检索"], ["法规", "研究"], ["现行有效", "法规"], ["现行有效", "规定"], ["查", "规定"], ["法律", "规定"], ["法条", "规定"], ["怎么", "规定"]],
     // 案例库尚未开通：说“类案、案例”时不建议本卡，免得律师以为能检索案例
     notFor: ["类案", "案例"],
   },
@@ -541,7 +546,7 @@ export const SCENARIOS: ScenarioCard[] = [
     fields: [{ key: "when", label: "事件时点", kind: "text", placeholder: "用于判断适用哪一版法律，可空" }],
     minMaterials: 1,
     steps: ["逐条抽出文稿里的法条、司法解释与案例引用", "核对是否存在、按事件时点是否适用", "对照条文原文看能否支持结论（库外的标“支持待判”）", "列出改引建议，由你确认"],
-    intents: [["核对", "引用"], ["核验", "引用"], ["引用", "法条"], ["法条", "有效"], ["现行有效"], ["文稿", "体检"]],
+    intents: [["核对", "引用"], ["核验", "引用"], ["引用", "法条"], ["法条", "有效", "这份"], ["现行有效", "这份"], ["现行有效", "文书"], ["现行有效", "代理词"], ["现行有效", "起诉状"], ["文稿", "体检"]],
   },
   {
     // 第 28 批：在原件上改（修订稿 + 清洁稿）。此前“按我的意见改这份 Word”没有入口——自由描述时助手按合同审查做，只出风险卡与表格
@@ -588,7 +593,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "transactional",
     title: "审合同",
     gives: "一份合同（Word 最佳）",
-    gets: ["逐条审查意见（在审查工作台逐项决定）", "带修订痕迹的 Word 修订稿", "审查意见书（内部稿）"],
+    gets: ["审查意见书（内部稿）.docx", "逐条审查意见（在审查工作台逐项决定）", "问题清单.xlsx（附件）", "带修订痕迹的修订稿与清洁稿（在工作台处理意见后生成）"],
     scenario: "a1.agent_task",
     skill: "contract-review",
     verb: "开始审查",
@@ -608,7 +613,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "transactional",
     title: "对方回稿：比对与重审",
     gives: "我方上一稿 + 对方回稿（两份 Word）",
-    gets: ["变更清单.xlsx（含没标修订的静默改动、我方修改采纳情况）", "新问题进审查工作台", "回稿意见（草稿）"],
+    gets: ["变更清单.xlsx（含没标修订的静默改动、我方修改采纳情况）", "新问题进审查工作台", "回稿意见（草稿，需要时）"],
     scenario: "a1.agent_task",
     skill: "redraft-review",
     verb: "开始重审",
@@ -705,7 +710,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "transactional",
     title: "尽调清单与访谈提纲",
     gives: "交易简介；已有的目标公司资料（可选）",
-    gets: ["尽调清单.xlsx（红旗问题在前）", "可直接发对方的资料清单", "访谈提纲.docx"],
+    gets: ["尽调清单.xlsx（内部用，红旗问题在前）", "资料清单（致目标公司）.xlsx（单独文件，可直接发对方）", "访谈提纲.docx"],
     scenario: "a1.agent_task",
     skill: "due-diligence",
     args: { stage: "清单" },
@@ -724,10 +729,11 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "transactional",
     title: "尽调发现与报告（内部稿）",
     gives: "数据室材料、访谈纪要、你在外部系统查到的工商 / 涉诉 / 执行结果",
-    gets: ["尽调发现表.xlsx", "尽调报告（内部稿）.docx", "交易文件条款建议"],
+    gets: ["尽调报告（内部稿）.docx", "尽调发现表.xlsx（附件）", "交易文件条款建议"],
     scenario: "a1.agent_task",
     skill: "due-diligence",
     args: { stage: "发现" },
+    primary: "尽调报告（内部稿）.docx",
     verb: "开始整理",
     goal: "请根据数据室材料、访谈纪要和导入的外部查询结果整理尽调发现与内部报告；交易类型：{deal_type}。",
     fields: [{ key: "deal_type", label: "交易类型", kind: "select", options: ["股权收购", "增资", "资产收购", "其他"], required: true }],
@@ -807,7 +813,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "inhouse",
     title: "合同审核",
     gives: "一份合同（Word 最佳）",
-    gets: ["逐条审核意见（审查工作台）", "带修订痕迹的 Word 修订稿"],
+    gets: ["审核意见书（内部稿）.docx", "逐条审核意见（审查工作台）", "带修订痕迹的修订稿与清洁稿（在工作台处理意见后生成）"],
     scenario: "a1.agent_task",
     skill: "contract-review",
     verb: "开始审核",
@@ -852,7 +858,7 @@ export const SCENARIOS: ScenarioCard[] = [
     ],
     minMaterials: 0,
     steps: ["明确问题与前提", "检索并核对依据", "写出结论、假设与需客户确认的事项"],
-    intents: [["合规"], ["能不能"], ["是否合法"], ["是否违法"], ["顾问"]],
+    intents: [["合规"], ["能不能"], ["是否合法"], ["是否违法"], ["顾问"], ["法律意见"]],
   },
   {
     id: "demand-inhouse",

@@ -320,8 +320,10 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         break;
       case "agent.approval_decided": {
         const i = approvalIndex.get(String(p.approval_id));
+        // 退回计划（第 29 批真实走查）：律师写了修改意见退回计划，助手会按意见重写计划——不是“跳过”
+        const plan = i !== undefined && /提交计划/.test(steps[i]?.title ?? "");
         if (i !== undefined && steps[i]) steps[i] = { ...steps[i]!, icon: p.decision === "approve" ? "ok" : "fail" };
-        steps.push({ key: `${e.event_id}`, icon: p.decision === "approve" ? "ok" : "fail", level: "lawyer", title: p.decision === "approve" ? `你已同意${p.scope === "task" ? "（本任务内同类不再询问）" : ""}` : "你没有同意，已跳过", at });
+        steps.push({ key: `${e.event_id}`, icon: p.decision === "approve" ? "ok" : "fail", level: "lawyer", title: p.decision === "approve" ? `你已同意${p.scope === "task" ? "（本任务内同类不再询问）" : ""}` : plan ? "你退回了计划，助手按你的意见修改" : "你没有同意，已跳过", at });
         break;
       }
       case "agent.approval_expired": {
@@ -413,7 +415,8 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
           icon: e.type === "run.succeeded" ? "ok" : e.type === "run.partial" ? "dot" : "fail",
           title: RUN_STATUS_LABELS[e.type.slice(4)] ?? e.type,
           at,
-          detail: e.type === "run.failed" ? String(p.error ?? p.reason ?? "") : undefined,
+          // 超时、过期同样写明原因与下一步（第 29 批上游不回应演练：原先只显示“已超时”）
+          detail: e.type === "run.failed" || e.type === "run.timed_out" || e.type === "run.expired" ? String(p.error ?? p.reason ?? "") : undefined,
         });
         break;
       default:

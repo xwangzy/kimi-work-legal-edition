@@ -9,6 +9,7 @@ import { dropHouseMark } from "./house-style.ts";
 import { DomainError, sha256Hex } from "@zr-legal/domain";
 import { readZipEntries, writeZip } from "./zip.ts";
 import { escapeXml, findInParagraph, mapParagraphs, type ParagraphMap } from "./textmap.ts";
+import { paragraphListLabels } from "./numbering.ts";
 import type { AppliedRevision, RevisionOp, RevisionPlan } from "./revision-ops.ts";
 
 const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
@@ -34,9 +35,11 @@ export function applyRevisionsToDocx(docx: Buffer, plan: RevisionPlan): ApplyRes
   const comments: { id: number; author: string; date: string; text: string }[] = [];
   let idSeq = nextIdSeed(xml);
   const applied: AppliedRevision[] = [];
+  // 自动编号（第 29 批）：条款提示（“3.2”“第五条”）也按 Word 显示的编号比对；按原件段落次序算一次（新插入的段落不参与匹配，次序不变）
+  const labels = paragraphListLabels(documentXml, files.get("word/numbering.xml")?.toString("utf8") ?? null, files.get("word/styles.xml")?.toString("utf8") ?? null);
 
   for (const op of plan.ops) {
-    xml = applyOne(xml, op, comments, () => idSeq++, applied);
+    xml = applyOne(xml, op, comments, () => idSeq++, applied, labels);
   }
   // 段后插入用的临时标记（同一段后的多条插入按先后接在一起；插入的新段落不参与后续锚点匹配）写完即去掉
   xml = xml.replace(/ kwl-(?:anchor|ins)="\d+"/g, "");
@@ -68,16 +71,18 @@ function applyOne(
   comments: { id: number; author: string; date: string; text: string }[],
   nextId: () => number,
   applied: AppliedRevision[],
+  labels: readonly (string | null)[] = [],
 ): string {
   if (sha256Hex(op.anchor.originalText) !== op.originalHash) {
     throw new DomainError("anchor_mismatch", `修订 ${op.opId} 原文 hash 校验失败`, 422, { opId: op.opId });
   }
   // 本次写入里新插入的段落不算候选（复核 Q2-06：补充条款里恰好含后面某张卡的锚点时不会多出一处匹配）
   const paras = mapParagraphs(xml).filter((p) => !/^<w:p\b[^>]*\skwl-ins="/.test(xml.slice(p.xmlStart, p.xmlStart + 200)));
+  const shown = new Map(paras.map((p, i) => [p, labels[i] ? `${labels[i]} ${p.text}` : p.text]));
   const candidates = paras.filter((p) => findInParagraph(p, op.anchor.originalText, op.anchor.occurrence ?? 0) !== null);
   let target = candidates[0];
   if (op.anchor.paragraphHint && candidates.length > 1) {
-    target = candidates.find((p) => p.text.includes(op.anchor.paragraphHint!)) ?? target;
+    target = candidates.find((p) => shown.get(p)!.includes(op.anchor.paragraphHint!)) ?? target;
   }
   if (!target) {
     throw new DomainError("anchor_mismatch", `修订 ${op.opId} 锚点未找到（原文不存在或已被修改），转人工`, 422, {

@@ -626,6 +626,43 @@ function wireIpc() {
       return null;
     }
   });
+  // 导出 PDF（第 29 批，律师指定要 PDF）：内核按“下载 Word”同一份文件排出打印页（artifacts.print_html），主进程在隔离的隐藏窗口里
+  // 用 Chromium 打印成 PDF，写到律师在系统对话框里选的位置。打印窗口不跑脚本、独立会话、除页面本身外一切请求拦截。
+  ipcMain.handle("kwl:export-pdf", async (e, artifactVersionId) => {
+    if (!fromAppMainFrame(e) || typeof artifactVersionId !== "string" || !/^artv_[A-Za-z0-9_-]{6,80}$/.test(artifactVersionId)) return { ok: false };
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const k = await whenKernel(60_000);
+    if (!k) return { ok: false, reason: "后台服务正在启动，请稍候" };
+    const reply = await new Promise((resolve) => {
+      const id = ++rpcSeq;
+      pendingRpc.set(id, resolve);
+      k.postMessage({ id, method: "artifacts.print_html", params: { artifact_version_id: artifactVersionId } });
+    });
+    if (!reply || reply.ok !== true) return { ok: false, reason: (reply && reply.error && reply.error.message) || "导出失败" };
+    const r = await dialog.showSaveDialog(win, {
+      defaultPath: path.join(app.getPath("documents"), safeSuggestedName(reply.result.filename)),
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+      properties: ["dontAddToRecent", "showOverwriteConfirmation", "createDirectory"],
+    });
+    if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+    if (insideAppData(r.filePath, [DATA_DIR, app.getPath("userData")])) return { ok: false, reason: "不能保存到 Kimi Work 的数据目录里，请换一个位置" };
+    const printSession = session.fromPartition("kwl-print");
+    printSession.webRequest.onBeforeRequest({ urls: ["<all_urls>"] }, (d, cb) => cb({ cancel: !d.url.startsWith("data:text/html") }));
+    printSession.setPermissionRequestHandler((_wc, _p, cb) => cb(false));
+    const pw = new BrowserWindow({ show: false, webPreferences: { session: printSession, javascript: false, sandbox: true, contextIsolation: true, nodeIntegration: false } });
+    try {
+      await pw.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(reply.result.html)}`);
+      const footer = `<div style="width:100%;text-align:center;font-size:9pt;font-family:'SimSun','Songti SC',serif">第 <span class="pageNumber"></span> 页 共 <span class="totalPages"></span> 页</div>`;
+      const pdf = await pw.webContents.printToPDF({ preferCSSPageSize: true, printBackground: false, displayHeaderFooter: true, headerTemplate: "<span></span>", footerTemplate: footer });
+      require("node:fs").writeFileSync(r.filePath, pdf, { mode: 0o600 });
+      return { ok: true, name: path.basename(r.filePath), open_handle: fileHandles.issue("opensaved", r.filePath) };
+    } catch (err) {
+      slog.event("MAIN_EXPORT_PDF_FAILED", errFields(err));
+      return { ok: false, reason: "导出 PDF 失败" };
+    } finally {
+      pw.destroy();
+    }
+  });
   // 不含案件内容的小文件（删除回执）：主进程写到对话框选定的位置
   ipcMain.handle("kwl:save-text", async (e, handle, text) => {
     if (!fromAppMainFrame(e)) return { ok: false };

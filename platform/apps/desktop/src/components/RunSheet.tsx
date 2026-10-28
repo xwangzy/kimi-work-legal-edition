@@ -28,6 +28,8 @@ export interface PendingStart {
   skillArgs?: Record<string, string>;
   /** 本事项审查要点（v9.4 第 22 批）：false = 本次不按要点审；缺省由内核按方法决定。 */
   reviewRules?: boolean;
+  /** 场景卡指定的主交付物（第 29 批）。 */
+  primaryOutput?: string;
   /** 所选材料的文件名（第 26 批，评审 U2-23：确认卡回显用到哪几份，只在本机显示）。 */
   docNames?: string[];
   estimate: {
@@ -52,6 +54,7 @@ export async function launchRun(p: PendingStart): Promise<string> {
     ...(agent && p.skill ? { skill: p.skill } : {}),
     ...(agent && p.skill && p.skillArgs && Object.keys(p.skillArgs).length > 0 ? { skill_args: p.skillArgs } : {}),
     ...(agent && p.skill && p.reviewRules === false ? { review_rules: false } : {}),
+    ...(agent && p.skill && p.primaryOutput ? { primary_output: p.primaryOutput } : {}),
   });
   notifyDataChanged();
   nav(`/run/${run.run_id}/${p.matter.matter_id}`);
@@ -59,7 +62,7 @@ export async function launchRun(p: PendingStart): Promise<string> {
 }
 
 /** 预估（失败抛出内核原因，例如场景须有材料）。 */
-export async function prepareStart(matter: Matter, value: ComposerValue, o: { skill?: string; label?: string; skillArgs?: Record<string, string>; reviewRules?: boolean; docNames?: string[] } = {}): Promise<PendingStart> {
+export async function prepareStart(matter: Matter, value: ComposerValue, o: { skill?: string; label?: string; skillArgs?: Record<string, string>; reviewRules?: boolean; primaryOutput?: string; docNames?: string[] } = {}): Promise<PendingStart> {
   const extra: Record<string, unknown> = {};
   if (value.scenario === "s1b.draft_compare") {
     if (value.documentIds.length < 2) throw new Error("回稿比对需要选择两份文档：先选基线稿，再选回稿");
@@ -69,7 +72,7 @@ export async function prepareStart(matter: Matter, value: ComposerValue, o: { sk
   if (value.goal.trim()) extra.goal = value.goal.trim();
   if (value.scenario === "s2.case_file" && value.issues?.length) extra.issues = value.issues;
   const estimate = await api.estimate(matter.matter_id, { scenario: value.scenario, document_version_ids: value.documentIds, ...extra });
-  return { matter, value, estimate: estimate as PendingStart["estimate"], ...(o.skill ? { skill: o.skill } : {}), ...(o.label ? { label: o.label } : {}), ...(o.skillArgs ? { skillArgs: o.skillArgs } : {}), ...(o.reviewRules !== undefined ? { reviewRules: o.reviewRules } : {}), ...(o.docNames ? { docNames: o.docNames } : {}) };
+  return { matter, value, estimate: estimate as PendingStart["estimate"], ...(o.skill ? { skill: o.skill } : {}), ...(o.label ? { label: o.label } : {}), ...(o.skillArgs ? { skillArgs: o.skillArgs } : {}), ...(o.reviewRules !== undefined ? { reviewRules: o.reviewRules } : {}), ...(o.primaryOutput ? { primaryOutput: o.primaryOutput } : {}), ...(o.docNames ? { docNames: o.docNames } : {}) };
 }
 
 export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose: () => void }) {

@@ -4,7 +4,7 @@
  * 中文合同保真度以 G0 同台评测为准。v0 解析结果一律打 quality_flags，如实降级。
  */
 import { DomainError } from "@zr-legal/domain";
-import { xlsxToText } from "@zr-legal/docx-engine";
+import { documentXmlWithListLabels, mapParagraphs, paragraphListLabels, xlsxToText } from "@zr-legal/docx-engine";
 import { listEntries, readEntry, readEntryText } from "./zip.ts";
 
 export interface ParseOutcome {
@@ -17,7 +17,8 @@ export interface ParseOutcome {
 
 // v0.1.1：DOCX 取可见文字（修订删除、移动原位置不计入；复核 B3-B14、C-B04）——新旧解析版本可按此区分
 // v0.1.2（v9.3 第 15 批 B-11）：DOCX 表格按行输出“| 单元格 | 单元格 |”，不再每个单元格各占一行
-const PARSER_VERSION = "v0.1.2-crude";
+// v0.1.3（v9.4 第 29 批）：DOCX 自动编号（“第一条”“1.1”“（一）”）写进段首——原先只取可见文字，自动编号的合同整份没有条款号
+const PARSER_VERSION = "v0.1.3-crude";
 
 /**
  * 旧版 Office 与 WPS 格式（B-11；评审 Z1“.doc/.wps 不支持”）：本机不带格式转换程序，按扩展名或文件头（OLE 复合文档 D0CF11E0、RTF）认出来，
@@ -96,11 +97,18 @@ export function parseDocument(filename: string, mime: string, buf: Buffer): Pars
   ) {
     const xml = readEntryText(buf, "word/document.xml");
     if (xml === null) throw new DomainError("unsupported_file", "DOCX 缺少 word/document.xml", 422);
-    const text = docxXmlToText(xml);
+    const labels = docxParagraphLabels(xml, buf);
+    const text = docxXmlToText(labels.some(Boolean) ? documentXmlWithListLabels(xml, labels) : xml);
     return {
       text,
       pageCount: null,
-      qualityFlags: ["v0_crude_docx_parser", "no_page_anchors", ...(/<w:tbl\b/.test(xml) ? ["tables_as_rows"] : []), "comments_revisions_ignored"],
+      qualityFlags: [
+        "v0_crude_docx_parser",
+        "no_page_anchors",
+        ...(/<w:tbl\b/.test(xml) ? ["tables_as_rows"] : []),
+        ...(labels.some(Boolean) ? ["list_numbers_rendered"] : []),
+        "comments_revisions_ignored",
+      ],
       parser: "docx-crude",
       parserVersion: PARSER_VERSION,
     };
@@ -128,6 +136,22 @@ export function parseDocument(filename: string, mime: string, buf: Buffer): Pars
     });
   }
   throw new DomainError("unsupported_file", `不支持的文件类型 ${mime}（支持 DOCX、XLSX、PDF、图片、TXT、MD、CSV）`, 422);
+}
+
+/**
+ * 段落的自动编号文字（第 29 批）：按 numbering.xml 与样式算出，与 mapParagraphs 同序；可见文字为空的段落（整段被修订删除、空段）不写编号。
+ * numbering.xml 读不出或格式异常时全部为 null（照旧只取可见文字，不让编号拖垮导入）。
+ */
+function docxParagraphLabels(xml: string, buf: Buffer): (string | null)[] {
+  try {
+    const numbering = readEntryText(buf, "word/numbering.xml");
+    if (!numbering) return [];
+    const labels = paragraphListLabels(xml, numbering, readEntryText(buf, "word/styles.xml"));
+    const visible = mapParagraphs(xml).map((p) => p.text.trim() !== "");
+    return labels.map((l, i) => (visible[i] ? l : null));
+  } catch {
+    return [];
+  }
 }
 
 /**

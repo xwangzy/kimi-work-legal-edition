@@ -60,6 +60,8 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const [roles, setRoles] = useState<Record<string, MaterialRole | null>>({});
   const [how, setHow] = useState(false);
   const [estimate, setEstimate] = useState<PendingStart | null>(null);
+  /** 这份估价是按哪一组输入算的（事项、任务说明与材料、方法参数）。 */
+  const estimateFor = useRef<readonly unknown[] | null>(null);
   const [estErr, setEstErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -138,7 +140,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   // 补全提示（C1 #24）：这个方法用得到、事项还没填的事件时点 / 地域 / 阶段；不拦着开始
   const [filled, setFilled] = useState<Partial<Record<HintField, string>>>({});
   const hints = matterFactHints(card.skill, matter ? { ...matter, ...filled } : null);
-  const opts = useMemo(() => ({ ...(card.skill ? { skill: card.skill } : {}), label: card.title, ...(card.skill ? { skillArgs: skillArgsOf(card, values) } : {}), ...(rules && !useRules ? { reviewRules: false } : {}) }), [card, values, rules, useRules]);
+  const opts = useMemo(() => ({ ...(card.skill ? { skill: card.skill } : {}), label: card.title, ...(card.skill ? { skillArgs: skillArgsOf(card, values) } : {}), ...(rules && !useRules ? { reviewRules: false } : {}), ...(card.primary ? { primaryOutput: card.primary } : {}) }), [card, values, rules, useRules]);
 
   // 疑似姓名核对之后重新估价
   const [reestimateTick, setReestimateTick] = useState(0);
@@ -151,6 +153,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
     const t = setTimeout(() => {
       prepareStart(matter, value, opts)
         .then((p) => {
+          estimateFor.current = [matter, value, opts];
           setEstimate(p);
           setEstErr("");
         })
@@ -167,7 +170,10 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
     setErr("");
     try {
       if (!matter) return;
-      const p = estimate ?? (await prepareStart(matter, value, opts));
+      // 估价是去抖后才算的：刚改完选项就点开始，手里的估价还是改之前那组输入（第 29 批真实走查：刚选的“我方地位”没进任务说明）——不是按当前输入算的就重算
+      const f = estimateFor.current;
+      const fresh = estimate && f && f[0] === matter && f[1] === value && f[2] === opts ? estimate : null;
+      const p = fresh ?? (await prepareStart(matter, value, opts));
       // 依据未齐、去向有提醒：转到发起确认（在那里原地记录客户同意）
       if (p.estimate.data_where?.start_blocked || p.estimate.data_where?.warning) {
         setConfirm(p);
@@ -181,8 +187,6 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
       setBusy(false);
     }
   };
-
-  if (confirm) return <RunSheet pending={confirm} onClose={() => setConfirm(null)} />;
 
   const setField = (k: string, v: string | string[]) => {
     setGuessed(null);
@@ -201,6 +205,9 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
     }
   }, [typeField, docsReady, documents, docIds, matter?.title, values]);
   const order = (id: string) => docIds.indexOf(id) + 1;
+
+  // 转到发起确认：放在全部 hook 之后（第 29 批真实走查：早退在第 26 批新增的 useState/useEffect 之前，点“下一步：确认”整页报错）
+  if (confirm) return <RunSheet pending={confirm} onClose={() => setConfirm(null)} />;
 
   return (
     <Modal title={card.title} onClose={onClose} wide>
@@ -404,7 +411,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
             </SendPoints>
           )}
           {confirmedFacts === 0 && (
-            <p className="banner banner-orange">这个事项还没有确认过的事实：AI 只能列出要件框架。先做“整理案卷”，再到事项页“事实”里逐条确认。</p>
+            <p className="banner banner-orange">这个事项还没有确认过的事实：AI 会先用材料载明的事实做矩阵（标【未确认】，评估写“初步判断”）。到事项页“事实”里逐条确认后再做，结论更可靠。</p>
           )}
           {hasPrefs && <p className="ss-note muted">按你的写作偏好写（设置 · 通用里可改）。</p>}
           <p className="ss-note muted">结果都是草稿，需要你复核后使用。{card.scenario === "a1.agent_task" ? "处理中需要联网或用到当事人信息时，会先问你。" : ""}</p>

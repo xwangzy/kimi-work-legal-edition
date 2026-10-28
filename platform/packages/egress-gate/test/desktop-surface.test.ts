@@ -144,7 +144,8 @@ test("预加载脚本只暴露最小接口；渲染进程源码里只有 api.ts 
   // pickFiles/pickSave/saveText：主进程文件对话框（Y5 P1-4），只回一次性句柄与文件名
   // pickFolder（第 14 批：备份位置、从备份恢复）：同样只回一次性句柄
   // openSaved（v9.4 第 21 批：在 Word / WPS 中打开）：只认成果保存成功后主进程发的一次性句柄，页面给不了路径
-  assert.deepEqual(exposed.sort(), ["fileHandleFor", "installUpdate", "invoke", "onEvent", "openSaved", "pickFiles", "pickFolder", "pickSave", "platform", "rendererNet", "saveText", "updateStatus"].sort());
+  // exportPdf（第 29 批：律师指定要 PDF）：只收成果编号；主进程向内核取打印页、选保存位置、打印并写文件，页面拿不到路径
+  assert.deepEqual(exposed.sort(), ["exportPdf", "fileHandleFor", "installUpdate", "invoke", "onEvent", "openSaved", "pickFiles", "pickFolder", "pickSave", "platform", "rendererNet", "saveText", "updateStatus"].sort());
 });
 
 test("对外口径（第 02 篇 §12 禁用词；复核 S5-A03）：界面、确认卡、告知函与估价文字不出现绝对化承诺", () => {

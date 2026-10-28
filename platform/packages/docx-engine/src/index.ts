@@ -11,3 +11,5 @@ export * from "./mask.ts";
 export * from "./xlsx.ts";
 export * from "./props.ts";
 export * from "./render-html.ts";
+export * from "./numbering.ts";
+export * from "./print-html.ts";

@@ -101,5 +101,6 @@ test("任务快照记下方法模板的标题、版本与模板包摘要（余�
   assert.deepEqual(skillSnapshot({ ok: false, reason: "x" } as any, "contract-review"), {});
   assert.deepEqual(skillSnapshot(undefined, "contract-review"), {});
   const api = (await import("node:fs")).readFileSync(new URL("../src/api/index.ts", import.meta.url), "utf8");
-  assert.match(api, /\.\.\.\(skill \? \{ skill, \.\.\.skillSnapshot\(deps\.skills, skill\) \} : \{\}\)/, "runs.start 把快照写进 input_snapshot");
+  // 第 29 批：场景卡可指定主交付物（primaryOutput），一并写进快照
+  assert.match(api, /\.\.\.\(skill \? \{ skill, \.\.\.skillSnapshot\(deps\.skills, skill, primaryOutput\) \} : \{\}\)/, "runs.start 把快照写进 input_snapshot");
 });

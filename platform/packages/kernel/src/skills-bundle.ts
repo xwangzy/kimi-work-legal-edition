@@ -23,6 +23,8 @@ export interface SkillInfo {
   requires_outline?: boolean;
   /** 主交付物（第 28 批，SKILL.md 前言 outputs 的第一项）：以 .docx 结尾的方法，任务结束时内核核对有没有交出 Word 文书。 */
   primary_output?: string;
+  /** 全部交付物（第 29 批，前言 outputs）：场景卡指定主交付物时须是其中一项。 */
+  outputs?: string[];
 }
 
 export interface SkillsManifest {
@@ -189,9 +191,10 @@ export function skillQualityChecklist(dir: string, skillId: string): string[] {
 
 
 /** 任务开始时方法模板的标题、版本与模板包摘要（余项续复核 RC-A-09、RC-B-14）：写进任务快照，事后看得到“当时按哪一版做的”。纯函数。 */
-export function skillSnapshot(bundle: SkillsBundleStatus | undefined, skill: string): { skill_title?: string; skill_version?: string; skills_sha256?: string; skill_requires_outline?: true; skill_primary_output?: string } {
+export function skillSnapshot(bundle: SkillsBundleStatus | undefined, skill: string, primaryOverride?: string): { skill_title?: string; skill_version?: string; skills_sha256?: string; skill_requires_outline?: true; skill_primary_output?: string } {
   if (!bundle || !bundle.ok) return {};
   const x = bundle.skills.find((s) => s.id === skill);
-  const primary = typeof x?.primary_output === "string" ? x.primary_output.slice(0, 80) : "";
+  // 场景卡指定的主交付物（第 29 批）：须是方法前言 outputs 里的一项（调用方已校验），否则用方法缺省的第一项
+  const primary = (primaryOverride && x?.outputs?.includes(primaryOverride) ? primaryOverride : typeof x?.primary_output === "string" ? x.primary_output : "").slice(0, 80);
   return { ...(x ? { skill_title: x.title, skill_version: x.version } : {}), ...(x?.requires_outline ? { skill_requires_outline: true as const } : {}), ...(primary ? { skill_primary_output: primary } : {}), skills_sha256: bundle.contentSha256 };
 }

@@ -217,7 +217,9 @@ test("审查要点与写作偏好（v9.4 第 22 批）：审合同的任务把�
       const est = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
       const run = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-rules-${rr}-${Date.now()}`, goal: `${M} ${rr === false ? "不用要点" : "按要点"}`, skill: "contract-review", ...(rr === false ? { review_rules: false } : {}), plan_first: false, mode: "default" });
       const { run: fin, events } = await waitRun(inv, run.run_id, 150_000);
-      assert.equal(fin.status, "succeeded", JSON.stringify(events.map((e: any) => e.type)));
+      // 第 29 批：审合同的主交付物是《审查意见书》Word；模拟模型只写了文字草稿，没出意见书 → 记“部分完成”并写明缺什么（本用例只验提示词）
+      assert.equal(fin.status, "partial", JSON.stringify(events.map((e: any) => e.type)));
+      assert.ok(events.some((e: any) => e.type === "agent.primary_missing"), "写明没交出审查意见书");
     }
     // 追问沿用原任务那一版要点（之后改过要点也不换；模型会话里看到的是原来那一版）
     const first = tk.kernel.db.get<{ run_id: string }>(`SELECT run_id FROM runs WHERE matter_id = ? AND input_snapshot LIKE '%按要点%' ORDER BY created_at LIMIT 1`, [matter.matter_id])!.run_id;

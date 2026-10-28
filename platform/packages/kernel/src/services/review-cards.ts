@@ -14,7 +14,7 @@
 import { ruleNoOf, runRulesSnapshot, type ReviewRule, type RulesSnapshot } from "./review-rules.ts";
 import { localToday } from "./local-date.ts";
 import { DomainError, newId, notFound, sha256Hex } from "@zr-legal/domain";
-import { cellPositionLabel, compareDocx, createStyledDocx, createXlsx, extractParagraphs, paragraphCells, readZipText, type CellPosition } from "@zr-legal/docx-engine";
+import { cellPositionLabel, compareDocx, createStyledDocx, createXlsx, docxListLabels, extractParagraphs, paragraphCells, readZipText, stripListLabel, type CellPosition } from "@zr-legal/docx-engine";
 import type { Lawdb } from "@zr-legal/lawdb";
 import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
@@ -46,16 +46,19 @@ const optStr = (v: unknown, max: number): string | null => {
 };
 
 /** 文档的令牌化视图（Agent 看到的文本形态）。DOCX 用段落文本（与结构化补丁一致），其他用最新解析文本。 */
-function documentView(deps: ReviewDeps, matterId: string, documentVersionId: string): { view: string; filename: string } {
+function documentView(deps: ReviewDeps, matterId: string, documentVersionId: string): { view: string; filename: string; labels: (string | null)[] } {
   const doc = deps.db.get<{ document_version_id: string; matter_id: string; filename: string; storage_uri: string }>(
     `SELECT document_version_id, matter_id, filename, storage_uri FROM document_versions WHERE document_version_id = ? AND quarantined_at IS NULL`,
     [documentVersionId],
   );
   if (!doc || doc.matter_id !== matterId) throw notFound("文档");
   let plain: string | null = null;
+  let labels: (string | null)[] = [];
   if (doc.filename.toLowerCase().endsWith(".docx")) {
     try {
-      plain = extractParagraphs(deps.blobs.read(doc.storage_uri)).map((x) => x.text).join("\n");
+      const buf = deps.blobs.read(doc.storage_uri);
+      plain = extractParagraphs(buf).map((x) => x.text).join("\n");
+      labels = docxListLabels(buf);
     } catch {
       plain = null;
     }
@@ -69,7 +72,7 @@ function documentView(deps: ReviewDeps, matterId: string, documentVersionId: str
       )?.content ?? "";
   }
   const view = deps.tokens ? deps.tokens.tokenizer(matterId).tokenize(plain).text : plain;
-  return { view, filename: doc.filename };
+  return { view, filename: doc.filename, labels };
 }
 
 /**
@@ -341,7 +344,10 @@ export function submitRiskCards(deps: ReviewDeps, scope: ToolScope, input: { doc
       const category = ["legal", "commercial", "both"].includes(c?.category) ? (c.category as string) : "legal";
       // 建议的性质（Astra M-1）：只存 Agent 给的；没给的读出时再推定（nature_inferred）
       const nature = ["must", "should", "negotiable"].includes(c?.nature) ? (c.nature as string) : null;
-      const found = !anchor ? { status: "not_found" as const, start: null, end: null } : view ? locateQuote(view.view, anchor) : { status: "no_document" as const, start: null, end: null };
+      // 自动编号（第 29 批）：材料文字段首带“3.2”等编号、原件段落文字不带；锚点开头抄进来的编号找不到时去掉再找
+      const exact = !anchor ? { status: "not_found" as const, start: null, end: null } : view ? locateQuote(view.view, anchor) : { status: "no_document" as const, start: null, end: null };
+      const unlabeled = view && exact.status === "not_found" && anchor ? stripListLabel(anchor, view.labels) : anchor;
+      const found = unlabeled !== anchor && view ? locateQuote(view.view, unlabeled) : exact;
       // 规范锚点（复核 B3-B04）：定位到的视图原文（空白与 Agent 原话可能不同），修订稿一律用它；Agent 原话另存
       const canonical = view && found.start !== null && found.end !== null ? view.view.slice(found.start, found.end) : anchor;
       const loc = found.status === "located" && canonical.includes("\n") ? { ...found, status: "cross_paragraph" as const } : found;

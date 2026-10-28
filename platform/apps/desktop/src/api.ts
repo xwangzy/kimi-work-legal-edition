@@ -21,6 +21,8 @@ declare global {
       saveText?: (handle: string, text: string) => Promise<{ ok: boolean; name?: string }>;
       /** 用系统默认程序打开刚保存的成果（v9.4 第 21 批）。 */
       openSaved?: (handle: string) => Promise<{ ok: boolean; reason?: string }>;
+      /** 把 Word 成果导出成 PDF（第 29 批）：主进程选位置、打印、写文件。 */
+      exportPdf?: (artifactVersionId: string) => Promise<{ ok: boolean; name?: string; open_handle?: string; canceled?: boolean; reason?: string }>;
       rendererNet?: () => Promise<{ blocked: number; last: string[] }>;
       updateStatus?: () => Promise<UpdateStatus | null>;
       installUpdate?: () => Promise<{ ok: boolean; reason?: string }>;
@@ -804,7 +806,7 @@ export const api = {
   listSuspects: (matterId: string, documentVersionIds: string[], goal?: string) => invoke<{ suspects: SuspectView[]; summary: SendSummaryView }>("matters.suspects.list", { matter_id: matterId, document_version_ids: documentVersionIds, ...(goal ? { goal } : {}) }),
   reviewSuspects: (matterId: string, items: { value: string; decision: "name" | "not_name" }[]) =>
     invoke<{ added_to_parties: number; dismissed: number; rejected: string[] }>("matters.suspects.review", { matter_id: matterId, items }),
-  startRun: (matterId: string, body: { estimate_id: string; idempotency_key: string; goal?: string; title?: string; topic_hint?: string; mode?: RunMode; plan_first?: boolean; preauthorizations?: Preauthorization[]; skill?: string; skill_args?: Record<string, string>; review_rules?: boolean; followup_of?: string; mode_raise_confirmed?: boolean }) =>
+  startRun: (matterId: string, body: { estimate_id: string; idempotency_key: string; goal?: string; title?: string; topic_hint?: string; mode?: RunMode; plan_first?: boolean; preauthorizations?: Preauthorization[]; skill?: string; skill_args?: Record<string, string>; primary_output?: string; review_rules?: boolean; followup_of?: string; mode_raise_confirmed?: boolean }) =>
     invoke<{ run_id: string; status: string; mode?: RunMode }>("runs.start", { matter_id: matterId, ...body }),
   getRun: (runId: string) =>
     invoke<{ run: any; artifacts: any[]; inflight?: { model: number; search: number; fetch: number }; unresolved_operations?: UnresolvedOperation[] }>("runs.get", { run_id: runId }),
@@ -849,6 +851,29 @@ export const api = {
     }
     const opened = !!(r.open_handle && window.zrKernel?.openSaved && (await window.zrKernel.openSaved(r.open_handle)).ok);
     return { saved: true, opened, copied };
+  },
+  /**
+   * 导出 PDF（第 29 批，律师指定要 PDF）：与“下载 Word”同一份文件排版后打印。桌面客户端由主进程打印并写到律师选定的位置；
+   * 开发形态（浏览器）打开打印页，由浏览器“打印 → 存储为 PDF”。返回 null = 取消。
+   */
+  exportArtifactPdf: async (artifactVersionId: string): Promise<{ name: string | null; opened: boolean } | null> => {
+    if (window.zrKernel?.exportPdf) {
+      const r = await window.zrKernel.exportPdf(artifactVersionId);
+      if (r.canceled) return null;
+      if (!r.ok) throw new Error(r.reason ?? "导出 PDF 失败");
+      const opened = !!(r.open_handle && window.zrKernel.openSaved && (await window.zrKernel.openSaved(r.open_handle)).ok);
+      return { name: r.name ?? null, opened };
+    }
+    const r = await invoke<{ filename: string; html: string }>("artifacts.print_html", { artifact_version_id: artifactVersionId });
+    const url = URL.createObjectURL(new Blob([r.html], { type: "text/html" }));
+    const w = window.open(url, "_blank");
+    if (!w) {
+      URL.revokeObjectURL(url);
+      throw new Error("浏览器拦截了打印窗口：请允许本页弹出窗口后再点“导出 PDF”");
+    }
+    w.addEventListener("load", () => w.print());
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return { name: r.filename, opened: false };
   },
   downloadArtifact: async (artifactVersionId: string, filename: string): Promise<boolean> => {
     const plan = downloadPlan(filename);
@@ -966,7 +991,7 @@ export const api = {
   /** audience：对外版只有修订、内部版另带批注（C1 §2.2 第 6 条）。 */
   buildRedline: (matterId: string, documentVersionId: string, o: { run_id?: string; skip_card_ids?: string[]; audience?: "external" | "internal" } = {}) =>
     invoke<
-      | { status: "applied"; artifact_version_id: string; filename: string; applied: number; skipped: string[]; no_insert_point?: string[] }
+      | { status: "applied"; artifact_version_id: string; filename: string; applied: number; skipped: string[]; no_insert_point?: string[]; clean?: { artifact_version_id: string; filename: string } }
       | { status: "preview"; reason: string; conflicts: { index: number; reason: string; detail?: string; card_id: string | null }[]; skipped: string[]; no_insert_point?: string[] }
     >("riskcards.redline", { matter_id: matterId, document_version_id: documentVersionId, ...o }),
   /** 导出审查意见表（Excel 草稿成果，C1 §2.2 第 8 条）。 */

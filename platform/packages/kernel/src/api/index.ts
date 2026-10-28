@@ -57,7 +57,7 @@ import {
 import type { KernelDb } from "../db.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { upstreamTransport, type KernelGate } from "../egress/kernel-gate.ts";
-import { applyStructuredPatches } from "../services/structured-patch.ts";
+import { applyStructuredPatches, registerCleanCopy } from "../services/structured-patch.ts";
 import { basisCompleteOf, dataLevelOf, parseBasis, BASIS_KEYS } from "../egress/gate-host.ts";
 import type { EgressApprovalStore } from "../services/egress-approvals.ts";
 import type { QaChatService } from "../services/qa-chat.ts";
@@ -97,7 +97,7 @@ import { adjudicate, compareAnnotations, normalizeDocs, openEvalBytes, openEvalF
 import { isImage, isPdf, ocrReady, parseWithPipeline } from "../services/parse-pipeline.ts";
 import { estimatePoints, scenarioCap } from "../services/estimate.ts";
 import { docxRenderReport } from "../tools/tools/docx.ts";
-import { courtFilingStyle, createDocx, createStyledDocx, extractParagraphs, isCourtFiling, isHouseStyled, markdownToBlocks, renderDocxHtml, renderXlsxHtml, restyleDocx } from "@zr-legal/docx-engine";
+import { courtFilingStyle, createDocx, createStyledDocx, docxListLabels, extractParagraphs, isCourtFiling, isHouseStyled, markdownToBlocks, renderDocxHtml, renderDocxPrintHtml, renderXlsxHtml, restyleDocx } from "@zr-legal/docx-engine";
 import { redlineAuthorOf, docStyleView, houseStyleFor, setDocStyle, setDocTemplate } from "../services/doc-style.ts";
 import { isToolOperationInFlight } from "../local-server.ts";
 import { MATTER_STAGES } from "../services/matter-facts.ts";
@@ -1529,6 +1529,14 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (typeof p.skill !== "string" || !installed.includes(p.skill)) throw validation("方法模板不存在或未安装（请在“方法与模板”页查看可用模板）");
         skill = p.skill;
       }
+      // 场景卡指定的主交付物（第 29 批）：同一方法的不同卡交付不同（尽调“清单”与“发现与报告”），须是方法前言 outputs 里的一项
+      let primaryOutput: string | undefined;
+      if (p?.primary_output !== undefined && p?.primary_output !== null && p?.primary_output !== "") {
+        if (!skill) throw validation("主交付物只能和方法模板一起指定");
+        const outs = deps.skills?.ok ? (deps.skills.skills.find((x) => x.id === skill)?.outputs ?? []) : [];
+        if (typeof p.primary_output !== "string" || !outs.includes(p.primary_output)) throw validation("主交付物须是这个方法列出的交付物之一");
+        primaryOutput = p.primary_output;
+      }
       // 场景卡字段作为方法参数显式传给 Agent（v9.4 S1 §6.2 第 10 项：原来只拼进任务说明的文字里，真实模型可能读不到）。
       // 只收简单键值：≤ 8 项，键为小写字母与下划线，值为字符串（多选用“、”连接），每项 ≤ 300 字
       let skillArgs: Record<string, string> | undefined;
@@ -1625,7 +1633,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           matterId,
           est.scenario,
           String(p.idempotency_key),
-          JSON.stringify({ ...est.input, estimate_id: est.estimate_id, goal: p?.goal, ...(title ? { title } : {}), topic_hint: p?.topic_hint ?? est.input.topic_hint, ...(runOptions ? { run_options: runOptions } : {}), ...(skill ? { skill, ...skillSnapshot(deps.skills, skill) } : {}), ...(skillArgs ? { skill_args: skillArgs } : {}), ...(rulesSnap ? { review_rules: rulesSnap } : {}), ...(prefsSnap ? { writing_prefs: prefsSnap } : {}), ...(followup ?? {}) }),
+          JSON.stringify({ ...est.input, estimate_id: est.estimate_id, goal: p?.goal, ...(title ? { title } : {}), topic_hint: p?.topic_hint ?? est.input.topic_hint, ...(runOptions ? { run_options: runOptions } : {}), ...(skill ? { skill, ...skillSnapshot(deps.skills, skill, primaryOutput) } : {}), ...(skillArgs ? { skill_args: skillArgs } : {}), ...(rulesSnap ? { review_rules: rulesSnap } : {}), ...(prefsSnap ? { writing_prefs: prefsSnap } : {}), ...(followup ?? {}) }),
           Math.min(est.points, budgetCap),
           Math.min(est.points, budgetCap),
           est.estimate_id,
@@ -2002,6 +2010,27 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       return { filename: saved?.name ?? "文书版式样张.docx", ...(saved ? { saved: true } : { data_base64: out.toString("base64") }) };
     },
 
+    /**
+     * 导出 PDF 用的打印页（第 29 批：律师指定要 PDF）。与“下载 Word”同一份文件——还原真名、套本机文书版式（递交法院的文书不套函头）——
+     * 再按文书版式排成打印页；桌面端主进程交给 Chromium 打印成 PDF 并写到律师选定的位置。只收 Word 成果；修订稿须用清洁稿导出。
+     * 只给可信界面（与下载同一口径）：被停用的电脑不提供；记审计。
+     */
+    "artifacts.print_html": (p, id) => {
+      const art = requireArtifact(db, String(p?.artifact_version_id ?? ""), id);
+      if (!/\.docx$/i.test(String(art.filename))) throw new DomainError("unsupported_file", "只有 Word 成果可以导出 PDF；表格请下载 Excel", 422);
+      if (art.kind === "revision_draft") throw new DomainError("unsupported_file", "修订稿带修订痕迹，不能直接导出 PDF：请用清洁稿导出", 422);
+      const d = api["artifacts.download"]!({ artifact_version_id: art.artifact_version_id }, id) as { filename: string; data_base64: string };
+      const name = String(d.filename).replace(/\.docx$/i, "");
+      let html: string;
+      try {
+        html = renderDocxPrintHtml(Buffer.from(d.data_base64, "base64"), name);
+      } catch (e) {
+        throw new DomainError("unsupported_file", `这份文件导出不了 PDF：${(e as Error).message.slice(0, 80)}`, 422);
+      }
+      audit(db, id, "artifact.print_pdf", "artifact", art.artifact_version_id, sha256Hex(html), keyctx);
+      return { filename: `${name}.pdf`, html };
+    },
+
     /** Office 成果的应用内预览（UIUX P0-3）：内核渲染为白名单 HTML（修订显示为插入/删除，批注列在文末）；代号由界面在隔离框架内还原。 */
     "artifacts.render_html": (p, id) => {
       const art = requireArtifact(db, String(p?.artifact_version_id ?? ""), id);
@@ -2033,7 +2062,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       let paragraphs: string[] | null = null;
       if (String(doc.filename).toLowerCase().endsWith(".docx") && doc.storage_mode === "import") {
         try {
-          paragraphs = extractParagraphs(blobs.read(String(doc.storage_uri))).map((x) => x.text);
+          const buf = blobs.read(String(doc.storage_uri));
+          // 自动编号照 Word 显示写在段首（第 29 批：工作台原文栏原先只有“验收”“知识产权”，没有“第四条”）；高亮按文字查找，不受前缀影响
+          const labels = docxListLabels(buf);
+          paragraphs = extractParagraphs(buf).map((x, i) => (labels[i] && x.text.trim() ? `${labels[i]} ${x.text}` : x.text));
         } catch {
           paragraphs = null;
         }
@@ -2896,8 +2928,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const byIndex = new Map(r.cards.map((c) => [c.index, c.card_id]));
       const conflicts = r.result.status === "preview" ? r.result.conflicts.map((c) => ({ ...c, card_id: byIndex.get(c.index) ?? null })) : [];
       audit(db, id, r.result.status === "applied" ? "riskcards.redline_applied" : "riskcards.redline_preview", "document_version", String(p?.document_version_id ?? ""), sha256Hex(JSON.stringify({ cards: r.cards.length, skipped: r.skipped.length, status: r.result.status })), keyctx);
+      // 清洁稿（第 29 批）：与修订稿一起生成，律师不用自己在 Word 里接受全部修订
+      const clean = r.result.status === "applied" ? registerCleanCopy({ db, blobs }, r.result.artifact_version_id, id.userId) : null;
       return r.result.status === "applied"
-        ? { status: "applied", artifact_version_id: r.result.artifact_version_id, filename: r.result.filename, applied: r.result.applied, skipped: r.skipped, no_insert_point: r.no_insert_point }
+        ? { status: "applied", artifact_version_id: r.result.artifact_version_id, filename: r.result.filename, applied: r.result.applied, skipped: r.skipped, no_insert_point: r.no_insert_point, ...(clean ? { clean } : {}) }
         : { status: "preview", reason: r.result.reason, conflicts, skipped: r.skipped, no_insert_point: r.no_insert_point };
     },
     // 导出审查意见表（C1 §2.2 第 8 条）：草稿成果，下载时还原代号；审计只记卡数

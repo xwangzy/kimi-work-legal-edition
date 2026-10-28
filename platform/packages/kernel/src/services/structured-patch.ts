@@ -11,7 +11,7 @@
  * - 任何一条不成立：整体返回预览（逐条列出原因与还原后的文本），不做模糊替换、不写半个文件。
  */
 import { DomainError, newId, sha256Hex } from "@zr-legal/domain";
-import { applyRevisionsToDocx, extractParagraphs, type RevisionOp } from "@zr-legal/docx-engine";
+import { applyRevisionsToDocx, docxListLabels, extractParagraphs, sanitizeDocx, stripListLabel, type RevisionOp } from "@zr-legal/docx-engine";
 import { findTokens } from "@zr-legal/tokenizer";
 import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
@@ -141,8 +141,15 @@ export function applyStructuredPatches(
     const r = db.get<{ matter_id: string }>(`SELECT matter_id FROM runs WHERE run_id = ?`, [input.run_id]);
     if (!r || r.matter_id !== input.matter_id) throw new DomainError("validation", "run_id 不属于本事项", 422);
   }
-  // Agent 所见的令牌化视图：同一事项令牌化器作用于原件全文（不写回新条目：视图只用于核对）
-  const viewText = tokens.tokenizer(input.matter_id).tokenize(extractParagraphs(buf).map((x) => x.text).join("\n")).text;
+  // Agent 所见的令牌化视图：同一事项令牌化器作用于原件全文（不写回新条目：视图只用于核对）。
+  // 自动编号写在段首（第 29 批：材料解析文字带“第三条”“3.2”，与 Agent 看到的一致）；编号不在原件段落文字里，抄进锚点的编号在定位前去掉
+  const paragraphs = extractParagraphs(buf).map((x) => x.text);
+  const labels = docxListLabels(buf);
+  const viewText = tokens.tokenizer(input.matter_id).tokenize(paragraphs.map((t, i) => (labels[i] && t.trim() ? `${labels[i]} ${t}` : t)).join("\n")).text;
+  const withoutLabel = (s: string): string => {
+    const stripped = stripListLabel(s, labels);
+    return stripped !== s && stripped && !paragraphs.some((t) => t.includes(s)) ? stripped : s;
+  };
   const conflicts: PatchConflict[] = [];
   const ops: RevisionOp[] = [];
   let tokensRestored = 0;
@@ -156,7 +163,8 @@ export function applyStructuredPatches(
     // 代号必须都在本事项令牌表里（不认识的代号不猜）
     const unknown = [...findTokens(anchor), ...findTokens(proposed), ...(comment ? findTokens(comment) : [])].filter((t) => !restoreMap.has(t));
     if (unknown.length > 0) return void conflicts.push({ index, reason: "unknown_token", detail: [...new Set(unknown)].join("、") });
-    const a = restore(anchor);
+    const a0 = restore(anchor);
+    const a = { ...a0, text: withoutLabel(a0.text) };
     const n = restore(proposed);
     const c = comment ? restore(comment) : null;
     tokensRestored += a.restored + n.restored + (c?.restored ?? 0);
@@ -175,7 +183,6 @@ export function applyStructuredPatches(
     });
   });
   // 逐条在原件上试定位（任一条不成立即整体预览）；定位口径与文书引擎一致：出现序号按段落内计，多段命中须有条款提示
-  const paragraphs = extractParagraphs(buf).map((x) => x.text);
   const nth = (text: string, needle: string, occ: number): number => {
     let at = -1;
     for (let k = 0; k <= occ; k++) {
@@ -198,7 +205,8 @@ export function applyStructuredPatches(
     const occ = op.anchor.occurrence ?? 0;
     const cands = paragraphs.map((t, i) => ({ i, at: nth(t, op.anchor.originalText, occ) })).filter((c) => c.at >= 0);
     const hint = op.anchor.paragraphHint;
-    const target = cands.length === 1 ? cands[0] : hint ? (cands.find((c) => paragraphs[c.i]!.includes(hint)) ?? cands[0]) : cands[0];
+    const shown = (i: number): string => (labels[i] ? `${labels[i]} ${paragraphs[i]}` : paragraphs[i]!);
+    const target = cands.length === 1 ? cands[0] : hint ? (cands.find((c) => shown(c.i).includes(hint)) ?? cands[0]) : cands[0];
     if (target) spans.push({ index, para: target.i, start: target.at, end: target.at + op.anchor.originalText.length, old: op.anchor.originalText, new: op.newText, ...(op.insertAfter ? { insert: true as const } : {}) });
   }
   for (let i = 0; i < spans.length; i++) {
@@ -257,4 +265,45 @@ export function applyStructuredPatches(
     [artifactId, doc.tenant_id, doc.matter_id, input.run_id ?? null, kind, v.next, filename, stored.sha256, stored.storage_uri, "[]", JSON.stringify(manifest), input.created_by, docLineage(doc.document_version_id)],
   );
   return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview };
+}
+
+/**
+ * 修订稿的清洁稿（第 29 批）：接受全部修订、去掉批注，登记为 revision_clean（与 docx.revise 的清洁稿同一种成果、同一函数）。
+ * 审查工作台“生成修订稿”原先只出带修订痕迹的稿，律师还要自己在 Word 里“接受全部修订”才能得到干净的合同文本。
+ * 修订稿与原件都不动；返回清洁稿的成果编号与文件名。
+ */
+export function registerCleanCopy(deps: { db: KernelDb; blobs: BlobStore }, revisionArtifactId: string, createdBy: string): { artifact_version_id: string; filename: string } {
+  const { db, blobs } = deps;
+  const rev = db.get<{ tenant_id: string; matter_id: string; run_id: string | null; filename: string; sha256: string; storage_uri: string; manifest: string; lineage: string | null }>(
+    `SELECT tenant_id, matter_id, run_id, filename, sha256, storage_uri, manifest, lineage FROM artifact_versions WHERE artifact_version_id = ? AND kind = 'revision_draft'`,
+    [revisionArtifactId],
+  );
+  if (!rev) throw new DomainError("not_found", "修订稿不存在", 404);
+  const clean = sanitizeDocx(blobs.read(rev.storage_uri));
+  const stored = blobs.put(clean.docx, rev.matter_id);
+  const id = newId("artifactVersion");
+  const filename = /（[^（）]*修订[^（）]*）\.docx$/i.test(rev.filename) ? rev.filename.replace(/（[^（）]*修订[^（）]*）\.docx$/i, "（清洁稿）.docx") : rev.filename.replace(/\.docx$/i, "（清洁稿）.docx");
+  const source = (JSON.parse(rev.manifest || "{}") as { source_document_version_id?: string }).source_document_version_id ?? null;
+  db.tx(() => {
+    const v = db.get<{ next: number }>(`SELECT COALESCE(MAX(version), 0) + 1 AS next FROM artifact_versions WHERE matter_id = ? AND kind = 'revision_clean' AND audience = 'internal'`, [rev.matter_id])!;
+    db.run(
+      `INSERT INTO artifact_versions
+        (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by, lineage)
+       VALUES (?,?,?,?,'revision_clean',?,NULL,'internal','draft',?,?,?,'[]',?,?,?)`,
+      [
+        id,
+        rev.tenant_id,
+        rev.matter_id,
+        rev.run_id,
+        v.next,
+        filename,
+        stored.sha256,
+        stored.storage_uri,
+        JSON.stringify({ source_document_version_id: source, derived_from: rev.sha256, accepted: clean.removed, note: "清洁稿：修订稿接受全部修订、去掉批注；原件与修订稿不变" }),
+        createdBy,
+        rev.lineage,
+      ],
+    );
+  });
+  return { artifact_version_id: id, filename };
 }

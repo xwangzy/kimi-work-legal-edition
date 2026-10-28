@@ -20,7 +20,7 @@ export const REVISE_MAX_PATCHES = 200;
 
 /** 逐条失败原因的改法（写给模型；律师界面不显示）。 */
 const FIX_HINT: Record<PatchConflict["reason"], string> = {
-  anchor_not_found: "原件里找不到这段原文：逐字照抄材料原文（同一段落之内，含标点、空格与代号；Word 自动编号不在文字里，不要抄进锚点）",
+  anchor_not_found: "原件里找不到这段原文：逐字照抄材料原文（同一段落之内，含标点、空格与代号；段首的条款编号可以不抄）",
   anchor_ambiguous: "这段原文在多个段落出现：加 paragraph_hint（条款号）或 occurrence，或把锚点写长到唯一",
   anchor_not_in_view: "这段原文不在本材料的文字里：不是照抄的原文，或跨了段落（一条修改只能在一个段落之内）",
   overlap: "与另一条修改的原文重叠：合并成一条",

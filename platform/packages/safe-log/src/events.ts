@@ -102,6 +102,8 @@ export const EVENTS = {
   MAIN_SAVE_FAILED: { level: "warn", fields: { ...ERR } },
   // v9.4 第 21 批：用系统默认程序打开刚保存的成果失败
   MAIN_OPEN_SAVED_FAILED: { level: "warn", fields: { ...ERR } },
+  /** 导出 PDF 失败（第 29 批，主进程打印 Word 成果）：只记错误类别。 */
+  MAIN_EXPORT_PDF_FAILED: { level: "warn", fields: { ...ERR } },
   MAIN_UPDATE_WARN: { level: "warn", fields: {} },
   MAIN_UPDATE_FAILED: { level: "error", fields: {} },
 } as const satisfies Record<string, EventSpec>;

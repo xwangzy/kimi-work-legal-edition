@@ -60,6 +60,13 @@ test("规范锚点：换行写成空格也能定位并生成修订稿；跨段�
   await tk.inv("riskcards.decide", { matter_id: matter.matter_id, card_id: c1.card_id, decision: "accept" });
   const red = await tk.inv("riskcards.redline", { matter_id: matter.matter_id, document_version_id: doc.document_version_id });
   assert.equal(red.status, "applied", JSON.stringify(red));
+  // 第 29 批：工作台生成修订稿时一并出清洁稿（接受全部修订、去掉批注），原件与修订稿不变
+  assert.match(red.clean?.filename ?? "", /（清洁稿）\.docx$/, JSON.stringify(red.clean));
+  const clean = Buffer.from((await tk.inv("artifacts.download", { artifact_version_id: red.clean.artifact_version_id })).data_base64, "base64");
+  const cleanXml = readZipText(clean, "word/document.xml")!;
+  assert.equal(/<w:(ins|del)\b/.test(cleanXml), false, "清洁稿不含修订标记");
+  const row = tk.kernel.db.get<{ kind: string }>(`SELECT kind FROM artifact_versions WHERE artifact_version_id = ?`, [red.clean.artifact_version_id])!;
+  assert.equal(row.kind, "revision_clean");
 });
 
 test("回稿带修订痕迹：快照只取可见文字，从快照摘录的引文能定位", { timeout: 60_000 }, async () => {

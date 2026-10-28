@@ -21,7 +21,7 @@
  * 用法：node scripts/dev-cloud-v0.mjs   → 按输出设置环境变量后启动内核 / 桌面
  */
 import { randomBytes } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -31,6 +31,8 @@ const ss = await import("../services/search-service/src/index.ts");
 
 const tenant = process.env.KWL_TENANT ?? "ten_demo-firm";
 const dir = process.env.KWL_CLOUD_DIR ?? mkdtempSync(join(tmpdir(), "kwl-cloud-v0-"));
+// 指定的目录不存在时先建好（第 29 批真实走查：目录不存在时每次写计量都失败，任务一直显示“AI 服务没有回应”）
+mkdirSync(dir, { recursive: true, mode: 0o700 });
 const withCp = process.env.KWL_CONTROL_PLANE === "1";
 const { privateKey, publicKey } = devSeatKeyPair();
 let keys = new Map([["dev1", publicKey]]);

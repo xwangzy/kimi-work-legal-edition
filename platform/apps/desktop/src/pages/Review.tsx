@@ -106,6 +106,16 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
         return api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" });
       })
       .catch((e) => setErr(e.message));
+  // 导出 PDF（第 29 批）：与“下载 Word”同一份文件；修订稿不导出（用清洁稿）
+  const exportPdf = () =>
+    void api
+      .exportArtifactPdf(data.artifact_version_id)
+      .then((r) => {
+        if (!r) return;
+        setNote(window.zrKernel?.exportPdf ? `已导出《${r.name ?? "PDF"}》（真实名称已还原）${r.opened ? "并打开" : ""}。下载已留痕。` : "已打开打印页：在打印对话框里选“存储为 PDF”。");
+        return api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" });
+      })
+      .catch((e) => setErr(e.message));
   // 在 Word / WPS 中打开（v9.4 第 21 批）：存到你选的位置后用系统默认程序打开那一份；给了一句话就复制到剪贴板，Ctrl+F 粘贴即可定位
   const openInOffice = (find?: string) =>
     void api
@@ -249,6 +259,11 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
             {data && (
               <button className="btn-ghost" onClick={download}>
                 {downloadPlan(data.filename).label}
+              </button>
+            )}
+            {data && /\.docx$/i.test(data.filename) && data.kind !== "revision_draft" && (
+              <button className="btn-ghost" onClick={exportPdf} title="与“下载 Word”同一份文件，排版后存成 PDF（修订稿请用清洁稿导出）">
+                导出 PDF
               </button>
             )}
             {data && /\.(docx|xlsx)$/i.test(data.filename) && (

@@ -237,7 +237,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       if (r.status === "applied") {
         setMsg({
           tone: "ok",
-          text: `已生成${audience === "internal" ? "内部版" : "对外版"}修订稿《${r.filename}》：${r.applied} 处修改以 Word 修订${audience === "internal" ? "和批注" : ""}写入（原件未改动）${r.skipped.length ? `；跳过 ${r.skipped.length} 项` : ""}${noPoint}。${audience === "external" ? "对外版不含内部批注；发出前请再看一遍修订署名。" : "内部版带理由与规则批注，不要直接发给对方。"}`,
+          text: `已生成${audience === "internal" ? "内部版" : "对外版"}修订稿《${r.filename}》：${r.applied} 处修改以 Word 修订${audience === "internal" ? "和批注" : ""}写入（原件未改动）${r.skipped.length ? `；跳过 ${r.skipped.length} 项` : ""}${noPoint}${r.clean ? `；另有接受全部修订后的清洁稿《${r.clean.filename}》` : ""}。${audience === "external" ? "对外版不含内部批注；发出前请再看一遍修订署名。" : "内部版带理由与规则批注，不要直接发给对方。"}`,
           artifact: r.artifact_version_id,
         });
         onRedline?.(r.artifact_version_id);

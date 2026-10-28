@@ -640,7 +640,10 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             <div className={`step step-wait${pv.retry ? " step-retry" : ""}`}>
               <span className="step-dot" />
               <div className="step-body muted">
-                {pv.retry ?? (silentFor > stallThresholdMs(progress) ? "已经有一阵子没有新进展了。任务仍在运行；如果长时间没有变化，可以取消后重新运行。" : phaseLine(progress, now, toolLabel) ?? "正在处理…")}
+                {/* 排队中不是“没进展”（第 29 批：本机同时处理的任务有上限，排在后面的曾被提示“可以取消后重新运行”） */}
+                {status === "queued"
+                  ? "排队中：本机同时处理的任务有上限，前面的任务完成后自动开始，不用重新发起。"
+                  : (pv.retry ?? (silentFor > stallThresholdMs(progress) ? "已经有一阵子没有新进展了。任务仍在运行；如果长时间没有变化，可以取消后重新运行。" : phaseLine(progress, now, toolLabel) ?? "正在处理…"))}
                 {retryStoppable(pv) && run && (
                   <div className="banner-actions">
                     <ConfirmButton

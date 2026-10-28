@@ -88,3 +88,39 @@ test("合同里“角色词 + 常用词”不是姓名（第 27 批真实模型�
   for (const v of ["何间接", "严重违", "严重迟", "全面履", "连续两"]) assert.equal(stillLooksLikeName(v), false, v);
   assert.equal(stillLooksLikeName("严格"), true, "两字值可能是以前认对的真名，不退役（复核 Q8-02）");
 });
+
+test("合同里“角色词 + 应缴纳 / 任期……”不是姓名（第 29 批真实模型走查：股权转让协议税费与任期条款）；以“应”“任”为姓的真名照常认出", async () => {
+  const { recognizeNames } = await import("../src/names.ts");
+  for (const t of ["包括但不限于甲方应缴纳的个人所得税、双方应缴纳的印花税。", "甲方继续担任目标公司总经理，任期三年。", "董事任期三年，可以连选连任。", "监事任期届满未及时改选的。", "法定代表人任期内离职。", "承租人应缴纳租金。", "出租人应保证租赁物符合约定用途。", "劳动者应遵守用人单位的规章制度。"]) {
+    assert.deepEqual([...recognizeNames(t)], [], t);
+  }
+  assert.ok(recognizeNames("原告：应晓明，男，1980 年出生。").has("应晓明"));
+  assert.ok(recognizeNames("被告应晓明于 2025 年 3 月借款。").has("应晓明"), "没有标点边界的真名照常认出");
+  assert.ok(recognizeNames("被告应保国于 2025 年 3 月借款。").has("应保国"), "“应保”开头的真名不受影响（只排除三字短语）");
+  assert.ok(recognizeNames("总经理任明辉表示同意。").has("任明辉"));
+  for (const v of ["应缴纳", "任期三", "任期届", "应遵守"]) assert.equal(stillLooksLikeName(v), false, v);
+  // 同批：助手自己写的审查意见里的误认（出站令牌化时认出、进了令牌表，合同原文“任何一方”“向乙方支付”随之被换掉，风险卡定位不到）
+  for (const t of ["遭受损失的，甲方应全额赔偿。", "乙方付款义务缺乏控制阀门。", "乙方任何付款义务均以下列条件满足为前提。", "登记义务以乙方付清全款为起点。", "甲方应负责并促使目标公司配合。", "甲方任何披露或乙方按现状受让。", "甲方向乙方陈述并保证。", "乙方应依法保障员工合法权益。", "甲方任职期间还应遵守竞业限制。", "解除通知自到达甲方时生效。", "由双方另行协商。"]) {
+    assert.deepEqual([...recognizeNames(t)], [], t);
+  }
+  assert.ok(recognizeNames("被告付清华于 2025 年 3 月借款。").has("付清华"), "“付清”开头的真名照常认出");
+  assert.ok(recognizeNames("被告向乙明于 2025 年 3 月借款。").has("向乙明"), "“向乙”后不是“方”的照常认出");
+  assert.ok(recognizeNames("原告：任何平，男，1980 年出生。").has("任何平"), "有标点边界的“任何”开头真名照常认出");
+  for (const v of ["应全额", "任何", "向乙", "向甲", "由双", "由对", "付款义", "时生效"]) assert.equal(stillLooksLikeName(v), false, v);
+  assert.deepEqual([...recognizeNames("乙方向甲方交付货物，由对方承担运费。")], [], "向甲方、由对方");
+});
+
+test("第 29 批复测：介词接角色词、“对方”的“方”不是姓名；退役值任何一支都不出（令牌表先换掉后文时也一样）；真名照常认出", () => {
+  for (const t of ["判令被告向原告支付货款人民币 735,800 元。", "2025 年 10 月 20 日，被告向原告出具对账确认函。", "上诉人向原审法院提交证据。", "申请人向原单位提出异议。", "微信中对方亦确认前台收到。", "当事人名称、住所、法定代表人和联系方式。", "甲方和实际收货人一致。", "原告和联系人到场。", "由原告承担诉讼费用。"]) {
+    assert.deepEqual([...recognizeNames(t)], [], t);
+  }
+  assert.ok(recognizeNames("被告向原明于 2025 年 3 月借款。").has("向原明"), "“向原”后不是角色词的真名照常认出");
+  assert.ok(recognizeNames("原告和联辉于 2025 年 3 月签约。").has("和联辉"), "“和联”后不是“系”的真名照常认出");
+  assert.ok(recognizeNames("原告方亦农诉称，双方约定。").has("方亦农"), "“方”前不是“对 / 双 / 甲……”的真名照常认出");
+  for (const v of ["向原", "方采", "方亦", "和联", "和实", "封样"]) assert.equal(stillLooksLikeName(v), false, v);
+  // 真实走查的形态：当事人词典（或令牌表）里的值先把“方采”换掉，“甲方向乙方采购”只剩“向乙”接代号——不得因此把“向乙”认成姓名，
+  // 否则同一段里的“向乙方发出订单”跟着被换掉（合同第 3.1、4.2、6.1 条）
+  const tz = new MatterTokenizer({ matterKey: KEY, parties: [{ name: "方采", kind: "person" }] });
+  const out = tz.tokenize("就甲方向乙方采购薄膜。甲方应以微信方式向乙方发出订单。").text;
+  assert.match(out, /以微信方式向乙方发出订单/, out);
+});

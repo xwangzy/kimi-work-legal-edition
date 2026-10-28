@@ -8,7 +8,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { LEGAL_MCP_TOOLS } from "@zr-legal/domain";
-import { createStyledDocx, extractParagraphs, readZipEntries } from "@zr-legal/docx-engine";
+import { createStyledDocx, extractParagraphs, readZipEntries, writeZip } from "@zr-legal/docx-engine";
 import { importBytes, liveTaskIdentity, makeKernel, type TestKernel } from "./helpers.ts";
 import { mintTaskToken } from "../src/identity.ts";
 import { findTool, legalToolLockProblems } from "../src/tools/registry.ts";
@@ -301,6 +301,14 @@ test("任务失败给律师看的话（第 28 批模型不可用演练）：通�
   assert.equal(t.includes("host_reported_failure"), false);
   assert.match(agentFailureText("host_reported_failure", "材料快照写入失败"), /^任务没有完成：材料快照写入失败/);
   assert.match(agentFailureText("unknown_task", null), /^任务没有完成（unknown_task）/);
+  // 第 29 批 429 演练：限流说“繁忙”，不说“连不上”
+  assert.match(agentFailureText("host_reported_failure", "429 rate limit exceeded (drill)"), /^AI 服务繁忙（请求太多被限流/);
+  // 第 29 批上游不回应演练：超时写明时限与下一步，不露原因码
+  const { agentTimeoutText } = await import("../src/executor/executor.ts");
+  const t2 = agentTimeoutText("run_deadline_exceeded");
+  assert.match(t2, /^任务工作了 25 分钟仍没有完成/);
+  assert.match(t2, /重新运行/);
+  assert.equal(t2.includes("run_deadline_exceeded"), false);
 });
 
 test("试写（dry_run）：返回改到的段落改前与改后的整段文字、不生成文件；漏字一眼可见（第 28 批真实走查：“于本验收合格后”）", { timeout: 60_000 }, async () => {
@@ -327,4 +335,105 @@ test("试写（dry_run）：返回改到的段落改前与改后的整段文字�
   } finally {
     await a.close();
   }
+});
+
+/** 自动编号的合同（第 29 批）：条款号由 numbering.xml 生成（“第三条”“3.2”），段落文字里没有。 */
+function autoNumberedDocx(): Buffer {
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const num = (ilvl: number) => `<w:pPr><w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="1"/></w:numPr></w:pPr>`;
+  const para = (t: string, pPr = "") => `<w:p>${pPr}<w:r><w:t xml:space="preserve">${t}</w:t></w:r></w:p>`;
+  const body = [
+    para("技术服务合同"),
+    para("服务费用及支付方式", num(0)),
+    para("本合同服务费用总额为人民币 1,200,000 元。", num(1)),
+    para("甲方应于本合同签订之日起五个工作日内一次性向乙方支付全部服务费用。", num(1)),
+    para("争议解决", num(0)),
+    para("协商不成的，提交乙方所在地有管辖权的人民法院诉讼解决。", num(1)),
+  ].join("");
+  const files = readZipEntries(createStyledDocx([p("占位")], undefined, null, { mark: false }));
+  files.set("word/document.xml", Buffer.from(files.get("word/document.xml")!.toString("utf8").replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body>${body}$1`)));
+  files.set(
+    "word/numbering.xml",
+    Buffer.from(
+      `<w:numbering ${W}><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="3"/><w:numFmt w:val="chineseCounting"/><w:lvlText w:val="第%1条"/></w:lvl><w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:isLgl/><w:lvlText w:val="%1.%2"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>`,
+    ),
+  );
+  return writeZip([...files.entries()].map(([name, data]) => ({ name, data })));
+}
+
+test("自动编号的合同（第 29 批）：材料文字带条款号；修订锚点、风险卡引文抄进条款号也能定位，修订稿不重复写编号", { timeout: 120_000 }, async () => {
+  const { matter } = await tk.inv("matters.create", { title: "自动编号合同", stance: "委托方", consent_status: "agreed", key_dates: { analysis_as_of: "2026-10-28" } });
+  const doc = await importBytes(tk.inv, matter.matter_id, "技术服务合同（自动编号）.docx", autoNumberedDocx(), DOCX_MIME);
+  const a = await agentFor(matter.matter_id, "revise-autonum");
+  try {
+    const excerpt = await a.call("materials.read_excerpt", { parse_version_id: doc.parse_version_id, char_start: 0, char_end: 400 });
+    const text = String(excerpt.text);
+    assert.match(text, /第三条 服务费用及支付方式/, "一级编号写进材料文字");
+    assert.match(text, /3\.2 甲方应于本合同签订之日起五个工作日内/, "二级编号写进材料文字");
+    assert.match(text, /第四条 争议解决\n4\.1 协商不成的/);
+
+    const out = await a.call("docx.revise", {
+      document_version_id: doc.document_version_id,
+      patches: [
+        { anchor: "3.2 甲方应于本合同签订之日起五个工作日内一次性向乙方支付全部服务费用。", proposed_text: "甲方应于验收合格后三十日内一次性向乙方支付全部服务费用。" },
+        { anchor: "乙方所在地", proposed_text: "甲方住所地", paragraph_hint: "4.1" },
+      ],
+    });
+    assert.equal(out.status, "applied", JSON.stringify(out));
+    const clean = Buffer.from((await tk.inv("artifacts.download", { artifact_version_id: out.clean.artifact_version_id })).data_base64, "base64");
+    const paras = extractParagraphs(clean).map((x) => x.text);
+    assert.ok(paras.includes("甲方应于验收合格后三十日内一次性向乙方支付全部服务费用。"), `清洁稿：${JSON.stringify(paras)}`);
+    assert.equal(paras.some((t) => /^3\.2/.test(t)), false, "编号仍由 Word 自动生成，不写进段落文字");
+    assert.ok(paras.includes("协商不成的，提交甲方住所地有管辖权的人民法院诉讼解决。"));
+
+    const sub = await a.call("riskcards.submit", {
+      document_version_id: doc.document_version_id,
+      cards: [{ clause_ref: "4.1", anchor_text: "4.1 协商不成的，提交乙方所在地有管辖权的人民法院诉讼解决。", severity: "mid", category: "legal", issue: "管辖约定对委托方不利", suggestion: "协商不成的，提交甲方住所地有管辖权的人民法院诉讼解决。" }],
+    });
+    assert.equal(sub.cards[0].anchor_status, "located", "引文开头的条款号去掉后定位到原文");
+    // 工作台原文栏照 Word 显示带编号
+    const shown = await tk.inv("materials.text", { document_version_id: doc.document_version_id });
+    assert.ok(shown.paragraphs.includes("第三条 服务费用及支付方式"), JSON.stringify(shown.paragraphs));
+    assert.ok(shown.paragraphs.includes("3.2 甲方应于本合同签订之日起五个工作日内一次性向乙方支付全部服务费用。"));
+  } finally {
+    await a.close();
+  }
+});
+
+test("导出 PDF 的打印页（第 29 批）：与“下载 Word”同一份文件、真名已还原；修订稿拒绝、清洁稿可以", { timeout: 120_000 }, async () => {
+  const { matter } = await tk.inv("matters.create", { title: "导出 PDF", stance: "委托方", consent_status: "agreed", key_dates: { analysis_as_of: "2026-10-28" } });
+  await tk.inv("matters.parties.upsert", { matter_id: matter.matter_id, name: "王建国", kind: "person" });
+  const doc = await importBytes(tk.inv, matter.matter_id, "技术服务合同（乙方提供稿）.docx", contractDocx(), DOCX_MIME);
+  const a = await agentFor(matter.matter_id, "print");
+  try {
+    const out = await a.call("docx.revise", { document_version_id: doc.document_version_id, patches: [{ anchor: "乙方所在地", proposed_text: "甲方住所地" }] });
+    assert.equal(out.status, "applied");
+    const r = await tk.inv("artifacts.print_html", { artifact_version_id: out.clean.artifact_version_id });
+    assert.match(r.filename, /（清洁稿）\.pdf$/);
+    assert.match(r.html, /<!doctype html>/);
+    assert.ok(r.html.includes("王建国"), "打印页是还原真名后的文件（与下载 Word 同一份）");
+    assert.ok(r.html.includes("甲方住所地有管辖权"), "清洁稿的文字");
+    assert.equal(/〔自然人·/.test(r.html), false, "不残留代号");
+    await assert.rejects(() => tk.inv("artifacts.print_html", { artifact_version_id: out.revision.artifact_version_id }), /清洁稿/, "修订稿不直接导出 PDF");
+    const audit = tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_events WHERE action = 'artifact.print_pdf'`);
+    assert.ok((audit?.n ?? 0) >= 1, "导出留痕");
+  } finally {
+    await a.close();
+  }
+});
+
+test("场景卡指定主交付物（第 29 批）：须是方法列出的交付物，写进任务快照；不认识的在发起时拒绝", async () => {
+  const { skillSnapshot } = await import("../src/skills-bundle.ts");
+  const bundle = { ok: true as const, dir: "", contentSha256: "x", skills: [{ id: "due-diligence", version: "1.2.0", tier: "beta", lines: [], title: "尽调", description: "", tools_required: [], primary_output: "尽调清单.xlsx", outputs: ["尽调清单.xlsx", "尽调报告（内部稿）.docx"] }] };
+  assert.equal(skillSnapshot(bundle, "due-diligence", "尽调报告（内部稿）.docx").skill_primary_output, "尽调报告（内部稿）.docx", "卡上指定的覆盖方法缺省的第一项");
+  assert.equal(skillSnapshot(bundle, "due-diligence").skill_primary_output, "尽调清单.xlsx", "不指定时用前言第一项");
+  assert.equal(skillSnapshot(bundle, "due-diligence", "不存在.docx").skill_primary_output, "尽调清单.xlsx", "不在 outputs 里的不采用");
+  // 发起时校验：不认识的主交付物直接拒绝，不创建任务
+  const { matter } = await tk.inv("matters.create", { title: "尽调主交付物", stance: "收购方", consent_status: "agreed", key_dates: { analysis_as_of: "2026-10-28" } });
+  const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
+  await assert.rejects(
+    () => tk.inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `dd-bad-${Date.now()}`, goal: "尽调", skill: "due-diligence", primary_output: "不存在的报告.docx", plan_first: true }),
+    /主交付物须是这个方法列出的交付物之一/,
+  );
+  assert.equal(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM runs WHERE matter_id = ?`, [matter.matter_id])!.n, 0, "没有创建任务");
 });

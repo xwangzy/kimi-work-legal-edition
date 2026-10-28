@@ -286,6 +286,7 @@ export const PARSE_FLAG_TEXT: Record<string, string | ((n: string) => string)> =
   no_page_anchors: "没有页码",
   tables_flattened: "表格按文字读取",
   tables_as_rows: "表格按行读取（合并单元格可能错位）",
+  list_numbers_rendered: "",
   comments_revisions_ignored: "批注与修订没有读取",
   xlsx_values_only: "只读了表格里的值，公式没有计算",
   xlsx_truncated: "表格太大，只读了前一部分",
