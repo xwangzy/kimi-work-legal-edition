@@ -889,7 +889,9 @@ export function methodPromptLine(skill: string | null, skillArgs: Record<string,
   const argsLine = skillArgs && Object.keys(skillArgs).length > 0 ? `方法参数：${Object.entries(skillArgs).map(([k, v]) => `${k}=${String(v).slice(0, 300)}`).join("；")}。` : "";
   // 主交付物（第 28 批）：文书类方法写明“必须出 Word 文书”，表格不能代替；信息不全照样出草稿（真实走查：事实未确认时只交了两份表格）
   const deliver = primaryOutput && WORD_OUTPUT.test(primaryOutput)
-    ? `本方法的主交付物是 Word 文书《${primaryOutput.replace(WORD_OUTPUT, "")}》，必须用 docx.render_report 生成；表格只作附件，不能代替文书；信息不全照样出草稿，缺项写“【待填】”，未经律师确认的事实标“【待确认】”。`
+    ? // 第 31 批：“信息不全照样出草稿”只管事实与身份信息不全；答辩、上诉、质证要回应的文书本身不在事项里时按方法先问律师
+      // （真实走查：没有起诉状时助手把这句当成“律师的明确指示”，越过方法“先请律师补充”的规定要出一份全是【待填】的答辩状）
+      `本方法的主交付物是 Word 文书《${primaryOutput.replace(WORD_OUTPUT, "")}》，必须用 docx.render_report 生成；表格只作附件，不能代替文书；事实或身份信息不全照样出草稿，缺项写“【待填】”，未经律师确认的事实标“【待确认】”；方法规定先向律师要的核心材料（例如答辩要回应的起诉状）不在事项里时，按方法先问律师。`
     : // Excel 主交付物（第 31 批，审查 B-12）：金额测算、引用核验等的成果是表本身，只在答复里贴表格或文字不算交付
       primaryOutput && SHEET_OUTPUT.test(primaryOutput)
       ? `本方法的主交付物是 Excel 表《${primaryOutput.replace(SHEET_OUTPUT, "")}》，必须用 xlsx.render_table 生成，不能只在答复里列表格或写文字；信息不全照样出表，未经律师确认的数据标“【待确认】”。`

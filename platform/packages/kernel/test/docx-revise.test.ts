@@ -252,6 +252,8 @@ test("主交付物核对（第 31 批，审查 B-12）：表格类方法一张�
   assert.equal(primaryDeliverableMissing(db, live.rid, "计算明细.xlsx"), null, "工作区里的表也算");
   assert.match(methodPromptLine("amount-calc", null, "计算明细.xlsx"), /主交付物是 Excel 表《计算明细》，必须用 xlsx\.render_table 生成/);
   assert.doesNotMatch(methodPromptLine("amount-calc", null, "计算明细.xlsx"), /docx\.render_report/);
+  // 第 31 批：“照样出草稿”只管事实与身份信息；答辩要回应的起诉状不在时按方法先问（真实走查：助手把这句当成律师指示，要出全是【待填】的答辩状）
+  assert.match(methodPromptLine("defense-draft", null, "民事答辩状（草稿）.docx"), /事实或身份信息不全照样出草稿.*方法规定先向律师要的核心材料（例如答辩要回应的起诉状）不在事项里时，按方法先问律师/);
 });
 
 test("待补占位：复核页列出个数，签发须勾选“已知悉”；没有占位的文件不受影响", { timeout: 60_000 }, async () => {
