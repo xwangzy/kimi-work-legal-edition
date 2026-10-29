@@ -73,7 +73,8 @@ test("内核写的提示词框架（事项口径、方法、审查要点、写�
   const prefs = prefsPromptLine({ signature: "本所律师", citation: "short", notes: "段落之间空一行" } as any);
   const texts: string[] = [QA_SYSTEM_PROMPT, rules, prefs];
   for (const s of manifest.skills) {
-    const method = methodPromptLine(s.id, { focus: "付款与违约责任" });
+    // 主交付物那一句（Word / Excel，第 28、31 批）也随提示词令牌化：按方法实际的主交付物生成
+    const method = methodPromptLine(s.id, { focus: "付款与违约责任" }, (s as { primary_output?: string }).primary_output ?? null);
     texts.push(agentGoalPrompt({ stance: "买方", jurisdiction: "内地民商事", asOf: "2026-10-23", facts, goal: "审查这份采购合同", methodLine: method, rulesBlock: rules, prefsLine: prefs }));
     texts.push(agentFollowUpPrompt("再看一下违约金", method, true));
   }

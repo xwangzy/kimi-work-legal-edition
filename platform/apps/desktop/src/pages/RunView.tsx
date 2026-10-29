@@ -347,7 +347,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   // 提纲卡在时，Agent 为它提的那道确认题并进提纲卡（不让律师答两遍）
   const outlineQ = useMemo(() => (outline ? outlineQuestion(questions) : null), [outline, questions]);
   const pendingCards = useMemo(
-    () => [...approvals.map((card) => ({ kind: "approval" as const, card })), ...questions.filter((q) => q.question_id !== outlineQ?.question_id).map((card) => ({ kind: "question" as const, card }))],
+    // 只有确认题单独一张卡时才整张并进提纲卡；和别的题同卡时卡照常显示，确认那一题跟着提纲卡走（第 31 批）
+    () => [...approvals.map((card) => ({ kind: "approval" as const, card })), ...questions.filter((q) => !(outlineQ && outlineQ.others === 0 && q.question_id === outlineQ.question_id)).map((card) => ({ kind: "question" as const, card }))],
     [approvals, questions, outlineQ],
   );
   const [showAllCards, setShowAllCards] = useState(false);
@@ -494,7 +495,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     try {
       await confirmAndAnswer({
         decide: () => api.decideOutline(matterId, outline.outline_id, decisions, note, confirmFacts),
-        answer: outlineQ ? () => api.answer(runId, outlineQ.question_id, outlineAnswer(outlineQ, true), stateVersion) : null,
+        answer: outlineQ && outlineQ.others === 0 ? () => api.answer(runId, outlineQ.question_id, outlineAnswer(outlineQ, true), stateVersion) : null,
       });
       await refresh();
     } catch (e) {
@@ -560,7 +561,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               {/* 材料入口（UIUX 增量评审 N-1；第 20 批起各种宽度都用两栏，不再有左栏） */}
               <span className="mats-chip-wrap">
                 <button className="pill pill-gray" aria-expanded={matsOpen} onClick={() => setMatsOpen((v) => !v)}>
-                  材料 {inputDocs.length} 份 ▾
+                  {/* 没指定材料时助手按需读取本事项的材料（第 31 批：原先显示“材料 0 份”，像是没给材料） */}
+                  {inputDocs.length > 0 ? `材料 ${inputDocs.length} 份 ▾` : "材料：按需读取 ▾"}
                 </button>
                 {matsOpen && (
                   <div className="mats-pop" role="dialog" aria-label="本次用到的材料">
@@ -772,7 +774,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             outline={outline}
             plain={(t) => (t ? restoredPlain(t, tokenMap) : "")}
             busy={busy}
-            canStop={!!outlineQ}
+            canStop={!!outlineQ && outlineQ.others === 0}
             onConfirm={(d, n, f) => void confirmOutline(d, n, f)}
             onStop={() => void stopOutline()}
           />
@@ -783,7 +785,14 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             c.kind === "approval" ? (
               <ApprovalCardView key={c.card.approval_id} card={c.card} tokenMap={tokenMap} busy={busy} onDecide={(d) => void decide(c.card, d)} />
             ) : (
-              <QuestionCardView key={c.card.question_id} card={c.card} tokenMap={tokenMap} busy={busy} onAnswer={(ans) => void answer(c.card, ans)} />
+              <QuestionCardView
+                key={c.card.question_id}
+                card={c.card}
+                tokenMap={tokenMap}
+                busy={busy}
+                onAnswer={(ans) => void answer(c.card, ans)}
+                {...(outlineQ && outlineQ.others > 0 && c.card.question_id === outlineQ.question_id ? { outlineLock: { qid: outlineQ.qid, confirm: outlineQ.confirm, confirmed: outline?.status === "confirmed" } } : {})}
+              />
             ),
           )}
           {pendingCards.length > 1 && (

@@ -17,6 +17,8 @@ export const GENERIC_FAILURE = "操作没有完成，请重试。";
  */
 export function importFailText(fileName: string, message: string): string {
   const raw = String(message ?? "").split(fileName).join("").trim();
+  // 文件不完整（第 31 批异常走查：截断的 Word 报“不是有效的 ZIP/DOCX 文件”，律师看不懂 ZIP）
+  if (/不是有效的 ZIP|ZIP\/DOCX/i.test(raw)) return `${fileName} 没有添加：这个文件已损坏或不完整（可能下载或拷贝时中断），打不开。请从原邮件或网盘重新下载后再添加。`;
   // 内核写好的中文原因照写，哪怕里面有 Word、WPS、PDF 这类词（复核 Q8-03：原先按“含 4 个英文字母”判断，把“另存为 .docx”的办法整句换掉了）
   if (raw && /[\u4e00-\u9fff]/.test(raw)) return `${fileName} 没有添加：${raw}`;
   const ext = (/\.([A-Za-z0-9]+)$/.exec(fileName)?.[1] ?? "").toLowerCase();

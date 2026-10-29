@@ -6,12 +6,12 @@ when_to_use: 已有成稿或草稿需要核验引用与论证；需要从头研�
 arguments: [document]
 kwl:
   id: citation-check
-  version: 1.3.0
+  version: 1.3.1
   lines: [诉讼仲裁, 非诉, 企业法务]
   chain: research
   tier: beta
-  tools_required: [citations.verify, law.get_version]
-  tools_optional: [materials.list, materials.read_excerpt, law.search, law.get_article, xlsx.render_table]
+  tools_required: [citations.verify, law.get_version, xlsx.render_table]
+  tools_optional: [materials.list, materials.read_excerpt, law.search, law.get_article]
   outputs: [引用核验表.xlsx]
   source_lineage: [demo:legal-prompt-rules#citations, demo:scene-criminal-defense#citation-table, upstream:legal-agent-skills@83df6b13:core-claim-evidence-audit, upstream:legal-agent-skills@83df6b13:core-verify-statute-validity, spec:v9.4评审S1§6.1-3]
 ---

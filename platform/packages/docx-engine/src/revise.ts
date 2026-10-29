@@ -147,9 +147,32 @@ function applyOne(
   const relStart = first.runXmlStart - target.xmlStart;
   const relEnd = last.runXmlEnd - target.xmlStart;
   const paraXml = xml.slice(target.xmlStart, target.xmlEnd);
-  const newParaXml = paraXml.slice(0, relStart) + parts.join("") + paraXml.slice(relEnd);
+  let newParaXml = paraXml.slice(0, relStart) + parts.join("") + paraXml.slice(relEnd);
+  // 整段删除（第 31 批）：段落的可见文字全部删掉时，段落标记也标为删除——接受修订后整段消失（清洁稿同一处理，见 sanitize），
+  // 不留空行；自动编号的条款不再剩一个空的“5.3”、后面的编号也随之顺延。分节符所在的段落不动段落标记（会并掉分节）。
+  const remaining = target.text.slice(0, span.start) + target.text.slice(span.end);
+  if (!op.newText && remaining.trim() === "") newParaXml = markParagraphDeleted(newParaXml, nextId(), escapeXml(author), date);
   applied.push({ opId: op.opId, status: "applied", paragraphIndex: target.index });
   return xml.slice(0, target.xmlStart) + newParaXml + xml.slice(target.xmlEnd);
+}
+
+/** 在段落的 w:pPr/w:rPr 里加段落标记删除（<w:del …/>）；没有 pPr / rPr 的补上；带分节符（w:sectPr）的段落原样返回。纯函数。 */
+export function markParagraphDeleted(paraXml: string, id: number, author: string, date: string): string {
+  const mark = `<w:del w:id="${id}" w:author="${author}" w:date="${date}"/>`;
+  const open = /^<w:p\b[^>]*>/.exec(paraXml)![0];
+  const pPr = /^<w:pPr\b[^>]*>[\s\S]*?<\/w:pPr>/.exec(paraXml.slice(open.length))?.[0];
+  if (!pPr) return `${open}<w:pPr><w:rPr>${mark}</w:rPr></w:pPr>${paraXml.slice(open.length)}`;
+  // 带分节符的不动；已有段落格式修订（w:pPrChange 里嵌着旧的 w:pPr）的也不动，免得把嵌套结构切坏
+  if (/<w:sectPr\b|<w:pPrChange\b/.test(paraXml)) return paraXml;
+  // w:pPr 里 w:rPr 之后只能是 w:sectPr / w:pPrChange：有 rPr 的加在 rPr 里，没有的加在这两者之前（或末尾）
+  const rPr = /<w:rPr\b[^>]*>[\s\S]*?<\/w:rPr>|<w:rPr\b[^>]*\/>/.exec(pPr);
+  let next: string;
+  if (rPr) next = pPr.replace(rPr[0], rPr[0].endsWith("/>") ? `<w:rPr>${mark}</w:rPr>` : rPr[0].replace(/<\/w:rPr>$/, `${mark}</w:rPr>`));
+  else {
+    const at = pPr.search(/<w:pPrChange\b|<\/w:pPr>$/);
+    next = `${pPr.slice(0, at)}<w:rPr>${mark}</w:rPr>${pPr.slice(at)}`;
+  }
+  return open + next + paraXml.slice(open.length + pPr.length);
 }
 
 /** 段后插入：新段落沿用目标段落的段落格式（去掉分节 w:sectPr、段落标记的 w:rPr 与已有修订标记），段落标记标为插入。 */

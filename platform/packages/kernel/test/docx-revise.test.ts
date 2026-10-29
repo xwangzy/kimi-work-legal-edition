@@ -12,7 +12,7 @@ import { createStyledDocx, extractParagraphs, readZipEntries, writeZip } from "@
 import { importBytes, liveTaskIdentity, makeKernel, type TestKernel } from "./helpers.ts";
 import { mintTaskToken } from "../src/identity.ts";
 import { findTool, legalToolLockProblems } from "../src/tools/registry.ts";
-import { primaryDeliverableMissing } from "../src/executor/executor.ts";
+import { methodPromptLine, primaryDeliverableMissing } from "../src/executor/executor.ts";
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -231,6 +231,27 @@ test("主交付物核对：文书类方法没有 Word 文书 → 缺失说明；
   assert.equal(primaryDeliverableMissing(db, live.rid, null), null, "没有方法不核对");
   art("a1_workspace_file", "起诉状-工作区.docx");
   assert.equal(primaryDeliverableMissing(db, live.rid, "民事起诉状（草稿）.docx"), null, "工作区里的 Word 文书也算");
+});
+
+test("主交付物核对（第 31 批，审查 B-12）：表格类方法一张表都没交 → 缺失说明；提示词写明用出表工具", async () => {
+  const { matter } = await tk.inv("matters.create", { title: "核对表格主交付物", stance: "原告", consent_status: "agreed", key_dates: { analysis_as_of: "2026-10-29" } });
+  const live = liveTaskIdentity(tk, matter.matter_id, "primary-sheet");
+  const db = tk.kernel.db;
+  const art = (kind: string, filename: string) =>
+    db.run(
+      `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, version, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by) VALUES (?,?,?,?,?,1,'internal','draft',?,?,?,'[]','{}',?)`,
+      [`art_${Math.random().toString(36).slice(2, 10)}`, live.tid, matter.matter_id, live.rid, kind, filename, "x".repeat(64), "blob://x", live.uid],
+    );
+  art("a1_agent_draft", "草稿-2026-10-29.md");
+  const miss = primaryDeliverableMissing(db, live.rid, "计算明细.xlsx");
+  assert.ok(miss);
+  assert.equal(miss.primary, "计算明细");
+  assert.equal(miss.cause, "no_sheet_output");
+  assert.match(miss.note, /没有交出《计算明细》：助手只交了文字说明/);
+  art("a1_workspace_file", "计算明细-工作区.xlsx");
+  assert.equal(primaryDeliverableMissing(db, live.rid, "计算明细.xlsx"), null, "工作区里的表也算");
+  assert.match(methodPromptLine("amount-calc", null, "计算明细.xlsx"), /主交付物是 Excel 表《计算明细》，必须用 xlsx\.render_table 生成/);
+  assert.doesNotMatch(methodPromptLine("amount-calc", null, "计算明细.xlsx"), /docx\.render_report/);
 });
 
 test("待补占位：复核页列出个数，签发须勾选“已知悉”；没有占位的文件不受影响", { timeout: 60_000 }, async () => {

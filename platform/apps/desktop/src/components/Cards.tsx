@@ -170,14 +170,25 @@ export function ApprovalCardView({ card, tokenMap, busy, onDecide }: {
   );
 }
 
-export function QuestionCardView({ card, tokenMap, busy, onAnswer }: {
+export function QuestionCardView({ card, tokenMap, busy, onAnswer, outlineLock }: {
   card: QuestionCard;
   tokenMap?: Map<string, string | null>;
   busy?: boolean;
   onAnswer: (answers: Record<string, QuestionAnswer>) => void;
+  /**
+   * 论点确认题和别的题在同一张卡里（第 31 批）：“已确认……”这一项跟着上面的论点卡走——论点卡确认前不能选（否则助手以为确认了、
+   * 文书工具却拒绝出文书），确认后自动选上；“先不起草”照常可选。
+   */
+  outlineLock?: { qid: string; confirm: string; confirmed: boolean };
 }) {
   // 选项与“其他”互斥（复核 B4-B16：此前“其他”有文字时静默覆盖已选项，界面上两者同时呈选中）
   const [draft, setDraft] = useState<AnswerDraft>({ sel: {}, other: {} });
+  const lockQid = outlineLock?.qid;
+  const lockConfirmed = outlineLock?.confirmed ?? false;
+  const lockConfirm = outlineLock?.confirm;
+  useEffect(() => {
+    if (lockQid && lockConfirm && lockConfirmed) setDraft((d) => ({ sel: { ...d.sel, [lockQid]: [lockConfirm] }, other: { ...d.other, [lockQid]: "" } }));
+  }, [lockQid, lockConfirm, lockConfirmed]);
   const { sel, other } = draft;
   const answered = isAnswered(card.questions, draft);
   const missing = unansweredCount(card.questions, draft);
@@ -193,6 +204,7 @@ export function QuestionCardView({ card, tokenMap, busy, onAnswer }: {
           <div className="q-options" role={q.multi_select ? "group" : "radiogroup"} aria-labelledby={`${idBase}-${q.id}`}>
             {q.options.map((o) => {
               const on = (sel[q.id] ?? []).includes(o.id);
+              const lockedOut = !!outlineLock && q.id === outlineLock.qid && o.id === outlineLock.confirm && !outlineLock.confirmed;
               return (
                 <button
                   key={o.id}
@@ -200,6 +212,7 @@ export function QuestionCardView({ card, tokenMap, busy, onAnswer }: {
                   role={q.multi_select ? "checkbox" : "radio"}
                   aria-checked={on}
                   className={`q-option${on ? " on" : ""}`}
+                  disabled={lockedOut}
                   onClick={() => setDraft((d) => pickOption(d, q, o.id))}
                 >
                   <span>
@@ -210,6 +223,9 @@ export function QuestionCardView({ card, tokenMap, busy, onAnswer }: {
               );
             })}
           </div>
+          {outlineLock && q.id === outlineLock.qid && (
+            <div className="cc-hint muted">{outlineLock.confirmed ? "已在上面的论点卡确认。" : "要按论点起草，请先在上面的论点卡确认；也可以选“先不起草”。"}</div>
+          )}
           <input className="q-other" placeholder="其他（直接输入；会取代上面的选择）" aria-label="其他（直接输入）" value={other[q.id] ?? ""} onChange={(e) => setDraft((d) => typeOther(d, q, e.target.value))} />
         </div>
       ))}

@@ -6,12 +6,12 @@ when_to_use: 有本金、付款记录与计息约定（或律师给定口径）�
 arguments: [as_of, mode]
 kwl:
   id: amount-calc
-  version: 1.5.0
+  version: 1.6.0
   lines: [诉讼仲裁, 企业法务]
   chain: casefile
   tier: beta
-  tools_required: [calc.interest, materials.read_excerpt]
-  tools_optional: [xlsx.render_table, facts.list, materials.list, law.get_version, citations.verify, calc.labor, calc.court_fee]
+  tools_required: [calc.interest, materials.read_excerpt, xlsx.render_table]
+  tools_optional: [facts.list, materials.list, law.get_version, citations.verify, calc.labor, calc.court_fee]
   outputs: [计算明细.xlsx]
   source_lineage: [demo:scene-civil-pleading@v1.0, demo:scene-labor-calculation@v1.0, demo:scene-counsel-workforce-cost@v1.0]
 ---
@@ -27,7 +27,7 @@ kwl:
 - 不覆盖（明确告知律师）：加班费；外币汇率；复利；迟延履行期间加倍部分。LPR 倍数不得换算成加点或固定利率，直接用 `lpr_times`；`calc.interest` 返回 warnings（如计算区间越过已收录的 LPR 报价）时原样写进交付件。
 
 ## 2. 输入与前置检查
-1. 本金、交付或到期日、每笔付款（日期、金额）：先用 `facts.list` 取 lawyer_status = confirmed 的事实（含 amount_yuan、occurred_on），其次用律师在对话中给出的数据；只在材料中出现、律师未确认的，列入“参数与假设”并标“待律师确认”——可以先出情景草稿，**不得出正式表**。
+1. 本金、交付或到期日、每笔付款（日期、金额）：先用 `facts.list` 取 lawyer_status = confirmed 的事实（含 amount_yuan、occurred_on），其次用律师在对话中给出的数据；只在材料中出现、律师未确认的，照常用 `calc.interest` 出正式《计算明细》（第 31 批，与 D-154/D-155 同一口径；原先只出未经工具复算的情景草稿）：这些参数在“参数与假设”逐项标“【待确认】”并写出处（材料名称 · 位置），“汇总”首行写“含未经律师确认的参数，确认后如有变动须重算”。材料之间数字不一致的不自行取舍，列出两种说法，按律师选定或两种都算并列。
 2. 计息依据：用 `materials.list` 找到合同，用 `materials.read_excerpt` 定位利率、违约金比例与起算条件；没有约定或约定不明时，用提问工具让律师选口径（约定固定利率 / LPR 加点 / LPR 倍数 / 暂不主张），**不得默认使用“LPR 四倍”**。
 3. 截止日：取 `$as_of` 或律师给定的日期；“暂计至实际清偿之日”与暂计金额分开写。
 4. 日数规则：律师未确认年日数（360/365）时两种都算，并列显示差额。
@@ -41,7 +41,7 @@ kwl:
 4. 互斥与重复：同一期间同时主张利息与违约金等情形单列“互斥或可能重复”，**不计入合计**，由律师选择。
 5. 调整风险：约定违约金明显偏高时，只提示“存在被请求调整的风险”，所引条文经 `citations.verify` 核验；不自行下调。
 6. 成表：用 `xlsx.render_table` 生成《计算明细》（title：`计算明细-<事项简称>-截至<日期>`），四个工作表一次提交；不要在命令行里拼表。
-7. 情景测算：律师要求比较几种情景时，可在受限命令行里用 Python（decimal）做草稿，结果放在“情景草稿”工作表并标注“草稿 · 未经工具复算”；律师选定后回到第 2 步用 `calc.interest` 复算。
+7. 情景测算（只用于律师要求的多口径比较，不代替正式表）：律师要求比较几种情景时，可在受限命令行里用 Python（decimal）做草稿，结果放在“情景草稿”工作表并标注“草稿 · 未经工具复算”；律师选定后回到第 2 步用 `calc.interest` 复算。
 8. **复核对方计算**（`$mode` = 复核对方计算）：
    - 用 `materials.read_excerpt` 逐项摘录对方的计算：项目、原文位置、本金或基数、起止日、利率或倍数、年日数、公式、对方金额。
    - **按对方口径复算**：对方写明的参数原样代入 `calc.interest`（劳动项目用 `calc.labor`），得出“按对方口径复算数”；与对方原数不一致的，写差额与原因（算术错误、日数计法、LPR 取值或报价日、基数、起算日、抵扣遗漏）。
@@ -69,7 +69,7 @@ kwl:
 
 ## 6. 质量自检
 - [ ] 每段金额都来自 calc.interest 的返回值，可按公式复算。
-- [ ] 正式表中没有未经律师确认的参数。
+- [ ] 正式表中未经律师确认的参数都在“参数与假设”标了“【待确认】”和出处，“汇总”首行写明含未确认参数。
 - [ ] 没有把 LPR 四倍当作默认口径；LPR 倍数用 lpr_times，没有擅自换算成加点。
 - [ ] 互斥或可能重复的项目没有计入合计。
 - [ ] 日数规则与年日数已写明并经确认或并列展示。

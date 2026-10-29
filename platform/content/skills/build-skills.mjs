@@ -67,6 +67,8 @@ for (const id of ids) {
   // 所以这类方法必须把出 Word 的工具列为必需（第 28 批全量用例查出顾问答复、访谈纪要、研究备忘录三处只列为可选）
   const primary = Array.isArray(fm.kwl.outputs) && fm.kwl.outputs.length > 0 ? String(fm.kwl.outputs[0]) : "";
   if (/\.docx$/i.test(primary) && !req.some((t) => t === "docx.render_report" || t === "docx.revise")) throw new Error(`${file}：主交付物是 Word（${primary}），tools_required 须含 docx.render_report 或 docx.revise`);
+  // 主交付物是 Excel（第 31 批，审查 B-12）：内核同样核对有没有交出表，出表工具须是必需（金额测算、引用核验原先只列为可选）
+  if (/\.xlsx$/i.test(primary) && !req.includes("xlsx.render_table")) throw new Error(`${file}：主交付物是 Excel（${primary}），tools_required 须含 xlsx.render_table`);
   // 全部交付物（第 29 批）：同一方法的不同场景卡可以指定其中一项为主交付物（尽调“清单”与“发现与报告”共用一个方法；卡上指定的 Word 主交付物由桌面端用例核对必需工具）
   const outputs = Array.isArray(fm.kwl.outputs) ? fm.kwl.outputs.map(String).slice(0, 12) : [];
   skills.push({ id, version: fm.kwl.version ?? "0.0.0", tier: fm.kwl.tier ?? "beta", lines: fm.kwl.lines ?? [], tools_required: req, ...(fm.kwl.requires_outline === "true" ? { requires_outline: true } : {}), ...(primary ? { primary_output: primary } : {}), ...(outputs.length > 0 ? { outputs } : {}), title: (/^# (.+)$/m.exec(text) ?? [])[1] ?? id, description: fm.description });

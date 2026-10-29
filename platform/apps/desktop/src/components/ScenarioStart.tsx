@@ -10,7 +10,7 @@ import { eventDateProblem, STAGE_LABELS, stagesFor } from "../lib/matter-stage.t
 import { notifyDataChanged } from "../lib/events.ts";
 import { nav } from "../App.tsx";
 import type { ScenarioCard } from "../lib/scenarios.ts";
-import { buildGoal, canStartPartial, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, skillArgsOf, splitIssues } from "../lib/scenarios.ts";
+import { buildGoal, canStartPartial, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues } from "../lib/scenarios.ts";
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { defaultChoice } from "./ModeSelector.tsx";
@@ -40,8 +40,10 @@ interface Props {
 
 function preselect(card: ScenarioCard, docs: Props["documents"]): string[] {
   if (card.minMaterials === 0) return [];
-  if (card.scenario === "s1b.draft_compare") return [];
-  if (card.skill === "contract-review") {
+  // 回稿重审要按“上一稿、回稿”的顺序勾两份（第 31 批：原先全选，案卷里有第三份稿时顺序就不是律师心里那两份）
+  if (card.scenario === "s1b.draft_compare" || card.skill === "redraft-review") return [];
+  // 针对一份文书的方法（审合同、按意见修改、文稿体检）只预选最近一份 Word（第 31 批：后两张原先把案卷里的证据也全勾上）
+  if (card.skill === "contract-review" || card.skill === "doc-revise" || card.skill === "citation-check") {
     const word = [...docs].reverse().find((d) => d.filename.toLowerCase().endsWith(".docx"));
     return word ? [word.document_version_id] : docs.slice(-1).map((d) => d.document_version_id);
   }
@@ -140,7 +142,9 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   // 补全提示（C1 #24）：这个方法用得到、事项还没填的事件时点 / 地域 / 阶段；不拦着开始
   const [filled, setFilled] = useState<Partial<Record<HintField, string>>>({});
   const hints = matterFactHints(card.skill, matter ? { ...matter, ...filled } : null);
-  const opts = useMemo(() => ({ ...(card.skill ? { skill: card.skill } : {}), label: card.title, ...(card.skill ? { skillArgs: skillArgsOf(card, values) } : {}), ...(rules && !useRules ? { reviewRules: false } : {}), ...(card.primary ? { primaryOutput: card.primary } : {}) }), [card, values, rules, useRules]);
+  // 勾选材料的文件名按勾选顺序（回稿重审的上一稿 / 回稿、文稿体检的那一份，第 31 批）；用字符串作依赖，材料未载入时的空数组每次都是新对象
+  const pickedNames = docIds.map((id) => documents.find((d) => d.document_version_id === id)?.filename ?? "").filter(Boolean).join("\n");
+  const opts = useMemo(() => ({ ...(card.skill ? { skill: card.skill } : {}), label: card.title, ...(card.skill ? { skillArgs: { ...skillArgsOf(card, values), ...docArgsFor(card, pickedNames ? pickedNames.split("\n") : []) } } : {}), ...(rules && !useRules ? { reviewRules: false } : {}), ...primaryOpt(primaryOutputOf(card, values)) }), [card, values, rules, useRules, pickedNames]);
 
   // 疑似姓名核对之后重新估价
   const [reestimateTick, setReestimateTick] = useState(0);
@@ -204,6 +208,17 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
       setGuessed(g);
     }
   }, [typeField, docsReady, documents, docIds, matter?.title, values]);
+  // “我方是”按事项立场预选（第 31 批）：律师没选过、事项立场对得上某个选项时才填，下拉框下写“按事项立场预选，可改”
+  const sideField = card.fields.find((f) => f.key === "side" && f.kind === "select");
+  const [sideGuessed, setSideGuessed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!sideField || values[sideField.key]) return;
+    const g = sideOptionFor(sideField.options, matter?.stance);
+    if (g) {
+      setValues((cur) => (cur[sideField.key] ? cur : { ...cur, [sideField.key]: g }));
+      setSideGuessed(g);
+    }
+  }, [sideField, matter?.stance, values]);
   const order = (id: string) => docIds.indexOf(id) + 1;
 
   // 转到发起确认：放在全部 hook 之后（第 29 批真实走查：早退在第 26 批新增的 useState/useEffect 之前，点“下一步：确认”整页报错）
@@ -335,6 +350,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
                 <span className="ss-select">
                   <Select aria-label={f.label} value={String(values[f.key] ?? "")} onChange={(v) => setField(f.key, v)} options={f.options!.map((o) => ({ value: o, label: o }))} />
                   {guessed && f === typeField && values[f.key] === guessed && <span className="ss-guess muted">按文件名预选，可改</span>}
+                  {sideGuessed && f === sideField && values[f.key] === sideGuessed && <span className="ss-guess muted">按事项立场预选，可改</span>}
                 </span>
               ) : f.kind === "multi" ? (
                 <span className="ss-multi">
@@ -497,4 +513,9 @@ function FactHints({ matter, hints, onSaved }: { matter: Matter; hints: ReturnTy
       {err && <div className="ss-need">{err}</div>}
     </div>
   );
+}
+
+/** 主交付物有值才带上（第 31 批：可能随律师选的字段变） */
+function primaryOpt(p: string | undefined): { primaryOutput?: string } {
+  return p ? { primaryOutput: p } : {};
 }

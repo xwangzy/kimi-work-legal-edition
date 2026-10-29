@@ -888,12 +888,19 @@ export function snapshotText(text: string, max = AGENT_SNAPSHOT_MAX_CHARS): stri
 export function methodPromptLine(skill: string | null, skillArgs: Record<string, string> | null, primaryOutput: string | null = null): string {
   const argsLine = skillArgs && Object.keys(skillArgs).length > 0 ? `方法参数：${Object.entries(skillArgs).map(([k, v]) => `${k}=${String(v).slice(0, 300)}`).join("；")}。` : "";
   // 主交付物（第 28 批）：文书类方法写明“必须出 Word 文书”，表格不能代替；信息不全照样出草稿（真实走查：事实未确认时只交了两份表格）
-  const deliver = primaryOutput && WORD_OUTPUT.test(primaryOutput) ? `本方法的主交付物是 Word 文书《${primaryOutput.replace(WORD_OUTPUT, "")}》，必须用 docx.render_report 生成；表格只作附件，不能代替文书；信息不全照样出草稿，缺项写“【待填】”，未经律师确认的事实标“【待确认】”。` : "";
+  const deliver = primaryOutput && WORD_OUTPUT.test(primaryOutput)
+    ? `本方法的主交付物是 Word 文书《${primaryOutput.replace(WORD_OUTPUT, "")}》，必须用 docx.render_report 生成；表格只作附件，不能代替文书；信息不全照样出草稿，缺项写“【待填】”，未经律师确认的事实标“【待确认】”。`
+    : // Excel 主交付物（第 31 批，审查 B-12）：金额测算、引用核验等的成果是表本身，只在答复里贴表格或文字不算交付
+      primaryOutput && SHEET_OUTPUT.test(primaryOutput)
+      ? `本方法的主交付物是 Excel 表《${primaryOutput.replace(SHEET_OUTPUT, "")}》，必须用 xlsx.render_table 生成，不能只在答复里列表格或写文字；信息不全照样出表，未经律师确认的数据标“【待确认】”。`
+      : "";
   return skill ? `【方法】先调用 Skill 工具加载方法模板“${skill}”，按其步骤、工具约定与输出规格执行；${argsLine}${deliver}模板与律师的任务说明冲突时，以律师的说明为准。\n` : "";
 }
 
 /** 主交付物是 Word 文书的写法（方法前言 outputs 第一项）。 */
 const WORD_OUTPUT = /\.docx$/i;
+/** 主交付物是 Excel 表的写法（第 31 批）。 */
+const SHEET_OUTPUT = /\.xlsx$/i;
 
 export function agentGoalPrompt(p: { stance: string; jurisdiction: string; asOf: string; facts: string; goal: string; methodLine: string; rulesBlock: string; prefsLine: string }): string {
   const { stance, jurisdiction, asOf, facts, goal, methodLine, rulesBlock, prefsLine } = p;
@@ -1182,12 +1189,20 @@ const AGENT_PRIMARY_MISSING_SEQ = 9_001;
 
 /** 算作“交出了 Word 文书”的成果：文书工具、在原件上修订、工作区里的 .docx（最终答复转出的 Word 不算）。 */
 const WORD_ARTIFACT_SQL = `kind IN ('agent_report', 'revision_draft', 'revision_clean') OR (kind = 'a1_workspace_file' AND lower(filename) LIKE '%.docx')`;
+const SHEET_ARTIFACT_SQL = `kind = 'agent_table' OR (kind = 'a1_workspace_file' AND lower(filename) LIKE '%.xlsx')`;
 
 /**
  * 方法的主交付物是 Word 文书（前言 outputs 第一项以 .docx 结尾）而本任务一份 Word 文书都没登记时，返回缺失说明；否则 null。
  * 原因按论点提纲状态给出（还在等律师确认 / 没提交），其余情形统一写“只交了表格或说明”。纯查询，重放结果相同。
  */
 export function primaryDeliverableMissing(db: KernelDb, runId: string, primaryOutput: string | null): { primary: string; cause: string; note: string } | null {
+  // Excel 主交付物（第 31 批）：一张表都没登记时同样不记“完成”
+  if (primaryOutput && SHEET_OUTPUT.test(primaryOutput)) {
+    const t = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM artifact_versions WHERE run_id = ? AND (${SHEET_ARTIFACT_SQL})`, [runId])?.n ?? 0;
+    if (t > 0) return null;
+    const primary = primaryOutput.replace(SHEET_OUTPUT, "");
+    return { primary, cause: "no_sheet_output", note: `没有交出《${primary}》：助手只交了文字说明。可以在本任务里“追问”，让助手用表格工具补出` };
+  }
   if (!primaryOutput || !WORD_OUTPUT.test(primaryOutput)) return null;
   const n = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM artifact_versions WHERE run_id = ? AND (${WORD_ARTIFACT_SQL})`, [runId])?.n ?? 0;
   if (n > 0) return null;

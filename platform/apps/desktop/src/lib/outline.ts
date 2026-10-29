@@ -69,15 +69,19 @@ export const keptCount = (o: Pick<OutlineView, "items">, d: OutlineDraft) => o.i
 const CONFIRM = /^已确认/;
 const STOP = /^先不起草/;
 
-/** 找到 Agent 为这份提纲提的那道确认题：单题、选项里有“已确认……”。返回作答所需的编号；找不到为 null。 */
-export function outlineQuestion(questions: readonly QuestionCard[]): { question_id: string; qid: string; confirm: string; stop: string | null } | null {
+/**
+ * 找到 Agent 为这份提纲提的那道确认题：题干含“论点”、选项里有“已确认……”。返回作答所需的编号；找不到为 null。
+ * others = 同一张提问卡里另外还有几道题（第 31 批真实走查：助手把论点确认和“赔偿基数”“欠薪范围”放在同一张卡里，
+ * 原先只认单题卡，律师在论点卡确认后还得在提问卡上再确认一遍）。
+ */
+export function outlineQuestion(questions: readonly QuestionCard[]): { question_id: string; qid: string; confirm: string; stop: string | null; others: number } | null {
   for (const q of questions) {
-    if (q.questions.length !== 1) continue;
-    const one = q.questions[0]!;
-    const yes = one.options.find((o) => CONFIRM.test(o.label.trim()));
-    if (!yes || !/论点/.test(one.question)) continue;
-    const no = one.options.find((o) => STOP.test(o.label.trim()));
-    return { question_id: q.question_id, qid: one.id, confirm: yes.id, stop: no?.id ?? null };
+    for (const one of q.questions) {
+      const yes = one.options.find((o) => CONFIRM.test(o.label.trim()));
+      if (!yes || !/论点/.test(one.question)) continue;
+      const no = one.options.find((o) => STOP.test(o.label.trim()));
+      return { question_id: q.question_id, qid: one.id, confirm: yes.id, stop: no?.id ?? null, others: q.questions.length - 1 };
+    }
   }
   return null;
 }

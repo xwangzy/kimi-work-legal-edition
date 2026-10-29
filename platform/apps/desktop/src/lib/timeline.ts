@@ -77,6 +77,7 @@ const PRIMARY_MISSING_CAUSES: Record<string, string> = {
   outline_pending: "论点与依据还在等你确认，确认后在本任务里追问即可补出文书",
   outline_missing: "助手没有先把论点与依据交你确认，可以在本任务里追问补出文书",
   no_word_output: "助手只交了表格或文字说明，可以在本任务里追问补出文书",
+  no_sheet_output: "助手只交了文字说明，可以在本任务里追问补出表格",
 };
 
 export interface Step {
