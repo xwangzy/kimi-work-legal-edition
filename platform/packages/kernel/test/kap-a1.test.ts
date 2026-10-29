@@ -189,7 +189,9 @@ test("方法参数（v9.4 S1 §6.2 第 10 项）：场景卡字段作为参数�
     await inv("matters.parties.upsert", { matter_id: matter.matter_id, name: "欧阳娜娜", kind: "person" });
     const run = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-args-${Date.now()}`, goal: `${M} 核对引用`, skill: "citation-check", skill_args: { when: "2025-06", focus: ["付款", "违约责任"], who: "欧阳娜娜" }, plan_first: false, mode: "default" });
     const { run: fin, events } = await waitRun(inv, run.run_id, 150_000);
-    assert.equal(fin.status, "succeeded", JSON.stringify(events.map((e: any) => e.type)));
+    // 第 31 批（审查 B-12）：文稿体检的主交付物是《引用核验表》.xlsx，模拟模型只回了一句话、没出表 → 记部分完成并写明缺什么（有意的契约变化）
+    assert.equal(fin.status, "partial", JSON.stringify(events.map((e: any) => e.type)));
+    assert.equal(events.find((e: any) => e.type === "agent.primary_missing")?.payload?.cause, "no_sheet_output");
     assert.match(firstUser, /方法参数：when=2025-06；focus=付款、违约责任；who=/, firstUser.slice(0, 400));
     assert.doesNotMatch(firstUser, /欧阳娜娜/, "方法参数里的自然人姓名不得以原文到达模型");
   } finally {
