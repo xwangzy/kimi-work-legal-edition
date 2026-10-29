@@ -23,7 +23,7 @@ import { buildSteps, groupSubtaskSteps, keyStepKeys, mergeRepeatSteps, reusedArt
 import { busyRunOfError } from "../lib/start-block.ts";
 import { methodLine, methodShort } from "../lib/run-method.ts";
 import { Select } from "../components/Select.tsx";
-import { rightCollapsed, rightTabs, type RightTab } from "../lib/run-pane.ts";
+import { currentFiles, rightCollapsed, rightTabs, type RightTab } from "../lib/run-pane.ts";
 import { previewCites, previewFactMarks, type ArtifactCitations, type FactMarkView } from "../lib/citation-review.ts";
 import { CitationClaims } from "../components/CitationClaims.tsx";
 import { Breadcrumb } from "../components/Breadcrumb.tsx";
@@ -353,6 +353,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   );
   const [showAllCards, setShowAllCards] = useState(false);
   const [showAllFiles, setShowAllFiles] = useState(false);
+  const doneFiles = useMemo(() => currentFiles(artifacts), [artifacts]);
   const unreviewed = artifacts.filter((a) => a.status === "draft" || a.status === "pending_review").length;
   const [showDetail, setShowDetail] = useState(false);
   const steps = showDetail ? allSteps : allSteps.filter((x) => x.level === "lawyer");
@@ -838,10 +839,12 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
         {/* 首屏下载入口（Z3 评审 #3）：没有审查意见的任务，完成后在中栏直接列出成果，不必先切右栏 */}
         {terminal && !hasRiskEntry && (status === "succeeded" || status === "partial") && artifacts.length > 0 && (
           <div className="card done-files">
-            <div className="title">本任务生成了 {artifacts.length} 份文件（草稿）</div>
+            <div className="title">本任务生成了 {doneFiles.current.length} 份文件（草稿）</div>
+            {/* 同名文件只列最新一版（第 31 批）：旧版在右栏“成果”的版本记录里 */}
+            {doneFiles.older > 0 && <div className="muted">同名文件只列最新一版；另有 {doneFiles.older} 份被新版取代的旧版，在右栏“成果”的版本记录里。</div>}
             <ul className="done-file-list">
               {/* 份数与列出的行数一致（v9.4 U1 #8）：多于 6 份时先列 6 份，其余点“全部”展开 */}
-              {(showAllFiles ? artifacts : artifacts.slice(0, 6)).map((a) => (
+              {(showAllFiles ? doneFiles.current : doneFiles.current.slice(0, 6)).map((a) => (
                 <li key={a.artifact_version_id}>
                   <button
                     className="btn-link"
@@ -860,9 +863,9 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 </li>
               ))}
             </ul>
-            {artifacts.length > 6 && !showAllFiles && (
+            {doneFiles.current.length > 6 && !showAllFiles && (
               <button className="btn-link" onClick={() => setShowAllFiles(true)}>
-                全部 {artifacts.length} 份 →
+                全部 {doneFiles.current.length} 份 →
               </button>
             )}
           </div>

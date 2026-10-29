@@ -143,3 +143,19 @@ test("导入失败提示（第 31 批异常走查）：截断的 Word 不再显�
   // 其他中文原因照写（不变）
   assert.equal(importFailText("a.docx", "超过 200MB 上限"), "a.docx 没有添加：超过 200MB 上限");
 });
+
+test("完成卡只列每个同名文件的最新一版（第 31 批真实走查：申请书、证据目录各两行一模一样）", async () => {
+  const { currentFiles } = await import("../src/lib/run-pane.ts");
+  const a = [
+    { artifact_version_id: "1", kind: "agent_report", filename: "劳动仲裁申请书.docx", version: 1 },
+    { artifact_version_id: "2", kind: "agent_table", filename: "证据目录.xlsx", version: 1 },
+    { artifact_version_id: "3", kind: "agent_table", filename: "提交前核对清单.xlsx", version: 1 },
+    { artifact_version_id: "4", kind: "agent_table", filename: "证据目录.xlsx", version: 2 },
+    { artifact_version_id: "5", kind: "agent_report", filename: "劳动仲裁申请书.docx", version: 2 },
+    { artifact_version_id: "6", kind: "revision_draft", filename: "劳动仲裁申请书.docx", version: 1 },
+  ];
+  const r = currentFiles(a);
+  assert.deepEqual(r.current.map((x) => x.artifact_version_id), ["5", "4", "3", "6"], "按首次出现的顺序，取最新版；类型不同的同名文件分开");
+  assert.equal(r.older, 2);
+  assert.deepEqual(currentFiles([]), { current: [], older: 0 });
+});

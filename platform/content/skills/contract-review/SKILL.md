@@ -6,7 +6,7 @@ when_to_use: 事项中已有合同文本（DOCX 优先，PDF 可审但修订稿�
 arguments: [focus]
 kwl:
   id: contract-review
-  version: 1.8.0
+  version: 1.8.1
   lines: [非诉, 企业法务, 诉讼仲裁]
   chain: contract
   tier: beta

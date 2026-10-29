@@ -21,3 +21,22 @@ export function rightCollapsed(p: { artifactsLoaded: boolean; artifactCount: num
   if (p.userExpanded) return false;
   return p.artifactsLoaded && p.artifactCount === 0 && !p.hasRisk && !p.hasCitations;
 }
+
+/**
+ * 完成卡上列哪些文件（第 31 批真实走查）：同一任务多次调用文书 / 表格工具时同名文件登记为第 1、2 版，
+ * 原先两行一模一样（劳动仲裁申请书、证据目录各两份），律师分不出哪份是改正后的。每个“类型 + 文件名”只列最新一版，
+ * 按首次出现的顺序；older = 被取代的旧版份数（右栏“成果”里仍可看历史版本）。纯函数。
+ */
+export function currentFiles<T extends { kind?: string; filename?: string; version?: number | string; kind_version?: number | string }>(artifacts: readonly T[]): { current: T[]; older: number } {
+  const ver = (a: T) => Number(a.kind_version ?? a.version ?? 0);
+  const latest = new Map<string, T>();
+  const order: string[] = [];
+  for (const a of artifacts) {
+    const k = `${a.kind ?? ""}\u0000${a.filename ?? ""}`;
+    const cur = latest.get(k);
+    if (!cur) order.push(k);
+    if (!cur || ver(a) > ver(cur)) latest.set(k, a);
+  }
+  const current = order.map((k) => latest.get(k)!);
+  return { current, older: artifacts.length - current.length };
+}
