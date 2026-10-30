@@ -57,8 +57,12 @@ function insideDel(pXml: string, runStart: number): boolean {
   return lastOpen > lastClose;
 }
 
+/**
+ * 转义并去掉 XML 1.0 不允许的控制字符（制表、换行、回车除外）：模型从 PDF、OCR 摘录里带出的 \f、\v 等原样写进
+ * <w:t> 会让 Word 打不开整份文件（第 32 批，复核 A-03）。
+ */
 export function escapeXml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f￾￿]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 export function unescapeXml(s: string): string {

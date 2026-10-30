@@ -3,7 +3,7 @@
  * - Agent 经本机端点出带表格的文书：格子里的代号导出时还原成真名、无残留代号；格子里的【待填】计入签发前的待补占位；
  *   成果登记写明表格数；
  * - 格数与表头不符、列数或行数超限、格子是对象：整份不生成（不登记成果），逐条说明哪一节哪一行，供模型改正后重交；
- * - 数字格转成文字、空值写空格；表格里不认识的字段经 schema 拒绝。
+ * - 整数格转成文字、空值写空格；带小数的数字与真假值不收（复核 A-04）；没有表头只报一次（A-05）；表格里不认识的字段经 schema 拒绝。
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
@@ -71,6 +71,16 @@ test("第 32 批：带表格的文书——格子里的代号导出还原、待�
   assert.match(JSON.stringify(nested.result.content), /第 1 行有格子不是文字或数字/);
   const extra = await raw("docx.render_report", { title: "设备买卖合同", sections: [{ heading: "", paragraphs: [], table: { columns: ["a"], rows: [["x"]], widths: [100] } }] });
   assert.equal(extra.result?.isError, true, "表格里不认识的字段经 schema 拒绝");
+  // 复核 A-04：带小数的数字（金额经 JSON 丢了末尾的 0）与真假值不收
+  const decimal = await raw("docx.render_report", { title: "设备买卖合同", sections: [{ heading: "", paragraphs: [], table: { columns: ["项目", "金额（元）"], rows: [["预付款", 380000.5], ["含税", true]] } }] });
+  assert.equal(decimal.result?.isError, true);
+  assert.match(JSON.stringify(decimal.result.content), /第 1 行有带小数的数字：金额按文书写法写成文字/);
+  assert.match(JSON.stringify(decimal.result.content), /第 2 行有格子不是文字或数字/);
+  // 复核 A-05：没有表头只报一次，不逐行重复
+  const noHead = await raw("docx.render_report", { title: "设备买卖合同", sections: [{ heading: "", paragraphs: [], table: { columns: [], rows: [["a"], ["b"]] } }] });
+  assert.equal(noHead.result?.isError, true);
+  assert.match(JSON.stringify(noHead.result.content), /没有表头列/);
+  assert.doesNotMatch(JSON.stringify(noHead.result.content), /表头是 0 列/);
   assert.equal(reports(), 0, "格式有误的文书不登记成果");
 
   // 2. 改正后重交：数字格转文字、空值写空格；格子里的代号与【待填】

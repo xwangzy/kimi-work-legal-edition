@@ -112,16 +112,27 @@ function para(styleId: string, runs: Run[]): string {
 
 /** 表格版心宽（twip）：A4 宽 11906 减左右页边距。 */
 const TABLE_WIDTH = 8845;
+/** 表格文字小四（12 磅）：半个汉字宽 120 twip（汉字 240、西文数字 120）；单元格左右边距各 108，另留 12 给粗体表头。 */
+const HALF_EM = 120;
+const CELL_PAD = 108 * 2 + 12;
 
 /**
- * 列宽按各列最长文字的显示宽度分配（汉字计 2、其他计 1，每列按 4～24 截取；第 32 批）：
- * “序号”“数量”这类短列不再和“设备名称”“证明目的”一样宽。
+ * 列宽（第 32 批，复核 A-01）：先给每列保底——放得下表头（至多 5 个汉字宽，更长的表头折行）、最长的不可断开的西文串
+ * （金额“1,200,000.00”、型号、信用代码，至多 18 个半角宽）与两个汉字；剩下的宽度按各列最长一格（至多 20 个汉字宽）超出保底的部分分。
+ * 保底合计已超过版心（列很多）时按保底比例缩。“序号”“数量”这类短列不再和“设备名称”“证明目的”一样宽，也不会窄到表头竖排。
  */
 function columnWidths(rows: Run[][][], cols: number): number[] {
-  const shown = (runs: Run[] | undefined) => [...(runs ?? []).map((r) => r.text).join("")].reduce((n, ch) => n + (ch.codePointAt(0)! > 0x2e7f ? 2 : 1), 0);
-  const want = Array.from({ length: cols }, (_, c) => Math.min(24, Math.max(4, ...rows.map((r) => shown(r[c])))));
-  const total = want.reduce((a, b) => a + b, 0);
-  return want.map((w) => Math.floor((TABLE_WIDTH * w) / total));
+  const units = (s: string) => [...s].reduce((n, ch) => n + (ch.codePointAt(0)! > 0x2e7f ? 2 : 1), 0);
+  const text = (r: Run[][] | undefined, c: number) => (r?.[c] ?? []).map((x) => x.text).join("");
+  const longestRun = (s: string) => Math.max(0, ...(s.match(/[!-~]+/g) ?? []).map((w) => w.length));
+  const need = Array.from({ length: cols }, (_, c) => CELL_PAD + HALF_EM * Math.max(4, Math.min(10, units(text(rows[0], c))), ...rows.map((r) => Math.min(18, longestRun(text(r, c))))));
+  const want = need.map((n, c) => Math.max(n, CELL_PAD + HALF_EM * Math.min(40, Math.max(0, ...rows.map((r) => units(text(r, c)))))));
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  if (sum(need) >= TABLE_WIDTH) return need.map((n) => Math.floor((TABLE_WIDTH * n) / sum(need)));
+  if (sum(want) <= TABLE_WIDTH) return want.map((w) => Math.floor((TABLE_WIDTH * w) / sum(want)));
+  const spare = TABLE_WIDTH - sum(need);
+  const extra = sum(want) - sum(need);
+  return need.map((n, c) => Math.floor(n + (spare * (want[c]! - n)) / extra));
 }
 
 /** 正文块 → document.xml 的 body 内容（样式写本产品编号）。 */
@@ -605,7 +616,13 @@ const SIGNATURE_LINE =
 /** 把文末连续的落款行改成右对齐（Markdown 转换与 createDocx 共用）。 */
 export function alignSignature(blocks: DocBlock[]): DocBlock[] {
   const out = blocks.slice();
-  for (let k = out.length - 1, n = 0; k >= 0 && n < 6; k -= 1, n += 1) {
+  // 文末是附页表（证据目录、计算表）时，落款在附页之前：跳过末尾的表格与它的小标题再找（第 32 批，复核 A-06）
+  let end = out.length - 1;
+  if (out[end]?.kind === "table") {
+    while (end >= 0 && (out[end]!.kind === "table" || out[end]!.kind === "blank")) end -= 1;
+    if (end >= 0 && /^h[123]$/.test(out[end]!.kind)) end -= 1;
+  }
+  for (let k = end, n = 0; k >= 0 && n < 6; k -= 1, n += 1) {
     const b = out[k]!;
     if (b.kind !== "p") break;
     const text = b.runs.map((r) => r.text).join("").trim();

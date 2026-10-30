@@ -73,7 +73,8 @@ const TABLE_MAX_ROWS = 300;
 /**
  * 节内表格逐张核对：列数、行数在上限内，每行格数与表头列数相同——不符时整份不写，逐条说明哪一节哪一行，
  * 由模型改正后重交（不悄悄补空格或截掉多出的格：错位的价款表比没有表更危险）。
- * 单元格接受文字、数字（转成文字）与空值（写空格）；格内换行改成空格（Word 表格里一格一段）。
+ * 单元格接受文字、整数（数量、序号，转成文字）与空值（写空格）；格内换行改成空格（Word 表格里一格一段）。
+ * 带小数的数字与真假值不收（复核 A-04）：380000.50 经 JSON 成了 380000.5，金额要按文书写法写成文字。
  */
 function normalizeTables(sections: ReportSection[]): ReportSection[] {
   const problems: string[] = [];
@@ -89,8 +90,10 @@ function normalizeTables(sections: ReportSection[]): ReportSection[] {
     const n = Array.isArray(t.columns) ? t.columns.length : 0;
     (Array.isArray(t.rows) ? t.rows : []).forEach((r, ri) => {
       if (!Array.isArray(r)) problems.push(`${where}第 ${ri + 1} 行不是数组`);
-      else if (r.some((v) => v !== null && typeof v === "object")) problems.push(`${where}第 ${ri + 1} 行有格子不是文字或数字`);
-      else if (r.length !== n) problems.push(`${where}第 ${ri + 1} 行有 ${r.length} 格，表头是 ${n} 列`);
+      else if (r.some((v) => v !== null && v !== undefined && typeof v !== "string" && typeof v !== "number")) problems.push(`${where}第 ${ri + 1} 行有格子不是文字或数字`);
+      else if (r.some((v) => typeof v === "number" && !Number.isInteger(v))) problems.push(`${where}第 ${ri + 1} 行有带小数的数字：金额按文书写法写成文字（如“380,000.50”）`);
+      // 没有表头时上面已报，不再逐行重复（复核 A-05）
+      else if (n > 0 && r.length !== n) problems.push(`${where}第 ${ri + 1} 行有 ${r.length} 格，表头是 ${n} 列`);
     });
     return { ...s, table: { columns: (t.columns ?? []).map(cell), rows: (Array.isArray(t.rows) ? t.rows : []).map((r) => (Array.isArray(r) ? r.map(cell) : [])) } };
   });

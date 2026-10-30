@@ -372,7 +372,7 @@ export const TOOLS: readonly ToolDef[] = [
     title: "生成文书（DOCX）",
     description:
       "按标题与段落结构生成 Word 文书（备忘录、意见书、函件、合同、诉状），登记为本任务的草稿成果交律师审阅；导出时按事项令牌表还原代号。" +
-      "文书正文里要成表的内容（合同价款表、设备清单、付款节点、证据目录、当事人或股权结构表）用该节的 table 画成 Word 表格：columns 为表头，rows 每行格数与表头相同，画在本节段落之后；表后还有正文的，另起一节、heading 写空字符串。每节至多一张表、每表 1–10 列、最多 300 行；格内写文字（金额按文书写法，如“1,200,000.00”）。" +
+      "文书正文里要成表的内容（合同价款表、设备清单、付款节点、证据目录、当事人或股权结构表）用该节的 table 画成 Word 表格：columns 为表头，rows 每行格数与表头相同，画在本节段落之后；表后还有正文的，另起一节、heading 写空字符串。每节至多一张表、每表 1–10 列、最多 300 行；格内写文字，数量、序号可写整数；金额按文书写法写成文字（如“1,200,000.00”），不要传带小数的数字。" +
       "格数不符或超限时整份不生成并逐条说明，改正后重交。分析用的大表（争点矩阵、尽调清单等）仍用 xlsx.render_table 作附件。" +
       "本任务有待律师确认的论点提纲（outline.submit）时拒绝生成，先等律师确认。",
     sideEffect: "write_draft",
@@ -393,7 +393,7 @@ export const TOOLS: readonly ToolDef[] = [
             properties: {
               heading: { type: "string" },
               paragraphs: { type: "array", items: { type: "string" } },
-              // 第 32 批：节内表格（v4）；格子接受文字或数字，内核再逐行核对格数
+              // 第 32 批：节内表格（v4）；格子接受文字或整数，内核再逐行核对格数与小数
               table: {
                 type: "object",
                 additionalProperties: false,
