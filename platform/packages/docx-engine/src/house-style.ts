@@ -117,12 +117,11 @@ const HALF_EM = 120;
 const CELL_PAD = 108 * 2 + 24;
 
 /**
- * 列宽（第 32 批，复核 A-01；真实走查 W1 后改为“最高的一格行数最少”）：
- * 1. 每列保底：放得下表头（至多 5 个汉字宽，更长的表头折行）、最长的不可断开的西文串（金额“1,200,000.00”、型号“HZ-ZZ-8000”、
- *    信用代码，至多 18 个半角宽）与两个汉字——“序号”“数量”不竖排，金额、型号不断开；
- * 2. 从 1 行起找最小的行数 L，使每列最长的数据格（不含表头）折成 L 行后都放得下且合计不超过版心，按这组宽度再等比放满版心；
- *    长内容的列（设备名称、备注、证明目的）因此分到相近的行数，表头长、内容短的“单价（元，含税）”不再挤占“备注”；
- * 3. 保底合计已超过版心（列很多）时按保底比例缩。
+ * 列宽（第 32 批，复核 A-01；真实走查 W1、W2 后改为“数据格行数最少”）：
+ * 从 1 行起找最小的行数 L，使每列放得下——最长的数据格折成 L 行、表头折成至多 1～3 行（L 小时表头不折，L 大时允许折到 3 行）、
+ * 最长的不可断开的西文串（金额“1,200,000.00”、型号“HZ-ZZ-8000”、信用代码，至多 18 个半角宽）与两个汉字——且合计不超过版心，
+ * 再放满版心（先让差得少的短列一行放下，余下给仍要折行的列）。长内容的列（设备名称、备注、证明目的）因此分到相近的行数；列很多的证据目录（8 列）表头折行，
+ * 不再整表按比例缩到“证明目的”一行 4 个字。连保底都放不下时按保底比例缩。
  */
 function columnWidths(rows: Run[][][], cols: number): number[] {
   const units = (s: string) => [...s].reduce((n, ch) => n + (ch.codePointAt(0)! > 0x2e7f ? 2 : /[A-Zmw]/.test(ch) ? 1.3 : 1), 0);
@@ -131,14 +130,31 @@ function columnWidths(rows: Run[][][], cols: number): number[] {
   const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
   const fill = (ws: number[]) => ws.map((w) => Math.floor((TABLE_WIDTH * w) / sum(ws)));
   const data = rows.length > 1 ? rows.slice(1) : rows;
-  const need = Array.from({ length: cols }, (_, c) => CELL_PAD + HALF_EM * Math.max(4, Math.min(10, units(text(rows[0], c))), ...rows.map((r) => Math.min(18, longestRun(text(r, c))))));
-  if (sum(need) >= TABLE_WIDTH) return fill(need);
+  const floor = Array.from({ length: cols }, (_, c) => Math.max(4, ...rows.map((r) => Math.min(18, longestRun(text(r, c))))));
+  const head = Array.from({ length: cols }, (_, c) => units(text(rows[0], c)));
   const longest = Array.from({ length: cols }, (_, c) => Math.max(0, ...data.map((r) => units(text(r, c)))));
+  // 数据一行放得下的宽度；放满版心时先让差得少的短列（“证据1”“第1、2项”）一行放下，余下给仍要折行的长内容列
+  const oneLine = floor.map((f, c) => CELL_PAD + HALF_EM * Math.max(f, Math.ceil(longest[c]!)));
+  const spread = (ws: number[]) => {
+    const out = ws.slice();
+    let spare = TABLE_WIDTH - sum(out);
+    for (const c of out.map((_, i) => i).filter((i) => oneLine[i]! > out[i]!).sort((a, b) => oneLine[a]! - out[a]! - (oneLine[b]! - out[b]!))) {
+      if (oneLine[c]! - out[c]! > spare) break;
+      spare -= oneLine[c]! - out[c]!;
+      out[c] = oneLine[c]!;
+    }
+    const wrapping = out.map((_, i) => i).filter((i) => oneLine[i]! > out[i]!);
+    const take = wrapping.length > 0 ? wrapping : out.map((_, i) => i);
+    const base = sum(take.map((i) => out[i]!));
+    for (const i of take) out[i] = Math.floor(out[i]! + (spare * out[i]!) / base);
+    return out;
+  };
   for (let lines = 1; lines <= 60; lines += 1) {
-    const ws = need.map((n, c) => Math.max(n, CELL_PAD + HALF_EM * Math.ceil(longest[c]! / lines)));
-    if (sum(ws) <= TABLE_WIDTH) return fill(ws);
+    const headLines = lines <= 2 ? 1 : lines <= 6 ? 2 : 3;
+    const ws = floor.map((f, c) => CELL_PAD + HALF_EM * Math.max(f, Math.ceil(head[c]! / headLines), Math.ceil(longest[c]! / lines)));
+    if (sum(ws) <= TABLE_WIDTH) return spread(ws);
   }
-  return fill(need);
+  return fill(floor.map((f) => CELL_PAD + HALF_EM * f));
 }
 
 /** 正文块 → document.xml 的 body 内容（样式写本产品编号）。 */
@@ -619,7 +635,7 @@ export function inlineRuns(text: string): Run[] {
  * 单独的“（盖章）”或日期。文末几行里出现时右对齐；正文里提到律所的句子不算。
  */
 const SIGNATURE_LINE =
-  /^(?:[^，。；,;：:]{2,30}律师事务所(?:（盖章）|\(盖章\))?|(?:承办|经办)?律师[:：].{0,20}|(?:具状人|答辩人|申请人|被申请人|上诉人|被上诉人|起诉人|委托人|声明人|承诺人|原告|被告)[:：]?.{0,30}|[（(]盖章[)）]|(?:\d{4}|[〇零一二三四五六七八九]{4})\s*年\s*\S{1,3}\s*月\s*\S{1,3}\s*日)$/;
+  /^(?:[^，。；,;：:]{2,30}律师事务所(?:（盖章）|\(盖章\))?|(?:承办|经办)?律师[:：].{0,20}|(?:具状人|答辩人|申请人|被申请人|上诉人|被上诉人|起诉人|委托人|声明人|承诺人|原告|被告)[:：]?.{0,30}|(?:法定代表人|负责人|授权代表|(?:委托)?(?:诉讼)?代理人)(?:或(?:授权代表|负责人))?[:：].{0,30}|[（(]盖章[)）]|(?:\d{4}|[〇零一二三四五六七八九]{4})\s*年\s*\S{1,3}\s*月\s*\S{1,3}\s*日|[_＿\s]*年[_＿\s]*月[_＿\s]*日)$/;
 
 /** 把文末连续的落款行改成右对齐（Markdown 转换与 createDocx 共用）。 */
 export function alignSignature(blocks: DocBlock[]): DocBlock[] {
