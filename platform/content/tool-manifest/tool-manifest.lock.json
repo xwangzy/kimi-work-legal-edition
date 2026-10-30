@@ -150,7 +150,7 @@
     },
     {
       "name": "docx.render_report",
-      "version": "3",
+      "version": "4",
       "sideEffect": "write_draft",
       "resource": "matter_work",
       "purposes": [
@@ -159,7 +159,7 @@
         "legal_research",
         "case_file"
       ],
-      "schemaHash": "0be671e14e7e94d38838cd9a213a6c25310350838d8c774c34aa0b067db42538"
+      "schemaHash": "d731c9390716d8db8372b468b6f8c726943e4ab5a7ec43dc8429dec8eb006b69"
     },
     {
       "name": "docx.revise",
