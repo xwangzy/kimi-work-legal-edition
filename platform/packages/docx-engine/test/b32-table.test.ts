@@ -33,6 +33,9 @@ test("第 32 批：节内表格画在本节段落之后、下一节之前；首�
   const firstRow = /<w:tr>[\s\S]*?<\/w:tr>/.exec(xml)![0];
   assert.match(firstRow, /<w:tblHeader\/>/);
   assert.match(firstRow, /<w:b\/><\/w:rPr><w:t xml:space="preserve">序号</);
+  // 表头左右居中；各格上下居中（汉字格与纯数字格行高不同，顶端对齐看着错位）
+  assert.match(firstRow, /<w:pStyle w:val="KwlTable"\/><w:jc w:val="center"\/>/);
+  assert.equal((xml.match(/<w:vAlign w:val="center"\/>/g) ?? []).length, 18, "3 行 × 6 列都上下居中");
   // 空标题的节不印小标题
   assert.equal((xml.match(/KwlHeading1/g) ?? []).length, 2);
 });
@@ -73,6 +76,15 @@ test("复核 A-01：每列都放得下表头（至多 5 个汉字）与最长的
   const g = grid(review);
   assert.ok(fits(g[5]!, 8), `“律师决定”表头放得下：${g.join(",")}`);
   assert.ok(g.reduce((a, b) => a + b, 0) <= 8845);
+  // 真实走查 W1 的设备价格表（7 列）：大写字母型号不在连字符处断开，长内容的“设备名称”“备注”行数相近，“备注”至少一行 4 个汉字
+  const w1 = grid(createDocx("", [{ heading: "", paragraphs: [], table: { columns: ["序号", "设备名称", "型号", "数量", "单价（元，含税）", "金额（元，含税）", "备注"], rows: [
+    ["1", "全自动输液器组装机", "HZ-ZZ-8000", "2台", "1,220,000.00", "2,440,000.00", "含上料、组装、检漏、计数包装工位"],
+    ["2", "医用 PVC 导管挤出生产线", "HZ-JC-65", "1条", "960,000.00", "960,000.00", "含挤出机、牵引、在线测径、切管"],
+    ["合计", "", "", "", "", "3,880,000.00", "人民币叁佰捌拾捌万元整"],
+  ] } }], { mark: false }));
+  assert.ok(fits(w1[2]!, 11), `型号“HZ-ZZ-8000”放得下：${w1.join(",")}`);
+  assert.ok(fits(w1[4]!, 12) && fits(w1[5]!, 12), `金额一行放得下：${w1.join(",")}`);
+  assert.ok(fits(w1[6]!, 8), `备注一行至少 4 个汉字：${w1.join(",")}`);
   // 10 列短表头：保底合计超过版心时按比例缩，总宽仍不超过版心
   const wide = grid(createDocx("", [{ heading: "", paragraphs: [], table: { columns: Array.from({ length: 10 }, (_, i) => `第${i + 1}列标题文字`), rows: [Array.from({ length: 10 }, () => "x")] } }], { mark: false }));
   assert.equal(wide.length, 10);

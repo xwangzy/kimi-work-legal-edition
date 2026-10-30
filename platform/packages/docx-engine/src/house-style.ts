@@ -112,27 +112,33 @@ function para(styleId: string, runs: Run[]): string {
 
 /** 表格版心宽（twip）：A4 宽 11906 减左右页边距。 */
 const TABLE_WIDTH = 8845;
-/** 表格文字小四（12 磅）：半个汉字宽 120 twip（汉字 240、西文数字 120）；单元格左右边距各 108，另留 12 给粗体表头。 */
+/** 表格文字小四（12 磅）：半个汉字宽 120 twip（汉字 240、西文数字与小写约 120、大写字母约 155）；单元格左右边距各 108，另留 24 给粗体表头与字体差异。 */
 const HALF_EM = 120;
-const CELL_PAD = 108 * 2 + 12;
+const CELL_PAD = 108 * 2 + 24;
 
 /**
- * 列宽（第 32 批，复核 A-01）：先给每列保底——放得下表头（至多 5 个汉字宽，更长的表头折行）、最长的不可断开的西文串
- * （金额“1,200,000.00”、型号、信用代码，至多 18 个半角宽）与两个汉字；剩下的宽度按各列最长一格（至多 20 个汉字宽）超出保底的部分分。
- * 保底合计已超过版心（列很多）时按保底比例缩。“序号”“数量”这类短列不再和“设备名称”“证明目的”一样宽，也不会窄到表头竖排。
+ * 列宽（第 32 批，复核 A-01；真实走查 W1 后改为“最高的一格行数最少”）：
+ * 1. 每列保底：放得下表头（至多 5 个汉字宽，更长的表头折行）、最长的不可断开的西文串（金额“1,200,000.00”、型号“HZ-ZZ-8000”、
+ *    信用代码，至多 18 个半角宽）与两个汉字——“序号”“数量”不竖排，金额、型号不断开；
+ * 2. 从 1 行起找最小的行数 L，使每列最长的数据格（不含表头）折成 L 行后都放得下且合计不超过版心，按这组宽度再等比放满版心；
+ *    长内容的列（设备名称、备注、证明目的）因此分到相近的行数，表头长、内容短的“单价（元，含税）”不再挤占“备注”；
+ * 3. 保底合计已超过版心（列很多）时按保底比例缩。
  */
 function columnWidths(rows: Run[][][], cols: number): number[] {
-  const units = (s: string) => [...s].reduce((n, ch) => n + (ch.codePointAt(0)! > 0x2e7f ? 2 : 1), 0);
+  const units = (s: string) => [...s].reduce((n, ch) => n + (ch.codePointAt(0)! > 0x2e7f ? 2 : /[A-Zmw]/.test(ch) ? 1.3 : 1), 0);
   const text = (r: Run[][] | undefined, c: number) => (r?.[c] ?? []).map((x) => x.text).join("");
-  const longestRun = (s: string) => Math.max(0, ...(s.match(/[!-~]+/g) ?? []).map((w) => w.length));
-  const need = Array.from({ length: cols }, (_, c) => CELL_PAD + HALF_EM * Math.max(4, Math.min(10, units(text(rows[0], c))), ...rows.map((r) => Math.min(18, longestRun(text(r, c))))));
-  const want = need.map((n, c) => Math.max(n, CELL_PAD + HALF_EM * Math.min(40, Math.max(0, ...rows.map((r) => units(text(r, c)))))));
+  const longestRun = (s: string) => Math.max(0, ...(s.match(/[!-~]+/g) ?? []).map(units));
   const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
-  if (sum(need) >= TABLE_WIDTH) return need.map((n) => Math.floor((TABLE_WIDTH * n) / sum(need)));
-  if (sum(want) <= TABLE_WIDTH) return want.map((w) => Math.floor((TABLE_WIDTH * w) / sum(want)));
-  const spare = TABLE_WIDTH - sum(need);
-  const extra = sum(want) - sum(need);
-  return need.map((n, c) => Math.floor(n + (spare * (want[c]! - n)) / extra));
+  const fill = (ws: number[]) => ws.map((w) => Math.floor((TABLE_WIDTH * w) / sum(ws)));
+  const data = rows.length > 1 ? rows.slice(1) : rows;
+  const need = Array.from({ length: cols }, (_, c) => CELL_PAD + HALF_EM * Math.max(4, Math.min(10, units(text(rows[0], c))), ...rows.map((r) => Math.min(18, longestRun(text(r, c))))));
+  if (sum(need) >= TABLE_WIDTH) return fill(need);
+  const longest = Array.from({ length: cols }, (_, c) => Math.max(0, ...data.map((r) => units(text(r, c)))));
+  for (let lines = 1; lines <= 60; lines += 1) {
+    const ws = need.map((n, c) => Math.max(n, CELL_PAD + HALF_EM * Math.ceil(longest[c]! / lines)));
+    if (sum(ws) <= TABLE_WIDTH) return fill(ws);
+  }
+  return fill(need);
 }
 
 /** 正文块 → document.xml 的 body 内容（样式写本产品编号）。 */
@@ -159,7 +165,9 @@ export function blocksToBodyXml(blocks: DocBlock[]): string {
       const rows = b.rows
         .map((r, i) => {
           const cells = Array.from({ length: cols }, (_, c) => r[c] ?? []);
-          return `<w:tr>${i === 0 ? "<w:trPr><w:tblHeader/></w:trPr>" : ""}${cells.map((runs, c) => `<w:tc><w:tcPr><w:tcW w:w="${widths[c]}" w:type="dxa"/></w:tcPr>${para(IDS.table, i === 0 ? runs.map((x) => ({ ...x, bold: true })) : runs)}</w:tc>`).join("")}</w:tr>`;
+          // 格内上下居中（汉字与纯数字的格行高不同，顶端对齐时看着错位）；表头左右居中
+          const cellPara = (runs: Run[]) => (i === 0 ? para(IDS.table, runs.map((x) => ({ ...x, bold: true }))).replace(`<w:pStyle w:val="${IDS.table}"/>`, `<w:pStyle w:val="${IDS.table}"/><w:jc w:val="center"/>`) : para(IDS.table, runs));
+          return `<w:tr>${i === 0 ? "<w:trPr><w:tblHeader/></w:trPr>" : ""}${cells.map((runs, c) => `<w:tc><w:tcPr><w:tcW w:w="${widths[c]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>${cellPara(runs)}</w:tc>`).join("")}</w:tr>`;
         })
         .join("");
       out.push(`<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders>${["top", "left", "bottom", "right", "insideH", "insideV"].map(border).join("")}</w:tblBorders><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl>`);
