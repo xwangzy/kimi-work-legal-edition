@@ -6,7 +6,7 @@ when_to_use: 准备起诉或申请仲裁、或已在诉讼中，需要申请查�
 arguments: [stage]
 kwl:
   id: preservation-application
-  version: 1.2.0
+  version: 1.3.0
   lines: [诉讼仲裁]
   chain: casefile
   tier: beta
@@ -59,7 +59,7 @@ kwl:
 | calc.interest | 请求保全数额中的利息部分（按律师口径） | 本金、起止日、rate | 不可用：写“【金额待测算确认】” |
 | calc.deadline | 诉前保全后起诉或申请仲裁、执行前保全后申请执行的届满日（只进核对表） | 诉前：start（保全措施采取日），period {unit: day, n: 30}；执行前：start（法律文书指定的履行期间最后一日），period {unit: day, n: 5}；rule civil；起算口径由律师确认 | 不可用：届满日标“待律师计算” |
 | outline.submit / outline.get | 起草前确认论点 | doc_kind，arguments | 不可用：见第 8 节 |
-| docx.render_report | 申请书 | title，sections | 不可用：见第 8 节 |
+| docx.render_report | 申请书（财产信息可含表格） | title，sections[{heading, paragraphs, table?{columns, rows}}] | 不可用：见第 8 节；返回“表格有误”时按说明改正格数后重交 |
 | xlsx.render_table | 核对表（附件） | title，sheets | 不可用：财产线索作申请书附页，担保与程序要点写进最终答复 |
 
 ## 5. 输出规格
@@ -67,7 +67,7 @@ kwl:
 1. 申请人与被申请人：身份要素、送达地址、联系方式（代号原样，缺失写【待填】）。
 2. 请求事项：保全数额与方式。
 3. 事实与理由：法律关系与请求概要 → 需要保全的理由（附证据编号）→（诉前）情况紧急的事实。
-4. 被保全财产信息或线索：逐项列明。
+4. 被保全财产信息或线索：逐项列明；两项以上的用该部分的 table 画成 Word 表格（表头：序号 / 财产类型 / 权属人 / 名称或编号 / 所在地或开户行），一项一行，缺的格子写【待填】。线索来源与明确程度是内部判断，只进核对表，不写进申请书（第 32 批）。
 5. 担保：方式、担保人、担保材料；或不需要提供担保的理由。
 6. 结尾：“此致 ＿＿人民法院”、“申请人：（签名或盖章）”、日期留空、“附：担保材料＿份；财产线索材料＿份”。
 
