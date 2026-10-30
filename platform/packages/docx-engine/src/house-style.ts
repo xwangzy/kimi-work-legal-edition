@@ -23,7 +23,7 @@ export interface Run {
 export type DocBlock =
   | { kind: "title"; text: string }
   | { kind: "h1" | "h2" | "h3"; text: string }
-  | { kind: "p"; runs: Run[] }
+  | { kind: "p"; runs: Run[]; keepNext?: boolean }
   | { kind: "li"; runs: Run[]; marker: string; level?: number }
   | { kind: "table"; rows: Run[][][] }
   | { kind: "right"; text: string }
@@ -163,7 +163,10 @@ export function blocksToBodyXml(blocks: DocBlock[]): string {
   for (const b of blocks) {
     if (b.kind === "title") out.push(para(IDS.title, [{ text: b.text }]));
     else if (b.kind === "h1" || b.kind === "h2" || b.kind === "h3") out.push(para(IDS[b.kind], [{ text: b.text }]));
-    else if (b.kind === "p") out.push(para(IDS.body, b.runs));
+    else if (b.kind === "p") {
+      const p = para(IDS.body, b.runs);
+      out.push(b.keepNext ? p.replace(`<w:pStyle w:val="${IDS.body}"/>`, `<w:pStyle w:val="${IDS.body}"/><w:keepNext/>`) : p);
+    }
     else if (b.kind === "li") {
       // 嵌套列表按层级加缩进（复核 R15B-20）
       const lvl = Math.min(4, Math.max(0, b.level ?? 0));
@@ -177,13 +180,14 @@ export function blocksToBodyXml(blocks: DocBlock[]): string {
       const border = (side: string) => `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>`;
       const widths = columnWidths(b.rows, cols);
       const grid = widths.map((w) => `<w:gridCol w:w="${w}"/>`).join("");
-      // 首行是表头：跨页时在每页重复（第 32 批，设备清单、证据目录常跨页）
+      // 首行是表头：跨页时在每页重复（第 32 批，设备清单、证据目录常跨页）；
+      // 每行不拆到两页（第 33 批，Word 实开：证据目录一行拆开后末页只剩表头与一个字；行高超过一页时 Word 仍会拆）
       const rows = b.rows
         .map((r, i) => {
           const cells = Array.from({ length: cols }, (_, c) => r[c] ?? []);
-          // 格内上下居中（汉字与纯数字的格行高不同，顶端对齐时看着错位）；表头左右居中
-          const cellPara = (runs: Run[]) => (i === 0 ? para(IDS.table, runs.map((x) => ({ ...x, bold: true }))).replace(`<w:pStyle w:val="${IDS.table}"/>`, `<w:pStyle w:val="${IDS.table}"/><w:jc w:val="center"/>`) : para(IDS.table, runs));
-          return `<w:tr>${i === 0 ? "<w:trPr><w:tblHeader/></w:trPr>" : ""}${cells.map((runs, c) => `<w:tc><w:tcPr><w:tcW w:w="${widths[c]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>${cellPara(runs)}</w:tc>`).join("")}</w:tr>`;
+          // 格内上下居中（汉字与纯数字的格行高不同，顶端对齐时看着错位）；表头左右居中，并与第一行数据同页（第 33 批：行不拆后表头曾独自留在页末）
+          const cellPara = (runs: Run[]) => (i === 0 ? para(IDS.table, runs.map((x) => ({ ...x, bold: true }))).replace(`<w:pStyle w:val="${IDS.table}"/>`, `<w:pStyle w:val="${IDS.table}"/><w:keepNext/><w:jc w:val="center"/>`) : para(IDS.table, runs));
+          return `<w:tr><w:trPr><w:cantSplit/>${i === 0 ? "<w:tblHeader/>" : ""}</w:trPr>${cells.map((runs, c) => `<w:tc><w:tcPr><w:tcW w:w="${widths[c]}" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>${cellPara(runs)}</w:tc>`).join("")}</w:tr>`;
         })
         .join("");
       out.push(`<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders>${["top", "left", "bottom", "right", "insideH", "insideV"].map(border).join("")}</w:tblBorders><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl>`);
@@ -652,6 +656,11 @@ export function alignSignature(blocks: DocBlock[]): DocBlock[] {
     const text = b.runs.map((r) => r.text).join("").trim();
     if (text.length > 40 || !SIGNATURE_LINE.test(text)) break;
     out[k] = { kind: "right", text };
+  }
+  // “此致”与下一行（受文机关）放在同一页（第 33 批，Word 实开：“此致”独自落在页末）
+  for (let k = 0; k < out.length - 1; k += 1) {
+    const b = out[k]!;
+    if (b.kind === "p" && /^此\s*致[，,：:]?$/.test(b.runs.map((r) => r.text).join("").trim())) out[k] = { ...b, keepNext: true };
   }
   return out;
 }

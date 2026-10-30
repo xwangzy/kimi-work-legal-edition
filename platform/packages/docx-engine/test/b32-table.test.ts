@@ -34,7 +34,7 @@ test("第 32 批：节内表格画在本节段落之后、下一节之前；首�
   assert.match(firstRow, /<w:tblHeader\/>/);
   assert.match(firstRow, /<w:b\/><\/w:rPr><w:t xml:space="preserve">序号</);
   // 表头左右居中；各格上下居中（汉字格与纯数字格行高不同，顶端对齐看着错位）
-  assert.match(firstRow, /<w:pStyle w:val="KwlTable"\/><w:jc w:val="center"\/>/);
+  assert.match(firstRow, /<w:pStyle w:val="KwlTable"\/>(?:<w:keepNext\/>)?<w:jc w:val="center"\/>/);
   assert.equal((xml.match(/<w:vAlign w:val="center"\/>/g) ?? []).length, 18, "3 行 × 6 列都上下居中");
   // 空标题的节不印小标题
   assert.equal((xml.match(/KwlHeading1/g) ?? []).length, 2);
