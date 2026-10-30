@@ -12,6 +12,7 @@ import {
   sanitizeDocx,
   scrubDocProps,
   extractParagraphs,
+  type ReportSection,
   type RevisionOp,
 } from "@zr-legal/docx-engine";
 import { scanDirectIdentifiers } from "@zr-legal/pseudonym";
@@ -65,9 +66,41 @@ export function docxSanitize(db: KernelDb, blobs: BlobStore, mid: string | undef
   return { ...stored, removed: result.removed, source_document_version_id: params.document_version_id };
 }
 
-export function docxRenderReport(blobs: BlobStore, params: { title: string; sections: { heading: string; paragraphs: string[] }[] }, matterId?: string) {
+/** 文书里一张表的上限（第 32 批）：A4 纵向版心放 10 列已很挤；更大的表用 xlsx.render_table 作附件。 */
+const TABLE_MAX_COLUMNS = 10;
+const TABLE_MAX_ROWS = 300;
+
+/**
+ * 节内表格逐张核对：列数、行数在上限内，每行格数与表头列数相同——不符时整份不写，逐条说明哪一节哪一行，
+ * 由模型改正后重交（不悄悄补空格或截掉多出的格：错位的价款表比没有表更危险）。
+ * 单元格接受文字、数字（转成文字）与空值（写空格）；格内换行改成空格（Word 表格里一格一段）。
+ */
+function normalizeTables(sections: ReportSection[]): ReportSection[] {
+  const problems: string[] = [];
+  const cell = (v: unknown) => (v === null || v === undefined ? "" : String(v).replace(/\s*[\r\n]+\s*/g, " ").trim());
+  const out = sections.map((s, si) => {
+    const t = s.table;
+    if (t === undefined) return s;
+    const where = `第 ${si + 1} 节${s.heading ? `（${s.heading}）` : ""}的表格`;
+    if (!Array.isArray(t.columns) || t.columns.length === 0) problems.push(`${where}没有表头列`);
+    else if (t.columns.length > TABLE_MAX_COLUMNS) problems.push(`${where}有 ${t.columns.length} 列，超过 ${TABLE_MAX_COLUMNS} 列；拆成两张表，或改用 xlsx.render_table 作附件`);
+    if (!Array.isArray(t.rows) || t.rows.length === 0) problems.push(`${where}没有数据行`);
+    else if (t.rows.length > TABLE_MAX_ROWS) problems.push(`${where}有 ${t.rows.length} 行，超过 ${TABLE_MAX_ROWS} 行；改用 xlsx.render_table 作附件`);
+    const n = Array.isArray(t.columns) ? t.columns.length : 0;
+    (Array.isArray(t.rows) ? t.rows : []).forEach((r, ri) => {
+      if (!Array.isArray(r)) problems.push(`${where}第 ${ri + 1} 行不是数组`);
+      else if (r.some((v) => v !== null && typeof v === "object")) problems.push(`${where}第 ${ri + 1} 行有格子不是文字或数字`);
+      else if (r.length !== n) problems.push(`${where}第 ${ri + 1} 行有 ${r.length} 格，表头是 ${n} 列`);
+    });
+    return { ...s, table: { columns: (t.columns ?? []).map(cell), rows: (Array.isArray(t.rows) ? t.rows : []).map((r) => (Array.isArray(r) ? r.map(cell) : [])) } };
+  });
+  if (problems.length > 0) throw new DomainError("validation", `表格有误，整份文书未生成，请改正后重新提交：${problems.slice(0, 8).join("；")}${problems.length > 8 ? `；另有 ${problems.length - 8} 处` : ""}`, 422, { problems });
+  return out;
+}
+
+export function docxRenderReport(blobs: BlobStore, params: { title: string; sections: ReportSection[] }, matterId?: string) {
   if (!params.title || !Array.isArray(params.sections)) throw new DomainError("validation", "需要 title 与 sections", 422);
-  const buf = createDocx(params.title, params.sections);
+  const buf = createDocx(params.title, normalizeTables(params.sections));
   return blobs.put(buf, matterId ?? null);
 }
 
