@@ -110,6 +110,20 @@ function para(styleId: string, runs: Run[]): string {
   return `<w:p><w:pPr><w:pStyle w:val="${styleId}"/></w:pPr>${runs.map(runXml).join("")}</w:p>`;
 }
 
+/** 表格版心宽（twip）：A4 宽 11906 减左右页边距。 */
+const TABLE_WIDTH = 8845;
+
+/**
+ * 列宽按各列最长文字的显示宽度分配（汉字计 2、其他计 1，每列按 4～24 截取；第 32 批）：
+ * “序号”“数量”这类短列不再和“设备名称”“证明目的”一样宽。
+ */
+function columnWidths(rows: Run[][][], cols: number): number[] {
+  const shown = (runs: Run[] | undefined) => [...(runs ?? []).map((r) => r.text).join("")].reduce((n, ch) => n + (ch.codePointAt(0)! > 0x2e7f ? 2 : 1), 0);
+  const want = Array.from({ length: cols }, (_, c) => Math.min(24, Math.max(4, ...rows.map((r) => shown(r[c])))));
+  const total = want.reduce((a, b) => a + b, 0);
+  return want.map((w) => Math.floor((TABLE_WIDTH * w) / total));
+}
+
 /** 正文块 → document.xml 的 body 内容（样式写本产品编号）。 */
 export function blocksToBodyXml(blocks: DocBlock[]): string {
   const out: string[] = [];
@@ -128,11 +142,13 @@ export function blocksToBodyXml(blocks: DocBlock[]): string {
     else if (b.kind === "table" && b.rows.length > 0) {
       const cols = Math.max(1, ...b.rows.map((r) => r.length));
       const border = (side: string) => `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>`;
-      const grid = Array.from({ length: cols }, () => `<w:gridCol w:w="${Math.floor(8845 / cols)}"/>`).join("");
+      const widths = columnWidths(b.rows, cols);
+      const grid = widths.map((w) => `<w:gridCol w:w="${w}"/>`).join("");
+      // 首行是表头：跨页时在每页重复（第 32 批，设备清单、证据目录常跨页）
       const rows = b.rows
         .map((r, i) => {
           const cells = Array.from({ length: cols }, (_, c) => r[c] ?? []);
-          return `<w:tr>${cells.map((runs) => `<w:tc><w:tcPr><w:tcW w:w="${Math.floor(8845 / cols)}" w:type="dxa"/></w:tcPr>${para(IDS.table, i === 0 ? runs.map((x) => ({ ...x, bold: true })) : runs)}</w:tc>`).join("")}</w:tr>`;
+          return `<w:tr>${i === 0 ? "<w:trPr><w:tblHeader/></w:trPr>" : ""}${cells.map((runs, c) => `<w:tc><w:tcPr><w:tcW w:w="${widths[c]}" w:type="dxa"/></w:tcPr>${para(IDS.table, i === 0 ? runs.map((x) => ({ ...x, bold: true })) : runs)}</w:tc>`).join("")}</w:tr>`;
         })
         .join("");
       out.push(`<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders>${["top", "left", "bottom", "right", "insideH", "insideV"].map(border).join("")}</w:tblBorders><w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl>`);

@@ -4,9 +4,16 @@
  */
 import { alignSignature, createStyledDocx, type DocBlock } from "./house-style.ts";
 
+/** 节内表格（第 32 批：合同价款表、设备清单、证据目录等）：画在本节段落之后，首行为表头。 */
+export interface ReportTable {
+  columns: string[];
+  rows: string[][];
+}
+
 export interface ReportSection {
   heading: string;
   paragraphs: string[];
+  table?: ReportTable;
 }
 
 /** mark=false：不带本产品标记，导出时不套函头（示例合同、清洁稿这类不是律所出具的文件）。 */
@@ -22,6 +29,7 @@ export function createDocx(title: string, sections: ReportSection[], o: { mark?:
   for (const s of sections) {
     if (s.heading && !STRUCTURE_HEADING.test(s.heading.trim())) blocks.push({ kind: "h1", text: s.heading });
     for (const p of s.paragraphs) blocks.push({ kind: "p", runs: [{ text: p }] });
+    if (s.table) blocks.push({ kind: "table", rows: [s.table.columns, ...s.table.rows].map((r) => r.map((text) => [{ text }])) });
   }
   // 起诉状、律师函的落款（律所、律师、具状人、日期）右对齐，与 Markdown 导出同一规则
   return createStyledDocx(alignSignature(blocks), undefined, null, o);
