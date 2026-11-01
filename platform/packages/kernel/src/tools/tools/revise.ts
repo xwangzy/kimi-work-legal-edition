@@ -87,7 +87,7 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   const src = ctx.db.get<{ storage_uri: string; filename: string }>(`SELECT storage_uri, filename FROM document_versions WHERE document_version_id = ? AND matter_id = ?`, [documentVersionId, mid]);
   const prior = src && src.filename.toLowerCase().endsWith(".docx") ? existingRevisions(ctx.blobs.read(src.storage_uri)) : null;
   const priorNote = prior && prior.total > 0
-    ? { existing_revisions: prior, existing_revisions_note: `原件里已有他人的修订痕迹 ${prior.total} 处（插入 ${prior.insertions}、删除 ${prior.deletions}、移动 ${prior.moves}、格式 ${prior.format_changes}）：修订稿原样保留；清洁稿会把它们与本次修改一并接受。在计划与最终答复里告诉律师这一点；落在对方修订痕迹里的修改不能自动写，列明请律师在 Word 里处理` }
+    ? { existing_revisions: prior, existing_revisions_note: `原件里已有他人的修订痕迹 ${prior.total} 处（插入 ${prior.insertions}、删除 ${prior.deletions}、移动 ${prior.moves}、格式 ${prior.format_changes}）：修订稿原样保留；清洁稿会把它们与本次修改一并接受。在计划与最终答复里告诉律师这一点；完全落在对方插入的文字之内的可以改（记成我方修订），跨过对方修订边界的不能自动写，列明请律师在 Word 里处理` }
     : {};
   const r = applyStructuredPatches(
     { db: ctx.db, blobs: ctx.blobs, tokens: ctx.tokens },

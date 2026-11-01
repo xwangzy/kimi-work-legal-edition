@@ -134,7 +134,7 @@ function applyOne(
   const relStart = first.runXmlStart - target.xmlStart;
   const relEnd = last.runXmlEnd - target.xmlStart;
   const region = paraXml.slice(relStart, relEnd);
-  const preserved = checkRegion(op.opId, paraXml, relStart, region);
+  const { preserved, foreignIns } = checkRegion(op.opId, paraXml, relStart, region);
 
   // 只标出真正改动的字（第 28 批）：锚点与新文本相同的开头、结尾照原样保留，中间一段删、一段插。
   // 第 34 批 D08：每个原 run 按自己的格式重发（原先没改的字一律套第一个 run 的格式，下划线、楷体、字号会丢）
@@ -175,7 +175,9 @@ function applyOne(
     if (i === changeStart && commentId >= 0 && changed) parts.push(`<w:commentRangeStart w:id="${commentId}"/>`);
     if (i === insPos && added) {
       closeDel();
-      parts.push(`<w:ins w:id="${insId}" w:author="${escapeXml(author)}" w:date="${date}" kwl-new="1"><w:r>${insRpr}${runContent(added)}</w:r></w:ins>`);
+      const ours = `<w:ins w:id="${insId}" w:author="${escapeXml(author)}" w:date="${date}" kwl-new="1"><w:r>${insRpr}${runContent(added)}</w:r></w:ins>`;
+      // 在对方的插入里：先收起对方的插入，我方插入放在外面，再用新编号接着对方的插入（ins 里不能再套 ins）
+      parts.push(foreignIns ? `</w:ins>${ours}${foreignIns.replace(/\bw:id="\d+"/, `w:id="${nextId()}"`)}` : ours);
       if (commentId >= 0) parts.push(commentEnd(commentId));
     }
     const x = atoms[i];
@@ -250,21 +252,28 @@ const CONTAINERS = /<(\/?)w:(ins|del|moveFrom|moveTo|hyperlink|sdt|sdtContent|sm
  * 切除范围的检查：范围必须只由 run 和可放回的标记组成；不能落在他人修订或域里、不能跨过容器的边界；run 里不能有脚注引用、
  * 域代码、图片等（切掉就丢了）。不成立时拒写并说明改法。返回要放回的标记。
  */
-function checkRegion(opId: string, paraXml: string, relStart: number, region: string): string[] {
+function checkRegion(opId: string, paraXml: string, relStart: number, region: string): { preserved: string[]; foreignIns: string | null } {
   const refuse = (why: string): never => {
     throw new DomainError("anchor_mismatch", `修订 ${opId} ${why}`, 422, { opId });
   };
   // 起点所在的容器
-  const stack: { name: string; fresh: boolean }[] = [];
+  const stack: { name: string; fresh: boolean; tag: string }[] = [];
   CONTAINERS.lastIndex = 0;
   for (const m of paraXml.matchAll(CONTAINERS)) {
     if (m.index! >= relStart) break;
     if (m[4] === "/") continue;
     if (m[1]) stack.pop();
-    else stack.push({ name: m[2]!, fresh: /\skwl-new="/.test(m[3] ?? "") });
+    else stack.push({ name: m[2]!, fresh: /\skwl-new="/.test(m[3] ?? ""), tag: m[0] });
   }
+  // 整段落在对方的一处插入之内（对方加的字我方再改，如“不接受对方把连带责任保证改成一般保证”）：照 Word 的写法，
+  // 删除嵌在对方的插入里、我方插入放在对方插入之外——接受全部得到我方文字，拒绝全部回到原件（第 34 批，T3 第 6 条意见）
+  let foreignIns: string | null = null;
   for (const c of stack) {
     if (c.fresh) refuse("与本次另一处修改落在同一处：合并成一条修改");
+    if (c.name === "ins" && !foreignIns && stack.filter((x) => x.name === "ins").length === 1) {
+      foreignIns = c.tag;
+      continue;
+    }
     if (c.name === "ins" || c.name === "del" || c.name === "moveFrom" || c.name === "moveTo") refuse("锚点在原件已有的修订痕迹里（对方的插入或删除）：自动改写会打乱对方的修订记录，请先在 Word 里接受或拒绝对方的修订，或手工修改这一处");
     if (c.name === "fldSimple") refuse("锚点在 Word 域（自动日期、页码、交叉引用等）的结果里：域更新后修改会失效，请手工修改");
   }
@@ -291,7 +300,7 @@ function checkRegion(opId: string, paraXml: string, relStart: number, region: st
     if (MARKERS.has(c.name)) preserved.push(el);
     else if (c.name !== "w:proofErr") refuse("锚点范围里有无法自动改写的内容（如公式或嵌入对象）：把锚点缩小到纯文字部分，或手工修改");
   }
-  return preserved;
+  return { preserved, foreignIns };
 }
 
 /**

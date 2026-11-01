@@ -151,3 +151,16 @@ test("自动编号与段落切分一致：空段落、文本框里的段落不�
   assert.deepEqual(texts(docx), ["总则", "", "价款见附件。", "其他"], "文本框里的文字不混进外层段落");
   assert.deepEqual(texts(sanitizeDocx(revise(docx, [{ a: "见附件", n: "见附件一" }])).docx)[2], "价款见附件一。");
 });
+
+test("在对方插入的文字里再改（不接受对方把“连带责任保证”改成“一般保证”）：删除嵌在对方插入里、我方插入放在外面", () => {
+  const theirsDel = `<w:del w:id="70" w:author="对方律师" w:date="2026-10-01T00:00:00Z"><w:r><w:delText>连带责任保证</w:delText></w:r></w:del>`;
+  const theirsIns = `<w:ins w:id="71" w:author="对方律师" w:date="2026-10-01T00:00:00Z">${r("一般保证")}</w:ins>`;
+  const docx = withBody(p(`${r("11.1 丙方对乙方的全部债务承担")}${theirsDel}${theirsIns}${r("。")}`));
+  const rev = docXml(revise(docx, [{ a: "一般保证", n: "连带责任保证" }]));
+  assert.ok(wellFormed(rev));
+  // 最小改动保留共同的“保证”：删“一般”嵌在对方插入里，我方插入“连带责任”在外面，对方插入用新编号接上“保证”
+  assert.match(rev, /<w:ins w:id="71" w:author="对方律师"[^>]*><w:del [^>]*author="测试"[^>]*><w:r><w:delText xml:space="preserve">一般<\/w:delText><\/w:r><\/w:del><\/w:ins><w:ins [^>]*author="测试"[^>]*><w:r><w:t xml:space="preserve">连带责任<\/w:t><\/w:r><\/w:ins><w:ins w:id="(?!71")\d+" w:author="对方律师"[^>]*><w:r><w:t xml:space="preserve">保证<\/w:t><\/w:r><\/w:ins>/);
+  assert.doesNotMatch(rev, /<w:ins [^>]*>(?:(?!<\/w:ins>)[\s\S])*<w:ins /, "插入里没有再套插入");
+  assert.deepEqual(texts(sanitizeDocx(revise(docx, [{ a: "一般保证", n: "连带责任保证" }])).docx), ["11.1 丙方对乙方的全部债务承担连带责任保证。"]);
+  assert.throws(() => revise(docx, [{ a: "承担一般保证", n: "承担连带责任保证" }]), /对方的插入或删除/, "跨过对方插入边界的仍拒写");
+});
