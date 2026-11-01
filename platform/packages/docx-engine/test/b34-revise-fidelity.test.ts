@@ -184,3 +184,11 @@ test("表格里同一行、跨行重复的金额：条款提示写“行名｜�
   assert.deepEqual(texts(clean).slice(4, 16), ["第 1 期", "0", "67,500.00", "67,500.00", "第 2 期", "1,350,000.00", "67,500.00", "1,575,000.00", "第 3 期", "1,350,000.00", "52,500.00", "1,552,500.00"]);
   assert.throws(() => revise(docx, [{ a: "75,000.00", n: "67,500.00", hint: "第 1 期" }]), /锚点歧义/, "同一行两格相同、只给行名仍拒写");
 });
+
+test("最小改动不在数字、金额、日期中间切开（第 34 批律师验收：13.50 改 14.20 显示成“1[-3.5-][+4.2+]0”）", async () => {
+  const { minimalChange } = await import("../src/revise.ts");
+  assert.deepEqual(minimalChange("单价 13.50 元/kg", "单价 14.20 元/kg"), { keepHead: "单价 ", removed: "13.50", added: "14.20", keepTail: " 元/kg" });
+  assert.equal(minimalChange("1,575,000.00", "1,417,500.00").removed, "1,575,000.00");
+  assert.equal(minimalChange("自 2025 年 3 月 12 日起", "自 2026 年 1 月 1 日起").removed, "2025 年 3 月 12");
+  assert.deepEqual(minimalChange("第一条", "第二条"), { keepHead: "第", removed: "一", added: "二", keepTail: "条" }, "非数字的文字照旧只标改动的字");
+});

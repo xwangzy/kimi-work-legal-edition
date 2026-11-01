@@ -377,6 +377,9 @@ export function markParagraphDeleted(paraXml: string, id: number, author: string
  * 原文与新文本的最小改动：去掉相同的开头与结尾，只剩中间一段删除、一段插入。按码点切分（不拆开代理对）。
  * 删除整段（新文本为空）时原样整段删除；新旧相同时不产生修订。纯函数。
  */
+/** 数字、金额与中文大写数字的用字（最小改动不在它们中间切开）。 */
+const NUMERIC = /[0-9０-９.,，．%％零〇壹贰叁肆伍陆柒捌玖拾佰仟萬]/;
+
 export function minimalChange(original: string, replacement: string): { keepHead: string; removed: string; added: string; keepTail: string } {
   const a = Array.from(original);
   const b = Array.from(replacement);
@@ -385,6 +388,11 @@ export function minimalChange(original: string, replacement: string): { keepHead
   while (head < a.length && head < b.length && a[head] === b[head]) head++;
   let tail = 0;
   while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+  // 不在数字中间切开（第 34 批律师验收：13.50 改 14.20 显示成“1[-3.5-][+4.2+]0”，金额、日期被切成碎片，对方核对容易看错）：
+  // 边界两侧都是数字、金额或中文大写数字的字时，退到整个数字的边界
+  const numAt = (xs: string[], i: number) => i >= 0 && i < xs.length && NUMERIC.test(xs[i]!);
+  while (head > 0 && numAt(a, head - 1) && (numAt(a, head) || numAt(b, head))) head--;
+  while (tail > 0 && numAt(a, a.length - tail) && (numAt(a, a.length - tail - 1) || numAt(b, b.length - tail - 1))) tail--;
   return {
     keepHead: a.slice(0, head).join(""),
     removed: a.slice(head, a.length - tail).join(""),
