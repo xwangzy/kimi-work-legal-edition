@@ -28,10 +28,13 @@ test("law.get_article: 库内条文返回原文，版本与 law.get_version 一�
   assert.equal(r.article_no, 585);
   assert.equal(r.text, lawdb.getArticle("lsv_civil_code_2020", 585), "逐字返回法规库采集文本");
   assert.match(r.text!, /^当事人可以约定一方违约时/);
-  assert.equal(r.source_license_id, "official-gazette-selfbuilt");
-  // 演示库的可信度标记原样返回，界面与方法据此提示“演示数据，不得引用”
-  assert.equal(r.reliability, "demo_seed");
-  assert.match(r.note, /演示数据/);
+  assert.equal(r.source_license_id, "official-text-collected-2026-11", "第 34 批：民法典换成官方发布文本人工采集");
+  // 可信度标记原样返回：官方发布文本人工采集的不再提示“演示数据”；仍是演示种子的（《律师法》第三十八条）照旧提示不得引用
+  assert.equal(r.reliability, "official_text_collected");
+  assert.doesNotMatch(r.note ?? "", /演示数据/);
+  const demo = lawGetArticle(lawdb, { law: "律师法", article: 38, as_of: "2025-01-01" });
+  assert.equal(demo.reliability, "demo_seed");
+  assert.match(demo.note, /演示数据/);
 });
 
 test("law.get_article: 条号写法——整数、数字串、第585条、第五百八十五条、带款项都解析到同一条", () => {
@@ -83,8 +86,8 @@ test("law.get_article: as_of 选版本（律师法 2026 修正施行日 2026-09-
 
 test("law.get_article: 库外、无适用版本、条号不存在——一律 found:false，不给文本", () => {
   const cases = [
-    { p: { law: "中华人民共和国公司法", article: 20, as_of: "2026-10-01" }, reason: "law_not_in_lawdb" },
-    { p: { law: "民诉法", article: "第八十五条", as_of: "2026-10-01" }, reason: "law_not_in_lawdb" },
+    { p: { law: "中华人民共和国证券法", article: 20, as_of: "2026-10-01" }, reason: "law_not_in_lawdb" },
+    { p: { law: "民诉法", article: "第八十五条", as_of: "2026-10-01" }, reason: "text_not_collected" },
     { p: { law: "某某不存在法", article: 1, as_of: "2026-10-01" }, reason: "law_not_in_lawdb" },
     { p: { law: "民法典", article: 585, as_of: "2020-06-01" }, reason: "no_applicable_version" },
     { p: { law: "民法典", article: 1261, as_of: "2026-10-01" }, reason: "article_not_exist" },

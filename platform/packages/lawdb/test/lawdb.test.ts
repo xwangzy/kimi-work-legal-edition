@@ -38,9 +38,10 @@ test("加载验签 ok：status 与签名内容一致、重复构建确定", () =
   const db = openLawdb(BASE, { expectedSignerPubPem: PUB });
   const st = db.status();
   assert.equal(st.signature_valid, true);
-  assert.equal(st.laws_count, 3);
-  assert.equal(st.versions_count, 3);
-  assert.equal(st.articles_count, 7);
+  // 第 34 批：9 部 137 条官方发布文本入库（《律师法》第三十八条仍为演示种子）
+  assert.equal(st.laws_count, 10);
+  assert.equal(st.versions_count, 10);
+  assert.equal(st.articles_count, 138);
   assert.match(st.package_version, /^g0\./);
   db.close();
   // content hash 重算 = manifest 声明（确定性：同源同 hash；package_meta 的 built_at 不进签名）
@@ -196,12 +197,12 @@ test("增量伪造（dev 私钥真签名、声明的合并 hash 与真实合并�
   // 回滚断言：逐表行数与关键内容未变、版本未变（用独立只读句柄复核文件真实状态）
   const raw = new Database(copy, { readonly: true });
   const n = (sql: string) => (raw.prepare(sql).get() as { c: number }).c;
-  assert.equal(n(`SELECT COUNT(*) AS c FROM laws`), 3);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions`), 3);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM articles`), 7);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM article_topics`), 8);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM laws`), 10);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions`), 10);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM articles`), 138);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM article_topics`), 139);
   assert.equal(n(`SELECT COUNT(*) AS c FROM renumbering`), 0);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM source_registry`), 2);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM source_registry`), 3);
   assert.equal(n(`SELECT COUNT(*) AS c FROM laws WHERE law_id = 'law_arbitration'`), 0, "增量行不得残留");
   assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions WHERE lsv_id = 'lsv_arbitration_2017'`), 0);
   assert.equal((raw.prepare(`SELECT value FROM package_meta WHERE key = 'package_version'`).get() as { value: string }).value, before);

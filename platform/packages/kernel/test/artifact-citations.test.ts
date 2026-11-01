@@ -20,18 +20,18 @@ test("分类：已收录且条号正确为已核；条号超范围为错误；�
   const text = [
     "依据《民法典》第五百八十五条，违约金可以调整。",
     "《民法典》第一千三百条规定……",
-    "《公司法》第一百八十八条规定董事的忠实义务。",
+    "《证券法》第七十八条规定信息披露义务。",
     "参见（2023）最高法民终123号判决。",
   ].join("\n");
   const c = checkArtifactCitations(lawdb, "研究备忘录.md", Buffer.from(text), "2026-10-01");
   assert.equal(c.checked, true);
   assert.equal(c.verified, 1);
   assert.equal(c.wrong, 1, "民法典只有 1260 条");
-  assert.equal(c.outside_registry, 1, "公司法不在演示法规库");
+  assert.equal(c.outside_registry, 1, "证券法不在本机法规库（第 34 批：公司法等 9 部入库，库外的例子改用不在库里的证券法）");
   assert.equal(c.unverified_offline, 1);
   assert.equal(artifactCitationBlock(c, {})?.code, "wrong");
   // docx 取可见文字
-  const docx = createDocx("备忘录", [{ heading: "结论", paragraphs: ["《公司法》第一百八十八条"] }]);
+  const docx = createDocx("备忘录", [{ heading: "结论", paragraphs: ["《证券法》第七十八条"] }]);
   const d = checkArtifactCitations(lawdb, "备忘录.docx", docx, "2026-10-01");
   assert.equal(d.outside_registry, 1);
   assert.equal(artifactCitationBlock(d, {})?.code, "outside");
@@ -74,7 +74,7 @@ test("签发链：成果含法规库外的引用须勾选人工核对；含错�
     return { artifact_version_id: id, sha256 };
   };
   {
-    const outside = reg("备忘录.docx", "依据《公司法》第一百八十八条，董事负有忠实义务。");
+    const outside = reg("备忘录.docx", "依据《证券法》第七十八条，发行人负有信息披露义务。");
     const comp = await inv("review.completeness", { artifact_version_id: outside.artifact_version_id });
     assert.equal(comp.completeness.artifact_citations.outside_registry, 1);
     assert.ok(comp.blockers.some((b: string) => b.includes("不在本机法规库")));
@@ -211,7 +211,7 @@ test("论断—依据签发门禁（C-03，C1 §4.4）：系统核到的每条�
       );
       return { id, sha256 };
     };
-    const v1 = reg("依据《民法典》第五百八十五条，被告应支付违约金。《民法典》第五百零九条要求全面履行。《公司法》第一百八十八条规定忠实义务。");
+    const v1 = reg("依据《民法典》第五百八十五条，被告应支付违约金。《民法典》第五百零九条要求全面履行。《证券法》第七十八条规定信息披露义务。");
     const { citations } = await inv("artifacts.citations", { artifact_version_id: v1.id });
     assert.equal(citations.support_pending, 2);
     const [k585, k509, kOut] = citations.items.map((i: any) => i.key);

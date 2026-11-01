@@ -17,6 +17,23 @@
     "withdrawn_reason": null
   },
   {
+    "source_license_id": "official-text-collected-2026-11",
+    "source_type": "official_gazette",
+    "licensor": "无（立法文件、司法解释不适用著作权法）",
+    "acquired_via": "官方发布文本人工采集：国家法律法规数据库（flk.npc.gov.cn）与最高人民法院官网（court.gov.cn）发布页逐条切分（v9.5 第 34 批）",
+    "contract_ref": null,
+    "valid_until": null,
+    "allowed_actions": ["search", "display", "quote", "cache", "vectorize", "model", "export", "train", "retain_after_termination"],
+    "region": "全国",
+    "firm_limit": null,
+    "concurrency_limit": null,
+    "citation_requirement": "官方发布文本（著作权法第五条）。2026-11-01 采集：除民事诉讼法外，每条与第二个官方来源逐字比对一致；民事诉讼法 10 条只有国家法律法规数据库一个来源、待人工复核；公报期号未采集。只收录高频条文，未收录的条文仍按“库内没有”处理。",
+    "deletion_obligation": null,
+    "acquired_at": "2026-11-01",
+    "reliability": "official_text_collected",
+    "withdrawn_reason": null
+  },
+  {
     "source_license_id": "seed-demo",
     "source_type": "seed_demo",
     "licensor": "（演示种子）",

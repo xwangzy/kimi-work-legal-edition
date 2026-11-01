@@ -27,8 +27,9 @@ test("lawdb.status：版本/更新日/签名有效；加载留痕上链", async 
   const st = await tk.inv("lawdb.status");
   assert.match(st.package_version, /^g0\./);
   assert.equal(st.signature_valid, true);
-  assert.equal(st.laws_count, 3);
-  assert.equal(st.versions_count, 4);
+  // 第 34 批：9 部 137 条官方发布文本入库（加增量样例的一个版本）
+  assert.equal(st.laws_count, 10);
+  assert.equal(st.versions_count, 11);
   assert.match(st.display, /法规库最后更新/);
   // 覆盖范围如实说（第 13 批）：演示法规库不足 50 部 → sample，说明里直说多数引用无法自动核对
   assert.equal(st.coverage.level, "sample");

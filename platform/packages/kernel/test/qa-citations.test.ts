@@ -19,7 +19,7 @@ const noParties = { partiesIn: () => [] } as any;
 
 test("B-6 回答里的引用逐条核对：核到、条款对不上、法规库外、案号离线；没有引用的回答不带标记", async () => {
   const answers = [
-    "违约金过高可以请求调整，依据《民法典》第五百八十五条第二款；另见民法典第五百八十五条第四款（应为第二款）、《公司法》第二十条，参见（2023）最高法民终123号。",
+    "违约金过高可以请求调整，依据《民法典》第五百八十五条第二款；另见民法典第五百八十五条第四款（应为第二款）、《证券法》第七十八条，参见（2023）最高法民终123号。",
     "这个问题需要结合合同约定判断，建议先梳理履行过程。",
   ];
   const qa = new QaChatService({ db: k.kernel.db, tokens: noParties, lawdb, ask: async () => answers.shift()! });
@@ -29,7 +29,7 @@ test("B-6 回答里的引用逐条核对：核到、条款对不上、法规库�
   assert.equal(a1.citations!.total, 4);
   assert.equal(a1.citations!.verified, 1);
   assert.equal(a1.citations!.wrong, 0, "款项对不上归“须人工核对”（复核 R15B-03）");
-  assert.equal(a1.citations!.outside, 2, "第五百八十五条只有三款 + 公司法不在演示法规库");
+  assert.equal(a1.citations!.outside, 2, "第五百八十五条只有三款 + 证券法不在本机法规库（第 34 批：公司法等 9 部入库，库外的例子改用不在库里的证券法）");
   assert.equal(a1.citations!.cases, 1);
   assert.deepEqual(a1.citations!.items.map((i) => i.kind), ["ok", "outside", "outside", "case"]);
   const r2 = await qa.send({ conversationId: r1.conversation_id, text: "还有别的办法吗？" }, TID, UID);
