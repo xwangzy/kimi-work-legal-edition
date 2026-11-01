@@ -6,7 +6,7 @@ when_to_use: 起诉或申请仲裁前确定去哪里、还来不来得及；收�
 arguments: [claims, side, received_on]
 kwl:
   id: procedure-check
-  version: 1.2.1
+  version: 1.2.2
   lines: [诉讼仲裁, 企业法务]
   chain: casefile
   tier: beta
