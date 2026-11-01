@@ -1217,7 +1217,7 @@ export function missingMaterialsText(card: Pick<ScenarioCard, "scenario" | "skil
 }
 
 const LITIGATION_STANCES = new Set(["原告", "被告", "申请人", "被申请人", "第三人", "上诉人", "被上诉人", "劳动者", "plaintiff", "defendant"]);
-const TRANSACTIONAL_STANCES = new Set(["受让方", "转让方", "买方", "卖方", "出租人", "承租人", "出租方", "承租方", "投资方", "目标公司", "出借人", "借款人", "保证人", "委托方", "服务方", "发包人", "承包人", "buyer", "seller", "lessee", "lessor"]);
+const TRANSACTIONAL_STANCES = new Set(["受让方", "转让方", "买方", "卖方", "出租人", "承租人", "出租方", "承租方", "投资方", "目标公司", "出借人", "借款人", "保证人", "委托方", "服务方", "发包人", "承包人", "创始股东", "buyer", "seller", "lessee", "lessor"]);
 // 用人单位立场多是企业法务线（劳动仲裁应对、解除前评估）；劳动者一方归诉讼仲裁线（v9.4 新增立场）
 const INHOUSE_STANCES = new Set(["常年顾问", "用人单位"]);
 
