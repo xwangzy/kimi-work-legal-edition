@@ -12,7 +12,7 @@
  */
 import { DomainError, sha256Hex } from "@zr-legal/domain";
 import { existingRevisions, sanitizeDocx } from "@zr-legal/docx-engine";
-import { applyStructuredPatches, type PatchConflict, type StructuredPatch } from "../../services/structured-patch.ts";
+import { applyStructuredPatches, type NumberingShifts, type PatchConflict, type StructuredPatch } from "../../services/structured-patch.ts";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
 
@@ -58,6 +58,22 @@ function previewChanges(paragraphs: readonly string[], spans: readonly { para: n
     });
 }
 
+/** 自动编号的提示（第 34 批 T3b）：新文字开头抄进去的编号已去掉；删除、插入条款后编号顺延，正文里写死的旧条号要一并改。 */
+function numberingNotes(r: { numbering?: NumberingShifts; label_notes?: { index: number; dropped: string[] }[] }, written: boolean) {
+  const out: Record<string, unknown> = {};
+  if (r.label_notes && r.label_notes.length > 0) {
+    out.label_notes = r.label_notes.map((x) => ({ patch: x.index + 1, dropped: x.dropped }));
+    out.label_note = "这几条改的是 Word 自动编号的段落：新文字开头抄进去的编号已去掉（编号由 Word 生成，插入、删除条款后自动顺延），不要在文字里另写编号";
+  }
+  if (r.numbering && r.numbering.renumbered.length > 0) {
+    out.numbering_changes = r.numbering;
+    out.numbering_note = `删除或插入了自动编号的条款，后面的条款编号已自动顺延（renumbered）；正文里写死的条号不会跟着变${
+      r.numbering.references.length > 0 ? `——references 列出 ${r.numbering.references.length} 处互引仍写着旧号，${written ? "把它们改成新号后连同全部修改重新提交一次（生成新版本），做不到的在答复里逐处列给律师" : "把它们改成新号、连同全部修改一并提交"}` : ""
+    }。最终答复写明编号已顺延，不要写“后续编号保持不动”`;
+  }
+  return out;
+}
+
 export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; patches?: unknown; dry_run?: unknown }) {
   const mid = ctx.claims.mid;
   if (!mid) throw new DomainError("forbidden", "令牌未绑定事项", 403);
@@ -99,6 +115,7 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
       written: false,
       changes: previewChanges(r.paragraphs ?? [], r.spans ?? []),
       ...priorNote,
+      ...numberingNotes(r, false),
       note: "这是试写，没有生成文件。逐段读 after（改后的整段）：语句通顺、与前后文衔接（没有多出或漏掉的字，例如替换“合同签订之日起”时留下的“本”）、编号与互引正确后，去掉 dry_run 把全部修改正式提交一次。",
     };
   }
@@ -143,6 +160,7 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
     revision: { artifact_version_id: r.artifact_version_id, filename: r.filename },
     clean: { artifact_version_id: cleanReg.artifact_version_id, filename: cleanReg.filename },
     ...priorNote,
+    ...numberingNotes(r, true),
     note: "修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；清洁稿已接受全部修订、去掉批注；原件不变。批注是写给律师的修改理由，发给对方前须删除批注或改用清洁稿。",
   };
 }

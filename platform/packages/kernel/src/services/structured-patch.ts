@@ -67,6 +67,10 @@ export type PatchResult =
       applied: number;
       tokens_restored: number;
       preview: PatchPreviewItem[];
+      /** 自动编号挪动与正文里的旧条号（接受全部修订后的稿与原件对照）。 */
+      numbering: NumberingShifts;
+      /** 新文字开头抄进去、已去掉的自动编号（逐条）。 */
+      label_notes: { index: number; dropped: string[] }[];
     }
   | {
       status: "preview";
@@ -77,6 +81,8 @@ export type PatchResult =
       /** 只在 dryRun 时给出：原件的段落（原文）与每条补丁在段落里的落点（与生成修订稿同一套定位）。 */
       paragraphs?: string[];
       spans?: PatchSpan[];
+      numbering?: NumberingShifts;
+      label_notes?: { index: number; dropped: string[] }[];
     };
 
 /** 补丁在原件段落里的落点（段落序号、起止位置，均按原文计）。 */
@@ -92,6 +98,61 @@ export interface PatchSpan {
 }
 
 const AUTHOR = "Kimi Work 法律助手（AI 建议，待律师确认）";
+
+/** 自动编号挪动后的条号与正文里写死的旧条号（第 34 批 T3b 真实走查：删去第十条后，“丙方依本合同第十一条承担保证责任”指向了通知与送达）。 */
+export interface NumberingShifts {
+  /** 编号变了的条款：原编号、现编号、条款文字开头。 */
+  renumbered: { from: string; to: string; text: string }[];
+  /** 正文里仍写着旧编号的地方：所在段落（现编号与文字开头）、写的条号、该条现在的编号。 */
+  references: { at: string; ref: string; now: string }[];
+}
+
+/** 与某个自动编号同形的段首编号（“8.4 ”“第十条 ”“（三）”）：数字换成任意数字、中文数字换成任意中文数字。 */
+function leadingLabel(label: string): RegExp {
+  const body = label
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/[0-9０-９]+/g, "[0-9０-９]+")
+    .replace(/[一二三四五六七八九十百千零〇两]+/g, "[一二三四五六七八九十百千零〇两]+");
+  return new RegExp(`^${body}(?:[\\s　]+|(?<=[、.．）)]))`);
+}
+
+const REF_RE = /第[一二三四五六七八九十百千零〇两0-9０-９]+条|(?<![\d.])\d+(?:\.\d+)+(?![\d.])/g;
+
+/**
+ * 修改前后的自动编号对照：按文字相同、先后次序对齐两稿的段落，列出编号变了的条款；再找正文里仍写着旧编号的互引。
+ * 自动编号由 Word 生成，删除、插入条款后会自动顺延，正文里写死的“第十一条”“11.2”不会跟着变。
+ */
+export function numberingShifts(before: Buffer, after: Buffer): NumberingShifts {
+  const b = extractParagraphs(before).map((p) => p.text);
+  const bl = docxListLabels(before);
+  const a = extractParagraphs(after).map((p) => p.text);
+  const al = docxListLabels(after);
+  const moved = new Map<string, string>();
+  const renumbered: NumberingShifts["renumbered"] = [];
+  let j = 0;
+  for (let i = 0; i < a.length; i++) {
+    if (!al[i] || !a[i]!.trim()) continue;
+    let k = j;
+    while (k < b.length && b[k] !== a[i]) k++;
+    if (k >= b.length) continue;
+    j = k + 1;
+    const from = bl[k];
+    if (from && from !== al[i] && !moved.has(from)) {
+      moved.set(from, al[i]!);
+      renumbered.push({ from, to: al[i]!, text: a[i]!.slice(0, 20) });
+    }
+  }
+  const references: NumberingShifts["references"] = [];
+  if (moved.size > 0) {
+    a.forEach((t, i) => {
+      for (const m of t.matchAll(REF_RE)) {
+        const now = moved.get(m[0]);
+        if (now) references.push({ at: `${al[i] ? `${al[i]} ` : ""}${t.slice(0, 24)}`, ref: m[0], now });
+      }
+    });
+  }
+  return { renumbered: renumbered.slice(0, 40), references: references.slice(0, 40) };
+}
 
 /** 合并写入时先做段后插入（不改原有段落文字），再做替换：替换不会把插入的锚点改掉（复核 Q2-06）；各自保持原先后次序。 */
 const insertsFirst = (ops: readonly RevisionOp[]): RevisionOp[] => [...ops.filter((o) => o.insertAfter), ...ops.filter((o) => !o.insertAfter)];
@@ -193,6 +254,7 @@ export function applyStructuredPatches(
     return at;
   };
   const spans: PatchSpan[] = [];
+  const labelNotes: { index: number; dropped: string[] }[] = [];
   for (const op of ops) {
     const index = Number(op.opId.slice(1));
     let located: number | undefined;
@@ -219,6 +281,21 @@ export function applyStructuredPatches(
     // （第 34 批 D10：原先这里另按“提示是段落文字的子串”挑一遍，对不上时取第一处，与引擎不一致）
     const occ = op.anchor.occurrence ?? 0;
     const target = located !== undefined && paragraphs[located] !== undefined ? { i: located, at: nth(paragraphs[located]!, op.anchor.originalText, occ) } : undefined;
+    // 段首编号是自动编号的：新文字开头抄进去的编号去掉（第 34 批 T3b：锚点里的“11.2”在定位前去掉了，新文字里的没去，
+    // Word 里显示成“11.2 11.2 保证范围……”；插入的条款继承自动编号，“8.3 乙方违约的……”同样重号）。原文段首本来就写着编号的不动
+    const lab = target ? labels[target.i] : null;
+    if (target && lab && (op.insertAfter || target.at === 0)) {
+      const re = leadingLabel(lab);
+      if (!re.test(paragraphs[target.i]!)) {
+        const lines = op.newText.split("\n");
+        const fixed = lines.map((l, li) => (op.insertAfter || li === 0 ? l.replace(re, "") : l));
+        const dropped = lines.map((l, li) => (fixed[li] !== l ? (re.exec(l)?.[0] ?? "").trim() : "")).filter(Boolean);
+        if (dropped.length > 0) {
+          op.newText = fixed.join("\n");
+          labelNotes.push({ index, dropped });
+        }
+      }
+    }
     if (target && target.at >= 0) spans.push({ index, para: target.i, start: target.at, end: target.at + op.anchor.originalText.length, old: op.anchor.originalText, new: op.newText, ...(op.insertAfter ? { insert: true as const } : {}) });
   }
   for (let i = 0; i < spans.length; i++) {
@@ -234,15 +311,16 @@ export function applyStructuredPatches(
   for (const item of preview) item.ok = !bad.has(item.index);
   if (input.dryRun) {
     // 逐条成立时再合并试写一遍（与真正生成时同一步）：合并失败即整体不成立
+    let numbering: NumberingShifts | undefined;
     if (conflicts.length === 0) {
       try {
-        applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops: insertsFirst(ops) });
+        numbering = numberingShifts(buf, sanitizeDocx(applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops: insertsFirst(ops) }).docx).docx);
       } catch (e) {
         for (const item of preview) item.ok = false;
         conflicts.push({ index: 0, reason: "apply_failed", detail: (e as Error).message.slice(0, 200) });
       }
     }
-    return { status: "preview", reason: conflicts.length > 0 ? "conflicts" : "dry_run", conflicts: conflicts.sort((x, y) => x.index - y.index), preview, paragraphs, spans: spans.filter((x) => !bad.has(x.index)) };
+    return { status: "preview", reason: conflicts.length > 0 ? "conflicts" : "dry_run", conflicts: conflicts.sort((x, y) => x.index - y.index), preview, paragraphs, spans: spans.filter((x) => !bad.has(x.index)), ...(numbering ? { numbering } : {}), label_notes: labelNotes };
   }
   if (conflicts.length > 0) return { status: "preview", reason: "conflicts", conflicts: conflicts.sort((x, y) => x.index - y.index), preview };
 
@@ -276,7 +354,7 @@ export function applyStructuredPatches(
      VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,?,?,?,?)`,
     [artifactId, doc.tenant_id, doc.matter_id, input.run_id ?? null, kind, v.next, filename, stored.sha256, stored.storage_uri, "[]", JSON.stringify(manifest), input.created_by, docLineage(doc.document_version_id)],
   );
-  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview };
+  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(buf, sanitizeDocx(out).docx), label_notes: labelNotes };
 }
 
 /**

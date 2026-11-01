@@ -423,6 +423,77 @@ test("自动编号的合同（第 29 批）：材料文字带条款号；修订�
   }
 });
 
+/** 删条款、加条款的自动编号合同（第 34 批 T3b）：第四条删掉后第五条顺延成第四条，正文里的“第五条”“5.2”不会跟着变。 */
+function renumberDocx(): Buffer {
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const num = (ilvl: number) => `<w:pPr><w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="1"/></w:numPr></w:pPr>`;
+  const para = (t: string, pPr = "") => `<w:p>${pPr}<w:r><w:t xml:space="preserve">${t}</w:t></w:r></w:p>`;
+  const body = [
+    para("借款合同"),
+    para("还款", num(0)),
+    para("乙方应按还款计划表按期还本付息。", num(1)),
+    para("还款依次冲抵费用、利息与本金。", num(1)),
+    para("借款展期", num(0)),
+    para("乙方可以书面申请展期一次。", num(1)),
+    para("保证", num(0)),
+    para("丙方为乙方的全部债务提供连带责任保证。", num(1)),
+    para("保证期间为三年；依本合同第五条承担责任的范围见 5.1。", num(1)),
+    para("争议解决", num(0)),
+    para("丙方依本合同第五条承担的责任，不因主合同变更而减轻。", num(1)),
+  ].join("");
+  const files = readZipEntries(createStyledDocx([p("占位")], undefined, null, { mark: false }));
+  files.set("word/document.xml", Buffer.from(files.get("word/document.xml")!.toString("utf8").replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body>${body}$1`)));
+  files.set(
+    "word/numbering.xml",
+    Buffer.from(
+      `<w:numbering ${W}><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="3"/><w:numFmt w:val="chineseCounting"/><w:lvlText w:val="第%1条"/></w:lvl><w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:isLgl/><w:lvlText w:val="%1.%2"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>`,
+    ),
+  );
+  return writeZip([...files.entries()].map(([name, data]) => ({ name, data })));
+}
+
+test("自动编号的段落：新文字开头抄进去的编号去掉；删条款后编号顺延，列出正文里仍写着旧条号的互引（第 34 批 T3b 真实走查）", { timeout: 120_000 }, async () => {
+  const { matter } = await tk.inv("matters.create", { title: "自动编号顺延", stance: "出借人", consent_status: "agreed", key_dates: { analysis_as_of: "2026-11-01" } });
+  const doc = await importBytes(tk.inv, matter.matter_id, "借款合同（自动编号）.docx", renumberDocx(), DOCX_MIME);
+  const a = await agentFor(matter.matter_id, "revise-renumber");
+  try {
+    const patches = [
+      { anchor: "3.1 乙方应按还款计划表按期还本付息。", proposed_text: "3.1 乙方应按本合同附件一还款计划表按期还本付息。" },
+      { anchor: "3.2 还款依次冲抵费用、利息与本金。", proposed_text: "3.3 乙方逾期还款的，按日万分之三支付违约金。", insert_after: true },
+      { anchor: "第四条 借款展期", proposed_text: "" },
+      { anchor: "4.1 乙方可以书面申请展期一次。", proposed_text: "" },
+    ];
+    const dry = await a.call("docx.revise", { document_version_id: doc.document_version_id, patches, dry_run: true });
+    assert.equal(dry.status, "preview", JSON.stringify(dry));
+    assert.deepEqual(dry.label_notes, [{ patch: 1, dropped: ["3.1"] }, { patch: 2, dropped: ["3.3"] }], "新文字开头的编号去掉并说明");
+    assert.ok(dry.changes.some((c: { after: string }) => c.after === "乙方应按本合同附件一还款计划表按期还本付息。"), JSON.stringify(dry.changes));
+    assert.ok(dry.numbering_changes.renumbered.some((x: { from: string; to: string }) => x.from === "第五条" && x.to === "第四条"), JSON.stringify(dry.numbering_changes));
+    const refs = dry.numbering_changes.references.map((x: { ref: string; now: string }) => `${x.ref}→${x.now}`);
+    assert.deepEqual(refs.sort(), ["5.1→4.1", "第五条→第四条", "第五条→第四条"].sort(), "正文里的旧条号逐处列出");
+    assert.match(dry.numbering_note, /3 处互引仍写着旧号/);
+
+    const out = await a.call("docx.revise", { document_version_id: doc.document_version_id, patches });
+    assert.equal(out.status, "applied", JSON.stringify(out));
+    assert.match(out.numbering_note, /重新提交一次/);
+    const clean = Buffer.from((await tk.inv("artifacts.download", { artifact_version_id: out.clean.artifact_version_id })).data_base64, "base64");
+    const paras = extractParagraphs(clean).map((x) => x.text);
+    assert.ok(paras.includes("乙方应按本合同附件一还款计划表按期还本付息。"), JSON.stringify(paras));
+    assert.ok(paras.includes("乙方逾期还款的，按日万分之三支付违约金。"), "插入的条款继承自动编号，文字里不再写“3.3”");
+    assert.equal(paras.some((t) => /^\d+\.\d+ /.test(t)), false, "没有一段在文字里另写编号");
+
+    // 互引一并改：再提交时不再列出
+    const fixed = await a.call("docx.revise", {
+      document_version_id: doc.document_version_id,
+      patches: [...patches, { anchor: "依本合同第五条承担责任的范围见 5.1", proposed_text: "依本合同第四条承担责任的范围见 4.1" }, { anchor: "丙方依本合同第五条承担的责任", proposed_text: "丙方依本合同第四条承担的责任" }],
+      dry_run: true,
+    });
+    assert.equal(fixed.numbering_changes.references.length, 0, JSON.stringify(fixed.numbering_changes));
+    assert.doesNotMatch(fixed.numbering_note, /互引/);
+  } finally {
+    await a.close();
+  }
+});
+
 test("导出 PDF 的打印页（第 29 批）：与“下载 Word”同一份文件、真名已还原；修订稿拒绝、清洁稿可以", { timeout: 120_000 }, async () => {
   const { matter } = await tk.inv("matters.create", { title: "导出 PDF", stance: "委托方", consent_status: "agreed", key_dates: { analysis_as_of: "2026-10-28" } });
   await tk.inv("matters.parties.upsert", { matter_id: matter.matter_id, name: "王建国", kind: "person" });
