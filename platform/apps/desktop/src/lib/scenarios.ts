@@ -1162,10 +1162,21 @@ export function buildGoal(card: ScenarioCard, values: Record<string, string | st
   return [out.trim(), extra.trim()].filter(Boolean).join("\n");
 }
 
-/** 意图建议：根据律师输入的任务描述建议一个业务场景（本机关键词规则，不联网；不自动切换）。 */
-export function suggestScenario(goal: string): ScenarioCard | null {
-  const g = goal.replace(/\s+/g, "");
-  if (g.length < 4) return null;
+/**
+ * 律师说“要什么”的句子（第 34 批真实走查）：带“帮 / 请 / 起草 / 写一份……”的句子。律师常把案情一并写进来，
+ * 事实里的“违约金……分段计算”“对方要求修改”会和请求句里的“起草起诉状”同分甚至排除它——“帮我起草一份民事起诉状。基本事实：……
+ * 违约金分段计算……”原先被建议成“金额测算”（只出 Excel）。
+ */
+const ASK_RE = /帮|(?<![申诉提报])请(?!求)|麻烦|给我|我要|我想|想要|需要你|起草|草拟|拟一份|拟个|写一份|写个|出一份|出个|做一份|做个/;
+function askSentences(goal: string): string {
+  return goal
+    .split(/[。！？!?；;\n]/)
+    .filter((s) => ASK_RE.test(s))
+    .join("。")
+    .replace(/\s+/g, "");
+}
+
+function bestScenarioIn(g: string): ScenarioCard | null {
   // 取命中最具体的一张（命中词的总字数最多；复核 B3-B24：“核对起诉状里的引用”应引向引用核验，而不是起草起诉状）
   let best: ScenarioCard | null = null;
   let bestScore = 0;
@@ -1181,6 +1192,14 @@ export function suggestScenario(goal: string): ScenarioCard | null {
     }
   }
   return best;
+}
+
+/** 意图建议：根据律师输入的任务描述建议一个业务场景（本机关键词规则，不联网；不自动切换）。先只看请求句，请求句里认不出再看全文。 */
+export function suggestScenario(goal: string): ScenarioCard | null {
+  const g = goal.replace(/\s+/g, "");
+  if (g.length < 4) return null;
+  const ask = askSentences(goal);
+  return (ask && ask !== g ? bestScenarioIn(ask) : null) ?? bestScenarioIn(g);
 }
 
 /** 材料不齐时能否先开始（Z3 评审 #4）：卡片声明允许、且是 Agent 场景。 */

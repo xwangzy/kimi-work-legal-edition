@@ -472,7 +472,9 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   // 总时长上限（含等待律师）：缺省 8 小时，本机配置可调（测试与律所策略）
   const wall = Number(env.ZR_AGENT_WALL_MS);
   const agentWallMs = Number.isFinite(wall) && wall >= 2000 ? wall : undefined;
-  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs };
+  // 主交付物（第 34 批）：读当时生效的方法模板包（内容更新后 skillsBundle 会换）
+  const skillPrimaryOf = (skill: string) => (skillsBundle.ok ? (skillsBundle.skills.find((x) => x.id === skill)?.primary_output ?? null) : null);
+  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf };
   queue.register("legalRun", createLegalWorkflow(workflowDeps));
 
   const ocrModelPaths = {

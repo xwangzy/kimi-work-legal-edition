@@ -47,6 +47,8 @@ export interface ExecutorDeps {
   agentWorkLimitMs?: number | undefined;
   /** A1 任务的总时长上限（毫秒，含等待律师；缺省 8 小时；本机配置 ZR_AGENT_WALL_MS）。 */
   agentWallMs?: number | undefined;
+  /** 方法模板的主交付物（前言 outputs 第一项；第 34 批）：自由描述的任务按助手实际加载的方法核对主交付物。读当时生效的模板包。 */
+  skillPrimaryOf?: ((skill: string) => string | null | undefined) | undefined;
 }
 
 interface RunRow {
@@ -1154,7 +1156,9 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   // 成果已入库（检查点在案）；本次尝试中若有副作用调用结果不明 → 转对账，对账后 runs.retry 按检查点结算、不重跑 Agent
   assertNoUnresolved();
   // 主交付物核对（第 28 批）：文书类方法没交出任何 Word 文书时不记“完成”——真实走查里起诉状任务只交了两份表格却显示“已完成”
-  const missing = outcomeStatus === "succeeded" ? primaryDeliverableMissing(db, runId, primaryOutput) : null;
+  // 律师直接描述任务（没从场景卡指定方法）时按助手自己加载的方法核对（第 34 批：原先这类任务没有任何主交付物核对）
+  const expected = primaryOutput ?? (!skill && ctx.deps.skillPrimaryOf ? loadedPrimaryOutput(db, runId, ctx.deps.skillPrimaryOf) : null);
+  const missing = outcomeStatus === "succeeded" ? primaryDeliverableMissing(db, runId, expected) : null;
   if (missing) appendEvent(ctx.deps, runId, attemptId, AGENT_PRIMARY_MISSING_SEQ, "agent.primary_missing", { primary: missing.primary, cause: missing.cause });
   const finalStatus = outcomeStatus === "partial" || missing ? RunStatus.partial : RunStatus.succeeded;
   const finalRemaining = missing ? [...remaining, missing.note] : remaining;
@@ -1188,6 +1192,23 @@ export function agentTimeoutText(reason: string | null): string {
 
 /** 主交付物缺失的事件序号（独立占位，不与成果段 69+、工作区被拒 9000、宿主事件 10000+ 冲突）。 */
 const AGENT_PRIMARY_MISSING_SEQ = 9_001;
+
+/**
+ * 自由描述的任务里助手加载过的方法的主交付物（第 34 批）：按加载顺序，先取第一个主交付物是 Word 文书的方法，没有再取第一个是 Excel 表的；
+ * 都没有返回 null（只回答问题、没加载方法的任务不核对）。起诉状任务里助手常先后加载“民事起诉状”“金额测算”——应交的是起诉状。纯查询。
+ */
+export function loadedPrimaryOutput(db: KernelDb, runId: string, primaryOf: (skill: string) => string | null | undefined): string | null {
+  const outs: string[] = [];
+  for (const row of db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.skill' ORDER BY seq`, [runId])) {
+    let skill: unknown = null;
+    try {
+      skill = JSON.parse(row.payload)?.skill;
+    } catch {}
+    const out = typeof skill === "string" ? primaryOf(skill) : null;
+    if (out) outs.push(out);
+  }
+  return outs.find((o) => WORD_OUTPUT.test(o)) ?? outs.find((o) => SHEET_OUTPUT.test(o)) ?? null;
+}
 
 /** 算作“交出了 Word 文书”的成果：文书工具、在原件上修订、工作区里的 .docx（最终答复转出的 Word 不算）。 */
 const WORD_ARTIFACT_SQL = `kind IN ('agent_report', 'revision_draft', 'revision_clean') OR (kind = 'a1_workspace_file' AND lower(filename) LIKE '%.docx')`;
