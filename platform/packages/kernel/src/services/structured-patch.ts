@@ -11,7 +11,7 @@
  * - 任何一条不成立：整体返回预览（逐条列出原因与还原后的文本），不做模糊替换、不写半个文件。
  */
 import { DomainError, newId, sha256Hex } from "@zr-legal/domain";
-import { applyRevisionsToDocx, docxListLabels, extractParagraphs, sanitizeDocx, stripListLabel, type RevisionOp } from "@zr-legal/docx-engine";
+import { applyRevisionsToDocx, docxListLabels, extractParagraphs, sameSpaces, sanitizeDocx, stripListLabel, type RevisionOp } from "@zr-legal/docx-engine";
 import { findTokens } from "@zr-legal/tokenizer";
 import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
@@ -45,6 +45,7 @@ export interface PatchConflict {
     | "anchor_ambiguous"
     | "anchor_empty"
     | "overlap"
+    | "complex_structure"
     | "apply_failed";
   detail?: string;
 }
@@ -159,7 +160,7 @@ export function applyStructuredPatches(
     const comment = typeof p?.comment === "string" ? p.comment : undefined;
     if (anchor.length === 0) return void conflicts.push({ index, reason: "anchor_empty" });
     if (sha256Hex(anchor) !== String(p?.expected_text_hash ?? "")) return void conflicts.push({ index, reason: "anchor_hash_mismatch" });
-    if (!viewText.includes(anchor)) return void conflicts.push({ index, reason: "anchor_not_in_view", detail: "锚点不在当前版本的令牌化视图中（文档已变化或锚点不是 Agent 看到的原文）" });
+    if (!sameSpaces(viewText).includes(sameSpaces(anchor))) return void conflicts.push({ index, reason: "anchor_not_in_view", detail: "锚点不在当前版本的令牌化视图中（文档已变化或锚点不是 Agent 看到的原文）" });
     // 代号必须都在本事项令牌表里（不认识的代号不猜）
     const unknown = [...findTokens(anchor), ...findTokens(proposed), ...(comment ? findTokens(comment) : [])].filter((t) => !restoreMap.has(t));
     if (unknown.length > 0) return void conflicts.push({ index, reason: "unknown_token", detail: [...new Set(unknown)].join("、") });
@@ -186,7 +187,7 @@ export function applyStructuredPatches(
   const nth = (text: string, needle: string, occ: number): number => {
     let at = -1;
     for (let k = 0; k <= occ; k++) {
-      at = text.indexOf(needle, at + 1);
+      at = sameSpaces(text).indexOf(sameSpaces(needle), at + 1);
       if (at < 0) return -1;
     }
     return at;
@@ -194,20 +195,31 @@ export function applyStructuredPatches(
   const spans: PatchSpan[] = [];
   for (const op of ops) {
     const index = Number(op.opId.slice(1));
+    let located: number | undefined;
     try {
-      applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops: [op] });
+      located = applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops: [op] }).applied[0]?.paragraphIndex;
     } catch (e) {
       const msg = (e as Error).message;
-      conflicts.push({ index, reason: /歧义/.test(msg) ? "anchor_ambiguous" : /未找到|非文本区/.test(msg) ? "anchor_not_found" : "apply_failed", detail: msg.slice(0, 200) });
+      conflicts.push({
+        index,
+        reason: /歧义/.test(msg)
+          ? "anchor_ambiguous"
+          : /未找到|非文本区/.test(msg)
+            ? "anchor_not_found"
+            : /同一处/.test(msg)
+              ? "overlap"
+              : /修订痕迹|超链接|内容控件|域|脚注|特殊符号|嵌入对象|结构不完整/.test(msg)
+                ? "complex_structure"
+                : "apply_failed",
+        detail: msg.slice(0, 200),
+      });
       continue;
     }
-    // 记录定位，检查补丁之间是否重叠（重叠的两处修改无法同时写成原生修订）
+    // 记录定位，检查补丁之间是否重叠（重叠的两处修改无法同时写成原生修订）；段落用引擎实际定位的那一段
+    // （第 34 批 D10：原先这里另按“提示是段落文字的子串”挑一遍，对不上时取第一处，与引擎不一致）
     const occ = op.anchor.occurrence ?? 0;
-    const cands = paragraphs.map((t, i) => ({ i, at: nth(t, op.anchor.originalText, occ) })).filter((c) => c.at >= 0);
-    const hint = op.anchor.paragraphHint;
-    const shown = (i: number): string => (labels[i] ? `${labels[i]} ${paragraphs[i]}` : paragraphs[i]!);
-    const target = cands.length === 1 ? cands[0] : hint ? (cands.find((c) => shown(c.i).includes(hint)) ?? cands[0]) : cands[0];
-    if (target) spans.push({ index, para: target.i, start: target.at, end: target.at + op.anchor.originalText.length, old: op.anchor.originalText, new: op.newText, ...(op.insertAfter ? { insert: true as const } : {}) });
+    const target = located !== undefined && paragraphs[located] !== undefined ? { i: located, at: nth(paragraphs[located]!, op.anchor.originalText, occ) } : undefined;
+    if (target && target.at >= 0) spans.push({ index, para: target.i, start: target.at, end: target.at + op.anchor.originalText.length, old: op.anchor.originalText, new: op.newText, ...(op.insertAfter ? { insert: true as const } : {}) });
   }
   for (let i = 0; i < spans.length; i++) {
     for (let j = i + 1; j < spans.length; j++) {

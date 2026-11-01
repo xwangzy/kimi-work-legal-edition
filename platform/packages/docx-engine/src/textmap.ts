@@ -6,17 +6,24 @@ export interface TextSegment {
   /** 段内文本偏移 [start, end) */
   start: number;
   end: number;
-  /** 文本在整篇 XML 中的偏移（<w:t> 内容区间） */
+  /** 文本在整篇 XML 中的偏移（<w:t> 内容区间；制表符、换行为该元素本身的区间） */
   xmlStart: number;
   xmlEnd: number;
   /** 所属 <w:r> 在整篇 XML 中的完整区间（修订手术以 run 为最小切除单位） */
   runXmlStart: number;
   runXmlEnd: number;
   text: string;
-  /** 所属 <w:r> 的 rPr XML（用于继承格式） */
+  /** 所属 <w:r> 的 rPr XML（用于继承格式；按配对标签取全，含他人格式修订 w:rPrChange 时也完整） */
   rPr: string | null;
   /** 该文本是否在删除标记内（w:delText 或位于未闭合 w:del 内） */
   deleted: boolean;
+  /**
+   * 内容种类（第 34 批）：文字；制表符（记作“\t”）；换行（w:br / w:cr，记作“\n”）——与材料文字视图（内核 parser 的 inlineText）一致，
+   * 律师和助手在材料里看到的“甲方（盖章）：\t乙方（盖章）：”在这里也找得到。
+   */
+  kind?: "text" | "tab" | "br";
+  /** 本次写入中新插入的文字（带 kwl-new 标记的 w:ins 内）：不参与锚点匹配，宽度为 0（第 34 批 D11） */
+  fresh?: boolean;
 }
 
 export interface ParagraphMap {
@@ -28,11 +35,98 @@ export interface ParagraphMap {
   segments: TextSegment[];
 }
 
-const P_RE = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
-const R_RE = /<w:r\b[^>]*>[\s\S]*?<\/w:r>/g;
-const T_RE = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>/;
-const DELT_RE = /<w:delText\b[^>]*>([\s\S]*?)<\/w:delText>/;
-const RPR_RE = /<w:rPr>[\s\S]*?<\/w:rPr>/;
+/**
+ * 段落区间（第 34 批，文档工程压测 D02/D05）：按 <w:p> 的嵌套深度扫描。自闭合空段落 <w:p …/>（Word 常这样写空行，本引擎的
+ * createStyledDocx 也这样写）单独算一段——原先的惰性正则会把它连同下一段并成一段，整段删除时写出非法结构；文本框里嵌套的段落
+ * （w:txbxContent）算在外层段落里、不单独成段。返回顶层段落在整篇里的 [start, end)。多余的结束标签忽略，没闭合的段落不算。
+ */
+export function paragraphSpans(xml: string): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  let depth = 0;
+  let start = -1;
+  for (const m of xml.matchAll(/<(\/?)w:p\b[^>]*?(\/?)>/g)) {
+    if (m[2] === "/") {
+      if (depth === 0) out.push({ start: m.index!, end: m.index! + m[0].length });
+      continue;
+    }
+    if (!m[1]) {
+      if (depth === 0) start = m.index!;
+      depth += 1;
+      continue;
+    }
+    if (depth === 0) continue;
+    depth -= 1;
+    if (depth === 0) out.push({ start, end: m.index! + m[0].length });
+  }
+  return out;
+}
+
+/** 名为 name 的第一个元素（按同名标签配对，嵌套同名元素也取全）：返回在 xml 里的 [start, end)；没有返回 null。 */
+export function findElement(xml: string, name: string, from = 0): { start: number; end: number } | null {
+  const re = new RegExp(`<(/?)${name.replace(":", "\\:")}(?=[\\s/>])[^>]*?(/?)>`, "g");
+  re.lastIndex = from;
+  let depth = 0;
+  let start = -1;
+  for (let m = re.exec(xml); m; m = re.exec(xml)) {
+    if (m[2] === "/") {
+      if (depth === 0) return { start: m.index, end: m.index + m[0].length };
+      continue;
+    }
+    if (!m[1]) {
+      if (depth === 0) start = m.index;
+      depth += 1;
+      continue;
+    }
+    if (depth === 0) continue;
+    depth -= 1;
+    if (depth === 0) return { start, end: m.index + m[0].length };
+  }
+  return null;
+}
+
+/** 去掉 xml 里所有名为 names 的元素（按配对取全）。纯函数。 */
+export function removeElements(xml: string, names: readonly string[]): string {
+  let out = xml;
+  for (const name of names) {
+    for (let e = findElement(out, name); e; e = findElement(out, name, e.start)) out = out.slice(0, e.start) + out.slice(e.end);
+  }
+  return out;
+}
+
+/** 片段里的顶层元素（任意名，按深度配对）：name、区间；不含元素之间的空白文字。 */
+export function childElements(xml: string): { name: string; start: number; end: number }[] {
+  const out: { name: string; start: number; end: number }[] = [];
+  let depth = 0;
+  let start = -1;
+  let name = "";
+  for (const m of xml.matchAll(/<(\/?)([A-Za-z_][\w.:-]*)\b[^>]*?(\/?)>/g)) {
+    if (m[3] === "/") {
+      if (depth === 0) out.push({ name: m[2]!, start: m.index!, end: m.index! + m[0].length });
+      continue;
+    }
+    if (!m[1]) {
+      if (depth === 0) {
+        start = m.index!;
+        name = m[2]!;
+      }
+      depth += 1;
+      continue;
+    }
+    if (depth === 0) continue;
+    depth -= 1;
+    if (depth === 0) out.push({ name, start, end: m.index! + m[0].length });
+  }
+  return out;
+}
+
+/** 文本框内容（w:txbxContent，里面是嵌套的段落）换成等长空格：偏移不变，外层段落只看自己的 run（第 34 批 D02）。 */
+export function maskNested(pXml: string): string {
+  let out = pXml;
+  for (let e = findElement(out, "w:txbxContent"); e; e = findElement(out, "w:txbxContent", e.end)) out = out.slice(0, e.start) + " ".repeat(e.end - e.start) + out.slice(e.end);
+  return out;
+}
+
+const R_RE = /<w:r\b[^>]*\/>|<w:r\b[^>]*>[\s\S]*?<\/w:r>/g;
 /**
  * 删除区段的开/闭标记：w:del 与 w:moveFrom（移动修订的原位置，等同删除；复核 C-B03，与解析器口径一致）。
  * 自闭合的 `<w:del …/>`（段落标记被删，出现在 rPr 里）不是区段开头——否则会把其后整段都当成已删除。
@@ -57,6 +151,18 @@ function insideDel(pXml: string, runStart: number): boolean {
   return lastOpen > lastClose;
 }
 
+/** run 是否在本次写入新插入的 w:ins（带 kwl-new 标记）内：按 w:ins 开闭配对，看最内层（第 34 批 D11）。 */
+function insideFreshIns(pXml: string, runStart: number): boolean {
+  const stack: boolean[] = [];
+  for (const m of pXml.matchAll(/<(\/?)w:ins\b([^>]*?)(\/?)>/g)) {
+    if (m.index! >= runStart) break;
+    if (m[3] === "/") continue;
+    if (m[1]) stack.pop();
+    else stack.push(/\skwl-new="/.test(m[2] ?? ""));
+  }
+  return stack.at(-1) === true;
+}
+
 /**
  * 转义并去掉 XML 1.0 不允许的控制字符（制表、换行、回车除外）：模型从 PDF、OCR 摘录里带出的 \f、\v 等原样写进
  * <w:t> 会让 Word 打不开整份文件（第 32 批，复核 A-03）。
@@ -65,60 +171,133 @@ export function escapeXml(s: string): string {
   return s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f￾￿]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+/** 反转义；数字字符引用（&#160; &#x4E09;）也解码（第 34 批 D14：原先原样留在文字里，改同一 run 后正文出现字面“&#160;”）。 */
 export function unescapeXml(s: string): string {
-  return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+  return s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);|&#x([0-9a-fA-F]+);/g, (m, d: string | undefined, h: string | undefined) => {
+      const cp = d !== undefined ? Number(d) : parseInt(h!, 16);
+      return Number.isFinite(cp) && cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+    })
+    .replace(/&amp;/g, "&");
 }
 
-export function mapParagraphs(documentXml: string): ParagraphMap[] {
-  const out: ParagraphMap[] = [];
-  let pIdx = 0;
-  for (const pm of documentXml.matchAll(P_RE)) {
-    const pStart = pm.index!;
-    const pXml = pm[0];
-    const segments: TextSegment[] = [];
-    let textLen = 0;
-    for (const rm of pXml.matchAll(R_RE)) {
-      const rStart = rm.index!;
-      const rXml = rm[0];
-      const rpr = RPR_RE.exec(rXml)?.[0] ?? null;
-      const inDel = insideDel(pXml, rm.index!);
-      const tMatch = T_RE.exec(rXml) ?? DELT_RE.exec(rXml);
-      if (!tMatch) continue;
-      const isDelText = DELT_RE.test(rXml) && !T_RE.test(rXml);
-      const tXmlStart = rStart + tMatch.index + tMatch[0].indexOf(">") + 1;
-      const raw = tMatch[1] ?? "";
-      const text = unescapeXml(raw);
+/** run 的 rPr（按配对标签取全；第 34 批 D03：含他人格式修订 w:rPrChange 时原先只取到半截）。 */
+export function runProps(rXml: string): string | null {
+  const open = /^<w:r\b[^>]*>/.exec(rXml);
+  if (!open) return null;
+  const e = findElement(rXml, "w:rPr", open[0].length);
+  if (!e) return null;
+  // 只认 run 的第一个子元素位置上的 rPr（不是内容里嵌套的）
+  return /^\s*$/.test(rXml.slice(open[0].length, e.start)) ? rXml.slice(e.start, e.end) : null;
+}
+
+/** 映射一个段落（pXml 为该段落的 XML，pStart 为其在整篇里的偏移）。 */
+export function mapParagraph(pXml: string, pStart: number, index: number): ParagraphMap {
+  const masked = maskNested(pXml);
+  const segments: TextSegment[] = [];
+  let textLen = 0;
+  for (const rm of masked.matchAll(R_RE)) {
+    if (rm[0].endsWith("/>") && !rm[0].includes("</w:r>")) continue;
+    const rStart = rm.index!;
+    const rXml = pXml.slice(rStart, rStart + rm[0].length);
+    const rpr = runProps(rXml);
+    const inDel = insideDel(masked, rStart);
+    const fresh = insideFreshIns(masked, rStart);
+    const open = /^<w:r\b[^>]*>/.exec(rXml)![0].length;
+    const inner = rXml.slice(open, rXml.length - "</w:r>".length);
+    for (const c of childElements(inner)) {
+      const el = inner.slice(c.start, c.end);
+      let text: string;
+      let kind: TextSegment["kind"];
+      let xs: number;
+      let xe: number;
+      let isDelText = false;
+      if (c.name === "w:t" || c.name === "w:delText") {
+        const gt = el.indexOf(">");
+        if (el.endsWith("/>")) continue;
+        const raw = el.slice(gt + 1, el.length - `</${c.name}>`.length);
+        text = unescapeXml(raw);
+        kind = "text";
+        xs = pStart + rStart + open + c.start + gt + 1;
+        xe = xs + raw.length;
+        isDelText = c.name === "w:delText";
+      } else if (c.name === "w:tab" || c.name === "w:ptab") {
+        text = "\t";
+        kind = "tab";
+        xs = pStart + rStart + open + c.start;
+        xe = pStart + rStart + open + c.end;
+      } else if (c.name === "w:br" || c.name === "w:cr") {
+        text = "\n";
+        kind = "br";
+        xs = pStart + rStart + open + c.start;
+        xe = pStart + rStart + open + c.end;
+      } else continue;
       const seg: TextSegment = {
         start: textLen,
         end: textLen + text.length,
-        xmlStart: pStart + tXmlStart,
-        xmlEnd: pStart + tXmlStart + raw.length,
+        xmlStart: xs,
+        xmlEnd: xe,
         runXmlStart: pStart + rStart,
         runXmlEnd: pStart + rStart + rXml.length,
         text,
         rPr: rpr,
         deleted: inDel || isDelText,
+        kind,
+        ...(fresh ? { fresh: true } : {}),
       };
       segments.push(seg);
-      if (!seg.deleted) textLen += text.length;
+      if (!seg.deleted && !fresh) textLen += text.length;
       else {
-        // 删除文本不占可见文本位：回退段内偏移
+        // 删除文本、本次新插入的文字不占可见文本位：回退段内偏移
         seg.start = textLen;
         seg.end = textLen;
       }
     }
-    const visible = segments.filter((s) => !s.deleted).map((s) => s.text).join("");
-    out.push({ index: pIdx++, xmlStart: pStart, xmlEnd: pStart + pXml.length, text: visible, segments });
   }
-  return out;
+  const visible = segments.filter((s) => !s.deleted && !s.fresh).map((s) => s.text).join("");
+  return { index, xmlStart: pStart, xmlEnd: pStart + pXml.length, text: visible, segments };
+}
+
+/** 把段落里含多个内容（文字、制表符、换行……）的 run 拆成一个内容一个 run（格式照抄）；段落之外不动。 */
+export function splitParagraphRuns(xml: string, target: { xmlStart: number; xmlEnd: number }, nextId?: () => number): string {
+  const paraXml = xml.slice(target.xmlStart, target.xmlEnd);
+  const out = paraXml.replace(/<w:r\b[^>]*\/>|<w:r\b[^>]*>[\s\S]*?<\/w:r>/g, (rXml) => {
+    if (rXml.endsWith("/>") && !rXml.includes("</w:r>")) return rXml;
+    const open = /^<w:r\b[^>]*>/.exec(rXml)![0];
+    const inner = rXml.slice(open.length, rXml.length - "</w:r>".length);
+    const rPr = runProps(rXml) ?? "";
+    const kids = childElements(inner).filter((k) => k.name !== "w:rPr");
+    // 文本框（嵌套段落）所在的 run 不拆：childElements 按深度配对，图形整块算一个内容
+    if (kids.length <= 1 || /<w:txbxContent\b/.test(inner)) return rXml;
+    // 拆出的第二段起，格式里的格式修订记录（w:rPrChange）换新编号，免得同一编号出现在几个 run 里
+    const renumber = (x: string) => (nextId ? x.replace(/(<w:rPrChange\b[^>]*?\bw:id=")\d+(")/g, (_m, a: string, c: string) => `${a}${nextId()}${c}`) : x);
+    return kids.map((k, i) => `${open}${i === 0 ? rPr : renumber(rPr)}${inner.slice(k.start, k.end)}</w:r>`).join("");
+  });
+  return out === paraXml ? xml : xml.slice(0, target.xmlStart) + out + xml.slice(target.xmlEnd);
+}
+
+export function mapParagraphs(documentXml: string): ParagraphMap[] {
+  return paragraphSpans(documentXml).map((sp, i) => mapParagraph(documentXml.slice(sp.start, sp.end), sp.start, i));
+}
+
+/** 不间断空格（U+00A0、U+202F）记作普通空格；长度不变。 */
+export function sameSpaces(s: string): string {
+  return s.replace(/[\u00a0\u202f]/g, " ");
 }
 
 /** 在段落文本中定位原文（支持第 N 次出现），返回段内 [start, end)。 */
 export function findInParagraph(para: ParagraphMap, originalText: string, occurrence = 0): { start: number; end: number } | null {
   let idx = -1;
   let from = 0;
+  // 不间断空格与普通空格按同一个字比（等长替换，偏移不变；第 34 批压测 E18：模型转述时常把 NBSP 写成普通空格）
+  const hay = sameSpaces(para.text);
+  const needle = sameSpaces(originalText);
   for (let i = 0; i <= occurrence; i++) {
-    idx = para.text.indexOf(originalText, from);
+    idx = hay.indexOf(needle, from);
     if (idx < 0) return null;
     from = idx + originalText.length;
   }

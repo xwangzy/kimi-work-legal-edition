@@ -45,6 +45,7 @@ export const SKIP_REASON_TEXT: Record<string, string> = {
   unknown_token: "含无法还原的代号，生成修订稿时会被拦下",
   anchor_empty: "没有原文，生成修订稿时会被拦下",
   apply_failed: "无法写成修订，生成修订稿时会被拦下",
+  complex_structure: "原文里有对方修订、域或脚注等，不能自动改，请在 Word 中手工修改",
   no_insert_point: "没有写明插在哪里，只进审查意见表，请在 Word 中手工补上",
   insert_point_not_found: "插入位置在合同里找不到，只进审查意见表，请在 Word 中手工补上",
   insert_point_ambiguous: "插入位置在合同里出现多处，只进审查意见表，请在 Word 中手工补上",

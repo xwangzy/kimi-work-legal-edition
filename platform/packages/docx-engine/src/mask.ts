@@ -6,7 +6,7 @@
 import { dropHouseMark } from "./house-style.ts";
 import { DomainError } from "@zr-legal/domain";
 import { readZipEntries, writeZip } from "./zip.ts";
-import { escapeXml, mapParagraphs } from "./textmap.ts";
+import { escapeXml, mapParagraph, mapParagraphs, splitParagraphRuns } from "./textmap.ts";
 
 export interface TextMask {
   /** 精确原文（在段落文本内定位） */
@@ -38,13 +38,18 @@ export function maskDocxText(docx: Buffer, masks: TextMask[]): MaskResult {
       if (remaining <= 0) break;
       const paras = mapParagraphs(xml);
       let applied = false;
-      for (const para of paras) {
-        const idx = para.text.indexOf(mask.find);
+      for (const found of paras) {
+        const idx = found.text.indexOf(mask.find);
         if (idx < 0) continue;
+        // 一个 run 里有几段文字、制表符的先拆开（第 34 批 D07：原先整 run 切除后只重发第一段文字，后半段会丢）
+        const lenBefore = xml.length;
+        xml = splitParagraphRuns(xml, found);
+        const para = mapParagraph(xml.slice(found.xmlStart, found.xmlEnd + xml.length - lenBefore), found.xmlStart, found.index);
         const spanStart = idx;
         const spanEnd = idx + mask.find.length;
         const coverSegs = para.segments.filter((s) => !s.deleted && s.end > spanStart && s.start < spanEnd);
-        if (coverSegs.length === 0) continue;
+        // 跨制表符、换行的不替换（只替换文字）
+        if (coverSegs.length === 0 || coverSegs.some((s) => s.kind !== undefined && s.kind !== "text")) continue;
         const first = coverSegs[0]!;
         const last = coverSegs.at(-1)!;
         const rpr = first.rPr ?? "";

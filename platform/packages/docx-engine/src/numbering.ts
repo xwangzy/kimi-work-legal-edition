@@ -10,7 +10,7 @@
  * - 不认识的格式按阿拉伯数字写，项目符号写“•”。
  * 只用于让文字视图带上编号（解析文本、定位提示），不改文件。
  */
-import { escapeXml, unescapeXml } from "./textmap.ts";
+import { escapeXml, findElement, paragraphSpans, removeElements, unescapeXml } from "./textmap.ts";
 import { readZipText } from "./zip.ts";
 
 interface Level {
@@ -26,7 +26,6 @@ interface NumDef {
   overrides: Map<number, { start?: number; level?: Level }>;
 }
 
-const P_RE = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
 const attr = (xml: string, name: string): string | null => new RegExp(`<w:${name}\\b[^>]*\\bw:val="([^"]*)"`).exec(xml)?.[1] ?? null;
 
 function parseLevel(xml: string): Level {
@@ -160,7 +159,8 @@ export function formatListNumber(n: number, fmt: string): string {
  * numberingXml 为空（文件没有自动编号）时全部为 null。
  */
 export function paragraphListLabels(documentXml: string, numberingXml: string | null, stylesXml: string | null): (string | null)[] {
-  const paras = [...documentXml.matchAll(P_RE)].map((m) => m[0]);
+  // 与 mapParagraphs 同一切分（第 34 批：自闭合空段落单独成段，文本框里的段落不单独成段）
+  const paras = paragraphSpans(documentXml).map((sp) => documentXml.slice(sp.start, sp.end));
   if (!numberingXml) return paras.map(() => null);
   const { abstracts, nums } = parseNumbering(numberingXml);
   const styles = parseStyleNumbering(stylesXml);
@@ -176,7 +176,9 @@ export function paragraphListLabels(documentXml: string, numberingXml: string | 
   const counters = new Map<string, number[]>();
   const startedNums = new Set<string>();
   return paras.map((p) => {
-    const pPr = /<w:pPr>([\s\S]*?)<\/w:pPr>/.exec(p)?.[1] ?? "";
+    // 段落格式按配对标签取全，去掉他人的格式修订记录（w:pPrChange 里嵌着旧的 w:pPr）
+    const pPrEl = findElement(p, "w:pPr");
+    const pPr = pPrEl ? removeElements(p.slice(pPrEl.start, pPrEl.end), ["w:pPrChange"]).replace(/^<w:pPr\b[^>]*>|<\/w:pPr>$/g, "") : "";
     const numPr = /<w:numPr>([\s\S]*?)<\/w:numPr>/.exec(pPr)?.[1] ?? null;
     const pStyle = attr(pPr.replace(/<w:rPr>[\s\S]*?<\/w:rPr>/, ""), "pStyle");
     const fromStyle = styleNum(pStyle);
@@ -222,16 +224,26 @@ export function docxListLabels(docx: Buffer): (string | null)[] {
  * 修订删除掉的段落仍按 Word 的口径计号（与 Word 打开时显示一致）。
  */
 export function documentXmlWithListLabels(documentXml: string, labels: readonly (string | null)[]): string {
-  let i = 0;
-  return documentXml.replace(P_RE, (p) => {
-    const label = labels[i++];
-    if (!label) return p;
+  let out = "";
+  let cursor = 0;
+  paragraphSpans(documentXml).forEach((sp, i) => {
+    const label = labels[i];
+    const p = documentXml.slice(sp.start, sp.end);
+    out += documentXml.slice(cursor, sp.start);
+    cursor = sp.end;
+    if (!label || p.endsWith("/>")) {
+      out += p;
+      return;
+    }
     const run = `<w:r><w:t xml:space="preserve">${escapeXml(label)} </w:t></w:r>`;
-    const at = p.indexOf("</w:pPr>");
-    if (at >= 0) return p.slice(0, at + 8) + run + p.slice(at + 8);
-    const open = /^<w:p\b[^>]*>/.exec(p)![0];
-    return open + run + p.slice(open.length);
+    const pPrEl = findElement(p, "w:pPr");
+    if (pPrEl && /^<w:p\b[^>]*>\s*$/.test(p.slice(0, pPrEl.start))) out += p.slice(0, pPrEl.end) + run + p.slice(pPrEl.end);
+    else {
+      const open = /^<w:p\b[^>]*>/.exec(p)![0];
+      out += open + run + p.slice(open.length);
+    }
   });
+  return out + documentXml.slice(cursor);
 }
 
 /**

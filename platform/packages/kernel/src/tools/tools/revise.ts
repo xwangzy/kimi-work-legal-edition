@@ -11,7 +11,7 @@
  * - 任一条不成立：整体不写，逐条返回原因与改法（不返回还原后的原文，结果仍经本机端点令牌化）。
  */
 import { DomainError, sha256Hex } from "@zr-legal/domain";
-import { sanitizeDocx } from "@zr-legal/docx-engine";
+import { existingRevisions, sanitizeDocx } from "@zr-legal/docx-engine";
 import { applyStructuredPatches, type PatchConflict, type StructuredPatch } from "../../services/structured-patch.ts";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
@@ -21,9 +21,10 @@ export const REVISE_MAX_PATCHES = 200;
 /** 逐条失败原因的改法（写给模型；律师界面不显示）。 */
 const FIX_HINT: Record<PatchConflict["reason"], string> = {
   anchor_not_found: "原件里找不到这段原文：逐字照抄材料原文（同一段落之内，含标点、空格与代号；段首的条款编号可以不抄）",
-  anchor_ambiguous: "这段原文在多个段落出现：加 paragraph_hint（条款号）或 occurrence，或把锚点写长到唯一",
+  anchor_ambiguous: "这段原文在多个段落出现：加 paragraph_hint 写条款号（表格里的格子写同一行的项目名，如“首期”），或把锚点写长到唯一；occurrence 只区分同一段落里的第几次出现",
   anchor_not_in_view: "这段原文不在本材料的文字里：不是照抄的原文，或跨了段落（一条修改只能在一个段落之内）",
   overlap: "与另一条修改的原文重叠：合并成一条",
+  complex_structure: "这处原文里有对方的修订痕迹、Word 域、脚注、超链接或内容控件，自动改写会丢内容或打乱修订记录：按 detail 把锚点缩到纯文字；做不到的不要重试，在最终答复里列明这一处请律师在 Word 里手工修改",
   unknown_token: "含有本事项不存在的代号：代号只能照抄材料里出现过的",
   anchor_empty: "anchor 不能为空；新增条款用 insert_after，锚点写插入位置前一段里的原文",
   anchor_hash_mismatch: "内部校验失败，请重新提交",
@@ -82,6 +83,12 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   });
   const documentVersionId = String(p.document_version_id ?? "");
   const dryRun = p.dry_run === true;
+  // 原件里已有的修订（第 34 批）：对方返回的带修订稿上再改时，清洁稿会把对方的修订一并接受——让助手先告诉律师
+  const src = ctx.db.get<{ storage_uri: string; filename: string }>(`SELECT storage_uri, filename FROM document_versions WHERE document_version_id = ? AND matter_id = ?`, [documentVersionId, mid]);
+  const prior = src && src.filename.toLowerCase().endsWith(".docx") ? existingRevisions(ctx.blobs.read(src.storage_uri)) : null;
+  const priorNote = prior && prior.total > 0
+    ? { existing_revisions: prior, existing_revisions_note: `原件里已有他人的修订痕迹 ${prior.total} 处（插入 ${prior.insertions}、删除 ${prior.deletions}、移动 ${prior.moves}、格式 ${prior.format_changes}）：修订稿原样保留；清洁稿会把它们与本次修改一并接受。在计划与最终答复里告诉律师这一点；落在对方修订痕迹里的修改不能自动写，列明请律师在 Word 里处理` }
+    : {};
   const r = applyStructuredPatches(
     { db: ctx.db, blobs: ctx.blobs, tokens: ctx.tokens },
     { matter_id: mid, document_version_id: documentVersionId, patches, created_by: run.created_by, run_id: rid, filename_suffix: "（修订稿）", ...(dryRun ? { dryRun: true } : {}) },
@@ -91,6 +98,7 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
       status: "preview" as const,
       written: false,
       changes: previewChanges(r.paragraphs ?? [], r.spans ?? []),
+      ...priorNote,
       note: "这是试写，没有生成文件。逐段读 after（改后的整段）：语句通顺、与前后文衔接（没有多出或漏掉的字，例如替换“合同签订之日起”时留下的“本”）、编号与互引正确后，去掉 dry_run 把全部修改正式提交一次。",
     };
   }
@@ -106,6 +114,7 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
       reason: r.reason,
       written: false,
       conflicts: r.conflicts.map((c) => ({ index: c.index, reason: c.reason, fix: FIX_HINT[c.reason], ...(c.detail ? { detail: c.detail } : {}) })),
+      ...priorNote,
       note,
     };
   }
@@ -133,6 +142,7 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
     applied: r.applied,
     revision: { artifact_version_id: r.artifact_version_id, filename: r.filename },
     clean: { artifact_version_id: cleanReg.artifact_version_id, filename: cleanReg.filename },
+    ...priorNote,
     note: "修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；清洁稿已接受全部修订、去掉批注；原件不变。批注是写给律师的修改理由，发给对方前须删除批注或改用清洁稿。",
   };
 }
