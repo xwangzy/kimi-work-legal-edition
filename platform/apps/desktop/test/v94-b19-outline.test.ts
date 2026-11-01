@@ -58,8 +58,12 @@ test("确认的先后：先记决定再代答；没有确认题只记决定；�
 
 test("任务页源码：单题的确认题并进提纲卡、和别的题同卡时确认那一项跟着提纲卡走（第 31 批）；确认走 confirmAndAnswer", () => {
   const src = readFileSync(fileURLToPath(new URL("../src/pages/RunView.tsx", import.meta.url)), "utf8");
-  assert.match(src, /questions\.filter\(\(q\) => !\(outlineQ && outlineQ\.others === 0 && q\.question_id === outlineQ\.question_id\)\)/);
+  assert.match(src, /questions\.filter\(\(q\) => !\(outline && outlineQ && outlineQ\.others === 0 && q\.question_id === outlineQ\.question_id\)\)/);
   assert.match(src, /answer: outlineQ && outlineQ\.others === 0 \?/);
-  assert.match(src, /outlineLock: \{ qid: outlineQ\.qid, confirm: outlineQ\.confirm, confirmed: outline\?\.status === "confirmed" \}/);
+  // 第 34 批真实走查：任务页只保存待确认的提纲，一确认就变成 null——原写法 outline?.status === "confirmed" 永远为假，确认后“已确认”一项不会自动选上；
+  // 改为另记“本任务提纲已确认且没有新的待确认提纲”
+  assert.match(src, /outlineLock: \{ qid: outlineQ\.qid, confirm: outlineQ\.confirm, confirmed: !outline && outlineConfirmed \}/);
+  assert.match(src, /setOutlineConfirmed\(!list\.some\(\(o\) => o\.status === "proposed"\) && list\.some\(\(o\) => o\.status === "confirmed"\)\)/);
+  assert.match(src, /const outlineQ = useMemo\(\(\) => \(outline \|\| outlineConfirmed \? outlineQuestion\(questions\) : null\)/);
   assert.match(src, /confirmAndAnswer\(\{\s*decide: \(\) => api\.decideOutline/);
 });

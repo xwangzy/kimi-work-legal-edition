@@ -86,6 +86,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const [questions, setQuestions] = useState<QuestionCard[]>([]);
   // 起草前的论点与依据（C-04）：本任务待确认的提纲
   const [outline, setOutline] = useState<OutlineView | null>(null);
+  /** 本任务的提纲已确认、且没有新的待确认提纲（第 34 批：提问卡里的“已确认”题据此自动选上；原先只记待确认的提纲，一确认就变成 null，锁随之消失） */
+  const [outlineConfirmed, setOutlineConfirmed] = useState(false);
   const [stateVersion, setStateVersion] = useState<number | null>(null);
   const [egressInflight, setEgressInflight] = useState<{ model: number; search: number; fetch: number } | null>(null);
   const [matter, setMatter] = useState<any>(null);
@@ -198,7 +200,9 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
         setApprovals(i.approvals);
         setQuestions(i.questions);
         const ol = await api.outlines(matterId, runId).catch(() => null);
-        setOutline(ol?.outlines.find((o) => o.status === "proposed") ?? null);
+        const list = ol?.outlines ?? [];
+        setOutline(list.find((o) => o.status === "proposed") ?? null);
+        setOutlineConfirmed(!list.some((o) => o.status === "proposed") && list.some((o) => o.status === "confirmed"));
         setStateVersion(i.state_version ?? null);
         setLiveText(i.live_text ?? "");
         // 内容不变时保留原对象（复核 B4-B20：每秒轮询都会反序列化出新对象，引用变化让静默看门狗永远被重置）
@@ -209,6 +213,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
         setApprovals([]);
         setQuestions([]);
         setOutline(null);
+        setOutlineConfirmed(false);
         setLiveText("");
         setProgress(null);
         setHeartbeat(0);
@@ -345,11 +350,11 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   // 引擎心跳（宿主转来）也算“还活着”：长时间思考或执行工具时不误报“没有新进展”
   const silentFor = !terminal && approvals.length === 0 && questions.length === 0 ? silenceMs(now, lastActivity, heartbeat) : 0;
   // 提纲卡在时，Agent 为它提的那道确认题并进提纲卡（不让律师答两遍）
-  const outlineQ = useMemo(() => (outline ? outlineQuestion(questions) : null), [outline, questions]);
+  const outlineQ = useMemo(() => (outline || outlineConfirmed ? outlineQuestion(questions) : null), [outline, outlineConfirmed, questions]);
   const pendingCards = useMemo(
     // 只有确认题单独一张卡时才整张并进提纲卡；和别的题同卡时卡照常显示，确认那一题跟着提纲卡走（第 31 批）
-    () => [...approvals.map((card) => ({ kind: "approval" as const, card })), ...questions.filter((q) => !(outlineQ && outlineQ.others === 0 && q.question_id === outlineQ.question_id)).map((card) => ({ kind: "question" as const, card }))],
-    [approvals, questions, outlineQ],
+    () => [...approvals.map((card) => ({ kind: "approval" as const, card })), ...questions.filter((q) => !(outline && outlineQ && outlineQ.others === 0 && q.question_id === outlineQ.question_id)).map((card) => ({ kind: "question" as const, card }))],
+    [approvals, questions, outlineQ, outline],
   );
   const [showAllCards, setShowAllCards] = useState(false);
   const [showAllFiles, setShowAllFiles] = useState(false);
@@ -792,7 +797,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 tokenMap={tokenMap}
                 busy={busy}
                 onAnswer={(ans) => void answer(c.card, ans)}
-                {...(outlineQ && outlineQ.others > 0 && c.card.question_id === outlineQ.question_id ? { outlineLock: { qid: outlineQ.qid, confirm: outlineQ.confirm, confirmed: outline?.status === "confirmed" } } : {})}
+                {...(outlineQ && outlineQ.others > 0 && c.card.question_id === outlineQ.question_id ? { outlineLock: { qid: outlineQ.qid, confirm: outlineQ.confirm, confirmed: !outline && outlineConfirmed } } : {})}
               />
             ),
           )}
