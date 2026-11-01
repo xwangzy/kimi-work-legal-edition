@@ -156,6 +156,9 @@ export const SCENARIOS: ScenarioCard[] = [
       "列出缺口与待补证据；接着可做“争点与证据分析”",
     ],
     intents: [["证据", "目录"], ["证据", "清单"], ["整理", "证据"], ["整理", "案卷"], ["时间线"], ["时间轴"]],
+    // 本机规则整理不调用 AI、不做分析与计算（第 34 批真实走查：“整理成证据目录，并写证据分析、说明能主张的本金和利息”被引到这张卡，
+    // 分析与金额部分被静默丢掉）——请求里还要分析、计算、意见的不建议本卡，交给助手按描述编排
+    notFor: ["分析", "能主张", "本金", "利息", "测算", "计算", "意见", "评估", "风险", "起草"],
   },
   // 整理案卷的 AI 精读版（v9.4 第 20 批，V9.4 主文 §3.2“精读版入口”）：本机规则版之外，逐份读、逐条提交带引文的事实给你确认
   {
@@ -1204,7 +1207,17 @@ export function suggestScenario(goal: string): ScenarioCard | null {
   const g = goal.replace(/\s+/g, "");
   if (g.length < 4) return null;
   const ask = askSentences(goal);
+  // 一句话要几种成果（“整理成证据目录，并写一份证据分析”）：任何一张卡都给不全，不建议，交给助手按描述分步做（第 34 批 T6 真实走查）
+  if (ask && COMPOUND_RE.test(ask) && matchedCards(ask).size >= 2) return null;
   return (ask && ask !== g ? bestScenarioIn(ask) : null) ?? bestScenarioIn(g);
+}
+
+const COMPOUND_RE = /并(?:写|出|起草|做|附|算)|同时(?:写|出|起草|做|算)|还要(?:写|出|起草|做|算)|另(?:写|出)|再(?:写|出)一份/;
+/** 请求句点到的卡（不看排除词：排除词挡掉的卡，它的成果也是律师点名要的）。 */
+function matchedCards(g: string): Set<string> {
+  const ids = new Set<string>();
+  for (const c of SCENARIOS) if (c.intents.some((words) => words.every((w) => g.includes(w)))) ids.add(c.id);
+  return ids;
 }
 
 /** 材料不齐时能否先开始（Z3 评审 #4）：卡片声明允许、且是 Agent 场景。 */

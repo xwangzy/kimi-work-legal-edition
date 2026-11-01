@@ -33,3 +33,12 @@ test("合同类型预选：事项名括注的立场（“采购方”）不当�
   assert.equal(guessContractType(["设备采购合同.docx"], "某某项目（采购方）"), "买卖", "文件名仍优先");
   assert.equal(guessContractType([], "甲公司股权转让（受让方）"), "股权转让");
 });
+
+test("复合请求（“整理成证据目录，并写一份证据分析、说明能主张的本金和利息”）不建议单张卡；不调用 AI 的本机整理卡不接要分析、计算的请求（第 34 批 T6）", () => {
+  const t6 = "当事人蒋文博借钱给方立新一直没还，准备起诉。帮我把借条、转账流水、还款记录和微信聊天整理成证据目录（Excel），并写一份证据分析，说明能主张的本金和利息、哪些款项有争议。";
+  assert.equal(suggestScenario(t6), null);
+  assert.notEqual(suggestScenario("整理证据目录，分析一下能主张多少本金")?.id, "casefile");
+  assert.equal(suggestScenario("帮我整理一下证据目录")?.id, "casefile", "只要目录的仍是本机整理");
+  assert.equal(suggestScenario("帮我算一下违约金，然后起草起诉状")?.id, "pleading", "“然后”不算并列成果，起诉状方法本身会算金额");
+  assert.equal(suggestScenario(D1)?.id, "pleading");
+});
