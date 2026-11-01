@@ -202,12 +202,12 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   useEffect(() => {
     if (!typeField || !docsReady || values[typeField.key]) return;
     const names = documents.filter((d) => docIds.includes(d.document_version_id)).map((d) => d.filename);
-    const g = guessContractType(names, matter?.title ?? "");
+    const g = guessContractType(names, matter?.title ?? "", extra);
     if (g && typeField.options!.includes(g)) {
       setValues((cur) => (cur[typeField.key] ? cur : { ...cur, [typeField.key]: g }));
       setGuessed(g);
     }
-  }, [typeField, docsReady, documents, docIds, matter?.title, values]);
+  }, [typeField, docsReady, documents, docIds, matter?.title, values, extra]);
   // “我方是”按事项立场预选（第 31 批）：律师没选过、事项立场对得上某个选项时才填，下拉框下写“按事项立场预选，可改”
   const sideField = card.fields.find((f) => f.key === "side" && f.kind === "select");
   const [sideGuessed, setSideGuessed] = useState<string | null>(null);

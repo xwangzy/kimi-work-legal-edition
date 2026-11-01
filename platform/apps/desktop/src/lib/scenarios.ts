@@ -115,14 +115,19 @@ const CONTRACT_TYPE_HINTS: [RegExp, string][] = [
   [/劳动合同|聘用合同/, "劳动合同（用人单位）"],
   [/施工|建设工程|工程承包/, "建设工程施工"],
   [/借款|贷款|担保|保证合同|抵押|质押/, "借款与担保"],
+  // SaaS、云服务、数据处理（第 34 批真实走查：“SaaS 订阅与数据处理协议”原先没有对应规则，被事项名里的“采购方”猜成买卖）
+  [/SaaS|软件即服务|订阅服务|云服务|数据处理协议|委托处理|软件许可|系统服务/i, "服务 / 技术服务"],
   [/租赁|出租|承租/, "租赁"],
   [/采购|买卖|购销|供货|销售合同/, "买卖"],
   [/服务合同|服务协议|技术服务|委托合同|咨询/, "服务 / 技术服务"],
 ];
 
-/** 从所选合同的文件名（优先）与事项名猜合同类型；都猜不出返回 null。 */
-export function guessContractType(filenames: readonly string[], matterTitle = ""): string | null {
-  for (const text of [...filenames, matterTitle]) {
+/**
+ * 从所选合同的文件名（优先）、律师写的任务说明与事项名猜合同类型；都猜不出返回 null。
+ * 事项名末尾括注的立场（“（采购方）”“（受让方）”）不参与——第 34 批：“……数据处理协议（采购方）”的“采购”被猜成买卖。
+ */
+export function guessContractType(filenames: readonly string[], matterTitle = "", request = ""): string | null {
+  for (const text of [...filenames, request, matterTitle.replace(/[（(][^（()）]*[）)]\s*$/, "")]) {
     const hit = CONTRACT_TYPE_HINTS.find(([re]) => re.test(text));
     if (hit) return hit[1];
   }

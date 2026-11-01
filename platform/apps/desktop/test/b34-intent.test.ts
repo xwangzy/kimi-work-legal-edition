@@ -2,7 +2,7 @@
 // （真实走查：“帮我起草一份民事起诉状。基本事实：……违约金……分段计算……”被建议成“金额测算”，按建议点下去只出 Excel 计算明细）
 import assert from "node:assert/strict";
 import test from "node:test";
-import { suggestScenario } from "../src/lib/scenarios.ts";
+import { guessContractType, suggestScenario } from "../src/lib/scenarios.ts";
 
 const D1 =
   "帮我起草一份民事起诉状。基本事实：2025年11月3日，我方杭州云帆网络科技有限公司（乙方）与宁波百川贸易有限公司（甲方）签订《供应链管理系统软件开发合同》，合同总价48万元，分三期付款：签约后5日内付30%（14.4万元）；系统上线后10日内付40%（19.2万元）；验收合格后15日内付30%（14.4万元）。" +
@@ -24,4 +24,12 @@ test("请求句里认不出时仍按全文（原有行为）", () => {
   assert.equal(suggestScenario("收到员工的劳动仲裁申请书")?.id, "labor-arb-defense");
   assert.equal(suggestScenario("帮我看看。对方欠款的违约金怎么计算")?.id, "amount");
   assert.equal(suggestScenario("这份合同的违约金条款帮我改一下")?.id, "doc-revise");
+});
+
+test("合同类型预选：事项名括注的立场（“采购方”）不当作合同类型；SaaS / 数据处理协议预选“服务 / 技术服务”；任务说明也参与（第 34 批 T2 真实走查）", () => {
+  assert.equal(guessContractType([], "康禾大药房SaaS订阅与数据处理协议（采购方）"), "服务 / 技术服务");
+  assert.equal(guessContractType([], "康禾大药房项目（采购方）"), null, "括注的立场不参与");
+  assert.equal(guessContractType([], "某某项目", "起草一份SaaS订阅服务与数据处理协议，我方是采购方"), "服务 / 技术服务");
+  assert.equal(guessContractType(["设备采购合同.docx"], "某某项目（采购方）"), "买卖", "文件名仍优先");
+  assert.equal(guessContractType([], "甲公司股权转让（受让方）"), "股权转让");
 });
