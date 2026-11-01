@@ -2,7 +2,7 @@
 // （真实走查：“帮我起草一份民事起诉状。基本事实：……违约金……分段计算……”被建议成“金额测算”，按建议点下去只出 Excel 计算明细）
 import assert from "node:assert/strict";
 import test from "node:test";
-import { guessContractType, suggestScenario } from "../src/lib/scenarios.ts";
+import { SCENARIOS, guessContractType, suggestScenario } from "../src/lib/scenarios.ts";
 
 const D1 =
   "帮我起草一份民事起诉状。基本事实：2025年11月3日，我方杭州云帆网络科技有限公司（乙方）与宁波百川贸易有限公司（甲方）签订《供应链管理系统软件开发合同》，合同总价48万元，分三期付款：签约后5日内付30%（14.4万元）；系统上线后10日内付40%（19.2万元）；验收合格后15日内付30%（14.4万元）。" +
@@ -53,6 +53,7 @@ test("路由体检（第 34 批，30 句律师常用说法）：审对方回稿�
 
 test("要交付的是“出一份 / 写一份”后面的名词，请求里提到的材料名不抢卡（第 34 批 T5：结合董事会决议出法律意见书）", () => {
   assert.equal(suggestScenario("我们是华嘉银行苏州分行的常年顾问。请按委托事项里银行提出的四个问题，结合章程、董事会决议和保证合同，出一份正式的法律意见书。")?.id, "compliance-qa");
+  assert.ok(SCENARIOS.find((s) => s.id === "compliance-qa")!.gets.some((g) => g.includes("法律意见书")), "卡上写明点名要法律意见书时出意见书草稿（方法 client-advice 1.4.0 第 5.2 节）");
   assert.equal(suggestScenario("帮我起草董事会决议，同意公司为子公司借款提供担保")?.id, "corporate-resolutions", "要的就是决议时不变");
   assert.equal(suggestScenario("根据对账单和送货单，帮我写一份起诉状")?.id, "pleading");
 });

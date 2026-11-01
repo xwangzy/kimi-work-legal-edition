@@ -875,7 +875,8 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "inhouse",
     title: "合规问答 / 顾问答复",
     gives: "问题（可附业务材料）",
-    gets: ["顾问答复.docx（结论、假设、限制）"],
+    // 第 34 批 T5：律师点名要正式法律意见书时，方法出意见书体例的草稿（签署栏留空），卡上照实写
+    gets: ["顾问答复.docx（结论、假设、限制）", "点名要法律意见书时：法律意见书（草稿）.docx，签署栏留空"],
     scenario: "a1.agent_task",
     skill: "client-advice",
     verb: "开始答复",
