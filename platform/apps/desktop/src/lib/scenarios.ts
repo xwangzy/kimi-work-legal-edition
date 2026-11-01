@@ -1212,7 +1212,20 @@ export function suggestScenario(goal: string): ScenarioCard | null {
   const ask = askSentences(goal);
   // 一句话要几种成果（“整理成证据目录，并写一份证据分析”）：任何一张卡都给不全，不建议，交给助手按描述分步做（第 34 批 T6 真实走查）
   if (ask && COMPOUND_RE.test(ask) && matchedCards(ask).size >= 2) return null;
-  return (ask && ask !== g ? bestScenarioIn(ask) : null) ?? bestScenarioIn(g);
+  // 要交付的东西是“出 / 写 / 起草 + 一份”后面那个名词（第 34 批：“结合章程、董事会决议和保证合同，出一份法律意见书”里的“董事会决议”是材料）
+  const wanted = deliverablePhrase(ask || g);
+  return (wanted ? bestScenarioIn(wanted) : null) ?? (ask && ask !== g ? bestScenarioIn(ask) : null) ?? bestScenarioIn(g);
+}
+
+const DELIVER_VERB_RE = /(?:出具|起草|草拟|撰写|拟|写|出|做|准备|形成)(?:一份|一个|一封|一套|份|个|封)/g;
+/** 请求里最后一个“出 / 写 / 起草 + 一份”之后、到标点为止的短语；没有返回 null。 */
+function deliverablePhrase(text: string): string | null {
+  let last: RegExpExecArray | null = null;
+  for (let m = DELIVER_VERB_RE.exec(text); m; m = DELIVER_VERB_RE.exec(text)) last = m;
+  DELIVER_VERB_RE.lastIndex = 0;
+  if (!last) return null;
+  const rest = text.slice(last.index + last[0].length).split(/[，。；;！？!?,\n（(]/)[0]!.replace(/\s+/g, "");
+  return rest.length >= 2 ? rest : null;
 }
 
 const COMPOUND_RE = /并(?:且)?(?:写|出|起草|做|附|算|整理|列|核|分析|准备)|同时(?:写|出|起草|做|算|整理|列)|还要(?:写|出|起草|做|算|整理)|另(?:写|出)|再(?:写|出)一份/;

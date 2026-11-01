@@ -50,3 +50,9 @@ test("路由体检（第 34 批，30 句律师常用说法）：审对方回稿�
   assert.equal(suggestScenario("解除劳动合同前的风险")?.id, "labor-termination", "解除前的评估不变");
   assert.equal(suggestScenario("帮我把这份律师函里的金额改成85万，期限改成15日")?.id, "doc-revise", "我方改文书不变");
 });
+
+test("要交付的是“出一份 / 写一份”后面的名词，请求里提到的材料名不抢卡（第 34 批 T5：结合董事会决议出法律意见书）", () => {
+  assert.equal(suggestScenario("我们是华嘉银行苏州分行的常年顾问。请按委托事项里银行提出的四个问题，结合章程、董事会决议和保证合同，出一份正式的法律意见书。")?.id, "compliance-qa");
+  assert.equal(suggestScenario("帮我起草董事会决议，同意公司为子公司借款提供担保")?.id, "corporate-resolutions", "要的就是决议时不变");
+  assert.equal(suggestScenario("根据对账单和送货单，帮我写一份起诉状")?.id, "pleading");
+});
