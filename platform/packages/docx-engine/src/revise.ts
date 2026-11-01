@@ -130,8 +130,16 @@ function applyOne(
   if (coverSegs.length === 0) {
     throw new DomainError("anchor_mismatch", `修订 ${op.opId} 锚点落在非文本区`, 422, { opId: op.opId });
   }
-  const first = coverSegs[0]!;
-  const last = coverSegs.at(-1)!;
+  // 只标出真正改动的字（第 28 批）：锚点与新文本相同的开头、结尾照原样保留，中间一段删、一段插。
+  // 第 34 批 D08：每个原 run 按自己的格式重发（原先没改的字一律套第一个 run 的格式，下划线、楷体、字号会丢）
+  const { keepHead, removed, added, keepTail } = minimalChange(op.anchor.originalText, op.newText);
+  const r0 = span.start + keepHead.length;
+  const r1 = span.end - keepTail.length;
+  // 只重写改动所在的 run，锚点里没变的开头、结尾所在的 run 字节不动：锚点可以跨过对方修订的边界，只要改动本身不跨
+  // （第 34 批 T3b 真实走查：“一般保证”里“一般”是对方插入、“保证”是原文，改回“连带责任保证”原先因锚点跨边界被拒写）
+  const touched = r1 > r0 ? coverSegs.filter((s) => s.end > r0 && s.start < r1) : [coverSegs.findLast((s) => s.start < r0) ?? coverSegs[0]!];
+  const first = touched[0] ?? coverSegs[0]!;
+  const last = touched.at(-1) ?? first;
   const date = new Date().toISOString();
   const author = op.author;
   const paraXml = xml.slice(target.xmlStart, target.xmlEnd);
@@ -140,11 +148,6 @@ function applyOne(
   const region = paraXml.slice(relStart, relEnd);
   const { preserved, foreignIns } = checkRegion(op.opId, paraXml, relStart, region);
 
-  // 只标出真正改动的字（第 28 批）：锚点与新文本相同的开头、结尾照原样保留，中间一段删、一段插。
-  // 第 34 批 D08：每个原 run 按自己的格式重发（原先没改的字一律套第一个 run 的格式，下划线、楷体、字号会丢）
-  const { keepHead, removed, added, keepTail } = minimalChange(op.anchor.originalText, op.newText);
-  const r0 = span.start + keepHead.length;
-  const r1 = span.end - keepTail.length;
   type Atom = { kind: "keep" | "del"; seg: TextSegment; text: string };
   const atoms: Atom[] = [];
   for (const seg of target.segments) {
@@ -284,8 +287,8 @@ function checkRegion(opId: string, paraXml: string, relStart: number, region: st
   for (const m of region.matchAll(CONTAINERS)) {
     if (m[4] === "/") continue;
     if (/\skwl-new="/.test(m[3] ?? "")) refuse("与本次另一处修改落在同一处：合并成一条修改");
-    if (m[2] === "ins" || m[2] === "del" || m[2] === "moveFrom" || m[2] === "moveTo") refuse("锚点跨过了原件已有的修订痕迹（对方的插入或删除）：把锚点缩到修订痕迹之外，或先在 Word 里处理对方的修订");
-    refuse("锚点跨过了超链接、内容控件或域的边界：把锚点缩到其中一侧的纯文字");
+    if (m[2] === "ins" || m[2] === "del" || m[2] === "moveFrom" || m[2] === "moveTo") refuse("要改的文字跨过了原件已有的修订痕迹（对方的插入或删除）：按边界拆成两条修改（对方插入里的字一条、外面的字一条），或先在 Word 里处理对方的修订");
+    refuse("要改的文字跨过了超链接、内容控件或域的边界：按边界拆成两条修改，每条只改其中一侧的纯文字");
   }
   const preserved: string[] = [];
   for (const c of childElements(region)) {

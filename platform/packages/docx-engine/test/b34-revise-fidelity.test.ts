@@ -111,8 +111,9 @@ test("D01/D06/D09：锚点跨过对方的修订或含脚注引用时整体拒写
   assert.ok(wellFormed(ok));
   assert.match(ok, /<w:ins w:id="80" w:author="对方律师"[^>]*><w:r><w:t xml:space="preserve">三<\/w:t><\/w:r><\/w:ins>/, "对方的修订原样保留");
   const fn = withBody(p(`${r("依据《公司法》")}<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="2"/></w:r>${r("第八十四条")}`));
-  assert.throws(() => revise(fn, [{ a: "《公司法》第八十四条", n: "《公司法》第八十五条" }]), /脚注引用/);
+  assert.throws(() => revise(fn, [{ a: "《公司法》第八十四条", n: "《民法典》第五百条" }]), /脚注引用/, "要改的文字盖住脚注引用的拒写");
   assert.match(docXml(revise(fn, [{ a: "第八十四条", n: "第八十五条" }])), /<w:footnoteReference w:id="2"\/>/, "缩到纯文字后可改，脚注引用保留");
+  assert.match(docXml(revise(fn, [{ a: "《公司法》第八十四条", n: "《公司法》第八十五条" }])), /<w:footnoteReference w:id="2"\/>/, "锚点带上脚注引用、改动只在一侧的照写，脚注引用保留");
 });
 
 test("D12：清洁稿接受移动修订、去掉格式修订记录，脚注里的修订一并接受", () => {
@@ -164,7 +165,25 @@ test("在对方插入的文字里再改（不接受对方把“连带责任保�
   assert.doesNotMatch(revise(docx, [{ a: "一般", n: "连带责任" }]).toString("latin1"), /kwl-reopen/, "临时标记已去掉");
   assert.doesNotMatch(docXml(revise(docx, [{ a: "一般", n: "连带责任" }])), /<w:ins [^>]*><\/w:ins>/, "对方插入改完没有剩下空的插入标签");
   assert.deepEqual(texts(sanitizeDocx(revise(docx, [{ a: "一般保证", n: "连带责任保证" }])).docx), ["11.1 丙方对乙方的全部债务承担连带责任保证。"]);
-  assert.throws(() => revise(docx, [{ a: "承担一般保证", n: "承担连带责任保证" }]), /对方的插入或删除/, "跨过对方插入边界的仍拒写");
+  assert.deepEqual(texts(sanitizeDocx(revise(docx, [{ a: "承担一般保证", n: "承担连带责任保证" }])).docx), ["11.1 丙方对乙方的全部债务承担连带责任保证。"], "锚点跨过对方插入的边界、改动本身在插入之内的照写");
+  assert.throws(() => revise(docx, [{ a: "承担一般保证", n: "提供保证" }]), /对方的插入或删除/, "改动本身跨过对方插入边界的仍拒写");
+});
+
+test("锚点带上对方插入外面的原文、改动只在插入之内：照写，锚点里没变的 run 字节不动（第 34 批 T3b 真实走查：借款合同 11.1 对方只插入“一般”二字）", () => {
+  const theirsDel = `<w:del w:id="104" w:author="对方律师" w:date="2026-10-28T15:20:00Z"><w:r><w:delText xml:space="preserve">连带责任</w:delText></w:r></w:del>`;
+  const theirsIns = `<w:ins w:id="105" w:author="对方律师" w:date="2026-10-28T15:20:00Z">${r("一般")}</w:ins>`;
+  const head = r("丙方自愿为乙方在本合同项下的全部债务提供", "<w:rPr><w:b/></w:rPr>");
+  const tail = r("保证。");
+  const docx = withBody(p(`${head}${theirsDel}${theirsIns}${tail}`));
+  for (const a of ["一般保证", "提供一般保证", "全部债务提供一般保证。"]) {
+    const n = a.replace("一般", "连带责任");
+    const rev = docXml(revise(docx, [{ a, n }]));
+    assert.ok(wellFormed(rev), a);
+    assert.ok(rev.includes(head) && rev.includes(tail), `${a}：锚点里没变的开头、结尾 run 原样保留`);
+    assert.ok(rev.includes(theirsDel), `${a}：对方的删除原样保留`);
+    assert.deepEqual(texts(sanitizeDocx(revise(docx, [{ a, n }])).docx), ["丙方自愿为乙方在本合同项下的全部债务提供连带责任保证。"], a);
+  }
+  assert.throws(() => revise(docx, [{ a: "一般保证", n: "特别担保" }]), /对方的插入或删除/, "改动跨过插入与原文的边界仍拒写");
 });
 
 test("表格里同一行、跨行重复的金额：条款提示写“行名｜列名”定位到那一格（第 34 批 T3 真实走查：还款表 12 格因金额重复没写入）", () => {
