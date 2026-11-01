@@ -42,3 +42,11 @@ test("复合请求（“整理成证据目录，并写一份证据分析、说�
   assert.equal(suggestScenario("帮我算一下违约金，然后起草起诉状")?.id, "pleading", "“然后”不算并列成果，起诉状方法本身会算金额");
   assert.equal(suggestScenario(D1)?.id, "pleading");
 });
+
+test("路由体检（第 34 批，30 句律师常用说法）：审对方回稿、答辩状并整理证据、员工已主张后的应诉", () => {
+  assert.equal(suggestScenario("这份租赁合同对方改了几处，帮我看看他们改了什么，哪些不能接受")?.id, "redraft");
+  assert.equal(suggestScenario("我们是被告，原告的起诉状说我们欠款200万，其实已经付了80万，帮我写答辩状并整理付款证据"), null, "一句话两种成果，交给助手分步做");
+  assert.equal(suggestScenario("员工主张违法解除赔偿金，我们是用人单位，帮我评估风险")?.id, "labor-response");
+  assert.equal(suggestScenario("解除劳动合同前的风险")?.id, "labor-termination", "解除前的评估不变");
+  assert.equal(suggestScenario("帮我把这份律师函里的金额改成85万，期限改成15日")?.id, "doc-revise", "我方改文书不变");
+});
