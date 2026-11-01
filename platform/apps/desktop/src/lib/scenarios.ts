@@ -1310,8 +1310,11 @@ export function pickMatterForCard(card: Pick<ScenarioCard, "line">, matters: Pic
  * 它不在列表里（已结案，或不在最近的 100 个里）时返回 null 并标 missing，**不**自动换成别的事项（误挂会让材料与成果进错案卷）；
  * 没指定才按卡片业务线挑。
  */
-export function startMatterFor(keep: string | undefined, matters: PickableMatter[], currentId: string | null, card: Pick<ScenarioCard, "line">): { matterId: string | null; missing: boolean } {
+export function startMatterFor(keep: string | undefined, matters: PickableMatter[], currentId: string | null, card: Pick<ScenarioCard, "line">, chosen = false): { matterId: string | null; missing: boolean } {
   if (keep) return matters.some((m) => m.matter_id === keep) ? { matterId: keep, missing: false } : { matterId: null, missing: true };
+  // 律师在首页亲手选了事项、或在输入框里对着这个事项写了任务（chosen）：照用，业务线不一致只在面板里提醒（lineMismatchText），
+  // 不换成别的事项（第 34 批 T1b 真实走查：选了“承包人”立场的工程款事项，点“起草起诉状”后面板换成了另一件诉讼事项）
+  if (chosen && currentId && matters.some((m) => m.matter_id === currentId)) return { matterId: currentId, missing: false };
   return { matterId: pickMatterForCard(card, matters, currentId), missing: false };
 }
 

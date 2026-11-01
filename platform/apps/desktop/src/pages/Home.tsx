@@ -68,13 +68,16 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     }
   };
   // 默认事项按卡片业务线挑（Z3 评审 #1：非诉卡不默认挂到诉讼事项上）；keep = 指定了事项（“接着做”）时照用
-  const openCard = (card: ScenarioCard, extra?: string, keep?: string) => {
-    const { matterId: pick, missing } = startMatterFor(keep, matters, matterId, card);
+  // 律师亲手选过事项（首页事项下拉、新建、从事项页进来）：开卡时照用，不按业务线换（第 34 批 T1b）
+  const matterChosen = useRef(!!presetMatterId);
+  const openCard = (card: ScenarioCard, extra?: string, keep?: string, typed = false) => {
+    const { matterId: pick, missing } = startMatterFor(keep, matters, matterId, card, matterChosen.current || typed);
     if (pick && pick !== matterId) setMatterId(pick);
     if (missing) setMsg("原来的事项已结案或不在最近的事项里，没有替你换成别的事项：请在下面选择事项，或新建一个。");
     setStarting({ card, ...(extra ? { extra } : {}), matterId: pick });
   };
   const switchStartMatter = (id: string) => {
+    matterChosen.current = true;
     setMatterId(id);
     setStarting((s) => (s ? { ...s, matterId: id } : s));
   };
@@ -224,7 +227,10 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
         <Composer
           matters={matters}
           matterId={matterId}
-          onMatterChange={setMatterId}
+          onMatterChange={(id) => {
+            matterChosen.current = true;
+            setMatterId(id);
+          }}
           onNewMatter={() => setNewMatter(true)}
           documents={docs}
           policy={policy}
@@ -239,7 +245,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
               ? {
                   title: suggestion.title,
                   gets: getsPlain(suggestion).join("、"),
-                  onUse: () => openCard(suggestion, value.goal),
+                  onUse: () => openCard(suggestion, value.goal, undefined, true),
                   onDismiss: () => setDismissed(suggestion.id),
                 }
               : null
@@ -399,6 +405,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
           onCreated={(m) => {
             setNewMatter(false);
             setMatters((ms) => [m, ...ms]);
+            matterChosen.current = true;
             setMatterId(m.matter_id);
             setStarting((st) => (st ? { ...st, matterId: m.matter_id } : st));
           }}
