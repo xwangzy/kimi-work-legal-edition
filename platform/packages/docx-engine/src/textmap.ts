@@ -265,19 +265,30 @@ export function mapParagraph(pXml: string, pStart: number, index: number): Parag
 /** 把段落里含多个内容（文字、制表符、换行……）的 run 拆成一个内容一个 run（格式照抄）；段落之外不动。 */
 export function splitParagraphRuns(xml: string, target: { xmlStart: number; xmlEnd: number }, nextId?: () => number): string {
   const paraXml = xml.slice(target.xmlStart, target.xmlEnd);
-  const out = paraXml.replace(/<w:r\b[^>]*\/>|<w:r\b[^>]*>[\s\S]*?<\/w:r>/g, (rXml) => {
-    if (rXml.endsWith("/>") && !rXml.includes("</w:r>")) return rXml;
-    const open = /^<w:r\b[^>]*>/.exec(rXml)![0];
-    const inner = rXml.slice(open.length, rXml.length - "</w:r>".length);
-    const rPr = runProps(rXml) ?? "";
-    const kids = childElements(inner).filter((k) => k.name !== "w:rPr");
-    // 文本框（嵌套段落）所在的 run 不拆：childElements 按深度配对，图形整块算一个内容
-    if (kids.length <= 1 || /<w:txbxContent\b/.test(inner)) return rXml;
-    // 拆出的第二段起，格式里的格式修订记录（w:rPrChange）换新编号，免得同一编号出现在几个 run 里
-    const renumber = (x: string) => (nextId ? x.replace(/(<w:rPrChange\b[^>]*?\bw:id=")\d+(")/g, (_m, a: string, c: string) => `${a}${nextId()}${c}`) : x);
-    return kids.map((k, i) => `${open}${i === 0 ? rPr : renumber(rPr)}${inner.slice(k.start, k.end)}</w:r>`).join("");
-  });
+  // 与 mapParagraph 同一口径：在遮盖了文本框内容的副本上找 run（文本框里的 run 不动），按位置取原文
+  const masked = maskNested(paraXml);
+  let out = "";
+  let cursor = 0;
+  for (const m of masked.matchAll(R_RE)) {
+    out += paraXml.slice(cursor, m.index!);
+    cursor = m.index! + m[0].length;
+    out += splitRun(paraXml.slice(m.index!, cursor), nextId);
+  }
+  out += paraXml.slice(cursor);
   return out === paraXml ? xml : xml.slice(0, target.xmlStart) + out + xml.slice(target.xmlEnd);
+}
+
+function splitRun(rXml: string, nextId?: () => number): string {
+  if (rXml.endsWith("/>") && !rXml.includes("</w:r>")) return rXml;
+  const open = /^<w:r\b[^>]*>/.exec(rXml)![0];
+  const inner = rXml.slice(open.length, rXml.length - "</w:r>".length);
+  const rPr = runProps(rXml) ?? "";
+  const kids = childElements(inner).filter((k) => k.name !== "w:rPr");
+  // 文本框（嵌套段落）所在的 run 不拆：childElements 按深度配对，图形整块算一个内容
+  if (kids.length <= 1 || /<w:txbxContent\b/.test(inner)) return rXml;
+  // 拆出的第二段起，格式里的格式修订记录（w:rPrChange）换新编号，免得同一编号出现在几个 run 里
+  const renumber = (x: string) => (nextId ? x.replace(/(<w:rPrChange\b[^>]*?\bw:id=")\d+(")/g, (_m, a: string, c: string) => `${a}${nextId()}${c}`) : x);
+  return kids.map((k, i) => `${open}${i === 0 ? rPr : renumber(rPr)}${inner.slice(k.start, k.end)}</w:r>`).join("");
 }
 
 export function mapParagraphs(documentXml: string): ParagraphMap[] {
