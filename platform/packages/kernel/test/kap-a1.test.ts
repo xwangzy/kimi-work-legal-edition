@@ -159,7 +159,9 @@ test("方法模板（Kimi Code Skills，核查 P0-5）：签名包作为可信�
     const est = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
     const run = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-skill-${Date.now()}`, goal: `${M} 核对引用` });
     const { run: fin, events } = await waitRun(inv, run.run_id, 150_000);
-    assert.equal(fin.status, "succeeded", JSON.stringify(events.map((e: any) => e.type)));
+    // 第 34 批：律师直接描述的任务也按助手实际加载的方法核对主交付物——加载了引用核验却只回了一句文字，记“部分完成”（原先记“完成”）
+    assert.equal(fin.status, "partial", JSON.stringify(events.map((e: any) => e.type)));
+    assert.equal(events.find((e: any) => e.type === "agent.primary_missing")?.payload?.cause, "no_sheet_output");
     assert.match(firstBody, /citation-check/, "技能清单应出现在模型可见的上下文中");
     assert.match(firstBody, /工作准则/, "可信区 AGENTS.md（产品工作准则）应进入模型上下文");
     assert.match(skillResult, /引用核验/, `调用 Skill 后模型应看到方法正文：${skillResult.slice(0, 300)}`);
