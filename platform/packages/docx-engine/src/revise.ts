@@ -43,7 +43,9 @@ export function applyRevisionsToDocx(docx: Buffer, plan: RevisionPlan): ApplyRes
     xml = applyOne(xml, op, comments, () => idSeq++, applied, labels);
   }
   // 段后插入用的临时标记（同一段后的多条插入按先后接在一起；插入的新段落不参与后续锚点匹配）写完即去掉
-  xml = xml.replace(/ kwl-(?:anchor|ins|new)="\d+"/g, "");
+  // 接着对方插入时重开的标签后面没有字的，整个去掉（不留空的对方插入）
+  xml = xml.replace(/<w:ins\b[^>]*\skwl-reopen="1"[^>]*><\/w:ins>/g, "");
+  xml = xml.replace(/ kwl-(?:anchor|ins|new|reopen)="\d+"/g, "");
   // 结构自检（第 34 批，文档工程压测 D01～D05）：写坏了就整体停止、原件不动，不交一份打不开的文件
   assertWellFormed(xml, "word/document.xml");
 
@@ -95,7 +97,9 @@ function applyOne(
       const c = cells[p.index];
       return c ? all.filter((q) => cells[q.index]?.table === c.table && cells[q.index]?.row === c.row).map((q) => q.text).join(" | ") : "";
     };
-    const picked = op.anchor.paragraphHint ? pickByHint(candidates.map((p) => ({ label: labels[origIndex.get(p)!] ?? null, text: p.text, row: rowText(p) })), op.anchor.paragraphHint) : null;
+    // 列名：该列首行的文字（同一行里两格金额相同，如“应还利息”与“本期合计”都是 75,000.00，靠列名区分；第 34 批 T3 真实走查）
+    const colText = (p: ParagraphMap): string => cells[p.index]?.header ?? "";
+    const picked = op.anchor.paragraphHint ? pickByHint(candidates.map((p) => ({ label: labels[origIndex.get(p)!] ?? null, text: p.text, row: rowText(p), col: colText(p) })), op.anchor.paragraphHint) : null;
     if (picked === null) {
       throw new DomainError(
         "anchor_mismatch",
@@ -177,7 +181,7 @@ function applyOne(
       closeDel();
       const ours = `<w:ins w:id="${insId}" w:author="${escapeXml(author)}" w:date="${date}" kwl-new="1"><w:r>${insRpr}${runContent(added)}</w:r></w:ins>`;
       // 在对方的插入里：先收起对方的插入，我方插入放在外面，再用新编号接着对方的插入（ins 里不能再套 ins）
-      parts.push(foreignIns ? `</w:ins>${ours}${foreignIns.replace(/\bw:id="\d+"/, `w:id="${nextId()}"`)}` : ours);
+      parts.push(foreignIns ? `</w:ins>${ours}${foreignIns.replace(/\bw:id="\d+"/, `w:id="${nextId()}"`).replace(/>$/, ' kwl-reopen="1">')}` : ours);
       if (commentId >= 0) parts.push(commentEnd(commentId));
     }
     const x = atoms[i];
@@ -307,11 +311,13 @@ function checkRegion(opId: string, paraXml: string, relStart: number, region: st
  * 条款提示定位（第 34 批 D10）：多处匹配时按提示挑一处——先比自动编号（“3.2”“第五条”），再比段首（段首是“3.2”不算“3.2.1”），
  * 最后比段内；同一档里不止一处、或哪一档都对不上时返回 null（按歧义处理，不再默认改第一处）。纯函数。
  */
-export function pickByHint(cands: readonly { label: string | null; text: string; row?: string }[], hint: string): number | null {
+export function pickByHint(cands: readonly { label: string | null; text: string; row?: string; col?: string }[], hint: string): number | null {
   const norm = (s: string) => s.replace(/\s+/g, "").replace(/[.、．:：）)]+$/, "");
   const h = norm(hint);
   if (!h) return null;
-  const tiers: ((c: { label: string | null; text: string; row?: string }) => boolean)[] = [
+  // “行名｜列名”（“第 2 期｜应还本金”）：每一段都要出现在该格所在行或该列表头里（去空白比较）
+  const parts = hint.split(/[｜|/／,，、;；]+/).map((x) => x.replace(/\s+/g, "")).filter(Boolean);
+  const tiers: ((c: { label: string | null; text: string; row?: string; col?: string }) => boolean)[] = [
     (c) => c.label !== null && norm(c.label) === h,
     (c) => {
       const t = `${c.label ?? ""}${c.text}`.replace(/\s+/g, "");
@@ -320,6 +326,7 @@ export function pickByHint(cands: readonly { label: string | null; text: string;
     (c) => `${c.label ?? ""} ${c.text}`.includes(hint),
     // 表格格子：提示写的是同一行别的格子（行首的项目名、期次）
     (c) => !!c.row && c.row.includes(hint),
+    (c) => parts.length >= 2 && !!c.row && parts.every((x) => `${c.row}${c.col ?? ""}`.replace(/\s+/g, "").includes(x)),
   ];
   for (const tier of tiers) {
     const hits = cands.map((c, i) => (tier(c) ? i : -1)).filter((i) => i >= 0);

@@ -161,6 +161,26 @@ test("在对方插入的文字里再改（不接受对方把“连带责任保�
   // 最小改动保留共同的“保证”：删“一般”嵌在对方插入里，我方插入“连带责任”在外面，对方插入用新编号接上“保证”
   assert.match(rev, /<w:ins w:id="71" w:author="对方律师"[^>]*><w:del [^>]*author="测试"[^>]*><w:r><w:delText xml:space="preserve">一般<\/w:delText><\/w:r><\/w:del><\/w:ins><w:ins [^>]*author="测试"[^>]*><w:r><w:t xml:space="preserve">连带责任<\/w:t><\/w:r><\/w:ins><w:ins w:id="(?!71")\d+" w:author="对方律师"[^>]*><w:r><w:t xml:space="preserve">保证<\/w:t><\/w:r><\/w:ins>/);
   assert.doesNotMatch(rev, /<w:ins [^>]*>(?:(?!<\/w:ins>)[\s\S])*<w:ins /, "插入里没有再套插入");
+  assert.doesNotMatch(revise(docx, [{ a: "一般", n: "连带责任" }]).toString("latin1"), /kwl-reopen/, "临时标记已去掉");
+  assert.doesNotMatch(docXml(revise(docx, [{ a: "一般", n: "连带责任" }])), /<w:ins [^>]*><\/w:ins>/, "对方插入改完没有剩下空的插入标签");
   assert.deepEqual(texts(sanitizeDocx(revise(docx, [{ a: "一般保证", n: "连带责任保证" }])).docx), ["11.1 丙方对乙方的全部债务承担连带责任保证。"]);
   assert.throws(() => revise(docx, [{ a: "承担一般保证", n: "承担连带责任保证" }]), /对方的插入或删除/, "跨过对方插入边界的仍拒写");
+});
+
+test("表格里同一行、跨行重复的金额：条款提示写“行名｜列名”定位到那一格（第 34 批 T3 真实走查：还款表 12 格因金额重复没写入）", () => {
+  const tc = (t: string) => `<w:tc>${p(r(t))}</w:tc>`;
+  const row = (...xs: string[]) => `<w:tr>${xs.map(tc).join("")}</w:tr>`;
+  const table = `<w:tbl>${row("期次", "应还本金", "应还利息", "本期合计")}${row("第 1 期", "0", "75,000.00", "75,000.00")}${row("第 2 期", "1,500,000.00", "75,000.00", "1,575,000.00")}${row("第 3 期", "1,500,000.00", "52,500.00", "1,552,500.00")}</w:tbl>`;
+  const docx = withBody(table + p(r("其他")));
+  const clean = sanitizeDocx(
+    revise(docx, [
+      { a: "75,000.00", n: "67,500.00", hint: "第 1 期｜应还利息" },
+      { a: "75,000.00", n: "67,500.00", hint: "第1期｜本期合计" },
+      { a: "75,000.00", n: "67,500.00", hint: "第 2 期｜应还利息" },
+      { a: "1,500,000.00", n: "1,350,000.00", hint: "第 2 期｜应还本金" },
+      { a: "1,500,000.00", n: "1,350,000.00", hint: "第 3 期" },
+    ]),
+  ).docx;
+  assert.deepEqual(texts(clean).slice(4, 16), ["第 1 期", "0", "67,500.00", "67,500.00", "第 2 期", "1,350,000.00", "67,500.00", "1,575,000.00", "第 3 期", "1,350,000.00", "52,500.00", "1,552,500.00"]);
+  assert.throws(() => revise(docx, [{ a: "75,000.00", n: "67,500.00", hint: "第 1 期" }]), /锚点歧义/, "同一行两格相同、只给行名仍拒写");
 });

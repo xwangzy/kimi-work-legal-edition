@@ -21,7 +21,7 @@ export const REVISE_MAX_PATCHES = 200;
 /** 逐条失败原因的改法（写给模型；律师界面不显示）。 */
 const FIX_HINT: Record<PatchConflict["reason"], string> = {
   anchor_not_found: "原件里找不到这段原文：逐字照抄材料原文（同一段落之内，含标点、空格与代号；段首的条款编号可以不抄）",
-  anchor_ambiguous: "这段原文在多个段落出现：加 paragraph_hint 写条款号（表格里的格子写同一行的项目名，如“首期”），或把锚点写长到唯一；occurrence 只区分同一段落里的第几次出现",
+  anchor_ambiguous: "这段原文在多个段落出现：加 paragraph_hint 写条款号；表格里的格子写“行名｜列名”（如“第 2 期｜应还本金”，同一行里金额相同的两格靠列名区分），或把锚点写长到唯一；occurrence 只区分同一段落里的第几次出现",
   anchor_not_in_view: "这段原文不在本材料的文字里：不是照抄的原文，或跨了段落（一条修改只能在一个段落之内）",
   overlap: "与另一条修改的原文重叠：合并成一条",
   complex_structure: "这处原文里有对方的修订痕迹、Word 域、脚注、超链接或内容控件，自动改写会丢内容或打乱修订记录：按 detail 把锚点缩到纯文字；做不到的不要重试，在最终答复里列明这一处请律师在 Word 里手工修改",
