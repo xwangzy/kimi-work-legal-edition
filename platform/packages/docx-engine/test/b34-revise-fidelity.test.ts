@@ -211,3 +211,27 @@ test("最小改动不在数字、金额、日期中间切开（第 34 批律师�
   assert.equal(minimalChange("自 2025 年 3 月 12 日起", "自 2026 年 1 月 1 日起").removed, "2025 年 3 月 12");
   assert.deepEqual(minimalChange("第一条", "第二条"), { keepHead: "第", removed: "一", added: "二", keepTail: "条" }, "非数字的文字照旧只标改动的字");
 });
+
+test("交付的 Excel 不是“裸表”：首行表头加粗冻结、正文换行有边框、金额千分位、列宽按文字估（第 34 批独立律师验收）", async () => {
+  const { createXlsx } = await import("../src/xlsx.ts");
+  const long = "一年期LPR 3.35%（2024-07-22报价）；合同16.1及律师选定口径；".repeat(3);
+  const files = readZipEntries(createXlsx([{ name: "计算明细", rows: [["段号", "计息本金", "金额", "说明"], [1, 3945000, 4706.98, long], [2026, 12, 0.5, "短"]] }, { name: "空表", rows: [] }]));
+  const ct = files.get("[Content_Types].xml")!.toString("utf8");
+  const rels = files.get("xl/_rels/workbook.xml.rels")!.toString("utf8");
+  const styles = files.get("xl/styles.xml")?.toString("utf8") ?? "";
+  const sheet = files.get("xl/worksheets/sheet1.xml")!.toString("utf8");
+  assert.match(ct, /PartName="\/xl\/styles\.xml"/);
+  assert.match(rels, /relationships\/styles" Target="styles\.xml"/);
+  for (const part of ["[Content_Types].xml", "xl/_rels/workbook.xml.rels", "xl/styles.xml", "xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml"]) assert.ok(wellFormed(files.get(part)!.toString("utf8")), part);
+  assert.match(sheet, /<sheetViews>.*state="frozen".*<\/sheetViews><cols>.*<\/cols><sheetData>/, "冻结表头；元素次序 sheetViews → cols → sheetData");
+  assert.match(sheet, /<c r="A1" s="1" t="inlineStr">/, "表头样式");
+  assert.match(sheet, /<c r="B2" s="3"><v>3945000<\/v>/, "一万以上整数千分位");
+  assert.match(sheet, /<c r="C2" s="4"><v>4706\.98<\/v>/, "小数两位千分位");
+  assert.match(sheet, /<c r="A3" s="5"><v>2026<\/v>/, "年份、序号等小整数不加千分位");
+  assert.match(sheet, /<c r="D2" s="2" t="inlineStr">/, "正文文字换行有边框");
+  assert.match(sheet, /<col min="4" max="4" width="60" customWidth="1"\/>/, "长文字列封顶 60，靠换行");
+  assert.match(sheet, /<col min="1" max="1" width="6" customWidth="1"\/>/, "短列不小于 6");
+  assert.match(styles, /<cellXfs count="6">/);
+  assert.equal((styles.match(/<xf numFmtId=/g) ?? []).length, 7, "cellStyleXfs 1 个 + cellXfs 6 个");
+  assert.doesNotMatch(files.get("xl/worksheets/sheet2.xml")!.toString("utf8"), /<cols>|<sheetViews>/, "空表不写列宽、不冻结");
+});
