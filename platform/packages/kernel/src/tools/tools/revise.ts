@@ -11,7 +11,7 @@
  * - 任一条不成立：整体不写，逐条返回原因与改法（不返回还原后的原文，结果仍经本机端点令牌化）。
  */
 import { DomainError, sha256Hex } from "@zr-legal/domain";
-import { createDocx, existingRevisions, sanitizeDocx } from "@zr-legal/docx-engine";
+import { createDocx, existingRevisions, minimalChange, readZipEntries, sanitizeDocx } from "@zr-legal/docx-engine";
 import { applyStructuredPatches, type ChangeRow, type NumberingShifts, type PatchConflict, type StructuredPatch } from "../../services/structured-patch.ts";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
@@ -58,6 +58,37 @@ function previewChanges(paragraphs: readonly string[], spans: readonly { para: n
     });
 }
 
+/**
+ * 页眉页脚（第 35 批真实走查 R5：律师要求“首部、鉴于条款、页眉和签署页”的乙方名称统一改正）：材料文字与本工具只覆盖正文，
+ * 页眉页脚里的同一处错名不会被改到，原先也不提示，助手会回报“已全部改完”。这里按每条修改实际删掉的字（前后各带 4 个字的上下文）
+ * 在原件页眉页脚里查一遍，查到的列给助手，由它在答复里请律师手工改。只读原件，不改写。
+ */
+function headerFooterLeftovers(docx: Buffer, patches: readonly { anchor: string; proposed: string }[]): { part: string; text: string; patches: number[] }[] {
+  let parts: [string, string][];
+  try {
+    parts = [...readZipEntries(docx).entries()]
+      .filter(([n]) => /^word\/(header|footer)\d*\.xml$/.test(n))
+      .map(([n, d]) => [n.includes("header") ? "页眉" : "页脚", d.toString("utf8").replace(/<w:tab\/>/g, " ").replace(/<[^>]+>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&")]);
+  } catch {
+    return [];
+  }
+  const out = new Map<string, { part: string; text: string; patches: number[] }>();
+  patches.forEach((x, i) => {
+    const { keepHead, removed, keepTail } = minimalChange(x.anchor, x.proposed);
+    if (!removed.trim()) return;
+    const probe = `${keepHead.slice(-4)}${removed}${keepTail.slice(0, 4)}`;
+    if ([...probe].length < 6) return;
+    for (const [part, text] of parts) {
+      if (!text.includes(probe)) continue;
+      const key = `${part}${text}`;
+      const hit = out.get(key) ?? { part, text: text.trim().slice(0, 120), patches: [] };
+      hit.patches.push(i + 1);
+      out.set(key, hit);
+    }
+  });
+  return [...out.values()];
+}
+
 /** 自动编号的提示（第 34 批 T3b）：新文字开头抄进去的编号已去掉；删除、插入条款后编号顺延，正文里写死的旧条号要一并改。 */
 function numberingNotes(r: { numbering?: NumberingShifts; label_notes?: { index: number; dropped: string[] }[] }, written: boolean) {
   const out: Record<string, unknown> = {};
@@ -101,9 +132,14 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   const dryRun = p.dry_run === true;
   // 原件里已有的修订（第 34 批）：对方返回的带修订稿上再改时，清洁稿会把对方的修订一并接受——让助手先告诉律师
   const src = ctx.db.get<{ storage_uri: string; filename: string }>(`SELECT storage_uri, filename FROM document_versions WHERE document_version_id = ? AND matter_id = ?`, [documentVersionId, mid]);
-  const prior = src && src.filename.toLowerCase().endsWith(".docx") ? existingRevisions(ctx.blobs.read(src.storage_uri)) : null;
+  const srcBuf = src && src.filename.toLowerCase().endsWith(".docx") ? ctx.blobs.read(src.storage_uri) : null;
+  const prior = srcBuf ? existingRevisions(srcBuf) : null;
   const priorNote = prior && prior.total > 0
     ? { existing_revisions: prior, existing_revisions_note: `原件里已有他人的修订痕迹 ${prior.total} 处（插入 ${prior.insertions}、删除 ${prior.deletions}、移动 ${prior.moves}、格式 ${prior.format_changes}）：修订稿原样保留；清洁稿会把它们与本次修改一并接受。在计划与最终答复里告诉律师这一点；完全落在对方插入的文字之内的可以改（记成我方修订），跨过对方修订边界的不能自动写，列明请律师在 Word 里处理` }
+    : {};
+  const hf = srcBuf ? headerFooterLeftovers(srcBuf, patches.filter((x) => !x.insert_after).map((x) => ({ anchor: ctx.tokens!.restore(mid, x.anchor).text, proposed: ctx.tokens!.restore(mid, x.proposed_text).text }))) : [];
+  const hfNote = hf.length > 0
+    ? { header_footer: hf, header_footer_note: "原件的页眉或页脚里也有这次改掉的原文（见 header_footer，patches 是第几条修改）：本工具只改正文，页眉页脚不会改到。在最终答复里逐处列明位置与应改成的文字，请律师在 Word 里双击页眉或页脚手工修改；不要回报“已全部改完”" }
     : {};
   const r = applyStructuredPatches(
     { db: ctx.db, blobs: ctx.blobs, tokens: ctx.tokens },
@@ -115,6 +151,7 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
       written: false,
       changes: previewChanges(r.paragraphs ?? [], r.spans ?? []),
       ...priorNote,
+      ...hfNote,
       ...numberingNotes(r, false),
       note: "这是试写，没有生成文件。逐段读 after（改后的整段）：语句通顺、与前后文衔接（没有多出或漏掉的字，例如替换“合同签订之日起”时留下的“本”）、编号与互引正确后，去掉 dry_run 把全部修改正式提交一次。",
     };
@@ -163,6 +200,7 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
     clean: { artifact_version_id: cleanReg.artifact_version_id, filename: cleanReg.filename },
     ...(compareReg ? { comparison: { artifact_version_id: compareReg.artifact_version_id, filename: compareReg.filename } } : {}),
     ...priorNote,
+    ...hfNote,
     ...numberingNotes(r, true),
     note: `修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；清洁稿已接受全部修订、去掉批注；${compareReg ? "修改对照表逐段列出修改前后与理由（由系统按实际写入的修改生成，不用另写）；" : ""}原件不变。批注是写给律师的修改理由，发给对方前须删除批注或改用清洁稿。`,
   };
