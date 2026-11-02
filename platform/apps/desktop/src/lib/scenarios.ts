@@ -1161,9 +1161,12 @@ export function primaryOutputOf(card: Pick<ScenarioCard, "primary" | "primaryBy"
  * 开始面板的初值（第 35 批真实走查 R3）：卡片有必填的“问题 / 研究问题”时，律师在输入框里写的整段话就是问题——预填进该栏、补充要求留空。
  * 原先整段进了“补充要求”，必填的“问题”为空、开始按钮点不了，律师只好在问题栏写“见补充要求中的三个问题”。其余卡片照旧作为补充要求。
  */
+/** 承载律师主要请求的必填栏：问题、修改意见、基本情况、履约问题（第 35 批 R7：修改意见整段进了“补充要求”，开始按钮点不了，与 R3 的“问题”栏同一类）。 */
+const PRIMARY_FIELDS = new Set(["question", "opinion", "situation", "issue"]);
+
 export function startPanelInitial(card: ScenarioCard, request: string | null | undefined): { values: Record<string, string>; extra: string } {
   const text = (request ?? "").trim();
-  const q = card.fields.find((f) => f.key === "question" && f.required && f.kind === "text");
+  const q = card.fields.find((f) => PRIMARY_FIELDS.has(f.key) && f.required && f.kind === "text");
   return q && text ? { values: { [q.key]: text }, extra: "" } : { values: {}, extra: request ?? "" };
 }
 

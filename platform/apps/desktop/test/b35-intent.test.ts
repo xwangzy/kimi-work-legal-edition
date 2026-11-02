@@ -56,3 +56,11 @@ test("预填的问题自带句号时任务说明不叠句号（真实走查 R3�
   assert.equal(buildGoal(advice, { question: "能否解除？" }, ""), "请答复以下问题：能否解除？", "问号结尾不再加句号");
   assert.equal(buildGoal(advice, { question: "能否解除" }, ""), "请答复以下问题：能否解除。", "没有标点的照常补句号");
 });
+
+test("按意见修改文书：输入框里的修改意见预填进必填的“修改意见”栏（真实走查 R7：整段进了补充要求、开始按钮点不了）", () => {
+  const revise = SCENARIOS.find((c) => c.id === "doc-revise")!;
+  const req = "请按下列意见在原件上修改：1. 押金改为一个月租金。2. 违约金改为每日万分之五。";
+  assert.deepEqual(startPanelInitial(revise, req), { values: { opinion: req }, extra: "" });
+  const agency = SCENARIOS.find((c) => c.id === "agency")!;
+  assert.deepEqual(startPanelInitial(agency, "起草代理词"), { values: {}, extra: "起草代理词" }, "争议焦点这类窄栏不预填整段描述");
+});
