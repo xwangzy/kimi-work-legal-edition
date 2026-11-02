@@ -34,7 +34,16 @@ export interface GateServerOptions {
   tokenizerIdleMs?: number;
   /** 批准凭据验签公钥（设备 ID → Ed25519 公钥 PEM；内核随 init 下发）。未给出 = 不受理确认（失败关闭）。 */
   approvalKeys?: Readonly<Record<string, string>>;
+  /**
+   * 模型请求的看门狗（第 35 批真实走查 N3/N4：上游一次调用挂住 12～16 分钟不出一个字，引擎不设超时，任务被拖到工作时限）：
+   * 等响应头超过 firstByteMs 回 504、流式输出中途 idleMs 没有新数据即断开——引擎按可重试错误自动重发这一步。缺省 180 / 120 秒。
+   */
+  modelWatchdog?: { firstByteMs?: number; idleMs?: number };
 }
+
+/** 模型看门狗缺省值：K3.1-Pro 长上下文预填实测 5～30 秒出首字、流式输出中两段数据间隔在秒级（第 35 批计量），留足余量。 */
+const MODEL_FIRST_BYTE_MS = 180_000;
+const MODEL_IDLE_MS = 120_000;
 
 const ROUTE = /^\/m\/([A-Za-z0-9_.-]{1,128})\/(v1\/chat\/completions|v1\/models|search|fetch)$/;
 /** 无事项问答（第 04 篇 §5.3：用户输入同样经出站闸门）：/q/<会话>/v1/chat/completions。 */
@@ -476,6 +485,20 @@ export class EgressGateServer {
     const sentBase = { ...base, destination: t.kind, destinationHost: hostOf(t.url), chars: report.textChars, segments: report.segments, tokenized: report.present, replacedAtGate: report.counts, media, model, ...suspected, ...(mediaApproval ? { approvalId: mediaApproval } : {}) };
     // 预写去向记录（审查 S4-03）：转发之前写入“已发出”，结束时补全结果与用量——闸门或内核中途退出时账本里也有这次出站
     this.record({ ...sentBase, phase: "start", outcome: "sent", reason: null, upstreamStatus: null, durationMs: 0, usage: null });
+    // 看门狗（第 35 批）：等首字、流中断档都有上限；到点只中止这一次请求，由引擎重试（取消与活性复核照旧走 ac）
+    const firstByteMs = this.o.modelWatchdog?.firstByteMs ?? MODEL_FIRST_BYTE_MS;
+    const idleMs = this.o.modelWatchdog?.idleMs ?? MODEL_IDLE_MS;
+    let stalled: "first_byte_timeout" | "stream_idle_timeout" | null = null;
+    let dog: NodeJS.Timeout | null = null;
+    const arm = (ms: number, why: "first_byte_timeout" | "stream_idle_timeout") => {
+      if (dog) clearTimeout(dog);
+      dog = setTimeout(() => {
+        stalled = why;
+        ac.abort();
+      }, ms);
+      dog.unref?.();
+    };
+    arm(firstByteMs, "first_byte_timeout");
     try {
       upstreamRes = await fetchImpl(t.url, {
         method: "POST",
@@ -486,11 +509,15 @@ export class EgressGateServer {
         redirect: "error",
       });
     } catch (e) {
-      const reason = transportFailureReason(e, ac.signal.aborted);
+      if (dog) clearTimeout(dog);
+      const reason = stalled ?? transportFailureReason(e, ac.signal.aborted);
       this.record({ ...sentBase, phase: "end", outcome: "failed", reason, upstreamStatus: null, durationMs: Date.now() - started, usage: null });
       if (reason === "tls_pin_mismatch" || reason === "tls_verify_failed") throw new GateError(502, reason, "模型通道的证书校验未通过（可能存在网络拦截），请求已中断、未发出内容");
+      // 等不到响应头：回 504，引擎按可重试状态码重发
+      if (stalled) throw new GateError(504, stalled, `模型通道 ${Math.round(firstByteMs / 1000)} 秒没有响应，已中断这次请求（会自动重试）`);
       throw new GateError(502, "upstream_unreachable", "模型通道不可达（已排队或稍后重试）");
     }
+    arm(idleMs, "stream_idle_timeout");
     // 响应流原样返回（不还原、不改写）；用量只从内存中的响应尾部读取
     const headers: Record<string, string> = {};
     for (const k of ["content-type", "x-request-id", "x-kwl-usage", "cache-control"]) {
@@ -505,6 +532,7 @@ export class EgressGateServer {
     try {
       if (upstreamRes.body) {
         for await (const chunk of upstreamRes.body as unknown as AsyncIterable<Uint8Array>) {
+          arm(idleMs, "stream_idle_timeout");
           tail = (tail + dec.decode(chunk, { stream: true })).slice(-65_536);
           if (!(await this.writeChunk(res, chunk, ac.signal))) {
             // 客户端已断开或任务已中止：停止读上游（退出迭代即取消上游流）
@@ -517,6 +545,9 @@ export class EgressGateServer {
     } catch {
       ok = false;
     } finally {
+      if (dog) clearTimeout(dog);
+      // 流中断档（看门狗到点）同样断开：引擎得到中断的流（connection 类错误）后自动重试
+      if (stalled) ok = false;
       if (ac.signal.aborted || !ok) {
         // 任务被撤销或客户端断开：断开连接（客户端得到不完整的流，不会被当作正常结束）
         res.destroy();
@@ -525,7 +556,7 @@ export class EgressGateServer {
         ...sentBase,
         phase: "end",
         outcome: ok && upstreamRes.status < 500 ? "sent" : "failed",
-        reason: ok ? null : ac.signal.aborted ? "aborted" : "stream_interrupted",
+        reason: ok ? null : stalled ?? (ac.signal.aborted ? "aborted" : "stream_interrupted"),
         upstreamStatus: upstreamRes.status,
         durationMs: Date.now() - started,
         usage: upstreamRes.status === 200 ? extractUsage(tail) : null,
