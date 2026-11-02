@@ -85,3 +85,46 @@ test("改正文里的名称时，原件页眉里同一处原文列给助手；�
     await agent.close();
   }
 });
+
+test("修改对照表的“条款”栏用律师的说法：段首条款号、表格的行与列、段首几个字，不写“第 N 段”（R5 律师评分）", { timeout: 120_000 }, async () => {
+  const { Agent, fetch } = await import("undici");
+  const { extractParagraphs } = await import("@zr-legal/docx-engine");
+  const { matter } = await tk.inv("matters.create", { title: "对照表位置", stance: "委托方", consent_status: "agreed", key_dates: { analysis_as_of: "2026-11-03" } });
+  const body = createStyledDocx(
+    [
+      { kind: "title", text: "软件许可及实施服务合同" },
+      p("乙方：北京云栈软件技术有限公司"),
+      p("2.1 本合同总价为人民币2,860,000元，构成如下："),
+      { kind: "table", rows: [[[{ text: "项目" }], [{ text: "金额（元）" }]], [[{ text: "软件许可费" }], [{ text: "1,560,000.00" }]], [[{ text: "合计" }], [{ text: "2,860,000.00" }]]] },
+    ],
+    undefined,
+    null,
+    { mark: false },
+  );
+  const doc = await importBytes(tk.inv, matter.matter_id, "软件许可合同.docx", body, DOCX_MIME);
+  const live = liveTaskIdentity(tk, matter.matter_id, "b35_place");
+  const token = mintTaskToken({ tid: live.tid, uid: live.uid, mid: live.mid, rid: live.rid, aid: live.aid, fen: live.fence, fx: ["read", "write_draft"], scope: ["tool:legal"] }, 300);
+  const agent = new Agent({ connect: { socketPath: tk.kernel.pipePath } });
+  try {
+    const r = (await fetch("http://tools.kwl/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "docx.revise", arguments: { document_version_id: doc.document_version_id, patches: [
+        { anchor: "北京云栈软件技术有限公司", proposed_text: "北京云栈软件科技有限公司" },
+        { anchor: "2,860,000元", proposed_text: "2,580,000元" },
+        { anchor: "2,860,000.00", proposed_text: "2,580,000.00" },
+      ] } } }),
+      dispatcher: agent,
+    }).then((x) => x.json())) as any;
+    const done = r.result.structuredContent;
+    assert.equal(done.status, "applied", JSON.stringify(r).slice(0, 400));
+    const art = tk.kernel.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM artifact_versions WHERE artifact_version_id = ?`, [done.comparison.artifact_version_id])!;
+    const cells = extractParagraphs(tk.kernel.blobs.read(art.storage_uri)).map((x) => x.text);
+    assert.ok(cells.includes("2.1"), `段首手打的款号：${cells.join(" / ")}`);
+    assert.ok(cells.some((x) => x === "第 2.1 款下表格“合计”行·金额（元）"), `表格的格子写行与列：${cells.join(" / ")}`);
+    assert.ok(cells.some((x) => /^“乙方：北京云栈软件技术有/.test(x)), "没有编号的段落写段首几个字");
+    assert.ok(!cells.some((x) => /^第 \d+ 段$/.test(x)), "不写内部段落号");
+  } finally {
+    await agent.close();
+  }
+});

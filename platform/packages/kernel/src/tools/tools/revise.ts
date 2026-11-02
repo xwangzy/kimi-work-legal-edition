@@ -213,11 +213,13 @@ function registerComparison(ctx: InvokeCtx, r: { changes?: ChangeRow[]; numberin
   try {
     const name = source.replace(/\.docx$/i, "");
     const cap = (s: string) => (s.length > 2000 ? `${s.slice(0, 2000)}……` : s);
-    const where = (c: ChangeRow) => (c.kind === "insert" ? `在${c.label ?? `第 ${c.para + 1} 段`}之后新增` : c.label ?? `第 ${c.para + 1} 段`);
+    // 位置用律师的说法（第 35 批 R5：原先没有自动编号的段落写“第 21 段”）
+    const at = (c: ChangeRow) => c.label ?? c.place ?? `第 ${c.para + 1} 段`;
+    const where = (c: ChangeRow) => (c.kind === "insert" ? `在${at(c)}之后新增` : at(c));
     const table = rows.map((c, i) => [String(i + 1), where(c), c.kind === "insert" ? "（新增）" : cap(c.before), c.kind === "delete" ? "（删除本段）" : cap(c.after), c.reason || "按律师意见修改"]);
     const shifts = r.numbering?.renumbered ?? [];
     const notes = [
-      `本表逐段列出对《${name}》所作的修改，共 ${rows.length} 处，与修订稿一致（以修订稿为准）；“条款”一栏是原件的编号。`,
+      `本表逐段列出对《${name}》所作的修改，共 ${rows.length} 处，与修订稿一致（以修订稿为准）；“条款”一栏是原件的条款号或位置。`,
       ...(shifts.length > 0 ? [`删除或插入条款后，后续条款的自动编号已顺延：${shifts.slice(0, 20).map((s) => `原 ${s.from} 现为 ${s.to}`).join("；")}${shifts.length > 20 ? "；……" : ""}。`] : []),
       "本表供律师复核与向客户说明修改内容；发给对方前请删去“修改理由”一栏。",
     ];

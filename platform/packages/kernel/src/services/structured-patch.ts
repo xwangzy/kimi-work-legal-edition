@@ -11,7 +11,7 @@
  * - 任何一条不成立：整体返回预览（逐条列出原因与还原后的文本），不做模糊替换、不写半个文件。
  */
 import { DomainError, newId, sha256Hex } from "@zr-legal/domain";
-import { applyRevisionsToDocx, docxListLabels, extractParagraphs, sameSpaces, sanitizeDocx, stripListLabel, type RevisionOp } from "@zr-legal/docx-engine";
+import { applyRevisionsToDocx, docxListLabels, extractParagraphs, paragraphCells, readZipText, sameSpaces, sanitizeDocx, stripListLabel, type RevisionOp } from "@zr-legal/docx-engine";
 import { findTokens } from "@zr-legal/tokenizer";
 import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
@@ -356,14 +356,39 @@ export function applyStructuredPatches(
      VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,?,?,?,?)`,
     [artifactId, doc.tenant_id, doc.matter_id, input.run_id ?? null, kind, v.next, filename, stored.sha256, stored.storage_uri, "[]", JSON.stringify(manifest), input.created_by, docLineage(doc.document_version_id)],
   );
-  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(buf, sanitizeDocx(out).docx), label_notes: labelNotes, changes: changeRows(paragraphs, labels, spans, ops) };
+  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(buf, sanitizeDocx(out).docx), label_notes: labelNotes, changes: changeRows(paragraphs, labels, spans, ops, paragraphPlaces(buf, paragraphs, labels)) };
 }
 
 /**
  * 修改对照（第 35 批）：按原件段落逐段给出“修改前 / 修改后”整段文字、条款编号与修改理由（原文形态，与修订稿同为真名）——
  * 律师要的“修改对照及修改说明”由内核按实际写入的修改生成，不靠助手再抄一遍全文。同一段多处修改合并成一行；段后插入单列一行。
  */
-function changeRows(paragraphs: readonly string[], labels: readonly (string | null)[], spans: readonly PatchSpan[], ops: readonly RevisionOp[]): ChangeRow[] {
+/**
+ * 每段在原件里的位置，用律师的说法（第 35 批 R5 律师评分：对照表“条款”栏写成“第 21 段”这类内部段落号）：
+ * 自动编号或段首手打的条款号；表格里的格子写“第 2.1 款下表格‘合计’行·金额（元）”；都没有的写段首几个字。
+ */
+function paragraphPlaces(docx: Buffer, paragraphs: readonly string[], labels: readonly (string | null)[]): (string | null)[] {
+  const leadNo = (t: string | undefined) => /^\s*(第[一二三四五六七八九十百零〇\d]+条|\d{1,3}(?:\.\d{1,3})+)/.exec(t ?? "")?.[1] ?? null;
+  const own = (i: number) => labels[i] ?? leadNo(paragraphs[i]);
+  let cells: ReturnType<typeof paragraphCells> = [];
+  try {
+    cells = paragraphCells(readZipText(docx, "word/document.xml") ?? "");
+  } catch {
+    cells = [];
+  }
+  const snip = (t: string) => `“${[...t.trim()].slice(0, 12).join("")}${[...t.trim()].length > 12 ? "……" : ""}”一段`;
+  return paragraphs.map((t, i) => {
+    const c = cells[i];
+    if (!c) return own(i) ?? (t.trim() ? snip(t) : null);
+    const rowHead = cells.findIndex((x) => x !== null && x.table === c.table && x.row === c.row && x.col === 1);
+    const rowName = rowHead >= 0 ? (paragraphs[rowHead] ?? "").trim().slice(0, 12) : "";
+    const lead = c.lead !== null ? own(c.lead) : null;
+    const where = `${lead ? `第 ${lead.replace(/^第|条$/g, "")} ${/条$/.test(lead) ? "条" : "款"}下` : ""}表格`;
+    return `${where}${rowName && c.col > 1 ? `“${rowName}”行` : `第 ${c.row} 行`}${c.header && c.row > 1 ? `·${c.header}` : ""}`;
+  });
+}
+
+function changeRows(paragraphs: readonly string[], labels: readonly (string | null)[], spans: readonly PatchSpan[], ops: readonly RevisionOp[], places: readonly (string | null)[] = []): ChangeRow[] {
   const comment = (i: number) => ops.find((o) => o.opId === `p${i}`)?.comment ?? "";
   const byPara = new Map<number, PatchSpan[]>();
   for (const sp of spans) byPara.set(sp.para, [...(byPara.get(sp.para) ?? []), sp]);
@@ -371,13 +396,14 @@ function changeRows(paragraphs: readonly string[], labels: readonly (string | nu
   for (const [para, list] of [...byPara.entries()].sort((a, b) => a[0] - b[0])) {
     const before = paragraphs[para] ?? "";
     const label = labels[para] ?? null;
+    const place = places[para] ?? null;
     const edits = list.filter((x) => !x.insert);
     if (edits.length > 0) {
       let after = before;
       for (const sp of [...edits].sort((a, b) => b.start - a.start)) after = after.slice(0, sp.start) + sp.new + after.slice(sp.end);
-      rows.push({ para, label, kind: after.trim() ? "edit" : "delete", before, after, reason: [...new Set(edits.map((x) => comment(x.index)).filter(Boolean))].join("；") });
+      rows.push({ para, label, place, kind: after.trim() ? "edit" : "delete", before, after, reason: [...new Set(edits.map((x) => comment(x.index)).filter(Boolean))].join("；") });
     }
-    for (const sp of list.filter((x) => x.insert)) rows.push({ para, label, kind: "insert", before, after: sp.new, reason: comment(sp.index) });
+    for (const sp of list.filter((x) => x.insert)) rows.push({ para, label, place, kind: "insert", before, after: sp.new, reason: comment(sp.index) });
   }
   return rows;
 }
@@ -387,6 +413,8 @@ export interface ChangeRow {
   para: number;
   /** 该段的 Word 自动编号（原件编号；没有为 null）。 */
   label: string | null;
+  /** 该段位置的律师说法（条款号、表格的行与列、段首几个字；第 35 批）。 */
+  place?: string | null;
   kind: "edit" | "delete" | "insert";
   /** edit / delete：该段修改前的整段文字；insert：插入位置之前那一段的文字。 */
   before: string;
