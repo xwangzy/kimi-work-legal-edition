@@ -10,7 +10,7 @@ import { eventDateProblem, STAGE_LABELS, stagesFor } from "../lib/matter-stage.t
 import { notifyDataChanged } from "../lib/events.ts";
 import { nav } from "../App.tsx";
 import type { ScenarioCard } from "../lib/scenarios.ts";
-import { buildGoal, canStartPartial, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues } from "../lib/scenarios.ts";
+import { buildGoal, canStartPartial, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues, startPanelInitial } from "../lib/scenarios.ts";
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { defaultChoice } from "./ModeSelector.tsx";
@@ -55,8 +55,9 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const docsReady = !!matter && documentsFor === matter.matter_id;
   const documents = docsReady ? allDocs : [];
   const [matterMenu, setMatterMenu] = useState(false);
-  const [values, setValues] = useState<Record<string, string | string[]>>({});
-  const [extra, setExtra] = useState(initialExtra ?? "");
+  // 律师在输入框写的是问题时预填进“问题”栏（第 35 批）
+  const [values, setValues] = useState<Record<string, string | string[]>>(() => startPanelInitial(card, initialExtra).values);
+  const [extra, setExtra] = useState(() => startPanelInitial(card, initialExtra).extra);
   const [docIds, setDocIds] = useState<string[]>(() => preselect(card, documents));
   /** 本面板里刚改过的用途（未刷新事项材料前先按这里显示；保存失败即撤回）。 */
   const [roles, setRoles] = useState<Record<string, MaterialRole | null>>({});

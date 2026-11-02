@@ -246,11 +246,9 @@ export const SCENARIOS: ScenarioCard[] = [
     skill: "pleading-draft",
     allowPartial: true,
     verb: "开始起草",
-    goal: "请起草民事起诉状。拟受理法院：{court}。{extra}",
-    fields: [
-      { key: "court", label: "拟受理法院", kind: "text", placeholder: "可空，待确认" },
-      { key: "extra", label: "补充要求", kind: "text", placeholder: "可选" },
-    ],
+    goal: "请起草民事起诉状。拟受理法院：{court}。",
+    // 第 35 批真实走查 R4：卡片自带的“补充要求”与面板通用的“补充要求（可选）”同名并列，律师写在哪栏都一样——只留通用栏
+    fields: [{ key: "court", label: "拟受理法院", kind: "text", placeholder: "可空，待确认" }],
     minMaterials: 0,
     steps: ["确认过的事实与金额照写，未确认的标【待确认】", "写出诉讼请求、事实与理由", "核对引用的法条", "列出提交前核对清单"],
     // 模板只做民商事起诉状（复核 B3-B24）：答辩状另有卡（defense），仲裁申请书不引到这里
@@ -587,7 +585,8 @@ export const SCENARIOS: ScenarioCard[] = [
     steps: ["读原文，把你的意见拆成逐处修改（连同定义、互引、附件）", "在原件副本上逐处修改，保留原版式、编号与表格", "生成带修订痕迹的修订稿和接受全部修订的清洁稿", "列出修改清单；你没提但发现的重大风险只提示、不擅自改"],
     intents: [["修改", "合同"], ["修改", "这份"], ["修订稿"], ["清洁稿"], ["清洁版"], ["修订痕迹"], ["按", "意见", "修改"], ["帮我", "改"]],
     // 第 34 批路由体检：“对方改了几处，帮我看看改了什么”是审对方的回稿，不是我方改文书
-    notFor: ["起草", "比对", "回稿", "对方改了", "改了什么", "改了哪些"],
+    // 第 35 批真实走查（N3）：“审查……出一份审查意见书，并给出建议的修改条款”被引到这里——要的是审查成果里的修改建议，不是我方改原件
+    notFor: ["起草", "比对", "回稿", "对方改了", "改了什么", "改了哪些", "给出修改建议", "提出修改建议", "给出建议的修改", "提出建议的修改", "出具修改建议", "审查意见书", "审核意见书"],
   },
   {
     id: "demand-lit",
@@ -628,7 +627,8 @@ export const SCENARIOS: ScenarioCard[] = [
     minMaterials: 1,
     steps: ["通读合同、标出结构", "按我方立场逐条找出风险，引用原文", "给出修改建议与可退让方案，核对依据", "把每项意见放进审查工作台，由你逐项决定"],
     // 第 28 批：“修改合同”引到“按你的意见修改文书”（律师要的是改好的稿子，不是风险清单）
-    intents: [["审查", "合同"], ["审合同"], ["审查", "协议"], ["审核", "合同"], ["风险", "合同"]],
+    // 第 35 批：审查成果的说法（“出一份审查意见书”“提出修改建议”“把关”“审一下”）也认作审合同
+    intents: [["审查", "合同"], ["审合同"], ["审查", "协议"], ["审核", "合同"], ["风险", "合同"], ["审查意见书"], ["审核意见书"], ["修改建议", "合同"], ["修改建议", "协议"], ["把关", "合同"], ["审一下", "合同"], ["审一下", "协议"]],
     notFor: ["解除劳动合同"],
   },
   {
@@ -1157,6 +1157,16 @@ export function primaryOutputOf(card: Pick<ScenarioCard, "primary" | "primaryBy"
   return picked ?? card.primary;
 }
 
+/**
+ * 开始面板的初值（第 35 批真实走查 R3）：卡片有必填的“问题 / 研究问题”时，律师在输入框里写的整段话就是问题——预填进该栏、补充要求留空。
+ * 原先整段进了“补充要求”，必填的“问题”为空、开始按钮点不了，律师只好在问题栏写“见补充要求中的三个问题”。其余卡片照旧作为补充要求。
+ */
+export function startPanelInitial(card: ScenarioCard, request: string | null | undefined): { values: Record<string, string>; extra: string } {
+  const text = (request ?? "").trim();
+  const q = card.fields.find((f) => f.key === "question" && f.required && f.kind === "text");
+  return q && text ? { values: { [q.key]: text }, extra: "" } : { values: {}, extra: request ?? "" };
+}
+
 export function buildGoal(card: ScenarioCard, values: Record<string, string | string[]>, extra: string): string {
   const parts = card.goal.split(/(?<=[。；])/);
   const out = parts
@@ -1192,6 +1202,9 @@ function bestScenarioIn(g: string): ScenarioCard | null {
   // 取命中最具体的一张（命中词的总字数最多；复核 B3-B24：“核对起诉状里的引用”应引向引用核验，而不是起草起诉状）
   let best: ScenarioCard | null = null;
   let bestScore = 0;
+  // 与最高分同分的审合同卡（第 35 批真实走查 N3：“审查……合同”与“修改……合同”同分时原先按卡片顺序取了“按你的意见修改文书”，
+  // 律师要的审查意见书不会出）：同分时看动作——有明确的改写动作才是我方改原件，否则是审查
+  let reviewTie: ScenarioCard | null = null;
   for (const c of SCENARIOS) {
     if (c.notFor?.some((w) => g.includes(w))) continue;
     for (const words of c.intents) {
@@ -1200,11 +1213,16 @@ function bestScenarioIn(g: string): ScenarioCard | null {
       if (score > bestScore) {
         best = c;
         bestScore = score;
-      }
+        reviewTie = null;
+      } else if (score === bestScore && best?.skill === "doc-revise" && c.skill === "contract-review") reviewTie = c;
     }
   }
+  if (best?.skill === "doc-revise" && reviewTie && !REVISE_ACTION_RE.test(g)) return reviewTie;
   return best;
 }
+
+/** 我方直接改原件的动作（第 35 批）：“改成 / 改为 / 删去 / 增加一款 / 出修订稿 / 在原件上 / 按……意见改”。 */
+const REVISE_ACTION_RE = /改成|改为|修改为|改到|删去|删除|删掉|增加一款|加一款|增加一条|加一条|修订稿|清洁稿|清洁版|修订痕迹|原件上|直接改|直接修改|按[^，。；]{0,12}意见[^，。；]{0,6}(?:修改|改)/;
 
 /** 意图建议：根据律师输入的任务描述建议一个业务场景（本机关键词规则，不联网；不自动切换）。先只看请求句，请求句里认不出再看全文。 */
 export function suggestScenario(goal: string): ScenarioCard | null {
