@@ -70,16 +70,25 @@ export function lawGetVersion(lawdb: Lawdb, params: LawGetVersionParams): LawVer
   return result;
 }
 
-export function lawSearch(lawdb: Lawdb, params: { query: string }): { results: { law_name: string; lsv_id: string; effectiveness: string; effective: string }[] } {
+export function lawSearch(lawdb: Lawdb, params: { query: string }) {
   const q = (params.query ?? "").trim();
   if (!q) throw new DomainError("validation", "law.search 需要 query", 422);
   const hits = lawdb.searchLaws(q);
+  // 条文检索（第 35 批）：按关键词在已收录的条文里找，法名之外也能按“竞业限制”“违法解除 赔偿金”定位到条
+  const articles = lawdb.searchArticles(q);
   // 检索动作逐命中校验（§2.2「运行时每次检索……校验」；不足即停，不让模型补全未获授权内容）
-  for (const h of hits) {
-    const src = lawdb.sourceOfVersion(h.lsv_id);
+  for (const lsv of new Set([...hits.map((h) => h.lsv_id), ...articles.map((a) => a.lsv_id)])) {
+    const src = lawdb.sourceOfVersion(lsv);
     if (src) lawdb.assertAction(src, "search");
   }
-  return { results: hits };
+  return {
+    results: hits,
+    articles: articles.map(({ score: _s, ...a }) => a),
+    note:
+      hits.length + articles.length === 0
+        ? "法名与条文都没有命中：换更短的关键词（如“竞业限制”“经济补偿”）或直接写法名再查；仍查不到的写“法规库未收录”"
+        : "results 是按法名命中的法规版本；articles 是条文里含查询关键词的条（只覆盖法规库收录的条文，片段不是全文）。要引用的条用 law.get_article 取原文逐款核对",
+  };
 }
 
 // ─── law.get_article：取条文原文（v9.4 评审 S1 §6.2 第 4 项） ───

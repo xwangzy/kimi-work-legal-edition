@@ -349,6 +349,47 @@ export class Lawdb {
     return [...hits.values()];
   }
 
+  /**
+   * 按关键词检索已收录的条文（第 35 批真实走查 R3：law.search 只比对法名，“竞业限制”“解除劳动合同”“违法解除 赔偿金”一律返回空，
+   * 助手据此认定“法规库未检出”，而劳动合同法第二十三、二十四、三十九、八十七条原文就在库里）。
+   * 查询按空白与标点切成关键词；每个关键词在条文里出现记 1 分（四字以上的长词也按两字片段计覆盖率，覆盖六成以上记 1 分）；
+   * 关键词里的法名只作过滤。只返回现行（未失效）版本的条文，按得分、法名、条号排序，至多 limit 条。纯查询。
+   */
+  searchArticles(query: string, limit = 10): { law_name: string; lsv_id: string; article_no: number; effectiveness: string; effective: string; snippet: string; score: number }[] {
+    const terms = query.split(/[\s，,。；;、:：（）()《》“”"]+/).map((t) => t.trim()).filter((t) => t.length >= 2);
+    if (terms.length === 0) return [];
+    const laws = this.db.prepare(`SELECT l.law_id, l.law_name, l.aliases_json FROM laws l`).all() as { law_id: string; law_name: string; aliases_json: string | null }[];
+    const lawFilter = new Set<string>();
+    const textTerms: string[] = [];
+    for (const t of terms) {
+      const n = normalizeLawName(t);
+      const hit = laws.filter((l) => [l.law_name, ...JSON.parse(l.aliases_json ?? "[]")].some((x: string) => normalizeLawName(x) === n || normalizeLawName(x).endsWith(n) && n.length >= 4 && /法|条例|规定|解释/.test(n)));
+      if (hit.length > 0) for (const h of hit) lawFilter.add(h.law_id);
+      else textTerms.push(t);
+    }
+    if (textTerms.length === 0) return [];
+    const rows = this.db
+      .prepare(`SELECT a.lsv_id, a.article_no, a.text, v.effectiveness, v.effective, v.superseded, l.law_id, l.law_name FROM articles a JOIN law_versions v ON v.lsv_id = a.lsv_id JOIN laws l ON l.law_id = v.law_id`)
+      .all() as { lsv_id: string; article_no: number; text: string; effectiveness: string; effective: string; superseded: string | null; law_id: string; law_name: string }[];
+    const covers = (text: string, term: string): boolean => {
+      if (text.includes(term)) return true;
+      if (term.length < 4) return false;
+      const grams = Array.from({ length: term.length - 1 }, (_, i) => term.slice(i, i + 2));
+      return grams.filter((g) => text.includes(g)).length / grams.length >= 0.6;
+    };
+    const out: { law_name: string; lsv_id: string; article_no: number; effectiveness: string; effective: string; snippet: string; score: number }[] = [];
+    for (const r of rows) {
+      if (r.superseded || r.effectiveness !== "valid") continue;
+      if (lawFilter.size > 0 && !lawFilter.has(r.law_id)) continue;
+      const matched = textTerms.filter((t) => covers(r.text, t));
+      if (matched.length === 0) continue;
+      const first = matched.map((t) => r.text.indexOf(t)).filter((i) => i >= 0).sort((a, b) => a - b)[0] ?? 0;
+      const start = Math.max(0, first - 20);
+      out.push({ law_name: r.law_name, lsv_id: r.lsv_id, article_no: r.article_no, effectiveness: r.effectiveness, effective: r.effective, snippet: `${start > 0 ? "……" : ""}${r.text.slice(start, start + 100)}${start + 100 < r.text.length ? "……" : ""}`, score: matched.length });
+    }
+    return out.sort((a, b) => b.score - a.score || a.law_name.localeCompare(b.law_name) || a.article_no - b.article_no).slice(0, limit);
+  }
+
   topicArticle(lsvId: string, topic: string): number | null {
     const r = this.db.prepare(`SELECT article_no FROM article_topics WHERE lsv_id = ? AND topic = ?`).get(lsvId, topic) as { article_no: number } | undefined;
     return r?.article_no ?? null;

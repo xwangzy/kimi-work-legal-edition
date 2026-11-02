@@ -80,7 +80,7 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "law.search",
     title: "法规检索（注册库内）",
-    description: "在 Source Registry 种子内按名称检索法源版本。",
+    description: "在本所法规库内检索：按法名或简称找法规版本（results），并按关键词在已收录的条文里找相关的条（articles：法名、条号、片段；如“竞业限制”“违法解除 赔偿金”“劳动合同法 严重违反规章制度”）。要引用的条再用 law.get_article 取原文。",
     sideEffect: "read",
     resource: "lawdb",
     version: "1",
@@ -138,7 +138,14 @@ export const TOOLS: readonly ToolDef[] = [
         topic_hint: { type: "string" },
       },
     },
-    invoke: (p, ctx) => citationsVerify(ctx.lawdb, p),
+    // 给助手的口径说明（第 35 批真实走查 R3：助手把“支持待判”读成“核验未通过”，劳动争议意见书准备把结论全部降为“初步”）
+    invoke: (p, ctx) => {
+      const r = citationsVerify(ctx.lawdb, p);
+      return {
+        ...r,
+        note: "support_pending（支持待判）是正常结果：条文存在、适用版本现行有效，来源与版本已核；是否支持你的论点由你读 law.get_article 的原文判断后写明，不是核验失败。intercepted（拦截）才表示条号不存在、已改号或该时点无有效版本，不得照引；unverified_offline 是库外法源，写“法规库未收录”",
+      };
+    },
   },
   {
     name: "calc.interest",
