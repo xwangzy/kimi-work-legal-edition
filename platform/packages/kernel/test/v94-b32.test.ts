@@ -95,7 +95,10 @@ test("第 32 批：带表格的文书——格子里的代号导出还原、待�
   assert.match(report.artifact_version_id, /^artv_/);
   assert.equal(reports(), 1);
   const art = tk.kernel.db.get<{ manifest: string; storage_uri: string; filename: string }>(`SELECT manifest, storage_uri, filename FROM artifact_versions WHERE artifact_version_id = ?`, [report.artifact_version_id])!;
-  assert.deepEqual(JSON.parse(art.manifest), { tool: "docx.render_report", sections: 3, tables: 2 });
+  // 第 35 批：清单另记文字字数（版本缩水检查用）
+  const { text_chars, ...manifest } = JSON.parse(art.manifest);
+  assert.deepEqual(manifest, { tool: "docx.render_report", sections: 3, tables: 2 });
+  assert.ok(Number.isInteger(text_chars) && text_chars > 0);
 
   // 登记的字节是令牌形态；格子里的【待填】计入签发前的待补占位
   const stored = tk.kernel.blobs.read(art.storage_uri);
