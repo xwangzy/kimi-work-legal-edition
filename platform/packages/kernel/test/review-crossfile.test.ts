@@ -40,8 +40,10 @@ test("paragraphCells：表格外为 null，表内按表 / 行 / 列编号，首�
   assert.equal(cells.length, paras.length);
   const at = (t: string) => cells[paras.findIndex((p) => p.text === t)];
   assert.equal(at("第三条 价格见下表。"), null);
-  assert.deepEqual(at("每台人民币 1 万元"), { table: 1, row: 3, col: 2, header: "单价" });
-  assert.deepEqual(at("付款节点"), { table: 1, row: 1, col: 3, header: "付款节点" });
+  // 第 35 批：另记表格前最近一段正文的段落序号（两张表行名列名相同时靠它区分）
+  const lead = paras.findIndex((p) => p.text === "第三条 价格见下表。");
+  assert.deepEqual(at("每台人民币 1 万元"), { table: 1, row: 3, col: 2, header: "单价", lead });
+  assert.deepEqual(at("付款节点"), { table: 1, row: 1, col: 3, header: "付款节点", lead });
   assert.equal(at("第八条 买方应于验收合格后九十日内支付货款。"), null);
 });
 
