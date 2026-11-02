@@ -321,6 +321,8 @@ export interface CellPosition {
   row: number;
   col: number;
   header: string;
+  /** 表格前最近一段正文的段落序号（第 35 批 R5：两张表的“合计｜金额（元）”同名，靠表前那段的条款号区分）；表前没有正文为 null。 */
+  lead: number | null;
 }
 
 /**
@@ -330,18 +332,19 @@ export interface CellPosition {
 export function paragraphCells(documentXml: string): (CellPosition | null)[] {
   const paras = mapParagraphs(documentXml);
   const TAG = /<(\/?)w:(tbl|tr|tc)\b[^>]*?(\/?)>/g;
-  type Frame = { table: number; row: number; col: number };
+  type Frame = { table: number; row: number; col: number; lead: number | null };
   const stack: Frame[] = [];
   let tables = 0;
   const events = [...documentXml.matchAll(TAG)].filter((m) => m[3] !== "/");
   const out: (CellPosition | null)[] = [];
   const firstRow = new Map<string, string>();
   let e = 0;
+  let lastOutside: number | null = null;
   for (const p of paras) {
     while (e < events.length && events[e]!.index! < p.xmlStart) {
       const [, close, tag] = events[e]!;
       if (!close) {
-        if (tag === "tbl") stack.push({ table: ++tables, row: 0, col: 0 });
+        if (tag === "tbl") stack.push({ table: ++tables, row: 0, col: 0, lead: stack.at(-1)?.lead ?? lastOutside });
         else if (tag === "tr" && stack.length) {
           stack.at(-1)!.row += 1;
           stack.at(-1)!.col = 0;
@@ -351,6 +354,7 @@ export function paragraphCells(documentXml: string): (CellPosition | null)[] {
     }
     const f = stack.at(-1);
     if (!f || f.row === 0 || f.col === 0) {
+      if (!f && p.text.trim()) lastOutside = p.index;
       out.push(null);
       continue;
     }
@@ -358,7 +362,7 @@ export function paragraphCells(documentXml: string): (CellPosition | null)[] {
       const k = `${f.table}:${f.col}`;
       firstRow.set(k, `${firstRow.get(k) ?? ""}${p.text}`);
     }
-    out.push({ table: f.table, row: f.row, col: f.col, header: "" });
+    out.push({ table: f.table, row: f.row, col: f.col, header: "", lead: f.lead });
   }
   for (const c of out) if (c) c.header = (firstRow.get(`${c.table}:${c.col}`) ?? "").trim().slice(0, 20);
   return out;

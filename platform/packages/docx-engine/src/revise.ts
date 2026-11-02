@@ -99,7 +99,13 @@ function applyOne(
     };
     // 列名：该列首行的文字（同一行里两格金额相同，如“应还利息”与“本期合计”都是 75,000.00，靠列名区分；第 34 批 T3 真实走查）
     const colText = (p: ParagraphMap): string => cells[p.index]?.header ?? "";
-    const picked = op.anchor.paragraphHint ? pickByHint(candidates.map((p) => ({ label: labels[origIndex.get(p)!] ?? null, text: p.text, row: rowText(p), col: colText(p) })), op.anchor.paragraphHint) : null;
+    // 表前那段（第 35 批 R5）：条款号与文字，两张表行名列名相同时靠它区分（“2.1｜合计｜金额（元）”）
+    const leadText = (p: ParagraphMap): string => {
+      const at = cells[p.index]?.lead;
+      const q = at === null || at === undefined ? undefined : all[at];
+      return q ? `${labels[origIndex.get(q) ?? -1] ?? ""} ${q.text}` : "";
+    };
+    const picked = op.anchor.paragraphHint ? pickByHint(candidates.map((p) => ({ label: labels[origIndex.get(p)!] ?? null, text: p.text, row: rowText(p), col: colText(p), lead: leadText(p) })), op.anchor.paragraphHint) : null;
     if (picked === null) {
       throw new DomainError(
         "anchor_mismatch",
@@ -314,13 +320,13 @@ function checkRegion(opId: string, paraXml: string, relStart: number, region: st
  * 条款提示定位（第 34 批 D10）：多处匹配时按提示挑一处——先比自动编号（“3.2”“第五条”），再比段首（段首是“3.2”不算“3.2.1”），
  * 最后比段内；同一档里不止一处、或哪一档都对不上时返回 null（按歧义处理，不再默认改第一处）。纯函数。
  */
-export function pickByHint(cands: readonly { label: string | null; text: string; row?: string; col?: string }[], hint: string): number | null {
+export function pickByHint(cands: readonly { label: string | null; text: string; row?: string; col?: string; lead?: string }[], hint: string): number | null {
   const norm = (s: string) => s.replace(/\s+/g, "").replace(/[.、．:：）)]+$/, "");
   const h = norm(hint);
   if (!h) return null;
   // “行名｜列名”（“第 2 期｜应还本金”）：每一段都要出现在该格所在行或该列表头里（去空白比较）
   const parts = hint.split(/[｜|/／,，、;；]+/).map((x) => x.replace(/\s+/g, "")).filter(Boolean);
-  const tiers: ((c: { label: string | null; text: string; row?: string; col?: string }) => boolean)[] = [
+  const tiers: ((c: { label: string | null; text: string; row?: string; col?: string; lead?: string }) => boolean)[] = [
     (c) => c.label !== null && norm(c.label) === h,
     (c) => {
       const t = `${c.label ?? ""}${c.text}`.replace(/\s+/g, "");
@@ -330,6 +336,8 @@ export function pickByHint(cands: readonly { label: string | null; text: string;
     // 表格格子：提示写的是同一行别的格子（行首的项目名、期次）
     (c) => !!c.row && c.row.includes(hint),
     (c) => parts.length >= 2 && !!c.row && parts.every((x) => `${c.row}${c.col ?? ""}`.replace(/\s+/g, "").includes(x)),
+    // 几张表的行名列名相同（价款构成表与付款表都有“合计｜金额（元）”）：再加表前那段的条款号或文字（第 35 批 R5）
+    (c) => parts.length >= 2 && !!c.row && !!c.lead && parts.every((x) => `${c.lead}${c.row}${c.col ?? ""}`.replace(/\s+/g, "").includes(x)),
   ];
   for (const tier of tiers) {
     const hits = cands.map((c, i) => (tier(c) ? i : -1)).filter((i) => i >= 0);

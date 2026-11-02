@@ -32,7 +32,7 @@ type Reason = "anchor_empty" | "anchor_not_found" | "anchor_ambiguous" | "unknow
 const FIX: Record<Reason, string> = {
   anchor_empty: "anchor 不能为空；新增段落用 insert_after，锚点写插入位置前一段里的原文",
   anchor_not_found: "草稿里找不到这段文字：逐字照抄这份文书里的原文（同一段落之内，含标点与代号）",
-  anchor_ambiguous: "这段文字在多个段落或表格格子出现：加 paragraph_hint——正文写所在条款号或该段里另一段独有的文字，表格里的格子写“行名｜列名”（如“付款安排｜严重度”，行名取该行第一格的文字）；或把锚点写长到唯一",
+  anchor_ambiguous: "这段文字在多个段落或表格格子出现：加 paragraph_hint——正文写所在条款号或该段里另一段独有的文字，表格里的格子写“行名｜列名”（如“付款安排｜严重度”，行名取该行第一格的文字），几张表的行名列名相同时前面再加表格前一段的条款号或标题（如“2.1｜合计｜金额（元）”）；或把锚点写长到唯一",
   unknown_token: "含有本事项不存在的代号：代号只能照抄材料或草稿里出现过的",
   overlap: "与另一条修改的原文重叠：合并成一条",
   apply_failed: "写入失败：通常是两条修改落在同一处，拆开或合并后重试",

@@ -235,3 +235,22 @@ test("交付的 Excel 不是“裸表”：首行表头加粗冻结、正文换�
   assert.equal((styles.match(/<xf numFmtId=/g) ?? []).length, 7, "cellStyleXfs 1 个 + cellXfs 6 个");
   assert.doesNotMatch(files.get("xl/worksheets/sheet2.xml")!.toString("utf8"), /<cols>|<sheetViews>/, "空表不写列宽、不冻结");
 });
+
+test("几张表的行名列名相同：提示前加表格前一段的条款号或文字区分（第 35 批 R5 真实走查：价款构成表与付款表的“合计｜金额（元）”都没写入）", () => {
+  const tc = (t: string) => `<w:tc>${p(r(t))}</w:tc>`;
+  const row = (...xs: string[]) => `<w:tr>${xs.map(tc).join("")}</w:tr>`;
+  const price = `<w:tbl>${row("项目", "金额（元）")}${row("软件许可费", "1,500,000.00")}${row("合计", "2,860,000.00")}</w:tbl>`;
+  const pay = `<w:tbl>${row("期次", "比例", "金额（元）")}${row("签约", "40%", "1,144,000.00")}${row("合计", "100%", "2,860,000.00")}</w:tbl>`;
+  const docx = withBody(p(r("2.1 本合同总价构成如下：")) + price + p(r("3.1 甲方按下表付款：")) + pay + p(r("其他")));
+  assert.throws(() => revise(docx, [{ a: "2,860,000.00", n: "2,580,000.00", hint: "合计｜金额（元）" }]), /锚点歧义/, "只写行名列名，两张表都对上：仍拒写");
+  const clean = sanitizeDocx(
+    revise(docx, [
+      { a: "2,860,000.00", n: "2,580,000.00", hint: "2.1｜合计｜金额（元）" },
+      { a: "2,860,000.00", n: "2,580,000.00", hint: "甲方按下表付款｜合计｜金额（元）" },
+    ]),
+  ).docx;
+  const t = texts(clean);
+  assert.equal(t.filter((x) => x === "2,580,000.00").length, 2, t.join(" / "));
+  assert.ok(!t.includes("2,860,000.00"));
+  assert.throws(() => revise(docx, [{ a: "2,860,000.00", n: "2,580,000.00", hint: "4.1｜合计｜金额（元）" }]), /锚点歧义/, "条款号对不上任何一张表：拒写，不改第一处");
+});
