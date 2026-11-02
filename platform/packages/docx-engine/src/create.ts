@@ -42,6 +42,8 @@ export function createDocx(title: string, sections: ReportSection[], o: { mark?:
 }
 
 /** 合同各方的签署行开头（“受让方：”“甲方（盖章）：”“转让方一：”）。 */
+/** 签署表格里的格子：当事人称谓开头，或“盖章 / 签字 / 签署日期”。 */
+const SIGN_CELL = /^(?:(?:甲方|乙方|丙方|丁方|买方|卖方|出租方|承租方|委托方|受托方|转让方|受让方|许可方|被许可方)[一二三四五六七八九十]?\s*[（(：:]|.{0,12}(?:盖章|签字|签署日期|签章))/;
 const PARTY_SIGN = /^(?:甲方|乙方|丙方|丁方|戊方|受让方|转让方|出让方|出租人|出租方|承租人|承租方|买方|卖方|委托方|受托方|委托人|受托人|服务方|发包人|承包人|借款人|出借人|贷款人|保证人|担保人|投资方|目标公司|创始股东|增资方|原股东|合作方|许可方|被许可方)[一二三四五六七八九十]?\s*[（(：:]/;
 
 /**
@@ -49,8 +51,17 @@ const PARTY_SIGN = /^(?:甲方|乙方|丙方|丁方|戊方|受让方|转让方|�
  * 作为签署页——第一行另起一页、各行左对齐不缩进，各方之间空一行；“以下无正文”那一行留在上一页。意见书、律师函的落款不在此列（仍右对齐）。
  */
 export function signaturePage(blocks: DocBlock[]): DocBlock[] {
-  const start = blocks.findIndex((b) => b.kind === "p" && /^[（(]\s*以下无正文/.test(b.runs.map((r) => r.text).join("").trim()));
+  // “以下无正文”“以下为签署页”等写法都认（第 35 批 R6：写成“（以下为签署页）”时签署页没有另起一页）
+  const start = blocks.findIndex((b) => b.kind === "p" && /^[（(]\s*以下(?:无正文|为签署页|为签字页|为签章页|是签署页)/.test(b.runs.map((r) => r.text).join("").trim()));
   if (start < 0) return blocks;
+  // 签署栏画成表格（各方并列两栏）：表格另起一页、不画框线；其后的“附件”另起一页
+  let t = start + 1;
+  while (t < blocks.length && blocks[t]!.kind === "blank") t += 1;
+  const tbl = blocks[t];
+  if (tbl?.kind === "table" && tbl.rows.some((r) => r.some((c) => SIGN_CELL.test(c.map((x) => x.text).join("").trim())))) {
+    const rest = blocks.slice(t + 1).map((b, i) => (i === 0 && (b.kind === "h1" || b.kind === "h2") && /^附件/.test(b.text) ? { ...b, pageBreakBefore: true } : b));
+    return [...blocks.slice(0, start + 1), { ...tbl, borderless: true, pageBreakBefore: true }, ...rest] as DocBlock[];
+  }
   let end = start + 1;
   while (end < blocks.length && (blocks[end]!.kind === "p" || blocks[end]!.kind === "blank")) end += 1;
   const lines = blocks.slice(start + 1, end);

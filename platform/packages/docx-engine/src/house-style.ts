@@ -25,7 +25,7 @@ export type DocBlock =
   | { kind: "h1" | "h2" | "h3"; text: string; pageBreakBefore?: boolean }
   | { kind: "p"; runs: Run[]; keepNext?: boolean; sign?: boolean; pageBreakBefore?: boolean }
   | { kind: "li"; runs: Run[]; marker: string; level?: number }
-  | { kind: "table"; rows: Run[][][] }
+  | { kind: "table"; rows: Run[][][]; borderless?: boolean; pageBreakBefore?: boolean }
   | { kind: "right"; text: string; keepNext?: boolean }
   | { kind: "blank" };
 
@@ -201,7 +201,9 @@ export function blocksToBodyXml(blocks: DocBlock[]): string {
     else if (b.kind === "blank") out.push(`<w:p/>`);
     else if (b.kind === "table" && b.rows.length > 0) {
       const cols = Math.max(1, ...b.rows.map((r) => r.length));
-      const border = (side: string) => `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>`;
+      // 签署栏画成的表（第 35 批 R6）：另起一页、不画框线
+      const border = (side: string) => (b.borderless ? `<w:${side} w:val="nil"/>` : `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="000000"/>`);
+      if (b.pageBreakBefore) out.push(`<w:p><w:pPr><w:pageBreakBefore/></w:pPr></w:p>`);
       const widths = columnWidths(b.rows, cols);
       const grid = widths.map((w) => `<w:gridCol w:w="${w}"/>`).join("");
       // 首行是表头：跨页时在每页重复（第 32 批，设备清单、证据目录常跨页）；

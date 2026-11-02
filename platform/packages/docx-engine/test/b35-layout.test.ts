@@ -59,6 +59,24 @@ test("落款写成“律师事务所：【待签发】”也右对齐；落款�
   assert.doesNotMatch(at("日期：【待签发】"), /<w:keepNext\/>/, "最后一行不与后面的内容绑在一起");
 });
 
+test("签署栏画成两栏表格、标记写成“（以下为签署页）”：表格另起一页、不画框线，其后的附件另起一页；正文里的表格照常有框线（真实走查 R6）", () => {
+  const xml = docXml(
+    createDocx("设备采购及安装合同", [
+      { heading: "第一条 设备", paragraphs: ["1.1 设备如下表："], table: { columns: ["设备", "数量"], rows: [["五轴联动加工中心", "2"]] } },
+      { heading: "第二十条 其他", paragraphs: ["20.1 本合同自双方签字盖章之日起生效。", "（以下为签署页）"], table: { columns: ["买方（甲方）", "卖方（乙方）"], rows: [["苏州恒川精密制造有限公司", "无锡德隆智能装备有限公司"], ["盖章：", "盖章："], ["签署日期：　　年　　月　　日", "签署日期：　　年　　月　　日"]] } },
+      { heading: "附件", paragraphs: ["附件一 技术规格"] },
+    ]),
+  );
+  const tables = xml.match(/<w:tbl>[\s\S]*?<\/w:tbl>/g) ?? [];
+  assert.equal(tables.length, 2);
+  assert.match(tables[0]!, /w:val="single"/, "正文表格有框线");
+  assert.doesNotMatch(tables[1]!, /w:val="single"/, "签署表格不画框线");
+  assert.match(xml, /<w:p><w:pPr><w:pageBreakBefore\/><\/w:pPr><\/w:p><w:tbl>/, "签署表格另起一页");
+  const ps = paras(xml);
+  assert.match(ps.find((x) => textOf(x) === "附件")!, /pageBreakBefore/, "附件另起一页");
+  assert.doesNotMatch(ps.find((x) => textOf(x) === "（以下为签署页）")!, /pageBreakBefore/, "标记留在上一页");
+});
+
 test("A-02：合同签署页另起一页，签署行左对齐不缩进、各方之间空一行；附件另起一页；“以下无正文”留在上一页", () => {
   const xml = docXml(
     createDocx("股权转让协议", [

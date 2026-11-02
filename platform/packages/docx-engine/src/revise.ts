@@ -66,6 +66,15 @@ export function applyRevisionsToDocx(docx: Buffer, plan: RevisionPlan): ApplyRes
   }
 
   files.set("word/document.xml", Buffer.from(xml, "utf8"));
+  // 修订稿打开“修订”开关（第 35 批 R5 律师评分：律师在修订稿上接着改时容易不留痕）；原件没有设置部件的不新建
+  const settings = files.get("word/settings.xml")?.toString("utf8");
+  if (settings !== undefined && !/<w:trackRevisions\b/.test(settings)) {
+    const next = settings.replace(/(<w:settings\b[^>]*>)/, "$1<w:trackRevisions/>");
+    if (next !== settings) {
+      assertWellFormed(next, "word/settings.xml");
+      files.set("word/settings.xml", Buffer.from(next, "utf8"));
+    }
+  }
   dropHouseMark(files);
   const out = writeZip([...files.entries()].map(([name, data]) => ({ name, data })));
   return { docx: out, applied };

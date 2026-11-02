@@ -25,6 +25,9 @@ export function sanitizeDocx(docx: Buffer): SanitizeResult {
   for (const [name, data] of files) {
     if (/^word\/(?:footnotes|endnotes|header\d*|footer\d*)\.xml$/.test(name)) files.set(name, Buffer.from(acceptAll(data.toString("utf8"), counts), "utf8"));
   }
+  // 清洁稿关掉“修订”开关（修订稿为方便律师续改而打开，第 35 批）
+  const settings = files.get("word/settings.xml")?.toString("utf8");
+  if (settings !== undefined && /<w:trackRevisions\b/.test(settings)) files.set("word/settings.xml", Buffer.from(settings.replace(/<w:trackRevisions\b[^>]*\/>/g, ""), "utf8"));
   const { deletionsAccepted, insertionsAccepted, comments } = counts;
   files.set("word/comments.xml", Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="${W_NS}"></w:comments>`, "utf8"));
 
