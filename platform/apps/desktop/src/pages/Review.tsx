@@ -80,6 +80,8 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   const [tokenMap, setTokenMap] = useState<Map<string, string | null>>(new Map());
   // 律师看得懂的标题（内容标题在本机还原代号；取不到时用固定名称）
   const [title, setTitle] = useState<string | null>(null);
+  // 文件名带代号时（第 35 批 R3）保存对话框建议还原后的名字
+  const [saveName, setSaveName] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     api.completeness(artifactId).then(setData).catch((e) => setErr(e.message));
@@ -92,14 +94,16 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
       .then(async (r) => {
         const a = r.artifacts.find((x: any) => x.artifact_version_id === data.artifact_version_id);
         if (!a) return;
-        const map = String(a.title ?? "").includes("〔") ? await restoreTokens(data.matter_id, String(a.title)) : new Map<string, string | null>();
+        const both = `${a.title ?? ""}\n${a.filename ?? ""}`;
+        const map = both.includes("〔") ? await restoreTokens(data.matter_id, both) : new Map<string, string | null>();
         setTitle(artifactName(a, (t) => restoredPlain(t, map)));
+        setSaveName(restoredPlain(String(a.filename ?? ""), map));
       })
       .catch(() => {});
   }, [data?.artifact_version_id, data?.matter_id]);
   const download = () =>
     void api
-      .downloadArtifact(data.artifact_version_id, data.filename)
+      .downloadArtifact(data.artifact_version_id, saveName ?? data.filename)
       .then((saved) => {
         if (!saved) return;
         setNote("已保存（真实名称已还原）。下载已留痕。");
@@ -119,7 +123,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   // 在 Word / WPS 中打开（v9.4 第 21 批）：存到你选的位置后用系统默认程序打开那一份；给了一句话就复制到剪贴板，Ctrl+F 粘贴即可定位
   const openInOffice = (find?: string) =>
     void api
-      .openArtifactInOffice(data.artifact_version_id, data.filename, find ? restoredPlain(find, tokenMap) : undefined)
+      .openArtifactInOffice(data.artifact_version_id, saveName ?? data.filename, find ? restoredPlain(find, tokenMap) : undefined)
       .then((r) => {
         if (!r.saved) return;
         const where = r.copied ? "那句话已复制，在 Word 里按 Ctrl+F（Mac 为 ⌘F）粘贴即可找到。" : "";

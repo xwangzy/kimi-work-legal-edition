@@ -154,7 +154,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const withRun = (a: any) => ({ ...a, run_title: a.run_title ?? runSnap.title ?? null, run_goal: a.run_goal ?? runSnap.goal ?? run?.goal ?? null });
   const downloadOne = (a: any) =>
     void api
-      .downloadArtifact(a.artifact_version_id, a.filename)
+      .downloadArtifact(a.artifact_version_id, restoredPlain(String(a.filename ?? ""), tokenMap))
       .then((saved) => (saved ? api.deliver({ artifact_version_id: a.artifact_version_id, action: "download" }) : undefined))
       .catch((e) => setErr(e.message));
   const submitOne = async (a: any) => {
@@ -250,7 +250,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   // 代号只在界面还原（标题、计划、提问、预览；事实角标的悬停文字）
   const [factText, setFactText] = useState("");
   const texts = useMemo(
-    () => [preview?.text ?? "", factText, liveText, ...progressTexts(progress), ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? "")), ...artifacts.map((a) => String(a.title ?? "")), ...(risk?.top.map((t) => t.issue) ?? []), ...(outline?.items.flatMap((x) => [x.claim, x.counter ?? "", ...x.basis.map((b) => b.note ?? ""), ...x.facts.map((f) => f.statement)]) ?? [])].join("\n"),
+    () => [preview?.text ?? "", factText, liveText, ...progressTexts(progress), ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? "")), ...artifacts.map((a) => `${a.title ?? ""}\n${a.filename ?? ""}`), ...(risk?.top.map((t) => t.issue) ?? []), ...(outline?.items.flatMap((x) => [x.claim, x.counter ?? "", ...x.basis.map((b) => b.note ?? ""), ...x.facts.map((f) => f.statement)]) ?? [])].join("\n"),
     [preview, factText, liveText, progress, approvals, questions, events, artifacts, risk, outline],
   );
   useEffect(() => {
@@ -1010,7 +1010,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 />
               )}
               {selected && preview && <SafePreview filename={preview.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} {...(previewMarks ? { cites: previewMarks } : {})} />}
-              {selected && <ArtifactActions artifact={artifacts.find((a) => a.artifact_version_id === selected)} onError={setErr} primary={!hasRiskEntry} />}
+              {selected && <ArtifactActions artifact={artifacts.find((a) => a.artifact_version_id === selected)} restore={(t) => restoredPlain(t, tokenMap)} onError={setErr} primary={!hasRiskEntry} />}
               {artifacts.length > 1 && (
                 // 原“文件历史”标签并入这里（Z3 #11）
                 <details className="pane-fold">
@@ -1076,7 +1076,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
 }
 
 /** primary=false：同屏已有主按钮（待处理的审查意见），这里的动作降为次按钮（复核 S7B-01）。 */
-function ArtifactActions({ artifact, onError, primary = true }: { artifact: any; onError: (m: string) => void; primary?: boolean }) {
+function ArtifactActions({ artifact, restore, onError, primary = true }: { artifact: any; restore: (t: string) => string; onError: (m: string) => void; primary?: boolean }) {
   if (!artifact) return null;
   return (
     <div className="artifact-actions">
@@ -1085,7 +1085,7 @@ function ArtifactActions({ artifact, onError, primary = true }: { artifact: any;
         title="下载会记录在事项日志里"
         onClick={() =>
           void api
-            .downloadArtifact(artifact.artifact_version_id, artifact.filename)
+            .downloadArtifact(artifact.artifact_version_id, restore(String(artifact.filename ?? "")))
             .then((saved) => (saved ? api.deliver({ artifact_version_id: artifact.artifact_version_id, action: "download" }) : undefined))
             .catch((e) => onError(e.message))
         }

@@ -36,3 +36,13 @@ test("开始面板：卡片有必填的“问题”时，输入框里的话预�
   assert.deepEqual(startPanelInitial(draft, "起草一份股权转让协议"), { values: {}, extra: "起草一份股权转让协议" });
   assert.deepEqual(startPanelInitial(advice, "  "), { values: {}, extra: "  " }, "空输入不预填");
 });
+
+// 第 35 批真实走查 R3：助手拟的意见书标题带当事人名，成果文件名是令牌形态；没有内容标题时界面用文件名，须同样还原
+test("成果名称用文件名时还原代号（与标题同一还原函数）", async () => {
+  const { artifactName } = await import("../src/lib/labels.ts");
+  const restore = (t: string) => t.replace("〔自然人·CB99AX〕", "方景行");
+  const a = { kind: "agent_report", filename: "关于〔自然人·CB99AX〕劳动合同解除事项的法律意见书（草稿）.docx", title: null };
+  assert.equal(artifactName(a, restore), "关于方景行劳动合同解除事项的法律意见书（草稿）");
+  assert.equal(artifactName({ kind: "review_table", filename: "〔自然人·CB99AX〕借款合同.xlsx" }, restore), "方景行借款合同");
+  assert.equal(artifactName(a), "关于〔自然人·CB99AX〕劳动合同解除事项的法律意见书（草稿）", "不给还原函数时原样（界面另以代号块显示）");
+});

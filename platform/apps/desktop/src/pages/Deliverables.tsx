@@ -42,9 +42,9 @@ export function DeliverablesPage() {
         for (const m of r.matters.slice(0, 50)) {
           const a = await api.listArtifacts(m.matter_id).catch(() => ({ artifacts: [] as any[] }));
           // 内容标题是令牌形态：按事项在本机还原后显示（还原结果只在渲染进程内存里）
-          const titles = a.artifacts.map((x: any) => String(x.title ?? "")).join("\n");
+          const titles = a.artifacts.map((x: any) => `${x.title ?? ""}\n${x.filename ?? ""}`).join("\n");
           const map = titles.includes("〔") ? await restoreTokens(m.matter_id, titles).catch(() => new Map<string, string | null>()) : new Map<string, string | null>();
-          for (const x of a.artifacts) all.push({ ...x, matter_id: m.matter_id, matter_title: m.title, display: artifactName(x, (t) => restoredPlain(t, map)) });
+          for (const x of a.artifacts) all.push({ ...x, matter_id: m.matter_id, matter_title: m.title, display: artifactName(x, (t) => restoredPlain(t, map)), save_name: restoredPlain(String(x.filename ?? ""), map) });
         }
         all.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
         setRows(all);
@@ -60,7 +60,7 @@ export function DeliverablesPage() {
     setErr("");
     setNote("");
     try {
-      const saved = await api.downloadArtifact(r.artifact_version_id, r.filename);
+      const saved = await api.downloadArtifact(r.artifact_version_id, r.save_name ?? r.filename);
       if (!saved) return;
       await api.deliver({ artifact_version_id: r.artifact_version_id, action: "download" });
       setNote(`已保存「${r.display}」（真实名称已还原，下载记在事项日志里）。`);
@@ -184,7 +184,7 @@ export function MatterDeliverables({ matterId }: { matterId: string }) {
   const [packNote, setPackNote] = useState("");
   const download = (r: any) =>
     api
-      .downloadArtifact(r.artifact_version_id, r.filename)
+      .downloadArtifact(r.artifact_version_id, r.save_name ?? r.filename)
       .then((saved) => (saved ? api.deliver({ artifact_version_id: r.artifact_version_id, action: "download" }).then(() => true) : false))
       .catch((e) => {
         setErr((e as Error).message);
@@ -194,9 +194,9 @@ export function MatterDeliverables({ matterId }: { matterId: string }) {
     api
       .listArtifacts(matterId)
       .then(async (a) => {
-        const titles = a.artifacts.map((x: any) => String(x.title ?? "")).join("\n");
+        const titles = a.artifacts.map((x: any) => `${x.title ?? ""}\n${x.filename ?? ""}`).join("\n");
         const map = titles.includes("〔") ? await restoreTokens(matterId, titles).catch(() => new Map<string, string | null>()) : new Map<string, string | null>();
-        setRows([...a.artifacts].sort((x: any, y: any) => String(y.created_at).localeCompare(String(x.created_at))).map((x: any) => ({ ...x, display: artifactName(x, (t) => restoredPlain(t, map)) })));
+        setRows([...a.artifacts].sort((x: any, y: any) => String(y.created_at).localeCompare(String(x.created_at))).map((x: any) => ({ ...x, display: artifactName(x, (t) => restoredPlain(t, map)), save_name: restoredPlain(String(x.filename ?? ""), map) })));
       })
       .catch(() => setRows([]));
   }, [matterId]);

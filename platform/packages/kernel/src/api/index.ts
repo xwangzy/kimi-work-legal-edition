@@ -1940,6 +1940,11 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       }
       let out = r?.changed ? r.bytes : buf;
       let filename = String(art.filename);
+      // 文件名也是令牌形态（助手拟的标题带当事人名，第 35 批 R3：“关于〔自然人·…〕劳动合同解除……意见书.docx”）：导出时同样还原，去掉文件名不允许的字符
+      if (tokens && p?.restore !== false && filename.includes("〔")) {
+        const named = tokens.restore(art.matter_id, filename);
+        if (named.restored > 0) filename = named.text.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").trim() || filename;
+      }
       // 文书版式（B-4）：导出时套本机的函头、字体与律所模板——本产品生成的 Word 重新套版式；Markdown / 文本成果可“下载 Word”。预览不套
       if (p?.restore !== false) {
         const { style, template, digest } = houseStyleFor(db, id.tenantId, config.activation?.firm_name ?? null);

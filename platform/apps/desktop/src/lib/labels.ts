@@ -92,7 +92,9 @@ export function artifactName(a: { kind: string; filename: string; title?: string
   const agentKind = ["a1_workspace_file", "agent_table", "agent_report", "a1_agent_draft", "a1_agent_draft_partial"].includes(a.kind);
   // 审查意见表、审阅表按所审的合同或表命名（同一事项可有多份），用文件名去掉扩展名（v9.4 第 19 批）
   // v9.4 第 20 批：意见表 Word 版、据审阅表起草的证据目录与尽调发现同样按文件名
-  if (["review_table", "review_grid", "review_table_docx", "evidence_index", "dd_findings"].includes(a.kind)) return a.filename.replace(/\.(xlsx|docx)$/i, "");
+  // 文件名可能带代号（第 35 批 R3：助手拟的标题带当事人名）：与标题同样在界面还原
+  const fname = restore ? restore(a.filename) : a.filename;
+  if (["review_table", "review_grid", "review_table_docx", "evidence_index", "dd_findings"].includes(a.kind)) return fname.replace(/\.(xlsx|docx)$/i, "");
   if (!agentKind) return ARTIFACT_LABELS[a.kind] ?? a.filename;
   const t = a.title ? (restore ? restore(a.title) : a.title) : null;
   // 助手草稿有标题时写“标题（草稿）”，没有标题时沿用固定名称；标题自己已带“（草稿）”时不再重复（v9.4 走查：“研究备忘（草稿）（草稿）”）
@@ -107,7 +109,7 @@ export function artifactName(a: { kind: string; filename: string; title?: string
     return `${bare}（${a.kind === "a1_agent_draft" ? "草稿" : "部分完成"}）`;
   }
   // 没有内容标题时用文件名，去掉扩展名（第 26 批走查：“案情时间线（草稿）.docx”；下载按钮已写明 Word / Excel）
-  return t ?? a.filename.replace(/\.(docx|xlsx|md|txt|csv|pdf)$/i, "");
+  return t ?? fname.replace(/\.(docx|xlsx|md|txt|csv|pdf)$/i, "");
 }
 
 /** 去掉行内 Markdown 记号（粗体、斜体、行内代码、链接），用于摘要与标题这类纯文字位置。 */
