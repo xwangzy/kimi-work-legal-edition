@@ -46,6 +46,22 @@ export function isCourtFiling(filename: string): boolean {
   return COURT_FILING.test(filename);
 }
 
+/**
+ * 当事人之间的文书（第 35 批，文档工程审查 A-08）：合同、协议、章程、决议等是双方签署的文件，不是律所出具的——不套律所函头与模板页眉；
+ * “××协议审查意见书”“法律意见书”“备忘录”“报告”仍是律所文书。
+ */
+const PARTY_DOCUMENT = /(合同|协议|章程|决议|承诺函|授权委托书|补充协议|框架协议)/;
+const FIRM_DOCUMENT = /(意见书|审查|法律意见|备忘录|报告|律师函|说明|清单|对照表|起草说明)/;
+
+export function isPartyDocument(filename: string): boolean {
+  return PARTY_DOCUMENT.test(filename) && !FIRM_DOCUMENT.test(filename) && !COURT_FILING.test(filename);
+}
+
+/** 当事人文书的版式：去掉函头，字体与页码照旧。 */
+export function partyDocumentStyle(style: HouseStyle): HouseStyle {
+  return { ...style, letterhead: null };
+}
+
 /** 递交法院的文书用的版式：去掉函头，正文仿宋三号，页码照旧。 */
 export function courtFilingStyle(style: HouseStyle): HouseStyle {
   return { ...style, letterhead: null, body: "fangsong-san" };

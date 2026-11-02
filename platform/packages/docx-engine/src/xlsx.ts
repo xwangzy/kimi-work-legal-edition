@@ -75,11 +75,26 @@ function colName(i: number): string {
 }
 
 /** 逐行编码成字节再拼接（十几万行的时间轴不再先拼成一个几十 MB 的字符串，峰值内存降一个量级）。 */
+/** 表的范围（首行表头 + 数据）：列数取最宽的一行；空表返回 null。 */
+function sheetRange(spec: SheetSpec): { cols: number; rows: number } | null {
+  const cols = spec.rows.reduce((n, r) => Math.max(n, r.length), 0);
+  return cols > 0 && spec.rows.length > 0 ? { cols, rows: spec.rows.length } : null;
+}
+
+/** 宽表横向打印（第 35 批，文档工程审查 E-01）：多于 5 列，或估算总列宽超过 A4 纵向可印宽度。 */
+function landscape(spec: SheetSpec): boolean {
+  const r = sheetRange(spec);
+  if (!r) return false;
+  const total = [...colsXml(spec.rows).matchAll(/width="([\d.]+)"/g)].reduce((n, m) => n + Number(m[1]), 0);
+  return r.cols > 5 || total > 95;
+}
+
 function sheetXml(spec: SheetSpec): Buffer {
   // 首行是表头时冻结（多于一行才冻结，单行表不冻）
   const freeze = spec.rows.length > 1 ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` : "";
+  // 打印（第 35 批，文档工程审查 E-01：证据目录、问题清单打出来表头不重复、宽表被拆到几页）：缩到一页宽、高度不限
   const parts: Buffer[] = [Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${freeze}${colsXml(spec.rows)}<sheetData>`, "utf8")];
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>${freeze}${colsXml(spec.rows)}<sheetData>`, "utf8")];
   spec.rows.forEach((row, ri) => {
     let cells = "";
     row.forEach((cell, ci) => {
@@ -90,8 +105,25 @@ function sheetXml(spec: SheetSpec): Buffer {
     });
     parts.push(Buffer.from(`<row r="${ri + 1}">${cells}</row>`, "utf8"));
   });
-  parts.push(Buffer.from("</sheetData></worksheet>", "utf8"));
+  // 表头筛选、页边距、纸张方向与页脚页码（元素顺序按 CT_Worksheet：autoFilter → pageMargins → pageSetup → headerFooter）
+  const r = sheetRange(spec);
+  const filter = r && r.rows > 1 ? `<autoFilter ref="A1:${colName(r.cols - 1)}${r.rows}"/>` : "";
+  const print = `<pageMargins left="0.5" right="0.5" top="0.75" bottom="0.75" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="${landscape(spec) ? "landscape" : "portrait"}" fitToWidth="1" fitToHeight="0"/><headerFooter><oddFooter>&amp;C第 &amp;P 页，共 &amp;N 页</oddFooter></headerFooter>`;
+  parts.push(Buffer.from(`</sheetData>${filter}${print}</worksheet>`, "utf8"));
   return Buffer.concat(parts);
+}
+
+/** 工作簿里的打印标题与筛选范围（每张表：打印时每页重复首行；有筛选的登记筛选范围）。 */
+function definedNamesXml(sheets: SheetSpec[]): string {
+  const names: string[] = [];
+  sheets.forEach((s, i) => {
+    const r = sheetRange(s);
+    if (!r || r.rows < 2) return;
+    const q = `'${s.name.slice(0, 31).replace(/'/g, "''")}'`;
+    names.push(`<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">${escapeXml(`${q}!$A$1:$${colName(r.cols - 1)}$${r.rows}`)}</definedName>`);
+    names.push(`<definedName name="_xlnm.Print_Titles" localSheetId="${i}">${escapeXml(`${q}!$1:$1`)}</definedName>`);
+  });
+  return names.length > 0 ? `<definedNames>${names.join("")}</definedNames>` : "";
 }
 
 export function createXlsx(sheets: SheetSpec[]): Buffer {
@@ -99,7 +131,7 @@ export function createXlsx(sheets: SheetSpec[]): Buffer {
   const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets
     .map((s, i) => `<sheet name="${escapeXml(s.name.slice(0, 31))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`)
-    .join("")}</sheets></workbook>`;
+    .join("")}</sheets>${definedNamesXml(sheets)}</workbook>`;
   const wbRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets
     .map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`)

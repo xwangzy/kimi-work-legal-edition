@@ -54,6 +54,14 @@ test("B-4 文书版式：设置、模板、下载时套版式、Markdown 下载 
   const preview = await inv("artifacts.download", { artifact_version_id: gen.id, restore: false });
   assert.equal(part(Buffer.from(preview.data_base64, "base64"), "word/header1.xml"), "", "预览不套版式");
 
+  // 当事人之间的文书（第 35 批 A-08）：合同、协议下载时不套律所函头（字体照旧）；“××协议审查意见书”仍是律所文书、照套
+  const spa = reg("股权转让协议.docx", createDocx("股权转让协议", [{ heading: "第一条 标的股权", paragraphs: ["1.1 转让方同意转让。"] }]));
+  const spaOut = Buffer.from((await inv("artifacts.download", { artifact_version_id: spa.id })).data_base64, "base64");
+  assert.doesNotMatch(part(spaOut, "word/header1.xml"), /示例律师事务所/, "合同不套函头");
+  assert.match(part(spaOut, "word/styles.xml"), /w:eastAsia="宋体"|w:eastAsia="仿宋"/, "字体照旧套");
+  const opinion = reg("增资协议审查意见书.docx", createDocx("增资协议审查意见书", [{ heading: "一、结论", paragraphs: ["正文。"] }]));
+  assert.match(part(Buffer.from((await inv("artifacts.download", { artifact_version_id: opinion.id })).data_base64, "base64"), "word/header1.xml"), /示例律师事务所/, "审查意见书照套函头");
+
   // 律师上传或对方给的文件（没有本产品标记）：原样
   const foreign = writeRawZip([
     { name: "[Content_Types].xml", data: Buffer.from(`<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/></Types>`) },

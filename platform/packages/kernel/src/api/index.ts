@@ -97,7 +97,7 @@ import { adjudicate, compareAnnotations, normalizeDocs, openEvalBytes, openEvalF
 import { isImage, isPdf, ocrReady, parseWithPipeline } from "../services/parse-pipeline.ts";
 import { estimatePoints, scenarioCap } from "../services/estimate.ts";
 import { docxRenderReport } from "../tools/tools/docx.ts";
-import { courtFilingStyle, createDocx, createStyledDocx, docxListLabels, extractParagraphs, isCourtFiling, isHouseStyled, markdownToBlocks, renderDocxHtml, renderDocxPrintHtml, renderXlsxHtml, restyleDocx } from "@zr-legal/docx-engine";
+import { courtFilingStyle, createDocx, createStyledDocx, docxListLabels, extractParagraphs, isCourtFiling, isHouseStyled, isPartyDocument, markdownToBlocks, partyDocumentStyle, renderDocxHtml, renderDocxPrintHtml, renderXlsxHtml, restyleDocx } from "@zr-legal/docx-engine";
 import { redlineAuthorOf, docStyleView, houseStyleFor, setDocStyle, setDocTemplate } from "../services/doc-style.ts";
 import { isToolOperationInFlight } from "../local-server.ts";
 import { MATTER_STAGES } from "../services/matter-facts.ts";
@@ -1945,8 +1945,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         const { style, template, digest } = houseStyleFor(db, id.tenantId, config.activation?.firm_name ?? null);
         let styled = false;
         if (/\.docx$/i.test(filename) && isHouseStyled(out)) {
-          // 递交法院、仲裁机构的文书不套函头与律所模板（第 28 批）
-          out = isCourtFiling(filename) ? restyleDocx(out, courtFilingStyle(style), null) : restyleDocx(out, style, template);
+          // 递交法院、仲裁机构的文书不套函头与律所模板（第 28 批）；合同、协议等当事人文书同样不套（第 35 批 A-08）
+          out = isCourtFiling(filename) ? restyleDocx(out, courtFilingStyle(style), null) : isPartyDocument(filename) ? restyleDocx(out, partyDocumentStyle(style), null) : restyleDocx(out, style, template);
           styled = true;
         } else if (p?.as === "docx" && /\.(md|markdown|txt)$/i.test(filename)) {
           out = createStyledDocx(markdownToBlocks(out.toString("utf8")), style, template);

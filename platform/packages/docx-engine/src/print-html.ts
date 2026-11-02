@@ -25,6 +25,9 @@ interface Fmt {
   font?: string;
   size?: number;
   bold?: boolean;
+  /** 段前分页、与下段同页（第 35 批，文档工程审查 D-02：签署页另起一页、标题不落在页末）。 */
+  pageBreakBefore?: boolean;
+  keepNext?: boolean;
 }
 
 function pFmt(pPr: string): Fmt {
@@ -51,6 +54,8 @@ function pFmt(pPr: string): Fmt {
     if (b !== null) f.before = Number(b);
     if (a !== null) f.after = Number(a);
   }
+  if (/<w:pageBreakBefore\b(?![^>]*w:val="(?:0|false)")[^>]*\/>/.test(pPr)) f.pageBreakBefore = true;
+  if (/<w:keepNext\b(?![^>]*w:val="(?:0|false)")[^>]*\/>/.test(pPr)) f.keepNext = true;
   return f;
 }
 
@@ -121,6 +126,8 @@ function css(f: Fmt): string {
   if (f.font) out.push(`font-family:${fontStack(f.font)}`);
   if (f.size) out.push(`font-size:${pt(f.size)}`);
   if (f.bold !== undefined) out.push(`font-weight:${f.bold ? "bold" : "normal"}`);
+  if (f.pageBreakBefore) out.push("break-before:page");
+  if (f.keepNext) out.push("break-after:avoid");
   return out.join(";");
 }
 
@@ -171,7 +178,11 @@ export function renderDocxPrintHtml(docx: Buffer, title: string): string {
     const fmt: Fmt = { ...defaults, ...(styleId ? (styles.get(styleId) ?? {}) : {}), ...pFmt(pPr.replace(/<w:rPr>[\s\S]*?<\/w:rPr>/, "")) };
     const body = runsHtml(pXml, fmt);
     const text = (label ? `${esc(label)} ` : "") + body;
-    return `<p style="${css(fmt)}">${text || "&nbsp;"}</p>`;
+    // 手动分页符（<w:br w:type="page"/>）：段内有分页符的，其后的内容另起一页（按段落近似：分页符在段首则本段另起一页，否则下一段另起一页）
+    const pageBr = /<w:br\b[^>]*w:type="page"[^>]*\/>/.exec(pXml);
+    const brFirst = pageBr ? !/<w:t\b[^>]*>[^<]+<\/w:t>/.test(pXml.slice(0, pageBr.index)) : false;
+    const html = `<p style="${css(pageBr && brFirst ? { ...fmt, pageBreakBefore: true } : fmt)}">${text.replace(/^(?:<br>)+/, "") || "&nbsp;"}</p>`;
+    return pageBr && !brFirst ? `${html}<div style="break-after:page"></div>` : html;
   };
   const bodyXml = /<w:body>([\s\S]*)<\/w:body>/.exec(xml)?.[1] ?? xml;
   const parts: string[] = [];
