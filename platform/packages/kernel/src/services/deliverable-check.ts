@@ -8,7 +8,7 @@
  * 只报能确定的问题（宁可漏报不误报），每条给出位置、原文片段与改法；纯函数（法规核验经传入的法规库离线完成）。
  */
 import type { Lawdb } from "@zr-legal/lawdb";
-import { isPartyDocument } from "@zr-legal/docx-engine";
+import { isCourtFiling, isPartyDocument } from "@zr-legal/docx-engine";
 import { cnToInt } from "../tools/tools/cn-numerals.ts";
 import { checkArtifactCitations } from "./artifact-citations.ts";
 
@@ -55,7 +55,7 @@ const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   { re: /\b(?:docv|psv|artv|art|run|mat|est|approval|usr|ten|pv)_[0-9a-f][0-9a-f-]{5,}/g, fix: "删去内部编号，用文件名或条款号称呼" },
   { re: /\b[a-z]{2,}(?:_[a-z]{2,})+\b/g, fix: "删去工具参数名（如 amount_yuan），改写成中文说明" },
   { re: /演示数据|演示库|演示法规|SKILL\.md|rubric|quality=ok/gi, fix: "删去系统内部用语" },
-  { re: /(?:金额|计算|法律|文书|表格|检索|修订)工具/g, fix: "改用律师的说法（如“手工计算，请复核”“经法规库核验”）" },
+  { re: /(?:金额|计算|法律|文书|表格|检索|修订)工具/g, fix: "改用律师的说法（如“经核算”“经法规库核验”）" },
 ];
 
 /** 夹在中文之间的英文单词（如“转让方一 personal名下”）；全大写缩写（LPR、SLA）与常见外来词不报。 */
@@ -111,6 +111,8 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
 
   // 当事人文书（合同、协议等，要发给对方）：正文不写内部说明、签署页之后不再有条款（第 35 批真实走查 R1）
   if (isPartyDocument(`${title}.docx`)) for (const i of partyDocumentIssues(paras)) push(i);
+  // 递交法院、客户的文书（起诉状、答辩状、法律意见书、律师函）：给律师的提示不进正文（第 35 批真实走查 R3、R4）
+  else if (isOutward(title)) for (const i of outwardIssues(paras)) push(i);
   for (const i of numberingIssues(sections)) push(i);
   for (const i of crossRefIssues(sections, paras)) push(i);
 
@@ -136,7 +138,27 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
 }
 
 /** 合同正文里写给律师或客户的内部说明（发给对方前要人工删）。 */
-const PARTY_INTERNAL_RE = /首稿方案|待客户确认|待对方(?:书面)?确认|材料未(?:明确)?(?:约定|载明|提供)|见起草说明|起草说明(?:与待定事项)?》?中|本所|律师复核|经律师确认/;
+const PARTY_INTERNAL_RE = /首稿方案|待客户确认|待对方(?:书面)?确认|材料未(?:明确)?(?:约定|载明|提供)|见起草说明|起草说明(?:与待定事项)?》?中|本所|律师复核|经律师确认|请律师|手工计算|请复核|代号(?:记载|形式|表示|替代)|以(?:合同)?代号/;
+
+/**
+ * 写给律师的提示（第 35 批真实走查 R3、R4）：计算工具的提示“请律师按当地公布的数据核对”、手工计算的“请复核”、材料的“识别质量”、
+ * 隐私代号的说法（“以代号记载”）原样进了意见书正文与递交法院的附件。律所对外文书里的“本所律师”是正常写法，不报。
+ */
+const OUTWARD_INTERNAL_RE = /请律师|律师(?:核对|复核)|经律师确认|手工计算|请复核|识别质量|代号(?:记载|形式|表示|替代)|以(?:合同)?代号|未经你确认/;
+/** 对外文书：递交法院、仲裁机构的文书与律所出具给客户或对方的意见书、律师函；内部稿、备忘录、清单、说明不算。 */
+function isOutward(title: string): boolean {
+  if (/内部|备忘录|清单|起草说明|对照表|底稿|研究/.test(title)) return false;
+  return isCourtFiling(`${title}.docx`) || /法律意见|意见书|律师函|答复函|顾问答复/.test(title);
+}
+
+function outwardIssues(paras: readonly Para[]): DeliverableIssue[] {
+  const out: DeliverableIssue[] = [];
+  for (const p of paras) {
+    const m = OUTWARD_INTERNAL_RE.exec(p.text);
+    if (m) out.push({ kind: "internal_term", where: p.where, text: snippet(p.text, m.index, m[0].length), fix: "这份文书要交给客户或法院，正文不写给律师的提示：删去这句；影响结论的限制改写成对客户的专业表述（如“上述金额尚未按当地上年度职工月平均工资三倍封顶复核”），原话写进最终答复" });
+  }
+  return out;
+}
 
 function partyDocumentIssues(paras: readonly Para[]): DeliverableIssue[] {
   const out: DeliverableIssue[] = [];

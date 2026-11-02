@@ -104,7 +104,8 @@ test("经本机端点调用文书工具：照常生成并登记，结果里带�
     sections: [
       { heading: "第1条 定义", paragraphs: ["1.1 “标的股权”指目标公司60%股权。"] },
       { heading: "第2条 特别赔偿", paragraphs: ["2.1 核心软件著作权登记在转让方一个人名下的，转让方一应赔偿。"] },
-      { heading: "第3条 其他", paragraphs: ["3.1 金额为手工计算，请复核。"] },
+      // “手工计算，请复核”是写给律师的，合同正文不写（R3、R4 之后另报，见下一个用例）
+      { heading: "第3条 其他", paragraphs: ["3.1 本协议一式三份，各方各执一份。"] },
     ],
   });
   assert.equal(good.quality_check.ok, true, JSON.stringify(good.quality_check));
@@ -157,4 +158,24 @@ test("当事人文书（合同、协议）：正文里的内部说明与签署�
   assert.equal(opinion.issues.filter((i) => i.kind === "internal_term").length, 0, "律所文书不按合同口径查");
   const clean = checkDeliverable("设备买卖合同", [{ heading: "第1条 标的", paragraphs: ["1.1 设备见附件一。"] }, { heading: "", paragraphs: ["（以下无正文，为签署页）", "甲方（盖章）："] }, { heading: "附件一 设备清单", paragraphs: ["1. 五轴加工中心", "2.1 主机（附件自己的编号）"] }]);
   assert.equal(clean.issues.length, 0, JSON.stringify(clean.issues));
+});
+
+test("对外文书（法律意见书、起诉状）正文里给律师的提示逐段报出；“本所律师”与内部备忘录不报（真实走查 R3、R4）", () => {
+  const opinion = checkDeliverable("关于方景行劳动合同解除事项的法律意见书", [
+    { heading: "一、结论", paragraphs: ["本所律师认为，本次解除被认定违法的风险较高。"] },
+    { heading: "二、赔偿金测算", paragraphs: ["没有提供当地上年度职工月平均工资：没有核对三倍封顶，请律师按当地公布的数据核对。", "经济补偿按 12 个月计算（手工计算，请复核）。", "七份材料识别质量未见异常。"] },
+  ]);
+  const hits = opinion.issues.filter((i) => i.kind === "internal_term").map((i) => i.text);
+  assert.equal(hits.length, 3, JSON.stringify(opinion.issues));
+  assert.ok(hits.some((t) => t.includes("请律师")) && hits.some((t) => t.includes("手工计算")) && hits.some((t) => t.includes("识别质量")));
+  assert.ok(!opinion.issues.some((i) => i.text.includes("本所律师认为")), "“本所律师”是意见书的正常写法");
+  assert.match(opinion.issues.find((i) => i.text.includes("请律师"))!.fix, /写进最终答复/);
+
+  const complaint = checkDeliverable("民事起诉状", [{ heading: "", paragraphs: ["原告：佛山华兴铝业有限公司，双方住所分别以合同代号记载。"] }]);
+  assert.ok(complaint.issues.some((i) => i.kind === "internal_term" && i.text.includes("代号")), "隐私代号的说法不进递交法院的文书");
+
+  const memo = checkDeliverable("研究备忘录-竞业限制", [{ heading: "", paragraphs: ["本备忘录中的金额为手工计算，请复核。"] }]);
+  assert.equal(memo.issues.filter((i) => i.kind === "internal_term").length, 0, "内部备忘录不查这一类");
+  const contract = checkDeliverable("设备采购合同", [{ heading: "第一条 标的", paragraphs: ["1.1 设备产品代号为DL-5X800。"] }]);
+  assert.equal(contract.issues.filter((i) => i.kind === "internal_term").length, 0, "合同里的“产品代号”不是隐私代号的说法");
 });
