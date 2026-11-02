@@ -40,7 +40,7 @@ test("合同当事人代称后没有分隔的两个字不是姓名；“劳动�
 test("已误登记进事项令牌表的常用词退役：“劳动”“付款”不再替换，真名照旧", async () => {
   const { randomBytes } = await import("node:crypto");
   const { MatterTokenizer } = await import("../src/index.ts");
-  for (const v of ["劳动", "劳务", "付款"]) assert.equal(stillLooksLikeName(v), false, v);
+  for (const v of ["劳动", "劳务", "付款", "应进", "方迟延", "方违反", "向第三"]) assert.equal(stillLooksLikeName(v), false, v);
   assert.equal(stillLooksLikeName("张建华"), true);
   const t = new MatterTokenizer({ matterKey: randomBytes(32), parties: [], fullPseudonym: false, table: [{ token: "〔自然人·QQ83M8〕", category: "person", value: "劳动", source: "recognizer" }] } as any);
   assert.equal(t.tokenize("依据《中华人民共和国劳动合同法》第三十九条。").text, "依据《中华人民共和国劳动合同法》第三十九条。");
