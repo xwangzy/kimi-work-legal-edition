@@ -18,6 +18,7 @@ import { proposeDraft } from "../../services/review-rules.ts";
 import { fillCells, tableForAgent } from "../../services/review-tables.ts";
 import { acceptedText, changesDocument, listFacts, listRiskCards, submitFacts, submitRiskCards, riskCardProgress } from "../../services/review-cards.ts";
 import { runLineage } from "../../services/artifact-lineage.ts";
+import { checkDeliverable } from "../../services/deliverable-check.ts";
 
 function scopeOf(ctx: InvokeCtx): { tenantId: string; matterId: string; runId: string | null } {
   const mid = ctx.claims.mid;
@@ -246,20 +247,36 @@ export function registerToolArtifact(
 export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { name: string; columns: string[]; rows: unknown[][] }[] }) {
   const sheets = Array.isArray(p.sheets) ? p.sheets : [];
   if (sheets.length === 0 || sheets.length > MAX_SHEETS) throw new DomainError("validation", `sheets 须为 1–${MAX_SHEETS} 个`, 422);
+  // 长数字（第 35 批，文档工程审查 E-02）：身份证号、银行账号按数字传时，超过双精度的整数在到这里之前已经变了（…4517 成了 …4500），
+  // 写进去就是错号——拒收并说明改按文字传；16 位账号虽未失真，但 Excel 只保留 15 位有效数字、显示成科学计数，按文字写
+  const lost: string[] = [];
+  const usedNames = new Set<string>();
   const specs = sheets.map((sh, si) => {
     const cols = Array.isArray(sh.columns) ? sh.columns.map((c) => String(c).slice(0, 200)) : [];
     if (cols.length === 0 || cols.length > MAX_COLS) throw new DomainError("validation", `第 ${si + 1} 个表的列数须为 1–${MAX_COLS}`, 422);
     const rows = Array.isArray(sh.rows) ? sh.rows : [];
     if (rows.length > MAX_ROWS) throw new DomainError("validation", `第 ${si + 1} 个表超过 ${MAX_ROWS} 行，请分表`, 422);
-    const body = rows.map((r) =>
-      (Array.isArray(r) ? r : []).slice(0, cols.length).map((c): string | number | null => {
+    const body = rows.map((r, ri) =>
+      (Array.isArray(r) ? r : []).slice(0, cols.length).map((c, ci): string | number | null => {
         if (c === null || c === undefined) return null;
-        if (typeof c === "number" && Number.isFinite(c)) return c;
+        if (typeof c === "number" && Number.isFinite(c)) {
+          if (Number.isInteger(c) && Math.abs(c) >= 1e11) {
+            if (!Number.isSafeInteger(c)) lost.push(`第 ${si + 1} 个表第 ${ri + 1} 行“${cols[ci] ?? `第 ${ci + 1} 列`}”`);
+            return String(c);
+          }
+          return c;
+        }
         return String(typeof c === "object" ? JSON.stringify(c) : c).slice(0, MAX_CELL);
       }),
     );
-    return { name: String(sh.name || `表${si + 1}`).replace(/[\\/?*[\]:]/g, "").slice(0, 31) || `表${si + 1}`, rows: [cols, ...body] };
+    // 表名去重（文档工程审查 E-03：同名工作表 Excel 打开要修复）
+    const base = String(sh.name || `表${si + 1}`).replace(/[\\/?*[\]:]/g, "").slice(0, 31) || `表${si + 1}`;
+    let name = base;
+    for (let k = 2; usedNames.has(name.toLowerCase()); k++) name = `${base.slice(0, 31 - String(k).length - 2)}（${k}）`;
+    usedNames.add(name.toLowerCase());
+    return { name, rows: [cols, ...body] };
   });
+  if (lost.length > 0) throw new DomainError("validation", `表格有误，未生成：${lost.slice(0, 8).join("、")}是超长的数字（身份证号、账号一类），按数字传已失真，请改成文字（加引号）后重新提交`, 422, { problems: lost });
   const buf = createXlsx(specs);
   const stored = ctx.blobs.put(buf, scopeOf(ctx).matterId);
   const filename = `${safeTitle(String(p.title ?? ""))}.xlsx`;
@@ -270,7 +287,14 @@ export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { na
     storage_uri: stored.storage_uri,
     manifest: { tool: "xlsx.render_table", sheets: specs.map((s) => ({ name: s.name, rows: s.rows.length - 1, columns: s.rows[0]!.length })), note: "Agent 经工具生成的表格（草稿）；导出时按事项令牌表还原代号" },
   });
-  return { ...reg, sha256: stored.sha256, sheets: specs.length, rows: specs.reduce((n, s) => n + s.rows.length - 1, 0) };
+  // 交付前检查（第 35 批）：附件表格同样不该有工具用语、参数名、夹杂英文、Markdown 符号与大小写不一致的金额
+  let quality_check: ReturnType<typeof checkDeliverable> | null = null;
+  try {
+    quality_check = checkDeliverable(String(p.title ?? ""), specs.map((s) => ({ heading: s.name, paragraphs: [], table: { columns: s.rows[0] ?? [], rows: s.rows.slice(1) as unknown[][] } })));
+  } catch {
+    quality_check = null;
+  }
+  return { ...reg, sha256: stored.sha256, sheets: specs.length, rows: specs.reduce((n, s) => n + s.rows.length - 1, 0), ...(quality_check ? { quality_check } : {}) };
 }
 
 function parseSkill(snap: string | null): string | null {

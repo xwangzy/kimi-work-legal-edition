@@ -71,6 +71,8 @@ export type PatchResult =
       numbering: NumberingShifts;
       /** 新文字开头抄进去、已去掉的自动编号（逐条）。 */
       label_notes: { index: number; dropped: string[] }[];
+      /** 修改对照（原文形态，第 35 批）：只给内核生成《修改对照表》，不返回给助手。 */
+      changes: ChangeRow[];
     }
   | {
       status: "preview";
@@ -354,7 +356,43 @@ export function applyStructuredPatches(
      VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,?,?,?,?)`,
     [artifactId, doc.tenant_id, doc.matter_id, input.run_id ?? null, kind, v.next, filename, stored.sha256, stored.storage_uri, "[]", JSON.stringify(manifest), input.created_by, docLineage(doc.document_version_id)],
   );
-  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(buf, sanitizeDocx(out).docx), label_notes: labelNotes };
+  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(buf, sanitizeDocx(out).docx), label_notes: labelNotes, changes: changeRows(paragraphs, labels, spans, ops) };
+}
+
+/**
+ * 修改对照（第 35 批）：按原件段落逐段给出“修改前 / 修改后”整段文字、条款编号与修改理由（原文形态，与修订稿同为真名）——
+ * 律师要的“修改对照及修改说明”由内核按实际写入的修改生成，不靠助手再抄一遍全文。同一段多处修改合并成一行；段后插入单列一行。
+ */
+function changeRows(paragraphs: readonly string[], labels: readonly (string | null)[], spans: readonly PatchSpan[], ops: readonly RevisionOp[]): ChangeRow[] {
+  const comment = (i: number) => ops.find((o) => o.opId === `p${i}`)?.comment ?? "";
+  const byPara = new Map<number, PatchSpan[]>();
+  for (const sp of spans) byPara.set(sp.para, [...(byPara.get(sp.para) ?? []), sp]);
+  const rows: ChangeRow[] = [];
+  for (const [para, list] of [...byPara.entries()].sort((a, b) => a[0] - b[0])) {
+    const before = paragraphs[para] ?? "";
+    const label = labels[para] ?? null;
+    const edits = list.filter((x) => !x.insert);
+    if (edits.length > 0) {
+      let after = before;
+      for (const sp of [...edits].sort((a, b) => b.start - a.start)) after = after.slice(0, sp.start) + sp.new + after.slice(sp.end);
+      rows.push({ para, label, kind: after.trim() ? "edit" : "delete", before, after, reason: [...new Set(edits.map((x) => comment(x.index)).filter(Boolean))].join("；") });
+    }
+    for (const sp of list.filter((x) => x.insert)) rows.push({ para, label, kind: "insert", before, after: sp.new, reason: comment(sp.index) });
+  }
+  return rows;
+}
+
+export interface ChangeRow {
+  /** 原件段落序号。 */
+  para: number;
+  /** 该段的 Word 自动编号（原件编号；没有为 null）。 */
+  label: string | null;
+  kind: "edit" | "delete" | "insert";
+  /** edit / delete：该段修改前的整段文字；insert：插入位置之前那一段的文字。 */
+  before: string;
+  /** edit：修改后的整段文字；delete：空；insert：新增的文字。 */
+  after: string;
+  reason: string;
 }
 
 /**

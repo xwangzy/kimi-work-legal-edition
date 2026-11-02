@@ -26,6 +26,8 @@ import { docxApplyRevisions, docxCompare, docxRenderReport, docxSanitize, redact
 import { docxRevise } from "./tools/revise.ts";
 import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, rulesPropose, riskcardsList, riskcardsSubmit, tableFill, tableGet, xlsxRenderTable } from "./tools/review.ts";
 import { assertOutlineSettled } from "../services/argument-outlines.ts";
+import { checkDeliverable, type DeliverableCheck } from "../services/deliverable-check.ts";
+import { localToday } from "../services/local-date.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
 
@@ -374,6 +376,7 @@ export const TOOLS: readonly ToolDef[] = [
       "按标题与段落结构生成 Word 文书（备忘录、意见书、函件、合同、诉状），登记为本任务的草稿成果交律师审阅；导出时按事项令牌表还原代号。" +
       "文书正文里要成表的内容（合同价款表、设备清单、付款节点、证据目录、当事人或股权结构表）用该节的 table 画成 Word 表格：columns 为表头，rows 每行格数与表头相同，画在本节段落之后；表后还有正文的，另起一节、heading 写空字符串。每节至多一张表、每表 1–10 列、最多 300 行；格内写文字，数量、序号可写整数；金额按文书写法写成文字（如“1,200,000.00”），不要传带小数的数字。" +
       "格数不符或超限时整份不生成并逐条说明，改正后重交。分析用的大表（争点矩阵、尽调清单等）仍用 xlsx.render_table 作附件。" +
+      "返回的 quality_check 是交付前检查（工具用语或内部编号外露、正文夹杂英文、Markdown 符号、条款编号不连续、互引指向不存在的条款、大小写金额不一致、错误条号）：issues 不为空时逐条改正后用同一标题重新生成；确实不需要改的在最终答复里说明理由。" +
       "本任务有待律师确认的论点提纲（outline.submit）时拒绝生成，先等律师确认。",
     sideEffect: "write_draft",
     resource: "matter_work",
@@ -412,17 +415,23 @@ export const TOOLS: readonly ToolDef[] = [
       // 起草前的论点与依据还在等律师确认时不出文书（v9.4 第 19 批 C-04）
       assertOutlineSettled(ctx.db, typeof ctx.claims.rid === "string" ? ctx.claims.rid : null);
       const r = docxRenderReport(ctx.blobs, p, ctx.claims.mid);
+      // 交付前检查（第 35 批）：工具用语与内部编号外露、夹杂英文、条款编号与互引、大小写金额、错误条号——随结果交回助手当场改正
+      const quality_check = deliverableQualityFor(ctx, p, r.storage_uri);
       // 任务内调用（Agent 经本机端点）：登记为草稿成果，律师在执行态与交付件页可见
-      if (!ctx.claims.rid) return r;
+      if (!ctx.claims.rid) return { ...r, ...(quality_check ? { quality_check } : {}) };
       const title = String(p.title ?? "文书").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").trim().slice(0, 60) || "文书";
-      return { ...r, ...registerToolArtifact(ctx, { kind: "agent_report", filename: `${title}.docx`, sha256: r.sha256, storage_uri: r.storage_uri, manifest: { tool: "docx.render_report", sections: Array.isArray(p.sections) ? p.sections.length : 0, tables: Array.isArray(p.sections) ? p.sections.filter((s: any) => s?.table).length : 0 } }) };
+      return {
+        ...r,
+        ...registerToolArtifact(ctx, { kind: "agent_report", filename: `${title}.docx`, sha256: r.sha256, storage_uri: r.storage_uri, manifest: { tool: "docx.render_report", sections: Array.isArray(p.sections) ? p.sections.length : 0, tables: Array.isArray(p.sections) ? p.sections.filter((s: any) => s?.table).length : 0 } }),
+        ...(quality_check ? { quality_check } : {}),
+      };
     },
   },
   {
     name: "docx.revise",
     title: "在原件上修订（修订稿 + 清洁稿）",
     description:
-      "按律师意见修改已上传的 Word 原件：每处给出要改的原文（anchor，逐字照抄材料原文、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落），在原件副本上生成带修订痕迹的修订稿（保留原版式、编号、表格）与接受全部修订后的清洁稿，登记为本任务草稿成果；原件不变。dry_run=true 只试写：返回每个改到的段落改前与改后的整段文字，不生成文件，先读一遍再正式提交。任一处找不到或有歧义时整体不写，逐条返回原因，改正后重新提交。",
+      "按律师意见修改已上传的 Word 原件：每处给出要改的原文（anchor，逐字照抄材料原文、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落），在原件副本上生成带修订痕迹的修订稿（保留原版式、编号、表格）与接受全部修订后的清洁稿，并由系统按实际写入的修改生成《修改对照表》（逐段修改前、修改后与理由），登记为本任务草稿成果；原件不变。dry_run=true 只试写：返回每个改到的段落改前与改后的整段文字，不生成文件，先读一遍再正式提交。任一处找不到或有歧义时整体不写，逐条返回原因，改正后重新提交。",
     sideEffect: "write_draft",
     resource: "matter_documents",
     version: "1",
@@ -764,6 +773,24 @@ export const TOOLS: readonly ToolDef[] = [
     invoke: (p, ctx) => xlsxRenderTable(ctx, p),
   },
 ];
+
+/**
+ * 文书的交付前检查（第 35 批）：法条按事项的分析截止日（缺省今天）离线核验；检查本身出错不影响文书生成（返回 null）。
+ */
+function deliverableQualityFor(ctx: InvokeCtx, p: { title?: unknown; sections?: unknown }, storageUri: string): DeliverableCheck | null {
+  try {
+    const kd = ctx.claims.mid ? ctx.db.get<{ key_dates: string | null }>(`SELECT key_dates FROM matters WHERE matter_id = ?`, [ctx.claims.mid])?.key_dates : null;
+    let asOf = localToday();
+    try {
+      const v = kd ? JSON.parse(kd)?.analysis_as_of : null;
+      if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) asOf = v;
+    } catch {}
+    const sections = Array.isArray(p.sections) ? (p.sections as any[]) : [];
+    return checkDeliverable(String(p.title ?? ""), sections, { lawdb: ctx.lawdb, asOf, docx: ctx.blobs.read(storageUri) });
+  } catch {
+    return null;
+  }
+}
 
 export function findTool(name: string): ToolDef | undefined {
   return TOOLS.find((t) => t.name === name);

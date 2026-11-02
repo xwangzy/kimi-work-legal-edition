@@ -11,8 +11,8 @@
  * - 任一条不成立：整体不写，逐条返回原因与改法（不返回还原后的原文，结果仍经本机端点令牌化）。
  */
 import { DomainError, sha256Hex } from "@zr-legal/domain";
-import { existingRevisions, sanitizeDocx } from "@zr-legal/docx-engine";
-import { applyStructuredPatches, type NumberingShifts, type PatchConflict, type StructuredPatch } from "../../services/structured-patch.ts";
+import { createDocx, existingRevisions, sanitizeDocx } from "@zr-legal/docx-engine";
+import { applyStructuredPatches, type ChangeRow, type NumberingShifts, type PatchConflict, type StructuredPatch } from "../../services/structured-patch.ts";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
 
@@ -154,13 +154,48 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
       note: "清洁稿：修订稿接受全部修订、去掉批注（含律师尚未逐条确认的修改）；原件不变",
     },
   });
+  // 修改对照表（第 35 批）：按实际写入的修改逐段列“修改前 / 修改后 / 修改理由”，供律师复核与向客户说明——律师要的“修改对照及修改说明”
+  const compareReg = registerComparison(ctx, r, src?.filename ?? r.filename);
   return {
     status: "applied" as const,
     applied: r.applied,
     revision: { artifact_version_id: r.artifact_version_id, filename: r.filename },
     clean: { artifact_version_id: cleanReg.artifact_version_id, filename: cleanReg.filename },
+    ...(compareReg ? { comparison: { artifact_version_id: compareReg.artifact_version_id, filename: compareReg.filename } } : {}),
     ...priorNote,
     ...numberingNotes(r, true),
-    note: "修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；清洁稿已接受全部修订、去掉批注；原件不变。批注是写给律师的修改理由，发给对方前须删除批注或改用清洁稿。",
+    note: `修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；清洁稿已接受全部修订、去掉批注；${compareReg ? "修改对照表逐段列出修改前后与理由（由系统按实际写入的修改生成，不用另写）；" : ""}原件不变。批注是写给律师的修改理由，发给对方前须删除批注或改用清洁稿。`,
   };
+}
+
+/** 生成并登记《修改对照表》（Word，原文形态与修订稿一致）；没有可列的修改或生成失败时返回 null（不影响修订稿与清洁稿）。 */
+function registerComparison(ctx: InvokeCtx, r: { changes?: ChangeRow[]; numbering?: NumberingShifts; filename: string }, source: string) {
+  const rows = r.changes ?? [];
+  if (rows.length === 0) return null;
+  try {
+    const name = source.replace(/\.docx$/i, "");
+    const cap = (s: string) => (s.length > 2000 ? `${s.slice(0, 2000)}……` : s);
+    const where = (c: ChangeRow) => (c.kind === "insert" ? `在${c.label ?? `第 ${c.para + 1} 段`}之后新增` : c.label ?? `第 ${c.para + 1} 段`);
+    const table = rows.map((c, i) => [String(i + 1), where(c), c.kind === "insert" ? "（新增）" : cap(c.before), c.kind === "delete" ? "（删除本段）" : cap(c.after), c.reason || "按律师意见修改"]);
+    const shifts = r.numbering?.renumbered ?? [];
+    const notes = [
+      `本表逐段列出对《${name}》所作的修改，共 ${rows.length} 处，与修订稿一致（以修订稿为准）；“条款”一栏是原件的编号。`,
+      ...(shifts.length > 0 ? [`删除或插入条款后，后续条款的自动编号已顺延：${shifts.slice(0, 20).map((s) => `原 ${s.from} 现为 ${s.to}`).join("；")}${shifts.length > 20 ? "；……" : ""}。`] : []),
+      "本表供律师复核与向客户说明修改内容；发给对方前请删去“修改理由”一栏。",
+    ];
+    const buf = createDocx(`${name}修改对照表`, [
+      { heading: "说明", paragraphs: notes },
+      { heading: "", paragraphs: [], table: { columns: ["序号", "条款", "修改前", "修改后", "修改理由"], rows: table } },
+    ]);
+    const stored = ctx.blobs.put(buf, ctx.claims.mid ?? null);
+    return registerToolArtifact(ctx, {
+      kind: "agent_report",
+      filename: r.filename.replace(/（修订稿）\.docx$/i, "（修改对照表）.docx"),
+      sha256: stored.sha256,
+      storage_uri: stored.storage_uri,
+      manifest: { tool: "docx.revise", derived_from: "revision_draft", rows: rows.length, note: "修改对照表：按修订稿实际写入的修改逐段列出修改前后与理由（系统生成）" },
+    });
+  } catch {
+    return null;
+  }
 }
