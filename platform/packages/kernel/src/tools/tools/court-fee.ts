@@ -122,7 +122,7 @@ export function calcCourtFee(p: CalcCourtFeeParams): CalcCourtFeeResult {
     case "enforcement":
       basis.push(`${BASIS_ROOT}第十四条第（一）项`);
       if (amount === 0) {
-        warnings.push("没有执行金额或者价额的，每件交纳 50 元至 500 元（具体以法院为准），本工具不算幅度内的数额");
+        warnings.push("没有执行金额或者价额的，每件交纳 50 元至 500 元（具体以法院为准），此处未计算幅度内的具体数额");
         steps.push("没有执行金额：每件 50 元至 500 元，以法院确定为准");
         break;
       }
@@ -150,7 +150,7 @@ export function calcCourtFee(p: CalcCourtFeeParams): CalcCourtFeeResult {
   if (reductions.length > 0) {
     const caseFee = p.kind === "case_property" || p.kind === "labor";
     if (!caseFee) {
-      warnings.push("减半交纳只适用于案件受理费（第十五、十六、十八条），申请费不减半，已忽略 reductions");
+      warnings.push("减半交纳只适用于案件受理费（第十五、十六、十八条），申请费不减半，此处未减半");
     } else {
       const label: Record<CourtFeeReduction, string> = {
         mediation_or_withdrawal: "以调解方式结案或者申请撤诉（第十五条）",
@@ -160,10 +160,10 @@ export function calcCourtFee(p: CalcCourtFeeParams): CalcCourtFeeResult {
       for (const r of reductions) basis.push(`${BASIS_ROOT}${label[r].match(/第.+条/)![0]}`);
       fee = round2(full / 2);
       steps.push(`减半交纳：${reductions.map((r) => label[r]).join("；")} → ${full} ÷ 2 = ${fee} 元`);
-      if (reductions.length > 1) warnings.push("同时符合几种减半情形时能否再次减半，各地法院做法不一；本工具只减半一次，请律师按受理法院的做法核对");
+      if (reductions.length > 1) warnings.push("同时符合几种减半情形时能否再次减半，各地法院做法不一；此处只减半一次，请按受理法院的做法核对");
     }
   }
-  if (p.kind === "case_property") warnings.push("上诉的，按不服一审判决部分的上诉请求数额交纳（第十七条）：请把上诉请求数额作为 amount_yuan 另算一次");
-  warnings.push("结果是按《诉讼费用交纳办法》的预估，以受理法院的交费通知为准；非财产案件、无争议金额的知识产权案件等按件幅度收费的，由各省规定具体标准，本工具不算");
+  if (p.kind === "case_property") warnings.push("上诉的，按不服一审判决部分的上诉请求数额交纳（第十七条），上诉时须按上诉请求数额另行计算");
+  warnings.push("结果是按《诉讼费用交纳办法》的预估，以受理法院的交费通知为准；非财产案件、无争议金额的知识产权案件等按件幅度收费的，由各省规定具体标准，此处未计算");
   return { kind: p.kind, amount_yuan: needsAmount ? amount! : null, segments, full_fee_yuan: full, fee_yuan: fee, steps, basis, warnings };
 }

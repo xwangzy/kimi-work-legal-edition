@@ -139,7 +139,7 @@ export function calcLabor(p: CalcLaborParams): CalcLaborResult {
     steps.push(`代通知金（额外一个月工资）按上一个月工资 ${notice} 元${lastMonth === undefined ? "（暂按平均工资）" : ""}`);
     if (p.kind === "unlawful") warnings.push("违法解除时是否另付代通知金各地口径不一，请律师核对");
   }
-  if (sp.years >= 1 && p.kind === "compensation") warnings.push("是否应付经济补偿取决于解除或终止的情形（第四十六条），本工具只算数额");
+  if (sp.years >= 1 && p.kind === "compensation") warnings.push("是否应付经济补偿取决于解除或终止的情形（第四十六条），此处只算数额");
   return {
     service: { from, to: p.end_date, ...sp },
     months_of_wage: n,
