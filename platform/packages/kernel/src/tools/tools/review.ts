@@ -19,6 +19,7 @@ import { fillCells, tableForAgent } from "../../services/review-tables.ts";
 import { acceptedText, changesDocument, listFacts, listRiskCards, submitFacts, submitRiskCards, riskCardProgress } from "../../services/review-cards.ts";
 import { runLineage } from "../../services/artifact-lineage.ts";
 import { checkDeliverable } from "../../services/deliverable-check.ts";
+import { cellChars, shrinkCheck } from "../../services/version-shrink.ts";
 
 function scopeOf(ctx: InvokeCtx): { tenantId: string; matterId: string; runId: string | null } {
   const mid = ctx.claims.mid;
@@ -280,13 +281,16 @@ export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { na
   const buf = createXlsx(specs);
   const stored = ctx.blobs.put(buf, scopeOf(ctx).matterId);
   const filename = `${safeTitle(String(p.title ?? ""))}.xlsx`;
+  const textChars = specs.reduce((n, sh) => n + cellChars(sh.rows), 0);
   const reg = registerToolArtifact(ctx, {
     kind: "agent_table",
     filename,
     sha256: stored.sha256,
     storage_uri: stored.storage_uri,
-    manifest: { tool: "xlsx.render_table", sheets: specs.map((s) => ({ name: s.name, rows: s.rows.length - 1, columns: s.rows[0]!.length })), note: "Agent 经工具生成的表格（草稿）；导出时按事项令牌表还原代号" },
+    manifest: { tool: "xlsx.render_table", sheets: specs.map((s) => ({ name: s.name, rows: s.rows.length - 1, columns: s.rows[0]!.length })), text_chars: textChars, note: "Agent 经工具生成的表格（草稿）；导出时按事项令牌表还原代号" },
   });
+  // 版本缩水检查（第 35 批）：同一任务里重出的同名表格比上一版明显变短，提示助手核对是否漏了行
+  const shrink = reg.reused ? null : shrinkCheck(ctx.db, scopeOf(ctx).runId, "agent_table", reg.filename, reg.artifact_version_id, textChars);
   // 交付前检查（第 35 批）：附件表格同样不该有工具用语、参数名、夹杂英文、Markdown 符号与大小写不一致的金额
   let quality_check: ReturnType<typeof checkDeliverable> | null = null;
   try {
@@ -294,7 +298,7 @@ export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { na
   } catch {
     quality_check = null;
   }
-  return { ...reg, sha256: stored.sha256, sheets: specs.length, rows: specs.reduce((n, s) => n + s.rows.length - 1, 0), ...(quality_check ? { quality_check } : {}) };
+  return { ...reg, sha256: stored.sha256, sheets: specs.length, rows: specs.reduce((n, s) => n + s.rows.length - 1, 0), ...(quality_check ? { quality_check } : {}), ...(shrink ? { shrink } : {}) };
 }
 
 function parseSkill(snap: string | null): string | null {

@@ -27,6 +27,7 @@ import { docxRevise } from "./tools/revise.ts";
 import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, rulesPropose, riskcardsList, riskcardsSubmit, tableFill, tableGet, xlsxRenderTable } from "./tools/review.ts";
 import { assertOutlineSettled } from "../services/argument-outlines.ts";
 import { checkDeliverable, type DeliverableCheck } from "../services/deliverable-check.ts";
+import { sectionChars, shrinkCheck } from "../services/version-shrink.ts";
 import { localToday } from "../services/local-date.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
@@ -420,11 +421,11 @@ export const TOOLS: readonly ToolDef[] = [
       // 任务内调用（Agent 经本机端点）：登记为草稿成果，律师在执行态与交付件页可见
       if (!ctx.claims.rid) return { ...r, ...(quality_check ? { quality_check } : {}) };
       const title = String(p.title ?? "文书").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").trim().slice(0, 60) || "文书";
-      return {
-        ...r,
-        ...registerToolArtifact(ctx, { kind: "agent_report", filename: `${title}.docx`, sha256: r.sha256, storage_uri: r.storage_uri, manifest: { tool: "docx.render_report", sections: Array.isArray(p.sections) ? p.sections.length : 0, tables: Array.isArray(p.sections) ? p.sections.filter((s: any) => s?.table).length : 0 } }),
-        ...(quality_check ? { quality_check } : {}),
-      };
+      const textChars = sectionChars(p.sections);
+      const reg = registerToolArtifact(ctx, { kind: "agent_report", filename: `${title}.docx`, sha256: r.sha256, storage_uri: r.storage_uri, manifest: { tool: "docx.render_report", sections: Array.isArray(p.sections) ? p.sections.length : 0, tables: Array.isArray(p.sections) ? p.sections.filter((s: any) => s?.table).length : 0, text_chars: textChars } });
+      // 版本缩水检查（第 35 批）：同一任务里重出的同名文书比上一版明显变短，提示助手核对是否漏了内容
+      const shrink = reg.reused ? null : shrinkCheck(ctx.db, ctx.claims.rid, "agent_report", reg.filename, reg.artifact_version_id, textChars);
+      return { ...r, ...reg, ...(quality_check ? { quality_check } : {}), ...(shrink ? { shrink } : {}) };
     },
   },
   {
