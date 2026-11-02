@@ -375,6 +375,12 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         // 主交付物核对（第 28 批）：文书类方法没交出 Word 文书——如实告诉律师，任务记部分完成
         steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: `没有交出《${String(p.primary ?? "文书")}》`, at, detail: PRIMARY_MISSING_CAUSES[String(p.cause)] ?? "" });
         break;
+      case "agent.deadline_delivered": {
+        // 到工作时限时文书已交出（第 35 批）：如实说“文书已交出、收尾没完成”，任务记部分完成，不让律师以为什么都没有
+        const files = Array.isArray(p.files) ? p.files.map(String) : [];
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "dot", title: `到工作时限时已交出 ${files.length} 份文件，收尾没有完成`, at, detail: files.join("、") });
+        break;
+      }
       case "agent.error":
         // 律师层只给一句可理解的说明（不显示英文错误与状态码）；原文进“处理细节”（UIUX 增量评审 P0-D）。
         // retryable 由内核保留（复核 B4-B21：此前被裁掉，“正在自动重试”永远不出现）

@@ -1017,6 +1017,16 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   let pollDeadline = startedAt + timeoutMs + Math.min(60_000, Math.max(5_000, Math.round(timeoutMs / 10)));
   let lastTick = startedAt;
   let finished = false;
+  // 到工作时限时主交付物已交出（第 35 批真实走查 N1：《股权转让协议》已交出 5 版，任务仍记“已超时、需要重试”）→ 按部分完成结算
+  const expectedPrimary = () => primaryOutput ?? (!skill && ctx.deps.skillPrimaryOf ? loadedPrimaryOutput(db, runId, ctx.deps.skillPrimaryOf) : null);
+  const settleDelivered = async (reason: string | null): Promise<boolean> => {
+    const delivered = deliveredBeforeDeadline(db, runId, expectedPrimary());
+    if (!delivered) return false;
+    assertNoUnresolved();
+    appendEvent(ctx.deps, runId, attemptId, AGENT_DEADLINE_DELIVERED_SEQ, "agent.deadline_delivered", { files: delivered.files, reason });
+    await ctx.step("settle", () => stepSettle(ctx, runId, attemptId, RunStatus.partial, [delivered.note]));
+    return true;
+  };
   const poll = await (async () => {
     let cursor = 0;
     let mirrorSeq = 41;
@@ -1078,7 +1088,12 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
         }
       }
     }
-  })();
+  })().catch(async (e: unknown) => {
+    // 内核兜底判超时（宿主没按时上报终态）同样先看主交付物是否已交出
+    if (e instanceof RunTerminal && e.status === "timed_out" && (await settleDelivered("kernel_deadline"))) return null;
+    throw e;
+  });
+  if (!poll) return;
   const remaining = remainingFor(poll.status, poll.reason);
   appendEvent(ctx.deps, runId, attemptId, 68, "agent.outcome", {
     status: poll.status,
@@ -1094,6 +1109,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
     case "cancelled":
       throw new RunCancelled();
     case "timed_out":
+      if (await settleDelivered(poll.reason)) return;
       throw new RunTerminal("timed_out", agentTimeoutText(poll.reason));
     case "expired":
       throw new RunTerminal("expired", `Agent 任务过期（${poll.reason ?? "expired"}）`);
@@ -1165,7 +1181,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   assertNoUnresolved();
   // 主交付物核对（第 28 批）：文书类方法没交出任何 Word 文书时不记“完成”——真实走查里起诉状任务只交了两份表格却显示“已完成”
   // 律师直接描述任务（没从场景卡指定方法）时按助手自己加载的方法核对（第 34 批：原先这类任务没有任何主交付物核对）
-  const expected = primaryOutput ?? (!skill && ctx.deps.skillPrimaryOf ? loadedPrimaryOutput(db, runId, ctx.deps.skillPrimaryOf) : null);
+  const expected = expectedPrimary();
   const missing = outcomeStatus === "succeeded" ? primaryDeliverableMissing(db, runId, expected) : null;
   if (missing) appendEvent(ctx.deps, runId, attemptId, AGENT_PRIMARY_MISSING_SEQ, "agent.primary_missing", { primary: missing.primary, cause: missing.cause });
   const finalStatus = outcomeStatus === "partial" || missing ? RunStatus.partial : RunStatus.succeeded;
@@ -1200,6 +1216,27 @@ export function agentTimeoutText(reason: string | null): string {
 
 /** 主交付物缺失的事件序号（独立占位，不与成果段 69+、工作区被拒 9000、宿主事件 10000+ 冲突）。 */
 const AGENT_PRIMARY_MISSING_SEQ = 9_001;
+/** 到时限时主交付物已交出的事件序号（第 35 批）。 */
+const AGENT_DEADLINE_DELIVERED_SEQ = 9_002;
+
+/**
+ * 到工作时限时本任务已交出的文书或表格（第 35 批真实走查 N1）：方法有主交付物的，须主交付物已登记；没有的，登记了任一 Word 文书或 Excel 表即可。
+ * 都没有返回 null（照常记超时）。返回给律师的说明写清“文书已交出、收尾没完成”。纯查询。
+ */
+export function deliveredBeforeDeadline(db: KernelDb, runId: string, primaryOutput: string | null): { files: string[]; note: string } | null {
+  if (primaryOutput && (WORD_OUTPUT.test(primaryOutput) || SHEET_OUTPUT.test(primaryOutput)) && primaryDeliverableMissing(db, runId, primaryOutput)) return null;
+  const rows = db.all<{ filename: string }>(
+    `SELECT filename FROM artifact_versions WHERE run_id = ? AND ((${WORD_ARTIFACT_SQL}) OR (${SHEET_ARTIFACT_SQL})) ORDER BY created_at`,
+    [runId],
+  );
+  if (rows.length === 0) return null;
+  const files = [...new Set(rows.map((r) => r.filename))];
+  const minutes = Math.round(AGENT_WORK_LIMIT_MS / 60_000);
+  return {
+    files,
+    note: `已交出${files.slice(0, 4).map((f) => `《${f.replace(/\.(docx|xlsx)$/i, "")}》`).join("")}${files.length > 4 ? `等 ${files.length} 份` : ""}，但助手在 ${minutes} 分钟工作时限内没有收尾（最终答复、附件或交付前自查可能未完成）：请以交出的文件为准核对；要补的内容可以在本任务里“追问”`,
+  };
+}
 
 /**
  * 自由描述的任务里助手加载过的方法的主交付物（第 34 批）：按加载顺序，先取第一个主交付物是 Word 文书的方法，没有再取第一个是 Excel 表的；
