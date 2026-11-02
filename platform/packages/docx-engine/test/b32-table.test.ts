@@ -111,7 +111,7 @@ test("真实走查 W2：落款日期留空（“年　月　日”）、有“�
     { heading: "", paragraphs: ["此致", "嘉兴市南湖区人民法院", "附：本诉状副本1份；证据目录及证据【待填】份。", "具状人：浙江衡川新材料有限公司（盖章）", "法定代表人或授权代表：（签名）", "年    月    日"] },
     { heading: "证据目录", paragraphs: [], table: { columns: ["证据编号", "证据名称"], rows: [["证据1", "购销合同"]] } },
   ]));
-  for (const line of ["具状人：浙江衡川新材料有限公司（盖章）", "法定代表人或授权代表：（签名）", "年    月    日"]) assert.match(xml, new RegExp(`KwlRight"\\/><\\/w:pPr><w:r><w:t xml:space="preserve">${line.replace(/[（）()]/g, "\\$&")}`), line);
+  for (const line of ["具状人：浙江衡川新材料有限公司（盖章）", "法定代表人或授权代表：（签名）", "年    月    日"]) assert.match(xml, new RegExp(`KwlRight"\\/>(?:<w:keepNext\\/>)?<\\/w:pPr><w:r><w:t xml:space="preserve">${line.replace(/[（）()]/g, "\\$&")}`), line);
   assert.doesNotMatch(xml, /KwlRight"\/><\/w:pPr><w:r><w:t xml:space="preserve">附：/, "“附：”一行不右对齐");
 });
 
@@ -122,7 +122,8 @@ test("复核 A-06：文末是附页表格（证据目录）时，附页之前的
     { heading: "", paragraphs: [], table: { columns: ["序号", "材料"], rows: [["1", "授权委托书"]] } },
   ]);
   const xml = docXml(filing);
-  assert.match(xml, /KwlRight"\/><\/w:pPr><w:r><w:t xml:space="preserve">具状人：浙江衡川新材料有限公司/);
+  // 第 35 批：落款除最后一行外带 keepNext（与下一行同页）
+  assert.match(xml, /KwlRight"\/>(?:<w:keepNext\/>)?<\/w:pPr><w:r><w:t xml:space="preserve">具状人：浙江衡川新材料有限公司/);
   assert.match(xml, /KwlRight"\/><\/w:pPr><w:r><w:t xml:space="preserve">2026 年 10 月 30 日/);
   assert.match(xml, /<\/w:tbl><w:p\/><w:tbl>/, "两张表之间有空段");
 });

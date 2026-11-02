@@ -44,6 +44,21 @@ test("A-03、A-02：意见书的“致送对象与事由”“签署栏”不印
   assert.ok(ps.some((p) => /KwlTitle/.test(p) && textOf(p) === "关于晟澜公司对外担保效力的法律意见书"), "标题去掉“（草稿）”");
 });
 
+test("落款写成“律师事务所：【待签发】”也右对齐；落款各行与下一行同页、最后一行不加（真实走查 R3：律所一行左对齐、三行跨页拆开）", () => {
+  const xml = docXml(
+    createDocx("关于劳动合同解除事项的法律意见书（草稿）", [
+      { heading: "一、结论", paragraphs: ["解除存在较高的违法风险。"] },
+      { heading: "签署栏", paragraphs: ["律师事务所：【待签发】", "经办律师：【待签发】", "日期：【待签发】"] },
+    ]),
+  );
+  const ps = paras(xml);
+  const at = (t: string) => ps.find((x) => textOf(x) === t)!;
+  for (const t of ["律师事务所：【待签发】", "经办律师：【待签发】", "日期：【待签发】"]) assert.match(at(t), /KwlRight/, `“${t}”右对齐`);
+  assert.match(at("律师事务所：【待签发】"), /<w:keepNext\/>/);
+  assert.match(at("经办律师：【待签发】"), /<w:keepNext\/>/);
+  assert.doesNotMatch(at("日期：【待签发】"), /<w:keepNext\/>/, "最后一行不与后面的内容绑在一起");
+});
+
 test("A-02：合同签署页另起一页，签署行左对齐不缩进、各方之间空一行；附件另起一页；“以下无正文”留在上一页", () => {
   const xml = docXml(
     createDocx("股权转让协议", [

@@ -41,7 +41,8 @@ test("第 33 批：“此致”与下一行受文机关同页（keepNext）；�
   const xml = docXml(PLEADING);
   assert.match(paraOf(xml, "此致"), /<w:pStyle w:val="KwlBody"\/><w:keepNext\/>/);
   for (const other of ["嘉兴市南湖区人民法院", "原告已履行供货义务，特此致函被告催告付款未果。", "附：本诉状副本1份；证据目录及证据【待填】份。"]) assert.doesNotMatch(paraOf(xml, other), /keepNext/);
-  assert.equal((xml.replace(/<w:tbl>[\s\S]*?<\/w:tbl>/g, "").match(/<w:keepNext\/>/g) ?? []).length, 1, "表格以外只有“此致”一段");
+  // 第 35 批：落款各行（最后一行除外）也与下一行同页，这里只数正文段落
+  assert.equal((xml.replace(/<w:tbl>[\s\S]*?<\/w:tbl>/g, "").match(/KwlBody"\/><w:keepNext\/>/g) ?? []).length, 1, "表格以外的正文段落只有“此致”一段");
   // 落款仍右对齐（附页表格之前）
   assert.match(paraOf(xml, "具状人：浙江衡川新材料有限公司（盖章）"), /KwlRight/);
 });

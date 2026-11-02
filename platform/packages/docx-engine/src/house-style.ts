@@ -26,7 +26,7 @@ export type DocBlock =
   | { kind: "p"; runs: Run[]; keepNext?: boolean; sign?: boolean; pageBreakBefore?: boolean }
   | { kind: "li"; runs: Run[]; marker: string; level?: number }
   | { kind: "table"; rows: Run[][][] }
-  | { kind: "right"; text: string }
+  | { kind: "right"; text: string; keepNext?: boolean }
   | { kind: "blank" };
 
 export interface HouseStyle {
@@ -194,7 +194,10 @@ export function blocksToBodyXml(blocks: DocBlock[]): string {
       const p = para(IDS.list, [{ text: `${b.marker}\t` }, ...b.runs]);
       out.push(lvl === 0 ? p : p.replace(`<w:pStyle w:val="${IDS.list}"/>`, `<w:pStyle w:val="${IDS.list}"/><w:ind w:left="${480 * (lvl + 1)}" w:hanging="240"/>`));
     }
-    else if (b.kind === "right") out.push(para(IDS.right, [{ text: b.text }]));
+    else if (b.kind === "right") {
+      const p = para(IDS.right, [{ text: b.text }]);
+      out.push(b.keepNext ? p.replace(`<w:pStyle w:val="${IDS.right}"/>`, `<w:pStyle w:val="${IDS.right}"/><w:keepNext/>`) : p);
+    }
     else if (b.kind === "blank") out.push(`<w:p/>`);
     else if (b.kind === "table" && b.rows.length > 0) {
       const cols = Math.max(1, ...b.rows.map((r) => r.length));
@@ -660,7 +663,7 @@ export function inlineRuns(text: string): Run[] {
  * 单独的“（盖章）”或日期。文末几行里出现时右对齐；正文里提到律所的句子不算。
  */
 const SIGNATURE_LINE =
-  /^(?:[^，。；,;：:]{2,30}律师事务所(?:（盖章）|\(盖章\))?|(?:承办|经办)?律师[:：].{0,20}|(?:具状人|答辩人|申请人|被申请人|上诉人|被上诉人|起诉人|委托人|声明人|承诺人|原告|被告)[:：]?.{0,30}|(?:法定代表人|负责人|授权代表|(?:委托)?(?:诉讼)?代理人)(?:或(?:授权代表|负责人))?[:：].{0,30}|[（(]盖章[)）]|(?:签署|签发|出具)?日期[:：].{0,20}|(?:\d{4}|[〇零一二三四五六七八九]{4})\s*年\s*\S{1,3}\s*月\s*\S{1,3}\s*日|[_＿\s]*年[_＿\s]*月[_＿\s]*日)$/;
+  /^(?:[^，。；,;：:]{2,30}律师事务所(?:（盖章）|\(盖章\))?|律师事务所[:：].{0,30}|(?:承办|经办)?律师[:：].{0,20}|(?:具状人|答辩人|申请人|被申请人|上诉人|被上诉人|起诉人|委托人|声明人|承诺人|原告|被告)[:：]?.{0,30}|(?:法定代表人|负责人|授权代表|(?:委托)?(?:诉讼)?代理人)(?:或(?:授权代表|负责人))?[:：].{0,30}|[（(]盖章[)）]|(?:签署|签发|出具)?日期[:：].{0,20}|(?:\d{4}|[〇零一二三四五六七八九]{4})\s*年\s*\S{1,3}\s*月\s*\S{1,3}\s*日|[_＿\s]*年[_＿\s]*月[_＿\s]*日)$/;
 
 /** 把文末连续的落款行改成右对齐（Markdown 转换与 createDocx 共用）。 */
 export function alignSignature(blocks: DocBlock[]): DocBlock[] {
@@ -676,7 +679,8 @@ export function alignSignature(blocks: DocBlock[]): DocBlock[] {
     if (b.kind !== "p" || b.sign) break;
     const text = b.runs.map((r) => r.text).join("").trim();
     if (text.length > 40 || !SIGNATURE_LINE.test(text)) break;
-    out[k] = { kind: "right", text };
+    // 落款各行与下一行同页，最后一行除外（第 35 批 R3：律所、经办律师、日期三行跨页拆开）
+    out[k] = { kind: "right", text, ...(n > 0 ? { keepNext: true } : {}) };
   }
   // “此致”与下一行（受文机关）放在同一页（第 33 批，Word 实开：“此致”独自落在页末）
   for (let k = 0; k < out.length - 1; k += 1) {
