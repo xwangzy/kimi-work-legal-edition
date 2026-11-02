@@ -32,7 +32,7 @@ export function sanitizeDocx(docx: Buffer): SanitizeResult {
   const core = files.get("docProps/core.xml");
   if (core) {
     let c = core.toString("utf8");
-    c = c.replace(/<dc:creator>[\s\S]*?<\/dc:creator>/, "<dc:creator>Kimi Work 法律行业发行版（AI 辅助起草，经律师复核）</dc:creator>");
+    c = c.replace(/<dc:creator>[\s\S]*?<\/dc:creator>/, "<dc:creator>Kimi Work 法律行业发行版（AI 辅助生成，须经律师复核）</dc:creator>");
     c = c.replace(/<cp:lastModifiedBy>[\s\S]*?<\/cp:lastModifiedBy>/, "<cp:lastModifiedBy></cp:lastModifiedBy>");
     files.set("docProps/core.xml", Buffer.from(c, "utf8"));
   }

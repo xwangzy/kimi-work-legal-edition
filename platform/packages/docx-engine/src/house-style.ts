@@ -22,8 +22,8 @@ export interface Run {
 
 export type DocBlock =
   | { kind: "title"; text: string }
-  | { kind: "h1" | "h2" | "h3"; text: string }
-  | { kind: "p"; runs: Run[]; keepNext?: boolean }
+  | { kind: "h1" | "h2" | "h3"; text: string; pageBreakBefore?: boolean }
+  | { kind: "p"; runs: Run[]; keepNext?: boolean; sign?: boolean; pageBreakBefore?: boolean }
   | { kind: "li"; runs: Run[]; marker: string; level?: number }
   | { kind: "table"; rows: Run[][][] }
   | { kind: "right"; text: string }
@@ -162,10 +162,15 @@ export function blocksToBodyXml(blocks: DocBlock[]): string {
   const out: string[] = [];
   for (const b of blocks) {
     if (b.kind === "title") out.push(para(IDS.title, [{ text: b.text }]));
-    else if (b.kind === "h1" || b.kind === "h2" || b.kind === "h3") out.push(para(IDS[b.kind], [{ text: b.text }]));
+    else if (b.kind === "h1" || b.kind === "h2" || b.kind === "h3") {
+      const h = para(IDS[b.kind], [{ text: b.text }]);
+      out.push(b.pageBreakBefore ? h.replace(`<w:pStyle w:val="${IDS[b.kind]}"/>`, `<w:pStyle w:val="${IDS[b.kind]}"/><w:pageBreakBefore/>`) : h);
+    }
     else if (b.kind === "p") {
       const p = para(IDS.body, b.runs);
-      out.push(b.keepNext ? p.replace(`<w:pStyle w:val="${IDS.body}"/>`, `<w:pStyle w:val="${IDS.body}"/><w:keepNext/>`) : p);
+      // 合同签署页（第 35 批）：签署行左对齐、不缩进，第一行另起一页；与下一行同页
+      const extra = `${b.keepNext || b.sign ? "<w:keepNext/>" : ""}${b.pageBreakBefore ? "<w:pageBreakBefore/>" : ""}${b.sign ? '<w:ind w:firstLineChars="0" w:firstLine="0"/><w:jc w:val="left"/>' : ""}`;
+      out.push(extra ? p.replace(`<w:pStyle w:val="${IDS.body}"/>`, `<w:pStyle w:val="${IDS.body}"/>${extra}`) : p);
     }
     else if (b.kind === "li") {
       // 嵌套列表按层级加缩进（复核 R15B-20）
@@ -216,7 +221,7 @@ function footerXml(): string {
 function coreXml(mark = true): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-<dc:creator>Kimi Work 法律行业发行版（AI 辅助起草，经律师复核）</dc:creator>
+<dc:creator>Kimi Work 法律行业发行版（AI 辅助生成，须经律师复核）</dc:creator>
 <cp:lastModifiedBy></cp:lastModifiedBy>
 ${mark ? `<cp:category>${HOUSE_STYLE_MARK}</cp:category>\n` : ""}</cp:coreProperties>`;
 }
@@ -630,7 +635,7 @@ export function inlineRuns(text: string): Run[] {
   }
   if (last < s.length) runs.push({ text: s.slice(last) });
   return runs
-    .map((r) => ({ ...r, text: escOut(r.text.replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1$2").replace(/(^|\s)_([^_]+)_(?=\s|$)/g, "$1$2")) }))
+    .map((r) => ({ ...r, text: escOut(r.text.replace(/(^|[^\p{L}\p{N}*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\p{L}\p{N}*])/gu, "$1$2").replace(/(^|\s)_([^_]+)_(?=\s|$)/g, "$1$2")) }))
     .filter((r) => r.text !== "");
 }
 
@@ -639,7 +644,7 @@ export function inlineRuns(text: string): Run[] {
  * 单独的“（盖章）”或日期。文末几行里出现时右对齐；正文里提到律所的句子不算。
  */
 const SIGNATURE_LINE =
-  /^(?:[^，。；,;：:]{2,30}律师事务所(?:（盖章）|\(盖章\))?|(?:承办|经办)?律师[:：].{0,20}|(?:具状人|答辩人|申请人|被申请人|上诉人|被上诉人|起诉人|委托人|声明人|承诺人|原告|被告)[:：]?.{0,30}|(?:法定代表人|负责人|授权代表|(?:委托)?(?:诉讼)?代理人)(?:或(?:授权代表|负责人))?[:：].{0,30}|[（(]盖章[)）]|(?:\d{4}|[〇零一二三四五六七八九]{4})\s*年\s*\S{1,3}\s*月\s*\S{1,3}\s*日|[_＿\s]*年[_＿\s]*月[_＿\s]*日)$/;
+  /^(?:[^，。；,;：:]{2,30}律师事务所(?:（盖章）|\(盖章\))?|(?:承办|经办)?律师[:：].{0,20}|(?:具状人|答辩人|申请人|被申请人|上诉人|被上诉人|起诉人|委托人|声明人|承诺人|原告|被告)[:：]?.{0,30}|(?:法定代表人|负责人|授权代表|(?:委托)?(?:诉讼)?代理人)(?:或(?:授权代表|负责人))?[:：].{0,30}|[（(]盖章[)）]|(?:签署|签发|出具)?日期[:：].{0,20}|(?:\d{4}|[〇零一二三四五六七八九]{4})\s*年\s*\S{1,3}\s*月\s*\S{1,3}\s*日|[_＿\s]*年[_＿\s]*月[_＿\s]*日)$/;
 
 /** 把文末连续的落款行改成右对齐（Markdown 转换与 createDocx 共用）。 */
 export function alignSignature(blocks: DocBlock[]): DocBlock[] {
@@ -652,7 +657,7 @@ export function alignSignature(blocks: DocBlock[]): DocBlock[] {
   }
   for (let k = end, n = 0; k >= 0 && n < 6; k -= 1, n += 1) {
     const b = out[k]!;
-    if (b.kind !== "p") break;
+    if (b.kind !== "p" || b.sign) break;
     const text = b.runs.map((r) => r.text).join("").trim();
     if (text.length > 40 || !SIGNATURE_LINE.test(text)) break;
     out[k] = { kind: "right", text };
