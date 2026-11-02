@@ -1178,7 +1178,8 @@ export function buildGoal(card: ScenarioCard, values: Record<string, string | st
         if (!s) empty = true;
         return s;
       });
-      return empty ? "" : filled;
+      // 填进来的话自己已带句末标点（第 35 批 R3：输入框里的问题预填进“问题”栏，任务说明成了“……法律意见书。。”）：不再叠模板的句号
+      return empty ? "" : filled.replace(/([。！？!?；;.])\s*[。；]$/, "$1");
     })
     .join("");
   return [out.trim(), extra.trim()].filter(Boolean).join("\n");

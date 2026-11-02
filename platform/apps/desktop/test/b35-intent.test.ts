@@ -46,3 +46,13 @@ test("成果名称用文件名时还原代号（与标题同一还原函数）",
   assert.equal(artifactName({ kind: "review_table", filename: "〔自然人·CB99AX〕借款合同.xlsx" }, restore), "方景行借款合同");
   assert.equal(artifactName(a), "关于〔自然人·CB99AX〕劳动合同解除事项的法律意见书（草稿）", "不给还原函数时原样（界面另以代号块显示）");
 });
+
+test("预填的问题自带句号时任务说明不叠句号（真实走查 R3：“……出一份正式的法律意见书。。”）", async () => {
+  const { buildGoal } = await import("../src/lib/scenarios.ts");
+  const advice = SCENARIOS.find((c) => c.skill === "client-advice")!;
+  const q = "客户问能否追究竞业限制违约责任？请出一份正式的法律意见书。";
+  const goal = buildGoal(advice, startPanelInitial(advice, q).values, "");
+  assert.ok(goal.includes("法律意见书。") && !goal.includes("。。"), goal);
+  assert.equal(buildGoal(advice, { question: "能否解除？" }, ""), "请答复以下问题：能否解除？", "问号结尾不再加句号");
+  assert.equal(buildGoal(advice, { question: "能否解除" }, ""), "请答复以下问题：能否解除。", "没有标点的照常补句号");
+});
