@@ -64,3 +64,16 @@ test("A-02：合同签署页另起一页，签署行左对齐不缩进、各方�
   assert.match(ps.find((p) => /KwlHeading1/.test(p) && textOf(p) === "附件")!, /<w:pageBreakBefore\/>/, "附件另起一页");
   assert.ok(extractParagraphs(Buffer.from(createDocx("x", [{ heading: "", paragraphs: ["a"] }]))).length > 0);
 });
+
+test("段内换行拆成独立段落：首部各方信息与签署块一项一行（第 35 批真实走查 R1）", async () => {
+  const { createDocx, extractParagraphs, readZipEntries } = await import("../src/index.ts");
+  const buf = createDocx("股权转让协议", [
+    { heading: "", paragraphs: ["受让方：上海澄远科技集团有限公司\n统一社会信用代码：91310000MA1K8C7X2Q\n\n住所：上海市浦东新区"] },
+    { heading: "", paragraphs: ["（以下无正文，为签署页）", "受让方：上海澄远科技集团有限公司（盖章）\n法定代表人或授权代表（签字）：________\n签署日期：____年__月__日"] },
+  ]);
+  const xml = readZipEntries(buf).get("word/document.xml")!.toString("utf8");
+  assert.equal(/<w:t[^>]*>[^<]*\n[^<]*<\/w:t>/.test(xml), false, "文字节点里不留换行");
+  const ps = extractParagraphs(buf).map((p) => p.text).filter((t) => t.trim());
+  assert.deepEqual(ps.slice(1, 4), ["受让方：上海澄远科技集团有限公司", "统一社会信用代码：91310000MA1K8C7X2Q", "住所：上海市浦东新区"], "空行不另起空段");
+  assert.ok(ps.includes("法定代表人或授权代表（签字）：________"));
+});

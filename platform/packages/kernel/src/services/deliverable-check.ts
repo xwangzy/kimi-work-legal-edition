@@ -8,6 +8,7 @@
  * 只报能确定的问题（宁可漏报不误报），每条给出位置、原文片段与改法；纯函数（法规核验经传入的法规库离线完成）。
  */
 import type { Lawdb } from "@zr-legal/lawdb";
+import { isPartyDocument } from "@zr-legal/docx-engine";
 import { cnToInt } from "../tools/tools/cn-numerals.ts";
 import { checkArtifactCitations } from "./artifact-citations.ts";
 
@@ -108,6 +109,8 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
     for (const a of amountMismatches(p.text)) push({ kind: "amount_words", where: p.where, text: a.text, fix: `小写 ${a.figure} 与大写（折合 ${a.words}）不一致：按核对后的金额统一大小写` });
   }
 
+  // 当事人文书（合同、协议等，要发给对方）：正文不写内部说明、签署页之后不再有条款（第 35 批真实走查 R1）
+  if (isPartyDocument(`${title}.docx`)) for (const i of partyDocumentIssues(paras)) push(i);
   for (const i of numberingIssues(sections)) push(i);
   for (const i of crossRefIssues(sections, paras)) push(i);
 
@@ -130,6 +133,40 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
       ? "交付前检查未发现问题（只查工具用语、夹杂英文、条款编号、互引、大小写金额、法条号这几类，不代替律师复核）"
       : `交付前检查发现 ${issues.length} 处问题：Word 文书用 docx.edit_draft 在这份文书上逐处改正（不要整份重新生成），表格改正后重新生成；确实不需要改的（如律师要求保留），在最终答复里说明理由`,
   };
+}
+
+/** 合同正文里写给律师或客户的内部说明（发给对方前要人工删）。 */
+const PARTY_INTERNAL_RE = /首稿方案|待客户确认|待对方(?:书面)?确认|材料未(?:明确)?(?:约定|载明|提供)|见起草说明|起草说明(?:与待定事项)?》?中|本所|律师复核|经律师确认/;
+
+function partyDocumentIssues(paras: readonly Para[]): DeliverableIssue[] {
+  const out: DeliverableIssue[] = [];
+  for (const p of paras) {
+    // 每段报一次（同一句里“首稿方案”“待客户确认”常一起出现）
+    const m = PARTY_INTERNAL_RE.exec(p.text);
+    if (m) out.push({ kind: "internal_term", where: p.where, text: snippet(p.text, m.index, m[0].length), fix: "合同正文要发给对方，不写内部说明：删去这句（或整条），口径说明写进《起草说明》" });
+  }
+  // 签署页之后接着正文最后一条往下编的款（正文最后是 20.7，签署页、附件之后又冒出“20.8 ……”），或紧接其后的新条：落错了位置。附件自己的编号不算
+  const sign = paras.findIndex((p) => /以下无正文/.test(p.text));
+  if (sign >= 0) {
+    let last = 0;
+    const maxClause = new Map<number, number>();
+    for (const p of paras.slice(0, sign)) {
+      const h = ARTICLE_HEADING_RE.exec(p.heading);
+      const hn = h ? cnToInt(h[1]!) : null;
+      if (hn !== null) last = Math.max(last, hn);
+      const c = /^(\d{1,2})\.(\d{1,2})\s/.exec(p.text.trim());
+      if (c) maxClause.set(Number(c[1]), Math.max(maxClause.get(Number(c[1])) ?? 0, Number(c[2])));
+    }
+    if (last > 0) {
+      for (const p of paras.slice(sign + 1)) {
+        const c = /^(\d{1,2})\.(\d{1,2})\s/.exec(p.text.trim());
+        const a = /^第([一二三四五六七八九十百零〇\d]+)条/.exec(p.text.trim()) ?? ARTICLE_HEADING_RE.exec(p.heading === p.text ? p.text : "");
+        const stray = c ? Number(c[1]) === last && Number(c[2]) > (maxClause.get(last) ?? 0) : a ? cnToInt(a[1]!) === last + 1 : false;
+        if (stray) out.push({ kind: "numbering", where: p.where, text: p.text.slice(0, 40), fix: "这一款接着正文最后一条往下编，却落在“以下无正文”与签署页之后：移回签署页之前的对应条款里" });
+      }
+    }
+  }
+  return out;
 }
 
 function flatten(title: string, sections: readonly DeliverableSection[]): Para[] {

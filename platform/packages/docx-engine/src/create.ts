@@ -29,7 +29,12 @@ export function createDocx(title: string, sections: ReportSection[], o: { mark?:
   const blocks: DocBlock[] = shown ? [{ kind: "title", text: shown }] : [];
   for (const s of sections) {
     if (s.heading && !STRUCTURE_HEADING.test(s.heading.trim())) blocks.push({ kind: "h1", text: s.heading });
-    for (const p of s.paragraphs) blocks.push({ kind: "p", runs: [{ text: p }] });
+    // 段内换行拆成独立段落（第 35 批真实走查 R1：首部各方信息、签署块按“一项一行”写进同一段，换行留在文字里，Word 打开挤成一行）
+    for (const p of s.paragraphs) {
+      const lines = String(p).split(/\r?\n/);
+      if (lines.length === 1) blocks.push({ kind: "p", runs: [{ text: p }] });
+      else for (const line of lines) if (line.trim()) blocks.push({ kind: "p", runs: [{ text: line }] });
+    }
     if (s.table) blocks.push({ kind: "table", rows: [s.table.columns, ...s.table.rows].map((r) => r.map((text) => [{ text }])) });
   }
   // 起诉状、律师函的落款（律所、律师、具状人、日期）右对齐，与 Markdown 导出同一规则；合同签署页另起一页、签署行不缩进（第 35 批）

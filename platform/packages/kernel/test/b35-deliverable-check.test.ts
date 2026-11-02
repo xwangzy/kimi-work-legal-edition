@@ -139,3 +139,22 @@ test("经本机端点调用文书工具：照常生成并登记，结果里带�
   assert.match(all, /6222020200112233/, "16 位账号按文字原样写入");
   assert.doesNotMatch(all, /<v>6222020200112233<\/v>/, "不按数字写（Excel 只保留 15 位有效数字）");
 });
+
+test("当事人文书（合同、协议）：正文里的内部说明与签署页之后的条款报出；意见书里同样的词不报（第 35 批真实走查 R1）", () => {
+  const sections = [
+    { heading: "第1条 定义", paragraphs: ["1.1 定义。", "1.2 解释。"] },
+    { heading: "第20条 其他", paragraphs: ["20.6 本协议一式捌份。", "20.7 本协议中材料未明确约定的期限均为我方首稿方案，待客户确认。"] },
+    { heading: "", paragraphs: ["（以下无正文，为签署页）", "受让方：上海澄远科技集团有限公司（盖章）"] },
+    { heading: "附件", paragraphs: ["附件一 披露函", "1.1 披露事项一（附件自己的编号，不报）", "20.8 本协议自各方签署之日起生效。"] },
+  ];
+  const r = checkDeliverable("股权转让协议", sections);
+  const internal = r.issues.filter((i) => i.kind === "internal_term");
+  assert.equal(internal.length, 1, `同一段只报一次：${JSON.stringify(internal)}`);
+  assert.match(internal[0]!.text, /材料未明确约定/);
+  assert.equal(internal[0]!.where, "第20条 其他第 2 段");
+  assert.ok(r.issues.some((i) => i.kind === "numbering" && i.text.startsWith("20.8") && /签署页之后/.test(i.fix)), JSON.stringify(r.issues));
+  const opinion = checkDeliverable("关于方景行事项的法律意见书", [{ heading: "四、假设", paragraphs: ["本意见书所述事实待客户确认。"] }]);
+  assert.equal(opinion.issues.filter((i) => i.kind === "internal_term").length, 0, "律所文书不按合同口径查");
+  const clean = checkDeliverable("设备买卖合同", [{ heading: "第1条 标的", paragraphs: ["1.1 设备见附件一。"] }, { heading: "", paragraphs: ["（以下无正文，为签署页）", "甲方（盖章）："] }, { heading: "附件一 设备清单", paragraphs: ["1. 五轴加工中心", "2.1 主机（附件自己的编号）"] }]);
+  assert.equal(clean.issues.length, 0, JSON.stringify(clean.issues));
+});
