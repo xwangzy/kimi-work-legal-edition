@@ -24,6 +24,7 @@ import { redactScan } from "./tools/redact.ts";
 import { materialsReadExcerpt } from "./tools/materials.ts";
 import { docxApplyRevisions, docxCompare, docxRenderReport, docxSanitize, redactApply } from "./tools/docx.ts";
 import { docxRevise } from "./tools/revise.ts";
+import { docxEditDraft, sectionsOfDocx } from "./tools/edit-draft.ts";
 import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, rulesPropose, riskcardsList, riskcardsSubmit, tableFill, tableGet, xlsxRenderTable } from "./tools/review.ts";
 import { assertOutlineSettled } from "../services/argument-outlines.ts";
 import { checkDeliverable, type DeliverableCheck } from "../services/deliverable-check.ts";
@@ -377,7 +378,8 @@ export const TOOLS: readonly ToolDef[] = [
       "按标题与段落结构生成 Word 文书（备忘录、意见书、函件、合同、诉状），登记为本任务的草稿成果交律师审阅；导出时按事项令牌表还原代号。" +
       "文书正文里要成表的内容（合同价款表、设备清单、付款节点、证据目录、当事人或股权结构表）用该节的 table 画成 Word 表格：columns 为表头，rows 每行格数与表头相同，画在本节段落之后；表后还有正文的，另起一节、heading 写空字符串。每节至多一张表、每表 1–10 列、最多 300 行；格内写文字，数量、序号可写整数；金额按文书写法写成文字（如“1,200,000.00”），不要传带小数的数字。" +
       "格数不符或超限时整份不生成并逐条说明，改正后重交。分析用的大表（争点矩阵、尽调清单等）仍用 xlsx.render_table 作附件。" +
-      "返回的 quality_check 是交付前检查（工具用语或内部编号外露、正文夹杂英文、Markdown 符号、条款编号不连续、互引指向不存在的条款、大小写金额不一致、错误条号）：issues 不为空时逐条改正后用同一标题重新生成；确实不需要改的在最终答复里说明理由。" +
+      "返回的 quality_check 是交付前检查（工具用语或内部编号外露、正文夹杂英文、Markdown 符号、条款编号不连续、互引指向不存在的条款、大小写金额不一致、错误条号）：issues 不为空时用 docx.edit_draft 在这份文书上逐处改正（几秒完成），不要整份重新生成；确实不需要改的在最终答复里说明理由。" +
+      "生成前先在心里把全文写完、自查一遍再一次提交；生成后的局部修改一律用 docx.edit_draft。" +
       "本任务有待律师确认的论点提纲（outline.submit）时拒绝生成，先等律师确认。",
     sideEffect: "write_draft",
     resource: "matter_work",
@@ -462,6 +464,51 @@ export const TOOLS: readonly ToolDef[] = [
       },
     },
     invoke: async (p, ctx) => docxRevise(ctx, p),
+  },
+  {
+    // 第 35 批真实走查 N1：自查改两个词要整份重出约 1 万字的协议（一次 2～6 分钟），5 次重出用完工作时限
+    name: "docx.edit_draft",
+    title: "修改本任务的文书草稿",
+    description:
+      "在本任务里你已用 docx.render_report 生成的 Word 文书上逐处修改（交付前检查报出的问题、自查发现的措辞、条号、金额、遗漏的款项等），几秒完成，登记为同名文书的新版本（旧版本保留）：" +
+      "artifact_version_id 写 docx.render_report（或上一次本工具）返回的编号；每处给出要改的原文（anchor，逐字照抄这份文书里的文字、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落，按换行分段）。" +
+      "只改要改的地方，不要为改几处整份重新生成；整体结构要变（增删多条、重排章节）才用 docx.render_report 重出。律师上传的材料不能用本工具，用 docx.revise。" +
+      "任一处找不到或有歧义时整体不写，逐条返回原因；改好后返回新版本的交付前检查 quality_check。",
+    sideEffect: "write_draft",
+    resource: "matter_work",
+    version: "1",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["artifact_version_id", "patches"],
+      properties: {
+        artifact_version_id: { type: "string" },
+        dry_run: { type: "boolean" },
+        patches: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["anchor", "proposed_text"],
+            properties: {
+              anchor: { type: "string" },
+              proposed_text: { type: "string" },
+              occurrence: { type: "integer", minimum: 0 },
+              paragraph_hint: { type: "string" },
+              insert_after: { type: "boolean" },
+            },
+          },
+        },
+      },
+    },
+    invoke: async (p, ctx) => {
+      const r = docxEditDraft(ctx, p);
+      if (r.status !== "applied") return r;
+      // 改后对新版本重做交付前检查（节结构按文书引擎的标题样式还原）
+      const row = ctx.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM artifact_versions WHERE artifact_version_id = ?`, [r.artifact_version_id]);
+      const quality_check = row ? deliverableQualityFor(ctx, sectionsOfDocx(ctx.blobs.read(row.storage_uri)), row.storage_uri) : null;
+      return { ...r, ...(quality_check ? { quality_check } : {}) };
+    },
   },
   {
     name: "redact.apply",

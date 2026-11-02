@@ -36,6 +36,8 @@ export const LEGAL_MCP_TOOLS = [
   "rules.propose",
   // 2026-10-28 第 28 批：在律师上传的 Word 原件副本上写修订（修订稿 + 清洁稿，写本事项草稿；原件不变）
   "docx.revise",
+  // 2026-11-03 第 35 批：在本任务已生成的文书草稿上逐处修改（同名新版本；不再为改几处整份重出）
+  "docx.edit_draft",
 ] as const;
 
 export type LegalMcpToolName = (typeof LEGAL_MCP_TOOLS)[number];

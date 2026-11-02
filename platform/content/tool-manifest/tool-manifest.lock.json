@@ -174,6 +174,19 @@
       "schemaHash": "cc5ccff7c19d9dd28fd4fe408019d6a9f242a89ddf80e2979ac6ac1c79d710c1"
     },
     {
+      "name": "docx.edit_draft",
+      "version": "1",
+      "sideEffect": "write_draft",
+      "resource": "matter_work",
+      "purposes": [
+        "legal_analysis",
+        "drafting",
+        "legal_research",
+        "case_file"
+      ],
+      "schemaHash": "698e1d8635788aae1afe820a059a0c0962a04c5c9200a3859df10ff912a214e7"
+    },
+    {
       "name": "redact.apply",
       "version": "1",
       "sideEffect": "write_draft",
