@@ -153,6 +153,21 @@ const ADDRESS_RE = new RegExp(`${ADDR_HEAD}${ADDR_ROAD}${ADDR_NUM}${ADDR_TAIL}`,
 /** 地址前常见的引导词（“住北京市……”“住所地：……”）：不属于地址本身。 */
 const ADDRESS_LEAD = /^(?:住所地|住所|住址|地址|现住址?|户籍地址?|户籍地|经常居住地|居住地?|家住|住|位于|在|于|至|到|往)[：:]?/;
 
+/**
+ * 地址前混进的叙述（第 35 批真实走查 R3：“自2026年9月1日起整体搬迁至苏州工业园区星湖街328号”整段成了一个地址代号，
+ * 送给模型的是“自2026年9月〔地址〕”，搬迁日期丢了；“10月8日入职上海市……”“住所变更为上海市……”同样）：
+ * 第一个行政区划之前有日期或“搬迁、入职、变更”等叙述标记的，从最后一个引导词之后算起。返回要去掉的字数；没有叙述标记返回 0（“于都县”不受影响）。
+ */
+function narrativeHead(v: string): number {
+  const admin = ADDRESS_ADMIN.exec(v);
+  if (!admin) return 0;
+  const head = v.slice(0, admin.index);
+  if (!/[0-9０-９年月日起]|搬迁|迁往|迁至|入职|变更|更为|整体/.test(head)) return 0;
+  let cut = 0;
+  for (const m of head.matchAll(/(?:搬迁至|迁至|迁往|入职|变更为|更为|位于|设在|至|到|往|于|在|为)/g)) cut = m.index! + m[0].length;
+  return head.length - cut >= 2 ? cut : 0;
+}
+
 /** 无门牌地址只在这些位置起算（句首、标点或“住/住址/户籍地/位于……”之后），不吞前面的姓名与动词。 */
 const ADDR_START = "(?<=^|[\\s，。；;：:、,（(“\"‘〕]|住|住址|住所|住所地|地址|户籍地|户籍|位于|居住地|现住|现住址|经常居住地|家住|系|在|于|至|到|往)";
 /**
@@ -248,10 +263,11 @@ export function findIdentifiers(original: string, skip: readonly { start: number
   ADDRESS_RE.lastIndex = 0;
   for (const m of text.matchAll(ADDRESS_RE)) {
     const lead = ADDRESS_LEAD.exec(m[0])?.[0] ?? "";
-    const v = m[0].slice(lead.length);
+    const cut = lead.length + narrativeHead(m[0].slice(lead.length));
+    const v = m[0].slice(cut);
     // 必须含行政区划或道路 + 门牌；过短的“3号楼”之类不算详细住址
     if (v.length < 6 || !ADDRESS_ADMIN.test(v)) continue;
-    push("address", m.index! + lead.length, v);
+    push("address", m.index! + cut, v);
   }
   // 无门牌的村、组地址
   VILLAGE_RE.lastIndex = 0;
