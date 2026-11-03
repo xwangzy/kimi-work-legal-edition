@@ -82,11 +82,23 @@ function sheetRange(spec: SheetSpec): { cols: number; rows: number } | null {
 }
 
 /** 宽表横向打印（第 35 批，文档工程审查 E-01）：多于 5 列，或估算总列宽超过 A4 纵向可印宽度。 */
+function totalWidth(spec: SheetSpec): number {
+  return [...colsXml(spec.rows).matchAll(/width="([\d.]+)"/g)].reduce((n, m) => n + Number(m[1]), 0);
+}
+
 function landscape(spec: SheetSpec): boolean {
   const r = sheetRange(spec);
   if (!r) return false;
-  const total = [...colsXml(spec.rows).matchAll(/width="([\d.]+)"/g)].reduce((n, m) => n + Number(m[1]), 0);
-  return r.cols > 5 || total > 95;
+  return r.cols > 5 || totalWidth(spec) > 95;
+}
+
+/**
+ * 打印几页宽（V10 第 36 批；V9.6 R6 律师评分：起草说明表横向缩到一页宽，打印出来字太小看不清）：A4 横向 100% 约容 145 个列宽单位，
+ * 缩放不低于约七成即一页最多约 207 个单位——在此以内缩到一页宽，更宽的按每页约 207 个单位分几页宽打印（每页重复表头行与首列）。
+ */
+export const PRINT_WIDTH_PER_PAGE = 207;
+export function printPagesWide(spec: SheetSpec): number {
+  return Math.max(1, Math.ceil(totalWidth(spec) / PRINT_WIDTH_PER_PAGE));
 }
 
 function sheetXml(spec: SheetSpec): Buffer {
@@ -108,7 +120,7 @@ function sheetXml(spec: SheetSpec): Buffer {
   // 表头筛选、页边距、纸张方向与页脚页码（元素顺序按 CT_Worksheet：autoFilter → pageMargins → pageSetup → headerFooter）
   const r = sheetRange(spec);
   const filter = r && r.rows > 1 ? `<autoFilter ref="A1:${colName(r.cols - 1)}${r.rows}"/>` : "";
-  const print = `<pageMargins left="0.5" right="0.5" top="0.75" bottom="0.75" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="${landscape(spec) ? "landscape" : "portrait"}" fitToWidth="1" fitToHeight="0"/><headerFooter><oddFooter>&amp;C第 &amp;P 页，共 &amp;N 页</oddFooter></headerFooter>`;
+  const print = `<pageMargins left="0.5" right="0.5" top="0.75" bottom="0.75" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="${landscape(spec) ? "landscape" : "portrait"}" fitToWidth="${printPagesWide(spec)}" fitToHeight="0"/><headerFooter><oddFooter>&amp;C第 &amp;P 页，共 &amp;N 页</oddFooter></headerFooter>`;
   parts.push(Buffer.from(`</sheetData>${filter}${print}</worksheet>`, "utf8"));
   return Buffer.concat(parts);
 }
@@ -121,7 +133,8 @@ function definedNamesXml(sheets: SheetSpec[]): string {
     if (!r || r.rows < 2) return;
     const q = `'${s.name.slice(0, 31).replace(/'/g, "''")}'`;
     names.push(`<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">${escapeXml(`${q}!$A$1:$${colName(r.cols - 1)}$${r.rows}`)}</definedName>`);
-    names.push(`<definedName name="_xlnm.Print_Titles" localSheetId="${i}">${escapeXml(`${q}!$1:$1`)}</definedName>`);
+    // 分几页宽打印时每页同时重复首列（行名），否则后几页只剩数字看不出是哪一行
+    names.push(`<definedName name="_xlnm.Print_Titles" localSheetId="${i}">${escapeXml(printPagesWide(s) > 1 ? `${q}!$A:$A,${q}!$1:$1` : `${q}!$1:$1`)}</definedName>`);
   });
   return names.length > 0 ? `<definedNames>${names.join("")}</definedNames>` : "";
 }

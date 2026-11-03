@@ -34,3 +34,13 @@ test("只有表头一行的表：不加筛选与打印标题", () => {
   assert.doesNotMatch(z.get("xl/worksheets/sheet1.xml")!.toString("utf8"), /<autoFilter/);
   assert.doesNotMatch(z.get("xl/workbook.xml")!.toString("utf8"), /<definedNames>/);
 });
+
+test("V10：很宽的说明表不再硬缩到一页宽（V9.6 R6 律师评分：打印字太小看不清）——按约 207 个列宽单位一页分几页宽打印，每页重复首行与首列", async () => {
+  const { printPagesWide } = await import("../src/xlsx.ts");
+  const long = "按投资方立场给出首稿值，对方可能要求放宽，可退让至客户确认的区间，效力与可执行性另行提示".repeat(2);
+  const wide = { name: "起草说明", rows: [["条款", "写法要点", "为什么这样写", "对我方的保护", "对方可能的修改", "可退让方向", "效力存疑提示", "依据", "核验状态", "材料来源"], ...Array.from({ length: 5 }, (_, i) => [`第${i + 1}条`, long, long, long, long, long, long, "公司法第十五条", "已核", "条款清单"])] };
+  assert.ok(printPagesWide(wide) >= 2, `宽表分几页宽：${printPagesWide(wide)}`);
+  const z = readZipEntries(createXlsx([wide]));
+  assert.match(z.get("xl/worksheets/sheet1.xml")!.toString("utf8"), new RegExp(`fitToWidth="${printPagesWide(wide)}" fitToHeight="0"`));
+  assert.ok(z.get("xl/workbook.xml")!.toString("utf8").includes(`'起草说明'!$A:$A,'起草说明'!$1:$1`), "分页宽时每页重复首列与首行");
+});
