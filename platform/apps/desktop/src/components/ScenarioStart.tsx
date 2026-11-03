@@ -209,6 +209,20 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
       setGuessed(g);
     }
   }, [typeField, docsReady, documents, docIds, matter?.title, values, extra]);
+  // 面板里换了事项：上一个事项按文件名猜的合同类型作废，按新事项的材料重猜（V10 走查：换到增资事项后仍是“技术开发”）；律师亲手选的不动
+  const guessedFor = useRef<string | null>(matter?.matter_id ?? null);
+  useEffect(() => {
+    const id = matter?.matter_id ?? null;
+    if (guessedFor.current === id) return;
+    guessedFor.current = id;
+    if (typeField && guessed && values[typeField.key] === guessed) {
+      setValues((cur) => {
+        const { [typeField.key]: _drop, ...rest } = cur;
+        return rest;
+      });
+      setGuessed(null);
+    }
+  }, [matter?.matter_id, typeField, guessed, values]);
   // “我方是”按事项立场预选（第 31 批）：律师没选过、事项立场对得上某个选项时才填，下拉框下写“按事项立场预选，可改”
   const sideField = card.fields.find((f) => f.key === "side" && f.kind === "select");
   const [sideGuessed, setSideGuessed] = useState<string | null>(null);

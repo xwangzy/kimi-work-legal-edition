@@ -17,3 +17,11 @@ test("主要请求栏是多行文字，并照旧接住输入框里的整段话",
   assert.equal(init.values.opinion, req, "多行意见原样预填");
   assert.ok(buildGoal(revise, init.values, "").includes("3. 争议解决改为宁波仲裁委员会仲裁"), "整段进任务说明");
 });
+
+test("事项页、任务页点“新建任务”带上当前事项（V10 走查：开始面板预选了最近新建的另一个事项）；其他页面照旧回首页", async () => {
+  const { newTaskHref } = await import("../src/lib/nav-target.ts");
+  assert.equal(newTaskHref("/", { page: "matter", matterId: "mat_1" }), "/new/mat_1");
+  assert.equal(newTaskHref("/", { page: "run", matterId: "mat_2" }), "/new/mat_2");
+  assert.equal(newTaskHref("/", { page: "matters" }), "/");
+  assert.equal(newTaskHref("/matters", { page: "matter", matterId: "mat_1" }), "/matters", "其他导航项不受影响");
+});

@@ -1,5 +1,6 @@
 /** 左侧栏（第 03 篇 §4.1：Kimi Work 入口 → 发行版入口）。未开放的入口不占一级导航；状态用律师语言，只在异常时变色（UIUX P0-6）。 */
 import { useEffect, useState, type ReactNode } from "react";
+import { newTaskHref } from "../lib/nav-target.ts";
 import { api, members, onKernelEvent, type Matter } from "../api.ts";
 import { nav, type Route } from "../App.tsx";
 import { Icon } from "./Icons.tsx";
@@ -24,6 +25,7 @@ const ITEMS: Item[] = [
   { key: "reminders", label: "期限提醒", icon: Icon.bell, href: "/reminders" },
   { key: "chat", label: "问答", icon: Icon.chat, href: "/chat" },
 ];
+
 
 export function Sidebar({ route }: { route: Route }) {
   const [matters, setMatters] = useState<Matter[]>([]);
@@ -95,7 +97,7 @@ export function Sidebar({ route }: { route: Route }) {
         {ITEMS.map((it) => {
           const active = route.page === it.key || (it.key === "matters" && route.page === "matter") || (it.key === "deliverables" && route.page === "review");
           return (
-            <button key={it.key} className={`nav-item${active ? " active" : ""}`} onClick={() => nav(it.href)} title={it.label}>
+            <button key={it.key} className={`nav-item${active ? " active" : ""}`} onClick={() => nav(newTaskHref(it.href, route))} title={it.label}>
               <span className="nav-icon">{it.icon()}</span>
               <span className="nav-label">{it.label}</span>
               {it.key === "deliverables" && pending > 0 && <span className="badge">{pending}</span>}
