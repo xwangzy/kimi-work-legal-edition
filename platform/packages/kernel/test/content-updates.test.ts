@@ -75,7 +75,7 @@ test("法规库：增量包安装后即时换用（新增法规可查）；重�
     assert.equal(r.results[0].seq, 3);
     const st = await k.inv("lawdb.status");
     assert.equal(st.package_version, incrVersion, "即时换用：同一个内核进程里法规库已是增量后的版本");
-    assert.equal(st.laws_count, before.laws_count + 1, "增量新增的一部法规可查");
+    assert.equal(st.versions_count, before.versions_count + 1, "增量补入的仲裁法 2017 年修正本可查（V10 第 36 批起随包种子已有 2025 年修订本）");
     assert.equal(r.status.lawdb.source, "installed");
     // 再查一次：已是最新
     assert.equal((await k.inv("content.check", { kind: "lawdb" })).results[0].outcome, "up_to_date");

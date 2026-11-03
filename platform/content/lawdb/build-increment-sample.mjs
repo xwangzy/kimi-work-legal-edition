@@ -21,7 +21,8 @@ if (!existsSync(baseFile)) throw new Error("先运行 npm run build:lawdb 构建
 const key = ensureContentSigningKey(join(root, "content", "keys"));
 const baseManifest = JSON.parse(readFileSync(manifestPathFor(baseFile), "utf8"));
 
-// 增量内容（演示种子，如实标注）：新增《中华人民共和国仲裁法》（演示形态，非采集产物）
+// 增量内容（演示种子，如实标注）：为《中华人民共和国仲裁法》补入 2017 年修正本（演示形态，非采集产物）。
+// V10 第 36 批起随包种子已收 2025 年修订本（2026-03-01 施行）全文，增量补的是被它取代的旧版本（2026-03-01 起为“已修改”）
 const DELTA_LAW = {
   law_id: "law_arbitration",
   law_name: "中华人民共和国仲裁法",
@@ -33,8 +34,8 @@ const DELTA_LAW = {
       lsv_id: "lsv_arbitration_2017",
       promulgated: "2017-09-01",
       effective: "2018-01-01",
-      superseded: null,
-      effectiveness: "valid",
+      superseded: "2026-03-01",
+      effectiveness: "amended",
       total_articles: 80,
       gazette_issue: "示例期号（增量演示，非真实采集）",
       gazette_page: "0",

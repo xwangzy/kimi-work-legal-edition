@@ -136,8 +136,8 @@ test("B-7 款项核对：正文已采集的按段落与列项核对，没采集�
   const it = v("《民法典》第五百八十五条第一款第（二）项");
   assert.equal(it.state, CitationState.intercepted);
   assert.match(it.reasons[0]!, /item_out_of_range/);
-  // 第五百零一条正文没采集：只核到条，如实注明款项没核
-  const un = v("《民法典》第五百零一条第二款");
+  // 正文没采集的条：只核到条，如实注明款项没核（V10 第 36 批：民法典已收全文，改用只收了第三十八条的《律师法》）
+  const un = v("《律师法》第十条第二款");
   assert.equal(un.state, CitationState.supportPending);
   assert.ok(un.reasons.some((r) => r.startsWith("subdivision_unchecked:")));
   // 无书名号与全称都能查到法规库里的“民法典”
@@ -167,8 +167,8 @@ test("复核 R15B-02/03/05/14：版本括注能查到法规库；款项对不上
   assert.equal(sx.items[0]!.kind, "ok");
   assert.equal(sx.items[0]!.partial, true);
   assert.equal(sx.partial, 1);
-  // 款项正文未采集：核到、只核到条号
-  assert.equal(chk("《民法典》第五百零一条第二款").partial, 1);
+  // 款项正文未采集：核到、只核到条号（V10 第 36 批：民法典已收全文，改用《律师法》）
+  assert.equal(chk("《律师法》第十条第二款").partial, 1);
   // 适用时点没有有效版本：须人工核对（律师写明适用依据后可签发）
   const old = chk("《民法典》第五百零九条", "2019-01-01");
   assert.equal(old.items[0]!.kind, "outside");

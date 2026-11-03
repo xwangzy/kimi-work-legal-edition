@@ -87,11 +87,13 @@ test("law.get_article: as_of 选版本（律师法 2026 修正施行日 2026-09-
 test("law.get_article: 库外、无适用版本、条号不存在——一律 found:false，不给文本", () => {
   const cases = [
     { p: { law: "中华人民共和国证券法", article: 20, as_of: "2026-10-01" }, reason: "law_not_in_lawdb" },
-    { p: { law: "民诉法", article: "第八十五条", as_of: "2026-10-01" }, reason: "text_not_collected" },
+    // V10 第 36 批：民法典、民诉法等 9 部已收全文；“条号存在但正文未采集”改用只收了第三十八条的《律师法》2017 年版
+    { p: { law: "律师法", article: "第八十五条", as_of: "2026-08-31" }, reason: "article_not_exist" },
+    { p: { law: "律师法", article: "第十条", as_of: "2026-08-31" }, reason: "text_not_collected" },
     { p: { law: "某某不存在法", article: 1, as_of: "2026-10-01" }, reason: "law_not_in_lawdb" },
     { p: { law: "民法典", article: 585, as_of: "2020-06-01" }, reason: "no_applicable_version" },
     { p: { law: "民法典", article: 1261, as_of: "2026-10-01" }, reason: "article_not_exist" },
-    { p: { law: "民法典", article: 1, as_of: "2026-10-01" }, reason: "text_not_collected" },
+    { p: { law: "律师法", article: 1, as_of: "2026-08-31" }, reason: "text_not_collected" },
   ] as const;
   for (const c of cases) {
     const r = lawGetArticle(lawdb, c.p);
@@ -100,6 +102,18 @@ test("law.get_article: 库外、无适用版本、条号不存在——一律 fo
     assert.equal(r.text, undefined, "不补文本");
     assert.ok(!("text" in r));
   }
+});
+
+test("law.get_article: V10 第 36 批 9 部法规全文入库——民法典第一条、民诉法第一百二十二条、公司法第二百二十七条按官方文本返回", () => {
+  const a = lawGetArticle(lawdb, { law: "民法典", article: 1, as_of: "2026-10-01" });
+  assert.equal(a.found, true);
+  assert.match(a.text!, /^为了保护民事主体的合法权益/);
+  const b = lawGetArticle(lawdb, { law: "民事诉讼法", article: "第一百二十二条", as_of: "2026-10-01" });
+  assert.equal(b.found, true);
+  assert.match(b.text!, /起诉必须符合下列条件/);
+  const c = lawGetArticle(lawdb, { law: "公司法", article: 227, as_of: "2026-10-01" });
+  assert.equal(c.found, true);
+  assert.match(c.text!, /有限责任公司增加注册资本时，股东在同等条件下有权优先按照实缴的出资比例认缴出资/);
 });
 
 test("law.get_article: 来源未授权“引用原文 / 送入模型”即停（Source Registry §2.2）", () => {

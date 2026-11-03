@@ -377,17 +377,32 @@ export class Lawdb {
       const grams = Array.from({ length: term.length - 1 }, (_, i) => term.slice(i, i + 2));
       return grams.filter((g) => text.includes(g)).length / grams.length >= 0.6;
     };
-    const out: { law_name: string; lsv_id: string; article_no: number; effectiveness: string; effective: string; snippet: string; score: number }[] = [];
-    for (const r of rows) {
-      if (r.superseded || r.effectiveness !== "valid") continue;
-      if (lawFilter.size > 0 && !lawFilter.has(r.law_id)) continue;
+    // 排序（V10 第 36 批：9 部法规收全文后约 2,200 条，“保证期间”“经济补偿”这类词命中几十条；原先只按命中词数排、同分按法名与条号，
+    // 相关的条文被排到十条之后）：BM25 式打分——越少见的词权重越高（逆文档频率），同一词出现多次递减计分，长条文略降权；
+    // 只按两字片段覆盖到的长词记半分；命中词数仍是第一排序键（多个词都命中的条文优先）。
+    const pool = rows.filter((r) => !r.superseded && r.effectiveness === "valid" && (lawFilter.size === 0 || lawFilter.has(r.law_id)));
+    const avgLen = pool.reduce((n, r) => n + r.text.length, 0) / Math.max(1, pool.length);
+    const df = new Map(textTerms.map((t) => [t, pool.filter((r) => r.text.includes(t)).length]));
+    const idf = (t: string) => Math.log(1 + (pool.length - (df.get(t) ?? 0) + 0.5) / ((df.get(t) ?? 0) + 0.5));
+    const tf = (text: string, t: string) => text.split(t).length - 1;
+    const out: { law_name: string; lsv_id: string; article_no: number; effectiveness: string; effective: string; snippet: string; score: number; rank: number }[] = [];
+    for (const r of pool) {
       const matched = textTerms.filter((t) => covers(r.text, t));
       if (matched.length === 0) continue;
+      let rank = 0;
+      for (const t of matched) {
+        const f = tf(r.text, t);
+        const k = 1.2 * (0.25 + 0.75 * (r.text.length / avgLen));
+        rank += f > 0 ? idf(t) * ((f * 2.2) / (f + k)) : idf(t) * 0.5;
+      }
       const first = matched.map((t) => r.text.indexOf(t)).filter((i) => i >= 0).sort((a, b) => a - b)[0] ?? 0;
       const start = Math.max(0, first - 20);
-      out.push({ law_name: r.law_name, lsv_id: r.lsv_id, article_no: r.article_no, effectiveness: r.effectiveness, effective: r.effective, snippet: `${start > 0 ? "……" : ""}${r.text.slice(start, start + 100)}${start + 100 < r.text.length ? "……" : ""}`, score: matched.length });
+      out.push({ law_name: r.law_name, lsv_id: r.lsv_id, article_no: r.article_no, effectiveness: r.effectiveness, effective: r.effective, snippet: `${start > 0 ? "……" : ""}${r.text.slice(start, start + 100)}${start + 100 < r.text.length ? "……" : ""}`, score: matched.length, rank });
     }
-    return out.sort((a, b) => b.score - a.score || a.law_name.localeCompare(b.law_name) || a.article_no - b.article_no).slice(0, limit);
+    return out
+      .sort((a, b) => b.score - a.score || b.rank - a.rank || a.law_name.localeCompare(b.law_name) || a.article_no - b.article_no)
+      .slice(0, limit)
+      .map(({ rank: _rank, ...x }) => x);
   }
 
   topicArticle(lsvId: string, topic: string): number | null {
