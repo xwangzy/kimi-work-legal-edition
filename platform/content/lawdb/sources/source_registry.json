@@ -61,7 +61,7 @@
     "region": "全国",
     "firm_limit": null,
     "concurrency_limit": null,
-    "citation_requirement": "官方发布文本（著作权法第五条）。2026-11-03 采集 6 部全文，均与第二官方来源逐条比对（合伙企业法第四十八条两源差一个顿号，按 flk 文本）；劳动争议解释（一）第三十二条第一款已被废止，整条不入库；公报期号未采集。",
+    "citation_requirement": "官方发布文本（著作权法第五条）。2026-11-03 采集 6 部全文，均与第二官方来源逐条比对（合伙企业法第四十八条两源差一个顿号，按 flk 文本）；劳动争议解释（一）第三十二条第一款已被废止，整条不入库；同批另收民事诉讼法解释（2022 年修正）、城镇房屋租赁合同解释、买卖合同解释，均与法院网逐条比对一致；公报期号未采集。",
     "deletion_obligation": null,
     "acquired_at": "2026-11-03",
     "reliability": "official_text_collected",

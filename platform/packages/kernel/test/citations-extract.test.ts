@@ -124,6 +124,7 @@ test("B-7 名称归一：简称、去或加“中华人民共和国”、标题�
 test("B-7 款项核对：正文已采集的按段落与列项核对，没采集的只核到条并如实注明", () => {
   assert.deepEqual(articleStructure("第一款。\n（一）甲；\n（二）乙；\n第二款。"), [2, 0]);
   assert.deepEqual(articleStructure("只有一款。\n（G0 演示演绎文本：说明。）"), [0], "整段括号里的编者注不算款");
+  assert.deepEqual(articleStructure("下列案件，由破产案件受理法院管辖：\n(一)破产程序中有关债务人的诉讼案件；\n(二)其他案件。"), [2], "半角括号的项号同样按项计（V10：民事诉讼法解释官方文本）");
   const repo = (p: string) => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
   const signerPub = (JSON.parse(readFileSync(repo("content/keys/content-signing-dev.pub.json"), "utf8")) as { publicKeyPem: string }).publicKeyPem;
   const lawdb = openLawdb(repo("content/lawdb/dist/lawdb.sqlite"), { expectedSignerPubPem: signerPub });

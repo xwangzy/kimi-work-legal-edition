@@ -389,12 +389,13 @@ function verifyOne(lawdb: Lawdb, rc: RawCitation, asOf: string, topicHint: strin
 export function articleStructure(body: string): number[] {
   const out: number[] = [];
   for (const line of body.split(/\n+/).map((x) => x.trim()).filter(Boolean)) {
-    if (/^（[一二三四五六七八九十]{1,3}）/.test(line)) {
+    // 项号的括号全角、半角都认（V10 第 36 批：民事诉讼法解释的官方文本项号写作半角“(一)”，原先每一项被当成一款，引用“第（一）项”会误判超范围）
+    if (/^[（(][一二三四五六七八九十]{1,3}[）)]/.test(line)) {
       if (out.length === 0) out.push(0);
       out[out.length - 1]! += 1;
       continue;
     }
-    if (/^（[^）]*）$/.test(line)) continue;
+    if (/^[（(][^）)]*[）)]$/.test(line)) continue;
     out.push(0);
   }
   return out;
