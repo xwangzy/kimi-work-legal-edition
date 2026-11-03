@@ -120,6 +120,11 @@ export function createGateProvider(t: GateTransport): GateProvider {
     if (err.type === "kwl_gate_denied" && (res.status === 401 || res.status === 403)) {
       throw new DomainError("egress_blocked", `出站闸门拦截：${err.message ?? err.code ?? res.status}`, 422, { code: err.code ?? null });
     }
+    // 模型端点未配置（V11 界面走查 D1）：闸门的上游表在进程启动时就定了，重试不会变好——原先归“暂时不可用”，
+    // Agent 任务重试约 2.5 分钟后才失败，界面一直写“AI 服务暂时没有回应”、最后建议“稍后重新运行”。改为立即失败、写明要先配置
+    if (err.type === "kwl_gate_denied" && err.code === "model_upstream_unavailable") {
+      throw new DomainError("egress_blocked", `模型端点未配置：${err.message ?? "模型通道未配置"}（请先在设置里配置模型端点；不会切换到其他端点，重试不会成功）`, 422, { code: err.code, not_configured: true });
+    }
     if (res.status === 429 || res.status >= 500) {
       throw new DomainError("provider_unavailable", `模型通道 ${res.status}（${err.message ?? "限流/故障"}；交编排层有界退避，不切换端点）`, 503, {
         status: res.status,

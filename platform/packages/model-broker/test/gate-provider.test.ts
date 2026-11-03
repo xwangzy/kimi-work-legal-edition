@@ -18,7 +18,7 @@ const dir = realpathSync(mkdtempSync(join(tmpdir(), "kwl-gp-")));
 const socket = join(dir, "gate.sock");
 let hits = 0;
 const seen: { path: string; auth: string; body: any }[] = [];
-let mode: "ok" | "deny" | "busy" = "ok";
+let mode: "ok" | "deny" | "busy" | "unconfigured" = "ok";
 const srv: Server = createServer((req, res) => {
   hits += 1;
   let body = "";
@@ -32,6 +32,11 @@ const srv: Server = createServer((req, res) => {
       return;
     }
     if (mode === "busy") {
+      res.writeHead(503, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { type: "kwl_gate_denied", code: "seat_unavailable", message: "席位令牌未取得或已过期（联网后自动续期）：模型请求未发出" } }));
+      return;
+    }
+    if (mode === "unconfigured") {
       res.writeHead(503, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: { type: "kwl_gate_denied", code: "model_upstream_unavailable", message: "模型通道未配置" } }));
       return;
@@ -89,6 +94,9 @@ test("闸门拒绝 → egress_blocked；闸门 503 → provider_unavailable；�
   await assert.rejects(provider.chat(route, { model: "legal/k3", messages: [] }, { nonce: "n", clientIdempotencyId: "i", task }), (e: any) => e.code === "egress_blocked" && /当事人限制/.test(e.message));
   mode = "busy";
   await assert.rejects(provider.chat(route, { model: "legal/k3", messages: [] }, { nonce: "n", clientIdempotencyId: "i", task }), (e: any) => e.code === "provider_unavailable");
+  // V11 D1：模型端点未配置不是暂时故障——不归可重试的 provider_unavailable，立即失败并写明要先配置
+  mode = "unconfigured";
+  await assert.rejects(provider.chat(route, { model: "legal/k3", messages: [] }, { nonce: "n", clientIdempotencyId: "i", task }), (e: any) => e.code !== "provider_unavailable" && e.httpStatus < 500 && /未配置/.test(e.message) && e.detail?.not_configured === true);
   mode = "ok";
   gateUp = false;
   const before = hits;

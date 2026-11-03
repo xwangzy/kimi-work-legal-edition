@@ -62,6 +62,7 @@ import { basisCompleteOf, dataLevelOf, parseBasis, BASIS_KEYS } from "../egress/
 import type { EgressApprovalStore } from "../services/egress-approvals.ts";
 import type { QaChatService } from "../services/qa-chat.ts";
 import type { KapAgentClient, KapMatterPolicy } from "../executor/kap-agent-client.ts";
+import { deliverableRequest } from "../executor/executor.ts";
 import { createW1Api } from "./w1.ts";
 import { buildDiagnostics } from "../services/diagnostics.ts";
 import { nowIso } from "../db.ts";
@@ -1622,6 +1623,22 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (busy) throw new DomainError("conflict", `这个事项里还有一个任务在进行${busy.goal ? `（“${busy.goal}”）` : ""}。请等它完成，或在它的执行页取消后再开始`, 409, { run_id: busy.run_id });
       }
 
+      // 交付要求（V11 路由体检）：律师说明里点名的格式（“出 Word”“给我 Excel 表”“要 PDF”）与文书意图（勾选了 Word 材料 + 改原件的动作；
+      // 起草 / 出具一份文书）写进快照，执行器与方法的主交付物一起核对。原先这些只是一段文字，没有地方记录，也无从核对
+      let deliverReq: ReturnType<typeof deliverableRequest> = null;
+      let carryPrimary: string | null = null;
+      if (est.scenario === "a1.agent_task") {
+        const docIds = ((est.input.document_version_ids as string[] | undefined) ?? []).filter((x) => typeof x === "string").slice(0, 200);
+        const docxMaterials = docIds.filter((d) => /\.docx$/i.test(db.get<{ filename: string }>(`SELECT filename FROM document_versions WHERE document_version_id = ? AND matter_id = ?`, [d, matterId])?.filename ?? "")).length;
+        deliverReq = deliverableRequest(String(p?.goal ?? est.input.goal ?? ""), { docxMaterials });
+        // 追问继承上一轮没交出的主交付物（V11：执行页提示“可以在本任务里追问补出文书”，但追问的快照里没有方法与主交付物，补没补出都记“完成”）
+        if (followup) {
+          const pm = db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.primary_missing' ORDER BY seq DESC LIMIT 1`, [followup.followup_of])[0];
+          const pmp = pm ? parseJson<any>(pm.payload, {}) : null;
+          if (pmp && typeof pmp.primary === "string" && pmp.primary.trim()) carryPrimary = `${pmp.primary.trim().slice(0, 78)}${pmp.cause === "no_sheet_output" ? ".xlsx" : ".docx"}`;
+        }
+      }
+
       const runId = newId("run");
       db.run(
         `INSERT INTO runs (run_id, tenant_id, matter_id, scenario, workflow_version, status, idempotency_key,
@@ -1633,7 +1650,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           matterId,
           est.scenario,
           String(p.idempotency_key),
-          JSON.stringify({ ...est.input, estimate_id: est.estimate_id, goal: p?.goal, ...(title ? { title } : {}), topic_hint: p?.topic_hint ?? est.input.topic_hint, ...(runOptions ? { run_options: runOptions } : {}), ...(skill ? { skill, ...skillSnapshot(deps.skills, skill, primaryOutput) } : {}), ...(skillArgs ? { skill_args: skillArgs } : {}), ...(rulesSnap ? { review_rules: rulesSnap } : {}), ...(prefsSnap ? { writing_prefs: prefsSnap } : {}), ...(followup ?? {}) }),
+          JSON.stringify({ ...est.input, estimate_id: est.estimate_id, goal: p?.goal, ...(title ? { title } : {}), topic_hint: p?.topic_hint ?? est.input.topic_hint, ...(runOptions ? { run_options: runOptions } : {}), ...(skill ? { skill, ...skillSnapshot(deps.skills, skill, primaryOutput) } : {}), ...(skillArgs ? { skill_args: skillArgs } : {}), ...(rulesSnap ? { review_rules: rulesSnap } : {}), ...(prefsSnap ? { writing_prefs: prefsSnap } : {}), ...(followup ?? {}), ...(deliverReq ? { deliverable_request: deliverReq } : {}), ...(carryPrimary ? { carry_primary_output: carryPrimary } : {}) }),
           Math.min(est.points, budgetCap),
           Math.min(est.points, budgetCap),
           est.estimate_id,

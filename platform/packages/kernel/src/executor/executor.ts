@@ -907,6 +907,163 @@ const WORD_OUTPUT = /\.docx$/i;
 const SHEET_OUTPUT = /\.xlsx$/i;
 
 /**
+ * 律师对交付件的要求（V11 路由体检）：律师说明里点名的格式与“要的是文书”的意图，发起时写进任务快照（deliverable_request），
+ * 结算时与方法的主交付物一起核对。此前律师写“出 Word”“给我 Excel 表”“要 PDF”只是一段文字，没有任何地方记录或核对：
+ * 方法主交付物是 Excel 的（回稿重审、金额测算……）交了表就记“完成”；自由描述没加载方法的任务根本不核对。
+ */
+export type DeliverableFormat = "docx" | "xlsx" | "pdf";
+export interface DeliverableRequest {
+  /** 律师点名要的格式（“出 Word”“给我 Excel 表”“导出 PDF”）。 */
+  formats: DeliverableFormat[];
+  /** 律师点名不要、或“只要”别的格式时排除的格式（“不要 Excel”“只要 Word”）。 */
+  not: DeliverableFormat[];
+  /** 文书意图：revise = 在已上传的 Word 上按意见改；draft = 起草、出具一份文书；没有为 null。 */
+  document: "revise" | "draft" | null;
+}
+
+/** 格式词：只认文件格式本身的叫法（“表格”“一张表”可能是 Word 里的表，不算点名 Excel）。 */
+const FORMAT_WORDS: readonly [DeliverableFormat, RegExp][] = [
+  ["docx", /(?<![A-Za-z])(?:word|docx)(?![A-Za-z])/gi],
+  ["xlsx", /(?<![A-Za-z])(?:excel|xlsx)(?![A-Za-z])|电子表格/gi],
+  ["pdf", /(?<![A-Za-z])pdf(?![A-Za-z])/gi],
+];
+/** 句读（不含顿号：“Word 意见书、Excel 清单”是同一句里并列的要求）。 */
+const CLAUSE_END = /[，。；！？,;!?\n]/;
+/** 格式词紧前是“出 / 给我 / 要 / 做成 / 导出 / 转成……（+ 一份 / 一张 / 版）”：律师在要这个格式。 */
+const ASK_FORMAT_BEFORE = /(?:出|给我|给|要|需要|做成|生成|导出|输出|交付|交|形成|整理成|整理为|存成|存为|转成|转为|写成|改成|改为|提供|发我|做)\s*(?:一份|一个|一张|一版|份|个|张|版)?\s*$/;
+/** “以 / 用 / 按 Word 格式交付”一类：格式词后面跟“格式 / 版式 / 文件 + 交付动词”。 */
+const VIA_FORMAT = { before: /(?:以|用|按)\s*$/, after: /^\s*(?:格式|版式|文件|文档)\s*(?:交付|输出|提交|给|出|发)/ };
+/** 并列：前一个点名的格式后面“和 / 及 / 与 / 并附 / 另附 / 、”接着的格式同样算点名。 */
+const AND_BEFORE = /^[^，。；！？,;!?\n]{0,8}?(?:和|及|与|以及|、|加上?|并附|另附|附)\s*(?:一份|一张|份|张)?\s*$/;
+const NOT_BEFORE = /(?:不要|不用|无需|不需要|别|勿|不必|而不是|不是)[^，。；！？,;!?\n]{0,4}$/;
+const ONLY_BEFORE = /(?:只要|只需|只出|只给|仅需|仅要|仅出)[^，。；！？,;!?\n]{0,4}$/;
+
+/** 改原件的动作（文书意图 revise）：先去掉审查、比对成果的叫法（“修改建议”“改了哪些”不是要我方改原件）。 */
+const REVISE_NOUNS = /修改建议|修订建议|修改意见书|修改意见|修订意见|修改说明|修订说明|修改对照表?|修改情况|修改了(?:什么|哪些|哪几处|几处)|改了(?:什么|哪些|哪几处|几处)/g;
+const REVISE_VERBS = /修改|修订|改成|改为|改到|改好|改回|改掉|改一下|改写|删去|删除|删掉|增加一款|增加一条|加一款|加一条|增补|替换为|修订稿|清洁稿/;
+/** 起草、出具一份文书（文书意图 draft）：动词后面十余字内是文书名，且不是“……清单 / 表 / 目录 / 明细”。 */
+const DRAFT_DOC = /(?:起草|草拟|拟定|拟写|拟一份|撰写|写一份|写份|写个|写一封|出具|出一份|出份|做一份|准备一份|形成一份|制作一份|整理一份|整理出一份)[^，。；！？,;!?\n]{0,14}?(合同|协议|意见书|法律意见|起诉状|诉状|答辩状|答辩书|上诉状|申请书|律师函|催告函|函件|通知书|通知函|决议|备忘录|代理词|质证意见|顾问答复|报告|章程|承诺函|委托书|声明书|纪要|提纲|方案|文书)([^，。；！？,;!?\n]{0,8})/g;
+const TABLE_NOUN = /清单|表|目录|明细|矩阵|台账/;
+
+/**
+ * 从律师的说明里读出交付要求（纯函数，规则写死、不联网、不猜具体文书名）。只认三类结构化信号：
+ * 1. 点名的格式：格式词紧前是要的动作（“出 Word”“给我 Excel 表”“导出 PDF”“以 Word 格式交付”），或与前一个点名的格式并列；
+ *    “不要 / 无需……”记为排除，“只要……”排除其余格式；只是提到材料的格式（“上传的 Word 合同”“用 Excel 里的数据”）不算。
+ * 2. 改原件：事项里有已上传的 Word（docxMaterials > 0）且说明里有改原件的动作（修改、改为、删去、出修订稿……；“修改建议”“改了哪些”不算）。
+ * 3. 起草文书：起草 / 出具 / 写一份 + 文书名（合同、协议、意见书、起诉状……），文书名后面是“清单 / 表 / 目录”的不算。
+ * 三类都没有返回 null（只问问题的任务不加要求）。
+ */
+export function deliverableRequest(text: string, o: { docxMaterials?: number } = {}): DeliverableRequest | null {
+  const t = String(text ?? "").slice(0, 8000);
+  const formats = new Set<DeliverableFormat>();
+  const not = new Set<DeliverableFormat>();
+  const hits: { f: DeliverableFormat; at: number; end: number }[] = [];
+  for (const [f, re] of FORMAT_WORDS) for (const m of t.matchAll(re)) hits.push({ f, at: m.index!, end: m.index! + m[0].length });
+  hits.sort((a, b) => a.at - b.at);
+  let prevAsked: { end: number } | null = null;
+  for (const h of hits) {
+    let i = h.at;
+    while (i > 0 && !CLAUSE_END.test(t[i - 1]!)) i--;
+    const before = t.slice(i, h.at);
+    const after = t.slice(h.end, h.end + 12);
+    if (NOT_BEFORE.test(before)) {
+      not.add(h.f);
+      continue;
+    }
+    const only = ONLY_BEFORE.test(before);
+    const asked =
+      only ||
+      ASK_FORMAT_BEFORE.test(before) ||
+      (VIA_FORMAT.before.test(before) && VIA_FORMAT.after.test(after)) ||
+      (prevAsked !== null && prevAsked.end >= h.at - 12 && AND_BEFORE.test(t.slice(prevAsked.end, h.at)));
+    if (!asked) continue;
+    formats.add(h.f);
+    if (only) for (const [g] of FORMAT_WORDS) if (g !== h.f && !(h.f === "pdf" && g === "docx")) not.add(g);
+    prevAsked = h;
+  }
+  for (const f of formats) not.delete(f);
+  let document: DeliverableRequest["document"] = null;
+  if ((o.docxMaterials ?? 0) > 0 && REVISE_VERBS.test(t.replace(REVISE_NOUNS, "　"))) document = "revise";
+  else {
+    for (const m of t.matchAll(DRAFT_DOC)) {
+      if (!TABLE_NOUN.test(m[2] ?? "")) {
+        document = "draft";
+        break;
+      }
+    }
+  }
+  if (formats.size === 0 && not.size === 0 && !document) return null;
+  const order: DeliverableFormat[] = ["docx", "xlsx", "pdf"];
+  return { formats: order.filter((f) => formats.has(f)), not: order.filter((f) => not.has(f)), document };
+}
+
+/** 快照里的交付要求（发起时写入；形状不对的当没有）。纯函数。 */
+export function deliverableRequestOf(v: unknown): DeliverableRequest | null {
+  if (!v || typeof v !== "object") return null;
+  const x = v as Record<string, unknown>;
+  const fmts = (a: unknown) => (Array.isArray(a) ? a.filter((f): f is DeliverableFormat => f === "docx" || f === "xlsx" || f === "pdf") : []);
+  const document: DeliverableRequest["document"] = x.document === "revise" || x.document === "draft" ? x.document : null;
+  const r: DeliverableRequest = { formats: fmts(x.formats), not: fmts(x.not), document };
+  return r.formats.length || r.not.length || r.document ? r : null;
+}
+
+/**
+ * 本任务结算时要核对的交付件（文件名，.docx 或 .xlsx；按顺序报第一个缺的）。纯函数。
+ * - 方法的主交付物（场景卡指定或助手加载的方法）照常要求；律师点名不要这种格式（“不要 Excel”“只要 Word”）时不再要求；
+ * - 追问继承的上一轮没交出的主交付物（carried）同样要求；
+ * - 律师点名的格式是附加要求：Word 或 PDF（PDF 由 Word 定稿后导出）→ 要一份 Word 文书；Excel → 要一张表；
+ * - 律师要的是文书（改原件 / 起草）→ 要一份 Word 文书（律师点名不要 Word 的除外）。
+ * 同一种格式只核对一次，名称取方法或上一轮的叫法，没有时写“Word 文书”“Excel 表”。
+ */
+export function requiredDeliverables(methodPrimary: string | null, req: DeliverableRequest | null, carried: string | null = null): string[] {
+  const kind = (x: string | null) => (x && WORD_OUTPUT.test(x) ? "docx" : x && SHEET_OUTPUT.test(x) ? "xlsx" : null);
+  const notWord = !!req?.not.includes("docx");
+  const notSheet = !!req?.not.includes("xlsx");
+  const out: string[] = [];
+  const add = (x: string) => {
+    if (!out.some((o) => kind(o) === kind(x))) out.push(x);
+  };
+  for (const x of [methodPrimary, carried]) {
+    const k = kind(x);
+    if ((k === "docx" && !notWord) || (k === "xlsx" && !notSheet)) add(x!);
+  }
+  const wordName = [methodPrimary, carried].find((x) => kind(x) === "docx") ?? "Word 文书.docx";
+  const sheetName = [methodPrimary, carried].find((x) => kind(x) === "xlsx") ?? "Excel 表.xlsx";
+  if (req?.formats.includes("docx") || req?.formats.includes("pdf") || (req?.document && !notWord)) add(wordName);
+  if (req?.formats.includes("xlsx")) add(sheetName);
+  return out;
+}
+
+/** 按顺序核对交付件，返回第一个缺的说明；都交了（或没有要核对的）返回 null。纯查询。 */
+export function firstMissingDeliverable(db: KernelDb, runId: string, required: readonly string[]): { primary: string; cause: string; note: string } | null {
+  for (const r of required) {
+    const miss = primaryDeliverableMissing(db, runId, r);
+    if (miss) return miss;
+  }
+  return null;
+}
+
+/**
+ * 交付要求写给助手的一句（与核对同一来源）：点名的格式、不要的格式、文书意图、追问要补的上一轮主交付物。没有要求返回空串。
+ * 随整段提示词令牌化（用例核对不被姓名规则误认）。
+ */
+export function deliverablePromptLine(req: DeliverableRequest | null, carried: string | null = null): string {
+  const NAMES: Record<DeliverableFormat, string> = {
+    docx: "Word 文书（用 docx.render_report 生成；在已上传的 Word 上修改用 docx.revise）",
+    xlsx: "Excel 表（用 xlsx.render_table 生成）",
+    pdf: "PDF（照出 Word 文书，并在最终答复里告诉律师定稿后在成果上“导出 PDF”，你不能直接生成 PDF）",
+  };
+  const NOT: Record<DeliverableFormat, string> = { docx: "Word 文书", xlsx: "Excel 表", pdf: "PDF" };
+  const parts: string[] = [];
+  if (req?.formats.length) parts.push(`律师点名要的交付格式：${req.formats.map((f) => NAMES[f]).join("；")}`);
+  if (req?.not.length) parts.push(`律师说不要：${req.not.map((f) => NOT[f]).join("、")}`);
+  if (req?.document === "revise" && !req.not.includes("docx")) parts.push("律师要在已上传的 Word 文书上按意见修改：最终交付是用 docx.revise 出的修订稿与清洁稿，表格或文字说明不能代替");
+  if (req?.document === "draft" && !req.not.includes("docx")) parts.push("律师要的是一份文书：最终交付必须是 Word 文书（docx.render_report），表格或文字说明不能代替，表格只作附件");
+  if (carried) parts.push(`上一轮没有交出《${carried.replace(/\.(docx|xlsx)$/i, "")}》，本轮须补出（${SHEET_OUTPUT.test(carried) ? "用 xlsx.render_table" : "用 docx.render_report"}）`);
+  return parts.length ? `【交付要求】${parts.join("；")}。任务结束时按这些要求核对，没有交出的不记完成。\n` : "";
+}
+
+/**
  * 律师直接描述的任务（没从场景卡指定方法）先选方法（第 35 批真实走查 N3：“审查……出一份审查意见书”自由描述后，助手没有加载
  * 合同审查方法，方法里的审查步骤、输出规格与主交付物核对都没生效；同批 N2 自己加载了修改文书方法——是否加载全凭模型临场决定）。
  */
@@ -934,12 +1091,16 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   // 卡片字段作为方法参数显式写出（v9.4 S1 §6.2 第 10 项）；参数值随整段提示词一起令牌化
   const skillArgs = skill && inputSnapshot(run)?.skill_args && typeof inputSnapshot(run).skill_args === "object" ? (inputSnapshot(run).skill_args as Record<string, string>) : null;
   const primaryOutput = skill && typeof inputSnapshot(run)?.skill_primary_output === "string" ? String(inputSnapshot(run).skill_primary_output) : null;
+  // 交付要求（V11）：律师说明里点名的格式与文书意图（发起时写进快照），追问继承的上一轮没交出的主交付物；与方法的主交付物一起核对
+  const deliverReq = deliverableRequestOf(inputSnapshot(run)?.deliverable_request);
+  const carried = typeof inputSnapshot(run)?.carry_primary_output === "string" && /\.(docx|xlsx)$/i.test(inputSnapshot(run).carry_primary_output) ? String(inputSnapshot(run).carry_primary_output).slice(0, 84) : null;
   const methodLine = methodPromptLine(skill, skillArgs, primaryOutput);
+  const deliverLine = deliverablePromptLine(deliverReq, carried);
   // 本事项审查要点（发起时快照的那一版）与律师本人的写作偏好（v9.4 第 22 批，C1 #21、#29）：随整段提示词令牌化
   const rulesSnap = inputSnapshot(run)?.review_rules;
   const rulesBlock = rulesSnap && typeof rulesSnap === "object" && Array.isArray(rulesSnap.rules) ? rulesPromptBlock(rulesSnap as RulesSnapshot) : "";
   const prefsLine = prefsPromptLine(inputSnapshot(run)?.writing_prefs ?? null);
-  const fullGoal = agentGoalPrompt({ ...ctxM, goal, methodLine, rulesBlock, prefsLine });
+  const fullGoal = agentGoalPrompt({ ...ctxM, goal, methodLine: deliverLine ? `${methodLine || FREEFORM_METHOD_LINE}${deliverLine}` : methodLine, rulesBlock, prefsLine });
 
   const materials = await ctx.step("load_materials", () => stepLoadMaterials(ctx, runId, attemptId));
   // Agent 工作区即令牌化视图（v9 第 02 篇 §8.4）：材料快照、文件名与目标都是事项令牌形态；代码在令牌数据上运行；
@@ -960,7 +1121,8 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
     : materials.map((m, i) => ({ filename: withRole(db, m.document_version_id, m.filename), text: replaceDirectIdentifiers(bodies[i]!).text }));
   // 追问（集成核查 P1-1）：在上一次运行的会话上继续，引擎已有完整上下文，只送律师的追问与一句边界提醒
   const continueSession = typeof inputSnapshot(run)?.continue_session_id === "string" ? String(inputSnapshot(run).continue_session_id) : null;
-  const promptText = continueSession ? agentFollowUpPrompt(goal, methodLine, materials.length > 0) : fullGoal;
+  // 追问也带上交付要求（V11：原先追问只有方法那一句，从首页自由描述发起的任务追问时连这一句也没有，“补出文书”没有任何约束）
+  const promptText = continueSession ? agentFollowUpPrompt(goal, `${methodLine}${deliverLine}`, materials.length > 0) : fullGoal;
   const goalSent = tz ? tz.tokenize(run.matter_id, promptText).text : promptText;
 
   // 检查点（审查 R-04）：成果已入库（上次尝试在结算前中断）→ 不重跑 Agent，按检查点里记录的终态与成果结算；
@@ -969,6 +1131,17 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   const assertNoUnresolved = () => {
     const unresolved = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM tool_operations WHERE run_id = ? AND status IN ('pending','unknown')`, [runId])!;
     if (unresolved.n > 0) throw new NeedsReconciliation(`${unresolved.n} 个副作用工具调用的结果不明（outbox pending/unknown）`);
+  };
+  // V11：方法的主交付物之外，律师点名的格式、文书意图与追问继承的主交付物一起核对（requiredDeliverables）
+  const expectedPrimary = () => requiredDeliverables(primaryOutput ?? (!skill && ctx.deps.skillPrimaryOf ? loadedPrimaryOutput(db, runId, ctx.deps.skillPrimaryOf) : null), deliverReq, carried);
+  // 主交付物核对（第 28 批）：文书类方法没交出任何 Word 文书时不记“完成”——真实走查里起诉状任务只交了两份表格却显示“已完成”
+  // 律师直接描述任务（没从场景卡指定方法）时按助手自己加载的方法核对（第 34 批：原先这类任务没有任何主交付物核对）
+  const settleChecked = async (outcomeStatus: "succeeded" | "partial", remaining: string[]): Promise<void> => {
+    const missing = outcomeStatus === "succeeded" ? firstMissingDeliverable(db, runId, expectedPrimary()) : null;
+    if (missing) appendEvent(ctx.deps, runId, attemptId, AGENT_PRIMARY_MISSING_SEQ, "agent.primary_missing", { primary: missing.primary, cause: missing.cause });
+    const finalStatus = outcomeStatus === "partial" || missing ? RunStatus.partial : RunStatus.succeeded;
+    const finalRemaining = missing ? [...remaining, missing.note] : remaining;
+    await ctx.step("settle", () => stepSettle(ctx, runId, attemptId, finalStatus, finalRemaining));
   };
   const stored = db.get<{ result_json: string | null }>(`SELECT result_json FROM step_checkpoints WHERE run_id = ? AND step_name = 'agent_store_draft'`, [runId]);
   if (stored) {
@@ -989,7 +1162,8 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
       });
     if (!valid) throw new NeedsReconciliation("成果检查点缺失或与已入库成果不一致：不默认成功，转人工对账");
     assertNoUnresolved();
-    await ctx.step("settle", () => stepSettle(ctx, runId, attemptId, ck!.status === "partial" ? RunStatus.partial : RunStatus.succeeded, ck!.remaining));
+    // V11：按检查点结算（成果已入库、结算前中断后恢复）同样核对主交付物——原先这条路径直接按宿主的终态记“完成”，跳过了核对
+    await settleChecked(ck!.status, Array.isArray(ck!.remaining) ? ck!.remaining : []);
     return;
   }
 
@@ -1018,7 +1192,6 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   let lastTick = startedAt;
   let finished = false;
   // 到工作时限时主交付物已交出（第 35 批真实走查 N1：《股权转让协议》已交出 5 版，任务仍记“已超时、需要重试”）→ 按部分完成结算
-  const expectedPrimary = () => primaryOutput ?? (!skill && ctx.deps.skillPrimaryOf ? loadedPrimaryOutput(db, runId, ctx.deps.skillPrimaryOf) : null);
   const settleDelivered = async (reason: string | null): Promise<boolean> => {
     const delivered = deliveredBeforeDeadline(db, runId, expectedPrimary(), timeoutMs);
     if (!delivered) return false;
@@ -1180,14 +1353,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
 
   // 成果已入库（检查点在案）；本次尝试中若有副作用调用结果不明 → 转对账，对账后 runs.retry 按检查点结算、不重跑 Agent
   assertNoUnresolved();
-  // 主交付物核对（第 28 批）：文书类方法没交出任何 Word 文书时不记“完成”——真实走查里起诉状任务只交了两份表格却显示“已完成”
-  // 律师直接描述任务（没从场景卡指定方法）时按助手自己加载的方法核对（第 34 批：原先这类任务没有任何主交付物核对）
-  const expected = expectedPrimary();
-  const missing = outcomeStatus === "succeeded" ? primaryDeliverableMissing(db, runId, expected) : null;
-  if (missing) appendEvent(ctx.deps, runId, attemptId, AGENT_PRIMARY_MISSING_SEQ, "agent.primary_missing", { primary: missing.primary, cause: missing.cause });
-  const finalStatus = outcomeStatus === "partial" || missing ? RunStatus.partial : RunStatus.succeeded;
-  const finalRemaining = missing ? [...remaining, missing.note] : remaining;
-  await ctx.step("settle", () => stepSettle(ctx, runId, attemptId, finalStatus, finalRemaining));
+  await settleChecked(outcomeStatus, remaining);
 }
 
 /**
@@ -1224,8 +1390,10 @@ const AGENT_DEADLINE_DELIVERED_SEQ = 9_002;
  * 到工作时限时本任务已交出的文书或表格（第 35 批真实走查 N1）：方法有主交付物的，须主交付物已登记；没有的，登记了任一 Word 文书或 Excel 表即可。
  * 都没有返回 null（照常记超时）。返回给律师的说明写清“文书已交出、收尾没完成”；limitMs 是本次运行实际下发的工作时限。纯查询。
  */
-export function deliveredBeforeDeadline(db: KernelDb, runId: string, primaryOutput: string | null, limitMs: number = AGENT_WORK_LIMIT_MS): { files: string[]; note: string } | null {
-  if (primaryOutput && (WORD_OUTPUT.test(primaryOutput) || SHEET_OUTPUT.test(primaryOutput)) && primaryDeliverableMissing(db, runId, primaryOutput)) return null;
+export function deliveredBeforeDeadline(db: KernelDb, runId: string, primaryOutput: string | readonly string[] | null, limitMs: number = AGENT_WORK_LIMIT_MS): { files: string[]; note: string } | null {
+  // V11：要核对的交付件可以有几份（方法主交付物 + 律师点名的格式），都交出了才算
+  const required = primaryOutput === null ? [] : typeof primaryOutput === "string" ? [primaryOutput] : primaryOutput;
+  if (required.some((p) => (WORD_OUTPUT.test(p) || SHEET_OUTPUT.test(p)) && primaryDeliverableMissing(db, runId, p))) return null;
   const rows = db.all<{ filename: string }>(
     `SELECT filename FROM artifact_versions WHERE run_id = ? AND ((${WORD_ARTIFACT_SQL}) OR (${SHEET_ARTIFACT_SQL})) ORDER BY created_at`,
     [runId],
@@ -1382,7 +1550,11 @@ export function verifyOfficeArtifact(filename: string, read: () => Buffer): void
     throw new DomainError("internal", `成果 ${filename} 是无法核验外取引用的格式：拒绝登记`, 500);
   }
   if (/\.(docx|docm|dotx|dotm|xlsx|xlsm|xltx|xltm|pptx|pptm|potx|ppsx|ppsm)$/i.test(filename)) {
-    const found = findExternalRefs(readZipEntries(read()));
+    const entries = readZipEntries(read());
+    // V11：扩展名与内容一致（受限命令行写出的“合同.docx”可能是改了名的表格或别的压缩包——打不开，却曾被当作已交出 Word 文书）
+    const main = /\.(docx|docm|dotx|dotm)$/i.test(filename) ? "word/document.xml" : /\.(xlsx|xlsm|xltx|xltm)$/i.test(filename) ? "xl/workbook.xml" : "ppt/presentation.xml";
+    if (!entries.has(main)) throw new DomainError("internal", `成果 ${filename} 不是能打开的 Office 文件（缺 ${main}）：拒绝登记`, 500);
+    const found = findExternalRefs(entries);
     if (found.length > 0) throw new DomainError("internal", `成果 ${filename} 仍含打开时会外取的引用（${[...new Set(found.map((f) => f.kind))].join("、")}）：拒绝登记`, 500);
   }
 }

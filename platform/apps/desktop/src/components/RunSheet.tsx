@@ -75,6 +75,15 @@ export async function prepareStart(matter: Matter, value: ComposerValue, o: { sk
   return { matter, value, estimate: estimate as PendingStart["estimate"], ...(o.skill ? { skill: o.skill } : {}), ...(o.label ? { label: o.label } : {}), ...(o.skillArgs ? { skillArgs: o.skillArgs } : {}), ...(o.reviewRules !== undefined ? { reviewRules: o.reviewRules } : {}), ...(o.primaryOutput ? { primaryOutput: o.primaryOutput } : {}), ...(o.docNames ? { docNames: o.docNames } : {}) };
 }
 
+/**
+ * 重新估价时沿用的发起选项（V11 路由体检）：原先这里逐项手抄，漏了场景卡指定的主交付物——“依据待确认”原地记录同意、或核对疑似姓名后重新估价，
+ * 发起时不再带 primary_output，内核退回方法缺省的第一项（尽调“发现与报告”卡变成《尽调清单》Excel、修订说明“致对方”变成致客户版）。
+ * 一处取齐，新增选项不会再漏。
+ */
+export function startOptionsOf(p: PendingStart): NonNullable<Parameters<typeof prepareStart>[2]> {
+  return { ...(p.skill ? { skill: p.skill } : {}), ...(p.label ? { label: p.label } : {}), ...(p.skillArgs ? { skillArgs: p.skillArgs } : {}), ...(p.reviewRules !== undefined ? { reviewRules: p.reviewRules } : {}), ...(p.primaryOutput ? { primaryOutput: p.primaryOutput } : {}), ...(p.docNames ? { docNames: p.docNames } : {}) };
+}
+
 export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -92,7 +101,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   const reestimate = async () => {
     setErr("");
     try {
-      setCur(await prepareStart(matter, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}), ...(cur.reviewRules !== undefined ? { reviewRules: cur.reviewRules } : {}), ...(cur.docNames ? { docNames: cur.docNames } : {}) }));
+      setCur(await prepareStart(matter, value, startOptionsOf(cur)));
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -107,7 +116,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
     try {
       await api.updateMatter(matter.matter_id, { basis });
       notifyDataChanged();
-      const fresh = await prepareStart({ ...matter, basis }, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}), ...(cur.reviewRules !== undefined ? { reviewRules: cur.reviewRules } : {}), ...(cur.docNames ? { docNames: cur.docNames } : {}) });
+      const fresh = await prepareStart({ ...matter, basis }, value, startOptionsOf(cur));
       setCur(fresh);
       if (fresh.estimate.data_where?.start_blocked) {
         setErr(afterConsentNotice(fresh.estimate.data_where.block_kind, sensitive));
