@@ -95,6 +95,13 @@ export interface GatewayOptions {
   quota?: QuotaSource;
   tenantConcurrency?: number;
   queueTimeoutMs?: number;
+  /**
+   * 上游超时（V10 第 36 批真实走查 V17：一次请求 965 秒无响应，Agent 用完 40 分钟工作时限，律师只看到“已超时”）：
+   * 收到响应头前（流式缺省 120 秒、非流式 600 秒）与流式两块之间（缺省 120 秒）没有动静即中止上游，返回 504 / 断开流，让 Agent 重试。
+   * 实测中软 MaaS 流式首字节约 5 秒、块间隔不到 1 秒。
+   */
+  upstreamHeaderTimeoutMs?: number;
+  upstreamIdleTimeoutMs?: number;
   maxBodyBytes?: number;
   /** 内容安全（v9.2 R11）：未给出 = 不检查。 */
   contentSafety?: ContentSafety;
@@ -365,13 +372,36 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
     let usage: { input: number; output: number; cached: number } | null = null;
     let finishReason: string | null = null;
     let interrupted = false;
+    // 上游超时：先等响应头，收到后改为流式块间隔；到时只中止上游（ac），按 timedOut 区分于客户端断开
+    let timedOut: "header" | "idle" | null = null;
+    const headerMs = o.upstreamHeaderTimeoutMs ?? (body.stream === true ? 120_000 : 600_000);
+    const idleMs = o.upstreamIdleTimeoutMs ?? 120_000;
+    let upTimer: ReturnType<typeof setTimeout> = setTimeout(() => {
+      timedOut = "header";
+      ac.abort();
+    }, headerMs);
+    const bumpIdle = () => {
+      clearTimeout(upTimer);
+      upTimer = setTimeout(() => {
+        timedOut = "idle";
+        ac.abort();
+      }, idleMs);
+    };
     let safetyOut: SafetyVerdict | null = null;
     let blockedOut: string | null = null;
     try {
       const upstreamBody = { ...body, model: route!.upstreamModel, ...(body.stream === true ? { stream_options: { ...(body.stream_options as object | undefined), include_usage: true } } : {}) };
-      const up = await o.provider.chat(upstreamBody, { requestId, signal: ac.signal });
+      let up: Awaited<ReturnType<ChatProvider["chat"]>>;
+      try {
+        up = await o.provider.chat(upstreamBody, { requestId, signal: ac.signal });
+      } catch (e) {
+        if (timedOut === "header") throw new GwError(504, "upstream_timeout", `模型服务 ${Math.round(headerMs / 1000)} 秒内没有响应，已中止本次请求（可重试）`);
+        throw e;
+      }
       status = up.status;
       const streaming = body.stream === true;
+      if (streaming) bumpIdle();
+      else clearTimeout(upTimer);
       // 内容安全：非流式响应先在内存里检查再发出；流式逐块检查，命中拦截类别即以错误事件结束
       const holdForCheck = !!cs && !streaming && up.status === 200;
       if (!holdForCheck) res.writeHead(up.status, { ...up.headers, "x-kwl-gateway-request-id": requestId });
@@ -386,7 +416,19 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
         new TextEncoder().encode(`data: ${JSON.stringify({ error: { type: "kwl_gateway", code: "content_blocked_output", message: `${why}（${cat}），已中止` } })}\n\n`);
       const held: Uint8Array[] = [];
       let heldBytes = 0;
-      for await (const c of up.body) {
+      const chunks = async function* (): AsyncGenerator<Uint8Array> {
+        try {
+          for await (const c of up.body) {
+            if (streaming) bumpIdle();
+            yield c;
+          }
+        } catch (e) {
+          // 块间隔超时：上游流被中止，按客户端可见的中断处理（下方 interrupted → 断开），计量记原因
+          if (timedOut === "idle") return;
+          throw e;
+        }
+      };
+      for await (const c of chunks()) {
         const piece = dec.decode(c, { stream: true });
         tail = (tail + piece).slice(-65_536);
         if (holdForCheck) {
@@ -451,13 +493,15 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
         finishReason = extractFinishReason(tail);
       }
     } finally {
+      clearTimeout(upTimer);
       release();
       if (status === null) upstreamCounts.error += 1;
       else if (status === 429) upstreamCounts["429"] += 1;
       else if (status >= 200 && status < 300) upstreamCounts["2xx"] += 1;
       else if (status >= 400 && status < 500) upstreamCounts["4xx"] += 1;
       else upstreamCounts["5xx"] += 1;
-      const actual = usage ? points(usage.input + usage.output, route!) : status === 200 ? reserved : 0;
+      // 上游超时是服务方的问题：有 usage 按实际计，没有就不扣（不按预占收）
+      const actual = usage ? points(usage.input + usage.output, route!) : status === 200 && !timedOut ? reserved : 0;
       quota.settle(hold, seat.sid, actual);
       o.meter.append({
         at: new Date().toISOString(),
@@ -476,7 +520,9 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
         latencyMs: Date.now() - started,
         finishReason,
         upstreamModel: route!.upstreamModel,
-        reason: blockedOut
+        reason: timedOut
+          ? `upstream_${timedOut}_timeout`
+          : blockedOut
           ? `content_blocked_output:${blockedOut}`
           : usage
             ? interrupted

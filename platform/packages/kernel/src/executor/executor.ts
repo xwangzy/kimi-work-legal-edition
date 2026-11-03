@@ -1050,7 +1050,8 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
           }
           throw new RunTerminal("timed_out", `Agent 任务总时长超过上限（${cap}）仍未收尾`);
         }
-        if (now > pollDeadline) throw new RunTerminal("timed_out", "Agent 任务超过工作时限仍未收尾（宿主未在时限内上报终态；等待律师的时间不计）");
+        // 给律师看的说明（V10 真实走查 V17：原先写“宿主未在时限内上报终态”，律师看不懂、不知道下一步）
+        if (now > pollDeadline) throw new RunTerminal("timed_out", "到了工作时限仍没有做完（等你确认或回答的时间不计在内），这次没有交出文书。可以在本页重新发起；多次出现时，可能是 AI 服务响应慢，稍后再试");
         const p = await agentClient.poll(identity, taskId, cursor);
         cursor = p.next_cursor;
         for (const ev of p.events) {
