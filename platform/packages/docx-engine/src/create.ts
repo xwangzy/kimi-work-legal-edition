@@ -2,7 +2,7 @@
  * 生成新 DOCX（意见书/报告/清洁稿模板）：带律所版式（house-style.ts：A4、字体字号、标题居中、页码、落款），Word/WPS 可开。
  * 函头与律所模板在下载 / 导出时按本机的“文书版式”设置套上（成果登记的字节不含函头）。
  */
-import { alignSignature, createStyledDocx, type DocBlock } from "./house-style.ts";
+import { alignSignature, createStyledDocx, isPartyDocument, type DocBlock } from "./house-style.ts";
 
 /** 节内表格（第 32 批：合同价款表、设备清单、证据目录等）：画在本节段落之后，首行为表头。 */
 export interface ReportTable {
@@ -24,16 +24,34 @@ const STRUCTURE_HEADING = /^(落款|落款与联系方式|署名|签署|签字|�
 /** 标题末尾的“（草稿）”不印进正文标题（草稿状态在文件名、文件属性与成果状态里；律师递交前不必再手工删）。 */
 const DRAFT_SUFFIX = /\s*[（(]草稿[）)]\s*$/;
 
+/**
+ * 节内小标题（V10 第 36 批；V9.6 文档工程审查 B-01：意见书 18 个“（一）问题……”小标题用正文样式，导航窗格与目录看不到二级结构）：
+ * 律所文书（意见书、备忘录、起诉状等）里以“（一）”“一、”开头、40 字以内、不以句读收尾、不含句号的段落按二级标题排。
+ * 合同、协议等当事人文书不改——那里的“（一）”是条款下的项目。
+ */
+const SUB_HEADING = /^(?:[（(][一二三四五六七八九十]{1,3}[）)]|[一二三四五六七八九十]{1,3}、)\s*\S/;
+export function isSubHeading(text: string): boolean {
+  const t = text.trim();
+  return t.length <= 40 && SUB_HEADING.test(t) && !/[。；;，,：:、！!？?]$/.test(t) && !/[。；;]/.test(t);
+}
+
 export function createDocx(title: string, sections: ReportSection[], o: { mark?: boolean } = {}): Buffer {
   const shown = title.replace(DRAFT_SUFFIX, "");
   const blocks: DocBlock[] = shown ? [{ kind: "title", text: shown }] : [];
+  const subHeadings = !isPartyDocument(shown);
   for (const s of sections) {
     if (s.heading && !STRUCTURE_HEADING.test(s.heading.trim())) blocks.push({ kind: "h1", text: s.heading });
     // 段内换行拆成独立段落（第 35 批真实走查 R1：首部各方信息、签署块按“一项一行”写进同一段，换行留在文字里，Word 打开挤成一行）
     for (const p of s.paragraphs) {
       const lines = String(p).split(/\r?\n/);
-      if (lines.length === 1) blocks.push({ kind: "p", runs: [{ text: p }] });
-      else for (const line of lines) if (line.trim()) blocks.push({ kind: "p", runs: [{ text: line }] });
+      if (lines.length === 1 && !lines[0]!.trim()) {
+        blocks.push({ kind: "p", runs: [{ text: p }] });
+        continue;
+      }
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        blocks.push(subHeadings && isSubHeading(line) ? { kind: "h2", text: line.trim() } : { kind: "p", runs: [{ text: line }] });
+      }
     }
     if (s.table) blocks.push({ kind: "table", rows: [s.table.columns, ...s.table.rows].map((r) => r.map((text) => [{ text }])) });
   }
