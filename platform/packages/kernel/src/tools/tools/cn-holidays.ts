@@ -172,15 +172,35 @@ export interface DayStatus {
 /**
  * 《全国年节及纪念日放假办法》规定日期固定（公历）的全体公民假日：未收录当年放假通知的年份至少认这些天是休假日（v9.4 复核 Q1-01：
  * 原来只按周末判断，跨年期间会把 1 月 1 日当成届满日）。2025 年起劳动节 2 天（5 月 1、2 日）；此前 1 天。
- * 春节（含除夕）、清明、端午、中秋按农历或节气，日期不固定；调休安排也只能看当年通知——未收录年份里这些一律未知，由调用方写警告。
+ * 春节（含除夕）、清明、端午、中秋按农历或节气，2027～2030 年的日期见 LUNAR_STATUTORY，其余年份未知；调休与补假只能看当年通知，由调用方写警告。
  */
 function fixedHoliday(date: string): string | null {
   const y = Number(date.slice(0, 4));
   const md = date.slice(5);
-  if (md === "01-01") return "元旦";
-  if (md === "05-01" || (y >= 2025 && md === "05-02")) return "劳动节";
-  if (md === "10-01" || md === "10-02" || md === "10-03") return "国庆节";
+  if (md === "01-01") return "元旦（放假办法固定日期）";
+  if (md === "05-01" || (y >= 2025 && md === "05-02")) return "劳动节（放假办法固定日期）";
+  if (md === "10-01" || md === "10-02" || md === "10-03") return "国庆节（放假办法固定日期）";
+  const l = LUNAR_STATUTORY[y];
+  if (l) for (const [name, days] of Object.entries(l)) if (days.includes(date)) return `${name}（放假办法法定假日，日期按农历或节气）`;
   return null;
+}
+
+/**
+ * 按农历或节气、但日期已经确定的法定假日（V10 第 36 批：2027 年放假通知未发布时，倒排工期把除夕至初三当成工作日，
+ * 真实走查 V11 的“2 月 11 日终验、留 18 天缓冲”正压在春节上）。依《全国年节及纪念日放假办法》（2024 年修订）：春节放除夕、
+ * 正月初一至初三，清明、端午、中秋各一天；公历日期由农历（macOS 中国农历历法换算）与清明节气公式算出，2026 年与当年国务院
+ * 放假通知逐日对上。调休与周末补假仍只看当年通知，未收录年份照旧写警告。
+ */
+const LUNAR_STATUTORY: Record<number, Record<string, readonly string[]>> = {
+  2027: { 春节: ["2027-02-05", "2027-02-06", "2027-02-07", "2027-02-08"], 清明节: ["2027-04-05"], 端午节: ["2027-06-09"], 中秋节: ["2027-09-15"] },
+  2028: { 春节: ["2028-01-25", "2028-01-26", "2028-01-27", "2028-01-28"], 清明节: ["2028-04-04"], 端午节: ["2028-05-28"], 中秋节: ["2028-10-03"] },
+  2029: { 春节: ["2029-02-12", "2029-02-13", "2029-02-14", "2029-02-15"], 清明节: ["2029-04-04"], 端午节: ["2029-06-16"], 中秋节: ["2029-09-22"] },
+  2030: { 春节: ["2030-02-02", "2030-02-03", "2030-02-04", "2030-02-05"], 清明节: ["2030-04-05"], 端午节: ["2030-06-05"], 中秋节: ["2030-09-12"] },
+};
+
+/** 未收录年份里，农历与节气假日的日期是否已知（2027～2030）。 */
+export function lunarHolidaysKnown(year: number): boolean {
+  return !!LUNAR_STATUTORY[year];
 }
 
 /** 0=周日 … 6=周六（UTC 计算，日期字符串无时区）。 */
@@ -199,7 +219,7 @@ export function dayStatus(date: string): DayStatus {
     if (w) return { kind: "adjusted_workday", name: w.name, covered: true };
   } else {
     const f = fixedHoliday(date);
-    if (f) return { kind: "holiday", name: `${f}（放假办法固定日期）`, span: { from: date, to: date }, covered: false, fixed: true };
+    if (f) return { kind: "holiday", name: f, span: { from: date, to: date }, covered: false, fixed: true };
   }
   return { kind: weekend ? "weekend" : "workday", covered: !!y };
 }

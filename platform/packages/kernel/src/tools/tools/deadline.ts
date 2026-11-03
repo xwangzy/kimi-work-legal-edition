@@ -18,7 +18,7 @@
  * 只到月的起算事实不补成某月 1 日：只给区间（最早 = 按该月 1 日算，最晚 = 按该月末日算）。
  */
 import { DomainError } from "@zr-legal/domain";
-import { dayStatus, holidaySource, holidayYear, isRestDay, weekdayOf } from "./cn-holidays.ts";
+import { dayStatus, holidaySource, holidayYear, isRestDay, lunarHolidaysKnown, weekdayOf } from "./cn-holidays.ts";
 
 export type DeadlineUnit = "day" | "month" | "year" | "workday";
 export type DeadlineRule = "civil" | "workday";
@@ -95,6 +95,10 @@ function cnMonth(y: number, m: number): string {
 /** 一天为何是休假日（写进过程，律师可复核）。 */
 /** 未收录年份的警告（v9.4 复核 Q1-01、Q1-03：按规则区分“顺延”与“计数”，写明已按固定日期假日处理、哪些仍未知）。 */
 export function notCollectedWarning(year: number, rule: DeadlineRule): string {
+  if (lunarHolidaysKnown(year)) {
+    const how = rule === "workday" ? "已跳过周末与放假办法规定的法定假日（元旦，春节除夕至初三，清明、劳动节、端午、中秋、国庆）计数" : "已按周末与放假办法规定的法定假日（元旦，春节除夕至初三，清明、劳动节、端午、中秋、国庆）顺延";
+    return `${year} 年放假通知未收录：${how}；调休上班与周末补假未知，须律师按当年国务院办公厅放假通知核对`;
+  }
   const how = rule === "workday" ? "只跳过周末与放假办法规定的固定日期假日（元旦、劳动节、国庆）计数" : "只按周末与放假办法规定的固定日期假日（元旦、劳动节、国庆）顺延";
   return `${year} 年放假安排未收录：${how}，春节、清明、端午、中秋与调休未知，须律师按当年国务院办公厅放假通知核对`;
 }
