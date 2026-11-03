@@ -717,7 +717,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "transactional",
     title: "起草合同",
     gives: "交易要点或条款清单；本所范本（可选）",
-    gets: ["合同草稿.docx", "起草说明与待定事项.xlsx（附件）"],
+    gets: ["合同草稿.docx", "起草说明与待定事项.docx（附件）"],
     scenario: "a1.agent_task",
     skill: "contract-draft",
     allowPartial: true,
