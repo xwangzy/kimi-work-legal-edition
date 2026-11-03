@@ -581,6 +581,19 @@ export function dropHouseMark(files: Map<string, Buffer>): void {
   if (next !== xml) files.set("docProps/core.xml", Buffer.from(next, "utf8"));
 }
 
+/**
+ * 本产品生成的草稿在本产品里逐处修改后，版式标记照旧保留（V10 第 36 批，V3 律师评分：docx.edit_draft 改出的意见书第 2 版丢了标记，
+ * 下载与导出 PDF 时不再套律所函头与模板）：修订引擎与清洁稿为律师上传的原件去掉标记，这里只对原本带标记的草稿放回。
+ */
+export function keepHouseMark(source: Buffer, out: Buffer): Buffer {
+  if (!isHouseStyled(source) || isHouseStyled(out)) return out;
+  const files = readZipEntries(out);
+  const core = files.get("docProps/core.xml")?.toString("utf8");
+  if (core === undefined || !/<\/cp:coreProperties>/.test(core)) return out;
+  files.set("docProps/core.xml", Buffer.from(core.replace(/<\/cp:coreProperties>/, `<cp:category>${HOUSE_STYLE_MARK}</cp:category>\n</cp:coreProperties>`), "utf8"));
+  return writeZip([...files.entries()].map(([name, data]) => ({ name, data })));
+}
+
 /** 是不是本产品生成、可以重新套版式的文件（看 core.xml 的标记）。 */
 export function isHouseStyled(docx: Buffer): boolean {
   try {

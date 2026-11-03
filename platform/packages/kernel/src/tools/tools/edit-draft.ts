@@ -11,7 +11,7 @@
  * - 任一处找不到或有歧义：整体不写，逐条返回原因；改后对新版本重做交付前检查。
  */
 import { DomainError, sha256Hex } from "@zr-legal/domain";
-import { applyRevisionsToDocx, readZipText, sanitizeDocx, type RevisionOp } from "@zr-legal/docx-engine";
+import { applyRevisionsToDocx, keepHouseMark, readZipText, sanitizeDocx, type RevisionOp } from "@zr-legal/docx-engine";
 import { findTokens } from "@zr-legal/tokenizer";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
@@ -129,7 +129,8 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
   try {
     // 段后插入先写（与 docx.revise 同一顺序），再接受全部修改：草稿是助手自己的文字，不留修订痕迹
     const ordered = [...ops.filter((o) => o.insertAfter), ...ops.filter((o) => !o.insertAfter)];
-    out = sanitizeDocx(applyRevisionsToDocx(buf, { baselineHash: art.sha256, ops: ordered }).docx).docx;
+    // 本产品生成的草稿保留版式标记（下载与导出照旧套函头），见 keepHouseMark
+    out = keepHouseMark(buf, sanitizeDocx(applyRevisionsToDocx(buf, { baselineHash: art.sha256, ops: ordered }).docx).docx);
   } catch (e) {
     return { status: "not_applied" as const, written: false, conflicts: [{ index: 0, reason: "apply_failed" as const, fix: FIX.apply_failed, detail: (e as Error).message.slice(0, 200) }], note: "逐条都能定位，合并写入失败：通常是两条修改落在同一处，合并后重新提交" };
   }

@@ -29,7 +29,8 @@ export function sanitizeDocx(docx: Buffer): SanitizeResult {
   const settings = files.get("word/settings.xml")?.toString("utf8");
   if (settings !== undefined && /<w:trackRevisions\b/.test(settings)) files.set("word/settings.xml", Buffer.from(settings.replace(/<w:trackRevisions\b[^>]*\/>/g, ""), "utf8"));
   const { deletionsAccepted, insertionsAccepted, comments } = counts;
-  files.set("word/comments.xml", Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="${W_NS}"></w:comments>`, "utf8"));
+  // 原本有批注部件的清空；没有的不新建（V10 第 36 批，V3 律师评分：清洁稿里多出一个没在 [Content_Types].xml 与关系里登记的空 comments.xml）
+  if (files.has("word/comments.xml")) files.set("word/comments.xml", Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="${W_NS}"></w:comments>`, "utf8"));
 
   // 作者属性净化（保留生成标识：creator 标记为发行版，满足 AI 标识要求）
   const core = files.get("docProps/core.xml");
