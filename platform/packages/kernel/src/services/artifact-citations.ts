@@ -112,7 +112,7 @@ export function artifactText(filename: string, bytes: Buffer): string | "format"
  * 须律师人工核对、勾选后可签发的理由（复核 R15B-03、R15B-14）：法规库没收、款项与本机正文对不上（可能是正文排版）、
  * 适用时点没有有效版本（已废止的旧法按时间效力规定仍可正当引用）。条号超出总条数、已改号仍是定性错误。
  */
-const MANUAL_REASONS = ["unknown_source:", "paragraph_out_of_range:", "item_out_of_range:", "no_applicable_version:"];
+const MANUAL_REASONS = ["unknown_source:", "paragraph_out_of_range:", "item_out_of_range:", "no_applicable_version:", "suffix_unverifiable:"];
 
 function classify(v: CitationVerdict): ArtifactCitationCheck["items"][number]["kind"] {
   if (v.state === CitationState.unverifiedOffline) return "case";
@@ -127,7 +127,10 @@ export function reasonText(v: Pick<CitationVerdict, "reasons" | "state" | "sugge
   if (v.state === CitationState.unverifiedOffline) return "案号系统离线没法核对：请到裁判文书网等官方来源逐个核对";
   if (codes.includes("article_out_of_range")) return "条号超出这部法规的总条数";
   if (codes.includes("renumbered")) return v.suggestion ? `适用的版本里这一条已改号：${v.suggestion.replace(/（[^（）]*施行版本）/, "")}` : "适用的版本里这一条已改号";
+  // 文号与解释对不上（V11）：定性错误，原先落到兜底的“核对不通过”
+  if (codes.includes("doc_number_mismatch")) return "司法解释的文号与所引的解释对不上，请核对文号或解释名称";
   if (codes.includes("unknown_source")) return "本机法规库没有收录这部法规，系统没法核对";
+  if (codes.includes("suffix_unverifiable")) return "本机法规库按条号收录，没法核对“之一”“之二”这类条文是否存在，请人工核对";
   if (codes.includes("no_applicable_version")) return "适用时点没有有效版本（可能已废止或尚未施行），请人工核对适用依据";
   if (codes.includes("paragraph_out_of_range")) return "条号核到了，但本机法规库里这一条没有这么多款（也可能是正文排版），请人工核对";
   if (codes.includes("item_out_of_range")) return "条号核到了，但本机法规库里这一款没有这么多项（也可能是正文排版），请人工核对";

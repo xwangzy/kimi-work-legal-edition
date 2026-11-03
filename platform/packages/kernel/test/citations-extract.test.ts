@@ -145,7 +145,9 @@ test("B-7 款项核对：正文已采集的按段落与列项核对，没采集�
   assert.equal(v("依照中华人民共和国民法典第五百零九条").matched_law_name, "中华人民共和国民法典");
   assert.equal(v("刑法第一百二十条之一").state, CitationState.intercepted, "刑法不在演示法规库：法规库外");
   const suffix = citationsVerify(lawdb, { citations: [], text: "《民法典》第五百零九条之一", as_of: "2026-10-01" }).verdicts[0]!;
-  assert.ok(suffix.reasons.some((r) => r.startsWith("suffix_unchecked:")));
+  // V11：之X条法规库没法核对是否存在，拦截、须人工核对（原先只注明“只核到条号”仍判已核）
+  assert.equal(suffix.state, CitationState.intercepted);
+  assert.ok(suffix.reasons.some((r) => r.startsWith("suffix_unverifiable:")));
 });
 
 test("复核 R15B-02/03/05/14：版本括注能查到法规库；款项对不上与无适用版本归“须人工核对”；之X只核到条；没认出的“第X条”计数；北京时间", async () => {
@@ -163,11 +165,11 @@ test("复核 R15B-02/03/05/14：版本括注能查到法规库；款项对不上
   assert.equal(p4.items[0]!.kind, "outside");
   assert.equal(p4.wrong, 0);
   assert.match(p4.items[0]!.reason!, /没有这么多款/);
-  // 之X 带款项：不拿基础条比，核到但只核到条号
+  // 之X 带款项：不拿基础条比；V11 起之X条须人工核对（法规库没法核对是否存在，不再判“已核、只核到条号”）
   const sx = chk("《民法典》第五百八十五条之一第二款");
-  assert.equal(sx.items[0]!.kind, "ok");
-  assert.equal(sx.items[0]!.partial, true);
-  assert.equal(sx.partial, 1);
+  assert.equal(sx.items[0]!.kind, "outside");
+  assert.equal(sx.wrong, 0);
+  assert.match(sx.items[0]!.reason!, /之一/);
   // 款项正文未采集：核到、只核到条号（V10 第 36 批：民法典已收全文，改用《律师法》）
   assert.equal(chk("《律师法》第十条第二款").partial, 1);
   // 适用时点没有有效版本：须人工核对（律师写明适用依据后可签发）

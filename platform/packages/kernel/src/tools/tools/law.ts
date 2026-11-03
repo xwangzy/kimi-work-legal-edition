@@ -6,7 +6,7 @@
 import { DomainError } from "@zr-legal/domain";
 import { versionAt, type Lawdb, type LawVersionRow } from "@zr-legal/lawdb";
 import { cnToInt } from "./cn-numerals.ts";
-import { lawNameCandidates } from "./law-names.ts";
+import { lawNameCandidates, repealedLaw } from "./law-names.ts";
 
 export interface LawGetVersionParams {
   law: string; // 法名或简称（名称归一：书名号/空白/全半角不敏感）
@@ -28,6 +28,8 @@ export interface LawVersionResult {
   topic_article?: number | null;
   all_versions?: { lsv_id: string; effective: string; superseded: string | null; effectiveness: string }[];
   license_note?: string;
+  /** 法规库不收、但已知已整体废止的法（V11）：废止日、依据与替代法——不让“没查到”被读成“法规库覆盖不全”。 */
+  repealed?: { law_name: string; repealed: string; basis: string; successor: string };
   checked_at: string;
 }
 
@@ -35,11 +37,13 @@ export function lawGetVersion(lawdb: Lawdb, params: LawGetVersionParams): LawVer
   if (!params.law || !/^\d{4}-\d{2}-\d{2}$/.test(params.as_of ?? "")) {
     throw new DomainError("validation", "law.get_version 需要 law 与 as_of(YYYY-MM-DD)", 422);
   }
-  const rows = lawdb.findLawVersions(params.law);
+  // 名称归一与 citations.verify、law.get_article 一致（V11：原先只按原样查，《劳动争议解释一》《公司法司法解释三》在库里却答 found=false）
+  const rows = findRows(lawdb, params.law);
   const checkedAt = new Date().toISOString();
   if (rows.length === 0) {
-    // 不伪造：注册库没有就明说
-    return { found: false, checked_at: checkedAt };
+    // 不伪造：注册库没有就明说；已整体废止的写明废止事实
+    const rep = repealedLaw(params.law);
+    return rep ? { found: false, repealed: { law_name: rep.law_name, repealed: rep.repealed, basis: rep.basis, successor: rep.successor }, checked_at: checkedAt } : { found: false, checked_at: checkedAt };
   }
   // 展示动作校验（Source Registry §2.2 运行时强制：all_versions 逐版本核对各自来源，不足即停）
   for (const r of rows) lawdb.assertAction(r.source_license_id, "display");
@@ -164,7 +168,11 @@ export function lawGetArticle(lawdb: Lawdb, params: LawGetArticleParams): LawArt
   const checkedAt = new Date().toISOString();
   const rows = findRows(lawdb, law);
   if (rows.length === 0) {
-    return { found: false, reason: "law_not_in_lawdb", article_no: articleNo, as_of: asOf, note: "法规库未收录该法源：不提供条文文本，须律师查官方文本核对", checked_at: checkedAt };
+    const rep = repealedLaw(law);
+    const note = rep && asOf >= rep.repealed
+      ? `《${rep.law_name}》已于 ${rep.repealed} 废止（${rep.basis}），法规库不收：不提供条文文本。现行规定见《${rep.successor}》；法律事实发生在废止前、确需适用旧法的，须律师查官方文本核对`
+      : "法规库未收录该法源：不提供条文文本，须律师查官方文本核对";
+    return { found: false, reason: "law_not_in_lawdb", article_no: articleNo, as_of: asOf, note, checked_at: checkedAt };
   }
   const v = versionAt(rows, asOf);
   if (!v) {

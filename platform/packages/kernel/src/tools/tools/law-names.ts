@@ -16,6 +16,7 @@ export const LAW_ALIASES: Readonly<Record<string, string>> = {
   侵权责任法: "中华人民共和国侵权责任法",
   婚姻法: "中华人民共和国婚姻法",
   继承法: "中华人民共和国继承法",
+  收养法: "中华人民共和国收养法",
   公司法: "中华人民共和国公司法",
   合伙企业法: "中华人民共和国合伙企业法",
   证券法: "中华人民共和国证券法",
@@ -98,11 +99,19 @@ export const LAW_ALIASES: Readonly<Record<string, string>> = {
   公司法解释四: "最高人民法院关于适用《中华人民共和国公司法》若干问题的规定（四）",
   公司法解释五: "最高人民法院关于适用《中华人民共和国公司法》若干问题的规定（五）",
   九民纪要: "全国法院民商事审判工作会议纪要",
+  // 已废止的司法解释（V11：引用它们本身就要提示，见 REPEALED）
+  担保法解释: "最高人民法院关于适用《中华人民共和国担保法》若干问题的解释",
+  担保法司法解释: "最高人民法院关于适用《中华人民共和国担保法》若干问题的解释",
+  合同法解释一: "最高人民法院关于适用《中华人民共和国合同法》若干问题的解释（一）",
+  合同法解释二: "最高人民法院关于适用《中华人民共和国合同法》若干问题的解释（二）",
 };
 
-/** 不加书名号也提取的名字：限“××法”与“民法典”（司法解释、纪要的简称只认书名号形态）。长名在前，避免“劳动合同法”被截成“合同法”。 */
+/**
+ * 不加书名号也提取的名字：限“××法”“民法典”与“民法通则 / 民法总则”（司法解释、纪要的简称只认书名号形态）。长名在前，避免“劳动合同法”被截成“合同法”。
+ * V11：民法通则、民法总则原先不在此列，“根据民法通则第一百三十五条”整句漏提取——已废止的法恰恰最需要核。
+ */
 export const BARE_NAMES: readonly string[] = Object.keys(LAW_ALIASES)
-  .filter((k) => /法$|法典$/.test(k) && k.length >= 2)
+  .filter((k) => /法$|法典$|^民法(?:通则|总则)$/.test(k) && k.length >= 2)
   .sort((a, b) => b.length - a.length);
 
 /** 名称 → 查法规库时依次尝试的写法：原样、简称表的全称、加或去“中华人民共和国”前缀；圆括号统一为全角，序号“（一）”与“一”互通。 */
@@ -113,8 +122,49 @@ export function lawNameCandidates(name: string): string[] {
   const out = new Set<string>([full, raw]);
   const short = raw.replace(/^中华人民共和国/, "");
   const key = short.replace(/[（）]/g, "");
-  for (const k of [short, key]) if (LAW_ALIASES[k]) out.add(LAW_ALIASES[k]!);
+  // “司法解释”与“解释”互通（V11：《公司法司法解释三》《民诉法司法解释》原先查不到，误报“法规库未收录”）
+  const keys = [short, key, short.replace(/司法解释/, "解释"), key.replace(/司法解释/, "解释")];
+  for (const k of keys) if (LAW_ALIASES[k]) out.add(LAW_ALIASES[k]!);
+  if (/司法解释/.test(raw)) out.add(raw.replace(/司法解释/, "解释"));
   if (raw.startsWith("中华人民共和国")) out.add(short);
   else if (/法$|法典$/.test(raw)) out.add(`中华人民共和国${raw}`);
   return [...out];
+}
+
+/**
+ * 已整体废止的法律与司法解释（V11）：法规库不收已废止的法，原先引用它们只得到“法规库没有收录”，律师会当成覆盖不全勾掉；
+ * 这里只记公开的废止事实（废止日、依据、替代法），不含条文：适用时点在废止日及以后的，核验结论写明“已废止”并提示改引。
+ * 2021-01-01：《民法典》第一千二百六十条废止婚姻法、继承法、民法通则、收养法、担保法、合同法、物权法、侵权责任法、民法总则；
+ * 同日《最高人民法院关于废止部分司法解释及相关规范性文件的决定》（法释〔2020〕16号）废止担保法解释、合同法解释（一）（二）等。
+ */
+export interface RepealedLaw {
+  repealed: string;
+  basis: string;
+  successor: string;
+}
+const CIVIL_CODE = "中华人民共和国民法典";
+const BY_1260 = { repealed: "2021-01-01", basis: "《中华人民共和国民法典》第一千二百六十条", successor: CIVIL_CODE };
+const BY_2020_16 = { repealed: "2021-01-01", basis: "法释〔2020〕16号" };
+export const REPEALED: Readonly<Record<string, RepealedLaw>> = {
+  中华人民共和国民法通则: BY_1260,
+  中华人民共和国民法总则: BY_1260,
+  中华人民共和国合同法: BY_1260,
+  中华人民共和国物权法: BY_1260,
+  中华人民共和国担保法: BY_1260,
+  中华人民共和国侵权责任法: BY_1260,
+  中华人民共和国婚姻法: BY_1260,
+  中华人民共和国继承法: BY_1260,
+  中华人民共和国收养法: BY_1260,
+  "最高人民法院关于适用《中华人民共和国担保法》若干问题的解释": { ...BY_2020_16, successor: "最高人民法院关于适用《中华人民共和国民法典》有关担保制度的解释" },
+  "最高人民法院关于适用《中华人民共和国合同法》若干问题的解释（一）": { ...BY_2020_16, successor: CIVIL_CODE },
+  "最高人民法院关于适用《中华人民共和国合同法》若干问题的解释（二）": { ...BY_2020_16, successor: CIVIL_CODE },
+};
+
+/** 名称（简称、全称、带不带书名号与“中华人民共和国”）→ 已废止的记录；不是已废止的返回 null。 */
+export function repealedLaw(name: string): (RepealedLaw & { law_name: string }) | null {
+  for (const n of lawNameCandidates(name)) {
+    const k = n.replace(/[《》\s]/g, "");
+    for (const [full, r] of Object.entries(REPEALED)) if (full.replace(/[《》]/g, "") === k) return { ...r, law_name: full };
+  }
+  return null;
 }
