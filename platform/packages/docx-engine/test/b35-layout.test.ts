@@ -110,3 +110,22 @@ test("段内换行拆成独立段落：首部各方信息与签署块一项一�
   assert.deepEqual(ps.slice(1, 4), ["受让方：上海澄远科技集团有限公司", "统一社会信用代码：91310000MA1K8C7X2Q", "住所：上海市浦东新区"], "空行不另起空段");
   assert.ok(ps.includes("法定代表人或授权代表（签字）：________"));
 });
+
+test("V10 走查 V1：标记中间夹文书名称“（以下为《增资协议》签署页，无正文）”也认——签署页另起一页、附件另起一页；“（本页无正文，为《××协议》之签署页）”写在签署页顶上，标记本身另起一页", async () => {
+  const { createDocx, readZipEntries } = await import("../src/index.ts");
+  const paras = (buf: Buffer) => readZipEntries(buf).get("word/document.xml")!.toString("utf8").match(/<w:p\b[\s\S]*?<\/w:p>/g)!;
+  const text = (x: string) => (x.match(/<w:t[^>]*>([^<]*)<\/w:t>/g) ?? []).map((t) => t.replace(/<[^>]+>/g, "")).join("");
+  const a = paras(createDocx("增资协议", [
+    { heading: "第27条 生效及其他", paragraphs: ["27.1 本协议自各方签署之日起生效。", "（以下为《增资协议》签署页，无正文）", "甲方：苏州启衡新能源产业投资合伙企业（有限合伙）（盖章）", "日期：____年__月__日", "丙方一：周叙白（签字）", "日期：____年__月__日"] },
+    { heading: "附件一 保护性事项清单", paragraphs: ["1. 修改公司章程。"] },
+  ]));
+  const at = (ps: string[], t: string) => ps.find((x) => text(x) === t)!;
+  assert.doesNotMatch(at(a, "（以下为《增资协议》签署页，无正文）"), /pageBreakBefore/, "标记留在上一页");
+  assert.match(at(a, "甲方：苏州启衡新能源产业投资合伙企业（有限合伙）（盖章）"), /pageBreakBefore/, "签署页另起一页");
+  assert.match(at(a, "附件一 保护性事项清单"), /pageBreakBefore/, "附件另起一页");
+  const b = paras(createDocx("股权转让协议", [
+    { heading: "第十条 其他", paragraphs: ["10.1 本协议一式四份。", "（本页无正文，为《股权转让协议》之签署页）", "受让方：上海澄远科技集团有限公司（盖章）", "转让方：周牧之（签字）"] },
+  ]));
+  assert.match(at(b, "（本页无正文，为《股权转让协议》之签署页）"), /pageBreakBefore/, "本页无正文的标记在签署页顶上，自身另起一页");
+  assert.doesNotMatch(at(b, "受让方：上海澄远科技集团有限公司（盖章）"), /pageBreakBefore/, "签署行跟在标记后面，不再另起一页");
+});

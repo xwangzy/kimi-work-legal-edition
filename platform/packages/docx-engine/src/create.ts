@@ -50,16 +50,28 @@ const PARTY_SIGN = /^(?:甲方|乙方|丙方|丁方|戊方|受让方|转让方|�
  * 合同签署页（第 35 批，文档工程审查 A-02）：“（以下无正文……）”之后到下一个标题或表格之前的段落，若含合同一方的签署行，
  * 作为签署页——第一行另起一页、各行左对齐不缩进，各方之间空一行；“以下无正文”那一行留在上一页。意见书、律师函的落款不在此列（仍右对齐）。
  */
+/**
+ * 签署页标记。BEFORE：写在正文末尾、签署页之前（“以下无正文”“以下为签署页”；V10 走查 V1：中间夹文书名称的
+ * “（以下为《增资协议》签署页，无正文）”原先认不出，签署页与附件都没另起一页）。ON_PAGE：写在签署页顶上的
+ * “（本页无正文，为《××协议》之签署页）”——标记本身另起一页。
+ */
+export const SIGN_MARKER_BEFORE = /^[（(]\s*以下(?:无正文|为.{0,30}?(?:签署|签字|签章)页|是.{0,30}?签署页)/;
+export const SIGN_MARKER_ON_PAGE = /^[（(]\s*(?:本页|此页)(?:为)?无正文/;
+export const isSignMarker = (text: string): boolean => SIGN_MARKER_BEFORE.test(text.trim()) || SIGN_MARKER_ON_PAGE.test(text.trim());
+
 export function signaturePage(blocks: DocBlock[]): DocBlock[] {
   // “以下无正文”“以下为签署页”等写法都认（第 35 批 R6：写成“（以下为签署页）”时签署页没有另起一页）
-  const start = blocks.findIndex((b) => b.kind === "p" && /^[（(]\s*以下(?:无正文|为签署页|为签字页|为签章页|是签署页)/.test(b.runs.map((r) => r.text).join("").trim()));
+  const start = blocks.findIndex((b) => b.kind === "p" && isSignMarker(b.runs.map((r) => r.text).join("")));
   if (start < 0) return blocks;
+  const marker = blocks[start]!;
+  const onPage = marker.kind === "p" && SIGN_MARKER_ON_PAGE.test(marker.runs.map((r) => r.text).join("").trim());
   // 签署栏画成表格（各方并列两栏）：表格另起一页、不画框线；其后的“附件”另起一页
   let t = start + 1;
   while (t < blocks.length && blocks[t]!.kind === "blank") t += 1;
   const tbl = blocks[t];
   if (tbl?.kind === "table" && tbl.rows.some((r) => r.some((c) => SIGN_CELL.test(c.map((x) => x.text).join("").trim())))) {
     const rest = blocks.slice(t + 1).map((b, i) => (i === 0 && (b.kind === "h1" || b.kind === "h2") && /^附件/.test(b.text) ? { ...b, pageBreakBefore: true } : b));
+    if (onPage) return [...blocks.slice(0, start), { ...marker, pageBreakBefore: true }, ...blocks.slice(start + 1, t), { ...tbl, borderless: true }, ...rest] as DocBlock[];
     return [...blocks.slice(0, start + 1), { ...tbl, borderless: true, pageBreakBefore: true }, ...rest] as DocBlock[];
   }
   let end = start + 1;
@@ -67,8 +79,9 @@ export function signaturePage(blocks: DocBlock[]): DocBlock[] {
   const lines = blocks.slice(start + 1, end);
   const textOf = (b: DocBlock) => (b.kind === "p" ? b.runs.map((r) => r.text).join("").trim() : "");
   if (!lines.some((b) => PARTY_SIGN.test(textOf(b)))) return blocks;
-  const out: DocBlock[] = blocks.slice(0, start + 1);
-  let first = true;
+  // “本页无正文”写在签署页顶上：标记本身另起一页，签署行跟在后面
+  const out: DocBlock[] = onPage ? [...blocks.slice(0, start), { ...marker, pageBreakBefore: true } as DocBlock] : blocks.slice(0, start + 1);
+  let first = !onPage;
   for (const b of lines) {
     if (b.kind !== "p") continue;
     if (!first && PARTY_SIGN.test(textOf(b))) out.push({ kind: "blank" });

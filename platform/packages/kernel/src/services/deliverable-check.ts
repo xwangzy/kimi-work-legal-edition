@@ -8,7 +8,7 @@
  * 只报能确定的问题（宁可漏报不误报），每条给出位置、原文片段与改法；纯函数（法规核验经传入的法规库离线完成）。
  */
 import type { Lawdb } from "@zr-legal/lawdb";
-import { isCourtFiling, isPartyDocument } from "@zr-legal/docx-engine";
+import { isCourtFiling, isPartyDocument, isSignMarker } from "@zr-legal/docx-engine";
 import { cnToInt } from "../tools/tools/cn-numerals.ts";
 import { checkArtifactCitations } from "./artifact-citations.ts";
 
@@ -168,7 +168,8 @@ function partyDocumentIssues(paras: readonly Para[]): DeliverableIssue[] {
     if (m) out.push({ kind: "internal_term", where: p.where, text: snippet(p.text, m.index, m[0].length), fix: "合同正文要发给对方，不写内部说明：删去这句（或整条），口径说明写进《起草说明》" });
   }
   // 签署页之后接着正文最后一条往下编的款（正文最后是 20.7，签署页、附件之后又冒出“20.8 ……”），或紧接其后的新条：落错了位置。附件自己的编号不算
-  const sign = paras.findIndex((p) => /以下无正文/.test(p.text));
+  // 签署页标记（V10：“（以下为《增资协议》签署页，无正文）”“（本页无正文，为……签署页）”同样认，与文书引擎同一规则）
+  const sign = paras.findIndex((p) => isSignMarker(p.text));
   if (sign >= 0) {
     let last = 0;
     const maxClause = new Map<number, number>();
