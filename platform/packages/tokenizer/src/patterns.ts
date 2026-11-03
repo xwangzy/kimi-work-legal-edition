@@ -151,7 +151,7 @@ const ADDR_NUM = "[\\u4e00-\\u9fa5A-Za-z0-9]{0,12}?\\d{1,5}(?:号院|号楼|号|
 const ADDR_TAIL = "(?:院|[A-Za-z]座|[-—]?\\d{1,5}(?:号院|号楼|号|弄|栋|幢|座|单元|楼|层|室|户)|[-—]\\d{1,5})*";
 const ADDRESS_RE = new RegExp(`${ADDR_HEAD}${ADDR_ROAD}${ADDR_NUM}${ADDR_TAIL}`, "g");
 /** 地址前常见的引导词（“住北京市……”“住所地：……”）：不属于地址本身。 */
-const ADDRESS_LEAD = /^(?:住所地|住所|住址|地址|现住址?|户籍地址?|户籍地|经常居住地|居住地?|家住|住|位于|在|于|至|到|往)[：:]?/;
+const ADDRESS_LEAD = /^(?:主要经营场所|经营场所|营业场所|办公地址|办公场所|注册地址|注册地|通讯地址|通信地址|联系地址|送达地址|收件地址|住所地|住所|住址|地址|现住址?|户籍地址?|户籍地|经常居住地|居住地?|家住|住|位于|在|于|至|到|往)[：:]?/;
 
 /**
  * 地址前混进的叙述（第 35 批真实走查 R3：“自2026年9月1日起整体搬迁至苏州工业园区星湖街328号”整段成了一个地址代号，
@@ -201,6 +201,21 @@ const COMPLEX_RE = new RegExp(
 const COMPLEX_BAD = /^(?:该|本|此|其|涉案|案涉|上述|前述|所在|同一|附近|周边|整个|全|各|每|那|这|某)/;
 
 const ADDRESS_ADMIN = /(?:省|自治区|特别行政区|市|自治州|盟|地区|区|县|旗|镇|乡|街道)/;
+
+/**
+ * 地址里保留原文的行政区划前缀（V10 第 36 批，11-03 拍板 B）：省、市、区县一级不识别个人，却决定受诉法院与协议管辖是否有效——
+ * 第 35 批真实走查 R4 原告住所整体换成〔地址〕，助手只能请律师补法院全称。只换乡镇街道、道路与门牌，返回要保留的字数。
+ * “阳光小区”“某某社区”这类以“区”结尾的不是区县，不保留；保留后剩下的不足 3 字（只有区划、没有街道门牌）返回 0，整段照旧替换。
+ */
+const ADMIN_KEEP = /^((?:[一-龥]{2,8}?(?:省|自治区|特别行政区))?(?:[一-龥]{2,8}?(?:市|自治州|盟|地区))?)((?:[一-龥]{1,8}?(?:区|县|旗|市))?)/;
+const NOT_COUNTY = /(?:小区|社区|校区|片区|厂区|景区|营区|院区|园区内)$/;
+export function adminPrefixLength(v: string): number {
+  const m = ADMIN_KEEP.exec(v);
+  if (!m) return 0;
+  const county = m[2] && !NOT_COUNTY.test(m[2]) ? m[2] : "";
+  const keep = m[1]!.length + county.length;
+  return keep > 0 && v.length - keep >= 3 ? keep : 0;
+}
 
 /**
  * 全角 ASCII（U+FF01–U+FF5E）折成半角、全角空格折成空格：**逐个 UTF-16 码元一一对应、长度不变**，识别在折叠视图上进行，
@@ -267,7 +282,8 @@ export function findIdentifiers(original: string, skip: readonly { start: number
     const v = m[0].slice(cut);
     // 必须含行政区划或道路 + 门牌；过短的“3号楼”之类不算详细住址
     if (v.length < 6 || !ADDRESS_ADMIN.test(v)) continue;
-    push("address", m.index! + cut, v);
+    const keep = adminPrefixLength(v);
+    push("address", m.index! + cut + keep, v.slice(keep));
   }
   // 无门牌的村、组地址
   VILLAGE_RE.lastIndex = 0;
@@ -278,7 +294,9 @@ export function findIdentifiers(original: string, skip: readonly { start: number
     if (!/(?:区|县|旗|镇|乡|街道|苏木)$/.test(head) || !/^[\u4e00-\u9fa5]{2}/.test(head)) continue;
     const name = village.replace(/(?:村|嘎查|屯)$/, "");
     if (name.length < 2 || VILLAGE_BAD.test(name)) continue;
-    push("address", m.index! + lead, m[0].slice(lead));
+    const v = m[0].slice(lead);
+    const keep = adminPrefixLength(v);
+    push("address", m.index! + lead + keep, v.slice(keep));
   }
   // 小区名 + 楼栋（无道路词）
   COMPLEX_RE.lastIndex = 0;
@@ -287,7 +305,8 @@ export function findIdentifiers(original: string, skip: readonly { start: number
     const v = m[0].slice(lead.length);
     const name = (m[1] ?? "").slice(lead.length).replace(/(?:小区|花园|公寓|大厦|家园|苑|新村|山庄|华庭|府邸|社区|广场)$/, "");
     if (name.length < 2 || COMPLEX_BAD.test(name) || !/[\u4e00-\u9fa5]/.test(name)) continue;
-    push("address", m.index! + lead.length, v);
+    const keep = adminPrefixLength(v);
+    push("address", m.index! + lead.length + keep, v.slice(keep));
   }
   return hits.sort((a, b) => a.start - b.start);
 }

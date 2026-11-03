@@ -49,8 +49,9 @@ test("已误登记进事项令牌表的常用词退役：“劳动”“付款�
 test("地址前混进的叙述（日期、搬迁、入职、变更）留在原文，只把地址换成代号（第 35 批真实走查 R3）", async () => {
   const { findIdentifiers } = await import("../src/patterns.ts");
   const addr = (s: string) => (findIdentifiers as any)(s).filter((h: any) => h.category === "address").map((h: any) => h.value);
-  assert.deepEqual(addr("公司研发中心自2026年9月1日起整体搬迁至苏州工业园区星湖街328号。"), ["苏州工业园区星湖街328号"]);
-  assert.deepEqual(addr("已于10月8日入职上海市浦东新区张江路100号的某公司"), ["上海市浦东新区张江路100号"]);
-  assert.deepEqual(addr("现住所变更为上海市浦东新区张江路100号"), ["上海市浦东新区张江路100号"]);
-  assert.deepEqual(addr("住所：江西省于都县长征大道8号"), ["江西省于都县长征大道8号"], "以引导字开头的真实地名不截");
+  // V10 第 36 批（拍板 B）：省、市、区县留在原文，只换街道门牌
+  assert.deepEqual(addr("公司研发中心自2026年9月1日起整体搬迁至苏州工业园区星湖街328号。"), ["星湖街328号"]);
+  assert.deepEqual(addr("已于10月8日入职上海市浦东新区张江路100号的某公司"), ["张江路100号"]);
+  assert.deepEqual(addr("现住所变更为上海市浦东新区张江路100号"), ["张江路100号"]);
+  assert.deepEqual(addr("住所：江西省于都县长征大道8号"), ["长征大道8号"], "以引导字开头的真实地名不截");
 });
