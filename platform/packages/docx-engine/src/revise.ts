@@ -172,7 +172,10 @@ function applyOne(
     });
   }
   const paragraphIndex = origIndex.get(target)!;
-  if (op.insertAfter) return insertParagraphsAfter(xml, target, op, comments, nextId, applied, paragraphIndex);
+  if (op.insertAfter) {
+    const heading = articleHeadingFor(paras, labels, paragraphIndex, op.newText);
+    return insertParagraphsAfter(xml, target, op, comments, nextId, applied, paragraphIndex, heading && { para: heading, labeled: !!labels[origIndex.get(heading) ?? -1] });
+  }
   // 一个 run 里有几段文字、制表符、换行的（Word 常这样写签署栏、地址栏），先按内容拆成一段一个 run 再切（第 34 批 D07：
   // 原先只认第一段文字，改前半段会把后半段静默删掉）；只拆要改的这一段，其余段落字节不动
   const lenBefore = xml.length;
@@ -459,6 +462,29 @@ export function minimalChange(original: string, replacement: string): { keepHead
   };
 }
 
+const ARTICLE_LINE_RE = /^\s*第\s*[0-9一二三四五六七八九十百零〇]{1,6}\s*条\s*/;
+
+/**
+ * 插在某条最后一款之后、首行写“第 N 条 标题”、其后还有正文的：返回锚点所属那一条的标题段落，首行照它的格式写
+ * （自动编号的去掉“第 N 条”由 Word 续号）。V10 真实走查 V12：自动编号的合同里，插在 6.1 后的新条只能跟着成 6.2～6.5。
+ * 只认明写的“第 N 条”，不猜短句是不是标题；锚点本身是条标题或不在任何条之下的，不改变原做法。
+ */
+function articleHeadingFor(paras: readonly ParagraphMap[], labels: readonly (string | null)[], at: number, newText: string): ParagraphMap | null {
+  const lines = newText.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length < 2) return null;
+  const first = lines[0]!;
+  if (!ARTICLE_LINE_RE.test(first)) return null;
+  const own = labels[at] ?? "";
+  const isArticle = (i: number): boolean => {
+    const lab = labels[i] ?? "";
+    return (!!lab && !/\d+\.\d+/.test(lab) && /^(第.{1,6}条|\d{1,3}\.?|[一二三四五六七八九十]{1,3}、?)$/.test(lab.trim())) || ARTICLE_LINE_RE.test(paras[i]?.text ?? "");
+  };
+  if (isArticle(at)) return null;
+  if (own && !/\d+\.\d+/.test(own)) return null;
+  for (let i = at - 1; i >= 0; i--) if (isArticle(i)) return paras[i]!;
+  return null;
+}
+
 function insertParagraphsAfter(
   xml: string,
   target: ParagraphMap,
@@ -467,15 +493,23 @@ function insertParagraphsAfter(
   nextId: () => number,
   applied: AppliedRevision[],
   paragraphIndex: number,
+  heading: { para: ParagraphMap; labeled: boolean } | null = null,
 ): string {
   const lines = op.newText.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
   if (lines.length === 0) throw new DomainError("anchor_mismatch", `修订 ${op.opId} 插入的条款为空`, 422, { opId: op.opId });
   const paraXml = xml.slice(target.xmlStart, target.xmlEnd);
   // 段落格式按配对标签取全（第 34 批 D04：段落带他人格式修订 w:pPrChange 时，原先只取到半截、写坏文件）
-  const pPrEl = findElement(paraXml, "w:pPr");
-  const pPrXml = pPrEl && /^<w:p\b[^>]*>\s*$/.test(paraXml.slice(0, pPrEl.start)) ? paraXml.slice(pPrEl.start, pPrEl.end) : "";
-  const basePpr = pPrXml.endsWith("/>") || !pPrXml ? "" : removeElements(pPrXml.slice(pPrXml.indexOf(">") + 1, pPrXml.length - "</w:pPr>".length), ["w:sectPr", "w:rPr", "w:pPrChange"]);
+  const pprOf = (px: string): string => {
+    const el = findElement(px, "w:pPr");
+    const full = el && /^<w:p\b[^>]*>\s*$/.test(px.slice(0, el.start)) ? px.slice(el.start, el.end) : "";
+    return full.endsWith("/>") || !full ? "" : removeElements(full.slice(full.indexOf(">") + 1, full.length - "</w:pPr>".length), ["w:sectPr", "w:rPr", "w:pPrChange"]);
+  };
+  const basePpr = pprOf(paraXml);
   const rpr = cleanRpr(target.segments.find((s) => !s.deleted && !s.fresh)?.rPr ?? null);
+  // 新增独立一条（V10 真实走查 V12）：首行是条标题时沿用本条标题段落的格式与编号级别（自动编号续成下一条），其余各行仍是款
+  const headPpr = heading ? pprOf(xml.slice(heading.para.xmlStart, heading.para.xmlEnd)) : "";
+  const headRpr = heading ? cleanRpr(heading.para.segments.find((s) => !s.deleted && !s.fresh)?.rPr ?? null) : "";
+  if (heading?.labeled) lines[0] = lines[0]!.replace(ARTICLE_LINE_RE, "").trim() || lines[0]!;
   const date = new Date().toISOString();
   const author = escapeXml(op.author);
   let commentId = -1;
@@ -492,8 +526,8 @@ function insertParagraphsAfter(
         ? `<w:commentRangeEnd w:id="${commentId}"/><w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="${commentId}"/></w:r>`
         : "";
     return (
-      `<w:p><w:pPr>${basePpr}<w:rPr><w:ins w:id="${markId}" w:author="${author}" w:date="${date}"/></w:rPr></w:pPr>${open}` +
-      `<w:ins w:id="${insId}" w:author="${author}" w:date="${date}" kwl-new="1"><w:r>${rpr}${runContent(line)}</w:r></w:ins>${close}</w:p>`
+      `<w:p><w:pPr>${heading && i === 0 ? headPpr : basePpr}<w:rPr><w:ins w:id="${markId}" w:author="${author}" w:date="${date}"/></w:rPr></w:pPr>${open}` +
+      `<w:ins w:id="${insId}" w:author="${author}" w:date="${date}" kwl-new="1"><w:r>${heading && i === 0 ? headRpr : rpr}${runContent(line)}</w:r></w:ins>${close}</w:p>`
     );
   });
   applied.push({ opId: op.opId, status: "applied", paragraphIndex });
