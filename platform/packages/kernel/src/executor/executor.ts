@@ -1362,6 +1362,8 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
  */
 export function agentFailureText(reason: string | null, error: string | null): string {
   const err = (error ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+  // 模型端点未配置（V11 界面走查 D1）：不是暂时故障，“稍后重新运行”不会成功——写明要先配置；须在 503 / provider 规则之前
+  if (/模型端点未配置|模型通道未配置|model_upstream_unavailable/.test(err)) return `这台电脑还没有配置 AI 模型端点，任务没有发出去（${err.slice(0, 60)}）：请先在设置里配置模型端点（或请律所管理员配置），配置好后再点“重新运行”；不用 AI 的本机功能（整理案卷、回稿比对、脱敏等）照常可用`;
   // 限流（第 29 批 429 演练）：服务是通的，只是请求太多——说“繁忙”，不说“连不上”
   if (/\b429\b|rate.?limit|queue_timeout|排队超时/i.test(err)) return `AI 服务繁忙（请求太多被限流：${err}），任务没有完成；已完成且可验证的部分保留，可以过几分钟点“重新运行”`;
   if (/通道不可达|不可达|ECONNREFUSED|ECONNRESET|ETIMEDOUT|\b50[234]\b|provider/i.test(err)) return `AI 服务暂时连不上（${err}），任务没有完成；已完成且可验证的部分保留，可以稍后点“重新运行”`;

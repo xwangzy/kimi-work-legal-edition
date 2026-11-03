@@ -143,3 +143,13 @@ test("发起确认重新估价（记录客户同意、核对疑似姓名之后�
   const fn = /export function startOptionsOf[\s\S]*?\n}/.exec(src)?.[0] ?? "";
   for (const k of ["skill", "label", "skillArgs", "reviewRules", "primaryOutput", "docNames"]) assert.match(fn, new RegExp(`p\\.${k}`), `带上 ${k}`);
 });
+
+test("V11 D1 模型端点未配置：失败说明写明要先配置，不写“暂时连不上 / 稍后重新运行”", async () => {
+  const { agentFailureText } = await import("../src/executor/executor.ts");
+  for (const e of ["模型端点未配置：模型通道未配置（请先在设置里配置模型端点；不会切换到其他端点，重试不会成功）", "503 模型通道未配置"]) {
+    const t = agentFailureText("host_reported_failure", e);
+    assert.match(t, /还没有配置 AI 模型端点/, e);
+    assert.doesNotMatch(t, /暂时连不上|稍后/, e);
+  }
+  assert.match(agentFailureText("host_reported_failure", "502 模型通道不可达（已排队或稍后重试）"), /暂时连不上/, "真正的暂时故障照旧");
+});
