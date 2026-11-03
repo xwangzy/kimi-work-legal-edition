@@ -332,23 +332,40 @@ export interface CellPosition {
 export function paragraphCells(documentXml: string): (CellPosition | null)[] {
   const paras = mapParagraphs(documentXml);
   const TAG = /<(\/?)w:(tbl|tr|tc)\b[^>]*?(\/?)>/g;
-  type Frame = { table: number; row: number; col: number; lead: number | null };
+  // 列名按网格列认（V11 F6：横向合并的“合计”格 gridSpan=5 之后，金额格原先按“第几个格子”认成第 2 列“设备名称”）：
+  // 每个格子记它起始的网格列与跨的列数，首行一个格子跨几列就给这几列都记上它的文字
+  type Frame = { table: number; row: number; col: number; grid: number; span: number; lead: number | null };
   const stack: Frame[] = [];
   let tables = 0;
   const events = [...documentXml.matchAll(TAG)].filter((m) => m[3] !== "/");
   const out: (CellPosition | null)[] = [];
+  const grids: (number | null)[] = [];
   const firstRow = new Map<string, string>();
+  const spanAt = (at: number): number => {
+    const tc = findElement(documentXml, "w:tc", at);
+    const tcPr = tc ? /^<w:tc\b[^>]*>\s*(<w:tcPr\b[^>]*>[\s\S]*?<\/w:tcPr>)/.exec(documentXml.slice(tc.start, tc.end))?.[1] : undefined;
+    const n = Number(/<w:gridSpan\b[^>]*\bw:val="(\d+)"/.exec(tcPr ?? "")?.[1] ?? 1);
+    return Number.isFinite(n) && n >= 1 ? Math.min(n, 64) : 1;
+  };
   let e = 0;
   let lastOutside: number | null = null;
   for (const p of paras) {
     while (e < events.length && events[e]!.index! < p.xmlStart) {
       const [, close, tag] = events[e]!;
       if (!close) {
-        if (tag === "tbl") stack.push({ table: ++tables, row: 0, col: 0, lead: stack.at(-1)?.lead ?? lastOutside });
+        if (tag === "tbl") stack.push({ table: ++tables, row: 0, col: 0, grid: 0, span: 1, lead: stack.at(-1)?.lead ?? lastOutside });
         else if (tag === "tr" && stack.length) {
-          stack.at(-1)!.row += 1;
-          stack.at(-1)!.col = 0;
-        } else if (tag === "tc" && stack.length) stack.at(-1)!.col += 1;
+          const f = stack.at(-1)!;
+          f.row += 1;
+          f.col = 0;
+          f.grid = 0;
+          f.span = 1;
+        } else if (tag === "tc" && stack.length) {
+          const f = stack.at(-1)!;
+          f.grid = f.col === 0 ? 1 : f.grid + f.span;
+          f.col += 1;
+          f.span = spanAt(events[e]!.index!);
+        }
       } else if (tag === "tbl") stack.pop();
       e += 1;
     }
@@ -356,15 +373,21 @@ export function paragraphCells(documentXml: string): (CellPosition | null)[] {
     if (!f || f.row === 0 || f.col === 0) {
       if (!f && p.text.trim()) lastOutside = p.index;
       out.push(null);
+      grids.push(null);
       continue;
     }
     if (f.row === 1) {
-      const k = `${f.table}:${f.col}`;
-      firstRow.set(k, `${firstRow.get(k) ?? ""}${p.text}`);
+      for (let g = f.grid; g < f.grid + f.span; g++) {
+        const k = `${f.table}:${g}`;
+        firstRow.set(k, `${firstRow.get(k) ?? ""}${p.text}`);
+      }
     }
     out.push({ table: f.table, row: f.row, col: f.col, header: "", lead: f.lead });
+    grids.push(f.grid);
   }
-  for (const c of out) if (c) c.header = (firstRow.get(`${c.table}:${c.col}`) ?? "").trim().slice(0, 20);
+  out.forEach((c, i) => {
+    if (c) c.header = (firstRow.get(`${c.table}:${grids[i]}`) ?? "").trim().slice(0, 20);
+  });
   return out;
 }
 

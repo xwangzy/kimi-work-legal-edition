@@ -258,7 +258,7 @@ test("几张表的行名列名相同：提示前加表格前一段的条款号�
 test("修订稿打开 Word 的“修订”开关，清洁稿关掉（第 35 批 R5 律师评分：律师在修订稿上续改时不留痕）", () => {
   const docx = withBody(p(r("3.1 甲方应于验收合格后三十日内付款。")), { "word/settings.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:zoom w:percent="100"/></w:settings>` });
   const rev = revise(docx, [{ a: "三十日", n: "十五日" }]);
-  assert.match(readZipEntries(rev).get("word/settings.xml")!.toString("utf8"), /<w:settings[^>]*><w:trackRevisions\/>/);
+  assert.match(readZipEntries(rev).get("word/settings.xml")!.toString("utf8"), /<w:settings[^>]*><w:zoom w:percent="100"\/><w:trackRevisions\/>/, "V11 F5：按 CT_Settings 次序写在 w:zoom 之后");
   const clean = sanitizeDocx(rev).docx;
   assert.doesNotMatch(readZipEntries(clean).get("word/settings.xml")!.toString("utf8"), /trackRevisions/);
   const again = revise(rev, [{ a: "验收合格", n: "最终验收合格" }]);

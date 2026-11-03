@@ -51,7 +51,7 @@ test("自动编号的条款整段删除：清洁稿里没有空的编号，后�
 });
 
 test("段落标记删除：已有段落 rPr 的加在里面；带分节符或段落格式修订的不动", () => {
-  assert.equal(markParagraphDeleted('<w:p><w:pPr><w:jc w:val="both"/><w:rPr><w:b/></w:rPr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>', 9, "A", "D"), '<w:p><w:pPr><w:jc w:val="both"/><w:rPr><w:b/><w:del w:id="9" w:author="A" w:date="D"/></w:rPr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>');
+  assert.equal(markParagraphDeleted('<w:p><w:pPr><w:jc w:val="both"/><w:rPr><w:b/></w:rPr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>', 9, "A", "D"), '<w:p><w:pPr><w:jc w:val="both"/><w:rPr><w:del w:id="9" w:author="A" w:date="D"/><w:b/></w:rPr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>', "V11 F4：段落标记的删除按 CT_ParaRPr 次序写在 rPr 最前");
   assert.equal(markParagraphDeleted('<w:p w:rsidR="1"><w:r><w:t>x</w:t></w:r></w:p>', 9, "A", "D"), '<w:p w:rsidR="1"><w:pPr><w:rPr><w:del w:id="9" w:author="A" w:date="D"/></w:rPr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>');
   const sect = '<w:p><w:pPr><w:sectPr><w:pgSz w:w="11906"/></w:sectPr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>';
   assert.equal(markParagraphDeleted(sect, 9, "A", "D"), sect);

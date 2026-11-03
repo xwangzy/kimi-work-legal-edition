@@ -8,7 +8,7 @@
 import { dropHouseMark } from "./house-style.ts";
 import { DomainError, sha256Hex } from "@zr-legal/domain";
 import { readZipEntries, writeZip } from "./zip.ts";
-import { childElements, escapeXml, findElement, findInParagraph, mapParagraph, mapParagraphs, paragraphCells, removeElements, splitParagraphRuns, type ParagraphMap, type TextSegment } from "./textmap.ts";
+import { childElements, escapeXml, findElement, findInParagraph, mapParagraph, mapParagraphs, paragraphCells, removeElements, splitParagraphRuns, unescapeXml, type ParagraphMap, type TextSegment } from "./textmap.ts";
 import { paragraphListLabels } from "./numbering.ts";
 import type { AppliedRevision, RevisionOp, RevisionPlan } from "./revision-ops.ts";
 
@@ -69,8 +69,8 @@ export function applyRevisionsToDocx(docx: Buffer, plan: RevisionPlan): ApplyRes
   files.set("word/document.xml", Buffer.from(xml, "utf8"));
   // 修订稿打开“修订”开关（第 35 批 R5 律师评分：律师在修订稿上接着改时容易不留痕）；原件没有设置部件的不新建
   const settings = files.get("word/settings.xml")?.toString("utf8");
-  if (settings !== undefined && !/<w:trackRevisions\b/.test(settings)) {
-    const next = settings.replace(/(<w:settings\b[^>]*>)/, "$1<w:trackRevisions/>");
+  if (settings !== undefined) {
+    const next = withTrackRevisions(settings);
     if (next !== settings) {
       assertWellFormed(next, "word/settings.xml");
       files.set("word/settings.xml", Buffer.from(next, "utf8"));
@@ -193,9 +193,20 @@ function applyOne(
   const r1 = span.end - keepTail.length;
   // 只重写改动所在的 run，锚点里没变的开头、结尾所在的 run 字节不动：锚点可以跨过对方修订的边界，只要改动本身不跨
   // （第 34 批 T3b 真实走查：“一般保证”里“一般”是对方插入、“保证”是原文，改回“连带责任保证”原先因锚点跨边界被拒写）
-  const touched = r1 > r0 ? coverSegs.filter((s) => s.end > r0 && s.start < r1) : [coverSegs.findLast((s) => s.start < r0) ?? coverSegs[0]!];
+  // 纯插入：新字接在插入点前那个字所在的 run 上；那个 run 是 Word 域的结果、插入点正好在它末尾时，改接在后面那个 run 前（新字写在域外，V11 F1）
+  const pureInsertAt = (): TextSegment => {
+    const prev = coverSegs.findLast((s) => s.start < r0) ?? coverSegs[0]!;
+    const next = coverSegs.find((s) => s.start === r0 && s.end > s.start);
+    return prev.end === r0 && next && inComplexField(xml, prev.runXmlStart) && !inComplexField(xml, next.runXmlStart) ? next : prev;
+  };
+  const touched = r1 > r0 ? coverSegs.filter((s) => s.end > r0 && s.start < r1) : [pureInsertAt()];
   const first = touched[0] ?? coverSegs[0]!;
   const last = touched.at(-1) ?? first;
+  // 复杂域（REF 交叉引用、PAGE、DATE 等 fldChar 写法，Word 正文里最常见）的结果里不写修订：域一更新修改即失效，LibreOffice 也不显示这处修订
+  // （V11 F1，与简单域 fldSimple 同一口径；原先只认 fldSimple）
+  if (inComplexField(xml, first.runXmlStart) || inComplexField(xml, last.runXmlStart)) {
+    throw new DomainError("anchor_mismatch", `修订 ${op.opId} 锚点在 Word 域（自动日期、页码、交叉引用等）的结果里：域更新后修改会失效，请把锚点缩小到域外的文字，或手工修改`, 422, { opId: op.opId });
+  }
   const date = new Date().toISOString();
   const author = op.author;
   const paraXml = xml.slice(target.xmlStart, target.xmlEnd);
@@ -203,6 +214,9 @@ function applyOne(
   const relEnd = last.runXmlEnd - target.xmlStart;
   const region = paraXml.slice(relStart, relEnd);
   const { preserved, foreignIns } = checkRegion(op.opId, paraXml, relStart, region);
+  // 落在本作者此前的插入里（V11 F2：律师回传上一轮修订稿再改，上一轮的插入与本次同一署名）：照 Word 对同一作者的做法，删去的字直接从
+  // 那处插入里去掉、不写“自己的插入里套自己的删除”——LibreOffice 会把这种删除丢掉，接受全部后旧字新字并存。拒绝全部仍回到原件（那些字本来就是插入的）
+  const ownIns = foreignIns !== null && unescapeXml(/\bw:author="([^"]*)"/.exec(foreignIns)?.[1] ?? "") === author;
 
   type Atom = { kind: "keep" | "del"; seg: TextSegment; text: string };
   const atoms: Atom[] = [];
@@ -249,9 +263,11 @@ function applyOne(
     const rpr = freshChangeIds(x.seg.rPr ?? "", nextId);
     const body = x.seg.kind === "text" ? `<w:${x.kind === "del" ? "delText" : "t"} xml:space="preserve">${escapeXml(x.text)}</w:${x.kind === "del" ? "delText" : "t"}>` : xml.slice(x.seg.xmlStart, x.seg.xmlEnd);
     if (x.kind === "del") {
-      if (!delOpen) parts.push(`<w:del w:id="${delId}" w:author="${escapeXml(author)}" w:date="${date}" kwl-new="1">`);
-      delOpen = true;
-      parts.push(`<w:r>${rpr}${body}</w:r>`);
+      if (!ownIns) {
+        if (!delOpen) parts.push(`<w:del w:id="${delId}" w:author="${escapeXml(author)}" w:date="${date}" kwl-new="1">`);
+        delOpen = true;
+        parts.push(`<w:r>${rpr}${body}</w:r>`);
+      }
       if (!atoms[i + 1] || atoms[i + 1]!.kind !== "del") {
         closeDel();
         if (!added && commentId >= 0) parts.push(commentEnd(commentId));
@@ -264,16 +280,79 @@ function applyOne(
   parts.push(...preserved);
 
   let newParaXml = paraXml.slice(0, relStart) + parts.join("") + paraXml.slice(relEnd);
+  // 本作者的插入里的字删光了：不留空的插入
+  if (ownIns) newParaXml = newParaXml.replace(/<w:ins\b[^>]*(?<!\/)><\/w:ins>/g, "");
   // 整段删除（第 31 批）：段落的可见文字全部删掉时，段落标记也标为删除——接受修订后整段消失（清洁稿同一处理，见 sanitize），
   // 不留空行；自动编号的条款不再剩一个空的“5.3”、后面的编号也随之顺延。分节符所在的段落不动段落标记（会并掉分节）。
   const remaining = target.text.slice(0, span.start) + target.text.slice(span.end);
-  if (!op.newText && remaining.trim() === "") newParaXml = markParagraphDeleted(newParaXml, nextId(), escapeXml(author), date);
+  if (!op.newText && remaining.trim() === "") {
+    // 整段（连段落标记）都是本作者此前插入的（上一轮新增的条款）：照 Word 的做法整段去掉，不写“插入又删除”（V11 F2）
+    if (ownIns && ownInsertedParagraph(newParaXml, author, commentId) && !onlyParagraphInCell(xml, target)) {
+      // 本条的批注随段落一起去掉（批注挂不到已不存在的段落上；修改理由仍进修改对照表）
+      const ci = comments.findIndex((c) => c.id === commentId);
+      if (ci >= 0) comments.splice(ci, 1);
+      newParaXml = "";
+    } else newParaXml = markParagraphDeleted(newParaXml, nextId(), escapeXml(author), date);
+  }
   applied.push({ opId: op.opId, status: "applied", paragraphIndex });
   return xml.slice(0, target.xmlStart) + newParaXml + xml.slice(target.xmlEnd);
 }
 
+/**
+ * CT_Settings 里排在 w:trackRevisions 之前的元素（ECMA-376 第 1 部分 §17.15.1.78 的次序）。V11 F5：原先把 w:trackRevisions 写成
+ * settings 的第一个子元素（排在 w:zoom、w:proofState 之前），不合架构次序；按次序写在这些元素之后。
+ */
+const SETTINGS_BEFORE_TRACK = new Set(
+  "writeProtection view zoom removePersonalInformation removeDateAndTime doNotDisplayPageBoundaries displayBackgroundShape printPostScriptOverText printFractionalCharacterWidth printFormsData embedTrueTypeFonts embedSystemFonts saveSubsetFonts saveFormsData mirrorMargins alignBordersAndEdges bordersDoNotSurroundHeader bordersDoNotSurroundFooter gutterAtTop hideSpellingErrors hideGrammaticalErrors activeWritingStyle proofState formsDesign attachedTemplate linkStyles stylePaneFormatFilter stylePaneSortMethod documentType mailMerge revisionView"
+    .split(" ")
+    .map((n) => `w:${n}`),
+);
+
+/** 打开“修订”开关（settings.xml）：已打开的不动；写着关闭（w:val="false"/"0"/"off"）的改为打开；没有的按架构次序插入。纯函数。 */
+export function withTrackRevisions(settings: string): string {
+  const existing = /<w:trackRevisions\b[^>]*\/>/.exec(settings);
+  if (existing) return /\bw:val="(?:false|0|off)"/.test(existing[0]) ? settings.replace(existing[0], "<w:trackRevisions/>") : settings;
+  const open = /<w:settings\b[^>]*>/.exec(settings);
+  const close = settings.lastIndexOf("</w:settings>");
+  if (!open || close < 0) return settings;
+  const innerStart = open.index + open[0].length;
+  const kids = childElements(settings.slice(innerStart, close));
+  const before = kids.filter((k) => SETTINGS_BEFORE_TRACK.has(k.name)).at(-1);
+  const at = innerStart + (before ? before.end : 0);
+  return `${settings.slice(0, at)}<w:trackRevisions/>${settings.slice(at)}`;
+}
+
+/** pos 处是否在复杂域（w:fldChar begin…end，含域代码与域结果）之内：按其前的 begin / end 计深度（V11 F1）。 */
+function inComplexField(xml: string, pos: number): boolean {
+  let depth = 0;
+  for (const m of xml.matchAll(/<w:fldChar\b[^>]*\bw:fldCharType="(begin|end)"/g)) {
+    if (m.index! >= pos) break;
+    depth = Math.max(0, depth + (m[1] === "begin" ? 1 : -1));
+  }
+  return depth > 0;
+}
+
 function commentEnd(id: number): string {
   return `<w:commentRangeEnd w:id="${id}"/><w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="${id}"/></w:r>`;
+}
+
+/** 段落是否整段都是 author 此前插入的、且已没有任何内容（段落标记记为 author 的插入；本次的批注标记不算内容）。 */
+function ownInsertedParagraph(paraXml: string, author: string, commentId: number): boolean {
+  const open = /^<w:p\b[^>]*>/.exec(paraXml)?.[0];
+  if (!open) return false;
+  const pPr = findElement(paraXml, "w:pPr");
+  const pPrXml = pPr && /^\s*$/.test(paraXml.slice(open.length, pPr.start)) ? paraXml.slice(pPr.start, pPr.end) : "";
+  if (/<w:sectPr\b|<w:pPrChange\b/.test(pPrXml)) return false;
+  const mark = /<w:rPr\b[^>]*>(?:(?!<\/w:rPr>)[\s\S])*?<w:ins\b([^>]*)\/>/.exec(pPrXml);
+  if (!mark || unescapeXml(/\bw:author="([^"]*)"/.exec(mark[1] ?? "")?.[1] ?? "") !== author) return false;
+  let body = paraXml.slice(pPrXml ? pPr!.end : open.length, paraXml.length - "</w:p>".length);
+  if (commentId >= 0) body = body.replace(`<w:commentRangeStart w:id="${commentId}"/>`, "").replace(commentEnd(commentId), "");
+  return /^\s*$/.test(body.replace(/<w:proofErr\b[^>]*\/>/g, ""));
+}
+
+/** 段落是表格单元格里唯一的段落（单元格至少要有一段，不能整段去掉）。 */
+function onlyParagraphInCell(xml: string, p: { xmlStart: number; xmlEnd: number }): boolean {
+  return /(?:<w:tc\b[^>]*>|<\/w:tcPr>)\s*$/.test(xml.slice(Math.max(0, p.xmlStart - 4000), p.xmlStart)) && /^\s*<\/w:tc>/.test(xml.slice(p.xmlEnd, p.xmlEnd + 100));
 }
 
 /** 纯插入（没有删除的字）时新字的位置：第一个起点不早于插入点的保留片段之前。 */
@@ -416,21 +495,48 @@ export function assertWellFormed(xml: string, part: string): void {
 
 /** 在段落的 w:pPr/w:rPr 里加段落标记删除（<w:del …/>）；没有 pPr / rPr 的补上；带分节符（w:sectPr）的段落原样返回。纯函数。 */
 export function markParagraphDeleted(paraXml: string, id: number, author: string, date: string): string {
-  const mark = `<w:del w:id="${id}" w:author="${author}" w:date="${date}"/>`;
-  const open = /^<w:p\b[^>]*>/.exec(paraXml)![0];
-  const pPr = /^<w:pPr\b[^>]*>[\s\S]*?<\/w:pPr>/.exec(paraXml.slice(open.length))?.[0];
-  if (!pPr) return `${open}<w:pPr><w:rPr>${mark}</w:rPr></w:pPr>${paraXml.slice(open.length)}`;
   // 带分节符的不动；已有段落格式修订（w:pPrChange 里嵌着旧的 w:pPr）的也不动，免得把嵌套结构切坏
-  if (/<w:sectPr\b|<w:pPrChange\b/.test(paraXml)) return paraXml;
-  // w:pPr 里 w:rPr 之后只能是 w:sectPr / w:pPrChange：有 rPr 的加在 rPr 里，没有的加在这两者之前（或末尾）
-  const rPr = /<w:rPr\b[^>]*>[\s\S]*?<\/w:rPr>|<w:rPr\b[^>]*\/>/.exec(pPr);
+  const pPr = findElement(paraXml, "w:pPr");
+  if (pPr && /<w:sectPr\b|<w:pPrChange\b/.test(paraXml.slice(pPr.start, pPr.end))) return paraXml;
+  return addParagraphMarkRevision(paraXml, `<w:del w:id="${id}" w:author="${author}" w:date="${date}"/>`);
+}
+
+/**
+ * 段落标记上的修订（<w:ins …/> / <w:del …/>）写进 w:pPr/w:rPr：按 CT_ParaRPr 的次序放在 rPr 最前面（ins 在 del 之前；V11 F4：
+ * 原先追加在字体、字号之后，不合架构次序）；没有 rPr 的补在 w:sectPr / w:pPrChange 之前（或末尾），没有 pPr 的补上。纯函数。
+ */
+export function addParagraphMarkRevision(paraXml: string, mark: string): string {
+  const open = /^<w:p\b[^>]*>/.exec(paraXml)![0];
+  if (open.endsWith("/>")) return `${open.slice(0, -2).trimEnd()}><w:pPr><w:rPr>${mark}</w:rPr></w:pPr></w:p>`;
+  const el = findElement(paraXml, "w:pPr");
+  if (!el || !/^\s*$/.test(paraXml.slice(open.length, el.start))) return `${open}<w:pPr><w:rPr>${mark}</w:rPr></w:pPr>${paraXml.slice(open.length)}`;
+  const pPr = paraXml.slice(el.start, el.end);
   let next: string;
-  if (rPr) next = pPr.replace(rPr[0], rPr[0].endsWith("/>") ? `<w:rPr>${mark}</w:rPr>` : rPr[0].replace(/<\/w:rPr>$/, `${mark}</w:rPr>`));
+  if (pPr.endsWith("/>")) next = `<w:pPr><w:rPr>${mark}</w:rPr></w:pPr>`;
   else {
-    const at = pPr.search(/<w:pPrChange\b|<\/w:pPr>$/);
-    next = `${pPr.slice(0, at)}<w:rPr>${mark}</w:rPr>${pPr.slice(at)}`;
+    const pOpen = /^<w:pPr\b[^>]*>/.exec(pPr)![0];
+    const inner = pPr.slice(pOpen.length, pPr.length - "</w:pPr>".length);
+    const kids = childElements(inner);
+    const rPr = kids.find((k) => k.name === "w:rPr");
+    if (rPr) {
+      const rx = inner.slice(rPr.start, rPr.end);
+      let nr: string;
+      if (rx.endsWith("/>")) nr = `<w:rPr>${mark}</w:rPr>`;
+      else {
+        const rOpen = /^<w:rPr\b[^>]*>/.exec(rx)![0];
+        const rest = rx.slice(rOpen.length);
+        // 删除标记接在已有的插入标记之后（同一段落标记先被对方插入、再被我方删除）
+        const lead = /^<w:del\b/.test(mark) ? (/^\s*<w:ins\b[^>]*\/>/.exec(rest)?.[0] ?? "") : "";
+        nr = `${rOpen}${lead}${mark}${rest.slice(lead.length)}`;
+      }
+      next = `${pOpen}${inner.slice(0, rPr.start)}${nr}${inner.slice(rPr.end)}</w:pPr>`;
+    } else {
+      const after = kids.find((k) => k.name === "w:sectPr" || k.name === "w:pPrChange");
+      const at = after ? after.start : inner.length;
+      next = `${pOpen}${inner.slice(0, at)}<w:rPr>${mark}</w:rPr>${inner.slice(at)}</w:pPr>`;
+    }
   }
-  return open + next + paraXml.slice(open.length + pPr.length);
+  return paraXml.slice(0, el.start) + next + paraXml.slice(el.end);
 }
 
 /** 段后插入：新段落沿用目标段落的段落格式（去掉分节 w:sectPr、段落标记的 w:rPr 与已有修订标记），段落标记标为插入。 */
@@ -538,10 +644,25 @@ function insertParagraphsAfter(
   const tagged = paras.map((p) => p.replace(/^<w:p>/, `<w:p kwl-ins="${k}">`));
   let out = known ? xml : xml.slice(0, target.xmlStart) + head.replace(/>$/, ` kwl-anchor="${k}">`) + xml.slice(target.xmlStart + head.length);
   let at = target.xmlEnd + (known ? 0 : ` kwl-anchor="${k}"`.length);
+  let prevStart = target.xmlStart;
   for (;;) {
     const m = /^<w:p\b[^>]*>[\s\S]*?<\/w:p>/.exec(out.slice(at));
     if (!m || !m[0].startsWith(`<w:p kwl-ins="${k}">`)) break;
+    prevStart = at;
     at += m[0].length;
+  }
+  // 插入位置前那一段带分节符（V11 F3：Word 与 LibreOffice 都把分节符写在本节最后一段的段落属性里）：新段落原先落到下一节（横向附件页）。
+  // 照 Word 在分节符前回车的写法：分节符移到最后一个新段落上（它的段落标记就是原来那个，不记插入），前一段的段落标记记为插入——
+  // 接受全部，新段落在本节末尾；拒绝全部，几段并回原来那一段、分节符还在。
+  const prevXml = out.slice(prevStart, at);
+  const prevPpr = findElement(prevXml, "w:pPr");
+  const sect = prevPpr && /^<w:p\b[^>]*>\s*$/.test(prevXml.slice(0, prevPpr.start)) ? findElement(prevXml.slice(0, prevPpr.end), "w:sectPr", prevPpr.start) : null;
+  if (sect) {
+    const sectXml = prevXml.slice(sect.start, sect.end);
+    const moved = addParagraphMarkRevision(prevXml.slice(0, sect.start) + prevXml.slice(sect.end), `<w:ins w:id="${nextId()}" w:author="${author}" w:date="${date}"/>`);
+    tagged[tagged.length - 1] = tagged.at(-1)!.replace(/<w:rPr><w:ins\b[^>]*\/><\/w:rPr><\/w:pPr>/, `${sectXml}</w:pPr>`);
+    out = out.slice(0, prevStart) + moved + out.slice(at);
+    at = prevStart + moved.length;
   }
   out = out.slice(0, at) + tagged.join("") + out.slice(at);
   return out;

@@ -142,6 +142,8 @@ const REF_RE = /第[一二三四五六七八九十百千零〇两0-9０-９]+条
  * 修改前后的自动编号对照：按文字相同、先后次序对齐两稿的段落，列出编号变了的条款；再找正文里仍写着旧编号的互引。
  * 自动编号由 Word 生成，删除、插入条款后会自动顺延，正文里写死的“第十一条”“11.2”不会跟着变。
  */
+// V11：调用方须先把两边都接受全部修订再比（第二轮在带上一轮修订的原件上改时，原先拿带修订的原件比，把上一轮未接受的删除造成的
+// 编号变化算进本轮，对照表与 numbering_changes 写“原（三）现为（二）”）
 export function numberingShifts(before: Buffer, after: Buffer): NumberingShifts {
   const b = extractParagraphs(before).map((p) => p.text);
   const bl = docxListLabels(before);
@@ -356,7 +358,7 @@ export function applyStructuredPatches(
     let numbering: NumberingShifts | undefined;
     if (conflicts.length === 0) {
       try {
-        numbering = numberingShifts(buf, sanitizeDocx(applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops: insertsFirst(ops) }).docx).docx);
+        numbering = numberingShifts(sanitizeDocx(buf).docx, sanitizeDocx(applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops: insertsFirst(ops) }).docx).docx);
       } catch (e) {
         for (const item of preview) item.ok = false;
         conflicts.push({ index: 0, reason: "apply_failed", detail: (e as Error).message.slice(0, 200) });
@@ -396,7 +398,7 @@ export function applyStructuredPatches(
      VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,?,?,?,?)`,
     [artifactId, doc.tenant_id, doc.matter_id, input.run_id ?? null, kind, v.next, filename, stored.sha256, stored.storage_uri, "[]", JSON.stringify(manifest), input.created_by, docLineage(doc.document_version_id)],
   );
-  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(buf, sanitizeDocx(out).docx), label_notes: labelNotes, changes: [...hfRows, ...changeRows(paragraphs, labels, spans, ops, paragraphPlaces(buf, paragraphs, labels))] };
+  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(sanitizeDocx(buf).docx, sanitizeDocx(out).docx), label_notes: labelNotes, changes: [...hfRows, ...changeRows(paragraphs, labels, spans, ops, paragraphPlaces(buf, paragraphs, labels))] };
 }
 
 /**
