@@ -47,6 +47,11 @@ const NO_YEAR_RE = /(?<![年\d〇零○一二三四五六七八九十\s])(\d{1,2
 /** 相对年份的日期：同年 / 次年 / 当年 / 今年 / 去年……3月5日——年份不明，原文里带着相对年份（复核 R15B-17）。 */
 const RELATIVE_DATE_RE = /(同年|次年|当年|今年|去年|上年|翌年|前年|本年)\s*(\d{1,2}|元|[一二三四五六七八九十]{1,2})\s*月\s*(\d{1,2}|[一二三四五六七八九十]{1,3})\s*日/g;
 const AMOUNT_RE = /(人民币|￥|¥)?\s*(?<![\d.])([\d,]+(?:\.\d+)?)\s*(万元|元)/g;
+/**
+ * 只有币种前缀、没有“元”的小写金额（V11 界面走查 D9）：“¥5,100,000”“人民币 1,530,000.00”“RMB 200,000”。
+ * 后面紧跟“元 / 万元 / 万 / 千”等的交给上面的规则；须有币种前缀，免得把编号、电话、条款号当金额。
+ */
+const CURRENCY_AMOUNT_RE = /(人民币|RMB|CNY|￥|¥)\s*(?<![\d.])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\d.,]|\s*(?:万元|元|圆|万|千|百|亿))/g;
 /** 阿拉伯数字与千、百、万、亿混写：5千元、3万5千元、3百万元、2千万元（复核 R15B-06）。 */
 const MIXED_AMOUNT_RE = /(人民币|￥|¥)?\s*(?<![\d.])((?:\d+(?:\.\d+)?[千百万亿])+\d*)\s*元/g;
 /**
@@ -206,6 +211,10 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
       assertion: "material_record",
     });
   }
+  for (const m of text.matchAll(CURRENCY_AMOUNT_RE)) {
+    const value = Number(m[2]!.replace(/,/g, ""));
+    if (Number.isFinite(value) && value > 0) push("amount", m, `${value} 元`);
+  }
   // 同一笔金额的大写与小写（“人民币壹拾万元整（小写：100,000元）”）是一件事：相距 20 字以内且金额相等的合并成一条，原文涵盖两处（复核 R15B-17）
   const amounts = out.filter((f) => f.kind === "amount").sort((a, b) => a.char_start - b.char_start);
   const drop = new Set<FactRow>();
@@ -361,6 +370,38 @@ function qualityRemark(flags: string[]): string {
   return notes.join("；") || "—";
 }
 
+/** 大写（中文数字）金额与阿拉伯数字金额（V11）。 */
+const CN_NUMERAL = /[零〇壹贰叁肆伍陆柒捌玖拾佰仟萬一二三四五六七八九十百千两]/;
+const ARABIC = /\d/;
+/** 同一笔金额的大写与小写之间只会有的东西。 */
+const PAIR_GLUE = /^[\s（(）)【】\[\]：:，,、]*(?:(?:小写|大写|即|计|合)[\s：:]*)?(?:人民币|RMB|CNY)?[\s：:]*$/;
+
+/**
+ * 同一笔金额的大写与小写对不上（V11 界面走查 D9：“合同总价款为人民币伍佰零玖万元整（¥5,100,000）”没被发现）：
+ * 同一份材料里一处大写、紧接着一处小写（中间只有括号、冒号、空白与“小写 / 大写 / 即 / 人民币”这类连接词，不跨句）、数值不同的两处金额。
+ * 相等的已在 extractFacts 里合并成一条，这里只剩对不上的。纯函数。
+ */
+export function amountCaseConflicts(facts: readonly FactRow[], textOf: (documentVersionId: string) => string): { filename: string; char_start: number; char_end: number; upper: string; lower: string; text: string }[] {
+  const out: { filename: string; char_start: number; char_end: number; upper: string; lower: string; text: string }[] = [];
+  const isCn = (f: FactRow) => CN_NUMERAL.test(f.text) && !ARABIC.test(f.text);
+  const isAr = (f: FactRow) => ARABIC.test(f.text);
+  const byDoc = new Map<string, FactRow[]>();
+  for (const f of facts) if (f.kind === "amount") byDoc.set(f.document_version_id, [...(byDoc.get(f.document_version_id) ?? []), f]);
+  for (const rows of byDoc.values()) {
+    rows.sort((a, b) => a.char_start - b.char_start);
+    for (let i = 0; i + 1 < rows.length; i += 1) {
+      const a = rows[i]!;
+      const b = rows[i + 1]!;
+      if (b.char_start - a.char_end > 20 || a.normalized === b.normalized) continue;
+      if (!PAIR_GLUE.test(textOf(a.document_version_id).slice(a.char_end, b.char_start))) continue;
+      const [cn, ar] = isCn(a) && isAr(b) ? [a, b] : isAr(a) && isCn(b) ? [b, a] : [null, null];
+      if (!cn || !ar) continue;
+      out.push({ filename: a.filename, char_start: a.char_start, char_end: b.char_end, upper: cn.normalized, lower: ar.normalized, text: `${a.text}……${b.text}` });
+    }
+  }
+  return out;
+}
+
 export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
   const facts = input.materials.flatMap((m) =>
     extractFacts({ document_version_id: m.document_version_id, parse_version_id: m.parse_version_id, filename: m.filename, text: m.text }),
@@ -425,6 +466,13 @@ export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
         supplementRows.push(`《${m.filename}》第 ${pg.pageNo} 页：识别不清——建议重新扫描，或在材料页手工更正识别出的文字（原件不变）`);
       }
     }
+  }
+
+  // 金额大小写对不上（V11）：列入补证清单，请律师核对原件，不替律师判断哪一个是对的
+  const textByDoc = new Map(input.materials.map((m) => [m.document_version_id, m.text]));
+  for (const c of amountCaseConflicts(facts, (id) => textByDoc.get(id) ?? "")) {
+    qualityNotes.push(`《${c.filename}》${charPos(c.char_start, c.char_end)}：金额大写与小写不一致（大写 ${c.upper}，小写 ${c.lower}）`);
+    supplementRows.push(`《${c.filename}》${charPos(c.char_start, c.char_end)}：金额大写（${c.upper}）与小写（${c.lower}）不一致——请核对原件与对方确认，以哪一个为准须写明`);
   }
 
   const factsCount = { dates: dates.length, amounts: amounts.length, parties: parties.length };
