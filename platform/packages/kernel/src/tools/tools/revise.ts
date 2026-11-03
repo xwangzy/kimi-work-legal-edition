@@ -28,6 +28,7 @@ const FIX_HINT: Record<PatchConflict["reason"], string> = {
   unknown_token: "含有本事项不存在的代号：代号只能照抄材料里出现过的",
   anchor_empty: "anchor 不能为空；新增条款用 insert_after，锚点写插入位置前一段里的原文",
   anchor_hash_mismatch: "内部校验失败，请重新提交",
+  new_clause_in_edit: "新增条款不要接在原段落里换行写（会成为同一段里的软回车：不受自动编号管理，对方也没法单独接受或拒绝）：本条只写对原段的修改；新增条款另提一条 insert_after，锚点写它前一段里的原文，新文字不写编号（自动续号）",
   apply_failed: "写入失败：通常是两条修改落在同一处，拆开或合并后重试",
 };
 

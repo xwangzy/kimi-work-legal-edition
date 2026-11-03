@@ -46,8 +46,24 @@ export interface PatchConflict {
     | "anchor_empty"
     | "overlap"
     | "complex_structure"
+    | "new_clause_in_edit"
     | "apply_failed";
   detail?: string;
+}
+
+/**
+ * 改字的新文字里换行后冒出新的条款编号（“2.3 ……”“第七条 ……”）：新增条款被接在原段落里成了软回车，
+ * 不受自动编号管理，对方也无法单独接受或拒绝（V10 真实走查 V9：提前退租权写成第 2.2 款段内的“2.3”）。
+ * 返回冒出的编号；原文本身就是多行的段落不查。
+ */
+const NEW_CLAUSE_LINE_RE = /^\s*(第\s*[0-9一二三四五六七八九十百零〇]{1,6}\s*条|[0-9]{1,3}(?:\.[0-9]{1,3})+)(?![0-9.])/;
+export function newClauseInEdit(anchor: string, proposed: string): string | null {
+  if (/\n/.test(anchor)) return null;
+  for (const line of proposed.split(/\r?\n/).slice(1)) {
+    const m = NEW_CLAUSE_LINE_RE.exec(line);
+    if (m && !anchor.includes(m[1]!)) return m[1]!.replace(/\s+/g, "");
+  }
+  return null;
 }
 
 export interface PatchPreviewItem {
@@ -229,6 +245,8 @@ export function applyStructuredPatches(
     if (anchor.length === 0) return void conflicts.push({ index, reason: "anchor_empty" });
     if (sha256Hex(anchor) !== String(p?.expected_text_hash ?? "")) return void conflicts.push({ index, reason: "anchor_hash_mismatch" });
     const part = headerFooterHint(p?.paragraph_hint);
+    const newLabel = p?.insert_after === true ? null : newClauseInEdit(anchor, proposed);
+    if (newLabel) return void conflicts.push({ index, reason: "new_clause_in_edit", detail: `新文字里换行后是新的“${newLabel}”` });
     if (part) {
       if (p.insert_after === true) return void conflicts.push({ index, reason: "apply_failed", detail: "页眉页脚只能改字，不能插入新段落" });
       if (!sameSpaces(hfView(part)).includes(sameSpaces(anchor))) return void conflicts.push({ index, reason: "anchor_not_in_view", detail: `锚点不在原件${part === "header" ? "页眉" : "页脚"}的文字里（照抄 header_footer 列出的文字）` });
