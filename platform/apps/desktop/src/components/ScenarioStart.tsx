@@ -342,7 +342,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
             </div>
           ) : null}
           {card.fields.map((f) => (
-            <label key={f.key} className="ss-field">
+            <label key={f.key} className={`ss-field${f.kind === "long" ? " ss-field-long" : ""}`}>
               <span className="ss-label">
                 {f.label}
                 {f.required ? <span className="ss-req" aria-label="必填">*</span> : null}
@@ -365,6 +365,8 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
                     );
                   })}
                 </span>
+              ) : f.kind === "long" ? (
+                <textarea aria-label={f.label} rows={4} placeholder={f.placeholder ?? ""} value={String(values[f.key] ?? "")} onChange={(e) => setField(f.key, e.target.value)} />
               ) : (
                 <input aria-label={f.label} type={f.kind === "date" ? "date" : "text"} placeholder={f.placeholder ?? ""} value={String(values[f.key] ?? "")} onChange={(e) => setField(f.key, e.target.value)} />
               )}

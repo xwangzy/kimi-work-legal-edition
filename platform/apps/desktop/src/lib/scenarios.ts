@@ -14,7 +14,8 @@ export const LINE_LABELS: Record<BusinessLine, string> = { litigation: "诉讼�
 export interface ScenarioField {
   key: string;
   label: string;
-  kind: "select" | "text" | "date" | "multi";
+  /** long：多行文字（V10 第 36 批：律师贴进来的逐条修改意见、问题常有好几段，单行输入框看不全也不好改）。 */
+  kind: "select" | "text" | "long" | "date" | "multi";
   options?: string[];
   placeholder?: string;
   required?: boolean;
@@ -476,7 +477,7 @@ export const SCENARIOS: ScenarioCard[] = [
     allowPartial: true,
     verb: "开始梳理",
     goal: "请为劳动者梳理应主张的全部仲裁请求、时效与证据：{situation}。",
-    fields: [{ key: "situation", label: "基本情况", kind: "text", required: true, placeholder: "例如：2026 年 8 月被口头辞退，未签书面合同，有加班" }],
+    fields: [{ key: "situation", label: "基本情况", kind: "long", required: true, placeholder: "例如：2026 年 8 月被口头辞退，未签书面合同，有加班" }],
     minMaterials: 1,
     steps: ["按事实逐项核对应主张的请求，避免漏项", "时效分两类列出（劳动报酬与其他）", "按法定规则列举证责任与要补的证据", "测算金额并写明公式与基数（草稿，待复核）"],
     // 第 31 批（审查 B-15）：律师代理劳动者最常说“申请劳动仲裁”“员工被辞退要申请仲裁”，原先被引到用人单位的应诉卡
@@ -542,7 +543,7 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始研究",
     goal: "研究问题：{question}。事件发生时点：{when}。",
     fields: [
-      { key: "question", label: "研究问题", kind: "text", required: true, placeholder: "例如：股东未实缴出资时对公司债务的责任" },
+      { key: "question", label: "研究问题", kind: "long", required: true, placeholder: "例如：股东未实缴出资时对公司债务的责任" },
       { key: "when", label: "事件时点", kind: "text", placeholder: "用于判断适用哪一版法律，可空" },
     ],
     minMaterials: 0,
@@ -580,7 +581,7 @@ export const SCENARIOS: ScenarioCard[] = [
     skill: "doc-revise",
     verb: "开始修改",
     goal: "请按以下意见直接在原文上修改这份文书，给我修订稿和清洁稿：{opinion}",
-    fields: [{ key: "opinion", label: "修改意见", kind: "text", placeholder: "例如：付款改为 3-4-3 分期；验收期改为 15 个工作日；争议解决改为我方所在地法院", required: true }],
+    fields: [{ key: "opinion", label: "修改意见", kind: "long", placeholder: "例如：付款改为 3-4-3 分期；验收期改为 15 个工作日；争议解决改为我方所在地法院", required: true }],
     minMaterials: 1,
     steps: ["读原文，把你的意见拆成逐处修改（连同定义、互引、附件）", "在原件副本上逐处修改，保留原版式、编号与表格", "生成带修订痕迹的修订稿和接受全部修订的清洁稿", "列出修改清单；你没提但发现的重大风险只提示、不擅自改"],
     intents: [["修改", "合同"], ["修改", "这份"], ["修订稿"], ["清洁稿"], ["清洁版"], ["修订痕迹"], ["按", "意见", "修改"], ["帮我", "改"]],
@@ -814,7 +815,7 @@ export const SCENARIOS: ScenarioCard[] = [
     skill: "legal-research-memo",
     verb: "开始研究",
     goal: "研究问题：{question}。",
-    fields: [{ key: "question", label: "研究问题", kind: "text", required: true, placeholder: "例如：外资并购中的经营者集中申报门槛" }],
+    fields: [{ key: "question", label: "研究问题", kind: "long", required: true, placeholder: "例如：外资并购中的经营者集中申报门槛" }],
     minMaterials: 0,
     steps: ["拆解问题", "检索法规并核对效力", "写成研究备忘录"],
     intents: [["监管"], ["审批", "要求"], ["申报"]],
@@ -882,7 +883,7 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始答复",
     goal: "请答复以下问题：{question}。业务背景：{background}。",
     fields: [
-      { key: "question", label: "问题", kind: "text", required: true },
+      { key: "question", label: "问题", kind: "long", required: true },
       { key: "background", label: "业务背景", kind: "text", placeholder: "可选" },
     ],
     minMaterials: 0,
@@ -901,7 +902,7 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始处理",
     goal: "请就以下履约问题梳理履约事实与依据，并起草函件：{issue}。函件类型：{letter_type}。",
     fields: [
-      { key: "issue", label: "履约节点或违约事项", kind: "text", required: true },
+      { key: "issue", label: "履约节点或违约事项", kind: "long", required: true },
       // 第 26 批（评审 S2-12）：可不选，方法会问
       { key: "letter_type", label: "函件类型", kind: "select", options: LETTER_TYPES },
     ],
@@ -1166,7 +1167,7 @@ const PRIMARY_FIELDS = new Set(["question", "opinion", "situation", "issue"]);
 
 export function startPanelInitial(card: ScenarioCard, request: string | null | undefined): { values: Record<string, string>; extra: string } {
   const text = (request ?? "").trim();
-  const q = card.fields.find((f) => PRIMARY_FIELDS.has(f.key) && f.required && f.kind === "text");
+  const q = card.fields.find((f) => PRIMARY_FIELDS.has(f.key) && f.required && (f.kind === "text" || f.kind === "long"));
   return q && text ? { values: { [q.key]: text }, extra: "" } : { values: {}, extra: request ?? "" };
 }
 

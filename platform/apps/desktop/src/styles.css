@@ -645,6 +645,9 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .ss-add { align-self: flex-start; padding: 2px 0; font-size: var(--fs-caption); }
 .ss-need { color: var(--status-warning-text); font-size: var(--fs-body); }
 .ss-field { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: center; font-size: var(--fs-caption); }
+.ss-field-long { align-items: start; }
+.ss-field-long .ss-label { padding-top: 8px; }
+.ss-field textarea { width: 100%; min-height: 84px; resize: vertical; line-height: 1.6; }
 .ss-select { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
 .ss-guess { font-size: var(--fs-meta); }
 .ss-label { color: var(--text-strong); }
