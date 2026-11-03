@@ -45,16 +45,34 @@ function classify(msg: string): Reason {
   return "apply_failed";
 }
 
-/** 按文书引擎的样式还原“节”（一级、二级标题起节），供改后重做交付前检查（条款编号与互引按节标题判断）。 */
+const textOfParagraph = (inner: string): string =>
+  [...inner.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((t) => t[1]).join("").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+
+/**
+ * 按文书引擎的样式还原“节”（一级、二级标题起节），供改后重做交付前检查（条款编号与互引按节标题判断）。
+ * 表格整张收进本节的 table（首行作表头，与 docx.render_report 的输入同形），表后的文字另起无标题节（仍属上一条）：
+ * 格子里的“56.25”“33.75”等数字不再当款号查（V10 真实走查 V7：股权表的持股比例报了 30 条“款号不连续”）。
+ */
 export function sectionsOfDocx(docx: Buffer): { title: string; sections: DeliverableSection[] } {
   const xml = readZipText(docx, "word/document.xml") ?? "";
   let title = "";
   const sections: DeliverableSection[] = [];
   let cur: DeliverableSection = { heading: "", paragraphs: [] };
-  for (const m of xml.matchAll(/<w:p\b[^>]*>([\s\S]*?)<\/w:p>|<w:p\b[^>]*\/>/g)) {
+  for (const m of xml.matchAll(/<w:tbl>[\s\S]*?<\/w:tbl>|<w:p\b[^>]*>([\s\S]*?)<\/w:p>|<w:p\b[^>]*\/>/g)) {
+    if (m[0].startsWith("<w:tbl>")) {
+      const rows = [...m[0].matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g)].map((r) =>
+        [...r[0].matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)].map((c) => [...c[0].matchAll(/<w:p\b[^>]*>([\s\S]*?)<\/w:p>/g)].map((p) => textOfParagraph(p[1] ?? "")).join("\n")),
+      );
+      if (cur.table) {
+        sections.push(cur);
+        cur = { heading: "", paragraphs: [] };
+      }
+      cur.table = { columns: rows[0] ?? [], rows: rows.slice(1) };
+      continue;
+    }
     const inner = m[1] ?? "";
     const style = /<w:pStyle w:val="([^"]+)"/.exec(inner)?.[1] ?? "";
-    const text = [...inner.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((t) => t[1]).join("").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+    const text = textOfParagraph(inner);
     if (style === "KwlTitle") {
       title ||= text;
       continue;
@@ -64,10 +82,15 @@ export function sectionsOfDocx(docx: Buffer): { title: string; sections: Deliver
       cur = { heading: text, paragraphs: [] };
       continue;
     }
-    if (text.trim()) cur.paragraphs!.push(text);
+    if (!text.trim()) continue;
+    if (cur.table) {
+      sections.push(cur);
+      cur = { heading: "", paragraphs: [] };
+    }
+    cur.paragraphs!.push(text);
   }
   sections.push(cur);
-  return { title, sections: sections.filter((s, i) => i > 0 || (s.paragraphs?.length ?? 0) > 0) };
+  return { title, sections: sections.filter((s, i) => i > 0 || (s.paragraphs?.length ?? 0) > 0 || !!s.table) };
 }
 
 export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown; patches?: unknown; dry_run?: unknown }) {
