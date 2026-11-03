@@ -29,7 +29,8 @@ test("有明确改写动作的仍是我方改原件", () => {
 test("开始面板：卡片有必填的“问题”时，输入框里的话预填进问题栏，补充要求留空；其余卡片照旧作补充要求", () => {
   const advice = SCENARIOS.find((c) => c.skill === "client-advice")!;
   const ask = "客户问三个问题：一是解除是否合法；二是竞业限制能否追责；三是下一步怎么办。请出一份正式的法律意见书。";
-  assert.deepEqual(startPanelInitial(advice, ask), { values: { question: ask }, extra: "" });
+  // V11 D10：话里点名“法律意见书”，交付形式随之预选（主交付物为《法律意见书（草稿）》）
+  assert.deepEqual(startPanelInitial(advice, ask), { values: { question: ask, form: "法律意见书（草稿）" }, extra: "" });
   const memo = SCENARIOS.find((c) => c.skill === "legal-research-memo" && c.fields.some((f) => f.key === "question" && f.required))!;
   assert.equal(startPanelInitial(memo, "股东未实缴出资时对公司债务的责任").values.question, "股东未实缴出资时对公司债务的责任");
   const draft = SCENARIOS.find((c) => c.skill === "contract-draft")!;

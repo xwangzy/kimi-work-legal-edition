@@ -881,11 +881,14 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "client-advice",
     verb: "开始答复",
-    goal: "请答复以下问题：{question}。业务背景：{background}。",
+    goal: "请答复以下问题：{question}。业务背景：{background}。交付形式：{form}。",
     fields: [
       { key: "question", label: "问题", kind: "long", required: true },
       { key: "background", label: "业务背景", kind: "text", placeholder: "可选" },
+      // V11 界面走查 D10：卡上写“点名要法律意见书时出意见书”，但发起时不带主交付物，内核恒按《顾问答复》核对与提示——律师可选，输入框里点名了会预选
+      { key: "form", label: "交付形式", kind: "select", options: ["顾问答复", "法律意见书（草稿）"] },
     ],
+    primaryBy: { field: "form", map: { "法律意见书（草稿）": "法律意见书（草稿）.docx" } },
     minMaterials: 0,
     steps: ["明确问题与前提", "检索并核对依据", "写出结论、假设与需客户确认的事项"],
     intents: [["合规"], ["能不能"], ["是否合法"], ["是否违法"], ["顾问"], ["法律意见"]],
@@ -1168,7 +1171,12 @@ const PRIMARY_FIELDS = new Set(["question", "opinion", "situation", "issue"]);
 export function startPanelInitial(card: ScenarioCard, request: string | null | undefined): { values: Record<string, string>; extra: string } {
   const text = (request ?? "").trim();
   const q = card.fields.find((f) => PRIMARY_FIELDS.has(f.key) && f.required && (f.kind === "text" || f.kind === "long"));
-  return q && text ? { values: { [q.key]: text }, extra: "" } : { values: {}, extra: request ?? "" };
+  const base = q && text ? { values: { [q.key]: text } as Record<string, string>, extra: "" } : { values: {} as Record<string, string>, extra: request ?? "" };
+  // 主交付物随选项变的卡（V11 D10）：律师的话里点名了某个选项（去掉“（草稿）”等括注比），预选它
+  const pf = card.primaryBy ? card.fields.find((f) => f.key === card.primaryBy!.field && f.kind === "select") : undefined;
+  const named = pf?.options?.filter((o) => card.primaryBy!.map[o] && text.includes(o.replace(/（[^）]*）/g, "")));
+  if (pf && named && named.length === 1) base.values[pf.key] = named[0]!;
+  return base;
 }
 
 export function buildGoal(card: ScenarioCard, values: Record<string, string | string[]>, extra: string): string {
@@ -1241,7 +1249,9 @@ export function suggestScenario(goal: string): ScenarioCard | null {
   return (wanted ? bestScenarioIn(wanted) : null) ?? (ask && ask !== g ? bestScenarioIn(ask) : null) ?? bestScenarioIn(g);
 }
 
-const DELIVER_VERB_RE = /(?:出具|起草|草拟|撰写|拟|写|出|做|准备|形成)(?:一份|一个|一封|一套|份|个|封)/g;
+// V11（路由体检 F8）：“起草 / 草拟 / 撰写 + 文书名”不带“一份”也取后面的短语（“帮我起草起诉状，违约金分段计算”原先取不到要交付的东西，
+// 同分时按卡片顺序落到只出 Excel 的“金额测算”卡）
+const DELIVER_VERB_RE = /(?:出具|起草|草拟|撰写|拟|写|出|做|准备|形成)(?:一份|一个|一封|一套|份|个|封)|(?:起草|草拟|撰写)(?!一份|一个|一封|一套|份|个|封)/g;
 /** 请求里最后一个“出 / 写 / 起草 + 一份”之后、到标点为止的短语；没有返回 null。 */
 function deliverablePhrase(text: string): string | null {
   let last: RegExpExecArray | null = null;
@@ -1361,4 +1371,21 @@ export function sampleBannerText(m: { stance?: string | null } | null | undefine
     return `${head}本机整理还没有完成：可在“任务”里重试，或重新用“整理案卷”。`;
   }
   return "示例事项：合同与审查意见是虚构的，只在这台电脑上。去“材料”打开审查意见，逐条决定后生成修订稿。";
+}
+
+/**
+ * 开始面板预选的材料（V11 界面走查 D6，原在 ScenarioStart 里）：针对一份文书的方法（审合同、按意见修改、文稿体检）只预选最近一份 Word。
+ * 原先 `[...docs].reverse().find(...)` 假设材料按旧到新排，而内核 matters.get 按导入时间新到旧返回——预选的是最早的一版，律师可能不知情审了旧稿。
+ * 有 created_at 按它取最新；没有时按内核的新到旧顺序取第一份。纯函数。
+ */
+export function preselectMaterials(card: Pick<ScenarioCard, "minMaterials" | "scenario" | "skill">, docs: readonly { document_version_id: string; filename: string; created_at?: string | null }[]): string[] {
+  if (card.minMaterials === 0) return [];
+  // 回稿重审要按“上一稿、回稿”的顺序勾两份（第 31 批：原先全选，案卷里有第三份稿时顺序就不是律师心里那两份）
+  if (card.scenario === "s1b.draft_compare" || card.skill === "redraft-review") return [];
+  if (card.skill === "contract-review" || card.skill === "doc-revise" || card.skill === "citation-check") {
+    const newestFirst = docs.every((d) => typeof d.created_at === "string" && d.created_at) ? [...docs].sort((a, b) => (a.created_at! < b.created_at! ? 1 : a.created_at! > b.created_at! ? -1 : 0)) : [...docs];
+    const word = newestFirst.find((d) => d.filename.toLowerCase().endsWith(".docx"));
+    return word ? [word.document_version_id] : newestFirst.slice(0, 1).map((d) => d.document_version_id);
+  }
+  return docs.map((d) => d.document_version_id);
 }
