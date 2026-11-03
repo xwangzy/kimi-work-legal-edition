@@ -179,3 +179,12 @@ test("对外文书（法律意见书、起诉状）正文里给律师的提示�
   const contract = checkDeliverable("设备采购合同", [{ heading: "第一条 标的", paragraphs: ["1.1 设备产品代号为DL-5X800。"] }]);
   assert.equal(contract.issues.filter((i) => i.kind === "internal_term").length, 0, "合同里的“产品代号”不是隐私代号的说法");
 });
+
+test("V10 真实走查 V3：对外意见书里讲“本文怎么写”的写作说明与法规库状态报出；正常的保留意见不报", () => {
+  const r = checkDeliverable("关于恒拓建设货款债权追责及保证责任的法律意见书（草稿）", [
+    { heading: "七、问题三", paragraphs: ["追加未获支持时，应根据裁定载明的救济方式核对期限；本意见不写尚未核实的具体救济天数。", "审阅文件按贵方提供的电子文本列示，不以电子文本长度代替页数。", "该条原文未采集，请以官方文本为准。"] },
+    { heading: "八、限制", paragraphs: ["本意见仅就截至 2026 年 11 月 3 日的中国法律发表意见，不对会计、审计事项发表意见。"] },
+  ]);
+  const hits = r.issues.filter((i) => i.kind === "internal_term").map((i) => i.where);
+  assert.deepEqual(hits, ["七、问题三第 1 段", "七、问题三第 2 段", "七、问题三第 3 段"], JSON.stringify(r.issues));
+});
