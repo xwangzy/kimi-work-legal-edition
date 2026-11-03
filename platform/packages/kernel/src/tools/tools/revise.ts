@@ -11,8 +11,8 @@
  * - 任一条不成立：整体不写，逐条返回原因与改法（不返回还原后的原文，结果仍经本机端点令牌化）。
  */
 import { DomainError, sha256Hex } from "@zr-legal/domain";
-import { createDocx, existingRevisions, minimalChange, readZipEntries, sanitizeDocx } from "@zr-legal/docx-engine";
-import { applyStructuredPatches, type ChangeRow, type NumberingShifts, type PatchConflict, type StructuredPatch } from "../../services/structured-patch.ts";
+import { createDocx, existingRevisions, headerFooterParagraphs, minimalChange, readZipEntries, sanitizeDocx } from "@zr-legal/docx-engine";
+import { applyStructuredPatches, headerFooterHint, type ChangeRow, type NumberingShifts, type PatchConflict, type StructuredPatch } from "../../services/structured-patch.ts";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
 
@@ -22,7 +22,7 @@ export const REVISE_MAX_PATCHES = 200;
 const FIX_HINT: Record<PatchConflict["reason"], string> = {
   anchor_not_found: "原件里找不到这段原文：逐字照抄材料原文（同一段落之内，含标点、空格与代号；段首的条款编号可以不抄）",
   anchor_ambiguous: "这段原文在多个段落出现：加 paragraph_hint 写条款号；表格里的格子写“行名｜列名”（如“第 2 期｜应还本金”，同一行里金额相同的两格靠列名区分）；几张表的行名列名相同时，前面再加表格前一段的条款号（如“2.1｜合计｜金额（元）”与“3.1｜合计｜金额（元）”），或把锚点写长到唯一；occurrence 只区分同一段落里的第几次出现",
-  anchor_not_in_view: "这段原文不在本材料的文字里：不是照抄的原文，或跨了段落（一条修改只能在一个段落之内）",
+  anchor_not_in_view: "这段原文不在本材料的文字里：不是照抄的原文，或跨了段落（一条修改只能在一个段落之内）；改页眉页脚的，paragraph_hint 写“页眉”或“页脚”，anchor 照抄 header_footer_text 里的原文",
   overlap: "与另一条修改的原文重叠：合并成一条",
   complex_structure: "要改的字跨过了对方的修订痕迹、Word 域、脚注、超链接或内容控件的边界，自动改写会丢内容或打乱修订记录：按 detail 在边界处拆成两条修改（每条只改一侧的纯文字，锚点可以带上两边没变的字）；做不到的（如要改对方删除的字、域结果）不要重试，在最终答复里列明这一处请律师在 Word 里手工修改",
   unknown_token: "含有本事项不存在的代号：代号只能照抄材料里出现过的",
@@ -59,11 +59,11 @@ function previewChanges(paragraphs: readonly string[], spans: readonly { para: n
 }
 
 /**
- * 页眉页脚（第 35 批真实走查 R5：律师要求“首部、鉴于条款、页眉和签署页”的乙方名称统一改正）：材料文字与本工具只覆盖正文，
- * 页眉页脚里的同一处错名不会被改到，原先也不提示，助手会回报“已全部改完”。这里按每条修改实际删掉的字（前后各带 4 个字的上下文）
- * 在原件页眉页脚里查一遍，查到的列给助手，由它在答复里请律师手工改。只读原件，不改写。
+ * 页眉页脚（第 35 批真实走查 R5：律师要求“首部、鉴于条款、页眉和签署页”的乙方名称统一改正）：材料文字只覆盖正文，
+ * 页眉页脚里的同一处错名原先不会被改到，也不提示，助手会回报“已全部改完”。这里按每条正文修改实际删掉的字（前后各带 4 个字的上下文）
+ * 在原件页眉页脚里查一遍，查到、且没有同一处的页眉页脚修改（paragraph_hint 写“页眉 / 页脚”，V10 第 36 批起可以改）的，列给助手补一条修改。
  */
-function headerFooterLeftovers(docx: Buffer, patches: readonly { anchor: string; proposed: string }[]): { part: string; text: string; patches: number[] }[] {
+function headerFooterLeftovers(docx: Buffer, patches: readonly { anchor: string; proposed: string; part: "header" | "footer" | null }[]): { part: string; text: string; patches: number[] }[] {
   let parts: [string, string][];
   try {
     parts = [...readZipEntries(docx).entries()]
@@ -73,13 +73,16 @@ function headerFooterLeftovers(docx: Buffer, patches: readonly { anchor: string;
     return [];
   }
   const out = new Map<string, { part: string; text: string; patches: number[] }>();
+  // 已有页眉页脚修改覆盖的原文（锚点）：同一处不再列为遗漏
+  const covered = (part: string, probe: string) => patches.some((x) => x.part && (x.part === "header" ? "页眉" : "页脚") === part && x.anchor.includes(probe.slice(4, -4) || probe));
   patches.forEach((x, i) => {
+    if (x.part) return;
     const { keepHead, removed, keepTail } = minimalChange(x.anchor, x.proposed);
     if (!removed.trim()) return;
     const probe = `${keepHead.slice(-4)}${removed}${keepTail.slice(0, 4)}`;
     if ([...probe].length < 6) return;
     for (const [part, text] of parts) {
-      if (!text.includes(probe)) continue;
+      if (!text.includes(probe) || covered(part, probe)) continue;
       const key = `${part}${text}`;
       const hit = out.get(key) ?? { part, text: text.trim().slice(0, 120), patches: [] };
       hit.patches.push(i + 1);
@@ -137,9 +140,11 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   const priorNote = prior && prior.total > 0
     ? { existing_revisions: prior, existing_revisions_note: `原件里已有他人的修订痕迹 ${prior.total} 处（插入 ${prior.insertions}、删除 ${prior.deletions}、移动 ${prior.moves}、格式 ${prior.format_changes}）：修订稿原样保留；清洁稿会把它们与本次修改一并接受。在计划与最终答复里告诉律师这一点；完全落在对方插入的文字之内的可以改（记成我方修订），跨过对方修订边界的不能自动写，列明请律师在 Word 里处理` }
     : {};
-  const hf = srcBuf ? headerFooterLeftovers(srcBuf, patches.filter((x) => !x.insert_after).map((x) => ({ anchor: ctx.tokens!.restore(mid, x.anchor).text, proposed: ctx.tokens!.restore(mid, x.proposed_text).text }))) : [];
+  const hf = srcBuf ? headerFooterLeftovers(srcBuf, patches.filter((x) => !x.insert_after).map((x) => ({ anchor: ctx.tokens!.restore(mid, x.anchor).text, proposed: ctx.tokens!.restore(mid, x.proposed_text).text, part: headerFooterHint(x.paragraph_hint) }))) : [];
+  // 原件页眉页脚的文字（令牌化后给助手照抄锚点；V10 第 36 批）
+  const hfText = srcBuf ? headerFooterParagraphs(srcBuf).map((x) => ({ part: x.part === "header" ? "页眉" : "页脚", text: ctx.tokens!.tokenizer(mid).tokenize(x.texts.join(" / ")).text.slice(0, 300) })) : [];
   const hfNote = hf.length > 0
-    ? { header_footer: hf, header_footer_note: "原件的页眉或页脚里也有这次改掉的原文（见 header_footer，patches 是第几条修改）：本工具只改正文，页眉页脚不会改到。在最终答复里逐处列明位置与应改成的文字，请律师在 Word 里双击页眉或页脚手工修改；不要回报“已全部改完”" }
+    ? { header_footer: hf, header_footer_text: hfText, header_footer_note: "原件的页眉或页脚里也有这次改掉的原文（见 header_footer，patches 是第几条修改）：律师要求一并改的，再加一条修改——paragraph_hint 写“页眉”或“页脚”，anchor 照抄 header_footer_text 里的原文，修订同样以痕迹显示；律师没有要求改页眉页脚的，在最终答复里提醒这一处" }
     : {};
   const r = applyStructuredPatches(
     { db: ctx.db, blobs: ctx.blobs, tokens: ctx.tokens },
@@ -150,6 +155,8 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
       status: "preview" as const,
       written: false,
       changes: previewChanges(r.paragraphs ?? [], r.spans ?? []),
+      ...(r.header_footer_changes ? { header_footer_changes: r.header_footer_changes.map((c) => ({ part: c.place, before: c.before, after: c.after })) } : {}),
+      ...(hfText.length > 0 && !hfNote.header_footer ? { header_footer_text: hfText } : {}),
       ...priorNote,
       ...hfNote,
       ...numberingNotes(r, false),
@@ -169,6 +176,7 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
       written: false,
       conflicts: r.conflicts.map((c) => ({ index: c.index, reason: c.reason, fix: FIX_HINT[c.reason], ...(c.detail ? { detail: c.detail } : {}) })),
       ...priorNote,
+      ...(hfText.length > 0 ? { header_footer_text: hfText } : {}),
       note,
     };
   }

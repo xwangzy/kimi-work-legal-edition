@@ -69,18 +69,67 @@ test("改正文里的名称时，原件页眉里同一处原文列给助手；�
     assert.equal(dry.header_footer?.length, 1, JSON.stringify(dry));
     assert.equal(dry.header_footer[0].part, "页眉");
     assert.deepEqual(dry.header_footer[0].patches, [1], "只有改名那一条在页眉里有同一处原文");
-    assert.match(dry.header_footer_note, /页眉页脚不会改到/);
+    assert.match(dry.header_footer_note, /paragraph_hint 写“页眉”或“页脚”/, "V10 第 36 批：提示补一条页眉修改，不再只请律师手工改");
+    assert.ok(dry.header_footer_text?.some((x: any) => x.part === "页眉" && x.text.includes("北京云栈软件技术有限公司")), "页眉原文给助手照抄锚点");
 
     const done = await call("docx.revise", { document_version_id: doc.document_version_id, patches: [rename, unrelated] });
     assert.equal(done.status, "applied");
     assert.equal(done.header_footer?.length, 1, "正式写入后同样提示");
-    // 只提示、不改写：修订稿的页眉仍是原文
+    // 只改正文的这次提交：修订稿的页眉仍是原文（页眉要另写一条 paragraph_hint“页眉”的修改，见下一用例）
     const art = tk.kernel.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM artifact_versions WHERE artifact_version_id = ?`, [done.revision.artifact_version_id])!;
     const header = readZipEntries(tk.kernel.blobs.read(art.storage_uri)).get("word/header1.xml")!.toString("utf8");
     assert.ok(header.includes("北京云栈软件技术有限公司"));
 
     const only = await call("docx.revise", { document_version_id: doc.document_version_id, patches: [unrelated], dry_run: true });
     assert.equal(only.header_footer, undefined, "与页眉无关的修改不报");
+  } finally {
+    await agent.close();
+  }
+});
+
+test("V10 第 36 批：paragraph_hint 写“页眉”的修改写进页眉（原生修订），清洁稿接受；对照表单列“页眉”一行；锚点不在页眉里整体不写", { timeout: 120_000 }, async () => {
+  const { Agent, fetch } = await import("undici");
+  const { sanitizeDocx, headerFooterParagraphs, extractParagraphs } = await import("@zr-legal/docx-engine");
+  const { matter } = await tk.inv("matters.create", { title: "云栈合同页眉", stance: "委托方", consent_status: "agreed", key_dates: { analysis_as_of: "2026-11-03" } });
+  const doc = await importBytes(tk.inv, matter.matter_id, "软件许可及实施服务合同（页眉）.docx", contractWithHeader(), DOCX_MIME);
+  const live = liveTaskIdentity(tk, matter.matter_id, "v10_hf");
+  const token = mintTaskToken({ tid: live.tid, uid: live.uid, mid: live.mid, rid: live.rid, aid: live.aid, fen: live.fence, fx: ["read", "write_draft"], scope: ["tool:legal"] }, 300);
+  const agent = new Agent({ connect: { socketPath: tk.kernel.pipePath } });
+  let seq = 0;
+  const call = async (name: string, args: unknown) => {
+    const r = (await fetch("http://tools.kwl/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ jsonrpc: "2.0", id: ++seq, method: "tools/call", params: { name, arguments: args } }),
+      dispatcher: agent,
+    }).then((x) => x.json())) as any;
+    assert.equal(r.result?.isError, false, `${name}: ${JSON.stringify(r).slice(0, 400)}`);
+    return r.result.structuredContent;
+  };
+  try {
+    const body = { anchor: "乙方：北京云栈软件技术有限公司", proposed_text: "乙方：北京云栈软件科技有限公司", comment: "乙方名称以营业执照为准" };
+    const head = { anchor: "北京云栈软件技术有限公司 · 软件许可", proposed_text: "北京云栈软件科技有限公司 · 软件许可", paragraph_hint: "页眉" };
+    const dry = await call("docx.revise", { document_version_id: doc.document_version_id, patches: [body, head], dry_run: true });
+    assert.equal(dry.status, "preview", JSON.stringify(dry).slice(0, 400));
+    assert.equal(dry.header_footer, undefined, "页眉已有修改，不再列为遗漏");
+    assert.equal(dry.header_footer_changes?.[0]?.part, "页眉");
+    assert.match(dry.header_footer_changes[0].after, /^北京云栈软件科技有限公司 · 软件许可及实施服务合同$/);
+
+    const done = await call("docx.revise", { document_version_id: doc.document_version_id, patches: [body, head] });
+    assert.equal(done.status, "applied", JSON.stringify(done).slice(0, 400));
+    const rev = tk.kernel.blobs.read(tk.kernel.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM artifact_versions WHERE artifact_version_id = ?`, [done.revision.artifact_version_id])!.storage_uri);
+    const hx = readZipEntries(rev).get("word/header1.xml")!.toString("utf8");
+    assert.match(hx, /<w:del\b[^>]*><w:r><w:delText xml:space="preserve">技术<\/w:delText><\/w:r><\/w:del><w:ins\b[^>]*><w:r><w:t xml:space="preserve">科技<\/w:t>/, "页眉里是原生修订（删“技术”插“科技”），不是直接改字");
+    assert.ok(!hx.includes("commentRangeStart"), "页眉里不挂批注");
+    assert.deepEqual(headerFooterParagraphs(sanitizeDocx(rev).docx).find((x) => x.part === "header")!.texts, ["北京云栈软件科技有限公司 · 软件许可及实施服务合同"], "清洁稿接受页眉修订");
+    const cmp = extractParagraphs(tk.kernel.blobs.read(tk.kernel.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM artifact_versions WHERE artifact_version_id = ?`, [done.comparison.artifact_version_id])!.storage_uri)).map((x) => x.text);
+    assert.ok(cmp.includes("页眉"), `对照表单列页眉一行：${cmp.join(" / ")}`);
+
+    // 锚点不在页眉里：整体不写，结果附页眉原文供照抄
+    const bad = await call("docx.revise", { document_version_id: doc.document_version_id, patches: [{ ...head, anchor: "云栈软件技术公司" }] });
+    assert.equal(bad.status, "not_applied");
+    assert.equal(bad.conflicts[0].reason, "anchor_not_in_view");
+    assert.ok(bad.header_footer_text?.length > 0);
   } finally {
     await agent.close();
   }

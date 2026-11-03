@@ -9,6 +9,8 @@ export interface RevisionOp {
     originalText: string;
     occurrence?: number | undefined; // 默认 0（第一次出现）
     paragraphHint?: string | undefined; // 条款号提示（如 "7.1"），用于冲突时的人工定位
+    /** 改页眉或页脚里的文字（V10 第 36 批）：在每个含锚点的页眉 / 页脚部件里写原生修订；缺省为正文。页眉页脚里不加批注。 */
+    part?: "body" | "header" | "footer" | undefined;
   };
   /** 原文 hash（sha256 of originalText）：不符即停止并转人工，不覆盖原件（§6.2） */
   originalHash: string;
@@ -32,7 +34,11 @@ export interface RevisionPlan {
 export interface AppliedRevision {
   opId: string;
   status: "applied";
+  /** 正文段落序号；改在页眉页脚里的为 -1（见 part / partName）。 */
   paragraphIndex: number;
+  part?: "header" | "footer";
+  /** 改到的页眉页脚部件（word/header1.xml 等），一条修改可能改到几个部件（首页页眉与默认页眉）。 */
+  partNames?: string[];
 }
 
 export interface RevisionFailure {

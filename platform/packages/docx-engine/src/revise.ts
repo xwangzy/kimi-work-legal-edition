@@ -40,7 +40,8 @@ export function applyRevisionsToDocx(docx: Buffer, plan: RevisionPlan): ApplyRes
   const labels = paragraphListLabels(documentXml, files.get("word/numbering.xml")?.toString("utf8") ?? null, files.get("word/styles.xml")?.toString("utf8") ?? null);
 
   for (const op of plan.ops) {
-    xml = applyOne(xml, op, comments, () => idSeq++, applied, labels);
+    if (op.anchor.part === "header" || op.anchor.part === "footer") applyToHeaderFooter(files, op, () => idSeq++, applied);
+    else xml = applyOne(xml, op, comments, () => idSeq++, applied, labels);
   }
   // 段后插入用的临时标记（同一段后的多条插入按先后接在一起；插入的新段落不参与后续锚点匹配）写完即去掉
   // 接着对方插入时重开的标签后面没有字的，整个去掉（不留空的对方插入）
@@ -78,6 +79,43 @@ export function applyRevisionsToDocx(docx: Buffer, plan: RevisionPlan): ApplyRes
   dropHouseMark(files);
   const out = writeZip([...files.entries()].map(([name, data]) => ({ name, data })));
   return { docx: out, applied };
+}
+
+/**
+ * 页眉页脚里的修订（V10 第 36 批：V9.6 真实走查 R5 与 V10 走查 V2——律师要求“全文（含页眉）”统一改正乙方名称，原先工具只改正文、
+ * 页眉里的错名只能请律师手工改）。在每个含锚点的同类部件（首页、奇偶页、默认页眉各是一个部件）里各写一处原生修订；
+ * 定位口径与正文相同（部件内多段命中且无提示即拒写）；一个部件都没有命中即报“未找到”。Word 不支持在页眉页脚里挂批注，批注不写。
+ */
+function applyToHeaderFooter(files: Map<string, Buffer>, op: RevisionOp, nextId: () => number, applied: AppliedRevision[]): void {
+  const kind = op.anchor.part as "header" | "footer";
+  const names = [...files.keys()].filter((n) => new RegExp(`^word/${kind}\\d*\\.xml$`).test(n)).sort();
+  const hit: string[] = [];
+  for (const name of names) {
+    const partXml = files.get(name)!.toString("utf8");
+    if (!mapParagraphs(partXml).some((p) => findInParagraph(p, op.anchor.originalText, op.anchor.occurrence ?? 0) !== null)) continue;
+    const local: AppliedRevision[] = [];
+    let next = applyOne(partXml, { ...op, comment: undefined, insertAfter: undefined }, [], nextId, local, []);
+    next = next.replace(/<w:ins\b[^>]*\skwl-reopen="1"[^>]*><\/w:ins>/g, "").replace(/ kwl-(?:anchor|ins|new|reopen)="\d+"/g, "");
+    assertWellFormed(next, name);
+    files.set(name, Buffer.from(next, "utf8"));
+    hit.push(name);
+  }
+  if (hit.length === 0) {
+    throw new DomainError("anchor_mismatch", `修订 ${op.opId} 锚点未找到（${kind === "header" ? "页眉" : "页脚"}里没有这段原文），转人工`, 422, { opId: op.opId, anchor: op.anchor.originalText.slice(0, 60) });
+  }
+  applied.push({ opId: op.opId, status: "applied", paragraphIndex: -1, part: kind, partNames: hit });
+}
+
+/** 页眉、页脚各部件的段落文字（V10 第 36 批：给助手看，好照抄锚点）；空段略去。 */
+export function headerFooterParagraphs(docx: Buffer): { part: "header" | "footer"; name: string; texts: string[] }[] {
+  const out: { part: "header" | "footer"; name: string; texts: string[] }[] = [];
+  for (const [name, data] of [...readZipEntries(docx).entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const m = /^word\/(header|footer)\d*\.xml$/.exec(name);
+    if (!m) continue;
+    const texts = mapParagraphs(data.toString("utf8")).map((p) => p.text).filter((t) => t.trim());
+    if (texts.length > 0) out.push({ part: m[1] as "header" | "footer", name, texts });
+  }
+  return out;
 }
 
 function applyOne(

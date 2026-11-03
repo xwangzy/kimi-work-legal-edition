@@ -11,7 +11,7 @@
  * - 任何一条不成立：整体返回预览（逐条列出原因与还原后的文本），不做模糊替换、不写半个文件。
  */
 import { DomainError, newId, sha256Hex } from "@zr-legal/domain";
-import { applyRevisionsToDocx, docxListLabels, extractParagraphs, paragraphCells, readZipText, sameSpaces, sanitizeDocx, stripListLabel, type RevisionOp } from "@zr-legal/docx-engine";
+import { applyRevisionsToDocx, docxListLabels, extractParagraphs, headerFooterParagraphs, paragraphCells, readZipText, sameSpaces, sanitizeDocx, stripListLabel, type RevisionOp } from "@zr-legal/docx-engine";
 import { findTokens } from "@zr-legal/tokenizer";
 import type { KernelDb } from "../db.ts";
 import type { BlobStore } from "../blobs.ts";
@@ -27,7 +27,7 @@ export interface StructuredPatch {
   proposed_text: string;
   /** 第几次出现（从 0 起；缺省 0）。 */
   occurrence?: number;
-  /** 条款号提示（锚点多处出现时用于定位）。 */
+  /** 条款号提示（锚点多处出现时用于定位）。写“页眉”或“页脚”时改的是页眉 / 页脚里的文字（V10 第 36 批）。 */
   paragraph_hint?: string;
   /** 批注（令牌形态）。 */
   comment?: string;
@@ -85,6 +85,8 @@ export type PatchResult =
       spans?: PatchSpan[];
       numbering?: NumberingShifts;
       label_notes?: { index: number; dropped: string[] }[];
+      /** 只在 dryRun 时给出：页眉页脚里的修改（原文形态，改前 / 改后整段）。 */
+      header_footer_changes?: ChangeRow[];
     };
 
 /** 补丁在原件段落里的落点（段落序号、起止位置，均按原文计）。 */
@@ -214,6 +216,9 @@ export function applyStructuredPatches(
     const stripped = stripListLabel(s, labels);
     return stripped !== s && stripped && !paragraphs.some((t) => t.includes(s)) ? stripped : s;
   };
+  // 页眉页脚（V10 第 36 批）：paragraph_hint 写“页眉 / 页脚”的修改改在页眉页脚里，锚点核对它们的令牌化文字
+  const hfParts = headerFooterParagraphs(buf);
+  const hfView = (part: "header" | "footer") => tokens.tokenizer(input.matter_id).tokenize(hfParts.filter((x) => x.part === part).flatMap((x) => x.texts).join("\n")).text;
   const conflicts: PatchConflict[] = [];
   const ops: RevisionOp[] = [];
   let tokensRestored = 0;
@@ -223,7 +228,11 @@ export function applyStructuredPatches(
     const comment = typeof p?.comment === "string" ? p.comment : undefined;
     if (anchor.length === 0) return void conflicts.push({ index, reason: "anchor_empty" });
     if (sha256Hex(anchor) !== String(p?.expected_text_hash ?? "")) return void conflicts.push({ index, reason: "anchor_hash_mismatch" });
-    if (!sameSpaces(viewText).includes(sameSpaces(anchor))) return void conflicts.push({ index, reason: "anchor_not_in_view", detail: "锚点不在当前版本的令牌化视图中（文档已变化或锚点不是 Agent 看到的原文）" });
+    const part = headerFooterHint(p?.paragraph_hint);
+    if (part) {
+      if (p.insert_after === true) return void conflicts.push({ index, reason: "apply_failed", detail: "页眉页脚只能改字，不能插入新段落" });
+      if (!sameSpaces(hfView(part)).includes(sameSpaces(anchor))) return void conflicts.push({ index, reason: "anchor_not_in_view", detail: `锚点不在原件${part === "header" ? "页眉" : "页脚"}的文字里（照抄 header_footer 列出的文字）` });
+    } else if (!sameSpaces(viewText).includes(sameSpaces(anchor))) return void conflicts.push({ index, reason: "anchor_not_in_view", detail: "锚点不在当前版本的令牌化视图中（文档已变化或锚点不是 Agent 看到的原文）" });
     // 代号必须都在本事项令牌表里（不认识的代号不猜）
     const unknown = [...findTokens(anchor), ...findTokens(proposed), ...(comment ? findTokens(comment) : [])].filter((t) => !restoreMap.has(t));
     if (unknown.length > 0) return void conflicts.push({ index, reason: "unknown_token", detail: [...new Set(unknown)].join("、") });
@@ -237,12 +246,13 @@ export function applyStructuredPatches(
       anchor: {
         originalText: a.text,
         ...(Number.isInteger(p.occurrence) && (p.occurrence as number) >= 0 ? { occurrence: p.occurrence } : {}),
-        ...(typeof p.paragraph_hint === "string" && p.paragraph_hint ? { paragraphHint: restore(p.paragraph_hint).text } : {}),
+        ...(typeof p.paragraph_hint === "string" && p.paragraph_hint && !part ? { paragraphHint: restore(p.paragraph_hint).text } : {}),
+        ...(part ? { part } : {}),
       },
       originalHash: sha256Hex(a.text),
       newText: n.text,
       ...(p.insert_after === true ? { insertAfter: true } : {}),
-      ...(c ? { comment: c.text } : {}),
+      ...(c && !part ? { comment: c.text } : {}),
       author: input.author ?? AUTHOR,
     });
   });
@@ -257,6 +267,7 @@ export function applyStructuredPatches(
   };
   const spans: PatchSpan[] = [];
   const labelNotes: { index: number; dropped: string[] }[] = [];
+  const hfRows: ChangeRow[] = [];
   for (const op of ops) {
     const index = Number(op.opId.slice(1));
     let located: number | undefined;
@@ -277,6 +288,17 @@ export function applyStructuredPatches(
                 : "apply_failed",
         detail: msg.slice(0, 200),
       });
+      continue;
+    }
+    // 页眉页脚：不参与正文的段落定位与编号处理；对照表单列一行（位置写“页眉 / 页脚”，修改理由取助手给的批注）
+    if (op.anchor.part === "header" || op.anchor.part === "footer") {
+      const where = op.anchor.part === "header" ? "页眉" : "页脚";
+      const comment = patches[index]?.comment;
+      for (const t of hfParts.filter((x) => x.part === op.anchor.part).flatMap((x) => x.texts)) {
+        if (!sameSpaces(t).includes(sameSpaces(op.anchor.originalText))) continue;
+        hfRows.push({ para: -1, label: null, place: where, kind: "edit", before: t, after: t.replace(op.anchor.originalText, op.newText), reason: comment ? restore(comment).text : "" });
+        break;
+      }
       continue;
     }
     // 记录定位，检查补丁之间是否重叠（重叠的两处修改无法同时写成原生修订）；段落用引擎实际定位的那一段
@@ -322,7 +344,7 @@ export function applyStructuredPatches(
         conflicts.push({ index: 0, reason: "apply_failed", detail: (e as Error).message.slice(0, 200) });
       }
     }
-    return { status: "preview", reason: conflicts.length > 0 ? "conflicts" : "dry_run", conflicts: conflicts.sort((x, y) => x.index - y.index), preview, paragraphs, spans: spans.filter((x) => !bad.has(x.index)), ...(numbering ? { numbering } : {}), label_notes: labelNotes };
+    return { status: "preview", reason: conflicts.length > 0 ? "conflicts" : "dry_run", conflicts: conflicts.sort((x, y) => x.index - y.index), preview, paragraphs, spans: spans.filter((x) => !bad.has(x.index)), ...(numbering ? { numbering } : {}), label_notes: labelNotes, ...(hfRows.length > 0 ? { header_footer_changes: hfRows } : {}) };
   }
   if (conflicts.length > 0) return { status: "preview", reason: "conflicts", conflicts: conflicts.sort((x, y) => x.index - y.index), preview };
 
@@ -356,7 +378,7 @@ export function applyStructuredPatches(
      VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,?,?,?,?)`,
     [artifactId, doc.tenant_id, doc.matter_id, input.run_id ?? null, kind, v.next, filename, stored.sha256, stored.storage_uri, "[]", JSON.stringify(manifest), input.created_by, docLineage(doc.document_version_id)],
   );
-  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(buf, sanitizeDocx(out).docx), label_notes: labelNotes, changes: changeRows(paragraphs, labels, spans, ops, paragraphPlaces(buf, paragraphs, labels)) };
+  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(buf, sanitizeDocx(out).docx), label_notes: labelNotes, changes: [...hfRows, ...changeRows(paragraphs, labels, spans, ops, paragraphPlaces(buf, paragraphs, labels))] };
 }
 
 /**
@@ -386,6 +408,15 @@ function paragraphPlaces(docx: Buffer, paragraphs: readonly string[], labels: re
     const where = `${lead ? `第 ${lead.replace(/^第|条$/g, "")} ${/条$/.test(lead) ? "条" : "款"}下` : ""}表格`;
     return `${where}${rowName && c.col > 1 ? `“${rowName}”行` : `第 ${c.row} 行`}${c.header && c.row > 1 ? `·${c.header}` : ""}`;
   });
+}
+
+/** paragraph_hint 写“页眉”“页脚”（可带“首页页眉”等字样）时改的是页眉页脚（V10 第 36 批）。 */
+export function headerFooterHint(hint: unknown): "header" | "footer" | null {
+  if (typeof hint !== "string") return null;
+  const h = hint.trim();
+  if (/^(?:首页|偶数页|奇数页|默认)?页眉$/.test(h)) return "header";
+  if (/^(?:首页|偶数页|奇数页|默认)?页脚$/.test(h)) return "footer";
+  return null;
 }
 
 function changeRows(paragraphs: readonly string[], labels: readonly (string | null)[], spans: readonly PatchSpan[], ops: readonly RevisionOp[], places: readonly (string | null)[] = []): ChangeRow[] {
