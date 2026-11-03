@@ -142,7 +142,11 @@ export function Select(p: {
               className={`select-option${i === active ? " active" : ""}${o.value === p.value ? " selected" : ""}${o.disabled ? " disabled" : ""}`}
               onMouseEnter={() => !o.disabled && setActive(i)}
               onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick(i)}
+              // 列表在 <label> 里时（新建事项、开始面板），点选项的默认动作会“点”到标签里的触发按钮、把刚关上的列表又打开（V10 走查）
+              onClick={(e) => {
+                e.preventDefault();
+                pick(i);
+              }}
             >
               <span>{o.label}</span>
               {o.hint ? <span className="select-hint">{o.hint}</span> : null}
