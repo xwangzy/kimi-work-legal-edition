@@ -43,7 +43,7 @@ export interface ExecutorDeps {
   signer?: LedgerSigner | undefined;
   /** 事项令牌存储（v9 第 02 篇 §8.3–§8.4：送模型与 Agent 工作区的文本一律是事项令牌形态；缺省时退回 v5 规则遮蔽）。 */
   tokens?: MatterTokenStore | undefined;
-  /** A1 任务的工作时限（毫秒，不含等待律师确认或回答的时间；缺省 25 分钟，见 AGENT_WORK_LIMIT_MS；本机配置 ZR_AGENT_WORK_LIMIT_MS）。 */
+  /** A1 任务的工作时限（毫秒，不含等待律师确认或回答的时间；缺省 40 分钟，见 AGENT_WORK_LIMIT_MS；本机配置 ZR_AGENT_WORK_LIMIT_MS）。 */
   agentWorkLimitMs?: number | undefined;
   /** A1 任务的总时长上限（毫秒，含等待律师；缺省 8 小时；本机配置 ZR_AGENT_WALL_MS）。 */
   agentWallMs?: number | undefined;
@@ -1020,7 +1020,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   // 到工作时限时主交付物已交出（第 35 批真实走查 N1：《股权转让协议》已交出 5 版，任务仍记“已超时、需要重试”）→ 按部分完成结算
   const expectedPrimary = () => primaryOutput ?? (!skill && ctx.deps.skillPrimaryOf ? loadedPrimaryOutput(db, runId, ctx.deps.skillPrimaryOf) : null);
   const settleDelivered = async (reason: string | null): Promise<boolean> => {
-    const delivered = deliveredBeforeDeadline(db, runId, expectedPrimary());
+    const delivered = deliveredBeforeDeadline(db, runId, expectedPrimary(), timeoutMs);
     if (!delivered) return false;
     assertNoUnresolved();
     appendEvent(ctx.deps, runId, attemptId, AGENT_DEADLINE_DELIVERED_SEQ, "agent.deadline_delivered", { files: delivered.files, reason });
@@ -1110,7 +1110,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
       throw new RunCancelled();
     case "timed_out":
       if (await settleDelivered(poll.reason)) return;
-      throw new RunTerminal("timed_out", agentTimeoutText(poll.reason));
+      throw new RunTerminal("timed_out", agentTimeoutText(poll.reason, timeoutMs));
     case "expired":
       throw new RunTerminal("expired", `Agent 任务过期（${poll.reason ?? "expired"}）`);
     default:
@@ -1204,11 +1204,11 @@ export function agentFailureText(reason: string | null, error: string | null): s
 
 /**
  * 超时给律师看的话（第 29 批上游不回应演练：25 分钟后界面只显示“已超时”，存的原因是“Agent 任务超时（run_deadline_exceeded）”）。
- * 写清超了哪个时限、已完成的部分怎么处理、下一步可以做什么。
+ * 写清超了哪个时限、已完成的部分怎么处理、下一步可以做什么。limitMs 是本次运行实际下发的工作时限（本机配置可调，不写死缺省值）。
  */
-export function agentTimeoutText(reason: string | null): string {
+export function agentTimeoutText(reason: string | null, limitMs: number = AGENT_WORK_LIMIT_MS): string {
   if (reason === "run_deadline_exceeded") {
-    return `任务工作了 ${Math.round(AGENT_WORK_LIMIT_MS / 60_000)} 分钟仍没有完成，已停止；已完成且可验证的部分保留。如果这段时间一直提示“AI 服务暂时没有回应”，是 AI 服务暂时不可用，可以稍后点“重新运行”；否则可以把任务拆小后重新发起`;
+    return `任务工作了 ${Math.round(limitMs / 60_000)} 分钟仍没有完成，已停止；已完成且可验证的部分保留。如果这段时间一直提示“AI 服务暂时没有回应”，是 AI 服务暂时不可用，可以稍后点“重新运行”；否则可以把任务拆小后重新发起`;
   }
   if (reason === "run_wall_deadline_exceeded") return "任务从发起起已超过 8 小时（含等待你确认的时间）仍没有完成，已停止；已完成且可验证的部分保留，可以重新发起";
   return `任务超时没有完成（${reason ?? "原因未知"}）；已完成且可验证的部分保留，可以点“重新运行”`;
@@ -1221,9 +1221,9 @@ const AGENT_DEADLINE_DELIVERED_SEQ = 9_002;
 
 /**
  * 到工作时限时本任务已交出的文书或表格（第 35 批真实走查 N1）：方法有主交付物的，须主交付物已登记；没有的，登记了任一 Word 文书或 Excel 表即可。
- * 都没有返回 null（照常记超时）。返回给律师的说明写清“文书已交出、收尾没完成”。纯查询。
+ * 都没有返回 null（照常记超时）。返回给律师的说明写清“文书已交出、收尾没完成”；limitMs 是本次运行实际下发的工作时限。纯查询。
  */
-export function deliveredBeforeDeadline(db: KernelDb, runId: string, primaryOutput: string | null): { files: string[]; note: string } | null {
+export function deliveredBeforeDeadline(db: KernelDb, runId: string, primaryOutput: string | null, limitMs: number = AGENT_WORK_LIMIT_MS): { files: string[]; note: string } | null {
   if (primaryOutput && (WORD_OUTPUT.test(primaryOutput) || SHEET_OUTPUT.test(primaryOutput)) && primaryDeliverableMissing(db, runId, primaryOutput)) return null;
   const rows = db.all<{ filename: string }>(
     `SELECT filename FROM artifact_versions WHERE run_id = ? AND ((${WORD_ARTIFACT_SQL}) OR (${SHEET_ARTIFACT_SQL})) ORDER BY created_at`,
@@ -1231,7 +1231,7 @@ export function deliveredBeforeDeadline(db: KernelDb, runId: string, primaryOutp
   );
   if (rows.length === 0) return null;
   const files = [...new Set(rows.map((r) => r.filename))];
-  const minutes = Math.round(AGENT_WORK_LIMIT_MS / 60_000);
+  const minutes = Math.round(limitMs / 60_000);
   return {
     files,
     note: `已交出${files.slice(0, 4).map((f) => `《${f.replace(/\.(docx|xlsx)$/i, "")}》`).join("")}${files.length > 4 ? `等 ${files.length} 份` : ""}，但助手在 ${minutes} 分钟工作时限内没有收尾（最终答复、附件或交付前自查可能未完成）：请以交出的文件为准核对；要补的内容可以在本任务里“追问”`,
@@ -1308,9 +1308,12 @@ export const AGENT_WALL_MS = 8 * 60 * 60_000;
 /**
  * A1 工作时限缺省值（不含等待律师确认或回答的时间；本机配置 ZR_AGENT_WORK_LIMIT_MS 可调）。
  * 第 27 批（偏离 D-152）：原为 10 分钟。真实 K3 走查：审一份 11 条采购合同用时约 9.5 分钟（差一点超时），
- * 劳动仲裁申请书在成文前就用满 10 分钟、以超时结束、没有出文书。花费另有点数上限兜住，时限只防失控，故放宽到 25 分钟（宿主上限 30 分钟以内）。
+ * 劳动仲裁申请书在成文前就用满 10 分钟、以超时结束、没有出文书。花费另有点数上限兜住，时限只防失控，故放宽到 25 分钟。
+ * 第 35 批（偏离 D-159，11-03 用户拍板）：25 分钟 → 40 分钟。真实 K3.1-Pro 走查 R1 起草股权转让协议、R2 审设备采购合同都用满 25 分钟
+ * （文书已交出、收尾自查与附件没做完）；模型输出约每秒 28～35 token，一份 1 万字文书一次 3～6 分钟。上游挂住另由出站闸门看门狗
+ * （180 秒无响应头、流式 120 秒无数据即断开重发）截断，失控的代价仍由点数上限兜住。宿主以内核下发的时限为准，上限是总时长。
  */
-export const AGENT_WORK_LIMIT_MS = 25 * 60_000;
+export const AGENT_WORK_LIMIT_MS = 40 * 60_000;
 
 /** 非失败类终态（超时、过期）。 */
 class RunTerminal extends Error {

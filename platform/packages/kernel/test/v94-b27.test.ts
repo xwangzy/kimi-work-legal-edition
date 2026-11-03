@@ -67,8 +67,8 @@ test("待签发的待办带成果种类与任务名（界面写“签发：××�
   assert.equal(sign.goal, "整理案卷");
 });
 
-test("Agent 工作时限缺省 25 分钟（D-152：真实 K3 审合同约 9.5 分钟、劳动仲裁申请书 10 分钟内没写完），不超过宿主上限 30 分钟", async () => {
-  const { AGENT_WORK_LIMIT_MS } = await import("../src/executor/executor.ts");
-  assert.equal(AGENT_WORK_LIMIT_MS, 25 * 60_000);
-  assert.ok(AGENT_WORK_LIMIT_MS <= 30 * 60_000, "宿主缺省上限 maxRunMs 30 分钟");
+test("Agent 工作时限缺省 40 分钟（D-152 原 10→25 分钟；D-159：真实 K3.1-Pro 起草、审查用满 25 分钟），不超过总时长上限", async () => {
+  const { AGENT_WORK_LIMIT_MS, AGENT_WALL_MS } = await import("../src/executor/executor.ts");
+  assert.equal(AGENT_WORK_LIMIT_MS, 40 * 60_000);
+  assert.ok(AGENT_WORK_LIMIT_MS < AGENT_WALL_MS, "宿主以内核下发的工作时限为准，上限是总时长");
 });

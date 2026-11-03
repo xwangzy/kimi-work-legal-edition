@@ -342,7 +342,8 @@ test("任务失败给律师看的话（第 28 批模型不可用演练）：通�
   // 第 29 批上游不回应演练：超时写明时限与下一步，不露原因码
   const { agentTimeoutText } = await import("../src/executor/executor.ts");
   const t2 = agentTimeoutText("run_deadline_exceeded");
-  assert.match(t2, /^任务工作了 25 分钟仍没有完成/);
+  assert.match(t2, /^任务工作了 40 分钟仍没有完成/);
+  assert.match(agentTimeoutText("run_deadline_exceeded", 10 * 60_000), /^任务工作了 10 分钟仍没有完成/, "写本次实际下发的时限（本机配置可调），不写死缺省值");
   assert.match(t2, /重新运行/);
   assert.equal(t2.includes("run_deadline_exceeded"), false);
 });

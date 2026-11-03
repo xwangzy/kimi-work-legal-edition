@@ -125,6 +125,7 @@ test("在本任务的文书草稿上逐处修改：同名新版本、旧版本�
     const d = deliveredBeforeDeadline(tk.kernel.db, a.live.rid, "合同草稿.docx");
     assert.ok(d && d.files.includes("股权转让协议.docx"), JSON.stringify(d));
     assert.match(d!.note, /已交出《股权转让协议》.*没有收尾/);
+    assert.match(deliveredBeforeDeadline(tk.kernel.db, a.live.rid, "合同草稿.docx", 10 * 60_000)!.note, /在 10 分钟工作时限内/, "写本次实际下发的时限");
   } finally {
     await a.close();
   }

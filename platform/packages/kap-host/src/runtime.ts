@@ -151,7 +151,7 @@ export interface StartRunRequest {
   plan_first?: boolean;
   /** 律师在“自动”档开始时选择的预授权范围（与律所允许范围取交集）。 */
   preauthorized?: Preauthorization[];
-  /** 本次运行的工作时限（毫秒，不含等待律师；由内核按任务给出，不超过宿主上限 maxRunMs）。 */
+  /** 本次运行的工作时限（毫秒，不含等待律师；由内核按任务给出，宿主以下发值为准、不超过总时长 maxWallMs；未下发时用 maxRunMs）。 */
   time_limit_ms?: number;
   /** 本次运行的总时长上限（毫秒，含等待律师；由内核按任务给出——宿主另加 5 分钟宽限，让内核先判“过期”）。 */
   wall_limit_ms?: number;
