@@ -22,6 +22,20 @@ export const SCAN_TEXT_THRESHOLD = 20;
 export const MAX_PDF_PAGES = 500;
 const MAX_PAGE_SIDE_PT = 10_000;
 
+/**
+ * 康熙部首与部首补充字符折回统一汉字（V10 第 36 批）：macOS 导出的 PDF（Word for Mac、Pages
+ * 经 Quartz）里，宋体、苹方等字体的同一字形同时对应部首与汉字，文本层常写成部首码位——
+ * “甲⽅”“⼄⽅”“《中华⼈民共和国民法典》”看着一样，法名、条文核验、材料检索与姓名识别都对不上。
+ * 只折这两个区段（逐字 NFKC；补充区里没有兼容分解的字保持原样），全角标点不动，字数与位置不变。
+ */
+const CJK_RADICAL_RE = /[⺀-⻳⼀-⿕]/g;
+export function foldCjkRadicals(s: string): string {
+  return s.replace(CJK_RADICAL_RE, (c) => {
+    const n = c.normalize("NFKC");
+    return n.length === 1 ? n : c;
+  });
+}
+
 export async function extractPdfText(buf: Buffer): Promise<PdfTextOutcome> {
   const data = new Uint8Array(buf);
   const loadingTask = getDocument({ data, useSystemFonts: false });
@@ -48,7 +62,8 @@ export async function extractPdfText(buf: Buffer): Promise<PdfTextOutcome> {
         text += item.str;
         lastY = y;
       }
-      pages.push({ pageNo: i, text: text.trim(), charCount: text.trim().length });
+      text = foldCjkRadicals(text).trim();
+      pages.push({ pageNo: i, text, charCount: text.length });
     }
     return { pages, pageCount };
   } finally {
