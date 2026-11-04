@@ -9,7 +9,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { makeKernel, waitRun, type TestKernel } from "./helpers.ts";
 import { startCloudV0, type CloudV0 } from "./cloud-v0.ts";
-import { reviewMessages } from "../src/executor/independent-review.ts";
+import { parseReview, reviewFixPrompt, reviewMessages } from "../src/executor/independent-review.ts";
 
 let tk: TestKernel;
 let cloud: CloudV0;
@@ -63,5 +63,15 @@ test("复核时文书只替换已知名单：助手写进文书的“姓名样�
     assert.doesNotMatch(reviewerBody, /王建国/, "律师指令里的姓名照常换成代号");
   } finally {
     cloud.model.script = null;
+  }
+});
+
+test("修正轮：复核意见涉及法条款项或事实的，先核到法规库原文或回原材料，核不到不改（V13 N3：复核把正确的第二款改成第三款）", () => {
+  const r = parseReview(JSON.stringify({ trace: [], issues: [{ severity: "major", kind: "fabricated_basis", where: "意见书·第五部分", quote: "第六十四条第二款", problem: "款项引错", fix: "改为第三款" }] }));
+  for (const revise of [false, true]) {
+    const f = reviewFixPrompt(r, { revise });
+    assert.match(f, /law\.get_article 核到原文再改/);
+    assert.match(f, /先回原材料核对/);
+    assert.match(f, /核不到或与原文、材料不符的不改/);
   }
 });
