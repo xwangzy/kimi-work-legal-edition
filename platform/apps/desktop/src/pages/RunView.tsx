@@ -152,6 +152,15 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     }
   })();
   const withRun = (a: any) => ({ ...a, run_title: a.run_title ?? runSnap.title ?? null, run_goal: a.run_goal ?? runSnap.goal ?? run?.goal ?? null });
+  const canContinueOn = (a: { kind?: string; filename?: string | null }) => ["revision_draft", "revision_clean", "agent_report"].includes(String(a.kind)) && /\.docx$/i.test(String(a.filename ?? ""));
+  const continueOn = async (a: { artifact_version_id: string }) => {
+    try {
+      await api.materialFromArtifact(a.artifact_version_id);
+      nav(`/start/doc-revise/${matterId}`);
+    } catch (e) {
+      window.alert(`没能把这一版加入材料：${(e as Error).message}`);
+    }
+  };
   const downloadOne = (a: any) =>
     void api
       .downloadArtifact(a.artifact_version_id, restoredPlain(String(a.filename ?? ""), tokenMap))
@@ -862,6 +871,12 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                     {artifactName(withRun(a), (t) => restoredPlain(t, tokenMap))}
                   </button>
                   <span className="spacer" />
+                  {/* V12 多轮修订：修订稿、清洁稿与助手起草的 Word 文书可以作为下一轮修改的底稿（原先只能下载后重新上传） */}
+                  {canContinueOn(a) && (
+                    <button className="btn-ghost btn-sm" title="把这一版加入事项材料，打开“按你的意见修改文书”在它上面继续改" onClick={() => void continueOn(a)}>
+                      在这一版上继续修改
+                    </button>
+                  )}
                   <button className="btn-ghost btn-sm" onClick={() => downloadOne(a)}>
                     {downloadLabel(String(a.filename ?? ""))}
                   </button>
