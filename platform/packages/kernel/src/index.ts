@@ -474,7 +474,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const agentWallMs = Number.isFinite(wall) && wall >= 2000 ? wall : undefined;
   // 主交付物（第 34 批）：读当时生效的方法模板包（内容更新后 skillsBundle 会换）
   const skillPrimaryOf = (skill: string) => (skillsBundle.ok ? (skillsBundle.skills.find((x) => x.id === skill)?.primary_output ?? null) : null);
-  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf };
+  const skillOutputsOf = (skill: string) => (skillsBundle.ok ? (skillsBundle.skills.find((x) => x.id === skill)?.outputs ?? null) : null);
+  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf, skillOutputsOf };
   queue.register("legalRun", createLegalWorkflow(workflowDeps));
 
   const ocrModelPaths = {

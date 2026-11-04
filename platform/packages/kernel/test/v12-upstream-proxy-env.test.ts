@@ -24,7 +24,7 @@ test("ZR_UPSTREAM_PROXY：显式配置才生效，只留协议与主机端口；
 test("配了代理，自带密钥端点的地址与型号不变", () => {
   const u = gateUpstreamsFromEnv({ ZR_UPSTREAM_PROXY: "http://127.0.0.1:3128", ZR_BYOK_BASE: "https://maas.example.cn/v1", ZR_BYOK_API_KEY: "test-key-not-real", ZR_MODEL_K3: "kimi-k3.1-pro" });
   assert.equal(u.byok?.baseUrl, "https://maas.example.cn/v1");
-  assert.equal(u.byok?.models["legal/k3"], "kimi-k3.1-pro");
+  assert.equal(u.byok?.models?.["legal/k3"], "kimi-k3.1-pro");
   assert.deepEqual(u.proxy, { url: "http://127.0.0.1:3128" });
   assert.equal(gateUpstreamsFromEnv({}).proxy, null);
 });

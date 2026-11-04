@@ -49,6 +49,8 @@ export interface ExecutorDeps {
   agentWallMs?: number | undefined;
   /** 方法模板的主交付物（前言 outputs 第一项；第 34 批）：自由描述的任务按助手实际加载的方法核对主交付物。读当时生效的模板包。 */
   skillPrimaryOf?: ((skill: string) => string | null | undefined) | undefined;
+  /** 方法前言 outputs 全部交付物（V12 F10）：第二项起是附件（如《起草说明与待定事项》），结算核对主交付物时不算数。 */
+  skillOutputsOf?: ((skill: string) => readonly string[] | null | undefined) | undefined;
 }
 
 interface RunRow {
@@ -1035,9 +1037,9 @@ export function requiredDeliverables(methodPrimary: string | null, req: Delivera
 }
 
 /** 按顺序核对交付件，返回第一个缺的说明；都交了（或没有要核对的）返回 null。纯查询。 */
-export function firstMissingDeliverable(db: KernelDb, runId: string, required: readonly string[]): { primary: string; cause: string; note: string } | null {
+export function firstMissingDeliverable(db: KernelDb, runId: string, required: readonly string[], attachments: readonly string[] = []): { primary: string; cause: string; note: string } | null {
   for (const r of required) {
-    const miss = primaryDeliverableMissing(db, runId, r);
+    const miss = primaryDeliverableMissing(db, runId, r, attachments);
     if (miss) return miss;
   }
   return null;
@@ -1137,7 +1139,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   // 主交付物核对（第 28 批）：文书类方法没交出任何 Word 文书时不记“完成”——真实走查里起诉状任务只交了两份表格却显示“已完成”
   // 律师直接描述任务（没从场景卡指定方法）时按助手自己加载的方法核对（第 34 批：原先这类任务没有任何主交付物核对）
   const settleChecked = async (outcomeStatus: "succeeded" | "partial", remaining: string[]): Promise<void> => {
-    const missing = outcomeStatus === "succeeded" ? firstMissingDeliverable(db, runId, expectedPrimary()) : null;
+    const missing = outcomeStatus === "succeeded" ? firstMissingDeliverable(db, runId, expectedPrimary(), attachmentOutputs(db, runId, skill, ctx.deps.skillOutputsOf)) : null;
     if (missing) appendEvent(ctx.deps, runId, attemptId, AGENT_PRIMARY_MISSING_SEQ, "agent.primary_missing", { primary: missing.primary, cause: missing.cause });
     const finalStatus = outcomeStatus === "partial" || missing ? RunStatus.partial : RunStatus.succeeded;
     const finalRemaining = missing ? [...remaining, missing.note] : remaining;
@@ -1193,7 +1195,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   let finished = false;
   // 到工作时限时主交付物已交出（第 35 批真实走查 N1：《股权转让协议》已交出 5 版，任务仍记“已超时、需要重试”）→ 按部分完成结算
   const settleDelivered = async (reason: string | null): Promise<boolean> => {
-    const delivered = deliveredBeforeDeadline(db, runId, expectedPrimary(), timeoutMs);
+    const delivered = deliveredBeforeDeadline(db, runId, expectedPrimary(), timeoutMs, attachmentOutputs(db, runId, skill, ctx.deps.skillOutputsOf));
     if (!delivered) return false;
     assertNoUnresolved();
     appendEvent(ctx.deps, runId, attemptId, AGENT_DEADLINE_DELIVERED_SEQ, "agent.deadline_delivered", { files: delivered.files, reason });
@@ -1392,10 +1394,10 @@ const AGENT_DEADLINE_DELIVERED_SEQ = 9_002;
  * 到工作时限时本任务已交出的文书或表格（第 35 批真实走查 N1）：方法有主交付物的，须主交付物已登记；没有的，登记了任一 Word 文书或 Excel 表即可。
  * 都没有返回 null（照常记超时）。返回给律师的说明写清“文书已交出、收尾没完成”；limitMs 是本次运行实际下发的工作时限。纯查询。
  */
-export function deliveredBeforeDeadline(db: KernelDb, runId: string, primaryOutput: string | readonly string[] | null, limitMs: number = AGENT_WORK_LIMIT_MS): { files: string[]; note: string } | null {
+export function deliveredBeforeDeadline(db: KernelDb, runId: string, primaryOutput: string | readonly string[] | null, limitMs: number = AGENT_WORK_LIMIT_MS, attachments: readonly string[] = []): { files: string[]; note: string } | null {
   // V11：要核对的交付件可以有几份（方法主交付物 + 律师点名的格式），都交出了才算
   const required = primaryOutput === null ? [] : typeof primaryOutput === "string" ? [primaryOutput] : primaryOutput;
-  if (required.some((p) => (WORD_OUTPUT.test(p) || SHEET_OUTPUT.test(p)) && primaryDeliverableMissing(db, runId, p))) return null;
+  if (required.some((p) => (WORD_OUTPUT.test(p) || SHEET_OUTPUT.test(p)) && primaryDeliverableMissing(db, runId, p, attachments))) return null;
   const rows = db.all<{ filename: string }>(
     `SELECT filename FROM artifact_versions WHERE run_id = ? AND ((${WORD_ARTIFACT_SQL}) OR (${SHEET_ARTIFACT_SQL})) ORDER BY created_at`,
     [runId],
@@ -1426,6 +1428,40 @@ export function loadedPrimaryOutput(db: KernelDb, runId: string, primaryOf: (ski
   return outs.find((o) => WORD_OUTPUT.test(o)) ?? outs.find((o) => SHEET_OUTPUT.test(o)) ?? null;
 }
 
+/**
+ * 方法规定的附件（V12 F10）：本任务用的方法（场景卡指定的与助手加载过的）前言 outputs 第二项起、标明“（附件）”的 Word 文件名。
+ * 与主交付物同名或互相包含的不算附件（宁可放过，不把真正的文书当附件）。纯查询。
+ */
+export function attachmentOutputs(db: KernelDb, runId: string, skill: string | null, outputsOf: ((skill: string) => readonly string[] | null | undefined) | undefined): string[] {
+  if (!outputsOf) return [];
+  const skills = new Set<string>(skill ? [skill] : []);
+  for (const row of db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.skill' ORDER BY seq`, [runId])) {
+    try {
+      const s = JSON.parse(row.payload)?.skill;
+      if (typeof s === "string") skills.add(s);
+    } catch {}
+  }
+  const out = new Set<string>();
+  // 只认前言明写“（附件）”的 Word 文件（如“起草说明与待定事项.docx（附件）”）；“顾问答复 / 法律意见书”这类可互为主交付物的不算
+  for (const s of skills) for (const o of (outputsOf(s) ?? []).slice(1)) if (/（附件[^）]*）$/.test(o) && WORD_OUTPUT.test(o.replace(/（附件[^）]*）$/, ""))) out.add(o);
+  return [...out];
+}
+
+/** 文件名比对用的基名：去掉目录、扩展名、书名号、“（附件）”与空白。 */
+function outputBase(name: string): string {
+  return name.split(/[\\/]/).pop()!.replace(/（附件[^）]*）/g, "").replace(/\.(docx|xlsx)$/i, "").replace(/[《》\s]/g, "");
+}
+
+/** 判断成果文件是不是方法规定的附件：文件名含附件基名（至少 4 字）且不含主交付物基名。 */
+export function attachmentMatcher(attachments: readonly string[], primaryOutput: string): (filename: string) => boolean {
+  const primary = outputBase(primaryOutput);
+  const bases = attachments.map(outputBase).filter((b) => b.length >= 4 && !b.includes(primary) && !primary.includes(b));
+  return (filename: string) => {
+    const f = outputBase(filename);
+    return bases.some((b) => f.includes(b)) && !(primary.length >= 2 && f.includes(primary));
+  };
+}
+
 /** 算作“交出了 Word 文书”的成果：文书工具、在原件上修订、工作区里的 .docx（最终答复转出的 Word 不算）。 */
 const WORD_ARTIFACT_SQL = `kind IN ('agent_report', 'revision_draft', 'revision_clean') OR (kind = 'a1_workspace_file' AND lower(filename) LIKE '%.docx')`;
 const SHEET_ARTIFACT_SQL = `kind = 'agent_table' OR (kind = 'a1_workspace_file' AND lower(filename) LIKE '%.xlsx')`;
@@ -1434,7 +1470,7 @@ const SHEET_ARTIFACT_SQL = `kind = 'agent_table' OR (kind = 'a1_workspace_file' 
  * 方法的主交付物是 Word 文书（前言 outputs 第一项以 .docx 结尾）而本任务一份 Word 文书都没登记时，返回缺失说明；否则 null。
  * 原因按论点提纲状态给出（还在等律师确认 / 没提交），其余情形统一写“只交了表格或说明”。纯查询，重放结果相同。
  */
-export function primaryDeliverableMissing(db: KernelDb, runId: string, primaryOutput: string | null): { primary: string; cause: string; note: string } | null {
+export function primaryDeliverableMissing(db: KernelDb, runId: string, primaryOutput: string | null, attachments: readonly string[] = []): { primary: string; cause: string; note: string } | null {
   // Excel 主交付物（第 31 批）：一张表都没登记时同样不记“完成”
   if (primaryOutput && SHEET_OUTPUT.test(primaryOutput)) {
     const t = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM artifact_versions WHERE run_id = ? AND (${SHEET_ARTIFACT_SQL})`, [runId])?.n ?? 0;
@@ -1443,7 +1479,10 @@ export function primaryDeliverableMissing(db: KernelDb, runId: string, primaryOu
     return { primary, cause: "no_sheet_output", note: `没有交出《${primary}》：助手只交了文字说明。可以在本任务里“追问”，让助手用表格工具补出` };
   }
   if (!primaryOutput || !WORD_OUTPUT.test(primaryOutput)) return null;
-  const n = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM artifact_versions WHERE run_id = ? AND (${WORD_ARTIFACT_SQL})`, [runId])?.n ?? 0;
+  // V12 F10：方法规定的附件（outputs 第二项起，如《起草说明与待定事项》.docx）不算交出了主交付物；修订稿与清洁稿总算
+  const skip = attachmentMatcher(attachments, primaryOutput);
+  const words = db.all<{ kind: string; filename: string }>(`SELECT kind, filename FROM artifact_versions WHERE run_id = ? AND (${WORD_ARTIFACT_SQL})`, [runId]);
+  const n = words.filter((w) => w.kind === "revision_draft" || w.kind === "revision_clean" || !skip(w.filename)).length;
   if (n > 0) return null;
   const primary = primaryOutput.replace(WORD_OUTPUT, "");
   const state = outlineState(db, runId);
