@@ -71,6 +71,30 @@ export function latestVersionOf(db: KernelDb, a: ArtKey): number {
 }
 
 /**
+ * 工具结果里登记的成果（顶层与下一层对象的 artifact_version_id）有没有已被同一份文件的更新版本取代（V12）。
+ * 本机端点按幂等键重放写类调用的存档结果：A → B → 又交一次与 A 完全相同的调用（律师要撤回第二轮、回到第一轮的改法）时，
+ * 重放的是 A 的旧编号、最新版仍是 B——助手以为已经改回，律师看到的最新版没变。存档结果里的成果已被取代的，不再重放。
+ */
+export function resultHasSupersededArtifact(db: KernelDb, result: unknown): boolean {
+  if (!result || typeof result !== "object") return false;
+  const ids = new Set<string>();
+  const take = (o: unknown) => {
+    const v = o && typeof o === "object" && !Array.isArray(o) ? (o as Record<string, unknown>).artifact_version_id : undefined;
+    if (typeof v === "string" && v) ids.add(v);
+  };
+  take(result);
+  for (const v of Object.values(result as Record<string, unknown>)) take(v);
+  for (const id of ids) {
+    const a = db.get<{ matter_id: string; kind: string; audience: string; lineage: string | null; version: number }>(
+      `SELECT matter_id, kind, audience, lineage, version FROM artifact_versions WHERE artifact_version_id = ?`,
+      [id],
+    );
+    if (a && latestVersionOf(db, a) > a.version) return true;
+  }
+  return false;
+}
+
+/**
  * 给界面的版本信息：version 换成这份文件里的第几版、kind_version 留原编号、is_latest 是不是这份文件的最新版。
  * 一次查出同一事项里的全部版本按 lineage 分组，不逐行查库。
  */

@@ -11,7 +11,7 @@
  * - 任一条不成立：整体不写，逐条返回原因与改法（不返回还原后的原文，结果仍经本机端点令牌化）。
  */
 import { DomainError, sha256Hex } from "@zr-legal/domain";
-import { createDocx, existingRevisions, headerFooterParagraphs, minimalChange, readZipEntries, sanitizeDocx } from "@zr-legal/docx-engine";
+import { createDocx, existingRevisions, extractParagraphs, headerFooterParagraphs, minimalChange, readZipEntries, sanitizeDocx } from "@zr-legal/docx-engine";
 import { applyStructuredPatches, headerFooterHint, type ChangeRow, type NumberingShifts, type PatchConflict, type StructuredPatch } from "../../services/structured-patch.ts";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
@@ -182,9 +182,10 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
     };
   }
   // 清洁稿：从刚登记的修订稿字节派生（接受全部修订、去掉批注），原件与修订稿都不动
-  const rev = ctx.db.get<{ storage_uri: string; manifest: string }>(`SELECT storage_uri, manifest FROM artifact_versions WHERE artifact_version_id = ?`, [r.artifact_version_id]);
+  const rev = ctx.db.get<{ storage_uri: string; manifest: string; version: number; lineage: string | null }>(`SELECT storage_uri, manifest, version, lineage FROM artifact_versions WHERE artifact_version_id = ?`, [r.artifact_version_id]);
   if (!rev) throw new DomainError("internal", "修订稿登记后读取失败", 500);
   const clean = sanitizeDocx(ctx.blobs.read(rev.storage_uri));
+  const previousRound = srcBuf ? previousRoundGaps(ctx, mid, { ...rev, filename: r.filename }, srcBuf, clean.docx) : null;
   const stored = ctx.blobs.put(clean.docx, mid);
   const cleanName = r.filename.replace(/（修订稿）\.docx$/i, "（清洁稿）.docx");
   const cleanReg = registerToolArtifact(ctx, {
@@ -211,7 +212,75 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
     ...priorNote,
     ...hfNote,
     ...numberingNotes(r, true),
+    ...(previousRound ? { previous_round: previousRound } : {}),
     note: `修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；清洁稿已接受全部修订、去掉批注；${compareReg ? "修改对照表逐段列出修改前后与理由（由系统按实际写入的修改生成，不用另写）；" : ""}原件不变。批注是写给律师的修改理由，发给对方前须删除批注或改用清洁稿。`,
+  };
+}
+
+/**
+ * 多轮修订（V12，第 36 批待拍板“基于旧版本修改会丢更新”一并排查）：docx.revise 每次都在原件上重出修订稿（修订痕迹相对原件），
+ * 新一轮登记为同一份修订稿的最新版。助手第二轮只交新增的修改时，最新的修订稿与清洁稿里悄悄没了上一轮已改好的内容。
+ * 这里拿这份原件上一版修订稿（不限本任务：追问另起的任务也是同一份）接受全部修订后的文字，与本轮清洁稿逐段比对，
+ * 列出上一轮写入、本轮没有的修改交回助手（只提示不拦：律师确实可能要撤回上一轮的某处修改）。
+ */
+function previousRoundGaps(
+  ctx: InvokeCtx,
+  mid: string,
+  cur: { version: number; lineage: string | null; filename: string },
+  original: Buffer,
+  curClean: Buffer,
+) {
+  if (!cur.lineage) return null;
+  const prev = ctx.db.get<{ artifact_version_id: string; storage_uri: string }>(
+    `SELECT artifact_version_id, storage_uri FROM artifact_versions WHERE matter_id = ? AND kind = 'revision_draft' AND audience = 'internal' AND lineage = ? AND filename = ? AND version < ? ORDER BY version DESC LIMIT 1`,
+    [mid, cur.lineage, cur.filename, cur.version],
+  );
+  if (!prev) return null;
+  let prevClean: Buffer;
+  try {
+    prevClean = sanitizeDocx(ctx.blobs.read(prev.storage_uri)).docx;
+  } catch {
+    return null;
+  }
+  const paras = (b: Buffer) => extractParagraphs(b).map((x) => x.text).filter((t) => t.trim());
+  const orig = paras(original);
+  const before = paras(prevClean);
+  const now = paras(curClean);
+  const origSet = new Set(orig);
+  const beforeSet = new Set(before);
+  const nowText = now.join("\n");
+  // 上一轮改掉的原段（改写或删除）
+  const changedOrig = orig.filter((t) => !beforeSet.has(t));
+  const used = new Set<string>();
+  const missing: { kind: "edit" | "insert" | "delete"; before?: string; after: string }[] = [];
+  // 上一轮改出的字带上一侧的上下文还在本轮清洁稿里，就算带上了（本轮在同一段里改得更多时不误报）；删字的看删处两侧是否接上
+  const carried = (o: string, t: string) => {
+    const m = minimalChange(o, t);
+    if (!m.added) return nowText.includes(`${m.keepHead.slice(-4)}${m.keepTail.slice(0, 4)}`);
+    return nowText.includes(`${m.keepHead.slice(-6)}${m.added}`) || nowText.includes(`${m.added}${m.keepTail.slice(0, 6)}`);
+  };
+  for (const t of before) {
+    if (origSet.has(t) || now.includes(t)) continue;
+    // 对应的原段：与之首尾相同的字最多的那一段（至少 4 个字），没有的是上一轮插入的新段
+    let best: { o: string; score: number } | null = null;
+    for (const o of changedOrig) {
+      const m = minimalChange(o, t);
+      const score = [...m.keepHead].length + [...m.keepTail].length;
+      if (score >= 4 && (!best || score > best.score)) best = { o, score };
+    }
+    if (best) {
+      used.add(best.o);
+      if (carried(best.o, t)) continue;
+      missing.push({ kind: "edit", before: best.o, after: t });
+    } else missing.push({ kind: "insert", after: t });
+  }
+  for (const o of changedOrig) if (!used.has(o) && now.includes(o)) missing.push({ kind: "delete", before: o, after: "" });
+  if (missing.length === 0) return null;
+  const cap = (x: string) => (x.length > 300 ? `${x.slice(0, 300)}……` : x);
+  return {
+    revision_artifact_version_id: prev.artifact_version_id,
+    missing: missing.slice(0, 20).map((m) => ({ kind: m.kind, ...(m.before !== undefined ? { before: cap(m.before) } : {}), after: cap(m.after) })),
+    note: `docx.revise 每次都在原件上重出，不在上一版修订稿上叠加：上一版修订稿（${prev.artifact_version_id}）里的 ${missing.length} 处修改这次没有带上（missing 列出改前与改后的整段），现在的最新修订稿与清洁稿里没有它们。律师没有要求撤回的，把它们连同这次的修改作为全部修改在原件上重新提交一次；确是律师要撤回的，在最终答复里写明撤回了哪几处`,
   };
 }
 

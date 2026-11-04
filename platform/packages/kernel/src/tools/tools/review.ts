@@ -228,8 +228,12 @@ export function registerToolArtifact(
   if (!s.runId) throw new DomainError("forbidden", "只有任务内的调用可以登记成果", 403);
   const run = ctx.db.get<{ tenant_id: string; created_by: string; matter_id: string }>(`SELECT tenant_id, created_by, matter_id FROM runs WHERE run_id = ?`, [s.runId]);
   if (!run || run.matter_id !== s.matterId) throw notFound("任务");
+  // 同内容复用只认这份文件当前的最新版（原样重试不多出一版）。V12：此前同任务里任一版内容相同即复用——
+  // A → B → 又出 A（改回、整份重出成同样的字节）时返回第一版的旧编号，最新版仍是 B：改回的内容不算数，下一次修改又落在旧版本上
+  const lineage = runLineage(ctx.db, s.runId!, art.kind, art.filename);
   const existing = ctx.db.get<{ artifact_version_id: string }>(
-    `SELECT artifact_version_id FROM artifact_versions WHERE matter_id = ? AND run_id = ? AND kind = ? AND audience = 'internal' AND sha256 = ?`,
+    `SELECT artifact_version_id FROM artifact_versions a WHERE matter_id = ? AND run_id = ? AND kind = ? AND audience = 'internal' AND sha256 = ?
+       AND NOT EXISTS (SELECT 1 FROM artifact_versions b WHERE b.matter_id = a.matter_id AND b.kind = a.kind AND b.audience = a.audience AND b.lineage IS a.lineage AND b.version > a.version)`,
     [s.matterId, s.runId, art.kind, art.sha256],
   );
   if (existing) return { artifact_version_id: existing.artifact_version_id, filename: art.filename, reused: true };
@@ -239,7 +243,7 @@ export function registerToolArtifact(
     ctx.db.run(
       `INSERT INTO artifact_versions (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by, lineage)
        VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,'[]',?,?,?)`,
-      [id, run.tenant_id, s.matterId, s.runId, art.kind, v.next, art.filename, art.sha256, art.storage_uri, JSON.stringify(art.manifest), run.created_by, runLineage(ctx.db, s.runId!, art.kind, art.filename)],
+      [id, run.tenant_id, s.matterId, s.runId, art.kind, v.next, art.filename, art.sha256, art.storage_uri, JSON.stringify(art.manifest), run.created_by, lineage],
     );
   });
   return { artifact_version_id: id, filename: art.filename, reused: false };

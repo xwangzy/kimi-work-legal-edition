@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import { argsHash, canonicalJson } from "@zr-legal/host-policy";
 import { newId } from "@zr-legal/domain";
 import { liveRunForClaims, tokenLiveness, type LiveRun } from "./identity.ts";
+import { resultHasSupersededArtifact } from "./services/artifact-lineage.ts";
 import { authorizeToolCall } from "@zr-legal/host-policy";
 import { READBACK_MODEL_FIELDS, tokenizeByField, type ModelFieldRule } from "@zr-legal/egress-gate";
 import { TOOLS, findTool, invokeTool, legalToolLockProblems, legalToolManifests, manifestFor, validateParams } from "./tools/registry.ts";
@@ -264,7 +265,19 @@ export async function startLocalServer(deps: LocalServerDeps, opts: { host?: str
         `SELECT tool_operation_id, status, result_uri FROM tool_operations WHERE run_id = ? AND idempotency_key = ?`,
         [rid, idem],
       );
-      if (prior?.status === "succeeded" && prior.result_uri) return { replayUri: prior.result_uri, opId: prior.tool_operation_id };
+      if (prior?.status === "succeeded" && prior.result_uri) {
+        // V12：存档结果里的成果已被同一份文件的更新版本取代（A → B → 又交一次 A）——重放旧编号会让“改回”悄悄不生效，改为重新执行
+        // （原调用确已完成，之后又有新版本，重新执行不是重复副作用）；仍是最新的照旧重放
+        let superseded = false;
+        try {
+          superseded = resultHasSupersededArtifact(db, JSON.parse(blobs.read(prior.result_uri).toString("utf8")));
+        } catch {
+          superseded = false;
+        }
+        if (!superseded) return { replayUri: prior.result_uri, opId: prior.tool_operation_id };
+        db.run(`UPDATE tool_operations SET status = 'pending', attempt_id = ?, completed_at = NULL WHERE tool_operation_id = ? AND status = 'succeeded'`, [aid, prior.tool_operation_id]);
+        return { replayUri: null, opId: prior.tool_operation_id };
+      }
       if (prior?.status === "pending" || prior?.status === "unknown") {
         throw new DomainError("conflict", "同一副作用调用正在执行或上次结果不明（outbox），不重放；结果不明的调用须经人工对账（runs.reconcile）后才能再次执行", 409);
       }

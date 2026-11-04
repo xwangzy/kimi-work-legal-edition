@@ -93,14 +93,48 @@ export function sectionsOfDocx(docx: Buffer): { title: string; sections: Deliver
   return { title, sections: sections.filter((s, i) => i > 0 || (s.paragraphs?.length ?? 0) > 0 || !!s.table) };
 }
 
+/**
+ * 同一份文书（同一 lineage，与界面“第 n 版 / 最新版”同一口径）里比这一版更新的版本；没有更新的返回 null。
+ * 早期没有 lineage 的成果按本任务里的同名文书判断。
+ */
+function newerVersionOf(
+  ctx: InvokeCtx,
+  mid: string,
+  id: string,
+  art: { kind: string; filename: string; run_id: string | null; audience: string; version: number; lineage: string | null },
+) {
+  const latest = art.lineage
+    ? ctx.db.get<{ artifact_version_id: string; run_id: string | null; version: number }>(
+        `SELECT artifact_version_id, run_id, version FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = ? AND lineage = ? ORDER BY version DESC LIMIT 1`,
+        [mid, art.kind, art.audience, art.lineage],
+      )
+    : ctx.db.get<{ artifact_version_id: string; run_id: string | null; version: number }>(
+        `SELECT artifact_version_id, run_id, version FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = ? AND run_id IS ? AND filename = ? ORDER BY version DESC LIMIT 1`,
+        [mid, art.kind, art.audience, art.run_id, art.filename],
+      );
+  if (!latest || latest.artifact_version_id === id || latest.version <= art.version) return null;
+  const name = art.filename.replace(/\.docx$/i, "");
+  const own = latest.run_id === art.run_id;
+  return {
+    status: "not_applied" as const,
+    written: false,
+    reason: "stale_version" as const,
+    latest_artifact_version_id: latest.artifact_version_id,
+    conflicts: [],
+    note: own
+      ? `《${name}》已有更新的版本（${latest.artifact_version_id}），你给的 ${id} 是旧版本：在旧版本上改会丢掉之后的修改，整体没有写入。改用 artifact_version_id=${latest.artifact_version_id}，锚点照抄最新版本里的文字，把这次的修改重新提交一次（之前几轮已改好的不用再交）`
+      : `《${name}》已有更新的版本（${latest.artifact_version_id}，不是本任务生成的），你给的 ${id} 是旧版本，整体没有写入：不要在旧版本上改；在最终答复里告诉律师最新版本已在别的任务里更新，需要时请律师在最新版本上提出修改`,
+  };
+}
+
 export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown; patches?: unknown; dry_run?: unknown }) {
   const mid = ctx.claims.mid;
   if (!mid) throw new DomainError("forbidden", "令牌未绑定事项", 403);
   const rid = typeof ctx.claims.rid === "string" ? ctx.claims.rid : null;
   if (!rid) throw new DomainError("forbidden", "只有任务内的调用可以修改文书草稿", 403);
   const id = String(p.artifact_version_id ?? "");
-  const art = ctx.db.get<{ kind: string; filename: string; storage_uri: string; sha256: string; run_id: string | null }>(
-    `SELECT kind, filename, storage_uri, sha256, run_id FROM artifact_versions WHERE artifact_version_id = ? AND matter_id = ?`,
+  const art = ctx.db.get<{ kind: string; filename: string; storage_uri: string; sha256: string; run_id: string | null; audience: string; version: number; lineage: string | null }>(
+    `SELECT kind, filename, storage_uri, sha256, run_id, audience, version, lineage FROM artifact_versions WHERE artifact_version_id = ? AND matter_id = ?`,
     [id, mid],
   );
   if (!art) throw new DomainError("not_found", "找不到这份文书：artifact_version_id 用 docx.render_report 返回的那个", 404);
@@ -108,6 +142,11 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
   if (art.kind !== "agent_report" || !art.filename.toLowerCase().endsWith(".docx")) {
     throw new DomainError("validation", "只能修改 docx.render_report 生成的 Word 文书；修订稿、清洁稿要改的，在原件上重新用 docx.revise 提交全部修改", 422);
   }
+  // V12（第 36 批待拍板“基于旧版本修改会丢更新”）：只在这份文书的最新版本上改（乐观并发）。
+  // 此前拿旧编号也照常写入：新版本由旧版本改出、却登记成最新版，上一轮已改好的内容悄悄没了（律师看到的最新文书少了修改）。
+  // 不是最新的整体不写（试写也拦），交回最新版本的编号，由助手在最新版本上重新定位锚点后提交
+  const stale = newerVersionOf(ctx, mid, id, art);
+  if (stale) return stale;
   const raw = Array.isArray(p.patches) ? (p.patches as EditPatchInput[]) : [];
   if (raw.length === 0) throw new DomainError("validation", "patches 至少一条", 422);
   if (raw.length > EDIT_DRAFT_MAX_PATCHES) throw new DomainError("validation", `一次最多 ${EDIT_DRAFT_MAX_PATCHES} 处修改；改动更多时说明这份文书要重写，用 docx.render_report 重新生成`, 422);

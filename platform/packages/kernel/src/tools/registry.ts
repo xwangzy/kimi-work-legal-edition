@@ -441,7 +441,7 @@ export const TOOLS: readonly ToolDef[] = [
     name: "docx.revise",
     title: "在原件上修订（修订稿 + 清洁稿）",
     description:
-      "按律师意见修改已上传的 Word 原件：每处给出要改的原文（anchor，逐字照抄材料原文、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落），在原件副本上生成带修订痕迹的修订稿（保留原版式、编号、表格）与接受全部修订后的清洁稿，并由系统按实际写入的修改生成《修改对照表》（逐段修改前、修改后与理由），登记为本任务草稿成果；原件不变。dry_run=true 只试写：返回每个改到的段落改前与改后的整段文字，不生成文件，先读一遍再正式提交。任一处找不到或有歧义时整体不写，逐条返回原因，改正后重新提交。" +
+      "按律师意见修改已上传的 Word 原件：每处给出要改的原文（anchor，逐字照抄材料原文、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落），在原件副本上生成带修订痕迹的修订稿（保留原版式、编号、表格）与接受全部修订后的清洁稿（每次都在原件上重出、不在上一版修订稿上叠加：再改时把之前各轮仍要保留的修改连同新修改一并提交；漏了的在结果 previous_round 里列出），并由系统按实际写入的修改生成《修改对照表》（逐段修改前、修改后与理由），登记为本任务草稿成果；原件不变。dry_run=true 只试写：返回每个改到的段落改前与改后的整段文字，不生成文件，先读一遍再正式提交。任一处找不到或有歧义时整体不写，逐条返回原因，改正后重新提交。" +
       "页眉、页脚里的文字（材料正文里看不到，试写结果的 header_footer_text 会列出）也能改：该条 paragraph_hint 写“页眉”或“页脚”，anchor 照抄 header_footer_text 里的原文；页眉页脚不加批注，修改理由写在最终答复里。",
     sideEffect: "write_draft",
     resource: "matter_documents",
@@ -479,7 +479,7 @@ export const TOOLS: readonly ToolDef[] = [
     title: "修改本任务的文书草稿",
     description:
       "在本任务里你已用 docx.render_report 生成的 Word 文书上逐处修改（交付前检查报出的问题、自查发现的措辞、条号、金额、遗漏的款项等），几秒完成，登记为同名文书的新版本（旧版本保留）：" +
-      "artifact_version_id 写 docx.render_report（或上一次本工具）返回的编号；每处给出要改的原文（anchor，逐字照抄这份文书里的文字、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落，按换行分段）。" +
+      "artifact_version_id 写这份文书最新一版的编号（docx.render_report 或上一次本工具返回的）；给的不是最新版时整体不写，返回 stale_version 与最新版编号 latest_artifact_version_id，改用它重新提交；每处给出要改的原文（anchor，逐字照抄这份文书里的文字、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落，按换行分段）。" +
       "只改要改的地方，不要为改几处整份重新生成；整体结构要变（增删多条、重排章节）才用 docx.render_report 重出。律师上传的材料不能用本工具，用 docx.revise。" +
       "任一处找不到或有歧义时整体不写，逐条返回原因；改好后返回新版本的交付前检查 quality_check。",
     sideEffect: "write_draft",

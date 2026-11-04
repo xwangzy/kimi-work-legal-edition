@@ -113,7 +113,7 @@ test("在本任务的文书草稿上逐处修改：同名新版本、旧版本�
     assert.ok(text.indexOf("3.2 仲裁裁决是终局的，对各方均有约束力。") === text.indexOf("3.1 因本协议发生的争议，提交上海仲裁委员会仲裁。") + 1, "插入的款紧接锚点段落");
     assert.equal(/<w:ins\b|<w:del\b/.test(dl.toString("latin1")), false, "草稿是助手自己的文字，不留修订痕迹");
 
-    // 再改一次用新编号；用旧编号也可以（旧版本保留），但结果是又一个新版本
+    // 再改一次用新编号（V12：用旧编号整体不写、返回最新版编号，见 v12-edit-draft-stale-base.test.ts）
     const r3 = await a.call("docx.edit_draft", { artifact_version_id: r2.artifact_version_id, patches: [{ anchor: "上海仲裁委员会", proposed_text: "上海国际仲裁中心" }] });
     assert.equal(r3.status, "applied");
 
