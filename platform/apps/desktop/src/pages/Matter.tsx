@@ -142,7 +142,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
         try {
           const r: any = mode === "import" ? await api.importMaterial(matterId, f) : await api.mountMaterial(matterId, f);
           if (r?.duplicate_of) {
-            lines.push(`${f.name} 没有重复添加：与已添加的《${String(r.duplicate_filename ?? "")}》内容完全相同`);
+            lines.push(`${f.name} 已添加，但与已有的《${String(r.duplicate_filename ?? "")}》内容完全相同；如是误传请删除其中一份，免得整理案卷时重复计入`);
             continue;
           }
           const how = mode === "import" ? "已添加（加密保存一份副本，原文件不改动）" : "已关联（只读引用原文件，不复制）";

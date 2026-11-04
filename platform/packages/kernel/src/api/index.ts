@@ -1058,12 +1058,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (bytes.length > MAX_BYTES) throw validation(`文件太大（${Math.round(bytes.length / 1048576)} MB，上限 ${Math.round(MAX_BYTES / 1048576)} MB），没有添加。可以拆成几份后再添加`);
       const sha256 = sha256Hex(bytes);
       if (p?.sha256 && p.sha256 !== sha256) throw new DomainError("hash_mismatch", "内核复算 hash 与声明不符，已拒收", 422);
-      // V12（V11 遗留 D8）：同一事项里已有内容完全相同的材料（未隔离）时不再重复添加——原先静默再存一份，整理案卷、证据目录把同一份证据计两次
+      // V12（V11 遗留 D8）：同一事项里已有内容完全相同的材料（未隔离）时照常添加但明确告诉律师——原先静默再存一份，整理案卷、证据目录会把同一份证据计两次。
+      // 不拦：对方原样退回、换了文件名的回稿要两份才能比对“有没有改”
       const dup = db.get<{ document_version_id: string; filename: string }>(
         `SELECT document_version_id, filename FROM document_versions WHERE matter_id = ? AND sha256 = ? AND quarantined_at IS NULL ORDER BY created_at LIMIT 1`,
         [matter.matter_id, sha256],
       );
-      if (dup) return { document_version_id: dup.document_version_id, duplicate_of: dup.document_version_id, duplicate_filename: dup.filename, sha256, note: `与已添加的《${dup.filename}》内容完全相同，没有重复添加` };
       const result = await insertDocumentWithParse({
         matterId: matter.matter_id,
         tenantId: id.tenantId,
@@ -1077,6 +1077,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         identity: id,
       });
       audit(db, id, "materials.import", "document", result.document_version_id, sha256, keyctx);
+      if (dup) return { ...result, sha256, duplicate_of: dup.document_version_id, duplicate_filename: dup.filename, note: `与已添加的《${dup.filename}》内容完全相同：已作为另一份材料添加；如是误传，请删除其中一份，免得整理案卷时重复计入` };
       return { ...result, sha256, note: "导入副本进入内容寻址块（不可变）；纠错请上传新版本" };
     },
 
