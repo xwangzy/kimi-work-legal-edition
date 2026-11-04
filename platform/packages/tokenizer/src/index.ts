@@ -258,7 +258,20 @@ export class MatterTokenizer {
     const knownOnly = o.knownOnly === true;
     if (this.recognize && !knownOnly) {
       const masked = maskRanges(foldWidth(text), taken);
-      const found = [...recognizeNames(masked)].filter((n) => !dict.some((d) => d.value === n));
+      // 认出的“姓名”在本段每一处都接着已知机构名称里的字往下写（“出租人明远商业，”里的“明远商”+“业”是“钱塘明远商业”的一段）：是机构简称，不是自然人
+      // （V13 真实走查 N1：律师在补充要求里写的“我方代理出租人明远商业”被学成自然人“明远商”，此后助手看到的是“〔自然人〕业”）。
+      // 只看这一处是否接着机构名往下写，不按“是机构名的一部分”一概排除——以创始人姓名作字号的公司，其法定代表人照常识别
+      const orgNames = this.parties.filter((p) => p.category === "org").map((p) => foldWidth(p.value));
+      const insideOrg = (n: string): boolean => {
+        let k = masked.indexOf(n);
+        if (k < 0 || orgNames.length === 0) return false;
+        for (; k >= 0; k = masked.indexOf(n, k + 1)) {
+          const ext = masked.slice(k, k + n.length + 1);
+          if (ext.length <= n.length || !orgNames.some((o) => o.includes(ext))) return false;
+        }
+        return true;
+      };
+      const found = [...recognizeNames(masked)].filter((n) => !dict.some((d) => d.value === n) && !insideOrg(n));
       for (const n of found) addSurname(surnames, nickAllowed, n);
       const names = found.filter((n) => nicknameSurname(n) === null);
       hits.push(...matchDictionary(text, names.map((value) => ({ value, category: "person" as const })), taken, "recognizer"));

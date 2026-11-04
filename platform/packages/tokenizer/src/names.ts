@@ -64,7 +64,7 @@ const ROLE_CUES = [
   "证人", "鉴定人", "当事人", "联系人", "收款人", "付款人", "收件人", "寄件人", "户名", "开户名", "姓名", "户主", "持卡人", "开户人",
   "买受人", "出卖人", "买方", "卖方", "出租人", "承租人", "转让方", "受让方", "转让人", "受让人", "发包人", "承包人", "劳动者", "员工",
   "职工", "配偶", "丈夫", "妻子", "之夫", "之妻", "父亲", "母亲", "儿子", "女儿", "之子", "之女", "继承人", "被继承人", "股东", "董事", "监事",
-  "总经理", "经理", "董事长", "签字人", "签署人", "经办人", "投保人", "被保险人", "受益人", "介绍人", "见证人", "担任", "签名",
+  "总经理", "经理", "董事长", "签字人", "签署人", "签收人", "收货人", "经办人", "投保人", "被保险人", "受益人", "介绍人", "见证人", "担任", "签名",
 ];
 
 /** 合同当事人代称：其后须有冒号、空白或括注才读姓名（第 35 批）。 */
@@ -374,8 +374,15 @@ export function findNicknames(
 /** 姓名的明确右边界（除标点、空白、文末外）：言语动词、称谓、出庭类动词。 */
 const RIGHT_ANCHORS = [...SPEECH_VERBS, ...HONORIFICS, "出庭", "到庭", "作证"].sort((a, b) => b.length - a.length);
 
-/** 从 j 起读一个姓名：姓氏 + 1–2 个名字；不是姓名返回 null。 */
-function readName(text: string, j: number): string | null {
+/**
+ * STOP 中常作两字名**首字**的字（V13 真实走查 N1：“法定代表人：郑可欣”“联系人：郑可欣，”“签收人：郑可欣。”全部没认出、按原文发给模型——
+ * “可”在 STOP 里，STOP 字原先只许作两字名的末字）。只在“角色词 + 分隔符 + 姓名 + 明确右边界”时放宽：角色词后有冒号、空白或括注，
+ * 名字后紧跟标点、空白、文末或称谓（“甲方可以”“当事人可能”没有分隔符，不受影响）。
+ */
+const NAME_FIRST_OK = new Set([..."可中承和同至合申书元万方之月年来行"]);
+
+/** 从 j 起读一个姓名：姓氏 + 1–2 个名字；不是姓名返回 null。`strong`：角色词与姓名之间有冒号、空白或括注。 */
+function readName(text: string, j: number, strong = false): string | null {
   const s = surnameAt(text, j);
   if (s === 0) return null;
   if (COMMON_WORDS.has(text.slice(j, j + 2))) return null;
@@ -386,7 +393,8 @@ function readName(text: string, j: number): string | null {
     const after = text[at] ?? "";
     const hard = after === "" || BOUNDARY.test(after) || HONORIFICS.some((w) => text.startsWith(w, at));
     const anchored = hard || RIGHT_ANCHORS.some((w) => text.startsWith(w, at));
-    if (given.length !== g || !anchored || !givenOk(given, hard)) continue;
+    const firstLoose = strong && hard && g === 2 && given.length === 2 && NAME_FIRST_OK.has(given[0]!) && givenOk(given.slice(1), true) && !GIVEN_NOT.has(given) && !ROLE_GIVEN.has(given);
+    if (given.length !== g || !anchored || !(givenOk(given, hard) || firstLoose)) continue;
     // “姓氏”其实是前一个词的功能字（“向双方，”）：不认
     if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
     // 列明退役的误认值即使有边界也不认（第 29 批：“到达甲方时生效，”）
@@ -473,6 +481,9 @@ const KNOWN_MISREADS = new Set([
   // 第 29 批复测：货款纠纷事项令牌表里旧规则学进的值（“被告向原告支付”“甲方向乙方采购”“对方亦确认”“法定代表人和联系方式”
   // “和实际”“双方确认的封样”，以及把句点当间隔号读出的一段）仍在替换合同原文
   "向原", "方采", "方亦", "和联", "和实", "封样", "元.保全费未发生不",
+  // V13 真实走查：法条原文“当事人一方违约”“一方明确表示”学出的值（N2 仓储合同审查事项），以及交付前独立复核把助手写的意见书
+  // 按材料识别时学出的“单次涨”（“单次涨幅不得超过”）、修正轮提示里的“位复核”
+  "方违约", "方明", "单次涨", "位复核",
 ]);
 export function stillLooksLikeName(value: string): boolean {
   // 整条值就是常用词的（“劳动”“付款”，第 35 批）同样退役：此前误登记进事项令牌表的条目在规则修正后不再替换
@@ -496,13 +507,17 @@ export function recognizeNames(text: string): Set<string> {
     // “标准为乙方劳动合同解除或终止前……”把“劳动”登记成人名，此后材料与检索词里的“劳动合同法”“劳动争议”都被换成代号；
     // 同法造句，“乙方付款、乙方计算、乙方利息、乙方时限”等 330 组被误认）。代称后的真名在合同里写作“乙方：张三”“乙方（劳动者）：张三”，照常识别
     if (j === m.index! + m[0].length && PARTY_LABELS.has(m[0])) continue;
+    // “当事人一方违约”“当事人一方明确表示”：ROLE_RE 把“一”当作序号（原告一、被告二），其后的“方”是名词，不是姓氏（V13 真实走查 N2：
+    // 法规检索结果里《民法典》第五百六十三条、第五百七十七条的原文学出“方明”“方违约”，此后审查意见书里的“乙方违约”“甲方违约”
+    // 送给模型时都成了“乙〔自然人〕”，交付前独立复核据此判“正文被占位符截断”，修正轮把清洁的 Word 改成“乙违约”）。另两支早已这样处理
+    if (text[j] === "方" && PARTY_FANG_BEFORE.has(text[j - 1] ?? "")) continue;
     // 音译名与拉丁字母姓名优先（否则“阿卜杜拉·买买提”会被截成“阿卜杜”）
     const special = readDottedAt(text, j) ?? readLatinAt(text, j);
     if (special) {
       out.add(special);
       continue;
     }
-    const name = readName(text, j);
+    const name = readName(text, j, j > m.index! + m[0].length);
     if (name) out.add(name);
   }
   dottedByContext(text, out);
