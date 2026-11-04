@@ -288,8 +288,12 @@ export class HostPolicy {
         loc.zone.name === "engine" &&
         (req.toolName === "Read" || req.toolName === "Write" || req.toolName === "Edit") &&
         isOwnPlanFile(loc.rel, req.sessionId, req.agentId);
-      if (!loc || (!TOOL_ZONES.has(loc.zone.name) && !ownPlan)) return deny("path_outside_matter", spec.grade, `宿主策略拒绝：路径不在本事项的材料区或工作区内（${field}）`);
-      if (ownPlan) continue;
+      // 引擎把超长的工具结果存进本会话的 tool-results 并只给模型前后各一段预览，提示“用 Read 按 output_path 翻页”（上游截断服务）。
+      // V13 真实走查 N1（整理案卷，102 条事实）：facts.list 的结果被存起来，Read 这个文件被本策略以“路径不在本事项”拒绝，助手只好把
+      // 102 条事实凭记忆重写一遍成 JSON，40 分钟用完、三张表一张没出。只读、只限请求方自己（同会话、同 Agent）的结果文件
+      const ownToolResult = !!loc && loc.zone.name === "engine" && req.toolName === "Read" && isOwnToolResultFile(loc.rel, req.sessionId, req.agentId);
+      if (!loc || (!TOOL_ZONES.has(loc.zone.name) && !ownPlan && !ownToolResult)) return deny("path_outside_matter", spec.grade, `宿主策略拒绝：路径不在本事项的材料区或工作区内（${field}）`);
+      if (ownPlan || ownToolResult) continue;
       if (spec.writes && loc.zone.name !== "work") return deny("write_outside_workspace", spec.grade, "宿主策略拒绝：只能写入本事项工作区；原件区只读、交付区只由人发布");
       if (req.toolName === "Bash" && loc.zone.name !== "work") return deny("bash_cwd_outside_workspace", spec.grade);
     }
@@ -438,6 +442,13 @@ export class HostPolicy {
 function isOwnPlanFile(rel: readonly string[], sessionId: string, agentId: string): boolean {
   return (
     rel.length === 6 && rel[1] === sessionId && rel[2] === "agents" && rel[3] === agentId && rel[4] === "plans" && /^[A-Za-z0-9._-]+\.md$/.test(rel[5] ?? "")
+  );
+}
+
+/** `<home>/sessions/<wd>/<session_id>/agents/<agent>/tool-results/<file>`：请求方自己（同会话、同 Agent）的工具结果存档（只读）。 */
+function isOwnToolResultFile(rel: readonly string[], sessionId: string, agentId: string): boolean {
+  return (
+    rel.length === 6 && rel[1] === sessionId && rel[2] === "agents" && rel[3] === agentId && rel[4] === "tool-results" && /^[A-Za-z0-9._-]+$/.test(rel[5] ?? "") && !/^\.+$/.test(rel[5] ?? "")
   );
 }
 
