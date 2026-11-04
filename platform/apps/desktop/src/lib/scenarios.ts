@@ -1359,9 +1359,13 @@ export function startMatterFor(keep: string | undefined, matters: PickableMatter
 }
 
 /** 所选事项与卡片业务线不一致时的一行提醒（不阻断）；一致或看不出时返回 null。 */
-export function lineMismatchText(card: Pick<ScenarioCard, "line" | "title">, matter: { stance?: string | null } | null | undefined): string | null {
+/** 任何业务线都常用的答复与研究类方法（V12 真实走查用例 5：诉讼事项里出给客户的法律意见书被问“确定在这里做吗”）。 */
+const ANY_LINE_SKILLS = new Set(["client-advice", "legal-research-memo"]);
+
+export function lineMismatchText(card: Pick<ScenarioCard, "line" | "title"> & { skill?: string | null }, matter: { stance?: string | null } | null | undefined): string | null {
   const l = matterLine(matter);
   if (!l || l === card.line) return null;
+  if (card.skill && ANY_LINE_SKILLS.has(card.skill)) return null;
   return `这是${LINE_LABELS[l]}事项。确定在这里做「${card.title}」吗？`;
 }
 
@@ -1385,8 +1389,11 @@ export function sampleBannerText(m: { stance?: string | null } | null | undefine
  * 原先 `[...docs].reverse().find(...)` 假设材料按旧到新排，而内核 matters.get 按导入时间新到旧返回——预选的是最早的一版，律师可能不知情审了旧稿。
  * 有 created_at 按它取最新；没有时按内核的新到旧顺序取第一份。纯函数。
  */
-export function preselectMaterials(card: Pick<ScenarioCard, "minMaterials" | "scenario" | "skill">, docs: readonly { document_version_id: string; filename: string; created_at?: string | null }[]): string[] {
-  if (card.minMaterials === 0) return [];
+/** 律师说了“基于全部材料 / 本事项的材料 / 以上证据”（V12 真实走查用例 5：说了“基于本事项的全部材料”，五份材料一份都没勾）。 */
+const ALL_MATERIALS_RE = /(?:全部|所有|全体|现有|已有|以上|上述|这些|这几份|本事项的?|本案的?)(?:的)?(?:材料|证据|文件|资料|案卷)/;
+
+export function preselectMaterials(card: Pick<ScenarioCard, "minMaterials" | "scenario" | "skill">, docs: readonly { document_version_id: string; filename: string; created_at?: string | null }[], request?: string | null): string[] {
+  if (card.minMaterials === 0) return request && ALL_MATERIALS_RE.test(request.replace(/\s+/g, "")) ? docs.map((d) => d.document_version_id) : [];
   // 回稿重审要按“上一稿、回稿”的顺序勾两份（第 31 批：原先全选，案卷里有第三份稿时顺序就不是律师心里那两份）
   if (card.scenario === "s1b.draft_compare" || card.skill === "redraft-review") return [];
   if (card.skill === "contract-review" || card.skill === "doc-revise" || card.skill === "citation-check") {

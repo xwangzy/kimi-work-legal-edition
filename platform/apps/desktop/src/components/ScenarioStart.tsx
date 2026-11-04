@@ -48,7 +48,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   // 律师在输入框写的是问题时预填进“问题”栏（第 35 批）
   const [values, setValues] = useState<Record<string, string | string[]>>(() => startPanelInitial(card, initialExtra).values);
   const [extra, setExtra] = useState(() => startPanelInitial(card, initialExtra).extra);
-  const [docIds, setDocIds] = useState<string[]>(() => preselect(card, documents));
+  const [docIds, setDocIds] = useState<string[]>(() => preselect(card, documents, initialExtra));
   /** 本面板里刚改过的用途（未刷新事项材料前先按这里显示；保存失败即撤回）。 */
   const [roles, setRoles] = useState<Record<string, MaterialRole | null>>({});
   const [how, setHow] = useState(false);
@@ -69,7 +69,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
     if (knownFor.current !== documentsFor) {
       knownFor.current = documentsFor;
       known.current = new Set(documents.map((d) => d.document_version_id));
-      setDocIds(preselect(card, documents));
+      setDocIds(preselect(card, documents, initialExtra));
       return;
     }
     const fresh = documents.filter((d) => !known.current.has(d.document_version_id)).map((d) => d.document_version_id);
