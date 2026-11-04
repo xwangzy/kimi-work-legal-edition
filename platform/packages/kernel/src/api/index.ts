@@ -1100,6 +1100,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const bytes = r?.changed ? r.bytes : buf;
       let filename = String(art.filename);
       if (tokens && filename.includes("〔")) filename = tokens.restore(art.matter_id, filename).text.replace(/[\\/:*?"<>|]/g, "_");
+      // 按轮次命名（V12 用例 7 评分：第二轮成果叫“……（修订稿）（修订稿）.docx”“……（修订稿）（清洁稿）.docx”，律师分不清哪一轮）：
+      // 去掉“（修订稿）（清洁稿）”与旧的“-第N轮”后缀，按本事项已有的轮次加一
+      const base = filename.replace(/\.docx$/i, "").replace(/(?:（(?:修订稿|清洁稿)）)+$/, "").replace(/-第\d+轮$/, "");
+      const prior = db.all<{ filename: string }>(`SELECT filename FROM document_versions WHERE matter_id = ? AND quarantined_at IS NULL`, [art.matter_id]).map((r) => /-第(\d+)轮\.docx$/i.exec(r.filename)?.[1]).filter(Boolean).map(Number);
+      const round = Math.max(1, ...prior) + 1;
+      filename = `${base}-第${round}轮.docx`;
       const sha256 = sha256Hex(bytes);
       const result = await insertDocumentWithParse({
         matterId: art.matter_id,

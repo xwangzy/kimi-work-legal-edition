@@ -42,7 +42,7 @@ test("第一轮修订稿作为材料加入事项，第二轮在它上面修改�
     const r1 = await call("docx.revise", { document_version_id: doc.document_version_id, patches: [{ anchor: "每日按万分之一支付违约金。", proposed_text: "每日按万分之五支付违约金，累计不超过合同总价的百分之十。" }] });
     assert.equal(r1.status, "applied", JSON.stringify(r1).slice(0, 300));
     const m = await tk.inv("materials.from_artifact", { artifact_version_id: r1.revision.artifact_version_id });
-    assert.match(m.filename, /修订稿/);
+    assert.equal(m.filename, "设备采购合同-第2轮.docx", "按轮次命名，不叠加“（修订稿）”");
     assert.equal(m.source_artifact_version_id, r1.revision.artifact_version_id);
     const row = tk.kernel.db.get<{ storage_uri: string; matter_id: string }>(`SELECT storage_uri, matter_id FROM document_versions WHERE document_version_id = ?`, [m.document_version_id])!;
     assert.equal(row.matter_id, matter.matter_id);
@@ -62,7 +62,7 @@ test("第一轮修订稿作为材料加入事项，第二轮在它上面修改�
     assert.ok((xml2.match(/<w:ins /g) ?? []).length >= 2, "两轮修订痕迹都在");
 
     const clean = await tk.inv("materials.from_artifact", { artifact_version_id: r1.clean.artifact_version_id });
-    assert.match(clean.filename, /清洁稿/);
+    assert.equal(clean.filename, "设备采购合同-第3轮.docx");
     await assert.rejects(tk.inv("materials.from_artifact", { artifact_version_id: "artv_nope" }));
   } finally {
     await agent.close();
