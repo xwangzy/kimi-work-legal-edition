@@ -7,6 +7,8 @@
  * 档位如实标注：所有场景都还没有通过法律质量门槛，统一为“试用”（结果是草稿，须律师复核）。
  */
 
+import { OWN_REVISION_RE, wantsWordDocument } from "@zr-legal/domain/deliverable-intent";
+
 export type BusinessLine = "litigation" | "transactional" | "inhouse";
 
 export const LINE_LABELS: Record<BusinessLine, string> = { litigation: "诉讼仲裁", transactional: "非诉", inhouse: "企业法务" };
@@ -1203,7 +1205,7 @@ function askSentences(goal: string): string {
     .replace(/\s+/g, "");
 }
 
-function bestScenarioIn(g: string): ScenarioCard | null {
+function bestScenarioIn(g: string, wantsDoc = false): ScenarioCard | null {
   // 取命中最具体的一张（命中词的总字数最多；复核 B3-B24：“核对起诉状里的引用”应引向引用核验，而不是起草起诉状）
   let best: ScenarioCard | null = null;
   let bestScore = 0;
@@ -1211,7 +1213,10 @@ function bestScenarioIn(g: string): ScenarioCard | null {
   // 律师要的审查意见书不会出）：同分时看动作——有明确的改写动作才是我方改原件，否则是审查
   let reviewTie: ScenarioCard | null = null;
   for (const c of SCENARIOS) {
-    if (c.notFor?.some((w) => g.includes(w))) continue;
+    // V12：律师要的是 Word 文书时不建议主交付物是 Excel 的卡（按建议发起后内核要求“必须用 xlsx.render_table 出表”，文书不出）
+    if (wantsDoc && sheetPrimary(c)) continue;
+    // V12：律师明说要我方修订稿、清洁稿或按意见改的，“回稿”“对方改了”只说明改的是对方回稿，不挡“按你的意见修改文书”
+    if (c.notFor?.some((w) => g.includes(w) && !(c.skill === "doc-revise" && REPLY_WORDS.includes(w) && OWN_REVISION_RE.test(g)))) continue;
     for (const words of c.intents) {
       if (!words.every((w) => g.includes(w))) continue;
       const score = words.join("").length;
@@ -1238,8 +1243,16 @@ export function suggestScenario(goal: string): ScenarioCard | null {
   if (ask && COMPOUND_RE.test(ask) && matchedCards(ask).size >= 2) return null;
   // 要交付的东西是“出 / 写 / 起草 + 一份”后面那个名词（第 34 批：“结合章程、董事会决议和保证合同，出一份法律意见书”里的“董事会决议”是材料）
   const wanted = deliverablePhrase(ask || g);
-  return (wanted ? bestScenarioIn(wanted) : null) ?? (ask && ask !== g ? bestScenarioIn(ask) : null) ?? bestScenarioIn(g);
+  const doc = wantsWordDocument(ask || g);
+  return (wanted ? bestScenarioIn(wanted, doc) : null) ?? (ask && ask !== g ? bestScenarioIn(ask, doc) : null) ?? bestScenarioIn(g, doc);
 }
+
+/** 卡的主交付物是 Excel 表（V12）：与内核同一口径——卡写明的主交付物，没写的取卡上第一项交付件（与方法前言 outputs 第一项同类）。 */
+function sheetPrimary(c: ScenarioCard): boolean {
+  return /\.xlsx\b/i.test(primaryOutputOf(c, {}) ?? c.gets[0] ?? "");
+}
+
+const REPLY_WORDS = ["回稿", "对方改了", "改了什么", "改了哪些"];
 
 const DELIVER_VERB_RE = /(?:出具|起草|草拟|撰写|拟|写|出|做|准备|形成)(?:一份|一个|一封|一套|份|个|封)/g;
 /** 请求里最后一个“出 / 写 / 起草 + 一份”之后、到标点为止的短语；没有返回 null。 */

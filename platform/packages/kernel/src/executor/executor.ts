@@ -14,6 +14,7 @@ import { prefsPromptLine } from "../services/writing-prefs.ts";
 import { matterFactsLine } from "../services/matter-facts.ts";
 import { outlineOpenItems, outlineState } from "../services/argument-outlines.ts";
 import { DomainError, RUN_TRANSITIONS, RunStatus, canTransitionRun, isTerminalRun, newId, sha256Hex } from "@zr-legal/domain";
+import { wantsWordDocument } from "@zr-legal/domain/deliverable-intent";
 import { replaceDirectIdentifiers } from "@zr-legal/pseudonym";
 import { findExternalRefs, readZipEntries } from "@zr-legal/docx-engine";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
@@ -1018,7 +1019,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   let lastTick = startedAt;
   let finished = false;
   // 到工作时限时主交付物已交出（第 35 批真实走查 N1：《股权转让协议》已交出 5 版，任务仍记“已超时、需要重试”）→ 按部分完成结算
-  const expectedPrimary = () => primaryOutput ?? (!skill && ctx.deps.skillPrimaryOf ? loadedPrimaryOutput(db, runId, ctx.deps.skillPrimaryOf) : null);
+  const expectedPrimary = () => primaryOutput ?? (!skill ? freeformPrimaryOutput(goal, ctx.deps.skillPrimaryOf ? loadedPrimaryOutput(db, runId, ctx.deps.skillPrimaryOf) : null) : null);
   const settleDelivered = async (reason: string | null): Promise<boolean> => {
     const delivered = deliveredBeforeDeadline(db, runId, expectedPrimary(), timeoutMs);
     if (!delivered) return false;
@@ -1254,6 +1255,19 @@ export function loadedPrimaryOutput(db: KernelDb, runId: string, primaryOf: (ski
     if (out) outs.push(out);
   }
   return outs.find((o) => WORD_OUTPUT.test(o)) ?? outs.find((o) => SHEET_OUTPUT.test(o)) ?? null;
+}
+
+/** 自由描述任务里律师点名要文书、而助手没加载出文书的方法时的主交付物占位名（V12）。 */
+export const REQUESTED_WORD_PRIMARY = "律师要求的 Word 文书.docx";
+
+/**
+ * 自由描述任务（没选卡片、没指定方法）的主交付物（V12）：先看助手加载过的方法；律师的请求句明确要起草、修改一份文书
+ * （与首页建议同一口径 wantsWordDocument）而加载的方法没有文书主交付物（没加载方法，或只加载了金额测算、回稿比对这类出表的方法）时，
+ * 按 Word 文书核对——原先这类任务只交一张 Excel 表也记“已完成”（V12 走查：要求起草或修订法律文书，最终输出 Excel）。纯函数。
+ */
+export function freeformPrimaryOutput(goal: string, loaded: string | null): string | null {
+  if (loaded && WORD_OUTPUT.test(loaded)) return loaded;
+  return wantsWordDocument(goal) ? REQUESTED_WORD_PRIMARY : loaded;
 }
 
 /** 算作“交出了 Word 文书”的成果：文书工具、在原件上修订、工作区里的 .docx（最终答复转出的 Word 不算）。 */
