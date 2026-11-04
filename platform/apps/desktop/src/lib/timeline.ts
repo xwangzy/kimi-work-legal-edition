@@ -6,6 +6,11 @@ import type { RunEvent, RunMode } from "../api.ts";
 import { ARTIFACT_LABELS, methodName, MODE_LABELS, RUN_STATUS_LABELS } from "./labels.ts";
 import { modeChipLabel } from "./mode-options.ts";
 
+/** 引擎的英文自述（V12）：以英文动词开头的“Searching for … in …”“Reading …”之类，即使夹着中文检索词也不是给律师的话。 */
+const ENGINE_SELF_TALK = /^(?:Searching|Reading|Listing|Writing|Editing|Finding|Globbing|Running|Fetching|Loading|Opening|Creating|Updating|Checking)\b/i;
+/** 本机绝对路径（POSIX 两级以上或 Windows 盘符）：不显示在律师看的时间线里。 */
+const LOCAL_PATH = /(?:^|[\s'"（(])\/(?:[^\s/'"]+\/){2,}|[A-Za-z]:\\/;
+
 export const TOOL_LABELS: Record<string, string> = {
   Read: "读取材料",
   Glob: "查找文件",
@@ -273,7 +278,8 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         const network = name === "WebSearch" || name === "FetchURL";
         // 引擎的英文自述（“Reading file …”）不给律师看（复核 S5B-12）：只保留含中文的说明
         const rawDesc = !network && p.description ? String(p.description).replace(/^[A-Z][A-Za-z ]{1,24}:\s*/, "") : undefined;
-        const desc = rawDesc && /[\u4e00-\u9fff]/.test(rawDesc) ? rawDesc : undefined;
+        // V12：引擎英文自述里夹着中文检索词（“Searching for '技术开发|技术合同' in /…/kap-trusted/…/contract-types.md”）也不给律师看，带本机路径的一律不显示
+        const desc = rawDesc && /[\u4e00-\u9fff]/.test(rawDesc) && !ENGINE_SELF_TALK.test(rawDesc) && !LOCAL_PATH.test(rawDesc) ? rawDesc : undefined;
         // 联网步骤显示实际发出的内容（改写后的查询或打开的网址），不显示改写前的检索式
         const s = network ? sent.get(String(p.tool_call_id)) : undefined;
         steps.push({
