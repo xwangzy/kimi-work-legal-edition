@@ -462,7 +462,7 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
               matter_id: id.mid,
               goal: req.goal,
               mode: ro.mode ?? policy.maxMode,
-              plan_first: ro.plan_first ?? true,
+              plan_first: req.plan_first ?? ro.plan_first ?? true,
               ...(preauthorized.length ? { preauthorized } : {}),
               // 工作时限（不含等待律师）：宿主按此判“超过工作时限”，内核另有带宽限的兜底
               ...(req.timeout_ms ? { time_limit_ms: req.timeout_ms } : {}),

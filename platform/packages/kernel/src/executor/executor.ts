@@ -1311,7 +1311,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
       if (sid) {
         assertNotCancelled(db, runId);
         const fixLimit = Math.min(timeoutMs, REVIEW_FIX_LIMIT_MS);
-        const tid2 = await agentClient.start(identity, { goal: rv.fix_prompt, materials: snapshot, timeout_ms: fixLimit, wall_ms: wallMs, purpose, fx, continue_session_id: sid, segment: "review_fix" });
+        const tid2 = await agentClient.start(identity, { goal: rv.fix_prompt, materials: snapshot, timeout_ms: fixLimit, wall_ms: wallMs, purpose, fx, continue_session_id: sid, segment: "review_fix", plan_first: false });
         appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ + 1, "agent.review_fix_started", { agent_task_id: tid2 });
         pollDeadline = Date.now() + fixLimit + Math.min(60_000, Math.max(5_000, Math.round(fixLimit / 10)));
         const p2 = await pollAgent(tid2, REVIEW_FIX_EVENT_BASE);
