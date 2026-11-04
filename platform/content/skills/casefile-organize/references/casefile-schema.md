@@ -47,7 +47,7 @@
 ## 四、《事实时间线》排序与分列
 - 按日期升序；同日按材料形成顺序；日期只到月的排在该月末尾，日期未知的放表尾。
 - 四类事实分列：同一行只在其所属的一列写陈述，其余三列留空；律师已确认的事实写在“律师确认”列（来自 facts.list 中 lawyer_status = confirmed 的行）。
-- 定位状态列取自 facts.submit / facts.list 返回的 anchor_status（located / ambiguous / not_found）。
+- 表里不放定位状态（located / ambiguous / not_found 是工具字段）：未定位的事实在缺口清单里列明；“引文”列只写 30 字以内，逐字全文在事实时间线（界面）里。
 
 ## 五、缺口的常见类型
 - 有付款陈述而无付款凭证；有交付陈述而无签收或验收记录。
