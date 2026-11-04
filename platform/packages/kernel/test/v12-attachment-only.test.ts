@@ -84,3 +84,15 @@ test("起草合同只交了《起草说明与待定事项》：记“部分完�
     cloud.model.script = null;
   }
 });
+
+test("V12 D11：估价回传应交清单，与结算核对同一口径（场景卡方法主交付物 + 律师点名的格式）", async () => {
+  const matter = await newMatter("V12 估价交付");
+  const e1 = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [], goal: "请起草技术开发合同", skill: "contract-draft" });
+  assert.deepEqual(e1.deliverables, ["合同草稿.docx"]);
+  assert.equal(e1.deliverable_request.document, "draft");
+  const e2 = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [], goal: "比对回稿，回稿意见给我 Word", skill: "redraft-review" });
+  assert.deepEqual(e2.deliverables, ["变更清单.xlsx", "Word 文书.docx"]);
+  const e3 = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [], goal: "股权转让需要其他股东同意吗？" });
+  assert.deepEqual(e3.deliverables, []);
+  assert.equal(e3.deliverable_request, undefined);
+});

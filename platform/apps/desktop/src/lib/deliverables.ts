@@ -94,3 +94,29 @@ export function deliveryPackage<T extends PackageRow>(rows: readonly T[]): { rea
   }
   return { ready, held };
 }
+
+/** 内核估价回传的交付要求（与发起时写进快照、结算时核对的是同一个纯函数，V11 deliverableRequest）。 */
+export interface DeliverableRequestView {
+  formats: ("docx" | "xlsx" | "pdf")[];
+  not: ("docx" | "xlsx" | "pdf")[];
+  document: "revise" | "draft" | null;
+}
+
+/**
+ * 发起确认里的“交付”一行（V12 D11：律师写了“出 Word”，确认卡上看不到会交什么，交错了只能事后发现）。
+ * `deliverables` 是内核估价按结算同一规则算出的应交清单（方法主交付物 + 律师点名的格式 + 文书意图），界面只负责写成律师话。
+ * 非 AI 任务返回 null（不显示）；什么都没指定时如实写“未指定”。纯函数。
+ */
+export function deliverSheetLine(o: { agent: boolean; deliverables?: readonly string[] | null; req?: DeliverableRequestView | null }): string | null {
+  if (!o.agent) return null;
+  const name = (x: string) => {
+    if (x === "Word 文书.docx") return o.req?.document === "revise" ? "在原件上的修订稿与清洁稿（Word）" : "Word 文书";
+    if (x === "Excel 表.xlsx") return "Excel 表";
+    return /\.docx$/i.test(x) ? `《${x.replace(/\.docx$/i, "")}》（Word）` : /\.xlsx$/i.test(x) ? `《${x.replace(/\.xlsx$/i, "")}》（Excel）` : x;
+  };
+  const items = (o.deliverables ?? []).map(name);
+  if (o.req?.formats.includes("pdf")) items.push("PDF 在定稿后从成果导出");
+  const nots = (o.req?.not ?? []).map((f) => ({ docx: "Word", xlsx: "Excel", pdf: "PDF" })[f]);
+  if (items.length === 0) return nots.length ? `不要 ${nots.join("、")}；其余按任务需要` : "未指定：按任务需要（要 Word 或 Excel 请在说明里写明）";
+  return `${items.join("；")}${nots.length ? `（不要 ${nots.join("、")}）` : ""}——没交出会记“部分完成”`;
+}

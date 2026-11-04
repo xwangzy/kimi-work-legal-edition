@@ -16,6 +16,7 @@ import { SendSummary } from "./SendSummary.tsx";
 import { SendPoints } from "./SendPoints.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 import { afterConsentNotice, busyRunOfError } from "../lib/start-block.ts";
+import { deliverSheetLine, type DeliverableRequestView } from "../lib/deliverables.ts";
 
 export interface PendingStart {
   matter: Matter;
@@ -37,6 +38,9 @@ export interface PendingStart {
     points: number;
     points_display: string;
     assumptions: string[];
+    /** V12 D11：内核按结算同一规则算出的应交清单与律师说明里的交付要求（只 AI 任务有）。 */
+    deliverables?: string[];
+    deliverable_request?: DeliverableRequestView | null;
     data_where?: { preview?: string; preview_rows?: { label: string; text: string }[]; bullets?: string[]; bullet_kinds?: string[]; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | null; busy_run_id?: string; send_summary?: SendSummaryView };
   };
 }
@@ -70,6 +74,9 @@ export async function prepareStart(matter: Matter, value: ComposerValue, o: { sk
     extra.current_document_version_id = value.documentIds[1];
   }
   if (value.goal.trim()) extra.goal = value.goal.trim();
+  // V12 D11：场景卡的方法与指定的主交付物一并给估价，确认卡上的“交付”与结算核对同一口径
+  if (o.skill) extra.skill = o.skill;
+  if (o.primaryOutput) extra.primary_output = o.primaryOutput;
   if (value.scenario === "s2.case_file" && value.issues?.length) extra.issues = value.issues;
   const estimate = await api.estimate(matter.matter_id, { scenario: value.scenario, document_version_ids: value.documentIds, ...extra });
   return { matter, value, estimate: estimate as PendingStart["estimate"], ...(o.skill ? { skill: o.skill } : {}), ...(o.label ? { label: o.label } : {}), ...(o.skillArgs ? { skillArgs: o.skillArgs } : {}), ...(o.reviewRules !== undefined ? { reviewRules: o.reviewRules } : {}), ...(o.primaryOutput ? { primaryOutput: o.primaryOutput } : {}), ...(o.docNames ? { docNames: o.docNames } : {}) };
@@ -178,6 +185,15 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
             </dd>
           </>
         )}
+        {(() => {
+          const line = deliverSheetLine({ agent, deliverables: estimate.deliverables ?? null, req: estimate.deliverable_request ?? null });
+          return line ? (
+            <>
+              <dt>交付</dt>
+              <dd>{line}</dd>
+            </>
+          ) : null;
+        })()}
         <dt>预计用量</dt>
         <dd>
           {estimate.points_display.replace(/^预计 /, "约 ")}

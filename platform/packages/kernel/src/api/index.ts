@@ -62,7 +62,7 @@ import { basisCompleteOf, dataLevelOf, parseBasis, BASIS_KEYS } from "../egress/
 import type { EgressApprovalStore } from "../services/egress-approvals.ts";
 import type { QaChatService } from "../services/qa-chat.ts";
 import type { KapAgentClient, KapMatterPolicy } from "../executor/kap-agent-client.ts";
-import { deliverableRequest } from "../executor/executor.ts";
+import { deliverableRequest, requiredDeliverables } from "../executor/executor.ts";
 import { createW1Api } from "./w1.ts";
 import { buildDiagnostics } from "../services/diagnostics.ts";
 import { nowIso } from "../db.ts";
@@ -1468,7 +1468,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         ...(busy ? { busy_run_id: busy.run_id } : {}),
         caps: { per_request_chars: 200_000, per_task_chars: 1_000_000 },
       };
-      return { estimate_id: estimateId, ...est, points_display: est.local ? "不调用 AI，不计点" : `预计 ${est.points} 点`, data_where: dataWhere };
+      // 交付要求（V12 D11）：与发起时写进快照、结算时核对的同一个纯函数，发起确认里给律师看“会交什么”（只认律师说明里的结构化信号）
+      let deliverReq: ReturnType<typeof deliverableRequest> = null;
+      if (p.scenario === "a1.agent_task" && typeof p?.goal === "string" && p.goal.trim()) {
+        const docxMaterials = docIds.filter((d) => /\.docx$/i.test(db.get<{ filename: string }>(`SELECT filename FROM document_versions WHERE document_version_id = ? AND matter_id = ?`, [d, matterId])?.filename ?? "")).length;
+        deliverReq = deliverableRequest(p.goal, { docxMaterials });
+      }
+      // 场景卡的方法（只用来显示“会交什么”，发起时仍以 runs.start 的方法与核对为准）：主交付物取方法前言或卡片指定的那一项
+      const estSkill = p.scenario === "a1.agent_task" && typeof p?.skill === "string" && /^[a-z0-9-]{1,64}$/.test(p.skill) ? p.skill : null;
+      const estPrimary = estSkill ? (skillSnapshot(deps.skills, estSkill, typeof p?.primary_output === "string" ? p.primary_output : undefined).skill_primary_output ?? null) : null;
+      const deliverables = p.scenario === "a1.agent_task" ? requiredDeliverables(estPrimary, deliverReq) : [];
+      return { estimate_id: estimateId, ...est, points_display: est.local ? "不调用 AI，不计点" : `预计 ${est.points} 点`, data_where: dataWhere, ...(deliverReq ? { deliverable_request: deliverReq } : {}), ...(p.scenario === "a1.agent_task" ? { deliverables } : {}) };
     },
 
     "runs.start": async (p, id) => {
