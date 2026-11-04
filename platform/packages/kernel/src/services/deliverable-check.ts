@@ -59,6 +59,12 @@ const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   { re: /(?:金额|计算|法律|文书|表格|检索|修订)工具/g, fix: "改用律师的说法（如“经核算”“经法规库核验”）" },
 ];
 
+/**
+ * 只对 Word 文书报的界面与环境用语（V13 真实走查 N2 独立律师评分：《审查意见书（内部稿）》第一、六、七节写着“识别质量正常、无被替代版本”
+ * “核验状态”“已在受限命令行复算”“请在审查工作台处理……生成”，交付形式 1 分）。Excel 问题清单按方法本就有“风险卡序号”“核验状态”列，不报。
+ */
+const WORD_INTERFACE_RE = /审查工作台|风险卡|受限命令行|核验状态|识别质量|被替代版本/g;
+
 /** 夹在中文之间的英文单词（如“转让方一 personal名下”）；全大写缩写（LPR、SLA）与常见外来词不报。 */
 const FOREIGN_RE = /(?<=[一-鿿])[  ]?([A-Za-z][a-z]{2,})[  ]?(?=[一-鿿])/g;
 const FOREIGN_OK = new Set(["app", "email", "wifi", "word", "excel", "pdf", "saas", "paas", "iaas", "logo", "html", "java", "python", "linux", "windows", "android", "ios", "web", "wechat", "pos", "erp", "crm", "api", "sdk", "led", "usb", "gps", "vip", "ceo", "cfo", "cto", "coo"]);
@@ -96,6 +102,12 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
         // 邮箱、网址里的下划线不是参数名
         if (/[@/]/.test(p.text.slice(Math.max(0, m.index! - 30), m.index! + m[0].length + 30)) && /_/.test(m[0]) && !/\./.test(m[0])) continue;
         push({ kind: "internal_term", where: p.where, text: m[0], fix });
+      }
+    }
+    if (opts.docx) {
+      WORD_INTERFACE_RE.lastIndex = 0;
+      for (const m of p.text.matchAll(WORD_INTERFACE_RE)) {
+        push({ kind: "internal_term", where: p.where, text: snippet(p.text, m.index!, m[0].length), fix: `文书里不写工具与界面用语“${m[0]}”：删去或改成律师的说法（如“已审阅全文”“经核算”）；要律师在界面上做的事写进最终答复` });
       }
     }
     FOREIGN_RE.lastIndex = 0;
