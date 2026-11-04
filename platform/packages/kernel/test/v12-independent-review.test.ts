@@ -137,3 +137,13 @@ test("没有问题：不占修正轮；关闭开关：不复核", { timeout: 300
     cloud.model.script = null;
   }
 });
+
+test("按意见改原件的任务：复核只核对落实与联动，修正轮不改授权范围外的条款、联动写进答复并附替代条款", () => {
+  const m = reviewMessages({ goal: "改第5.1款", stance: "买方", jurisdiction: "中国大陆", asOf: "2026-11-04", method: "doc-revise", checklist: [], docs: [{ name: "清洁稿", text: "正文" }], revise: true });
+  assert.match(m[0]!.content, /律师授权范围以外的条款起草人不得改，你也不要求改/);
+  assert.match(m[0]!.content, /没收或扣留款项/);
+  const r = parseReview(JSON.stringify({ trace: [{ point: "5.1", clause: "5.1", status: "covered" }], issues: [{ severity: "major", kind: "logic_conflict", where: "9.3", problem: "没收预付款架空 5.2 上限", fix: "第9.3款改为……" }] }));
+  const f = reviewFixPrompt(r, { revise: true });
+  assert.match(f, /不改正文（律师说了其他条款不要动）/);
+  assert.doesNotMatch(f, /docx\.edit_draft/);
+});

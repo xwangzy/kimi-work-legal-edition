@@ -1426,8 +1426,8 @@ const REVIEW_FIX_EVENT_BASE = 30_000;
 const REVIEW_FIX_MIRROR_SEQ = 9_100;
 /** 修正轮的工作时限上限（不超过本任务的工作时限）。 */
 export const REVIEW_FIX_LIMIT_MS = 20 * 60_000;
-/** 只复核这几类成果里的 Word 文书：文书工具生成与在草稿上改出的版本（修订稿、清洁稿是在律师原件上按意见改，不在此复核）。 */
-const REVIEWABLE_SQL = `kind = 'agent_report' AND lower(filename) LIKE '%.docx'`;
+/** 复核这几类成果里的 Word 文书：文书工具生成与在草稿上改出的版本；按意见改原件的任务复核清洁稿（接受全部修订后的全文）与修改对照表。 */
+const REVIEWABLE_SQL = `kind IN ('agent_report', 'revision_clean') AND lower(filename) LIKE '%.docx'`;
 
 /** 本任务助手会话编号（kap 宿主 run.started 载荷，镜像为 agent.started）；没有返回 null。 */
 export function agentSessionOf(db: KernelDb, runId: string): string | null {
@@ -1440,15 +1440,15 @@ export function agentSessionOf(db: KernelDb, runId: string): string | null {
 }
 
 /** 本任务每份 Word 文书的最新一版（按文件名；方法规定的附件排在后面，篇幅不够时先截附件）。纯查询。 */
-export function reviewableDocs(db: KernelDb, runId: string, attachments: readonly string[]): { artifact_version_id: string; filename: string; storage_uri: string; attachment: boolean }[] {
-  const rows = db.all<{ artifact_version_id: string; filename: string; storage_uri: string }>(
-    `SELECT artifact_version_id, filename, storage_uri FROM artifact_versions WHERE run_id = ? AND ${REVIEWABLE_SQL} ORDER BY created_at, rowid`,
+export function reviewableDocs(db: KernelDb, runId: string, attachments: readonly string[]): { artifact_version_id: string; filename: string; storage_uri: string; revise: boolean; attachment: boolean }[] {
+  const rows = db.all<{ artifact_version_id: string; filename: string; storage_uri: string; kind: string }>(
+    `SELECT artifact_version_id, filename, storage_uri, kind FROM artifact_versions WHERE run_id = ? AND ${REVIEWABLE_SQL} ORDER BY created_at, rowid`,
     [runId],
   );
   const latest = new Map<string, (typeof rows)[number]>();
   for (const r of rows) latest.set(r.filename, r);
   const isAtt = attachments.length ? attachmentMatcher(attachments, "主交付物.docx") : () => false;
-  return [...latest.values()].map((r) => ({ ...r, attachment: isAtt(r.filename) })).sort((a, b) => Number(a.attachment) - Number(b.attachment));
+  return [...latest.values()].map((r) => ({ artifact_version_id: r.artifact_version_id, filename: r.filename, storage_uri: r.storage_uri, revise: r.kind === "revision_clean", attachment: isAtt(r.filename) })).sort((a, b) => Number(a.attachment) - Number(b.attachment));
 }
 
 interface ReviewCheckpoint {
@@ -1502,7 +1502,9 @@ async function stepIndependentReview(ctx: Ctx, runId: string, attemptId: string,
   })[0] || null);
   const checklist = method && ctx.deps.skillChecklistOf ? [...ctx.deps.skillChecklistOf(method)].slice(0, 20) : [];
   const tz = ctx.deps.tokens.tokenizeAll(run.matter_id, [goal, ...texts.map((t) => t.text)]);
+  const revise = docs.some((d) => d.revise);
   const messages = reviewMessages({
+    revise,
     goal: tz[0]!.text,
     stance: ctxM.stance,
     jurisdiction: ctxM.jurisdiction,
@@ -1547,7 +1549,7 @@ async function stepIndependentReview(ctx: Ctx, runId: string, attemptId: string,
     trace_gaps: review.trace.filter((t) => t.status !== "covered").slice(0, 12),
     issues: review.issues.slice(0, 12),
   });
-  return { skipped: null, fix_prompt: fix ? reviewFixPrompt(review) : null };
+  return { skipped: null, fix_prompt: fix ? reviewFixPrompt(review, { revise }) : null };
 }
 
 /** 主交付物缺失的事件序号（独立占位，不与成果段 69+、工作区被拒 9000、宿主事件 10000+ 冲突）。 */
