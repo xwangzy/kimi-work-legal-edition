@@ -19,7 +19,7 @@ test("法条原文“当事人一方违约”“一方明确表示”不学出�
 });
 
 test("已学进令牌表的“方违约”“方明”“单次涨”“位复核”退役：不再替换新文字，旧代号照常还原", () => {
-  for (const v of ["方违约", "方明", "单次涨", "位复核"]) assert.equal(stillLooksLikeName(v), false, v);
+  for (const v of ["方违约", "方明", "单次涨", "位复核", "官网", "应否", "和送达"]) assert.equal(stillLooksLikeName(v), false, v);
   const t = new MatterTokenizer({ matterKey: Buffer.alloc(32, 7), table: [{ token: "〔自然人·GJ62GK〕", category: "person", value: "方违约", normalized: "方违约", source: "recognizer" }] });
   assert.equal(t.tokenize("因乙方违约导致合同解除的，甲方无需支付补偿").text, "因乙方违约导致合同解除的，甲方无需支付补偿");
 });
