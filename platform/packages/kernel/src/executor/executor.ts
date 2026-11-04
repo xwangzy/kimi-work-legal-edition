@@ -1430,7 +1430,7 @@ export const REVIEW_FIX_LIMIT_MS = 20 * 60_000;
 const REVIEWABLE_SQL = `kind IN ('agent_report', 'revision_clean') AND lower(filename) LIKE '%.docx'`;
 
 /** 流式模型调用并拼出完整回答（OpenAI 兼容的增量块；“[DONE]”与解析不了的块跳过）。上游中止或出错照常抛出，交给有界重试。 */
-async function chatStreamText(broker: ModelBroker, args: Parameters<ModelBroker["chatStream"]>[0]): Promise<string> {
+export async function chatStreamText(broker: ModelBroker, args: Parameters<ModelBroker["chatStream"]>[0]): Promise<string> {
   const s = await broker.chatStream(args);
   let out = "";
   try {
@@ -1445,6 +1445,11 @@ async function chatStreamText(broker: ModelBroker, args: Parameters<ModelBroker[
         // 非 JSON 块（注释行等）跳过
       }
     }
+  } catch (e) {
+    // 流读到一半连接被切断（undici 抛不带 code 的 “terminated”，V13 真实走查 N2b：经出站代理的 MaaS 流中途关闭，复核没有重试就记“没有复核”）：
+    // 按模型通道暂不可用处理，交给有界重试；已分类的领域错误（取消、配额、拒绝……）原样抛出
+    if (e instanceof DomainError || e instanceof RunCancelled) throw e;
+    throw new DomainError("provider_unavailable", `模型流中途中断：${String((e as Error)?.message ?? e).slice(0, 80)}`, 502);
   } finally {
     await s.finalize().catch(() => {});
   }
