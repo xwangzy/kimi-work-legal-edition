@@ -1429,6 +1429,28 @@ export const REVIEW_FIX_LIMIT_MS = 20 * 60_000;
 /** 复核这几类成果里的 Word 文书：文书工具生成与在草稿上改出的版本；按意见改原件的任务复核清洁稿（接受全部修订后的全文）与修改对照表。 */
 const REVIEWABLE_SQL = `kind IN ('agent_report', 'revision_clean') AND lower(filename) LIKE '%.docx'`;
 
+/** 流式模型调用并拼出完整回答（OpenAI 兼容的增量块；“[DONE]”与解析不了的块跳过）。上游中止或出错照常抛出，交给有界重试。 */
+async function chatStreamText(broker: ModelBroker, args: Parameters<ModelBroker["chatStream"]>[0]): Promise<string> {
+  const s = await broker.chatStream(args);
+  let out = "";
+  try {
+    for await (const chunk of s.chunks) {
+      const t = String(chunk).trim();
+      if (!t || t === "[DONE]") continue;
+      try {
+        const j = JSON.parse(t);
+        const d = j?.choices?.[0]?.delta?.content ?? j?.choices?.[0]?.message?.content;
+        if (typeof d === "string") out += d;
+      } catch {
+        // 非 JSON 块（注释行等）跳过
+      }
+    }
+  } finally {
+    await s.finalize().catch(() => {});
+  }
+  return out;
+}
+
 /** 本任务助手会话编号（kap 宿主 run.started 载荷，镜像为 agent.started）；没有返回 null。 */
 export function agentSessionOf(db: KernelDb, runId: string): string | null {
   const row = db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.started' ORDER BY seq DESC LIMIT 1`, [runId])[0];
@@ -1515,9 +1537,11 @@ async function stepIndependentReview(ctx: Ctx, runId: string, attemptId: string,
   });
   let content = "";
   try {
-    const r = await withBoundedRetry(
+    // 流式调用（V12 真实走查用例 4：非流式时 K3.1-Pro 先推理再一次性返回，审 4 万字的文书 180 秒内没有首字节，被闸门看门狗中断、
+    // 三次重试共约 9 分钟后放弃）；流式首字节数秒内到达，流中断档仍由看门狗把关
+    content = await withBoundedRetry(
       () =>
-        broker.chat({
+        chatStreamText(broker, {
           matter,
           task: { tid: run.tenant_id, uid: run.created_by, mid: run.matter_id, rid: runId, aid: attemptId },
           route: "legal/k3",
@@ -1528,7 +1552,6 @@ async function stepIndependentReview(ctx: Ctx, runId: string, attemptId: string,
       "model.independent_review",
     );
     recordToolOperation(db, runId, attemptId, "model", "chat", { route: "legal/k3", purpose: "independent_review" }, "succeeded");
-    content = r.content ?? "";
   } catch (e) {
     recordToolOperation(db, runId, attemptId, "model", "chat", { route: "legal/k3", purpose: "independent_review" }, "failed");
     if (e instanceof RunCancelled) throw e;
