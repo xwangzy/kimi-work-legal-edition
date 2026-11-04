@@ -29,6 +29,8 @@ import { buildS2Deliverables, extractFacts, fileDay, factSubmissions, persistAnc
 import { FACT_LIMITS, submitFacts } from "../services/review-cards.ts";
 import type { AgentCancelOutcome, AgentClient } from "./agent-client.ts";
 import { slimAgentPayload } from "./run-progress.ts";
+import { parseReview, reviewCounts, reviewFixPrompt, reviewMessages, reviewNeedsFix, reviewSummaryLine, REVIEW_LIMITS } from "./independent-review.ts";
+import { parseDocument } from "../services/parser.ts";
 import { runCapabilities, runModeOf } from "../identity.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
 import { runLineage } from "../services/artifact-lineage.ts";
@@ -51,6 +53,10 @@ export interface ExecutorDeps {
   skillPrimaryOf?: ((skill: string) => string | null | undefined) | undefined;
   /** 方法前言 outputs 全部交付物（V12 F10）：第二项起是附件（如《起草说明与待定事项》），结算核对主交付物时不算数。 */
   skillOutputsOf?: ((skill: string) => readonly string[] | null | undefined) | undefined;
+  /** 方法的质量自检清单（V12 独立复核用：复核律师据此独立复核）。 */
+  skillChecklistOf?: ((skill: string) => readonly string[]) | undefined;
+  /** 交付前独立复核（V12）：缺省开启；本机配置 ZR_INDEPENDENT_REVIEW=off 关闭（回滚开关）。 */
+  independentReview?: boolean | undefined;
 }
 
 interface RunRow {
@@ -1202,9 +1208,11 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
     await ctx.step("settle", () => stepSettle(ctx, runId, attemptId, RunStatus.partial, [delivered.note]));
     return true;
   };
-  const poll = await (async () => {
+  // V12：轮询抽成函数——交付前独立复核后的修正轮在同一会话里续跑，按另一段事件序号镜像（evBase）
+  const pollAgent = (tid: string, evBase: number) => (async () => {
     let cursor = 0;
-    let mirrorSeq = 41;
+    let mirrorSeq = evBase === 10_000 ? 41 : REVIEW_FIX_MIRROR_SEQ;
+    const mirrorEnd = evBase === 10_000 ? 68 : REVIEW_FIX_MIRROR_SEQ + 40;
     try {
       for (;;) {
         await new Promise((r) => setTimeout(r, 800));
@@ -1227,17 +1235,17 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
         }
         // 给律师看的说明（V10 真实走查 V17：原先写“宿主未在时限内上报终态”，律师看不懂、不知道下一步）
         if (now > pollDeadline) throw new RunTerminal("timed_out", "到了工作时限仍没有做完（等你确认或回答的时间不计在内），这次没有交出文书。可以在本页重新发起；多次出现时，可能是 AI 服务响应慢，稍后再试");
-        const p = await agentClient.poll(identity, taskId, cursor);
+        const p = await agentClient.poll(identity, tid, cursor);
         cursor = p.next_cursor;
         for (const ev of p.events) {
           // W1 执行态时间线（第 03 篇 §4.3）：kap 宿主的工具调用、确认、提问与执行域事件按宿主序号镜像到事项账本（独立序号段 10000+，
           // 不与工作流固定序号冲突；载荷只保留时间线需要的字段，均为令牌形态）
           if (AGENT_TIMELINE_EVENTS.has(ev.type)) {
-            appendEvent(ctx.deps, runId, attemptId, 10_000 + ev.seq, ev.type, slimAgentPayload(ev.type, ev.payload));
+            appendEvent(ctx.deps, runId, attemptId, evBase + ev.seq, ev.type, slimAgentPayload(ev.type, ev.payload));
             continue;
           }
           // 只镜像关键事件（引擎细节事件留 agent 宿主，可按需拉取）
-          if (["agent.ready", "agent.approval", "agent.error", "agent.timeout", "agent.exited"].includes(ev.type) && mirrorSeq < 68) {
+          if (["agent.ready", "agent.approval", "agent.error", "agent.timeout", "agent.exited"].includes(ev.type) && mirrorSeq < mirrorEnd) {
             appendEvent(ctx.deps, runId, attemptId, mirrorSeq++, `agent.${ev.type.replace(/^agent\./, "")}`, ev.payload);
           }
         }
@@ -1250,13 +1258,13 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
       if (!finished) {
         // 取消结果直接写入事项账本（复核 B4-B07）：此前取消失败只记在宿主事件流里，而轮询已退出，那条记录永远到不了账本——
         // 宿主未停住时律师与审计只看到“已取消”。强制取消也失败 = 本机任务可能仍在运行（律师层提示）；经强制取消才停住 = 处理细节
-        const c: AgentCancelOutcome | null = await agentClient.cancel(identity, taskId, "run ended abnormally").then(
+        const c: AgentCancelOutcome | null = await agentClient.cancel(identity, tid, "run ended abnormally").then(
           (r) => r ?? null,
           (e: unknown) => ({ confirmed: false, forced: false, cause: "error", error: String((e as Error)?.message ?? e) }),
         );
         if (c && (!c.confirmed || c.forced)) {
-          appendEvent(ctx.deps, runId, attemptId, AGENT_CANCEL_EVENT_SEQ, c.confirmed ? "agent.cancel_forced" : "agent.cancel_unconfirmed", {
-            agent_task_id: taskId,
+          appendEvent(ctx.deps, runId, attemptId, evBase === 10_000 ? AGENT_CANCEL_EVENT_SEQ : REVIEW_FIX_MIRROR_SEQ + 45, c.confirmed ? "agent.cancel_forced" : "agent.cancel_unconfirmed", {
+            agent_task_id: tid,
             forced: c.forced,
             cause: typeof c.cause === "string" ? c.cause.slice(0, 40) : null,
             error: typeof c.error === "string" ? c.error.slice(0, 300) : null,
@@ -1269,6 +1277,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
     if (e instanceof RunTerminal && e.status === "timed_out" && (await settleDelivered("kernel_deadline"))) return null;
     throw e;
   });
+  let poll = await pollAgent(taskId, 10_000);
   if (!poll) return;
   const remaining = remainingFor(poll.status, poll.reason);
   appendEvent(ctx.deps, runId, attemptId, 68, "agent.outcome", {
@@ -1291,6 +1300,32 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
       throw new RunTerminal("expired", `Agent 任务过期（${poll.reason ?? "expired"}）`);
     default:
       throw new DomainError("internal", agentFailureText(poll.reason, poll.error), 502);
+  }
+
+  // V12 交付前独立复核：助手交出了 Word 文书、任务成功收尾时，另起一次全新上下文的复核；有否决类或重要缺陷、或指令要点没落实的，
+  // 把复核意见作为下一轮交给同一会话的助手，在原文书上逐处修正后再结算（修正轮失败不影响已交出的成果，按复核前的成果结算）
+  if (poll.status === "succeeded" && ctx.deps.independentReview !== false && runModeOf(run.input_snapshot) !== "chat") {
+    const rv = await ctx.step("independent_review", () => stepIndependentReview(ctx, runId, attemptId, goal, skill));
+    if (rv.fix_prompt) {
+      const sid = agentSessionOf(db, runId);
+      if (sid) {
+        assertNotCancelled(db, runId);
+        const fixLimit = Math.min(timeoutMs, REVIEW_FIX_LIMIT_MS);
+        const tid2 = await agentClient.start(identity, { goal: rv.fix_prompt, materials: snapshot, timeout_ms: fixLimit, wall_ms: wallMs, purpose, fx, continue_session_id: sid, segment: "review_fix" });
+        appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ + 1, "agent.review_fix_started", { agent_task_id: tid2 });
+        pollDeadline = Date.now() + fixLimit + Math.min(60_000, Math.max(5_000, Math.round(fixLimit / 10)));
+        const p2 = await pollAgent(tid2, REVIEW_FIX_EVENT_BASE);
+        if (!p2) return;
+        appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ + 2, "agent.review_fix_outcome", { status: p2.status, reason: p2.reason, error: p2.error });
+        if (p2.status === "cancelled") throw new RunCancelled();
+        if (p2.status === "succeeded" || p2.status === "partial") {
+          // 修正轮的最终答复取代第一轮的；工作区文件按路径以后一轮为准
+          const hasFinal = p2.artifacts.some((a) => a.kind !== "workspace_file");
+          const kept = poll.artifacts.filter((a) => (a.kind === "workspace_file" ? !p2.artifacts.some((b) => b.kind === "workspace_file" && b.filename === a.filename) : !hasFinal));
+          poll = { ...p2, status: poll.status, reason: poll.reason, artifacts: [...kept, ...p2.artifacts] };
+        }
+      }
+    }
   }
 
   const outcomeStatus = poll.status as "succeeded" | "partial";
@@ -1383,6 +1418,136 @@ export function agentTimeoutText(reason: string | null, limitMs: number = AGENT_
   }
   if (reason === "run_wall_deadline_exceeded") return "任务从发起起已超过 8 小时（含等待你确认的时间）仍没有完成，已停止；已完成且可验证的部分保留，可以重新发起";
   return `任务超时没有完成（${reason ?? "原因未知"}）；已完成且可验证的部分保留，可以点“重新运行”`;
+}
+
+/** V12 交付前独立复核的事件序号（独立占位 9_050～9_052）与修正轮的镜像序号段（宿主事件 30000+，关键事件 9_100～9_145）。 */
+const REVIEW_SEQ = 9_050;
+const REVIEW_FIX_EVENT_BASE = 30_000;
+const REVIEW_FIX_MIRROR_SEQ = 9_100;
+/** 修正轮的工作时限上限（不超过本任务的工作时限）。 */
+export const REVIEW_FIX_LIMIT_MS = 20 * 60_000;
+/** 只复核这几类成果里的 Word 文书：文书工具生成与在草稿上改出的版本（修订稿、清洁稿是在律师原件上按意见改，不在此复核）。 */
+const REVIEWABLE_SQL = `kind = 'agent_report' AND lower(filename) LIKE '%.docx'`;
+
+/** 本任务助手会话编号（kap 宿主 run.started 载荷，镜像为 agent.started）；没有返回 null。 */
+export function agentSessionOf(db: KernelDb, runId: string): string | null {
+  const row = db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.started' ORDER BY seq DESC LIMIT 1`, [runId])[0];
+  let sid: unknown = null;
+  try {
+    sid = row ? JSON.parse(row.payload)?.session_id : null;
+  } catch {}
+  return typeof sid === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(sid) ? sid : null;
+}
+
+/** 本任务每份 Word 文书的最新一版（按文件名；方法规定的附件排在后面，篇幅不够时先截附件）。纯查询。 */
+export function reviewableDocs(db: KernelDb, runId: string, attachments: readonly string[]): { artifact_version_id: string; filename: string; storage_uri: string; attachment: boolean }[] {
+  const rows = db.all<{ artifact_version_id: string; filename: string; storage_uri: string }>(
+    `SELECT artifact_version_id, filename, storage_uri FROM artifact_versions WHERE run_id = ? AND ${REVIEWABLE_SQL} ORDER BY created_at, rowid`,
+    [runId],
+  );
+  const latest = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) latest.set(r.filename, r);
+  const isAtt = attachments.length ? attachmentMatcher(attachments, "主交付物.docx") : () => false;
+  return [...latest.values()].map((r) => ({ ...r, attachment: isAtt(r.filename) })).sort((a, b) => Number(a.attachment) - Number(b.attachment));
+}
+
+interface ReviewCheckpoint {
+  /** 没复核的原因（没有 Word 文书、没有令牌存储……）；复核了为 null。 */
+  skipped: string | null;
+  /** 交给助手的修正轮提示（令牌形态）；不需要修正为 null。 */
+  fix_prompt: string | null;
+}
+
+/**
+ * 交付前独立复核一步（检查点在案：恢复时不重复调用模型）。文书与律师指令先令牌化再发出（与助手所见同一代号表），模型输出也是令牌形态，
+ * 修正轮直接交给同一会话的助手；复核摘要写进时间线事件。复核调用失败（限流、超时）不阻断结算：记一条“没有复核”事件，按助手交出的文书结算。
+ */
+async function stepIndependentReview(ctx: Ctx, runId: string, attemptId: string, goal: string, skill: string | null): Promise<ReviewCheckpoint> {
+  const { db, broker, blobs } = ctx.deps;
+  assertNotCancelled(db, runId);
+  const run = getRun(db, runId);
+  const attachments = attachmentOutputs(db, runId, skill, ctx.deps.skillOutputsOf);
+  const docs = reviewableDocs(db, runId, attachments);
+  const skip = (why: string): ReviewCheckpoint => {
+    appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ, "agent.independent_review", { skipped: why });
+    return { skipped: why, fix_prompt: null };
+  };
+  if (docs.length === 0) return { skipped: "no_word_report", fix_prompt: null };
+  if (!ctx.deps.tokens) return skip("no_token_store");
+  const matter = loadMatter(db, run.matter_id);
+  const ctxM = matterCtxOf(matter);
+  // 文书文字（自动编号写进段首，与律师在 Word 里看到的一致）；总量封顶，附件先截
+  let budget: number = REVIEW_LIMITS.docChars;
+  const texts: { name: string; text: string }[] = [];
+  for (const d of docs) {
+    if (budget <= 2_000) break;
+    let text = "";
+    try {
+      text = parseDocument(d.filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", blobs.read(d.storage_uri)).text;
+    } catch {
+      continue;
+    }
+    const cut = text.slice(0, Math.min(REVIEW_LIMITS.perDocChars, budget));
+    budget -= cut.length;
+    texts.push({ name: d.filename.replace(/\.docx$/i, "") + (d.attachment ? "（附件）" : ""), text: cut + (cut.length < text.length ? "\n【以下篇幅过长未送复核】" : "") });
+  }
+  if (texts.length === 0) return skip("doc_unreadable");
+  // 复核用哪套自检清单：场景卡的方法，否则助手第一个加载的方法
+  const method = skill ?? (db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.skill' ORDER BY seq LIMIT 1`, [runId]).map((r) => {
+    try {
+      return String(JSON.parse(r.payload)?.skill ?? "");
+    } catch {
+      return "";
+    }
+  })[0] || null);
+  const checklist = method && ctx.deps.skillChecklistOf ? [...ctx.deps.skillChecklistOf(method)].slice(0, 20) : [];
+  const tz = ctx.deps.tokens.tokenizeAll(run.matter_id, [goal, ...texts.map((t) => t.text)]);
+  const messages = reviewMessages({
+    goal: tz[0]!.text,
+    stance: ctxM.stance,
+    jurisdiction: ctxM.jurisdiction,
+    asOf: ctxM.asOf,
+    method,
+    checklist,
+    docs: texts.map((t, i) => ({ name: t.name, text: tz[i + 1]!.text })),
+  });
+  let content = "";
+  try {
+    const r = await withBoundedRetry(
+      () =>
+        broker.chat({
+          matter,
+          task: { tid: run.tenant_id, uid: run.created_by, mid: run.matter_id, rid: runId, aid: attemptId },
+          route: "legal/k3",
+          messages,
+          clientIdempotencyId: `independent_review_${runId}_${attemptId}`,
+          note: "交付前独立复核：律师指令与本任务文书（已令牌化）",
+        }),
+      "model.independent_review",
+    );
+    recordToolOperation(db, runId, attemptId, "model", "chat", { route: "legal/k3", purpose: "independent_review" }, "succeeded");
+    content = r.content ?? "";
+  } catch (e) {
+    recordToolOperation(db, runId, attemptId, "model", "chat", { route: "legal/k3", purpose: "independent_review" }, "failed");
+    if (e instanceof RunCancelled) throw e;
+    return skip(`review_call_failed: ${String((e as Error)?.message ?? e).slice(0, 120)}`);
+  }
+  const review = parseReview(content);
+  const fix = reviewNeedsFix(review);
+  const counts = reviewCounts(review);
+  appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ, "agent.independent_review", {
+    skipped: null,
+    method,
+    docs: texts.map((t) => t.name),
+    counts,
+    unparsed: !!review.unparsed,
+    fix_requested: fix,
+    summary: reviewSummaryLine(review, fix),
+    verdict: review.summary,
+    trace_gaps: review.trace.filter((t) => t.status !== "covered").slice(0, 12),
+    issues: review.issues.slice(0, 12),
+  });
+  return { skipped: null, fix_prompt: fix ? reviewFixPrompt(review) : null };
 }
 
 /** 主交付物缺失的事件序号（独立占位，不与成果段 69+、工作区被拒 9000、宿主事件 10000+ 冲突）。 */

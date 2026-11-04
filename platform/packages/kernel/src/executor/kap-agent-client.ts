@@ -391,7 +391,8 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
 
   return {
     async start(id, req) {
-      const taskId = `kap_${id.rid}_${id.aid}`;
+      // 同一次尝试的后续段（V12 修正轮）另起任务编号：令牌 jti 即任务编号，前一段收尾时已吊销
+      const taskId = `kap_${id.rid}_${id.aid}${req.segment && /^[a-z0-9_]{1,16}$/.test(req.segment) ? `_${req.segment}` : ""}`;
       // 复核 B4-B11：同一事项上一任务尚未收尾（律师取消后马上重开：内核已置“已取消”，宿主要等执行器轮询发现并取消后才释放事项）——
       // 先等它收尾（有上限）再发起，而不是让宿主以“同一事项已有运行中的任务”拒绝、律师看到“先受理后失败”。
       // 等待在占用运行槽位之前；超时仍未收尾即照常发起（宿主如实拒绝）

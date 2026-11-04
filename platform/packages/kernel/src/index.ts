@@ -34,7 +34,7 @@ import { ControlPlaneClient } from "./control-plane/client.ts";
 import { parsePublicKeyMap } from "@zr-legal/firm-trust";
 import { appendAuditEvent, createLedgerSigner, rowPayloadHash } from "./ledger-signer.ts";
 import { AsyncMutex, Semaphore } from "./mutex.ts";
-import { materializeSkillsBundle } from "./skills-bundle.ts";
+import { materializeSkillsBundle, skillQualityChecklist } from "./skills-bundle.ts";
 import { ContentUpdater, LawdbHolder, contentKeyTable, contentKeysFromEnv, markProblem, selectLawdb, selectSkills } from "./services/content-updates.ts";
 import { totalmem } from "node:os";
 import { createBlobCipher } from "./blob-cipher.ts";
@@ -475,7 +475,10 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   // 主交付物（第 34 批）：读当时生效的方法模板包（内容更新后 skillsBundle 会换）
   const skillPrimaryOf = (skill: string) => (skillsBundle.ok ? (skillsBundle.skills.find((x) => x.id === skill)?.primary_output ?? null) : null);
   const skillOutputsOf = (skill: string) => (skillsBundle.ok ? (skillsBundle.skills.find((x) => x.id === skill)?.outputs ?? null) : null);
-  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf, skillOutputsOf };
+  const skillChecklistOf = (skill: string) => (skillsBundle.ok ? skillQualityChecklist(skillsBundle.dir, skill) : []);
+  // V12 交付前独立复核：缺省开启，ZR_INDEPENDENT_REVIEW=off 关闭
+  const independentReview = (env.ZR_INDEPENDENT_REVIEW ?? "on") !== "off";
+  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf, skillOutputsOf, skillChecklistOf, independentReview };
   queue.register("legalRun", createLegalWorkflow(workflowDeps));
 
   const ocrModelPaths = {

@@ -382,6 +382,29 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         // 主交付物核对（第 28 批）：文书类方法没交出 Word 文书——如实告诉律师，任务记部分完成
         steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: `没有交出《${String(p.primary ?? "文书")}》`, at, detail: PRIMARY_MISSING_CAUSES[String(p.cause)] ?? "" });
         break;
+      case "agent.independent_review": {
+        // V12 交付前独立复核：另一次全新上下文的复核律师审读文书；律师层只写计数与结论（细项是令牌形态，进处理细节）
+        if (p.skipped) {
+          if (p.skipped !== "no_word_report") steps.push({ key: `${e.event_id}`, level: "detail", icon: "dot", title: "这次没有做交付前独立复核", at, detail: String(p.skipped).startsWith("review_call_failed") ? "复核调用没有成功，按助手交出的文书结算；请照常复核" : undefined });
+          break;
+        }
+        const issues = Array.isArray(p.issues) ? p.issues : [];
+        steps.push({
+          key: `${e.event_id}`,
+          level: "lawyer",
+          icon: p.fix_requested ? "dot" : "ok",
+          title: `交付前独立复核：${String(p.summary ?? "")}`,
+          at,
+          detail: issues.slice(0, 5).map((x: any) => `${x.where ? `${x.where}：` : ""}${x.problem ?? ""}`).join("；") || undefined,
+        });
+        break;
+      }
+      case "agent.review_fix_started":
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "wait", title: "助手按复核意见在原文书上修正", at });
+        break;
+      case "agent.review_fix_outcome":
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: p.status === "succeeded" ? "ok" : "dot", title: p.status === "succeeded" ? "复核意见已处理（采纳与不采纳见最终答复）" : "按复核意见修正没有做完，交付件以复核前的版本为准", at });
+        break;
       case "agent.deadline_delivered": {
         // 到工作时限时文书已交出（第 35 批）：如实说“文书已交出、收尾没完成”，任务记部分完成，不让律师以为什么都没有
         const files = Array.isArray(p.files) ? p.files.map(String) : [];
