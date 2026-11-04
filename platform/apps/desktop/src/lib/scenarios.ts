@@ -148,7 +148,7 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "s2.case_file",
     verb: "开始整理",
     goal: "",
-    fields: [{ key: "issues", label: "已知争点（可空，用“；”或换行隔开）", kind: "text", placeholder: "例如：货款是否已付清；违约金是否过高" }],
+    fields: [{ key: "issues", label: "已知争点（可空，用“；”或换行隔开）", kind: "long", placeholder: "例如：货款是否已付清；违约金是否过高" }],
     minMaterials: 1,
     steps: [
       "逐份读取材料并标出识别不全的页",
@@ -188,7 +188,7 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始分析",
     goal: "请梳理争点与证据：拟主张或需应对的请求为{claims}；我方诉讼地位：{side}。有我确认过的事实时只用确认的事实；还没有确认的，用材料载明的事实并标【未确认】，评估写“初步判断”。不评估胜诉率。",
     fields: [
-      { key: "claims", label: "拟主张或需应对的请求", kind: "text", required: true, placeholder: "例如：支付货款 120 万元及逾期利息" },
+      { key: "claims", label: "拟主张或需应对的请求", kind: "long", required: true, placeholder: "例如：支付货款 120 万元及逾期利息" },
       { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人"] },
     ],
     minMaterials: 0,
@@ -316,7 +316,7 @@ export const SCENARIOS: ScenarioCard[] = [
     goal: "请起草商事仲裁申请书，先核对仲裁协议。仲裁机构：{institution}；仲裁请求：{claims}。我确认过的事实与金额照写，材料载明但未确认的标【待确认】，仲裁规则与收费以我提供的机构文件为准。",
     fields: [
       { key: "institution", label: "仲裁机构", kind: "text", placeholder: "以合同约定为准，可空" },
-      { key: "claims", label: "仲裁请求", kind: "text", placeholder: "例如：支付货款 50 万元及逾期利息" },
+      { key: "claims", label: "仲裁请求", kind: "long", placeholder: "例如：支付货款 50 万元及逾期利息" },
     ],
     minMaterials: 1,
     steps: ["逐字摘出仲裁条款，核对仲裁意思、仲裁事项与选定的机构", "仲裁请求与金额逐项单列（未确认的标【待确认】，没有测算的标待测算）", "按时间顺序写事实与理由，每段注明证据", "列出提交前核对：机构规则与收费以你提供的文件为准"],
@@ -338,7 +338,7 @@ export const SCENARIOS: ScenarioCard[] = [
     fields: [
       { key: "hearing_on", label: "开庭日期", kind: "date" },
       { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人", "上诉人", "被上诉人"], required: true },
-      { key: "focus_points", label: "争议焦点（可空）", kind: "text", placeholder: "用“；”隔开，例如：货款是否已付清；违约金是否过高" },
+      { key: "focus_points", label: "争议焦点（可空）", kind: "long", placeholder: "用“；”隔开，例如：货款是否已付清；违约金是否过高" },
     ],
     minMaterials: 1,
     steps: ["按争点列我方主张、事实与证据", "排出举证顺序，写每份证据的证明目的", "对对方证据列质证要点；发问提纲不设诱导问题", "整理辩论要点和法庭可能问的问题（内部工作稿）"],
@@ -380,7 +380,7 @@ export const SCENARIOS: ScenarioCard[] = [
       { key: "effective_on", label: "法律文书生效日期", kind: "date" },
       // 第 26 批（评审 S2-17）：申请执行期间从履行期限最后一日起算（分期的从最后一期）
       { key: "due_on", label: "履行期限最后一日（分期写最后一期）", kind: "date" },
-      { key: "paid", label: "对方已履行情况", kind: "text", placeholder: "例如：2026 年 5 月付过 10 万元；没有付过" },
+      { key: "paid", label: "对方已履行情况", kind: "long", placeholder: "例如：2026 年 5 月付过 10 万元；没有付过" },
     ],
     minMaterials: 1,
     steps: ["逐项摘出判决主文或裁决的给付内容", "申请执行期间（二年）届满日由期限工具计算", "扣除已履行部分；迟延履行期间的利息写明公式，金额由计算工具算出", "列出执行法院、财产线索（你提供的）与提交材料"],
@@ -402,7 +402,7 @@ export const SCENARIOS: ScenarioCard[] = [
       { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人"], required: true },
       { key: "proof_deadline", label: "举证期限届满日", kind: "date" },
       { key: "hearing_on", label: "开庭或证据交换日期", kind: "date" },
-      { key: "extra", label: "已知疑点", kind: "text", placeholder: "可选，例如：证据 3 的签章与合同不一致" },
+      { key: "extra", label: "已知疑点", kind: "long", placeholder: "可选，例如：证据 3 的签章与合同不一致" },
     ],
     minMaterials: 1,
     steps: ["逐份读对方证据，核对编号与页数", "逐份写真实性、合法性、关联性与证明目的意见", "列出需要核对原件、申请鉴定或补充反证的", "写成质证意见与意见表"],
@@ -418,7 +418,7 @@ export const SCENARIOS: ScenarioCard[] = [
     skill: "agency-statement",
     verb: "开始起草",
     goal: "请起草代理词。法庭归纳的争议焦点：{focus_points}。事实以我确认过的与已质证的证据为准，未确认的标【待确认】，不评估胜诉率。",
-    fields: [{ key: "focus_points", label: "争议焦点", kind: "text", required: true, placeholder: "用“；”隔开，例如：货款是否已付清；违约金是否过高" }],
+    fields: [{ key: "focus_points", label: "争议焦点", kind: "long", required: true, placeholder: "用“；”隔开，例如：货款是否已付清；违约金是否过高" }],
     minMaterials: 0,
     steps: ["按法庭归纳的焦点逐个论证", "证据只用已质证的，注明出处；你确认过的事实照写，未确认的标【待确认】", "核对引用的法条；案例只用你提供的", "写成代理词与对照表"],
     intents: [["代理词"], ["代理意见"]],
@@ -452,7 +452,7 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始核查",
     goal: "请核查管辖与诉讼时效：拟主张的请求为{claims}；我方：{side}。",
     fields: [
-      { key: "claims", label: "拟主张的请求", kind: "text", required: true, placeholder: "例如：支付货款 50 万元及逾期利息" },
+      { key: "claims", label: "拟主张的请求", kind: "long", required: true, placeholder: "例如：支付货款 50 万元及逾期利息" },
       // 第 26 批（评审 S2 §3 第 9 条）：方法参数本来就有 side
       { key: "side", label: "我方", kind: "select", options: ["拟起诉", "已被诉"] },
     ],
@@ -498,7 +498,7 @@ export const SCENARIOS: ScenarioCard[] = [
     goal: "请起草劳动仲裁申请书：我方为{side}；拟主张的请求：{claims}。",
     fields: [
       { key: "side", label: "我方是", kind: "select", options: ["劳动者", "用人单位"], required: true },
-      { key: "claims", label: "拟主张的请求（可空，会逐项核对漏项）", kind: "text", placeholder: "例如：违法解除赔偿金；未签合同二倍工资；加班费" },
+      { key: "claims", label: "拟主张的请求（可空，会逐项核对漏项）", kind: "long", placeholder: "例如：违法解除赔偿金；未签合同二倍工资；加班费" },
     ],
     minMaterials: 1,
     steps: ["先确认文书、立场与关键日期", "请求一次提全，逐项单列金额与口径", "论点与依据先交你确认再成文（事实未确认的照常写，标【待确认】）", "生成申请书、证据目录与提交前核对清单"],
@@ -725,7 +725,7 @@ export const SCENARIOS: ScenarioCard[] = [
     goal: "请起草一份{type}合同，我方立场以事项为准；交易要点：{points}。",
     fields: [
       { key: "type", label: "合同类型", kind: "select", options: CONTRACT_TYPES, required: true },
-      { key: "points", label: "交易要点", kind: "text", placeholder: "主体、标的、价款与支付、交付验收、期限……缺的会列为待定事项" },
+      { key: "points", label: "交易要点", kind: "long", placeholder: "主体、标的、价款与支付、交付验收、期限……缺的会列为待定事项" },
     ],
     minMaterials: 0,
     steps: ["确认交易要点，缺的列为“待定事项”，不编造", "有本所范本先用范本", "起草后做一致性检查（定义、金额大小写、日期、互引、附件）", "写起草说明：关键条款为什么这样写、对方可能怎么改"],
@@ -784,7 +784,7 @@ export const SCENARIOS: ScenarioCard[] = [
     fields: [
       { key: "meeting", label: "会议", kind: "select", options: ["股东会", "临时股东会", "董事会", "临时董事会", "全体股东书面决定", "一人公司股东决定"], required: true },
       { key: "company_type", label: "公司类型", kind: "select", options: ["有限责任公司", "股份有限公司（非上市）"], required: true },
-      { key: "matters", label: "拟议事项", kind: "text", required: true, placeholder: "例如：增资 500 万元；修改章程；选举董事" },
+      { key: "matters", label: "拟议事项", kind: "long", required: true, placeholder: "例如：增资 500 万元；修改章程；选举董事" },
     ],
     minMaterials: 0,
     steps: ["逐字摘出章程里召集、通知、表决的规定（章程优先）", "逐项判断普通决议还是特别决议、要不要回避", "起草会议通知、决议与签署页（出席与表决结果留空）", "列出召集与表决核对表和可能影响决议效力的情形"],
@@ -884,7 +884,7 @@ export const SCENARIOS: ScenarioCard[] = [
     goal: "请答复以下问题：{question}。业务背景：{background}。交付形式：{form}。",
     fields: [
       { key: "question", label: "问题", kind: "long", required: true },
-      { key: "background", label: "业务背景", kind: "text", placeholder: "可选" },
+      { key: "background", label: "业务背景", kind: "long", placeholder: "可选" },
       // V11 界面走查 D10：卡上写“点名要法律意见书时出意见书”，但发起时不带主交付物，内核恒按《顾问答复》核对与提示——律师可选，输入框里点名了会预选
       { key: "form", label: "交付形式", kind: "select", options: ["顾问答复", "法律意见书（草稿）"] },
     ],
