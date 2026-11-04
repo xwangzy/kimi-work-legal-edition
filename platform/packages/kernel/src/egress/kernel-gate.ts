@@ -101,7 +101,34 @@ export function gateUpstreamsFromEnv(env: NodeJS.ProcessEnv, cp?: { seatToken: s
     relay: env.ZR_RELAY_BASE && hasSeat ? { baseUrl: env.ZR_RELAY_BASE, ...pin(pinsFrom(env.ZR_RELAY_PINS)) } : null,
     // 传输策略（审计 S5）：安装包形态（ZR_UPSTREAM_TLS=strict）不允许回环 http，中软网关、检索与控制面必须带内置钉住集
     tls: env.ZR_UPSTREAM_TLS === "strict" ? { allowLoopbackHttp: false, requirePins: true } : { allowLoopbackHttp: true, requirePins: false },
+    proxy: upstreamProxyFromEnv(env),
   };
+}
+
+/**
+ * 出站代理（V12）：只认显式配置的 ZR_UPSTREAM_PROXY（http(s)://主机:端口，不带用户名口令），不隐式沿用 HTTPS_PROXY——
+ * 闸门不继承内核环境，代理与否由律所或运行环境明确决定。ZR_UPSTREAM_PROXY_CA_FILE 为代理重签证书的根证书（追加信任）。
+ * 写错的地址按未配置处理（直连，失败时设备页可见），不猜测。
+ */
+export function upstreamProxyFromEnv(env: NodeJS.ProcessEnv): { url: string; caPem?: string } | null {
+  const raw = env.ZR_UPSTREAM_PROXY?.trim();
+  if (!raw) return null;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  if ((u.protocol !== "http:" && u.protocol !== "https:") || u.username || u.password) return null;
+  let caPem: string | undefined;
+  if (env.ZR_UPSTREAM_PROXY_CA_FILE) {
+    try {
+      caPem = readFileSync(env.ZR_UPSTREAM_PROXY_CA_FILE, "utf8");
+    } catch {
+      caPem = undefined;
+    }
+  }
+  return { url: `${u.protocol}//${u.host}`, ...(caPem ? { caPem } : {}) };
 }
 
 /** 各上游的传输状态（设备页“连接加密”；纯检查，不联网）。 */

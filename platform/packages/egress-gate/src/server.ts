@@ -17,7 +17,7 @@ import { FetchDenied, gateFetch, type AddressPolicy, type FetchLimits, type Reso
 import { screenSearchQuery } from "./search-guard.ts";
 import { egressDigest, verifyApproval, type ApprovalCredential } from "./approval.ts";
 import { extractUsage } from "./usage.ts";
-import { checkUpstream, transportFailureReason, upstreamFetch, type TransportCheck } from "./tls-policy.ts";
+import { checkUpstream, transportFailureReason, upstreamFetch, viaProxy, type TransportCheck } from "./tls-policy.ts";
 import type { GateAuthority, GateEgressRecord, GatePurpose, GateUpstreams, MatterEgressContext } from "./types.ts";
 
 export interface GateServerOptions {
@@ -144,7 +144,7 @@ export class EgressGateServer {
     const tls = u.tls ?? { allowLoopbackHttp: true, requirePins: false };
     const mk = (baseUrl: string | undefined, pins: readonly string[] | undefined, requirePins: boolean, caPem?: string) => ({
       check: checkUpstream(baseUrl, { allowLoopbackHttp: tls.allowLoopbackHttp, pins: pins ?? [], requirePins }),
-      fetch: o.fetchImpl ?? upstreamFetch({ pins: pins ?? [], caPem: caPem ?? null }),
+      fetch: o.fetchImpl ?? upstreamFetch({ pins: pins ?? [], caPem: caPem ?? null, proxy: viaProxy(baseUrl, u.proxy) }),
     });
     this.transport = {
       legal_gateway: mk(u.model?.baseUrl, u.model?.pins, tls.requirePins),

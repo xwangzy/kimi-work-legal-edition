@@ -174,4 +174,10 @@ export interface GateUpstreams {
    * 缺省 = 开发形态（允许回环 http、不强制钉住）；安装包形态由内核按 ZR_UPSTREAM_TLS=strict 下发。
    */
   tls?: { allowLoopbackHttp: boolean; requirePins: boolean };
+  /**
+   * 出站代理（V12）：律所或云端运行环境只允许经 HTTP CONNECT 代理出网时显式配置（内核读 ZR_UPSTREAM_PROXY，不隐式沿用 HTTPS_PROXY）。
+   * 只改“怎么连”，不改“连谁”：目的地仍是上面固定的地址，证书校验与钉住集照常对目标服务器核对（会重签证书的代理遇上钉住集即失败关闭）；
+   * `caPem` 是代理重签证书所用的根证书（只追加信任，不替换系统根）；回环地址不走代理。未配置 = 直连。
+   */
+  proxy?: { url: string; caPem?: string } | null;
 }
