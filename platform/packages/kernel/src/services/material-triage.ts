@@ -109,7 +109,12 @@ export function triageText(filename: string, head: string, chars: number, pages:
   // 判决书：案号带“终”、或写明终审的是终审判决
   if (kind === "judgment_first" && /[(（〔]\d{4}[)）〕][^\s]{0,12}终\d+号|本判决为终审判决/.test(`${lines.join("\n")}\n${head}`)) kind = "judgment_final";
   const isContract = kind === "contract" || kind === "supplement";
-  const contract_type = isContract ? (CONTRACT_TYPES.find(([, re]) => re.test(title))?.[0] ?? null) : null;
+  // 合同类型只看文件名与合同自己的标题行（以“合同 / 协议 / 契约”结尾的行）：开头几行里常有当事人行——“甲方（服务采购方）：……”里的“采购”
+  // 曾把《咨询服务框架协议》初判成买卖（V12 真实界面走查用例 4），审合同卡据此预选了错的类型要点。没有标题行的才退回原先的标题范围
+  const docTitles = titleLines.filter((l) => /(合同|协议书?|契约)(（[^）]*）|\([^)]*\))?$/.test(l) && !/[：:]/.test(l));
+  const typeText = [name, ...docTitles].join("\n");
+  const typeOf = (t: string) => CONTRACT_TYPES.find(([, re]) => re.test(t))?.[0] ?? null;
+  const contract_type = isContract ? (typeOf(typeText) ?? (docTitles.length ? null : typeOf(title))) : null;
   return { kind, label: MATERIAL_KIND_LABELS[kind], contract_type, chars, pages, size: chars < 3_000 ? "short" : chars < 20_000 ? "medium" : "long" };
 }
 
