@@ -67,7 +67,7 @@ export function reviewMessages(o: {
   docs: readonly { name: string; text: string }[];
   /** 按律师意见改原件的任务（修订稿 / 清洁稿）：只核对修改是否准确落实、找修改与未改条款的联动，不要求改授权范围外的条款。 */
   revise?: boolean;
-}): { role: "system" | "user"; content: string }[] {
+}): { role: "system" | "assistant" | "user"; content: string }[] {
   const system = [
     "你是律所的复核合伙人，独立审读一份由同事（起草人）交来的文书草稿。你不是起草人，不替起草人辩护；要像对方律师那样找它的漏洞，像客户那样追问指令有没有落实。",
     `我方立场：${o.stance || "未写明"}；法域：${o.jurisdiction || "中国大陆"}；分析截止日：${o.asOf}。`,
@@ -95,12 +95,16 @@ export function reviewMessages(o: {
     `【律师的指令】\n${o.goal}`,
     o.method ? `【起草人所用方法】${o.method}` : "",
     o.checklist.length ? `【该方法的质量自检清单（起草人应已逐项自检，请独立复核）】\n${o.checklist.map((c, i) => `${i + 1}. ${c}`).join("\n")}` : "",
-    docBlocks,
+    "上一条消息是起草人（同事）交来的文书全文，不是你写的。请按系统说明独立复核，只输出一个 JSON 对象。",
   ]
     .filter(Boolean)
     .join("\n\n");
+  // 文书放在 assistant 消息里、律师指令放在最后的 user 消息里（V13 真实走查 N2）：文书是模型写的，出站时只替换已知名单（D-157）——
+  // 放进 user 消息时闸门对它做姓名识别，意见书里的“单次涨幅”被学成自然人“单次涨”，复核人看到“〔自然人〕幅”判“正文被占位符截断”，
+  // 修正轮把清洁的 Word 改坏。闸门对“不在末尾的 assistant 消息”只替换已知名单；律师指令照常识别
   return [
     { role: "system", content: system },
+    { role: "assistant", content: `以下是起草人交来、待你复核的文书（从 Word 中提取的文字）：\n\n${docBlocks}` },
     { role: "user", content: user },
   ];
 }

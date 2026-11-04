@@ -1523,17 +1523,19 @@ async function stepIndependentReview(ctx: Ctx, runId: string, attemptId: string,
     }
   })[0] || null);
   const checklist = method && ctx.deps.skillChecklistOf ? [...ctx.deps.skillChecklistOf(method)].slice(0, 20) : [];
-  const tz = ctx.deps.tokens.tokenizeAll(run.matter_id, [goal, ...texts.map((t) => t.text)]);
+  // 律师指令照常识别；文书是模型写的（V13 真实走查 N2：按材料识别时把“单次涨幅”学成自然人），只替换已知名单（D-157）
+  const goalSent = ctx.deps.tokens.tokenize(run.matter_id, goal).text;
+  const tz = ctx.deps.tokens.tokenizeAll(run.matter_id, texts.map((t) => t.text), { knownOnly: true });
   const revise = docs.some((d) => d.revise);
   const messages = reviewMessages({
     revise,
-    goal: tz[0]!.text,
+    goal: goalSent,
     stance: ctxM.stance,
     jurisdiction: ctxM.jurisdiction,
     asOf: ctxM.asOf,
     method,
     checklist,
-    docs: texts.map((t, i) => ({ name: t.name, text: tz[i + 1]!.text })),
+    docs: texts.map((t, i) => ({ name: t.name, text: tz[i]!.text })),
   });
   let content = "";
   try {
