@@ -1047,15 +1047,23 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (st.isSymbolicLink()) throw validation("符号链接不跟随：请导入真实文件本身（防越界引用）");
         bytes = readFileSync(String(p.path));
         filename = String(p.filename ?? basename(String(p.path)));
-      } else if (p?.data_base64) {
+      } else if (typeof p?.data_base64 === "string") {
         bytes = Buffer.from(String(p.data_base64), "base64");
         filename = String(p.filename ?? "未命名");
       } else {
         throw validation("需要 path 或 data_base64");
       }
-      if (bytes.length === 0 || bytes.length > MAX_BYTES) throw validation(`文件大小非法（上限 ${MAX_BYTES}）`);
+      // V12（V11 遗留 D7）：空文件原先报“需要 path 或 data_base64”（空串被当成没传），律师看不懂
+      if (bytes.length === 0) throw validation("这个文件是空的（0 字节），没有添加。请打开原文件确认有内容后再添加");
+      if (bytes.length > MAX_BYTES) throw validation(`文件太大（${Math.round(bytes.length / 1048576)} MB，上限 ${Math.round(MAX_BYTES / 1048576)} MB），没有添加。可以拆成几份后再添加`);
       const sha256 = sha256Hex(bytes);
       if (p?.sha256 && p.sha256 !== sha256) throw new DomainError("hash_mismatch", "内核复算 hash 与声明不符，已拒收", 422);
+      // V12（V11 遗留 D8）：同一事项里已有内容完全相同的材料（未隔离）时不再重复添加——原先静默再存一份，整理案卷、证据目录把同一份证据计两次
+      const dup = db.get<{ document_version_id: string; filename: string }>(
+        `SELECT document_version_id, filename FROM document_versions WHERE matter_id = ? AND sha256 = ? AND quarantined_at IS NULL ORDER BY created_at LIMIT 1`,
+        [matter.matter_id, sha256],
+      );
+      if (dup) return { document_version_id: dup.document_version_id, duplicate_of: dup.document_version_id, duplicate_filename: dup.filename, sha256, note: `与已添加的《${dup.filename}》内容完全相同，没有重复添加` };
       const result = await insertDocumentWithParse({
         matterId: matter.matter_id,
         tenantId: id.tenantId,

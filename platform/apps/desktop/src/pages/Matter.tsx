@@ -141,6 +141,10 @@ export function MatterPage({ matterId }: { matterId: string }) {
       for (const f of Array.from(files)) {
         try {
           const r: any = mode === "import" ? await api.importMaterial(matterId, f) : await api.mountMaterial(matterId, f);
+          if (r?.duplicate_of) {
+            lines.push(`${f.name} 没有重复添加：与已添加的《${String(r.duplicate_filename ?? "")}》内容完全相同`);
+            continue;
+          }
           const how = mode === "import" ? "已添加（加密保存一份副本，原文件不改动）" : "已关联（只读引用原文件，不复制）";
           lines.push(`${f.name} ${how}，${Number(r.chars ?? 0).toLocaleString()} 字${r.marking_notice ? `。${r.marking_notice}` : ""}`);
         } catch (e) {

@@ -205,9 +205,10 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     try {
       for (const f of Array.from(files)) {
         try {
-          const r = await api.importMaterial(matterId, f);
-          setValue((v) => ({ ...v, documentIds: [...v.documentIds, r.document_version_id] }));
-          lines.push(`已添加 ${f.name}（${r.chars.toLocaleString()} 字）${r.marking_notice ? `。${r.marking_notice}` : ""}`);
+          const r: any = await api.importMaterial(matterId, f);
+          // 内容相同的材料不重复添加（V12 D8）：沿用已有的那份，勾选不重复
+          setValue((v) => (v.documentIds.includes(r.document_version_id) ? v : { ...v, documentIds: [...v.documentIds, r.document_version_id] }));
+          lines.push(r.duplicate_of ? `${f.name} 没有重复添加：与已添加的《${String(r.duplicate_filename ?? "")}》内容完全相同` : `已添加 ${f.name}（${Number(r.chars ?? 0).toLocaleString()} 字）${r.marking_notice ? `。${r.marking_notice}` : ""}`);
         } catch (e) {
           fails.push(importFailText(f.name, (e as Error).message));
         }
