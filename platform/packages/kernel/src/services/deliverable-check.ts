@@ -52,7 +52,8 @@ const MAX_ISSUES = 30;
 const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   { re: /mcp__legal__\w+/g, fix: "删去工具名，改用律师的说法" },
   { re: /\b(?:riskcards|facts|outline|materials|citations|law|calc|docx|xlsx|table|rules)[._](?:submit|list|get|search|get_version|get_article|verify|interest|deadline|labor|court_fee|render_report|render_table|revise|read_excerpt|fill|propose)\b/g, fix: "删去工具名，改用律师的说法（如“经法规库核验”“经计算复核”）" },
-  { re: /\b(?:docv|psv|artv|art|run|mat|est|approval|usr|ten|pv)_[0-9a-f][0-9a-f-]{5,}/g, fix: "删去内部编号，用文件名或条款号称呼" },
+  // V12：补齐内核实际签发的编号前缀（真实走查用例 6：《案卷总目录》“关联事实编号”一列写满 fct_… 事实编号）
+  { re: /\b(?:docv|psv|artv|art|run|att|mat|est|approval|apr|usr|ten|pv|fct|rkc|otl|rtb|rtc|tdo|anc|lsv|tplv|rev|dlv|qac|qam|syn|ftp|rrs|cbt|drc|conf|ckp|qa)_[0-9a-f][0-9a-f-]{5,}/g, fix: "删去内部编号，用文件名、条款号或时间线序号称呼" },
   { re: /\b[a-z]{2,}(?:_[a-z]{2,})+\b/g, fix: "删去工具参数名（如 amount_yuan），改写成中文说明" },
   { re: /演示数据|演示库|演示法规|SKILL\.md|rubric|quality=ok/gi, fix: "删去系统内部用语" },
   { re: /(?:金额|计算|法律|文书|表格|检索|修订)工具/g, fix: "改用律师的说法（如“经核算”“经法规库核验”）" },
