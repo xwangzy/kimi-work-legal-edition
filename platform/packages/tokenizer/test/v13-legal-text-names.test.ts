@@ -55,3 +55,8 @@ test("“当事人解释：”“原告解答，”“甲方解约。”里的�
   assert.equal(stillLooksLikeName("解释"), false);
   assert.deepEqual([...recognizeNames("原告：解小飞，男")], ["解小飞"]);
 });
+
+test("“承租人利用原有设施”“出租人利用”里的“利用”不是姓名（V13：方法正文“新承租人利用了对方的装修”被认出“利用了”）", () => {
+  for (const s of ["新承租人利用了对方的装修", "承租人利用原有后厨排烟设施", "出租人利用该装修物的"]) assert.deepEqual([...recognizeNames(s)], [], s);
+  assert.deepEqual([...recognizeNames("承租人：利明，")], ["利明"]);
+});

@@ -252,15 +252,16 @@ test("材料初判：文书类型、合同类型、篇幅；证据里提到“�
   assert.deepEqual(items.map((i: any) => [i.label, i.contract_type]).sort(), [["合同", "租赁"], ["起诉状", null]]);
 });
 
+// V13：原夹具第三页是“签收人张三”，“签收人”成为角色词后张三在发送视图里换成代号（正确行为），夹具改用不含姓名的文字
 test("引文页码：按页解析的材料给出第几页（引文唯一才算）；Word 不给；事实与格子接口带上页码", async () => {
   const { inv } = tk;
   const { matter } = await inv("matters.create", { title: "页码", stance: "原告", consent_status: "agreed" });
   const m = matter.matter_id;
-  const pdfLike = await importText(inv, m, "证据.txt", "第一页：双方签订合同。\f第二页：买方于 2026 年 3 月 1 日签收全部货物。\f第三页：签收人张三。");
+  const pdfLike = await importText(inv, m, "证据.txt", "第一页：双方签订合同。\f第二页：买方于 2026 年 3 月 1 日签收全部货物。\f第三页：收货单位盖章确认。");
   const word = await importBytes(inv, m, "合同.docx", createDocx("合同", [{ heading: "一", paragraphs: ["买方于 2026 年 3 月 1 日签收全部货物。"] }]), DOCX);
   const deps = { db: tk.kernel.db, blobs: tk.kernel.blobs };
   const pages = quotePages(deps, m, [
-    { key: "a", document_version_id: pdfLike.document_version_id, quote: "签收人张三。" },
+    { key: "a", document_version_id: pdfLike.document_version_id, quote: "收货单位盖章确认。" },
     { key: "b", document_version_id: pdfLike.document_version_id, quote: "买方于 2026 年 3 月 1 日签收全部货物。" },
     { key: "c", document_version_id: pdfLike.document_version_id, quote: "第" },
     { key: "d", document_version_id: word.document_version_id, quote: "买方于 2026 年 3 月 1 日签收全部货物。" },
@@ -279,7 +280,7 @@ test("引文页码：按页解析的材料给出第几页（引文唯一才算�
   const table = (await inv("tables.create", { matter_id: m, template: "evidence_list", document_version_ids: [pdfLike.document_version_id] })).table;
   const col = table.columns[0].key;
   const { fillCells } = await import("../src/services/review-tables.ts");
-  fillCells(deps, { matterId: m, runId: live.rid }, { table_id: table.table_id, cells: [{ document_version_id: pdfLike.document_version_id, column: col, value: "张三", quote: "签收人张三。" }] });
+  fillCells(deps, { matterId: m, runId: live.rid }, { table_id: table.table_id, cells: [{ document_version_id: pdfLike.document_version_id, column: col, value: "收货单位", quote: "收货单位盖章确认。" }] });
   const cell = (await inv("tables.get", { matter_id: m, table_id: table.table_id })).cells.find((c: any) => c.col_key === col);
   assert.equal(cell.page, 3);
 });
