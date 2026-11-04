@@ -17,6 +17,7 @@ import { FetchDenied, gateFetch, type AddressPolicy, type FetchLimits, type Reso
 import { screenSearchQuery } from "./search-guard.ts";
 import { egressDigest, verifyApproval, type ApprovalCredential } from "./approval.ts";
 import { extractUsage } from "./usage.ts";
+import { modelStreamProgress } from "./stream-progress.ts";
 import { checkUpstream, transportFailureReason, upstreamFetch, type TransportCheck } from "./tls-policy.ts";
 import type { GateAuthority, GateEgressRecord, GatePurpose, GateUpstreams, MatterEgressContext } from "./types.ts";
 
@@ -37,6 +38,8 @@ export interface GateServerOptions {
   /**
    * 模型请求的看门狗（第 35 批真实走查 N3/N4：上游一次调用挂住 12～16 分钟不出一个字，引擎不设超时，任务被拖到工作时限）：
    * 等响应头超过 firstByteMs 回 504、流式输出中途 idleMs 没有新数据即断开——引擎按可重试错误自动重发这一步。缺省 180 / 120 秒。
+   * V12：“首字”“新数据”都指模型确有输出（stream-progress.ts）——响应头、注释保活、空行、空增量块不解除首字计时、不重置断档计时；
+   * 响应头已到而首字超时的，按断档同样断开连接。
    */
   modelWatchdog?: { firstByteMs?: number; idleMs?: number };
 }
@@ -517,7 +520,9 @@ export class EgressGateServer {
       if (stalled) throw new GateError(504, stalled, `模型通道 ${Math.round(firstByteMs / 1000)} 秒没有响应，已中断这次请求（会自动重试）`);
       throw new GateError(502, "upstream_unreachable", "模型通道不可达（已排队或稍后重试）");
     }
-    arm(idleMs, "stream_idle_timeout");
+    // V12：响应头到了不等于模型开始输出——上游或前置代理可能先回 200、之后只发注释保活或空增量（V10 遗留“看门狗第三次未截断”）。
+    // 首字计时一直保持到第一次真正的输出；之后断档计时也只按真正的输出重置（stream-progress.ts），保活与空白不再续命
+    const progressed = modelStreamProgress(upstreamRes.headers.get("content-type"));
     // 响应流原样返回（不还原、不改写）；用量只从内存中的响应尾部读取
     const headers: Record<string, string> = {};
     for (const k of ["content-type", "x-request-id", "x-kwl-usage", "cache-control"]) {
@@ -532,7 +537,7 @@ export class EgressGateServer {
     try {
       if (upstreamRes.body) {
         for await (const chunk of upstreamRes.body as unknown as AsyncIterable<Uint8Array>) {
-          arm(idleMs, "stream_idle_timeout");
+          if (progressed(chunk)) arm(idleMs, "stream_idle_timeout");
           tail = (tail + dec.decode(chunk, { stream: true })).slice(-65_536);
           if (!(await this.writeChunk(res, chunk, ac.signal))) {
             // 客户端已断开或任务已中止：停止读上游（退出迭代即取消上游流）
