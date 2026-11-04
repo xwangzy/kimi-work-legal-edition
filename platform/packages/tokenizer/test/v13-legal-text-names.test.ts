@@ -49,3 +49,9 @@ test("本段里接着已知机构名称往下写的“姓名”是机构简称�
   t2.tokenize("法定代表人：李宁，");
   assert.deepEqual(persons(t2), ["李宁"]);
 });
+
+test("“当事人解释：”“原告解答，”“甲方解约。”里的“解”字头常用词不是姓名；已学进的“解释”退役；“解”姓真名照常（“原告：解小飞，”）", () => {
+  for (const s of ["当事人解释：不同意", "原告解答，", "出租人解约。", "被告解决：", "申请人解押，"]) assert.deepEqual([...recognizeNames(s)], [], s);
+  assert.equal(stillLooksLikeName("解释"), false);
+  assert.deepEqual([...recognizeNames("原告：解小飞，男")], ["解小飞"]);
+});
