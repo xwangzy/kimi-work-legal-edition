@@ -92,6 +92,7 @@ test("纯函数：解析容忍代码块；有重要缺陷或要点没落实才�
   assert.equal(reviewNeedsFix(parseReview("不是 JSON")), false);
   const m = reviewMessages({ goal: "起草", stance: "委托方", jurisdiction: "中国大陆", asOf: "2026-11-04", method: "contract-draft", checklist: ["金额大小写一致"], docs: [{ name: "合同", text: "正文" }] });
   assert.match(m[0]!.content, /你不是起草人/);
+  assert.match(m[0]!.content, /已作为 Word（\.docx）文件交付/, "真实走查 R1：复核人把提取的文字当成“没有交付 Word”，报了否决类");
   assert.match(m[1]!.content, /【该方法的质量自检清单/);
 });
 
