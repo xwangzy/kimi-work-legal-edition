@@ -1238,9 +1238,16 @@ function bestScenarioIn(g: string): ScenarioCard | null {
 const REVISE_ACTION_RE = /改成|改为|修改为|改到|删去|删除|删掉|增加一款|加一款|增加一条|加一条|修订稿|清洁稿|清洁版|修订痕迹|原件上|直接改|直接修改|按[^，。；]{0,12}意见[^，。；]{0,6}(?:修改|改)/;
 
 /** 意图建议：根据律师输入的任务描述建议一个业务场景（本机关键词规则，不联网；不自动切换）。先只看请求句，请求句里认不出再看全文。 */
+/**
+ * 要我方在对方回稿上直接改（V11 遗留 F9）：“对方回稿了，按我们的意见把回稿改好，给我 Word”原先因“回稿”二字被引到回稿重审卡（只出变更清单与回稿意见，
+ * 不在回稿上改），按建议点下去律师拿不到改好的 Word。要的是“把 / 在回稿上 + 改的动作”或“按……意见……改回稿”；“回稿改了哪些 / 修改的地方”是审对方的改动，不算。
+ */
+const REVISE_ON_REDRAFT_RE = /(?:把|在|将|就|对)(?:对方(?:的)?)?回稿(?:上|里|中|的基础上)?[^，。；]{0,10}?(?:改好|改一下|改掉|改回|改成|改为|直接改|修改好|修订好|出修订稿|(?:修改|修订)(?!的|之处|了|情况|内容|部分|痕迹))|按[^，。；]{0,14}意见[^，。；]{0,6}(?:把|在|将)?(?:对方(?:的)?)?回稿[^，。；]{0,4}(?:改|修改|修订)(?!的|之处|了|情况)/;
+
 export function suggestScenario(goal: string): ScenarioCard | null {
   const g = goal.replace(/\s+/g, "");
   if (g.length < 4) return null;
+  if (REVISE_ON_REDRAFT_RE.test(g)) return SCENARIOS.find((c) => c.id === "doc-revise") ?? null;
   const ask = askSentences(goal);
   // 一句话要几种成果（“整理成证据目录，并写一份证据分析”）：任何一张卡都给不全，不建议，交给助手按描述分步做（第 34 批 T6 真实走查）
   if (ask && COMPOUND_RE.test(ask) && matchedCards(ask).size >= 2) return null;
