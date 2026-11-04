@@ -1390,10 +1390,24 @@ export function sampleBannerText(m: { stance?: string | null } | null | undefine
  * 有 created_at 按它取最新；没有时按内核的新到旧顺序取第一份。纯函数。
  */
 /** 律师说了“基于全部材料 / 本事项的材料 / 以上证据”（V12 真实走查用例 5：说了“基于本事项的全部材料”，五份材料一份都没勾）。 */
-const ALL_MATERIALS_RE = /(?:全部|所有|全体|现有|已有|以上|上述|这些|这几份|本事项的?|本案的?)(?:的)?(?:材料|证据|文件|资料|案卷)/;
+const ALL_MATERIALS_RE = /(?:全部|所有|全体|现有|已有|以上|上述|这些|这几份|本事项的?|本案的?)(?:的)?(?:材料|证据|文件|资料|案卷)|(?:基于|根据|依据|结合|按照?)(?:材料|证据|案卷)/;
+/** 律师点了份数（V13 真实走查 N3：“请基于三份材料出具法律意见书”，三份材料一份都没勾）：份数与事项里的材料数一致才全勾，不一致不猜。 */
+const COUNTED_MATERIALS_RE = /([一二两三四五六七八九十]|\d{1,2})\s*(?:份|个|件)(?:的)?(?:材料|证据|文件|资料|附件)/;
+const CN_COUNT: Record<string, number> = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+
+/** 律师的请求句是否点名要用事项里的全部材料（纯函数）。 */
+export function requestNamesAllMaterials(request: string | null | undefined, docCount: number): boolean {
+  if (!request || docCount === 0) return false;
+  const t = request.replace(/\s+/g, "");
+  if (ALL_MATERIALS_RE.test(t)) return true;
+  const m = COUNTED_MATERIALS_RE.exec(t);
+  if (!m) return false;
+  const n = /^\d+$/.test(m[1]!) ? Number(m[1]) : (CN_COUNT[m[1]!] ?? 0);
+  return n === docCount;
+}
 
 export function preselectMaterials(card: Pick<ScenarioCard, "minMaterials" | "scenario" | "skill">, docs: readonly { document_version_id: string; filename: string; created_at?: string | null }[], request?: string | null): string[] {
-  if (card.minMaterials === 0) return request && ALL_MATERIALS_RE.test(request.replace(/\s+/g, "")) ? docs.map((d) => d.document_version_id) : [];
+  if (card.minMaterials === 0) return requestNamesAllMaterials(request, docs.length) ? docs.map((d) => d.document_version_id) : [];
   // 回稿重审要按“上一稿、回稿”的顺序勾两份（第 31 批：原先全选，案卷里有第三份稿时顺序就不是律师心里那两份）
   if (card.scenario === "s1b.draft_compare" || card.skill === "redraft-review") return [];
   if (card.skill === "contract-review" || card.skill === "doc-revise" || card.skill === "citation-check") {
