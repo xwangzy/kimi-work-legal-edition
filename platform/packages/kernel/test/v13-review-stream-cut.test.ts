@@ -23,5 +23,5 @@ test("流读到一半被切断：抛 provider_unavailable（交给有界重试�
   const delta = (t: string) => JSON.stringify({ choices: [{ delta: { content: t } }] });
   await assert.rejects(() => chatStreamText(broker([delta("{\"trace\":"), new TypeError("terminated")]), {} as never), (e: any) => e instanceof DomainError && e.code === "provider_unavailable");
   assert.equal(await chatStreamText(broker([delta("{\"a\":"), delta("1}"), "[DONE]"]), {} as never), "{\"a\":1}");
-  await assert.rejects(() => chatStreamText(broker([new DomainError("quota_exceeded", "点数不足", 402)]), {} as never), (e: any) => e.code === "quota_exceeded");
+  await assert.rejects(() => chatStreamText(broker([new DomainError("rate_limited", "限流", 429)]), {} as never), (e: any) => e.code === "rate_limited");
 });
