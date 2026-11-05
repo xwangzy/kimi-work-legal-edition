@@ -100,3 +100,28 @@ test("v9.4 第 21 批：原“即将推出”的八项有了卡，意图建议�
   assert.notEqual(suggestScenario("申请证据保全")?.id, "preservation");
   assert.equal(suggestScenario("准备辞退一名员工有什么风险")?.id, "labor-termination", "解除前评估不被规章制度审查抢走");
 });
+
+test("V12 R-1：律师要文书时不建议表格类卡片；动作词与排除词按整句请求核对", async () => {
+  const { asksForDocument, cardDeliversDocument, SCENARIOS } = await import("../src/lib/scenarios.ts");
+  const id = (g: string) => suggestScenario(g)?.id ?? null;
+  // 原先：amount（只出计算明细表）、casefile（本机整理案卷，只出 Excel）
+  assert.equal(id("帮我起草一份采购合同，附违约金计算方式"), "contract-draft");
+  assert.equal(id("帮我起草一份证据目录和起诉状"), "pleading");
+  assert.equal(id("帮我起草一份起诉状及证据目录"), "pleading");
+  assert.equal(id("起草一份股权转让协议并附交割清单"), "contract-draft");
+  // 原先：contract-draft（“劳动合同”含“合同”）、compliance-qa（改已有意见书却新写一份）、null（“写”不认）
+  assert.notEqual(id("起草一份解除劳动合同通知书"), "contract-draft");
+  assert.equal(id("帮我修改法律意见书"), "doc-revise");
+  assert.equal(id("帮我写一份买卖合同"), "contract-draft");
+  // 不误伤：表格类请求照旧
+  assert.equal(id("帮我把证据整理成证据目录"), "casefile");
+  assert.equal(id("算一下截至起诉日的违约金"), "amount");
+  assert.equal(id("审查这份采购合同并给出修订版"), "contract-review");
+  assert.equal(id("整理证据目录，并写一份证据分析"), null);
+  assert.equal(asksForDocument("请起草一份法律意见书"), true);
+  assert.equal(asksForDocument("整理成 Excel 证据目录"), false);
+  // 主交付物是表格的卡片由数据推出
+  const tableCards = SCENARIOS.filter((c) => !cardDeliversDocument(c)).map((c) => c.id);
+  for (const t of ["casefile", "amount", "issues", "procedure", "citation-audit"]) assert.ok(tableCards.includes(t), t);
+  for (const d of ["contract-draft", "pleading", "doc-revise", "compliance-qa"]) assert.ok(!tableCards.includes(d), d);
+});

@@ -584,7 +584,8 @@ export const SCENARIOS: ScenarioCard[] = [
     fields: [{ key: "opinion", label: "修改意见", kind: "long", placeholder: "例如：付款改为 3-4-3 分期；验收期改为 15 个工作日；争议解决改为我方所在地法院", required: true }],
     minMaterials: 1,
     steps: ["读原文，把你的意见拆成逐处修改（连同定义、互引、附件）", "在原件副本上逐处修改，保留原版式、编号与表格", "生成带修订痕迹的修订稿和接受全部修订的清洁稿", "系统按实际写入的修改生成修改对照表；你没提但发现的重大风险只提示、不擅自改"],
-    intents: [["修改", "合同"], ["修改", "这份"], ["修订稿"], ["清洁稿"], ["清洁版"], ["修订痕迹"], ["按", "意见", "修改"], ["帮我", "改"]],
+    // V12 R-1：改已有的意见书、诉状、函件、协议同样是在原件上修改（“帮我修改法律意见书”原先建议成新写一份顾问答复）
+    intents: [["修改", "合同"], ["修改", "这份"], ["修订稿"], ["清洁稿"], ["清洁版"], ["修订痕迹"], ["按", "意见", "修改"], ["帮我", "改"], ["修改", "协议"], ["修改", "意见书"], ["修改", "起诉状"], ["修改", "答辩状"], ["修改", "函"], ["修改", "文书"]],
     // 第 34 批路由体检：“对方改了几处，帮我看看改了什么”是审对方的回稿，不是我方改文书
     // 第 35 批真实走查（N3）：“审查……出一份审查意见书，并给出建议的修改条款”被引到这里——要的是审查成果里的修改建议，不是我方改原件
     notFor: ["起草", "比对", "回稿", "对方改了", "改了什么", "改了哪些", "给出修改建议", "提出修改建议", "给出建议的修改", "提出建议的修改", "出具修改建议", "审查意见书", "审核意见书"],
@@ -729,7 +730,9 @@ export const SCENARIOS: ScenarioCard[] = [
     ],
     minMaterials: 0,
     steps: ["确认交易要点，缺的列为“待定事项”，不编造", "有本所范本先用范本", "起草后做一致性检查（定义、金额大小写、日期、互引、附件）", "写起草说明：关键条款为什么这样写、对方可能怎么改"],
-    intents: [["起草", "合同"], ["拟", "合同"], ["起草", "协议"]],
+    // V12 R-1：“写 / 拟 / 草拟 / 做一份……合同或协议”同样是起草；律师点名的是通知书、律师函、诉状等别的文书时不是起草合同（“起草一份解除劳动合同通知书”）
+    intents: [["起草", "合同"], ["拟", "合同"], ["起草", "协议"], ["写", "合同"], ["写", "协议"], ["拟", "协议"], ["做", "合同"], ["做", "协议"]],
+    notFor: ["通知书", "律师函", "起诉状", "答辩状", "上诉状", "申请书", "意见书", "审查", "审核", "修改这份", "修改合同"],
   },
   {
     // v9.4 新增（S1 §5.3 #5、#6）：尽职调查两阶段（due-diligence）
@@ -1203,7 +1206,27 @@ function askSentences(goal: string): string {
     .replace(/\s+/g, "");
 }
 
-function bestScenarioIn(g: string): ScenarioCard | null {
+/**
+ * 律师的请求是不是要一份正式文书（V12 R-1；与内核 executor/deliverable-intent.ts 同一口径）：请求句里有产出文书的动作，宾语是合同、
+ * 协议、起诉状、意见书、律师函……。真实复现：“帮我起草一份起诉状及证据目录”建议成“整理案卷”（本机流程，只出 Excel），
+ * “起草一份采购合同，附违约金计算方式”建议成“金额测算”（只出计算明细表）——命中词字数多的表格类卡片压过了律师点名的文书。
+ */
+const DOC_DRAFT_VERB_RE = /起草|草拟|拟定|拟一份|拟个|撰写|写一份|写个|写一封|出具|出一份|形成一份|准备一份|做一份|修改|修订|改写|完善/;
+const DOC_NOUN_RE =
+  /合同|协议|契约|章程|起诉状|诉状|答辩状|答辩书|上诉状|申请书|意见书|法律意见|律师函|催告函|催款函|告知函|函件|通知书|备忘录|决议|决定书|代理词|代理意见|质证意见|庭审提纲|承诺函|承诺书|声明书|授权委托书|补充协议|条款|报告书|尽调报告|审查意见|修订稿|清洁稿/;
+const SHEET_NOUN_RE = /Excel|excel|xlsx|表格形式|做成表|列成表|一张表/;
+export function asksForDocument(ask: string): boolean {
+  return ask
+    .split(/[。！？!?；;\n]/)
+    .some((s) => DOC_DRAFT_VERB_RE.test(s) && DOC_NOUN_RE.test(s) && !SHEET_NOUN_RE.test(s));
+}
+
+/** 卡片的主交付物是不是一份文书（Agent 场景、主交付物不是 Excel 表）。由卡片数据推出，不按卡片编号列举。 */
+export function cardDeliversDocument(c: Pick<ScenarioCard, "scenario" | "primary" | "gets">): boolean {
+  return c.scenario === "a1.agent_task" && !/\.xlsx/i.test(c.primary ?? c.gets[0] ?? "");
+}
+
+function bestScenarioIn(g: string, opts: { docOnly?: boolean; excludeBy?: string } = {}): ScenarioCard | null {
   // 取命中最具体的一张（命中词的总字数最多；复核 B3-B24：“核对起诉状里的引用”应引向引用核验，而不是起草起诉状）
   let best: ScenarioCard | null = null;
   let bestScore = 0;
@@ -1211,7 +1234,10 @@ function bestScenarioIn(g: string): ScenarioCard | null {
   // 律师要的审查意见书不会出）：同分时看动作——有明确的改写动作才是我方改原件，否则是审查
   let reviewTie: ScenarioCard | null = null;
   for (const c of SCENARIOS) {
-    if (c.notFor?.some((w) => g.includes(w))) continue;
+    // 排除词对照律师的整句请求（V12 R-1：原先只对照截出的短语，“起草一份证据目录和起诉状”截成“证据目录和起诉状”后整理案卷卡的排除词“起草”失效）
+    if (c.notFor?.some((w) => g.includes(w) || (opts.excludeBy ?? "").includes(w))) continue;
+    // 律师要的是文书时，主交付物是表格的卡片不建议（表格可作文书的附件，由文书方法一并出）
+    if (opts.docOnly && !cardDeliversDocument(c)) continue;
     for (const words of c.intents) {
       if (!words.every((w) => g.includes(w))) continue;
       const score = words.join("").length;
@@ -1235,10 +1261,13 @@ export function suggestScenario(goal: string): ScenarioCard | null {
   if (g.length < 4) return null;
   const ask = askSentences(goal);
   // 一句话要几种成果（“整理成证据目录，并写一份证据分析”）：任何一张卡都给不全，不建议，交给助手按描述分步做（第 34 批 T6 真实走查）
-  if (ask && COMPOUND_RE.test(ask) && matchedCards(ask).size >= 2) return null;
+  // V12 R-1：律师要的是一份文书、另附清单或计算表（“起草股权转让协议并附交割清单”）时，只数文书卡——表格由文书方法作附件一并出
+  const docOnly = asksForDocument(ask || g);
+  if (ask && COMPOUND_RE.test(ask) && matchedCards(ask, docOnly).size >= 2) return null;
   // 要交付的东西是“出 / 写 / 起草 + 一份”后面那个名词（第 34 批：“结合章程、董事会决议和保证合同，出一份法律意见书”里的“董事会决议”是材料）
   const wanted = deliverablePhrase(ask || g);
-  return (wanted ? bestScenarioIn(wanted) : null) ?? (ask && ask !== g ? bestScenarioIn(ask) : null) ?? bestScenarioIn(g);
+  const opts = { docOnly, excludeBy: ask || g };
+  return (wanted ? bestScenarioIn(wanted, opts) : null) ?? (ask && ask !== g ? bestScenarioIn(ask, opts) : null) ?? bestScenarioIn(g, opts);
 }
 
 const DELIVER_VERB_RE = /(?:出具|起草|草拟|撰写|拟|写|出|做|准备|形成)(?:一份|一个|一封|一套|份|个|封)/g;
@@ -1249,14 +1278,15 @@ function deliverablePhrase(text: string): string | null {
   DELIVER_VERB_RE.lastIndex = 0;
   if (!last) return null;
   const rest = text.slice(last.index + last[0].length).split(/[，。；;！？!?,\n（(]/)[0]!.replace(/\s+/g, "");
-  return rest.length >= 2 ? rest : null;
+  // 动作词一并带上（V12 R-1：原先只留宾语，“起草一份采购合同”截成“采购合同”，起草合同卡的命中词“起草 + 合同”永远对不上）
+  return rest.length >= 2 ? `${last[0].replace(/(?:一份|一个|一封|一套|份|个|封)$/, "")}${rest}` : null;
 }
 
 const COMPOUND_RE = /并(?:且)?(?:写|出|起草|做|附|算|整理|列|核|分析|准备)|同时(?:写|出|起草|做|算|整理|列)|还要(?:写|出|起草|做|算|整理)|另(?:写|出)|再(?:写|出)一份/;
 /** 请求句点到的卡（不看排除词：排除词挡掉的卡，它的成果也是律师点名要的）。 */
-function matchedCards(g: string): Set<string> {
+function matchedCards(g: string, docOnly = false): Set<string> {
   const ids = new Set<string>();
-  for (const c of SCENARIOS) if (c.intents.some((words) => words.every((w) => g.includes(w)))) ids.add(c.id);
+  for (const c of SCENARIOS) if ((!docOnly || cardDeliversDocument(c)) && c.intents.some((words) => words.every((w) => g.includes(w)))) ids.add(c.id);
   return ids;
 }
 

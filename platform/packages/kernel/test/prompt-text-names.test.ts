@@ -75,10 +75,13 @@ test("内核写的提示词框架（事项口径、方法、审查要点、写�
   for (const s of manifest.skills) {
     // 主交付物那一句（Word / Excel，第 28、31 批）也随提示词令牌化：按方法实际的主交付物生成
     const method = methodPromptLine(s.id, { focus: "付款与违约责任" }, (s as { primary_output?: string }).primary_output ?? null);
+    // V12：表格类方法遇到文书请求时的另一种写法
+    texts.push(methodPromptLine(s.id, null, (s as { primary_output?: string }).primary_output ?? null, "word"));
     texts.push(agentGoalPrompt({ stance: "买方", jurisdiction: "内地民商事", asOf: "2026-10-23", facts, goal: "审查这份采购合同", methodLine: method, rulesBlock: rules, prefsLine: prefs }));
     texts.push(agentFollowUpPrompt("再看一下违约金", method, true));
   }
   texts.push(agentGoalPrompt({ stance: "原告", jurisdiction: "内地民商事", asOf: "2026-10-23", facts: "", goal: "整理证据", methodLine: methodPromptLine(null, null), rulesBlock: "", prefsLine: "" }));
+  texts.push(agentGoalPrompt({ stance: "委托方", jurisdiction: "内地民商事", asOf: "2026-10-23", facts: "", goal: "起草合同", methodLine: "", rulesBlock: "", prefsLine: "", goalKind: "word" }));
   const bad = texts.map((t) => personHits(t)).filter((h) => h.length > 0);
   assert.deepEqual(bad, [], `提示词框架里被认成姓名的：${bad.flat().join("、")}`);
 });
