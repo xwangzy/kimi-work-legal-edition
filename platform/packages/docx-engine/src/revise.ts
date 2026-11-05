@@ -474,6 +474,14 @@ function articleHeadingFor(paras: readonly ParagraphMap[], labels: readonly (str
   if (lines.length < 2) return null;
   const first = lines[0]!;
   if (!ARTICLE_LINE_RE.test(first)) return null;
+  // 条标题是手写的“第 N 条”（V12 R-5：条下各款用一串连续单级自动编号“1. 2. 3. …”的合同很常见）：
+  // 按手写标题认条——锚点本身是条标题的不改原做法；否则取前面最近的手写条标题段落。原先单级编号“10.”被当成条，
+  // 返回 null，新条首行沿用款的格式，成了“11. 第六条 数据与信息安全”，也不加粗
+  if (ARTICLE_LINE_RE.test(paras[at]?.text ?? "")) return null;
+  if (paras.filter((p) => ARTICLE_LINE_RE.test(p.text)).length >= 2) {
+    for (let i = at - 1; i >= 0; i--) if (ARTICLE_LINE_RE.test(paras[i]!.text)) return paras[i]!;
+    return null;
+  }
   const own = labels[at] ?? "";
   const isArticle = (i: number): boolean => {
     const lab = labels[i] ?? "";

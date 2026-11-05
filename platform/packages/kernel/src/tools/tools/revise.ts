@@ -100,11 +100,19 @@ function numberingNotes(r: { numbering?: NumberingShifts; label_notes?: { index:
     out.label_notes = r.label_notes.map((x) => ({ patch: x.index + 1, dropped: x.dropped }));
     out.label_note = "这几条改的是 Word 自动编号的段落：新文字开头抄进去的编号已去掉（编号由 Word 生成，插入、删除条款后自动顺延），不要在文字里另写编号";
   }
+  // 手写条号（V12 R-6）：新增或删除一条后，手写的“第 N 条”不会自动顺延——原先这里照样说“编号已自动顺延”
+  const art = r.numbering?.articles;
+  if (art && art.duplicates.length + art.gaps.length > 0) {
+    out.article_numbers = art;
+    out.article_number_note = `本文书的条标题是手写的“第 N 条”，不会自动顺延：改后${art.duplicates.length > 0 ? `${art.duplicates.join("、")}重复` : ""}${art.duplicates.length > 0 && art.gaps.length > 0 ? "，" : ""}${art.gaps.length > 0 ? art.gaps.join("、") : ""}。${
+      written ? "用同一工具把其后各条标题的条号逐条改成新号（正文里引用这些条号的地方一并改），连同全部修改重新提交一次（生成新版本）" : "把其后各条标题的条号逐条改成新号（正文里引用这些条号的地方一并改），连同全部修改一并提交"
+    }；做不到的在答复里逐处列给律师，不要写“后续条号已顺延”`;
+  }
   if (r.numbering && r.numbering.renumbered.length > 0) {
     out.numbering_changes = r.numbering;
     out.numbering_note = `删除或插入了自动编号的条款，后面的条款编号已自动顺延（renumbered）；正文里写死的条号不会跟着变${
       r.numbering.references.length > 0 ? `——references 列出 ${r.numbering.references.length} 处互引仍写着旧号，${written ? "把它们改成新号后连同全部修改重新提交一次（生成新版本），做不到的在答复里逐处列给律师" : "把它们改成新号、连同全部修改一并提交"}` : ""
-    }。最终答复写明编号已顺延，不要写“后续编号保持不动”`;
+    }${art && art.duplicates.length + art.gaps.length > 0 ? "。自动编号的款号已顺延，手写的条号见 article_number_note" : "。最终答复写明编号已顺延，不要写“后续编号保持不动”"}`;
   }
   return out;
 }

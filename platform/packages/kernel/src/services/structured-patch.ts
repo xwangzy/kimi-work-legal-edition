@@ -125,6 +125,51 @@ export interface NumberingShifts {
   renumbered: { from: string; to: string; text: string }[];
   /** 正文里仍写着旧编号的地方：所在段落（现编号与文字开头）、写的条号、该条现在的编号。 */
   references: { at: string; ref: string; now: string }[];
+  /**
+   * 手写的“第 N 条”条号（V12 R-6）：改后稿里重复或跳号的条标题。手写条号不会像自动编号那样顺延——新增“第六条”后原第六条仍写第六条。
+   * 只在改后才出现的问题才列出（原稿本来就跳号的不算）。
+   */
+  articles?: { duplicates: string[]; gaps: string[] };
+}
+
+const CN_DIGIT: Record<string, number> = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+/** “第十二条”“第105条”里的数字；认不出返回 null。 */
+export function articleNumber(s: string): number | null {
+  const m = /^\s*第\s*([0-9０-９]{1,4}|[一二三四五六七八九十百零〇两]{1,8})\s*条/.exec(s);
+  if (!m) return null;
+  const t = m[1]!.replace(/[０-９]/g, (c) => String(c.charCodeAt(0) - 0xff10));
+  if (/^\d+$/.test(t)) return Number(t);
+  let total = 0;
+  let cur = 0;
+  for (const ch of t) {
+    if (ch === "百") {
+      total += (cur || 1) * 100;
+      cur = 0;
+    } else if (ch === "十") {
+      total += (cur || 1) * 10;
+      cur = 0;
+    } else if (ch in CN_DIGIT) cur = CN_DIGIT[ch]!;
+    else return null;
+  }
+  return total + cur;
+}
+
+/** 手写条标题（段首“第 N 条”、不是 Word 自动编号的段落）的重复与跳号。 */
+function articleIssues(texts: readonly string[], labels: readonly (string | null)[]): { duplicates: string[]; gaps: string[] } {
+  const seen = new Map<number, number>();
+  const nums: { n: number; label: string }[] = [];
+  texts.forEach((t, i) => {
+    if (labels[i]) return;
+    const n = articleNumber(t);
+    if (n === null) return;
+    nums.push({ n, label: (/^\s*(第\s*\S{1,8}?\s*条)/.exec(t)?.[1] ?? `第${n}条`).replace(/\s+/g, "") });
+    seen.set(n, (seen.get(n) ?? 0) + 1);
+  });
+  const labelOf = (n: number) => nums.find((x) => x.n === n)!.label;
+  const duplicates = [...seen].filter(([, c]) => c > 1).map(([n]) => labelOf(n));
+  const gaps: string[] = [];
+  for (let i = 1; i < nums.length; i++) if (nums[i]!.n !== nums[i - 1]!.n + 1 && nums[i]!.n !== nums[i - 1]!.n) gaps.push(`${nums[i - 1]!.label}之后是${nums[i]!.label}`);
+  return { duplicates, gaps };
 }
 
 /** 与某个自动编号同形的段首编号（“8.4 ”“第十条 ”“（三）”）：数字换成任意数字、中文数字换成任意中文数字。 */
@@ -171,7 +216,12 @@ export function numberingShifts(before: Buffer, after: Buffer): NumberingShifts 
       }
     });
   }
-  return { renumbered: renumbered.slice(0, 40), references: references.slice(0, 40) };
+  // 手写条号（V12 R-6）：改后新出现的重复或跳号
+  const was = articleIssues(b, bl);
+  const now = articleIssues(a, al);
+  const duplicates = now.duplicates.filter((d) => !was.duplicates.includes(d));
+  const gaps = now.gaps.filter((g) => !was.gaps.includes(g));
+  return { renumbered: renumbered.slice(0, 40), references: references.slice(0, 40), ...(duplicates.length + gaps.length > 0 ? { articles: { duplicates: duplicates.slice(0, 20), gaps: gaps.slice(0, 20) } } : {}) };
 }
 
 /** 合并写入时先做段后插入（不改原有段落文字），再做替换：替换不会把插入的锚点改掉（复核 Q2-06）；各自保持原先后次序。 */

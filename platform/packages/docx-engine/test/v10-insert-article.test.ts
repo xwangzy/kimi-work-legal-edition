@@ -63,3 +63,21 @@ test("手打编号：首行写“第七条 ……”的照前一条标题段落�
   assert.doesNotMatch(ps.find((p) => p.includes("7.1 乙方仅为"))!, /<w:jc w:val="center"\/>/, "款沿用锚点的段落格式");
   assert.deepEqual(texts(sanitizeDocx(revised).docx).slice(2, 4), ["第七条 数据与个人信息保护", "7.1 乙方仅为实施目的处理个人信息。"]);
 });
+
+test("V12 R-5：手打“第 N 条”标题、条下各款是一串连续单级自动编号（1. 2. 3. …）的：新条标题照前一条标题，不占款号", () => {
+  const LIST = `<?xml version="1.0" encoding="UTF-8"?><w:numbering ${W}>
+<w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>
+<w:num w:numId="1"><w:abstractNumId w:val="3"/></w:num></w:numbering>`;
+  const bold = (t: string) => `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${t}</w:t></w:r></w:p>`;
+  const item = (t: string) => para(t, '<w:pStyle w:val="ListNumber"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>');
+  const docx = withBody([bold("第五条 维修与保养"), item("甲方承担质量问题维修费用。"), item("甲方七十二小时内到场。"), bold("第六条 保险与风险"), item("风险由乙方承担。")].join(""), LIST);
+  assert.deepEqual(docxListLabels(docx).filter(Boolean), ["1.", "2.", "3."]);
+  const revised = insert(docx, "甲方七十二小时内到场。", "第六条 数据与信息安全\n甲方远程运维须经乙方书面授权。\n甲方应留存操作日志。");
+  const clean = sanitizeDocx(revised).docx;
+  const xml = readZipEntries(clean).get("word/document.xml")!.toString("utf8");
+  const title = [...xml.matchAll(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g)].map((m) => m[0]).find((p) => p.includes("第六条 数据与信息安全"))!;
+  assert.match(title, /<w:b\/>/, "新条标题沿用条标题的加粗");
+  assert.doesNotMatch(title, /ListNumber|w:numPr/, "新条标题不进款的自动编号");
+  // 原先：标题占一个款号（“3. 第六条 数据与信息安全”），后面的款号多顺延一位
+  assert.deepEqual(docxListLabels(clean).filter(Boolean), ["1.", "2.", "3.", "4.", "5."]);
+});
