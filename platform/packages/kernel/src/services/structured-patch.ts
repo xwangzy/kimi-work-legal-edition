@@ -225,6 +225,46 @@ export function numberingShifts(before: Buffer, after: Buffer): NumberingShifts 
 }
 
 /** 合并写入时先做段后插入（不改原有段落文字），再做替换：替换不会把插入的锚点改掉（复核 Q2-06）；各自保持原先后次序。 */
+/**
+ * 多轮修订（V12 R-8）：上一轮 docx.revise 出的清洁稿作为本轮底稿。真实走查 R4b：律师追问“在上一版清洁稿基础上再改两处”，
+ * docx.revise 只认律师上传的材料、docx.edit_draft 只认 docx.render_report 的草稿，清洁稿两边都不收，助手只能请律师把清洁稿下载后重新导入。
+ * 只收本事项的 revision_clean；文件名回到原件名（本轮修订稿仍叫“××（修订稿）”），版本链沿用原件，修订稿只显示本轮改动。
+ */
+function priorCleanAsSource(db: KernelDb, matterId: string, id: string): (PatchSource & { prior_clean: PriorClean }) | null {
+  const a = db.get<{ artifact_version_id: string; matter_id: string; tenant_id: string; filename: string; sha256: string; storage_uri: string; manifest: string; lineage: string | null; created_at: string }>(
+    `SELECT artifact_version_id, matter_id, tenant_id, filename, sha256, storage_uri, manifest, lineage, created_at FROM artifact_versions WHERE artifact_version_id = ? AND matter_id = ? AND kind = 'revision_clean'`,
+    [id, matterId],
+  );
+  if (!a) return null;
+  let source: string | null = null;
+  try {
+    source = (JSON.parse(a.manifest || "{}") as { source_document_version_id?: string }).source_document_version_id ?? null;
+  } catch {}
+  return {
+    document_version_id: a.artifact_version_id,
+    matter_id: a.matter_id,
+    tenant_id: a.tenant_id,
+    filename: a.filename.replace(/（清洁稿）(\.docx)$/i, "$1"),
+    sha256: a.sha256,
+    storage_uri: a.storage_uri,
+    prior_clean: { lineage: a.lineage, created_at: a.created_at, source_document_version_id: source },
+  };
+}
+interface PatchSource {
+  document_version_id: string;
+  matter_id: string;
+  tenant_id: string;
+  filename: string;
+  sha256: string;
+  storage_uri: string;
+  prior_clean?: PriorClean;
+}
+interface PriorClean {
+  lineage: string | null;
+  created_at: string;
+  source_document_version_id: string | null;
+}
+
 const insertsFirst = (ops: readonly RevisionOp[]): RevisionOp[] => [...ops.filter((o) => o.insertAfter), ...ops.filter((o) => !o.insertAfter)];
 
 export function applyStructuredPatches(
@@ -243,10 +283,10 @@ export function applyStructuredPatches(
   },
 ): PatchResult {
   const { db, blobs, tokens } = deps;
-  const doc = db.get<{ document_version_id: string; matter_id: string; tenant_id: string; filename: string; sha256: string; storage_uri: string }>(
+  const doc: PatchSource | null = db.get<PatchSource>(
     `SELECT document_version_id, matter_id, tenant_id, filename, sha256, storage_uri FROM document_versions WHERE document_version_id = ? AND quarantined_at IS NULL`,
     [input.document_version_id],
-  );
+  ) ?? priorCleanAsSource(db, input.matter_id, input.document_version_id);
   if (!doc || doc.matter_id !== input.matter_id) throw new DomainError("not_found", "文档不存在或无权查看", 404);
   const patches = Array.isArray(input.patches) ? input.patches.slice(0, 500) : [];
   const blocked = tokens.conflicts(input.matter_id);
@@ -260,8 +300,10 @@ export function applyStructuredPatches(
     ok: false,
   }));
   if (patches.length === 0) return { status: "preview", reason: "no_patches", conflicts: [], preview };
-  // 版本：只在当前版本上改（已被新版本取代 → 预览，由律师在新版本上重做）
-  const newer = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM document_versions WHERE supersedes = ?`, [doc.document_version_id])!;
+  // 版本：只在当前版本上改（已被新版本取代 → 预览，由律师在新版本上重做）；上一轮清洁稿作底稿的，须是同一份文件最新的清洁稿
+  const newer = doc.prior_clean
+    ? { n: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM artifact_versions WHERE matter_id = ? AND kind = 'revision_clean' AND lineage IS ? AND created_at > ?`, [doc.matter_id, doc.prior_clean.lineage, doc.prior_clean.created_at])!.n }
+    : db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM document_versions WHERE supersedes = ?`, [doc.document_version_id])!;
   if (newer.n > 0) return { status: "preview", reason: "document_version_superseded", conflicts: [], preview };
   if (!doc.filename.toLowerCase().endsWith(".docx")) return { status: "preview", reason: "not_docx", conflicts: [], preview };
   const buf = blobs.read(doc.storage_uri);
@@ -433,7 +475,8 @@ export function applyStructuredPatches(
   const v = db.get<{ next: number }>(`SELECT COALESCE(MAX(version), 0) + 1 AS next FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = 'internal'`, [doc.matter_id, kind])!;
   const filename = doc.filename.replace(/\.docx$/i, `${input.filename_suffix ?? "（修订建议）"}.docx`);
   const manifest = {
-    source_document_version_id: doc.document_version_id,
+    source_document_version_id: doc.prior_clean?.source_document_version_id ?? doc.document_version_id,
+    ...(doc.prior_clean ? { base_artifact_version_id: doc.document_version_id, round: "在上一轮清洁稿上继续修订" } : {}),
     source_sha256: doc.sha256,
     patches: ops.length,
     tokens_restored: tokensRestored,
@@ -444,7 +487,7 @@ export function applyStructuredPatches(
     `INSERT INTO artifact_versions
       (artifact_version_id, tenant_id, matter_id, run_id, kind, version, baseline_id, audience, status, filename, sha256, storage_uri, open_items, manifest, created_by, lineage)
      VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,?,?,?,?)`,
-    [artifactId, doc.tenant_id, doc.matter_id, input.run_id ?? null, kind, v.next, filename, stored.sha256, stored.storage_uri, "[]", JSON.stringify(manifest), input.created_by, docLineage(doc.document_version_id)],
+    [artifactId, doc.tenant_id, doc.matter_id, input.run_id ?? null, kind, v.next, filename, stored.sha256, stored.storage_uri, "[]", JSON.stringify(manifest), input.created_by, doc.prior_clean ? doc.prior_clean.lineage : docLineage(doc.document_version_id)],
   );
   return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(buf, sanitizeDocx(out).docx), label_notes: labelNotes, changes: [...hfRows, ...changeRows(paragraphs, labels, spans, ops, paragraphPlaces(buf, paragraphs, labels))] };
 }

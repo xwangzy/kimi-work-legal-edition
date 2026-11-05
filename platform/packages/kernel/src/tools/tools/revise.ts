@@ -143,7 +143,10 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   const documentVersionId = String(p.document_version_id ?? "");
   const dryRun = p.dry_run === true;
   // 原件里已有的修订（第 34 批）：对方返回的带修订稿上再改时，清洁稿会把对方的修订一并接受——让助手先告诉律师
-  const src = ctx.db.get<{ storage_uri: string; filename: string }>(`SELECT storage_uri, filename FROM document_versions WHERE document_version_id = ? AND matter_id = ?`, [documentVersionId, mid]);
+  const src =
+    ctx.db.get<{ storage_uri: string; filename: string }>(`SELECT storage_uri, filename FROM document_versions WHERE document_version_id = ? AND matter_id = ?`, [documentVersionId, mid]) ??
+    // 多轮修订（V12 R-8）：上一轮的清洁稿作底稿
+    ctx.db.get<{ storage_uri: string; filename: string }>(`SELECT storage_uri, filename FROM artifact_versions WHERE artifact_version_id = ? AND matter_id = ? AND kind = 'revision_clean'`, [documentVersionId, mid]);
   const srcBuf = src && src.filename.toLowerCase().endsWith(".docx") ? ctx.blobs.read(src.storage_uri) : null;
   const prior = srcBuf ? existingRevisions(srcBuf) : null;
   const priorNote = prior && prior.total > 0
@@ -219,7 +222,7 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
     ...priorNote,
     ...hfNote,
     ...numberingNotes(r, true),
-    note: `修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；清洁稿已接受全部修订、去掉批注；${compareReg ? "修改对照表逐段列出修改前后与理由（由系统按实际写入的修改生成，不用另写）；" : ""}原件不变。批注是写给律师的修改理由，发给对方前须删除批注或改用清洁稿。`,
+    note: `修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；清洁稿已接受全部修订、去掉批注；${compareReg ? "修改对照表逐段列出修改前后与理由（由系统按实际写入的修改生成，不用另写）；" : ""}原件不变。批注是写给律师的修改理由，发给对方前须删除批注或改用清洁稿。律师要在这一版上接着改的，下一轮 document_version_id 填 clean.artifact_version_id。`,
   };
 }
 
