@@ -12,3 +12,7 @@ __pycache__/
 
 # 本机工具配置（含机器特定路径）
 .claude/
+
+# 试用安装包（内置可还原的 MaaS 密钥，偏离 D-160）：不得入库
+*Trial-Setup-*.exe
+output/Windows试用版-*/

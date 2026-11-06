@@ -16,12 +16,20 @@
  *   env  用 CSC_LINK / CSC_KEY_PASSWORD（正式证书，由发布流程注入）；
  *   none 不签名（缺省；SmartScreen 会拦截，只用于本机检查）。
  *
- * 用法：node scripts/package-desktop.mjs [--target win32-x64] [--sign dev|env|none] [--skip-build] [--dir]
+ * 用法：node scripts/package-desktop.mjs [--target win32-x64] [--sign dev|env|none] [--skip-build] [--dir] [--trial]
  *   --dir 只产出未打包目录（release/win-unpacked），便于检查内容。
+ *   --trial 试用构建（偏离 D-160，apps/desktop/electron/trial-mode.cjs）：安装包内置本机法律模型网关与封装的中软 MaaS 密钥，
+ *           不接云端控制面；与 release.json 互斥。密钥从 KWL_TRIAL_KEY_FILE 指向的文件读取（只含密钥一行，不入库），
+ *           上游 KWL_TRIAL_BASE（缺省 https://maas.jointpilot.com/v1）、型号 KWL_TRIAL_MODEL（缺省 kimi-k3.1-pro）、
+ *           可选到期日 KWL_TRIAL_EXPIRES（YYYY-MM-DD，过期后 AI 功能停用）。产物名 KimiWorkLegal-Trial-Setup-<版本>.exe。
+ *           **封装只防明文被直接搜到：拿到安装包的人可以还原密钥**。
+ *   Apple 芯片的 Mac 上出 NSIS 安装包：electron-builder 自带的 makensis 是 x86_64，设 ELECTRON_BUILDER_NSIS_DIR 指向
+ *   scripts/mac-nsis-shim.mjs 生成的目录（改用 Homebrew 的原生 makensis）。
  */
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { createRequire } from "node:module";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,6 +45,7 @@ const target = arg("--target", "win32-x64");
 const sign = arg("--sign", "none");
 const skipBuild = argv.includes("--skip-build");
 const dirOnly = argv.includes("--dir");
+const trialBuild = argv.includes("--trial");
 const [platform, arch] = target.split("-");
 const log = (m) => console.log(`[package-desktop] ${m}`);
 // node 直接以本进程的可执行文件运行（不经 shell）；只有 npm/npx 在 Windows 上是 .cmd，须经 shell——此时逐个参数加引号，
@@ -47,6 +56,23 @@ const run = (cmd, args, opts = {}) => {
   if (process.platform === "win32") return execFileSync([cmd, ...args.map(quoteWin)].join(" "), [], { stdio: "inherit", cwd: root, shell: true, ...opts });
   return execFileSync(cmd, args, { stdio: "inherit", cwd: root, ...opts });
 };
+
+// 试用构建的输入先核对（构建要几分钟，别到最后才失败）；密钥只读进内存，不打印
+let trial = null;
+if (trialBuild) {
+  if (existsSync(join(desktop, "electron/release.json"))) throw new Error("--trial 与 electron/release.json 互斥：试用构建不接云端，先移走 release.json");
+  const keyFile = process.env.KWL_TRIAL_KEY_FILE;
+  if (!keyFile || !existsSync(keyFile)) throw new Error("--trial 需要 KWL_TRIAL_KEY_FILE（只含中软 MaaS 密钥一行的文件）");
+  const apiKey = readFileSync(keyFile, "utf8").trim();
+  if (!/^[\x21-\x7e]{16,256}$/.test(apiKey)) throw new Error("KWL_TRIAL_KEY_FILE 的内容不像一把 API 密钥（须为 16～256 个可见 ASCII 字符、单行）");
+  const upstreamBase = process.env.KWL_TRIAL_BASE ?? "https://maas.jointpilot.com/v1";
+  if (!/^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(upstreamBase)) throw new Error("KWL_TRIAL_BASE 必须是 https 地址");
+  const model = process.env.KWL_TRIAL_MODEL ?? "kimi-k3.1-pro";
+  if (!/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(model)) throw new Error("KWL_TRIAL_MODEL 格式不对");
+  const expires = process.env.KWL_TRIAL_EXPIRES;
+  if (expires !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(expires)) throw new Error("KWL_TRIAL_EXPIRES 须为 YYYY-MM-DD");
+  trial = { apiKey, upstreamBase, model, expires };
+}
 
 // 暂只支持 win32-x64（复核 B4-A02）：锁文件只有 x64 的 Node 与原生包，electron-builder.yml 也写死 x64
 if (target !== "win32-x64") throw new Error(`暂只支持 win32-x64 安装包（得到 ${target}）`);
@@ -110,7 +136,28 @@ await build({
   sourcemap: false,
   logLevel: "warning",
   legalComments: "none",
+  // 试用构建：本次的解封密钥写进主进程制品（trial-mode.cjs 的 __KWL_TRIAL_SEAL__）
+  ...(trial ? { define: { __KWL_TRIAL_SEAL__: JSON.stringify((trial.sealKey = randomBytes(32)).toString("base64")) } } : {}),
 });
+if (trial) {
+  // 本机法律模型网关（utilityProcess）：网关与席位令牌代码打成一个文件
+  await build({
+    entryPoints: [join(desktop, "electron/trial-gateway.mjs")],
+    outfile: join(stage, "electron/trial-gateway.bundle.cjs"),
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    target: "node24",
+    external: ["electron"],
+    sourcemap: false,
+    logLevel: "warning",
+    legalComments: "none",
+  });
+  const { sealTrialKey } = createRequire(import.meta.url)("../apps/desktop/electron/trial-mode.cjs");
+  const cfg = { trial: true, label: "试用版", upstream_base: trial.upstreamBase, model: trial.model, ...(trial.expires ? { expires: trial.expires } : {}), sealed: sealTrialKey(trial.apiKey, trial.sealKey) };
+  writeFileSync(join(stage, "electron/trial.json"), `${JSON.stringify(cfg, null, 2)}\n`);
+  log(`试用构建：本机网关 → ${trial.upstreamBase}（${trial.model}）${trial.expires ? `，${trial.expires} 到期` : ""}；密钥已封装`);
+}
 for (const f of ["preload.cjs", "kernel.bundle.cjs"]) cpSync(join(desktop, "electron", f), join(stage, "electron", f));
 // 随包运行时的期望摘要放进 asar（主进程按它核对 resources/runtime，见 runtime-paths.cjs trustedManifestFile）；
 // 另记 asar.unpacked 里原生模块的摘要（内核进程装载它，asar 完整性不覆盖 unpacked；复核 B4-A01）
@@ -159,6 +206,20 @@ else log("提示：未找到 electron/release.json——安装包不含中软云
 // K9-1：v5 SDK 宿主已退役——暂存目录里不得出现它的制品或 SDK 入口（防止旧的本地构建产物被带进安装包）
 for (const f of readdirSync(join(stage, "electron"))) if (/^agent-host/.test(f)) throw new Error(`暂存目录含已退役的 SDK 宿主制品：electron/${f}`);
 if (readFileSync(join(stage, "electron/kernel.bundle.cjs"), "utf8").includes("createKimiHarness")) throw new Error("内核制品含已退役的 SDK 宿主入口（createKimiHarness）：先重新构建内核");
+// 试用构建：暂存目录里不得出现明文密钥（封装失效或误把密钥文件放进来时中止）
+if (trial) {
+  const needle = Buffer.from(trial.apiKey, "utf8");
+  const scan = (d) => {
+    for (const ent of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, ent.name);
+      if (ent.isDirectory()) scan(p);
+      else if (readFileSync(p).includes(needle)) throw new Error(`暂存目录含明文试用密钥：${p.slice(stage.length + 1)}`);
+    }
+  };
+  scan(stage);
+  trial.apiKey = null;
+  log("试用构建：暂存目录未发现明文密钥");
+}
 log(`暂存完成 → ${stage}`);
 
 // 正式发布门禁（第 13 批，评审 Z4 P0-3）：放了 release.json 的安装包不得随包开发内容签名公钥、不得用测试代码签名证书——
@@ -199,6 +260,8 @@ if (sign === "dev") {
 } else throw new Error(`未知的 --sign ${sign}`);
 
 const builderArgs = ["electron-builder", "--win", `--${arch}`, "--config", "electron-builder.yml", "--publish", "never"];
+// 试用安装包另起文件名（与正式安装包、更新源上的文件区分）
+if (trial) builderArgs.push("-c.nsis.artifactName=KimiWorkLegal-Trial-Setup-${version}.${ext}");
 if (dirOnly) builderArgs.push("--dir");
 run("npx", builderArgs, { cwd: desktop, env });
 log(`完成 → ${join(desktop, "release")}`);

@@ -12,7 +12,8 @@ const { APP_INDEX_URL, handleAppProtocol, registerAppScheme } = require("./app-p
 const { resolveBundledRuntime, verifyRuntimeDigests } = require("./runtime-paths.cjs");
 const { adoptDbKey, loadOrCreateDbKey, purgeOldDumps } = require("./secret-store.cjs");
 const { quarantineUnreadable } = require("./unreadable-data.cjs");
-const { kernelChildEnv, loadReleaseConfig } = require("./release-config.cjs");
+const { kernelChildEnv, loadReleaseConfig, OS_ENV_ALLOW } = require("./release-config.cjs");
+const trialMode = require("./trial-mode.cjs");
 const { initUpdater } = require("./updater.cjs");
 const { parseSmokeArg, writeSmokeResult, SmokeFailure } = require("./smoke-io.cjs");
 const { createIdentityRestart } = require("./identity-restart.cjs");
@@ -264,6 +265,110 @@ function releaseConfig() {
   return releaseCached;
 }
 
+/**
+ * 试用构建（trial-mode.cjs，偏离 D-160）：asar 里有 trial.json 才是试用版；正式构建（有 release.json）不会同时带它。
+ * 本机法律模型网关以 utilityProcess 运行，主进程解封 MaaS 密钥后经进程消息交给它；内核只拿到回环地址与席位令牌。
+ */
+let trialCached;
+function trialConfig() {
+  if (trialCached !== undefined) return trialCached;
+  trialCached = null;
+  if (app.isPackaged) {
+    const r = trialMode.loadTrialConfig(path.join(__dirname, "trial.json"));
+    if (r && r.problems.length) slog.event("MAIN_TRIAL_CONFIG_PROBLEM", { count: r.problems.length });
+    if (r && r.config) trialCached = r.config;
+  }
+  return trialCached;
+}
+const trialGw = { proc: null, info: null, port: 0, seatPrivateKeyPem: null, starting: null, exits: [], warned: false };
+function startTrialGateway() {
+  const cfg = trialConfig();
+  if (!cfg) return Promise.resolve(null);
+  if (trialGw.info) return Promise.resolve(trialGw.info);
+  if (trialGw.starting) return trialGw.starting;
+  trialGw.seatPrivateKeyPem ??= require("node:crypto").generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" });
+  trialGw.starting = new Promise((resolve) => {
+    const env = {};
+    for (const [k, v] of Object.entries(process.env)) if (OS_ENV_ALLOW.has(k.toUpperCase()) && typeof v === "string") env[k] = v;
+    const meterDir = path.join(DATA_DIR, ".trial-gateway");
+    try {
+      require("node:fs").mkdirSync(meterDir, { recursive: true });
+    } catch {}
+    let apiKey;
+    try {
+      apiKey = cfg.unseal();
+    } catch {
+      slog.event("MAIN_TRIAL_GATEWAY_FAILED", { code: "unseal" });
+      resolve(null);
+      return;
+    }
+    const p = utilityProcess.fork(path.join(__dirname, "trial-gateway.bundle.cjs"), [], { env, stdio: "ignore", serviceName: "Kimi Work Legal Trial Gateway" });
+    trialGw.proc = p;
+    let settled = false;
+    const done = (info) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      trialGw.starting = null;
+      trialGw.info = info;
+      resolve(info);
+    };
+    const timer = setTimeout(() => {
+      slog.event("MAIN_TRIAL_GATEWAY_FAILED", { code: "timeout" });
+      try {
+        p.kill();
+      } catch {}
+      done(null);
+    }, 20_000);
+    p.on("message", (m) => {
+      if (m && m.type === "ready" && Number.isInteger(m.port) && typeof m.seatToken === "string") {
+        trialGw.port = m.port;
+        slog.event("MAIN_TRIAL_GATEWAY_READY", {});
+        done({ port: m.port, seatToken: m.seatToken });
+      } else if (m && m.type === "failed") {
+        slog.event("MAIN_TRIAL_GATEWAY_FAILED", { code: String(m.code).slice(0, 32) });
+        done(null);
+      }
+    });
+    p.on("exit", () => {
+      if (trialGw.proc === p) {
+        trialGw.proc = null;
+        trialGw.info = null;
+      }
+      done(null);
+      if (appExiting) return;
+      // 意外退出：同一端口、同一席位私钥重新拉起（内核手里的令牌与地址仍有效）；2 分钟内超过 5 次即停止
+      const now = Date.now();
+      trialGw.exits = trialGw.exits.filter((t) => now - t < 120_000);
+      trialGw.exits.push(now);
+      slog.event("MAIN_TRIAL_GATEWAY_EXIT", { recent: trialGw.exits.length });
+      if (trialGw.exits.length <= 5) setTimeout(() => void startTrialGateway(), 1_000);
+    });
+    p.postMessage({
+      type: "init",
+      apiKey,
+      upstreamBase: cfg.upstreamBase,
+      model: cfg.model,
+      seatPrivateKeyPem: trialGw.seatPrivateKeyPem,
+      tenant: trialMode.TRIAL_TENANT,
+      meterFile: path.join(meterDir, "meter.jsonl"),
+      port: trialGw.port,
+    });
+    apiKey = null;
+  });
+  return trialGw.starting;
+}
+function stopTrialGateway() {
+  const p = trialGw.proc;
+  trialGw.proc = null;
+  trialGw.info = null;
+  if (p) {
+    try {
+      p.kill();
+    } catch {}
+  }
+}
+
 /** 自动更新状态（W7）：界面横幅据此提示“新版本已就绪，重启后生效”；不强制重启、不打断进行中的任务。 */
 const updateState = { handle: null, last: { state: "idle" } };
 function startUpdater() {
@@ -316,6 +421,21 @@ async function startKernel() {
   let dbKey = keyResult.key;
   // 安装包形态：上游地址与钉住集只认随包的 release.json（审计 S5）；内核环境按白名单构造、数据目录与入口写定（复核 B3-A02、C-A15）
   const release = releaseConfig();
+  // 试用构建：先拉起本机网关（失败也照常拉起内核：界面可用，任务会提示 AI 服务不可用），只提示一次
+  let trialEnv = null;
+  if (trialConfig()) {
+    const gw = trialMode.trialExpired(trialConfig()) ? null : await startTrialGateway();
+    trialEnv = trialMode.trialKernelEnv(gw);
+    if (!gw && !trialGw.warned && !smoke.out) {
+      trialGw.warned = true;
+      dialog.showErrorBox(
+        "试用版暂时连不上 AI 服务",
+        trialMode.trialExpired(trialConfig())
+          ? `本试用版已于 ${trialConfig().expires} 到期，AI 功能已停用。请联系提供试用的同事获取新版本。`
+          : "本机的 AI 转发服务没有启动成功，案件材料与文书仍可正常查看。请关闭应用后重新打开；仍不行请联系提供试用的同事。",
+      );
+    }
+  }
   kernelStopped = false;
   kernel = utilityProcess.fork(bundle, [], {
     env: kernelChildEnv({
@@ -323,6 +443,7 @@ async function startKernel() {
       isDev,
       processEnv: process.env,
       release,
+      trialEnv,
       paths: { dataDir: DATA_DIR, gateEntry, kapEntry },
       appVersion: app.getVersion(),
       runtimeEnv: restart.runtimeEnv,
@@ -810,6 +931,16 @@ function createWindow() {
   });
 
   win.on("focus", () => win.flashFrame(false));
+  // 试用构建：窗口标题始终带“（试用版）”（界面会改写标题以显示待处理数）
+  const trial = trialConfig();
+  if (trial) {
+    const suffix = `（${trial.label}${trial.expires ? `，${trial.expires} 到期` : ""}）`;
+    win.setTitle(`Kimi Work 法律行业发行版${suffix}`);
+    win.on("page-title-updated", (e, title) => {
+      e.preventDefault();
+      win.setTitle(`${title}${suffix}`);
+    });
+  }
   wireContentProtection(win);
   if (isDev) {
     void win.loadURL(DEV_SERVER);
@@ -1072,8 +1203,14 @@ let quitAfterKernel = false;
 app.on("will-quit", (event) => {
   restart.quitting = true;
   appExiting = true;
-  if (!kernel || quitAfterKernel) return;
+  if (!kernel || quitAfterKernel) {
+    stopTrialGateway();
+    return;
+  }
   event.preventDefault();
   quitAfterKernel = true;
-  void stopKernel().then(() => app.quit());
+  void stopKernel().then(() => {
+    stopTrialGateway();
+    app.quit();
+  });
 });

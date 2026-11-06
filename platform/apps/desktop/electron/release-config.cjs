@@ -167,7 +167,11 @@ function packagedKernelEnv(processEnv, release) {
  * 开发形态：进程环境原样，数据目录与入口允许覆盖。随包运行时（runtimeEnv）最后叠加。
  */
 function kernelChildEnv(o) {
-  const base = o.packaged ? packagedKernelEnv(o.processEnv, o.release ?? { env: {} }) : o.processEnv;
+  // 试用构建（trial-mode.cjs，偏离 D-160）：白名单系统变量 + 试用附加项（本机回环网关、固定试用身份）；不叠加 release.json、
+  // 不下发严格传输策略、不要求控制面。只在安装包形态生效（开发形态本来就按进程环境）
+  const trial = o.packaged && o.trialEnv ? o.trialEnv : null;
+  const base = trial ? { ...packagedKernelEnv(o.processEnv, { env: {} }), ...trial } : o.packaged ? packagedKernelEnv(o.processEnv, o.release ?? { env: {} }) : o.processEnv;
+  if (trial) delete base.ZR_UPSTREAM_TLS;
   const pick = (k, fallback) => (!o.packaged && o.processEnv[k]) || fallback;
   // 安装包形态：子进程入口只来自核验过的随包运行时（runtimeEnv），不下发指向 asar 内并不存在的文件的缺省入口；
   // 缺项即运行时损坏（复核 B4-A20）。v5 SDK 宿主已退役（K9-1），没有它的入口
@@ -176,7 +180,7 @@ function kernelChildEnv(o) {
   }
   return {
     ...base,
-    ...(o.packaged ? { ZR_REQUIRE_CONTROL_PLANE: "1", ZR_AT_REST: "required" } : {}),
+    ...(o.packaged ? { ...(trial ? {} : { ZR_REQUIRE_CONTROL_PLANE: "1" }), ZR_AT_REST: "required" } : {}),
     ...(o.isDev ? {} : { ZR_KERNEL_TCP: "off" }),
     ZR_KERNEL_DATA_DIR: pick("ZR_KERNEL_DATA_DIR", o.paths.dataDir),
     // 客户端版本（v9.3 P3 版本分布统计）：只认数字点分加短后缀
