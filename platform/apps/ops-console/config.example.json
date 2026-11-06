@@ -1,0 +1,7 @@
+{
+  "_comment": "复制为 config.json 与 index.html 放在同一目录。control_plane_base：控制面的 https 地址（不带路径）；deployment：与控制面配置 ops.deployment、运营名册的部署标识一致；point_price_cny：可选，每点参考单价（元），只用于页面上显示“约 ¥”，不参与计费；label：可选，页头显示的环境名。",
+  "control_plane_base": "https://cp.kwl.example.com",
+  "deployment": "prod",
+  "point_price_cny": 0.001,
+  "label": "生产环境"
+}

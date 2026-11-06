@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- 正式部署由 Web 服务器下发更严的 CSP（connect-src 只写控制面地址，见 docs/部署-云端控制台与桌面端对接.md）；这里是兜底 -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'none'; form-action 'none'" />
+    <meta name="referrer" content="no-referrer" />
+    <title>运营控制台 · Kimi Work 法律版</title>
+    <link rel="stylesheet" href="console.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">K</span>
+        <div>
+          <div class="brand-title">Kimi Work 法律版 · 运营控制台</div>
+          <div class="brand-sub" id="env-line">读取配置中…</div>
+        </div>
+      </div>
+      <div class="who" id="who" hidden>
+        <span id="who-text"></span>
+        <button type="button" class="btn ghost" id="btn-logout">退出（丢弃私钥）</button>
+      </div>
+    </header>
+
+    <main id="app">
+      <section class="panel login" id="login" hidden>
+        <h1>载入运营私钥</h1>
+        <p class="hint">
+          每个运营请求都在本页用<strong>你本人的私钥</strong>签名后直接发给控制面；私钥只放在本页内存里，不上传、不落盘，关掉页面或点“退出”即丢弃。
+          私钥由你本人用 <code>ops-cli keygen</code> 生成，公钥须已由安全管理员登记进运营名册。
+        </p>
+        <form id="login-form" autocomplete="off">
+          <label>运营编号<input name="operator" required placeholder="op_0001" pattern="op_[0-9]{4,12}" /></label>
+          <label>密钥编号<input name="kid" required placeholder="k1" value="k1" pattern="[a-z0-9][a-z0-9\-]{0,23}" /></label>
+          <label>私钥文件<input name="keyfile" type="file" required accept=".pem,.key,.txt" /></label>
+          <label>私钥口令（没有可不填）<input name="passphrase" type="password" autocomplete="off" /></label>
+          <button class="btn primary" type="submit">载入并连接控制面</button>
+          <p class="error" id="login-error" role="alert"></p>
+        </form>
+      </section>
+
+      <section id="dash" hidden>
+        <div class="toolbar">
+          <h1>律所租户</h1>
+          <div class="toolbar-actions">
+            <input type="search" id="filter" placeholder="按名称或租户编号筛选" />
+            <button type="button" class="btn" id="btn-refresh">刷新</button>
+            <button type="button" class="btn" id="btn-export-all">导出月度用量（CSV）</button>
+            <button type="button" class="btn primary" id="btn-new">开通律所</button>
+          </div>
+        </div>
+        <div class="stats" id="stats"></div>
+        <div class="table-wrap">
+          <table class="grid" id="tenant-table">
+            <thead>
+              <tr>
+                <th>律所</th>
+                <th>版本</th>
+                <th class="num">席位（已用/总数）</th>
+                <th class="num">本月已用</th>
+                <th class="num">月度上限</th>
+                <th class="num">池余额</th>
+                <th>订阅到期</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p class="empty" id="empty" hidden>还没有租户。点“开通律所”开第一个。</p>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="detail" class="drawer" aria-labelledby="detail-title">
+      <div class="drawer-head">
+        <div>
+          <h2 id="detail-title"></h2>
+          <div class="muted" id="detail-sub"></div>
+        </div>
+        <button type="button" class="btn ghost" data-close>关闭</button>
+      </div>
+      <div class="drawer-body" id="detail-body"></div>
+    </dialog>
+
+    <dialog id="new-tenant" class="modal" aria-labelledby="new-title">
+      <form id="new-form" method="dialog">
+        <h2 id="new-title">开通律所</h2>
+        <p class="hint">开通后须再“发创始开通码”给律所管理员；律所在客户端输入开通码完成登记（经运营接口开通的租户一律要求开通码）。</p>
+        <label>租户编号<input name="tid" required placeholder="ten_zhonglun" pattern="ten_[A-Za-z0-9_\-]{1,60}" /></label>
+        <label>律所名称<input name="name" maxlength="40" placeholder="某某律师事务所" /></label>
+        <label>版本
+          <select name="edition"><option value="team">团队版（team）</option><option value="firm">律所版（firm）</option></select>
+        </label>
+        <label>席位数<input name="seats" type="number" min="1" max="10000" value="5" required /></label>
+        <label>订阅天数<input name="days" type="number" min="1" max="3650" value="365" required /></label>
+        <label>开通时注入点数（须有加量权限）<input name="points" type="number" min="0" value="0" /></label>
+        <p class="error" role="alert"></p>
+        <div class="row-end">
+          <button type="button" class="btn ghost" data-close>取消</button>
+          <button type="submit" class="btn primary" value="ok">开通</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="console.js"></script>
+  </body>
+</html>

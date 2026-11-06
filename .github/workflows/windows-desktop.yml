@@ -82,6 +82,18 @@ jobs:
           Export-PfxCertificate -Cert $cert -FilePath $pfx -Password (ConvertTo-SecureString $pw -AsPlainText -Force) | Out-Null
           "CSC_LINK=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "CSC_KEY_PASSWORD=$pw" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      # 第 37 批：要连某套云端（试点 / 预发）的测试包，把 scripts/make-release-config.mjs 生成的 release.json（只有地址、钉住值与公钥，
+      # 不含秘密）整份放进仓库变量 KWL_RELEASE_JSON；没设即与以前一样，不带云端上游。本工作流用测试证书与开发内容公钥，release.json 须标 "test_build": true
+      - name: 内置云端上游（可选，仓库变量 KWL_RELEASE_JSON）
+        env:
+          KWL_RELEASE_JSON: ${{ vars.KWL_RELEASE_JSON }}
+        run: |
+          if [ -n "$KWL_RELEASE_JSON" ]; then
+            printf '%s' "$KWL_RELEASE_JSON" > apps/desktop/electron/release.json
+            node -e 'const r=require("./apps/desktop/electron/release-config.cjs").loadReleaseConfig("apps/desktop/electron/release.json");if(r.problems.length){console.error(r.problems.join("\n"));process.exit(1)}console.log("release.json 校验通过：", Object.keys(r.env).filter(k=>k.endsWith("_BASE")).join(" "))'
+          else
+            echo "未设 KWL_RELEASE_JSON：安装包不带云端上游"
+          fi
       - name: 构建安装包（随包 Node 按锁文件核验；签名）
         run: node scripts/package-desktop.mjs --sign env
       - name: 发布签名清单（测试密钥）

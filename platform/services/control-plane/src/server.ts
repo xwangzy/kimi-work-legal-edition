@@ -1051,12 +1051,55 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           return { ok: true, tenant: tenantSummary(t) };
         },
       };
+    // 运营控制台（第 37 批）：租户列表与按租户的用量明细，只读（tenant.read）。同 tenantSummary：不给成员姓名与标识，席位只给席位编号
+    if (method === "GET" && p === "/v1/ops/tenants")
+      return {
+        perm: "tenant.read",
+        action: "tenant.list",
+        tid: none,
+        target: none,
+        run: () => ({ tenants: [...tenants.values()].sort((a, b) => a.created_at.localeCompare(b.created_at)).map(tenantSummary) }),
+      };
     const m = /^\/v1\/ops\/tenants\/([A-Za-z0-9_-]{1,64})(?:\/(.+))?$/.exec(p);
     if (!m) return null;
     const tid = m[1]!;
     const rest = m[2] ?? "";
     const at = () => tid;
     if (method === "GET" && rest === "") return { perm: "tenant.read", action: "tenant.read", tid: at, target: none, run: () => ({ tenant: tenantSummary(tenantOf(tid)) }) };
+    if (method === "GET" && rest === "usage")
+      return {
+        perm: "tenant.read",
+        action: "tenant.usage",
+        tid: at,
+        target: none,
+        run: () => {
+          const t = tenantOf(tid);
+          const q = quotaView(t.quota, now(), { detail: false, seatOwner: () => null, ownSid: null });
+          const seats = new Map([...t.seatsByUser.values()].map((s) => [s.sid, s]));
+          const leases = Object.values(t.quota.leases);
+          return {
+            tid: t.tid,
+            issued_at: iso(),
+            period: q.period,
+            paused: q.paused,
+            cap_monthly: q.cap_monthly,
+            cap_set_at: q.cap_set_at,
+            // 律所管理员设的上限 cap_set_by 是设备编号（含成员标识）：对外只给种类
+            cap_set_by: t.quota.cap_set_by === null ? null : issuerKind(t.quota.cap_set_by),
+            period_used: q.period_used,
+            in_flight: q.in_flight,
+            pool_remaining: t.quota.pool,
+            granted_total: t.quota.granted_total,
+            history: q.history,
+            // 本月按席位（席位编号是假名；只标在用或已收回，不给成员）
+            by_seat: Object.entries(t.quota.period_by_seat)
+              .map(([sid, u]) => ({ sid, status: seats.get(sid)?.revoked_at ? "revoked" : seats.has(sid) ? "active" : "unknown", points: u.points, requests: u.requests }))
+              .sort((a, b) => b.points - a.points),
+            seats: { total: t.seats, assigned: [...seats.values()].filter((s) => !s.revoked_at).length },
+            leases: { open: leases.filter((l) => l.closed_at === null).length, unreconciled: leases.filter((l) => l.unreconciled).length },
+          };
+        },
+      };
     if (method !== "POST") return null;
     if (rest === "activation-codes")
       return {

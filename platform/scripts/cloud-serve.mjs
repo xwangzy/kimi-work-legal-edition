@@ -47,7 +47,8 @@
  *            "roster_file": "/etc/kwl/ops-roster.json",          // 安全管理员签名的运营名册（每人的签名公钥、权限、状态；换文件即生效，至多 31 天须重签）
  *            "roster_keys_file": "/etc/kwl/ops-roster-keys.json", // 名册签名公钥 { kid: PEM }（只收公钥）
  *            "allow_cidrs": ["10.20.0.0/24"],                     // 运维网段（堡垒机出口）：来源不在其中的运营请求一律 404
- *            "min_roster_version": 12 } }                         // 可选：新实例或数据目录重建时的名册版本下限
+ *            "min_roster_version": 12,                            // 可选：新实例或数据目录重建时的名册版本下限
+ *            "console_origins": ["https://ops-console.kwl.internal"] } }  // 可选（第 37 批）：网页运营控制台的来源，只给它跨源读运营接口的回复（CORS）
  * 没有 ops：运营路径一律 404。名册版本记录、换版记录、随机数与被拒记录在 <data_dir>/<角色>/ops/；名册不可用时业务照常、运营接口 503。
  * 全部密钥文件除格式外还核“是不是随机生成的”（scripts/lib/secret-strength.mjs：拒绝重复、递增、单一字符类、占位词）；服务间凭据同一要求。
  *
@@ -146,6 +147,8 @@ const opsMod = await import(join(root, "packages/ops-auth/src/index.ts"));
 let opsGuard = null;
 /** 运维网段（null = 没有配置运营接口：运营路径一律 404）。 */
 let opsSources = null;
+/** 网页运营控制台的来源（ops.console_origins）：只对运营路径、只对这些来源回 CORS 头。 */
+let opsConsoleOrigins = null;
 /** 启动时名册不可用的原因（不拒绝启动，只让运营接口 503；可观测性建好后记一条错误日志）。 */
 let opsStartupProblem = null;
 /** 运营网段的合理性（复核 RA10A-10）：前缀不短于 IPv4 /8、IPv6 /32，合计覆盖不超过一个 /8（/32）；生产形态不许回环、未指定与链路本地地址。 */
@@ -183,6 +186,23 @@ if (cfg.ops !== undefined) {
     opsSources.addSubnet(addr, n, v4 ? "ipv4" : "ipv6");
   }
   if (cover4 > 1n << 24n || cover6 > 1n << 96n) fail("ops.allow_cidrs 合计覆盖过宽（IPv4 不超过一个 /8，IPv6 不超过一个 /32）");
+  // 网页运营控制台（第 37 批）：浏览器里用运营人员自己的私钥签名后直接调运营接口，须允许控制台来源跨源读回复。
+  // 只放行逐个列出的来源（https，完整来源、不带路径；不收通配）；不带凭据（运营请求按签名鉴权，没有 Cookie，不存在跨站请求伪造的会话）
+  if (c.console_origins !== undefined) {
+    if (!Array.isArray(c.console_origins) || c.console_origins.length === 0 || c.console_origins.length > 8) fail("ops.console_origins 须为 1–8 个控制台来源");
+    opsConsoleOrigins = new Set();
+    for (const x of c.console_origins) {
+      let u = null;
+      try {
+        u = new URL(String(x));
+      } catch {
+        u = null;
+      }
+      const loop = u && (u.hostname === "127.0.0.1" || u.hostname === "localhost" || u.hostname === "[::1]");
+      if (!u || u.origin !== String(x) || !(u.protocol === "https:" || (insecure && loop && u.protocol === "http:"))) fail(`ops.console_origins 里的 ${x} 须为 https 来源（形如 https://ops-console.example，不带路径与末尾斜杠）`);
+      opsConsoleOrigins.add(u.origin);
+    }
+  }
   const opsDir = join(dataDir(cfg.role), "ops");
   mkdirSync(opsDir, { recursive: true, mode: 0o700 });
   // 名册状态（缺失、签名不符、回滚、过期、版本记录损坏）不拒绝启动：业务照常，运营接口 503（复核 RA10A-03：回滚保护不能成为停服开关）
@@ -569,6 +589,24 @@ const handle = obs.wrap((req, res) => {
     res.writeHead(404, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
     res.end('{"error":"not_found"}');
     return;
+  }
+  // 运营控制台跨源（第 37 批）：来源在 console_origins 里才回允许头；预检由入口应答（运营守卫照常核验之后的真实请求）
+  if (opsConsoleOrigins && opsMod.OPS_PATH_RE.test(String(req.url ?? "/").split("?")[0])) {
+    const origin = typeof req.headers.origin === "string" ? req.headers.origin : "";
+    if (opsConsoleOrigins.has(origin)) {
+      res.setHeader("access-control-allow-origin", origin);
+      res.setHeader("vary", "Origin");
+      if (req.method === "OPTIONS") {
+        res.writeHead(204, {
+          "access-control-allow-methods": "GET, POST",
+          "access-control-allow-headers": "content-type, x-kwl-op, x-kwl-op-key, x-kwl-op-ts, x-kwl-op-nonce, x-kwl-op-sig",
+          "access-control-max-age": "600",
+          "cache-control": "no-store",
+        });
+        res.end();
+        return;
+      }
+    }
   }
   handlers.forEach((h) => h(req, res));
 });
