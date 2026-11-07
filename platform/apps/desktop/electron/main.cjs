@@ -326,7 +326,7 @@ function startTrialGateway() {
         slog.event("MAIN_TRIAL_GATEWAY_READY", {});
         done({ port: m.port, seatToken: m.seatToken });
       } else if (m && m.type === "failed") {
-        slog.event("MAIN_TRIAL_GATEWAY_FAILED", { code: String(m.code).slice(0, 32) });
+        slog.event("MAIN_TRIAL_GATEWAY_FAILED", { code: m.code === "port_in_use" ? "port_in_use" : m.code === "start_failed" ? "start_failed" : "other" });
         done(null);
       }
     });
