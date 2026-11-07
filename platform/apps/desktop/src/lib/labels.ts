@@ -89,7 +89,7 @@ export const SCENARIO_LABELS: Record<string, string> = {
  * 标题是令牌形态，传入 restore 才还原代号（下拉框里不能渲染胶囊）。
  */
 export function artifactName(a: { kind: string; filename: string; title?: string | null; run_title?: string | null; run_goal?: string | null }, restore?: (t: string) => string): string {
-  const agentKind = ["a1_workspace_file", "agent_table", "agent_report", "a1_agent_draft", "a1_agent_draft_partial"].includes(a.kind);
+  const agentKind = ["a1_workspace_file", "agent_table", "agent_report", "a1_agent_draft", "a1_agent_draft_partial", "a1_review_note"].includes(a.kind);
   // 审查意见表、审阅表按所审的合同或表命名（同一事项可有多份），用文件名去掉扩展名（v9.4 第 19 批）
   // v9.4 第 20 批：意见表 Word 版、据审阅表起草的证据目录与尽调发现同样按文件名
   // 文件名可能带代号（第 35 批 R3：助手拟的标题带当事人名）：与标题同样在界面还原
@@ -150,6 +150,8 @@ export const ARTIFACT_LABELS: Record<string, string> = {
   agent_report: "文书（草稿）",
   final_message: "助手回复",
   a1_agent_draft_partial: "助手草稿（部分完成）",
+  // 独立复核意见（V13 第 38 批）：不带起草上下文的复核，交回助手逐条处理
+  a1_review_note: "独立复核意见",
   consent_notice: "当事人告知函（草稿）",
 };
 

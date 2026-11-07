@@ -32,6 +32,7 @@ import { slimAgentPayload } from "./run-progress.ts";
 import { runCapabilities, runModeOf } from "../identity.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
 import { runLineage } from "../services/artifact-lineage.ts";
+import { REVIEW_KIND_OF_SKILL, fixPrompt, labeledText, parseFindings, reportText, reviewMessages, reviewNote, revisionDiff, type ReviewDoc, type ReviewFinding, type ReviewKind } from "../services/independent-review.ts";
 
 export interface ExecutorDeps {
   db: KernelDb;
@@ -49,6 +50,19 @@ export interface ExecutorDeps {
   agentWallMs?: number | undefined;
   /** 方法模板的主交付物（前言 outputs 第一项；第 34 批）：自由描述的任务按助手实际加载的方法核对主交付物。读当时生效的模板包。 */
   skillPrimaryOf?: ((skill: string) => string | null | undefined) | undefined;
+  /**
+   * 独立复核（V13 第 38 批）：起草、修改、意见与诉讼文书类任务交出 Word 文书后，内核另起一次不带起草上下文的模型调用复核，
+   * 意见交回原会话逐条处理。缺省开；本机配置 ZR_INDEPENDENT_REVIEW=off 关闭（测试与故障排查）。
+   */
+  independentReview?: boolean | undefined;
+  /** 复核调用时限（毫秒，缺省 15 分钟）与交回修改的工作时限（缺省 15 分钟）：超时只少了这一步，已交出的文书照常结算。 */
+  reviewLimitMs?: number | undefined;
+  reviewFixLimitMs?: number | undefined;
+  /**
+   * 复核调用的推理强度（缺省 low）。V13 实验（V15 股权转让协议，约 3 万字）：不传时厂商缺省 max，1,210 秒用尽 32,000 个输出 token 仍无正文；
+   * low 346 秒给出 8 条意见，与评分律师指出的核心缺陷（资金缺口、诚意金冲突、业绩补偿时间错位、法定代表人笔误）重合。
+   */
+  reviewEffort?: "low" | "high" | undefined;
 }
 
 interface RunRow {
@@ -1185,9 +1199,288 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   const expected = expectedPrimary();
   const missing = outcomeStatus === "succeeded" ? primaryDeliverableMissing(db, runId, expected) : null;
   if (missing) appendEvent(ctx.deps, runId, attemptId, AGENT_PRIMARY_MISSING_SEQ, "agent.primary_missing", { primary: missing.primary, cause: missing.cause });
-  const finalStatus = outcomeStatus === "partial" || missing ? RunStatus.partial : RunStatus.succeeded;
-  const finalRemaining = missing ? [...remaining, missing.note] : remaining;
+  // 独立复核（V13 第 38 批）：主任务完整交出文书后才做；追问（在原会话上继续）不再复核
+  const reviewed =
+    outcomeStatus === "succeeded" && !missing && !continueSession
+      ? await runReviewStage(ctx, run, runId, attemptId, identity, { skill, goalSent, snapshot, ctxM, purpose, fx, wallMs })
+      : { remaining: [] as string[], partial: false };
+  assertNoUnresolved();
+  const finalStatus = outcomeStatus === "partial" || missing || reviewed.partial ? RunStatus.partial : RunStatus.succeeded;
+  const finalRemaining = [...remaining, ...(missing ? [missing.note] : []), ...reviewed.remaining];
   await ctx.step("settle", () => stepSettle(ctx, runId, attemptId, finalStatus, finalRemaining));
+}
+
+/** 独立复核的事件序号段（V13 第 38 批）：与工作流固定序号、成果段 69+、宿主事件镜像 10000+ 都不冲突；交回修改那一轮的宿主事件镜像到 30000+。 */
+const REVIEW_SEQ = { started: 9_100, completed: 9_101, note: 9_102, fixStarted: 9_103, fixOutcome: 9_104, skipped: 9_105, fixArtifacts: 9_200, fixMirror: 30_000 } as const;
+const REVIEW_LIMIT_MS = 15 * 60_000;
+const REVIEW_FIX_LIMIT_MS = 15 * 60_000;
+
+/** 本任务实际用到的方法：律师指定的优先，其次助手加载的（按加载顺序第一个属于复核范围的）。 */
+export function reviewKindOf(db: KernelDb, runId: string, skill: string | null): { kind: ReviewKind; skill: string } | null {
+  if (skill) return REVIEW_KIND_OF_SKILL[skill] ? { kind: REVIEW_KIND_OF_SKILL[skill]!, skill } : null;
+  for (const row of db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.skill' ORDER BY seq`, [runId])) {
+    let s: unknown = null;
+    try {
+      s = JSON.parse(row.payload)?.skill;
+    } catch {}
+    if (typeof s === "string" && REVIEW_KIND_OF_SKILL[s]) return { kind: REVIEW_KIND_OF_SKILL[s]!, skill: s };
+  }
+  return null;
+}
+
+/**
+ * 复核对象：本任务登记的 Word 文书，每个文件名取最新一版。修改文书任务取清洁稿与修改对照表，并按清洁稿登记的原件做段落差异。
+ * 纯查询 + 读成果块。
+ */
+export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string, kind: ReviewKind): { docs: ReviewDoc[]; diff: string[]; title: string } | null {
+  const rows = deps.db.all<{ filename: string; storage_uri: string; manifest: string | null; created_at: string }>(
+    `SELECT filename, storage_uri, manifest, created_at FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','revision_draft','revision_clean') AND lower(filename) LIKE '%.docx' ORDER BY created_at, version`,
+    [runId, matterId],
+  );
+  const latest = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) latest.set(r.filename, r);
+  let picked = [...latest.values()];
+  let diff: string[] = [];
+  if (kind === "revise") {
+    const clean = picked.filter((r) => /（清洁稿）\.docx$/i.test(r.filename)).at(-1);
+    picked = picked.filter((r) => !/（修订稿）\.docx$/i.test(r.filename));
+    if (clean) {
+      const srcId = (() => {
+        try {
+          return String(JSON.parse(clean.manifest ?? "{}")?.source_document_version_id ?? "");
+        } catch {
+          return "";
+        }
+      })();
+      const src = srcId ? deps.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM document_versions WHERE document_version_id = ? AND matter_id = ?`, [srcId, matterId]) : undefined;
+      if (src) {
+        try {
+          diff = revisionDiff(deps.blobs.read(src.storage_uri), deps.blobs.read(clean.storage_uri));
+        } catch {
+          diff = [];
+        }
+      }
+    }
+  }
+  if (picked.length === 0) return null;
+  const docs = picked.slice(0, 4).map((r) => {
+    const buf = deps.blobs.read(r.storage_uri);
+    let text = "";
+    try {
+      text = /（清洁稿）\.docx$/i.test(r.filename) ? labeledText(buf).join("\n") : reportText(buf);
+    } catch {
+      text = "";
+    }
+    if (!text.trim()) {
+      try {
+        text = labeledText(buf).join("\n");
+      } catch {}
+    }
+    return { filename: r.filename, text };
+  });
+  const main = picked.find((r) => /（清洁稿）\.docx$/i.test(r.filename)) ?? picked[0]!;
+  return { docs: docs.filter((d) => d.text.trim().length > 0), diff, title: main.filename.replace(/\.docx$/i, "") };
+}
+
+/**
+ * 独立复核与交回修改（V13 第 38 批）：主任务成功交出 Word 文书后执行。
+ * ①复核：经出站闸门调用法律模型（流式，带时限），不带主任务的对话上下文，只给委托原话、材料快照与交付件文字（均为代号形态）；
+ * ②意见登记为《独立复核意见》（内部成果，律师可下载）；③有意见时接着原会话发起一轮修改（不出计划、单独时限），
+ * 助手逐条核对、修改或说明理由并重写最终答复。任何一步失败或超时都不影响已交出的文书，只在“还差什么”里如实写明。
+ * 返回追加给律师的未完成说明。
+ */
+async function runReviewStage(
+  ctx: Ctx,
+  run: RunRow,
+  runId: string,
+  attemptId: string,
+  identity: { tid: string; uid: string; mid: string; rid: string; aid: string; fence: number },
+  p: { skill: string | null; goalSent: string; snapshot: { filename: string; text: string }[]; ctxM: { stance: string; jurisdiction: string; asOf: string }; purpose: string; fx: readonly string[]; wallMs: number },
+): Promise<{ remaining: string[]; partial: boolean }> {
+  const { db, broker, agentClient } = ctx.deps;
+  const none = { remaining: [] as string[], partial: false };
+  if (ctx.deps.independentReview === false) return none;
+  const picked = reviewKindOf(db, runId, p.skill);
+  if (!picked) return none;
+  const targets = reviewTargets(ctx.deps, runId, run.matter_id, picked.kind);
+  if (!targets || targets.docs.length === 0) return none;
+  const tz = ctx.deps.tokens;
+  const tok = (texts: string[]) => (tz ? tz.tokenizeAll(run.matter_id, texts).map((r) => r.text) : texts.map((t) => replaceDirectIdentifiers(t).text));
+
+  // ① 复核（检查点：重试时不重复调用模型）
+  const review = await ctx.step("independent_review", async (): Promise<{ ok: boolean; text: string; findings: ReviewFinding[]; error?: string }> => {
+    assertNotCancelled(db, runId);
+    const docTexts = tok([...targets.docs.map((d) => d.text), ...targets.diff]);
+    const docs = targets.docs.map((d, i) => ({ filename: tok([d.filename])[0]!, text: docTexts[i]! }));
+    const diff = docTexts.slice(targets.docs.length);
+    appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.started, "review.started", { kind: picked.kind, skill: picked.skill, docs: docs.map((d) => d.filename), diff_lines: diff.length });
+    const messages = reviewMessages({ kind: picked.kind, stance: p.ctxM.stance, jurisdiction: p.ctxM.jurisdiction, asOf: p.ctxM.asOf, goal: p.goalSent, materials: p.snapshot, docs, diff });
+    const limit = ctx.deps.reviewLimitMs ?? REVIEW_LIMIT_MS;
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), limit);
+    const started = Date.now();
+    try {
+      const s = await broker.chatStream({
+        matter: loadMatter(db, run.matter_id),
+        task: { tid: run.tenant_id, uid: run.created_by, mid: run.matter_id, rid: runId, aid: attemptId },
+        route: "legal/k3",
+        messages,
+        effort: ctx.deps.reviewEffort ?? "low",
+        maxTokens: 24_000,
+        clientIdempotencyId: `review_${runId}_${attemptId}`,
+        signal: ac.signal,
+        note: "独立复核：只含委托原话、材料快照与交付件文字（代号形态）",
+      });
+      let text = "";
+      for await (const chunk of s.chunks) {
+        if (ac.signal.aborted) break;
+        if (chunk === "[DONE]") break;
+        try {
+          const d = JSON.parse(chunk);
+          const c = d?.choices?.[0]?.delta?.content;
+          if (typeof c === "string") text += c;
+        } catch {}
+      }
+      await s.finalize().catch(() => undefined);
+      if (ac.signal.aborted) throw new Error(`复核超过 ${Math.round(limit / 60_000)} 分钟没有完成`);
+      // 正文为空不是“没有问题”（V13 实验：上游缺省推理强度下 32,000 个输出 token 全部用在推理上，正文为空）
+      if (!text.trim()) throw new Error("复核没有给出意见（模型输出为空，可能是推理用尽了输出上限）");
+      recordToolOperation(db, runId, attemptId, "model", "review", { route: "legal/k3" }, "succeeded");
+      const findings = /未发现实质问题/.test(text) && !/【\s*1\s*】/.test(text) ? [] : parseFindings(text);
+      appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.completed, "review.completed", {
+        kind: picked.kind,
+        findings: findings.length,
+        must: findings.filter((f) => f.must).length,
+        seconds: Math.round((Date.now() - started) / 1000),
+        request_id: s.requestId,
+      });
+      return { ok: true, text, findings };
+    } catch (e) {
+      recordToolOperation(db, runId, attemptId, "model", "review", { route: "legal/k3" }, "failed");
+      const error = String((e as Error)?.message ?? e).slice(0, 200);
+      appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.skipped, "review.skipped", { kind: picked.kind, reason: "review_failed", error });
+      return { ok: false, text: "", findings: [], error };
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+  // 复核调用失败：文书照常交付（时间线写明“未经复核”），不改结算状态
+  if (!review.ok) return { remaining: [`独立复核没有完成（${review.error ?? "模型调用失败"}）：文书未经复核，请律师按方法的自检清单核对后使用`], partial: false };
+
+  // ② 复核意见登记为内部成果（代号形态，下载时还原）
+  await ctx.step("independent_review_note", async () => {
+    const buf = Buffer.from(reviewNote(targets.title, review.findings, review.text), "utf8");
+    const stored = ctx.deps.blobs.put(buf, run.matter_id);
+    db.tx(() =>
+      registerArtifact(ctx, run, runId, attemptId, {
+        kind: "a1_review_note",
+        filename: `独立复核意见-${targets.title}.md`,
+        sha256: stored.sha256,
+        storage_uri: stored.storage_uri,
+        manifest: { note: "独立复核意见：不带起草上下文的复核（V13 第 38 批），已交回助手逐条处理", findings: review.findings.length },
+      }, REVIEW_SEQ.note),
+    );
+    return { ok: true };
+  });
+  if (review.findings.length === 0) return none;
+
+  // ③ 交回原会话修改
+  const started = db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.started' ORDER BY seq DESC LIMIT 1`, [runId])[0];
+  const sid = started ? (() => {
+    try {
+      return JSON.parse(started.payload)?.session_id;
+    } catch {
+      return null;
+    }
+  })() : null;
+  if (typeof sid !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(sid)) {
+    appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.skipped, "review.skipped", { kind: picked.kind, reason: "no_session" });
+    return { remaining: [`独立复核提出 ${review.findings.length} 条意见，未能交回助手修改（找不到原会话）：请按《独立复核意见》核对`], partial: true };
+  }
+  const fix = await ctx.step("independent_review_fix", async (): Promise<{ status: string; files: number; error?: string }> => {
+    assertNotCancelled(db, runId);
+    const goal = tok([fixPrompt(picked.kind, review.findings, review.text)])[0]!;
+    const limit = ctx.deps.reviewFixLimitMs ?? REVIEW_FIX_LIMIT_MS;
+    let taskId: string;
+    try {
+      taskId = await agentClient.start(identity, { goal, materials: [], timeout_ms: limit, wall_ms: p.wallMs, purpose: p.purpose, fx: p.fx, continue_session_id: sid, plan_first: false, task_suffix: "review" });
+    } catch (e) {
+      const error = String((e as Error)?.message ?? e).slice(0, 200);
+      appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.fixOutcome, "review.fix_outcome", { status: "start_failed", error });
+      return { status: "start_failed", files: 0, error };
+    }
+    appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.fixStarted, "review.fix_started", { agent_task_id: taskId, findings: review.findings.length });
+    const t0 = Date.now();
+    let deadline = t0 + limit + 60_000;
+    let last = t0;
+    let cursor = 0;
+    let poll: Awaited<ReturnType<AgentClient["poll"]>> | null = null;
+    try {
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 800));
+        const current = getRun(db, runId);
+        if (current.status === RunStatus.cancelled) throw new RunCancelled();
+        const now = Date.now();
+        if (current.status === RunStatus.waitingApproval || current.status === RunStatus.waitingInput) deadline += now - last;
+        last = now;
+        if (now > deadline || now > t0 + p.wallMs) break;
+        const pr = await agentClient.poll(identity, taskId, cursor);
+        cursor = pr.next_cursor;
+        for (const ev of pr.events) {
+          if (AGENT_TIMELINE_EVENTS.has(ev.type)) appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.fixMirror + ev.seq, ev.type, slimAgentPayload(ev.type, ev.payload));
+        }
+        if (pr.status !== "starting" && pr.status !== "running") {
+          poll = pr;
+          break;
+        }
+      }
+    } finally {
+      if (!poll) await agentClient.cancel(identity, taskId, "review fix ended").catch(() => undefined);
+    }
+    if (!poll) {
+      appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.fixOutcome, "review.fix_outcome", { status: "timed_out" });
+      return { status: "timed_out", files: 0 };
+    }
+    if (poll.status !== "succeeded" && poll.status !== "partial") {
+      appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.fixOutcome, "review.fix_outcome", { status: poll.status, reason: poll.reason, error: poll.error });
+      return { status: String(poll.status), files: 0, ...(poll.error ? { error: poll.error } : {}) };
+    }
+    // 修改那一轮的最终答复与工作区文件照常登记（最终答复与主任务同名，成为同一份答复的新版本）
+    const accepted = poll.artifacts.filter((a) => {
+      if (a.kind !== "workspace_file") return true;
+      try {
+        verifyOfficeArtifact(a.filename, () => Buffer.from(a.bytes));
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    const stored = accepted.map((a) => {
+      const buf = Buffer.from(a.bytes);
+      if (sha256Hex(buf) !== a.sha256) throw new DomainError("internal", "成果 hash 与完成记录不一致（F5）", 502);
+      return { a, stored: ctx.deps.blobs.put(buf, run.matter_id) };
+    });
+    db.tx(() => {
+      let seq: number = REVIEW_SEQ.fixArtifacts;
+      for (const { a, stored: st } of stored) {
+        const isFile = a.kind === "workspace_file";
+        registerArtifact(ctx, run, runId, attemptId, {
+          kind: isFile ? "a1_workspace_file" : "a1_agent_draft",
+          open_items: outlineOpenItems(db, runId),
+          filename: isFile ? workspaceArtifactName(a.filename) : `草稿-${fileDay()}.md`,
+          sha256: st.sha256,
+          storage_uri: st.storage_uri,
+          manifest: { agent_task_id: taskId, agent_artifact_kind: a.kind, outcome: poll!.status, stage: "independent_review_fix", note: "独立复核后的修改与最终答复（A1 产物状态只能是草稿）", budget_cap: 60 },
+        }, seq++);
+      }
+    });
+    appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.fixOutcome, "review.fix_outcome", { status: poll.status, files: stored.length, seconds: Math.round((Date.now() - t0) / 1000) });
+    return { status: String(poll.status), files: stored.length };
+  });
+  if (fix.status === "succeeded") return none;
+  // 复核提出了意见而修改没做完：已知问题未处理，记部分完成并写明（文书是复核前或处理到一半的版本）
+  if (fix.status === "partial") return { remaining: [`独立复核意见已交回助手处理，处理没有全部完成：请对照《独立复核意见》与最终答复里的“独立复核处理情况”核对`], partial: true };
+  return { remaining: [`独立复核提出 ${review.findings.length} 条意见，交回助手修改没有完成（${fix.status === "timed_out" ? "超过时限" : fix.error ?? fix.status}）：文书是复核前的版本，请按《独立复核意见》逐条核对`], partial: true };
 }
 
 /**

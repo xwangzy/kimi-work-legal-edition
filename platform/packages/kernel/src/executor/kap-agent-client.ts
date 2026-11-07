@@ -391,7 +391,9 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
 
   return {
     async start(id, req) {
-      const taskId = `kap_${id.rid}_${id.aid}`;
+      // 同一尝试里内核接着原会话再发起一轮（独立复核后的修改，V13 第 38 批）：任务编号另加后缀——运行令牌按任务编号吊销，
+      // 上一轮结束时已吊销的编号若被沿用，这一轮的模型令牌一出生就被闸门以 token_revoked 拒绝（用例 b38-independent-review 复现）
+      const taskId = `kap_${id.rid}_${id.aid}${req.task_suffix && /^[a-z0-9]{1,16}$/.test(req.task_suffix) ? `_${req.task_suffix}` : ""}`;
       // 复核 B4-B11：同一事项上一任务尚未收尾（律师取消后马上重开：内核已置“已取消”，宿主要等执行器轮询发现并取消后才释放事项）——
       // 先等它收尾（有上限）再发起，而不是让宿主以“同一事项已有运行中的任务”拒绝、律师看到“先受理后失败”。
       // 等待在占用运行槽位之前；超时仍未收尾即照常发起（宿主如实拒绝）
@@ -461,7 +463,8 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
               matter_id: id.mid,
               goal: req.goal,
               mode: ro.mode ?? policy.maxMode,
-              plan_first: ro.plan_first ?? true,
+              // 内核自己接着原会话发起的一轮（独立复核后的修改，V13 第 38 批）不再出计划：plan_first 由调用方给定
+              plan_first: req.plan_first ?? ro.plan_first ?? true,
               ...(preauthorized.length ? { preauthorized } : {}),
               // 工作时限（不含等待律师）：宿主按此判“超过工作时限”，内核另有带宽限的兜底
               ...(req.timeout_ms ? { time_limit_ms: req.timeout_ms } : {}),

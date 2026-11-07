@@ -11,7 +11,7 @@ export interface AgentClient {
    */
   start(
     id: { tid: string; uid: string; mid: string; rid: string; aid: string; fence: number },
-    req: { goal: string; materials: { filename: string; text: string }[]; timeout_ms?: number; wall_ms?: number; purpose?: string; fx?: readonly string[]; continue_session_id?: string },
+    req: { goal: string; materials: { filename: string; text: string }[]; timeout_ms?: number; wall_ms?: number; purpose?: string; fx?: readonly string[]; continue_session_id?: string; plan_first?: boolean; task_suffix?: string },
   ): Promise<string>;
   poll(id: { tid: string; uid: string }, taskId: string, cursor: number): Promise<AgentTaskPoll>;
   /** 取消；kap-host 适配器返回取消结果（复核 B4-B07：执行器据此直接记入事项账本），SDK 宿主不返回。 */

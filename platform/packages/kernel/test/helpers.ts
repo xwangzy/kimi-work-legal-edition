@@ -28,7 +28,8 @@ export async function makeKernel(env: Record<string, string> = {}, slug = "test-
     firmSlug: slug,
     userSlug: "test-lawyer",
     // 唯一引擎是 kap-host（K9-1：SDK 宿主已退役）；须跑通模型请求的用例另起云端 v0（cloud-v0.ts）并传其环境
-    env: { ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_LAWDB_FILE: process.env.ZR_LAWDB_FILE ?? LAWDB_FIXTURE, ZR_LAWDB_ALLOW_TEST_FIXTURE: "1", ...env },
+    // 独立复核（V13 第 38 批）缺省关：已有用例按脚本数模型调用与成果数；复核用例（b38-independent-review）显式打开
+    env: { ...process.env, ZR_MODEL_PROVIDER: "mock", ZR_LAWDB_FILE: process.env.ZR_LAWDB_FILE ?? LAWDB_FIXTURE, ZR_LAWDB_ALLOW_TEST_FIXTURE: "1", ZR_INDEPENDENT_REVIEW: "off", ...env },
   });
   return { kernel, dir, inv: (m, p) => kernel.invoke(m, p) };
 }

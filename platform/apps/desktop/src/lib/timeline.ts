@@ -372,6 +372,29 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         });
         break;
       }
+      // 独立复核（V13 第 38 批）：文书交出后由内核另起一次不带起草上下文的复核，意见交回助手逐条处理
+      case "review.started":
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "wait", title: "独立复核：另一位“复核人”只看委托、材料和交出的文书，逐项复核", at });
+        break;
+      case "review.completed": {
+        const n = Number(p.findings ?? 0);
+        const must = Number(p.must ?? 0);
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "ok", title: n > 0 ? `独立复核提出 ${n} 条意见（其中必须改 ${must} 条），已交回助手处理` : "独立复核未发现实质问题", at, detail: n > 0 ? "意见见交付件《独立复核意见》；处理结果见最终答复的“独立复核处理情况”" : undefined });
+        break;
+      }
+      case "review.skipped":
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: p.reason === "no_session" ? "独立复核意见没能交回助手修改，请按《独立复核意见》核对" : "独立复核没有完成，文书未经复核", at, detail: typeof p.error === "string" ? p.error : undefined });
+        break;
+      case "review.fix_started":
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "wait", title: "助手按复核意见逐条核对、修改", at });
+        break;
+      case "review.fix_outcome":
+        steps.push(
+          p.status === "succeeded"
+            ? { key: `${e.event_id}`, level: "lawyer", icon: "ok", title: "复核意见已处理完", at }
+            : { key: `${e.event_id}`, level: "lawyer", icon: "fail", title: p.status === "timed_out" ? "按复核意见修改超过时限，文书是复核前的版本" : "按复核意见修改没有完成，文书是复核前的版本", at },
+        );
+        break;
       case "agent.primary_missing":
         // 主交付物核对（第 28 批）：文书类方法没交出 Word 文书——如实告诉律师，任务记部分完成
         steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: `没有交出《${String(p.primary ?? "文书")}》`, at, detail: PRIMARY_MISSING_CAUSES[String(p.cause)] ?? "" });

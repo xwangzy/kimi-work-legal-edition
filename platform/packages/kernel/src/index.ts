@@ -474,7 +474,13 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const agentWallMs = Number.isFinite(wall) && wall >= 2000 ? wall : undefined;
   // 主交付物（第 34 批）：读当时生效的方法模板包（内容更新后 skillsBundle 会换）
   const skillPrimaryOf = (skill: string) => (skillsBundle.ok ? (skillsBundle.skills.find((x) => x.id === skill)?.primary_output ?? null) : null);
-  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf };
+  // 独立复核（V13 第 38 批）：缺省开；ZR_INDEPENDENT_REVIEW=off 关闭；复核与交回修改各自的时限可调（毫秒）
+  const independentReview = !/^(off|0|false)$/i.test(String(env.ZR_INDEPENDENT_REVIEW ?? ""));
+  const msEnv = (v: string | undefined) => (Number.isFinite(Number(v)) && Number(v) >= 1000 ? Number(v) : undefined);
+  const reviewLimitMs = msEnv(env.ZR_REVIEW_LIMIT_MS);
+  const reviewFixLimitMs = msEnv(env.ZR_REVIEW_FIX_LIMIT_MS);
+  const reviewEffort = env.ZR_REVIEW_EFFORT === "high" ? ("high" as const) : ("low" as const);
+  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf, independentReview, reviewLimitMs, reviewFixLimitMs, reviewEffort };
   queue.register("legalRun", createLegalWorkflow(workflowDeps));
 
   const ocrModelPaths = {

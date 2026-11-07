@@ -1,0 +1,199 @@
+/**
+ * V13 第 38 批：独立复核。主任务交出 Word 文书后，内核另起一次不带起草上下文的模型调用复核（只看委托原话、材料与交付件），
+ * 意见登记为《独立复核意见》并交回原会话：助手逐条核对、用 docx.edit_draft 改正、重写最终答复。
+ * 根因（V9.6～V10 共 18 份独立律师评分 13～18 分，“分析深度”多为 1 分）：方法里写了自查清单，模型在同一上下文里自查照样漏——复核要换一双眼睛，
+ * 而且是工作流里必走的一步，不由模型临场决定做不做。
+ */
+process.env.ZR_INTERNAL_SECRET = process.env.ZR_INTERNAL_SECRET ?? "b38-review-secret-0123456789abcdef";
+import { test, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { makeKernel, waitRun, type TestKernel } from "./helpers.ts";
+import { startCloudV0, type CloudV0 } from "./cloud-v0.ts";
+import { parseFindings, fixPrompt, reviewMessages } from "../src/services/independent-review.ts";
+
+let tk: TestKernel;
+let cloud: CloudV0;
+
+before(async () => {
+  cloud = await startCloudV0({ tenant: "ten_b38-review-firm" });
+  tk = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "upstream", ZR_KERNEL_TCP: "off", ZR_INDEPENDENT_REVIEW: "on", ZR_REVIEW_LIMIT_MS: "20000", ZR_REVIEW_FIX_LIMIT_MS: "20000" }, "b38-review-firm");
+});
+
+after(async () => {
+  await tk.kernel.close();
+  await cloud.close();
+});
+
+type Msg = { role?: string; tool_call_id?: string; content?: unknown };
+const msgs = (body: Record<string, unknown>): Msg[] => (Array.isArray(body.messages) ? (body.messages as Msg[]) : []);
+const REVIEWER = "现在独立复核";
+
+async function startRun(marker: string) {
+  const { matter } = await tk.inv("matters.create", {
+    title: `复核测试 ${marker}`,
+    stance: "买方",
+    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
+    model_endpoint: "standard",
+  });
+  const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
+  return tk.inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `b38-${marker}-${Date.now()}`, goal: `${marker} 起草设备买卖合同，价款120万元`, skill: "contract-draft", mode: "default", plan_first: false });
+}
+
+/** 主任务出一份合同；复核调用回 reviewText；交回修改那一轮先用 edit_draft 把 100 万改成 120 万再写答复。 */
+function script(marker: string, reviewText: string, seen: { review: Record<string, unknown>[]; fixUser: string[] }) {
+  return (body: Record<string, unknown>) => {
+    const ms = msgs(body);
+    const sys = ms.filter((m) => m.role === "system").map((m) => String(m.content ?? "")).join("\n");
+    if (sys.includes(REVIEWER)) {
+      seen.review.push(body);
+      return { content: reviewText };
+    }
+    const first = JSON.stringify(ms.find((m) => m.role === "user")?.content ?? "");
+    if (!first.includes(marker)) return null;
+    const users = ms.filter((m) => m.role === "user").map((m) => JSON.stringify(m.content ?? ""));
+    const inFix = users.some((u) => u.includes("【独立复核】"));
+    const render = ms.find((m) => m.role === "tool" && m.tool_call_id === "render_1");
+    if (!render) {
+      return { toolCalls: [{ id: "render_1", name: "mcp__legal__docx_render_report", args: { title: "设备买卖合同", sections: [{ heading: "第一条 标的", paragraphs: ["1.1 买方向卖方购买压装设备一台。"] }, { heading: "第二条 价款", paragraphs: ["2.1 价款为人民币100万元。"] }] } }] };
+    }
+    if (!inFix) return { content: "已起草《设备买卖合同》。" };
+    seen.fixUser.push(users.at(-1) ?? "");
+    if (!ms.some((m) => m.role === "tool" && m.tool_call_id === "edit_1")) {
+      const id = /artv_[0-9a-f-]+/.exec(JSON.stringify(render.content ?? ""))?.[0];
+      return { toolCalls: [{ id: "edit_1", name: "mcp__legal__docx_edit_draft", args: { artifact_version_id: id, patches: [{ anchor: "价款为人民币100万元", proposed_text: "价款为人民币120万元" }] } }] };
+    }
+    return { content: "已按独立复核意见改正。\n\n独立复核处理情况：\n1｜已改（第 2.1 款价款改为 120 万元）" };
+  };
+}
+
+test("交出文书后独立复核：复核调用不带起草上下文，意见登记为《独立复核意见》，交回原会话改正后出新版本", { timeout: 180_000 }, async () => {
+  const seen = { review: [] as Record<string, unknown>[], fixUser: [] as string[] };
+  cloud.model.script = script("B38REV", "【1】第二条｜价款写成 100 万元，与委托的 120 万元不一致｜委托原话：价款120万元｜2.1 改为“价款为人民币120万元”｜必须改", seen);
+  try {
+    const run = await startRun("B38REV");
+    const done = await waitRun(tk.inv, run.run_id, 150_000);
+    const types = done.events.map((e: any) => e.type);
+    assert.equal(done.run.status, "succeeded", JSON.stringify(types));
+    // 复核调用：只有系统与用户两条消息（不带起草过程），用户消息里有委托原话、材料与交付件文字
+    assert.equal(seen.review.length, 1);
+    const rm = msgs(seen.review[0]!);
+    assert.deepEqual(rm.map((m) => m.role), ["system", "user"]);
+    const u = String(rm[1]!.content);
+    assert.match(u, /委托原话[\s\S]*B38REV/);
+    assert.match(u, /待复核交付件[\s\S]*价款为人民币100万元/);
+    assert.equal(/mcp__legal__|tool_call/.test(u), false, "复核提示里没有起草过程的工具调用");
+    const completed = done.events.find((e: any) => e.type === "review.completed");
+    assert.equal(completed?.payload.findings, 1);
+    assert.equal(completed?.payload.must, 1);
+    assert.ok(types.includes("review.fix_started") && types.includes("review.fix_outcome"), JSON.stringify(types));
+    assert.equal(done.events.find((e: any) => e.type === "review.fix_outcome")?.payload.status, "succeeded");
+    // 交回修改的提示带着复核意见原文
+    assert.match(seen.fixUser.at(-1) ?? "", /【独立复核】[\s\S]*价款写成 100 万元/);
+    // 成果：复核意见、合同第 2 版（120 万）、最终答复新版本
+    const note = done.artifacts.find((a: any) => a.kind === "a1_review_note");
+    assert.ok(note, "有《独立复核意见》");
+    const contracts = done.artifacts.filter((a: any) => a.kind === "agent_report" && a.filename === "设备买卖合同.docx");
+    assert.equal(contracts.length, 2, "合同有复核后的新版本");
+    const replies = done.artifacts.filter((a: any) => a.kind === "a1_agent_draft");
+    assert.equal(replies.length, 2, "最终答复有复核后的新版本");
+    const latest = await tk.inv("artifacts.download", { artifact_version_id: contracts.at(-1).artifact_version_id });
+    const { readZipText } = await import("@zr-legal/docx-engine");
+    assert.match((readZipText(Buffer.from(latest.data_base64, "base64"), "word/document.xml") ?? "").replace(/<[^>]+>/g, ""), /价款为人民币120万元/);
+    const md = await tk.inv("artifacts.download", { artifact_version_id: note.artifact_version_id });
+    assert.match(Buffer.from(md.data_base64, "base64").toString("utf8"), /独立复核意见[\s\S]*必须改/);
+  } finally {
+    cloud.model.script = null;
+  }
+});
+
+test("复核未发现实质问题：只登记复核意见，不再交回修改", { timeout: 120_000 }, async () => {
+  const seen = { review: [] as Record<string, unknown>[], fixUser: [] as string[] };
+  cloud.model.script = script("B38OK", "未发现实质问题。", seen);
+  try {
+    const run = await startRun("B38OK");
+    const done = await waitRun(tk.inv, run.run_id, 100_000);
+    const types = done.events.map((e: any) => e.type);
+    assert.equal(done.run.status, "succeeded", JSON.stringify(types));
+    assert.equal(done.events.find((e: any) => e.type === "review.completed")?.payload.findings, 0);
+    assert.equal(types.includes("review.fix_started"), false);
+    assert.equal(seen.fixUser.length, 0);
+    assert.ok(done.artifacts.some((a: any) => a.kind === "a1_review_note"));
+  } finally {
+    cloud.model.script = null;
+  }
+});
+
+test("复核调用失败：文书照常交付，“还差什么”写明未经复核", { timeout: 120_000 }, async () => {
+  const seen = { review: [] as Record<string, unknown>[], fixUser: [] as string[] };
+  const base = script("B38ERR", "", seen);
+  cloud.model.script = (body) => {
+    const sys = msgs(body).filter((m) => m.role === "system").map((m) => String(m.content ?? "")).join("\n");
+    if (sys.includes(REVIEWER)) return { status: 400, content: "bad request" };
+    return base(body);
+  };
+  try {
+    const run = await startRun("B38ERR");
+    const done = await waitRun(tk.inv, run.run_id, 100_000);
+    const types = done.events.map((e: any) => e.type);
+    assert.equal(done.run.status, "succeeded", JSON.stringify(types));
+    assert.ok(types.includes("review.skipped"), JSON.stringify(types));
+    const settled = done.events.find((e: any) => e.type === "run.succeeded");
+    assert.ok(settled, "照常结算");
+    assert.ok(done.artifacts.some((a: any) => a.kind === "agent_report" && a.filename === "设备买卖合同.docx"));
+  } finally {
+    cloud.model.script = null;
+  }
+});
+
+test("复核提出意见而交回修改失败：任务记部分完成，“还差什么”写明文书是复核前的版本", { timeout: 120_000 }, async () => {
+  const seen = { review: [] as Record<string, unknown>[], fixUser: [] as string[] };
+  const base = script("B38FIXERR", "【1】第二条｜价款与委托不一致｜委托原话｜改为 120 万元｜必须改", seen);
+  cloud.model.script = (body) => {
+    const users = msgs(body).filter((m) => m.role === "user").map((m) => JSON.stringify(m.content ?? ""));
+    if (users.some((u) => u.includes("【独立复核】")) && users.some((u) => u.includes("B38FIXERR"))) return { status: 400, content: "bad request" };
+    return base(body);
+  };
+  try {
+    const run = await startRun("B38FIXERR");
+    const done = await waitRun(tk.inv, run.run_id, 100_000);
+    const types = done.events.map((e: any) => e.type);
+    assert.equal(done.run.status, "partial", JSON.stringify(types));
+    assert.notEqual(done.events.find((e: any) => e.type === "review.fix_outcome")?.payload.status, "succeeded");
+    const settled = done.events.find((e: any) => e.type === "run.partial");
+    assert.match(String(settled?.payload.remaining?.join("") ?? ""), /复核前的版本/);
+    assert.ok(done.artifacts.some((a: any) => a.kind === "a1_review_note"), "复核意见照常登记");
+  } finally {
+    cloud.model.script = null;
+  }
+});
+
+test("复核正文为空（推理用尽输出上限）：按复核没有完成处理，不当作“未发现问题”", { timeout: 120_000 }, async () => {
+  const seen = { review: [] as Record<string, unknown>[], fixUser: [] as string[] };
+  cloud.model.script = script("B38EMPTY", "", seen);
+  try {
+    const run = await startRun("B38EMPTY");
+    const done = await waitRun(tk.inv, run.run_id, 100_000);
+    const types = done.events.map((e: any) => e.type);
+    assert.equal(done.run.status, "succeeded", JSON.stringify(types));
+    const skipped = done.events.find((e: any) => e.type === "review.skipped");
+    assert.match(String(skipped?.payload.error ?? ""), /输出为空/);
+    assert.equal(types.includes("review.completed"), false);
+    assert.equal(done.artifacts.some((a: any) => a.kind === "a1_review_note"), false);
+  } finally {
+    cloud.model.script = null;
+  }
+});
+
+test("复核意见解析：标准格式、续行与“建议改”；交回修改的提示按方法区分（修订任务重提完整修改清单）", () => {
+  const f = parseFindings("前言\n【1】第三条｜定金超过 20%｜民法典第五百八十六条｜改为 1,720 万元｜必须改\n【2】第 9.1 款｜上限封住全额赔偿\n续行说明｜算式：300<360｜提示律师｜建议改\n【3】整份没有签署页");
+  assert.equal(f.length, 3);
+  assert.deepEqual([f[0]!.where, f[0]!.must], ["第三条", true]);
+  assert.equal(f[1]!.must, false);
+  assert.match(f[1]!.problem, /上限封住全额赔偿 续行说明/);
+  assert.equal(f[2]!.problem, "整份没有签署页");
+  assert.match(fixPrompt("revise", f, ""), /重新调用 docx\.revise，提交完整的修改清单/);
+  assert.match(fixPrompt("draft", f, ""), /docx\.edit_draft/);
+  const m = reviewMessages({ kind: "revise", stance: "委托方", jurisdiction: "中国大陆", asOf: "2026-11-07", goal: "改第8.1款", materials: [{ filename: "原件.docx", text: "原文" }], docs: [{ filename: "清洁稿.docx", text: "改后" }], diff: ["［修改前］8.1 50万元\n［修改后］8.1 20万元"] });
+  assert.match(m[1]!.content, /原件与清洁稿的段落差异[\s\S]*8\.1 20万元/);
+  assert.match(m[1]!.content, /授权范围/);
+});
