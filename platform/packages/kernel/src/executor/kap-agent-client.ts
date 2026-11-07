@@ -630,7 +630,14 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
     async decide(runId, approvalId, req, approver) {
       const t = taskByRun.get(runId);
       if (!t || !t.approvals.has(approvalId)) throw Object.assign(new Error("审批不存在或已处理"), { code: "not_found" });
+      const card = t.approvals.get(approvalId);
       await call("approve", { approval_id: approvalId, request: req, approver });
+      // 退回计划时写的修改意见同样是律师的指示（已由内核令牌化）：与作答一并交给独立复核（V13 第 38 批）
+      const fb = typeof req.feedback === "string" ? req.feedback.trim() : "";
+      if (req.decision === "reject" && fb && card?.tool === "ExitPlanMode") {
+        answeredByRun.set(runId, [...(answeredByRun.get(runId) ?? []), `律师退回计划时的修改意见：${fb.slice(0, 2000)}`].slice(-40));
+        if (answeredByRun.size > 200) answeredByRun.delete(answeredByRun.keys().next().value!);
+      }
     },
     async answer(runId, questionId, answers, origin, expectedStateVersion) {
       const t = taskByRun.get(runId);

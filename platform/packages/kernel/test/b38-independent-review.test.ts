@@ -293,3 +293,40 @@ test("修改轮已改出新版本但没做完：“还差什么”写明以最�
     cloud.model.script = null;
   }
 });
+
+test("律师退回计划时写的修改意见也交给复核人（V13 W6 复测：律师在计划卡“提修改意见”里给出含税口径与付款比例）", { timeout: 180_000 }, async () => {
+  const seen = { review: [] as Record<string, unknown>[], fixUser: [] as string[] };
+  const inner = script("B38PLANFB", "未发现实质问题", seen);
+  const planPath = (body: Record<string, unknown>): string | null => /(\/[^\s"\\]+\/plans\/[A-Za-z0-9._-]+\.md)/.exec(JSON.stringify(body.messages ?? []))?.[1] ?? null;
+  cloud.model.script = (body: Record<string, unknown>) => {
+    const ms = msgs(body);
+    const sys = ms.filter((m) => m.role === "system").map((m) => String(m.content ?? "")).join("\n");
+    const first = JSON.stringify(ms.find((m) => m.role === "user")?.content ?? "");
+    if (!sys.includes(REVIEWER) && first.includes("B38PLANFB")) {
+      const answered = new Set(ms.filter((m) => m.role === "tool").map((m) => m.tool_call_id));
+      if (!answered.has("pl_write")) return { toolCalls: [{ id: "pl_write", name: "Write", args: { path: planPath(body) ?? "/nonexistent/plan.md", content: "# 计划\n1. 起草设备买卖合同\n" } }] };
+      if (!answered.has("pl_exit")) return { toolCalls: [{ id: "pl_exit", name: "ExitPlanMode", args: { options: [{ label: "按计划执行" }] } }] };
+      if (!answered.has("pl_exit2")) return { toolCalls: [{ id: "pl_exit2", name: "ExitPlanMode", args: { options: [{ label: "按修改后的计划执行" }] } }] };
+    }
+    return inner(body);
+  };
+  try {
+    const { matter } = await tk.inv("matters.create", { title: "复核测试 B38PLANFB", stance: "买方", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, model_endpoint: "standard" });
+    const doc = await importBytes(tk.inv, matter.matter_id, "交易条款清单.txt", Buffer.from("设备：压装设备一台。价款：人民币120万元。", "utf8"), "text/plain");
+    const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [doc.document_version_id] });
+    const run = await tk.inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `b38-planfb-${Date.now()}`, goal: "B38PLANFB 起草设备买卖合同，价款120万元", skill: "contract-draft", document_version_ids: [doc.document_version_id], mode: "default", plan_first: true });
+    let plans = 0;
+    const done = await waitRunAnswering(tk.inv, run.run_id, (card: any) => {
+      if (card.kind !== "plan") return { decision: "approve" };
+      plans += 1;
+      return plans === 1 ? { decision: "reject", feedback: "价款120万元按含税口径写" } : { decision: "approve", scope: "once" };
+    }, 150_000);
+    assert.equal(done.run.status, "succeeded", JSON.stringify(done.events.map((e: any) => e.type)));
+    assert.equal(plans, 2, "退回一次后第二次批准");
+    assert.equal(seen.review.length, 1);
+    const user = String(msgs(seen.review[0]!).find((m) => m.role === "user")?.content ?? "");
+    assert.ok(user.includes("律师退回计划时的修改意见：价款120万元按含税口径写"), user.slice(0, 800));
+  } finally {
+    cloud.model.script = null;
+  }
+});
