@@ -23,7 +23,9 @@ test("主进程：渲染会话网络层拦截非本机请求、拒绝权限、�
   // 安装包形态必须接入控制面（复核 S6-A17）：缺控制面配置即退出模式，不能以本机配置项的开发形态运行。
   // 环境拼装在 release-config.cjs 的 kernelChildEnv（行为见 apps/desktop/test/release-config.test.ts；复核 C-A15）
   assert.match(main, /kernelChildEnv\(\{\s*packaged: app\.isPackaged,/);
-  assert.match(read("electron/release-config.cjs"), /o\.packaged \? \{ ZR_REQUIRE_CONTROL_PLANE: "1", ZR_AT_REST: "required" \}/);
+  // 安装包形态必须接控制面、库必须加密；唯一例外是 Windows 试用构建（偏离 D-160：trial.json 只在安装包形态生效，仍要求加密）
+  assert.match(read("electron/release-config.cjs"), /o\.packaged \? \{ \.\.\.\(trial \? \{\} : \{ ZR_REQUIRE_CONTROL_PLANE: "1" \}\), ZR_AT_REST: "required" \}/);
+  assert.match(read("electron/release-config.cjs"), /const trial = o\.packaged && o\.trialEnv \? o\.trialEnv : null;/);
   assert.match(main, /webRequest\.onBeforeRequest\(\{ urls: \["<all_urls>"\] \}/);
   assert.match(main, /callback\(\{ cancel: true \}\)/);
   assert.match(main, /setPermissionRequestHandler\(\(_wc, _permission, callback\) => callback\(false\)\)/);
