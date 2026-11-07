@@ -5,16 +5,25 @@
 import { useEffect, useState } from "react";
 import { api, type FactRow } from "../api.ts";
 import { factCounts, factSourceText } from "../lib/facts.ts";
+import { restoreTokens } from "../lib/tokens.ts";
+import { tokens } from "./Markdown.tsx";
 
 export function FactsPanel({ matterId, docs, readOnly }: { matterId: string; docs: { document_version_id: string; filename: string }[]; readOnly: boolean }) {
   const [facts, setFacts] = useState<FactRow[] | null>(null);
   const [show, setShow] = useState<"proposed" | "confirmed" | "rejected">("proposed");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  // 事实是 Agent 写的（代号形态）：与审查工作台、表格复核一样先还原再显示（V13 第 38 批真实走查 W5：“〔自然人·YDCE9A〕内部说明称……”原样显示，
+  // 律师在这页看不出是谁说的；整理案卷撞时限没交出时间线文件时，这页就是唯一的时间线）。还原只在渲染进程内存里
+  const [map, setMap] = useState<Map<string, string | null>>(new Map());
   const load = () =>
     api
       .facts(matterId)
-      .then((r) => setFacts(r.facts))
+      .then((r) => {
+        setFacts(r.facts);
+        const all = r.facts.map((f) => `${f.statement}\n${f.party ?? ""}`).join("\n");
+        if (all.includes("〔")) void restoreTokens(matterId, all).then(setMap).catch(() => {});
+      })
       .catch((e: Error) => setMsg(e.message));
   useEffect(() => {
     void load();
@@ -70,7 +79,7 @@ export function FactsPanel({ matterId, docs, readOnly }: { matterId: string; doc
               <tr key={f.fact_id}>
                 <td>{f.occurred_on ?? "—"}</td>
                 <td>
-                  {f.statement}
+                  {tokens(f.statement, map)}
                   {f.amount_yuan !== null && <div className="muted">金额：{f.amount_yuan.toLocaleString()} 元</div>}
                 </td>
                 <td className="muted">{factSourceText(f, fileOf)}</td>
