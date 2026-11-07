@@ -49,6 +49,8 @@ export interface ReviewFinding {
 /** 复核提示里单份文字的上限（字）：材料与交付件合计控制在模型上下文的一小部分以内。 */
 export const REVIEW_DOC_MAX = 60_000;
 export const REVIEW_MATERIAL_MAX = 40_000;
+/** 一次复核的文字总量上限（字）：交付件优先，材料按剩余额度平均分配。V13 实验：约 3 万字、推理强度 low 用时 346 秒。 */
+export const REVIEW_TOTAL_MAX = 120_000;
 
 const cut = (s: string, max: number) => (s.length <= max ? s : `${s.slice(0, max)}\n【以下 ${s.length - max} 字未提供】`);
 
@@ -152,6 +154,9 @@ export function reviewMessages(p: {
   docs: readonly ReviewDoc[];
   diff?: readonly string[];
 }): { role: "system" | "user"; content: string }[] {
+  const docTexts = p.docs.map((d) => `【交付件：${d.filename}】\n${cut(d.text, REVIEW_DOC_MAX)}`);
+  const used = docTexts.reduce((n, t) => n + t.length, 0) + (p.diff ?? []).reduce((n, t) => n + t.length, 0);
+  const perMaterial = Math.max(2_000, Math.min(REVIEW_MATERIAL_MAX, Math.floor((REVIEW_TOTAL_MAX - used) / Math.max(1, p.materials.length))));
   const system = [
     "你是本所负责质量把关的资深合伙人，在中国执业多年。",
     `${ROLE[p.kind]}；你没有参与起草，现在独立复核，决定能否交给客户或对方。`,
@@ -168,10 +173,10 @@ export function reviewMessages(p: {
     "不写交付件的优点，不泛泛而谈；法条不确定的写“需核验”，不要编造法条或案例；需要客户决定的商业条件写“需客户决定”，不要替客户定。",
     "",
     "=== 事项材料 ===",
-    ...p.materials.map((m) => `【材料：${m.filename}】\n${cut(m.text, REVIEW_MATERIAL_MAX)}`),
+    ...p.materials.map((m) => `【材料：${m.filename}】\n${cut(m.text, perMaterial)}`),
     "",
     "=== 待复核交付件 ===",
-    ...p.docs.map((d) => `【交付件：${d.filename}】\n${cut(d.text, REVIEW_DOC_MAX)}`),
+    ...docTexts,
     ...(p.diff && p.diff.length > 0 ? ["", "=== 原件与清洁稿的段落差异（系统比对，段首是自动编号） ===", ...p.diff] : []),
   ].join("\n");
   return [
