@@ -1504,7 +1504,20 @@ async function runReviewStage(
   if (fix.status === "succeeded") return none;
   // 复核提出了意见而修改没做完：已知问题未处理，记部分完成并写明（文书是复核前或处理到一半的版本）
   if (fix.status === "partial") return { remaining: [`独立复核意见已交回助手处理，处理没有全部完成：请对照《独立复核意见》与最终答复里的“独立复核处理情况”核对`], partial: true };
-  return { remaining: [`独立复核提出 ${review.findings.length} 条意见，交回助手修改没有完成（${fix.status === "timed_out" ? "超过时限" : fix.error ?? fix.status}）：文书是复核前的版本，请按《独立复核意见》逐条核对`], partial: true };
+  // 修改轮没做完时，助手可能已经用文书工具改出了新版本（工具当场登记，不随修改轮超时作废）——不能一律说“文书是复核前的版本”
+  // （V13 真实走查 W4：修改轮 15 分钟超时，意见书已改出第 4～6 版、计算表第 3 版，提示却写“文书是复核前的版本”）
+  const why = fix.status === "timed_out" ? "超过时限" : fix.error ?? fix.status;
+  const fixFrom = db.get<{ created_at: string }>(`SELECT created_at FROM run_events WHERE run_id = ? AND seq = ?`, [runId, REVIEW_SEQ.fixStarted])?.created_at;
+  const revised = fixFrom
+    ? db.all<{ filename: string }>(
+        `SELECT DISTINCT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND created_at >= ? AND kind IN ('agent_report','revision_draft','revision_clean','agent_table')`,
+        [runId, run.matter_id, fixFrom],
+      ).map((r) => r.filename)
+    : [];
+  if (revised.length > 0) {
+    return { remaining: [`独立复核提出 ${review.findings.length} 条意见，助手按意见改出了新版本（${revised.map((f) => `《${f.replace(/\.(docx|xlsx)$/i, "")}》`).join("")}），但修改没有全部完成（${why}），也没有写出“独立复核处理情况”：请以最新版本为准，按《独立复核意见》逐条核对哪些已改`], partial: true };
+  }
+  return { remaining: [`独立复核提出 ${review.findings.length} 条意见，交回助手修改没有完成（${why}）：文书是复核前的版本，请按《独立复核意见》逐条核对`], partial: true };
 }
 
 /**

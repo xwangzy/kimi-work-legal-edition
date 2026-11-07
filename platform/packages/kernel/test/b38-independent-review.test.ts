@@ -267,3 +267,29 @@ test("律师在任务中的答复交给复核人（V13 W6：律师答了“180 �
     cloud.model.script = null;
   }
 });
+
+test("修改轮已改出新版本但没做完：“还差什么”写明以最新版本为准，不说“文书是复核前的版本”（V13 真实走查 W4：修改轮超时前意见书已改出第 4～6 版）", { timeout: 120_000 }, async () => {
+  const seen = { review: [] as Record<string, unknown>[], fixUser: [] as string[] };
+  const base = script("B38FIXHALF", "【1】第二条｜价款与委托不一致｜委托原话｜改为 120 万元｜必须改\n【2】第一条｜标的型号未写｜条款清单｜补型号｜建议改", seen);
+  cloud.model.script = (body) => {
+    const ms = msgs(body);
+    const users = ms.filter((m) => m.role === "user").map((m) => JSON.stringify(m.content ?? ""));
+    const inFix = users.some((u) => u.includes("【独立复核】")) && users.some((u) => u.includes("B38FIXHALF"));
+    // 修改轮：先按第 1 条改出新版本（edit_1），之后模型出错，修改轮失败
+    if (inFix && ms.some((m) => m.role === "tool" && m.tool_call_id === "edit_1")) return { status: 400, content: "bad request" };
+    return base(body);
+  };
+  try {
+    const run = await startRun("B38FIXHALF");
+    const done = await waitRun(tk.inv, run.run_id, 100_000);
+    assert.equal(done.run.status, "partial", JSON.stringify(done.events.map((e: any) => e.type)));
+    const reports = done.artifacts.filter((a: any) => a.kind === "agent_report");
+    assert.ok(reports.some((a: any) => a.version >= 2), "修改轮已改出新版本");
+    const text = String(done.events.find((e: any) => e.type === "run.partial")?.payload.remaining?.join("") ?? "");
+    assert.match(text, /改出了新版本/);
+    assert.match(text, /以最新版本为准/);
+    assert.doesNotMatch(text, /复核前的版本/);
+  } finally {
+    cloud.model.script = null;
+  }
+});
