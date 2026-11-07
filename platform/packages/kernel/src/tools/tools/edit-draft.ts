@@ -16,6 +16,13 @@ import { findTokens } from "@zr-legal/tokenizer";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
 import type { DeliverableSection } from "../../services/deliverable-check.ts";
+import { slog } from "@zr-legal/safe-log";
+
+/** 结果分布留痕（V13 第 38 批）：只记计数，不记文字。 */
+function logOutcome(status: "applied" | "not_applied" | "preview", patches: number, applied: number, conflicts: readonly { reason: Reason }[]): void {
+  const n = (r: Reason) => conflicts.filter((c) => c.reason === r).length;
+  slog.event("TOOLS_DOCX_EDIT_OUTCOME", { tool: "docx_edit_draft", status, patches, applied, not_found: n("anchor_not_found") + n("anchor_empty"), ambiguous: n("anchor_ambiguous"), unknown_token: n("unknown_token"), other: n("overlap") + n("apply_failed") });
+}
 
 export const EDIT_DRAFT_MAX_PATCHES = 100;
 
@@ -146,6 +153,7 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
     }
   });
   if (conflicts.length > 0) {
+    logOutcome("not_applied", raw.length, 0, conflicts);
     return { status: "not_applied" as const, written: false, conflicts, note: "整体没有写入任何修改：按逐条原因改正后，把全部修改重新提交一次" };
   }
   let out: Buffer;
@@ -155,12 +163,15 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
     // 本产品生成的草稿保留版式标记（下载与导出照旧套函头），见 keepHouseMark
     out = keepHouseMark(buf, sanitizeDocx(applyRevisionsToDocx(buf, { baselineHash: art.sha256, ops: ordered }).docx).docx);
   } catch (e) {
+    logOutcome("not_applied", raw.length, 0, [{ reason: "apply_failed" }]);
     return { status: "not_applied" as const, written: false, conflicts: [{ index: 0, reason: "apply_failed" as const, fix: FIX.apply_failed, detail: (e as Error).message.slice(0, 200) }], note: "逐条都能定位，合并写入失败：通常是两条修改落在同一处，合并后重新提交" };
   }
   if (p.dry_run === true) {
+    logOutcome("preview", raw.length, ops.length, []);
     return { status: "preview" as const, written: false, applied: ops.length, note: "试写通过，没有生成文件；去掉 dry_run 正式提交" };
   }
   const stored = ctx.blobs.put(out, mid);
+  logOutcome("applied", raw.length, ops.length, []);
   const reg = registerToolArtifact(ctx, {
     kind: "agent_report",
     filename: art.filename,

@@ -10,6 +10,7 @@
  * - 锚点完整性 hash 由本工具按 Agent 给出的锚点计算（Agent 拿不到原件字节）：绑定关系靠“锚点在令牌化视图里”这一条；
  * - 任一条不成立：整体不写，逐条返回原因与改法（不返回还原后的原文，结果仍经本机端点令牌化）。
  */
+import { slog } from "@zr-legal/safe-log";
 import { DomainError, sha256Hex } from "@zr-legal/domain";
 import { createDocx, existingRevisions, headerFooterParagraphs, minimalChange, readZipEntries, sanitizeDocx } from "@zr-legal/docx-engine";
 import { applyStructuredPatches, headerFooterHint, type ChangeRow, type NumberingShifts, type PatchConflict, type StructuredPatch } from "../../services/structured-patch.ts";
@@ -165,6 +166,9 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
     };
   }
   if (r.status !== "applied") {
+    // 结果分布留痕（V13 第 38 批）：只记计数
+    const n = (re: RegExp) => r.conflicts.filter((c) => re.test(String(c.reason))).length;
+    slog.event("TOOLS_DOCX_EDIT_OUTCOME", { tool: "docx_revise", status: "not_applied", patches: Array.isArray(p.patches) ? p.patches.length : 0, applied: 0, not_found: n(/not_found|empty/), ambiguous: n(/ambiguous/), unknown_token: n(/token/), other: r.conflicts.length - n(/not_found|empty|ambiguous|token/) });
     const note =
       r.reason === "not_docx"
         ? "这份材料不是 Word（.docx）文件，不能在原件上写修订：告诉律师原因，改为用 docx.render_report 出“修改后全文（新排版）”"
