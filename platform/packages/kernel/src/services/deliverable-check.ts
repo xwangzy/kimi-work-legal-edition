@@ -18,7 +18,7 @@ export interface DeliverableSection {
   table?: { columns?: unknown[]; rows?: unknown[][] } | null;
 }
 
-export type DeliverableIssueKind = "internal_term" | "foreign_word" | "markdown" | "numbering" | "cross_ref" | "amount_words" | "citation";
+export type DeliverableIssueKind = "internal_term" | "foreign_word" | "markdown" | "numbering" | "cross_ref" | "amount_words" | "citation" | "table_sum";
 
 export interface DeliverableIssue {
   kind: DeliverableIssueKind;
@@ -115,6 +115,7 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
   else if (isOutward(title)) for (const i of outwardIssues(paras)) push(i);
   for (const i of numberingIssues(sections)) push(i);
   for (const i of crossRefIssues(sections, paras)) push(i);
+  for (const i of tableSumIssues(sections)) push(i);
 
   // 法条核验：条号超出范围、已改号、适用时点没有有效版本（编造或记错的条号）——与签发前的引用核验同一套判定
   if (opts.lawdb && opts.docx && opts.asOf) {
@@ -132,7 +133,7 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
     placeholders,
     issues,
     note: ok
-      ? "交付前检查未发现问题（只查工具用语、夹杂英文、条款编号、互引、大小写金额、法条号这几类，不代替律师复核）"
+      ? "交付前检查未发现问题（只查工具用语、夹杂英文、条款编号、互引、大小写金额、表格合计、法条号这几类，不代替律师复核）"
       : `交付前检查发现 ${issues.length} 处问题：Word 文书用 docx.edit_draft 在这份文书上逐处改正（不要整份重新生成），表格改正后重新生成；确实不需要改的（如律师要求保留），在最终答复里说明理由`,
   };
 }
@@ -342,5 +343,47 @@ function amountMismatches(text: string): { text: string; figure: string; words: 
     if (words === null || !Number.isFinite(fig)) continue;
     if (Math.abs(fig - words) > 0.005) out.push({ text: m[0].slice(0, 60), figure: m[1]! + m[2]!, words: `${words.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}元` });
   }
+  return out;
+}
+
+/**
+ * 表格合计（V13 第 38 批）：带“合计 / 总计”行的表，逐列把其余各行的数加起来与合计行比对（付款计划、价款明细、设备清单）。
+ * 交易数学最常见的错就在这里：V13 出题 W1 的条款清单把第二期 40% 写成 35,400,000 元，四期之和 87,000,000 元≠总价 86,000,000 元，
+ * 照抄进合同就是一张自相矛盾的付款表。只比能确定的：合计格与参与相加的格都是纯数字（可带千分位、“元 / 万元 / %”），至少两行参加；
+ * 有“其中”“含”“（大写”等说明的列、比例与金额混写的格不比。
+ */
+const NUM_CELL = /^\s*(?:人民币|RMB|￥|¥)?\s*(-?\d{1,3}(?:,\d{3})+(?:\.\d+)?|-?\d+(?:\.\d+)?)\s*(元|万元|%|％)?\s*$/;
+function cellNumber(v: unknown): { n: number; unit: string } | null {
+  const m = NUM_CELL.exec(String(v ?? ""));
+  if (!m) return null;
+  const n = Number(m[1]!.replace(/,/g, ""));
+  return Number.isFinite(n) ? { n, unit: (m[2] ?? "").replace("％", "%") } : null;
+}
+export function tableSumIssues(sections: readonly DeliverableSection[]): DeliverableIssue[] {
+  const out: DeliverableIssue[] = [];
+  sections.forEach((sec, si) => {
+    const t = sec.table;
+    if (!t || !Array.isArray(t.rows) || t.rows.length < 3) return;
+    const cols = (t.columns ?? []).map((c) => String(c ?? ""));
+    const rows = t.rows.map((r) => (Array.isArray(r) ? r : []));
+    const totalAt = rows.findIndex((r) => r.some((c) => /^\s*(?:合\s*计|总\s*计|共\s*计)\s*$/.test(String(c ?? ""))));
+    if (totalAt < 0) return;
+    const where = sec.heading || `第 ${si + 1} 节的表格`;
+    const width = Math.max(cols.length, ...rows.map((r) => r.length));
+    for (let j = 0; j < width; j++) {
+      if (/单价|费率|比例|税率|序号|编号|天数|日期|期限/.test(cols[j] ?? "")) continue;
+      const total = cellNumber(rows[totalAt]![j]);
+      if (!total) continue;
+      const parts = rows.flatMap((r, i) => (i === totalAt ? [] : [cellNumber(r[j])]));
+      const nums = parts.filter((x): x is { n: number; unit: string } => x !== null && x.unit === total.unit);
+      // 列里有不是纯数字的格（写了说明、待填）：不比
+      if (nums.length < 2 || nums.length !== parts.filter((x, i) => String(rows.filter((_, k) => k !== totalAt)[i]?.[j] ?? "").trim() !== "").length) continue;
+      const sum = nums.reduce((a, x) => a + x.n, 0);
+      if (Math.abs(sum - total.n) > 0.005 * Math.max(1, Math.abs(total.n)) && Math.abs(sum - total.n) >= 0.01) {
+        const fmt = (n: number) => `${(Number.isInteger(n) ? String(n) : n.toFixed(2)).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${total.unit}`;
+        out.push({ kind: "table_sum", where, text: `${cols[j] || `第 ${j + 1} 列`}：合计 ${fmt(total.n)}`, fix: `各行之和是 ${fmt(sum)}，与合计 ${fmt(total.n)} 不一致：逐项复算（单价 × 数量、比例 × 总价）后改正有错的行或合计，正文里引用的同一金额一并改` });
+      }
+    }
+  });
   return out;
 }
