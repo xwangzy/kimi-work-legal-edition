@@ -1403,7 +1403,8 @@ async function runReviewStage(
     const limit = ctx.deps.reviewFixLimitMs ?? REVIEW_FIX_LIMIT_MS;
     let taskId: string;
     try {
-      taskId = await agentClient.start(identity, { goal, materials: [], timeout_ms: limit, wall_ms: p.wallMs, purpose: p.purpose, fx: p.fx, continue_session_id: sid, plan_first: false, task_suffix: "review" });
+      // 材料快照照样交给这一轮：宿主每轮清空并重写材料区，传空列表等于让助手在修改时读不到材料
+      taskId = await agentClient.start(identity, { goal, materials: p.snapshot, timeout_ms: limit, wall_ms: p.wallMs, purpose: p.purpose, fx: p.fx, continue_session_id: sid, plan_first: false, task_suffix: "review" });
     } catch (e) {
       const error = String((e as Error)?.message ?? e).slice(0, 200);
       appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.fixOutcome, "review.fix_outcome", { status: "start_failed", error });

@@ -7,7 +7,7 @@
 process.env.ZR_INTERNAL_SECRET = process.env.ZR_INTERNAL_SECRET ?? "b38-review-secret-0123456789abcdef";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { makeKernel, waitRun, type TestKernel } from "./helpers.ts";
+import { importBytes, makeKernel, waitRun, type TestKernel } from "./helpers.ts";
 import { startCloudV0, type CloudV0 } from "./cloud-v0.ts";
 import { parseFindings, fixPrompt, reviewMessages } from "../src/services/independent-review.ts";
 
@@ -35,8 +35,9 @@ async function startRun(marker: string) {
     basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
     model_endpoint: "standard",
   });
-  const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
-  return tk.inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `b38-${marker}-${Date.now()}`, goal: `${marker} 起草设备买卖合同，价款120万元`, skill: "contract-draft", mode: "default", plan_first: false });
+  const doc = await importBytes(tk.inv, matter.matter_id, "交易条款清单.txt", Buffer.from("设备：压装设备一台。价款：人民币120万元，验收合格后10日内一次付清。", "utf8"), "text/plain");
+  const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [doc.document_version_id] });
+  return tk.inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `b38-${marker}-${Date.now()}`, goal: `${marker} 起草设备买卖合同，价款120万元`, skill: "contract-draft", document_version_ids: [doc.document_version_id], mode: "default", plan_first: false });
 }
 
 /** 主任务出一份合同；复核调用回 reviewText；交回修改那一轮先用 edit_draft 把 100 万改成 120 万再写答复。 */
@@ -87,8 +88,10 @@ test("交出文书后独立复核：复核调用不带起草上下文，意见�
     assert.equal(completed?.payload.must, 1);
     assert.ok(types.includes("review.fix_started") && types.includes("review.fix_outcome"), JSON.stringify(types));
     assert.equal(done.events.find((e: any) => e.type === "review.fix_outcome")?.payload.status, "succeeded");
-    // 交回修改的提示带着复核意见原文
+    // 交回修改的提示带着复核意见原文，材料快照照样在（宿主每轮重写材料区）
     assert.match(seen.fixUser.at(-1) ?? "", /【独立复核】[\s\S]*价款写成 100 万元/);
+    assert.match(seen.fixUser.at(-1) ?? "", /本事项材料快照/);
+    assert.match(u, /材料：[^\n]*交易条款清单[\s\S]*验收合格后10日内/, "复核提示里有材料原文");
     // 成果：复核意见、合同第 2 版（120 万）、最终答复新版本
     const note = done.artifacts.find((a: any) => a.kind === "a1_review_note");
     assert.ok(note, "有《独立复核意见》");
