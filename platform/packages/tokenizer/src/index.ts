@@ -319,6 +319,26 @@ function maskRanges(text: string, ranges: readonly { start: number; end: number 
   return out;
 }
 
+/**
+ * 称呼代号说明（V13 第 38 批）：称呼形态的值（“周总”“老周”“周经理”）按设计与全名各有代号（不能断定是同一人，用例 coverage 锁定），
+ * 模型因此看不出“周总的指示”就是邮件署名的“周启明”——真实走查 W1 的起草说明里写出了“指示人代号不一致”这一行，评分律师列为必删。
+ * 这里只在文本里同时出现两者、且本事项令牌表里与该称呼同姓的全名只有一位时，给出“这两个代号可能是同一人”的说明；
+ * 说明里只有代号，不出现姓氏或姓名。同姓全名有两位以上的不说明（宁可不并）。纯函数。
+ */
+export function nicknameLegend(entries: readonly TokenEntry[], texts: readonly string[]): string {
+  const present = new Set(texts.flatMap((t) => findTokens(t)));
+  const persons = entries.filter((e) => e.category === "person");
+  const lines: string[] = [];
+  for (const e of persons) {
+    if (!present.has(e.token)) continue;
+    const s = nicknameSurname(e.value);
+    if (!s) continue;
+    const full = [...new Map(persons.filter((f) => nicknameSurname(f.value) === null && surnameOf(f.value) === s).map((f) => [f.token, f])).values()];
+    if (full.length === 1 && present.has(full[0]!.token)) lines.push(`${e.token}是称呼（“某总”“老某”一类），本事项与它同姓的自然人只有${full[0]!.token}，通常指同一人（上下文明显不是同一人的除外）`);
+  }
+  return lines.length > 0 ? `【代号说明】${lines.join("；")}。不要把这类称呼与全名代号写成“代号不一致”。\n` : "";
+}
+
 /** 文本中的全部代号（去重，按出现顺序）。 */
 export function findTokens(text: string): string[] {
   const seen = new Set<string>();

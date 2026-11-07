@@ -187,6 +187,28 @@ test("复核正文为空（推理用尽输出上限）：按复核没有完成�
   }
 });
 
+test("称呼代号说明随任务说明发出：委托原话写“周总”、材料署名“周启明”，模型收到一行只含代号的说明（V13 真实走查 W1 起草说明写出“指示人代号不一致”）", { timeout: 120_000 }, async () => {
+  let firstUser = "";
+  cloud.model.script = (body) => {
+    const ms = msgs(body);
+    const u = JSON.stringify(ms.find((m) => m.role === "user")?.content ?? "");
+    if (!u.includes("B38LEG")) return null;
+    firstUser = u;
+    return { content: "已收到。" };
+  };
+  try {
+    const { matter } = await tk.inv("matters.create", { title: "称呼代号", stance: "买方", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, model_endpoint: "standard" });
+    const doc = await importBytes(tk.inv, matter.matter_id, "客户指示邮件.txt", Buffer.from("顾律师：协议用我们的抬头起草，先发我看。\n董事长：周启明", "utf8"), "text/plain");
+    const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [doc.document_version_id] });
+    const run = await tk.inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `b38-leg-${Date.now()}`, goal: "B38LEG 周总的指示和条款清单不一致的，单独列清单。", document_version_ids: [doc.document_version_id], mode: "default", plan_first: false });
+    await waitRun(tk.inv, run.run_id, 100_000);
+    assert.match(firstUser, /【代号说明】/, firstUser.slice(0, 400));
+    assert.doesNotMatch(firstUser.slice(firstUser.indexOf("【代号说明】")), /^【代号说明】[^。]*(周|启明)/, "说明里不出现姓名");
+  } finally {
+    cloud.model.script = null;
+  }
+});
+
 test("复核意见解析：标准格式、续行与“建议改”；交回修改的提示按方法区分（修订任务重提完整修改清单）", () => {
   const f = parseFindings("前言\n【1】第三条｜定金超过 20%｜民法典第五百八十六条｜改为 1,720 万元｜必须改\n【2】第 9.1 款｜上限封住全额赔偿\n续行说明｜算式：300<360｜提示律师｜建议改\n【3】整份没有签署页");
   assert.equal(f.length, 3);

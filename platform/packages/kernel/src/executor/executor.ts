@@ -15,6 +15,7 @@ import { matterFactsLine } from "../services/matter-facts.ts";
 import { outlineOpenItems, outlineState } from "../services/argument-outlines.ts";
 import { DomainError, RUN_TRANSITIONS, RunStatus, canTransitionRun, isTerminalRun, newId, sha256Hex } from "@zr-legal/domain";
 import { replaceDirectIdentifiers } from "@zr-legal/pseudonym";
+import { nicknameLegend } from "@zr-legal/tokenizer";
 import { findExternalRefs, readZipEntries } from "@zr-legal/docx-engine";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import type { ModelBroker } from "@zr-legal/model-broker";
@@ -975,7 +976,10 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   // 追问（集成核查 P1-1）：在上一次运行的会话上继续，引擎已有完整上下文，只送律师的追问与一句边界提醒
   const continueSession = typeof inputSnapshot(run)?.continue_session_id === "string" ? String(inputSnapshot(run).continue_session_id) : null;
   const promptText = continueSession ? agentFollowUpPrompt(goal, methodLine, materials.length > 0) : fullGoal;
-  const goalSent = tz ? tz.tokenize(run.matter_id, promptText).text : promptText;
+  const goalTokenized = tz ? tz.tokenize(run.matter_id, promptText).text : promptText;
+  // 称呼代号说明（V13 第 38 批）：“周总”与“周启明”各有代号，本事项只有一位同姓自然人时提示可能是同一人（只写代号）
+  const legend = tz ? nicknameLegend(tz.table(run.matter_id), [goalTokenized, ...snapshot.map((m) => m.text)]) : "";
+  const goalSent = legend ? `${goalTokenized}\n${legend}` : goalTokenized;
 
   // 检查点（审查 R-04）：成果已入库（上次尝试在结算前中断）→ 不重跑 Agent，按检查点里记录的终态与成果结算；
   // 检查点缺失、损坏或成果对不上（行不存在、hash 不符）→ 不默认成功，转人工对账
