@@ -83,6 +83,9 @@ test("交出文书后独立复核：复核调用不带起草上下文，意见�
     assert.match(u, /委托原话[\s\S]*B38REV/);
     assert.match(u, /待复核交付件[\s\S]*价款为人民币100万元/);
     assert.equal(/mcp__legal__|tool_call/.test(u), false, "复核提示里没有起草过程的工具调用");
+    // V13 W2 真实走查：没给文件清单与最终答复时，复核人误报“没交修订稿”“其他问题没列给律师”
+    assert.match(u, /本任务已交出的文件[\s\S]*设备买卖合同\.docx/);
+    assert.match(u, /助手给律师的最终答复[\s\S]*已起草《设备买卖合同》/);
     const completed = done.events.find((e: any) => e.type === "review.completed");
     assert.equal(completed?.payload.findings, 1);
     assert.equal(completed?.payload.must, 1);

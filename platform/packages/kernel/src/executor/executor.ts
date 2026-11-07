@@ -33,7 +33,7 @@ import { slimAgentPayload } from "./run-progress.ts";
 import { runCapabilities, runModeOf } from "../identity.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
 import { runLineage } from "../services/artifact-lineage.ts";
-import { REVIEW_KIND_OF_SKILL, fixPrompt, labeledText, parseFindings, reportText, reviewMessages, reviewNote, revisionDiff, type ReviewDoc, type ReviewFinding, type ReviewKind } from "../services/independent-review.ts";
+import { REVIEW_KIND_OF_SKILL, fixPrompt, headerFooterText, labeledText, parseFindings, reportText, reviewMessages, reviewNote, revisionDiff, type ReviewDoc, type ReviewFinding, type ReviewKind } from "../services/independent-review.ts";
 
 export interface ExecutorDeps {
   db: KernelDb;
@@ -1236,7 +1236,7 @@ export function reviewKindOf(db: KernelDb, runId: string, skill: string | null):
  * 复核对象：本任务登记的 Word 文书，每个文件名取最新一版。修改文书任务取清洁稿与修改对照表，并按清洁稿登记的原件做段落差异。
  * 纯查询 + 读成果块。
  */
-export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string, kind: ReviewKind): { docs: ReviewDoc[]; diff: string[]; title: string } | null {
+export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string, kind: ReviewKind): { docs: ReviewDoc[]; diff: string[]; title: string; inventory: string[]; reply: string } | null {
   const rows = deps.db.all<{ filename: string; storage_uri: string; manifest: string | null; created_at: string }>(
     `SELECT filename, storage_uri, manifest, created_at FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','revision_draft','revision_clean') AND lower(filename) LIKE '%.docx' ORDER BY created_at, version`,
     [runId, matterId],
@@ -1271,7 +1271,7 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
     const buf = deps.blobs.read(r.storage_uri);
     let text = "";
     try {
-      text = /（清洁稿）\.docx$/i.test(r.filename) ? labeledText(buf).join("\n") : reportText(buf);
+      text = /（清洁稿）\.docx$/i.test(r.filename) ? [...headerFooterText(buf), ...labeledText(buf)].join("\n") : reportText(buf);
     } catch {
       text = "";
     }
@@ -1283,7 +1283,22 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
     return { filename: r.filename, text };
   });
   const main = picked.find((r) => /（清洁稿）\.docx$/i.test(r.filename)) ?? picked[0]!;
-  return { docs: docs.filter((d) => d.text.trim().length > 0), diff, title: main.filename.replace(/\.docx$/i, "") };
+  // 本任务交出的全部文件与助手的最终答复（V13 W2：复核人没看到修订稿与答复，误报“没交修订稿”“其他问题没列给律师”）
+  const inventory = [
+    ...new Set(
+      deps.db
+        .all<{ filename: string }>(`SELECT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','revision_draft','revision_clean','agent_table','a1_workspace_file') ORDER BY created_at`, [runId, matterId])
+        .map((r) => r.filename),
+    ),
+  ];
+  const replyRow = deps.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('a1_agent_draft','a1_agent_draft_partial') ORDER BY created_at DESC, version DESC LIMIT 1`, [runId, matterId]);
+  let reply = "";
+  try {
+    reply = replyRow ? deps.blobs.read(replyRow.storage_uri).toString("utf8") : "";
+  } catch {
+    reply = "";
+  }
+  return { docs: docs.filter((d) => d.text.trim().length > 0), diff, title: main.filename.replace(/\.docx$/i, ""), inventory, reply };
 }
 
 /**
@@ -1314,11 +1329,13 @@ async function runReviewStage(
   // ① 复核（检查点：重试时不重复调用模型）
   const review = await ctx.step("independent_review", async (): Promise<{ ok: boolean; text: string; findings: ReviewFinding[]; error?: string }> => {
     assertNotCancelled(db, runId);
-    const docTexts = tok([...targets.docs.map((d) => d.text), ...targets.diff]);
+    const docTexts = tok([...targets.docs.map((d) => d.text), ...targets.diff, targets.reply, ...targets.inventory]);
     const docs = targets.docs.map((d, i) => ({ filename: tok([d.filename])[0]!, text: docTexts[i]! }));
-    const diff = docTexts.slice(targets.docs.length);
+    const diff = docTexts.slice(targets.docs.length, targets.docs.length + targets.diff.length);
+    const reply = docTexts[targets.docs.length + targets.diff.length] ?? "";
+    const inventory = docTexts.slice(targets.docs.length + targets.diff.length + 1);
     appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.started, "review.started", { kind: picked.kind, skill: picked.skill, docs: docs.map((d) => d.filename), diff_lines: diff.length });
-    const messages = reviewMessages({ kind: picked.kind, stance: p.ctxM.stance, jurisdiction: p.ctxM.jurisdiction, asOf: p.ctxM.asOf, goal: p.goalSent, materials: p.snapshot, docs, diff });
+    const messages = reviewMessages({ kind: picked.kind, stance: p.ctxM.stance, jurisdiction: p.ctxM.jurisdiction, asOf: p.ctxM.asOf, goal: p.goalSent, materials: p.snapshot, docs, diff, inventory, reply });
     const limit = ctx.deps.reviewLimitMs ?? REVIEW_LIMIT_MS;
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), limit);

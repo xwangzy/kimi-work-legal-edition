@@ -8,7 +8,7 @@
  *
  * 本文件只放纯函数：选哪些方法复核、取文书文字、原件与清洁稿的段落差异、拼复核提示、解析复核意见、拼交回原会话的修改指示。
  */
-import { compareDocx, docxListLabels, extractParagraphs } from "@zr-legal/docx-engine";
+import { compareDocx, docxListLabels, extractParagraphs, readZipEntries } from "@zr-legal/docx-engine";
 import { sectionsOfDocx } from "../tools/tools/edit-draft.ts";
 
 export type ReviewKind = "draft" | "revise" | "opinion" | "pleading" | "review";
@@ -79,6 +79,18 @@ export function labeledText(docx: Buffer): string[] {
     labels = [];
   }
   return paras.flatMap((p, i) => (p.text.trim() === "" ? [] : [`${labels[i] ? `${labels[i]} ` : ""}${p.text}`.trim()]));
+}
+
+/** 页眉页脚文字（修订任务的页眉改动也要能复核）。 */
+export function headerFooterText(docx: Buffer): string[] {
+  const out: string[] = [];
+  for (const [name, data] of readZipEntries(docx)) {
+    const m = /^word\/(header|footer)\d*\.xml$/.exec(name);
+    if (!m) continue;
+    const t = [...data.toString("utf8").matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((x) => x[1]).join("").trim();
+    if (t) out.push(`［${m[1] === "header" ? "页眉" : "页脚"}］${t}`);
+  }
+  return out;
 }
 
 /** 原件与清洁稿的段落差异（复核“只改了授权范围”用）：只列改动的段落，带自动编号。 */
@@ -153,6 +165,10 @@ export function reviewMessages(p: {
   materials: readonly { filename: string; text: string }[];
   docs: readonly ReviewDoc[];
   diff?: readonly string[];
+  /** 本任务交出的全部文件名（V13 W2：只给清洁稿时复核人以为“没交修订稿”，误报为必须改）。 */
+  inventory?: readonly string[];
+  /** 助手给律师的最终答复（V13 W2：没给时复核人以为“其他问题没有列给律师”）。 */
+  reply?: string;
 }): { role: "system" | "user"; content: string }[] {
   const docTexts = p.docs.map((d) => `【交付件：${d.filename}】\n${cut(d.text, REVIEW_DOC_MAX)}`);
   const used = docTexts.reduce((n, t) => n + t.length, 0) + (p.diff ?? []).reduce((n, t) => n + t.length, 0);
@@ -175,8 +191,13 @@ export function reviewMessages(p: {
     "=== 事项材料 ===",
     ...p.materials.map((m) => `【材料：${m.filename}】\n${cut(m.text, perMaterial)}`),
     "",
+    ...(p.inventory && p.inventory.length > 0
+      ? ["", `=== 本任务已交出的文件 ===\n${p.inventory.map((f) => `- ${f}`).join("\n")}\n（修订稿与清洁稿内容相同，只是以修订痕迹显示；下面给的是清洁稿文字与页眉页脚。不要因为下面没贴某份文件的全文就认为它没有交出）`]
+      : []),
+    "",
     "=== 待复核交付件 ===",
     ...docTexts,
+    ...(p.reply ? ["", `=== 助手给律师的最终答复（其中列的其他问题、风险提示与待定事项算已告知律师） ===\n${cut(p.reply, 20_000)}`] : []),
     ...(p.diff && p.diff.length > 0 ? ["", "=== 原件与清洁稿的段落差异（系统比对，段首是自动编号） ===", ...p.diff] : []),
   ].join("\n");
   return [
