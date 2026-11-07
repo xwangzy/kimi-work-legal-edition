@@ -276,3 +276,24 @@ test("也是姓氏的连词、介词、情态字只凭弱证据不当姓氏（V1
   const old = new MatterTokenizer({ matterKey: Buffer.alloc(32, 7), parties: [], table: [{ token: "〔自然人·DNE0N1〕", category: "person", value: "应事先", normalized: "应事先", source: "recognizer" }] });
   assert.equal(old.tokenize("乙方应事先在附件五中披露。").text, "乙方应事先在附件五中披露。");
 });
+
+test("言语动词分支（只有“后面跟言语动词”这一条弱证据）要求名字含常见名字用字（V13 第 38 批 W4：意见书“现有证据支持主张后两周……”认出“支持”，学进事项令牌表后“裁判支持数额”“能否同时支持”都被换成自然人代号，复核据此报“语句残缺、不能交付”）；称呼形态与真名照常认出", async () => {
+  const { recognizeNames } = await import("../src/names.ts");
+  for (const [text, not] of [
+    ["现有证据支持主张后两周未经授权的推广费19,300元。", "支持"],
+    ["应当区分说明各项请求的依据。", "区分"],
+    ["该操作危险表示需要二次确认。", "危险"],
+  ] as const) {
+    const got = recognizeNames(text);
+    assert.ok(!got.has(not), `${text} 不得认出 ${not}（实得 ${[...got].join("、")}）`);
+  }
+  for (const [text, name] of [
+    ["王总表示同意。", "王总"],
+    ["据曹雨回忆，货物于当天送达。", "曹雨"],
+    ["林岚表示已收到。", "林岚"],
+    ["，张宸璐称其未收到通知。", "张宸璐"],
+  ] as const) {
+    const got = recognizeNames(text);
+    assert.ok(got.has(name), `${text} → ${name}（实得 ${[...got].join("、")}）`);
+  }
+});
