@@ -392,9 +392,10 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
               按本事项审查要点「{rules.title}」第 {rules.version} 版（{rules.rules.length} 条）{card.skill === "contract-draft" ? "起草" : "审查"}
             </label>
           )}
-          <label className="ss-field">
+          <label className="ss-field ss-field-long">
             <span className="ss-label">补充要求（可选）</span>
-            <input type="text" aria-label="补充要求" value={extra} placeholder="例如：重点看交割前提条件" onChange={(e) => setExtra(e.target.value)} />
+            {/* V13 第 38 批真实走查 W3：审合同这类没有主要请求栏的卡，律师的具体指示（要哪几份文件、谈判优先级）都写在这里（346 字），单行框只看得到末尾 */}
+            <textarea aria-label="补充要求" rows={2} value={extra} placeholder="例如：重点看交割前提条件" onChange={(e) => setExtra(e.target.value)} />
           </label>
         </section>
         <section className="ss-sec">

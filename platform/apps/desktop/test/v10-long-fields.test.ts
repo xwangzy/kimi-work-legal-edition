@@ -30,3 +30,10 @@ test("起草合同的“交易要点”也是多行文字（V13 第 38 批真实
   const card = SCENARIOS.find((c) => c.id === "contract-draft")!;
   assert.equal(card.fields.find((f) => f.key === "points")?.kind, "long");
 });
+
+test("开始面板的“补充要求”是多行文字框（V13 第 38 批真实走查 W3：审合同卡没有主要请求栏，346 字的指示只能写在这里）", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/components/ScenarioStart.tsx", import.meta.url), "utf8");
+  assert.match(src, /<textarea aria-label="补充要求"/);
+  assert.doesNotMatch(src, /<input type="text" aria-label="补充要求"/);
+});
