@@ -236,3 +236,43 @@ test("名字末字是介词、连词（V13 第 38 批：“法定代表人钱季
     assert.ok(!got.has(not) && got.has(keep), `${text} 应认出 ${keep}、不得认出 ${not}（实得 ${[...got].join("、")}）`);
   }
 });
+
+test("也是姓氏的连词、介词、情态字只凭弱证据不当姓氏（V13 第 38 批 W6：合同第 12.4 条“，应事先说明依据”认出“应事先”，学进令牌表后第 10.4 条“乙方应事先在附件五中披露”送给模型成了“乙方〔自然人〕在附件五中披露”，最终答复让律师删去“事先”）；强证据下的真名照常认出", async () => {
+  const { recognizeNames } = await import("../src/names.ts");
+  for (const [text, not] of [
+    ["法律法规确需保留的，应事先说明依据、范围和期限，并在保留期间隔离存储。", "应事先"],
+    ["服务费是否含税、由财务确认发票类型和税率。", "由财务"],
+    ["必须马上向德隆书面确认交期。", "向德隆"],
+    ["请向贵方确认交期。", "向贵"],
+    ["董事长由股东会选举，财务负责人由锦漪委派。", "由锦漪"],
+    ["列明负责人和期限。", "和期限"],
+    ["员工和家属信息分开处理。", "和家属"],
+    ["境外法超出检索覆盖时，向相应法域律师咨询。", "应法域"],
+    ["上传人和责任律师仍承担保密义务。", "和责任"],
+    ["申请人向贵院申请财产保全。", "向贵"],
+    ["申请人向仲裁委员会申请仲裁。", "向仲"],
+    ["需分别评估员工、应聘者及家属信息。", "应聘"],
+  ] as const) {
+    const got = recognizeNames(text);
+    assert.ok(![...got].some((n) => n.startsWith(not)), `${text} 不得认出 ${not}（实得 ${[...got].join("、")}）`);
+  }
+  for (const [text, name] of [
+    ["证人：应晓明，男，1980年生", "应晓明"],
+    ["被告应晓明于 2025 年 3 月向原告借款", "应晓明"],
+    ["原告：由志强，男，", "由志强"],
+    ["联系人：向东，电话 13900000000", "向东"],
+    ["，向东律师确认", "向东"],
+    ["于明表示同意", "于明"],
+  ] as const) {
+    const got = recognizeNames(text);
+    assert.ok(got.has(name), `${text} → ${name}（实得 ${[...got].join("、")}）`);
+  }
+  // 整条链路：前文学到的误认值不再替换后文的正常条款
+  const t = new MatterTokenizer({ matterKey: Buffer.alloc(32, 7), parties: [] });
+  const r1 = t.tokenize("12.4 法律法规确需保留的，应事先说明依据、范围和期限。").text;
+  const r2 = t.tokenize("10.4 确需将背景技术嵌入开发成果的，乙方应事先在附件五中披露。").text;
+  assert.ok(!/〔自然人/.test(r1 + r2), `${r1} ${r2}`);
+  // 旧规则已学进事项令牌表的误认值退役：带着旧表的令牌化器也不再替换正文
+  const old = new MatterTokenizer({ matterKey: Buffer.alloc(32, 7), parties: [], table: [{ token: "〔自然人·DNE0N1〕", category: "person", value: "应事先", normalized: "应事先", source: "recognizer" }] });
+  assert.equal(old.tokenize("乙方应事先在附件五中披露。").text, "乙方应事先在附件五中披露。");
+});
