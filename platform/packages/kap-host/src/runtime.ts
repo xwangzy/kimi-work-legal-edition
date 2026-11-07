@@ -444,11 +444,13 @@ export class KapRuntime {
     if (req.continue_session_id) {
       const sid = req.continue_session_id;
       if (this.runBySession.has(sid)) throw new RuntimeError("conflict", "该会话还有进行中的运行，请等它结束后再追问");
-      // 会话只在本事项的引擎里查找（每事项一个引擎与数据根：别的事项的会话在这里不存在）；宿主重启后先恢复
-      const found = await engine.kap.getSession(sid).catch(async () => {
-        await engine.kap.sessionAction(sid, "restore").catch(() => null);
-        return engine.kap.getSession(sid).catch(() => null);
-      });
+      // 会话只在本事项的引擎里查找（每事项一个引擎与数据根：别的事项的会话在这里不存在）。
+      // 接续前一律先恢复（V13 第 38 批真实走查 W7）：宿主重启后会话只在磁盘上，查询（getSession）照样成功，但没有加载进引擎，
+      // 随后订阅事件报“session … not found”，律师对重启前的任务追问直接失败。恢复对已在线的会话是幂等的（直接返回在线会话）。
+      const found = await engine.kap
+        .sessionAction(sid, "restore")
+        .then(() => engine.kap.getSession(sid))
+        .catch(() => null);
       if (!found) throw new RuntimeError("not_found", "上一次的对话记录不存在（可能已清理），请新建任务");
       session = { id: sid };
     } else session = await engine.kap.createSession(engine.workDir, `任务 ${runId.replace(/^[a-z]+_/, "").slice(0, 8)}`); // 会话标题不含任务内容（审计 S3 1-10：标题落盘）
