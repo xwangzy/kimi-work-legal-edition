@@ -725,7 +725,8 @@ export const SCENARIOS: ScenarioCard[] = [
     goal: "请起草一份{type}合同，我方立场以事项为准；交易要点：{points}。",
     fields: [
       { key: "type", label: "合同类型", kind: "select", options: CONTRACT_TYPES, required: true },
-      { key: "points", label: "交易要点", kind: "text", placeholder: "主体、标的、价款与支付、交付验收、期限……缺的会列为待定事项" },
+      // V13 第 38 批真实走查 W1：律师把 323 字的委托说明贴进交易要点，单行框只看得到末尾一截（第 36 批其他卡的主栏已改多行，这张漏了）
+      { key: "points", label: "交易要点", kind: "long", placeholder: "主体、标的、价款与支付、交付验收、期限……缺的会列为待定事项" },
     ],
     minMaterials: 0,
     steps: ["确认交易要点，缺的列为“待定事项”，不编造", "有本所范本先用范本", "起草后做一致性检查（定义、金额大小写、日期、互引、附件）", "写起草说明：关键条款为什么这样写、对方可能怎么改"],

@@ -25,3 +25,8 @@ test("事项页、任务页点“新建任务”带上当前事项（V10 走查�
   assert.equal(newTaskHref("/", { page: "matters" }), "/");
   assert.equal(newTaskHref("/matters", { page: "matter", matterId: "mat_1" }), "/matters", "其他导航项不受影响");
 });
+
+test("起草合同的“交易要点”也是多行文字（V13 第 38 批真实走查 W1：323 字的委托说明在单行框里只看得到末尾）", () => {
+  const card = SCENARIOS.find((c) => c.id === "contract-draft")!;
+  assert.equal(card.fields.find((f) => f.key === "points")?.kind, "long");
+});
