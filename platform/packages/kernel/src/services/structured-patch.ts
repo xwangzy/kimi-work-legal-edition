@@ -127,6 +127,21 @@ export interface NumberingShifts {
   references: { at: string; ref: string; now: string }[];
 }
 
+/** 双字组重合度（Dice）：0～1。 */
+function similarity(x: string, y: string): number {
+  const grams = (t: string) => {
+    const m = new Map<string, number>();
+    for (let i = 0; i + 1 < t.length; i++) m.set(t.slice(i, i + 2), (m.get(t.slice(i, i + 2)) ?? 0) + 1);
+    return m;
+  };
+  const gx = grams(x);
+  const gy = grams(y);
+  let inter = 0;
+  for (const [g, n] of gx) inter += Math.min(n, gy.get(g) ?? 0);
+  const total = Math.max(0, x.length - 1) + Math.max(0, y.length - 1);
+  return total === 0 ? 0 : (2 * inter) / total;
+}
+
 /** 与某个自动编号同形的段首编号（“8.4 ”“第十条 ”“（三）”）：数字换成任意数字、中文数字换成任意中文数字。 */
 function leadingLabel(label: string): RegExp {
   const body = label
@@ -149,6 +164,8 @@ export function numberingShifts(before: Buffer, after: Buffer): NumberingShifts 
   const al = docxListLabels(after);
   const moved = new Map<string, string>();
   const renumbered: NumberingShifts["renumbered"] = [];
+  // ① 文字相同的段落按先后次序对齐
+  const pairOf = new Map<number, number>();
   let j = 0;
   for (let i = 0; i < a.length; i++) {
     if (!al[i] || !a[i]!.trim()) continue;
@@ -156,6 +173,34 @@ export function numberingShifts(before: Buffer, after: Buffer): NumberingShifts 
     while (k < b.length && b[k] !== a[i]) k++;
     if (k >= b.length) continue;
     j = k + 1;
+    pairOf.set(i, k);
+  }
+  // ② 被改过文字的段落（V13 第 38 批 W2：10.1→11.1、11.3→12.3 等 5 处本身被修改的段落漏出顺延清单）：
+  //    在前后两个已对齐段落之间，按文字相似度（双字组重合度 ≥ 0.3，只在两个已对齐段落之间找）依次配对，插入、删除的段落不配
+  const used = new Set(pairOf.values());
+  const anchors = [...pairOf.entries()].sort((x, y) => x[0] - y[0]);
+  for (let i = 0; i < a.length; i++) {
+    if (pairOf.has(i) || !al[i] || !a[i]!.trim()) continue;
+    const prev = anchors.filter(([ai]) => ai < i).at(-1)?.[1] ?? -1;
+    const next = anchors.find(([ai]) => ai > i)?.[1] ?? b.length;
+    let best = -1;
+    let score = 0.3;
+    for (let k = prev + 1; k < next; k++) {
+      if (used.has(k) || !bl[k] || !b[k]!.trim()) continue;
+      const sc = similarity(b[k]!, a[i]!);
+      if (sc >= score) {
+        score = sc;
+        best = k;
+      }
+    }
+    if (best >= 0) {
+      used.add(best);
+      pairOf.set(i, best);
+      anchors.push([i, best]);
+      anchors.sort((x, y) => x[0] - y[0]);
+    }
+  }
+  for (const [i, k] of [...pairOf.entries()].sort((x, y) => x[0] - y[0])) {
     const from = bl[k];
     if (from && from !== al[i] && !moved.has(from)) {
       moved.set(from, al[i]!);

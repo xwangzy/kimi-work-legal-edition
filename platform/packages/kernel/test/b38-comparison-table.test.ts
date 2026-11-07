@@ -63,6 +63,7 @@ test("修改对照表分三部分：按意见的修改、援引条号联动、�
         { anchor: "乙方可将货物调拨至其他仓库。", proposed_text: "" },
         { anchor: "人民币500,000元", proposed_text: "人民币200,000元" },
         { anchor: "违反第1.3款约定的", proposed_text: "违反第1.2款约定的" },
+        { anchor: "乙方应每月盘点。", proposed_text: "乙方应于每月最后一个工作日盘点。" },
       ] } } }),
       dispatcher: agent,
     }).then((x) => x.json())) as any;
@@ -81,7 +82,8 @@ test("修改对照表分三部分：按意见的修改、援引条号联动、�
     assert.doesNotMatch(own, /违反第1\.2款/, "援引联动不混在按意见的修改里");
     assert.match(linked, /原 3\.1|3\.1/);
     assert.match(linked, /违反第1\.2款/);
-    assert.match(shift, /1\.3[\s\S]*1\.2/, "顺延清单列出 1.3 → 1.2");
+    assert.match(shift, /1\.3[\s\S]*1\.2/, "顺延清单列出 1.3 → 1.2（这一段本身也被修改过：W2 里这类段落曾漏出顺延清单）");
+    assert.match(own, /原 1\.3（现 1\.2）/, "改过又顺延的段落，条款栏写原号与现号");
   } finally {
     await agent.close();
   }
