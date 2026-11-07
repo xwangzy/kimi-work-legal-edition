@@ -219,34 +219,69 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   };
 }
 
-/** 生成并登记《修改对照表》（Word，原文形态与修订稿一致）；没有可列的修改或生成失败时返回 null（不影响修订稿与清洁稿）。 */
+/**
+ * 只改了条款援引号（“第十一条”→“第十二条”、“第4.4款”→“第4.3款”）的修改：增删条款引起的联动，对照表单列（V13 第 38 批）。纯函数。
+ */
+export function isReferenceOnlyChange(before: string, after: string): boolean {
+  if (before === after) return false;
+  const norm = (t: string) =>
+    t
+      .replace(/第[一二三四五六七八九十百零〇两\d]+条/g, "第#条")
+      .replace(/第\d+(?:\.\d+)+款/g, "第#款")
+      .replace(/第[（(][一二三四五六七八九十]+[)）]项/g, "第#项")
+      .replace(/\s+/g, "");
+  return norm(before) === norm(after);
+}
+
+/**
+ * 生成并登记《修改对照表》（Word，原文形态与修订稿一致）；没有可列的修改或生成失败时返回 null（不影响修订稿与清洁稿）。
+ * V13 第 38 批（W2 律师评分：律师要求“增删条款引起的条号、援引条号跟着改，并在对照表里单独列出来”，原表混在一起、顺延清单只列前 20 条被截断）：
+ * 一、按修改意见的修改；二、援引条号联动（只改了援引号的段落）；三、条款编号顺延（原件 → 修订后，全部列出）。条款一栏写“原号（现号）”。
+ */
 function registerComparison(ctx: InvokeCtx, r: { changes?: ChangeRow[]; numbering?: NumberingShifts; filename: string }, source: string) {
   const rows = r.changes ?? [];
   if (rows.length === 0) return null;
   try {
     const name = source.replace(/\.docx$/i, "");
     const cap = (s: string) => (s.length > 2000 ? `${s.slice(0, 2000)}……` : s);
-    // 位置用律师的说法（第 35 批 R5：原先没有自动编号的段落写“第 21 段”）
-    const at = (c: ChangeRow) => c.label ?? c.place ?? `第 ${c.para + 1} 段`;
-    const where = (c: ChangeRow) => (c.kind === "insert" ? `在${at(c)}之后新增` : at(c));
-    const table = rows.map((c, i) => [String(i + 1), where(c), c.kind === "insert" ? "（新增）" : cap(c.before), c.kind === "delete" ? "（删除本段）" : cap(c.after), c.reason || "按律师意见修改"]);
     const shifts = r.numbering?.renumbered ?? [];
+    const now = new Map(shifts.map((x) => [x.from, x.to]));
+    // 位置用律师的说法（第 35 批 R5：原先没有自动编号的段落写“第 21 段”）；编号顺延了的写“原 11.3（现 12.3）”
+    const at = (c: ChangeRow) => {
+      const base = c.label ?? c.place ?? `第 ${c.para + 1} 段`;
+      const to = c.label ? now.get(c.label) : undefined;
+      return to && to !== c.label ? `原 ${base}（现 ${to}）` : base;
+    };
+    const where = (c: ChangeRow) => (c.kind === "insert" ? `在${at(c)}之后新增` : at(c));
+    const row = (c: ChangeRow, i: number) => [String(i + 1), where(c), c.kind === "insert" ? "（新增）" : cap(c.before), c.kind === "delete" ? "（删除本段）" : cap(c.after), c.reason || "按律师意见修改"];
+    const linked = rows.filter((c) => c.kind === "edit" && isReferenceOnlyChange(c.before, c.after));
+    const own = rows.filter((c) => !linked.includes(c));
     const notes = [
-      `本表逐段列出对《${name}》所作的修改，共 ${rows.length} 处，与修订稿一致（以修订稿为准）；“条款”一栏是原件的条款号或位置。`,
-      ...(shifts.length > 0 ? [`删除或插入条款后，后续条款的自动编号已顺延：${shifts.slice(0, 20).map((s) => `原 ${s.from} 现为 ${s.to}`).join("；")}${shifts.length > 20 ? "；……" : ""}。`] : []),
+      `本表逐段列出对《${name}》所作的修改，共 ${rows.length} 处（按修改意见的修改 ${own.length} 处${linked.length > 0 ? `、因增删条款引起的援引条号联动 ${linked.length} 处` : ""}），与修订稿一致（以修订稿为准）；“条款”一栏写原件条款号，编号顺延了的括注现在的编号。`,
+      ...(shifts.length > 0 ? [`删除或插入条款后，${shifts.length} 处条款的自动编号顺延，见第三部分。`] : []),
       "本表供律师复核与向客户说明修改内容；发给对方前请删去“修改理由”一栏。",
     ];
-    const buf = createDocx(`${name}修改对照表`, [
+    const cols = ["序号", "条款", "修改前", "修改后", "修改理由"];
+    const sections: { heading: string; paragraphs: string[]; table?: { columns: string[]; rows: string[][] } }[] = [
       { heading: "说明", paragraphs: notes },
-      { heading: "", paragraphs: [], table: { columns: ["序号", "条款", "修改前", "修改后", "修改理由"], rows: table } },
-    ]);
+      { heading: "一、按修改意见的修改", paragraphs: [], table: { columns: cols, rows: own.map(row) } },
+    ];
+    if (linked.length > 0) sections.push({ heading: "二、因增删条款引起的援引条号联动", paragraphs: [], table: { columns: cols, rows: linked.map(row) } });
+    if (shifts.length > 0) {
+      sections.push({
+        heading: linked.length > 0 ? "三、条款编号顺延（原件 → 修订后）" : "二、条款编号顺延（原件 → 修订后）",
+        paragraphs: [],
+        table: { columns: ["序号", "原件编号", "修订后编号", "条款开头"], rows: shifts.map((x, i) => [String(i + 1), x.from, x.to, cap(x.text).slice(0, 40)]) },
+      });
+    }
+    const buf = createDocx(`${name}修改对照表`, sections);
     const stored = ctx.blobs.put(buf, ctx.claims.mid ?? null);
     return registerToolArtifact(ctx, {
       kind: "agent_report",
       filename: r.filename.replace(/（修订稿）\.docx$/i, "（修改对照表）.docx"),
       sha256: stored.sha256,
       storage_uri: stored.storage_uri,
-      manifest: { tool: "docx.revise", derived_from: "revision_draft", rows: rows.length, note: "修改对照表：按修订稿实际写入的修改逐段列出修改前后与理由（系统生成）" },
+      manifest: { tool: "docx.revise", derived_from: "revision_draft", rows: rows.length, linked: linked.length, renumbered: shifts.length, note: "修改对照表：按修订稿实际写入的修改逐段列出修改前后与理由（系统生成）" },
     });
   } catch {
     return null;
