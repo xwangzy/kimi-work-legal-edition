@@ -31,7 +31,8 @@ const STOP = new Set([
  * 不含助词与后缀（等、的、某、们、人……）：“张三等，”仍取“张三”。
  */
 // 复核 S6A-04：去掉“均、至、日、方”——“施工方”“甲方”“于近日”“均”这类功能写法太常见，宁可让“张晓方”的“方”照旧截短
-const NAME_OK = new Set([..."月年中之承元万章栋镇路庭书申"]);
+// V13 第 38 批：加“行”（景行、知行、慎行；“申请人：方景行，男”原先截成“方景”，劳动案员工姓名送给模型成了“〔自然人〕行”）
+const NAME_OK = new Set([..."月年中之承元万章栋镇路庭书申行"]);
 /** 名字（1–2 字）：都是汉字；STOP 字只允许作两字名的末字且须在 NAME_OK 内（单字名“王月”与“官方”“许可”难以区分，宁可不认）。 */
 const GIVEN_NOT = new Set([
   "双方", "各方", "对方", "我方", "他方", "己方", "一方", "三方", "多方", "四方", "八方", "本月", "当月", "次月", "每月", "当日", "次日", "本年", "当年", "次年",
@@ -45,11 +46,20 @@ const ROLE_GIVEN = new Set(["律师", "法官", "股东", "董事", "监事", "�
  */
 // 复核 Q7-04：“项”“监”作名字用字（王项明、王监军），不放进来——“合并成一项”“董事和监事”由 GIVEN_NOT、ROLE_GIVEN、常见词挡
 const NOT_GIVEN = new Set([..."且须只取写待按问询告哪些赔偿者"]);
-const givenOk = (given: string, loose = true) => {
+/**
+ * STOP 里的介词、连词（V13 第 38 批）：句法上必须带宾语，不会直接落在标点或文末之前——“法定代表人钱季同。”的“同”只能是名字末字。
+ * 原先按 STOP 截成“钱季”，送给模型的是“〔自然人·…〕同。”，起草的协议首部把客户法定代表人写成“钱季”（V10 V15 评分律师：首页第一段必须改）。
+ * 只在两字名末字、且右边紧跟标点、空白、文末或言语类动词时放宽（称谓作右边界不放宽：“张三同律师一起”）。
+ */
+const NAME_END_BEFORE_PUNCT = new Set([..."同和与及向对把被将从由以跟给为"]);
+const givenOk = (given: string, loose = true, punct = false) => {
   if (GIVEN_NOT.has(given) || ROLE_GIVEN.has(given)) return false;
   const cs = [...given];
   // loose = 右边界是标点、文末、称谓或身份信息；言语动词与出庭类动词作右边界时不放宽（“李四方辩称”不能读成“李四方”）
-  return cs.length >= 1 && cs.every((c, i) => CJK.test(c) && !NOT_GIVEN.has(c) && (!STOP.has(c) || (loose && i === 1 && cs.length === 2 && NAME_OK.has(c))));
+  return (
+    cs.length >= 1 &&
+    cs.every((c, i) => CJK.test(c) && !NOT_GIVEN.has(c) && (!STOP.has(c) || (loose && i === 1 && cs.length === 2 && (NAME_OK.has(c) || (punct && NAME_END_BEFORE_PUNCT.has(c))))))
+  );
 };
 
 /** 姓名之前若是这些字，优先取较短的候选（“和王明律师”取“王明”而不是“和王明”）。 */
@@ -386,7 +396,10 @@ function readName(text: string, j: number): string | null {
     const after = text[at] ?? "";
     const hard = after === "" || BOUNDARY.test(after) || HONORIFICS.some((w) => text.startsWith(w, at));
     const anchored = hard || RIGHT_ANCHORS.some((w) => text.startsWith(w, at));
-    if (given.length !== g || !anchored || !givenOk(given, hard)) continue;
+    // 介词、连词作名字末字（NAME_END_BEFORE_PUNCT）：右边是标点或文末，或直接是言语、出庭类动词（“钱季同签字”——“同”后没有宾语，不是介词）；称谓不算
+    const verbAfter = RIGHT_ANCHORS.some((w) => !HONORIFICS.includes(w) && text.startsWith(w, at));
+    const prepOk = after === "" || BOUNDARY.test(after) || verbAfter;
+    if (given.length !== g || !anchored || !givenOk(given, hard || (prepOk && NAME_END_BEFORE_PUNCT.has(given[1] ?? "")), prepOk)) continue;
     // “姓氏”其实是前一个词的功能字（“向双方，”）：不认
     if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
     // 列明退役的误认值即使有边界也不认（第 29 批：“到达甲方时生效，”）

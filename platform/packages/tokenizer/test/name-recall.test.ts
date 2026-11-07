@@ -212,3 +212,27 @@ test("名字末字是常作名字用字的功能字（S8 进所评测发现：�
     assert.ok(!recognizeNames(text).has(not), `${text} 不得认出 ${not}`);
   }
 });
+
+test("名字末字是介词、连词（V13 第 38 批：“法定代表人钱季同。”曾截成“钱季”，送给模型的是“〔自然人〕同。”，起草的协议把客户法定代表人写成“钱季”）：右边是标点、文末或言语类动词时整名识别；称谓作右边界照旧截短", async () => {
+  const { recognizeNames } = await import("../src/names.ts");
+  for (const [text, name] of [
+    ["住所江苏省南京市江宁区乘渚路66号，法定代表人钱季同。转让方一：贺知远（", "钱季同"],
+    ["法定代表人：钱季同", "钱季同"],
+    ["甲方法定代表人钱季同签字", "钱季同"],
+    ["原告：王立和，男，", "王立和"],
+    ["委托代理人：陈思为，电话 13900000000", "陈思为"],
+    ["申请人：方景行，男，1986年生", "方景行"],
+    ["乙方（签字）：方景行　　2024年", "方景行"],
+  ] as const) {
+    const got = recognizeNames(text);
+    assert.ok(got.has(name), `${text} → ${name}（实得 ${[...got].join("、")}）`);
+  }
+  for (const [text, not, keep] of [
+    ["原告张三同律师一起到庭", "张三同", "张三"],
+    ["被告李四方辩称", "李四方", "李四"],
+    ["甲方：李四于本月，", "李四于", "李四"],
+  ] as const) {
+    const got = recognizeNames(text);
+    assert.ok(!got.has(not) && got.has(keep), `${text} 应认出 ${keep}、不得认出 ${not}（实得 ${[...got].join("、")}）`);
+  }
+});
