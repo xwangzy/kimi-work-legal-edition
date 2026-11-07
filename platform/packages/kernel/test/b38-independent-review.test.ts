@@ -7,7 +7,8 @@
 process.env.ZR_INTERNAL_SECRET = process.env.ZR_INTERNAL_SECRET ?? "b38-review-secret-0123456789abcdef";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { importBytes, makeKernel, waitRun, type TestKernel } from "./helpers.ts";
+import { importBytes, makeKernel, waitRun, waitRunAnswering, type TestKernel } from "./helpers.ts";
+import { questionAnswerLines } from "../src/executor/kap-agent-client.ts";
 import { startCloudV0, type CloudV0 } from "./cloud-v0.ts";
 import { parseFindings, fixPrompt, reviewMessages } from "../src/services/independent-review.ts";
 
@@ -224,4 +225,45 @@ test("复核意见解析：标准格式、续行与“建议改”；交回修�
   const m = reviewMessages({ kind: "revise", stance: "委托方", jurisdiction: "中国大陆", asOf: "2026-11-07", goal: "改第8.1款", materials: [{ filename: "原件.docx", text: "原文" }], docs: [{ filename: "清洁稿.docx", text: "改后" }], diff: ["［修改前］8.1 50万元\n［修改后］8.1 20万元"] });
   assert.match(m[1]!.content, /原件与清洁稿的段落差异[\s\S]*8\.1 20万元/);
   assert.match(m[1]!.content, /授权范围/);
+});
+
+test("律师在任务中的答复交给复核人（V13 W6：律师答了“180 万元含税”“30%/40%/30%”，复核人只看委托原话，把这两项当成无出处的商业条件、要求改回待定）", { timeout: 180_000 }, async () => {
+  // 纯函数：单选、多选、其他、跳过；去掉引擎要求的推荐后缀
+  const q = { question_id: "q", questions: [
+    { id: "a", question: "价款是否含税？", options: [{ id: "o1", label: "含税 (Recommended)" }, { id: "o2", label: "不含税" }] },
+    { id: "b", question: "付款节点？", options: [{ id: "p1", label: "签约" }, { id: "p2", label: "终验" }], multi_select: true },
+    { id: "c", question: "违约金比例？", options: [] },
+    { id: "d", question: "管辖？", options: [] },
+  ] };
+  assert.deepEqual(questionAnswerLines(q, { a: { kind: "single", option_id: "o1" }, b: { kind: "multi", option_ids: ["p1", "p2"] }, c: { kind: "other", text: "日万分之五" }, d: { kind: "skipped" } }), [
+    "问：价款是否含税？　答：含税",
+    "问：付款节点？　答：签约；终验",
+    "问：违约金比例？　答：日万分之五",
+  ]);
+  const base = { kind: "draft" as const, stance: "买方", jurisdiction: "中国大陆", asOf: "2026-11-07", goal: "起草", materials: [], docs: [{ filename: "合同.docx", text: "2.1 价款为人民币120万元（含税）。" }] };
+  assert.ok(!reviewMessages(base)[1]!.content.includes("律师在任务中的答复"), "没有答复时不出这一段");
+  assert.ok(reviewMessages({ ...base, answers: ["问：价款是否含税？　答：含税"] })[1]!.content.includes("【律师在任务中的答复】"));
+
+  // 整条链路：主任务提问 → 律师在界面作答 → 交出文书 → 复核调用里带着这条答复
+  const seen = { review: [] as Record<string, unknown>[], fixUser: [] as string[] };
+  const inner = script("B38QA", "未发现实质问题", seen);
+  cloud.model.script = (body: Record<string, unknown>) => {
+    const ms = msgs(body);
+    const sys = ms.filter((m) => m.role === "system").map((m) => String(m.content ?? "")).join("\n");
+    const first = JSON.stringify(ms.find((m) => m.role === "user")?.content ?? "");
+    if (!sys.includes(REVIEWER) && first.includes("B38QA") && !ms.some((m) => m.role === "tool" && m.tool_call_id === "q_tax")) {
+      return { toolCalls: [{ id: "q_tax", name: "AskUserQuestion", args: { questions: [{ question: "价款是否含税？", header: "含税", options: [{ label: "含税", description: "" }, { label: "不含税", description: "" }], multi_select: false }] } }] };
+    }
+    return inner(body);
+  };
+  try {
+    const run = await startRun("B38QA");
+    const done = await waitRunAnswering(tk.inv, run.run_id, () => ({ decision: "approve" }), 150_000, (qq: any) => Object.fromEntries(qq.questions.map((x: any) => [x.id, { kind: "single", option_id: x.options.find((o: any) => o.label === "含税")?.id }])));
+    assert.equal(done.run.status, "succeeded", JSON.stringify(done.events.map((e: any) => e.type)));
+    assert.equal(seen.review.length, 1);
+    const user = String(msgs(seen.review[0]!).find((m) => m.role === "user")?.content ?? "");
+    assert.ok(user.includes("【律师在任务中的答复】") && user.includes("问：价款是否含税？　答：含税"), user.slice(0, 600));
+  } finally {
+    cloud.model.script = null;
+  }
 });

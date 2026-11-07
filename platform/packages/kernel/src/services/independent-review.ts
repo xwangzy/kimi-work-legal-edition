@@ -169,6 +169,11 @@ export function reviewMessages(p: {
   inventory?: readonly string[];
   /** 助手给律师的最终答复（V13 W2：没给时复核人以为“其他问题没有列给律师”）。 */
   reply?: string;
+  /**
+   * 律师在本任务中对助手提问的答复（“问：…　答：…”，代号形态）。V13 W6：律师答了“180 万元含税”“30%/40%/30%”，
+   * 复核人只看委托原话，把这两项当成“无材料出处的商业条件”要求改回待定（必须改），修改轮只能逐条驳回。
+   */
+  answers?: readonly string[];
 }): { role: "system" | "user"; content: string }[] {
   const docTexts = p.docs.map((d) => `【交付件：${d.filename}】\n${cut(d.text, REVIEW_DOC_MAX)}`);
   const used = docTexts.reduce((n, t) => n + t.length, 0) + (p.diff ?? []).reduce((n, t) => n + t.length, 0);
@@ -182,6 +187,9 @@ export function reviewMessages(p: {
   const user = [
     `【事项口径】我方立场：${p.stance}；法域：${p.jurisdiction}；分析截止日：${p.asOf}`,
     `【委托原话】\n${p.goal}`,
+    ...(p.answers && p.answers.length > 0
+      ? [`【律师在任务中的答复】（律师对助手提问的回答，与委托原话同等对待：交付件按这些答复写成确定内容的，不算无出处，不要求改回待定）\n${cut(p.answers.join("\n"), 8_000)}`]
+      : []),
     "【复核方法】逐项做，不要只看文字是否通顺：",
     FOCUS[p.kind],
     "【输出】只列会让你拒绝签发或要求返工的实质问题，按严重程度排序，最多 15 条；没有这类问题就只写“未发现实质问题”。每条单独一行，格式：",

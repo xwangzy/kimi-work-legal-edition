@@ -1335,7 +1335,9 @@ async function runReviewStage(
     const reply = docTexts[targets.docs.length + targets.diff.length] ?? "";
     const inventory = docTexts.slice(targets.docs.length + targets.diff.length + 1);
     appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.started, "review.started", { kind: picked.kind, skill: picked.skill, docs: docs.map((d) => d.filename), diff_lines: diff.length });
-    const messages = reviewMessages({ kind: picked.kind, stance: p.ctxM.stance, jurisdiction: p.ctxM.jurisdiction, asOf: p.ctxM.asOf, goal: p.goalSent, materials: p.snapshot, docs, diff, inventory, reply });
+    // 律师在任务中对提问的答复（已是代号形态）：没有时复核人会把律师确认过的商业条件当成“无出处”（V13 W6）
+    const answers = agentClient.answered?.(runId) ?? [];
+    const messages = reviewMessages({ kind: picked.kind, stance: p.ctxM.stance, jurisdiction: p.ctxM.jurisdiction, asOf: p.ctxM.asOf, goal: p.goalSent, materials: p.snapshot, docs, diff, inventory, reply, answers });
     const limit = ctx.deps.reviewLimitMs ?? REVIEW_LIMIT_MS;
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), limit);

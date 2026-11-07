@@ -74,6 +74,29 @@ export type KapPendingApproval = Record<string, unknown> & { approval_id: string
 /** 宿主的待决提问（run.question 载荷）。 */
 export type KapPendingQuestion = Record<string, unknown> & { question_id: string; questions: unknown[] };
 
+/**
+ * 一次作答的“问：…　答：…”行（代号形态：题目与选项来自助手，“其他”文字已由内核令牌化）。跳过的题不记。
+ * 选项文字去掉引擎要求的“(Recommended)”后缀。纯函数，可单测。
+ */
+export function questionAnswerLines(q: KapPendingQuestion | undefined, answers: Record<string, unknown>): string[] {
+  const items = Array.isArray(q?.questions) ? (q.questions as { id?: unknown; question?: unknown; options?: unknown }[]) : [];
+  const out: string[] = [];
+  for (const it of items) {
+    const a = answers[String(it?.id ?? "")] as { kind?: string; option_id?: unknown; option_ids?: unknown; text?: unknown } | undefined;
+    if (!a || a.kind === "skipped") continue;
+    const opts = Array.isArray(it.options) ? (it.options as { id?: unknown; label?: unknown }[]) : [];
+    const label = (oid: unknown) => String(opts.find((o) => o?.id === oid)?.label ?? "").replace(/\s*[（(]\s*recommended\s*[)）]\s*$/i, "").trim();
+    const ans =
+      a.kind === "single" ? label(a.option_id)
+      : a.kind === "multi" ? (Array.isArray(a.option_ids) ? a.option_ids.map(label).filter(Boolean).join("；") : "")
+      : a.kind === "other" ? String(a.text ?? "").trim()
+      : "";
+    if (!ans) continue;
+    out.push(`问：${String(it.question ?? "").trim().slice(0, 300)}　答：${ans.slice(0, 600)}`);
+  }
+  return out;
+}
+
 interface TaskState {
   taskId: string;
   runId: string;
@@ -133,6 +156,8 @@ export interface KapAgentClient extends AgentClient {
   decide(runId: string, approvalId: string, req: { decision: "approve" | "reject"; object_hash: string; nonce: string; scope: "once" | "task"; feedback?: string }, approver: { channel: string; userId: string }): Promise<void>;
   /** 律师回答提问。 */
   answer(runId: string, questionId: string, answers: Record<string, unknown>, origin: { channel: string; userId: string }, expectedStateVersion?: number): Promise<void>;
+  /** 律师在该运行中的作答（问—答，代号形态；内存）。 */
+  answered(runId: string): string[];
   /** 宿主运行的状态版本（界面作答时带回，乐观并发）。 */
   stateVersion(runId: string): Promise<number | null>;
   /** 能力账本：宿主在运行即现取（自检结果最新）；未启动时返回启动时上报的快照或 null（不为设备页而拉起宿主）。 */
@@ -149,6 +174,8 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
   const tasks = new Map<string, TaskState>();
   const taskByRun = new Map<string, TaskState>();
+  /** 律师在各运行中的作答（问—答，代号形态；内存，最多保留 200 个运行）：独立复核核对“律师已确认”的内容（V13 第 38 批 W6）。 */
+  const answeredByRun = new Map<string, string[]>();
 
   function onMessage(raw: unknown): void {
     const msg = raw as any;
@@ -610,7 +637,16 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
       if (!t || !t.questions.has(questionId)) throw Object.assign(new Error("问题不存在或已处理"), { code: "not_found" });
       // 乐观并发（第 04 篇 §3.3）：界面带回它看到的状态版本；未带（旧调用方）时取宿主当前版本
       const version = expectedStateVersion ?? (await call<{ state_version: number }>("events", { run_id: runId, after: 1e9, origin })).state_version;
+      const asked = t.questions.get(questionId);
       await call("answer", { run_id: runId, request: { question_id: questionId, answers, expected_state_version: version }, origin });
+      const lines = questionAnswerLines(asked, answers);
+      if (lines.length > 0) {
+        answeredByRun.set(runId, [...(answeredByRun.get(runId) ?? []), ...lines].slice(-40));
+        if (answeredByRun.size > 200) answeredByRun.delete(answeredByRun.keys().next().value!);
+      }
+    },
+    answered(runId) {
+      return [...(answeredByRun.get(runId) ?? [])];
     },
     async stateVersion(runId) {
       const t = taskByRun.get(runId);

@@ -16,6 +16,8 @@ export interface AgentClient {
   poll(id: { tid: string; uid: string }, taskId: string, cursor: number): Promise<AgentTaskPoll>;
   /** 取消；kap-host 适配器返回取消结果（复核 B4-B07：执行器据此直接记入事项账本），SDK 宿主不返回。 */
   cancel(id: { tid: string; uid: string }, taskId: string, reason: string): Promise<AgentCancelOutcome | void>;
+  /** 律师在该运行中对提问的答复（“问：…　答：…”，代号形态；内存，宿主重启后为空）。独立复核据此核对“律师已确认”的内容（V13 第 38 批）。 */
+  answered?(runId: string): string[];
 }
 
 /**
