@@ -19,7 +19,7 @@ import type { DeliverableSection } from "../../services/deliverable-check.ts";
 import { slog } from "@zr-legal/safe-log";
 
 /** 结果分布留痕（V13 第 38 批）：只记计数，不记文字。 */
-function logOutcome(status: "applied" | "not_applied" | "preview", patches: number, applied: number, conflicts: readonly { reason: Reason }[]): void {
+function logOutcome(status: "applied" | "partial" | "not_applied" | "preview", patches: number, applied: number, conflicts: readonly { reason: Reason }[]): void {
   const n = (r: Reason) => conflicts.filter((c) => c.reason === r).length;
   slog.event("TOOLS_DOCX_EDIT_OUTCOME", { tool: "docx_edit_draft", status, patches, applied, not_found: n("anchor_not_found") + n("anchor_empty"), ambiguous: n("anchor_ambiguous"), unknown_token: n("unknown_token"), other: n("overlap") + n("apply_failed") });
 }
@@ -152,9 +152,11 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
       conflicts.push({ index, reason, fix: FIX[reason], detail: msg.slice(0, 200) });
     }
   });
-  if (conflicts.length > 0) {
+  // 能定位的先写入、定位不到的逐条退回（V13 第 38 批取证：4 次正式调用里 2 次因 2 处中 1 处找不到而整体未写，另一处本可写入）。
+  // 草稿是在最新版本上逐处增量修改，部分写入不丢已写的修改；一处都定位不到时照旧不写
+  if (ops.length === 0) {
     logOutcome("not_applied", raw.length, 0, conflicts);
-    return { status: "not_applied" as const, written: false, conflicts, note: "整体没有写入任何修改：按逐条原因改正后，把全部修改重新提交一次" };
+    return { status: "not_applied" as const, written: false, conflicts, note: "没有写入任何修改：按逐条原因改正后重新提交" };
   }
   let out: Buffer;
   try {
@@ -171,7 +173,7 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
     return { status: "preview" as const, written: false, applied: ops.length, note: "试写通过，没有生成文件；去掉 dry_run 正式提交" };
   }
   const stored = ctx.blobs.put(out, mid);
-  logOutcome("applied", raw.length, ops.length, []);
+  logOutcome(conflicts.length > 0 ? "partial" : "applied", raw.length, ops.length, conflicts);
   const reg = registerToolArtifact(ctx, {
     kind: "agent_report",
     filename: art.filename,
@@ -179,11 +181,16 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
     storage_uri: stored.storage_uri,
     manifest: { tool: "docx.edit_draft", edited_from: id, patches: ops.length, note: "在本任务的文书草稿上逐处修改后的新版本（旧版本保留）" },
   });
+  const name = art.filename.replace(/\.docx$/i, "");
   return {
-    status: "applied" as const,
+    status: conflicts.length > 0 ? ("partial" as const) : ("applied" as const),
     applied: ops.length,
+    ...(conflicts.length > 0 ? { conflicts } : {}),
     ...reg,
     edited_from: id,
-    note: `已在《${art.filename.replace(/\.docx$/i, "")}》上改好 ${ops.length} 处，登记为同名文书的新版本（旧版本保留）。后续再改，用这次返回的 artifact_version_id`,
+    note:
+      conflicts.length > 0
+        ? `已在《${name}》上改好 ${ops.length} 处，登记为新版本；另有 ${conflicts.length} 处没有写入（见 conflicts 的序号与原因）：按原因改正后，用这次返回的 artifact_version_id 只重交这几处，已写入的不要重复提交`
+        : `已在《${name}》上改好 ${ops.length} 处，登记为同名文书的新版本（旧版本保留）。后续再改，用这次返回的 artifact_version_id`,
   };
 }

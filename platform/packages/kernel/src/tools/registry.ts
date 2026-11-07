@@ -481,7 +481,7 @@ export const TOOLS: readonly ToolDef[] = [
       "在本任务里你已用 docx.render_report 生成的 Word 文书上逐处修改（交付前检查报出的问题、自查发现的措辞、条号、金额、遗漏的款项等），几秒完成，登记为同名文书的新版本（旧版本保留）：" +
       "artifact_version_id 写 docx.render_report（或上一次本工具）返回的编号；每处给出要改的原文（anchor，逐字照抄这份文书里的文字、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落，按换行分段）。" +
       "只改要改的地方，不要为改几处整份重新生成；整体结构要变（增删多条、重排章节）才用 docx.render_report 重出。律师上传的材料不能用本工具，用 docx.revise。" +
-      "任一处找不到或有歧义时整体不写，逐条返回原因；改好后返回新版本的交付前检查 quality_check。",
+      "能定位的各处先写入（status=partial），找不到或有歧义的逐条退回原因，改正后用新编号只重交这几处；改好后返回新版本的交付前检查 quality_check。",
     sideEffect: "write_draft",
     resource: "matter_work",
     version: "1",

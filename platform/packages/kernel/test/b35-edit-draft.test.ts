@@ -76,10 +76,10 @@ test("在本任务的文书草稿上逐处修改：同名新版本、旧版本�
     assert.ok(r1.quality_check.issues.some((i: any) => i.kind === "foreign_word"));
     assert.match(r1.quality_check.note, /docx\.edit_draft/, "检查结果指向逐处修改，不是整份重出");
 
-    // 锚点找不到：整体不写，逐条给原因
-    const miss = await a.call("docx.edit_draft", { artifact_version_id: r1.artifact_version_id, patches: [{ anchor: "转让方一 personal名下", proposed_text: "转让方一个人名下" }, { anchor: "草稿里没有的一句话", proposed_text: "x" }] });
+    // 锚点一处都找不到：不写，逐条给原因（能定位的先写入见 b38-edit-draft-partial）
+    const miss = await a.call("docx.edit_draft", { artifact_version_id: r1.artifact_version_id, patches: [{ anchor: "草稿里没有的一句话", proposed_text: "x" }] });
     assert.equal(miss.status, "not_applied");
-    assert.deepEqual(miss.conflicts.map((c: any) => [c.index, c.reason]), [[1, "anchor_not_found"]]);
+    assert.deepEqual(miss.conflicts.map((c: any) => [c.index, c.reason]), [[0, "anchor_not_found"]]);
 
     const r2 = await a.call("docx.edit_draft", {
       artifact_version_id: r1.artifact_version_id,

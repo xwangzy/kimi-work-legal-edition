@@ -73,7 +73,7 @@ export const EVENTS = {
   TOOLS_LOCK_UNAVAILABLE: { level: "error", fields: { ...ERR } },
   TOOLS_TOOL_HIDDEN: { level: "error", fields: { tool: "ident" } },
   // 文书修改工具的结果分布（V13 第 38 批）：只记写入几处、各类定位失败几处，不记任何文字——用于查“改了很多次只写进几次”的原因
-  TOOLS_DOCX_EDIT_OUTCOME: { level: "info", fields: { tool: ["docx_edit_draft", "docx_revise"], status: ["applied", "not_applied", "preview"], patches: "int", applied: "int", not_found: "int", ambiguous: "int", unknown_token: "int", other: "int" } },
+  TOOLS_DOCX_EDIT_OUTCOME: { level: "info", fields: { tool: ["docx_edit_draft", "docx_revise"], status: ["applied", "partial", "not_applied", "preview"], patches: "int", applied: "int", not_found: "int", ambiguous: "int", unknown_token: "int", other: "int" } },
   GATE_RECORD_WRITE_FAILED: { level: "error", fields: { ...ERR } },
   GATE_TOKEN_WRITE_FAILED: { level: "error", fields: { ...ERR } },
   METER_INSERT_FAILED: { level: "error", fields: { ...ERR } },
