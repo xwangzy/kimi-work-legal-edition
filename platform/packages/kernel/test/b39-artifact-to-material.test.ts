@@ -50,7 +50,7 @@ test("修订稿作新材料：真名还原、独立登记、原件与成果不�
   // 清洁稿作为新材料
   const m = await tk.inv("materials.from_artifact", { artifact_version_id: r1.clean.artifact_version_id });
   assert.notEqual(m.document_version_id, doc.document_version_id, "独立的新材料，不覆盖原件");
-  assert.match(m.filename, /清洁稿/);
+  assert.match(m.filename, /^服务合同（第1轮修改后）\.docx$/, m.filename);
   const row = tk.kernel.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM document_versions WHERE document_version_id = ?`, [m.document_version_id])!;
   const imported = text(tk.kernel.blobs.read(row.storage_uri));
   assert.match(imported, /何予安确认，服务费为人民币120万元/, "材料是第一轮修改后的文字、真名已还原");
@@ -69,6 +69,11 @@ test("修订稿作新材料：真名还原、独立登记、原件与成果不�
   assert.match(xml.replace(/<[^>]+>/g, ""), /服务费为人民币120万元/, "第一轮的结果在第二轮修订稿里是正文");
   assert.equal((xml.match(/<w:ins\b/g) ?? []).length >= 1, true, "第二轮修改以修订痕迹显示");
   assert.equal(/100万元/.test(xml.replace(/<w:delText[^>]*>[^<]*<\/w:delText>/g, "").replace(/<[^>]+>/g, "")), false, "第二轮修订稿里不再出现第一轮删掉的 100 万");
+  // 文件名分得清轮次：第二轮成果是“服务合同（第1轮修改后）（修订稿）”；再往下一轮，底稿叫“第2轮修改后”
+  const r2name = tk.kernel.db.get<{ filename: string }>(`SELECT filename FROM artifact_versions WHERE artifact_version_id = ?`, [r2.revision.artifact_version_id])!.filename;
+  assert.equal(r2name, "服务合同（第1轮修改后）（修订稿）.docx");
+  const m3 = await tk.inv("materials.from_artifact", { artifact_version_id: r2.clean.artifact_version_id });
+  assert.equal(m3.filename, "服务合同（第2轮修改后）.docx");
 });
 
 test("非 Word 成果不能作为材料", async () => {

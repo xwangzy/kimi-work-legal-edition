@@ -1090,6 +1090,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         const named = tokens.restore(art.matter_id, filename);
         if (named.restored > 0) filename = named.text.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").trim() || filename;
       }
+      // 第几轮的底稿写进文件名（V14 第 39 批真实界面 T2R2：第二轮成果叫“……（清洁稿）（修订稿）”“……（清洁稿）（清洁稿）”，律师分不清两轮）：
+      // 去掉“（清洁稿）（修订稿）（修订稿·对外版）”，接“（第 N 轮修改后）”；再往下一轮时 N 加一。输出照常接“（修订稿）”等后缀
+      {
+        const stem = filename.replace(/\.docx$/i, "").replace(/（(?:清洁稿|修订稿(?:·对外版|·内部版)?)）$/, "");
+        const prev = /（第(\d+)轮修改后）$/.exec(stem);
+        filename = `${prev ? stem.slice(0, prev.index) : stem}（第${prev ? Number(prev[1]) + 1 : 1}轮修改后）.docx`;
+      }
       const sha256 = sha256Hex(bytes);
       const result = await insertDocumentWithParse({
         matterId: art.matter_id,
