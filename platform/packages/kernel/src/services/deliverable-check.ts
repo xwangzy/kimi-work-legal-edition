@@ -56,6 +56,8 @@ const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   { re: /\b[a-z]{2,}(?:_[a-z]{2,})+\b/g, fix: "删去工具参数名（如 amount_yuan），改写成中文说明" },
   { re: /演示数据|演示库|演示法规|SKILL\.md|rubric|quality=ok/gi, fix: "删去系统内部用语" },
   { re: /(?:金额|计算|法律|文书|表格|检索|修订)工具/g, fix: "改用律师的说法（如“经核算”“经法规库核验”）" },
+  // 隐私代号的说明是写给助手的（V14 第 39 批独立评分：争点矩阵里出现“称呼与全名代号按任务说明通常指同一人”）
+  { re: /(?:称呼|全名|姓名|自然人|当事人)(?:与全名|和全名)?代号|代号(?:说明|一致|不一致|对应|形态)|按任务说明|任务说明(?:中|里|所载)/g, fix: "删去关于代号、任务说明的话：直接写当事人的名称或称呼（导出时系统还原真名）" },
 ];
 
 /** 夹在中文之间的英文单词（如“转让方一 personal名下”）；全大写缩写（LPR、SLA）与常见外来词不报。 */
@@ -74,6 +76,40 @@ const MARKDOWN_PATTERNS: { re: RegExp; fix: string }[] = [
 const ARTICLE_HEADING_RE = /^\s*第\s*([0-9]{1,3}|[一二三四五六七八九十百零〇]{1,6})\s*条(?:\s|$|[^款项之])/;
 /** 段首款号“N.M”（不含 N.M.K 的第三级）。 */
 const CLAUSE_RE = /^\s*([0-9]{1,3})\.([0-9]{1,3})(?![.\d])/;
+
+const CN_DIGITS = "一二三四五六七八九十";
+/** “一、”“十二、”这类中文序号的值（1～99）；不是返回 null。纯函数。 */
+function cnOrdinal(s: string): number | null {
+  const m = /^\s*([一二三四五六七八九十]{1,3})、/.exec(s);
+  if (!m) return null;
+  const t = m[1]!;
+  if (t === "十") return 10;
+  if (t.length === 1) return CN_DIGITS.indexOf(t) + 1;
+  if (t.startsWith("十")) return 10 + CN_DIGITS.indexOf(t[1]!) + 1;
+  if (t.endsWith("十")) return (CN_DIGITS.indexOf(t[0]!) + 1) * 10;
+  if (t.length === 3 && t[1] === "十") return (CN_DIGITS.indexOf(t[0]!) + 1) * 10 + CN_DIGITS.indexOf(t[2]!) + 1;
+  return null;
+}
+
+/**
+ * 节标题的“一、二、三、”序号重复或跳号（V14 第 39 批独立评分：案情分析备忘录里出现三个“二、基本案情”、六个“三、争点”——
+ * 助手把同一级标题拆成几节分次写，每节都重写了序号）。只看以中文序号开头的节标题。纯函数。
+ */
+export function headingNumberIssues(sections: readonly DeliverableSection[]): DeliverableIssue[] {
+  const out: DeliverableIssue[] = [];
+  const seen = new Map<number, number>();
+  let last = 0;
+  sections.forEach((sec, i) => {
+    const s = { heading: sec.heading ?? "" };
+    const n = cnOrdinal(s.heading);
+    if (n === null) return;
+    if (seen.has(n)) out.push({ kind: "numbering", where: s.heading.slice(0, 20), text: s.heading.slice(0, 30), fix: `节标题序号重复（第 ${seen.get(n)! + 1} 节已用过“${s.heading.slice(0, 3)}”）：同一部分的内容合并到一节，或把后面的标题改成下一级（“（一）”）` });
+    else if (n !== last + 1 && last > 0) out.push({ kind: "numbering", where: s.heading.slice(0, 20), text: s.heading.slice(0, 30), fix: `节标题序号不连续（上一个是第 ${last} 部分）：按顺序改正` });
+    seen.set(n, seen.get(n) ?? i);
+    if (n > last) last = n;
+  });
+  return out;
+}
 
 export function checkDeliverable(title: string, sections: readonly DeliverableSection[], opts: { lawdb?: Lawdb; asOf?: string; docx?: Buffer } = {}): DeliverableCheck {
   const paras = flatten(title, sections);
@@ -114,6 +150,7 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
   // 递交法院、客户的文书（起诉状、答辩状、法律意见书、律师函）：给律师的提示不进正文（第 35 批真实走查 R3、R4）
   else if (isOutward(title)) for (const i of outwardIssues(paras)) push(i);
   for (const i of numberingIssues(sections)) push(i);
+  for (const i of headingNumberIssues(sections)) push(i);
   for (const i of crossRefIssues(sections, paras)) push(i);
   for (const i of tableSumIssues(sections)) push(i);
 
