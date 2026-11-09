@@ -18,7 +18,8 @@ export interface ParseOutcome {
 // v0.1.1：DOCX 取可见文字（修订删除、移动原位置不计入；复核 B3-B14、C-B04）——新旧解析版本可按此区分
 // v0.1.2（v9.3 第 15 批 B-11）：DOCX 表格按行输出“| 单元格 | 单元格 |”，不再每个单元格各占一行
 // v0.1.3（v9.4 第 29 批）：DOCX 自动编号（“第一条”“1.1”“（一）”）写进段首——原先只取可见文字，自动编号的合同整份没有条款号
-const PARSER_VERSION = "v0.1.3-crude";
+// v0.1.4（V14 第 39 批）：文字视图的自动编号按接受修订后的口径（18b3088），早先的解析可按此版本号找出、经 materials.reparse 重新解析
+const PARSER_VERSION = "v0.1.4-crude";
 
 /**
  * 旧版 Office 与 WPS 格式（B-11；评审 Z1“.doc/.wps 不支持”）：本机不带格式转换程序，按扩展名或文件头（OLE 复合文档 D0CF11E0、RTF）认出来，
