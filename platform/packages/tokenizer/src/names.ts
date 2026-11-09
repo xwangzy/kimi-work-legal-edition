@@ -448,6 +448,9 @@ export function findNicknames(
 /** 姓名的明确右边界（除标点、空白、文末外）：言语动词、称谓、出庭类动词。 */
 const RIGHT_ANCHORS = [...SPEECH_VERBS, ...HONORIFICS, "出庭", "到庭", "作证"].sort((a, b) => b.length - a.length);
 
+/** 常紧跟在姓名后的时间、副词（头一个字不作名字末字）。 */
+const AFTER_NAME_WORDS = new Set(["当日", "当天", "当场", "当时", "当晚", "当即", "当面", "当月", "当年", "当期", "已经", "曾经", "于当"]);
+
 /** 从 j 起读一个姓名：姓氏 + 1–2 个名字；不是姓名返回 null。 */
 function readName(text: string, j: number, strong = false): string | null {
   const s = surnameAt(text, j);
@@ -476,7 +479,9 @@ function readName(text: string, j: number, strong = false): string | null {
   const g2 = text[j + s + 1];
   if (!g1 || !CJK.test(g1) || STOP.has(g1) || NOT_GIVEN.has(g1) || (g2 && ROLE_GIVEN.has(g1 + g2))) return null;
   let len = s + 1;
-  if (g2 && CJK.test(g2) && !STOP.has(g2) && !NOT_GIVEN.has(g2)) len = s + 2;
+  // 名字后紧跟“当日、当天、当场、当时……”：第二字是这个词的头一个字，不是名字（V14 第 39 批 L2 劳动答辩：“部门负责人王磊当日 18:22 点击同意”
+  // 认成“王磊当”，同一人有两个代号、助手当成身份记载矛盾；表里只有“王磊当”，同一份材料里“系王磊让其……”“应王磊要求”以真名发给了模型）
+  if (g2 && CJK.test(g2) && !STOP.has(g2) && !NOT_GIVEN.has(g2) && !AFTER_NAME_WORDS.has(g2 + (text[j + s + 2] ?? ""))) len = s + 2;
   const next = text[j + len] ?? "";
   // 姓名后紧跟标点或常见动词、介词：姓名到此为止；否则可能是机构名的开头（“张家港市……有限公司”）
   if (next !== "" && CJK.test(next) && !NAME_DELIM.has(next) && ORG_TAIL.test(text.slice(j))) return null;

@@ -72,3 +72,13 @@ test("角色词后直接接常用词、副词“都”、指代词不读姓名�
   assert.deepEqual(names("股东：利益民"), ["利益民"]);
   assert.deepEqual(names("被告利晓峰辩称"), ["利晓峰"]);
 });
+
+test("姓名后紧跟“当日、当天、当场、当时”：两字名不吞下“当”（L2 劳动答辩：“部门负责人王磊当日点击同意”认成“王磊当”，同一人两个代号，另几处真名外发）", () => {
+  assert.deepEqual(names("部门负责人王磊当日18:22点击“同意”"), ["王磊"]);
+  assert.deepEqual(names("经理张伟当天签字"), ["张伟"]);
+  assert.deepEqual(names("联系人李娜当场确认"), ["李娜"]);
+  const tz = new MatterTokenizer({ matterKey: Buffer.alloc(32, 3) });
+  const out = tz.tokenize("部门负责人王磊当日18:22点击“同意”；申请人称系王磊让其在家准备客户演示，应王磊要求上传。").text;
+  assert.equal(out.includes("王磊"), false, out);
+  assert.equal(new Set(out.match(/〔自然人·[0-9A-Z]{6}〕/g)).size, 1, "同一人一个代号");
+});
