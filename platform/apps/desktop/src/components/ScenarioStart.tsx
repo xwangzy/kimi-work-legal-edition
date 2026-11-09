@@ -10,7 +10,7 @@ import { eventDateProblem, STAGE_LABELS, stagesFor } from "../lib/matter-stage.t
 import { notifyDataChanged } from "../lib/events.ts";
 import { nav } from "../App.tsx";
 import type { ScenarioCard } from "../lib/scenarios.ts";
-import { buildGoal, canStartPartial, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues, startPanelInitial } from "../lib/scenarios.ts";
+import { buildGoal, canStartPartial, preselectDocs, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues, startPanelInitial } from "../lib/scenarios.ts";
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { defaultChoice } from "./ModeSelector.tsx";
@@ -38,17 +38,6 @@ interface Props {
   onClose: () => void;
 }
 
-function preselect(card: ScenarioCard, docs: Props["documents"]): string[] {
-  if (card.minMaterials === 0) return [];
-  // 回稿重审要按“上一稿、回稿”的顺序勾两份（第 31 批：原先全选，案卷里有第三份稿时顺序就不是律师心里那两份）
-  if (card.scenario === "s1b.draft_compare" || card.skill === "redraft-review") return [];
-  // 针对一份文书的方法（审合同、按意见修改、文稿体检）只预选最近一份 Word（第 31 批：后两张原先把案卷里的证据也全勾上）
-  if (card.skill === "contract-review" || card.skill === "doc-revise" || card.skill === "citation-check") {
-    const word = [...docs].reverse().find((d) => d.filename.toLowerCase().endsWith(".docx"));
-    return word ? [word.document_version_id] : docs.slice(-1).map((d) => d.document_version_id);
-  }
-  return docs.map((d) => d.document_version_id);
-}
 
 export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatter, documentsFor, documents: allDocs, policy, initialExtra, onImport, onClose }: Props) {
   // 只用属于当前所选事项的材料（切换事项后旧事项的材料不显示、不勾选）
@@ -58,7 +47,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   // 律师在输入框写的是问题时预填进“问题”栏（第 35 批）
   const [values, setValues] = useState<Record<string, string | string[]>>(() => startPanelInitial(card, initialExtra).values);
   const [extra, setExtra] = useState(() => startPanelInitial(card, initialExtra).extra);
-  const [docIds, setDocIds] = useState<string[]>(() => preselect(card, documents));
+  const [docIds, setDocIds] = useState<string[]>(() => preselectDocs(card, documents));
   /** 本面板里刚改过的用途（未刷新事项材料前先按这里显示；保存失败即撤回）。 */
   const [roles, setRoles] = useState<Record<string, MaterialRole | null>>({});
   const [how, setHow] = useState(false);
@@ -79,7 +68,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
     if (knownFor.current !== documentsFor) {
       knownFor.current = documentsFor;
       known.current = new Set(documents.map((d) => d.document_version_id));
-      setDocIds(preselect(card, documents));
+      setDocIds(preselectDocs(card, documents));
       return;
     }
     const fresh = documents.filter((d) => !known.current.has(d.document_version_id)).map((d) => d.document_version_id);

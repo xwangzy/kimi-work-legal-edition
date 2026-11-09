@@ -1363,3 +1363,20 @@ export function sampleBannerText(m: { stance?: string | null } | null | undefine
   }
   return "示例事项：合同与审查意见是虚构的，只在这台电脑上。去“材料”打开审查意见，逐条决定后生成修订稿。";
 }
+
+/**
+ * 开始面板默认勾哪些材料。documents 按导入时间新的在前（matters.get：ORDER BY created_at DESC）。
+ * V14 第 39 批真实走查 T2R2：针对一份文书的方法原写“只预选最近一份 Word”，却把列表反过来取，勾上的是最早那份——
+ * 律师在成果页点“作为底稿继续修改”后，开始面板勾的是原件而不是刚加进来的上一轮清洁稿，直接开始就在原件上改了第二轮。
+ */
+export function preselectDocs(card: Pick<ScenarioCard, "minMaterials" | "scenario" | "skill">, docs: readonly { document_version_id: string; filename: string }[]): string[] {
+  if (card.minMaterials === 0) return [];
+  // 回稿重审要按“上一稿、回稿”的顺序勾两份（第 31 批：原先全选，案卷里有第三份稿时顺序就不是律师心里那两份）
+  if (card.scenario === "s1b.draft_compare" || card.skill === "redraft-review") return [];
+  // 针对一份文书的方法（审合同、按意见修改、文稿体检）只预选最近一份 Word（第 31 批：后两张原先把案卷里的证据也全勾上）
+  if (card.skill === "contract-review" || card.skill === "doc-revise" || card.skill === "citation-check") {
+    const word = docs.find((d) => d.filename.toLowerCase().endsWith(".docx"));
+    return word ? [word.document_version_id] : docs.slice(0, 1).map((d) => d.document_version_id);
+  }
+  return docs.map((d) => d.document_version_id);
+}

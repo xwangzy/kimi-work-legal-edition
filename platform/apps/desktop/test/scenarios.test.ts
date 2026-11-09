@@ -100,3 +100,18 @@ test("v9.4 第 21 批：原“即将推出”的八项有了卡，意图建议�
   assert.notEqual(suggestScenario("申请证据保全")?.id, "preservation");
   assert.equal(suggestScenario("准备辞退一名员工有什么风险")?.id, "labor-termination", "解除前评估不被规章制度审查抢走");
 });
+
+test("开始面板预选：按意见修改、审合同只勾最近导入的一份 Word（列表新的在前）；回稿比对不预选（V14 第 39 批 T2R2：原先勾的是最早那份）", async () => {
+  const { preselectDocs, SCENARIOS } = await import("../src/lib/scenarios.ts");
+  const docs = [
+    { document_version_id: "d_clean", filename: "合同（清洁稿）.docx" },
+    { document_version_id: "d_note", filename: "律师意见.txt" },
+    { document_version_id: "d_orig", filename: "合同.docx" },
+  ];
+  const card = (id: string) => SCENARIOS.find((c) => c.id === id)!;
+  assert.deepEqual(preselectDocs(card("doc-revise"), docs), ["d_clean"]);
+  assert.deepEqual(preselectDocs(card("contract-review"), docs), ["d_clean"]);
+  assert.deepEqual(preselectDocs(card("redraft-local"), docs), []);
+  assert.deepEqual(preselectDocs(card("casefile"), docs), ["d_clean", "d_note", "d_orig"]);
+  assert.deepEqual(preselectDocs(card("doc-revise"), [{ document_version_id: "t", filename: "意见.txt" }]), ["t"]);
+});
