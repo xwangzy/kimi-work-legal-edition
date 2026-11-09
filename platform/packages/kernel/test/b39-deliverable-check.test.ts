@@ -27,3 +27,14 @@ test("节标题序号重复、跳号报出；正常的一、二、三不报", ()
   // 十一、十二 照常识别
   assert.deepEqual(headingNumberIssues(Array.from({ length: 12 }, (_, i) => ({ heading: `${["一","二","三","四","五","六","七","八","九","十","十一","十二"][i]}、第${i + 1}部分`, paragraphs: [] }))), []);
 });
+
+test("上诉状核对清单里的“住所代号”“律师任务说明”“费用工具提示”报为内部用语（表格也查）", () => {
+  const r = checkDeliverable("提交前核对清单", [{ heading: "核对清单", paragraphs: [], table: { columns: ["事项", "依据"], rows: [["当事人信息", "双方名称、住所代号、统一社会信用代码代号及法定代表人已按判决书填写。"], ["上诉期限", "律师任务说明；民诉法解释第三百二十一条"], ["上诉费", "费用工具提示一"]] } }]);
+  const hits = r.issues.filter((i) => i.kind === "internal_term").map((i) => i.text);
+  assert.ok(hits.some((t) => /住所代号/.test(t)), JSON.stringify(r.issues));
+  assert.ok(hits.some((t) => /信用代码代号/.test(t)));
+  assert.ok(hits.some((t) => /律师任务说明/.test(t)));
+  assert.ok(hits.some((t) => /费用工具/.test(t)));
+  const ok = checkDeliverable("核对清单", [{ heading: "说明", paragraphs: ["本合同项下产品代号为 RC-F860；上诉状已按一审判决书核对当事人住所。"] }]);
+  assert.equal(ok.issues.filter((i) => i.kind === "internal_term").length, 0, JSON.stringify(ok.issues));
+});
