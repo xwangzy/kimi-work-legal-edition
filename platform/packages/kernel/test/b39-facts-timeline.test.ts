@@ -161,3 +161,34 @@ test("助手自己交了《事实时间线》的不再重复生成", { timeout: 
     cloud.model.script = null;
   }
 });
+
+test("facts.submit：引文里的代号抄错了（本事项令牌表里没有）的那条不入库，退回原因；照抄正确的照常入库", { timeout: 60_000 }, async () => {
+  const { Agent, fetch } = await import("undici");
+  const { liveTaskIdentity } = await import("./helpers.ts");
+  const { mintTaskToken } = await import("../src/identity.ts");
+  const { matter } = await tk.inv("matters.create", { title: "代号抄错", stance: "原告", consent_status: "agreed" });
+  await tk.inv("matters.parties.upsert", { matter_id: matter.matter_id, name: "王建国", kind: "person" });
+  const doc = await importBytes(tk.inv, matter.matter_id, "合同.txt", Buffer.from("甲方联系人王建国于2026年1月5日签收货物。", "utf8"), "text/plain");
+  const live = liveTaskIdentity(tk, matter.matter_id, "badtok");
+  tk.kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ goal: "整理", document_version_ids: [doc.document_version_id] }), live.rid]);
+  const token = mintTaskToken({ tid: live.tid, uid: live.uid, mid: live.mid, rid: live.rid, aid: live.aid, fen: live.fence, fx: ["read", "write_draft"], scope: ["tool:legal"] }, 300);
+  const agent = new Agent({ connect: { socketPath: tk.kernel.pipePath } });
+  let seq = 0;
+  const call = async (name: string, args: unknown) => ((await fetch("http://tools.kwl/mcp", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ jsonrpc: "2.0", id: ++seq, method: "tools/call", params: { name, arguments: args } }), dispatcher: agent }).then((x) => x.json())) as any).result.structuredContent;
+  const ex = await call("materials.read_excerpt", { parse_version_id: (await call("materials.list", {})).materials[0].parse_version_id });
+  const real = /〔自然人·[0-9A-Z]+〕/.exec(ex.text)![0];
+  const fake = "〔自然人·ZZZZZZ〕";
+  const r = await call("facts.submit", {
+    facts: [
+      { statement: `甲方联系人${fake}于2026-01-05签收货物`, kind: "claimed", occurred_on: "2026-01-05", document_version_id: doc.document_version_id, quote: `甲方联系人${fake}于2026年1月5日签收货物` },
+      { statement: `甲方联系人${real}于2026-01-05签收货物。`, kind: "claimed", occurred_on: "2026-01-05", document_version_id: doc.document_version_id, quote: `甲方联系人${real}于2026年1月5日签收货物` },
+    ],
+  });
+  assert.equal(r.submitted, 1, JSON.stringify(r));
+  assert.equal(r.rejected?.[0]?.index, 0);
+  assert.deepEqual(r.rejected[0].tokens, [fake]);
+  assert.match(r.note, /不存在的代号/);
+  const rows = tk.kernel.db.all<{ quote: string }>(`SELECT quote FROM matter_facts WHERE matter_id = ?`, [matter.matter_id]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.quote.includes(fake), false);
+});

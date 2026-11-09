@@ -14,6 +14,7 @@
 import { ruleNoOf, runRulesSnapshot, type ReviewRule, type RulesSnapshot } from "./review-rules.ts";
 import { localToday } from "./local-date.ts";
 import { DomainError, newId, notFound, sha256Hex } from "@zr-legal/domain";
+import { findTokens } from "@zr-legal/tokenizer";
 import { cellPositionLabel, compareDocx, createStyledDocx, createXlsx, docxListLabels, extractParagraphs, paragraphCells, readZipText, stripListLabel, type CellPosition } from "@zr-legal/docx-engine";
 import type { Lawdb } from "@zr-legal/lawdb";
 import type { KernelDb } from "../db.ts";
@@ -1094,6 +1095,10 @@ export function submitFacts(deps: ReviewDeps, scope: ToolScope, input: { facts?:
     return undefined;
   };
   const duplicates: { index: number; duplicate_of: string }[] = [];
+  // 代号照抄错了的（V14 第 39 批真实走查 casefile-deep：助手把“〔地址·6X…〕”抄成“〔地址·6KCYZS〕”，事项令牌表里没有这个代号，
+  // 事实页与时间线下载后都还原不了、引文也定位不到）：该条不入库，退回说明，让助手照抄材料里的代号重交
+  const known = deps.tokens ? new Set(deps.tokens.table(scope.matterId).map((e) => e.token)) : null;
+  const rejected: { index: number; reason: string; tokens: string[] }[] = [];
   let inserted = 0;
   deps.db.tx(() => {
     facts.forEach((f: any, i: number) => {
@@ -1105,6 +1110,13 @@ export function submitFacts(deps: ReviewDeps, scope: ToolScope, input: { facts?:
       const amount = typeof f?.amount_yuan === "number" && Number.isFinite(f.amount_yuan) ? f.amount_yuan : null;
       const docId = optStr(f?.document_version_id, 80);
       const quote = optStr(f?.quote, FACT_LIMITS.field);
+      if (known) {
+        const bad = [...new Set([...findTokens(statement), ...(quote ? findTokens(quote) : [])])].filter((t) => !known.has(t));
+        if (bad.length > 0) {
+          rejected.push({ index: i, reason: "含有本事项不存在的代号（多半是照抄时抄错了）：statement 与 quote 里的代号只能逐字照抄材料里出现过的，改正后只重交这几条", tokens: bad });
+          return;
+        }
+      }
       const keys = factKeys({ statement, kind, occurred_on: occurredOn, document_version_id: docId, quote });
       const dup = duplicateOf(keys, statement);
       if (dup) {
@@ -1134,7 +1146,8 @@ export function submitFacts(deps: ReviewDeps, scope: ToolScope, input: { facts?:
     submitted: out.length,
     facts: out,
     ...(duplicates.length > 0 ? { duplicates } : {}),
-    note: `${unanchored > 0 ? `${unanchored} 条事实没有在材料中定位到逐字引文：律师确认前不会被文书与汇报引用` : "已提交，律师确认后才可被文书与汇报引用"}${dupNote}`,
+    ...(rejected.length > 0 ? { rejected } : {}),
+    note: `${rejected.length > 0 ? `${rejected.length} 条没有入库：含有本事项不存在的代号（见 rejected），照抄材料里的代号后只重交这几条。` : ""}${unanchored > 0 ? `${unanchored} 条事实没有在材料中定位到逐字引文：律师确认前不会被文书与汇报引用` : "已提交，律师确认后才可被文书与汇报引用"}${dupNote}`,
   };
 }
 
