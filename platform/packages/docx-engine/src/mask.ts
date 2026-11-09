@@ -23,28 +23,33 @@ export interface MaskResult {
   notFound: string[];
 }
 
-export function maskDocxText(docx: Buffer, masks: TextMask[]): MaskResult {
-  const files = readZipEntries(docx);
-  let xml = files.get("word/document.xml")?.toString("utf8");
-  if (xml === undefined) throw new DomainError("unsupported_file", "DOCX 缺少 word/document.xml", 422);
+/** 遮盖要处理的部件：正文、页眉、页脚、脚注、尾注（V14 第 39 批：原先只处理正文，页脚里的“钱予墨 13823519076”原样留在对外脱敏件里）。 */
+const MASK_PARTS = /^word\/(?:document|header\d*|footer\d*|footnotes|endnotes)\.xml$/;
 
+/** 各部件的可见文字（正文在前，页眉页脚等按部件名顺序），供脱敏前扫描标识符。 */
+export function docxAllPartsText(docx: Buffer): string {
+  const files = readZipEntries(docx);
+  const names = [...files.keys()].filter((n) => MASK_PARTS.test(n)).sort((a, b) => (a === "word/document.xml" ? -1 : b === "word/document.xml" ? 1 : a.localeCompare(b)));
+  return names.map((n) => mapParagraphs(files.get(n)!.toString("utf8")).map((p) => p.text).join("\n")).join("\n");
+}
+
+function maskXml(xml0: string, masks: TextMask[], found: Set<number>): { xml: string; replaced: number } {
+  let xml = xml0;
   let replaced = 0;
-  const notFound: string[] = [];
-  for (const mask of masks) {
-    if (!mask.find) continue;
+  masks.forEach((mask, mi) => {
+    if (!mask.find) return;
     let remaining = mask.maxOccurrences ?? Number.POSITIVE_INFINITY;
-    let foundAny = false;
     for (;;) {
       if (remaining <= 0) break;
       const paras = mapParagraphs(xml);
       let applied = false;
-      for (const found of paras) {
-        const idx = found.text.indexOf(mask.find);
+      for (const hit of paras) {
+        const idx = hit.text.indexOf(mask.find);
         if (idx < 0) continue;
         // 一个 run 里有几段文字、制表符的先拆开（第 34 批 D07：原先整 run 切除后只重发第一段文字，后半段会丢）
         const lenBefore = xml.length;
-        xml = splitParagraphRuns(xml, found);
-        const para = mapParagraph(xml.slice(found.xmlStart, found.xmlEnd + xml.length - lenBefore), found.xmlStart, found.index);
+        xml = splitParagraphRuns(xml, hit);
+        const para = mapParagraph(xml.slice(hit.xmlStart, hit.xmlEnd + xml.length - lenBefore), hit.xmlStart, hit.index);
         const spanStart = idx;
         const spanEnd = idx + mask.find.length;
         const coverSegs = para.segments.filter((s) => !s.deleted && s.end > spanStart && s.start < spanEnd);
@@ -64,16 +69,29 @@ export function maskDocxText(docx: Buffer, masks: TextMask[]): MaskResult {
         const paraXml = xml.slice(para.xmlStart, para.xmlEnd);
         xml = xml.slice(0, para.xmlStart) + paraXml.slice(0, relStart) + parts.join("") + paraXml.slice(relEnd) + xml.slice(para.xmlEnd);
         applied = true;
-        foundAny = true;
+        found.add(mi);
         replaced++;
         remaining--;
         break; // 段落映射已失效，重扫
       }
       if (!applied) break;
     }
-    if (!foundAny) notFound.push(mask.find.slice(0, 40));
+  });
+  return { xml, replaced };
+}
+
+export function maskDocxText(docx: Buffer, masks: TextMask[]): MaskResult {
+  const files = readZipEntries(docx);
+  if (!files.has("word/document.xml")) throw new DomainError("unsupported_file", "DOCX 缺少 word/document.xml", 422);
+  let replaced = 0;
+  const found = new Set<number>();
+  for (const [name, data] of files) {
+    if (!MASK_PARTS.test(name)) continue;
+    const r = maskXml(data.toString("utf8"), masks, found);
+    if (r.replaced > 0) files.set(name, Buffer.from(r.xml, "utf8"));
+    replaced += r.replaced;
   }
-  files.set("word/document.xml", Buffer.from(xml, "utf8"));
+  const notFound = masks.filter((m, i) => m.find && !found.has(i)).map((m) => m.find.slice(0, 40));
   dropHouseMark(files);
   return { docx: writeZip([...files.entries()].map(([name, data]) => ({ name, data }))), replaced, notFound };
 }

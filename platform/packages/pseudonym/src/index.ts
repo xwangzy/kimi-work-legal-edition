@@ -73,6 +73,13 @@ export function scanDirectIdentifiers(text: string): {
     if (s.length === 18 && idCardValid(s)) continue;
     if (luhnValid(s)) findings.push({ type: "bank_card", start: m.index!, end: m.index! + s.length, masked: mask(s, 4, 4), valid: true });
   }
+  // 对公账户多数不是银行卡号、过不了 Luhn 校验：紧跟“账号、账户、卡号”的 8～30 位数字按账号处理（V14 第 39 批 T2-D 对外脱敏）
+  for (const m of text.matchAll(/(?:账号|账户|帐号|帐户|卡号)(?:号码)?[^0-9\n]{0,6}?(\d[\d ]{6,28}\d)(?!\d)/g)) {
+    const start = m.index! + m[0].length - m[1]!.length;
+    const end = start + m[1]!.length;
+    if (findings.some((f) => f.start < end && f.end > start)) continue;
+    findings.push({ type: "bank_card", start, end, masked: mask(m[1]!.replace(/ /g, ""), 4, 4), valid: true });
+  }
   for (const m of text.matchAll(/(?<![0-9A-Z])[0-9A-HJ-NPQRTUWXY]{2}\d{6}[0-9A-HJ-NPQRTUWXY]{10}(?![0-9A-Z])/g)) {
     // 与身份证重叠的跳过（身份证优先，避免同一 18 位重复计数）
     if (findings.some((f) => f.type === "id_card" && f.start === m.index)) continue;

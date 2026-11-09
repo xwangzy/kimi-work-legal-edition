@@ -10,6 +10,7 @@ import {
   compareDocx,
   createDocx,
   maskDocxText,
+  docxAllPartsText,
   sanitizeDocx,
   scrubDocProps,
   extractParagraphs,
@@ -185,14 +186,20 @@ export function redactApply(db: KernelDb, blobs: BlobStore, mid: string | undefi
   if (!/\.(docx|txt|md|markdown|csv)$/.test(name)) {
     throw new DomainError("validation", "S6 脱敏（v0）只处理 DOCX 与纯文本（.txt/.md/.csv）；其他格式请先转换为 DOCX 或文本——不会原样输出原件", 422);
   }
-  const { text, isDocx, doc } = extractText(db, blobs, mid, params.document_version_id);
+  const { text: plain, isDocx, doc } = extractText(db, blobs, mid, params.document_version_id);
+  // V14 第 39 批（T2-D 对外脱敏独立评分，命中否决）：原先在原件上只遮正文——修订删除痕迹里的乙方旧账号、页脚的手机号与姓名原样留下，
+  // 修订与修订作者、修订模式也都还在。DOCX 先接受全部修订、清空批注、去掉修订作者与修订模式（sanitizeDocx），再在正文、页眉页脚、脚注里扫描与遮盖
+  const cleaned = isDocx ? sanitizeDocx(doc.buf) : null;
+  const base = cleaned ? cleaned.docx : doc.buf;
+  const text = cleaned ? docxAllPartsText(base) : plain;
   const isCsv = name.endsWith(".csv");
   const scan = scanDirectIdentifiers(text);
+  const revisions = cleaned ? { revisions_accepted: cleaned.removed.deletionsAccepted + cleaned.removed.insertionsAccepted, comments_removed: cleaned.removed.comments } : {};
   if (scan.findings.length === 0) {
     // 零命中同样产出“写出的”脱敏件（复核 S5-B04）：DOCX 经文书引擎重写——净化文档属性并去除打开时会外取的引用；CSV 中和公式；不把原件字节原样当成果
     return {
-      ...blobs.put(isDocx ? scrubDocProps(doc.buf) : isCsv ? Buffer.from(neutralizeCsvFormulas(text), "utf8") : doc.buf, doc.matter_id),
-      report: { counts: {}, findings: 0, notFound: [], coverage_notes: scan.coverage_notes, note: "未发现需遮盖的直接标识符" },
+      ...blobs.put(isDocx ? scrubDocProps(base) : isCsv ? Buffer.from(neutralizeCsvFormulas(text), "utf8") : doc.buf, doc.matter_id),
+      report: { counts: {}, findings: 0, notFound: [], coverage_notes: scan.coverage_notes, note: "未发现需遮盖的直接标识符", ...revisions },
       source_document_version_id: params.document_version_id,
     };
   }
@@ -205,7 +212,7 @@ export function redactApply(db: KernelDb, blobs: BlobStore, mid: string | undefi
   let outBuf: Buffer;
   let notFound: string[] = [];
   if (isDocx) {
-    const r = maskDocxText(doc.buf, [...maskMap.entries()].map(([find, replace]) => ({ find, replace })));
+    const r = maskDocxText(base, [...maskMap.entries()].map(([find, replace]) => ({ find, replace })));
     notFound = r.notFound;
     // 脱敏件同时净化文档属性（作者/公司/最后修改人），不得携带元数据泄露
     outBuf = scrubDocProps(r.docx);
@@ -225,7 +232,9 @@ export function redactApply(db: KernelDb, blobs: BlobStore, mid: string | undefi
       masked_values: maskMap.size,
       notFound,
       coverage_notes: scan.coverage_notes,
-      residual_risks: ["姓名、详细地址、批注/属性、图片内文字不在 v0 覆盖范围（见 coverage_notes）"],
+      ...revisions,
+      parts_scanned: isDocx ? "正文（含表格）、页眉、页脚、脚注、尾注；修订已全部接受、批注已清空、修订作者与文档属性已清除" : "全文",
+      residual_risks: ["自然人姓名、详细地址、图片与文本框内文字不在本机脱敏覆盖范围（见 coverage_notes），发出前请律师核对"],
     },
     source_document_version_id: params.document_version_id,
   };

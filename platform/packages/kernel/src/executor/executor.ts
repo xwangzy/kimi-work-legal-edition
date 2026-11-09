@@ -739,9 +739,12 @@ async function runS6Scenario(ctx: Ctx, runId: string, attemptId: string): Promis
         storage_uri: r.storage_uri,
         manifest: { source: m.sha256, report: r.report, note: "不可还原；对照表单独限权（v0 未产出对照表，见报告）" },
       }, seq++);
+      const KIND: Record<string, string> = { id_card: "身份证号", mobile: "手机号", bank_card: "银行账号", uscc: "统一社会信用代码", email: "电子邮箱", plate: "车牌号" };
       reportParas.push(
-        `《${m.filename}》：发现 ${r.report.findings} 处直接标识符（${Object.entries(r.report.counts ?? {}).map(([k, v]) => `${k}×${v}`).join("、") || "无"}），全部遮盖${r.report.notFound?.length ? `；${r.report.notFound.length} 处定位失败需人工处理` : ""}。`,
+        `《${m.filename}》：发现 ${r.report.findings} 处直接标识符（${Object.entries(r.report.counts ?? {}).map(([k, v]) => `${KIND[k] ?? k} ${v} 处`).join("、") || "无"}），${r.report.notFound?.length ? `${r.report.findings - r.report.notFound.length} 处已遮盖，${r.report.notFound.length} 处定位失败、需人工处理` : "已全部遮盖（保留前几位与末四位，便于核对）"}。`,
       );
+      // V14 第 39 批：写明修订、批注与扫描范围（原先只遮正文，删除痕迹里的旧账号、页脚手机号原样留下，报告却写“全部遮盖”）
+      if (r.report.parts_scanned) reportParas.push(`  处理范围：${r.report.parts_scanned}${r.report.revisions_accepted ? `；接受修订 ${r.report.revisions_accepted} 处（被删除的文字随之去掉，不会恢复成正文）` : ""}${r.report.comments_removed ? `；清除批注 ${r.report.comments_removed} 条` : ""}。`);
       if (r.report.findings === 0) reportParas.push("  未发现需遮盖的直接标识符。");
     }
     const report = localReport(ctx, run.matter_id, {
@@ -751,7 +754,7 @@ async function runS6Scenario(ctx: Ctx, runId: string, attemptId: string): Promis
           {
             heading: "二、未能处理的对象与残余风险",
             paragraphs: [
-              "自然人姓名、详细地址、批注/修订/文档属性、图片与扫描件内文字不在 v0 覆盖范围（需 NER/OCR，G1 评测验收）。",
+              "自然人姓名、详细地址、图片与扫描件内文字不在本机脱敏覆盖范围（需 NER/OCR，G1 评测验收），发出前请律师逐页核对；修订、批注与文档属性作者已在脱敏前清除。",
               "脱敏不可还原；化名对照表（如需）应单独限权加密保存，不随对外文件打包。",
             ],
           },
