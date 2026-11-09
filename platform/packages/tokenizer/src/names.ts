@@ -63,6 +63,16 @@ const givenOk = (given: string, loose = true, punct = false) => {
 };
 
 /**
+ * 强证据下的名字（V14 第 39 批）：函件与纪要表头冒号之后、括注职务之前，“周以宁”“叶书禾”这类名字里的“以”“书”在 STOP 里，
+ * givenOk 不收。强证据下放宽为：都是汉字、不含 NOT_GIVEN、不是“双方”“律师”一类词，STOP 字至多一个。
+ */
+const strongGivenOk = (given: string) => {
+  if (GIVEN_NOT.has(given) || ROLE_GIVEN.has(given)) return false;
+  const cs = [...given];
+  return cs.length >= 1 && cs.length <= 2 && cs.every((c) => CJK.test(c) && !NOT_GIVEN.has(c)) && cs.filter((c) => STOP.has(c)).length <= (cs.length === 2 ? 1 : 0);
+};
+
+/**
  * 常见名字用字（中档依据须至少含一个）：列举、名词并列与技术文字里“姓氏字 + 普通字”的组合（成果、解析、边界）由此排除。
  * 二次检测（candidates.ts）用它定中档置信度；规则识别的言语动词分支（只有“后面跟言语动词”这一条弱证据）也要求至少含一个（V13 第 38 批）。
  * 用字罕见的姓名在强证据（角色词、称谓、表头与身份信息、当事人名单）下照常认出。
@@ -111,6 +121,17 @@ const ROLE_CUES = [
   "职工", "配偶", "丈夫", "妻子", "之夫", "之妻", "父亲", "母亲", "儿子", "女儿", "之子", "之女", "继承人", "被继承人", "股东", "董事", "监事",
   "总经理", "经理", "董事长", "签字人", "签署人", "经办人", "投保人", "被保险人", "受益人", "介绍人", "见证人", "担任", "签名",
 ];
+
+/**
+ * 往来函件与会议纪要的表头（V14 第 39 批真实走查 A：客户邮件“发件人：钟启衡（……董事长）”“抄送：周以宁（……销售总监）”、
+ * 会谈纪要“檀屿参会：周以宁（销售总监）、韩策（财务经理）、顾言（质量负责人）”“记录：周以宁”里的 5 个自然人一个都没认出，
+ * 以真名发给了模型）。这些词也常作普通动词（“记录显示”“主持召开”），只在后面紧跟冒号或空白时读姓名。
+ */
+const HEADER_LABELS = new Set([
+  "发件人", "发信人", "抄送", "抄送人", "密送", "记录人", "记录", "整理人", "参会人员", "参会人", "参会", "与会人员", "出席人员", "出席", "列席人员", "列席",
+  "主持人", "主持", "审核人", "审批人", "批准人", "报告人", "汇报人", "对接人", "承办人", "联络人", "接待人", "送达人", "签收人", "拟稿人", "核稿人", "访谈对象", "受访人", "访谈人",
+]);
+ROLE_CUES.push(...HEADER_LABELS);
 
 /** 合同当事人代称：其后须有冒号、空白或括注才读姓名（第 35 批）。 */
 const PARTY_LABELS = new Set(["甲方", "乙方", "丙方", "丁方", "买方", "卖方", "转让方", "受让方"]);
@@ -423,7 +444,7 @@ export function findNicknames(
 const RIGHT_ANCHORS = [...SPEECH_VERBS, ...HONORIFICS, "出庭", "到庭", "作证"].sort((a, b) => b.length - a.length);
 
 /** 从 j 起读一个姓名：姓氏 + 1–2 个名字；不是姓名返回 null。 */
-function readName(text: string, j: number): string | null {
+function readName(text: string, j: number, strong = false): string | null {
   const s = surnameAt(text, j);
   if (s === 0) return null;
   if (COMMON_WORDS.has(text.slice(j, j + 2))) return null;
@@ -437,7 +458,7 @@ function readName(text: string, j: number): string | null {
     // 介词、连词作名字末字（NAME_END_BEFORE_PUNCT）：右边是标点或文末，或直接是言语、出庭类动词（“钱季同签字”——“同”后没有宾语，不是介词）；称谓不算
     const verbAfter = RIGHT_ANCHORS.some((w) => !HONORIFICS.includes(w) && text.startsWith(w, at));
     const prepOk = after === "" || BOUNDARY.test(after) || verbAfter;
-    if (given.length !== g || !anchored || !givenOk(given, hard || (prepOk && NAME_END_BEFORE_PUNCT.has(given[1] ?? "")), prepOk)) continue;
+    if (given.length !== g || !anchored || !(givenOk(given, hard || (prepOk && NAME_END_BEFORE_PUNCT.has(given[1] ?? "")), prepOk) || (strong && hard && strongGivenOk(given)))) continue;
     // “姓氏”其实是前一个词的功能字（“向双方，”）：不认
     if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
     // 列明退役的误认值即使有边界也不认（第 29 批：“到达甲方时生效，”）
@@ -501,6 +522,58 @@ function headerNames(text: string, out: Set<string>): void {
   }
 }
 
+/** 以角色词或表头词开头（顿号列举到下一个角色时停下，由角色词那一支处理）。 */
+const ROLE_START = new RegExp(`^(?:${ROLE_CUES.slice().sort((a, b) => b.length - a.length).join("|")})`);
+
+/**
+ * 顿号列举（V14 第 39 批）：角色词或表头词后的姓名之后，跳过括注（职务、性别），遇“、”继续读下一个姓名——
+ * “参会：周以宁（销售总监）、韩策（财务经理）、顾言（质量负责人）”“被告：张三、李四”。下一段以角色词开头的停下。
+ */
+function listNames(text: string, at: number, out: Set<string>, strong = false): void {
+  let k = at;
+  for (let n = 0; n < 12; n++) {
+    if (text[k] === "（" || text[k] === "(") {
+      const close = text.slice(k, k + 40).search(/[）)]/);
+      if (close < 0) return;
+      k += close + 1;
+    }
+    if (text[k] !== "、") return;
+    if (ROLE_START.test(text.slice(k + 1))) return;
+    const next = readName(text, k + 1, strong);
+    if (!next) return;
+    out.add(next);
+    k += 1 + next.length;
+  }
+}
+
+/**
+ * 姓名后紧跟括注职务（V14 第 39 批）：“钟启衡（苏州檀屿医疗器械有限公司 董事长）”“韩策（财务经理）”。
+ * 括注以职务词收尾才算；候选前须是句首、标点、空白或功能字，候选不以部门、机构用字收尾（“董事会（董事长……）”）。
+ */
+const TITLE_PAREN_CUE =
+  /[（(][^（）()\n]{0,24}?(?:副?董事长|副?总经理|副?总裁|总监|经理|负责人|主管|专员|助理|主任|秘书|会计|出纳|法务|工程师|厂长|部长|处长|科长|院长|行长|店长|组长|队长|董事|监事|实际控制人|法定代表人|联系人|业务员|销售代表|驻场代表)[^（）()\n]{0,6}[）)]/g;
+const NOT_NAME_TAIL = new Set([..."会部处科司厂院局组室所行队方"]);
+function titleParenNames(text: string, out: Set<string>): void {
+  TITLE_PAREN_CUE.lastIndex = 0;
+  for (const m of text.matchAll(TITLE_PAREN_CUE)) {
+    const k = m.index!;
+    for (const len of [4, 3, 2]) {
+      const j = k - len;
+      if (j < 0) continue;
+      const before = j === 0 ? "" : text[j - 1]!;
+      if (before !== "" && !BOUNDARY.test(before) && !FUNCTION_BEFORE.has(before)) continue;
+      const s = surnameAt(text, j);
+      if (s === 0 || len - s < 1 || len - s > 2) continue;
+      if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
+      const given = text.slice(j + s, k);
+      if (!(givenOk(given) || strongGivenOk(given)) || NOT_NAME_TAIL.has(given.at(-1) ?? "")) continue;
+      if (COMMON_WORDS.has(text.slice(j, j + 2))) continue;
+      out.add(text.slice(j, k));
+      break;
+    }
+  }
+}
+
 /**
  * 规则早先认出、已存进事项令牌表的值，还算不算已知姓名（v9.4 第 25 批）：旧规则把内核说明与方法正文里的“任务”“权利”“时告知”一类认成过姓名，
  * 这些条目留在表里（旧成果里的代号照常还原），但不再当作已知姓名去匹配新文字。
@@ -557,11 +630,18 @@ export function recognizeNames(text: string): Set<string> {
       out.add(special);
       continue;
     }
-    const name = readName(text, j);
-    if (name) out.add(name);
+    // 函件与纪要表头只在冒号或空白之后读姓名（“记录显示”“主持召开”不是）
+    if (HEADER_LABELS.has(m[0].replace(/[一二三四五六七八九十\d]+$/, "")) && !/[：:\s]/.test(text[m.index! + m[0].length] ?? "")) continue;
+    const strong = HEADER_LABELS.has(m[0].replace(/[一二三四五六七八九十\d]+$/, ""));
+    const name = readName(text, j, strong);
+    if (name) {
+      out.add(name);
+      listNames(text, j + name.length, out, strong);
+    }
   }
   dottedByContext(text, out);
   headerNames(text, out);
+  titleParenNames(text, out);
   HONORIFIC_RE.lastIndex = 0;
   for (const m of text.matchAll(HONORIFIC_RE)) {
     const k = m.index!;
@@ -580,6 +660,8 @@ export function recognizeNames(text: string): Set<string> {
       if (text[j] === "方" && PARTY_FANG_BEFORE.has(text[j - 1] ?? "")) continue;
       // 连词、情态字其实是前一个词的末字或词中连词（“向相应法域律师”“上传人和责任律师”）：前面紧挨着普通汉字时不认（V13 第 38 批）
       if (s === 1 && FUNCTION_SURNAMES.has(text[j]!) && j > 0 && CJK.test(text[j - 1]!) && !FUNCTION_BEFORE.has(text[j - 1]!)) continue;
+      // “麻烦沈律师”（V14 第 39 批真实走查 A）：称谓前一个字本身是姓（“沈律师”是称呼），名字部分又没有常见名字用字——是“麻烦”+“沈律师”，不是三字名
+      if (s === 1 && given.length === 2 && surnameAt(text, k - 1) > 0 && ![...given].some((c) => GIVEN_CHARS.has(c))) continue;
       tries.push(text.slice(j, k));
     }
     if (tries.length > 0) out.add(tries[0]!);
