@@ -330,3 +330,13 @@ test("律师退回计划时写的修改意见也交给复核人（V13 W6 复测�
     cloud.model.script = null;
   }
 });
+
+test("V14 第 39 批：修改轮说明写出时限与先后（先改必须改的，改完一批就重写答复与附件）；不给时限时不写", async () => {
+  const { fixPrompt } = await import("../src/services/independent-review.ts");
+  const f = [{ no: 1, where: "第三条", problem: "期限算错", basis: "材料", fix: "改为11-13", must: true }] as any;
+  const withLimit = fixPrompt("draft" as any, f, "", 15 * 60_000);
+  assert.match(withLimit, /约 15 分钟/);
+  assert.match(withLimit, /先改“必须改”的/);
+  assert.match(withLimit, /附件（证据目录、核对清单）跟正文同步改/);
+  assert.equal(/分钟，到时即停止/.test(fixPrompt("draft" as any, f, "")), false);
+});

@@ -239,7 +239,7 @@ export function parseFindings(text: string): ReviewFinding[] {
 }
 
 /** 交回原会话的修改指示（追问形态，令牌化后发出）。 */
-export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], reviewText: string): string {
+export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], reviewText: string, limitMs?: number): string {
   const how =
     kind === "revise"
       ? "成立的，在原件上重新调用 docx.revise，提交完整的修改清单（原有的修改照旧、加上这次的更正）——修订稿与清洁稿以最后一次为准；不要用 docx.edit_draft 改修订稿或清洁稿。"
@@ -251,6 +251,9 @@ export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], 
     "3. 不成立的、或需要客户决定的商业条件，不改，写明理由；需要客户决定的列入待定事项。",
     "4. 只改复核意见涉及的地方，不借机改动别处；不为措辞润色重新生成。改动牵动时间表、付款节点、先决条件或解除权的，把委托与材料里的关键日期、金额代进去重新核对一遍，避免修一处坏一处（V13 真实走查 W1：把“验收合格”加成交割条件后，交割晚于客户 12 月 31 日的硬节点）。要补一项义务、条件或禁止事项前，先在全文找有没有已经写了同一事项的条款（换了说法也算）：有就改那一条，不另加一款；新写的互引核对条号指的确是那件事（V14 真实走查：修改轮在第 20.5 条第四次写“禁售过期、断链产品”，在第 12.1 条第三次写保险单提交；第 13.1 条把第二十一条的过渡期写成“第二十条约定的过渡期”）。",
     "5. 处理完后重写最终答复：完整写出本任务的最终答复（律师只看最后这一版），末尾加“独立复核处理情况”一节，逐条写“序号｜已改（改在哪里）／未改（理由）”。",
+    // V14 第 39 批全量走查：47 张卡里 5 个任务在这一轮超时（起诉状、专利转让协议、两份劳动仲裁文书、合同审核），超时时最终答复与附件停在复核前，
+    // 与改过的正文互相矛盾，也没有“独立复核处理情况”
+    ...(limitMs ? [`6. 这一轮有时间限制（约 ${Math.round(limitMs / 60_000)} 分钟，到时即停止，已写入的修改保留）：先改“必须改”的，按对结论的影响从大到小；需要另起一份新文书或大段重写的，时间不够就列为待办，在答复里写明，不要开了头做不完。改完一批就先重写一次最终答复（含“独立复核处理情况”），附件（证据目录、核对清单）跟正文同步改，别留到最后。`] : []),
     "",
     findings.length > 0 ? findings.map((f) => `【${f.no}】${[f.where, f.problem, f.basis, f.fix, f.must ? "必须改" : "建议改"].filter(Boolean).join("｜")}`).join("\n") : reviewText.slice(0, 12_000),
   ].join("\n");

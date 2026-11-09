@@ -1459,8 +1459,8 @@ async function runReviewStage(
   }
   const fix = await ctx.step("independent_review_fix", async (): Promise<{ status: string; files: number; error?: string }> => {
     assertNotCancelled(db, runId);
-    const goal = tok([fixPrompt(picked.kind, review.findings, review.text)])[0]!;
     const limit = ctx.deps.reviewFixLimitMs ?? REVIEW_FIX_LIMIT_MS;
+    const goal = tok([fixPrompt(picked.kind, review.findings, review.text, limit)])[0]!;
     let taskId: string;
     try {
       // 材料快照照样交给这一轮：宿主每轮清空并重写材料区，传空列表等于让助手在修改时读不到材料
