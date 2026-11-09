@@ -25,6 +25,8 @@ export interface FactRow {
   /** 文件页码（parse_texts 以 \f 换页分隔时由字符区间换算；无 \f 的非 PDF 材料为 null）。 */
   file_page: number | null;
   assertion: "material_record"; // 只标材料记载
+  /** 同一处大写与小写金额对不上（如“肆拾伍万伍仟元整（¥445,000.00）”）：写明两处数额，补证清单列为待核（V14 第 39 批） */
+  conflict?: string;
 }
 
 /** 字符区间 → 文件页码（\f 换页符计数；无 \f 即无页码映射，如实返回 null）。 */
@@ -48,6 +50,8 @@ const NO_YEAR_RE = /(?<![年\d〇零○一二三四五六七八九十\s])(\d{1,2
 const RELATIVE_DATE_RE = /(同年|次年|当年|今年|去年|上年|翌年|前年|本年)\s*(\d{1,2}|元|[一二三四五六七八九十]{1,2})\s*月\s*(\d{1,2}|[一二三四五六七八九十]{1,3})\s*日/g;
 const AMOUNT_RE = /(人民币|￥|¥)?\s*(?<![\d.])([\d,]+(?:\.\d+)?)\s*(万元|元)/g;
 /** 阿拉伯数字与千、百、万、亿混写：5千元、3万5千元、3百万元、2千万元（复核 R15B-06）。 */
+/** 只有货币符号、没写“元”的小写金额（“（¥445,000.00）”）：V14 第 39 批真实走查，催款函里这类小写金额原先摘不出，大小写不一致也就发现不了。 */
+const SYMBOL_AMOUNT_RE = /(￥|¥)\s*([\d,]+(?:\.\d+)?)(?!\s*(?:万元|元|[\d.,]))/g;
 const MIXED_AMOUNT_RE = /(人民币|￥|¥)?\s*(?<![\d.])((?:\d+(?:\.\d+)?[千百万亿])+\d*)\s*元/g;
 /**
  * 大写或中文数字金额：人民币壹拾万元整、壹佰贰拾叁万肆仟伍佰元、十万元、三千五百元（须以“元 / 圆”结尾，可带角分与“整”）。
@@ -206,7 +210,14 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
       assertion: "material_record",
     });
   }
-  // 同一笔金额的大写与小写（“人民币壹拾万元整（小写：100,000元）”）是一件事：相距 20 字以内且金额相等的合并成一条，原文涵盖两处（复核 R15B-17）
+  for (const m of text.matchAll(SYMBOL_AMOUNT_RE)) {
+    const value = Number(m[2]!.replace(/,/g, ""));
+    if (!Number.isFinite(value) || value === 0) continue;
+    push("amount", m, `${value} 元`);
+  }
+  // 同一笔金额的大写与小写（“人民币壹拾万元整（小写：100,000元）”）是一件事：相距 20 字以内且金额相等的合并成一条，原文涵盖两处（复核 R15B-17）。
+  // 相距 20 字以内、一处大写一处小写而数额不同的，不合并，两条都记下“大写与小写不一致”（V14 第 39 批：催款函大写 455,000、小写 445,000）
+  const UPPER = /[壹贰叁肆伍陆柒捌玖拾佰仟]/;
   const amounts = out.filter((f) => f.kind === "amount").sort((a, b) => a.char_start - b.char_start);
   const drop = new Set<FactRow>();
   for (let i = 0; i < amounts.length; i += 1) {
@@ -219,6 +230,11 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
         a.char_end = Math.max(a.char_end, b.char_end);
         a.text = text.slice(a.char_start, a.char_end);
         drop.add(b);
+      } else if (!drop.has(b) && UPPER.test(a.text) !== UPPER.test(b.text)) {
+        const [up, low] = UPPER.test(a.text) ? [a, b] : [b, a];
+        const note = `大写“${up.text}”（${up.normalized}）与小写“${low.text}”（${low.normalized}）不一致`;
+        a.conflict = note;
+        b.conflict = note;
       }
     }
   }
@@ -397,7 +413,7 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
     const key = `${f.document_version_id}|${date}|${sp.start}`;
     if (seen.has(key)) return null;
     seen.add(key);
-    return [date, t.slice(sp.start, sp.end).replace(/\s+/g, " ") || f.text, kind === "日期" ? "日期" : `金额：${f.normalized}`, f.filename, f.text, charPos(f.char_start, f.char_end), "材料记载"];
+    return [date, t.slice(sp.start, sp.end).replace(/\s+/g, " ") || f.text, kind === "日期" ? "日期" : `金额：${f.normalized}${f.conflict ? `（${f.conflict}，见补证清单）` : ""}`, f.filename, f.text, charPos(f.char_start, f.char_end), "材料记载"];
   };
   const timelineRows: (string | number | null)[][] = [
     ["发生日期", "事件（所在原句）", "类型", "来源文件", "原文", "原文位置", "陈述性质"],
@@ -443,6 +459,11 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
     }
   }
 
+  // 材料内部不一致（本机规则只认得出大写与小写金额对不上；同一处两条只列一次）
+  const conflictRows = [...new Map(amounts.filter((f) => f.conflict).map((f) => [`${f.document_version_id}|${f.conflict}`, f] as const)).values()].map(
+    (f) => `《${f.filename}》${charPos(f.char_start, f.char_end)}：${f.conflict}——请核对原件与其他材料（对账函、收付款记录），以哪一个为准由律师判断`,
+  );
+
   const factsCount = { dates: dates.length, amounts: amounts.length, parties: parties.length };
 
   const files: BuiltS2["files"] = [
@@ -478,7 +499,8 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
           heading: "一、材料质量缺陷与建议",
           paragraphs: supplementRows.length > 0 ? supplementRows : ["本次材料没有发现需要重扫或补正的页。"],
         },
-        { heading: "二、待补材料", paragraphs: ["（由律师按争点矩阵缺口补充）"] },
+        { heading: "二、材料内部不一致", paragraphs: conflictRows.length > 0 ? conflictRows : ["本机规则没有发现大写与小写金额不一致；其他矛盾（如不同材料对同一事实说法不同）要接着做“争点与证据分析”。"] },
+        { heading: "三、待补材料", paragraphs: ["（由律师按争点矩阵缺口补充）"] },
       ]),
       manifest: {},
     },

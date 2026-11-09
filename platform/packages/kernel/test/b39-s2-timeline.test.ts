@@ -44,3 +44,23 @@ test("案卷总目录与证据目录按文件名编号排列（01、02、10）�
     assert.ok(i1 >= 0 && i1 < i2 && i2 < i10, `${name} 顺序不对`);
   }
 });
+
+test("只有货币符号的小写金额摘得出；大写与小写对不上的列进补证清单（催款函：大写 455,000、小写 ¥445,000）", () => {
+  const b = buildS2Deliverables({
+    runId: "run_b39b",
+    matter: { title: "示例", client_name: null, counterparty: null, stance: "原告" },
+    materials: [
+      mat("e1", "06-催款函.docx", "截至本函发出之日，贵司尚欠我司货款人民币肆拾伍万伍仟元整（¥445,000.00）。"),
+      mat("e2", "01-合同.docx", "合同总价人民币壹佰贰拾万元整（¥1,200,000.00）。"),
+    ],
+    issues: [],
+  });
+  const text = (name: string) => [...readZipEntries(b.files.find((x) => x.filename.startsWith(name))!.bytes).entries()].filter(([k]) => /\.xml$/.test(k)).map(([, v]) => v.toString("utf8")).join("\n");
+  const tl = text("事实时间轴");
+  // 时间轴一句一行：这句只列一行，写明大小写对不上
+  assert.match(tl, /金额：455000 元（大写“人民币肆拾伍万伍仟元整”（455000 元）与小写“¥445,000\.00”（445000 元）不一致，见补证清单）/);
+  const sup = text("补证清单").replace(/<[^>]+>/g, "");
+  assert.match(sup, /《06-催款函\.docx》第 \d+–\d+ 字：大写“人民币肆拾伍万伍仟元整”（455000 元）与小写“¥445,000\.00”（445000 元）不一致/);
+  assert.equal(/01-合同\.docx》第/.test(sup), false, "一致的大小写不报");
+  assert.equal(b.factsCount.amounts, 3, "合同的大小写合并为一条，催款函两条");
+});
