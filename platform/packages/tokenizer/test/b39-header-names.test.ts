@@ -99,3 +99,9 @@ test("“董事、监事”不是姓名（临时股东会文件：董事会文�
   assert.deepEqual(names("联系人：董事长秘书"), []);
   assert.deepEqual(names("董事：董明，男"), ["董明"]);
 });
+
+test("“被申请人应依约支付”“申请人原数相差”里没有姓名（劳动仲裁申请书复核误报）；“被告应晓明于……”照常认出", () => {
+  assert.deepEqual(names("被申请人应依约支付竞业限制补偿"), []);
+  assert.deepEqual(names("申请人原数相差较大"), []);
+  assert.deepEqual(names("被告应晓明于2025年3月借款"), ["应晓明"]);
+});
