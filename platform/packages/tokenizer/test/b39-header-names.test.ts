@@ -52,3 +52,13 @@ test("令牌化：邮件表头与纪要里的自然人全部换成代号，发�
   for (const n of ["钟启衡", "周以宁", "韩策", "顾言", "庞立川", "叶书禾"]) assert.equal(out.includes(n), false, `${n} 仍是明文：${out}`);
   assert.match(out, /苏州檀屿医疗器械有限公司 董事长/, "职务与机构照原样");
 });
+
+test("“当事人一方明确表示”“合同当事人一方明知”里没有姓名（民法典第 563 条原文不再被换成代号）；带序号的角色词后的真名照常认出", () => {
+  assert.deepEqual(names("（二）在履行期限届满前，当事人一方明确表示或者以自己的行为表明不履行主要债务；"), []);
+  assert.deepEqual(names("合同当事人一方明知对方不具备履约能力"), []);
+  assert.deepEqual(names("被告一张晓明，男，1985年出生"), ["张晓明"]);
+  assert.deepEqual(names("证人二：方明，男"), ["方明"], "冒号后的“方明”是真名");
+  const tz = new MatterTokenizer({ matterKey: Buffer.alloc(32, 5) });
+  const law = "当事人一方明确表示或者以自己的行为表明不履行主要债务";
+  assert.equal(tz.tokenize(law).text, law, "法条原文原样发出");
+});

@@ -633,6 +633,10 @@ export function recognizeNames(text: string): Set<string> {
     // 函件与纪要表头只在冒号或空白之后读姓名（“记录显示”“主持召开”不是）
     if (HEADER_LABELS.has(m[0].replace(/[一二三四五六七八九十\d]+$/, "")) && !/[：:\s]/.test(text[m.index! + m[0].length] ?? "")) continue;
     const strong = HEADER_LABELS.has(m[0].replace(/[一二三四五六七八九十\d]+$/, ""));
+    // “当事人一方明确表示”（民法典第五百六十三条）：角色词后的“一”被当成序号（“证人一”），“方明”被认成姓名，学进事项令牌表后
+    // 法条原文成了“当事人一〔自然人〕确表示”，助手起草的“卖方明知”在回读里也被换成代号、改不掉（V14 第 39 批真实走查 A）。
+    // “一方、双方、对方……”里的“方”不作姓氏读，与称谓分支同一口径
+    if (text[j] === "方" && PARTY_FANG_BEFORE.has(text[j - 1] ?? "")) continue;
     const name = readName(text, j, strong);
     if (name) {
       out.add(name);
