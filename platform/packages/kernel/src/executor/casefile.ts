@@ -230,7 +230,8 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
         a.char_end = Math.max(a.char_end, b.char_end);
         a.text = text.slice(a.char_start, a.char_end);
         drop.add(b);
-      } else if (!drop.has(b) && UPPER.test(a.text) !== UPPER.test(b.text)) {
+      } else if (!drop.has(b) && UPPER.test(a.text) !== UPPER.test(b.text) && /^[\s　]*[（(]?\s*(?:小写|大写)?\s*[：:]?\s*$/.test(text.slice(a.char_end, b.char_start))) {
+        // 只认“大写（小写）”紧挨着写的一对（V14 第 39 批复测：前一句的付款额 200,000 元与下一句的大写 455,000 元被配成“不一致”）
         const [up, low] = UPPER.test(a.text) ? [a, b] : [b, a];
         const note = `大写“${up.text}”（${up.normalized}）与小写“${low.text}”（${low.normalized}）不一致`;
         a.conflict = note;
