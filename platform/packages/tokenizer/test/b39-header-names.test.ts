@@ -92,3 +92,10 @@ test("表格的人名列：表头是“客户签字”“姓名”“联系人�
   const tz = new MatterTokenizer({ matterKey: Buffer.alloc(32, 4) });
   assert.equal(tz.tokenize(xl).text.includes("李国栋"), false, "表格里的姓名发出前换成代号");
 });
+
+test("“董事、监事”不是姓名（临时股东会文件：董事会文件名成了“临时〔自然人〕会”）；“董事：董明，”照常认出", () => {
+  assert.deepEqual(names("公司章程对公司、股东、董事、监事、高级管理人员具有约束力"), []);
+  assert.deepEqual(names("股东：董事会"), []);
+  assert.deepEqual(names("联系人：董事长秘书"), []);
+  assert.deepEqual(names("董事：董明，男"), ["董明"]);
+});
