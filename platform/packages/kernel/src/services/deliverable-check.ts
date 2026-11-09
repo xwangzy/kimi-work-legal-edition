@@ -52,7 +52,10 @@ const MAX_ISSUES = 30;
 const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   { re: /mcp__legal__\w+/g, fix: "删去工具名，改用律师的说法" },
   { re: /\b(?:riskcards|facts|outline|materials|citations|law|calc|docx|xlsx|table|rules)[._](?:submit|list|get|search|get_version|get_article|verify|interest|deadline|labor|court_fee|render_report|render_table|revise|read_excerpt|fill|propose)\b/g, fix: "删去工具名，改用律师的说法（如“经法规库核验”“经计算复核”）" },
-  { re: /\b(?:docv|psv|artv|art|run|mat|est|approval|usr|ten|pv)_[0-9a-f][0-9a-f-]{5,}/g, fix: "删去内部编号，用文件名或条款号称呼" },
+  // V14 第 39 批：前缀补全到 domain/ids.ts 的全部编号（代理词附表 D 整列是事实编号 fct_…）
+  { re: /\b(?:docv|psv|artv|art|run|mat|est|approval|usr|ten|pv|mem|anc|lsv|tplv|att|top|rev|apr|dlv|usg|egr|qac|qam|rkc|fct|otl|rtb|rtc|tdo|cbt|rrs|ftp)_[0-9a-f][0-9a-f-]{5,}/g, fix: "删去内部编号，用文件名、条款号或事实本身称呼" },
+  // 案件进展汇报（同批评分）：给客户管理层的正文里是“快照002”“材料记载，待核实”
+  { re: /快照\s*\d{2,}|材料记载[，,]\s*待核实/g, fix: "改用律师的说法：写材料名称，未核实的写“材料显示……，尚待核实”" },
   { re: /\b[a-z]{2,}(?:_[a-z]{2,})+\b/g, fix: "删去工具参数名（如 amount_yuan），改写成中文说明" },
   { re: /演示数据|演示库|演示法规|SKILL\.md|rubric|quality=ok/gi, fix: "删去系统内部用语" },
   { re: /(?:金额|计算|法律|文书|表格|检索|修订|费用|期限|期间|利息|测算|核验|法条)工具/g, fix: "改用律师的说法（如“经核算”“经法规库核验”）" },
@@ -60,8 +63,11 @@ const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   // 上诉状核对清单（同批评分）：“住所代号、统一社会信用代码代号”“依据：律师任务说明；”
   // 法规研究备忘录（同批评分）：“已核验且支持命题”37 处、“任务事实”“任务给定的”——引用核验的内部结论与写给助手的说法
   { re: /已核验且支持命题|支持命题|任务(?:事实|给定|所给|材料)/g, fix: "改用律师的说法：引用写“原文已核”，事实写“材料载明”或“委托人陈述”" },
-  { re: /(?:称呼|全名|姓名|自然人|当事人|住所|地址|信用代码|证件号?|身份证号?|账号|电话|手机号?|联系方式)(?:与全名|和全名)?代号|代号(?:说明|一致|不一致|对应|形态)|按任务说明|(?:律师|本次|原)任务说明|任务说明(?:中|里|所载|[；;，,。]|$)/g, fix: "删去关于代号、任务说明的话：直接写当事人的名称或称呼（导出时系统还原真名），依据写材料名或律师的指示" },
+  { re: /(?:称呼|全名|姓名|自然人|当事人|住所|地址|信用代码|证件号?|身份证号?|账号|电话|手机号?|联系方式)(?:与全名|和全名)?代号|代号(?:说明|一致|不一致|对应|形态|原样)|原样保留代号|按任务说明|(?:律师|本次|原)任务说明|任务说明(?:中|里|所载|[；;，,。]|$)/g, fix: "删去关于代号、任务说明的话：直接写当事人的名称或称呼（导出时系统还原真名），依据写材料名或律师的指示" },
 ];
+
+/** 繁体字（V14 第 39 批评分：文稿体检“法規”、进展汇报附表“上訴”）：只收简体文本里不会出现的常用繁体字；原文引用的机构名称照原样保留。 */
+export const TRADITIONAL_RE = /[訴規條與為證據權務責實則項並對經關這說開發會後過們還裡麼從頁參數變應該歸屬區執營銷貨價額負債擔損訂購將專續簽審議]/g;
 
 /** 夹在中文之间的英文单词（如“转让方一 personal名下”）；全大写缩写（LPR、SLA）与常见外来词不报。 */
 const FOREIGN_RE = /(?<=[一-鿿])[  ]?([A-Za-z][a-z]{2,})[  ]?(?=[一-鿿])/g;
@@ -154,6 +160,12 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
     for (const m of p.text.matchAll(FOREIGN_RE)) {
       if (FOREIGN_OK.has(m[1]!.toLowerCase())) continue;
       push({ kind: "foreign_word", where: p.where, text: snippet(p.text, m.index!, m[0].length), fix: `正文夹杂英文“${m[1]}”：改成中文` });
+    }
+    TRADITIONAL_RE.lastIndex = 0;
+    const trad = [...new Set([...p.text.matchAll(TRADITIONAL_RE)].map((m) => m[0]))];
+    if (trad.length > 0) {
+      const at = p.text.search(TRADITIONAL_RE);
+      push({ kind: "foreign_word", where: p.where, text: snippet(p.text, at, 1), fix: `正文有繁体字“${trad.slice(0, 5).join("")}”：改为简体（引用原文里的机构名称照原样）` });
     }
     for (const { re, fix } of MARKDOWN_PATTERNS) {
       re.lastIndex = 0;

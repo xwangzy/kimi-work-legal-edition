@@ -63,3 +63,15 @@ test("互引的条存在、但说的事项在别的条：报出（A 评分：13.
   assert.match(hits[0]!.fix, /第 20 条是“终止后的库存回购”，“过渡期”在第 21 条/);
   assert.match(hits[1]!.fix, /“通知”在第 22 条/);
 });
+
+test("内部编号（事实 fct_、风险卡 rkc_ 等）、“快照002”“材料记载，待核实”“代号原样”、繁体字报出；简体正文与正常引号不报", () => {
+  const r = checkDeliverable("案件进展汇报", [{ heading: "一、进展", paragraphs: ["依据 fct_3f2a9c1e-77b0-4c1d-9b2e-1a2b3c4d5e6f 与快照002，材料记载，待核实。", "主体名称（代号原样）。", "法規核验后，上訴期限为十五日。"] }]);
+  const t = r.issues.map((i) => `${i.kind}:${i.text}:${i.fix}`).join("\n");
+  assert.match(t, /internal_term:fct_3f2a9c1e/);
+  assert.match(t, /internal_term:快照002/);
+  assert.match(t, /internal_term:材料记载，待核实/);
+  assert.match(t, /internal_term:代号原样/);
+  assert.match(t, /foreign_word:.*繁体字“規訴”/);
+  const ok = checkDeliverable("进展汇报", [{ heading: "一、进展", paragraphs: ["一审判决已于2026年10月27日作出，上诉期限为十五日。"] }]);
+  assert.equal(ok.issues.length, 0, JSON.stringify(ok.issues));
+});
