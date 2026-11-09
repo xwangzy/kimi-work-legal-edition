@@ -563,6 +563,43 @@ function listNames(text: string, at: number, out: Set<string>, strong = false): 
 const TITLE_PAREN_CUE =
   /[（(][^（）()\n]{0,24}?(?:副?董事长|副?总经理|副?总裁|总监|经理|负责人|主管|专员|助理|主任|秘书|会计|出纳|法务|工程师|厂长|部长|处长|科长|院长|行长|店长|组长|队长|董事|监事|实际控制人|法定代表人|联系人|业务员|销售代表|驻场代表)[^（）()\n]{0,6}[）)]/g;
 const NOT_NAME_TAIL = new Set([..."会部处科司厂院局组室所行队方"]);
+
+/**
+ * 表格里的人名列（V14 第 39 批 L1 表格审阅：《售后服务记录》“客户签字”一列 6 行都是“李国栋”，名字旁边没有任何提示词，以真名发给了模型）。
+ * 文字视图里表格一行一行写：Excel 用制表符分格，Word 表格写成“| 格 | 格 |”。表头某格是人名列（签字、签名、经办人、联系人、姓名、负责人……），
+ * 其下各行同一列的值形如姓名（2～4 个汉字、姓氏开头、不是机构与常用词）时按强证据认出；列数变了或遇空行即停。
+ */
+const PERSON_COLUMN_RE = /(?:签字|签名|签收人|经办人|经手人|联系人|负责人|姓名|员工|证人|收件人|寄件人|审批人|验收人|确认人|记录人|参会人|代理人|法定代表人|承办人|业务员)\s*$/;
+function tableCells(line: string): string[] | null {
+  if (line.includes("\t")) return line.split("\t").map((c) => c.trim());
+  const t = line.trim();
+  if (t.startsWith("|") && t.endsWith("|") && t.length > 2) return t.slice(1, -1).split("|").map((c) => c.trim());
+  return null;
+}
+function tableColumnNames(text: string, out: Set<string>): void {
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const head = tableCells(lines[i]!);
+    if (!head || head.length < 2) continue;
+    const cols = head.map((c, k) => (c.length <= 12 && PERSON_COLUMN_RE.test(c) ? k : -1)).filter((k) => k >= 0);
+    if (cols.length === 0) continue;
+    for (let r = i + 1; r < lines.length; r++) {
+      const row = tableCells(lines[r]!);
+      if (!row || row.length !== head.length) break;
+      for (const k of cols) {
+        for (const v0 of row[k]!.split(/[、，,；;/\s]+/)) {
+          const v = v0.replace(/[（(][^）)]*[）)]$/, "");
+          if (!/^[一-龥]{2,4}$/.test(v)) continue;
+          const s = surnameAt(v, 0);
+          if (s === 0 || v.length - s < 1 || v.length - s > 2) continue;
+          if (COMMON_WORDS.has(v.slice(0, 2)) || NOT_NAME_TAIL.has(v.at(-1)!) || !stillLooksLikeName(v)) continue;
+          out.add(v);
+        }
+      }
+    }
+  }
+}
+
 function titleParenNames(text: string, out: Set<string>): void {
   TITLE_PAREN_CUE.lastIndex = 0;
   for (const m of text.matchAll(TITLE_PAREN_CUE)) {
@@ -660,6 +697,7 @@ export function recognizeNames(text: string): Set<string> {
   }
   dottedByContext(text, out);
   headerNames(text, out);
+  tableColumnNames(text, out);
   titleParenNames(text, out);
   HONORIFIC_RE.lastIndex = 0;
   for (const m of text.matchAll(HONORIFIC_RE)) {

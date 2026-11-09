@@ -82,3 +82,13 @@ test("姓名后紧跟“当日、当天、当场、当时”：两字名不吞�
   assert.equal(out.includes("王磊"), false, out);
   assert.equal(new Set(out.match(/〔自然人·[0-9A-Z]{6}〕/g)).size, 1, "同一人一个代号");
 });
+
+test("表格的人名列：表头是“客户签字”“姓名”“联系人”等，其下各行同列的姓名认出（Excel 制表符分格、Word 表格“| 格 |”）；机构、常用词、占位符不认", () => {
+  const xl = "【3号机服务记录】\n序号\t报修/服务日期\t故障现象\t结果\t客户签字\n1\t2025-11-12\t验收遗留\t已修复\t李国栋\n2\t2025-11-20\t卡纸\t当日恢复\t李国栋";
+  assert.deepEqual(names(xl), ["李国栋"]);
+  const dx = "| 序号 | 姓名 | 职务 | 联系方式 |\n| 1 | 程野 | 研发总监 | 待补 |\n| 2 | 待定 | — | — |\n| 3 | 技术部 | 部门 | — |";
+  assert.deepEqual(names(dx), ["程野"]);
+  assert.deepEqual(names("序号\t项目\t负责人\n1\t实施\t乙方\n2\t运维\t甲方项目组"), []);
+  const tz = new MatterTokenizer({ matterKey: Buffer.alloc(32, 4) });
+  assert.equal(tz.tokenize(xl).text.includes("李国栋"), false, "表格里的姓名发出前换成代号");
+});
