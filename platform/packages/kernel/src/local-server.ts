@@ -31,6 +31,8 @@ export interface LocalServerDeps {
   blobs: BlobStore;
   broker: ModelBroker;
   lawdb: Lawdb;
+  /** 律所名称（对外修订稿署名的缺省，V14 第 39 批）。 */
+  firmName?: string | null;
   /** 任务令牌验证密钥（内核进程内存中的随机密钥，identity.ts `taskTokenKey()`；复审 N-03）。 */
   secret: string;
   /**
@@ -237,7 +239,7 @@ export async function startLocalServer(deps: LocalServerDeps, opts: { host?: str
     if (sideEffect === "read") {
       let result: unknown;
       try {
-        result = await invokeTool(name, args, { claims: ctxClaims, db, blobs, lawdb, ...(deps.tokens ? { tokens: deps.tokens } : {}) });
+        result = await invokeTool(name, args, { claims: ctxClaims, db, blobs, lawdb, ...(deps.tokens ? { tokens: deps.tokens } : {}), firmName: deps.firmName ?? null });
       } catch (e) {
         db.tx(() => {
           if (!tokenLiveness(db, claims, revoked)) recordOp(rid, aid, name, paramsHash, "failed", sideEffect, null, null);
@@ -290,7 +292,7 @@ export async function startLocalServer(deps: LocalServerDeps, opts: { host?: str
     inflightOperations.add(opId);
     let result: unknown;
     try {
-      result = await invokeTool(name, args, { claims: ctxClaims, db, blobs, lawdb, ...(deps.tokens ? { tokens: deps.tokens } : {}) });
+      result = await invokeTool(name, args, { claims: ctxClaims, db, blobs, lawdb, ...(deps.tokens ? { tokens: deps.tokens } : {}), firmName: deps.firmName ?? null });
     } catch (e) {
       // 审查 R-07：只有“执行前就被拒”的错误（参数校验、不存在、无权、前置条件冲突）确定没有副作用 → failed（可重试）；
       // 其余异常可能发生在副作用之后 → unknown（结果不明，转人工对账，不重放）。写回只覆盖本尝试的 pending 行

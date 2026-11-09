@@ -57,6 +57,8 @@ export interface InvokeCtx {
   lawdb: Lawdb;
   /** 事项令牌存储（结构化产出核对锚点用；结果令牌化在本机端点统一做）。 */
   tokens?: MatterTokenStore;
+  /** 激活记录里的律所名称（V14 第 39 批：对外修订稿的署名在没设修订署名时用它，10-23 拍板）；开发形态为 null。 */
+  firmName?: string | null;
 }
 
 const dateSchema = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" };

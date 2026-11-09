@@ -1254,7 +1254,7 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
   let diff: string[] = [];
   if (kind === "revise") {
     const clean = picked.filter((r) => /（清洁稿）\.docx$/i.test(r.filename)).at(-1);
-    picked = picked.filter((r) => !/（修订稿）\.docx$/i.test(r.filename));
+    picked = picked.filter((r) => !/（修订稿(?:·对外版)?）\.docx$/i.test(r.filename));
     if (clean) {
       const srcId = (() => {
         try {
@@ -1291,13 +1291,29 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
   });
   const main = picked.find((r) => /（清洁稿）\.docx$/i.test(r.filename)) ?? picked[0]!;
   // 本任务交出的全部文件与助手的最终答复（V13 W2：复核人没看到修订稿与答复，误报“没交修订稿”“其他问题没列给律师”）
+  // 修订稿只给复核人一行“痕迹概况”（V14 第 39 批，基线走查 B 独立评分：复核人只看清洁稿，看不到修订作者是 AI 标签、带着内部批注，
+  // 律师说“修订稿要能直接发回对方”时没法发现）：修订处数、修订作者、批注条数
+  const redlineNote = (filename: string): string => {
+    const r = latest.get(filename);
+    if (!r || !/（修订稿(?:·对外版)?）\.docx$/i.test(filename)) return "";
+    try {
+      const files = readZipEntries(deps.blobs.read(r.storage_uri));
+      const xml = [...files.entries()].filter(([n]) => /^word\/(?:document|header\d*|footer\d*)\.xml$/.test(n)).map(([, d]) => d.toString("utf8")).join("");
+      const authors = [...new Set([...xml.matchAll(/<w:(?:ins|del)\b[^>]*\sw:author="([^"]*)"/g)].map((m) => m[1]))];
+      const marks = (xml.match(/<w:(?:ins|del)\b/g) ?? []).length;
+      const comments = (files.get("word/comments.xml")?.toString("utf8").match(/<w:comment\b/g) ?? []).length;
+      return `（修订标记 ${marks} 处；修订作者：${authors.join("、") || "无"}；批注 ${comments} 条）`;
+    } catch {
+      return "";
+    }
+  };
   const inventory = [
     ...new Set(
       deps.db
         .all<{ filename: string }>(`SELECT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','revision_draft','revision_clean','agent_table','a1_workspace_file') ORDER BY created_at`, [runId, matterId])
         .map((r) => r.filename),
     ),
-  ];
+  ].map((f) => `${f}${redlineNote(f)}`);
   const replyRow = deps.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('a1_agent_draft','a1_agent_draft_partial') ORDER BY created_at DESC, version DESC LIMIT 1`, [runId, matterId]);
   let reply = "";
   try {

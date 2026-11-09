@@ -125,3 +125,35 @@ function acceptAll(input: string, counts: { deletionsAccepted: number; insertion
   xml = xml.replace(/<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:commentReference\b[^>]*\/>[\s\S]*?<\/w:r>/g, "");
   return xml;
 }
+
+/**
+ * 对外修订稿（V14 第 39 批；基线走查 B 独立评分）：律师说“修订稿要能直接发回对方”，产品交出的修订稿里每处修订作者都是
+ * “Kimi Work 法律助手（AI 建议，待律师确认）”、还带着写给律师的修改理由批注。这里从修订稿派生对外版：
+ * 修订痕迹原样保留；批注（引用、范围标记、批注部件内容）去掉；只把 fromAuthor 写的修订改署名为 toAuthor
+ * （设置里的修订署名，没设用本所名称，10-23 拍板），对方原有的修订与作者不动；最后修改者写 toAuthor。纯函数。
+ */
+export function externalRedline(docx: Buffer, fromAuthor: string, toAuthor: string): { docx: Buffer; comments: number; reauthored: number } {
+  const files = readZipEntries(docx);
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const from = `w:author="${esc(fromAuthor)}"`;
+  const to = `w:author="${esc(toAuthor)}"`;
+  let comments = 0;
+  let reauthored = 0;
+  for (const [name, data] of files) {
+    if (!/^word\/(?:document|footnotes|endnotes|header\d*|footer\d*)\.xml$/.test(name)) continue;
+    let xml = data.toString("utf8");
+    xml = xml.replace(/<w:commentRangeStart\b[^>]*\/>/g, () => {
+      comments++;
+      return "";
+    });
+    xml = xml.replace(/<w:commentRangeEnd\b[^>]*\/>/g, "");
+    xml = xml.replace(/<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:commentReference\b[^>]*\/>[\s\S]*?<\/w:r>/g, "");
+    reauthored += xml.split(from).length - 1;
+    xml = xml.split(from).join(to);
+    files.set(name, Buffer.from(xml, "utf8"));
+  }
+  if (files.has("word/comments.xml")) files.set("word/comments.xml", Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="${W_NS}"></w:comments>`, "utf8"));
+  const core = files.get("docProps/core.xml");
+  if (core) files.set("docProps/core.xml", Buffer.from(core.toString("utf8").replace(/<cp:lastModifiedBy>[\s\S]*?<\/cp:lastModifiedBy>|<cp:lastModifiedBy\/>/, `<cp:lastModifiedBy>${esc(toAuthor)}</cp:lastModifiedBy>`), "utf8"));
+  return { docx: writeZip([...files.entries()].map(([name, data]) => ({ name, data }))), comments, reauthored };
+}

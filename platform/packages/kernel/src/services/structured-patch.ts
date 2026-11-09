@@ -117,7 +117,8 @@ export interface PatchSpan {
   insert?: true;
 }
 
-const AUTHOR = "Kimi Work 法律助手（AI 建议，待律师确认）";
+export const AI_REVISION_AUTHOR = "Kimi Work 法律助手（AI 建议，待律师确认）";
+const AUTHOR = AI_REVISION_AUTHOR;
 
 /** 自动编号挪动后的条号与正文里写死的旧条号（第 34 批 T3b 真实走查：删去第十条后，“丙方依本合同第十一条承担保证责任”指向了通知与送达）。 */
 export interface NumberingShifts {

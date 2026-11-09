@@ -841,7 +841,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   // 本机端点：回环 TCP（开发/桥接；ZR_KERNEL_TCP=off 关闭以验证纯管道模式）+ 命名管道（Agent 宿主通道）
   const tcpOff = env.ZR_KERNEL_TCP === "off";
   const servers: LocalServers = await startLocalServer(
-    { db, blobs, broker, lawdb, secret: taskTokenKey(), revoked: { rids: revokedRids, jtis: revokedJtis }, stats: localStats, mcpToolsAllowlist: LEGAL_MCP_TOOLS, tokens },
+    { db, blobs, broker, lawdb, secret: taskTokenKey(), revoked: { rids: revokedRids, jtis: revokedJtis }, stats: localStats, mcpToolsAllowlist: LEGAL_MCP_TOOLS, tokens, firmName: config.activation?.firm_name ?? null },
     { port: tcpOff ? -1 : Number(env.ZR_KERNEL_LOCAL_PORT ?? 0), pipePath },
   );
   const localPort = localServerPort(servers.tcp);

@@ -101,7 +101,9 @@ test("在原件上修订：令牌形态锚点还原、修订稿保留表格并�
     assert.match(out.revision.filename, /（修订稿）\.docx$/);
     assert.match(out.clean.filename, /（清洁稿）\.docx$/);
     const rows = tk.kernel.db.all<{ kind: string; run_id: string }>(`SELECT kind, run_id FROM artifact_versions WHERE run_id = ? ORDER BY kind`, [a.live.rid]);
-    assert.deepEqual(rows.map((r) => r.kind), ["agent_report", "revision_clean", "revision_draft"], "修订稿、清洁稿与修改对照表都登记在本任务下");
+    // V14 第 39 批：另有《修订稿·对外版》（同为 revision_draft）
+    assert.deepEqual(rows.map((r) => r.kind), ["agent_report", "revision_clean", "revision_draft", "revision_draft"], "修订稿（内部版、对外版）、清洁稿与修改对照表都登记在本任务下");
+    assert.match(out.external.filename, /（修订稿·对外版）\.docx$/);
 
     // 修改对照表（第 35 批）：按实际写入的修改逐段列修改前、修改后与理由；姓名是真名、不残留代号
     assert.match(out.comparison.filename, /（修改对照表）\.docx$/);
@@ -111,7 +113,8 @@ test("在原件上修订：令牌形态锚点还原、修订稿保留表格并�
     const cmpText = extractParagraphs(cmp).map((x) => x.text).join("\n");
     assert.ok(cmpText.includes("一次性向乙方支付全部服务费用") && cmpText.includes("运维期满后支付30%"), "同一行写修改前与修改后的整段");
     assert.ok(cmpText.includes("按甲方要求改为分期付款"), "修改理由取自批注");
-    assert.ok(cmpText.includes("按律师意见修改"), "没写批注的写缺省理由");
+    // V14 第 39 批（基线 B 独立评分）：没写批注的不再冒称“按律师意见修改”，如实写“助手未注明理由”
+    assert.ok(cmpText.includes("助手未注明理由，请律师核对"), "没写批注的如实标注");
     assert.ok(cmpText.includes("王建国（变更须提前书面通知甲方）"), "代号已还原为真名");
     assert.equal(/〔自然人·/.test(cmpXml), false, "对照表不残留代号");
     assert.match(cmpText, /共 4 处/);

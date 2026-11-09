@@ -12,7 +12,10 @@
  */
 import { slog } from "@zr-legal/safe-log";
 import { DomainError, sha256Hex } from "@zr-legal/domain";
-import { createDocx, existingRevisions, headerFooterParagraphs, minimalChange, readZipEntries, sanitizeDocx } from "@zr-legal/docx-engine";
+import { createDocx, existingRevisions, externalRedline, headerFooterParagraphs, minimalChange, readZipEntries, sanitizeDocx } from "@zr-legal/docx-engine";
+import { AI_REVISION_AUTHOR } from "../../services/structured-patch.ts";
+import { redlineAuthorOf } from "../../services/doc-style.ts";
+import { LAWYER_APPROVED_AUTHOR } from "../../services/review-cards.ts";
 import { applyStructuredPatches, headerFooterHint, type ChangeRow, type NumberingShifts, type PatchConflict, type StructuredPatch } from "../../services/structured-patch.ts";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
@@ -204,6 +207,23 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
       note: "清洁稿：修订稿接受全部修订、去掉批注（含律师尚未逐条确认的修改）；原件不变",
     },
   });
+  // 对外版修订稿（V14 第 39 批，基线走查 B 独立评分）：修订痕迹保留、批注去掉、本产品写的修订改署名为设置里的修订署名（没设用本所名称，10-23 拍板）
+  const externalReg = (() => {
+    try {
+      const author = redlineAuthorOf(ctx.db, String(ctx.claims.tid ?? ""), "external", ctx.firmName ?? null) || LAWYER_APPROVED_AUTHOR;
+      const ext = externalRedline(ctx.blobs.read(rev.storage_uri), AI_REVISION_AUTHOR, author);
+      const put = ctx.blobs.put(ext.docx, mid);
+      return registerToolArtifact(ctx, {
+        kind: "revision_draft",
+        filename: r.filename.replace(/（修订稿）\.docx$/i, "（修订稿·对外版）.docx"),
+        sha256: put.sha256,
+        storage_uri: put.storage_uri,
+        manifest: { tool: "docx.revise", audience: "external", source_document_version_id: documentVersionId, derived_from: r.sha256, author, comments_removed: ext.comments, reauthored: ext.reauthored, note: "对外版修订稿：修订痕迹保留，批注（修改理由）去掉，修订署名为本所设置；原件与内部版修订稿不变" },
+      });
+    } catch {
+      return null;
+    }
+  })();
   // 修改对照表（第 35 批）：按实际写入的修改逐段列“修改前 / 修改后 / 修改理由”，供律师复核与向客户说明——律师要的“修改对照及修改说明”
   const compareReg = registerComparison(ctx, r, src?.filename ?? r.filename);
   return {
@@ -212,10 +232,11 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
     revision: { artifact_version_id: r.artifact_version_id, filename: r.filename },
     clean: { artifact_version_id: cleanReg.artifact_version_id, filename: cleanReg.filename },
     ...(compareReg ? { comparison: { artifact_version_id: compareReg.artifact_version_id, filename: compareReg.filename } } : {}),
+    ...(externalReg ? { external: { artifact_version_id: externalReg.artifact_version_id, filename: externalReg.filename } } : {}),
     ...priorNote,
     ...hfNote,
     ...numberingNotes(r, true),
-    note: `修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；清洁稿已接受全部修订、去掉批注；${compareReg ? "修改对照表逐段列出修改前后与理由（由系统按实际写入的修改生成，不用另写）；" : ""}原件不变。批注是写给律师的修改理由，发给对方前须删除批注或改用清洁稿。要核对实际写入的结果，用 docx.compare（baseline 填原件的 document_version_id，current 填清洁稿的 artifact_version_id）。`,
+    note: `修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；${externalReg ? "另有《修订稿·对外版》：同样的修订痕迹、不带批注、修订署名为本所设置，可直接发对方——所以修改理由照常写进 comment（它进内部修订稿与修改对照表），不要为了“能直接发对方”而去掉 comment 重交；" : ""}清洁稿已接受全部修订、去掉批注；${compareReg ? "修改对照表逐段列出修改前后与理由（由系统按实际写入的修改生成，不用另写）；" : ""}原件不变。批注是写给律师的修改理由，发给对方前须删除批注或改用清洁稿。要核对实际写入的结果，用 docx.compare（baseline 填原件的 document_version_id，current 填清洁稿的 artifact_version_id）。`,
   };
 }
 
@@ -253,9 +274,11 @@ function registerComparison(ctx: InvokeCtx, r: { changes?: ChangeRow[]; numberin
       return to && to !== c.label ? `原 ${base}（现 ${to}）` : base;
     };
     const where = (c: ChangeRow) => (c.kind === "insert" ? `在${at(c)}之后新增` : at(c));
-    const row = (c: ChangeRow, i: number) => [String(i + 1), where(c), c.kind === "insert" ? "（新增）" : cap(c.before), c.kind === "delete" ? "（删除本段）" : cap(c.after), c.reason || "按律师意见修改"];
+    const row = (c: ChangeRow, i: number, why = "按律师意见修改") => [String(i + 1), where(c), c.kind === "insert" ? "（新增）" : cap(c.before), c.kind === "delete" ? "（删除本段）" : cap(c.after), c.reason || why];
     const linked = rows.filter((c) => c.kind === "edit" && isReferenceOnlyChange(c.before, c.after));
     const own = rows.filter((c) => !linked.includes(c));
+    // 第一部分里没写理由的行（V14 基线 B：复核轮为去掉批注不写 comment 重交，17 行全成了“按律师意见修改”）：如实写“未注明理由”，不冒称律师意见
+    const ownRow = (c: ChangeRow, i: number) => row(c, i, "（助手未注明理由，请律师核对）");
     const notes = [
       `本表逐段列出对《${name}》所作的修改，共 ${rows.length} 处（按修改意见的修改 ${own.length} 处${linked.length > 0 ? `、因增删条款引起的援引条号联动 ${linked.length} 处` : ""}），与修订稿一致（以修订稿为准）；“条款”一栏写原件条款号，编号顺延了的括注现在的编号。`,
       ...(shifts.length > 0 ? [`删除或插入条款后，${shifts.length} 处条款的自动编号顺延，见第三部分。`] : []),
@@ -264,9 +287,10 @@ function registerComparison(ctx: InvokeCtx, r: { changes?: ChangeRow[]; numberin
     const cols = ["序号", "条款", "修改前", "修改后", "修改理由"];
     const sections: { heading: string; paragraphs: string[]; table?: { columns: string[]; rows: string[][] } }[] = [
       { heading: "说明", paragraphs: notes },
-      { heading: "一、按修改意见的修改", paragraphs: [], table: { columns: cols, rows: own.map(row) } },
+      { heading: "一、按修改意见的修改", paragraphs: [], table: { columns: cols, rows: own.map(ownRow) } },
     ];
-    if (linked.length > 0) sections.push({ heading: "二、因增删条款引起的援引条号联动", paragraphs: [], table: { columns: cols, rows: linked.map(row) } });
+    // 联动行没有写理由的不写“按律师意见修改”（V14 基线 B 独立评分：联动不是律师点名的修改，那样写不实）
+    if (linked.length > 0) sections.push({ heading: "二、因增删条款引起的援引条号联动", paragraphs: [], table: { columns: cols, rows: linked.map((c, i) => row(c, i, "增删条款后援引条号随之调整")) } });
     if (shifts.length > 0) {
       sections.push({
         heading: linked.length > 0 ? "三、条款编号顺延（原件 → 修订后）" : "二、条款编号顺延（原件 → 修订后）",
