@@ -361,7 +361,12 @@ function qualityRemark(flags: string[]): string {
   return notes.join("；") || "—";
 }
 
-export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
+/** 文件名自然排序（“02-…”在“10-…”之前）：律师给材料编号，本机整理按编号列，不按勾选先后（V14 第 39 批：目录与证据目录原先是倒序）。 */
+const byFilename = <T extends { filename: string }>(xs: readonly T[]): T[] => [...xs].sort((a, b) => a.filename.localeCompare(b.filename, "zh-Hans-CN", { numeric: true }));
+
+export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
+  const input = { ...input0, materials: byFilename(input0.materials) };
+  const textOf = new Map(input.materials.map((m) => [m.document_version_id, m.text] as const));
   const facts = input.materials.flatMap((m) =>
     extractFacts({ document_version_id: m.document_version_id, parse_version_id: m.parse_version_id, filename: m.filename, text: m.text }),
   );
@@ -383,15 +388,26 @@ export function buildS2Deliverables(input: S2DeliverableInput): BuiltS2 {
     ] as (string | number | null)[]),
   ];
 
-  // 事实时间轴（按发生日排序；同一事实不合并；保留来源与锚点）
+  // 事实时间轴（按发生日排序；保留来源与锚点）。V14 第 39 批：“事件”写日期所在的那句话；同一份材料里同一句话里的同一日期只列一次
+  const seen = new Set<string>();
+  const row = (f: (typeof facts)[number], date: string, kind: string): (string | number | null)[] | null => {
+    // “事件”写日期或金额所在的那句话（V14 第 39 批真实走查：原先只写日期本身——“2025年9月12日｜日期”，同一日期出现几次列几行，看不出那天发生了什么）
+    const t = textOf.get(f.document_version_id) ?? f.text;
+    const sp = sentenceAround(t, f.char_start, f.char_end);
+    const key = `${f.document_version_id}|${date}|${sp.start}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    return [date, t.slice(sp.start, sp.end).replace(/\s+/g, " ") || f.text, kind === "日期" ? "日期" : `金额：${f.normalized}`, f.filename, f.text, charPos(f.char_start, f.char_end), "材料记载"];
+  };
   const timelineRows: (string | number | null)[][] = [
-    ["发生日期", "事件/金额", "类型", "来源文件", "原文", "原文位置", "陈述性质"],
+    ["发生日期", "事件（所在原句）", "类型", "来源文件", "原文", "原文位置", "陈述性质"],
     ...dates
       .slice()
       // 年份不明的排在最后（不猜年份）
       .sort((a, b) => Number(a.normalized.startsWith("年份不明")) - Number(b.normalized.startsWith("年份不明")) || a.normalized.localeCompare(b.normalized))
-      .map((f) => [f.normalized, f.text, "日期", f.filename, f.text, charPos(f.char_start, f.char_end), "材料记载"] as (string | number | null)[]),
-    ...amounts.map((f) => ["（日期未明）", f.normalized, "金额", f.filename, f.text, charPos(f.char_start, f.char_end), "材料记载"] as (string | number | null)[]),
+      .map((f) => row(f, f.normalized, "日期"))
+      .filter((r): r is (string | number | null)[] => r !== null),
+    ...amounts.map((f) => row(f, "（日期未明）", "金额")).filter((r): r is (string | number | null)[] => r !== null),
   ];
 
   // 证据目录（证明目的留空待律师填写——不擅自认定证明力）
