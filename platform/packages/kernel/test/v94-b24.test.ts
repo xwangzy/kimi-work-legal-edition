@@ -99,7 +99,7 @@ test("本机流程不计点：回稿比对、整理案卷、对外脱敏件预�
   const doc = await importText(inv, matter.matter_id, "对账函.txt", "2025年3月1日，被告确认欠付货款人民币12万元。\n2025年5月1日，原告发函催告。");
   const est = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "s2.case_file", document_version_ids: [doc.document_version_id] });
   assert.equal(est.points, 0);
-  assert.equal(est.points_display, "不调用 AI，不计点");
+  assert.equal(est.points_display, "不调用 AI，不占用额度"); // 第 40 批：不再出现点数
   assert.deepEqual(est.assumptions, []);
   // 界面带来的 budget_points 不起作用
   const run = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `b24-local-${Date.now()}`, budget_points: 50 });
@@ -109,7 +109,7 @@ test("本机流程不计点：回稿比对、整理案卷、对外脱敏件预�
   assert.equal(d.run.points_reserved, 0);
   assert.equal(d.run.points_charged ?? 0, 0);
   const aiEst = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "s1.contract_review", document_version_ids: [doc.document_version_id] });
-  assert.match(aiEst.points_display, /^预计 \d+ 点$/);
+  assert.match(aiEst.points_display, /^(较少|中等|较大)（约为这类任务上限的 \d+%）$/); // 第 40 批：按百分比
 });
 
 test("被停用电脑的个人数据提示：没被停用时不提示", async () => {

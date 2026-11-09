@@ -100,20 +100,47 @@ export interface DraftView {
   problem: string | null;
 }
 
-/** 本所用量视图（控制面 quotaView 的字段；只有点数与成员编号）。 */
+/** 打码的 Kimi 账号（第 40 批：昵称只留首字、手机只留尾号）。 */
+export interface KimiAccountView {
+  nickname: string;
+  phone_tail: string | null;
+  level?: string | null;
+  bound_at?: string;
+}
+
+/**
+ * 本所用量视图（第 40 批：取消点数，一律为本月额度的比例 0–1；控制面 quotaView 的字段 + 套餐与 Kimi 账号）。
+ * 个人份额 = 本月总额度 ÷ 席位数（只用于显示）。
+ */
 export interface QuotaView {
+  unit: "percent";
   period: string;
-  cap_monthly: number | null;
+  resets_at: string;
+  paused: "cap" | "allowance" | null;
+  used_ratio: number;
+  in_flight_ratio: number;
+  cap_pct: number | null;
   cap_set_at: string | null;
-  period_used: number;
-  in_flight: number;
-  own: { points: number; requests: number } | null;
-  history: { period: string; used: number }[];
+  boost_pct: number;
+  seats: number;
+  plan: { id: string; label: string };
+  own: { used_ratio: number; firm_ratio: number; requests: number } | null;
+  history: { period: string; used_ratio: number | null; boost_pct: number }[];
   issued_at: string;
-  pool_remaining?: number;
-  granted_total?: number;
-  by_member?: { member_id: string | null; points: number; requests: number }[];
+  by_member?: { member_id: string | null; used_ratio: number; firm_ratio: number; requests: number }[];
+  boosts?: { at: string; pct: number }[];
   unreconciled_leases?: number;
+  kimi?: { enabled: boolean; required: boolean; own: KimiAccountView | null; members?: Record<string, KimiAccountView> };
+}
+
+/** Kimi 账号登录（设备授权，控制面代办）的发起结果。 */
+export interface KimiLoginStart {
+  flow_id: string;
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete: string;
+  expires_at: string;
+  interval: number;
 }
 
 type CallResult = { ok: true; status: number; json: Record<string, unknown> } | { ok: false; error: string; status?: number };
@@ -489,12 +516,42 @@ export class ControlPlaneClient {
     return v;
   }
 
-  /** 管理员设月度上限（点数；null = 不设上限）。 */
-  async setQuotaCap(cap: number | null): Promise<{ cap_monthly: number | null }> {
-    if (cap !== null && !(Number.isSafeInteger(cap) && cap >= 0)) throw new Error("月度上限须为非负整数点数");
-    const r = await this.call("PUT", "/v1/quota/cap", { monthly_cap: cap });
+  /** 管理员设月度上限（本月总额度的百分比 1–100；null = 不设上限）。 */
+  async setQuotaCap(capPct: number | null): Promise<{ cap_pct: number | null }> {
+    if (capPct !== null && !(Number.isSafeInteger(capPct) && capPct >= 1 && capPct <= 100)) throw new Error("月度上限须为 1–100 的整数百分比");
+    const r = await this.call("PUT", "/v1/quota/cap", { monthly_cap_pct: capPct });
     if (!r.ok) throw new Error(r.error);
-    return { cap_monthly: (r.json.cap_monthly as number | null) ?? null };
+    return { cap_pct: (r.json.cap_pct as number | null) ?? null };
+  }
+
+  // ─── Kimi 账号（第 40 批）：授权由控制面代办，本机不经手 Kimi 令牌 ───
+
+  async kimiAccount(): Promise<{ enabled: boolean; required: boolean; account: KimiAccountView | null }> {
+    const r = await this.call("GET", "/v1/account/kimi");
+    if (!r.ok) {
+      if (r.status === 404) return { enabled: false, required: false, account: null };
+      throw new Error(r.error);
+    }
+    return { enabled: true, required: r.json.required === true, account: (r.json.account as KimiAccountView | null) ?? null };
+  }
+
+  async kimiLoginStart(): Promise<KimiLoginStart> {
+    const r = await this.call("POST", "/v1/account/kimi/start", {});
+    if (!r.ok) throw new Error(r.error);
+    const j = r.json;
+    if (typeof j.flow_id !== "string" || typeof j.user_code !== "string" || typeof j.verification_uri_complete !== "string") throw new Error("kimi_start_invalid");
+    return { flow_id: j.flow_id, user_code: j.user_code, verification_uri: String(j.verification_uri ?? j.verification_uri_complete), verification_uri_complete: j.verification_uri_complete, expires_at: String(j.expires_at ?? ""), interval: Number(j.interval) || 5 };
+  }
+
+  async kimiLoginPoll(flowId: string): Promise<{ status: string; account?: KimiAccountView | null }> {
+    const r = await this.call("POST", "/v1/account/kimi/poll", { flow_id: flowId });
+    if (!r.ok) throw new Error(r.error);
+    return { status: String(r.json.status ?? "expired"), ...(r.json.account ? { account: r.json.account as KimiAccountView } : {}) };
+  }
+
+  async kimiUnbind(): Promise<void> {
+    const r = await this.call("DELETE", "/v1/account/kimi");
+    if (!r.ok) throw new Error(r.error);
   }
 
   // ─── 中软侧操作记录（第 9 批 S14） ───

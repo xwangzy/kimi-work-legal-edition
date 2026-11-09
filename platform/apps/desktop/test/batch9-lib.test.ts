@@ -3,51 +3,66 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { auditDetailLabel, diagSectionLabels, auditActionLabel, auditActorLabel, auditFetchErrorText, auditResultLabel, auditTargetLabel, capRatio, periodLabel, quotaLawyerLine } from "../src/lib/firm-usage.ts";
+import { auditDetailLabel, diagSectionLabels, auditActionLabel, auditActorLabel, auditFetchErrorText, auditResultLabel, auditTargetLabel, fmtPct, kimiAccountLabel, periodLabel, quotaLawyerLine, resetLabel, usageTone } from "../src/lib/firm-usage.ts";
 import { SAVE_METHODS } from "../electron/file-dialogs.cjs";
 
 const JARGON = /租约|lease|序号|seq|签名|哈希|hash|席位|控制面|token/i;
 
-test("律师一句话：本人与本所用量、上限；到 80% 提示即将用完，到上限写明暂停；不出现租约、序号、签名、席位等工程用语", () => {
-  const base = { mode: "control_plane" as const, period: "2026-10", period_used: 800, in_flight: 0, own: { points: 120, requests: 3 }, history: [] };
+test("律师一句话（第 40 批：百分比）：本人占个人份额、本所占本月额度与上限、重置日；到上限 80% 提示即将用完，到上限或 100% 写明暂停；不出现点数与工程用语", () => {
+  const base = { mode: "control_plane" as const, period: "2026-10", resets_at: "2026-10-31T16:00:00.000Z", used_ratio: 0.4, in_flight_ratio: 0, own: { used_ratio: 0.3, firm_ratio: 0.06, requests: 3 }, history: [] };
   const lines = [
-    quotaLawyerLine({ ...base, cap_monthly: null }),
-    quotaLawyerLine({ ...base, cap_monthly: 2000 }),
-    quotaLawyerLine({ ...base, cap_monthly: 900 }),
-    quotaLawyerLine({ ...base, cap_monthly: 800 }),
-    quotaLawyerLine({ ...base, own: null, cap_monthly: null }),
+    quotaLawyerLine({ ...base, cap_pct: null }),
+    quotaLawyerLine({ ...base, cap_pct: 90 }),
+    quotaLawyerLine({ ...base, cap_pct: 45 }),
+    quotaLawyerLine({ ...base, cap_pct: 40 }),
+    quotaLawyerLine({ ...base, own: null, cap_pct: null }),
     quotaLawyerLine({ mode: "local_dev" }),
     quotaLawyerLine(null),
   ];
   for (const l of lines) assert.doesNotMatch(l, JARGON, l);
-  assert.match(lines[0]!, /你本月用了 120 点；本所 800 点（未设上限）/);
-  assert.match(lines[1]!, /本所 800 \/ 2,000 点$/);
+  for (const l of lines) assert.doesNotMatch(l, /点/, `不再出现点数：${l}`);
+  assert.equal(lines[0], "你本月已用个人份额的 30%；本所已用 40%；11 月 1 日重置");
+  assert.match(lines[1]!, /本所已用 40%（上限 90%）；11 月 1 日重置$/);
   assert.match(lines[2]!, /即将用完/);
-  assert.match(lines[3]!, /已用完，AI 处理暂停/);
+  assert.match(lines[3]!, /已到律所设的上限，AI 处理暂停/);
   assert.match(lines[4]!, /你本月还没有用量/);
-  // 购买额度用完同样写明暂停（复核 S9A-13）
-  const pool = quotaLawyerLine({ ...base, cap_monthly: null, paused: "pool" });
-  assert.match(pool, /购买的 AI 额度已用完，AI 处理暂停/);
-  assert.doesNotMatch(pool, JARGON);
+  // 本月额度用完（100%）同样写明暂停（复核 S9A-13）
+  const full = quotaLawyerLine({ ...base, used_ratio: 1, cap_pct: null, paused: "allowance" });
+  assert.match(full, /本月 AI 额度已用完，AI 处理暂停/);
+  assert.doesNotMatch(full, JARGON);
 });
 
-test("上限比例只按已结算用量（网关预领的不算已用）；上限为 0 即满；不设上限为 null；月份写成中文", () => {
-  assert.equal(capRatio({ mode: "control_plane", cap_monthly: 1000, period_used: 500, in_flight: 300 }), 0.5);
-  assert.equal(capRatio({ mode: "control_plane", cap_monthly: 1000, period_used: 0, in_flight: 1000 }), 0, "刚预领、尚未使用不显示用完");
-  assert.equal(capRatio({ mode: "control_plane", cap_monthly: 0, period_used: 0 }), 1);
-  assert.equal(capRatio({ mode: "control_plane", cap_monthly: null, period_used: 10 }), null);
-  assert.equal(capRatio({ mode: "control_plane", cap_monthly: 100, period_used: 500 }), 1);
+test("百分比文字与水位：<0.1% 不写 0；10% 以下一位小数；上限按百分比折算水位；重置日与月份写成中文", () => {
+  assert.equal(fmtPct(0), "0%");
+  assert.equal(fmtPct(0.0004), "<0.1%");
+  assert.equal(fmtPct(0.0123), "1.2%");
+  assert.equal(fmtPct(0.05), "5%");
+  assert.equal(fmtPct(0.456), "46%");
+  assert.equal(fmtPct(1.2), "120%");
+  assert.equal(fmtPct(undefined), "—");
+  assert.equal(usageTone({ used_ratio: 0.5, cap_pct: null, paused: null }), "ok");
+  assert.equal(usageTone({ used_ratio: 0.81, cap_pct: null, paused: null }), "high");
+  assert.equal(usageTone({ used_ratio: 0.41, cap_pct: 50, paused: null }), "high", "上限 50% 的 80% 即偏高");
+  assert.equal(usageTone({ used_ratio: 0.5, cap_pct: 50, paused: null }), "full");
+  assert.equal(usageTone({ used_ratio: 0.1, cap_pct: null, paused: "allowance" }), "full");
+  assert.equal(resetLabel("2026-11-30T16:00:00.000Z"), "12 月 1 日重置");
+  assert.equal(kimiAccountLabel({ nickname: "张**", phone_tail: "0000" }), "张**（尾号 0000）");
+  assert.equal(kimiAccountLabel(null), "未绑定");
   assert.equal(periodLabel("2026-03"), "2026 年 3 月");
   assert.equal(periodLabel(undefined), "本月");
 });
 
 test("操作记录：动作、执行者、对象、结果都有中文；未知动作原样显示；取回失败分“被改写/验不过”与“暂时取不到”", () => {
-  assert.equal(auditDetailLabel({ cap: 5000 }), "上限 5,000 点");
+  assert.equal(auditDetailLabel({ cap_pct: 80 }), "上限 80%");
   assert.equal(auditDetailLabel({ uncapped: 1 }), "不设上限");
-  assert.equal(auditDetailLabel({ points: 1000 }), "1,000 点");
-  assert.equal(auditDetailLabel({ seats: 5, points: 0 }), "席位 5、点数 0");
+  assert.equal(auditDetailLabel({ pct: 50 }), "本月额度 +50%");
+  assert.equal(auditDetailLabel({ seats: 5 }), "席位 5");
+  assert.equal(auditDetailLabel({ required: 1 }), "要求用 Kimi 账号登录");
+  // 第 39 批之前的流水是点数（不可改），照原样标“旧版计量”
+  assert.equal(auditDetailLabel({ cap: 5000 }), "上限 5,000（旧版计量）");
+  assert.equal(auditDetailLabel({ seats: 5, points: 0 }), "席位 5");
   assert.equal(auditDetailLabel(undefined), "");
-  for (const a of ["seat.assign", "support_token.issue", "tenant.create", "tenant.enroll_root", "device.register", "seat_token.issue", "anon_summary.update", "draft.create", "draft.sign", "draft.publish", "connector.remove", "device.revoke", "seat.revoke", "quota.grant", "quota.cap_set", "license.renew", "license.terminate"]) {
+  for (const a of ["seat.assign", "support_token.issue", "tenant.create", "tenant.enroll_root", "device.register", "seat_token.issue", "anon_summary.update", "draft.create", "draft.sign", "draft.publish", "connector.remove", "device.revoke", "seat.revoke", "quota.grant", "quota.boost", "plan.change", "kimi.policy", "kimi.bind", "kimi.unbind", "quota.cap_set", "license.renew", "license.terminate"]) {
     assert.doesNotMatch(auditActionLabel(a), /\./, a);
   }
   assert.equal(auditActionLabel("x.unknown"), "x.unknown");

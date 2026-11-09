@@ -96,6 +96,7 @@ import { firstLineTitle, isTitledFilename } from "../services/artifact-title.ts"
 import { adjudicate, compareAnnotations, normalizeDocs, openEvalBytes, openEvalFile, parseDecisions, reportFileText, runRecallEval, workFileText } from "../services/recall-eval.ts";
 import { isImage, isPdf, ocrReady, parseWithPipeline } from "../services/parse-pipeline.ts";
 import { estimatePoints, scenarioCap } from "../services/estimate.ts";
+import { chargedDisplay, estimateDisplay } from "../services/usage-display.ts";
 import { docxRenderReport } from "../tools/tools/docx.ts";
 import { courtFilingStyle, createDocx, createStyledDocx, docxListLabels, extractParagraphs, isCourtFiling, isHouseStyled, isPartyDocument, markdownToBlocks, partyDocumentStyle, renderDocxHtml, renderDocxPrintHtml, renderXlsxHtml, restyleDocx } from "@zr-legal/docx-engine";
 import { redlineAuthorOf, docStyleView, houseStyleFor, setDocStyle, setDocTemplate } from "../services/doc-style.ts";
@@ -1510,7 +1511,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         ...(busy ? { busy_run_id: busy.run_id } : {}),
         caps: { per_request_chars: 200_000, per_task_chars: 1_000_000 },
       };
-      return { estimate_id: estimateId, ...est, points_display: est.local ? "不调用 AI，不计点" : `预计 ${est.points} 点`, data_where: dataWhere };
+      // 第 40 批：不再显示点数，改为“约为这类任务上限的百分比”（任务预留额度与月度额度不是同一把尺子，不折算）
+      return { estimate_id: estimateId, ...est, points_display: estimateDisplay(est.points, scenarioCap(p.scenario), est.local), data_where: dataWhere };
     },
 
     "runs.start": async (p, id) => {
@@ -1715,7 +1717,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           ? db.all(`SELECT tool_operation_id, tool, operation, status, created_at FROM tool_operations WHERE run_id = ? AND status IN ('pending','unknown') ORDER BY created_at`, [run.run_id])
           : [];
       // is_mine：追问只对发起人显示（复核 B3-B13；内核同样只接受发起人追问）
-      return { run: { ...runOut(run), is_mine: run.created_by === id.userId }, artifacts: artifactsOut, inflight, unresolved_operations };
+      return { run: { ...runOut(run), is_mine: run.created_by === id.userId, usage_display: chargedDisplay(Number(run.points_charged) || 0, Number(run.budget_points) || 0) }, artifacts: artifactsOut, inflight, unresolved_operations };
     },
 
     "runs.events": (p, id) => {
@@ -3432,23 +3434,56 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "quota.status": async (_p, id) => {
       if (!deps.controlPlane) return { mode: "local_dev", note: "未配置控制面（开发形态：额度只在开发网关内存里）" };
       const view = await cpCall(() => deps.controlPlane!.quota());
-      // 成员编号换成本机成员名（控制面只有编号）
+      // 成员编号换成本机成员名（控制面只有编号），并附上成员绑定的 Kimi 账号（打码）
       const names = new Map(db.all<{ user_id: string; display_name: string }>(`SELECT user_id, display_name FROM users WHERE tenant_id = ?`, [id.tenantId]).map((r) => [r.user_id, r.display_name]));
+      const accounts = view.kimi?.members ?? {};
+      const { members: _m, ...kimi } = view.kimi ?? { enabled: false, required: false, own: null };
       return {
         mode: "control_plane",
         ...view,
-        ...(view.by_member ? { by_member: view.by_member.map((m) => ({ ...m, name: m.member_id ? (names.get(m.member_id) ?? null) : null })) } : {}),
+        kimi,
+        ...(view.by_member ? { by_member: view.by_member.map((m) => ({ ...m, name: m.member_id ? (names.get(m.member_id) ?? null) : null, kimi: m.member_id ? (accounts[m.member_id] ?? null) : null })) } : {}),
       };
     },
     "quota.set_cap": async (p, id) => {
       requireAdminDevice(id);
-      const raw = p?.monthly_cap;
-      // 空串、布尔等不按 0 处理（复核 S9A-20：上限 0 = 立即停）
+      // 第 40 批：上限为本月总额度的百分比（1–100）；空串、布尔等不按数处理（复核 S9A-20）
+      if (p && "monthly_cap" in p) throw validation("已取消点数：月度上限请按百分比设置");
+      const raw = p?.monthly_cap_pct;
       const cap = raw === null ? null : typeof raw === "number" || (typeof raw === "string" && /^\d+$/.test(raw)) ? Number(raw) : NaN;
-      if (cap !== null && !(Number.isSafeInteger(cap) && cap >= 0)) throw validation("月度上限须为非负整数点数，或不设上限");
+      if (cap !== null && !(Number.isSafeInteger(cap) && cap >= 1 && cap <= 100)) throw validation("月度上限须为 1–100 的整数百分比，或不设上限");
       const r = await cpCall(() => deps.controlPlane!.setQuotaCap(cap));
       audit(db, id, "quota.cap_set", "tenant", id.tenantId, sha256Hex(JSON.stringify({ cap })), keyctx);
       return r;
+    },
+    // ─── Kimi 账号（第 40 批）：本人用 Kimi 账号登录并绑定席位；授权由控制面代办，本机只经手验证码与授权页地址 ───
+    "account.kimi_status": async () => {
+      if (!deps.controlPlane) return { mode: "local_dev", enabled: false, required: false, account: null };
+      return { mode: "control_plane", ...(await cpCall(() => deps.controlPlane!.kimiAccount())) };
+    },
+    "account.kimi_start": async (_p, id) => {
+      if (!deps.controlPlane) throw validation("未配置 Kimi Work 服务：开发形态不能登录 Kimi 账号");
+      const r = await cpCall(() => deps.controlPlane!.kimiLoginStart());
+      audit(db, id, "account.kimi_login_start", "user", id.userId, undefined, keyctx);
+      return r;
+    },
+    "account.kimi_poll": async (p, id) => {
+      if (!deps.controlPlane) throw validation("未配置 Kimi Work 服务");
+      const flow = String(p?.flow_id ?? "");
+      if (!/^kf_[A-Za-z0-9_-]{10,64}$/.test(flow)) throw validation("登录流程编号不合法");
+      const r = await cpCall(() => deps.controlPlane!.kimiLoginPoll(flow));
+      if (r.status === "bound") {
+        audit(db, id, "account.kimi_bind", "user", id.userId, undefined, keyctx);
+        // 绑定后立即同步一次：要求绑定的律所此时才签得出席位令牌
+        void deps.controlPlane!.sync().catch(() => undefined);
+      }
+      return r;
+    },
+    "account.kimi_unbind": async (_p, id) => {
+      if (!deps.controlPlane) throw validation("未配置 Kimi Work 服务");
+      await cpCall(() => deps.controlPlane!.kimiUnbind());
+      audit(db, id, "account.kimi_unbind", "user", id.userId, undefined, keyctx);
+      return { ok: true };
     },
     // ─── 中软侧操作记录（第 9 批 S14）：取回、验控制面签名与哈希链、本机留存；律所管理员与合伙人可看、可导出 ───
     "control_plane.audit": async (p, id) => {
@@ -4575,12 +4610,27 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     if (exit) throw new DomainError("exit_mode", `${exit.message}（${what}不可用）`, 403);
   }
 
+  /** 控制面拒绝代码 → 律师看得懂的话（第 40 批）。 */
+  const CP_ERROR_TEXT: Readonly<Record<string, string>> = {
+    kimi_account_in_use: "这个 Kimi 账号已绑定本所另一位成员：请换一个账号，或请管理员先解绑",
+    kimi_account_disabled: "本所的 Kimi Work 服务还没有开通 Kimi 账号登录",
+    kimi_unreachable: "连不上 Kimi 账号中心，请稍后再试",
+    kimi_start_failed: "Kimi 账号中心暂时不能发起登录，请稍后再试",
+    kimi_userinfo_failed: "取不到 Kimi 账号信息，请重新登录",
+    kimi_poll_failed: "Kimi 账号中心返回了无法识别的结果，请重新登录",
+    no_seat: "你还没有席位：请律所管理员先分配席位",
+    rate_limited: "操作过于频繁，请稍后再试",
+    cap_invalid: "月度上限须为 1–100 的整数百分比",
+  };
   /** 控制面调用的错误换成人话（控制面不可达或拒绝）。 */
   async function cpCall<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
     } catch (e) {
       const msg = (e as Error)?.message ?? String(e);
+      // 第 40 批：Kimi 账号与百分比上限的常见拒绝写成人话（其余照旧带代码）
+      const human = CP_ERROR_TEXT[msg];
+      if (human) throw new DomainError(msg === "kimi_unreachable" || msg === "kimi_start_failed" ? "provider_unavailable" : "validation", human, msg === "kimi_unreachable" ? 502 : 400);
       throw new DomainError("provider_unavailable", `控制面：${msg}`, 502);
     }
   }

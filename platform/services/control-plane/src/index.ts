@@ -8,3 +8,5 @@ export { connectPg, parsePgUrl, PgError, type PgConn, type PgConnOptions } from 
 export { connectRedis, parseRedisUrl, type RedisOptions } from "./resp.ts";
 export * from "./audit-log.ts";
 export * from "./quota.ts";
+export * from "./billing.ts";
+export * from "./kimi-account.ts";

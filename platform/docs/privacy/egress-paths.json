@@ -2,12 +2,13 @@
   "_comment": "闸门每个外发通道发往云端的路径逐条登记（v9.3 A-12；评审 Z4 P0-11“通道 ↔ 清单”）。门禁 packages/egress-gate/test/egress-paths.test.ts：源码里提取的路径须与这里逐条一致；classes 为驻留面清单 residency.json 的数据类编号。cp-relay 与 dist-relay 是路径白名单正则（源码原样），其余是源码拼出的路径（${…} 记作 {}）。",
   "channels": {
     "packages/egress-gate/src/cp-relay.ts": {
-      "what": "控制面通道：开通与入组、设备登记与吊销、席位与许可、律所策略与连接器、租户盐、匿名事项摘要、用量与运营审计",
+      "what": "控制面通道：开通与入组、设备登记与吊销、席位与许可、律所策略与连接器、租户盐、匿名事项摘要、用量与运营审计、Kimi 账号登录（第 40 批：发起、轮询、解绑；授权由控制面代办，本机不经手 Kimi 令牌）",
       "classes": [
         24,
         25
       ],
       "paths": [
+        "^\\/v1\\/account\\/kimi(?:\\/start|\\/poll)?$",
         "^\\/v1\\/activation\\/redeem$",
         "^\\/v1\\/anon-matters\\/[A-Za-z0-9_-]{16,64}$",
         "^\\/v1\\/audit\\?after=\\d{1,15}&limit=\\d{1,3}$",

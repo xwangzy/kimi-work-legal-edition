@@ -64,7 +64,7 @@ const call = async (who: string, method: string, path: string, body?: unknown, o
 const chain = (tid: string) => auditLog.list(tid, 0, 1000);
 
 test("开通、发码、加量、续订、终止：执行者记为运营编号（律所可见的流水）；访问审计先记“已请求”再记结果，带密钥编号与名册版本", async () => {
-  const created = await call("op_0001", "POST", "/v1/ops/tenants", { tid: "ten_alpha", edition: "team", seats: 5, points: 1000, name: "阿尔法律师事务所" });
+  const created = await call("op_0001", "POST", "/v1/ops/tenants", { tid: "ten_alpha", edition: "team", seats: 5, plan: "pro", name: "阿尔法律师事务所" });
   assert.equal(created.status, 200, JSON.stringify(created.json));
   assert.equal(created.json.tenant.activation_required, true, "经运营接口开通的租户一律要求开通码");
   assert.equal(cp.ops.tenant("ten_alpha")!.activation_required, true);
@@ -72,14 +72,17 @@ test("开通、发码、加量、续订、终止：执行者记为运营编号�
   assert.equal(code.status, 200);
   assert.match(code.json.code, /\S{10,}/);
   assert.equal(cp.ops.tenant("ten_alpha")!.activations.get(code.json.activation_id)!.created_by, "op_0003", "发码者是具体的运营人员");
-  assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/points", { points: 500 })).status, 200);
-  assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/cap", { cap: 800 })).status, 200);
+  assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/boost", { pct: 50 })).status, 200);
+  assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/cap", { cap_pct: 80 })).status, 200);
   assert.equal(cp.ops.tenant("ten_alpha")!.quota.cap_set_by, "op_0001", "代设上限记到运营编号（复核 RA10A-16）");
   assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/renew", { days: 30 })).status, 200);
   assert.equal((await call("op_0003", "POST", `/v1/ops/tenants/ten_alpha/activation-codes/${code.json.activation_id}/revoke`)).status, 200);
   const summary = await call("op_0002", "GET", "/v1/ops/tenants/ten_alpha");
   assert.equal(summary.status, 200);
-  assert.equal(summary.json.tenant.quota.pool_remaining, 1500);
+  assert.equal(summary.json.tenant.quota.boost_pct, 50);
+  assert.equal(summary.json.tenant.quota.cap_pct, 80);
+  assert.deepEqual(summary.json.tenant.quota.plan, { id: "pro", label: "专业", custom: false });
+  assert.deepEqual(summary.json.tenant.quota.units, { total: 5 * 500_000 * 1.5, used: 0 }, "专业套餐 5 席 + 加量 50%");
   assert.deepEqual(summary.json.tenant.activations.map((a: any) => [a.status, a.issued_by]), [["revoked", "op_0003"]]);
   assert.equal(JSON.stringify(summary.json).includes("张管理员"), false, "概要不给成员姓名");
   assert.equal(JSON.stringify(summary.json).includes("admin"), false, "概要不给成员标识");
@@ -93,7 +96,7 @@ test("开通、发码、加量、续订、终止：执行者记为运营编号�
     [
       ["tenant.create", "ops", "op_0001", "ok"],
       ["activation.issue", "ops", "op_0003", "ok"],
-      ["quota.grant", "ops", "op_0001", "ok"],
+      ["quota.boost", "ops", "op_0001", "ok"],
       ["quota.cap_set", "ops", "op_0001", "ok"],
       ["license.renew", "ops", "op_0001", "ok"],
       ["activation.revoke", "ops", "op_0003", "ok"],
@@ -103,23 +106,24 @@ test("开通、发码、加量、续订、终止：执行者记为运营编号�
   const mine = access.filter((r) => r.tid === "ten_alpha").map((r) => `${r.operator}/${r.op_key}/v${r.roster_version}:${r.action}:${r.result}`);
   assert.deepEqual(mine.slice(0, 2), ["op_0001/k1/v1:tenant.create:requested", "op_0001/k1/v1:tenant.create:ok"]);
   assert.ok(mine.includes("op_0002/k1/v1:tenant.read:requested") && mine.includes("op_0002/k1/v1:tenant.read:ok"));
-  cp.ops.grantPoints("ten_alpha", 1);
+  cp.ops.grantUnits("ten_alpha", 1);
   assert.deepEqual(chain("ten_alpha").at(-1)!.actor, { kind: "ops", id: "ops" }, "进程内调用（开发脚本与测试）仍记笼统的 ops");
 });
 
 test("权限按接口：只读的人不能加量、只能发码的人不能开通、开通时附带点数另须加量权限（复核 RA10B-07）；被拒的不进律所流水；共享口令与无签名一律 401", async () => {
   const before = chain("ten_alpha").length;
-  const ro = await call("op_0002", "POST", "/v1/ops/tenants/ten_alpha/points", { points: 1 });
+  const ro = await call("op_0002", "POST", "/v1/ops/tenants/ten_alpha/boost", { pct: 1 });
   assert.deepEqual([ro.status, ro.json.error.code], [403, "ops_permission_denied"]);
   const issuer = await call("op_0003", "POST", "/v1/ops/tenants", { tid: "ten_beta", edition: "team", seats: 1 });
   assert.deepEqual([issuer.status, issuer.json.error.code], [403, "ops_permission_denied"]);
+  // 第 40 批取消点数：开通时附带点数一律拒绝（旧控制台不会误以为加了量）
   const preload = await call("op_0004", "POST", "/v1/ops/tenants", { tid: "ten_beta", edition: "team", seats: 1, points: 1_000_000_000 });
-  assert.deepEqual([preload.status, preload.json.error.code], [403, "ops_permission_denied"]);
+  assert.deepEqual([preload.status, preload.json.error.code], [400, "points_removed"]);
   assert.equal(cp.ops.tenant("ten_beta"), undefined);
   assert.equal((await call("op_0004", "POST", "/v1/ops/tenants", { tid: "ten_beta", edition: "team", seats: 1 })).status, 200, "不附点数可以开通");
-  const shared = await fetch(`${base}/v1/ops/tenants/ten_alpha/points`, { method: "POST", headers: { authorization: "Bearer ops-secret-0123456789", "x-kwl-operator": "ops.zhang", "content-type": "application/json" }, body: '{"points":1}' });
+  const shared = await fetch(`${base}/v1/ops/tenants/ten_alpha/boost`, { method: "POST", headers: { authorization: "Bearer ops-secret-0123456789", "x-kwl-operator": "ops.zhang", "content-type": "application/json" }, body: '{"pct":1}' });
   assert.deepEqual([shared.status, ((await shared.json()) as any).error.code], [401, "ops_auth_missing"]);
-  const tampered = await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/points", { points: 999999 }, { headers: OPS.sign("op_0001", "control-plane", { method: "POST", path: "/v1/ops/tenants/ten_alpha/points", body: '{"points":1}' }) });
+  const tampered = await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/boost", { pct: 999 }, { headers: OPS.sign("op_0001", "control-plane", { method: "POST", path: "/v1/ops/tenants/ten_alpha/boost", body: '{"pct":1}' }) });
   assert.deepEqual([tampered.status, tampered.json.error.code], [401, "ops_auth_invalid"]);
   const cross = await fetch(`${base}/v1/ops/tenants/ten_alpha`, { headers: OPS.sign("op_0001", "support", { method: "GET", path: "/v1/ops/tenants/ten_alpha" }) });
   assert.equal(cross.status, 401);
@@ -143,18 +147,18 @@ test("运营只作废创始开通码、代设上限只能调低（复核 RA10B-0
   assert.deepEqual(summary.json.tenant.activations, [], "概要不列成员邀请码");
   assert.deepEqual(summary.json.tenant.member_invitations, { total: 1, open: 1 });
   assert.equal(JSON.stringify(summary.json).includes("zhangsan"), false, "设备编号里的成员标识不外露（复核 RA10B-05）");
-  // 代设上限：无上限 → 设 500（调低）可以；500 → 800（调高）、500 → 不设（取消）须律所自己
-  assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_beta/cap", { cap: 500 })).status, 200);
-  for (const cap of [800, null]) {
-    const up = await call("op_0001", "POST", "/v1/ops/tenants/ten_beta/cap", { cap });
-    assert.deepEqual([up.status, up.json.error.code], [409, "cap_raise_by_firm_only"], String(cap));
+  // 代设上限（百分比）：无上限 → 设 50%（调低）可以；50% → 80%（调高）、50% → 不设（取消）须律所自己
+  assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_beta/cap", { cap_pct: 50 })).status, 200);
+  for (const cap_pct of [80, null]) {
+    const up = await call("op_0001", "POST", "/v1/ops/tenants/ten_beta/cap", { cap_pct });
+    assert.deepEqual([up.status, up.json.error.code], [409, "cap_raise_by_firm_only"], String(cap_pct));
   }
-  assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_beta/cap", { cap: 300 })).status, 200);
-  assert.equal(t.quota.cap_monthly, 300);
+  assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_beta/cap", { cap_pct: 30 })).status, 200);
+  assert.equal(t.quota.cap_pct, 30);
   // 已认证的运营连发 30 次被拒的加量：律所流水里被拒的记录限量（每分钟 10 条；跨分钟至多 20 条）
   const n0 = chain("ten_beta").filter((x) => x.result.startsWith("rejected:")).length;
-  for (let i = 0; i < 30; i++) await call("op_0001", "POST", "/v1/ops/tenants/ten_beta/points", { points: -1 });
-  const n1 = chain("ten_beta").filter((x) => x.result.startsWith("rejected:points_invalid")).length - n0;
+  for (let i = 0; i < 30; i++) await call("op_0001", "POST", "/v1/ops/tenants/ten_beta/boost", { pct: -1 });
+  const n1 = chain("ten_beta").filter((x) => x.result.startsWith("rejected:boost_invalid")).length - n0;
   assert.ok(n1 >= 10 && n1 <= 20, `被拒记录应限量（得到 ${n1}）`);
 });
 
@@ -190,7 +194,7 @@ test("输入校验与已有租户；吊销设备与席位走运维包装；访�
     assert.deepEqual([r.status, r.json.error.code], [400, codeWant], JSON.stringify(body));
   }
   assert.equal(cp.ops.tenant("ten_delta"), undefined);
-  assert.deepEqual((await call("op_0001", "POST", "/v1/ops/tenants/ten_nope/points", { points: 1 })).json.error.code, "tenant_unknown");
+  assert.deepEqual((await call("op_0001", "POST", "/v1/ops/tenants/ten_nope/boost", { pct: 1 })).json.error.code, "tenant_unknown");
   const seat = await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/seats/u-nobody/revoke");
   assert.deepEqual([seat.status, seat.json.error.code], [404, "seat_unknown"]);
   const dev = await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/devices/dev_alpha_x/revoke", {});

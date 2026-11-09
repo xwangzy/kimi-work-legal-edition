@@ -42,7 +42,7 @@ test("控制面篡改：列表后改申请 → 管理员按快照签发、控制
   const FIRM3 = "onbk-tamper2";
   const TID3 = `ten_${FIRM3}`;
   cloud = await startCloudCp({ tenant: "ten_onbk-unused2" });
-  cloud!.cp.ops.createTenant({ tid: TID3, edition: "team", seats: 8, points: 1_000_000, name: "篡改演练二所" });
+  cloud!.cp.ops.createTenant({ tid: TID3, edition: "team", seats: 8, allowanceUnits: 1_000_000, name: "篡改演练二所" });
   const dirA = mkdtempSync(join(tmpdir(), "kwl-onb-t2a-"));
   let a = await boot(dirA);
   const restartA = nextRestart(a);

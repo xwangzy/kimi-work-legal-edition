@@ -4,9 +4,19 @@
  */
 import type { CpAuditRow, QuotaStatus } from "../api.ts";
 
-/** 点数千分位。 */
-export function fmtPoints(n: number | null | undefined): string {
+/** 次数等整数的千分位。 */
+export function fmtCount(n: number | null | undefined): string {
   return typeof n === "number" && Number.isFinite(n) ? n.toLocaleString("zh-CN") : "—";
+}
+
+/**
+ * 比例（0–1）→ 百分比文字（第 40 批：用量一律按百分比）：不到 0.1% 写“<0.1%”；10% 以下保留一位小数；其余取整。
+ */
+export function fmtPct(r: number | null | undefined): string {
+  if (typeof r !== "number" || !Number.isFinite(r)) return "—";
+  const p = r * 100;
+  if (p > 0 && p < 0.1) return "<0.1%";
+  return `${p < 10 ? (Math.round(p * 10) / 10).toFixed(1).replace(/\.0$/, "") : Math.round(p)}%`;
 }
 
 /** “2026-10” → “2026 年 10 月”。 */
@@ -15,33 +25,44 @@ export function periodLabel(p: string | undefined): string {
   return m ? `${m[1]} 年 ${Number(m[2])} 月` : "本月";
 }
 
-/**
- * 本月已用占上限的比例（0–1；不设上限为 null）。只按已结算的用量：网关预领、尚未用掉的部分（in_flight）不算“已用”，
- * 否则设了上限后第一次请求就会显示“已用完”。
- */
-export function capRatio(q: QuotaStatus): number | null {
-  if (q.cap_monthly === null || q.cap_monthly === undefined || q.period_used === undefined) return null;
-  if (q.cap_monthly === 0) return 1;
-  return Math.min(1, q.period_used / q.cap_monthly);
+/** 重置时刻（北京时间）→ “12 月 1 日重置”。 */
+export function resetLabel(iso: string | undefined): string {
+  const t = Date.parse(iso ?? "");
+  if (!Number.isFinite(t)) return "每月 1 日重置";
+  const d = new Date(t + 8 * 3600_000);
+  return `${d.getUTCMonth() + 1} 月 ${d.getUTCDate()} 日重置`;
+}
+
+/** 用量水位：<80% 正常、≥80% 偏高、≥100%（或已暂停）用完。上限按本月总额度的百分比折算。 */
+export function usageTone(q: Pick<QuotaStatus, "used_ratio" | "cap_pct" | "paused">): "ok" | "high" | "full" {
+  const r = q.used_ratio ?? 0;
+  const limit = q.cap_pct ? q.cap_pct / 100 : 1;
+  if (q.paused || r >= limit) return "full";
+  return r >= limit * 0.8 ? "high" : "ok";
 }
 
 /** 律师在“本机与安全”看到的一句话。 */
 export function quotaLawyerLine(q: QuotaStatus | null): string {
   if (!q) return "读取中…";
   if (q.mode !== "control_plane") return "开发形态：不统计本所用量";
-  const own = q.own ? `你本月用了 ${fmtPoints(q.own.points)} 点` : "你本月还没有用量";
-  const firm = q.cap_monthly === null || q.cap_monthly === undefined ? `本所 ${fmtPoints(q.period_used)} 点（未设上限）` : `本所 ${fmtPoints(q.period_used)} / ${fmtPoints(q.cap_monthly)} 点`;
-  const r = capRatio(q);
-  // 购买额度用完同样暂停（复核 S9A-13：成员看不到余额，但要知道为什么停了）
+  const own = q.own && q.own.requests > 0 ? `你本月已用个人份额的 ${fmtPct(q.own.used_ratio)}` : "你本月还没有用量";
+  const firm = `本所已用 ${fmtPct(q.used_ratio)}${q.cap_pct ? `（上限 ${q.cap_pct}%）` : ""}`;
+  const tone = usageTone(q);
   const warn =
-    q.paused === "pool"
-      ? "；本所购买的 AI 额度已用完，AI 处理暂停，请联系律所管理员"
-      : q.paused === "cap" || (r !== null && r >= 1)
-        ? "；本所本月额度已用完，AI 处理暂停，请联系律所管理员"
-        : r !== null && r >= 0.8
+    q.paused === "allowance"
+      ? "；本所本月 AI 额度已用完，AI 处理暂停，请联系律所管理员加量"
+      : q.paused === "cap" || tone === "full"
+        ? "；本所本月用量已到律所设的上限，AI 处理暂停，请联系律所管理员"
+        : tone === "high"
           ? "；本所本月额度即将用完"
           : "";
-  return `${own}；${firm}${warn}`;
+  return `${own}；${firm}；${resetLabel(q.resets_at)}${warn}`;
+}
+
+/** Kimi 账号的一行显示：“张**（尾号 0000）”。 */
+export function kimiAccountLabel(k: { nickname: string; phone_tail: string | null } | null | undefined): string {
+  if (!k) return "未绑定";
+  return k.phone_tail ? `${k.nickname}（尾号 ${k.phone_tail}）` : k.nickname;
 }
 
 const ACTIONS: Readonly<Record<string, string>> = {
@@ -58,8 +79,13 @@ const ACTIONS: Readonly<Record<string, string>> = {
   "seat.revoke": "收回席位",
   "seat.assign": "分配席位",
   "support_token.issue": "签发支持凭据（诊断包上传）",
-  "quota.grant": "加量",
+  "quota.grant": "加量（旧版点数）",
+  "quota.boost": "加量包",
   "quota.cap_set": "设置月度上限",
+  "plan.change": "调整套餐或席位",
+  "kimi.policy": "Kimi 账号登录要求",
+  "kimi.bind": "绑定 Kimi 账号",
+  "kimi.unbind": "解绑 Kimi 账号",
   "license.renew": "续订",
   "license.terminate": "终止订阅",
 };
@@ -68,14 +94,22 @@ export function auditActionLabel(a: string): string {
   return ACTIONS[a] ?? a;
 }
 
-/** 数值明细 → 一句话（复核 S9A-25：上限改成多少点等在页面上可见）。 */
+/**
+ * 数值明细 → 一句话（复核 S9A-25：上限改成多少等在页面上可见）。第 40 批起按百分比；
+ * 第 39 批之前的记录是点数（流水不可改），照原样标“旧版计量”。
+ */
 export function auditDetailLabel(d: Record<string, number> | undefined): string {
   if (!d) return "";
   const parts: string[] = [];
   if (d.uncapped) parts.push("不设上限");
-  if (d.cap !== undefined) parts.push(`上限 ${fmtPoints(d.cap)} 点`);
-  if (d.points !== undefined && d.seats === undefined) parts.push(`${fmtPoints(d.points)} 点`);
-  if (d.seats !== undefined) parts.push(`席位 ${d.seats}、点数 ${fmtPoints(d.points ?? 0)}`);
+  if (d.cap_pct !== undefined) parts.push(`上限 ${d.cap_pct}%`);
+  if (d.pct !== undefined) parts.push(`本月额度 +${d.pct}%`);
+  if (d.custom) parts.push("定制加量");
+  if (d.plan) parts.push("改套餐");
+  if (d.seats !== undefined) parts.push(`席位 ${d.seats}`);
+  if (d.required !== undefined) parts.push(d.required ? "要求用 Kimi 账号登录" : "不强制 Kimi 账号登录");
+  if (d.cap !== undefined) parts.push(`上限 ${fmtCount(d.cap)}（旧版计量）`);
+  if (d.points !== undefined && d.points > 0) parts.push(`${fmtCount(d.points)}（旧版计量）`);
   if (d.days !== undefined) parts.push(`${d.days} 天`);
   return parts.join("，");
 }
@@ -107,6 +141,8 @@ const RESULT_CODES: Readonly<Record<string, string>> = {
   seat_revoked: "席位已收回",
   device_revoked: "设备已停用",
   cap_invalid: "上限不合法",
+  kimi_account_required: "须先用 Kimi 账号登录",
+  kimi_account_in_use: "Kimi 账号已被本所另一位成员绑定",
   draft_stale: "草稿已过时",
   admin_threshold_not_met: "管理员签名不足",
   state_persist_failed: "写盘失败",

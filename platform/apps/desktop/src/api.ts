@@ -592,7 +592,6 @@ export interface SupportPreview {
   preview: string;
 }
 
-/** 本所用量与上限（第 9 批 S3；只有点数与成员编号，成员名由内核在本机换上）。 */
 /** 本人设的期限提醒（第 10 批 S9）。 */
 export interface ReminderItem {
   reminder_id: string;
@@ -641,22 +640,47 @@ export interface ReminderInput {
   audience: "me" | "team";
 }
 
+/** 打码的 Kimi 账号（昵称只留首字、手机只留尾号）。 */
+export interface KimiAccount {
+  nickname: string;
+  phone_tail: string | null;
+  level?: string | null;
+  bound_at?: string;
+}
+
+/**
+ * 本所用量与上限（第 40 批：取消点数，一律为本月额度的比例 0–1，与 Kimi 会员额度同一表达）。
+ * 个人份额 = 本所本月总额度 ÷ 席位数；成员名由内核在本机换上。
+ */
 export interface QuotaStatus {
   mode: "control_plane" | "local_dev";
   note?: string;
+  unit?: "percent";
   period?: string;
-  /** 暂停原因：上限已到 / 购买额度用完（成员也能看到，不含金额）。 */
-  paused?: "cap" | "pool" | null;
-  cap_monthly?: number | null;
+  /** 下次重置（北京时间下月 1 日 0 点）。 */
+  resets_at?: string;
+  /** 暂停原因：律所设的上限已到 / 本月额度用完（100%）。 */
+  paused?: "cap" | "allowance" | null;
+  used_ratio?: number;
+  in_flight_ratio?: number;
+  cap_pct?: number | null;
   cap_set_at?: string | null;
-  period_used?: number;
-  in_flight?: number;
-  own?: { points: number; requests: number } | null;
-  history?: { period: string; used: number }[];
-  pool_remaining?: number;
-  granted_total?: number;
-  by_member?: { member_id: string | null; name: string | null; points: number; requests: number }[];
+  boost_pct?: number;
+  seats?: number;
+  plan?: { id: string; label: string };
+  own?: { used_ratio: number; firm_ratio: number; requests: number } | null;
+  history?: { period: string; used_ratio: number | null; boost_pct: number }[];
+  by_member?: { member_id: string | null; name: string | null; used_ratio: number; firm_ratio: number; requests: number; kimi: KimiAccount | null }[];
+  boosts?: { at: string; pct: number }[];
   unreconciled_leases?: number;
+  kimi?: { enabled: boolean; required: boolean; own: KimiAccount | null };
+}
+
+export interface KimiAccountStatus {
+  mode: "control_plane" | "local_dev";
+  enabled: boolean;
+  required: boolean;
+  account: KimiAccount | null;
 }
 
 /** 中软侧操作记录（第 9 批 S14）：本机验过签名与哈希链后留存的记录。 */
@@ -1121,7 +1145,12 @@ export const api = {
   diagnosticsUploadPreview: () => invoke<SupportPreview>("diagnostics.upload_preview"),
   diagnosticsUploads: () => invoke<{ uploads: { upload_id: string; ticket: string | null; bytes: number; status: "pending" | "sent" | "failed" | "unknown"; error_code: string | null; created_at: string }[] }>("diagnostics.uploads"),
   diagnosticsUpload: (fileSha256: string) => invoke<{ ticket: string; expires_at: string | null; retention_days: number }>("diagnostics.upload", { file_sha256: fileSha256 }),
-  quotaSetCap: (cap: number | null) => invoke<{ cap_monthly: number | null }>("quota.set_cap", { monthly_cap: cap }),
+  quotaSetCap: (capPct: number | null) => invoke<{ cap_pct: number | null }>("quota.set_cap", { monthly_cap_pct: capPct }),
+  // Kimi 账号（第 40 批）：授权由 Kimi Work 服务代办；本机只显示验证码、打开授权页、轮询结果
+  kimiStatus: () => invoke<KimiAccountStatus>("account.kimi_status"),
+  kimiLoginStart: () => invoke<{ flow_id: string; user_code: string; verification_uri: string; verification_uri_complete: string; expires_at: string; interval: number }>("account.kimi_start"),
+  kimiLoginPoll: (flowId: string) => invoke<{ status: "pending" | "slow_down" | "expired" | "denied" | "bound"; account?: KimiAccount | null }>("account.kimi_poll", { flow_id: flowId }),
+  kimiUnbind: () => invoke<{ ok: true }>("account.kimi_unbind"),
   cpAudit: (o: { limit?: number; before_seq?: number } = {}) =>
     invoke<{ mode: string; fetched: { added: number; head: number; withheld: boolean } | null; fetch_error: string | null; records: CpAuditRow[] }>("control_plane.audit", o),
   /** 导出中软侧操作记录（原记录含哈希链，收件人可自行核验；只有代码与编号）。返回 null = 取消。 */

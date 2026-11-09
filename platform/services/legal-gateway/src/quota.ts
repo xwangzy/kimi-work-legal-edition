@@ -36,7 +36,7 @@ export class MapQuota implements QuotaSource {
   }
   async reserve(tid: string, points: number): Promise<ReserveResult> {
     const left = this.budgets.get(tid) ?? 0;
-    if (left < points) return { ok: false, status: 402, code: "quota_exhausted", message: "本所点数不足（预占失败）" };
+    if (left < points) return { ok: false, status: 402, code: "quota_exhausted", message: "本所本月 AI 额度不足（预占失败）" };
     this.budgets.set(tid, left - points);
     return { ok: true, hold: { tid, points } };
   }
@@ -200,7 +200,7 @@ export class LeaseQuota implements QuotaSource {
     const f = this.lastFailure.get(tid);
     if (f?.code === "license_expired") return { ok: false, status: 402, code: "quota_license_expired", message: "本所订阅已到期，AI 处理暂停：请联系律所管理员" };
     if (f?.code === "cap_reached") return { ok: false, status: 402, code: "quota_cap_reached", message: "本所本月 AI 额度已达律所设定的上限：请联系律所管理员" };
-    if (f?.code === "pool_exhausted") return { ok: false, status: 402, code: "quota_exhausted", message: "本所购买的 AI 额度已用完：请联系律所管理员" };
+    if (f?.code === "pool_exhausted") return { ok: false, status: 402, code: "quota_exhausted", message: "本所本月 AI 额度已用完（100%）：请联系律所管理员加量，或等下月 1 日重置" };
     if (f && f.status === 401) return { ok: false, status: 503, code: "quota_unavailable", message: "暂时无法确认本所 AI 额度，请稍后再试" };
     if (f && f.status !== 0 && f.status < 500) return { ok: false, status: 402, code: "quota_denied", message: "暂时无法为本所发放 AI 额度：请联系律所管理员" };
     if (!f) return { ok: false, status: 402, code: "quota_exhausted", message: "本所 AI 额度暂时不足，请稍后再试" };

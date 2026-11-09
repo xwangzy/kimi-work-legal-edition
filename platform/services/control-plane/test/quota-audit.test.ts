@@ -16,7 +16,9 @@ import {
   createControlPlane,
   devControlPlaneKeys,
   emptyQuota,
-  grantPoints,
+  grantUnits,
+  boostPct,
+  quotaView,
   LEASE_GRACE_MS,
   leaseQuota,
   periodOf,
@@ -77,11 +79,10 @@ const service = async (path: string, body: unknown, secret = SECRET) => {
   return { status: r.status, json: (await r.json()) as any };
 };
 
-test("额度账本（纯函数）：租约受池余额与月度上限双重约束；回报为累计值（重发不重复计费）；上限与池用完分开报", () => {
+test("额度账本（纯函数）：租约受本月额度与百分比上限双重约束；回报为累计值（重发不重复计费）；上限与额度用完分开报", () => {
   const t0 = Date.parse("2026-10-15T02:00:00Z");
-  const q = emptyQuota(t0);
-  grantPoints(q, 10_000);
-  setCap(q, 3_000, t0, "dev_admin");
+  const q = emptyQuota(t0, 10_000);
+  setCap(q, 30, t0, "dev_admin"); // 30% × 10000 = 3000
   const a = leaseQuota(q, { want: 2_000, need: 2_000, holder: "gw-1" }, t0);
   assert.equal(a.points, 2_000);
   assert.equal(a.limited_by, null);
@@ -98,7 +99,7 @@ test("额度账本（纯函数）：租约受池余额与月度上限双重约�
   assert.equal(settleLease(q, { lease_id: a.lease_id, holder: "gw-1", usage: [{ sid: "s1", points: 500, requests: 2 }] }, t0).charged, 0);
   assert.equal(settleLease(q, { lease_id: a.lease_id, holder: "gw-1", usage: [{ sid: "s1", points: 400, requests: 1 }] }, t0).charged, 0);
   assert.equal(q.period_used, 500);
-  assert.equal(q.pool, 9_500);
+  assert.equal(q.allowance + q.boost - q.period_used, 9_500);
   assert.throws(() => settleLease(q, { lease_id: a.lease_id, holder: "gw-2", usage: [] }, t0), (e: unknown) => e instanceof QuotaError && e.code === "lease_holder_mismatch");
   // 不合法的回报整体不入账（不留半截）
   assert.throws(() => settleLease(q, { lease_id: a.lease_id, holder: "gw-1", usage: [{ sid: "s2", points: 100, requests: 1 }, { sid: "s3", points: -1, requests: 1 }] }, t0));
@@ -108,17 +109,16 @@ test("额度账本（纯函数）：租约受池余额与月度上限双重约�
   settleLease(q, { lease_id: a.lease_id, holder: "gw-1", usage: [{ sid: "s1", points: 800, requests: 3 }], final: true }, t0);
   assert.equal(available(q, t0), 3_000 - 800 - 250 - 750);
 
-  // 池用完（不设上限）
+  // 本月额度用完（不设上限）：线上码仍为 pool_exhausted（网关协议不变）
   const p = emptyQuota(t0);
-  grantPoints(p, 10);
+  grantUnits(p, 10, t0);
   leaseQuota(p, { want: 10, need: 10, holder: "gw-1" }, t0);
   assert.throws(() => leaseQuota(p, { want: 1, holder: "gw-1" }, t0), (e: unknown) => e instanceof QuotaError && e.code === "pool_exhausted");
 });
 
 test("额度账本（纯函数）：到期 + 宽限未回报的租约按已报用量结案并标“待对账”，迟到的最终回报补记；跨月清零入历史", () => {
   const t0 = Date.parse("2026-10-31T15:40:00Z"); // 北京时间 10-31 23:40
-  const q = emptyQuota(t0);
-  grantPoints(q, 100_000);
+  const q = emptyQuota(t0, 100_000);
   const l = leaseQuota(q, { want: 5_000, holder: "gw-1", ttl_ms: 60_000 }, t0);
   settleLease(q, { lease_id: l.lease_id, holder: "gw-1", usage: [{ sid: "s1", points: 100, requests: 1 }] }, t0);
   const late = t0 + 60_000 + LEASE_GRACE_MS + 1;
@@ -131,14 +131,14 @@ test("额度账本（纯函数）：到期 + 宽限未回报的租约按已报�
   const r = settleLease(q, { lease_id: l.lease_id, holder: "gw-1", usage: [{ sid: "s1", points: 300, requests: 2 }], final: true }, late);
   assert.equal(r.charged, 200);
   assert.equal(q.leases[l.lease_id]!.unreconciled, false);
-  assert.deepEqual(q.history, [{ period: "2026-10", used: 100 }]);
+  assert.deepEqual(q.history, [{ period: "2026-10", used: 100, total: 100_000, boost_pct: 0 }]);
   assert.equal(q.period, "2026-11");
   assert.equal(q.period_used, 200);
 });
 
 test("额度 HTTP：租约与回报只认服务凭据；成员只看本所与自己的用量，管理员看按成员明细；只有管理员能设上限；上限到达后网关领不到租约", async () => {
   const tid = "ten_quota_http";
-  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 5, points: 50_000 });
+  cp.ops.createTenant({ activationRequired: false, tid, edition: "team", seats: 5, allowanceUnits: 50_000 });
   await enroll(tid);
   const admin = makeDevice(tid, "admin", "usr_admin", "dev_qadmin");
   const lawyer = makeDevice(tid, "lawyer", "usr_law", "dev_qlaw");
@@ -155,20 +155,24 @@ test("额度 HTTP：租约与回报只认服务凭据；成员只看本所与自
   const lv = await lawyer.call("GET", "/v1/quota");
   const lb = openEnvelope<any>(lv.json, "kwl-quota-view", publicKeyMap(cp.publicKeys.envelope));
   assert.ok(lb.ok);
-  assert.equal(lb.ok && lb.body.period_used, 120);
-  assert.deepEqual(lb.ok && lb.body.own, { points: 120, requests: 3 });
-  assert.equal(lb.ok && "by_member" in lb.body, false, "律师看不到按成员明细与池余额");
-  assert.equal(lb.ok && "pool_remaining" in lb.body, false);
+  // 第 40 批：视图只有比例（0–1），没有点数或单位；个人份额 = 本月总额度 ÷ 席位数（50000 ÷ 5 = 10000）
+  assert.equal(lb.ok && lb.body.unit, "percent");
+  assert.equal(lb.ok && lb.body.used_ratio, 0.0024);
+  assert.deepEqual(lb.ok && lb.body.own, { used_ratio: 0.012, firm_ratio: 0.0024, requests: 3 });
+  assert.equal(lb.ok && "by_member" in lb.body, false, "律师看不到按成员明细");
+  for (const k of ["period_used", "pool_remaining", "granted_total", "cap_monthly", "in_flight"]) assert.equal(lb.ok && k in lb.body, false, `视图里不再有 ${k}`);
   const av = openEnvelope<any>((await admin.call("GET", "/v1/quota")).json, "kwl-quota-view", publicKeyMap(cp.publicKeys.envelope));
   assert.ok(av.ok);
-  assert.deepEqual(av.ok && av.body.by_member, [{ member_id: "usr_law", points: 120, requests: 3 }]);
-  assert.equal(av.ok && av.body.pool_remaining, 50_000 - 120);
+  assert.deepEqual(av.ok && av.body.by_member, [{ member_id: "usr_law", used_ratio: 0.012, firm_ratio: 0.0024, requests: 3 }]);
+  assert.match(av.ok ? av.body.resets_at : "", /^\d{4}-\d{2}-\d{2}T16:00:00\.000Z$/, "北京时间下月 1 日 0 点重置");
 
-  assert.equal((await lawyer.call("PUT", "/v1/quota/cap", { monthly_cap: 1 })).json.error.code, "admin_required");
-  assert.equal((await admin.call("PUT", "/v1/quota/cap", { monthly_cap: -5 })).json.error.code, "cap_invalid");
+  assert.equal((await lawyer.call("PUT", "/v1/quota/cap", { monthly_cap_pct: 50 })).json.error.code, "admin_required");
+  assert.equal((await admin.call("PUT", "/v1/quota/cap", { monthly_cap_pct: 0 })).json.error.code, "cap_invalid");
+  assert.equal((await admin.call("PUT", "/v1/quota/cap", { monthly_cap_pct: 101 })).json.error.code, "cap_invalid");
+  assert.equal((await admin.call("PUT", "/v1/quota/cap", { monthly_cap: 1500 })).json.error.code, "cap_invalid", "旧客户端的点数上限明确拒绝");
   assert.equal((await admin.call("PUT", "/v1/quota/cap", {})).json.error.code, "cap_invalid");
-  // 上限 1500：已用 120 + 在途 880（1000 − 120）→ 还能发 500
-  assert.equal((await admin.call("PUT", "/v1/quota/cap", { monthly_cap: 1500 })).status, 200);
+  // 上限 3%（50000 × 3% = 1500）：已用 120 + 在途 880（1000 − 120）→ 还能发 500
+  assert.equal((await admin.call("PUT", "/v1/quota/cap", { monthly_cap_pct: 3 })).status, 200);
   const l2 = await service("/v1/quota/lease", { tid, want: 2000, need: 2000, holder: "gw-2" });
   assert.equal(l2.json.points, 500);
   assert.equal(l2.json.limited_by, "cap");
@@ -176,7 +180,7 @@ test("额度 HTTP：租约与回报只认服务凭据；成员只看本所与自
   assert.equal(l3.status, 402);
   assert.equal(l3.json.error.code, "cap_reached");
   // 不设上限
-  assert.equal((await admin.call("PUT", "/v1/quota/cap", { monthly_cap: null })).status, 200);
+  assert.equal((await admin.call("PUT", "/v1/quota/cap", { monthly_cap_pct: null })).status, 200);
   assert.equal((await service("/v1/quota/lease", { tid, want: 1, holder: "gw-2" })).status, 200);
 
   // 许可终止：不再发放
@@ -196,8 +200,8 @@ test("运营审计流水：运营与设备的写操作逐条入链（吊销只�
   const lawyer = makeDevice(tid, "lawyer", "usr_l", "dev_alaw");
   for (const d of [admin, partner, lawyer]) assert.equal((await d.register()).status, 200);
   assert.equal((await admin.register()).status, 200, "重复登记（证书未变）不记");
-  cp.ops.grantPoints(tid, 1000);
-  assert.equal((await lawyer.call("PUT", "/v1/quota/cap", { monthly_cap: 1 })).status, 403);
+  cp.ops.boostQuota(tid, 25);
+  assert.equal((await lawyer.call("PUT", "/v1/quota/cap", { monthly_cap_pct: 1 })).status, 403);
   assert.equal((await partner.call("POST", "/v1/devices/dev_alaw/revoke", {})).status, 200);
 
   assert.equal((await partner.call("GET", "/v1/audit?after=0&limit=500")).status, 200);
@@ -217,14 +221,14 @@ test("运营审计流水：运营与设备的写操作逐条入链（吊销只�
       "device:device.register:dev_apartner:ok",
       `device:seat.assign:seat_${tid}_3:ok`,
       "device:device.register:dev_alaw:ok",
-      "ops:quota.grant:-:ok",
+      "ops:quota.boost:-:ok",
       "device:quota.cap_set:-:rejected:admin_required",
       "device:device.revoke:dev_alaw:ok",
     ],
   );
   // 数值明细（复核 S9A-09）
-  assert.deepEqual(recs.find((r) => r.action === "tenant.create")!.detail, { seats: 5, points: 0 });
-  assert.deepEqual(recs.find((r) => r.action === "quota.grant")!.detail, { points: 1000 });
+  assert.deepEqual(recs.find((r) => r.action === "tenant.create")!.detail, { seats: 5 });
+  assert.deepEqual(recs.find((r) => r.action === "quota.boost")!.detail, { pct: 25 });
   // 成员编号不进流水（复核 S9A-11）
   assert.ok(!JSON.stringify(recs).includes("usr_"), "流水里只有席位编号，没有成员编号");
   assert.equal(recs.find((r) => r.action === "device.revoke")!.actor.id, "dev_apartner");
@@ -239,7 +243,7 @@ test("运营审计流水：运营与设备的写操作逐条入链（吊销只�
   assert.ok(tail.ok && tail.body.records.length === 2 && tail.body.records[0]!.seq === 6);
   assert.deepEqual(tail.ok && verifyAuditChain(tail.body.records, tid, { seq: 5, hash: recs[4]!.hash }), { ok: true });
   // 被拒绝记录限速（复核 S9A-10）：同一设备同一动作每分钟至多 10 条
-  for (let i = 0; i < 30; i++) await partner.call("PUT", "/v1/quota/cap", { monthly_cap: 1 });
+  for (let i = 0; i < 30; i++) await partner.call("PUT", "/v1/quota/cap", { monthly_cap_pct: 1 });
   const all = openEnvelope<CpAuditPage>((await admin.call("GET", "/v1/audit?after=0&limit=500")).json, "kwl-cp-audit-page", publicKeyMap(cp.publicKeys.envelope));
   assert.ok(all.ok);
   const spam = all.ok ? all.body.records.filter((r) => r.action === "quota.cap_set" && r.actor.id === "dev_apartner").length : -1;
@@ -375,9 +379,8 @@ test("复核 S9A-03：审计写不进去时吊销整体不生效（设备未吊�
 
 test("复核 S9A-04、S9A-17：已到期但未终报的租约仍计在途（同一份额度不再发两次）；终报后释放；空月份补 0", () => {
   const t0 = Date.parse("2026-10-15T02:00:00Z");
-  const q = emptyQuota(t0);
-  grantPoints(q, 100_000);
-  setCap(q, 1_000, t0, null);
+  const q = emptyQuota(t0, 100_000);
+  setCap(q, 1, t0, null); // 1% = 1000
   const a = leaseQuota(q, { want: 1_000, need: 1_000, holder: "gw-1", ttl_ms: 60_000 }, t0);
   assert.equal(a.points, 1_000);
   const t1 = t0 + 61_000; // A 已到期，未终报
@@ -388,7 +391,7 @@ test("复核 S9A-04、S9A-17：已到期但未终报的租约仍计在途（同�
   const h = emptyQuota(Date.parse("2026-07-10T00:00:00Z"));
   h.period_used = 5;
   rollPeriod(h, Date.parse("2026-10-10T00:00:00Z"));
-  assert.deepEqual(h.history, [{ period: "2026-07", used: 5 }, { period: "2026-08", used: 0 }, { period: "2026-09", used: 0 }]);
+  assert.deepEqual(h.history, [{ period: "2026-07", used: 5, total: 0, boost_pct: 0 }, { period: "2026-08", used: 0, total: 0, boost_pct: 0 }, { period: "2026-09", used: 0, total: 0, boost_pct: 0 }]);
   assert.equal(h.period, "2026-10");
 });
 
@@ -441,4 +444,34 @@ test("客户端版本分布（v9.3 P3）：按 30 天内报到、未吊销的设
   assert.equal(cp.metrics().client_versions["0.9.3"], 2);
   cp.ops.revokeDevice(tid, "dev_cv_a");
   assert.equal(cp.metrics().client_versions["0.9.3"], 1);
+});
+
+test("第 40 批：加量包按套餐额度的百分比、跨月清零；上限按本月总额度的百分比；用量视图只有比例；旧点数账本读回", () => {
+  const t0 = Date.parse("2026-11-09T02:00:00Z");
+  const q = emptyQuota(t0, 200_000);
+  assert.throws(() => boostPct(q, 0, t0, null), (e: unknown) => e instanceof QuotaError && e.code === "boost_invalid");
+  assert.throws(() => boostPct(q, 2.5, t0, null), (e: unknown) => e instanceof QuotaError && e.code === "boost_invalid");
+  assert.equal(boostPct(q, 50, t0, "op_0001"), 100_000);
+  assert.equal(q.allowance + q.boost, 300_000);
+  setCap(q, 80, t0, "dev_admin"); // 80% × 300000 = 240000
+  q.period_used = 150_000;
+  q.period_by_seat = { s1: { points: 150_000, requests: 9 } };
+  const v = quotaView(q, t0, { detail: true, seats: 2, seatOwner: (sid) => (sid === "s1" ? "usr_a" : null), ownSid: "s1" });
+  assert.equal(v.used_ratio, 0.5);
+  assert.equal(v.boost_pct, 50);
+  assert.equal(v.cap_pct, 80);
+  assert.equal(v.paused, null);
+  assert.deepEqual(v.own, { used_ratio: 1, firm_ratio: 0.5, requests: 9 }, "个人份额 = 300000 ÷ 2");
+  assert.ok(!JSON.stringify(v).includes("150000") && !JSON.stringify(v).includes("points"), "视图里没有单位数");
+  q.period_used = 240_000;
+  assert.equal(quotaView(q, t0, { detail: false, seats: 2, seatOwner: () => null, ownSid: null }).paused, "cap");
+  // 跨月：加量清零、历史记总额度与加量百分比
+  const next = Date.parse("2026-12-01T00:00:00Z"); // 北京时间 12-01 08:00
+  rollPeriod(q, next);
+  assert.equal(q.boost, 0);
+  assert.deepEqual(q.boosts, []);
+  assert.deepEqual(q.history.at(-1), { period: "2026-11", used: 240_000, total: 300_000, boost_pct: 50 });
+  assert.equal(quotaView(q, next, { detail: false, seats: 2, seatOwner: () => null, ownSid: null }).history.at(-1)!.used_ratio, 0.8);
+  // 没有套餐额度时不能按百分比加量
+  assert.throws(() => boostPct(emptyQuota(t0), 10, t0, null), (e: unknown) => e instanceof QuotaError && e.code === "allowance_missing");
 });

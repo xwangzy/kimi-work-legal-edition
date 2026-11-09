@@ -1,5 +1,5 @@
 /**
- * 发起前的预览（第 03 篇 §5 步骤 5：看到预计点数与数据去向预览；第 04 篇 §15.2 先预估、后确认）。
+ * 发起前的预览（第 03 篇 §5 步骤 5：看到预计用量（占本月份额的百分比）与数据去向预览；第 04 篇 §15.2 先预估、后确认）。
  * 预估与去向由内核按事项记录计算；律师确认后才发起。
  */
 import { useState } from "react";
@@ -171,7 +171,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
         )}
         <dt>预计用量</dt>
         <dd>
-          {estimate.points_display.replace(/^预计 /, "约 ")}
+          {estimate.points_display}
           {estimate.assumptions.length > 0 && <div className="muted sheet-note">{estimate.assumptions.join("；")}</div>}
         </dd>
       </dl>

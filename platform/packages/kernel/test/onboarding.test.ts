@@ -45,7 +45,7 @@ async function reboot(k: Kernel, dir: string): Promise<Kernel> {
 
 test("开通与成员入组：创始开通码 → 重启按律所身份运行；邀请码 → 管理员批准 → 成员取回证书、不持律所根、取得席位", { timeout: 240_000 }, async () => {
   cloud = await startCloudCp({ tenant: "ten_onbk-unused" });
-  cloud.cp.ops.createTenant({ tid: TID, edition: "team", seats: 5, points: 1_000_000, name: "测试律师事务所", activationRequired: true });
+  cloud.cp.ops.createTenant({ tid: TID, edition: "team", seats: 5, allowanceUnits: 1_000_000, name: "测试律师事务所", activationRequired: true });
   const founderCode = cloud.cp.ops.issueActivationCode(TID, { member: { slug: "li", name: "李主任" } }).code;
 
   // ── 创始设备 ──
@@ -151,7 +151,7 @@ test("开通与成员入组：创始开通码 → 重启按律所身份运行；
 
 test("控制面篡改：列表前换掉申请公钥 → 核对不通过、不能批准；取回时管理员 MAC 被换 → 成员机不采用；待激活模式其余方法一律 not_activated", { timeout: 240_000 }, async () => {
   const TID2 = "ten_onbk-tamper";
-  cloud!.cp.ops.createTenant({ tid: TID2, edition: "team", seats: 5, points: 1_000_000, name: "篡改演练所" });
+  cloud!.cp.ops.createTenant({ tid: TID2, edition: "team", seats: 5, allowanceUnits: 1_000_000, name: "篡改演练所" });
   const dirA = mkdtempSync(join(tmpdir(), "kwl-onb-ta-"));
   let a = await boot(dirA);
   for (const m of ["matters.list", "materials.import", "runs.start", "members.invite", "backup.run", "recovery.create_package", "control_plane.sync"]) {

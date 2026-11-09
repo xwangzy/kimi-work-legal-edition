@@ -924,10 +924,41 @@ table.data td.num { white-space: nowrap; }
 .inline-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 .inline-form input { width: 160px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); padding: 4px 8px; background: var(--bg-surface); color: var(--text-primary); font-size: var(--fs-base); font-variant-numeric: tabular-nums; }
 table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.usage-meter { height: 8px; border-radius: var(--r-full); background: var(--bg-muted); overflow: hidden; margin: 8px 0 4px; max-width: 420px; }
-.usage-meter > span { display: block; height: 100%; background: var(--accent); }
+/* 用量（第 40 批：按百分比）：已用实心、在途浅色、上限刻度；水位 <80% 主色、≥80% 警示、用完危险 */
+.usage-meter { position: relative; height: 8px; border-radius: var(--r-full); background: var(--bg-muted); overflow: hidden; margin: 8px 0 4px; max-width: 520px; }
+.usage-meter.lg { height: 10px; }
+.usage-meter.sm { height: 6px; margin: 0; flex: 1 1 auto; min-width: 60px; max-width: 160px; }
+.usage-meter > span { display: block; height: 100%; background: var(--accent); border-radius: var(--r-full); }
 .usage-meter.high > span { background: var(--status-warning-solid); }
 .usage-meter.full > span { background: var(--status-danger-solid); }
+.usage-meter > .usage-flight { position: absolute; top: 0; bottom: 0; background: var(--accent-border); }
+.usage-meter > .usage-cap { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text-primary); }
+.usage-hero { display: flex; gap: var(--sp-5); align-items: stretch; border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-surface); padding: var(--sp-4); margin-bottom: var(--sp-3); flex-wrap: wrap; }
+.usage-hero-main { flex: 1 1 320px; min-width: 0; }
+.usage-hero-side { display: flex; gap: var(--sp-5); align-items: flex-start; border-left: 1px solid var(--border-subtle); padding-left: var(--sp-4); }
+.usage-hero-k { font-size: var(--fs-xs); color: var(--text-secondary); }
+.usage-hero-v { font-size: var(--fs-2xl); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; color: var(--text-strong); }
+.usage-hero-v.tone-high { color: var(--status-warning-text); }
+.usage-hero-v.tone-full { color: var(--status-danger-text); }
+.usage-hero-s { font-size: var(--fs-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.cap-picker { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 4px; }
+.cap-picker .chip.on { background: var(--btn-primary); border-color: var(--btn-primary); color: var(--btn-primary-text); }
+.cap-picker .inline-form input { width: 72px; }
+.member-usage { display: flex; align-items: center; gap: 8px; }
+.usage-history { display: flex; gap: 10px; align-items: flex-end; padding: 4px 0 8px; overflow-x: auto; }
+.usage-history-col { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: var(--fs-xs); min-width: 40px; }
+.usage-history-track { position: relative; width: 14px; height: 72px; border-radius: var(--r-xs); background: var(--bg-muted); overflow: hidden; display: flex; align-items: flex-end; }
+.usage-history-track > span { display: block; width: 100%; background: var(--accent); border-radius: var(--r-xs); }
+.usage-history-track > span.full { background: var(--status-danger-solid); }
+.usage-history-v { font-variant-numeric: tabular-nums; color: var(--text-strong); }
+/* Kimi 账号（第 40 批） */
+.kimi-account { display: flex; flex-direction: column; gap: 6px; }
+.kimi-account-on { display: flex; align-items: center; gap: 10px; }
+.kimi-avatar { flex: none; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); font-weight: 600; }
+.kimi-login-flow { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; border: 1px dashed var(--border-dashed); border-radius: var(--r-md); padding: 10px 12px; }
+.kimi-url { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: 100%; }
+.kimi-url .mono { word-break: break-all; user-select: all; }
+.kimi-code { font-family: var(--font-mono); font-size: var(--fs-md); letter-spacing: 0.12em; background: var(--bg-code); border-radius: var(--r-xs); padding: 1px 8px; }
 .support-upload { margin-top: 8px; }
 .support-upload details { margin: 8px 0; }
 .support-preview { max-height: 320px; overflow: auto; background: var(--bg-code); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); padding: 8px 10px; font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-all; }

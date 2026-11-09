@@ -40,6 +40,8 @@ const PATHS: readonly RegExp[] = [
   // 第 11 批：共享中继专用凭据（S11 团队事项密文同步）
   /^\/v1\/relay-token$/,
   /^\/v1\/quota\/cap$/,
+  // Kimi 账号登录（第 40 批）：查询、发起、轮询、解绑（授权由控制面代办，本机不直连 Kimi）
+  /^\/v1\/account\/kimi(?:\/start|\/poll)?$/,
   /^\/v1\/audit\?after=\d{1,15}&limit=\d{1,3}$/,
   // 第 13 批：开通与成员入组（开通码兑换、入组申请与取回、管理员发邀请与批准；记录编号固定 16 位）
   /^\/v1\/activation\/redeem$/,

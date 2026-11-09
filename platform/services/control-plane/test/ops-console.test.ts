@@ -52,7 +52,7 @@ const browserCall = async (who: string, method: string, path: string, body?: unk
 };
 
 test("浏览器签名与控制面运营守卫兼容；口令加密私钥可导入、错口令与公钥文件如实拒绝", async () => {
-  const created = await browserCall("op_0001", "POST", "/v1/ops/tenants", { tid: "ten_console", edition: "team", seats: 3, points: 5000, name: "控制台测试所" });
+  const created = await browserCall("op_0001", "POST", "/v1/ops/tenants", { tid: "ten_console", edition: "team", seats: 3, name: "控制台测试所" });
   assert.equal(created.status, 200, JSON.stringify(created.json));
   const kp = generateOpsKeyPair("口令-测试-2026");
   const k = await importOpsKey(kp.privateKeyPem, "口令-测试-2026");
@@ -65,8 +65,8 @@ test("浏览器签名与控制面运营守卫兼容；口令加密私钥可导�
   assert.equal((k as CryptoKey).extractable, false, "私钥导入为不可导出");
   // 篡改请求体：签名不符
   const key = await importOpsKey(OPS.keyOf("op_0001").privateKeyPem);
-  const h = await signOpsRequest({ deployment: OPS.deployment, audience: "control-plane", operator: "op_0001", kid: "k1", key, method: "POST", path: "/v1/ops/tenants/ten_console/points", body: JSON.stringify({ points: 1 }) });
-  const r = await fetch(`${base}/v1/ops/tenants/ten_console/points`, { method: "POST", headers: { ...h, "content-type": "application/json" }, body: JSON.stringify({ points: 999999 }) });
+  const h = await signOpsRequest({ deployment: OPS.deployment, audience: "control-plane", operator: "op_0001", kid: "k1", key, method: "POST", path: "/v1/ops/tenants/ten_console/boost", body: JSON.stringify({ pct: 1 }) });
+  const r = await fetch(`${base}/v1/ops/tenants/ten_console/boost`, { method: "POST", headers: { ...h, "content-type": "application/json" }, body: JSON.stringify({ pct: 999 }) });
   assert.equal(r.status, 401);
 });
 
@@ -75,7 +75,8 @@ test("租户列表与用量明细：只读权限；按席位只给席位编号�
   const list = await browserCall("op_0001", "GET", "/v1/ops/tenants");
   assert.equal(list.status, 200);
   assert.deepEqual(list.json.tenants.map((t: any) => t.tid), ["ten_console", "ten_second"]);
-  assert.equal(list.json.tenants[0].quota.pool_remaining, 5000);
+  assert.equal(list.json.tenants[0].quota.used_ratio, 0);
+  assert.deepEqual(list.json.tenants[0].quota.plan, { id: "standard", label: "标准", custom: false });
   assert.equal((await browserCall("op_0003", "GET", "/v1/ops/tenants")).status, 403, "只能发码的人不能看租户列表");
 
   // 造一点用量：两个席位（一个已收回），律所管理员设的上限（设备编号里含成员标识）
@@ -84,16 +85,16 @@ test("租户列表与用量明细：只读权限；按席位只给席位编号�
   t.seatsByUser.set("li.lawyer", { sid: "seat_bbb", uid: "li.lawyer", assigned_at: new Date().toISOString(), revoked_at: new Date().toISOString() });
   t.quota.period_by_seat = { seat_aaa: { points: 120, requests: 3 }, seat_bbb: { points: 400, requests: 9 } };
   t.quota.period_used = 520;
-  t.quota.cap_monthly = 9000;
+  t.quota.cap_pct = 90;
   t.quota.cap_set_by = "dev_zhang.lawyer_01";
   const u = await browserCall("op_0001", "GET", "/v1/ops/tenants/ten_console/usage");
   assert.equal(u.status, 200, JSON.stringify(u.json));
-  assert.equal(u.json.period_used, 520);
-  assert.equal(u.json.pool_remaining, 5000);
-  assert.equal(u.json.granted_total, 5000);
+  // 第 40 批：比例为主（标准套餐 3 席 = 600000 单位，个人份额 200000）；单位只为对账
+  assert.deepEqual(u.json.units, { total: 600_000, used: 520 });
+  assert.equal(u.json.used_ratio, 0.0009);
   assert.deepEqual(u.json.by_seat, [
-    { sid: "seat_bbb", status: "revoked", points: 400, requests: 9 },
-    { sid: "seat_aaa", status: "active", points: 120, requests: 3 },
+    { sid: "seat_bbb", status: "revoked", used_ratio: 0.002, firm_ratio: 0.0007, requests: 9, kimi: null },
+    { sid: "seat_aaa", status: "active", used_ratio: 0.0006, firm_ratio: 0.0002, requests: 3, kimi: null },
   ]);
   assert.deepEqual(u.json.seats, { total: 3, assigned: 1 });
   assert.equal(u.json.cap_set_by, "firm_admin");
@@ -233,3 +234,41 @@ test("meter-report：按租户 × 月份（北京时间）× 席位汇总，点�
   assert.equal(t.stdout.trim(), "tid,period,requests,ok,errors,timeouts,input_tokens,output_tokens,cached_tokens,points\nten_a,2026-11,3,2,1,1,9000,1000,2000,80");
 });
 
+
+test("第 40 批运营接口：套餐目录；改套餐与席位（不得少于在用席位）；加量包按百分比、计入账单；旧的点数接口 410；没配 Kimi 对接不能要求绑定", async () => {
+  const plans = await browserCall("op_0001", "GET", "/v1/ops/plans");
+  assert.equal(plans.status, 200);
+  assert.deepEqual(plans.json.plans.map((p: any) => p.id), ["standard", "pro", "max"]);
+  assert.equal(plans.json.kimi_account, false);
+  assert.equal((await browserCall("op_0003", "GET", "/v1/ops/plans")).status, 403, "只能发码的人看不到目录");
+
+  const t = cp.ops.tenant("ten_second")!;
+  // 改套餐：标准 → 旗舰，额度即刻按新套餐算
+  const ch = await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/plan", { plan: "max" });
+  assert.equal(ch.status, 200, JSON.stringify(ch.json));
+  assert.deepEqual(ch.json.tenant.quota.units, { total: 10 * 1_200_000, used: 0 });
+  assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/plan", { plan: "gold" })).json.error.code, "plan_unknown");
+  assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/plan", {})).json.error.code, "plan_invalid");
+  // 席位数不得少于在用席位
+  t.seatsByUser.set("a", { sid: "seat_s1", uid: "a", assigned_at: new Date().toISOString(), revoked_at: null });
+  t.seatsByUser.set("b", { sid: "seat_s2", uid: "b", assigned_at: new Date().toISOString(), revoked_at: null });
+  const low = await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/plan", { seats: 1 });
+  assert.deepEqual([low.status, low.json.error.code], [409, "seats_in_use"]);
+  assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/plan", { seats: 4 })).status, 200);
+  assert.equal(t.license.seats, 4, "许可随席位数重签");
+  // 加量包
+  const b = await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/boost", { pct: 50 });
+  assert.equal(b.status, 200);
+  assert.equal(b.json.quota.boost_pct, 50);
+  assert.deepEqual(b.json.quota.units, { total: 4 * 1_200_000 * 1.5, used: 0 });
+  const u = await browserCall("op_0001", "GET", "/v1/ops/tenants/ten_second/usage");
+  assert.deepEqual(u.json.boosts.map((x: any) => [x.pct, x.by]), [[50, "op_0001"]]);
+  assert.deepEqual(u.json.bill, { seat_fee_cny: null, boost_fee_cny: null, revenue_cny: null, cost_cny: null, margin_cny: null }, "缺省目录没有价格");
+  assert.equal(u.json.by_seat.length, 2, "没有用量的在用席位也列出");
+  // 旧接口与旧字段
+  assert.deepEqual([(await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/points", { points: 1 })).status], [410]);
+  assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/cap", { cap: 1 })).json.error.code, "cap_invalid");
+  // 没配 Kimi 对接：不能要求绑定；可以设为不强制
+  assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/kimi-policy", { required: true })).json.error.code, "kimi_account_disabled");
+  assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/kimi-policy", { required: false })).status, 200);
+});

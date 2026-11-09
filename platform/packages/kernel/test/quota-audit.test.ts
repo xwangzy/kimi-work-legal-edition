@@ -30,8 +30,10 @@ after(async () => {
 test("用量与上限：网关按租约结算并回报后，本所本月用量与按成员明细（成员名在本机换上）可见；管理员设月度上限经控制面生效", { timeout: 60_000 }, async () => {
   const s0 = await tk.inv("quota.status");
   assert.equal(s0.mode, "control_plane");
-  assert.equal(s0.cap_monthly, null);
-  assert.equal(s0.period_used, 0);
+  assert.equal(s0.unit, "percent");
+  assert.equal(s0.cap_pct, null);
+  assert.equal(s0.used_ratio, 0);
+  assert.deepEqual(s0.kimi, { enabled: false, required: false, own: null });
   // 模拟本所一次模型请求（直接打网关：内核的模型链路另有用例覆盖）
   const t = cloud.cp.ops.tenant(TID)!;
   const seat = t.seatsByUser.get(`usr_${FIRM}_test-lawyer`)!;
@@ -44,19 +46,21 @@ test("用量与上限：网关按租约结算并回报后，本所本月用量�
   await r.text();
   await cloud.quota.flush();
   const s1 = await tk.inv("quota.status");
-  assert.ok(s1.period_used > 0);
+  assert.ok(typeof s1.used_ratio === "number" && s1.used_ratio >= 0 && s1.used_ratio < 1, "只有比例（单次请求占 5000 万单位的比例四舍五入可为 0）");
   assert.equal(s1.own.requests, 1);
   assert.equal(s1.by_member.length, 1);
   assert.equal(s1.by_member[0].member_id, `usr_${FIRM}_test-lawyer`);
   assert.ok(s1.by_member[0].name, "成员名由本机换上（控制面只有编号）");
-  assert.equal(typeof s1.pool_remaining, "number");
+  assert.equal(s1.by_member[0].kimi, null);
+  assert.ok(!JSON.stringify(s1).match(/"(points|pool_remaining|period_used|granted_total)"/), "界面拿到的视图里没有点数");
 
-  await assert.rejects(() => tk.inv("quota.set_cap", { monthly_cap: -1 }), (e: any) => e.code === "validation");
-  assert.deepEqual(await tk.inv("quota.set_cap", { monthly_cap: 123_456 }), { cap_monthly: 123_456 });
-  assert.equal(t.quota.cap_monthly, 123_456);
-  assert.equal((await tk.inv("quota.status")).cap_monthly, 123_456);
-  await tk.inv("quota.set_cap", { monthly_cap: null });
-  assert.equal(t.quota.cap_monthly, null);
+  await assert.rejects(() => tk.inv("quota.set_cap", { monthly_cap_pct: 0 }), (e: any) => e.code === "validation");
+  await assert.rejects(() => tk.inv("quota.set_cap", { monthly_cap: 1000 }), (e: any) => e.code === "validation", "旧的点数上限明确拒绝");
+  assert.deepEqual(await tk.inv("quota.set_cap", { monthly_cap_pct: 80 }), { cap_pct: 80 });
+  assert.equal(t.quota.cap_pct, 80);
+  assert.equal((await tk.inv("quota.status")).cap_pct, 80);
+  await tk.inv("quota.set_cap", { monthly_cap_pct: null });
+  assert.equal(t.quota.cap_pct, null);
 });
 
 test("中软侧操作记录：取回后验签验链、本机留存（再取不重复）；云端改写已给出的历史即告警拒收、本机原记录不变；导出可自行验链", { timeout: 60_000 }, async () => {

@@ -20,7 +20,9 @@ import { createHash, createPublicKey, generateKeyPairSync, hkdfSync, randomBytes
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { StateStore } from "./state-store.ts";
 import { createAuditLog, type AuditEntry, type AuditLog } from "./audit-log.ts";
-import { emptyQuota, grantPoints as quotaGrant, leaseQuota, QuotaError, quotaView, setCap as quotaSetCap, settleLease, type QuotaState } from "./quota.ts";
+import { boostPct as quotaBoost, emptyQuota, grantUnits as quotaGrantUnits, leaseQuota, migrateQuota, pausedOf, QuotaError, quotaView, ratio, setCap as quotaSetCap, settleLease, syncAllowance, totalOf, type QuotaState } from "./quota.ts";
+import { DEFAULT_BILLING, monthBill, planOf, type BillingConfig } from "./billing.ts";
+import { createKimiAccountBroker, KimiAccountError, type KimiAccountConfig, type KimiBinding } from "./kimi-account.ts";
 import { canonicalJson, verifyBytes, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
 import { OpsAuthError, type OpsAuthorized, type OpsGuard, type OpsPermission } from "@zr-legal/ops-auth";
 import { MIN_SEAT_TTL_SECONDS } from "@zr-legal/seat-token";
@@ -180,8 +182,16 @@ export interface TenantRecord {
   connectorsVersion: number;
   drafts: Map<string, DraftRecord>;
   anon: Map<string, AnonMatterSummary>;
-  /** 额度池与月度上限（S3 v0，quota.ts）。 */
+  /** 本月额度与月度上限（第 40 批按百分比，quota.ts）。 */
   quota: QuotaState;
+  /** 套餐代码（billing.ts 目录；第 40 批之前开通的读回为缺省套餐）。 */
+  plan: string;
+  /** 定制月额度（单位；试点与用例用，设了即不按“席位 × 套餐”计；null = 按套餐）。 */
+  allowance_override?: number | null;
+  /** Kimi 账号绑定：成员编号 → 绑定（第 40 批）。 */
+  kimiAccounts: Map<string, KimiBinding>;
+  /** 要求成员先绑定 Kimi 账号才签发席位令牌（运营按律所合同开关；缺省 false）。 */
+  kimi_required?: boolean;
 }
 
 export interface ControlPlaneOptions {
@@ -215,6 +225,10 @@ export interface ControlPlaneOptions {
   opsGuard?: OpsGuard;
   /** 运营访问审计（每个通过鉴权的运营请求：先记“已请求”、记不进去即不执行，执行后补记结果）；缺省不记（开发与测试）。 */
   opsAccessLog?: (r: CpOpsAccessRecord) => void;
+  /** 套餐目录与计费口径（第 40 批，billing.ts）；缺省 DEFAULT_BILLING。 */
+  billing?: BillingConfig;
+  /** Kimi 账号对接（第 40 批，kimi-account.ts）：没有 = 账号接口 404，客户端显示“未开通 Kimi 账号登录”。 */
+  kimiAccount?: { config: KimiAccountConfig; fetchImpl?: typeof fetch };
 }
 
 /** 控制面运营访问审计（中软内部，不进律所可见的流水）：只有运营编号、密钥编号、动作、租户与目标编号、结果。 */
@@ -233,7 +247,7 @@ export interface CpOpsAccessRecord {
 
 export interface ControlPlaneOps {
   /** 商务开通：建租户、发许可（≤ 30 天）、生成租户盐、发布最严模板策略 v1（不比最严模板宽：只需控制面签名）。 */
-  createTenant(o: { tid: string; edition: LicenseBody["edition"]; seats: number; subscriptionDays?: number; points?: number; name?: string; activationRequired?: boolean }): TenantRecord;
+  createTenant(o: { tid: string; edition: LicenseBody["edition"]; seats: number; subscriptionDays?: number; plan?: string; allowanceUnits?: number; name?: string; activationRequired?: boolean; kimiRequired?: boolean }): TenantRecord;
   /** 发创始开通码（交律所管理员）：返回码明文（只此一次）；云端只存 HMAC。 */
   issueActivationCode(tid: string, o: { member: { slug: string; name?: string }; ttlHours?: number }): { code: string; activation_id: string; expires_at: string };
   /** 作废尚未消费的开通码 / 邀请码；by 为作废者（管理员设备编号；缺省为当前运维执行者）。 */
@@ -250,10 +264,18 @@ export interface ControlPlaneOps {
   /** 吊销设备；尚未登记的设备须附它的律所根签发证书（预先吊销，复核 S6-C05、S6-C09）。 */
   revokeDevice(tid: string, deviceId: string, o?: { cert?: unknown; by?: string }): void;
   revokeSeat(tid: string, uid: string): void;
-  /** 运营加量：额度池注入点数（S3）。 */
-  grantPoints(tid: string, points: number): void;
-  /** 运营代设月度上限（律所管理员通常在客户端自己设；null = 不设上限）。 */
-  setQuotaCap(tid: string, cap: number | null): void;
+  /** 运营加量包：按套餐额度的百分比加到本月（第 40 批）；返回折合单位。 */
+  boostQuota(tid: string, pct: number): number;
+  /** 按单位加量（开发脚本与用例；对外一律按百分比）。 */
+  grantUnits(tid: string, units: number): void;
+  /** 改套餐与席位数（立即对本月额度生效；席位数不得少于在用席位）。 */
+  setPlan(tid: string, o: { plan?: string; seats?: number }): void;
+  /** 运营代设月度上限（百分比 1–100；律所管理员通常在客户端自己设；null = 不设上限）。 */
+  setQuotaCap(tid: string, capPct: number | null): void;
+  /** 是否要求成员先绑定 Kimi 账号（第 40 批）。 */
+  setKimiRequired(tid: string, required: boolean): void;
+  /** 解除某个 Kimi 账号与席位的绑定（运营按账号引用；律所管理员在客户端按成员）。 */
+  unbindKimi(tid: string, ref: string): void;
   tenant(tid: string): TenantRecord | undefined;
   /**
    * 用控制面自己的信封密钥签任意文档（演练“控制面被攻破”时攻击者同样能做到）。只有进程内签名者有：
@@ -312,6 +334,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const maxPreRevoked = o.maxPreRevoked ?? MAX_PRE_REVOKED;
   const iso = (t = now()) => new Date(t).toISOString();
   const tenants = new Map<string, TenantRecord>();
+  const billing: BillingConfig = o.billing ?? DEFAULT_BILLING;
+  /** 本月套餐额度（单位）：定制额度优先，否则席位数 × 套餐每席位额度。 */
+  const allowanceOf = (t: TenantRecord): number => (typeof t.allowance_override === "number" ? t.allowance_override : t.seats * planOf(billing, t.plan).seat_monthly_units);
+  /** 账本入口：先按当前套餐与席位同步本月额度（改目录、改席位即生效）。 */
+  const qOf = (t: TenantRecord): QuotaState => {
+    if (t.quota.allowance !== allowanceOf(t)) syncAllowance(t.quota, allowanceOf(t), now());
+    return t.quota;
+  };
   const nonces = new Map<string, number>();
   const auditLog = o.auditLog ?? createAuditLog();
   /** 写一条审计；写不进去即整个操作失败（调用方回滚）。 */
@@ -334,7 +364,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     JSON.stringify({
       v: 1,
       feedVersion,
-      tenants: [...tenants.values()].map((t) => ({ ...t, devices: [...t.devices], preRevoked: [...t.preRevoked], seatsByUser: [...t.seatsByUser], connectors: [...t.connectors], drafts: [...t.drafts], anon: [...t.anon], activations: [...t.activations], joinRequests: [...t.joinRequests] })),
+      tenants: [...tenants.values()].map((t) => ({ ...t, devices: [...t.devices], preRevoked: [...t.preRevoked], seatsByUser: [...t.seatsByUser], connectors: [...t.connectors], drafts: [...t.drafts], anon: [...t.anon], activations: [...t.activations], joinRequests: [...t.joinRequests], kimiAccounts: [...t.kimiAccounts] })),
     });
   const snapshot = (state = stateOnly()): string => JSON.stringify({ ...(JSON.parse(state) as object), nonces: [...nonces] });
   /** 由快照重建内存状态（启动读回与失败回滚共用）；null = 空状态。 */
@@ -360,7 +390,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         anon: new Map(t.anon),
         activations: new Map(t.activations ?? []),
         joinRequests: new Map(t.joinRequests ?? []),
-        quota: t.quota ?? emptyQuota(now()),
+        // 第 40 批之前的“点数池”账本按百分比口径读回（quota.ts migrateQuota：月度上限点数无法换算，按不设上限读回）
+        quota: migrateQuota(t.quota, now()),
+        plan: typeof t.plan === "string" ? t.plan : billing.default_plan,
+        kimiAccounts: new Map(t.kimiAccounts ?? []),
       });
     }
   };
@@ -459,6 +492,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     ? Buffer.from(o.codePepper)
     : Buffer.from(hkdfSync("sha256", signer.envelopePrivateKey!.export({ format: "der", type: "pkcs8" }), Buffer.alloc(0), "kwl-cp-code-pepper/1", 32));
   if (codePepper.byteLength !== 32) throw new Error("开通码胡椒须为 32 字节");
+  // Kimi 账号对接（第 40 批）：账号引用用由胡椒派生的独立密钥做 HMAC（换控制面实例引用不变；与开通码 HMAC 分开用途）
+  const kimiBroker = o.kimiAccount
+    ? createKimiAccountBroker({ config: o.kimiAccount.config, pepper: Buffer.from(hkdfSync("sha256", codePepper, Buffer.alloc(0), "kwl-kimi-account-ref/1", 32)), now, ...(o.kimiAccount.fetchImpl ? { fetchImpl: o.kimiAccount.fetchImpl } : {}) })
+    : null;
   /** 律所标识 = 租户编号去掉 ten_ 前缀（与内核 identity.ts 的 ten_<律所标识> 对应）；不合规的租户不能发开通码。 */
   const firmSlugOf = (tid: string): string | null => (/^ten_[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(tid) ? tid.slice(4) : null);
   const newRecordId = (prefix: string) => `${prefix}_${randomBytes(12).toString("base64url")}`;
@@ -587,11 +624,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
    */
   let opsActor: CpAuditActor = { kind: "ops", id: "ops" };
   const rawOps: ControlPlaneOps = {
-    createTenant({ tid, edition, seats, subscriptionDays = 365, points = 0, name, activationRequired = true }) {
+    createTenant({ tid, edition, seats, subscriptionDays = 365, plan, allowanceUnits, name, activationRequired = true, kimiRequired = false }) {
       // 租户编号字符集（复核 S9A-01：不合规的编号写进审计流水会让重启验链失败）
       if (typeof tid !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(tid)) throw new CpError(400, "tid_invalid", "租户编号只能用字母、数字、下划线与连字符");
       if (tenants.has(tid)) throw new Error(`租户已存在：${tid}`);
       if (name !== undefined && !validDisplayName(name)) throw new CpError(400, "tenant_name_invalid", "律所名称须为 1–40 个字符");
+      if (plan !== undefined && !billing.plans.some((x) => x.id === plan)) throw new CpError(400, "plan_unknown", "套餐不在目录里");
+      if (allowanceUnits !== undefined && !(Number.isSafeInteger(allowanceUnits) && allowanceUnits >= 0)) throw new CpError(400, "allowance_invalid", "定制额度须为非负整数");
       const t: TenantRecord = {
         tid,
         ...(name !== undefined ? { name } : {}),
@@ -616,8 +655,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         drafts: new Map(),
         anon: new Map(),
         quota: emptyQuota(now()),
+        plan: plan ?? billing.default_plan,
+        ...(allowanceUnits !== undefined ? { allowance_override: allowanceUnits } : {}),
+        kimiAccounts: new Map(),
+        kimi_required: kimiRequired,
       };
-      if (points > 0) quotaGrant(t.quota, points);
+      syncAllowance(t.quota, allowanceOf(t), now());
       issueLicense(t);
       publishStrictest(t);
       tenants.set(tid, t);
@@ -666,8 +709,37 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         feedVersion += 1;
       }
     },
-    grantPoints(tid, points) {
-      quotaGrant(tenantOf(tid).quota, points);
+    boostQuota(tid, pct) {
+      const t = tenantOf(tid);
+      return quotaBoost(qOf(t), pct, now(), opsActor.id === "ops" ? null : opsActor.id);
+    },
+    grantUnits(tid, units) {
+      const t = tenantOf(tid);
+      quotaGrantUnits(qOf(t), units, now(), opsActor.id === "ops" ? null : opsActor.id);
+    },
+    setPlan(tid, { plan, seats }) {
+      const t = tenantOf(tid);
+      if (plan !== undefined && !billing.plans.some((x) => x.id === plan)) throw new CpError(400, "plan_unknown", "套餐不在目录里");
+      if (seats !== undefined) {
+        if (!Number.isSafeInteger(seats) || seats < 1 || seats > 10_000) throw new CpError(400, "seats_invalid", "席位数须为 1–10000 的整数");
+        const used = [...t.seatsByUser.values()].filter((x) => !x.revoked_at).length;
+        if (seats < used) throw new CpError(409, "seats_in_use", `在用席位 ${used} 个，席位数不能少于它（先由律所收回席位）`);
+      }
+      if (plan !== undefined) t.plan = plan;
+      if (seats !== undefined && seats !== t.seats) {
+        t.seats = seats;
+        issueLicense(t);
+      }
+      qOf(t);
+    },
+    setKimiRequired(tid, required) {
+      tenantOf(tid).kimi_required = required === true;
+    },
+    unbindKimi(tid, ref) {
+      const t = tenantOf(tid);
+      const hit = [...t.kimiAccounts.entries()].find(([, b]) => b.ref === ref);
+      if (!hit) throw new CpError(404, "kimi_account_unknown", "没有这个 Kimi 账号绑定");
+      t.kimiAccounts.delete(hit[0]);
     },
     issueActivationCode(tid, { member, ttlHours = 14 * 24 }) {
       return issueCode(tenantOf(tid), { kind: "founder", member: { slug: member.slug, name: member.name ?? null, role: "admin" }, ttlHours, by: opsActor.id });
@@ -682,7 +754,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       for (const jr of t.joinRequests.values()) if (jr.activation_id === r.id && jr.status === "pending") Object.assign(jr, { status: "rejected", decided_at: iso(), decided_by: o2.by ?? opsActor.id });
     },
     setQuotaCap(tid, cap) {
-      quotaSetCap(tenantOf(tid).quota, cap, now(), opsActor.id === "ops" ? null : opsActor.id);
+      quotaSetCap(qOf(tenantOf(tid)), cap, now(), opsActor.id === "ops" ? null : opsActor.id);
     },
     sweepOnboarding() {
       const t0 = now();
@@ -727,18 +799,22 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     createTenant: {
       action: "tenant.create",
       detail: (a) => {
-        const x = (a[0] ?? {}) as { seats?: unknown; points?: unknown };
-        return { seats: Number(x.seats) || 0, points: Number(x.points) || 0 };
+        const x = (a[0] ?? {}) as { seats?: unknown };
+        return { seats: Number(x.seats) || 0 };
       },
     },
     renewLicense: { action: "license.renew", detail: (a) => ({ days: Math.floor(Number(a[1])) || 0 }) },
     terminateLicense: { action: "license.terminate" },
     revokeDevice: { action: "device.revoke", target: (a) => String(a[1]) },
     revokeSeat: { action: "seat.revoke", target: (a) => seatOf(String(a[0]), a[1]) },
-    grantPoints: { action: "quota.grant", detail: (a) => ({ points: Math.floor(Number(a[1])) || 0 }) },
+    boostQuota: { action: "quota.boost", detail: (a) => ({ pct: Math.floor(Number(a[1])) || 0 }) },
+    grantUnits: { action: "quota.boost", detail: () => ({ custom: 1 }) },
+    setPlan: { action: "plan.change", detail: (a) => { const x = (a[1] ?? {}) as { seats?: unknown }; return x.seats === undefined ? { plan: 1 } : { seats: Number(x.seats) || 0 }; } },
+    setKimiRequired: { action: "kimi.policy", detail: (a) => ({ required: a[1] === true ? 1 : 0 }) },
+    unbindKimi: { action: "kimi.unbind", target: (a) => String(a[1]) },
     issueActivationCode: { action: "activation.issue" },
     revokeActivationCode: { action: "activation.revoke", target: (a) => String(a[1]) },
-    setQuotaCap: { action: "quota.cap_set", detail: (a) => (a[1] === null ? { uncapped: 1 } : { cap: Math.floor(Number(a[1])) || 0 }) },
+    setQuotaCap: { action: "quota.cap_set", detail: (a) => (a[1] === null ? { uncapped: 1 } : { cap_pct: Math.floor(Number(a[1])) || 0 }) },
   };
   /** 路由代为调用运维操作时为真：审计由路由按设备执行者记，包装不再按“运营”记一条。 */
   let routeCall = false;
@@ -995,8 +1071,25 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
   /** 发码者对外只给种类（复核 RA10B-05：管理员发的邀请码 created_by 是设备编号，其中有成员标识）。 */
   const issuerKind = (by: string) => (by === "ops" || /^op_[0-9]+$/.test(by) ? by : "firm_admin");
+  /** 本月用量与账单（运营视图：比例为主，另给计量单位只为与网关计量日志对账）。 */
+  const opsQuota = (t: TenantRecord) => {
+    const q = qOf(t);
+    const v = quotaView(q, now(), { detail: false, seats: t.seats, seatOwner: () => null, ownSid: null });
+    const plan = planOf(billing, t.plan);
+    return {
+      period: v.period,
+      resets_at: v.resets_at,
+      paused: v.paused,
+      used_ratio: v.used_ratio,
+      in_flight_ratio: v.in_flight_ratio,
+      cap_pct: v.cap_pct,
+      boost_pct: v.boost_pct,
+      plan: { id: plan.id, label: plan.label, custom: typeof t.allowance_override === "number" },
+      bill: monthBill(billing, { plan, seats: t.seats, boost_pct: v.boost_pct, used_units: q.period_used }),
+      units: { total: totalOf(q), used: q.period_used },
+    };
+  };
   const tenantSummary = (t: TenantRecord) => {
-    const q = quotaView(t.quota, now(), { detail: false, seatOwner: () => null, ownSid: null });
     const devs = [...t.devices.values()];
     const all = [...t.activations.values()];
     const invites = all.filter((r) => r.kind !== "founder");
@@ -1015,7 +1108,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       // 只列创始开通码（运营的事）；律所管理员发的成员邀请码只给计数（复核 RA10B-06）。不给成员标识与姓名
       activations: all.filter((r) => r.kind === "founder").map((r) => ({ id: r.id, status: r.status, created_at: r.created_at, expires_at: r.expires_at, issued_by: issuerKind(r.created_by) })),
       member_invitations: { total: invites.length, open: invites.filter((r) => r.status === "open").length },
-      quota: { period: q.period, paused: q.paused, cap_monthly: q.cap_monthly, period_used: q.period_used, pool_remaining: t.quota.pool },
+      quota: opsQuota(t),
+      kimi: { required: t.kimi_required === true, bound: [...t.kimiAccounts.keys()].filter((uid) => { const s = t.seatsByUser.get(uid); return s && !s.revoked_at; }).length },
     };
   };
   type OpsSpec = {
@@ -1043,13 +1137,29 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           if (b.edition !== "team" && b.edition !== "firm") throw new CpError(400, "edition_invalid", "版本须为 team 或 firm");
           const seats = intIn(b.seats, 1, 10_000, "seats_invalid", "席位数");
           const subscriptionDays = b.subscription_days === undefined ? 365 : intIn(b.subscription_days, 1, 3650, "days_invalid", "订阅天数");
-          const points = b.points === undefined ? 0 : intIn(b.points, 0, Number.MAX_SAFE_INTEGER, "points_invalid", "点数");
-          // 开通时附带点数等于加量：另须 quota.manage（复核 RA10B-07）
-          if (points > 0 && !who.perms.includes("quota.manage")) throw new CpError(403, "ops_permission_denied", "开通时附带点数须有加量权限");
+          // 第 40 批取消点数：开通时不再注入点数（额度 = 席位 × 套餐）；旧控制台带 points 的请求明确拒绝，免得以为加了量
+          if (b.points !== undefined) throw new CpError(400, "points_removed", "已取消点数：额度按“席位 × 套餐”计，加量请用加量包（百分比）");
+          if (b.plan !== undefined && (typeof b.plan !== "string" || !billing.plans.some((x) => x.id === b.plan))) throw new CpError(400, "plan_unknown", "套餐不在目录里");
+          if (b.kimi_required !== undefined && typeof b.kimi_required !== "boolean") throw new CpError(400, "kimi_required_invalid", "kimi_required 须为 true 或 false");
           if (b.name !== undefined && typeof b.name !== "string") throw new CpError(400, "tenant_name_invalid", "律所名称须为 1–40 个字符");
-          const t = ops.createTenant({ tid, edition: b.edition, seats, subscriptionDays, points, ...(typeof b.name === "string" ? { name: b.name } : {}), activationRequired: true });
+          const t = ops.createTenant({ tid, edition: b.edition, seats, subscriptionDays, ...(typeof b.plan === "string" ? { plan: b.plan } : {}), ...(typeof b.name === "string" ? { name: b.name } : {}), activationRequired: true, kimiRequired: b.kimi_required === true });
           return { ok: true, tenant: tenantSummary(t) };
         },
+      };
+    // 套餐目录（第 40 批）：控制台的开通与改套餐下拉框、账单口径
+    if (method === "GET" && p === "/v1/ops/plans")
+      return {
+        perm: "tenant.read",
+        action: "plan.list",
+        tid: none,
+        target: none,
+        run: () => ({
+          plans: billing.plans.map((x) => ({ id: x.id, label: x.label, note: x.note ?? null, seat_price_cny: x.seat_price_cny ?? null })),
+          default_plan: billing.default_plan,
+          boost_price_factor: billing.boost_price_factor ?? 1,
+          has_unit_cost: billing.unit_cost_cny != null,
+          kimi_account: kimiBroker !== null,
+        }),
       };
     // 运营控制台（第 37 批）：租户列表与按租户的用量明细，只读（tenant.read）。同 tenantSummary：不给成员姓名与标识，席位只给席位编号
     if (method === "GET" && p === "/v1/ops/tenants")
@@ -1074,29 +1184,34 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         target: none,
         run: () => {
           const t = tenantOf(tid);
-          const q = quotaView(t.quota, now(), { detail: false, seatOwner: () => null, ownSid: null });
+          const q = qOf(t);
+          const v = quotaView(q, now(), { detail: true, seats: t.seats, seatOwner: () => null, ownSid: null });
           const seats = new Map([...t.seatsByUser.values()].map((s) => [s.sid, s]));
-          const leases = Object.values(t.quota.leases);
+          const bySid = new Map([...t.seatsByUser.values()].map((s) => [s.sid, t.kimiAccounts.get(s.uid) ?? null]));
+          const leases = Object.values(q.leases);
+          const share = t.seats > 0 ? totalOf(q) / t.seats : totalOf(q);
+          const usedSids = new Set(Object.keys(q.period_by_seat));
+          const kimiOf = (sid: string) => {
+            const k = bySid.get(sid);
+            return k ? { ref: k.ref, nickname: k.nickname, phone_tail: k.phone_tail, level: k.level, bound_at: k.bound_at } : null;
+          };
           return {
             tid: t.tid,
             issued_at: iso(),
-            period: q.period,
-            paused: q.paused,
-            cap_monthly: q.cap_monthly,
+            ...opsQuota(t),
             cap_set_at: q.cap_set_at,
             // 律所管理员设的上限 cap_set_by 是设备编号（含成员标识）：对外只给种类
-            cap_set_by: t.quota.cap_set_by === null ? null : issuerKind(t.quota.cap_set_by),
-            period_used: q.period_used,
-            in_flight: q.in_flight,
-            pool_remaining: t.quota.pool,
-            granted_total: t.quota.granted_total,
-            history: q.history,
-            // 本月按席位（席位编号是假名；只标在用或已收回，不给成员）
-            by_seat: Object.entries(t.quota.period_by_seat)
-              .map(([sid, u]) => ({ sid, status: seats.get(sid)?.revoked_at ? "revoked" : seats.has(sid) ? "active" : "unknown", points: u.points, requests: u.requests }))
-              .sort((a, b) => b.points - a.points),
+            cap_set_by: q.cap_set_by === null ? null : issuerKind(q.cap_set_by),
+            boosts: q.boosts.map((b) => ({ at: b.at, pct: b.pct, by: b.by === null ? "ops" : issuerKind(b.by) })),
+            history: v.history,
+            // 本月按席位（席位编号是假名；只标在用或已收回、绑定的 Kimi 账号打码信息，不给成员姓名与编号）。没有用量的在用席位也列出
+            by_seat: [
+              ...Object.entries(q.period_by_seat).map(([sid, u]) => ({ sid, status: seats.get(sid)?.revoked_at ? "revoked" : seats.has(sid) ? "active" : "unknown", used_ratio: ratio(u.points, share), firm_ratio: ratio(u.points, totalOf(q)), requests: u.requests, kimi: kimiOf(sid) })),
+              ...[...seats.values()].filter((s) => !usedSids.has(s.sid) && !s.revoked_at).map((s) => ({ sid: s.sid, status: "active", used_ratio: 0, firm_ratio: 0, requests: 0, kimi: kimiOf(s.sid) })),
+            ].sort((a, b) => b.firm_ratio - a.firm_ratio),
             seats: { total: t.seats, assigned: [...seats.values()].filter((s) => !s.revoked_at).length },
             leases: { open: leases.filter((l) => l.closed_at === null).length, unreconciled: leases.filter((l) => l.unreconciled).length },
+            kimi: { required: t.kimi_required === true, enabled: kimiBroker !== null },
           };
         },
       };
@@ -1131,7 +1246,37 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       };
     if (rest === "renew") return { perm: "tenant.manage", action: "license.renew", tid: at, target: none, run: (b) => ({ ok: true, license: ops.renewLicense(tid, intIn(b.days, 1, 3650, "days_invalid", "续订天数")) }) };
     if (rest === "terminate") return { perm: "tenant.terminate", action: "license.terminate", tid: at, target: none, run: () => ({ ok: true, license: ops.terminateLicense(tid) }) };
-    if (rest === "points") return { perm: "quota.manage", action: "quota.grant", tid: at, target: none, run: (b) => (ops.grantPoints(tid, b.points as number), { ok: true }) };
+    if (rest === "points") return { perm: "quota.manage", action: "quota.grant", tid: at, target: none, run: () => { throw new CpError(410, "points_removed", "已取消点数：请用加量包（按套餐额度的百分比）"); } };
+    if (rest === "boost") return { perm: "quota.manage", action: "quota.boost", tid: at, target: none, run: (b) => { ops.boostQuota(tid, b.pct as number); return { ok: true, quota: opsQuota(tenantOf(tid)) }; } };
+    if (rest === "plan")
+      return {
+        perm: "tenant.manage",
+        action: "plan.change",
+        tid: at,
+        target: none,
+        run: (b) => {
+          if (b.plan === undefined && b.seats === undefined) throw new CpError(400, "plan_invalid", "须给出套餐 plan 或席位数 seats");
+          if (b.plan !== undefined && typeof b.plan !== "string") throw new CpError(400, "plan_unknown", "套餐不在目录里");
+          const seats = b.seats === undefined ? undefined : intIn(b.seats, 1, 10_000, "seats_invalid", "席位数");
+          ops.setPlan(tid, { ...(typeof b.plan === "string" ? { plan: b.plan } : {}), ...(seats !== undefined ? { seats } : {}) });
+          return { ok: true, tenant: tenantSummary(tenantOf(tid)) };
+        },
+      };
+    if (rest === "kimi-policy")
+      return {
+        perm: "tenant.manage",
+        action: "kimi.policy",
+        tid: at,
+        target: none,
+        run: (b) => {
+          if (typeof b.required !== "boolean") throw new CpError(400, "kimi_required_invalid", "required 须为 true 或 false");
+          if (b.required && !kimiBroker) throw new CpError(409, "kimi_account_disabled", "控制面没有配置 Kimi 账号对接，不能要求绑定");
+          ops.setKimiRequired(tid, b.required);
+          return { ok: true };
+        },
+      };
+    const ku = /^kimi-accounts\/(kimi_[0-9a-f]{20})\/unbind$/.exec(rest);
+    if (ku) return { perm: "device.revoke", action: "kimi.unbind", tid: at, target: () => ku[1]!, run: () => (ops.unbindKimi(tid, ku[1]!), { ok: true }) };
     if (rest === "cap")
       return {
         perm: "quota.cap",
@@ -1139,11 +1284,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         tid: at,
         target: none,
         run: (b) => {
-          if (!("cap" in b)) throw new CpError(400, "cap_invalid", "须给出 cap（点数，或 null 表示不设上限）");
+          if (!("cap_pct" in b)) throw new CpError(400, "cap_invalid", "须给出 cap_pct（1–100 的百分比，或 null 表示不设上限）");
           // 运营代设上限只能调低（复核 RA10A-17）：调高或取消律所已设的上限是放宽律所的管控，须律所管理员自己在客户端操作
-          const cur = tenantOf(tid).quota.cap_monthly;
-          if (cur !== null && (b.cap === null || (typeof b.cap === "number" && b.cap > cur))) throw new CpError(409, "cap_raise_by_firm_only", "调高或取消月度上限须由律所管理员操作");
-          ops.setQuotaCap(tid, b.cap as number | null);
+          const cur = tenantOf(tid).quota.cap_pct;
+          if (cur !== null && (b.cap_pct === null || (typeof b.cap_pct === "number" && b.cap_pct > cur))) throw new CpError(409, "cap_raise_by_firm_only", "调高或取消月度上限须由律所管理员操作");
+          ops.setQuotaCap(tid, b.cap_pct as number | null);
           return { ok: true };
         },
       };
@@ -1445,7 +1590,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不发放额度");
       let l: ReturnType<typeof leaseQuota>;
       try {
-        l = leaseQuota(t.quota, { want: b.want, holder: b.holder, ttl_ms: b.ttl_ms, need: b.need }, now());
+        l = leaseQuota(qOf(t), { want: b.want, holder: b.holder, ttl_ms: b.ttl_ms, need: b.need }, now());
       } catch (e) {
         quotaCount(`lease_denied:${e instanceof QuotaError && /^[a-z_]{1,40}$/.test(e.code) ? e.code : "other"}`);
         throw e;
@@ -1457,7 +1602,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       requireService(req);
       const b = parseJson(raw);
       const t = tenantOf(String(b.tid ?? ""));
-      const r = settleLease(t.quota, { lease_id: b.lease_id, holder: b.holder, usage: b.usage, final: b.final }, now());
+      const r = settleLease(qOf(t), { lease_id: b.lease_id, holder: b.holder, usage: b.usage, final: b.final }, now());
       quotaCount("settle_ok");
       return send(res, 200, { ok: true, ...r });
     }
@@ -1480,7 +1625,45 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
+      // 律所合同要求用 Kimi 账号登录（第 40 批）：没绑定的成员不签发通用席位令牌（AI 用不了；本机功能照常）
+      if (t.kimi_required === true && kimiBroker && !t.kimiAccounts.has(dev.cert.memberId)) throw new CpError(403, "kimi_account_required", "请先用 Kimi 账号登录（设置 → Kimi 账号）");
       return send(res, 200, await seatToken(t, dev, seat.sid, seatTtl));
+    }
+    // ─── Kimi 账号（第 40 批）：设备授权由控制面代办，Kimi 令牌不出控制面、不留存；只绑本人席位 ───
+    if (p === "/v1/account/kimi" || p.startsWith("/v1/account/kimi/")) {
+      if (!kimiBroker) throw new CpError(404, "kimi_account_disabled", "未开通 Kimi 账号登录");
+      const seat = t.seatsByUser.get(dev.cert.memberId);
+      const owner = `${t.tid}\u0000${dev.cert.deviceId}`;
+      const viewOf = (k: KimiBinding | undefined) => (k ? { nickname: k.nickname, phone_tail: k.phone_tail, level: k.level, bound_at: k.bound_at } : null);
+      if (method === "GET" && p === "/v1/account/kimi") return send(res, 200, { enabled: true, required: t.kimi_required === true, account: viewOf(t.kimiAccounts.get(dev.cert.memberId)) });
+      if (!seat || seat.revoked_at) throw new CpError(402, "no_seat", "该成员没有席位：不能绑定 Kimi 账号");
+      try {
+        if (method === "POST" && p === "/v1/account/kimi/start") {
+          if (!issueAllowed(t.tid, dev.cert.deviceId, "kimi_start")) throw new CpError(429, "rate_limited", "登录请求过于频繁，请稍后再试");
+          return send(res, 200, await kimiBroker.start(owner));
+        }
+        if (method === "POST" && p === "/v1/account/kimi/poll") {
+          const b = parseJson(raw);
+          const r = await kimiBroker.poll(b.flow_id, owner);
+          if (r.status !== "authorized") return send(res, 200, { status: r.status });
+          // 同一律所内一个 Kimi 账号只绑一个席位（换电脑同一成员可重绑）
+          const other = [...t.kimiAccounts.entries()].find(([uid, k]) => k.ref === r.account.ref && uid !== dev.cert.memberId);
+          if (other) throw new CpError(409, "kimi_account_in_use", "这个 Kimi 账号已绑定本所另一位成员：请换一个账号，或请管理员先解绑");
+          mark("kimi.bind", seat.sid);
+          const binding: KimiBinding = { ...r.account, bound_at: iso() };
+          t.kimiAccounts.set(dev.cert.memberId, binding);
+          return send(res, 200, { status: "bound", account: viewOf(binding) });
+        }
+        if (method === "DELETE" && p === "/v1/account/kimi") {
+          mark("kimi.unbind", seat.sid);
+          t.kimiAccounts.delete(dev.cert.memberId);
+          return send(res, 200, { ok: true });
+        }
+      } catch (e) {
+        if (e instanceof KimiAccountError) throw new CpError(e.status, e.code, e.message);
+        throw e;
+      }
+      throw new CpError(404, "not_found", "没有这条路由");
     }
     // 支持服务专用的短期凭据（第 9 批复核 S9B-03）：受众只有 "support"、15 分钟；网关、检索、分发拒收——诊断包上传不再把通用席位令牌交给支持域
     if (method === "POST" && p === "/v1/support-token") {
@@ -1518,18 +1701,24 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (method === "GET" && p === "/v1/quota") {
       const detail = dev.cert.role === "admin" || dev.cert.role === "partner";
       const owner = new Map([...t.seatsByUser.values()].map((x) => [x.sid, x.uid]));
-      const view = quotaView(t.quota, now(), { detail, seatOwner: (sid) => owner.get(sid) ?? null, ownSid: t.seatsByUser.get(dev.cert.memberId)?.sid ?? null });
-      return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), ...view }));
+      const view = quotaView(qOf(t), now(), { detail, seats: t.seats, seatOwner: (sid) => owner.get(sid) ?? null, ownSid: t.seatsByUser.get(dev.cert.memberId)?.sid ?? null });
+      const plan = planOf(billing, t.plan);
+      const mine = t.kimiAccounts.get(dev.cert.memberId) ?? null;
+      // 管理员与合伙人另看成员绑定的 Kimi 账号（打码）：成员编号 → 账号
+      const accounts = detail ? Object.fromEntries([...t.kimiAccounts.entries()].map(([uid, k]) => [uid, { nickname: k.nickname, phone_tail: k.phone_tail }])) : undefined;
+      return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), unit: "percent", plan: { id: plan.id, label: plan.label }, ...view, kimi: { enabled: kimiBroker !== null, required: t.kimi_required === true, own: mine ? { nickname: mine.nickname, phone_tail: mine.phone_tail, level: mine.level, bound_at: mine.bound_at } : null, ...(accounts ? { members: accounts } : {}) } }));
     }
     if (method === "PUT" && p === "/v1/quota/cap") {
       mark("quota.cap_set");
       requireAdmin(dev);
       const b = parseJson(raw);
-      if (!("monthly_cap" in b)) throw new CpError(400, "cap_invalid", "缺少月度上限（不设上限请传 null）");
-      quotaSetCap(t.quota, b.monthly_cap, now(), dev.cert.deviceId);
+      // 第 40 批：上限为本月总额度的百分比（monthly_cap_pct）；旧客户端的点数上限明确拒绝
+      if ("monthly_cap" in b) throw new CpError(400, "cap_invalid", "已取消点数：月度上限请按百分比设置（monthly_cap_pct）");
+      if (!("monthly_cap_pct" in b)) throw new CpError(400, "cap_invalid", "缺少月度上限（不设上限请传 null）");
+      quotaSetCap(qOf(t), b.monthly_cap_pct, now(), dev.cert.deviceId);
       const ctx = auditCtx.get(res);
-      if (ctx) ctx.entry.detail = t.quota.cap_monthly === null ? { uncapped: 1 } : { cap: t.quota.cap_monthly };
-      return send(res, 200, { ok: true, cap_monthly: t.quota.cap_monthly });
+      if (ctx) ctx.entry.detail = t.quota.cap_pct === null ? { uncapped: 1 } : { cap_pct: t.quota.cap_pct };
+      return send(res, 200, { ok: true, cap_pct: t.quota.cap_pct });
     }
     // ─── 中软侧操作记录（S14 v0）：管理员与合伙人可取本所流水（控制面签名的分页；律所侧另行验链） ───
     if (method === "GET" && p === "/v1/audit") {

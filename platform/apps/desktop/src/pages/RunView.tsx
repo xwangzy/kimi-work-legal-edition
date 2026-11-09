@@ -1039,7 +1039,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                     <tbody>
                       <tr><th>任务编号</th><td className="mono">{run.run_id}</td></tr>
                       <tr><th>状态</th><td>{RUN_STATUS_LABELS[run.status] ?? run.status}</td></tr>
-                      <tr><th>点数</th><td>预留 {run.points_reserved} / 已扣 {run.points_charged}</td></tr>
+                      <tr><th>用量</th><td>{run.usage_display ?? "—"}</td></tr>
                       <tr><th>发起</th><td>{fmtTime(run.created_at)}</td></tr>
                       {run.reason && <tr><th>原因</th><td>{reasonLabel(String(run.reason))}</td></tr>}
                     </tbody>

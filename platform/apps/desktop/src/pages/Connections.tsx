@@ -16,7 +16,7 @@ import { displayVersion, fmtDate, fmtTime, groupDigits } from "../lib/labels.ts"
 import { backupTile, deviceSafetyTile } from "../lib/device-status.ts";
 import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
 import { RecallEvalPanel } from "./RecallEval.tsx";
-import { CpAuditPanel, UsagePanel } from "./FirmUsage.tsx";
+import { CpAuditPanel, KimiAccountRow, UsagePanel } from "./FirmUsage.tsx";
 import { SupportUpload } from "../components/SupportUpload.tsx";
 import { TeamShare } from "../components/TeamShare.tsx";
 import { MembersAdmin } from "../components/MembersAdmin.tsx";
@@ -524,6 +524,12 @@ function DeviceTab({ caps, gate, mySafety, admin }: { caps: Capabilities | null;
           <div className="device-row">
             <div className="device-k">本月用量</div>
             <div>{quotaLawyerLine(quota)}</div>
+          </div>
+        )}
+        {cp && cp.mode === "control_plane" && (
+          <div className="device-row">
+            <div className="device-k">Kimi 账号</div>
+            <KimiAccountRow />
           </div>
         )}
         {/* 单机使用（没加入律所）时不显示离所交接、本机核对码这类只在律所里才有的事（第 26 批，评审 U2-08） */}

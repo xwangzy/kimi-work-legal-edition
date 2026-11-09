@@ -49,6 +49,11 @@
  *            "allow_cidrs": ["10.20.0.0/24"],                     // 运维网段（堡垒机出口）：来源不在其中的运营请求一律 404
  *            "min_roster_version": 12,                            // 可选：新实例或数据目录重建时的名册版本下限
  *            "console_origins": ["https://ops-console.kwl.internal"] } }  // 可选（第 37 批）：网页运营控制台的来源，只给它跨源读运营接口的回复（CORS）
+ *   // 控制面可选（第 40 批）：套餐目录与计费口径（取消点数，用量按本月额度的百分比；缺省为标准/专业/旗舰三档、不显示价格）
+ *   "billing": { "plans": [ { "id": "standard", "label": "标准", "seat_monthly_units": 200000, "seat_price_cny": 399, "note": "每席每月约 80 单" }, ... ],
+ *                "default_plan": "standard", "unit_cost_cny": 0.0008, "boost_price_factor": 1 },
+ *   // 控制面可选（第 40 批）：Kimi 账号对接（律师用 Kimi 账号登录绑定席位；client_id 须向月之暗面申请法律版自己的，不得用 Kimi Code 的）
+ *   "kimi_account": { "oauth_host": "https://auth.kimi.com", "client_id": "<法律版 client_id>", "api_base": "https://api.kimi.com/coding/v1", "userinfo_path": "/me" },
  * 没有 ops：运营路径一律 404。名册版本记录、换版记录、随机数与被拒记录在 <data_dir>/<角色>/ops/；名册不可用时业务照常、运营接口 503。
  * 全部密钥文件除格式外还核“是不是随机生成的”（scripts/lib/secret-strength.mjs：拒绝重复、递增、单一字符类、占位词）；服务间凭据同一要求。
  *
@@ -466,6 +471,25 @@ if (cfg.role === "cp-signer") {
     auditLog: cpMod.createAuditLog({ file: join(dir, "audit.jsonl") }),
     // 运营接口（A-10）：写操作照常进律所可见的运营审计流水（执行者为运营编号）；每个运营请求另记内部访问审计
     ...(opsGuard ? { opsGuard, opsAccessLog: (r) => opsMod.appendLineSynced(join(dir, "ops", "access.jsonl"), r) } : {}),
+    // 第 40 批：套餐目录（配置错误启动即失败）与 Kimi 账号对接（没配 = 账号接口 404，客户端不显示登录入口）
+    billing: (() => {
+      try {
+        return cpMod.validateBilling(cfg.billing);
+      } catch (e) {
+        fail(`billing 配置不合法：${e.message}`);
+      }
+    })(),
+    ...(cfg.kimi_account
+      ? (() => {
+          try {
+            const k = cpMod.validateKimiConfig(cfg.kimi_account);
+            if (!insecure && (!k.oauth_host.startsWith("https://") || !k.api_base.startsWith("https://"))) fail("kimi_account 的地址须为 https");
+            return { kimiAccount: { config: k } };
+          } catch (e) {
+            fail(`kimi_account 配置不合法：${e.message}`);
+          }
+        })()
+      : {}),
   });
   svc = cpInstance.server;
   // 额度租约指标（A-9 余项）与状态库指标并列
