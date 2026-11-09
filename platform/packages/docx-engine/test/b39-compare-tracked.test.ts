@@ -120,3 +120,16 @@ test("页眉文字的变化单列，未标修订的报静默", () => {
   assert.equal(r.headerFooter[0]!.curText, "目标公司修改稿v2");
   assert.equal(r.headerFooter[0]!.silent, true);
 });
+
+test("条款号按接受修订后的口径：整段留痕删除的子项不占号，后面一项前移（Word 接受修订后的显示），不出现“（二）后接（四）”", async () => {
+  const { extractParagraphs, acceptedNumberingXml, paragraphListLabels, readZipText } = await import("../src/index.ts");
+  const paras = extractParagraphs(CURRENT);
+  const after = paras.find((p) => p.text === "核心人员已签署劳动合同；");
+  assert.equal(after?.clause, "1.1（三）", JSON.stringify(paras.map((p) => [p.clause, p.text.slice(0, 8)])));
+  // 原样（含删除段落）计号时是（四）：只在计算编号时排除删除段落，原文 XML 不变
+  const xml = readZipText(CURRENT, "word/document.xml")!;
+  const raw = paragraphListLabels(xml, NUMBERING, null);
+  assert.ok(raw.includes("（四）"));
+  assert.equal(acceptedNumberingXml(xml).length > 0, true);
+  assert.equal(paragraphListLabels(acceptedNumberingXml(xml), NUMBERING, null).filter(Boolean).length, raw.filter(Boolean).length - 1, "只少了被删除的那一项");
+});

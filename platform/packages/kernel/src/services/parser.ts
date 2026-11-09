@@ -4,7 +4,7 @@
  * 中文合同保真度以 G0 同台评测为准。v0 解析结果一律打 quality_flags，如实降级。
  */
 import { DomainError } from "@zr-legal/domain";
-import { documentXmlWithListLabels, mapParagraphs, paragraphListLabels, xlsxToText } from "@zr-legal/docx-engine";
+import { acceptedNumberingXml, documentXmlWithListLabels, mapParagraphs, paragraphListLabels, xlsxToText } from "@zr-legal/docx-engine";
 import { listEntries, readEntry, readEntryText } from "./zip.ts";
 
 export interface ParseOutcome {
@@ -146,7 +146,8 @@ function docxParagraphLabels(xml: string, buf: Buffer): (string | null)[] {
   try {
     const numbering = readEntryText(buf, "word/numbering.xml");
     if (!numbering) return [];
-    const labels = paragraphListLabels(xml, numbering, readEntryText(buf, "word/styles.xml"));
+    // 文字视图取可见文字，编号也按接受修订后的口径：整段留痕删除的段落不占号（V14 第 39 批：否则助手看到“（二）……（四）”以为编号断档）
+    const labels = paragraphListLabels(acceptedNumberingXml(xml), numbering, readEntryText(buf, "word/styles.xml"));
     const visible = mapParagraphs(xml).map((p) => p.text.trim() !== "");
     return labels.map((l, i) => (visible[i] ? l : null));
   } catch {

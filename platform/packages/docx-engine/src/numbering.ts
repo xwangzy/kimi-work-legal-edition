@@ -213,6 +213,36 @@ export function paragraphListLabels(documentXml: string, numberingXml: string | 
   });
 }
 
+/**
+ * 接受全部修订后的编号口径（V14 第 39 批真实走查 T1 回稿重审）：整段留痕删除的段落（文字都在删除里、且有删除标记）不再占编号。
+ * 材料文字视图与整稿比对都取“可见文字”（已删除的字不显示），编号却按含删除段落计，助手看到“（二）……（四）……”，
+ * 在会议要点里写“删除第（三）项后子项编号断档”——Word 接受修订后编号会前移，并无断档。
+ * 返回的 XML 只用于计算编号（段落个数、顺序与原文一致），不写回文件。
+ */
+export function acceptedNumberingXml(documentXml: string): string {
+  let out = "";
+  let cursor = 0;
+  for (const sp of paragraphSpans(documentXml)) {
+    const p = documentXml.slice(sp.start, sp.end);
+    out += documentXml.slice(cursor, sp.start);
+    cursor = sp.end;
+    const visible = p
+      .replace(/<w:(del|moveFrom)\b[^>]*\/>/g, "")
+      .replace(/<w:(del|moveFrom)\b[^>]*>[\s\S]*?<\/w:\1>/g, "")
+      .replace(/<w:delText\b[^>]*>[\s\S]*?<\/w:delText>/g, "");
+    const hasText = /<w:t(?:\s[^>]*)?>[^<]*\S[^<]*<\/w:t>/.test(visible);
+    if (hasText || !/<w:(?:del|moveFrom)\b/.test(p) || p.endsWith("/>")) {
+      out += p;
+      continue;
+    }
+    const off = `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="0"/></w:numPr>`;
+    if (/<w:numPr>[\s\S]*?<\/w:numPr>/.test(p)) out += p.replace(/<w:numPr>[\s\S]*?<\/w:numPr>/, off);
+    else if (/<w:pPr\b[^>]*>/.test(p)) out += p.replace(/<w:pPr\b[^>]*>/, (m) => m + off);
+    else out += p.replace(/^<w:p\b[^>]*>/, (m) => `${m}<w:pPr>${off}</w:pPr>`);
+  }
+  return out + documentXml.slice(cursor);
+}
+
 /** 从 DOCX 字节算每个段落的自动编号文字（读不出 numbering.xml 时全部为 null）。 */
 export function docxListLabels(docx: Buffer): (string | null)[] {
   const documentXml = readZipText(docx, "word/document.xml") ?? "";

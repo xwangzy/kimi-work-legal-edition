@@ -8,7 +8,7 @@
  */
 import { readZipText, readZipSelected } from "./zip.ts";
 import { mapParagraphs } from "./textmap.ts";
-import { paragraphListLabels } from "./numbering.ts";
+import { acceptedNumberingXml, paragraphListLabels } from "./numbering.ts";
 
 export interface DocxParagraph {
   index: number;
@@ -81,7 +81,8 @@ function paragraphsOf(xml: string, labels: readonly (string | null)[] | null): D
 export function extractParagraphs(docx: Buffer): DocxParagraph[] {
   const xml = readZipText(docx, "word/document.xml");
   if (xml === null) throw new Error("DOCX 缺少 word/document.xml");
-  return paragraphsOf(xml, paragraphListLabels(xml, readZipText(docx, "word/numbering.xml"), readZipText(docx, "word/styles.xml")));
+  // 条款号按接受修订后的口径（整段删除的段落不占号），与可见文字一致
+  return paragraphsOf(xml, paragraphListLabels(acceptedNumberingXml(xml), readZipText(docx, "word/numbering.xml"), readZipText(docx, "word/styles.xml")));
 }
 
 /** 页眉、页脚各自的可见文字与拒绝修订后的文字（多个页眉部件按部件名顺序以“ / ”连接）。 */
