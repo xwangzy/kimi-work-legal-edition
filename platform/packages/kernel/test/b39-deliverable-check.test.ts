@@ -38,3 +38,16 @@ test("上诉状核对清单里的“住所代号”“律师任务说明”“�
   const ok = checkDeliverable("核对清单", [{ heading: "说明", paragraphs: ["本合同项下产品代号为 RC-F860；上诉状已按一审判决书核对当事人住所。"] }]);
   assert.equal(ok.issues.filter((i) => i.kind === "internal_term").length, 0, JSON.stringify(ok.issues));
 });
+
+test("同一级的“（一）（二）”节标题重复报出（法规研究备忘录：每个小节都带上一层序号）；正常的（一）（二）（三）与“一、”下重新计数不报；“已核验且支持命题”“任务事实”报为内部用语", () => {
+  const h = (heading: string) => ({ heading, paragraphs: [] as string[] });
+  const bad = headingNumberIssues([h("一、问题与范围"), h("二、分析"), h("（一）相关规则"), h("（一）适用于本事项"), h("（二）质保期内质量问题"), h("（二）相关规则：减价"), h("三、相反依据")]);
+  assert.equal(bad.length, 2, JSON.stringify(bad));
+  assert.match(bad[0]!.fix, /重复/);
+  const ok = headingNumberIssues([h("一、结论"), h("（一）检验期"), h("（二）质保期"), h("二、分析"), h("（一）规则"), h("（二）适用"), h("（三）小结")]);
+  assert.deepEqual(ok, []);
+  const r = checkDeliverable("研究备忘录", [{ heading: "一、简答", paragraphs: ["该条已核验且支持命题。", "按任务事实，买方于验收后8个月提出异议。"] }]);
+  const hits = r.issues.filter((i) => i.kind === "internal_term").map((i) => i.text);
+  assert.ok(hits.some((t) => /支持命题/.test(t)), JSON.stringify(r.issues));
+  assert.ok(hits.some((t) => /任务事实/.test(t)));
+});

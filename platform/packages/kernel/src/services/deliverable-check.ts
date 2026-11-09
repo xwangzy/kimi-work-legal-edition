@@ -58,6 +58,8 @@ const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   { re: /(?:金额|计算|法律|文书|表格|检索|修订|费用|期限|期间|利息|测算|核验|法条)工具/g, fix: "改用律师的说法（如“经核算”“经法规库核验”）" },
   // 隐私代号的说明是写给助手的（V14 第 39 批独立评分：争点矩阵里出现“称呼与全名代号按任务说明通常指同一人”）
   // 上诉状核对清单（同批评分）：“住所代号、统一社会信用代码代号”“依据：律师任务说明；”
+  // 法规研究备忘录（同批评分）：“已核验且支持命题”37 处、“任务事实”“任务给定的”——引用核验的内部结论与写给助手的说法
+  { re: /已核验且支持命题|支持命题|任务(?:事实|给定|所给|材料)/g, fix: "改用律师的说法：引用写“原文已核”，事实写“材料载明”或“委托人陈述”" },
   { re: /(?:称呼|全名|姓名|自然人|当事人|住所|地址|信用代码|证件号?|身份证号?|账号|电话|手机号?|联系方式)(?:与全名|和全名)?代号|代号(?:说明|一致|不一致|对应|形态)|按任务说明|(?:律师|本次|原)任务说明|任务说明(?:中|里|所载|[；;，,。]|$)/g, fix: "删去关于代号、任务说明的话：直接写当事人的名称或称呼（导出时系统还原真名），依据写材料名或律师的指示" },
 ];
 
@@ -100,10 +102,24 @@ export function headingNumberIssues(sections: readonly DeliverableSection[]): De
   const out: DeliverableIssue[] = [];
   const seen = new Map<number, number>();
   let last = 0;
+  // 同一级的“（一）（二）”节标题（V14 第 39 批独立评分：法规研究备忘录 17 个同级节标题里“（一）”连用 4 次、“（二）”9 次、“（三）”5 次——
+  // 助手把“问题（一）”当前缀写在每个小节上）。遇到“一、”级标题重新计数；报出前 5 处
+  let sub = 0;
+  let subIssues = 0;
   sections.forEach((sec, i) => {
     const s = { heading: sec.heading ?? "" };
+    const pn = /^\s*（/.test(s.heading) ? cnOrdinal(s.heading.replace(/^\s*（([一二三四五六七八九十]{1,3})）/, "$1、")) : null;
+    if (pn !== null) {
+      if (pn !== sub + 1 && subIssues < 5) {
+        subIssues += 1;
+        out.push({ kind: "numbering", where: s.heading.slice(0, 20), text: s.heading.slice(0, 30), fix: pn === sub ? `同一级节标题“（${s.heading.match(/（([^）]+)）/)?.[1]}）”重复：小节标题不要都带上一层的序号，按（一）（二）（三）顺序编，或改用不带序号的小标题` : `节标题“（…）”序号不连续（上一个是第 ${sub} 项）：按顺序改正` });
+      }
+      if (pn > sub) sub = pn;
+      return;
+    }
     const n = cnOrdinal(s.heading);
     if (n === null) return;
+    sub = 0;
     if (seen.has(n)) out.push({ kind: "numbering", where: s.heading.slice(0, 20), text: s.heading.slice(0, 30), fix: `节标题序号重复（第 ${seen.get(n)! + 1} 节已用过“${s.heading.slice(0, 3)}”）：同一部分的内容合并到一节，或把后面的标题改成下一级（“（一）”）` });
     else if (n !== last + 1 && last > 0) out.push({ kind: "numbering", where: s.heading.slice(0, 20), text: s.heading.slice(0, 30), fix: `节标题序号不连续（上一个是第 ${last} 部分）：按顺序改正` });
     seen.set(n, seen.get(n) ?? i);
