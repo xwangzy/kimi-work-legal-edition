@@ -78,7 +78,12 @@ export function ApprovalCardView({ card, tokenMap, busy, onDecide }: {
         <div className="cc-actions">
           <button className="btn-primary" disabled={busy} onClick={() => onDecide({ decision: "approve", scope: "once" })}>按这个计划开始</button>
           {showFeedback ? (
-            <button className="btn-ghost" disabled={busy} onClick={() => onDecide({ decision: "reject", feedback: feedback.trim() || "请按意见修改计划" })}>退回修改</button>
+            // V14 第 39 批（V13 W6 复测真实发生）：“提修改意见”原位变成“退回修改”，连点两下就以缺省文字“请按意见修改计划”退回了计划。
+            // 没写意见时不能退回；可以收起输入框
+            <>
+              <button className="btn-ghost" disabled={busy || !feedback.trim()} title={feedback.trim() ? "" : "先写下你希望怎么改"} onClick={() => onDecide({ decision: "reject", feedback: feedback.trim() })}>退回修改</button>
+              <button className="btn-link" disabled={busy} onClick={() => setShowFeedback(false)}>收起</button>
+            </>
           ) : (
             <button className="btn-ghost" disabled={busy} onClick={() => setShowFeedback(true)}>提修改意见</button>
           )}
