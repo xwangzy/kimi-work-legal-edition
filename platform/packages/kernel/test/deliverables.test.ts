@@ -89,6 +89,8 @@ test("S1b: 回稿比对检出静默改动并产出报告与差异表（本机完
   assert.equal(cmp.payload.silent, 1, "对方未开修订的改动应判为静默");
   assert.ok(artifacts.some((a: any) => a.kind === "s1b_report"));
   assert.ok(artifacts.some((a: any) => a.kind === "s1b_diff_table"));
+  // V14 第 39 批：报告不再经文书工具生成而被登记两次（同一份报告既是 agent_report 又是 s1b_report）
+  assert.equal(artifacts.filter((a: any) => a.kind === "agent_report").length, 0, "本机比对报告只登记一份");
   // S1b 不调用模型：数据去向应为零记录
   const eg = await inv("egress.records", { run_id: run.run_id });
   assert.equal(eg.records.length, 0, "回稿比对在本机完成，无外发");
@@ -114,4 +116,5 @@ test("S6: 脱敏件遮盖直接标识符且不留修订痕迹，附脱敏报告�
   const xml = readZipText(redactedBuf, "word/document.xml")!;
   assert.ok(!/<w:del\b/.test(xml), "脱敏件不得留修订痕迹（防止经修订还原）");
   assert.ok(artifacts.some((a: any) => a.kind === "s6_report"));
+  assert.equal(artifacts.filter((a: any) => a.kind === "agent_report").length, 0, "脱敏报告只登记一份");
 });

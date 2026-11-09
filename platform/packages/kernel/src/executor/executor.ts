@@ -29,7 +29,7 @@ import { buildS1Deliverables, type ToolIdentity } from "./deliverables.ts";
 import { buildS2Deliverables, extractFacts, fileDay, factSubmissions, persistAnchors } from "./casefile.ts";
 import { FACT_LIMITS, submitFacts } from "../services/review-cards.ts";
 import { buildTimeline, timelineFacts } from "../services/facts-timeline.ts";
-import { createXlsx } from "@zr-legal/docx-engine";
+import { createDocx, createXlsx } from "@zr-legal/docx-engine";
 import type { AgentCancelOutcome, AgentClient } from "./agent-client.ts";
 import { slimAgentPayload } from "./run-progress.ts";
 import { runCapabilities, runModeOf } from "../identity.ts";
@@ -657,9 +657,7 @@ async function runS1bScenario(ctx: Ctx, runId: string, attemptId: string): Promi
       const silent = c.silent ? "【静默改动】" : "";
       return `${i + 1}. [${tag}]${silent} 旧：${c.baseText || "（无）"} ／ 新：${c.curText || "（无）"}`;
     });
-    const report = (await invokeTool(
-      "docx.render_report",
-      {
+    const report = localReport(ctx, run.matter_id, {
         title: "回稿比对报告",
         sections: [
           {
@@ -672,9 +670,7 @@ async function runS1bScenario(ctx: Ctx, runId: string, attemptId: string): Promi
           },
           { heading: "二、改动清单", paragraphs: changedLines.length > 0 ? changedLines : ["（无差异）"] },
         ],
-      },
-      { ...toolCtx(run, runId, attemptId), db, blobs, lawdb: ctx.deps.lawdb },
-    )) as any;
+    });
     registerArtifact(ctx, run, runId, attemptId, {
       kind: "s1b_report",
       filename: `回稿比对报告-${fileDay()}.docx`,
@@ -726,9 +722,7 @@ async function runS6Scenario(ctx: Ctx, runId: string, attemptId: string): Promis
       );
       if (r.report.findings === 0) reportParas.push("  未发现需遮盖的直接标识符。");
     }
-    const report = (await invokeTool(
-      "docx.render_report",
-      {
+    const report = localReport(ctx, run.matter_id, {
         title: "脱敏报告",
         sections: [
           { heading: "一、覆盖范围与替换统计", paragraphs: reportParas },
@@ -741,9 +735,7 @@ async function runS6Scenario(ctx: Ctx, runId: string, attemptId: string): Promis
           },
           { heading: "三、复核", paragraphs: ["复核人：____（脱敏件签发前须经律师复核）"] },
         ],
-      },
-      { ...toolCtx(run, runId, attemptId), db, blobs, lawdb: ctx.deps.lawdb },
-    )) as any;
+    });
     registerArtifact(ctx, run, runId, attemptId, {
       kind: "s6_report",
       filename: `脱敏报告-${fileDay()}.docx`,
@@ -1572,6 +1564,14 @@ export function agentTimeoutText(reason: string | null, limitMs: number = AGENT_
 const AGENT_PRIMARY_MISSING_SEQ = 9_001;
 /** 到时限时主交付物已交出的事件序号（第 35 批）。 */
 const AGENT_DEADLINE_DELIVERED_SEQ = 9_002;
+/**
+ * 本机流程（回稿比对 S1b、对外脱敏 S6）的报告直接由文书引擎生成（V14 第 39 批真实走查 T1“回稿比对（不用 AI）”：原先经 docx.render_report 工具生成，
+ * 工具自己会把它登记成一份 agent_report 成果，执行器再登记一次 s1b_report，交付件里同一份报告出现两次）。
+ */
+function localReport(ctx: Ctx, matterId: string, p: { title: string; sections: { heading: string; paragraphs: string[] }[] }): { sha256: string; storage_uri: string } {
+  return ctx.deps.blobs.put(createDocx(p.title, p.sections), matterId);
+}
+
 /** 系统按已提交事实生成《事实时间线》的成果事件序号（V14 第 39 批；独立占位）。 */
 const FACTS_TIMELINE_SEQ = 9_050;
 
