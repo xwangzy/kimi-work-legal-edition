@@ -91,6 +91,18 @@ test("S1b: 回稿比对检出静默改动并产出报告与差异表（本机完
   assert.ok(artifacts.some((a: any) => a.kind === "s1b_diff_table"));
   // V14 第 39 批：报告不再经文书工具生成而被登记两次（同一份报告既是 agent_report 又是 s1b_report）
   assert.equal(artifacts.filter((a: any) => a.kind === "agent_report").length, 0, "本机比对报告只登记一份");
+  // V14 第 39 批（独立评分）：报告写明比的是哪两份文件、每处改动的位置与是否标了修订、比对范围、实质重审用哪张卡；不留内部编号
+  const rep = artifacts.find((a: any) => a.kind === "s1b_report");
+  const repText = (readZipText(await downloadArtifact(inv, rep.artifact_version_id), "word/document.xml") ?? "").replace(/<[^>]+>/g, "");
+  assert.match(repText, /旧稿《我方稿\.docx》；新稿（回稿）《对方回稿\.docx》/);
+  assert.match(repText, /【修改·未标修订（静默）】旧稿第 \d+ 段 → 新稿第 \d+ 段/);
+  assert.match(repText, /比对范围：正文段落/);
+  assert.match(repText, /对方回稿：比对与重审/);
+  assert.equal(/§\d/.test(repText), false, "报告里没有内部编号");
+  const tbl = artifacts.find((a: any) => a.kind === "s1b_diff_table");
+  const sheet = readZipText(await downloadArtifact(inv, tbl.artifact_version_id), "xl/worksheets/sheet1.xml") ?? "";
+  assert.match(sheet, /修改/);
+  assert.equal(/>modified</.test(sheet), false, "差异表的类型写中文");
   // S1b 不调用模型：数据去向应为零记录
   const eg = await inv("egress.records", { run_id: run.run_id });
   assert.equal(eg.records.length, 0, "回稿比对在本机完成，无外发");

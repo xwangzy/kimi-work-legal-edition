@@ -24,6 +24,11 @@ export interface TextSegment {
   kind?: "text" | "tab" | "br";
   /** 本次写入中新插入的文字（带 kwl-new 标记的 w:ins 内）：不参与锚点匹配，宽度为 0（第 34 批 D11） */
   fresh?: boolean;
+  /**
+   * 文字在插入修订内（任何 w:ins / w:moveTo，含本次写入的 kwl-new）：拒绝全部修订后这段字不存在。
+   * 整稿比对用它还原“对方修订前”的段落文字，判断改动是否都标了修订（V14 第 39 批）。
+   */
+  inserted?: boolean;
 }
 
 export interface ParagraphMap {
@@ -152,6 +157,17 @@ function insideDel(pXml: string, runStart: number): boolean {
 }
 
 /** run 是否在本次写入新插入的 w:ins（带 kwl-new 标记）内：按 w:ins 开闭配对，看最内层（第 34 批 D11）。 */
+/** run 是否位于插入修订（w:ins / w:moveTo，不论谁写的）之内；段落标记上的自闭合 w:ins 不算。 */
+function insideIns(pXml: string, runStart: number): boolean {
+  let depth = 0;
+  for (const m of pXml.matchAll(/<(\/?)w:(?:ins|moveTo)\b[^>]*?(\/?)>/g)) {
+    if (m.index! >= runStart) break;
+    if (m[2] === "/") continue;
+    depth += m[1] ? -1 : 1;
+  }
+  return depth > 0;
+}
+
 function insideFreshIns(pXml: string, runStart: number): boolean {
   const stack: boolean[] = [];
   for (const m of pXml.matchAll(/<(\/?)w:ins\b([^>]*?)(\/?)>/g)) {
@@ -207,6 +223,7 @@ export function mapParagraph(pXml: string, pStart: number, index: number): Parag
     const rpr = runProps(rXml);
     const inDel = insideDel(masked, rStart);
     const fresh = insideFreshIns(masked, rStart);
+    const inserted = fresh || insideIns(masked, rStart);
     const open = /^<w:r\b[^>]*>/.exec(rXml)![0].length;
     const inner = rXml.slice(open, rXml.length - "</w:r>".length);
     for (const c of childElements(inner)) {
@@ -248,6 +265,7 @@ export function mapParagraph(pXml: string, pStart: number, index: number): Parag
         deleted: inDel || isDelText,
         kind,
         ...(fresh ? { fresh: true } : {}),
+        ...(inserted ? { inserted: true } : {}),
       };
       segments.push(seg);
       if (!seg.deleted && !fresh) textLen += text.length;

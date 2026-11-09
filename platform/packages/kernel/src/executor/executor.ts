@@ -644,31 +644,52 @@ async function runS1bScenario(ctx: Ctx, runId: string, attemptId: string): Promi
   });
 
   await ctx.step("s1b_report", async () => {
+    const tracked = cmp.changes.length - cmp.stats.silent;
     appendEvent(ctx.deps, runId, attemptId, 30, "compare.completed", {
       added: cmp.stats.added,
       deleted: cmp.stats.deleted,
       modified: cmp.stats.modified,
       silent: cmp.stats.silent,
+      tracked,
+      header_footer_changed: (cmp.headerFooter ?? []).length,
       curHasTrackedChanges: cmp.curHasTrackedChanges,
       where: "本机",
     });
+    // V14 第 39 批（真实走查 T1 回稿比对·不用 AI，独立评分）：报告没写比的是哪两份文件、只有段落序号没有条款号、新增段落没有位置、
+    // 留着“（§4.4）”这类内部编号、差异表类型是英文，也没告诉律师要实质重审该用哪张卡。
+    const nameOf = (id: string) => db.get<{ filename: string }>(`SELECT filename FROM document_versions WHERE document_version_id = ?`, [id])?.filename ?? "（未知文件）";
+    const kindText = (t: string) => (t === "added" ? "新增" : t === "deleted" ? "删除" : "修改");
+    const markText = (c: any) => (c.silent ? "未标修订（静默）" : "已标修订");
+    const cut = (t: string, n = 24) => (t.length > n ? `${t.slice(0, n)}…` : t);
+    const basePos = (c: any) => (c.baseIndex === null ? "" : c.baseClause ? `旧稿 ${c.baseClause}` : `旧稿第 ${c.baseIndex + 1} 段`);
+    const curPos = (c: any) => {
+      if (c.curIndex === null) return "";
+      const at = c.curClause ? `新稿 ${c.curClause}` : `新稿第 ${c.curIndex + 1} 段`;
+      if (c.type !== "added") return at;
+      return `${at}（${(c.afterBaseIndex ?? -1) < 0 ? "插在最前" : `插在旧稿${c.afterBaseClause ? ` ${c.afterBaseClause}` : ""}“${cut(c.afterBaseText ?? "")}”之后`}）`;
+    };
     const changedLines = cmp.changes.slice(0, 200).map((c: any, i: number) => {
-      const tag = c.type === "added" ? "新增" : c.type === "deleted" ? "删除" : "修改";
-      const silent = c.silent ? "【静默改动】" : "";
-      return `${i + 1}. [${tag}]${silent} 旧：${c.baseText || "（无）"} ／ 新：${c.curText || "（无）"}`;
+      const where = [basePos(c), curPos(c)].filter(Boolean).join(" → ");
+      return `${i + 1}. 【${kindText(c.type)}·${markText(c)}】${where}　旧：${c.baseText || "（无）"} ／ 新：${c.curText || "（无）"}`;
     });
+    const hf: any[] = cmp.headerFooter ?? [];
+    const overview = [
+      `比对文件：旧稿《${nameOf(baselineId)}》；新稿（回稿）《${nameOf(currentId)}》。`,
+      `新增 ${cmp.stats.added} 段、删除 ${cmp.stats.deleted} 段、修改 ${cmp.stats.modified} 段，共 ${cmp.changes.length} 处；其中未标修订（静默）${cmp.stats.silent} 处，已标修订 ${tracked} 处。`,
+      cmp.curHasTrackedChanges
+        ? "回稿带修订标记。“已标修订”指拒绝回稿的全部修订后能回到旧稿原文的改动；拒绝修订后仍与旧稿不同的，是没有标修订的静默改动。"
+        : "回稿不含任何修订标记（对方未开修订），全部改动均为静默改动。",
+      ...(cmp.curHasTrackedChanges && cmp.stats.silent > 0 ? [`注意：回稿带修订痕迹，但仍有 ${cmp.stats.silent} 处改动没有标修订；对方如称“修改均已在修订模式下标出”，与实际不符。`] : []),
+      ...(hf.length > 0 ? [`页眉页脚也有改动 ${hf.length} 处，见第三部分。`] : []),
+      "比对范围：正文段落（含表格内文字）与页眉页脚文字；批注、文本框、图片以及字体、加粗等格式改动不在比对范围，请律师抽查。条款号按文件的自动编号推算，手打编号的条款号见原文。",
+      "本报告由本机规则生成，不判断改动对我方的影响；受影响条款原来的审查结论不自动沿用，需要律师重新复核。要判断影响、拟回应意见，请用“对方回稿：比对与重审”卡（会调用 AI）。",
+    ];
     const report = localReport(ctx, run.matter_id, {
         title: "回稿比对报告",
         sections: [
-          {
-            heading: "一、比对概况",
-            paragraphs: [
-              `新增 ${cmp.stats.added} 段、删除 ${cmp.stats.deleted} 段、修改 ${cmp.stats.modified} 段；其中静默改动 ${cmp.stats.silent} 段。`,
-              cmp.curHasTrackedChanges ? "回稿含修订标记。" : "回稿不含任何修订标记（对方未开修订），全部改动按静默改动对待。",
-              "受影响条款的原复核结论不自动继承，需律师重新复核（§4.4）。",
-            ],
-          },
+          { heading: "一、比对概况", paragraphs: overview },
           { heading: "二、改动清单", paragraphs: changedLines.length > 0 ? changedLines : ["（无差异）"] },
+          ...(hf.length > 0 ? [{ heading: "三、页眉页脚", paragraphs: hf.map((h, i) => `${i + 1}. 【${h.part}·${markText(h)}】旧：${h.baseText || "（无）"} ／ 新：${h.curText || "（无）"}`) }] : []),
         ],
     });
     registerArtifact(ctx, run, runId, attemptId, {
@@ -680,8 +701,9 @@ async function runS1bScenario(ctx: Ctx, runId: string, attemptId: string): Promi
     }, 40);
     const { createXlsx } = await import("@zr-legal/docx-engine");
     const rows: (string | number | null)[][] = [
-      ["序号", "类型", "静默改动", "基线段", "旧文", "新文", "原建议状态", "重新复核人"],
-      ...cmp.changes.map((c: any, i: number) => [i + 1, c.type, c.silent ? "是" : "否", c.baseIndex !== null ? c.baseIndex + 1 : "", c.baseText, c.curText, "", ""] as (string | number | null)[]),
+      ["序号", "类型", "是否标了修订", "旧稿位置", "新稿位置", "旧文", "新文", "原建议状态", "重新复核人"],
+      ...cmp.changes.map((c: any, i: number) => [i + 1, kindText(c.type), c.silent ? "未标修订（静默）" : "已标修订", basePos(c), curPos(c), c.baseText, c.curText, "", ""] as (string | number | null)[]),
+      ...hf.map((h: any, i: number) => [cmp.changes.length + i + 1, h.part, h.silent ? "未标修订（静默）" : "已标修订", h.part, h.part, h.baseText, h.curText, "", ""] as (string | number | null)[]),
     ];
     const stored = blobs.put(createXlsx([{ name: "回稿差异表", rows }]), run.matter_id);
     registerArtifact(ctx, run, runId, attemptId, {
