@@ -28,8 +28,12 @@ test("law.get_article / law.search / citations.verify 的结果：条文原样�
     assert.equal(out.note.includes("程思远"), false, "当事人词典里的真名照常换成代号");
     assert.equal(readbackToolOf(`mcp__legal__${tool.replace(".", "_")}`), tool, "出站闸门按同一张表认出这类工具结果");
   }
-  // 对照：没有读回规则（材料类工具）时照常规则识别——同一句法条会把“利益”学成自然人，这正是要挡住的
+  // 对照：同一段带姓名格式的文字，法律检索类工具的结果里不学；没有读回规则（材料类工具）时照常识别、学进令牌表
+  const NAMED = "联系人：王磊，男";
+  const t1 = new MatterTokenizer({ matterKey: randomBytes(32) });
+  tokenizeToolResult({ items: [{ text: NAMED }] }, (s, knownOnly) => t1.tokenize(s, knownOnly ? { knownOnly: true } : {}).text, READBACK_MODEL_FIELDS["law.get_article"] ?? null);
+  assert.equal(t1.table().filter((e) => e.category === "person").length, 0);
   const t2 = new MatterTokenizer({ matterKey: randomBytes(32) });
-  tokenizeToolResult({ text: ARTICLES[1] }, (s, knownOnly) => t2.tokenize(s, knownOnly ? { knownOnly: true } : {}).text, null);
-  assert.deepEqual(t2.table().filter((e) => e.category === "person").map((e) => e.value), ["利益"]);
+  tokenizeToolResult({ text: NAMED }, (s, knownOnly) => t2.tokenize(s, knownOnly ? { knownOnly: true } : {}).text, null);
+  assert.deepEqual(t2.table().filter((e) => e.category === "person").map((e) => e.value), ["王磊"]);
 });
