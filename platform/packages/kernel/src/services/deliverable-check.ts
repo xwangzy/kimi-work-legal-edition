@@ -313,6 +313,8 @@ function crossRefIssues(sections: readonly DeliverableSection[], paras: readonly
   const out: DeliverableIssue[] = [];
   const arts = new Set<number>();
   const clauses = new Set<string>();
+  // 条标题（“第二十条 库存回购”→ 20：“库存回购”），用于核对“第 N 条约定的过渡期”指的是不是这一条
+  const titles = new Map<number, string>();
   let current: number | null = null;
   for (const s of sections) {
     const m = ARTICLE_HEADING_RE.exec(String(s?.heading ?? ""));
@@ -320,6 +322,7 @@ function crossRefIssues(sections: readonly DeliverableSection[], paras: readonly
     if (n !== null) {
       arts.add(n);
       current = n;
+      titles.set(n, String(s.heading).replace(/^\s*第\s*[0-9一二三四五六七八九十百零〇]{1,6}\s*条[\s　、：:]*/, "").trim());
     } else if (String(s?.heading ?? "").trim()) current = null;
     for (const t of Array.isArray(s?.paragraphs) ? s.paragraphs : []) {
       const c = CLAUSE_RE.exec(String(t ?? ""));
@@ -335,6 +338,21 @@ function crossRefIssues(sections: readonly DeliverableSection[], paras: readonly
       if (/[》法则例定释]|规定|办法|纪要|意见/.test(before)) continue;
       const n = cnToInt(m[1]!);
       if (n !== null && !arts.has(n) && n > max) out.push({ kind: "cross_ref", where: p.where, text: snippet(p.text, m.index!, m[0].length), fix: `本文书只有 ${max} 条，“${m[0]}”指向不存在的条款：改成正确条号` });
+      // 指向的条存在、但说的事项在别的条（V14 第 39 批 A 评分：第 13.1 条“第二十条约定的过渡期”——第二十条是库存回购，过渡期在第二十一条）
+      const what = /^(?:约定|规定|所述|所列|项下)?的([一-龥]{2,6})/.exec(p.text.slice(m.index! + m[0].length));
+      const own = n !== null ? titles.get(n) : undefined;
+      if (what && own) {
+        const noun = what[1]!;
+        for (let k = Math.min(4, noun.length); k >= 2; k--) {
+          const w = noun.slice(0, k);
+          if (own.includes(w)) break;
+          const elsewhere = [...titles].filter(([x, t]) => x !== n && t.includes(w));
+          if (elsewhere.length === 1) {
+            out.push({ kind: "cross_ref", where: p.where, text: snippet(p.text, m.index!, m[0].length + what[0].length), fix: `第 ${n} 条是“${own}”，“${w}”在第 ${elsewhere[0]![0]} 条“${elsewhere[0]![1]}”：核对条号` });
+            break;
+          }
+        }
+      }
     }
     // 款：“第 X.Y 款”“X.Y款”
     for (const m of p.text.matchAll(/第?\s*([0-9]{1,3})\.([0-9]{1,3})\s*款/g)) {

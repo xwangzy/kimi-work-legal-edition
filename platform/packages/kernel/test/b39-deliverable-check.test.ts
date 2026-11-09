@@ -51,3 +51,15 @@ test("同一级的“（一）（二）”节标题重复报出（法规研究�
   assert.ok(hits.some((t) => /支持命题/.test(t)), JSON.stringify(r.issues));
   assert.ok(hits.some((t) => /任务事实/.test(t)));
 });
+
+test("互引的条存在、但说的事项在别的条：报出（A 评分：13.1“第二十条约定的过渡期”，过渡期在第二十一条）；指对了、法条引用、事项不在任何条标题里的都不报", () => {
+  const art = (h: string, ps: string[] = ["……"]) => ({ heading: h, paragraphs: ps });
+  const secs = [
+    art("第一条 定义"), art("第十三条 商标与知识产权许可", ["13.1 在本协议期限及第二十条约定的过渡期内，甲方许可乙方使用商标。", "13.2 第二十一条约定的过渡期届满后乙方停止使用。", "13.3 依《民法典》第二十条的规定处理。", "13.4 按第二十条约定的价格回购。", "13.5 第二十条约定的通知方式另行确定。"]),
+    art("第二十条 终止后的库存回购"), art("第二十一条 终止后过渡期与交接"), art("第二十二条 通知与送达"),
+  ];
+  const hits = checkDeliverable("经销协议", secs).issues.filter((i) => i.kind === "cross_ref");
+  assert.equal(hits.length, 2, JSON.stringify(hits));
+  assert.match(hits[0]!.fix, /第 20 条是“终止后的库存回购”，“过渡期”在第 21 条/);
+  assert.match(hits[1]!.fix, /“通知”在第 22 条/);
+});
