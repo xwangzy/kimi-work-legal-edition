@@ -1076,6 +1076,25 @@ export function submitFacts(deps: ReviewDeps, scope: ToolScope, input: { facts?:
   if (base.count + facts.length > FACT_LIMITS.perRun) throw new DomainError("validation", `本任务事实行已达上限 ${FACT_LIMITS.perRun}`, 422);
   const views = new Map<string, string>();
   const out: { fact_id: string; seq: number; anchor_status: string }[] = [];
+  // 重复事实（V14 第 39 批；V13 W5 真实走查：事项“事实”页 119 条里 8 条重复——同一材料同一句引文、同一日期被分批提交了两次，
+  // 律师要逐条确认两遍，时间线里也出现两行）：同一事项里已有（未被律师驳回的）同日期、同陈述，或同材料、同引文、同日期、同类别的事实，不再入库，返回已有的那条
+  const seen = new Map<string, { id: string; statement: string }[]>();
+  const remember = (k: string, id: string, statement: string) => seen.set(k, [...(seen.get(k) ?? []), { id, statement }]);
+  for (const r of deps.db.all<{ fact_id: string; statement: string; kind: string; occurred_on: string | null; document_version_id: string | null; quote: string | null }>(
+    `SELECT fact_id, statement, kind, occurred_on, document_version_id, quote FROM matter_facts WHERE matter_id = ? AND status != 'rejected'`,
+    [scope.matterId],
+  )) {
+    for (const k of factKeys(r)) remember(k, r.fact_id, r.statement);
+  }
+  const duplicateOf = (keys: string[], statement: string): string | undefined => {
+    for (const k of keys) {
+      const hit = (seen.get(k) ?? []).find((x) => k.startsWith("s|") || statementOverlap(x.statement, statement) >= 0.85);
+      if (hit) return hit.id;
+    }
+    return undefined;
+  };
+  const duplicates: { index: number; duplicate_of: string }[] = [];
+  let inserted = 0;
   deps.db.tx(() => {
     facts.forEach((f: any, i: number) => {
       const statement = str(f?.statement, FACT_LIMITS.field);
@@ -1086,13 +1105,21 @@ export function submitFacts(deps: ReviewDeps, scope: ToolScope, input: { facts?:
       const amount = typeof f?.amount_yuan === "number" && Number.isFinite(f.amount_yuan) ? f.amount_yuan : null;
       const docId = optStr(f?.document_version_id, 80);
       const quote = optStr(f?.quote, FACT_LIMITS.field);
+      const keys = factKeys({ statement, kind, occurred_on: occurredOn, document_version_id: docId, quote });
+      const dup = duplicateOf(keys, statement);
+      if (dup) {
+        duplicates.push({ index: i, duplicate_of: dup });
+        return;
+      }
       let loc: { status: string; start: number | null; end: number | null } = { status: "no_document", start: null, end: null };
       if (docId) {
         if (!views.has(docId)) views.set(docId, documentView(deps, scope.matterId, docId).view);
         loc = quote ? locateQuote(views.get(docId)!, quote) : { status: "not_found", start: null, end: null };
       }
       const id = newId("fact");
-      const seq = base.next + i;
+      const seq = base.next + inserted;
+      inserted += 1;
+      for (const k of keys) remember(k, id, statement);
       deps.db.run(
         `INSERT INTO matter_facts (fact_id, tenant_id, matter_id, run_id, seq, statement, kind, occurred_on, amount_yuan, party, document_version_id, quote, anchor_start, anchor_end, anchor_status)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -1102,11 +1129,45 @@ export function submitFacts(deps: ReviewDeps, scope: ToolScope, input: { facts?:
     });
   });
   const unanchored = out.filter((x) => x.anchor_status !== "located").length;
+  const dupNote = duplicates.length > 0 ? `；另有 ${duplicates.length} 条与事项里已有的事实重复（同日期同陈述，或同材料同引文），没有重复入库（见 duplicates，duplicate_of 是已有那条的编号）` : "";
   return {
     submitted: out.length,
     facts: out,
-    note: unanchored > 0 ? `${unanchored} 条事实没有在材料中定位到逐字引文：律师确认前不会被文书与汇报引用` : "已提交，律师确认后才可被文书与汇报引用",
+    ...(duplicates.length > 0 ? { duplicates } : {}),
+    note: `${unanchored > 0 ? `${unanchored} 条事实没有在材料中定位到逐字引文：律师确认前不会被文书与汇报引用` : "已提交，律师确认后才可被文书与汇报引用"}${dupNote}`,
   };
+}
+
+/**
+ * 判重键（V14 第 39 批）：去掉空白与常见标点后比较。①同日期、同陈述；②同材料、同引文、同日期、同类别，且陈述的字粒（双字组）重合 ≥ 0.85——
+ * 同一句引文可以支撑两条不同的事实（“甲方交货”与“乙方签收”），只有陈述也基本相同才算重复。纯函数。
+ */
+export function factKeys(f: { statement: string; kind: string; occurred_on: string | null; document_version_id: string | null; quote: string | null }): string[] {
+  const keys: string[] = [];
+  const st = normFact(f.statement);
+  if (st && f.occurred_on) keys.push(`s|${f.occurred_on}|${st}`);
+  const q = f.quote ? normFact(f.quote) : "";
+  // 第二类键带陈述的“粗指纹”（排序后的双字组集合摘要不可行——相似不等于相同）：这里只放引文键，陈述相似度在比较时另算
+  if (f.document_version_id && q.length >= 6) keys.push(`q|${f.document_version_id}|${f.occurred_on ?? ""}|${f.kind}|${q}`);
+  return keys;
+}
+
+const normFact = (s: string) => s.replace(/[\s，,。.；;：:、“”"'‘’（）()【】\[\]]/g, "");
+
+/** 两条陈述的双字组重合度（Dice 系数）。纯函数。 */
+export function statementOverlap(a: string, b: string): number {
+  const grams = (s: string) => {
+    const t = [...normFact(s)];
+    const out = new Set<string>();
+    for (let i = 0; i + 1 < t.length; i += 1) out.add(t[i]! + t[i + 1]!);
+    return out;
+  };
+  const x = grams(a);
+  const y = grams(b);
+  if (x.size === 0 || y.size === 0) return normFact(a) === normFact(b) ? 1 : 0;
+  let n = 0;
+  for (const g of x) if (y.has(g)) n += 1;
+  return (2 * n) / (x.size + y.size);
 }
 
 export interface FactRow {

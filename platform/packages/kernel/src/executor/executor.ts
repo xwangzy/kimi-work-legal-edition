@@ -28,6 +28,8 @@ import { invokeTool } from "../tools/registry.ts";
 import { buildS1Deliverables, type ToolIdentity } from "./deliverables.ts";
 import { buildS2Deliverables, extractFacts, fileDay, factSubmissions, persistAnchors } from "./casefile.ts";
 import { FACT_LIMITS, submitFacts } from "../services/review-cards.ts";
+import { buildTimeline, timelineFacts } from "../services/facts-timeline.ts";
+import { createXlsx } from "@zr-legal/docx-engine";
 import type { AgentCancelOutcome, AgentClient } from "./agent-client.ts";
 import { slimAgentPayload } from "./run-progress.ts";
 import { runCapabilities, runModeOf } from "../identity.ts";
@@ -1109,10 +1111,15 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
     }
   })().catch(async (e: unknown) => {
     // 内核兜底判超时（宿主没按时上报终态）同样先看主交付物是否已交出
-    if (e instanceof RunTerminal && e.status === "timed_out" && (await settleDelivered("kernel_deadline"))) return null;
+    if (e instanceof RunTerminal && e.status === "timed_out") {
+      await ensureFactsTimeline(ctx, run, runId, attemptId, skill);
+      if (await settleDelivered("kernel_deadline")) return null;
+    }
     throw e;
   });
   if (!poll) return;
+  // 案卷整理：事实已入库而助手没交时间线表的，由系统生成（不论是否按时收尾；V14 第 39 批）
+  if (poll.status !== "cancelled") await ensureFactsTimeline(ctx, run, runId, attemptId, skill);
   const remaining = remainingFor(poll.status, poll.reason);
   appendEvent(ctx.deps, runId, attemptId, 68, "agent.outcome", {
     status: poll.status,
@@ -1549,6 +1556,62 @@ export function agentTimeoutText(reason: string | null, limitMs: number = AGENT_
 const AGENT_PRIMARY_MISSING_SEQ = 9_001;
 /** 到时限时主交付物已交出的事件序号（第 35 批）。 */
 const AGENT_DEADLINE_DELIVERED_SEQ = 9_002;
+/** 系统按已提交事实生成《事实时间线》的成果事件序号（V14 第 39 批；独立占位）。 */
+const FACTS_TIMELINE_SEQ = 9_050;
+
+/** 本任务是否用了某个方法：律师从卡片指定的，或助手自己加载的（agent.skill 事件）。纯查询。 */
+export function runUsedSkill(db: KernelDb, runId: string, skill: string | null, wanted: string): boolean {
+  if (skill === wanted) return true;
+  return db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.skill'`, [runId]).some((r) => {
+    try {
+      return JSON.parse(r.payload)?.skill === wanted;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * 案卷整理任务交出《事实时间线》（V14 第 39 批；根因见 services/facts-timeline.ts）：本任务提交过事实、而助手自己没有交出时间线表的，
+ * 由系统按本事项全部未驳回的事实生成并登记（与助手的表同为草稿成果，代号形态存放、下载时还原）。不论任务是否在时限内收尾都做——
+ * 时限到了，事实已经入库，表不该跟着丢。失败只记事件，不影响任务结算。
+ */
+async function ensureFactsTimeline(ctx: Ctx, run: RunRow, runId: string, attemptId: string, skill: string | null): Promise<void> {
+  const { db } = ctx.deps;
+  try {
+    if (!runUsedSkill(db, runId, skill, "casefile-organize")) return;
+    const submitted = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM matter_facts WHERE run_id = ?`, [runId])?.n ?? 0;
+    if (submitted === 0) return;
+    const own = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM artifact_versions WHERE run_id = ? AND filename LIKE '事实时间线%'`, [runId])?.n ?? 0;
+    if (own > 0) return;
+    await ctx.step("facts_timeline", async () => {
+      const tz = ctx.deps.tokens;
+      const tok = (s: string) => (tz && s ? tz.tokenize(run.matter_id, s).text : s);
+      const names = new Map<string, string>();
+      const table = buildTimeline(timelineFacts(db, run.matter_id), (f) => {
+        if (!f.filename) return "";
+        if (!names.has(f.filename)) names.set(f.filename, tok(f.filename));
+        return names.get(f.filename)!;
+      });
+      const buf = createXlsx(table.sheets);
+      const stored = ctx.deps.blobs.put(buf, run.matter_id);
+      const title = String(loadMatter(db, run.matter_id)?.title ?? "").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").trim().slice(0, 40);
+      const filename = `事实时间线${title ? `-${tok(title)}` : ""}.xlsx`;
+      db.tx(() =>
+        registerArtifact(ctx, run, runId, attemptId, {
+          kind: "agent_table",
+          filename,
+          sha256: stored.sha256,
+          storage_uri: stored.storage_uri,
+          manifest: { tool: "facts.timeline", system_generated: true, facts: table.facts, rows: table.rows, merged: table.merged, note: "系统按本事项已提交的事实生成的事实时间线（V14 第 39 批）；只有“律师确认”一列经律师确认" },
+        }, FACTS_TIMELINE_SEQ),
+      );
+      return { rows: table.rows };
+    });
+  } catch (e) {
+    appendEvent(ctx.deps, runId, attemptId, FACTS_TIMELINE_SEQ + 1, "agent.facts_timeline_failed", { error: String((e as Error)?.message ?? e).slice(0, 200) });
+  }
+}
 
 /**
  * 到工作时限时本任务已交出的文书或表格（第 35 批真实走查 N1）：方法有主交付物的，须主交付物已登记；没有的，登记了任一 Word 文书或 Excel 表即可。
@@ -1588,7 +1651,8 @@ export function loadedPrimaryOutput(db: KernelDb, runId: string, primaryOf: (ski
 
 /** 算作“交出了 Word 文书”的成果：文书工具、在原件上修订、工作区里的 .docx（最终答复转出的 Word 不算）。 */
 const WORD_ARTIFACT_SQL = `kind IN ('agent_report', 'revision_draft', 'revision_clean') OR (kind = 'a1_workspace_file' AND lower(filename) LIKE '%.docx')`;
-const SHEET_ARTIFACT_SQL = `kind = 'agent_table' OR (kind = 'a1_workspace_file' AND lower(filename) LIKE '%.xlsx')`;
+// 系统按已提交事实生成的《事实时间线》（V14 第 39 批）不算助手交出的表：否则助手没交《案卷总目录》也会被它“顶替”
+const SHEET_ARTIFACT_SQL = `(kind = 'agent_table' AND manifest NOT LIKE '%"system_generated":true%') OR (kind = 'a1_workspace_file' AND lower(filename) LIKE '%.xlsx')`;
 
 /**
  * 方法的主交付物是 Word 文书（前言 outputs 第一项以 .docx 结尾）而本任务一份 Word 文书都没登记时，返回缺失说明；否则 null。
