@@ -790,6 +790,8 @@ export const api = {
   },
   /** 材料用途（我方 / 对方 / 参考；null 清除）。 */
   setMaterialRole: (documentVersionId: string, role: "ours" | "theirs" | "reference" | null) => invoke<{ role: string | null }>("materials.set_role", { document_version_id: documentVersionId, role }),
+  /** 把本事项的 Word 成果作为新材料（V14 第 39 批：在上一轮修订稿 / 清洁稿 / 起草稿上继续修改）。 */
+  artifactToMaterial: (artifactVersionId: string) => invoke<{ document_version_id: string; filename: string; note: string }>("materials.from_artifact", { artifact_version_id: artifactVersionId }),
   mountMaterial: async (matterId: string, file: MaterialFile) => {
     if (isPicked(file)) return invoke("materials.mount", { matter_id: matterId, file_handle: file.handle, filename: file.name });
     const h = window.zrKernel?.fileHandleFor ? await window.zrKernel.fileHandleFor(file) : null;

@@ -131,6 +131,15 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
         return api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" });
       })
       .catch((e) => setErr(e.message));
+  // 多轮修订（V14 第 39 批）：把这份 Word 成果作为新材料，再在“按你的意见修改文书”里选它继续改（原件与成果都不变）
+  const reviseFurther = () =>
+    void api
+      .artifactToMaterial(data.artifact_version_id)
+      .then((r) => {
+        setNote(`已把《${r.filename.replace(/\.docx$/i, "")}》作为新材料加入本事项，正在打开“按你的意见修改文书”。`);
+        nav(`/start/doc-revise/${data.matter_id}`);
+      })
+      .catch((e) => setErr(e.message));
   const submitForReview = async () => {
     setBusy(true);
     setErr("");
@@ -268,6 +277,11 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
             {data && /\.docx$/i.test(data.filename) && data.kind !== "revision_draft" && (
               <button className="btn-ghost" onClick={exportPdf} title="与“下载 Word”同一份文件，排版后存成 PDF（修订稿请用清洁稿导出）">
                 导出 PDF
+              </button>
+            )}
+            {data && /\.docx$/i.test(data.filename) && (
+              <button className="btn-ghost" onClick={reviseFurther} title="把这份 Word 作为新材料加入本事项，在它上面按你的意见继续修改（下一轮修订痕迹以它为底稿；原件与这份成果都不变）">
+                作为底稿继续修改
               </button>
             )}
             {data && /\.(docx|xlsx)$/i.test(data.filename) && (

@@ -1071,6 +1071,42 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       return { ...result, sha256, note: "导入副本进入内容寻址块（不可变）；纠错请上传新版本" };
     },
 
+    /**
+     * 把本事项的 Word 成果作为新材料（V14 第 39 批：多轮修订）。V13 W7 真实走查：律师要在第一轮修订稿上接着改第二轮，
+     * docx.revise 只认事项材料作原件，产品自己出的修订稿 / 清洁稿 / 起草稿只能下载后再上传——还原真名、版本来源都要律师自己处理。
+     * 这里按下载同一规则还原真名（代号还原不了的不收，免得材料里留代号）、作为独立的新材料登记（原件与成果都不动），审计记来源成果。
+     */
+    "materials.from_artifact": async (p, id) => {
+      const art = requireArtifact(db, String(p?.artifact_version_id ?? ""), id);
+      requireMatterWriter(db, art.matter_id, id);
+      if (!/\.docx$/i.test(String(art.filename))) throw validation("只有 Word 成果可以作为材料继续修改");
+      const buf = blobs.read(String(art.storage_uri));
+      if (sha256Hex(buf) !== art.sha256) throw new DomainError("hash_mismatch", "成果文件 hash 与登记不符（完整性校验失败）", 500);
+      const r = tokens ? restoreArtifactBytes(String(art.filename), buf, (t) => tokens.restore(art.matter_id, t)) : null;
+      if (r && r.unresolved.length > 0) throw validation(`这份成果里有 ${r.unresolved.length} 处代号还原不了，不能作为材料（会把代号带进原件）：请下载核对后再上传`);
+      const bytes = r?.changed ? r.bytes : buf;
+      let filename = String(art.filename);
+      if (tokens && filename.includes("〔")) {
+        const named = tokens.restore(art.matter_id, filename);
+        if (named.restored > 0) filename = named.text.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").trim() || filename;
+      }
+      const sha256 = sha256Hex(bytes);
+      const result = await insertDocumentWithParse({
+        matterId: art.matter_id,
+        tenantId: id.tenantId,
+        filename,
+        bytes,
+        mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        storageMode: "import",
+        storageUri: () => blobs.put(bytes, art.matter_id).storage_uri,
+        sha256,
+        uploadedBy: id.userId,
+        identity: id,
+      });
+      audit(db, id, "materials.from_artifact", "document", result.document_version_id, sha256Hex(JSON.stringify({ from: art.artifact_version_id, sha256 })), keyctx);
+      return { ...result, sha256, filename, source_artifact_version_id: art.artifact_version_id, note: "已作为新材料加入本事项（成果与原件都不变）；在“按你的意见修改文书”里选它即可在其上继续修订" };
+    },
+
     /** 材料用途（v9.2 Y4 §5 D-4）：我方 / 对方 / 参考，或清除；写入 A1 材料快照清单。审计只记用途类别。 */
     "materials.set_role": (p, id) => {
       const docId = String(p?.document_version_id ?? "");
