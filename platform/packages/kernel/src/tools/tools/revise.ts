@@ -215,7 +215,7 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
     ...priorNote,
     ...hfNote,
     ...numberingNotes(r, true),
-    note: `修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；清洁稿已接受全部修订、去掉批注；${compareReg ? "修改对照表逐段列出修改前后与理由（由系统按实际写入的修改生成，不用另写）；" : ""}原件不变。批注是写给律师的修改理由，发给对方前须删除批注或改用清洁稿。`,
+    note: `修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；清洁稿已接受全部修订、去掉批注；${compareReg ? "修改对照表逐段列出修改前后与理由（由系统按实际写入的修改生成，不用另写）；" : ""}原件不变。批注是写给律师的修改理由，发给对方前须删除批注或改用清洁稿。要核对实际写入的结果，用 docx.compare（baseline 填原件的 document_version_id，current 填清洁稿的 artifact_version_id）。`,
   };
 }
 

@@ -20,7 +20,7 @@ export interface RestoreOutcome {
   changed: boolean;
 }
 
-type Restore = (text: string) => { text: string; restored: number; unknown: string[] };
+export type Restore = (text: string) => { text: string; restored: number; unknown: string[] };
 
 const TEXT_EXT = /\.(md|txt|csv|json|html?)$/i;
 const OOXML_EXT = /\.(docx|xlsx|pptx)$/i;

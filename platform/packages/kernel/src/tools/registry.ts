@@ -361,7 +361,7 @@ export const TOOLS: readonly ToolDef[] = [
         current_document_version_id: { type: "string" },
       },
     },
-    invoke: async (p, ctx) => docxCompare(ctx.db, ctx.blobs, ctx.claims.mid, p),
+    invoke: async (p, ctx) => docxCompare(ctx.db, ctx.blobs, ctx.claims.mid, p, ctx.tokens && ctx.claims.mid ? (s: string) => ctx.tokens!.restore(ctx.claims.mid!, s) : undefined),
   },
   {
     name: "docx.sanitize",

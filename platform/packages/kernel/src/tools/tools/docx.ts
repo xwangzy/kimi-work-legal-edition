@@ -3,6 +3,7 @@
  * 产出为内容寻址字节（BlobStore）；artifact_versions 登记由内核工作流完成。
  * 挂载原件只读引用（storage_mode=mount）：读取时复算 hash，变化即需生成新文档版本。
  */
+import { restoreArtifactBytes, type Restore } from "../../services/export-restore.ts";
 import { DomainError, notFound, sha256Hex } from "@zr-legal/domain";
 import {
   applyRevisionsToDocx,
@@ -53,10 +54,31 @@ export function docxCompare(
   blobs: BlobStore,
   mid: string | undefined,
   params: { baseline_document_version_id: string; current_document_version_id: string },
+  restore?: Restore,
 ) {
-  const base = loadDocument(db, blobs, mid, params.baseline_document_version_id);
-  const cur = loadDocument(db, blobs, mid, params.current_document_version_id);
+  const base = loadComparable(db, blobs, mid, params.baseline_document_version_id, restore);
+  const cur = loadComparable(db, blobs, mid, params.current_document_version_id, restore);
   return { ...compareDocx(base.buf, cur.buf), baseline_sha256: base.sha256, current_sha256: cur.sha256 };
+}
+
+/**
+ * 比对的一方可以是本事项的 Word 成果（V14 第 39 批真实走查 B：助手写完修订后想把原件与自己交出的清洁稿对一遍，
+ * docx.compare 只认材料编号、报“对象不存在”，转而去磁盘上找文件被宿主拒绝——交付前没法核对实际写入的结果）。
+ * 修订稿、清洁稿是还原后的原文形态；助手文书（代号形态）按事项令牌表还原后再比，免得名字差异被当成改动。比对结果照常经本机端点令牌化后交回。
+ */
+function loadComparable(db: KernelDb, blobs: BlobStore, mid: string | undefined, id: string, restore?: Restore): { buf: Buffer; sha256: string } {
+  if (!id.startsWith("artv_")) return loadDocument(db, blobs, mid, id);
+  if (!mid) throw new DomainError("forbidden", "令牌未绑定事项", 403);
+  const art = db.get<{ matter_id: string; kind: string; filename: string; sha256: string; storage_uri: string }>(
+    `SELECT matter_id, kind, filename, sha256, storage_uri FROM artifact_versions WHERE artifact_version_id = ?`,
+    [id],
+  );
+  if (!art || art.matter_id !== mid || !/\.docx$/i.test(art.filename) || !["revision_draft", "revision_clean", "agent_report"].includes(art.kind)) throw notFound("文档");
+  const buf = blobs.read(art.storage_uri);
+  if (sha256Hex(buf) !== art.sha256) throw new DomainError("hash_mismatch", "成果文件 hash 与登记不符（完整性校验失败）", 500);
+  if (art.kind !== "agent_report" || !restore) return { buf, sha256: art.sha256 };
+  const r = restoreArtifactBytes(art.filename, buf, restore);
+  return { buf: r.changed ? r.bytes : buf, sha256: art.sha256 };
 }
 
 export function docxSanitize(db: KernelDb, blobs: BlobStore, mid: string | undefined, params: { document_version_id: string }) {

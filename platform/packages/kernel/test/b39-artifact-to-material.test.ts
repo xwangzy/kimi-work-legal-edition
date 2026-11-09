@@ -83,3 +83,33 @@ test("非 Word 成果不能作为材料", async () => {
   );
   await assert.rejects(tk.inv("materials.from_artifact", { artifact_version_id: id }), /只有 Word 成果/);
 });
+
+test("docx.compare 可以拿原件对本事项的清洁稿：助手交付前能核对实际写入的结果；别的事项的成果仍是“不存在”", { timeout: 120_000 }, async () => {
+  const { Agent, fetch } = await import("undici");
+  const { matter } = await tk.inv("matters.create", { title: "比对清洁稿", stance: "委托方", consent_status: "agreed" });
+  const original = createDocx("服务合同", [{ heading: "第一条 价款", paragraphs: ["1.1 服务费为人民币100万元。", "1.2 乙方应于收款后开具发票。"] }], { mark: false });
+  const doc = await importBytes(tk.inv, matter.matter_id, "服务合同.docx", original, DOCX);
+  const live = liveTaskIdentity(tk, matter.matter_id, "cmp");
+  tk.kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ goal: "改", document_version_ids: [doc.document_version_id] }), live.rid]);
+  const token = mintTaskToken({ tid: live.tid, uid: live.uid, mid: live.mid, rid: live.rid, aid: live.aid, fen: live.fence, fx: ["read", "write_draft"], scope: ["tool:legal"] }, 300);
+  const agent = new Agent({ connect: { socketPath: tk.kernel.pipePath } });
+  let seq = 0;
+  const raw = (name: string, args: unknown) =>
+    fetch("http://tools.kwl/mcp", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ jsonrpc: "2.0", id: ++seq, method: "tools/call", params: { name, arguments: args } }), dispatcher: agent }).then((x) => x.json()) as Promise<any>;
+  const r1 = (await raw("docx.revise", { document_version_id: doc.document_version_id, patches: [{ anchor: "服务费为人民币100万元", proposed_text: "服务费为人民币120万元" }] })).result.structuredContent;
+  assert.match(r1.note, /docx\.compare/, "写入成功的说明里告诉助手怎么核对");
+  const cmp = await raw("docx.compare", { baseline_document_version_id: doc.document_version_id, current_document_version_id: r1.clean.artifact_version_id });
+  assert.equal(cmp.result?.isError, false, JSON.stringify(cmp));
+  const changes = cmp.result.structuredContent.changes as any[];
+  assert.equal(changes.length, 1, JSON.stringify(changes));
+  assert.match(JSON.stringify(changes[0]), /120万元/);
+  // 别的事项的成果：照旧“不存在”
+  const other = await tk.inv("matters.create", { title: "别的事项", stance: "原告", consent_status: "agreed" });
+  const otherDoc = await importBytes(tk.inv, other.matter.matter_id, "x.docx", original, DOCX);
+  const live2 = liveTaskIdentity(tk, other.matter.matter_id, "cmp2");
+  tk.kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ goal: "改", document_version_ids: [otherDoc.document_version_id] }), live2.rid]);
+  const token2 = mintTaskToken({ tid: live2.tid, uid: live2.uid, mid: live2.mid, rid: live2.rid, aid: live2.aid, fen: live2.fence, fx: ["read", "write_draft"], scope: ["tool:legal"] }, 300);
+  const cross = (await fetch("http://tools.kwl/mcp", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token2}` }, body: JSON.stringify({ jsonrpc: "2.0", id: 99, method: "tools/call", params: { name: "docx.compare", arguments: { baseline_document_version_id: otherDoc.document_version_id, current_document_version_id: r1.clean.artifact_version_id } } }), dispatcher: agent }).then((x) => x.json())) as any;
+  assert.equal(cross.result?.isError, true);
+  assert.match(cross.result.content[0].text, /not_found/);
+});
