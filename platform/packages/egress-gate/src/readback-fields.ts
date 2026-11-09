@@ -22,6 +22,13 @@ export const READBACK_MODEL_FIELDS: Readonly<Record<string, ModelFieldRule>> = O
   "outline.get": (k, p) => k === "basis" || k === "facts" || k === "counter" || (k === "claim" && p.lawyer_edited !== true),
   // 律师改过的格子（state=edited）是律师的值
   "table.get": (k, p) => k === "quote" || (k === "value" && p.state !== "edited"),
+  // 法规库的条文原文与模型自己的检索词（V14 第 39 批）：法条里没有自然人，规则识别却会把“当事人一方明确表示”“被监护人利益”
+  // “利害关系人”里的字认成姓名；学进事项令牌表后，本事项材料与草稿里的同一串字都被换成代号（真实走查 A：“方明”）。
+  // 法规库 3,513 条全文扫描，V13 规则误认 47 个值、78 条。只替换已知名单，不从条文里学新名字
+  "law.search": () => true,
+  "law.get_version": () => true,
+  "law.get_article": () => true,
+  "citations.verify": () => true,
 });
 
 /** 引擎给本机法律工具起的函数名（`mcp__legal__riskcards_list`）→ 有读回规则的内核工具名；其他名字返回 null。 */
