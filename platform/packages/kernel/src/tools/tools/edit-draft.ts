@@ -11,7 +11,7 @@
  * - 任一处找不到或有歧义：整体不写，逐条返回原因；改后对新版本重做交付前检查。
  */
 import { DomainError, sha256Hex } from "@zr-legal/domain";
-import { applyRevisionsToDocx, keepHouseMark, readZipText, sanitizeDocx, type RevisionOp } from "@zr-legal/docx-engine";
+import { applyRevisionsToDocx, extractParagraphs, keepHouseMark, readZipText, sanitizeDocx, type RevisionOp } from "@zr-legal/docx-engine";
 import { findTokens } from "@zr-legal/tokenizer";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
@@ -100,6 +100,26 @@ export function sectionsOfDocx(docx: Buffer): { title: string; sections: Deliver
   return { title, sections: sections.filter((s, i) => i > 0 || (s.paragraphs?.length ?? 0) > 0 || !!s.table) };
 }
 
+/**
+ * 改出来的重复句（V14 第 39 批；基线走查 A 独立评分：复核后修改轮把第 10.3 条改完，同一项通知义务写了两遍；V13 W4 修改轮同样在 v5 多出一整句）：
+ * 修改后文书里出现次数比修改前多、且出现两次以上的句子（12 字以上，按句号、分号断句，去空白比较）。纯函数。
+ */
+export function newlyRepeatedSentences(before: readonly string[], after: readonly string[], max = 5): string[] {
+  const count = (paras: readonly string[]) => {
+    const m = new Map<string, number>();
+    for (const p of paras) for (const raw of p.split(/[。；;]/)) {
+      // 句首的条款号（“10.3”“第十条”“（一）”）不算在内：同一句被重复写进另一款时编号不同
+      const k = raw.replace(/\s+/g, "").replace(/^(?:第[一二三四五六七八九十百零〇两\d]+[条款项]|\d+(?:\.\d+)*\.?|[（(][一二三四五六七八九十\d]+[)）])/, "");
+      if ([...k].length >= 12) m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return m;
+  };
+  const b = count(before);
+  const out: string[] = [];
+  for (const [k, n] of count(after)) if (n >= 2 && n > (b.get(k) ?? 0) && out.length < max) out.push(k);
+  return out;
+}
+
 export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown; patches?: unknown; dry_run?: unknown }) {
   const mid = ctx.claims.mid;
   if (!mid) throw new DomainError("forbidden", "令牌未绑定事项", 403);
@@ -172,6 +192,12 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
     logOutcome("preview", raw.length, ops.length, []);
     return { status: "preview" as const, written: false, applied: ops.length, note: "试写通过，没有生成文件；去掉 dry_run 正式提交" };
   }
+  let repeated: string[] = [];
+  try {
+    repeated = newlyRepeatedSentences(extractParagraphs(buf).map((x) => x.text), extractParagraphs(out).map((x) => x.text));
+  } catch {
+    repeated = [];
+  }
   const stored = ctx.blobs.put(out, mid);
   logOutcome(conflicts.length > 0 ? "partial" : "applied", raw.length, ops.length, conflicts);
   const reg = registerToolArtifact(ctx, {
@@ -188,6 +214,9 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
     ...(conflicts.length > 0 ? { conflicts } : {}),
     ...reg,
     edited_from: id,
+    ...(repeated.length > 0
+      ? { repeated_sentences: repeated, repeated_note: "这次修改后，上面这些句子在文书里出现了两次以上（修改前没有这么多）：多半是新文字和原有的句子重复了。逐处核对，重复的用 docx.edit_draft 删掉一处（用这次返回的 artifact_version_id）" }
+      : {}),
     note:
       conflicts.length > 0
         ? `已在《${name}》上改好 ${ops.length} 处，登记为新版本；另有 ${conflicts.length} 处没有写入（见 conflicts 的序号与原因）：按原因改正后，用这次返回的 artifact_version_id 只重交这几处，已写入的不要重复提交`
