@@ -140,7 +140,9 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
   if (raw.length > EDIT_DRAFT_MAX_PATCHES) throw new DomainError("validation", `一次最多 ${EDIT_DRAFT_MAX_PATCHES} 处修改；改动更多时说明这份文书要重写，用 docx.render_report 重新生成`, 422);
   const buf = ctx.blobs.read(art.storage_uri);
   if (sha256Hex(buf) !== art.sha256) throw new DomainError("hash_mismatch", "文书草稿内容已变化（读取时复算 hash 不符），已停止", 412);
-  const known = new Set((ctx.tokens?.table(mid) ?? []).map((e) => e.token));
+  const table = ctx.tokens?.table(mid) ?? [];
+  const known = new Set(table.map((e) => e.token));
+  const valueOf = new Map(table.map((e) => [e.token, e.value] as const));
 
   const conflicts: { index: number; reason: Reason; fix: string; detail?: string }[] = [];
   const ops: RevisionOp[] = [];
@@ -167,9 +169,19 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
       applyRevisionsToDocx(buf, { baselineHash: art.sha256, ops: [op] });
       ops.push(op);
     } catch (e) {
-      const msg = (e as Error).message;
-      const reason = classify(msg);
-      conflicts.push({ index, reason, fix: FIX[reason], detail: msg.slice(0, 200) });
+      // 草稿里是原字、助手看到的回读里却是代号：令牌表后来学进的值（V14 第 39 批真实走查 A：法条“当事人一方明确表示”让“方明”进了令牌表，
+      // 助手早先写进草稿的“卖方明知”在回读里成了“卖〔自然人·…〕知”，照抄回读的锚点 9 次都定位不到）。锚点里的代号换回原字再找一次
+      const restored = findTokens(anchor).reduce((t, tok) => (valueOf.has(tok) ? t.split(tok).join(valueOf.get(tok)!) : t), anchor);
+      const retry = restored !== anchor && classify((e as Error).message) === "anchor_not_found" ? { ...op, anchor: { ...op.anchor, originalText: restored }, originalHash: sha256Hex(restored) } : null;
+      try {
+        if (!retry) throw e;
+        applyRevisionsToDocx(buf, { baselineHash: art.sha256, ops: [retry] });
+        ops.push(retry);
+      } catch (e2) {
+        const msg = (e2 as Error).message;
+        const reason = classify(msg);
+        conflicts.push({ index, reason, fix: FIX[reason], detail: msg.slice(0, 200) });
+      }
     }
   });
   // 能定位的先写入、定位不到的逐条退回（V13 第 38 批取证：4 次正式调用里 2 次因 2 处中 1 处找不到而整体未写，另一处本可写入）。
