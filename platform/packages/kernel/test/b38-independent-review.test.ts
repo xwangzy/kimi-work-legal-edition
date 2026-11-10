@@ -95,6 +95,11 @@ test("交出文书后独立复核：复核调用不带起草上下文，意见�
     // 交回修改的提示带着复核意见原文，材料快照照样在（宿主每轮重写材料区）
     assert.match(seen.fixUser.at(-1) ?? "", /【独立复核】[\s\S]*价款写成 100 万元/);
     assert.match(seen.fixUser.at(-1) ?? "", /本事项材料快照/);
+    // V16 第 41 批：修改轮提示列出要改的文件与成果编号（不靠会话记忆找文件），并写明不要换文件名另起一份
+    const firstVersion = done.artifacts.find((a: any) => a.kind === "agent_report" && a.filename === "设备买卖合同.docx" && a.version === 1);
+    assert.ok(firstVersion, "有合同第 1 版");
+    assert.ok((seen.fixUser.at(-1) ?? "").includes(`《设备买卖合同.docx》——用 docx.edit_draft，成果编号 ${firstVersion.artifact_version_id}`), seen.fixUser.at(-1) ?? "");
+    assert.match(seen.fixUser.at(-1) ?? "", /不要换标题或文件名另起一份/);
     assert.match(u, /材料：[^\n]*交易条款清单[\s\S]*验收合格后10日内/, "复核提示里有材料原文");
     // 成果：复核意见、合同第 2 版（120 万）、最终答复新版本
     const note = done.artifacts.find((a: any) => a.kind === "a1_review_note");
@@ -222,6 +227,15 @@ test("复核意见解析：标准格式、续行与“建议改”；交回修�
   assert.equal(f[2]!.problem, "整份没有签署页");
   assert.match(fixPrompt("revise", f, ""), /重新调用 docx\.revise，提交完整的修改清单/);
   assert.match(fixPrompt("draft", f, ""), /docx\.edit_draft/);
+  // 要改的文件清单：Word 用 edit_draft、表格用 edit_cells，各带成果编号；编号不写进答复；修订任务不列（照旧重新调用 docx.revise）
+  const targets = [{ filename: "意见书.docx", artifact_version_id: "artv_doc-2", kind: "docx" as const }, { filename: "计算表.xlsx", artifact_version_id: "artv_tab-3", kind: "xlsx" as const }];
+  const withTargets = fixPrompt("draft", f, "", undefined, targets);
+  assert.ok(withTargets.includes("《意见书.docx》——用 docx.edit_draft，成果编号 artv_doc-2"), withTargets);
+  assert.ok(withTargets.includes("《计算表.xlsx》——用 xlsx.edit_cells，成果编号 artv_tab-3"), withTargets);
+  assert.match(withTargets, /成果编号只在调用工具时用，不写进给律师的答复/);
+  assert.match(withTargets, /确需整份重出时，标题与原文件名完全一致/);
+  assert.equal(fixPrompt("draft", f, "").includes("成果编号"), false, "没有文件时不出清单");
+  assert.equal(fixPrompt("revise", f, "", undefined, targets).includes("artv_doc-2"), false, "修订任务不列编号");
   const m = reviewMessages({ kind: "revise", stance: "委托方", jurisdiction: "中国大陆", asOf: "2026-11-07", goal: "改第8.1款", materials: [{ filename: "原件.docx", text: "原文" }], docs: [{ filename: "清洁稿.docx", text: "改后" }], diff: ["［修改前］8.1 50万元\n［修改后］8.1 20万元"] });
   assert.match(m[1]!.content, /原件与清洁稿的段落差异[\s\S]*8\.1 20万元/);
   assert.match(m[1]!.content, /授权范围/);

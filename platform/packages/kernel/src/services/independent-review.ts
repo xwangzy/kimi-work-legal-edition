@@ -314,7 +314,23 @@ export function parseFindings(text: string): ReviewFinding[] {
 }
 
 /** 交回原会话的修改指示（追问形态，令牌化后发出）。 */
-export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], reviewText: string, limitMs?: number): string {
+/** 修改轮要改的文书与表格（本任务已生成的，每个文件名取最新一版）。 */
+export type FixTarget = { filename: string; artifact_version_id: string; kind: "docx" | "xlsx" };
+
+/**
+ * 修改轮要改的文件清单（V16 第 41 批真实回归：提示只说“在已生成的文书上改”，不给文件名与成果编号，全靠会话记忆——
+ * 会话接错时助手说“工作区里没有已生成的文书”，整份重写并换了文件名，新旧两套都标为最新）。
+ */
+function fixTargetLines(targets: readonly FixTarget[]): string[] {
+  if (targets.length === 0) return [];
+  return [
+    "本任务已生成、这一轮要在上面改的文件（每份取最新一版）：",
+    ...targets.map((t) => `- 《${t.filename}》——用 ${t.kind === "xlsx" ? "xlsx.edit_cells" : "docx.edit_draft"}，成果编号 ${t.artifact_version_id}`),
+    "成果编号只在调用工具时用，不写进给律师的答复。改动登记为同名文件的新版本：不要换标题或文件名另起一份；确需整份重出时，标题与原文件名完全一致。",
+  ];
+}
+
+export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], reviewText: string, limitMs?: number, targets: readonly FixTarget[] = []): string {
   const how =
     kind === "revise"
       ? "成立的，在原件上重新调用 docx.revise，提交完整的修改清单（原有的修改照旧、加上这次的更正）——修订稿与清洁稿以最后一次为准；不要用 docx.edit_draft 改修订稿或清洁稿。"
@@ -323,6 +339,8 @@ export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], 
     "【独立复核】本所另一位律师没有参与起草，只看了委托原话、事项材料和你交出的文书，提出下面的复核意见。请逐条处理：",
     "1. 先回到材料与文书核对这条意见是否成立（复核人也可能看错：材料里有依据、或文书其他位置已经处理的，不改）。",
     `2. ${how}`,
+    // 在原件上修订的任务照旧重新调用 docx.revise，不列编号
+    ...(kind === "revise" ? [] : fixTargetLines(targets).map((l) => `   ${l}`)),
     "3. 不成立的、或需要客户决定的商业条件，不改，写明理由；需要客户决定的列入待定事项。",
     "4. 只改复核意见涉及的地方，不借机改动别处；不为措辞润色重新生成。改动牵动时间表、付款节点、先决条件或解除权的，把委托与材料里的关键日期、金额代进去重新核对一遍，避免修一处坏一处（V13 真实走查 W1：把“验收合格”加成交割条件后，交割晚于客户 12 月 31 日的硬节点）。要补一项义务、条件或禁止事项前，先在全文找有没有已经写了同一事项的条款（换了说法也算）：有就改那一条，不另加一款；新写的互引核对条号指的确是那件事（V14 真实走查：修改轮在第 20.5 条第四次写“禁售过期、断链产品”，在第 12.1 条第三次写保险单提交；第 13.1 条把第二十一条的过渡期写成“第二十条约定的过渡期”）。",
     "5. 处理完后重写最终答复：完整写出本任务的最终答复（律师只看最后这一版），末尾加“独立复核处理情况”一节，逐条写“序号｜已改（改在哪里）／未改（理由）”。",

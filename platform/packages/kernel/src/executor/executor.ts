@@ -35,7 +35,7 @@ import { slimAgentPayload } from "./run-progress.ts";
 import { runCapabilities, runModeOf } from "../identity.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
 import { runLineage } from "../services/artifact-lineage.ts";
-import { REVIEW_KIND_OF_SKILL, fixPrompt, headerFooterText, labeledText, labeledTextWithRows, parseFindings, reportText, reviewMessages, reviewNote, revisionDiff, type ReviewDoc, type ReviewFinding, type ReviewKind } from "../services/independent-review.ts";
+import { REVIEW_KIND_OF_SKILL, fixPrompt, headerFooterText, labeledText, labeledTextWithRows, parseFindings, reportText, reviewMessages, reviewNote, revisionDiff, type FixTarget, type ReviewDoc, type ReviewFinding, type ReviewKind } from "../services/independent-review.ts";
 
 export interface ExecutorDeps {
   db: KernelDb;
@@ -1360,6 +1360,20 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
   return { docs: docs.filter((d) => d.text.trim().length > 0), diff, title: main.filename.replace(/\.docx$/i, ""), inventory, reply };
 }
 
+/** 修改轮要改的文件：本任务已生成的 Word 文书与表格，每个文件名取最新一版（给出成果编号，不靠会话记忆找文件）。 */
+export function fixTargetsOf(db: KernelDb, runId: string, matterId: string): FixTarget[] {
+  const rows = db.all<{ artifact_version_id: string; filename: string; kind: string }>(
+    `SELECT artifact_version_id, filename, kind FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','agent_table') ORDER BY created_at, version`,
+    [runId, matterId],
+  );
+  const latest = new Map<string, FixTarget>();
+  for (const r of rows) {
+    const k = r.kind === "agent_table" ? (/\.xlsx$/i.test(r.filename) ? "xlsx" : null) : /\.docx$/i.test(r.filename) ? "docx" : null;
+    if (k) latest.set(r.filename, { filename: r.filename, artifact_version_id: r.artifact_version_id, kind: k });
+  }
+  return [...latest.values()];
+}
+
 /**
  * 独立复核与交回修改（V13 第 38 批）：主任务成功交出 Word 文书后执行。
  * ①复核：经出站闸门调用法律模型（流式，带时限），不带主任务的对话上下文，只给委托原话、材料快照与交付件文字（均为代号形态）；
@@ -1483,7 +1497,7 @@ async function runReviewStage(
   const fix = await ctx.step("independent_review_fix", async (): Promise<{ status: string; files: number; error?: string }> => {
     assertNotCancelled(db, runId);
     const limit = ctx.deps.reviewFixLimitMs ?? REVIEW_FIX_LIMIT_MS;
-    const goal = tok([fixPrompt(picked.kind, review.findings, review.text, limit)])[0]!;
+    const goal = tok([fixPrompt(picked.kind, review.findings, review.text, limit, fixTargetsOf(db, runId, run.matter_id))])[0]!;
     let taskId: string;
     try {
       // 材料快照照样交给这一轮：宿主每轮清空并重写材料区，传空列表等于让助手在修改时读不到材料
