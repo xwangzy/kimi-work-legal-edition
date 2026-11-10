@@ -100,8 +100,31 @@ function soleDocument(db: KernelDb, scope: ToolScope): string | null {
   throw new DomainError("validation", "本事项有多份材料：请为风险卡指定 document_version_id（用 materials.list 查看各材料的编号）；同一批卡只对应一份合同", 422);
 }
 
-/** 在视图中定位引文：先精确，再忽略空白（Agent 常把换行写成空格）。 */
+/**
+ * 引文开头的条款编号（V16 第 41 批真实回归）：给助手读的材料文字里，Word 自动编号的条款带着编号（“2.1 卖方应于…”），
+ * 定位视图是 Word 段落原文、不含自动编号——助手照抄的“编号 + 正文”整批定位不到，又重复提交一遍。
+ * 认的写法：第十二条／第3条（章、节、款、项）、（三）／(3)、2.1／2.1.3、3.／3、、一、。阿拉伯数字后面紧接数额、日期单位的不认（“2.1万元”“2025年”）。
+ */
+const LEADING_CLAUSE_NO = /^[\s　]*(?:第[一二三四五六七八九十百千零〇两\d]+[条章节款项]|[（(][一二三四五六七八九十\d]{1,3}[)）]|\d{1,3}(?:[.．]\d{1,3})+[.．、]?(?![\d.．%％万元亿千百年月日个份倍])|\d{1,3}[.．、](?![\d%％万元亿千百年月日个份倍])|[一二三四五六七八九十]{1,3}[、．.])[\s　]*/;
+/** 去掉编号后至少还要这么多字（不计空白与表格分隔符）才放宽定位：太短的正文到处都是，定位到了也不可信。 */
+const MIN_UNLABELED_CHARS = 6;
+
+export function stripLeadingClauseNo(quote: string): string {
+  const m = LEADING_CLAUSE_NO.exec(quote);
+  if (!m || m[0].trim().length === 0) return quote;
+  const rest = quote.slice(m[0].length);
+  return rest.replace(/[\s|｜]+/g, "").length >= MIN_UNLABELED_CHARS ? rest : quote;
+}
+
+/** 在视图中定位引文：先精确，再忽略空白（Agent 常把换行写成空格）；仍找不到且开头是条款编号的，去掉编号再找（锚点落在正文上）。 */
 export function locateQuote(view: string, quote: string): { status: "located" | "ambiguous" | "not_found"; start: number | null; end: number | null } {
+  const loc = locateQuoteAsIs(view, quote);
+  if (loc.status !== "not_found") return loc;
+  const unlabeled = stripLeadingClauseNo(quote);
+  return unlabeled === quote ? loc : locateQuoteAsIs(view, unlabeled);
+}
+
+function locateQuoteAsIs(view: string, quote: string): { status: "located" | "ambiguous" | "not_found"; start: number | null; end: number | null } {
   if (!quote) return { status: "not_found", start: null, end: null };
   const first = view.indexOf(quote);
   if (first >= 0) {
