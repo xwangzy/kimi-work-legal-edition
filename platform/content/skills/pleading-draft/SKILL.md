@@ -6,7 +6,7 @@ when_to_use: 准备向人民法院起诉，事项里有案卷材料或事实时�
 arguments: [court]
 kwl:
   id: pleading-draft
-  version: 1.6.0
+  version: 1.7.0
   lines: [诉讼仲裁]
   chain: casefile
   tier: beta
@@ -47,7 +47,7 @@ kwl:
 |---|---|---|---|
 | facts.list | 事实与金额（含律师确认状态） | 无 | 不可用：照常起草，事实只用材料原文，全部列进核对清单待你确认，回报第一句写明 |
 | facts.submit | 把材料载明、事实表里还没有的关键事实提交为待确认事实，供律师在论点卡上一并确认 | facts[{statement, quote, document_version_id, occurred_on, amount_yuan}] | 不可用：文书照常写，这些事实列进核对清单与回报 |
-| materials.list | 证据清单 | 无 | 不可用：证据目录只列事实编号，注明“材料目录不可用” |
+| materials.list | 证据清单 | 无 | 不可用：证据目录按材料里写明的证据名称列，不写“事实 N”；材料目录不可用写进核对清单 |
 | materials.read_excerpt | 核对证据内容与当事人信息 | parse_version_id，区间 | 失败：该项写“【待核对】” |
 | law.search / law.get_version | 请求权基础与行为时法 | query；law + as_of | 未收录：不写条号，列入核对清单 |
 | citations.verify | 核验所引条文 | citations，as_of | 不可用：起诉状不写条号，核对清单注明 |

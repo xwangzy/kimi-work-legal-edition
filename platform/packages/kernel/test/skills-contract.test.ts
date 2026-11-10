@@ -70,7 +70,7 @@ function argsFor(tool: string, skill: string): Record<string, unknown> {
     case "facts.submit":
       return { facts: [{ statement: "买方于 2026 年 3 月 1 日签收全部货物", kind: "claimed", occurred_on: "2026-03-01" }] };
     case "docx.render_report":
-      return { title: `${skill}（草稿）`, sections: [{ heading: "一、说明", paragraphs: ["草稿 · 待律师复核。"] }] };
+      return { title: `${skill}（草稿）`, sections: [{ heading: "一、说明", paragraphs: ["资料范围：示例材料一份。"] }] }; // 第 41 批：文件里不写“草稿 · 待律师复核”（工作准则第 10 条）
     case "xlsx.render_table":
       return { title: `${skill}-表`, sheets: [{ name: "清单", columns: ["序号", "事项"], rows: [[1, "示例"]] }] };
     case "calc.interest":
