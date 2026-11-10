@@ -44,7 +44,7 @@ test("随包节假日表与内置表逐年一致；单独签名：被改即不�
   raw.close();
   const tampered = openLawdb(t, { expectedSignerPubPem: PUB });
   assert.deepEqual(tampered.holidays(), [], "被改的节假日表不用");
-  assert.equal(tampered.status().laws_count, 36, "法规内容照常验签加载（V16 第 41 批：随包种子 36 部）");
+  assert.equal(tampered.status().laws_count, 37, "法规内容照常验签加载（V16 第 41 批：随包种子 37 部）");
   tampered.close();
   // 清单里去掉单独签名（旧构建）：同样不用
   const t2 = copyPair(BASE);

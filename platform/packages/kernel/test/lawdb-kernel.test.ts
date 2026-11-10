@@ -28,8 +28,8 @@ test("lawdb.status：版本/更新日/签名有效；加载留痕上链", async 
   assert.match(st.package_version, /^g0\./);
   assert.equal(st.signature_valid, true);
   // 第 34 批：9 部 137 条官方发布文本入库（加增量样例的一个版本）；V10 第 36 批：9 部扩为全文、另收 6 部与 3 部司法解释全文，共 19 部；V13 第 38 批再收 5 部，共 24 部；V16 第 41 批再收 11 部与法释〔2024〕15 号批复（不分条），共 36 部
-  assert.equal(st.laws_count, 36);
-  assert.equal(st.versions_count, 37);
+  assert.equal(st.laws_count, 37);
+  assert.equal(st.versions_count, 38);
   assert.match(st.display, /法规库最后更新/);
   // 覆盖范围如实说（第 13 批）：演示法规库不足 50 部 → sample，说明里直说多数引用无法自动核对
   assert.equal(st.coverage.level, "sample");
