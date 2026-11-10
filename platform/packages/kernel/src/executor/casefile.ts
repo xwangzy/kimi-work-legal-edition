@@ -243,7 +243,10 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
   // 表格或分行写的“××（小写）｜9,135,420.00”“××（大写）｜人民币玖佰……元整”（V16 第 41 批真实走查 E1：结算书里大写、小写各占一行，
   // 小写没带“元”摘不出来，两行也不挨着，9,135,420 与大写 9,135,240 不一致没有查出，补证清单却写“没有发现”）：
   // 按行找标了“小写”“大写”的金额，同一名目（标注前面的字相同）且相隔不超过两行的配成一对比对
-  const labelled: { kind: "upper" | "lower"; name: string; line: number; fact: FactRow }[] = [];
+  // 小写一行有几个数的（“结算总价（小写）｜送审 9,372,760.00｜审定 9,135,420.00｜核减 237,340.00”）：有一个与大写相等就算一致；都不相等时拿最接近大写的那个来比，
+  // 并写明这一行还有哪几个数——不能拿第一个数就说“不一致”（同批修复后复测：把送审金额当成了小写）
+  type Cand = { text: string; value: number; start: number; fact?: FactRow };
+  const labelled: { kind: "upper" | "lower"; name: string; line: number; fact?: FactRow; cands: Cand[] }[] = [];
   let lineStart = 0;
   text.split("\n").forEach((line, lineNo) => {
     const at = lineStart;
@@ -254,34 +257,45 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
     const inLine = (f: FactRow) => f.kind === "amount" && f.char_start >= at && f.char_start < at + line.length;
     if (lab[2] === "大写") {
       const f = out.find((x) => inLine(x) && UPPER.test(x.text));
-      if (f) labelled.push({ kind: "upper", name, line: lineNo, fact: f });
+      if (f) labelled.push({ kind: "upper", name, line: lineNo, fact: f, cands: [] });
       return;
     }
-    let f = out.find((x) => inLine(x) && !UPPER.test(x.text));
-    if (!f) {
-      // 小写一栏常常只有数字，没有“元”：标注之后第一个像金额的数（至少四位或带千分位、小数）
-      const rest = line.slice(lab.index + lab[0].length);
-      const num = /(?<![\d.,])((?:\d{1,3}(?:,\d{3})+|\d{4,})(?:\.\d{1,2})?)(?![\d,]|\.\d)/.exec(rest);
-      const value = num ? Number(num[1]!.replace(/,/g, "")) : NaN;
-      const numAt = num ? at + lab.index + lab[0].length + num.index : -1;
+    const cands: Cand[] = out.filter((x) => inLine(x) && !UPPER.test(x.text)).map((x) => ({ text: x.text, value: Number.parseFloat(x.normalized), start: x.char_start, fact: x }));
+    // 小写一栏常常只有数字，没有“元”：标注之后像金额的数（至少四位或带千分位、小数）
+    const from = lab.index + lab[0].length;
+    for (const num of line.slice(from).matchAll(/(?<![\d.,])((?:\d{1,3}(?:,\d{3})+|\d{4,})(?:\.\d{1,2})?)(?![\d,]|\.\d)/g)) {
+      const value = Number(num[1]!.replace(/,/g, ""));
+      const numAt = at + from + num.index;
       // 这个数已经在摘出的某条金额里（“人民币壹拾万元整（小写：100,000元）”合并成的一条）：不重复摘，也不再配对
-      if (num && out.some((x) => x.kind === "amount" && x.char_start <= numAt && x.char_end >= numAt + num[1]!.length)) return;
-      if (num && Number.isFinite(value) && value > 0) {
-        const start = numAt;
-        f = { kind: "amount", text: num[1]!, normalized: `${value} 元`, document_version_id: doc.document_version_id, parse_version_id: doc.parse_version_id, filename: doc.filename, char_start: start, char_end: start + num[1]!.length, file_page: filePageOf(text, start), assertion: "material_record" };
-        out.push(f);
-      }
+      if (out.some((x) => x.kind === "amount" && x.char_start <= numAt && x.char_end >= numAt + num[1]!.length)) continue;
+      if (Number.isFinite(value) && value > 0) cands.push({ text: num[1]!, value, start: numAt });
     }
-    if (f) labelled.push({ kind: "lower", name, line: lineNo, fact: f });
+    if (cands.length > 0) labelled.push({ kind: "lower", name, line: lineNo, cands: cands.sort((x, y) => x.start - y.start) });
   });
+  const factOf = (c: Cand): FactRow => {
+    if (c.fact) return c.fact;
+    const f: FactRow = { kind: "amount", text: c.text, normalized: `${c.value} 元`, document_version_id: doc.document_version_id, parse_version_id: doc.parse_version_id, filename: doc.filename, char_start: c.start, char_end: c.start + c.text.length, file_page: filePageOf(text, c.start), assertion: "material_record" };
+    out.push(f);
+    c.fact = f;
+    return f;
+  };
   for (const low of labelled.filter((x) => x.kind === "lower")) {
     const up = labelled.filter((x) => x.kind === "upper" && x.name === low.name && Math.abs(x.line - low.line) <= 2).sort((a, b) => Math.abs(a.line - low.line) - Math.abs(b.line - low.line))[0];
-    if (!up || up.fact.conflict || low.fact.conflict) continue;
-    if (Number.parseFloat(up.fact.normalized) !== Number.parseFloat(low.fact.normalized)) {
-      const note = `${low.name ? `“${low.name}”的` : ""}大写“${up.fact.text}”（${up.fact.normalized}）与小写“${low.fact.text}”（${low.fact.normalized}）不一致`;
-      up.fact.conflict = note;
-      low.fact.conflict = note;
+    if (!up?.fact) {
+      factOf(low.cands[0]!);
+      continue;
     }
+    const upValue = Number.parseFloat(up.fact.normalized);
+    const same = low.cands.find((c) => c.value === upValue);
+    const pick = same ?? [...low.cands].sort((x, y) => Math.abs(x.value - upValue) - Math.abs(y.value - upValue))[0]!;
+    const lowFact = factOf(pick);
+    if (same || up.fact.conflict || lowFact.conflict) continue;
+    const others = low.cands.filter((c) => c !== pick).map((c) => c.text);
+    const note =
+      `${low.name ? `“${low.name}”的` : ""}大写“${up.fact.text}”（${up.fact.normalized}）与小写“${lowFact.text}”（${lowFact.normalized}）不一致` +
+      (others.length > 0 ? `（小写这一行还有 ${others.join("、")}，也都与大写不相等；这里取的是最接近大写的一个）` : "");
+    up.fact.conflict = note;
+    lowFact.conflict = note;
   }
   for (const m of text.matchAll(PARTY_RE)) {
     out.push({
@@ -518,23 +532,25 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
   );
 
   // 不同材料对同一天的付款写了不同金额（V16 第 41 批真实走查 E1：2023-08-10 那笔，台账、纪要、情况说明写 500,000，对方回函写 600,000，没有任何提示）：
-  // 只看同一句里既有日期、又有金额、又有付款字眼的；同一天有两个金额、且没有哪一份材料同时写了这两个金额的（同时写的多半是两笔），列出来请律师核对。
-  // 只提示“可能是同一笔”，不判断以哪个为准
+  // 只看同一句里既有日期、又有金额的，且这一句或同一段里它前面的话有付款字眼（回函里“已支付……明细为：某日某元；某日某元”是一段里用分号隔开的清单）；
+  // 一句里有几个日期、几个金额的，每个日期只配它后面、下一个日期之前的第一个金额（纪要写“8月10日一笔为500,000元，原账误记为600,000元”，这一天记 500,000）。
+  // 同一天有两个金额、且没有哪一份材料同时写了这两个金额的（同时写的多半是两笔），列出来请律师核对。只提示“可能是同一笔”，不判断以哪个为准
   const PAY = /付款|支付|已付|实付|转账|汇款|汇入|到账|收到|收款|付至|付清|打款/;
   const payOn = new Map<string, Map<number, Set<string>>>();
   for (const d of dates) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d.normalized)) continue;
     const t = textOf.get(d.document_version_id) ?? "";
     const sp = sentenceAround(t, d.char_start, d.char_end);
-    if (!PAY.test(t.slice(sp.start, sp.end))) continue;
-    for (const a of amounts) {
-      if (a.document_version_id !== d.document_version_id || a.char_start < sp.start || a.char_start >= sp.end) continue;
-      const v = Number.parseFloat(a.normalized);
-      if (!Number.isFinite(v) || v <= 0) continue;
-      const byAmount = payOn.get(d.normalized) ?? new Map<number, Set<string>>();
-      byAmount.set(v, (byAmount.get(v) ?? new Set<string>()).add(d.filename));
-      payOn.set(d.normalized, byAmount);
-    }
+    const lineStart = t.lastIndexOf("\n", sp.start) + 1;
+    if (!PAY.test(t.slice(lineStart, sp.end))) continue;
+    const nextDate = Math.min(sp.end, ...dates.filter((o) => o.document_version_id === d.document_version_id && o.char_start >= d.char_end && o.char_start < sp.end).map((o) => o.char_start));
+    const a = amounts.filter((x) => x.document_version_id === d.document_version_id && x.char_start >= d.char_end && x.char_start < nextDate).sort((x, y) => x.char_start - y.char_start)[0];
+    if (!a) continue;
+    const v = Number.parseFloat(a.normalized);
+    if (!Number.isFinite(v) || v <= 0) continue;
+    const byAmount = payOn.get(d.normalized) ?? new Map<number, Set<string>>();
+    byAmount.set(v, (byAmount.get(v) ?? new Set<string>()).add(d.filename));
+    payOn.set(d.normalized, byAmount);
   }
   const crossRows: string[] = [];
   for (const [day, byAmount] of [...payOn.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
@@ -552,7 +568,7 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
       const t = sentence.replace(/\s+/g, " ").trim();
       if (t.length < 6 || t.length > 160 || !MISSING_RE.test(t) || hit.has(t)) continue;
       hit.add(t);
-      if (hit.size <= 5) missingRows.push(`《${m.filename}》提到：“${t}”——请向委托人调取`);
+      if (hit.size <= 5) missingRows.push(`《${m.filename}》提到：“${t}”——还没到手，请确认在谁手里后调取`);
     }
   }
 
