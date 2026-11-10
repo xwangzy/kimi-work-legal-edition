@@ -228,7 +228,9 @@ test("复核意见解析：标准格式、续行与“建议改”；交回修�
   assert.equal(f[1]!.must, false);
   assert.match(f[1]!.problem, /上限封住全额赔偿 续行说明/);
   assert.equal(f[2]!.problem, "整份没有签署页");
-  assert.match(fixPrompt("revise", f, ""), /重新调用 docx\.revise，提交完整的修改清单/);
+  // V16 第 41 批：修订任务用补交方式只交要更正的几条，不重发全部修改
+  assert.match(fixPrompt("revise", f, ""), /docx\.revise 用补交方式（amend）只交这次要更正的几条/);
+  assert.match(fixPrompt("revise", f, ""), /不要重发全部修改/);
   assert.match(fixPrompt("draft", f, ""), /docx\.edit_draft/);
   // 要改的文件清单：Word 用 edit_draft、表格用 edit_cells，各带成果编号；编号不写进答复；修订任务不列（照旧重新调用 docx.revise）
   const targets = [{ filename: "意见书.docx", artifact_version_id: "artv_doc-2", kind: "docx" as const }, { filename: "计算表.xlsx", artifact_version_id: "artv_tab-3", kind: "xlsx" as const }];

@@ -159,7 +159,7 @@ test("锚点不成立：整体不写、逐条给出改法；段后插入新条�
     assert.equal(bad.status, "not_applied");
     assert.equal(bad.written, false);
     assert.equal(bad.conflicts.length, 1);
-    assert.equal(bad.conflicts[0].index, 1);
+    assert.equal(bad.conflicts[0].index, 2, "index 是第几条（从 1 起，V16 第 41 批与 label_notes 同一口径）");
     assert.match(bad.conflicts[0].fix, /逐字照抄|不在本材料/);
     assert.equal(tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM artifact_versions WHERE run_id = ?`, [a.live.rid])!.n, 0, "整体不写");
 
@@ -498,7 +498,7 @@ test("自动编号的段落：新文字开头抄进去的编号去掉；删条�
 
     const out = await a.call("docx.revise", { document_version_id: doc.document_version_id, patches });
     assert.equal(out.status, "applied", JSON.stringify(out));
-    assert.match(out.numbering_note, /重新提交一次/);
+    assert.match(out.numbering_note, /用 amend\.add 补几条修改把它们改成新号/);
     const clean = Buffer.from((await tk.inv("artifacts.download", { artifact_version_id: out.clean.artifact_version_id })).data_base64, "base64");
     const paras = extractParagraphs(clean).map((x) => x.text);
     assert.ok(paras.includes("乙方应按本合同附件一还款计划表按期还本付息。"), JSON.stringify(paras));

@@ -9,6 +9,8 @@
  * - 清洁稿：修订稿接受全部修订（docx-engine sanitizeDocx，与 S1 清洁稿同一函数），登记为 revision_clean；
  * - 锚点完整性 hash 由本工具按 Agent 给出的锚点计算（Agent 拿不到原件字节）：绑定关系靠“锚点在令牌化视图里”这一条；
  * - 任一条不成立：整体不写，逐条返回原因与改法（不返回还原后的原文，结果仍经本机端点令牌化）。
+ * - 补交（V16 第 41 批）：内核记住本任务对这份原件最后一次提交的完整清单（revise_submissions），更正时助手只交要换、要删、要加的几条（amend），
+ *   内核合成新的完整清单后照原流程从原件重新生成——真实走查里助手三次重发 61 条修改、每次生成 2～3 分钟，40 分钟内没交出修订稿。
  */
 import { slog } from "@zr-legal/safe-log";
 import { DomainError, sha256Hex } from "@zr-legal/domain";
@@ -23,9 +25,11 @@ import { registerToolArtifact } from "./review.ts";
 export const REVISE_MAX_PATCHES = 200;
 
 /** 逐条失败原因的改法（写给模型；律师界面不显示）。 */
+// 表格格子的定位写法（V16 第 41 批真实走查：付款表里“30%”“尾款”这类短文字，助手用 occurrence 数全文第几处，找不到又不知道还有别的写法）
+const CELL_HINT = "表格里的格子：anchor 只写这一格的原文，paragraph_hint 写“行名｜列名”（如“定金｜比例”；几张表行名列名相同时前面加表格前一段的条款号，如“3.2｜定金｜比例”），行名、列名一律照原件写——同一批里改了行名的，同一行别的格子仍写原行名";
 const FIX_HINT: Record<PatchConflict["reason"], string> = {
-  anchor_not_found: "原件里找不到这段原文：逐字照抄材料原文（同一段落之内，含标点、空格与代号；段首的条款编号可以不抄）",
-  anchor_ambiguous: "这段原文在多个段落出现：加 paragraph_hint 写条款号；表格里的格子写“行名｜列名”（如“第 2 期｜应还本金”，同一行里金额相同的两格靠列名区分）；几张表的行名列名相同时，前面再加表格前一段的条款号（如“2.1｜合计｜金额（元）”与“3.1｜合计｜金额（元）”），或把锚点写长到唯一；occurrence 只区分同一段落里的第几次出现",
+  anchor_not_found: `原件里找不到这段原文：逐字照抄材料原文（同一段落之内，含标点、空格与代号；段首的条款编号可以不抄）；occurrence 只数同一段落里的第几次出现，不是全文第几处。${CELL_HINT}`,
+  anchor_ambiguous: `这段原文在多个段落出现：加 paragraph_hint 写条款号，或把锚点写长到唯一；occurrence 只区分同一段落里的第几次出现。${CELL_HINT}；同一行里金额相同的两格靠列名区分`,
   anchor_not_in_view: "这段原文不在本材料的文字里：不是照抄的原文，或跨了段落（一条修改只能在一个段落之内）；改页眉页脚的，paragraph_hint 写“页眉”或“页脚”，anchor 照抄 header_footer_text 里的原文",
   overlap: "与另一条修改的原文重叠：合并成一条",
   complex_structure: "要改的字跨过了对方的修订痕迹、Word 域、脚注、超链接或内容控件的边界，自动改写会丢内容或打乱修订记录：按 detail 在边界处拆成两条修改（每条只改一侧的纯文字，锚点可以带上两边没变的字）；做不到的（如要改对方删除的字、域结果）不要重试，在最终答复里列明这一处请律师在 Word 里手工修改",
@@ -33,9 +37,12 @@ const FIX_HINT: Record<PatchConflict["reason"], string> = {
   anchor_empty: "anchor 不能为空；新增条款用 insert_after，锚点写插入位置前一段里的原文",
   anchor_hash_mismatch: "内部校验失败，请重新提交",
   new_clause_in_edit: "新增条款不要接在原段落里换行写（会成为同一段里的软回车：不受自动编号管理，对方也没法单独接受或拒绝）：本条只写对原段的修改；新增条款另提一条 insert_after，锚点写它前一段里的原文，新文字不写编号（自动续号）",
-  bad_placement: "这条修改落位的写法不对，按 detail 改：新款要插在某款及其表格之后的用 insert_after_table（锚点写表格前紧挨着的那一段、或表格里任一格的原文）；表格加一行用 insert_row_after（锚点写要接在其后的那一行里任一格的原文，新文字各格用“｜”分隔，纵向合并的格子留空）；删整行用 delete_row（新文字为空串）",
-  apply_failed: "写入失败：通常是两条修改落在同一处，拆开或合并后重试",
+  bad_placement: `这条修改落位的写法不对，按 detail 改：新款要插在某款及其表格之后的用 insert_after_table（锚点写表格前紧挨着的那一段、或表格里任一格的原文）；表格加一行用 insert_row_after（锚点写要接在其后的那一行里任一格的原文，新文字各格用“｜”分隔，纵向合并的格子留空）；删整行用 delete_row（新文字为空串）；只改某一格的字不用这几种落位——${CELL_HINT}`,
+  apply_failed: "写入失败：按 detail 找到是哪一处；通常是两条修改落在同一处，合并成一条",
 };
+
+/** 一条修改的入参字段（存清单、补交合成时只留这些）。 */
+const PATCH_FIELDS = ["anchor", "proposed_text", "occurrence", "paragraph_hint", "comment", "insert_after", "insert_after_table", "insert_row_after", "delete_row"] as const;
 
 interface RevisePatchInput {
   anchor?: unknown;
@@ -123,13 +130,67 @@ function numberingNotes(r: { numbering?: NumberingShifts; label_notes?: { index:
   if (r.numbering && r.numbering.renumbered.length > 0) {
     out.numbering_changes = r.numbering;
     out.numbering_note = `删除或插入了自动编号的条款，后面的条款编号已自动顺延（renumbered）；正文里写死的条号不会跟着变${
-      r.numbering.references.length > 0 ? `——references 列出 ${r.numbering.references.length} 处互引仍写着旧号，${written ? "把它们改成新号后连同全部修改重新提交一次（生成新版本），做不到的在答复里逐处列给律师" : "把它们改成新号、连同全部修改一并提交"}` : ""
+      r.numbering.references.length > 0 ? `——references 列出 ${r.numbering.references.length} 处互引仍写着旧号，${written ? "用 amend.add 补几条修改把它们改成新号（重新生成一版，旧版本保留），做不到的在答复里逐处列给律师" : "正式提交时用 amend.add 一并补上把它们改成新号的修改"}` : ""
     }。最终答复写明编号已顺延，不要写“后续编号保持不动”`;
   }
   return out;
 }
 
-export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; patches?: unknown; dry_run?: unknown }) {
+/** 补交的入参：按上一次清单的序号（从 1 起）替换、删除，再在末尾新增。 */
+interface AmendInput {
+  replace?: unknown;
+  remove?: unknown;
+  add?: unknown;
+}
+
+export interface AmendSummary {
+  base: number;
+  replaced: number;
+  removed: number;
+  added: number;
+  total: number;
+}
+
+const pick = (x: unknown): RevisePatchInput => {
+  if (!x || typeof x !== "object" || Array.isArray(x)) throw new DomainError("validation", "每条修改须是一个对象（anchor、proposed_text 等字段）", 422);
+  const o = x as Record<string, unknown>;
+  return Object.fromEntries(PATCH_FIELDS.filter((k) => o[k] !== undefined).map((k) => [k, o[k]])) as RevisePatchInput;
+};
+
+/**
+ * 补交合成（纯函数）：上一次的完整清单按 replace（{index, patch}）换掉、按 remove 去掉，其余照原次序保留，add 接在末尾。
+ * index 是上一次清单里的第几条（从 1 起，与逐条结果里的 index 一致）；越界、重复、同一条既换又删都报错，不猜。
+ */
+export function amendPatches(prev: readonly RevisePatchInput[], amend: AmendInput): { patches: RevisePatchInput[]; summary: AmendSummary } {
+  const n = prev.length;
+  const list = (v: unknown, name: string): unknown[] => {
+    if (v === undefined || v === null) return [];
+    if (!Array.isArray(v)) throw new DomainError("validation", `amend.${name} 须是数组`, 422);
+    return v;
+  };
+  const no = (v: unknown, where: string): number => {
+    if (!Number.isInteger(v) || (v as number) < 1 || (v as number) > n) throw new DomainError("validation", `${where} 的序号须是 1～${n} 之间的整数（上一次清单共 ${n} 条，序号与逐条结果里的 index 一致）`, 422);
+    return v as number;
+  };
+  const replaced = new Map<number, RevisePatchInput>();
+  for (const r of list(amend.replace, "replace")) {
+    const o = (r ?? {}) as { index?: unknown; patch?: unknown };
+    const i = no(o.index, "amend.replace");
+    if (replaced.has(i)) throw new DomainError("validation", `amend.replace 里第 ${i} 条出现了两次`, 422);
+    replaced.set(i, pick(o.patch));
+  }
+  const removed = new Set<number>();
+  for (const r of list(amend.remove, "remove")) {
+    const i = no(r, "amend.remove");
+    if (replaced.has(i)) throw new DomainError("validation", `第 ${i} 条同时出现在 amend.replace 与 amend.remove 里：要换就只写 replace，要删就只写 remove`, 422);
+    removed.add(i);
+  }
+  const added = list(amend.add, "add").map(pick);
+  const patches = [...prev.flatMap((x, k) => (removed.has(k + 1) ? [] : [replaced.get(k + 1) ?? x])), ...added];
+  return { patches, summary: { base: n, replaced: replaced.size, removed: removed.size, added: added.length, total: patches.length } };
+}
+
+export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; patches?: unknown; dry_run?: unknown; amend?: unknown }) {
   const mid = ctx.claims.mid;
   if (!mid) throw new DomainError("forbidden", "令牌未绑定事项", 403);
   const rid = typeof ctx.claims.rid === "string" ? ctx.claims.rid : null;
@@ -137,9 +198,47 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   if (!ctx.tokens) throw new DomainError("provider_unavailable", "令牌化工作区未启用", 503);
   const run = ctx.db.get<{ created_by: string; matter_id: string }>(`SELECT created_by, matter_id FROM runs WHERE run_id = ?`, [rid]);
   if (!run || run.matter_id !== mid) throw new DomainError("not_found", "任务不存在", 404);
-  const raw = Array.isArray(p.patches) ? (p.patches as RevisePatchInput[]) : [];
-  if (raw.length === 0) throw new DomainError("validation", "patches 至少一条", 422);
+  const documentVersionId = String(p.document_version_id ?? "");
+  const given = Array.isArray(p.patches) ? p.patches : [];
+  let raw: RevisePatchInput[];
+  let amended: AmendSummary | null = null;
+  if (p.amend !== undefined && p.amend !== null) {
+    if (given.length > 0) throw new DomainError("validation", "给了 amend 就不要再给 patches：amend 是在上一次清单上只改几条，patches 是重交完整清单，二者择一", 422);
+    if (typeof p.amend !== "object" || Array.isArray(p.amend)) throw new DomainError("validation", "amend 须是对象：{ replace?: [{ index, patch }], remove?: [index], add?: [patch] }", 422);
+    const prev = ctx.db.get<{ patches: string }>(`SELECT patches FROM revise_submissions WHERE run_id = ? AND document_version_id = ?`, [rid, documentVersionId]);
+    if (!prev) throw new DomainError("validation", "本任务还没有对这份文件提交过修改清单，请用 patches 提交完整清单", 422);
+    const r = amendPatches(JSON.parse(prev.patches) as RevisePatchInput[], p.amend as AmendInput);
+    raw = r.patches;
+    amended = r.summary;
+    if (raw.length === 0) throw new DomainError("validation", "补交后清单里一条修改也没有了：至少留一条，或在最终答复里说明不改原件", 422);
+  } else {
+    raw = given.map(pick);
+    if (raw.length === 0) throw new DomainError("validation", "patches 至少一条（更正上一次提交的清单用 amend，只写要换、要删、要加的几条）", 422);
+  }
   if (raw.length > REVISE_MAX_PATCHES) throw new DomainError("validation", `一次最多 ${REVISE_MAX_PATCHES} 处修改，请分批提交`, 422);
+  // 记下这一次的完整清单（不论结果如何，下一次补交以它为准）；令牌形态，不含真名
+  const now = new Date().toISOString();
+  ctx.db.run(
+    `INSERT INTO revise_submissions (run_id, document_version_id, matter_id, patches, outcome, updated_at) VALUES (?,?,?,?,?,?)
+     ON CONFLICT (run_id, document_version_id) DO UPDATE SET patches = excluded.patches, outcome = excluded.outcome, updated_at = excluded.updated_at`,
+    [rid, documentVersionId, mid, JSON.stringify(raw), "submitted", now],
+  );
+  const out = reviseOnce(ctx, { mid, rid, run, documentVersionId, raw, dryRun: p.dry_run === true });
+  ctx.db.run(`UPDATE revise_submissions SET outcome = ? WHERE run_id = ? AND document_version_id = ?`, [out.status, rid, documentVersionId]);
+  if (!amended) return out;
+  const a = amended;
+  return {
+    ...out,
+    amend: a,
+    amend_note: `本次在上一次 ${a.base} 条的基础上替换 ${a.replaced} 条、删除 ${a.removed} 条、新增 ${a.added} 条，合计 ${a.total} 条（新增的排在末尾；删除后后面各条的序号依次前移）。结果里的序号都按这份新清单计，下一次补交也按它。`,
+  };
+}
+
+function reviseOnce(
+  ctx: InvokeCtx,
+  q: { mid: string; rid: string; run: { created_by: string }; documentVersionId: string; raw: RevisePatchInput[]; dryRun: boolean },
+) {
+  const { mid, rid, run, documentVersionId, raw, dryRun } = q;
   const patches: StructuredPatch[] = raw.map((x) => {
     const anchor = String(x?.anchor ?? "");
     return {
@@ -155,8 +254,6 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
       ...(x?.delete_row === true ? { delete_row: true } : {}),
     };
   });
-  const documentVersionId = String(p.document_version_id ?? "");
-  const dryRun = p.dry_run === true;
   // 原件里已有的修订（第 34 批）：对方返回的带修订稿上再改时，清洁稿会把对方的修订一并接受——让助手先告诉律师
   const src = ctx.db.get<{ storage_uri: string; filename: string }>(`SELECT storage_uri, filename FROM document_versions WHERE document_version_id = ? AND matter_id = ?`, [documentVersionId, mid]);
   const srcBuf = src && src.filename.toLowerCase().endsWith(".docx") ? ctx.blobs.read(src.storage_uri) : null;
@@ -168,10 +265,10 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   // 原件页眉页脚的文字（令牌化后给助手照抄锚点；V10 第 36 批）
   const hfText = srcBuf ? headerFooterParagraphs(srcBuf).map((x) => ({ part: x.part === "header" ? "页眉" : "页脚", text: ctx.tokens!.tokenizer(mid).tokenize(x.texts.join(" / ")).text.slice(0, 300) })) : [];
   const hfNote = hf.length > 0
-    ? { header_footer: hf, header_footer_text: hfText, header_footer_note: "原件的页眉或页脚里也有这次改掉的原文（见 header_footer，patches 是第几条修改）：律师要求一并改的，再加一条修改——paragraph_hint 写“页眉”或“页脚”，anchor 照抄 header_footer_text 里的原文，修订同样以痕迹显示；律师没有要求改页眉页脚的，在最终答复里提醒这一处" }
+    ? { header_footer: hf, header_footer_text: hfText, header_footer_note: "原件的页眉或页脚里也有这次改掉的原文（见 header_footer，patches 是第几条修改）：律师要求一并改的，用 amend.add 补一条修改——paragraph_hint 写“页眉”或“页脚”，anchor 照抄 header_footer_text 里的原文，修订同样以痕迹显示；律师没有要求改页眉页脚的，在最终答复里提醒这一处" }
     : {};
   const r = applyStructuredPatches(
-    { db: ctx.db, blobs: ctx.blobs, tokens: ctx.tokens },
+    { db: ctx.db, blobs: ctx.blobs, tokens: ctx.tokens! },
     { matter_id: mid, document_version_id: documentVersionId, patches, created_by: run.created_by, run_id: rid, filename_suffix: "（修订稿）", ...(dryRun ? { dryRun: true } : {}) },
   );
   if (r.status === "preview" && r.reason === "dry_run") {
@@ -184,24 +281,25 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
       ...priorNote,
       ...hfNote,
       ...numberingNotes(r, false),
-      note: "这是试写，没有生成文件。逐段读 after（改后的整段）：语句通顺、与前后文衔接（没有多出或漏掉的字，例如替换“合同签订之日起”时留下的“本”）、编号与互引正确后，去掉 dry_run 把全部修改正式提交一次。",
+      note: "这是试写，没有生成文件。逐段读 after（改后的整段）：语句通顺、与前后文衔接（没有多出或漏掉的字，例如替换“合同签订之日起”时留下的“本”）、编号与互引正确。正式写入时不用重发清单：只写 document_version_id 与 amend: {}（照这次试写的清单写入）；要改其中几条的，在 amend 里只写那几条。",
     };
   }
   if (r.status !== "applied") {
     // 结果分布留痕（V13 第 38 批）：只记计数
     const n = (re: RegExp) => r.conflicts.filter((c) => re.test(String(c.reason))).length;
-    slog.event("TOOLS_DOCX_EDIT_OUTCOME", { tool: "docx_revise", status: "not_applied", patches: Array.isArray(p.patches) ? p.patches.length : 0, applied: 0, not_found: n(/not_found|empty/), ambiguous: n(/ambiguous/), unknown_token: n(/token/), other: r.conflicts.length - n(/not_found|empty|ambiguous|token/) });
+    slog.event("TOOLS_DOCX_EDIT_OUTCOME", { tool: "docx_revise", status: "not_applied", patches: raw.length, applied: 0, not_found: n(/not_found|empty/), ambiguous: n(/ambiguous/), unknown_token: n(/token/), other: r.conflicts.length - n(/not_found|empty|ambiguous|token/) });
     const note =
       r.reason === "not_docx"
         ? "这份材料不是 Word（.docx）文件，不能在原件上写修订：告诉律师原因，改为用 docx.render_report 出“修改后全文（新排版）”"
         : r.reason === "document_version_superseded"
           ? "这份材料已有更新的版本：用 materials.list 找到最新版本的材料编号后重做"
-          : "整体没有写入任何修改：按逐条原因改正后，把全部修改重新提交一次";
+          : "整体没有写入任何修改。内核记着这次的完整清单：只改正被退回的这几条——用 amend.replace 按 index 换成改正后的修改（index 是第几条，从 1 起），确实不要的用 amend.remove 去掉；其余各条不用再交，不要把全部修改重发一遍。";
     return {
       status: "not_applied" as const,
       reason: r.reason,
       written: false,
-      conflicts: r.conflicts.map((c) => ({ index: c.index, reason: c.reason, fix: FIX_HINT[c.reason], ...(c.detail ? { detail: c.detail } : {}) })),
+      // index 是第几条（从 1 起，与 label_notes、header_footer 的序号同一口径，补交时照写）；引擎报错里的“修订 p14”是从 0 起的内部编号，换成“第 15 条”
+      conflicts: r.conflicts.map((c) => ({ ...(c.index >= 0 ? { index: c.index + 1 } : {}), reason: c.reason, fix: FIX_HINT[c.reason], ...(c.detail ? { detail: c.detail.replace(/修订 p(\d+)/g, (_m, n: string) => `第 ${Number(n) + 1} 条修改`) } : {}) })),
       ...priorNote,
       ...(hfText.length > 0 ? { header_footer_text: hfText } : {}),
       note,
@@ -251,6 +349,9 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   return {
     status: "applied" as const,
     applied: r.applied,
+    // 正式写入同样返回每个改到的段落改前 / 改后的整段（V16 第 41 批：不必先试写再全量重交一次，直接写入、读这里，有问题用 amend 只改那几条）
+    changes: previewChanges(r.paragraphs, r.spans),
+    ...(r.header_footer_changes ? { header_footer_changes: r.header_footer_changes.map((c) => ({ part: c.place, before: c.before, after: c.after })) } : {}),
     revision: { artifact_version_id: r.artifact_version_id, filename: r.filename },
     clean: { artifact_version_id: cleanReg.artifact_version_id, filename: cleanReg.filename },
     ...(compareReg ? { comparison: { artifact_version_id: compareReg.artifact_version_id, filename: compareReg.filename } } : {}),
@@ -258,7 +359,7 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
     ...priorNote,
     ...hfNote,
     ...numberingNotes(r, true),
-    note: `修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；${
+    note: `已写入。先逐段读 changes 里的 after（改后的整段）：语句通顺、与前后文衔接（没有多出或漏掉的字）、编号与互引正确；有问题的只用 amend 补交那几条（会生成新版本的修订稿、清洁稿与对照表，旧版本保留），不要把全部修改重发。修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；${
       externalReg
         ? `另有《修订稿·对外版》：同样的修订痕迹，去掉的是本产品写的修改理由批注${keptComments > 0 ? `；原件原有的批注 ${keptComments} 条与原有的修订痕迹原样保留（不是遗漏，是否删去由律师在发出前决定，不要替律师删）` : "，原件原有的修订痕迹（如有）原样保留"}，本产品的修订署名为本所设置——所以修改理由照常写进 comment（它进内部修订稿与修改对照表），不要为了“能直接发对方”而去掉 comment 重交；`
         : ""

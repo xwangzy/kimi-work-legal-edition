@@ -42,6 +42,7 @@ export interface StructuredPatch {
 }
 
 export interface PatchConflict {
+  /** 第几条补丁（从 0 起；合并写入失败而认不出是哪一条时为 -1）。 */
   index: number;
   reason:
     | "anchor_hash_mismatch"
@@ -96,6 +97,11 @@ export type PatchResult =
       label_notes: { index: number; dropped: string[] }[];
       /** 修改对照（原文形态，第 35 批）：只给内核生成《修改对照表》，不返回给助手。 */
       changes: ChangeRow[];
+      /** 原件的段落（原文）与每条补丁的落点（V16 第 41 批：正式写入也返回改前 / 改后整段，与试写同一套）。 */
+      paragraphs: string[];
+      spans: PatchSpan[];
+      /** 页眉页脚里的修改（原文形态，改前 / 改后整段）。 */
+      header_footer_changes?: ChangeRow[];
     }
   | {
       status: "preview";
@@ -378,20 +384,14 @@ export function applyStructuredPatches(
       placement = one?.placement;
     } catch (e) {
       const msg = (e as Error).message;
+      const reason = conflictReason(msg);
+      // occurrence 只数同一段落之内的第几次出现（真实走查：付款表“30%”写 occurrence=1 想指第二处，这一格里只有一处，报“找不到”）
+      const occ = op.anchor.occurrence ?? 0;
+      const paraHits = reason === "anchor_not_found" && occ > 0 ? paragraphs.filter((t) => sameSpaces(t).includes(sameSpaces(op.anchor.originalText))).length : 0;
       conflicts.push({
         index,
-        reason: /歧义/.test(msg)
-          ? "anchor_ambiguous"
-          : /未找到|非文本区/.test(msg)
-            ? "anchor_not_found"
-            : /同一处/.test(msg)
-              ? "overlap"
-              : /后面不是表格|不在表格里|应有 \d+ 格|没有文字|新文字须为空|没有正文段落可以沿用/.test(msg)
-                ? "bad_placement"
-                : /修订痕迹|超链接|内容控件|域|脚注|特殊符号|嵌入对象|结构不完整|无法自动|嵌着表格/.test(msg)
-                  ? "complex_structure"
-                  : "apply_failed",
-        detail: msg.slice(0, 200),
+        reason,
+        detail: paraHits > 0 ? `这段原文出现在 ${paraHits} 个段落里，但 occurrence=${occ} 要的是同一段落里的第 ${occ + 1} 次出现，没有哪一段有这么多处：去掉 occurrence，改用 paragraph_hint 指明是哪一段（表格里的格子写“行名｜列名”）` : msg.slice(0, 200),
       });
       continue;
     }
@@ -453,7 +453,7 @@ export function applyStructuredPatches(
         numbering = numberingShifts(buf, sanitizeDocx(applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops: insertsFirst(ops) }).docx).docx);
       } catch (e) {
         for (const item of preview) item.ok = false;
-        conflicts.push({ index: 0, reason: "apply_failed", detail: (e as Error).message.slice(0, 200) });
+        conflicts.push(mergedConflict(e as Error));
       }
     }
     return { status: "preview", reason: conflicts.length > 0 ? "conflicts" : "dry_run", conflicts: conflicts.sort((x, y) => x.index - y.index), preview, paragraphs, spans: spans.filter((x) => !bad.has(x.index)), ...(numbering ? { numbering } : {}), label_notes: labelNotes, ...(hfRows.length > 0 ? { header_footer_changes: hfRows } : {}) };
@@ -466,7 +466,7 @@ export function applyStructuredPatches(
   } catch (e) {
     // 逐条成立而合并失败（例如前一条的修订改变了后一条的定位）：整体预览
     for (const item of preview) item.ok = false;
-    return { status: "preview", reason: "conflicts", conflicts: [{ index: 0, reason: "apply_failed", detail: (e as Error).message.slice(0, 200) }], preview };
+    return { status: "preview", reason: "conflicts", conflicts: [mergedConflict(e as Error)], preview };
   }
   // 还原校验：交付件里不得残留代号（零错名：代号只按令牌表还原，不认识的代号在上面已拒绝）
   const residual = extractParagraphs(out).some((p) => findTokens(p.text).length > 0);
@@ -490,7 +490,32 @@ export function applyStructuredPatches(
      VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,?,?,?,?)`,
     [artifactId, doc.tenant_id, doc.matter_id, input.run_id ?? null, kind, v.next, filename, stored.sha256, stored.storage_uri, "[]", JSON.stringify(manifest), input.created_by, docLineage(doc.document_version_id)],
   );
-  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(buf, sanitizeDocx(out).docx), label_notes: labelNotes, changes: [...hfRows, ...changeRows(paragraphs, labels, spans, ops, paragraphPlaces(buf, paragraphs, labels), rowTexts(buf, paragraphs))] };
+  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(buf, sanitizeDocx(out).docx), label_notes: labelNotes, changes: [...hfRows, ...changeRows(paragraphs, labels, spans, ops, paragraphPlaces(buf, paragraphs, labels), rowTexts(buf, paragraphs))], paragraphs, spans, ...(hfRows.length > 0 ? { header_footer_changes: hfRows } : {}) };
+}
+
+/** 文书引擎的拒写原因归类（逐条试定位与合并写入同一口径）。 */
+function conflictReason(msg: string): PatchConflict["reason"] {
+  return /歧义/.test(msg)
+    ? "anchor_ambiguous"
+    : /未找到|非文本区/.test(msg)
+      ? "anchor_not_found"
+      : /同一处/.test(msg)
+        ? "overlap"
+        : /后面不是表格|不在表格里|应有 \d+ 格|没有文字|新文字须为空|没有正文段落可以沿用/.test(msg)
+          ? "bad_placement"
+          : /修订痕迹|超链接|内容控件|域|脚注|特殊符号|嵌入对象|结构不完整|无法自动|嵌着表格/.test(msg)
+            ? "complex_structure"
+            : "apply_failed";
+}
+
+/**
+ * 逐条成立、合并写入时失败：按引擎报错里的修改编号（“修订 p14”）指出是第几条（V16 第 41 批：原先一律记在第 0 条、原因写“写入失败”，
+ * 助手看不出是哪一条）；认不出编号的 index 为 -1。
+ */
+function mergedConflict(e: Error): PatchConflict {
+  const msg = e.message;
+  const m = /修订 p(\d+)/.exec(msg);
+  return { index: m ? Number(m[1]) : -1, reason: m ? conflictReason(msg) : "apply_failed", detail: msg.slice(0, 200) };
 }
 
 /**

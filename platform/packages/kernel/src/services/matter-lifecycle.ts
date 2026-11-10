@@ -220,6 +220,8 @@ export async function purgeMatter(
     d.db.run(`DELETE FROM argument_outlines WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM matter_todos WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM matter_review_rules WHERE matter_id = ?`, [matterId]);
+    // 在原件上修订时记下的修改清单（V16 第 41 批，补交用）
+    d.db.run(`DELETE FROM revise_submissions WHERE matter_id = ?`, [matterId]);
     d.db.run(`DELETE FROM citation_decisions WHERE artifact_version_id IN (SELECT artifact_version_id FROM artifact_versions WHERE matter_id = ?)`, [matterId]);
     d.db.run(`DELETE FROM artifact_payloads WHERE artifact_version_id IN (SELECT artifact_version_id FROM artifact_versions WHERE matter_id = ?)`, [matterId]);
     // 签名业务行（运行事件、去向记录）里的内容：登记删除清单后清除（链复核按清单报告“已清除”，清单摘要进签名的删除审计事件）；

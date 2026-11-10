@@ -62,6 +62,23 @@ export interface InvokeCtx {
 }
 
 const dateSchema = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" };
+/** docx.revise 的一条修改（patches 与补交 amend 里同一结构）。 */
+const REVISE_PATCH_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["anchor", "proposed_text"],
+  properties: {
+    anchor: { type: "string" },
+    proposed_text: { type: "string" },
+    occurrence: { type: "integer", minimum: 0 },
+    paragraph_hint: { type: "string" },
+    comment: { type: "string" },
+    insert_after: { type: "boolean" },
+    insert_after_table: { type: "boolean" },
+    insert_row_after: { type: "boolean" },
+    delete_row: { type: "boolean" },
+  },
+};
 
 export const TOOLS: readonly ToolDef[] = [
   {
@@ -445,7 +462,11 @@ export const TOOLS: readonly ToolDef[] = [
     description:
       "按律师意见修改已上传的 Word 原件：每处给出要改的原文（anchor，逐字照抄材料原文、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落），" +
       "表格相关：insert_after_table=true 把新段落插在整张表格之后（“在第 6.1 款及其后表格之后新增一款”：anchor 写表格前紧挨着的那一段、或表格里任一格的原文，新款沿用表格前那一段的格式与自动编号）；insert_row_after=true 在 anchor 所在的表格行之后新增一行（proposed_text 各格用“｜”分隔，纵向合并的格子留空或不写；整行以修订痕迹显示）；delete_row=true 删除 anchor 所在的整行（proposed_text 为空串）。这四种落位一条修改只用一种。" +
-      "在原件副本上生成带修订痕迹的修订稿（保留原版式、编号、表格）与接受全部修订后的清洁稿，并由系统按实际写入的修改生成《修改对照表》（逐段修改前、修改后与理由），登记为本任务草稿成果；原件不变。dry_run=true 只试写：返回每个改到的段落改前与改后的整段文字，不生成文件，先读一遍再正式提交。任一处找不到或有歧义时整体不写，逐条返回原因，改正后重新提交。" +
+      "表格里的格子：anchor 只写这一格的原文，paragraph_hint 写“行名｜列名”（如“定金｜比例”），行名、列名照原件写。" +
+      "在原件副本上生成带修订痕迹的修订稿（保留原版式、编号、表格）与接受全部修订后的清洁稿，并由系统按实际写入的修改生成《修改对照表》（逐段修改前、修改后与理由），登记为本任务草稿成果；原件不变。" +
+      "直接正式提交：写入后返回 changes（每个改到的段落改前与改后的整段文字），逐段读一遍。任一处找不到或有歧义时整体不写，逐条返回原因（index 是第几条，从 1 起）。" +
+      "补交：内核记着本任务对这份原件上一次提交的完整清单（试写、被退回、已写入都算），更正时不要重发全部修改，只写 amend——replace 按 index 换掉几条、remove 去掉几条、add 在末尾加几条（amend: {} 即照上一次清单原样提交）；给了 amend 就不给 patches。内核合成新的完整清单后从原件重新生成，已写入过的生成新版本、旧版本保留。" +
+      "dry_run=true 只试写、不生成文件（清单特别大或律师要先看预览时用），试写后正式写入用 amend: {}。" +
       "页眉、页脚里的文字（材料正文里看不到，试写结果的 header_footer_text 会列出）也能改：该条 paragraph_hint 写“页眉”或“页脚”，anchor 照抄 header_footer_text 里的原文；页眉页脚不加批注，修改理由写在最终答复里。",
     sideEffect: "write_draft",
     resource: "matter_documents",
@@ -453,27 +474,21 @@ export const TOOLS: readonly ToolDef[] = [
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      required: ["document_version_id", "patches"],
+      required: ["document_version_id"],
       properties: {
         document_version_id: { type: "string" },
         dry_run: { type: "boolean" },
-        patches: {
-          type: "array",
-          items: {
-            type: "object",
-            additionalProperties: false,
-            required: ["anchor", "proposed_text"],
-            properties: {
-              anchor: { type: "string" },
-              proposed_text: { type: "string" },
-              occurrence: { type: "integer", minimum: 0 },
-              paragraph_hint: { type: "string" },
-              comment: { type: "string" },
-              insert_after: { type: "boolean" },
-              insert_after_table: { type: "boolean" },
-              insert_row_after: { type: "boolean" },
-              delete_row: { type: "boolean" },
+        patches: { type: "array", items: REVISE_PATCH_SCHEMA },
+        amend: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            replace: {
+              type: "array",
+              items: { type: "object", additionalProperties: false, required: ["index", "patch"], properties: { index: { type: "integer", minimum: 1 }, patch: REVISE_PATCH_SCHEMA } },
             },
+            remove: { type: "array", items: { type: "integer", minimum: 1 } },
+            add: { type: "array", items: REVISE_PATCH_SCHEMA },
           },
         },
       },
