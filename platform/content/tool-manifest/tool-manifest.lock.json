@@ -282,6 +282,20 @@
       "schemaHash": "476d6857457f4398954c577ea71cb14a548bc07f70a2a8b91322de0ac8346dc7"
     },
     {
+      "name": "xlsx.edit_cells",
+      "version": "1",
+      "sideEffect": "write_draft",
+      "resource": "matter_work",
+      "purposes": [
+        "legal_analysis",
+        "contract_review",
+        "case_file",
+        "legal_research",
+        "drafting"
+      ],
+      "schemaHash": "e46654cf05827737f3db34c6c9cd7862dc644d91c04647ea3e774c09739c24ca"
+    },
+    {
       "name": "outline.submit",
       "version": "1",
       "sideEffect": "write_draft",

@@ -68,6 +68,7 @@ const LEGAL_TOOL_LABELS: Record<string, string> = {
   "facts.submit": "整理事实",
   "facts.list": "查看事实",
   "xlsx.render_table": "生成表格",
+  "xlsx.edit_cells": "修改表格",
   "docx.render_report": "生成 Word 文书",
   "docx.revise": "在原件上修订",
   "docx.edit_draft": "修改文书草稿",

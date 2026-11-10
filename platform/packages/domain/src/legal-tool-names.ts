@@ -38,6 +38,8 @@ export const LEGAL_MCP_TOOLS = [
   "docx.revise",
   // 2026-11-03 第 35 批：在本任务已生成的文书草稿上逐处修改（同名新版本；不再为改几处整份重出）
   "docx.edit_draft",
+  // 2026-11-10 V16 第 41 批：在本任务已生成的表格上逐格修改（同名新版本；不再为改几处整份重出）
+  "xlsx.edit_cells",
 ] as const;
 
 export type LegalMcpToolName = (typeof LEGAL_MCP_TOOLS)[number];

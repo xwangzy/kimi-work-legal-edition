@@ -4,8 +4,8 @@
  * 第 34 批（独立律师验收：交付的 Excel 全是“裸表”，长文字挤在默认列宽里要手工调）：首行作表头（加粗、底色、换行、冻结），
  * 正文换行、细边框、顶端对齐，金额千分位；列宽按前 500 行的文字宽度估（中文按两个字宽）。
  */
-import { writeZip } from "./zip.ts";
-import { escapeXml } from "./textmap.ts";
+import { readZipEntries, writeZip } from "./zip.ts";
+import { escapeXml, unescapeXml } from "./textmap.ts";
 
 export interface SheetSpec {
   name: string;
@@ -157,4 +157,73 @@ export function createXlsx(sheets: SheetSpec[]): Buffer {
     { name: "xl/styles.xml", data: Buffer.from(STYLES, "utf8") },
     ...sheets.map((s, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: sheetXml(s) })),
   ]);
+}
+
+/** 列字母转序号（A→0，Z→25，AA→26）。 */
+function colIndex(letters: string): number {
+  let n = 0;
+  for (const ch of letters) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+/**
+ * 读回本文件 createXlsx 写出的工作簿（V16 第 41 批：xlsx.edit_cells 在已生成的表格上逐格修改，不再整份重出）。
+ * 只认本写入器的写法：文字为 t="inlineStr"，数字为 <v>；按 r="B3" 的列字母定位，中间的空格补 null；表名从 xl/workbook.xml 读。
+ * 不是本写入器写的（有 sharedStrings、公式、别的单元格类型、行号或格子位置对不上）一律返回 null——律师上传的 Excel 不在此列。
+ * 首行（表头）在 rows[0]；空串与 null 都读成 null（写入时两者都不写格子）。
+ */
+export function readCreatedXlsx(buf: Buffer): SheetSpec[] | null {
+  let entries: Map<string, Buffer>;
+  try {
+    entries = readZipEntries(buf);
+  } catch {
+    return null;
+  }
+  if (entries.has("xl/sharedStrings.xml")) return null;
+  const workbook = entries.get("xl/workbook.xml")?.toString("utf8");
+  if (!workbook) return null;
+  const names = [...workbook.matchAll(/<sheet name="([^"]*)" sheetId="(\d+)" r:id="rId(\d+)"\/>/g)];
+  if (names.length === 0) return null;
+  const out: SheetSpec[] = [];
+  for (let i = 0; i < names.length; i++) {
+    const m = names[i]!;
+    if (Number(m[2]) !== i + 1 || Number(m[3]) !== i + 1) return null;
+    const xml = entries.get(`xl/worksheets/sheet${i + 1}.xml`)?.toString("utf8");
+    if (!xml) return null;
+    const data = /<sheetData>([\s\S]*)<\/sheetData>/.exec(xml)?.[1];
+    if (data === undefined || /<f[\s>]/.test(data)) return null;
+    const rows: (string | number | null)[][] = [];
+    // 每行按 <row r="n">…</row> 读；行号必须从 1 起连续（本写入器每行都写，空行写成空 <row>）
+    const rowRe = /<row r="(\d+)">([\s\S]*?)<\/row>/g;
+    let consumed = "";
+    for (const rm of data.matchAll(rowRe)) {
+      consumed += rm[0];
+      if (Number(rm[1]) !== rows.length + 1) return null;
+      const row: (string | number | null)[] = [];
+      let rest = rm[2]!;
+      const cellRe = /^<c r="([A-Z]+)(\d+)" s="\d+"( t="inlineStr")?>(?:<v>([^<]*)<\/v>|<is><t xml:space="preserve">([^<]*)<\/t><\/is>)<\/c>/;
+      while (rest.length > 0) {
+        const cm = cellRe.exec(rest);
+        if (!cm || Number(cm[2]) !== rows.length + 1) return null;
+        const ci = colIndex(cm[1]!);
+        if (ci < row.length) return null;
+        while (row.length < ci) row.push(null);
+        if (cm[3]) {
+          if (cm[5] === undefined) return null;
+          const t = unescapeXml(cm[5]);
+          row.push(t === "" ? null : t);
+        } else {
+          if (cm[4] === undefined) return null;
+          const n = Number(cm[4]);
+          if (!Number.isFinite(n)) return null;
+          row.push(n);
+        }
+        rest = rest.slice(cm[0].length);
+      }
+      rows.push(row);
+    }
+    if (consumed !== data) return null;
+    out.push({ name: unescapeXml(m[1]!), rows });
+  }
+  return out;
 }

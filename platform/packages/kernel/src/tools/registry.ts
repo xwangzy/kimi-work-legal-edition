@@ -25,7 +25,7 @@ import { materialsReadExcerpt } from "./tools/materials.ts";
 import { docxApplyRevisions, docxCompare, docxRenderReport, docxSanitize, redactApply } from "./tools/docx.ts";
 import { docxRevise } from "./tools/revise.ts";
 import { docxEditDraft, sectionsOfDocx } from "./tools/edit-draft.ts";
-import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, rulesPropose, riskcardsList, riskcardsSubmit, tableFill, tableGet, xlsxRenderTable } from "./tools/review.ts";
+import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, rulesPropose, riskcardsList, riskcardsSubmit, tableFill, tableGet, xlsxEditCells, xlsxRenderTable } from "./tools/review.ts";
 import { assertOutlineSettled } from "../services/argument-outlines.ts";
 import { checkDeliverable, type DeliverableCheck } from "../services/deliverable-check.ts";
 import { sectionChars, shrinkCheck } from "../services/version-shrink.ts";
@@ -809,7 +809,7 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "xlsx.render_table",
     title: "生成表格（XLSX）",
-    description: "按列生成 Excel 表格（证据目录、时间线、问题清单、计算明细等），登记为本任务的草稿成果交律师审阅；每个表 1–40 列、最多 5,000 行；单元格为文字或数字。",
+    description: "按列生成 Excel 表格（证据目录、时间线、问题清单、计算明细等），登记为本任务的草稿成果交律师审阅；每个表 1–40 列、最多 5,000 行；单元格为文字或数字。生成后的局部修改（含交付前检查 quality_check 报出的问题）用 xlsx.edit_cells，不要整份重新生成。",
     sideEffect: "write_draft",
     resource: "matter_work",
     version: "1",
@@ -835,6 +835,81 @@ export const TOOLS: readonly ToolDef[] = [
       },
     },
     invoke: (p, ctx) => xlsxRenderTable(ctx, p),
+  },
+  {
+    // V16 第 41 批真实走查（争点与证据分析）：5 张工作表、97 行的表格为改几处用语整份重出 4 次（每次 4～5 分钟），撞上 40 分钟时限
+    name: "xlsx.edit_cells",
+    title: "修改本任务的表格",
+    description:
+      "在本任务里你已用 xlsx.render_table 生成的表格上逐格修改（交付前检查 quality_check 报出的用语、内部编号，自查发现的金额、日期、遗漏的行等），几秒完成，登记为同名表格的新版本（旧版本保留）：" +
+      "artifact_version_id 写 xlsx.render_table（或上一次本工具）返回的编号。edits 逐格改：sheet 工作表名、row 数据行号（从 1 起、不含表头，与 quality_check 里“××表格第 N 行”一致）、column 列名（逐字照抄表头）、value 新值（文字、数字，null 为清空）；" +
+      "replace 把文字格子里的 find 逐字替换为 with（不含表头，find 至少 2 个字，可用 sheet 限定一张表，返回替换了几处）——同一个说法在许多格子里出现时用它一次改完；" +
+      "delete_rows 删除行、append_rows 在表末追加行（每行按表头的列依次给值）；行号一律按这次修改前的表格。" +
+      "只改要改的格子，不要为改几处整份重新生成；整体结构要变（增删列、重排工作表）才用 xlsx.render_table 重出。律师上传的 Excel 材料不能用本工具。" +
+      "能定位的先写入（status=partial），定位不到的逐条退回原因，改正后用新编号只重交这几处；改好后返回新版本的 quality_check，检查通过后不要为润色再整份重出。",
+    sideEffect: "write_draft",
+    resource: "matter_work",
+    version: "1",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["artifact_version_id"],
+      properties: {
+        artifact_version_id: { type: "string" },
+        edits: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["sheet", "row", "column", "value"],
+            properties: {
+              sheet: { type: "string" },
+              row: { type: "integer" },
+              column: { type: "string" },
+              value: {},
+            },
+          },
+        },
+        replace: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["find", "with"],
+            properties: {
+              find: { type: "string" },
+              with: { type: "string" },
+              sheet: { type: "string" },
+            },
+          },
+        },
+        append_rows: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["sheet", "rows"],
+            properties: {
+              sheet: { type: "string" },
+              rows: { type: "array", items: { type: "array", items: {} } },
+            },
+          },
+        },
+        delete_rows: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["sheet", "rows"],
+            properties: {
+              sheet: { type: "string" },
+              rows: { type: "array", items: { type: "integer" } },
+            },
+          },
+        },
+      },
+    },
+    invoke: (p, ctx) => xlsxEditCells(ctx, p),
   },
 ];
 

@@ -6,12 +6,14 @@
  *   facts.submit        提交事实行（材料声称 / 推论 / 待确认；Agent 不能标“律师确认”）
  *   facts.list          读取事实行（文书与汇报只引用律师确认的事实）
  *   xlsx.render_table   按列生成 Excel 表格，登记为本任务的草稿成果（统一格式，不用执行域里拼表）
+ *   xlsx.edit_cells     在本任务已生成的表格上逐格修改，登记为同名表格的新版本（V16 第 41 批）
  *
  * 事项与任务一律取自端点按任务记录派生的身份（claims.mid / claims.rid；local-server toolClaims），不采信参数里的事项。
  * 结果交回 Agent 前由本机端点按事项令牌化（local-server tokenizeToolResult）。
  */
-import { DomainError, newId, notFound } from "@zr-legal/domain";
-import { createXlsx } from "@zr-legal/docx-engine";
+import { DomainError, newId, notFound, sha256Hex } from "@zr-legal/domain";
+import { createXlsx, readCreatedXlsx, type SheetSpec } from "@zr-legal/docx-engine";
+import { slog } from "@zr-legal/safe-log";
 import type { InvokeCtx } from "../registry.ts";
 import { confirmedView, latestOutline, submitOutline } from "../../services/argument-outlines.ts";
 import { proposeDraft } from "../../services/review-rules.ts";
@@ -301,11 +303,25 @@ export function registerToolArtifact(
   return { artifact_version_id: id, filename: art.filename, reused: false };
 }
 
+/**
+ * 单元格归一（xlsx.render_table 与 xlsx.edit_cells 共用）：null/undefined 为空格；有限数字照写；
+ * 长整数（第 35 批，文档工程审查 E-02）：身份证号、银行账号按数字传时，超过双精度的整数在到这里之前已经变了（…4517 成了 …4500），
+ * 写进去就是错号——lost=true 由调用方拒收并说明改按文字传；16 位账号虽未失真，但 Excel 只保留 15 位有效数字、显示成科学计数，按文字写；
+ * 其余转文字并截到 MAX_CELL 字。
+ */
+function normalizeCell(c: unknown): { value: string | number | null; lost: boolean } {
+  if (c === null || c === undefined) return { value: null, lost: false };
+  if (typeof c === "number" && Number.isFinite(c)) {
+    if (Number.isInteger(c) && Math.abs(c) >= 1e11) return { value: String(c), lost: !Number.isSafeInteger(c) };
+    return { value: c, lost: false };
+  }
+  return { value: String(typeof c === "object" ? JSON.stringify(c) : c).slice(0, MAX_CELL), lost: false };
+}
+
 export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { name: string; columns: string[]; rows: unknown[][] }[] }) {
   const sheets = Array.isArray(p.sheets) ? p.sheets : [];
   if (sheets.length === 0 || sheets.length > MAX_SHEETS) throw new DomainError("validation", `sheets 须为 1–${MAX_SHEETS} 个`, 422);
-  // 长数字（第 35 批，文档工程审查 E-02）：身份证号、银行账号按数字传时，超过双精度的整数在到这里之前已经变了（…4517 成了 …4500），
-  // 写进去就是错号——拒收并说明改按文字传；16 位账号虽未失真，但 Excel 只保留 15 位有效数字、显示成科学计数，按文字写
+  // 长数字见 normalizeCell
   const lost: string[] = [];
   const usedNames = new Set<string>();
   const specs = sheets.map((sh, si) => {
@@ -315,15 +331,9 @@ export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { na
     if (rows.length > MAX_ROWS) throw new DomainError("validation", `第 ${si + 1} 个表超过 ${MAX_ROWS} 行，请分表`, 422);
     const body = rows.map((r, ri) =>
       (Array.isArray(r) ? r : []).slice(0, cols.length).map((c, ci): string | number | null => {
-        if (c === null || c === undefined) return null;
-        if (typeof c === "number" && Number.isFinite(c)) {
-          if (Number.isInteger(c) && Math.abs(c) >= 1e11) {
-            if (!Number.isSafeInteger(c)) lost.push(`第 ${si + 1} 个表第 ${ri + 1} 行“${cols[ci] ?? `第 ${ci + 1} 列`}”`);
-            return String(c);
-          }
-          return c;
-        }
-        return String(typeof c === "object" ? JSON.stringify(c) : c).slice(0, MAX_CELL);
+        const n = normalizeCell(c);
+        if (n.lost) lost.push(`第 ${si + 1} 个表第 ${ri + 1} 行“${cols[ci] ?? `第 ${ci + 1} 列`}”`);
+        return n.value;
       }),
     );
     // 表名去重（文档工程审查 E-03：同名工作表 Excel 打开要修复）
@@ -334,27 +344,254 @@ export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { na
     return { name, rows: [cols, ...body] };
   });
   if (lost.length > 0) throw new DomainError("validation", `表格有误，未生成：${lost.slice(0, 8).join("、")}是超长的数字（身份证号、账号一类），按数字传已失真，请改成文字（加引号）后重新提交`, 422, { problems: lost });
+  return finishTable(ctx, String(p.title ?? ""), specs, "xlsx.render_table");
+}
+
+/**
+ * 写出表格并登记为本任务的草稿成果（xlsx.render_table 与 xlsx.edit_cells 共用）：存文件、登记成果、版本缩水检查、交付前检查。
+ * 同一任务里同名的表格串成同一份文件的各个版本。
+ */
+function finishTable(ctx: InvokeCtx, title: string, specs: SheetSpec[], tool: "xlsx.render_table" | "xlsx.edit_cells", extraManifest: Record<string, unknown> = {}) {
   const buf = createXlsx(specs);
   const stored = ctx.blobs.put(buf, scopeOf(ctx).matterId);
-  const filename = `${safeTitle(String(p.title ?? ""))}.xlsx`;
+  const filename = `${safeTitle(title)}.xlsx`;
   const textChars = specs.reduce((n, sh) => n + cellChars(sh.rows), 0);
   const reg = registerToolArtifact(ctx, {
     kind: "agent_table",
     filename,
     sha256: stored.sha256,
     storage_uri: stored.storage_uri,
-    manifest: { tool: "xlsx.render_table", sheets: specs.map((s) => ({ name: s.name, rows: s.rows.length - 1, columns: s.rows[0]!.length })), text_chars: textChars, note: "Agent 经工具生成的表格（草稿）；导出时按事项令牌表还原代号" },
+    manifest: { tool, sheets: specs.map((s) => ({ name: s.name, rows: s.rows.length - 1, columns: s.rows[0]!.length })), text_chars: textChars, note: "Agent 经工具生成的表格（草稿）；导出时按事项令牌表还原代号", ...extraManifest },
   });
   // 版本缩水检查（第 35 批）：同一任务里重出的同名表格比上一版明显变短，提示助手核对是否漏了行
   const shrink = reg.reused ? null : shrinkCheck(ctx.db, scopeOf(ctx).runId, "agent_table", reg.filename, reg.artifact_version_id, textChars);
   // 交付前检查（第 35 批）：附件表格同样不该有工具用语、参数名、夹杂英文、Markdown 符号与大小写不一致的金额
   let quality_check: ReturnType<typeof checkDeliverable> | null = null;
   try {
-    quality_check = checkDeliverable(String(p.title ?? ""), specs.map((s) => ({ heading: s.name, paragraphs: [], table: { columns: s.rows[0] ?? [], rows: s.rows.slice(1) as unknown[][] } })));
+    quality_check = checkDeliverable(title, specs.map((s) => ({ heading: s.name, paragraphs: [], table: { columns: s.rows[0] ?? [], rows: s.rows.slice(1) as unknown[][] } })));
   } catch {
     quality_check = null;
   }
   return { ...reg, sha256: stored.sha256, sheets: specs.length, rows: specs.reduce((n, s) => n + s.rows.length - 1, 0), ...(quality_check ? { quality_check } : {}), ...(shrink ? { shrink } : {}) };
+}
+
+/** 一次逐格修改的操作总数上限（逐格改、替换、追加行、删除行合计）。 */
+export const EDIT_CELLS_MAX_OPS = 500;
+
+type CellOp = "edits" | "replace" | "append_rows" | "delete_rows";
+
+/**
+ * xlsx.edit_cells（V16 第 41 批）：在本任务已生成的表格上逐格修改，交出同名表格的新版本（旧版本保留）。
+ *
+ * 真实走查（争点与证据分析）：助手用 xlsx.render_table 生成 5 张工作表、97 行的 Excel（一次约 1.5 万 token、4～5 分钟），
+ * 交付前检查报了“事实编号”列里的内部编号和几处用语，只能整份重出；前后 4 次，撞上 40 分钟时限只交出半成品。
+ *
+ * - 只改本事项、本任务里表格工具生成的表格（agent_table，.xlsx）；律师上传的 Excel 不能改；
+ * - 行号是数据行号（从 1 起、不含表头），与交付前检查报的“××表格第 N 行”一致；列按表头文字定位；
+ * - 执行顺序：逐格改 → 替换文字 → 删除行（从大到小）→ 追加行；行号一律按修改前这份表格的行号；
+ * - 语义照 docx.edit_draft：能定位的先改，定位不到的逐条退回原因；一处都没改成时不登记新版本。
+ */
+export function xlsxEditCells(
+  ctx: InvokeCtx,
+  p: {
+    artifact_version_id?: unknown;
+    edits?: unknown;
+    replace?: unknown;
+    append_rows?: unknown;
+    delete_rows?: unknown;
+  },
+) {
+  const s = scopeOf(ctx);
+  if (!s.runId) throw new DomainError("forbidden", "只有任务内的调用可以修改表格", 403);
+  const id = String(p.artifact_version_id ?? "");
+  const art = ctx.db.get<{ kind: string; filename: string; storage_uri: string; sha256: string; run_id: string | null; manifest: string | null }>(
+    `SELECT kind, filename, storage_uri, sha256, run_id, manifest FROM artifact_versions WHERE artifact_version_id = ? AND matter_id = ?`,
+    [id, s.matterId],
+  );
+  if (!art) throw new DomainError("not_found", "找不到这份表格：artifact_version_id 用 xlsx.render_table（或上一次 xlsx.edit_cells）返回的那个", 404);
+  if (art.run_id !== s.runId) throw new DomainError("forbidden", "只能修改本任务里生成的表格；别的任务的表格与律师上传的 Excel 材料不能用本工具", 403);
+  if (art.kind !== "agent_table" || !art.filename.toLowerCase().endsWith(".xlsx")) {
+    throw new DomainError("validation", "只能修改 xlsx.render_table 生成的表格；Word 文书用 docx.edit_draft", 422);
+  }
+  if ((art.manifest ?? "").includes('"system_generated":true')) {
+    throw new DomainError("validation", "这份是系统按本事项事实生成的事实时间线，不能逐格改：事实有误的用 facts.submit 重新提交，由律师在事实页确认", 422);
+  }
+  const arr = (v: unknown): any[] => (Array.isArray(v) ? v : []);
+  const edits = arr(p.edits);
+  const replaces = arr(p.replace);
+  const appends = arr(p.append_rows);
+  const deletes = arr(p.delete_rows);
+  if (edits.length + replaces.length + appends.length + deletes.length === 0) {
+    throw new DomainError("validation", "edits、replace、append_rows、delete_rows 至少给一类", 422);
+  }
+  const total = edits.length + replaces.length + appends.reduce((n, a) => n + arr(a?.rows).length, 0) + deletes.reduce((n, d) => n + arr(d?.rows).length, 0);
+  if (total > EDIT_CELLS_MAX_OPS) throw new DomainError("validation", `一次最多 ${EDIT_CELLS_MAX_OPS} 处修改；改动更多时说明这份表格要重做，用 xlsx.render_table 重新生成`, 422);
+  const buf = ctx.blobs.read(art.storage_uri);
+  if (sha256Hex(buf) !== art.sha256) throw new DomainError("hash_mismatch", "表格内容已变化（读取时复算 hash 不符），已停止", 412);
+  const read = readCreatedXlsx(buf);
+  if (!read) throw new DomainError("validation", "这份表格不是用表格工具生成的，不能逐格改，请用 xlsx.render_table 重新生成", 422);
+  // 每行补齐到表头列数（写入时末尾的空格不写，读回会短）
+  const specs: SheetSpec[] = read.map((sh) => {
+    const width = sh.rows[0]?.length ?? 0;
+    return { name: sh.name, rows: sh.rows.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? null)) };
+  });
+
+  const rejected: { op: CellOp; index: number; reason: string }[] = [];
+  const replaced: { index: number; find: string; count: number }[] = [];
+  let applied = 0;
+  const sheetNames = () => specs.map((x) => `“${x.name}”`).join("、");
+  const sheetOf = (op: CellOp, index: number, name: unknown): SheetSpec | null => {
+    const n = String(name ?? "");
+    const hit = specs.find((x) => x.name === n) ?? specs.find((x) => x.name === n.trim());
+    if (!hit) rejected.push({ op, index, reason: `没有名为“${n}”的工作表；这份表格的工作表：${sheetNames()}` });
+    return hit ?? null;
+  };
+  const dataRows = (sh: SheetSpec) => sh.rows.length - 1;
+  const rowOk = (op: CellOp, index: number, sh: SheetSpec, row: unknown): number | null => {
+    const r = typeof row === "number" ? row : Number(row);
+    if (!Number.isInteger(r) || r < 1 || r > dataRows(sh)) {
+      rejected.push({ op, index, reason: `行号 ${String(row)} 超出范围：“${sh.name}”共 ${dataRows(sh)} 行数据（行号从 1 起，不含表头，与交付前检查报的“第 N 行”一致）` });
+      return null;
+    }
+    return r;
+  };
+  const lostReason = "是超长的数字（身份证号、账号一类），按数字传已失真，请改成文字（加引号）后重交";
+
+  // 1. 逐格改
+  edits.forEach((e, index) => {
+    const sh = sheetOf("edits", index, e?.sheet);
+    if (!sh) return;
+    const r = rowOk("edits", index, sh, e?.row);
+    if (r === null) return;
+    const col = String(e?.column ?? "");
+    const header = sh.rows[0]!.map((c) => String(c ?? ""));
+    let ci = header.indexOf(col);
+    if (ci < 0) ci = header.findIndex((h) => h.trim() === col.trim());
+    if (ci < 0) {
+      rejected.push({ op: "edits", index, reason: `“${sh.name}”没有“${col}”这一列（列名逐字照抄表头）；该表的列：${header.map((h) => `“${h}”`).join("、")}` });
+      return;
+    }
+    const v = normalizeCell(e?.value);
+    if (v.lost) {
+      rejected.push({ op: "edits", index, reason: `新值${lostReason}` });
+      return;
+    }
+    sh.rows[r]![ci] = v.value;
+    applied += 1;
+  });
+
+  // 2. 替换文字（不含表头）
+  replaces.forEach((x, index) => {
+    const find = String(x?.find ?? "");
+    const to = String(x?.with ?? "");
+    if ([...find].length < 2) {
+      rejected.push({ op: "replace", index, reason: "find 至少 2 个字（太短容易误改别处）" });
+      return;
+    }
+    let targets = specs;
+    if (x?.sheet !== undefined && x?.sheet !== null && x?.sheet !== "") {
+      const sh = sheetOf("replace", index, x.sheet);
+      if (!sh) return;
+      targets = [sh];
+    }
+    let count = 0;
+    for (const sh of targets) {
+      for (let ri = 1; ri < sh.rows.length; ri++) {
+        const row = sh.rows[ri]!;
+        row.forEach((c, ci) => {
+          if (typeof c !== "string" || !c.includes(find)) return;
+          const parts = c.split(find);
+          count += parts.length - 1;
+          const next = parts.join(to).slice(0, MAX_CELL);
+          row[ci] = next === "" ? null : next;
+        });
+      }
+    }
+    if (count === 0) {
+      rejected.push({ op: "replace", index, reason: `在${targets.length === 1 ? `“${targets[0]!.name}”` : "这份表格"}的文字格子里没有找到“${find}”（表头不在替换范围内；逐字照抄格子里的文字）` });
+      return;
+    }
+    replaced.push({ index, find, count });
+    applied += 1;
+  });
+
+  // 3. 删除行：同一张表的行号去重后从大到小删，行号按修改前的表
+  const toDelete = new Map<SheetSpec, Set<number>>();
+  deletes.forEach((d, index) => {
+    const sh = sheetOf("delete_rows", index, d?.sheet);
+    if (!sh) return;
+    const rows = arr(d?.rows);
+    if (rows.length === 0) {
+      rejected.push({ op: "delete_rows", index, reason: "rows 里没有行号" });
+      return;
+    }
+    const set = toDelete.get(sh) ?? new Set<number>();
+    for (const row of rows) {
+      const r = rowOk("delete_rows", index, sh, row);
+      if (r !== null && !set.has(r)) {
+        set.add(r);
+        applied += 1;
+      }
+    }
+    toDelete.set(sh, set);
+  });
+  for (const [sh, set] of toDelete) for (const r of [...set].sort((a, b) => b - a)) sh.rows.splice(r, 1);
+
+  // 4. 追加行
+  appends.forEach((a, index) => {
+    const sh = sheetOf("append_rows", index, a?.sheet);
+    if (!sh) return;
+    const width = sh.rows[0]!.length;
+    const rows = arr(a?.rows);
+    if (rows.length === 0) {
+      rejected.push({ op: "append_rows", index, reason: "rows 里没有要追加的行" });
+      return;
+    }
+    rows.forEach((row, k) => {
+      const cells = Array.isArray(row) ? row : [];
+      if (cells.length > width) {
+        rejected.push({ op: "append_rows", index, reason: `第 ${k + 1} 行有 ${cells.length} 格，多于“${sh.name}”的 ${width} 列：按表头的列依次给值；要加列请用 xlsx.render_table 重新生成` });
+        return;
+      }
+      if (dataRows(sh) >= MAX_ROWS) {
+        rejected.push({ op: "append_rows", index, reason: `“${sh.name}”已到 ${MAX_ROWS} 行上限，请分表` });
+        return;
+      }
+      const norm = cells.map(normalizeCell);
+      if (norm.some((n) => n.lost)) {
+        rejected.push({ op: "append_rows", index, reason: `第 ${k + 1} 行里有格子${lostReason}` });
+        return;
+      }
+      sh.rows.push(Array.from({ length: width }, (_, i) => norm[i]?.value ?? null));
+      applied += 1;
+    });
+  });
+
+  const notFound = rejected.length;
+  slog.event("TOOLS_DOCX_EDIT_OUTCOME", { tool: "xlsx_edit_cells", status: applied === 0 ? "not_applied" : notFound > 0 ? "partial" : "applied", patches: total, applied, not_found: notFound, ambiguous: 0, unknown_token: 0, other: 0 });
+  if (applied === 0) {
+    return {
+      status: "not_applied" as const,
+      applied: 0,
+      rejected,
+      note: "一处都没有改成，没有登记新版本：按 rejected 里的原因改正后重交（artifact_version_id 仍用这一个）",
+    };
+  }
+  const title = art.filename.replace(/\.xlsx$/i, "");
+  const done = finishTable(ctx, title, specs, "xlsx.edit_cells", { edited_from: id });
+  return {
+    status: notFound > 0 ? ("partial" as const) : ("applied" as const),
+    applied,
+    ...(replaced.length > 0 ? { replaced } : {}),
+    ...(notFound > 0 ? { rejected } : {}),
+    previous_artifact_version_id: id,
+    ...done,
+    note:
+      (notFound > 0
+        ? `能定位的 ${applied} 处已写入新版本，${notFound} 处退回（见 rejected）：按原因改正后，用新的 artifact_version_id 只重交这几处。`
+        : `${applied} 处已写入同名表格的新版本（旧版本保留）。`) +
+      "后续再改用新的 artifact_version_id；quality_check 通过后不要为润色整份重新生成。",
+  };
 }
 
 function parseSkill(snap: string | null): string | null {

@@ -200,7 +200,7 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
     issues,
     note: ok
       ? "交付前检查未发现问题（只查工具用语、夹杂英文、条款编号、互引、大小写金额、表格合计、法条号这几类，不代替律师复核）"
-      : `交付前检查发现 ${issues.length} 处问题：Word 文书用 docx.edit_draft 在这份文书上逐处改正（不要整份重新生成），表格改正后重新生成；确实不需要改的（如律师要求保留），在最终答复里说明理由`,
+      : `交付前检查发现 ${issues.length} 处问题：Word 文书用 docx.edit_draft 在这份文书上逐处改正（不要整份重新生成），表格用 xlsx.edit_cells 在这份表格上逐格改正（不要整份重新生成）；确实不需要改的（如律师要求保留），在最终答复里说明理由`,
   };
 }
 
