@@ -20,7 +20,8 @@ import { proposeDraft } from "../../services/review-rules.ts";
 import { fillCells, tableForAgent } from "../../services/review-tables.ts";
 import { acceptedText, changesDocument, listFacts, listRiskCards, submitFacts, submitRiskCards, riskCardProgress } from "../../services/review-cards.ts";
 import { runLineage } from "../../services/artifact-lineage.ts";
-import { checkDeliverable } from "../../services/deliverable-check.ts";
+import { checkDeliverable, factRefNos } from "../../services/deliverable-check.ts";
+import { FACT_COLUMNS, FACT_SHEET_NAME, factTableRows } from "../../services/fact-refs.ts";
 import { cellChars, shrinkCheck } from "../../services/version-shrink.ts";
 import { amountWordsConflicts, extractFacts, payDayConflicts, type FactRow } from "../../executor/casefile.ts";
 
@@ -384,7 +385,10 @@ export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { na
  * 写出表格并登记为本任务的草稿成果（xlsx.render_table 与 xlsx.edit_cells 共用）：存文件、登记成果、版本缩水检查、交付前检查。
  * 同一任务里同名的表格串成同一份文件的各个版本。
  */
-function finishTable(ctx: InvokeCtx, title: string, specs: SheetSpec[], tool: "xlsx.render_table" | "xlsx.edit_cells", extraManifest: Record<string, unknown> = {}) {
+function finishTable(ctx: InvokeCtx, title: string, specs0: SheetSpec[], tool: "xlsx.render_table" | "xlsx.edit_cells", extraManifest: Record<string, unknown> = {}) {
+  // 事实对照（V16 第 41 批）：单元格里写了“事实 N”的，自动追加一张“事实对照”，只列被引用到的序号
+  const facts = withFactSheet(ctx, specs0);
+  const specs = facts.specs;
   const buf = createXlsx(specs);
   const stored = ctx.blobs.put(buf, scopeOf(ctx).matterId);
   const filename = `${safeTitle(title)}.xlsx`;
@@ -394,18 +398,35 @@ function finishTable(ctx: InvokeCtx, title: string, specs: SheetSpec[], tool: "x
     filename,
     sha256: stored.sha256,
     storage_uri: stored.storage_uri,
-    manifest: { tool, sheets: specs.map((s) => ({ name: s.name, rows: s.rows.length - 1, columns: s.rows[0]!.length })), text_chars: textChars, note: "Agent 经工具生成的表格（草稿）；导出时按事项令牌表还原代号", ...extraManifest },
+    manifest: { tool, sheets: specs.map((s) => ({ name: s.name, rows: s.rows.length - 1, columns: s.rows[0]!.length })), text_chars: textChars, note: "Agent 经工具生成的表格（草稿）；导出时按事项令牌表还原代号", ...extraManifest, ...(facts.added ? { fact_sheet: "auto" } : {}) },
   });
   // 版本缩水检查（第 35 批）：同一任务里重出的同名表格比上一版明显变短，提示助手核对是否漏了行
   const shrink = reg.reused ? null : shrinkCheck(ctx.db, scopeOf(ctx).runId, "agent_table", reg.filename, reg.artifact_version_id, textChars);
   // 交付前检查（第 35 批）：附件表格同样不该有工具用语、参数名、夹杂英文、Markdown 符号与大小写不一致的金额
   let quality_check: ReturnType<typeof checkDeliverable> | null = null;
   try {
-    quality_check = checkDeliverable(title, specs.map((s) => ({ heading: s.name, paragraphs: [], table: { columns: s.rows[0] ?? [], rows: s.rows.slice(1) as unknown[][] } })));
+    quality_check = checkDeliverable(title, specs.map((s) => ({ heading: s.name, paragraphs: [], table: { columns: s.rows[0] ?? [], rows: s.rows.slice(1) as unknown[][] } })), { table: true });
   } catch {
     quality_check = null;
   }
-  return { ...reg, sha256: stored.sha256, sheets: specs.length, rows: specs.reduce((n, s) => n + s.rows.length - 1, 0), ...(quality_check ? { quality_check } : {}), ...(shrink ? { shrink } : {}) };
+  return { ...reg, sha256: stored.sha256, sheets: specs.length, rows: specs.reduce((n, s) => n + s.rows.length - 1, 0), ...(quality_check ? { quality_check } : {}), ...(shrink ? { shrink } : {}), ...(facts.note ? { fact_sheet: facts.note } : {}) };
+}
+
+/**
+ * 表格里引用了“事实 N”时追加“事实对照”工作表（V16 第 41 批）。助手自己已经给了同名工作表的不加；工作表已到上限的不加，在返回里说明。
+ * 事实陈述是代号形态（与表格其他内容一致，导出时还原）。
+ */
+function withFactSheet(ctx: InvokeCtx, specs: SheetSpec[]): { specs: SheetSpec[]; added: boolean; note: string | null } {
+  const nos = factRefNos(specs.map((sh) => sh.rows.map((r) => r.map((c) => (c === null ? "" : String(c))).join("｜")).join("\n")).join("\n"));
+  if (nos.length === 0) return { specs, added: false, note: null };
+  if (specs.some((sh) => sh.name === FACT_SHEET_NAME)) return { specs, added: false, note: `表格里已有你写的“${FACT_SHEET_NAME}”工作表，系统没有另加；请核对它列全了表里引用的 ${nos.length} 个事实序号` };
+  if (specs.length >= MAX_SHEETS) return { specs, added: false, note: `表格里引用了 ${nos.length} 个事实序号，但工作表已有 ${MAX_SHEETS} 张（上限），系统没能附上“${FACT_SHEET_NAME}”：把“事实 N”改写成材料名称与日期，或并掉一张工作表后重出` };
+  const t = factTableRows({ db: ctx.db, tokens: ctx.tokens }, scopeOf(ctx).matterId, nos);
+  return {
+    specs: [...specs, { name: FACT_SHEET_NAME, rows: [FACT_COLUMNS, ...t.rows] }],
+    added: true,
+    note: `表格里引用了 ${nos.length} 个事实序号，系统已自动附上工作表“${FACT_SHEET_NAME}”（序号、事实陈述、发生日期、来源材料、律师是否已确认${t.omitted > 0 ? `；另有 ${t.omitted} 条超出上限未列` : ""}），读者离开产品也能对上——不要再手工做一张；之后用 xlsx.edit_cells 改表时这张会随引用自动更新`,
+  };
 }
 
 /** 一次逐格修改的操作总数上限（逐格改、替换、追加行、删除行合计）。 */
@@ -463,8 +484,10 @@ export function xlsxEditCells(
   if (sha256Hex(buf) !== art.sha256) throw new DomainError("hash_mismatch", "表格内容已变化（读取时复算 hash 不符），已停止", 412);
   const read = readCreatedXlsx(buf);
   if (!read) throw new DomainError("validation", "这份表格不是用表格工具生成的，不能逐格改，请用 xlsx.render_table 重新生成", 422);
+  // 上一版系统附的“事实对照”先去掉，改完后按新的引用重新生成（不重复追加）
+  const autoFacts = (art.manifest ?? "").includes('"fact_sheet":"auto"');
   // 每行补齐到表头列数（写入时末尾的空格不写，读回会短）
-  const specs: SheetSpec[] = read.map((sh) => {
+  const specs: SheetSpec[] = read.filter((sh) => !(autoFacts && sh.name === FACT_SHEET_NAME)).map((sh) => {
     const width = sh.rows[0]?.length ?? 0;
     return { name: sh.name, rows: sh.rows.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? null)) };
   });

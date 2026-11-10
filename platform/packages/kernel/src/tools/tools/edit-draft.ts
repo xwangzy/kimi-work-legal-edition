@@ -15,7 +15,8 @@ import { applyRevisionsToDocx, extractParagraphs, keepHouseMark, readZipText, sa
 import { findTokens } from "@zr-legal/tokenizer";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
-import type { DeliverableSection } from "../../services/deliverable-check.ts";
+import { factRefNos, isInternalDocument, type DeliverableSection } from "../../services/deliverable-check.ts";
+import { factTableRows, syncFactSection } from "../../services/fact-refs.ts";
 import { slog } from "@zr-legal/safe-log";
 
 /** 结果分布留痕（V13 第 38 批）：只记计数，不记文字。 */
@@ -220,6 +221,22 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
     logOutcome("preview", raw.length, ops.length, []);
     return { status: "preview" as const, written: false, applied: ops.length, note: "试写通过，没有生成文件；去掉 dry_run 正式提交" };
   }
+  // 事实对照（V16 第 41 批）：内部文书改动后，文末系统附的“事实对照”按改后正文引用的序号重新生成（不重复追加；不再引用时整节去掉）
+  let factSynced = false;
+  if (isInternalDocument(art.filename.replace(/\.docx$/i, ""))) {
+    try {
+      const synced = syncFactSection(out, (body) => {
+        const nos = factRefNos(body);
+        return nos.length > 0 ? factTableRows({ db: ctx.db, tokens: ctx.tokens }, mid, nos) : null;
+      });
+      if (synced.changed) {
+        out = synced.docx;
+        factSynced = true;
+      }
+    } catch {
+      // 同步失败不影响这次修改（文末那一节可能与正文引用不一致，交付前检查与复核仍会看到）
+    }
+  }
   let repeated: string[] = [];
   try {
     repeated = newlyRepeatedSentences(extractParagraphs(buf).map((x) => x.text), extractParagraphs(out).map((x) => x.text));
@@ -242,6 +259,7 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
     ...(conflicts.length > 0 ? { conflicts } : {}),
     ...reg,
     edited_from: id,
+    ...(factSynced ? { fact_table: "文末的“事实对照”已按改后正文引用的事实序号重新生成（系统附的，不要手工改这一节）" } : {}),
     ...(repeated.length > 0
       ? { repeated_sentences: repeated, repeated_note: "这次修改后，上面这些句子在文书里出现了两次以上（修改前没有这么多）：多半是新文字和原有的句子重复了。逐处核对，重复的用 docx.edit_draft 删掉一处（用这次返回的 artifact_version_id）" }
       : {}),

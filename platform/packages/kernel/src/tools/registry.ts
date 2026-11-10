@@ -27,7 +27,8 @@ import { docxRevise } from "./tools/revise.ts";
 import { docxEditDraft, sectionsOfDocx } from "./tools/edit-draft.ts";
 import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, rulesPropose, riskcardsList, riskcardsSubmit, tableFill, tableGet, xlsxEditCells, xlsxRenderTable } from "./tools/review.ts";
 import { assertOutlineSettled } from "../services/argument-outlines.ts";
-import { checkDeliverable, type DeliverableCheck } from "../services/deliverable-check.ts";
+import { checkDeliverable, factRefNos, isInternalDocument, type DeliverableCheck } from "../services/deliverable-check.ts";
+import { FACT_SHEET_NAME, factSection, factTableRows } from "../services/fact-refs.ts";
 import { sectionChars, shrinkCheck } from "../services/version-shrink.ts";
 import { localToday } from "../services/local-date.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
@@ -443,6 +444,9 @@ export const TOOLS: readonly ToolDef[] = [
     invoke: async (p, ctx) => {
       // 起草前的论点与依据还在等律师确认时不出文书（v9.4 第 19 批 C-04）
       assertOutlineSettled(ctx.db, typeof ctx.claims.rid === "string" ? ctx.claims.rid : null);
+      // 事实对照（V16 第 41 批）：内部文书正文引用了“事实 N”的，文末自动加一节对照表；对外文书不加，由交付前检查报出改成证据名称
+      const facts = ctx.claims.rid && ctx.claims.mid ? factSectionFor(ctx, p) : null;
+      if (facts?.section) p = { ...p, sections: [...p.sections, facts.section] };
       const r = docxRenderReport(ctx.blobs, p, ctx.claims.mid);
       // 交付前检查（第 35 批）：工具用语与内部编号外露、夹杂英文、条款编号与互引、大小写金额、错误条号——随结果交回助手当场改正
       const quality_check = deliverableQualityFor(ctx, p, r.storage_uri);
@@ -450,10 +454,10 @@ export const TOOLS: readonly ToolDef[] = [
       if (!ctx.claims.rid) return { ...r, ...(quality_check ? { quality_check } : {}) };
       const title = String(p.title ?? "文书").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").trim().slice(0, 60) || "文书";
       const textChars = sectionChars(p.sections);
-      const reg = registerToolArtifact(ctx, { kind: "agent_report", filename: `${title}.docx`, sha256: r.sha256, storage_uri: r.storage_uri, manifest: { tool: "docx.render_report", sections: Array.isArray(p.sections) ? p.sections.length : 0, tables: Array.isArray(p.sections) ? p.sections.filter((s: any) => s?.table).length : 0, text_chars: textChars } });
+      const reg = registerToolArtifact(ctx, { kind: "agent_report", filename: `${title}.docx`, sha256: r.sha256, storage_uri: r.storage_uri, manifest: { tool: "docx.render_report", sections: Array.isArray(p.sections) ? p.sections.length : 0, tables: Array.isArray(p.sections) ? p.sections.filter((s: any) => s?.table).length : 0, text_chars: textChars, ...(facts?.section ? { fact_section: "auto" } : {}) } });
       // 版本缩水检查（第 35 批）：同一任务里重出的同名文书比上一版明显变短，提示助手核对是否漏了内容
       const shrink = reg.reused ? null : shrinkCheck(ctx.db, ctx.claims.rid, "agent_report", reg.filename, reg.artifact_version_id, textChars);
-      return { ...r, ...reg, ...(quality_check ? { quality_check } : {}), ...(shrink ? { shrink } : {}) };
+      return { ...r, ...reg, ...(quality_check ? { quality_check } : {}), ...(shrink ? { shrink } : {}), ...(facts?.note ? { fact_table: facts.note } : {}) };
     },
   },
   {
@@ -930,6 +934,23 @@ export const TOOLS: readonly ToolDef[] = [
     invoke: (p, ctx) => xlsxEditCells(ctx, p),
   },
 ];
+
+/** 内部文书引用了“事实 N”时文末要加的那一节（助手已写了同名节的不加）；对外文书与没有引用的返回 null。 */
+function factSectionFor(ctx: InvokeCtx, p: { title?: unknown; sections?: unknown }): { section: ReturnType<typeof factSection> | null; note: string } | null {
+  try {
+    const sections = Array.isArray(p.sections) ? (p.sections as { heading?: unknown; paragraphs?: unknown; table?: { columns?: unknown[]; rows?: unknown[][] } }[]) : [];
+    const text = sections
+      .map((s) => [String(s?.heading ?? ""), ...(Array.isArray(s?.paragraphs) ? s.paragraphs.map(String) : []), ...(Array.isArray(s?.table?.rows) ? s.table!.rows!.map((r) => (Array.isArray(r) ? r.map((c) => String(c ?? "")).join("｜") : "")) : [])].join("\n"))
+      .join("\n");
+    const nos = factRefNos(text);
+    if (nos.length === 0 || !isInternalDocument(String(p.title ?? ""))) return null;
+    if (sections.some((s) => String(s?.heading ?? "").trim() === FACT_SHEET_NAME)) return { section: null, note: `文书里已有你写的“${FACT_SHEET_NAME}”一节，系统没有另加；请核对它列全了正文引用的 ${nos.length} 个事实序号` };
+    const t = factTableRows({ db: ctx.db, tokens: ctx.tokens }, ctx.claims.mid!, nos);
+    return { section: factSection(t.rows, t.omitted), note: `正文引用了 ${nos.length} 个事实序号，系统已在文末自动加了一节“${FACT_SHEET_NAME}”（序号、事实陈述、发生日期、来源材料、律师是否已确认），读者离开产品也能对上——不要再手工写一节；之后用 docx.edit_draft 改文书时这一节会随引用自动更新` };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * 文书的交付前检查（第 35 批）：法条按事项的分析截止日（缺省今天）离线核验；检查本身出错不影响文书生成（返回 null）。

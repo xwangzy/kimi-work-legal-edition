@@ -136,7 +136,39 @@ export function headingNumberIssues(sections: readonly DeliverableSection[]): De
   return out;
 }
 
-export function checkDeliverable(title: string, sections: readonly DeliverableSection[], opts: { lawdb?: Lawdb; asOf?: string; docx?: Buffer } = {}): DeliverableCheck {
+/**
+ * 交付件里的“事实 N”（V16 第 41 批，回归评分二 m03、m05、m16、m20、m25、m26：表格和文书用“事实 12”作出处，事实清单只在产品界面里，文件离开界面就对不上）。
+ * 认的写法：“事实 12”“事实12”“事实 3、5”“事实 3—7”“事实3至事实7”“事实 3-7”；区间至多展开 50 个。后面紧跟年、月、日、号、万、元、% 的数字不算（“事实2023年”）。
+ * 返回去重、按序号排好的序号。纯函数。
+ */
+const FACT_NO = String.raw`(\d{1,4})(?![\d年月日号万元%．.])`;
+const FACT_SEP = String.raw`\s*(、|，|,|和|及|与|至|到|—|－|-|~|～)\s*(?:事实\s*)?`;
+const FACT_REF_RE = new RegExp(String.raw`事实\s*${FACT_NO}((?:${FACT_SEP}\d{1,4}(?![\d年月日号万元%．.]))*)`, "g");
+export function factRefNos(text: string): number[] {
+  const out = new Set<number>();
+  for (const m of String(text ?? "").matchAll(FACT_REF_RE)) {
+    let prev = Number(m[1]);
+    out.add(prev);
+    for (const x of (m[2] ?? "").matchAll(new RegExp(String.raw`${FACT_SEP}(\d{1,4})`, "g"))) {
+      const n = Number(x[2]);
+      if (/至|到|—|－|-|~|～/.test(x[1]!) && n > prev && n - prev <= 50) for (let k = prev + 1; k <= n; k++) out.add(k);
+      else out.add(n);
+      prev = n;
+    }
+  }
+  return [...out].filter((n) => n > 0).sort((a, b) => a - b);
+}
+
+/**
+ * 内部文书（给律师或本所自己看的）：备忘录、分析、评估、草稿、核对清单、起草说明、对照表、底稿、研究、提纲、纪要、测算、内部稿等。
+ * 与 isFiledOrSent 的排除口径一致（它排除的都在这里），另把“意见书草稿”“庭审提纲”“访谈纪要”算内部。其余（起诉状、函件、意见书、合同、汇报）按对外文书处理。
+ * 用于“事实 N”：内部文书文末自动附事实对照，对外文书由交付前检查报出、改成证据名称。
+ */
+export function isInternalDocument(title: string): boolean {
+  return /内部|备忘录|分析|评估|草稿|核对|清单|起草说明|说明|对照表|底稿|研究|提纲|纪要|测算|计算|矩阵|工作稿/.test(String(title ?? ""));
+}
+
+export function checkDeliverable(title: string, sections: readonly DeliverableSection[], opts: { lawdb?: Lawdb; asOf?: string; docx?: Buffer; table?: boolean } = {}): DeliverableCheck {
   const paras = flatten(title, sections);
   const issues: DeliverableIssue[] = [];
   const push = (i: DeliverableIssue) => {
@@ -182,6 +214,14 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
   else if (isOutward(title)) for (const i of outwardIssues(paras)) push(i);
   // 要递交法院、仲裁机构或发给对方的文书：正文不留给律师的标记（V16 第 41 批，工作准则第 5 条）
   if (isFiledOrSent(title)) for (const i of noteToLawyerIssues(paras)) push(i);
+  // 对外文书正文里的“事实 N”（V16 第 41 批）：读者手里没有事实页，改成证据名称；表格与内部文书由工具自动附事实对照，不在这里报
+  if (!opts.table && !isInternalDocument(title)) {
+    for (const p of paras) {
+      FACT_REF_RE.lastIndex = 0;
+      const m = FACT_REF_RE.exec(p.text);
+      if (m) push({ kind: "note_to_lawyer", where: p.where, text: snippet(p.text, m.index, m[0].length), fix: "“事实 N”是本产品事实页的序号，这份文书要交给客户、对方或法院，读者手里没有事实表：改成证据或材料的名称（文件名）与条款、日期（如“《对账确认函》（2026年3月5日）第2条”）" });
+    }
+  }
   for (const i of numberingIssues(sections)) push(i);
   for (const i of headingNumberIssues(sections)) push(i);
   for (const i of crossRefIssues(sections, paras)) push(i);
