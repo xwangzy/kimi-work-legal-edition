@@ -6,7 +6,7 @@ export * from "./server.ts";
 export { checkUrlStatic, isPublicAddress, DEFAULT_ALLOWED_PORTS } from "./url-guard.ts";
 export { gateFetch, FetchDenied, htmlToText } from "./fetcher.ts";
 export { screenSearchQuery, type DataLevel, type SearchVerdict } from "./search-guard.ts";
-export { processChatPayload } from "./chat-payload.ts";
+export { processChatPayload, type ChatPayloadOptions } from "./chat-payload.ts";
 export { READBACK_MODEL_FIELDS, readbackToolOf, tokenizeByField, type ModelFieldRule } from "./readback-fields.ts";
 export { extractUsage } from "./usage.ts";
 export { OFFICIAL_SITE_BASELINE } from "./baseline.ts";

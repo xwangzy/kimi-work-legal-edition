@@ -32,6 +32,11 @@ export interface BrokerChatArgs {
   signal?: AbortSignal | undefined;
   /** 调用方已持有的任务令牌（本机端点转发宿主请求时原样交给闸门再验；缺省由闸门传输按任务签发）。 */
   bearer?: string | undefined;
+  /**
+   * 内核自己发起、内容已按来源分别处理过的请求（独立复核；V16 第 41 批）：闸门整段只替换已知名单。
+   * 只在闸门传输按任务签发令牌时生效（令牌带 model:known_only）；带着 bearer 转发的请求用的是调用方自己的令牌，不受此项影响。
+   */
+  knownOnly?: boolean | undefined;
 }
 
 export interface BrokerChatResult {
@@ -93,7 +98,7 @@ export class ModelBroker {
         nonce: randomUUID(),
         clientIdempotencyId,
         signal: args.signal,
-        task: { tid: args.task.tid, uid: args.task.uid, mid: args.task.mid, rid: args.task.rid, aid: args.task.aid },
+        task: { tid: args.task.tid, uid: args.task.uid, mid: args.task.mid, rid: args.task.rid, aid: args.task.aid, ...(args.knownOnly ? { knownOnly: true } : {}) },
         bearer: args.bearer,
       },
     };

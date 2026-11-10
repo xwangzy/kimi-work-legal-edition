@@ -162,6 +162,8 @@ export class KernelGate {
   private restartTimer: NodeJS.Timeout | null = null;
   private restartBackoffMs = 0;
   readonly upstreams: GateUpstreams;
+  /** 内核为各任务担保过的文字（交回修改那一轮的提示；只在内存，内核重启后为空——此时闸门照常识别，偏向多遮）。 */
+  private readonly vouched = new Map<string, string[]>();
   /** 匿名事项编号的租户盐缓存（控制面固定新盐时清空）。 */
   private readonly salts = new Map<string, Buffer>();
   /** 统计（测试与设备页）：闸门进程拉起次数、去向记录与令牌条目写入数、写入失败数。 */
@@ -349,6 +351,7 @@ export class KernelGate {
       l3aStandardAllowed: () => gov.l3aStandardAllowed(),
       exitMode: () => gov.exitMode(),
       ...(this.d.preauth ? { preauth: this.d.preauth } : {}),
+      knownOnlyTexts: (rid) => this.vouched.get(rid) ?? [],
     });
     const approvals = this.d.approvals;
     this.starting = startEgressGate({
@@ -402,6 +405,19 @@ export class KernelGate {
       void this.ensure().catch(() => this.scheduleRestart());
     }, this.restartBackoffMs);
     this.restartTimer.unref();
+  }
+
+  /**
+   * 担保一段内核写好的文字（V16 第 41 批）：交回修改那一轮的提示是复核意见加内核的说明，内核已只换已知名单；它经助手宿主的会话出站，
+   * 闸门对 user 消息照常识别，会把意见里引用的“曾根据”认成新姓名。登记后，闸门对本任务请求里逐字出现的这一段只替换已知名单，
+   * 同一条消息里宿主或引擎加的其他文字照常识别。只能由内核调用（宿主没有这条通道）。
+   */
+  vouchKnownOnly(runId: string, text: string): void {
+    if (text.length === 0) return;
+    const list = this.vouched.get(runId) ?? [];
+    if (!list.includes(text)) list.push(text);
+    this.vouched.set(runId, list.slice(-4));
+    while (this.vouched.size > 200) this.vouched.delete(this.vouched.keys().next().value!);
   }
 
   /** 撤销任务：通知闸门立即中止该任务的在途上游请求（之后的请求由授权拒绝）。 */

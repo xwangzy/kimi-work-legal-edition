@@ -13,6 +13,8 @@
  *   riskcards.list / facts.list / outline.get / table.get 的结果，按 JSON 解析后，模型自己写的字段（卡片建议、未确认的事实陈述、
  *   未经律师改写的论点、AI 填的格子）只替换已知名单，律师写的字段与其余内容照常识别；引擎在 JSON 前加的“Wall time”行照常处理；
  *   解析不了的（超长被引擎截断、出错说明）整段只替换已知名单——律师写的字段在内核交回 Agent 前已照常识别、换成代号；
+ * - **内核自己发起的请求**（V16 第 41 批）：独立复核请求整段只替换已知名单（令牌里带 `model:known_only`，只有内核签得出）；
+ *   交回修改那一轮的提示由内核担保、逐字出现的那一段只替换已知名单（见 `ChatPayloadOptions`）；
  * - 工作区本已是令牌形态，确定性令牌化幂等：同一值得到同一代号，跨轮稳定、前缀缓存不破；
  * - 工具调用参数（JSON 字符串）先解析再逐值令牌化（`\uXXXX` 转义写法同样识别），只在确有替换时重新序列化；
  * - **响应流不还原**（不在本模块）：引擎收到的永远是令牌形态；
@@ -56,15 +58,47 @@ const MESSAGE_STRUCTURAL = new Set(["role", "tool_call_id", "partial", "prefix"]
 /** 内容块对象的结构字段（`redacted_thinking` 的 data 为上游加密数据，原样）。`citations` 含原文片段，照常令牌化（终核 S4-24）。 */
 const BLOCK_STRUCTURAL = new Set(["type", "id", "tool_use_id", "cache_control", "signature", "is_error"]);
 
-export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): ChatPayloadReport {
+/**
+ * 出站处理的选项（V16 第 41 批）。两项都只来自内核：闸门从内核签发的任务令牌与内核的授权结果里读到，请求方（助手宿主、模型）设不了。
+ */
+export interface ChatPayloadOptions {
+  /**
+   * 整个请求只替换已知名单（标识符、当事人词典与令牌表照常替换，不做姓名识别、不学新名字；发送前二次检测照常）。
+   * 用于内核自己发起、内容已由内核按来源分别处理过的请求——独立复核：委托原话、律师的回答、材料原文在内核里已照常识别过，
+   * 文书与答复是助手写的、只换已知名单；闸门再按“律师写的”整段识别，会把文书里的“曾根据”认成新姓名“曾根”。
+   */
+  knownOnly?: boolean;
+  /**
+   * 内核担保过的文字（交回修改那一轮的提示：复核意见与内核写的说明，内核已只换已知名单）：请求里逐字出现的这一段只替换已知名单，
+   * 同一条消息里其余文字照常识别。逐字比对，引擎改动过的文字对不上就照常识别（失败时偏向多遮）。
+   */
+  knownOnlyTexts?: readonly string[];
+}
+
+/** 内核担保的文字太短时不按段处理（避免短串到处命中）。 */
+const MIN_VOUCHED_CHARS = 20;
+
+export function processChatPayload(input: unknown, tokenizer: MatterTokenizer, opts: ChatPayloadOptions = {}): ChatPayloadReport {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("请求体不是对象");
   const report: ChatPayloadReport = { body: {}, textChars: 0, segments: 0, replaced: 0, counts: {}, present: {}, media: [], suspects: { high: 0, medium: 0 }, suspectValues: [] };
   const seen = new Map<string, "high" | "medium">();
+  const wholeKnownOnly = opts.knownOnly === true;
+  const vouched = [...new Set((opts.knownOnlyTexts ?? []).filter((t) => typeof t === "string" && t.length >= MIN_VOUCHED_CHARS))].sort((a, b) => b.length - a.length);
   /** 正在处理模型写的 assistant 消息（D-157）：其中的字符串只替换已知名单。 */
   let modelAuthored = false;
   /** 正在处理读回工具的结果（D-157 第二步）：文字按 JSON 解析、按字段选档。 */
   let readbackRule: ModelFieldRule | null = null;
-  const tok = (s: string, knownOnly = modelAuthored): string => {
+  /** 一段文字：照常识别的文字里逐字出现内核担保过的一段时，拆开处理——担保的一段只换已知名单，前后照常识别。 */
+  const tok = (s: string, knownOnly = modelAuthored || wholeKnownOnly): string => {
+    if (!knownOnly && vouched.length > 0 && s.length >= MIN_VOUCHED_CHARS) {
+      for (const v of vouched) {
+        const at = s.indexOf(v);
+        if (at >= 0) return tok(s.slice(0, at), false) + tokOne(v, true) + tok(s.slice(at + v.length), false);
+      }
+    }
+    return tokOne(s, knownOnly);
+  };
+  const tokOne = (s: string, knownOnly: boolean): string => {
     if (s.length === 0) return s;
     report.textChars += s.length;
     report.segments += 1;
@@ -103,7 +137,7 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer): 
     const head = raw.slice(0, at);
     const headOut = tok(head);
     const before = JSON.stringify(parsed);
-    const out = tokenizeByField(parsed, (s, modelWritten) => tok(s, modelWritten), rule);
+    const out = tokenizeByField(parsed, (s, modelWritten) => tok(s, modelWritten || wholeKnownOnly), rule);
     return headOut === head && JSON.stringify(out) === before ? raw : headOut + JSON.stringify(out, null, 2);
   };
   /** 消息与内容块里的正文文字。 */

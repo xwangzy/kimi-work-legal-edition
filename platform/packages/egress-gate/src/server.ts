@@ -452,7 +452,8 @@ export class EgressGateServer {
     }
     const tz = this.tokenizerFor(ctx);
     const before = tz.table().length;
-    const report = processChatPayload(parsed, tz);
+    // 内核自己发起的独立复核（令牌带 model:known_only）整段只换已知名单；内核担保过的修改轮提示逐字出现处只换已知名单（V16 第 41 批）
+    const report = processChatPayload(parsed, tz, { knownOnly: ctx.knownOnly === true, knownOnlyTexts: ctx.knownOnlyTexts ?? [] });
     this.reportNewTokens(ctx, tz, before);
     const model = typeof report.body.model === "string" ? report.body.model : null;
     const media = report.media.map((x) => x.kind);

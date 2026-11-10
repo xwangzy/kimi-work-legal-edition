@@ -13,6 +13,9 @@ export type ModelFieldRule = (key: string, parent: Readonly<Record<string, unkno
 /** 风险卡里 Agent 提交的字段；`lawyer_text` 是律师“修改后接受”写的，照常识别。 */
 const CARD_FIELDS = new Set(["clause_ref", "anchor_text", "category", "issue", "basis", "suggestion", "fallback", "bottom_line", "rule_ref", "searched_terms", "searched_found", "adopted_text"]);
 
+/** docx.revise 结果里按模型写的处理的字段（V16 第 41 批）。 */
+const REVISE_MODEL_FIELDS = new Set(["changes", "conflicts", "numbering_changes", "numbering_note", "label_notes", "note"]);
+
 /** 键为内核法律工具名。 */
 export const READBACK_MODEL_FIELDS: Readonly<Record<string, ModelFieldRule>> = Object.freeze({
   "riskcards.list": (k) => CARD_FIELDS.has(k),
@@ -29,6 +32,17 @@ export const READBACK_MODEL_FIELDS: Readonly<Record<string, ModelFieldRule>> = O
   "law.get_version": () => true,
   "law.get_article": () => true,
   "citations.verify": () => true,
+  // 出文书、出表、改文书、改表、在原件上修订这几个工具的结果，回给助手的是它自己刚交上来的文字（交付前检查摘出的原句、改前改后的整段、被退回的定位文字）
+  // 和原件里它已经读过的文字（V16 第 41 批两轮真实回归：文书里的“被告应予返还”“应休”“应发工资”“曾根据”“公式成立”经这些结果被认成新姓名，学进事项代号表后，
+  // 独立复核看到的文书里这些词都成了代号，报“无出处的自然人代号，必须改”，修改轮照改）。只替换已知名单，不从中学新名字；
+  // 出文书、出表、改文书、改表只能作用于本任务里助手自己生成的文书与表格（edit-draft.ts、review.ts 按任务与成果类别核对），结果整体按模型写的处理
+  "docx.render_report": () => true,
+  "docx.edit_draft": () => true,
+  "xlsx.render_table": () => true,
+  "xlsx.edit_cells": () => true,
+  // 在原件上修订：只有改前改后的整段（changes）、被退回的原因（conflicts）、编号顺延与互引（numbering_changes）、条款标签提示与说明按模型写的处理——
+  // 这些是助手交的修改加上它读过的正文段落；页眉页脚（header_footer、header_footer_text、header_footer_changes）不在材料文字里、助手未必读过，照常识别
+  "docx.revise": (k) => REVISE_MODEL_FIELDS.has(k),
 });
 
 /** 引擎给本机法律工具起的函数名（`mcp__legal__riskcards_list`）→ 有读回规则的内核工具名；其他名字返回 null。 */

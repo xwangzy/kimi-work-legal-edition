@@ -31,6 +31,13 @@ export interface MatterEgressContext {
    */
   fetchAllowlist: readonly string[];
   policyVersion: number;
+  /**
+   * 整个模型请求只替换已知名单（V16 第 41 批）：内核给自己发起的独立复核请求签的任务令牌带 `model:known_only`，授权时据此给出。
+   * 令牌由内核进程内存里的密钥签发，助手宿主只拿到 `model:chat` 等固定 scope 的令牌，加不上这一项。
+   */
+  knownOnly?: boolean;
+  /** 内核担保过的文字（交回修改那一轮的提示；内核已只换已知名单）：请求里逐字出现的这一段只替换已知名单。按任务给出。 */
+  knownOnlyTexts?: readonly string[];
   /** 审批策略指纹（与批准凭据的 pol 比对；无事项问答为空）。 */
   approvalPolicy?: string;
   tokenizer: {

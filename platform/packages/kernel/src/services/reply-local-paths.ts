@@ -10,7 +10,7 @@ const SEE = "（见本任务的成果）";
 /** 路径里不会出现、到此为止的字符：空白、括号、引号、中文标点、反引号。 */
 const STOP = "\\s)\\]>」』”\"'`，。；、）！？";
 
-/** 指向本机的地址：sandbox:、file:、类 Unix 的绝对路径（/private/、/Users/、/tmp/ 等）、Windows 盘符路径。 */
+/** 指向本机的地址：sandbox:、file:、类 Unix 的完整路径（/private/、/Users/、/tmp/ 等）、Windows 盘符路径。 */
 const LOCAL_TARGET = /^(?:sandbox:|file:|\/(?:private|Users|tmp|var|home|mnt|Volumes|opt|root|data)\/|~\/|[A-Za-z]:[\\/])/i;
 
 /** 正文里直接出现的本机路径（前面不能紧挨字母、数字或斜杠，避免把网址里的一段当成本机路径）。 */

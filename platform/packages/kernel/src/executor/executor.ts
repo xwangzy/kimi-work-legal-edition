@@ -68,6 +68,11 @@ export interface ExecutorDeps {
    * low 346 秒给出 8 条意见，与评分律师指出的核心缺陷（资金缺口、诚意金冲突、业绩补偿时间错位、法定代表人笔误）重合。
    */
   reviewEffort?: "low" | "high" | undefined;
+  /**
+   * 担保一段内核写好的文字（V16 第 41 批；index.ts 接到出站闸门）：交回修改那一轮的提示经助手宿主的会话出站，
+   * 闸门对逐字出现的这一段只替换已知名单。未配置时闸门照常识别（偏向多遮）。
+   */
+  vouchKnownOnly?: ((runId: string, text: string) => void) | undefined;
 }
 
 interface RunRow {
@@ -1285,7 +1290,7 @@ export function reviewKindOf(db: KernelDb, runId: string, skill: string | null):
  * 复核对象：本任务登记的 Word 文书，每个文件名取最新一版。修改文书任务取清洁稿与修改对照表，并按清洁稿登记的原件做段落差异。
  * 纯查询 + 读成果块。
  */
-export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string, kind: ReviewKind): { docs: ReviewDoc[]; diff: string[]; title: string; inventory: string[]; reply: string } | null {
+export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string, kind: ReviewKind): { docs: ReviewDoc[]; diff: string[]; title: string; inventory: string[]; reply: string; sources: string[] } | null {
   const rows = deps.db.all<{ filename: string; storage_uri: string; manifest: string | null; created_at: string }>(
     `SELECT filename, storage_uri, manifest, created_at FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','revision_draft','revision_clean') AND lower(filename) LIKE '%.docx' ORDER BY created_at, version`,
     [runId, matterId],
@@ -1294,6 +1299,8 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
   for (const r of rows) latest.set(r.filename, r);
   let picked = [...latest.values()];
   let diff: string[] = [];
+  /** 修改文书任务的原件文字（页眉页脚 + 正文）：复核前按材料口径识别一遍，原件里的姓名一定进事项代号表（见 runReviewStage）。 */
+  const sources: string[] = [];
   if (kind === "revise") {
     const clean = picked.filter((r) => /（清洁稿）\.docx$/i.test(r.filename)).at(-1);
     picked = picked.filter((r) => !/（修订稿(?:·对外版)?）\.docx$/i.test(r.filename));
@@ -1312,6 +1319,10 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
         } catch {
           diff = [];
         }
+        try {
+          const srcBuf = deps.blobs.read(src.storage_uri);
+          sources.push([...headerFooterText(srcBuf), ...labeledTextWithRows(srcBuf)].join("\n"));
+        } catch {}
       }
     }
   }
@@ -1372,7 +1383,7 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
   } catch {
     reply = "";
   }
-  return { docs: docs.filter((d) => d.text.trim().length > 0), diff, title: main.filename.replace(/\.docx$/i, ""), inventory, reply };
+  return { docs: docs.filter((d) => d.text.trim().length > 0), diff, title: main.filename.replace(/\.docx$/i, ""), inventory, reply, sources };
 }
 
 /** 修改轮要改的文件：本任务已生成的 Word 文书与表格，每个文件名取最新一版（给出成果编号，不靠会话记忆找文件）。 */
@@ -1434,7 +1445,18 @@ async function runReviewStage(
   const targets = reviewTargets(ctx.deps, runId, run.matter_id, picked.kind);
   if (!targets || targets.docs.length === 0) return none;
   const tz = ctx.deps.tokens;
-  const tok = (texts: string[]) => (tz ? tz.tokenizeAll(run.matter_id, texts).map((r) => r.text) : texts.map((t) => replaceDirectIdentifiers(t).text));
+  // 交给复核人的文书、答复、文件清单和交回修改的意见，都是助手或复核人写的文字：只把事项里已经认得的姓名、机构换成代号，不再从这些文字里“认新名字”
+  // （V16 第 41 批两轮真实回归：文书里的“被告应予返还”“应休”“应发”“曾根据”“权限”被当成新姓名换成代号，复核人看到一句读不通的话，
+  // 报“无出处的自然人代号，必须改”，修改轮照改甚至删掉了实质内容）。真实姓名不会因此漏遮盖：助手只见过代号，文书里的真名都是导出时由已有代号还原的，
+  // 事项的代号表里一定有；律师的委托与回答、材料原文在各自送出时照常识别新名字
+  const tok = (texts: string[]) => (tz ? tz.tokenizeAll(run.matter_id, texts, { knownOnly: true }).map((r) => r.text) : texts.map((t) => replaceDirectIdentifiers(t).text));
+  // 复核请求经出站闸门时整段只换已知名单（broker 调用带 knownOnly），所以律师写的与材料里的文字必须在这里先照常识别过：
+  // - 委托原话（goalSent）与材料快照（snapshot）在助手开工前已照常识别（runAgentTask），律师的回答与退回计划的意见在 runs.answer / runs.decide 收到时已照常识别；
+  // - 事项口径里的立场、法域是律师填的，在这里照常识别；
+  // - 修改文书任务的原件（页眉页脚不在材料快照里）在这里照常识别一遍，原件里的姓名进代号表，清洁稿里的同一个名字才换得掉
+  const learned = tz ? tz.tokenizeAll(run.matter_id, [p.ctxM.stance, p.ctxM.jurisdiction, ...targets.sources]).map((r) => r.text) : [replaceDirectIdentifiers(p.ctxM.stance).text, replaceDirectIdentifiers(p.ctxM.jurisdiction).text];
+  const stanceSent = learned[0] ?? p.ctxM.stance;
+  const jurisdictionSent = learned[1] ?? p.ctxM.jurisdiction;
 
   // ① 复核（检查点：重试时不重复调用模型）
   const review = await ctx.step("independent_review", async (): Promise<{ ok: boolean; text: string; findings: ReviewFinding[]; error?: string }> => {
@@ -1447,7 +1469,7 @@ async function runReviewStage(
     appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.started, "review.started", { kind: picked.kind, skill: picked.skill, docs: docs.map((d) => d.filename), diff_lines: diff.length });
     // 律师在任务中对提问的答复（已是代号形态）：没有时复核人会把律师确认过的商业条件当成“无出处”（V13 W6）
     const answers = agentClient.answered?.(runId) ?? [];
-    const messages = reviewMessages({ kind: picked.kind, stance: p.ctxM.stance, jurisdiction: p.ctxM.jurisdiction, asOf: p.ctxM.asOf, goal: p.goalSent, materials: p.snapshot, docs, diff, inventory, reply, answers });
+    const messages = reviewMessages({ kind: picked.kind, stance: stanceSent, jurisdiction: jurisdictionSent, asOf: p.ctxM.asOf, goal: p.goalSent, materials: p.snapshot, docs, diff, inventory, reply, answers });
     const limit = ctx.deps.reviewLimitMs ?? REVIEW_LIMIT_MS;
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), limit);
@@ -1462,6 +1484,8 @@ async function runReviewStage(
         maxTokens: 24_000,
         clientIdempotencyId: `review_${runId}_${attemptId}`,
         signal: ac.signal,
+        // 闸门整段只替换已知名单（令牌带 model:known_only）：各部分已在上面按来源处理过，闸门再按“律师写的”识别会把文书里的普通词认成姓名
+        knownOnly: true,
         note: "独立复核：只含委托原话、材料快照与交付件文字（代号形态）",
       });
       let text = "";
@@ -1538,6 +1562,8 @@ async function runReviewStage(
     assertNotCancelled(db, runId);
     const limit = ctx.deps.reviewFixLimitMs ?? REVIEW_FIX_LIMIT_MS;
     const goal = tok([fixPrompt(picked.kind, review.findings, review.text, limit, fixTargetsOf(db, runId, run.matter_id))])[0]!;
+    // 这段提示经助手宿主的会话出站：登记为内核担保的文字，闸门对逐字出现的这一段只换已知名单（复核意见里引用的“曾根据”不再被认成新姓名）
+    ctx.deps.vouchKnownOnly?.(runId, goal);
     let taskId: string;
     try {
       // 材料快照照样交给这一轮：宿主每轮清空并重写材料区，传空列表等于让助手在修改时读不到材料

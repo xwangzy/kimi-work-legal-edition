@@ -19,6 +19,13 @@ import { liveRunForClaims } from "../identity.ts";
 import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, startParentHeartbeat, windowsSystemEnv } from "../executor/child-env.ts";
 import { errFields, relayChildStderr, slog } from "@zr-legal/safe-log";
 
+/**
+ * 独立复核请求的令牌附加 scope（V16 第 41 批）：闸门见到它，整个模型请求只替换已知名单。只有内核给自己发起的复核请求签发
+ * （index.ts gateTokenFor，按模型调用的 knownOnly 选项）；交给助手宿主的运行令牌 scope 是固定的（kap-agent-client），
+ * 令牌以内核进程内存里的密钥签名，宿主与模型改不了、也签不出带这一项的令牌。
+ */
+export const GATE_KNOWN_ONLY_SCOPE = "model:known_only";
+
 /** 用途 → 任务令牌须带的 scope。 */
 export const GATE_SCOPES: Readonly<Record<GatePurpose, string>> = Object.freeze({ model: "model:chat", search: "egress:search", fetch: "egress:fetch", qa: "qa:chat" });
 
@@ -118,6 +125,8 @@ export interface GateAuthorizerDeps {
   l3aStandardAllowed(): boolean;
   /** 退出模式（许可到期或未取得、本设备被吊销；阶段 6）：一切出站拒绝。 */
   exitMode?(): { code: string; message: string } | null;
+  /** 内核为本任务担保过的文字（交回修改那一轮的提示，已只换已知名单；V16 第 41 批）：闸门对逐字出现的这一段只替换已知名单。 */
+  knownOnlyTexts?(runId: string): readonly string[];
 }
 
 /** 匿名事项编号：HMAC-SHA256(租户盐, 租户‖事项) 截 22 字符（闸门出站与事项匿名摘要上报同一口径；不能还原事项）。 */
@@ -162,6 +171,12 @@ export function createGateAuthorizer(d: GateAuthorizerDeps): (req: { token: stri
         fetchAllowlist: d.fetchAllowlist(live.matterId),
         policyVersion: m.policy_version,
         approvalPolicy: approvalPolicyOf(m),
+        // 只替换已知名单（V16 第 41 批）：开关只认内核签发的令牌里的 scope 与内核登记的担保文字，不看请求头或请求体
+        ...(req.purpose === "model" && claims.scope.includes(GATE_KNOWN_ONLY_SCOPE) ? { knownOnly: true } : {}),
+        ...(() => {
+          const texts = req.purpose === "model" && !req.light ? (d.knownOnlyTexts?.(live.runId) ?? []) : [];
+          return texts.length > 0 ? { knownOnlyTexts: texts } : {};
+        })(),
         // 在途复核（light）只核对活性与归属：不下发密钥材料与令牌表
         tokenizer: req.light ? { keyB64: "", parties: [], table: [], fullPseudonym: true, tableVersion: -1 } : d.tokenizerContext(live.matterId, m),
       },

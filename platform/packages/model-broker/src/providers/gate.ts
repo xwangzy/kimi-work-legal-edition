@@ -28,6 +28,8 @@ export interface GateTask {
   mid: string;
   rid?: string | undefined;
   aid?: string | undefined;
+  /** 内核自己发起的独立复核：签发的令牌另带 model:known_only，闸门整段只替换已知名单（V16 第 41 批）。 */
+  knownOnly?: boolean | undefined;
 }
 
 export interface GateMeta extends UpstreamMeta {

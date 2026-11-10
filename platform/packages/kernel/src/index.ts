@@ -48,7 +48,7 @@ import { legalToolManifests, setLegalToolLock } from "./tools/registry.ts";
 import { MatterTokenStore } from "./egress/matter-tokens.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { KernelGate } from "./egress/kernel-gate.ts";
-import { basisCompleteOf, dataLevelOf } from "./egress/gate-host.ts";
+import { basisCompleteOf, dataLevelOf, GATE_KNOWN_ONLY_SCOPE } from "./egress/gate-host.ts";
 import { EgressApprovalStore } from "./services/egress-approvals.ts";
 import { screenSearchQuery } from "@zr-legal/egress-gate";
 import { createGateProvider, mockProvider } from "@zr-legal/model-broker";
@@ -351,10 +351,12 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
         })
       : null;
   /** 确定性工作流经闸门的任务令牌：绑定当前执行中的尝试与纪元（尝试已结束 → 令牌不绑定纪元 → 闸门拒绝）。 */
-  const gateTokenFor = (task: { tid: string; uid: string; mid: string; rid?: string | undefined; aid?: string | undefined }): string => {
+  // 内核自己发起的独立复核（knownOnly）另带 model:known_only：闸门整段只替换已知名单（V16 第 41 批）。这个函数只在内核进程里由 broker 调用，
+  // 交给助手宿主的运行令牌另由 kap-agent-client 按固定 scope 签发，宿主拿不到带这一项的令牌
+  const gateTokenFor = (task: { tid: string; uid: string; mid: string; rid?: string | undefined; aid?: string | undefined; knownOnly?: boolean | undefined }): string => {
     const a = task.rid && task.aid ? db.get<{ fence_token: number }>(`SELECT fence_token FROM attempts WHERE attempt_id = ? AND run_id = ? AND status = 'running'`, [task.aid, task.rid]) : undefined;
     return mintTaskToken(
-      { tid: task.tid, uid: task.uid, mid: task.mid, ...(task.rid ? { rid: task.rid } : {}), ...(task.aid ? { aid: task.aid } : {}), ...(a ? { fen: a.fence_token } : {}), scope: ["model:chat"] },
+      { tid: task.tid, uid: task.uid, mid: task.mid, ...(task.rid ? { rid: task.rid } : {}), ...(task.aid ? { aid: task.aid } : {}), ...(a ? { fen: a.fence_token } : {}), scope: task.knownOnly ? ["model:chat", GATE_KNOWN_ONLY_SCOPE] : ["model:chat"] },
       600,
     );
   };
@@ -480,7 +482,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const reviewLimitMs = msEnv(env.ZR_REVIEW_LIMIT_MS);
   const reviewFixLimitMs = msEnv(env.ZR_REVIEW_FIX_LIMIT_MS);
   const reviewEffort = env.ZR_REVIEW_EFFORT === "high" ? ("high" as const) : ("low" as const);
-  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf, independentReview, reviewLimitMs, reviewFixLimitMs, reviewEffort };
+  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf, independentReview, reviewLimitMs, reviewFixLimitMs, reviewEffort, vouchKnownOnly: (rid: string, text: string) => gate.vouchKnownOnly(rid, text) };
   queue.register("legalRun", createLegalWorkflow(workflowDeps));
 
   const ocrModelPaths = {
