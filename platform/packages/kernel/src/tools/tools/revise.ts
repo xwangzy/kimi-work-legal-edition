@@ -226,18 +226,21 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
       note: "清洁稿：修订稿接受全部修订、去掉批注（含律师尚未逐条确认的修改）；原件不变",
     },
   });
-  // 对外版修订稿（V14 第 39 批，基线走查 B 独立评分）：修订痕迹保留、批注去掉、本产品写的修订改署名为设置里的修订署名（没设用本所名称，10-23 拍板）
+  // 对外版修订稿（V14 第 39 批，基线走查 B 独立评分）：修订痕迹保留、本产品写的批注去掉、本产品写的修订改署名为设置里的修订署名（没设用本所名称，10-23 拍板）；
+  // 原件原有的批注（对方律师留的等）与对方原有修订原样保留（V16 第 41 批），发出前由律师决定去留
+  let keptComments = 0;
   const externalReg = (() => {
     try {
       const author = redlineAuthorOf(ctx.db, String(ctx.claims.tid ?? ""), "external", ctx.firmName ?? null) || LAWYER_APPROVED_AUTHOR;
       const ext = externalRedline(ctx.blobs.read(rev.storage_uri), AI_REVISION_AUTHOR, author);
+      keptComments = (readZipEntries(ext.docx).get("word/comments.xml")?.toString("utf8").match(/<w:comment\b/g) ?? []).length;
       const put = ctx.blobs.put(ext.docx, mid);
       return registerToolArtifact(ctx, {
         kind: "revision_draft",
         filename: r.filename.replace(/（修订稿）\.docx$/i, "（修订稿·对外版）.docx"),
         sha256: put.sha256,
         storage_uri: put.storage_uri,
-        manifest: { tool: "docx.revise", audience: "external", source_document_version_id: documentVersionId, derived_from: r.sha256, author, comments_removed: ext.comments, reauthored: ext.reauthored, note: "对外版修订稿：修订痕迹保留，批注（修改理由）去掉，修订署名为本所设置；原件与内部版修订稿不变" },
+        manifest: { tool: "docx.revise", audience: "external", source_document_version_id: documentVersionId, derived_from: r.sha256, author, comments_removed: ext.comments, comments_kept: keptComments, reauthored: ext.reauthored, note: "对外版修订稿：修订痕迹保留，本产品写的批注（修改理由）去掉、原件原有的批注保留，本产品的修订署名为本所设置；原件与内部版修订稿不变" },
       });
     } catch {
       return null;
@@ -255,7 +258,11 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
     ...priorNote,
     ...hfNote,
     ...numberingNotes(r, true),
-    note: `修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；${externalReg ? "另有《修订稿·对外版》：同样的修订痕迹、不带批注、修订署名为本所设置，可直接发对方——所以修改理由照常写进 comment（它进内部修订稿与修改对照表），不要为了“能直接发对方”而去掉 comment 重交；" : ""}清洁稿已接受全部修订、去掉批注；${compareReg ? "修改对照表逐段列出修改前后与理由（由系统按实际写入的修改生成，不用另写）；" : ""}原件不变。批注是写给律师的修改理由，发给对方前须删除批注或改用清洁稿。要核对实际写入的结果，用 docx.compare（baseline 填原件的 document_version_id，current 填清洁稿的 artifact_version_id）。`,
+    note: `修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；${
+      externalReg
+        ? `另有《修订稿·对外版》：同样的修订痕迹，去掉的是本产品写的修改理由批注${keptComments > 0 ? `；原件原有的批注 ${keptComments} 条与原有的修订痕迹原样保留（不是遗漏，是否删去由律师在发出前决定，不要替律师删）` : "，原件原有的修订痕迹（如有）原样保留"}，本产品的修订署名为本所设置——所以修改理由照常写进 comment（它进内部修订稿与修改对照表），不要为了“能直接发对方”而去掉 comment 重交；`
+        : ""
+    }清洁稿已接受全部修订、去掉全部批注；${compareReg ? "修改对照表逐段列出修改前后与理由（由系统按实际写入的修改生成，不用另写）；" : ""}原件不变。内部修订稿里本产品写的批注是给律师的修改理由，不要原样发给对方${externalReg ? "（发对方用对外版或清洁稿）" : "（发对方前删去这些批注或改用清洁稿）"}。要核对实际写入的结果，用 docx.compare（baseline 填原件的 document_version_id，current 填清洁稿的 artifact_version_id）。`,
   };
 }
 

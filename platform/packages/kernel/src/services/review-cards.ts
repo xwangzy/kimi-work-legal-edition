@@ -845,7 +845,7 @@ function planRedline(
     const rule = c.rule_ref ? `（规则：${c.rule_ref}）` : "";
     // 律师改写的文本是原文：先按本事项令牌化成与视图同一形态，再与引文比出最小修改范围（结构化补丁引擎会把代号还原回原文）
     const full = c.status === "modified" ? deps.tokens.tokenize(input.matter_id, c.final_text ?? "").text : acceptedText(c);
-    // 对外版（C1 §2.2 第 6 条）：只有修订、不带批注（理由、规则号、依据都是内部意见）
+    // 对外版（C1 §2.2 第 6 条）：只有修订、不加本产品的批注（理由、规则号、依据都是内部意见）；原件原有的批注不动（修订引擎在原有 comments.xml 上追加，不删原有的）
     const comment = internal ? `${KIND_TAG[c.kind]}${c.severity === "high" ? "【重大】" : c.severity === "mid" ? "【一般】" : "【提示】"}${c.issue}${rule}${basis}${c.status === "modified" ? "（律师已修改）" : c.chosen_level === "fallback" ? "（选用可退让方案）" : ""}` : undefined;
     if (c.kind === "missing") {
       // 缺失条款：在 insert_after 段落之后插入新段落；没给插入位置或找不到的，只进意见表（预览里写明）

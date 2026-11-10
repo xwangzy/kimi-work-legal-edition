@@ -424,7 +424,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
             </>
           )}
           {/* 对外版的可见提示（C1 §2.2 第 6 条）：生成前就说清对外版里没有什么 */}
-          {documentVersionId && !readOnly && audience === "external" && <div className="wb-why muted">对外版只有修订，不带批注、理由、规则号和底线</div>}
+          {documentVersionId && !readOnly && audience === "external" && <div className="wb-why muted">对外版只有修订，不带系统生成的批注、理由、规则号和底线；原件里原有的批注（如对方律师留的）照原样保留，发出前请自行决定去留</div>}
           {/* 置灰原因与“先生成”（W-2）：未处理的卡不写进修订稿 */}
           {documentVersionId && !readOnly && progress && progress.total > 0 && !allDecided && (
             <div className="wb-why muted">

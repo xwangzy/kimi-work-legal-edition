@@ -93,6 +93,50 @@ test("docx.revise 另交《修订稿·对外版》（无批注、署名为本所
   const t = reviewTargets({ db: tk.kernel.db, blobs: tk.kernel.blobs }, live.rid, matter.matter_id, "revise")!;
   assert.equal(t.docs.some((d) => /修订稿/.test(d.filename)), false, "修订稿（含对外版）不作复核正文，正文看清洁稿");
   const inv = t.inventory.join("\n");
-  assert.match(inv, /（修订稿）\.docx（修订标记 \d+ 处；修订作者：Kimi Work 法律助手（AI 建议，待律师确认）；批注 1 条）/);
-  assert.match(inv, /（修订稿·对外版）\.docx（修订标记 \d+ 处；修订作者：苏州衡正律师事务所；批注 0 条）/);
+  assert.match(inv, /（修订稿）\.docx（修订标记 \d+ 处；修订作者：Kimi Work 法律助手（AI 建议，待律师确认）；本产品写的批注 1 条；原件原有的批注 0 条）/);
+  assert.match(inv, /（修订稿·对外版）\.docx（修订标记 \d+ 处；修订作者：苏州衡正律师事务所；本产品写的批注 0 条；原件原有的批注 0 条；对外版按设计只去掉本产品写的批注，原件原有的批注保留，不算遗漏）/);
+  assert.equal(r.note.includes("原件原有的批注"), false, "原件没有批注时不提条数");
+});
+
+test("V16 第 41 批：原件带对方批注走 docx.revise——对外版保留对方那条，返回说明与复核清单如实写明，不说“对外版不带批注”", { timeout: 120_000 }, async () => {
+  const { Agent, fetch } = await import("undici");
+  const { matter } = await tk.inv("matters.create", { title: "对外修订稿带对方批注", stance: "委托方", consent_status: "agreed" });
+  // 原件：第 1.2 款上有对方律师留的一条批注
+  const base = readZipEntries(createDocx("服务合同", [{ heading: "第一条 价款", paragraphs: ["1.1 服务费为人民币100万元。", "1.2 乙方应于收款后开具发票。"] }], { mark: false }));
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const docXml = base.get("word/document.xml")!.toString("utf8");
+  const at = docXml.indexOf("1.2 乙方");
+  const runStart = docXml.lastIndexOf("<w:r>", at);
+  const pEnd = docXml.indexOf("</w:p>", at);
+  base.set("word/document.xml", Buffer.from(`${docXml.slice(0, runStart)}<w:commentRangeStart w:id="7"/>${docXml.slice(runStart, pEnd)}<w:commentRangeEnd w:id="7"/><w:r><w:commentReference w:id="7"/></w:r>${docXml.slice(pEnd)}`, "utf8"));
+  base.set("word/comments.xml", Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments ${W}><w:comment w:id="7" w:author="对方法务" w:date="2026-11-05T00:00:00Z"><w:p><w:r><w:t>开票时间请再确认。</w:t></w:r></w:p></w:comment></w:comments>`, "utf8"));
+  const original = writeZip([...base.entries()].map(([name, data]) => ({ name, data })));
+  const doc = await importBytes(tk.inv, matter.matter_id, "服务合同.docx", original, DOCX);
+  const live = liveTaskIdentity(tk, matter.matter_id, "ext2");
+  tk.kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ goal: "改", document_version_ids: [doc.document_version_id] }), live.rid]);
+  const token = mintTaskToken({ tid: live.tid, uid: live.uid, mid: live.mid, rid: live.rid, aid: live.aid, fen: live.fence, fx: ["read", "write_draft"], scope: ["tool:legal"] }, 300);
+  const agent = new Agent({ connect: { socketPath: tk.kernel.pipePath } });
+  const res = (await fetch("http://tools.kwl/mcp", { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "docx.revise", arguments: { document_version_id: doc.document_version_id, patches: [{ anchor: "服务费为人民币100万元", proposed_text: "服务费为人民币120万元", comment: "按客户预算调整价款" }] } } }), dispatcher: agent }).then((x) => x.json())) as any;
+  const r = res.result.structuredContent;
+  assert.equal(r.status, "applied", JSON.stringify(r));
+  // 返回给助手的说明：去掉的是本产品写的批注；原件原有的 1 条保留，由律师决定去留
+  assert.match(r.note, /去掉的是本产品写的修改理由批注/);
+  assert.match(r.note, /原件原有的批注 1 条与原有的修订痕迹原样保留/);
+  assert.match(r.note, /不要替律师删/);
+  assert.equal(/不带批注|发给对方前须删除批注/.test(r.note), false, r.note);
+  // 对外版：对方那条批注仍在，本产品的批注不在
+  const ext = tk.kernel.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM artifact_versions WHERE artifact_version_id = ?`, [r.external.artifact_version_id])!;
+  const exBuf = tk.kernel.blobs.read(ext.storage_uri);
+  const ec = readZipText(exBuf, "word/comments.xml") ?? "";
+  assert.match(ec, /对方法务[\s\S]*开票时间请再确认/);
+  assert.equal(ec.includes("按客户预算调整价款"), false);
+  assert.match(readZipText(exBuf, "word/document.xml") ?? "", /<w:commentReference w:id="7"\/>/);
+  // 复核清单：批注按作者分开数；对外版写明保留原件批注不算遗漏
+  const inv = reviewTargets({ db: tk.kernel.db, blobs: tk.kernel.blobs }, live.rid, matter.matter_id, "revise")!.inventory.join("\n");
+  assert.match(inv, /（修订稿）\.docx（[^\n]*本产品写的批注 1 条；原件原有的批注 1 条（作者：对方法务））/);
+  assert.match(inv, /（修订稿·对外版）\.docx（[^\n]*本产品写的批注 0 条；原件原有的批注 1 条（作者：对方法务）；对外版按设计只去掉本产品写的批注，原件原有的批注保留，不算遗漏）/);
+  // 给复核人的核对清单同样写明
+  const { reviewMessages } = await import("../src/services/independent-review.ts");
+  const m = reviewMessages({ kind: "revise", stance: "委托方", jurisdiction: "中国大陆", asOf: "2026-11-10", goal: "改", materials: [], docs: [{ filename: "服务合同（清洁稿）.docx", text: "1.1 服务费为人民币120万元。" }], inventory: [inv] });
+  assert.match(m[0]!.content + m[1]!.content, /原件里原有的批注与修订[\s\S]*不算问题/);
 });

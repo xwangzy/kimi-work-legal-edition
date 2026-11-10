@@ -28,6 +28,7 @@ import { invokeTool } from "../tools/registry.ts";
 import { buildS1Deliverables, type ToolIdentity } from "./deliverables.ts";
 import { buildS2Deliverables, extractFacts, fileDay, factSubmissions, persistAnchors } from "./casefile.ts";
 import { FACT_LIMITS, submitFacts } from "../services/review-cards.ts";
+import { AI_REVISION_AUTHOR } from "../services/structured-patch.ts";
 import { buildTimeline, timelineFacts } from "../services/facts-timeline.ts";
 import { createDocx, createXlsx } from "@zr-legal/docx-engine";
 import type { AgentCancelOutcome, AgentClient } from "./agent-client.ts";
@@ -1337,8 +1338,17 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
       const xml = [...files.entries()].filter(([n]) => /^word\/(?:document|header\d*|footer\d*)\.xml$/.test(n)).map(([, d]) => d.toString("utf8")).join("");
       const authors = [...new Set([...xml.matchAll(/<w:(?:ins|del)\b[^>]*\sw:author="([^"]*)"/g)].map((m) => m[1]))];
       const marks = (xml.match(/<w:(?:ins|del)\b/g) ?? []).length;
-      const comments = (files.get("word/comments.xml")?.toString("utf8").match(/<w:comment\b/g) ?? []).length;
-      return `（修订标记 ${marks} 处；修订作者：${authors.join("、") || "无"}；批注 ${comments} 条）`;
+      // 批注按作者分开数（V16 第 41 批真实任务 D1：清单只写“批注 1 条”，复核人把对外版保留的对方批注判成“必须全部删除”）
+      const unescape = (v: string) => v.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+      const commentAuthors = [...(files.get("word/comments.xml")?.toString("utf8") ?? "").matchAll(/<w:comment\b([^>]*)>/g)].map((m) => unescape(/\sw:author="([^"]*)"/.exec(m[1]!)?.[1] ?? ""));
+      const ours = commentAuthors.filter((a) => a === AI_REVISION_AUTHOR).length;
+      const theirs = commentAuthors.filter((a) => a !== AI_REVISION_AUTHOR);
+      const theirsAuthors = [...new Set(theirs.map((a) => a || "未署名"))];
+      const commentPart = `本产品写的批注 ${ours} 条；原件原有的批注 ${theirs.length} 条${theirs.length > 0 ? `（作者：${theirsAuthors.join("、")}）` : ""}`;
+      const external = /（修订稿·对外版）\.docx$/i.test(filename)
+        ? "；对外版按设计只去掉本产品写的批注，原件原有的批注保留，不算遗漏"
+        : "";
+      return `（修订标记 ${marks} 处；修订作者：${authors.join("、") || "无"}；${commentPart}${external}）`;
     } catch {
       return "";
     }
