@@ -139,7 +139,7 @@ export function ReviewRulesWidget({ matter, readOnly }: { matter: Matter; readOn
       ))}
       {!readOnly && (
         <div className="w-actions">
-          <button className="btn btn-sm" onClick={() => setEdit({ from: a, draft: null })}>{a ? "修改" : "写审查要点"}</button>
+          <button className="btn-ghost btn-sm" onClick={() => setEdit({ from: a, draft: null })}>{a ? "修改" : "写审查要点"}</button>
           <button className="btn-link" onClick={() => nav(`/start/${matterLine(matter) === "inhouse" ? "rules-from-template-inhouse" : "rules-from-template"}/${matter.matter_id}`)}>
             从范本整理
           </button>

@@ -20,7 +20,7 @@ interface Props {
   onFill: (table: TableView) => void;
   /** 问这张表（v9.4 第 21 批，C1 §3.3 跨表对话）：上层按方法 tabular-review、mode=问表发起任务（先估价确认），只依据表里的格子回答。 */
   onAsk?: (table: TableView, question: string) => void;
-  /** 导出后通知上层刷新交付件。 */
+  /** 导出后通知上层刷新成果。 */
   onExported?: () => void;
   /** 打开时选中这张表（待核清单点进来，v9.4 第 21 批）。 */
   initialTable?: string | null;
@@ -159,7 +159,7 @@ export function TableReview({ matterId, docs, readOnly, onFill, onAsk, onExporte
       const r = await api.tableDraft(matterId, grid.table.table_id);
       notifyDataChanged();
       onExported?.();
-      setMsg({ tone: "ok", text: `已生成《${r.filename}》草稿，在交付件里复核${r.open > 0 ? `；其中 ${r.open} 处没核，已标“待核”` : ""}。` });
+      setMsg({ tone: "ok", text: `已生成《${r.filename}》草稿，在成果里复核${r.open > 0 ? `；其中 ${r.open} 处没核，已标“待核”` : ""}。` });
     });
   const createReminders = () =>
     run(async () => {
@@ -207,7 +207,7 @@ export function TableReview({ matterId, docs, readOnly, onFill, onAsk, onExporte
               onClick={() =>
                 void run(async () => {
                   const r = await api.exportTable(matterId, grid.table.table_id);
-                  setMsg({ tone: "ok", text: `已导出《${r.filename}》，在交付件里下载；没核的格子标了“待核”。` });
+                  setMsg({ tone: "ok", text: `已导出《${r.filename}》，在成果里下载；没核的格子标了“待核”。` });
                   onExported?.();
                 })
               }

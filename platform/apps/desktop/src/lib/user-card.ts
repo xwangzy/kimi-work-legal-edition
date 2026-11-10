@@ -24,9 +24,9 @@ export function sidebarFoot(s: { gate: boolean | null; unresolved: number; execO
   tone: "dot-off" | "dot-warn" | "dot-ok";
   href: string;
 } {
-  if (s.gate === null) return { title: "正在启动…", note: "", tone: "dot-off", href: "/connections/device" };
-  if (s.unresolved > 0) return { title: "有联网记录需要核对", note: `${s.unresolved} 条因中断无法确认是否发出`, tone: "dot-warn", href: "/connections/device" };
+  if (s.gate === null) return { title: "正在启动…", note: "", tone: "dot-off", href: "/connections/backup" };
+  if (s.unresolved > 0) return { title: "有联网记录需要核对", note: `${s.unresolved} 条因中断无法确认是否发出`, tone: "dot-warn", href: "/connections/backup" };
   if (s.pendingJoins > 0) return { title: `有 ${s.pendingJoins} 位同事等你批准入组`, note: "", tone: "dot-warn", href: "/connections/admin" };
-  if (s.execOk === false) return { title: "本机运行 · 代码分析暂不可用", note: "其余功能正常", tone: "dot-warn", href: "/connections/device" };
+  if (s.execOk === false) return { title: "本机运行 · 代码分析暂不可用", note: "其余功能正常", tone: "dot-warn", href: "/connections/backup" };
   return { title: "本机运行 · 防护正常", note: "", tone: "dot-ok", href: "/connections" };
 }

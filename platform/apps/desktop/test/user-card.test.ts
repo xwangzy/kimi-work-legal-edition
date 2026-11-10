@@ -43,7 +43,7 @@ test("用户卡底部一行（v9.3 B-3 余项）：有入组申请等批准时�
   assert.equal(joins.href, "/connections/admin");
   const both = sidebarFoot({ ...ok, pendingJoins: 2, unresolved: 1 });
   assert.equal(both.title, "有联网记录需要核对");
-  assert.equal(both.href, "/connections/device");
+  assert.equal(both.href, "/connections/backup");
   assert.equal(sidebarFoot({ ...ok, gate: null, pendingJoins: 3 }).tone, "dot-off", "启动中不提前报");
   assert.equal(sidebarFoot({ ...ok, execOk: false }).note, "其余功能正常");
 });

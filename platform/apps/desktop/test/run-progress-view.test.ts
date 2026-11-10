@@ -29,7 +29,7 @@ test("K7-P 过程信息：空快照不渲染；重试取代“正在处理…”
   assert.deepEqual(vm.todo!.items.map((x) => x.mark), ["✓", "●", "○"]);
   assert.equal(vm.subagents!.title, "同时进行 1 项核对");
   assert.deepEqual(vm.subagents!.items.map((x) => [x.state, x.failed, x.summary]), [["已完成", false, "无异常"], ["进行中", false, null], ["没有完成", true, null]]);
-  assert.deepEqual(vm.tasks, { title: "后台运行中（1）", items: ["本机计算"] });
+  assert.deepEqual(vm.tasks, { title: "正在计算（1）", items: ["本机计算"] });
   assert.match(vm.compaction!, /第 2 次/);
   assert.match(progressView({ ...base, compaction: { ...base.compaction, blocked: true } } as any).compaction!, /整理完自动继续/);
 });

@@ -82,7 +82,7 @@ export function RecallEvalPanel() {
         详细规则见《标注规范 v1》。
       </p>
       <div className="ev-bar">
-        <button className="btn btn-sm" onClick={() => void open()}>
+        <button className="btn-ghost btn-sm" onClick={() => void open()}>
           打开文书或标注文件…
         </button>
         <input
@@ -101,7 +101,7 @@ export function RecallEvalPanel() {
             }
           }}
         />
-        <button className="btn btn-sm" disabled={st.docs.length === 0} onClick={() => void save()}>
+        <button className="btn-ghost btn-sm" disabled={st.docs.length === 0} onClick={() => void save()}>
           保存标注…
         </button>
         {st.dirty && st.docs.length > 0 && <span className="pill pill-orange">有未保存的标注</span>}
@@ -349,7 +349,7 @@ function Annotate({ st }: { st: EvalState }) {
               {(["person", "org"] as const).map((k) => (
                 <button
                   key={k}
-                  className="btn btn-sm"
+                  className="btn-ghost btn-sm"
                   disabled={!party.trim()}
                   onClick={() => {
                     replaceDoc({ ...doc, known_parties: [...doc.known_parties, { name: party.trim(), kind: k }] });
@@ -433,7 +433,7 @@ function Agree({ st, onMsg }: { st: EvalState; onMsg: (m: { tone: "gray" | "red"
         未达标的文书退回两人重标，达标的逐组裁决后合成金标准。
       </p>
       <div className="ev-bar">
-        <button className="btn btn-sm" onClick={() => void pickB()}>
+        <button className="btn-ghost btn-sm" onClick={() => void pickB()}>
           打开乙的标注文件…
         </button>
         <input
@@ -590,7 +590,7 @@ function Evaluate({ st, onMsg }: { st: EvalState; onMsg: (m: { tone: "gray" | "r
           运行评测
         </button>
         <button
-          className="btn btn-sm"
+          className="btn-ghost btn-sm"
           disabled={busy || !md}
           onClick={async () => {
             try {

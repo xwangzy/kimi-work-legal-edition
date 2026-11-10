@@ -293,11 +293,11 @@ function RestoreFromBackup({ onBack, onDone, onStuck, notice = "" }: { onBack: (
       ) : (
         <>
           <label className="field">
-            <span>开发形态：恢复包文件路径</span>
+            <span>恢复包文件位置</span>
             <input onChange={(e) => setPkg({ name: e.target.value, path: e.target.value })} />
           </label>
           <label className="field">
-            <span>开发形态：备份位置路径</span>
+            <span>备份文件夹位置</span>
             <input onChange={(e) => setFolder({ name: e.target.value, path: e.target.value })} />
           </label>
         </>

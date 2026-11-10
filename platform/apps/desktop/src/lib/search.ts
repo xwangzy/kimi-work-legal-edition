@@ -1,6 +1,6 @@
 /**
  * 全局搜索（Z3 评审 §8.2 #31）：匹配在内核里做（search.titles；余项续复核 RC-A-05、RC-B-06/07/09），这里只把结果排成三组。纯函数。
- * 任务用目标作标题（同一事项的几次任务分得清），交付件标题后带“第 N 版”，副标题写所在事项与时刻。
+ * 任务用目标作标题（同一事项的几次任务分得清），成果标题后带“第 N 版”，副标题写所在事项与时刻。
  */
 import { artifactName, ARTIFACT_LABELS, fmtWhen, SCENARIO_LABELS } from "./labels.ts";
 import { SCENARIOS, scenarioOfRun } from "./scenarios.ts";
@@ -15,7 +15,7 @@ export interface SearchItem {
 
 const LEGACY_SCENARIO_NAMES: Record<string, string> = { "s2.case_file": "材料整理" };
 
-/** 给内核的标签：场景卡名（按方法模板与场景）与交付件名（按种类），任务与交付件也能按这些名称搜到。 */
+/** 给内核的标签：场景卡名（按方法模板与场景）与成果名（按种类），任务与成果也能按这些名称搜到。 */
 export function searchLabels(): Record<string, string> {
   const out: Record<string, string> = {};
   for (const c of SCENARIOS) {
@@ -59,4 +59,4 @@ export function searchGroups(
   return groups.filter((g) => g.items.length > 0);
 }
 
-export const SEARCH_KIND_LABEL: Readonly<Record<SearchKind, string>> = { matter: "事项", run: "任务", deliverable: "交付件" };
+export const SEARCH_KIND_LABEL: Readonly<Record<SearchKind, string>> = { matter: "事项", run: "任务", deliverable: "成果" };

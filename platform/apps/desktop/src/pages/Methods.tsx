@@ -24,7 +24,7 @@ export function MethodsPage() {
       .listSkills()
       .then((r) => {
         setSkills(r.skills ?? []);
-        if (!r.ok) setSkillsNote("方法模板暂不可用（模板包校验未通过）。可以照常在首页描述任务。");
+        if (!r.ok) setSkillsNote("方法暂时用不了，可以照常在首页描述任务。");
       })
       .catch(() => {
         setSkills([]);

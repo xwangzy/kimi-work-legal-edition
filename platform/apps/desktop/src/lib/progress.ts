@@ -42,7 +42,7 @@ export function progressView(p: RunProgress | null | undefined): ProgressViewMod
     const running = p.subagents.filter((s) => s.status === "running").length;
     const swarm = p.subagents.some((s) => s.swarm_index !== null);
     vm.subagents = {
-      title: running > 0 ? (swarm ? `同时进行 ${running} 项核对` : `子任务进行中（${running}）`) : `子任务（${p.subagents.length} 项，已结束）`,
+      title: running > 0 ? (swarm ? `同时进行 ${running} 项核对` : `分头核对中（${running}）`) : `分头核对（${p.subagents.length} 项，已结束）`,
       items: p.subagents.map((s) => ({
         text: s.description || s.name || "子任务",
         state: SUB_STATE[s.status] ?? s.status,
@@ -52,7 +52,7 @@ export function progressView(p: RunProgress | null | undefined): ProgressViewMod
     };
   }
   const bg = p.tasks.filter((t) => t.status === "running");
-  if (bg.length > 0) vm.tasks = { title: `后台运行中（${bg.length}）`, items: bg.map((t) => t.description || (t.kind === "bash" ? "本机计算" : "后台任务")) };
+  if (bg.length > 0) vm.tasks = { title: `正在计算（${bg.length}）`, items: bg.map((t) => t.description || (t.kind === "bash" ? "本机计算" : "计算")) };
   vm.notes = p.notes.slice(-5).map((n) => ({ text: n.text, source: n.agent_id && n.agent_id !== "main" ? "子任务" : "助手" }));
   if (p.compaction.blocked) vm.compaction = "对话较长，助手先把前面的内容整理成摘要，整理完自动继续…";
   else if (p.compaction.running) vm.compaction = "对话较长，助手正在把前面的内容整理成摘要…";

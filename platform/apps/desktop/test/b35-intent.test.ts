@@ -27,7 +27,7 @@ test("有明确改写动作的仍是我方改原件", () => {
 // 第 35 批真实走查 R3：首页写的三个问题进了“补充要求”，必填的“问题”为空、开始按钮点不了
 
 test("开始面板：卡片有必填的“问题”时，输入框里的话预填进问题栏，补充要求留空；其余卡片照旧作补充要求", () => {
-  const advice = SCENARIOS.find((c) => c.skill === "client-advice")!;
+  const advice = SCENARIOS.find((c) => c.id === "compliance-qa")!;
   const ask = "客户问三个问题：一是解除是否合法；二是竞业限制能否追责；三是下一步怎么办。请出一份正式的法律意见书。";
   assert.deepEqual(startPanelInitial(advice, ask), { values: { question: ask }, extra: "" });
   const memo = SCENARIOS.find((c) => c.skill === "legal-research-memo" && c.fields.some((f) => f.key === "question" && f.required))!;
@@ -49,7 +49,7 @@ test("成果名称用文件名时还原代号（与标题同一还原函数）",
 
 test("预填的问题自带句号时任务说明不叠句号（真实走查 R3：“……出一份正式的法律意见书。。”）", async () => {
   const { buildGoal } = await import("../src/lib/scenarios.ts");
-  const advice = SCENARIOS.find((c) => c.skill === "client-advice")!;
+  const advice = SCENARIOS.find((c) => c.id === "compliance-qa")!;
   const q = "客户问能否追究竞业限制违约责任？请出一份正式的法律意见书。";
   const goal = buildGoal(advice, startPanelInitial(advice, q).values, "");
   assert.ok(goal.includes("法律意见书。") && !goal.includes("。。"), goal);

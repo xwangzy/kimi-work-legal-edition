@@ -22,7 +22,10 @@ const ADMIN_FROM: Record<string, string> = { "pages/Connections.tsx": "function 
 const LAWYER_FROM: Record<string, string> = { "lib/relay-text.ts": "export function syncAlertSummary(" };
 
 // 不区分大小写；含本轮清理过的 sha256、OCR（复核 Q1-25）
-const BANNED = /令牌化|出站|闸门|内核|控制面|执行域|沙箱|DPAPI|主密钥|吊销|租户|中继|网关|锚点|哈希|证书|指纹|上游|v0|Skill|MCP|Playbook|token|sha256|OCR/i;
+// V16 第 41 批：加上宿主、公钥、签名链、席位、令牌、MiB、TPM、HSM、JSON、API、kap-trusted（任务时间线曾露出本机路径）
+const BANNED = /令牌化|令牌|出站|闸门|内核|控制面|执行域|沙箱|DPAPI|主密钥|吊销|租户|中继|网关|锚点|哈希|证书|指纹|上游|v0|Skill|MCP|Playbook|token|sha256|OCR|宿主|公钥|签名链|席位|MiB|TPM|HSM|kap-trusted/i;
+/** 只按大写拦的英文缩写（小写的 api、.json 是代码与扩展名，不是可见文字）。 */
+const BANNED_CS = /\bAPI\b|\bJSON\b/;
 /** 已知且有意保留的：开发形态专用提示、网址里的 token 检查原因码映射（键名不是可见文字）。 */
 const ALLOW = [
   /开发桥/,
@@ -57,7 +60,7 @@ test("律师层文案不出现研发用语（v9.4 U1 #21）", () => {
     if (ADMIN_FROM[rel]) src = src.slice(0, src.indexOf(ADMIN_FROM[rel]!));
     if (LAWYER_FROM[rel]) src = src.slice(src.indexOf(LAWYER_FROM[rel]!));
     for (const t of visibleTexts(src)) {
-      if (!/[一-鿿]/.test(t) || !BANNED.test(t) || ALLOW.some((a) => a.test(t))) continue;
+      if (!/[一-鿿]/.test(t) || !(BANNED.test(t) || BANNED_CS.test(t)) || ALLOW.some((a) => a.test(t))) continue;
       hits.push(`${rel}：${t.slice(0, 80)}`);
     }
   }
@@ -70,6 +73,11 @@ test("门禁本身有效：带研发用语的样本会被拦下（反向对照�
   assert.equal(visibleTexts('// 注释里的出站闸门不算\nconst y = 1;').some((t) => BANNED.test(t)), false);
   assert.ok(visibleTexts("const z = '文件的 Sha256 校验';").some((t) => BANNED.test(t)), "单引号字符串、不分大小写（复核 Q1-25）");
   assert.ok(visibleTexts("const w = `已用 ocr 识别 ${n} 页`;").some((t) => BANNED.test(t)));
+  // V16 新增词的反向对照
+  assert.ok(visibleTexts('const a = "已启动 Agent 宿主";').some((t) => BANNED.test(t)));
+  assert.ok(visibleTexts('const b = "释放 1 个席位";').some((t) => BANNED.test(t)));
+  assert.ok(visibleTexts("<p>按 4 MiB 分块</p>").some((t) => BANNED.test(t)));
+  assert.ok(visibleTexts('const c = "经 API 发出";').some((t) => BANNED_CS.test(t)));
 });
 
 test("中文与 Kimi 之间留空格（复核 Q1-16）", () => {

@@ -142,7 +142,7 @@ test("文书版式（U2-01/02/03）：标签 | 控件网格、一种分段控件
   assert.doesNotMatch(d, /type="checkbox"/);
   assert.match(d, /role="switch" aria-checked=\{draft\.page_numbers\}/);
   assert.equal((d.match(/btn-primary/g) ?? []).length, 1);
-  assert.match(d, /aria-label="版式来源"/);
+  assert.match(d, /aria-label="排版方式"/, "V16：“版式来源”改名“排版方式”，屏幕与读屏同名");
   assert.doesNotMatch(d, /q-option/, "不再用另一种分段样式");
   assert.match(d, /\{dirty && <span className="pill pill-orange unsaved">未保存<\/span>\}/);
   const css = read("../src/styles.css");

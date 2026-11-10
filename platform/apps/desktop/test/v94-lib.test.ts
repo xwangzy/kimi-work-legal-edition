@@ -28,7 +28,8 @@ test("本机与安全“案卷安全”：不写“AI 计算时不联网”（�
   const ok = deviceSafetyTile(true, true);
   assert.equal(ok.tone, "ok");
   assert.doesNotMatch(ok.line, /AI 计算时不联网/);
-  assert.match(ok.line, /本机计算不联网/);
+  // V16（审计第 23 条）：“本机计算不联网”律师读不懂，改写成“每次发给 AI 的内容都有记录可查”
+  assert.match(ok.line, /每次发给 AI 的内容都有记录可查/);
   assert.equal(deviceSafetyTile(true, true, { envWarn: 2 }).tone, "warn");
   assert.match(deviceSafetyTile(true, true, { envWarn: 2 }).line, /2 项/);
   assert.equal(deviceSafetyTile(true, true, { exitMessage: "许可已到期" }).tone, "warn");

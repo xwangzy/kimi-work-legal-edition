@@ -30,8 +30,20 @@ import { fmtDate } from "./lib/labels.ts";
 /** “明天提醒”记在这台电脑的本地偏好（v9.4）。 */
 const SNOOZE_KEY = "kwl.recovery.snooze_until";
 
-/** 设置页的标签（UIUX 增量评审 ST-5）：律师版四页 + 管理员“管理”。 */
-export type SettingsTab = "general" | "visibility" | "sources" | "device" | "admin";
+/** 设置页的标签（V16 IA-1）：律师版五页（通用 / 文书与写作 / 账号与团队 / 备份与安全 / 数据去向）+ 管理员“管理”。 */
+export type SettingsTab = "general" | "writing" | "account" | "backup" | "visibility" | "admin";
+
+/**
+ * 设置子路径 → 标签（纯函数）。旧地址继续可用（V16）：device（原“本机与安全”）→ 备份与安全，
+ * sources / data（原“资料来源”，已并入数据去向页底）→ 数据去向，policy → 管理；认不出的回到通用。
+ */
+export function settingsTabOf(a: string | undefined): SettingsTab {
+  if (a === "general" || a === "writing" || a === "account" || a === "backup" || a === "visibility" || a === "admin") return a;
+  if (a === "device") return "backup";
+  if (a === "sources" || a === "data") return "visibility";
+  if (a === "policy") return "admin";
+  return "general";
+}
 
 export type Route =
   | { page: "home"; matterId?: string; startScenario?: string }
@@ -78,8 +90,8 @@ export function parseHash(hash: string): Route {
     case "inbox":
       return { page: "inbox" };
     case "connections":
-      // 旧链接兼容：data → 资料来源，policy → 管理
-      return { page: "connections", tab: a === "device" || a === "visibility" || a === "sources" || a === "admin" ? a : a === "data" ? "sources" : a === "policy" ? "admin" : "general" };
+      // 旧链接兼容见 settingsTabOf（device → 备份与安全，sources / data → 数据去向，policy → 管理）
+      return { page: "connections", tab: settingsTabOf(a) };
     case "chat":
       return a ? { page: "chat", conversationId: a } : { page: "chat" };
     // 开通向导：激活后的“最后一步”（恢复包、试一下、备份位置），之后进首页看示例事项
@@ -284,9 +296,9 @@ export function App() {
             <button
               className="btn-link"
               onClick={() => {
-                // 还没有恢复包：回到开通向导一步一步做；其余情形到“设置 · 本机与安全”并滚到“恢复与备份”那一行（复核 R2B-23）
+                // 还没有恢复包：回到开通向导一步一步做；其余情形到“设置 · 备份与安全”并滚到“恢复与备份”那一行（复核 R2B-23）
                 if (reminder.kind === "package") return nav("/welcome");
-                nav("/connections/device");
+                nav("/connections/backup");
                 setTimeout(() => document.getElementById("recovery-backup")?.scrollIntoView({ block: "center" }), 300);
               }}
             >
@@ -359,7 +371,7 @@ function UpdateBanner({ status, onDismiss }: { status: UpdateStatus; onDismiss: 
         <div className="banner-actions">
           {view.canInstall && (
             <button
-              className="btn btn-primary btn-sm"
+              className="btn-primary btn-sm"
               disabled={busy}
               onClick={() => {
                 setBusy(true);
@@ -376,7 +388,7 @@ function UpdateBanner({ status, onDismiss }: { status: UpdateStatus; onDismiss: 
             </button>
           )}{" "}
           <button
-            className="btn btn-sm"
+            className="btn-ghost btn-sm"
             onClick={() => {
               remember(LATER_KEY, String(status.version ?? ""));
               onDismiss();
@@ -394,7 +406,7 @@ function UpdateBanner({ status, onDismiss }: { status: UpdateStatus; onDismiss: 
         这次下载的更新没有通过安全核验，已丢弃，当前版本照常可用。如持续出现，请联系所内 IT 或客服。
         <div className="banner-actions">
           <button
-            className="btn btn-sm"
+            className="btn-ghost btn-sm"
             onClick={() => {
               remember(REJECTED_KEY, String(status.version ?? ""));
               onDismiss();

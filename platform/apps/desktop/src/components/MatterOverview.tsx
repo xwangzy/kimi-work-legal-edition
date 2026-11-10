@@ -87,7 +87,7 @@ export function StageStrip({ matter, readOnly, onChanged }: { matter: Matter; re
             地域
             <input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="如 上海市" aria-label="地域" size={10} maxLength={20} />
           </label>
-          <button className="btn btn-sm" disabled={busy || !!problem} onClick={() => void save({ event_date: eventDate.trim() || null, region: region.trim() || null }).then((ok) => ok && setEditing(false))}>
+          <button className="btn-ghost btn-sm" disabled={busy || !!problem} onClick={() => void save({ event_date: eventDate.trim() || null, region: region.trim() || null }).then((ok) => ok && setEditing(false))}>
             保存
           </button>
           <button className="btn-link" onClick={() => { setEditing(false); setEventDate(matter.event_date ?? ""); setRegion(matter.region ?? ""); setErr(""); }}>
@@ -244,7 +244,7 @@ export function MatterTodos({ matter, readOnly, othersCount = 0 }: { matter: Mat
             <input type="date" value={draft.due_date ?? ""} onChange={(e) => setDraft({ ...draft, due_date: e.target.value })} aria-label="期限" />
           </div>
           <div className="todo-add-row">
-            <button className="btn btn-sm" disabled={!draft.title.trim()} onClick={() => void add()}>添加</button>
+            <button className="btn-ghost btn-sm" disabled={!draft.title.trim()} onClick={() => void add()}>添加</button>
             <button className="btn-link" onClick={() => { setAdding(false); setDraft(EMPTY); }}>取消</button>
           </div>
         </div>

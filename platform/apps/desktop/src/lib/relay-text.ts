@@ -16,11 +16,11 @@ export function syncAlertText(a: { kind: string; title: string | null; peer_memb
   if (a.kind === "chain_pending")
     return `事项${t}有成员变更还在等确认（例如由已停用电脑做的变更，等在用的负责人确认；或部分变更还没送到）：这台电脑暂停发出该事项的新内容，只同步成员信息。在用的负责人同步一次后自动恢复；负责人都已离所时请联系 Kimi Work 客服`;
   if (a.kind === "rekey_needed")
-    return `事项${t}有成员已被移出，但当前密钥仍包含他（多为两位负责人同时调整成员）：这台电脑暂停发出该事项的新内容，等负责人${a.peer_member ? `（${a.peer_member}）` : ""}的电脑同步时自动换新密钥后恢复；超过一天未处理，其他每位负责人的电脑都会尝试接手（经中软中继同步的事项只能由中继上的控制成员处理）`;
+    return `事项${t}有成员已被移出，但当前密钥仍包含他（多为两位负责人同时调整成员）：这台电脑暂停发出该事项的新内容，等负责人${a.peer_member ? `（${a.peer_member}）` : ""}的电脑同步时自动换新密钥后恢复；超过一天未处理，其他每位负责人的电脑都会尝试接手（经中软同步的团队事项，由律所指定的负责人处理）`;
   if (a.kind === "epoch_superseded")
     return `事项${t}的密钥在两位负责人同时调整成员时有了两把，这台电脑手里的这把没有被采用：暂停发出新内容，收到被采用的那把后自动恢复并补发；长期不恢复，请负责人在其电脑上再换一次密钥（移出后再加回任一成员）`;
   if (a.kind === "root_conflict")
-    return `事项${t}在这台电脑上的成员记录与${a.peer_member ? `负责人（${a.peer_member}）` : "另一位负责人"}发来的起点不同（多为升级时两台电脑各自整理了一次）：这台电脑暂停发出该事项的新内容。请与负责人核实后点“本机重新引导”：这台电脑放弃现在的起点，之后采用这台电脑记录里在册负责人发来的起点（经中软中继同步的事项只认中继上的控制成员；共享文件夹介质上取先收到的那一份）`;
+    return `事项${t}在这台电脑上的成员记录与${a.peer_member ? `负责人（${a.peer_member}）` : "另一位负责人"}发来的起点不同（多为升级时两台电脑各自整理了一次）：这台电脑暂停发出该事项的新内容。请与负责人核实后点“重新同步成员名单”：这台电脑放弃现在的起点，改用在册负责人发来的起点（经中软同步的团队事项，以律所指定的负责人为准；经共享文件夹同步的取先收到的那一份）`;
   if (a.kind === "member_conflict")
     return `事项${t}的两位负责人${a.peer_member ? `（其中一位是 ${a.peer_member}）` : ""}同时互相降级或移出，两项都已生效：这台电脑暂停发出该事项的新内容，也暂不据此移出本机记录。请其他负责人核实后重新调整成员（换新密钥）；没有其他负责人时请联系律所管理员或 Kimi Work 客服`;
   if (a.kind === "revoked_change")
@@ -36,6 +36,20 @@ export function syncAlertSummary(a: { title: string | null; peer_member?: string
   const t = a.title ? `「${a.title}」` : "有一个事项";
   const who = a.peer_name ?? a.peer_member ?? null;
   return `${t}暂时不能同步给同事，负责人${who ? ` ${who} ` : ""}处理后会自动恢复。`;
+}
+
+/**
+ * 同步告警的第二段“谁来处理、怎么处理”（V16 审计第 11 条：三段式——暂停了 → 谁来处理 → 详情折叠）。
+ * 律师只需要知道找谁、点什么；原来的长说明（syncAlertText）进“详情”。纯函数。
+ */
+export function syncAlertAction(a: { kind: string; peer_member?: string | null; peer_name?: string | null }): string {
+  const who = a.peer_name ?? a.peer_member ?? null;
+  const owner = who ? `负责人 ${who}` : "事项负责人";
+  if (a.kind === "root_conflict") return `请与${owner}核实后，由你或负责人点一次“重新同步成员名单”。`;
+  if (a.kind === "owner_unverifiable" || a.kind === "chain_pending") return "等在用的负责人同步一次即可；负责人都已离所时，请联系 Kimi Work 客服。";
+  if (a.kind === "member_conflict") return "请其他负责人核实后重新调整成员；没有其他负责人时，请联系律所管理员。";
+  if (a.kind === "revoked_change") return `请${owner}核实：确需移出的，在自己的电脑上重做一次。`;
+  return `需要${owner}在他的电脑上同步一次，之后自动恢复。`;
 }
 
 /** “重新同步成员名单”（原“本机重新引导”）只给管理员与该事项的负责人（评审 Z4 §五第 4 项、P1-4）。纯函数。 */
@@ -59,7 +73,7 @@ export function relayErrorText(code: string | null | undefined): string | null {
   if (code === "waiting_for_owner") return "这个事项的负责人还没有同步过：负责人的电脑同步一次后，这里的改动会自动发出";
   if (code === "epoch_not_established")
     return "这个事项的成员在这台电脑上有调整，同步服务上还没有生效：正在等负责同步的同事那边送达。若是在律所关闭“同事之间同步”期间做的移出，被移出的人仍可能收到其他成员的新内容——请那位负责人在其电脑上重做移出，或联系 Kimi Work 客服";
-  if (code === "credential_backoff") return "暂时连不上 Kimi Work 的同步服务（取不到使用凭据），稍后自动重试";
+  if (code === "credential_backoff") return "暂时连不上 Kimi Work 的同步服务，稍后自动重试";
   if (code === "relay_push_failed" || code === "relay_blob_failed" || code === "relay_import_failed") return "本机处理改动时出错（可能是文件被占用），稍后自动重试";
   if (code === "segment_too_large" || code === "too_many_readers") return "有一批改动过大或事项成员过多，无法经同步服务发出；请联系 Kimi Work 客服，或先经律所共享文件夹同步";
   if (code === "not_reader") return "这台电脑已不在其中某个事项里，那批改动没有发出";

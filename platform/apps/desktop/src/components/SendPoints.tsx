@@ -4,6 +4,7 @@
  * 原来卡片路径只有一段折叠的长句，“没认出的姓名也按原文”埋在括号里；输入框路径是五条记号要点——两条入口披露不一致。
  */
 import type { ReactNode } from "react";
+import { sendPointShort } from "../lib/sheet-text.ts";
 
 export interface DataWhereView {
   preview?: string;
@@ -21,7 +22,7 @@ export function SendPoints({ dataWhere, children }: { dataWhere: DataWhereView |
         <ul className="sheet-points">
           {bullets.map((b, i) => (
             <li key={i} data-kind={dataWhere?.bullet_kinds?.[i] ?? undefined}>
-              {b}
+              {sendPointShort(b)}
             </li>
           ))}
         </ul>

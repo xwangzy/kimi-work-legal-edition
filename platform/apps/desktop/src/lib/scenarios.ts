@@ -17,6 +17,10 @@ export interface ScenarioField {
   /** long：多行文字（V10 第 36 批：律师贴进来的逐条修改意见、问题常有好几段，单行输入框看不全也不好改）。 */
   kind: "select" | "text" | "long" | "date" | "multi";
   options?: string[];
+  /**
+   * 选项 → 拼进任务说明的话（V16 F4）：没有这一项时直接拼选项原文；对应空串的选项让这一句整句省略（与空字段同一机制）。
+   */
+  goalText?: Record<string, string>;
   placeholder?: string;
   required?: boolean;
   /** 选了某个选项时改用别的卡（第 26 批）：选项 → 卡 id 与一句说明；开始面板据此提示并给“改用”按钮。 */
@@ -466,7 +470,8 @@ export const SCENARIOS: ScenarioCard[] = [
     // v9.4 新增：劳动者一方的仲裁申请（labor-dispute，模式 = 仲裁申请）
     id: "labor-apply",
     line: "litigation",
-    title: "劳动仲裁申请（劳动者一方）",
+    // V16 F2：与“劳动仲裁申请书”卡名几乎一样却不出申请书，改名
+    title: "劳动者请求梳理与金额测算",
     gives: "劳动合同、工资与考勤记录、解除通知等",
     // 第 27 批（评审 S3-15）：与方法实际产出同名；要成文用“劳动仲裁申请书”卡
     // 第 31 批（审查 B-03）：与方法实际交付同名、主交付物（应对方案）在前
@@ -553,6 +558,28 @@ export const SCENARIOS: ScenarioCard[] = [
     notFor: ["类案", "案例"],
   },
   {
+    // V16 F1：正式法律意见书单独一张卡（原由“合规问答 / 顾问答复”在点名时兼出）；同一方法 client-advice，主交付物是意见书
+    id: "legal-opinion",
+    line: "transactional",
+    general: true,
+    title: "出具法律意见书",
+    gives: "要回答的问题；相关合同、章程、函件等材料",
+    gets: ["法律意见书（草稿）.docx（结论先行、逐问分析、依据逐条核对，签署栏留空）"],
+    scenario: "a1.agent_task",
+    skill: "client-advice",
+    primary: "法律意见书（草稿）.docx",
+    allowPartial: true,
+    verb: "开始起草",
+    goal: "请就以下问题出具正式的法律意见书（Word），签署栏留空：{question}。致送对象：{addressee}。",
+    fields: [
+      { key: "question", label: "要回答的问题", kind: "long", required: true },
+      { key: "addressee", label: "致送对象", kind: "text", placeholder: "例如：某公司董事会（可空）" },
+    ],
+    minMaterials: 0,
+    steps: ["读材料、明确每个问题", "检索并逐条核对法律依据（核对不了的标出来）", "先把论点与依据交你确认", "按意见书体例成文并自查"],
+    intents: [["法律意见书"], ["出具", "意见书"], ["正式意见"]],
+  },
+  {
     // v9.4 新增（S1 §6.1 第 1 项）：“核对起诉状里的引用”不再被引到研究备忘录——那个方法自己写明不核已有文稿
     id: "citation-audit",
     line: "litigation",
@@ -595,7 +622,7 @@ export const SCENARIOS: ScenarioCard[] = [
     general: true,
     title: "律师函 / 催告函",
     gives: "合同与往来记录",
-    gets: ["函件草稿.docx", "发送前核对清单"],
+    gets: ["函件草稿.docx", "依据与发送前核对.xlsx"],
     scenario: "a1.agent_task",
     skill: "demand-letter",
     allowPartial: true,
@@ -616,14 +643,15 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "transactional",
     title: "审合同",
     gives: "一份合同（Word 最佳）",
-    gets: ["审查意见书（内部稿）.docx", "逐条审查意见（在审查工作台逐项决定）", "问题清单.xlsx（附件）", "带修订痕迹的修订稿与清洁稿（在工作台处理意见后生成）"],
+    gets: ["审查意见书（内部稿）.docx", "逐条审查意见（在审查工作台逐项决定）", "问题清单.xlsx（附件）", "带修订痕迹的修订稿与清洁稿（可在开始时选择同时出建议修订稿；也可在工作台逐条处理后生成）"],
     scenario: "a1.agent_task",
     skill: "contract-review",
     verb: "开始审查",
-    goal: "请审查这份{type}合同，我方立场以事项为准；重点关注：{focus}。",
+    goal: "请审查这份{type}合同，我方立场以事项为准；重点关注：{focus}。{redline}。",
     fields: [
       { key: "type", label: "合同类型", kind: "select", options: CONTRACT_TYPES, required: true },
       { key: "focus", label: "重点关注", kind: "multi", options: ["付款", "交割 / 验收", "违约责任", "知识产权", "保密", "争议解决"] },
+      { key: "redline", label: "同时出一份建议修订稿", kind: "select", options: ["不用，先看审查意见", "要：按审查意见直接在原件上写修订"], goalText: { "不用，先看审查意见": "", "要：按审查意见直接在原件上写修订": "审查意见出完后，按必须修改与建议修改的意见在原件上写一份建议修订稿（修订痕迹）" } },
     ],
     minMaterials: 1,
     steps: ["通读合同、标出结构", "按我方立场逐条找出风险，引用原文", "给出修改建议与可退让方案，核对依据", "把每项意见放进审查工作台，由你逐项决定"],
@@ -775,7 +803,8 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "transactional",
     title: "股东会与董事会文件",
     gives: "公司章程、拟议事项的材料（股东名册、交易文件等）",
-    gets: ["会议通知（草稿）.docx（书面决定不开会的不出）", "决议（草稿）.docx", "签署页（草稿）.docx", "召集与表决核对表.xlsx（通知期限、表决比例、回避）"],
+    // V16 F5：决议在前（方法 outputs 首项已改成决议）
+    gets: ["决议（草稿）.docx", "会议通知（草稿）.docx（书面决定不开会的不出）", "签署页（草稿）.docx", "召集与表决核对表.xlsx（通知期限、表决比例、回避）"],
     scenario: "a1.agent_task",
     skill: "corporate-resolutions",
     verb: "开始起草",
@@ -843,14 +872,15 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "inhouse",
     title: "合同审核",
     gives: "一份合同（Word 最佳）",
-    gets: ["审核意见书（内部稿）.docx", "逐条审核意见（审查工作台）", "带修订痕迹的修订稿与清洁稿（在工作台处理意见后生成）"],
+    gets: ["审核意见书（内部稿）.docx", "逐条审核意见（审查工作台）", "带修订痕迹的修订稿与清洁稿（可在开始时选择同时出建议修订稿；也可在工作台逐条处理后生成）"],
     scenario: "a1.agent_task",
     skill: "contract-review",
     verb: "开始审核",
-    goal: "请从公司角度审核这份{type}合同；重点关注：{focus}。",
+    goal: "请从公司角度审核这份{type}合同；重点关注：{focus}。{redline}。",
     fields: [
       { key: "type", label: "合同类型", kind: "select", options: CONTRACT_TYPES, required: true },
       { key: "focus", label: "重点关注", kind: "multi", options: ["付款", "验收", "违约责任", "知识产权", "保密", "数据合规"] },
+      { key: "redline", label: "同时出一份建议修订稿", kind: "select", options: ["不用，先看审查意见", "要：按审查意见直接在原件上写修订"], goalText: { "不用，先看审查意见": "", "要：按审查意见直接在原件上写修订": "审查意见出完后，按必须修改与建议修改的意见在原件上写一份建议修订稿（修订痕迹）" } },
     ],
     minMaterials: 1,
     steps: ["通读合同", "从公司立场逐条找出风险", "给出修改建议并核对依据", "放进审查工作台由你决定"],
@@ -877,8 +907,8 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "inhouse",
     title: "合规问答 / 顾问答复",
     gives: "问题（可附业务材料）",
-    // 第 34 批 T5：律师点名要正式法律意见书时，方法出意见书体例的草稿（签署栏留空），卡上照实写
-    gets: ["顾问答复.docx（结论、假设、限制）", "点名要法律意见书时：法律意见书（草稿）.docx，签署栏留空"],
+    // V16 F1：正式法律意见书改由“出具法律意见书”卡承接
+    gets: ["顾问答复.docx（结论、假设、限制）"],
     scenario: "a1.agent_task",
     skill: "client-advice",
     verb: "开始答复",
@@ -889,7 +919,7 @@ export const SCENARIOS: ScenarioCard[] = [
     ],
     minMaterials: 0,
     steps: ["明确问题与前提", "检索并核对依据", "写出结论、假设与需客户确认的事项"],
-    intents: [["合规"], ["能不能"], ["是否合法"], ["是否违法"], ["顾问"], ["法律意见"]],
+    intents: [["合规"], ["能不能"], ["是否合法"], ["是否违法"], ["顾问"]],
   },
   {
     id: "demand-inhouse",
@@ -897,7 +927,7 @@ export const SCENARIOS: ScenarioCard[] = [
     title: "履约问题与催告函",
     gives: "合同与履约记录",
     // v9.4（S1 §0 第 6 条）：方法只出函件与依据核对，不出“风险提示”——卡上不承诺方法没有的东西
-    gets: ["履约事实与依据核对表", "催告函（草稿）.docx"],
+    gets: ["函件草稿.docx（催告函、解除通知或保证责任主张，按你选的路径）", "依据与发送前核对.xlsx"],
     scenario: "a1.agent_task",
     skill: "demand-letter",
     verb: "开始处理",
@@ -905,7 +935,7 @@ export const SCENARIOS: ScenarioCard[] = [
     fields: [
       { key: "issue", label: "履约节点或违约事项", kind: "long", required: true },
       // 第 26 批（评审 S2-12）：可不选，方法会问
-      { key: "letter_type", label: "函件类型", kind: "select", options: LETTER_TYPES },
+      { key: "letter_type", label: "函件类型", kind: "select", options: ["先帮我判断该走哪条路径", ...LETTER_TYPES] },
     ],
     minMaterials: 1,
     steps: ["对照合同条款梳理履约事实", "核对依据，列出发送前要确认的事项", "起草催告函（期限按合同或你给的写，不自行推算）"],
@@ -1106,6 +1136,7 @@ export const NEXT_STEPS: Readonly<Record<string, readonly string[]>> = Object.fr
   "contract-review-inhouse": ["audience-pack", "compliance-qa"],
   "research-deal": ["contract-review"],
   "compliance-qa": ["demand-inhouse"],
+  "legal-opinion": ["audience-pack"],
 });
 
 /** 本次任务对应的场景卡：按方法模板（Agent 场景）或工作流场景找第一张；找不到返回 null。 */
@@ -1137,6 +1168,8 @@ export function skillArgsOf(card: Pick<ScenarioCard, "fields" | "args">, values:
   for (const f of card.fields) {
     const v = values[f.key];
     const s = (Array.isArray(v) ? v.join("、") : (v ?? "")).trim();
+    // 选了“不用”这类空说法的选项（V16 F4）不作为方法参数
+    if (f.goalText && f.goalText[s] === "") continue;
     if (s && /^[a-z][a-z_]{0,31}$/.test(f.key)) out[f.key] = [...s].slice(0, 300).join("");
   }
   return out;
@@ -1179,7 +1212,9 @@ export function buildGoal(card: ScenarioCard, values: Record<string, string | st
       let empty = false;
       const filled = seg.replace(/\{(\w+)\}/g, (_m, k: string) => {
         const v = values[k];
-        const s = Array.isArray(v) ? v.join("、") : (v ?? "").trim();
+        const raw = Array.isArray(v) ? v.join("、") : (v ?? "").trim();
+        const map = card.fields.find((f) => f.key === k)?.goalText;
+        const s = map && typeof v === "string" && v in map ? map[v]!.trim() : raw;
         if (!s) empty = true;
         return s;
       });
@@ -1376,7 +1411,21 @@ export function preselectDocs(card: Pick<ScenarioCard, "minMaterials" | "scenari
   // 针对一份文书的方法（审合同、按意见修改、文稿体检）只预选最近一份 Word（第 31 批：后两张原先把案卷里的证据也全勾上）
   if (card.skill === "contract-review" || card.skill === "doc-revise" || card.skill === "citation-check") {
     const word = docs.find((d) => d.filename.toLowerCase().endsWith(".docx"));
+    // V16 A4：“按你的意见修改文书”只在 Word 原件上改——没有 .docx 时不预选别的文件（此前会勾上一份 .txt）
+    if (card.skill === "doc-revise") return word ? [word.document_version_id] : [];
     return word ? [word.document_version_id] : docs.slice(0, 1).map((d) => d.document_version_id);
   }
   return docs.map((d) => d.document_version_id);
+}
+
+/**
+ * 只能在 Word 原件上做的方法（V16 A4：按你的意见修改文书）还缺 Word 文书时的一句话；不缺或不是这类方法时返回 null。
+ * 事项里没有 .docx 时请律师先添加；有但没勾时请勾选。纯函数。
+ */
+export function wordDocGap(card: Pick<ScenarioCard, "skill">, docs: readonly { document_version_id: string; filename: string }[], picked: readonly string[]): string | null {
+  if (card.skill !== "doc-revise") return null;
+  const isWord = (d: { filename: string }) => d.filename.toLowerCase().endsWith(".docx");
+  if (!docs.some(isWord)) return "本事项还没有 Word 文书，请先添加要修改的那份（.docx）";
+  if (!docs.some((d) => isWord(d) && picked.includes(d.document_version_id))) return "请勾选要修改的那份 Word 文书（.docx）";
+  return null;
 }

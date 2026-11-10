@@ -10,7 +10,7 @@ import { eventDateProblem, STAGE_LABELS, stagesFor } from "../lib/matter-stage.t
 import { notifyDataChanged } from "../lib/events.ts";
 import { nav } from "../App.tsx";
 import type { ScenarioCard } from "../lib/scenarios.ts";
-import { buildGoal, canStartPartial, preselectDocs, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues, startPanelInitial } from "../lib/scenarios.ts";
+import { buildGoal, canStartPartial, preselectDocs, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues, startPanelInitial, wordDocGap } from "../lib/scenarios.ts";
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { defaultChoice } from "./ModeSelector.tsx";
@@ -89,7 +89,9 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const canPartial = canStartPartial(card) && needDocs > 0;
   // 示例事项不能存审查要点（复核 Q5-03）：从范本整理的任务在示例上不开始，免得跑完才在最后一步失败
   const sampleBlocked = !!matter?.is_sample && card.skill === "review-rules-draft";
-  const ready = !!matter && !sampleBlocked && docsReady && missing.length === 0 && (needDocs === 0 || (canPartial && partial)) && (card.scenario !== "a1.agent_task" || goal.length > 0);
+  // 修改文书只认 Word 原件（V16 A4）：没有勾上 .docx 时不能开始，并写明原因
+  const wordGap = docsReady ? wordDocGap(card, documents, docIds) : null;
+  const ready = !!matter && !sampleBlocked && docsReady && !wordGap && missing.length === 0 && (needDocs === 0 || (canPartial && partial)) && (card.scenario !== "a1.agent_task" || goal.length > 0);
   // “争点与证据分析”只用确认过的事实（复核 R15B-01）：事项里还没有确认过的，开始前就说清楚
   const [confirmedFacts, setConfirmedFacts] = useState<number | null>(null);
   useEffect(() => {
@@ -324,7 +326,8 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
                   e.target.value = "";
                 }}
               />
-              {needDocs > 0 && !(canPartial && partial) && (
+              {wordGap && <div className="ss-need">{wordGap}</div>}
+              {!wordGap && needDocs > 0 && !(canPartial && partial) && (
                 <div className="ss-need">
                   {missingMaterialsText(card, needDocs)}
                   {canPartial && (
@@ -414,7 +417,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
             ) : ready ? (
               <span className="muted">正在估算…</span>
             ) : (
-              <span className="muted">{missing.length > 0 ? `请先填写：${missing.map((f) => f.label).join("、")}` : needDocs > 0 ? "请先选择材料" : ""}</span>
+              <span className="muted">{missing.length > 0 ? `请先填写：${missing.map((f) => f.label).join("、")}` : wordGap ? "请先选择要修改的 Word 文书" : needDocs > 0 ? "请先选择材料" : ""}</span>
             )}
           </div>
           {/* 发送什么、发给谁：与开始前确认同一块（第 27 批，评审 U3-01：卡片路径原来只有一段折叠长句，风险句埋在括号里）。
@@ -436,7 +439,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
           {confirmedFacts === 0 && (
             <p className="banner banner-orange">这个事项还没有确认过的事实：AI 会先用材料载明的事实做矩阵（标【未确认】，评估写“初步判断”）。到事项页“事实”里逐条确认后再做，结论更可靠。</p>
           )}
-          {hasPrefs && <p className="ss-note muted">按你的写作偏好写（设置 · 通用里可改）。</p>}
+          {hasPrefs && <p className="ss-note muted">按你的写作偏好写（设置 · 文书与写作里可改）。</p>}
           <p className="ss-note muted">结果都是草稿，需要你复核后使用。{card.scenario === "a1.agent_task" ? "处理中需要联网或用到当事人信息时，会先问你。" : ""}</p>
         </section>
         {/* 选项指向别的卡（第 26 批，评审 S2-03）：例如“收到的是劳动仲裁申请书”改用“劳动仲裁应对” */}
@@ -444,7 +447,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
           <div className="banner banner-orange">
             {fieldRedirect(card, values)!.text}
             <div className="banner-actions">
-              <button className="btn btn-sm" onClick={() => nav(`/start/${fieldRedirect(card, values)!.card.id}${matter ? `/${matter.matter_id}` : ""}`)}>
+              <button className="btn-ghost btn-sm" onClick={() => nav(`/start/${fieldRedirect(card, values)!.card.id}${matter ? `/${matter.matter_id}` : ""}`)}>
                 改用“{fieldRedirect(card, values)!.card.title}”
               </button>
             </div>
@@ -454,7 +457,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
         {err && <div className="banner banner-red">{err}</div>}
         {/* 底部按钮贴底（第 26 批走查：1280×720 下“开始审查”在首屏之外，要先滚到底才看得到）；还不能开始时左边写缺什么 */}
         <div className="modal-actions modal-actions-sticky">
-          {!ready && !busy && (missing.length > 0 || needDocs > 0) && <span className="muted ss-foot-why">{missing.length > 0 ? `先填写：${missing.map((f) => f.label).join("、")}` : "先选择材料"}</span>}
+          {!ready && !busy && (missing.length > 0 || needDocs > 0 || !!wordGap) && <span className="muted ss-foot-why">{missing.length > 0 ? `先填写：${missing.map((f) => f.label).join("、")}` : wordGap ? "先添加或勾选要修改的 Word 文书（.docx）" : "先选择材料"}</span>}
           <button className="btn-ghost" onClick={onClose}>取消</button>
           {/* 还不能开始时（例如疑似姓名待核对）不占主按钮：同屏的主动作是待办那一步（复核 S7B-01） */}
           <button className={ready ? "btn-primary" : "btn-ghost"} disabled={busy || !ready} onClick={() => void start()}>
@@ -509,7 +512,7 @@ function FactHints({ matter, hints, onSaved }: { matter: Matter; hints: ReturnTy
               ) : (
                 <>
                   <input aria-label={h.label} value={v} onChange={(e) => setV(e.target.value)} placeholder={h.field === "event_date" ? "2023-05 或 2023-05-06" : "如 上海市"} maxLength={h.field === "region" ? 20 : 10} size={14} />
-                  <button className="btn btn-sm" disabled={busy || !v.trim()} onClick={() => void save(h.field, v)}>保存</button>
+                  <button className="btn-ghost btn-sm" disabled={busy || !v.trim()} onClick={() => void save(h.field, v)}>保存</button>
                 </>
               )}
               <button className="btn-link" onClick={() => setOpen(null)}>取消</button>

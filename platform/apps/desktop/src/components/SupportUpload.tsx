@@ -55,7 +55,7 @@ export function SupportUpload({ allowed, configured }: { allowed: boolean | null
       {/* 律所未开启或未配置时律师做不了什么：不再单独占一行（v9.4 认知减负）；导出文件的路径就在上面 */}
       {unavailable ? null : !preview ? (
         <div className="banner-actions">
-          <button className="btn btn-sm" disabled={busy} onClick={() => void open()}>
+          <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void open()}>
             {busy ? "正在生成…" : "发给 Kimi Work 客服（中软国际运营）…"}
           </button>
         </div>
@@ -79,7 +79,7 @@ export function SupportUpload({ allowed, configured }: { allowed: boolean | null
                 {busy ? "正在上传…" : "确认上传"}
               </button>
             )}{" "}
-            <button className="btn btn-sm" disabled={busy} onClick={() => setPreview(null)}>
+            <button className="btn-ghost btn-sm" disabled={busy} onClick={() => setPreview(null)}>
               取消
             </button>
           </div>

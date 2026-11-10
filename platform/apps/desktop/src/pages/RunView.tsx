@@ -357,6 +357,18 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     [approvals, questions, outlineQ, outline],
   );
   const [showAllCards, setShowAllCards] = useState(false);
+  // V16 A3：确认卡、提问卡、提纲卡在时间线之后的正常文档流里（此前粘在中栏底部，卡片高于一屏时从页顶盖住标题与任务说明）；
+  // 新卡出现时把卡片顶部滚到眼前（同一张卡刷新不再滚动）
+  const cardsRef = useRef<HTMLDivElement | null>(null);
+  const outlineRef = useRef<HTMLDivElement | null>(null);
+  const firstCardKey = pendingCards[0] ? (pendingCards[0].kind === "approval" ? pendingCards[0].card.approval_id : pendingCards[0].card.question_id) : null;
+  useEffect(() => {
+    if (firstCardKey) cardsRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, [firstCardKey]);
+  const outlineKey = outline && !terminal ? outline.outline_id : null;
+  useEffect(() => {
+    if (outlineKey) outlineRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, [outlineKey]);
   const [showAllFiles, setShowAllFiles] = useState(false);
   const doneFiles = useMemo(() => currentFiles(artifacts), [artifacts]);
   const unreviewed = artifacts.filter((a) => a.status === "draft" || a.status === "pending_review").length;
@@ -774,6 +786,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             </div>
           </div>
         )}
+        <div ref={outlineRef} className="card-anchor" />
         {outline && !terminal && (
           <OutlineConfirm
             key={outline.outline_id}
@@ -785,7 +798,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             onStop={() => void stopOutline()}
           />
         )}
-        <div className="interactions">
+        <div className="interactions" ref={cardsRef}>
           {/* 同一时间只展开一张（UIUX 增量评审 P0-F）：先到的先处理，其余折叠为“还有 N 项待确认”，可展开 */}
           {pendingCards.slice(0, showAllCards ? pendingCards.length : 1).map((c) =>
             c.kind === "approval" ? (
@@ -807,7 +820,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             </button>
           )}
         </div>
-        {/* 有交付件时中栏只放摘要，全文在右栏（UIUX 增量评审 D-1：同一份内容不读两遍） */}
+        {/* 有成果时中栏只放摘要，全文在右栏（UIUX 增量评审 D-1：同一份内容不读两遍） */}
         {terminal && preview && preview.text && !preview.office && String(artifacts.find((a) => a.artifact_version_id === selected)?.kind ?? "").startsWith("a1_agent_draft") && (
           <div className="answer answer-summary">
             <div className="pane-title">回复（草稿）· 摘要</div>
@@ -830,7 +843,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
             <div className="title">这次的结果与之前一次任务完全相同，沿用了那次的{reused.length > 1 ? ` ${reused.length} 份` : ""}文件</div>
             <p className="muted">内容一字不差时不另存一份新版本，复核与签发都在原来那份上进行。</p>
             <div className="banner-actions">
-              <button className="btn btn-sm" onClick={() => nav(`/review/${reused[0]!.artifact_version_id}`)}>
+              <button className="btn-ghost btn-sm" onClick={() => nav(`/review/${reused[0]!.artifact_version_id}`)}>
                 打开那份文件
               </button>
               {reused[0]!.first_run_id && (
@@ -925,7 +938,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 {followConfirm.warning && <div className="banner banner-orange">{followConfirm.warning}</div>}
                 {followConfirm.busyRunId && followConfirm.busyRunId !== runId && (
                   <div className="banner-actions">
-                    <button className="btn btn-sm" onClick={() => nav(`/run/${followConfirm.busyRunId}/${matterId}`)}>
+                    <button className="btn-ghost btn-sm" onClick={() => nav(`/run/${followConfirm.busyRunId}/${matterId}`)}>
                       查看进行中的任务
                     </button>
                   </div>
@@ -933,7 +946,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 {prevMode === "chat" && (
                   <label className="lifecycle-check">
                     <input type="checkbox" aria-label="本轮允许写入草稿" checked={followRaise} onChange={(e) => setFollowRaise(e.target.checked)} />
-                    本轮允许写入草稿（风险卡、事实、文书草稿），改为“默认”档（留痕）
+                    本轮允许写入草稿（风险卡、事实、文书草稿），改用“标准”档（留痕）
                   </label>
                 )}
                 <div className="modal-actions">
@@ -1005,7 +1018,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                   className="artifact-select"
                   value={selected ?? ""}
                   onChange={setSelected}
-                  aria-label="选择交付件"
+                  aria-label="选择成果"
                   options={artifacts.map((a) => ({ value: a.artifact_version_id, label: `${artifactName(withRun(a), (t) => restoredPlain(t, tokenMap))} · v${a.version}` }))}
                 />
               )}

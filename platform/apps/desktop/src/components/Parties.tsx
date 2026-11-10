@@ -48,12 +48,12 @@ export function PartiesPanel({ matterId, onChanged, readOnly = false }: { matter
     // 结案事项只读（复核 C-B11）：fieldset disabled 让其中所有按钮与输入不可用
     <fieldset className="parties fieldset-plain" disabled={readOnly}>
       <p className="muted">
-        词典里的名称与别名在发给模型、检索与抓取前替换为代号或被拦截（自然人默认替换；机构名称{fullPseudonym ? "在本事项也替换（全部化名）" : "默认保留"}）。
+        名单里的名称和别名，发给 AI 或联网查询前都会换成代号（个人姓名一律换；公司名称{fullPseudonym ? "在本事项也换（已开启全部化名）" : "默认保留，开启“全部化名”后也换"}）。
         没识别出来的姓名会按原文发出——请核对名单，尤其是敏感事项。
       </p>
       {err && <div className="banner banner-red">{err}</div>}
       <table className="data">
-        <thead><tr><th>名称</th><th>类型</th><th>别名</th><th>待确认（学得）</th><th>自动派生字号</th><th>已停用</th><th /></tr></thead>
+        <thead><tr><th>名称</th><th>类型</th><th>别名</th><th>AI 发现的别名（待你确认）</th><th>自动生成的简称</th><th>已停用</th><th /></tr></thead>
         <tbody>
           {(parties ?? []).map((p) => (
             <tr key={p.name}>
@@ -73,7 +73,7 @@ export function PartiesPanel({ matterId, onChanged, readOnly = false }: { matter
                 {p.derived.length === 0 ? "—" : p.derived.map((a) => (
                   <span key={a} className="alias-chip">
                     {a}
-                    <ConfirmButton label="停用" className="btn-link btn-danger" question={`停用后“${a}”不再换成代号，之后发出的内容可能带这个字号。`} confirmLabel="确定停用" onConfirm={() => alias(p.name, a, "reject")} />
+                    <ConfirmButton label="停用" className="btn-link btn-danger" question={`停用后“${a}”不再换成代号，之后发出的内容可能带这个简称。`} confirmLabel="确定停用" onConfirm={() => alias(p.name, a, "reject")} />
                   </span>
                 ))}
               </td>

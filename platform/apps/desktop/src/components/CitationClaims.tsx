@@ -75,13 +75,13 @@ export function CitationClaims({ artifactVersionId, citations, tokenMap, readOnl
             </div>
             {i.kind === "ok" && !readOnly && (
               <div className="claim-actions">
-                <button className={`btn btn-sm${i.decision === "supported" ? " on" : ""}`} aria-pressed={i.decision === "supported"} disabled={busy === i.key} onClick={() => void decide(i, i.decision === "supported" ? null : "supported")}>
+                <button className={`btn-ghost btn-sm${i.decision === "supported" ? " on" : ""}`} aria-pressed={i.decision === "supported"} disabled={busy === i.key} onClick={() => void decide(i, i.decision === "supported" ? null : "supported")}>
                   确认支持
                 </button>
-                <button className={`btn btn-sm${i.decision === "unsupported" ? " on" : ""}`} aria-pressed={i.decision === "unsupported"} disabled={busy === i.key} onClick={() => void decide(i, i.decision === "unsupported" ? null : "unsupported")}>
+                <button className={`btn-ghost btn-sm${i.decision === "unsupported" ? " on" : ""}`} aria-pressed={i.decision === "unsupported"} disabled={busy === i.key} onClick={() => void decide(i, i.decision === "unsupported" ? null : "unsupported")}>
                   标为不支持
                 </button>
-                <button className={`btn btn-sm${i.decision === "acknowledged" ? " on" : ""}`} aria-pressed={i.decision === "acknowledged"} disabled={busy === i.key} onClick={() => void decide(i, i.decision === "acknowledged" ? null : "acknowledged")}>
+                <button className={`btn-ghost btn-sm${i.decision === "acknowledged" ? " on" : ""}`} aria-pressed={i.decision === "acknowledged"} disabled={busy === i.key} onClick={() => void decide(i, i.decision === "acknowledged" ? null : "acknowledged")}>
                   我已知悉
                 </button>
               </div>

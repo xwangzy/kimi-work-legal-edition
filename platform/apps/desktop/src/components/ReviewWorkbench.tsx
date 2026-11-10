@@ -264,8 +264,8 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
     setMsg(null);
     try {
       const r = await api.exportReviewTable(matterId, documentVersionId, { ...(runFilter ? { run_id: runFilter } : {}), format: tableFormat });
-      // 不带“查看修订稿”按钮（那是修订稿的入口）：意见表在交付件里下载
-      setMsg({ tone: "ok", text: `已导出《${r.filename}》：${r.rows} 项意见，在交付件里下载。` });
+      // 不带“查看修订稿”按钮（那是修订稿的入口）：意见表在成果里下载
+      setMsg({ tone: "ok", text: `已导出《${r.filename}》：${r.rows} 项意见，在成果里下载。` });
       onRedline?.(r.artifact_version_id);
     } catch (e) {
       setMsg({ tone: "err", text: (e as Error).message });
@@ -857,7 +857,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                         {falsePos?.id === c.card_id && (
                           <span className="rc-falsepos">
                             <input value={falsePos.term} maxLength={30} onChange={(e) => setFalsePos({ id: c.card_id, term: e.target.value })} placeholder="材料里的说法，如：成果归甲方所有" aria-label="材料里实际的说法" />
-                            <button className="btn btn-sm" disabled={busy || (!!falsePos.term.trim() && falsePos.term.trim().length < 2)} onClick={() => void rejectFalsePositive(c, falsePos.term)}>
+                            <button className="btn-ghost btn-sm" disabled={busy || (!!falsePos.term.trim() && falsePos.term.trim().length < 2)} onClick={() => void rejectFalsePositive(c, falsePos.term)}>
                               {falsePos.term.trim() ? "驳回并记住" : "只驳回"}
                             </button>
                             <button className="btn-link" onClick={() => setFalsePos(null)}>取消</button>

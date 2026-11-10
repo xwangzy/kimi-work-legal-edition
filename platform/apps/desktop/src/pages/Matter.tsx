@@ -257,7 +257,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
           <h1 className="page-title">{matter.title}</h1>
           <div className="page-head-actions">
             {!closed && (
-              <button className="btn" aria-expanded={composerOpen || !!value.goal.trim()} onClick={() => setComposerOpen((v) => !v || !!value.goal.trim())}>
+              <button className="btn-ghost" aria-expanded={composerOpen || !!value.goal.trim()} onClick={() => setComposerOpen((v) => !v || !!value.goal.trim())}>
                 发起任务
               </button>
             )}
@@ -280,7 +280,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
             )}
             <div className="banner-actions">
               <button
-                className="btn btn-sm"
+                className="btn-ghost btn-sm"
                 onClick={() =>
                   void api
                     .removeSample(matterId)
@@ -308,7 +308,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                   void api
                     .consentNotice(matterId)
                     .then((r) => {
-                      setMsg(`${r.filename}：${r.note}（见“交付件 · 草稿”）`);
+                      setMsg(`${r.filename}：${r.note}（见“成果 · 草稿”）`);
                       notifyDataChanged();
                     })
                     .catch((e) => setMsg((e as Error).message)),
@@ -347,7 +347,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
               ["facts", "事实"],
               // “任务”改名“AI 记录”（C1 §3.2）：它是 AI 运行流水，待办在概览里
               ["runs", `AI 记录（${runs.length}）`],
-              ["deliverables", "交付件"],
+              ["deliverables", "成果"],
             ] as [Tab, string][]
           ).map(([k, l]) => (
             <button key={k} role="tab" aria-selected={tab === k} className={`tab${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{l}</button>

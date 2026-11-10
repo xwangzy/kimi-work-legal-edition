@@ -22,9 +22,9 @@ export const KIND_TITLES: Record<ApprovalCard["kind"], string> = {
   search: "要联网查一条资料",
   fetch: "要打开一个网页",
   image: "要把图片直接发给 AI",
-  budget: "本任务的预算用完了",
+  budget: "本任务的用量上限到了",
   schedule: "要创建定时任务",
-  stop: "要停止一个后台任务",
+  stop: "要停下一项正在进行的计算",
   manual: "这一步需要你同意",
   connector: "要使用外部资料库",
   other: "这一步需要你同意",
@@ -124,7 +124,7 @@ export function ApprovalCardView({ card, tokenMap, busy, onDecide }: {
         </dd>
         {card.cost && (
           <>
-            <dt>预计费用</dt>
+            <dt>预计用量</dt>
             <dd>{card.cost}</dd>
           </>
         )}
@@ -173,6 +173,16 @@ export function ApprovalCardView({ card, tokenMap, busy, onDecide }: {
       )}
     </div>
   );
+}
+
+/** 输入框按内容自动增高，最多 4 行（V16）。 */
+function autoGrow(el: HTMLTextAreaElement | null) {
+  if (!el) return;
+  el.style.height = "auto";
+  const line = parseFloat(getComputedStyle(el).lineHeight) || 22;
+  const pad = el.offsetHeight - el.clientHeight + parseFloat(getComputedStyle(el).paddingTop || "0") + parseFloat(getComputedStyle(el).paddingBottom || "0");
+  el.style.height = `${Math.min(el.scrollHeight, line * 4 + pad)}px`;
+  el.style.overflowY = el.scrollHeight > line * 4 + pad ? "auto" : "hidden";
 }
 
 export function QuestionCardView({ card, tokenMap, busy, onAnswer, outlineLock }: {
@@ -231,7 +241,8 @@ export function QuestionCardView({ card, tokenMap, busy, onAnswer, outlineLock }
           {outlineLock && q.id === outlineLock.qid && (
             <div className="cc-hint muted">{outlineLock.confirmed ? "已在上面的论点卡确认。" : "要按论点起草，请先在上面的论点卡确认；也可以选“先不起草”。"}</div>
           )}
-          <input className="q-other" placeholder="其他（直接输入；会取代上面的选择）" aria-label="其他（直接输入）" value={other[q.id] ?? ""} onChange={(e) => setDraft((d) => typeOther(d, q, e.target.value))} />
+          {/* V16：多行、随内容自动增高（最多 4 行），律师写一句完整的话看得全；提交逻辑不变 */}
+          <textarea className="q-other" rows={1} placeholder="其他（直接输入；会取代上面的选择）" aria-label="其他（直接输入）" value={other[q.id] ?? ""} ref={autoGrow} onChange={(e) => { autoGrow(e.target); setDraft((d) => typeOther(d, q, e.target.value)); }} />
         </div>
       ))}
       {/* 不能提交的原因写在卡片上（读屏与触屏也能看到），不只放在按钮的悬停提示里 */}

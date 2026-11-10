@@ -142,7 +142,7 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
         endpoint={f.model_endpoint}
         sensitiveMatter={f.confidentiality === "high"}
       />
-      <button type="button" className="btn-link" onClick={() => setMore((v) => !v)}>{more ? "收起更多设置" : "更多设置（事件时点、地域、保密程度、AI 服务、资料截止日）"}</button>
+      <button type="button" className="btn-link" onClick={() => setMore((v) => !v)}>{more ? "收起更多设置" : "更多设置（事件时点、地域、敏感程度、使用哪种 AI、分析截止日）"}</button>
       {more && (
         <div className="form-grid">
         <label className="field">
@@ -159,7 +159,7 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
           <input value={f.jurisdiction} onChange={set("jurisdiction")} />
         </label>
         <label className="field">
-          <span>密级</span>
+          <span>敏感程度</span>
           <Select aria-label="敏感程度" value={f.confidentiality} onChange={(v) => set("confidentiality")({ target: { value: v } })} options={LEVELS.map((l) => ({ value: l.v, label: l.label }))} />
           <small className="muted">{LEVELS.find((l) => l.v === f.confidentiality)?.hint}</small>
         </label>

@@ -63,7 +63,7 @@ export const RUN_STATUS_LABELS: Record<string, string> = {
   waiting_input: "等待你回答",
   waiting_approval: "等待你确认",
   waiting_device: "等待电脑上线",
-  budget_paused: "预算暂停",
+  budget_paused: "用量到上限，已暂停",
   recovering: "恢复中",
   reconciling: "对账中",
   succeeded: "已完成",
@@ -80,7 +80,7 @@ export const SCENARIO_LABELS: Record<string, string> = {
   "s1b.draft_compare": "回稿比对",
   "s2.case_file": "整理案卷",
   "s6.redaction": "对外脱敏",
-  "a1.agent_task": "通用任务",
+  "a1.agent_task": "自由描述",
 };
 
 /** 成果在列表里的名称：Agent 产出的文件用文件名（同一任务可能有多份），其余用类别名。 */
@@ -123,7 +123,7 @@ export function stripMarkdownInline(s: string): string {
 }
 
 export const ARTIFACT_LABELS: Record<string, string> = {
-  s1_redline: "修订稿（原生修订）",
+  s1_redline: "修订稿（Word 修订痕迹）",
   s1_clean: "清洁稿",
   s1_opinion: "审查意见书（内部稿）",
   s1_issue_table: "条款问题表",
@@ -139,7 +139,7 @@ export const ARTIFACT_LABELS: Record<string, string> = {
   s6_redacted: "脱敏件",
   s6_report: "脱敏报告",
   a1_agent_draft: "助手草稿",
-  a1_workspace_file: "工作区文件（草稿）",
+  a1_workspace_file: "助手生成的文件（草稿）",
   revision_draft: "修订稿（Word 修订痕迹）",
   agent_table: "表格（草稿）",
   review_table: "审查意见表",

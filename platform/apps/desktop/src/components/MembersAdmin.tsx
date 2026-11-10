@@ -187,7 +187,7 @@ export function MembersAdmin() {
             </tbody>
           </table>
         )}
-        {data?.firm_check_code && <p className="muted">本所识别码：{data.firm_check_code}（同事加入后，他的“设置 · 本机与安全”里应显示同一串数字）</p>}
+        {data?.firm_check_code && <p className="muted">本所识别码：{data.firm_check_code}（同事加入后，他的“设置 · 账号与团队”里应显示同一串数字）</p>}
       </div>
     </div>
   );

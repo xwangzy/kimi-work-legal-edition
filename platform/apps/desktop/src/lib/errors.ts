@@ -4,7 +4,7 @@
 
 /** 首页连不上后台：律师层一句话；开发环境另附开发桥地址，方便研发排查。 */
 export function backendDownText(dev: boolean): string {
-  const base = "Kimi Work 的后台服务没有响应。请关闭后重新打开；仍不行，请在 设置 → 本机与安全 导出诊断信息交给 IT。";
+  const base = "Kimi Work 没有响应。请关闭后重新打开；仍不行，请在 设置 → 备份与安全 导出诊断信息交给 IT。";
   return dev ? `${base}（开发：确认开发桥已启动）` : base;
 }
 
@@ -26,5 +26,5 @@ export function importFailText(fileName: string, message: string): string {
   // PDF 只看扩展名（复核 Q8-03：.msg 等格式的英文报错里也可能出现“PDF”）
   if (ext === "pdf") return `${fileName} 没有添加：这个 PDF 打不开，可能已损坏或设了密码。请用原文件重新导出 PDF 后再添加。`;
   if (/unsupported|not supported|unknown (file|format)/i.test(raw)) return `${fileName} 没有添加：暂不支持这种格式。支持 Word、WPS、PDF、Excel、图片和文本文件。`;
-  return `${fileName} 没有添加：没能读出这个文件。请确认它能正常打开后再试；仍不行，请在 设置 → 本机与安全 导出诊断信息交给 IT。`;
+  return `${fileName} 没有添加：没能读出这个文件。请确认它能正常打开后再试；仍不行，请在 设置 → 备份与安全 导出诊断信息交给 IT。`;
 }

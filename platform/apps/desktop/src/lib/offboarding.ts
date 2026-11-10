@@ -28,8 +28,8 @@ export function offboardingSummary(r: { matters: OffboardingItem[]; pending: num
 export function removalLines(p: { name: string | null; active_devices: number; matters: { title: string; relay_controller: boolean }[] }): string[] {
   const who = p.name ?? "这位同事";
   const lines = [
-    `移出后，${who} 的${p.active_devices > 1 ? ` ${p.active_devices} 台` : ""}电脑不能再同步、不能用 AI、不能签发或导出，并释放 1 个席位。他电脑上已有的事项仍在那台电脑上，无法远程删除——请按律所制度收回电脑；已经复制或导出的文件也收不回来。`,
-    `请先确认 ${who} 已在自己电脑的“设置 · 本机与安全 · 离所交接”里交接完：只在他电脑上的事项要导出归档交给律所；这台电脑看不到他自己的事项。`,
+    `移出后，${who} 的${p.active_devices > 1 ? ` ${p.active_devices} 台` : ""}电脑不能再同步、不能用 AI、不能导出，并空出 1 个账号名额。他电脑上已有的事项仍在那台电脑上，无法远程删除——请按律所制度收回电脑；已经复制或导出的文件也收不回来。`,
+    `请先确认 ${who} 已在自己电脑的“设置 · 账号与团队 · 离所交接”里交接完：只在他电脑上的事项要导出归档交给律所；这台电脑看不到他自己的事项。`,
   ];
   if (p.matters.length > 0) {
     lines.push(
@@ -41,8 +41,8 @@ export function removalLines(p: { name: string | null; active_devices: number; m
 
 /** 成员表的状态一栏。 */
 export function memberStatusText(m: Pick<RosterMember, "status" | "is_me" | "removal">): string {
-  if (m.status === "removed") return m.removal && !m.removal.seat_released ? "已移出 · 席位还没有释放（会自动再试）" : "已移出";
-  if (m.status === "devices_stopped") return "电脑都已停用（还在律所，席位未释放）";
+  if (m.status === "removed") return m.removal && !m.removal.seat_released ? "已移出 · 名额还没有空出（会自动再试）" : "已移出";
+  if (m.status === "devices_stopped") return "电脑都已停用（还在律所，名额未空出）";
   return m.is_me ? "正常（你）" : "正常";
 }
 

@@ -414,7 +414,7 @@ function ReminderForm({ reminder, matterId, onClose, onSaved }: { reminder?: Rem
             <div className="deadline-calc-row">
               <input value={calc.start} onChange={(e) => setCalc({ ...calc, start: e.target.value, result: null })} placeholder="起算日，如 2026-11-03（送达日等）" aria-label="起算日" />
               <Select aria-label="期间" value={calc.preset} onChange={(v) => setCalc({ ...calc, preset: v, result: null })} options={PERIOD_PRESETS.map((p) => ({ value: p.id, label: p.label }))} />
-              <button className="btn btn-sm" disabled={!calc.start.trim()} onClick={() => void runCalc()}>推算</button>
+              <button className="btn-ghost btn-sm" disabled={!calc.start.trim()} onClick={() => void runCalc()}>推算</button>
             </div>
             {calc.err && <div className="banner banner-red">{calc.err}</div>}
             {calc.result && (

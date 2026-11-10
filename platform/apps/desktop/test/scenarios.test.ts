@@ -113,5 +113,7 @@ test("开始面板预选：按意见修改、审合同只勾最近导入的一�
   assert.deepEqual(preselectDocs(card("contract-review"), docs), ["d_clean"]);
   assert.deepEqual(preselectDocs(card("redraft-local"), docs), []);
   assert.deepEqual(preselectDocs(card("casefile"), docs), ["d_clean", "d_note", "d_orig"]);
-  assert.deepEqual(preselectDocs(card("doc-revise"), [{ document_version_id: "t", filename: "意见.txt" }]), ["t"]);
+  // V16 A4：修改文书只认 Word 原件，事项里没有 .docx 时不预选 .txt；审合同等仍回退到第一份
+  assert.deepEqual(preselectDocs(card("doc-revise"), [{ document_version_id: "t", filename: "意见.txt" }]), []);
+  assert.deepEqual(preselectDocs(card("contract-review"), [{ document_version_id: "t", filename: "合同.txt" }]), ["t"]);
 });

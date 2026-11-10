@@ -21,7 +21,7 @@ interface Item {
 const ITEMS: Item[] = [
   { key: "home", label: "新建任务", icon: Icon.plus, href: "/" },
   { key: "matters", label: "事项", icon: Icon.folder, href: "/matters" },
-  { key: "deliverables", label: "交付件", icon: Icon.file, href: "/deliverables" },
+  { key: "deliverables", label: "成果", icon: Icon.file, href: "/deliverables" },
   { key: "reminders", label: "期限提醒", icon: Icon.bell, href: "/reminders" },
   { key: "chat", label: "问答", icon: Icon.chat, href: "/chat" },
 ];
@@ -77,7 +77,7 @@ export function Sidebar({ route }: { route: Route }) {
       .then((c) => setExecOk(c.execution_domain.available === false ? false : c.execution_domain.available === null ? null : true))
       .catch(() => {});
   }, [route.page, tick]);
-  // 底部状态：正常时一句“本机运行 · 防护正常”；只有出问题时变色并说明（技术细节在“设置 · 本机与安全”）
+  // 底部状态：正常时一句“本机运行 · 防护正常”；只有出问题时变色并说明（技术细节在“设置 · 备份与安全”）
   const foot = sidebarFoot({ gate: status.gate, unresolved: status.unresolved, execOk, pendingJoins: joins });
   const { title: footTitle, note: footNote, tone: footTone } = foot;
   const card = userCardText(me, { title: footTitle, note: footNote });
@@ -107,7 +107,7 @@ export function Sidebar({ route }: { route: Route }) {
           );
         })}
       </nav>
-      <button className="nav-item nav-search" onClick={() => window.dispatchEvent(new Event("kwl:search"))} title="搜索事项、任务、交付件">
+      <button className="nav-item nav-search" onClick={() => window.dispatchEvent(new Event("kwl:search"))} title="搜索事项、任务、成果">
         <span className="nav-icon">{Icon.search()}</span>
         <span className="nav-label">搜索</span>
         <span className="nav-kbd muted">{/Mac/i.test(navigator.platform) ? "⌘K" : "Ctrl K"}</span>

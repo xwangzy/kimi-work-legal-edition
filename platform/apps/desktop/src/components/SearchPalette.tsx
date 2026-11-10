@@ -1,5 +1,5 @@
 /**
- * 全局搜索面板（Z3 评审 §8.2 #31）：Ctrl + K（macOS 为 ⌘ + K）打开，在本人能看到的全部事项、任务、交付件里按标题找；↑↓ 选、回车打开、Esc 关闭。
+ * 全局搜索面板（Z3 评审 §8.2 #31）：Ctrl + K（macOS 为 ⌘ + K）打开，在本人能看到的全部事项、任务、成果里按标题找；↑↓ 选、回车打开、Esc 关闭。
  * 匹配在内核里做（search.titles），只返回命中的几条；不联网。输入法组字时的回车与方向键不当作选择（余项续复核 RC-B-08）。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -67,7 +67,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
         <input
           ref={inputRef}
           className="search-input"
-          placeholder="搜索事项、任务、交付件"
+          placeholder="搜索事项、任务、成果"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
@@ -99,7 +99,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
               })}
             </div>
           ))}
-          {res && (res.truncated.runs || res.truncated.deliverables) && <p className="muted">任务或交付件太多，只在最近的 3,000 个任务、5,000 份交付件里找。</p>}
+          {res && (res.truncated.runs || res.truncated.deliverables) && <p className="muted">任务或成果太多，只在最近的 3,000 个任务、5,000 份成果里找。</p>}
         </div>
       </div>
     </div>

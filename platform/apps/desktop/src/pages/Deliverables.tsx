@@ -1,5 +1,5 @@
 /**
- * 交付件（第 03 篇 §4.1：待复核、草稿、已签发；成果只是草稿，复核签发后才是交付件）。
+ * 成果（第 03 篇 §4.1：待复核、草稿、已签发；成果只是草稿，复核签发后才是成果）。
  * Z3 评审 #2：列表显示律师看得懂的标题（内容标题在本机还原代号；文件名只在悬停时显示），按事项分组；
  * 点任何一行都进入这份文件的详情（左预览、右签发前检查）；每行可直接下载，草稿行可提交复核。
  */
@@ -84,7 +84,7 @@ export function DeliverablesPage() {
     <main className="main">
       <div className="main-wide">
         <div className="page-head">
-          <h1 className="page-title">交付件</h1>
+          <h1 className="page-title">成果</h1>
           <div className="seg">
             {(
               [
@@ -175,7 +175,7 @@ export function DeliverablesPage() {
   );
 }
 
-/** 事项页“交付件”标签（Z3 评审 #10）：本事项的成果，与交付件页同样的标题、直达与下载。 */
+/** 事项页“成果”标签（Z3 评审 #10）：本事项的成果，与成果页同样的标题、直达与下载。 */
 export function MatterDeliverables({ matterId }: { matterId: string }) {
   const [rows, setRows] = useState<any[] | null>(null);
   const [err, setErr] = useState("");

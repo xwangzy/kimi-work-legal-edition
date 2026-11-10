@@ -60,7 +60,8 @@ test("第 12 批：成员链的四种告警写明暂停发出与出路，起点�
     assert.doesNotMatch(t, new RegExp(kind), "不露出内部代码");
   }
   assert.match(syncAlertText({ kind: "root_conflict", title: null, peer_member: "usr_y" }), /usr_y/);
-  assert.match(syncAlertText({ kind: "root_conflict", title: null }), /本机重新引导/);
+  // V16：说明里的按钮名与界面一致（原写“本机重新引导”，界面按钮早已改名）
+  assert.match(syncAlertText({ kind: "root_conflict", title: null }), /“重新同步成员名单”/);
 });
 
 test("第 12 批第三轮：互相降级与停用设备的变更未生效两种告警写明出路", () => {

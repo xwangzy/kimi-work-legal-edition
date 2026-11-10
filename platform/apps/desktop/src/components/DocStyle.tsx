@@ -1,10 +1,11 @@
 /**
- * 设置 → 通用 → 文书版式（v9.3 第 15 批 B-4）：下载的 Word 用什么函头、字体字号、要不要页码，或者直接用律所自己的 Word 模板。
+ * 设置 → 文书与写作 → 文书版式（v9.3 第 15 批 B-4）：下载的 Word 用什么函头、字体字号、要不要页码，或者直接用律所自己的 Word 模板。
  * 只影响这台电脑导出的 Word（本产品生成的意见书、报告与 Markdown 备忘录）；律师上传的原件、对方合同的修订稿不动。
  */
 import { useEffect, useRef, useState } from "react";
 import { api, type DocStyleView } from "../api.ts";
 import { fmtTime } from "../lib/labels.ts";
+import { SettingRow } from "./SettingRow.tsx";
 
 export function DocStyle() {
   const [v, setV] = useState<DocStyleView | null>(null);
@@ -54,17 +55,11 @@ export function DocStyle() {
   const pickTemplate = () => (window.zrKernel?.pickFiles ? void run(() => api.setDocTemplate(), "已用律所模板") : fileRef.current?.click());
   // 第 26 批（评审 U2-01）：一张“标签 | 控件”网格，标签与控件同一条中线；分段控件一种样子；页码用开关；律所模板是“版式来源”的一个选项，不和“保存”并排
   return (
-    <div className="device-row" id="doc-style">
-      <div className="device-k">
-        文书版式
-        {dirty && <span className="pill pill-orange unsaved">未保存</span>}
-      </div>
-      <div>
-        <div className="muted">下载的意见书、报告、备忘录按这里排版；原件和对方合同不受影响。</div>
+    <SettingRow id="doc-style" label="文书版式" badge={dirty && <span className="pill pill-orange unsaved">未保存</span>} hint="下载的意见书、报告、备忘录按这里排版；原件和对方合同不受影响。">
         <div className="settings-grid">
-          <span className="sg-k">版式来源</span>
+          <span className="sg-k">排版方式</span>
           <div className="sg-v">
-            <div className="seg seg-lg" role="radiogroup" aria-label="版式来源">
+            <div className="seg seg-lg" role="radiogroup" aria-label="排版方式">
               <button role="radio" aria-checked={!v.template} className={`seg-btn${!v.template ? " on" : ""}`} disabled={busy} onClick={() => v.template && setConfirmClear(true)}>
                 按下面的设置
               </button>
@@ -86,12 +81,12 @@ export function DocStyle() {
               </span>
             )}
             {v.template?.looks_case_specific && (
-              <p className="banner banner-orange">模板的页眉页脚里像是有具体案件的信息（案号、“诉”或文件名）。这些文字会印到之后每一份下载的 Word 上，包括别的客户的文书——请换一份干净的模板。</p>
+              <p className="banner banner-orange">模板页眉页脚里像有具体案件信息（如案号），会印到之后每份文书上，包括别的客户的。请换一份干净的模板。</p>
             )}
             {confirmClear && (
               <span className="sg-confirm">
                 不用律所模板，改按下面的设置？
-                <button className="btn btn-sm" disabled={busy} onClick={() => void run(() => api.clearDocTemplate(), "已移除律所模板，改按下面的设置").then(() => setConfirmClear(false))}>
+                <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => api.clearDocTemplate(), "已移除律所模板，改按下面的设置").then(() => setConfirmClear(false))}>
                   不用模板
                 </button>
                 <button className="btn-ghost btn-sm" onClick={() => setConfirmClear(false)}>
@@ -167,7 +162,7 @@ export function DocStyle() {
           <span className="sg-k sg-top">修订署名</span>
           <div className="sg-v">
             <input value={draft.redline_author ?? ""} maxLength={30} placeholder="律师审定（Kimi Work 辅助起草）" onChange={(e) => set({ redline_author: e.target.value || null })} aria-label="修订署名" />
-            <span className="sg-help">{draft.redline_author ? "Word 修订里显示的作者。对外版和内部版都用这个署名，对方打开对外版修订稿能看到。" : v?.firm_name ? `Word 修订里显示的作者。不填时：对外版用本所名称“${v.firm_name}”，内部版用框里的缺省写法。` : "Word 修订里显示的作者。不填用框里的缺省写法；写本所名称或律师姓名时，对方打开修订稿能看到。"}</span>
+            <span className="sg-help">{draft.redline_author ? "对方打开修订稿时看到的作者名，对外版和内部版都用它。" : v?.firm_name ? `对方打开修订稿时看到的作者名。不填：对外版写本所名称“${v.firm_name}”，内部版写框里的默认文字。` : "对方打开修订稿时看到的作者名，不填用框里的默认文字。"}</span>
           </div>
         </div>
         <div className="settings-actions">
@@ -194,7 +189,6 @@ export function DocStyle() {
             {msg}
           </p>
         )}
-      </div>
-    </div>
+    </SettingRow>
   );
 }

@@ -1,5 +1,5 @@
 /**
- * 设置 → 本机与安全 → 恢复与备份（第 14 批；设计 docs/design/恢复与备份设计-v1.md）。
+ * 设置 → 备份与安全 → 恢复与备份（第 14 批；设计 docs/design/恢复与备份设计-v1.md）。
  * 律师要做的只有三件事：生成恢复包（抄下或打印恢复码）、试一次、选一个备份位置。之后每天自动备份。
  * 电脑坏了：在新电脑的激活页点“从备份恢复”。律师层不出现“主密钥、DPAPI、证书”等词。
  * 第二轮复核处置：恢复码逐行编号、打印带抬头与配对编号（R2B-18、R2B-21）；保存后提醒把恢复包放到别处、自动展开“试一下”（R2B-17）；
@@ -160,7 +160,7 @@ export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
       )}
       {!dialogs && (
         <label className="field">
-          <span>开发形态：路径（恢复包文件或备份文件夹）</span>
+          <span>文件位置（恢复包文件或备份文件夹）</span>
           <input value={devPath} onChange={(e) => setDevPath(e.target.value)} />
         </label>
       )}

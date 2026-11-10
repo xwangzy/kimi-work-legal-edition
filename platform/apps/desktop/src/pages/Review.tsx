@@ -60,7 +60,7 @@ function systemChecks(c: any, latest: boolean): Check[] {
 }
 
 /**
- * 交付件详情 / 复核签发页（§5.4 签发页线框；v9.2 §4.4 / Y4 #18、§5 D-3；Z3 评审 #2）：左预览，右“签发前检查”——系统已核对与你来核对分开。
+ * 成果详情 / 复核签发页（§5.4 签发页线框；v9.2 §4.4 / Y4 #18、§5 D-3；Z3 评审 #2）：左预览，右“签发前检查”——系统已核对与你来核对分开。
  * 任何状态的成果都进这一页：草稿也能看到检查清单，主动作是“提交复核”；待复核的是“确认签发”。右上角始终可下载。
  */
 export function ReviewPage({ artifactId }: { artifactId: string }) {
@@ -211,7 +211,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   const placeholders: { total: number; kinds: { text: string; n: number }[] } = data?.placeholders ?? { total: 0, kinds: [] };
   const internalOnly = data?.audience === "internal";
   const outlineOpen = data?.outline_unconfirmed === true;
-  /** 没通过的项“去处理”（Astra M-2）：材料回到任务过程、引用滚到下面的引用核对、版本回到事项的交付件。 */
+  /** 没通过的项“去处理”（Astra M-2）：材料回到任务过程、引用滚到下面的引用核对、版本回到事项的成果。 */
   const goFix = (k: NonNullable<Check["fix"]>) => {
     // 材料：到事项的材料页（重新解析与识别在那里；没读到的文件名在下面列出，复核 RB16B-07）
     if (k === "materials") nav(`/matter/${data.matter_id}`);
@@ -260,7 +260,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
     <main className="main">
       <div className="review-page">
         {/* 只留面包屑一套返回（v9.4 U1 #13）；“查看任务过程”移到标题右侧（复核 B13-U10） */}
-        <Breadcrumb items={[{ label: "交付件", href: "/deliverables" }, { label: title ?? data?.filename ?? "…" }]} />
+        <Breadcrumb items={[{ label: "成果", href: "/deliverables" }, { label: title ?? data?.filename ?? "…" }]} />
         <div className="page-head">
           <h1 className="page-title" title={data?.filename ?? ""}>{title ?? data?.filename ?? "…"}</h1>
           <span className="page-head-actions">

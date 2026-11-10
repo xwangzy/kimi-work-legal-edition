@@ -90,11 +90,11 @@ export function UsagePanel() {
           </div>
         </div>
       </div>
-      <p className="muted">
-        百分比 = 本月已用 ÷ 本月额度（席位数 × 套餐额度 + 本月加量），与 Kimi 会员的额度显示同一口径。个人份额 = 本月额度 ÷ 席位数，只用于看谁用得多，不单独限额。
-        浅色段是网关已预领、尚未结算的部分（计入上限判断；异常退出时最长约 35 分钟后释放）。用量按实际结算，到上限即停；单个请求的实际用量超过预估时，最多略超上限。
+      <p className="lead-note">
+        本月额度 = 人数 × 套餐额度 + 本月加量。个人份额只用来看谁用得多，不单独限额。
+        浅色部分是正在进行、还没结算的任务。到上限会停，个别任务可能略超。
       </p>
-      {(q.unreconciled_leases ?? 0) > 0 && <p className="muted">有 {q.unreconciled_leases} 笔用量待中软对账（以网关计量记录为准，不会按预留整笔扣费）。</p>}
+      {(q.unreconciled_leases ?? 0) > 0 && <p className="muted">有 {q.unreconciled_leases} 笔用量还在核算，不会多扣。</p>}
 
       <div className="section-title">月度上限</div>
       <div className="cap-picker" role="group" aria-label="月度上限">
@@ -109,7 +109,7 @@ export function UsagePanel() {
         <span className="inline-form">
           <input aria-label="自定义上限（百分比）" inputMode="numeric" placeholder="自定义" value={capInput} onChange={(e) => setCapInput(e.target.value)} />
           <span className="muted">%</span>
-          <button className="btn btn-sm" disabled={busy || !capValid || parsed === null || parsed === q.cap_pct} onClick={() => void save(parsed)}>
+          <button className="btn-ghost btn-sm" disabled={busy || !capValid || parsed === null || parsed === q.cap_pct} onClick={() => void save(parsed)}>
             保存
           </button>
         </span>
@@ -293,7 +293,7 @@ export function KimiAccountRow() {
           </div>
           <div className="kimi-url">
             <span className="mono">{flow.url}</span>
-            <button className="btn btn-sm" onClick={() => void copy(flow.url)}>
+            <button className="btn-ghost btn-sm" onClick={() => void copy(flow.url)}>
               复制链接
             </button>
           </div>
@@ -304,7 +304,7 @@ export function KimiAccountRow() {
         </div>
       ) : (
         <div className="inline-form">
-          <button className="btn btn-sm kimi-login-btn" disabled={busy} onClick={() => void start()}>
+          <button className="btn-ghost btn-sm kimi-login-btn" disabled={busy} onClick={() => void start()}>
             用 Kimi 账号登录
           </button>
           <span className="muted">{st.required ? "本所要求用 Kimi 账号登录：登录前 AI 处理不可用。" : "登录后，本人的 AI 用量按 Kimi 账号统计。"}</span>
@@ -347,12 +347,12 @@ export function CpAuditPanel() {
   if (err) return <div className="banner banner-red">{err}</div>;
   return (
     <div className="device">
-      <p className="muted">Kimi Work 服务上与本所有关的每个写操作（本所设备与中软运营）：谁、何时、做了什么、结果。本机核对过 Kimi Work 服务的签名与前后相接的哈希链才留存；中软之后改动或删除已给出的记录，本机会告警并保留原记录。记录里没有任何案件内容。</p>
+      <p className="lead-note">本所规则、成员、电脑的每一次改动（含中软运营人员的操作）：谁、何时、做了什么。记录不能被事后篡改，不含任何案件内容。</p>
       {fetchError && <div className={`banner ${fetchError.startsWith("cp_audit_") ? "banner-red" : "banner-gray"}`}>{auditFetchErrorText(fetchError)}</div>}
-      {withheld && <div className="banner banner-red">中软侧的最高记录序号比给出的多：可能有记录未给出（已记告警）。请联系中软核对。</div>}
+      {withheld && <div className="banner banner-red">中软那边的记录可能没给全，请联系中软核对。</div>}
       {msg && <div className="banner">{msg}</div>}
       <div className="inline-form">
-        <button className="btn btn-sm" disabled={busy} onClick={load}>
+        <button className="btn-ghost btn-sm" disabled={busy} onClick={load}>
           {busy ? "正在取回…" : "取回最新"}
         </button>
         <button className="btn-ghost btn-sm" disabled={busy || !rows?.length} onClick={() => void exportAll()}>

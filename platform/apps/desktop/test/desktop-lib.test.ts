@@ -85,7 +85,8 @@ test("复核 B4-B07/B4-B21/B4-B23 时间线文案：取消未确认如实说“�
   assert.ok(!JSON.stringify(un).includes("已强制停止"));
   assert.match(un.find((s) => s.level === "detail")!.detail!, /停止时恰好有新的确认或提问到达；引擎没有响应中止/);
   const forced = buildSteps([ev("agent.cancel_forced", { forced: true, cause: "forbidden" })]);
-  assert.deepEqual(forced.map((s) => [s.level, s.title]), [["detail", "停止请求经强制方式生效（本机助手记录的发起人与当前不一致）"]]);
+  // V16（审计 2.2）：标题只写“已停止”，原因放说明
+  assert.deepEqual(forced.map((s) => [s.level, s.title, s.detail]), [["detail", "已停止", "原因：本机助手记录的发起人与当前不一致"]]);
   const retrying = buildSteps([ev("agent.error", { code: "provider_unavailable", message: "503", retryable: true })]);
   assert.equal(retrying.find((s) => s.level === "lawyer")!.title, "AI 服务出了点问题，正在自动重试");
   const plain = buildSteps([ev("agent.error", { code: "x", message: "y", retryable: false })]);

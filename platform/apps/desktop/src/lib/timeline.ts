@@ -7,7 +7,8 @@ import { ARTIFACT_LABELS, methodName, MODE_LABELS, RUN_STATUS_LABELS } from "./l
 import { modeChipLabel } from "./mode-options.ts";
 
 export const TOOL_LABELS: Record<string, string> = {
-  Read: "读取材料",
+  // V16：与 materials.read_excerpt 同名（原“读取材料 / 阅读材料”交替出现）
+  Read: "阅读材料",
   Glob: "查找文件",
   Grep: "检索材料内容",
   Write: "写草稿",
@@ -16,11 +17,11 @@ export const TOOL_LABELS: Record<string, string> = {
   WebSearch: "联网查资料",
   FetchURL: "打开网页",
   Agent: "子任务",
-  AgentSwarm: "子任务集群",
+  AgentSwarm: "同时做几项核对",
   TodoList: "任务清单",
-  TaskList: "后台任务",
-  TaskOutput: "后台任务输出",
-  TaskStop: "停止后台任务",
+  TaskList: "正在计算",
+  TaskOutput: "查看计算结果",
+  TaskStop: "停下一项计算",
   EnterPlanMode: "制定计划",
   ExitPlanMode: "提交计划",
   AskUserQuestion: "向你提问",
@@ -42,7 +43,7 @@ const SKIP_REASONS: Record<string, string> = {
   format: "这种文件暂时读不了",
   too_large: "文件过大",
   limit: "超过数量上限",
-  instructions: "助手指令文件，不作为交付件",
+  instructions: "助手指令文件，不作为成果",
   unreadable: "无法解密读取（文件损坏，或不是经本软件写入的）",
 };
 
@@ -79,6 +80,8 @@ const PRIMARY_MISSING_CAUSES: Record<string, string> = {
   outline_missing: "助手没有先把论点与依据交你确认，可以在本任务里追问补出文书",
   no_word_output: "助手只交了表格或文字说明，可以在本任务里追问补出文书",
   no_sheet_output: "助手只交了文字说明，可以在本任务里追问补出表格",
+  // V16 F6：内核新增的原因码
+  only_attachments: "助手只交了附件，没有交出主文书，可以在本任务里追问补出",
 };
 
 export interface Step {
@@ -104,13 +107,29 @@ export type TimelineItem =
 
 /** 连续多次只算一步的律师层动作（Z3 #29）：看目录、读原文都是“阅读材料”；每张风险卡一次提交合成“找出 n 处风险”。 */
 const MERGEABLE_TITLES = new Set(["阅读材料", "找出风险"]);
+/**
+ * 连续多次合成一行并写出次数的律师层动作（V16：真实任务里连续 8 行“查看条文原文”刷屏）。
+ * 值为次数的量词；“计算…”类（计算利息与违约金、计算期限等）按前缀归入。
+ */
+const COUNTED_TITLES: Record<string, string> = {
+  查看条文原文: "条",
+  查法条版本: "条",
+  检索法规: "次",
+  核对引用: "次",
+};
+function countUnit(title: string): string | undefined {
+  return COUNTED_TITLES[title] ?? (/^计算\S/.test(title) ? "次" : undefined);
+}
 
 /**
- * 合并连续的同类步骤（Z3 #29）：同一子任务里紧挨着的“阅读材料”“找出风险”合成一行；
- * 有风险卡总数时写“找出 n 处风险”。只合并律师层工具步骤，不碰联网与确认。纯函数。
+ * 合并连续的同类步骤（Z3 #29；V16 扩到查条文、检索法规、核对引用、计算类）：同一子任务里紧挨着的同名律师层步骤合成一行
+ * （中间夹着的处理细节不打断）；查条文等写出次数（“查看条文原文（8 条）”）；有风险卡总数时写“找出 n 处风险”。
+ * 只合并律师层工具步骤，不碰联网与确认。纯函数。
  */
 export function mergeRepeatSteps(steps: Step[], riskTotal?: number): Step[] {
   const out: Step[] = [];
+  /** out 下标 → 合并前的标题与次数（只给计次的步骤）。 */
+  const counted = new Map<number, { base: string; n: number }>();
   const DRAFT = /^草稿已生成：(.*)（待复核）$/;
   for (const s of steps) {
     const prev = out[out.length - 1];
@@ -121,15 +140,48 @@ export function mergeRepeatSteps(steps: Step[], riskTotal?: number): Step[] {
       out[out.length - 1] = { ...prev, title: `生成 ${names.length} 份草稿，待你复核`, drafts: names, detail: names.join("、"), at: s.at ?? prev.at };
       continue;
     }
-    if (prev && s.level === "lawyer" && MERGEABLE_TITLES.has(s.title) && prev.title === s.title && prev.agent === s.agent && prev.level === "lawyer") {
-      const icon = prev.icon === "fail" || s.icon === "fail" ? "fail" : prev.icon === "wait" || s.icon === "wait" ? "wait" : "ok";
-      out[out.length - 1] = { ...prev, icon, at: s.at ?? prev.at, detail: prev.detail ?? s.detail };
-      continue;
+    if (s.level === "lawyer" && (MERGEABLE_TITLES.has(s.title) || countUnit(s.title))) {
+      // 往回找上一条律师层步骤（处理细节不打断合并）
+      let j = out.length - 1;
+      while (j >= 0 && out[j]!.level === "detail") j--;
+      const last = j >= 0 ? out[j]! : undefined;
+      const lastBase = counted.get(j)?.base ?? last?.title;
+      if (last && lastBase === s.title && last.agent === s.agent) {
+        const icon = last.icon === "fail" || s.icon === "fail" ? "fail" : last.icon === "wait" || s.icon === "wait" ? "wait" : "ok";
+        const unit = countUnit(s.title);
+        const n = (counted.get(j)?.n ?? 1) + 1;
+        if (unit) counted.set(j, { base: s.title, n });
+        out[j] = { ...last, icon, at: s.at ?? last.at, detail: last.detail ?? s.detail, title: unit ? `${s.title}（${n} ${unit}）` : last.title };
+        continue;
+      }
     }
     out.push(s);
   }
   if (riskTotal && riskTotal > 0) return out.map((s) => (s.title === "找出风险" && s.icon !== "wait" ? { ...s, title: `找出 ${riskTotal} 处风险` } : s));
   return out;
+}
+
+/** 引擎内置工具：它们的自述是英文加本机路径（“Searching for '…' in /private/tmp/…”），一律不进律师层（V16 A1）。 */
+const ENGINE_TOOLS = new Set(["Read", "Glob", "Grep", "Bash", "Write", "Edit"]);
+/** 查阅方法自带的参考资料（路径在方法目录里）时，律师层不显示这一步（V16 A1）。 */
+const METHOD_REF_TOOLS = new Set(["Read", "Grep", "Glob"]);
+
+/**
+ * 工具自述能不能给律师看（V16 A1；复核 S5B-12）：须含中文；含本机路径（“/” 开头的多级路径、盘符路径、方法目录）
+ * 或以英文动词短语开头（Searching for / Reading / Listing / Running / Writing…）的一律不显示。纯函数。
+ */
+export function lawyerToolDescription(tool: string, description: unknown): string | undefined {
+  if (ENGINE_TOOLS.has(tool) || typeof description !== "string") return undefined;
+  const d = description.replace(/^[A-Z][A-Za-z ]{1,24}:\s*/, "").trim();
+  if (!d || !/[\u4e00-\u9fff]/.test(d)) return undefined;
+  if (/(^|[\s'"(（：:=])\/[^\s/]+\/[^\s]+/.test(d) || /\b[A-Za-z]:[\\/]/.test(d) || /[\\/]skills[\\/]/.test(d) || /kap-trusted/.test(d)) return undefined;
+  if (/^(search|read|list|run|writ|edit|find|look|check|creat|fetch|open|execut|updat|analy|get|load|scan|inspect|grep|glob|view|calculat|comput|process)[a-z]*\b/i.test(d)) return undefined;
+  return d;
+}
+
+/** 这一步是否在查阅方法自带的参考资料（自述里的路径在方法目录下）。纯函数。 */
+export function isMethodReference(tool: string, description: unknown): boolean {
+  return METHOD_REF_TOOLS.has(tool) && typeof description === "string" && /[\\/]skills[\\/]/.test(description);
 }
 
 /** 联网步骤不折叠：律师要能直接看到“实际发出什么”（复核 S7B-05）。 */
@@ -248,10 +300,10 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
     const at = e.created_at;
     switch (e.type) {
       case "run.started":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "任务受理", at });
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "已收到任务", at });
         break;
       case "agent.task_started":
-        steps.push({ key: `${e.event_id}`, icon: "ok", level: "detail", title: "助手已在本机启动", at });
+        steps.push({ key: `${e.event_id}`, icon: "ok", level: "detail", title: "助手开始工作", at });
         break;
       case "agent.started":
         // 第 27 批（评审 U3-02）：与输入框的做法胶囊同名，不再写“运行模式：标准（推荐）· 先给我看计划”与“数据级别 L2”
@@ -271,17 +323,19 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         toolIndex.set(String(p.tool_call_id), steps.length);
         // 联网检索与抓取：不显示 Agent 自述（可能是改写前、含当事人名称的检索式，UIUX 增量评审 P0-A）——实际发出的内容见“数据去向”
         const network = name === "WebSearch" || name === "FetchURL";
-        // 引擎的英文自述（“Reading file …”）不给律师看（复核 S5B-12）：只保留含中文的说明
-        const rawDesc = !network && p.description ? String(p.description).replace(/^[A-Z][A-Za-z ]{1,24}:\s*/, "") : undefined;
-        const desc = rawDesc && /[\u4e00-\u9fff]/.test(rawDesc) ? rawDesc : undefined;
+        // 引擎的英文自述与本机路径不给律师看（复核 S5B-12；V16 A1：此前只看“含中文”，检索式里的中文关键词让整句英文加路径漏了出来）
+        const desc = network ? undefined : lawyerToolDescription(name, p.description);
+        // 查阅方法自带的参考资料：标题写“查阅方法参考资料”，收进处理细节（V16 A1）
+        const methodRef = isMethodReference(name, p.description);
         // 联网步骤显示实际发出的内容（改写后的查询或打开的网址），不显示改写前的检索式
         const s = network ? sent.get(String(p.tool_call_id)) : undefined;
         steps.push({
           key: `${e.event_id}`,
           // 调用方法模板这一步收进处理细节（第 26 批）：下一条“按《…》的方法处理”已经说了，不再重复一行
-          level: name === "Skill" ? "detail" : "lawyer",
+          // 任务清单每更新一次就是一步（真实任务里出现 6 次）：对律师没有信息量，收进处理细节（V16）
+          level: name === "Skill" || name === "TodoList" || methodRef ? "detail" : "lawyer",
           icon: "wait",
-          title: toolLabel(name),
+          title: methodRef ? "查阅方法参考资料" : toolLabel(name),
           at,
           meta: network && !s ? "实际发出的内容见右侧“数据去向”" : undefined,
           agent: p.agent_id && p.agent_id !== "main" ? String(p.agent_id) : undefined,
@@ -366,7 +420,7 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
           key: `${e.event_id}`,
           level: "lawyer",
           icon: "dot",
-          title: `${files.length} 个文件没有收进交付件${e.type === "agent.workspace_rejected" ? "（含外部链接，已拦下）" : ""}`,
+          title: `${files.length} 个文件没有放进成果${e.type === "agent.workspace_rejected" ? "（含外部链接，已拦下）" : ""}`,
           at,
           detail: files.map((f: any) => `${f.path ?? f.filename}${SKIP_REASONS[f.reason] ? `（${SKIP_REASONS[f.reason]}）` : ""}`).join("、"),
         });
@@ -379,7 +433,7 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
       case "review.completed": {
         const n = Number(p.findings ?? 0);
         const must = Number(p.must ?? 0);
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "ok", title: n > 0 ? `独立复核提出 ${n} 条意见（其中必须改 ${must} 条），已交回助手处理` : "独立复核未发现实质问题", at, detail: n > 0 ? "意见见交付件《独立复核意见》；处理结果见最终答复的“独立复核处理情况”" : undefined });
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "ok", title: n > 0 ? `独立复核提出 ${n} 条意见（其中必须改 ${must} 条），已交回助手处理` : "独立复核未发现实质问题", at, detail: n > 0 ? "意见见成果《独立复核意见》；处理结果见最终答复的“独立复核处理情况”" : undefined });
         break;
       }
       case "review.skipped":
@@ -410,7 +464,8 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         // retryable 由内核保留（复核 B4-B21：此前被裁掉，“正在自动重试”永远不出现）
         // 模型通道不可达（provider.*，第 28 批演练）：直说 AI 服务连不上，不写“任务会尽量继续”
         steps.push({ key: `${e.event_id}-l`, level: "lawyer", icon: "fail", title: p.retryable === true ? "AI 服务出了点问题，正在自动重试" : String(p.code ?? "").startsWith("provider.") ? "AI 服务连不上，这一步没有完成" : "这一步没有完成，任务会尽量继续", at });
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "fail", title: "错误详情", at, detail: String(p.message ?? p.error ?? "") });
+        // V16（审计第 8 条）：处理细节里只写出错代码，原始错误原文（常为英文）只进诊断信息
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "fail", title: "出错代码", at, detail: `${String(p.code ?? "") || "未知"}（可在 设置 → 备份与安全 导出诊断信息给客服）` });
         break;
       case "agent.cancel_unconfirmed":
         // 停止请求与强制停止都没有得到本机助手的确认（复核 B4-B07：原文案“已强制停止”与事实相反）
@@ -418,13 +473,13 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         if (p.error || p.cause) steps.push({ key: `${e.event_id}-d`, level: "detail", icon: "fail", title: "停止请求的处理详情", at, detail: [p.cause ? `原因：${cancelCauseLabel(String(p.cause))}` : "", p.error ? String(p.error) : ""].filter(Boolean).join("；") });
         break;
       case "agent.cancel_forced":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: `停止请求经强制方式生效（${cancelCauseLabel(String(p.cause ?? ""))}）`, at });
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "已停止", at, detail: `原因：${cancelCauseLabel(String(p.cause ?? ""))}` });
         break;
       case "citations.verified":
         steps.push({ key: `${e.event_id}`, icon: Number(p.intercepted) > 0 ? "fail" : "ok", level: "lawyer", title: Number(p.intercepted) > 0 ? `核对引用：${p.total} 条中 ${p.intercepted} 条有问题，已标出` : `核对引用：${p.total} 条均已核对`, at });
         break;
       case "model.completed":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "AI 分析完成", at, meta: String(p.route ?? "") || undefined });
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "AI 分析完成", at });
         break;
       case "artifact.drafted":
         steps.push({ key: `${e.event_id}`, icon: "ok", level: "lawyer", title: `草稿已生成：${p.kind === "a1_workspace_file" ? p.filename : ARTIFACT_LABELS[p.kind] ?? p.filename ?? "成果"}（待复核）`, at });
@@ -458,7 +513,7 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
 }
 
 /** 停止请求没有得到确认时律师看到的一句话（复核 B4-B07）。 */
-export const CANCEL_UNCONFIRMED_TEXT = "停止请求没有得到本机助手的确认，它可能仍在运行；请重启应用";
+export const CANCEL_UNCONFIRMED_TEXT = "没能确认任务已停下，它可能仍在运行；请关闭 Kimi Work 再重新打开";
 
 const CANCEL_CAUSE_LABELS: Record<string, string> = {
   version_conflict: "停止时恰好有新的确认或提问到达",
@@ -494,7 +549,7 @@ const OUTCOME_REASON_LABELS: Record<string, string> = {
   workspace_commit_incomplete: "部分文件没有写入工作区",
   run_deadline_exceeded: "超过工作时限",
   run_wall_deadline_exceeded: "超过总时长上限",
-  prompt_rejected: "任务没有被助手受理",
+  prompt_rejected: "助手没能接这个任务，请换个说法再试",
   host_exited: "处理意外中断，可以重新运行",
   start_failed: "启动失败",
   unknown_task: "任务不存在",

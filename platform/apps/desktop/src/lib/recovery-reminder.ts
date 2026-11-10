@@ -12,7 +12,7 @@ export interface BackupStatusView {
 
 export type ReminderKind = "package" | "folder" | "location_changed" | "failed" | "stale";
 
-/** kind：缺恢复包时“去完成”打开开通向导（#/welcome），其余打开“设置 · 本机与安全”。 */
+/** kind：缺恢复包时“去完成”打开开通向导（#/welcome），其余打开“设置 · 备份与安全”。 */
 export function recoveryReminder(s: BackupStatusView | null | undefined): { kind: ReminderKind; text: string; tone: "orange" | "red"; everywhere: boolean } | null {
   if (!s || s.revoked) return null;
   if (!s.packages_created) return { kind: "package", text: "还没有生成恢复包：这台电脑坏了或丢了，案卷就找不回。", tone: "orange", everywhere: false };

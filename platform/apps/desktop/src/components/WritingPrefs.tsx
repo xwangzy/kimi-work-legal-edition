@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { api, type WritingPrefs as Prefs } from "../api.ts";
 import { Select } from "./Select.tsx";
+import { SettingRow } from "./SettingRow.tsx";
 
 export function WritingPrefs() {
   const [p, setP] = useState<Prefs | null>(null);
@@ -43,13 +44,7 @@ export function WritingPrefs() {
   const dirty = !!saved && ((p.signature ?? "") !== (saved.signature ?? "") || (p.citation ?? "") !== (saved.citation ?? "") || (p.notes ?? "") !== (saved.notes ?? ""));
   // 第 26 批（评审 U2-01）：与文书版式同一张“标签 | 控件”网格
   return (
-    <div className="device-row" id="writing-prefs">
-      <div className="device-k">
-        写作偏好
-        {dirty && <span className="pill pill-orange unsaved">未保存</span>}
-      </div>
-      <div>
-        <div className="muted">AI 起草文书时按你的习惯写。只写格式与文风，不写案情；会随任务说明一起发给 AI。</div>
+    <SettingRow id="writing-prefs" label="写作偏好" badge={dirty && <span className="pill pill-orange unsaved">未保存</span>} hint="AI 起草文书时按你的习惯写。只写格式与文风，不写案情；会随任务说明一起发给 AI。">
         <div className="settings-grid">
           <span className="sg-k sg-top">落款</span>
           <div className="sg-v">
@@ -84,7 +79,6 @@ export function WritingPrefs() {
             {msg}
           </p>
         )}
-      </div>
-    </div>
+    </SettingRow>
   );
 }

@@ -1,5 +1,5 @@
 /**
- * 设置 → 本机与安全 → 离所同事（复核 R15A-05）：你负责的团队事项里，还有电脑已全部停用的成员（多为离所、也可能在换电脑）。
+ * 设置 → 账号与团队 → 离所同事（复核 R15A-05）：你负责的团队事项里，还有电脑已全部停用的成员（多为离所、也可能在换电脑）。
  * 移出他会换新的事项密钥（界面不讲密钥），他手里的旧电脑拿不到此后的新内容；还在换电脑的同事等新电脑到位后再加回即可。没有这样的成员时不显示。
  */
 import { useEffect, useState } from "react";
@@ -23,7 +23,7 @@ export function DepartedMembers() {
     <div className="device-row">
       <div className="device-k">离所同事</div>
       <div>
-        <div className="muted">下面这些同事的电脑都已停用，但还在你负责的事项里。确认他已离所后移出：移出后，他手里的旧电脑拿不到此后的新内容。</div>
+        <div className="lead-note">下面这些同事的电脑都已停用，但还在你负责的事项里。确认他已离所后移出：移出后，他手里的旧电脑拿不到此后的新内容。</div>
         {items.map((x) => (
           <div key={`${x.matter_id}-${x.user_id}`}>
             「{x.title}」· {memberLabel({ name: x.name, member_id: x.user_id, is_me: false })}

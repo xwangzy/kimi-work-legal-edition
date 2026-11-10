@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, type RelayStatus } from "../api.ts";
-import { canResyncMembers, relayErrorText, syncAlertSummary, syncAlertText, syncOutcomeText, teamShareLine } from "../lib/relay-text.ts";
+import { canResyncMembers, relayErrorText, syncAlertAction, syncAlertSummary, syncAlertText, syncOutcomeText, teamShareLine } from "../lib/relay-text.ts";
 import { fmtTime } from "../lib/labels.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
 
@@ -63,8 +63,8 @@ export function TeamShare({ admin = false }: { admin?: boolean }) {
   const counts = [
     st.pending_upload ? `${st.pending_upload} 条改动待发出` : "",
     st.stuck ? `${st.stuck_matters ?? 1} 个事项有改动发不出去` : "",
-    st.waiting_key ? `${st.waiting_key} 条同事的改动在等负责人确认你的成员身份` : "",
-    st.waiting_blob ? `${st.waiting_blob} 条同事的改动在等材料文件` : "",
+    st.waiting_key ? `${st.waiting_key} 条同事的改动要等事项负责人的电脑上线后才能收到` : "",
+    st.waiting_blob ? `${st.waiting_blob} 条同事的改动正在下载材料` : "",
     st.retrying || st.deferred ? `${(st.retrying ?? 0) + (st.deferred ?? 0)} 条稍后重试` : "",
   ].filter(Boolean);
   const pushErr = relayErrorText(st.push_last_error);
@@ -78,12 +78,14 @@ export function TeamShare({ admin = false }: { admin?: boolean }) {
         {alerts.map((a) => (
           <div key={`${a.matter_id}-${a.kind}-${a.epoch}`} className="sync-alert">
             {syncAlertSummary(a)}
+            {/* V16 三段式：暂停了 → 谁来处理 → 详情（管理员） */}
+            <div className="sync-alert-action">{syncAlertAction(a)}</div>
             {a.kind === "root_conflict" && canResyncMembers(admin, owners[a.matter_id]) && (
               <>
                 {" "}
                 <ConfirmButton
                   label="重新同步成员名单"
-                  className="btn btn-sm"
+                  className="btn-ghost btn-sm"
                   danger={false}
                   disabled={busy}
                   question={`这台电脑会重新向负责人${a.peer_name ?? a.peer_member ? ` ${a.peer_name ?? a.peer_member} ` : ""}确认「${a.title ?? "这个事项"}」有哪些成员。期间这个事项暂停同步，内容不受影响。`}
@@ -103,7 +105,7 @@ export function TeamShare({ admin = false }: { admin?: boolean }) {
         {st.blocked === null && (
           <>
             {" "}
-            <button className="btn btn-sm" disabled={busy} onClick={() => void syncNow()}>
+            <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void syncNow()}>
               {busy ? "正在同步…" : "立即同步"}
             </button>
             {msg && <span className="muted"> {msg}</span>}
@@ -118,7 +120,7 @@ export function TeamShare({ admin = false }: { admin?: boolean }) {
                 {st.dropped_total ? <div>另有 {st.dropped_total} 条同事的改动无法在这台电脑上处理（多为这台电脑加入事项之前的内容），已略过。</div> : null}
                 {pushErr && pushErr !== stuckErr && <div>发出：{pushErr}</div>}
                 {pullErr && <div>收取：{pullErr}</div>}
-                {st.chain_last_error && <div>成员记录自动处理没有完成（{st.chain_last_error.slice(0, 80)}），会在下次同步时再试</div>}
+                {st.chain_last_error && <div title={st.chain_last_error.slice(0, 200)}>成员名单暂时没核对完，下次同步时会再试</div>}
               </details>
             )}
           </>

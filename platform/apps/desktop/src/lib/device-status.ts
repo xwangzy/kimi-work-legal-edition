@@ -1,5 +1,5 @@
 /**
- * 设置 → 本机与安全顶部的三块结论（v9.4）：律师先看一句话结论，细节在下面分块。
+ * 设置 → 备份与安全顶部的三块结论（v9.4）：律师先看一句话结论，细节在下面分块。
  * 只用律师听得懂的话；“执行域、出站闸门”等研发用语留在“管理 → 技术支持”。
  */
 import { fmtTime } from "./labels.ts";
@@ -13,10 +13,10 @@ export type TileTone = "ok" | "warn" | "info";
  */
 export function deviceSafetyTile(domainOk: boolean, gateOk: boolean, o: { envWarn?: number; exitMessage?: string | null } = {}): { tone: TileTone; line: string } {
   if (o.exitMessage) return { tone: "warn", line: `新任务已暂停：${o.exitMessage}` };
-  if (!domainOk) return { tone: "warn", line: "加密保存正常；计算环境暂不可用，需要计算的任务会停下并说明原因" };
-  if (!gateOk) return { tone: "warn", line: "加密保存正常；联网功能暂不可用，AI 与检索会停下并说明原因" };
-  if ((o.envWarn ?? 0) > 0) return { tone: "warn", line: `加密保存在这台电脑上；有 ${o.envWarn} 项电脑设置要请 IT 处理（见下方“电脑环境”）` };
-  return { tone: "ok", line: "加密保存在这台电脑上；本机计算不联网，发给 AI 和联网查询的每一次都有记录" };
+  if (!domainOk) return { tone: "warn", line: "案卷已加密保存；表格计算暂时用不了，用到时会提示你" };
+  if (!gateOk) return { tone: "warn", line: "案卷已加密保存；暂时连不上 AI 和联网检索，用到时会提示你" };
+  if ((o.envWarn ?? 0) > 0) return { tone: "warn", line: `案卷加密存在这台电脑上；有 ${o.envWarn} 项电脑设置要请 IT 处理（见下方“电脑环境”）` };
+  return { tone: "ok", line: "案卷加密存在这台电脑上；每次发给 AI 的内容都有记录可查" };
 }
 
 /** 备份：没有恢复包或没设自动备份都算“未完成”；超过 3 天没有成功备份要提醒。 */

@@ -7,6 +7,7 @@ import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
 import { materialsLine, PREAUTH_LABELS } from "../lib/labels.ts";
 import { modeSheetText } from "../lib/mode-options.ts";
+import { freeTaskWhat, usageNoteShort } from "../lib/sheet-text.ts";
 import type { ComposerValue } from "./Composer.tsx";
 import { SCENARIO_LABELS } from "../lib/labels.ts";
 import { Modal } from "./Modal.tsx";
@@ -145,7 +146,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
         <dd>{matter.title}</dd>
         <dt>做什么</dt>
         <dd>
-          {cur.label ?? (agent ? "按你的描述处理" : SCENARIO_LABELS[value.scenario]) ?? value.scenario}
+          {cur.label ?? (agent ? freeTaskWhat(value.choice.mode !== "chat" && value.choice.planFirst) : SCENARIO_LABELS[value.scenario]) ?? value.scenario}
           {/* 回显任务说明（第 26 批，评审 U2-23）：确认卡要能用来核对“我要做的事”；最多两行，悬停看全文 */}
           {value.goal.trim() && (
             <div className="sheet-goal" title={value.goal.trim()}>
@@ -165,14 +166,27 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
             <dt>做法</dt>
             <dd>
               {modeSheetText({ mode: value.choice.mode, planFirst: value.choice.mode !== "chat" && value.choice.planFirst })}
-              {value.choice.mode === "auto" && value.choice.preauth.length > 0 ? `（预授权：${value.choice.preauth.map((p) => PREAUTH_LABELS[p] ?? p).join("；")}）` : ""}
+              {value.choice.mode === "auto" && value.choice.preauth.length > 0 ? `（事先同意：${value.choice.preauth.map((p) => PREAUTH_LABELS[p] ?? p).join("；")}）` : ""}
             </dd>
           </>
         )}
         <dt>预计用量</dt>
         <dd>
           {estimate.points_display}
-          {estimate.assumptions.length > 0 && <div className="muted sheet-note">{estimate.assumptions.join("；")}</div>}
+          {/* V16 A5：用量说明缩成一行，原话收进“了解更多” */}
+          {estimate.assumptions.length > 0 && (
+            <div className="muted sheet-note">
+              {usageNoteShort(estimate.assumptions).line}
+              {usageNoteShort(estimate.assumptions).more.length > 0 && (
+                <details className="sheet-more">
+                  <summary>了解更多</summary>
+                  {usageNoteShort(estimate.assumptions).more.map((m) => (
+                    <div key={m}>{m}</div>
+                  ))}
+                </details>
+              )}
+            </div>
+          )}
         </dd>
       </dl>
       {/* 发送说明（v9.4 认知减负）：默认只列三四句要点，完整口径收进“完整说明”；与开始面板共用（第 27 批，评审 U3-01） */}
@@ -187,7 +201,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
           {busyRun && (
             <div className="banner-actions">
               <button
-                className="btn btn-sm"
+                className="btn-ghost btn-sm"
                 onClick={() => {
                   onClose();
                   nav(`/run/${busyRun}/${matter.matter_id}`);
@@ -212,7 +226,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
           {errBusyRun && (
             <div className="banner-actions">
               <button
-                className="btn btn-sm"
+                className="btn-ghost btn-sm"
                 onClick={() => {
                   onClose();
                   nav(`/run/${errBusyRun}/${matter.matter_id}`);

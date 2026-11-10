@@ -195,7 +195,7 @@ export function SendPreviewDrawer({ matterId, documentIds, initial, onClose }: {
           </div>
           {sel && (
             <div className="banner-actions">
-              <button className="btn btn-sm" onClick={() => void addParty()}>
+              <button className="btn-ghost btn-sm" onClick={() => void addParty()}>
                 把“{sel}”加入当事人名单（自然人）
               </button>
             </div>
@@ -297,7 +297,7 @@ export function SuspectReview({ matterId, documentIds, goal, onClose, onDone }: 
         </table>
       )}
       <div className="banner-actions">
-        <button className="btn btn-sm" onClick={onClose}>
+        <button className="btn-ghost btn-sm" onClick={onClose}>
           稍后
         </button>
         <button className="btn-primary btn-sm" disabled={busy || all.length === 0 || decided < all.length} onClick={() => void save()}>
