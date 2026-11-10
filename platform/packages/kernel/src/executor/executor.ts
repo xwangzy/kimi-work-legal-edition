@@ -942,13 +942,15 @@ export function snapshotText(text: string, max = AGENT_SNAPSHOT_MAX_CHARS): stri
 export function methodPromptLine(skill: string | null, skillArgs: Record<string, string> | null, primaryOutput: string | null = null): string {
   const argsLine = skillArgs && Object.keys(skillArgs).length > 0 ? `方法参数：${Object.entries(skillArgs).map(([k, v]) => `${k}=${String(v).slice(0, 300)}`).join("；")}。` : "";
   // 主交付物（第 28 批）：文书类方法写明“必须出 Word 文书”，表格不能代替；信息不全照样出草稿（真实走查：事实未确认时只交了两份表格）
+  // V16 第 41 批：与工作准则第 5 条一致——对外文书正文不留【待确认】、律师提示、待补与期限提醒（原先这里写“未经律师确认的事实标【待确认】”，
+  // 真实成果里代理词正文 14 处“页码【待确认】”、催告函 4 处【待确认】）；只留非填不可的【待填】
   const deliver = primaryOutput && WORD_OUTPUT.test(primaryOutput)
     ? // 第 31 批：“信息不全照样出草稿”只管事实与身份信息不全；答辩、上诉、质证要回应的文书本身不在事项里时按方法先问律师
       // （真实走查：没有起诉状时助手把这句当成“律师的明确指示”，越过方法“先请律师补充”的规定要出一份全是【待填】的答辩状）
-      `本方法的主交付物是 Word 文书《${primaryOutput.replace(WORD_OUTPUT, "")}》，必须用 docx.render_report 生成；Excel 表格只作附件，不能代替文书（文书里要成表的内容用 docx.render_report 的 table 画在 Word 里）；事实或身份信息不全照样出草稿，缺项写“【待填】”；哪些内容标“【待确认】”按方法的规定（方法没有规定的，未经律师确认的事实标“【待确认】”）；方法规定先向律师要的核心材料（例如答辩要回应的起诉状）不在事项里时，按方法先问律师。`
+      `本方法的主交付物是 Word 文书《${primaryOutput.replace(WORD_OUTPUT, "")}》，必须用 docx.render_report 生成；Excel 表格只作附件，不能代替文书（文书里要成表的内容用 docx.render_report 的 table 画在 Word 里）；事实或身份信息不全照样出草稿，文书非填不可、材料里又没有的填空项写“【待填】”；要发给对方或交给法院的文书正文不留“【待确认】”“律师提示”“待补”和给律师的期限提醒——未经律师确认或材料之间矛盾的事实，正文用附条件或对我方站得住的保守表述，待确认事项写进给律师的核对附件和最终答复；方法规定先向律师要的核心材料（例如答辩要回应的起诉状）不在事项里时，按方法先问律师。`
     : // Excel 主交付物（第 31 批，审查 B-12）：金额测算、引用核验等的成果是表本身，只在答复里贴表格或文字不算交付
       primaryOutput && SHEET_OUTPUT.test(primaryOutput)
-      ? `本方法的主交付物是 Excel 表《${primaryOutput.replace(SHEET_OUTPUT, "")}》，必须用 xlsx.render_table 生成，不能只在答复里列表格或写文字；信息不全照样出表，未经律师确认的数据标“【待确认】”。`
+      ? `本方法的主交付物是 Excel 表《${primaryOutput.replace(SHEET_OUTPUT, "")}》，必须用 xlsx.render_table 生成，不能只在答复里列表格或写文字；信息不全照样出表；要作为附页递交法院或发给对方的表不留“【待确认】”等给律师的标记，未经律师确认的数据写进给律师的核对附件和最终答复（内部分析用的表按方法标注）。`
       : "";
   return skill ? `【方法】先调用 Skill 工具加载方法模板“${skill}”，按其步骤、工具约定与输出规格执行；${argsLine}${deliver}模板与律师的任务说明冲突时，以律师的说明为准（工作准则列明的底线除外），不为此再提问。\n` : "";
 }

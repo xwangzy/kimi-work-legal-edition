@@ -270,6 +270,13 @@ test("主交付物核对（第 31 批，审查 B-12）：表格类方法一张�
   assert.doesNotMatch(methodPromptLine("amount-calc", null, "计算明细.xlsx"), /docx\.render_report/);
   // 第 31 批：“照样出草稿”只管事实与身份信息；答辩要回应的起诉状不在时按方法先问（真实走查：助手把这句当成律师指示，要出全是【待填】的答辩状）
   assert.match(methodPromptLine("defense-draft", null, "民事答辩状（草稿）.docx"), /事实或身份信息不全照样出草稿.*方法规定先向律师要的核心材料（例如答辩要回应的起诉状）不在事项里时，按方法先问律师/);
+  // V16 第 41 批：与工作准则第 5 条一致——对外文书正文不留【待确认】，只留非填不可的【待填】；不再有“未经律师确认的事实标【待确认】”的旧句
+  const draftLine = methodPromptLine("defense-draft", null, "民事答辩状（草稿）.docx");
+  assert.match(draftLine, /要发给对方或交给法院的文书正文不留“【待确认】”“律师提示”“待补”和给律师的期限提醒/);
+  assert.match(draftLine, /正文用附条件或对我方站得住的保守表述，待确认事项写进给律师的核对附件和最终答复/);
+  assert.match(draftLine, /非填不可、材料里又没有的填空项写“【待填】”/);
+  assert.doesNotMatch(draftLine, /未经律师确认的事实标“【待确认】”/);
+  assert.doesNotMatch(methodPromptLine("amount-calc", null, "计算明细.xlsx"), /未经律师确认的数据标“【待确认】”/);
 });
 
 test("待补占位：复核页列出个数，签发须勾选“已知悉”；没有占位的文件不受影响", { timeout: 60_000 }, async () => {

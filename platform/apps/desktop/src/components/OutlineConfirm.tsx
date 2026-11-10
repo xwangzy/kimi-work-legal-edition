@@ -108,7 +108,7 @@ export function OutlineConfirm({ outline, plain, busy, canStop, onConfirm, onSto
         <label className="lifecycle-check outline-facts-confirm">
           <input type="checkbox" checked={withFacts} disabled={busy} onChange={(e) => setWithFacts(e.target.checked)} />
           同时确认上面标“未经你确认”的 {pendingFacts.length} 条事实（我已对照材料核过）
-          {!withFacts && <span className="muted">：不确认的话，助手照常起草，这些事实在文书里标“【待确认】”</span>}
+          {!withFacts && <span className="muted">：不确认的话，助手照常起草，这些事实在正文里写得保守（附条件或照材料写明证据），列进给你的核对清单</span>}
         </label>
       )}
       <textarea rows={2} placeholder="给助手的补充要求（可不填），例如：违约金按合同第 8.2 条计算" value={note} disabled={busy} onChange={(e) => setNote(e.target.value)} aria-label="补充要求" />

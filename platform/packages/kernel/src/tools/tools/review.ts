@@ -267,7 +267,7 @@ export function outlineGet(ctx: InvokeCtx) {
     confirmed_arguments: confirmedView(o).map((a) => ({ ...a, basis: a.basis.map((b) => ({ law: b.law, article: b.article, note: b.note, check: b.check })) })),
     dropped: (o.decisions ?? []).filter((d) => !d.keep).map((d) => d.arg_id),
     lawyer_note: o.lawyer_note,
-    note: "只按 confirmed_arguments 起草；dropped 里的论点不写；事实中 confirmed=false 的在文书里标“待律师确认”。",
+    note: "只按 confirmed_arguments 起草；dropped 里的论点不写；事实中 confirmed=false 的，要递交法院或发给对方的文书正文不标“待律师确认”，用附条件或保守表述，待确认事项写进给律师的核对附件和最终答复（内部分析类文书可以标“待律师确认”）。",
   };
 }
 
@@ -293,7 +293,7 @@ export function factsList(ctx: InvokeCtx, p: { confirmed_only?: boolean }) {
       lawyer_status: f.status,
     })),
     note:
-      "只有 lawyer_status=confirmed 的事实可以写进文书与汇报；其余须在交付件中标为“待律师确认”。" +
+      "只有 lawyer_status=confirmed 的事实可以作为确定的事实写进文书与汇报；其余在内部分析类交付件中标“待律师确认”，要递交法院或发给对方的文书正文不留这类标记，用附条件或保守表述，待确认事项写进给律师的核对附件和最终答复。" +
       "交付件里引用事实写 ref（如“事实 12”，律师在事项的事实页按同一序号可以查到），不写 fact_id；fact_id 只在调用工具时用。",
   };
 }
