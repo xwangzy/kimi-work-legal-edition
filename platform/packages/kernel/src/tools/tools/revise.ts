@@ -149,6 +149,10 @@ export interface AmendSummary {
   removed: number;
   added: number;
   total: number;
+  /** 这次被删掉、不再写入修订稿的修改（上一次清单里的序号与定位文字开头）。 */
+  dropped: { index: number; anchor: string }[];
+  /** 这次被替换、且定位文字与原来那一条不同的修改：多半是序号写错了一位（V16 第 41 批真实复测 D2：序号错一位，三处已写入的修改被别的修改盖掉，意见书仍写“已写入”）。 */
+  retargeted: { index: number; was: string; now: string }[];
 }
 
 const pick = (x: unknown): RevisePatchInput => {
@@ -160,8 +164,10 @@ const pick = (x: unknown): RevisePatchInput => {
 /**
  * 补交合成（纯函数）：上一次的完整清单按 replace（{index, patch}）换掉、按 remove 去掉，其余照原次序保留，add 接在末尾。
  * index 是上一次清单里的第几条（从 1 起，与逐条结果里的 index 一致）；越界、重复、同一条既换又删都报错，不猜。
+ * `prevWritten`：上一次清单是否已经写成了修订稿。已写入的清单上，替换一条时换了定位文字，等于原来那一处的修改不要了，报出来；
+ * 上一次整批被退回或只是试写的，换定位文字正是在改正定位，不报。
  */
-export function amendPatches(prev: readonly RevisePatchInput[], amend: AmendInput): { patches: RevisePatchInput[]; summary: AmendSummary } {
+export function amendPatches(prev: readonly RevisePatchInput[], amend: AmendInput, prevWritten = true): { patches: RevisePatchInput[]; summary: AmendSummary } {
   const n = prev.length;
   const list = (v: unknown, name: string): unknown[] => {
     if (v === undefined || v === null) return [];
@@ -187,7 +193,13 @@ export function amendPatches(prev: readonly RevisePatchInput[], amend: AmendInpu
   }
   const added = list(amend.add, "add").map(pick);
   const patches = [...prev.flatMap((x, k) => (removed.has(k + 1) ? [] : [replaced.get(k + 1) ?? x])), ...added];
-  return { patches, summary: { base: n, replaced: replaced.size, removed: removed.size, added: added.length, total: patches.length } };
+  const head = (x: RevisePatchInput | undefined): string => String((x as { anchor?: unknown } | undefined)?.anchor ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+  const dropped = [...removed].sort((a, b) => a - b).map((i) => ({ index: i, anchor: head(prev[i - 1]) }));
+  const retargeted = [...replaced.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([i, x]) => ({ index: i, was: head(prev[i - 1]), now: head(x) }))
+    .filter((r) => prevWritten && r.was !== r.now && !r.was.includes(r.now) && !r.now.includes(r.was));
+  return { patches, summary: { base: n, replaced: replaced.size, removed: removed.size, added: added.length, total: patches.length, dropped, retargeted } };
 }
 
 export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; patches?: unknown; dry_run?: unknown; amend?: unknown }) {
@@ -205,9 +217,9 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   if (p.amend !== undefined && p.amend !== null) {
     if (given.length > 0) throw new DomainError("validation", "给了 amend 就不要再给 patches：amend 是在上一次清单上只改几条，patches 是重交完整清单，二者择一", 422);
     if (typeof p.amend !== "object" || Array.isArray(p.amend)) throw new DomainError("validation", "amend 须是对象：{ replace?: [{ index, patch }], remove?: [index], add?: [patch] }", 422);
-    const prev = ctx.db.get<{ patches: string }>(`SELECT patches FROM revise_submissions WHERE run_id = ? AND document_version_id = ?`, [rid, documentVersionId]);
+    const prev = ctx.db.get<{ patches: string; outcome: string | null }>(`SELECT patches, outcome FROM revise_submissions WHERE run_id = ? AND document_version_id = ?`, [rid, documentVersionId]);
     if (!prev) throw new DomainError("validation", "本任务还没有对这份文件提交过修改清单，请用 patches 提交完整清单", 422);
-    const r = amendPatches(JSON.parse(prev.patches) as RevisePatchInput[], p.amend as AmendInput);
+    const r = amendPatches(JSON.parse(prev.patches) as RevisePatchInput[], p.amend as AmendInput, prev.outcome === "applied");
     raw = r.patches;
     amended = r.summary;
     if (raw.length === 0) throw new DomainError("validation", "补交后清单里一条修改也没有了：至少留一条，或在最终答复里说明不改原件", 422);
@@ -230,7 +242,13 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   return {
     ...out,
     amend: a,
-    amend_note: `本次在上一次 ${a.base} 条的基础上替换 ${a.replaced} 条、删除 ${a.removed} 条、新增 ${a.added} 条，合计 ${a.total} 条（新增的排在末尾；删除后后面各条的序号依次前移）。结果里的序号都按这份新清单计，下一次补交也按它。`,
+    amend_note: `本次在上一次 ${a.base} 条的基础上替换 ${a.replaced} 条、删除 ${a.removed} 条、新增 ${a.added} 条，合计 ${a.total} 条（新增的排在末尾；删除后后面各条的序号依次前移）。结果里的序号都按这份新清单计，下一次补交也按它。` +
+      (a.dropped.length > 0
+        ? `\n这次删掉的 ${a.dropped.length} 条不再写进修订稿：${a.dropped.map((d) => `原第 ${d.index} 条“${d.anchor}”`).join("；")}。不是有意放弃的，用 amend.add 补回；有意放弃的，把审查意见、问题清单和最终答复里写“已写入”的相应说法一并改掉。`
+        : "") +
+      (a.retargeted.length > 0
+        ? `\n这次替换的修改里有 ${a.retargeted.length} 条换了定位文字：${a.retargeted.map((r) => `第 ${r.index} 条原来定位在“${r.was}”，现在定位在“${r.now}”`).join("；")}——原来那一处的修改因此不在清单里了。如果本意只是更正另一条，说明序号写错了：把原来那一条用 amend.add 补回，再把更正写到对的序号上。`
+        : ""),
   };
 }
 
