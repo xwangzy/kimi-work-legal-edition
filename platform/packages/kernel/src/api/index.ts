@@ -1422,7 +1422,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           ? "律所自己的 AI，是否保存由律所决定"
           : matter.model_endpoint === "byok"
             ? "AI 服务方是否保存，以律所与厂商的协议为准"
-            : "AI 服务方是否保存，以其企业协议为准（协议状态见“设置 → 数据去向说明”）";
+            : "AI 服务方是否保存，以其企业协议为准（协议状态见“设置 → 数据去向”）";
       const pseudonymScope =
         level === "L3a" || matter.full_pseudonym === 1
           ? "证件、账户、联系方式、自然人姓名与机构名称在发送前全部替换为代号（全部化名）"

@@ -405,6 +405,21 @@ export class Lawdb {
       .map(({ rank: _rank, ...x }) => x);
   }
 
+  /**
+   * 条文的合读提示（V16 第 41 批）：随包数据里以“__合读:”开头的主题登记在某一条上，表示这一条须与另一文件合读
+   * （例：公司法时间效力规定第四条第一项关于第八十八条第一款溯及适用的规定，已被法释〔2024〕15 号批复限定）。
+   * 真实走查 O16：库里只有前一个文件而没有后一个时，助手“核验通过”后会得出相反的结论。提示与条文一样进签名内容。
+   */
+  articleNotes(lsvId: string, articleNo: number): string[] {
+    const rows = this.db.prepare(`SELECT topic FROM article_topics WHERE lsv_id = ? AND article_no = ? AND topic LIKE '\\_\\_合读:%' ESCAPE '\\' ORDER BY topic`).all(lsvId, articleNo) as { topic: string }[];
+    return rows.map((r) => r.topic.slice("__合读:".length));
+  }
+
+  /** 不分条的文件（批复、答复、通知）：随包数据以主题“__全文”登记在第 1 条上，第 1 条即全文（V16 第 41 批）。 */
+  isWholeText(lsvId: string): boolean {
+    return this.topicArticle(lsvId, "__全文") === 1;
+  }
+
   topicArticle(lsvId: string, topic: string): number | null {
     const r = this.db.prepare(`SELECT article_no FROM article_topics WHERE lsv_id = ? AND topic = ?`).get(lsvId, topic) as { article_no: number } | undefined;
     return r?.article_no ?? null;

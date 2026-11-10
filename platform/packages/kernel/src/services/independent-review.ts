@@ -8,7 +8,7 @@
  *
  * 本文件只放纯函数：选哪些方法复核、取文书文字、原件与清洁稿的段落差异、拼复核提示、解析复核意见、拼交回原会话的修改指示。
  */
-import { compareDocx, docxListLabels, extractParagraphs, readZipEntries } from "@zr-legal/docx-engine";
+import { compareDocx, docxListLabels, extractParagraphs, paragraphCells, readZipEntries, readZipText } from "@zr-legal/docx-engine";
 import { sectionsOfDocx } from "../tools/tools/edit-draft.ts";
 
 export type ReviewKind = "draft" | "revise" | "opinion" | "pleading" | "review" | "letter" | "report";
@@ -92,6 +92,47 @@ export function labeledText(docx: Buffer): string[] {
   return paras.flatMap((p, i) => (p.text.trim() === "" ? [] : [`${labels[i] ? `${labels[i]} ` : ""}${p.text}`.trim()]));
 }
 
+/** 同 labeledText，但表格按行写出——给复核人看全文用（逐段比对仍用 labeledText，段落序号要与文书引擎一致）。 */
+export function labeledTextWithRows(docx: Buffer): string[] {
+  const paras = extractParagraphs(docx);
+  let labels: (string | null)[] = [];
+  try {
+    labels = docxListLabels(docx);
+  } catch {
+    labels = [];
+  }
+  // 表格按行写（V16 第 41 批真实走查 D1：律师要“表格新增一行”，助手把一行的内容塞进了一个单元格；复核人看到的是逐格平铺的文字，
+  // 看不出行与格，没能发现）：同一行的各格用“｜”连接、行首标“［表格行］”，一格里有几段的用“ / ”隔开
+  let cells: ReturnType<typeof paragraphCells> = [];
+  try {
+    cells = paragraphCells(readZipText(docx, "word/document.xml") ?? "");
+  } catch {
+    cells = [];
+  }
+  const out: string[] = [];
+  let row: { key: string; cols: Map<number, string[]> } | null = null;
+  const flush = () => {
+    if (row) out.push(`［表格行］${[...row.cols.entries()].sort((a, b) => a[0] - b[0]).map(([, t]) => t.filter(Boolean).join(" / ")).join("｜")}`);
+    row = null;
+  };
+  paras.forEach((p, i) => {
+    const c = cells.length === paras.length ? cells[i] : null;
+    if (!c) {
+      flush();
+      if (p.text.trim() !== "") out.push(`${labels[i] ? `${labels[i]} ` : ""}${p.text}`.trim());
+      return;
+    }
+    const key = `${c.table}:${c.row}`;
+    if (!row || row.key !== key) {
+      flush();
+      row = { key, cols: new Map() };
+    }
+    row.cols.set(c.col, [...(row.cols.get(c.col) ?? []), p.text.trim()]);
+  });
+  flush();
+  return out;
+}
+
 /** 页眉页脚文字（修订任务的页眉改动也要能复核）。 */
 export function headerFooterText(docx: Buffer): string[] {
   const out: string[] = [];
@@ -132,7 +173,7 @@ const FOCUS: Record<ReviewKind, string> = {
     "7. 卖方给账期或信用额度的，有没有所有权保留、停止供货与加速到期；买方先付款的，有没有退款与担保安排。",
   ].join("\n"),
   revise: [
-    "1. 逐条核对律师的每一条修改意见：是否改了、改在正确的位置（注意增删条款后条号顺延）、改后文字是否完整准确（金额大小写、表内数字与正文联动）。",
+    "1. 逐条核对律师的每一条修改意见：是否改了、改在正确的位置（注意增删条款后条号顺延）、改后文字是否完整准确（金额大小写、表内数字与正文联动）。律师要求表格新增或删除一行的，看“［表格行］”：是否真的多了或少了一行、新内容是否各在其格（一行的内容挤在同一格里、用空白或“ / ”隔开的，是没有新增行）；要求在某款及其表格之后新增一款的，新款是否在表格之后、编号是否接着那一款。助手的最终答复写“已写入”的，逐条与交付件对上，对不上的列为必须改。",
     "2. 授权范围：对照下面的“原件与清洁稿的段落差异”，找出律师没有要求、却被改动的地方（包括措辞、标点、编号），以及律师要求了却没有改到的地方。",
     "3. 援引联动：删除、新增条款后，全文援引条号是否同步改对；被改动条款的援引句代入新条文后，后果是否仍然成立（例如删除了“限额”，援引“赔偿标准及限额”的句子）。",
     "4. 修改带来的新风险：新加的上限、违约金、解除权与原有条款是否冲突或互相封住（例如新上限把律师刚改的全额赔偿封住），算出对我方的净影响；律师明确同意的条件不要改，但要提示风险与可选写法。",
@@ -143,7 +184,8 @@ const FOCUS: Record<ReviewKind, string> = {
     "2. 事实对照：主体、金额、日期、期限与材料逐项对照；客户单方说法是否被写成已查明事实。",
     "3. 计算：本金、利息、违约金、赔偿、期限届满日实际复算，写出算式；上限、封顶、起算日的不同读法是否都算了。",
     "4. 主体与路径：每一个可能承担责任或可供回收的主体是否都分析了；对方最有力的抗辩和最伤我方的事实是否正面回应。",
-    "5. 建议是否可执行：谁、在什么日期之前、做什么；法定期限是否算准并提示。",
+    "5. 建议是否可执行：谁、在什么日期之前、做什么；法定期限是否算准并提示。结论是“不能、不可行”的，是否给了最接近委托人目的的合法替代路径及其条件。",
+    "5a. 行为发生时间与现行法施行时间不在同一侧的，是否先判断了适用旧法还是新法（时间效力规定、过渡安排、批复）；对结论有决定性影响的依据如果只写“待核”而没有写出要点和两种情况下的结论，列为必须改。",
     "6. 法律依据：引用的法条是否与论点对应（适用条件与例外）；不确定的写“需核验”，不要编造法条。",
   ].join("\n"),
   pleading: [

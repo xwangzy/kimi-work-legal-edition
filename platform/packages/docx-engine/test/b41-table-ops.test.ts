@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sha256Hex } from "@zr-legal/domain";
-import { applyRevisionsToDocx, assertWellFormed, createDocx, docxListLabels, enclosingElement, extractParagraphs, paragraphCells, readZipEntries, removeDeletedRows, sanitizeDocx, writeZip, type RevisionOp } from "../src/index.ts";
+import { applyRevisionsToDocx, assertWellFormed, changeHunks, createDocx, docxListLabels, enclosingElement, extractParagraphs, paragraphCells, readZipEntries, removeDeletedRows, sanitizeDocx, writeZip, type RevisionOp } from "../src/index.ts";
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
 const NUMBERING = `<?xml version="1.0" encoding="UTF-8"?><w:numbering ${W}>
@@ -201,4 +201,35 @@ test("列名按网格列取：合计行前三格横向合并，“合计｜金�
   const r = apply(two, [op("a", "594,000", "654,000", { anchor: { originalText: "594,000", paragraphHint: "合计｜金额（元）" } })]);
   const t = texts(sanitizeDocx(r.docx).docx);
   assert.deepEqual(t.filter((x) => /,000$/.test(x)), ["594,000", "654,000"], "只改合计那一格");
+});
+
+test("逐处改动：整段作锚点只改三个数时，修订稿里是三处各自的删与增；加粗只留在原来加粗的金额上", () => {
+  const before = "本合同服务费总额为人民币1,860,000元（大写：壹佰捌拾陆万元整），含增值税，其中运维服务费人民币1,200,000元、升级服务费人民币660,000元。";
+  const after = "本合同服务费总额为人民币1,920,000元（大写：壹佰玖拾贰万元整），含增值税，其中运维服务费人民币1,200,000元、升级服务费人民币720,000元。";
+  assert.deepEqual(changeHunks(before, after).map((h) => [before.slice(h.a0, h.a1), h.added]), [["1,860,000", "1,920,000"], ["壹佰捌拾陆", "壹佰玖拾贰"], ["660,000", "720,000"]]);
+  // 原件：金额“人民币1,860,000元”加粗，其余不加粗（三个 run）
+  const body = `<w:p><w:r><w:t xml:space="preserve">本合同服务费总额为</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">人民币1,860,000元</w:t></w:r><w:r><w:t xml:space="preserve">（大写：壹佰捌拾陆万元整），含增值税，其中运维服务费人民币1,200,000元、升级服务费人民币660,000元。</w:t></w:r></w:p>`;
+  const docx = withBody(body);
+  const r = apply(docx, [op("a", before, after, { comment: "升级服务费调整" })]);
+  const xml = docXml(r.docx);
+  assertWellFormed(xml, "word/document.xml");
+  const dels = [...xml.matchAll(/<w:delText[^>]*>([^<]*)<\/w:delText>/g)].map((m) => m[1]);
+  assert.deepEqual(dels, ["1,860,000", "壹佰捌拾陆", "660,000"], "只有三处删除，中间没变的字不动");
+  const ins = [...xml.matchAll(/<w:ins\b[^>]*><w:r>(<w:rPr>[\s\S]*?<\/w:rPr>)?<w:t xml:space="preserve">([^<]*)<\/w:t><\/w:r><\/w:ins>/g)].map((m) => [m[2], /<w:b\/>/.test(m[1] ?? "")]);
+  assert.deepEqual(ins, [["1,920,000", true], ["壹佰玖拾贰", false], ["720,000", false]], "新数字各自沿用所在位置的格式：只有总额那一处加粗");
+  assert.equal((xml.match(/<w:commentRangeStart/g) ?? []).length, 1);
+  assert.equal((xml.match(/<w:commentRangeEnd/g) ?? []).length, 1);
+  assert.ok(xml.indexOf("<w:commentRangeStart") < xml.indexOf("1,860,000") && xml.indexOf("<w:commentRangeEnd") > xml.indexOf("720,000"), "批注范围罩住第一处到最后一处");
+  assert.equal(texts(sanitizeDocx(r.docx).docx).includes(after), true, "接受全部修订后是新文字");
+  // 拒绝全部修订（去掉插入、保留删除的字）回到原文
+  const rejected = xml.replace(/<w:ins\b[^>]*>[\s\S]*?<\/w:ins>/g, "").replace(/<w:delText/g, "<w:t").replace(/<\/w:delText>/g, "</w:t>");
+  assert.ok(rejected.replace(/<[^>]+>/g, "").includes(before));
+});
+
+test("逐处改动：整句重写（不变的字不到六成）或改动太碎时仍按一处处理；挨得近的并成一处", () => {
+  assert.equal(changeHunks("甲方应于验收合格后三十日内付款。", "乙方开具发票并经甲方确认后，甲方在十五个工作日内付清全部款项。").length, 1);
+  assert.deepEqual(changeHunks("三日内完成验收；逾期未提出书面异议的，视为验收合格", "十五个工作日内完成验收，验收以甲方书面确认为准").length, 1);
+  assert.deepEqual(changeHunks("乙方应提前15日书面通知甲方", "乙方应提前30日书面通知甲方").map((h) => h.added), ["30"]);
+  assert.equal(changeHunks("相同", "相同").length, 1);
+  assert.deepEqual(changeHunks("整段删除", ""), [{ a0: 0, a1: 4, added: "" }]);
 });

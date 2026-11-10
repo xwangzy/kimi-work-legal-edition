@@ -66,5 +66,22 @@
     "acquired_at": "2026-11-03",
     "reliability": "official_text_collected",
     "withdrawn_reason": null
+  },
+  {
+    "source_license_id": "official-text-collected-2026-11-v16",
+    "source_type": "official_gazette",
+    "licensor": "无（立法文件、司法解释不适用著作权法）",
+    "acquired_via": "官方发布文本采集（V16 第 41 批）：法律、行政法规、司法解释取国家法律法规数据库（flk.npc.gov.cn）官方 Word 文本逐条切分；部门规章取中国政府网（www.gov.cn）刊载的国务院公报文本；均与第二官方来源逐条比对",
+    "contract_ref": null,
+    "valid_until": null,
+    "allowed_actions": ["search", "display", "quote", "cache", "vectorize", "model", "export", "train", "retain_after_termination"],
+    "region": "全国",
+    "firm_limit": null,
+    "concurrency_limit": null,
+    "citation_requirement": "官方发布文本（著作权法第五条）。2026-11-10 采集 11 部 447 条全文，每部与至少一个第二官方来源逐条比对：劳动法对中国人大网；两部行政法规对中国政府网 / 国务院公报或生态环境部、农业农村部转载页；两部部门规章以国务院公报为主来源，对国家规章库、司法部、上海 / 广东人社网站；六部司法解释对最高人民法院官网、最高法公报网、国际商事法庭网或知识产权法庭网。差异如实保留：年休假条例第二、四条与公司法时间效力规定第二条、总则编解释第三十一条官方 Word 为半角标点，网页为全角，文字相同；年休假实施办法第十条国家规章库多一“年”字、少一“的”字，按公报（司法部页面相同）；仲裁办案规则 24 条公报用阿拉伯数字、规章库与地方网站用汉字数字，按公报标准文本。法释〔2024〕15号批复无条号，未入库。公报期号未采集。",
+    "deletion_obligation": null,
+    "acquired_at": "2026-11-10",
+    "reliability": "official_text_collected",
+    "withdrawn_reason": null
   }
 ]

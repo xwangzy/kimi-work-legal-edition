@@ -35,7 +35,7 @@ import { slimAgentPayload } from "./run-progress.ts";
 import { runCapabilities, runModeOf } from "../identity.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
 import { runLineage } from "../services/artifact-lineage.ts";
-import { REVIEW_KIND_OF_SKILL, fixPrompt, headerFooterText, labeledText, parseFindings, reportText, reviewMessages, reviewNote, revisionDiff, type ReviewDoc, type ReviewFinding, type ReviewKind } from "../services/independent-review.ts";
+import { REVIEW_KIND_OF_SKILL, fixPrompt, headerFooterText, labeledText, labeledTextWithRows, parseFindings, reportText, reviewMessages, reviewNote, revisionDiff, type ReviewDoc, type ReviewFinding, type ReviewKind } from "../services/independent-review.ts";
 
 export interface ExecutorDeps {
   db: KernelDb;
@@ -1241,7 +1241,9 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
 /** 独立复核的事件序号段（V13 第 38 批）：与工作流固定序号、成果段 69+、宿主事件镜像 10000+ 都不冲突；交回修改那一轮的宿主事件镜像到 30000+。 */
 const REVIEW_SEQ = { started: 9_100, completed: 9_101, note: 9_102, fixStarted: 9_103, fixOutcome: 9_104, skipped: 9_105, fixArtifacts: 9_200, fixMirror: 30_000 } as const;
 const REVIEW_LIMIT_MS = 15 * 60_000;
-const REVIEW_FIX_LIMIT_MS = 15 * 60_000;
+// V16 第 41 批（偏离 D-163，待律所拍板可调回）：修改轮时限 15 → 25 分钟。V14 全量走查 47 张卡里 5 个任务“部分完成”，全部是这一轮撞 15 分钟
+// （K3.1-Pro 实测约 30 字/秒，改三四处并重写答复就到时限）；本批独立复核又多覆盖了 8 个方法。环境变量 ZR_REVIEW_FIX_LIMIT_MS 仍可覆盖
+const REVIEW_FIX_LIMIT_MS = 25 * 60_000;
 
 /** 本任务实际用到的方法：律师指定的优先，其次助手加载的（按加载顺序第一个属于复核范围的）。 */
 export function reviewKindOf(db: KernelDb, runId: string, skill: string | null): { kind: ReviewKind; skill: string } | null {
@@ -1295,13 +1297,13 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
     const buf = deps.blobs.read(r.storage_uri);
     let text = "";
     try {
-      text = /（清洁稿）\.docx$/i.test(r.filename) ? [...headerFooterText(buf), ...labeledText(buf)].join("\n") : reportText(buf);
+      text = /（清洁稿）\.docx$/i.test(r.filename) ? [...headerFooterText(buf), ...labeledTextWithRows(buf)].join("\n") : reportText(buf);
     } catch {
       text = "";
     }
     if (!text.trim()) {
       try {
-        text = labeledText(buf).join("\n");
+        text = labeledTextWithRows(buf).join("\n");
       } catch {}
     }
     return { filename: r.filename, text };

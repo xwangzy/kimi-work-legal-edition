@@ -31,6 +31,25 @@ test("externalRedline：修订痕迹保留，批注去掉，只改本产品修�
   assert.equal(/内部理由/.test(readZipText(r.docx, "word/comments.xml") ?? ""), false);
 });
 
+test("externalRedline（V16 第 41 批）：对方原有的批注保留，只去掉本产品写的批注", () => {
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const ref = (id: number) => `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="${id}"/></w:r>`;
+  const doc = `<?xml version="1.0" encoding="UTF-8"?><w:document ${W}><w:body><w:p><w:commentRangeStart w:id="7"/><w:r><w:t>争议由甲方住所地人民法院管辖。</w:t></w:r><w:commentRangeEnd w:id="7"/>${ref(7)}</w:p><w:p><w:commentRangeStart w:id="9"/><w:ins w:id="3" w:author="${AI}" w:date="2026-11-10T00:00:00Z"><w:r><w:t>新增一句。</w:t></w:r></w:ins><w:commentRangeEnd w:id="9"/>${ref(9)}</w:p></w:body></w:document>`;
+  const files = readZipEntries(createDocx("x", [{ heading: "", paragraphs: ["占位"] }], { mark: false }));
+  files.set("word/document.xml", Buffer.from(doc, "utf8"));
+  files.set("word/comments.xml", Buffer.from(`<?xml version="1.0"?><w:comments ${W}><w:comment w:id="7" w:author="潘越（对方法务）" w:date="2026-11-05T00:00:00Z"><w:p><w:r><w:t>我方建议改为仲裁，请考虑。</w:t></w:r></w:p></w:comment><w:comment w:id="9" w:author="${AI}" w:date="2026-11-10T00:00:00Z"><w:p><w:r><w:t>内部理由</w:t></w:r></w:p></w:comment></w:comments>`, "utf8"));
+  const r = externalRedline(writeZip([...files.entries()].map(([name, data]) => ({ name, data }))), AI, "苏州衡正律师事务所");
+  const x = readZipText(r.docx, "word/document.xml") ?? "";
+  const c = readZipText(r.docx, "word/comments.xml") ?? "";
+  assert.equal(r.comments, 1, "只去掉一条（本产品写的）");
+  assert.match(x, /<w:commentRangeStart w:id="7"\/>/);
+  assert.match(x, /<w:commentRangeEnd w:id="7"\/>/);
+  assert.match(x, /<w:commentReference w:id="7"\/>/);
+  assert.equal(/w:id="9"/.test(x), false, "本产品批注的范围与引用都去掉");
+  assert.match(c, /潘越（对方法务）[\s\S]*我方建议改为仲裁/);
+  assert.equal(c.includes("内部理由"), false);
+});
+
 let tk: TestKernel;
 before(async () => {
   tk = await makeKernel({}, "b39-extredline-firm");

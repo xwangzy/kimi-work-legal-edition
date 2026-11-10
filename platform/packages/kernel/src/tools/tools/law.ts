@@ -200,15 +200,22 @@ export function lawGetArticle(lawdb: Lawdb, params: LawGetArticleParams): LawArt
   lawdb.assertAction(v.source_license_id, "quote");
   lawdb.assertAction(v.source_license_id, "model");
   const reliability = lawdb.getSource(v.source_license_id)?.reliability ?? "";
+  // V16 第 41 批：合读提示（这一条被别的文件限定、须一并读）与不分条文件（批复等，本条即全文）
+  const readWith = lawdb.articleNotes(v.lsv_id, articleNo);
+  const whole = lawdb.isWholeText(v.lsv_id);
   return {
     found: true,
     ...base,
     text,
     reliability,
     license_note: lawdb.licenseNoteOf(v.source_license_id),
+    ...(readWith.length > 0 ? { read_with: readWith, read_with_note: "这一条须与 read_with 列出的文件合读：先取那份文件核对，再下结论；交付件里引用这一条时一并写明" } : {}),
+    ...(whole ? { whole_text: true } : {}),
     note:
       reliability === "demo_seed"
         ? "演示数据（reliability=demo_seed），不得作为正式引用；正式引用以官方公报文本为准"
-        : "法规库采集原文；是否支持结论由律师比对判断（本工具不判支持）",
+        : whole
+          ? "该文件不分条，以上即全文（法规库采集原文）：引用时写文件名称与文号，不写条号；是否支持结论由律师比对判断"
+          : "法规库采集原文；是否支持结论由律师比对判断（本工具不判支持）",
   };
 }

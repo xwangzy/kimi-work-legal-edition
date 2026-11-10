@@ -378,6 +378,9 @@ function verifyOne(lawdb: Lawdb, rc: RawCitation, asOf: string, topicHint: strin
   if (rc.suffix) notes.push(`suffix_unchecked:法规库按条号计数，“第${intToCn(rc.article)}条${rc.suffix}”只核到第${intToCn(rc.article)}条`);
   // 来源与版本均已核；内容是否支持命题不由确定性工具判断
   base.state = CitationState.supportPending;
+  // 合读提示（V16 第 41 批）：这一条被别的文件限定的，核验结果里写明，免得“已核”被读成“可以直接适用”
+  for (const n of lawdb.articleNotes(v.lsv_id, rc.article)) notes.push(`read_with:${n}`);
+  if (lawdb.isWholeText(v.lsv_id)) notes.push("whole_text:该文件不分条，引用时写文件名称与文号，不写条号");
   base.reasons.push("source_and_version_verified:来源与适用版本已核，内容支持待判", ...notes);
   return base;
 }

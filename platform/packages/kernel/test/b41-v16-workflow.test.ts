@@ -244,3 +244,19 @@ test("docx.revise：表后新增一款、表格新增一行、删除一行——
     await a.close();
   }
 });
+
+test("独立复核看到的修订稿文字：表格按行写出，一行的内容被塞进同一格时看得出来", async () => {
+  const { labeledTextWithRows, reviewMessages: rm } = await import("../src/services/independent-review.ts");
+  const lines = labeledTextWithRows(serviceContract());
+  assert.ok(lines.includes("［表格行］故障等级｜响应时间｜恢复时间"));
+  assert.ok(lines.includes("［表格行］一级｜15分钟｜4小时"));
+  assert.ok(lines.some((l) => l.startsWith("1.1 乙方应按下表约定的时限")), "正文段落仍带自动编号");
+  // 把一行内容塞进最后一格（真实走查 D1 的样子）：同一格里两段，用“ / ”隔开，行数没有变
+  const files = readZipEntries(serviceContract());
+  const xml = files.get("word/document.xml")!.toString("utf8").replace("<w:r><w:t xml:space=\"preserve\">0573-82910002</w:t></w:r></w:p>", "<w:r><w:t xml:space=\"preserve\">0573-82910002</w:t></w:r></w:p><w:p><w:r><w:t xml:space=\"preserve\">甲方数据安全联系人 0573-82916627</w:t></w:r></w:p>");
+  files.set("word/document.xml", Buffer.from(xml));
+  const stuffed = labeledTextWithRows(writeZip([...files.entries()].map(([name, data]) => ({ name, data }))));
+  assert.ok(stuffed.includes("［表格行］｜甲方运维对接人｜0573-82910002 / 甲方数据安全联系人 0573-82916627"), JSON.stringify(stuffed.slice(-4)));
+  const user = rm({ ...base, kind: "revise", docs: [{ filename: "x（清洁稿）.docx", text: stuffed.join("\n") }] }).find((m) => m.role === "user")!.content;
+  assert.match(user, /是否真的多了或少了一行/);
+});

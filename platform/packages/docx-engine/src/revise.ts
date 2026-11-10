@@ -208,9 +208,12 @@ function applyOne(
   }
   // 只标出真正改动的字（第 28 批）：锚点与新文本相同的开头、结尾照原样保留，中间一段删、一段插。
   // 第 34 批 D08：每个原 run 按自己的格式重发（原先没改的字一律套第一个 run 的格式，下划线、楷体、字号会丢）
-  const { keepHead, removed, added, keepTail } = minimalChange(op.anchor.originalText, op.newText);
-  const r0 = span.start + keepHead.length;
-  const r1 = span.end - keepTail.length;
+  // 逐处改动（V16 第 41 批）：锚点与新文本之间有几处互不相连的不同时，分成几处各自删、各自插，每处的新字沿用它那一处的格式。
+  // 真实走查 D1：5.1 款只改三个数字，整段作锚点提交后，从第一个不同到最后一个不同之间的字全部显示成删除又新增，
+  // 新字一律套用第一处（加粗的金额）的格式——加粗范围扩到了大半段，对方也看不出其实只改了三个数。
+  const hunks = changeHunks(op.anchor.originalText, op.newText).map((h) => ({ d0: span.start + h.a0, d1: span.start + h.a1, added: h.added }));
+  const r0 = hunks[0]!.d0;
+  const r1 = hunks.at(-1)!.d1;
   // 只重写改动所在的 run，锚点里没变的开头、结尾所在的 run 字节不动：锚点可以跨过对方修订的边界，只要改动本身不跨
   // （第 34 批 T3b 真实走查：“一般保证”里“一般”是对方插入、“保证”是原文，改回“连带责任保证”原先因锚点跨边界被拒写）
   const touched = r1 > r0 ? coverSegs.filter((s) => s.end > r0 && s.start < r1) : [coverSegs.findLast((s) => s.start < r0) ?? coverSegs[0]!];
@@ -223,25 +226,33 @@ function applyOne(
   const relEnd = last.runXmlEnd - target.xmlStart;
   const region = paraXml.slice(relStart, relEnd);
   const { preserved, foreignIns } = checkRegion(op.opId, paraXml, relStart, region);
+  // 整段落在对方的一处插入之内时按一处改动处理（插入要先收起对方的插入再重开，分成几处会把对方的插入切碎）
+  const plan = foreignIns && hunks.length > 1 ? [{ d0: r0, d1: r1, added: op.newText.slice(hunks[0]!.d0 - span.start, op.newText.length - (span.end - r1)) }] : hunks;
 
-  type Atom = { kind: "keep" | "del"; seg: TextSegment; text: string };
+  type Atom = { kind: "keep" | "del"; seg: TextSegment; text: string; at: number; hunk: number };
   const atoms: Atom[] = [];
   for (const seg of target.segments) {
     if (seg.runXmlStart < first.runXmlStart || seg.runXmlEnd > last.runXmlEnd || seg.deleted || seg.fresh) continue;
-    const cut = (a: number, b: number, kind: Atom["kind"]) => {
-      if (b > a) atoms.push({ kind, seg, text: seg.text.slice(a - seg.start, b - seg.start) });
+    let pos = seg.start;
+    const cut = (to: number, kind: Atom["kind"], hunk: number) => {
+      const b2 = Math.min(seg.end, to);
+      if (b2 > pos) atoms.push({ kind, seg, text: seg.text.slice(pos - seg.start, b2 - seg.start), at: pos, hunk });
+      pos = Math.max(pos, b2);
     };
-    cut(seg.start, Math.min(seg.end, r0), "keep");
-    cut(Math.max(seg.start, r0), Math.min(seg.end, r1), "del");
-    cut(Math.max(seg.start, r1), seg.end, "keep");
+    plan.forEach((h, k) => {
+      cut(h.d0, "keep", -1);
+      cut(h.d1, "del", k);
+    });
+    cut(seg.end, "keep", -1);
   }
-  const changed = removed.length > 0 || added.length > 0;
-  // 插入的新字接在删除的字之后；格式取改动开始处那个 run 的（纯插入取前一个字的）
-  const firstDel = atoms.findIndex((x) => x.kind === "del");
-  const insPos = firstDel >= 0 ? atoms.findLastIndex((x) => x.kind === "del") + 1 : insertionIndex(atoms, r0, first.start);
-  const insRpr = cleanRpr((firstDel >= 0 ? atoms[firstDel]! : (atoms[Math.max(0, insPos - 1)] ?? atoms[0]!)).seg.rPr);
-  const delId = nextId();
-  const insId = nextId();
+  const changed = plan.some((h) => h.d1 > h.d0 || h.added.length > 0);
+  // 每处改动：新字接在该处删除的字之后；格式取该处删除开始的那个 run 的（纯插入取前一个字的）
+  const points = plan.map((h, k) => {
+    const firstDel = atoms.findIndex((x) => x.kind === "del" && x.hunk === k);
+    const insPos = firstDel >= 0 ? atoms.findLastIndex((x) => x.kind === "del" && x.hunk === k) + 1 : (() => { const i = atoms.findIndex((x) => x.at >= h.d0); return i < 0 ? atoms.length : i; })();
+    const rPr = cleanRpr((firstDel >= 0 ? atoms[firstDel]! : (atoms[Math.max(0, insPos - 1)] ?? atoms[0]!)).seg.rPr);
+    return { firstDel, insPos, rPr, added: h.added, start: firstDel >= 0 ? firstDel : insPos };
+  });
   let commentId = -1;
   if (op.comment) {
     commentId = nextId();
@@ -253,15 +264,22 @@ function applyOne(
     if (delOpen) parts.push("</w:del>");
     delOpen = false;
   };
-  const changeStart = firstDel >= 0 ? firstDel : insPos;
+  const changeStart = Math.min(...points.map((x) => x.start));
+  const lastPoint = points.at(-1)!;
+  let commentClosed = false;
+  const closeComment = () => {
+    if (commentId >= 0 && !commentClosed) parts.push(commentEnd(commentId));
+    commentClosed = true;
+  };
   for (let i = 0; i <= atoms.length; i++) {
     if (i === changeStart && commentId >= 0 && changed) parts.push(`<w:commentRangeStart w:id="${commentId}"/>`);
-    if (i === insPos && added) {
+    for (const pt of points) {
+      if (i !== pt.insPos || !pt.added) continue;
       closeDel();
-      const ours = `<w:ins w:id="${insId}" w:author="${escapeXml(author)}" w:date="${date}" kwl-new="1"><w:r>${insRpr}${runContent(added)}</w:r></w:ins>`;
+      const ours = `<w:ins w:id="${nextId()}" w:author="${escapeXml(author)}" w:date="${date}" kwl-new="1"><w:r>${pt.rPr}${runContent(pt.added)}</w:r></w:ins>`;
       // 在对方的插入里：先收起对方的插入，我方插入放在外面，再用新编号接着对方的插入（ins 里不能再套 ins）
       parts.push(foreignIns ? `</w:ins>${ours}${foreignIns.replace(/\bw:id="\d+"/, `w:id="${nextId()}"`).replace(/>$/, ' kwl-reopen="1">')}` : ours);
-      if (commentId >= 0) parts.push(commentEnd(commentId));
+      if (pt === lastPoint) closeComment();
     }
     const x = atoms[i];
     if (!x) break;
@@ -269,17 +287,19 @@ function applyOne(
     const rpr = freshChangeIds(x.seg.rPr ?? "", nextId);
     const body = x.seg.kind === "text" ? `<w:${x.kind === "del" ? "delText" : "t"} xml:space="preserve">${escapeXml(x.text)}</w:${x.kind === "del" ? "delText" : "t"}>` : xml.slice(x.seg.xmlStart, x.seg.xmlEnd);
     if (x.kind === "del") {
-      if (!delOpen) parts.push(`<w:del w:id="${delId}" w:author="${escapeXml(author)}" w:date="${date}" kwl-new="1">`);
+      if (!delOpen) parts.push(`<w:del w:id="${nextId()}" w:author="${escapeXml(author)}" w:date="${date}" kwl-new="1">`);
       delOpen = true;
       parts.push(`<w:r>${rpr}${body}</w:r>`);
-      if (!atoms[i + 1] || atoms[i + 1]!.kind !== "del") {
+      const next = atoms[i + 1];
+      if (!next || next.kind !== "del" || next.hunk !== x.hunk) {
         closeDel();
-        if (!added && commentId >= 0) parts.push(commentEnd(commentId));
+        if (x.hunk === plan.length - 1 && !lastPoint.added) closeComment();
       }
     } else parts.push(`<w:r>${rpr}${body}</w:r>`);
   }
   closeDel();
   if (!changed && commentId >= 0) parts.push(`<w:commentRangeStart w:id="${commentId}"/>${commentEnd(commentId)}`);
+  else if (changed) closeComment();
   // 切除范围里原有的书签、批注范围等标记照原样放回（第 34 批 D06：原先随 run 一起被静默删掉）
   parts.push(...preserved);
 
@@ -458,6 +478,69 @@ export function markParagraphDeleted(paraXml: string, id: number, author: string
  * 原文与新文本的最小改动：去掉相同的开头与结尾，只剩中间一段删除、一段插入。按码点切分（不拆开代理对）。
  * 删除整段（新文本为空）时原样整段删除；新旧相同时不产生修订。纯函数。
  */
+/**
+ * 锚点与新文本之间的逐处改动（V16 第 41 批）：按“数字串整体、其余逐字”切分后求最长公共子序列，相邻改动之间不变的字少于 4 个的并成一处。
+ * 返回各处在锚点里的起止（UTF-16 下标）与该处的新字；整体相同返回一处空改动。改动太碎（超过 6 处）或不变的字不到较长一方的六成时，
+ * 说明是整句重写——退回“去掉相同的开头与结尾、中间一处”的做法（读起来是一句换一句，不是满篇碎片）。纯函数。
+ */
+export function changeHunks(original: string, replacement: string): { a0: number; a1: number; added: string }[] {
+  const one = (): { a0: number; a1: number; added: string }[] => {
+    const m = minimalChange(original, replacement);
+    return [{ a0: m.keepHead.length, a1: original.length - m.keepTail.length, added: m.added }];
+  };
+  if (replacement.length === 0 || original === replacement) return one();
+  const tok = (t: string): string[] => t.match(/[0-9０-９.,，．%％零〇壹贰叁肆伍陆柒捌玖拾佰仟萬]+|[一二三四五六七八九十百千两]+|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\s\S]/g) ?? [];
+  const A = tok(original);
+  const B = tok(replacement);
+  if (A.length * B.length > 4_000_000) return one();
+  // 最长公共子序列（按词元）
+  const n = A.length;
+  const m = B.length;
+  const L: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i]![j] = A[i] === B[j] ? L[i + 1]![j + 1]! + 1 : Math.max(L[i + 1]![j]!, L[i]![j + 1]!);
+  const raw: { a0: number; a1: number; added: string; }[] = [];
+  let i = 0;
+  let j = 0;
+  let pa = 0;
+  let cur: { a0: number; a1: number; added: string } | null = null;
+  let same = 0;
+  const flush = () => {
+    if (cur) raw.push(cur);
+    cur = null;
+  };
+  while (i < n || j < m) {
+    if (i < n && j < m && A[i] === B[j]) {
+      flush();
+      pa += A[i]!.length;
+      same += A[i]!.length;
+      i++;
+      j++;
+    } else if (j < m && (i >= n || L[i]![j + 1]! >= L[i + 1]![j]!)) {
+      cur ??= { a0: pa, a1: pa, added: "" };
+      cur.added += B[j]!;
+      j++;
+    } else {
+      cur ??= { a0: pa, a1: pa, added: "" };
+      pa += A[i]!.length;
+      cur.a1 = pa;
+      i++;
+    }
+  }
+  flush();
+  if (raw.length <= 1) return one();
+  // 并掉挨得太近的改动：中间不变的字少于 4 个的合成一处（“三十日”改“十五个工作日”不拆成三处）
+  const merged: { a0: number; a1: number; added: string }[] = [];
+  for (const h of raw) {
+    const prev = merged.at(-1);
+    if (prev && h.a0 - prev.a1 < 4) {
+      prev.added += original.slice(prev.a1, h.a0) + h.added;
+      prev.a1 = h.a1;
+    } else merged.push({ ...h });
+  }
+  if (merged.length <= 1 || merged.length > 6 || same < Math.max(original.length, replacement.length) * 0.6) return one();
+  return merged;
+}
+
 /** 数字、金额与中文大写数字的用字（最小改动不在它们中间切开）。 */
 const NUMERIC = /[0-9０-９.,，．%％零〇壹贰叁肆伍陆柒捌玖拾佰仟萬]/;
 
