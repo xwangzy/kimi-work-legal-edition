@@ -445,7 +445,10 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         break;
       case "review.fix_outcome":
         steps.push(
-          p.status === "succeeded"
+          // V16 第 41 批：有必须改的意见、修改轮正常结束却没改动任何文书或表格（revised 为 0）——如实提示律师核对，不写“已处理完”
+          p.status === "succeeded" && Number(p.must ?? 0) > 0 && p.revised !== undefined && Number(p.revised) === 0
+            ? { key: `${e.event_id}`, level: "lawyer", icon: "dot", title: `独立复核提出 ${Number(p.must)} 条必须改的意见，修改轮没有改动任何文书或表格`, at, detail: "处理理由见最终答复的“独立复核处理情况”，请对照《独立复核意见》核对" }
+            : p.status === "succeeded"
             ? { key: `${e.event_id}`, level: "lawyer", icon: "ok", title: "复核意见已处理完", at }
             : { key: `${e.event_id}`, level: "lawyer", icon: "fail", title: p.status === "timed_out" ? "按复核意见修改超过时限，文书是复核前的版本" : "按复核意见修改没有完成，文书是复核前的版本", at },
         );

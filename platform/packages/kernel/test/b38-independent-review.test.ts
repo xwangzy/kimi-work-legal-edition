@@ -92,6 +92,9 @@ test("交出文书后独立复核：复核调用不带起草上下文，意见�
     assert.equal(completed?.payload.must, 1);
     assert.ok(types.includes("review.fix_started") && types.includes("review.fix_outcome"), JSON.stringify(types));
     assert.equal(done.events.find((e: any) => e.type === "review.fix_outcome")?.payload.status, "succeeded");
+    // V16 第 41 批：修改轮新登记的交付件版本数如实记录（合同第 2 版），不再只记“文件数”（那是最终答复）
+    assert.equal(done.events.find((e: any) => e.type === "review.fix_outcome")?.payload.revised, 1);
+    assert.equal(done.events.find((e: any) => e.type === "run.succeeded")?.payload.remaining, undefined, "改出了新版本，不提示");
     // 交回修改的提示带着复核意见原文，材料快照照样在（宿主每轮重写材料区）
     assert.match(seen.fixUser.at(-1) ?? "", /【独立复核】[\s\S]*价款写成 100 万元/);
     assert.match(seen.fixUser.at(-1) ?? "", /本事项材料快照/);
@@ -275,6 +278,33 @@ test("V16 第 41 批：没有交回修改时，《独立复核意见》抬头不
   const none = reviewNote("合同", [], "未发现实质问题。");
   assert.equal(/已交回/.test(none), false, none);
   assert.match(none, /没有交回修改[\s\S]*未发现实质问题/);
+});
+
+test("V16 第 41 批：有必须改的意见、修改轮一个字没改——任务照样完成，但提示律师核对（真实任务：助手自述“尚未实际写入原文书”却记“成功、1 个文件”）", { timeout: 120_000 }, async () => {
+  const seen = { review: [] as Record<string, unknown>[], fixUser: [] as string[] };
+  const base = script("B38NOEDIT", "1. 第二条｜价款写成 100 万元，与委托不一致｜委托原话：价款120万元｜改为 120 万元｜必须改", seen);
+  cloud.model.script = (body) => {
+    const ms = msgs(body);
+    const users = ms.filter((m) => m.role === "user").map((m) => JSON.stringify(m.content ?? ""));
+    // 修改轮：不调用任何文书工具，直接写答复
+    if (users.some((u) => u.includes("【独立复核】")) && users.some((u) => u.includes("B38NOEDIT"))) return { content: "复核意见已核对。\n\n独立复核处理情况：\n1｜未改（尚未实际写入原文书）" };
+    return base(body);
+  };
+  try {
+    const run = await startRun("B38NOEDIT");
+    const done = await waitRun(tk.inv, run.run_id, 100_000);
+    const types = done.events.map((e: any) => e.type);
+    assert.equal(done.run.status, "succeeded", JSON.stringify(types));
+    assert.equal(done.events.find((e: any) => e.type === "review.completed")?.payload.must, 1, "“1.”写法的意见认出来了");
+    const outcome = done.events.find((e: any) => e.type === "review.fix_outcome")?.payload;
+    assert.equal(outcome?.status, "succeeded");
+    assert.equal(outcome?.files, 1, "交回的只有最终答复");
+    assert.equal(outcome?.revised, 0, "没有任何文书或表格出新版本");
+    const remaining = String(done.events.find((e: any) => e.type === "run.succeeded")?.payload.remaining?.join("") ?? "");
+    assert.match(remaining, /独立复核提出 1 条必须改的意见，修改轮没有改动任何文书或表格：处理理由见最终答复的“独立复核处理情况”，请对照《独立复核意见》核对/);
+  } finally {
+    cloud.model.script = null;
+  }
 });
 
 test("律师在任务中的答复交给复核人（V13 W6：律师答了“180 万元含税”“30%/40%/30%”，复核人只看委托原话，把这两项当成无出处的商业条件、要求改回待定）", { timeout: 180_000 }, async () => {

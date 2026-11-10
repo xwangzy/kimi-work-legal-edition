@@ -640,7 +640,9 @@ async function stepSettle(ctx: Ctx, runId: string, attemptId: string, terminal: 
       points_charged: run.points_reserved,
       ...(terminal === "partial"
         ? { remaining, points_note: "部分完成按已发生的消耗扣点（G0 以预留额代替实耗；按次实耗计量与对账在模型网关 W11 落地）" }
-        : {}),
+        : remaining.length > 0
+          ? { remaining } // 任务完成但有要律师核对的事项（如独立复核未完成、必须改的意见没有改动文书）：原先完成时一律丢掉
+          : {}),
     });
   });
 }
@@ -1386,6 +1388,17 @@ export function fixTargetsOf(db: KernelDb, runId: string, matterId: string): Fix
   return [...latest.values()];
 }
 
+/** 修改轮开始（review.fix_started）之后新登记的交付件：Word 文书、修订稿、清洁稿、表格（版本数与文件名）。 */
+function revisedSinceFix(db: KernelDb, runId: string, matterId: string): { versions: number; filenames: string[] } {
+  const fixFrom = db.get<{ created_at: string }>(`SELECT created_at FROM run_events WHERE run_id = ? AND type = 'review.fix_started' ORDER BY event_id DESC LIMIT 1`, [runId])?.created_at;
+  if (!fixFrom) return { versions: 0, filenames: [] };
+  const rows = db.all<{ filename: string }>(
+    `SELECT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND created_at >= ? AND kind IN ('agent_report','revision_draft','revision_clean','agent_table') ORDER BY created_at`,
+    [runId, matterId, fixFrom],
+  );
+  return { versions: rows.length, filenames: [...new Set(rows.map((r) => r.filename))] };
+}
+
 /**
  * 独立复核与交回修改（V13 第 38 批）：主任务成功交出 Word 文书后执行。
  * ①复核：经出站闸门调用法律模型（流式，带时限），不带主任务的对话上下文，只给委托原话、材料快照与交付件文字（均为代号形态）；
@@ -1509,7 +1522,7 @@ async function runReviewStage(
     appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.skipped, "review.skipped", { kind: picked.kind, reason: "no_session" });
     return { remaining: [`独立复核提出 ${review.findings.length} 条意见，未能交回助手修改（找不到原会话）：请按《独立复核意见》核对`], partial: true };
   }
-  const fix = await ctx.step("independent_review_fix", async (): Promise<{ status: string; files: number; error?: string }> => {
+  const fix = await ctx.step("independent_review_fix", async (): Promise<{ status: string; files: number; revised?: number; error?: string }> => {
     assertNotCancelled(db, runId);
     const limit = ctx.deps.reviewFixLimitMs ?? REVIEW_FIX_LIMIT_MS;
     const goal = tok([fixPrompt(picked.kind, review.findings, review.text, limit, fixTargetsOf(db, runId, run.matter_id))])[0]!;
@@ -1587,22 +1600,27 @@ async function runReviewStage(
         }, seq++);
       }
     });
-    appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.fixOutcome, "review.fix_outcome", { status: poll.status, files: stored.length, seconds: Math.round((Date.now() - t0) / 1000) });
-    return { status: String(poll.status), files: stored.length };
+    // files 是这一轮交回的文件数（含最终答复）；revised 是这一轮新登记的交付件版本数（Word 文书、修订稿、清洁稿、表格）。
+    // V16 第 41 批真实任务：助手自述“尚未实际写入原文书”，文书最高版本仍是修改轮之前的，却记“成功、1 个文件”（那个 1 是最终答复）
+    const revisedNow = revisedSinceFix(db, runId, run.matter_id);
+    const must = review.findings.filter((f) => f.must).length;
+    appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.fixOutcome, "review.fix_outcome", { status: poll.status, files: stored.length, revised: revisedNow.versions, revised_files: revisedNow.filenames, must, seconds: Math.round((Date.now() - t0) / 1000) });
+    return { status: String(poll.status), files: stored.length, revised: revisedNow.versions };
   });
-  if (fix.status === "succeeded") return none;
+  if (fix.status === "succeeded") {
+    // 有“必须改”的意见、修改轮正常结束却没有任何文书或表格出新版本：不记失败（助手可能逐条判断意见不成立），但提示律师核对
+    const must = review.findings.filter((f) => f.must).length;
+    if (must > 0 && (fix.revised ?? revisedSinceFix(db, runId, run.matter_id).versions) === 0) {
+      return { remaining: [`独立复核提出 ${must} 条必须改的意见，修改轮没有改动任何文书或表格：处理理由见最终答复的“独立复核处理情况”，请对照《独立复核意见》核对`], partial: false };
+    }
+    return none;
+  }
   // 复核提出了意见而修改没做完：已知问题未处理，记部分完成并写明（文书是复核前或处理到一半的版本）
   if (fix.status === "partial") return { remaining: [`独立复核意见已交回助手处理，处理没有全部完成：请对照《独立复核意见》与最终答复里的“独立复核处理情况”核对`], partial: true };
   // 修改轮没做完时，助手可能已经用文书工具改出了新版本（工具当场登记，不随修改轮超时作废）——不能一律说“文书是复核前的版本”
   // （V13 真实走查 W4：修改轮 15 分钟超时，意见书已改出第 4～6 版、计算表第 3 版，提示却写“文书是复核前的版本”）
   const why = fix.status === "timed_out" ? "超过时限" : fix.error ?? fix.status;
-  const fixFrom = db.get<{ created_at: string }>(`SELECT created_at FROM run_events WHERE run_id = ? AND type = 'review.fix_started' ORDER BY event_id DESC LIMIT 1`, [runId])?.created_at;
-  const revised = fixFrom
-    ? db.all<{ filename: string }>(
-        `SELECT DISTINCT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND created_at >= ? AND kind IN ('agent_report','revision_draft','revision_clean','agent_table')`,
-        [runId, run.matter_id, fixFrom],
-      ).map((r) => r.filename)
-    : [];
+  const revised = revisedSinceFix(db, runId, run.matter_id).filenames;
   if (revised.length > 0) {
     return { remaining: [`独立复核提出 ${review.findings.length} 条意见，助手按意见改出了新版本（${revised.map((f) => `《${f.replace(/\.(docx|xlsx)$/i, "")}》`).join("")}），但修改没有全部完成（${why}），也没有写出“独立复核处理情况”：请以最新版本为准，按《独立复核意见》逐条核对哪些已改`], partial: true };
   }
