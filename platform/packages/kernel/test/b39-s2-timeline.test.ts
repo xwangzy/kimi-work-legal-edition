@@ -58,7 +58,7 @@ test("只有货币符号的小写金额摘得出；大写与小写对不上的�
   const text = (name: string) => [...readZipEntries(b.files.find((x) => x.filename.startsWith(name))!.bytes).entries()].filter(([k]) => /\.xml$/.test(k)).map(([, v]) => v.toString("utf8")).join("\n");
   const tl = text("事实时间轴");
   // 时间轴一句一行：这句只列一行，写明大小写对不上
-  assert.match(tl, /金额：455000 元（大写“人民币肆拾伍万伍仟元整”（455000 元）与小写“¥445,000\.00”（445000 元）不一致，见补证清单）/);
+  assert.match(tl, /金额：455000 元（大写与小写不一致，见补证清单）/);
   const sup = text("补证清单").replace(/<[^>]+>/g, "");
   assert.match(sup, /《06-催款函\.docx》第 \d+–\d+ 字：大写“人民币肆拾伍万伍仟元整”（455000 元）与小写“¥445,000\.00”（445000 元）不一致/);
   assert.equal(/01-合同\.docx》第/.test(sup), false, "一致的大小写不报");

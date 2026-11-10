@@ -293,7 +293,7 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
     const others = low.cands.filter((c) => c !== pick).map((c) => c.text);
     const note =
       `${low.name ? `“${low.name}”的` : ""}大写“${up.fact.text}”（${up.fact.normalized}）与小写“${lowFact.text}”（${lowFact.normalized}）不一致` +
-      (others.length > 0 ? `（小写这一行还有 ${others.join("、")}，也都与大写不相等；这里取的是最接近大写的一个）` : "");
+      (others.length > 0 ? `（小写这一行共 ${low.cands.length} 个数：${low.cands.map((c) => c.text).join("、")}，各是什么名目请看原表；没有一个与大写相等，这里拿数额最接近大写的 ${pick.text} 来比）` : "");
     up.fact.conflict = note;
     lowFact.conflict = note;
   }
@@ -442,10 +442,16 @@ const byFilename = <T extends { filename: string }>(xs: readonly T[]): T[] => [.
  * 陈述性质（V16 第 41 批真实走查 E1：全表 95 行都写“材料记载”，只有我方项目负责人一面之词的竣工验收日看不出来）：
  * 文件名表明是当事人一方自己的说明、陈述、访谈或笔记的，标“一方陈述，待其他材料印证”；其余照旧。只按文件名判断，不读内容定性。
  */
-const natureOf = (filename: string): string => (/情况说明|陈述|访谈|笔记|口述|自述|说明函|备忘（内部）/.test(filename) ? "一方陈述，待其他材料印证" : "材料记载");
+const natureOf = (filename: string): string =>
+  /情况说明|陈述|访谈|笔记|口述|自述|备忘（内部）/.test(filename)
+    ? "一方陈述，待其他材料印证"
+    : // 一方发出的函件（催款函、回复函、律师函、通知）同样只是发函一方的说法（复评 N2：我方情况说明标了“一方陈述”，对方回函却是“材料记载”，对方的数字反而显得更可信）
+      /函|通知书|告知书|声明/.test(filename)
+      ? "发函一方所述，待其他材料印证"
+      : "材料记载";
 
 /** 材料里自己提到“还没提供、原件在别处、待补”的句子（同批：情况说明写着“回单原件在财务部，尚未提供给律师”，待补材料一栏却是空的）。 */
-const MISSING_RE = /尚未提供|未提供给|暂未提供|没有提供|待补充|待补交|另行提供|后续提供|原件在|原件存|原件由|未找到|找不到|已遗失|遗失|未能调取|待调取|未留存/;
+const MISSING_RE = /尚未提供|未提供给|暂未提供|没有提供|待补充|待补交|另行提供|后续提供|未找到|找不到|已遗失|遗失|未能调取|待调取|未留存/;
 
 export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
   const input = { ...input0, materials: byFilename(input0.materials) };
@@ -471,6 +477,41 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
     ] as (string | number | null)[]),
   ];
 
+  // 不同材料对同一天的付款写了不同金额（V16 第 41 批真实走查 E1：2023-08-10 那笔，台账、纪要、情况说明写 500,000，对方回函写 600,000，没有任何提示）：
+  // 只看同一句里既有日期、又有金额的，且这一句或同一段里它前面的话有付款字眼（回函里“已支付……明细为：某日某元；某日某元”是一段里用分号隔开的清单）；
+  // 一句里有几个日期、几个金额的，每个日期只配它后面、下一个日期之前的第一个金额（纪要写“8月10日一笔为500,000元，原账误记为600,000元”，这一天记 500,000）。
+  // 同一天有两个金额、且没有哪一份材料同时写了这两个金额的（同时写的多半是两笔），列出来请律师核对。只提示“可能是同一笔”，不判断以哪个为准
+  const PAY = /付款|支付|已付|实付|转账|汇款|汇入|到账|收到|收款|付至|付清|打款/;
+  const payOn = new Map<string, Map<number, Set<string>>>();
+  const paySentences = new Map<string, string[]>();
+  /** 时间轴上要就地标一句“各份材料写的金额不一样”的句子（复评 N5：大小写不一致在时间轴行内有标注，这一类原先只写在补证清单里） */
+  const crossSentences = new Set<string>();
+  for (const d of dates) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.normalized)) continue;
+    const t = textOf.get(d.document_version_id) ?? "";
+    const sp = sentenceAround(t, d.char_start, d.char_end);
+    const lineStart = t.lastIndexOf("\n", sp.start) + 1;
+    if (!PAY.test(t.slice(lineStart, sp.end))) continue;
+    const nextDate = Math.min(sp.end, ...dates.filter((o) => o.document_version_id === d.document_version_id && o.char_start >= d.char_end && o.char_start < sp.end).map((o) => o.char_start));
+    const a = amounts.filter((x) => x.document_version_id === d.document_version_id && x.char_start >= d.char_end && x.char_start < nextDate).sort((x, y) => x.char_start - y.char_start)[0];
+    if (!a) continue;
+    const v = Number.parseFloat(a.normalized);
+    if (!Number.isFinite(v) || v <= 0) continue;
+    const byAmount = payOn.get(d.normalized) ?? new Map<number, Set<string>>();
+    byAmount.set(v, (byAmount.get(v) ?? new Set<string>()).add(d.filename));
+    payOn.set(d.normalized, byAmount);
+    paySentences.set(d.normalized, [...(paySentences.get(d.normalized) ?? []), `${d.document_version_id}|${sp.start}`]);
+  }
+  const crossRows: string[] = [];
+  for (const [day, byAmount] of [...payOn.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const list = [...byAmount.entries()];
+    const loose = list.filter(([, files], i) => list.some(([, other], j) => j !== i && [...files].every((f) => !other.has(f)) && [...other].every((f) => !files.has(f))));
+    if (loose.length < 2) continue;
+    for (const k of paySentences.get(day) ?? []) crossSentences.add(k);
+    const yuan = (v: number) => `${v.toLocaleString("en-US")} 元`;
+    crossRows.push(`${day} 的付款，各份材料写的金额不一样：${loose.map(([v, files]) => `${[...files].map((f) => `《${f}》`).join("、")}写 ${yuan(v)}`).join("；")}——可能是同一笔，请对照银行回单或收款凭证核对；也可能是当天的两笔，本机规则分不出来`);
+  }
+
   // 事实时间轴（按发生日排序；保留来源与锚点）。V14 第 39 批：“事件”写日期所在的那句话；同一份材料里同一句话里的同一日期只列一次
   const seen = new Set<string>();
   const row = (f: (typeof facts)[number], date: string, kind: string): (string | number | null)[] | null => {
@@ -480,7 +521,9 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
     const key = `${f.document_version_id}|${date}|${sp.start}`;
     if (seen.has(key)) return null;
     seen.add(key);
-    return [date, t.slice(sp.start, sp.end).replace(/\s+/g, " ") || f.text, kind === "日期" ? "日期" : `金额：${f.normalized}${f.conflict ? `（${f.conflict}，见补证清单）` : ""}`, f.filename, f.text, charPos(f.char_start, f.char_end), natureOf(f.filename)];
+    // “类型”栏只写一句短的提示，详情在补证清单（复评 N1：原先把整段不一致说明塞进这一栏，两行各写一遍）
+    const flag = (f.conflict ? "（大写与小写不一致，见补证清单）" : "") + (crossSentences.has(`${f.document_version_id}|${sp.start}`) ? "（各份材料对这一天的付款写的金额不一样，见补证清单）" : "");
+    return [date, t.slice(sp.start, sp.end).replace(/\s+/g, " ") || f.text, (kind === "日期" ? "日期" : `金额：${f.normalized}`) + flag, f.filename, f.text, charPos(f.char_start, f.char_end), natureOf(f.filename)];
   };
   const timelineRows: (string | number | null)[][] = [
     ["发生日期", "事件（所在原句）", "类型", "来源文件", "原文", "原文位置", "陈述性质"],
@@ -530,36 +573,6 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
   const conflictRows = [...new Map(amounts.filter((f) => f.conflict).map((f) => [`${f.document_version_id}|${f.conflict}`, f] as const)).values()].map(
     (f) => `《${f.filename}》${charPos(f.char_start, f.char_end)}：${f.conflict}——请核对原件与其他材料（对账函、收付款记录），以哪一个为准由律师判断`,
   );
-
-  // 不同材料对同一天的付款写了不同金额（V16 第 41 批真实走查 E1：2023-08-10 那笔，台账、纪要、情况说明写 500,000，对方回函写 600,000，没有任何提示）：
-  // 只看同一句里既有日期、又有金额的，且这一句或同一段里它前面的话有付款字眼（回函里“已支付……明细为：某日某元；某日某元”是一段里用分号隔开的清单）；
-  // 一句里有几个日期、几个金额的，每个日期只配它后面、下一个日期之前的第一个金额（纪要写“8月10日一笔为500,000元，原账误记为600,000元”，这一天记 500,000）。
-  // 同一天有两个金额、且没有哪一份材料同时写了这两个金额的（同时写的多半是两笔），列出来请律师核对。只提示“可能是同一笔”，不判断以哪个为准
-  const PAY = /付款|支付|已付|实付|转账|汇款|汇入|到账|收到|收款|付至|付清|打款/;
-  const payOn = new Map<string, Map<number, Set<string>>>();
-  for (const d of dates) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.normalized)) continue;
-    const t = textOf.get(d.document_version_id) ?? "";
-    const sp = sentenceAround(t, d.char_start, d.char_end);
-    const lineStart = t.lastIndexOf("\n", sp.start) + 1;
-    if (!PAY.test(t.slice(lineStart, sp.end))) continue;
-    const nextDate = Math.min(sp.end, ...dates.filter((o) => o.document_version_id === d.document_version_id && o.char_start >= d.char_end && o.char_start < sp.end).map((o) => o.char_start));
-    const a = amounts.filter((x) => x.document_version_id === d.document_version_id && x.char_start >= d.char_end && x.char_start < nextDate).sort((x, y) => x.char_start - y.char_start)[0];
-    if (!a) continue;
-    const v = Number.parseFloat(a.normalized);
-    if (!Number.isFinite(v) || v <= 0) continue;
-    const byAmount = payOn.get(d.normalized) ?? new Map<number, Set<string>>();
-    byAmount.set(v, (byAmount.get(v) ?? new Set<string>()).add(d.filename));
-    payOn.set(d.normalized, byAmount);
-  }
-  const crossRows: string[] = [];
-  for (const [day, byAmount] of [...payOn.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-    const list = [...byAmount.entries()];
-    const loose = list.filter(([, files], i) => list.some(([, other], j) => j !== i && [...files].every((f) => !other.has(f)) && [...other].every((f) => !files.has(f))));
-    if (loose.length < 2) continue;
-    const yuan = (v: number) => `${v.toLocaleString("en-US")} 元`;
-    crossRows.push(`${day} 的付款，各份材料写的金额不一样：${loose.map(([v, files]) => `${[...files].map((f) => `《${f}》`).join("、")}写 ${yuan(v)}`).join("；")}——可能是同一笔，请对照银行回单或收款凭证核对；也可能是当天的两笔，本机规则分不出来`);
-  }
 
   const missingRows: string[] = [];
   for (const m of input.materials) {
@@ -616,7 +629,7 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
         },
         {
           heading: "三、待补材料",
-          paragraphs: missingRows.length > 0 ? [...missingRows, "以上是材料里自己提到还没拿到的；按争点还缺什么，由律师补充，或接着做“争点与证据分析”。"] : ["材料里没有提到尚未提供的文件；按争点还缺什么，由律师补充，或接着做“争点与证据分析”。"],
+          paragraphs: missingRows.length > 0 ? [...missingRows, "以上是材料里自己提到还没拿到的；按争点还缺什么，由律师补充，或接着做“争点与证据分析”。"] : ["本机规则只找材料里明说“尚未提供、未留存、待补”之类的话，这次没有找到——不等于材料齐了：摘录件、复印件对应的完整件与原件，以及按争点还缺什么，由律师补充，或接着做“争点与证据分析”。"],
         },
       ]),
       manifest: {},
