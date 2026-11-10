@@ -81,6 +81,10 @@ test("回函里分号隔开的付款明细、纪要里“某日一笔为 A，原
   assert.match(text, /2023-08-10 的付款，各份材料写的金额不一样/);
   assert.match(text, /《07-对方回复函\.docx》写 600,000 元；《08-结算对账会议纪要\.docx》、《09-项目负责人情况说明（我方）\.docx》写 500,000 元/);
   assert.equal(/2023-04-28 的付款|2023-10-20 的付款/.test(text), false);
+  const tl = [...readZipEntries(Buffer.from(b.files.find((x) => x.filename.startsWith("事实时间轴"))!.bytes)).entries()].filter(([k]) => /\.xml$/.test(k)).map(([, v]) => v.toString("utf8")).join("\n");
+  assert.match(tl, /金额：600000 元（各份材料对这一天的付款写的金额不一样，见补证清单）/);
+  assert.match(tl, /金额：500000 元（各份材料对这一天的付款写的金额不一样，见补证清单）/);
+  assert.equal(/金额：7060000 元（各份材料/.test(tl), false, "同一句里的累计已付款不是这一天的付款，不标");
 });
 
 test("小写一行有送审、审定、核减三个数：拿最接近大写的审定金额来比，并写明这一行还有哪几个数；有一个与大写相等就不报", () => {

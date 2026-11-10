@@ -500,7 +500,7 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
     const byAmount = payOn.get(d.normalized) ?? new Map<number, Set<string>>();
     byAmount.set(v, (byAmount.get(v) ?? new Set<string>()).add(d.filename));
     payOn.set(d.normalized, byAmount);
-    paySentences.set(d.normalized, [...(paySentences.get(d.normalized) ?? []), `${d.document_version_id}|${sp.start}`]);
+    paySentences.set(d.normalized, [...(paySentences.get(d.normalized) ?? []), `${d.document_version_id}|${sp.start}|${d.normalized}`, `${d.document_version_id}|${sp.start}|${v}`]);
   }
   const crossRows: string[] = [];
   for (const [day, byAmount] of [...payOn.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
@@ -522,7 +522,7 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
     if (seen.has(key)) return null;
     seen.add(key);
     // “类型”栏只写一句短的提示，详情在补证清单（复评 N1：原先把整段不一致说明塞进这一栏，两行各写一遍）
-    const flag = (f.conflict ? "（大写与小写不一致，见补证清单）" : "") + (crossSentences.has(`${f.document_version_id}|${sp.start}`) ? "（各份材料对这一天的付款写的金额不一样，见补证清单）" : "");
+    const flag = (f.conflict ? "（大写与小写不一致，见补证清单）" : "") + (crossSentences.has(`${f.document_version_id}|${sp.start}|${kind === "日期" ? date : Number.parseFloat(f.normalized)}`) ? "（各份材料对这一天的付款写的金额不一样，见补证清单）" : "");
     return [date, t.slice(sp.start, sp.end).replace(/\s+/g, " ") || f.text, (kind === "日期" ? "日期" : `金额：${f.normalized}`) + flag, f.filename, f.text, charPos(f.char_start, f.char_end), natureOf(f.filename)];
   };
   const timelineRows: (string | number | null)[][] = [
