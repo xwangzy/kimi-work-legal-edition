@@ -124,6 +124,9 @@ test("law.get_article: 来源未授权“引用原文 / 送入模型”即停（
       getArticle: () => "条文",
       getSource: () => ({ reliability: "demo_seed" }),
       licenseNoteOf: () => "",
+      // V16 第 41 批：条文的合读提示与不分条文件标记
+      articleNotes: () => [],
+      isWholeText: () => false,
       assertAction: (_src: string, action: string) => {
         if (!allowed.includes(action)) throw Object.assign(new Error(`未授权动作「${action}」`), { code: "source_action_denied" });
       },

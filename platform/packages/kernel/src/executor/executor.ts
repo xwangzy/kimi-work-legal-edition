@@ -1571,6 +1571,12 @@ export function agentFailureText(reason: string | null, error: string | null): s
   // 限流（第 29 批 429 演练）：服务是通的，只是请求太多——说“繁忙”，不说“连不上”
   if (/\b429\b|rate.?limit|queue_timeout|排队超时/i.test(err)) return `AI 服务繁忙（请求太多被限流：${err}），任务没有完成；已完成且可验证的部分保留，可以过几分钟点“重新运行”`;
   if (/通道不可达|不可达|ECONNREFUSED|ECONNRESET|ETIMEDOUT|\b50[234]\b|provider/i.test(err)) return `AI 服务暂时连不上（${err}），任务没有完成；已完成且可验证的部分保留，可以稍后点“重新运行”`;
+  // AI 服务账户欠费或额度用完（V16 第 41 批真实走查：全量回归发起后上游返回“403 预扣费额度失败, 用户剩余额度: ¥0.95…, 需要预扣费额度: ¥1.38…（request id: …）”，
+  // 这句话原样显示给了律师）：不是律师能处理的事，说清是谁的事、怎么办；金额与请求编号不显示（留在任务事件与诊断信息里）
+  // 本产品自己的月度额度提示（“本所本月 AI 额度已用完……”）已经是律师话，照原样走下面的分支
+  if (!/本所/.test(err) && /额度不足|预扣费|余额不足|insufficient[_ ]?(?:quota|balance|credit)|quota[_ ]?exceeded|billing|欠费/i.test(err)) {
+    return "AI 服务账户的余额或额度不足，任务没有完成：这要由律所管理员或 Kimi Work 客服处理（充值或调整额度），不是你这边的问题；已完成且可验证的部分保留，处理好后点“重新运行”即可，不会重复计用量";
+  }
   if (err && !/^[a-z_]+$/.test(err)) return `任务没有完成：${err}；可以点“重新运行”`;
   return `任务没有完成（${reason ?? err ?? "原因未知"}）；可以点“重新运行”`;
 }

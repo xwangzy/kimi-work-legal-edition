@@ -260,3 +260,19 @@ test("独立复核看到的修订稿文字：表格按行写出，一行的内�
   const user = rm({ ...base, kind: "revise", docs: [{ filename: "x（清洁稿）.docx", text: stuffed.join("\n") }] }).find((m) => m.role === "user")!.content;
   assert.match(user, /是否真的多了或少了一行/);
 });
+
+test("任务失败的说法：AI 服务账户余额或额度不足时，不把上游的金额与请求编号原样给律师看", async () => {
+  const { agentFailureText } = await import("../src/executor/executor.ts");
+  // 真实走查里上游返回的两种原话
+  for (const raw of ["403 预扣费额度失败, 用户剩余额度: ¥0.959866, 需要预扣费额度: ¥1.386286 (request id: 202611100322146653457258268d9d6Bj7ZAfmc)", "403 用户额度不足, 剩余额度: ¥-0.152098 (request id: 202611100320009358618848268d9d6tSjbVaE0)", "insufficient_quota: You exceeded your current quota"]) {
+    const t = agentFailureText("host_reported_failure", raw);
+    assert.match(t, /AI 服务账户的余额或额度不足/);
+    assert.match(t, /律所管理员或 Kimi Work 客服/);
+    assert.match(t, /重新运行/);
+    assert.equal(/¥|request id|0\.95|预扣费/.test(t), false, t);
+  }
+  // 其他情形不受影响
+  assert.match(agentFailureText(null, "429 Too Many Requests"), /AI 服务繁忙/);
+  assert.match(agentFailureText(null, "模型通道不可达"), /暂时连不上/);
+  assert.match(agentFailureText(null, "文书工具返回了错误"), /^任务没有完成：文书工具返回了错误/);
+});
