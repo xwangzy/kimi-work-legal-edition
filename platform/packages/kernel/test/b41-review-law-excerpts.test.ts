@@ -124,3 +124,17 @@ test("第三轮复验：不带书名号的法名、省写的条号串、文书�
   assert.equal(lines.length, 3);
   assert.ok(lines.every((l) => !/无法核对/.test(l)), lines.join("\n"));
 });
+
+test("分段复验：法名后面跟的是司法解释的名字时，不归到那部法（“关于适用《民法典》合同编通则若干问题的解释（2023年12月5日施行）第10条”曾被取成民法典第十条）", async () => {
+  const { extractCitations } = await import("../src/tools/tools/citations.ts");
+  const key = (t: string) => extractCitations(t).map((x) => `${x.law}#${x.article}`);
+  const JS = "最高人民法院关于适用《中华人民共和国民法典》合同编通则若干问题的解释";
+  assert.deepEqual(key("原文已对照最高人民法院关于适用《中华人民共和国民法典》合同编通则若干问题的解释（2023年12月5日施行）第10条、第六十五条"), [`${JS}#10`, `${JS}#65`]);
+  assert.deepEqual(key("民法典合同编通则解释第65条"), [`${JS}#65`]);
+  // 编章名照旧归到这部法；说不清是哪份文件的不提取
+  assert.deepEqual(key("《民法典》合同编第五百七十七条；民法典第三编第一分编通则第四百六十九条"), ["民法典#577", "民法典#469"]);
+  assert.deepEqual(key("参照《民法典》有关规定第十条"), []);
+  const lines = lawExcerptLines(lawdb, lawRefsIn(["最高人民法院关于适用《中华人民共和国民法典》合同编通则若干问题的解释（2023年12月5日施行）第10条"]), "2026-11-11");
+  assert.equal(lines.length, 1);
+  assert.match(lines[0]!, /合同编通则若干问题的解释》第十条】（/);
+});

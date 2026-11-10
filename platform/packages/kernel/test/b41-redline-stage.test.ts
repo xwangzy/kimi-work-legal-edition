@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { createDocx } from "@zr-legal/docx-engine";
 import { importBytes, makeKernel, waitRun, type TestKernel } from "./helpers.ts";
 import { startCloudV0, type CloudV0 } from "./cloud-v0.ts";
-import { methodPromptLine, redlineStagePrompt, wantsRedlineStage } from "../src/executor/executor.ts";
+import { goalForReviewer, methodPromptLine, redlineStagePrompt, wantsRedlineStage } from "../src/executor/executor.ts";
 
 let tk: TestKernel;
 let cloud: CloudV0;
@@ -74,6 +74,13 @@ test("只认开始面板的选项：选了“要”才分两段，审查那一�
   const p = redlineStagePrompt(25 * 60_000);
   assert.match(p, /【出建议修订稿】[\s\S]*docx\.revise[\s\S]*amend[\s\S]*约 25 分钟/);
   assert.equal(/分钟/.test(redlineStagePrompt()), false);
+  // 数字待客户确认的照建议值写入；不添加没有出处的事实陈述
+  assert.match(p, /数字待客户确认[\s\S]*不添加意见和材料里没有的事实陈述/);
+  // 交给复核人的委托原话不带“这一轮不要调用 docx.revise”，换成一句如实说明
+  const sent = `审查这份合同\n${methodPromptLine("contract-review", { redline: YES })}`;
+  assert.equal(/不要调用 docx\.revise/.test(goalForReviewer(sent)), false);
+  assert.match(goalForReviewer(sent), /修订稿、清洁稿是律师要的交付件/);
+  assert.equal(goalForReviewer("起草合同"), "起草合同");
 });
 
 test("审查交出后另起一段写修订稿：接着原会话、单独时限，修订稿与清洁稿登记，任务完成", { timeout: 180_000 }, async () => {

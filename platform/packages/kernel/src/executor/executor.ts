@@ -967,12 +967,23 @@ export const REDLINE_LIMIT_MS = 25 * 60_000;
 /** 出修订稿那一段的事件序号：与工作流固定序号、成果段、独立复核段（9_100+）、宿主事件镜像都不冲突；这一段的宿主事件镜像到 50000+。 */
 const REDLINE_SEQ = { started: 9_060, outcome: 9_061, skipped: 9_062, artifacts: 9_300, mirror: 50_000 } as const;
 
+/**
+ * 交给独立复核人的委托原话：去掉只对审查那一轮有效的分段指令，换成一句如实的说明
+ * （真实复验：复核人把“这一轮不要调用 docx.revise”当成律师的话，据此提“必须改：撤回修订稿”）。纯函数。
+ */
+export function goalForReviewer(goalSent: string): string {
+  const note = "【说明】律师在开始时选了同时出一份建议修订稿：修订稿、清洁稿是律师要的交付件，审查与出修订稿分两段完成。";
+  if (goalSent.includes(REDLINE_STAGE_ONE_LINE)) return goalSent.replace(REDLINE_STAGE_ONE_LINE, note);
+  return goalSent.replace(/【分两段】[^\n]*?不要写成已经生成。/, note);
+}
+
 /** 出修订稿那一段交给助手的话（接着原会话，不出计划）。纯函数。 */
 export function redlineStagePrompt(limitMs?: number): string {
   const mins = limitMs ? Math.max(1, Math.round(limitMs / 60_000)) : 0;
   return [
     "【出建议修订稿】审查已经交出。现在按律师开始时的选择，在合同原件上写一份建议修订稿（修订痕迹），按方法模板“修订稿”一项办：",
-    "1. 用 docx.revise 把“必须修改”“建议修改”两类意见里有确定替换文字的写成修订，每处的 comment 写对应意见的标题与一句理由；“可谈”“需客户决定”的不改。修订只来自已提交的审查意见，不借机改意见以外的地方。",
+    "1. 用 docx.revise 把“必须修改”“建议修改”两类意见里给出了替换文字的全部写成修订，每处的 comment 写对应意见的标题与一句理由。意见给了替换文字、只是其中的商业数字还要客户确认的，按意见里的建议值写入，comment 里注明“数字待客户确认”，不要因此整条不写；只有分级本身是“可谈”“需客户决定”、或意见没有给出替换文字的才不写。",
+    "   写入的文字只用审查意见里的替换文字：不借机改意见以外的地方，不添加意见和材料里没有的事实陈述（例如“双方已协商”“已完成勘测”）。新增或改写的条款与合同其他条款冲突的（例如新增的解除事由与没改的分包、转让条款），一并改掉或在最终答复里提示。",
     "2. 直接正式提交，读返回的改后整段（changes）；有问题的用补交方式（amend）只交要更正的几条，留意返回里被删掉（dropped）和换了定位（retargeted）的条目，不要把全部修改重发。",
     "3. 写完后核对：意见书、问题清单里“已写入修订稿 / 未写入”的说法要与实际写入的一致，不一致的用 docx.edit_draft、xlsx.edit_cells 在原文书上改，不重新生成。",
     "4. 最后完整重写最终答复（它会替换审查那一轮的答复）：保留审查结论，写明修订稿、清洁稿、修改对照表已生成，列出没有写入修订稿的意见及原因。",
@@ -1299,7 +1310,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   // 独立复核（V13 第 38 批）：主任务完整交出文书后才做；追问（在原会话上继续）不再复核
   const reviewed =
     outcomeStatus === "succeeded" && !missing && !continueSession
-      ? await runReviewStage(ctx, run, runId, attemptId, identity, { skill, goalSent, snapshot, ctxM, purpose, fx, wallMs })
+      ? await runReviewStage(ctx, run, runId, attemptId, identity, { skill, goalSent: goalForReviewer(goalSent), snapshot, ctxM, purpose, fx, wallMs })
       : { remaining: [] as string[], partial: false };
   assertNoUnresolved();
   const finalStatus = outcomeStatus === "partial" || missing || redline.partial || reviewed.partial ? RunStatus.partial : RunStatus.succeeded;

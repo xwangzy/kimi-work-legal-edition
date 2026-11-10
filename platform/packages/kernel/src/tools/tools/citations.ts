@@ -11,7 +11,7 @@
 import { CitationState, DomainError, type CitationState as CitationStateT } from "@zr-legal/domain";
 import { versionAt, type Lawdb } from "@zr-legal/lawdb";
 import { cnToInt, intToCn } from "./cn-numerals.ts";
-import { BARE_NAMES, lawNameCandidates } from "./law-names.ts";
+import { BARE_NAMES, LAW_ALIASES, lawNameCandidates } from "./law-names.ts";
 
 export interface RawCitation {
   raw: string;
@@ -61,6 +61,21 @@ const VERSION_NOTE_RE = /[（(][^（）()]{0,30}(?:年|修订|修正|法释|〔|
 function partOk(part: string): boolean {
   const p = part.replace(VERSION_NOTE_RE, "").replace(/\s+/g, "");
   return p === "" || (/(编|章|节|总则|分则|附则|通则)/.test(p) && !/[条款项]/.test(p) && p.length <= 20);
+}
+
+/**
+ * 法名后面跟的不是编章名、而是另一份文件的名字（V16 第 41 批真实任务：意见书写“最高人民法院关于适用《中华人民共和国民法典》合同编通则若干问题的解释
+ * （2023年12月5日施行）第10条”，被提取成“民法典第十条”，独立复核拿到的是民法典第十条的原文）：
+ * - 前面紧挨着“关于适用”的，按“最高人民法院关于适用《法名》××的解释”这部司法解释提取；
+ * - 没有书名号的“民法典合同编通则解释第65条”，后半段在简称表里的按简称对应的那部提取；
+ * - 其余的不提取（宁可不提取也不张冠李戴）。返回 undefined 表示后面跟的是普通编章名，照旧归到这部法。
+ */
+const OTHER_INSTRUMENT_RE = /(解释|规定|批复|意见|纪要|答复)(?:[（(][一二三四五六七八九十]{1,3}[)）])?$/;
+function otherInstrument(t: string, start: number, title: string, part: string, bracketed: boolean): string | null | undefined {
+  const p = part.replace(VERSION_NOTE_RE, "").replace(/\s+/g, "");
+  if (!OTHER_INSTRUMENT_RE.test(p)) return undefined;
+  if (bracketed) return /关于适用\s*$/.test(t.slice(Math.max(0, start - 8), start)) ? `最高人民法院关于适用《${LAW_ALIASES[title] ?? title}》${p}` : null;
+  return LAW_ALIASES[p] ?? LAW_ALIASES[`${title.replace(/^中华人民共和国/, "")}${p}`] ?? null;
 }
 
 /** 标题里误写的嵌套书名号改成〈〉、全角数字改半角（都是等长替换，位置不变）：《最高人民法院关于适用《中华人民共和国民事诉讼法》的解释》。 */
@@ -128,10 +143,14 @@ export function extractCitations(text: string): RawCitation[] {
       if (r) {
         const start = m.index;
         const end = start + m[0].length;
-        out.push({ raw: text.slice(start, end), law: m[1]!, offset: start, ...r });
-        covered.push([start, end]);
-        followers(t, end, m[1]!, `《${m[1]!}》`, out);
-        ok = true;
+        const other = otherInstrument(t, start, m[1]!, m[2]!, true);
+        if (other !== null) {
+          const law = other ?? m[1]!;
+          out.push({ raw: text.slice(start, end), law, offset: start, ...r });
+          covered.push([start, end]);
+          followers(t, end, law, `《${law}》`, out);
+          ok = true;
+        }
       }
     }
     it = titles.next(ok);
@@ -148,11 +167,14 @@ export function extractCitations(text: string): RawCitation[] {
         const r = refOf(m, 3);
         if (r) {
           const end = start + m[0].length;
-          const law = `${m[1]!}`.replace(/^中华人民共和国/, "");
-          out.push({ raw: text.slice(start, end), law, offset: start, ...r });
-          covered.push([start, end]);
-          followers(t, end, law, law, out);
-          ok = true;
+          const other = otherInstrument(t, start, m[1]!, m[2]!, false);
+          const law = other ?? `${m[1]!}`.replace(/^中华人民共和国/, "");
+          if (other !== null) {
+            out.push({ raw: text.slice(start, end), law, offset: start, ...r });
+            covered.push([start, end]);
+            followers(t, end, law, law, out);
+            ok = true;
+          }
         }
       }
       it = bare.next(ok);
