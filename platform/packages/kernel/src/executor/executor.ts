@@ -1454,7 +1454,8 @@ async function runReviewStage(
       // 正文为空不是“没有问题”（V13 实验：上游缺省推理强度下 32,000 个输出 token 全部用在推理上，正文为空）
       if (!text.trim()) throw new Error("复核没有给出意见（模型输出为空，可能是推理用尽了输出上限）");
       recordToolOperation(db, runId, attemptId, "model", "review", { route: "legal/k3" }, "succeeded");
-      const findings = /未发现实质问题/.test(text) && !/【\s*1\s*】/.test(text) ? [] : parseFindings(text);
+      // “未发现实质问题”由 parseFindings 判断：复核人写“1. …｜必须改”又在末尾写“其余未发现实质问题”的，意见照样认出
+      const findings = parseFindings(text);
       appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.completed, "review.completed", {
         kind: picked.kind,
         findings: findings.length,
@@ -1475,25 +1476,7 @@ async function runReviewStage(
   // 复核调用失败：文书照常交付（时间线写明“未经复核”），不改结算状态
   if (!review.ok) return { remaining: [`独立复核没有完成（${review.error ?? "模型调用失败"}）：文书未经复核，请律师按方法的自检清单核对后使用`], partial: false };
 
-  // ② 复核意见登记为内部成果（代号形态，下载时还原）
-  await ctx.step("independent_review_note", async () => {
-    const buf = Buffer.from(reviewNote(targets.title, review.findings, review.text), "utf8");
-    const stored = ctx.deps.blobs.put(buf, run.matter_id);
-    db.tx(() =>
-      registerArtifact(ctx, run, runId, attemptId, {
-        kind: "a1_review_note",
-        filename: `独立复核意见-${targets.title}.md`,
-        sha256: stored.sha256,
-        storage_uri: stored.storage_uri,
-        manifest: { note: "独立复核意见：不带起草上下文的复核（V13 第 38 批），已交回助手逐条处理", findings: review.findings.length },
-      }, REVIEW_SEQ.note),
-    );
-    return { ok: true };
-  });
-  if (review.findings.length === 0) return none;
-
-  // ③ 交回原会话修改
-  // 取最近一次写入的“助手会话已启动”（按写入先后，不按序号：序号是分段的）
+  // 原会话：取最近一次写入的“助手会话已启动”（按写入先后，不按序号：序号是分段的）。先查出来，复核意见的抬头才能如实写是否交回修改
   const started = db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.started' ORDER BY event_id DESC LIMIT 1`, [runId])[0];
   const sid = started ? (() => {
     try {
@@ -1502,7 +1485,27 @@ async function runReviewStage(
       return null;
     }
   })() : null;
-  if (typeof sid !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(sid)) {
+  const sidOk = typeof sid === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(sid);
+
+  // ② 复核意见登记为内部成果（代号形态，下载时还原）
+  await ctx.step("independent_review_note", async () => {
+    const buf = Buffer.from(reviewNote(targets.title, review.findings, review.text, review.findings.length > 0 && sidOk), "utf8");
+    const stored = ctx.deps.blobs.put(buf, run.matter_id);
+    db.tx(() =>
+      registerArtifact(ctx, run, runId, attemptId, {
+        kind: "a1_review_note",
+        filename: `独立复核意见-${targets.title}.md`,
+        sha256: stored.sha256,
+        storage_uri: stored.storage_uri,
+        manifest: { note: review.findings.length > 0 && sidOk ? "独立复核意见：不带起草上下文的复核（V13 第 38 批），已交回助手逐条处理" : "独立复核意见：不带起草上下文的复核（V13 第 38 批），没有交回修改", findings: review.findings.length },
+      }, REVIEW_SEQ.note),
+    );
+    return { ok: true };
+  });
+  if (review.findings.length === 0) return none;
+
+  // ③ 交回原会话修改
+  if (!sidOk) {
     appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.skipped, "review.skipped", { kind: picked.kind, reason: "no_session" });
     return { remaining: [`独立复核提出 ${review.findings.length} 条意见，未能交回助手修改（找不到原会话）：请按《独立复核意见》核对`], partial: true };
   }
@@ -1513,7 +1516,7 @@ async function runReviewStage(
     let taskId: string;
     try {
       // 材料快照照样交给这一轮：宿主每轮清空并重写材料区，传空列表等于让助手在修改时读不到材料
-      taskId = await agentClient.start(identity, { goal, materials: p.snapshot, timeout_ms: limit, wall_ms: p.wallMs, purpose: p.purpose, fx: p.fx, continue_session_id: sid, plan_first: false, task_suffix: "review" });
+      taskId = await agentClient.start(identity, { goal, materials: p.snapshot, timeout_ms: limit, wall_ms: p.wallMs, purpose: p.purpose, fx: p.fx, continue_session_id: String(sid), plan_first: false, task_suffix: "review" });
     } catch (e) {
       const error = String((e as Error)?.message ?? e).slice(0, 200);
       appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.fixOutcome, "review.fix_outcome", { status: "start_failed", error });

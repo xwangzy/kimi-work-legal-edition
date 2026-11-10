@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { importBytes, makeKernel, waitRun, waitRunAnswering, type TestKernel } from "./helpers.ts";
 import { questionAnswerLines } from "../src/executor/kap-agent-client.ts";
 import { startCloudV0, type CloudV0 } from "./cloud-v0.ts";
-import { parseFindings, fixPrompt, reviewMessages } from "../src/services/independent-review.ts";
+import { parseFindings, fixPrompt, reviewMessages, reviewNote } from "../src/services/independent-review.ts";
 
 let tk: TestKernel;
 let cloud: CloudV0;
@@ -239,6 +239,42 @@ test("复核意见解析：标准格式、续行与“建议改”；交回修�
   const m = reviewMessages({ kind: "revise", stance: "委托方", jurisdiction: "中国大陆", asOf: "2026-11-07", goal: "改第8.1款", materials: [{ filename: "原件.docx", text: "原文" }], docs: [{ filename: "清洁稿.docx", text: "改后" }], diff: ["［修改前］8.1 50万元\n［修改后］8.1 20万元"] });
   assert.match(m[1]!.content, /原件与清洁稿的段落差异[\s\S]*8\.1 20万元/);
   assert.match(m[1]!.content, /授权范围/);
+});
+
+test("V16 第 41 批：复核人没按“【1】”写序号也能认出意见（真实回归：写成“1. 位置｜问题｜…｜必须改”，记成 0 条、修改轮被跳过）", () => {
+  // 真实写法：阿拉伯数字加点、竖线分栏；依据里有“1.2 条”“第 1. 项”，第二条跨两行、续行以“3.5 万元”起头
+  const real = parseFindings(
+    "复核意见如下：\n1. 第二条｜价款写成 100 万元｜委托原话：价款120万元；合同第 1.2 条｜改为 120 万元｜必须改\n2. 第五条｜违约金比例偏高，\n3.5 万元的计算未列算式｜材料：条款清单第 1. 项｜补算式｜建议改",
+  );
+  assert.equal(real.length, 2, JSON.stringify(real));
+  assert.deepEqual([real[0]!.no, real[0]!.where, real[0]!.must], [1, "第二条", true]);
+  assert.match(real[0]!.basis, /合同第 1\.2 条/);
+  assert.deepEqual([real[1]!.no, real[1]!.must], [2, false]);
+  assert.match(real[1]!.problem, /3\.5 万元的计算未列算式/);
+  // 全角括号、顿号、方括号写法
+  const paren = parseFindings("（1）第三条｜定金超过 20%｜民法典第五百八十六条｜改为 20%｜必须改\n2、第四条｜交付期限未写｜条款清单｜补写｜建议改\n[3] 第六条｜管辖约定不明｜合同原文｜明确法院｜建议改");
+  assert.deepEqual(paren.map((f) => [f.no, f.where, f.must]), [[1, "第三条", true], [2, "第四条", false], [3, "第六条", false]]);
+  // 认不出分条、但明确写了“必须改”的：整段作为一条交回，不当作没有意见
+  const whole = parseFindings("价款与委托不一致，应改为 120 万元，必须改。");
+  assert.equal(whole.length, 1);
+  assert.equal(whole[0]!.must, true);
+  // “未发现实质问题”仍是 0 条；只有普通编号、没有竖线和“必须改/建议改”的说明不当作意见
+  assert.equal(parseFindings("未发现实质问题。").length, 0);
+  assert.equal(parseFindings("未发现实质问题。个别措辞可以斟酌，但不属于建议改的范围。").length, 0);
+  assert.equal(parseFindings("复核要点：\n1. 事实对照已做\n2. 计算已复算").length, 0);
+  // 末尾写“其余未发现实质问题”的，前面的意见照样认出
+  assert.equal(parseFindings("1. 第二条｜价款不一致｜委托原话｜改为 120 万元｜必须改\n其余未发现实质问题。").length, 1);
+});
+
+test("V16 第 41 批：没有交回修改时，《独立复核意见》抬头不写“已交回起草的助手逐条处理”", () => {
+  const f = parseFindings("【1】第二条｜价款不一致｜委托原话｜改为 120 万元｜必须改");
+  assert.match(reviewNote("合同", f, "", true), /已交回起草的助手逐条处理/);
+  const notBack = reviewNote("合同", f, "", false);
+  assert.equal(/已交回/.test(notBack), false, notBack);
+  assert.match(notBack, /没有交回起草的助手修改[\s\S]*请律师逐条核对/);
+  const none = reviewNote("合同", [], "未发现实质问题。");
+  assert.equal(/已交回/.test(none), false, none);
+  assert.match(none, /没有交回修改[\s\S]*未发现实质问题/);
 });
 
 test("律师在任务中的答复交给复核人（V13 W6：律师答了“180 万元含税”“30%/40%/30%”，复核人只看委托原话，把这两项当成无出处的商业条件、要求改回待定）", { timeout: 180_000 }, async () => {

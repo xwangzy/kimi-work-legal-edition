@@ -312,7 +312,24 @@ export function parseFindings(text: string): ReviewFinding[] {
       must,
     });
   }
-  return out.slice(0, 15);
+  if (out.length > 0) return out.slice(0, 15);
+  // 复核人没有按“【1】”写序号（V16 第 41 批真实回归 m08：写成“1. 位置｜问题｜依据｜改法｜必须改”，两条意见一条必须改，
+  // 这里一条也没认出来，记成“0 条”，修改轮被跳过，《独立复核意见》里却写着“已交回助手逐条处理”）：
+  // 行首“1.”“1、”“（1）”“[1]”后面带竖线分栏的同样算一条
+  // 序号后不能紧跟数字（“1.2 条”“3.5 万元”起头的续行不当作新的一条）；只有行首序号且同一行带竖线的才切分，依据里出现的“1.”不会误切
+  const alt = /(?:^|\n)[ \t]*(?:[（(\[]\s*(\d{1,2})\s*[)）\]]|(\d{1,2})\s*[.．、](?!\d))\s*([^\n]*[｜|][\s\S]*?)(?=\n[ \t]*(?:[（(\[]\s*\d{1,2}\s*[)）\]]|\d{1,2}\s*[.．、](?!\d))\s*[^\n]*[｜|]|$)/g;
+  for (const m of body.matchAll(alt)) {
+    const raw = m[3]!.replace(/\s*\n\s*/g, " ").trim();
+    const parts = raw.split(/[｜|]/).map((x) => x.trim());
+    if (parts.length < 3) continue;
+    const tail = parts.at(-1) ?? "";
+    out.push({ no: Number(m[1] ?? m[2]), where: parts.length >= 4 ? parts[0]! : "", problem: parts.length >= 4 ? parts[1]! : raw, basis: parts.length >= 4 ? parts[2]! : "", fix: parts.length >= 4 ? (parts[3] ?? "") : "", must: /必须改/.test(tail) || (!/建议改/.test(tail) && /必须改/.test(raw)) });
+  }
+  if (out.length > 0) return out.slice(0, 15);
+  // 仍认不出分条、但复核人明确写了“必须改”“建议改”的：整段作为一条交回，不当作“没有意见”
+  const whole = body.trim();
+  if (/必须改|建议改/.test(whole) && !/未发现实质问题|没有发现实质问题/.test(whole)) return [{ no: 1, where: "", problem: whole.slice(0, 4000), basis: "", fix: "", must: /必须改/.test(whole) }];
+  return [];
 }
 
 /** 交回原会话的修改指示（追问形态，令牌化后发出）。 */
@@ -355,8 +372,14 @@ export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], 
 }
 
 /** 给律师看的复核意见（Markdown，代号形态；下载时还原真名）。 */
-export function reviewNote(title: string, findings: readonly ReviewFinding[], reviewText: string): string {
-  const head = `# 独立复核意见：${title}\n\n复核方式：由系统另起一次模型调用，不带起草过程的上下文，只看委托原话、事项材料与交付件；以下意见已交回起草的助手逐条处理，处理结果见任务最终答复的“独立复核处理情况”。复核意见同样是 AI 草稿，须律师判断。\n\n`;
+export function reviewNote(title: string, findings: readonly ReviewFinding[], reviewText: string, handedBack = findings.length > 0): string {
+  // 只有真的交回修改时才写“已交回逐条处理”（V16 第 41 批真实回归：意见没认出来、修改轮被跳过，抬头仍写“已交回”）
+  const after = handedBack
+    ? "以下意见已交回起草的助手逐条处理，处理结果见任务最终答复的“独立复核处理情况”。"
+    : findings.length > 0
+      ? "以下意见没有交回起草的助手修改（原因见任务的“还差什么”），文书是复核前的版本，请律师逐条核对。"
+      : "复核没有提出需要修改的意见，文书没有交回修改。";
+  const head = `# 独立复核意见：${title}\n\n复核方式：由系统另起一次模型调用，不带起草过程的上下文，只看委托原话、事项材料与交付件；${after}复核意见同样是 AI 草稿，须律师判断。\n\n`;
   if (findings.length === 0) return `${head}${reviewText.trim() || "未发现实质问题。"}\n`;
   const rows = findings.map((f) => `| ${f.no} | ${esc(f.where)} | ${esc(f.problem)} | ${esc(f.basis)} | ${esc(f.fix)} | ${f.must ? "必须改" : "建议改"} |`);
   return `${head}| 序号 | 位置 | 问题 | 依据 | 改法 | 性质 |\n|---|---|---|---|---|---|\n${rows.join("\n")}\n`;
