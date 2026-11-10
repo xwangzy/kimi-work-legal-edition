@@ -131,8 +131,13 @@ test("新卡：劳动仲裁申请书 / 答辩书（新方法 labor-arbitration-d
   assert.deepEqual(card("labor-arb-application").args, { doc_kind: "申请书" });
   assert.deepEqual(card("labor-arb-defense").args, { doc_kind: "答辩书", side: "用人单位" });
   assert.ok(card("labor-arb-defense").fields.find((f) => f.key === "received_on")?.required, "答辩书必须问收到日期（答辩期按工作日起算）");
-  assert.match(card("labor-arb-defense").goal, /十个工作日/);
-  assert.match(card("labor-response").goal, /十个工作日/);
+  // 第 41 批（V16 回归）：委托原话不再替律师定“十个工作日”这一种口径（助手据此只给工作日日期），改为请助手算届满日、按工作准则第 4 条并列各口径
+  for (const id of ["labor-arb-defense", "labor-arb-defense-lit", "labor-response"]) {
+    assert.doesNotMatch(card(id).goal, /十个工作日/, id);
+    assert.match(card(id).goal, /收到仲裁申请书副本的日期：\{received_on\}；请算出答辩期届满日/, id);
+    assert.ok(!card(id).steps.some((x) => /十个工作日/.test(x)), id);
+  }
+  assert.match(card("labor-arb-defense").goal, /管辖异议与反申请须在期满前提出/);
   assert.equal(card("case-report-lit").line, "litigation");
   assert.equal(card("case-report-lit").skill, "case-report");
   assert.ok(card("amount").fields.find((f) => f.key === "mode")?.options?.includes("复核对方计算"));
@@ -166,10 +171,11 @@ test("首页近期期限也列 cancel_pending 的有效提醒（复核 Q8-04，�
   assert.deepEqual(got.map((r) => r.due_date), ["2026-10-28"]);
 });
 
-test("工作准则第 10 条：系统标识不写给律师，但方法要求的质量说明行（未经本所质量验收）必须照写（复核 Q8-07）", () => {
+test("工作准则第 10 条：系统标识不写给律师；质量说明行只写在最终答复末尾，不进任何交付文件（复核 Q8-07；第 41 批 V16 回归改）", () => {
   const agents = readFileSync(new URL("../../../content/skills/AGENTS.md", import.meta.url), "utf8");
   assert.match(agents, /10\. \*\*写给律师的话用律师的语言。\*\*/);
-  assert.match(agents, /质量说明行（如“通用辅助 · 未经本所质量验收 · 草稿待律师复核”）必须照写，不得删改/);
+  assert.match(agents, /质量说明（“通用辅助 · 未经本所质量验收”）只写在给律师的最终答复末尾/);
+  assert.doesNotMatch(agents, /必须照写，不得删改/);
 });
 
 test("删除清单的说法对得上对象；数据去向说明保留根密钥的风险与缓解两句（复核 Q8-05、Q8-12）", () => {
