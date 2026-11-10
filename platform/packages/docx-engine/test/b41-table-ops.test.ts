@@ -233,3 +233,30 @@ test("逐处改动：整句重写（不变的字不到六成）或改动太碎�
   assert.equal(changeHunks("相同", "相同").length, 1);
   assert.deepEqual(changeHunks("整段删除", ""), [{ a0: 0, a1: 4, added: "" }]);
 });
+
+test("同一批里先改行名、再按原行名定位同一行的格子：提示一律按原件的行名、列名认，一次写入（V16 第 41 批真实走查：“尾款”改“质保金”后“尾款｜比例”对不上，整批失败）", () => {
+  const pay = withBody(
+    para("付款", num(0)) +
+      para("合同价款按下表支付：", num(1)) +
+      tbl([
+        tr([tc("款项"), tc("比例"), tc("金额（元）"), tc("支付时间")]),
+        tr([tc("定金"), tc("5%"), tc("160,000"), tc("签订后5日内")]),
+        tr([tc("验收款"), tc("90%"), tc("2,880,000"), tc("验收后10日内")]),
+        tr([tc("尾款"), tc("5%"), tc("160,000"), tc("验收满12个月后10日内")]),
+      ]) +
+      para("尾"),
+  );
+  const hinted = (id: string, anchor: string, hint: string, text: string) => op(id, anchor, text, { anchor: { originalText: anchor, paragraphHint: hint } });
+  // 行名的修改排在前面，后面三格仍写原行名“尾款”；列名“比例”也在同一批里改成“支付比例”
+  const r = apply(pay, [op("p0", "尾款", "质保金"), op("p1", "比例", "支付比例"), hinted("p2", "5%", "尾款｜比例", "10%"), hinted("p3", "160,000", "尾款｜金额（元）", "320,000"), hinted("p4", "5%", "定金｜比例", "10%")]);
+  assert.equal(r.applied.length, 5);
+  const t = texts(sanitizeDocx(r.docx).docx);
+  const at = t.indexOf("质保金");
+  assert.ok(at > 0, "行名已改");
+  assert.deepEqual(t.slice(at, at + 3), ["质保金", "10%", "320,000"], "改的是原“尾款”那一行");
+  const dep = t.indexOf("定金");
+  assert.deepEqual(t.slice(dep, dep + 3), ["定金", "10%", "160,000"], "定金行只改比例");
+  assert.ok(t.includes("支付比例"));
+  // 改后的行名不能拿来定位（提示照原件写）
+  assert.throws(() => apply(pay, [op("p0", "尾款", "质保金"), hinted("p1", "5%", "质保金｜比例", "10%")]), /歧义/);
+});

@@ -38,10 +38,12 @@ export function applyRevisionsToDocx(docx: Buffer, plan: RevisionPlan): ApplyRes
   const applied: AppliedRevision[] = [];
   // 自动编号（第 29 批）：条款提示（“3.2”“第五条”）也按 Word 显示的编号比对；按原件段落次序算一次（新插入的段落不参与匹配，次序不变）
   const labels = paragraphListLabels(documentXml, files.get("word/numbering.xml")?.toString("utf8") ?? null, files.get("word/styles.xml")?.toString("utf8") ?? null);
+  // 条款提示一律按原件比对（V16 第 41 批真实走查：同一批里先把付款表的行名“尾款”改成“质保金”，后面按“尾款｜比例”定位同一行的格子就对不上，整批失败）
+  const original = hintContext(documentXml, labels);
 
   for (const op of plan.ops) {
     if (op.anchor.part === "header" || op.anchor.part === "footer") applyToHeaderFooter(files, op, () => idSeq++, applied);
-    else xml = applyOne(xml, op, comments, () => idSeq++, applied, labels);
+    else xml = applyOne(xml, op, comments, () => idSeq++, applied, labels, original);
   }
   // 段后插入用的临时标记（同一段后的多条插入按先后接在一起；插入的新段落不参与后续锚点匹配）写完即去掉
   // 接着对方插入时重开的标签后面没有字的，整个去掉（不留空的对方插入）
@@ -118,6 +120,30 @@ export function headerFooterParagraphs(docx: Buffer): { part: "header" | "footer
   return out;
 }
 
+/** 条款提示比对用的段落信息：编号、文字、所在表格行的整行文字、列名、表前那段。 */
+type HintFacts = { label: string | null; text: string; row: string; col: string; lead: string };
+
+/**
+ * 按某一版文字（正文写入时取原件）算每段的条款提示信息，段落序号与 mapParagraphs 一致。
+ * 提示（“3.2｜尾款｜比例”）是助手照原件写的：同一批里前面的修改改了行名、列名或表前那段，后面的修改照样按原件的写法认（V16 第 41 批）。
+ */
+function hintContext(xml: string, labels: readonly (string | null)[]): (i: number) => HintFacts | null {
+  const all = mapParagraphs(xml);
+  let cells: ReturnType<typeof paragraphCells> | null = null;
+  return (i) => {
+    const p = all[i];
+    if (!p) return null;
+    cells ??= paragraphCells(xml);
+    const c = cells[i];
+    // 表格里的格子按所在行认提示（“首期”那一行的“无”）：材料视图里表格按行写成“| 首期 | 无 |”
+    const row = c ? all.filter((q) => cells![q.index]?.table === c.table && cells![q.index]?.row === c.row).map((q) => q.text).join(" | ") : "";
+    // 表前那段（第 35 批 R5）：条款号与文字，两张表行名列名相同时靠它区分（“2.1｜合计｜金额（元）”）
+    const lp = c && c.lead !== null ? all[c.lead] : undefined;
+    // 列名：该列首行的文字（同一行里两格金额相同，如“应还利息”与“本期合计”都是 75,000.00，靠列名区分；第 34 批 T3 真实走查）
+    return { label: labels[i] ?? null, text: p.text, row, col: c?.header ?? "", lead: lp ? `${labels[c!.lead!] ?? ""} ${lp.text}` : "" };
+  };
+}
+
 function applyOne(
   xml: string,
   op: RevisionOp,
@@ -125,6 +151,7 @@ function applyOne(
   nextId: () => number,
   applied: AppliedRevision[],
   labels: readonly (string | null)[] = [],
+  original?: (i: number) => HintFacts | null,
 ): string {
   if (sha256Hex(op.anchor.originalText) !== op.originalHash) {
     throw new DomainError("anchor_mismatch", `修订 ${op.opId} 原文 hash 校验失败`, 422, { opId: op.opId });
@@ -138,21 +165,9 @@ function applyOne(
   let target = candidates[0];
   if (candidates.length > 1) {
     // 多处匹配：没有条款提示、或提示对不上 / 仍有多处时都按歧义拒写（第 34 批 D10：原先提示对不上时静默改第一处）
-    // 表格里的格子按所在行认提示（“首期”那一行的“无”）：材料视图里表格按行写成“| 首期 | 无 |”
-    const cells = op.anchor.paragraphHint ? paragraphCells(xml) : [];
-    const rowText = (p: ParagraphMap): string => {
-      const c = cells[p.index];
-      return c ? all.filter((q) => cells[q.index]?.table === c.table && cells[q.index]?.row === c.row).map((q) => q.text).join(" | ") : "";
-    };
-    // 列名：该列首行的文字（同一行里两格金额相同，如“应还利息”与“本期合计”都是 75,000.00，靠列名区分；第 34 批 T3 真实走查）
-    const colText = (p: ParagraphMap): string => cells[p.index]?.header ?? "";
-    // 表前那段（第 35 批 R5）：条款号与文字，两张表行名列名相同时靠它区分（“2.1｜合计｜金额（元）”）
-    const leadText = (p: ParagraphMap): string => {
-      const at = cells[p.index]?.lead;
-      const q = at === null || at === undefined ? undefined : all[at];
-      return q ? `${labels[origIndex.get(q) ?? -1] ?? ""} ${q.text}` : "";
-    };
-    const picked = op.anchor.paragraphHint ? pickByHint(candidates.map((p) => ({ label: labels[origIndex.get(p)!] ?? null, text: p.text, row: rowText(p), col: colText(p), lead: leadText(p) })), op.anchor.paragraphHint) : null;
+    // 提示按原件的编号、行名、列名与表前那段比对（origIndex 是原件段落序号；页眉页脚各部件没有传入原件时按本部件现有文字）
+    const facts = original ?? hintContext(xml, labels);
+    const picked = op.anchor.paragraphHint ? pickByHint(candidates.map((p) => facts(origIndex.get(p)!) ?? { label: null, text: p.text, row: "", col: "", lead: "" }), op.anchor.paragraphHint) : null;
     if (picked === null) {
       throw new DomainError(
         "anchor_mismatch",
