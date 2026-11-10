@@ -104,3 +104,23 @@ test("整条链路：复核请求里有文书所引条文的原文；复核人�
     cloud.model.script = null;
   }
 });
+
+test("第三轮复验：不带书名号的法名、省写的条号串、文书自起的简称都取得到原文", () => {
+  const key = (r: { law: string; article: number }[]) => r.map((x) => `${x.law}#${x.article}`);
+  const refs = key(
+    lawRefsIn([
+      "依据《劳动人事争议仲裁办案规则》第八条。",
+      "收到副本；劳动人事争议仲裁办案规则第三十三条、第八十条；办案规则第十、三十六条",
+      "《劳动争议调解仲裁法》第四十七至五十条及《办案规则》第五十条",
+    ]),
+  );
+  for (const want of ["劳动人事争议仲裁办案规则#33", "劳动人事争议仲裁办案规则#80", "劳动人事争议仲裁办案规则#10", "劳动人事争议仲裁办案规则#36", "劳动人事争议仲裁办案规则#50", "劳动争议调解仲裁法#47", "劳动争议调解仲裁法#48", "劳动争议调解仲裁法#49", "劳动争议调解仲裁法#50"]) assert.ok(refs.includes(want), want);
+  assert.ok(!refs.some((x) => x.startsWith("办案规则#")), "简称按全称取");
+  assert.deepEqual(key(lawRefsIn(["《劳动合同法》第三十九条第二项、第三项，及第四十七条至第四十九条"])), ["劳动合同法#39", "劳动合同法#47", "劳动合同法#48", "劳动合同法#49"]);
+  // 合同自己的条款不算法条；跨度过大的“至”只取两端
+  assert.deepEqual(key(lawRefsIn(["《民法典》第五百七十七条。本合同第七条、第八条约定；《采购合同》第三条"])), ["民法典#577"]);
+  assert.deepEqual(key(lawRefsIn(["《劳动合同法》第四十六条至第八十七条"])), ["劳动合同法#46", "劳动合同法#87"]);
+  const lines = lawExcerptLines(lawdb, lawRefsIn(["《劳动人事争议仲裁办案规则》第八条；《办案规则》第三十三、八十条"]), "2026-11-11");
+  assert.equal(lines.length, 3);
+  assert.ok(lines.every((l) => !/无法核对/.test(l)), lines.join("\n"));
+});

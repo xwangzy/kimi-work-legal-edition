@@ -151,24 +151,92 @@ const BARE_ARTICLE_RE = /第\s*([零〇一二两三四五六七八九十百千\d
  * 文字里的法条引用（按出现先后；同一部法的同一条只取一次）。
  * followBare=true（复核意见用）：意见里常写“仲裁法第二十七条应改为第二十五条”，后一个条号没有法名——归到同一段里前面最近被引的那部法。
  */
+const NUM_SRC = "[零〇一二两三四五六七八九十百千\\d]{1,12}";
+const CHAIN_HEAD_RE = new RegExp(`^[^，。；：、,;:《》〈〉\\n第]{0,12}?第\\s*(${NUM_SRC})`);
+const CHAIN_TAIL_RE = /^\s*条(?:之[一二三四五六七八九十]{1,3})?(?:\s*第\s*[一二三四五六七八九十\d]{1,4}\s*款)?(?:\s*第?\s*[（(]?[一二三四五六七八九十\d]{1,4}[)）]?\s*项)?(?:\s*[、和及]\s*第?\s*[（(]?[一二三四五六七八九十\d]{1,4}[)）]?\s*[款项])*/;
+const CHAIN_SEP_RE = new RegExp(`^\\s*[，,]?\\s*(、|至|到|以及|及|和|—|－|-|～|~|(?<=[，,]\\s*))\\s*第?\\s*(${NUM_SRC})(?!\\s*[款项])`);
+const REVIEW_DOC_TITLE_RE = /(协议|协议书|合同|合同书|章程|意向书|承诺函|确认函|通知书|备忘录|说明书|报告|清单|附件|手册|制度|规程|决议|委托书|起诉状|答辩状|申请书|意见书|招标文件|投标文件|文件)$/;
+const toArticle = (x: string) => cnToInt(x.replace(/〇/g, "零").replace(/两/g, "二"));
+
+/**
+ * 法名后面的一串条号：认“第三十三、八十条”“第四十七至五十条”“第十条、第三十六条”“第四十七条至第五十条”。
+ * 没写“条”的数字先挂起，后面出现“条”才算数；“至 / 到”连着的两个条号相差不超过 10 的，中间各条一并取。
+ */
+function articleChain(rest: string): number[] {
+  const head = CHAIN_HEAD_RE.exec(rest);
+  if (!head) return [];
+  const out: number[] = [];
+  let pending: { n: number; range: boolean }[] = [];
+  let pos = head[0].length;
+  let cur = toArticle(head[1]!);
+  let range = false;
+  for (let i = 0; i < 40 && cur !== null; i += 1) {
+    pending.push({ n: cur, range });
+    const tail = CHAIN_TAIL_RE.exec(rest.slice(pos));
+    if (tail) {
+      pos += tail[0].length;
+      for (const x of pending) {
+        const prev = out.at(-1);
+        if (x.range && prev !== undefined && x.n > prev && x.n - prev <= 10) for (let k = prev + 1; k < x.n; k += 1) out.push(k);
+        out.push(x.n);
+      }
+      pending = [];
+    }
+    const sep = CHAIN_SEP_RE.exec(rest.slice(pos));
+    if (!sep) break;
+    pos += sep[0].length;
+    range = /至|到|—|－|-|～|~/.test(sep[1]!);
+    cur = toArticle(sep[2]!);
+  }
+  return out;
+}
+
 export function lawRefsIn(texts: readonly string[], o: { followBare?: boolean } = {}): LawRef[] {
   const out: LawRef[] = [];
   const seen = new Set<string>();
+  const perText = texts.map((text) => {
+    if (!text) return [];
+    try {
+      return extractCitations(text);
+    } catch {
+      return [];
+    }
+  });
+  // 这批文字里被引过的法名（提取器认出来的）：同一部法在别处不带书名号、或条号写成“第三十三、八十条”的，也要取到
+  const names = [...new Set(perText.flat().map((c) => c.law.replace(/^中华人民共和国/, "")))].filter((n) => n.length >= 3).sort((a, b) => b.length - a.length);
+  // 文书自己起的简称（《办案规则》）：恰好是这批文字里另一部被引法名的结尾、且只对得上一部的，按那部法取
+  const full = (law: string): string => {
+    const n = law.replace(/^中华人民共和国/, "");
+    const longer = names.filter((x) => x !== n && x.endsWith(n));
+    return n.length >= 3 && longer.length === 1 ? longer[0]! : law;
+  };
   const add = (law: string, article: number) => {
-    const k = `${law.replace(/^中华人民共和国/, "")}#${article}`;
+    const name = full(law);
+    const k = `${name.replace(/^中华人民共和国/, "")}#${article}`;
     if (seen.has(k)) return;
     seen.add(k);
-    out.push({ law, article });
+    out.push({ law: name, article });
   };
-  for (const text of texts) {
-    if (!text) continue;
-    let found: ReturnType<typeof extractCitations> = [];
-    try {
-      found = extractCitations(text);
-    } catch {
-      found = [];
-    }
+  texts.forEach((text, ti) => {
+    if (!text) return;
+    const found = perText[ti]!;
     const items: { at: number; law: string; article: number }[] = found.map((c) => ({ at: c.offset, law: c.law, article: c.article }));
+    for (const name of names) {
+      for (let at = text.indexOf(name); at >= 0; at = text.indexOf(name, at + name.length)) {
+        let from = at + name.length;
+        if (text[from] === "》") from += 1;
+        const arts = articleChain(text.slice(from, from + 200));
+        arts.forEach((article, i) => items.push({ at: at + i / 1000, law: name, article }));
+      }
+    }
+    // 带书名号、提取器没认出来的写法（《劳动争议调解仲裁法》第四十七至五十条）；合同、章程一类文件的标题不算
+    for (const m of text.matchAll(/《([^《》\n]{2,80})》/g)) {
+      const title = m[1]!;
+      if (REVIEW_DOC_TITLE_RE.test(title.replace(/\s*[（(][^（）()]{1,30}[)）]\s*$/, ""))) continue;
+      const at = m.index ?? 0;
+      const arts = articleChain(text.slice(at + m[0].length, at + m[0].length + 200));
+      arts.forEach((article, i) => items.push({ at: at + i / 1000, law: title, article }));
+    }
     if (o.followBare && found.length > 0) {
       const spans = found.map((c) => [c.offset, c.offset + c.raw.length] as const);
       for (const m of text.matchAll(BARE_ARTICLE_RE)) {
@@ -181,7 +249,7 @@ export function lawRefsIn(texts: readonly string[], o: { followBare?: boolean } 
       }
     }
     for (const it of items.sort((a, b) => a.at - b.at)) add(it.law, it.article);
-  }
+  });
   return out;
 }
 
