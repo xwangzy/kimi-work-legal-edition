@@ -38,10 +38,10 @@ test("加载验签 ok：status 与签名内容一致、重复构建确定", () =
   const db = openLawdb(BASE, { expectedSignerPubPem: PUB });
   const st = db.status();
   assert.equal(st.signature_valid, true);
-  // 第 34 批：9 部 137 条官方发布文本入库（《律师法》第三十八条仍为演示种子）；V10 第 36 批：9 部扩为全文、另收 6 部与 3 部司法解释全文（劳动争议解释（一）第三十二条不入库）；V13 第 38 批：再收专利法、反垄断法、劳动合同法实施条例、反不正当竞争法（2025 修订）、数据安全法 5 部 286 条
-  assert.equal(st.laws_count, 36);
-  assert.equal(st.versions_count, 36);
-  assert.equal(st.articles_count, 3961);
+  // 第 34 批：9 部 137 条官方发布文本入库（《律师法》第三十八条仍为演示种子）；V10 第 36 批：9 部扩为全文、另收 6 部与 3 部司法解释全文（劳动争议解释（一）第三十二条不入库）；V13 第 38 批：再收专利法、反垄断法、劳动合同法实施条例、反不正当竞争法（2025 修订）、数据安全法 5 部 286 条；V16 第 41 批：第五批 12 部，补收诉讼费用交纳办法 56 条
+  assert.equal(st.laws_count, 37);
+  assert.equal(st.versions_count, 37);
+  assert.equal(st.articles_count, 4017);
   assert.match(st.package_version, /^g0\./);
   db.close();
   // content hash 重算 = manifest 声明（确定性：同源同 hash；package_meta 的 built_at 不进签名）
@@ -198,10 +198,10 @@ test("增量伪造（dev 私钥真签名、声明的合并 hash 与真实合并�
   // 回滚断言：逐表行数与关键内容未变、版本未变（用独立只读句柄复核文件真实状态）
   const raw = new Database(copy, { readonly: true });
   const n = (sql: string) => (raw.prepare(sql).get() as { c: number }).c;
-  assert.equal(n(`SELECT COUNT(*) AS c FROM laws`), 36);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions`), 36);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM articles`), 3961);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM article_topics`), 141);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM laws`), 37);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions`), 37);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM articles`), 4017);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM article_topics`), 169);
   assert.equal(n(`SELECT COUNT(*) AS c FROM renumbering`), 0);
   assert.equal(n(`SELECT COUNT(*) AS c FROM source_registry`), 5);
   // V10 第 36 批：随包种子已有仲裁法 2025 年修订本（law_arbitration 一行），增量补的 2017 年修正本不得残留
