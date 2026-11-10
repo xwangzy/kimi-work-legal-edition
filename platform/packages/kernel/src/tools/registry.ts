@@ -443,7 +443,9 @@ export const TOOLS: readonly ToolDef[] = [
     name: "docx.revise",
     title: "在原件上修订（修订稿 + 清洁稿）",
     description:
-      "按律师意见修改已上传的 Word 原件：每处给出要改的原文（anchor，逐字照抄材料原文、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落），在原件副本上生成带修订痕迹的修订稿（保留原版式、编号、表格）与接受全部修订后的清洁稿，并由系统按实际写入的修改生成《修改对照表》（逐段修改前、修改后与理由），登记为本任务草稿成果；原件不变。dry_run=true 只试写：返回每个改到的段落改前与改后的整段文字，不生成文件，先读一遍再正式提交。任一处找不到或有歧义时整体不写，逐条返回原因，改正后重新提交。" +
+      "按律师意见修改已上传的 Word 原件：每处给出要改的原文（anchor，逐字照抄材料原文、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落），" +
+      "表格相关：insert_after_table=true 把新段落插在整张表格之后（“在第 6.1 款及其后表格之后新增一款”：anchor 写表格前紧挨着的那一段、或表格里任一格的原文，新款沿用表格前那一段的格式与自动编号）；insert_row_after=true 在 anchor 所在的表格行之后新增一行（proposed_text 各格用“｜”分隔，纵向合并的格子留空或不写；整行以修订痕迹显示）；delete_row=true 删除 anchor 所在的整行（proposed_text 为空串）。这四种落位一条修改只用一种。" +
+      "在原件副本上生成带修订痕迹的修订稿（保留原版式、编号、表格）与接受全部修订后的清洁稿，并由系统按实际写入的修改生成《修改对照表》（逐段修改前、修改后与理由），登记为本任务草稿成果；原件不变。dry_run=true 只试写：返回每个改到的段落改前与改后的整段文字，不生成文件，先读一遍再正式提交。任一处找不到或有歧义时整体不写，逐条返回原因，改正后重新提交。" +
       "页眉、页脚里的文字（材料正文里看不到，试写结果的 header_footer_text 会列出）也能改：该条 paragraph_hint 写“页眉”或“页脚”，anchor 照抄 header_footer_text 里的原文；页眉页脚不加批注，修改理由写在最终答复里。",
     sideEffect: "write_draft",
     resource: "matter_documents",
@@ -468,6 +470,9 @@ export const TOOLS: readonly ToolDef[] = [
               paragraph_hint: { type: "string" },
               comment: { type: "string" },
               insert_after: { type: "boolean" },
+              insert_after_table: { type: "boolean" },
+              insert_row_after: { type: "boolean" },
+              delete_row: { type: "boolean" },
             },
           },
         },
@@ -721,6 +726,7 @@ export const TOOLS: readonly ToolDef[] = [
     title: "起草本事项的审查要点（草稿）",
     description:
       "从本所或客户的范本（标准合同、采购标准、往来定稿）整理审查要点：每条写条款（topic）、我方标准（standard）、可退让（fallback，可省略）、不可谈（red_line，可省略），按范本原文概括，不添加范本里没有的立场。" +
+      "写 red_line 的条目必须同时给 red_line_quote：范本里写明这条底线的原句，逐字照抄（含“不得 / 必须 / 不接受 / 红线”这类字眼）；给不出原句的不要写 red_line——系统会逐字核对，核对不上的不可谈不写入。" +
       "只存为草稿交律师在事项概览“审查要点”里审定；律师启用之前，任何任务都不会按它审查。同一任务再次提交取代本任务上一份草稿。",
     sideEffect: "write_draft",
     resource: "matter_work",
@@ -738,7 +744,7 @@ export const TOOLS: readonly ToolDef[] = [
             type: "object",
             additionalProperties: false,
             required: ["topic", "standard"],
-            properties: { topic: { type: "string" }, standard: { type: "string" }, fallback: { type: "string" }, red_line: { type: "string" } },
+            properties: { topic: { type: "string" }, standard: { type: "string" }, fallback: { type: "string" }, red_line: { type: "string" }, red_line_quote: { type: "string" } },
           },
         },
       },

@@ -350,40 +350,80 @@ export interface CellPosition {
 export function paragraphCells(documentXml: string): (CellPosition | null)[] {
   const paras = mapParagraphs(documentXml);
   const TAG = /<(\/?)w:(tbl|tr|tc)\b[^>]*?(\/?)>/g;
-  type Frame = { table: number; row: number; col: number; lead: number | null };
+  // grid：这一格在表格网格里的起始列（前面各格的 w:gridSpan 累加）。合计行前几格横向合并时，“金额”那一格是第 2 个单元格、
+  // 却在第 4 列——列名要按网格列取（V16 第 41 批真实走查 D1：提示“5.2｜合计｜金额（元）”对不上，助手试了三次）
+  type Frame = { table: number; row: number; col: number; grid: number; span: number; lead: number | null };
   const stack: Frame[] = [];
   let tables = 0;
   const events = [...documentXml.matchAll(TAG)].filter((m) => m[3] !== "/");
   const out: (CellPosition | null)[] = [];
   const firstRow = new Map<string, string>();
+  const grids: number[] = [];
   let e = 0;
   let lastOutside: number | null = null;
   for (const p of paras) {
     while (e < events.length && events[e]!.index! < p.xmlStart) {
       const [, close, tag] = events[e]!;
       if (!close) {
-        if (tag === "tbl") stack.push({ table: ++tables, row: 0, col: 0, lead: stack.at(-1)?.lead ?? lastOutside });
+        if (tag === "tbl") stack.push({ table: ++tables, row: 0, col: 0, grid: 0, span: 1, lead: stack.at(-1)?.lead ?? lastOutside });
         else if (tag === "tr" && stack.length) {
           stack.at(-1)!.row += 1;
           stack.at(-1)!.col = 0;
-        } else if (tag === "tc" && stack.length) stack.at(-1)!.col += 1;
+          stack.at(-1)!.grid = 0;
+          stack.at(-1)!.span = 1;
+        } else if (tag === "tc" && stack.length) {
+          const f = stack.at(-1)!;
+          f.col += 1;
+          f.grid += f.col === 1 ? 1 : f.span;
+          // 本格的横向合并数：只看紧跟在 <w:tc> 后面的单元格属性
+          const at = events[e]!.index! + events[e]![0].length;
+          const tcPr = /^\s*<w:tcPr\b[^>]*>([\s\S]*?)<\/w:tcPr>/.exec(documentXml.slice(at, at + 2000))?.[1] ?? "";
+          f.span = Math.max(1, Number(/<w:gridSpan\b[^>]*w:val="(\d+)"/.exec(tcPr)?.[1] ?? 1));
+        }
       } else if (tag === "tbl") stack.pop();
       e += 1;
     }
     const f = stack.at(-1);
     if (!f || f.row === 0 || f.col === 0) {
       if (!f && p.text.trim()) lastOutside = p.index;
+      grids.push(0);
       out.push(null);
       continue;
     }
     if (f.row === 1) {
-      const k = `${f.table}:${f.col}`;
+      const k = `${f.table}:${f.grid}`;
       firstRow.set(k, `${firstRow.get(k) ?? ""}${p.text}`);
     }
+    grids.push(f.grid);
     out.push({ table: f.table, row: f.row, col: f.col, header: "", lead: f.lead });
   }
-  for (const c of out) if (c) c.header = (firstRow.get(`${c.table}:${c.col}`) ?? "").trim().slice(0, 20);
+  out.forEach((c, i) => {
+    if (c) c.header = (firstRow.get(`${c.table}:${grids[i]}`) ?? "").trim().slice(0, 20);
+  });
   return out;
+}
+
+/**
+ * 包着 pos 的 w:tbl / w:tr（成对标签按嵌套配对）：inner 取最内层、outer 取最外层；不在其中返回 null。
+ * “w:tbl\b”不会认到 w:tblPr、w:tblGrid（后面紧跟字母，没有词边界），w:tr 同理不认 w:trPr。
+ */
+export function enclosingElement(xml: string, name: "tbl" | "tr", pos: number, which: "inner" | "outer"): { start: number; end: number } | null {
+  const re = new RegExp(`<(/?)w:${name}\\b[^>]*?(/?)>`, "g");
+  const stack: number[] = [];
+  const found: { start: number; end: number }[] = [];
+  for (const m of xml.matchAll(re)) {
+    if (m[2] === "/") continue;
+    if (!m[1]) {
+      if (m.index! > pos && stack.length === 0) break;
+      stack.push(m.index!);
+      continue;
+    }
+    const start = stack.pop();
+    const end = m.index! + m[0].length;
+    if (start !== undefined && start <= pos && end > pos) found.push({ start, end });
+  }
+  if (found.length === 0) return null;
+  return which === "inner" ? found[0]! : found.at(-1)!;
 }
 
 /** 单元格位置的律师说法：“表 2 第 3 行第 2 列（单价）”；首行本身不带列名。 */

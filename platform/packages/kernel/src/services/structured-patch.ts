@@ -33,6 +33,12 @@ export interface StructuredPatch {
   comment?: string;
   /** 段后插入（v9.4 第 19 批 C-02 缺失条款）：不改锚点，在锚点所在段落之后插入 proposed_text（按换行分段）。 */
   insert_after?: boolean;
+  /** 表后插入（V16 第 41 批）：在锚点所在表格（或锚点段落后面紧跟的表格）之后插入 proposed_text；格式与自动编号取表格前那一段。 */
+  insert_after_table?: boolean;
+  /** 表格新增一行（V16 第 41 批）：在锚点所在行之后加一行，proposed_text 各格用“｜”分隔。 */
+  insert_row_after?: boolean;
+  /** 删除锚点所在的表格行（V16 第 41 批）：proposed_text 须为空。 */
+  delete_row?: boolean;
 }
 
 export interface PatchConflict {
@@ -47,6 +53,7 @@ export interface PatchConflict {
     | "overlap"
     | "complex_structure"
     | "new_clause_in_edit"
+    | "bad_placement"
     | "apply_failed";
   detail?: string;
 }
@@ -115,6 +122,8 @@ export interface PatchSpan {
   old: string;
   new: string;
   insert?: true;
+  /** 落在表格上的方式（V16 第 41 批）：表后插入、新增一行、删除一行。 */
+  placement?: "after_table" | "row_inserted" | "row_deleted";
 }
 
 export const AI_REVISION_AUTHOR = "Kimi Work 法律助手（AI 建议，待律师确认）";
@@ -221,7 +230,12 @@ export function numberingShifts(before: Buffer, after: Buffer): NumberingShifts 
 }
 
 /** 合并写入时先做段后插入（不改原有段落文字），再做替换：替换不会把插入的锚点改掉（复核 Q2-06）；各自保持原先后次序。 */
-const insertsFirst = (ops: readonly RevisionOp[]): RevisionOp[] => [...ops.filter((o) => o.insertAfter), ...ops.filter((o) => !o.insertAfter)];
+// V16 第 41 批：新增表格行与段后、表后插入一样先做；删除表格行最后做（同一行里另有改字的，由文书引擎报“落在同一处”）
+const insertsFirst = (ops: readonly RevisionOp[]): RevisionOp[] => [
+  ...ops.filter((o) => o.insertAfter || o.insertRowAfter),
+  ...ops.filter((o) => !o.insertAfter && !o.insertRowAfter && !o.deleteRow),
+  ...ops.filter((o) => o.deleteRow),
+];
 
 export function applyStructuredPatches(
   deps: { db: KernelDb; blobs: BlobStore; tokens: MatterTokenStore },
@@ -291,7 +305,14 @@ export function applyStructuredPatches(
     if (anchor.length === 0) return void conflicts.push({ index, reason: "anchor_empty" });
     if (sha256Hex(anchor) !== String(p?.expected_text_hash ?? "")) return void conflicts.push({ index, reason: "anchor_hash_mismatch" });
     const part = headerFooterHint(p?.paragraph_hint);
-    const newLabel = p?.insert_after === true ? null : newClauseInEdit(anchor, proposed);
+    // 表格上的三种写法与段后插入互斥；删除表格行不带新文字（V16 第 41 批）
+    const tableModes = [p?.insert_after_table === true, p?.insert_row_after === true, p?.delete_row === true].filter(Boolean).length;
+    if (tableModes > 1 || (tableModes === 1 && p?.insert_after === true && p?.insert_after_table !== true)) return void conflicts.push({ index, reason: "bad_placement", detail: "insert_after、insert_after_table、insert_row_after、delete_row 一条修改只能用一种" });
+    if (p?.delete_row === true && proposed.trim() !== "") return void conflicts.push({ index, reason: "bad_placement", detail: "delete_row 删除整行，proposed_text 须为空串；只改某一格的字不要用 delete_row" });
+    if ((p?.insert_after_table === true || p?.insert_row_after === true) && proposed.trim() === "") return void conflicts.push({ index, reason: "bad_placement", detail: "新增的内容不能为空" });
+    if (tableModes === 1 && part) return void conflicts.push({ index, reason: "bad_placement", detail: "页眉页脚里只能改字" });
+    const inserting = p?.insert_after === true || p?.insert_after_table === true || p?.insert_row_after === true || p?.delete_row === true;
+    const newLabel = inserting ? null : newClauseInEdit(anchor, proposed);
     if (newLabel) return void conflicts.push({ index, reason: "new_clause_in_edit", detail: `新文字里换行后是新的“${newLabel}”` });
     if (part) {
       if (p.insert_after === true) return void conflicts.push({ index, reason: "apply_failed", detail: "页眉页脚只能改字，不能插入新段落" });
@@ -315,7 +336,10 @@ export function applyStructuredPatches(
       },
       originalHash: sha256Hex(a.text),
       newText: n.text,
-      ...(p.insert_after === true ? { insertAfter: true } : {}),
+      ...(p.insert_after === true || p.insert_after_table === true ? { insertAfter: true } : {}),
+      ...(p.insert_after_table === true ? { afterTable: true } : {}),
+      ...(p.insert_row_after === true ? { insertRowAfter: true } : {}),
+      ...(p.delete_row === true ? { deleteRow: true } : {}),
       ...(c && !part ? { comment: c.text } : {}),
       author: input.author ?? AUTHOR,
     });
@@ -330,13 +354,28 @@ export function applyStructuredPatches(
     return at;
   };
   const spans: PatchSpan[] = [];
+  let cellsCache: ReturnType<typeof paragraphCells> | null = null;
+  const bodyCells = (): ReturnType<typeof paragraphCells> => {
+    if (cellsCache) return cellsCache;
+    try {
+      cellsCache = paragraphCells(readZipText(buf, "word/document.xml") ?? "");
+    } catch {
+      cellsCache = [];
+    }
+    return cellsCache;
+  };
   const labelNotes: { index: number; dropped: string[] }[] = [];
   const hfRows: ChangeRow[] = [];
   for (const op of ops) {
     const index = Number(op.opId.slice(1));
     let located: number | undefined;
+    let formatAt: number | undefined;
+    let placement: PatchSpan["placement"];
     try {
-      located = applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops: [op] }).applied[0]?.paragraphIndex;
+      const one = applyRevisionsToDocx(buf, { baselineHash: doc.sha256, ops: [op] }).applied[0];
+      located = one?.paragraphIndex;
+      formatAt = one?.formatParagraphIndex;
+      placement = one?.placement;
     } catch (e) {
       const msg = (e as Error).message;
       conflicts.push({
@@ -347,11 +386,19 @@ export function applyStructuredPatches(
             ? "anchor_not_found"
             : /同一处/.test(msg)
               ? "overlap"
-              : /修订痕迹|超链接|内容控件|域|脚注|特殊符号|嵌入对象|结构不完整/.test(msg)
-                ? "complex_structure"
-                : "apply_failed",
+              : /后面不是表格|不在表格里|应有 \d+ 格|没有文字|新文字须为空|没有正文段落可以沿用/.test(msg)
+                ? "bad_placement"
+                : /修订痕迹|超链接|内容控件|域|脚注|特殊符号|嵌入对象|结构不完整|无法自动|嵌着表格/.test(msg)
+                  ? "complex_structure"
+                  : "apply_failed",
         detail: msg.slice(0, 200),
       });
+      continue;
+    }
+    // 普通的段后插入落在表格单元格里（V16 第 41 批真实走查 D1）：律师要“表格新增一行”“在第 6.1 款及其表格之后新增一款”，
+    // 助手把锚点写在格子里用 insert_after——结果是格内多了一段带制表符的文字，表格没有多一行，回报却写“已新增一行”。这种落位一律不写，告诉助手该用哪一种
+    if (op.insertAfter && !op.afterTable && located !== undefined && bodyCells()[located]) {
+      conflicts.push({ index, reason: "bad_placement", detail: "锚点在表格单元格里，段后插入只会在这一格里多出一段，不会新增表格行，也不会落到表格之后：要加一行用 insert_row_after（各格用“｜”分隔）；要把新款插在整张表之后用 insert_after_table；确实只想在这一格里另起一行字的，把这一格的原文作为 anchor 改写，新文字里用换行" });
       continue;
     }
     // 页眉页脚：不参与正文的段落定位与编号处理；对照表单列一行（位置写“页眉 / 页脚”，修改理由取助手给的批注）
@@ -371,10 +418,11 @@ export function applyStructuredPatches(
     const target = located !== undefined && paragraphs[located] !== undefined ? { i: located, at: nth(paragraphs[located]!, op.anchor.originalText, occ) } : undefined;
     // 段首编号是自动编号的：新文字开头抄进去的编号去掉（第 34 批 T3b：锚点里的“11.2”在定位前去掉了，新文字里的没去，
     // Word 里显示成“11.2 11.2 保证范围……”；插入的条款继承自动编号，“8.3 乙方违约的……”同样重号）。原文段首本来就写着编号的不动
-    const lab = target ? labels[target.i] : null;
+    // 表后插入的新款沿用表格前那一段的编号（V16 第 41 批）：抄进去的编号按那一段的编号样式去掉；表格行不处理
+    const lab = target && !op.insertRowAfter && !op.deleteRow ? (labels[op.afterTable && formatAt !== undefined ? formatAt : target.i] ?? null) : null;
     if (target && lab && (op.insertAfter || target.at === 0)) {
       const re = leadingLabel(lab);
-      if (!re.test(paragraphs[target.i]!)) {
+      if (!re.test(paragraphs[op.afterTable && formatAt !== undefined ? formatAt : target.i]!)) {
         const lines = op.newText.split("\n");
         const fixed = lines.map((l, li) => (op.insertAfter || li === 0 ? l.replace(re, "") : l));
         const dropped = lines.map((l, li) => (fixed[li] !== l ? (re.exec(l)?.[0] ?? "").trim() : "")).filter(Boolean);
@@ -384,7 +432,7 @@ export function applyStructuredPatches(
         }
       }
     }
-    if (target && target.at >= 0) spans.push({ index, para: target.i, start: target.at, end: target.at + op.anchor.originalText.length, old: op.anchor.originalText, new: op.newText, ...(op.insertAfter ? { insert: true as const } : {}) });
+    if (target && target.at >= 0) spans.push({ index, para: target.i, start: target.at, end: target.at + op.anchor.originalText.length, old: op.anchor.originalText, new: op.newText, ...(op.insertAfter || op.insertRowAfter || op.deleteRow ? { insert: true as const } : {}), ...(placement ? { placement } : {}) });
   }
   for (let i = 0; i < spans.length; i++) {
     for (let j = i + 1; j < spans.length; j++) {
@@ -442,7 +490,7 @@ export function applyStructuredPatches(
      VALUES (?,?,?,?,?,?,NULL,'internal','draft',?,?,?,?,?,?,?)`,
     [artifactId, doc.tenant_id, doc.matter_id, input.run_id ?? null, kind, v.next, filename, stored.sha256, stored.storage_uri, "[]", JSON.stringify(manifest), input.created_by, docLineage(doc.document_version_id)],
   );
-  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(buf, sanitizeDocx(out).docx), label_notes: labelNotes, changes: [...hfRows, ...changeRows(paragraphs, labels, spans, ops, paragraphPlaces(buf, paragraphs, labels))] };
+  return { status: "applied", artifact_version_id: artifactId, filename, sha256: stored.sha256, applied: ops.length, tokens_restored: tokensRestored, preview, numbering: numberingShifts(buf, sanitizeDocx(out).docx), label_notes: labelNotes, changes: [...hfRows, ...changeRows(paragraphs, labels, spans, ops, paragraphPlaces(buf, paragraphs, labels), rowTexts(buf, paragraphs))] };
 }
 
 /**
@@ -474,6 +522,25 @@ function paragraphPlaces(docx: Buffer, paragraphs: readonly string[], labels: re
   });
 }
 
+/** 某段所在表格行的整行文字（各格用“｜”连接）；不在表格里返回 null。对照表写“整行删除”的修改前文字用。 */
+function rowTexts(docx: Buffer, paragraphs: readonly string[]): (para: number) => string | null {
+  let cells: ReturnType<typeof paragraphCells> = [];
+  try {
+    cells = paragraphCells(readZipText(docx, "word/document.xml") ?? "");
+  } catch {
+    cells = [];
+  }
+  return (para) => {
+    const c = cells[para];
+    if (!c) return null;
+    const byCol = new Map<number, string[]>();
+    cells.forEach((x, i) => {
+      if (x && x.table === c.table && x.row === c.row) byCol.set(x.col, [...(byCol.get(x.col) ?? []), (paragraphs[i] ?? "").trim()]);
+    });
+    return [...byCol.entries()].sort((a, b) => a[0] - b[0]).map(([, t]) => t.filter(Boolean).join(" ")).join("｜");
+  };
+}
+
 /** paragraph_hint 写“页眉”“页脚”（可带“首页页眉”等字样）时改的是页眉页脚（V10 第 36 批）。 */
 export function headerFooterHint(hint: unknown): "header" | "footer" | null {
   if (typeof hint !== "string") return null;
@@ -483,7 +550,7 @@ export function headerFooterHint(hint: unknown): "header" | "footer" | null {
   return null;
 }
 
-function changeRows(paragraphs: readonly string[], labels: readonly (string | null)[], spans: readonly PatchSpan[], ops: readonly RevisionOp[], places: readonly (string | null)[] = []): ChangeRow[] {
+function changeRows(paragraphs: readonly string[], labels: readonly (string | null)[], spans: readonly PatchSpan[], ops: readonly RevisionOp[], places: readonly (string | null)[] = [], rowTextOf?: (para: number) => string | null): ChangeRow[] {
   const comment = (i: number) => ops.find((o) => o.opId === `p${i}`)?.comment ?? "";
   const byPara = new Map<number, PatchSpan[]>();
   for (const sp of spans) byPara.set(sp.para, [...(byPara.get(sp.para) ?? []), sp]);
@@ -498,7 +565,14 @@ function changeRows(paragraphs: readonly string[], labels: readonly (string | nu
       for (const sp of [...edits].sort((a, b) => b.start - a.start)) after = after.slice(0, sp.start) + sp.new + after.slice(sp.end);
       rows.push({ para, label, place, kind: after.trim() ? "edit" : "delete", before, after, reason: [...new Set(edits.map((x) => comment(x.index)).filter(Boolean))].join("；") });
     }
-    for (const sp of list.filter((x) => x.insert)) rows.push({ para, label, place, kind: "insert", before, after: sp.new, reason: comment(sp.index) });
+    for (const sp of list.filter((x) => x.insert)) {
+      // 表格上的修改（V16 第 41 批）：位置写清是整张表之后、哪一行之后，还是整行删除
+      const rowPlace = (place ?? "").replace(/·[^·]*$/, "");
+      if (sp.placement === "row_deleted") rows.push({ para, label, place: `${rowPlace || place || ""}（整行删除）`, kind: "delete", before: rowTextOf?.(para) ?? before, after: "", reason: comment(sp.index) });
+      else if (sp.placement === "row_inserted") rows.push({ para, label, place: `${rowPlace || place || ""}（新增一行）`, kind: "insert", before, after: sp.new.replace(/\t/g, "｜"), reason: comment(sp.index), row: true });
+      else if (sp.placement === "after_table") rows.push({ para, label, place: `${(place ?? "").replace(/表格.*$/, "") || label || ""}表格`, kind: "insert", before, after: sp.new, reason: comment(sp.index) });
+      else rows.push({ para, label, place, kind: "insert", before, after: sp.new, reason: comment(sp.index) });
+    }
   }
   return rows;
 }
@@ -516,6 +590,8 @@ export interface ChangeRow {
   /** edit：修改后的整段文字；delete：空；insert：新增的文字。 */
   after: string;
   reason: string;
+  /** insert 且新增的是表格行（V16 第 41 批）：对照表写“在……行之后新增一行”。 */
+  row?: boolean;
 }
 
 /**

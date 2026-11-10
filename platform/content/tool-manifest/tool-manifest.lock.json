@@ -171,7 +171,7 @@
         "drafting",
         "contract_review"
       ],
-      "schemaHash": "cc5ccff7c19d9dd28fd4fe408019d6a9f242a89ddf80e2979ac6ac1c79d710c1"
+      "schemaHash": "7938cda214d09fc842ecd32a078137f8cec55bd41b03de969adf1ae2c67ae258"
     },
     {
       "name": "docx.edit_draft",
@@ -377,7 +377,7 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "fa62de6124bb0e2a96de87bc0b174d950816b7037e2681e5635a059622169791"
+      "schemaHash": "f766bf47c0e279fa9b0f5ec0b02ae38557bab5e32dae7c990cf9387dc55e9fb4"
     }
   ]
 }

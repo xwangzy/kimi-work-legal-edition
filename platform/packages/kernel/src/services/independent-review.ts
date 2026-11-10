@@ -11,7 +11,7 @@
 import { compareDocx, docxListLabels, extractParagraphs, readZipEntries } from "@zr-legal/docx-engine";
 import { sectionsOfDocx } from "../tools/tools/edit-draft.ts";
 
-export type ReviewKind = "draft" | "revise" | "opinion" | "pleading" | "review";
+export type ReviewKind = "draft" | "revise" | "opinion" | "pleading" | "review" | "letter" | "report";
 
 /** 复核哪些方法（主交付物是 Word 文书的起草、修改、意见、诉讼文书、审查意见书）。 */
 export const REVIEW_KIND_OF_SKILL: Readonly<Record<string, ReviewKind>> = Object.freeze({
@@ -26,8 +26,19 @@ export const REVIEW_KIND_OF_SKILL: Readonly<Record<string, ReviewKind>> = Object
   "appeal-draft": "pleading",
   "arbitration-application": "pleading",
   "labor-arbitration-draft": "pleading",
-  "demand-letter": "pleading",
+  // V16 第 41 批：律师函、催告函、解除通知不是诉讼文书——按“函件”复核（函件类型、法律效果与律师选定的路径是否一致）。
+  // V14 I1-C 否决：律师选“先发最后催告”，函件仍写“我司已有权主张解除合同”，按诉讼文书清单复核时没有任何一项会查到
+  "demand-letter": "letter",
   "contract-review": "review",
+  // V16 第 41 批（卡片—方法盘点：11 个方法、15 张卡的 Word 主交付物不经复核）：补上诉讼文书、意见类与汇报类
+  "agency-statement": "pleading",
+  "cross-exam-opinion": "pleading",
+  "preservation-application": "pleading",
+  "enforcement-application": "pleading",
+  "policy-review": "opinion",
+  "labor-dispute": "opinion",
+  "due-diligence": "opinion",
+  "case-report": "report",
 });
 
 export interface ReviewDoc {
@@ -141,6 +152,22 @@ const FOCUS: Record<ReviewKind, string> = {
     "3. 法律依据与请求权基础是否对应；对方最可能的抗辩是否有回应；备位主张是否写到。",
     "4. 程序事项：管辖、时效或期间、答辩期、证据目录与证据是否对应。",
   ].join("\n"),
+  letter: [
+    "1. 函件类型与法律效果：这是催告、主张权利、解除通知还是保证责任主张？函件标题、主张、要求与逾期后果是否自洽；律师在任务中选定了路径的（例如“先催告、期满未履行再解除”），函件与最终答复有没有写成另一条路径（例如写“我方已有权解除”“现通知解除”）。",
+    "2. 权利是否已经产生：解除权、加速到期、保证责任等的前提（催告并给合理期限、约定事由成就、通知义务）材料能否证明；不能证明的，函件只能写附条件的表述。",
+    "3. 事实、金额、期限与材料逐项对照，金额能否复算（写出算式）；履行期限的起算与长度是否合理、是否算准。",
+    "4. 有没有替我方承认不利事实、放弃权利或作出超出授权的承诺；有没有可能被对方反用的表述（自认违约、确认对方抗辩）。",
+    "5. 收件人与送达：主体全称、送达地址与合同约定的通知条款是否一致；是否需要同时发保证人或其他义务人。",
+    "6. 法律依据是否与主张对应；不确定的写“需核验”，不要编造法条。",
+  ].join("\n"),
+  report: [
+    "1. 读者是谁（客户管理层 / 当事人）：结论与需要对方决定的事项是否写在最前面，是否用读者能懂的话。",
+    "2. 事实、金额、日期、程序阶段与材料逐项对照；律师或客户单方的说法有没有被写成已查明事实；未经核实的是否如实标明。",
+    "3. 期限：答辩期、举证期、上诉期、申请执行期等是否算准并写明到期日；临期的有没有放在显著位置。",
+    "4. 风险判断与金额敞口是否有依据、是否与材料里的不利事实相符；有没有只报喜不报忧。",
+    "5. 有没有把写给律师看的内部判断（底线、策略、对客户不利的自我评价）写进给客户或管理层的版本；有没有内部编号、系统用语。",
+    "6. 下一步：谁、在什么日期之前、做什么，是否可执行。",
+  ].join("\n"),
   review: [
     "1. 审查意见是否覆盖了对我方影响最大的条款（按金额敞口排序），定级是否与算出的敞口相称。",
     "2. 每条意见的事实与条文是否与合同原文一致，修改建议是否给出可直接替换的条款文字。",
@@ -155,6 +182,8 @@ const ROLE: Record<ReviewKind, string> = {
   opinion: "下面是一位律师助理按委托写出的法律意见",
   pleading: "下面是一位律师助理按委托起草的诉讼或仲裁文书",
   review: "下面是一位律师助理对合同做的审查意见",
+  letter: "下面是一位律师助理按委托起草的律师函、催告函或通知",
+  report: "下面是一位律师助理按委托写给客户或管理层的案件进展汇报",
 };
 
 export function reviewMessages(p: {
@@ -189,7 +218,11 @@ export function reviewMessages(p: {
     `【事项口径】我方立场：${p.stance}；法域：${p.jurisdiction}；分析截止日：${p.asOf}`,
     `【委托原话】\n${p.goal}`,
     ...(p.answers && p.answers.length > 0
-      ? [`【律师在任务中的答复】（律师对助手提问的回答，与委托原话同等对待：交付件按这些答复写成确定内容的，不算无出处，不要求改回待定）\n${cut(p.answers.join("\n"), 8_000)}`]
+      ? [
+          `【律师在任务中的答复】（律师对助手提问的回答，与委托原话同等对待：交付件按这些答复写成确定内容的，不算无出处，不要求改回待定）\n${cut(p.answers.join("\n"), 8_000)}`,
+          // V16 第 41 批（V14 I1-C 否决的根因之一）：答复原先只起“免责”作用，没有人核对成文是否照答复写
+          "【先做这一步】逐条核对上面每一项答复是否落实：在交付件里找到落实它的条款或段落；交付件或最终答复与答复相反、只落实了一半、按另一个选项写、或者算式没有按答复的数字重算的，列为“必须改”，依据写“律师答复：……”，改法给出按答复应有的写法。全部落实的不用列。",
+        ]
       : []),
     "【复核方法】逐项做，不要只看文字是否通顺：",
     FOCUS[p.kind],

@@ -8,7 +8,7 @@
 import { dropHouseMark } from "./house-style.ts";
 import { DomainError, sha256Hex } from "@zr-legal/domain";
 import { readZipEntries, writeZip } from "./zip.ts";
-import { childElements, escapeXml, findElement, findInParagraph, mapParagraph, mapParagraphs, paragraphCells, removeElements, splitParagraphRuns, type ParagraphMap, type TextSegment } from "./textmap.ts";
+import { childElements, enclosingElement, escapeXml, findElement, findInParagraph, mapParagraph, mapParagraphs, paragraphCells, removeElements, splitParagraphRuns, type ParagraphMap, type TextSegment } from "./textmap.ts";
 import { paragraphListLabels } from "./numbering.ts";
 import type { AppliedRevision, RevisionOp, RevisionPlan } from "./revision-ops.ts";
 
@@ -172,6 +172,26 @@ function applyOne(
     });
   }
   const paragraphIndex = origIndex.get(target)!;
+  if (op.insertRowAfter) return insertRowAfter(xml, target, op, comments, nextId, applied, paragraphIndex);
+  if (op.deleteRow) return deleteRow(xml, target, op, comments, nextId, applied, paragraphIndex);
+  if (op.insertAfter && op.afterTable) {
+    // 表后插入（V16 第 41 批）：锚点在表里的，取最外层那张表、格式取表前最近一段有字的正文；锚点是表前那一段的，它后面必须紧跟表格
+    let tbl = enclosingElement(xml, "tbl", target.xmlStart, "outer");
+    let fmt = target;
+    if (tbl) {
+      const lead = paras.findLast((p) => p.xmlEnd <= tbl!.start && p.text.trim() !== "" && !enclosingElement(xml, "tbl", p.xmlStart, "outer"));
+      if (!lead) throw new DomainError("anchor_mismatch", `修订 ${op.opId} 表格前面没有正文段落可以沿用格式：改用表格之后那一段作锚点，在它之前或之后另行处理，或转人工`, 422, { opId: op.opId });
+      fmt = lead;
+    } else {
+      const m = /^(?:\s|<w:bookmark(?:Start|End)\b[^>]*\/>|<w:p\b[^>]*\skwl-ins="[^>]*>[\s\S]*?<\/w:p>)*<w:tbl\b/.exec(xml.slice(target.xmlEnd));
+      tbl = m ? enclosingElement(xml, "tbl", target.xmlEnd + m[0].length, "outer") : null;
+      if (!tbl) throw new DomainError("anchor_mismatch", `修订 ${op.opId} 锚点所在段落后面不是表格：要插在表格之后的，锚点写表格前面紧挨着的那一段、或表格里任一格的原文；不是插在表格之后的，去掉 insert_after_table`, 422, { opId: op.opId });
+    }
+    const fmtIndex = origIndex.get(fmt) ?? paragraphIndex;
+    const heading = articleHeadingFor(paras, labels, fmtIndex, op.newText);
+    const tableNo = (xml.slice(0, tbl.start).match(/<w:tbl\b/g) ?? []).length + 1;
+    return insertParagraphsAfter(xml, fmt, op, comments, nextId, applied, paragraphIndex, heading && { para: heading, labeled: !!labels[origIndex.get(heading) ?? -1] }, { at: tbl.end, key: String(900000 + tableNo), formatParagraphIndex: fmtIndex });
+  }
   if (op.insertAfter) {
     const heading = articleHeadingFor(paras, labels, paragraphIndex, op.newText);
     return insertParagraphsAfter(xml, target, op, comments, nextId, applied, paragraphIndex, heading && { para: heading, labeled: !!labels[origIndex.get(heading) ?? -1] });
@@ -494,6 +514,8 @@ function insertParagraphsAfter(
   applied: AppliedRevision[],
   paragraphIndex: number,
   heading: { para: ParagraphMap; labeled: boolean } | null = null,
+  /** 表后插入：新段落放在 at（表格结束处），同一张表之后的多条插入按 key 接在一起；格式仍取 target（表前那一段）。 */
+  place: { at: number; key: string; formatParagraphIndex: number } | null = null,
 ): string {
   const lines = op.newText.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
   if (lines.length === 0) throw new DomainError("anchor_mismatch", `修订 ${op.opId} 插入的条款为空`, 422, { opId: op.opId });
@@ -530,7 +552,18 @@ function insertParagraphsAfter(
       `<w:ins w:id="${insId}" w:author="${author}" w:date="${date}" kwl-new="1"><w:r>${heading && i === 0 ? headRpr : rpr}${runContent(line)}</w:r></w:ins>${close}</w:p>`
     );
   });
-  applied.push({ opId: op.opId, status: "applied", paragraphIndex });
+  if (place) {
+    applied.push({ opId: op.opId, status: "applied", paragraphIndex, formatParagraphIndex: place.formatParagraphIndex, placement: "after_table" });
+    const taggedAfter = paras.map((p) => p.replace(/^<w:p>/, `<w:p kwl-ins="${place.key}">`));
+    let pos = place.at;
+    for (;;) {
+      const m = /^<w:p\b[^>]*>[\s\S]*?<\/w:p>/.exec(xml.slice(pos));
+      if (!m || !m[0].startsWith(`<w:p kwl-ins="${place.key}">`)) break;
+      pos += m[0].length;
+    }
+    return xml.slice(0, pos) + taggedAfter.join("") + xml.slice(pos);
+  }
+  applied.push({ opId: op.opId, status: "applied", paragraphIndex, formatParagraphIndex: paragraphIndex });
   // 同一段之后已经插过的（复核 Q2-04）：接在它们后面，最终顺序与写入顺序一致；目标段落打上编号，写完统一去掉
   const head = /^<w:p\b[^>]*>/.exec(paraXml)![0];
   const known = /\skwl-anchor="(\d+)"/.exec(head)?.[1];
@@ -545,6 +578,175 @@ function insertParagraphsAfter(
   }
   out = out.slice(0, at) + tagged.join("") + out.slice(at);
   return out;
+}
+
+/** 一行里的各部分：行属性、表格属性例外、各单元格（直接子元素）。结构里有内容控件等包着单元格的，返回 null（不自动改）。 */
+function rowParts(rowXml: string): { open: string; pre: string; trPr: string; cells: string[] } | null {
+  const open = /^<w:tr\b[^>]*>/.exec(rowXml)?.[0];
+  if (!open || !rowXml.endsWith("</w:tr>")) return null;
+  const inner = rowXml.slice(open.length, rowXml.length - "</w:tr>".length);
+  let pre = "";
+  let trPr = "";
+  const cells: string[] = [];
+  for (const c of childElements(inner)) {
+    const el = inner.slice(c.start, c.end);
+    if (c.name === "w:tblPrEx") pre = el;
+    else if (c.name === "w:trPr") trPr = el;
+    else if (c.name === "w:tc") cells.push(el);
+    else if (c.name === "w:bookmarkStart" || c.name === "w:bookmarkEnd" || c.name === "w:proofErr") continue;
+    else return null;
+  }
+  return cells.length > 0 ? { open, pre, trPr, cells } : null;
+}
+
+/** 行属性里加上行级修订标记（w:ins / w:del 排在行属性的最后，只在 w:trPrChange 之前）；原有的行级修订标记去掉。 */
+function trPrWith(trPr: string, mark: string, forNewRow: boolean): string {
+  let body = trPr && !trPr.endsWith("/>") ? trPr.slice(trPr.indexOf(">") + 1, trPr.length - "</w:trPr>".length) : "";
+  body = removeElements(body, ["w:trPrChange"]).replace(/<w:(?:ins|del)\b[^>]*\/>/g, "");
+  // 新增的行不是表头行：不带“在各页顶端重复”
+  if (forNewRow) body = body.replace(/<w:tblHeader\b[^>]*\/>/g, "");
+  return `<w:trPr>${body}${mark}</w:trPr>`;
+}
+
+const splitRowCells = (text: string): string[] => {
+  const t = text.replace(/\r?\n/g, " ");
+  const parts = t.includes("｜") ? t.split("｜") : t.includes("\t") ? t.split("\t") : t.split("|");
+  // “| a | b |”这种写法首尾各多出一个空串
+  if (parts.length > 2 && parts[0]!.trim() === "" && parts.at(-1)!.trim() === "" && !t.includes("\t")) return parts.slice(1, -1).map((x) => x.trim());
+  return parts.map((x) => x.trim());
+};
+
+/**
+ * 表格新增一行（V16 第 41 批；真实走查 D1：律师要求“附件三表格在‘甲方运维对接人’一行之后新增一行”，原先工具只能在格子里加段落，
+ * 助手如实回报“未写入，请在 Word 里手工加”）。新行照抄锚点所在行每一格的单元格属性与首段、首个 run 的格式；纵向合并的格子续接合并。
+ */
+function insertRowAfter(
+  xml: string,
+  target: ParagraphMap,
+  op: RevisionOp,
+  comments: { id: number; author: string; date: string; text: string }[],
+  nextId: () => number,
+  applied: AppliedRevision[],
+  paragraphIndex: number,
+): string {
+  const row = enclosingElement(xml, "tr", target.xmlStart, "inner");
+  if (!row) throw new DomainError("anchor_mismatch", `修订 ${op.opId} 锚点不在表格里：新增表格行的锚点写要接在其后的那一行里任一格的原文`, 422, { opId: op.opId });
+  const parts = rowParts(xml.slice(row.start, row.end));
+  if (!parts) throw new DomainError("anchor_mismatch", `修订 ${op.opId} 这一行的结构无法自动复制（单元格外面包着内容控件等）：请在 Word 里手工加这一行`, 422, { opId: op.opId });
+  const merged = parts.cells.map((c) => /<w:vMerge\b/.test(findElementText(c, "w:tcPr")));
+  const free = merged.filter((m) => !m).length;
+  const texts = splitRowCells(op.newText);
+  let cellTexts: string[];
+  if (texts.length === parts.cells.length) cellTexts = texts.map((t, i) => (merged[i] ? "" : t));
+  else if (texts.length === free) {
+    let k = 0;
+    cellTexts = merged.map((m) => (m ? "" : texts[k++]!));
+  } else {
+    throw new DomainError("anchor_mismatch", `修订 ${op.opId} 新增的表格行应有 ${parts.cells.length} 格${free !== parts.cells.length ? `（其中 ${parts.cells.length - free} 格是纵向合并的，可以留空或不写，即写 ${free} 格）` : ""}，收到 ${texts.length} 格：各格文字用“｜”分隔，空格子留空`, 422, { opId: op.opId });
+  }
+  if (cellTexts.every((t) => t === "")) throw new DomainError("anchor_mismatch", `修订 ${op.opId} 新增的表格行没有文字`, 422, { opId: op.opId });
+  const date = new Date().toISOString();
+  const author = escapeXml(op.author);
+  let commentId = -1;
+  if (op.comment) {
+    commentId = nextId();
+    comments.push({ id: commentId, author: op.author, date, text: op.comment });
+  }
+  const firstText = cellTexts.findIndex((t) => t !== "");
+  const key = String(800000 + (xml.slice(0, row.start).match(/<w:tr\b/g) ?? []).length + 1);
+  const cells = parts.cells.map((cell, i) => {
+    let tcPr = findElementText(cell, "w:tcPr");
+    if (tcPr) {
+      tcPr = removeElements(tcPr, ["w:tcPrChange"]).replace(/<w:(?:cellIns|cellDel|cellMerge)\b[^>]*\/>/g, "");
+      // 纵向合并：新行在合并组里续接（起始格改成续接）
+      tcPr = tcPr.replace(/<w:vMerge\b[^>]*\/>/, "<w:vMerge/>");
+    }
+    const firstPara = /<w:p\b[^>]*>[\s\S]*?<\/w:p>|<w:p\b[^>]*\/>/.exec(cell.replace(/<w:tbl\b[\s\S]*<\/w:tbl>/, ""))?.[0] ?? "";
+    const pPrEl = firstPara ? findElement(firstPara, "w:pPr") : null;
+    const pPrFull = pPrEl ? firstPara.slice(pPrEl.start, pPrEl.end) : "";
+    const pPr = pPrFull && !pPrFull.endsWith("/>") ? removeElements(pPrFull.slice(pPrFull.indexOf(">") + 1, pPrFull.length - "</w:pPr>".length), ["w:sectPr", "w:rPr", "w:pPrChange", "w:numPr"]) : "";
+    const rPrEl = /<w:r\b[^>]*>\s*(<w:rPr\b[^>]*>[\s\S]*?<\/w:rPr>)/.exec(firstPara)?.[1] ?? "";
+    const rPr = cleanRpr(rPrEl || null);
+    const text = cellTexts[i]!;
+    const markId = nextId();
+    const mark = `<w:rPr><w:ins w:id="${markId}" w:author="${author}" w:date="${date}"/></w:rPr>`;
+    if (!text) return `<w:tc>${tcPr}<w:p kwl-ins="${key}"><w:pPr>${pPr}${mark}</w:pPr></w:p></w:tc>`;
+    const insId = nextId();
+    const open = i === firstText && commentId >= 0 ? `<w:commentRangeStart w:id="${commentId}"/>` : "";
+    const close = i === firstText && commentId >= 0 ? commentEnd(commentId) : "";
+    return `<w:tc>${tcPr}<w:p kwl-ins="${key}"><w:pPr>${pPr}${mark}</w:pPr>${open}<w:ins w:id="${insId}" w:author="${author}" w:date="${date}" kwl-new="1"><w:r>${rPr}${runContent(text)}</w:r></w:ins>${close}</w:p></w:tc>`;
+  });
+  const rowMark = `<w:ins w:id="${nextId()}" w:author="${author}" w:date="${date}"/>`;
+  const newRow = `<w:tr kwl-ins="${key}">${parts.pre}${trPrWith(parts.trPr, rowMark, true)}${cells.join("")}</w:tr>`;
+  // 同一行之后已经加过的新行：接在它们后面，顺序与写入顺序一致
+  let at = row.end;
+  for (;;) {
+    const next = /^\s*<w:tr\b[^>]*\skwl-ins="/.test(xml.slice(at, at + 200)) ? enclosingElement(xml, "tr", at + xml.slice(at).indexOf("<w:tr") + 1, "inner") : null;
+    if (!next) break;
+    at = next.end;
+  }
+  applied.push({ opId: op.opId, status: "applied", paragraphIndex, formatParagraphIndex: paragraphIndex, placement: "row_inserted" });
+  return xml.slice(0, at) + newRow + xml.slice(at);
+}
+
+/**
+ * 删除表格一行（V16 第 41 批）：行里每个 run 的文字标为删除、行标记标为删除；接受修订后整行消失（见 sanitize）。
+ * 行里已有修订痕迹、域、图片、脚注引用或嵌套表格的不自动改；纵向合并组的起始行（左侧类别栏的字写在这一行）删除时，
+ * 合并格里的字不标删除——接受修订时移到下一行，类别栏不丢。
+ */
+function deleteRow(
+  xml: string,
+  target: ParagraphMap,
+  op: RevisionOp,
+  comments: { id: number; author: string; date: string; text: string }[],
+  nextId: () => number,
+  applied: AppliedRevision[],
+  paragraphIndex: number,
+): string {
+  if (op.newText.trim() !== "") throw new DomainError("anchor_mismatch", `修订 ${op.opId} 删除表格行时新文字须为空`, 422, { opId: op.opId });
+  const row = enclosingElement(xml, "tr", target.xmlStart, "inner");
+  if (!row) throw new DomainError("anchor_mismatch", `修订 ${op.opId} 锚点不在表格里：删除表格行的锚点写该行任一格的原文`, 422, { opId: op.opId });
+  const rowXml = xml.slice(row.start, row.end);
+  const parts = rowParts(rowXml);
+  if (!parts) throw new DomainError("anchor_mismatch", `修订 ${op.opId} 这一行的结构无法自动处理：请在 Word 里手工删除这一行`, 422, { opId: op.opId });
+  if (/<w:tbl\b/.test(parts.cells.join(""))) throw new DomainError("anchor_mismatch", `修订 ${op.opId} 这一行里嵌着表格：请在 Word 里手工删除`, 422, { opId: op.opId });
+  if (/<w:(?:ins|del|moveFrom|moveTo)\b[^>]*[^/]>/.test(rowXml)) {
+    throw new DomainError("anchor_mismatch", /kwl-new="/.test(rowXml) ? `修订 ${op.opId} 与本次另一处修改落在同一处：这一行要删除的，不要再改它里面的字` : `修订 ${op.opId} 这一行里有原件已有的修订痕迹：请先在 Word 里接受或拒绝对方的修订，或手工删除这一行`, 422, { opId: op.opId });
+  }
+  const date = new Date().toISOString();
+  const author = escapeXml(op.author);
+  let commentId = -1;
+  if (op.comment) {
+    commentId = nextId();
+    comments.push({ id: commentId, author: op.author, date, text: op.comment });
+  }
+  let commented = false;
+  const cells = parts.cells.map((cell) => {
+    // 纵向合并组起始格：字留着（接受修订时移到下一行）
+    if (/<w:vMerge\b[^>]*w:val="restart"/.test(findElementText(cell, "w:tcPr"))) return cell;
+    return cell.replace(/<w:r\b[^>]*>[\s\S]*?<\/w:r>/g, (run) => {
+      const open = /^<w:r\b[^>]*>/.exec(run)![0];
+      const kids = childElements(run.slice(open.length, run.length - "</w:r>".length));
+      if (kids.some((k) => !RUN_TEXT_CHILDREN.has(k.name))) throw new DomainError("anchor_mismatch", `修订 ${op.opId} 这一行里有脚注引用、域、图片或特殊符号：请在 Word 里手工删除这一行`, 422, { opId: op.opId });
+      const body = run.replace(/<w:t(\s[^>]*)?>/g, "<w:delText$1>").replace(/<\/w:t>/g, "</w:delText>");
+      const del = `<w:del w:id="${nextId()}" w:author="${author}" w:date="${date}" kwl-new="1">${body}</w:del>`;
+      if (commentId >= 0 && !commented) {
+        commented = true;
+        return `<w:commentRangeStart w:id="${commentId}"/>${del}${commentEnd(commentId)}`;
+      }
+      return del;
+    });
+  });
+  const rowMark = `<w:del w:id="${nextId()}" w:author="${author}" w:date="${date}"/>`;
+  const out = `${parts.open}${parts.pre}${trPrWith(parts.trPr, rowMark, false)}${cells.join("")}</w:tr>`;
+  applied.push({ opId: op.opId, status: "applied", paragraphIndex, placement: "row_deleted" });
+  return xml.slice(0, row.start) + out + xml.slice(row.end);
+}
+
+/** 取某个直接出现的元素的全文（没有返回空串）。 */
+function findElementText(xml: string, name: string): string {
+  const el = findElement(xml, name);
+  return el ? xml.slice(el.start, el.end) : "";
 }
 
 function nextIdSeed(xml: string): number {

@@ -33,6 +33,7 @@ const FIX_HINT: Record<PatchConflict["reason"], string> = {
   anchor_empty: "anchor 不能为空；新增条款用 insert_after，锚点写插入位置前一段里的原文",
   anchor_hash_mismatch: "内部校验失败，请重新提交",
   new_clause_in_edit: "新增条款不要接在原段落里换行写（会成为同一段里的软回车：不受自动编号管理，对方也没法单独接受或拒绝）：本条只写对原段的修改；新增条款另提一条 insert_after，锚点写它前一段里的原文，新文字不写编号（自动续号）",
+  bad_placement: "这条修改落位的写法不对，按 detail 改：新款要插在某款及其表格之后的用 insert_after_table（锚点写表格前紧挨着的那一段、或表格里任一格的原文）；表格加一行用 insert_row_after（锚点写要接在其后的那一行里任一格的原文，新文字各格用“｜”分隔，纵向合并的格子留空）；删整行用 delete_row（新文字为空串）",
   apply_failed: "写入失败：通常是两条修改落在同一处，拆开或合并后重试",
 };
 
@@ -43,13 +44,16 @@ interface RevisePatchInput {
   paragraph_hint?: unknown;
   comment?: unknown;
   insert_after?: unknown;
+  insert_after_table?: unknown;
+  insert_row_after?: unknown;
+  delete_row?: unknown;
 }
 
 /**
  * 试写（dry_run）：只定位、不生成文件，返回每个改到的段落“改前 / 改后”的整段文字——Agent 写入前读一遍改后的句子
  * （第 28 批真实走查：锚点漏了“本”字，清洁稿成了“甲方应于本验收合格后三十日内”）。同一段多处修改合并成一段改后文字。
  */
-function previewChanges(paragraphs: readonly string[], spans: readonly { para: number; start: number; end: number; new: string; insert?: true }[]) {
+function previewChanges(paragraphs: readonly string[], spans: readonly { para: number; start: number; end: number; new: string; insert?: true; placement?: "after_table" | "row_inserted" | "row_deleted" }[]) {
   const byPara = new Map<number, typeof spans[number][]>();
   for (const sp of spans) byPara.set(sp.para, [...(byPara.get(sp.para) ?? []), sp]);
   return [...byPara.entries()]
@@ -58,8 +62,20 @@ function previewChanges(paragraphs: readonly string[], spans: readonly { para: n
       const before = paragraphs[para] ?? "";
       let after = before;
       for (const sp of list.filter((x) => !x.insert).sort((a, b) => b.start - a.start)) after = after.slice(0, sp.start) + sp.new + after.slice(sp.end);
-      const inserted = list.filter((x) => x.insert).map((x) => x.new);
-      return { paragraph: para, before, after, ...(inserted.length > 0 ? { inserted_after: inserted } : {}) };
+      const inserted = list.filter((x) => x.insert && !x.placement).map((x) => x.new);
+      // 表格上的修改（V16 第 41 批）：写清落在哪里，助手试写时能看出新款是在整张表之后、新行是在哪一行之后
+      const afterTable = list.filter((x) => x.placement === "after_table").map((x) => x.new);
+      const newRows = list.filter((x) => x.placement === "row_inserted").map((x) => x.new.replace(/\t/g, "｜"));
+      const rowDeleted = list.some((x) => x.placement === "row_deleted");
+      return {
+        paragraph: para,
+        before,
+        after,
+        ...(inserted.length > 0 ? { inserted_after: inserted } : {}),
+        ...(afterTable.length > 0 ? { inserted_after_table: afterTable, inserted_after_table_note: "新段落在这段所在（或紧随其后）的整张表格之后，格式与自动编号沿用表格前那一段" } : {}),
+        ...(newRows.length > 0 ? { row_inserted_after: newRows, row_inserted_note: "在这一格所在的行之后新增一行（整行标为插入修订）" } : {}),
+        ...(rowDeleted ? { row_deleted: true, row_deleted_note: "这一格所在的整行标为删除" } : {}),
+      };
     });
 }
 
@@ -134,6 +150,9 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
       ...(typeof x?.paragraph_hint === "string" && x.paragraph_hint ? { paragraph_hint: x.paragraph_hint } : {}),
       ...(typeof x?.comment === "string" && x.comment ? { comment: x.comment } : {}),
       ...(x?.insert_after === true ? { insert_after: true } : {}),
+      ...(x?.insert_after_table === true ? { insert_after_table: true } : {}),
+      ...(x?.insert_row_after === true ? { insert_row_after: true } : {}),
+      ...(x?.delete_row === true ? { delete_row: true } : {}),
     };
   });
   const documentVersionId = String(p.document_version_id ?? "");
@@ -145,7 +164,7 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   const priorNote = prior && prior.total > 0
     ? { existing_revisions: prior, existing_revisions_note: `原件里已有他人的修订痕迹 ${prior.total} 处（插入 ${prior.insertions}、删除 ${prior.deletions}、移动 ${prior.moves}、格式 ${prior.format_changes}）：修订稿原样保留；清洁稿会把它们与本次修改一并接受。在计划与最终答复里告诉律师这一点；完全落在对方插入的文字之内的可以改（记成我方修订），跨过对方修订边界的不能自动写，列明请律师在 Word 里处理` }
     : {};
-  const hf = srcBuf ? headerFooterLeftovers(srcBuf, patches.filter((x) => !x.insert_after).map((x) => ({ anchor: ctx.tokens!.restore(mid, x.anchor).text, proposed: ctx.tokens!.restore(mid, x.proposed_text).text, part: headerFooterHint(x.paragraph_hint) }))) : [];
+  const hf = srcBuf ? headerFooterLeftovers(srcBuf, patches.filter((x) => !x.insert_after && !x.insert_after_table && !x.insert_row_after && !x.delete_row).map((x) => ({ anchor: ctx.tokens!.restore(mid, x.anchor).text, proposed: ctx.tokens!.restore(mid, x.proposed_text).text, part: headerFooterHint(x.paragraph_hint) }))) : [];
   // 原件页眉页脚的文字（令牌化后给助手照抄锚点；V10 第 36 批）
   const hfText = srcBuf ? headerFooterParagraphs(srcBuf).map((x) => ({ part: x.part === "header" ? "页眉" : "页脚", text: ctx.tokens!.tokenizer(mid).tokenize(x.texts.join(" / ")).text.slice(0, 300) })) : [];
   const hfNote = hf.length > 0
@@ -273,8 +292,8 @@ function registerComparison(ctx: InvokeCtx, r: { changes?: ChangeRow[]; numberin
       const to = c.label ? now.get(c.label) : undefined;
       return to && to !== c.label ? `原 ${base}（现 ${to}）` : base;
     };
-    const where = (c: ChangeRow) => (c.kind === "insert" ? `在${at(c)}之后新增` : at(c));
-    const row = (c: ChangeRow, i: number, why = "按律师意见修改") => [String(i + 1), where(c), c.kind === "insert" ? "（新增）" : cap(c.before), c.kind === "delete" ? "（删除本段）" : cap(c.after), c.reason || why];
+    const where = (c: ChangeRow) => (c.kind === "insert" ? (c.row ? `在${at(c).replace(/（新增一行）$/, "")}之后新增一行` : `在${at(c)}之后新增`) : at(c));
+    const row = (c: ChangeRow, i: number, why = "按律师意见修改") => [String(i + 1), where(c), c.kind === "insert" ? "（新增）" : cap(c.before), c.kind === "delete" ? (/（整行删除）$/.test(c.place ?? "") ? "（删除整行）" : "（删除本段）") : cap(c.after), c.reason || why];
     const linked = rows.filter((c) => c.kind === "edit" && isReferenceOnlyChange(c.before, c.after));
     const own = rows.filter((c) => !linked.includes(c));
     // 第一部分里没写理由的行（V14 基线 B：复核轮为去掉批注不写 comment 重交，17 行全成了“按律师意见修改”）：如实写“未注明理由”，不冒称律师意见

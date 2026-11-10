@@ -5,7 +5,7 @@
  */
 import { dropHouseMark } from "./house-style.ts";
 import { readZipEntries, writeZip } from "./zip.ts";
-import { findElement, paragraphSpans, removeElements } from "./textmap.ts";
+import { childElements, enclosingElement, findElement, paragraphSpans, removeElements } from "./textmap.ts";
 
 const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
@@ -90,6 +90,67 @@ export function mergeDeletedParagraphMarks(xml: string): { xml: string; merged: 
   return { xml: out, merged };
 }
 
+/**
+ * 接受“删除表格行”（V16 第 41 批）：行属性里带 <w:del …/> 的整行移除（与 Word“接受全部修订”一致）；整张表的行都删掉了的，表格一并移除。
+ * 被删的行是纵向合并组的起始行（类别栏的字写在这一行）而下一行续接合并的：把这一格移到下一行，类别栏不丢。
+ */
+export function removeDeletedRows(xml: string): { xml: string; removed: number } {
+  let out = xml;
+  let removed = 0;
+  const cellsOf = (rowXml: string): { start: number; end: number }[] => {
+    const open = /^<w:tr\b[^>]*>/.exec(rowXml)![0];
+    return childElements(rowXml.slice(open.length, rowXml.length - "</w:tr>".length))
+      .filter((c) => c.name === "w:tc")
+      .map((c) => ({ start: c.start + open.length, end: c.end + open.length }));
+  };
+  const tcPrOf = (cell: string): string => {
+    const e = findElement(cell, "w:tcPr");
+    return e ? cell.slice(e.start, e.end) : "";
+  };
+  for (let guard = 0; guard < 5000; guard++) {
+    const m = /<w:trPr\b[^>]*>(?:(?!<\/w:trPr>)[\s\S])*?<w:del\b[^>]*\/>/.exec(out);
+    if (!m) break;
+    const row = enclosingElement(out, "tr", m.index, "inner");
+    if (!row) {
+      // 结构不成对：只去掉这一个标记，免得死循环
+      out = out.slice(0, m.index) + m[0].replace(/<w:del\b[^>]*\/>$/, "") + out.slice(m.index + m[0].length);
+      continue;
+    }
+    const tbl = enclosingElement(out, "tbl", row.start, "inner");
+    let rowXml = out.slice(row.start, row.end);
+    let tail = out.slice(row.end);
+    const nextAt = /^\s*<w:tr\b/.exec(tail);
+    if (nextAt) {
+      const next = enclosingElement(out, "tr", row.end + nextAt[0].length - 1, "inner");
+      if (next && next.start >= row.end) {
+        let nextXml = out.slice(next.start, next.end);
+        const mine = cellsOf(rowXml);
+        const theirs = cellsOf(nextXml);
+        // 从后往前换，前面的位置不受影响
+        for (let i = Math.min(mine.length, theirs.length) - 1; i >= 0; i--) {
+          const a = rowXml.slice(mine[i]!.start, mine[i]!.end);
+          const b = nextXml.slice(theirs[i]!.start, theirs[i]!.end);
+          const cont = /<w:vMerge\b(?![^>]*w:val="restart")[^>]*\/>/.test(tcPrOf(b));
+          if (/<w:vMerge\b[^>]*w:val="restart"/.test(tcPrOf(a)) && cont) nextXml = nextXml.slice(0, theirs[i]!.start) + a + nextXml.slice(theirs[i]!.end);
+        }
+        tail = out.slice(row.end, next.start) + nextXml + out.slice(next.end);
+      }
+    }
+    out = out.slice(0, row.start) + tail;
+    removed += 1;
+    void rowXml;
+    if (tbl) {
+      const t = enclosingElement(out, "tbl", tbl.start, "inner");
+      if (t && t.start === tbl.start && !/<w:tr\b/.test(out.slice(t.start, t.end))) {
+        // 嵌在单元格里的表删空后留一个空段落（单元格须以段落结尾）；正文里的直接去掉
+        const nested = enclosingElement(out.slice(0, t.start) + out.slice(t.end), "tbl", t.start, "inner") !== null;
+        out = out.slice(0, t.start) + (nested ? "<w:p/>" : "") + out.slice(t.end);
+      }
+    }
+  }
+  return { xml: out, removed };
+}
+
 /** 接受一个部件里的全部修订、去掉批注标记（第 34 批：移动修订、格式修订记录也处理——D12）。计数累加到 counts。 */
 function acceptAll(input: string, counts: { deletionsAccepted: number; insertionsAccepted: number; comments: number }): string {
   let xml = input;
@@ -97,6 +158,10 @@ function acceptAll(input: string, counts: { deletionsAccepted: number; insertion
   const merged = mergeDeletedParagraphMarks(xml);
   xml = merged.xml;
   counts.deletionsAccepted += merged.merged;
+  // 删除的表格行（行属性里的 <w:del …/>）：接受即整行移除——必须先于下面“去掉自闭合修订标记”，否则行会留下来
+  const rows = removeDeletedRows(xml);
+  xml = rows.xml;
+  counts.deletionsAccepted += rows.removed;
   // 段落标记上的修订（自闭合 <w:ins …/> / <w:del …/>，在 w:pPr 的 w:rPr 里）：接受即去掉标记——必须先于成对标记处理，
   // 否则下面的成对正则会把自闭合标记当成开头、一直吞到后面别的修订的结束标记（v9.4 第 19 批：段后插入的新段落带这种标记）
   xml = xml.replace(/<w:(?:ins|del|moveFrom|moveTo)\b[^>]*\/>/g, "");

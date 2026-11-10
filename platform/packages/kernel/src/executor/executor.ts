@@ -1695,6 +1695,9 @@ const WORD_ARTIFACT_SQL = `kind IN ('agent_report', 'revision_draft', 'revision_
 // 系统按已提交事实生成的《事实时间线》（V14 第 39 批）不算助手交出的表：否则助手没交《案卷总目录》也会被它“顶替”
 const SHEET_ARTIFACT_SQL = `(kind = 'agent_table' AND manifest NOT LIKE '%"system_generated":true%') OR (kind = 'a1_workspace_file' AND lower(filename) LIKE '%.xlsx')`;
 
+/** 附件类 Word 的名称（主交付物的配套件）：只交了这些不算交出主文书。 */
+const AUX_WORD = /起草说明|待定事项|待确认事项|核对清单|核对表|对照表|修改说明|签署页|访谈提纲|证据目录|材料清单|来源目录|独立复核意见|交付说明/;
+
 /**
  * 方法的主交付物是 Word 文书（前言 outputs 第一项以 .docx 结尾）而本任务一份 Word 文书都没登记时，返回缺失说明；否则 null。
  * 原因按论点提纲状态给出（还在等律师确认 / 没提交），其余情形统一写“只交了表格或说明”。纯查询，重放结果相同。
@@ -1708,9 +1711,15 @@ export function primaryDeliverableMissing(db: KernelDb, runId: string, primaryOu
     return { primary, cause: "no_sheet_output", note: `没有交出《${primary}》：助手只交了文字说明。可以在本任务里“追问”，让助手用表格工具补出` };
   }
   if (!primaryOutput || !WORD_OUTPUT.test(primaryOutput)) return null;
-  const n = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM artifact_versions WHERE run_id = ? AND (${WORD_ARTIFACT_SQL})`, [runId])?.n ?? 0;
-  if (n > 0) return null;
+  const words = db.all<{ filename: string }>(`SELECT filename FROM artifact_versions WHERE run_id = ? AND (${WORD_ARTIFACT_SQL})`, [runId]).map((r) => r.filename);
   const primary = primaryOutput.replace(WORD_OUTPUT, "");
+  if (words.length > 0) {
+    // V16 第 41 批（卡片—方法盘点 3.3）：原先“有任何一份 Word 就算交了主交付物”——合同起草只交《起草说明与待定事项》、
+    // 股东会文件只交《签署页》也记“完成”。主交付物本身不是附件类名称时，交出的 Word 全是附件类（说明、清单、对照表、目录、签署页、提纲）的不算
+    if (AUX_WORD.test(primary) || words.some((f) => !AUX_WORD.test(f))) return null;
+    const got = [...new Set(words)].slice(0, 3).map((f) => `《${f.replace(/\.docx$/i, "")}》`).join("");
+    return { primary, cause: "only_attachments", note: `没有交出《${primary}》：助手只交了附件（${got}）。可以在本任务里“追问”，让助手补出文书` };
+  }
   const state = outlineState(db, runId);
   const cause = state === "pending" ? "outline_pending" : state === "missing" ? "outline_missing" : "no_word_output";
   const why =

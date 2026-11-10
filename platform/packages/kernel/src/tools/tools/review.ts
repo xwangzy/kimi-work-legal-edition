@@ -164,8 +164,64 @@ export function rulesPropose(ctx: InvokeCtx, p: { title?: string; rules?: unknow
   const s = scopeOf(ctx);
   const skill = s.runId ? parseSkill(ctx.db.get<{ input_snapshot: string | null }>(`SELECT input_snapshot FROM runs WHERE run_id = ?`, [s.runId])?.input_snapshot ?? null) : null;
   if (skill !== "review-rules-draft") throw new DomainError("forbidden", "只有“从范本整理审查要点”的任务可以起草审查要点", 403);
-  return proposeDraft(ctx.db, s, p);
+  const checked = checkRedLineSources(ctx, s.matterId, p.rules);
+  const r = proposeDraft(ctx.db, s, { title: p.title, rules: checked.rules });
+  if (checked.dropped.length === 0) return r;
+  return {
+    ...r,
+    red_lines_dropped: checked.dropped,
+    note: `${r.note}。有 ${checked.dropped.length} 条的“不可谈”没有写入（见 red_lines_dropped）：范本里找不到写明这条底线的原句。范本没有写明不能接受的，不要替律师或客户定底线——在会话说明里把这几条列为“待律师补底线”；确有原句的，red_line_quote 逐字照抄那一句后重新提交`,
+  };
 }
+
+/** 认作“写明了底线”的原句用词：范本自己说了不能接受、不得、必须、红线之类才算。 */
+const RED_LINE_WORDS = /不可谈|不得|不能|不接受|不予接受|不可接受|不同意|拒绝|禁止|严禁|必须|务必|红线|底线|一律不|否决|不允许|不可以/;
+
+/**
+ * 审查要点里的“不可谈”要有范本原句为证（V16 第 41 批）。
+ * V14 真实走查 I1-B：范本“属性”栏为“—”的责任上限条款被写成不可谈——方法早就写了“范本没写的不补”，但没有任何环节核对。
+ * 这里按助手给的 red_line_quote（范本里写明这条底线的原句，代号形态）在本事项材料的文字视图里逐字找：
+ * 没给原句、原句不在材料里、或原句里没有任何表示“不能接受 / 必须”的字眼的，这一条的 red_line 不写入（其余照常存），并告诉助手原因。
+ * 律师自己在界面上写的不可谈不经这里（saveRules），不受影响。
+ */
+export function checkRedLineSources(ctx: Pick<InvokeCtx, "db" | "tokens">, matterId: string, rules: unknown): { rules: unknown; dropped: { no: number; topic: string; reason: string }[] } {
+  if (!Array.isArray(rules)) return { rules, dropped: [] };
+  let view: string | null = null;
+  const materialView = (): string => {
+    if (view !== null) return view;
+    const rows = ctx.db.all<{ content: string }>(
+      `SELECT pt.content FROM document_versions dv
+         JOIN parse_versions pv ON pv.parse_version_id = (SELECT p2.parse_version_id FROM parse_versions p2 WHERE p2.document_version_id = dv.document_version_id ORDER BY p2.created_at DESC LIMIT 1)
+         JOIN parse_texts pt ON pt.parse_version_id = pv.parse_version_id
+        WHERE dv.matter_id = ? AND dv.quarantined_at IS NULL`,
+      [matterId],
+    );
+    const plain = rows.map((r) => r.content).join("\n");
+    view = squash(ctx.tokens ? ctx.tokens.tokenizer(matterId).tokenize(plain).text : plain);
+    return view;
+  };
+  const dropped: { no: number; topic: string; reason: string }[] = [];
+  const out = rules.map((r: any, i: number) => {
+    if (!r || typeof r !== "object" || Array.isArray(r)) return r;
+    const { red_line_quote: q, ...rest } = r as Record<string, unknown>;
+    const red = typeof rest.red_line === "string" ? rest.red_line.trim() : "";
+    if (!red) return rest;
+    const quote = typeof q === "string" ? q.trim() : "";
+    const drop = (reason: string) => {
+      dropped.push({ no: i + 1, topic: String(rest.topic ?? "").slice(0, 40), reason });
+      const { red_line: _omit, ...kept } = rest;
+      return kept;
+    };
+    if ([...quote].length < 6) return drop("没有给出范本里写明这条底线的原句（red_line_quote）");
+    if (!materialView().includes(squash(quote))) return drop("red_line_quote 不是范本里逐字出现的句子");
+    if (!RED_LINE_WORDS.test(quote)) return drop("这句原文只写了我方的一般标准，没有写明不能接受或必须如此");
+    return rest;
+  });
+  return { rules: out, dropped };
+}
+
+/** 比对用：去掉全部空白与条款编号后的换行差异（材料文字视图里一段可能断成几行）。 */
+const squash = (t: string): string => t.replace(/\s+/g, "");
 
 export function outlineGet(ctx: InvokeCtx) {
   const s = scopeOf(ctx);
