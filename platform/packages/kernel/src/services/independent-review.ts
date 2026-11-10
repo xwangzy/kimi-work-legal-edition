@@ -9,7 +9,10 @@
  * 本文件只放纯函数：选哪些方法复核、取文书文字、原件与清洁稿的段落差异、拼复核提示、解析复核意见、拼交回原会话的修改指示。
  */
 import { compareDocx, docxListLabels, extractParagraphs, paragraphCells, readZipEntries, readZipText } from "@zr-legal/docx-engine";
+import type { Lawdb } from "@zr-legal/lawdb";
 import { sectionsOfDocx } from "../tools/tools/edit-draft.ts";
+import { citationsVerify, extractCitations } from "../tools/tools/citations.ts";
+import { cnToInt, intToCn } from "../tools/tools/cn-numerals.ts";
 
 export type ReviewKind = "draft" | "revise" | "opinion" | "pleading" | "review" | "letter" | "report";
 
@@ -64,6 +67,114 @@ export const REVIEW_MATERIAL_MAX = 40_000;
 export const REVIEW_TOTAL_MAX = 120_000;
 
 const cut = (s: string, max: number) => (s.length <= max ? s : `${s.slice(0, max)}\n【以下 ${s.length - max} 字未提供】`);
+
+/**
+ * 复核请求与修改轮附带的法条原文（V16 第 41 批真实回归 m09、E7、m12、m21：复核是一次不带工具的模型调用，查不了法规库，
+ * 凭记忆把仲裁法第二十七条——2026-03-01 起施行的新版里正是仲裁协议的条文——判成“必须改为第二十五条”，修改轮只能回查后驳回）。
+ * 做法是确定性地把文书引用的条文原文一并交给复核人，不给复核人加工具：
+ * 单条原文至多 LAW_ARTICLE_MAX 字，整节至多 LAW_SECTION_MAX 字、LAW_ITEMS_MAX 条，超出的按在文书中出现的先后保留、如实写“其余 N 条未附”。
+ */
+export const LAW_ARTICLE_MAX = 800;
+export const LAW_SECTION_MAX = 16_000;
+export const LAW_ITEMS_MAX = 40;
+
+export interface LawRef {
+  law: string;
+  article: number;
+}
+
+/** 只写条号、前面紧挨着合同等文件名或“本、该、前”的，是文件内部的条款，不归到法上（与 unrecognizedArticleRefs 同一口径）。 */
+const DOC_INTERNAL_BEFORE = /(合同|协议|章程|细则|手册|制度|决议|办法|规则|本|该|前|上|下|其|此)[^，。；\n]{0,4}$/;
+const BARE_ARTICLE_RE = /第\s*([零〇一二两三四五六七八九十百千\d]{1,12})\s*条/g;
+
+/**
+ * 文字里的法条引用（按出现先后；同一部法的同一条只取一次）。
+ * followBare=true（复核意见用）：意见里常写“仲裁法第二十七条应改为第二十五条”，后一个条号没有法名——归到同一段里前面最近被引的那部法。
+ */
+export function lawRefsIn(texts: readonly string[], o: { followBare?: boolean } = {}): LawRef[] {
+  const out: LawRef[] = [];
+  const seen = new Set<string>();
+  const add = (law: string, article: number) => {
+    const k = `${law.replace(/^中华人民共和国/, "")}#${article}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ law, article });
+  };
+  for (const text of texts) {
+    if (!text) continue;
+    let found: ReturnType<typeof extractCitations> = [];
+    try {
+      found = extractCitations(text);
+    } catch {
+      found = [];
+    }
+    const items: { at: number; law: string; article: number }[] = found.map((c) => ({ at: c.offset, law: c.law, article: c.article }));
+    if (o.followBare && found.length > 0) {
+      const spans = found.map((c) => [c.offset, c.offset + c.raw.length] as const);
+      for (const m of text.matchAll(BARE_ARTICLE_RE)) {
+        const at = m.index ?? 0;
+        if (spans.some(([a, b]) => at >= a && at < b)) continue;
+        if (DOC_INTERNAL_BEFORE.test(text.slice(Math.max(0, at - 10), at))) continue;
+        const prev = found.filter((c) => c.offset < at).at(-1);
+        const n = cnToInt(m[1]!.replace(/〇/g, "零").replace(/两/g, "二"));
+        if (prev && n !== null) items.push({ at, law: prev.law, article: n });
+      }
+    }
+    for (const it of items.sort((a, b) => a.at - b.at)) add(it.law, it.article);
+  }
+  return out;
+}
+
+/**
+ * 法条原文一节的各行（按 asOf 适用的版本取条文；法条是公开文本，不含当事人信息）。
+ * 每条一行起头“【《法名》第N条】”：库里有原文的附原文；条号超出总条数、法规未收录、当时没有有效版本、只收了条号没有正文的，写明无法核对的原因。
+ */
+export function lawExcerptLines(lawdb: Lawdb, refs: readonly LawRef[], asOf: string): string[] {
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  let used = 0;
+  let listed = 0;
+  let omitted = 0;
+  for (const r of refs.slice(0, 200)) {
+    let v: ReturnType<typeof citationsVerify>["verdicts"][number] | null = null;
+    try {
+      v = citationsVerify(lawdb, { citations: [{ law: r.law, article: r.article }], as_of: asOf }).verdicts[0] ?? null;
+    } catch {
+      v = null;
+    }
+    const name = v?.matched_law_name ?? r.law;
+    const label = `《${name.replace(/^中华人民共和国/, "")}》第${intToCn(r.article)}条`;
+    if (seen.has(label)) continue;
+    seen.add(label);
+    let line: string;
+    if (!v) line = `【${label}】本机法规库提供不了这一条的原文，无法核对`;
+    else if (!v.matched_law_name) line = `【${label}】本机法规库未收录这部法规，无法核对`;
+    else if (!v.lsv_id) line = `【${label}】本机法规库里这部法规在 ${asOf} 没有有效版本（可能已废止或尚未施行），无法核对`;
+    else {
+      const row = lawdb.findLawVersions(v.matched_law_name).find((x) => x.lsv_id === v!.lsv_id);
+      const ver = row ? `${row.effective} 起施行的版本` : "适用的版本";
+      if (v.reasons.some((x) => x.startsWith("article_out_of_range:"))) line = `【${label}】本机法规库里这部法规（${ver}）共 ${row?.total_articles ?? "若干"} 条，没有这一条`;
+      else {
+        let body: string | null = null;
+        try {
+          body = lawdb.getArticle(v.lsv_id, r.article);
+        } catch {
+          body = null;
+        }
+        line = body ? `【${label}】（${ver}）\n${body.length <= LAW_ARTICLE_MAX ? body : `${body.slice(0, LAW_ARTICLE_MAX)}……（以下 ${body.length - LAW_ARTICLE_MAX} 字未附）`}` : `【${label}】本机法规库只收了条号、没有这一条的正文（${ver}），条文内容无法核对`;
+      }
+    }
+    if (listed >= LAW_ITEMS_MAX || used + line.length > LAW_SECTION_MAX) {
+      omitted += 1;
+      continue;
+    }
+    lines.push(line);
+    used += line.length;
+    listed += 1;
+  }
+  if (omitted > 0) lines.push(`（其余 ${omitted} 条未附：超出这一节的字数上限。对这些条文的意见只能写“建议核对原文”）`);
+  return lines;
+}
 
 /** docx.render_report 生成的文书：按节写出（标题、段落、表格逐行“｜”分隔）。 */
 export function reportText(docx: Buffer): string {
@@ -248,6 +359,8 @@ export function reviewMessages(p: {
    * 复核人只看委托原话，把这两项当成“无材料出处的商业条件”要求改回待定（必须改），修改轮只能逐条驳回。
    */
   answers?: readonly string[];
+  /** 文书引用的法条在本机法规库里的原文（lawExcerptLines 的各行，代号形态不涉及）。 */
+  laws?: readonly string[];
 }): { role: "system" | "user"; content: string }[] {
   const docTexts = p.docs.map((d) => `【交付件：${d.filename}】\n${cut(d.text, REVIEW_DOC_MAX)}`);
   const used = docTexts.reduce((n, t) => n + t.length, 0) + (p.diff ?? []).reduce((n, t) => n + t.length, 0);
@@ -264,6 +377,8 @@ export function reviewMessages(p: {
     "2. 意见必须站在委托人一方：会削弱我方主张、让我方多承担义务或放弃权利的改法，不提；确有法律障碍必须提示的，写成“风险提示”，不定为“必须改”。",
     "3. 涉及金额、日期、期限的意见，写出取自哪份材料的哪个数和算式；自己没有逐项复算清楚的，标“建议复算”，不定为“必须改”。",
     "4. “必须改”只用于：与委托或材料明显不符、法律依据错误、金额或期限错误、遗漏委托事项、会直接损害委托人的表述；其余用“建议改”。",
+    // V16 第 41 批真实回归 m09、E7：复核人凭记忆把新仲裁法第二十七条（仲裁协议）判成“必须改为第二十五条”
+    "5. 你查不了法规库，法律会修订、条号会变：对条号、条文内容的意见，只能以“文书引用的法条在本机法规库里的原文”一节为依据；这一节写了“无法核对”、没有附原文或没有列出的条文，写“建议核对原文”，不定为“必须改”，不凭记忆断定条号错误。",
   ].join("\n");
   const user = [
     `【事项口径】我方立场：${p.stance}；法域：${p.jurisdiction}；分析截止日：${p.asOf}`,
@@ -290,6 +405,9 @@ export function reviewMessages(p: {
     "",
     "=== 待复核交付件 ===",
     ...docTexts,
+    ...(p.laws && p.laws.length > 0
+      ? ["", `=== 文书引用的法条在本机法规库里的原文（按分析截止日 ${p.asOf} 适用的版本；系统从交付件文字里抽出后查库附上） ===`, ...p.laws]
+      : ["", "=== 文书引用的法条在本机法规库里的原文 ===", "（交付件里没有认出“《法名》第N条”式的引用，本节为空：对条号与条文内容的意见一律写“建议核对原文”）"]),
     ...(p.reply ? ["", `=== 助手给律师的最终答复（其中列的其他问题、风险提示与待定事项算已告知律师） ===\n${cut(p.reply, 20_000)}`] : []),
     ...(p.diff && p.diff.length > 0 ? ["", "=== 原件与清洁稿的段落差异（系统比对，段首是自动编号） ===", ...p.diff] : []),
   ].join("\n");
@@ -356,7 +474,7 @@ function fixTargetLines(targets: readonly FixTarget[]): string[] {
   ];
 }
 
-export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], reviewText: string, limitMs?: number, targets: readonly FixTarget[] = []): string {
+export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], reviewText: string, limitMs?: number, targets: readonly FixTarget[] = [], laws: readonly string[] = []): string {
   const how =
     kind === "revise"
       ? "成立的，在原件上调用 docx.revise 用补交方式（amend）只交这次要更正的几条：要换的按上一次清单的序号写 replace、不要的写 remove、新加的写 add，其余各条内核记着、不要重发全部修改——内核合成完整清单后从原件重新生成新版本，修订稿与清洁稿以最后一次为准；不要用 docx.edit_draft 改修订稿或清洁稿。"
@@ -375,6 +493,10 @@ export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], 
     ...(limitMs ? [`6. 这一轮有时间限制（约 ${Math.round(limitMs / 60_000)} 分钟，到时即停止，已写入的修改保留）：先改“必须改”的，按对结论的影响从大到小；需要另起一份新文书或大段重写的，时间不够就列为待办，在答复里写明，不要开了头做不完。改完一批就先重写一次最终答复（含“独立复核处理情况”），附件（证据目录、核对清单）跟正文同步改，别留到最后。`] : []),
     "",
     findings.length > 0 ? findings.map((f) => `【${f.no}】${[f.where, f.problem, f.basis, f.fix, f.must ? "必须改" : "建议改"].filter(Boolean).join("｜")}`).join("\n") : reviewText.slice(0, 12_000),
+    // 意见里涉及的法条，系统已在本机法规库查好原文（V16 第 41 批真实回归 m09：助手为驳回一条错误的条号意见要自己再查一遍）
+    ...(laws.length > 0
+      ? ["", "=== 复核意见涉及的法条在本机法规库里的原文（系统查好附上，按事项的分析截止日适用的版本；判断意见是否成立以此为准，不必再查） ===", ...laws, "复核人说条号或条文内容有误、而上面的原文能支持文书原来写法的，判定不成立，不改，在答复里写明依据的条文；上面写“无法核对”的，按原文核实后再定，核实不了的列为待律师核对。"]
+      : []),
   ].join("\n");
 }
 

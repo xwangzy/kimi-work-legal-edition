@@ -37,7 +37,7 @@ import { runCapabilities, runModeOf } from "../identity.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
 import { runLineage } from "../services/artifact-lineage.ts";
 import { scrubLocalPaths } from "../services/reply-local-paths.ts";
-import { REVIEW_KIND_OF_SKILL, fixPrompt, headerFooterText, labeledText, labeledTextWithRows, parseFindings, reportText, reviewMessages, reviewNote, revisionDiff, type FixTarget, type ReviewDoc, type ReviewFinding, type ReviewKind } from "../services/independent-review.ts";
+import { REVIEW_KIND_OF_SKILL, fixPrompt, headerFooterText, labeledText, labeledTextWithRows, lawExcerptLines, lawRefsIn, parseFindings, reportText, reviewMessages, reviewNote, revisionDiff, type FixTarget, type ReviewDoc, type ReviewFinding, type ReviewKind } from "../services/independent-review.ts";
 
 export interface ExecutorDeps {
   db: KernelDb;
@@ -1386,6 +1386,16 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
   return { docs: docs.filter((d) => d.text.trim().length > 0), diff, title: main.filename.replace(/\.docx$/i, ""), inventory, reply, sources };
 }
 
+/** 法条原文一节（分析截止日格式不对时按今天取版本；查库出错不影响复核，只是不附原文）。 */
+function reviewLawLines(lawdb: Lawdb, refs: ReturnType<typeof lawRefsIn>, asOf: string): string[] {
+  if (refs.length === 0) return [];
+  try {
+    return lawExcerptLines(lawdb, refs, /^\d{4}-\d{2}-\d{2}$/.test(asOf) ? asOf : new Date().toISOString().slice(0, 10));
+  } catch {
+    return [];
+  }
+}
+
 /** 修改轮要改的文件：本任务已生成的 Word 文书与表格，每个文件名取最新一版（给出成果编号，不靠会话记忆找文件）。 */
 export function fixTargetsOf(db: KernelDb, runId: string, matterId: string): FixTarget[] {
   const rows = db.all<{ artifact_version_id: string; filename: string; kind: string }>(
@@ -1469,7 +1479,9 @@ async function runReviewStage(
     appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.started, "review.started", { kind: picked.kind, skill: picked.skill, docs: docs.map((d) => d.filename), diff_lines: diff.length });
     // 律师在任务中对提问的答复（已是代号形态）：没有时复核人会把律师确认过的商业条件当成“无出处”（V13 W6）
     const answers = agentClient.answered?.(runId) ?? [];
-    const messages = reviewMessages({ kind: picked.kind, stance: stanceSent, jurisdiction: jurisdictionSent, asOf: p.ctxM.asOf, goal: p.goalSent, materials: p.snapshot, docs, diff, inventory, reply, answers });
+    // 文书引用的法条：本机法规库查原文一并交给复核人（复核人查不了法规库，凭记忆判条号会判错）
+    const laws = reviewLawLines(ctx.deps.lawdb, lawRefsIn(docs.map((d) => d.text)), p.ctxM.asOf);
+    const messages = reviewMessages({ kind: picked.kind, stance: stanceSent, jurisdiction: jurisdictionSent, asOf: p.ctxM.asOf, goal: p.goalSent, materials: p.snapshot, docs, diff, inventory, reply, answers, laws });
     const limit = ctx.deps.reviewLimitMs ?? REVIEW_LIMIT_MS;
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), limit);
@@ -1561,7 +1573,10 @@ async function runReviewStage(
   const fix = await ctx.step("independent_review_fix", async (): Promise<{ status: string; files: number; revised?: number; error?: string }> => {
     assertNotCancelled(db, runId);
     const limit = ctx.deps.reviewFixLimitMs ?? REVIEW_FIX_LIMIT_MS;
-    const goal = tok([fixPrompt(picked.kind, review.findings, review.text, limit, fixTargetsOf(db, runId, run.matter_id))])[0]!;
+    // 复核意见里涉及的法条（含“改为第二十五条”这种只写条号的）同样查库附原文，助手不必再查就能判断意见是否成立
+    const findingTexts = review.findings.length > 0 ? review.findings.map((f) => [f.where, f.problem, f.basis, f.fix].join(" ")) : [review.text];
+    const laws = reviewLawLines(ctx.deps.lawdb, lawRefsIn(findingTexts, { followBare: true }), p.ctxM.asOf);
+    const goal = tok([fixPrompt(picked.kind, review.findings, review.text, limit, fixTargetsOf(db, runId, run.matter_id), laws)])[0]!;
     // 这段提示经助手宿主的会话出站：登记为内核担保的文字，闸门对逐字出现的这一段只换已知名单（复核意见里引用的“曾根据”不再被认成新姓名）
     ctx.deps.vouchKnownOnly?.(runId, goal);
     let taskId: string;
