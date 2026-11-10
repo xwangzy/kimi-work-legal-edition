@@ -13,6 +13,16 @@ test("代号与任务说明的说法被报为内部用语；正文里正常的�
   assert.ok(hits.some((t) => /全名代号/.test(t)), JSON.stringify(r.issues));
   assert.ok(hits.some((t) => /按任务说明/.test(t)));
   assert.equal(hits.some((t) => /产品代号/.test(t)), false);
+  // V16 第 41 批：改法不诱导虚构“律师的指示”——只叫删掉这句话本身，并写明律师没说过的不得写成律师指示
+  const fixes = r.issues.filter((i) => i.kind === "internal_term" && /全名代号|按任务说明/.test(i.text)).map((i) => i.fix);
+  assert.ok(fixes.length > 0);
+  for (const f of fixes) {
+    assert.match(f, /删去这句关于代号、任务说明的话本身/);
+    assert.match(f, /律师没有说过的，不得写成“律师指示”/);
+    assert.equal(/依据写[^，。；]*律师的指示/.test(f), false, f);
+  }
+  const fact = checkDeliverable("备忘录", [{ heading: "事实", paragraphs: ["根据任务事实，买方已付款。"] }]).issues.find((i) => i.kind === "internal_term");
+  assert.ok(fact && !/委托人陈述/.test(fact.fix), JSON.stringify(fact));
 });
 
 test("节标题序号重复、跳号报出；正常的一、二、三不报", () => {
