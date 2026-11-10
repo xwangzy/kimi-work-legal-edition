@@ -11,7 +11,8 @@ import { unescapeXml } from "./textmap.ts";
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-export const PREVIEW_LIMITS = { maxParagraphs: 5_000, maxRows: 500, maxCols: 40, maxSheets: 10 } as const;
+// maxSheets 与表格工具的上限（12 张，V16 第 41 批）一致：本产品生成的表格在预览里全部看得到
+export const PREVIEW_LIMITS = { maxParagraphs: 5_000, maxRows: 500, maxCols: 40, maxSheets: 12 } as const;
 
 interface Comment {
   id: string;

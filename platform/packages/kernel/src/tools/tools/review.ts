@@ -298,7 +298,8 @@ export function factsList(ctx: InvokeCtx, p: { confirmed_only?: boolean }) {
   };
 }
 
-const MAX_SHEETS = 5;
+// V16 第 41 批：“管辖与时效核查”等方法要 6 张工作表，上限 5 张时助手改用命令行脚本自己拼 xlsx（兼容性没保证），还把这段解释写进了成果
+const MAX_SHEETS = 12;
 const MAX_COLS = 40;
 const MAX_ROWS = 5_000;
 const MAX_CELL = 2_000;

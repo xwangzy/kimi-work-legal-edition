@@ -210,3 +210,28 @@ test("facts.list 的事实序号（no / ref）稳定：新增、驳回事实后�
     await a.close();
   }
 });
+
+test("表格最多 12 张工作表（V16 第 41 批：“管辖与时效核查”要 6 张，上限 5 张时助手改用脚本自己拼 xlsx）：12 张照常生成、改第 12 张、预览全部显示；13 张退回", { timeout: 120_000 }, async () => {
+  const { renderXlsxHtml } = await import("@zr-legal/docx-engine");
+  const { matter } = await tk.inv("matters.create", { title: "管辖与时效核查", stance: "原告", consent_status: "agreed" });
+  const a = await agentFor(matter.matter_id, "sheets12");
+  try {
+    const sheets = Array.from({ length: 12 }, (_, i) => ({ name: `第${i + 1}表`, columns: ["序号", "事项"], rows: [[1, `第${i + 1}张表的内容`]] }));
+    const t = await a.call("xlsx.render_table", { title: "管辖与时效核查表", sheets });
+    assert.ok(t.artifact_version_id, JSON.stringify(t).slice(0, 400));
+    assert.equal(sheetsOf(t.artifact_version_id).length, 12);
+    const e = await a.call("xlsx.edit_cells", { artifact_version_id: t.artifact_version_id, edits: [{ sheet: "第12表", row: 1, column: "事项", value: "改过的第12张" }] });
+    assert.equal(e.status, "applied", JSON.stringify(e));
+    const back = sheetsOf(e.artifact_version_id);
+    assert.equal(back.length, 12);
+    assert.ok(JSON.stringify(back[11]).includes("改过的第12张"), JSON.stringify(back[11]));
+    const row = tk.kernel.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM artifact_versions WHERE artifact_version_id = ?`, [e.artifact_version_id])!;
+    const prev = renderXlsxHtml(tk.kernel.blobs.read(row.storage_uri));
+    assert.equal(prev.sheets, 12);
+    assert.match(prev.html, /改过的第12张/);
+    const over = await a.raw("xlsx.render_table", { title: "过多", sheets: [...sheets, { name: "第13表", columns: ["序号"], rows: [[1]] }] });
+    assert.match(JSON.stringify(over), /1–12/);
+  } finally {
+    await a.close();
+  }
+});
