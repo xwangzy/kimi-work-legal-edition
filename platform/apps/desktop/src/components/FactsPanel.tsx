@@ -4,7 +4,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, type FactRow } from "../api.ts";
-import { factCounts, factSourceText } from "../lib/facts.ts";
+import { factCounts, factRef, factSourceText } from "../lib/facts.ts";
 import { restoreTokens } from "../lib/tokens.ts";
 import { tokens } from "./Markdown.tsx";
 
@@ -68,6 +68,7 @@ export function FactsPanel({ matterId, docs, readOnly }: { matterId: string; doc
         <table className="members-table">
           <thead>
             <tr>
+              <th>序号</th>
               <th>日期</th>
               <th>事实（材料原文）</th>
               <th>出处</th>
@@ -77,6 +78,8 @@ export function FactsPanel({ matterId, docs, readOnly }: { matterId: string; doc
           <tbody>
             {list.map((f) => (
               <tr key={f.fact_id}>
+                {/* 序号（V16 第 41 批）：交付件里的“事实 12”就是这一条 */}
+                <td className="muted fact-no">{factRef(f) || "—"}</td>
                 <td>{f.occurred_on ?? "—"}</td>
                 <td>
                   {tokens(f.statement, map)}

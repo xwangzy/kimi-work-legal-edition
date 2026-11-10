@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { factCounts, factSourceText } from "../src/lib/facts.ts";
+import { factCounts, factRef, factSourceText } from "../src/lib/facts.ts";
 
 test("事实计数与出处", () => {
   assert.deepEqual(factCounts([{ status: "proposed" }, { status: "confirmed" }, { status: "proposed" }]), { proposed: 2, confirmed: 1, rejected: 0 });
@@ -18,4 +18,10 @@ test("事项页有“事实”标签，并调用确认接口", () => {
   assert.match(src("components/FactsPanel.tsx"), /api\.decideFact\(/);
   assert.match(src("pages/Matter.tsx"), /\["facts", "事实"\]/);
   assert.match(src("pages/Matter.tsx"), /<FactsPanel /);
+});
+
+test("事实序号的写法与交付件一致（V16 第 41 批）：“事实 12”；旧内核没有序号时为空", () => {
+  assert.equal(factRef({ no: 12 }), "事实 12");
+  assert.equal(factRef({}), "");
+  assert.equal(factRef({ no: 0 }), "");
 });

@@ -7,6 +7,11 @@ export function factCounts(facts: Pick<FactRow, "status">[]): { proposed: number
   return out;
 }
 
+/** 事实序号的写法（V16 第 41 批）：与交付件里的“事实 12”一致，律师按序号在事实页找到它。旧内核没有序号时为空。 */
+export function factRef(f: Partial<Pick<FactRow, "no">>): string {
+  return typeof f.no === "number" && f.no > 0 ? `事实 ${f.no}` : "";
+}
+
 /** 出处：材料名 + 能否在材料里定位到原文。 */
 export function factSourceText(f: Pick<FactRow, "document_version_id" | "anchor_status" | "page">, fileOf: Map<string, string>): string {
   if (!f.document_version_id) return "没有关联材料";

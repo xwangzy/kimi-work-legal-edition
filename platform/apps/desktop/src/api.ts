@@ -1243,6 +1243,8 @@ export interface RiskProgress {
 }
 export interface FactRow {
   fact_id: string;
+  /** 本事项内的事实序号（V16 第 41 批）：交付件里写“事实 12”，这里显示同一序号；后来新增或驳回事实不改变旧序号。 */
+  no: number;
   run_id: string | null;
   statement: string;
   kind: "claimed" | "inferred" | "to_confirm" | "confirmed";

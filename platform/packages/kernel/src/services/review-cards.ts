@@ -1140,12 +1140,15 @@ export function submitFacts(deps: ReviewDeps, scope: ToolScope, input: { facts?:
       out.push({ fact_id: id, seq, anchor_status: loc.status });
     });
   });
+  // 事实序号（V16 第 41 批）：交付件里引用写 ref（“事实 12”），不写 fact_id
+  const nos = factNos(deps.db, scope.matterId, [...out.map((x) => x.fact_id), ...duplicates.map((d) => d.duplicate_of)]);
+  const withRef = <T extends { fact_id: string }>(x: T) => (nos.has(x.fact_id) ? { ...x, ref: `事实 ${nos.get(x.fact_id)}` } : x);
   const unanchored = out.filter((x) => x.anchor_status !== "located").length;
   const dupNote = duplicates.length > 0 ? `；另有 ${duplicates.length} 条与事项里已有的事实重复（同日期同陈述，或同材料同引文），没有重复入库（见 duplicates，duplicate_of 是已有那条的编号）` : "";
   return {
     submitted: out.length,
-    facts: out,
-    ...(duplicates.length > 0 ? { duplicates } : {}),
+    facts: out.map(withRef),
+    ...(duplicates.length > 0 ? { duplicates: duplicates.map((d) => (nos.has(d.duplicate_of) ? { ...d, duplicate_ref: `事实 ${nos.get(d.duplicate_of)}` } : d)) } : {}),
     ...(rejected.length > 0 ? { rejected } : {}),
     note: `${rejected.length > 0 ? `${rejected.length} 条没有入库：含有本事项不存在的代号（见 rejected），照抄材料里的代号后只重交这几条。` : ""}${unanchored > 0 ? `${unanchored} 条事实没有在材料中定位到逐字引文：律师确认前不会被文书与汇报引用` : "已提交，律师确认后才可被文书与汇报引用"}${dupNote}`,
   };
@@ -1185,6 +1188,11 @@ export function statementOverlap(a: string, b: string): number {
 
 export interface FactRow {
   fact_id: string;
+  /**
+   * 本事项内的事实序号（V16 第 41 批）：从 1 起，按写入先后在本事项全部事实（含已驳回的）里排名——后来新增或驳回事实不改变旧序号。
+   * 交付件里写“事实 12”、事项“事实”页显示同一序号，律师按序号就能对上；seq 是按任务计的，不能代替。
+   */
+  no: number;
   run_id: string | null;
   seq: number;
   statement: string;
@@ -1198,6 +1206,21 @@ export interface FactRow {
   status: string;
   decided_by: string | null;
   decided_at: string | null;
+}
+
+/** 事实序号（见 FactRow.no）：按 fact_id 取本事项内的序号。 */
+export function factNos(db: KernelDb, matterId: string, ids: readonly string[]): Map<string, number> {
+  const out = new Map<string, number>();
+  if (ids.length === 0) return out;
+  for (let i = 0; i < ids.length; i += 500) {
+    const part = ids.slice(i, i + 500);
+    for (const r of db.all<{ fact_id: string; no: number }>(
+      `SELECT f.fact_id, (SELECT COUNT(*) FROM matter_facts m2 WHERE m2.matter_id = f.matter_id AND m2.rowid <= f.rowid) AS no
+         FROM matter_facts f WHERE f.matter_id = ? AND f.fact_id IN (${part.map(() => "?").join(",")})`,
+      [matterId, ...part],
+    )) out.set(r.fact_id, r.no);
+  }
+  return out;
 }
 
 export function listFacts(db: KernelDb, matterId: string, f: { run_id?: unknown; status?: unknown; kind?: unknown } = {}): FactRow[] {
@@ -1214,7 +1237,8 @@ export function listFacts(db: KernelDb, matterId: string, f: { run_id?: unknown;
   }
   return db
     .all<any>(
-      `SELECT fact_id, run_id, seq, statement, kind, occurred_on, amount_yuan, party, document_version_id, quote, anchor_status, anchor_start, status, decided_by, decided_at
+      `SELECT fact_id, (SELECT COUNT(*) FROM matter_facts m2 WHERE m2.matter_id = matter_facts.matter_id AND m2.rowid <= matter_facts.rowid) AS no,
+              run_id, seq, statement, kind, occurred_on, amount_yuan, party, document_version_id, quote, anchor_status, anchor_start, status, decided_by, decided_at
          FROM matter_facts WHERE ${where.join(" AND ")} ORDER BY COALESCE(occurred_on, '9999'), seq LIMIT 2000`,
       args,
     )

@@ -1014,6 +1014,8 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .members-table { width: 100%; border-collapse: collapse; font-size: var(--fs-caption); }
 .members-table th { text-align: left; color: var(--text-label); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--border-subtle); }
 .members-table td { padding: 8px; border-bottom: 1px solid var(--border-subtle); vertical-align: middle; }
+/* 事实页的序号（V16 第 41 批）：低调、不换行，与交付件里的“事实 12”对应 */
+.members-table td.fact-no { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .members-check { font-family: var(--font-mono); letter-spacing: 0.04em; }
 /* 交付件列表（Z3 评审 #2）：按事项分组、每行直接下载 */
 table.data.deliverables tr.dl-group td { background: var(--bg-subtle); font-weight: 500; padding-top: 10px; }

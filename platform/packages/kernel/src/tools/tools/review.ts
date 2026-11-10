@@ -252,6 +252,7 @@ export function factsList(ctx: InvokeCtx, p: { confirmed_only?: boolean }) {
   return {
     facts: rows.map((f) => ({
       fact_id: f.fact_id,
+      ref: `事实 ${f.no}`,
       statement: f.statement,
       kind: f.kind,
       occurred_on: f.occurred_on,
@@ -262,7 +263,9 @@ export function factsList(ctx: InvokeCtx, p: { confirmed_only?: boolean }) {
       anchor_status: f.anchor_status,
       lawyer_status: f.status,
     })),
-    note: "只有 lawyer_status=confirmed 的事实可以写进文书与汇报；其余须在交付件中标为“待律师确认”。",
+    note:
+      "只有 lawyer_status=confirmed 的事实可以写进文书与汇报；其余须在交付件中标为“待律师确认”。" +
+      "交付件里引用事实写 ref（如“事实 12”，律师在事项的事实页按同一序号可以查到），不写 fact_id；fact_id 只在调用工具时用。",
   };
 }
 

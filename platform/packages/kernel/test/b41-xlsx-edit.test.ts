@@ -1,9 +1,10 @@
 /**
- * V16 第 41 批：xlsx.edit_cells——在本任务已生成的表格上逐格修改。
+ * V16 第 41 批：xlsx.edit_cells——在本任务已生成的表格上逐格修改；事实有了律师看得懂的序号（事实 N）。
  * 真实走查（争点与证据分析，方法 issue-evidence-matrix）：5 张工作表、97 行的表格，交付前检查报出“事实编号”列里的 fct_… 内部编号与几处用语，
  * 只能整份重出（每次约 1.5 万 token、4～5 分钟），前后 4 次撞上 40 分钟时限只交出半成品。
  * - 经本机端点真实调用：逐格改、替换、追加、删除各一例，读回新版本文件核对；定位不到的逐条退回、其余照改；全部定位不到不登记新版本；
  * - 别的任务、别的事项的成果拒绝；改完是同名新版本、旧版本仍在；把 fct_… 替换成“事实 N”后交付前检查由不通过变通过；
+ * - facts.list 的 no / ref 稳定：新增、驳回事实后旧序号不变。
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
@@ -174,5 +175,38 @@ test("定位不到的逐条退回、其余照改；全部定位不到不登记�
     await a.close();
     await b.close();
     await c.close();
+  }
+});
+
+test("facts.list 的事实序号（no / ref）稳定：新增、驳回事实后旧序号不变；facts.submit 顺带给出 ref", { timeout: 120_000 }, async () => {
+  const { matter } = await tk.inv("matters.create", { title: "事实序号", stance: "原告", consent_status: "agreed" });
+  const a = await agentFor(matter.matter_id, "facts");
+  try {
+    const sub = await a.call("facts.submit", {
+      facts: [
+        { statement: "双方于2026年3月1日签订购销合同", kind: "claimed", occurred_on: "2026-03-01" },
+        { statement: "原告于2026年3月15日交付货物", kind: "claimed", occurred_on: "2026-03-15" },
+        { statement: "被告于2026年2月20日发出询价函", kind: "claimed", occurred_on: "2026-02-20" },
+      ],
+    });
+    assert.deepEqual(sub.facts.map((f: any) => f.ref), ["事实 1", "事实 2", "事实 3"]);
+    const l1 = await a.call("facts.list", {});
+    const refOf = (l: any, st: RegExp) => l.facts.find((f: any) => st.test(f.statement))?.ref;
+    assert.equal(refOf(l1, /签订购销合同/), "事实 1");
+    assert.equal(refOf(l1, /询价函/), "事实 3", "按写入先后编号，不按日期");
+    assert.match(l1.note, /交付件里引用事实写 ref/);
+
+    const delivered = l1.facts.find((f: any) => /交付货物/.test(f.statement));
+    await tk.inv("facts.decide", { matter_id: matter.matter_id, fact_id: delivered.fact_id, decision: "reject" });
+    await a.call("facts.submit", { facts: [{ statement: "被告于2026年4月1日部分付款", kind: "claimed", occurred_on: "2026-04-01" }] });
+    const l2 = await a.call("facts.list", {});
+    assert.equal(refOf(l2, /签订购销合同/), "事实 1");
+    assert.equal(refOf(l2, /询价函/), "事实 3", "驳回别的事实后序号不变");
+    assert.equal(refOf(l2, /部分付款/), "事实 4", "新事实接着编，驳回的那条仍占号");
+    assert.equal(refOf(l2, /交付货物/), undefined, "驳回的不再列给助手");
+    const all = await tk.inv("facts.list", { matter_id: matter.matter_id });
+    assert.equal(all.facts.find((f: any) => f.fact_id === delivered.fact_id)?.no, 2, "事实页看得到同一序号");
+  } finally {
+    await a.close();
   }
 });
