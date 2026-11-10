@@ -105,8 +105,25 @@ function getRun(db: KernelDb, runId: string): RunRow {
   return run;
 }
 
-function appendEvent(deps: ExecutorDeps, runId: string, attemptId: string | null, seq: number, type: string, payload: Record<string, unknown>): void {
+/**
+ * 同一任务第二次及以后的尝试（失败后“重新运行”、崩溃恢复），事件序号整体后移一段（V16 第 41 批真实回归的根因）：
+ * 事件按（任务，序号）去重，而每次尝试都从同样的固定序号、同样的宿主事件序号写起——重新运行那一次的“开始”“助手会话已启动”
+ * 和前若干条助手事件因此全部被当成重复丢掉。后果：①任务过程缺了重新运行这一段；②独立复核后的修改轮按“最后一条助手会话已启动”
+ * 找原会话，找到的是失败那一次的空会话，助手在里面看不到自己刚写的文书，只好问律师要文件、整份重写并改了文件名。
+ * 第一次尝试的序号不变；同一次尝试内重放仍按序号去重。
+ */
+const ATTEMPT_SEQ_SPAN = 1_000_000;
+function attemptSeqOffset(db: KernelDb, runId: string, attemptId: string | null): number {
+  // 不挂在某次尝试上的收尾事件（终态迁移、转人工对账）按本任务最近一次尝试后移——否则重新运行后再失败，第二条“失败”同样被当成重复丢掉
+  const n = attemptId
+    ? (db.get<{ seq: number }>(`SELECT seq FROM attempts WHERE attempt_id = ?`, [attemptId])?.seq ?? 1)
+    : (db.get<{ seq: number | null }>(`SELECT MAX(seq) AS seq FROM attempts WHERE run_id = ?`, [runId])?.seq ?? 1);
+  return Math.max(0, n - 1) * ATTEMPT_SEQ_SPAN;
+}
+
+function appendEvent(deps: ExecutorDeps, runId: string, attemptId: string | null, seq0: number, type: string, payload: Record<string, unknown>): void {
   const { db, signer } = deps;
+  const seq = seq0 + attemptSeqOffset(db, runId, attemptId);
   if (!signer) {
     db.run(`INSERT OR IGNORE INTO run_events (run_id, attempt_id, seq, type, payload) VALUES (?,?,?,?,?)`, [
       runId,
@@ -1450,7 +1467,8 @@ async function runReviewStage(
   if (review.findings.length === 0) return none;
 
   // ③ 交回原会话修改
-  const started = db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.started' ORDER BY seq DESC LIMIT 1`, [runId])[0];
+  // 取最近一次写入的“助手会话已启动”（按写入先后，不按序号：序号是分段的）
+  const started = db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.started' ORDER BY event_id DESC LIMIT 1`, [runId])[0];
   const sid = started ? (() => {
     try {
       return JSON.parse(started.payload)?.session_id;
@@ -1549,7 +1567,7 @@ async function runReviewStage(
   // 修改轮没做完时，助手可能已经用文书工具改出了新版本（工具当场登记，不随修改轮超时作废）——不能一律说“文书是复核前的版本”
   // （V13 真实走查 W4：修改轮 15 分钟超时，意见书已改出第 4～6 版、计算表第 3 版，提示却写“文书是复核前的版本”）
   const why = fix.status === "timed_out" ? "超过时限" : fix.error ?? fix.status;
-  const fixFrom = db.get<{ created_at: string }>(`SELECT created_at FROM run_events WHERE run_id = ? AND seq = ?`, [runId, REVIEW_SEQ.fixStarted])?.created_at;
+  const fixFrom = db.get<{ created_at: string }>(`SELECT created_at FROM run_events WHERE run_id = ? AND type = 'review.fix_started' ORDER BY event_id DESC LIMIT 1`, [runId])?.created_at;
   const revised = fixFrom
     ? db.all<{ filename: string }>(
         `SELECT DISTINCT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND created_at >= ? AND kind IN ('agent_report','revision_draft','revision_clean','agent_table')`,

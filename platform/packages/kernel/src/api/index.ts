@@ -1626,7 +1626,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (!prev || prev.matter_id !== matterId) throw notFound("上一次任务");
         if (prev.scenario !== "a1.agent_task" || !["succeeded", "partial"].includes(prev.status)) throw validation("只能在已完成的 Agent 任务上追问");
         if (prev.created_by !== id.userId) throw forbidden("只能追问自己发起的任务");
-        const started = db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.started' ORDER BY seq DESC LIMIT 1`, [prev.run_id])[0];
+        const started = db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.started' ORDER BY event_id DESC LIMIT 1`, [prev.run_id])[0];
         const sid = started ? parseJson<any>(started.payload, {})?.session_id : null;
         if (typeof sid !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(sid)) throw validation("上一次任务没有可继续的对话记录，请新建任务");
         followup = { followup_of: prev.run_id, continue_session_id: sid };
@@ -4768,7 +4768,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   /** 成果引用面板中「未核实（离线）」的引用数（citations.verified 事件 payload；案号离线未核 → 签发门禁）。 */
   function unverifiedOfflineCount(db2: KernelDb, runId: string | null): number {
     if (!runId) return 0;
-    const evs = db2.all(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'citations.verified'`, [runId]);
+    // 每次尝试各有一条（重新运行后序号分段，不再被当成重复丢掉）：只算最近一次，不把两次尝试的数加在一起
+    const evs = db2.all(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'citations.verified' ORDER BY event_id DESC LIMIT 1`, [runId]);
     let n = 0;
     for (const e of evs as any[]) {
       const payload = parseJson<any>(e.payload, {});
