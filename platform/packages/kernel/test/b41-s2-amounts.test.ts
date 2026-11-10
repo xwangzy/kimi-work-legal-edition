@@ -65,7 +65,7 @@ test("一方自己的情况说明标“一方陈述”；材料里提到还没�
 
   const timeline = [...readZipEntries(Buffer.from(b.files.find((x) => x.filename.startsWith("事实时间轴"))!.bytes)).entries()].filter(([k]) => /\.xml$/.test(k)).map(([, v]) => v.toString("utf8")).join("\n");
   assert.match(timeline, /一方陈述，待其他材料印证/);
-  assert.match(timeline, /材料记/);
+  assert.match(timeline, /材料记载（本机流程不判断证明力）/);
   const text = supplement(b);
   assert.match(text, /《09-项目负责人情况说明（我方）\.docx》提到：“2023年8月10日那笔的银行回单原件在财务部，尚未提供给律师。”——还没到手，请确认在谁手里后调取/);
   assert.equal(text.includes("（由律师按争点矩阵缺口补充）"), false);
