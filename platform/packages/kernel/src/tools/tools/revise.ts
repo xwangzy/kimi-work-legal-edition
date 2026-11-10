@@ -21,6 +21,7 @@ import { LAWYER_APPROVED_AUTHOR } from "../../services/review-cards.ts";
 import { applyStructuredPatches, headerFooterHint, type ChangeRow, type NumberingShifts, type PatchConflict, type StructuredPatch } from "../../services/structured-patch.ts";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
+import { learnSourceDocument } from "../../services/source-learning.ts";
 
 export const REVISE_MAX_PATCHES = 200;
 
@@ -211,6 +212,10 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   const run = ctx.db.get<{ created_by: string; matter_id: string }>(`SELECT created_by, matter_id FROM runs WHERE run_id = ?`, [rid]);
   if (!run || run.matter_id !== mid) throw new DomainError("not_found", "任务不存在", 404);
   const documentVersionId = String(p.document_version_id ?? "");
+  // 安全评审 H1：本工具的返回（改前整段、编号顺延的条款开头、互引所在段落）带着原件原文，读回时按“只换已知名单”处理；
+  // 原件可以是本事项任何一份材料（不限于本任务的材料快照），里面的姓名可能从没识别过——先把原件全文完整识别一遍、写回事项代号表。
+  // 读不到原件就不往下做（不让没识别过的原件文字经“只换已知名单”出去）
+  if (!learnSourceDocument({ db: ctx.db, blobs: ctx.blobs, tokens: ctx.tokens }, mid, documentVersionId)) throw new DomainError("not_found", "找不到这份材料：document_version_id 用 materials.list 返回的材料编号", 404);
   const given = Array.isArray(p.patches) ? p.patches : [];
   let raw: RevisePatchInput[];
   let amended: AmendSummary | null = null;
@@ -363,7 +368,7 @@ function reviseOnce(
     }
   })();
   // 修改对照表（第 35 批）：按实际写入的修改逐段列“修改前 / 修改后 / 修改理由”，供律师复核与向客户说明——律师要的“修改对照及修改说明”
-  const compareReg = registerComparison(ctx, r, src?.filename ?? r.filename);
+  const compareReg = registerComparison(ctx, r, { id: documentVersionId, filename: src?.filename ?? r.filename });
   return {
     status: "applied" as const,
     applied: r.applied,
@@ -404,11 +409,11 @@ export function isReferenceOnlyChange(before: string, after: string): boolean {
  * V13 第 38 批（W2 律师评分：律师要求“增删条款引起的条号、援引条号跟着改，并在对照表里单独列出来”，原表混在一起、顺延清单只列前 20 条被截断）：
  * 一、按修改意见的修改；二、援引条号联动（只改了援引号的段落）；三、条款编号顺延（原件 → 修订后，全部列出）。条款一栏写“原号（现号）”。
  */
-function registerComparison(ctx: InvokeCtx, r: { changes?: ChangeRow[]; numbering?: NumberingShifts; filename: string }, source: string) {
+function registerComparison(ctx: InvokeCtx, r: { changes?: ChangeRow[]; numbering?: NumberingShifts; filename: string }, source: { id: string; filename: string }) {
   const rows = r.changes ?? [];
   if (rows.length === 0) return null;
   try {
-    const name = source.replace(/\.docx$/i, "");
+    const name = source.filename.replace(/\.docx$/i, "");
     const cap = (s: string) => (s.length > 2000 ? `${s.slice(0, 2000)}……` : s);
     const shifts = r.numbering?.renumbered ?? [];
     const now = new Map(shifts.map((x) => [x.from, x.to]));
@@ -450,7 +455,8 @@ function registerComparison(ctx: InvokeCtx, r: { changes?: ChangeRow[]; numberin
       filename: r.filename.replace(/（修订稿）\.docx$/i, "（修改对照表）.docx"),
       sha256: stored.sha256,
       storage_uri: stored.storage_uri,
-      manifest: { tool: "docx.revise", derived_from: "revision_draft", rows: rows.length, linked: linked.length, renumbered: shifts.length, note: "修改对照表：按修订稿实际写入的修改逐段列出修改前后与理由（系统生成）" },
+      // 源自原件（安全评审 M1、H2）：复核前按 source_document_version_id 把原件完整识别；docx.edit_draft 不改这份
+      manifest: { tool: "docx.revise", source_document_version_id: source.id, derived_from: "revision_draft", rows: rows.length, linked: linked.length, renumbered: shifts.length, note: "修改对照表：按修订稿实际写入的修改逐段列出修改前后与理由（系统生成）" },
     });
   } catch {
     return null;

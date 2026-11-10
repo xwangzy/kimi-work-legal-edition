@@ -26,6 +26,17 @@ function logOutcome(status: "applied" | "partial" | "not_applied" | "preview", p
 
 export const EDIT_DRAFT_MAX_PATCHES = 100;
 
+/** docx.edit_draft 能改的成果：docx.render_report 出的文书及本工具在其上改出的版本。 */
+const EDITABLE_TOOLS = new Set(["docx.render_report", "docx.edit_draft"]);
+function manifestTool(manifest: string | null): string {
+  try {
+    const t = JSON.parse(manifest ?? "{}")?.tool;
+    return typeof t === "string" ? t : "";
+  } catch {
+    return "";
+  }
+}
+
 interface EditPatchInput {
   anchor?: unknown;
   proposed_text?: unknown;
@@ -126,14 +137,19 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
   const rid = typeof ctx.claims.rid === "string" ? ctx.claims.rid : null;
   if (!rid) throw new DomainError("forbidden", "只有任务内的调用可以修改文书草稿", 403);
   const id = String(p.artifact_version_id ?? "");
-  const art = ctx.db.get<{ kind: string; filename: string; storage_uri: string; sha256: string; run_id: string | null }>(
-    `SELECT kind, filename, storage_uri, sha256, run_id FROM artifact_versions WHERE artifact_version_id = ? AND matter_id = ?`,
+  const art = ctx.db.get<{ kind: string; filename: string; storage_uri: string; sha256: string; run_id: string | null; manifest: string | null }>(
+    `SELECT kind, filename, storage_uri, sha256, run_id, manifest FROM artifact_versions WHERE artifact_version_id = ? AND matter_id = ?`,
     [id, mid],
   );
   if (!art) throw new DomainError("not_found", "找不到这份文书：artifact_version_id 用 docx.render_report 返回的那个", 404);
   if (art.run_id !== rid) throw new DomainError("validation", "只能修改本任务里生成的文书草稿；律师上传的材料用 docx.revise 出修订稿", 422);
   if (art.kind !== "agent_report" || !art.filename.toLowerCase().endsWith(".docx")) {
     throw new DomainError("validation", "只能修改 docx.render_report 生成的 Word 文书；修订稿、清洁稿要改的，在原件上重新用 docx.revise 提交全部修改", 422);
+  }
+  // 安全评审 M1：按生成工具判断，不按成果类别猜——《修改对照表》也登记为本任务的 Word 成果，但内容是原件原文，
+  // 本工具的结果按“助手写的文字”读回（只换已知名单），不能作用于它
+  if (!EDITABLE_TOOLS.has(manifestTool(art.manifest))) {
+    throw new DomainError("validation", "这份文书不是 docx.render_report 生成的（例如修改对照表由 docx.revise 按原件生成）：不能用本工具改；要改修订内容，在原件上用 docx.revise 补交", 422);
   }
   const raw = Array.isArray(p.patches) ? (p.patches as EditPatchInput[]) : [];
   if (raw.length === 0) throw new DomainError("validation", "patches 至少一条", 422);

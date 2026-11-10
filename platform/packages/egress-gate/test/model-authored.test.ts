@@ -185,7 +185,7 @@ test("读回工具的 tool 消息按字段：卡片建议、未确认的事实�
   assert.ok(!o.confirmed_arguments[1].claim.includes("孙志强") && !o.lawyer_note.includes("周文涛"));
 });
 
-test("读回规则只认本请求里 assistant 调用的这四个工具：别的工具结果、没有对应调用的照常识别；读回结果解析不了（引擎截断）的只替换已知名单；Anthropic 形态同样按字段", () => {
+test("读回规则只认本请求里 assistant 调用的这四个工具：别的工具结果、没有对应调用的照常识别；读回结果解析不了（引擎截断）的整段照常识别（安全评审 L1）；Anthropic 形态同样按字段", () => {
   const t = new MatterTokenizer({ matterKey: KEY });
   const prose = "每期付款前，乙方应开具等额合法有效的增值税专用发票。";
   const r = processChatPayload(
@@ -196,7 +196,7 @@ test("读回规则只认本请求里 assistant 调用的这四个工具：别的
         call("c1", "mcp__legal__materials_read_excerpt"),
         result("c1", { text: "证人王建业出庭作证。" }),
         call("c2", "mcp__legal__riskcards_list"),
-        // 超长被引擎截断：JSON 不完整、后面接存放说明（律师写的字段内核交回前已换成代号，这里只替换已知名单）
+        // 超长被引擎截断：JSON 不完整、后面接存放说明——分不清哪些字段是模型写的，整段照常识别（宁可多遮）
         { role: "tool", tool_call_id: "c2", content: `Wall time: 0.031 seconds\n{\n  "cards": [\n    {\n      "suggestion": "${prose}"\n[...truncated]\n证人赵立新称已保存` },
         { role: "tool", tool_call_id: "c9", content: JSON.stringify({ cards: [{ suggestion: "由证人钱志远签收" }] }) },
         { role: "user", content: "继续。" },
@@ -204,10 +204,9 @@ test("读回规则只认本请求里 assistant 调用的这四个工具：别的
     },
     t,
   );
-  // 材料摘录（非读回工具）、没有对应调用的 tool 消息：照常识别；截断的读回结果不学
-  assert.deepEqual(persons(t), ["王建业", "钱志远"].sort());
-  assert.ok((r.body as any).messages[4].content.includes(prose), "截断的读回结果里模型写的文字原样");
-  assert.ok(!JSON.stringify(r.body).includes("王建业"));
+  // 材料摘录（非读回工具）、没有对应调用的 tool 消息：照常识别；截断的读回结果同样照常识别（原先只换已知名单，截断尾部的“证人赵立新”会以明文发出）
+  for (const n of ["王建业", "钱志远", "赵立新"]) assert.ok(persons(t).includes(n), `${n}：${persons(t).join("、")}`);
+  for (const n of ["王建业", "赵立新"]) assert.ok(!JSON.stringify(r.body).includes(n), n);
   // Anthropic 形态
   const t2 = new MatterTokenizer({ matterKey: KEY });
   const a = processChatPayload(

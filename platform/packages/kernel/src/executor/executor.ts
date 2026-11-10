@@ -12,6 +12,7 @@
 import { rulesPromptBlock, type RulesSnapshot } from "../services/review-rules.ts";
 import { prefsPromptLine } from "../services/writing-prefs.ts";
 import { matterFactsLine } from "../services/matter-facts.ts";
+import { sourceDocumentTexts } from "../services/source-learning.ts";
 import { outlineOpenItems, outlineState } from "../services/argument-outlines.ts";
 import { DomainError, RUN_TRANSITIONS, RunStatus, canTransitionRun, isTerminalRun, newId, sha256Hex } from "@zr-legal/domain";
 import { replaceDirectIdentifiers } from "@zr-legal/pseudonym";
@@ -1267,7 +1268,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
 }
 
 /** 独立复核的事件序号段（V13 第 38 批）：与工作流固定序号、成果段 69+、宿主事件镜像 10000+ 都不冲突；交回修改那一轮的宿主事件镜像到 30000+。 */
-const REVIEW_SEQ = { started: 9_100, completed: 9_101, note: 9_102, fixStarted: 9_103, fixOutcome: 9_104, skipped: 9_105, fixArtifacts: 9_200, fixMirror: 30_000 } as const;
+const REVIEW_SEQ = { started: 9_100, completed: 9_101, note: 9_102, fixStarted: 9_103, fixOutcome: 9_104, skipped: 9_105, sourceUnread: 9_106, fixArtifacts: 9_200, fixMirror: 30_000 } as const;
 const REVIEW_LIMIT_MS = 15 * 60_000;
 // V16 第 41 批（偏离 D-163，待律所拍板可调回）：修改轮时限 15 → 25 分钟。V14 全量走查 47 张卡里 5 个任务“部分完成”，全部是这一轮撞 15 分钟
 // （K3.1-Pro 实测约 30 字/秒，改三四处并重写答复就到时限）；本批独立复核又多覆盖了 8 个方法。环境变量 ZR_REVIEW_FIX_LIMIT_MS 仍可覆盖
@@ -1295,18 +1296,42 @@ const ATTACHMENT_NAME = /起草说明|核对清单|对照表|待定事项|待确
  * 修改文书任务取清洁稿与修改对照表，并按清洁稿登记的原件做段落差异。整理审查要点的任务取本任务存下的审查要点草稿。
  * 纯查询 + 读成果块。
  */
-export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string, kind: ReviewKind, primary: string | null = null): { docs: ReviewDoc[]; diff: string[]; title: string; inventory: string[]; reply: string; sources: string[] } | null {
+export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string, kind: ReviewKind, primary: string | null = null): { docs: ReviewDoc[]; diff: string[]; title: string; inventory: string[]; reply: string; sources: string[]; unlearned: string[] } | null {
   if (kind === "rules") return rulesReviewTarget(deps, runId, matterId);
-  const rows = deps.db.all<{ filename: string; storage_uri: string; manifest: string | null; created_at: string }>(
-    `SELECT filename, storage_uri, manifest, created_at FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','revision_draft','revision_clean') AND lower(filename) LIKE '%.docx' ORDER BY created_at, version`,
+  const rows = deps.db.all<{ filename: string; storage_uri: string; manifest: string | null; created_at: string; kind: string }>(
+    `SELECT filename, storage_uri, manifest, created_at, kind FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','revision_draft','revision_clean') AND lower(filename) LIKE '%.docx' ORDER BY created_at, version`,
     [runId, matterId],
   );
   const latest = new Map<string, (typeof rows)[number]>();
   for (const r of rows) latest.set(r.filename, r);
   let picked = [...latest.values()];
   let diff: string[] = [];
-  /** 修改文书任务的原件文字（页眉页脚 + 正文）：复核前按材料口径识别一遍，原件里的姓名一定进事项代号表（见 runReviewStage）。 */
+  /**
+   * 源自律师上传原件的文书（修订稿、清洁稿、对外版、修改对照表）对应的每一份原件全文（正文、表格、页眉页脚、脚注、批注与文件名）：
+   * 复核前完整识别一遍，原件里的姓名一定进事项代号表，复核请求才能“只换已知名单”（见 runReviewStage）。
+   * 安全评审 H2：原先只有“修改文书”类、只取最后一份清洁稿的原件，读原件失败还静默吞掉——审合同出了修订稿的任务，原件页眉里的姓名以明文进了复核请求。
+   * 找不到原件（manifest 没写、原件读不到）的文书列进 unlearned：这些文书整段完整识别，不走“只换已知名单”。
+   */
   const sources: string[] = [];
+  const unlearned: string[] = [];
+  const srcIdOf = (manifest: string | null): string => {
+    try {
+      const v = JSON.parse(manifest ?? "{}")?.source_document_version_id;
+      return typeof v === "string" ? v : "";
+    } catch {
+      return "";
+    }
+  };
+  const fromSource = (r: (typeof rows)[number]) => r.kind === "revision_draft" || r.kind === "revision_clean" || /"tool":"docx\.revise"/.test(r.manifest ?? "") || !!srcIdOf(r.manifest);
+  const sourceText = new Map<string, string[] | null>();
+  for (const r of latest.values()) {
+    if (!fromSource(r)) continue;
+    const id = srcIdOf(r.manifest);
+    if (id && !sourceText.has(id)) sourceText.set(id, sourceDocumentTexts(deps.db, deps.blobs, matterId, id));
+    const texts = id ? sourceText.get(id) : null;
+    if (!texts) unlearned.push(r.filename);
+  }
+  for (const texts of sourceText.values()) if (texts) sources.push(...texts);
   if (kind === "revise") {
     const clean = picked.filter((r) => /（清洁稿）\.docx$/i.test(r.filename)).at(-1);
     picked = picked.filter((r) => !/（修订稿(?:·对外版)?）\.docx$/i.test(r.filename));
@@ -1325,10 +1350,6 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
         } catch {
           diff = [];
         }
-        try {
-          const srcBuf = deps.blobs.read(src.storage_uri);
-          sources.push([...headerFooterText(srcBuf), ...labeledTextWithRows(srcBuf)].join("\n"));
-        } catch {}
       }
     }
   }
@@ -1409,7 +1430,7 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
         .map((r) => r.filename),
     ),
   ].map((f) => `${f}${redlineNote(f)}`);
-  return { docs: docs.filter((d) => d.text.trim().length > 0), diff, title: main.filename.replace(/\.(docx|xlsx)$/i, ""), inventory, reply: finalReply(deps, runId, matterId), sources };
+  return { docs: docs.filter((d) => d.text.trim().length > 0), diff, title: main.filename.replace(/\.(docx|xlsx)$/i, ""), inventory, reply: finalReply(deps, runId, matterId), sources, unlearned };
 }
 
 /** 助手给律师的最终答复（最新一版）。 */
@@ -1426,7 +1447,7 @@ function finalReply(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, mat
  * 整理审查要点的复核对象（V16 第 41 批：E5、m41、m44 的主交付物是存进事项的审查要点草稿，不是文件，原先没有复核）：
  * 本任务最近一次 rules.propose 存下的草稿（代号形态），逐条写成一行。没有草稿时不复核。
  */
-function rulesReviewTarget(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string): { docs: ReviewDoc[]; diff: string[]; title: string; inventory: string[]; reply: string; sources: string[] } | null {
+function rulesReviewTarget(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string): { docs: ReviewDoc[]; diff: string[]; title: string; inventory: string[]; reply: string; sources: string[]; unlearned: string[] } | null {
   const row = deps.db.get<{ title: string; rules: string }>(`SELECT title, rules FROM matter_review_rules WHERE run_id = ? AND matter_id = ? AND status = 'draft' ORDER BY created_at DESC LIMIT 1`, [runId, matterId]);
   if (!row) return null;
   let rules: { no?: unknown; topic?: unknown; standard?: unknown; fallback?: unknown; red_line?: unknown }[] = [];
@@ -1438,7 +1459,7 @@ function rulesReviewTarget(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: stri
   if (!Array.isArray(rules) || rules.length === 0) return null;
   const text = rules.map((r, i) => `要点 ${Number(r.no) || i + 1}｜${String(r.topic ?? "")}｜我方标准：${String(r.standard ?? "")}｜可退让：${r.fallback ? String(r.fallback) : "（未写）"}｜不可谈：${r.red_line ? String(r.red_line) : "（未写）"}`).join("\n");
   const title = `审查要点草稿《${row.title}》`;
-  return { docs: [{ filename: title, text }], diff: [], title, inventory: [`${title}（共 ${rules.length} 条，存在事项的审查要点草稿里，律师审定启用前不生效）`], reply: finalReply(deps, runId, matterId), sources: [] };
+  return { docs: [{ filename: title, text }], diff: [], title, inventory: [`${title}（共 ${rules.length} 条，存在事项的审查要点草稿里，律师审定启用前不生效）`], reply: finalReply(deps, runId, matterId), sources: [], unlearned: [] };
 }
 
 /** 法条原文一节（分析截止日格式不对时按今天取版本；查库出错不影响复核，只是不附原文）。 */
@@ -1524,6 +1545,13 @@ async function runReviewStage(
   // - 事项口径里的立场、法域是律师填的，在这里照常识别；
   // - 修改文书任务的原件（页眉页脚不在材料快照里）在这里照常识别一遍，原件里的姓名进代号表，清洁稿里的同一个名字才换得掉
   const learned = tz ? tz.tokenizeAll(run.matter_id, [p.ctxM.stance, p.ctxM.jurisdiction, ...targets.sources]).map((r) => r.text) : [replaceDirectIdentifiers(p.ctxM.stance).text, replaceDirectIdentifiers(p.ctxM.jurisdiction).text];
+  // 安全评审 H2：找不到原件的修订稿、清洁稿、修改对照表——这几份不走“只换已知名单”：整段（连同文件名）先完整识别、写回代号表，
+  // 下面再按已知名单替换时其中的姓名一定已是代号；记一条事件（只记份数），不静默
+  if (targets.unlearned.length > 0) {
+    const texts = targets.docs.filter((d) => targets.unlearned.includes(d.filename)).map((d) => d.text);
+    if (tz) tz.tokenizeAll(run.matter_id, [...targets.unlearned, ...texts]);
+    appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.sourceUnread, "review.source_unread", { files: targets.unlearned.length, note: "复核对象里有源自原件的文书找不到原件：这几份按完整识别处理" });
+  }
   const stanceSent = learned[0] ?? p.ctxM.stance;
   const jurisdictionSent = learned[1] ?? p.ctxM.jurisdiction;
 
