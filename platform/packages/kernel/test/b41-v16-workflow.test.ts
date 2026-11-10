@@ -58,8 +58,10 @@ test("独立复核覆盖面：律师函按函件；补上代理词、质证意�
   // 原有的不变
   assert.equal(REVIEW_KIND_OF_SKILL["contract-draft"], "draft");
   assert.equal(REVIEW_KIND_OF_SKILL["doc-revise"], "revise");
-  // 表格类、确定性流程不复核
-  for (const s of ["amount-calc", "casefile-organize", "citation-check", "review-rules-draft"]) assert.equal(REVIEW_KIND_OF_SKILL[s], undefined, s);
+  // V16 第 41 批回归评分二：表格类与整理审查要点也复核（见 b41-review-coverage）；表格审阅（逐格回填工作台的表）仍不复核
+  for (const s of ["amount-calc", "casefile-organize", "citation-check"]) assert.equal(REVIEW_KIND_OF_SKILL[s], "table", s);
+  assert.equal(REVIEW_KIND_OF_SKILL["review-rules-draft"], "rules");
+  assert.equal(REVIEW_KIND_OF_SKILL["tabular-review"], undefined);
 });
 
 test("主交付物核对：只交了附件类 Word 不算交出主文书；主文书在、或主交付物本身就是说明类的不报", async () => {

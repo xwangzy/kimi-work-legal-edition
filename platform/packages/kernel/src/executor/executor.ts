@@ -37,7 +37,7 @@ import { runCapabilities, runModeOf } from "../identity.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
 import { runLineage } from "../services/artifact-lineage.ts";
 import { scrubLocalPaths } from "../services/reply-local-paths.ts";
-import { REVIEW_KIND_OF_SKILL, fixPrompt, headerFooterText, labeledText, labeledTextWithRows, lawExcerptLines, lawRefsIn, parseFindings, reportText, reviewMessages, reviewNote, revisionDiff, type FixTarget, type ReviewDoc, type ReviewFinding, type ReviewKind } from "../services/independent-review.ts";
+import { REVIEW_KIND_OF_SKILL, fixPrompt, headerFooterText, labeledText, labeledTextWithRows, lawExcerptLines, lawRefsIn, parseFindings, workbookText, reportText, reviewMessages, reviewNote, revisionDiff, type FixTarget, type ReviewDoc, type ReviewFinding, type ReviewKind } from "../services/independent-review.ts";
 
 export interface ExecutorDeps {
   db: KernelDb;
@@ -1286,11 +1286,17 @@ export function reviewKindOf(db: KernelDb, runId: string, skill: string | null):
   return null;
 }
 
+/** 给律师的附件（起草说明、核对清单、对照表等）：复核时排在正文之后。 */
+const ATTACHMENT_NAME = /起草说明|核对清单|对照表|待定事项|待确认事项|修改说明|修改对照|说明表|附件|证据目录|清单/;
+
 /**
- * 复核对象：本任务登记的 Word 文书，每个文件名取最新一版。修改文书任务取清洁稿与修改对照表，并按清洁稿登记的原件做段落差异。
+ * 复核对象：本任务登记的全部 Word 文书与表格附件（每个文件名取最新一版），按主次排好——主交付物（方法定的那一份）在前，
+ * 其次是 Word 正文、表格（以表格为主交付物的方法表格在前），起草说明、核对清单一类附件在后；字数按主次分配见 reviewMessages。
+ * 修改文书任务取清洁稿与修改对照表，并按清洁稿登记的原件做段落差异。整理审查要点的任务取本任务存下的审查要点草稿。
  * 纯查询 + 读成果块。
  */
-export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string, kind: ReviewKind): { docs: ReviewDoc[]; diff: string[]; title: string; inventory: string[]; reply: string; sources: string[] } | null {
+export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string, kind: ReviewKind, primary: string | null = null): { docs: ReviewDoc[]; diff: string[]; title: string; inventory: string[]; reply: string; sources: string[] } | null {
+  if (kind === "rules") return rulesReviewTarget(deps, runId, matterId);
   const rows = deps.db.all<{ filename: string; storage_uri: string; manifest: string | null; created_at: string }>(
     `SELECT filename, storage_uri, manifest, created_at FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','revision_draft','revision_clean') AND lower(filename) LIKE '%.docx' ORDER BY created_at, version`,
     [runId, matterId],
@@ -1326,8 +1332,35 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
       }
     }
   }
-  if (picked.length === 0) return null;
-  const docs = picked.slice(0, 4).map((r) => {
+  // 表格附件（V16 第 41 批：m29 发给对方董秘的资料清单、m26 计算表原先不在复核范围）：系统按事实生成的事实时间线不复核
+  const tableRows = deps.db.all<{ filename: string; storage_uri: string; manifest: string | null }>(
+    `SELECT filename, storage_uri, manifest FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind = 'agent_table' AND lower(filename) LIKE '%.xlsx' ORDER BY created_at, version`,
+    [runId, matterId],
+  );
+  const latestTable = new Map<string, (typeof tableRows)[number]>();
+  for (const r of tableRows) latestTable.set(r.filename, r);
+  const tables = [...latestTable.values()].filter((r) => !(r.manifest ?? "").includes('"system_generated":true'));
+  if (picked.length === 0 && tables.length === 0) return null;
+  // 主次：方法定的主交付物 → 正文（以表格为主的方法表格在前）→ 附件；同一档按生成先后
+  const stem = (primary ?? "").replace(/\.(docx|xlsx)$/i, "").replace(/[《》]/g, "").trim();
+  const rank = (filename: string, isTable: boolean): number => {
+    if (stem && filename.includes(stem)) return 0;
+    if (ATTACHMENT_NAME.test(filename.replace(/\.(docx|xlsx)$/i, ""))) return 3;
+    return isTable === (kind === "table") ? 1 : 2;
+  };
+  const ordered = [...picked.map((r) => ({ r, isTable: false })), ...tables.map((r) => ({ r, isTable: true }))]
+    .map((x, i) => ({ ...x, i, rank: /（清洁稿）\.docx$/i.test(x.r.filename) ? -1 : rank(x.r.filename, x.isTable) }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i);
+  const docs = ordered.map(({ r, isTable }) => {
+    if (isTable) {
+      let text = "";
+      try {
+        text = workbookText(deps.blobs.read(r.storage_uri));
+      } catch {
+        text = "";
+      }
+      return { filename: r.filename, text };
+    }
     const buf = deps.blobs.read(r.storage_uri);
     let text = "";
     try {
@@ -1342,7 +1375,7 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
     }
     return { filename: r.filename, text };
   });
-  const main = picked.find((r) => /（清洁稿）\.docx$/i.test(r.filename)) ?? picked[0]!;
+  const main = ordered[0]!.r;
   // 本任务交出的全部文件与助手的最终答复（V13 W2：复核人没看到修订稿与答复，误报“没交修订稿”“其他问题没列给律师”）
   // 修订稿只给复核人一行“痕迹概况”（V14 第 39 批，基线走查 B 独立评分：复核人只看清洁稿，看不到修订作者是 AI 标签、带着内部批注，
   // 律师说“修订稿要能直接发回对方”时没法发现）：修订处数、修订作者、批注条数
@@ -1376,14 +1409,36 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
         .map((r) => r.filename),
     ),
   ].map((f) => `${f}${redlineNote(f)}`);
+  return { docs: docs.filter((d) => d.text.trim().length > 0), diff, title: main.filename.replace(/\.(docx|xlsx)$/i, ""), inventory, reply: finalReply(deps, runId, matterId), sources };
+}
+
+/** 助手给律师的最终答复（最新一版）。 */
+function finalReply(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string): string {
   const replyRow = deps.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('a1_agent_draft','a1_agent_draft_partial') ORDER BY created_at DESC, version DESC LIMIT 1`, [runId, matterId]);
-  let reply = "";
   try {
-    reply = replyRow ? deps.blobs.read(replyRow.storage_uri).toString("utf8") : "";
+    return replyRow ? deps.blobs.read(replyRow.storage_uri).toString("utf8") : "";
   } catch {
-    reply = "";
+    return "";
   }
-  return { docs: docs.filter((d) => d.text.trim().length > 0), diff, title: main.filename.replace(/\.docx$/i, ""), inventory, reply, sources };
+}
+
+/**
+ * 整理审查要点的复核对象（V16 第 41 批：E5、m41、m44 的主交付物是存进事项的审查要点草稿，不是文件，原先没有复核）：
+ * 本任务最近一次 rules.propose 存下的草稿（代号形态），逐条写成一行。没有草稿时不复核。
+ */
+function rulesReviewTarget(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string): { docs: ReviewDoc[]; diff: string[]; title: string; inventory: string[]; reply: string; sources: string[] } | null {
+  const row = deps.db.get<{ title: string; rules: string }>(`SELECT title, rules FROM matter_review_rules WHERE run_id = ? AND matter_id = ? AND status = 'draft' ORDER BY created_at DESC LIMIT 1`, [runId, matterId]);
+  if (!row) return null;
+  let rules: { no?: unknown; topic?: unknown; standard?: unknown; fallback?: unknown; red_line?: unknown }[] = [];
+  try {
+    rules = JSON.parse(row.rules);
+  } catch {
+    rules = [];
+  }
+  if (!Array.isArray(rules) || rules.length === 0) return null;
+  const text = rules.map((r, i) => `要点 ${Number(r.no) || i + 1}｜${String(r.topic ?? "")}｜我方标准：${String(r.standard ?? "")}｜可退让：${r.fallback ? String(r.fallback) : "（未写）"}｜不可谈：${r.red_line ? String(r.red_line) : "（未写）"}`).join("\n");
+  const title = `审查要点草稿《${row.title}》`;
+  return { docs: [{ filename: title, text }], diff: [], title, inventory: [`${title}（共 ${rules.length} 条，存在事项的审查要点草稿里，律师审定启用前不生效）`], reply: finalReply(deps, runId, matterId), sources: [] };
 }
 
 /** 法条原文一节（分析截止日格式不对时按今天取版本；查库出错不影响复核，只是不附原文）。 */
@@ -1429,7 +1484,9 @@ function revisedSinceFix(db: KernelDb, runId: string, matterId: string): { versi
     `SELECT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND created_at >= ? AND kind IN ('agent_report','revision_draft','revision_clean','agent_table') ORDER BY created_at`,
     [runId, matterId, fixFrom],
   );
-  return { versions: rows.length, filenames: [...new Set(rows.map((r) => r.filename))] };
+  // 整理审查要点：修改轮重交的是审查要点草稿（存进事项，不是文件）
+  const rules = db.all<{ title: string }>(`SELECT title FROM matter_review_rules WHERE run_id = ? AND matter_id = ? AND created_at >= ?`, [runId, matterId, fixFrom]);
+  return { versions: rows.length + rules.length, filenames: [...new Set([...rows.map((r) => r.filename), ...rules.map((r) => `审查要点草稿《${r.title}》`)])] };
 }
 
 /**
@@ -1452,7 +1509,9 @@ async function runReviewStage(
   if (ctx.deps.independentReview === false) return none;
   const picked = reviewKindOf(db, runId, p.skill);
   if (!picked) return none;
-  const targets = reviewTargets(ctx.deps, runId, run.matter_id, picked.kind);
+  // 主交付物排在复核对象最前（字数按主次分配）：律师指定方法的取任务快照里的，自由描述的取助手加载的方法
+  const primary = typeof inputSnapshot(run)?.skill_primary_output === "string" ? String(inputSnapshot(run).skill_primary_output) : ctx.deps.skillPrimaryOf ? loadedPrimaryOutput(db, runId, ctx.deps.skillPrimaryOf) : null;
+  const targets = reviewTargets(ctx.deps, runId, run.matter_id, picked.kind, primary);
   if (!targets || targets.docs.length === 0) return none;
   const tz = ctx.deps.tokens;
   // 交给复核人的文书、答复、文件清单和交回修改的意见，都是助手或复核人写的文字：只把事项里已经认得的姓名、机构换成代号，不再从这些文字里“认新名字”

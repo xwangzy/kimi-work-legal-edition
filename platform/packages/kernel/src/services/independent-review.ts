@@ -8,13 +8,13 @@
  *
  * 本文件只放纯函数：选哪些方法复核、取文书文字、原件与清洁稿的段落差异、拼复核提示、解析复核意见、拼交回原会话的修改指示。
  */
-import { compareDocx, docxListLabels, extractParagraphs, paragraphCells, readZipEntries, readZipText } from "@zr-legal/docx-engine";
+import { compareDocx, docxListLabels, extractParagraphs, paragraphCells, readCreatedXlsx, readZipEntries, readZipText, xlsxToText } from "@zr-legal/docx-engine";
 import type { Lawdb } from "@zr-legal/lawdb";
 import { sectionsOfDocx } from "../tools/tools/edit-draft.ts";
 import { citationsVerify, extractCitations } from "../tools/tools/citations.ts";
 import { cnToInt, intToCn } from "../tools/tools/cn-numerals.ts";
 
-export type ReviewKind = "draft" | "revise" | "opinion" | "pleading" | "review" | "letter" | "report";
+export type ReviewKind = "draft" | "revise" | "opinion" | "pleading" | "review" | "letter" | "report" | "table" | "rules";
 
 /** 复核哪些方法（主交付物是 Word 文书的起草、修改、意见、诉讼文书、审查意见书）。 */
 export const REVIEW_KIND_OF_SKILL: Readonly<Record<string, ReviewKind>> = Object.freeze({
@@ -42,6 +42,22 @@ export const REVIEW_KIND_OF_SKILL: Readonly<Record<string, ReviewKind>> = Object
   "labor-dispute": "opinion",
   "due-diligence": "opinion",
   "case-report": "report",
+  // V16 第 41 批（回归评分二：m10 庭审提纲举证期限晚一天没人拦；m16、m21、m31、m32、m36、m39、E5/m41/m44、E1/m02、m03、m05 都没有复核环节）
+  // 以表格为主交付物的方法按“表格”清单复核（金额期限复算、表间一致、最早届满口径、逐行出处、单元格里的内部用语、委托点名事项是否有行）
+  "casefile-organize": "table",
+  "issue-evidence-matrix": "table",
+  "amount-calc": "table",
+  "procedure-check": "table",
+  "citation-check": "table",
+  "closing-checklist": "table",
+  "intake-notes": "table",
+  // 庭审提纲是内部诉讼文书：按诉讼文书清单（期间、证据目录与证据对应）
+  "hearing-outline": "pleading",
+  // 回稿重审、修订说明与谈判要点：按审查意见清单（覆盖、条文一致、联动）
+  "redraft-review": "review",
+  "contract-redline": "review",
+  // 整理审查要点：交付的是存进事项的审查要点草稿（不是文件），复核读这份草稿；修改轮用 rules.propose 重交
+  "review-rules-draft": "rules",
 });
 
 export interface ReviewDoc {
@@ -49,6 +65,50 @@ export interface ReviewDoc {
   filename: string;
   /** 文字视图（带条款编号与表格，代号形态）。 */
   text: string;
+}
+
+/**
+ * 表格附件的文字视图（V16 第 41 批：复核原先只看 Word，m29 要发给对方董秘的资料清单、m26 计算表都没人复核）：
+ * 每张工作表写表名、表头，数据行按“［第 N 行］”逐行给出——行号与 xlsx.edit_cells 的数据行号一致（不含表头、从 1 起），各格用“｜”分隔。
+ * 不是表格工具写的表（读不回）按通用的表格文字视图给出。
+ */
+export function workbookText(buf: Buffer): string {
+  const sheets = readCreatedXlsx(buf);
+  if (sheets) {
+    return sheets
+      .map((sh) => [`［工作表］${sh.name}`, `［表头］${(sh.rows[0] ?? []).map((c) => String(c ?? "")).join("｜")}`, ...sh.rows.slice(1).map((r, i) => `［第 ${i + 1} 行］${r.map((c) => (c === null ? "" : String(c))).join("｜")}`)].join("\n"))
+      .join("\n\n");
+  }
+  try {
+    return xlsxToText(buf).text;
+  } catch {
+    return "";
+  }
+}
+
+/** 复核请求里交付件（Word 文书、表格、审查要点草稿）合计的上限（字）：主交付物在前、优先给全，其余按先后各保底 REVIEW_DOC_FLOOR 字。 */
+export const REVIEW_DELIVERABLE_MAX = 80_000;
+export const REVIEW_DOC_FLOOR = 3_000;
+
+/**
+ * 按主次分配交付件字数（纯函数）：docs 已按主次排好（主交付物在前）。先给每份保底（不超过它本身的长度），再按先后补足到各自上限 REVIEW_DOC_MAX；
+ * 合计不超过 total。返回每份实际给出的字数。
+ */
+export function allocateDeliverables(lengths: readonly number[], total = REVIEW_DELIVERABLE_MAX, per = REVIEW_DOC_MAX, floor = REVIEW_DOC_FLOOR): number[] {
+  const alloc = lengths.map(() => 0);
+  let left = total;
+  lengths.forEach((len, i) => {
+    const a = Math.min(len, floor, left);
+    alloc[i] = a;
+    left -= a;
+  });
+  lengths.forEach((len, i) => {
+    const want = Math.min(len, per) - alloc[i]!;
+    const take = Math.max(0, Math.min(want, left));
+    alloc[i]! += take;
+    left -= take;
+  });
+  return alloc;
 }
 
 export interface ReviewFinding {
@@ -329,6 +389,22 @@ const FOCUS: Record<ReviewKind, string> = {
     "3. 条款之间的联动（付款、验收、违约、解除、上限、争议解决）是否被看到。",
     "4. 客户的商业目标与时间节点是否被倒排核对。",
   ].join("\n"),
+  table: [
+    "表格按“［工作表］表名、［表头］、［第 N 行］”给出，位置写“表名第 N 行／列名”（N 与表格工具的数据行号一致）。",
+    "1. 金额与期限逐项复算：本金、利息、违约金、日数、届满日按材料里的数和约定实际算一遍，写出算式与取自哪份材料；算不清的标“建议复算”。",
+    "2. 一致性：各表之间、表内小计与合计、表格与随附 Word 文书里的同一金额、日期、期限是否一致；同一事项在不同行的说法是否打架。",
+    "3. 期限口径：是否取了最早届满的口径（起算日当日是否计入、是否顺延、不同条款或不同法律规定的期间），其他口径是否也列出；已经届满或临期的有没有放在醒目位置。",
+    "4. 出处：每一行写的材料名、条款、日期、原句能否在材料里对上；材料里没有的事实被写成已查明的，列出来。",
+    "5. 单元格里有没有内部提示或流程用语（工具名、内部编号、“手工计算，请复核”“未经本所质量验收”“审查工作台”、写给律师的话）；要发给客户、对方或法院的表尤其不能有。",
+    "6. 覆盖面：委托里点名要查、要列的事项，是否每一项都有对应的行；表里的法律判断（管辖、时效、法条）是否与后面附的法条原文相符。",
+  ].join("\n"),
+  rules: [
+    "交付的是审查要点草稿（律师审定启用后，以后审这类合同时按它判“偏离”），每条写“要点 n｜条款｜我方标准｜可退让｜不可谈”；位置写“要点 n”。",
+    "1. 出处：每一条的我方标准、可退让能否在范本或客户标准里找到写明的原文；范本没写的不应补，范本写明不属于合同条款的（如内部审批流程）不应收为要点。",
+    "2. 不可谈：只有范本写明不能接受、必须、红线的事项才写不可谈；把范本的一般立场写成不可谈、或范本写明的底线漏写的，列出来。",
+    "3. 覆盖：逐节对照范本，范本写明的立场是否都收进了要点；同一事项是否重复或互相矛盾。",
+    "4. 范本本身前后矛盾、或低于客户在别处写明的底线的，是否在给律师的答复里提示（不替客户定）。",
+  ].join("\n"),
 };
 
 const ROLE: Record<ReviewKind, string> = {
@@ -339,6 +415,8 @@ const ROLE: Record<ReviewKind, string> = {
   review: "下面是一位律师助理对合同做的审查意见",
   letter: "下面是一位律师助理按委托起草的律师函、催告函或通知",
   report: "下面是一位律师助理按委托写给客户或管理层的案件进展汇报",
+  table: "下面是一位律师助理按委托做出的工作表格（Excel）与随附文书",
+  rules: "下面是一位律师助理从本所范本、客户标准里整理出的审查要点草稿",
 };
 
 export function reviewMessages(p: {
@@ -362,7 +440,15 @@ export function reviewMessages(p: {
   /** 文书引用的法条在本机法规库里的原文（lawExcerptLines 的各行，代号形态不涉及）。 */
   laws?: readonly string[];
 }): { role: "system" | "user"; content: string }[] {
-  const docTexts = p.docs.map((d) => `【交付件：${d.filename}】\n${cut(d.text, REVIEW_DOC_MAX)}`);
+  // 全部交付件都进复核（V16 第 41 批：m37 七份公司文件只复核了四份），总量按主次分配；没给全的如实告诉复核人
+  const alloc = allocateDeliverables(p.docs.map((d) => d.text.length));
+  const docTexts = p.docs.flatMap((d, i) => (alloc[i]! > 0 ? [`【交付件：${d.filename}】\n${cut(d.text, alloc[i]!)}`] : []));
+  const partial = p.docs.flatMap((d, i) => (alloc[i]! > 0 && alloc[i]! < d.text.length ? [`《${d.filename}》只给了前 ${alloc[i]} 字（全文 ${d.text.length} 字）`] : []));
+  const omitted = p.docs.flatMap((d, i) => (alloc[i] === 0 ? [`《${d.filename}》`] : []));
+  const coverage =
+    partial.length + omitted.length > 0
+      ? [`【复核范围说明】交付件合计超出这次复核的字数上限（${REVIEW_DELIVERABLE_MAX} 字），${[partial.length > 0 ? `${partial.join("；")}` : "", omitted.length > 0 ? `${omitted.join("")}没有提供文字` : ""].filter(Boolean).join("；")}。没给全的部分不要推定有问题或没有问题，涉及的写“未见全文，建议核对”，不定为“必须改”。`]
+      : [];
   const used = docTexts.reduce((n, t) => n + t.length, 0) + (p.diff ?? []).reduce((n, t) => n + t.length, 0);
   const perMaterial = Math.max(2_000, Math.min(REVIEW_MATERIAL_MAX, Math.floor((REVIEW_TOTAL_MAX - used) / Math.max(1, p.materials.length))));
   const system = [
@@ -404,6 +490,7 @@ export function reviewMessages(p: {
       : []),
     "",
     "=== 待复核交付件 ===",
+    ...coverage,
     ...docTexts,
     ...(p.laws && p.laws.length > 0
       ? ["", `=== 文书引用的法条在本机法规库里的原文（按分析截止日 ${p.asOf} 适用的版本；系统从交付件文字里抽出后查库附上） ===`, ...p.laws]
@@ -476,7 +563,11 @@ function fixTargetLines(targets: readonly FixTarget[]): string[] {
 
 export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], reviewText: string, limitMs?: number, targets: readonly FixTarget[] = [], laws: readonly string[] = []): string {
   const how =
-    kind === "revise"
+    kind === "rules"
+      ? "成立的，用 rules.propose 重新提交审查要点：同一任务再次提交会整份替换上一份草稿，所以要交全部要点（改了的和没改的都交），不只交改动的几条；不成立的不改。"
+      : kind === "table"
+        ? "成立的，表格用 xlsx.edit_cells 在原表上逐格改（一次提交多处；行号按复核意见里的“第 N 行”，即不含表头的数据行号），不整份重新生成；随附的 Word 文书用 docx.edit_draft 逐处改，两边的同一数字一起改。"
+        : kind === "revise"
       ? "成立的，在原件上调用 docx.revise 用补交方式（amend）只交这次要更正的几条：要换的按上一次清单的序号写 replace、不要的写 remove、新加的写 add，其余各条内核记着、不要重发全部修改——内核合成完整清单后从原件重新生成新版本，修订稿与清洁稿以最后一次为准；不要用 docx.edit_draft 改修订稿或清洁稿。"
       : "成立的，用 docx.edit_draft 在已生成的文书上逐处修改（一次提交多处；某处定位不到的，按返回的原因改正后只重交那几处）；结构要大改（增删多条、重排）才用 docx.render_report 重出。附件（起草说明、待定事项等）受影响的同样修改；表格附件用 xlsx.edit_cells 在原表上逐格改，不整份重新生成。";
   return [
