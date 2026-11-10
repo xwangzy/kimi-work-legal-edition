@@ -29,6 +29,9 @@ export const TOOL_LABELS: Record<string, string> = {
   Skill: "使用方法模板",
 };
 
+/** 上游说的是余额或额度不足（不是连不上）：与内核给律师的失败说明同一口径（V16 第 41 批真实走查：额度用完时这一步写成“AI 服务连不上”，下一行又写“余额或额度不足”） */
+const QUOTA_RE = /额度不足|预扣费|余额不足|insufficient[_ ]?(?:quota|balance|credit)|quota[_ ]?exceeded|billing|欠费/i;
+
 export function toolLabel(name: string): string {
   if (name.startsWith("mcp__legal__")) {
     // 引擎里的工具名把第一个点写成下划线（materials.read_excerpt → mcp__legal__materials_read_excerpt）
@@ -467,7 +470,7 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         // 律师层只给一句可理解的说明（不显示英文错误与状态码）；原文进“处理细节”（UIUX 增量评审 P0-D）。
         // retryable 由内核保留（复核 B4-B21：此前被裁掉，“正在自动重试”永远不出现）
         // 模型通道不可达（provider.*，第 28 批演练）：直说 AI 服务连不上，不写“任务会尽量继续”
-        steps.push({ key: `${e.event_id}-l`, level: "lawyer", icon: "fail", title: p.retryable === true ? "AI 服务出了点问题，正在自动重试" : String(p.code ?? "").startsWith("provider.") ? "AI 服务连不上，这一步没有完成" : "这一步没有完成，任务会尽量继续", at });
+        steps.push({ key: `${e.event_id}-l`, level: "lawyer", icon: "fail", title: p.retryable === true ? "AI 服务出了点问题，正在自动重试" : String(p.code ?? "").startsWith("provider.") ? (QUOTA_RE.test(String(p.message ?? "")) ? "AI 服务账户的余额或额度不足，这一步没有完成" : "AI 服务连不上，这一步没有完成") : "这一步没有完成，任务会尽量继续", at });
         // V16（审计第 8 条）：处理细节里只写出错代码，原始错误原文（常为英文）只进诊断信息
         steps.push({ key: `${e.event_id}`, level: "detail", icon: "fail", title: "出错代码", at, detail: `${String(p.code ?? "") || "未知"}（可在 设置 → 备份与安全 导出诊断信息给客服）` });
         break;

@@ -159,3 +159,10 @@ test("V16 F1～F6：出具法律意见书新卡；劳动者卡改名；催告函
   assert.match(src("lib/timeline.ts"), /only_attachments: "助手只交了附件，没有交出主文书，可以在本任务里追问补出"/);
   assert.match(src("components/Cards.tsx"), /<textarea className="q-other"/, "提问卡“其他”改多行");
 });
+
+test("额度用完时任务进度写“余额或额度不足”，不写“连不上”", () => {
+  const steps = (buildSteps as any)([{ event_id: 1, seq: 10004, type: "agent.error", created_at: "2026-11-10T08:43:00.000Z", payload: { code: "provider.auth_error", message: "403 预扣费额度失败, 用户剩余额度: ¥0.9", retryable: false } }]);
+  const text = JSON.stringify(steps);
+  assert.match(text, /AI 服务账户的余额或额度不足，这一步没有完成/);
+  assert.equal(/连不上|预扣费|403/.test(text), false);
+});
