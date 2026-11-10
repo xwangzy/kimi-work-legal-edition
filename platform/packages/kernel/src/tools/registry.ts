@@ -543,7 +543,10 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "materials.list",
     title: "材料目录",
-    description: "列出本事项的材料：本任务提供的快照序号、解析版本、字数、页数与识别质量（partial/unreadable 表示有页未能识别，须在结论中说明未读取范围）。",
+    description:
+      "列出本事项的材料：本任务提供的快照序号、解析版本、字数、页数与识别质量（partial/unreadable 表示有页未能识别，须在结论中说明未读取范围）；" +
+      "另带系统按规则比出的金额不一致：amount_conflicts（这份材料里大写与小写金额对不上）、cross_material_conflicts（不同材料对同一天的付款写了不同金额），有的要列进交付件的矛盾或缺口、请律师核对原件。" +
+      "这些是系统内部字段，交付件里用“序号”“能否读清”等律师的说法，不照抄字段名和取值。",
     sideEffect: "read",
     resource: "matter_materials",
     version: "1",

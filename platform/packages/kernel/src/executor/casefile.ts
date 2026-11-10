@@ -27,6 +27,13 @@ export interface FactRow {
   assertion: "material_record"; // 只标材料记载
   /** 同一处大写与小写金额对不上（如“肆拾伍万伍仟元整（¥445,000.00）”）：写明两处数额，补证清单列为待核（V14 第 39 批） */
   conflict?: string;
+  /** 与 conflict 同时写：这一对大写、小写各自的原文与数额（给 materials.list 列给助手；V16 第 41 批） */
+  conflict_pair?: AmountWordsPair;
+}
+
+export interface AmountWordsPair {
+  upper: { text: string; amount_yuan: number };
+  lower: { text: string; amount_yuan: number };
 }
 
 /** 字符区间 → 文件页码（\f 换页符计数；无 \f 即无页码映射，如实返回 null）。 */
@@ -236,6 +243,7 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
         const note = `大写“${up.text}”（${up.normalized}）与小写“${low.text}”（${low.normalized}）不一致`;
         a.conflict = note;
         b.conflict = note;
+        a.conflict_pair = b.conflict_pair = pairOf(up, low);
       }
     }
   }
@@ -296,6 +304,7 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
       (others.length > 0 ? `（小写这一行共 ${low.cands.length} 个数：${low.cands.map((c) => c.text).join("、")}，各是什么名目请看原表；没有一个与大写相等，这里拿数额最接近大写的 ${pick.text} 来比）` : "");
     up.fact.conflict = note;
     lowFact.conflict = note;
+    up.fact.conflict_pair = lowFact.conflict_pair = pairOf(up.fact, lowFact);
   }
   for (const m of text.matchAll(PARTY_RE)) {
     out.push({
@@ -312,6 +321,70 @@ export function extractFacts(doc: { document_version_id: string; parse_version_i
     });
   }
   return out;
+}
+
+const pairOf = (up: FactRow, low: FactRow): AmountWordsPair => ({
+  upper: { text: up.text, amount_yuan: Number.parseFloat(up.normalized) },
+  lower: { text: low.text, amount_yuan: Number.parseFloat(low.normalized) },
+});
+
+/** 材料内部大写与小写金额对不上的各处（同一对只列一次）。整理案卷与 materials.list 共用。 */
+export function amountWordsConflicts(facts: readonly FactRow[]): (AmountWordsPair & { document_version_id: string; filename: string; note: string; fact: FactRow })[] {
+  const seen = new Map<string, AmountWordsPair & { document_version_id: string; filename: string; note: string; fact: FactRow }>();
+  for (const f of facts) {
+    if (f.kind !== "amount" || !f.conflict || !f.conflict_pair) continue;
+    const k = `${f.document_version_id}|${f.conflict}`;
+    if (!seen.has(k)) seen.set(k, { ...f.conflict_pair, document_version_id: f.document_version_id, filename: f.filename, note: f.conflict, fact: f });
+  }
+  return [...seen.values()];
+}
+
+/** 不同材料对同一天的付款写了不同的金额：哪一天、哪几份各写多少（只提示可能是同一笔，不判断以哪个为准）。 */
+export interface PayDayConflict {
+  date: string;
+  amounts: { amount_yuan: number; filenames: string[] }[];
+}
+
+/**
+ * 不同材料对同一天的付款写了不同金额（V16 第 41 批真实走查 E1：2023-08-10 那笔，台账、纪要、情况说明写 500,000，对方回函写 600,000，没有任何提示）：
+ * 只看同一句里既有日期、又有金额的，且这一句或同一段里它前面的话有付款字眼（回函里“已支付……明细为：某日某元；某日某元”是一段里用分号隔开的清单）；
+ * 一句里有几个日期、几个金额的，每个日期只配它后面、下一个日期之前的第一个金额（纪要写“8月10日一笔为500,000元，原账误记为600,000元”，这一天记 500,000）。
+ * 同一天有两个金额、且没有哪一份材料同时写了这两个金额的（同时写的多半是两笔），列出来请律师核对。
+ * 整理案卷与 materials.list 共用。sentences 是要在时间轴上就地标注的句子（材料编号|句首位置|日期或金额）。
+ */
+export function payDayConflicts(materials: readonly { document_version_id: string; text: string }[], facts: readonly FactRow[]): { conflicts: PayDayConflict[]; sentences: Set<string> } {
+  const textOf = new Map(materials.map((m) => [m.document_version_id, m.text] as const));
+  const dates = facts.filter((f) => f.kind === "date");
+  const amounts = facts.filter((f) => f.kind === "amount");
+  const PAY = /付款|支付|已付|实付|转账|汇款|汇入|到账|收到|收款|付至|付清|打款/;
+  const payOn = new Map<string, Map<number, Set<string>>>();
+  const paySentences = new Map<string, string[]>();
+  const sentences = new Set<string>();
+  for (const d of dates) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.normalized)) continue;
+    const t = textOf.get(d.document_version_id) ?? "";
+    const sp = sentenceAround(t, d.char_start, d.char_end);
+    const lineStart = t.lastIndexOf("\n", sp.start) + 1;
+    if (!PAY.test(t.slice(lineStart, sp.end))) continue;
+    const nextDate = Math.min(sp.end, ...dates.filter((o) => o.document_version_id === d.document_version_id && o.char_start >= d.char_end && o.char_start < sp.end).map((o) => o.char_start));
+    const a = amounts.filter((x) => x.document_version_id === d.document_version_id && x.char_start >= d.char_end && x.char_start < nextDate).sort((x, y) => x.char_start - y.char_start)[0];
+    if (!a) continue;
+    const v = Number.parseFloat(a.normalized);
+    if (!Number.isFinite(v) || v <= 0) continue;
+    const byAmount = payOn.get(d.normalized) ?? new Map<number, Set<string>>();
+    byAmount.set(v, (byAmount.get(v) ?? new Set<string>()).add(d.filename));
+    payOn.set(d.normalized, byAmount);
+    paySentences.set(d.normalized, [...(paySentences.get(d.normalized) ?? []), `${d.document_version_id}|${sp.start}|${d.normalized}`, `${d.document_version_id}|${sp.start}|${v}`]);
+  }
+  const conflicts: PayDayConflict[] = [];
+  for (const [day, byAmount] of [...payOn.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const list = [...byAmount.entries()];
+    const loose = list.filter(([, files], i) => list.some(([, other], j) => j !== i && [...files].every((f) => !other.has(f)) && [...other].every((f) => !files.has(f))));
+    if (loose.length < 2) continue;
+    for (const k of paySentences.get(day) ?? []) sentences.add(k);
+    conflicts.push({ date: day, amounts: loose.map(([v, files]) => ({ amount_yuan: v, filenames: [...files] })) });
+  }
+  return { conflicts, sentences };
 }
 
 /** S2 抽出的事实交给事实表（v9.3 复核 R15B-01）：按“同一份材料的同一句”合并，句子原文作引文，日期、金额、主体作字段；类型一律“材料记载”。 */
@@ -474,40 +547,14 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
     ] as (string | number | null)[]),
   ];
 
-  // 不同材料对同一天的付款写了不同金额（V16 第 41 批真实走查 E1：2023-08-10 那笔，台账、纪要、情况说明写 500,000，对方回函写 600,000，没有任何提示）：
-  // 只看同一句里既有日期、又有金额的，且这一句或同一段里它前面的话有付款字眼（回函里“已支付……明细为：某日某元；某日某元”是一段里用分号隔开的清单）；
-  // 一句里有几个日期、几个金额的，每个日期只配它后面、下一个日期之前的第一个金额（纪要写“8月10日一笔为500,000元，原账误记为600,000元”，这一天记 500,000）。
-  // 同一天有两个金额、且没有哪一份材料同时写了这两个金额的（同时写的多半是两笔），列出来请律师核对。只提示“可能是同一笔”，不判断以哪个为准
-  const PAY = /付款|支付|已付|实付|转账|汇款|汇入|到账|收到|收款|付至|付清|打款/;
-  const payOn = new Map<string, Map<number, Set<string>>>();
-  const paySentences = new Map<string, string[]>();
+  // 不同材料对同一天的付款写了不同金额（判断规则见 payDayConflicts，与 materials.list 同一函数）
+  const pay = payDayConflicts(input.materials, facts);
   /** 时间轴上要就地标一句“各份材料写的金额不一样”的句子（复评 N5：大小写不一致在时间轴行内有标注，这一类原先只写在补证清单里） */
-  const crossSentences = new Set<string>();
-  for (const d of dates) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.normalized)) continue;
-    const t = textOf.get(d.document_version_id) ?? "";
-    const sp = sentenceAround(t, d.char_start, d.char_end);
-    const lineStart = t.lastIndexOf("\n", sp.start) + 1;
-    if (!PAY.test(t.slice(lineStart, sp.end))) continue;
-    const nextDate = Math.min(sp.end, ...dates.filter((o) => o.document_version_id === d.document_version_id && o.char_start >= d.char_end && o.char_start < sp.end).map((o) => o.char_start));
-    const a = amounts.filter((x) => x.document_version_id === d.document_version_id && x.char_start >= d.char_end && x.char_start < nextDate).sort((x, y) => x.char_start - y.char_start)[0];
-    if (!a) continue;
-    const v = Number.parseFloat(a.normalized);
-    if (!Number.isFinite(v) || v <= 0) continue;
-    const byAmount = payOn.get(d.normalized) ?? new Map<number, Set<string>>();
-    byAmount.set(v, (byAmount.get(v) ?? new Set<string>()).add(d.filename));
-    payOn.set(d.normalized, byAmount);
-    paySentences.set(d.normalized, [...(paySentences.get(d.normalized) ?? []), `${d.document_version_id}|${sp.start}|${d.normalized}`, `${d.document_version_id}|${sp.start}|${v}`]);
-  }
-  const crossRows: string[] = [];
-  for (const [day, byAmount] of [...payOn.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-    const list = [...byAmount.entries()];
-    const loose = list.filter(([, files], i) => list.some(([, other], j) => j !== i && [...files].every((f) => !other.has(f)) && [...other].every((f) => !files.has(f))));
-    if (loose.length < 2) continue;
-    for (const k of paySentences.get(day) ?? []) crossSentences.add(k);
-    const yuan = (v: number) => `${v.toLocaleString("en-US")} 元`;
-    crossRows.push(`${day} 的付款，各份材料写的金额不一样：${loose.map(([v, files]) => `${[...files].map((f) => `《${f}》`).join("、")}写 ${yuan(v)}`).join("；")}——可能是同一笔，请对照银行回单或收款凭证核对；也可能是当天的两笔，本机规则分不出来`);
-  }
+  const crossSentences = pay.sentences;
+  const yuan = (v: number) => `${v.toLocaleString("en-US")} 元`;
+  const crossRows: string[] = pay.conflicts.map(
+    (c) => `${c.date} 的付款，各份材料写的金额不一样：${c.amounts.map((x) => `${x.filenames.map((f) => `《${f}》`).join("、")}写 ${yuan(x.amount_yuan)}`).join("；")}——可能是同一笔，请对照银行回单或收款凭证核对；也可能是当天的两笔，本机规则分不出来`,
+  );
 
   // 事实时间轴（按发生日排序；保留来源与锚点）。V14 第 39 批：“事件”写日期所在的那句话；同一份材料里同一句话里的同一日期只列一次
   const seen = new Set<string>();
@@ -567,8 +614,8 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
   }
 
   // 材料内部不一致（本机规则只认得出大写与小写金额对不上；同一处两条只列一次）
-  const conflictRows = [...new Map(amounts.filter((f) => f.conflict).map((f) => [`${f.document_version_id}|${f.conflict}`, f] as const)).values()].map(
-    (f) => `《${f.filename}》${charPos(f.char_start, f.char_end)}：${f.conflict}——请核对原件与其他材料（对账函、收付款记录），以哪一个为准由律师判断`,
+  const conflictRows = amountWordsConflicts(amounts).map(
+    ({ fact: f }) => `《${f.filename}》${charPos(f.char_start, f.char_end)}：${f.conflict}——请核对原件与其他材料（对账函、收付款记录），以哪一个为准由律师判断`,
   );
 
   const missingRows: string[] = [];

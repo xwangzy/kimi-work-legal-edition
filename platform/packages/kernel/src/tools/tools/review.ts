@@ -22,6 +22,7 @@ import { acceptedText, changesDocument, listFacts, listRiskCards, submitFacts, s
 import { runLineage } from "../../services/artifact-lineage.ts";
 import { checkDeliverable } from "../../services/deliverable-check.ts";
 import { cellChars, shrinkCheck } from "../../services/version-shrink.ts";
+import { amountWordsConflicts, extractFacts, payDayConflicts, type FactRow } from "../../executor/casefile.ts";
 
 function scopeOf(ctx: InvokeCtx): { tenantId: string; matterId: string; runId: string | null } {
   const mid = ctx.claims.mid;
@@ -85,11 +86,39 @@ export function materialsList(ctx: InvokeCtx) {
       superseded: d.superseded > 0,
     };
   });
+  // 金额比对（V16 第 41 批：调用 AI 的精读、争点、管辖时效任务拿不到整理案卷的确定性比对，三个真实任务都漏了催款函
+  // “大写肆拾伍万伍仟元整 / 小写 ¥445,000.00”，其中一个还写了“金额一致”）：与整理案卷同一套规则、同一来源的材料文字
+  // （最新解析文字的前 5 万字）。本任务选了材料的只比这几份，没选的比本事项全部现行材料
+  const scope = out.filter((m) => m.parse_version_id && (index.size > 0 ? m.in_this_task : !m.superseded));
+  const texts = scope.map((m) => ({
+    document_version_id: m.document_version_id,
+    parse_version_id: m.parse_version_id!,
+    filename: m.filename,
+    text: (ctx.db.get<{ content: string }>(`SELECT content FROM parse_texts WHERE parse_version_id = ?`, [m.parse_version_id])?.content ?? "").slice(0, 50_000),
+  }));
+  let facts: FactRow[] = [];
+  try {
+    facts = texts.flatMap((t) => extractFacts(t));
+  } catch {
+    facts = [];
+  }
+  const words = amountWordsConflicts(facts);
+  const pay = payDayConflicts(texts, facts).conflicts;
+  const materials = out.map((m) => {
+    const mine = words.filter((w) => w.document_version_id === m.document_version_id);
+    return mine.length === 0
+      ? m
+      : { ...m, amount_conflicts: mine.map((w) => ({ upper: { text: w.upper.text, amount_yuan: w.upper.amount_yuan }, lower: { text: w.lower.text, amount_yuan: w.lower.amount_yuan } })) };
+  });
   return {
-    materials: out,
+    materials,
+    ...(pay.length > 0 ? { cross_material_conflicts: pay.map((c) => ({ date: c.date, amounts: c.amounts })) } : {}),
     note:
       "in_this_task=true 的材料已作为快照放在工作区 materials/ 目录（文件名以 snapshot_index 三位序号开头）；其他材料可用 materials.read_excerpt 按 parse_version_id 读取。" +
-      "quality 为 partial/unreadable 的材料存在识别不全的页，结论中须如实说明未读取的范围。",
+      "quality 为 partial/unreadable 的材料存在识别不全的页，结论中须如实说明未读取的范围。" +
+      "amount_conflicts（这份材料里大写与小写金额对不上的各处）与 cross_material_conflicts（不同材料对同一天的付款写了不同金额）是系统按规则比出来的，只覆盖这两类：" +
+      "有的要列进交付件的矛盾或缺口里，写明两处原文与数额，请律师核对原件；没有列出不等于金额都一致，不要写“金额一致”“未发现冲突”。" +
+      "这些字段名和取值（snapshot_index、quality=ok 等）是系统内部的，交付件里用“序号”“能否读清”等律师的说法，不照抄。",
   };
 }
 
