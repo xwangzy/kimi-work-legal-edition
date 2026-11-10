@@ -307,6 +307,21 @@ test("V16 第 41 批：有必须改的意见、修改轮一个字没改——任
   }
 });
 
+test("V16 第 41 批：复核人的约束——改法不代写对外正文、站在委托人一方、金额写出处与算式、“必须改”限定范围；修改轮可判不成立、改法不照抄", () => {
+  const m = reviewMessages({ kind: "pleading", stance: "被申请人", jurisdiction: "中国大陆", asOf: "2026-11-10", goal: "写答辩书", materials: [], docs: [{ filename: "答辩书.docx", text: "正文" }] });
+  const sys = m[0]!.content;
+  assert.match(sys, /不替起草人写成段的对外正文，不写【待填】，不把材料里没有的事实写成已经发生/);
+  assert.match(sys, /意见必须站在委托人一方[\s\S]*写成“风险提示”，不定为“必须改”/);
+  assert.match(sys, /写出取自哪份材料的哪个数和算式[\s\S]*标“建议复算”，不定为“必须改”/);
+  assert.match(sys, /“必须改”只用于：与委托或材料明显不符、法律依据错误、金额或期限错误、遗漏委托事项、会直接损害委托人的表述；其余用“建议改”/);
+  // 各类别通用：起草、修订、函件同样带着
+  for (const kind of ["draft", "revise", "letter", "report", "review", "opinion"] as const) assert.match(reviewMessages({ kind, stance: "x", jurisdiction: "x", asOf: "x", goal: "x", materials: [], docs: [] })[0]!.content, /意见必须站在委托人一方/);
+  assert.equal(/尽量给可直接替换的文字/.test(m[1]!.content), false, "输出格式不再要求改法给可直接替换的文字");
+  const fp = fixPrompt("pleading", [{ no: 1, where: "第二段", problem: "p", basis: "b", fix: "f", must: true }], "");
+  assert.match(fp, /判定不成立，不改，在答复里写明理由；不成立的不改不算没完成/);
+  assert.match(fp, /复核意见的“改法”是方向，不要原样抄进文书/);
+});
+
 test("律师在任务中的答复交给复核人（V13 W6：律师答了“180 万元含税”“30%/40%/30%”，复核人只看委托原话，把这两项当成无出处的商业条件、要求改回待定）", { timeout: 180_000 }, async () => {
   // 纯函数：单选、多选、其他、跳过；去掉引擎要求的推荐后缀
   const q = { question_id: "q", questions: [
