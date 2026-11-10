@@ -503,6 +503,7 @@ export class KapRuntime {
       fetchAllowlist: policy.fetchAllowlist,
       budget: { maxToolCalls: policy.budget.maxToolCalls, maxSubagents: policy.budget.maxSubagents },
       planFirst,
+      continued: Boolean(req.continue_session_id),
     });
     this.runs.set(runId, run);
     this.runBySession.set(session.id, runId);

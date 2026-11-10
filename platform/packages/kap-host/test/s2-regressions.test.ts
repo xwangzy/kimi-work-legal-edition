@@ -442,3 +442,24 @@ test("重试同一任务（第 4 批复核 B 范围外发现）：上一次运�
   const settling = runtimeWith(fakeRunRecord({ status: "succeeded", settling: true }));
   await assert.rejects(() => settling.rt.startRun({ matter_id: "m", goal: "重试", run_id: "r" } as never, origin as never), /运行已存在/);
 });
+
+test("V16 第 41 批：接着原会话、未开“先出计划”的一轮（独立复核后的修改轮、追问），计划确认由宿主代批，不弹计划卡；主任务与开了先出计划的照旧出卡", () => {
+  const p = policy();
+  const exit = (sid: string, id: string) => tag(ev(p, sid, id, "ExitPlanMode", { options: [{ label: "按计划执行" }] }));
+  // 修改轮：默认档、续接、不出计划 → 代批（runtime 据此自动批准并记 run.approval_auto）
+  p.bindSession("fix", { ...ctx("default", 100, 4), continued: true, planFirst: false });
+  assert.equal(exit("fix", "e1"), "approve:plan_auto_approved");
+  // 主任务（不是续接）：默认档照旧出卡，不论是否开了先出计划
+  p.bindSession("main", { ...ctx("default", 100, 4), planFirst: true });
+  assert.equal(exit("main", "e2"), "approve:plan_review_by_card");
+  p.bindSession("main2", { ...ctx("default", 100, 4), planFirst: false });
+  assert.equal(exit("main2", "e3"), "approve:plan_review_by_card");
+  // 续接但律师明确开了先出计划：出卡
+  p.bindSession("cont-plan", { ...ctx("default", 100, 4), continued: true, planFirst: true });
+  assert.equal(exit("cont-plan", "e4"), "approve:plan_review_by_card");
+  // 手动档（每一步都要律师确认）：续接也出卡；问答档不能出计划
+  p.bindSession("cont-manual", { ...ctx("manual", 100, 4), continued: true, planFirst: false });
+  assert.equal(exit("cont-manual", "e5"), "approve:plan_review_by_card");
+  p.bindSession("cont-chat", { ...ctx("chat", 100, 4), continued: true, planFirst: false });
+  assert.equal(exit("cont-chat", "e6").startsWith("deny:"), true);
+});

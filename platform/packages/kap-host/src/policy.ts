@@ -53,6 +53,11 @@ export interface RunPolicyContext {
   budget: { maxToolCalls: number; maxSubagents: number };
   /** “先出计划”开关：开启时计划一律经业务审批卡由律师批准。 */
   planFirst: boolean;
+  /**
+   * 是否接着原会话继续的一轮（追问、独立复核后的修改轮）。这一轮没开“先出计划”时，模型仍调用了计划确认（ExitPlanMode）的，
+   * 宿主代为批准、不弹计划卡（V16 第 41 批真实任务：修改轮以“不出计划”启动，却弹出计划确认卡等律师点，白占时限）。
+   */
+  continued?: boolean;
 }
 
 export interface PolicyDecisionRecord {
@@ -302,7 +307,9 @@ export class HostPolicy {
         // 权限层放行；计划本身的确认由工具自己的交互发起（引擎侧权限模式固定 manual），业务层呈现为审批卡。
         // “自动”档且未开“先出计划”时，宿主按自动档语义代为批准该确认（runtime.ts，记 run.approval_auto）
         if (mode === "chat") return deny("chat_read_only", spec.grade);
-        return approve(mode === "auto" && !ctx.planFirst ? "plan_auto_approved" : "plan_review_by_card", spec.grade);
+        // 接着原会话、未开“先出计划”的一轮（默认档、自动档）同样代批：续接的会话可能仍在计划模式，或模型照着前一轮的习惯又出计划。
+        // 手动档（每一步都要律师确认）照旧出卡；开了“先出计划”的照旧出卡
+        return approve((mode === "auto" || (ctx.continued === true && mode !== "manual")) && !ctx.planFirst ? "plan_auto_approved" : "plan_review_by_card", spec.grade);
       case "T0":
         if (!this.consumeBudget(state, 0)) return this.overBudget(state, 0, ask, deny, spec.grade);
         return mode === "manual" ? ask("manual_mode", spec.grade, null) : approve("read_within_matter", spec.grade);
