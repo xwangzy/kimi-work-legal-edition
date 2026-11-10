@@ -287,7 +287,7 @@ test("V16 第 41 批：有必须改的意见、修改轮一个字没改——任
     const ms = msgs(body);
     const users = ms.filter((m) => m.role === "user").map((m) => JSON.stringify(m.content ?? ""));
     // 修改轮：不调用任何文书工具，直接写答复
-    if (users.some((u) => u.includes("【独立复核】")) && users.some((u) => u.includes("B38NOEDIT"))) return { content: "复核意见已核对。\n\n独立复核处理情况：\n1｜未改（尚未实际写入原文书）" };
+    if (users.some((u) => u.includes("【独立复核】")) && users.some((u) => u.includes("B38NOEDIT"))) return { content: "复核意见已核对，核查表见 [管辖与时效核查表.xlsx](sandbox:/private/tmp/kw/abc/outputs/管辖与时效核查表.xlsx)。\n\n独立复核处理情况：\n1｜未改（尚未实际写入原文书）" };
     return base(body);
   };
   try {
@@ -302,6 +302,11 @@ test("V16 第 41 批：有必须改的意见、修改轮一个字没改——任
     assert.equal(outcome?.revised, 0, "没有任何文书或表格出新版本");
     const remaining = String(done.events.find((e: any) => e.type === "run.succeeded")?.payload.remaining?.join("") ?? "");
     assert.match(remaining, /独立复核提出 1 条必须改的意见，修改轮没有改动任何文书或表格：处理理由见最终答复的“独立复核处理情况”，请对照《独立复核意见》核对/);
+    // 最终答复里的本机路径链接登记前换成文件名（第 5 项）
+    const reply = done.artifacts.filter((a: any) => a.kind === "a1_agent_draft").at(-1);
+    const text = Buffer.from((await tk.inv("artifacts.download", { artifact_version_id: reply.artifact_version_id })).data_base64, "base64").toString("utf8");
+    assert.match(text, /核查表见 《管辖与时效核查表\.xlsx》（见本任务的成果）。/);
+    assert.equal(/sandbox:|\/private\//.test(text), false, text);
   } finally {
     cloud.model.script = null;
   }

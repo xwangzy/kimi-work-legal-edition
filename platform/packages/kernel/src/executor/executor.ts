@@ -36,6 +36,7 @@ import { slimAgentPayload } from "./run-progress.ts";
 import { runCapabilities, runModeOf } from "../identity.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
 import { runLineage } from "../services/artifact-lineage.ts";
+import { scrubLocalPaths } from "../services/reply-local-paths.ts";
 import { REVIEW_KIND_OF_SKILL, fixPrompt, headerFooterText, labeledText, labeledTextWithRows, parseFindings, reportText, reviewMessages, reviewNote, revisionDiff, type FixTarget, type ReviewDoc, type ReviewFinding, type ReviewKind } from "../services/independent-review.ts";
 
 export interface ExecutorDeps {
@@ -1201,7 +1202,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
     const blobsStored = accepted.map((a) => {
       const buf = Buffer.from(a.bytes);
       if (sha256Hex(buf) !== a.sha256) throw new DomainError("internal", "成果 hash 与完成记录不一致（F5）", 502);
-      return { a, stored: ctx.deps.blobs.put(buf, run.matter_id) };
+      return { a, stored: ctx.deps.blobs.put(replyWithoutLocalPaths(a.kind, buf), run.matter_id) };
     });
     if (rejected.length) appendEvent(ctx.deps, runId, attemptId, AGENT_WORKSPACE_REJECTED_SEQ, "agent.workspace_rejected", { files: rejected });
     return db.tx(() => {
@@ -1386,6 +1387,17 @@ export function fixTargetsOf(db: KernelDb, runId: string, matterId: string): Fix
     if (k) latest.set(r.filename, { filename: r.filename, artifact_version_id: r.artifact_version_id, kind: k });
   }
   return [...latest.values()];
+}
+
+/**
+ * 最终答复登记前去掉本机路径链接（V16 第 41 批真实任务：答复里有“sandbox:/private/tmp/…/outputs/管辖与时效核查表.xlsx”，
+ * 律师点不开，还露出本机目录）：换成“《文件名》（见本任务的成果）”。工作区文件原样登记。主任务与修改轮共用。
+ */
+function replyWithoutLocalPaths(kind: string, buf: Buffer): Buffer {
+  if (kind === "workspace_file") return buf;
+  const text = buf.toString("utf8");
+  const cleaned = scrubLocalPaths(text);
+  return cleaned === text ? buf : Buffer.from(cleaned, "utf8");
 }
 
 /** 修改轮开始（review.fix_started）之后新登记的交付件：Word 文书、修订稿、清洁稿、表格（版本数与文件名）。 */
@@ -1584,7 +1596,7 @@ async function runReviewStage(
     const stored = accepted.map((a) => {
       const buf = Buffer.from(a.bytes);
       if (sha256Hex(buf) !== a.sha256) throw new DomainError("internal", "成果 hash 与完成记录不一致（F5）", 502);
-      return { a, stored: ctx.deps.blobs.put(buf, run.matter_id) };
+      return { a, stored: ctx.deps.blobs.put(replyWithoutLocalPaths(a.kind, buf), run.matter_id) };
     });
     db.tx(() => {
       let seq: number = REVIEW_SEQ.fixArtifacts;
