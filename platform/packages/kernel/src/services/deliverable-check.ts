@@ -18,7 +18,7 @@ export interface DeliverableSection {
   table?: { columns?: unknown[]; rows?: unknown[][] } | null;
 }
 
-export type DeliverableIssueKind = "internal_term" | "foreign_word" | "markdown" | "numbering" | "cross_ref" | "amount_words" | "citation" | "table_sum";
+export type DeliverableIssueKind = "internal_term" | "foreign_word" | "markdown" | "numbering" | "cross_ref" | "amount_words" | "citation" | "table_sum" | "note_to_lawyer";
 
 export interface DeliverableIssue {
   kind: DeliverableIssueKind;
@@ -180,6 +180,8 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
   if (isPartyDocument(`${title}.docx`)) for (const i of partyDocumentIssues(paras)) push(i);
   // 递交法院、客户的文书（起诉状、答辩状、法律意见书、律师函）：给律师的提示不进正文（第 35 批真实走查 R3、R4）
   else if (isOutward(title)) for (const i of outwardIssues(paras)) push(i);
+  // 要递交法院、仲裁机构或发给对方的文书：正文不留给律师的标记（V16 第 41 批，工作准则第 5 条）
+  if (isFiledOrSent(title)) for (const i of noteToLawyerIssues(paras)) push(i);
   for (const i of numberingIssues(sections)) push(i);
   for (const i of headingNumberIssues(sections)) push(i);
   for (const i of crossRefIssues(sections, paras)) push(i);
@@ -201,7 +203,7 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
     placeholders,
     issues,
     note: ok
-      ? "交付前检查未发现问题（只查工具用语、夹杂英文、条款编号、互引、大小写金额、表格合计、法条号这几类，不代替律师复核）"
+      ? "交付前检查未发现问题（只查工具用语、夹杂英文、条款编号、互引、大小写金额、表格合计、法条号，以及递交或发出的文书正文里给律师的标记这几类，不代替律师复核）"
       : `交付前检查发现 ${issues.length} 处问题：Word 文书用 docx.edit_draft 在这份文书上逐处改正（不要整份重新生成），表格用 xlsx.edit_cells 在这份表格上逐格改正（不要整份重新生成）；确实不需要改的（如律师要求保留），在最终答复里说明理由`,
   };
 }
@@ -219,6 +221,45 @@ const OUTWARD_INTERNAL_RE = /请律师|律师(?:核对|复核)|经律师确认|�
 function isOutward(title: string): boolean {
   if (/内部|备忘录|清单|起草说明|对照表|底稿|研究/.test(title)) return false;
   return isCourtFiling(`${title}.docx`) || /法律意见|意见书|律师函|答复函|顾问答复/.test(title);
+}
+
+/**
+ * 要递交法院、仲裁机构或发给对方的文书（V16 第 41 批）：只按文书标题判断——起诉状、答辩状（书）、上诉状、各类申请书（含仲裁、劳动仲裁）、代理词、质证意见、
+ * 再审、保全、执行申请，以及催告函、催款函、律师函、通知函。标题里有“核对、清单、起草说明、对照表、内部、备忘录、分析、研究、底稿、说明”的是给律师的附件，不查；
+ * 意见书、报告等律所文书判断不了是否原样外发，不查（宁缺毋滥）。
+ */
+const SENT_LETTER = /催告函|催款函|律师函|通知函|告知函|催收函/;
+function isFiledOrSent(title: string): boolean {
+  if (/核对|清单|起草说明|对照表|内部|备忘录|分析|研究|底稿|说明|意见书/.test(title)) return false;
+  return isCourtFiling(`${title}.docx`) || SENT_LETTER.test(title);
+}
+
+/**
+ * 给律师的标记（真实成果：代理词正文 14 处“页码【待确认】”，质证意见里“律师提示”和给律师的期限提醒，催告函 4 处【待确认】，答辩书证据“待补”）。
+ * 【待填】（非填不可的当事人信息、案号等）与【金额待测算确认】照旧允许，签发时另有提示。
+ */
+const NOTE_TO_LAWYER_RES: RegExp[] = [
+  /【[^】\n]{0,12}(?:待确认|待核实|待核对|待补充|待补)[^】\n]{0,12}】/g,
+  /律师提示|提示律师|提请律师|(?:^|[。；！？\n]\s*)请律师/g,
+  /(?<![【])待补(?:充)?(?=[）)】，,。；;、：:\s|｜]|$)/g,
+];
+function noteToLawyerIssues(paras: readonly Para[]): DeliverableIssue[] {
+  const out: DeliverableIssue[] = [];
+  for (const p of paras) {
+    for (const re of NOTE_TO_LAWYER_RES) {
+      re.lastIndex = 0;
+      for (const m of p.text.matchAll(re)) {
+        const lead = /^[。；！？\n]?\s*/.exec(m[0])![0].length;
+        out.push({
+          kind: "note_to_lawyer",
+          where: p.where,
+          text: snippet(p.text, m.index! + lead, m[0].length - lead),
+          fix: "这份文书要递交法院或发给对方，正文不留给律师的标记：未确认或有矛盾的事实改用附条件写法（“如……，则……”）或对我方站得住的保守写法，照材料写的注明证据；待确认事项、提示与期限提醒移到给律师的核对附件（如《提交前核对清单》）或最终答复。只有非填不可、材料里没有的填空项留【待填】",
+        });
+      }
+    }
+  }
+  return out;
 }
 
 function outwardIssues(paras: readonly Para[]): DeliverableIssue[] {
