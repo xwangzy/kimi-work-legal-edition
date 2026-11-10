@@ -443,6 +443,20 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
       case "review.skipped":
         steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: p.reason === "no_session" ? "独立复核意见没能交回助手修改，请按《独立复核意见》核对" : "独立复核没有完成，文书未经复核", at, detail: typeof p.error === "string" ? p.error : undefined });
         break;
+      // V16 第 41 批（偏离 D-178）：审查与出建议修订稿分两段，各有各的时限
+      case "redline.started":
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "wait", title: "审查已交出，助手接着在原件上写建议修订稿", at });
+        break;
+      case "redline.outcome":
+        steps.push(
+          (p.status === "succeeded" || p.status === "partial") && Number(p.files ?? 0) > 0
+            ? { key: `${e.event_id}`, level: "lawyer", icon: p.status === "succeeded" ? "ok" : "dot", title: p.status === "succeeded" ? "建议修订稿已生成" : "建议修订稿已生成，核对没有全部做完", at }
+            : { key: `${e.event_id}`, level: "lawyer", icon: "fail", title: p.status === "timed_out" ? "写建议修订稿超过时限，审查成果不受影响" : "建议修订稿没有做出来，审查成果不受影响", at, detail: "可以在审查工作台逐条处理后点“生成修订稿”" },
+        );
+        break;
+      case "redline.skipped":
+        if (p.reason === "no_session") steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: "建议修订稿没有做出来，审查成果不受影响", at, detail: "可以在审查工作台逐条处理后点“生成修订稿”" });
+        break;
       case "review.fix_started":
         steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "wait", title: "助手按复核意见逐条核对、修改", at });
         break;

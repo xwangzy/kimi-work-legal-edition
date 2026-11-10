@@ -64,6 +64,8 @@ export interface ExecutorDeps {
   /** 复核调用时限（毫秒，缺省 15 分钟）与交回修改的工作时限（缺省 15 分钟）：超时只少了这一步，已交出的文书照常结算。 */
   reviewLimitMs?: number | undefined;
   reviewFixLimitMs?: number | undefined;
+  /** “审查＋出建议修订稿”分两段时，出修订稿那一段的工作时限（毫秒，缺省 25 分钟，见 REDLINE_LIMIT_MS；本机配置 ZR_REDLINE_LIMIT_MS）。 */
+  redlineLimitMs?: number | undefined;
   /**
    * 复核调用的推理强度（缺省 low）。V13 实验（V15 股权转让协议，约 3 万字）：不传时厂商缺省 max，1,210 秒用尽 32,000 个输出 token 仍无正文；
    * low 346 秒给出 8 条意见，与评分律师指出的核心缺陷（资金缺口、诚意金冲突、业绩补偿时间错位、法定代表人笔误）重合。
@@ -948,6 +950,36 @@ export function snapshotText(text: string, max = AGENT_SNAPSHOT_MAX_CHARS): stri
  * Agent 任务提示词里内核写的固定部分（v9.4 第 25 批抽出）：这些文字随每个任务发出、和律师的说明一起经事项令牌化器——
  * 写法不能让姓名规则误认（“律师的任务说明”曾把“任务”换成自然人代号），用例 `prompt-text-names` 逐句核对。
  */
+/**
+ * 审合同时律师在开始面板选了“同时出一份建议修订稿”（方法参数 redline 以“要”开头）：审查与出修订稿分两段做，各有各的工作时限
+ * （V16 第 41 批三次真实任务：审查本身就接近 40 分钟，修订稿挤在最后几分钟，独立复核、修改轮与最终答复被时限截掉；11-11 用户拍板拆两段，偏离 D-178）。
+ * 只认开始面板的选项，不从委托原话里猜。
+ */
+export function wantsRedlineStage(skill: string | null, skillArgs: Record<string, string> | null): boolean {
+  return !!skill && REDLINE_STAGE_SKILLS.has(skill) && typeof skillArgs?.redline === "string" && skillArgs.redline.trim().startsWith("要");
+}
+const REDLINE_STAGE_SKILLS = new Set(["contract-review"]);
+const REDLINE_STAGE_ONE_LINE =
+  "【分两段】律师选了同时出建议修订稿：审查与出修订稿分两段做。这一轮只做审查——风险卡、意见书、问题清单交齐并写出最终答复就结束，这一轮不要调用 docx.revise、不写修订稿；" +
+  "审查交出后，系统会接着本会话另给一段时间专门在原件上写修订稿，届时再写。最终答复里写明“建议修订稿随后生成”，不要写成已经生成。";
+/** 出修订稿那一段的工作时限缺省值（不含等待律师确认或回答的时间）。三次真实任务里这一步实际用 3～12 分钟。 */
+export const REDLINE_LIMIT_MS = 25 * 60_000;
+/** 出修订稿那一段的事件序号：与工作流固定序号、成果段、独立复核段（9_100+）、宿主事件镜像都不冲突；这一段的宿主事件镜像到 50000+。 */
+const REDLINE_SEQ = { started: 9_060, outcome: 9_061, skipped: 9_062, artifacts: 9_300, mirror: 50_000 } as const;
+
+/** 出修订稿那一段交给助手的话（接着原会话，不出计划）。纯函数。 */
+export function redlineStagePrompt(limitMs?: number): string {
+  const mins = limitMs ? Math.max(1, Math.round(limitMs / 60_000)) : 0;
+  return [
+    "【出建议修订稿】审查已经交出。现在按律师开始时的选择，在合同原件上写一份建议修订稿（修订痕迹），按方法模板“修订稿”一项办：",
+    "1. 用 docx.revise 把“必须修改”“建议修改”两类意见里有确定替换文字的写成修订，每处的 comment 写对应意见的标题与一句理由；“可谈”“需客户决定”的不改。修订只来自已提交的审查意见，不借机改意见以外的地方。",
+    "2. 直接正式提交，读返回的改后整段（changes）；有问题的用补交方式（amend）只交要更正的几条，留意返回里被删掉（dropped）和换了定位（retargeted）的条目，不要把全部修改重发。",
+    "3. 写完后核对：意见书、问题清单里“已写入修订稿 / 未写入”的说法要与实际写入的一致，不一致的用 docx.edit_draft、xlsx.edit_cells 在原文书上改，不重新生成。",
+    "4. 最后完整重写最终答复（它会替换审查那一轮的答复）：保留审查结论，写明修订稿、清洁稿、修改对照表已生成，列出没有写入修订稿的意见及原因。",
+    ...(mins ? [`这一段的工作时限约 ${mins} 分钟：先交出修订稿，再做核对与答复。`] : []),
+  ].join("\n");
+}
+
 export function methodPromptLine(skill: string | null, skillArgs: Record<string, string> | null, primaryOutput: string | null = null): string {
   const argsLine = skillArgs && Object.keys(skillArgs).length > 0 ? `方法参数：${Object.entries(skillArgs).map(([k, v]) => `${k}=${String(v).slice(0, 300)}`).join("；")}。` : "";
   // 主交付物（第 28 批）：文书类方法写明“必须出 Word 文书”，表格不能代替；信息不全照样出草稿（真实走查：事实未确认时只交了两份表格）
@@ -961,7 +993,8 @@ export function methodPromptLine(skill: string | null, skillArgs: Record<string,
       primaryOutput && SHEET_OUTPUT.test(primaryOutput)
       ? `本方法的主交付物是 Excel 表《${primaryOutput.replace(SHEET_OUTPUT, "")}》，必须用 xlsx.render_table 生成，不能只在答复里列表格或写文字；信息不全照样出表；要作为附页递交法院或发给对方的表不留“【待确认】”等给律师的标记，未经律师确认的数据写进给律师的核对附件和最终答复（内部分析用的表按方法标注）。`
       : "";
-  return skill ? `【方法】先调用 Skill 工具加载方法模板“${skill}”，按其步骤、工具约定与输出规格执行；${argsLine}${deliver}模板与律师的任务说明冲突时，以律师的说明为准（工作准则列明的底线除外），不为此再提问。\n` : "";
+  const staged = wantsRedlineStage(skill, skillArgs) ? REDLINE_STAGE_ONE_LINE : "";
+  return skill ? `【方法】先调用 Skill 工具加载方法模板“${skill}”，按其步骤、工具约定与输出规格执行；${argsLine}${deliver}${staged}模板与律师的任务说明冲突时，以律师的说明为准（工作准则列明的底线除外），不为此再提问。\n` : "";
 }
 
 /** 主交付物是 Word 文书的写法（方法前言 outputs 第一项）。 */
@@ -1256,15 +1289,147 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   const expected = expectedPrimary();
   const missing = outcomeStatus === "succeeded" ? primaryDeliverableMissing(db, runId, expected) : null;
   if (missing) appendEvent(ctx.deps, runId, attemptId, AGENT_PRIMARY_MISSING_SEQ, "agent.primary_missing", { primary: missing.primary, cause: missing.cause });
+  // 出建议修订稿（V16 第 41 批，偏离 D-178）：律师在开始面板选了同时出修订稿的，审查完整交出后另起一段（单独时限）在原件上写；
+  // 这一段没做完不影响审查成果，独立复核照常做（复核对象是当时已登记的全部文书）
+  const redline =
+    outcomeStatus === "succeeded" && !missing && !continueSession && wantsRedlineStage(skill, skillArgs)
+      ? await runRedlineStage(ctx, run, runId, attemptId, identity, { snapshot, purpose, fx, wallMs })
+      : { remaining: [] as string[], partial: false };
+  assertNoUnresolved();
   // 独立复核（V13 第 38 批）：主任务完整交出文书后才做；追问（在原会话上继续）不再复核
   const reviewed =
     outcomeStatus === "succeeded" && !missing && !continueSession
       ? await runReviewStage(ctx, run, runId, attemptId, identity, { skill, goalSent, snapshot, ctxM, purpose, fx, wallMs })
       : { remaining: [] as string[], partial: false };
   assertNoUnresolved();
-  const finalStatus = outcomeStatus === "partial" || missing || reviewed.partial ? RunStatus.partial : RunStatus.succeeded;
-  const finalRemaining = [...remaining, ...(missing ? [missing.note] : []), ...reviewed.remaining];
+  const finalStatus = outcomeStatus === "partial" || missing || redline.partial || reviewed.partial ? RunStatus.partial : RunStatus.succeeded;
+  const finalRemaining = [...remaining, ...(missing ? [missing.note] : []), ...redline.remaining, ...reviewed.remaining];
   await ctx.step("settle", () => stepSettle(ctx, runId, attemptId, finalStatus, finalRemaining));
+}
+
+/** 本任务已登记的修订稿、清洁稿文件名（在原件上修订的产物）。纯查询。 */
+function redlineFilesOf(db: KernelDb, runId: string, matterId: string): string[] {
+  return [...new Set(db.all<{ filename: string }>(`SELECT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('revision_draft','revision_clean') ORDER BY created_at`, [runId, matterId]).map((r) => r.filename))];
+}
+
+/**
+ * 出建议修订稿那一段（V16 第 41 批，偏离 D-178）：审查交出后接着原会话发起（不出计划、单独时限，等待律师确认或回答的时间不计）。
+ * 有检查点：重试时不重做。结果只影响“还差什么”与是否记部分完成，审查成果不受影响。
+ */
+async function runRedlineStage(
+  ctx: Ctx,
+  run: RunRow,
+  runId: string,
+  attemptId: string,
+  identity: { tid: string; uid: string; mid: string; rid: string; aid: string; fence: number },
+  p: { snapshot: { filename: string; text: string }[]; purpose: string; fx: readonly string[]; wallMs: number },
+): Promise<{ remaining: string[]; partial: boolean }> {
+  const { db, agentClient } = ctx.deps;
+  const fallback = "可以在审查工作台逐条处理后点“生成修订稿”，或重新发起";
+  const r = await ctx.step("redline_stage", async (): Promise<{ status: string; files: string[]; error?: string }> => {
+    assertNotCancelled(db, runId);
+    // 审查那一轮已经把修订稿写了（没按分段的要求办）：不再重做
+    const already = redlineFilesOf(db, runId, run.matter_id);
+    if (already.length > 0) {
+      appendEvent(ctx.deps, runId, attemptId, REDLINE_SEQ.skipped, "redline.skipped", { reason: "already_done", files: already.length });
+      return { status: "succeeded", files: already };
+    }
+    const started = db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.started' ORDER BY event_id DESC LIMIT 1`, [runId])[0];
+    let sid: unknown = null;
+    try {
+      sid = started ? JSON.parse(started.payload)?.session_id : null;
+    } catch {
+      sid = null;
+    }
+    if (typeof sid !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(sid)) {
+      appendEvent(ctx.deps, runId, attemptId, REDLINE_SEQ.skipped, "redline.skipped", { reason: "no_session" });
+      return { status: "no_session", files: [] };
+    }
+    const limit = ctx.deps.redlineLimitMs ?? REDLINE_LIMIT_MS;
+    const goal = redlineStagePrompt(limit);
+    // 内核自己写的话，不含当事人信息：登记为担保文字，闸门不从里面“认新名字”
+    ctx.deps.vouchKnownOnly?.(runId, goal);
+    let taskId: string;
+    try {
+      taskId = await agentClient.start(identity, { goal, materials: p.snapshot, timeout_ms: limit, wall_ms: p.wallMs, purpose: p.purpose, fx: p.fx, continue_session_id: sid, plan_first: false, task_suffix: "redline" });
+    } catch (e) {
+      const error = String((e as Error)?.message ?? e).slice(0, 200);
+      appendEvent(ctx.deps, runId, attemptId, REDLINE_SEQ.outcome, "redline.outcome", { status: "start_failed", error });
+      return { status: "start_failed", files: [], error };
+    }
+    appendEvent(ctx.deps, runId, attemptId, REDLINE_SEQ.started, "redline.started", { agent_task_id: taskId, limit_ms: limit });
+    const t0 = Date.now();
+    let deadline = t0 + limit + 60_000;
+    let last = t0;
+    let cursor = 0;
+    let poll: Awaited<ReturnType<AgentClient["poll"]>> | null = null;
+    try {
+      for (;;) {
+        await new Promise((res) => setTimeout(res, 800));
+        const current = getRun(db, runId);
+        if (current.status === RunStatus.cancelled) throw new RunCancelled();
+        const now = Date.now();
+        if (current.status === RunStatus.waitingApproval || current.status === RunStatus.waitingInput) deadline += now - last;
+        last = now;
+        if (now > deadline || now > t0 + p.wallMs) break;
+        const pr = await agentClient.poll(identity, taskId, cursor);
+        cursor = pr.next_cursor;
+        for (const ev of pr.events) {
+          if (AGENT_TIMELINE_EVENTS.has(ev.type)) appendEvent(ctx.deps, runId, attemptId, REDLINE_SEQ.mirror + ev.seq, ev.type, slimAgentPayload(ev.type, ev.payload));
+        }
+        if (pr.status !== "starting" && pr.status !== "running") {
+          poll = pr;
+          break;
+        }
+      }
+    } finally {
+      if (!poll) await agentClient.cancel(identity, taskId, "redline stage ended").catch(() => undefined);
+    }
+    const seconds = Math.round((Date.now() - t0) / 1000);
+    if (!poll || (poll.status !== "succeeded" && poll.status !== "partial")) {
+      const status = poll ? String(poll.status) : "timed_out";
+      const files = redlineFilesOf(db, runId, run.matter_id);
+      appendEvent(ctx.deps, runId, attemptId, REDLINE_SEQ.outcome, "redline.outcome", { status, files: files.length, seconds, ...(poll?.reason ? { reason: poll.reason } : {}), ...(poll?.error ? { error: poll.error } : {}) });
+      return { status, files, ...(poll?.error ? { error: poll.error } : {}) };
+    }
+    // 这一段的最终答复与工作区文件照常登记（最终答复与审查那一轮同名，成为同一份答复的新版本）
+    const accepted = poll.artifacts.filter((a) => {
+      if (a.kind !== "workspace_file") return true;
+      try {
+        verifyOfficeArtifact(a.filename, () => Buffer.from(a.bytes));
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    const stored = accepted.map((a) => {
+      const buf = Buffer.from(a.bytes);
+      if (sha256Hex(buf) !== a.sha256) throw new DomainError("internal", "成果 hash 与完成记录不一致（F5）", 502);
+      return { a, stored: ctx.deps.blobs.put(replyWithoutLocalPaths(a.kind, buf), run.matter_id) };
+    });
+    db.tx(() => {
+      let seq: number = REDLINE_SEQ.artifacts;
+      for (const { a, stored: st } of stored) {
+        const isFile = a.kind === "workspace_file";
+        registerArtifact(ctx, run, runId, attemptId, {
+          kind: isFile ? "a1_workspace_file" : "a1_agent_draft",
+          open_items: outlineOpenItems(db, runId),
+          filename: isFile ? workspaceArtifactName(a.filename) : `草稿-${fileDay()}.md`,
+          sha256: st.sha256,
+          storage_uri: st.storage_uri,
+          manifest: { agent_task_id: taskId, agent_artifact_kind: a.kind, outcome: poll!.status, stage: "redline", note: "出建议修订稿那一段的最终答复（A1 产物状态只能是草稿）", budget_cap: 60 },
+        }, seq++);
+      }
+    });
+    const files = redlineFilesOf(db, runId, run.matter_id);
+    appendEvent(ctx.deps, runId, attemptId, REDLINE_SEQ.outcome, "redline.outcome", { status: poll.status, files: files.length, seconds });
+    return { status: String(poll.status), files };
+  });
+  if (r.status === "succeeded" && r.files.length > 0) return { remaining: [], partial: false };
+  if (r.status === "succeeded") return { remaining: [`审查已完成；出建议修订稿那一段正常结束，但没有生成修订稿（原因见最终答复）：${fallback}`], partial: true };
+  const why = r.status === "timed_out" ? "超过这一段的时限" : r.status === "no_session" ? "找不到原会话" : r.error ?? r.status;
+  if (r.files.length > 0) return { remaining: [`审查已完成；建议修订稿已生成，但这一段的核对与最终答复没有做完（${why}）：请对照意见书核对修订稿是否写全`], partial: true };
+  return { remaining: [`审查已完成；建议修订稿没有做出来（${why}）：${fallback}`], partial: true };
 }
 
 /** 独立复核的事件序号段（V13 第 38 批）：与工作流固定序号、成果段 69+、宿主事件镜像 10000+ 都不冲突；交回修改那一轮的宿主事件镜像到 30000+。 */
