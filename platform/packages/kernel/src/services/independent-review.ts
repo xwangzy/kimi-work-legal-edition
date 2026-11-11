@@ -629,7 +629,7 @@ function fixTargetLines(targets: readonly FixTarget[]): string[] {
   ];
 }
 
-export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], reviewText: string, limitMs?: number, targets: readonly FixTarget[] = [], laws: readonly string[] = []): string {
+export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], reviewText: string, limitMs?: number, targets: readonly FixTarget[] = [], laws: readonly string[] = [], redline: readonly string[] = []): string {
   const how =
     kind === "rules"
       ? "成立的，用 rules.propose 重新提交审查要点：同一任务再次提交会整份替换上一份草稿，所以要交全部要点（改了的和没改的都交），不只交改动的几条；不成立的不改。"
@@ -644,6 +644,14 @@ export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], 
     `2. ${how}`,
     // 在原件上修订的任务用 docx.revise 补交，不列编号
     ...(kind === "revise" ? [] : fixTargetLines(targets).map((l) => `   ${l}`)),
+    // 本任务还在原件上写了修订稿（审合同分两段，D-178）：落在合同条文上的意见要改修订稿，上面的清单只列意见书与表格
+    //（V16 第 41 批分段复验二：复核 10 条里 8 条落在合同上，清单没列修订稿与清洁稿；意见书的替换文字改完与合同对不上）
+    ...(kind !== "revise" && redline.length > 0
+      ? [
+          `   本任务还在合同原件上写了修订稿（${redline.map((f) => `《${f}》`).join("、")}，连同修改对照表）：落在合同条文上的意见不用 docx.edit_draft，在原件上调用 docx.revise 用补交方式（amend）只交要更正的几条——要换的按上一次清单的序号写 replace、不要的写 remove、新加的写 add，其余各条内核记着，不要重发全部修改；修订稿、清洁稿、对外版与修改对照表由系统一并重出。`,
+          "   改了合同条文的，意见书、问题清单里对应项的替换文字同步改成与修订稿实际写入的一致（律师拿意见书对修订稿，两边条文要对得上）。修订稿的修订署名由本所设置决定，工具改不了：这类意见不改，在答复里写明请律师在设置里调整或发出前处理。",
+        ]
+      : []),
     "3. 不成立的、或需要客户决定的商业条件，不改，写明理由；需要客户决定的列入待定事项。",
     "4. 只改复核意见涉及的地方，不借机改动别处；不为措辞润色重新生成。改动牵动时间表、付款节点、先决条件或解除权的，把委托与材料里的关键日期、金额代进去重新核对一遍，避免修一处坏一处（V13 真实走查 W1：把“验收合格”加成交割条件后，交割晚于客户 12 月 31 日的硬节点）。要补一项义务、条件或禁止事项前，先在全文找有没有已经写了同一事项的条款（换了说法也算）：有就改那一条，不另加一款；新写的互引核对条号指的确是那件事（V14 真实走查：修改轮在第 20.5 条第四次写“禁售过期、断链产品”，在第 12.1 条第三次写保险单提交；第 13.1 条把第二十一条的过渡期写成“第二十条约定的过渡期”）。",
     "5. 处理完后重写最终答复：完整写出本任务的最终答复（律师只看最后这一版），末尾加“独立复核处理情况”一节，逐条写“序号｜已改（改在哪里）／未改（理由）”。",

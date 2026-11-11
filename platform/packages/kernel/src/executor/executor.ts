@@ -985,7 +985,8 @@ export function redlineStagePrompt(limitMs?: number): string {
     "1. 用 docx.revise 把“必须修改”“建议修改”两类意见里给出了替换文字的全部写成修订，每处的 comment 写对应意见的标题与一句理由。意见给了替换文字、只是其中的商业数字还要客户确认的，按意见里的建议值写入，comment 里注明“数字待客户确认”，不要因此整条不写；只有分级本身是“可谈”“需客户决定”、或意见没有给出替换文字的才不写。",
     "   写入的文字只用审查意见里的替换文字：不借机改意见以外的地方，不添加意见和材料里没有的事实陈述（例如“双方已协商”“已完成勘测”）。新增或改写的条款与合同其他条款冲突的（例如新增的解除事由与没改的分包、转让条款），一并改掉或在最终答复里提示。",
     "2. 直接正式提交，读返回的改后整段（changes）；有问题的用补交方式（amend）只交要更正的几条，留意返回里被删掉（dropped）和换了定位（retargeted）的条目，不要把全部修改重发。",
-    "3. 写完后核对：意见书、问题清单里“已写入修订稿 / 未写入”的说法要与实际写入的一致，不一致的用 docx.edit_draft、xlsx.edit_cells 在原文书上改，不重新生成。",
+    "   proposed_text 只写合同条文本身：“原第 X 条不再适用”“删除某某上限”“修改为……”这类给律师看的说明写进 comment，不写进条文。",
+    "3. 写完后核对：意见书、问题清单里“已写入修订稿 / 未写入”的说法要与实际写入的一致；写入时文字与意见书里的替换文字不同的（调整了措辞、数字、条号，或补交时改过），把意见书、问题清单对应项的替换文字改成与修订稿实际写入的一致——律师拿意见书对修订稿，两边条文要对得上。不一致的用 docx.edit_draft、xlsx.edit_cells 在原文书上改，不重新生成。",
     "4. 最后完整重写最终答复（它会替换审查那一轮的答复）：保留审查结论，写明修订稿、清洁稿、修改对照表已生成，列出没有写入修订稿的意见及原因。",
     ...(mins ? [`这一段的工作时限约 ${mins} 分钟：先交出修订稿，再做核对与答复。`] : []),
   ].join("\n");
@@ -1650,12 +1651,14 @@ function reviewLawLines(lawdb: Lawdb, refs: ReturnType<typeof lawRefsIn>, asOf: 
 
 /** 修改轮要改的文件：本任务已生成的 Word 文书与表格，每个文件名取最新一版（给出成果编号，不靠会话记忆找文件）。 */
 export function fixTargetsOf(db: KernelDb, runId: string, matterId: string): FixTarget[] {
-  const rows = db.all<{ artifact_version_id: string; filename: string; kind: string }>(
-    `SELECT artifact_version_id, filename, kind FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','agent_table') ORDER BY created_at, version`,
+  const rows = db.all<{ artifact_version_id: string; filename: string; kind: string; manifest: string | null }>(
+    `SELECT artifact_version_id, filename, kind, manifest FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','agent_table') ORDER BY created_at, version`,
     [runId, matterId],
   );
   const latest = new Map<string, FixTarget>();
   for (const r of rows) {
+    // 修改对照表是 docx.revise 按实际写入的修改生成的，docx.edit_draft 不改它（V16 第 41 批分段复验二：清单里写“用 docx.edit_draft”，被工具拒绝）
+    if (r.kind === "agent_report" && /"tool"\s*:\s*"docx\.revise"/.test(r.manifest ?? "")) continue;
     const k = r.kind === "agent_table" ? (/\.xlsx$/i.test(r.filename) ? "xlsx" : null) : /\.docx$/i.test(r.filename) ? "docx" : null;
     if (k) latest.set(r.filename, { filename: r.filename, artifact_version_id: r.artifact_version_id, kind: k });
   }
@@ -1839,7 +1842,7 @@ async function runReviewStage(
     // 复核意见里涉及的法条（含“改为第二十五条”这种只写条号的）同样查库附原文，助手不必再查就能判断意见是否成立
     const findingTexts = review.findings.length > 0 ? review.findings.map((f) => [f.where, f.problem, f.basis, f.fix].join(" ")) : [review.text];
     const laws = reviewLawLines(ctx.deps.lawdb, lawRefsIn(findingTexts, { followBare: true }), p.ctxM.asOf);
-    const goal = tok([fixPrompt(picked.kind, review.findings, review.text, limit, fixTargetsOf(db, runId, run.matter_id), laws)])[0]!;
+    const goal = tok([fixPrompt(picked.kind, review.findings, review.text, limit, fixTargetsOf(db, runId, run.matter_id), laws, picked.kind === "revise" ? [] : redlineFilesOf(db, runId, run.matter_id))])[0]!;
     // 这段提示经助手宿主的会话出站：登记为内核担保的文字，闸门对逐字出现的这一段只换已知名单（复核意见里引用的“曾根据”不再被认成新姓名）
     ctx.deps.vouchKnownOnly?.(runId, goal);
     let taskId: string;

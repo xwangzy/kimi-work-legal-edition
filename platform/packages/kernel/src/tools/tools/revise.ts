@@ -154,6 +154,8 @@ export interface AmendSummary {
   dropped: { index: number; anchor: string }[];
   /** 这次被替换、且定位文字与原来那一条不同的修改：多半是序号写错了一位（V16 第 41 批真实复测 D2：序号错一位，三处已写入的修改被别的修改盖掉，意见书仍写“已写入”）。 */
   retargeted: { index: number; was: string; now: string }[];
+  /** 替换后条文（proposed_text）与上一次不同的条目序号：意见书、问题清单里对应的替换文字要同步 */
+  text_changed: number[];
 }
 
 const pick = (x: unknown): RevisePatchInput => {
@@ -200,7 +202,45 @@ export function amendPatches(prev: readonly RevisePatchInput[], amend: AmendInpu
     .sort((a, b) => a[0] - b[0])
     .map(([i, x]) => ({ index: i, was: head(prev[i - 1]), now: head(x) }))
     .filter((r) => prevWritten && r.was !== r.now && !r.was.includes(r.now) && !r.now.includes(r.was));
-  return { patches, summary: { base: n, replaced: replaced.size, removed: removed.size, added: added.length, total: patches.length, dropped, retargeted } };
+  // 替换后条文变了、或新加了条文的（分段复验二：补交改了 8 条，意见书里的替换文字还是原来的，与最终合同对不上）
+  const body = (x: RevisePatchInput | undefined): string => String((x as { proposed_text?: unknown } | undefined)?.proposed_text ?? "").replace(/\s+/g, "");
+  const textChanged = [...replaced.entries()].sort((a, b) => a[0] - b[0]).filter(([i, x]) => body(prev[i - 1]) !== body(x)).map(([i]) => i);
+  return { patches, summary: { base: n, replaced: replaced.size, removed: removed.size, added: added.length, total: patches.length, dropped, retargeted, text_changed: textChanged } };
+}
+
+/**
+ * 写进条文的起草说明（V16 第 41 批分段复验二：首版修订稿有 8 句“原第6.3条不再适用”“删除按甲方已支付价款5%……上限”进了合同正文，
+ * 写入后的检查没有报）。只认给律师看的说明的典型写法；补充协议里“原合同第 X 条修改为”是条文，不算。只提示、不拒写。纯函数。
+ */
+const DRAFTING_NOTE_RES: readonly RegExp[] = [
+  /原第\s*[\d.一二三四五六七八九十百]+\s*[条款项][^。；\n]{0,12}(?:不再适用|予以删除|已删除|已并入|已移至)/,
+  /(?:^|\n)\s*(?:[（(]?\s*\d+(?:\.\d+)*\s*[)）]?\s*)?(?:删除|删去)(?![或、及和并与])[^。\n]{0,40}(?:上限|条款|约定|表述|一句|一款|字样|部分)[。；]?\s*(?:$|\n)/,
+  /(?:修改说明|修改理由|起草说明|律师提示|审查意见)[:：]/,
+  /数字待客户确认|待客户确认后填写|见审查意见书/,
+  /(?:^|\n)\s*(?:建议|本[条款]建议)(?:修改为|改为|删除|增加|补充)/,
+];
+export function draftingNotesIn(patches: readonly { proposed_text?: unknown }[]): { index: number; text: string }[] {
+  const out: { index: number; text: string }[] = [];
+  patches.forEach((x, i) => {
+    const t = String(x?.proposed_text ?? "");
+    if (!t) return;
+    for (const re of DRAFTING_NOTE_RES) {
+      const m = re.exec(t);
+      if (m) {
+        out.push({ index: i + 1, text: m[0].replace(/\s+/g, " ").trim().slice(0, 60) });
+        break;
+      }
+    }
+  });
+  return out;
+}
+function draftingNote(raw: readonly RevisePatchInput[]): Record<string, unknown> {
+  const hits = draftingNotesIn(raw);
+  if (hits.length === 0) return {};
+  return {
+    drafting_notes: hits,
+    drafting_notes_note: `有 ${hits.length} 条修改的 proposed_text 里像是写给律师的说明、不是合同条文（见 drafting_notes，index 是第几条）：这些字会原样进合同正文与清洁稿。用 amend.replace 把说明移到 comment，proposed_text 只留条文；整条只是说明、没有条文的，用 amend.remove 去掉。确属合同条文的不用改。`,
+  };
 }
 
 export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; patches?: unknown; dry_run?: unknown; amend?: unknown }) {
@@ -253,6 +293,9 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
         : "") +
       (a.retargeted.length > 0
         ? `\n这次替换的修改里有 ${a.retargeted.length} 条换了定位文字：${a.retargeted.map((r) => `第 ${r.index} 条原来定位在“${r.was}”，现在定位在“${r.now}”`).join("；")}——原来那一处的修改因此不在清单里了。如果本意只是更正另一条，说明序号写错了：把原来那一条用 amend.add 补回，再把更正写到对的序号上。`
+        : "") +
+      (out.status === "applied" && a.text_changed.length + a.added > 0
+        ? `\n这次${a.text_changed.length > 0 ? `第 ${a.text_changed.join("、")} 条的条文换了` : ""}${a.text_changed.length > 0 && a.added > 0 ? "，" : ""}${a.added > 0 ? `新加了 ${a.added} 条` : ""}：审查意见书、问题清单里对应项的替换文字要改成与这次写入的一致（用 docx.edit_draft、xlsx.edit_cells 在原文书上改），不要让意见书与修订稿对不上。`
         : ""),
   };
 }
@@ -304,6 +347,7 @@ function reviseOnce(
       ...priorNote,
       ...hfNote,
       ...numberingNotes(r, false),
+      ...draftingNote(raw),
       note: "这是试写，没有生成文件。逐段读 after（改后的整段）：语句通顺、与前后文衔接（没有多出或漏掉的字，例如替换“合同签订之日起”时留下的“本”）、编号与互引正确。正式写入时不用重发清单：只写 document_version_id 与 amend: {}（照这次试写的清单写入）；要改其中几条的，在 amend 里只写那几条。",
     };
   }
@@ -382,6 +426,7 @@ function reviseOnce(
     ...priorNote,
     ...hfNote,
     ...numberingNotes(r, true),
+    ...draftingNote(raw),
     note: `已写入。先逐段读 changes 里的 after（改后的整段）：语句通顺、与前后文衔接（没有多出或漏掉的字）、编号与互引正确；有问题的只用 amend 补交那几条（会生成新版本的修订稿、清洁稿与对照表，旧版本保留），不要把全部修改重发。修订稿保留原件版式、编号与表格，修改以修订痕迹显示（有批注的附批注）；${
       externalReg
         ? `另有《修订稿·对外版》：同样的修订痕迹，去掉的是本产品写的修改理由批注${keptComments > 0 ? `；原件原有的批注 ${keptComments} 条与原有的修订痕迹原样保留（不是遗漏，是否删去由律师在发出前决定，不要替律师删）` : "，原件原有的修订痕迹（如有）原样保留"}，本产品的修订署名为本所设置——所以修改理由照常写进 comment（它进内部修订稿与修改对照表），不要为了“能直接发对方”而去掉 comment 重交；`

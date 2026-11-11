@@ -93,7 +93,7 @@ test("补交合成（纯函数）：按序号换、删，末尾加；越界、�
   const r = amendPatches(prev, { replace: [{ index: 2, patch: { anchor: "B", proposed_text: "22", junk: 1 } }], remove: [1], add: [{ anchor: "d", proposed_text: "4" }] });
   assert.deepEqual(r.patches, [{ anchor: "B", proposed_text: "22" }, { anchor: "c", proposed_text: "3" }, { anchor: "d", proposed_text: "4" }], "未知字段不进清单");
   // 真实复测 D2：序号错一位，三处已写入的修改被盖掉或删掉，没有任何提示——删掉的、换了定位文字的都要报出来
-  assert.deepEqual(r.summary, { base: 3, replaced: 1, removed: 1, added: 1, total: 3, dropped: [{ index: 1, anchor: prev[0]!.anchor }], retargeted: [{ index: 2, was: prev[1]!.anchor, now: "B" }] });
+  assert.deepEqual(r.summary, { base: 3, replaced: 1, removed: 1, added: 1, total: 3, dropped: [{ index: 1, anchor: prev[0]!.anchor }], retargeted: [{ index: 2, was: prev[1]!.anchor, now: "B" }], text_changed: [2] });
   const same = amendPatches(prev, { replace: [{ index: 2, patch: { anchor: prev[1]!.anchor, proposed_text: "只改措辞" } }] });
   assert.deepEqual([same.summary.dropped, same.summary.retargeted], [[], []], "定位没变的替换不报");
   assert.deepEqual(amendPatches(prev, { replace: [{ index: 2, patch: { anchor: "B", proposed_text: "22" } }] }, false).summary.retargeted, [], "上一次没有写入：换定位文字是在改正定位，不报");
@@ -144,7 +144,7 @@ test("补交：六条里两条定位不到整批不写→只换这两条写入�
     });
     assert.equal(second.status, "applied", JSON.stringify(second).slice(0, 1200));
     assert.equal(second.applied, 6);
-    assert.deepEqual(second.amend, { base: 6, replaced: 2, removed: 0, added: 0, total: 6, dropped: [], retargeted: [] }, "上一次整批被退回：改正定位不算改到了别处");
+    assert.deepEqual(second.amend, { base: 6, replaced: 2, removed: 0, added: 0, total: 6, dropped: [], retargeted: [], text_changed: [6] }, "上一次整批被退回：改正定位不算改到了别处");
     assert.match(second.amend_note, /本次在上一次 6 条的基础上替换 2 条、删除 0 条、新增 0 条，合计 6 条/);
     // 正式写入返回每处改前 / 改后的整段（与试写同样的字段）
     const flat = JSON.stringify(second.changes);
@@ -165,7 +165,7 @@ test("补交：六条里两条定位不到整批不写→只换这两条写入�
     assert.equal(third.status, "applied", JSON.stringify(third).slice(0, 1200));
     assert.equal(third.amend.dropped.length, 1, "已写入的清单上删一条：报出删掉的是哪一条");
     assert.match(third.amend_note, /这次删掉的 1 条不再写进修订稿/);
-    assert.deepEqual({ ...third.amend, dropped: [] }, { base: 6, replaced: 0, removed: 1, added: 1, total: 6, dropped: [], retargeted: [] });
+    assert.deepEqual({ ...third.amend, dropped: [] }, { base: 6, replaced: 0, removed: 1, added: 1, total: 6, dropped: [], retargeted: [], text_changed: [] });
     paras = await cleanText(third.clean.artifact_version_id);
     assert.deepEqual(rowOf(paras, "质保金"), ["质保金", "10%", "160,000", "验收合格满12个月之日起10日内"], "删掉的那条回到原文");
     assert.ok(paras.includes("4.1 乙方应于2027年1月25日前交货。"), "新加的一条写入");
@@ -201,7 +201,7 @@ test("补交：没有上一次清单时报错；另一个任务、另一份文�
     const out = await a.call("docx.revise", { document_version_id: doc.document_version_id, amend: {} });
     assert.equal(out.status, "applied", JSON.stringify(out).slice(0, 800));
     assert.equal(out.applied, 4);
-    assert.deepEqual(out.amend, { base: 4, replaced: 0, removed: 0, added: 0, total: 4, dropped: [], retargeted: [] });
+    assert.deepEqual(out.amend, { base: 4, replaced: 0, removed: 0, added: 0, total: 4, dropped: [], retargeted: [], text_changed: [] });
     const paras = await cleanText(out.clean.artifact_version_id);
     assert.deepEqual(rowOf(paras, "质保金"), ["质保金", "10%", "160,000", "验收合格满12个月之日起10日内"]);
     // 清单存在库里（任务可能跨进程恢复），事项删除时随事项删除

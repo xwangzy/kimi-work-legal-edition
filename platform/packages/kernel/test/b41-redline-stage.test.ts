@@ -9,7 +9,9 @@ import assert from "node:assert/strict";
 import { createDocx } from "@zr-legal/docx-engine";
 import { importBytes, makeKernel, waitRun, type TestKernel } from "./helpers.ts";
 import { startCloudV0, type CloudV0 } from "./cloud-v0.ts";
-import { goalForReviewer, methodPromptLine, redlineStagePrompt, wantsRedlineStage } from "../src/executor/executor.ts";
+import { fixTargetsOf, goalForReviewer, methodPromptLine, redlineStagePrompt, wantsRedlineStage } from "../src/executor/executor.ts";
+import { fixPrompt } from "../src/services/independent-review.ts";
+import { amendPatches, draftingNotesIn } from "../src/tools/tools/revise.ts";
 
 let tk: TestKernel;
 let cloud: CloudV0;
@@ -107,6 +109,11 @@ test("审查交出后另起一段写修订稿：接着原会话、单独时限�
     assert.ok(kinds.includes("revision_draft") && kinds.includes("revision_clean"), JSON.stringify(kinds));
     assert.equal(done.artifacts.filter((a: any) => a.kind === "a1_agent_draft").length, 2, "最终答复有这一段之后的新版本");
     assert.equal(done.events.find((e: any) => e.type === "run.succeeded")?.payload.remaining, undefined);
+    // 分段复验二：修改轮的“用 docx.edit_draft 改”清单不列修改对照表（docx.revise 生成的，edit_draft 会拒绝），只列意见书
+    const targets = fixTargetsOf(tk.kernel.db, run.run_id, run.matter_id ?? done.run.matter_id);
+    assert.equal(done.artifacts.some((a: any) => /修改对照表/.test(a.filename)), true, "对照表生成了");
+    assert.equal(targets.some((t) => /修改对照表/.test(t.filename)), false, JSON.stringify(targets));
+    assert.equal(targets.some((t) => /审查意见书/.test(t.filename)), true, JSON.stringify(targets));
   } finally {
     cloud.model.script = null;
   }
@@ -141,4 +148,37 @@ test("没选同时出修订稿：不分段，不发起第二段", { timeout: 180
   } finally {
     cloud.model.script = null;
   }
+});
+
+test("分段复验二：修改轮写明合同条文上的意见用 docx.revise 补交、意见书替换文字同步；修订稿段要求条文与意见书对得上、说明不进条文", () => {
+  const f = [{ no: 1, where: "清洁稿第 9.1 条", problem: "p", basis: "b", fix: "f", must: true }];
+  const withRedline = fixPrompt("review", f, "", undefined, [{ filename: "审查意见书（内部稿）.docx", artifact_version_id: "artv_1", kind: "docx" }], [], ["合同（修订稿）.docx", "合同（清洁稿）.docx"]);
+  assert.match(withRedline, /《合同（修订稿）\.docx》、《合同（清洁稿）\.docx》/);
+  assert.match(withRedline, /落在合同条文上的意见不用 docx\.edit_draft，在原件上调用 docx\.revise 用补交方式（amend）/);
+  assert.match(withRedline, /意见书、问题清单里对应项的替换文字同步改成与修订稿实际写入的一致/);
+  assert.match(withRedline, /修订署名由本所设置决定，工具改不了/);
+  assert.equal(fixPrompt("review", f, "", undefined, [], [], []).includes("docx.revise"), false, "没有修订稿的任务不提");
+  assert.equal(fixPrompt("revise", f, "", undefined, [], [], ["合同（修订稿）.docx"]).includes("本任务还在合同原件上写了修订稿"), false, "修订任务本来就用补交，不重复");
+  const stage = redlineStagePrompt();
+  assert.match(stage, /proposed_text 只写合同条文本身/);
+  assert.match(stage, /把意见书、问题清单对应项的替换文字改成与修订稿实际写入的一致/);
+});
+
+test("分段复验二：写进条文的起草说明被认出来，正常条文与补充协议写法不误报；补交换了条文的序号回显", () => {
+  const hits = draftingNotesIn([
+    { proposed_text: "6.3 乙方逾期交货的，每日按合同总价的0.1%支付违约金。原第6.3条不再适用。" },
+    { proposed_text: "删除按甲方已支付价款5%计算的赔偿上限。" },
+    { proposed_text: "违约金上限为合同总价的20%（数字待客户确认）。" },
+    { proposed_text: "修改理由：与第 4.4 条保持一致。" },
+    { proposed_text: "11.2 合同解除后，乙方应于十日内返还甲方已付款项，并删除或销毁甲方全部保密信息。" },
+    { proposed_text: "原合同第三条修改为：价款为人民币100万元。" },
+    { proposed_text: "" },
+  ]);
+  assert.deepEqual(hits.map((h) => h.index), [1, 2, 3, 4], JSON.stringify(hits));
+  const prev = [
+    { anchor: "三日内", proposed_text: "十日内" },
+    { anchor: "一次付清", proposed_text: "分两期付清" },
+  ];
+  const r = amendPatches(prev, { replace: [{ index: 1, patch: { anchor: "三日内", proposed_text: "十五日内" } }, { index: 2, patch: { anchor: "一次付清", proposed_text: "分两期付清", comment: "只改理由" } }] });
+  assert.deepEqual(r.summary.text_changed, [1], "只有条文变了的才回显");
 });
