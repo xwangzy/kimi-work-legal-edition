@@ -41,8 +41,11 @@ jobs:
       - run: npm ci
       - run: npm run fetch:ocr-models
       - run: npm run build:lawdb && npm run build:agent-profile && npm run build:tool-manifest && npm run build:skills
+      # runner 的 TEMP 是 C:\Users\RUNNER~1\AppData\Local\Temp（runneradmin 的 8.3 短名）——broker 拒绝 8.3 短名分量，
+      # run 43248258556 里 91 处 PathRejected、约 19 个用例文件秒挂。律所电脑的临时目录不会有这种别名，指到干净目录再跑
       - name: 关键用例（Windows）
-        run: >
+        run: |
+          mkdir -p /c/kwl-tmp && export TEMP='C:\kwl-tmp' TMP='C:\kwl-tmp'
           node scripts/run-tests-watchdog.mjs --file-timeout-min=10 --test-timeout-ms=300000
           packages/exec-wasm/test/*.test.ts packages/file-broker/test/*.test.ts packages/at-rest/test/*.test.ts
           packages/kap-host/test/*.test.ts packages/egress-gate/test/*.test.ts
@@ -52,8 +55,9 @@ jobs:
       - name: 中文路径（临时目录含中文）
         shell: pwsh
         working-directory: platform
+        # 基目录不能用 $env:RUNNER_TEMP——它含 RUNNER~1 8.3 短名（run 43248258556），broker 拒绝；直接建在 C:\ 下，中文照旧
         run: |
-          $d = Join-Path $env:RUNNER_TEMP "律师 张三\临时"
+          $d = "C:\律师 张三\临时"
           New-Item -ItemType Directory -Force -Path $d | Out-Null
           $env:TEMP = $d; $env:TMP = $d
           node scripts/run-tests-watchdog.mjs --file-timeout-min=10 --test-timeout-ms=300000 packages/exec-wasm/test/w-core.test.ts packages/exec-wasm/test/w-runtime-bundle.test.ts packages/kernel/test/kap-a1.test.ts
@@ -61,7 +65,9 @@ jobs:
       - name: 全量（信息性，不阻断：部分用例依赖 POSIX 语义，逐条登记后再转为阻断）
         continue-on-error: true
         timeout-minutes: 120
-        run: node scripts/run-tests-watchdog.mjs --file-timeout-min=6 --test-timeout-ms=300000 "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "apps/desktop/test/*.test.ts"
+        run: |
+          mkdir -p /c/kwl-tmp && export TEMP='C:\kwl-tmp' TMP='C:\kwl-tmp'
+          node scripts/run-tests-watchdog.mjs --file-timeout-min=6 --test-timeout-ms=300000 "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "apps/desktop/test/*.test.ts"
 
   package:
     runs-on: windows-latest
