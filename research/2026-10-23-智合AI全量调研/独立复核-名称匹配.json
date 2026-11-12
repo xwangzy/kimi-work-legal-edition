@@ -1,0 +1,996 @@
+{
+  "date": "2026-10-23",
+  "reviewer_role": "independent static review, no browser operation",
+  "home": 36,
+  "workbench": 59,
+  "market": 316,
+  "fixed_open_source_matches": [
+    {
+      "skill_id": "core-audit-case-citation",
+      "display_name": "案例援引审查",
+      "market_title": "案例援引审查",
+      "labels": [
+        "基础技能",
+        "已开源 ↗"
+      ],
+      "page": 2,
+      "position": 2
+    },
+    {
+      "skill_id": "core-claim-evidence-audit",
+      "display_name": "论证依据审查",
+      "market_title": "论证依据审查",
+      "labels": [
+        "基础技能",
+        "已开源 ↗"
+      ],
+      "page": 2,
+      "position": 1
+    },
+    {
+      "skill_id": "core-verify-statute-validity",
+      "display_name": "法条引用核验",
+      "market_title": "法条引用核验",
+      "labels": [
+        "基础技能",
+        "已开源 ↗"
+      ],
+      "page": 2,
+      "position": 3
+    },
+    {
+      "skill_id": "util-legal-calculator",
+      "display_name": "法律计算器",
+      "market_title": "法律计算器",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 5,
+      "position": 2
+    },
+    {
+      "skill_id": "zhihe-case-search",
+      "display_name": "智合AI搜案",
+      "market_title": "智合AI搜案",
+      "labels": [
+        "基础技能",
+        "已开源 ↗"
+      ],
+      "page": 5,
+      "position": 5
+    },
+    {
+      "skill_id": "zhihe-law-search",
+      "display_name": "智合AI搜法",
+      "market_title": "智合AI搜法",
+      "labels": [
+        "基础技能",
+        "已开源 ↗"
+      ],
+      "page": 13,
+      "position": 24
+    },
+    {
+      "skill_id": "lit-administrative-remedy",
+      "display_name": "行政救济路径",
+      "market_title": "行政救济路径",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 3,
+      "position": 21
+    },
+    {
+      "skill_id": "lit-analyze-claim-basis",
+      "display_name": "请求权基础分析",
+      "market_title": "请求权基础分析",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 11
+    },
+    {
+      "skill_id": "lit-analyze-judgment-divergence",
+      "display_name": "裁判尺度分析",
+      "market_title": "裁判尺度分析",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 23
+    },
+    {
+      "skill_id": "lit-analyze-jurisdiction",
+      "display_name": "管辖权分析",
+      "market_title": "管辖权分析",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 2
+    },
+    {
+      "skill_id": "lit-analyze-law-conflict",
+      "display_name": "法律适用冲突分析",
+      "market_title": "法律适用冲突分析",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 21
+    },
+    {
+      "skill_id": "lit-analyze-limitation",
+      "display_name": "诉讼时效分析",
+      "market_title": "诉讼时效分析",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 1
+    },
+    {
+      "skill_id": "lit-assess-case-risk",
+      "display_name": "争议焦点与胜败评估",
+      "market_title": "争议焦点与胜败评估",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 9
+    },
+    {
+      "skill_id": "lit-bankruptcy",
+      "display_name": "破产与债务重组",
+      "market_title": "破产与债务重组",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 3,
+      "position": 20
+    },
+    {
+      "skill_id": "lit-build-evidence-list",
+      "display_name": "证据清单与举证责任",
+      "market_title": "证据清单与举证责任",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 3,
+      "position": 24
+    },
+    {
+      "skill_id": "lit-build-timeline",
+      "display_name": "案件事实时间轴",
+      "market_title": "案件事实时间轴",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 3,
+      "position": 23
+    },
+    {
+      "skill_id": "lit-case-closing",
+      "display_name": "结案交付与回访",
+      "market_title": "结案交付与回访",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 1,
+      "position": 13
+    },
+    {
+      "skill_id": "lit-case-intake",
+      "display_name": "接案研判",
+      "market_title": "接案研判",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 1,
+      "position": 11
+    },
+    {
+      "skill_id": "lit-counter-adverse-precedent",
+      "display_name": "不利判例应对",
+      "market_title": "不利判例应对",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 22
+    },
+    {
+      "skill_id": "lit-criminal-defense",
+      "display_name": "刑事辩护阶段与要点",
+      "market_title": "刑事辩护阶段与要点",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 1,
+      "position": 14
+    },
+    {
+      "skill_id": "lit-criminal-sentencing-calibration",
+      "display_name": "刑事量刑校准",
+      "market_title": "刑事量刑校准",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 12
+    },
+    {
+      "skill_id": "lit-cross-examination",
+      "display_name": "质证意见",
+      "market_title": "质证意见",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 10
+    },
+    {
+      "skill_id": "lit-draft-appeal",
+      "display_name": "上诉与再审申请",
+      "market_title": "上诉与再审申请",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 5
+    },
+    {
+      "skill_id": "lit-draft-argument",
+      "display_name": "代理词与辩护词",
+      "market_title": "代理词与辩护词",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 6
+    },
+    {
+      "skill_id": "lit-draft-complaint",
+      "display_name": "起诉状与仲裁申请",
+      "market_title": "起诉状与仲裁申请",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 8
+    },
+    {
+      "skill_id": "lit-draft-defense",
+      "display_name": "答辩状与反诉",
+      "market_title": "答辩状与反诉",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 7
+    },
+    {
+      "skill_id": "lit-extract-judicial-rules",
+      "display_name": "裁判规则提炼",
+      "market_title": "裁判规则提炼",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 24
+    },
+    {
+      "skill_id": "lit-labor-dispute",
+      "display_name": "劳动争议处理",
+      "market_title": "劳动争议处理",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 3,
+      "position": 22
+    },
+    {
+      "skill_id": "lit-opponent-background",
+      "display_name": "对手背景调查",
+      "market_title": "对手背景调查",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 1,
+      "position": 12
+    },
+    {
+      "skill_id": "lit-plan-enforcement",
+      "display_name": "执行方案与财产线索",
+      "market_title": "执行方案与财产线索",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 3
+    },
+    {
+      "skill_id": "lit-prepare-hearing",
+      "display_name": "庭审提纲",
+      "market_title": "庭审提纲",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 4
+    },
+    {
+      "skill_id": "lit-search-similar-cases",
+      "display_name": "类案检索",
+      "market_title": "类案检索",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 5,
+      "position": 1
+    },
+    {
+      "skill_id": "lit-shareholder-dispute",
+      "display_name": "股东权利救济路径",
+      "market_title": "股东权利救济路径",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 1,
+      "position": 15
+    },
+    {
+      "skill_id": "nonlit-admin-penalty-benchmark",
+      "display_name": "行政处罚裁量基准比对",
+      "market_title": "行政处罚裁量基准比对",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 3,
+      "position": 18
+    },
+    {
+      "skill_id": "nonlit-assess-china-data",
+      "display_name": "来华数据合规",
+      "market_title": "来华数据合规",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "page": 1,
+      "position": 9
+    },
+    {
+      "skill_id": "nonlit-assess-china-investment-access",
+      "display_name": "外资准入研判",
+      "market_title": "外资准入研判",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "page": 1,
+      "position": 3
+    },
+    {
+      "skill_id": "nonlit-clause-benchmark",
+      "display_name": "条款范本与修改建议",
+      "market_title": "条款范本与修改建议",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 18
+    },
+    {
+      "skill_id": "nonlit-compliance-obligation-matrix",
+      "display_name": "合规义务矩阵",
+      "market_title": "合规义务矩阵",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 16
+    },
+    {
+      "skill_id": "nonlit-corporate-governance",
+      "display_name": "公司治理与股权架构",
+      "market_title": "公司治理与股权架构",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 3,
+      "position": 15
+    },
+    {
+      "skill_id": "nonlit-data-compliance",
+      "display_name": "数据合规评估",
+      "market_title": "数据合规评估",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 13
+    },
+    {
+      "skill_id": "nonlit-dd-opinion",
+      "display_name": "尽调发现与法律意见",
+      "market_title": "尽调发现与法律意见",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 3,
+      "position": 16
+    },
+    {
+      "skill_id": "nonlit-draft-china-contracts",
+      "display_name": "来华合同审查",
+      "market_title": "来华合同审查",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "page": 1,
+      "position": 5
+    },
+    {
+      "skill_id": "nonlit-due-diligence",
+      "display_name": "尽职调查清单",
+      "market_title": "尽职调查清单",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 3,
+      "position": 17
+    },
+    {
+      "skill_id": "nonlit-ipo-review",
+      "display_name": "IPO法律审核",
+      "market_title": "IPO法律审核",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 3,
+      "position": 13
+    },
+    {
+      "skill_id": "nonlit-labor-compliance",
+      "display_name": "劳动人事合规",
+      "market_title": "劳动人事合规",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 3,
+      "position": 19
+    },
+    {
+      "skill_id": "nonlit-litigation-response",
+      "display_name": "应诉应急响应",
+      "market_title": "应诉应急响应",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 9,
+      "position": 4
+    },
+    {
+      "skill_id": "nonlit-new-business-review",
+      "display_name": "新业务法律评估",
+      "market_title": "新业务法律评估",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 9,
+      "position": 5
+    },
+    {
+      "skill_id": "nonlit-new-rule-tracking",
+      "display_name": "新规追踪",
+      "market_title": "新规追踪",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 14
+    },
+    {
+      "skill_id": "nonlit-orchestrate-china-business",
+      "display_name": "来华业务统筹",
+      "market_title": "来华业务统筹",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "page": 1,
+      "position": 2
+    },
+    {
+      "skill_id": "nonlit-plan-china-employment",
+      "display_name": "来华用工规划",
+      "market_title": "来华用工规划",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "page": 1,
+      "position": 7
+    },
+    {
+      "skill_id": "nonlit-plan-china-entity",
+      "display_name": "来华设立规划",
+      "market_title": "来华设立规划",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "page": 1,
+      "position": 4
+    },
+    {
+      "skill_id": "nonlit-plan-china-ip",
+      "display_name": "中国知产布局",
+      "market_title": "中国知产布局",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "page": 1,
+      "position": 6
+    },
+    {
+      "skill_id": "nonlit-plan-china-tax-customs-fx",
+      "display_name": "来华税关汇筹划",
+      "market_title": "来华税关汇筹划",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "page": 1,
+      "position": 8
+    },
+    {
+      "skill_id": "nonlit-regulatory-inspection",
+      "display_name": "监管检查与约谈应对",
+      "market_title": "监管检查与约谈应对",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 9,
+      "position": 6
+    },
+    {
+      "skill_id": "nonlit-regulatory-penalty-scan",
+      "display_name": "监管处罚画像",
+      "market_title": "监管处罚画像",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 15
+    },
+    {
+      "skill_id": "nonlit-review-contract",
+      "display_name": "合同审查",
+      "market_title": "合同审查",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 19
+    },
+    {
+      "skill_id": "nonlit-transaction-documents",
+      "display_name": "交易文件与条款",
+      "market_title": "交易文件与条款",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 3,
+      "position": 14
+    },
+    {
+      "skill_id": "util-anonymize",
+      "display_name": "文件脱敏",
+      "market_title": "文件脱敏",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 1,
+      "position": 17
+    },
+    {
+      "skill_id": "util-bid-proposal",
+      "display_name": "招投标应标",
+      "market_title": "招投标应标",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 9,
+      "position": 3
+    },
+    {
+      "skill_id": "util-case-file-index",
+      "display_name": "卷宗解析与编目",
+      "market_title": "卷宗解析与编目",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 1,
+      "position": 18
+    },
+    {
+      "skill_id": "util-contract-diff",
+      "display_name": "合同版本比对",
+      "market_title": "合同版本比对",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 17
+    },
+    {
+      "skill_id": "util-diagram",
+      "display_name": "结构图生成",
+      "market_title": "结构图生成",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 1,
+      "position": 16
+    },
+    {
+      "skill_id": "util-docx-format",
+      "display_name": "法律文书排版",
+      "market_title": "法律文书排版",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 1,
+      "position": 20
+    },
+    {
+      "skill_id": "util-engagement-proposal",
+      "display_name": "工作方案与报价",
+      "market_title": "工作方案与报价",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 1,
+      "position": 22
+    },
+    {
+      "skill_id": "util-enterprise-service-season",
+      "display_name": "企业服务季全程协作",
+      "market_title": "企业服务季全程协作",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "page": 1,
+      "position": 1
+    },
+    {
+      "skill_id": "util-legal-training",
+      "display_name": "企业普法培训",
+      "market_title": "企业普法培训",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 9,
+      "position": 2
+    },
+    {
+      "skill_id": "util-legal-translation",
+      "display_name": "法律翻译与术语一致",
+      "market_title": "法律翻译与术语一致",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 1,
+      "position": 21
+    },
+    {
+      "skill_id": "util-plain-language",
+      "display_name": "法律意见通俗化",
+      "market_title": "法律意见通俗化",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 1,
+      "position": 19
+    },
+    {
+      "skill_id": "util-research-memo",
+      "display_name": "检索报告成稿",
+      "market_title": "检索报告成稿",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "page": 4,
+      "position": 20
+    },
+    {
+      "skill_id": "util-run-ciie-legal-demo",
+      "display_name": "进博法律宣讲",
+      "market_title": "进博法律宣讲",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "page": 1,
+      "position": 10
+    }
+  ],
+  "extra_official": [
+    {
+      "title": "ProcessOn官方AI思维脑图生成",
+      "page": 2,
+      "position": 5
+    },
+    {
+      "title": "常年法律顾问服务方案生成",
+      "page": 2,
+      "position": 6
+    },
+    {
+      "title": "Excel 表格处理",
+      "page": 2,
+      "position": 7
+    },
+    {
+      "title": "去AI味儿Skill",
+      "page": 2,
+      "position": 8
+    },
+    {
+      "title": "中国大学学术论文排版",
+      "page": 2,
+      "position": 9
+    },
+    {
+      "title": "中国党政机关公文排版",
+      "page": 2,
+      "position": 10
+    },
+    {
+      "title": "语音转文字",
+      "page": 2,
+      "position": 11
+    },
+    {
+      "title": "ECharts 智能图表",
+      "page": 2,
+      "position": 13
+    },
+    {
+      "title": "Mermaid 架构与流程图",
+      "page": 2,
+      "position": 14
+    },
+    {
+      "title": "PDF 文档处理",
+      "page": 2,
+      "position": 15
+    },
+    {
+      "title": "技能创建与优化",
+      "page": 2,
+      "position": 16
+    },
+    {
+      "title": "word脱敏",
+      "page": 2,
+      "position": 17
+    },
+    {
+      "title": "Excel表格统计与计算分析",
+      "page": 2,
+      "position": 19
+    },
+    {
+      "title": "图表图片生成",
+      "page": 2,
+      "position": 20
+    },
+    {
+      "title": "青年律师接待客户方法和话术",
+      "page": 2,
+      "position": 21
+    },
+    {
+      "title": "诉讼/非诉可视化-案件时间线",
+      "page": 2,
+      "position": 22
+    },
+    {
+      "title": "PPT设计与生成（MiniMax）",
+      "page": 2,
+      "position": 24
+    },
+    {
+      "title": "Word 文档创作与修订",
+      "page": 3,
+      "position": 2
+    },
+    {
+      "title": "html-to-pdf",
+      "page": 3,
+      "position": 3
+    },
+    {
+      "title": "HTML转PPT",
+      "page": 3,
+      "position": 4
+    },
+    {
+      "title": "PPT生成",
+      "page": 3,
+      "position": 5
+    },
+    {
+      "title": "诉讼攻防全流程产品交付SKILL（终极优化版）",
+      "page": 5,
+      "position": 4
+    },
+    {
+      "title": "律师谈案全流程法律产品交付（升级优化版）",
+      "page": 5,
+      "position": 9
+    },
+    {
+      "title": "当事人谈话笔录生成",
+      "page": 5,
+      "position": 19
+    },
+    {
+      "title": "保全申请助手",
+      "page": 5,
+      "position": 20
+    },
+    {
+      "title": "当事人庭前指导（深度问答版）",
+      "page": 6,
+      "position": 7
+    },
+    {
+      "title": "当事人庭前指导（简要交互版）",
+      "page": 6,
+      "position": 11
+    },
+    {
+      "title": "启信宝-企业全景尽调报告",
+      "page": 11,
+      "position": 21
+    },
+    {
+      "title": "启信宝-合作前主体核验",
+      "page": 11,
+      "position": 22
+    },
+    {
+      "title": "启信宝-司法与经营风险体检",
+      "page": 11,
+      "position": 24
+    },
+    {
+      "title": "启信宝-公司风险速查",
+      "page": 12,
+      "position": 1
+    },
+    {
+      "title": "启信宝-关联企业传导风险报告",
+      "page": 12,
+      "position": 2
+    },
+    {
+      "title": "启信宝-客户准入快速筛查",
+      "page": 12,
+      "position": 3
+    },
+    {
+      "title": "启信宝-重点区域企业检索与发现",
+      "page": 12,
+      "position": 4
+    },
+    {
+      "title": "启信宝-企业优先级排序",
+      "page": 12,
+      "position": 5
+    },
+    {
+      "title": "启信宝-前置准入核验",
+      "page": 12,
+      "position": 6
+    },
+    {
+      "title": "启信宝-国内企业关联关系报告",
+      "page": 12,
+      "position": 7
+    },
+    {
+      "title": "启信宝-招投标情报雷达",
+      "page": 12,
+      "position": 8
+    },
+    {
+      "title": "启信宝-多次关系寻源",
+      "page": 12,
+      "position": 9
+    },
+    {
+      "title": "启信宝-负面舆情扫描",
+      "page": 12,
+      "position": 10
+    }
+  ],
+  "limitations": [
+    "visible-name match does not establish identical online content",
+    "no private community skill bodies",
+    "no runtime validation"
+  ]
+}

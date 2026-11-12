@@ -1,0 +1,670 @@
+{
+"@context": "https://schema.org",
+"@graph": [
+{
+"name": "Frequently asked questions on estate taxes",
+"datePosted": "2017-02-23T00:00:00-0500"
+}
+]
+}
+window.a2a_config=window.a2a_config||{};a2a_config.callbacks=[];a2a_config.overlays=[];a2a_config.templates={};
+Frequently asked questions on estate taxes | Internal Revenue Service
+{"path":{"baseUrl":"\/","pathPrefix":"","currentPath":"node\/591","currentPathIsAdmin":false,"isFront":false,"currentLanguage":"en"},"pluralDelimiter":"\u0003","suppressDeprecationErrors":true,"gtag":{"tagId":"","consentMode":false,"otherIds":[],"events":[],"additionalConfigInfo":[]},"ajaxPageState":{"libraries":"eJx1kuuSgyAMhV8I5ZGYIBGzBcKQ2G7ffrGts2vt_hHznVzmQGCauAXi4jKWVSwcY3ejEFENhKAM5W73n3FuXNR4ZhVtUJ2H1ojtzC2faUzsIQ2i90QlnnXKENHNaaVwFjOKdFlcoriomRYWLPZ5jB7nnYS2VkjjM3rBXuP31EnEdHNoJ86VCxaV8X3YMGy2XQYqp9y6VkdNDpkmgEKCOzbrcYErcRMT-FYSQ-jDy8Ul8Ji6vtNho8OLDrpgRoPfutHdwis0kTkmdArRxv55j0f4gu8jzKZCg9gNLbJ3-yXjWurqE8mCwWx2-mv3yyVPiXR720zFKXPqFh_6dMFAys3VtEYqf9bjs_wJPjKfC-AE25X6SPuBmeP92rlBxhu3y7uwLxMpDjOCru1cXLgMjw0daqO-p5sslGu_qK0uQ7XH0PEVe2XorQShTYuDSg5W5W0DEiraf7iRu_QW1oPgDxqFTvE","theme":"pup_irs_barrio","theme_token":"Y1FBNVZzTLJAHiXp7xg01LCiFoOHtlEJbxNwjTdFHUU"},"ajaxTrustedUrl":{"\/site-index-search":true},"gtm":{"tagId":null,"settings":{"data_layer":"dataLayer","include_environment":false},"tagIds":["GTM-KV978ZL"]},"dataLayer":{"defaultLang":"en","languages":{"en":{"id":"en","name":"English","direction":"ltr","weight":-10},"es":{"id":"es","name":"Spanish","direction":"ltr","weight":-9},"zh-hans":{"id":"zh-hans","name":"Chinese, Simplified","direction":"ltr","weight":-8},"zh-hant":{"id":"zh-hant","name":"Chinese, Traditional","direction":"ltr","weight":-7},"ko":{"id":"ko","name":"Korean","direction":"ltr","weight":-6},"ru":{"id":"ru","name":"Russian","direction":"ltr","weight":-5},"vi":{"id":"vi","name":"Vietnamese","direction":"ltr","weight":-4},"ht":{"id":"ht","name":"Haitian Creole","direction":"ltr","weight":-3}}},"data":{"extlink":{"extTarget":false,"extTargetAppendNewWindowLabel":"(opens in a new window)","extTargetNoOverride":false,"extNofollow":false,"extTitleNoOverride":false,"extNoreferrer":false,"extFollowNoOverride":false,"extClass":"ext","extLabel":"(link is external)","extImgClass":true,"extSubdomains":true,"extExclude":"","extInclude":"","extCssExclude":".paragraph--type--social-media-footer, .btn-primary, .btn-secondary","extCssInclude":"","extCssExplicit":"","extAlert":false,"extAlertText":"This link will take you to an external web site. We are not responsible for their content.","extHideIcons":false,"mailtoClass":"mailto","telClass":"","mailtoLabel":"(link sends email)","telLabel":"(link is a phone number)","extUseFontAwesome":true,"extIconPlacement":"append","extPreventOrphan":false,"extFaLinkClasses":"fa fa-external-link fa-external-link-alt","extFaMailtoClasses":"fa fa-envelope-o","extAdditionalLinkClasses":"","extAdditionalMailtoClasses":"","extAdditionalTelClasses":"","extFaTelClasses":"fa fa-phone","whitelistedDomains":[],"extExcludeNoreferrer":""}},"chosen":{"selector":"select:not(:hidden,[id*=\u0027edit-state\u0027],[id^=\u0022views-form-user-admin-people-page\u0022] #edit-action)","minimum_single":25,"minimum_multiple":20,"minimum_width":200,"use_relative_width":false,"options":{"disable_search":false,"disable_search_threshold":0,"allow_single_deselect":false,"add_helper_buttons":false,"search_contains":true,"placeholder_text_multiple":"Choose some option","placeholder_text_single":"Choose an option","no_results_text":"No results match","max_shown_results":null,"inherit_select_classes":true}},"search_api_autocomplete":{"pup_site_index_search":{"delay":600,"auto_submit":true,"min_length":3}},"accordion_menus":{"accordion_closed":{"main_mobile":"main_mobile"}},"ajax":[],"user":{"uid":0,"permissionsHash":"e9da02e5b7417a890b4132fa11d6d613c1b2cb82c70d51ba8112726ab1c5a870"}}
+Skip to main content
+An official website of the United States government
+Here's how you know
+Here's how you know
+Official websites use .gov
+A
+.gov
+website belongs to an official government organization in the United States.
+Secure .gov websites use HTTPS
+A
+lock
+(
+)
+or
+https://
+means you've safely connected to the .gov website. Share sensitive information only on official, secure websites.
+English
+Español
+中文 (简体)
+中文 (繁體)
+한국어
+Русский
+Tiếng Việt
+Kreyòl ayisyen
+Information Menu
+Help
+News
+Tax Pros
+Sign in
+Individual
+Business
+Tax Pro
+Access your tax information with an IRS account.
+Refunds
+Payments
+Tax records
+Create account
+Search
+Help Menu Mobile
+Sign in
+Individual
+Business
+Tax Pro
+Access your tax information with an IRS account.
+Refunds
+Payments
+Tax records
+Create account
+Menu
+Main navigation
+File
+Overview
+INFORMATION FOR…
+Individuals
+Business and self-employed
+Charities and nonprofits
+International filers
+Retirement
+Governments and tax-exempt bonds
+Indian Tribal Governments
+FILING FOR INDIVIDUALS
+How to file
+When to file
+Where to file
+Update your information
+POPULAR
+Tax record (transcript)
+Apply for an Employer ID Number (EIN)
+Amend return
+Identity Protection PIN (IP PIN)
+Pay
+Overview
+PAY BY
+Bank Account (Direct Pay)
+Payment Plan (Installment Agreement)
+Electronic Federal Tax Payment System (EFTPS)
+POPULAR
+Your Online Account
+Tax Withholding Estimator
+Estimated Taxes
+Penalties
+Refunds
+Overview
+About refunds
+Direct deposit
+Reduced refunds
+Where’s my amended return?
+Credits & Deductions
+Overview
+INFORMATION FOR...
+Individuals
+For you and your family
+Businesses & Self-Employed
+Standard mileage and other information
+POPULAR
+Earned Income Credit (EITC)
+Child Tax Credit
+Clean Energy and Vehicle Credits
+Standard Deduction
+Retirement Plans
+Forms
+Overview
+POPULAR FORMS & INSTRUCTIONS
+Form 1040
+Individual Income Tax Return
+Form 1040 Instructions
+Instructions for Form 1040
+Form W-9
+Request for Taxpayer Identification Number (TIN) and Certification
+Form 4506-T
+Request for Transcript of Tax Return
+Form W-4
+Employee's Withholding Certificate
+Form 941
+Employer's Quarterly Federal Tax Return
+Form W-2
+Wage and Tax Statement
+Form 9465
+Installment Agreement Request
+POPULAR FOR TAX PROS
+Form 1040-X
+Amended Individual Income Tax Return
+Form 2848
+Power of Attorney
+Form W-7
+Apply for an ITIN
+Circular 230
+Regulations Governing Practice before the IRS
+Report Fraud
+Overview
+Tax fraud and scams
+Identity theft
+Fake IRS email or message
+Tax return preparer misconduct
+Help for tax professionals
+Search
+Include Historical Content
+- Any -
+No
+Include Historical Content
+- Any -
+No
+Search
+File
+Overview
+INFORMATION FOR…
+Individuals
+Business and self-employed
+Charities and nonprofits
+International filers
+Retirement
+Governments and tax-exempt bonds
+Indian Tribal Governments
+FILING FOR INDIVIDUALS
+How to file
+When to file
+Where to file
+Update your information
+POPULAR
+Tax record (transcript)
+Apply for an Employer ID Number (EIN)
+Amend return
+Identity Protection PIN (IP PIN)
+Pay
+Overview
+PAY BY
+Bank Account (Direct Pay)
+Payment Plan (Installment Agreement)
+Electronic Federal Tax Payment System (EFTPS)
+POPULAR
+Your Online Account
+Tax Withholding Estimator
+Estimated Taxes
+Penalties
+Refunds
+Overview
+About refunds
+Direct deposit
+Reduced refunds
+Where’s my amended return?
+Credits & Deductions
+Overview
+INFORMATION FOR...
+Individuals
+Businesses & Self-Employed
+POPULAR
+Earned Income Credit (EITC)
+Child Tax Credit
+Clean Energy and Vehicle Credits
+Standard Deduction
+Retirement Plans
+Forms
+Overview
+POPULAR FORMS & INSTRUCTIONS
+Form 1040
+Form 1040 Instructions
+Form W-9
+Form 4506-T
+Form W-4
+Form 941
+Form W-2
+Form 9465
+POPULAR FOR TAX PROS
+Form 1040-X
+Form 2848
+Form W-7
+Circular 230
+Report Fraud
+Overview
+Tax fraud and scams
+Identity theft
+Fake IRS email or message
+Tax return preparer misconduct
+Help for tax professionals
+Main navigation
+File
+Pay
+Refunds
+Credits & Deductions
+Forms & Instructions
+Info Menu Mobile
+Charities & Nonprofits
+Help
+News
+Tax Pros
+Search
+Include Historical Content
+- Any -
+No
+Include Historical Content
+- Any -
+No
+Search
+Home
+File
+Businesses and self-employed
+Small business
+Frequently asked questions on estate taxes
+Frequently asked questions on estate taxes
+More In File
+Individuals
+Businesses and self-employed
+Business tax account
+Employer ID numbers
+Business taxes
+Business structures
+Operating a business
+Self-employed
+Small business
+Industries and professions
+Small business events
+Online learning
+Large business
+Charities and nonprofits
+International taxpayers
+Governmental liaisons
+Federal, state and local governments
+Indian tribal governments
+Tax exempt bonds
+Taxpayer identification numbers (TIN)
+Form 706 estate tax return packages returned
+If your Form 706 package was returned to you, you must
+take specific action to ensure your package is considered timely filed
+.
+Below are some of the more common questions and answers about estate tax issues. You may also find additional information in
+Publication 559
+or some of the other forms and publications offered in our
+forms and publications
+page. Included in this area are the instructions to Forms 706 and 709. Within these instructions, you will find the tax rate schedules to the related returns. If the answers to your questions cannot be found in these resources, we strongly recommend visiting with a tax practitioner.
+Am I required to file an estate tax return? (updated Dec. 22, 2025)
+An estate tax return (Form 706) must be filed if the gross estate of the decedent (who is a U.S. citizen or resident), increased by the decedent’s adjusted taxable gifts and specific gift tax exemption, is valued at more than the filing threshold for the year of the decedent’s death, as shown in the table below.
+Filing threshold for year of death
+Year of death
+Filing threshold
+2011
+$5,000,000
+2012
+$5,120,000
+2013
+$5,250,000
+2014
+$5,340,000
+2015
+$5,430,000
+2016
+$5,450,000
+2017
+$5,490,000
+2018
+$11,180,000
+2019
+$11,400,000
+2020
+$11,580,000
+2021
+$11,700,000
+2022
+$12,060,000
+2023
+$12,920,000
+2024
+$13,610,000
+2025
+$13,990,000
+2026
+$15,000,000
+An estate tax return also must be filed if the estate elects to transfer any deceased spousal unused exclusion (DSUE) amount to a surviving spouse, regardless of the size of the gross estate or amount of adjusted taxable gifts. The election to transfer a DSUE amount to a surviving spouse is known as the portability election.
+An estate tax return may need to be filed for a decedent who was a nonresident and not a U.S. citizen if the decedent had U.S.-situated assets. Refer to
+some nonresidents with U.S. assets must file estate tax returns
+to learn more.
+I need to change something on an estate tax return that has already been filed. What is the process?
+File another Form 706 or Form 706-NA, as applicable
+Enter “Supplemental Information” across the top of page 1 of the form
+Include a statement of what has changed, along with the supporting information
+Attach a copy of pages 1, 2, 3, and 4 of the original Form 706 or Form 706-NA that has already been filed
+For the mailing address for a supplemental Form 706 or Form 706-NA, see
+filing estate and gift tax returns
+.
+How do I elect portability of the Deceased Spousal Unused Exclusion (DSUE) amount to benefit the surviving spouse?
+In order to elect portability of the decedent's unused exclusion amount (deceased spousal unused exclusion (DSUE) amount) for the benefit of the surviving spouse, the estate's representative must file an estate tax return (Form 706) and the return must be filed timely. The due date of the estate tax return is nine months after the decedent's date of death, however, the estate's representative may request an extension of time to file the return for up to six months. An automatic six month extension of time to file the return is available to all estates, including those filing solely to elect portability, by filing Form 4768 on or before the due date of the estate tax return.
+If I missed the due date for filing the estate tax return, can I get an extension of time to elect portability?
+If the estate representative did not file an estate tax return within nine months after the decedent's date of death, or within fifteen months of the decedent's date of death (if a six month extension of time for filing the estate tax return had been obtained), the availability of an extension of time to elect portability of the Deceased Spousal Unused Exclusion (DSUE) amount depends on whether the estate has a filing requirement, based on the filing threshold provided under § 6018(a).
+If the filing threshold has been met, or in other words, if, independent of the portability election, the estate is required to file an estate tax return based on the total value of the gross estate and the amount of any adjusted taxable gifts, no extension of time to elect portability is available and
+Revenue Procedure 2022-32
+does not apply.
+However, if, the sum of the value of the decedent’s gross estate and the total amount of the decedent’s adjusted taxable gifts is less than the filing threshold, Revenue Procedure 2022-32 provides a simplified method for certain taxpayers to obtain an extension of time to make a “portability” election under § 2010(c)(5)(A) of the Internal Revenue Code. The simplified method under the revenue procedure to obtain an extension of time to make the portability election requires the filing of a complete and properly prepared estate tax return on or before the fifth annual anniversary of the decedent’s date of death and requires a notation on the estate tax return that the return is “FILED PURSUANT TO REV. PROC. 2022-32 TO ELECT PORTABILITY UNDER § 2010(c)(5)(A).” No user fee is required to use the simplified method under this revenue procedure. Estates that do not qualify for this relief, and do not have a filing requirement based on the filing threshold, may request an extension of time to make the portability election under § 2010(c)(5)(A) by requesting a letter ruling under the provisions of § 301.9100-3. The requirements for requesting a letter ruling are described in Revenue Procedure 2022-1 (or any successor revenue procedure).
+How does the basic exclusion amount apply in 2026 if I make large gifts before 2026? (updated Dec. 22, 2025)
+The Working Families Tax Cuts Bill was signed into law on July 4, 2025 as Public Law 119-21 and amends § 2010(c)(3) by increasing the basic exclusion amount to $15,000,000 for gifts for calendar year 2026.
+When can I expect an estate tax closing letter?
+Final regulations establishing a new user fee of $67 for persons requesting the issuance of IRS Letter 627, Estate Tax Closing Letter (ETCL), became effective October 28, 2021 (User Fee for Estate Tax Closing Letter (
+TD 9957
+)). For information on all estate tax closing letter requests, see
+Frequently asked questions on the estate tax closing letter
+.
+Is there an alternative to the estate tax closing letter?
+Yes.
+Notice 2017-12
+explains that an account transcript issued by the Internal Revenue Service (IRS) can be used in lieu of Letter 627, Estate Tax Closing Letter. The Transcript Delivery Service (TDS), which provides authorized practitioners the ability to view and print instant account transcripts for estate tax returns, is now available on IRS.gov. In addition, hardcopy account transcripts are available to authorized taxpayers making valid requests via mail or facsimile using Form 4506-T, Request for Transcript of Tax Return. Please refer to
+transcripts in lieu of estate tax closing letters
+for specific instructions on how to request an estate tax account transcript using TDS or by using Form 4506-T.
+How do I make a payment after an extension is requested, but before filing the return? (added Aug. 7, 2023)
+To make an electronic payment, which is encouraged, go to
+How do I make an electronic payment?
+To make payment by paper check, make the check payable to “United States Treasury.” Note the decedent’s name, social security number, and “Form 706” on the face of the check. Mail the check to:
+Internal Revenue Service
+1973 Rulon White Blvd.
+Ogden, UT 84201
+Who do I contact for a discharge or release of property from an estate tax lien? Where do I send bonds and letters of credit on IRC 2056A qualified domestic trust elections? (updated Sept. 30, 2025)
+Advisory Consolidated Receipts
+7940 Kentucky Drive Stop 2850A
+Florence, KY 41042-2915
+Phone:
+669-229-1504
+Fax: 844-201-8382
+Can a refund check for estate taxes (Form 706) be re-issued in a name other than “The estate of…”? For example, in the name of an executor, personal representative, beneficiary, a trust or trustee? (added June 11, 2024)
+Refund checks that are issued to an estate account (for Form 706) are issued only in the name of the estate and will not be made payable to any other person or entity.
+How do I make an electronic payment? (updated May 2026)
+There are two separate systems for making an electronic payment of estate or gift tax:
+Direct Pay with bank account
+The Electronic Federal Tax Payment System (EFTPS)
+Same-day wire payment
+Direct Pay with bank account
+Instructions on how to pay directly from your bank account are found at
+Direct Pay with bank account
+.
+Electronic Federal Tax Payment System (EFTPS)
+Instructions on how to use the
+Electronic Federal Tax System (EFTPS)
+are found in
+Publication 4990
+PDF
+(do not use Publication 4990 for the same-day wire payment method).
+Same-day wire payment
+What you need to know about making a same day wire payment:
+You do not need to enroll to make a same-day wire payment, and no PIN is needed.
+Your financial institution may charge a fee for this service.
+The cutoff time to make a same-day wire payment is 5 p.m. Eastern Time. Your bank may have an earlier cutoff time.
+Download and complete page 1 of the Same-Day Taxpayer Worksheet, and provide pages 1 and 2 to your financial institution.
+When completing the
+Same-day taxpayer worksheet
+PDF
+, you will need a two-digit year, a two-digit month, and a five-digit tax type code, depending on the type of payment you are making (use the table of codes listed below).
+Form number
+Two-digit year
+Two-digit month
+Type of payment (tax type code)
+706 or 706-NA
+00
+00
+Payment due with return (07061)
+Payment on a proposed assessment (07064)
+Estimated payment (07066)
+Payment after the return was due and filed (07067)
+Payment with extension, Form 4768 (07067)
+706-A or 706-QDT
+Last two digits of the year of the applicable filing year
+Two digits for the month of death
+Payment due with return
+Payment after the return was due and filed
+706-GS(D)
+Last two digits of the year of the applicable filing year
+12
+Payment due with return
+Payment with extension, Form 7004
+Payment after the return was due and filed
+706-GS(T)
+Last two digits of the year of the applicable filing year
+12
+Payment due with return 70631
+Payment with extension, Form 7004
+Payment after the return was due and filed
+709 or 709-A
+Last two digits of the year of the applicable filing year
+12
+Payment due with return 07091
+Payment after the return was due and filed
+Estimated payment
+Payment with extension, Form 8892
+Payment with extension, Form 8892, with credit card
+If you encounter problems making a payment using these codes, please call Federal Tax Collection Service (Same-Day Wire) Customer Service at
+800-382-0045
+or
+314-425-1810
+between 8:30 a.m. to 7 p.m. Eastern Time, Monday through Friday.
+What is included in the estate?
+The gross estate of the decedent consists of an accounting of everything you own or have certain interests in at the date of death (Refer to
+Form 706
+PDF
+). The fair market value of these items is used, not necessarily what you paid for them or what their values were when you acquired them. The total of all of these items is your "gross estate." The includible property may consist of cash and securities, real estate, insurance, trusts, annuities, business interests and other assets. Keep in mind that the Gross Estate will likely include non-probate as well as probate property.
+I own a 1/2 interest in a farm (or building or business) with my brother (sister, friend, other). What is included?
+Depending on how your 1/2 interest is held and treated under state law, and how it was acquired, you would probably only include 1/2 of its value in your gross estate. However, many other factors influence this answer, so you would need to visit with a tax or legal professional to make that determination.
+What is excluded from the estate?
+Generally, the gross estate does not include property owned solely by the decedent's spouse or other individuals. Lifetime gifts that are complete (no powers or other control over the gifts are retained) are not included in the gross estate (but taxable gifts are used in the computation of the estate tax). Life estates given to the decedent by others in which the decedent has no further control or power at the date of death are not included.
+What deductions are available to reduce the estate tax?
+Marital deduction: One of the primary deductions for married decedents is the marital deduction. All property that is included in the gross estate and passes to the surviving spouse is eligible for the marital deduction. The property must pass "outright." In some cases, certain life estates also qualify for the marital deduction.
+Charitable deduction: If the decedent leaves property to a qualifying charity, it is deductible from the gross estate.
+Mortgages and debt.
+Administration expenses of the estate.
+Losses during estate administration.
+What other information do I need to include with the return?
+See
+Form 706
+PDF
+and
+instructions
+PDF
+and
+Publication 559
+. Among other items listed:
+Copies of the death certificate
+Copies of the decedent's will and/or relevant trusts
+Copies of appraisals
+Copies of relevant documents regarding litigation involving the estate
+Documentation of any unusual items shown on the return (partially included assets, losses, near date of death transfers, others).
+If you are attaching to the Form 706 copies of a previously filed Forms 709, write at the top of each Form 709, “THIS PREVIOUSLY FILED FORM IS AN EXHIBIT TO FORM 706.”
+What is "fair market value"?
+Fair market value is defined as: "The fair market value is the price at which the property would change hands between a willing buyer and a willing seller, neither being under any compulsion to buy or to sell and both having reasonable knowledge of relevant facts. The fair market value of a particular item of property includible in the decedent's gross estate is not to be determined by a forced sale price. Nor is the fair market value of an item of property to be determined by the sale price of the item in a market other than that in which such item is most commonly sold to the public, taking into account the location of the item wherever appropriate." Regulation §20.2031-1.
+What about the value of my family business/farm? (updated Oct. 29, 2024)
+Generally, the fair market value of such interests owned by the decedent are includible in the gross estate at date of death. However, for certain farms operated as a family farm, reductions to these amounts may be available.
+In the case of a qualifying family farm, IRC 2032A allows an inflation-adjusted reduction from value of up to the following amounts in the applicable year of death:
+Maximum IRC 2032A adjustment for year of death
+Year of death
+Maximum IRC 2032A adjustment
+2011
+$1,020,000
+2012
+$1,040,000
+2013
+$1,070,000
+2014
+$1,090,000
+2015
+$1,100,000
+2016
+$1,110,000
+2017
+$1,120,000
+2018
+$1,140,000
+2019
+$1,160,000
+2020
+$1,180,000
+2021
+$1,190,000
+2022
+$1,230,000
+2023
+$1,310,000
+2024
+$1,390,000
+2025
+$1,420,000
+A similar deduction for a qualifying family-owned business (IRC 2057) was repealed beginning in 2004.
+What if I do not have everything ready for filing by the due date?
+The estate's representative may request an extension of time to file for up to six months from the due date of the return. However, the correct amount of tax is still due by the due date and interest is accrued on any amounts still owed by the due date that are not paid at that time.
+Who should I hire to represent me and prepare and file the return?
+The Internal Revenue Service cannot make recommendations about specific individuals, but there are several factors to consider:
+How complex is the estate? By the time most estates reach $1,000,000, there is usually some complexity involved.
+How large is the estate?
+In what condition are the decedent's records?
+How many beneficiaries are there and are they cooperative?
+Do I need an estate tax professional?
+With these questions in mind, it is a good idea to discuss the matter with several estate tax professionals. Ask about how much experience they have had and ask for referrals. This process should be similar to locating a good physician. Locate other individuals that have had similar experiences and ask for recommendations. Finally, after the individual(s) are employed and begin to work on estate matters, make sure the lines of communication remain open so that there are no surprises during administration or if the estate tax return is examined.
+Finally, most estates engage the services of both attorneys and CPAs or enrolled agents (EA). The attorney usually handles probate matters and reviews the impact of documents on the estate tax return. The CPA or EA often handles the actual return preparation and some representation of the estate in matters with the IRS. However, some attorneys handle all of the work. CPAs and EAs may also handle most of the work but cannot take care of probate matters and other situations where a law license is required. In addition, other professionals (such as appraisers, surveyors, financial advisors and others) may need to be engaged during this time.
+Do I have to talk to the IRS during an examination?
+You do not have to be present during an examination unless an IRS representative needs to ask specific questions. Although you may represent yourself during an examination, most executors prefer that professional(s) they have employed handle this phase of administration. They may delegate authority for this by signing a designation on the
+Form 706
+PDF
+itself, or executing
+Form 2848, Power of Attorney
+PDF
+.
+What if I disagree with the examination proposals?
+You have many rights and avenues of appeal if you disagree with any proposals made by the IRS. See
+Publication 1
+PDF
+and
+Publication 5
+PDF
+for an explanation of these options.
+What happens if I sell property that I have inherited? (updated Oct. 10, 2023)
+The sale of such property is usually considered the sale of a capital asset and may be subject to capital gains (or loss) treatment. However, IRC §1014 provides that the basis of property acquired from a decedent is its fair market value at the date of death, so there is usually little or no gain to account for if the sale occurs soon after the date of death. (Remember, the rules are different for determining the basis of property received as a lifetime gift). Refer to
+Gift tax FAQs
+.
+If you need a discharge of property from a federal estate tax lien, submit
+Form 4422, Application for Certificate Discharging Property Subject to Estate Tax Lien
+PDF
+, to the IRS. The form instructions include the address where to send Form 4422.
+International: In a Form 706-NA, how do I claim a pro-rata unified credit pursuant to a treaty?
+Complete the entries for Lines 1 through 3 in Schedule B on the second page of the return. Attach a statement to the return that refers to the particular treaty applicable to the estate, and write that the estate is claiming its benefits. Show your computation of the pro-rata unified credit in the statement, and enter that figure in the Tax Computation on Line 7 on the front page of the return. Attach to the Form 706-NA a copy of the return filed with the treaty partner. If no estate or inheritance tax return has been filed with the treaty partner, explain in your statement why no foreign return was due. If there was no foreign return, attach a copy of an inventory that sets forth the decedents assets and their values at the date of death, and explains how the figure shown on Line 3 of Schedule B was computed.
+How do I know which estate tax return to file? Form 706 or Form 706-NA? (added Sept. 18, 2024)
+To determine which instructions to review and estate tax return to file, you must first determine your citizenship or resident status.
+For estate and gift tax purposes, “residency” is effectively your domicile (see Treas. Reg. §§ 20.0-1(b) and 25.2501-1(b)).
+A person acquires a domicile in a place by living there, even for a brief period of time, with no definite present intention of moving therefrom.
+Note that for estate and gift tax purposes, holding a “green card” is not conclusive evidence of an intent to be domiciled in the U.S.
+If the decedent (at the date of death) was a resident of the U.S., review the instructions for Form 706 (for decedent).
+If the decedent was neither a citizen nor resident at the date of death, review the instructions for Form 706-NA.
+The table below is intended to be a summary of the above information. To determine whether a return is required to be filed, review the noted form’s instructions.
+Status
+Form 706,
+Estate tax return
+Form 706-NA, Estate tax return
+United States citizen or United States resident
+Yes
+No
+Non-resident United States citizen
+Yes
+No
+United States resident (non-citizen)
+Yes
+No
+Nonresident not a United States citizen (NRNC)
+No
+Yes
+Green card holder (legal resident of the United States) (not conclusive of being domiciled in the U.S.)
+Yes,
+if domiciled
+in the U.S.**
+Yes,
+if not domiciled
+in the U.S.
+** Having a green card doesn’t mean you were a U.S. domiciliary (full exclusion), nor does filing a Form 706 carry that weight alone.
+Additional information is available at:
+Estate tax for nonresidents not citizens of the US
+FAQs on estate tax for nonresidents not citizens of the US
+International: In a Form 706-NA, how do I claim an exemption from U.S. estate tax pursuant to a treaty?
+In Schedule A of the return, list the estates U.S. assets, but show no values for those that are exempt from U.S. estate tax pursuant to a treaty. Attach a statement to the return that refers to the particular treaty applicable to the estate, and write that the estate is claiming its benefits. Entries for the gross estate in the U.S., the taxable estate, and the tax amounts, should be "0" if all of the decedents U.S. assets are exempt from U.S. estate tax pursuant to the applicable treaty. Attach to the Form 706-NA a copy of the return filed with the treaty partner. If no estate or inheritance tax return has been filed with the treaty partner, explain in your statement why no foreign return was due.
+Most information for this page came from the Internal Revenue Code: Chapter 11--Estate Tax (generally Internal Revenue Code §2001 and following, related regulations and other sources.)
+International: How do I secure a transfer certificate for an estate of a nonresident citizen of the United States?
+Transfer certificate filing requirements for the estates of nonresident citizens of the United States
+International: How do I secure a transfer certificate for an estate of a nonresident not a citizen of the United States?
+Transfer certificate filing requirements for the estates of nonresident citizens of the United States
+Will my same-sex spouse be considered a surviving spouse for purposes of the marital deduction for estate tax purposes?
+For federal tax purposes, the terms “spouse,” “husband,” and “wife” includes individuals of the same sex who were lawfully married under the laws of a state whose laws authorize the marriage of two individuals of the same sex and who remain married. Also, the Service will recognize a marriage of individuals of the same sex that was validly created under the laws of the state of celebration even if the married couple resides in a state that does not recognize the validity of same-sex marriages.
+However, the terms “spouse,” “husband and wife,” “husband,” and “wife” do not include individuals (whether of the opposite sex or the same sex) who have entered into a registered domestic partnership, civil union, or other similar formal relationship recognized under state law that is not denominated as a marriage under the laws of that state, and the term “marriage” does not include such formal relationships.
+All property that is included in the gross estate and passes to the surviving spouse is eligible for the marital deduction. The property must pass "outright." In some cases, certain life estates also qualify for the marital deduction.
+For further information, including the timeframes regarding filing claims or amended returns, see
+Revenue Ruling 2013-17
+.
+Revenue Ruling 2013-17, along with updated
+Frequently asked questions for same-sex couples
+and updated
+FAQs for registered domestic partners and individuals in civil unions
+, are available today on IRS.gov. See also
+Publication 555, Community Property
+.
+Related
+Estate and gift taxes
+Estate tax
+Frequently asked questions on estate taxes
+Information for executors
+Gift tax
+Frequently asked questions on gift taxes
+Filing estate and gift tax returns
+Modernized e-File (MeF) for gift taxes
+Transcripts in lieu of estate tax closing letters
+Frequently asked questions on the Estate Tax Closing Letter
+Penalties
+What's new — Estate and gift tax
+Related international topics
+Estate tax for nonresidents not citizens of the United States
+Frequently asked questions on estate taxes for nonresidents not citizens of the United States
+Transfer certificate filing requirements for the estates of nonresidents not citizens of the United States
+Transfer certificate filing requirements for the estates of nonresident citizens of the United States
+Gift tax for nonresidents not citizens of the United States
+Estate & gift tax treaties (international)
+Publications
+Forms and publications: Estate and gift tax
+About Publication 559, Survivors, Executors and Administrators
+Page Last Reviewed or Updated: 23-Jul-2026
+Share
+Facebook
+Twitter
+Linkedin
+Print
+Footer Navigation
+Our Agency
+About IRS
+Careers
+Financial and Budget Reports
+Tax Statistics
+Help
+Find a Local Office
+Know Your Rights
+Taxpayer Bill of Rights
+Taxpayer Advocate Service
+Independent Office of Appeals
+Civil Rights
+FOIA
+No FEAR Act Data
+Reliance on Guidance
+Resolve an Issue
+IRS Notices and Letters
+Identity Theft
+Tax scams
+Tax Fraud
+Criminal Investigation
+Whistleblower Office
+Languages
+Español
+中文 (简体)
+中文 (繁體)
+한국어
+Pусский
+Tiếng Việt
+Kreyòl ayisyen
+English
+Related Sites
+U.S. Treasury
+Treasury Inspector General for Tax Administration
+USA.gov
+USAspending.gov
+Vote.gov
+Subfooter
+Privacy Policy
+Accessibility
+window.dataLayer = window.dataLayer || []; window.dataLayer.push({"entityLanguage":"en","entityCountry":"US","siteName":"Internal Revenue Service","entityLangcode":"en","entityVid":"6295656","entityCreated":"1487826000","entityStatus":"1","entityType":"node","entityBundle":"pup_article","entityId":"591","entityTitle":"Frequently asked questions on estate taxes","primaryCategory":"businesses","subCategory1":"small-businesses-self-employed","subCategory2":"frequently-asked-questions-on-estate-taxes","Navigation":{"id":"17876","label":"Small business","bundle":"pup_navigation"},"field_pup_ot_guid":"2e9240be3a716310VgnVCM100000351f0a0aRCRD","field_pup_ot_unique_id":"108143","field_pup_ot_url":"https:\/\/www.irs.gov\/businesses\/small-businesses-self-employed\/frequently-asked-questions-on-estate-taxes","entityTaxonomy":{"pup_audience":{"6676":"Small Businesses"},"pup_channels":{"2096":"Small Businesses \u0026 Self Employed"},"pup_navigation":{"17876":"Small business"},"pup_organization":{"14106":"SE:S"},"pup_topic":{"12331":"Default Topic No Value"}},"userUid":0});

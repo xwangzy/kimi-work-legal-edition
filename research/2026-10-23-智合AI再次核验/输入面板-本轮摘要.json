@@ -1,0 +1,10 @@
+{
+  "date": "2026-10-23",
+  "modelPanelVisible": true,
+  "autoModelOptionVisible": true,
+  "autoOfficialSkillsSwitchVisible": true,
+  "autoOfficialSkillsChecked": false,
+  "executionPanel": "- dialog \"执行设置\":\n  - heading \"执行设置\" [level=2]\n  - button \"关闭设置\": ×\n  - generic: 开始任务\n  - radiogroup \"任务开始方式\":\n    - radio \"直接执行\" [checked] [active]\n    - radio \"先做计划\"\n  - paragraph: 收到任务后开始处理，需要确认的操作仍会询问。\n  - generic: 执行额度\n  - radiogroup \"达到执行额度后\":\n    - radio \"按额度暂停\" [checked]\n    - radio \"持续工作\"\n  - paragraph: 达到单次任务执行额度后暂停，可确认后继续。\n  - paragraph: 两项独立设置。持续工作仍受账户余额限制，不会更改操作审批权限。",
+  "changesApplied": false,
+  "taskSubmitted": false
+}

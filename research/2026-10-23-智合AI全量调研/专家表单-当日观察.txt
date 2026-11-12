@@ -1,0 +1,105 @@
+- button "‹ 返回列表"
+- generic: 👤
+- text: 新建专家
+- button "创建专家" [disabled]
+- generic: ✏️
+- text: 专家设定
+- generic: 🧩
+- text: 基本信息
+- generic: 专家名称
+- textbox "如：合同审查专家"
+- text: 专家描述
+- generic: AI 靠它判断何时把任务委派给这个专家，写清适用场景
+- textbox "如：审查各类商务合同的风险点与不利条款，输出逐条审查意见"
+- text: 专家图标
+- generic: 专家列表 / 广场 / @ 菜单里的头像，不设则用名称首字母
+- generic: "?"
+- button "上传图片"
+- generic: 图片优先于 emoji 显示；都不设则用名称首字母。支持 PNG / JPG / GIF / WebP，不超过 512 KB。
+- generic: emoji
+- button "⚡"
+- button "🔧"
+- button "🛠️"
+- button "⚙️"
+- button "🤖"
+- button "🧠"
+- button "💡"
+- button "🔍"
+- button "📄"
+- button "📝"
+- button "📋"
+- button "📑"
+- button "📊"
+- button "📈"
+- button "🗂️"
+- button "🗃️"
+- button "更多"
+- textbox "或粘贴任意 emoji / 一两个字"
+- generic: 配色
+- button "自动"
+- button "紫"
+- button "蓝"
+- button "青"
+- button "碧"
+- button "绿"
+- button "琥珀"
+- button "橙"
+- button "绯"
+- button "粉"
+- button "石墨"
+- text: 专家分类
+- generic: 决定专家在广场里被归到哪一类，用户主要靠它找人。可以只选大类
+- combobox:
+  - option "选择大类…" [selected]
+  - option "诉讼仲裁"
+  - option "交易与非诉"
+  - option "企业法务与合规"
+  - option "法律研究与检索"
+  - option "律所经营与个人执业"
+  - option "通用办公工具"
+  - option "娱乐与减压"
+- combobox [disabled]:
+  - option "请先选大类" [selected]
+- button "✨ 让 AI 帮我选"
+- generic: ⚡
+- text: 专家技能
+- generic: 0/20
+- generic: 专家技能与你的“我的 skill”相互独立：从个人库导入是复制一份，之后改 / 删个人技能都不影响专家；在这里上传的技能不会进入“我的 skill”。分享给他人时对方看不到技能内容。
+- button "＋ 从我的技能库导入"
+- button "⬆ 上传技能"
+- button "📁 上传文件夹"
+- generic: 导入 = 复制到专家；上传支持 .md / .skill / .zip 或文件夹。 增删都要点右上角“创建专家”后才生效。
+- generic: 该专家还没有技能，添加至少 1 个并保存后才能被主 AI 委派 / 试运行。
+- generic: 🎭
+- text: 提示词
+- generic: 可选
+- button "✨ AI 生成人设" [disabled]
+- generic: 注入专家的执行环境，决定它的语气与工作方式。可先填好名称与绑定技能，再一键生成草稿。
+- textbox "如：你是资深法务，结论先行、依据简短…"
+- generic: 💬
+- text: 微信渠道文案
+- generic: 可选
+- generic: 仅当该专家绑定了企业微信机器人时生效；留空则使用系统默认文案。
+- text: 欢迎词
+- generic: 用户添加机器人 / 首次私聊时自动发送的开场白
+- textbox "如：您好！我是您的专属法务助手，有合同审查、法律咨询等需求都可以直接发给我～"
+- text: 收到词
+- generic: 收到任务、开始处理前即时回复的“已收到”提示
+- textbox "如：好的，我已收到，正在为您处理，请稍候…"
+- generic: 🧠
+- text: 执行配置
+- text: 推荐执行模型
+- generic: 专家执行任务时固定用它，与主对话所选模型无关
+- text: 执行轮次上限
+- generic: 留空 / 0 = 跟随平台默认。检索、逐份处理这类“多轮但每轮很轻”的任务 可以调大；到达上限时专家会先收尾交付已有成果，不会直接中断
+- spinbutton
+- checkbox "向使用者展示执行过程 开启：专家直接在用户当前的对话里执行（不另开子代理），过程与技能内容对使用者可见。 关闭（隐蔽执行）：专家在独立子代理 + 独立沙箱中运行，只返回最终结果，技能内容受保护、不对使用者展示" [checked]
+- generic: 向使用者展示执行过程
+- generic: 开启：专家直接在用户当前的对话里执行（不另开子代理），过程与技能内容对使用者可见。 关闭（隐蔽执行）：专家在独立子代理 + 独立沙箱中运行，只返回最终结果，技能内容受保护、不对使用者展示
+- generic: 🧪
+- text: 试运行
+- generic: 边改边测 · 发送即用最新设定
+- generic: 🧪
+- generic: 创建后即可在这里试运行
+- generic: 填好左侧“基本信息”、挑好技能，点“创建专家”即一并落库， 之后边改边测 —— 每次发送会自动带上你最新的改动。
+- button "创建并开始试运行" [disabled]

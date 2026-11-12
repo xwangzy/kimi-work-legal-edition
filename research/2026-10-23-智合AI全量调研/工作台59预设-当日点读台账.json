@@ -1,0 +1,420 @@
+{
+  "date": "2026-10-23",
+  "timezone": "Asia/Shanghai",
+  "method": "computer use; all scene cards clicked and visible editor values read; no tasks submitted",
+  "items": [
+    {
+      "id": "S01",
+      "category": "诉讼争议",
+      "title": "开庭红蓝对抗推演 进阶 开庭前先挨一顿打，好过在庭上被打 推演剧本 应对话术",
+      "characters": 501,
+      "sha256": "d414538abf6f5d29b6d554f72dc8d94a3efcafb34d3dc1922d6fd6e1c788739a"
+    },
+    {
+      "id": "S02",
+      "category": "诉讼争议",
+      "title": "扫描类案裁判倾向 进阶 先摸清法院的口径，再决定怎么打 裁判口径 支持率倾向 要旨清单",
+      "characters": 369,
+      "sha256": "0f72a864098b92ad435ff71af1243245be5a9cab2b2e5a05cbdd4e204089e2e4"
+    },
+    {
+      "id": "S03",
+      "category": "诉讼争议",
+      "title": "做一次案件胜算体检 本来要花两小时的案情梳理 焦点拆解 举证责任表 风险分级",
+      "characters": 476,
+      "sha256": "88e7cb9648af58b1ff94d45861758847e7e7e4b969d091764226db2fc1e95553"
+    },
+    {
+      "id": "S04",
+      "category": "诉讼争议",
+      "title": "起草起诉状 / 答辩状 拿到的是初稿，不是空白页 文书初稿 待补信息标注",
+      "characters": 475,
+      "sha256": "33fa3cd02d0e2a47e85acab272b9248c42d30df8295628e14dca011465e95587"
+    },
+    {
+      "id": "S05",
+      "category": "诉讼争议",
+      "title": "编证据目录与质证预判 交证据之前，先知道对方会怎么打 证据目录表 质证预判 补强建议",
+      "characters": 408,
+      "sha256": "1f581371b54236f48e4a43f131229097f29f02acdb5390e663fbf3675930cb06"
+    },
+    {
+      "id": "S06",
+      "category": "诉讼争议",
+      "title": "排诉讼全流程作战地图 期限红线一次排清，不再靠记 时间轴 节点动作清单 期限红线",
+      "characters": 347,
+      "sha256": "38702e6732ce18ec2c5b43f85a9700c91e2775f8e486c4ae45dc12d2fcfe877e"
+    },
+    {
+      "id": "S07",
+      "category": "企业法务",
+      "title": "写给老板的法律风险一页纸 推荐 明天要汇报，一页纸讲完不堆法条 一页纸 风险分级 决策建议",
+      "characters": 425,
+      "sha256": "a3dd04b8fa83326dc709764315db62a7ad5f1eee0b0cdbe67b5b606fa755e1f0"
+    },
+    {
+      "id": "S08",
+      "category": "企业法务",
+      "title": "写突发事件第一小时手册 有人上门检查时，照着做就行 行动清单 对外口径 记录模板",
+      "characters": 416,
+      "sha256": "aba8eaa9a95122f545c94def17c1f84318b320514d199da6043781c8f9cc5f77"
+    },
+    {
+      "id": "S09",
+      "category": "企业法务",
+      "title": "设计合同审查标准与授权矩阵 谁能签、审到什么颗粒度，一张表定死 授权矩阵 红黄绿线清单 抽检机制",
+      "characters": 418,
+      "sha256": "6f15bb3cf58572561fa27d6612332ba950e62fd9475a10ccf2b307083208420b"
+    },
+    {
+      "id": "S10",
+      "category": "企业法务",
+      "title": "规划合同模板体系 一次想清楚公司到底要哪些模板 模板清单 条款骨架 优先级",
+      "characters": 397,
+      "sha256": "9ed39d0a6443f4e727c37829afa12af91fbc72691909e2234a20de1d7605dd38"
+    },
+    {
+      "id": "S11",
+      "category": "企业法务",
+      "title": "出业务部门法律培训大纲 45 分钟的课，含案例和互动设计 课件大纲 真实感案例 互动设计",
+      "characters": 416,
+      "sha256": "08ea394288f48ad15ee271b076aad2b30473f5162e0a5585ca8d8fa0b4345323"
+    },
+    {
+      "id": "S12",
+      "category": "企业法务",
+      "title": "写年度法务规划与预算论证 论证“为什么还要再招两个人” 规划框架 量化指标 预算论证",
+      "characters": 482,
+      "sha256": "4119c9785ce910500ec1adbe54a11e7a87609ad2a1769b182c056189813778e3"
+    },
+    {
+      "id": "S13",
+      "category": "劳动人事",
+      "title": "测算违法解除风险 推荐 现在动手风险多大、赔多少，先算清 合法性打分 赔偿测算 补救方案",
+      "characters": 528,
+      "sha256": "8573705499378e30e8c2f161da6530c01d909274f16d83f03a54487d2226ce79"
+    },
+    {
+      "id": "S14",
+      "category": "劳动人事",
+      "title": "模拟劳动仲裁开庭 进阶 仲裁员和员工方轮番发问，先练一遍 推演剧本 举证漏洞 答辩要点",
+      "characters": 502,
+      "sha256": "bea397ba661c60e62b6c93e132de48b234b5cb66668dcef49c7c103e1a983b7c"
+    },
+    {
+      "id": "S15",
+      "category": "劳动人事",
+      "title": "设计裁员方案 40 人的事业部要关，路径和补偿一起算 路径对比 补偿测算 沟通节奏",
+      "characters": 575,
+      "sha256": "c07c7933f6702b5c02cc08a7cf9b416c8e0559b777cd33c74f4eb21ea5bda2de"
+    },
+    {
+      "id": "S16",
+      "category": "劳动人事",
+      "title": "从零起草规章制度体系 员工手册 + 民主程序留痕，一起给 手册目录 条款初稿 程序步骤",
+      "characters": 488,
+      "sha256": "9cd25f37d2b7706ab28154e8b2711fdd6dc41137869d47195a8166bb97194f0b"
+    },
+    {
+      "id": "S17",
+      "category": "劳动人事",
+      "title": "设计竞业限制与保密方案 既要控成本，又要真的能执行 条款初稿 补偿测算 可执行性风险",
+      "characters": 521,
+      "sha256": "a638fc3f7cf4d2cc12c7827a1aeae74c14e87089fe0b24666e4c20086796b8db"
+    },
+    {
+      "id": "S18",
+      "category": "劳动人事",
+      "title": "理清灵活用工合规路径 外包众包怎么用才不被认定劳动关系 模式对比 认定因素 红线清单",
+      "characters": 511,
+      "sha256": "296b046932f9d54e016e0f1c445cf647fb2ebdb6569593fb10b3a1289b25bc66"
+    },
+    {
+      "id": "S19",
+      "category": "公司投融资",
+      "title": "做交易结构沙盘 进阶 三套结构摆进同一张表里比 对比矩阵 推荐方案 落地要点",
+      "characters": 597,
+      "sha256": "dd1486b368d49752fb78a61a1883a692b2221d4c3e360c90576d8e6edd75a3aa"
+    },
+    {
+      "id": "S20",
+      "category": "公司投融资",
+      "title": "备对赌 / 回购谈判弹药包 推荐 三档条款加让步顺序，进场前塞进包里 三档条款 让步顺序 反驳话术",
+      "characters": 612,
+      "sha256": "048697298585d3902edbe843911497077269a59ecea58a6a16de1f47a28c3f71"
+    },
+    {
+      "id": "S21",
+      "category": "公司投融资",
+      "title": "定制法律尽调清单 按行业定制，不是套一份通用模板 DD 清单 访谈提纲 红旗预警",
+      "characters": 614,
+      "sha256": "a9b470211a782edffdfe78f5794905a88f539d2f860134788719c5877504dc27"
+    },
+    {
+      "id": "S22",
+      "category": "公司投融资",
+      "title": "扫描目标公司公开风险 见面之前，先把对方底细摸一遍 风险报告 股权穿透 待核实项",
+      "characters": 464,
+      "sha256": "8d8a0554af05f4cb4a37b8851bd3afe12ad8fd1716c6030f83962c9e21859fba"
+    },
+    {
+      "id": "S23",
+      "category": "公司投融资",
+      "title": "起草核心条款并标谈判弹性 条款初稿上直接标好哪些是底线 条款初稿 弹性说明 谈判备选",
+      "characters": 520,
+      "sha256": "76bc6f283da8d5a802e459c9a566653ef26158f538e353d54e9326c8e5d4b457"
+    },
+    {
+      "id": "S24",
+      "category": "公司投融资",
+      "title": "排交割清单与时间表 签约到交割两个月，节点排到人头 交割清单 责任分工 卡点预警",
+      "characters": 566,
+      "sha256": "e401a2d53ef4d6d58b9e1d70ffd10eab739c39f45ebb7d4391150569951a0ad0"
+    },
+    {
+      "id": "S25",
+      "category": "合规风控",
+      "title": "画企业合规义务地图 进阶 适用哪些法、谁来做、多久做一次 义务矩阵 高风险项 整改顺序",
+      "characters": 520,
+      "sha256": "5c0793567f277442152585da3e4ee5d17e72e9a3cc4c5bc15f85440755dae884"
+    },
+    {
+      "id": "S26",
+      "category": "合规风控",
+      "title": "选数据出境路径 三条路怎么选，门槛和材料一次说清 路径对比 材料清单 时间预估",
+      "characters": 548,
+      "sha256": "f8a0aa34df48cf1cacec6ead10c193d224a1562321d0ad19398f5705e6d304f4"
+    },
+    {
+      "id": "S27",
+      "category": "合规风控",
+      "title": "梳理数据处理场景并做 PIA 处理清单、影响评估、政策初稿一起给 处理活动清单 PIA 表 政策初稿",
+      "characters": 581,
+      "sha256": "ea62628f581d4af03ce5bd0b4fe8ed2c8dd3dcdb1faf40d1b66a37642dc05d0c"
+    },
+    {
+      "id": "S28",
+      "category": "合规风控",
+      "title": "设计反舞弊调查方案 从访谈顺序到证据固定，含员工权益红线 调查步骤 访谈话术 处置选项",
+      "characters": 640,
+      "sha256": "8c88ee1ec1fd4f8af8589b809da7ecd24ee51a7d599d2cf9761b4a77a7df0d09"
+    },
+    {
+      "id": "S29",
+      "category": "合规风控",
+      "title": "测算反垄断申报门槛并自查 先算要不要申报，再排自查清单 门槛测算 自查清单 高风险动作",
+      "characters": 598,
+      "sha256": "92cd565252a6cbdbe85d2861cb6bfd7465834df9a076d3a61eba893d95f45ec6"
+    },
+    {
+      "id": "S30",
+      "category": "合规风控",
+      "title": "理制裁与出口管制筛查思路 交易方、物项、用途、目的地，四步筛 筛查流程 核实清单 内控建议",
+      "characters": 615,
+      "sha256": "85663415237de773b81598a9bd41bee8353664fb82af3a2bbd6b2cceb08dd8db"
+    },
+    {
+      "id": "S31",
+      "category": "律所经营",
+      "title": "准备客户提案与报价方案 推荐 明天见客户，今晚就能备齐 提案结构 三档报价 应对话术",
+      "characters": 617,
+      "sha256": "9a079f789d0a67ca09c8de2c378702c3cf74a9a6f4358abebb5bade646923b3c"
+    },
+    {
+      "id": "S32",
+      "category": "律所经营",
+      "title": "产 10 个选题 + 3 条短视频脚本 一次把这个月的内容排完 选题清单 口播脚本 合规提醒",
+      "characters": 519,
+      "sha256": "98f824333f1613d1d7dde7c9681bb5c6bb3911c4140dbf0674933d5110fc4b9c"
+    },
+    {
+      "id": "S33",
+      "category": "律所经营",
+      "title": "设计律师费方案 客户嫌计时贵，四种模式算给他看 模式测算 推荐方案 合规边界",
+      "characters": 626,
+      "sha256": "9227ca02bfa5cee41cbbc213de9c144fff06a57251e70cfad90af46a3c0c080e"
+    },
+    {
+      "id": "S34",
+      "category": "律所经营",
+      "title": "做潜在客户行业研究简报 切新行业之前，先把痛点摸清 行业图谱 需求清单 拜访提纲",
+      "characters": 542,
+      "sha256": "629097595d321dc159f1af2fc01c48386f3ddde51994a64ee4a0de8e8d5cfd53"
+    },
+    {
+      "id": "S35",
+      "category": "律所经营",
+      "title": "诊断专业定位 执业几年还没方向，先做一次筛选 赛道筛选 匹配度分析 三年路线图",
+      "characters": 568,
+      "sha256": "9922dfdb889defb8bcfee3c58514cb439cd3ea61f2a27f80f8e1440b7a5a1666"
+    },
+    {
+      "id": "S36",
+      "category": "律所经营",
+      "title": "模拟高难度客户沟通 这通催款电话，先在这儿打一遍 沟通策略 话术脚本 应对分支",
+      "characters": 559,
+      "sha256": "eaaaa2e91d06c7cc1a14397360fd0ef09300005c7415583d5e5cd6d06a40b6db"
+    },
+    {
+      "id": "S37",
+      "category": "刑事辩护",
+      "title": "测算量刑与缓刑可能性 推荐 家属最想问的那句话，先给出区间 量刑区间 情节增减表 从宽空间",
+      "characters": 610,
+      "sha256": "9420d139c6b56a3e954507c2b3a4b5ca4810af77bc2ccdfe6b4c9fbe659ebb3e"
+    },
+    {
+      "id": "S38",
+      "category": "刑事辩护",
+      "title": "快速研判罪与非罪 先分清此罪彼罪，再谈怎么辩 罪名比对 构成要件对照 出罪路径",
+      "characters": 585,
+      "sha256": "dea5b3d29c56e24c183b1f9f0cb4fee80e531da09c5608b099d75f890f2f417b"
+    },
+    {
+      "id": "S39",
+      "category": "刑事辩护",
+      "title": "生成会见提纲 明天要会见，今晚十分钟备好 必问清单 程序核查项 表述提醒",
+      "characters": 602,
+      "sha256": "c6ebfc437d2096b2d28c0920d608cda0def56ccf11e500aaa075c8d9ecc3c7cc"
+    },
+    {
+      "id": "S40",
+      "category": "刑事辩护",
+      "title": "排查侦查阶段程序瑕疵 程序违法点，一条条对着法条挑 瑕疵清单 排非切入点 文书要点",
+      "characters": 682,
+      "sha256": "172bbd3a7eaa276c6061f4cfde4111ce991db45fbf1b071dfcb4e93fd5a45905"
+    },
+    {
+      "id": "S41",
+      "category": "刑事辩护",
+      "title": "搭辩护词框架与类案支撑 论点、论证路径、类案倾向一次搭好 辩护词框架 论证路径 类案支撑",
+      "characters": 713,
+      "sha256": "6faf0dcdab1c45e28d4956892578328fa3806da17fea6119c18c466ad90f0313"
+    },
+    {
+      "id": "S42",
+      "category": "刑事辩护",
+      "title": "做企业刑事合规体检 把高管最容易踩的红线摆上桌 风险矩阵 典型罪名 内控建议",
+      "characters": 668,
+      "sha256": "d69e3fc2161baf78953769a3d85392dd70dee2a61b1ab365b0754f40f4543211"
+    },
+    {
+      "id": "S43",
+      "category": "知识产权",
+      "title": "对比维权三路径的成本收益 推荐 四条路摆一张表，直接看该走哪条 对比矩阵 组合拳建议",
+      "characters": 619,
+      "sha256": "27b471121b92982b8bb08a5d0bd2e10252465e2d0f725fdcc2b40dd0cdbe7657"
+    },
+    {
+      "id": "S44",
+      "category": "知识产权",
+      "title": "规划专利布局地图 进阶 从技术分解到规避设计，一次画完 技术分解树 布局方向 规避提示",
+      "characters": 652,
+      "sha256": "5714019d2751a3412d8d48b3ee196e6a37139b08b3a5e5c159e812f49861631a"
+    },
+    {
+      "id": "S45",
+      "category": "知识产权",
+      "title": "设计商标布局策略 核心类加防御类，一次布到位 类别布局表 近似风险 复审思路",
+      "characters": 599,
+      "sha256": "398ccbfdeb00aff43c94e59b970aed4dae9b3ac93fdc6db4c9c2adb85fb6ca54"
+    },
+    {
+      "id": "S46",
+      "category": "知识产权",
+      "title": "测算侵权赔偿金额 四条计算路径，给出参考区间 计算路径 参考区间 补证清单",
+      "characters": 645,
+      "sha256": "2910ee9c81d00988fcc5dd05f24e95164872b6c4104a5cd714360bfdf435926a"
+    },
+    {
+      "id": "S47",
+      "category": "知识产权",
+      "title": "打商业秘密保护组合拳 不申请专利，也能守住配方和名单 秘密点清单 措施清单 维权准备",
+      "characters": 702,
+      "sha256": "fbecd08584db093485e708964b51651c5947ead33d1dc464bf34029ebdb08193"
+    },
+    {
+      "id": "S48",
+      "category": "知识产权",
+      "title": "扫描竞品 IP 情报 看清对手的雷区和自己的空白区 IP 概览 布局重心 空白区提示",
+      "characters": 595,
+      "sha256": "20dfe5c7b34d8292e4bea408357a54f90f51180f29585c5be1eb7a5fc5b6dd39"
+    },
+    {
+      "id": "S49",
+      "category": "家事传承",
+      "title": "做传承工具对比矩阵 推荐 遗嘱、赠与、保险、信托，一张表看完 对比矩阵 组合方案",
+      "characters": 681,
+      "sha256": "2f00eb292c6ffc3553adf390a96715dde478ee6d523344b19b4f8fdad53a11da"
+    },
+    {
+      "id": "S50",
+      "category": "家事传承",
+      "title": "做家企隔离体检 进阶 公私账户混着用的老板，先体检一次 风险扫描 隔离清单 优先级",
+      "characters": 738,
+      "sha256": "c0be80ce0f8c0083138ff3c80ed74080be6a20c2ba3d2ca315ec518e47b09e27"
+    },
+    {
+      "id": "S51",
+      "category": "家事传承",
+      "title": "设计婚前 / 婚内财产协议 要点加上常见无效条款提醒 协议框架 无效条款提醒",
+      "characters": 722,
+      "sha256": "5b920f98972a1a24d82da21882f3fc1f8bffc9758cb24acacda815c45890be2f"
+    },
+    {
+      "id": "S52",
+      "category": "家事传承",
+      "title": "做离婚方案沙盘 分割、抚养、线索，两条路径各算一遍 分割思路 线索排查 路径对比",
+      "characters": 758,
+      "sha256": "6c1fa8be2a2ab6765f4ad69c0863e47e6f8eec7f5000e56b6d65d52f479e40df"
+    },
+    {
+      "id": "S53",
+      "category": "家事传承",
+      "title": "起草遗嘱并核对形式要件 初稿加一份“容易导致无效”的坑清单 遗嘱初稿 要件核对表 无效情形",
+      "characters": 648,
+      "sha256": "9d6cbff15b31e4848e33e18e39ed2f3baea5021d2770d27b02c8b9af2587f0f2"
+    },
+    {
+      "id": "S54",
+      "category": "家事传承",
+      "title": "提示涉外财富的法律冲突 境外资产，境内遗嘱到底管不管用 适用分析 单独安排清单",
+      "characters": 675,
+      "sha256": "ec6052430237750d9956403ef1e1ece6694c29df67074ae04c357c02aee3b7b2"
+    },
+    {
+      "id": "S55",
+      "category": "通用",
+      "title": "检索现行规定与地方口径 法条出处和地方差异一次找齐 规定清单 地方口径 实务提示",
+      "characters": 459,
+      "sha256": "3d21dd8e94b0fd2aed470002fc69b9a13dd7eb02663e10b60a4e5ded06270527"
+    },
+    {
+      "id": "S56",
+      "category": "通用",
+      "title": "算清一个法定期限 上诉期到哪天，遇周末怎么顺延 期限结论 计算依据 风险提示",
+      "characters": 458,
+      "sha256": "56f5f8e4f0cf3e738e97680a9b2998c0afb27af6110791c3a37bc4cec1859a04"
+    },
+    {
+      "id": "S57",
+      "category": "通用",
+      "title": "把法条翻译成客户能听懂的话 白话版加一个生意场景的例子 白话版 举例 边界说明",
+      "characters": 411,
+      "sha256": "512e192618b81ad38e1303a64999d9e11ac5cc2bb699f93aaa2357229a3f7b00"
+    },
+    {
+      "id": "S58",
+      "category": "通用",
+      "title": "找个难缠的对手陪练 先在这儿练一轮，再去见真人 对练剧本 复盘建议",
+      "characters": 434,
+      "sha256": "4d9e74f5362f56c697c1964f9eb06c1b23cf7625b2780d5c82903b5288288f8b"
+    },
+    {
+      "id": "S59",
+      "category": "通用",
+      "title": "给我的观点做一次文书体检 口述观点，让它先挑逻辑漏洞 漏洞清单 修改建议",
+      "characters": 569,
+      "sha256": "0315434f11a9775772ea4faa94cc1541f46b21aa6667d94bbbb8e5b01f91fadc"
+    }
+  ]
+}

@@ -1,0 +1,940 @@
+{
+  "date": "2026-10-23",
+  "source": "computer-use visible catalog only; no internal skill body",
+  "source_catalog_sha256": "969442aaadaaef4cefc2bcafed5e326132df41f23894021d5e317f833c376b9f",
+  "expected": 103,
+  "actual": 103,
+  "start": "C104",
+  "end": "C206",
+  "prompt_chinese_characters_min": 117,
+  "prompt_chinese_characters_max": 139,
+  "records": [
+    {
+      "community_id": "C104",
+      "title": "嵌入九步裁判校验逻辑的民商事案件律师办案全流程方案",
+      "author": "by 张映律师",
+      "page": 9,
+      "position": 8,
+      "prompt_chinese_characters": 118,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C105",
+      "title": "刑事案件分析与判断-刑法适用方法论",
+      "author": "by 胖梅梅",
+      "page": 9,
+      "position": 9,
+      "prompt_chinese_characters": 119,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C106",
+      "title": "解除或终止劳动合同风控技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 9,
+      "position": 10,
+      "prompt_chinese_characters": 119,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C107",
+      "title": "调岗调薪风控技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 9,
+      "position": 11,
+      "prompt_chinese_characters": 130,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C108",
+      "title": "股权转让税优技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 9,
+      "position": 12,
+      "prompt_chinese_characters": 124,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C109",
+      "title": "税务优化方法思维技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 9,
+      "position": 13,
+      "prompt_chinese_characters": 125,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C110",
+      "title": "制度合规审查标准化流程",
+      "author": "by 张映律师",
+      "page": 9,
+      "position": 14,
+      "prompt_chinese_characters": 124,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C111",
+      "title": "增值税专项优化技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 9,
+      "position": 15,
+      "prompt_chinese_characters": 117,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C112",
+      "title": "日常经营税务优化技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 9,
+      "position": 16,
+      "prompt_chinese_characters": 124,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C113",
+      "title": "网文剧本法律服务专家",
+      "author": "by 三太子过儿",
+      "page": 9,
+      "position": 17,
+      "prompt_chinese_characters": 124,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C114",
+      "title": "旅游纠纷咨询助手（C端游客版）",
+      "author": "by 三太子过儿",
+      "page": 9,
+      "position": 18,
+      "prompt_chinese_characters": 121,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C115",
+      "title": "刑民交叉案件法律分析",
+      "author": "by 刘艳",
+      "page": 9,
+      "position": 19,
+      "prompt_chinese_characters": 126,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C116",
+      "title": "法律可视化",
+      "author": "by 杨卫薪律师",
+      "page": 9,
+      "position": 20,
+      "prompt_chinese_characters": 123,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C117",
+      "title": "合同起草与审查助手",
+      "author": "by 杨卫薪律师",
+      "page": 9,
+      "position": 21,
+      "prompt_chinese_characters": 124,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C118",
+      "title": "法院短信识别与文书下载",
+      "author": "by 杨卫薪律师",
+      "page": 9,
+      "position": 22,
+      "prompt_chinese_characters": 135,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C119",
+      "title": "民商事一审被告代理v3.3",
+      "author": "by 甘丽霞律师",
+      "page": 9,
+      "position": 23,
+      "prompt_chinese_characters": 124,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C120",
+      "title": "庭审提纲与争议焦点预判",
+      "author": "by 张宸璐律师",
+      "page": 9,
+      "position": 24,
+      "prompt_chinese_characters": 124,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C121",
+      "title": "金额/利息/期限精准计算器（法院增强版）",
+      "author": "by 张宸璐律师",
+      "page": 10,
+      "position": 1,
+      "prompt_chinese_characters": 126,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C122",
+      "title": "要件事实—证据对应",
+      "author": "by 张宸璐律师",
+      "page": 10,
+      "position": 2,
+      "prompt_chinese_characters": 125,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C123",
+      "title": "劳动争议举证质证攻防技能2.0",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 10,
+      "position": 3,
+      "prompt_chinese_characters": 130,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C124",
+      "title": "法条检索与效力核验器（含新旧法衔接对照手册）",
+      "author": "by 张宸璐律师",
+      "page": 10,
+      "position": 4,
+      "prompt_chinese_characters": 124,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C125",
+      "title": "劳动争议/关系识别判断技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 10,
+      "position": 5,
+      "prompt_chinese_characters": 132,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C126",
+      "title": "法官校准型类案检索与裁判尺度分析器",
+      "author": "by 张宸璐律师",
+      "page": 10,
+      "position": 6,
+      "prompt_chinese_characters": 121,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C127",
+      "title": "经济补偿与赔偿金核算技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 10,
+      "position": 7,
+      "prompt_chinese_characters": 132,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C128",
+      "title": "工伤事故处理及风险防控技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 10,
+      "position": 8,
+      "prompt_chinese_characters": 130,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C129",
+      "title": "裁判规则提炼与说理辅助",
+      "author": "by 张宸璐律师",
+      "page": 10,
+      "position": 9,
+      "prompt_chinese_characters": 123,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C130",
+      "title": "建设工程风控流程方案（律师 + 造价师双视角）",
+      "author": "by 张映律师",
+      "page": 10,
+      "position": 10,
+      "prompt_chinese_characters": 126,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C131",
+      "title": "工伤赔偿计算技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 10,
+      "position": 11,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C132",
+      "title": "仲裁时效全矩阵核查技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 10,
+      "position": 12,
+      "prompt_chinese_characters": 123,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C133",
+      "title": "法院裁判文书产出校验器",
+      "author": "by 张宸璐律师",
+      "page": 10,
+      "position": 13,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C134",
+      "title": "一裁终局攻防与裁诉衔接技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 10,
+      "position": 14,
+      "prompt_chinese_characters": 132,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C135",
+      "title": "社保缴纳争议解决技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 10,
+      "position": 15,
+      "prompt_chinese_characters": 128,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C136",
+      "title": "案件变成公众号文章",
+      "author": "by 树先生",
+      "page": 10,
+      "position": 16,
+      "prompt_chinese_characters": 133,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C137",
+      "title": "刑民行案件",
+      "author": "by 张映律师",
+      "page": 10,
+      "position": 17,
+      "prompt_chinese_characters": 133,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C138",
+      "title": "案由确定神器",
+      "author": "by 张宸璐律师",
+      "page": 10,
+      "position": 18,
+      "prompt_chinese_characters": 126,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C139",
+      "title": "立案审查辅助器",
+      "author": "by 张宸璐律师",
+      "page": 10,
+      "position": 19,
+      "prompt_chinese_characters": 126,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C140",
+      "title": "庭前最终排查",
+      "author": "by 三太子过儿",
+      "page": 10,
+      "position": 20,
+      "prompt_chinese_characters": 126,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C141",
+      "title": "目标法院裁判画像研究",
+      "author": "by 三太子过儿",
+      "page": 10,
+      "position": 21,
+      "prompt_chinese_characters": 123,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C142",
+      "title": "证券交易所业务指南与规则",
+      "author": "by 陈晚柒律师",
+      "page": 10,
+      "position": 22,
+      "prompt_chinese_characters": 130,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C143",
+      "title": "怼人高手",
+      "author": "by 张耀天律师",
+      "page": 10,
+      "position": 23,
+      "prompt_chinese_characters": 125,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C144",
+      "title": "案件倒推法律服务产品",
+      "author": "by 树先生",
+      "page": 10,
+      "position": 24,
+      "prompt_chinese_characters": 134,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C145",
+      "title": "新闻媒体公益普法写作专家",
+      "author": "by 张宸璐律师",
+      "page": 11,
+      "position": 1,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C146",
+      "title": "权威观点援引（坚定立论版）",
+      "author": "by 三太子过儿",
+      "page": 11,
+      "position": 2,
+      "prompt_chinese_characters": 126,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C147",
+      "title": "顶级心理学家思维SKILL （客户关系维护）",
+      "author": "by 张宸璐律师",
+      "page": 11,
+      "position": 3,
+      "prompt_chinese_characters": 125,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C148",
+      "title": "九型人格拓客神器（成交增强版 ）",
+      "author": "by 张宸璐律师",
+      "page": 11,
+      "position": 4,
+      "prompt_chinese_characters": 131,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C149",
+      "title": "民商事诉讼策略分析助手",
+      "author": "by 张耀天律师",
+      "page": 11,
+      "position": 5,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C150",
+      "title": "顶级商业领袖思维 SKILL",
+      "author": "by 张宸璐律师",
+      "page": 11,
+      "position": 6,
+      "prompt_chinese_characters": 126,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C151",
+      "title": "顶级投资大师思维 SKILL",
+      "author": "by 张宸璐律师",
+      "page": 11,
+      "position": 7,
+      "prompt_chinese_characters": 131,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C152",
+      "title": "中国杰出企业家商业思维",
+      "author": "by 张宸璐律师",
+      "page": 11,
+      "position": 8,
+      "prompt_chinese_characters": 128,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C153",
+      "title": "律师个人IP定位与获客（配套模板库）",
+      "author": "by 张宸璐律师",
+      "page": 11,
+      "position": 9,
+      "prompt_chinese_characters": 128,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C154",
+      "title": "律师朋友圈人设经营",
+      "author": "by 张宸璐律师",
+      "page": 11,
+      "position": 10,
+      "prompt_chinese_characters": 125,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C155",
+      "title": "律师短视频口播获客脚本",
+      "author": "by 张宸璐律师",
+      "page": 11,
+      "position": 11,
+      "prompt_chinese_characters": 123,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C156",
+      "title": "法律咨询线索落地页设计",
+      "author": "by 张宸璐律师",
+      "page": 11,
+      "position": 12,
+      "prompt_chinese_characters": 135,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C157",
+      "title": "诉讼可视化-超高水准美化",
+      "author": "by 缪奇川",
+      "page": 11,
+      "position": 13,
+      "prompt_chinese_characters": 121,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C158",
+      "title": "原告律师庭前五件套交付",
+      "author": "by 张宸璐律师",
+      "page": 11,
+      "position": 14,
+      "prompt_chinese_characters": 125,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C159",
+      "title": "法律关系图大师",
+      "author": "by 缪奇川",
+      "page": 11,
+      "position": 15,
+      "prompt_chinese_characters": 129,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C160",
+      "title": "模糊想法梳理你的思路",
+      "author": "by 树先生",
+      "page": 11,
+      "position": 16,
+      "prompt_chinese_characters": 129,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C161",
+      "title": "庭审对抗图大师",
+      "author": "by 缪奇川",
+      "page": 11,
+      "position": 17,
+      "prompt_chinese_characters": 124,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C162",
+      "title": "时间轴大师",
+      "author": "by 缪奇川",
+      "page": 11,
+      "position": 18,
+      "prompt_chinese_characters": 128,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C163",
+      "title": "企业尽职调查全流程法律产品交付（启信宝至尊版）",
+      "author": "by 张宸璐律师",
+      "page": 11,
+      "position": 19,
+      "prompt_chinese_characters": 139,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C164",
+      "title": "婚姻家事律师全流程办案 Skill",
+      "author": "by 遵义杨衡",
+      "page": 11,
+      "position": 20,
+      "prompt_chinese_characters": 131,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C165",
+      "title": "刑事辩护2·证据审查",
+      "author": "by 胖梅梅",
+      "page": 11,
+      "position": 23,
+      "prompt_chinese_characters": 128,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C166",
+      "title": "交通事故纠纷处理skill",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 12,
+      "position": 11,
+      "prompt_chinese_characters": 132,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C167",
+      "title": "大事记表大师",
+      "author": "by 缪奇川",
+      "page": 12,
+      "position": 12,
+      "prompt_chinese_characters": 130,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C168",
+      "title": "法律服务翻译官（含10国语种）",
+      "author": "by 张宸璐律师",
+      "page": 12,
+      "position": 13,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C169",
+      "title": "法律业务多语种语音交流",
+      "author": "by 张宸璐律师",
+      "page": 12,
+      "position": 14,
+      "prompt_chinese_characters": 131,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C170",
+      "title": "人身损害伤残鉴定技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 12,
+      "position": 15,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C171",
+      "title": "双倍工资专项攻防技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 12,
+      "position": 16,
+      "prompt_chinese_characters": 125,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C172",
+      "title": "债务清收诊断",
+      "author": "by 北京浩天律师事务所债务清收法律服务中心",
+      "page": 12,
+      "position": 17,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C173",
+      "title": "公司登记与税务法律风险防控",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 12,
+      "position": 18,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C174",
+      "title": "刑事辩护-证据矛盾可视化",
+      "author": "by 胖梅梅",
+      "page": 12,
+      "position": 19,
+      "prompt_chinese_characters": 126,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C175",
+      "title": "彩礼返还纠纷咨询",
+      "author": "by 遵义胡青焱",
+      "page": 12,
+      "position": 20,
+      "prompt_chinese_characters": 126,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C176",
+      "title": "合同审查（包含税务角度审查）",
+      "author": "by 闵人杰律师",
+      "page": 12,
+      "position": 21,
+      "prompt_chinese_characters": 123,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C177",
+      "title": "民间借贷处理技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 12,
+      "position": 22,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C178",
+      "title": "破产案件全角色辅助技能",
+      "author": "by 泡泡",
+      "page": 12,
+      "position": 23,
+      "prompt_chinese_characters": 126,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C179",
+      "title": "浙企 AI 出海风控合规顾问（京衡律师）",
+      "author": "by 张宸璐律师",
+      "page": 12,
+      "position": 24,
+      "prompt_chinese_characters": 139,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C180",
+      "title": "法律文书涉税风险与证据审查",
+      "author": "by 闵人杰律师",
+      "page": 13,
+      "position": 1,
+      "prompt_chinese_characters": 128,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C181",
+      "title": "医疗损害责任纠纷处理技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 13,
+      "position": 2,
+      "prompt_chinese_characters": 123,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C182",
+      "title": "财税实务技能-法律人视角",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 13,
+      "position": 3,
+      "prompt_chinese_characters": 132,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C183",
+      "title": "采购反舞弊调查技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 13,
+      "position": 4,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C184",
+      "title": "异常、疑点或疑似舞弊线索查找技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 13,
+      "position": 5,
+      "prompt_chinese_characters": 133,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C185",
+      "title": "企业法律风险内控技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 13,
+      "position": 6,
+      "prompt_chinese_characters": 130,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C186",
+      "title": "IPO-04-股权结构与历史沿革合规诊断",
+      "author": "by 壹然",
+      "page": 13,
+      "position": 7,
+      "prompt_chinese_characters": 122,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C187",
+      "title": "人资内控查缺评估技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 13,
+      "position": 8,
+      "prompt_chinese_characters": 126,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C188",
+      "title": "IPO-05-财务规范性与收入确认合规诊断",
+      "author": "by 壹然",
+      "page": 13,
+      "position": 9,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C189",
+      "title": "IPO-06-税务合规与社保公积金整改",
+      "author": "by 壹然",
+      "page": 13,
+      "position": 10,
+      "prompt_chinese_characters": 126,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C190",
+      "title": "IPO-07-资产权属与土地房产合规诊断",
+      "author": "by 壹然",
+      "page": 13,
+      "position": 11,
+      "prompt_chinese_characters": 130,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C191",
+      "title": "出门问问录音软件库链接",
+      "author": "by 闵人杰律师",
+      "page": 13,
+      "position": 12,
+      "prompt_chinese_characters": 132,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C192",
+      "title": "IPO-11-信息披露与招股书撰写合规",
+      "author": "by 壹然",
+      "page": 13,
+      "position": 13,
+      "prompt_chinese_characters": 128,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C193",
+      "title": "IPO-08-业务合规与资质许可诊断",
+      "author": "by 壹然",
+      "page": 13,
+      "position": 14,
+      "prompt_chinese_characters": 124,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C194",
+      "title": "IPO-12-中介机构选聘与协作效能评估",
+      "author": "by 壹然",
+      "page": 13,
+      "position": 15,
+      "prompt_chinese_characters": 128,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C195",
+      "title": "IPO-02-历史问题专项整改",
+      "author": "by 壹然",
+      "page": 13,
+      "position": 16,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C196",
+      "title": "IPO-03-同业对标与赛道审核尺度研判",
+      "author": "by 壹然",
+      "page": 13,
+      "position": 17,
+      "prompt_chinese_characters": 124,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C197",
+      "title": "IPO-09-关联交易与独立性合规诊断",
+      "author": "by 壹然",
+      "page": 13,
+      "position": 18,
+      "prompt_chinese_characters": 123,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C198",
+      "title": "IPO-10-募投项目合规性与可行性研判",
+      "author": "by 壹然",
+      "page": 13,
+      "position": 19,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C199",
+      "title": "IPO-13-上市前模拟问询与压力测试",
+      "author": "by 壹然",
+      "page": 13,
+      "position": 20,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C200",
+      "title": "IPO-01-IPO快速诊断",
+      "author": "by 壹然",
+      "page": 13,
+      "position": 21,
+      "prompt_chinese_characters": 127,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C201",
+      "title": "民商事一审被告代理v4.0",
+      "author": "by 甘丽霞律师",
+      "page": 13,
+      "position": 22,
+      "prompt_chinese_characters": 125,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C202",
+      "title": "舞弊专项审查技能",
+      "author": "by 王律建智ᵃᵍᵉⁿᵗ",
+      "page": 13,
+      "position": 23,
+      "prompt_chinese_characters": 129,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C203",
+      "title": "义乌厂房买卖税费测算",
+      "author": "by 骆定进律师",
+      "page": 14,
+      "position": 1,
+      "prompt_chinese_characters": 134,
+      "observed_catalog_increment": false
+    },
+    {
+      "community_id": "C204",
+      "title": "上市公司公众号发文舆情监测与合规预检",
+      "author": "by 张宸璐律师",
+      "page": 14,
+      "position": 2,
+      "prompt_chinese_characters": 134,
+      "observed_catalog_increment": true
+    },
+    {
+      "community_id": "C205",
+      "title": "医药临床与研发数据合规",
+      "author": "by 盧嘉亮拓泽",
+      "page": 14,
+      "position": 3,
+      "prompt_chinese_characters": 131,
+      "observed_catalog_increment": true
+    },
+    {
+      "community_id": "C206",
+      "title": "医药广告营销合规审查",
+      "author": "by 盧嘉亮拓泽",
+      "page": 14,
+      "position": 4,
+      "prompt_chinese_characters": 128,
+      "observed_catalog_increment": true
+    }
+  ]
+}

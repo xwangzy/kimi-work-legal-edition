@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-23",
+  "timezone": "Asia/Shanghai",
+  "file": "00-智合AI法律业务全模块与提示词-Skills-MCP手册-重新核验版.md",
+  "characters": 789190,
+  "bytes": 1763564,
+  "lines": 27641,
+  "sha256": "27f2ff388c77809953f51a9f81d953d96650690ce1352b660028bc7c20caceae",
+  "counts": {
+    "homepage": 36,
+    "workbench": 59,
+    "open_skills": 70,
+    "official_extra": 40,
+    "source_experts": 34,
+    "expert_market": 79,
+    "community_methods": 206,
+    "raw_skills": 70,
+    "raw_experts": 34
+  },
+  "preset_hash_matches": 95,
+  "market_rows": 316,
+  "market_content_combinations": 314,
+  "market_multiset_equal": true,
+  "market_position_changes": 16,
+  "expert_market_rows": 79,
+  "expert_ids_contiguous": true,
+  "duplicate_anchors": [],
+  "broken_local_links": [],
+  "fence_errors": [],
+  "raw_method_bodies_equal": 104,
+  "raw_method_body_errors": [],
+  "wording_correction_locations": 14,
+  "evidence": [
+    {
+      "path": "evidence/MCP新增表单-本轮.png",
+      "bytes": 42441,
+      "sha256": "4442202e7c0546469fd1300a7ca868d477e280f6eab558137fb03868e2f699a9"
+    },
+    {
+      "path": "evidence/Skill创建器-本轮.png",
+      "bytes": 47665,
+      "sha256": "05d0605fce8a31d2b6553ca2fe0586d2f4145dd9d7641288a113bd6f14faca17"
+    },
+    {
+      "path": "evidence/专家创建器-本轮.png",
+      "bytes": 53762,
+      "sha256": "0fedc367175be4e5d6f42cb9ea86a45ee05e77c651551869de89bb975c223a05"
+    },
+    {
+      "path": "evidence/专家广场-第4页.png",
+      "bytes": 62471,
+      "sha256": "da53eaff825ad2f5642262a44b52e2ede8ea3bfe1ff231891266805b756a1afc"
+    },
+    {
+      "path": "evidence/官方手册-v1.6.png",
+      "bytes": 53144,
+      "sha256": "24109b2008121e0e5d520e02f68c95ee85bf59d7119408dcb702d2454975222f"
+    },
+    {
+      "path": "evidence/官方手册-v1.6版本标记.png",
+      "bytes": 61316,
+      "sha256": "f15eaee10efd4e1ec87bf1c460739218749874adc97404d484dab771fa63ef6f"
+    },
+    {
+      "path": "evidence/工作台-通用预设.png",
+      "bytes": 49821,
+      "sha256": "95993808273f98560dbb22e23752a883b0e6bca7c5702220e59279aae826d9c1"
+    },
+    {
+      "path": "evidence/执行设置-本轮.png",
+      "bytes": 49633,
+      "sha256": "cda93b2e6bbefd3ab75a3a47ed0ce2c73c80efdd45b51ca41bc044e338b6010e"
+    },
+    {
+      "path": "evidence/技能广场-第14页.png",
+      "bytes": 64324,
+      "sha256": "45813bc4f06191d6aa1bec3cb031a067b5387c49b34e5e6838faf44a80e82e02"
+    },
+    {
+      "path": "evidence/技能自动匹配-本轮.png",
+      "bytes": 52546,
+      "sha256": "77a6fc51e2a95299690f1da2bd5d1f908c6adc7f24439bbd30787be848d49997"
+    },
+    {
+      "path": "evidence/模型与思考-本轮.png",
+      "bytes": 53687,
+      "sha256": "471d57bb9c40a26f93205995e665fd0efc34f0f6f572b94d424df137c4b2c99c"
+    },
+    {
+      "path": "evidence/首页预设-劳动争议.png",
+      "bytes": 64846,
+      "sha256": "634950b65362a8a54074d32113aa48a8b0b34b23ac4fc9050efa5e27b7122cc8"
+    }
+  ],
+  "limits": [
+    "社区私有正文未取得",
+    "场景业务未逐项运行",
+    "真实MCP和数据库未连接",
+    "未交付适配后的可安装技能包",
+    "原始源码附录未改写或执行"
+  ]
+}

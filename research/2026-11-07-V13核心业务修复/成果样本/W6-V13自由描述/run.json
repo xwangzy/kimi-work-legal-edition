@@ -1,0 +1,120 @@
+{
+ "run": {
+  "run_id": "run_2cd8a1c8-ae81-4acb-a432-738445838284",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_233f3461-a4c2-4d07-944b-82c1a95e4d75",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_233f3461-a4c2-4d07-944b-82c1a95e4d75-a1.agent_task-1794025902685",
+  "input_snapshot": {
+   "matter_id": "mat_233f3461-a4c2-4d07-944b-82c1a95e4d75",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [],
+   "goal": "帮我起草一份技术服务合同，我们是委托方上海芯澜半导体科技有限公司，对方是苏州远图工业软件有限公司，内容是给我们临港工厂的MES系统做二次开发，上线后再做一年运维。总价大概180万，分三期付。我们要求交付全部源代码，开发成果的知识产权归我们；验收要有不少于30天的试运行。出Word。",
+   "estimate_id": "est_e1f87da5-89c2-4bc1-bde2-d9c7d6fbbef7",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   }
+  },
+  "budget_points": 20,
+  "points_reserved": 20,
+  "points_charged": 20,
+  "estimate_id": "est_e1f87da5-89c2-4bc1-bde2-d9c7d6fbbef7",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-07T04:31:42.688Z",
+  "updated_at": "2026-11-07T05:26:49.447Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_492163c3-efc3-427e-903c-591e1e7c1011",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "MES系统二次开发及运维技术服务合同.docx",
+   "sha256": "48e8267a662ebd2b41d96d130b70a818377a94dd4d8fa22752ccc292743478ba",
+   "created_at": "2026-11-07T05:08:27.287Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_40c78865-162a-40e9-a61c-951b9b9f0c61",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-MES系统二次开发及运维技术服务合同.docx",
+   "sha256": "6cdd02452e23c967f839785eee3d4732c9d05aa52001f241abf3b2992d181efe",
+   "created_at": "2026-11-07T05:10:28.636Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2be73d4b-2bf0-4a37-a646-4575955d433a",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-07.md",
+   "sha256": "0c8208eb6c8fda7ac84c9a1880f1a4e580295872140da026d700fb7d456eb84a",
+   "created_at": "2026-11-07T05:12:07.304Z",
+   "title": "本事项未附材料（0份），无读取不全或排除项。已按委托方立场及确认的价款、付款口径",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_e776c173-eb06-4054-9de8-5bec2e19dbe2",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-MES系统二次开发及运维技术服务合同.md",
+   "sha256": "4879080dc9526e59c74ecd871887f9c1b575e43a6951e80f9395ab9e6c438b29",
+   "created_at": "2026-11-07T05:14:42.747Z",
+   "title": "独立复核意见：MES系统二次开发及运维技术服务合同",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c9ea0251-176f-496e-b03f-8d87d080f788",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "MES系统二次开发及运维技术服务合同.docx",
+   "sha256": "f5e564f93c39496611213c7094982545c7638be6cc9de3fa385e2080b916cd54",
+   "created_at": "2026-11-07T05:22:08.042Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c44d58de-d567-4058-adf6-ed29bf5e4af0",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-07.md",
+   "sha256": "344fcf94cc42f366a327ee66772d00bfa284861b926b4bcacd495efaa785426f",
+   "created_at": "2026-11-07T05:26:49.446Z",
+   "title": "本事项未附材料（0份），无读取不全或排除项。已生成合同及起草说明两份 Word；",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

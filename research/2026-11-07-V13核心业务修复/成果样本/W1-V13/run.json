@@ -1,0 +1,200 @@
+{
+ "run": {
+  "run_id": "run_c3e9cbb8-c1f0-44ac-9fdc-b08778c81500",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_5d3d073d-01c6-4526-969a-9cff1021440e",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_5d3d073d-01c6-4526-969a-9cff1021440e-a1.agent_task-1794025586333",
+  "input_snapshot": {
+   "matter_id": "mat_5d3d073d-01c6-4526-969a-9cff1021440e",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_7ddeba89-0bff-43ce-b610-01c53aafc1e9",
+    "docv_246a5e0d-7373-4c63-b840-0838a572ac3a",
+    "docv_32cf3650-7ac8-48c8-8bdc-08b092e4bf5b",
+    "docv_d135564b-eac9-4e34-b0f9-f411681a4ec3"
+   ],
+   "goal": "请起草一份其他（通用辅助）合同，我方立场以事项为准；交易要点：我们是苏州澄锐智能装备有限公司的律师。澄锐（我方，买方）准备收购无锡衡川精密机械有限公司（卖方）的伺服压装生产线业务资产，包括生产设备、专利和软件著作权、存货、客户合同和客户资料；衡川的控股股东衡川控股集团有限公司作为保证人一起签约。附件四份：双方10月28日草签的商务条款清单、客户董事长周启明11月5日的指示邮件、卖方和保证人的工商及抵押登记信息、我方的资产与技术尽调摘要。请站在澄锐的立场，起草一份甲（买方）、乙（卖方）、丙（保证人）三方的《资产收购协议》正式稿，交付Word文件，要能直接发给对方。材料之间数字或日期对不上的、周总的指示和条款清单不一致的、需要客户拍板的事项，另外单独列一份清单给我，写明你在协议里按什么口径写的、为什么。",
+   "estimate_id": "est_f928d206-0ab1-493c-8127-4746aa0bfb3a",
+   "title": "起草合同",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-draft",
+   "skill_title": "起草合同 · 试用",
+   "skill_version": "1.7.3",
+   "skill_primary_output": "合同草稿.docx",
+   "skills_sha256": "sUSOoUiH8MRK2usGoBAWN7Qdst_qplAZMMaWwcW8p8M",
+   "skill_args": {
+    "type": "其他（通用辅助）",
+    "points": "我们是苏州澄锐智能装备有限公司的律师。澄锐（我方，买方）准备收购无锡衡川精密机械有限公司（卖方）的伺服压装生产线业务资产，包括生产设备、专利和软件著作权、存货、客户合同和客户资料；衡川的控股股东衡川控股集团有限公司作为保证人一起签约。附件四份：双方10月28日草签的商务条款清单、客户董事长周启明11月5日的指示邮件、卖方和保证人的工商及抵押登记信息、我方的资产与技术尽调摘要。请站在澄锐的立场，起草一份甲（买方）、乙（卖方）、丙（保证人）三方的《资产收购协议》正式稿，交付Word文件，要能直接发给对方。材料之间数字或日期对不上的、周总的指示和条款清单不一致的、需要客户拍板的事项，另外单独列一份清"
+   }
+  },
+  "budget_points": 40,
+  "points_reserved": 40,
+  "points_charged": 40,
+  "estimate_id": "est_f928d206-0ab1-493c-8127-4746aa0bfb3a",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-07T04:26:26.338Z",
+  "updated_at": "2026-11-07T05:15:18.035Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_c48d88bd-139d-4ab9-8e78-2371c1837122",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "资产收购协议.docx",
+   "sha256": "1f4af89689ac2b9874dadb8795ae9345d65eee2b734217f37e9111c6920c76eb",
+   "created_at": "2026-11-07T04:50:31.404Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_32b0294c-b7c5-431a-bd81-60bd0a2cb720",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-资产收购协议.docx",
+   "sha256": "64803cf0aaee70b1e396e4e7b33aebf5bdcd3c6173bde4df6dfbf333000bf03e",
+   "created_at": "2026-11-07T04:54:17.268Z",
+   "title": null,
+   "kind_version": 6,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_b9795c90-5a4c-4ba9-9689-9fd1a90b7939",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-资产收购协议.docx",
+   "sha256": "d36f6467a0d7caa2d12faaed6829a93db725395940ec2e2fc14cc5a4e79dd1b6",
+   "created_at": "2026-11-07T04:57:23.179Z",
+   "title": null,
+   "kind_version": 7,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_de573689-b698-47ef-b856-1b915f9e928b",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "资产收购协议.docx",
+   "sha256": "e95448731bc0b59e8abdbbb4feeb941aa0d4189f2f16b29a9d3e9f5cf72dec5d",
+   "created_at": "2026-11-07T04:57:40.098Z",
+   "title": null,
+   "kind_version": 8,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_2b84d02e-245e-491c-affc-b4443710b48a",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "资产收购协议.docx",
+   "sha256": "d74a51c68bfb471df82f12bdbacd22d556c0f0a6cdd14cadd27f3dfff1706c43",
+   "created_at": "2026-11-07T04:58:29.686Z",
+   "title": null,
+   "kind_version": 9,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_cc57f0aa-9a4e-4e8b-9376-e97640d90a35",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-07.md",
+   "sha256": "197c00bc9ae2f43da4ecae46b87b5b6798df5d59efb8f3063df4c38b3b417807",
+   "created_at": "2026-11-07T05:00:21.256Z",
+   "title": "已完成两份 Word 文书。四份材料均已完整读取，无识别缺页、未读或排除材料。",
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_15c8e320-3b05-4757-9953-5262dc0e2058",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-资产收购协议.md",
+   "sha256": "0517ff818b65bef83458a29c2addfc28c7a01524758af46eebc915035a7b32b2",
+   "created_at": "2026-11-07T05:06:51.116Z",
+   "title": "独立复核意见：资产收购协议",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_a2fcb1fc-027c-465f-9f8a-fd443aa7cb37",
+   "kind": "agent_report",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "资产收购协议.docx",
+   "sha256": "2daa05b2eac7b2433307768a28262e8202ae9ba6ae2b6d47b1600f635fb35276",
+   "created_at": "2026-11-07T05:13:03.300Z",
+   "title": null,
+   "kind_version": 10,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b3e2fb01-aab5-4152-90d2-bbce4934ef85",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-资产收购协议.docx",
+   "sha256": "d10a881b557b1fbdf6fc756be06a81773895fe3d6bcaeaf67f25ca040531ec02",
+   "created_at": "2026-11-07T05:13:03.337Z",
+   "title": null,
+   "kind_version": 11,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_133ca43f-4e06-4632-a3c3-b563788d240e",
+   "kind": "agent_report",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-资产收购协议.docx",
+   "sha256": "0d11d53aad730a605d0299a65b1933ebff0b9308309a8e78991608b4b9847c7f",
+   "created_at": "2026-11-07T05:13:50.913Z",
+   "title": null,
+   "kind_version": 12,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_5ba28d64-79a9-41c2-93cc-21e298dc311e",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-07.md",
+   "sha256": "5806b40cdfd6382ba7c88a223f7e19d934c9d6a433bdeba969ad386d0b97668b",
+   "created_at": "2026-11-07T05:15:18.032Z",
+   "title": "已按独立复核意见完成修改。四份事项材料均已完整读取，无识别缺页、未读或排除材料；",
+   "kind_version": 3,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}
