@@ -15,14 +15,14 @@ import { applyRevisionsToDocx, extractParagraphs, keepHouseMark, readZipText, sa
 import { findTokens } from "@zr-legal/tokenizer";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
-import { factRefNos, isInternalDocument, type DeliverableSection } from "../../services/deliverable-check.ts";
+import { factRefNos, isInternalDocument, scrubQualityLine, type DeliverableSection } from "../../services/deliverable-check.ts";
 import { factTableRows, syncFactSection } from "../../services/fact-refs.ts";
 import { slog } from "@zr-legal/safe-log";
 
 /** 结果分布留痕（V13 第 38 批）：只记计数，不记文字。 */
 function logOutcome(status: "applied" | "partial" | "not_applied" | "preview", patches: number, applied: number, conflicts: readonly { reason: Reason }[]): void {
   const n = (r: Reason) => conflicts.filter((c) => c.reason === r).length;
-  slog.event("TOOLS_DOCX_EDIT_OUTCOME", { tool: "docx_edit_draft", status, patches, applied, not_found: n("anchor_not_found") + n("anchor_empty"), ambiguous: n("anchor_ambiguous"), unknown_token: n("unknown_token"), other: n("overlap") + n("apply_failed") });
+  slog.event("TOOLS_DOCX_EDIT_OUTCOME", { tool: "docx_edit_draft", status, patches, applied, not_found: n("anchor_not_found") + n("anchor_empty"), ambiguous: n("anchor_ambiguous"), unknown_token: n("unknown_token"), other: n("overlap") + n("apply_failed") + n("quality_line") });
 }
 
 export const EDIT_DRAFT_MAX_PATCHES = 100;
@@ -46,7 +46,7 @@ interface EditPatchInput {
   insert_after?: unknown;
 }
 
-type Reason = "anchor_empty" | "anchor_not_found" | "anchor_ambiguous" | "unknown_token" | "overlap" | "apply_failed";
+type Reason = "anchor_empty" | "anchor_not_found" | "anchor_ambiguous" | "unknown_token" | "overlap" | "apply_failed" | "quality_line";
 
 const FIX: Record<Reason, string> = {
   anchor_empty: "anchor 不能为空；新增段落用 insert_after，锚点写插入位置前一段里的原文",
@@ -55,6 +55,7 @@ const FIX: Record<Reason, string> = {
   unknown_token: "含有本事项不存在的代号：代号只能照抄材料或草稿里出现过的",
   overlap: "与另一条修改的原文重叠：合并成一条",
   apply_failed: "写入失败：通常是两条修改落在同一处，拆开或合并后重试",
+  quality_line: "这一条要写进文书的只有质量说明（“通用辅助 · 未经本所质量验收”“草稿 · 待律师复核”）：它只写在最终答复末尾，交付文件里不写，去掉这一条",
 };
 
 function classify(msg: string): Reason {
@@ -165,7 +166,10 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
   const ops: RevisionOp[] = [];
   raw.forEach((x, index) => {
     const anchor = String(x?.anchor ?? "");
-    const proposed = String(x?.proposed_text ?? "");
+    // 质量说明（第 42 批）：新文字里独立成段的质量说明直接删掉；删完什么都不剩的这一条不写（否则“替换成空”会把锚点原文删掉）
+    const scrub = scrubQualityLine(String(x?.proposed_text ?? ""));
+    const proposed = scrub.text;
+    if (scrub.removed > 0 && proposed.trim() === "") return void conflicts.push({ index, reason: "quality_line", fix: FIX.quality_line });
     if (!anchor) return void conflicts.push({ index, reason: "anchor_empty", fix: FIX.anchor_empty });
     // 新文字里的代号须是本事项的（导出时按令牌表还原；不认识的代号会原样留在文书里）
     const unknown = findTokens(proposed).filter((t) => !known.has(t) && !anchor.includes(t));

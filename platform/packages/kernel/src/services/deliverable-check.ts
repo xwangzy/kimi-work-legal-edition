@@ -65,8 +65,135 @@ const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   // V16 第 41 批真实任务：原先的改法写“依据写材料名或律师的指示”，助手据此把内部的称呼合并说明改成“两个称呼按律师指示视为同一人”、
   // 把“律师任务说明”统一改成“律师的指示载明”——律师没有作过这些指示。改法只叫删掉这句话本身，不给“换个出处”的引导
   { re: /已核验且支持命题|支持命题|任务(?:事实|给定|所给|材料)/g, fix: "改用律师的说法：引用写“原文已核”；事实写明出自哪份材料（如“《对账确认函》载明”），出处拿不准的不要替它找一个来源，在最终答复里列为待核实" },
+  // 第 42 批：出文书、出表格时系统已把独立成段的质量说明删掉（scrubQualityLine）；这里报的是嵌在句子里、删了句子不通的
+  { re: /未经本所质量验收|通用辅助(?:审查)?\s*[·•・]|草稿\s*[·•・]?\s*待律师复核/g, fix: "删去这句质量说明并把句子改通（质量说明只写在最终答复末尾，交付文件里不写；文件已由系统标为草稿）" },
   { re: /(?:称呼|全名|姓名|自然人|当事人|住所|地址|信用代码|证件号?|身份证号?|账号|电话|手机号?|联系方式)(?:与全名|和全名)?代号|代号(?:说明|一致|不一致|对应|形态|原样)|原样保留代号|按任务说明|(?:律师|本次|原)任务说明|任务说明(?:中|里|所载|[；;，,。]|$)/g, fix: "删去这句关于代号、任务说明的话本身（导出时系统还原真名，不需要解释）：正文直接写当事人的名称或称呼；确有依据的写材料名称；律师没有说过的，不得写成“律师指示”“律师确认”“律师的说明载明”。两个称呼是否同一人、材料里没有写明的，不下结论，在最终答复里请律师核实" },
 ];
+
+/**
+ * 质量说明（第 42 批）：“通用辅助 · 未经本所质量验收”“草稿 · 待律师复核”只写在给律师的最终答复末尾，任何交付文件里都不写（工作准则第 10 条）。
+ *
+ * 这条规则在工作准则与 18 个方法里各写了一遍，V16 第二轮全新发起的 57 张卡仍有 23 张、27 份最终成果带着这一行（核对清单第一行、
+ * “说明”页、意见书首段）。能确定判断、又不涉及取舍的事不再交给助手自觉：出文书、出表格时由内核直接删掉，并在工具结果里告诉助手已删。
+ *
+ * 只删“独立成段”的说明——整段、整格，或用“·｜；。”隔开的一截只有这几个词（前面可带“说明：”“质量说明：”一类标签）。
+ * 嵌在句子里的（“本方案为草稿 · 待律师复核；不预测……”）删了句子就不通，不动，由交付前检查报出让助手改写。纯函数。
+ */
+const QUALITY_TOKEN = String.raw`(?:通用辅助(?:审查)?|未经本所质量验收|草稿\s*[·•・]?\s*待律师复核)`;
+const QUALITY_ONLY_RE = new RegExp(String.raw`^\s*(?:(?:质量|文稿|草稿|档位|试用)?(?:说明|状态|档位|提示)\s*[:：]\s*)?${QUALITY_TOKEN}(?:[\s,，、]*${QUALITY_TOKEN})*\s*$`);
+const QUALITY_ANY_RE = new RegExp(String.raw`未经本所质量验收|通用辅助(?:审查)?\s*[·•・]|草稿\s*[·•・]\s*待律师复核|草稿待律师复核`);
+const QUALITY_SPLIT_RE = /(\s*[·•・|｜；;。]\s*)/;
+
+export function scrubQualityLine(text: string): { text: string; removed: number } {
+  const src = String(text ?? "");
+  if (!QUALITY_ANY_RE.test(src)) return { text: src, removed: 0 };
+  let removed = 0;
+  const lines = src.split("\n").map((line) => {
+    if (!QUALITY_ANY_RE.test(line)) return line;
+    // “草稿 · 待律师复核”自己带着分隔号：先换成占位再切段
+    const held: string[] = [];
+    const parts = line.replace(/草稿\s*[·•・]\s*待律师复核/g, (m) => `\u0001${held.push(m) - 1}\u0002`).split(QUALITY_SPLIT_RE);
+    const restore = (s: string) => s.replace(/\u0001(\d+)\u0002/g, (_, i) => held[Number(i)]!);
+    const kept: { seg: string; sep: string }[] = [];
+    let hit = 0;
+    for (let i = 0; i < parts.length; i += 2) {
+      const seg = restore(parts[i] ?? "");
+      const sep = parts[i + 1] ?? "";
+      if (QUALITY_ONLY_RE.test(seg)) {
+        hit += 1;
+        // 删掉这一截和它后面的分隔号；它是最后一截时，改删前面那个分隔号（“内部工作稿 · 通用辅助 · 未经本所质量验收”→“内部工作稿”）
+        if (i + 2 >= parts.length && kept.length > 0) kept[kept.length - 1]!.sep = /。\s*$/.test(kept[kept.length - 1]!.sep) ? kept[kept.length - 1]!.sep : "";
+        continue;
+      }
+      kept.push({ seg, sep });
+    }
+    if (hit === 0) return line;
+    // 按处数计：一行里连写的几个词算一处
+    removed += 1;
+    return kept.map((k) => k.seg + k.sep).join("").trim();
+  });
+  if (removed === 0) return { text: src, removed: 0 };
+  // 整行删空的不留空行（原来就有的空行照旧）
+  const srcLines = src.split("\n");
+  return { text: lines.filter((l, i) => l.trim() !== "" || srcLines[i]!.trim() === "").join("\n"), removed };
+}
+
+/** 一行表格在删掉质量说明后是否只剩标签：只剩序号、“说明 / 质量说明 / 文稿状态 / 档位”一类行名，或全空。 */
+function onlyLabelLeft(cells: readonly unknown[]): boolean {
+  const rest = cells.map((c) => String(c ?? "").trim()).filter((c) => c !== "");
+  return rest.every((c) => /^\d{1,3}$/.test(c) || /^(?:质量|文稿|草稿|档位|试用)?(?:说明|状态|档位|提示)$/.test(c));
+}
+
+/**
+ * 把文书各节（段落与节内表格）里的质量说明删掉：段落删空的整段去掉；表格行里说明所在的格删空后只剩行名或序号的整行去掉，
+ * 其余只清空那一格；表头不删行。返回新的节数组（没有改动时返回原数组）与删掉的处数。纯函数。
+ */
+export function scrubQualitySections<T extends DeliverableSection>(sections: readonly T[]): { sections: T[]; removed: number } {
+  let removed = 0;
+  const out = sections.map((s) => {
+    if (!s || typeof s !== "object") return s;
+    let changed = false;
+    const heading = typeof s.heading === "string" ? scrubQualityLine(s.heading) : null;
+    const paragraphs = Array.isArray(s.paragraphs)
+      ? s.paragraphs.flatMap((p) => {
+          if (typeof p !== "string") return [p];
+          const r = scrubQualityLine(p);
+          if (r.removed === 0) return [p];
+          removed += r.removed;
+          changed = true;
+          return r.text.trim() === "" ? [] : [r.text];
+        })
+      : s.paragraphs;
+    let table = s.table;
+    if (table && Array.isArray(table.rows)) {
+      const t = scrubQualityRows(table.rows as unknown[][]);
+      const cols = Array.isArray(table.columns) ? scrubQualityRows([table.columns as unknown[]], true) : null;
+      if (t.removed + (cols?.removed ?? 0) > 0) {
+        removed += t.removed + (cols?.removed ?? 0);
+        changed = true;
+        table = { ...table, rows: t.rows, ...(cols ? { columns: cols.rows[0] } : {}) };
+      }
+    }
+    if (heading && heading.removed > 0) {
+      removed += heading.removed;
+      changed = true;
+    }
+    return changed ? ({ ...s, ...(heading && heading.removed > 0 ? { heading: heading.text } : {}), paragraphs, table } as T) : s;
+  });
+  return removed > 0 ? { sections: out, removed } : { sections: sections as T[], removed: 0 };
+}
+
+/** 表格数据行里的质量说明（docx 节内表格与 xlsx 工作表共用）。keepRows=true 时只清格、不删行（表头）。纯函数。 */
+export function scrubQualityRows(rows: readonly unknown[][], keepRows = false): { rows: unknown[][]; removed: number } {
+  let removed = 0;
+  const out: unknown[][] = [];
+  for (const row of rows) {
+    if (!Array.isArray(row)) {
+      out.push(row);
+      continue;
+    }
+    let hit = 0;
+    const cells = row.map((c) => {
+      if (typeof c !== "string") return c;
+      const r = scrubQualityLine(c);
+      hit += r.removed;
+      return r.removed > 0 ? r.text : c;
+    });
+    if (hit === 0) {
+      out.push(row);
+      continue;
+    }
+    removed += hit;
+    if (!keepRows && onlyLabelLeft(cells)) continue;
+    out.push(cells);
+  }
+  return { rows: removed > 0 ? out : (rows as unknown[][]), removed };
+}
+
+/** 工具结果里告诉助手“已由系统删掉”的那句话（没删返回 null）。 */
+export function qualityScrubNote(removed: number): string | null {
+  return removed > 0 ? `系统已删去文件里的 ${removed} 处质量说明（“通用辅助 · 未经本所质量验收”“草稿 · 待律师复核”只写在最终答复末尾，交付文件里不写）：不必再改，也不要用修改工具加回去` : null;
+}
 
 /** 繁体字（V14 第 39 批评分：文稿体检“法規”、进展汇报附表“上訴”）：只收简体文本里不会出现的常用繁体字；原文引用的机构名称照原样保留。 */
 export const TRADITIONAL_RE = /[訴規條與為證據權務責實則項並對經關這說開發會後過們還裡麼從頁參數變應該歸屬區執營銷貨價額負債擔損訂購將專續簽審議]/g;
@@ -77,7 +204,9 @@ const FOREIGN_OK = new Set(["app", "email", "wifi", "word", "excel", "pdf", "saa
 
 /** Markdown 残留：Word 里会原样显示成星号、井号。 */
 const MARKDOWN_PATTERNS: { re: RegExp; fix: string }[] = [
-  { re: /\*\*[^*\n]{1,40}\*\*/g, fix: "去掉星号（Word 里会原样显示）；要强调的写成独立一句或放进标题" },
+  // 第 42 批：打码的号码不是加粗（V16 第二轮回放：“139****3262） 联系电话：138****4173”被认成一对星号，改法是“去掉星号”）——
+  // 星号紧挨数字或另一颗星号的不算
+  { re: /(?<![\d*])\*\*(?![\s*])[^*\n]{1,40}(?<![\s*])\*\*(?![\d*])/g, fix: "去掉星号（Word 里会原样显示）；要强调的写成独立一句或放进标题" },
   { re: /^#{1,6}\s+\S/g, fix: "去掉行首井号，标题放进该节的 heading" },
   { re: /\|\s*-{3,}\s*\|/g, fix: "表格用该节的 table 画，不要写 Markdown 表格" },
   { re: /`[^`\n]{1,40}`/g, fix: "去掉反引号" },

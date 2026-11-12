@@ -27,7 +27,7 @@ import { docxRevise } from "./tools/revise.ts";
 import { docxEditDraft, sectionsOfDocx } from "./tools/edit-draft.ts";
 import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, rulesPropose, riskcardsList, riskcardsSubmit, tableFill, tableGet, xlsxEditCells, xlsxRenderTable } from "./tools/review.ts";
 import { assertOutlineSettled } from "../services/argument-outlines.ts";
-import { checkDeliverable, factRefNos, isInternalDocument, type DeliverableCheck } from "../services/deliverable-check.ts";
+import { checkDeliverable, factRefNos, isInternalDocument, qualityScrubNote, scrubQualitySections, type DeliverableCheck, type DeliverableSection } from "../services/deliverable-check.ts";
 import { FACT_SHEET_NAME, factSection, factTableRows } from "../services/fact-refs.ts";
 import { sectionChars, shrinkCheck } from "../services/version-shrink.ts";
 import { localToday } from "../services/local-date.ts";
@@ -445,19 +445,23 @@ export const TOOLS: readonly ToolDef[] = [
       // 起草前的论点与依据还在等律师确认时不出文书（v9.4 第 19 批 C-04）
       assertOutlineSettled(ctx.db, typeof ctx.claims.rid === "string" ? ctx.claims.rid : null);
       // 事实对照（V16 第 41 批）：内部文书正文引用了“事实 N”的，文末自动加一节对照表；对外文书不加，由交付前检查报出改成证据名称
+      // 质量说明（第 42 批）：“通用辅助 · 未经本所质量验收”“草稿 · 待律师复核”不进任何交付文件——独立成段的由内核直接删掉，不靠助手自觉
+      const scrubbed = Array.isArray(p.sections) ? scrubQualitySections(p.sections as DeliverableSection[]) : { sections: p.sections, removed: 0 };
+      if (scrubbed.removed > 0) p = { ...p, sections: scrubbed.sections };
       const facts = ctx.claims.rid && ctx.claims.mid ? factSectionFor(ctx, p) : null;
       if (facts?.section) p = { ...p, sections: [...p.sections, facts.section] };
       const r = docxRenderReport(ctx.blobs, p, ctx.claims.mid);
+      const auto_cleaned = qualityScrubNote(scrubbed.removed);
       // 交付前检查（第 35 批）：工具用语与内部编号外露、夹杂英文、条款编号与互引、大小写金额、错误条号——随结果交回助手当场改正
       const quality_check = deliverableQualityFor(ctx, p, r.storage_uri);
       // 任务内调用（Agent 经本机端点）：登记为草稿成果，律师在执行态与交付件页可见
-      if (!ctx.claims.rid) return { ...r, ...(quality_check ? { quality_check } : {}) };
+      if (!ctx.claims.rid) return { ...r, ...(quality_check ? { quality_check } : {}), ...(auto_cleaned ? { auto_cleaned } : {}) };
       const title = String(p.title ?? "文书").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").trim().slice(0, 60) || "文书";
       const textChars = sectionChars(p.sections);
       const reg = registerToolArtifact(ctx, { kind: "agent_report", filename: `${title}.docx`, sha256: r.sha256, storage_uri: r.storage_uri, manifest: { tool: "docx.render_report", sections: Array.isArray(p.sections) ? p.sections.length : 0, tables: Array.isArray(p.sections) ? p.sections.filter((s: any) => s?.table).length : 0, text_chars: textChars, ...(facts?.section ? { fact_section: "auto" } : {}) } });
       // 版本缩水检查（第 35 批）：同一任务里重出的同名文书比上一版明显变短，提示助手核对是否漏了内容
       const shrink = reg.reused ? null : shrinkCheck(ctx.db, ctx.claims.rid, "agent_report", reg.filename, reg.artifact_version_id, textChars);
-      return { ...r, ...reg, ...(quality_check ? { quality_check } : {}), ...(shrink ? { shrink } : {}), ...(facts?.note ? { fact_table: facts.note } : {}) };
+      return { ...r, ...reg, ...(quality_check ? { quality_check } : {}), ...(auto_cleaned ? { auto_cleaned } : {}), ...(shrink ? { shrink } : {}), ...(facts?.note ? { fact_table: facts.note } : {}) };
     },
   },
   {

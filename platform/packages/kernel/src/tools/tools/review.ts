@@ -20,7 +20,7 @@ import { proposeDraft } from "../../services/review-rules.ts";
 import { fillCells, tableForAgent } from "../../services/review-tables.ts";
 import { acceptedText, changesDocument, listFacts, listRiskCards, submitFacts, submitRiskCards, riskCardProgress } from "../../services/review-cards.ts";
 import { runLineage } from "../../services/artifact-lineage.ts";
-import { checkDeliverable, factRefNos } from "../../services/deliverable-check.ts";
+import { checkDeliverable, factRefNos, qualityScrubNote, scrubQualityRows } from "../../services/deliverable-check.ts";
 import { FACT_COLUMNS, FACT_SHEET_NAME, factTableRows } from "../../services/fact-refs.ts";
 import { cellChars, shrinkCheck } from "../../services/version-shrink.ts";
 import { amountWordsConflicts, extractFacts, payDayConflicts, type FactRow } from "../../executor/casefile.ts";
@@ -387,7 +387,17 @@ export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { na
  */
 function finishTable(ctx: InvokeCtx, title: string, specs0: SheetSpec[], tool: "xlsx.render_table" | "xlsx.edit_cells", extraManifest: Record<string, unknown> = {}) {
   // 事实对照（V16 第 41 批）：单元格里写了“事实 N”的，自动追加一张“事实对照”，只列被引用到的序号
-  const facts = withFactSheet(ctx, specs0);
+  // 质量说明（第 42 批）：表格里独立成格的“通用辅助 · 未经本所质量验收”“草稿 · 待律师复核”由内核直接删掉（只剩行名的整行去掉）；表头行不删
+  let cleaned = 0;
+  const specs1 = specs0.map((sh) => {
+    const head = scrubQualityRows([sh.rows[0] ?? []], true);
+    const body = scrubQualityRows(sh.rows.slice(1) as unknown[][]);
+    if (head.removed + body.removed === 0) return sh;
+    cleaned += head.removed + body.removed;
+    return { ...sh, rows: [head.rows[0], ...body.rows] as typeof sh.rows };
+  });
+  const auto_cleaned = qualityScrubNote(cleaned);
+  const facts = withFactSheet(ctx, specs1);
   const specs = facts.specs;
   const buf = createXlsx(specs);
   const stored = ctx.blobs.put(buf, scopeOf(ctx).matterId);
@@ -409,7 +419,7 @@ function finishTable(ctx: InvokeCtx, title: string, specs0: SheetSpec[], tool: "
   } catch {
     quality_check = null;
   }
-  return { ...reg, sha256: stored.sha256, sheets: specs.length, rows: specs.reduce((n, s) => n + s.rows.length - 1, 0), ...(quality_check ? { quality_check } : {}), ...(shrink ? { shrink } : {}), ...(facts.note ? { fact_sheet: facts.note } : {}) };
+  return { ...reg, sha256: stored.sha256, sheets: specs.length, rows: specs.reduce((n, s) => n + s.rows.length - 1, 0), ...(quality_check ? { quality_check } : {}), ...(auto_cleaned ? { auto_cleaned } : {}), ...(shrink ? { shrink } : {}), ...(facts.note ? { fact_sheet: facts.note } : {}) };
 }
 
 /**

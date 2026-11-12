@@ -93,20 +93,24 @@ function cnMonth(y: number, m: number): string {
 }
 
 /** 一天为何是休假日（写进过程，律师可复核）。 */
-/** 未收录年份的警告（v9.4 复核 Q1-01、Q1-03：按规则区分“顺延”与“计数”，写明已按固定日期假日处理、哪些仍未知）。 */
+/**
+ * 未收录年份的警告（v9.4 复核 Q1-01、Q1-03：按规则区分“顺延”与“计数”，写明已按固定日期假日处理、哪些仍未知）。
+ * 第 42 批：措辞改成律师的说法——V16 第二轮 57 张卡里 20 张把“某年放假通知未收录……须律师……核对”抄或改写进了成果，
+ * “未收录”说的是本产品的表，读者看不懂；现在这句话即使被照抄进内部底稿也说得通（对外文书正文仍不写，见工作准则第 4 条）。
+ */
 export function notCollectedWarning(year: number, rule: DeadlineRule): string {
   if (lunarHolidaysKnown(year)) {
     const how = rule === "workday" ? "已跳过周末与放假办法规定的法定假日（元旦，春节除夕至初三，清明、劳动节、端午、中秋、国庆）计数" : "已按周末与放假办法规定的法定假日（元旦，春节除夕至初三，清明、劳动节、端午、中秋、国庆）顺延";
-    return `${year} 年放假通知未收录：${how}；调休上班与周末补假未知，须律师按当年国务院办公厅放假通知核对`;
+    return `${year} 年的调休安排尚未纳入测算：${how}；调休上班日与周末补假以当年国务院办公厅放假通知为准，届时按通知复核`;
   }
   const how = rule === "workday" ? "只跳过周末与放假办法规定的固定日期假日（元旦、劳动节、国庆）计数" : "只按周末与放假办法规定的固定日期假日（元旦、劳动节、国庆）顺延";
-  return `${year} 年放假安排未收录：${how}，春节、清明、端午、中秋与调休未知，须律师按当年国务院办公厅放假通知核对`;
+  return `${year} 年的放假安排尚未纳入测算：${how}；春节、清明、端午、中秋假期与调休以当年国务院办公厅放假通知为准，届时按通知复核`;
 }
 
 function restReason(date: string): string {
   const s = dayStatus(date);
   if (s.kind === "holiday") return `${s.name}假期 ${s.span!.from} 至 ${s.span!.to}`;
-  if (s.kind === "weekend") return `${WEEKDAY[weekdayOf(date)]}公休日${s.covered ? "" : "（该年节假日安排未收录）"}`;
+  if (s.kind === "weekend") return `${WEEKDAY[weekdayOf(date)]}公休日${s.covered ? "" : "（该年放假安排尚未纳入测算）"}`;
   return "";
 }
 
@@ -149,7 +153,7 @@ function runCivil(start: string, unit: Exclude<DeadlineUnit, "workday">, n: numb
     steps.push(
       s.kind === "adjusted_workday"
         ? `名义末日 ${wd(d)}是调休上班日（${s.name}），不是法定休假日，不顺延`
-        : `名义末日 ${wd(d)}是工作日${s.covered ? "" : "（该年节假日安排未收录，只按周末与放假办法固定日期假日判断）"}，不顺延`,
+        : `名义末日 ${wd(d)}是工作日${s.covered ? "" : "（该年放假安排尚未纳入测算，只按周末与放假办法固定日期假日判断）"}，不顺延`,
     );
   } else {
     const reasons: string[] = [];

@@ -23,6 +23,8 @@ test("跨春节的期限：顺延与工作日计数都跳过除夕至初三；�
   assert.equal(civil.deadline, "2027-02-09", "名义末日 02-06（初一）→ 02-07、02-08 仍是假日 → 02-09");
   const work = calcDeadline({ start: "2027-02-01", period: { unit: "workday", n: 5 }, rule: "workday" });
   assert.equal(work.deadline, "2027-02-10", "02-02①、02-03②、02-04③，除夕至初三跳过，02-09④、02-10⑤");
-  assert.match(notCollectedWarning(2027, "civil"), /春节除夕至初三.*调休上班与周末补假未知/);
-  assert.match(notCollectedWarning(2031, "civil"), /春节、清明、端午、中秋与调休未知/);
+  // 第 42 批：措辞改成律师的说法（不写“未收录”“须律师……核对”），内容不变——哪些已处理、哪些以当年通知为准
+  assert.match(notCollectedWarning(2027, "civil"), /春节除夕至初三.*调休上班日与周末补假以当年国务院办公厅放假通知为准/);
+  assert.match(notCollectedWarning(2031, "civil"), /春节、清明、端午、中秋假期与调休以当年国务院办公厅放假通知为准/);
+  for (const y of [2027, 2031]) for (const rule of ["civil", "workday"] as const) assert.doesNotMatch(notCollectedWarning(y, rule), /未收录|须律师|请律师/);
 });
