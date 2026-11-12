@@ -1,0 +1,50 @@
+【芃岳采购部邬静怡邮箱导出，2026-11-09】
+
+邮件1
+发件人：caiwentao@chengli-tc.example（蔡文涛，铖砾特材销售部）
+收件人：wujingyi@pengyue-motor.example
+时间：2026-08-29 10:12
+主题：RE: PO-2026-0917 订单确认
+正文：邬经理，PO-2026-0917已确认，交期9月30日。
+
+邮件2
+发件人：caiwentao@chengli-tc.example
+收件人：wujingyi@pengyue-motor.example
+时间：2026-09-26 17:40
+主题：关于PO-2026-0917交期
+正文：邬经理您好，因上游钢厂50W470牌号硅钢卷排产延迟，PO-2026-0917预计10月20日左右交付，给贵司带来不便，深表歉意。
+
+邮件3
+发件人：wujingyi@pengyue-motor.example
+收件人：caiwentao@chengli-tc.example
+时间：2026-09-27 09:05
+主题：RE: 关于PO-2026-0917交期
+正文：收到，知悉，请保持沟通。
+
+邮件4
+发件人：caiwentao@chengli-tc.example
+收件人：wujingyi@pengyue-motor.example
+时间：2026-10-21 15:22
+主题：PO-2026-0917最新进度
+正文：钢卷已到一半，冲压线在排，预计10月底前交付。
+
+邮件5
+发件人：caiwentao@chengli-tc.example
+收件人：wujingyi@pengyue-motor.example
+时间：2026-10-30 18:03
+主题：PO-2026-0917
+正文：邬经理，实在抱歉，剩余钢卷要11月上旬到，整单预计11月中旬交付。如贵司急用，可以先发定子冲片2万片。
+
+邮件6
+发件人：wujingyi@pengyue-motor.example
+收件人：caiwentao@chengli-tc.example
+时间：2026-10-31 08:47
+主题：RE: PO-2026-0917
+正文：好的，我和业务部门确认后回复您。
+
+邮件7（内部）
+发件人：yangkai@pengyue-motor.example（杨恺，业务部）
+收件人：legal@pengyue-motor.example
+时间：2026-11-06 11:30
+主题：铖砾逾期，要求直接解除
+正文：法务同事，铖砾PO-0917已经逾期一个多月，合同写了逾期超过30天可以解除，请今天就帮我们发解除通知，把整份长期合同解掉，我们转向宁波的供应商。宁波那家说下单后20天能交货。
