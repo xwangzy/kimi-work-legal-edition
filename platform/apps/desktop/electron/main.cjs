@@ -19,7 +19,7 @@ const { parseSmokeArg, writeSmokeResult, SmokeFailure } = require("./smoke-io.cj
 const { createIdentityRestart } = require("./identity-restart.cjs");
 const { createHandleStore, classifySaveTarget, resolveFileParams, acceptDroppedPath, insideAppData, safeSuggestedName, openableSaved, OPENABLE } = require("./file-dialogs.cjs");
 
-const DEV_SERVER = process.env.ZR_DESKTOP_DEV_URL ?? "http://127.0.0.1:5173";
+const DEV_SERVER = process.env.ZR_DESKTOP_DEV_URL ?? `http://127.0.0.1:${process.env.KWL_DEV_WEB_PORT ?? 5173}`;
 
 /**
  * 本机数据根（隐私安全增量评审 F1）：Windows 上一律放在 %LOCALAPPDATA%（不漫游），不放 %APPDATA%（Roaming）——
@@ -804,7 +804,7 @@ function wireIpc() {
  * 生产只允许应用协议 kwl://app/（本包 dist）与开发者工具；开发形态另允许 vite 开发服务与热更新。Agent 产物 HTML 即使绕过清洗与 CSP 也发不出请求。
  * 同时：拒绝一切权限请求（摄像头、麦克风、定位、通知……）、不打开外部浏览器、不在窗口或框架内导航到应用之外。
  */
-const DEV_ORIGINS = ["http://127.0.0.1:5173", "ws://127.0.0.1:5173"];
+const DEV_ORIGINS = [`http://127.0.0.1:${process.env.KWL_DEV_WEB_PORT ?? 5173}`, `ws://127.0.0.1:${process.env.KWL_DEV_WEB_PORT ?? 5173}`];
 const rendererNet = { blocked: 0, lastBlocked: [] };
 // 地址策略（url-policy.cjs，可单测）：生产只认应用协议 kwl://app/（复核 B4-A03；不再放行任何 file:// 地址，UNC 外连也就无从谈起）；开发另认 vite
 const { allowedRendererUrl, allowedMainNavigation } = createUrlPolicy({
