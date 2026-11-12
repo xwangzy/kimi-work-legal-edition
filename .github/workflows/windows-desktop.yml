@@ -27,7 +27,9 @@ defaults:
 jobs:
   test:
     runs-on: windows-latest
-    # 关键用例（Windows 单并发）实测 117 分钟仍未跑完即被 120 分钟超时杀掉（run 38690633107）——放宽到 240
+    # 关键用例（Windows 单并发）实测 117 分钟仍未跑完即被 120 分钟超时杀掉（run 38690633107），放宽到 240 后仍跑满被杀；
+    # 同一批用例本机十几分钟跑完——是有文件挂住而不是慢。第 42 批起改用 scripts/run-tests-watchdog.mjs 逐文件运行：
+    # 每个文件 10 分钟硬时限，超时连同子进程终止并在步骤摘要里点名，其余文件照常跑完
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +43,7 @@ jobs:
       - run: npm run build:lawdb && npm run build:agent-profile && npm run build:tool-manifest && npm run build:skills
       - name: 关键用例（Windows）
         run: >
-          node --test --test-concurrency=1 --test-reporter=spec
+          node scripts/run-tests-watchdog.mjs --file-timeout-min=10 --test-timeout-ms=300000
           packages/exec-wasm/test/*.test.ts packages/file-broker/test/*.test.ts packages/at-rest/test/*.test.ts
           packages/kap-host/test/*.test.ts packages/egress-gate/test/*.test.ts
           packages/kernel/test/kap-a1.test.ts packages/kernel/test/kap-gate.test.ts packages/kernel/test/parse-ocr.test.ts
@@ -54,11 +56,12 @@ jobs:
           $d = Join-Path $env:RUNNER_TEMP "律师 张三\临时"
           New-Item -ItemType Directory -Force -Path $d | Out-Null
           $env:TEMP = $d; $env:TMP = $d
-          node --test --test-concurrency=1 --test-reporter=spec packages/exec-wasm/test/w-core.test.ts packages/exec-wasm/test/w-runtime-bundle.test.ts packages/kernel/test/kap-a1.test.ts
+          node scripts/run-tests-watchdog.mjs --file-timeout-min=10 --test-timeout-ms=300000 packages/exec-wasm/test/w-core.test.ts packages/exec-wasm/test/w-runtime-bundle.test.ts packages/kernel/test/kap-a1.test.ts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: 全量（信息性，不阻断：部分用例依赖 POSIX 语义，逐条登记后再转为阻断）
         continue-on-error: true
-        run: npm test
+        timeout-minutes: 120
+        run: node scripts/run-tests-watchdog.mjs --file-timeout-min=6 --test-timeout-ms=300000 "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "apps/desktop/test/*.test.ts"
 
   package:
     runs-on: windows-latest
