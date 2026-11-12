@@ -46,12 +46,12 @@ jobs:
       - name: 关键用例（Windows）
         run: |
           mkdir -p /c/kwl-tmp && export TEMP='C:\kwl-tmp' TMP='C:\kwl-tmp'
-          node scripts/run-tests-watchdog.mjs --file-timeout-min=10 --test-timeout-ms=300000
-          packages/exec-wasm/test/*.test.ts packages/file-broker/test/*.test.ts packages/at-rest/test/*.test.ts
-          packages/kap-host/test/*.test.ts packages/egress-gate/test/*.test.ts
-          packages/kernel/test/kap-a1.test.ts packages/kernel/test/kap-gate.test.ts packages/kernel/test/parse-ocr.test.ts
-          packages/kernel/test/secret-files.test.ts packages/kernel/test/matter-lifecycle.test.ts
-          apps/desktop/test/*.test.ts
+          node scripts/run-tests-watchdog.mjs --file-timeout-min=10 --test-timeout-ms=300000 \
+            packages/exec-wasm/test/*.test.ts packages/file-broker/test/*.test.ts packages/at-rest/test/*.test.ts \
+            packages/kap-host/test/*.test.ts packages/egress-gate/test/*.test.ts \
+            packages/kernel/test/kap-a1.test.ts packages/kernel/test/kap-gate.test.ts packages/kernel/test/parse-ocr.test.ts \
+            packages/kernel/test/secret-files.test.ts packages/kernel/test/matter-lifecycle.test.ts \
+            apps/desktop/test/*.test.ts
       - name: 中文路径（临时目录含中文）
         shell: pwsh
         working-directory: platform
