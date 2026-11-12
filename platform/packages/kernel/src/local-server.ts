@@ -23,6 +23,7 @@ import { liveRunForClaims, tokenLiveness, type LiveRun } from "./identity.ts";
 import { authorizeToolCall } from "@zr-legal/host-policy";
 import { READBACK_MODEL_FIELDS, tokenizeByField, type ModelFieldRule } from "@zr-legal/egress-gate";
 import { TOOLS, findTool, invokeTool, legalToolLockProblems, legalToolManifests, manifestFor, validateParams } from "./tools/registry.ts";
+import { toolResultSummaryJson } from "./tools/result-summary.ts";
 
 const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -254,7 +255,7 @@ export async function startLocalServer(deps: LocalServerDeps, opts: { host?: str
       }
       return db.tx(() => {
         requireLive(claims);
-        recordOp(rid, aid, name, paramsHash, "succeeded", sideEffect, null, resultDigest(result));
+        recordOp(rid, aid, name, paramsHash, "succeeded", sideEffect, null, resultDigest(result), toolResultSummaryJson(result));
         return result;
       });
     }
@@ -320,8 +321,8 @@ export async function startLocalServer(deps: LocalServerDeps, opts: { host?: str
         return why ?? "aborted";
       }
       const r = db.run(
-        `UPDATE tool_operations SET status = 'succeeded', result_uri = ?, result_hash = ?, completed_at = ? WHERE tool_operation_id = ? AND attempt_id = ? AND status = 'pending'`,
-        [stored.storage_uri, stored.sha256, now, opId, aid],
+        `UPDATE tool_operations SET status = 'succeeded', result_uri = ?, result_hash = ?, completed_at = ?, result_summary = ? WHERE tool_operation_id = ? AND attempt_id = ? AND status = 'pending'`,
+        [stored.storage_uri, stored.sha256, now, toolResultSummaryJson(result), opId, aid],
       );
       return r.changes === 1 ? null : "outbox_row_changed";
     });
@@ -338,11 +339,11 @@ export async function startLocalServer(deps: LocalServerDeps, opts: { host?: str
     }
   }
 
-  function recordOp(rid: string, aid: string, tool: string, paramsHash: string, status: string, sideEffect: string, resultUri: string | null, resultHash: string | null): void {
+  function recordOp(rid: string, aid: string, tool: string, paramsHash: string, status: string, sideEffect: string, resultUri: string | null, resultHash: string | null, summary: string | null = null): void {
     db.run(
-      `INSERT INTO tool_operations (tool_operation_id, run_id, attempt_id, tool, operation, params_hash, status, side_effect, result_uri, result_hash, completed_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [newId("toolOperation"), rid, aid, tool, "mcp_call", paramsHash, status, sideEffect, resultUri, resultHash, new Date().toISOString()],
+      `INSERT INTO tool_operations (tool_operation_id, run_id, attempt_id, tool, operation, params_hash, status, side_effect, result_uri, result_hash, completed_at, result_summary)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [newId("toolOperation"), rid, aid, tool, "mcp_call", paramsHash, status, sideEffect, resultUri, resultHash, new Date().toISOString(), summary],
     );
   }
 
