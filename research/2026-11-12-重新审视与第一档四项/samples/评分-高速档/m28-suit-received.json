@@ -1,0 +1,6 @@
+{"tag": "m28-suit-received", "card": "管辖与时效核查 · 试用（收到起诉：第一步）", "veto": [], "score": 21, "dims": [3, 2, 3, 2, 3, 2, 3, 3],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 10, "questions": 0,
+ "top_issues": ["未从起诉状“已付905,000元”算出我方未收445,000元（其中310,000元已到期），反诉筹码未量化", "诉讼时效表为原告请求列8行分支，冗长", "v1引文出处误写为“03-民事起诉状”，靠独立复核改正"],
+ "prev_score": null,
+ "product_defect": [],
+ "known_defects_recurring": [], "new_defects": []}

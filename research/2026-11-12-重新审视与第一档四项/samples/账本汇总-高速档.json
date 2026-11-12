@@ -1,0 +1,824 @@
+{
+ "summary": {
+  "ledgers": 1,
+  "runs": 11,
+  "runs_with_model": 10,
+  "status": {
+   "succeeded": 11
+  },
+  "work_min": {
+   "min": 8.94085,
+   "median": 12.757716666666667,
+   "p90": 15.6195,
+   "max": 15.6195,
+   "sum": 120.94548333333334
+  },
+  "wait_min": {
+   "min": 0.0935,
+   "median": 0.5478833333333334,
+   "p90": 2.4579,
+   "max": 2.4579,
+   "sum": 8.509516666666666
+  },
+  "calls": {
+   "min": 16,
+   "median": 20,
+   "p90": 33,
+   "max": 33,
+   "sum": 211
+  },
+  "tool_calls": {
+   "min": 43,
+   "median": 78,
+   "p90": 102,
+   "max": 102,
+   "sum": 773
+  },
+  "out_tokens": {
+   "min": 34999,
+   "median": 48748,
+   "p90": 59443,
+   "max": 59443,
+   "sum": 464158
+  },
+  "reasoning_tokens": {
+   "min": 15339,
+   "median": 21021,
+   "p90": 24760,
+   "max": 24760,
+   "sum": 201698
+  },
+  "cost_yuan": {
+   "min": 2.359892,
+   "median": 3.515764,
+   "p90": 4.052304,
+   "max": 4.052304,
+   "sum": 32.457664
+  },
+  "over_30_min": 0,
+  "over_40_min": 0,
+  "model_share_of_work": 0.9319543281828492,
+  "review_fix_share_of_work": 0.1259990554973184,
+  "cached_input_share": 0.9238407878861407,
+  "out_tokens_per_second": 68.63257695617587,
+  "input_per_call": {
+   "median": 97109,
+   "p90": 155698
+  },
+  "todo_only": {
+   "calls": 0,
+   "share_of_model_time": 0
+  },
+  "rerender": {
+   "docx_runs_2plus": 0,
+   "xlsx_runs_2plus": 4
+  },
+  "by_model": {
+   "kimi-k3": {
+    "runs": 10,
+    "work_min_median": 12.757716666666667,
+    "cost_yuan_median": 3.515764,
+    "out_tokens_per_second": 68.63257695617587
+   }
+  },
+  "attribution": [
+   {
+    "after_call": "(无工具：答复或思考)",
+    "calls": 24,
+    "out_tokens": 43969,
+    "share_of_model_time": 0.10837505581891899
+   },
+   {
+    "after_call": "TodoList+docx_render_report",
+    "calls": 4,
+    "out_tokens": 34007,
+    "share_of_model_time": 0.0655240176609581
+   },
+   {
+    "after_call": "Write",
+    "calls": 9,
+    "out_tokens": 23041,
+    "share_of_model_time": 0.050932138980975726
+   },
+   {
+    "after_call": "docx_render_report",
+    "calls": 2,
+    "out_tokens": 20024,
+    "share_of_model_time": 0.03522092462745492
+   },
+   {
+    "after_call": "TodoList+xlsx_render_table",
+    "calls": 3,
+    "out_tokens": 17723,
+    "share_of_model_time": 0.03211961070185452
+   },
+   {
+    "after_call": "docx_edit_draft",
+    "calls": 12,
+    "out_tokens": 10720,
+    "share_of_model_time": 0.028723306727547488
+   },
+   {
+    "after_call": "riskcards_submit",
+    "calls": 2,
+    "out_tokens": 13046,
+    "share_of_model_time": 0.026489662779796953
+   },
+   {
+    "after_call": "NotifyUser+TodoList+docx_render_report",
+    "calls": 2,
+    "out_tokens": 13643,
+    "share_of_model_time": 0.02542799433382523
+   },
+   {
+    "after_call": "xlsx_render_table",
+    "calls": 2,
+    "out_tokens": 11926,
+    "share_of_model_time": 0.01980588324012929
+   },
+   {
+    "after_call": "Bash+calc_deadline+law_get_article",
+    "calls": 2,
+    "out_tokens": 9764,
+    "share_of_model_time": 0.019615581389159153
+   },
+   {
+    "after_call": "TodoList+facts_submit+xlsx_render_table",
+    "calls": 1,
+    "out_tokens": 9669,
+    "share_of_model_time": 0.019085634354289702
+   },
+   {
+    "after_call": "TodoList+calc_deadline+facts_submit+riskcards_submit",
+    "calls": 1,
+    "out_tokens": 10929,
+    "share_of_model_time": 0.018904943707914013
+   },
+   {
+    "after_call": "xlsx_edit_cells",
+    "calls": 5,
+    "out_tokens": 6595,
+    "share_of_model_time": 0.017933768449816204
+   },
+   {
+    "after_call": "NotifyUser+TodoList+facts_submit",
+    "calls": 1,
+    "out_tokens": 9073,
+    "share_of_model_time": 0.0176921575527803
+   },
+   {
+    "after_call": "TodoList+facts_submit",
+    "calls": 2,
+    "out_tokens": 7940,
+    "share_of_model_time": 0.014399654588093344
+   }
+  ],
+  "tools": [
+   [
+    "law_get_article",
+    233
+   ],
+   [
+    "Read",
+    80
+   ],
+   [
+    "law_search",
+    64
+   ],
+   [
+    "TodoList",
+    58
+   ],
+   [
+    "calc_deadline",
+    53
+   ],
+   [
+    "law_get_version",
+    38
+   ],
+   [
+    "Bash",
+    23
+   ],
+   [
+    "docx_edit_draft",
+    22
+   ],
+   [
+    "NotifyUser",
+    21
+   ],
+   [
+    "facts_submit",
+    17
+   ],
+   [
+    "facts_list",
+    16
+   ],
+   [
+    "citations_verify",
+    15
+   ],
+   [
+    "xlsx_render_table",
+    14
+   ],
+   [
+    "xlsx_edit_cells",
+    14
+   ],
+   [
+    "Skill",
+    11
+   ],
+   [
+    "materials_list",
+    10
+   ],
+   [
+    "Write",
+    10
+   ],
+   [
+    "ExitPlanMode",
+    10
+   ],
+   [
+    "materials_read_excerpt",
+    9
+   ],
+   [
+    "calc_labor",
+    9
+   ],
+   [
+    "calc_interest",
+    8
+   ],
+   [
+    "docx_render_report",
+    8
+   ],
+   [
+    "riskcards_submit",
+    7
+   ],
+   [
+    "AskUserQuestion",
+    6
+   ],
+   [
+    "outline_get",
+    4
+   ]
+  ],
+  "tool_quality": {
+   "facts.extract": {
+    "n": 1,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "materials.list": {
+    "n": 10,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "facts.list": {
+    "n": 16,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "materials.read_excerpt": {
+    "n": 9,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "law.search": {
+    "n": 64,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "calc.deadline": {
+    "n": 53,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "law.get_version": {
+    "n": 38,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "law.get_article": {
+    "n": 233,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "calc.interest": {
+    "n": 8,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "citations.verify": {
+    "n": 15,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "calc.court_fee": {
+    "n": 3,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "facts.submit": {
+    "n": 17,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "outline.submit": {
+    "n": 2,
+    "failed": 0,
+    "status": {
+     "proposed": 2
+    },
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "outline.get": {
+    "n": 4,
+    "failed": 0,
+    "status": {
+     "confirmed": 4
+    },
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "docx.render_report": {
+    "n": 8,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 8,
+    "quality_not_ok": 3,
+    "quality_kinds": {
+     "note_to_lawyer": 10,
+     "internal_term": 1,
+     "numbering": 1
+    },
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "xlsx.render_table": {
+    "n": 14,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 14,
+    "quality_not_ok": 1,
+    "quality_kinds": {
+     "internal_term": 1
+    },
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "model": {
+    "n": 10,
+    "failed": 1,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "calc.labor": {
+    "n": 9,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "docx.edit_draft": {
+    "n": 22,
+    "failed": 0,
+    "status": {
+     "applied": 13,
+     "partial": 1,
+     "not_applied": 6,
+     "preview": 2
+    },
+    "conflict_reasons": {
+     "anchor_not_found": 6,
+     "anchor_ambiguous": 2
+    },
+    "quality_checked": 13,
+    "quality_not_ok": 1,
+    "quality_kinds": {
+     "citation": 2
+    },
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "xlsx.edit_cells": {
+    "n": 14,
+    "failed": 0,
+    "status": {
+     "applied": 12,
+     "not_applied": 1,
+     "partial": 1
+    },
+    "conflict_reasons": {},
+    "quality_checked": 13,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "riskcards.submit": {
+    "n": 7,
+    "failed": 2,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   },
+   "riskcards.list": {
+    "n": 4,
+    "failed": 0,
+    "status": {},
+    "conflict_reasons": {},
+    "quality_checked": 0,
+    "quality_not_ok": 0,
+    "quality_kinds": {},
+    "auto_cleaned": 0,
+    "shrink": 0
+   }
+  }
+ },
+ "runs": [
+  {
+   "run_id": "run_4fe86c96-d7d7-47af-bf8a-bd43d5720b54",
+   "scenario": "s2.case_file",
+   "skill": "",
+   "status": "succeeded",
+   "model": null,
+   "work_min": 0.0004,
+   "wait_min": 0,
+   "review_min": 0,
+   "fix_min": 0,
+   "model_min": 0,
+   "calls": 0,
+   "tools": 0,
+   "out": 0,
+   "reasoning": 0,
+   "input": 0,
+   "cached": 0,
+   "cost_yuan": 0,
+   "todo_only_calls": 0,
+   "todo_only_min": 0,
+   "renders": {
+    "docx": 0,
+    "xlsx": 0
+   }
+  },
+  {
+   "run_id": "run_646a5285-0476-4324-8d31-56df9e665e2c",
+   "scenario": "a1.agent_task",
+   "skill": "enforcement-application",
+   "status": "succeeded",
+   "model": "kimi-k3",
+   "work_min": 9.93365,
+   "wait_min": 2.4579,
+   "review_min": 0.66605,
+   "fix_min": 0,
+   "model_min": 8.907666666666668,
+   "calls": 22,
+   "tools": 66,
+   "out": 34999,
+   "reasoning": 17260,
+   "input": 1736779,
+   "cached": 1589504,
+   "cost_yuan": 2.738588,
+   "todo_only_calls": 0,
+   "todo_only_min": 0,
+   "renders": {
+    "docx": 1,
+    "xlsx": 2
+   }
+  },
+  {
+   "run_id": "run_84a76b5d-aa65-4147-af81-99a945390b7b",
+   "scenario": "a1.agent_task",
+   "skill": "labor-dispute",
+   "status": "succeeded",
+   "model": "kimi-k3",
+   "work_min": 14.453983333333333,
+   "wait_min": 2.0572833333333334,
+   "review_min": 0,
+   "fix_min": 0,
+   "model_min": 13.24935,
+   "calls": 19,
+   "tools": 102,
+   "out": 55526,
+   "reasoning": 24444,
+   "input": 2133096,
+   "cached": 1948928,
+   "cost_yuan": 3.574016,
+   "todo_only_calls": 0,
+   "todo_only_min": 0,
+   "renders": {
+    "docx": 1,
+    "xlsx": 2
+   }
+  },
+  {
+   "run_id": "run_38532c80-8b5c-4678-b350-aa8b208b0488",
+   "scenario": "a1.agent_task",
+   "skill": "labor-dispute",
+   "status": "succeeded",
+   "model": "kimi-k3",
+   "work_min": 12.757716666666667,
+   "wait_min": 1.4157833333333334,
+   "review_min": 0.911,
+   "fix_min": 1.1224,
+   "model_min": 12.715016666666667,
+   "calls": 20,
+   "tools": 94,
+   "out": 56391,
+   "reasoning": 24494,
+   "input": 2057857,
+   "cached": 1872640,
+   "cost_yuan": 3.515764,
+   "todo_only_calls": 0,
+   "todo_only_min": 0,
+   "renders": {
+    "docx": 1,
+    "xlsx": 2
+   }
+  },
+  {
+   "run_id": "run_da9ddfd3-1b8a-42b1-9bcf-8262a2732862",
+   "scenario": "a1.agent_task",
+   "skill": "procedure-check",
+   "status": "succeeded",
+   "model": "kimi-k3",
+   "work_min": 8.94085,
+   "wait_min": 0.5478833333333334,
+   "review_min": 0.33898333333333336,
+   "fix_min": 1.12255,
+   "model_min": 8.789316666666666,
+   "calls": 16,
+   "tools": 68,
+   "out": 35188,
+   "reasoning": 17924,
+   "input": 1457796,
+   "cached": 1343744,
+   "cost_yuan": 2.36296,
+   "todo_only_calls": 0,
+   "todo_only_min": 0,
+   "renders": {
+    "docx": 0,
+    "xlsx": 1
+   }
+  },
+  {
+   "run_id": "run_50130b6d-8d63-4fd9-9333-d9cfe1050d4e",
+   "scenario": "a1.agent_task",
+   "skill": "closing-checklist",
+   "status": "succeeded",
+   "model": "kimi-k3",
+   "work_min": 11.072466666666667,
+   "wait_min": 0.16036666666666666,
+   "review_min": 0.8037,
+   "fix_min": 0.37403333333333333,
+   "model_min": 8.811216666666667,
+   "calls": 17,
+   "tools": 43,
+   "out": 36218,
+   "reasoning": 19596,
+   "input": 1405677,
+   "cached": 1280768,
+   "cost_yuan": 2.359892,
+   "todo_only_calls": 0,
+   "todo_only_min": 0,
+   "renders": {
+    "docx": 0,
+    "xlsx": 1
+   }
+  },
+  {
+   "run_id": "run_4b4b23fe-2222-4165-99cc-6986eb177a5c",
+   "scenario": "a1.agent_task",
+   "skill": "contract-review",
+   "status": "succeeded",
+   "model": "kimi-k3",
+   "work_min": 15.6195,
+   "wait_min": 0.20035,
+   "review_min": 1.128,
+   "fix_min": 1.1090666666666666,
+   "model_min": 13.382466666666666,
+   "calls": 20,
+   "tools": 83,
+   "out": 59443,
+   "reasoning": 15559,
+   "input": 2315306,
+   "cached": 2125056,
+   "cost_yuan": 3.837144,
+   "todo_only_calls": 0,
+   "todo_only_min": 0,
+   "renders": {
+    "docx": 1,
+    "xlsx": 1
+   }
+  },
+  {
+   "run_id": "run_2f52cccd-241d-4459-ab8b-7e026165f4d7",
+   "scenario": "a1.agent_task",
+   "skill": "policy-review",
+   "status": "succeeded",
+   "model": "kimi-k3",
+   "work_min": 11.718433333333333,
+   "wait_min": 0.24033333333333334,
+   "review_min": 0.9141166666666667,
+   "fix_min": 1.0952833333333334,
+   "model_min": 11.688683333333334,
+   "calls": 21,
+   "tools": 64,
+   "out": 48748,
+   "reasoning": 21021,
+   "input": 1834201,
+   "cached": 1698816,
+   "cost_yuan": 3.020324,
+   "todo_only_calls": 0,
+   "todo_only_min": 0,
+   "renders": {
+    "docx": 1,
+    "xlsx": 1
+   }
+  },
+  {
+   "run_id": "run_b19e8c28-38df-4f44-90f4-653dad383cca",
+   "scenario": "a1.agent_task",
+   "skill": "pleading-draft",
+   "status": "succeeded",
+   "model": "kimi-k3",
+   "work_min": 10.55005,
+   "wait_min": 1.1490333333333334,
+   "review_min": 0.6023333333333334,
+   "fix_min": 0,
+   "model_min": 10.510883333333334,
+   "calls": 23,
+   "tools": 74,
+   "out": 37940,
+   "reasoning": 15339,
+   "input": 2212904,
+   "cached": 2056448,
+   "cost_yuan": 3.289312,
+   "todo_only_calls": 0,
+   "todo_only_min": 0,
+   "renders": {
+    "docx": 1,
+    "xlsx": 3
+   }
+  },
+  {
+   "run_id": "run_c5ed4e28-2d54-44d0-99ac-fd75569c9f51",
+   "scenario": "a1.agent_task",
+   "skill": "client-advice",
+   "status": "succeeded",
+   "model": "kimi-k3",
+   "work_min": 12.81095,
+   "wait_min": 0.0935,
+   "review_min": 0.9515166666666667,
+   "fix_min": 3.2999833333333335,
+   "model_min": 11.6076,
+   "calls": 33,
+   "tools": 78,
+   "out": 41499,
+   "reasoning": 21301,
+   "input": 3024744,
+   "cached": 2903552,
+   "cost_yuan": 4.052304,
+   "todo_only_calls": 0,
+   "todo_only_min": 0,
+   "renders": {
+    "docx": 1,
+    "xlsx": 0
+   }
+  },
+  {
+   "run_id": "run_f8d91ea5-971d-4804-a732-ba17526d8e58",
+   "scenario": "a1.agent_task",
+   "skill": "due-diligence",
+   "status": "succeeded",
+   "model": "kimi-k3",
+   "work_min": 13.087883333333334,
+   "wait_min": 0.18708333333333332,
+   "review_min": 0.8,
+   "fix_min": 0,
+   "model_min": 13.053466666666667,
+   "calls": 20,
+   "tools": 101,
+   "out": 58206,
+   "reasoning": 24760,
+   "input": 2197376,
+   "cached": 2004480,
+   "cost_yuan": 3.70736,
+   "todo_only_calls": 0,
+   "todo_only_min": 0,
+   "renders": {
+    "docx": 1,
+    "xlsx": 1
+   }
+  }
+ ]
+}

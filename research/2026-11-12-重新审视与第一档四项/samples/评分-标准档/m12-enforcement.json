@@ -1,0 +1,6 @@
+{"tag": "m12-enforcement", "card": "enforcement", "veto": [], "score": 21, "dims": [3, 3, 3, 2, 2, 3, 3, 2],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 31, "questions": 3,
+ "top_issues": ["申请事项只写概括的财产调查请求，未列冻结账户、查封车辆、冻结对宏盛到期债权及失信、限制消费", "加倍部分债务利息自 2026-01-15 起算，多算 1 天（应自 01-16）", "21,400 元逾期付款损失不计入加倍利息基数的归类未说明，只就受理费给了备选口径"],
+ "prev_score": null,
+ "product_defect": ["独立复核 0 条，未发现加倍利息起算日多算一天与基数归类未说明的问题"],
+ "known_defects_recurring": [], "new_defects": ["独立复核对执行标的计算的起算日、基数归类没有核对能力（0 条意见）"]}

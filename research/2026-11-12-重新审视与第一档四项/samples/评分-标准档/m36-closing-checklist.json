@@ -1,0 +1,6 @@
+{"tag": "m36-closing-checklist", "card": "closing-checklist", "veto": [], "score": 23, "dims": [3, 3, 3, 3, 3, 2, 3, 3],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 37, "questions": 0,
+ "top_issues": ["漏列第 3.3 款增资款用途限制这一交割后持续义务", "附件三第 8 项董事任职文件超出第 5.2 款的不一致未作为冲突标出", "拆分行原文整段重复、同一义务双列，14 页篇幅偏长"],
+ "prev_score": null,
+ "product_defect": ["助手能读取事项内未被本卡勾选的材料（章程、名册），独立复核只看勾选材料，二者范围不一致，导致首轮事实整段删改", "成果表头与说明带“工具结果”“无律师已确认事实”等产品流程用语"],
+ "known_defects_recurring": [], "new_defects": ["助手可读材料范围与本卡勾选材料、独立复核所见材料不一致"]}

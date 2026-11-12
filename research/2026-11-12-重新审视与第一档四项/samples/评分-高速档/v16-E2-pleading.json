@@ -1,0 +1,6 @@
+{"tag": "v16-E2-pleading", "card": "pleading", "veto": [], "score": 23, "dims": [3, 3, 3, 3, 3, 3, 3, 2],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 12, "questions": 4,
+ "top_issues": ["起诉状把竣工验收日2023-06-30引为“见证据2、证据3、证据8”，所引证据不能证明，证据目录无对应证据", "未在诉状中回应合同第5.7款先开票抗辩（质保金发票未开）", "事件流不记提问题干与律师回答，无法核对回答是否被照办"],
+ "prev_score": null,
+ "product_defect": ["事件流只记录提问与已回答两个事件，不含题干、选项与律师回答原文，事后无法核对律师回答是否落实"],
+ "known_defects_recurring": [], "new_defects": ["事件流不记录提问题干与律师回答原文"]}
