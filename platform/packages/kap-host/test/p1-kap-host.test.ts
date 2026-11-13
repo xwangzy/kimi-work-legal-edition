@@ -16,6 +16,7 @@ import { configureTrustedRipgrep } from "../vendor/kap-embed/kap-embed.mjs";
 import { KapRuntime, type RuntimeRunStatus } from "../src/runtime.ts";
 import { HostEgressDispatcher } from "../src/host-egress.ts";
 import { startFakeModel, type FakeModel } from "./fake-model.ts";
+import { ipcPath } from "./ipc-path.ts";
 
 /** 检索入口（审计 S3 第 2 步：Grep/Glob 由宿主内检索完成；入口只是已存在的占位文件，路由按字面匹配、从不执行）。 */
 function searchEntry(): string {
@@ -57,7 +58,7 @@ before(async () => {
   const { mkdirSync, writeFileSync } = await import("node:fs");
   mkdirSync(join(base, "trusted", "skills"), { recursive: true });
   writeFileSync(join(base, "trusted", "AGENTS.md"), "TRUSTED-INSTRUCTION-ABC：本所方法包指令。\n");
-  model = await startFakeModel(join(base, "m.sock"));
+  model = await startFakeModel(ipcPath(base, "m.sock"));
   // 假的法律 MCP（Streamable HTTP 的 JSON 单响应形态；与内核本机端点同形）
   const { createServer } = await import("node:http");
   const mcp = createServer((req, res) => {
@@ -86,7 +87,7 @@ before(async () => {
       return reply({});
     });
   });
-  await new Promise<void>((r) => mcp.listen(join(base, "t.sock"), () => r()));
+  await new Promise<void>((r) => mcp.listen(ipcPath(base, "t.sock"), () => r()));
   mcpServer = mcp;
   configureTrustedRipgrep(rg ?? undefined);
   runtime = new KapRuntime({
@@ -106,7 +107,7 @@ before(async () => {
     trustedRgPath: rg,
     logLevel: "silent",
   });
-  egress = new HostEgressDispatcher({ modelSocket: model.socket, toolsSocket: join(base, "t.sock"), authority: runtime.authority });
+  egress = new HostEgressDispatcher({ modelSocket: model.socket, toolsSocket: ipcPath(base, "t.sock"), authority: runtime.authority });
   prevDispatcher = getGlobalDispatcher();
   setGlobalDispatcher(egress);
 });

@@ -7,11 +7,14 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { deriveZoneKey, ZoneCodec } from "@zr-legal/at-rest";
 import { FileBroker } from "@zr-legal/file-broker";
 import { ExecRouter, UNAVAILABLE_DOMAIN } from "../src/exec-router.ts";
 import { placeholderShellPath } from "../src/seeds.ts";
+
+// 检索的路径类跟随平台，与产品一致（exec-router 缺省按 process.platform）；Windows 上 ripgrep 形状的相对路径是 `.\x`
+const PC = process.platform === "win32" ? "win32" : "posix";
 
 function fixture(o: { sealed?: boolean } = {}) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "kwl-router-")));
@@ -107,7 +110,7 @@ test(`宿主内检索真实运行（${sealed ? "加密区" : "明文区"}）：G
   // Glob 的真实形状：cwd = 搜索根、路径为 "."（旧实现固定按工作区解析，在材料区列出的是工作区）
   const g2 = await output(await router.spawn(rg, ["--files", "--hidden", "--sortr=modified", "--glob", "!.git", "--glob", "*", "."], { cwd: materials }));
   assert.equal(g2.code, 0);
-  assert.deepEqual(g2.out.trim().split("\n"), ["./合同.txt"]);
+  assert.deepEqual(g2.out.trim().split("\n"), [`.${sep}合同.txt`]);
   // 行内容模式（上游 content 形状）读到解封后的明文
   const content = await output(await router.spawn(rg, ["--hidden", "--null", "--glob", "!.git", "--with-filename", "-n", "--", "百分之", materials]));
   assert.equal(content.code, 0);
@@ -127,7 +130,7 @@ test("宿主内检索：cwd 在工具可寻址区外即拒绝；--version 探测
   assert.equal(await p.wait(), 143);
   utimesSync(join(work, "f1.txt"), new Date(), new Date(Date.now() + 60_000));
   const g = await output(await router.spawn(rg, ["--files", "--hidden", "--sortr=modified", "--glob", "*.txt", "."], { cwd: work }));
-  assert.equal(g.out.split("\n")[0], "./f1.txt", "按修改时间倒序");
+  assert.equal(g.out.split("\n")[0], `.${sep}f1.txt`, "按修改时间倒序");
 });
 
 test("宿主内检索健壮性（复核 S3B-B02～B05）：大文件上的正则、-U、计数、大 -C 在 worker 内执行——宿主事件循环保持响应；运行中途 kill 立即 143", { timeout: 180_000 }, async () => {
@@ -194,7 +197,7 @@ test("检索 worker 的出错路径（复核 B 处置复核 N-01/N-07）：堆�
   const zones = [{ name: "work", root: work, strict: true, chunkedOnly: true, keys: codecs.work.toWire() }];
   // 400 万个短行：按行切分即需上百 MB 堆，16 MB 堆上限必然超限
   writeFileSync(join(work, "lines.txt"), codecs.work.seal(Buffer.from("违约\n".repeat(4_000_000))));
-  const oom = spawnHostSearch(["--null", "-n", "--with-filename", "--", "违约", join(work, "lines.txt")], { cwd: work, pathClass: "posix", zones, heapMb: 16 });
+  const oom = spawnHostSearch(["--null", "-n", "--with-filename", "--", "违约", join(work, "lines.txt")], { cwd: work, pathClass: PC, zones, heapMb: 16 });
   let err = "";
   oom.stderr.setEncoding("utf8");
   oom.stderr.on("data", (c: string) => (err += c));
@@ -202,13 +205,13 @@ test("检索 worker 的出错路径（复核 B 处置复核 N-01/N-07）：堆�
   assert.equal(await oom.wait(), 2);
   assert.match(err, /内存超限|宿主内检索出错/);
   // 宿主（本进程）照常：再跑一次正常检索
-  const ok = spawnHostSearch(["--null", "-l", "--", "违约金", work], { cwd: work, pathClass: "posix", zones });
+  const ok = spawnHostSearch(["--null", "-l", "--", "违约金", work], { cwd: work, pathClass: PC, zones });
   ok.stdout.resume();
   assert.equal(await ok.wait(), 0);
   // 占满槽位后，排队中的检索被 kill 立即以 143 结束（不等前面的检索）
-  const busy = Array.from({ length: SEARCH_WORKER_SLOTS }, () => spawnHostSearch(["--null", "--count-matches", "--with-filename", "--", "[违约]金\\p{Han}", join(work, "big.txt")], { cwd: work, pathClass: "posix", zones }));
+  const busy = Array.from({ length: SEARCH_WORKER_SLOTS }, () => spawnHostSearch(["--null", "--count-matches", "--with-filename", "--", "[违约]金\\p{Han}", join(work, "big.txt")], { cwd: work, pathClass: PC, zones }));
   for (const b of busy) b.stdout.resume();
-  const queued = spawnHostSearch(["--null", "-l", "--", "违约金", work], { cwd: work, pathClass: "posix", zones });
+  const queued = spawnHostSearch(["--null", "-l", "--", "违约金", work], { cwd: work, pathClass: PC, zones });
   await new Promise((r) => setTimeout(r, 50));
   const t0 = Date.now();
   await queued.kill("SIGTERM");

@@ -20,6 +20,7 @@ import { EgressGateServer } from "../src/server.ts";
 import { canonicalCredential, egressDigest, type ApprovalCredential, type SignedApproval } from "../src/approval.ts";
 import { isPublicAddress } from "../src/url-guard.ts";
 import type { AuthorizeResult, GateAuthority, GateEgressRecord, MatterEgressContext } from "../src/types.ts";
+import { ipcPath } from "./ipc-path.ts";
 
 const KEY = Buffer.alloc(32, 9).toString("base64");
 const devA = generateKeyPairSync("ed25519");
@@ -121,7 +122,7 @@ describe("闸门独立核验批准凭据（W1）", () => {
 
   before(async () => {
     dir = realpathSync(mkdtempSync(join(tmpdir(), "kwl-gate-apv-")));
-    socket = join(dir, "gate.sock");
+    socket = ipcPath(dir, "gate.sock");
     authority = new FakeAuthority();
     site = createServer((req, res) => {
       siteHits.push(`${req.headers.host}${req.url}`);

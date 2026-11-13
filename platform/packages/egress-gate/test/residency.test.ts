@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { MatterTokenizer } from "@zr-legal/tokenizer";
 import { EgressGateServer } from "../src/server.ts";
 import type { AuthorizeResult, GateAuthority, GateEgressRecord, MatterEgressContext } from "../src/types.ts";
+import { ipcPath } from "./ipc-path.ts";
 
 const KEY = Buffer.alloc(32, 7).toString("base64");
 const ctx = (tableVersion = 1): MatterEgressContext => ({
@@ -56,7 +57,7 @@ before(async () => {
     });
   });
   await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
-  socket = join(realpathSync(mkdtempSync(join(tmpdir(), "kwl-gate-res-"))), "gate.sock");
+  socket = ipcPath(realpathSync(mkdtempSync(join(tmpdir(), "kwl-gate-res-"))), "gate.sock");
   gate = new EgressGateServer({ authority, tokenizerIdleMs: 50, upstreams: { model: { baseUrl: `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/v1`, seatToken: "s" }, search: null, fetch: "disabled" } });
   await gate.listen(socket);
 });

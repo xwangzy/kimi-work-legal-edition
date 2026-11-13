@@ -6,12 +6,13 @@ import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { deriveZoneKey, isSealed, plainSizeOf, ZoneCodec } from "@zr-legal/at-rest";
 import { FileBroker } from "@zr-legal/file-broker";
 import { WCoreDomain, WUnavailableError, type WExecEvent, type WProcess } from "../src/domain.ts";
 import { selftestProblems } from "../src/host.ts";
+import { PATH_CLASS, shp } from "./path-class.ts";
 
 /**
  * 加密形态（复核 S3B-A01 / B-07）：KWL_W_SEALED=1（w-s3-regressions-sealed.test.ts）时工作区与材料以 KWE1 密文挂载，W 读层解密、提交经 broker 封装；
@@ -73,7 +74,7 @@ async function fixture(
     work: { zone: "work", root: work },
     readOnlyRoots: [materials],
     ...(SEALED ? { sealed: { work: CODECS.work.toWire(), readOnly: { [materials]: CODECS.materials.toWire() }, strict: true } } : {}),
-    pathClass: "posix",
+    pathClass: PATH_CLASS,
     tmpDir: join(base, "w-tmp"),
     supervisor: {
       maxConcurrent: o.maxConcurrent ?? 2,
@@ -107,7 +108,7 @@ async function collect(p: WProcess): Promise<{ code: number; out: string; err: s
   return { code, out, err };
 }
 
-const sh = (fx: Fx, cmd: string) => fx.domain.run(`cd '${fx.work}' && ${cmd}`, { cwd: fx.work });
+const sh = (fx: Fx, cmd: string) => fx.domain.run(`cd '${shp(fx.work)}' && ${cmd}`, { cwd: fx.work });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const copiesOf = (dir: string, stem: string) => readdirSync(dir).filter((n) => n.startsWith(`${stem}（执行冲突副本`));
 
@@ -412,13 +413,13 @@ describe("复核 S3-17～S3-23：删除的比较—替换、上限的结构化�
       };
       let r;
       try {
-        r = await collect(await sh(fx, `mkdir -p 归档 && mv '${src.split("/").pop()}' 归档/`));
+        r = await collect(await sh(fx, `mkdir -p 归档 && mv '${basename(src)}' 归档/`));
       } finally {
         (fx.broker as unknown as { createExclusive: typeof orig }).createExclusive = orig;
       }
       assert.equal(injected, true);
       assert.equal(rf(src), "LAWYER-NEW-VERSION\n", "律师的新版本必须保留");
-      assert.equal(rf(join(fx.work, "归档", src.split("/").pop()!)), "OLD-VERSION\n");
+      assert.equal(rf(join(fx.work, "归档", basename(src))), "OLD-VERSION\n");
       assert.equal(r.code, 75);
       assert.match(r.err, /写回时刚被其他操作修改，未删除|未删除/);
     });

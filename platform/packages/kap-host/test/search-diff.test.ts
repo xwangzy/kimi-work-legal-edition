@@ -24,6 +24,9 @@ import { FileBroker } from "@zr-legal/file-broker";
 import { runSearch, type SearchFs } from "../src/search/engine.ts";
 import { brokerSearchFs } from "../src/search/host-search.ts";
 
+// 路径类跟随平台，与产品一致（以前写死 posix，Windows 上盘符路径全部按 POSIX 解析失败，退出码 2：CI run 43435998778）
+const PC = process.platform === "win32" ? "win32" : "posix";
+
 function nativeRg(): string | null {
   for (const c of [process.env.KWL_TRUSTED_RG, join(homedir(), ".kimi-code", "bin", "rg")]) {
     if (!c) continue;
@@ -172,7 +175,7 @@ function plainFs(zoneRoot: string): SearchFs {
     parentsWithinZone(p) {
       const rel = relative(zoneRoot, p);
       if (rel === "" || rel.startsWith("..")) return [];
-      const parts = rel.split("/");
+      const parts = rel.split(/[\\/]/);
       const out = [zoneRoot];
       for (const c of parts.slice(0, -1)) out.push(join(out[out.length - 1]!, c));
       return out;
@@ -183,7 +186,7 @@ function plainFs(zoneRoot: string): SearchFs {
 async function host(args: string[], cwd: string, fs: SearchFs): Promise<{ code: number; out: string; err: string }> {
   let out = "";
   let err = "";
-  const code = await runSearch(args, { cwd, pathClass: "posix", fs, io: { out: (s) => (out += s), err: (s) => (err += s), aborted: () => false } });
+  const code = await runSearch(args, { cwd, pathClass: PC, fs, io: { out: (s) => (out += s), err: (s) => (err += s), aborted: () => false } });
   return { code, out, err };
 }
 
@@ -287,7 +290,10 @@ function compare(key: string, h: { code: number; out: string; err: string }, run
   }
   const g = golden[key];
   if (!g) return `${key}: 金标准缺失（在有 rg 的机器上以 KWL_UPDATE_RG_GOLDEN=1 生成）`;
-  if (h.code !== g.code || (g.code !== 2 && hd !== g.sha)) return `${key}: 与金标准不一致（code ${h.code}/${g.code}）`;
+  // 金标准是 POSIX 机器上 rg 的输出；Windows 上宿主检索按 ripgrep 的 Windows 形状输出反斜杠路径。语料内容不含反斜杠，
+  // 所以先把语料根换成 <ROOT>、再把分隔符统一成 / 后比对——比的是匹配、顺序、计数、上下文，分隔符差异不算不一致
+  const gd = PC === "win32" ? digestOut(h.out.split(plainRoot).join("<ROOT>").replaceAll("\\", "/")) : hd;
+  if (h.code !== g.code || (g.code !== 2 && gd !== g.sha)) return `${key}: 与金标准不一致（code ${h.code}/${g.code}）`;
   return null;
 }
 
@@ -337,7 +343,7 @@ test("差分：Glob 的上游参数形状（cwd = 搜索根，路径 \".\"，按
 
 test("加密语料：经文件 broker 解封的宿主检索输出与明文语料完全一致（Grep 全部组合与 Glob）；盘上没有明文", async () => {
   const pfs = plainFs(plainRoot);
-  const sfs = brokerSearchFs(sealedBroker, new Set(["work"]), "posix");
+  const sfs = brokerSearchFs(sealedBroker, new Set(["work"]), PC);
   const swap = (s: string) => s.split(plainRoot).join(sealedRoot);
   let n = 0;
   for (const root of ["", "sub", "合同.txt", "bin.dat", "repo"]) {

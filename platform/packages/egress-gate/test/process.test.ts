@@ -9,6 +9,7 @@ import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { IPC_IS_PIPE, ipcListening, ipcPath } from "./ipc-path.ts";
 
 const entry = fileURLToPath(new URL("../src/main.ts", import.meta.url));
 
@@ -27,7 +28,7 @@ function post(socket: string, path: string, body: unknown): Promise<{ status: nu
 
 test("闸门进程：fork 后经 IPC 取授权；内核拒绝即拒绝、内核不回答即超时拒绝（失败关闭）；去向记录回送内核；内核断开即退出并清理套接字", { timeout: 60_000 }, async () => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "kwl-gatep-")));
-  const socketPath = join(dir, "g.sock");
+  const socketPath = ipcPath(dir, "g.sock");
   const child = fork(entry, [], { stdio: ["ignore", "ignore", "pipe", "ipc"], env: {} });
   const records: unknown[] = [];
   let mode: "deny" | "silent" = "deny";
@@ -45,7 +46,7 @@ test("闸门进程：fork 后经 IPC 取授权；内核拒绝即拒绝、内核�
     });
     child.send({ t: "init", config: { socketPath, upstreams: { model: null, search: null, fetch: "disabled" }, authorizeTimeoutMs: 800 } });
   });
-  assert.ok(existsSync(socketPath));
+  assert.ok(IPC_IS_PIPE ? await ipcListening(socketPath) : existsSync(socketPath));
   const denied = await post(socketPath, "/m/m1/v1/chat/completions", { messages: [] });
   assert.equal(denied.status, 403);
   assert.equal(JSON.parse(denied.text).error.code, "run_not_live");
@@ -58,5 +59,6 @@ test("闸门进程：fork 后经 IPC 取授权；内核拒绝即拒绝、内核�
   const exited = new Promise<number | null>((r) => child.on("exit", (c) => r(c)));
   child.disconnect();
   assert.equal(await exited, 0);
-  assert.equal(existsSync(socketPath), false, "退出时清理套接字");
+  // Windows 的命名管道随监听结束消失，没有文件要清理：改为确认已没有人在监听
+  assert.equal(IPC_IS_PIPE ? await ipcListening(socketPath) : existsSync(socketPath), false, "退出时清理套接字");
 });

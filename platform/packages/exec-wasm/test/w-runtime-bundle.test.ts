@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { FileBroker } from "@zr-legal/file-broker";
 import { WCoreDomain, type WProcess } from "../src/domain.ts";
 import { selftestProblems, WUnavailableError, WSupervisor } from "../src/host.ts";
+import { PATH_CLASS, shp } from "./path-class.ts";
 
 const require = createRequire(import.meta.url);
 const { resolveBundledRuntime, verifyRuntimeDigests } = require("../../../apps/desktop/electron/runtime-paths.cjs") as {
@@ -78,7 +79,7 @@ describe("随包运行时（scripts/build-runtime.mjs）", () => {
       broker,
       work: { zone: "work", root: work },
       readOnlyRoots: [materials],
-      pathClass: "posix",
+      pathClass: PATH_CLASS,
       tmpDir: join(base, "w-tmp"),
       supervisor: {
         maxConcurrent: 1,
@@ -90,11 +91,11 @@ describe("随包运行时（scripts/build-runtime.mjs）", () => {
     });
     try {
       assert.deepEqual(selftestProblems(await domain.supervisor.selftest(), r.env.KWL_RUNTIME_NODE_VERSION!), []);
-      const a = await collect(await domain.run(`cd '${work}' && grep -c 人民币 '${materials}/合同.txt' && echo 完成 > 结果.txt`, { cwd: work }));
+      const a = await collect(await domain.run(`cd '${shp(work)}' && grep -c 人民币 '${shp(materials)}/合同.txt' && echo 完成 > 结果.txt`, { cwd: work }));
       assert.equal(a.code, 0);
       assert.equal(a.out.trim(), "1");
       assert.equal(readFileSync(join(work, "结果.txt"), "utf8").trim(), "完成");
-      const b = await collect(await domain.run(`cd '${work}' && python3 -c "print(sum([1,2,3]))"`, { cwd: work }));
+      const b = await collect(await domain.run(`cd '${shp(work)}' && python3 -c "print(sum([1,2,3]))"`, { cwd: work }));
       assert.equal(b.code, 0);
       assert.equal(b.out.trim(), "6");
     } finally {
@@ -113,7 +114,7 @@ describe("随包运行时（scripts/build-runtime.mjs）", () => {
     const codec = new ZoneCodec("work", new Map([[1, deriveZoneKey(randomBytes(32), "work")]]), 1);
     writeFileSync(join(zoneRoot, "合同.txt"), codec.seal(Buffer.from("违约金为合同总价的百分之二十\n")));
     const w = new Worker(join(rt, "kap-host", "search-worker.mjs"), {
-      workerData: { args: ["--null", "-n", "--with-filename", "--", "百分之\\p{Han}+", zoneRoot], cwd: zoneRoot, pathClass: "posix", zones: [{ name: "work", root: zoneRoot, strict: true, chunkedOnly: true, keys: codec.toWire() }] },
+      workerData: { args: ["--null", "-n", "--with-filename", "--", "百分之\\p{Han}+", zoneRoot], cwd: zoneRoot, pathClass: PATH_CLASS, zones: [{ name: "work", root: zoneRoot, strict: true, chunkedOnly: true, keys: codec.toWire() }] },
     });
     let out = "";
     const code = await new Promise<number>((resolve, reject) => {

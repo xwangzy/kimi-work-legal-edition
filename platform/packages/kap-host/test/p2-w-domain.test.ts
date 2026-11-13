@@ -19,6 +19,8 @@ import { wCoreFactory } from "../src/w-domain.ts";
 import { placeholderShellPath } from "../src/seeds.ts";
 import type { ExecDomainFactory } from "../src/exec-router.ts";
 import { startFakeModel, type FakeModel, type FakeStep } from "./fake-model.ts";
+import { ipcPath } from "./ipc-path.ts";
+import { toShellPath } from "@zr-legal/exec-wasm";
 
 /** 检索入口（审计 S3 第 2 步：Grep/Glob 由宿主内检索完成；入口只是已存在的占位文件，路由按字面匹配、从不执行）。 */
 function searchEntry(): string {
@@ -63,10 +65,10 @@ let runtime: KapRuntime;
 
 before(async () => {
   base = realpathSync(mkdtempSync(join(tmpdir(), "kh-p2-")));
-  model = await startFakeModel(join(base, "m.sock"));
+  model = await startFakeModel(ipcPath(base, "m.sock"));
   configureTrustedRipgrep(rg ?? undefined);
   runtime = newRuntime(wCoreFactory(), "w");
-  egress = new HostEgressDispatcher({ modelSocket: model.socket, toolsSocket: join(base, "t.sock"), authority: runtime.authority });
+  egress = new HostEgressDispatcher({ modelSocket: model.socket, toolsSocket: ipcPath(base, "t.sock"), authority: runtime.authority });
   prevDispatcher = getGlobalDispatcher();
   setGlobalDispatcher(egress);
 });
@@ -126,7 +128,8 @@ describe("P2：Bash 经 DI 进入 W-core", () => {
         ],
         ["Read", { path: join(W, "统计", "流水.csv") }],
         ["Write", { path: join(W, "宿主写入.md"), content: "由 Write 工具写入" }],
-        ["Bash", { command: `cat '${join(W, "宿主写入.md")}' && wc -l 统计/流水.csv` }],
+        // 拼进 Bash 的宿主路径用 shell 形式（Windows `C:\\a` → `/c/a`），与产品按平台取的路径类一致
+        ["Bash", { command: `cat '${toShellPath(join(W, "宿主写入.md"), process.platform === "win32" ? "win32" : "posix")}' && wc -l 统计/流水.csv` }],
         ...(rg ? ([["Grep", { pattern: "2026-02" }]] as [string, unknown][]) : []),
       ]),
     );
@@ -388,7 +391,7 @@ describe("P2：第二轮复核 S3-28", () => {
   test("S3-28 执行域运行中不可用 → 宿主策略拒绝 Bash；退避后经健康查询自行恢复，下一次运行的 Bash 经宿主策略成功（不直接调用执行域）", { timeout: 120_000 }, async () => {
     const rt = newRuntime(wCoreFactory({ recoveryRetryMs: 200 }), "recover");
     const prev = getGlobalDispatcher();
-    const eg = new HostEgressDispatcher({ modelSocket: model.socket, toolsSocket: join(base, "t.sock"), authority: rt.authority });
+    const eg = new HostEgressDispatcher({ modelSocket: model.socket, toolsSocket: ipcPath(base, "t.sock"), authority: rt.authority });
     setGlobalDispatcher(eg);
     try {
       const mid = "m_recover";
@@ -442,7 +445,7 @@ describe("P2：执行域起不来时失败关闭", () => {
     };
     const rt = newRuntime(broken, "broken");
     const prev = getGlobalDispatcher();
-    const eg = new HostEgressDispatcher({ modelSocket: model.socket, toolsSocket: join(base, "t.sock"), authority: rt.authority });
+    const eg = new HostEgressDispatcher({ modelSocket: model.socket, toolsSocket: ipcPath(base, "t.sock"), authority: rt.authority });
     setGlobalDispatcher(eg);
     try {
       const engine = await rt.matterEngine("m_broken");

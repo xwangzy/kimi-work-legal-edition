@@ -13,6 +13,7 @@ import { FileBroker } from "@zr-legal/file-broker";
 import { captureBaseline, commitChanges, LinkPresentError } from "../src/commit.ts";
 import { WCoreDomain, type WExecEvent, type WProcess } from "../src/domain.ts";
 import { selftestProblems } from "../src/host.ts";
+import { PATH_CLASS, shp } from "./path-class.ts";
 
 interface Fx {
   base: string;
@@ -43,7 +44,7 @@ async function fixture(
     broker,
     work: { zone: "work", root: work },
     readOnlyRoots: [materials],
-    pathClass: "posix",
+    pathClass: PATH_CLASS,
     tmpDir: join(base, "w-tmp"),
     supervisor: {
       maxConcurrent: opts.maxConcurrent ?? 2,
@@ -79,7 +80,7 @@ async function collect(p: WProcess): Promise<{ code: number; out: string; err: s
   return { code, out, err, chunksBeforeExit: chunks };
 }
 
-const sh = (fx: Fx, cmd: string, cwd = fx.work) => fx.domain.run(`cd '${cwd}' && ${cmd}`, { cwd });
+const sh = (fx: Fx, cmd: string, cwd = fx.work) => fx.domain.run(`cd '${shp(cwd)}' && ${cmd}`, { cwd });
 
 describe("W-core 执行域", () => {
   let fx: Fx;
@@ -116,15 +117,15 @@ describe("W-core 执行域", () => {
   test("单一路径命名空间：Bash 写的文件以同一宿主路径经 broker 可读；宿主写的文件 Bash 以同一路径可读；材料快照同路径只读", async () => {
     await fx.broker.writeText(join(fx.work, "宿主写入.txt"), "来自 Write 工具\n");
     const r = await collect(
-      await sh(fx, `cat '${join(fx.work, "宿主写入.txt")}'; mkdir -p 草稿/明细; printf '合计,100000\\n' > 草稿/明细/汇总.csv; cat '${join(fx.materials, "001-借款合同.txt")}' | head -1`),
+      await sh(fx, `cat '${shp(join(fx.work, "宿主写入.txt"))}'; mkdir -p 草稿/明细; printf '合计,100000\\n' > 草稿/明细/汇总.csv; cat '${shp(join(fx.materials, "001-借款合同.txt"))}' | head -1`),
     );
     assert.equal(r.code, 0, r.err);
     assert.equal(r.out, "来自 Write 工具\n借款金额：人民币 100,000 元\n");
     assert.equal(await fx.broker.readText(join(fx.work, "草稿", "明细", "汇总.csv")), "合计,100000\n");
-    const ro = await collect(await sh(fx, `echo x > '${join(fx.materials, "新文件.txt")}'; echo 继续`));
+    const ro = await collect(await sh(fx, `echo x > '${shp(join(fx.materials, "新文件.txt"))}'; echo 继续`));
     assert.notEqual(ro.code, 0);
     assert.equal(existsSync(join(fx.materials, "新文件.txt")), false);
-    const rm = await collect(await sh(fx, `rm -f '${join(fx.materials, "001-借款合同.txt")}'; ls '${fx.materials}'`));
+    const rm = await collect(await sh(fx, `rm -f '${shp(join(fx.materials, "001-借款合同.txt"))}'; ls '${shp(fx.materials)}'`));
     assert.match(rm.out + rm.err, /001-借款合同\.txt|EROFS|read-only/i);
     assert.equal(existsSync(join(fx.materials, "001-借款合同.txt")), true);
   });
@@ -159,10 +160,10 @@ sqlite3 :memory: "select 6*7;"`,
     const r = await collect(
       await sh(
         fx,
-        `cat ../../outside/secret.txt 2>&1; cat '${join(fx.outside, "secret.txt")}' 2>&1; cat /etc/passwd 2>&1 | head -1; ls ~ 2>&1 | head -3
-ln -s '${join(fx.outside, "secret.txt")}' lnk 2>&1; ln -s /etc/passwd lnk2 2>&1
+        `cat ../../outside/secret.txt 2>&1; cat '${shp(join(fx.outside, "secret.txt"))}' 2>&1; cat /etc/passwd 2>&1 | head -1; ls ~ 2>&1 | head -3
+ln -s '${shp(join(fx.outside, "secret.txt"))}' lnk 2>&1; ln -s /etc/passwd lnk2 2>&1
 python3 -c "import os; os.symlink('/etc/passwd', 'pl')" 2>&1 | tail -1
-python3 -c "print(open('${join(fx.outside, "secret.txt")}').read())" 2>&1 | tail -1
+python3 -c "print(open('${shp(join(fx.outside, "secret.txt"))}').read())" 2>&1 | tail -1
 curl -s https://example.com 2>&1 | head -1; wget -q https://example.com 2>&1 | head -1
 node -e "console.log(1)" 2>&1 | head -1; js-exec -c "1" 2>&1 | head -1
 echo done`,

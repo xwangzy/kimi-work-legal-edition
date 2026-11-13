@@ -16,6 +16,7 @@ import { EgressGateServer } from "../src/server.ts";
 import { FetchDenied, gateFetch } from "../src/fetcher.ts";
 import { isPublicAddress } from "../src/url-guard.ts";
 import type { AuthorizeResult, GateAuthority, GateEgressRecord, MatterEgressContext } from "../src/types.ts";
+import { ipcPath } from "./ipc-path.ts";
 
 const KEY = Buffer.alloc(32, 9).toString("base64");
 
@@ -124,7 +125,7 @@ describe("闸门服务（阶段 4 补充）", () => {
 
   before(async () => {
     dir = realpathSync(mkdtempSync(join(tmpdir(), "kwl-g4-")));
-    socket = join(dir, "g.sock");
+    socket = ipcPath(dir, "g.sock");
     const SSE = (model: string) =>
       `data: ${JSON.stringify({ id: "c1", model, choices: [{ index: 0, delta: { content: "好的" }, finish_reason: null }] })}\n\n` +
       `data: ${JSON.stringify({ id: "c1", model, choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 120, completion_tokens: 30, prompt_tokens_details: { cached_tokens: 100 }, completion_tokens_details: { reasoning_tokens: 7 } } })}\n\n` +

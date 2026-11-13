@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { crc32 } from "node:zlib";
 import { FileBroker } from "@zr-legal/file-broker";
 import { WCoreDomain, type WProcess } from "../src/domain.ts";
+import { PATH_CLASS, shp } from "./path-class.ts";
 
 /** 最小 ZIP 写出（stored，无压缩）：用于生成测试 DOCX。 */
 function zipStore(files: Record<string, string>): Buffer {
@@ -98,7 +99,7 @@ before(async () => {
     for (let k = 0; k < 60; k++) paras.push(`事实与理由第${k + 1}段：双方于2025年签订买卖合同，被告未按约付款。`);
     writeFileSync(join(materials, "文书", `起诉状-${String(i).padStart(2, "0")}.docx`), docx(paras));
   }
-  domain = await WCoreDomain.start({ broker, work: { zone: "work", root: work }, readOnlyRoots: [materials], pathClass: "posix", tmpDir: join(base, "w-tmp") });
+  domain = await WCoreDomain.start({ broker, work: { zone: "work", root: work }, readOnlyRoots: [materials], pathClass: PATH_CLASS, tmpDir: join(base, "w-tmp") });
 });
 
 after(async () => {
@@ -108,7 +109,7 @@ after(async () => {
 
 async function run(name: string, script: string): Promise<{ code: number; out: string; err: string }> {
   const t0 = Date.now();
-  const p: WProcess = await domain.run(`cd '${work}' && ${script}`, { cwd: work });
+  const p: WProcess = await domain.run(`cd '${shp(work)}' && ${script}`, { cwd: work });
   let out = "";
   let err = "";
   p.stdout.setEncoding("utf8");
@@ -123,7 +124,8 @@ async function run(name: string, script: string): Promise<{ code: number; out: s
 }
 
 const py = (src: string) => `python3 - <<'PY'\n${src}\nPY`;
-const M = () => materials;
+/** 材料目录在 Bash 里的路径（只拼进命令用） */
+const M = () => shp(materials);
 
 describe("20 类律师典型数据任务（W-core，标准库）", () => {
   test("01 银行流水按月汇总（300 行，< 10 秒）", async () => {

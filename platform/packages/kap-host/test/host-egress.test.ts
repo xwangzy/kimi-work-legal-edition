@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostEgressDispatcher, type ModelBinding } from "../src/host-egress.ts";
 import { egressDigest } from "../src/policy.ts";
+import { ipcPath } from "./ipc-path.ts";
 
 interface Seen {
   path: string;
@@ -32,14 +33,15 @@ function listen(socket: string, seen: Seen[]): Promise<Server> {
 }
 
 const dir = mkdtempSync(join(tmpdir(), "eg-"));
+const sockPath = (name: string) => ipcPath(dir, name);
 const gateSeen: Seen[] = [];
 const toolsSeen: Seen[] = [];
-const gate = await listen(join(dir, "gate.sock"), gateSeen);
-const tools = await listen(join(dir, "tools.sock"), toolsSeen);
+const gate = await listen(sockPath("gate.sock"), gateSeen);
+const tools = await listen(sockPath("tools.sock"), toolsSeen);
 const bindings = new Map<string, ModelBinding>([["sess-a", { matterId: "m1", runId: "run-a", token: "TOKEN-RUN-A" }]]);
 const egress = new HostEgressDispatcher({
-  modelSocket: join(dir, "gate.sock"),
-  toolsSocket: join(dir, "tools.sock"),
+  modelSocket: sockPath("gate.sock"),
+  toolsSocket: sockPath("tools.sock"),
   authority: {
     modelBinding: (s) => bindings.get(s) ?? null,
     toolsToken: (m) => (m === "m1" ? "TOKEN-TOOLS-M1" : null),
@@ -162,7 +164,7 @@ test("检索与抓取：工具调用 ID 与参数摘要对上宿主策略放行�
 test("闸门未配置（modelSocket 为空）：模型、检索、抓取一律在本进程内失败，不改走别的通道；法律 MCP 不受影响", async () => {
   const eg = new HostEgressDispatcher({
     modelSocket: null,
-    toolsSocket: join(dir, "tools.sock"),
+    toolsSocket: sockPath("tools.sock"),
     authority: { modelBinding: (s) => bindings.get(s) ?? null, toolsToken: (m) => (m === "m1" ? "TOKEN-TOOLS-M1" : null) },
   });
   try {

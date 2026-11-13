@@ -16,6 +16,7 @@ import { transportFailureReason, upstreamFetch } from "../src/tls-policy.ts";
 import { relayControlPlane } from "../src/cp-relay.ts";
 import { EgressGateServer } from "../src/server.ts";
 import type { AuthorizeResult, GateAuthority, GateEgressRecord, MatterEgressContext } from "../src/types.ts";
+import { ipcPath } from "./ipc-path.ts";
 
 const fx = (n: string) => readFileSync(fileURLToPath(new URL(`./fixtures/${n}`, import.meta.url)), "utf8");
 const CERT = fx("tls-test-cert.pem");
@@ -162,7 +163,7 @@ describe("闸门按传输策略拒绝或中断", () => {
   async function gate(upstreams: ConstructorParameters<typeof EgressGateServer>[0]["upstreams"]): Promise<{ g: EgressGateServer; a: Auth; sock: string }> {
     const a = new Auth();
     const g = new EgressGateServer({ authority: a, upstreams });
-    const sock = join(dir, `g${n++}.sock`);
+    const sock = ipcPath(dir, `g${n++}.sock`);
     await g.listen(sock);
     return { g, a, sock };
   }

@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EgressGateServer } from "../src/server.ts";
 import type { AuthorizeResult, GateAuthority, GateEgressRecord, MatterEgressContext } from "../src/types.ts";
+import { ipcPath } from "./ipc-path.ts";
 
 const KEY = Buffer.alloc(32, 7).toString("base64");
 const CTX: MatterEgressContext = {
@@ -68,7 +69,7 @@ describe("模型请求看门狗（第 35 批）", () => {
 
   before(async () => {
     dir = realpathSync(mkdtempSync(join(tmpdir(), "kwl-gate-dog-")));
-    socket = join(dir, "gate.sock");
+    socket = ipcPath(dir, "gate.sock");
     authority = new Authority();
     up = createServer((req, res) => {
       req.resume();

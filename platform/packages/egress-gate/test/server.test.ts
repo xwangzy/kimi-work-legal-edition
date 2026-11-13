@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { EgressGateServer } from "../src/server.ts";
 import type { AuthorizeResult, GateAuthority, GateEgressRecord, MatterEgressContext } from "../src/types.ts";
 import type { TokenEntry } from "@zr-legal/tokenizer";
+import { ipcPath } from "./ipc-path.ts";
 
 const KEY = Buffer.alloc(32, 7).toString("base64");
 
@@ -97,7 +98,7 @@ describe("出站闸门服务", () => {
 
   before(async () => {
     dir = realpathSync(mkdtempSync(join(tmpdir(), "kwl-gate-")));
-    socket = join(dir, "gate.sock");
+    socket = ipcPath(dir, "gate.sock");
     authority = new FakeAuthority();
     model = await upstream((_p, _b, res) => {
       res.writeHead(200, { "content-type": "text/event-stream", "x-request-id": "up-1" });

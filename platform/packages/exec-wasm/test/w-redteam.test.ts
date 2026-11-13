@@ -17,6 +17,7 @@ import { randomBytes } from "node:crypto";
 import { deriveZoneKey, ZoneCodec } from "@zr-legal/at-rest";
 import { FileBroker } from "@zr-legal/file-broker";
 import { WCoreDomain, type WProcess } from "../src/domain.ts";
+import { PATH_CLASS, shp } from "./path-class.ts";
 
 interface R {
   code: number;
@@ -79,7 +80,7 @@ before(async () => {
     work: { zone: "work", root: work },
     readOnlyRoots: [materials],
     ...(SEALED ? { sealed: { work: CODECS.work.toWire(), readOnly: { [materials]: CODECS.materials.toWire() }, strict: true } } : {}),
-    pathClass: "posix",
+    pathClass: PATH_CLASS,
     tmpDir: join(base, "w-tmp"),
     limits: { maxExecutionTimeMs: 20_000 },
   });
@@ -92,7 +93,7 @@ after(async () => {
 });
 
 async function run(script: string): Promise<R> {
-  const p: WProcess = await domain.run(`cd '${work}' && ${script}`, { cwd: work });
+  const p: WProcess = await domain.run(`cd '${shp(work)}' && ${script}`, { cwd: work });
   let out = "";
   p.stdout.setEncoding("utf8");
   p.stderr.setEncoding("utf8");
@@ -297,13 +298,14 @@ const LEAK: Case[] = [
   ["E06 Python 当前目录与用户目录", `python3 -c "import os; print(os.getcwd(), os.path.expanduser('~'))" 2>&1 | tail -1`],
 ];
 
+// 占位符只出现在 Bash 命令里：换成 shell 形式的路径
 const subst = (s: string) =>
   s
-    .replaceAll("<O>", outside)
-    .replaceAll("<W>", work)
-    .replaceAll("<M>", materials)
-    .replaceAll("<E>", engineHome)
-    .replaceAll("<B>", base);
+    .replaceAll("<O>", shp(outside))
+    .replaceAll("<W>", shp(work))
+    .replaceAll("<M>", shp(materials))
+    .replaceAll("<E>", shp(engineHome))
+    .replaceAll("<B>", shp(base));
 
 function suite(name: string, cases: Case[]) {
   describe(name, () => {

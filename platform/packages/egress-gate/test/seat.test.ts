@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EgressGateServer, seatUsable } from "../src/server.ts";
 import type { AuthorizeResult, GateAuthority, GateEgressRecord, MatterEgressContext } from "../src/types.ts";
+import { ipcPath } from "./ipc-path.ts";
 
 const seat = (expSecondsFromNow: number) =>
   `zst1.${Buffer.from(JSON.stringify({ tid: "t1", uid: "u1", sid: "s1", dev: "d1", kid: "k", iat: 0, exp: Math.floor(Date.now() / 1000) + expSecondsFromNow })).toString("base64url")}.sig`;
@@ -59,7 +60,7 @@ before(async () => {
   await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", () => r()));
   const url = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
   gate = new EgressGateServer({ authority, upstreams: { model: { baseUrl: `${url}/v1`, seatToken: seat(-60) }, search: { baseUrl: `${url}/search`, seatToken: seat(-60) }, fetch: "disabled" } });
-  socket = join(realpathSync(mkdtempSync(join(tmpdir(), "kwl-seat-"))), "gate.sock");
+  socket = ipcPath(realpathSync(mkdtempSync(join(tmpdir(), "kwl-seat-"))), "gate.sock");
   await gate.listen(socket);
 });
 after(async () => {

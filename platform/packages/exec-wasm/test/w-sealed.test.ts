@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { deriveZoneKey, ZoneCodec } from "@zr-legal/at-rest";
 import { FileBroker } from "@zr-legal/file-broker";
 import { WCoreDomain, type WProcess } from "../src/domain.ts";
+import { PATH_CLASS, shp } from "./path-class.ts";
 
 const CANARY = "KWLCANARYWSEAL4417";
 
@@ -63,7 +64,7 @@ before(async () => {
     work: { zone: "work", root: work },
     readOnlyRoots: [materials],
     sealed: { work: codecs.work.toWire(), readOnly: { [materials]: codecs.materials.toWire() }, strict: true },
-    pathClass: "posix",
+    pathClass: PATH_CLASS,
     tmpDir: join(base, "w-tmp"),
     supervisor: { maxConcurrent: 2 },
   });
@@ -91,14 +92,14 @@ function diskHits(needle: string): string[] {
 }
 
 test("读层解封：cat、grep -r、wc -c、head、ls -l、stat 读到明文与明文长度；盘上始终是 KWE1", async () => {
-  const r = await run(`cat ${fx.materials}/001.txt && grep -rn "${CANARY}" ${fx.materials} && wc -c < ${fx.work}/台账.csv && head -2 ${fx.work}/台账.csv`);
+  const r = await run(`cat ${shp(fx.materials)}/001.txt && grep -rn "${CANARY}" ${shp(fx.materials)} && wc -c < ${shp(fx.work)}/台账.csv && head -2 ${shp(fx.work)}/台账.csv`);
   assert.equal(r.code, 0, r.err);
   assert.match(r.out, new RegExp(`出借人：澜沧科技有限公司 ${CANARY}`));
   assert.match(r.out, new RegExp(`001.txt:2:出借人`));
   const plainLen = Buffer.byteLength(`编号,金额\n1,100\n2,250\n3,${CANARY.length}\n`);
   assert.match(r.out, new RegExp(`^${plainLen}$`, "m"), "wc -c 报告明文长度");
   assert.match(r.out, /编号,金额\n1,100/);
-  const ls = await run(`ls -l ${fx.work}/台账.csv; stat -c %s ${fx.work}/台账.csv`);
+  const ls = await run(`ls -l ${shp(fx.work)}/台账.csv; stat -c %s ${shp(fx.work)}/台账.csv`);
   assert.equal(ls.code, 0, ls.err);
   assert.match(ls.out, new RegExp(`\\b${plainLen}\\b`), "ls -l / stat 报告明文长度");
   assert.equal(readFileSync(join(fx.work, "台账.csv")).subarray(0, 4).toString(), "KWE1");
@@ -109,11 +110,11 @@ test("python3 与 sqlite3 经同一读层读加密文件；写出的新文件经
   const before = statSync(join(fx.work, "台账.csv"));
   const r = await run(
     [
-      `python3 -c "import csv; rows=list(csv.reader(open('${fx.work}/台账.csv', encoding='utf-8'))); print(sum(int(r[1]) for r in rows[1:])); open('${fx.work}/汇总.txt','w',encoding='utf-8').write('合计 ' + '${CANARY}')"`,
-      `sqlite3 ${fx.work}/t.db "create table t(x text); insert into t values ('${CANARY}');"`,
-      `sqlite3 ${fx.work}/t.db "select x from t;"`,
-      `cp ${fx.work}/台账.csv ${fx.work}/台账-副本.csv`,
-      `cat ${fx.work}/台账.csv > /dev/null`,
+      `python3 -c "import csv; rows=list(csv.reader(open('${shp(fx.work)}/台账.csv', encoding='utf-8'))); print(sum(int(r[1]) for r in rows[1:])); open('${shp(fx.work)}/汇总.txt','w',encoding='utf-8').write('合计 ' + '${CANARY}')"`,
+      `sqlite3 ${shp(fx.work)}/t.db "create table t(x text); insert into t values ('${CANARY}');"`,
+      `sqlite3 ${shp(fx.work)}/t.db "select x from t;"`,
+      `cp ${shp(fx.work)}/台账.csv ${shp(fx.work)}/台账-副本.csv`,
+      `cat ${shp(fx.work)}/台账.csv > /dev/null`,
     ].join(" && "),
   );
   assert.equal(r.code, 0, r.err);
@@ -126,7 +127,7 @@ test("python3 与 sqlite3 经同一读层读加密文件；写出的新文件经
   assert.equal(afterSt.ino, before.ino, "只读过、未改动的文件不被重写");
   assert.equal(afterSt.mtimeMs, before.mtimeMs);
   // 只 touch/chmod 而内容不变：内存层的明文与盘上解封内容相同 → 跳过（不按密文长度误判为改动）
-  const t = await run(`chmod 600 ${fx.work}/台账.csv`);
+  const t = await run(`chmod 600 ${shp(fx.work)}/台账.csv`);
   assert.equal(t.code, 0, t.err);
   assert.equal(statSync(join(fx.work, "台账.csv")).ino, before.ino);
   assert.deepEqual(diskHits(CANARY), []);
@@ -134,7 +135,7 @@ test("python3 与 sqlite3 经同一读层读加密文件；写出的新文件经
 
 test("追加与改写已有加密文件：sed -i、>> 追加经提交写回（比较—替换按盘上身份，不误报冲突）", async () => {
   await fx.broker.writeText(join(fx.work, "备忘.md"), "第一行\n");
-  const r = await run(`echo "第二行 ${CANARY}" >> ${fx.work}/备忘.md && sed -i 's/第一行/首行/' ${fx.work}/备忘.md && cat ${fx.work}/备忘.md`);
+  const r = await run(`echo "第二行 ${CANARY}" >> ${shp(fx.work)}/备忘.md && sed -i 's/第一行/首行/' ${shp(fx.work)}/备忘.md && cat ${shp(fx.work)}/备忘.md`);
   assert.equal(r.code, 0, `${r.err}`);
   assert.equal(r.err.includes("冲突"), false, r.err);
   assert.equal(await fx.broker.readText(join(fx.work, "备忘.md")), `首行\n第二行 ${CANARY}\n`);
@@ -145,18 +146,18 @@ test("追加与改写已有加密文件：sed -i、>> 追加经提交写回（�
 test("严格形态：工作区里被外部植入的明文文件，W 内读取报错、不当作内容；材料区不可写；用别的密钥封装的文件读不出", async () => {
   writeFileSync(join(fx.work, "植入.txt"), "外部写入的明文 不应被当作工作区内容");
   // 拒读：命令失败、内容不出现（just-bash 的 cat 把读错误一律报成“没有这个文件”，python3 报 I/O 错误）
-  const r = await run(`cat ${fx.work}/植入.txt`);
+  const r = await run(`cat ${shp(fx.work)}/植入.txt`);
   assert.notEqual(r.code, 0);
   assert.equal(r.out.includes("外部写入的明文"), false);
-  const py = await run(`python3 -c "print(open('${fx.work}/植入.txt', encoding='utf-8').read())"`);
+  const py = await run(`python3 -c "print(open('${shp(fx.work)}/植入.txt', encoding='utf-8').read())"`);
   assert.notEqual(py.code, 0);
   assert.equal(py.out.includes("外部写入的明文"), false);
   const foreign = new ZoneCodec("work", new Map([[1, deriveZoneKey(randomBytes(32), "work")]]), 1);
   writeFileSync(join(fx.work, "他钥.txt"), foreign.seal(Buffer.from("别的事项")));
-  const f = await run(`cat ${fx.work}/他钥.txt`);
+  const f = await run(`cat ${shp(fx.work)}/他钥.txt`);
   assert.notEqual(f.code, 0);
   assert.equal(f.out.includes("别的事项"), false);
-  const w = await run(`echo x > ${fx.materials}/new.txt`);
+  const w = await run(`echo x > ${shp(fx.materials)}/new.txt`);
   assert.notEqual(w.code, 0);
   // 复核 S3B-B01：just-bash 的 >> 与 python3 的 'a' 模式吞掉读错误、把读不出的文件当空文件——解密层报告拒读，整次改动不写回
   const plantedBytes = readFileSync(join(fx.work, "植入.txt"));
@@ -165,7 +166,7 @@ test("严格形态：工作区里被外部植入的明文文件，W 内读取报
   writeFileSync(join(fx.work, "空日志.txt"), fx.codecs.work.newLog());
   const emptyLog = readFileSync(join(fx.work, "空日志.txt"));
   for (const f of ["植入.txt", "他钥.txt", "空日志.txt"]) {
-    for (const cmd of [`echo 追加 >> ${fx.work}/${f}`, `: >> ${fx.work}/${f}`, `echo 追加 | tee -a ${fx.work}/${f}`, `python3 -c "open('${fx.work}/${f}','a').write('追加')"`]) {
+    for (const cmd of [`echo 追加 >> ${shp(fx.work)}/${f}`, `: >> ${shp(fx.work)}/${f}`, `echo 追加 | tee -a ${shp(fx.work)}/${f}`, `python3 -c "open('${shp(fx.work)}/${f}','a').write('追加')"`]) {
       const r = await run(cmd);
       assert.notEqual(r.code, 0, `${cmd}：应以非 0 结束`);
       assert.match(r.err, /无法解密的工作区或材料文件/, `${cmd}：应说明改动未写回`);
