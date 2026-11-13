@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { link, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileBroker, BrokerError, relativeUnder, splitAbsolute, splitRelative, PathRejected } from "../src/index.ts";
@@ -136,11 +136,21 @@ test("只读文件按对象身份保护：直接名、大小写变体、Unicode 
     const caseInsensitive = process.platform !== "linux";
     if (caseInsensitive) {
       await rejects(b.writeText(join(s.work, "MCP.JSON"), "{}"), "EPERM");
-      // 审查 R-12 的攻击：ſ (U+017F) 在 APFS / NTFS 上折叠为 s，mcp.jſon 与 mcp.json 是同一个 inode
+      // 审查 R-12 的攻击：ſ (U+017F) 在 APFS 上折叠为 s，mcp.jſon 与 mcp.json 是同一个 inode。
+      // NTFS 不这样折叠（Windows CI run 43435998778：经别名删除没有被拒——broker 删除不存在的路径直接返回），
+      // 所以先问文件系统别名是不是同一个对象：是就必须拒绝；不是，别名就是另一个不存在的名字，经它删除碰不到受保护文件
       const alias = join(s.work, "mcp.j\u017Fon");
-      await rejects(b.remove(alias), "EPERM");
-      await rejects(b.writeText(alias, '{"mcpServers":{"evil":{"url":"http://attacker"}}}'), "EPERM");
-      assert.equal(await b.createExclusive(alias, Buffer.from("{}")), false, "目标已存在（别名）→ 独占创建失败");
+      const cfgId = await stat(cfg);
+      const aliasId = await stat(alias).catch(() => null);
+      if (aliasId && aliasId.dev === cfgId.dev && aliasId.ino === cfgId.ino) {
+        await rejects(b.remove(alias), "EPERM");
+        await rejects(b.writeText(alias, '{"mcpServers":{"evil":{"url":"http://attacker"}}}'), "EPERM");
+        assert.equal(await b.createExclusive(alias, Buffer.from("{}")), false, "目标已存在（别名）→ 独占创建失败");
+      } else {
+        assert.equal(aliasId, null, "别名不是受保护文件，就不该存在");
+        await b.remove(alias);
+        assert.match(await readFile(cfg, "utf8"), /legal/, "经不折叠的别名删除，受保护文件不受影响");
+      }
     }
     await rejects(b.remove(sub), "EPERM", );
     assert.match(await readFile(cfg, "utf8"), /legal/, "受保护文件内容未变");

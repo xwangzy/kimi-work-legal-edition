@@ -4,7 +4,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,19 +58,28 @@ test("移到一边：激活记录、入组记录、每个有账本的工作区�
   assert.equal(again.code, "exists");
 });
 
-test("中途失败：已移的留在新目录，主密钥文件还在（下次启动仍走同一对话框）；修好后再来一次移剩下的", { skip: process.getuid?.() === 0 ? "root 不受目录权限限制" : false }, () => {
+test("中途失败：已移的留在新目录，主密钥文件还在（下次启动仍走同一对话框）；修好后再来一次移剩下的", (t) => {
   const { dataDir, keyFile } = layout();
-  // 目录改名到另一个父目录要改它的“..”：去掉写权限即改名失败
-  chmodSync(join(dataDir, "sa-firm"), 0o555);
+  // 让 sa-firm 这一次改名失败。原先用 chmod 0o555 去掉写权限，只在 POSIX 上有效（root 还得跳过）：Windows 上 chmod 挡不住目录改名，
+  // 目录照样被移走（CI run 43435998778）。改为在改名这一步注入失败，各平台一致
+  const saFirm = join(dataDir, "sa-firm");
+  const realRename = fs.renameSync;
+  const rename = t.mock.method(fs, "renameSync", (from: fs.PathLike, to: fs.PathLike) => {
+    if (String(from) === saFirm) throw Object.assign(new Error(`EPERM: operation not permitted, rename '${saFirm}'`), { code: "EPERM" });
+    return realRename(from, to);
+  });
   try {
     const r = quarantineUnreadable({ dataDir, keyFile, now: Date.parse("2026-10-21T09:00:00Z") });
+    assert.ok(rename.mock.calls.some((c) => String(c.arguments[0]) === saFirm), "注入的失败确实发生在 sa-firm 的改名上");
     assert.equal(r.ok, false);
     assert.equal(r.code, "move_failed");
     assert.ok(r.moved.includes("activation.json"), "记录文件先移");
+    assert.ok(!r.moved.includes("sa-firm"));
     assert.ok(!r.moved.includes("ledger-key"));
+    assert.ok(existsSync(saFirm), "改名失败的工作区还在原处");
     assert.ok(existsSync(keyFile), "主密钥文件没动：不会出现“新主密钥 + 旧工作区”");
   } finally {
-    chmodSync(join(dataDir, "sa-firm"), 0o755);
+    rename.mock.restore();
   }
   const r2 = quarantineUnreadable({ dataDir, keyFile, now: Date.parse("2026-10-21T09:00:01Z") });
   assert.equal(r2.ok, true);

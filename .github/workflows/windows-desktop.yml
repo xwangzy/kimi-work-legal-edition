@@ -40,6 +40,10 @@ jobs:
           cache-dependency-path: platform/package-lock.json
       - run: npm ci
       - run: npm run fetch:ocr-models
+      # w-runtime-bundle 在 runner 上调 build-runtime.mjs 组随包运行时，要用 Windows 版 node.exe 与原生包的下载缓存（按锁文件核验）。
+      # package job 经 package-desktop.mjs 自动拉；test job 以前没拉，该文件 6 条用例全部没跑起来（run 43257101625、43435998778）
+      - name: Windows 随包运行时下载缓存（按锁文件核验）
+        run: node scripts/fetch-win-runtime.mjs
       - run: npm run build:lawdb && npm run build:agent-profile && npm run build:tool-manifest && npm run build:skills
       # runner 的 TEMP 是 C:\Users\RUNNER~1\AppData\Local\Temp（runneradmin 的 8.3 短名）——broker 拒绝 8.3 短名分量，
       # run 43248258556 里 91 处 PathRejected、约 19 个用例文件秒挂。律所电脑的临时目录不会有这种别名，指到干净目录再跑
