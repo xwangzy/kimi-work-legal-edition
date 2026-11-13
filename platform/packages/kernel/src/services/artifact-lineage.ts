@@ -36,6 +36,25 @@ export function chainRoot(db: KernelDb, runId: string): string {
   return cur;
 }
 
+/**
+ * 修改工具能不能动这份成果（V18 第 43 批续五，偏离 D-185）：本任务生成的，或同一条追问链上此前各轮生成的。
+ * 原先只认本任务：追问是另一个任务，助手想在上一轮的文书、表格上改几处被拒绝，只能整份重出（真实追问两次都是先改单元格被拒、再整表重出）。
+ * 追问只能由同一人在同一事项里对自己的任务发起（runs.start 校验），所以同链即同人同事项。纯查询。
+ */
+export function sameFollowUpChain(db: KernelDb, artifactRunId: string | null, runId: string): boolean {
+  if (!artifactRunId) return false;
+  return artifactRunId === runId || chainRoot(db, artifactRunId) === chainRoot(db, runId);
+}
+
+/**
+ * 这份文件（同一 lineage）目前的最新版编号。此前各轮的文件只许在最新版上改：助手凭会话记忆拿着旧编号改，会把其后各版的改动悄悄丢掉。
+ * 没有 lineage 的（早期数据）不判，返回 null。纯查询。
+ */
+export function latestOfLineage(db: KernelDb, matterId: string, kind: string, lineage: string | null): string | null {
+  if (!lineage) return null;
+  return db.get<{ artifact_version_id: string }>(`SELECT artifact_version_id FROM artifact_versions WHERE matter_id = ? AND kind = ? AND lineage = ? ORDER BY version DESC LIMIT 1`, [matterId, kind, lineage])?.artifact_version_id ?? null;
+}
+
 /** 最终回复草稿的种类：按追问链区分（文件名都一样）。 */
 export const REPLY_DRAFT_KINDS: ReadonlySet<string> = new Set(["a1_agent_draft", "a1_agent_draft_partial"]);
 

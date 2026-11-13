@@ -443,7 +443,9 @@ export function MatterPage({ matterId }: { matterId: string }) {
                       <td>
                         {review.get(d.document_version_id) ? (
                           <button className="btn-link" onClick={() => setWorkbench({ doc: d.document_version_id })}>
-                            {review.get(d.document_version_id)!.total} 项{review.get(d.document_version_id)!.open > 0 ? `（待处理 ${review.get(d.document_version_id)!.open}）` : ""}
+                            {review.get(d.document_version_id)!.total} 项
+                            {/* 待处理数单独一行（V18 A10：曾整串不换行压到“时间”列上） */}
+                            {review.get(d.document_version_id)!.open > 0 && <span className="mat-review-open">待处理 {review.get(d.document_version_id)!.open}</span>}
                           </button>
                         ) : (
                           "—"

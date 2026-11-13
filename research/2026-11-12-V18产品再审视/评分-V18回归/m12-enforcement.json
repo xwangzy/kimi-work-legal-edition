@@ -1,0 +1,6 @@
+{"tag": "m12-enforcement", "card": "enforcement", "veto": [], "score": 19, "dims": [3, 3, 2, 2, 2, 2, 3, 2],
+ "tier": "需中度修改", "status": "未通过", "open_ok": true, "minutes": 8, "questions": 1,
+ "top_issues": ["一般债务利息在还款后仍以286,500元为基数计算（已写明口径），执行标的212,226.87元偏高约2,500元，申请事项二持续多算", "落款三行用KwlBody左排首行缩进，未用KwlRight右对齐", "未提纳入失信名单、限制消费申请"],
+ "prev_score": 20,
+ "product_defect": ["强制执行方法未写明部分清偿后一般债务利息基数随未清偿本金下降，模型按判决字面固定基数计算，独立复核也未拦住", "文书生成未把落款（申请执行人/法定代表人/日期）套KwlRight样式", "内部计算表、核对清单带“工具计算”“论点确认”“法规检索未收录”等产品流程用语"],
+ "known_defects_recurring": [], "new_defects": []}

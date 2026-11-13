@@ -25,10 +25,10 @@ import { materialsReadExcerpt } from "./tools/materials.ts";
 import { docxApplyRevisions, docxCompare, docxRenderReport, docxSanitize, redactApply } from "./tools/docx.ts";
 import { docxRevise } from "./tools/revise.ts";
 import { docxEditDraft, sectionsOfDocx } from "./tools/edit-draft.ts";
-import { factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, rulesPropose, riskcardsList, riskcardsSubmit, tableFill, tableGet, xlsxEditCells, xlsxRenderTable } from "./tools/review.ts";
+import { assertMaterialInScope, factsList, factsSubmit, materialsList, outlineGet, outlineSubmit, registerToolArtifact, rulesPropose, riskcardsList, riskcardsSubmit, tableFill, tableGet, xlsxEditCells, xlsxRenderTable } from "./tools/review.ts";
 import { assertOutlineSettled } from "../services/argument-outlines.ts";
 import { checkDeliverable, factRefNos, isInternalDocument, qualityScrubNote, scrubQualitySections, type DeliverableCheck, type DeliverableSection } from "../services/deliverable-check.ts";
-import { FACT_SHEET_NAME, factSection, factTableRows } from "../services/fact-refs.ts";
+import { FACT_SHEET_NAME, factSection, factTableRows, unknownFactNote } from "../services/fact-refs.ts";
 import { sectionChars, shrinkCheck } from "../services/version-shrink.ts";
 import { localToday } from "../services/local-date.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
@@ -303,7 +303,7 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "materials.read_excerpt",
     title: "读取材料片段",
-    description: "按解析版本与字符区间/锚点读取材料文本；令牌须绑定对应事项。",
+    description: "按解析版本与字符区间/锚点读取材料文本；令牌须绑定对应事项。律师发起时勾选了材料的，只能读勾选的那几份。",
     sideEffect: "read",
     resource: "matter_materials",
     version: "1",
@@ -318,7 +318,7 @@ export const TOOLS: readonly ToolDef[] = [
         anchor_id: { type: "string" },
       },
     },
-    invoke: async (p, ctx) => materialsReadExcerpt(ctx.db, ctx.claims.mid, p),
+    invoke: async (p, ctx) => materialsReadExcerpt(ctx.db, ctx.claims.mid, p, (id) => assertMaterialInScope(ctx, id)),
   },
   {
     name: "docx.apply_revisions",
@@ -363,7 +363,7 @@ export const TOOLS: readonly ToolDef[] = [
         },
       },
     },
-    invoke: async (p, ctx) => docxApplyRevisions(ctx.db, ctx.blobs, ctx.claims.mid, p),
+    invoke: async (p, ctx) => (assertMaterialInScope(ctx, p?.document_version_id), docxApplyRevisions(ctx.db, ctx.blobs, ctx.claims.mid, p)),
   },
   {
     name: "docx.compare",
@@ -381,7 +381,7 @@ export const TOOLS: readonly ToolDef[] = [
         current_document_version_id: { type: "string" },
       },
     },
-    invoke: async (p, ctx) => docxCompare(ctx.db, ctx.blobs, ctx.claims.mid, p, ctx.tokens && ctx.claims.mid ? (s: string) => ctx.tokens!.restore(ctx.claims.mid!, s) : undefined),
+    invoke: async (p, ctx) => (assertMaterialInScope(ctx, p?.baseline_document_version_id), assertMaterialInScope(ctx, p?.current_document_version_id), docxCompare(ctx.db, ctx.blobs, ctx.claims.mid, p, ctx.tokens && ctx.claims.mid ? (s: string) => ctx.tokens!.restore(ctx.claims.mid!, s) : undefined)),
   },
   {
     name: "docx.sanitize",
@@ -396,7 +396,7 @@ export const TOOLS: readonly ToolDef[] = [
       required: ["document_version_id"],
       properties: { document_version_id: { type: "string" } },
     },
-    invoke: async (p, ctx) => docxSanitize(ctx.db, ctx.blobs, ctx.claims.mid, p),
+    invoke: async (p, ctx) => (assertMaterialInScope(ctx, p?.document_version_id), docxSanitize(ctx.db, ctx.blobs, ctx.claims.mid, p)),
   },
   {
     name: "docx.render_report",
@@ -405,12 +405,14 @@ export const TOOLS: readonly ToolDef[] = [
       "按标题与段落结构生成 Word 文书（备忘录、意见书、函件、合同、诉状），登记为本任务的草稿成果交律师审阅；导出时按事项令牌表还原代号。" +
       "文书正文里要成表的内容（合同价款表、设备清单、付款节点、证据目录、当事人或股权结构表）用该节的 table 画成 Word 表格：columns 为表头，rows 每行格数与表头相同，画在本节段落之后；表后还有正文的，另起一节、heading 写空字符串。每节至多一张表、每表 1–10 列、最多 300 行；格内写文字，数量、序号可写整数；金额按文书写法写成文字（如“1,200,000.00”），不要传带小数的数字。" +
       "格数不符或超限时整份不生成并逐条说明，改正后重交。分析用的大表（争点矩阵、尽调清单等）仍用 xlsx.render_table 作附件。" +
+      "每节可写 level 表示节标题层级（缺省 1）：按中文法律文书惯例，大节用 1（“一、”），大节下的小节用 2（“（一）”），再下一层用 3（“1.”）；小标题写成单独一节并标对层级，不要都写成 1 级。" +
       "返回的 quality_check 是交付前检查（工具用语或内部编号外露、正文夹杂英文、Markdown 符号、条款编号不连续、互引指向不存在的条款、大小写金额不一致、错误条号）：issues 不为空时用 docx.edit_draft 在这份文书上逐处改正（几秒完成），不要整份重新生成；确实不需要改的在最终答复里说明理由。" +
       "生成前先在心里把全文写完、自查一遍再一次提交；生成后的局部修改一律用 docx.edit_draft。" +
       "本任务有待律师确认的论点提纲（outline.submit）时拒绝生成，先等律师确认。",
     sideEffect: "write_draft",
     resource: "matter_work",
-    version: "4",
+    // V18 首轮 B11：节标题层级 level（v5）
+    version: "5",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -425,6 +427,8 @@ export const TOOLS: readonly ToolDef[] = [
             required: ["heading", "paragraphs"],
             properties: {
               heading: { type: "string" },
+              // V18 首轮 B11：节标题层级（1 大节“一、”，2 小节“（一）”，3 再下一层“1.”）；缺省 1
+              level: { type: "integer", minimum: 1, maximum: 3 },
               paragraphs: { type: "array", items: { type: "string" } },
               // 第 32 批：节内表格（v4）；格子接受文字或整数，内核再逐行核对格数与小数
               table: {
@@ -501,7 +505,7 @@ export const TOOLS: readonly ToolDef[] = [
         },
       },
     },
-    invoke: async (p, ctx) => docxRevise(ctx, p),
+    invoke: async (p, ctx) => (assertMaterialInScope(ctx, p?.document_version_id), docxRevise(ctx, p)),
   },
   {
     // 第 35 批真实走查 N1：自查改两个词要整份重出约 1 万字的协议（一次 2～6 分钟），5 次重出用完工作时限
@@ -561,13 +565,13 @@ export const TOOLS: readonly ToolDef[] = [
       required: ["document_version_id"],
       properties: { document_version_id: { type: "string" } },
     },
-    invoke: async (p, ctx) => redactApply(ctx.db, ctx.blobs, ctx.claims.mid, p),
+    invoke: async (p, ctx) => (assertMaterialInScope(ctx, p?.document_version_id), redactApply(ctx.db, ctx.blobs, ctx.claims.mid, p)),
   },
   {
     name: "materials.list",
     title: "材料目录",
     description:
-      "列出本事项的材料：本任务提供的快照序号、解析版本、字数、页数与识别质量（partial/unreadable 表示有页未能识别，须在结论中说明未读取范围）；" +
+      "列出本任务的材料：快照序号、解析版本、字数、页数与识别质量（partial/unreadable 表示有页未能识别，须在结论中说明未读取范围）；律师发起时勾选了材料的，本事项里没勾的只列文件名（not_provided），不能读取；" +
       "另带系统按规则比出的金额不一致：amount_conflicts（这份材料里大写与小写金额对不上）、cross_material_conflicts（不同材料对同一天的付款写了不同金额），有的要列进交付件的矛盾或缺口、请律师核对原件。" +
       "这些是系统内部字段，交付件里用“序号”“能否读清”等律师的说法，不照抄字段名和取值。",
     sideEffect: "read",
@@ -950,7 +954,9 @@ function factSectionFor(ctx: InvokeCtx, p: { title?: unknown; sections?: unknown
     if (nos.length === 0 || !isInternalDocument(String(p.title ?? ""))) return null;
     if (sections.some((s) => String(s?.heading ?? "").trim() === FACT_SHEET_NAME)) return { section: null, note: `文书里已有你写的“${FACT_SHEET_NAME}”一节，系统没有另加；请核对它列全了正文引用的 ${nos.length} 个事实序号` };
     const t = factTableRows({ db: ctx.db, tokens: ctx.tokens }, ctx.claims.mid!, nos);
-    return { section: factSection(t.rows, t.omitted), note: `正文引用了 ${nos.length} 个事实序号，系统已在文末自动加了一节“${FACT_SHEET_NAME}”（序号、事实陈述、发生日期、来源材料、律师是否已确认），读者离开产品也能对上——不要再手工写一节；之后用 docx.edit_draft 改文书时这一节会随引用自动更新` };
+    // 引用的序号在事实清单里一个都对不上：不附空的对照，只告诉助手改正引用
+    if (t.rows.length === 0) return { section: null, note: unknownFactNote(t.unknown) };
+    return { section: factSection(t.rows, t.omitted), note: `正文引用了 ${nos.length} 个事实序号，系统已在文末自动加了一节“${FACT_SHEET_NAME}”（序号、事实陈述、发生日期、来源材料、律师是否已确认），读者离开产品也能对上——不要再手工写一节；之后用 docx.edit_draft 改文书时这一节会随引用自动更新${t.unknown.length > 0 ? `。${unknownFactNote(t.unknown)}` : ""}` };
   } catch {
     return null;
   }

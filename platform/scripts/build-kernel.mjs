@@ -113,31 +113,17 @@ const gateOptions = {
   logLevel: "info",
 };
 
-// 所内节点制品：同一内核的 headless 形态（ESM；ZR_NODE_CONFIG 指定配置）
-const firmNodeOptions = {
-  entryPoints: [`${root}apps/firm-node/src/index.ts`],
-  outfile: `${root}apps/desktop/electron/firm-node.bundle.mjs`,
-  bundle: true,
-  platform: "node",
-  format: "esm",
-  target: "node24",
-  sourcemap: false,
-  external: [...NATIVE_EXTERNALS, "undici"],
-  banner: { js: "import { createRequire as __kwlCreateRequire } from 'node:module'; const require = __kwlCreateRequire(import.meta.url);" },
-  logLevel: "info",
-};
+// 所内节点（apps/firm-node）不再随桌面端构建（V18 第 43 批）：制品从未被主进程或安装包使用；源码与用例保留，要用时单独构建。
 
 if (process.argv.includes("--watch")) {
   const ctx = await context(options);
   const workerCtx = await context(parseWorkerOptions);
-  const nodeCtx = await context(firmNodeOptions);
   const gateCtx = await context(gateOptions);
-  await Promise.all([ctx.watch(), workerCtx.watch(), nodeCtx.watch(), gateCtx.watch()]);
+  await Promise.all([ctx.watch(), workerCtx.watch(), gateCtx.watch()]);
   console.log("[build-kernel] watching…");
 } else {
   await build(options);
   await build(parseWorkerOptions);
-  await build(firmNodeOptions);
   await build(gateOptions);
-  console.log("[build-kernel] done → apps/desktop/electron/kernel.bundle.cjs + parse-worker.bundle.cjs + firm-node.bundle.mjs + egress-gate.bundle.mjs");
+  console.log("[build-kernel] done → apps/desktop/electron/kernel.bundle.cjs + parse-worker.bundle.cjs + egress-gate.bundle.mjs");
 }

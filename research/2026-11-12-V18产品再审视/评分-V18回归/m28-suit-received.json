@@ -1,0 +1,6 @@
+{"tag": "m28-suit-received", "card": "suit-received", "veto": [], "score": 20, "dims": [3, 2, 3, 2, 2, 3, 3, 2],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 15, "questions": 0,
+ "top_issues": ["管辖结论对协议管辖排他性过度保留，“不断言南湖区法院无管辖权”", "未落到移送法院名称（苏州市虎丘区人民法院）", "我方债权只给名义差额445,000元，未拆出310,000元已到期与135,000元质保金未到期"],
+ "prev_score": 21,
+ "product_defect": ["核查表“说明”页带产品用语“事实时间线当前无律师已确认事实”"],
+ "known_defects_recurring": [], "new_defects": []}

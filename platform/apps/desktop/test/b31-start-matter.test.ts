@@ -155,7 +155,9 @@ test("完成卡只列每个同名文件的最新一版（第 31 批真实走查�
     { artifact_version_id: "6", kind: "revision_draft", filename: "劳动仲裁申请书.docx", version: 1 },
   ];
   const r = currentFiles(a);
-  assert.deepEqual(r.current.map((x) => x.artifact_version_id), ["5", "4", "3", "6"], "按首次出现的顺序，取最新版；类型不同的同名文件分开");
+  // V18 A1/A2：文书在前、表格其次，同类按首次出现的顺序；取最新版；类型不同的同名文件分开
+  assert.deepEqual(r.current.map((x) => x.artifact_version_id), ["5", "6", "4", "3"], "文书在前、表格其次，取最新版；类型不同的同名文件分开");
   assert.equal(r.older, 2);
-  assert.deepEqual(currentFiles([]), { current: [], older: 0 });
+  assert.deepEqual(currentFiles([]).current, []);
+  assert.equal(currentFiles([]).older, 0);
 });

@@ -39,9 +39,11 @@ async function matterWithUnseenDocx(marker: string, name: string) {
   return { matter, a, b };
 }
 
-async function startRun(matterId: string, docId: string, marker: string, goal: string, skill?: string) {
-  const est = await tk.inv("runs.estimate", { matter_id: matterId, scenario: "a1.agent_task", document_version_ids: [docId] });
-  return tk.inv("runs.start", { matter_id: matterId, estimate_id: est.estimate_id, idempotency_key: `${marker}-${Date.now()}`, goal: `${marker} ${goal}`, ...(skill ? { skill } : {}), document_version_ids: [docId], mode: "default", plan_first: false });
+// docId 为 null：发起时一份材料都不勾（V18 第 43 批：勾了材料的任务只能动勾选的；“原件没进快照却被修订”只在没勾选材料的任务里还会发生）
+async function startRun(matterId: string, docId: string | null, marker: string, goal: string, skill?: string) {
+  const docs = docId ? [docId] : [];
+  const est = await tk.inv("runs.estimate", { matter_id: matterId, scenario: "a1.agent_task", document_version_ids: docs });
+  return tk.inv("runs.start", { matter_id: matterId, estimate_id: est.estimate_id, idempotency_key: `${marker}-${Date.now()}`, goal: `${marker} ${goal}`, ...(skill ? { skill } : {}), document_version_ids: docs, mode: "default", plan_first: false });
 }
 
 test("H1：在没进快照的原件上修订，返回的改前整段里那个姓名发往模型时仍是代号", { timeout: 150_000 }, async () => {
@@ -58,7 +60,7 @@ test("H1：在没进快照的原件上修订，返回的改前整段里那个姓
     return { content: "已在对方稿上修订。" };
   };
   try {
-    const run = await startRun(matter.matter_id, a.document_version_id, "B41SRC1", "在对方稿上把验收改成安装调试验收");
+    const run = await startRun(matter.matter_id, null, "B41SRC1", "在对方稿上把验收改成安装调试验收");
     await waitRun(tk.inv, run.run_id, 120_000);
     assert.equal(after.length > 0, true, "修订结果交回了模型");
     const sent = after.at(-1)!;
@@ -135,7 +137,7 @@ test("M1：docx.edit_draft 不能改《修改对照表》（内容是原件原�
     return { content: "已修订。" };
   };
   try {
-    const run = await startRun(matter.matter_id, a.document_version_id, "B41SRC3", "在对方稿上修订并整理对照表");
+    const run = await startRun(matter.matter_id, null, "B41SRC3", "在对方稿上修订并整理对照表");
     const done = await waitRun(tk.inv, run.run_id, 120_000);
     assert.ok(results.length > 0);
     assert.match(results[1]!, /不是 docx\.render_report 生成的[\s\S]*修改对照表/, results[1]!);

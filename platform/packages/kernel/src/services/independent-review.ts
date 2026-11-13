@@ -11,6 +11,7 @@
 import { compareDocx, docxListLabels, extractParagraphs, paragraphCells, readCreatedXlsx, readZipEntries, readZipText, xlsxToText } from "@zr-legal/docx-engine";
 import type { Lawdb } from "@zr-legal/lawdb";
 import { sectionsOfDocx } from "../tools/tools/edit-draft.ts";
+import { scrubQualityLine } from "./deliverable-check.ts";
 import { citationsVerify, extractCitations } from "../tools/tools/citations.ts";
 import { cnToInt, intToCn } from "../tools/tools/cn-numerals.ts";
 
@@ -191,6 +192,9 @@ function articleChain(rest: string): number[] {
   return out;
 }
 
+/** 法名后面紧跟的版本括注（“（2024-07-01施行）”“（2023年修订，2024-07-01施行）”）跳过，后面才是条号。纯函数。 */
+const afterVersionNote = (s: string): string => s.replace(/^\s*[（(][^（）()《》\n]{0,40}(?:年|修订|修正|施行|生效)[^（）()《》\n]{0,20}[）)]\s*/, "");
+
 export function lawRefsIn(texts: readonly string[], o: { followBare?: boolean } = {}): LawRef[] {
   const out: LawRef[] = [];
   const seen = new Set<string>();
@@ -225,7 +229,7 @@ export function lawRefsIn(texts: readonly string[], o: { followBare?: boolean } 
       for (let at = text.indexOf(name); at >= 0; at = text.indexOf(name, at + name.length)) {
         let from = at + name.length;
         if (text[from] === "》") from += 1;
-        const arts = articleChain(text.slice(from, from + 200));
+        const arts = articleChain(afterVersionNote(text.slice(from, from + 240)));
         arts.forEach((article, i) => items.push({ at: at + i / 1000, law: name, article }));
       }
     }
@@ -234,7 +238,7 @@ export function lawRefsIn(texts: readonly string[], o: { followBare?: boolean } 
       const title = m[1]!;
       if (REVIEW_DOC_TITLE_RE.test(title.replace(/\s*[（(][^（）()]{1,30}[)）]\s*$/, ""))) continue;
       const at = m.index ?? 0;
-      const arts = articleChain(text.slice(at + m[0].length, at + m[0].length + 200));
+      const arts = articleChain(afterVersionNote(text.slice(at + m[0].length, at + m[0].length + 240)));
       arts.forEach((article, i) => items.push({ at: at + i / 1000, law: title, article }));
     }
     if (o.followBare && found.length > 0) {
@@ -563,7 +567,14 @@ export function reviewMessages(p: {
     ...(p.laws && p.laws.length > 0
       ? ["", `=== 文书引用的法条在本机法规库里的原文（按分析截止日 ${p.asOf} 适用的版本；系统从交付件文字里抽出后查库附上） ===`, ...p.laws]
       : ["", "=== 文书引用的法条在本机法规库里的原文 ===", "（交付件里没有认出“《法名》第N条”式的引用，本节为空：对条号与条文内容的意见一律写“建议核对原文”）"]),
-    ...(p.reply ? ["", `=== 助手给律师的最终答复（其中列的其他问题、风险提示与待定事项算已告知律师） ===\n${cut(p.reply, 20_000)}`] : []),
+    // V18 第 43 批续四真实任务：复核人把答复末尾系统规定的质量说明（“通用辅助 · 未经本所质量验收”）和“已提交审查工作台”当成
+    // “内部用语不能对外发出”，提了“必须改”——答复只给律师看、不对外。质量说明不交给复核人，并写明这份答复的性质
+    ...(p.reply
+      ? [
+          "",
+          `=== 助手给律师的最终答复（其中列的其他问题、风险提示与待定事项算已告知律师） ===\n（这份答复只给律师本人看，不对外发出：其中提到审查工作台、交付前检查、成果位置属于正常说明，不要就这类用语提意见；用语问题只看交付文件。）\n${cut(replyForReviewer(p.reply), 20_000)}`,
+        ]
+      : []),
     ...(p.diff && p.diff.length > 0 ? ["", "=== 原件与清洁稿的段落差异（系统比对，段首是自动编号） ===", ...p.diff] : []),
   ].join("\n");
   return [
@@ -653,6 +664,16 @@ export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], 
         ]
       : []),
     "3. 不成立的、或需要客户决定的商业条件，不改，写明理由；需要客户决定的列入待定事项。",
+    // V18 第 43 批真实回归：答“最新版已经处理”而 Word 里那个数没改（m24）；Excel 改了、Word 没改；答“该表不存在”而那张表就在成果里（m20）
+    kind === "revise"
+      ? "   判断“这条已经处理过”“最新版没有这个问题”之前，先核实，不凭印象：对照 docx.revise 最近一次返回的修改清单与条文变动，清单里没有这一处的，就是还没改，用补交方式改。"
+      : kind === "rules"
+        ? "   判断“这条已经处理过”之前，先对照你最近一次提交的审查要点核实，不凭印象。"
+        : "   判断“这条已经处理过”“最新版没有这个问题”之前，先在最新版文件上核实，不凭印象：用 docx.edit_draft 试写（dry_run，anchor 写复核意见引的那句原文）——还能定位到，就是还没改，照改；表格按意见指的工作表与行核对。",
+    "   同一个数字或表述出现在多份文件里的（Word 与 Excel、正文与附件、意见书与清单），每一份都改，处理情况里逐份写明改在哪里；只改了其中一份不算已改。",
+    "   意见指向的内容不是你写入的（例如文末自动附的“事实对照”）而你改不了的，写“未改（这一处不是我写入的，请律师处理）”，不要写“不存在”。",
+    // 只说“会核对”，不给“不改就不算完成”的压力：复核人也会错，判定不成立而不改、理由站得住的，同样算处理完（第 1 条）
+    "   修改之后，复核人会只对照最新版文件再核对一遍“必须改”的各条，不采信处理情况里的自述：写“已改”的，文件里要看得到；判定不成立而不改的，把材料或条文依据写清楚——两种都算处理完，不要为了过核对而照着一条不成立的意见改。",
     "4. 只改复核意见涉及的地方，不借机改动别处；不为措辞润色重新生成。改动牵动时间表、付款节点、先决条件或解除权的，把委托与材料里的关键日期、金额代进去重新核对一遍，避免修一处坏一处（V13 真实走查 W1：把“验收合格”加成交割条件后，交割晚于客户 12 月 31 日的硬节点）。要补一项义务、条件或禁止事项前，先在全文找有没有已经写了同一事项的条款（换了说法也算）：有就改那一条，不另加一款；新写的互引核对条号指的确是那件事（V14 真实走查：修改轮在第 20.5 条第四次写“禁售过期、断链产品”，在第 12.1 条第三次写保险单提交；第 13.1 条把第二十一条的过渡期写成“第二十条约定的过渡期”）。",
     "5. 处理完后重写最终答复：完整写出本任务的最终答复（律师只看最后这一版），末尾加“独立复核处理情况”一节，逐条写“序号｜已改（改在哪里）／未改（理由）”。",
     // V14 第 39 批全量走查：47 张卡里 5 个任务在这一轮超时（起诉状、专利转让协议、两份劳动仲裁文书、合同审核），超时时最终答复与附件停在复核前，
@@ -667,15 +688,120 @@ export function fixPrompt(kind: ReviewKind, findings: readonly ReviewFinding[], 
   ].join("\n");
 }
 
+/**
+ * 回看（V18 第 43 批）：修改轮结束后，再请复核人只对照最新版文件，核对“必须改”的意见是否真的落到了文件里。
+ * 真实回归 19 单里 3 单出过问题而任务仍记成功：起草方答“最新版已经处理”而 Word 里那个数没改（m24）；
+ * 答“该表不存在”而那张表就在成果里（m20）；改了正文、证据目录没跟着补（E2）。起草方只凭会话记忆判断，自己读不回已生成的文件。
+ */
+export type FollowUpVerdict = "done" | "justified" | "open" | "unknown";
+export interface FollowUpItem {
+  no: number;
+  verdict: FollowUpVerdict;
+  note: string;
+}
+
+const squash = (t: string) => t.replace(/\s+/g, "");
+
+/** 意见的“问题”“依据”里引号内的原文片段（6～60 字，至多 3 段）：用来机械核对“被指出的那句话还在不在最新版里”。纯函数。 */
+export function quotedSpans(f: ReviewFinding): string[] {
+  const out: string[] = [];
+  for (const m of `${f.problem}\n${f.basis}`.matchAll(/[“「"]([^“”「」"\n]{6,60})[”」"]/g)) {
+    const q = m[1]!.trim();
+    if (q.length >= 6 && !out.includes(q)) out.push(q);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+/** 机械核对的结果（给回看的复核人作线索，不替它下结论：依据里引的可能是材料原文，本来就该在）。纯函数。 */
+export function quoteHints(findings: readonly ReviewFinding[], docs: readonly { filename: string; text: string }[]): string[] {
+  const flat = docs.map((d) => ({ filename: d.filename, text: squash(d.text) }));
+  const out: string[] = [];
+  for (const f of findings) {
+    for (const q of quotedSpans(f)) {
+      const hit = flat.filter((d) => d.text.includes(squash(q))).map((d) => `《${d.filename}》`);
+      out.push(`意见【${f.no}】里引的“${q}”：${hit.length > 0 ? `在最新版 ${hit.join("、")} 里仍然能找到` : "在最新版各文件里已经找不到"}`);
+    }
+  }
+  return out;
+}
+
+/** 交给复核人的最终答复：去掉系统规定写在末尾的质量说明（它只是给律师的固定提示，不是复核对象）。纯函数。 */
+export function replyForReviewer(reply: string): string {
+  return scrubQualityLine(reply)
+    .text.replace(/\n{3,}/g, "\n\n")
+    .trimEnd();
+}
+
+export const FOLLOW_UP_SYSTEM = [
+  "你是本所的复核律师。此前你对一批交付件提出了复核意见，起草的助手已经处理并写了处理情况。现在只做一件事：逐条核对你标为“必须改”的意见，在最新版交付件里是否真的处理了。",
+  "只看文件本身，不采信处理情况里的自述：它写“已改”“最新版已经处理”而文件里那句话、那个数还在的，就是没有落实。同一问题出现在多份文件里的（Word 与 Excel、正文与附件），每一份都改了才算落实。",
+  "结论只有三种：",
+  "- 已落实：最新版文件里这个问题已经不存在（原句已改或已删）。",
+  "- 理由成立：文件没有按意见改，但起草方说明了这条意见不成立、或属于须由律师或客户决定的事项，理由有材料、文件原文或所附法条支持，保持原样是对的。",
+  "- 未落实：问题在最新版文件里仍然存在（全部或部分），或起草方的理由与文件、材料不符（例如说某张表、某句话不存在而它就在文件里）。",
+  // V18 第 43 批真实复验 m47：意见指的是最终答复里的一句话，回看写成“最新版文书已删除该表述”——文书里从来没有这句
+  "意见指向的是给律师的最终答复（不是交付文件）的，对照下面“处理情况”所在的那份最终答复核对，依据里写明是“最终答复”，不要写成文书。",
+  "不提出新的意见，不评价文书的其他部分。",
+  "输出格式：每条一行——【序号】结论｜一句话依据（未落实的写明哪份文件、哪一处还没改）。结论只用“已落实”“理由成立”“未落实”三个词之一。不输出别的内容。",
+].join("\n");
+
+/** 回看的提示（各部分均为代号形态）。 */
+export function followUpMessages(p: { findings: readonly ReviewFinding[]; handling: string; docs: readonly { filename: string; text: string }[]; hints: readonly string[]; laws?: readonly string[]; asOf?: string }): { role: "system" | "user"; content: string }[] {
+  const lens = allocateDeliverables(p.docs.map((d) => d.text.length));
+  const cutAt = (t: string, n: number) => (t.length > n ? `${t.slice(0, n)}\n……（以下从略）` : t);
+  const user = [
+    "=== 你标为“必须改”的意见 ===",
+    ...p.findings.map((f) => `【${f.no}】${[f.where, f.problem, f.basis, f.fix].filter(Boolean).join("｜")}`),
+    "",
+    "=== 给律师的最终答复全文（末尾是起草方写的处理情况；自述，须对照文件核实） ===",
+    cutAt(replyForReviewer(p.handling).trim() || "（没有写处理情况）", 12_000),
+    // 所附法条（V18 第 43 批续四真实任务：起草方答“意见不成立，法条原文支持现有表述”，回看手里没有法条原文，只能判“未落实”）
+    ...(p.laws && p.laws.length > 0 ? ["", `=== 意见、处理情况与交付件里引用的法条在本机法规库里的原文${p.asOf ? `（按分析截止日 ${p.asOf} 适用的版本）` : ""}：起草方以法条为由不改的，对照这里判断理由是否成立 ===`, ...p.laws] : []),
+    ...(p.hints.length > 0 ? ["", "=== 系统的机械核对（只说明意见里引的原文在最新版文件里还在不在；依据里引的若是材料原文，本来就该在，不要据此直接下结论） ===", ...p.hints] : []),
+    "",
+    "=== 最新版交付件 ===",
+    ...p.docs.map((d, i) => `--- 《${d.filename}》 ---\n${cutAt(d.text, lens[i] ?? REVIEW_DOC_FLOOR)}`),
+  ].join("\n");
+  return [
+    { role: "system", content: FOLLOW_UP_SYSTEM },
+    { role: "user", content: user },
+  ];
+}
+
+/** 解析回看结论：每个“必须改”的序号一条；没有给出结论的记 unknown。纯函数。 */
+export function parseFollowUp(text: string, nos: readonly number[]): FollowUpItem[] {
+  const by = new Map<number, FollowUpItem>();
+  for (const m of text.replace(/\r/g, "").matchAll(/【\s*(\d{1,2})\s*】\s*([^｜|\n]{0,20})(?:[｜|]\s*([^\n]*))?/g)) {
+    const no = Number(m[1]);
+    if (!nos.includes(no) || by.has(no)) continue;
+    const head = m[2] ?? "";
+    // “未落实”“部分落实”都算没有落实；先判它，免得“未落实”被“落实”两个字误认
+    const verdict: FollowUpVerdict = /未落实|没有落实|部分落实|未完全落实/.test(head) ? "open" : /理由成立/.test(head) ? "justified" : /已落实/.test(head) ? "done" : "unknown";
+    by.set(no, { no, verdict, note: (m[3] ?? "").trim().slice(0, 400) });
+  }
+  return nos.map((no) => by.get(no) ?? { no, verdict: "unknown" as const, note: "" });
+}
+
+const FOLLOW_UP_LABEL: Record<FollowUpVerdict, string> = { done: "已落实", justified: "未改，理由成立", open: "未落实", unknown: "没有核对出结论" };
+
+/** 接在《独立复核意见》后面的“回看”一节（代号形态，随复核意见一起下载）。 */
+export function followUpSection(items: readonly FollowUpItem[]): string {
+  const rows = items.map((i) => `| ${i.no} | ${FOLLOW_UP_LABEL[i.verdict]} | ${esc(i.note) || "—"} |`);
+  return `\n## 回看：必须改的意见是否落到了文件里\n\n修改之后，复核人只对照最新版文件又核对了一遍，不采信起草方的自述。标“未落实”的，请律师处理后再使用。\n\n| 序号 | 结论 | 说明 |\n|---|---|---|\n${rows.join("\n")}\n`;
+}
+
 /** 给律师看的复核意见（Markdown，代号形态；下载时还原真名）。 */
-export function reviewNote(title: string, findings: readonly ReviewFinding[], reviewText: string, handedBack = findings.length > 0): string {
+export function reviewNote(title: string, findings: readonly ReviewFinding[], reviewText: string, handedBack = findings.length > 0, followUpRound = 0): string {
   // 只有真的交回修改时才写“已交回逐条处理”（V16 第 41 批真实回归：意见没认出来、修改轮被跳过，抬头仍写“已交回”）
   const after = handedBack
     ? "以下意见已交回起草的助手逐条处理，处理结果见任务最终答复的“独立复核处理情况”。"
     : findings.length > 0
       ? "以下意见没有交回起草的助手修改（原因见任务的“还差什么”），文书是复核前的版本，请律师逐条核对。"
       : "复核没有提出需要修改的意见，文书没有交回修改。";
-  const head = `# 独立复核意见：${title}\n\n复核方式：由系统另起一次模型调用，不带起草过程的上下文，只看委托原话、事项材料与交付件；${after}复核意见同样是 AI 草稿，须律师判断。\n\n`;
+  // 追问后重出的版本（V18 第 43 批续四）：写明复核的是第几次追问后的那一版——既让律师分得清，也避免与上一轮内容相同的复核意见按内容去重后只挂在上一轮任务下
+  const round = followUpRound > 0 ? `本次复核的是第 ${followUpRound} 次追问后重新交出的版本。` : "";
+  const head = `# 独立复核意见：${title}\n\n${round}复核方式：由系统另起一次模型调用，不带起草过程的上下文，只看委托原话、事项材料与交付件；${after}复核意见同样是 AI 草稿，须律师判断。\n\n`;
   if (findings.length === 0) return `${head}${reviewText.trim() || "未发现实质问题。"}\n`;
   const rows = findings.map((f) => `| ${f.no} | ${esc(f.where)} | ${esc(f.problem)} | ${esc(f.basis)} | ${esc(f.fix)} | ${f.must ? "必须改" : "建议改"} |`);
   return `${head}| 序号 | 位置 | 问题 | 依据 | 改法 | 性质 |\n|---|---|---|---|---|---|\n${rows.join("\n")}\n`;

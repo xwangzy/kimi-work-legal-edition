@@ -8,7 +8,6 @@ import { nav } from "../App.tsx";
 import { fmtRelative, RUN_STATUS_LABELS, runName } from "../lib/labels.ts";
 import { dueText, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
 import type { ReminderItem } from "../api.ts";
-import { Select } from "../components/Select.tsx";
 import { MatterTodos, PendingChecks, StageStrip } from "../components/MatterOverview.tsx";
 import { ReviewRulesWidget, TemplateMethods } from "../components/MatterSetup.tsx";
 import { matterLine } from "../lib/scenarios.ts";
@@ -108,67 +107,5 @@ export function MatterBoard({ matter, runs, onChanged, onGo }: { matter: Matter;
       </div>
     </div>
     </>
-  );
-}
-
-export function BoardsPage() {
-  const [matters, setMatters] = useState<Matter[]>([]);
-  const [matterId, setMatterId] = useState<string | null>(null);
-  const [matter, setMatter] = useState<Matter | null>(null);
-  const [runs, setRuns] = useState<any[]>([]);
-  const [pendingReview, setPendingReview] = useState<any[]>([]);
-  const [unresolved, setUnresolved] = useState<any[]>([]);
-  useEffect(() => {
-    api
-      .listMatters()
-      .then((r) => {
-        setMatters(r.matters);
-        setMatterId((cur) => cur ?? r.matters[0]?.matter_id ?? null);
-      })
-      .catch(() => {});
-    api.pending().then((r) => setPendingReview(r.pending)).catch(() => {});
-    api.egressUnresolved().then((r) => setUnresolved(r.records)).catch(() => {});
-  }, []);
-  useEffect(() => {
-    if (!matterId) return;
-    api
-      .getMatter(matterId)
-      .then((r) => {
-        setMatter(r.matter);
-        setRuns(r.runs ?? []);
-      })
-      .catch(() => {});
-  }, [matterId]);
-  return (
-    <main className="main">
-      <div className="main-wide">
-        <h1 className="page-title">看板</h1>
-        <div className="section-title">我的看板</div>
-        <div className="board">
-          <Widget title="待复核 / 签发">
-            {pendingReview.length === 0 && <p className="muted">没有待复核的成果。</p>}
-            {pendingReview.slice(0, 8).map((p) => (
-              <button key={p.artifact_version_id} className="w-link" onClick={() => nav(`/review/${p.artifact_version_id}`)}>
-                {p.filename} · {p.matter_title}
-              </button>
-            ))}
-          </Widget>
-          <Widget title="事项">
-            <div className="w-row"><span>进行中的事项</span><b>{matters.length}</b></div>
-          </Widget>
-          {/* 只在有需要核对的联网记录时出现（Y4 B-3） */}
-          {unresolved.length > 0 && (
-            <Widget title="需要核对的联网记录">
-              <p>{unresolved.length} 条记录不确定是否已经发出，请在对应任务的“数据去向”里逐条确认。</p>
-            </Widget>
-          )}
-        </div>
-        <div className="section-title board-head">
-          事项看板
-          <Select aria-label="事项" value={matterId ?? ""} onChange={(v) => setMatterId(v || null)} placeholder="选择事项" options={matters.map((m) => ({ value: m.matter_id, label: m.title }))} />
-        </div>
-        {matter ? <MatterBoard matter={matter} runs={runs} onChanged={() => void api.getMatter(matter.matter_id).then((r) => setMatter(r.matter)).catch(() => {})} /> : <p className="muted">还没有事项。</p>}
-      </div>
-    </main>
   );
 }

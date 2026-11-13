@@ -1,0 +1,6 @@
+{"tag": "m08-appeal", "card": "appeal", "veto": [], "score": 22, "dims": [3, 3, 3, 2, 3, 3, 2, 3],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 7, "questions": 1,
+ "top_issues": ["上诉状落款三行为KwlBody，未右对齐", "举证责任分配错误未依民诉解释第90、91条展开", "独立复核14秒零意见，未发现上述问题"],
+ "prev_score": null,
+ "product_defect": ["上诉状模板的落款段（上诉人/法定代表人/日期）未套用KwlRight，与起诉状不一致", "独立复核对上诉状仅用14秒、零意见，未核对落款版式与答案级核心论点（举证责任）"],
+ "known_defects_recurring": [], "new_defects": []}

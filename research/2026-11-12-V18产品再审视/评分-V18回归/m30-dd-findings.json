@@ -1,0 +1,6 @@
+{"tag": "m30-dd-findings", "card": "dd-findings", "veto": [], "score": 22, "dims": [3, 2, 3, 3, 3, 3, 3, 2],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 17, "questions": 0,
+ "top_issues": ["漏财务摘要附注“无需要披露的或有事项”与800万最高额保证的矛盾", "正文约10处“草稿·手工计算，请复核”系统标注需清理", "依据表反不正当竞争法条号“第四十一条”重复"],
+ "prev_score": 20,
+ "product_defect": ["金额测算自动加注“草稿·手工计算，请复核”直接写进报告正文，交付件需人工清理", "依据表合并条号时未去重（“第四十一条、第四十一条”）"],
+ "known_defects_recurring": [], "new_defects": []}

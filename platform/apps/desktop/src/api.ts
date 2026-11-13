@@ -835,7 +835,7 @@ export const api = {
   startRun: (matterId: string, body: { estimate_id: string; idempotency_key: string; goal?: string; title?: string; topic_hint?: string; mode?: RunMode; plan_first?: boolean; preauthorizations?: Preauthorization[]; skill?: string; skill_args?: Record<string, string>; primary_output?: string; review_rules?: boolean; followup_of?: string; mode_raise_confirmed?: boolean }) =>
     invoke<{ run_id: string; status: string; mode?: RunMode }>("runs.start", { matter_id: matterId, ...body }),
   getRun: (runId: string) =>
-    invoke<{ run: any; artifacts: any[]; inflight?: { model: number; search: number; fetch: number }; unresolved_operations?: UnresolvedOperation[] }>("runs.get", { run_id: runId }),
+    invoke<{ run: any; artifacts: any[]; inflight?: { model: number; search: number; fetch: number }; unresolved_operations?: UnresolvedOperation[]; waiting_ahead?: number }>("runs.get", { run_id: runId }),
   /** 方法模板（Kimi Code Skills）：已验签、会在任务中提供给 Agent 的方法模板。 */
   listSkills: () =>
     invoke<{ ok: boolean; reason?: string; skills: { id: string; title: string; description: string; version: string; tier: string; lines: string[] }[] }>("skills.list", {}),

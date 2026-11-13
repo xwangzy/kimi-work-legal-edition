@@ -14,6 +14,8 @@ import { checkArtifactCitations } from "./artifact-citations.ts";
 
 export interface DeliverableSection {
   heading?: string;
+  /** 节标题层级（V18 首轮 B11，docx.render_report 的 level）：1 或缺省为大节，2 小节，3 再下一层。 */
+  level?: number;
   paragraphs?: string[];
   table?: { columns?: unknown[]; rows?: unknown[][] } | null;
 }
@@ -48,6 +50,13 @@ interface Para {
 
 const MAX_ISSUES = 30;
 
+/**
+ * 产品界面上的对象名（V18 首轮 B1）：审查工作台、任务页、开始面板（界面专名，单独出现即报）；“风险卡”后跟序号或“序号 / 编号”，
+ * 或前面是“提交 / 对应 / 用于 / 见”（“已提交 10 张风险卡”“对应风险卡”）；
+ * “工作台”后跟界面动作（逐项接受、处理卡、生成修订稿）；“事实时间线”前后是界面动作（到 / 在 / 提交到……确认）。导出给单元测试。
+ */
+export const UI_TERM_RE = /审查工作台|任务页|开始面板|风险卡\s*(?:序号|编号|第?\s*\d{1,3}(?![\d年月日号元万%．.]))|(?:提交|对应|用于|见|在|于)(?:了)?\s*(?:\d{1,3}\s*张\s*)?(?:工作台(?:的)?)?风险卡|工作台(?:中|里|上)?(?:逐(?:项|张|条|卡)(?:接受|处理|确认)|(?:处理|接受)[^。；\n]{0,6}卡|生成(?:修订稿|清洁稿))|可在工作台生成|(?:到|在|进入|(?:未|另行)?提交(?:到|至)?)\s*事实时间线|(?<![《〈])事实时间线(?:中|里|上)?(?:逐条)?(?:确认|查看|核对)|(?<![《〈])事实时间线(?:中|里|上)?(?:原|尚|目前|暂|现)?(?:无|没有|未有)(?:经)?律师(?:确认|核对)/g;
+
 /** 工具名、内部编号、工具参数名与系统用语：不该出现在给律师、客户或法院的文书里。 */
 const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   { re: /mcp__legal__\w+/g, fix: "删去工具名，改用律师的说法" },
@@ -67,6 +76,10 @@ const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   { re: /已核验且支持命题|支持命题|任务(?:事实|给定|所给|材料)/g, fix: "改用律师的说法：引用写“原文已核”；事实写明出自哪份材料（如“《对账确认函》载明”），出处拿不准的不要替它找一个来源，在最终答复里列为待核实" },
   // 第 42 批：出文书、出表格时系统已把独立成段的质量说明删掉（scrubQualityLine）；这里报的是嵌在句子里、删了句子不通的
   { re: /未经本所质量验收|通用辅助(?:审查)?\s*[·•・]|草稿\s*[·•・]?\s*待律师复核/g, fix: "删去这句质量说明并把句子改通（质量说明只写在最终答复末尾，交付文件里不写；文件已由系统标为草稿）" },
+  // V18 首轮 B1：产品界面上的对象名进了成果（意见书“律师在审查工作台逐项接受……”“风险卡 12”，案卷整理“未提交事实时间线”）。
+  // 来源是方法自己的输出规格，已改；这里兜底。只认界面专名与“界面名 + 界面动作”的组合：合同条文里单独的“工作台”（“乙方提供运维工作台”）、
+  // 文件名《事实时间线》不报
+  { re: UI_TERM_RE, fix: "改用律师的说法（问题序号、事实清单）：文件里不写产品界面上的名称；修订稿怎么生成、下一步在哪里处理，写在给律师的答复里，不写进文件" },
   { re: /(?:称呼|全名|姓名|自然人|当事人|住所|地址|信用代码|证件号?|身份证号?|账号|电话|手机号?|联系方式)(?:与全名|和全名)?代号|代号(?:说明|一致|不一致|对应|形态|原样)|原样保留代号|按任务说明|(?:律师|本次|原)任务说明|任务说明(?:中|里|所载|[；;，,。]|$)/g, fix: "删去这句关于代号、任务说明的话本身（导出时系统还原真名，不需要解释）：正文直接写当事人的名称或称呼；确有依据的写材料名称；律师没有说过的，不得写成“律师指示”“律师确认”“律师的说明载明”。两个称呼是否同一人、材料里没有写明的，不下结论，在最终答复里请律师核实" },
 ];
 
@@ -245,6 +258,10 @@ export function headingNumberIssues(sections: readonly DeliverableSection[]): De
   let subIssues = 0;
   sections.forEach((sec, i) => {
     const s = { heading: sec.heading ?? "" };
+    // V18 首轮 B11：标了层级的小节。三级（“1.”一层）不参与“一、”“（一）”的计数；二级只按“（一）”计数，
+    // 写成“一、”的二级标题不当成大节（不报与大节序号重复）
+    const lvl = sec.level === 2 || sec.level === 3 ? sec.level : 1;
+    if (lvl === 3) return;
     const pn = /^\s*（/.test(s.heading) ? cnOrdinal(s.heading.replace(/^\s*（([一二三四五六七八九十]{1,3})）/, "$1、")) : null;
     if (pn !== null) {
       if (pn !== sub + 1 && subIssues < 5) {
@@ -254,8 +271,13 @@ export function headingNumberIssues(sections: readonly DeliverableSection[]): De
       if (pn > sub) sub = pn;
       return;
     }
+    if (lvl === 2) return;
     const n = cnOrdinal(s.heading);
-    if (n === null) return;
+    // 明确标为一级的大节（如“事实对照”“附件”）不带“一、”时同样开始新的一组小节
+    if (n === null) {
+      if (sec.level === 1) sub = 0;
+      return;
+    }
     sub = 0;
     if (seen.has(n)) out.push({ kind: "numbering", where: s.heading.slice(0, 20), text: s.heading.slice(0, 30), fix: `节标题序号重复（第 ${seen.get(n)! + 1} 节已用过“${s.heading.slice(0, 3)}”）：同一部分的内容合并到一节，或把后面的标题改成下一级（“（一）”）` });
     else if (n !== last + 1 && last > 0) out.push({ kind: "numbering", where: s.heading.slice(0, 20), text: s.heading.slice(0, 30), fix: `节标题序号不连续（上一个是第 ${last} 部分）：按顺序改正` });

@@ -289,6 +289,64 @@ test("追问（Kimi Code 集成核查 P1-1）：在上一次运行的会话上�
   }
 });
 
+test("追问补勾材料（V18 第 43 批续三）：上一轮只勾一份，追问补一份——新一轮的材料快照两份都有，提示里点名哪份是新增的，新一轮的勾选范围含补的那份；上一轮勾了材料的追问不能改成不限", { timeout: 240_000 }, async () => {
+  const { inv } = tk;
+  const { matter } = await inv("matters.create", { title: "kap 追问补材料", stance: "投资方", consent_status: "not_required" });
+  const a = await importText(inv, matter.matter_id, "增资协议（签署版）.txt", "第一条 投资方以5000万元认购新增注册资本。");
+  const b = await importText(inv, matter.matter_id, "公司章程.txt", "第十八条 增资须经代表三分之二以上表决权的股东通过。");
+  const c = await importText(inv, matter.matter_id, "股东名册.txt", "1 创始人 60% 2 员工持股平台 40%");
+  type Msg = { role?: string; content?: unknown };
+  const msgs = (body: Record<string, unknown>): Msg[] => (Array.isArray(body.messages) ? (body.messages as Msg[]) : []);
+  let round2 = "";
+  cloud.model.script = (body) => {
+    const users = msgs(body).filter((m) => m.role === "user").map((m) => JSON.stringify(m.content ?? ""));
+    const last = users.at(-1) ?? "";
+    if (last.includes("KAPADD2")) {
+      round2 = last;
+      return { content: "第二轮答复：已读章程。" };
+    }
+    if (users.some((u) => u.includes("KAPADD1"))) return { content: "第一轮答复：章程本次没有提供。" };
+    return null;
+  };
+  try {
+    const est = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [a.document_version_id] });
+    const r1 = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `kap-add1-${Date.now()}`, goal: "KAPADD1 列交割清单", plan_first: false, mode: "default" });
+    const first = await waitRun(inv, r1.run_id, 150_000);
+    assert.equal(first.run.status, "succeeded", JSON.stringify(first.events.map((e: any) => e.type)));
+
+    // 上一轮勾了材料：追问一份都不带（等于放开到本事项全部材料）被拒绝
+    const est0 = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });
+    await assert.rejects(() => inv("runs.start", { matter_id: matter.matter_id, estimate_id: est0.estimate_id, idempotency_key: `kap-add0-${Date.now()}`, goal: "KAPADD0 放开", followup_of: r1.run_id }), /追问不能改成不限材料/);
+
+    // 追问补勾章程
+    const est2 = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [a.document_version_id, b.document_version_id] });
+    const r2 = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est2.estimate_id, idempotency_key: `kap-add2-${Date.now()}`, goal: "KAPADD2 章程补上了，核一下表决比例", followup_of: r1.run_id });
+    const snap = JSON.parse(tk.kernel.db.get<{ input_snapshot: string }>(`SELECT input_snapshot FROM runs WHERE run_id = ?`, [r2.run_id])!.input_snapshot);
+    assert.deepEqual(snap.document_version_ids, [a.document_version_id, b.document_version_id], "新一轮的勾选范围 = 上一轮的 + 补的");
+    assert.deepEqual(snap.followup_added_document_version_ids, [b.document_version_id], "补了哪份由内核比对上一轮得出");
+    const second = await waitRun(inv, r2.run_id, 150_000);
+    assert.equal(second.run.status, "succeeded", JSON.stringify(second.events.map((e: any) => e.type)));
+    const loaded = second.events.find((e: any) => e.type === "materials.loaded")?.payload;
+    assert.equal(loaded?.loaded, 2, JSON.stringify(loaded));
+    // 模型在追问这一轮看到：两份材料的清单（原来那份序号不变，补的排在后面），以及点名新增的一句
+    assert.match(round2, /001\.txt（增资协议（签署版）\.txt）/, round2.slice(0, 600));
+    assert.match(round2, /002\.txt（公司章程\.txt）/, round2.slice(0, 600));
+    assert.match(round2, /【本轮补充的材料】这一轮新增 1 份，上一轮没有提供：《公司章程\.txt》。回答前先读新增的材料/, round2.slice(0, 600));
+    assert.doesNotMatch(round2, /股东名册/, "没补的那份不出现在这一轮的提示里");
+    assert.doesNotMatch(round2, /〔/, "固定文字没有被认成姓名换成代号");
+    void c;
+
+    // 不补材料的追问：没有“本轮补充”一句，快照里也没有这个字段
+    const est3 = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [a.document_version_id, b.document_version_id] });
+    const r3 = await inv("runs.start", { matter_id: matter.matter_id, estimate_id: est3.estimate_id, idempotency_key: `kap-add3-${Date.now()}`, goal: "KAPADD1 再简短些", followup_of: r2.run_id });
+    const snap3 = JSON.parse(tk.kernel.db.get<{ input_snapshot: string }>(`SELECT input_snapshot FROM runs WHERE run_id = ?`, [r3.run_id])!.input_snapshot);
+    assert.equal(snap3.followup_added_document_version_ids, undefined);
+    await waitRun(inv, r3.run_id, 150_000);
+  } finally {
+    cloud.model.script = null;
+  }
+});
+
 test("过程事件与流式回复（Kimi Code 增量核查 K7-P/K7-0）：运行中 runs.interactions 给出主 Agent 的工作清单、子任务状态与正在起草的文字（子任务的文字不进流式）；终态后不再返回；子任务起止进时间线", { timeout: 240_000 }, async () => {
   const { inv } = tk;
   const { matter } = await inv("matters.create", { title: "kap 过程事件", stance: "原告", consent_status: "not_required" });

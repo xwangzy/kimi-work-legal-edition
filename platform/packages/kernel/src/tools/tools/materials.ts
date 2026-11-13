@@ -22,7 +22,7 @@ export interface MaterialsReadResult {
   text_hash: string;
 }
 
-export function materialsReadExcerpt(db: KernelDb, claimsMatterId: string | undefined, params: MaterialsReadParams): MaterialsReadResult {
+export function materialsReadExcerpt(db: KernelDb, claimsMatterId: string | undefined, params: MaterialsReadParams, inScope?: (documentVersionId: string) => void): MaterialsReadResult {
   if (!claimsMatterId) throw new DomainError("forbidden", "令牌未绑定事项", 403);
   if (!params.parse_version_id) throw new DomainError("validation", "需要 parse_version_id", 422);
 
@@ -34,6 +34,8 @@ export function materialsReadExcerpt(db: KernelDb, claimsMatterId: string | unde
   );
   // 无权/不存在统一 404：不泄露对象是否存在
   if (!row || row.matter_id !== claimsMatterId) throw notFound("材料");
+  // 本任务勾选了材料的，只能读勾选的（V18 第 43 批；由调用方给出把关函数）
+  inScope?.(row.document_version_id);
 
   let start = params.char_start ?? 0;
   let end = params.char_end ?? Number.MAX_SAFE_INTEGER;

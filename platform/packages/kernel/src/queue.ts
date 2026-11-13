@@ -36,10 +36,19 @@ interface QueuedRun {
 // v9 第 04 篇 §8：终态集合（与 @zr-legal/domain TERMINAL_RUN_STATUSES 一致）；reconciling 不是终态但须等人处理，不自动拉起
 const TERMINAL = new Set(["succeeded", "partial", "failed", "cancelled", "expired", "timed_out"]);
 
+/**
+ * 不调用模型的本机流程（回稿比对、对外脱敏、整理案卷）：几秒内做完，不占执行名额，也不排在 AI 任务后面。
+ * V18 第 43 批：真实运行里一单不到 1 秒的整理案卷，因为前面三单 AI 任务在等律师确认，排了近 7 分钟。
+ * AI 任务的名额不放宽：每个打开的助手会话都占内存（kap 运行槽位，≤ 8 GB 设备只有 1 个），等律师期间会话仍开着。
+ */
+export const LOCAL_SCENARIOS: ReadonlySet<string> = new Set(["s1b.draft_compare", "s6.redaction", "s2.case_file"]);
+
 export class TaskQueue {
   private readonly workflows = new Map<string, WorkflowFn>();
   private readonly pending: QueuedRun[] = [];
   private readonly running = new Set<string>();
+  /** running 里属于本机流程的那部分（不计入执行名额）。 */
+  private readonly runningLocal = new Set<string>();
   /** 退出模式下暂停的任务（启动时与运行中进入退出模式时；复核 S6-B34、S6-C12）。 */
   private parked: string[] = [];
   /** 拉起任务前的放行判断（退出模式下不拉起，任务暂停）。 */
@@ -127,11 +136,21 @@ export class TaskQueue {
   }
 
   private async drain(): Promise<void> {
-    while (!this.stopped && this.running.size < this.concurrency && this.pending.length > 0) {
-      const { runId } = this.pending.shift()!;
+    // 按入队先后逐个看：本机流程随到随做；AI 任务名额满了就留在队里（不挡住排在它后面的本机流程）
+    for (let i = 0; !this.stopped && i < this.pending.length; ) {
+      const { runId } = this.pending[i]!;
       // 取任务前复查权威状态（可能已被取消）
       const run = this.db.get<{ status: string; scenario: string }>(`SELECT status, scenario FROM runs WHERE run_id = ?`, [runId]);
-      if (!run || (run.status !== "queued" && run.status !== "recovering")) continue;
+      if (!run || (run.status !== "queued" && run.status !== "recovering")) {
+        this.pending.splice(i, 1);
+        continue;
+      }
+      const local = LOCAL_SCENARIOS.has(run.scenario);
+      if (!local && this.running.size - this.runningLocal.size >= this.concurrency) {
+        i++;
+        continue;
+      }
+      this.pending.splice(i, 1);
       if (this.startGate && !this.startGate()) {
         if (!this.parked.includes(runId)) this.parked.push(runId);
         continue;
@@ -139,12 +158,14 @@ export class TaskQueue {
       const wf = this.workflows.get("legalRun");
       if (!wf) throw new Error("workflow legalRun 未注册");
       this.running.add(runId);
+      if (local) this.runningLocal.add(runId);
       void this.execute(runId, wf)
         .catch((err) => {
           slog.event("QUEUE_WORKFLOW_ERROR", { run: runId, ...errFields(err) });
         })
         .finally(() => {
           this.running.delete(runId);
+          this.runningLocal.delete(runId);
           this.onSettle?.(runId);
           this.kick();
         });

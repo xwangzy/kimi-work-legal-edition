@@ -19,9 +19,9 @@ import { confirmedView, latestOutline, submitOutline } from "../../services/argu
 import { proposeDraft } from "../../services/review-rules.ts";
 import { fillCells, tableForAgent } from "../../services/review-tables.ts";
 import { acceptedText, changesDocument, listFacts, listRiskCards, submitFacts, submitRiskCards, riskCardProgress } from "../../services/review-cards.ts";
-import { runLineage } from "../../services/artifact-lineage.ts";
+import { latestOfLineage, runLineage, sameFollowUpChain } from "../../services/artifact-lineage.ts";
 import { checkDeliverable, factRefNos, qualityScrubNote, scrubQualityRows } from "../../services/deliverable-check.ts";
-import { FACT_COLUMNS, FACT_SHEET_NAME, factTableRows } from "../../services/fact-refs.ts";
+import { FACT_COLUMNS, FACT_SHEET_NAME, factTableRows, unknownFactNote } from "../../services/fact-refs.ts";
 import { cellChars, shrinkCheck } from "../../services/version-shrink.ts";
 import { amountWordsConflicts, extractFacts, payDayConflicts, type FactRow } from "../../executor/casefile.ts";
 
@@ -31,21 +31,47 @@ function scopeOf(ctx: InvokeCtx): { tenantId: string; matterId: string; runId: s
   return { tenantId: String(ctx.claims.tid ?? ""), matterId: mid, runId: typeof ctx.claims.rid === "string" ? ctx.claims.rid : null };
 }
 
-/** 本任务的材料目录：任务选定的材料（按快照顺序编号，与工作区 materials/NNN-文件名.txt 对应）+ 事项内其他材料（未随本任务提供）。 */
+/** 本任务发起时律师勾选的材料（按勾选顺序）；不在任务里调用、或任务没有勾选任何材料时为空。 */
+function selectedMaterials(ctx: InvokeCtx): string[] {
+  const s = scopeOf(ctx);
+  if (!s.runId) return [];
+  const run = ctx.db.get<{ input_snapshot: string | null; matter_id: string }>(`SELECT input_snapshot, matter_id FROM runs WHERE run_id = ?`, [s.runId]);
+  if (!run || run.matter_id !== s.matterId) return [];
+  try {
+    const snap = typeof run.input_snapshot === "string" ? JSON.parse(run.input_snapshot) : run.input_snapshot;
+    return Array.isArray(snap?.document_version_ids) ? snap.document_version_ids.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 本任务能读的材料范围（V18 第 43 批）：律师在开始面板或输入框里勾选了材料的，勾选的就是边界——没勾的不读；
+ * 一份都没勾的（只写了一句话就发起）不设边界，可读本事项全部材料，返回 null。
+ * 原先不论勾没勾，助手都能按编号读事项里的任何材料（2026-10-14 的设计，早于开始面板的勾选）：真实回归里交割清单只勾了签署版，
+ * 成果却引用了没勾的章程与股东名册；而独立复核只看勾选的材料，两边范围对不上；发给 AI 的内容也超出了律师选的范围。
+ */
+export function taskMaterialScope(ctx: InvokeCtx): Set<string> | null {
+  const selected = selectedMaterials(ctx);
+  return selected.length > 0 ? new Set(selected) : null;
+}
+
+/** 助手按材料编号读取或改写前的把关：不在本任务勾选范围内的拒绝，并说明该怎么办（给助手看的话）。 */
+export function assertMaterialInScope(ctx: InvokeCtx, documentVersionId: unknown): void {
+  const scope = taskMaterialScope(ctx);
+  const id = String(documentVersionId ?? "");
+  if (!scope || !id || scope.has(id)) return;
+  const name = ctx.db.get<{ filename: string }>(`SELECT filename FROM document_versions WHERE document_version_id = ? AND matter_id = ?`, [id, scopeOf(ctx).matterId])?.filename;
+  // 不属于本事项或不存在的编号，交给各工具自己的校验（统一 404，不泄露对象是否存在）
+  if (!name) return;
+  throw new DomainError("forbidden", `《${name}》没有勾选给本次任务，不能读取。需要用到它时不要绕开：在给律师的最终答复里写明“这份材料本次没有提供、可能相关”，请律师在追问时补勾这份材料，或勾选后重新发起任务`, 403);
+}
+
+/** 本任务的材料目录：任务选定的材料（按快照顺序编号，与工作区 materials/NNN-文件名.txt 对应）；勾选了材料的任务，事项里没勾的只列文件名、不能读取。 */
 export function materialsList(ctx: InvokeCtx) {
   const s = scopeOf(ctx);
-  let selected: string[] = [];
-  if (s.runId) {
-    const run = ctx.db.get<{ input_snapshot: string | null; matter_id: string }>(`SELECT input_snapshot, matter_id FROM runs WHERE run_id = ?`, [s.runId]);
-    if (run && run.matter_id === s.matterId) {
-      try {
-        const snap = typeof run.input_snapshot === "string" ? JSON.parse(run.input_snapshot) : run.input_snapshot;
-        selected = Array.isArray(snap?.document_version_ids) ? snap.document_version_ids.map(String) : [];
-      } catch {
-        selected = [];
-      }
-    }
-  }
+  const selected = selectedMaterials(ctx);
+  const bounded = selected.length > 0;
   const docs = ctx.db.all<{ document_version_id: string; filename: string; mime: string; created_at: string; superseded: number }>(
     `SELECT dv.document_version_id, dv.filename, dv.mime, dv.created_at,
             (SELECT COUNT(*) FROM document_versions n WHERE n.supersedes = dv.document_version_id) AS superseded
@@ -74,6 +100,10 @@ export function materialsList(ctx: InvokeCtx) {
       ? ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM parse_pages WHERE parse_version_id = ? AND quality != 'ok'`, [p.parse_version_id])?.n ?? 0
       : 0;
     const quality = !p ? "unreadable" : low > 0 ? "partial" : flags.some((f) => /ocr/i.test(f)) ? "ocr" : "ok";
+    // 勾选了材料的任务：没勾的只给文件名（让助手能提醒律师“事项里还有这份”），不给编号、字数与识别质量，也读不到
+    if (bounded && !index.has(d.document_version_id)) {
+      return { document_version_id: null, parse_version_id: null, filename: d.filename, in_this_task: false, not_provided: true as const, snapshot_index: null, chars: 0, page_count: null, quality: "not_provided", pages_with_issues: 0, superseded: d.superseded > 0 };
+    }
     return {
       document_version_id: d.document_version_id,
       parse_version_id: p?.parse_version_id ?? null,
@@ -92,7 +122,7 @@ export function materialsList(ctx: InvokeCtx) {
   // （最新解析文字的前 5 万字）。本任务选了材料的只比这几份，没选的比本事项全部现行材料
   const scope = out.filter((m) => m.parse_version_id && (index.size > 0 ? m.in_this_task : !m.superseded));
   const texts = scope.map((m) => ({
-    document_version_id: m.document_version_id,
+    document_version_id: m.document_version_id!,
     parse_version_id: m.parse_version_id!,
     filename: m.filename,
     text: (ctx.db.get<{ content: string }>(`SELECT content FROM parse_texts WHERE parse_version_id = ?`, [m.parse_version_id])?.content ?? "").slice(0, 50_000),
@@ -115,7 +145,10 @@ export function materialsList(ctx: InvokeCtx) {
     materials,
     ...(pay.length > 0 ? { cross_material_conflicts: pay.map((c) => ({ date: c.date, amounts: c.amounts })) } : {}),
     note:
-      "in_this_task=true 的材料已作为快照放在工作区 materials/ 目录（文件名以 snapshot_index 三位序号开头）；其他材料可用 materials.read_excerpt 按 parse_version_id 读取。" +
+      "in_this_task=true 的材料已作为快照放在工作区 materials/ 目录（文件名以 snapshot_index 三位序号开头）。" +
+      (bounded
+        ? "not_provided=true 的材料这次没有勾选给本任务（属于本事项，但发起任务时未选）：只知道文件名，不能读取，也不要据文件名推测内容；与任务明显相关的，在最终答复里点名提醒律师“这份本次没有提供”，需要时请律师在追问时补勾，或勾选后重新发起任务，交付件里的材料范围只写实际读过的。"
+        : "本任务发起时没有勾选材料：本事项的材料都可用 materials.read_excerpt 按 parse_version_id 读取，交付件里写明实际读了哪几份。") +
       "quality 为 partial/unreadable 的材料存在识别不全的页，结论中须如实说明未读取的范围。" +
       "amount_conflicts（这份材料里大写与小写金额对不上的各处）与 cross_material_conflicts（不同材料对同一天的付款写了不同金额）是系统按规则比出来的，只覆盖这两类：" +
       "有的要列进交付件的矛盾或缺口里，写明两处原文与数额，请律师核对原件；没有列出不等于金额都一致，不要写“金额一致”“未发现冲突”。" +
@@ -432,10 +465,12 @@ function withFactSheet(ctx: InvokeCtx, specs: SheetSpec[]): { specs: SheetSpec[]
   if (specs.some((sh) => sh.name === FACT_SHEET_NAME)) return { specs, added: false, note: `表格里已有你写的“${FACT_SHEET_NAME}”工作表，系统没有另加；请核对它列全了表里引用的 ${nos.length} 个事实序号` };
   if (specs.length >= MAX_SHEETS) return { specs, added: false, note: `表格里引用了 ${nos.length} 个事实序号，但工作表已有 ${MAX_SHEETS} 张（上限），系统没能附上“${FACT_SHEET_NAME}”：把“事实 N”改写成材料名称与日期，或并掉一张工作表后重出` };
   const t = factTableRows({ db: ctx.db, tokens: ctx.tokens }, scopeOf(ctx).matterId, nos);
+  // 引用的序号在事实清单里一个都对不上：不附只有表头的工作表，只告诉助手改正引用
+  if (t.rows.length === 0) return { specs, added: false, note: unknownFactNote(t.unknown) };
   return {
     specs: [...specs, { name: FACT_SHEET_NAME, rows: [FACT_COLUMNS, ...t.rows] }],
     added: true,
-    note: `表格里引用了 ${nos.length} 个事实序号，系统已自动附上工作表“${FACT_SHEET_NAME}”（序号、事实陈述、发生日期、来源材料、律师是否已确认${t.omitted > 0 ? `；另有 ${t.omitted} 条超出上限未列` : ""}），读者离开产品也能对上——不要再手工做一张；之后用 xlsx.edit_cells 改表时这张会随引用自动更新`,
+    note: `表格里引用了 ${nos.length} 个事实序号，系统已自动附上工作表“${FACT_SHEET_NAME}”（序号、事实陈述、发生日期、来源材料、律师是否已确认${t.omitted > 0 ? `；另有 ${t.omitted} 条超出上限未列` : ""}），读者离开产品也能对上——不要再手工做一张；之后用 xlsx.edit_cells 改表时这张会随引用自动更新${t.unknown.length > 0 ? `。${unknownFactNote(t.unknown)}` : ""}`,
   };
 }
 
@@ -468,12 +503,17 @@ export function xlsxEditCells(
   const s = scopeOf(ctx);
   if (!s.runId) throw new DomainError("forbidden", "只有任务内的调用可以修改表格", 403);
   const id = String(p.artifact_version_id ?? "");
-  const art = ctx.db.get<{ kind: string; filename: string; storage_uri: string; sha256: string; run_id: string | null; manifest: string | null }>(
-    `SELECT kind, filename, storage_uri, sha256, run_id, manifest FROM artifact_versions WHERE artifact_version_id = ? AND matter_id = ?`,
+  const art = ctx.db.get<{ kind: string; filename: string; storage_uri: string; sha256: string; run_id: string | null; manifest: string | null; lineage: string | null }>(
+    `SELECT kind, filename, storage_uri, sha256, run_id, manifest, lineage FROM artifact_versions WHERE artifact_version_id = ? AND matter_id = ?`,
     [id, s.matterId],
   );
   if (!art) throw new DomainError("not_found", "找不到这份表格：artifact_version_id 用 xlsx.render_table（或上一次 xlsx.edit_cells）返回的那个", 404);
-  if (art.run_id !== s.runId) throw new DomainError("forbidden", "只能修改本任务里生成的表格；别的任务的表格与律师上传的 Excel 材料不能用本工具", 403);
+  // 追问可以在此前各轮的表格上改（D-185）：同一条追问链上的算本任务的表格；别的任务的仍不能动
+  if (!sameFollowUpChain(ctx.db, art.run_id, s.runId)) throw new DomainError("forbidden", "只能修改本任务（含它所追问的此前各轮）里生成的表格；别的任务的表格与律师上传的 Excel 材料不能用本工具", 403);
+  if (art.run_id !== s.runId) {
+    const latest = latestOfLineage(ctx.db, s.matterId, art.kind, art.lineage);
+    if (latest && latest !== id) throw new DomainError("validation", `这份表格已有更新的版本：此前各轮的表格只能在最新版上改，否则其后的修改会丢。请改用成果编号 ${latest}`, 422, { latest_artifact_version_id: latest });
+  }
   if (art.kind !== "agent_table" || !art.filename.toLowerCase().endsWith(".xlsx")) {
     throw new DomainError("validation", "只能修改 xlsx.render_table 生成的表格；Word 文书用 docx.edit_draft", 422);
   }

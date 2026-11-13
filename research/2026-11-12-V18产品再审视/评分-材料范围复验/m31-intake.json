@@ -1,0 +1,7 @@
+{"tag": "m31-intake", "card": "intake", "veto": [], "score": 23, "dims": [3, 3, 3, 3, 3, 2, 3, 3],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 9, "questions": 0,
+ "top_issues": ["纪要套用接案模板，“客户诉求”“客户疑问”两节在第三方访谈纪要里为空", "材料清单备注“本事项有……同名单份材料，但本次未提供”语句不通", "“系统未做冲突判断”“法规库未采集条文正文”等产品用语进成果"],
+ "prev_score": null,
+ "product_defect": ["intake-notes 方法的纪要模板固定含“客户诉求”“客户疑问”节，用于第三方（目标公司人员）访谈时只能留空", "交付件中出现“系统”“法规库”等产品用语", "法规库未采集《律师法》条文正文，冲突检索依据只能标待核", "未勾选材料的提示语（“本事项有X同名单份材料，但本次未提供”）措辞不通，材料范围新规则缺少给成果用的规范表述"],
+ "material_scope": {"used_unselected_content": false, "reading_statement_truthful": true, "gaps_listed_not_assumed": true},
+ "known_defects_recurring": [], "new_defects": []}

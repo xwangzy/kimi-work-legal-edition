@@ -3,26 +3,13 @@
  * Z3 评审 #2：列表显示律师看得懂的标题（内容标题在本机还原代号；文件名只在悬停时显示），按事项分组；
  * 点任何一行都进入这份文件的详情（左预览、右签发前检查）；每行可直接下载，草稿行可提交复核。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
-import { downloadPlan } from "../lib/download.ts";
-import { ARTIFACT_STATUS_LABELS, artifactName, AUDIENCE_LABELS, fmtTime, fmtWhen } from "../lib/labels.ts";
-import { deliveryPackage, groupByTask, groupDeliverables, PACKAGE_REASON_TEXT, taskCountText, taskGroupLabel } from "../lib/deliverables.ts";
+import { AUDIENCE_LABELS, fileListName, fmtWhen } from "../lib/labels.ts";
+import { deliveryPackage, fileCount, groupByTask, groupDeliverables, PACKAGE_REASON_TEXT, splitTaskFiles, taskCountText, taskGroupLabel, taskPrimary } from "../lib/deliverables.ts";
+import { FileRows, ProcessRows } from "../components/ArtifactRow.tsx";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
-
-const STATUS_LABELS = ARTIFACT_STATUS_LABELS;
-const STATUS_TONE: Record<string, string> = { draft: "pill-gray", pending_review: "pill-orange", approved: "pill-green", rejected: "pill-red", superseded: "pill-gray" };
-
-/** 状态胶囊（v9.4 U1 #15）：版本与受众不再各占一列——第 2 版起才写版数，受众放悬停提示。 */
-function StatusPill({ r }: { r: { status: string; version: number; audience?: string | null } }) {
-  return (
-    <span className={`pill ${STATUS_TONE[r.status] ?? "pill-gray"}`} title={r.audience ? `受众：${AUDIENCE_LABELS[r.audience] ?? r.audience}` : undefined}>
-      {STATUS_LABELS[r.status] ?? r.status}
-      {r.version > 1 ? ` · 第 ${r.version} 版` : ""}
-    </span>
-  );
-}
 
 export function DeliverablesPage() {
   const [matters, setMatters] = useState<Matter[]>([]);
@@ -44,18 +31,37 @@ export function DeliverablesPage() {
           // 内容标题是令牌形态：按事项在本机还原后显示（还原结果只在渲染进程内存里）
           const titles = a.artifacts.map((x: any) => `${x.title ?? ""}\n${x.filename ?? ""}`).join("\n");
           const map = titles.includes("〔") ? await restoreTokens(m.matter_id, titles).catch(() => new Map<string, string | null>()) : new Map<string, string | null>();
-          for (const x of a.artifacts) all.push({ ...x, matter_id: m.matter_id, matter_title: m.title, display: artifactName(x, (t) => restoredPlain(t, map)), save_name: restoredPlain(String(x.filename ?? ""), map) });
+          for (const x of a.artifacts) all.push({ ...x, matter_id: m.matter_id, matter_title: m.title, display: fileListName(x, (t) => restoredPlain(t, map)), save_name: restoredPlain(String(x.filename ?? ""), map) });
         }
         all.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
         setRows(all);
-        const first = (["pending_review", "draft", "approved"] as const).find((k) => all.some((x) => x.status === k));
-        if (!touchedRef.current && first) setFilter(first);
       })
       .catch(() => {});
   useEffect(() => {
     void load();
   }, []);
-  const shown = rows.filter((r) => filter === "all" || r.status === filter);
+  // V18 A2：事项 → 一次任务 → 每份文件（最新版 + 旧版）与过程文件；计数按文件，不按版本
+  const groups = useMemo(
+    () =>
+      groupDeliverables(rows).map((g) => ({
+        ...g,
+        tasks: groupByTask(g.rows).map((t) => ({ ...t, split: splitTaskFiles(t.rows, { primary: taskPrimary(t) }) })),
+      })),
+    [rows],
+  );
+  const count = (k: typeof filter) => groups.reduce((n, g) => n + g.tasks.reduce((m, t) => m + fileCount(t.split.files, k === "all" ? undefined : k), 0), 0);
+  // 律师没点过分组时，缺省停在第一个有文件的分组（待复核 → 草稿 → 已签发）
+  useEffect(() => {
+    if (touchedRef.current || rows.length === 0) return;
+    const first = (["pending_review", "draft", "approved"] as const).find((k) => count(k) > 0);
+    if (first) setFilter(first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups]);
+  const pick = <E extends { latest: { status: string } }>(es: E[]) => es.filter((e) => filter === "all" || e.latest.status === filter);
+  const shownGroups = groups
+    .map((g) => ({ ...g, tasks: g.tasks.map((t) => ({ ...t, files: pick(t.split.files), process: pick(t.split.process) })).filter((t) => t.files.length + t.process.length > 0) }))
+    .filter((g) => g.tasks.length > 0);
+  const cols = filter === "all" ? 4 : 3;
   const download = async (r: any) => {
     setErr("");
     setNote("");
@@ -102,43 +108,43 @@ export function DeliverablesPage() {
                   setFilter(k);
                 }}
               >
-                {l}（{k === "all" ? rows.length : rows.filter((r) => r.status === k).length}）
+                {l}（{count(k)}）
               </button>
             ))}
           </div>
         </div>
-        <p className="muted">这里的文件都是草稿；你复核并签发后，才是可以对外的版本。{matters.length > 50 ? "（只列最近 50 个事项）" : ""}</p>
+        <p className="muted">每份文件只列最新版，以前的版本在“版本记录”里；答复摘要和复核意见收在每次任务下面的“过程文件”里。文件都是草稿，你复核并签发后，才是可以对外的版本。{matters.length > 50 ? "（只列最近 50 个事项）" : ""}</p>
         {err && <div className="banner banner-red">{err}</div>}
         {note && <div className="banner banner-gray">{note}</div>}
-        {shown.length === 0 && (
+        {shownGroups.length === 0 && (
           <p className="muted">
             {filter === "pending_review" ? "没有待复核的文件。" : filter === "draft" ? "没有草稿。" : filter === "approved" ? "还没有签发的文件。" : "还没有任何成果。"}
-            {filter !== "draft" && filter !== "all" && rows.some((r) => r.status === "draft") && (
+            {filter !== "draft" && filter !== "all" && count("draft") > 0 && (
               <button className="btn-link" onClick={() => setFilter("draft")}>
-                草稿里有 {rows.filter((r) => r.status === "draft").length} 份 →
+                草稿里有 {count("draft")} 份 →
               </button>
             )}
           </p>
         )}
-        {shown.length > 0 && (
+        {shownGroups.length > 0 && (
           <table className="data deliverables">
             {/* 按状态筛选时每行状态都一样：不成列（第 27 批，评审 U3-29 / 规则 5）；只有“全部”时显示 */}
             <thead><tr><th>成果</th>{filter === "all" && <th>状态</th>}<th>生成</th><th className="dl-actions-h">操作</th></tr></thead>
-            {groupDeliverables(shown).map((g) => (
+            {shownGroups.map((g) => (
               <tbody key={g.matter_id}>
                 <tr className="dl-group">
-                  <td colSpan={filter === "all" ? 4 : 3}>
+                  <td colSpan={cols}>
                     <button className="btn-link" onClick={() => nav(`/matter/${g.matter_id}`)}>{g.matter_title}</button>
-                    <span className="muted"> · {g.rows.length} 份</span>
+                    <span className="muted"> · {g.tasks.reduce((n, t) => n + fileCount(t.files), 0)} 份文件</span>
                   </td>
                 </tr>
                 {/* 事项下再按“一次任务”分组（Astra M-3）：这次要交给客户的那几份成组列出 */}
-                {groupByTask(g.rows).flatMap((t) => [
+                {g.tasks.flatMap((t) => [
                   <tr key={`task-${t.run_id ?? "none"}`} className="dl-task">
-                    <td colSpan={filter === "all" ? 4 : 3}>
+                    <td colSpan={cols}>
                       <span>{taskGroupLabel(t, (iso) => fmtWhen(iso))}</span>
-                      {/* 组头写这次任务一共几份（复核 RB16B-11：状态筛选之后只显示一部分时说清） */}
-                      <span className="muted"> · {taskCountText(t.rows.length, rows.filter((r) => r.matter_id === g.matter_id && (r.run_id ?? null) === t.run_id).length)}</span>
+                      {/* 组头写这次任务一共几份文件（复核 RB16B-11：状态筛选之后只显示一部分时说清） */}
+                      {t.split.files.length > 0 && <span className="muted"> · {taskCountText(fileCount(t.files), fileCount(t.split.files))}</span>}
                       {t.run_id && (
                         <button className="btn-link" onClick={() => nav(`/run/${t.run_id}/${g.matter_id}`)}>
                           看这次任务
@@ -146,25 +152,9 @@ export function DeliverablesPage() {
                       )}
                     </td>
                   </tr>,
-                  ...t.rows.map((r: any) => (
-                    <tr key={r.artifact_version_id} className="row-link dl-in-task" onClick={() => nav(`/review/${r.artifact_version_id}`)}>
-                      <td title={r.filename}>
-                        <b>{r.display}</b>
-                        {/* 状态列不显示时，版本与受众补在名称后（复核 Q8-13：已签发里给法院、给客户的要分得清） */}
-                        {filter !== "all" && r.audience && r.audience !== "internal" ? <span className="muted"> · 给{AUDIENCE_LABELS[r.audience] ?? r.audience}</span> : null}
-                        {filter !== "all" && r.version > 1 ? <span className="muted"> · 第 {r.version} 版</span> : null}
-                      </td>
-                      {filter === "all" && <td><StatusPill r={r} /></td>}
-                      <td className="nowrap" title={fmtTime(r.created_at)}>{fmtWhen(r.created_at)}</td>
-                      {/* 每行只留下载与提交复核（v9.4 U1 #15）；点整行就是预览。第 27 批（评审 U3-29）：改小按钮，一屏不再是十几个蓝色链接 */}
-                      <td className="dl-actions" onClick={(e) => e.stopPropagation()}>
-                        {r.status === "draft" && (
-                          <button className="btn-ghost btn-sm" disabled={busyId === r.artifact_version_id} onClick={() => void submit(r)}>提交复核</button>
-                        )}
-                        <button className="btn-ghost btn-sm" aria-label={downloadPlan(r.filename).label} title={downloadPlan(r.filename).label} onClick={() => void download(r)}>下载</button>
-                      </td>
-                    </tr>
-                  )),
+                  // 每份文件一行（最新版）；行点开是预览与签发前检查。第 27 批（评审 U3-29）：小按钮，一屏不再是十几个蓝色链接
+                  ...t.files.map((e) => <FileRows key={e.key} entry={e} showStatus={filter === "all"} onOpen={(r) => nav(`/review/${r.artifact_version_id}`)} onDownload={(r) => void download(r)} onSubmit={(r) => void submit(r)} busyId={busyId} />),
+                  <ProcessRows key={`proc-${t.run_id ?? "none"}`} entries={t.process} colSpan={cols} showStatus={filter === "all"} onDownload={(r) => void download(r)} />,
                 ])}
               </tbody>
             ))}
@@ -196,7 +186,7 @@ export function MatterDeliverables({ matterId }: { matterId: string }) {
       .then(async (a) => {
         const titles = a.artifacts.map((x: any) => `${x.title ?? ""}\n${x.filename ?? ""}`).join("\n");
         const map = titles.includes("〔") ? await restoreTokens(matterId, titles).catch(() => new Map<string, string | null>()) : new Map<string, string | null>();
-        setRows([...a.artifacts].sort((x: any, y: any) => String(y.created_at).localeCompare(String(x.created_at))).map((x: any) => ({ ...x, display: artifactName(x, (t) => restoredPlain(t, map)), save_name: restoredPlain(String(x.filename ?? ""), map) })));
+        setRows([...a.artifacts].sort((x: any, y: any) => String(y.created_at).localeCompare(String(x.created_at))).map((x: any) => ({ ...x, display: fileListName(x, (t) => restoredPlain(t, map)), save_name: restoredPlain(String(x.filename ?? ""), map) })));
       })
       .catch(() => setRows([]));
   }, [matterId]);
@@ -212,7 +202,7 @@ export function MatterDeliverables({ matterId }: { matterId: string }) {
             <tr key={`task-${t.run_id ?? "none"}`} className="dl-task">
               <td colSpan={4}>
                 <span>{taskGroupLabel(t, (iso) => fmtWhen(iso))}</span>
-                <span className="muted"> · {t.rows.length} 份</span>
+                {fileCount(splitTaskFiles(t.rows).files) > 0 && <span className="muted"> · {fileCount(splitTaskFiles(t.rows).files)} 份文件</span>}
                 {t.run_id && (
                   <button className="btn-link" onClick={() => nav(`/run/${t.run_id}/${matterId}`)}>
                     看这次任务
@@ -268,18 +258,14 @@ export function MatterDeliverables({ matterId }: { matterId: string }) {
                   })(),
                 ]
               : []),
-            ...t.rows.map((r: any) => (
-            <tr key={r.artifact_version_id} className="row-link dl-in-task" onClick={() => nav(`/review/${r.artifact_version_id}`)}>
-              <td title={r.filename}><b>{r.display}</b></td>
-              <td><StatusPill r={r} /></td>
-              <td title={fmtTime(r.created_at)}>{fmtWhen(r.created_at)}</td>
-              <td className="dl-actions" onClick={(e) => e.stopPropagation()}>
-                <button className="btn-link" onClick={() => void download(r)}>
-                  {downloadPlan(r.filename).label}
-                </button>
-              </td>
-            </tr>
-            )),
+            // V18 A2：每份文件一行（最新版），旧版在“版本记录”；答复摘要与复核意见收进“过程文件”
+            ...(() => {
+              const sp = splitTaskFiles(t.rows, { primary: taskPrimary(t) });
+              return [
+                ...sp.files.map((e) => <FileRows key={e.key} entry={e} showStatus onOpen={(r) => nav(`/review/${r.artifact_version_id}`)} onDownload={(r) => void download(r)} />),
+                <ProcessRows key={`proc-${t.run_id ?? "none"}`} entries={sp.process} colSpan={4} showStatus onDownload={(r) => void download(r)} />,
+              ];
+            })(),
           ])}
         </tbody>
       </table>

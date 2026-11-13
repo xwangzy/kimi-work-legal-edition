@@ -650,7 +650,7 @@ export class KapRuntime {
     const raw = this.decisions.get(decisionKey(run.sessionId, agentId, String(p.toolCallId)));
     const d = raw && raw.toolName === p.toolName && raw.argsHash === objectHash ? raw : undefined;
     // 宿主策略已批准、却仍有审批请求 = 工具自身发起的确认（计划确认、目标确认）。
-    // 只有“自动档未开先出计划”的 ExitPlanMode 计划确认由宿主代为批准；其余工具确认一律呈现给律师
+    // 只有“未开先出计划”（默认档、自动档，V18 首轮 A3）的 ExitPlanMode 计划确认由宿主代为批准；其余工具确认一律呈现给律师
     if (d?.decision === "approve" && d.reason === "plan_auto_approved" && p.toolName === "ExitPlanMode" && d.toolName === "ExitPlanMode") {
       this.push(run, "run.approval_auto", { approval_id: p.id, tool: p.toolName, reason: d.reason, object_hash: objectHash });
       void engine.kap.resolveApproval(run.sessionId, p.id, "approved").catch(() => {});

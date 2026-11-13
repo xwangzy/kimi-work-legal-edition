@@ -481,9 +481,10 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const msEnv = (v: string | undefined) => (Number.isFinite(Number(v)) && Number(v) >= 1000 ? Number(v) : undefined);
   const reviewLimitMs = msEnv(env.ZR_REVIEW_LIMIT_MS);
   const reviewFixLimitMs = msEnv(env.ZR_REVIEW_FIX_LIMIT_MS);
+  const reviewRetryWaitMs = env.ZR_REVIEW_RETRY_WAIT_MS !== undefined && /^\d+$/.test(env.ZR_REVIEW_RETRY_WAIT_MS) ? Number(env.ZR_REVIEW_RETRY_WAIT_MS) : undefined;
   const redlineLimitMs = msEnv(env.ZR_REDLINE_LIMIT_MS);
   const reviewEffort = env.ZR_REVIEW_EFFORT === "high" ? ("high" as const) : ("low" as const);
-  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf, independentReview, reviewLimitMs, reviewFixLimitMs, redlineLimitMs, reviewEffort, vouchKnownOnly: (rid: string, text: string) => gate.vouchKnownOnly(rid, text) };
+  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf, independentReview, reviewLimitMs, reviewRetryWaitMs, reviewFixLimitMs, redlineLimitMs, reviewEffort, vouchKnownOnly: (rid: string, text: string) => gate.vouchKnownOnly(rid, text) };
   queue.register("legalRun", createLegalWorkflow(workflowDeps));
 
   const ocrModelPaths = {

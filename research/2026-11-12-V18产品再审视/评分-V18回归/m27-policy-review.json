@@ -1,0 +1,6 @@
+{"tag": "m27-policy-review", "card": "policy-review", "veto": [], "score": 22, "dims": [3, 3, 3, 3, 3, 2, 3, 2],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 23, "questions": 1,
+ "top_issues": ["审查意见无致送对象、无落款，标题为文件名式", "写给律师的过程语进了对外意见：“本次没有律师已确认的事实”“按律师选择”", "每节重复“来源与适用版本已核，条文原文已对照”的工具核验口吻"],
+ "prev_score": 21,
+ "product_defect": ["审查意见类 docx 模板/门禁不要求致送对象与落款（KwlRight 已定义但未用）", "对外文书门禁未拦“律师已确认”“按律师选择”这类写给律师的过程语", "法条核验状态句被写进对外正文（每节“来源与适用版本已核”），应只留在内部表", "docx 元数据写入产品名与“AI 辅助生成”字样"],
+ "known_defects_recurring": [], "new_defects": []}

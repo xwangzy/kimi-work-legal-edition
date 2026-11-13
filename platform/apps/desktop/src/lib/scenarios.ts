@@ -1432,3 +1432,22 @@ export function wordDocGap(card: Pick<ScenarioCard, "skill">, docs: readonly { d
   if (!docs.some((d) => isWord(d) && picked.includes(d.document_version_id))) return "请勾选要修改的那份 Word 文书（.docx）";
   return null;
 }
+
+/**
+ * 开始面板勾选框下面的一句话（V18 第 43 批）：勾选就是边界。勾了的只读勾的；一份都没勾时助手可读本事项全部材料。纯函数。
+ */
+export function materialScopeText(picked: number, total: number): string {
+  if (picked === 0) return `没有勾选材料：助手可以读本事项的全部 ${total} 份材料。只想让它看其中几份，就勾上那几份。`;
+  if (picked >= total) return `助手只读勾选的材料（本事项 ${total} 份都勾了）。`;
+  return `助手只读勾选的 ${picked} 份；没勾的 ${total - picked} 份这次不会读取，也不会发给 AI。`;
+}
+
+/**
+ * 追问框“补充材料”下面的一句话（V18 第 43 批续三）：追问沿用上一轮勾选的材料，可以补、不能减；补了几份、还有几份不会读。纯函数。
+ * prev：上一轮勾选的份数；added：这一轮补勾的份数；rest：本事项里上一轮没勾的份数（含这一轮补勾的）。
+ */
+export function followUpMaterialsText(prev: number, added: number, rest: number): string {
+  const left = Math.max(0, rest - added);
+  if (added === 0) return `沿用上一轮的 ${prev} 份材料。本事项另有 ${rest} 份没给助手：需要它看的，勾上再追问。`;
+  return `沿用上一轮的 ${prev} 份，这一轮补充 ${added} 份${left > 0 ? `；其余 ${left} 份仍不会读取，也不会发给 AI` : ""}。`;
+}

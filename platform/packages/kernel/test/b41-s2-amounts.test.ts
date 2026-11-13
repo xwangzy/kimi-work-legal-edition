@@ -53,7 +53,8 @@ test("不同材料对同一天的付款写了不同金额：列出各自的出�
 
 test("两类都没有比出不一致时：写清只比了哪两类、不等于没有矛盾，不再说“没有发现大写与小写金额不一致”", () => {
   const text = supplement(build([mat("d1", "01-合同.docx", "本合同于2025年9月12日签订。买方应于验收后30日内支付验收款810,000元。")]));
-  assert.match(text, /本机规则只比对两类/);
+  assert.match(text, /本清单只比对两类/);
+  assert.equal(/本机|接着做|系统/.test(text), false, "V18 首轮 B1：补证清单不写“本机规则”“接着做”一类产品用语");
   assert.match(text, /不等于材料之间没有矛盾/);
 });
 
@@ -65,7 +66,7 @@ test("一方自己的情况说明标“一方陈述”；材料里提到还没�
 
   const timeline = [...readZipEntries(Buffer.from(b.files.find((x) => x.filename.startsWith("事实时间轴"))!.bytes)).entries()].filter(([k]) => /\.xml$/.test(k)).map(([, v]) => v.toString("utf8")).join("\n");
   assert.match(timeline, /一方陈述，待其他材料印证/);
-  assert.match(timeline, /材料记载（本机流程不判断证明力）/);
+  assert.match(timeline, /材料记载（证明力未作判断）/);
   const text = supplement(b);
   assert.match(text, /《09-项目负责人情况说明（我方）\.docx》提到：“2023年8月10日那笔的银行回单原件在财务部，尚未提供给律师。”——还没到手，请确认在谁手里后调取/);
   assert.equal(text.includes("（由律师按争点矩阵缺口补充）"), false);

@@ -143,11 +143,16 @@ test("多份 Word 文书与表格附件全部进复核（m37 七份只复核了�
 });
 
 test("整理审查要点：复核读本任务存下的审查要点草稿；修改轮用 rules.propose 重交，算作改出了新版本", { timeout: 180_000 }, async () => {
-  const seen = { review: [] as string[], fixUser: [] as string[] };
+  const seen = { review: [] as string[], fixUser: [] as string[], followUp: [] as string[] };
   const rules = (standard: string) => ({ title: "采购合同审查要点", rules: [{ topic: "付款", standard }, { topic: "预付款", standard: "不预付" }] });
   cloud.model.script = (body) => {
     const ms = msgs(body);
     const sys = ms.filter((m) => m.role === "system").map((m) => String(m.content ?? "")).join("\n");
+    // 回看（V18 第 43 批）：修改轮之后复核人对照重交的审查要点核对“必须改”是否落实
+    if (sys.includes("逐条核对你标为“必须改”的意见")) {
+      seen.followUp.push(String(ms.find((m) => m.role === "user")?.content ?? ""));
+      return { content: "【1】已落实｜付款期限已改为不超过 30 日" };
+    }
     if (sys.includes(REVIEWER)) {
       seen.review.push(`${sys}\n${String(ms.find((m) => m.role === "user")?.content ?? "")}`);
       return { content: "【1】要点 1｜付款期限写成 60 日｜范本：付款期限不超过30日｜改为不超过 30 日｜必须改" };
@@ -173,6 +178,9 @@ test("整理审查要点：复核读本任务存下的审查要点草稿；修�
     const outcome = done.events.find((e: any) => e.type === "review.fix_outcome")?.payload;
     assert.equal(outcome?.revised, 1, JSON.stringify(outcome));
     assert.equal(done.events.find((e: any) => e.type === "run.succeeded")?.payload.remaining, undefined, "改出了新草稿，不提示“没有改动”");
+    // 回看看到的是修改轮重交之后的审查要点（30 日），不是复核前的那一份
+    assert.equal(seen.followUp.length, 1);
+    assert.match(seen.followUp[0]!, /最新版交付件[\s\S]*付款期限不超过 30 日/);
   } finally {
     cloud.model.script = null;
   }

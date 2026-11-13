@@ -13,17 +13,34 @@ export const FACT_SHEET_NAME = "事实对照";
 export const FACT_COLUMNS = ["序号", "事实陈述", "发生日期", "来源材料", "律师是否已确认"];
 /** 一张对照表至多列多少条（Word 文书里的表格上限同为 300 行）。 */
 export const FACT_ROWS_MAX = 300;
-/** Word 文书里自动附的那一节的说明（以它识别“系统附的”那一节，改动后重新生成；助手自己写的同名节不动）。 */
-export const FACT_NOTE_PREFIX = "（本节由系统按正文引用的事实序号自动附上";
-export const FACT_NOTE = `${FACT_NOTE_PREFIX}，序号与事项“事实”页一致；正文改动后随之更新。“待确认”的事实尚未经律师确认。）`;
+/**
+ * Word 文书里自动附的那一节的说明（以它识别“系统附的”那一节，改动后重新生成；助手自己写的同名节不动）。
+ * V18 首轮 B1：原说明写“本节由系统……自动附上……序号与事项‘事实’页一致”，系统与界面的说法进了成果；改成律师的话。
+ * 识别时新旧两种开头都认（旧文书再经 docx.edit_draft 改动时，旧说明的那一节照样换成新的）。
+ */
+export const FACT_NOTE_PREFIX = "（本节列出正文引用的各项事实及其出处";
+export const FACT_NOTE = `${FACT_NOTE_PREFIX}，供核对；“待确认”的事实尚未经律师确认。）`;
+/** 第 41 批～第 42 批生成的文书里的旧说明开头。 */
+export const FACT_NOTE_LEGACY_PREFIX = "（本节由系统按正文引用的事实序号自动附上";
+/** 这段文字是不是系统附的那一节的说明（新旧写法都认）。 */
+export function isFactNote(text: string): boolean {
+  const t = String(text ?? "");
+  return t.startsWith(FACT_NOTE_PREFIX) || t.startsWith(FACT_NOTE_LEGACY_PREFIX);
+}
 
 const STATUS: Record<string, string> = { confirmed: "已确认", proposed: "待确认", rejected: "律师已否定（不应引用）" };
 
-/** 被引用到的序号对应的对照行（找不到的序号也列一行，提示核对引用）。 */
-export function factTableRows(deps: { db: KernelDb; tokens?: MatterTokenStore | undefined }, matterId: string, nos: readonly number[]): { rows: string[][]; omitted: number } {
+/**
+ * 被引用到的序号对应的对照行。事项的事实清单里没有的序号不列进对照表，放在 unknown 里由工具告诉助手改正引用
+ * （V18 第 43 批真实回归 m20：原先为它列一行“本事项的事实清单里没有这一序号，请核对引用”，这行系统提示随成果交了出去；
+ * 独立复核判“必须改”，起草的助手看不到系统附的这张表，答“该表不存在”，意见落不了地）。
+ */
+export function factTableRows(deps: { db: KernelDb; tokens?: MatterTokenStore | undefined }, matterId: string, nos: readonly number[]): { rows: string[][]; omitted: number; unknown: number[] } {
   const all = listFacts(deps.db, matterId);
   const byNo = new Map(all.map((f) => [Number(f.no), f] as const));
-  const picked = nos.slice(0, FACT_ROWS_MAX);
+  const unknown = nos.filter((n) => !byNo.has(n));
+  const known = nos.filter((n) => byNo.has(n));
+  const picked = known.slice(0, FACT_ROWS_MAX);
   const docIds = [...new Set(picked.map((n) => byNo.get(n)?.document_version_id).filter((x): x is string => typeof x === "string" && x.length > 0))];
   const names = new Map<string, string>();
   for (const id of docIds) {
@@ -37,11 +54,16 @@ export function factTableRows(deps: { db: KernelDb; tokens?: MatterTokenStore | 
     keys.forEach((k, i) => names.set(k, tok[i]!.text));
   }
   const rows = picked.map((n) => {
-    const f = byNo.get(n);
-    if (!f) return [`事实 ${n}`, "本事项事实页里没有这一序号，请核对引用", "", "", ""];
+    const f = byNo.get(n)!;
     return [`事实 ${n}`, String(f.statement ?? ""), String(f.occurred_on ?? ""), f.document_version_id ? (names.get(f.document_version_id) ?? "") : "", STATUS[String(f.status)] ?? String(f.status ?? "")];
   });
-  return { rows, omitted: nos.length - picked.length };
+  return { rows, omitted: known.length - picked.length, unknown };
+}
+
+/** 给助手的提示：正文引用了事项事实清单里没有的序号（只进工具返回，不进成果）。 */
+export function unknownFactNote(unknown: readonly number[]): string {
+  if (unknown.length === 0) return "";
+  return `正文引用的事实 ${unknown.slice(0, 20).join("、")}${unknown.length > 20 ? " 等" : ""} 在本事项的事实清单里没有这一序号，对照里没有列：先用 facts.list 核对序号，再把引用改对（或改写成材料名称与日期）`;
 }
 
 const textOf = (xml: string) => [...xml.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((t) => t[1]).join("");
@@ -54,7 +76,7 @@ export function stripFactSection(xml: string): string {
     const start = m.index ?? 0;
     let rest = xml.slice(start + m[0].length);
     const note = /^<w:p(?:\s[^>]*)?>[\s\S]*?<\/w:p>/.exec(rest);
-    if (!note || !textOf(note[0]).startsWith(FACT_NOTE_PREFIX)) continue;
+    if (!note || !isFactNote(textOf(note[0]))) continue;
     rest = rest.slice(note[0].length);
     const tbl = /^<w:tbl>[\s\S]*?<\/w:tbl>/.exec(rest);
     return xml.slice(0, start) + xml.slice(start + m[0].length + note[0].length + (tbl ? tbl[0].length : 0));
@@ -69,7 +91,7 @@ export function hasFactSection(xml: string): boolean {
 
 /** 系统附的那一节（交给 docx.render_report 的节结构）。 */
 export function factSection(rows: string[][], omitted: number): { heading: string; paragraphs: string[]; table: { columns: string[]; rows: string[][] } } {
-  return { heading: FACT_SHEET_NAME, paragraphs: [omitted > 0 ? `${FACT_NOTE.slice(0, -1)}；另有 ${omitted} 条超出本表上限未列。）` : FACT_NOTE], table: { columns: FACT_COLUMNS, rows } };
+  return { heading: FACT_SHEET_NAME, paragraphs: [omitted > 0 ? `${FACT_NOTE.replace(/。?）$/, "")}；另有 ${omitted} 条超出本表上限未列。）` : FACT_NOTE], table: { columns: FACT_COLUMNS, rows } };
 }
 
 /**
@@ -80,8 +102,8 @@ export function syncFactSection(docx: Buffer, build: (bodyText: string) => { row
   const xml = readZipText(docx, "word/document.xml");
   if (!xml) return { docx, changed: false };
   const stripped = stripFactSection(xml);
-  // 助手自己写了同名一节的不动（不另加）
-  if ([...stripped.matchAll(PARA_RE)].some((m) => /KwlHeading1/.test(m[0]) && textOf(m[0]).trim() === FACT_SHEET_NAME)) return { docx, changed: false };
+  // 助手自己写了同名一节的不动（不另加）；V18 首轮 B11：助手写成二、三级标题的同名节同样算（系统附的那一节只用一级标题）
+  if ([...stripped.matchAll(PARA_RE)].some((m) => /KwlHeading[123]/.test(m[0]) && textOf(m[0]).trim() === FACT_SHEET_NAME)) return { docx, changed: false };
   const body = [...stripped.matchAll(PARA_RE)].map((m) => textOf(m[0])).join("\n");
   const t = build(body);
   let next = stripped;

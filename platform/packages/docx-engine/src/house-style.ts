@@ -678,17 +678,34 @@ export function inlineRuns(text: string): Run[] {
  * 单独的“（盖章）”或日期。文末几行里出现时右对齐；正文里提到律所的句子不算。
  */
 const SIGNATURE_LINE =
-  /^(?:[^，。；,;：:]{2,30}律师事务所(?:（盖章）|\(盖章\))?|律师事务所[:：].{0,30}|(?:承办|经办)?律师[:：].{0,20}|(?:具状人|答辩人|申请人|被申请人|上诉人|被上诉人|起诉人|委托人|声明人|承诺人|原告|被告)[:：]?.{0,30}|(?:法定代表人|负责人|授权代表|(?:委托)?(?:诉讼)?代理人)(?:或(?:授权代表|负责人))?[:：].{0,30}|[（(]盖章[)）]|(?:签署|签发|出具)?日期[:：].{0,20}|(?:\d{4}|[〇零一二三四五六七八九]{4})\s*年\s*\S{1,3}\s*月\s*\S{1,3}\s*日|[_＿\s]*年[_＿\s]*月[_＿\s]*日)$/;
+  /^(?:[^，。；,;：:]{2,30}律师事务所(?:（盖章）|\(盖章\))?|律师事务所[:：].{0,30}|(?:承办|经办)?律师[:：].{0,20}|(?:具状人|答辩人|申请人|被申请人|申请执行人|再审申请人|复议申请人|异议人|上诉人|被上诉人|起诉人|反诉人|反诉原告|反诉被告|第三人|委托人|声明人|承诺人|原告|被告)[:：]?.{0,30}|(?:法定代表人|负责人|授权代表|授权代理人|(?:委托)?(?:诉讼)?代理人)(?:或(?:授权代表|授权代理人|委托代理人|负责人))?(?:[（(](?:签名|签字|盖章|签名或盖章|签字或盖章)[)）])?[:：].{0,30}|[（(]盖章[)）]|(?:签署|签发|出具)?日期[:：].{0,20}|(?:\d{4}|[〇零一二三四五六七八九]{4})\s*年\s*\S{1,3}\s*月\s*\S{1,3}\s*日|[_＿\s]*年[_＿\s]*月[_＿\s]*日)$/;
 
 /** 把文末连续的落款行改成右对齐（Markdown 转换与 createDocx 共用）。 */
 export function alignSignature(blocks: DocBlock[]): DocBlock[] {
   const out = blocks.slice();
   // 文末是附页表（证据目录、计算表）时，落款在附页之前：跳过末尾的表格与它的小标题再找（第 32 批，复核 A-06）
   let end = out.length - 1;
+  // 附页标题的位置（落款认出来之后，附页另起一页）
+  let annexHeading = -1;
   if (out[end]?.kind === "table") {
     while (end >= 0 && (out[end]!.kind === "table" || out[end]!.kind === "blank")) end -= 1;
-    if (end >= 0 && /^h[123]$/.test(out[end]!.kind)) end -= 1;
+    // 表与它的小标题之间可以有一两段说明（V18 第 43 批真实回归：起诉状落款后接“违约金计算明细”标题 + 一段说明 + 表，
+    // 说明段挡在中间，落款没被认出、整段按正文缩进排，附页也紧贴着落款）
+    let h = end;
+    for (let skipped = 0; h >= 0 && out[h]!.kind === "p" && skipped < 3; skipped += 1) h -= 1;
+    if (h >= 0 && /^h[123]$/.test(out[h]!.kind)) {
+      annexHeading = h;
+      end = h - 1;
+    }
   }
+  // 落款后面的“附：……”清单（副本份数、证据套数）不是落款，也不该挡住落款：跳过它再找
+  // （V18 第 43 批真实回归：强制执行申请书“年 月 日”后接一行“附：执行依据副本【待填】份；……”，落款三行都排成了正文）
+  for (let skipped = 0; end >= 0 && skipped < 2; skipped += 1) {
+    const b = out[end]!;
+    if (b.kind !== "p" || !/^附(?:件)?\s*[:：]/.test(b.runs.map((r) => r.text).join("").trim())) break;
+    end -= 1;
+  }
+  let aligned = 0;
   for (let k = end, n = 0; k >= 0 && n < 6; k -= 1, n += 1) {
     const b = out[k]!;
     if (b.kind !== "p" || b.sign) break;
@@ -696,6 +713,12 @@ export function alignSignature(blocks: DocBlock[]): DocBlock[] {
     if (text.length > 40 || !SIGNATURE_LINE.test(text)) break;
     // 落款各行与下一行同页，最后一行除外（第 35 批 R3：律所、经办律师、日期三行跨页拆开）
     out[k] = { kind: "right", text, ...(n > 0 ? { keepNext: true } : {}) };
+    aligned += 1;
+  }
+  // 落款之后的附页另起一页（只在确实认出了落款时；没有落款的文书照旧）
+  if (aligned > 0 && annexHeading >= 0) {
+    const hb = out[annexHeading]!;
+    if (hb.kind === "h1" || hb.kind === "h2" || hb.kind === "h3") out[annexHeading] = { ...hb, pageBreakBefore: true };
   }
   // “此致”与下一行（受文机关）放在同一页（第 33 批，Word 实开：“此致”独自落在页末）
   for (let k = 0; k < out.length - 1; k += 1) {

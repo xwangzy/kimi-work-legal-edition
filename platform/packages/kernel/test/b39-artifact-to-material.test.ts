@@ -61,7 +61,9 @@ test("修订稿作新材料：真名还原、独立登记、原件与成果不�
   const aud = tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_events WHERE action = 'materials.from_artifact' AND object_id = ?`, [m.document_version_id])!;
   assert.equal(aud.n, 1, "审计记了一条");
 
-  // 第二轮：在新材料上再改（修订痕迹以第一轮结果为底稿）
+  // 第二轮：在新材料上再改（修订痕迹以第一轮结果为底稿）。产品里“作为底稿继续修改”是另起一个任务并勾上这份新材料；
+  // 这里沿用同一个任务身份，把勾选换成新材料（V18 第 43 批：勾选的材料就是任务的边界，没勾的不能修订）
+  tk.kernel.db.run(`UPDATE runs SET input_snapshot = ? WHERE run_id = ?`, [JSON.stringify({ goal: "按意见修改", document_version_ids: [m.document_version_id] }), live.rid]);
   const r2 = await call("docx.revise", { document_version_id: m.document_version_id, patches: [{ anchor: "乙方应于收款后开具发票", proposed_text: "乙方应于收款后五个工作日内开具增值税专用发票" }] });
   assert.equal(r2.status, "applied", JSON.stringify(r2));
   const rev2 = tk.kernel.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM artifact_versions WHERE artifact_version_id = ?`, [r2.revision.artifact_version_id])!;

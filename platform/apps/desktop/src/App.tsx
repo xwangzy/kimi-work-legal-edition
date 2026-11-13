@@ -15,7 +15,6 @@ import { bootRetryDelay } from "./lib/boot-gate.ts";
 import { localDay, recoveryReminder, reminderSnoozed } from "./lib/recovery-reminder.ts";
 import { DeliverablesPage } from "./pages/Deliverables.tsx";
 import { MethodsPage } from "./pages/Methods.tsx";
-import { BoardsPage } from "./pages/Boards.tsx";
 import { ConnectionsPage } from "./pages/Connections.tsx";
 import { ChatPage } from "./pages/Chat.tsx";
 import { NotOpenPage } from "./pages/NotOpen.tsx";
@@ -53,7 +52,6 @@ export type Route =
   | { page: "review"; artifactId: string }
   | { page: "deliverables" }
   | { page: "methods" }
-  | { page: "boards" }
   | { page: "reminders"; newForMatter?: string }
   | { page: "inbox" }
   | { page: "connections"; tab: SettingsTab }
@@ -82,8 +80,9 @@ export function parseHash(hash: string): Route {
       return { page: "deliverables" };
     case "methods":
       return { page: "methods" };
+    // 独立的“看板”页已撤（V18 第 43 批）：内容与事项页“概览”相同；旧地址落到事项列表
     case "boards":
-      return { page: "boards" };
+      return { page: "matters" };
     case "reminders":
       // #/reminders/new/<事项>：打开设提醒表单并选好该事项（事项头“设提醒”）
       return a === "new" && b ? { page: "reminders", newForMatter: b } : { page: "reminders" };
@@ -438,8 +437,6 @@ function Page({ route }: { route: Route }) {
       return <DeliverablesPage />;
     case "methods":
       return <MethodsPage />;
-    case "boards":
-      return <BoardsPage />;
     case "connections":
       return <ConnectionsPage tab={route.tab} />;
     case "chat":

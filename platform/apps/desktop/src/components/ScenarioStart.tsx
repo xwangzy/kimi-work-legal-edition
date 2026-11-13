@@ -10,10 +10,10 @@ import { eventDateProblem, STAGE_LABELS, stagesFor } from "../lib/matter-stage.t
 import { notifyDataChanged } from "../lib/events.ts";
 import { nav } from "../App.tsx";
 import type { ScenarioCard } from "../lib/scenarios.ts";
-import { buildGoal, canStartPartial, preselectDocs, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues, startPanelInitial, wordDocGap } from "../lib/scenarios.ts";
+import { buildGoal, canStartPartial, materialScopeText, preselectDocs, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues, startPanelInitial, wordDocGap } from "../lib/scenarios.ts";
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
-import { defaultChoice } from "./ModeSelector.tsx";
+import { scenarioChoice } from "./ModeSelector.tsx";
 import { launchRun, prepareStart, RunSheet, type PendingStart } from "./RunSheet.tsx";
 import { SendSummary } from "./SendSummary.tsx";
 import { SendPoints } from "./SendPoints.tsx";
@@ -104,7 +104,9 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   }, [card.skill, matter?.matter_id]);
   // 整理案卷（确定性流程）的“已知争点”直接交给争点矩阵框架（B-5）
   const issues = useMemo(() => (card.scenario === "s2.case_file" ? splitIssues(String(values.issues ?? "")) : []), [card.scenario, values]);
-  const value = useMemo(() => ({ goal, scenario: card.scenario, documentIds: docIds, choice: defaultChoice(policy), ...(issues.length > 0 ? { issues } : {}) }), [goal, card.scenario, docIds, policy, issues]);
+  // V18 第 43 批：场景卡缺省直接开始（步骤与字段已在本面板给律师看过）；想先看计划的勾一下，仍走计划确认
+  const [planFirst, setPlanFirst] = useState(false);
+  const value = useMemo(() => ({ goal, scenario: card.scenario, documentIds: docIds, choice: { ...scenarioChoice(policy), planFirst }, ...(issues.length > 0 ? { issues } : {}) }), [goal, card.scenario, docIds, policy, issues, planFirst]);
   // 本事项审查要点（v9.4 第 22 批，C1 #21）：审合同、回稿重审、起草合同缺省按在用的那一版；律师可本次不用
   const [rules, setRules] = useState<RuleSet | null>(null);
   const [useRules, setUseRules] = useState(true);
@@ -314,6 +316,8 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
                   </div>
                 );
               })}
+              {/* V18 第 43 批：勾选就是边界——助手只读勾选的材料；一份都没勾时才可读本事项全部材料。把这条规则写在勾选框下面 */}
+              {card.scenario === "a1.agent_task" && docsReady && documents.length > 0 && <div className="ss-scope muted">{materialScopeText(docIds.length, documents.length)}</div>}
               <button className="btn-link ss-add" onClick={() => void pickMaterials(fileRef.current, onImport)}>＋ 添加文件</button>
               <input
                 ref={fileRef}
@@ -458,6 +462,12 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
         {/* 底部按钮贴底（第 26 批走查：1280×720 下“开始审查”在首屏之外，要先滚到底才看得到）；还不能开始时左边写缺什么 */}
         <div className="modal-actions modal-actions-sticky">
           {!ready && !busy && (missing.length > 0 || needDocs > 0 || !!wordGap) && <span className="muted ss-foot-why">{missing.length > 0 ? `先填写：${missing.map((f) => f.label).join("、")}` : wordGap ? "先添加或勾选要修改的 Word 文书（.docx）" : "先选择材料"}</span>}
+          {card.scenario === "a1.agent_task" && (
+            <label className="ss-plan-first" title="勾选后，助手先把打算怎么做写给你，你同意了才开始；不勾就直接按这张卡的步骤做。">
+              <input type="checkbox" checked={planFirst} onChange={(e) => setPlanFirst(e.target.checked)} />
+              开始前先给我看计划
+            </label>
+          )}
           <button className="btn-ghost" onClick={onClose}>取消</button>
           {/* 还不能开始时（例如疑似姓名待核对）不占主按钮：同屏的主动作是待办那一步（复核 S7B-01） */}
           <button className={ready ? "btn-primary" : "btn-ghost"} disabled={busy || !ready} onClick={() => void start()}>

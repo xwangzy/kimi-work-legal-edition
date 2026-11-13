@@ -1,5 +1,5 @@
 /** 内核测试辅助：每文件一个临时工作区；mock 提供方（离线可跑）。 */
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,27 @@ export interface TestKernel {
   inv: (method: string, params?: Record<string, unknown>) => Promise<any>;
 }
 
+/**
+ * 构建产物检查（V18 第 43 批）：新检出的目录里没有法规库、助手设定、工具清单、方法这些构建产物时，内核会一直等而不报错，
+ * 用例表现为挂起。这里先查一遍，缺了就直接失败并说明怎么补。
+ */
+const PREREQS: [string, string][] = [
+  ["content/lawdb/dist/lawdb.sqlite", "npm run build:lawdb"],
+  ["content/lawdb/test-fixtures/lawdb-renumber-demo.sqlite", "npm run build:lawdb"],
+  ["content/agent-profile/dist/legal-agent.manifest.json", "npm run build:agent-profile"],
+  ["content/tool-manifest/dist/tool-manifest.lock.json", "npm run build:tool-manifest"],
+  ["content/skills/dist/skills.manifest.json", "npm run build:skills"],
+];
+export function missingPrereqs(exists: (p: string) => boolean = existsSync): string[] {
+  return PREREQS.filter(([rel]) => !exists(fileURLToPath(new URL(`../../../${rel}`, import.meta.url)))).map(([rel, cmd]) => `${rel}（${cmd}）`);
+}
+function assertPrereqs(): void {
+  const miss = missingPrereqs();
+  if (miss.length > 0) throw new Error(`缺少构建产物，内核用例无法运行：${miss.join("；")}。在 platform/ 下先运行 npm run pretest（或直接 npm test）。`);
+}
+
 export async function makeKernel(env: Record<string, string> = {}, slug = "test-firm"): Promise<TestKernel> {
+  assertPrereqs();
   const dir = mkdtempSync(join(tmpdir(), "kwl-test-"));
   const { createKernel } = await import("../src/index.ts");
   const kernel = await createKernel({

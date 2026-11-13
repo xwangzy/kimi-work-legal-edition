@@ -1,0 +1,7 @@
+{"tag": "m36-closing-checklist", "card": "closing-checklist", "veto": [], "score": 23, "dims": [3, 3, 3, 3, 3, 2, 3, 3],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 11, "questions": 0,
+ "top_issues": ["先决条件与交割后义务各行的截止时点、后果大量同文重复，表格冗长", "单元格内留有“【未能在法规库核验，请核对原文】”产品提示标记", "变更登记法定申请期限因法规库缺《市场主体登记管理条例》只能列待核"],
+ "prev_score": 22,
+ "product_defect": ["独立复核的输入里“法规库原文”一节为空（起草时已取到原文），复核据此提出无效的“改为尚未核验”意见", "法规库缺《市场主体登记管理条例》，交割清单无法核验变更登记法定申请期限", "交付表格内保留“【未能在法规库核验，请核对原文】”等产品提示标记与“法规库”用语"],
+ "material_scope": {"used_unselected_content": false, "reading_statement_truthful": true, "gaps_listed_not_assumed": true},
+ "known_defects_recurring": [], "new_defects": []}

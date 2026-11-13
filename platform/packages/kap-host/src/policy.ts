@@ -308,8 +308,10 @@ export class HostPolicy {
         // “自动”档且未开“先出计划”时，宿主按自动档语义代为批准该确认（runtime.ts，记 run.approval_auto）
         if (mode === "chat") return deny("chat_read_only", spec.grade);
         // 接着原会话、未开“先出计划”的一轮（默认档、自动档）同样代批：续接的会话可能仍在计划模式，或模型照着前一轮的习惯又出计划。
-        // 手动档（每一步都要律师确认）照旧出卡；开了“先出计划”的照旧出卡
-        return approve((mode === "auto" || (ctx.continued === true && mode !== "manual")) && !ctx.planFirst ? "plan_auto_approved" : "plan_review_by_card", spec.grade);
+        // V18 首轮 A3：默认档的主任务律师没选“先看计划”（选了“直接做”）时，模型自发出的计划同样代批——原先只有自动档与续接代批，
+        // 律师选了“直接做”仍会被计划卡拦住（与上游 Kimi Code 2.4.0 起“计划模式只能由用户打开”同向）。
+        // 手动档（每一步都要律师确认）照旧出卡；开了“先出计划”的照旧出卡；问答档在上面已拒绝
+        return approve(mode !== "manual" && !ctx.planFirst ? "plan_auto_approved" : "plan_review_by_card", spec.grade);
       case "T0":
         if (!this.consumeBudget(state, 0)) return this.overBudget(state, 0, ask, deny, spec.grade);
         return mode === "manual" ? ask("manual_mode", spec.grade, null) : approve("read_within_matter", spec.grade);

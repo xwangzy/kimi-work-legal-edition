@@ -95,7 +95,9 @@ export function artifactName(a: { kind: string; filename: string; title?: string
   // 文件名可能带代号（第 35 批 R3：助手拟的标题带当事人名）：与标题同样在界面还原
   const fname = restore ? restore(a.filename) : a.filename;
   if (["review_table", "review_grid", "review_table_docx", "evidence_index", "dd_findings"].includes(a.kind)) return fname.replace(/\.(xlsx|docx)$/i, "");
-  if (!agentKind) return ARTIFACT_LABELS[a.kind] ?? a.filename;
+  // V18 A2：修订稿、清洁稿按文件名（去扩展名）显示——同一种类里有内部修订稿与“修订稿·对外版”，按种类名显示时两者同名、分不清哪份能发给对方
+  if (NAME_BY_FILE_KINDS.has(a.kind) || (!agentKind && !ARTIFACT_LABELS[a.kind])) return fname.replace(FILE_EXT, "") || (ARTIFACT_LABELS[a.kind] ?? a.filename);
+  if (!agentKind) return ARTIFACT_LABELS[a.kind]!;
   const t = a.title ? (restore ? restore(a.title) : a.title) : null;
   // 助手草稿有标题时写“标题（草稿）”，没有标题时沿用固定名称；标题自己已带“（草稿）”时不再重复（v9.4 走查：“研究备忘（草稿）（草稿）”）
   if (a.kind === "a1_agent_draft" || a.kind === "a1_agent_draft_partial") {
@@ -109,7 +111,21 @@ export function artifactName(a: { kind: string; filename: string; title?: string
     return `${bare}（${a.kind === "a1_agent_draft" ? "草稿" : "部分完成"}）`;
   }
   // 没有内容标题时用文件名，去掉扩展名（第 26 批走查：“案情时间线（草稿）.docx”；下载按钮已写明 Word / Excel）
-  return t ?? fname.replace(/\.(docx|xlsx|md|txt|csv|pdf)$/i, "");
+  return t ?? fname.replace(FILE_EXT, "");
+}
+
+const FILE_EXT = /\.(docx|xlsx|md|txt|csv|pdf)$/i;
+/** 按文件名显示的成果种类（V18 A2）：修订稿、清洁稿（docx.revise 与审查工作台都登记成这两种，对外版与内部稿同一种类）。 */
+const NAME_BY_FILE_KINDS: ReadonlySet<string> = new Set(["revision_draft", "revision_clean"]);
+
+/**
+ * 过程文件在列表里的名称（V18 A2）：答复摘要不再用第一行整句话当标题（“已完成审查。收到合同材料 1 份……”），统一叫“答复摘要”；
+ * 独立复核意见沿用“独立复核意见：所核的文书”。其余成果同 artifactName。
+ */
+export function fileListName(a: Parameters<typeof artifactName>[0], restore?: (t: string) => string): string {
+  if (a.kind === "a1_agent_draft") return "答复摘要";
+  if (a.kind === "a1_agent_draft_partial") return "答复摘要（部分完成）";
+  return artifactName(a, restore);
 }
 
 /** 去掉行内 Markdown 记号（粗体、斜体、行内代码、链接），用于摘要与标题这类纯文字位置。 */

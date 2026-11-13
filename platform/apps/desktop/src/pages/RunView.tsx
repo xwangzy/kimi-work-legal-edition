@@ -14,16 +14,18 @@ import { Icon } from "../components/Icons.tsx";
 import { Markdown, tokens as renderTokens } from "../components/Markdown.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
-import { ARTIFACT_STATUS_LABELS, artifactName, CITE_STATE_LABELS, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, jurisdictionLabel, MODE_LABELS, RUN_STATUS_LABELS, runName, stanceLabel, stepTime, stripMarkdownInline, TERMINAL_STATUSES } from "../lib/labels.ts";
+import { ARTIFACT_STATUS_LABELS, CITE_STATE_LABELS, fileListName, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, jurisdictionLabel, MODE_LABELS, RUN_STATUS_LABELS, runName, stanceLabel, stepTime, stripMarkdownInline, TERMINAL_STATUSES } from "../lib/labels.ts";
 import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "../lib/tokens.ts";
-import { nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
+import { followUpMaterialsText, nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
 import { currentBadges } from "../lib/badges.ts";
 import { engineHeartbeatMs, hasProgress, mergeProgress, phaseLine, progressActivityKey, progressTexts, retryStoppable, silenceMs, stallThresholdMs, progressView, type ProgressViewModel } from "../lib/progress.ts";
-import { buildSteps, groupSubtaskSteps, keyStepKeys, mergeRepeatSteps, reusedArtifacts, sentByToolCall, toolLabel, type SentInfo, type Step } from "../lib/timeline.ts";
+import { buildSteps, groupSubtaskSteps, keyStepKeys, mergeRepeatSteps, problemSteps, processSummary, reusedArtifacts, sentByToolCall, toolLabel, type SentInfo, type Step } from "../lib/timeline.ts";
 import { busyRunOfError } from "../lib/start-block.ts";
 import { methodLine, methodShort } from "../lib/run-method.ts";
 import { Select } from "../components/Select.tsx";
-import { currentFiles, rightCollapsed, rightTabs, type RightTab } from "../lib/run-pane.ts";
+import { artifactOptionOrder, currentFiles, queuedText, rightCollapsed, rightTabs, type RightTab } from "../lib/run-pane.ts";
+import { isPrimaryFile } from "../lib/deliverables.ts";
+import { FileTypeTag } from "../components/ArtifactRow.tsx";
 import { previewCites, previewFactMarks, type ArtifactCitations, type FactMarkView } from "../lib/citation-review.ts";
 import { CitationClaims } from "../components/CitationClaims.tsx";
 import { Breadcrumb } from "../components/Breadcrumb.tsx";
@@ -78,6 +80,8 @@ function downloadLabel(filename: string): string {
 export function RunView({ runId, matterId }: { runId: string; matterId: string }) {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [status, setStatus] = useState("queued");
+  // 排队原因（V18 第 43 批）：前面有几个任务在等律师确认或回答
+  const [waitingAhead, setWaitingAhead] = useState(0);
   const [run, setRun] = useState<any>(null);
   const [artifacts, setArtifacts] = useState<any[]>([]);
   const [docs, setDocs] = useState<any[]>([]);
@@ -134,6 +138,14 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   /** 追问前的一行确认（复核 B3-B10）：沿用的档位、估价与内容去向；问答档要写入草稿须明确勾选（复核 B3-B09）。 */
   const [followConfirm, setFollowConfirm] = useState<{ estimate_id: string; points_display: string; preview: string; warning: string | null; blocked: boolean; busyRunId: string | null; sendSummary?: SendSummaryView; mustReview: boolean } | null>(null);
   const [followRaise, setFollowRaise] = useState(false);
+  /** 追问时补勾的材料（上一轮没勾的）与勾选列表是否展开。 */
+  const [followAdd, setFollowAdd] = useState<string[]>([]);
+  const [followAddOpen, setFollowAddOpen] = useState(false);
+  // 追问框在页面最底部：展开补充材料的列表、出现确认行时都在它下面、落在可视区之外——滚到底，免得律师点了之后看不到变化
+  const followWrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (followAddOpen || followConfirm) followWrapRef.current?.scrollIntoView?.({ block: "end" });
+  }, [followAddOpen, followConfirm]);
   const [tokenMap, setTokenMap] = useState<Map<string, string | null>>(new Map());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -152,6 +164,16 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     }
   })();
   const withRun = (a: any) => ({ ...a, run_title: a.run_title ?? runSnap.title ?? null, run_goal: a.run_goal ?? runSnap.goal ?? run?.goal ?? null });
+  // 成果名（V18 A2 统一命名：答复摘要、修订稿按文件名）；代号在界面还原
+  const nameOf = (a: any) => fileListName(withRun(a), (t) => restoredPlain(t, tokenMap));
+  // 右栏下拉的选项名：交付文件写名称（第 2 版起写版数），旧版注明“旧版”，过程文件前面写“过程文件”
+  const optionLabel = (o: { row: any; group: "file" | "older" | "process"; old: boolean }) => {
+    const v = o.old || Number(o.row.version) > 1 ? ` · 第 ${o.row.version} 版` : "";
+    if (o.group === "process") return `过程文件 · ${nameOf(o.row)}${o.old ? `${v}（旧版）` : ""}`;
+    return `${nameOf(o.row)}${v}${o.old ? "（旧版）" : ""}`;
+  };
+  // 本次的主交付物（方法或场景卡定义的文件名）：结果区与右栏都把它排第一
+  const primaryName: string | null = typeof runSnap.skill_primary_output === "string" ? runSnap.skill_primary_output : (scenarioOfRun(run, homeLine())?.primary ?? null);
   const downloadOne = (a: any) =>
     void api
       .downloadArtifact(a.artifact_version_id, restoredPlain(String(a.filename ?? ""), tokenMap))
@@ -186,6 +208,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
       setArtifactsLoaded(true);
       setEgressInflight(g.inflight ?? null);
       setUnresolved(g.unresolved_operations ?? []);
+      setWaitingAhead(Number(g.waiting_ahead ?? 0));
       const rc = await api.riskCards(matterId, { run_id: runId }).catch(() => null);
       if (rc && rc.cards.length > 0) {
         const docsOf = [...new Set(rc.cards.map((c) => c.document_version_id).filter((x): x is string => !!x))];
@@ -249,21 +272,30 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
 
   // 代号只在界面还原（标题、计划、提问、预览；事实角标的悬停文字）
   const [factText, setFactText] = useState("");
+  // 结果区的一句话结论（V18 A1）：取最新一份答复摘要的正文，不再依赖右栏选中的是哪一份
+  const [replyText, setReplyText] = useState("");
   const texts = useMemo(
-    () => [preview?.text ?? "", factText, liveText, ...progressTexts(progress), ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? "")), ...artifacts.map((a) => `${a.title ?? ""}\n${a.filename ?? ""}`), ...(risk?.top.map((t) => t.issue) ?? []), ...(outline?.items.flatMap((x) => [x.claim, x.counter ?? "", ...x.basis.map((b) => b.note ?? ""), ...x.facts.map((f) => f.statement)]) ?? [])].join("\n"),
-    [preview, factText, liveText, progress, approvals, questions, events, artifacts, risk, outline],
+    () => [preview?.text ?? "", replyText, factText, liveText, ...progressTexts(progress), ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? "")), ...artifacts.map((a) => `${a.title ?? ""}\n${a.filename ?? ""}`), ...(risk?.top.map((t) => t.issue) ?? []), ...(outline?.items.flatMap((x) => [x.claim, x.counter ?? "", ...x.basis.map((b) => b.note ?? ""), ...x.facts.map((f) => f.statement)]) ?? [])].join("\n"),
+    [preview, replyText, factText, liveText, progress, approvals, questions, events, artifacts, risk, outline],
   );
   useEffect(() => {
     if (!texts.includes("〔")) return;
     restoreTokens(matterId, texts).then(setTokenMap).catch(() => {});
   }, [texts, matterId]);
 
-  // 默认预览：Agent 回复或第一份成果
+  // 右栏“成果”的顺序（V18 A1 #4）：交付文件最新版 → 旧版 → 过程文件；默认选中主交付物的最新版。
+  // 律师自己选过（下拉、结果区、审查工作台生成修订稿）之后不再自动换
+  const options = useMemo(() => artifactOptionOrder(artifacts, { primary: primaryName }), [artifacts, primaryName]);
+  const selTouched = useRef(false);
+  const pickArtifact = (id: string) => {
+    selTouched.current = true;
+    setSelected(id);
+  };
   useEffect(() => {
-    if (selected || artifacts.length === 0) return;
-    const first = artifacts.find((a) => a.kind === "a1_agent_draft" || a.kind === "final_message") ?? artifacts[0];
-    if (first) setSelected(first.artifact_version_id);
-  }, [artifacts, selected]);
+    if (selTouched.current || options.length === 0) return;
+    const best = options[0]!.row.artifact_version_id;
+    if (best !== selected) setSelected(best);
+  }, [options, selected]);
   useEffect(() => {
     if (!selected) return;
     const a = artifacts.find((x) => x.artifact_version_id === selected);
@@ -370,8 +402,25 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     if (outlineKey) outlineRef.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
   }, [outlineKey]);
   const [showAllFiles, setShowAllFiles] = useState(false);
-  const doneFiles = useMemo(() => currentFiles(artifacts), [artifacts]);
-  const unreviewed = artifacts.filter((a) => a.status === "draft" || a.status === "pending_review").length;
+  const doneFiles = useMemo(() => currentFiles(artifacts, { primary: primaryName }), [artifacts, primaryName]);
+  const reply = doneFiles.process.find((a) => String(a.kind).startsWith("a1_agent_draft")) ?? null;
+  const replyId = reply && /\.(md|txt|markdown)$/i.test(String(reply.filename)) ? String(reply.artifact_version_id) : null;
+  useEffect(() => {
+    if (!terminal || !replyId) return;
+    let live = true;
+    api
+      .artifactText(replyId)
+      .then((r) => live && setReplyText(new TextDecoder().decode(Uint8Array.from(atob(r.data_base64), (c) => c.charCodeAt(0)))))
+      .catch(() => live && setReplyText(""));
+    return () => {
+      live = false;
+    };
+  }, [terminal, replyId]);
+  /** 结束后的排法（V18 A1）：结果在上、过程收起；对账中仍要律师逐项核实，沿用运行中的排法。 */
+  const doneLayout = terminal && status !== "reconciling";
+  const [processOpen, setProcessOpen] = useState(false);
+  // 待复核按文件数算（V18 A2）：旧版与过程文件不算
+  const unreviewed = doneFiles.current.filter((a) => a.status === "draft" || a.status === "pending_review").length;
   const [showDetail, setShowDetail] = useState(false);
   const steps = showDetail ? allSteps : allSteps.filter((x) => x.level === "lawyer");
   const hiddenSteps = allSteps.length - allSteps.filter((x) => x.level === "lawyer").length;
@@ -398,6 +447,24 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     return ids.map((id) => docs.find((d) => d.document_version_id === id) ?? { document_version_id: id, filename: id });
   }, [run, docs]);
   const loaded = useMemo(() => [...events].reverse().find((e) => e.type === "materials.loaded")?.payload, [events]);
+  // 追问补勾材料（V18 第 43 批续三）：勾选即边界之后，漏勾一份不必整单重来。只在上一轮勾了材料时提供（没勾的任务本来就可读全部）；
+  // 可补的是本事项里上一轮没勾的材料。补勾的随追问一起估价、发起，内核据此放进新一轮的材料快照与读取范围
+  const extraDocs = useMemo(() => {
+    if (inputDocs.length === 0) return [];
+    const had = new Set(inputDocs.map((d) => d.document_version_id));
+    return docs.filter((d) => !had.has(d.document_version_id));
+  }, [inputDocs, docs]);
+  const followDocIds = useMemo(() => [...inputDocs.map((d) => d.document_version_id), ...extraDocs.filter((d) => followAdd.includes(d.document_version_id)).map((d) => d.document_version_id)], [inputDocs, extraDocs, followAdd]);
+  const followAdded = followDocIds.length - inputDocs.length;
+  // 本轮是追问且补过材料：材料清单里标出哪几份是这一轮补的
+  const addedThisRound: string[] = useMemo(() => {
+    try {
+      const snap = typeof run?.input_snapshot === "string" ? JSON.parse(run.input_snapshot) : (run?.input_snapshot ?? {});
+      return Array.isArray(snap.followup_added_document_version_ids) ? snap.followup_added_document_version_ids : [];
+    } catch {
+      return [];
+    }
+  }, [run]);
 
   const reconcile = async (op: UnresolvedOperation, resolution: "applied" | "not_applied") => {
     setBusy(true);
@@ -438,8 +505,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     setBusy(true);
     setErr("");
     try {
-      const docIds = inputDocs.map((d) => d.document_version_id);
-      const est = await api.estimate(matterId, { scenario: "a1.agent_task", document_version_ids: docIds, goal: text });
+      const est = await api.estimate(matterId, { scenario: "a1.agent_task", document_version_ids: followDocIds, goal: text });
       const dw = est.data_where ?? { preview: "", warning: null, start_blocked: false };
       // 事项里另有进行中的任务（复核 B4-B13）：与开始面板同样给出“查看进行中的任务”
       const busyRunId = dw.block_kind === "busy" && typeof dw.busy_run_id === "string" ? dw.busy_run_id : null;
@@ -469,6 +535,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
       });
       setFollowText("");
       setFollowConfirm(null);
+      setFollowAdd([]);
+      setFollowAddOpen(false);
       nav(`/run/${r.run_id}/${matterId}`);
     } catch (e) {
       setErr((e as Error).message);
@@ -549,12 +617,261 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
           void refresh();
         }}
         onRedline={(id) => {
-          setSelected(id);
+          pickArtifact(id);
           void refresh();
         }}
       />
     );
   }
+
+  // ——— 页面各块（V18 A1：运行中与结束后两种排法共用）———
+  const timelineEl = (
+    <div className="timeline">
+      {groupSubtaskSteps(steps).map((it) =>
+        it.kind === "step" ? (
+          <StepRow key={it.step.key} s={it.step} now={now} tokenMap={tokenMap} label={it.label} showTime={it.step.level === "detail" || keySteps.has(it.step.key)} />
+        ) : (
+          // 子任务折叠（Y4 #33，复核 S7B-05）：同一子任务的步骤只显示一行，展开看逐步
+          <details key={it.key} className={`step step-${it.failed ? "fail" : it.done ? "ok" : "wait"} step-sub step-group`}>
+            <summary>
+              <span className="step-dot">{it.failed ? <Icon.x /> : it.done ? <Icon.check /> : null}</span>
+              <span className="step-body">
+                <span className="step-title">
+                  <span className="tag tag-sub">{it.label}</span>
+                  {it.failed ? "有一步没有完成" : it.done ? "已完成" : `进行中：${it.steps.at(-1)!.title}`}
+                  <span className="muted"> · 共 {it.steps.length} 步 · 展开</span>
+                </span>
+              </span>
+            </summary>
+            {it.steps.map((s) => (
+              <StepRow key={s.key} s={s} now={now} tokenMap={tokenMap} showTime={s.level === "detail" || keySteps.has(s.key)} />
+            ))}
+          </details>
+        ),
+      )}
+      {!terminal && approvals.length === 0 && questions.length === 0 && !liveText && (
+        <div className={`step step-wait${pv.retry ? " step-retry" : ""}`}>
+          <span className="step-dot" />
+          <div className="step-body muted">
+            {/* 排队中不是“没进展”（第 29 批：本机同时处理的任务有上限，排在后面的曾被提示“可以取消后重新运行”） */}
+            {status === "queued"
+              ? queuedText(waitingAhead)
+              : (pv.retry ?? (silentFor > stallThresholdMs(progress) ? "已经有一阵子没有新进展了。任务仍在运行；如果长时间没有变化，可以取消后重新运行。" : phaseLine(progress, now, toolLabel) ?? "正在处理…"))}
+            {retryStoppable(pv) && run && (
+              <div className="banner-actions">
+                <ConfirmButton
+                  label="停止，稍后再试"
+                  question="先停止这个任务？已完成的部分不会丢，稍后可以重新运行。"
+                  confirmLabel="停止"
+                  keepLabel="继续等"
+                  onConfirm={async () => {
+                    try {
+                      const cur = await api.getRun(runId);
+                      await api.cancelRun(runId, cur.run.status_version);
+                      await refresh();
+                    } catch (e) {
+                      setErr((e as Error).message);
+                    }
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {hiddenSteps > 0 && (
+        <button className="btn-link step-toggle" onClick={() => setShowDetail((v) => !v)}>
+          {showDetail ? "收起处理细节" : `处理细节（${hiddenSteps} 条）`}
+        </button>
+      )}
+    </div>
+  );
+  const notesEl = terminal && lastNotes.length > 0 && (
+    <details className="progress-panel">
+      <summary className="muted">助手在过程中的进展说明（{lastNotes.length} 条）</summary>
+      {lastNotes.map((n, i) => (
+        <div key={i} className="progress-note">
+          <div className="muted">{n.source}</div>
+          <Markdown text={n.text} tokenMap={tokenMap} />
+        </div>
+      ))}
+    </details>
+  );
+  const reconcileEl = (status === "reconciling" || (status === "failed" && unresolved.length > 0)) && (
+    <div className="card reconcile-card">
+      <div className="title">有 {unresolved.length} 个操作无法确认是否已完成</div>
+      <p className="muted">
+        任务中断时（例如应用意外退出）这些操作正在进行。为避免重复执行（如重复生成或覆盖文件），请您到对应位置看一眼，再逐项告诉我们结果；全部确认后即可重新运行，已完成的操作不会再做一遍。
+      </p>
+      {unresolved.map((op) => (
+        <div key={op.tool_operation_id} className="reconcile-row">
+          <span>
+            {op.operation || op.tool}
+            <span className="muted">（{fmtShortTime(op.created_at)}）</span>
+          </span>
+          <span className="reconcile-actions">
+            <button className="btn-ghost" disabled={busy} onClick={() => void reconcile(op, "applied")}>已完成</button>
+            <button className="btn-ghost" disabled={busy} onClick={() => void reconcile(op, "not_applied")}>未完成</button>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+  // 哪里出了问题 / 还剩什么没做（V18 A1 #3）：部分完成、失败、取消、超时时放在结果区上方；没完成的那一步与说明露在外面，过程照样收起
+  const issues = doneLayout && status !== "succeeded" ? problemSteps(allSteps) : [];
+  const issueTitle: Record<string, string> = { partial: "部分完成：还有没做完的地方", failed: "任务未完成", cancelled: "任务已取消", timed_out: "任务超过时限，没有做完", expired: "任务已过期，没有做完" };
+  const issueEl = doneLayout && status !== "succeeded" && issueTitle[status] && !(status === "failed" && unresolved.length > 0) && (
+    <div className={`card done-issue${status === "partial" ? " done-issue-partial" : " retry-card"}`} role="status">
+      <div className="title">{issueTitle[status]}</div>
+      {issues.length > 0 && (
+        <ul className="done-issue-list">
+          {issues.map((s) => (
+            <li key={s.key}>
+              <span>{s.title}</span>
+              {s.detail && <div className="muted">{renderTokens(s.detail, tokenMap)}</div>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {run?.terminal_reason && !issues.some((s) => s.title === String(run.terminal_reason) || s.detail === String(run.terminal_reason)) && <p className="muted">{String(run.terminal_reason)}</p>}
+      {status === "failed" && run && (
+        <div className="card-actions">
+          <button className="btn-primary" disabled={busy} onClick={() => void retry()}>
+            重新运行
+          </button>
+          {retryBusyRun && (
+            <button className="btn-ghost" onClick={() => nav(`/run/${retryBusyRun}/${matterId}`)}>
+              查看进行中的任务
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+  const riskEl = risk && (risk.docs.length > 0 || risk.unlinked > 0) && (
+    <div className="card risk-entry">
+      <div className="title">
+        本任务提出了 {risk.total} 项审查意见{risk.highOpen > 0 ? `，其中 ${risk.highOpen} 项重大风险待你处理` : ""}
+      </div>
+      <p className="muted">
+        {risk.decided >= risk.total
+          ? revision
+            ? `${risk.total} 项意见都已处理，修订稿已生成，可以下载或提交复核。`
+            : `${risk.total} 项意见都已处理：在审查工作台生成带修订痕迹的 Word 修订稿（原件不改动）。`
+          : `逐项接受、修改或不采纳后，可一键生成带修订痕迹和批注的 Word 修订稿（原件不改动）。已处理 ${risk.decided}/${risk.total}。`}
+      </p>
+      {/* 全部处理完且已有修订稿：首屏主按钮换成“下载修订稿（Word）”，次按钮“提交复核”（Z3 评审 #3） */}
+      {risk.decided >= risk.total && revision && (
+        <div className="card-actions">
+          <button className="btn-primary" onClick={() => downloadOne(revision)}>下载修订稿（Word）</button>
+          {revision.status === "draft" && (
+            <button className="btn-ghost" onClick={() => void submitOne(revision)}>提交复核</button>
+          )}
+          {revision.status === "pending_review" && (
+            <button className="btn-ghost" onClick={() => nav(`/review/${revision.artifact_version_id}`)}>去复核 / 签发</button>
+          )}
+        </div>
+      )}
+      <div className="card-actions">
+        {risk.docs.map((d, i) => (
+          // 每屏最多一个黑色主按钮（Y4 V-5）：多份文书时只有第一份用主按钮
+          <button key={d} className={i === 0 && !(risk.decided >= risk.total && revision) ? "btn-primary" : "btn-ghost"} onClick={() => setWorkbench({ doc: d })}>
+            打开审查工作台{risk.docs.length > 1 ? `：${docs.find((x) => x.document_version_id === d)?.filename ?? ""}` : ""}
+          </button>
+        ))}
+        {risk.unlinked > 0 && (
+          <button className="btn-ghost" onClick={() => setWorkbench({ doc: null })}>
+            未关联合同的意见（{risk.unlinked}）
+          </button>
+        )}
+      </div>
+    </div>
+  );
+  // ①一句话结论：最新一份答复摘要的前三行（UIUX 增量评审 D-1：全文在右栏，同一份内容不读两遍）
+  const summaryEl = terminal && replyText.trim() && reply && (
+    <div className="answer answer-summary done-summary">
+      <div className="pane-title">结论 · 答复摘要（草稿）</div>
+      {summaryLines(replyText).map((l, i) => (
+        <p key={i}>{renderTokens(l, tokenMap)}</p>
+      ))}
+      <button
+        className="btn-link"
+        onClick={() => {
+          tabTouched.current = true;
+          pickArtifact(String(reply.artifact_version_id));
+          setTab("artifact");
+        }}
+      >
+        在右侧查看全文 →
+      </button>
+    </div>
+  );
+  const reusedEl = terminal && (status === "succeeded" || status === "partial") && reused.length > 0 && (
+    <div className="card done-files">
+      <div className="title">这次的结果与之前一次任务完全相同，沿用了那次的{reused.length > 1 ? ` ${reused.length} 份` : ""}文件</div>
+      <p className="muted">内容一字不差时不另存一份新版本，复核与签发都在原来那份上进行。</p>
+      <div className="banner-actions">
+        <button className="btn-ghost btn-sm" onClick={() => nav(`/review/${reused[0]!.artifact_version_id}`)}>
+          打开那份文件
+        </button>
+        {reused[0]!.first_run_id && (
+          <button className="btn-link" onClick={() => nav(`/run/${reused[0]!.first_run_id}/${matterId}`)}>
+            看那次任务
+          </button>
+        )}
+      </div>
+    </div>
+  );
+  // ②本次交付的文件：每份只列最新版，主交付物第一（V18 A1/A2，与成果页同一个分组函数）
+  const openInPane = (a: any) => {
+    tabTouched.current = true;
+    pickArtifact(a.artifact_version_id);
+    setTab("artifact");
+  };
+  const filesEl = terminal && doneFiles.current.length > 0 && (
+    <div className="done-files">
+      <div className="pane-title">本次交付的文件（草稿，{doneFiles.current.length} 份）</div>
+      <ul className="done-file-list">
+        {/* 多于 6 份时先列 6 份，其余点“全部”展开（v9.4 U1 #8） */}
+        {(showAllFiles ? doneFiles.current : doneFiles.current.slice(0, 6)).map((a) => (
+          <li key={a.artifact_version_id} className={selected === a.artifact_version_id ? "on" : undefined}>
+            <FileTypeTag filename={String(a.filename ?? "")} />
+            <button className="btn-link done-file-name" title={restoredPlain(String(a.filename ?? ""), tokenMap)} onClick={() => openInPane(a)}>
+              {nameOf(a)}
+            </button>
+            {isPrimaryFile(String(a.filename ?? ""), primaryName) && <span className="tag tag-gray">主文书</span>}
+            {Number(a.version) > 1 && <span className="muted done-file-ver">第 {a.version} 版</span>}
+            <span className="spacer" />
+            <button className="btn-ghost btn-sm" onClick={() => openInPane(a)}>
+              预览
+            </button>
+            <button className="btn-ghost btn-sm" onClick={() => downloadOne(a)}>
+              {downloadLabel(String(a.filename ?? ""))}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {doneFiles.current.length > 6 && !showAllFiles && (
+        <button className="btn-link" onClick={() => setShowAllFiles(true)}>
+          全部 {doneFiles.current.length} 份 →
+        </button>
+      )}
+      {/* 同一份文件只列最新一版（第 31 批）：旧版在右栏“成果”里 */}
+      {doneFiles.older > 0 && <div className="muted done-files-note">以前的 {doneFiles.older} 个版本在右侧“成果”里。</div>}
+    </div>
+  );
+  // ③下一步：接着做（D-4）：同一事项下打开下一场景的开始面板
+  const nextCards = (status === "succeeded" || status === "partial") && (matter?.lifecycle ?? "active") === "active" ? nextScenarios(scenarioOfRun(run, homeLine())) : [];
+  const nextEl = nextCards.length > 0 && (
+    <div className="next-steps">
+      <span className="muted">接着做：</span>
+      {nextCards.map((c) => (
+        <button key={c.id} className="pill pill-link" onClick={() => nav(`/start/${c.id}/${matterId}`)}>
+          {c.title} →
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     // 第 27 批（评审 U3-11）：执行页也有 <main> 地标（读屏“跳到正文”；原来是唯一没有的主页面）
@@ -571,7 +888,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               {status === "succeeded" && unreviewed > 0 ? (
                 <span className="pill pill-orange" title="任务已完成；成果都是草稿，等你复核">{unreviewed} 份待复核</span>
               ) : (
-                <span className={`pill ${terminal ? (status === "succeeded" ? "pill-green" : "pill-gray") : status.startsWith("waiting") ? "pill-orange" : "pill-blue"}`}>{RUN_STATUS_LABELS[status] ?? status}</span>
+                // 运行中“执行中”与“AI 处理中”意思重复（V18 A1 #5）：有说明当前在做什么的徽标时只留徽标
+                (terminal || status.startsWith("waiting") || badges.length === 0) && <span className={`pill ${terminal ? (status === "succeeded" ? "pill-green" : "pill-gray") : status.startsWith("waiting") ? "pill-orange" : "pill-blue"}`}>{RUN_STATUS_LABELS[status] ?? status}</span>
               )}
               {!status.startsWith("waiting") && badges.map((b) => <span key={b.label} className={`pill pill-${b.tone}`} title={b.title}>{b.label}</span>)}
               {/* 原左栏“在哪里处理”每个任务都一样，收成一枚胶囊（Z3 #29） */}
@@ -589,6 +907,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                       <div key={d.document_version_id} className="mat-row">
                         <Icon.file />
                         <span className="mat-name" title={d.filename}>{d.filename}</span>
+                        {addedThisRound.includes(d.document_version_id) && <span className="tag tag-gray">本轮补充</span>}
                       </div>
                     ))}
                     {loaded && <div className="muted">已读 {loaded.loaded}/{loaded.requested} 份{loaded.failed ? `，${loaded.failed} 份读不了（已列出，可换成 Word 或 PDF）` : ""}。</div>}
@@ -633,274 +952,95 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
           ) : (
             String(run.goal ?? run.input_snapshot.goal).replace(/\s+/g, " ").trim().length > 30 && <div className="goal-bubble">{renderTokens(String(run.goal ?? run.input_snapshot.goal), tokenMap)}</div>
           ))}
-        <div className="timeline">
-          {groupSubtaskSteps(steps).map((it) =>
-            it.kind === "step" ? (
-              <StepRow key={it.step.key} s={it.step} now={now} tokenMap={tokenMap} label={it.label} showTime={it.step.level === "detail" || keySteps.has(it.step.key)} />
-            ) : (
-              // 子任务折叠（Y4 #33，复核 S7B-05）：同一子任务的步骤只显示一行，展开看逐步
-              <details key={it.key} className={`step step-${it.failed ? "fail" : it.done ? "ok" : "wait"} step-sub step-group`}>
-                <summary>
-                  <span className="step-dot">{it.failed ? <Icon.x /> : it.done ? <Icon.check /> : null}</span>
-                  <span className="step-body">
-                    <span className="step-title">
-                      <span className="tag tag-sub">{it.label}</span>
-                      {it.failed ? "有一步没有完成" : it.done ? "已完成" : `进行中：${it.steps.at(-1)!.title}`}
-                      <span className="muted"> · 共 {it.steps.length} 步 · 展开</span>
-                    </span>
-                  </span>
-                </summary>
-                {it.steps.map((s) => (
-                  <StepRow key={s.key} s={s} now={now} tokenMap={tokenMap} showTime={s.level === "detail" || keySteps.has(s.key)} />
-                ))}
-              </details>
-            ),
-          )}
-          {!terminal && approvals.length === 0 && questions.length === 0 && !liveText && (
-            <div className={`step step-wait${pv.retry ? " step-retry" : ""}`}>
-              <span className="step-dot" />
-              <div className="step-body muted">
-                {/* 排队中不是“没进展”（第 29 批：本机同时处理的任务有上限，排在后面的曾被提示“可以取消后重新运行”） */}
-                {status === "queued"
-                  ? "排队中：本机同时处理的任务有上限，前面的任务完成后自动开始，不用重新发起。"
-                  : (pv.retry ?? (silentFor > stallThresholdMs(progress) ? "已经有一阵子没有新进展了。任务仍在运行；如果长时间没有变化，可以取消后重新运行。" : phaseLine(progress, now, toolLabel) ?? "正在处理…"))}
-                {retryStoppable(pv) && run && (
-                  <div className="banner-actions">
-                    <ConfirmButton
-                      label="停止，稍后再试"
-                      question="先停止这个任务？已完成的部分不会丢，稍后可以重新运行。"
-                      confirmLabel="停止"
-                      keepLabel="继续等"
-                      onConfirm={async () => {
-                        try {
-                          const cur = await api.getRun(runId);
-                          await api.cancelRun(runId, cur.run.status_version);
-                          await refresh();
-                        } catch (e) {
-                          setErr((e as Error).message);
-                        }
-                      }}
-                    />
+        {doneLayout ? (
+          <>
+            {/* V18 A1：结束后“结果在上、过程收起”。①哪里出了问题（部分完成、失败、取消时）②结论 ③交付文件 ④下一步；过程收成一行 */}
+            {issueEl}
+            {reconcileEl}
+            {(summaryEl || filesEl || reusedEl || riskEl || nextEl) && (
+              <section className="done-result" aria-label="结果">
+                {summaryEl}
+                {filesEl}
+                {reusedEl}
+                {(riskEl || nextEl) && (
+                  <div className="done-next">
+                    {riskEl}
+                    {nextEl}
                   </div>
                 )}
-              </div>
-            </div>
-          )}
-          {hiddenSteps > 0 && (
-            <button className="btn-link step-toggle" onClick={() => setShowDetail((v) => !v)}>
-              {showDetail ? "收起处理细节" : `处理细节（${hiddenSteps} 条）`}
-            </button>
-          )}
-        </div>
-        {!terminal && hasProgress(pv) && <ProgressPanel vm={pv} tokenMap={tokenMap} />}
-        {terminal && lastNotes.length > 0 && (
-          <details className="progress-panel">
-            <summary className="muted">助手在过程中的进展说明（{lastNotes.length} 条）</summary>
-            {lastNotes.map((n, i) => (
-              <div key={i} className="progress-note">
-                <div className="muted">{n.source}</div>
-                <Markdown text={n.text} tokenMap={tokenMap} />
-              </div>
-            ))}
-          </details>
-        )}
-        {!terminal && liveText.trim() && (
-          <div className="live-draft" aria-live="polite" aria-busy="true">
-            <div className="pane-title">正在起草…</div>
-            <Markdown text={liveText} tokenMap={tokenMap} />
-          </div>
-        )}
-        {err && <div className="banner banner-red">{err}</div>}
-        {(status === "reconciling" || (status === "failed" && unresolved.length > 0)) && (
-          <div className="card reconcile-card">
-            <div className="title">有 {unresolved.length} 个操作无法确认是否已完成</div>
-            <p className="muted">
-              任务中断时（例如应用意外退出）这些操作正在进行。为避免重复执行（如重复生成或覆盖文件），请您到对应位置看一眼，再逐项告诉我们结果；全部确认后即可重新运行，已完成的操作不会再做一遍。
-            </p>
-            {unresolved.map((op) => (
-              <div key={op.tool_operation_id} className="reconcile-row">
-                <span>
-                  {op.operation || op.tool}
-                  <span className="muted">（{fmtShortTime(op.created_at)}）</span>
-                </span>
-                <span className="reconcile-actions">
-                  <button className="btn-ghost" disabled={busy} onClick={() => void reconcile(op, "applied")}>已完成</button>
-                  <button className="btn-ghost" disabled={busy} onClick={() => void reconcile(op, "not_applied")}>未完成</button>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-        {status === "failed" && unresolved.length === 0 && run && (
-          <div className="card retry-card">
-            <div className="title">任务未完成</div>
-            {run.terminal_reason && <p className="muted">{String(run.terminal_reason)}</p>}
-            <div className="card-actions">
-              <button className="btn-primary" disabled={busy} onClick={() => void retry()}>
-                重新运行
+              </section>
+            )}
+            {err && <div className="banner banner-red">{err}</div>}
+            <div className="done-process">
+              <button className="done-process-toggle" aria-expanded={processOpen} onClick={() => setProcessOpen((v) => !v)}>
+                <span>{processSummary(allSteps, run?.created_at)}</span>
+                <span className="done-process-chev" aria-hidden="true">›</span>
               </button>
-              {retryBusyRun && (
-                <button className="btn-ghost" onClick={() => nav(`/run/${retryBusyRun}/${matterId}`)}>
-                  查看进行中的任务
-                </button>
+              {processOpen && (
+                <>
+                  {timelineEl}
+                  {notesEl}
+                </>
               )}
             </div>
-          </div>
-        )}
-        {risk && (risk.docs.length > 0 || risk.unlinked > 0) && (
-          <div className="card risk-entry">
-            <div className="title">
-              本任务提出了 {risk.total} 项审查意见{risk.highOpen > 0 ? `，其中 ${risk.highOpen} 项重大风险待你处理` : ""}
-            </div>
-            <p className="muted">
-              {risk.decided >= risk.total
-                ? revision
-                  ? `${risk.total} 项意见都已处理，修订稿已生成，可以下载或提交复核。`
-                  : `${risk.total} 项意见都已处理：在审查工作台生成带修订痕迹的 Word 修订稿（原件不改动）。`
-                : `逐项接受、修改或不采纳后，可一键生成带修订痕迹和批注的 Word 修订稿（原件不改动）。已处理 ${risk.decided}/${risk.total}。`}
-            </p>
-            {/* 全部处理完且已有修订稿：首屏主按钮换成“下载修订稿（Word）”，次按钮“提交复核”（Z3 评审 #3） */}
-            {risk.decided >= risk.total && revision && (
-              <div className="card-actions">
-                <button className="btn-primary" onClick={() => downloadOne(revision)}>下载修订稿（Word）</button>
-                {revision.status === "draft" && (
-                  <button className="btn-ghost" onClick={() => void submitOne(revision)}>提交复核</button>
-                )}
-                {revision.status === "pending_review" && (
-                  <button className="btn-ghost" onClick={() => nav(`/review/${revision.artifact_version_id}`)}>去复核 / 签发</button>
-                )}
+          </>
+        ) : (
+          <>
+            {timelineEl}
+            {!terminal && hasProgress(pv) && <ProgressPanel vm={pv} tokenMap={tokenMap} />}
+            {notesEl}
+            {!terminal && liveText.trim() && (
+              <div className="live-draft" aria-live="polite" aria-busy="true">
+                <div className="pane-title">正在起草…</div>
+                <Markdown text={liveText} tokenMap={tokenMap} />
               </div>
             )}
-            <div className="card-actions">
-              {risk.docs.map((d, i) => (
-                // 每屏最多一个黑色主按钮（Y4 V-5）：多份文书时只有第一份用主按钮
-                <button key={d} className={i === 0 && !(risk.decided >= risk.total && revision) ? "btn-primary" : "btn-ghost"} onClick={() => setWorkbench({ doc: d })}>
-                  打开审查工作台{risk.docs.length > 1 ? `：${docs.find((x) => x.document_version_id === d)?.filename ?? ""}` : ""}
-                </button>
-              ))}
-              {risk.unlinked > 0 && (
-                <button className="btn-ghost" onClick={() => setWorkbench({ doc: null })}>
-                  未关联合同的意见（{risk.unlinked}）
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-        <div ref={outlineRef} className="card-anchor" />
-        {outline && !terminal && (
-          <OutlineConfirm
-            key={outline.outline_id}
-            outline={outline}
-            plain={(t) => (t ? restoredPlain(t, tokenMap) : "")}
-            busy={busy}
-            canStop={!!outlineQ && outlineQ.others === 0}
-            onConfirm={(d, n, f) => void confirmOutline(d, n, f)}
-            onStop={() => void stopOutline()}
-          />
-        )}
-        <div className="interactions" ref={cardsRef}>
-          {/* 同一时间只展开一张（UIUX 增量评审 P0-F）：先到的先处理，其余折叠为“还有 N 项待确认”，可展开 */}
-          {pendingCards.slice(0, showAllCards ? pendingCards.length : 1).map((c) =>
-            c.kind === "approval" ? (
-              <ApprovalCardView key={c.card.approval_id} card={c.card} tokenMap={tokenMap} busy={busy} onDecide={(d) => void decide(c.card, d)} />
-            ) : (
-              <QuestionCardView
-                key={c.card.question_id}
-                card={c.card}
-                tokenMap={tokenMap}
+            {err && <div className="banner banner-red">{err}</div>}
+            {reconcileEl}
+            {issueEl}
+            {riskEl}
+            <div ref={outlineRef} className="card-anchor" />
+            {outline && !terminal && (
+              <OutlineConfirm
+                key={outline.outline_id}
+                outline={outline}
+                plain={(t) => (t ? restoredPlain(t, tokenMap) : "")}
                 busy={busy}
-                onAnswer={(ans) => void answer(c.card, ans)}
-                {...(outlineQ && outlineQ.others > 0 && c.card.question_id === outlineQ.question_id ? { outlineLock: { qid: outlineQ.qid, confirm: outlineQ.confirm, confirmed: !outline && outlineConfirmed } } : {})}
+                canStop={!!outlineQ && outlineQ.others === 0}
+                onConfirm={(d, n, f) => void confirmOutline(d, n, f)}
+                onStop={() => void stopOutline()}
               />
-            ),
-          )}
-          {pendingCards.length > 1 && (
-            <button className="btn-link interactions-more" onClick={() => setShowAllCards((v) => !v)}>
-              {showAllCards ? "只显示第一项" : `还有 ${pendingCards.length - 1} 项待确认`}
-            </button>
-          )}
-        </div>
-        {/* 有成果时中栏只放摘要，全文在右栏（UIUX 增量评审 D-1：同一份内容不读两遍） */}
-        {terminal && preview && preview.text && !preview.office && String(artifacts.find((a) => a.artifact_version_id === selected)?.kind ?? "").startsWith("a1_agent_draft") && (
-          <div className="answer answer-summary">
-            <div className="pane-title">回复（草稿）· 摘要</div>
-            {summaryLines(preview.text).map((l, i) => (
-              <p key={i}>{renderTokens(l, tokenMap)}</p>
-            ))}
-            <button
-              className="btn-link"
-              onClick={() => {
-                tabTouched.current = true;
-                setTab("artifact");
-              }}
-            >
-              在右侧查看全文 →
-            </button>
-          </div>
-        )}
-        {terminal && (status === "succeeded" || status === "partial") && reused.length > 0 && (
-          <div className="card done-files">
-            <div className="title">这次的结果与之前一次任务完全相同，沿用了那次的{reused.length > 1 ? ` ${reused.length} 份` : ""}文件</div>
-            <p className="muted">内容一字不差时不另存一份新版本，复核与签发都在原来那份上进行。</p>
-            <div className="banner-actions">
-              <button className="btn-ghost btn-sm" onClick={() => nav(`/review/${reused[0]!.artifact_version_id}`)}>
-                打开那份文件
-              </button>
-              {reused[0]!.first_run_id && (
-                <button className="btn-link" onClick={() => nav(`/run/${reused[0]!.first_run_id}/${matterId}`)}>
-                  看那次任务
+            )}
+            <div className="interactions" ref={cardsRef}>
+              {/* 同一时间只展开一张（UIUX 增量评审 P0-F）：先到的先处理，其余折叠为“还有 N 项待确认”，可展开 */}
+              {pendingCards.slice(0, showAllCards ? pendingCards.length : 1).map((c) =>
+                c.kind === "approval" ? (
+                  <ApprovalCardView key={c.card.approval_id} card={c.card} tokenMap={tokenMap} busy={busy} onDecide={(d) => void decide(c.card, d)} />
+                ) : (
+                  <QuestionCardView
+                    key={c.card.question_id}
+                    card={c.card}
+                    tokenMap={tokenMap}
+                    busy={busy}
+                    onAnswer={(ans) => void answer(c.card, ans)}
+                    {...(outlineQ && outlineQ.others > 0 && c.card.question_id === outlineQ.question_id ? { outlineLock: { qid: outlineQ.qid, confirm: outlineQ.confirm, confirmed: !outline && outlineConfirmed } } : {})}
+                  />
+                ),
+              )}
+              {pendingCards.length > 1 && (
+                <button className="btn-link interactions-more" onClick={() => setShowAllCards((v) => !v)}>
+                  {showAllCards ? "只显示第一项" : `还有 ${pendingCards.length - 1} 项待确认`}
                 </button>
               )}
             </div>
-          </div>
-        )}
-        {/* 首屏下载入口（Z3 评审 #3）：没有审查意见的任务，完成后在中栏直接列出成果，不必先切右栏 */}
-        {terminal && !hasRiskEntry && (status === "succeeded" || status === "partial") && artifacts.length > 0 && (
-          <div className="card done-files">
-            <div className="title">本任务生成了 {doneFiles.current.length} 份文件（草稿）</div>
-            {/* 同名文件只列最新一版（第 31 批）：旧版在右栏“成果”的版本记录里 */}
-            {doneFiles.older > 0 && <div className="muted">同名文件只列最新一版；另有 {doneFiles.older} 份被新版取代的旧版，在右栏“成果”的版本记录里。</div>}
-            <ul className="done-file-list">
-              {/* 份数与列出的行数一致（v9.4 U1 #8）：多于 6 份时先列 6 份，其余点“全部”展开 */}
-              {(showAllFiles ? doneFiles.current : doneFiles.current.slice(0, 6)).map((a) => (
-                <li key={a.artifact_version_id}>
-                  <button
-                    className="btn-link"
-                    onClick={() => {
-                      tabTouched.current = true;
-                      setSelected(a.artifact_version_id);
-                      setTab("artifact");
-                    }}
-                  >
-                    {artifactName(withRun(a), (t) => restoredPlain(t, tokenMap))}
-                  </button>
-                  <span className="spacer" />
-                  <button className="btn-ghost btn-sm" onClick={() => downloadOne(a)}>
-                    {downloadLabel(String(a.filename ?? ""))}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {doneFiles.current.length > 6 && !showAllFiles && (
-              <button className="btn-link" onClick={() => setShowAllFiles(true)}>
-                全部 {doneFiles.current.length} 份 →
-              </button>
-            )}
-          </div>
-        )}
-        {/* 接着做（D-4）：同一事项下打开下一场景的开始面板 */}
-        {(status === "succeeded" || status === "partial") && (matter?.lifecycle ?? "active") === "active" && nextScenarios(scenarioOfRun(run, homeLine())).length > 0 && (
-          <div className="next-steps">
-            <span className="muted">接着做：</span>
-            {nextScenarios(scenarioOfRun(run, homeLine())).map((c) => (
-              <button key={c.id} className="pill pill-link" onClick={() => nav(`/start/${c.id}/${matterId}`)}>
-                {c.title} →
-              </button>
-            ))}
-          </div>
+            {summaryEl}
+            {reusedEl}
+            {filesEl}
+            {nextEl}
+          </>
         )}
         {run?.scenario === "a1.agent_task" && run?.is_mine && (matter?.lifecycle ?? "active") === "active" && (status === "succeeded" || status === "partial") && (
-          <div className="followup-wrap">
+          <div className="followup-wrap" ref={followWrapRef}>
             <div className="followup">
               <textarea
                 rows={2}
@@ -926,14 +1066,44 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 </button>
               )}
             </div>
+            {extraDocs.length > 0 && (
+              <div className="followup-mats">
+                <button className="btn-link" aria-expanded={followAddOpen} onClick={() => setFollowAddOpen((v) => !v)}>
+                  {followAdded > 0 ? `补充材料：已勾 ${followAdded} 份` : "补充材料"} {followAddOpen ? "▴" : "▾"}
+                </button>
+                {followAddOpen && (
+                  <div className="ss-docs" role="group" aria-label="补充材料">
+                    {extraDocs.map((d) => {
+                      const on = followAdd.includes(d.document_version_id);
+                      return (
+                        <label key={d.document_version_id} className={`ss-doc${on ? " on" : ""}`}>
+                          <input
+                            type="checkbox"
+                            aria-label={d.filename}
+                            checked={on}
+                            disabled={busy}
+                            onChange={() => {
+                              setFollowAdd((ids) => (on ? ids.filter((x) => x !== d.document_version_id) : [...ids, d.document_version_id]));
+                              setFollowConfirm(null);
+                            }}
+                          />
+                          <span className="ss-doc-name">{d.filename}</span>
+                        </label>
+                      );
+                    })}
+                    <div className="ss-scope muted">{followUpMaterialsText(inputDocs.length, followAdded, extraDocs.length)}</div>
+                  </div>
+                )}
+              </div>
+            )}
             {followConfirm && (
               <div className="followup-confirm" role="group" aria-label="追问前确认">
                 <div>
-                  沿用上一轮：<b>{MODE_LABELS[prevMode]}</b> · 再次使用 {inputDocs.length} 份材料 · {followConfirm.points_display}
+                  沿用上一轮：<b>{MODE_LABELS[prevMode]}</b> · 再次使用 {inputDocs.length} 份材料{followAdded > 0 ? `，补充 ${followAdded} 份` : ""} · {followConfirm.points_display}
                 </div>
                 <div className="muted">{followConfirm.preview}</div>
                 {followConfirm.sendSummary && (
-                  <SendSummary matterId={matterId} summary={followConfirm.sendSummary} documentIds={inputDocs.map((d) => d.document_version_id)} goal={followText} mustReview={followConfirm.mustReview} onReviewed={() => void prepareFollowUp()} followup />
+                  <SendSummary matterId={matterId} summary={followConfirm.sendSummary} documentIds={followDocIds} goal={followText} mustReview={followConfirm.mustReview} onReviewed={() => void prepareFollowUp()} followup />
                 )}
                 {followConfirm.warning && <div className="banner banner-orange">{followConfirm.warning}</div>}
                 {followConfirm.busyRunId && followConfirm.busyRunId !== runId && (
@@ -1017,21 +1187,22 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 <Select
                   className="artifact-select"
                   value={selected ?? ""}
-                  onChange={setSelected}
+                  onChange={pickArtifact}
                   aria-label="选择成果"
-                  options={artifacts.map((a) => ({ value: a.artifact_version_id, label: `${artifactName(withRun(a), (t) => restoredPlain(t, tokenMap))} · v${a.version}` }))}
+                  options={options.map((o) => ({ value: o.row.artifact_version_id, label: optionLabel(o) }))}
                 />
               )}
               {selected && preview && <SafePreview filename={preview.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} {...(previewMarks ? { cites: previewMarks } : {})} />}
-              {selected && <ArtifactActions artifact={artifacts.find((a) => a.artifact_version_id === selected)} restore={(t) => restoredPlain(t, tokenMap)} onError={setErr} primary={!hasRiskEntry} />}
+              {/* 旧版与过程文件只给下载，不给“提交复核”（V18 A2）；提交复核对着的仍是那一个版本 */}
+              {selected && <ArtifactActions artifact={artifacts.find((a) => a.artifact_version_id === selected)} restore={(t) => restoredPlain(t, tokenMap)} onError={setErr} primary={!hasRiskEntry} review={options.some((o) => o.row.artifact_version_id === selected && o.group === "file")} />}
               {artifacts.length > 1 && (
                 // 原“文件历史”标签并入这里（Z3 #11）
                 <details className="pane-fold">
                   <summary>本任务的文件（{artifacts.length}）</summary>
-                  {artifacts.map((a) => (
+                  {options.map(({ row: a }) => (
                     <div key={a.artifact_version_id} className="hist-row">
                       <div>
-                        <b>{artifactName(withRun(a), (t) => restoredPlain(t, tokenMap))}</b> <span className="tag tag-gray">v{a.version}</span> <span className="tag tag-gray">{ARTIFACT_STATUS_LABELS[a.status] ?? "状态未知"}</span>
+                        <b>{nameOf(a)}</b> <span className="tag tag-gray">第 {a.version} 版</span> <span className="tag tag-gray">{ARTIFACT_STATUS_LABELS[a.status] ?? "状态未知"}</span>
                       </div>
                       <div className="muted">{fmtTime(a.created_at)}</div>
                     </div>
@@ -1089,7 +1260,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
 }
 
 /** primary=false：同屏已有主按钮（待处理的审查意见），这里的动作降为次按钮（复核 S7B-01）。 */
-function ArtifactActions({ artifact, restore, onError, primary = true }: { artifact: any; restore: (t: string) => string; onError: (m: string) => void; primary?: boolean }) {
+function ArtifactActions({ artifact, restore, onError, primary = true, review = true }: { artifact: any; restore: (t: string) => string; onError: (m: string) => void; primary?: boolean; review?: boolean }) {
   if (!artifact) return null;
   return (
     <div className="artifact-actions">
@@ -1105,7 +1276,7 @@ function ArtifactActions({ artifact, restore, onError, primary = true }: { artif
       >
         {downloadLabel(String(artifact.filename ?? ""))}
       </button>
-      {artifact.status === "draft" && (
+      {review && artifact.status === "draft" && (
         <button
           className={primary ? "btn-primary" : "btn-ghost"}
           onClick={async () => {
@@ -1120,7 +1291,7 @@ function ArtifactActions({ artifact, restore, onError, primary = true }: { artif
           提交复核
         </button>
       )}
-      {artifact.status === "pending_review" && <button className={primary ? "btn-primary" : "btn-ghost"} onClick={() => nav(`/review/${artifact.artifact_version_id}`)}>去复核 / 签发</button>}
+      {review && artifact.status === "pending_review" && <button className={primary ? "btn-primary" : "btn-ghost"} onClick={() => nav(`/review/${artifact.artifact_version_id}`)}>去复核 / 签发</button>}
     </div>
   );
 }

@@ -108,7 +108,9 @@ function paragraphHtml(pXml: string, commentNo: Map<string, number>): string {
   const style = /<w:pStyle w:val="([^"]*)"/.exec(pXml)?.[1] ?? "";
   // 段落属性（w:pPr）里的修订标记与 run 属性不参与内联渲染
   const { html, text } = inlineHtml(pXml.replace(/<w:pPr>[\s\S]*?<\/w:pPr>/, ""), commentNo);
-  const heading = /^(?:Title|Heading1|1)$/i.test(style) ? "h2" : /^(?:Heading2|2)$/i.test(style) ? "h3" : null;
+  // 本产品生成的文书用自己的样式名（KwlTitle、KwlHeading1～3）；此前只认 Word 内置样式名，预览里所有标题都排成普通段落（V18 第 43 批）
+  if (/^(?:Kwl)?Title$/i.test(style)) return `<h2 class="kwl-title">${html}</h2>`;
+  const heading = /^(?:(?:Kwl)?Heading1|1)$/i.test(style) ? "h2" : /^(?:(?:Kwl)?Heading2|2)$/i.test(style) ? "h3" : /^(?:(?:Kwl)?Heading3|3)$/i.test(style) ? "h4" : null;
   if (heading) return `<${heading}>${html}</${heading}>`;
   if (!text.trim() && !/<(?:ins|del)/.test(html)) return "<p>&nbsp;</p>";
   return `<p>${html}</p>`;
@@ -163,7 +165,7 @@ export function renderDocxHtml(docx: Buffer): { html: string; paragraphs: number
       return `<li value="${no}"><strong>${esc(c.author)}</strong>：${esc(c.text)}</li>`;
     });
   const style =
-    "<style>ins{background:#e6f4ea;color:#0b6b2e;text-decoration:underline}del{background:#fdecec;color:#b42318}table{border-collapse:collapse;margin:8px 0}td,th{border:1px solid #d0d4da;padding:4px 8px;vertical-align:top}h2{font-size:17px}h3{font-size:15px}.kwl-cmt{color:#c2410c}section.kwl-comments{border-top:1px solid #e3e6ea;margin-top:16px;font-size:13px}</style>";
+    "<style>ins{background:#e6f4ea;color:#0b6b2e;text-decoration:underline}del{background:#fdecec;color:#b42318}table{border-collapse:collapse;margin:8px 0}td,th{border:1px solid #d0d4da;padding:4px 8px;vertical-align:top}h2{font-size:17px}h2.kwl-title{text-align:center;font-size:18px}h3{font-size:15px}h4{font-size:14px;margin:10px 0 4px}.kwl-cmt{color:#c2410c}section.kwl-comments{border-top:1px solid #e3e6ea;margin-top:16px;font-size:13px}</style>";
   return {
     html: `${style}${parts.join("\n")}${cmtList.length ? `<section class="kwl-comments"><h3>批注</h3><ol>${cmtList.join("")}</ol></section>` : ""}${truncated ? `<p><em>（篇幅较长，预览只显示前 ${PREVIEW_LIMITS.maxParagraphs} 段，请下载查看全文）</em></p>` : ""}`,
     paragraphs,

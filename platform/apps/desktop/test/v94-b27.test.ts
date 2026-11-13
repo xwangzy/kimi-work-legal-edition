@@ -186,5 +186,8 @@ test("删除清单的说法对得上对象；数据去向说明保留根密钥�
 test("执行页的成果名用本任务的名字补（取成果的接口不带任务名）", () => {
   const rv = read("../src/pages/RunView.tsx");
   assert.match(rv, /const withRun = \(a: any\) => \(\{ \.\.\.a, run_title: a\.run_title \?\? runSnap\.title/);
-  assert.equal((rv.match(/artifactName\(withRun\(a\)/g) ?? []).length, 3);
+  // V18 A2：执行页的成果名统一经 nameOf（fileListName + withRun），结果区、右栏下拉与文件折叠都用它
+  assert.match(rv, /const nameOf = \(a: any\) => fileListName\(withRun\(a\)/);
+  assert.ok((rv.match(/nameOf\(/g) ?? []).length >= 3);
+  assert.doesNotMatch(rv, /artifactName\(/);
 });

@@ -21,6 +21,15 @@ export function defaultChoice(policy: RunPolicyView | null | undefined): ModeCho
   return { mode, planFirst: policy?.plan_first_default ?? true, preauth: [] };
 }
 
+/**
+ * 从场景卡开始面板发起的任务的缺省做法（V18 首轮 A3）：直接开始，不先出计划——场景卡已经选定了方法与交付物，
+ * 计划卡只是把方法步骤复述一遍再等律师点（真实走查：每单动笔前多停一次，3～12 分钟后才弹出）。
+ * 档位仍按律所策略取；首页自由描述的任务照旧用 defaultChoice（先看计划）。
+ */
+export function scenarioChoice(policy: RunPolicyView | null | undefined): ModeChoice {
+  return { ...defaultChoice(policy), planFirst: false };
+}
+
 export function ModeSelector({ policy, value, onChange, allowChat = true }: { policy: RunPolicyView | null | undefined; value: ModeChoice; onChange: (v: ModeChoice) => void; allowChat?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);

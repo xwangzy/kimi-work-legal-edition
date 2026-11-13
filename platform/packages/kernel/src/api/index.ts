@@ -204,6 +204,11 @@ interface EstimateRec {
 }
 const estimates = new Map<string, EstimateRec>();
 
+/** 输入快照里的材料编号清单（只留字符串；不是数组按空）。 */
+function docIdsOf(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+}
+
 function parseJson<T>(v: unknown, fallback: T): T {
   if (typeof v !== "string") return (v as T) ?? fallback;
   try {
@@ -1615,7 +1620,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const prefsSnap = prefsNow && hasPrefs(prefsNow) ? prefsNow : null;
 
       // 追问（集成核查 P1-1）：在本事项、本人发起、已完成的上一次 Agent 运行的会话上继续
-      let followup: { followup_of: string; continue_session_id: string } | undefined;
+      let followup: { followup_of: string; continue_session_id: string; followup_added_document_version_ids?: string[] } | undefined;
       let followupModeRaised: string | null = null;
       if (typeof p?.followup_of === "string" && p.followup_of) {
         if (est.scenario !== "a1.agent_task") throw validation("只有 Agent 任务可以追问");
@@ -1629,7 +1634,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         const started = db.all<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.started' ORDER BY event_id DESC LIMIT 1`, [prev.run_id])[0];
         const sid = started ? parseJson<any>(started.payload, {})?.session_id : null;
         if (typeof sid !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(sid)) throw validation("上一次任务没有可继续的对话记录，请新建任务");
-        followup = { followup_of: prev.run_id, continue_session_id: sid };
+        // 追问可以补勾材料（V18 第 43 批续三）：勾选即边界（D-183）之后，漏勾一份不必整单重来。以上一轮的勾选为底，只能补、不能改成不限：
+        // 上一轮勾了材料的，追问一份都不带等于把边界放开到本事项全部材料，拒绝；补了哪几份由内核比对得出（不信客户端），随提示词告诉模型
+        const prevDocs = docIdsOf(parseJson<any>(prev.input_snapshot, {})?.document_version_ids);
+        const nowDocs = docIdsOf(est.input.document_version_ids);
+        if (prevDocs.length > 0 && nowDocs.length === 0) throw validation("上一轮勾选了材料，追问不能改成不限材料；要换材料范围请重新发起任务");
+        const addedDocs = prevDocs.length > 0 ? nowDocs.filter((d) => !prevDocs.includes(d)) : [];
+        followup = { followup_of: prev.run_id, continue_session_id: sid, ...(addedDocs.length > 0 ? { followup_added_document_version_ids: addedDocs } : {}) };
         // 追问在原会话上继续，模型看到的是原任务那一版要点：沿用原任务的快照（之后改过要点也不换），“要点 n”的核对才对得上
         const prevRules = parseJson<any>(prev.input_snapshot, {})?.review_rules;
         rulesSnap = !prevRules || typeof prevRules !== "object" ? null : (prevRules as RulesSnapshot);
@@ -1716,8 +1727,14 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         run.status === "reconciling" || run.status === "failed"
           ? db.all(`SELECT tool_operation_id, tool, operation, status, created_at FROM tool_operations WHERE run_id = ? AND status IN ('pending','unknown') ORDER BY created_at`, [run.run_id])
           : [];
+      // 排队原因（V18 第 43 批）：排队中的任务如果是被“等你确认或回答”的任务占住了名额，界面要明说，不能只写“排队中”
+      // ——助手会话在等律师期间仍开着、占着内存名额，律师回应之前后面的 AI 任务开始不了。只给数量，不含其他任务的内容
+      const waiting_ahead =
+        run.status === "queued"
+          ? (db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM runs WHERE tenant_id = ? AND status IN ('waiting_approval','waiting_input') AND run_id <> ?`, [run.tenant_id, run.run_id])?.n ?? 0)
+          : 0;
       // is_mine：追问只对发起人显示（复核 B3-B13；内核同样只接受发起人追问）
-      return { run: { ...runOut(run), is_mine: run.created_by === id.userId, usage_display: chargedDisplay(Number(run.points_charged) || 0, Number(run.budget_points) || 0) }, artifacts: artifactsOut, inflight, unresolved_operations };
+      return { run: { ...runOut(run), is_mine: run.created_by === id.userId, usage_display: chargedDisplay(Number(run.points_charged) || 0, Number(run.budget_points) || 0) }, artifacts: artifactsOut, inflight, unresolved_operations, waiting_ahead };
     },
 
     "runs.events": (p, id) => {

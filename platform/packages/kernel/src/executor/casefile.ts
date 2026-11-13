@@ -518,7 +518,7 @@ const byFilename = <T extends { filename: string }>(xs: readonly T[]): T[] => [.
 const natureOf = (filename: string): string =>
   // 只认文件名表明是一方自己写的说明、陈述、访谈、笔记的；函件不按文件名定性（第二次复评 M1、M2：按“函”字标“发函一方所述”，把对方盖章的对账确认函、
   // EMS 妥投记录、对方自认“催款函收悉”都标成了待印证）。其余一律写明本机流程没有判断证明力，免得“材料记载”读起来比“一方陈述”更可信
-  /情况说明|陈述|访谈|笔记|口述|自述|备忘（内部）/.test(filename) ? "一方陈述，待其他材料印证" : "材料记载（本机流程不判断证明力）";
+  /情况说明|陈述|访谈|笔记|口述|自述|备忘（内部）/.test(filename) ? "一方陈述，待其他材料印证" : "材料记载（证明力未作判断）";
 
 /** 材料里自己提到“还没提供、原件在别处、待补”的句子（同批：情况说明写着“回单原件在财务部，尚未提供给律师”，待补材料一栏却是空的）。 */
 const MISSING_RE = /尚未提供|未提供给|暂未提供|没有提供|待补充|待补交|另行提供|后续提供|未找到|找不到|已遗失|遗失|未能调取|待调取|未留存/;
@@ -553,7 +553,7 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
   const crossSentences = pay.sentences;
   const yuan = (v: number) => `${v.toLocaleString("en-US")} 元`;
   const crossRows: string[] = pay.conflicts.map(
-    (c) => `${c.date} 的付款，各份材料写的金额不一样：${c.amounts.map((x) => `${x.filenames.map((f) => `《${f}》`).join("、")}写 ${yuan(x.amount_yuan)}`).join("；")}——可能是同一笔，请对照银行回单或收款凭证核对；也可能是当天的两笔，本机规则分不出来`,
+    (c) => `${c.date} 的付款，各份材料写的金额不一样：${c.amounts.map((x) => `${x.filenames.map((f) => `《${f}》`).join("、")}写 ${yuan(x.amount_yuan)}`).join("；")}——可能是同一笔，请对照银行回单或收款凭证核对；也可能是当天的两笔，仅凭材料文字无法区分`,
   );
 
   // 事实时间轴（按发生日排序；保留来源与锚点）。V14 第 39 批：“事件”写日期所在的那句话；同一份材料里同一句话里的同一日期只列一次
@@ -590,8 +590,8 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
   const matrixRows: (string | number | null)[][] = [
     ["争点", "要件", "举证责任", "支持证据（原文位置）", "反对证据", "缺口", "证明力意见（律师填写）"],
     ...(input.issues.length > 0
-      ? input.issues.map((issue) => [issue, "（待拆解：可接着做“争点与证据分析”）", "（待确认）", "", "", "", ""] as (string | number | null)[])
-      : [["（争点待填写：可接着做“争点与证据分析”，由 AI 按你确认的事实拆要件、挂证据）", "", "", "", "", "", ""]] as (string | number | null)[][]),
+      ? input.issues.map((issue) => [issue, "（要件待拆解）", "（待确认）", "", "", "", ""] as (string | number | null)[])
+      : [["（争点待填写：按确认的事实拆分要件、对应证据）", "", "", "", "", "", ""]] as (string | number | null)[][]),
   ];
 
   // 补证清单（质量缺陷 → 补证动作；页级 OCR 质量如实列出——低质量页可见、可重扫、可人工纠正）
@@ -608,7 +608,7 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
         supplementRows.push(`《${m.filename}》第 ${pg.pageNo} 页：不可读——请重扫或人工誊录后重新导入（不伪造文本）`);
       } else if (pg.quality === "low") {
         qualityNotes.push(`《${m.filename}》第 ${pg.pageNo} 页：识别不清（${pg.note ?? "文字识别把握不高"}）`);
-        supplementRows.push(`《${m.filename}》第 ${pg.pageNo} 页：识别不清——建议重新扫描，或在材料页手工更正识别出的文字（原件不变）`);
+        supplementRows.push(`《${m.filename}》第 ${pg.pageNo} 页：识别不清——建议重新扫描，或手工更正识别出的文字（原件不变）`);
       }
     }
   }
@@ -668,12 +668,12 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
           heading: "二、材料内部与材料之间的不一致",
           paragraphs:
             conflictRows.length + crossRows.length > 0
-              ? [...conflictRows, ...crossRows, "以上是本机规则能比出来的两类（成对写的大写与小写金额、不同材料对同一天付款写的金额）；其他矛盾要接着做“争点与证据分析”。"]
-              : ["本机规则只比对两类：成对写的大写与小写金额（紧挨着写，或表格里分别标了“大写”“小写”的），以及不同材料对同一天付款写的金额。这两类本次没有比出不一致——不等于材料之间没有矛盾，其他矛盾（如不同材料对同一事实说法不同）要接着做“争点与证据分析”。"],
+              ? [...conflictRows, ...crossRows, "以上只比对了两类：成对写的大写与小写金额、不同材料对同一天付款写的金额；其他矛盾尚待结合争点逐项分析。"]
+              : ["本清单只比对两类：成对写的大写与小写金额（紧挨着写，或表格里分别标了“大写”“小写”的），以及不同材料对同一天付款写的金额。这两类本次没有发现不一致——不等于材料之间没有矛盾，其他矛盾（如不同材料对同一事实说法不同）尚待结合争点逐项分析。"],
         },
         {
           heading: "三、待补材料",
-          paragraphs: missingRows.length > 0 ? [...missingRows, "以上是材料里自己提到还没拿到的；按争点还缺什么，由律师补充，或接着做“争点与证据分析”。"] : ["本机规则只找材料里明说“尚未提供、未留存、待补”之类的话，这次没有找到——不等于材料齐了：摘录件、复印件对应的完整件与原件，以及按争点还缺什么，由律师补充，或接着做“争点与证据分析”。"],
+          paragraphs: missingRows.length > 0 ? [...missingRows, "以上是材料里自己提到还没拿到的；按争点还缺什么，尚待结合争点逐项梳理。"] : ["本清单只列材料里明说“尚未提供、未留存、待补”之类的情形，这次没有发现——不等于材料齐了：摘录件、复印件对应的完整件与原件，以及按争点还缺什么，尚待结合争点逐项梳理。"],
         },
       ]),
       manifest: {},
@@ -693,7 +693,7 @@ export function buildS2Deliverables(input0: S2DeliverableInput): BuiltS2 {
           heading: "二、质量与降级说明",
           paragraphs: [
             ...(qualityNotes.length > 0 ? qualityNotes : ["无"]),
-            "这一步在这台电脑上按规则摘出日期、金额与主体，不调用 AI；行为与法律关系要接着做“争点与证据分析”并由律师确认。读不出的文件只列入目录，不进入任何结论。",
+            "本报告只按材料文字摘出日期、金额与主体，未对行为与法律关系作分析，相关判断须结合争点另行分析并由律师确认。读不出的文件只列入目录，不进入任何结论。",
             "原件不会被修改；手工更正识别文字会另存一版。",
           ],
         },

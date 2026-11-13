@@ -159,7 +159,9 @@ for (const s of manifest.skills) {
       return { content: `${s.id} 黄金路径完成。` };
     };
     try {
-      const est = await tk.inv("runs.estimate", { matter_id: matterId, scenario: "a1.agent_task", document_version_ids: [ids.doc] });
+      // 回稿重审要两份文件（上一稿与对方回稿），开始面板也要求勾两份；勾选的材料就是任务的边界（V18 第 43 批）
+      const picked = s.id === "redraft-review" ? [ids.doc, ids.doc2] : [ids.doc];
+      const est = await tk.inv("runs.estimate", { matter_id: matterId, scenario: "a1.agent_task", document_version_ids: picked });
       const run = await tk.inv("runs.start", {
         matter_id: matterId,
         estimate_id: est.estimate_id,

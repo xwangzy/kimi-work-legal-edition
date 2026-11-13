@@ -250,6 +250,49 @@ export function keyStepKeys(steps: Step[]): Set<string> {
   return keys;
 }
 
+/**
+ * 任务结束后过程收成一行（V18 A1）：“处理过程 · 用时 15 分 48 秒 · 44 步”。用时取第一步到最后一步的时刻（没有时刻时不写），
+ * 步数是律师层的步骤数（处理细节不算）。纯函数。
+ */
+export function processSummary(steps: readonly Step[], startedAt?: string | null): string {
+  const lawyer = steps.filter((s) => s.level === "lawyer");
+  const times = steps.map((s) => (s.at ? Date.parse(s.at) : NaN)).filter((t) => Number.isFinite(t));
+  const start = startedAt && Number.isFinite(Date.parse(startedAt)) ? Math.min(Date.parse(startedAt), ...times) : times.length ? Math.min(...times) : NaN;
+  const end = times.length ? Math.max(...times) : NaN;
+  const parts = ["处理过程"];
+  if (Number.isFinite(start) && Number.isFinite(end) && end >= start) parts.push(`用时 ${durationText(end - start)}`);
+  parts.push(`${lawyer.length} 步`);
+  return parts.join(" · ");
+}
+
+/** 时长的中文写法：不足 1 分钟写秒，不足 1 小时写“X 分 Y 秒”，再长写“X 小时 Y 分”。 */
+export function durationText(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} 秒`;
+  if (s < 3600) return `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
+  return `${Math.floor(s / 3600)} 小时 ${Math.floor((s % 3600) / 60)} 分`;
+}
+
+/**
+ * 结束后要一眼看到的问题（V18 A1 #3）：律师层里没有完成（fail）或只完成一部分（dot）的步骤，去掉最后那条“部分完成 / 失败”本身
+ * （状态已写在结果区标题里），同名的只留最后一条。纯函数。
+ */
+export function problemSteps(steps: readonly Step[]): Step[] {
+  const STATUS_TITLES = new Set(["部分完成", "失败", "已取消", "已超时", "已过期", "对账中"]);
+  const out = new Map<string, Step>();
+  for (const s of steps) {
+    if (s.level !== "lawyer" || (s.icon !== "fail" && s.icon !== "dot")) continue;
+    if (STATUS_TITLES.has(s.title) && !s.detail) continue;
+    // 自动重试中的失败后来恢复了，不算问题；读材料、查条文这类工具步骤失败时助手会换个办法接着做，单写一个“阅读材料”也说明不了什么
+    if (/正在自动重试/.test(s.title) || MERGEABLE_TITLES.has(s.title) || countUnit(s.title.replace(/（\d+ [条次]）$/, ""))) continue;
+    // “失败”这类状态行带原因时，直接写原因
+    const item = STATUS_TITLES.has(s.title) ? { ...s, title: s.detail!, detail: undefined } : s;
+    out.delete(item.title);
+    out.set(item.title, item);
+  }
+  return [...out.values()];
+}
+
 /** 联网检索/抓取实际发出的内容（来自本机去向记录，按工具调用编号关联；v9.2 Y4 P0-A）。 */
 export interface SentInfo {
   kind: "search" | "fetch";
@@ -440,9 +483,22 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "ok", title: n > 0 ? `独立复核提出 ${n} 条意见（其中必须改 ${must} 条），已交回助手处理` : "独立复核未发现实质问题", at, detail: n > 0 ? "意见见成果《独立复核意见》；处理结果见最终答复的“独立复核处理情况”" : undefined });
         break;
       }
-      case "review.skipped":
-        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: p.reason === "no_session" ? "独立复核意见没能交回助手修改，请按《独立复核意见》核对" : "独立复核没有完成，文书未经复核", at, detail: typeof p.error === "string" ? p.error : undefined });
+      // V18 第 43 批：复核调用失败先自动重试一次
+      case "review.retried":
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "wait", title: "独立复核没有连上，正在重试一次", at, detail: typeof p.error === "string" ? p.error : undefined });
         break;
+      case "review.skipped":
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: p.reason === "no_session" ? "独立复核意见没能交回助手修改，请按《独立复核意见》核对" : "独立复核没有完成（已重试），这一稿未经独立复核", at, detail: typeof p.error === "string" ? p.error : undefined });
+        break;
+      // V18 第 43 批：修改之后，复核人只对照最新版文件核对“必须改”的意见是否落到了文件里
+      case "review.followup": {
+        const open = Array.isArray(p.open) ? (p.open as unknown[]).map(Number).filter((n) => Number.isFinite(n)) : [];
+        const unknown = Array.isArray(p.unknown) ? (p.unknown as unknown[]).length : 0;
+        if (p.failed === true) steps.push({ key: `${e.event_id}`, level: "detail", icon: "fail", title: "修改结果没有核对成，请对照《独立复核意见》自行核对", at, detail: typeof p.error === "string" ? p.error : undefined });
+        else if (open.length > 0) steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: `复核人回看：必须改的意见里，第 ${open.join("、")} 条没有落实到文件`, at, detail: "详见成果《独立复核意见》末尾的“回看”一节" });
+        else steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "ok", title: unknown > 0 ? `复核人回看：必须改的意见有 ${unknown} 条没有核对出结论` : "复核人回看：必须改的意见都已处理", at });
+        break;
+      }
       // V16 第 41 批（偏离 D-178）：审查与出建议修订稿分两段，各有各的时限
       case "redline.started":
         steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "wait", title: "审查已交出，助手接着在原件上写建议修订稿", at });

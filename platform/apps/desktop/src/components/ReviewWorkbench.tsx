@@ -8,7 +8,7 @@
  */
 import { nav } from "../App.tsx";
 import { scrollBehavior } from "../lib/ui-prefs.ts";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { kernelPreview, localPreview, type AcceptPreview } from "../lib/accept-preview.ts";
 import { agreementParts, batchEligible, firstOpenCard, restoreOursText, nextOpenCard, stepCard } from "../lib/workbench.ts";
 import { api, type RiskCard, type RiskProgress, type TemplateMatch } from "../api.ts";
@@ -357,80 +357,98 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
     if (id) document.querySelector(`[data-mark="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest", behavior: scrollBehavior() });
   };
 
+  // 头部两层（V18 A5）：上层 返回 + 合同名 + 一句进度；下层 左边是立场、方法等小字，右边是操作
+  const docName = documentVersionId ? (doc ? String(doc.filename).replace(/\.(docx?|wps|pdf|txt|md|rtf)$/i, "") : "") : "未关联合同的意见";
+  const metaParts = [...agreementParts({ ...agreement }), ...kindCounts.map(([k, n]) => `${KIND_LABEL[k]} ${n}`), ...(otherFiles.length > 0 ? [`本次审查涉及 ${otherFiles.length + 1} 份文件`] : [])];
+  // 对外版的可见提示（C1 §2.2 第 6 条）：生成前就说清对外版里没有什么；收进版本下拉旁的 ⓘ
+  const audienceNote =
+    audience === "external"
+      ? "对外版只有修订，不带系统生成的批注、理由、规则号和底线；原件里原有的批注（如对方律师留的）照原样保留，发出前请自行决定去留"
+      : "内部版另带理由与规则批注，供所内复核，不要直接发给对方";
+  // 置灰原因与“先生成”（W-2）：未处理的卡不写进修订稿；完整说法放按钮提示，旁边只留一行小字
+  const redlineWhy =
+    !progress || progress.total === 0 || allDecided
+      ? null
+      : accepted === 0
+        ? { short: `还有 ${openCount} 项未处理`, full: `先接受或修改后接受至少一项（还有 ${openCount} 项未处理）` }
+        : { short: `还有 ${openCount} 项未处理`, full: `还有 ${openCount} 项未处理 · 现在生成也可以，未处理的不写入修订稿` };
+
   return (
     <div className="wb">
       <div className="wb-head">
-        <div className="wb-title">
-          <button className="btn-link" onClick={onClose}>{backLabel}</button>
-          <h1 className="page-title" title={doc?.filename}>审查工作台{documentVersionId ? (doc ? ` · ${String(doc.filename).replace(/\.(docx?|wps|pdf|txt|md|rtf)$/i, "")}` : "") : " · 未关联合同的意见"}</h1>
-          {(progress || agreement) && (
-            <div className="wb-progress wb-agreement" aria-live="polite" title={agreement?.method ? `方法：${agreement.method}` : undefined}>
-              {agreementParts({ ...agreement, decided: progress?.decided, total: progress?.total }).join(" · ")}
-              {progress && progress.high_open > 0 ? <span className="sev-text-high"> · {progress.high_open} 项重大风险待处理</span> : null}
-              {kindCounts.map(([k, n]) => ` · ${KIND_LABEL[k]} ${n}`).join("")}
-              {otherFiles.length > 0 && <span title={otherFiles.join("、")}> · 本次审查涉及 {otherFiles.length + 1} 份文件</span>}
-            </div>
+        <div className="wb-top">
+          <button className="btn-link wb-back" onClick={onClose}>{backLabel}</button>
+          <h1 className="page-title wb-name" title={doc?.filename ? `审查工作台 · ${doc.filename}` : undefined}>
+            <span className="wb-name-k">审查工作台</span>
+            {docName && <span className="wb-name-doc">{docName}</span>}
+          </h1>
+          {progress && progress.total > 0 && (
+            <span className="wb-prog" aria-live="polite">
+              已处理 {progress.decided}/{progress.total}
+              {progress.high_open > 0 ? <> · <span className="sev-text-high">重大 {progress.high_open} 项待处理</span></> : null}
+            </span>
           )}
         </div>
-        <div className="wb-head-actions">
-          {runId && (
-            <label className="lifecycle-check">
-              <input type="checkbox" checked={onlyRun} onChange={(e) => setOnlyRun(e.target.checked)} aria-label="只看本次任务提出的意见" />
-              只看本次任务
-            </label>
-          )}
-          {readOnly && <span className="muted">事项已结案（只读）</span>}
-          {documentVersionId && !readOnly && (
-            <>
-              <Select
-                className="select-sm"
-                aria-label="修订稿版本：对外版只有修订，内部版另带理由与规则批注"
-                value={audience}
-                disabled={busy}
-                onChange={(v) => setAudience(v === "internal" ? "internal" : "external")}
-                options={[
-                  { value: "external", label: "对外版" },
-                  { value: "internal", label: "内部版（带批注）" },
-                ]}
-              />
-              <button className={allDecided ? "btn-primary" : "btn-ghost"} disabled={busy || accepted === 0} onClick={() => void redline()} title={accepted === 0 ? "先接受或修改后接受至少一项" : undefined}>
-                {/* 勾选“只看本次任务”时修订稿也只含本次任务的卡（复核 C-B06）：文案写明 */}
-                生成修订稿{accepted > 0 ? `（${runFilter ? "本次任务 " : ""}${accepted} 项）` : ""}
+        <div className="wb-bar">
+          <div className="wb-meta muted" title={[agreement?.method ? `方法：${agreement.method}` : null, otherFiles.length > 0 ? `涉及文件：${otherFiles.join("、")}` : null].filter(Boolean).join("\n") || undefined}>
+            {metaParts.join(" · ")}
+            {readOnly && <span className="wb-ro"> · 事项已结案（只读）</span>}
+          </div>
+          <div className="wb-actions">
+            {runId && (
+              <label className="lifecycle-check wb-only">
+                <input type="checkbox" checked={onlyRun} onChange={(e) => setOnlyRun(e.target.checked)} aria-label="只看本次任务提出的意见" />
+                只看本次任务
+              </label>
+            )}
+            {!readOnly && cards.length > 0 && (
+              <span className="wb-split" role="group" aria-label="导出审查意见表">
+                <Select
+                  className="select-sm"
+                  aria-label="审查意见表格式"
+                  value={tableFormat}
+                  disabled={busy}
+                  onChange={(v) => setTableFormat(v === "docx" ? "docx" : "xlsx")}
+                  options={[
+                    { value: "xlsx", label: "意见表 Excel" },
+                    { value: "docx", label: "意见表 Word" },
+                  ]}
+                />
+                <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void exportTable()} title="条款、问题、类型、等级、规则、依据、建议与你的决定，一行一项">
+                  导出审查意见表
+                </button>
+              </span>
+            )}
+            {/* 全部处理完直达修订说明（V9.4 主文 §3.2）：已接受的修改整理成给客户或对方的说明与谈判要点 */}
+            {!readOnly && allDecided && accepted > 0 && (
+              <button className="btn-ghost btn-sm" onClick={() => nav(`/start/redline-notes/${matterId}`)} title="把已接受的修改整理成修订说明与谈判要点">
+                写修订说明
               </button>
-            </>
-          )}
-          {/* 全部处理完直达修订说明（V9.4 主文 §3.2）：已接受的修改整理成给客户或对方的说明与谈判要点 */}
-          {!readOnly && allDecided && accepted > 0 && (
-            <button className="btn-ghost" onClick={() => nav(`/start/redline-notes/${matterId}`)} title="把已接受的修改整理成修订说明与谈判要点">
-              写修订说明
-            </button>
-          )}
-          {!readOnly && cards.length > 0 && (
-            <>
-              <Select
-                className="select-sm"
-                aria-label="审查意见表格式"
-                value={tableFormat}
-                disabled={busy}
-                onChange={(v) => setTableFormat(v === "docx" ? "docx" : "xlsx")}
-                options={[
-                  { value: "xlsx", label: "意见表 Excel" },
-                  { value: "docx", label: "意见表 Word" },
-                ]}
-              />
-              <button className="btn-ghost" disabled={busy} onClick={() => void exportTable()} title="条款、问题、类型、等级、规则、依据、建议与你的决定，一行一项">
-                导出审查意见表
-              </button>
-            </>
-          )}
-          {/* 对外版的可见提示（C1 §2.2 第 6 条）：生成前就说清对外版里没有什么 */}
-          {documentVersionId && !readOnly && audience === "external" && <div className="wb-why muted">对外版只有修订，不带系统生成的批注、理由、规则号和底线；原件里原有的批注（如对方律师留的）照原样保留，发出前请自行决定去留</div>}
-          {/* 置灰原因与“先生成”（W-2）：未处理的卡不写进修订稿 */}
-          {documentVersionId && !readOnly && progress && progress.total > 0 && !allDecided && (
-            <div className="wb-why muted">
-              {accepted === 0 ? `先接受或修改后接受至少一项（还有 ${openCount} 项未处理）` : `还有 ${openCount} 项未处理 · 现在生成也可以，未处理的不写入修订稿`}
-            </div>
-          )}
+            )}
+            {documentVersionId && !readOnly && (
+              <>
+                <span className="wb-audience">
+                  <Select
+                    className="select-sm"
+                    aria-label="修订稿版本：对外版只有修订，内部版另带理由与规则批注"
+                    value={audience}
+                    disabled={busy}
+                    onChange={(v) => setAudience(v === "internal" ? "internal" : "external")}
+                    options={[
+                      { value: "external", label: "对外版", hint: "只有修订，可发给对方" },
+                      { value: "internal", label: "内部版（带批注）", hint: "另带理由与规则批注，所内用" },
+                    ]}
+                  />
+                  <Tip label={audience === "external" ? "对外版里有什么" : "内部版里有什么"} text={audienceNote} />
+                </span>
+                {redlineWhy && <span className="wb-why muted" title={redlineWhy.full}>{redlineWhy.short}</span>}
+                <button className="btn-primary btn-sm" disabled={busy || accepted === 0} onClick={() => void redline()} title={redlineWhy?.full}>
+                  {/* 勾选“只看本次任务”时修订稿也只含本次任务的卡（复核 C-B06）：文案写明 */}
+                  生成修订稿{accepted > 0 ? `（${runFilter ? "本次任务 " : ""}${accepted} 项）` : ""}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
       {msg && (
@@ -601,6 +619,15 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                 {l}
               </button>
             ))}
+            {/* 快捷键收成筛选条右端一个小入口（V18 A5；v9.4 U1 #14 起不再常驻一行） */}
+            {!readOnly && cards.length > 0 && (
+              <Tip className="wb-keys" label="键盘快捷键" text="J / K 切换上一张、下一张 · A 接受 · E 修改后接受 · N 不采纳（在输入框里不响应）">
+                <span aria-hidden="true" className="wb-keys-k">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><rect x="3" y="6" width="18" height="12" rx="2" /><path d="M7 10h.01M11 10h.01M15 10h.01M7 14h10" /></svg>
+                  快捷键
+                </span>
+              </Tip>
+            )}
           </div>
           {/* 批量接受（C1 §2.2 第 5 条）：只对提示级和前后不一致类开放；重大、必须修改、缺失、需客户决定的不能勾 */}
           {!readOnly && (cards.some((c) => batchEligible({ ...c, nature: natureOf(c) })) || (lastBatch?.ids.length ?? 0) > 0) && (
@@ -621,8 +648,6 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
               )}
             </div>
           )}
-          {/* 快捷键收进悬停提示（v9.4 U1 #14），不再常驻一行 */}
-          {!readOnly && cards.length > 0 && <div className="wb-keys muted" title="J / K 切换 · A 接受 · E 修改 · N 不采纳">键盘快捷键</div>}
           {visible.length === 0 && <p className="muted">没有符合条件的风险项。</p>}
           {visible.map((c) => {
             const sev = SEVERITY[c.severity];
@@ -648,27 +673,33 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                     一起接受
                   </label>
                 )}
+                {/* 卡头两行（V18 A5）：第一行 严重度、性质、条款位置、处理状态；问题判断单独一行占满卡宽，收起时最多两行 */}
                 <button className="rc-head" aria-expanded={open} onClick={() => setActive(open ? null : c.card_id)}>
-                  <span className={`rc-sev ${sev.cls}`}>{sev.label}</span>
-                  <span className={`pill ${NATURE_PILL[natureOf(c)]}`} title={c.nature_inferred ? "按类别与严重程度推定，可在展开后修改" : undefined}>
-                    {natureText(c)}
+                  <span className="rc-meta">
+                    <span className={`rc-sev ${sev.cls}`}>{sev.label}</span>
+                    <span className={`pill ${NATURE_PILL[natureOf(c)]}`} title={c.nature_inferred ? "按类别与严重程度推定，可在展开后修改" : undefined}>
+                      {natureText(c)}
+                    </span>
+                    {kindOf(c) !== "risk" && <span className="pill pill-gray">{KIND_LABEL[kindOf(c)]}</span>}
+                    {(c.searched_found?.length ?? 0) > 0 && <span className="pill pill-orange" title="查过的说法在材料里出现过，可能已有约定">可能误报</span>}
+                    {(c.related?.length ?? 0) > 0 && <span className="pill pill-gray" title={c.related!.map((x) => x.filename).join("、")}>涉及 {new Set(c.related!.map((x) => x.document_version_id)).size + 1} 份文件</span>}
+                    {(c.clause_ref || c.page || c.cell) && (
+                      <span className="rc-ref" title={[c.clause_ref ? clauseLabel(c.clause_ref) : null, c.page ? `第 ${c.page} 页` : null, c.cell ?? null].filter(Boolean).join(" · ")}>
+                        {[c.clause_ref ? clauseLabel(c.clause_ref) : null, c.page ? `第 ${c.page} 页` : null, c.cell ?? null].filter(Boolean).join(" · ")}
+                      </span>
+                    )}
+                    <span className={`rc-status rc-status-${c.status}`}>
+                      {c.status === "accepted" && !adoptedText(c).trim() ? "已知悉" : c.status === "accepted" && c.chosen_level === "fallback" ? "已接受（可退让）" : STATUS_LABEL[c.status]}
+                    </span>
                   </span>
-                  {kindOf(c) !== "risk" && <span className="pill pill-gray">{KIND_LABEL[kindOf(c)]}</span>}
-                  {(c.searched_found?.length ?? 0) > 0 && <span className="pill pill-orange" title="查过的说法在材料里出现过，可能已有约定">可能误报</span>}
-                  {(c.clause_ref || c.page || c.cell) && <span className="rc-ref">{[c.clause_ref ? clauseLabel(c.clause_ref) : null, c.page ? `第 ${c.page} 页` : null, c.cell ?? null].filter(Boolean).join(" · ")}</span>}
-                  {(c.related?.length ?? 0) > 0 && <span className="pill pill-gray" title={c.related!.map((x) => x.filename).join("、")}>涉及 {new Set(c.related!.map((x) => x.document_version_id)).size + 1} 份文件</span>}
-                  <span className="rc-issue">{plain(c.issue)}</span>
-                  <span className={`rc-status rc-status-${c.status}`}>
-                    {c.status === "accepted" && !adoptedText(c).trim() ? "已知悉" : c.status === "accepted" && c.chosen_level === "fallback" ? "已接受（可退让）" : STATUS_LABEL[c.status]}
-                  </span>
+                  <span className="rc-title">{plain(c.issue)}</span>
                 </button>
                 {open && (
                   <div className="rc-body">
-                    {/* 同一句话不出现两次（v9.4 U1 #14）：标题放得下全文时，这一行只放类别 */}
+                    {/* 同一句话不出现两次（v9.4 U1 #14；V18 A5）：展开后标题已是完整的问题判断，这一行只放类别 */}
                     <div className="rc-row">
-                      <span className="rc-k">{[...plain(c.issue)].length > 40 ? "问题判断" : "类别"}</span>
+                      <span className="rc-k">类别</span>
                       <span>
-                        {[...plain(c.issue)].length > 40 && plain(c.issue)}
                         <span className="tag tag-gray" title={c.category === "both" ? "既是法律问题，也涉及商业条件" : undefined}>{CATEGORY_LABEL[c.category]}</span>
                         {c.needs_client_decision && <span className="tag tag-beta">需客户决定</span>}
                       </span>
@@ -879,6 +910,24 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
         </section>
       </div>
     </div>
+  );
+}
+
+/**
+ * 小提示入口（V18 A5）：悬停或键盘聚焦时弹出说明，点一下也能固定显示；说明文字同时作为读屏名称，不只在悬停里。
+ */
+function Tip({ label, text, children, className = "" }: { label: string; text: string; children?: ReactNode; className?: string }) {
+  const [pinned, setPinned] = useState(false);
+  const id = useId();
+  return (
+    <span className={`wb-tip${pinned ? " on" : ""} ${className}`.trim()} onMouseLeave={() => setPinned(false)}>
+      <button type="button" className="wb-tip-btn" aria-label={label} aria-describedby={id} aria-expanded={pinned} onClick={() => setPinned((v) => !v)} onBlur={() => setPinned(false)}>
+        {children ?? <span aria-hidden="true">ⓘ</span>}
+      </button>
+      <span role="tooltip" id={id} className="wb-tip-pop">
+        {text}
+      </span>
+    </span>
   );
 }
 

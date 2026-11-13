@@ -14,6 +14,17 @@ export interface ReportSection {
   heading: string;
   paragraphs: string[];
   table?: ReportTable;
+  /**
+   * 节标题的层级（V18 首轮 B11）：1 大节（“一、”）、2 小节（“（一）”）、3 再下一层（“1.”）；缺省 1，旧入参产物不变。
+   * 原先每节标题一律按一级排，备忘录里“（一）……”“争点二：”与“五、诉讼风险”同为一级。
+   */
+  level?: number;
+}
+
+/** 节标题层级 → 标题块（1～3 以外、非整数的按 1）。 */
+export function headingKindOf(level: unknown): "h1" | "h2" | "h3" {
+  const n = typeof level === "string" && /^\s*[123]\s*$/.test(level) ? Number(level) : level;
+  return n === 2 ? "h2" : n === 3 ? "h3" : "h1";
 }
 
 /** mark=false：不带本产品标记，导出时不套函头（示例合同、清洁稿这类不是律所出具的文件）。 */
@@ -40,7 +51,10 @@ export function createDocx(title: string, sections: ReportSection[], o: { mark?:
   const blocks: DocBlock[] = shown ? [{ kind: "title", text: shown }] : [];
   const subHeadings = !isPartyDocument(shown);
   for (const s of sections) {
-    if (s.heading && !STRUCTURE_HEADING.test(s.heading.trim())) blocks.push({ kind: "h1", text: s.heading });
+    const kind = headingKindOf(s.level);
+    if (s.heading && !STRUCTURE_HEADING.test(s.heading.trim())) blocks.push({ kind, text: s.heading });
+    // 段落里写成小标题的（“（一）……”）排成本节下一级：一级节下排二级（与原先一致），二、三级节下排三级
+    const subKind = kind === "h1" ? "h2" : "h3";
     // 段内换行拆成独立段落（第 35 批真实走查 R1：首部各方信息、签署块按“一项一行”写进同一段，换行留在文字里，Word 打开挤成一行）
     for (const p of s.paragraphs) {
       const lines = String(p).split(/\r?\n/);
@@ -50,7 +64,7 @@ export function createDocx(title: string, sections: ReportSection[], o: { mark?:
       }
       for (const line of lines) {
         if (!line.trim()) continue;
-        blocks.push(subHeadings && isSubHeading(line) ? { kind: "h2", text: line.trim() } : { kind: "p", runs: [{ text: line }] });
+        blocks.push(subHeadings && isSubHeading(line) ? { kind: subKind, text: line.trim() } : { kind: "p", runs: [{ text: line }] });
       }
     }
     if (s.table) blocks.push({ kind: "table", rows: [s.table.columns, ...s.table.rows].map((r) => r.map((text) => [{ text }])) });
@@ -88,7 +102,7 @@ export function signaturePage(blocks: DocBlock[]): DocBlock[] {
   while (t < blocks.length && blocks[t]!.kind === "blank") t += 1;
   const tbl = blocks[t];
   if (tbl?.kind === "table" && tbl.rows.some((r) => r.some((c) => SIGN_CELL.test(c.map((x) => x.text).join("").trim())))) {
-    const rest = blocks.slice(t + 1).map((b, i) => (i === 0 && (b.kind === "h1" || b.kind === "h2") && /^附件/.test(b.text) ? { ...b, pageBreakBefore: true } : b));
+    const rest = blocks.slice(t + 1).map((b, i) => (i === 0 && (b.kind === "h1" || b.kind === "h2" || b.kind === "h3") && /^附件/.test(b.text) ? { ...b, pageBreakBefore: true } : b));
     if (onPage) return [...blocks.slice(0, start), { ...marker, pageBreakBefore: true }, ...blocks.slice(start + 1, t), { ...tbl, borderless: true }, ...rest] as DocBlock[];
     return [...blocks.slice(0, start + 1), { ...tbl, borderless: true, pageBreakBefore: true }, ...rest] as DocBlock[];
   }
@@ -107,7 +121,7 @@ export function signaturePage(blocks: DocBlock[]): DocBlock[] {
     first = false;
   }
   // 签署页之后的“附件”另起一页
-  const rest = blocks.slice(end).map((b, i) => (i === 0 && (b.kind === "h1" || b.kind === "h2") && /^附件/.test(b.text) ? { ...b, pageBreakBefore: true } : b));
+  const rest = blocks.slice(end).map((b, i) => (i === 0 && (b.kind === "h1" || b.kind === "h2" || b.kind === "h3") && /^附件/.test(b.text) ? { ...b, pageBreakBefore: true } : b));
   return [...out, ...rest] as DocBlock[];
 }
 

@@ -1,0 +1,6 @@
+{"tag": "m40-doc-revise", "card": "doc-revise", "veto": [], "score": 23, "dims": [3, 3, 3, 3, 3, 3, 2, 3],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 7, "questions": 0,
+ "top_issues": ["对外版修订作者为“律师审定（Kimi Work 辅助起草）”，产品名随修订署名发给对方", "修改对照表把仅编号顺延、文字未改的原10.5款列为修改行并计入“共17处”", "对照表页眉行理由写“（助手未注明理由，请律师核对）”；风险提示漏4.3预付50%与8.2视为验收"],
+ "prev_score": null,
+ "product_defect": ["对外版修订署名默认带产品名“律师审定（Kimi Work 辅助起草）”，未取律所/律师设置署名", "同一次运行内多次调用 docx_revise 每次都登记一套新版本，成果清单 12 份 docx 中 8 份是无说明的中间版", "run.json 中对外版 kind=revision_draft、audience=internal，与修订稿共用 kind_version，元数据分不出对外版", "修改对照表把只有编号顺延、文字未改的条款列为“修改”行并计入总处数；缺理由时写入“（助手未注明理由，请律师核对）”"],
+ "known_defects_recurring": [], "new_defects": []}

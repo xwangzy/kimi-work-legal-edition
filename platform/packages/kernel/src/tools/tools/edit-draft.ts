@@ -18,6 +18,7 @@ import { registerToolArtifact } from "./review.ts";
 import { factRefNos, isInternalDocument, scrubQualityLine, type DeliverableSection } from "../../services/deliverable-check.ts";
 import { factTableRows, syncFactSection } from "../../services/fact-refs.ts";
 import { slog } from "@zr-legal/safe-log";
+import { latestOfLineage, sameFollowUpChain } from "../../services/artifact-lineage.ts";
 
 /** 结果分布留痕（V13 第 38 批）：只记计数，不记文字。 */
 function logOutcome(status: "applied" | "partial" | "not_applied" | "preview", patches: number, applied: number, conflicts: readonly { reason: Reason }[]): void {
@@ -69,7 +70,7 @@ const textOfParagraph = (inner: string): string =>
   [...inner.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((t) => t[1]).join("").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
 
 /**
- * 按文书引擎的样式还原“节”（一级、二级标题起节），供改后重做交付前检查（条款编号与互引按节标题判断）。
+ * 按文书引擎的样式还原“节”（一级、二级、三级标题起节），供改后重做交付前检查（条款编号与互引按节标题判断）。
  * 表格整张收进本节的 table（首行作表头，与 docx.render_report 的输入同形），表后的文字另起无标题节（仍属上一条）：
  * 格子里的“56.25”“33.75”等数字不再当款号查（V10 真实走查 V7：股权表的持股比例报了 30 条“款号不连续”）。
  */
@@ -97,9 +98,11 @@ export function sectionsOfDocx(docx: Buffer): { title: string; sections: Deliver
       title ||= text;
       continue;
     }
-    if (style === "KwlHeading1" || style === "KwlHeading2") {
+    // V18 首轮 B11：三级标题同样开一节，标 level 3（交付前检查的序号规则不把它当大节、小节计数）。
+    // 二级标题不标层级、照旧按节标题查：它也可能是段落里“一、”“（一）”开头的小标题排成的，原先就按节标题查序号
+    if (style === "KwlHeading1" || style === "KwlHeading2" || style === "KwlHeading3") {
       sections.push(cur);
-      cur = { heading: text, paragraphs: [] };
+      cur = { heading: text, paragraphs: [], ...(style === "KwlHeading3" ? { level: 3 } : {}) };
       continue;
     }
     if (!text.trim()) continue;
@@ -139,12 +142,17 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
   const rid = typeof ctx.claims.rid === "string" ? ctx.claims.rid : null;
   if (!rid) throw new DomainError("forbidden", "只有任务内的调用可以修改文书草稿", 403);
   const id = String(p.artifact_version_id ?? "");
-  const art = ctx.db.get<{ kind: string; filename: string; storage_uri: string; sha256: string; run_id: string | null; manifest: string | null }>(
-    `SELECT kind, filename, storage_uri, sha256, run_id, manifest FROM artifact_versions WHERE artifact_version_id = ? AND matter_id = ?`,
+  const art = ctx.db.get<{ kind: string; filename: string; storage_uri: string; sha256: string; run_id: string | null; manifest: string | null; lineage: string | null }>(
+    `SELECT kind, filename, storage_uri, sha256, run_id, manifest, lineage FROM artifact_versions WHERE artifact_version_id = ? AND matter_id = ?`,
     [id, mid],
   );
   if (!art) throw new DomainError("not_found", "找不到这份文书：artifact_version_id 用 docx.render_report 返回的那个", 404);
-  if (art.run_id !== rid) throw new DomainError("validation", "只能修改本任务里生成的文书草稿；律师上传的材料用 docx.revise 出修订稿", 422);
+  // 追问可以在此前各轮的草稿上改（D-185）：同一条追问链上的算本任务的文书；别的任务的仍不能动
+  if (!sameFollowUpChain(ctx.db, art.run_id, rid)) throw new DomainError("validation", "只能修改本任务（含它所追问的此前各轮）里生成的文书草稿；律师上传的材料用 docx.revise 出修订稿", 422);
+  if (art.run_id !== rid) {
+    const latest = latestOfLineage(ctx.db, mid, art.kind, art.lineage);
+    if (latest && latest !== id) throw new DomainError("validation", `这份文书已有更新的版本：此前各轮的文书只能在最新版上改，否则其后的修改会丢。请改用成果编号 ${latest}`, 422, { latest_artifact_version_id: latest });
+  }
   if (art.kind !== "agent_report" || !art.filename.toLowerCase().endsWith(".docx")) {
     throw new DomainError("validation", "只能修改 docx.render_report 生成的 Word 文书；修订稿、清洁稿要改的，在原件上重新用 docx.revise 提交全部修改", 422);
   }

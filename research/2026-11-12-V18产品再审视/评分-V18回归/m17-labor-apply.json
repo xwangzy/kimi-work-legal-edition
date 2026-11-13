@@ -1,0 +1,6 @@
+{"tag": "m17-labor-apply", "card": "labor-apply", "veto": [], "score": 22, "dims": [3, 3, 3, 3, 3, 2, 3, 2],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 17, "questions": 1,
+ "top_issues": ["“（四）综合意见”误设为KwlHeading1，与一级章节并列", "正文夹产品流程话：“现有事实清单中没有已经律师确认的案件事实”“律师决定→本方案落实位置”“未能在法规库核验”", "多项“手工计算，请复核”及三倍封顶需律师自行核算"],
+ "prev_score": 21,
+ "product_defect": ["报告渲染未校验标题层级：小节“（四）”可被设为KwlHeading1", "方案正文仍出现“事实清单”“法规库”“律师决定→落实位置”等产品流程用语"],
+ "known_defects_recurring": [], "new_defects": []}

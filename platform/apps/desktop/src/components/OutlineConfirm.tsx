@@ -26,9 +26,12 @@ export function OutlineConfirm({ outline, plain, busy, canStop, onConfirm, onSto
   const kept = keptCount(outline, d);
   const pendingFacts = unconfirmedFactsOf(outline, d);
   return (
-    <div className="card outline-card" role="region" aria-label="起草前确认论点与依据">
-      <div className="card-title">起草前请确认：{outline.doc_kind}的论点与依据</div>
-      <p className="muted">助手按你留下的论点起草；删掉的不写，改写的按你的写法，去掉的依据不引。确认之前文书工具不会出文书；助手若绕过确认产出文书，会标为“论点未经确认”，签发时须写明不确认的理由。</p>
+    // V18 A6：与计划卡、提问卡同一外壳（card-confirm + cc-head + cc-why + cc-actions）；论点与依据的逻辑不变
+    <div className="card-confirm card-outline outline-card" role="region" aria-label="起草前确认论点与依据">
+      <div className="cc-top">
+        <div className="cc-head">起草前请确认：{outline.doc_kind}的论点与依据</div>
+      </div>
+      <p className="cc-why">助手按你留下的论点起草；删掉的不写，改写的按你的写法，去掉的依据不引。确认之前文书工具不会出文书；助手若绕过确认产出文书，会标为“论点未经确认”，签发时须写明不确认的理由。</p>
       <ol className="outline-list">
         {outline.items.map((x) => {
           const dropped = !!d.drop[x.arg_id];
@@ -112,7 +115,7 @@ export function OutlineConfirm({ outline, plain, busy, canStop, onConfirm, onSto
         </label>
       )}
       <textarea rows={2} placeholder="给助手的补充要求（可不填），例如：违约金按合同第 8.2 条计算" value={note} disabled={busy} onChange={(e) => setNote(e.target.value)} aria-label="补充要求" />
-      <div className="card-actions">
+      <div className="cc-actions">
         <button className="btn-primary" disabled={busy || kept === 0} title={kept === 0 ? "至少留一条论点" : undefined} onClick={() => onConfirm(decisionsOf(outline, d, plain), note.trim(), withFacts && pendingFacts.length > 0)}>
           确认并开始起草（{kept} 条论点）
         </button>

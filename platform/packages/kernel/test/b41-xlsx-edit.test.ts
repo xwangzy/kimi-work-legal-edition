@@ -162,7 +162,7 @@ test("定位不到的逐条退回、其余照改；全部定位不到不登记�
 
     const otherRun = await b.raw("xlsx.edit_cells", { artifact_version_id: t1.artifact_version_id, edits: [{ sheet: "要件矩阵", row: 1, column: "要件", value: "x" }] });
     assert.equal(otherRun.result?.isError, true);
-    assert.match(JSON.stringify(otherRun), /只能修改本任务里生成的表格/);
+    assert.match(JSON.stringify(otherRun), /只能修改本任务（含它所追问的此前各轮）里生成的表格/);
     const otherMatter = await c.raw("xlsx.edit_cells", { artifact_version_id: t1.artifact_version_id, edits: [{ sheet: "要件矩阵", row: 1, column: "要件", value: "x" }] });
     assert.equal(otherMatter.result?.isError, true);
     assert.match(JSON.stringify(otherMatter), /not_found/, "别的事项的成果按不存在处理（端点不透露是否存在）");

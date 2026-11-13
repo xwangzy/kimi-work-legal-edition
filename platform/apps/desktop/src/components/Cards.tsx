@@ -14,6 +14,7 @@ import type { ApprovalCard, QuestionAnswer, QuestionCard } from "../api.ts";
 import { Markdown, tokens as renderTokens } from "./Markdown.tsx";
 import { Icon } from "./Icons.tsx";
 import { sendView } from "../lib/query-diff.ts";
+import { splitPlan } from "../lib/plan-sections.ts";
 import { buildAnswers, isAnswered, optionLabelText, pickOption, typeOther, unansweredCount, type AnswerDraft } from "../lib/question-answers.ts";
 
 /** 卡片标题（动词短语，律师语言）。 */
@@ -42,9 +43,11 @@ export function ApprovalCardView({ card, tokenMap, busy, onDecide }: {
   onDecide: (d: { decision: "approve" | "reject"; scope?: "once" | "task"; variant?: "original" | "generalized"; feedback?: string }) => void;
 }) {
   const [feedback, setFeedback] = useState("");
-  const [showFeedback, setShowFeedback] = useState(false);
+  // 修改意见框出现在点“提修改意见”的那一处（计划卡顶部或展开全文后的底部）
+  const [showFeedback, setShowFeedback] = useState<false | "top" | "bottom">(false);
   const [forTask, setForTask] = useState(false);
   const [confirmOriginal, setConfirmOriginal] = useState(false);
+  const [planFull, setPlanFull] = useState(false);
   const [left, setLeft] = useState(() => Date.parse(card.expires_at) - Date.now());
   useEffect(() => {
     const t = setInterval(() => setLeft(Date.parse(card.expires_at) - Date.now()), 1000);
@@ -70,24 +73,48 @@ export function ApprovalCardView({ card, tokenMap, busy, onDecide }: {
     );
   }
   if (card.kind === "plan") {
+    // V18 A6：主操作放在标题行右侧；正文默认露“怎么审 / 会交出什么 / 需要你决定的事”，“步骤”等其余各节展开全文看（lib/plan-sections）；不再用内滚动框
+    const parts = splitPlan(card.preview.plan ?? "");
+    const folded = parts.restTitles.length > 0 && !planFull;
+    const planActions = (at: "top" | "bottom") => (
+      <div className="cc-actions">
+        <button className="btn-primary" disabled={busy} onClick={() => onDecide({ decision: "approve", scope: "once" })}>按这个计划开始</button>
+        {showFeedback === at ? (
+          // V14 第 39 批（V13 W6 复测真实发生）：“提修改意见”原位变成“退回修改”，连点两下就以缺省文字“请按意见修改计划”退回了计划。
+          // 没写意见时不能退回；可以收起输入框
+          <>
+            <button className="btn-ghost" disabled={busy || !feedback.trim()} title={feedback.trim() ? "" : "先写下你希望怎么改"} onClick={() => onDecide({ decision: "reject", feedback: feedback.trim() })}>退回修改</button>
+            <button className="btn-link" disabled={busy} onClick={() => setShowFeedback(false)}>收起</button>
+          </>
+        ) : (
+          <button className="btn-ghost" disabled={busy} onClick={() => setShowFeedback(at)}>提修改意见</button>
+        )}
+      </div>
+    );
+    const feedbackBox = <textarea className="cc-feedback" placeholder="写下你希望怎么改（会转给助手）" value={feedback} onChange={(e) => setFeedback(e.target.value)} autoFocus />;
     return (
       <div className="card-confirm card-plan" aria-live="polite">
-        <div className="cc-head"><Icon.list /> 请确认工作计划 {timer}</div>
-        <div className="cc-plan">{card.preview.plan ? <Markdown text={card.preview.plan} tokenMap={tokenMap} /> : <p className="muted">（计划正文为空）</p>}</div>
-        {showFeedback && <textarea className="cc-feedback" placeholder="写下你希望怎么改（会转给助手）" value={feedback} onChange={(e) => setFeedback(e.target.value)} autoFocus />}
-        <div className="cc-actions">
-          <button className="btn-primary" disabled={busy} onClick={() => onDecide({ decision: "approve", scope: "once" })}>按这个计划开始</button>
-          {showFeedback ? (
-            // V14 第 39 批（V13 W6 复测真实发生）：“提修改意见”原位变成“退回修改”，连点两下就以缺省文字“请按意见修改计划”退回了计划。
-            // 没写意见时不能退回；可以收起输入框
-            <>
-              <button className="btn-ghost" disabled={busy || !feedback.trim()} title={feedback.trim() ? "" : "先写下你希望怎么改"} onClick={() => onDecide({ decision: "reject", feedback: feedback.trim() })}>退回修改</button>
-              <button className="btn-link" disabled={busy} onClick={() => setShowFeedback(false)}>收起</button>
-            </>
-          ) : (
-            <button className="btn-ghost" disabled={busy} onClick={() => setShowFeedback(true)}>提修改意见</button>
-          )}
+        <div className="cc-top">
+          <div className="cc-head"><Icon.list /> 请确认工作计划 {timer}</div>
+          {planActions("top")}
         </div>
+        <div className="cc-why">助手会按这个计划做：同意就开始；要调整，写下修改意见退回给它。</div>
+        {showFeedback === "top" && feedbackBox}
+        <div className="cc-plan">
+          {card.preview.plan ? <Markdown text={folded ? parts.head : card.preview.plan} tokenMap={tokenMap} /> : <p className="muted">（计划正文为空）</p>}
+        </div>
+        {parts.restTitles.length > 0 &&
+          (folded ? (
+            <button className="btn-link cc-fold" aria-expanded={false} onClick={() => setPlanFull(true)}>
+              展开全文（另有 {parts.restTitles.length} 节：{parts.restTitles.join("、")}）
+            </button>
+          ) : (
+            <div className="cc-bottom">
+              {showFeedback === "bottom" && feedbackBox}
+              {planActions("bottom")}
+              <button className="btn-link cc-fold" aria-expanded={true} onClick={() => { setPlanFull(false); if (showFeedback === "bottom") setShowFeedback("top"); }}>收起全文</button>
+            </div>
+          ))}
       </div>
     );
   }
@@ -210,7 +237,9 @@ export function QuestionCardView({ card, tokenMap, busy, onAnswer, outlineLock }
   const idBase = useId();
   return (
     <div className="card-confirm card-question">
-      <div className="cc-head"><Icon.question /> 需要你定一下{card.questions[0]?.header ? `：${card.questions[0].header}` : ""}</div>
+      <div className="cc-top">
+        <div className="cc-head"><Icon.question /> 需要你定一下{card.questions[0]?.header ? `：${card.questions[0].header}` : ""}</div>
+      </div>
       {card.questions.map((q) => (
         <div key={q.id} className="q-block">
           {/* 只有一个问题时标题已写明，不再重复 */}

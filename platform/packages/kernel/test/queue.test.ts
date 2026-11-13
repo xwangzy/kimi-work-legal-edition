@@ -25,7 +25,7 @@ after(() => {
   db.close();
 });
 
-function insertRun(runId: string, status = "queued"): void {
+function insertRun(runId: string, status = "queued", scenario = "s1.contract_review"): void {
   db.run(`INSERT OR IGNORE INTO tenants (tenant_id, name) VALUES ('ten_q', 'q')`, []);
   db.run(`INSERT OR IGNORE INTO users (user_id, tenant_id, display_name) VALUES ('usr_q', 'ten_q', 'q')`, []);
   db.run(
@@ -35,7 +35,7 @@ function insertRun(runId: string, status = "queued"): void {
   db.run(
     `INSERT INTO runs (run_id, tenant_id, matter_id, scenario, workflow_version, status, idempotency_key, created_by)
      VALUES (?,?,?,?,?,?,?,?)`,
-    [runId, "ten_q", "mat_q", "s1.contract_review", "v5.0.0-g0", status, `idem-${runId}`, "usr_q"],
+    [runId, "ten_q", "mat_q", scenario, "v5.0.0-g0", status, `idem-${runId}`, "usr_q"],
   );
 }
 
@@ -152,4 +152,35 @@ test("队列：拉起前的放行判断（复核 S6-C12）——运行中进入�
   await new Promise((r) => setTimeout(r, 300));
   await q.shutdown();
   assert.deepEqual(ran.filter((id) => id === "run_gate_a"), ["run_gate_a"]);
+});
+
+test("队列：本机流程不排在 AI 任务后面，也不占 AI 任务的名额（V18 第 43 批）", async () => {
+  const started: string[] = [];
+  let releaseAi: (() => void) | null = null;
+  const q = new TaskQueue(db, { concurrency: 1 });
+  q.register("legalRun", async (ctx: WorkflowContext) => {
+    started.push(ctx.runId);
+    db.run(`UPDATE runs SET status = 'running' WHERE run_id = ?`, [ctx.runId]);
+    // AI 任务一直占着名额（好比在等律师确认）；本机流程立刻做完
+    if (ctx.runId.startsWith("run_ai")) await new Promise<void>((r) => (releaseAi = r));
+    db.run(`UPDATE runs SET status = 'succeeded' WHERE run_id = ?`, [ctx.runId]);
+  });
+  insertRun("run_ai_1", "queued", "a1.agent_task");
+  insertRun("run_ai_2", "queued", "a1.agent_task");
+  insertRun("run_local_1", "queued", "s2.case_file");
+  insertRun("run_local_2", "queued", "s6.redaction");
+  q.enqueue("run_ai_1");
+  q.enqueue("run_ai_2");
+  q.enqueue("run_local_1");
+  q.enqueue("run_local_2");
+  await new Promise((r) => setTimeout(r, 300));
+  assert.deepEqual(started, ["run_ai_1", "run_local_1", "run_local_2"], "名额 1：第二单 AI 任务等着，两单本机流程照做");
+  assert.equal(db.get<{ status: string }>(`SELECT status FROM runs WHERE run_id = 'run_local_1'`, [])!.status, "succeeded");
+  assert.equal(db.get<{ status: string }>(`SELECT status FROM runs WHERE run_id = 'run_ai_2'`, [])!.status, "queued");
+  assert.deepEqual(q.stats(), { pending: 1, running: 1 });
+  releaseAi!();
+  await new Promise((r) => setTimeout(r, 300));
+  assert.deepEqual(started, ["run_ai_1", "run_local_1", "run_local_2", "run_ai_2"], "前一单结束后第二单 AI 任务才开始");
+  releaseAi!();
+  await q.shutdown();
 });

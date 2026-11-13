@@ -1,0 +1,6 @@
+{"tag": "m24-labor-response", "card": "labor-response", "veto": [], "score": 22, "dims": [3, 2, 3, 3, 3, 3, 3, 2],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 18, "questions": 1,
+ "top_issues": ["复核“必须改”（情景A年休假应为19,725.59）未落到Word，v5仍写19,633.64，修改轮却称已改", "未指出10月竞业补偿在申请时尚未到期", "未点明哪些小额项可能一裁终局"],
+ "prev_score": 21,
+ "product_defect": ["复核修改轮核对了错误版本/文件：Word仍是旧数，却在最终答复里写“最新版已经处理”，revised 0", "复核有必须改未落实时任务仍记为succeeded（仅在remaining提示），未降为部分完成", "方案正文带“本次法规检索未检出”“律师已决定…落实在本方案第X部分”，敞口表列名“草稿金额”"],
+ "known_defects_recurring": [], "new_defects": []}

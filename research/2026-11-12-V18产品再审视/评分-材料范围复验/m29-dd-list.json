@@ -1,0 +1,7 @@
+{"tag": "m29-dd-list", "card": "dd-list", "veto": [], "score": 21, "dims": [3, 2, 3, 3, 3, 2, 3, 2],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 9, "questions": 2,
+ "top_issues": ["漏了条款清单排他期（60 日，至 2026-11-07 已届满）", "内部尽调清单夹带产品用语：“查询结果以律师导入为准，不由助手联网检索主体”", "行业监管待确认表多为条件性通用条目，需律师删减"],
+ "prev_score": null,
+ "product_defect": ["交付件中出现产品与流程用语（“助手”“律师导入”“法规库”），方法规则未拦住", "法规库缺《国务院关于经营者集中申报标准的规定》《计算机软件保护条例》"],
+ "material_scope": {"used_unselected_content": false, "reading_statement_truthful": true, "gaps_listed_not_assumed": true},
+ "known_defects_recurring": [], "new_defects": []}

@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MatterTokenizer } from "@zr-legal/tokenizer";
 import { TOOLS } from "../src/tools/registry.ts";
-import { agentFollowUpPrompt, agentGoalPrompt, methodPromptLine } from "../src/executor/executor.ts";
+import { agentFollowUpPrompt, agentGoalPrompt, followUpAddedLine, followUpEditLine, followUpReviewGoal, methodPromptLine } from "../src/executor/executor.ts";
 import { rulesPromptBlock } from "../src/services/review-rules.ts";
 import { prefsPromptLine } from "../src/services/writing-prefs.ts";
 import { matterFactsLine } from "../src/services/matter-facts.ts";
@@ -76,9 +76,19 @@ test("内核写的提示词框架（事项口径、方法、审查要点、写�
     // 主交付物那一句（Word / Excel，第 28、31 批）也随提示词令牌化：按方法实际的主交付物生成
     const method = methodPromptLine(s.id, { focus: "付款与违约责任" }, (s as { primary_output?: string }).primary_output ?? null);
     texts.push(agentGoalPrompt({ stance: "买方", jurisdiction: "内地民商事", asOf: "2026-10-23", facts, goal: "审查这份采购合同", methodLine: method, rulesBlock: rules, prefsLine: prefs }));
+    // V18 首轮 A3：按本次做法写的那一句（先看计划 / 直接开始）同样随提示词令牌化
+    texts.push(agentGoalPrompt({ stance: "买方", jurisdiction: "内地民商事", asOf: "2026-10-23", facts, goal: "审查这份采购合同", methodLine: method, rulesBlock: rules, prefsLine: prefs, planFirst: true }));
+    texts.push(agentGoalPrompt({ stance: "买方", jurisdiction: "内地民商事", asOf: "2026-10-23", facts, goal: "审查这份采购合同", methodLine: method, rulesBlock: rules, prefsLine: prefs, planFirst: false }));
     texts.push(agentFollowUpPrompt("再看一下违约金", method, true));
   }
   texts.push(agentGoalPrompt({ stance: "原告", jurisdiction: "内地民商事", asOf: "2026-10-23", facts: "", goal: "整理证据", methodLine: methodPromptLine(null, null), rulesBlock: "", prefsLine: "" }));
+  // V18 第 43 批续三：追问补勾材料时点名新增材料的一句（内核不再对它做代号替换，但出站闸门会复扫）
+  texts.push(followUpAddedLine(["公司章程.txt", "股东名册.xlsx · 证据"]));
+  assert.equal(followUpAddedLine([]), "");
+  // V18 第 43 批续五：追问提示里列出此前交出的文件与成果编号的一段
+  texts.push(followUpEditLine([{ filename: "交割清单-栖桐智能增资.xlsx", artifact_version_id: "artv_00000000-0000-4000-8000-000000000000", kind: "xlsx" }, { filename: "法律意见书.docx", artifact_version_id: "artv_00000000-0000-4000-8000-000000000001", kind: "docx" }]));
+  // V18 第 43 批续四：追问那一轮交给复核人的委托原话（整段照常做代号替换）
+  texts.push(followUpReviewGoal({ rootGoal: "审查这份采购合同", methodLine: methodPromptLine("contract-review", { focus: "付款与违约责任" }, null), rulesBlock: rules, earlier: ["第 7 条再细一点", "把违约金按三种情形再算一遍"], current: "章程补上了，核一下表决比例", added: ["公司章程.txt"] }));
   const bad = texts.map((t) => personHits(t)).filter((h) => h.length > 0);
   assert.deepEqual(bad, [], `提示词框架里被认成姓名的：${bad.flat().join("、")}`);
 });

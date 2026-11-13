@@ -83,9 +83,11 @@ test("表格：自动附“事实对照”、只列被引用的序号；助手�
       ["事实 1", "双方于2026年3月1日签订购销合同", "2026-03-01", "已确认"],
       ["事实 3", "被告于2026年4月1日部分付款", "2026-04-01", "待确认"],
       ["事实 4", "被告于2026年5月8日确认欠款", "2026-05-08", "待确认"],
-      ["事实 9", "本事项事实页里没有这一序号，请核对引用", null, null],
     ]);
+    // V18 第 43 批：事实清单里没有的序号（事实 9）不写进成果，只在工具返回里告诉助手改正引用
+    assert.equal(s[1]!.rows.some((r) => String(r[0]) === "事实 9"), false);
     assert.match(t1.fact_sheet, /已自动附上工作表“事实对照”[\s\S]*不要再手工做一张/);
+    assert.match(t1.fact_sheet, /事实 9 在本事项的事实清单里没有这一序号[\s\S]*facts\.list/);
     // 改表：引用从 3、4、9 改成 2，对照表随之更新（仍只有一张）
     const r1 = await a.call("xlsx.edit_cells", { artifact_version_id: t1.artifact_version_id, edits: [{ sheet: "要件矩阵", row: 2, column: "出处", value: "事实 2" }] });
     s = sheetsOf(r1.artifact_version_id);
@@ -114,7 +116,7 @@ test("Word：内部文书文末附“事实对照”一节，改后随引用重�
     const memo = await a.call("docx.render_report", { title: "案情分析备忘录", sections: [{ heading: "一、事实", paragraphs: ["双方签订合同（事实 1），被告部分付款（事实 3）。"] }] });
     let p = parasOf(memo.artifact_version_id);
     assert.ok(p.includes("事实对照"), p.join("\n"));
-    assert.ok(p.some((x) => x.startsWith("（本节由系统按正文引用的事实序号自动附上")));
+    assert.ok(p.some((x) => x.startsWith("（本节列出正文引用的各项事实及其出处")));
     assert.ok(p.includes("被告于2026年4月1日部分付款"));
     assert.equal(p.includes("原告于2026年3月15日交付货物"), false, "只列被引用的");
     assert.match(memo.fact_table, /文末自动加了一节“事实对照”/);
@@ -141,5 +143,16 @@ test("Word：内部文书文末附“事实对照”一节，改后随引用重�
     assert.equal(parasOf(plain.artifact_version_id).includes("事实对照"), false);
   } finally {
     await a.close();
+  }
+});
+
+test("引用的事实序号在事实清单里一个都对不上：不附对照表，只告诉助手改正引用（V18 第 43 批真实回归 m20：系统提示行随成果交了出去）", async () => {
+  const { a } = await matterWithFacts("事实对照·全对不上");
+  try {
+    const t = await a.call("xlsx.render_table", { title: "来源目录", sheets: [{ name: "来源目录", columns: ["法源", "用于"], rows: [["民法典第六百二十一条", "事实 23"]] }] });
+    assert.deepEqual(sheetsOf(t.artifact_version_id).map((x) => x.name), ["来源目录"]);
+    assert.match(String(t.fact_sheet ?? ""), /事实 23 在本事项的事实清单里没有这一序号/);
+  } finally {
+    await a.close?.();
   }
 });
