@@ -23,6 +23,7 @@ import { latestOfLineage, runLineage, sameFollowUpChain } from "../../services/a
 import { checkDeliverable, factRefNos, qualityScrubNote, scrubQualityRows } from "../../services/deliverable-check.ts";
 import { FACT_COLUMNS, FACT_SHEET_NAME, factTableRows, unknownFactNote } from "../../services/fact-refs.ts";
 import { cellChars, shrinkCheck } from "../../services/version-shrink.ts";
+import { reviveSuperseded } from "../../services/attempt-supersede.ts";
 import { amountWordsConflicts, extractFacts, payDayConflicts, type FactRow } from "../../executor/casefile.ts";
 
 function scopeOf(ctx: InvokeCtx): { tenantId: string; matterId: string; runId: string | null } {
@@ -357,7 +358,11 @@ export function registerToolArtifact(
     `SELECT artifact_version_id FROM artifact_versions WHERE matter_id = ? AND run_id = ? AND kind = ? AND audience = 'internal' AND sha256 = ?`,
     [s.matterId, s.runId, art.kind, art.sha256],
   );
-  if (existing) return { artifact_version_id: existing.artifact_version_id, filename: art.filename, reused: true };
+  if (existing) {
+    // 重新运行生成了与上一次字节相同的文件（第 44 批）：上一次那一行已被取代，这一份就是这一次的成果，恢复成草稿
+    reviveSuperseded(ctx.db, existing.artifact_version_id);
+    return { artifact_version_id: existing.artifact_version_id, filename: art.filename, reused: true };
+  }
   const id = newId("artifactVersion");
   ctx.db.tx(() => {
     const v = ctx.db.get<{ next: number }>(`SELECT COALESCE(MAX(version), 0) + 1 AS next FROM artifact_versions WHERE matter_id = ? AND kind = ? AND audience = 'internal'`, [s.matterId, art.kind])!;

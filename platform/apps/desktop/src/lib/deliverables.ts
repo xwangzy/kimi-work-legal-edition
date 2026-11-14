@@ -76,6 +76,8 @@ export interface VersionedRow {
   kind: string;
   filename: string;
   audience?: string | null;
+  /** 成果状态；superseded = 重新运行前那一次留下的、已被这一次取代（第 44 批）。 */
+  status?: string;
   /** 这份文件里的第几版（内核 withFileVersions 换算后的）。 */
   version?: number | string;
   /** 内核原编号（按种类递增）；比先后时优先用它。 */
@@ -94,6 +96,8 @@ export interface FileEntry<T> {
   older: T[];
   /** 这一版在本组里最新，但内核说它已被更新的版本取代（更新的那版在后面的追问任务里）。 */
   replaced: boolean;
+  /** 这一组全是重新运行前那一次留下的文件（第 44 批：已被这一次重新运行取代，不算本次成果）。 */
+  earlier: boolean;
 }
 
 /** 文件名末尾的日期与“部分完成”不算文件身份（与内核 artifact-lineage.ts 的 docNameKey 同一规则）。 */
@@ -138,19 +142,29 @@ function entries<T extends VersionedRow>(rows: readonly T[]): FileEntry<T>[] {
   }
   return [...groups.entries()].map(([key, g]) => {
     const sorted = [...g].sort((a, b) => ver(b) - ver(a) || String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
+    // 重新运行前那一次留下的版本（第 44 批）不当最新版：同名文件这一次又出了的，旧的收进旧版；这一次没再出的，整组归“上一次运行的文件”
+    const live = sorted.filter((a) => !isEarlierRun(a));
+    if (live.length === 0) return { key, latest: sorted[0]!, older: sorted.slice(1), replaced: false, earlier: true };
     // 内核给了 is_latest 就用它：本组里标了最新的那版排第一；本组没有一版是最新（更新的在别的任务里）时取本组最新的一版
-    const flagged = sorted.find((a) => a.is_latest === true);
-    const latest = flagged ?? sorted[0]!;
-    return { key, latest, older: sorted.filter((a) => a !== latest), replaced: latest.is_latest === false };
+    const flagged = live.find((a) => a.is_latest === true);
+    const latest = flagged ?? live[0]!;
+    return { key, latest, older: sorted.filter((a) => a !== latest), replaced: latest.is_latest === false, earlier: false };
   });
+}
+
+/** 重新运行前那一次留下的、已被这一次取代的成果（内核在 Agent 从头重跑时标成 superseded；第 44 批）。 */
+export function isEarlierRun(r: { status?: string | null }): boolean {
+  return r.status === "superseded";
 }
 
 /**
  * 把一次任务的成果分成交付文件与过程文件（纯函数）。交付文件：主交付物第一，其余文书在前、表格其次，同类按首次出现的顺序；
- * 过程文件：答复摘要在前、独立复核意见其次。
+ * 过程文件：答复摘要在前、独立复核意见其次。earlier：重新运行前那一次留下、这一次没再出的文件（第 44 批），不算交付文件也不算过程文件，
+ * 按生成先后列出，只给预览与下载。
  */
-export function splitTaskFiles<T extends VersionedRow>(rows: readonly T[], opts: { primary?: string | null } = {}): { files: FileEntry<T>[]; process: FileEntry<T>[] } {
-  const all = entries(rows);
+export function splitTaskFiles<T extends VersionedRow>(rows: readonly T[], opts: { primary?: string | null } = {}): { files: FileEntry<T>[]; process: FileEntry<T>[]; earlier: FileEntry<T>[] } {
+  const every = entries(rows);
+  const all = every.filter((e) => !e.earlier);
   const files = all.filter((e) => !PROCESS_KINDS.has(e.latest.kind));
   const order = new Map(files.map((e, i) => [e, i]));
   // 同类按这份文件第一次生成的先后（任务页按登记顺序、成果页按新到旧传入，排出来一样）
@@ -161,7 +175,8 @@ export function splitTaskFiles<T extends VersionedRow>(rows: readonly T[], opts:
     return pa - pb || rank(a.latest) - rank(b.latest) || born(a).localeCompare(born(b)) || order.get(a)! - order.get(b)!;
   });
   const process = all.filter((e) => PROCESS_KINDS.has(e.latest.kind)).sort((a, b) => (a.latest.kind === "a1_review_note" ? 1 : 0) - (b.latest.kind === "a1_review_note" ? 1 : 0));
-  return { files, process };
+  const earlier = every.filter((e) => e.earlier).sort((a, b) => (PROCESS_KINDS.has(a.latest.kind) ? 1 : 0) - (PROCESS_KINDS.has(b.latest.kind) ? 1 : 0) || born(a).localeCompare(born(b)));
+  return { files, process, earlier };
 }
 
 /** 一组成果里有几份文件（交付文件，不算旧版与过程文件；已被后面任务取代的不重复计）。 */
@@ -182,11 +197,12 @@ export interface PackageRow {
   /** 内核按“同一份文件”判断的是否最新版（v9.4 第 25 批）；旧内核没有这一项时按种类推算。 */
   is_latest?: boolean;
 }
-export type PackageReason = "internal" | "not_signed" | "superseded" | "rejected";
+export type PackageReason = "internal" | "not_signed" | "superseded" | "earlier_run" | "rejected";
 export const PACKAGE_REASON_TEXT: Record<PackageReason, string> = {
   internal: "内部稿，不随包（对外请用对外版或客户版）",
   not_signed: "还没签发",
   superseded: "已有更新版本",
+  earlier_run: "重新运行前那一次的文件，已被这一次取代",
   rejected: "已退回",
 };
 export function deliveryPackage<T extends PackageRow>(rows: readonly T[]): { ready: T[]; held: { row: T; reason: PackageReason }[] } {
@@ -199,7 +215,7 @@ export function deliveryPackage<T extends PackageRow>(rows: readonly T[]): { rea
   const held: { row: T; reason: PackageReason }[] = [];
   for (const r of rows) {
     const isLatest = typeof r.is_latest === "boolean" ? r.is_latest : latest.get(`${r.kind}\u0000${r.audience ?? ""}`) === r.version;
-    const reason: PackageReason | null = !isLatest || r.status === "superseded" ? "superseded" : r.status === "rejected" ? "rejected" : r.status !== "approved" ? "not_signed" : (r.audience ?? "internal") === "internal" ? "internal" : null;
+    const reason: PackageReason | null = r.status === "superseded" ? "earlier_run" : !isLatest ? "superseded" : r.status === "rejected" ? "rejected" : r.status !== "approved" ? "not_signed" : (r.audience ?? "internal") === "internal" ? "internal" : null;
     if (reason) held.push({ row: r, reason });
     else ready.push(r);
   }

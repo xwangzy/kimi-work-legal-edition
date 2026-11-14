@@ -263,7 +263,7 @@ test("R-07 人工对账出口：执行中不可对账；逐项确认“已生效
   const { matter } = await tk.inv("matters.create", { title: "对账事项", stance: "受让方", consent_status: "not_required" });
   const db = tk.kernel.db;
   const runId = seedRun(matter.matter_id, "reconcile");
-  seedDraftCheckpoint(matter.matter_id, runId);
+  const avId = seedDraftCheckpoint(matter.matter_id, runId);
   db.run(
     `INSERT INTO tool_operations (tool_operation_id, run_id, attempt_id, tool, operation, params_hash, status, idempotency_key, side_effect)
      VALUES (?,?,?,?,?,?,'unknown',?,?)`,
@@ -292,6 +292,10 @@ test("R-07 人工对账出口：执行中不可对账；逐项确认“已生效
   const done = await waitRun(tk.inv, runId, 30_000);
   assert.equal(done.run.status, "succeeded");
   assert.ok(!done.events.some((e: any) => e.type === "agent.task_started"), "重试按检查点结算，不重跑 Agent");
+  // 第 44 批：按检查点结算时，检查点里的成果就是本次成果——不标“已被取代”，检查点保留
+  assert.equal(db.get<{ status: string }>(`SELECT status FROM artifact_versions WHERE artifact_version_id = ?`, [avId])!.status, "draft");
+  assert.ok(!done.events.some((e: any) => e.type === "run.earlier_superseded"), "对账后重试不取代检查点里的成果");
+  assert.ok(db.get(`SELECT 1 AS x FROM step_checkpoints WHERE run_id = ? AND step_name = 'agent_store_draft'`, [runId]), "检查点保留");
 });
 
 test("R-07 本次尝试中出现结果不明的副作用调用：成果照常入库，但任务转 reconciling、不结算", { timeout: 60_000 }, async () => {

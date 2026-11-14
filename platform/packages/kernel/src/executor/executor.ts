@@ -37,6 +37,7 @@ import { slimAgentPayload } from "./run-progress.ts";
 import { runCapabilities, runModeOf } from "../identity.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
 import { runLineage } from "../services/artifact-lineage.ts";
+import { LIVE_ARTIFACT, reviveSuperseded, supersedeEarlierAttempts } from "../services/attempt-supersede.ts";
 import { scrubLocalPaths } from "../services/reply-local-paths.ts";
 import { REVIEW_KIND_OF_SKILL, fixPrompt, headerFooterText, labeledText, labeledTextWithRows, lawExcerptLines, lawRefsIn, parseFindings, workbookText, reportText, reviewMessages, reviewNote, revisionDiff, type FixTarget, type ReviewDoc, type ReviewFinding, type ReviewKind, followUpMessages, followUpSection, parseFollowUp, quoteHints, type FollowUpItem } from "../services/independent-review.ts";
 
@@ -607,6 +608,9 @@ function registerArtifact(
     [run.matter_id, art.kind, art.sha256],
   );
   if (existing) {
+    // 重新运行生成了与上一次字节相同的文件（第 44 批）：本任务上一次那一行已被取代，这一份就是这一次的成果，恢复成草稿。
+    // 只恢复本任务的：命中的是别的任务被取代的行时不动它（否则那个任务的成果会被改回来）
+    if (existing.run_id === runId) reviveSuperseded(db, existing.artifact_version_id);
     if (existing.run_id !== runId) {
       appendEvent(ctx.deps, runId, attemptId, seq, "artifact.reused", {
         artifact_version_id: existing.artifact_version_id,
@@ -1075,7 +1079,7 @@ export function followUpChain(db: KernelDb, runId: string): string[] {
 export function chainEditTargets(db: KernelDb, chain: readonly string[], matterId: string): FixTarget[] {
   if (chain.length === 0) return [];
   const rows = db.all<{ artifact_version_id: string; filename: string; kind: string; manifest: string | null; lineage: string | null }>(
-    `SELECT artifact_version_id, filename, kind, manifest, lineage FROM artifact_versions WHERE run_id IN (${chain.map(() => "?").join(",")}) AND matter_id = ? AND kind IN ('agent_report','agent_table') ORDER BY version`,
+    `SELECT artifact_version_id, filename, kind, manifest, lineage FROM artifact_versions WHERE run_id IN (${chain.map(() => "?").join(",")}) AND matter_id = ? AND kind IN ('agent_report','agent_table') AND ${LIVE_ARTIFACT} ORDER BY version`,
     [...chain, matterId],
   );
   const latest = new Map<string, FixTarget>();
@@ -1195,6 +1199,18 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
 
   // 上次尝试留下结果不明的副作用调用 → 不重跑 Agent
   assertNoUnresolved();
+
+  // 重新运行（或崩溃恢复）要从头重跑 Agent（第 44 批）：上一次运行登记的草稿成果标成“已被取代”、旧提纲撤回、Agent 之后各步的检查点清掉——
+  // 这一次会重新问律师、重新定计划，成果、复核与修改轮只认这一次的文件。第一次运行时什么都没有，不记事件
+  const superseded = supersedeEarlierAttempts(db, runId);
+  if (superseded.files.length > 0 || superseded.kept.length > 0 || superseded.outlines > 0) {
+    appendEvent(ctx.deps, runId, attemptId, AGENT_EARLIER_SUPERSEDED_SEQ, "run.earlier_superseded", {
+      files: superseded.files.map((f) => f.filename).slice(0, 50),
+      count: superseded.files.length,
+      kept: superseded.kept.map((f) => ({ filename: f.filename, status: f.status })).slice(0, 20),
+      outlines: superseded.outlines,
+    });
+  }
 
   const identity = { tid: run.tenant_id, uid: run.created_by, mid: run.matter_id, rid: runId, aid: attemptId, fence };
   // 运行意图 → 工具用途（审查 R-09；复审 N-03）：由任务记录（场景）派生，与端点使用同一来源
@@ -1435,7 +1451,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
 
 /** 本任务已登记的修订稿、清洁稿文件名（在原件上修订的产物）。纯查询。 */
 function redlineFilesOf(db: KernelDb, runId: string, matterId: string): string[] {
-  return [...new Set(db.all<{ filename: string }>(`SELECT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('revision_draft','revision_clean') ORDER BY created_at`, [runId, matterId]).map((r) => r.filename))];
+  return [...new Set(db.all<{ filename: string }>(`SELECT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('revision_draft','revision_clean') AND ${LIVE_ARTIFACT} ORDER BY created_at`, [runId, matterId]).map((r) => r.filename))];
 }
 
 /**
@@ -1595,7 +1611,7 @@ const ATTACHMENT_NAME = /起草说明|核对清单|对照表|待定事项|待确
 export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string, kind: ReviewKind, primary: string | null = null): { docs: ReviewDoc[]; diff: string[]; title: string; inventory: string[]; reply: string; sources: string[]; unlearned: string[] } | null {
   if (kind === "rules") return rulesReviewTarget(deps, runId, matterId);
   const rows = deps.db.all<{ filename: string; storage_uri: string; manifest: string | null; created_at: string; kind: string }>(
-    `SELECT filename, storage_uri, manifest, created_at, kind FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','revision_draft','revision_clean') AND lower(filename) LIKE '%.docx' ORDER BY created_at, version`,
+    `SELECT filename, storage_uri, manifest, created_at, kind FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','revision_draft','revision_clean') AND lower(filename) LIKE '%.docx' AND ${LIVE_ARTIFACT} ORDER BY created_at, version`,
     [runId, matterId],
   );
   const latest = new Map<string, (typeof rows)[number]>();
@@ -1651,7 +1667,7 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
   }
   // 表格附件（V16 第 41 批：m29 发给对方董秘的资料清单、m26 计算表原先不在复核范围）：系统按事实生成的事实时间线不复核
   const tableRows = deps.db.all<{ filename: string; storage_uri: string; manifest: string | null }>(
-    `SELECT filename, storage_uri, manifest FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind = 'agent_table' AND lower(filename) LIKE '%.xlsx' ORDER BY created_at, version`,
+    `SELECT filename, storage_uri, manifest FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind = 'agent_table' AND lower(filename) LIKE '%.xlsx' AND ${LIVE_ARTIFACT} ORDER BY created_at, version`,
     [runId, matterId],
   );
   const latestTable = new Map<string, (typeof tableRows)[number]>();
@@ -1722,7 +1738,7 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
   const inventory = [
     ...new Set(
       deps.db
-        .all<{ filename: string }>(`SELECT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','revision_draft','revision_clean','agent_table','a1_workspace_file') ORDER BY created_at`, [runId, matterId])
+        .all<{ filename: string }>(`SELECT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','revision_draft','revision_clean','agent_table','a1_workspace_file') AND ${LIVE_ARTIFACT} ORDER BY created_at`, [runId, matterId])
         .map((r) => r.filename),
     ),
   ].map((f) => `${f}${redlineNote(f)}`);
@@ -1731,7 +1747,7 @@ export function reviewTargets(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: s
 
 /** 助手给律师的最终答复（最新一版）。 */
 function finalReply(deps: Pick<ExecutorDeps, "db" | "blobs">, runId: string, matterId: string): string {
-  const replyRow = deps.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('a1_agent_draft','a1_agent_draft_partial') ORDER BY created_at DESC, version DESC LIMIT 1`, [runId, matterId]);
+  const replyRow = deps.db.get<{ storage_uri: string }>(`SELECT storage_uri FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('a1_agent_draft','a1_agent_draft_partial') AND ${LIVE_ARTIFACT} ORDER BY created_at DESC, version DESC LIMIT 1`, [runId, matterId]);
   try {
     return replyRow ? deps.blobs.read(replyRow.storage_uri).toString("utf8") : "";
   } catch {
@@ -1771,7 +1787,7 @@ function reviewLawLines(lawdb: Lawdb, refs: ReturnType<typeof lawRefsIn>, asOf: 
 /** 修改轮要改的文件：本任务已生成的 Word 文书与表格，每个文件名取最新一版（给出成果编号，不靠会话记忆找文件）。 */
 export function fixTargetsOf(db: KernelDb, runId: string, matterId: string): FixTarget[] {
   const rows = db.all<{ artifact_version_id: string; filename: string; kind: string; manifest: string | null }>(
-    `SELECT artifact_version_id, filename, kind, manifest FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','agent_table') ORDER BY created_at, version`,
+    `SELECT artifact_version_id, filename, kind, manifest FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND kind IN ('agent_report','agent_table') AND ${LIVE_ARTIFACT} ORDER BY created_at, version`,
     [runId, matterId],
   );
   const latest = new Map<string, FixTarget>();
@@ -1800,7 +1816,7 @@ function revisedSinceFix(db: KernelDb, runId: string, matterId: string): { versi
   const fixFrom = db.get<{ created_at: string }>(`SELECT created_at FROM run_events WHERE run_id = ? AND type = 'review.fix_started' ORDER BY event_id DESC LIMIT 1`, [runId])?.created_at;
   if (!fixFrom) return { versions: 0, filenames: [] };
   const rows = db.all<{ filename: string }>(
-    `SELECT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND created_at >= ? AND kind IN ('agent_report','revision_draft','revision_clean','agent_table') ORDER BY created_at`,
+    `SELECT filename FROM artifact_versions WHERE run_id = ? AND matter_id = ? AND created_at >= ? AND kind IN ('agent_report','revision_draft','revision_clean','agent_table') AND ${LIVE_ARTIFACT} ORDER BY created_at`,
     [runId, matterId, fixFrom],
   );
   // 整理审查要点：修改轮重交的是审查要点草稿（存进事项，不是文件）
@@ -2219,6 +2235,8 @@ export function agentTimeoutText(reason: string | null, limitMs: number = AGENT_
 const AGENT_PRIMARY_MISSING_SEQ = 9_001;
 /** 到时限时主交付物已交出的事件序号（第 35 批）。 */
 const AGENT_DEADLINE_DELIVERED_SEQ = 9_002;
+/** 重新运行时上一次运行的文件已被取代的事件序号（第 44 批；独立占位，每次尝试另有偏移）。 */
+const AGENT_EARLIER_SUPERSEDED_SEQ = 9_003;
 /**
  * 本机流程（回稿比对 S1b、对外脱敏 S6）的报告直接由文书引擎生成（V14 第 39 批真实走查 T1“回稿比对（不用 AI）”：原先经 docx.render_report 工具生成，
  * 工具自己会把它登记成一份 agent_report 成果，执行器再登记一次 s1b_report，交付件里同一份报告出现两次）。
@@ -2253,7 +2271,7 @@ async function ensureFactsTimeline(ctx: Ctx, run: RunRow, runId: string, attempt
     if (!runUsedSkill(db, runId, skill, "casefile-organize")) return;
     const submitted = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM matter_facts WHERE run_id = ?`, [runId])?.n ?? 0;
     if (submitted === 0) return;
-    const own = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM artifact_versions WHERE run_id = ? AND filename LIKE '事实时间线%'`, [runId])?.n ?? 0;
+    const own = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM artifact_versions WHERE run_id = ? AND filename LIKE '事实时间线%' AND ${LIVE_ARTIFACT}`, [runId])?.n ?? 0;
     if (own > 0) return;
     await ctx.step("facts_timeline", async () => {
       const tz = ctx.deps.tokens;
@@ -2291,7 +2309,7 @@ async function ensureFactsTimeline(ctx: Ctx, run: RunRow, runId: string, attempt
 export function deliveredBeforeDeadline(db: KernelDb, runId: string, primaryOutput: string | null, limitMs: number = AGENT_WORK_LIMIT_MS): { files: string[]; note: string } | null {
   if (primaryOutput && (WORD_OUTPUT.test(primaryOutput) || SHEET_OUTPUT.test(primaryOutput)) && primaryDeliverableMissing(db, runId, primaryOutput)) return null;
   const rows = db.all<{ filename: string }>(
-    `SELECT filename FROM artifact_versions WHERE run_id = ? AND ((${WORD_ARTIFACT_SQL}) OR (${SHEET_ARTIFACT_SQL})) ORDER BY created_at`,
+    `SELECT filename FROM artifact_versions WHERE run_id = ? AND ((${WORD_ARTIFACT_SQL}) OR (${SHEET_ARTIFACT_SQL})) AND ${LIVE_ARTIFACT} ORDER BY created_at`,
     [runId],
   );
   if (rows.length === 0) return null;
@@ -2335,13 +2353,13 @@ const AUX_WORD = /起草说明|待定事项|待确认事项|核对清单|核对�
 export function primaryDeliverableMissing(db: KernelDb, runId: string, primaryOutput: string | null): { primary: string; cause: string; note: string } | null {
   // Excel 主交付物（第 31 批）：一张表都没登记时同样不记“完成”
   if (primaryOutput && SHEET_OUTPUT.test(primaryOutput)) {
-    const t = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM artifact_versions WHERE run_id = ? AND (${SHEET_ARTIFACT_SQL})`, [runId])?.n ?? 0;
+    const t = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM artifact_versions WHERE run_id = ? AND (${SHEET_ARTIFACT_SQL}) AND ${LIVE_ARTIFACT}`, [runId])?.n ?? 0;
     if (t > 0) return null;
     const primary = primaryOutput.replace(SHEET_OUTPUT, "");
     return { primary, cause: "no_sheet_output", note: `没有交出《${primary}》：助手只交了文字说明。可以在本任务里“追问”，让助手用表格工具补出` };
   }
   if (!primaryOutput || !WORD_OUTPUT.test(primaryOutput)) return null;
-  const words = db.all<{ filename: string }>(`SELECT filename FROM artifact_versions WHERE run_id = ? AND (${WORD_ARTIFACT_SQL})`, [runId]).map((r) => r.filename);
+  const words = db.all<{ filename: string }>(`SELECT filename FROM artifact_versions WHERE run_id = ? AND (${WORD_ARTIFACT_SQL}) AND ${LIVE_ARTIFACT}`, [runId]).map((r) => r.filename);
   const primary = primaryOutput.replace(WORD_OUTPUT, "");
   if (words.length > 0) {
     // V16 第 41 批（卡片—方法盘点 3.3）：原先“有任何一份 Word 就算交了主交付物”——合同起草只交《起草说明与待定事项》、

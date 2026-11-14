@@ -59,7 +59,7 @@ export function DeliverablesPage() {
   }, [groups]);
   const pick = <E extends { latest: { status: string } }>(es: E[]) => es.filter((e) => filter === "all" || e.latest.status === filter);
   const shownGroups = groups
-    .map((g) => ({ ...g, tasks: g.tasks.map((t) => ({ ...t, files: pick(t.split.files), process: pick(t.split.process) })).filter((t) => t.files.length + t.process.length > 0) }))
+    .map((g) => ({ ...g, tasks: g.tasks.map((t) => ({ ...t, files: pick(t.split.files), process: pick(t.split.process) })).filter((t) => t.files.length + t.process.length + (filter === "all" ? t.split.earlier.length : 0) > 0) }))
     .filter((g) => g.tasks.length > 0);
   const cols = filter === "all" ? 4 : 3;
   const download = async (r: any) => {
@@ -155,6 +155,8 @@ export function DeliverablesPage() {
                   // 每份文件一行（最新版）；行点开是预览与签发前检查。第 27 批（评审 U3-29）：小按钮，一屏不再是十几个蓝色链接
                   ...t.files.map((e) => <FileRows key={e.key} entry={e} showStatus={filter === "all"} onOpen={(r) => nav(`/review/${r.artifact_version_id}`)} onDownload={(r) => void download(r)} onSubmit={(r) => void submit(r)} busyId={busyId} />),
                   <ProcessRows key={`proc-${t.run_id ?? "none"}`} entries={t.process} colSpan={cols} showStatus={filter === "all"} onDownload={(r) => void download(r)} />,
+                  // 重新运行前那一次留下的文件（第 44 批）：按状态筛选时不列（它们不是草稿也不是待复核），“全部”时收在最后
+                  ...(filter === "all" ? [<ProcessRows key={`earlier-${t.run_id ?? "none"}`} entries={t.split.earlier} colSpan={cols} showStatus onDownload={(r) => void download(r)} earlier />] : []),
                 ])}
               </tbody>
             ))}
@@ -264,6 +266,7 @@ export function MatterDeliverables({ matterId }: { matterId: string }) {
               return [
                 ...sp.files.map((e) => <FileRows key={e.key} entry={e} showStatus onOpen={(r) => nav(`/review/${r.artifact_version_id}`)} onDownload={(r) => void download(r)} />),
                 <ProcessRows key={`proc-${t.run_id ?? "none"}`} entries={sp.process} colSpan={4} showStatus onDownload={(r) => void download(r)} />,
+                <ProcessRows key={`earlier-${t.run_id ?? "none"}`} entries={sp.earlier} colSpan={4} showStatus onDownload={(r) => void download(r)} earlier />,
               ];
             })(),
           ])}

@@ -27,22 +27,31 @@ export function rightCollapsed(p: { artifactsLoaded: boolean; artifactCount: num
 /**
  * 完成后结果区列哪些文件（第 31 批真实走查；V18 A1/A2 起与成果页共用 splitTaskFiles）：同一份文件只列最新一版，
  * 主交付物第一，其余文书在前、表格其次；答复摘要与独立复核意见是过程文件，不进 current。
- * older = 交付文件被取代的旧版份数（右栏“成果”里仍可看）。纯函数。
+ * older = 交付文件被取代的旧版份数（右栏“成果”里仍可看）。
+ * earlier = 重新运行前那一次留下、这一次没再出的文件（第 44 批），每份取那一次的最后一版：不进 current、不算交付文件，结果区收进“上一次运行的文件”。纯函数。
  */
-export function currentFiles<T extends VersionedRow>(artifacts: readonly T[], opts: { primary?: string | null } = {}): { current: T[]; older: number; process: T[]; files: FileEntry<T>[] } {
+export function currentFiles<T extends VersionedRow>(artifacts: readonly T[], opts: { primary?: string | null } = {}): { current: T[]; older: number; process: T[]; files: FileEntry<T>[]; earlier: T[] } {
   const s = splitTaskFiles(artifacts, opts);
-  return { current: s.files.map((e) => e.latest), older: s.files.reduce((n, e) => n + e.older.length, 0), process: s.process.map((e) => e.latest), files: s.files };
+  return {
+    current: s.files.map((e) => e.latest),
+    older: s.files.reduce((n, e) => n + e.older.length, 0),
+    process: s.process.map((e) => e.latest),
+    files: s.files,
+    earlier: s.earlier.map((e) => e.latest),
+  };
 }
 
 /**
- * 右栏“成果”下拉的顺序（V18 A1 #4）：交付文件最新版 → 交付文件旧版 → 过程文件（各自最新在前）。默认选中第一项（主交付物的最新版）。纯函数。
+ * 右栏“成果”下拉的顺序（V18 A1 #4）：交付文件最新版 → 交付文件旧版 → 过程文件（各自最新在前）→ 重新运行前那一次的文件（第 44 批）。
+ * 默认选中第一项（主交付物的最新版）。纯函数。
  */
-export function artifactOptionOrder<T extends VersionedRow>(artifacts: readonly T[], opts: { primary?: string | null } = {}): { row: T; group: "file" | "older" | "process"; old: boolean }[] {
+export function artifactOptionOrder<T extends VersionedRow>(artifacts: readonly T[], opts: { primary?: string | null } = {}): { row: T; group: "file" | "older" | "process" | "earlier"; old: boolean }[] {
   const s = splitTaskFiles(artifacts, opts);
   return [
     ...s.files.map((e) => ({ row: e.latest, group: "file" as const, old: false })),
     ...s.files.flatMap((e) => e.older.map((row) => ({ row, group: "older" as const, old: true }))),
     ...s.process.flatMap((e) => [{ row: e.latest, group: "process" as const, old: false }, ...e.older.map((row) => ({ row, group: "process" as const, old: true }))]),
+    ...s.earlier.flatMap((e) => [e.latest, ...e.older].map((row) => ({ row, group: "earlier" as const, old: true }))),
   ];
 }
 

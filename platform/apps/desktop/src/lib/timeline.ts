@@ -526,6 +526,20 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
             : { key: `${e.event_id}`, level: "lawyer", icon: "fail", title: p.status === "timed_out" ? "按复核意见修改超过时限，文书是复核前的版本" : "按复核意见修改没有完成，文书是复核前的版本", at },
         );
         break;
+      case "run.earlier_superseded": {
+        // 重新运行从头再做（第 44 批）：上一次运行的文件收起、不算这一次的成果；上一次确认的论点作废。
+        // 不是问题，用 ok 图标（“没做完的地方”只收 fail / dot）
+        const n = Number(p.count ?? 0);
+        const kept = Array.isArray(p.kept) ? p.kept.length : 0;
+        const outlines = Number(p.outlines ?? 0);
+        const parts = [
+          n > 0 ? `上一次运行的 ${n} 份文件收进“上一次运行的文件”，不算这次的成果，也不交给复核` : "",
+          outlines > 0 ? "上一次确认的论点与依据不再沿用，这次起草前会重新请你确认" : "",
+          kept > 0 ? `你已提交复核或签发的 ${kept} 份保留不动` : "",
+        ].filter(Boolean);
+        steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "ok", title: "重新运行：按这一次的回答和计划重新做", at, ...(parts.length > 0 ? { detail: parts.join("；") } : {}) });
+        break;
+      }
       case "agent.primary_missing":
         // 主交付物核对（第 28 批）：文书类方法没交出 Word 文书——如实告诉律师，任务记部分完成
         steps.push({ key: `${e.event_id}`, level: "lawyer", icon: "fail", title: `没有交出《${String(p.primary ?? "文书")}》`, at, detail: PRIMARY_MISSING_CAUSES[String(p.cause)] ?? "" });

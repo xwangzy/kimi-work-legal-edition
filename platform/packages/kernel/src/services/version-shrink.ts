@@ -6,6 +6,7 @@
  * 只比字数（文书：标题与各节段落、表格格子的文字；表格：全部格子的文字），比上一版少 20% 以上才提示；纯查询，不拦截生成。
  */
 import type { KernelDb } from "../db.ts";
+import { LIVE_ARTIFACT } from "./attempt-supersede.ts";
 
 /** 缩水阈值：新版字数低于上一版的 80% 时提示。 */
 const SHRINK_RATIO = 0.8;
@@ -41,7 +42,7 @@ export interface ShrinkNote {
 export function shrinkCheck(db: KernelDb, runId: string | undefined | null, kind: string, filename: string, currentId: string, currentChars: number): ShrinkNote | null {
   if (!runId || currentChars <= 0) return null;
   const prev = db.get<{ artifact_version_id: string; manifest: string | null }>(
-    `SELECT artifact_version_id, manifest FROM artifact_versions WHERE run_id = ? AND kind = ? AND filename = ? AND artifact_version_id <> ? ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+    `SELECT artifact_version_id, manifest FROM artifact_versions WHERE run_id = ? AND kind = ? AND filename = ? AND artifact_version_id <> ? AND ${LIVE_ARTIFACT} ORDER BY created_at DESC, rowid DESC LIMIT 1`,
     [runId, kind, filename, currentId],
   );
   if (!prev) return null;

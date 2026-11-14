@@ -24,7 +24,7 @@ import { busyRunOfError } from "../lib/start-block.ts";
 import { methodLine, methodShort } from "../lib/run-method.ts";
 import { Select } from "../components/Select.tsx";
 import { artifactOptionOrder, currentFiles, queuedText, rightCollapsed, rightTabs, type RightTab } from "../lib/run-pane.ts";
-import { isPrimaryFile } from "../lib/deliverables.ts";
+import { PROCESS_KINDS, isEarlierRun, isPrimaryFile } from "../lib/deliverables.ts";
 import { FileTypeTag } from "../components/ArtifactRow.tsx";
 import { previewCites, previewFactMarks, type ArtifactCitations, type FactMarkView } from "../lib/citation-review.ts";
 import { CitationClaims } from "../components/CitationClaims.tsx";
@@ -166,11 +166,14 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const withRun = (a: any) => ({ ...a, run_title: a.run_title ?? runSnap.title ?? null, run_goal: a.run_goal ?? runSnap.goal ?? run?.goal ?? null });
   // 成果名（V18 A2 统一命名：答复摘要、修订稿按文件名）；代号在界面还原
   const nameOf = (a: any) => fileListName(withRun(a), (t) => restoredPlain(t, tokenMap));
-  // 右栏下拉的选项名：交付文件写名称（第 2 版起写版数），旧版注明“旧版”，过程文件前面写“过程文件”
-  const optionLabel = (o: { row: any; group: "file" | "older" | "process"; old: boolean }) => {
+  // 右栏下拉的选项名：交付文件写名称（第 2 版起写版数），旧版注明“旧版”，过程文件前面写“过程文件”；
+  // 重新运行前那一次留下的注明“上一次运行”（第 44 批）
+  const optionLabel = (o: { row: any; group: "file" | "older" | "process" | "earlier"; old: boolean }) => {
     const v = o.old || Number(o.row.version) > 1 ? ` · 第 ${o.row.version} 版` : "";
-    if (o.group === "process") return `过程文件 · ${nameOf(o.row)}${o.old ? `${v}（旧版）` : ""}`;
-    return `${nameOf(o.row)}${v}${o.old ? "（旧版）" : ""}`;
+    const oldTag = isEarlierRun(o.row) ? "（上一次运行）" : "（旧版）";
+    if (o.group === "earlier") return `${PROCESS_KINDS.has(String(o.row.kind)) ? "过程文件 · " : ""}${nameOf(o.row)}${v}（上一次运行）`;
+    if (o.group === "process") return `过程文件 · ${nameOf(o.row)}${o.old ? `${v}${oldTag}` : ""}`;
+    return `${nameOf(o.row)}${v}${o.old ? oldTag : ""}`;
   };
   // 本次的主交付物（方法或场景卡定义的文件名）：结果区与右栏都把它排第一
   const primaryName: string | null = typeof runSnap.skill_primary_output === "string" ? runSnap.skill_primary_output : (scenarioOfRun(run, homeLine())?.primary ?? null);
@@ -828,36 +831,49 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     pickArtifact(a.artifact_version_id);
     setTab("artifact");
   };
-  const filesEl = terminal && doneFiles.current.length > 0 && (
+  const fileItem = (a: any, opts: { primary?: boolean } = {}) => (
+    <li key={a.artifact_version_id} className={selected === a.artifact_version_id ? "on" : undefined}>
+      <FileTypeTag filename={String(a.filename ?? "")} />
+      <button className="btn-link done-file-name" title={restoredPlain(String(a.filename ?? ""), tokenMap)} onClick={() => openInPane(a)}>
+        {nameOf(a)}
+      </button>
+      {opts.primary && isPrimaryFile(String(a.filename ?? ""), primaryName) && <span className="tag tag-gray">主文书</span>}
+      {Number(a.version) > 1 && <span className="muted done-file-ver">第 {a.version} 版</span>}
+      <span className="spacer" />
+      <button className="btn-ghost btn-sm" onClick={() => openInPane(a)}>
+        预览
+      </button>
+      <button className="btn-ghost btn-sm" onClick={() => downloadOne(a)}>
+        {downloadLabel(String(a.filename ?? ""))}
+      </button>
+    </li>
+  );
+  const filesEl = terminal && (doneFiles.current.length > 0 || doneFiles.earlier.length > 0) && (
     <div className="done-files">
-      <div className="pane-title">本次交付的文件（草稿，{doneFiles.current.length} 份）</div>
-      <ul className="done-file-list">
-        {/* 多于 6 份时先列 6 份，其余点“全部”展开（v9.4 U1 #8） */}
-        {(showAllFiles ? doneFiles.current : doneFiles.current.slice(0, 6)).map((a) => (
-          <li key={a.artifact_version_id} className={selected === a.artifact_version_id ? "on" : undefined}>
-            <FileTypeTag filename={String(a.filename ?? "")} />
-            <button className="btn-link done-file-name" title={restoredPlain(String(a.filename ?? ""), tokenMap)} onClick={() => openInPane(a)}>
-              {nameOf(a)}
+      {doneFiles.current.length > 0 && (
+        <>
+          <div className="pane-title">本次交付的文件（草稿，{doneFiles.current.length} 份）</div>
+          <ul className="done-file-list">
+            {/* 多于 6 份时先列 6 份，其余点“全部”展开（v9.4 U1 #8） */}
+            {(showAllFiles ? doneFiles.current : doneFiles.current.slice(0, 6)).map((a) => fileItem(a, { primary: true }))}
+          </ul>
+          {doneFiles.current.length > 6 && !showAllFiles && (
+            <button className="btn-link" onClick={() => setShowAllFiles(true)}>
+              全部 {doneFiles.current.length} 份 →
             </button>
-            {isPrimaryFile(String(a.filename ?? ""), primaryName) && <span className="tag tag-gray">主文书</span>}
-            {Number(a.version) > 1 && <span className="muted done-file-ver">第 {a.version} 版</span>}
-            <span className="spacer" />
-            <button className="btn-ghost btn-sm" onClick={() => openInPane(a)}>
-              预览
-            </button>
-            <button className="btn-ghost btn-sm" onClick={() => downloadOne(a)}>
-              {downloadLabel(String(a.filename ?? ""))}
-            </button>
-          </li>
-        ))}
-      </ul>
-      {doneFiles.current.length > 6 && !showAllFiles && (
-        <button className="btn-link" onClick={() => setShowAllFiles(true)}>
-          全部 {doneFiles.current.length} 份 →
-        </button>
+          )}
+          {/* 同一份文件只列最新一版（第 31 批）：旧版在右栏“成果”里 */}
+          {doneFiles.older > 0 && <div className="muted done-files-note">以前的 {doneFiles.older} 个版本在右侧“成果”里。</div>}
+        </>
       )}
-      {/* 同一份文件只列最新一版（第 31 批）：旧版在右栏“成果”里 */}
-      {doneFiles.older > 0 && <div className="muted done-files-note">以前的 {doneFiles.older} 个版本在右侧“成果”里。</div>}
+      {/* 重新运行前那一次留下的文件（第 44 批真实验收：两张期限不同的核对表并列，律师分不清用哪张）：不算本次成果、没有交给复核，收起，只给预览与下载 */}
+      {doneFiles.earlier.length > 0 && (
+        <details className="done-earlier">
+          <summary>上一次运行的文件（{doneFiles.earlier.length} 份，已被这次重新运行取代）</summary>
+          <div className="muted done-files-note">重新运行是按你这一次的回答和计划重新做的。下面是上一次运行留下的文件，不算这次的成果，也没有交给复核；需要对照时可以预览或下载。</div>
+          <ul className="done-file-list">{doneFiles.earlier.map((a) => fileItem(a))}</ul>
+        </details>
+      )}
     </div>
   );
   // ③下一步：接着做（D-4）：同一事项下打开下一场景的开始面板

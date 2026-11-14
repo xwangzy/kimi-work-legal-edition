@@ -97,8 +97,11 @@ export function FileRows<T extends ListRow>({ entry, showStatus, onOpen, onDownl
   );
 }
 
-/** 任务组末尾的“过程文件（n）”：答复摘要、独立复核意见，默认收起；里面只有下载。 */
-export function ProcessRows<T extends ListRow>({ entries, colSpan, showStatus, onDownload }: { entries: FileEntry<T>[]; colSpan: number; showStatus: boolean; onDownload: (r: ListRow) => void }) {
+/**
+ * 任务组末尾的“过程文件（n）”：答复摘要、独立复核意见，默认收起；里面只有下载。
+ * earlier：同样的收起行用来列“上一次运行的文件（n）”——重新运行前那一次留下、已被这一次取代的文件（第 44 批）。
+ */
+export function ProcessRows<T extends ListRow>({ entries, colSpan, showStatus, onDownload, earlier = false }: { entries: FileEntry<T>[]; colSpan: number; showStatus: boolean; onDownload: (r: ListRow) => void; earlier?: boolean }) {
   const [open, setOpen] = useState(false);
   if (entries.length === 0) return null;
   return (
@@ -106,9 +109,9 @@ export function ProcessRows<T extends ListRow>({ entries, colSpan, showStatus, o
       <tr className="dl-proc">
         <td colSpan={colSpan}>
           <button className="btn-link" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-            过程文件（{entries.length}）<span className="dl-proc-chev" aria-hidden="true">›</span>
+            {earlier ? "上一次运行的文件" : "过程文件"}（{entries.length}）<span className="dl-proc-chev" aria-hidden="true">›</span>
           </button>
-          <span className="muted dl-proc-note">答复摘要与复核意见，留作记录，不用交出去</span>
+          <span className="muted dl-proc-note">{earlier ? "重新运行前那一次留下的，已被这一次取代，不算这次的成果" : "答复摘要与复核意见，留作记录，不用交出去"}</span>
         </td>
       </tr>
       {open &&
