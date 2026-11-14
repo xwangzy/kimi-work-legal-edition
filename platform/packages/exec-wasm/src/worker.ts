@@ -13,6 +13,7 @@ import { parentPort, workerData } from "node:worker_threads";
 import { LIMIT_PROBE_PREFIX, loadJustBash, PY_BRIDGE_BYTES, setLimitObserver, type OutputCallback } from "./jb-loader.ts";
 import { trustedCommands } from "./trusted-commands.ts";
 import { sealOverlay } from "./sealed-overlay.ts";
+import { makeDirsTraversable } from "./dir-mode.ts";
 import type { ChangeSet, ExecRequest, ExecResult } from "./protocol.ts";
 
 interface OverlayInternals {
@@ -152,6 +153,8 @@ async function main(): Promise<ExecResult> {
     }) as unknown as OverlayInternals;
     // 解密读层先装（上限记录器再包在它外面：EFBIG 等仍在原方法处抛出、经两层原样传出）
     if (m.sealed) codecs.push(sealOverlay(fs, { keys: m.sealed.keys, strict: m.sealed.strict, normalize: jb.normalizePath, onRefused: recordLimit }));
+    // Windows 上真实目录的权限位没有执行位，python3 进不了子目录（dir-mode.ts）；包在解密读层外面，看到的是最终的 stat
+    if (process.platform === "win32") makeDirsTraversable(fs as unknown as Parameters<typeof makeDirsTraversable>[0]);
     interceptFsLimits(fs, m.readOnly ? "readonly" : "overlay", ["readFileBuffer", "assertMemoryCapacity"]);
     overlays.push({ spec: m, fs });
     return { mountPoint: m.mountPoint, filesystem: fs };

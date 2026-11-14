@@ -108,6 +108,8 @@ async function collect(p: WProcess): Promise<{ code: number; out: string; err: s
   return { code, out, err };
 }
 
+/** 注入条件按路径尾部匹配：Windows 上宿主路径是反斜杠，先统一成 / 再比（以前写死 "/"，Windows 上注入从不触发：CI run 43465749822） */
+const fwd = (p: string) => p.replaceAll("\\", "/");
 const sh = (fx: Fx, cmd: string) => fx.domain.run(`cd '${shp(fx.work)}' && ${cmd}`, { cwd: fx.work });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const copiesOf = (dir: string, stem: string) => readdirSync(dir).filter((n) => n.startsWith(`${stem}（执行冲突副本`));
@@ -147,7 +149,7 @@ describe("审查 S3-03 / S3-04：写入临界区、比较—替换与别名", ()
     const orig = fx.broker.writeBytes.bind(fx.broker);
     let injected = false;
     (fx.broker as unknown as { writeBytes: typeof orig }).writeBytes = async (p, d, o) => {
-      if (o?.expect && !injected && p.endsWith("/f.txt")) {
+      if (o?.expect && !injected && fwd(p).endsWith("/f.txt")) {
         injected = true;
         await orig(p, Buffer.from("LAWYER-EDIT\n")); // 不经比较—替换的外部写入者
       }
@@ -462,7 +464,7 @@ describe("复核 S3-17～S3-23：删除的比较—替换、上限的结构化�
     wf(join(fx.work, "rep"), "原稿内容\n");
     const orig = fx.broker.createExclusive.bind(fx.broker);
     (fx.broker as unknown as { createExclusive: typeof orig }).createExclusive = async (p, d) => {
-      if (p.endsWith("/rep/v1")) throw Object.assign(new Error("EIO: simulated"), { code: "EIO" });
+      if (fwd(p).endsWith("/rep/v1")) throw Object.assign(new Error("EIO: simulated"), { code: "EIO" });
       return orig(p, d);
     };
     let r;
@@ -569,7 +571,7 @@ describe("第二轮复核 S3-24～S3-28：删除分支、类型变化先于删�
       fx,
       "createExclusive",
       async (orig, p: string, d: Uint8Array) => {
-        if (!injected && p.endsWith("/new24.txt")) {
+        if (!injected && fwd(p).endsWith("/new24.txt")) {
           injected = true;
           rmSync(join(fx.work, "olddir"), { recursive: true, force: true });
           wf(join(fx.work, "olddir"), "LAWYER-FILE-REPLACING-DIR\n");
@@ -595,7 +597,7 @@ describe("第二轮复核 S3-24～S3-28：删除分支、类型变化先于删�
       let armed = false;
       let injected = false;
       b.remove = async (p, o) => {
-        if (p.endsWith(`/${name}`)) armed = true;
+        if (fwd(p).endsWith(`/${name}`)) armed = true;
         try {
           return await origRemove(p, o);
         } finally {
@@ -603,7 +605,7 @@ describe("第二轮复核 S3-24～S3-28：删除分支、类型变化先于删�
         }
       };
       b.recheckChain = async (loc, chain) => {
-        if (armed && !injected && String(loc.display).endsWith(`/${name}`)) {
+        if (armed && !injected && fwd(String(loc.display)).endsWith(`/${name}`)) {
           injected = true;
           if (mode === "原地覆盖") wf(doc, "LAWYER-NEW-SAVE-INPLACE-LONGER\n");
           else {
@@ -636,7 +638,7 @@ describe("第二轮复核 S3-24～S3-28：删除分支、类型变化先于删�
       fx,
       "createExclusive",
       async (orig, p: string, d: Uint8Array) => {
-        if (!injected && p.endsWith("/rep5/合同5.docx")) {
+        if (!injected && fwd(p).endsWith("/rep5/合同5.docx")) {
           injected = true;
           throw Object.assign(new Error("EIO: injected"), { code: "EIO" });
         }
@@ -659,7 +661,7 @@ describe("第二轮复核 S3-24～S3-28：删除分支、类型变化先于删�
       fx,
       "stageAside",
       async (orig, p: string, o: unknown) => {
-        if (!injected && p.endsWith("/rep6")) {
+        if (!injected && fwd(p).endsWith("/rep6")) {
           injected = true;
           wf(join(fx.work, "rep6"), "REP6-LAWYER-EDIT-DURING-COMMIT\n");
         }
@@ -680,7 +682,7 @@ describe("第二轮复核 S3-24～S3-28：删除分支、类型变化先于删�
       fx,
       "createExclusive",
       async (orig, p: string, d: Uint8Array) => {
-        if (!injected && p.endsWith("/rep7/v2")) {
+        if (!injected && fwd(p).endsWith("/rep7/v2")) {
           injected = true;
           wf(join(fx.work, "rep7", "lawyer.txt"), "LAWYER-IN-NEWDIR\n");
           throw Object.assign(new Error("EIO: injected"), { code: "EIO" });
@@ -710,7 +712,7 @@ describe("第二轮复核 S3-24～S3-28：删除分支、类型变化先于删�
       fx,
       "placeStaged",
       async (orig, h: unknown, p: string) => {
-        if (!injected && p.endsWith("/d9")) {
+        if (!injected && fwd(p).endsWith("/d9")) {
           injected = true;
           throw Object.assign(new Error("EIO: injected"), { code: "EIO" });
         }
