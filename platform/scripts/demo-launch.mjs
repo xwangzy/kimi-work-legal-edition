@@ -16,10 +16,10 @@
  */
 import { execFileSync, spawn } from "node:child_process";
 import { createServer, request as httpRequest } from "node:http";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -195,8 +195,18 @@ const bridgePort = Number(process.env.ZR_DEV_BRIDGE_PORT ?? (await pickPort(7720
 if (webPort !== 5173 || bridgePort !== 7720) log(`开发端口错开：vite :${webPort} / 开发桥 :${bridgePort}`);
 
 /* ---------- ④ 运营控制台静态页 + 同源 /v1 代理（免 CORS） ---------- */
-const consoleFiles = { "/": "index.html", "/index.html": "index.html", "/console.js": "console.js", "/console.css": "console.css", "/ops-sign.js": "ops-sign.js" };
-const consoleBase = join(root, "apps", "ops-console");
+// 控制台按模块拆分后（第 44 批）部署只发 dist/（scripts/build-ops-console.mjs 打包，含 design-tokens 的 tokens.css）：
+// 有打包脚本就先打包再只发 dist/ 里的文件；没有（旧版单文件控制台）就发源目录。白名单之外一律 404，读文件失败不让进程崩
+const consoleSrc = join(root, "apps", "ops-console");
+let consoleBase = consoleSrc;
+if (existsSync(join(root, "scripts", "build-ops-console.mjs"))) {
+  const { buildOpsConsole } = await import("./build-ops-console.mjs");
+  consoleBase = join(consoleSrc, "dist");
+  buildOpsConsole(consoleBase);
+}
+const walkConsole = (d) => readdirSync(d).flatMap((f) => (f === "dist" && d === consoleSrc ? [] : statSync(join(d, f)).isDirectory() ? walkConsole(join(d, f)) : [join(d, f)]));
+const consoleFiles = Object.fromEntries(walkConsole(consoleBase).map((f) => relative(consoleBase, f).split(sep).join("/")).filter((f) => /\.(html|js|css)$/.test(f)).map((f) => [`/${f}`, f]));
+consoleFiles["/"] = "index.html";
 const types = { html: "text/html; charset=utf-8", js: "text/javascript; charset=utf-8", css: "text/css; charset=utf-8", json: "application/json; charset=utf-8" };
 const proxy = (req, res, pathname) => {
   const up = httpRequest({ host: cpUrl.hostname, port: cpUrl.port, method: req.method, path: pathname, headers: { ...req.headers, host: cpUrl.host } }, (r) => {
@@ -225,8 +235,15 @@ const consoleSrv = createServer((req, res) => {
     res.writeHead(404);
     return res.end("not found");
   }
+  let body;
+  try {
+    body = readFileSync(join(consoleBase, f));
+  } catch {
+    res.writeHead(404);
+    return res.end("not found");
+  }
   res.writeHead(200, { "content-type": types[f.split(".").pop()], "cache-control": "no-store" });
-  res.end(readFileSync(join(consoleBase, f)));
+  res.end(body);
 });
 await new Promise((r) => consoleSrv.listen(consolePort, "127.0.0.1", r));
 const consoleUrl = `http://127.0.0.1:${consolePort}/`;
