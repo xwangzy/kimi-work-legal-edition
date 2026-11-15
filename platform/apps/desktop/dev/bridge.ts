@@ -31,6 +31,12 @@ const watchIdentity = (k: typeof kernel) =>
       for (const c of eventClients) c.write(line);
       return;
     }
+    // 登录已失效（第 44 批）：与主进程同一形状，只带原因代码
+    if (m.type === "account.login_required" && typeof m.reason === "string" && /^[a-z_]{1,40}$/.test(m.reason)) {
+      const line = `${JSON.stringify({ type: "account.login_required", reason: m.reason })}\n`;
+      for (const c of eventClients) c.write(line);
+      return;
+    }
     // 从备份恢复（第 14 批）：开发形态没有 DPAPI，直接以恢复的主密钥重建内核（只在待激活模式）
     if (m.type === "kernel.adopt_master_key" && k.config.onboarding && typeof m.key === "string") process.env.ZR_DB_KEY = m.key;
     else if (m.type !== "kernel.restart_for_identity") return;

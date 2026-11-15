@@ -538,6 +538,10 @@ async function startKernel() {
     if (msg && msg.type === "chat.delta" && typeof msg.stream_id === "string" && typeof msg.text === "string") {
       for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", { type: "chat.delta", stream_id: msg.stream_id, text: msg.text });
     }
+    // 登录已失效（第 44 批）：只转发原因代码（会话过期、账号停用等），界面据此出“请重新登录”
+    if (msg && msg.type === "account.login_required" && typeof msg.reason === "string" && /^[a-z_]{1,40}$/.test(msg.reason)) {
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", { type: "account.login_required", reason: msg.reason });
+    }
     // 期限提醒到时（第 10 批 S9）：只转发条数，系统通知只写“有 N 条期限提醒”
     if (msg && msg.type === "reminder.due" && Number.isInteger(msg.count) && msg.count > 0) {
       for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", { type: "reminder.due", count: msg.count });

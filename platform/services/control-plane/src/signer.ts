@@ -42,6 +42,8 @@ export const ENVELOPE_KINDS = [
   "kwl-device-revoked",
   "kwl-quota-view",
   "kwl-cp-audit-page",
+  // 第 44 批：API 路由订阅（网关取上游、别名、价目；上游密钥是只有网关解得开的密文）
+  "kwl-routing-feed",
 ] as const;
 export type EnvelopeKind = (typeof ENVELOPE_KINDS)[number];
 

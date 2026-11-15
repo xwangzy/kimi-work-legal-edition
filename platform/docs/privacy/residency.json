@@ -925,6 +925,45 @@
       ],
       "residual": "恢复包 + 恢复码 = 这台电脑的全部能力；创始设备的恢复包另含律所根与全部 5 份恢复份额（可签发管理员证书、解开全所托管的事项密钥——界面单独提示，C6 落地前的过渡）；恢复包不能作废、数据库主密钥暂不能轮换（再生成一份不会让旧的失效，界面写明；轮换在 G1，复核 R2A-01）；吊销设备后不再备份、不再生成恢复包，但已生成的恢复包与已有备份不受影响；恢复后与旧电脑同一设备身份（设备编号确定性，D-42）：控制面不能单独吊销旧电脑，吊销即同时停用恢复出的新电脑——旧电脑丢失或被偷时须由管理员重新办理入组（界面提示，复核 R2A-14）；删除事项后记“待清旧代”并立即再备份一次，成功后备份位置上只留新的一代——之前几代账本快照（含该事项的密钥包裹）与该事项的块随之删除；备份位置当时不可用的，下次备份成功时删除；换过备份位置的，旧位置上的备份不会被清理；备份位置若保留旧版本（网盘版本历史、NAS 快照），旧版本连同恢复包与恢复码仍可解开已删事项，须按律所保留期清理（删除回执写明）；备份只保留最近若干代，更早的副本由备份位置自身的版本历史决定",
       "owner": "研发-内核"
+    },
+    {
+      "id": 29,
+      "data": "我方账号（第 44 批）：登录邮箱、姓名、角色、所属律所；密码（只在登录、注册、改密、找回的请求里）；账号会话令牌；本人的设备与登录列表（设备编号、客户端版本、最近报到日、登录时刻）",
+      "memory": "内核（密码只在调用期间，不落盘；会话令牌读入内存，附在控制面请求的 x-kwl-session 头里）；闸门（只转发）；渲染进程只拿到邮箱、姓名、角色与“是否已登录”，拿不到令牌",
+      "disk": "<工作区>/keys/account-session.json（kwl-sealed/1 封装：会话令牌、账号编号、邮箱、姓名、律所编号、角色、保存时刻；退出登录即删）；待激活时登录先暂存进目标工作区的 keys/，按新身份重启后照常读回",
+      "local_channels": "内核 ↔ 闸门（Node IPC，控制面通道）",
+      "network": "经出站闸门控制面通道（TLS 钉住）发往中软控制面：注册与登录时的邮箱、密码、姓名、律所名称、开通码 / 邀请码的控制面段、客户端版本与平台；控制面保存账号（邮箱、姓名、角色、所属律所、密码的 scrypt 摘要、失败计数与锁定时刻、个人上限与设备数上限）、会话（只存令牌的 SHA-256、绑定的设备编号、创建与最近使用时刻、到期时刻、客户端版本与平台）、一次性码（只存 HMAC）；运营控制台能看到账号的邮箱、姓名、状态、最近登录、设备与用量（逐请求的用量记录只有请求编号、模型、token 数与金额，不含请求内容与事项编号）",
+      "logs_dumps": "运行记录只记事件码（KERNEL_ACCOUNT_*、KERNEL_ONBOARDING_*），不记邮箱、密码与令牌；本机审计记登录、退出、改密、吊销登录、解绑设备（用户编号或设备编号）；控制面运营审计（律所可见流水）记注册、登录、退出、改密、重置、运营代建 / 停用 / 启用 / 发重置码 / 改上限（执行者为账号编号或运营编号，目标为账号编号，不记邮箱）",
+      "form": [
+        "kwl_sealed",
+        "tls_pinned",
+        "scrypt"
+      ],
+      "enforcement": [
+        {
+          "file": "packages/kernel/src/account-session.ts",
+          "symbol": "writeAccountSession"
+        },
+        {
+          "file": "packages/kernel/src/services/onboarding.ts",
+          "symbol": "OnboardingService"
+        },
+        {
+          "file": "packages/egress-gate/src/cp-relay.ts",
+          "symbol": "cpRelayAllowed"
+        },
+        {
+          "file": "services/control-plane/src/accounts.ts",
+          "symbol": "hashPassword"
+        }
+      ],
+      "tests": [
+        "services/control-plane/test/b44-accounts-routing-ledger.test.ts",
+        "services/control-plane/test/b44-ops-api.test.ts",
+        "packages/kernel/test/b44-account.test.ts"
+      ],
+      "residual": "密码经主进程 IPC 到内核再到闸门，进程内存里短暂存在（与开通码、恢复码同一口径）；会话令牌与设备私钥同一封装，拿到整机主密钥即可读出（与设备身份同一风险面）；没有邮件或短信通道时找回密码要找管理员或中软客服发重置码",
+      "owner": "研发-内核"
     }
   ],
   "write_points": {
@@ -953,8 +992,15 @@
       "reason": "数据库主密钥 DPAPI 包裹文件（原子写，解封失败不覆盖）；采用恢复的主密钥：新包裹先写 .next、原文件复制留档为 .prev-<时刻>、再原子替换"
     },
     "apps/desktop/electron/unreadable-data.cjs": {
-      "apis": ["renameSync", "writeFileSync"],
-      "rows": [8, 20, 24],
+      "apis": [
+        "renameSync",
+        "writeFileSync"
+      ],
+      "rows": [
+        8,
+        20,
+        24
+      ],
       "reason": "主密钥解封失败、律师选“用恢复包恢复”后（v9.3 主文 §9 第 7 项）：激活记录、入组与恢复中间记录、有账本的工作区、DPAPI 包裹的主密钥文件**改名**到 <数据根>/.unreadable-<时刻>/（不删除、不复制、跨卷即停）；另写一份不含案件信息的说明.txt"
     },
     "apps/desktop/electron/smoke-io.cjs": {

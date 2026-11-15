@@ -2,7 +2,8 @@
  * 运营控制台的请求签名（第 37 批）：在浏览器里用运营人员**自己的**私钥签运营请求，与 packages/ops-auth 的 signOpsRequest 逐字节同一格式
  * （域串 kwl-ops-request-v2 + 规范化 JSON {a,m,p,b,o,k,ts,n}，Ed25519，签名 base64url）。
  *
- * - 私钥只在本页内存：导入为不可导出的 CryptoKey，不写 localStorage / IndexedDB，不发往任何服务；关页或点“退出”即丢弃；
+ * - 私钥只在本页内存：导入为不可导出的 CryptoKey，私钥字节不落盘、不发往任何服务；关页或点“退出”即丢弃
+ *   （第 44 批：运营勾选“本标签页内记住 8 小时”时，keystore.js 只把这个不可导出的密钥对象存进 IndexedDB）；
  * - 收 ops-cli keygen 生成的两种私钥文件：PKCS#8 明文（BEGIN PRIVATE KEY）与口令加密（BEGIN ENCRYPTED PRIVATE KEY，
  *   PBES2 = PBKDF2-HMAC-SHA256 + AES-256-CBC，即 Node 的 cipher: "aes-256-cbc"）；
  * - 只用 WebCrypto（Chrome 137+、Edge 137+、Firefox 129+、Safari 17+ 支持 Ed25519），无第三方依赖；同一文件在 Node 24 里可直接导入（单测）。
@@ -173,7 +174,8 @@ function randomNonce() {
 }
 
 /**
- * 签一个运营请求，返回五个请求头。path 须与实际发出的请求行原样一致（控制面按原样路径核对，不带查询串）。
+ * 签一个运营请求，返回五个请求头。path 须与实际发出的请求行原样一致：pathname + search（第 44 批起 GET 可带查询串，
+ * 查询串用 URLSearchParams 生成一次、签名与请求共用同一字符串，不重新编码或排序）；写操作不带查询串。
  * @param {{deployment:string, audience:string, operator:string, kid:string, key:CryptoKey, method:string, path:string, body?:string, now?:number, nonce?:string}} p
  */
 export async function signOpsRequest(p) {

@@ -20,9 +20,42 @@ import { createHash, createPublicKey, generateKeyPairSync, hkdfSync, randomBytes
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { StateStore } from "./state-store.ts";
 import { createAuditLog, type AuditEntry, type AuditLog } from "./audit-log.ts";
-import { boostPct as quotaBoost, emptyQuota, grantUnits as quotaGrantUnits, leaseQuota, migrateQuota, pausedOf, QuotaError, quotaView, ratio, setCap as quotaSetCap, settleLease, syncAllowance, totalOf, type QuotaState } from "./quota.ts";
-import { DEFAULT_BILLING, monthBill, planOf, type BillingConfig } from "./billing.ts";
-import { createKimiAccountBroker, KimiAccountError, type KimiAccountConfig, type KimiBinding } from "./kimi-account.ts";
+import { availability, boostPct as quotaBoost, chargeLease, closeLease, emptyQuota, ensurePeriod, forecastExhaust, leaseQuota, memberLimitOf, migrateQuota, outstanding, pausedOf, QuotaError, quotaView, ratio, setCap as quotaSetCap, sweepLeases, totalsOf, usedOf, type QuotaCtx, type QuotaState } from "./quota.ts";
+import { catalogFromConfig, microToCny, migrateCatalog, periodBill, periodBounds, planOf, PlanError, seatQuotaUnits, unitOut, validatePlan, validateSettings, type Catalog, type PlanSpec } from "./billing.ts";
+import { bootstrapRouting, chargeOf, currentPrices, deleteModel, deleteProvider, migrateRouting, priceTableOf, recordHealth, requestProbe, routingFeedBody, RoutingError, routingView, setPrices, upsertModel, upsertProvider, type RoutingState } from "./routing.ts";
+import { addAgg, dayOf, emptyAgg, UsageBook, usedIn, type Agg, type UsageRow } from "./usage-ledger.ts";
+import {
+  accountDeviceId,
+  accountDeviceIndex,
+  accountView,
+  AuthError,
+  clientInfo,
+  codeMac,
+  formatOneTimeCode,
+  hashPassword,
+  locked,
+  MAX_DEVICES_PER_ACCOUNT,
+  newId,
+  newOneTimeCode,
+  newSessionToken,
+  normalizeEmail,
+  normalizeOneTimeCode,
+  noteFailure,
+  parseSessionToken,
+  passwordProblems,
+  sameHex as sameHexStr,
+  SESSION_ABS_MS,
+  SESSION_IDLE_MS,
+  sessionLive,
+  sessionView,
+  sha256Hex,
+  slugBase,
+  validName,
+  verifyPassword,
+  type AccountRecord,
+  type OneTimeCode,
+  type SessionRecord,
+} from "./accounts.ts";
 import { canonicalJson, verifyBytes, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
 import { OpsAuthError, type OpsAuthorized, type OpsGuard, type OpsPermission } from "@zr-legal/ops-auth";
 import { MIN_SEAT_TTL_SECONDS } from "@zr-legal/seat-token";
@@ -131,6 +164,24 @@ export interface ActivationRecord {
   /** 首次兑换时刻与兑换次数（复核 A-04：只在首次兑换后 10 分钟内、尚未提交申请或登记根之前可再兑换，覆盖“应答丢失重试”）。 */
   first_claimed_at?: string | null;
   redeem_count?: number;
+  /** 第 44 批：由账号登录生成的认领（没有码可兑换；成员新设备入组时预先分配了设备编号）。 */
+  via_account?: string;
+  device_id?: string;
+}
+
+/** 告警（第 44 批，主文 §4.3）：额度阈值、上限、用完、异常消耗、上游不可用、设备异常。 */
+export interface AlertRecord {
+  id: string;
+  at: string;
+  kind: "threshold" | "cap" | "exhausted" | "anomaly" | "route_down" | "device_flag";
+  level: "info" | "warn" | "critical";
+  tid: string | null;
+  aid: string | null;
+  provider: string | null;
+  pct: number | null;
+  message: string;
+  acked_at: string | null;
+  acked_by: string | null;
 }
 
 /** 成员入组申请：成员设备提交公钥，管理员本机核对核对码后用律所根签发证书，经此送达。 */
@@ -182,16 +233,16 @@ export interface TenantRecord {
   connectorsVersion: number;
   drafts: Map<string, DraftRecord>;
   anon: Map<string, AnonMatterSummary>;
-  /** 本月额度与月度上限（第 40 批按百分比，quota.ts）。 */
+  /** 本期额度配置、加量、上限与在途租约（第 44 批 v2：已用量从用量账本算，quota.ts）。 */
   quota: QuotaState;
-  /** 套餐代码（billing.ts 目录；第 40 批之前开通的读回为缺省套餐）。 */
+  /** 套餐代码（套餐目录在控制面状态里，billing.ts）。 */
   plan: string;
-  /** 定制月额度（单位；试点与用例用，设了即不按“席位 × 套餐”计；null = 按套餐）。 */
+  /** 定制本期额度（内部单位：tokens 或微元；设了即不按“席位 × 套餐”计；null = 按套餐）。 */
   allowance_override?: number | null;
-  /** Kimi 账号绑定：成员编号 → 绑定（第 40 批）。 */
-  kimiAccounts: Map<string, KimiBinding>;
-  /** 要求成员先绑定 Kimi 账号才签发席位令牌（运营按律所合同开关；缺省 false）。 */
-  kimi_required?: boolean;
+  /** 要求账号登录才签发席位令牌（第 44 批；之后开通的缺省 true，之前的读回为 false）。 */
+  accounts_required?: boolean;
+  /** 开通方式：运营开通 / 自助注册（试用）。 */
+  created_via?: "ops" | "self";
 }
 
 export interface ControlPlaneOptions {
@@ -225,10 +276,18 @@ export interface ControlPlaneOptions {
   opsGuard?: OpsGuard;
   /** 运营访问审计（每个通过鉴权的运营请求：先记“已请求”、记不进去即不执行，执行后补记结果）；缺省不记（开发与测试）。 */
   opsAccessLog?: (r: CpOpsAccessRecord) => void;
-  /** 套餐目录与计费口径（第 40 批，billing.ts）；缺省 DEFAULT_BILLING。 */
-  billing?: BillingConfig;
-  /** Kimi 账号对接（第 40 批，kimi-account.ts）：没有 = 账号接口 404，客户端显示“未开通 Kimi 账号登录”。 */
-  kimiAccount?: { config: KimiAccountConfig; fetchImpl?: typeof fetch };
+  /** 配置文件里的 billing 段（首次启动导入套餐目录与注册设置；之后以状态里的为准，运营在控制台改）。 */
+  billing?: unknown;
+  /** 用量账本（usage-ledger.ts）：未给出 = 只在内存（开发与测试）。 */
+  usageBook?: UsageBook;
+  /** API 路由（第 44 批）：首次启动导入的初始上游；网关路由公钥编号（控制台加密上游密钥用的那把，提交的密文须与之相符）。 */
+  routing?: { bootstrap?: Parameters<typeof bootstrapRouting>[1]; key_id?: string | null };
+  /** 邮件通道（找回密码验证码）；没有 = 只能由运营发重置码。 */
+  mailer?: { from: string; send(to: string, subject: string, text: string): Promise<void> };
+  /** 服务版本（运营“系统”页显示）。 */
+  serverVersion?: string;
+  /** 运营名册的只读信息（“系统”页显示；入口按名册来源给出）。 */
+  opsInfo?: { deployment: string; roster: () => { version: number; expires_at: string; operators: { id: string; perms: string[]; keys: { kid: string }[]; revoked_at?: string }[] } | null };
 }
 
 /** 控制面运营访问审计（中软内部，不进律所可见的流水）：只有运营编号、密钥编号、动作、租户与目标编号、结果。 */
@@ -247,7 +306,7 @@ export interface CpOpsAccessRecord {
 
 export interface ControlPlaneOps {
   /** 商务开通：建租户、发许可（≤ 30 天）、生成租户盐、发布最严模板策略 v1（不比最严模板宽：只需控制面签名）。 */
-  createTenant(o: { tid: string; edition: LicenseBody["edition"]; seats: number; subscriptionDays?: number; plan?: string; allowanceUnits?: number; name?: string; activationRequired?: boolean; kimiRequired?: boolean }): TenantRecord;
+  createTenant(o: { tid: string; edition: LicenseBody["edition"]; seats: number; subscriptionDays?: number; plan?: string; allowanceUnits?: number; name?: string; activationRequired?: boolean; accountsRequired?: boolean; createdVia?: "ops" | "self" }): TenantRecord;
   /** 发创始开通码（交律所管理员）：返回码明文（只此一次）；云端只存 HMAC。 */
   issueActivationCode(tid: string, o: { member: { slug: string; name?: string }; ttlHours?: number }): { code: string; activation_id: string; expires_at: string };
   /** 作废尚未消费的开通码 / 邀请码；by 为作废者（管理员设备编号；缺省为当前运维执行者）。 */
@@ -264,19 +323,17 @@ export interface ControlPlaneOps {
   /** 吊销设备；尚未登记的设备须附它的律所根签发证书（预先吊销，复核 S6-C05、S6-C09）。 */
   revokeDevice(tid: string, deviceId: string, o?: { cert?: unknown; by?: string }): void;
   revokeSeat(tid: string, uid: string): void;
-  /** 运营加量包：按套餐额度的百分比加到本月（第 40 批）；返回折合单位。 */
+  /** 运营加量包：按套餐额度的百分比加到本期；返回折合的内部单位。 */
   boostQuota(tid: string, pct: number): number;
-  /** 按单位加量（开发脚本与用例；对外一律按百分比）。 */
-  grantUnits(tid: string, units: number): void;
   /** 改套餐与席位数（立即对本月额度生效；席位数不得少于在用席位）。 */
   setPlan(tid: string, o: { plan?: string; seats?: number }): void;
-  /** 运营代设月度上限（百分比 1–100；律所管理员通常在客户端自己设；null = 不设上限）。 */
+  /** 运营代设本期上限（百分比 1–100；律所管理员通常在客户端自己设；null = 不设上限）。 */
   setQuotaCap(tid: string, capPct: number | null): void;
-  /** 是否要求成员先绑定 Kimi 账号（第 40 批）。 */
-  setKimiRequired(tid: string, required: boolean): void;
-  /** 解除某个 Kimi 账号与席位的绑定（运营按账号引用；律所管理员在客户端按成员）。 */
-  unbindKimi(tid: string, ref: string): void;
+  /** 是否要求账号登录才签发席位令牌（第 44 批）。 */
+  setAccountsRequired(tid: string, required: boolean): void;
   tenant(tid: string): TenantRecord | undefined;
+  /** 账号（第 44 批）：按邮箱查（开发脚本与用例）。 */
+  account(email: string): AccountRecord | undefined;
   /**
    * 用控制面自己的信封密钥签任意文档（演练“控制面被攻破”时攻击者同样能做到）。只有进程内签名者有：
    * 接独立签名服务（生产入口）时抛错——签名服务只签登记过的种类与合格的文档（A-8）。
@@ -293,6 +350,8 @@ export interface ControlPlane {
   metrics(): { quota: Record<string, number>; client_versions: Record<string, number> };
   /** seat = 全部席位公钥（通用 + 各受众）；seatFor(受众) = 只给那一受众服务的公钥表（A-8 按受众拆分）。 */
   publicKeys: { envelope: Record<string, string>; seat: Record<string, string>; seatFor(aud?: SeatAudience): Record<string, string> };
+  /** 用量账本（第 44 批；用例与运维脚本读）。 */
+  usageBook: UsageBook;
 }
 
 class CpError extends Error {
@@ -334,13 +393,51 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const maxPreRevoked = o.maxPreRevoked ?? MAX_PRE_REVOKED;
   const iso = (t = now()) => new Date(t).toISOString();
   const tenants = new Map<string, TenantRecord>();
-  const billing: BillingConfig = o.billing ?? DEFAULT_BILLING;
-  /** 本月套餐额度（单位）：定制额度优先，否则席位数 × 套餐每席位额度。 */
-  const allowanceOf = (t: TenantRecord): number => (typeof t.allowance_override === "number" ? t.allowance_override : t.seats * planOf(billing, t.plan).seat_monthly_units);
-  /** 账本入口：先按当前套餐与席位同步本月额度（改目录、改席位即生效）。 */
-  const qOf = (t: TenantRecord): QuotaState => {
-    if (t.quota.allowance !== allowanceOf(t)) syncAllowance(t.quota, allowanceOf(t), now());
-    return t.quota;
+  // ─── 第 44 批：账号、会话、一次性码、套餐目录、API 路由、告警（随状态快照落盘）；逐请求用量在独立的账本 ───
+  const accounts = new Map<string, AccountRecord>();
+  const accountByEmail = new Map<string, string>();
+  /** 租户 + 成员编号 → 账号（账号与成员一一对应）。 */
+  const accountByMember = new Map<string, string>();
+  const sessions = new Map<string, SessionRecord>();
+  const codes = new Map<string, OneTimeCode>();
+  const catalogDefault = catalogFromConfig(o.billing);
+  let catalog: Catalog = structuredClone(catalogDefault);
+  let routing: RoutingState = bootstrapRouting(now(), o.routing?.bootstrap);
+  let alerts: AlertRecord[] = [];
+  const book = o.usageBook ?? new UsageBook({ now });
+  const startedAt = iso();
+  const routingKeyId = o.routing?.key_id ?? null;
+  const memberKey = (tid: string, uid: string) => `${tid}\u0000${uid}`;
+  const indexAccount = (a: AccountRecord) => {
+    accountByEmail.set(a.email, a.aid);
+    accountByMember.set(memberKey(a.tid, `usr_${a.tid.slice(4)}_${a.member_slug}`), a.aid);
+  };
+  const accountOfMember = (tid: string, uid: string): AccountRecord | undefined => {
+    const aid = accountByMember.get(memberKey(tid, uid));
+    return aid ? accounts.get(aid) : undefined;
+  };
+  const planFor = (t: TenantRecord): PlanSpec => planOf(catalog, t.plan);
+  /** 额度上下文：当前套餐、席位、账号个人上限与用量账本（改套餐、改席位、改上限即对本期生效）。 */
+  const ctxOf = (t: TenantRecord): QuotaCtx => {
+    const plan = planFor(t);
+    return {
+      tid: t.tid,
+      plan,
+      seats: t.seats,
+      allowance_override: typeof t.allowance_override === "number" ? t.allowance_override : null,
+      book,
+      t: now(),
+      memberLimit: (uid) => {
+        const a = accountOfMember(t.tid, uid);
+        if (!a || a.quota_limit === null) return null;
+        return plan.quota_unit === "cny" ? Math.round(a.quota_limit * 1_000_000) : Math.round(a.quota_limit);
+      },
+    };
+  };
+  const qOf = (t: TenantRecord): { q: QuotaState; ctx: QuotaCtx } => {
+    const ctx = ctxOf(t);
+    ensurePeriod(t.quota, ctx);
+    return { q: t.quota, ctx };
   };
   const nonces = new Map<string, number>();
   const auditLog = o.auditLog ?? createAuditLog();
@@ -364,16 +461,40 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     JSON.stringify({
       v: 1,
       feedVersion,
-      tenants: [...tenants.values()].map((t) => ({ ...t, devices: [...t.devices], preRevoked: [...t.preRevoked], seatsByUser: [...t.seatsByUser], connectors: [...t.connectors], drafts: [...t.drafts], anon: [...t.anon], activations: [...t.activations], joinRequests: [...t.joinRequests], kimiAccounts: [...t.kimiAccounts] })),
+      tenants: [...tenants.values()].map((t) => ({ ...t, devices: [...t.devices], preRevoked: [...t.preRevoked], seatsByUser: [...t.seatsByUser], connectors: [...t.connectors], drafts: [...t.drafts], anon: [...t.anon], activations: [...t.activations], joinRequests: [...t.joinRequests] })),
+      accounts: [...accounts.values()],
+      sessions: [...sessions.values()],
+      codes: [...codes.values()],
+      catalog,
+      routing,
+      alerts,
     });
   const snapshot = (state = stateOnly()): string => JSON.stringify({ ...(JSON.parse(state) as object), nonces: [...nonces] });
   /** 由快照重建内存状态（启动读回与失败回滚共用）；null = 空状态。 */
   const applySnapshot = (raw: string | null, withNonces: boolean): void => {
     tenants.clear();
+    accounts.clear();
+    accountByEmail.clear();
+    accountByMember.clear();
+    sessions.clear();
+    codes.clear();
+    catalog = structuredClone(catalogDefault);
+    routing = bootstrapRouting(now(), o.routing?.bootstrap);
+    alerts = [];
     feedVersion = 1;
     if (withNonces) nonces.clear();
     if (raw === null) return;
-    const st = JSON.parse(raw) as { v: number; feedVersion: number; nonces?: [string, number][]; tenants: any[] };
+    const st = JSON.parse(raw) as { v: number; feedVersion: number; nonces?: [string, number][]; tenants: any[]; accounts?: AccountRecord[]; sessions?: SessionRecord[]; codes?: OneTimeCode[]; catalog?: Catalog; routing?: RoutingState; alerts?: AlertRecord[] };
+    // 第 44 批之前的状态没有这些：套餐从配置导入、路由按配置初始化、账号为空
+    catalog = migrateCatalog(st.catalog, structuredClone(catalogDefault));
+    routing = migrateRouting(st.routing, now(), o.routing?.bootstrap);
+    alerts = Array.isArray(st.alerts) ? st.alerts : [];
+    for (const a of st.accounts ?? []) {
+      accounts.set(a.aid, a);
+      indexAccount(a);
+    }
+    for (const x of st.sessions ?? []) sessions.set(x.sid, x);
+    for (const c of st.codes ?? []) codes.set(c.id, c);
     if (st.v !== 1) throw new Error(`控制面状态版本不认识：${st.v}`);
     feedVersion = st.feedVersion;
     if (withNonces) for (const [k, exp] of st.nonces ?? []) nonces.set(k, exp);
@@ -390,10 +511,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         anon: new Map(t.anon),
         activations: new Map(t.activations ?? []),
         joinRequests: new Map(t.joinRequests ?? []),
-        // 第 40 批之前的“点数池”账本按百分比口径读回（quota.ts migrateQuota：月度上限点数无法换算，按不设上限读回）
-        quota: migrateQuota(t.quota, now()),
-        plan: typeof t.plan === "string" ? t.plan : billing.default_plan,
-        kimiAccounts: new Map(t.kimiAccounts ?? []),
+        // 第 40 批的“内部单位”账本：本期已用冻结为比例，新账本从此计（quota.ts migrateQuota，主文 §4.6）
+        quota: migrateQuota(t.quota, planOf(catalog, typeof t.plan === "string" ? t.plan : catalog.default_plan), now()),
+        plan: typeof t.plan === "string" ? t.plan : catalog.default_plan,
+        // 第 44 批之前开通的律所不要求账号登录（运营可在控制台打开）；Kimi 账号绑定（第 40 批）已撤下，读回时丢弃
+        accounts_required: t.accounts_required === true,
+        kimiAccounts: undefined,
+        kimi_required: undefined,
       });
     }
   };
@@ -492,10 +616,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     ? Buffer.from(o.codePepper)
     : Buffer.from(hkdfSync("sha256", signer.envelopePrivateKey!.export({ format: "der", type: "pkcs8" }), Buffer.alloc(0), "kwl-cp-code-pepper/1", 32));
   if (codePepper.byteLength !== 32) throw new Error("开通码胡椒须为 32 字节");
-  // Kimi 账号对接（第 40 批）：账号引用用由胡椒派生的独立密钥做 HMAC（换控制面实例引用不变；与开通码 HMAC 分开用途）
-  const kimiBroker = o.kimiAccount
-    ? createKimiAccountBroker({ config: o.kimiAccount.config, pepper: Buffer.from(hkdfSync("sha256", codePepper, Buffer.alloc(0), "kwl-kimi-account-ref/1", 32)), now, ...(o.kimiAccount.fetchImpl ? { fetchImpl: o.kimiAccount.fetchImpl } : {}) })
-    : null;
+  // 账号一次性码（设置密码、重置、邮件验证码）的 HMAC 密钥：由胡椒派生（与开通码 HMAC 分开用途）
+  const accountPepper = Buffer.from(hkdfSync("sha256", codePepper, Buffer.alloc(0), "kwl-account-code/1", 32));
   /** 律所标识 = 租户编号去掉 ten_ 前缀（与内核 identity.ts 的 ten_<律所标识> 对应）；不合规的租户不能发开通码。 */
   const firmSlugOf = (tid: string): string | null => (/^ten_[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(tid) ? tid.slice(4) : null);
   const newRecordId = (prefix: string) => `${prefix}_${randomBytes(12).toString("base64url")}`;
@@ -624,13 +746,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
    */
   let opsActor: CpAuditActor = { kind: "ops", id: "ops" };
   const rawOps: ControlPlaneOps = {
-    createTenant({ tid, edition, seats, subscriptionDays = 365, plan, allowanceUnits, name, activationRequired = true, kimiRequired = false }) {
+    createTenant({ tid, edition, seats, subscriptionDays = 365, plan, allowanceUnits, name, activationRequired = true, accountsRequired = false, createdVia = "ops" }) {
       // 租户编号字符集（复核 S9A-01：不合规的编号写进审计流水会让重启验链失败）
       if (typeof tid !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(tid)) throw new CpError(400, "tid_invalid", "租户编号只能用字母、数字、下划线与连字符");
       if (tenants.has(tid)) throw new Error(`租户已存在：${tid}`);
       if (name !== undefined && !validDisplayName(name)) throw new CpError(400, "tenant_name_invalid", "律所名称须为 1–40 个字符");
-      if (plan !== undefined && !billing.plans.some((x) => x.id === plan)) throw new CpError(400, "plan_unknown", "套餐不在目录里");
+      if (plan !== undefined && !catalog.plans.some((x) => x.id === plan)) throw new CpError(400, "plan_unknown", "套餐不在目录里");
       if (allowanceUnits !== undefined && !(Number.isSafeInteger(allowanceUnits) && allowanceUnits >= 0)) throw new CpError(400, "allowance_invalid", "定制额度须为非负整数");
+      const planId = plan ?? catalog.default_plan;
       const t: TenantRecord = {
         tid,
         ...(name !== undefined ? { name } : {}),
@@ -654,13 +777,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         connectorsVersion: 1,
         drafts: new Map(),
         anon: new Map(),
-        quota: emptyQuota(now()),
-        plan: plan ?? billing.default_plan,
+        quota: emptyQuota(planOf(catalog, planId), now()),
+        plan: planId,
         ...(allowanceUnits !== undefined ? { allowance_override: allowanceUnits } : {}),
-        kimiAccounts: new Map(),
-        kimi_required: kimiRequired,
+        accounts_required: accountsRequired,
+        created_via: createdVia,
       };
-      syncAllowance(t.quota, allowanceOf(t), now());
       issueLicense(t);
       publishStrictest(t);
       tenants.set(tid, t);
@@ -710,16 +832,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       }
     },
     boostQuota(tid, pct) {
-      const t = tenantOf(tid);
-      return quotaBoost(qOf(t), pct, now(), opsActor.id === "ops" ? null : opsActor.id);
-    },
-    grantUnits(tid, units) {
-      const t = tenantOf(tid);
-      quotaGrantUnits(qOf(t), units, now(), opsActor.id === "ops" ? null : opsActor.id);
+      const { q, ctx } = qOf(tenantOf(tid));
+      return quotaBoost(q, ctx, pct, opsActor.id === "ops" ? null : opsActor.id);
     },
     setPlan(tid, { plan, seats }) {
       const t = tenantOf(tid);
-      if (plan !== undefined && !billing.plans.some((x) => x.id === plan)) throw new CpError(400, "plan_unknown", "套餐不在目录里");
+      if (plan !== undefined && !catalog.plans.some((x) => x.id === plan)) throw new CpError(400, "plan_unknown", "套餐不在目录里");
       if (seats !== undefined) {
         if (!Number.isSafeInteger(seats) || seats < 1 || seats > 10_000) throw new CpError(400, "seats_invalid", "席位数须为 1–10000 的整数");
         const used = [...t.seatsByUser.values()].filter((x) => !x.revoked_at).length;
@@ -732,14 +850,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       }
       qOf(t);
     },
-    setKimiRequired(tid, required) {
-      tenantOf(tid).kimi_required = required === true;
-    },
-    unbindKimi(tid, ref) {
-      const t = tenantOf(tid);
-      const hit = [...t.kimiAccounts.entries()].find(([, b]) => b.ref === ref);
-      if (!hit) throw new CpError(404, "kimi_account_unknown", "没有这个 Kimi 账号绑定");
-      t.kimiAccounts.delete(hit[0]);
+    setAccountsRequired(tid, required) {
+      tenantOf(tid).accounts_required = required === true;
+      feedVersion += 1;
     },
     issueActivationCode(tid, { member, ttlHours = 14 * 24 }) {
       return issueCode(tenantOf(tid), { kind: "founder", member: { slug: member.slug, name: member.name ?? null, role: "admin" }, ttlHours, by: opsActor.id });
@@ -754,7 +867,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       for (const jr of t.joinRequests.values()) if (jr.activation_id === r.id && jr.status === "pending") Object.assign(jr, { status: "rejected", decided_at: iso(), decided_by: o2.by ?? opsActor.id });
     },
     setQuotaCap(tid, cap) {
-      quotaSetCap(qOf(tenantOf(tid)), cap, now(), opsActor.id === "ops" ? null : opsActor.id);
+      const { q, ctx } = qOf(tenantOf(tid));
+      quotaSetCap(q, ctx, cap, opsActor.id === "ops" ? null : opsActor.id);
     },
     sweepOnboarding() {
       const t0 = now();
@@ -784,6 +898,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       return { names_cleared: names, records_removed: removed };
     },
     tenant: (tid) => tenants.get(tid),
+    account: (email) => {
+      const aid = accountByEmail.get(String(email).toLowerCase());
+      return aid ? accounts.get(aid) : undefined;
+    },
     seal(kind, body) {
       if (!signer.sealSync) throw new Error("接独立签名服务时不能在进程内签任意文档（A-8）");
       return signer.sealSync(kind, body);
@@ -808,10 +926,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     revokeDevice: { action: "device.revoke", target: (a) => String(a[1]) },
     revokeSeat: { action: "seat.revoke", target: (a) => seatOf(String(a[0]), a[1]) },
     boostQuota: { action: "quota.boost", detail: (a) => ({ pct: Math.floor(Number(a[1])) || 0 }) },
-    grantUnits: { action: "quota.boost", detail: () => ({ custom: 1 }) },
     setPlan: { action: "plan.change", detail: (a) => { const x = (a[1] ?? {}) as { seats?: unknown }; return x.seats === undefined ? { plan: 1 } : { seats: Number(x.seats) || 0 }; } },
-    setKimiRequired: { action: "kimi.policy", detail: (a) => ({ required: a[1] === true ? 1 : 0 }) },
-    unbindKimi: { action: "kimi.unbind", target: (a) => String(a[1]) },
+    setAccountsRequired: { action: "accounts.policy", detail: (a) => ({ required: a[1] === true ? 1 : 0 }) },
     issueActivationCode: { action: "activation.issue" },
     revokeActivationCode: { action: "activation.revoke", target: (a) => String(a[1]) },
     setQuotaCap: { action: "quota.cap_set", detail: (a) => (a[1] === null ? { uncapped: 1 } : { cap_pct: Math.floor(Number(a[1])) || 0 }) },
@@ -843,7 +959,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           // 被拒记录同样按“租户 + 执行者 + 动作 + 分钟”限量（复核 RA10B-08：运营接口走网络后，被拒请求不能撑大律所的流水）
           if (entry && tenants.has(tid) && rejectedAllowed(entry)) {
             try {
-              auditLog.append({ ...entry, result: `rejected:${e instanceof CpError || e instanceof QuotaError ? e.code : "error"}` }, iso());
+              auditLog.append({ ...entry, result: `rejected:${e instanceof CpError || e instanceof QuotaError || e instanceof RoutingError || e instanceof PlanError ? e.code : "error"}` }, iso());
             } catch {
               // 审计写不进去：操作本身已失败
             }
@@ -851,7 +967,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           throw e;
         }
         // 路由代调时不在这里写盘（复核 S9A-03）：由路由的 send 统一按“审计 → 写盘 → 回复”执行，审计写不进去即整个操作回滚
-        if (k !== "tenant" && k !== "seal" && !routeCall) {
+        if (k !== "tenant" && k !== "seal" && k !== "account" && !routeCall) {
           try {
             persistNow();
           } catch (e) {
@@ -986,6 +1102,26 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     return { t, dev: t.devices.get(v.deviceId)! };
   };
 
+  /**
+   * 账号闸（第 44 批，主文 §2.5）：要求账号登录的律所，签发席位令牌与各服务专用凭据前须有本设备上的有效会话、账号有效、账号就是证书上的成员。
+   * 会话还没绑设备（登录在激活之前）就在此绑定。
+   */
+  const accountGate = (req: IncomingMessage, t: TenantRecord, dev: DeviceRecord): void => {
+    if (t.accounts_required !== true) return;
+    let me: { s: SessionRecord; a: AccountRecord };
+    try {
+      me = sessionOf(req, true)!;
+    } catch (e) {
+      return authErr(e);
+    }
+    if (me.a.tid !== t.tid || uidOfAccount(me.a) !== dev.cert.memberId) throw new CpError(403, "session_member_mismatch", "登录的账号不是这台电脑上的成员：请用本机成员的账号重新登录");
+    if (me.s.device_id !== null && me.s.device_id !== dev.cert.deviceId) throw new CpError(401, "session_invalid", "登录已失效，请重新登录");
+    if (me.s.device_id === null) {
+      me.s.device_id = dev.cert.deviceId;
+      feedVersion += 1;
+    }
+  };
+
   /** 服务间凭据（网关、检索服务；G0 共享密钥，生产为 mTLS）。 */
   const requireService = (req: IncomingMessage): void => {
     const h = req.headers.authorization;
@@ -1050,7 +1186,301 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         share_relay: pol.share_relay === "allow" ? "allow" : "deny",
       });
     }
-    return { version: feedVersion, issued_at: iso(), revoked_devices: revokedDevices, revoked_seats: revokedSeats, matters, policies };
+    return { version: feedVersion, issued_at: iso(), revoked_devices: revokedDevices, revoked_seats: revokedSeats, matters, policies, suspended_devices: suspendedDevices() };
+  };
+
+  // ═══ 第 44 批：账号、会话、设备、路由、用量入账、告警 ═══
+  const sourceOf = (req: IncomingMessage) => String(req.socket.remoteAddress ?? "?");
+  /** 未认证账号入口的限速（按来源与种类，每分钟）。 */
+  const authWindow = new Map<string, { minute: number; n: number }>();
+  const authAllowed = (source: string, kind: string, max: number): boolean => {
+    const minute = Math.floor(now() / 60_000);
+    if (authWindow.size > 50_000) for (const [k, w] of authWindow) if (w.minute !== minute) authWindow.delete(k);
+    const k = `${kind}\u0000${source}`;
+    const w = authWindow.get(k);
+    if (!w || w.minute !== minute) {
+      authWindow.set(k, { minute, n: 1 });
+      return true;
+    }
+    return ++w.n <= max;
+  };
+  const uidOfAccount = (a: AccountRecord) => `usr_${a.tid.slice(4)}_${a.member_slug}`;
+  const orgOf = (tid: string) => ({ slug: tid.slice(4), name: tenants.get(tid)?.name ?? tid.slice(4) });
+  const deviceLimitOf = (a: AccountRecord): number => Math.min(MAX_DEVICES_PER_ACCOUNT, a.device_limit ?? (tenants.get(a.tid) ? planFor(tenants.get(a.tid)!).device_limit : catalog.settings.default_device_limit));
+  const accountDevices = (a: AccountRecord): DeviceRecord[] => [...(tenants.get(a.tid)?.devices.values() ?? [])].filter((d) => d.cert.memberId === uidOfAccount(a));
+  const liveSessionsOf = (aid: string) => [...sessions.values()].filter((x) => x.aid === aid && sessionLive(x, now()));
+  /** 暂停的设备：要求账号登录的律所里，设备所属成员没有账号、账号停用，或这台设备上没有有效的桌面会话。 */
+  const suspendedDevices = (): { tid: string; device_id: string }[] => {
+    const out: { tid: string; device_id: string }[] = [];
+    const t0 = now();
+    const liveDev = new Set<string>();
+    for (const x of sessions.values()) if (x.device_id && sessionLive(x, t0) && accounts.get(x.aid)?.status === "active") liveDev.add(`${accounts.get(x.aid)!.tid}\u0000${x.device_id}`);
+    for (const t of tenants.values()) {
+      if (t.accounts_required !== true) continue;
+      for (const d of t.devices.values()) if (!d.revoked_at && d.cert.role !== "node" && !liveDev.has(`${t.tid}\u0000${d.cert.deviceId}`)) out.push({ tid: t.tid, device_id: d.cert.deviceId });
+    }
+    return out;
+  };
+  /** 会话到期是按时间发生的：每 10 分钟看一次有没有新到期的，有就让订阅版本前进（网关据此暂停对应设备）。 */
+  let lastSuspendedSig = "";
+  const suspendSweep = setInterval(() => {
+    const sig = suspendedDevices().map((d) => `${d.tid}/${d.device_id}`).sort().join(",");
+    if (sig !== lastSuspendedSig) {
+      lastSuspendedSig = sig;
+      feedVersion += 1;
+    }
+  }, 600_000);
+  suspendSweep.unref();
+  const addAlert = (a: Omit<AlertRecord, "id" | "at" | "acked_at" | "acked_by">): void => {
+    alerts.unshift({ id: newId("alr"), at: iso(), acked_at: null, acked_by: null, ...a });
+    if (alerts.length > 500) alerts.length = 500;
+  };
+  const newSession = (a: AccountRecord, kind: SessionRecord["kind"], deviceId: string | null, client: unknown): { token: string; rec: SessionRecord } => {
+    const { sid, secret, token } = newSessionToken();
+    const t0 = now();
+    // 同一账号的会话至多 20 个（最旧的先失效）
+    const mine = [...sessions.values()].filter((x) => x.aid === a.aid && !x.revoked_at).sort((x, y) => x.created_at.localeCompare(y.created_at));
+    for (const x of mine.slice(0, Math.max(0, mine.length - 19))) Object.assign(x, { revoked_at: iso(t0), revoked_reason: "too_many_sessions" });
+    // 同一台设备只留一个有效桌面会话（重新登录即替换）
+    if (deviceId) for (const x of mine) if (x.device_id === deviceId && x.kind === "desktop") Object.assign(x, { revoked_at: iso(t0), revoked_reason: "replaced" });
+    const rec: SessionRecord = { sid, aid: a.aid, secret_hash: sha256Hex(secret), kind, device_id: deviceId, created_at: iso(t0), last_seen_at: iso(t0), idle_expires_at: iso(t0 + SESSION_IDLE_MS[kind]), abs_expires_at: iso(t0 + SESSION_ABS_MS[kind]), revoked_at: null, revoked_reason: null, client: clientInfo(client) };
+    sessions.set(sid, rec);
+    feedVersion += 1;
+    return { token, rec };
+  };
+  /** 请求里的会话（桌面：x-kwl-session；网页：Authorization: Bearer）；required = 没有即 401。 */
+  const sessionOf = (req: IncomingMessage, required: boolean): { s: SessionRecord; a: AccountRecord } | null => {
+    const h = req.headers["x-kwl-session"] ?? (typeof req.headers.authorization === "string" ? /^Bearer\s+(kws1\..+)$/i.exec(req.headers.authorization)?.[1] : undefined);
+    if (h === undefined) {
+      if (required) throw new AuthError(401, "session_required", "请先登录");
+      return null;
+    }
+    const pt = parseSessionToken(Array.isArray(h) ? h[0] : h);
+    const x = pt ? sessions.get(pt.sid) : undefined;
+    if (!pt || !x || !sameHexStr(x.secret_hash, sha256Hex(pt.secret))) throw new AuthError(401, "session_invalid", "登录已失效，请重新登录");
+    if (!sessionLive(x, now())) throw new AuthError(401, "session_expired", "登录已过期，请重新登录");
+    const a = accounts.get(x.aid);
+    if (!a) throw new AuthError(401, "session_invalid", "登录已失效，请重新登录");
+    if (a.status !== "active") throw new AuthError(403, "account_disabled", "账号已停用，请联系管理员");
+    // 续期：空闲到期往后推；按小时落盘（不让每个请求都整份重写状态）
+    const t0 = now();
+    if (t0 - Date.parse(x.last_seen_at) > 3600_000) {
+      x.last_seen_at = iso(t0);
+      x.idle_expires_at = iso(Math.min(t0 + SESSION_IDLE_MS[x.kind], Date.parse(x.abs_expires_at)));
+    }
+    return { s: x, a };
+  };
+  const revokeSessions = (pred: (x: SessionRecord) => boolean, reason: string): number => {
+    let n = 0;
+    for (const x of sessions.values())
+      if (!x.revoked_at && pred(x)) {
+        Object.assign(x, { revoked_at: iso(), revoked_reason: reason });
+        n += 1;
+      }
+    // 过期与吊销超过 30 天的会话清掉
+    for (const [k, x] of sessions) if ((x.revoked_at && Date.parse(x.revoked_at) + 30 * DAY_MS < now()) || Date.parse(x.abs_expires_at) + 30 * DAY_MS < now()) sessions.delete(k);
+    if (n) feedVersion += 1;
+    return n;
+  };
+  /**
+   * 账号生成的认领（主文 §2.2）：创始 = 登记律所根；成员 = 新设备入组（预先分配设备编号）。同一账号同一种类只留一份，重新登录即换新凭据。
+   */
+  const accountClaim = (t: TenantRecord, a: AccountRecord, kind: "founder" | "member", deviceId?: string): { activation_id: string; claim_secret: string } => {
+    for (const r of t.activations.values())
+      if (r.via_account === a.aid && r.kind === kind && (r.status === "claimed" || r.status === "open")) {
+        r.status = "revoked";
+        for (const jr of t.joinRequests.values()) if (jr.activation_id === r.id && jr.status === "pending") Object.assign(jr, { status: "withdrawn", decided_at: iso(), decided_by: "account_relogin" });
+      }
+    const secret = newClaimSecret();
+    const at = now();
+    const rec: ActivationRecord = {
+      id: newRecordId("act"),
+      // 没有可兑换的码：MAC 取一个随机值（码索引里查不到）
+      code_mac: randomBytes(32).toString("hex"),
+      kind,
+      member: { slug: a.member_slug, name: a.name, role: a.role },
+      created_at: iso(at),
+      expires_at: iso(at + 7 * DAY_MS),
+      created_by: `account:${a.aid}`,
+      status: "claimed",
+      claim_hash: claimSecretHash(secret),
+      claimed_at: iso(at),
+      consumed_at: null,
+      join_attempts: 0,
+      first_claimed_at: iso(at),
+      redeem_count: 1,
+      via_account: a.aid,
+      ...(deviceId ? { device_id: deviceId } : {}),
+    };
+    t.activations.set(rec.id, rec);
+    return { activation_id: rec.id, claim_secret: secret };
+  };
+  type Onboarding = Record<string, unknown> & { state: string };
+  /** 登录后这台电脑该做什么（主文 §2.2 Onboarding）。dev = 已激活且请求带了有效设备签名的本机设备。 */
+  const onboardingOf = (a: AccountRecord, dev: DeviceRecord | null): Onboarding => {
+    const t = tenantOf(a.tid);
+    const firm = orgOf(t.tid);
+    const member = { slug: a.member_slug, name: a.name, role: a.role };
+    const devs = accountDevices(a);
+    const live = devs.filter((d) => !d.revoked_at);
+    const limit = deviceLimitOf(a);
+    const base = { tid: t.tid, firm, member, devices_used: live.length, device_limit: limit };
+    if (dev) return dev.cert.memberId === uidOfAccount(a) ? { state: "ready", ...base, device_id: dev.cert.deviceId } : { state: "device_mismatch", ...base };
+    if (!t.root_public_key_pem) {
+      if (a.role !== "admin") return { state: "waiting_founder", ...base };
+      return { state: "needs_founder_setup", ...base, claim: { kind: "founder", tid: t.tid, firm, member, ...accountClaim(t, a, "founder") } };
+    }
+    if (live.length >= limit) return { state: "device_limit", ...base, devices: live.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null })) };
+    // 下一台的编号：1..9 里第一个从未用过的（吊销过的编号不再复用）
+    const used = new Set([...devs.map((d) => accountDeviceIndex(t.tid.slice(4), a.member_slug, d.cert.deviceId)), ...[...t.preRevoked.keys()].map((id) => accountDeviceIndex(t.tid.slice(4), a.member_slug, id))]);
+    for (const jr of t.joinRequests.values()) if (jr.member_slug === a.member_slug && (jr.status === "pending" || jr.status === "approved")) used.add(accountDeviceIndex(t.tid.slice(4), a.member_slug, jr.device_id));
+    let n = 1;
+    while (used.has(n) && n <= MAX_DEVICES_PER_ACCOUNT) n += 1;
+    if (n > MAX_DEVICES_PER_ACCOUNT) return { state: "device_limit", ...base, devices: [] };
+    const deviceId = accountDeviceId(t.tid.slice(4), a.member_slug, n);
+    return { state: "needs_device_join", ...base, device_id: deviceId, claim: { kind: "member", tid: t.tid, firm, member, ...accountClaim(t, a, "member", deviceId) } };
+  };
+  const authResult = (a: AccountRecord, token: string, x: SessionRecord, onb: Onboarding) => ({
+    ok: true,
+    session_token: token,
+    session: { sid: x.sid, kind: x.kind, idle_expires_at: x.idle_expires_at },
+    account: accountView(a, { org: orgOf(a.tid) }),
+    onboarding: onb,
+  });
+  /** 已激活设备的登录：请求带了设备签名头就核验（核验失败即 401，不降级为“未激活”）。 */
+  const optionalDevice = async (req: IncomingMessage, path: string, raw: string): Promise<DeviceRecord | null> => {
+    if (req.headers["x-kwl-device"] === undefined) return null;
+    const { dev } = await authDevice(req, path, raw);
+    return dev;
+  };
+  const newMemberSlug = (t: TenantRecord, email: string): string => {
+    const base = slugBase(email);
+    const taken = (slug: string) => [...accounts.values()].some((x) => x.tid === t.tid && x.member_slug === slug) || [...t.activations.values()].some((r) => r.member.slug === slug) || [...t.devices.values()].some((d) => d.cert.memberId === `usr_${t.tid.slice(4)}_${slug}`);
+    if (!taken(base)) return base;
+    for (let i = 2; i < 1000; i++) if (!taken(`${base}${i}`)) return `${base}${i}`;
+    return `${base}${randomBytes(3).toString("hex")}`;
+  };
+  const newFirmTid = (email: string): string => {
+    const base = slugBase(email);
+    for (let i = 0; i < 50; i++) {
+      const tid = `ten_${base}${i === 0 ? "" : `-${randomBytes(2).toString("hex")}`}`;
+      if (!tenants.has(tid)) return tid;
+    }
+    return `ten_${base}-${randomBytes(4).toString("hex")}`;
+  };
+  const issueAccountCode = (a: AccountRecord, purpose: OneTimeCode["purpose"], ttlMs: number, by: string | null): { code: string; expires_at: string } => {
+    for (const c of codes.values()) if (c.aid === a.aid && c.purpose === purpose && !c.used_at) c.used_at = iso();
+    const code = purpose === "email_reset" ? String(randomBytes(4).readUInt32BE() % 1_000_000).padStart(6, "0") : newOneTimeCode();
+    const rec: OneTimeCode = { id: newId("otc"), aid: a.aid, purpose, mac: codeMac(accountPepper, purpose, a.aid, code), created_at: iso(), expires_at: iso(now() + ttlMs), attempts: 0, used_at: null, by };
+    codes.set(rec.id, rec);
+    for (const [k, c] of codes) if (Date.parse(c.expires_at) + 7 * DAY_MS < now()) codes.delete(k);
+    return { code, expires_at: rec.expires_at };
+  };
+
+  // ─── 用量入账（网关回报的逐请求记录 → 账本行；按请求编号去重、按价目版本重算） ───
+  const REQ_ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
+  const OUTCOMES = new Set(["ok", "client_gone", "upstream_error", "timeout", "blocked"]);
+  const SOURCES = new Set(["upstream", "drained", "estimated", "none"]);
+  const nnInt = (v: unknown): number => (typeof v === "number" && Number.isSafeInteger(v) && v >= 0 && v <= 1e10 ? v : 0);
+  const strOr = (v: unknown, re: RegExp): string | null => (typeof v === "string" && re.test(v) ? v : null);
+  const rowOf = (t: TenantRecord, r: Record<string, any>, plan: PlanSpec): UsageRow => {
+    if (!r || typeof r !== "object" || typeof r.request_id !== "string" || !REQ_ID_RE.test(r.request_id)) throw new QuotaError(400, "records_invalid", "用量记录缺少请求编号");
+    const usage = r.usage && typeof r.usage === "object" ? { input: nnInt(r.usage.input), cached: Math.min(nnInt(r.usage.cached), nnInt(r.usage.input)), output: nnInt(r.usage.output), reasoning: nnInt(r.usage.reasoning) } : null;
+    const atMs = Number.isFinite(Date.parse(r.at)) ? Math.min(Date.parse(r.at), now() + 60_000) : now();
+    const uid = strOr(r.uid, /^[A-Za-z0-9_-]{1,160}$/);
+    const alias = strOr(r.alias, /^[a-z0-9][a-z0-9._/-]{1,47}$/);
+    const priceTable = priceTableOf(routing, r.price_version);
+    const money = usage ? chargeOf(alias ? priceTable.items[alias] : undefined, usage) : { value_micro: null, cost_micro: null };
+    const unit = plan.quota_unit;
+    const charge = usage ? (unit === "tokens" ? usage.input + usage.output : (money.value_micro ?? 0)) : 0;
+    const acc = uid ? accountOfMember(t.tid, uid) : undefined;
+    return {
+      v: 1,
+      request_id: r.request_id,
+      client_request_id: strOr(r.client_request_id, /^[A-Za-z0-9_-]{1,96}$/),
+      upstream_request_id: strOr(r.upstream_request_id, /^[A-Za-z0-9_.:-]{1,128}$/),
+      at: iso(atMs),
+      started_at: Number.isFinite(Date.parse(r.started_at)) ? iso(Date.parse(r.started_at)) : null,
+      day: dayOf(atMs),
+      tid: t.tid,
+      aid: acc?.aid ?? null,
+      uid,
+      sid: strOr(r.sid, /^[A-Za-z0-9_-]{1,120}$/),
+      dev: strOr(r.dev, /^[A-Za-z0-9_-]{1,128}$/),
+      alias,
+      provider: strOr(r.provider, /^[a-z][a-z0-9-]{1,31}$/),
+      upstream_model: strOr(r.upstream_model, /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,95}$/),
+      stream: r.stream === true,
+      qa: r.qa === true,
+      status: Number.isSafeInteger(r.status) ? r.status : null,
+      outcome: OUTCOMES.has(r.outcome) ? r.outcome : usage ? "ok" : "upstream_error",
+      usage,
+      usage_source: SOURCES.has(r.usage_source) ? r.usage_source : usage ? "upstream" : "none",
+      unit,
+      charge,
+      value_micro: money.value_micro,
+      cost_micro: money.cost_micro,
+      price_version: priceTable.version,
+      latency_ms: Number.isSafeInteger(r.latency_ms) && r.latency_ms >= 0 ? r.latency_ms : null,
+      attempts: Array.isArray(r.attempts) ? r.attempts.slice(0, 5).map((x: any) => ({ provider: strOr(x?.provider, /^[a-z][a-z0-9-]{1,31}$/), status: Number.isSafeInteger(x?.status) ? x.status : null, error: strOr(x?.error, /^[a-z0-9_:.-]{1,64}$/i), ms: Number.isSafeInteger(x?.ms) ? x.ms : null })) : [],
+      finish_reason: strOr(r.finish_reason, /^[a-z_]{1,32}$/),
+      lease_id: strOr(r.lease_id, /^ls_[0-9a-f]{24}$/),
+    };
+  };
+  /** 入账后的提醒：租户与成员跨过阈值、到上限、用完；成员 1 小时消耗异常。 */
+  const checkAlerts = (t: TenantRecord, uids: Set<string>): void => {
+    const { q, ctx } = qOf(t);
+    const plan = ctx.plan;
+    const tot = totalsOf(q, ctx);
+    const used = usedOf(q, ctx);
+    const pct = tot.total > 0 ? (used / tot.total) * 100 : 0;
+    const once = (key: string, f: () => void) => {
+      if (q.alerts_sent.includes(key)) return;
+      q.alerts_sent.push(key);
+      f();
+    };
+    for (const th of plan.alert_thresholds) if (pct >= th) once(`${q.period_key}:t:${th}`, () => addAlert({ kind: th >= 100 ? "exhausted" : "threshold", level: th >= 100 ? "critical" : th >= 90 ? "warn" : "info", tid: t.tid, aid: null, provider: null, pct: th, message: th >= 100 ? `${t.name ?? t.tid} 本期额度已用完` : `${t.name ?? t.tid} 本期已用 ${th}%` }));
+    if (tot.cap !== null && used >= tot.cap) once(`${q.period_key}:cap`, () => addAlert({ kind: "cap", level: "warn", tid: t.tid, aid: null, provider: null, pct: q.cap_pct, message: `${t.name ?? t.tid} 已到律所设定的上限（${q.cap_pct}%）` }));
+    for (const uid of uids) {
+      const a = accountOfMember(t.tid, uid);
+      const ml = memberLimitOf(ctx, uid);
+      if (ml.limit !== null) {
+        const mp = (usedOf(q, ctx, uid) / ml.limit) * 100;
+        for (const th of plan.alert_thresholds) if (mp >= th) once(`${q.period_key}:m:${uid}:${th}`, () => addAlert({ kind: th >= 100 ? "exhausted" : "threshold", level: th >= 100 ? "warn" : "info", tid: t.tid, aid: a?.aid ?? null, provider: null, pct: th, message: `${a?.email ?? uid} 个人额度已用 ${th}%` }));
+      }
+      // 异常：最近 1 小时 > 本期总额度 5%，且 > 近 7 日小时均值的 10 倍
+      const hour = ctx.book.window(t.tid, uid, 1, ctx.t);
+      const hourUsed = plan.quota_unit === "tokens" ? hour.tokens : hour.value;
+      if (tot.total > 0 && hourUsed > tot.total * 0.05) {
+        const week = usedIn(plan.quota_unit, ctx.book.member(t.tid, uid, dayOf(ctx.t - 7 * DAY_MS), dayOf(ctx.t)));
+        if (hourUsed > (week / 168) * 10) once(`${q.period_key}:anomaly:${uid}:${Math.floor(ctx.t / 3600_000)}`, () => addAlert({ kind: "anomaly", level: "warn", tid: t.tid, aid: a?.aid ?? null, provider: null, pct: Math.round((hourUsed / tot.total) * 100), message: `${a?.email ?? uid} 最近 1 小时用量异常（占本期总额度 ${Math.round((hourUsed / tot.total) * 100)}%）` }));
+      }
+    }
+  };
+  /** 上游健康变差时记告警（每个上游每小时至多一条）。 */
+  const routeAlertSent = new Map<string, number>();
+  const checkRouteAlerts = (): void => {
+    for (const p of routing.providers) {
+      if (!p.enabled) continue;
+      const states = Object.values(routing.health).map((h) => h.providers[p.id]?.state).filter(Boolean);
+      if (!states.length || !states.every((x) => x === "down" || x === "key_unusable" || x === "blocked_by_allowlist")) continue;
+      const last = routeAlertSent.get(p.id) ?? 0;
+      if (now() - last < 3600_000) continue;
+      routeAlertSent.set(p.id, now());
+      addAlert({ kind: "route_down", level: "critical", tid: null, aid: null, provider: p.id, pct: null, message: `上游“${p.label}”不可用（${states[0]}）` });
+    }
+  };
+  /** 一次请求预估所需（内部单位）：网关给出别名与估算 token，控制面按当前价目折算。 */
+  const needUnits = (plan: PlanSpec, est: unknown): number => {
+    const e = (est && typeof est === "object" ? est : {}) as Record<string, unknown>;
+    const input = nnInt(e.input);
+    const output = nnInt(e.output);
+    if (plan.quota_unit === "tokens") return Math.max(1, input + output);
+    const alias = typeof e.alias === "string" ? e.alias : "";
+    const item = currentPrices(routing).items[alias];
+    const m = chargeOf(item, { input, cached: 0, output });
+    if (m.value_micro === null) throw new QuotaError(503, "price_unconfigured", "这个模型还没有定价：按金额计的套餐暂不可用，请联系管理员");
+    return Math.max(1, m.value_micro);
   };
 
   // ─── 运营接口（v9.3 A-10）：按人运营签名 + 权限；写操作经运维包装（审计执行者 = 运营编号），另记内部访问审计 ───
@@ -1070,48 +1500,205 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     return v;
   };
   /** 发码者对外只给种类（复核 RA10B-05：管理员发的邀请码 created_by 是设备编号，其中有成员标识）。 */
-  const issuerKind = (by: string) => (by === "ops" || /^op_[0-9]+$/.test(by) ? by : "firm_admin");
-  /** 本月用量与账单（运营视图：比例为主，另给计量单位只为与网关计量日志对账）。 */
-  const opsQuota = (t: TenantRecord) => {
-    const q = qOf(t);
-    const v = quotaView(q, now(), { detail: false, seats: t.seats, seatOwner: () => null, ownSid: null });
-    const plan = planOf(billing, t.plan);
-    return {
-      period: v.period,
-      resets_at: v.resets_at,
-      paused: v.paused,
-      used_ratio: v.used_ratio,
-      in_flight_ratio: v.in_flight_ratio,
-      cap_pct: v.cap_pct,
-      boost_pct: v.boost_pct,
-      plan: { id: plan.id, label: plan.label, custom: typeof t.allowance_override === "number" },
-      bill: monthBill(billing, { plan, seats: t.seats, boost_pct: v.boost_pct, used_units: q.period_used }),
-      units: { total: totalOf(q), used: q.period_used },
-    };
+  const issuerKind = (by: string) => (by === "ops" || /^op_[0-9]+$/.test(by) ? by : by.startsWith("account:") ? "account" : "firm_admin");
+  const cny = (micro: number) => Math.round(micro / 100) / 10_000;
+  const tenantStatus = (t: TenantRecord): "active" | "pending" | "expired" | "terminated" => {
+    if (Date.parse(t.subscription_until) <= now()) return Date.parse(t.license.expires_at) <= Date.parse(t.license.issued_at) + 1 ? "terminated" : "expired";
+    return t.root_public_key_pem ? "active" : "pending";
   };
-  const tenantSummary = (t: TenantRecord) => {
-    const devs = [...t.devices.values()];
-    const all = [...t.activations.values()];
-    const invites = all.filter((r) => r.kind !== "founder");
+  /** 客户（律所）一行（运营接口契约 §2 TenantRow）。 */
+  const tenantRow = (t: TenantRecord) => {
+    const { q, ctx } = qOf(t);
+    const plan = ctx.plan;
+    const unit = plan.quota_unit;
+    const tot = totalsOf(q, ctx);
+    const used = usedOf(q, ctx);
+    const b = periodBounds(plan.period, now());
+    const agg = book.tenant(t.tid, q.period_from, q.period_to);
+    const tAccounts = [...accounts.values()].filter((a) => a.tid === t.tid);
     return {
       tid: t.tid,
-      name: t.name ?? null,
+      name: t.name ?? t.tid.replace(/^ten_/, ""),
       edition: t.edition,
+      plan: { id: plan.id, label: plan.label },
       seats: t.seats,
-      created_at: t.created_at,
-      subscription_until: t.subscription_until,
-      license_expires_at: t.license.expires_at,
-      activation_required: t.activation_required === true,
-      root_enrolled: t.root_public_key_pem !== null,
-      devices: { active: devs.filter((d) => !d.revoked_at).length, revoked: devs.filter((d) => d.revoked_at).length, pre_revoked: t.preRevoked.size },
       seats_used: [...t.seatsByUser.values()].filter((x) => !x.revoked_at).length,
-      // 只列创始开通码（运营的事）；律所管理员发的成员邀请码只给计数（复核 RA10B-06）。不给成员标识与姓名
-      activations: all.filter((r) => r.kind === "founder").map((r) => ({ id: r.id, status: r.status, created_at: r.created_at, expires_at: r.expires_at, issued_by: issuerKind(r.created_by) })),
-      member_invitations: { total: invites.length, open: invites.filter((r) => r.status === "open").length },
-      quota: opsQuota(t),
-      kimi: { required: t.kimi_required === true, bound: [...t.kimiAccounts.keys()].filter((uid) => { const s = t.seatsByUser.get(uid); return s && !s.revoked_at; }).length },
+      status: tenantStatus(t),
+      subscription_until: t.subscription_until,
+      created_at: t.created_at,
+      created_via: t.created_via ?? "ops",
+      accounts_required: t.accounts_required === true,
+      unit,
+      period: { kind: plan.period, key: b.key, start: b.start, resets_at: b.resets_at },
+      used: unitOut(unit, used),
+      total: unitOut(unit, tot.total),
+      used_ratio: ratio(used, tot.total),
+      in_flight_ratio: ratio(outstanding(q), tot.total),
+      cap_pct: q.cap_pct,
+      boost_pct: tot.boost_pct,
+      paused: pausedOf(q, ctx),
+      forecast_exhaust_at: forecastExhaust(q, ctx),
+      accounts: tAccounts.length,
+      devices: [...t.devices.values()].filter((d) => !d.revoked_at).length,
+      alerts_open: alerts.filter((x) => x.tid === t.tid && !x.acked_at).length,
+      value_cny: agg.requests && agg.unpriced && !agg.value_micro ? null : cny(agg.value_micro),
+      cost_cny: agg.requests && agg.uncosted && !agg.cost_micro ? null : cny(agg.cost_micro),
+      requests: agg.requests,
+      legacy_used_ratio: q.legacy && q.legacy.period_key === q.period_key ? q.legacy.used_ratio : null,
+      root_enrolled: t.root_public_key_pem !== null,
     };
   };
+  const billRow = (t: TenantRecord, month: string) => {
+    const plan = planFor(t);
+    const { q } = qOf(t);
+    const rows = book.monthRows(month).filter((r) => r.tid === t.tid);
+    const agg = emptyAgg();
+    for (const r of rows) addAgg(agg, { requests: 1, tokens_in: r.usage?.input ?? 0, tokens_cached: r.usage?.cached ?? 0, tokens_out: r.usage?.output ?? 0, value_micro: r.value_micro ?? 0, cost_micro: r.cost_micro ?? 0, errors: 0, estimated: 0, unpriced: r.usage && r.value_micro === null ? 1 : 0, uncosted: r.usage && r.cost_micro === null ? 1 : 0 });
+    // 加量只有本期有记录（跨期清零）；历史月份的加量百分比取历史行
+    const cur = periodBounds("month", now()).key === month;
+    const boost = cur ? q.boosts.reduce((s2, x) => s2 + x.pct, 0) : 0;
+    return { tid: t.tid, name: t.name ?? t.tid.replace(/^ten_/, ""), plan: { id: plan.id, label: plan.label }, seats: t.seats, ...periodBill({ plan, seats: t.seats, boost_pct: boost, value_micro: agg.value_micro, cost_micro: agg.cost_micro, unpriced: agg.unpriced, uncosted: agg.uncosted, requests: agg.requests }), requests: agg.requests, tokens: agg.tokens_in + agg.tokens_out, unpriced_rows: agg.unpriced };
+  };
+  const deviceRow = (t: TenantRecord, d: DeviceRecord) => {
+    const a = accountOfMember(t.tid, d.cert.memberId);
+    const live = [...sessions.values()].some((x) => x.device_id === d.cert.deviceId && accounts.get(x.aid)?.tid === t.tid && sessionLive(x, now()));
+    const flags: string[] = [];
+    const since = new Date(now() - 30 * DAY_MS).toISOString().slice(0, 10);
+    if (!d.revoked_at && (!d.client_seen_on || d.client_seen_on < since)) flags.push("stale");
+    const newest = [...tenants.values()].flatMap((x) => [...x.devices.values()]).map((x) => x.client_version).filter((v): v is string => !!v && v !== "legacy").sort((x, y) => cmpVer(y, x))[0];
+    if (!d.revoked_at && d.client_version && newest && (d.client_version === "legacy" || cmpVer(d.client_version, newest) < 0)) flags.push("outdated");
+    if (!d.revoked_at && t.accounts_required === true && !live) flags.push("suspended");
+    // 没有账号的成员：设备编号与成员编号里含成员标识（可能是姓名拼音），只给证书指纹（复核 RA10B-05）
+    return { tid: t.tid, tenant_name: t.name ?? t.tid.replace(/^ten_/, ""), device_id: a ? d.cert.deviceId : `fp:${certFingerprint(d.cert)}`, uid: a ? d.cert.memberId : null, aid: a?.aid ?? null, email: a?.email ?? null, role: d.cert.role, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, registered_at: d.registered_at, revoked_at: d.revoked_at, session: live ? "active" : "none", flags };
+  };
+  const cmpVer = (x: string, y: string): number => {
+    const px = x.split(/[.-]/).map((n) => Number(n) || 0);
+    const py = y.split(/[.-]/).map((n) => Number(n) || 0);
+    for (let i = 0; i < 3; i++) if ((px[i] ?? 0) !== (py[i] ?? 0)) return (px[i] ?? 0) - (py[i] ?? 0);
+    return 0;
+  };
+  const accountRow = (a: AccountRecord) => {
+    const t = tenants.get(a.tid);
+    let usedRatio: number | null = null;
+    if (t) {
+      const { q, ctx } = qOf(t);
+      const ml = memberLimitOf(ctx, uidOfAccount(a));
+      usedRatio = ratio(usedOf(q, ctx, uidOfAccount(a)), ml.limit ?? seatQuotaUnits(ctx.plan));
+    }
+    return {
+      aid: a.aid,
+      email: a.email,
+      name: a.name,
+      status: a.status,
+      disabled_reason: a.disabled_reason,
+      tid: a.tid,
+      tenant_name: t?.name ?? a.tid.replace(/^ten_/, ""),
+      role: a.role,
+      member_slug: a.member_slug,
+      created_at: a.created_at,
+      created_via: a.created_via,
+      last_login_at: a.last_login_at,
+      has_password: a.pw !== null,
+      devices: accountDevices(a).filter((d) => !d.revoked_at).length,
+      device_limit: deviceLimitOf(a),
+      sessions_active: liveSessionsOf(a.aid).length,
+      quota_limit: a.quota_limit,
+      used_ratio: usedRatio,
+      locked: locked(a, now()) > 0,
+    };
+  };
+  const accountUsage = (a: AccountRecord) => {
+    const t = tenantOf(a.tid);
+    const { q, ctx } = qOf(t);
+    const unit = ctx.plan.quota_unit;
+    const uid = uidOfAccount(a);
+    const agg = book.member(t.tid, uid, q.period_from, q.period_to);
+    const ml = memberLimitOf(ctx, uid);
+    const denom = ml.limit ?? seatQuotaUnits(ctx.plan);
+    const used = usedIn(unit, agg);
+    const from = dayOf(now() - 29 * DAY_MS);
+    const daily = [...book.daily(null, from, dayOf(now()))].length ? lastDays(30).map((day) => ({ day, used: unitOut(unit, usedIn(unit, book.member(t.tid, uid, day, day))), requests: book.member(t.tid, uid, day, day).requests })) : [];
+    const models = [...book.group("member", t.tid, q.period_from, q.period_to)].length ? memberModels(t.tid, uid, q.period_from, q.period_to, unit) : [];
+    const pb = periodBounds(ctx.plan.period, now());
+    return { unit, period: { kind: ctx.plan.period, key: pb.key, start: pb.start, resets_at: pb.resets_at }, used: unitOut(unit, used), total: unitOut(unit, denom), used_ratio: ratio(used, denom), denominator: ml.limit !== null ? ml.source : "seat_quota", enforced: ml.limit !== null, requests: agg.requests, tokens: agg.tokens_in + agg.tokens_out, value_cny: agg.requests && agg.unpriced && !agg.value_micro ? null : cny(agg.value_micro), by_model: models, daily };
+  };
+  const lastDays = (n: number): string[] => Array.from({ length: n }, (_, i) => dayOf(now() - (n - 1 - i) * DAY_MS));
+  /** 成员按模型（账本没有“成员 × 模型”的聚合：从已载入行现算）。 */
+  const memberModels = (tid: string, uid: string, from: string, to: string, unit: "tokens" | "cny") => {
+    const m = new Map<string, Agg>();
+    for (const r of book.query({ tid, from, to, limit: 200 }).rows) {
+      if (r.uid !== uid) continue;
+      const k = r.alias ?? "";
+      addAgg(m.get(k) ?? (m.set(k, emptyAgg()), m.get(k)!), { requests: 1, tokens_in: r.usage?.input ?? 0, tokens_cached: r.usage?.cached ?? 0, tokens_out: r.usage?.output ?? 0, value_micro: r.value_micro ?? 0, cost_micro: r.cost_micro ?? 0, errors: 0, estimated: 0, unpriced: 0, uncosted: 0 });
+    }
+    return [...m].map(([alias, a]) => ({ alias, used: unitOut(unit, usedIn(unit, a)), requests: a.requests }));
+  };
+  const tenantUsage = (t: TenantRecord) => {
+    const { q, ctx } = qOf(t);
+    const unit = ctx.plan.quota_unit;
+    const tot = totalsOf(q, ctx);
+    const used = usedOf(q, ctx);
+    const view = quotaView(q, ctx, { detail: true, uid: null, sid: null, memberName: () => null });
+    const byMember = [...book.group("member", t.tid, q.period_from, q.period_to)].map(([k, a]) => {
+      const uid = k.split("\u0000")[1] || null;
+      const acc = uid ? accountOfMember(t.tid, uid) : undefined;
+      const u = usedIn(unit, a);
+      const ml = uid ? memberLimitOf(ctx, uid) : { limit: null };
+      return { aid: acc?.aid ?? null, uid, email: acc?.email ?? null, name: acc?.name ?? null, used: unitOut(unit, u), used_ratio_of_firm: ratio(u, tot.total), own_ratio: ratio(u, ml.limit ?? seatQuotaUnits(ctx.plan)), requests: a.requests };
+    }).sort((x, y) => y.used_ratio_of_firm - x.used_ratio_of_firm);
+    return {
+      unit,
+      period: view.period,
+      used: unitOut(unit, used),
+      total: unitOut(unit, tot.total),
+      used_ratio: ratio(used, tot.total),
+      burst: view.burst,
+      history: view.history,
+      daily: lastDays(30).map((day) => {
+        const a = book.tenant(t.tid, day, day);
+        return { day, used: unitOut(unit, usedIn(unit, a)), requests: a.requests };
+      }),
+      by_model: view.models,
+      by_account: byMember,
+      boosts: q.boosts,
+      cap_set_at: q.cap_set_at,
+      cap_set_by: q.cap_set_by === null ? null : issuerKind(q.cap_set_by),
+      unreconciled_leases: Object.values(q.leases).filter((l) => l.unreconciled).length,
+      open_leases: Object.values(q.leases).filter((l) => !l.closed_at).length,
+    };
+  };
+  const alertView = (x: AlertRecord) => ({ ...x, tenant_name: x.tid ? (tenants.get(x.tid)?.name ?? x.tid.replace(/^ten_/, "")) : null, email: x.aid ? (accounts.get(x.aid)?.email ?? null) : null });
+  const usageRowView = (r: UsageRow) => ({ ...r, tenant_name: tenants.get(r.tid)?.name ?? r.tid.replace(/^ten_/, ""), email: r.aid ? (accounts.get(r.aid)?.email ?? null) : null, value_cny: r.value_micro === null ? null : cny(r.value_micro), cost_cny: r.cost_micro === null ? null : cny(r.cost_micro) });
+  const dayParam = (qs: URLSearchParams, k: string, dflt: string): string => {
+    const v = qs.get(k);
+    if (v === null || v === "") return dflt;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new CpError(400, "date_invalid", `${k} 须为 YYYY-MM-DD`);
+    return v;
+  };
+  const usageQuery = (qs: URLSearchParams, limitMax: number) => {
+    const lim = Number(qs.get("limit") ?? "50");
+    return {
+      from: dayParam(qs, "from", dayOf(now() - 29 * DAY_MS)),
+      to: dayParam(qs, "to", dayOf(now())),
+      ...(qs.get("tid") ? { tid: qs.get("tid")! } : {}),
+      ...(qs.get("aid") ? { aid: qs.get("aid")! } : {}),
+      ...(qs.get("alias") ? { alias: qs.get("alias")! } : {}),
+      ...(qs.get("outcome") ? { outcome: qs.get("outcome")! } : {}),
+      ...(qs.get("request_id") ? { request_id: qs.get("request_id")! } : {}),
+      ...(qs.get("cursor") ? { cursor: qs.get("cursor")! } : {}),
+      limit: Number.isSafeInteger(lim) && lim >= 1 ? Math.min(lim, limitMax) : 50,
+    };
+  };
+  const csvCell = (v: unknown) => {
+    const t = v === null || v === undefined ? "" : String(v);
+    // 防 CSV 公式注入：以 = + - @ 开头的加单引号
+    const safe = /^[=+\-@]/.test(t) ? `'${t}` : t;
+    return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+  };
+  const csv = (header: string[], rows: unknown[][]) => `﻿${[header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n")}\r\n`;
+  /** CSV 应答（运营接口里唯一不回 JSON 的）：路由返回这个形状，由 opsRoute 原样发出。 */
+  type CsvOut = { __csv: string; filename: string };
+  const planView = (p: PlanSpec) => ({ ...p, seat_quota_display: p.quota_unit === "tokens" ? `${p.seat_quota} tokens` : `¥${p.seat_quota}` });
   type OpsSpec = {
     perm: OpsPermission;
     action: string;
@@ -1120,16 +1707,371 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     target: (b: Record<string, unknown>) => string | null;
     run: (b: Record<string, unknown>, who: OpsAuthorized) => unknown;
   };
-  /** 运营路由只按方法与路径确定（先鉴权、后解析请求体；复核 RA10B-21）。 */
-  const opsSpec = (method: string, p: string): OpsSpec | null => {
+  /** 账号写操作的律所审计（律所可见流水：执行者 = 运营编号，目标 = 账号编号，不记邮箱）。 */
+  const accountAudit = (a: AccountRecord, action: string, who: OpsAuthorized) => audit({ tid: a.tid, actor: { kind: "ops", id: who.operator }, action, target: a.aid, result: "ok" });
+  const accountOf = (aid: string): AccountRecord => {
+    const a = accounts.get(aid);
+    if (!a) throw new CpError(404, "account_unknown", "没有这个账号");
+    return a;
+  };
+  /** 运营路由只按方法与路径确定（先鉴权、后解析请求体；复核 RA10B-21）；GET 可带查询串。 */
+  const opsSpec = (method: string, p: string, qs: URLSearchParams): OpsSpec | null => {
     const none = () => null;
+    const read = (action: string, run: () => unknown, perm: OpsPermission = "tenant.read"): OpsSpec => ({ perm, action, tid: none, target: none, run });
+    // ─── 总览 ───
+    if (method === "GET" && p === "/v1/ops/overview")
+      return read("overview.read", () => {
+        const days = Math.min(90, Math.max(7, Number(qs.get("days") ?? "30") || 30));
+        const from = dayOf(now() - (days - 1) * DAY_MS);
+        const to = dayOf(now());
+        const b = periodBounds("month", now());
+        const tot = book.daily(null, b.fromDay, b.toDay);
+        const sum = emptyAgg();
+        for (const a of tot.values()) addAgg(sum, a);
+        const revenue = [...tenants.values()].map((t) => billRow(t, b.key).revenue_cny).reduce<number | null>((s2, v) => (v === null ? s2 : (s2 ?? 0) + v), null);
+        const daily = book.daily(null, from, to);
+        const allAcc = [...accounts.values()];
+        const allDev = [...tenants.values()].flatMap((t) => [...t.devices.values()].filter((d) => !d.revoked_at).map((d) => deviceRow(t, d)));
+        const since7 = iso(now() - 7 * DAY_MS);
+        const byModel = new Map<string, Agg>();
+        for (const t of tenants.values()) for (const [alias, a] of book.group("model", t.tid, b.fromDay, b.toDay)) addAgg(byModel.get(alias) ?? (byModel.set(alias, emptyAgg()), byModel.get(alias)!), a);
+        const allTok = [...byModel.values()].reduce((s2, a) => s2 + a.tokens_in + a.tokens_out, 0);
+        return {
+          generated_at: iso(),
+          period: { kind: "month", key: b.key, start: b.start, resets_at: b.resets_at },
+          // 有用量却全部未定价：显示“未定价”（null），不显示 0
+          totals: { requests: sum.requests, tokens_in: sum.tokens_in, tokens_cached: sum.tokens_cached, tokens_out: sum.tokens_out, value_cny: sum.unpriced && !sum.value_micro ? null : cny(sum.value_micro), cost_cny: sum.uncosted && !sum.cost_micro ? null : cny(sum.cost_micro), revenue_cny: revenue, margin_cny: revenue === null || (sum.uncosted && !sum.cost_micro) ? null : Math.round((revenue - cny(sum.cost_micro)) * 100) / 100, errors: sum.errors, estimated_rows: sum.estimated, unpriced_rows: sum.unpriced },
+          accounts: { total: allAcc.length, active_7d: allAcc.filter((a) => a.last_login_at && a.last_login_at >= since7).length, new_7d: allAcc.filter((a) => a.created_at >= since7).length, disabled: allAcc.filter((a) => a.status === "disabled").length },
+          tenants: { total: tenants.size, active: [...tenants.values()].filter((t) => tenantStatus(t) === "active").length, pending: [...tenants.values()].filter((t) => tenantStatus(t) === "pending").length, expiring_30d: [...tenants.values()].filter((t) => Date.parse(t.subscription_until) > now() && Date.parse(t.subscription_until) < now() + 30 * DAY_MS).length },
+          devices: { total: allDev.length, active_7d: allDev.filter((d) => d.last_seen_on && d.last_seen_on >= dayOf(now() - 7 * DAY_MS)).length, flagged: allDev.filter((d) => d.flags.length > 0).length },
+          daily: lastDays(days).map((day) => {
+            const a = daily.get(day) ?? emptyAgg();
+            return { day, requests: a.requests, tokens: a.tokens_in + a.tokens_out, value_cny: cny(a.value_micro), cost_cny: cny(a.cost_micro), errors: a.errors };
+          }),
+          by_model: [...byModel].map(([alias, a]) => ({ alias, label: routing.models.find((m) => m.alias === alias)?.label ?? alias, requests: a.requests, tokens: a.tokens_in + a.tokens_out, value_cny: cny(a.value_micro), share: ratio(a.tokens_in + a.tokens_out, allTok) })).sort((x, y) => y.tokens - x.tokens),
+          attention: alerts.filter((x) => !x.acked_at).slice(0, 20).map(alertView),
+          routing: { version: routing.version, providers: routing.providers.map((x) => { const h = routingView(routing, routingKeyId).providers.find((y) => y.id === x.id)?.health; return { id: x.id, label: x.label, enabled: x.enabled, state: x.enabled ? (h?.state ?? "unknown") : "disabled", latency_ms: h?.latency_ms ?? null, updated_at: h?.updated_at ?? null }; }) },
+        };
+      });
+    // ─── 套餐与注册设置 ───
+    if (method === "GET" && p === "/v1/ops/plans") return read("plan.list", () => ({ plans: catalog.plans.map(planView), default_plan: catalog.default_plan }));
+    const pl = /^\/v1\/ops\/plans\/([a-z0-9][a-z0-9-]{0,23})$/.exec(p);
+    if (method === "PUT" && pl)
+      return {
+        perm: "plan.manage",
+        action: "plan.upsert",
+        tid: none,
+        target: () => pl[1]!,
+        run: (b) => {
+          const prev = catalog.plans.find((x) => x.id === pl[1]);
+          const next = validatePlan(pl[1]!, b, "ops", prev);
+          if (prev) Object.assign(prev, next);
+          else {
+            if (catalog.plans.length >= 20) throw new CpError(409, "too_many_plans", "套餐过多（至多 20 个）");
+            catalog.plans.push(next);
+          }
+          if (b.make_default === true) catalog.default_plan = next.id;
+          return { ok: true, plan: planView(next), default_plan: catalog.default_plan };
+        },
+      };
+    if (method === "GET" && p === "/v1/ops/settings") return read("settings.read", () => ({ ...catalog.settings, mail: { configured: !!o.mailer, from: o.mailer?.from ?? null } }));
+    if (method === "PUT" && p === "/v1/ops/settings")
+      return {
+        perm: "plan.manage",
+        action: "settings.update",
+        tid: none,
+        target: none,
+        run: (b) => {
+          catalog.settings = validateSettings(b, catalog.plans, catalog.settings);
+          return { ok: true, ...catalog.settings, mail: { configured: !!o.mailer, from: o.mailer?.from ?? null } };
+        },
+      };
+    // ─── 告警 ───
+    if (method === "GET" && p === "/v1/ops/alerts") {
+      const all = qs.get("status") === "all";
+      const lim = Math.min(500, Math.max(1, Number(qs.get("limit") ?? "100") || 100));
+      return read("alert.list", () => ({ alerts: alerts.filter((x) => all || !x.acked_at).slice(0, lim).map(alertView) }));
+    }
+    const ak = /^\/v1\/ops\/alerts\/(alr_[A-Za-z0-9_-]{16})\/ack$/.exec(p);
+    if (method === "POST" && ak)
+      return {
+        perm: "tenant.read",
+        action: "alert.ack",
+        tid: none,
+        target: () => ak[1]!,
+        run: (_b, who) => {
+          const x = alerts.find((y) => y.id === ak[1]);
+          if (!x) throw new CpError(404, "alert_unknown", "没有这条告警");
+          if (!x.acked_at) Object.assign(x, { acked_at: iso(), acked_by: who.operator });
+          return { ok: true, alert: alertView(x) };
+        },
+      };
+    // ─── 账号 ───
+    if (method === "GET" && p === "/v1/ops/accounts")
+      return read("account.list", () => {
+        const q = (qs.get("q") ?? "").trim().toLowerCase();
+        const tid = qs.get("tid");
+        const status = qs.get("status");
+        const lim = Math.min(200, Math.max(1, Number(qs.get("limit") ?? "50") || 50));
+        const cursor = qs.get("cursor");
+        let list = [...accounts.values()].sort((x, y) => y.created_at.localeCompare(x.created_at) || x.aid.localeCompare(y.aid));
+        if (q) list = list.filter((a) => a.email.includes(q) || a.name.toLowerCase().includes(q) || (tenants.get(a.tid)?.name ?? a.tid).toLowerCase().includes(q));
+        if (tid) list = list.filter((a) => a.tid === tid);
+        if (status === "active" || status === "disabled") list = list.filter((a) => a.status === status);
+        const start = cursor ? Math.max(0, list.findIndex((a) => a.aid === cursor) + 1) : 0;
+        const page = list.slice(start, start + lim);
+        return { accounts: page.map(accountRow), next: start + lim < list.length ? page[page.length - 1]!.aid : null, total: list.length };
+      });
+    if (method === "POST" && p === "/v1/ops/accounts")
+      return {
+        perm: "account.manage",
+        action: "account.create",
+        tid: (b) => (typeof b.tid === "string" ? b.tid : null),
+        target: none,
+        run: (b, who) => {
+          const t = tenantOf(String(b.tid ?? ""));
+          if (!firmSlugOf(t.tid)) throw new CpError(400, "tid_not_activatable", "租户编号须为 ten_<律所标识>");
+          const email = normalizeEmail(b.email);
+          if (!email) throw new CpError(400, "email_invalid", "邮箱格式不对");
+          if (accountByEmail.has(email)) throw new CpError(409, "email_taken", "这个邮箱已有账号");
+          if (!validName(b.name)) throw new CpError(400, "name_invalid", "姓名须为 1–40 个字符");
+          const role = b.role === undefined ? "lawyer" : b.role;
+          if (role !== "admin" && role !== "partner" && role !== "lawyer" && role !== "assistant") throw new CpError(400, "role_invalid", "角色须为 admin / partner / lawyer / assistant");
+          if (role !== "admin" && !t.root_public_key_pem) throw new CpError(409, "founder_first", "这家律所还没有完成开通：先为负责人建管理员账号");
+          if (role === "admin" && !t.root_public_key_pem && [...accounts.values()].some((a) => a.tid === t.tid && a.role === "admin")) throw new CpError(409, "founder_exists", "这家律所已有创始管理员账号");
+          const a: AccountRecord = { aid: newId("acc"), email, name: String(b.name).trim(), status: "active", disabled_reason: null, tid: t.tid, member_slug: newMemberSlug(t, email), role, pw: null, pw_changed_at: null, created_at: iso(), created_via: "ops", last_login_at: null, failed: { count: 0, first_at: null, locked_until: null }, device_limit: null, quota_limit: null };
+          accounts.set(a.aid, a);
+          indexAccount(a);
+          const c = issueAccountCode(a, "setup", 24 * 3600_000, who.operator);
+          accountAudit(a, "account.create", who);
+          return { ok: true, account: accountRow(a), setup_code: formatOneTimeCode(c.code), expires_at: c.expires_at };
+        },
+      };
+    const acm = /^\/v1\/ops\/accounts\/(acc_[A-Za-z0-9_-]{16})(?:\/([a-z-]+(?:\/[a-z-]+)?))?$/.exec(p);
+    if (acm) {
+      const aid = acm[1]!;
+      const sub = acm[2] ?? "";
+      const tgt = () => aid;
+      const tidOf = () => accounts.get(aid)?.tid ?? null;
+      if (method === "GET" && sub === "")
+        return {
+          perm: "tenant.read",
+          action: "account.read",
+          tid: tidOf,
+          target: tgt,
+          run: () => {
+            const a = accountOf(aid);
+            const t = tenants.get(a.tid);
+            return {
+              account: accountRow(a),
+              devices: t ? accountDevices(a).map((d) => deviceRow(t, d)) : [],
+              sessions: [...sessions.values()].filter((x) => x.aid === aid && sessionLive(x, now())).map((x) => sessionView(x, null)),
+              usage: t ? accountUsage(a) : null,
+              alerts: alerts.filter((x) => x.aid === aid).slice(0, 50).map(alertView),
+            };
+          },
+        };
+      if (method !== "POST") return null;
+      const w = (action: string, run: (a: AccountRecord, b: Record<string, unknown>, who: OpsAuthorized) => unknown): OpsSpec => ({ perm: "account.manage", action, tid: tidOf, target: tgt, run: (b, who) => run(accountOf(aid), b, who) });
+      if (sub === "disable")
+        return w("account.disable", (a, b, who) => {
+          if (b.reason !== undefined && (typeof b.reason !== "string" || b.reason.length > 100)) throw new CpError(400, "reason_invalid", "原因至多 100 个字符");
+          a.status = "disabled";
+          a.disabled_reason = typeof b.reason === "string" ? b.reason : null;
+          const n = revokeSessions((x) => x.aid === a.aid, "account_disabled");
+          feedVersion += 1;
+          accountAudit(a, "account.disable", who);
+          return { ok: true, sessions_revoked: n, account: accountRow(a) };
+        });
+      if (sub === "enable")
+        return w("account.enable", (a, _b, who) => {
+          a.status = "active";
+          a.disabled_reason = null;
+          a.failed = { count: 0, first_at: null, locked_until: null };
+          feedVersion += 1;
+          accountAudit(a, "account.enable", who);
+          return { ok: true, account: accountRow(a) };
+        });
+      if (sub === "reset-code")
+        return w("account.reset_code", (a, _b, who) => {
+          const c = issueAccountCode(a, a.pw ? "reset" : "setup", (a.pw ? 30 * 60_000 : 24 * 3600_000), who.operator);
+          accountAudit(a, "account.reset_code", who);
+          return { ok: true, reset_code: formatOneTimeCode(c.code), expires_at: c.expires_at, purpose: a.pw ? "reset" : "setup" };
+        });
+      if (sub === "sessions/revoke")
+        return w("account.sessions_revoke", (a, _b, who) => {
+          const n = revokeSessions((x) => x.aid === a.aid, "ops_revoked");
+          accountAudit(a, "account.sessions_revoke", who);
+          return { ok: true, revoked: n };
+        });
+      if (sub === "limits")
+        return w("account.limits", (a, b, who) => {
+          const t = tenantOf(a.tid);
+          const unit = planFor(t).quota_unit;
+          if ("quota_limit" in b) {
+            const v = b.quota_limit;
+            if (v !== null && !(typeof v === "number" && Number.isFinite(v) && v > 0 && v <= 1e13 && (unit === "cny" || Number.isSafeInteger(v)))) throw new CpError(400, "quota_limit_invalid", unit === "tokens" ? "个人上限须为正整数 token，或不设（null）" : "个人上限须为正数（元），或不设（null）");
+            a.quota_limit = v as number | null;
+          }
+          if ("device_limit" in b) {
+            const v = b.device_limit;
+            if (v !== null && !(Number.isSafeInteger(v) && (v as number) >= 1 && (v as number) <= MAX_DEVICES_PER_ACCOUNT)) throw new CpError(400, "device_limit_invalid", `设备数须为 1–${MAX_DEVICES_PER_ACCOUNT}，或按套餐（null）`);
+            a.device_limit = v as number | null;
+          }
+          accountAudit(a, "account.limits", who);
+          return { ok: true, account: accountRow(a), unit };
+        });
+      return null;
+    }
+    // ─── 设备 ───
+    if (method === "GET" && p === "/v1/ops/devices")
+      return read("device.list", () => {
+        const tid = qs.get("tid");
+        const status = qs.get("status");
+        const flag = qs.get("flag");
+        let list = [...tenants.values()].filter((t) => !tid || t.tid === tid).flatMap((t) => [...t.devices.values()].map((d) => deviceRow(t, d)));
+        if (status === "active") list = list.filter((d) => !d.revoked_at);
+        if (status === "revoked") list = list.filter((d) => d.revoked_at);
+        if (flag) list = list.filter((d) => d.flags.includes(flag));
+        return { devices: list.sort((x, y) => (y.last_seen_on ?? "").localeCompare(x.last_seen_on ?? "")).slice(0, 2000) };
+      });
+    // ─── 模型与路由 ───
+    if (method === "GET" && p === "/v1/ops/routing") return read("routing.read", () => routingView(routing, routingKeyId));
+    const rp = /^\/v1\/ops\/routing\/providers\/([a-z][a-z0-9-]{1,31})(\/probe)?$/.exec(p);
+    if (rp) {
+      const id = rp[1]!;
+      if (method === "PUT" && !rp[2]) return { perm: "route.manage", action: "routing.provider_upsert", tid: none, target: () => id, run: (b, who) => ({ ok: true, created: upsertProvider(routing, id, b, now(), who.operator, routingKeyId), routing: routingView(routing, routingKeyId) }) };
+      if (method === "DELETE" && !rp[2]) return { perm: "route.manage", action: "routing.provider_delete", tid: none, target: () => id, run: (_b, who) => (deleteProvider(routing, id, now(), who.operator), { ok: true, routing: routingView(routing, routingKeyId) }) };
+      if (method === "POST" && rp[2]) return { perm: "route.manage", action: "routing.probe", tid: none, target: () => id, run: () => ({ ok: true, probe_requested_at: requestProbe(routing, id, now()) }) };
+      return null;
+    }
+    const rm = /^\/v1\/ops\/routing\/models\/([^/]{1,160})$/.exec(p);
+    if (rm) {
+      let alias = "";
+      try {
+        alias = decodeURIComponent(rm[1]!);
+      } catch {
+        alias = "";
+      }
+      if (method === "PUT") return { perm: "route.manage", action: "routing.model_upsert", tid: none, target: () => alias, run: (b, who) => ({ ok: true, created: upsertModel(routing, alias, b, now(), who.operator), routing: routingView(routing, routingKeyId) }) };
+      if (method === "DELETE") return { perm: "route.manage", action: "routing.model_delete", tid: none, target: () => alias, run: (_b, who) => (deleteModel(routing, alias, now(), who.operator), { ok: true, routing: routingView(routing, routingKeyId) }) };
+      return null;
+    }
+    if (method === "PUT" && p === "/v1/ops/routing/prices") return { perm: "route.manage", action: "routing.prices", tid: none, target: none, run: (b, who) => ({ ok: true, version: setPrices(routing, b.items, now(), who.operator), routing: routingView(routing, routingKeyId) }) };
+    // ─── 用量 ───
+    if (method === "GET" && p === "/v1/ops/usage/summary")
+      return read("usage.summary", () => {
+        const f = usageQuery(qs, 200);
+        const group = qs.get("group") ?? "day";
+        if (!["day", "model", "tenant", "account"].includes(group)) throw new CpError(400, "group_invalid", "group 须为 day / model / tenant / account");
+        const out = (key: string, label: string, a: Agg) => ({ key, label, requests: a.requests, tokens_in: a.tokens_in, tokens_cached: a.tokens_cached, tokens_out: a.tokens_out, value_cny: cny(a.value_micro), cost_cny: cny(a.cost_micro), errors: a.errors, estimated: a.estimated, unpriced: a.unpriced });
+        let rows: ReturnType<typeof out>[] = [];
+        const tidF = f.tid ?? null;
+        if (f.aid) {
+          const a = accountOf(f.aid);
+          const uid = uidOfAccount(a);
+          rows = group === "day" ? lastDaysBetween(f.from, f.to).map((day) => out(day, day, book.member(a.tid, uid, day, day))) : [out(a.aid, a.email, book.member(a.tid, uid, f.from, f.to))];
+        } else if (group === "day") {
+          const d = book.daily(tidF, f.from, f.to);
+          rows = lastDaysBetween(f.from, f.to).map((day) => out(day, day, d.get(day) ?? emptyAgg()));
+        } else if (group === "model") {
+          const m = new Map<string, Agg>();
+          for (const t of tenants.values()) if (!tidF || t.tid === tidF) for (const [alias, a] of book.group("model", t.tid, f.from, f.to)) addAgg(m.get(alias) ?? (m.set(alias, emptyAgg()), m.get(alias)!), a);
+          rows = [...m].map(([alias, a]) => out(alias, routing.models.find((x) => x.alias === alias)?.label ?? alias, a));
+        } else if (group === "tenant") {
+          rows = [...book.group("tenant", tidF, f.from, f.to)].map(([tid, a]) => out(tid, tenants.get(tid)?.name ?? tid.replace(/^ten_/, ""), a));
+        } else {
+          rows = [...book.group("member", tidF, f.from, f.to)].map(([k, a]) => {
+            const [tid, uid] = k.split("\u0000") as [string, string];
+            const acc = uid ? accountOfMember(tid, uid) : undefined;
+            return out(acc?.aid ?? k, acc?.email ?? uid ?? "（无账号）", a);
+          });
+        }
+        if (group !== "day") rows.sort((x, y) => y.tokens_in + y.tokens_out - (x.tokens_in + x.tokens_out));
+        const sum = emptyAgg();
+        for (const r of rows) addAgg(sum, { requests: r.requests, tokens_in: r.tokens_in, tokens_cached: r.tokens_cached, tokens_out: r.tokens_out, value_micro: Math.round(r.value_cny * 1e6), cost_micro: Math.round(r.cost_cny * 1e6), errors: r.errors, estimated: r.estimated, unpriced: r.unpriced, uncosted: 0 });
+        return { from: f.from, to: f.to, group, rows, totals: out("total", "合计", sum) };
+      });
+    // 历史用量补录（主文 §4.6）：升级前网关预写日志里的 settle 行（有上游给的真实 token 数）→ 账本行，按请求编号去重；
+    // clear_legacy = 运营确认已交齐全部网关实例本期的日志，清掉该律所本期“旧口径冻结比例”，改按补录的真实用量算
+    if (method === "POST" && p === "/v1/ops/usage/backfill")
+      return {
+        perm: "plan.manage",
+        action: "usage.backfill",
+        tid: (b) => (typeof b.tid === "string" ? b.tid : null),
+        target: none,
+        run: (b) => {
+          const t = tenantOf(String(b.tid ?? ""));
+          const { q, ctx } = qOf(t);
+          if (!Array.isArray(b.rows) || b.rows.length > 2000) throw new CpError(400, "rows_invalid", "每次至多 2000 行");
+          const seatUid = new Map([...t.seatsByUser.values()].map((x) => [x.sid, x.uid]));
+          const rows: UsageRow[] = [];
+          let skipped = 0;
+          for (const raw of b.rows as Record<string, any>[]) {
+            // 旧格式（第 43 批及以前）：kind=settle、requestId、sid、model、status、inputTokens/outputTokens/cachedTokens、reason
+            if (!raw || raw.kind !== "settle" || raw.tid !== t.tid || typeof raw.requestId !== "string" || raw.record) {
+              skipped += 1;
+              continue;
+            }
+            const has = Number.isSafeInteger(raw.inputTokens) && raw.inputTokens >= 0;
+            const uid = typeof raw.sid === "string" ? (seatUid.get(raw.sid) ?? null) : null;
+            const r = rowOf(t, { request_id: raw.requestId, client_request_id: raw.clientRequestId ?? null, at: raw.at, sid: raw.sid, uid, alias: raw.model, upstream_model: raw.upstreamModel ?? null, status: raw.status, outcome: has ? "ok" : /timeout/.test(String(raw.reason ?? "")) ? "timeout" : "upstream_error", usage: has ? { input: raw.inputTokens, cached: raw.cachedTokens ?? 0, output: raw.outputTokens ?? 0, reasoning: 0 } : null, usage_source: has ? "upstream" : "none", latency_ms: raw.latencyMs ?? null, finish_reason: raw.finishReason ?? null }, ctx.plan);
+            rows.push({ ...r, backfill: true });
+          }
+          const fresh = book.append(rows.filter((r) => !book.has(r.request_id)));
+          let cleared = false;
+          if (b.clear_legacy === true && q.legacy) {
+            q.legacy = null;
+            cleared = true;
+          }
+          return { ok: true, accepted: fresh.length, duplicates: rows.length - fresh.length, skipped, legacy_cleared: cleared, tenant: tenantRow(t) };
+        },
+      };
+    if (method === "GET" && p === "/v1/ops/usage/records")
+      return read("usage.records", () => {
+        const r = book.query(usageQuery(qs, 200));
+        return { records: r.rows.map(usageRowView), next: r.next };
+      });
+    if (method === "GET" && p === "/v1/ops/usage/records.csv")
+      return read("usage.export", (): CsvOut => {
+        const f = usageQuery(qs, 200);
+        const rows: UsageRow[] = [];
+        let cursor: string | undefined;
+        for (let i = 0; i < 500 && rows.length < 100_000; i++) {
+          const r = book.query({ ...f, limit: 200, ...(cursor ? { cursor } : {}) });
+          rows.push(...r.rows);
+          if (!r.next) break;
+          cursor = r.next;
+        }
+        const head = ["时间", "请求编号", "客户端请求编号", "上游请求编号", "律所", "账号", "成员", "设备", "模型别名", "上游", "上游型号", "结果", "状态码", "输入token", "缓存token", "输出token", "用量来源", "售价金额(元)", "成本(元)", "价目版本", "耗时(毫秒)", "尝试次数"];
+        return { __csv: csv(head, rows.map((r) => [r.at, r.request_id, r.client_request_id, r.upstream_request_id, tenants.get(r.tid)?.name ?? r.tid, r.aid ? (accounts.get(r.aid)?.email ?? r.aid) : "", r.uid, r.dev, r.alias, r.provider, r.upstream_model, r.outcome, r.status, r.usage?.input ?? "", r.usage?.cached ?? "", r.usage?.output ?? "", r.usage_source, r.value_micro === null ? "" : cny(r.value_micro), r.cost_micro === null ? "" : cny(r.cost_micro), r.price_version, r.latency_ms, r.attempts.length])), filename: `usage-${f.from}-${f.to}.csv` };
+      });
+    // ─── 计费 ───
+    if (method === "GET" && (p === "/v1/ops/billing" || p === "/v1/ops/billing.csv")) {
+      const month = qs.get("period") ?? periodBounds("month", now()).key;
+      if (!/^\d{4}-\d{2}$/.test(month)) throw new CpError(400, "period_invalid", "period 须为 YYYY-MM");
+      return read(p.endsWith(".csv") ? "billing.export" : "billing.read", () => {
+        const rows = [...tenants.values()].map((t) => billRow(t, month)).sort((x, y) => (y.revenue_cny ?? 0) - (x.revenue_cny ?? 0) || y.requests - x.requests);
+        const add = (k: keyof (typeof rows)[number]) => rows.reduce<number | null>((s2, r) => (typeof r[k] === "number" ? (s2 ?? 0) + (r[k] as number) : s2), null);
+        const totals = { seat_fee_cny: add("seat_fee_cny"), boost_fee_cny: add("boost_fee_cny"), revenue_cny: add("revenue_cny"), value_cny: add("value_cny"), cost_cny: add("cost_cny"), margin_cny: add("margin_cny"), requests: add("requests"), tokens: add("tokens") };
+        if (p.endsWith(".csv")) return { __csv: csv(["律所", "租户编号", "套餐", "席位", "席位单价(元)", "席位费(元)", "加量(%)", "加量费(元)", "应收(元)", "用量价值(元)", "成本(元)", "毛利(元)", "请求数", "token"], rows.map((r) => [r.name, r.tid, r.plan.label, r.seats, r.seat_price_cny, r.seat_fee_cny, r.boost_pct, r.boost_fee_cny, r.revenue_cny, r.value_cny, r.cost_cny, r.margin_cny, r.requests, r.tokens])), filename: `billing-${month}.csv` } satisfies CsvOut;
+        return { period: month, priced: catalog.plans.some((x) => x.seat_price_cny !== null), rows, totals };
+      });
+    }
+    // ─── 系统 ───
+    if (method === "GET" && p === "/v1/ops/system")
+      return read("system.read", () => {
+        const r = o.opsInfo?.roster() ?? null;
+        return { deployment: o.opsInfo?.deployment ?? null, server_version: o.serverVersion ?? null, started_at: startedAt, usage_book: { rows_loaded: book.size, load_errors: book.loadErrors }, roster: r ? { version: r.version, expires_at: r.expires_at, operators: r.operators.map((x) => ({ id: x.id, perms: x.perms, keys: x.keys.map((k) => k.kid), revoked: !!x.revoked_at })) } : null, client_versions: cpMetrics().client_versions, quota_counters: { ...quotaCounts } };
+      });
+    // ─── 客户（律所） ───
     if (method === "POST" && p === "/v1/ops/tenants")
       return {
         perm: "tenant.manage",
         action: "tenant.create",
         tid: (b) => (typeof b.tid === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(b.tid) ? b.tid : null),
         target: none,
-        run: (b, who) => {
+        run: (b) => {
           const tid = typeof b.tid === "string" ? b.tid : "";
           // 经运营接口开通的租户一律要求开通码（不能再开“知道租户编号即可抢先登记律所根”的口子）
           if (!firmSlugOf(tid)) throw new CpError(400, "tid_not_activatable", "租户编号须为 ten_<律所标识>");
@@ -1137,84 +2079,56 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           if (b.edition !== "team" && b.edition !== "firm") throw new CpError(400, "edition_invalid", "版本须为 team 或 firm");
           const seats = intIn(b.seats, 1, 10_000, "seats_invalid", "席位数");
           const subscriptionDays = b.subscription_days === undefined ? 365 : intIn(b.subscription_days, 1, 3650, "days_invalid", "订阅天数");
-          // 第 40 批取消点数：开通时不再注入点数（额度 = 席位 × 套餐）；旧控制台带 points 的请求明确拒绝，免得以为加了量
           if (b.points !== undefined) throw new CpError(400, "points_removed", "已取消点数：额度按“席位 × 套餐”计，加量请用加量包（百分比）");
-          if (b.plan !== undefined && (typeof b.plan !== "string" || !billing.plans.some((x) => x.id === b.plan))) throw new CpError(400, "plan_unknown", "套餐不在目录里");
-          if (b.kimi_required !== undefined && typeof b.kimi_required !== "boolean") throw new CpError(400, "kimi_required_invalid", "kimi_required 须为 true 或 false");
+          if (b.plan !== undefined && (typeof b.plan !== "string" || !catalog.plans.some((x) => x.id === b.plan))) throw new CpError(400, "plan_unknown", "套餐不在目录里");
+          if (b.accounts_required !== undefined && typeof b.accounts_required !== "boolean") throw new CpError(400, "accounts_required_invalid", "accounts_required 须为 true 或 false");
           if (b.name !== undefined && typeof b.name !== "string") throw new CpError(400, "tenant_name_invalid", "律所名称须为 1–40 个字符");
-          const t = ops.createTenant({ tid, edition: b.edition, seats, subscriptionDays, ...(typeof b.plan === "string" ? { plan: b.plan } : {}), ...(typeof b.name === "string" ? { name: b.name } : {}), activationRequired: true, kimiRequired: b.kimi_required === true });
-          return { ok: true, tenant: tenantSummary(t) };
+          const t = ops.createTenant({ tid, edition: b.edition, seats, subscriptionDays, ...(typeof b.plan === "string" ? { plan: b.plan } : {}), ...(typeof b.name === "string" ? { name: b.name } : {}), activationRequired: true, accountsRequired: b.accounts_required !== false });
+          return { ok: true, tenant: tenantRow(t) };
         },
       };
-    // 套餐目录（第 40 批）：控制台的开通与改套餐下拉框、账单口径
-    if (method === "GET" && p === "/v1/ops/plans")
-      return {
-        perm: "tenant.read",
-        action: "plan.list",
-        tid: none,
-        target: none,
-        run: () => ({
-          plans: billing.plans.map((x) => ({ id: x.id, label: x.label, note: x.note ?? null, seat_price_cny: x.seat_price_cny ?? null })),
-          default_plan: billing.default_plan,
-          boost_price_factor: billing.boost_price_factor ?? 1,
-          has_unit_cost: billing.unit_cost_cny != null,
-          kimi_account: kimiBroker !== null,
-        }),
-      };
-    // 运营控制台（第 37 批）：租户列表与按租户的用量明细，只读（tenant.read）。同 tenantSummary：不给成员姓名与标识，席位只给席位编号
-    if (method === "GET" && p === "/v1/ops/tenants")
-      return {
-        perm: "tenant.read",
-        action: "tenant.list",
-        tid: none,
-        target: none,
-        run: () => ({ tenants: [...tenants.values()].sort((a, b) => a.created_at.localeCompare(b.created_at)).map(tenantSummary) }),
-      };
+    if (method === "GET" && p === "/v1/ops/tenants") return read("tenant.list", () => ({ tenants: [...tenants.values()].sort((a, b) => b.created_at.localeCompare(a.created_at)).map(tenantRow) }));
     const m = /^\/v1\/ops\/tenants\/([A-Za-z0-9_-]{1,64})(?:\/(.+))?$/.exec(p);
     if (!m) return null;
     const tid = m[1]!;
     const rest = m[2] ?? "";
     const at = () => tid;
-    if (method === "GET" && rest === "") return { perm: "tenant.read", action: "tenant.read", tid: at, target: none, run: () => ({ tenant: tenantSummary(tenantOf(tid)) }) };
-    if (method === "GET" && rest === "usage")
+    if (method === "GET" && rest === "")
       return {
         perm: "tenant.read",
-        action: "tenant.usage",
+        action: "tenant.read",
         tid: at,
         target: none,
         run: () => {
           const t = tenantOf(tid);
-          const q = qOf(t);
-          const v = quotaView(q, now(), { detail: true, seats: t.seats, seatOwner: () => null, ownSid: null });
-          const seats = new Map([...t.seatsByUser.values()].map((s) => [s.sid, s]));
-          const bySid = new Map([...t.seatsByUser.values()].map((s) => [s.sid, t.kimiAccounts.get(s.uid) ?? null]));
-          const leases = Object.values(q.leases);
-          const share = t.seats > 0 ? totalOf(q) / t.seats : totalOf(q);
-          const usedSids = new Set(Object.keys(q.period_by_seat));
-          const kimiOf = (sid: string) => {
-            const k = bySid.get(sid);
-            return k ? { ref: k.ref, nickname: k.nickname, phone_tail: k.phone_tail, level: k.level, bound_at: k.bound_at } : null;
+          const members = new Map<string, { uid: string; member_slug: string; role: string; aid: string | null; email: string | null; name: string | null; seat: { sid: string; revoked_at: string | null } | null; devices: number }>();
+          const ensure = (uid: string, role: string) => {
+            if (!members.has(uid)) {
+              const a = accountOfMember(t.tid, uid);
+              const s2 = t.seatsByUser.get(uid);
+              members.set(uid, { uid, member_slug: uid.replace(`usr_${t.tid.slice(4)}_`, ""), role, aid: a?.aid ?? null, email: a?.email ?? null, name: a?.name ?? null, seat: s2 ? { sid: s2.sid, revoked_at: s2.revoked_at } : null, devices: 0 });
+            }
+            return members.get(uid)!;
           };
+          for (const d of t.devices.values()) if (!d.revoked_at) ensure(d.cert.memberId, d.cert.role).devices += 1;
+          for (const a of accounts.values()) if (a.tid === t.tid) ensure(uidOfAccount(a), a.role);
+          for (const s2 of t.seatsByUser.values()) ensure(s2.uid, "lawyer");
+          // 没有账号的成员（第 44 批之前入组的）不外露成员标识（复核 RA10B-05：可能是姓名拼音），只给席位编号
+          const memberList = [...members.values()].map((x) => (x.aid ? x : { ...x, uid: null, member_slug: null }));
           return {
-            tid: t.tid,
-            issued_at: iso(),
-            ...opsQuota(t),
-            cap_set_at: q.cap_set_at,
-            // 律所管理员设的上限 cap_set_by 是设备编号（含成员标识）：对外只给种类
-            cap_set_by: q.cap_set_by === null ? null : issuerKind(q.cap_set_by),
-            boosts: q.boosts.map((b) => ({ at: b.at, pct: b.pct, by: b.by === null ? "ops" : issuerKind(b.by) })),
-            history: v.history,
-            // 本月按席位（席位编号是假名；只标在用或已收回、绑定的 Kimi 账号打码信息，不给成员姓名与编号）。没有用量的在用席位也列出
-            by_seat: [
-              ...Object.entries(q.period_by_seat).map(([sid, u]) => ({ sid, status: seats.get(sid)?.revoked_at ? "revoked" : seats.has(sid) ? "active" : "unknown", used_ratio: ratio(u.points, share), firm_ratio: ratio(u.points, totalOf(q)), requests: u.requests, kimi: kimiOf(sid) })),
-              ...[...seats.values()].filter((s) => !usedSids.has(s.sid) && !s.revoked_at).map((s) => ({ sid: s.sid, status: "active", used_ratio: 0, firm_ratio: 0, requests: 0, kimi: kimiOf(s.sid) })),
-            ].sort((a, b) => b.firm_ratio - a.firm_ratio),
-            seats: { total: t.seats, assigned: [...seats.values()].filter((s) => !s.revoked_at).length },
-            leases: { open: leases.filter((l) => l.closed_at === null).length, unreconciled: leases.filter((l) => l.unreconciled).length },
-            kimi: { required: t.kimi_required === true, enabled: kimiBroker !== null },
+            tenant: { ...tenantRow(t), activation_required: t.activation_required === true },
+            members: memberList,
+            devices: [...t.devices.values()].map((d) => deviceRow(t, d)),
+            // 只列创始开通码（运营的事）；律所管理员发的成员邀请码只给计数（复核 RA10B-06）
+            activation_codes: [...t.activations.values()].filter((r) => r.kind === "founder" && !r.via_account).map((r) => ({ id: r.id, kind: r.kind, status: r.status, created_at: r.created_at, expires_at: r.expires_at, issued_by: issuerKind(r.created_by) })),
+            member_invitations: { total: [...t.activations.values()].filter((r) => r.kind === "member" && !r.via_account).length, open: [...t.activations.values()].filter((r) => r.kind === "member" && !r.via_account && r.status === "open").length },
+            usage: tenantUsage(t),
+            bill: billRow(t, periodBounds("month", now()).key),
+            license: { issued_at: t.license.issued_at, expires_at: t.license.expires_at },
           };
         },
       };
+    if (method === "GET" && rest === "usage") return { perm: "tenant.read", action: "tenant.usage", tid: at, target: none, run: () => ({ tid, issued_at: iso(), ...tenantUsage(tenantOf(tid)) }) };
     if (method !== "POST") return null;
     if (rest === "activation-codes")
       return {
@@ -1223,11 +2137,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         tid: at,
         target: none,
         run: (b) => {
-          if (typeof b.slug !== "string") throw new CpError(400, "member_slug_invalid", "成员标识只允许小写字母、数字、下划线与连字符");
+          const slug = b.slug ?? b.member_slug ?? "admin";
+          if (typeof slug !== "string") throw new CpError(400, "member_slug_invalid", "成员标识只允许小写字母、数字、下划线与连字符");
           if (b.name !== undefined && typeof b.name !== "string") throw new CpError(400, "member_name_invalid", "成员姓名须为 1–40 个字符");
           const ttlHours = b.ttl_hours === undefined ? undefined : intIn(b.ttl_hours, 1, 14 * 24, "ttl_invalid", "有效小时数");
           tenantOf(tid);
-          return { ok: true, ...ops.issueActivationCode(tid, { member: { slug: b.slug, ...(typeof b.name === "string" ? { name: b.name } : {}) }, ...(ttlHours !== undefined ? { ttlHours } : {}) }) };
+          return { ok: true, ...ops.issueActivationCode(tid, { member: { slug, ...(typeof b.name === "string" ? { name: b.name } : {}) }, ...(ttlHours !== undefined ? { ttlHours } : {}) }) };
         },
       };
     const ac = /^activation-codes\/(act_[A-Za-z0-9_-]{16})\/revoke$/.exec(rest);
@@ -1247,7 +2162,19 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (rest === "renew") return { perm: "tenant.manage", action: "license.renew", tid: at, target: none, run: (b) => ({ ok: true, license: ops.renewLicense(tid, intIn(b.days, 1, 3650, "days_invalid", "续订天数")) }) };
     if (rest === "terminate") return { perm: "tenant.terminate", action: "license.terminate", tid: at, target: none, run: () => ({ ok: true, license: ops.terminateLicense(tid) }) };
     if (rest === "points") return { perm: "quota.manage", action: "quota.grant", tid: at, target: none, run: () => { throw new CpError(410, "points_removed", "已取消点数：请用加量包（按套餐额度的百分比）"); } };
-    if (rest === "boost") return { perm: "quota.manage", action: "quota.boost", tid: at, target: none, run: (b) => { ops.boostQuota(tid, b.pct as number); return { ok: true, quota: opsQuota(tenantOf(tid)) }; } };
+    if (rest === "boost") return { perm: "quota.manage", action: "quota.boost", tid: at, target: none, run: (b) => { ops.boostQuota(tid, b.pct as number); return { ok: true, tenant: tenantRow(tenantOf(tid)) }; } };
+    if (rest === "accounts-required")
+      return {
+        perm: "tenant.manage",
+        action: "accounts.policy",
+        tid: at,
+        target: none,
+        run: (b) => {
+          if (typeof b.required !== "boolean") throw new CpError(400, "accounts_required_invalid", "required 须为 true 或 false");
+          ops.setAccountsRequired(tid, b.required);
+          return { ok: true, tenant: tenantRow(tenantOf(tid)) };
+        },
+      };
     if (rest === "plan")
       return {
         perm: "tenant.manage",
@@ -1259,24 +2186,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           if (b.plan !== undefined && typeof b.plan !== "string") throw new CpError(400, "plan_unknown", "套餐不在目录里");
           const seats = b.seats === undefined ? undefined : intIn(b.seats, 1, 10_000, "seats_invalid", "席位数");
           ops.setPlan(tid, { ...(typeof b.plan === "string" ? { plan: b.plan } : {}), ...(seats !== undefined ? { seats } : {}) });
-          return { ok: true, tenant: tenantSummary(tenantOf(tid)) };
+          return { ok: true, tenant: tenantRow(tenantOf(tid)) };
         },
       };
-    if (rest === "kimi-policy")
-      return {
-        perm: "tenant.manage",
-        action: "kimi.policy",
-        tid: at,
-        target: none,
-        run: (b) => {
-          if (typeof b.required !== "boolean") throw new CpError(400, "kimi_required_invalid", "required 须为 true 或 false");
-          if (b.required && !kimiBroker) throw new CpError(409, "kimi_account_disabled", "控制面没有配置 Kimi 账号对接，不能要求绑定");
-          ops.setKimiRequired(tid, b.required);
-          return { ok: true };
-        },
-      };
-    const ku = /^kimi-accounts\/(kimi_[0-9a-f]{20})\/unbind$/.exec(rest);
-    if (ku) return { perm: "device.revoke", action: "kimi.unbind", tid: at, target: () => ku[1]!, run: () => (ops.unbindKimi(tid, ku[1]!), { ok: true }) };
     if (rest === "cap")
       return {
         perm: "quota.cap",
@@ -1287,7 +2199,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           if (!("cap_pct" in b)) throw new CpError(400, "cap_invalid", "须给出 cap_pct（1–100 的百分比，或 null 表示不设上限）");
           // 运营代设上限只能调低（复核 RA10A-17）：调高或取消律所已设的上限是放宽律所的管控，须律所管理员自己在客户端操作
           const cur = tenantOf(tid).quota.cap_pct;
-          if (cur !== null && (b.cap_pct === null || (typeof b.cap_pct === "number" && b.cap_pct > cur))) throw new CpError(409, "cap_raise_by_firm_only", "调高或取消月度上限须由律所管理员操作");
+          if (cur !== null && (b.cap_pct === null || (typeof b.cap_pct === "number" && b.cap_pct > cur))) throw new CpError(409, "cap_raise_by_firm_only", "调高或取消上限须由律所管理员操作");
           ops.setQuotaCap(tid, b.cap_pct as number | null);
           return { ok: true };
         },
@@ -1302,6 +2214,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         run: (b, who) => {
           const t = tenantOf(tid);
           ops.revokeDevice(tid, dv[1]!, { ...(b.cert !== undefined ? { cert: b.cert } : {}), by: who.operator });
+          revokeSessions((x) => x.device_id === dv[1] && accounts.get(x.aid)?.tid === tid, "device_revoked");
           return { ok: true, directory_version: t.directoryVersion };
         },
       };
@@ -1330,12 +2243,24 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     return null;
   };
+  const lastDaysBetween = (from: string, to: string): string[] => {
+    const out: string[] = [];
+    for (let t = Date.parse(`${from}T00:00:00+08:00`); out.length < 400; t += DAY_MS) {
+      const d = dayOf(t);
+      if (d > to) break;
+      out.push(d);
+    }
+    return out;
+  };
   const OPS_AUTH_MESSAGE: Record<number, string> = { 401: "运营凭据无效、已吊销或已过期", 403: "没有这项运营权限", 503: "运营名册暂不可用（运营接口暂停，业务不受影响）" };
   const opsRoute = (req: IncomingMessage, res: ServerResponse, method: string, path: string, p: string, raw: string): void => {
     if (!o.opsGuard) throw new CpError(404, "not_found", "没有这条路由");
-    // 运营路径按请求行原样匹配（不认查询串、点段与编码）：生产入口按原样路径判断来源网段，规范化后才落到运营路由的写法一律不认
-    if (path !== p) throw new CpError(404, "not_found", "没有这条路由");
-    const spec = opsSpec(method, p);
+    // 运营路径按请求行原样匹配（不认点段与编码）：生产入口按原样路径判断来源网段，规范化后才落到运营路由的写法一律不认。
+    // 第 44 批：GET 可带查询串（筛选与分页）；签名覆盖完整路径（含查询串，原样）
+    const qi = path.indexOf("?");
+    const pathOnly = qi < 0 ? path : path.slice(0, qi);
+    if (pathOnly !== p || (qi >= 0 && method !== "GET")) throw new CpError(404, "not_found", "没有这条路由");
+    const spec = opsSpec(method, p, new URLSearchParams(qi < 0 ? "" : path.slice(qi + 1)));
     if (!spec) throw new CpError(404, "not_found", "没有这条路由");
     let who: OpsAuthorized;
     try {
@@ -1357,7 +2282,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       out = asOperator(who.operator, () => spec.run(b, who));
     } catch (e) {
       try {
-        opsAccess({ at: iso(), ...rec, result: `rejected:${e instanceof CpError || e instanceof QuotaError ? e.code : "error"}` });
+        opsAccess({ at: iso(), ...rec, result: `rejected:${e instanceof CpError || e instanceof QuotaError || e instanceof RoutingError || e instanceof PlanError ? e.code : "error"}` });
       } catch {
         // 结果补记不进去：“已请求”一条已在，运营审计流水另有结果
       }
@@ -1368,7 +2293,221 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     } catch {
       // 同上
     }
+    if (out && typeof out === "object" && "__csv" in (out as object)) {
+      const c = out as { __csv: string; filename: string };
+      persistNow();
+      res.writeHead(200, { "content-type": "text/csv; charset=utf-8", "content-length": Buffer.byteLength(c.__csv), "cache-control": "no-store", "content-disposition": `attachment; filename="${c.filename.replace(/[^A-Za-z0-9._-]/g, "_")}"` });
+      res.end(c.__csv);
+      return;
+    }
     send(res, 200, out);
+  };
+
+  // ─── 第 44 批：账号接口（/v1/auth/*；不需要设备身份，已激活设备登录时可带设备签名把会话绑到本机） ───
+  const authErr = (e: unknown): never => {
+    if (e instanceof AuthError) throw new CpError(e.status, e.code, e.message, e.extra);
+    throw e;
+  };
+  const accountMark = (res: ServerResponse, a: AccountRecord, action: string) => auditCtx.set(res, { entry: { tid: a.tid, actor: { kind: "account", id: a.aid }, action, target: a.aid }, written: false });
+  const authRoute = async (req: IncomingMessage, res: ServerResponse, method: string, path: string, p: string, raw: string): Promise<void> => {
+    const src = sourceOf(req);
+    if (method === "POST" && p === "/v1/auth/register") {
+      if (!authAllowed(src, "register", 10)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
+      const b = parseJson(raw);
+      const set = catalog.settings;
+      if (set.registration === "closed") throw new CpError(403, "registration_closed", "暂不开放注册，请联系中软开通");
+      const email = normalizeEmail(b.email);
+      if (!email) throw new CpError(400, "email_invalid", "邮箱格式不对");
+      if (!validName(b.name)) throw new CpError(400, "name_invalid", "请填写姓名（1–40 个字符）");
+      const probs = passwordProblems(b.password, email);
+      if (probs.length) throw new CpError(400, "password_weak", `密码需要：${probs.join("、")}`, { rules: probs });
+      if (accountByEmail.has(email)) throw new CpError(409, "email_taken", "这个邮箱已注册，请直接登录（忘记密码可找回）");
+      const name = String(b.name).trim();
+      let t: TenantRecord;
+      let role: AccountRecord["role"];
+      let slug: string;
+      let via: AccountRecord["created_via"];
+      let claim: Record<string, unknown> | null = null;
+      const hasCode = typeof b.code === "string" && b.code.trim() !== "";
+      if (hasCode) {
+        // 开通码（20 位）或邀请码的控制面段（邀请码的本机核对段留在客户端，用于入组申请的 HMAC）
+        const code = normalizeActivationCode(b.code);
+        const mac = code ? activationCodeMac(codePepper, code) : null;
+        const ix = mac ? codeIndex.get(mac) : undefined;
+        const ht = ix ? tenants.get(ix.tid) : undefined;
+        const r = ix && ht ? ht.activations.get(ix.id) : undefined;
+        if (!ht || !r || r.via_account || !sameHex(r.code_mac, mac!) || !redeemable(ht, r)) throw new CpError(400, "code_invalid", "开通码或邀请码不正确或已失效，请向发码人重新获取");
+        if (!licenseValid(ht)) throw new CpError(402, "license_expired", "律所订阅已到期，请联系中软开通");
+        t = ht;
+        slug = r.member.slug;
+        role = r.kind === "founder" ? "admin" : r.member.role;
+        if (r.kind === "founder" && (t.root_public_key_pem || [...accounts.values()].some((x) => x.tid === t.tid && x.role === "admin"))) throw new CpError(400, "code_invalid", "开通码或邀请码不正确或已失效，请向发码人重新获取");
+        if (accountOfMember(t.tid, `usr_${t.tid.slice(4)}_${slug}`)) throw new CpError(409, "member_taken", "这份邀请对应的成员已有账号：请用那个账号登录");
+        via = r.kind === "founder" ? "founder_code" : "invite_code";
+        const secret = newClaimSecret();
+        r.status = "claimed";
+        r.claim_hash = claimSecretHash(secret);
+        r.claimed_at = iso();
+        r.first_claimed_at = r.first_claimed_at ?? r.claimed_at;
+        r.redeem_count = (r.redeem_count ?? 0) + 1;
+        claim = { kind: r.kind, tid: t.tid, activation_id: r.id, claim_secret: secret, firm: orgOf(t.tid), member: { slug, name, role } };
+      } else {
+        if (set.registration === "code") throw new CpError(403, "code_required", "请输入律所发给你的开通码或邀请码");
+        const orgName = typeof b.org_name === "string" && validDisplayName(b.org_name.trim()) ? b.org_name.trim() : `${name}的工作室`.slice(0, 40);
+        t = viaRoute(() => ops.createTenant({ tid: newFirmTid(email), edition: "team", seats: set.trial_seats, subscriptionDays: set.trial_days, plan: set.trial_plan, name: orgName, activationRequired: true, accountsRequired: true, createdVia: "self" }));
+        role = "admin";
+        slug = newMemberSlug(t, email);
+        via = "self";
+      }
+      const a: AccountRecord = { aid: newId("acc"), email, name, status: "active", disabled_reason: null, tid: t.tid, member_slug: slug, role, pw: hashPassword(String(b.password)), pw_changed_at: iso(), created_at: iso(), created_via: via, last_login_at: iso(), failed: { count: 0, first_at: null, locked_until: null }, device_limit: null, quota_limit: null };
+      accounts.set(a.aid, a);
+      indexAccount(a);
+      const kind = clientInfo(b.client).platform === "web" ? "web" : "desktop";
+      const { token, rec } = newSession(a, kind, null, b.client);
+      const base = { tid: t.tid, firm: orgOf(t.tid), member: { slug, name, role }, devices_used: 0, device_limit: deviceLimitOf(a) };
+      const onb: Onboarding = claim
+        ? claim.kind === "founder"
+          ? { state: "needs_founder_setup", ...base, claim }
+          : { state: "needs_device_join", ...base, device_id: expectedJoinDeviceId(t.tid.slice(4), slug), claim, via: "invite_code" }
+        : onboardingOf(a, null);
+      accountMark(res, a, "account.register");
+      return send(res, 200, authResult(a, token, rec, onb));
+    }
+    if (method === "POST" && p === "/v1/auth/login") {
+      if (!authAllowed(src, "login", 20)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
+      const b = parseJson(raw);
+      const email = normalizeEmail(b.email);
+      const a = email ? accounts.get(accountByEmail.get(email) ?? "") : undefined;
+      if (a) {
+        const lk = locked(a, now());
+        if (lk) throw new CpError(423, "account_locked", `密码错误次数过多，请 ${Math.ceil(lk / 60)} 分钟后再试，或找回密码`, { retry_after_s: lk });
+      }
+      const ok = verifyPassword(b.password, a?.pw ?? null);
+      if (!a || !ok) {
+        if (a) {
+          noteFailure(a, now());
+          persistNow();
+        }
+        throw new CpError(401, "auth_invalid", a && !a.pw ? "这个账号还没有设置密码：请用管理员给你的设置码设置密码" : "邮箱或密码不正确");
+      }
+      if (a.status !== "active") throw new CpError(403, "account_disabled", "账号已停用，请联系管理员");
+      if (!tenants.has(a.tid)) throw new CpError(403, "account_disabled", "账号所属律所已不存在，请联系管理员");
+      const dev = await optionalDevice(req, path, raw);
+      if (dev && (!tenants.get(a.tid)!.devices.has(dev.cert.deviceId) || dev.cert.memberId !== uidOfAccount(a))) throw new CpError(409, "device_mismatch", "这台电脑已登记为本所另一位成员（或另一家律所）：请用那位成员的账号登录");
+      a.failed = { count: 0, first_at: null, locked_until: null };
+      a.last_login_at = iso();
+      const onb = onboardingOf(a, dev);
+      const kind = clientInfo(b.client).platform === "web" ? "web" : "desktop";
+      const { token, rec } = newSession(a, kind, dev ? dev.cert.deviceId : null, b.client);
+      accountMark(res, a, "account.login");
+      return send(res, 200, authResult(a, token, rec, onb));
+    }
+    if (method === "POST" && p === "/v1/auth/password-reset/request") {
+      if (!authAllowed(src, "reset", 5)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
+      const b = parseJson(raw);
+      const email = normalizeEmail(b.email);
+      const a = email ? accounts.get(accountByEmail.get(email) ?? "") : undefined;
+      if (a && o.mailer && a.status === "active") {
+        const c = issueAccountCode(a, "email_reset", 15 * 60_000, null);
+        persistNow();
+        try {
+          await o.mailer.send(a.email, "Kimi Work 法律版：找回密码验证码", `你的验证码是 ${c.code}，15 分钟内有效。如果不是你本人操作，请忽略这封邮件。`);
+        } catch {
+          // 发送失败不改变应答（不泄露账号是否存在）
+        }
+      }
+      return sendRaw(res, 202, { ok: true, channel: o.mailer ? "email" : "admin", message: o.mailer ? "如果这个邮箱已注册，验证码已发到邮箱（15 分钟内有效）" : "请联系律所管理员或中软客服获取重置码" });
+    }
+    if (method === "POST" && p === "/v1/auth/password-reset/confirm") {
+      if (!authAllowed(src, "reset-confirm", 10)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
+      const b = parseJson(raw);
+      const email = normalizeEmail(b.email);
+      const a = email ? accounts.get(accountByEmail.get(email) ?? "") : undefined;
+      const code = normalizeOneTimeCode(b.code);
+      const fail = () => new CpError(400, "code_invalid", "验证码或重置码不正确或已过期");
+      if (!a || !code) throw fail();
+      const live = [...codes.values()].filter((c) => c.aid === a.aid && !c.used_at && Date.parse(c.expires_at) > now() && c.attempts < 5);
+      const hit = live.find((c) => sameHexStr(c.mac, codeMac(accountPepper, c.purpose, a.aid, code)));
+      if (!hit) {
+        for (const c of live) c.attempts += 1;
+        persistNow();
+        throw fail();
+      }
+      const probs = passwordProblems(b.password, a.email);
+      if (probs.length) throw new CpError(400, "password_weak", `密码需要：${probs.join("、")}`, { rules: probs });
+      a.pw = hashPassword(String(b.password));
+      a.pw_changed_at = iso();
+      a.failed = { count: 0, first_at: null, locked_until: null };
+      hit.used_at = iso();
+      revokeSessions((x) => x.aid === a.aid, "password_reset");
+      accountMark(res, a, hit.purpose === "setup" ? "account.password_setup" : "account.password_reset");
+      return send(res, 200, { ok: true });
+    }
+    // 以下要求会话
+    let me: { s: SessionRecord; a: AccountRecord };
+    try {
+      me = sessionOf(req, true)!;
+    } catch (e) {
+      return authErr(e);
+    }
+    const { s, a } = me;
+    if (method === "GET" && p === "/v1/auth/me") {
+      const t = tenantOf(a.tid);
+      const devs = accountDevices(a);
+      const dev = s.device_id ? (t.devices.get(s.device_id) ?? null) : null;
+      return sendRaw(res, 200, {
+        ok: true,
+        account: { ...accountView(a, { org: orgOf(a.tid) }), device_limit: deviceLimitOf(a) },
+        session: sessionView(s, s.sid),
+        onboarding: dev && !dev.revoked_at ? { state: "ready", tid: t.tid, device_id: dev.cert.deviceId } : null,
+        devices: devs.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, revoked_at: d.revoked_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, current: d.cert.deviceId === s.device_id, session: liveSessionsOf(a.aid).some((x) => x.device_id === d.cert.deviceId) ? "active" : "none" })),
+        sessions: liveSessionsOf(a.aid).map((x) => sessionView(x, s.sid)),
+      });
+    }
+    if (method === "POST" && p === "/v1/auth/logout") {
+      revokeSessions((x) => x.sid === s.sid, "logout");
+      accountMark(res, a, "account.logout");
+      return send(res, 200, { ok: true });
+    }
+    if (method === "POST" && p === "/v1/auth/password") {
+      const b = parseJson(raw);
+      if (!verifyPassword(b.current, a.pw)) {
+        noteFailure(a, now());
+        persistNow();
+        throw new CpError(401, "auth_invalid", "当前密码不正确");
+      }
+      const probs = passwordProblems(b.next, a.email);
+      if (probs.length) throw new CpError(400, "password_weak", `密码需要：${probs.join("、")}`, { rules: probs });
+      a.pw = hashPassword(String(b.next));
+      a.pw_changed_at = iso();
+      const n = revokeSessions((x) => x.aid === a.aid && x.sid !== s.sid, "password_changed");
+      accountMark(res, a, "account.password_change");
+      return send(res, 200, { ok: true, other_sessions_revoked: n });
+    }
+    const sr = /^\/v1\/auth\/sessions\/(ses_[A-Za-z0-9_-]{16})\/revoke$/.exec(p);
+    if (method === "POST" && sr) {
+      const x = sessions.get(sr[1]!);
+      if (!x || x.aid !== a.aid) throw new CpError(404, "session_unknown", "没有这个登录");
+      revokeSessions((y) => y.sid === x.sid, "user_revoked");
+      accountMark(res, a, "account.session_revoke");
+      return send(res, 200, { ok: true });
+    }
+    const du = /^\/v1\/auth\/devices\/([A-Za-z0-9_-]{1,128})\/unbind$/.exec(p);
+    if (method === "POST" && du) {
+      const b = parseJson(raw);
+      if (!verifyPassword(b.password, a.pw)) {
+        noteFailure(a, now());
+        persistNow();
+        throw new CpError(401, "auth_invalid", "密码不正确");
+      }
+      const d = accountDevices(a).find((x) => x.cert.deviceId === du[1]);
+      if (!d) throw new CpError(404, "device_unknown", "这台设备不属于你的账号");
+      viaRoute(() => ops.revokeDevice(a.tid, d.cert.deviceId, { by: `account:${a.aid}` }));
+      revokeSessions((x) => x.aid === a.aid && x.device_id === d.cert.deviceId, "device_unbound");
+      auditCtx.set(res, { entry: { tid: a.tid, actor: { kind: "account", id: a.aid }, action: "device.revoke", target: d.cert.deviceId }, written: false });
+      return send(res, 200, { ok: true });
+    }
+    throw new CpError(404, "not_found", "没有这条路由");
   };
 
   async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -1379,6 +2518,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const raw = method === "GET" ? "" : await readBody(req);
 
     if (p === "/v1/ops" || p.startsWith("/v1/ops/")) return opsRoute(req, res, method, path, p, raw);
+    if (p.startsWith("/v1/auth/")) return authRoute(req, res, method, path, p, raw);
 
     // ─── 开通：律所根公钥入组（G0：创始设备持根私钥签名证明；生产为开通流程） ───
     if (method === "POST" && p === "/v1/enroll") {
@@ -1455,6 +2595,18 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           if (ctx) ctx.extra = [...(ctx.extra ?? []), seatEntry];
         }
       }
+      // 第 44 批：带了账号会话的登记把会话绑到这台设备（会话还没绑设备、账号就是证书上的成员）
+      if (req.headers["x-kwl-session"] !== undefined) {
+        try {
+          const me = sessionOf(req, true)!;
+          if (me.a.tid === t.tid && uidOfAccount(me.a) === cert.memberId && me.s.device_id === null) {
+            me.s.device_id = cert.deviceId;
+            feedVersion += 1;
+          }
+        } catch {
+          // 会话无效不影响登记本身（席位令牌那一步再要求登录）
+        }
+      }
       // 已登记、证书未变：每次同步都会来一次，登记本身不记；顺带分配了席位则只记席位分配
       if (!changed) {
         const ctx = auditCtx.get(res);
@@ -1508,10 +2660,16 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const encPub = String(b.enc_pub ?? "");
       if (!DEVICE_ID_PATTERN.test(deviceId)) throw new CpError(400, "device_id_invalid", "设备编号不合法");
       if (signPub.length > 4096 || encPub.length > 4096 || !keysOk(signPub, encPub)) throw new CpError(400, "public_key_invalid", "公钥格式不对");
-      // 设备编号只能是 dev_<律所>_<成员>（复核 A-02）；申请须带成员机用邀请码本机秘密段做的 HMAC（复核 A-01，管理员机核对）
-      if (deviceId !== expectedJoinDeviceId(firmSlugOf(t.tid) ?? "", rec.member.slug)) throw new CpError(400, "device_id_invalid", "设备编号不合法");
+      // 设备编号只能是 dev_<律所>_<成员>（复核 A-02）；申请须带成员机用邀请码本机秘密段做的 HMAC（复核 A-01，管理员机核对）。
+      // 第 44 批（D-186）：账号登录生成的新设备入组用预先分配的编号（第 2～9 台加 _D<n>），没有邀请码本机段 → 不带 HMAC，由批准方人工核对核对码
+      if (deviceId !== (rec.via_account ? rec.device_id : expectedJoinDeviceId(firmSlugOf(t.tid) ?? "", rec.member.slug))) throw new CpError(400, "device_id_invalid", "设备编号不合法");
       const jmac = String(b.mac ?? "");
-      if (!/^[0-9a-f]{64}$/.test(jmac)) throw new CpError(400, "join_mac_missing", "邀请码不完整（缺少本机核对段），请向管理员核对邀请码");
+      if (!rec.via_account && !/^[0-9a-f]{64}$/.test(jmac)) throw new CpError(400, "join_mac_missing", "邀请码不完整（缺少本机核对段），请向管理员核对邀请码");
+      if (rec.via_account) {
+        const acc = accounts.get(rec.via_account);
+        if (!acc || acc.status !== "active") throw new CpError(403, "claim_invalid", "开通凭据无效或已过期，请重新登录");
+        if (accountDevices(acc).filter((d) => !d.revoked_at).length >= deviceLimitOf(acc)) throw new CpError(409, "device_limit", "账号的设备数已满：请先在别的设备上解绑一台");
+      }
       if (t.devices.has(deviceId) || t.preRevoked.has(deviceId)) throw new CpError(409, "device_exists", "该设备编号已登记或已吊销");
       const proofOk = verifyBytes(signPub, joinProofBytes({ tid: t.tid, activationId: rec.id, deviceId, signPublicKeyPem: signPub, encPublicKeyPem: encPub }), String(b.proof ?? ""));
       if (!proofOk) throw new CpError(400, "join_proof_invalid", "入组证明无效");
@@ -1538,7 +2696,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         decided_by: null,
         cert: null,
         firm_bundle: null,
-        mac: jmac,
+        ...(rec.via_account ? {} : { mac: jmac }),
         admin_mac: null,
       };
       t.joinRequests.set(jr.id, jr);
@@ -1581,30 +2739,66 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       requireService(req);
       return send(res, 200, await seal("kwl-gateway-feed", feedBody()));
     }
-    // ─── 额度租约（S3 v0）：网关领取一段点数、本地扣减、按租约回报累计用量（服务间凭据） ───
+    // ─── API 路由订阅与健康上报（第 44 批；服务间凭据） ───
+    if (method === "GET" && p === "/v1/feed/routing") {
+      requireService(req);
+      return sendRaw(res, 200, await seal("kwl-routing-feed", routingFeedBody(routing, now())));
+    }
+    if (method === "POST" && p === "/v1/feed/routing-health") {
+      requireService(req);
+      try {
+        recordHealth(routing, parseJson(raw), now());
+      } catch (e) {
+        if (e instanceof RoutingError) throw new CpError(e.status, e.code, e.message);
+        throw e;
+      }
+      checkRouteAlerts();
+      return send(res, 200, { ok: true, version: routing.version });
+    }
+    // ─── 额度租约 v2（第 44 批）：网关按席位领一段额度、本地扣减；回报逐请求记录，控制面按请求编号去重入账（服务间凭据） ───
     if (method === "POST" && p === "/v1/quota/lease") {
       requireService(req);
       const b = parseJson(raw);
       const t = tenantOf(String(b.tid ?? ""));
-      // 许可到期或已终止：不再发放（与席位令牌同一口径）
-      if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不发放额度");
+      if (!licenseValid(t)) throw new CpError(402, "license_expired", "律所订阅已到期：不发放额度");
+      const sid = String(b.sid ?? "");
+      const seat = [...t.seatsByUser.values()].find((x) => x.sid === sid);
+      if (!seat || seat.revoked_at) throw new CpError(403, "seat_revoked", "席位不存在或已收回");
+      const acc = accountOfMember(t.tid, seat.uid);
+      if (acc && acc.status !== "active") throw new CpError(403, "account_disabled", "账号已停用");
+      const { q, ctx } = qOf(t);
+      const est = (b.need_estimate && typeof b.need_estimate === "object" ? b.need_estimate : {}) as Record<string, unknown>;
+      const allowed = ctx.plan.models;
+      if (allowed && typeof est.alias === "string" && !allowed.includes(est.alias)) throw new CpError(403, "model_not_allowed", "本所套餐不含这个模型");
       let l: ReturnType<typeof leaseQuota>;
       try {
-        l = leaseQuota(qOf(t), { want: b.want, holder: b.holder, ttl_ms: b.ttl_ms, need: b.need }, now());
+        l = leaseQuota(q, ctx, { sid, uid: seat.uid, holder: b.holder, need: needUnits(ctx.plan, est), want: b.want, ttl_ms: b.ttl_ms });
       } catch (e) {
         quotaCount(`lease_denied:${e instanceof QuotaError && /^[a-z_]{1,40}$/.test(e.code) ? e.code : "other"}`);
         throw e;
       }
       quotaCount(l.limited_by ? `lease_limited:${l.limited_by}` : "lease_ok");
-      return send(res, 200, { lease_id: l.lease_id, points: l.points, expires_at: l.expires_at, limited_by: l.limited_by });
+      return send(res, 200, { lease_id: l.lease_id, unit: l.unit, units: l.units, expires_at: l.expires_at, limited_by: l.limited_by, price_version: currentPrices(routing).version, allowed_aliases: allowed });
     }
     if (method === "POST" && p === "/v1/quota/settle") {
       requireService(req);
       const b = parseJson(raw);
       const t = tenantOf(String(b.tid ?? ""));
-      const r = settleLease(qOf(t), { lease_id: b.lease_id, holder: b.holder, usage: b.usage, final: b.final }, now());
+      const { q, ctx } = qOf(t);
+      const leaseId = typeof b.lease_id === "string" ? b.lease_id : "";
+      const l = q.leases[leaseId];
+      // 迟到的回报（租约已过保留期）仍入账（按请求编号去重），只是不再记到租约上
+      if (l && b.holder !== l.holder) throw new CpError(403, "lease_holder_mismatch", "租约不属于该网关实例");
+      if (!Array.isArray(b.records) || b.records.length > 2000) throw new CpError(400, "records_invalid", "用量记录不合法（每次至多 2000 条）");
+      const rows = (b.records as Record<string, any>[]).map((r) => rowOf(t, r, ctx.plan));
+      const fresh = book.append(rows.filter((r) => !book.has(r.request_id)));
+      for (const r of fresh) chargeLease(q, r.lease_id ?? (l ? leaseId : null), r.charge);
+      let closed = false;
+      if (b.final === true && l) closed = closeLease(q, leaseId, b.holder, now());
+      sweepLeases(q, now());
+      if (fresh.length) checkAlerts(t, new Set(fresh.map((r) => r.uid).filter((x): x is string => !!x)));
       quotaCount("settle_ok");
-      return send(res, 200, { ok: true, ...r });
+      return send(res, 200, { ok: true, accepted: fresh.length, duplicates: rows.length - fresh.length, closed });
     }
 
     // 以下一律设备签名
@@ -1625,45 +2819,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
-      // 律所合同要求用 Kimi 账号登录（第 40 批）：没绑定的成员不签发通用席位令牌（AI 用不了；本机功能照常）
-      if (t.kimi_required === true && kimiBroker && !t.kimiAccounts.has(dev.cert.memberId)) throw new CpError(403, "kimi_account_required", "请先用 Kimi 账号登录（设置 → Kimi 账号）");
+      accountGate(req, t, dev);
       return send(res, 200, await seatToken(t, dev, seat.sid, seatTtl));
-    }
-    // ─── Kimi 账号（第 40 批）：设备授权由控制面代办，Kimi 令牌不出控制面、不留存；只绑本人席位 ───
-    if (p === "/v1/account/kimi" || p.startsWith("/v1/account/kimi/")) {
-      if (!kimiBroker) throw new CpError(404, "kimi_account_disabled", "未开通 Kimi 账号登录");
-      const seat = t.seatsByUser.get(dev.cert.memberId);
-      const owner = `${t.tid}\u0000${dev.cert.deviceId}`;
-      const viewOf = (k: KimiBinding | undefined) => (k ? { nickname: k.nickname, phone_tail: k.phone_tail, level: k.level, bound_at: k.bound_at } : null);
-      if (method === "GET" && p === "/v1/account/kimi") return send(res, 200, { enabled: true, required: t.kimi_required === true, account: viewOf(t.kimiAccounts.get(dev.cert.memberId)) });
-      if (!seat || seat.revoked_at) throw new CpError(402, "no_seat", "该成员没有席位：不能绑定 Kimi 账号");
-      try {
-        if (method === "POST" && p === "/v1/account/kimi/start") {
-          if (!issueAllowed(t.tid, dev.cert.deviceId, "kimi_start")) throw new CpError(429, "rate_limited", "登录请求过于频繁，请稍后再试");
-          return send(res, 200, await kimiBroker.start(owner));
-        }
-        if (method === "POST" && p === "/v1/account/kimi/poll") {
-          const b = parseJson(raw);
-          const r = await kimiBroker.poll(b.flow_id, owner);
-          if (r.status !== "authorized") return send(res, 200, { status: r.status });
-          // 同一律所内一个 Kimi 账号只绑一个席位（换电脑同一成员可重绑）
-          const other = [...t.kimiAccounts.entries()].find(([uid, k]) => k.ref === r.account.ref && uid !== dev.cert.memberId);
-          if (other) throw new CpError(409, "kimi_account_in_use", "这个 Kimi 账号已绑定本所另一位成员：请换一个账号，或请管理员先解绑");
-          mark("kimi.bind", seat.sid);
-          const binding: KimiBinding = { ...r.account, bound_at: iso() };
-          t.kimiAccounts.set(dev.cert.memberId, binding);
-          return send(res, 200, { status: "bound", account: viewOf(binding) });
-        }
-        if (method === "DELETE" && p === "/v1/account/kimi") {
-          mark("kimi.unbind", seat.sid);
-          t.kimiAccounts.delete(dev.cert.memberId);
-          return send(res, 200, { ok: true });
-        }
-      } catch (e) {
-        if (e instanceof KimiAccountError) throw new CpError(e.status, e.code, e.message);
-        throw e;
-      }
-      throw new CpError(404, "not_found", "没有这条路由");
     }
     // 支持服务专用的短期凭据（第 9 批复核 S9B-03）：受众只有 "support"、15 分钟；网关、检索、分发拒收——诊断包上传不再把通用席位令牌交给支持域
     if (method === "POST" && p === "/v1/support-token") {
@@ -1673,6 +2830,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
+      accountGate(req, t, dev);
       return send(res, 200, await seatToken(t, dev, seat.sid, SUPPORT_TOKEN_TTL_SECONDS, "support"));
     }
     // 通知服务专用凭据（第 10 批 S9）：受众只有 "notify"；网关、检索、分发、支持服务都拒收——期限提醒的密文与投递不用通用席位令牌
@@ -1683,6 +2841,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
+      accountGate(req, t, dev);
       return send(res, 200, await seatToken(t, dev, seat.sid, NOTIFY_TOKEN_TTL_SECONDS, "notify"));
     }
     // 共享中继专用凭据（第 11 批 S11）：受众只有 "relay"；网关、检索、分发、支持、通知服务都拒收——团队事项的密文同步不用通用席位令牌。
@@ -1694,19 +2853,20 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
+      accountGate(req, t, dev);
       return send(res, 200, await seatToken(t, dev, seat.sid, RELAY_TOKEN_TTL_SECONDS, "relay"));
     }
     if (method === "GET" && p === "/v1/policy") return send(res, 200, await seal("kwl-firm-policy-current", t.policy));
-    // ─── 本所用量与上限（S3 v0）：成员看本所本月用量、上限与自己的用量；管理员与合伙人另看按成员明细与池余额 ───
+    // ─── 本所用量与额度（第 44 批 v2）：成员看本所与自己的百分比、剩余、重置时间；管理员与合伙人另看用量数与按成员明细 ───
     if (method === "GET" && p === "/v1/quota") {
       const detail = dev.cert.role === "admin" || dev.cert.role === "partner";
-      const owner = new Map([...t.seatsByUser.values()].map((x) => [x.sid, x.uid]));
-      const view = quotaView(qOf(t), now(), { detail, seats: t.seats, seatOwner: (sid) => owner.get(sid) ?? null, ownSid: t.seatsByUser.get(dev.cert.memberId)?.sid ?? null });
-      const plan = planOf(billing, t.plan);
-      const mine = t.kimiAccounts.get(dev.cert.memberId) ?? null;
-      // 管理员与合伙人另看成员绑定的 Kimi 账号（打码）：成员编号 → 账号
-      const accounts = detail ? Object.fromEntries([...t.kimiAccounts.entries()].map(([uid, k]) => [uid, { nickname: k.nickname, phone_tail: k.phone_tail }])) : undefined;
-      return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), unit: "percent", plan: { id: plan.id, label: plan.label }, ...view, kimi: { enabled: kimiBroker !== null, required: t.kimi_required === true, own: mine ? { nickname: mine.nickname, phone_tail: mine.phone_tail, level: mine.level, bound_at: mine.bound_at } : null, ...(accounts ? { members: accounts } : {}) } }));
+      const { q, ctx } = qOf(t);
+      const plan = ctx.plan;
+      const me = accountOfMember(t.tid, dev.cert.memberId);
+      const view = quotaView(q, ctx, { detail, uid: dev.cert.memberId, sid: t.seatsByUser.get(dev.cert.memberId)?.sid ?? null, memberName: (uid) => accountOfMember(t.tid, uid)?.name ?? null });
+      // 模型显示名取路由登记里的（运营改了路由，客户端跟着变）
+      const models = view.models.map((m) => ({ ...m, label: routing.models.find((x) => x.alias === m.alias)?.label ?? m.alias }));
+      return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), plan: { id: plan.id, label: plan.label }, account: me ? { aid: me.aid, email: me.email, name: me.name } : null, accounts_required: t.accounts_required === true, ...view, models }));
     }
     if (method === "PUT" && p === "/v1/quota/cap") {
       mark("quota.cap_set");
@@ -1715,7 +2875,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       // 第 40 批：上限为本月总额度的百分比（monthly_cap_pct）；旧客户端的点数上限明确拒绝
       if ("monthly_cap" in b) throw new CpError(400, "cap_invalid", "已取消点数：月度上限请按百分比设置（monthly_cap_pct）");
       if (!("monthly_cap_pct" in b)) throw new CpError(400, "cap_invalid", "缺少月度上限（不设上限请传 null）");
-      quotaSetCap(qOf(t), b.monthly_cap_pct, now(), dev.cert.deviceId);
+      {
+        const { q, ctx } = qOf(t);
+        quotaSetCap(q, ctx, b.monthly_cap_pct, dev.cert.deviceId);
+      }
       const ctx = auditCtx.get(res);
       if (ctx) ctx.entry.detail = t.quota.cap_pct === null ? { uncapped: 1 } : { cap_pct: t.quota.cap_pct };
       return send(res, 200, { ok: true, cap_pct: t.quota.cap_pct });
@@ -1878,7 +3041,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       requireAdmin(dev);
       const list = [...t.joinRequests.values()]
         .filter((x) => x.status === "pending" && Date.parse(x.created_at) + 7 * DAY_MS > now())
-        .map((x) => ({ id: x.id, activation_id: x.activation_id, member_slug: x.member_slug, role: x.role, device_id: x.device_id, sign_pub: x.sign_pub, enc_pub: x.enc_pub, created_at: x.created_at, mac: x.mac ?? null }));
+        .map((x) => {
+          const r = t.activations.get(x.activation_id);
+          const acc = r?.via_account ? accounts.get(r.via_account) : undefined;
+          return { id: x.id, activation_id: x.activation_id, member_slug: x.member_slug, role: x.role, device_id: x.device_id, sign_pub: x.sign_pub, enc_pub: x.enc_pub, created_at: x.created_at, mac: x.mac ?? null, via: r?.via_account ? "account" : "invitation", account: acc ? { email: acc.email, name: acc.name } : null };
+        });
       return sendRaw(res, 200, { ok: true, join_requests: list });
     }
     const rja = /^\/v1\/join-requests\/([A-Za-z0-9_-]{1,64})\/(approve|reject)$/.exec(p);
@@ -1913,8 +3080,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           verifyBytes(t.root_public_key_pem, firmBundleBytes(t.tid, t.root_public_key_pem, fb.recovery_public_key_pem), fb.sig);
         if (!fbOk) throw new CpError(400, "firm_bundle_invalid", "律所公钥包缺失或签名无效");
         const amac = String(b.admin_mac ?? "");
-        if (!/^[0-9a-f]{64}$/.test(amac)) throw new CpError(400, "admin_mac_missing", "缺少批准核对段");
-        Object.assign(jr, { status: "approved", decided_at: iso(), decided_by: dev.cert.deviceId, cert, firm_bundle: { recovery_public_key_pem: fb!.recovery_public_key_pem, sig: fb!.sig }, admin_mac: amac });
+        // 账号新设备入组（D-186）没有邀请码本机段：批准方人工核对核对码，没有批准核对段
+        if (!rec.via_account && !/^[0-9a-f]{64}$/.test(amac)) throw new CpError(400, "admin_mac_missing", "缺少批准核对段");
+        Object.assign(jr, { status: "approved", decided_at: iso(), decided_by: dev.cert.deviceId, cert, firm_bundle: { recovery_public_key_pem: fb!.recovery_public_key_pem, sig: fb!.sig }, admin_mac: rec.via_account ? null : amac });
         rec.status = "consumed";
         rec.consumed_at = iso();
         rec.member.name = null;
@@ -1955,8 +3123,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const ce =
         e instanceof CpError
           ? e
-          : e instanceof QuotaError
-            ? new CpError(e.status, e.code, e.message)
+          : e instanceof QuotaError || e instanceof RoutingError || e instanceof PlanError || e instanceof AuthError
+            ? new CpError(e.status, e.code, e.message, e instanceof AuthError ? e.extra : undefined)
             : e instanceof SignerUnavailableError
               ? new CpError(503, "signer_unavailable", "控制面签名服务暂不可用，请稍后重试")
               : new CpError(500, "control_plane_error", "控制面错误");
@@ -1978,6 +3146,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   server.on("close", () => {
     if (nonceFlush) clearInterval(nonceFlush);
     clearInterval(onboardingSweep);
+    clearInterval(suspendSweep);
     if (!o.auditLog) auditLog.close();
     try {
       persistNow(true);
@@ -1990,7 +3159,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   return {
     server,
     ops,
-    metrics: () => {
+    metrics: () => cpMetrics(),
+    publicKeys: { envelope: pk.envelope, seat: pk.seat, seatFor: (aud?: SeatAudience) => ({ [aud ? (pk.seat_audiences[aud] ?? pk.seat_general) : pk.seat_general]: pk.seat[aud ? (pk.seat_audiences[aud] ?? pk.seat_general) : pk.seat_general]! }) },
+    usageBook: book,
+  };
+  function cpMetrics() {
+    {
       // 客户端版本分布（v9.3 P3；设计 §4.7 轮换签名密钥前看“旧版本活跃设备 < 1%”）：只数未吊销、30 天内报到过的设备；至多 20 个版本，其余归 other
       const since = new Date(now() - 30 * DAY_MS).toISOString().slice(0, 10);
       const byVersion = new Map<string, number>();
@@ -2006,9 +3180,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const rest = sorted.slice(20).reduce((n, [, c]) => n + c, 0);
       if (rest) versions.other = (versions.other ?? 0) + rest;
       return { quota: { ...quotaCounts }, client_versions: versions };
-    },
-    publicKeys: { envelope: pk.envelope, seat: pk.seat, seatFor: (aud?: SeatAudience) => ({ [aud ? (pk.seat_audiences[aud] ?? pk.seat_general) : pk.seat_general]: pk.seat[aud ? (pk.seat_audiences[aud] ?? pk.seat_general) : pk.seat_general]! }) },
-  };
+    }
+  }
 }
 
 /** 测试与运维：设备证书指纹（日志里只记指纹，不记公钥全文）。 */

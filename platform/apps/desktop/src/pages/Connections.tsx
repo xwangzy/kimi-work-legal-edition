@@ -1,7 +1,7 @@
 /**
  * 设置（UIUX 增量评审 ST-1～ST-5、§3.5；v9 第 03 篇 §4.1、§8.5；第 02 篇 §12；第 04 篇 §5.1；V16 IA-1 重排）。
  * 律师版五页：通用（字号、外观、通知、示例事项、版本）/ 文书与写作（文书版式、写作偏好、本所范本入口）/
- * 账号与团队（本所、Kimi 账号、本月用量、团队共享、离所相关）/ 备份与安全（恢复包、自动备份、遇到问题、电脑环境）/
+ * 账号与团队（本所、账号与电脑、本期用量、团队共享、离所相关；第 44 批起账号为自有邮箱账号）/ 备份与安全（恢复包、自动备份、遇到问题、电脑环境）/
  * 数据去向（三栏 + 现场生成的示例请求，可打印给客户；页底“这台电脑能用的资料”，原“资料来源”页并入）。
  * 管理员另有“管理”：律所策略、用量与上限、中软侧操作记录、技术支持（诊断、加密保存的局限、技术版数据去向）、替换准确度测试。
  * 旧地址（#/connections/device、/sources、/data、/policy）由 App.tsx 的 settingsTabOf 落到新分区。
@@ -10,15 +10,15 @@
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { useEffect, useState } from "react";
 import { notifyDataChanged } from "../lib/events.ts";
-import { api, recovery as recoveryApi, updates, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft, type QuotaStatus } from "../api.ts";
-import { quotaLawyerLine } from "../lib/firm-usage.ts";
+import { api, recovery as recoveryApi, updates, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft } from "../api.ts";
 import { CONTENT_CHECK_FAILED, CONTENT_PANEL_NOTE, contentCheckLine, contentSourceLine, contentStaleLine } from "../lib/content-labels.ts";
 import { nav, type SettingsTab } from "../App.tsx";
 import { displayVersion, fmtDate, fmtTime, groupDigits } from "../lib/labels.ts";
 import { backupTile, deviceSafetyTile } from "../lib/device-status.ts";
 import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
 import { RecallEvalPanel } from "./RecallEval.tsx";
-import { CpAuditPanel, KimiAccountRow, UsagePanel } from "./FirmUsage.tsx";
+import { CpAuditPanel, UsagePanel } from "./FirmUsage.tsx";
+import { AccountSection } from "../components/AccountPanel.tsx";
 import { SupportUpload } from "../components/SupportUpload.tsx";
 import { TeamShare } from "../components/TeamShare.tsx";
 import { MembersAdmin } from "../components/MembersAdmin.tsx";
@@ -249,7 +249,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
   const relayOn = !!gate?.relay_configured && !!gate?.share_relay_allowed;
   const relayStored = relayOn || (!!gate?.relay_configured && relayUsed);
   const stored = [
-    "账号与用量",
+    "你的登录邮箱、姓名和登记的电脑，以及每次 AI 调用的用量（请求编号、模型、token 数、金额）；看不到内容",
     "匿名事项编号与调用记录（不含内容）",
     "律所规则，以及登记过的电脑",
     ...(updatesOn ? ["更新检查的访问记录（IP 与版本）"] : []),
@@ -452,16 +452,12 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
  */
 function AccountTab({ mySafety, admin }: { mySafety: string | null; admin: boolean }) {
   const [cp, setCp] = useState<ControlPlaneStatus | null>(null);
-  const [quota, setQuota] = useState<QuotaStatus | null>(null);
   const [firm, setFirm] = useState<any | null>(null);
   useEffect(() => {
     api.kernelStatus().then((st: any) => setFirm(st?.activation ?? null)).catch(() => setFirm(null));
     api
       .controlPlaneStatus()
-      .then((c) => {
-        setCp(c);
-        if (c.mode === "control_plane") api.quotaStatus().then(setQuota).catch(() => setQuota(null));
-      })
+      .then(setCp)
       .catch(() => setCp(null));
   }, []);
   const inFirm = !!firm?.firm?.name || cp?.mode === "control_plane";
@@ -494,13 +490,14 @@ function AccountTab({ mySafety, admin }: { mySafety: string | null; admin: boole
             )}
           </SettingRow>
         )}
-        {cp && cp.mode === "control_plane" && quota && <SettingRow label="本月用量">{quotaLawyerLine(quota)}</SettingRow>}
-        {cp && cp.mode === "control_plane" && (
-          <SettingRow label="Kimi 账号">
-            <KimiAccountRow />
-          </SettingRow>
-        )}
+        {cp && cp.mode === "control_plane" && <AccountSection firm={firm?.firm?.name ?? null} />}
       </section>
+      )}
+      {cp && cp.mode === "control_plane" && (
+        <section className="panel device-section" aria-labelledby="sec-usage">
+          <h2 className="section-h h-section" id="sec-usage">用量</h2>
+          <UsagePanel admin={false} />
+        </section>
       )}
       <section className="panel device-section" aria-labelledby="sec-share">
         <h2 className="section-h h-section" id="sec-share">团队与离所</h2>
@@ -701,7 +698,7 @@ function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[];
       </div>
       {sub === "members" && <MembersAdmin />}
       {sub === "policy" && <PolicyTab />}
-      {sub === "usage" && <UsagePanel />}
+      {sub === "usage" && <UsagePanel admin />}
       {sub === "cp_audit" && <CpAuditPanel />}
       {sub === "support" && (
         <>

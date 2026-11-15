@@ -1,12 +1,16 @@
 /**
- * 首次启动激活（第 13 批开通与成员入组；docs/design/开通与成员入组设计-v1.md）。
- * 这台电脑还没有激活时，整个应用只显示这一页：输入中软给律所的开通码，或律所管理员发来的邀请码。
- * 邀请码激活后要等管理员批准：显示 12 位核对码，请律师电话或当面念给管理员核对；批准后自动打开。
- * 律师层不出现“证书、密钥、签名”等词；激活只把码发给中软核对，不上传任何案件材料。
+ * 首次启动（第 13 批开通与成员入组；第 44 批改为登录 / 注册，主文 §2）。
+ * 这台电脑还没有激活时，整个应用只显示这一页：缺省“登录”，可切“注册”“忘记密码”；
+ * 原来的“输入开通码或邀请码”“从备份恢复”保留为次要入口。
+ * 登录或注册后按中软的答复走：创始开通 → 等后台按新身份重启；成员入组（凭邀请码，或同一账号的新电脑）→ 等批准并核对 12 位核对码；
+ * 不能继续（设备已满、这台电脑属于别的成员、律所还没开通）→ 写明原因与已登记的电脑。
+ * 律师层不出现“证书、密钥、签名、令牌”等词；登录只把邮箱和密码发给中软核对，不上传任何案件材料。
  */
 import { useEffect, useRef, useState } from "react";
-import { api, onboarding, recovery } from "../api.ts";
+import { account, api, onboarding, recovery } from "../api.ts";
+import { PasswordField } from "../components/PasswordField.tsx";
 import { setAsideAutoOpen, setAsideNotice } from "../lib/activate-text.ts";
+import { checkPassword, codeLengthOk, dayLabel, deviceLine, emailLooksValid, nameLooksValid, resetNextText, roleLabel, waitApprovalLead, type AccountDevice } from "../lib/account.ts";
 import { fmtTime } from "../lib/labels.ts";
 
 /** 律师在恢复页点过“返回”的那个目录（每个查看者本机记一下；读写失败按没点过）。 */
@@ -30,14 +34,14 @@ type Status = {
   last_failure?: { code: string; at: string };
   /** 主密钥解封失败后移到一边的目录名（新的在前；v9.3 主文 §9 第 7 项）。 */
   set_aside?: string[];
+  /** 第 44 批：同一账号的新电脑（没有邀请可对，由已登录的另一台电脑或律所管理员人工核对）。 */
+  via_account?: boolean;
 };
 
 const JOIN_FAILED_TEXT = "入组没有完成：管理员批准的结果在这台电脑上核对不通过。请向管理员重新要一个邀请码，再输入一次；若反复出现，请联系所内 IT。";
 const RESTORE_FAILED_TEXT = "从备份恢复没有完成（这台电脑没能保存恢复出来的密钥，或恢复中途被打断）。恢复出来的内容已清掉，备份本身没有变：请再恢复一次；若仍不行，请联系所内 IT。";
 /** 内核回到待激活时报的原因代码 → 律师看得懂的一句话。 */
 const failureText = (code: string | undefined) => (code === "restore_incomplete" ? RESTORE_FAILED_TEXT : JOIN_FAILED_TEXT);
-
-const ROLE_LABEL: Record<string, string> = { admin: "管理员", partner: "合伙人", lawyer: "律师", assistant: "助理" };
 
 /** 输入时按 4 位一组显示（只留字母与数字，大写）。 */
 function groupCode(raw: string): string {
@@ -90,7 +94,7 @@ export function ActivatePage({ initial, onRefresh, notice = "" }: { initial: Sta
   }
   if (status.mode === "member_pending") return <WaitApproval status={status} onReset={async () => setStatus((await onboarding.reset()) as Status)} onRefresh={onRefresh} />;
   return (
-    <EnterCode
+    <Entry
       onPending={(s) => setStatus(s)}
       legacy={status.legacy_workspaces ?? []}
       failed={status.last_failure ? failureText(status.last_failure.code) : ""}
@@ -118,37 +122,44 @@ function Frame({ children }: { children: React.ReactNode }) {
   );
 }
 
-function EnterCode({ onPending, legacy, failed, setAside }: { onPending: (s: Status) => void; legacy: string[]; failed: string; setAside: string | null }) {
-  const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
+type View = "login" | "register" | "forgot" | "code" | "restore";
+type Blocked = { message: string; devices: AccountDevice[] };
+
+/** 登录 / 注册之后按中软的答复走下一步（创始开通、入组等待、不能继续）。 */
+function authOutcome(onPending: (s: Status) => void, setDone: (t: string) => void, setBlocked: (b: Blocked) => void, stuck: (t: string) => void) {
+  return (r: any) => {
+    if (r?.next === "restart") {
+      setDone(`已为「${r.firm?.name ?? "本所"}」开通，正在打开…`);
+      // 开通向导：激活后先到“开通的最后一步”（恢复包、试一下、备份位置），再进首页
+      void waitForActivated(stuck, "#/welcome");
+    } else if (r?.next === "wait") {
+      onPending({ mode: "member_pending", firm: r.firm, member: r.member ?? { name: r.account?.name ?? null, role: r.account?.role ?? "" }, check_code: r.check_code, requested_at: new Date().toISOString(), ...(r.via_account ? { via_account: true } : {}) });
+    } else if (r?.next === "blocked") {
+      setBlocked({ message: String(r.message ?? "这台电脑暂时不能用这个账号继续，请联系客服"), devices: Array.isArray(r.devices) ? r.devices : [] });
+    } else {
+      stuck("没有完成，请稍后重试；仍不行请联系客服");
+    }
+  };
+}
+
+function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status) => void; legacy: string[]; failed: string; setAside: string | null }) {
+  // 刚把打不开的数据移到一边（主进程对话框里选了“用恢复包恢复”）：直接打开从备份恢复
+  const [view, setView] = useState<View>(setAside !== null && !failed && setAsideAutoOpen(setAside, Date.now(), readDismissed()) ? "restore" : "login");
+  const [email, setEmail] = useState("");
   const [err, setErr] = useState(failed);
+  const [note, setNote] = useState("");
+  const [done, setDone] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState<Blocked | null>(null);
   const stuck = (t: string) => {
     setDone(null);
-    setRestoring(false);
+    if (view === "restore") setView("login");
     setErr(t);
   };
-  const [done, setDone] = useState<string | null>(null);
-  // 刚把打不开的数据移到一边（主进程对话框里选了“用恢复包恢复”）：直接打开从备份恢复
-  const [restoring, setRestoring] = useState(setAside !== null && !failed && setAsideAutoOpen(setAside, Date.now(), readDismissed()));
-  const ready = [20, 36].includes(code.replace(/-/g, "").length);
-  const submit = async () => {
-    if (!ready || busy) return;
-    setBusy(true);
+  const outcome = authOutcome(onPending, setDone, setBlocked, stuck);
+  const go = (v: View) => {
     setErr("");
-    try {
-      const r = await onboarding.redeem(code);
-      if (r.kind === "founder") {
-        setDone(`已为「${r.firm?.name ?? "本所"}」激活，正在打开…`);
-        // 开通向导（B 第 14 批续）：激活后先到“开通的最后一步”（恢复包、试一下、备份位置），再进首页
-        void waitForActivated(stuck, "#/welcome");
-      } else {
-        onPending({ mode: "member_pending", firm: r.firm, member: r.member, check_code: r.check_code, requested_at: new Date().toISOString() });
-      }
-    } catch (e) {
-      setErr((e as Error).message || "激活没有完成，请稍后重试");
-    } finally {
-      setBusy(false);
-    }
+    setNote("");
+    setView(v);
   };
   if (done) {
     return (
@@ -158,7 +169,8 @@ function EnterCode({ onPending, legacy, failed, setAside }: { onPending: (s: Sta
       </Frame>
     );
   }
-  if (restoring)
+  if (blocked) return <BlockedView b={blocked} onBack={() => setBlocked(null)} />;
+  if (view === "restore")
     return (
       <RestoreFromBackup
         onBack={() => {
@@ -170,17 +182,333 @@ function EnterCode({ onPending, legacy, failed, setAside }: { onPending: (s: Sta
               // 存不下：下次仍会自动打开，不影响使用
             }
           }
-          setRestoring(false);
+          go("login");
         }}
         onDone={setDone}
         onStuck={stuck}
         notice={setAside ? setAsideNotice(setAside) : ""}
       />
     );
+  const secondary = (
+    <div className="auth-secondary">
+      {view !== "code" && (
+        <button className="btn-link" onClick={() => go("code")}>
+          有开通码或邀请码？直接输入码 →
+        </button>
+      )}
+      <button className="btn-link" onClick={() => go("restore")}>
+        换了新电脑？从备份恢复 →
+      </button>
+    </div>
+  );
   return (
     <Frame>
-      <h1 className="activate-title">欢迎使用</h1>
-      <p className="activate-lead">请输入开通码或邀请码。</p>
+      {(view === "login" || view === "register") && (
+        <div className="auth-seg" role="tablist" aria-label="登录或注册">
+          <button role="tab" aria-selected={view === "login"} className={view === "login" ? "on" : ""} onClick={() => go("login")}>
+            登录
+          </button>
+          <button role="tab" aria-selected={view === "register"} className={view === "register" ? "on" : ""} onClick={() => go("register")}>
+            注册
+          </button>
+        </div>
+      )}
+      {note && (
+        <p className="activate-notice" role="status">
+          {note}
+        </p>
+      )}
+      {view === "login" && <LoginForm email={email} setEmail={setEmail} err={err} setErr={setErr} onResult={outcome} onForgot={() => go("forgot")} />}
+      {view === "register" && <RegisterForm email={email} setEmail={setEmail} err={err} setErr={setErr} onResult={outcome} />}
+      {view === "forgot" && (
+        <ForgotPassword
+          email={email}
+          setEmail={setEmail}
+          onBack={() => go("login")}
+          onDone={() => {
+            go("login");
+            setNote("密码已重设。请用新密码登录（别的电脑上的登录都已退出）。");
+          }}
+        />
+      )}
+      {view === "code" && <EnterCode onPending={onPending} onFounder={(t) => {
+            setDone(t);
+            void waitForActivated(stuck, "#/welcome");
+          }} failed={err} onBack={() => go("login")} />}
+      {view !== "forgot" && secondary}
+      <p className="muted activate-foot">登录与开通只把邮箱、密码或码发给 Kimi Work 服务核对；你的案卷不会上传。</p>
+      {legacy.length > 0 && (
+        <p className="muted activate-foot" role="note">
+          这台电脑上还有以前留下的数据（{legacy.join("、")}，例如旧版本试用或没有完成的入组）。激活后不会自动转入，也不会删除；如需保留或清理，请联系所内 IT。
+        </p>
+      )}
+    </Frame>
+  );
+}
+
+function LoginForm(p: { email: string; setEmail: (v: string) => void; err: string; setErr: (v: string) => void; onResult: (r: any) => void; onForgot: () => void }) {
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const ready = emailLooksValid(p.email) && pw.length > 0;
+  const submit = async () => {
+    if (!ready || busy) return;
+    setBusy(true);
+    p.setErr("");
+    try {
+      p.onResult(await account.login(p.email.trim(), pw));
+    } catch (e) {
+      p.setErr((e as Error).message || "登录没有完成，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="auth-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <p className="activate-lead">用邮箱和密码登录。第一次使用请先注册。</p>
+      <label className="field">
+        <span>邮箱</span>
+        <input className="auth-input" type="email" value={p.email} onChange={(e) => p.setEmail(e.target.value)} autoComplete="username" autoFocus spellCheck={false} />
+      </label>
+      <PasswordField label="密码" value={pw} onChange={setPw} />
+      {p.err && (
+        <p className="activate-error" role="alert">
+          {p.err}
+        </p>
+      )}
+      <button type="submit" className="btn-primary activate-submit" disabled={!ready || busy}>
+        {busy ? "正在登录…" : "登录"}
+      </button>
+      <div className="auth-row">
+        <button type="button" className="btn-link" onClick={p.onForgot}>
+          忘记密码？
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function RegisterForm(p: { email: string; setEmail: (v: string) => void; err: string; setErr: (v: string) => void; onResult: (r: any) => void }) {
+  const [pw, setPw] = useState("");
+  const [name, setName] = useState("");
+  const [org, setOrg] = useState("");
+  const [hasCode, setHasCode] = useState(false);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const ready = emailLooksValid(p.email) && checkPassword(pw, p.email).ok && nameLooksValid(name) && (!hasCode || codeLengthOk(code));
+  const submit = async () => {
+    if (!ready || busy) return;
+    setBusy(true);
+    p.setErr("");
+    try {
+      p.onResult(await account.register({ email: p.email.trim(), password: pw, name: name.trim(), ...(org.trim() ? { org_name: org.trim() } : {}), ...(hasCode ? { code } : {}) }));
+    } catch (e) {
+      p.setErr((e as Error).message || "注册没有完成，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="auth-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <p className="activate-lead">注册后这台电脑就是你的第一台电脑。律所负责人收到的开通码、同事收到的邀请码，请在下面勾选后填入。</p>
+      <label className="field">
+        <span>邮箱</span>
+        <input className="auth-input" type="email" value={p.email} onChange={(e) => p.setEmail(e.target.value)} autoComplete="username" autoFocus spellCheck={false} />
+        {p.email && !emailLooksValid(p.email) && <span className="field-warn">邮箱格式不对</span>}
+      </label>
+      <PasswordField label="密码" value={pw} onChange={setPw} rules email={p.email} />
+      <label className="field">
+        <span>姓名</span>
+        <input className="auth-input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={40} placeholder="同事和客户看到的名字" />
+      </label>
+      {!hasCode && (
+        <label className="field">
+          <span>律所或工作室名称（可不填）</span>
+          <input className="auth-input" value={org} onChange={(e) => setOrg(e.target.value)} autoComplete="organization" maxLength={60} placeholder="不填则用你的姓名" />
+        </label>
+      )}
+      <label className="auth-check">
+        <input type="checkbox" checked={hasCode} onChange={(e) => setHasCode(e.target.checked)} /> 我有开通码或邀请码
+      </label>
+      {hasCode && (
+        <label className="field">
+          <span>开通码或邀请码</span>
+          <input className="activate-code" value={code} onChange={(e) => setCode(groupCode(e.target.value))} placeholder="开通码 20 位，邀请码 36 位" spellCheck={false} autoComplete="off" />
+          <span className="muted">凭码注册时，律所以码对应的为准。</span>
+        </label>
+      )}
+      {p.err && (
+        <p className="activate-error" role="alert">
+          {p.err}
+        </p>
+      )}
+      <button type="submit" className="btn-primary activate-submit" disabled={!ready || busy}>
+        {busy ? "正在注册…" : "注册并继续"}
+      </button>
+      {!hasCode && <p className="muted activate-foot">不填码即自助注册：为你开通一个试用的个人工作室，之后可以邀请同事加入。</p>}
+    </form>
+  );
+}
+
+function ForgotPassword(p: { email: string; setEmail: (v: string) => void; onBack: () => void; onDone: () => void }) {
+  const [step, setStep] = useState<"ask" | "set">("ask");
+  const [code, setCode] = useState("");
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [hint, setHint] = useState("");
+  const send = async () => {
+    if (!emailLooksValid(p.email) || busy) return;
+    setBusy(true);
+    setErr("");
+    try {
+      setHint(resetNextText(await account.resetRequest(p.email.trim())));
+      setStep("set");
+    } catch (e) {
+      setErr((e as Error).message || "没有发出，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const confirm = async () => {
+    if (!code.trim() || !checkPassword(pw, p.email).ok || busy) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await account.resetConfirm(p.email.trim(), code.trim(), pw);
+      p.onDone();
+    } catch (e) {
+      setErr((e as Error).message || "没有重设成功，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      className="auth-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void (step === "ask" ? send() : confirm());
+      }}
+    >
+      <h1 className="activate-title">找回密码</h1>
+      {step === "ask" ? (
+        <>
+          <p className="activate-lead">填写注册时的邮箱。开通了邮件的会把验证码发到邮箱；没有邮件的，请向律所管理员或客服要一个重置码。</p>
+          <label className="field">
+            <span>邮箱</span>
+            <input className="auth-input" type="email" value={p.email} onChange={(e) => p.setEmail(e.target.value)} autoComplete="username" autoFocus spellCheck={false} />
+          </label>
+        </>
+      ) : (
+        <>
+          <p className="activate-notice" role="status">
+            {hint}
+          </p>
+          <label className="field">
+            <span>验证码、重置码或设置码</span>
+            <input className="activate-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\s+/g, ""))} autoFocus spellCheck={false} autoComplete="one-time-code" />
+          </label>
+          <PasswordField label="新密码" value={pw} onChange={setPw} rules email={p.email} />
+        </>
+      )}
+      {err && (
+        <p className="activate-error" role="alert">
+          {err}
+        </p>
+      )}
+      <div className="activate-actions">
+        {step === "ask" ? (
+          <button type="submit" className="btn-primary" disabled={!emailLooksValid(p.email) || busy}>
+            {busy ? "正在发送…" : "下一步"}
+          </button>
+        ) : (
+          <button type="submit" className="btn-primary" disabled={!code.trim() || !checkPassword(pw, p.email).ok || busy}>
+            {busy ? "正在重设…" : "重设密码"}
+          </button>
+        )}
+        {step === "set" && (
+          <button type="button" className="btn-ghost" disabled={busy} onClick={() => void send()}>
+            重新发送
+          </button>
+        )}
+        <button type="button" className="btn-ghost" onClick={p.onBack}>
+          返回登录
+        </button>
+      </div>
+      <p className="muted activate-foot">重设后，这个账号在所有电脑上的登录都会退出，需要用新密码重新登录。</p>
+    </form>
+  );
+}
+
+function BlockedView({ b, onBack }: { b: Blocked; onBack: () => void }) {
+  return (
+    <Frame>
+      <h1 className="activate-title">这台电脑暂时不能继续</h1>
+      <p className="activate-error" role="alert">
+        {b.message}
+      </p>
+      {b.devices.length > 0 && (
+        <>
+          <div className="section-title">这个账号已登记的电脑</div>
+          <ul className="auth-devices">
+            {b.devices.map((d) => {
+              const l = deviceLine(d);
+              return (
+                <li key={d.device_id}>
+                  <b>{l.title}</b>
+                  <span className="muted">{l.meta || `${dayLabel(d.registered_at)}登记`}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="muted">解绑旧电脑：在那台电脑上打开“设置 → 账号与团队 → 我的电脑”；那台电脑已经不在手边的，请律所管理员或客服处理。</p>
+        </>
+      )}
+      <div className="activate-actions">
+        <button className="btn-primary" onClick={onBack}>
+          返回登录
+        </button>
+      </div>
+    </Frame>
+  );
+}
+
+/** 直接输入开通码或邀请码（第 13 批原流程，第 44 批起为次要入口）。 */
+function EnterCode({ onPending, onFounder, failed, onBack }: { onPending: (s: Status) => void; onFounder: (t: string) => void; failed: string; onBack: () => void }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(failed);
+  const ready = codeLengthOk(code);
+  const submit = async () => {
+    if (!ready || busy) return;
+    setBusy(true);
+    setErr("");
+    try {
+      const r = await onboarding.redeem(code);
+      if (r.kind === "founder") onFounder(`已为「${r.firm?.name ?? "本所"}」激活，正在打开…`);
+      else onPending({ mode: "member_pending", firm: r.firm, member: r.member, check_code: r.check_code, requested_at: new Date().toISOString() });
+    } catch (e) {
+      setErr((e as Error).message || "激活没有完成，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <h1 className="activate-title">输入开通码或邀请码</h1>
+      <p className="activate-lead">不注册账号、直接用码激活这台电脑（之后可以在“设置 → 账号与团队”里登录账号）。</p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -206,28 +534,19 @@ function EnterCode({ onPending, legacy, failed, setAside }: { onPending: (s: Sta
             {err}
           </p>
         )}
-        <button type="submit" className="btn-primary activate-submit" disabled={!ready || busy}>
-          {busy ? "正在核对…" : "下一步"}
-        </button>
+        <div className="activate-actions">
+          <button type="submit" className="btn-primary" disabled={!ready || busy}>
+            {busy ? "正在核对…" : "下一步"}
+          </button>
+          <button type="button" className="btn-ghost" onClick={onBack}>
+            返回登录
+          </button>
+        </div>
       </form>
       <p id="activate-hint" className="muted activate-foot">
         开通码由 Kimi Work 发给律所负责人；邀请码由律所管理员发给你。码只能用一次，过期请向发码人重新获取。
-        <br />
-        没有码？请联系律所管理员；律所负责人还没收到开通码，请联系 Kimi Work 客服。
-        <br />
-        开通时只需联网核对一次这个码；你的案卷不会上传。
       </p>
-      <p className="activate-foot">
-        <button className="btn-link" onClick={() => setRestoring(true)}>
-          换了新电脑？从备份恢复 →
-        </button>
-      </p>
-      {legacy.length > 0 && (
-        <p className="muted activate-foot" role="note">
-          这台电脑上还有以前留下的数据（{legacy.join("、")}，例如旧版本试用或没有完成的入组）。激活后不会自动转入，也不会删除；如需保留或清理，请联系所内 IT。
-        </p>
-      )}
-    </Frame>
+    </>
   );
 }
 
@@ -338,27 +657,36 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
   const [note, setNote] = useState("");
   const [rejected, setRejected] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 账号新电脑批准后（D-186）：先请律师把本所识别码和旧电脑上的比对，再打开
+  const [firmCode, setFirmCode] = useState<string | null>(null);
   const alive = useRef(true);
+  const viaAccount = !!status.via_account;
+  const opened = (t: string) => {
+    if (!alive.current) return;
+    setRejected(true);
+    setNote(t);
+  };
   const check = async (manual: boolean) => {
-    if (busy) return;
+    if (busy || firmCode) return;
     setBusy(true);
     try {
       const r = await onboarding.check();
       if (!alive.current) return;
       if (r.last_check === "approved") {
-        setNote("管理员已批准，正在打开…");
-        void waitForActivated((t) => {
-          if (!alive.current) return;
-          setRejected(true);
-          setNote(t);
-        }, "#/welcome");
+        if (viaAccount && typeof r.firm_check_code === "string") {
+          setFirmCode(r.firm_check_code);
+          setNote("");
+        } else {
+          setNote("管理员已批准，正在打开…");
+          void waitForActivated(opened, "#/welcome");
+        }
       } else if (r.last_check === "rejected") {
         setRejected(true);
         setNote(r.message ?? "管理员没有批准这次申请");
       } else if (r.last_check === "unreachable") {
         setNote(r.message ?? "暂时连不上 Kimi Work 服务，稍后自动再试");
       } else if (manual) {
-        setNote("还在等管理员批准");
+        setNote("还在等批准");
       }
     } catch (e) {
       if (alive.current) setNote((e as Error).message);
@@ -374,13 +702,39 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
       clearInterval(t);
     };
   }, []);
-  const who = [status.member?.name, status.member?.role ? ROLE_LABEL[status.member.role] : null].filter(Boolean).join(" · ");
+  const who = [status.member?.name, status.member?.role ? roleLabel(status.member.role) : null].filter(Boolean).join(" · ");
+  if (firmCode) {
+    return (
+      <Frame>
+        <h1 className="activate-title">已批准，请再核对一次</h1>
+        <p className="activate-lead">请在你原来那台电脑上打开“设置 → 账号与团队 → 本所识别码”，与下面这串数字逐位比对。一致，说明这台电脑加入的确实是本所。</p>
+        <div className="activate-checkcode" aria-label="本所识别码">
+          {firmCode}
+        </div>
+        {note && (
+          <p className="muted" role="status">
+            {note}
+          </p>
+        )}
+        <div className="activate-actions">
+          <button
+            className="btn-primary"
+            onClick={() => {
+              setNote("正在打开…（第一次打开需要十几秒）");
+              void waitForActivated(opened, "#/welcome");
+            }}
+          >
+            一致，打开
+          </button>
+        </div>
+        <p className="muted activate-foot">对不上：请不要在这台电脑上继续使用，马上联系律所管理员；你也可以在原来那台电脑的“设置 → 账号与团队 → 我的电脑”里解绑这台电脑。</p>
+      </Frame>
+    );
+  }
   return (
     <Frame>
-      <h1 className="activate-title">等待管理员批准</h1>
-      <p className="activate-lead">
-        已向「{status.firm?.name ?? "律所"}」申请加入{who ? `（${who}）` : ""}。请打电话或当面联系管理员，把下面的入组核对码读给他；管理员核对一致后批准，这里会自动进入。
-      </p>
+      <h1 className="activate-title">{viaAccount ? "等待批准这台电脑" : "等待管理员批准"}</h1>
+      <p className="activate-lead">{waitApprovalLead({ firm: status.firm?.name ?? "律所", who, viaAccount })}</p>
       <div className="activate-checkcode" aria-label="入组核对码">
         {status.check_code}
       </div>
@@ -402,7 +756,7 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
             onRefresh();
           }}
         >
-          重新输入邀请码
+          {viaAccount ? "改用别的账号" : "重新输入邀请码"}
         </button>
       </div>
       <details className="muted activate-foot">

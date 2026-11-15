@@ -2206,6 +2206,12 @@ async function runReviewStage(
  */
 export function agentFailureText(reason: string | null, error: string | null): string {
   const err = (error ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+  // 第 44 批：本产品自己的额度规则（网关 402：频率窗口、本期额度、律所上限、个人额度、未定价）——不是连不上，说清原因与怎么办
+  if (/频率窗口|quota_burst/.test(err)) return "本所短时间内 AI 用量较多（5 小时频率窗口已满），任务暂停：几小时内窗口自动恢复后点“重新运行”即可，已完成的部分保留、不会重复计用量；常用这么多可请管理员调整套餐";
+  if (/个人额度|quota_seat_limit/.test(err)) return "你的个人 AI 额度已用完，任务暂停：请联系律所管理员调整你的个人上限；已完成的部分保留，处理好后点“重新运行”，不会重复计用量";
+  if (/律所设定的本期用量上限|quota_cap_reached/.test(err)) return "已到律所设定的本期 AI 用量上限，任务暂停：请律所管理员在“设置 → 管理 → 用量”调整上限；已完成的部分保留，处理好后点“重新运行”";
+  if (/本期 AI 额度已用完|quota_exhausted/.test(err)) return "本所本期 AI 额度已用完，任务暂停：下期自动重置，或请律所管理员联系中软加量；已完成的部分保留，处理好后点“重新运行”";
+  if (/还没有定价|price_unconfigured/.test(err)) return "这个 AI 模型还没有定价，按金额计的套餐暂不可用：请联系律所管理员或中软客服；已完成的部分保留";
   // 限流（第 29 批 429 演练）：服务是通的，只是请求太多——说“繁忙”，不说“连不上”
   if (/\b429\b|rate.?limit|queue_timeout|排队超时/i.test(err)) return `AI 服务繁忙（请求太多被限流：${err}），任务没有完成；已完成且可验证的部分保留，可以过几分钟点“重新运行”`;
   if (/通道不可达|不可达|ECONNREFUSED|ECONNRESET|ETIMEDOUT|\b50[234]\b|provider/i.test(err)) return `AI 服务暂时连不上（${err}），任务没有完成；已完成且可验证的部分保留，可以稍后点“重新运行”`;

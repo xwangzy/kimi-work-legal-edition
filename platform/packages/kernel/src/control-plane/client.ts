@@ -53,6 +53,10 @@ export interface ControlPlaneClientDeps {
   clientVersion?: string | null;
   /** 每次同步结束后（内核据此在退出模式解除后恢复暂停的任务；复核 S6-B34）。 */
   onSynced?: (report: SyncReport) => void;
+  /** 第 44 批：本机保存的账号会话令牌（附在 x-kwl-session 头里；没有 = 不附）。 */
+  sessionToken?: () => string | null;
+  /** 控制面答复“要重新登录”（会话无效、过期、账号停用）时回调（内核据此提示重新登录）。 */
+  onSessionProblem?: (code: string) => void;
 }
 
 /**
@@ -100,50 +104,31 @@ export interface DraftView {
   problem: string | null;
 }
 
-/** 打码的 Kimi 账号（第 40 批：昵称只留首字、手机只留尾号）。 */
-export interface KimiAccountView {
-  nickname: string;
-  phone_tail: string | null;
-  level?: string | null;
-  bound_at?: string;
-}
-
 /**
- * 本所用量视图（第 40 批：取消点数，一律为本月额度的比例 0–1；控制面 quotaView 的字段 + 套餐与 Kimi 账号）。
- * 个人份额 = 本月总额度 ÷ 席位数（只用于显示）。
+ * 本所用量视图（第 44 批 v2，控制面 quotaView）：百分比、剩余、单位（tokens 或元）、统计周期与重置时间、5 小时频率窗口、
+ * 自己的用量（分母 = 个人上限或每席位额度，写明来源与是否硬性生效）、按模型；管理员与合伙人另有用量数与按成员明细。
  */
 export interface QuotaView {
-  unit: "percent";
-  period: string;
-  resets_at: string;
-  paused: "cap" | "allowance" | null;
-  used_ratio: number;
-  in_flight_ratio: number;
-  cap_pct: number | null;
-  cap_set_at: string | null;
-  boost_pct: number;
-  seats: number;
-  plan: { id: string; label: string };
-  own: { used_ratio: number; firm_ratio: number; requests: number } | null;
-  history: { period: string; used_ratio: number | null; boost_pct: number }[];
+  tid: string;
   issued_at: string;
-  by_member?: { member_id: string | null; used_ratio: number; firm_ratio: number; requests: number }[];
+  plan: { id: string; label: string };
+  account: { aid: string; email: string; name: string } | null;
+  accounts_required: boolean;
+  unit: "tokens" | "cny";
+  unit_label: string;
+  period: { kind: "month" | "week"; key: string; start: string; resets_at: string };
+  firm: { used_ratio: number; remaining_ratio: number; in_flight_ratio: number; paused: "cap" | "allowance" | "burst" | null; cap_pct: number | null; cap_set_at: string | null; boost_pct: number; legacy_used_ratio: number | null; used: number | null; total: number | null; seats: number; denominator: string };
+  burst: { hours: number; pct: number; used_ratio: number; resets_at: string | null } | null;
+  own: { used_ratio: number; denominator: "account_limit" | "seat_quota"; enforced: boolean; used: number; total: number; requests: number; tokens: number; value_cny: number | null; estimated_rows: number } | null;
+  history: { period: string; used_ratio: number | null; legacy: boolean }[];
+  models: { alias: string; used: number; share: number; requests: number }[];
+  by_member?: { uid: string | null; name: string | null; used: number; used_ratio_of_firm: number; requests: number }[];
   boosts?: { at: string; pct: number }[];
   unreconciled_leases?: number;
-  kimi?: { enabled: boolean; required: boolean; own: KimiAccountView | null; members?: Record<string, KimiAccountView> };
 }
 
-/** Kimi 账号登录（设备授权，控制面代办）的发起结果。 */
-export interface KimiLoginStart {
-  flow_id: string;
-  user_code: string;
-  verification_uri: string;
-  verification_uri_complete: string;
-  expires_at: string;
-  interval: number;
-}
-
-type CallResult = { ok: true; status: number; json: Record<string, unknown> } | { ok: false; error: string; status?: number };
+type CallResult = { ok: true; status: number; json: Record<string, unknown> } | { ok: false; error: string; status?: number; message?: string };
+const SESSION_PROBLEMS: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch"]);
 
 export class ControlPlaneClient {
   private readonly d: ControlPlaneClientDeps;
@@ -169,7 +154,8 @@ export class ControlPlaneClient {
 
   private async call(method: string, path: string, body?: unknown): Promise<CallResult> {
     const raw = body === undefined ? "" : JSON.stringify(body);
-    const headers = { ...signDeviceRequest({ method, path, body: raw, tid: this.d.tenantId, deviceId: this.d.device.deviceId, signer: this.d.device.signer, ...(this.d.now ? { now: this.d.now() } : {}) }) };
+    const session = this.d.sessionToken?.() ?? null;
+    const headers = { ...signDeviceRequest({ method, path, body: raw, tid: this.d.tenantId, deviceId: this.d.device.deviceId, signer: this.d.device.signer, ...(this.d.now ? { now: this.d.now() } : {}) }), ...(session ? { "x-kwl-session": session } : {}) };
     const r = await this.d.relay({ method, path, headers, body: raw });
     if (!r.ok) return { ok: false, error: r.reason };
     let json: Record<string, unknown> = {};
@@ -184,7 +170,9 @@ export class ControlPlaneClient {
       if (code === "device_revoked" && json.notice) this.d.gov.applyRevocationNotice(json.notice);
       // 本机时钟偏差超过 5 分钟：控制面拒绝签名请求，同步、续期都会失败——告警写明原因（复核 S6-B37）
       if (code === "device_auth_stale") this.clockAlert(json.server_time);
-      return { ok: false, error: code, status: r.status };
+      // 第 44 批：会话无效、过期或账号停用 → 提示重新登录（席位令牌不再续期，网关按订阅暂停本设备）
+      if (SESSION_PROBLEMS.has(code)) this.d.onSessionProblem?.(code);
+      return { ok: false, error: code, status: r.status, ...(typeof (json.error as { message?: unknown } | undefined)?.message === "string" ? { message: String((json.error as { message: string }).message).slice(0, 200) } : {}) };
     }
     return { ok: true, status: r.status, json };
   }
@@ -524,34 +512,14 @@ export class ControlPlaneClient {
     return { cap_pct: (r.json.cap_pct as number | null) ?? null };
   }
 
-  // ─── Kimi 账号（第 40 批）：授权由控制面代办，本机不经手 Kimi 令牌 ───
+  // ─── 账号（第 44 批）：已激活设备上的登录（带设备签名，会话直接绑本机）、退出、改密、设备与会话管理 ───
 
-  async kimiAccount(): Promise<{ enabled: boolean; required: boolean; account: KimiAccountView | null }> {
-    const r = await this.call("GET", "/v1/account/kimi");
-    if (!r.ok) {
-      if (r.status === 404) return { enabled: false, required: false, account: null };
-      throw new Error(r.error);
-    }
-    return { enabled: true, required: r.json.required === true, account: (r.json.account as KimiAccountView | null) ?? null };
-  }
-
-  async kimiLoginStart(): Promise<KimiLoginStart> {
-    const r = await this.call("POST", "/v1/account/kimi/start", {});
-    if (!r.ok) throw new Error(r.error);
-    const j = r.json;
-    if (typeof j.flow_id !== "string" || typeof j.user_code !== "string" || typeof j.verification_uri_complete !== "string") throw new Error("kimi_start_invalid");
-    return { flow_id: j.flow_id, user_code: j.user_code, verification_uri: String(j.verification_uri ?? j.verification_uri_complete), verification_uri_complete: j.verification_uri_complete, expires_at: String(j.expires_at ?? ""), interval: Number(j.interval) || 5 };
-  }
-
-  async kimiLoginPoll(flowId: string): Promise<{ status: string; account?: KimiAccountView | null }> {
-    const r = await this.call("POST", "/v1/account/kimi/poll", { flow_id: flowId });
-    if (!r.ok) throw new Error(r.error);
-    return { status: String(r.json.status ?? "expired"), ...(r.json.account ? { account: r.json.account as KimiAccountView } : {}) };
-  }
-
-  async kimiUnbind(): Promise<void> {
-    const r = await this.call("DELETE", "/v1/account/kimi");
-    if (!r.ok) throw new Error(r.error);
+  /** 账号接口原样调用（带设备签名与会话头）；失败抛带 code 的错误。 */
+  async account(method: "GET" | "POST", path: string, body?: unknown): Promise<Record<string, unknown>> {
+    if (!/^\/v1\/auth\/[a-z0-9/_-]{2,80}$/.test(path)) throw new Error("account_path_invalid");
+    const r = await this.call(method, path, method === "GET" ? undefined : (body ?? {}));
+    if (!r.ok) throw Object.assign(new Error(r.error), { code: r.error, cpMessage: r.message ?? null, status: r.status ?? null });
+    return r.json;
   }
 
   // ─── 中软侧操作记录（第 9 批 S14） ───

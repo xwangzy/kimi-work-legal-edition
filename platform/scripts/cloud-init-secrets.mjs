@@ -13,16 +13,19 @@
  *     cp-envelope.pem           控制面文档签名私钥（只给签名服务）
  *     cp-envelope-next.pem      预置的下一把（轮换用；离线保管，不部署）
  *     seat.pem / seat-support.pem / seat-notify.pem / seat-relay.pem   席位令牌签名私钥（只给签名服务）
+ *     routing-key.pem           网关路由私钥（P-256 PKCS#8；只给网关 routing.key_file：解封控制台录入的上游密钥，第 44 批）
  *   public/    —— 公开，可随配置分发
  *     cp-public-keys.json       { kid: PEM }，控制面文档签名公钥（当前 + 下一把）：各服务 control_plane.keys_file、release.json control_plane_keys
  *     seat-public-keys.json     通用席位公钥：网关、检索、分发的 seat_keys_file，release.json seat_keys
  *     seat-support|notify|relay-public-keys.json   各受众的席位公钥：支持、通知、中继的 seat_keys_file
  *     signer-keys.json          签名服务配置 keys 段（kid 与私钥文件路径，路径按 --mount 改写）
+ *     routing-public.txt        网关路由公钥（SPKI DER 的 base64，一行）：控制台 config.json 的 routing_public_key
+ *     routing-key-id.txt        路由密钥编号（公钥 SPKI 的 SHA-256 前 16 位十六进制）：控制台 config.json 的 routing_key_id
  *
  * 用法：node scripts/cloud-init-secrets.mjs --env prod --out /secure/kwl-prod [--id 2611a] [--mount /run/secrets]
  * 已存在的目录不覆盖。生成后请把 secrets/ 放进密钥管理（KMS / 密钥管理服务挂载为只读文件），本机副本按公司规定销毁或离线保管。
  */
-import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -68,6 +71,14 @@ secret("cp-envelope-next.pem", envNext.priv);
 secret("seat.pem", seat.priv);
 for (const [k, v] of Object.entries(aud)) secret(`seat-${k}.pem`, v.priv);
 
+// 网关路由密钥对（第 44 批，主文 §3.2）：控制台在浏览器里用公钥加密上游密钥，控制面只存密文；私钥只给网关
+const routing = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+secret("routing-key.pem", routing.privateKey.export({ format: "pem", type: "pkcs8" }).toString());
+const routingSpki = routing.publicKey.export({ format: "der", type: "spki" });
+const routingKeyId = createHash("sha256").update(routingSpki).digest("hex").slice(0, 16);
+writeFileSync(join(pub, "routing-public.txt"), `${routingSpki.toString("base64")}\n`, { mode: 0o644, flag: "wx" });
+writeFileSync(join(pub, "routing-key-id.txt"), `${routingKeyId}\n`, { mode: 0o644, flag: "wx" });
+
 const kid = { envelope: `cp-${env}-${id}`, envelopeNext: `cp-${env}-${next}`, seat: `seat-${env}-${id}` };
 pubFile("cp-public-keys.json", { [kid.envelope]: env_.pub, [kid.envelopeNext]: envNext.pub });
 pubFile("seat-public-keys.json", { [kid.seat]: seat.pub });
@@ -82,7 +93,8 @@ console.log(`[cloud-init-secrets] 已生成 → ${outDir}（环境 ${env}，密�
 放到哪里：
   签名服务 cp-signer   secrets/cp-envelope.pem、seat*.pem（keys 段见 public/signer-keys.json）
   控制面 control-plane secrets/service-secret、cp-state.key、cp-code-pepper.key
-  网关 / 检索 / 分发   secrets/service-secret；public/cp-public-keys.json、seat-public-keys.json
+  网关 / 检索 / 分发   secrets/service-secret；public/cp-public-keys.json、seat-public-keys.json；网关另加 secrets/routing-key.pem（routing.key_file）
+  运营控制台 config.json  routing_public_key = public/routing-public.txt，routing_key_id = ${routingKeyId}
   支持 support         secrets/service-secret、support-meter.key；public/cp-public-keys.json、seat-support-public-keys.json
   通知 / 中继          secrets/service-secret；public/cp-public-keys.json、seat-notify|relay-public-keys.json
   桌面端 release.json  public/cp-public-keys.json（control_plane_keys）、seat-public-keys.json（seat_keys）——scripts/make-release-config.mjs 读取

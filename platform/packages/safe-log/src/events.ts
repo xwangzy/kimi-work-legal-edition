@@ -49,6 +49,9 @@ export const EVENTS = {
   KERNEL_ONBOARDING_JOINED: { level: "info", fields: {} },
   KERNEL_ONBOARDING_CERT_REJECTED: { level: "warn", fields: {} },
   KERNEL_JOIN_STAGED_REJECTED: { level: "warn", fields: {} },
+  /** 我方账号（第 44 批）：只记原因代码，不记邮箱、密码与令牌。 */
+  KERNEL_ACCOUNT_CALL_FAILED: { level: "warn", fields: { reason: "ident" } },
+  KERNEL_ACCOUNT_LOGIN_REQUIRED: { level: "warn", fields: { reason: "ident" } },
   /** 恢复与备份（第 14 批）：只记文件数，不记路径与内容。 */
   KERNEL_RESTORED_FROM_BACKUP: { level: "info", fields: { files: "int" } },
   KERNEL_BACKUP_DONE: { level: "info", fields: { files: "int", copied: "int" } },

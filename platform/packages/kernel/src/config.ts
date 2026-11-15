@@ -82,6 +82,8 @@ export interface ActivationFile {
   role: "admin" | "partner" | "lawyer" | "assistant";
   kind: "founder" | "member";
   activated_at: string;
+  /** 第 44 批：本机的设备编号（同一账号的第 2～9 台为 dev_<律所>_<成员>_D<n>；没有 = 第一台 dev_<律所>_<成员>）。 */
+  device_id?: string;
 }
 
 /** 待激活模式的占位工作区（激活完成、按真实身份启动后删除）。 */
@@ -117,6 +119,11 @@ export function validActivation(raw: unknown): ActivationFile | null {
       typeof a.firm_name !== "string"
     )
       return null;
+    // 设备编号只许本成员的第 1～9 台（不能借激活记录冒用别人的编号）
+    if (a.device_id !== undefined) {
+      const base = `dev_${a.firm_slug}_${a.member_slug}`;
+      if (typeof a.device_id !== "string" || !(a.device_id === base || (a.device_id.startsWith(base) && /^_D[2-9]$/.test(a.device_id.slice(base.length))))) return null;
+    }
     return a as ActivationFile;
   } catch {
     return null;

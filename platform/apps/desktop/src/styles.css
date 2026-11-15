@@ -969,14 +969,6 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .usage-history-track > span { display: block; width: 100%; background: var(--accent); border-radius: var(--r-xs); }
 .usage-history-track > span.full { background: var(--status-danger-solid); }
 .usage-history-v { font-variant-numeric: tabular-nums; color: var(--text-strong); }
-/* Kimi 账号（第 40 批） */
-.kimi-account { display: flex; flex-direction: column; gap: 6px; }
-.kimi-account-on { display: flex; align-items: center; gap: 10px; }
-.kimi-avatar { flex: none; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); font-weight: 600; }
-.kimi-login-flow { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; border: 1px dashed var(--border-dashed); border-radius: var(--r-md); padding: 10px 12px; }
-.kimi-url { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: 100%; }
-.kimi-url .mono { word-break: break-all; user-select: all; }
-.kimi-code { font-family: var(--font-mono); font-size: var(--fs-md); letter-spacing: 0.12em; background: var(--bg-code); border-radius: var(--r-xs); padding: 1px 8px; }
 .support-upload { margin-top: 8px; }
 .support-upload details { margin: 8px 0; }
 .support-preview { max-height: 320px; overflow: auto; background: var(--bg-code); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); padding: 8px 10px; font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-all; }
@@ -1414,3 +1406,58 @@ table.data.deliverables tr.dl-file td, table.data.deliverables tr.dl-ver td, tab
 table.data.deliverables tr.dl-proc .dl-proc-chev { display: inline-block; margin-left: 4px; transition: transform 0.15s; }
 table.data.deliverables tr.dl-proc .btn-link[aria-expanded="true"] .dl-proc-chev { transform: rotate(90deg); }
 table.data.deliverables tr.dl-proc .dl-proc-note { margin-left: var(--sp-3); }
+
+/* ── 第 44 批：登录 / 注册、账号与电脑、登录失效横幅、用量 v2 ── */
+.auth-seg { display: flex; gap: 4px; padding: 3px; margin: 0 0 18px; border-radius: var(--r-sm); background: var(--bg-muted); }
+.auth-seg button { flex: 1 1 0; border: 0; background: none; color: var(--text-secondary); padding: 6px 12px; border-radius: var(--r-xs); font-size: var(--fs-body); }
+.auth-seg button.on { background: var(--bg-surface); color: var(--text-primary); font-weight: 600; box-shadow: var(--shadow-xs); }
+.auth-form { display: flex; flex-direction: column; gap: 12px; }
+.auth-form .activate-lead { margin: 0 0 4px; }
+.auth-form .activate-submit { margin-top: 4px; }
+.auth-input { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-main); color: var(--text-primary); font-size: var(--fs-base); }
+.auth-input:focus { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.pw-wrap { position: relative; display: flex; align-items: center; }
+.pw-wrap .auth-input { padding-right: 56px; }
+.pw-toggle { position: absolute; right: 8px; font-size: var(--fs-caption); }
+.pw-rules { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 2px 0 0; padding: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.pw-rules li.ok { color: var(--status-success-text); }
+.pw-rules li.bad { color: var(--status-warning-text); }
+.auth-check { display: flex; align-items: center; gap: 6px; font-size: var(--fs-body); color: var(--text-label); }
+.auth-row { display: flex; justify-content: flex-end; }
+.auth-secondary { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+.auth-secondary .btn-link { padding: 0; }
+.auth-devices { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.auth-devices li { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); }
+.login-box { display: flex; flex-direction: column; gap: 10px; max-width: 420px; }
+.login-box-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.login-banner { display: flex; flex-direction: column; gap: 8px; }
+.login-banner .login-box.compact { flex-direction: row; flex-wrap: wrap; align-items: flex-end; max-width: none; gap: 8px 12px; }
+.login-banner .login-box.compact .field { flex: 1 1 200px; max-width: 280px; }
+.login-banner .login-box.compact .activate-error { flex-basis: 100%; margin: 0; }
+.account-card { display: flex; align-items: flex-start; gap: 12px; }
+.account-card .pill { margin-left: 8px; }
+.account-card-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.account-avatar { flex: none; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); font-weight: 600; }
+.account-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-width: 640px; }
+.account-list li { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); }
+.account-list li.off { background: var(--bg-subtle); }
+.account-list-main { flex: 1 1 auto; min-width: 0; }
+.account-list-main .tag { margin-left: 6px; }
+.usage-card { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-surface); padding: var(--sp-4); margin-bottom: var(--sp-3); max-width: 640px; }
+.usage-card.tone-high { border-color: var(--status-warning-border); }
+.usage-card.tone-full { border-color: var(--status-danger-border); }
+.usage-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; font-size: var(--fs-caption); }
+.usage-card-title { font-weight: 600; color: var(--text-strong); font-size: var(--fs-body); }
+.usage-big { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.usage-big-sub { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-secondary); font-size: var(--fs-caption); }
+.usage-meter.md { height: 8px; max-width: none; }
+.usage-card .usage-meter.lg { max-width: none; }
+.usage-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: var(--fs-body); }
+.usage-meta { font-size: var(--fs-caption); margin-top: 4px; }
+.usage-window { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border-subtle); }
+.usage-hero-s.tone-high, .num.tone-high { color: var(--status-warning-text); }
+.usage-hero-s.tone-full, .num.tone-full { color: var(--status-danger-text); }
+.usage-models { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
+.usage-models li { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(80px, 160px) 52px auto; align-items: center; gap: 10px; font-size: var(--fs-body); }
+.usage-models .usage-meter.sm { max-width: none; }
+.usage-model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

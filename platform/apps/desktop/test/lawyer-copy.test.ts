@@ -15,9 +15,10 @@ const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 
 /** 管理员层与技术支持（允许出现管理员说法与原始技术名）。 */
 // Boards.tsx 不排除：事项页“概览”（MatterBoard）就在这个文件里，律师看得到（复核 Q1-25）
-const ADMIN_FILES = new Set(["pages/FirmUsage.tsx", "pages/RecallEval.tsx", "components/MembersAdmin.tsx", "lib/firm-usage.ts"]);
+// 第 44 批：用量面板律师在“账号与团队”也看得到——FirmUsage.tsx 改为只放过 CpAuditPanel（操作记录，管理员层）之后的部分
+const ADMIN_FILES = new Set(["pages/RecallEval.tsx", "components/MembersAdmin.tsx", "lib/firm-usage.ts"]);
 /** 同一文件里管理员层从哪里开始（之后的内容不查）。 */
-const ADMIN_FROM: Record<string, string> = { "pages/Connections.tsx": "function AdminTab(" };
+const ADMIN_FROM: Record<string, string> = { "pages/Connections.tsx": "function AdminTab(", "pages/FirmUsage.tsx": "export function CpAuditPanel(" };
 /** 同一文件里律师层从哪里开始（之前的内容是管理员详情）。 */
 const LAWYER_FROM: Record<string, string> = { "lib/relay-text.ts": "export function syncAlertSummary(" };
 
@@ -31,6 +32,8 @@ const ALLOW = [
   /开发桥/,
   // 数据去向说明里“加密保存的局限”（折叠，标明建议所内 IT 看）：如实写出 Windows 数据保护的局限，是 Y5 §7.3 要求的披露
   /Windows 数据保护（DPAPI）/,
+  // 数据去向说明里“中软会保存”的用量明细（第 44 批）：用量单位就是 token，如实写出中软看得到的字段
+  /每次 AI 调用的用量（请求编号、模型、token 数、金额）/,
 ];
 
 function files(dir: string): string[] {

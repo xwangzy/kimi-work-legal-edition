@@ -149,6 +149,13 @@ export function checkEnvelopeBody(kind: EnvelopeKind, body: unknown, reqNow: num
       if (!isObj(body) || !tidOk(body) || !near(body.issued_at)) return "quota_view_malformed";
       return null;
     }
+    case "kwl-routing-feed": {
+      // 只核结构与时限；上游主机由网关本机白名单把关（控制面被攻破也改投不到名单外的主机）
+      if (!isObj(body) || !isInt(body.version) || !near(body.issued_at) || !Array.isArray(body.providers) || !Array.isArray(body.models) || !isObj(body.prices)) return "routing_feed_malformed";
+      if (body.providers.length > 32 || body.models.length > 32) return "routing_feed_too_large";
+      for (const p of body.providers) if (!isObj(p) || typeof p.id !== "string" || typeof p.base_url !== "string" || !/^https:\/\//.test(p.base_url)) return "routing_provider_invalid";
+      return null;
+    }
     case "kwl-cp-audit-page": {
       if (!isObj(body) || !tidOk(body) || !near(body.issued_at) || !Array.isArray(body.records) || body.records.length > 500 || !isObj(body.head)) return "audit_page_malformed";
       return null;

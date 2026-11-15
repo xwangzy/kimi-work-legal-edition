@@ -108,7 +108,9 @@ export function createSearchService(o: SearchServiceOptions): Server {
       } catch (e) {
         return send(401, { error: { code: `seat_${e instanceof SeatTokenError ? e.reason : "invalid"}`, message: "席位令牌无效" } });
       }
-      if (req.method !== "POST" || new URL(req.url ?? "/", "http://s").pathname !== "/search") return send(404, { error: { code: "not_found", message: "没有这条路由" } });
+      // 第 44 批：release.json 样例与部署手册一直写 `…/v1/search`，服务原先只认 `/search`——两种都收（同一处理）
+      const sp = new URL(req.url ?? "/", "http://s").pathname;
+      if (req.method !== "POST" || (sp !== "/search" && sp !== "/v1/search")) return send(404, { error: { code: "not_found", message: "没有这条路由" } });
       const chunks: Buffer[] = [];
       let size = 0;
       for await (const c of req) {

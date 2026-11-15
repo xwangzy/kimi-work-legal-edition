@@ -5,12 +5,15 @@
  * - 生产入口的 ops.console_origins：只对列出的来源回 CORS 头与预检；配置不合规拒绝启动；运维网段以外照样 404；
  * - 部署工具：cloud-init-secrets 生成的密钥能直接拉起签名服务与控制面；make-release-config 生成的 release.json 过客户端校验；
  *   meter-report 按网关同一规则重算点数、按 requestId 去重。
+ * 第 44 批：控制台重做为原生 ES 模块（app.js + api.js + ui.js + pages/*.js）与 dist 打包（scripts/build-ops-console.mjs）；
+ *   门禁不放松：CSP 原样、无内联脚本与样式、不引外部资源、不拼 HTML、动态样式只经 el.style.cssText、不用 window.confirm；
+ *   样式只用 tokens.css 的语义令牌；上游密钥在浏览器里按主文 §3.2 加密；“记住 8 小时”只收不可导出的密钥对象。
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createPublicKey, generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -70,35 +73,27 @@ test("浏览器签名与控制面运营守卫兼容；口令加密私钥可导�
   assert.equal(r.status, 401);
 });
 
-test("租户列表与用量明细：只读权限；按席位只给席位编号，不给成员标识与姓名；律所设的上限只标“律所管理员”", async () => {
+test("租户列表与用量明细（第 44 批 v2）：只读权限；用量从账本出、按对外单位与比例；没有账号的成员不外露成员标识；律所设的上限只标“律所管理员”", async () => {
   await browserCall("op_0001", "POST", "/v1/ops/tenants", { tid: "ten_second", edition: "firm", seats: 10, name: "第二所" });
   const list = await browserCall("op_0001", "GET", "/v1/ops/tenants");
   assert.equal(list.status, 200);
-  assert.deepEqual(list.json.tenants.map((t: any) => t.tid), ["ten_console", "ten_second"]);
-  assert.equal(list.json.tenants[0].quota.used_ratio, 0);
-  assert.deepEqual(list.json.tenants[0].quota.plan, { id: "standard", label: "标准", custom: false });
+  assert.deepEqual(list.json.tenants.map((t: any) => t.tid).sort(), ["ten_console", "ten_second"]);
+  const row = list.json.tenants.find((t: any) => t.tid === "ten_console");
+  assert.deepEqual([row.used_ratio, row.unit, row.plan.id, row.total], [0, "tokens", "standard", 3 * 50_000_000]);
   assert.equal((await browserCall("op_0003", "GET", "/v1/ops/tenants")).status, 403, "只能发码的人不能看租户列表");
-
-  // 造一点用量：两个席位（一个已收回），律所管理员设的上限（设备编号里含成员标识）
+  // 席位与律所管理员设的上限（设备编号里含成员标识）
   const t = cp.ops.tenant("ten_console")!;
   t.seatsByUser.set("zhang.lawyer", { sid: "seat_aaa", uid: "zhang.lawyer", assigned_at: new Date().toISOString(), revoked_at: null });
-  t.seatsByUser.set("li.lawyer", { sid: "seat_bbb", uid: "li.lawyer", assigned_at: new Date().toISOString(), revoked_at: new Date().toISOString() });
-  t.quota.period_by_seat = { seat_aaa: { points: 120, requests: 3 }, seat_bbb: { points: 400, requests: 9 } };
-  t.quota.period_used = 520;
   t.quota.cap_pct = 90;
   t.quota.cap_set_by = "dev_zhang.lawyer_01";
   const u = await browserCall("op_0001", "GET", "/v1/ops/tenants/ten_console/usage");
   assert.equal(u.status, 200, JSON.stringify(u.json));
-  // 第 40 批：比例为主（标准套餐 3 席 = 600000 单位，个人份额 200000）；单位只为对账
-  assert.deepEqual(u.json.units, { total: 600_000, used: 520 });
-  assert.equal(u.json.used_ratio, 0.0009);
-  assert.deepEqual(u.json.by_seat, [
-    { sid: "seat_bbb", status: "revoked", used_ratio: 0.002, firm_ratio: 0.0007, requests: 9, kimi: null },
-    { sid: "seat_aaa", status: "active", used_ratio: 0.0006, firm_ratio: 0.0002, requests: 3, kimi: null },
-  ]);
-  assert.deepEqual(u.json.seats, { total: 3, assigned: 1 });
+  assert.deepEqual([u.json.unit, u.json.used, u.json.total, u.json.used_ratio], ["tokens", 0, 150_000_000, 0]);
+  assert.equal(u.json.daily.length, 30);
   assert.equal(u.json.cap_set_by, "firm_admin");
-  assert.equal(JSON.stringify(u.json).includes("lawyer"), false, "用量明细不带成员标识");
+  assert.deepEqual(u.json.by_account, []);
+  const d = await browserCall("op_0001", "GET", "/v1/ops/tenants/ten_console");
+  assert.equal(JSON.stringify(u.json).includes("lawyer") || JSON.stringify(d.json.members).includes("zhang"), false, "没有账号的成员不外露成员标识");
   assert.equal((await browserCall("op_0001", "GET", "/v1/ops/tenants/ten_nobody/usage")).status, 404);
   assert.equal((await browserCall("op_0003", "GET", "/v1/ops/tenants/ten_console/usage")).status, 403);
 });
@@ -209,66 +204,181 @@ test("make-release-config：备份钉住、公钥表填好并过客户端校验�
   assert.match(run({ ...spec, pins: { ...cur, gateway: [join(out, "secrets/seat.pem")] } }).stderr, /是私钥/);
 });
 
-test("meter-report：按租户 × 月份（北京时间）× 席位汇总，点数按网关规则重算，多实例文件按 requestId 去重", () => {
-  const recs = [
-    { at: "2026-10-31T16:30:00.000Z", kind: "settle", requestId: "r1", tid: "ten_a", sid: "seat_1", model: "legal/k3", status: 200, reserved: 40, inputTokens: 9000, outputTokens: 1000, cachedTokens: 2000, reason: null },
-    { at: "2026-11-02T02:00:00.000Z", kind: "settle", requestId: "r2", tid: "ten_a", sid: "seat_1", model: "legal/k3", status: 200, reserved: 40, inputTokens: null, outputTokens: null, cachedTokens: null, reason: null },
-    { at: "2026-11-02T03:00:00.000Z", kind: "settle", requestId: "r3", tid: "ten_a", sid: "seat_2", model: "legal/k3", status: 504, reserved: 40, inputTokens: null, outputTokens: null, cachedTokens: null, reason: "upstream_header_timeout" },
+test("meter-report（第 44 批）：读网关预写日志里的逐请求记录，按租户 × 月份（北京时间）× 席位 × 模型 × 单位汇总；多实例文件按请求编号去重；旧行单列", () => {
+  const rec = (id: string, at: string, sid: string, unit: string, extra: Record<string, unknown>) => ({ at, kind: "settle", requestId: id, tid: "ten_a", sid, model: "legal/k3", status: 200, unit, record: { request_id: id, tid: "ten_a", sid, alias: "legal/k3", provider: "maas", upstream_model: "kimi-k3.1-pro", outcome: "ok", usage_source: "upstream", usage: { input: 9000, cached: 2000, output: 1000, reasoning: 0 }, charge_units: 10_000, ...extra } });
+  const lines = [
+    rec("r1", "2026-10-31T16:30:00.000Z", "seat_1", "tokens", {}),
+    rec("r2", "2026-11-02T02:00:00.000Z", "seat_1", "tokens", { outcome: "client_gone", usage_source: "estimated", usage: { input: 100, cached: 0, output: 50, reasoning: 0 }, charge_units: 150 }),
+    rec("r3", "2026-11-02T03:00:00.000Z", "seat_2", "tokens", { outcome: "timeout", usage_source: "none", usage: null, charge_units: 0 }),
     { at: "2026-11-02T03:00:00.000Z", kind: "reserve", requestId: "r4", tid: "ten_a", sid: "seat_2", model: "legal/k3", status: null, reserved: 40 },
     { at: "2026-10-15T03:00:00.000Z", kind: "settle", requestId: "r5", tid: "ten_b", sid: "seat_9", model: "legal/k2.6", status: 200, reserved: 10, inputTokens: 1500, outputTokens: 0, cachedTokens: 0, reason: null },
   ];
-  const f1 = write("meter-1.jsonl", recs.map((r) => JSON.stringify(r)).join("\n") + "\n");
-  const f2 = write("meter-2.jsonl", `${JSON.stringify(recs[0])}\nnot json\n`);
+  const f1 = write("meter-1.jsonl", lines.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  const f2 = write("meter-2.jsonl", `${JSON.stringify(lines[0])}\nnot json\n`);
   const r = spawnSync(process.execPath, [join(root, "scripts/meter-report.mjs"), f1, f2, "--format", "json"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  const rows = JSON.parse(r.stdout).rows;
-  const row = (tid: string, period: string, sid: string) => rows.find((x: any) => x.tid === tid && x.period === period && x.sid === sid);
-  // r1：UTC 10-31 16:30 = 北京 11-01 00:30 → 11 月；(9000+1000)/1000×4 = 40 点
-  assert.equal(row("ten_a", "2026-11", "seat_1").points, 40 + 40, "r1 按 usage 40 点 + r2 无 usage 而 200 按预占 40 点");
-  assert.equal(row("ten_a", "2026-11", "seat_1").requests, 2, "重复的 r1 去重");
-  assert.equal(row("ten_a", "2026-11", "seat_2").points, 0, "上游超时不扣");
-  assert.equal(row("ten_a", "2026-11", "seat_2").timeouts, 1);
-  assert.equal(row("ten_b", "2026-10", "seat_9").points, 3, "1500/1000×2 向上取整");
+  const out = JSON.parse(r.stdout);
+  const row = (tid: string, period: string, sid: string) => out.rows.find((x: any) => x.tid === tid && x.period === period && x.sid === sid);
+  // r1：UTC 10-31 16:30 = 北京 11-01 00:30 → 11 月；重复的 r1 去重
+  const s1 = row("ten_a", "2026-11", "seat_1");
+  assert.deepEqual([s1.requests, s1.ok, s1.client_gone, s1.estimated, s1.input_tokens, s1.charge_units], [2, 1, 1, 1, 9100, 10_150]);
+  const s2 = row("ten_a", "2026-11", "seat_2");
+  assert.deepEqual([s2.requests, s2.timeouts, s2.charge_units], [1, 1, 0], "上游超时不扣");
+  const old = row("ten_b", "2026-10", "seat_9");
+  assert.deepEqual([old.unit, old.legacy_rows, old.charge_units], ["legacy", 1, 0], "第 44 批之前的旧行不估单位");
+  assert.equal(out.bad_lines, 1);
   assert.match(r.stderr, /跳过 1 行/);
-  const t = spawnSync(process.execPath, [join(root, "scripts/meter-report.mjs"), f1, "--by", "tenant", "--month", "2026-11"], { encoding: "utf8" });
-  assert.equal(t.stdout.trim(), "tid,period,requests,ok,errors,timeouts,input_tokens,output_tokens,cached_tokens,points\nten_a,2026-11,3,2,1,1,9000,1000,2000,80");
+  const t = spawnSync(process.execPath, [join(root, "scripts/meter-report.mjs"), f1, "--by", "provider", "--month", "2026-11"], { encoding: "utf8" });
+  assert.equal(t.status, 0, t.stderr);
+  assert.match(t.stdout.split("\n")[0]!, /^period,provider,upstream_model,unit,requests,/);
+  assert.match(t.stdout, /2026-11,maas,kimi-k3\.1-pro,tokens,3,/);
 });
 
-
-test("第 40 批运营接口：套餐目录；改套餐与席位（不得少于在用席位）；加量包按百分比、计入账单；旧的点数接口 410；没配 Kimi 对接不能要求绑定", async () => {
+test("套餐与律所额度（第 44 批）：目录含试用套餐；改套餐与席位（不得少于在用席位）即刻改本期总额度；加量包按百分比；旧的点数接口 410、旧上限字段拒绝；Kimi 账号绑定接口已撤下", async () => {
   const plans = await browserCall("op_0001", "GET", "/v1/ops/plans");
   assert.equal(plans.status, 200);
-  assert.deepEqual(plans.json.plans.map((p: any) => p.id), ["standard", "pro", "max"]);
-  assert.equal(plans.json.kimi_account, false);
+  assert.deepEqual(plans.json.plans.map((p: any) => p.id), ["standard", "pro", "max", "trial"]);
+  assert.ok(plans.json.plans.every((p: any) => p.quota_unit === "tokens" && Number.isSafeInteger(p.seat_quota)));
   assert.equal((await browserCall("op_0003", "GET", "/v1/ops/plans")).status, 403, "只能发码的人看不到目录");
-
   const t = cp.ops.tenant("ten_second")!;
-  // 改套餐：标准 → 旗舰，额度即刻按新套餐算
   const ch = await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/plan", { plan: "max" });
   assert.equal(ch.status, 200, JSON.stringify(ch.json));
-  assert.deepEqual(ch.json.tenant.quota.units, { total: 10 * 1_200_000, used: 0 });
+  assert.equal(ch.json.tenant.total, 10 * 300_000_000);
   assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/plan", { plan: "gold" })).json.error.code, "plan_unknown");
   assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/plan", {})).json.error.code, "plan_invalid");
-  // 席位数不得少于在用席位
   t.seatsByUser.set("a", { sid: "seat_s1", uid: "a", assigned_at: new Date().toISOString(), revoked_at: null });
   t.seatsByUser.set("b", { sid: "seat_s2", uid: "b", assigned_at: new Date().toISOString(), revoked_at: null });
   const low = await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/plan", { seats: 1 });
   assert.deepEqual([low.status, low.json.error.code], [409, "seats_in_use"]);
   assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/plan", { seats: 4 })).status, 200);
   assert.equal(t.license.seats, 4, "许可随席位数重签");
-  // 加量包
   const b = await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/boost", { pct: 50 });
   assert.equal(b.status, 200);
-  assert.equal(b.json.quota.boost_pct, 50);
-  assert.deepEqual(b.json.quota.units, { total: 4 * 1_200_000 * 1.5, used: 0 });
+  assert.deepEqual([b.json.tenant.boost_pct, b.json.tenant.total], [50, 4 * 300_000_000 * 1.5]);
   const u = await browserCall("op_0001", "GET", "/v1/ops/tenants/ten_second/usage");
   assert.deepEqual(u.json.boosts.map((x: any) => [x.pct, x.by]), [[50, "op_0001"]]);
-  assert.deepEqual(u.json.bill, { seat_fee_cny: null, boost_fee_cny: null, revenue_cny: null, cost_cny: null, margin_cny: null }, "缺省目录没有价格");
-  assert.equal(u.json.by_seat.length, 2, "没有用量的在用席位也列出");
-  // 旧接口与旧字段
-  assert.deepEqual([(await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/points", { points: 1 })).status], [410]);
+  const d = await browserCall("op_0001", "GET", "/v1/ops/tenants/ten_second");
+  assert.deepEqual([d.json.bill.seat_fee_cny, d.json.bill.revenue_cny], [null, null], "缺省目录没有价格");
+  assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/points", { points: 1 })).status, 410);
   assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/cap", { cap: 1 })).json.error.code, "cap_invalid");
-  // 没配 Kimi 对接：不能要求绑定；可以设为不强制
-  assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/kimi-policy", { required: true })).json.error.code, "kimi_account_disabled");
-  assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/kimi-policy", { required: false })).status, 200);
+  assert.equal((await browserCall("op_0001", "POST", "/v1/ops/tenants/ten_second/kimi-policy", { required: true })).status, 404, "Kimi 账号绑定已撤下");
+});
+
+// ─── 第 44 批：运营控制台重做后的门禁（静态页约束不放松）与浏览器侧密码学 ─────────────────
+const consoleDir = join(root, "apps/ops-console");
+const CONSOLE_CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'none'; form-action 'none'";
+const consoleModules = () => [
+  ...readdirSync(consoleDir).filter((f) => f.endsWith(".js")),
+  ...readdirSync(join(consoleDir, "pages")).filter((f) => f.endsWith(".js")).map((f) => `pages/${f}`),
+];
+
+test("第 44 批控制台门禁：CSP 不变、无内联脚本与样式、不引外部资源、不拼 HTML、不用 style 属性与 window.confirm", () => {
+  const html = readFileSync(join(consoleDir, "index.html"), "utf8");
+  assert.ok(html.includes(`<meta http-equiv="Content-Security-Policy" content="${CONSOLE_CSP}" />`), "页内兜底 CSP 原样不变");
+  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
+  assert.equal(scripts.length, 1, "只有一个入口脚本");
+  assert.match(scripts[0]![1]!, /type="module"/);
+  assert.match(scripts[0]![1]!, /src="app\.js"/);
+  assert.equal(scripts[0]![2]!.trim(), "", "无内联脚本");
+  assert.doesNotMatch(html, /<style\b/i, "无内联样式块");
+  assert.doesNotMatch(html, /\sstyle\s*=/i, "无 style 属性");
+  assert.doesNotMatch(html, /\son[a-z]+\s*=/i, "无内联事件");
+  assert.doesNotMatch(html, /\b(?:src|href)\s*=\s*"(?:https?:)?\/\//i, "不引外部资源");
+  assert.deepEqual([...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map((m) => m[1]), ["tokens.css", "console.css"], "先令牌、后控制台样式");
+
+  const mods = consoleModules();
+  for (const need of ["app.js", "api.js", "ui.js", "ops-sign.js", "seal-key.js", "keystore.js", "domain.js"]) assert.ok(mods.includes(need), `缺 ${need}`);
+  assert.equal(mods.filter((f) => f.startsWith("pages/")).length, 9, "九个页面各一个模块");
+  assert.equal(existsSync(join(consoleDir, "console.js")), false, "旧的单文件 console.js 已拆分");
+  const bad = (f: string, src: string, re: RegExp, why: string) => assert.ok(!re.test(src), `${f} ${why}：${re.exec(src)?.[0] ?? ""}`);
+  for (const f of mods) {
+    const src = readFileSync(join(consoleDir, f), "utf8");
+    bad(f, src, /\.innerHTML\b|\.outerHTML\b|insertAdjacentHTML|document\.write|\beval\s*\(|new Function\b|createContextualFragment|DOMParser/, "不拼 HTML、不动态求值");
+    bad(f, src, /setAttribute\(\s*["']style["']/, "不写 style 属性");
+    bad(f, src, /\.style\.(?!cssText\b)/, "动态样式只经 el.style.cssText");
+    bad(f, src, /\bwindow\.(?:confirm|alert|prompt)\b|(?<![\w.$])(?:confirm|alert|prompt)\s*\(/, "不用 window.confirm / alert / prompt");
+    bad(f, src, /\bfrom\s+["'](?!\.\.?\/)|\bimport\s*\(\s*["'](?!\.\.?\/)|\bimport\s+["'](?!\.\.?\/)/, "只引本地相对模块");
+    bad(f, src, /fetch\(\s*["'`](?:https?:)?\/\/|\.(?:src|href|action)\s*=\s*["'`](?:https?:)?\/\/|\b(?:src|href|action):\s*["'`](?:https?:)?\/\/|new (?:WebSocket|EventSource|Worker)\(/, "不从外部取资源、不开别的连接");
+    if (f !== "app.js") bad(f, src, /localStorage\s*\.|localStorage\s*\[/, "不碰 localStorage（只有 app.js 记主题与运营编号）");
+    if (f !== "seal-key.js") bad(f, src, /exportKey\s*\(/, "不导出任何密钥（只有 seal-key.js 导出临时公钥）");
+  }
+  const ks = readFileSync(join(consoleDir, "keystore.js"), "utf8");
+  assert.match(ks, /indexedDB/);
+  assert.match(ks, /extractable !== false/, "记住前核对不可导出");
+
+  const css = readFileSync(join(consoleDir, "console.css"), "utf8");
+  const tokens = readFileSync(join(root, "packages/design-tokens/src/tokens.css"), "utf8");
+  assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i, "控制台样式不写颜色字面量");
+  assert.doesNotMatch(css, /@import|url\(/i, "不引外部样式与资源");
+  assert.doesNotMatch(css, /var\(--p-/, "不直接用基础色板");
+  const defined = new Set([...tokens.matchAll(/(--[a-z0-9-]+)\s*:/g), ...css.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]));
+  const used = [...new Set([...css.matchAll(/var\((--[a-z0-9-]+)/g)].map((m) => m[1]))];
+  // --w / --l / --h 由 cssVars() 在运行时写入（带缺省值）
+  assert.deepEqual(used.filter((v) => !defined.has(v) && !["--w", "--l", "--h"].includes(v!)), [], "引用的令牌都已定义");
+  const own = [...css.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]);
+  assert.ok(own.every((v) => v!.startsWith("--console-")), `控制台自加的令牌须以 --console- 开头：${own.join(",")}`);
+});
+
+test("build-ops-console：dist 含 tokens.css（与桌面端同一份）、页面与全部模块；引用都在 dist 内", async () => {
+  // @ts-expect-error 构建脚本（纯 JS，无类型声明）
+  const { buildOpsConsole, verifyDist } = await import("../../../scripts/build-ops-console.mjs");
+  const out = join(dir, "dist-check");
+  const files = buildOpsConsole(out).map((f: { path: string }) => f.path);
+  assert.deepEqual(files, ["config.example.json", "console.css", "index.html", "tokens.css", ...consoleModules()].sort());
+  assert.ok(readFileSync(join(out, "tokens.css")).equals(readFileSync(join(root, "packages/design-tokens/src/tokens.css"))));
+  assert.deepEqual(verifyDist(out), []);
+  const ex = JSON.parse(readFileSync(join(out, "config.example.json"), "utf8"));
+  assert.ok("routing_public_key" in ex && "routing_key_id" in ex, "示例配置写明网关路由公钥两项");
+});
+
+test("上游密钥浏览器加密与主文 §3.2 一致：网关私钥能解开；换上游编号（aad / info）解不开；只出尾号", async () => {
+  // @ts-expect-error 浏览器模块（纯 JS，无类型声明）
+  const { sealUpstreamKey, keyHint, SEAL_ALG } = await import("../../../apps/ops-console/seal-key.js");
+  const { createDecipheriv, diffieHellman, hkdfSync } = await import("node:crypto");
+  const pair = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const spki = pair.publicKey.export({ format: "der", type: "spki" }).toString("base64");
+  const plain = "sk-upstream-test-0123456789abcd";
+  const sealed = await sealUpstreamKey({ publicKey: spki, kid: "rk-test", providerId: "csi-maas", plaintext: plain });
+  assert.deepEqual(Object.keys(sealed).sort(), ["alg", "ct", "epk", "iv", "kid"]);
+  assert.equal(sealed.alg, "ECDH-P256+HKDF-SHA256+A256GCM");
+  assert.equal(SEAL_ALG, sealed.alg);
+  assert.equal(sealed.kid, "rk-test");
+  assert.equal(JSON.stringify(sealed).includes(plain), false, "密文里没有明文");
+  const open = (providerId: string) => {
+    const epk = Buffer.from(sealed.epk, "base64url");
+    assert.equal(epk.length, 65);
+    assert.equal(epk[0], 4, "未压缩点");
+    const pub = createPublicKey({ key: { kty: "EC", crv: "P-256", x: epk.subarray(1, 33).toString("base64url"), y: epk.subarray(33).toString("base64url") }, format: "jwk" });
+    const shared = diffieHellman({ privateKey: pair.privateKey, publicKey: pub });
+    const key = Buffer.from(hkdfSync("sha256", shared, Buffer.from("kwl-upstream-key/1"), Buffer.from(providerId), 32));
+    const iv = Buffer.from(sealed.iv, "base64url");
+    assert.equal(iv.length, 12);
+    const ct = Buffer.from(sealed.ct, "base64url");
+    const d = createDecipheriv("aes-256-gcm", key, iv);
+    d.setAAD(Buffer.from(`kwl-upstream-key/1\n${providerId}`));
+    d.setAuthTag(ct.subarray(ct.length - 16));
+    return Buffer.concat([d.update(ct.subarray(0, ct.length - 16)), d.final()]).toString("utf8");
+  };
+  assert.equal(open("csi-maas"), plain);
+  assert.throws(() => open("other-maas"), "换了上游编号就解不开");
+  assert.equal(keyHint(plain), "…abcd");
+  await assert.rejects(sealUpstreamKey({ publicKey: spki, kid: "rk-test", providerId: "csi-maas", plaintext: "short" }), /太短/);
+  await assert.rejects(sealUpstreamKey({ publicKey: "bm90LWEta2V5", kid: "rk-test", providerId: "csi-maas", plaintext: plain }), /P-256/);
+});
+
+test("记住 8 小时只收不可导出的私钥对象；签名路径含查询串（URLSearchParams 生成一次，签名与请求共用）", async () => {
+  // @ts-expect-error 浏览器模块（纯 JS，无类型声明）
+  const { rememberKey } = await import("../../../apps/ops-console/keystore.js");
+  // @ts-expect-error 浏览器模块（纯 JS，无类型声明）
+  const { qs } = await import("../../../apps/ops-console/api.js");
+  const extractable = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as unknown as { privateKey: CryptoKey; publicKey: CryptoKey };
+  await assert.rejects(rememberKey({ operator: "op_0001", kid: "k1", key: extractable.privateKey, deployment: "x", base: "https://cp" }), /不可导出/);
+  const k = await importOpsKey(OPS.keyOf("op_0001").privateKeyPem);
+  assert.equal(await rememberKey({ operator: "op_0001", kid: "k1", key: k, deployment: "x", base: "https://cp" }), false, "没有标签页存储（Node）时静默不记");
+
+  assert.equal(qs("/v1/ops/accounts", { q: "张 三", tid: "", status: undefined, limit: 50 }), "/v1/ops/accounts?q=%E5%BC%A0+%E4%B8%89&limit=50");
+  assert.equal(qs("/v1/ops/plans", {}), "/v1/ops/plans");
+  const r = await browserCall("op_0001", "GET", qs("/v1/ops/accounts", { q: "张 三", limit: 5 }));
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.ok(Array.isArray(r.json.accounts));
 });

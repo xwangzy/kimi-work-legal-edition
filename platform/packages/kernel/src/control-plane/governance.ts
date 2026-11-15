@@ -598,6 +598,14 @@ export class FirmGovernance {
   }
 
   /** 控制面答复本机席位已被吊销（收紧信号，控制面可单方面给出）：清掉席位令牌。 */
+  /** 第 44 批：本人退出登录或会话失效——清掉本机席位令牌（AI 立即停用；重新登录后同步再取）。 */
+  seatDroppedForSession(reason: "logout" | "session"): void {
+    if (this.clearSeatRow()) {
+      this.audit("seat.dropped", "seat", this.d.userId, { by: reason });
+      this.notifySeatCleared();
+    }
+  }
+
   seatRevokedByControlPlane(): void {
     if (this.clearSeatRow()) {
       this.audit("seat.revoked", "seat", this.d.userId, { by: "control_plane" });

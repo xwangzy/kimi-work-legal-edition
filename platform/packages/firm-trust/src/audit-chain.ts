@@ -14,8 +14,8 @@ import { canonicalJson } from "@zr-legal/keys";
 export const AUDIT_GENESIS = "0".repeat(64);
 
 export interface CpAuditActor {
-  /** claimant：出示开通码 / 邀请码或认领凭据、尚未登记设备的一方（第 13 批开通与入组），id 为码记录编号。 */
-  kind: "device" | "root" | "ops" | "service" | "claimant";
+  /** claimant：出示开通码 / 邀请码或认领凭据、尚未登记设备的一方（第 13 批开通与入组），id 为码记录编号；account：账号本人（第 44 批，id 为账号编号）。 */
+  kind: "device" | "root" | "ops" | "service" | "claimant" | "account";
   /** 设备编号 / 运营账号 / 服务名 / 码记录编号（[A-Za-z0-9_.:-]）。 */
   id: string;
   /** 设备证书指纹（设备类执行者）。 */
@@ -88,7 +88,7 @@ export function validAuditRecord(x: unknown): x is CpAuditRecord {
   if (!a || typeof a !== "object" || Array.isArray(a)) return false;
   const ak = Object.keys(a).sort().join(",");
   if (ak !== "id,kind" && ak !== "fp,id,kind") return false;
-  if (!["device", "root", "ops", "service", "claimant"].includes(a.kind as string) || typeof a.id !== "string" || !AUDIT_ID_RE.test(a.id)) return false;
+  if (!["device", "root", "ops", "service", "claimant", "account"].includes(a.kind as string) || typeof a.id !== "string" || !AUDIT_ID_RE.test(a.id)) return false;
   if (a.fp !== undefined && (typeof a.fp !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(a.fp))) return false;
   return (
     typeof r.tid === "string" &&

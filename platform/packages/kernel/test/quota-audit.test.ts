@@ -27,13 +27,13 @@ after(async () => {
   await cloud.close();
 });
 
-test("用量与上限：网关按租约结算并回报后，本所本月用量与按成员明细（成员名在本机换上）可见；管理员设月度上限经控制面生效", { timeout: 60_000 }, async () => {
+test("用量与上限（第 44 批 v2）：网关按席位租约结算并回报逐请求记录后，本所本期用量（tokens）与按成员明细（成员名在本机换上）可见；管理员设上限经控制面生效", { timeout: 60_000 }, async () => {
   const s0 = await tk.inv("quota.status");
   assert.equal(s0.mode, "control_plane");
-  assert.equal(s0.unit, "percent");
-  assert.equal(s0.cap_pct, null);
-  assert.equal(s0.used_ratio, 0);
-  assert.deepEqual(s0.kimi, { enabled: false, required: false, own: null });
+  assert.equal(s0.unit, "tokens");
+  assert.equal(s0.firm.cap_pct, null);
+  assert.equal(s0.firm.used_ratio, 0);
+  assert.equal("kimi" in s0, false, "Kimi 账号绑定已撤下");
   // 模拟本所一次模型请求（直接打网关：内核的模型链路另有用例覆盖）
   const t = cloud.cp.ops.tenant(TID)!;
   const seat = t.seatsByUser.get(`usr_${FIRM}_test-lawyer`)!;
@@ -46,19 +46,19 @@ test("用量与上限：网关按租约结算并回报后，本所本月用量�
   await r.text();
   await cloud.quota.flush();
   const s1 = await tk.inv("quota.status");
-  assert.ok(typeof s1.used_ratio === "number" && s1.used_ratio >= 0 && s1.used_ratio < 1, "只有比例（单次请求占 5000 万单位的比例四舍五入可为 0）");
+  assert.ok(typeof s1.firm.used_ratio === "number" && s1.firm.used_ratio >= 0 && s1.firm.used_ratio < 1);
+  assert.ok(s1.firm.used > 0, "管理员看得到本期用了多少 token（上游 usage 原样）");
   assert.equal(s1.own.requests, 1);
   assert.equal(s1.by_member.length, 1);
-  assert.equal(s1.by_member[0].member_id, `usr_${FIRM}_test-lawyer`);
-  assert.ok(s1.by_member[0].name, "成员名由本机换上（控制面只有编号）");
-  assert.equal(s1.by_member[0].kimi, null);
+  assert.equal(s1.by_member[0].uid, `usr_${FIRM}_test-lawyer`);
+  assert.ok(s1.by_member[0].name, "成员名由本机换上（成员没有账号时控制面不知道姓名）");
   assert.ok(!JSON.stringify(s1).match(/"(points|pool_remaining|period_used|granted_total)"/), "界面拿到的视图里没有点数");
 
   await assert.rejects(() => tk.inv("quota.set_cap", { monthly_cap_pct: 0 }), (e: any) => e.code === "validation");
   await assert.rejects(() => tk.inv("quota.set_cap", { monthly_cap: 1000 }), (e: any) => e.code === "validation", "旧的点数上限明确拒绝");
   assert.deepEqual(await tk.inv("quota.set_cap", { monthly_cap_pct: 80 }), { cap_pct: 80 });
   assert.equal(t.quota.cap_pct, 80);
-  assert.equal((await tk.inv("quota.status")).cap_pct, 80);
+  assert.equal((await tk.inv("quota.status")).firm.cap_pct, 80);
   await tk.inv("quota.set_cap", { monthly_cap_pct: null });
   assert.equal(t.quota.cap_pct, null);
 });

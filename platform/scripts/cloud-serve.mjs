@@ -36,8 +36,11 @@
  *   "keys": { "envelope": { "kid": "cp-prod-2612a", "private_key_file": "..." }, "seat": { "kid": "seat-prod-2612a", "private_key_file": "..." },
  *             "seat_audiences": { "support": { ... }, "notify": { ... }, "relay": { ... } } },   // 席位密钥按受众拆分；缺的受众用通用席位密钥
  *   // 网关 / 检索：
- *   "upstream": { "base_url": "https://api.moonshot.cn/v1", "api_key_file": "..." },
+ *   "upstream": { "base_url": "https://api.moonshot.cn/v1", "api_key_file": "..." },   // 网关配了 routing 时为兜底与 use_local_key 的密钥
  *   "content_safety_policy_file": "...",                 // 网关可选
+ *   // 网关可选（第 44 批）：路由订阅（控制面 /v1/feed/routing，签名信封 kwl-routing-feed）；配了就必须配上游主机白名单
+ *   "routing": { "feed": true, "key_file": "/run/secrets/routing-key.pem", "allow_hosts": ["maas.jointpilot.com"] },
+ *   "tenant_concurrency": 4, "queue_timeout_ms": 30000, "upstream_header_timeout_ms": 120000, "upstream_idle_timeout_ms": 120000,
  *   // 支持：
  *   "meter_key_file": "...",
  *   "blob_store": { "kind": "s3", "endpoint": "https://obs.cn-north-4.myhuaweicloud.com", "bucket": "kwl-prod-support", "region": "cn-north-4", "prefix": "support",
@@ -49,11 +52,14 @@
  *            "allow_cidrs": ["10.20.0.0/24"],                     // 运维网段（堡垒机出口）：来源不在其中的运营请求一律 404
  *            "min_roster_version": 12,                            // 可选：新实例或数据目录重建时的名册版本下限
  *            "console_origins": ["https://ops-console.kwl.internal"] } }  // 可选（第 37 批）：网页运营控制台的来源，只给它跨源读运营接口的回复（CORS）
- *   // 控制面可选（第 40 批）：套餐目录与计费口径（取消点数，用量按本月额度的百分比；缺省为标准/专业/旗舰三档、不显示价格）
- *   "billing": { "plans": [ { "id": "standard", "label": "标准", "seat_monthly_units": 200000, "seat_price_cny": 399, "note": "每席每月约 80 单" }, ... ],
- *                "default_plan": "standard", "unit_cost_cny": 0.0008, "boost_price_factor": 1 },
- *   // 控制面可选（第 40 批）：Kimi 账号对接（律师用 Kimi 账号登录绑定席位；client_id 须向月之暗面申请法律版自己的，不得用 Kimi Code 的）
- *   "kimi_account": { "oauth_host": "https://auth.kimi.com", "client_id": "<法律版 client_id>", "api_base": "https://api.kimi.com/coding/v1", "userinfo_path": "/me" },
+ *   // 控制面可选（第 44 批）：套餐目录与注册设置的初始值（首次启动导入状态；之后运营在控制台改）。额度单位 tokens 或 cny（价目表售价 × 实际 usage）
+ *   "billing": { "plans": [ { "id": "standard", "label": "标准", "quota_unit": "tokens", "seat_quota": 50000000, "period": "month", "seat_price_cny": 399,
+ *                             "burst": { "hours": 5, "pct": 25 }, "device_limit": 2, "alert_thresholds": [80, 100] }, ... ],
+ *                "default_plan": "standard", "registration": { "registration": "open", "trial_plan": "trial", "trial_days": 14, "trial_seats": 1, "default_device_limit": 2 } },
+ *   // 控制面可选（第 44 批）：API 路由初始值（首次启动导入；缺省取 upstream.base_url，密钥用网关本机文件）与网关路由公钥（控制台加密上游密钥用的那把）
+ *   "routing": { "bootstrap": { "provider": { "id": "maas", "label": "中软 MaaS", "vendor": "csi-maas", "base_url": "https://maas.jointpilot.com/v1" },
+ *                               "models": { "legal/k3": "kimi-k3.1-pro", "legal/k2.6": "kimi-k3.1-pro" } },
+ *                "public_key_file": "/etc/kwl/routing-public.txt" },
  * 没有 ops：运营路径一律 404。名册版本记录、换版记录、随机数与被拒记录在 <data_dir>/<角色>/ops/；名册不可用时业务照常、运营接口 503。
  * 全部密钥文件除格式外还核“是不是随机生成的”（scripts/lib/secret-strength.mjs：拒绝重复、递增、单一字符类、占位词）；服务间凭据同一要求。
  *
@@ -61,7 +67,7 @@
  * 保留 `log_retention_days` 天（缺省 190）；/healthz 与 /readyz 由入口应答；指标另起监听 `metrics`：
  *   "metrics": { "host": "127.0.0.1", "port": 9464, "token_file": "..." }   // 监听回环以外的地址必须给令牌（至少 32 字节随机）
  */
-import { createPrivateKey, createPublicKey, hkdfSync, randomBytes } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, hkdfSync, randomBytes } from "node:crypto";
 import { hostname } from "node:os";
 import { createServer as createHttpsServer } from "node:https";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
@@ -156,6 +162,8 @@ let opsSources = null;
 let opsConsoleOrigins = null;
 /** 启动时名册不可用的原因（不拒绝启动，只让运营接口 503；可观测性建好后记一条错误日志）。 */
 let opsStartupProblem = null;
+/** 运营名册来源（控制面“系统”页只读显示）。 */
+let opsRosterSource = null;
 /** 运营网段的合理性（复核 RA10A-10）：前缀不短于 IPv4 /8、IPv6 /32，合计覆盖不超过一个 /8（/32）；生产形态不许回环、未指定与链路本地地址。 */
 const FORBIDDEN_V4 = [["127.0.0.0", 8], ["0.0.0.0", 8], ["169.254.0.0", 16]];
 const FORBIDDEN_V6 = [["::1", 128], ["::", 128], ["fe80::", 10]];
@@ -211,7 +219,7 @@ if (cfg.ops !== undefined) {
   const opsDir = join(dataDir(cfg.role), "ops");
   mkdirSync(opsDir, { recursive: true, mode: 0o700 });
   // 名册状态（缺失、签名不符、回滚、过期、版本记录损坏）不拒绝启动：业务照常，运营接口 503（复核 RA10A-03：回滚保护不能成为停服开关）
-  const roster = opsMod.fileRosterSource({ file: c.roster_file, keys: rosterKeys, deployment: c.deployment, seenFile: join(opsDir, "roster-seen.json"), historyFile: join(opsDir, "roster-history.jsonl"), ...(c.min_roster_version !== undefined ? { minVersion: c.min_roster_version } : {}) });
+  const roster = (opsRosterSource = opsMod.fileRosterSource({ file: c.roster_file, keys: rosterKeys, deployment: c.deployment, seenFile: join(opsDir, "roster-seen.json"), historyFile: join(opsDir, "roster-history.jsonl"), ...(c.min_roster_version !== undefined ? { minVersion: c.min_roster_version } : {}) }));
   const first = roster.current();
   if (!first.ok) {
     opsStartupProblem = first.reason;
@@ -471,26 +479,43 @@ if (cfg.role === "cp-signer") {
     auditLog: cpMod.createAuditLog({ file: join(dir, "audit.jsonl") }),
     // 运营接口（A-10）：写操作照常进律所可见的运营审计流水（执行者为运营编号）；每个运营请求另记内部访问审计
     ...(opsGuard ? { opsGuard, opsAccessLog: (r) => opsMod.appendLineSynced(join(dir, "ops", "access.jsonl"), r) } : {}),
-    // 第 40 批：套餐目录（配置错误启动即失败）与 Kimi 账号对接（没配 = 账号接口 404，客户端不显示登录入口）
+    // 第 44 批：套餐目录与注册设置的初始值（配置错误启动即失败；之后以状态里的为准，运营在控制台改）
     billing: (() => {
       try {
-        return cpMod.validateBilling(cfg.billing);
+        cpMod.catalogFromConfig(cfg.billing);
+        return cfg.billing;
       } catch (e) {
         fail(`billing 配置不合法：${e.message}`);
       }
     })(),
-    ...(cfg.kimi_account
-      ? (() => {
-          try {
-            const k = cpMod.validateKimiConfig(cfg.kimi_account);
-            if (!insecure && (!k.oauth_host.startsWith("https://") || !k.api_base.startsWith("https://"))) fail("kimi_account 的地址须为 https");
-            return { kimiAccount: { config: k } };
-          } catch (e) {
-            fail(`kimi_account 配置不合法：${e.message}`);
-          }
-        })()
-      : {}),
+    // 第 44 批：逐请求用量账本（独立于状态快照的只追加文件）、API 路由初始值与网关路由公钥编号
+    usageBook: new cpMod.UsageBook({ dir: join(dir, "usage") }),
+    routing: (() => {
+      const r = cfg.routing ?? {};
+      if (r.bootstrap !== undefined && (typeof r.bootstrap !== "object" || r.bootstrap === null)) fail("routing.bootstrap 须为对象");
+      let keyId = null;
+      if (r.public_key_file !== undefined) {
+        const spki = readFileSync(String(r.public_key_file), "utf8").trim();
+        try {
+          const k = createPublicKey({ key: Buffer.from(spki, "base64"), format: "der", type: "spki" });
+          if (k.asymmetricKeyType !== "ec") throw new Error("not ec");
+        } catch {
+          fail("routing.public_key_file 须为网关路由公钥（P-256 SPKI，base64）");
+        }
+        keyId = createHash("sha256").update(Buffer.from(spki, "base64")).digest("hex").slice(0, 16);
+      }
+      return { bootstrap: r.bootstrap ?? (cfg.upstream?.base_url ? { provider: { base_url: cfg.upstream.base_url } } : undefined), key_id: keyId };
+    })(),
+    serverVersion: (() => {
+      try {
+        return JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version ?? null;
+      } catch {
+        return null;
+      }
+    })(),
+    ...(opsGuard && opsRosterSource ? { opsInfo: { deployment: cfg.ops.deployment, roster: () => { const r = opsRosterSource.current(); return r.ok ? r.body : null; } } } : {}),
   });
+  if (cfg.kimi_account !== undefined) fail("kimi_account 已撤下（第 44 批：Kimi 官方账号体系未开放第三方接入，改为我方自有账号），请从配置里删除");
   svc = cpInstance.server;
   // 额度租约指标（A-9 余项）与状态库指标并列
   serviceMetrics = () => [
@@ -518,18 +543,108 @@ if (cfg.role === "cp-signer") {
   }
   if (cfg.role === "gateway") {
     const gw = await import(join(root, "services/legal-gateway/src/index.ts"));
-    if (!cfg.upstream?.api_key_file) fail("网关只接真实上游：缺少 upstream.api_key_file");
-    const provider = new gw.MoonshotProvider({ apiKey: read(cfg.upstream.api_key_file, "upstream.api_key_file"), ...(cfg.upstream.base_url ? { baseUrl: String(cfg.upstream.base_url) } : {}) });
-    const quota = new gw.LeaseQuota({ ledger: gw.httpLedger({ baseUrl: String(cfg.control_plane.url).replace(/\/+$/, ""), serviceSecret: serviceSecret() }), holder: `gw-${host}-${port}` });
+    const cpBase = String(cfg.control_plane.url).replace(/\/+$/, "");
+    const svcSecret = serviceSecret();
+    // 并发与超时（第 44 批进配置；不配用网关缺省：每租户 4 并发、排队 30 秒、头超时流式 120 / 非流式 600 秒、块间隔 120 秒）
+    const intOpt = (v, what, min, max) => {
+      if (v === undefined) return undefined;
+      if (!Number.isInteger(v) || v < min || v > max) fail(`${what} 须为 ${min}～${max} 的整数`);
+      return v;
+    };
+    const tuning = {
+      tenantConcurrency: intOpt(cfg.tenant_concurrency, "tenant_concurrency", 1, 1024),
+      queueTimeoutMs: intOpt(cfg.queue_timeout_ms, "queue_timeout_ms", 100, 600_000),
+      upstreamHeaderTimeoutMs: intOpt(cfg.upstream_header_timeout_ms, "upstream_header_timeout_ms", 1_000, 900_000),
+      upstreamIdleTimeoutMs: intOpt(cfg.upstream_idle_timeout_ms, "upstream_idle_timeout_ms", 1_000, 900_000),
+    };
+    for (const k of Object.keys(tuning)) if (tuning[k] === undefined) delete tuning[k];
+    // upstream 段：没有路由订阅时是唯一上游；有订阅时是“从未取到订阅”的兜底，也是 use_local_key 的那把密钥
+    const localKey = cfg.upstream?.api_key_file ? read(cfg.upstream.api_key_file, "upstream.api_key_file") : null;
+    const localBase = String(cfg.upstream?.base_url ?? "https://api.moonshot.cn/v1");
+    if (cfg.upstream?.base_url !== undefined && !/^https:\/\//.test(localBase) && !insecure) fail("upstream.base_url 须为 https");
+    const fallbackRoutes = gw.routesFromEnv(process.env);
+    // 租约持有者：主机名 + 进程号 + 随机 6 位（多台网关不再撞同一个 holder；审计 §1）
+    const holder = `gw-${hostname().replace(/[^A-Za-z0-9_.-]/g, "-").slice(0, 40)}-${process.pid}-${randomBytes(3).toString("hex")}`;
+    let routing;
+    let health;
+    let provider;
+    if (cfg.routing !== undefined) {
+      const rc = cfg.routing;
+      if (!rc || typeof rc !== "object" || Array.isArray(rc)) fail("routing 须为对象：{ feed: true, key_file, allow_hosts: [...] }");
+      if (rc.feed !== true) fail("routing.feed 须为 true（不订阅路由就不要配 routing 段）");
+      // 流量去向不能被控制面单方面改（主文 §1.5）：配了路由订阅就必须配上游主机白名单
+      const allow = rc.allow_hosts;
+      if (!Array.isArray(allow) || allow.length === 0 || allow.length > 64 || allow.some((h) => typeof h !== "string" || !/^[a-z0-9]([a-z0-9-]{0,62})(\.[a-z0-9]([a-z0-9-]{0,62}))*$/.test(h)))
+        fail("routing.allow_hosts 必填：上游主机名列表（小写、精确匹配、不收通配与端口，1～64 个）");
+      let routingKey = null;
+      if (rc.key_file !== undefined) {
+        try {
+          routingKey = createPrivateKey(read(rc.key_file, "routing.key_file"));
+        } catch {
+          fail("routing.key_file 不是合法的私钥（P-256 PKCS#8 PEM，cloud-init-secrets 生成的 routing-key.pem）");
+        }
+        if (routingKey.asymmetricKeyType !== "ec" || routingKey.asymmetricKeyDetails?.namedCurve !== "prime256v1") fail("routing.key_file 须为 P-256 私钥");
+      }
+      if (!routingKey && !localKey) fail("路由订阅下没有可用的上游密钥：配 routing.key_file（解封控制台录入的密钥）或 upstream.api_key_file（use_local_key）");
+      if (localKey) {
+        let h = "";
+        try {
+          h = new URL(localBase).hostname.toLowerCase();
+        } catch {
+          fail("upstream.base_url 不是合法地址");
+        }
+        if (!allow.includes(h)) fail(`upstream.base_url 的主机 ${h} 不在 routing.allow_hosts 里（兜底上游也受白名单约束）`);
+      }
+      routing = new gw.RoutingFeedSubscriber({
+        url: `${cpBase}/v1/feed/routing`,
+        serviceSecret: svcSecret,
+        keys: pubMap(cfg.control_plane.keys_file, "control_plane.keys_file"),
+        routingKey,
+        allowHosts: allow,
+        fallback: localKey ? { baseUrl: localBase, apiKey: localKey, routes: fallbackRoutes } : null,
+        localKey,
+        allowHttp: insecure,
+      });
+      // 首次取不到不拒绝启动：用本机兜底（没有兜底则取到订阅前模型请求一律 503）
+      await routing.refresh().catch(() => {});
+      routing.start(15_000);
+      health = new gw.UpstreamHealth({ breaker: true });
+      health.startProbing(routing, 60_000);
+      health.startReporting({ url: `${cpBase}/v1/feed/routing-health`, serviceSecret: svcSecret, holder, view: routing, intervalMs: 15_000 });
+    } else {
+      if (!localKey) fail("网关只接真实上游：缺少 upstream.api_key_file（或配置 routing 段订阅路由）");
+      provider = new gw.OpenAICompatProvider({ apiKey: localKey, baseUrl: localBase, name: "local" });
+    }
+    const meterFile = join(dataDir("gateway"), "meter.jsonl");
+    const quota = new gw.LeaseQuota({ ledger: gw.httpLedger({ baseUrl: cpBase, serviceSecret: svcSecret }), holder, outbox: { meterFile, ackFile: join(dataDir("gateway"), "meter.ack") } });
     const contentSafety = cfg.content_safety_policy_file ? new gw.ContentSafety(JSON.parse(read(cfg.content_safety_policy_file, "content_safety_policy_file"))) : undefined;
-    const gateway = gw.createLegalGateway({ keys: seatKeys, provider, routes: gw.routesFromEnv(process.env), meter: gw.fileMeter(join(dataDir("gateway"), "meter.jsonl")), quota, feed, ...(contentSafety ? { contentSafety } : {}) });
+    const gateway = gw.createLegalGateway({
+      keys: seatKeys,
+      ...(routing ? { routing, health } : { provider, routes: fallbackRoutes }),
+      meter: gw.fileMeter(meterFile),
+      quota,
+      feed,
+      holder,
+      ...tuning,
+      ...(contentSafety ? { contentSafety } : {}),
+    });
     svc = gateway;
-    // 上游状态（429 单列）与网关自己的拒绝原因（额度、排队超时等）（A-9 余项）
+    // 停机：停订阅与探测，限时 5 秒做最终回报（未用的租约立即在账本释放；没送达的记录下次启动从 meter.ack 重放）
+    stopHooks.push(async () => {
+      routing?.stop();
+      health?.stop();
+      await Promise.race([quota.close(4_500), new Promise((r) => setTimeout(r, 5_000).unref())]);
+    });
+    // 上游状态（429 单列）与网关自己的拒绝原因（额度、排队超时等）（A-9 余项）；路由版本与上游健康（第 44 批）
     serviceMetrics = () => {
       const m = gateway.metrics();
+      const snap = routing ? routing.current() : null;
       return [
-        { name: "kwl_gateway_upstream_responses_total", help: "上游回复（按状态类别，429 单列；error = 没有回复）", type: "counter", values: Object.entries(m.upstream).map(([c, n]) => [{ code_class: c }, n]) },
+        { name: "kwl_gateway_upstream_responses_total", help: "上游回复（按状态类别，429 单列；error = 没有回复；每次尝试计一次）", type: "counter", values: Object.entries(m.upstream).map(([c, n]) => [{ code_class: c }, n]) },
         { name: "kwl_gateway_rejects_total", help: "网关拒绝（按原因代码）", type: "counter", values: Object.entries(m.rejects).map(([c, n]) => [{ reason: c }, n]) },
+        { name: "kwl_gateway_routing_version", help: "当前路由表版本（0 = 本机兜底或未订阅）", type: "gauge", values: [[{ source: snap ? snap.source : "static" }, snap?.version ?? 0]] },
+        ...(snap && health ? [{ name: "kwl_gateway_upstream_up", help: "上游可用（1 = up；按上游编号）", type: "gauge", values: Object.entries(health.report(snap)).map(([id, h]) => [{ provider: id, state: h.state }, h.state === "up" ? 1 : 0]) }] : []),
+        { name: "kwl_gateway_meter_pending", help: "待回报控制面的逐请求记录条数", type: "gauge", values: [[{}, quota.pendingRecords]] },
       ];
     };
   } else if (cfg.role === "search") {
@@ -622,7 +737,7 @@ const handle = obs.wrap((req, res) => {
       res.setHeader("vary", "Origin");
       if (req.method === "OPTIONS") {
         res.writeHead(204, {
-          "access-control-allow-methods": "GET, POST",
+          "access-control-allow-methods": "GET, POST, PUT, DELETE",
           "access-control-allow-headers": "content-type, x-kwl-op, x-kwl-op-key, x-kwl-op-ts, x-kwl-op-nonce, x-kwl-op-sig",
           "access-control-max-age": "600",
           "cache-control": "no-store",

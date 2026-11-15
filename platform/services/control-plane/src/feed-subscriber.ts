@@ -32,6 +32,8 @@ export class GatewayFeedSubscriber implements GatewayFeedView {
   private policies = new Map<string, "deny" | "allow">();
   private supportUpload = new Set<string>();
   private shareRelay = new Set<string>();
+  /** 暂停的设备（第 44 批）：每份订阅整体替换（不粘滞：重新登录即移出）。 */
+  private suspended = new Set<string>();
   private lastOkAt = 0;
   private lastFetch = 0;
   private inflight: Promise<void> | null = null;
@@ -57,6 +59,10 @@ export class GatewayFeedSubscriber implements GatewayFeedView {
 
   revokedSeat(seatId: string): boolean {
     return this.revSeats.has(seatId);
+  }
+
+  suspendedDevice(tid: string, deviceId: string): boolean {
+    return this.suspended.has(`${tid}\u0000${deviceId}`);
   }
 
   matter(tid: string, anon: string): AnonMatterSummary | null {
@@ -140,6 +146,9 @@ export class GatewayFeedSubscriber implements GatewayFeedView {
         if (p.share_relay === "allow") shareRelay.add(p.tid);
       }
       this.policies = policies;
+      const suspended = new Set<string>();
+      for (const d of Array.isArray(b.suspended_devices) ? b.suspended_devices : []) if (d && typeof d.tid === "string" && typeof d.device_id === "string") suspended.add(`${d.tid}\u0000${d.device_id}`);
+      this.suspended = suspended;
       this.supportUpload = supportUpload;
       this.shareRelay = shareRelay;
       this.lastOkAt = Date.now();

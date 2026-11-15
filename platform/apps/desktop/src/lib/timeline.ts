@@ -31,6 +31,8 @@ export const TOOL_LABELS: Record<string, string> = {
 
 /** 上游说的是余额或额度不足（不是连不上）：与内核给律师的失败说明同一口径（V16 第 41 批真实走查：额度用完时这一步写成“AI 服务连不上”，下一行又写“余额或额度不足”） */
 const QUOTA_RE = /额度不足|预扣费|余额不足|insufficient[_ ]?(?:quota|balance|credit)|quota[_ ]?exceeded|billing|欠费/i;
+/** 本产品自己的额度规则（第 44 批：频率窗口、本期额度、律所上限、个人额度）：说“暂停”，不说“连不上”。 */
+const OWN_QUOTA_RE = /频率窗口|额度已用完|用量上限|个人额度|quota_(?:burst|exhausted|cap_reached|seat_limit)/;
 
 export function toolLabel(name: string): string {
   if (name.startsWith("mcp__legal__")) {
@@ -102,6 +104,8 @@ export interface Step {
   detail?: string;
   /** 合并后的草稿名（v9.4：连续“草稿已生成”合成一行）。 */
   drafts?: string[];
+  /** 这一行是一次运行的开始（run.started；“重新运行”会再来一次）。 */
+  attemptStart?: true;
 }
 
 /** 时间线的一行：普通步骤，或同一子任务的若干步骤合成的一组（Y4 #33：子任务折叠，默认只显示一行）。 */
@@ -280,7 +284,15 @@ export function durationText(ms: number): string {
 export function problemSteps(steps: readonly Step[]): Step[] {
   const STATUS_TITLES = new Set(["部分完成", "失败", "已取消", "已超时", "已过期", "对账中"]);
   const out = new Map<string, Step>();
-  for (const s of steps) {
+  // 只看最后一次运行：“重新运行”之后，上一次的失败（例如额度暂停、连不上）已经过去了，不再列成“没做完的地方”（第 44 批真实验收）
+  let from = 0;
+  for (let i = steps.length - 1; i >= 0; i--) {
+    if (steps[i]!.attemptStart) {
+      from = i;
+      break;
+    }
+  }
+  for (const s of steps.slice(from)) {
     if (s.level !== "lawyer" || (s.icon !== "fail" && s.icon !== "dot")) continue;
     if (STATUS_TITLES.has(s.title) && !s.detail) continue;
     // 自动重试中的失败后来恢复了，不算问题；读材料、查条文这类工具步骤失败时助手会换个办法接着做，单写一个“阅读材料”也说明不了什么
@@ -347,7 +359,7 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
     const at = e.created_at;
     switch (e.type) {
       case "run.started":
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "已收到任务", at });
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "ok", title: "已收到任务", at, attemptStart: true });
         break;
       case "agent.task_started":
         steps.push({ key: `${e.event_id}`, icon: "ok", level: "detail", title: "助手开始工作", at });
@@ -554,7 +566,7 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         // 律师层只给一句可理解的说明（不显示英文错误与状态码）；原文进“处理细节”（UIUX 增量评审 P0-D）。
         // retryable 由内核保留（复核 B4-B21：此前被裁掉，“正在自动重试”永远不出现）
         // 模型通道不可达（provider.*，第 28 批演练）：直说 AI 服务连不上，不写“任务会尽量继续”
-        steps.push({ key: `${e.event_id}-l`, level: "lawyer", icon: "fail", title: p.retryable === true ? "AI 服务出了点问题，正在自动重试" : String(p.code ?? "").startsWith("provider.") ? (QUOTA_RE.test(String(p.message ?? "")) ? "AI 服务账户的余额或额度不足，这一步没有完成" : "AI 服务连不上，这一步没有完成") : "这一步没有完成，任务会尽量继续", at });
+        steps.push({ key: `${e.event_id}-l`, level: "lawyer", icon: "fail", title: p.retryable === true ? "AI 服务出了点问题，正在自动重试" : String(p.code ?? "").startsWith("provider.") ? (OWN_QUOTA_RE.test(String(p.message ?? "")) ? "AI 额度暂时用到限制，这一步暂停" : QUOTA_RE.test(String(p.message ?? "")) ? "AI 服务账户的余额或额度不足，这一步没有完成" : "AI 服务连不上，这一步没有完成") : "这一步没有完成，任务会尽量继续", at });
         // V16（审计第 8 条）：处理细节里只写出错代码，原始错误原文（常为英文）只进诊断信息
         steps.push({ key: `${e.event_id}`, level: "detail", icon: "fail", title: "出错代码", at, detail: `${String(p.code ?? "") || "未知"}（可在 设置 → 备份与安全 导出诊断信息给客服）` });
         break;

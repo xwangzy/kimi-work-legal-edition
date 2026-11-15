@@ -1,121 +1,153 @@
 #!/usr/bin/env node
 /**
- * 额度台本机演示（第 40 批）：一条命令拉起“控制面 + 模拟 Kimi 账号中心 + 控制台静态页”，并造好几家示例律所的用量，
- * 用于看界面、走查与截图。**只用于开发**：运营名册、签名私钥都是临时生成的，价格是示例价格。
+ * 运营控制台本机开发（第 44 批）：先打包 dist/（scripts/build-ops-console.mjs），再一条命令拉起“进程内控制面 + 控制台静态页”。
+ * **只用于开发**：运营名册、运营私钥、网关路由密钥都是临时生成的；价格是示例价格；律所、账号是虚构的演示数据。
  *
  *   node scripts/dev-ops-console.mjs [--port 5480] [--empty]
  *
- * - 控制台与控制面同源（本脚本把 /v1/* 反向代理到进程内的控制面），不必配 CORS；
- * - 运营私钥写到临时目录（启动时打印路径），在登录页拖进去即可（运营编号 op_0001，密钥编号 k1，无口令）；
- * - --empty：不造示例数据（从空平台开始）。
+ * - 控制台与控制面同源（/v1/* 反向代理到进程内的控制面），不必配 CORS；静态页只发 dist/ 里的文件，CSP 与生产同口径；
+ * - 运营私钥写到临时目录（启动时打印路径），在登录页拖进去即可（文件名里带运营编号与密钥编号，会自动填上）；
+ * - 演示数据**只经控制面的真实运营接口写入**（用 op_0001 / op_0002 的私钥签名，与浏览器同一个 ops-sign.js）：开通律所、代建账号、
+ *   套餐、上游（密钥用临时路由公钥在本机加密）、别名路由、价目、加量与上限、停用一个账号、发一个开通码。
+ *   逐请求用量**不造**：控制面要求真实席位（设备登记后才有），没有真实设备时用量页显示空状态。
+ *   页面顶栏标“开发演示数据”（config.json 的 demo: true）；--empty 不造任何数据，也不标。
  */
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash, generateKeyPairSync } from "node:crypto";
+import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
-import { extname, join, normalize } from "node:path";
+import { extname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildOpsConsole } from "./build-ops-console.mjs";
 
-const root = fileURLToPath(new URL("../", import.meta.url));
 const args = process.argv.slice(2);
 const PORT = Number(args[args.indexOf("--port") + 1]) || 5480;
 const EMPTY = args.includes("--empty");
 
-const { createControlPlane, devControlPlaneKeys } = await import("../services/control-plane/src/index.ts");
+const { createControlPlane, devControlPlaneKeys, UsageBook } = await import("../services/control-plane/src/index.ts");
 const { devOpsRoster, fileOpsGuard } = await import("../packages/ops-auth/src/testing.ts");
-const { startMockKimi } = await import("./lib/dev-kimi-oauth.mjs");
+const { importOpsKey, signOpsRequest } = await import("../apps/ops-console/ops-sign.js");
+const { sealUpstreamKey, keyHint } = await import("../apps/ops-console/seal-key.js");
 
+// ─── 打包 ───
+const DIST = fileURLToPath(new URL("../apps/ops-console/dist", import.meta.url));
+buildOpsConsole(DIST);
+
+// ─── 临时运营名册（含第 44 批新增的 account.manage / route.manage / plan.manage） ───
 const dir = mkdtempSync(join(tmpdir(), "kwl-ops-console-dev-"));
+// tenant.manage 与 activation.issue 职责分离（名册拒收同一人兼有）：发开通码用 op_0002
+const FULL = ["tenant.read", "tenant.manage", "tenant.terminate", "quota.manage", "quota.cap", "device.revoke", "account.manage", "route.manage", "plan.manage"];
 const OPS = devOpsRoster(
   [
-    { id: "op_0001", perms: ["tenant.read", "tenant.manage", "quota.manage", "quota.cap", "tenant.terminate", "device.revoke"] },
+    { id: "op_0001", perms: FULL },
     { id: "op_0002", perms: ["tenant.read", "activation.issue"] },
   ],
   { deployment: "dev" },
 );
 for (const id of ["op_0001", "op_0002"]) writeFileSync(join(dir, `${id}.k1.key.pem`), OPS.keyOf(id).privateKeyPem, { mode: 0o600 });
 
-const kimi = await startMockKimi({ port: PORT + 1 });
+// ─── 临时网关路由密钥（P-256）：公钥进 config.json，编号 = SPKI 字节 sha256 前 16 位十六进制 ───
+const routingPair = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+const spki = routingPair.publicKey.export({ format: "der", type: "spki" });
+const ROUTING_PUB = Buffer.from(spki).toString("base64");
+const ROUTING_KID = createHash("sha256").update(spki).digest("hex").slice(0, 16);
+
 const cp = createControlPlane({
   keys: devControlPlaneKeys(),
   serviceSecret: "dev-ops-console-service-secret-000",
   opsGuard: fileOpsGuard({ dir: join(dir, "guard"), audience: "control-plane", roster: OPS.roster, rosterKeys: OPS.rosterKeys }),
   opsAccessLog: () => {},
-  // 示例价格（正式价格由商务写进控制面配置的 billing 段）
-  billing: {
-    plans: [
-      { id: "standard", label: "标准", seat_monthly_units: 200_000, seat_price_cny: 399, note: "每席每月约 80 单常规任务" },
-      { id: "pro", label: "专业", seat_monthly_units: 500_000, seat_price_cny: 799, note: "每席每月约 200 单常规任务" },
-      { id: "max", label: "旗舰", seat_monthly_units: 1_200_000, seat_price_cny: 1599, note: "每席每月约 480 单常规任务" },
-    ],
-    default_plan: "standard",
-    unit_cost_cny: 0.0008,
-    boost_price_factor: 1,
+  opsInfo: { deployment: "dev", roster: () => OPS.roster.body },
+  usageBook: new UsageBook({ dir: join(dir, "usage") }),
+  routing: {
+    key_id: ROUTING_KID,
+    bootstrap: EMPTY
+      ? undefined
+      : {
+          provider: { id: "csi-maas", label: "中软 MaaS（演示地址）", vendor: "csi-maas", base_url: "https://maas.example.invalid/v1" },
+          models: { "legal/k3": "kimi-k3.1-pro", "legal/k2.6": "kimi-k3.1-pro-highspeed" },
+          prices: { "legal/k3": { input: 8, cached_input: 2, output: 32, cost_input: 4, cost_cached_input: 1, cost_output: 16 } },
+        },
   },
-  kimiAccount: { config: { oauth_host: kimi.base, client_id: "kwl-legal-dev", api_base: kimi.base } },
+  // 示例套餐（正式套餐由商务写进控制面配置的 billing 段，或在控制台“套餐与额度”里改）
+  billing: EMPTY
+    ? undefined
+    : {
+        plans: [
+          { id: "standard", label: "标准", quota_unit: "tokens", seat_quota: 20_000_000, period: "month", seat_price_cny: 399, boost_price_factor: 1, device_limit: 2, alert_thresholds: [80, 100], enforce_seat_quota: false, models: null, burst: null },
+          { id: "pro", label: "专业", quota_unit: "cny", seat_quota: 300, period: "month", seat_price_cny: 799, boost_price_factor: 1, device_limit: 3, alert_thresholds: [80, 100], enforce_seat_quota: false, models: null, burst: { hours: 5, pct: 20 } },
+          { id: "max", label: "旗舰", quota_unit: "tokens", seat_quota: 100_000_000, period: "month", seat_price_cny: 1599, boost_price_factor: 1.2, device_limit: 3, alert_thresholds: [50, 80, 100], enforce_seat_quota: true, models: null, burst: null },
+          // 旧版计量（单位）套餐：控制面按 × 250 换算为 token 额度、标“待商务确认”（主文 §4.6）
+          { id: "legacy-std", label: "旧标准", seat_monthly_units: 200_000, seat_price_cny: 399 },
+        ],
+        default_plan: "standard",
+      },
 });
 await new Promise((r) => cp.server.listen(0, "127.0.0.1", () => r()));
 const cpPort = cp.server.address().port;
+const cpBase = `http://127.0.0.1:${cpPort}`;
 
-// ─── 示例律所（虚构名称）：覆盖正常、偏快、用完、近上限、待开通、快到期六种状态 ───
-if (!EMPTY) {
-  const now = Date.now();
-  const DAY = 86_400_000;
-  const nicks = ["陈**", "林**", "周**", "吴**", "郑**", "孙**", "赵**", "钱**", "冯**", "何**", "罗**", "高**"];
-  const seed = (n) => {
-    let x = n * 9301 + 49297;
-    return () => ((x = (x * 9301 + 49297) % 233280) / 233280);
-  };
-  const firms = [
-    { tid: "ten_chengming", name: "澄明律师事务所", plan: "pro", seats: 40, used: 0.58, boost: 25, members: 34, kimiShare: 0.85, hist: [0.62, 0.71, 0.8, 0.88, 0.93, 1.04] },
-    { tid: "ten_hengshi", name: "衡石律师事务所", plan: "max", seats: 120, used: 0.21, members: 96, kimiShare: 0.6, hist: [0.55, 0.61, 0.58, 0.66, 0.7, 0.72] },
-    { tid: "ten_qinghe", name: "青禾律师事务所", plan: "standard", seats: 8, used: 1, members: 8, kimiShare: 1, hist: [0.9, 1, 1, 0.97, 1, 1] },
-    { tid: "ten_yuanlan", name: "远澜律师事务所", plan: "standard", seats: 15, used: 0.31, cap: 40, members: 12, kimiShare: 0.5, hist: [0.3, 0.34, 0.38, 0.36, 0.4, 0.39] },
-    { tid: "ten_zhizhi", name: "知止律师事务所", plan: "pro", seats: 25, used: 0, members: 0, pending: true, created: now - 10 * DAY, hist: [] },
-    { tid: "ten_nanqiang", name: "南樯律师事务所", plan: "standard", seats: 5, used: 0.12, members: 5, kimiShare: 0.4, kimiRequired: true, expires: now + 12 * DAY, hist: [0.2, 0.18, 0.25] },
-  ];
-  for (const [fi, f] of firms.entries()) {
-    const t = cp.ops.createTenant({ tid: f.tid, name: f.name, edition: f.seats > 30 ? "firm" : "team", seats: f.seats, plan: f.plan, subscriptionDays: 365, activationRequired: true, kimiRequired: !!f.kimiRequired });
-    if (f.created) t.created_at = new Date(f.created).toISOString();
-    if (f.expires) t.subscription_until = new Date(f.expires).toISOString();
-    if (f.boost) cp.ops.boostQuota(f.tid, f.boost);
-    if (f.cap) cp.ops.setQuotaCap(f.tid, f.cap);
-    if (f.pending) {
-      cp.ops.issueActivationCode(f.tid, { member: { slug: "admin", name: "管理员" }, ttlHours: 72 });
-      continue;
-    }
-    t.root_public_key_pem = "-----BEGIN PUBLIC KEY-----\n（本机演示，未登记）\n-----END PUBLIC KEY-----";
-    const q = t.quota;
-    const total = q.allowance + q.boost;
-    const usedUnits = Math.round(total * f.used);
-    // 成员用量：长尾分布（少数人用得多）
-    const rnd = seed(fi + 1);
-    const weights = Array.from({ length: f.members }, (_, i) => Math.pow(0.82, i) * (0.6 + rnd()));
-    const wsum = weights.reduce((s, w) => s + w, 0);
-    let left = usedUnits;
-    for (let i = 0; i < f.members; i++) {
-      const uid = `usr_${f.tid.slice(4)}_${String(i + 1).padStart(3, "0")}`;
-      const sid = `seat_${f.tid}_${i + 1}`;
-      t.seatsByUser.set(uid, { sid, uid, assigned_at: new Date(now - 60 * DAY).toISOString(), revoked_at: null });
-      const units = i === f.members - 1 ? left : Math.min(left, Math.round((usedUnits * weights[i]) / wsum));
-      left -= units;
-      if (units > 0) q.period_by_seat[sid] = { points: units, requests: Math.max(1, Math.round(units / 2400)) };
-      if (rnd() < f.kimiShare) t.kimiAccounts.set(uid, { ref: `kimi_${(fi * 1000 + i).toString(16).padStart(20, "0")}`, nickname: nicks[(i + fi) % nicks.length], phone_tail: String(1000 + Math.floor(rnd() * 8999)), level: ["Allegro", "Moderato", "Vivace"][i % 3], bound_at: new Date(now - (20 - (i % 20)) * DAY).toISOString() });
-    }
-    t.seatCounter = f.members;
-    q.period_used = usedUnits;
-    // 在途：用得多的所有一点网关在途
-    if (f.used > 0.1 && f.used < 1) q.leases.ls_demo = { lease_id: "ls_demo", holder: "gw-demo", points: Math.round(total * 0.03), granted_at: new Date().toISOString(), expires_at: new Date(now + 5 * 60_000).toISOString(), by_seat: {}, used: 0, closed_at: null, unreconciled: false };
-    // 历史月份
-    const [y, m] = q.period.split("-").map(Number);
-    q.history = f.hist.map((r, i) => {
-      const k = new Date(Date.UTC(y, m - 1 - (f.hist.length - i), 1));
-      return { period: `${k.getUTCFullYear()}-${String(k.getUTCMonth() + 1).padStart(2, "0")}`, used: Math.round(q.allowance * r), total: q.allowance, boost_pct: r > 1 ? Math.round((r - 1) * 100 / 25) * 25 || 25 : 0 };
-    });
+// ─── 演示数据：只经真实运营接口 ───
+const opKeys = { op_0001: await importOpsKey(OPS.keyOf("op_0001").privateKeyPem), op_0002: await importOpsKey(OPS.keyOf("op_0002").privateKeyPem) };
+async function ops(method, path, body, operator = "op_0001") {
+  const raw = body === undefined ? "" : JSON.stringify(body);
+  const headers = await signOpsRequest({ deployment: "dev", audience: "control-plane", operator, kid: "k1", key: opKeys[operator], method, path, body: raw });
+  const r = await fetch(cpBase + path, { method, headers: { ...headers, ...(raw ? { "content-type": "application/json" } : {}) }, ...(raw ? { body: raw } : {}) });
+  const json = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(`${method} ${path} → ${r.status} ${json?.error?.code ?? ""} ${json?.error?.message ?? ""}`);
+  return json;
+}
+const skipped = [];
+const tryOps = async (label, fn) => {
+  try {
+    return await fn();
+  } catch (e) {
+    skipped.push(`${label}：${e.message}`);
+    return null;
   }
+};
+
+if (!EMPTY) {
+  // 律所（虚构名称；邮箱用保留域名 .example）。每家只代建负责人账号：控制面要求先完成创始开通（founder_first）才能建成员账号
+  const firms = [
+    { tid: "ten_chengming", name: "澄明律师事务所", plan: "pro", seats: 40, edition: "firm", boost: 25, members: [["chen.yu", "陈雨", "admin"]] },
+    { tid: "ten_hengshi", name: "衡石律师事务所", plan: "max", seats: 120, edition: "firm", members: [["sun.li", "孙立", "admin"]] },
+    { tid: "ten_qinghe", name: "青禾律师事务所", plan: "standard", seats: 8, edition: "team", cap: 60, members: [["feng.xi", "冯溪", "admin"]] },
+    { tid: "ten_yuanlan", name: "远澜律师事务所", plan: "legacy-std", seats: 15, edition: "team", accounts_required: false, members: [["luo.jin", "罗瑾", "admin"]] },
+    { tid: "ten_zhizhi", name: "知止律师事务所", plan: "standard", seats: 25, edition: "team", pending: true, members: [] },
+  ];
+  for (const f of firms) {
+    const ok = await tryOps(`开通 ${f.tid}`, () => ops("POST", "/v1/ops/tenants", { tid: f.tid, name: f.name, plan: f.plan, seats: f.seats, subscription_days: f.tid === "ten_qinghe" ? 20 : 365, edition: f.edition, accounts_required: f.accounts_required ?? true }));
+    if (!ok) continue;
+    const T = `/v1/ops/tenants/${f.tid}`;
+    if (f.boost) await tryOps(`加量 ${f.tid}`, () => ops("POST", `${T}/boost`, { pct: f.boost }));
+    if (f.cap) await tryOps(`上限 ${f.tid}`, () => ops("POST", `${T}/cap`, { cap_pct: f.cap }));
+    if (f.pending) await tryOps(`开通码 ${f.tid}`, () => ops("POST", `${T}/activation-codes`, {}, "op_0002"));
+    for (const [slug, name, role] of f.members) {
+      const domain = `${f.tid.slice(4)}.example`;
+      const a = await tryOps(`账号 ${slug}@${domain}`, () => ops("POST", "/v1/ops/accounts", { tid: f.tid, email: `${slug}@${domain}`, name, role }));
+      if (a && slug === "luo.jin") await tryOps("停用演示账号", () => ops("POST", `/v1/ops/accounts/${encodeURIComponent(a.account.aid)}/disable`, { reason: "演示：离职交接中" }));
+    }
+  }
+  // 第二个上游：密钥用临时路由公钥在本机加密（与浏览器同一个 seal-key.js），控制面只见密文与尾号
+  const demoKey = `sk-demo-${createHash("sha256").update(dir).digest("hex").slice(0, 24)}`;
+  await tryOps("上游 csi-maas-b", async () =>
+    ops("PUT", "/v1/ops/routing/providers/csi-maas-b", {
+      label: "中软 MaaS 备线（演示地址）",
+      vendor: "csi-maas",
+      base_url: "https://maas-b.example.invalid/v1",
+      enabled: true,
+      max_concurrency: 32,
+      key_sealed: await sealUpstreamKey({ publicKey: ROUTING_PUB, kid: ROUTING_KID, providerId: "csi-maas-b", plaintext: demoKey }),
+      key_hint: keyHint(demoKey),
+    }),
+  );
+  await tryOps("路由 legal/k3", () => ops("PUT", `/v1/ops/routing/models/${encodeURIComponent("legal/k3")}`, { label: "主任务模型", enabled: true, is_default: true, targets: [{ provider: "csi-maas", model: "kimi-k3.1-pro", priority: 1 }, { provider: "csi-maas-b", model: "kimi-k3.1-pro", priority: 2 }], allow_cross_vendor: false, default_max_tokens: 8192 }));
 }
 
-// ─── 静态页 + /v1 反向代理 ───
-const STATIC = new Set(["index.html", "console.js", "console.css", "ops-sign.js"]);
+// ─── 静态页（只发 dist/）+ /v1 反向代理 ───
+const walk = (d) => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : [join(d, f)]));
+const STATIC = new Set(walk(DIST).map((f) => relative(DIST, f).split(sep).join("/")));
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8" };
 const origin = `http://127.0.0.1:${PORT}`;
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -129,25 +161,35 @@ const server = createServer((req, res) => {
     up.on("error", () => (res.writeHead(502), res.end()));
     return void req.pipe(up);
   }
-  const name = url.pathname === "/" ? "index.html" : normalize(url.pathname.slice(1));
+  const name = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
   if (name === "config.json") {
     res.writeHead(200, { "content-type": TYPES[".json"], "cache-control": "no-store" });
-    return void res.end(JSON.stringify({ control_plane_base: /^(127\.0\.0\.1|localhost):\d+$/.test(req.headers.host ?? "") ? `http://${req.headers.host}` : origin, deployment: "dev", label: "本机演示 · 示例价格" }));
+    return void res.end(
+      JSON.stringify({
+        control_plane_base: /^(127\.0\.0\.1|localhost):\d+$/.test(req.headers.host ?? "") ? `http://${req.headers.host}` : origin,
+        deployment: "dev",
+        label: "本机开发",
+        routing_public_key: ROUTING_PUB,
+        routing_key_id: ROUTING_KID,
+        demo: !EMPTY,
+      }),
+    );
   }
   if (!STATIC.has(name)) return void (res.writeHead(404), res.end());
   res.writeHead(200, { "content-type": TYPES[extname(name)] ?? "application/octet-stream", "content-security-policy": CSP, "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "cache-control": "no-store" });
-  res.end(readFileSync(join(root, "apps/ops-console", name)));
+  res.end(readFileSync(join(DIST, name)));
 });
 await new Promise((r) => server.listen(PORT, "127.0.0.1", () => r()));
-console.log(`额度台（本机演示）：${origin}`);
-console.log(`  运营私钥：${join(dir, "op_0001.k1.key.pem")}（运营编号 op_0001，密钥编号 k1，无口令；op_0002 只能看与发码）`);
-console.log(`  模拟 Kimi 账号中心：${kimi.base}`);
-console.log(`  控制面（进程内）：http://127.0.0.1:${cpPort}`);
-const stop = async () => {
+console.log(`运营控制台（本机开发）：${origin}`);
+console.log(`  运营私钥：${join(dir, "op_0001.k1.key.pem")}（op_0001，密钥编号 k1，无口令；除发开通码外的全部权限）`);
+console.log(`            ${join(dir, "op_0002.k1.key.pem")}（op_0002：只读 + 发开通码，与开通律所职责分离）`);
+console.log(`  网关路由公钥编号：${ROUTING_KID}（临时生成，私钥只在本进程内存）`);
+console.log(`  控制面（进程内）：${cpBase}`);
+if (skipped.length) console.log(`  演示数据有 ${skipped.length} 项没写入（接口未就绪或被拒）：\n    ${skipped.join("\n    ")}`);
+const stop = () => {
   server.close();
   cp.server.closeAllConnections();
   cp.server.close();
-  await kimi.close();
   process.exit(0);
 };
 process.on("SIGINT", stop);

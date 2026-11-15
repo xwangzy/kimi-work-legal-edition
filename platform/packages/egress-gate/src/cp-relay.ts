@@ -40,8 +40,10 @@ const PATHS: readonly RegExp[] = [
   // 第 11 批：共享中继专用凭据（S11 团队事项密文同步）
   /^\/v1\/relay-token$/,
   /^\/v1\/quota\/cap$/,
-  // Kimi 账号登录（第 40 批）：查询、发起、轮询、解绑（授权由控制面代办，本机不直连 Kimi）
-  /^\/v1\/account\/kimi(?:\/start|\/poll)?$/,
+  // 第 44 批：我方账号（注册、登录、退出、本人资料、改密、找回密码、吊销本人的登录、解绑本人的设备）
+  /^\/v1\/auth\/(?:register|login|logout|me|password|password-reset\/request|password-reset\/confirm)$/,
+  /^\/v1\/auth\/sessions\/ses_[A-Za-z0-9_-]{16}\/revoke$/,
+  /^\/v1\/auth\/devices\/[A-Za-z0-9_-]{1,128}\/unbind$/,
   /^\/v1\/audit\?after=\d{1,15}&limit=\d{1,3}$/,
   // 第 13 批：开通与成员入组（开通码兑换、入组申请与取回、管理员发邀请与批准；记录编号固定 16 位）
   /^\/v1\/activation\/redeem$/,
@@ -51,7 +53,8 @@ const PATHS: readonly RegExp[] = [
   /^\/v1\/invitations\/act_[A-Za-z0-9_-]{16}\/revoke$/,
 ];
 const METHODS = new Set(["GET", "POST", "PUT", "DELETE"]);
-const HEADERS = new Set(["x-kwl-tenant", "x-kwl-device", "x-kwl-ts", "x-kwl-nonce", "x-kwl-sig"]);
+// 第 44 批：x-kwl-session = 账号会话令牌（内核从封装文件读出、只附在控制面请求上）
+const HEADERS = new Set(["x-kwl-tenant", "x-kwl-device", "x-kwl-ts", "x-kwl-nonce", "x-kwl-sig", "x-kwl-session"]);
 export const CP_MAX_REQUEST_BYTES = 256 * 1024;
 /** 响应上限（设备目录约 0.6 KB/台：8 MiB 约一万三千台；分页或增量下发在 G1——复核 S6-B23）。 */
 export const CP_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;

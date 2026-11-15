@@ -34,7 +34,8 @@ test("复核 R15B-25：顶上一句话按缺的那一步说；重新生成恢复
 
 test("激活与入组批准后落到向导；从备份恢复后直接进首页；缺恢复包的提醒“去完成”回到向导", () => {
   const src = readFileSync(fileURLToPath(new URL("../src/pages/Activate.tsx", import.meta.url)), "utf8");
-  assert.equal((src.match(/"#\/welcome"\);/g) ?? []).length, 2, "开通码激活与入组批准两处");
+  // 第 44 批：登录或注册后的创始开通、直接输入开通码、邀请入组批准、账号新电脑核对本所识别码后打开——四处都落到向导
+  assert.equal((src.match(/"#\/welcome"\);/g) ?? []).length, 4, "开通（登录注册 / 开通码）与入组批准（邀请 / 账号新电脑）四处");
   assert.match(src, /void waitForActivated\(onStuck\);/, "从备份恢复不进向导");
   assert.equal(recoveryReminder({ packages_created: 0 })!.kind, "package");
   assert.equal(recoveryReminder({ packages_created: 1, configured: false })!.kind, "folder");

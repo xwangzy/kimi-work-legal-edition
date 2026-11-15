@@ -28,6 +28,7 @@ import { TaskQueue } from "./queue.ts";
 import { createApi } from "./api/index.ts";
 import { resolveIdentity, taskTokenKey, type Identity } from "./identity.ts";
 import { applyStagedJoin, applyStagedRecovery, configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
+import { dropAccountSession, readAccountSession, writeAccountSession, type AccountSessionFile } from "./account-session.ts";
 import { activationInfo, dropActivationClaim, membersApi, OnboardingService, ONBOARDING_METHODS, readActivationClaim, reconcilePendingRestore, removePendingWorkspace, writeJoinFailure, writePendingActivation } from "./services/onboarding.ts";
 import { FirmGovernance, localDevPolicyBody, firmPolicyInputOf, type FirmPolicyInput } from "./control-plane/governance.ts";
 import { ControlPlaneClient } from "./control-plane/client.ts";
@@ -165,7 +166,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   if (config.activation?.kind === "member") {
     let sj: { applied: boolean; rejected?: string };
     try {
-      sj = applyStagedJoin(db, keysDir, identity, { firmSlug: config.firmSlug, userSlug: config.userSlug });
+      sj = applyStagedJoin(db, keysDir, identity, { firmSlug: config.firmSlug, userSlug: config.userSlug, ...(config.activation?.device_id ? { deviceId: config.activation.device_id } : {}) });
     } catch {
       // 暂存文件损坏或解封不了（复核 B13-K02）：按“被拒”处理，不让未捕获异常把内核卡在每次启动都失败
       sj = { applied: false, rejected: "unreadable" };
@@ -188,9 +189,9 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   }
   const firm = ensureFirmIdentity(db, keysDir, identity.tenantId);
   // 暂存的设备恢复在任何组件装载设备密钥之前生效（复核 B4-R09）
-  const recovery = applyStagedRecovery(db, keysDir, { firmSlug: config.firmSlug, userSlug: config.userSlug }, firm.rootPublicKeyPem);
+  const recovery = applyStagedRecovery(db, keysDir, { firmSlug: config.firmSlug, userSlug: config.userSlug, ...(config.activation?.device_id ? { deviceId: config.activation.device_id } : {}) }, firm.rootPublicKeyPem);
   if (recovery.rejected) slog.event("KERNEL_RECOVERY_REJECTED", {});
-  const device = ensureDevice(db, keysDir, identity, { firmSlug: config.firmSlug, userSlug: config.userSlug }, { promoteSole: !config.activation });
+  const device = ensureDevice(db, keysDir, identity, { firmSlug: config.firmSlug, userSlug: config.userSlug, ...(config.activation?.device_id ? { deviceId: config.activation.device_id } : {}) }, { promoteSole: !config.activation });
   const signer = createLedgerSigner({ db, deviceId: device.deviceId, signer: device.signer, tenantId: identity.tenantId });
   // 从备份恢复后的第一次正常启动（复核 R2A-14）：在恢复出的账本里记一条审计（本设备何时从备份恢复），界面据此提醒“原电脑丢失请联系管理员”
   {
@@ -320,6 +321,31 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     preauth: (rid) => ({ searchGeneralized: runOptionsOf(db, rid, firmPolicy()).preauthorized.includes("search_generalized"), images: false }),
     governance,
   });
+  // 第 44 批：账号会话（令牌在 keys/account-session.json，封装；只在内核与闸门之间流转）与“要重新登录”的原因
+  let accountSession: AccountSessionFile | null = config.onboarding ? null : readAccountSession(keysDir);
+  let accountProblem: string | null = null;
+  /** 退出登录后仍记住上次的邮箱与姓名（不含令牌）：重新登录框里预填。 */
+  let lastAccount: { email: string; name: string; role: string } | null = accountSession ? { email: accountSession.email, name: accountSession.name, role: accountSession.role } : null;
+  const accountDeps = {
+    session: () => accountSession,
+    last: () => lastAccount,
+    save: (x: Omit<AccountSessionFile, "v" | "saved_at">) => {
+      writeAccountSession(keysDir, x);
+      accountSession = readAccountSession(keysDir);
+      lastAccount = { email: x.email, name: x.name, role: x.role };
+    },
+    drop: () => {
+      dropAccountSession(keysDir);
+      accountSession = null;
+    },
+    problem: () => accountProblem,
+    clearProblem: () => {
+      accountProblem = null;
+    },
+    setProblem: (code: string) => {
+      accountProblem = code;
+    },
+  };
   // 控制面客户端（只在配置了控制面时）：请求经闸门代发，内核本身不联网
   const controlPlane =
     governance.mode === "control_plane" && !config.onboarding
@@ -342,6 +368,17 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
           // 第 13 批：经开通码激活的创始设备首次登记根公钥时出示认领凭据，登记成功即删除暂存
           activationClaim: () => readActivationClaim(keysDir),
           onEnrolled: () => dropActivationClaim(keysDir),
+          // 第 44 批：控制面请求附账号会话；控制面说要重新登录 → 记原因、清掉本机席位令牌（AI 停用）、通知界面出登录框
+          sessionToken: () => accountSession?.token ?? null,
+          onSessionProblem: (code) => {
+            const first = accountProblem === null;
+            accountProblem = code;
+            if (first) {
+              governance.seatDroppedForSession("session");
+              slog.event("KERNEL_ACCOUNT_LOGIN_REQUIRED", { reason: /^[a-z_]{1,40}$/.test(code) ? code : "other" });
+              broadcast({ type: "account.login_required", reason: code });
+            }
+          },
           // 退出模式下启动时暂停的任务：退出模式解除后（同步取得许可）入队（复核 S6-B34）
           onSynced: () => {
             if (governance.exitMode()) return;
@@ -661,6 +698,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     matterPolicy: (mid) => kapMatterPolicy(db, mid, firmPolicy()),
     governance,
     controlPlane,
+    ...(controlPlane ? { account: accountDeps } : {}),
     reminders,
     shareRelay,
   });
@@ -862,6 +900,11 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     api["onboarding.redeem"] = (p) => onboarding.redeem((p ?? {}) as { code?: unknown });
     api["onboarding.check"] = () => onboarding.check();
     api["onboarding.reset"] = () => onboarding.reset();
+    // 第 44 批：账号注册与登录（这台电脑还没有身份）；找回密码两种模式都可用
+    api["account.register"] = (p) => onboarding.accountRegister((p ?? {}) as Record<string, unknown>);
+    api["account.login"] = (p) => onboarding.accountLogin((p ?? {}) as Record<string, unknown>);
+    api["account.reset_request"] = (p) => onboarding.resetRequest((p ?? {}) as Record<string, unknown>);
+    api["account.reset_confirm"] = (p) => onboarding.resetConfirm((p ?? {}) as Record<string, unknown>);
     // 从备份恢复（第 14 批；设计 docs/design/恢复与备份设计-v1.md §3.4）：恢复包 + 恢复码 + 备份位置 → 与原机相同的身份与数据
     api["onboarding.restore"] = async (p) => {
       const done = onboarding.exclusive();
@@ -900,6 +943,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
           role,
           kind: c.firm_root ? ("founder" as const) : ("member" as const),
           activated_at: new Date().toISOString(),
+          // 第 44 批：同一账号的第 2～9 台按证书上的编号恢复
+          ...(cert.deviceId !== `dev_${c.firm_slug}_${c.member_slug}` ? { device_id: cert.deviceId } : {}),
         };
         rmSync(join(config.dataRoot, "onboarding-failed.json"), { force: true }); // 复核 R2B-08：残留的失败记录不让这次恢复误报
         const r = await restoreFromBackup({

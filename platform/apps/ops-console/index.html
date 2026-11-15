@@ -7,217 +7,91 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'none'; form-action 'none'" />
     <meta name="referrer" content="no-referrer" />
     <meta name="color-scheme" content="light dark" />
-    <title>额度台 · Kimi Work 法律版</title>
+    <title>运营控制台 · Kimi Work 法律版</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23191919'/%3E%3Cpath d='M7 21h18' stroke='%23167ffb' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M7 15h11' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <!-- 令牌与桌面端同一份（scripts/build-ops-console.mjs 从 packages/design-tokens 拷入 dist/） -->
+    <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="console.css" />
+    <script type="module" src="app.js"></script>
   </head>
   <body>
-    <!-- 登录：载入运营私钥（私钥只在本页内存，不上传、不落盘） -->
-    <section class="login" id="login" hidden>
-      <div class="login-story">
-        <div class="mark" aria-hidden="true"><span></span><span></span></div>
-        <h1>额度台</h1>
-        <p class="lede">Kimi Work 法律版 · 中软运营</p>
-        <ul class="story-points">
-          <li><b>看水位</b>每家律所本月用了额度的百分之几，对照月份过了多少——谁会在月底前用完，一眼看出。</li>
-          <li><b>管计费</b>席位 × 套餐，加量按百分比，上限按百分比；本月应收、模型成本与毛利同屏对账。</li>
-          <li><b>认账号</b>律师用 Kimi 账号登录，用量记到账号名下；控制台只见打码昵称与手机尾号。</li>
-        </ul>
-        <p class="env" id="env-line">读取配置中…</p>
-      </div>
-      <form class="login-card" id="login-form" autocomplete="off">
-        <h2>载入运营私钥</h2>
-        <p class="hint">每个请求都在本页用<strong>你本人的私钥</strong>签名后直连控制面；私钥只在本页内存里，关页或退出即丢弃。</p>
-        <div class="field-row">
-          <label>运营编号<input name="operator" required placeholder="op_0001" pattern="op_[0-9]{4,12}" /></label>
-          <label class="narrow">密钥编号<input name="kid" required placeholder="k1" value="k1" pattern="[a-z0-9][a-z0-9\-]{0,23}" /></label>
-        </div>
-        <label class="drop" id="drop">
-          <input name="keyfile" type="file" accept=".pem,.key,.txt" />
-          <span class="drop-icon" aria-hidden="true">⌁</span>
-          <span class="drop-text" id="drop-text">把私钥文件拖到这里，或点击选择<small>ops-cli keygen 生成的 .key.pem</small></span>
-        </label>
-        <label>私钥口令<input name="passphrase" type="password" autocomplete="off" placeholder="没有可不填" /></label>
-        <button class="btn primary block" type="submit">进入额度台</button>
-        <p class="error" id="login-error" role="alert"></p>
-      </form>
-    </section>
+    <!-- 启动中 -->
+    <div class="boot" id="boot" role="status">正在读取配置…</div>
 
-    <!-- 主界面 -->
-    <div class="shell" id="shell" hidden>
-      <header class="topbar">
-        <div class="brand">
-          <div class="mark sm" aria-hidden="true"><span></span><span></span></div>
+    <!-- 登录：载入运营私钥（私钥只在本页内存，不上传；“记住 8 小时”只存不可导出的密钥对象） -->
+    <main class="login" id="login" hidden>
+      <form class="login-card" id="login-form" autocomplete="off" novalidate>
+        <div class="login-brand">
+          <span class="brand-mark" aria-hidden="true">K</span>
           <div>
-            <div class="brand-title">额度台</div>
-            <div class="brand-sub" id="env-sub"></div>
+            <h1>运营控制台</h1>
+            <p class="login-env" id="login-env">Kimi Work 法律版</p>
           </div>
         </div>
-        <nav class="tabs" role="tablist" aria-label="视图">
-          <button role="tab" class="tab active" data-view="overview" aria-selected="true">总览</button>
-          <button role="tab" class="tab" data-view="firms" aria-selected="false">律所</button>
-          <button role="tab" class="tab" data-view="billing" aria-selected="false">账单</button>
-        </nav>
-        <div class="top-actions">
-          <span class="refreshed" id="refreshed"></span>
-          <button type="button" class="btn ghost icon" id="btn-refresh" title="刷新" aria-label="刷新">↻</button>
-          <button type="button" class="btn primary" id="btn-new">开通律所</button>
-          <div class="who">
-            <span class="who-avatar" id="who-avatar" aria-hidden="true"></span>
-            <span id="who-text"></span>
-            <button type="button" class="btn ghost sm" id="btn-logout" title="退出并丢弃私钥">退出</button>
+        <p class="login-lead">每个请求都在本页用<b>你本人的运营私钥</b>签名后直连控制面。私钥不上传、不写盘，关页或退出即丢弃。</p>
+
+        <label class="drop" id="drop" tabindex="-1">
+          <input name="keyfile" id="keyfile" type="file" accept=".pem,.key,.txt" />
+          <span class="drop-icon" aria-hidden="true" id="drop-icon"></span>
+          <span class="drop-text" id="drop-text">把私钥文件拖到这里，或点击选择</span>
+          <small class="drop-sub" id="drop-sub">ops-cli keygen 生成的 .key.pem（PKCS#8，明文或口令加密）</small>
+        </label>
+
+        <div class="login-row">
+          <div class="field">
+            <label for="op-id">运营编号</label>
+            <input id="op-id" name="operator" placeholder="op_0001" autocomplete="username" spellcheck="false" />
+          </div>
+          <div class="field narrow">
+            <label for="op-kid">密钥编号</label>
+            <input id="op-kid" name="kid" placeholder="k1" spellcheck="false" />
           </div>
         </div>
-      </header>
+        <div class="field" id="pass-field" hidden>
+          <label for="op-pass">私钥口令</label>
+          <input id="op-pass" name="passphrase" type="password" autocomplete="off" placeholder="这把私钥有口令保护" />
+        </div>
+        <label class="field-check">
+          <input type="checkbox" name="remember" id="remember" />
+          <span>本标签页内记住 8 小时<small>只把浏览器里不可导出的密钥对象存在本机；关掉标签页、点“退出”或到期即清除。公用电脑不要勾。</small></span>
+        </label>
+        <p class="form-error" id="login-error" role="alert"></p>
+        <button class="btn primary block" type="submit" id="login-submit">进入控制台</button>
+        <p class="login-foot" id="login-foot"></p>
+      </form>
+    </main>
 
-      <main>
-        <!-- 总览 -->
-        <section class="view" id="view-overview">
-          <div class="hero">
-            <div class="hero-main">
-              <div class="kicker" id="hero-kicker">本月平台用量</div>
-              <div class="hero-num"><span id="hero-pct">—</span><small id="hero-of">的已售额度</small></div>
-              <div class="pace" id="hero-pace"></div>
-              <p class="hero-note" id="hero-note"></p>
-            </div>
-            <div class="hero-stats" id="hero-stats"></div>
+    <!-- 主界面：左侧导航 + 顶栏 + 内容 -->
+    <div class="app" id="app" hidden>
+      <aside class="sidebar" aria-label="导航">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">K</span>
+          <div>
+            <b>运营控制台</b>
+            <small>Kimi Work 法律版</small>
           </div>
-
-          <div class="split">
-            <section class="panel">
-              <header class="panel-head">
-                <h2>需要关注</h2>
-                <span class="muted" id="attention-count"></span>
-              </header>
-              <ol class="attention" id="attention"></ol>
-            </section>
-            <section class="panel">
-              <header class="panel-head">
-                <h2>水位</h2>
-                <div class="legend" aria-hidden="true">
-                  <span><i class="lg-used"></i>已用</span><span><i class="lg-flight"></i>在途</span><span><i class="lg-today"></i>月份进度</span><span><i class="lg-cap"></i>上限</span>
-                </div>
-              </header>
-              <div class="levels" id="levels"></div>
-            </section>
+        </div>
+        <nav class="nav" id="nav"></nav>
+        <div class="sidebar-foot" id="sidebar-foot"></div>
+      </aside>
+      <div class="main-col">
+        <header class="topbar">
+          <div class="deploy" id="deploy"></div>
+          <div class="gsearch" id="gsearch"></div>
+          <div class="topbar-right">
+            <span class="refreshed" id="refreshed" aria-live="polite"></span>
+            <button type="button" class="icon-btn" id="btn-refresh" title="刷新本页（R）" aria-label="刷新本页"></button>
+            <button type="button" class="icon-btn" id="btn-theme" title="主题" aria-label="切换主题"></button>
+            <span class="who" id="who"></span>
+            <button type="button" class="btn sm" id="btn-logout">退出</button>
           </div>
-        </section>
-
-        <!-- 律所 -->
-        <section class="view" id="view-firms" hidden>
-          <div class="toolbar">
-            <div class="filters" role="group" aria-label="筛选" id="filters">
-              <button class="chip on" data-f="all">全部</button>
-              <button class="chip" data-f="attention">需关注</button>
-              <button class="chip" data-f="paused">已暂停</button>
-              <button class="chip" data-f="pending">待开通</button>
-              <button class="chip" data-f="expiring">30 天内到期</button>
-            </div>
-            <input type="search" id="filter" placeholder="按名称或租户编号查找" aria-label="查找律所" />
-          </div>
-          <div class="table-wrap">
-            <table class="grid" id="firm-table">
-              <thead>
-                <tr>
-                  <th data-sort="name">律所</th>
-                  <th data-sort="plan">套餐 · 席位</th>
-                  <th data-sort="used" class="wide">本月用量</th>
-                  <th data-sort="proj" class="num">月底预计</th>
-                  <th data-sort="kimi" class="num">Kimi 账号</th>
-                  <th data-sort="until">订阅到期</th>
-                  <th>状态</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-            <p class="empty" id="empty" hidden>还没有律所。点右上角“开通律所”开第一家。</p>
-          </div>
-        </section>
-
-        <!-- 账单 -->
-        <section class="view" id="view-billing" hidden>
-          <div class="toolbar">
-            <div>
-              <h2 class="view-title" id="bill-title">本月账单</h2>
-              <p class="muted" id="bill-note"></p>
-            </div>
-            <div class="toolbar-actions">
-              <button type="button" class="btn" id="btn-export-bill">导出本月账单（CSV）</button>
-              <button type="button" class="btn" id="btn-export-usage">导出用量与对账（CSV）</button>
-            </div>
-          </div>
-          <div class="bill-cards" id="bill-cards"></div>
-          <div class="table-wrap">
-            <table class="grid" id="bill-table">
-              <thead>
-                <tr>
-                  <th>律所</th>
-                  <th>套餐</th>
-                  <th class="num">席位</th>
-                  <th class="num">席位费</th>
-                  <th class="num">加量</th>
-                  <th class="num">加量费</th>
-                  <th class="num">本月应收</th>
-                  <th class="num">用量</th>
-                  <th class="num">模型成本（估）</th>
-                  <th class="num">毛利</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-              <tfoot></tfoot>
-            </table>
-          </div>
-        </section>
-      </main>
+        </header>
+        <main class="content" id="content" tabindex="-1"></main>
+      </div>
     </div>
 
-    <!-- 律所详情（右侧抽屉） -->
-    <dialog id="detail" class="drawer" aria-labelledby="detail-title">
-      <header class="drawer-head">
-        <div>
-          <h2 id="detail-title"></h2>
-          <div class="muted" id="detail-sub"></div>
-        </div>
-        <button type="button" class="btn ghost icon" data-close aria-label="关闭">✕</button>
-      </header>
-      <nav class="tabs inner" role="tablist" aria-label="律所详情" id="detail-tabs">
-        <button role="tab" class="tab active" data-pane="usage" aria-selected="true">用量</button>
-        <button role="tab" class="tab" data-pane="plan" aria-selected="false">套餐与加量</button>
-        <button role="tab" class="tab" data-pane="members" aria-selected="false">成员与 Kimi 账号</button>
-        <button role="tab" class="tab" data-pane="subscription" aria-selected="false">开通与订阅</button>
-      </nav>
-      <div class="drawer-body" id="detail-body"></div>
-    </dialog>
-
-    <!-- 开通律所 -->
-    <dialog id="new-tenant" class="modal" aria-labelledby="new-title">
-      <form id="new-form" method="dialog">
-        <h2 id="new-title">开通律所</h2>
-        <p class="hint">开通后再“发创始开通码”给律所管理员；律所在客户端输入开通码完成登记。额度 = 席位 × 套餐，按百分比统计。</p>
-        <div class="field-row">
-          <label>租户编号<input name="tid" required placeholder="ten_zhonglun" pattern="ten_[A-Za-z0-9_\-]{1,60}" /></label>
-          <label>律所名称<input name="name" maxlength="40" placeholder="某某律师事务所" /></label>
-        </div>
-        <fieldset class="plans" id="new-plans"><legend>套餐</legend></fieldset>
-        <div class="field-row">
-          <label>席位数<input name="seats" type="number" min="1" max="10000" value="5" required /></label>
-          <label>订阅天数<input name="days" type="number" min="1" max="3650" value="365" required /></label>
-          <label>版本
-            <select name="edition"><option value="team">团队版</option><option value="firm">律所版</option></select>
-          </label>
-        </div>
-        <label class="check"><input type="checkbox" name="kimi_required" /> 要求成员用 Kimi 账号登录后才能用 AI</label>
-        <p class="estimate" id="new-estimate"></p>
-        <p class="error" role="alert"></p>
-        <div class="row-end">
-          <button type="button" class="btn ghost" data-close>取消</button>
-          <button type="submit" class="btn primary" value="ok">开通</button>
-        </div>
-      </form>
-    </dialog>
-
-    <div class="tip" id="tip" role="tooltip" hidden></div>
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script type="module" src="console.js"></script>
+    <dialog class="drawer" id="drawer" aria-label="详情"></dialog>
+    <dialog class="modal" id="modal" aria-label="确认"></dialog>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
   </body>
 </html>

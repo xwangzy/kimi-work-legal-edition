@@ -5,7 +5,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
-import { api, members, onKernelEvent, recovery, updates, type UpdateStatus } from "./api.ts";
+import { account, api, members, onKernelEvent, recovery, updates, type UpdateStatus } from "./api.ts";
+import { ACCOUNT_CHANGED, LoginBox } from "./components/AccountPanel.tsx";
+import { loginRequiredText, needsLogin } from "./lib/account.ts";
 import { Home } from "./pages/Home.tsx";
 import { MattersPage } from "./pages/Matters.tsx";
 import { MatterPage } from "./pages/Matter.tsx";
@@ -108,7 +110,7 @@ export function nav(path: string): void {
 export function App() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
   // 首次启动激活（第 13 批）：这台电脑还没有激活时整个应用只显示激活页
-  const [boot, setBoot] = useState<{ onboarding: any; restoredAt?: string | null } | null>(null);
+  const [boot, setBoot] = useState<{ onboarding: any; restoredAt?: string | null; login?: { reason: string | null; email: string } | null } | null>(null);
   // 取不到状态时不当作“已激活”（复核 B13-K01）：首次启动内核较慢，按退避重试（lib/boot-gate.ts）；约两分钟仍取不到才给出说明与“重试”
   const [bootFailed, setBootFailed] = useState(false);
   const loadBoot = () => {
@@ -117,7 +119,7 @@ export function App() {
     const tryOnce = () =>
       void api
         .kernelStatus()
-        .then((st: any) => setBoot({ onboarding: st?.onboarding ?? null, restoredAt: st?.restored_from_backup_at ?? null }))
+        .then((st: any) => setBoot({ onboarding: st?.onboarding ?? null, restoredAt: st?.restored_from_backup_at ?? null, login: needsLogin(st) ? { reason: st.account?.reason ?? null, email: st.account?.email ?? "" } : null }))
         .catch(() => {
           attempt += 1;
           const delay = bootRetryDelay(attempt);
@@ -161,6 +163,35 @@ export function App() {
       .personalStatus()
       .then((s) => setRevokedPersonal(s.prompt_clear ? { writing_prefs: s.writing_prefs, qa_conversations: s.qa_conversations } : null))
       .catch(() => setRevokedPersonal(null));
+  }, [boot]);
+  // 登录失效（第 44 批，主文 §2.5）：内核报 login_required 或广播 account.login_required → 顶部横幅 + 就地登录；
+  // 主进程与开发桥目前不转发这条广播，所以另按 30 秒查一次（本机调用，不联网），退出登录时立即刷新
+  const [login, setLogin] = useState<{ reason: string | null; email: string } | null>(null);
+  // 退出登录后内核不再留邮箱：记住这次打开期间最后看到的那个，就地登录时预先填好
+  const lastEmail = useRef("");
+  useEffect(() => {
+    if (!boot || boot.onboarding) return;
+    setLogin(boot.login ?? null);
+    let alive = true;
+    const refresh = () =>
+      void account
+        .status()
+        .then((s) => {
+          if (!alive) return;
+          if (s.account?.email) lastEmail.current = s.account.email;
+          setLogin(s.login_required ? { reason: s.reason, email: s.account?.email ?? s.last_account?.email ?? lastEmail.current } : null);
+        })
+        .catch(() => {});
+    refresh();
+    const t = setInterval(refresh, 30_000);
+    window.addEventListener(ACCOUNT_CHANGED, refresh);
+    const off = onKernelEvent((m) => (m?.type === "account.login_required" ? refresh() : undefined));
+    return () => {
+      alive = false;
+      clearInterval(t);
+      window.removeEventListener(ACCOUNT_CHANGED, refresh);
+      off();
+    };
   }, [boot]);
   const clearRevokedPersonal = async () => {
     try {
@@ -264,6 +295,13 @@ export function App() {
       <Sidebar route={route} />
       <div className="shell-main">
         {kernelNotice && <div className={`banner ${kernelNotice.status === "stopped" ? "banner-red" : "banner-orange"} kernel-banner`}>{kernelNotice.message ?? "后台服务正在恢复…"}</div>}
+        {login && (
+          <div className="banner banner-orange login-banner" role="alert">
+            <div>{loginRequiredText(login.reason)}</div>
+            {/* 设置 · 账号与团队页上已有登录框：横幅只提示，不再放第二个 */}
+            {route.page === "connections" && route.tab === "account" ? <div className="muted">请在下方“账号”一栏登录。</div> : <LoginBox compact email={login.email} onDone={() => setLogin(null)} />}
+          </div>
+        )}
         {update && !updateDismissed && route.page !== "run" && route.page !== "review" && <UpdateBanner status={update} onDismiss={() => setUpdateDismissed(true)} />}
         {revokedPersonal && (
           <div className="banner banner-orange" role="status">

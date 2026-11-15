@@ -4,6 +4,7 @@
  * 所内节点都走这同一份方法表。签发已接入设备签名（§6.3）；审计事件入签名 hash 链（§6.4）；
  * 策略事件的签发人角色签名在同步阶段接入（当前经审计事件上链留痕）。
  */
+import { accountErrorText } from "../account-session.ts";
 import { calcDeadline } from "../tools/tools/deadline.ts";
 import { localToday } from "../services/local-date.ts";
 import { createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
@@ -144,6 +145,18 @@ export interface ApiDeps {
   governance?: FirmGovernance;
   /** 控制面客户端（配置了控制面时；请求经闸门代发）。 */
   controlPlane?: ControlPlaneClient | null;
+  /** 第 44 批：本机的账号会话（令牌只在内核与闸门之间流转，不给渲染层）。 */
+  account?: {
+    session(): AccountSessionFile | null;
+    /** 上次登录的账号（退出登录后仍记得，只有邮箱、姓名、角色）。 */
+    last?(): { email: string; name: string; role: string } | null;
+    save(s: Omit<AccountSessionFile, "v" | "saved_at">): void;
+    drop(): void;
+    /** 控制面最近一次答复“要重新登录”的原因（null = 没有）。 */
+    problem(): string | null;
+    clearProblem(): void;
+    setProblem(code: string): void;
+  };
   /** 方法模板包（Kimi Code Skills）验签结果：方法库页展示可用的方法模板，校验失败如实显示原因。 */
   skills?: SkillsBundleStatus;
   /** 在线内容更新（第 8 批 S6/S7：法规库增量包与方法模板包）。 */
@@ -171,6 +184,7 @@ interface OffboardingMatterRow {
 }
 type FirmGovernance = import("../control-plane/governance.ts").FirmGovernance;
 type ControlPlaneClient = import("../control-plane/client.ts").ControlPlaneClient;
+type AccountSessionFile = import("../account-session.ts").AccountSessionFile;
 
 /** 文书版式样张（虚构内容）。 */
 const DOC_STYLE_SAMPLE = [
@@ -2829,6 +2843,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         lawdb_package: lawdb.packageVersion,
         // 控制面与律所治理（阶段 6）：模式、生效策略、许可与退出模式、告警（不含任何令牌）
         control_plane: { ...(deps.governance?.status() ?? { mode: "local_dev" }), last_sync: deps.controlPlane?.lastSync ?? null },
+        // 第 44 批：账号登录状态（不含令牌）
+        account: (() => {
+          const s = deps.account?.session() ?? null;
+          const problem = deps.account?.problem() ?? null;
+          return deps.account ? { logged_in: !!s && !problem, email: s?.email ?? null, name: s?.name ?? null, login_required: !!problem, reason: problem } : null;
+        })(),
         egress_gate: gate
           ? {
               socket: gate.socketPath,
@@ -3451,15 +3471,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "quota.status": async (_p, id) => {
       if (!deps.controlPlane) return { mode: "local_dev", note: "未配置控制面（开发形态：额度只在开发网关内存里）" };
       const view = await cpCall(() => deps.controlPlane!.quota());
-      // 成员编号换成本机成员名（控制面只有编号），并附上成员绑定的 Kimi 账号（打码）
+      // 成员编号换成本机成员名（控制面只知道有账号的成员的姓名）
       const names = new Map(db.all<{ user_id: string; display_name: string }>(`SELECT user_id, display_name FROM users WHERE tenant_id = ?`, [id.tenantId]).map((r) => [r.user_id, r.display_name]));
-      const accounts = view.kimi?.members ?? {};
-      const { members: _m, ...kimi } = view.kimi ?? { enabled: false, required: false, own: null };
       return {
         mode: "control_plane",
         ...view,
-        kimi,
-        ...(view.by_member ? { by_member: view.by_member.map((m) => ({ ...m, name: m.member_id ? (names.get(m.member_id) ?? null) : null, kimi: m.member_id ? (accounts[m.member_id] ?? null) : null })) } : {}),
+        ...(view.by_member ? { by_member: view.by_member.map((m) => ({ ...m, name: m.name ?? (m.uid ? (names.get(m.uid) ?? null) : null) })) } : {}),
       };
     },
     "quota.set_cap": async (p, id) => {
@@ -3473,33 +3490,74 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       audit(db, id, "quota.cap_set", "tenant", id.tenantId, sha256Hex(JSON.stringify({ cap })), keyctx);
       return r;
     },
-    // ─── Kimi 账号（第 40 批）：本人用 Kimi 账号登录并绑定席位；授权由控制面代办，本机只经手验证码与授权页地址 ───
-    "account.kimi_status": async () => {
-      if (!deps.controlPlane) return { mode: "local_dev", enabled: false, required: false, account: null };
-      return { mode: "control_plane", ...(await cpCall(() => deps.controlPlane!.kimiAccount())) };
+    // ─── 账号（第 44 批，主文 §2）：我方自有账号；登录带设备签名，会话直接绑这台电脑；密码只经闸门的控制面通道发给中软，本机不保存 ───
+    "account.status": () => {
+      const s = deps.account?.session() ?? null;
+      const problem = deps.account?.problem() ?? null;
+      const last = deps.account?.last?.() ?? null;
+      return { mode: deps.controlPlane ? "control_plane" : "local_dev", logged_in: !!s && !problem, account: s ? { email: s.email, name: s.name, role: s.role } : null, last_account: last, login_required: !!problem, reason: problem, message: problem ? accountErrorText(problem) : null };
     },
-    "account.kimi_start": async (_p, id) => {
-      if (!deps.controlPlane) throw validation("未配置 Kimi Work 服务：开发形态不能登录 Kimi 账号");
-      const r = await cpCall(() => deps.controlPlane!.kimiLoginStart());
-      audit(db, id, "account.kimi_login_start", "user", id.userId, undefined, keyctx);
-      return r;
+    "account.login": async (p, id) => {
+      const cp = requireCpAccount();
+      const j = await accountCp(() => cp.account("POST", "/v1/auth/login", { email: p?.email, password: p?.password, client: clientInfo() }));
+      const onb = (j.onboarding ?? {}) as Record<string, any>;
+      if (onb.state !== "ready") throw new DomainError("conflict", accountErrorText(onb.state === "device_mismatch" ? "device_mismatch" : "session_invalid"), 409, { reason: String(onb.state ?? "unknown") });
+      const acc = (j.account ?? {}) as Record<string, any>;
+      if (acc.tid !== id.tenantId) throw new DomainError("conflict", accountErrorText("device_mismatch"), 409);
+      deps.account!.save({ token: String(j.session_token), aid: String(acc.aid), email: String(acc.email), name: String(acc.name ?? ""), tid: id.tenantId, role: String(acc.role ?? "") });
+      deps.account!.clearProblem();
+      audit(db, id, "account.login", "user", id.userId, undefined, keyctx);
+      // 登录后立即同步：席位令牌此时才签得出
+      void cp.sync().catch(() => undefined);
+      return { ok: true, account: { email: acc.email, name: acc.name, role: acc.role } };
     },
-    "account.kimi_poll": async (p, id) => {
-      if (!deps.controlPlane) throw validation("未配置 Kimi Work 服务");
-      const flow = String(p?.flow_id ?? "");
-      if (!/^kf_[A-Za-z0-9_-]{10,64}$/.test(flow)) throw validation("登录流程编号不合法");
-      const r = await cpCall(() => deps.controlPlane!.kimiLoginPoll(flow));
-      if (r.status === "bound") {
-        audit(db, id, "account.kimi_bind", "user", id.userId, undefined, keyctx);
-        // 绑定后立即同步一次：要求绑定的律所此时才签得出席位令牌
-        void deps.controlPlane!.sync().catch(() => undefined);
+    "account.logout": async (_p, id) => {
+      const cp = requireCpAccount();
+      try {
+        await cp.account("POST", "/v1/auth/logout", {});
+      } catch {
+        // 控制面不可达也在本机退出（会话令牌删掉；控制面上的会话到期自然失效）
       }
-      return r;
+      deps.account!.drop();
+      deps.account!.setProblem("session_required");
+      deps.governance?.seatDroppedForSession("logout");
+      audit(db, id, "account.logout", "user", id.userId, undefined, keyctx);
+      return { ok: true };
     },
-    "account.kimi_unbind": async (_p, id) => {
-      if (!deps.controlPlane) throw validation("未配置 Kimi Work 服务");
-      await cpCall(() => deps.controlPlane!.kimiUnbind());
-      audit(db, id, "account.kimi_unbind", "user", id.userId, undefined, keyctx);
+    "account.me": async () => {
+      const cp = requireCpAccount();
+      return accountCp(() => cp.account("GET", "/v1/auth/me"));
+    },
+    "account.change_password": async (p, id) => {
+      const cp = requireCpAccount();
+      const r = await accountCp(() => cp.account("POST", "/v1/auth/password", { current: p?.current, next: p?.next }));
+      audit(db, id, "account.password_change", "user", id.userId, undefined, keyctx);
+      return { ok: true, other_sessions_revoked: r.other_sessions_revoked ?? 0 };
+    },
+    "account.revoke_session": async (p, id) => {
+      const cp = requireCpAccount();
+      const sid = String(p?.sid ?? "");
+      if (!/^ses_[A-Za-z0-9_-]{16}$/.test(sid)) throw validation("登录编号不合法");
+      await accountCp(() => cp.account("POST", `/v1/auth/sessions/${sid}/revoke`, {}));
+      audit(db, id, "account.session_revoke", "session", sid, undefined, keyctx);
+      return { ok: true };
+    },
+    "account.unbind_device": async (p, id) => {
+      const cp = requireCpAccount();
+      const dev = String(p?.device_id ?? "");
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(dev)) throw validation("设备编号不合法");
+      await accountCp(() => cp.account("POST", `/v1/auth/devices/${dev}/unbind`, { password: p?.password }));
+      audit(db, id, "account.device_unbind", "device", dev, undefined, keyctx);
+      void cp.sync().catch(() => undefined);
+      return { ok: true };
+    },
+    "account.reset_request": async (p) => {
+      const cp = requireCpAccount();
+      return accountCp(() => cp.account("POST", "/v1/auth/password-reset/request", { email: p?.email }));
+    },
+    "account.reset_confirm": async (p) => {
+      const cp = requireCpAccount();
+      await accountCp(() => cp.account("POST", "/v1/auth/password-reset/confirm", { email: p?.email, code: p?.code, password: p?.password }));
       return { ok: true };
     },
     // ─── 中软侧操作记录（第 9 批 S14）：取回、验控制面签名与哈希链、本机留存；律所管理员与合伙人可看、可导出 ───
@@ -4629,12 +4687,6 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
 
   /** 控制面拒绝代码 → 律师看得懂的话（第 40 批）。 */
   const CP_ERROR_TEXT: Readonly<Record<string, string>> = {
-    kimi_account_in_use: "这个 Kimi 账号已绑定本所另一位成员：请换一个账号，或请管理员先解绑",
-    kimi_account_disabled: "本所的 Kimi Work 服务还没有开通 Kimi 账号登录",
-    kimi_unreachable: "连不上 Kimi 账号中心，请稍后再试",
-    kimi_start_failed: "Kimi 账号中心暂时不能发起登录，请稍后再试",
-    kimi_userinfo_failed: "取不到 Kimi 账号信息，请重新登录",
-    kimi_poll_failed: "Kimi 账号中心返回了无法识别的结果，请重新登录",
     no_seat: "你还没有席位：请律所管理员先分配席位",
     rate_limited: "操作过于频繁，请稍后再试",
     cap_invalid: "月度上限须为 1–100 的整数百分比",
@@ -4645,11 +4697,33 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       return await fn();
     } catch (e) {
       const msg = (e as Error)?.message ?? String(e);
-      // 第 40 批：Kimi 账号与百分比上限的常见拒绝写成人话（其余照旧带代码）
+      // 百分比上限、席位等常见拒绝写成人话（其余照旧带代码）；要重新登录的另给原因码，界面据此出登录框
       const human = CP_ERROR_TEXT[msg];
-      if (human) throw new DomainError(msg === "kimi_unreachable" || msg === "kimi_start_failed" ? "provider_unavailable" : "validation", human, msg === "kimi_unreachable" ? 502 : 400);
+      if (human) throw new DomainError("validation", human, 400);
+      if (/^session_|^account_disabled$/.test(msg)) throw new DomainError("validation", accountErrorText(msg), 401, { reason: msg });
       throw new DomainError("provider_unavailable", `控制面：${msg}`, 502);
     }
+  }
+
+  /** 第 44 批账号接口：需要控制面与本机会话存放处（开发形态没有）。 */
+  function requireCpAccount(): ControlPlaneClient {
+    if (!deps.controlPlane || !deps.account) throw validation("未配置中软服务（开发形态没有账号登录）");
+    return deps.controlPlane;
+  }
+  /** 账号接口的错误换成律师话（控制面的原话只在密码规则、锁定剩余时间这类场合采用）。 */
+  async function accountCp<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (e) {
+      const code = String((e as { code?: unknown })?.code ?? (e as Error)?.message ?? "error");
+      const cpMessage = (e as { cpMessage?: unknown })?.cpMessage;
+      const text = accountErrorText(code, typeof cpMessage === "string" && (code === "password_weak" || code === "account_locked") ? cpMessage : undefined);
+      const status = code === "auth_invalid" || code.startsWith("session_") ? 401 : code === "account_locked" ? 423 : code === "rate_limited" ? 429 : code.startsWith("cp_") || code === "gate_unavailable" ? 502 : 400;
+      throw new DomainError(status === 502 ? "provider_unavailable" : status === 429 ? "rate_limited" : "validation", text, status, { reason: code });
+    }
+  }
+  function clientInfo(): { version: string | null; platform: string } {
+    return { version: config.env.ZR_APP_VERSION ?? null, platform: process.platform === "win32" || process.platform === "darwin" ? process.platform : "linux" };
   }
 
   function requireMatterOwner(db2: KernelDb, matterId: string, id: Identity, msg = "成员变更需要事项负责人角色"): void {

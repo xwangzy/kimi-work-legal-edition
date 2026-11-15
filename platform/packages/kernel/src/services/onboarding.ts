@@ -37,6 +37,7 @@ import { activationFilePath, PENDING_WORKSPACE_SLUG, type ActivationFile, type K
 import { configureSecretSealing, generateJoinDeviceKeys, getFirmRootPrivateKey, keysDirOf, readSecretFile, writeStagedSecret, type FirmIdentityRow } from "../devices.ts";
 import type { KernelDb } from "../db.ts";
 import type { Identity } from "../identity.ts";
+import { accountErrorText, writeAccountSession } from "../account-session.ts";
 
 type CpRelay = (req: { method: string; path: string; headers: Record<string, string>; body: string }) => Promise<{ ok: true; status: number; body: string } | { ok: false; reason: string }>;
 type SignedCall = (method: string, path: string, body?: unknown) => Promise<{ ok: true; status: number; json: Record<string, unknown> } | { ok: false; error: string; status?: number }>;
@@ -62,6 +63,8 @@ interface OnboardingFile {
   device_id: string;
   check_code: string;
   created_at: string;
+  /** 第 44 批：账号登录后的新设备入组（没有邀请码本机段，批准方人工核对核对码）。 */
+  via_account?: boolean;
 }
 
 /** 成员机暂存（keys/join-pending.json，封装）。 */
@@ -72,8 +75,8 @@ interface JoinPending {
   /** 申请提交前即写下（复核 A-09：提交成功后再回填编号）。 */
   join_request_id: string | null;
   keys: DeviceKeys;
-  /** 邀请码的本机秘密段（复核 A-01/03：对申请做 HMAC、核对管理员对批准结果的 HMAC）。 */
-  invite_secret: string;
+  /** 邀请码的本机秘密段（复核 A-01/03：对申请做 HMAC、核对管理员对批准结果的 HMAC）；账号新设备入组（第 44 批 D-186）没有，为 null。 */
+  invite_secret: string | null;
 }
 
 const ONBOARDING_FILE = "onboarding.json";
@@ -116,7 +119,7 @@ function cpErrorText(code: string): string {
   }
 }
 
-async function cpPost(relay: CpRelay, path: string, body: unknown): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string }> {
+async function cpPost(relay: CpRelay, path: string, body: unknown): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string }> {
   const r = await relay({ method: "POST", path, headers: {}, body: JSON.stringify(body) });
   if (!r.ok) return { ok: false, code: r.reason.startsWith("cp_") ? "cp_unreachable" : r.reason };
   let json: Record<string, any> = {};
@@ -125,7 +128,8 @@ async function cpPost(relay: CpRelay, path: string, body: unknown): Promise<{ ok
   } catch {
     return { ok: false, code: "cp_reply_not_json" };
   }
-  if (r.status >= 400) return { ok: false, code: String(json?.error?.code ?? `http_${r.status}`) };
+  // 控制面的错误说明（中文、可直接显示；只用于账号接口里密码规则、锁定剩余时间这类需要原话的提示）
+  if (r.status >= 400) return { ok: false, code: String(json?.error?.code ?? `http_${r.status}`), ...(typeof json?.error?.message === "string" && json.error.message.length <= 200 ? { message: json.error.message } : {}) };
   return { ok: true, json };
 }
 
@@ -188,6 +192,7 @@ export class OnboardingService {
         member: { name: p.member_name, role: p.role },
         check_code: p.check_code,
         requested_at: p.created_at,
+        ...(p.via_account ? { via_account: true } : {}),
       };
     }
     const failed = readJoinFailure(this.root);
@@ -300,54 +305,167 @@ export class OnboardingService {
       return { kind: "founder", next: "restart", firm: { name: firmName }, member: { name: memberName, role } };
     }
 
-    // 成员：邀请码必须带本机秘密段（复核 A-01）；本机生成设备密钥，先暂存再提交入组申请（复核 A-09）——只含公钥、持有证明与 HMAC
+    // 成员：邀请码必须带本机秘密段（复核 A-01）
     if (!input.secret) throw new DomainError("validation", "邀请码不完整：应为 36 位（管理员页面上完整的那一串），请向管理员核对", 400);
+    return this.submitJoin({ tid: j.tid, activation_id: j.activation_id, claim_secret: j.claim_secret, firmSlug, firmName, memberSlug, memberName, role }, input.secret, expectedJoinDeviceId(firmSlug, memberSlug));
+  }
+
+  /**
+   * 提交入组申请（邀请码入组与第 44 批账号新设备入组共用）：本机生成设备密钥，先暂存再提交（复核 A-09）——只含公钥、持有证明；
+   * 有邀请码本机段时另带 HMAC（复核 A-01）。账号新设备没有本机段（D-186）：批准方按核对码人工核对。
+   */
+  private async submitJoin(c: { tid: string; activation_id: string; claim_secret: string; firmSlug: string; firmName: string; memberSlug: string; memberName: string | null; role: Role }, secret: string | null, deviceId: string): Promise<Record<string, unknown>> {
+    const { tid, firmSlug, firmName, memberSlug, memberName, role } = c;
+    const keysDir = this.keysDirFor(firmSlug);
     const { keys, signer } = generateJoinDeviceKeys();
-    const deviceId = expectedJoinDeviceId(firmSlug, memberSlug);
-    const proof = signer.signSync(joinProofBytes({ tid: j.tid, activationId: j.activation_id, deviceId, signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem }));
+    const proof = signer.signSync(joinProofBytes({ tid, activationId: c.activation_id, deviceId, signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem }));
     // 律所名称与本人姓名按兑换时看到的进 HMAC（复核 A-03 余项）：控制面换掉名称，管理员机按本机邀请记录核对即不通过
-    const mac = inviteMac(
-      input.secret,
-      joinMacBytes({ tid: j.tid, activationId: j.activation_id, deviceId, signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem, memberSlug, role, firmName, memberName }),
-    );
+    const mac = secret
+      ? inviteMac(secret, joinMacBytes({ tid, activationId: c.activation_id, deviceId, signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem, memberSlug, role, firmName, memberName }))
+      : null;
     const pendingPath = join(keysDir, "join-pending.json");
-    const staged: JoinPending = { tid: j.tid, activation_id: j.activation_id, claim_secret: j.claim_secret, join_request_id: null, keys, invite_secret: input.secret };
+    const staged: JoinPending = { tid, activation_id: c.activation_id, claim_secret: c.claim_secret, join_request_id: null, keys, invite_secret: secret };
     writeStagedSecret(pendingPath, staged);
     const jr = await cpPost(this.d.relay, "/v1/join-requests", {
-      tid: j.tid,
-      activation_id: j.activation_id,
-      claim_secret: j.claim_secret,
+      tid,
+      activation_id: c.activation_id,
+      claim_secret: c.claim_secret,
       device_id: deviceId,
       sign_pub: keys.signPublicKeyPem,
       enc_pub: keys.encPublicKeyPem,
       proof,
-      mac,
+      ...(mac ? { mac } : {}),
     });
     if (!jr.ok || typeof jr.json.join_request_id !== "string") {
       rmSync(pendingPath, { force: true });
-      throw new DomainError("provider_unavailable", cpErrorText(jr.ok ? "reply_invalid" : jr.code), 502);
+      throw new DomainError("provider_unavailable", jr.ok ? cpErrorText("reply_invalid") : jr.code === "device_limit" ? accountErrorText("device_limit") : cpErrorText(jr.code), 502, { reason: jr.ok ? "reply_invalid" : jr.code });
     }
     writeStagedSecret(pendingPath, { ...staged, join_request_id: jr.json.join_request_id });
-    const checkCode = joinCheckCode({ tid: j.tid, deviceId, signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem });
+    const checkCode = joinCheckCode({ tid, deviceId, signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem });
     const file: OnboardingFile = {
       v: 1,
       stage: "member_pending",
-      tid: j.tid,
+      tid,
       firm_slug: firmSlug,
       firm_name: firmName,
       member_slug: memberSlug,
       member_name: memberName,
       role,
-      activation_id: j.activation_id,
+      activation_id: c.activation_id,
       join_request_id: jr.json.join_request_id,
       device_id: deviceId,
       check_code: checkCode,
       created_at: new Date().toISOString(),
+      ...(secret ? {} : { via_account: true }),
     };
     writeJsonAtomic(join(this.root, ONBOARDING_FILE), file);
     slog.event("KERNEL_ONBOARDING_JOIN_REQUESTED", {});
     this.start();
-    return { kind: "member", next: "wait", firm: { name: firmName }, member: { name: memberName, role }, check_code: checkCode };
+    return { kind: "member", next: "wait", firm: { name: firmName }, member: { name: memberName, role }, check_code: checkCode, ...(secret ? {} : { via_account: true }) };
+  }
+
+  // ─── 第 44 批：账号注册与登录（待激活模式；之后的登录、退出、改密在正常模式的 account.* 里） ───
+
+  /**
+   * 处理控制面的 AuthResult：会话令牌暂存进目标工作区 keys/（封装），再按 onboarding 状态走创始开通或入组申请。
+   * code = 注册时输入的邀请码（成员凭邀请码入组时要用它的本机段做 HMAC）。
+   */
+  private async afterAuth(j: Record<string, any>, inviteSecret: string | null): Promise<Record<string, unknown>> {
+    const onb = j.onboarding ?? {};
+    const acc = j.account ?? {};
+    const firmSlug = String(onb.firm?.slug ?? acc.org?.slug ?? "");
+    const firmOk = /^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(firmSlug) && firmSlug !== PENDING_WORKSPACE_SLUG && String(onb.tid ?? acc.tid) === `ten_${firmSlug}`;
+    if (!firmOk || typeof j.session_token !== "string") throw new DomainError("provider_unavailable", cpErrorText("reply_invalid"), 502);
+    const firmName = validDisplayName(onb.firm?.name) ? String(onb.firm.name) : firmSlug;
+    const memberSlug = String(onb.member?.slug ?? acc.member_slug ?? "");
+    const memberName = validDisplayName(onb.member?.name) ? String(onb.member.name) : validDisplayName(acc.name) ? String(acc.name) : null;
+    const role = String(onb.member?.role ?? acc.role ?? "") as Role;
+    if (!MEMBER_SLUG_PATTERN.test(memberSlug) || !ROLES.includes(role)) throw new DomainError("provider_unavailable", cpErrorText("reply_invalid"), 502);
+    const account = { aid: String(acc.aid ?? ""), email: String(acc.email ?? ""), name: memberName ?? "", tid: `ten_${firmSlug}`, role };
+    const state = String(onb.state ?? "");
+    const keysDir = this.keysDirFor(firmSlug);
+    // 会话令牌：能在这台电脑上继续时才暂存（入组等待期间也算已登录；重启后按新身份读回）；不能继续的不留会话文件
+    const proceed = state === "needs_founder_setup" || state === "needs_device_join";
+    if (proceed) writeAccountSession(keysDir, { token: j.session_token, ...account });
+    const view = { account: { email: account.email, name: account.name, role }, firm: { name: firmName }, state };
+    if (state === "needs_founder_setup") {
+      const c = onb.claim ?? {};
+      if (c.kind !== "founder" || role !== "admin" || typeof c.activation_id !== "string" || typeof c.claim_secret !== "string" || c.claim_secret.length < 32) throw new DomainError("provider_unavailable", cpErrorText("reply_invalid"), 502);
+      writeStagedSecret(join(keysDir, "activation-claim.json"), { tid: account.tid, activation_id: c.activation_id, claim_secret: c.claim_secret });
+      this.writeActivation({ tid: account.tid, firm_slug: firmSlug, firm_name: firmName, member_slug: memberSlug, member_name: memberName, role, kind: "founder" });
+      slog.event("KERNEL_ONBOARDING_ACTIVATED", {});
+      this.restartSoon();
+      return { ...view, kind: "founder", next: "restart" };
+    }
+    if (state === "needs_device_join") {
+      const c = onb.claim ?? {};
+      const deviceId = String(onb.device_id ?? "");
+      const viaInvite = onb.via === "invite_code";
+      if (c.kind !== "member" || typeof c.activation_id !== "string" || typeof c.claim_secret !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(deviceId) || !deviceId.startsWith(`dev_${firmSlug}_${memberSlug}`)) throw new DomainError("provider_unavailable", cpErrorText("reply_invalid"), 502);
+      if (viaInvite && !inviteSecret) throw new DomainError("validation", "邀请码不完整：应为 36 位（管理员页面上完整的那一串），请向管理员核对", 400);
+      const r = await this.submitJoin({ tid: account.tid, activation_id: c.activation_id, claim_secret: c.claim_secret, firmSlug, firmName, memberSlug, memberName, role }, viaInvite ? inviteSecret : null, deviceId);
+      return { ...view, ...r };
+    }
+    // 不能在这台电脑上继续的状态：如实告诉律师（会话已暂存，处理好后再登录即可）
+    const why: Record<string, string> = {
+      device_limit: "这个账号的电脑数已满：请先在已登录的电脑上（设置 → 账号与团队 → 我的电脑）解绑一台，或请管理员调高上限",
+      device_mismatch: "这台电脑已登记为另一位成员：请用那位成员的账号登录",
+      waiting_founder: "你的律所还没有完成开通：请律所负责人先在自己的电脑上登录完成开通",
+    };
+    return { ...view, next: "blocked", message: why[state] ?? "这台电脑暂时不能用这个账号继续，请联系客服", devices: Array.isArray(onb.devices) ? onb.devices : [] };
+  }
+
+  private async accountCall(path: string, body: unknown): Promise<Record<string, any>> {
+    const r = await cpPost(this.d.relay, path, body);
+    if (!r.ok) {
+      slog.event("KERNEL_ACCOUNT_CALL_FAILED", { reason: /^[a-z_]{1,40}$/.test(r.code) ? r.code : "other" });
+      const status = r.code === "auth_invalid" || r.code.startsWith("session_") ? 401 : r.code === "account_locked" ? 423 : r.code === "rate_limited" ? 429 : r.code === "email_taken" || r.code === "member_taken" ? 409 : r.code === "account_disabled" || r.code === "registration_closed" || r.code === "code_required" ? 403 : r.code.startsWith("cp_") || r.code === "gate_unavailable" ? 502 : 400;
+      throw new DomainError(status === 502 ? "provider_unavailable" : status === 429 ? "rate_limited" : "validation", accountErrorText(r.code, r.message), status, { reason: r.code });
+    }
+    return r.json;
+  }
+
+  /** 注册（待激活模式）：自助开通个人律所，或凭开通码 / 邀请码。密码只经闸门的控制面通道发给中软（TLS 钉住），本机不保存。 */
+  async accountRegister(p: { email?: unknown; password?: unknown; name?: unknown; org_name?: unknown; code?: unknown }): Promise<Record<string, unknown>> {
+    const done = this.exclusive();
+    try {
+      if (this.pending()) throw new DomainError("conflict", "这台电脑正在等待批准；如要改用别的账号，请先点“重新输入”", 409);
+      const hasCode = typeof p.code === "string" && p.code.trim() !== "";
+      const input = hasCode ? splitInvitationInput(p.code) : null;
+      if (hasCode && !input) throw new DomainError("validation", "开通码是 20 位、邀请码是 36 位字母与数字（可带连字符），请核对后重新输入", 400);
+      rmSync(join(this.root, JOIN_FAILED_FILE), { force: true });
+      const j = await this.accountCall("/v1/auth/register", { email: p.email, password: p.password, name: p.name, ...(typeof p.org_name === "string" && p.org_name.trim() ? { org_name: p.org_name } : {}), ...(input ? { code: input.code } : {}), client: this.clientInfo() });
+      return await this.afterAuth(j, input?.secret ?? null);
+    } finally {
+      if (!this.restarting) done();
+    }
+  }
+
+  /** 登录（待激活模式：这台电脑还没有身份）。 */
+  async accountLogin(p: { email?: unknown; password?: unknown }): Promise<Record<string, unknown>> {
+    const done = this.exclusive();
+    try {
+      if (this.pending()) throw new DomainError("conflict", "这台电脑正在等待批准；如要改用别的账号，请先点“重新输入”", 409);
+      const j = await this.accountCall("/v1/auth/login", { email: p.email, password: p.password, client: this.clientInfo() });
+      return await this.afterAuth(j, null);
+    } finally {
+      if (!this.restarting) done();
+    }
+  }
+
+  /** 找回密码（两种模式都可用）：有邮件通道发验证码，否则提示找管理员要重置码。 */
+  async resetRequest(p: { email?: unknown }): Promise<Record<string, unknown>> {
+    return this.accountCall("/v1/auth/password-reset/request", { email: p.email });
+  }
+
+  /** 用验证码 / 重置码 / 设置码设新密码（两种模式都可用；之后要重新登录）。 */
+  async resetConfirm(p: { email?: unknown; code?: unknown; password?: unknown }): Promise<Record<string, unknown>> {
+    await this.accountCall("/v1/auth/password-reset/confirm", { email: p.email, code: p.code, password: p.password });
+    return { ok: true };
+  }
+
+  private clientInfo(): { version: string | null; platform: string } {
+    return { version: this.d.config.env.ZR_APP_VERSION ?? null, platform: process.platform === "win32" || process.platform === "darwin" ? process.platform : "linux" };
   }
 
   /** 成员取回申请结果；批准则暂存证书并请求重启。 */
@@ -387,22 +505,25 @@ export class OnboardingService {
     const fbOk = !!fb && typeof fb.recovery_public_key_pem === "string" && typeof fb.sig === "string" && verifyBytes(rootPub, firmBundleBytes(p.tid, rootPub, fb.recovery_public_key_pem), fb.sig);
     // 管理员用邀请码本机秘密段对批准结果做的 HMAC（复核 A-03）：控制面不知秘密，伪造不了律所根、证书与恢复托管公钥——不再首次信任
     // 管理员对律所名称与成员姓名的核对也在其中：与本机兑换时记下的不一致即不采用（activation.json 里的显示名因此经管理员确认）
+    // 账号新设备入组（第 44 批 D-186）没有邀请码本机段：没有批准核对段可核，靠律师比对核对码（批准后另显示律所核对码，与已有设备上的比对）
     const macOk =
-      typeof st.invite_secret === "string" &&
-      inviteMacValid(st.invite_secret, approvalMacBytes({ tid: p.tid, joinRequestId: p.join_request_id, cert, rootPublicKeyPem: rootPub, bundle: fb, firmName: p.firm_name, memberName: p.member_name }), r.json.admin_mac);
+      st.invite_secret === null
+        ? p.via_account === true
+        : typeof st.invite_secret === "string" &&
+          inviteMacValid(st.invite_secret, approvalMacBytes({ tid: p.tid, joinRequestId: p.join_request_id, cert, rootPublicKeyPem: rootPub, bundle: fb, firmName: p.firm_name, memberName: p.member_name }), r.json.admin_mac);
     if (!vr.ok || !same || !fbOk || !macOk) {
       slog.event("KERNEL_ONBOARDING_CERT_REJECTED", {});
       throw new DomainError("provider_unavailable", "收到的批准结果核对不通过，没有采用。请联系管理员重新批准；如反复出现请联系客服", 502);
     }
     writeStagedSecret(join(keysDir, "join-approved.json"), { cert, root_public_key_pem: rootPub, recovery_public_key_pem: fb!.recovery_public_key_pem, keys: st.keys });
     const role = (ROLES.includes(cert.role as Role) ? cert.role : "lawyer") as Role;
-    this.writeActivation({ tid: p.tid, firm_slug: p.firm_slug, firm_name: p.firm_name, member_slug: p.member_slug, member_name: p.member_name, role, kind: "member" });
+    this.writeActivation({ tid: p.tid, firm_slug: p.firm_slug, firm_name: p.firm_name, member_slug: p.member_slug, member_name: p.member_name, role, kind: "member", ...(p.device_id !== expectedJoinDeviceId(p.firm_slug, p.member_slug) ? { device_id: p.device_id } : {}) });
     rmSync(pendingPath, { force: true });
     rmSync(join(this.root, ONBOARDING_FILE), { force: true });
     this.stop();
     slog.event("KERNEL_ONBOARDING_JOINED", {});
     this.restartSoon();
-    return { mode: "member_pending", last_check: "approved", next: "restart", firm_check_code: firmCheckCode(p.tid, rootPub) };
+    return { mode: "member_pending", last_check: "approved", next: "restart", firm_check_code: firmCheckCode(p.tid, rootPub), ...(p.via_account ? { via_account: true } : {}) };
   }
 
   /** 放弃本机的待批准申请（被拒、换邀请码）：同时请控制面撤回（复核 A-09，不必等 7 天）；撤回失败不影响本机重来。 */
@@ -480,6 +601,9 @@ interface JoinSnapshot {
   sign_pub: string;
   enc_pub: string;
   check_code: string;
+  /** 第 44 批：invitation = 凭邀请码入组；account = 同一账号的新设备（D-186，人工核对核对码）。 */
+  via: "invitation" | "account";
+  account_email: string | null;
 }
 
 interface LocalInvite {
@@ -509,7 +633,16 @@ export const membersApi = (d: MembersDeps) => {
       sign_pub: String(x.sign_pub),
       enc_pub: String(x.enc_pub),
       check_code: joinCheckCode({ tid: d.identity.tenantId, deviceId: String(x.device_id), signPublicKeyPem: String(x.sign_pub), encPublicKeyPem: String(x.enc_pub) }),
+      via: x.via === "account" ? "account" : "invitation",
+      account_email: typeof x.account?.email === "string" ? x.account.email : null,
     };
+    if (snap.via === "account") {
+      // 账号新设备（D-186）：成员须是本所已有成员、角色与本机记录一致（控制面不能借此提权）、设备编号属于这位成员（_D2～_D9）
+      const m = d.db.get<{ role: string }>(`SELECT role FROM memberships WHERE tenant_id = ? AND user_id = ?`, [d.identity.tenantId, `usr_${d.config.firmSlug}_${snap.member_slug}`]);
+      const base = expectedJoinDeviceId(d.config.firmSlug, snap.member_slug);
+      const ok = !!m && ROLE_OF_MEMBERSHIP[m.role] === snap.role && MEMBER_SLUG_PATTERN.test(snap.member_slug) && /^_D[2-9]$/.test(snap.device_id.slice(base.length)) && snap.device_id.startsWith(base);
+      return { local: undefined, snap, verified: ok };
+    }
     const verified =
       !!local &&
       local.status === "open" &&
@@ -573,14 +706,18 @@ export const membersApi = (d: MembersDeps) => {
       const requests = (jr.json.join_requests as any[]).map((x) => {
         const { local, snap, verified } = checkJoin(x);
         if (verified) snapshots.set(snap.id, snap);
+        const memberName = snap.via === "account" ? (d.db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE tenant_id = ? AND user_id = ?`, [d.identity.tenantId, `usr_${d.config.firmSlug}_${snap.member_slug}`])?.display_name ?? null) : null;
         return {
           id: snap.id,
-          name: local?.display_name ?? null,
+          name: local?.display_name ?? memberName,
           role: local?.role ?? snap.role,
           requested_at: x.created_at,
           check_code: snap.check_code,
+          // 第 44 批：账号新设备（同一成员换电脑或加电脑）——没有邀请可对，须当面或电话核对核对码
+          via: snap.via,
+          account_email: snap.account_email,
           // 本机没有发过这个邀请（例如另一台管理员设备发出）：不能在这台电脑上批准
-          local_invite: !!local,
+          local_invite: !!local || snap.via === "account",
           // 申请在传送中被改动过（HMAC、设备编号或角色核对不通过）：不要批准
           verified,
         };
@@ -599,7 +736,9 @@ export const membersApi = (d: MembersDeps) => {
       if (attentionCache && Date.now() - attentionCache.at < ATTENTION_TTL_MS) return { pending_joins: attentionCache.n };
       // 本机没有仍有效的邀请：不可能有能在这里批准的申请，不联网（绝大多数时间如此，复核 RB16B-18）
       const open = d.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM member_invitations WHERE tenant_id = ? AND status = 'open'`, [d.identity.tenantId])?.n ?? 0;
-      if (open === 0) {
+      // 第 44 批：账号新设备的申请不对应本机邀请——管理员电脑总要看一眼（仍按 60 秒缓存）
+      const isAdmin = d.db.get<{ role: string }>(`SELECT role FROM memberships WHERE tenant_id = ? AND user_id = ?`, [d.identity.tenantId, d.identity.userId])?.role === "firm_admin";
+      if (open === 0 && !isAdmin) {
         attentionCache = { at: Date.now(), n: 0 };
         return { pending_joins: 0 };
       }
@@ -620,8 +759,11 @@ export const membersApi = (d: MembersDeps) => {
       const id = String(p.join_request_id ?? "");
       const snap = snapshots.get(id);
       if (!snap) throw new DomainError("conflict", "请先刷新成员页、核对数字后再批准（只能批准核对通过的申请）", 409);
-      const local = inviteOf(snap.activation_id);
-      if (!local || local.status !== "open" || local.member_slug !== snap.member_slug || local.role !== snap.role) throw new DomainError("conflict", "这个邀请已处理过，或不是在这台电脑上发出的", 409);
+      const viaAccount = snap.via === "account";
+      const local = viaAccount ? undefined : inviteOf(snap.activation_id);
+      if (!viaAccount && (!local || local.status !== "open" || local.member_slug !== snap.member_slug || local.role !== snap.role)) throw new DomainError("conflict", "这个邀请已处理过，或不是在这台电脑上发出的", 409);
+      const role = (viaAccount ? snap.role : local!.role) as Role;
+      const displayName = viaAccount ? (d.db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE tenant_id = ? AND user_id = ?`, [d.identity.tenantId, `usr_${d.config.firmSlug}_${snap.member_slug}`])?.display_name ?? null) : local!.display_name;
       let root: { publicKeyPem: string; privateKeyPem: string };
       try {
         root = getFirmRootPrivateKey(d.keysDir);
@@ -634,7 +776,7 @@ export const membersApi = (d: MembersDeps) => {
         certId: `cert_${snap.device_id}_${now.toString(36)}`,
         memberId: userId,
         deviceId: snap.device_id,
-        role: local.role as DeviceRole,
+        role: role as DeviceRole,
         signPublicKeyPem: snap.sign_pub,
         encPublicKeyPem: snap.enc_pub,
         issuedAt: new Date(now).toISOString(),
@@ -645,19 +787,19 @@ export const membersApi = (d: MembersDeps) => {
         // 经签名者签（签名者表面门禁 KP-02：keys 包外不直接按私钥签名）
         sig: new SoftwareSigner(root.privateKeyPem).signSync(firmBundleBytes(d.identity.tenantId, root.publicKeyPem, d.firm.recoveryPublicKeyPem)),
       };
-      const adminMac = inviteMac(
-        local.invite_secret,
-        approvalMacBytes({ tid: d.identity.tenantId, joinRequestId: snap.id, cert, rootPublicKeyPem: root.publicKeyPem, bundle, firmName: firmNameOf(d), memberName: local.display_name }),
-      );
-      const r = await call("POST", `/v1/join-requests/${id}/approve`, { cert, firm_bundle: bundle, admin_mac: adminMac });
+      // 账号新设备（D-186）没有邀请码本机段，没有批准核对段
+      const adminMac = viaAccount
+        ? null
+        : inviteMac(local!.invite_secret, approvalMacBytes({ tid: d.identity.tenantId, joinRequestId: snap.id, cert, rootPublicKeyPem: root.publicKeyPem, bundle, firmName: firmNameOf(d), memberName: displayName }));
+      const r = await call("POST", `/v1/join-requests/${id}/approve`, { cert, firm_bundle: bundle, ...(adminMac ? { admin_mac: adminMac } : {}) });
       if (!r.ok) cpFail(r);
       d.db.tx(() => {
-        d.db.run(`UPDATE member_invitations SET status = 'approved', device_id = ?, decided_at = ? WHERE activation_id = ?`, [snap.device_id, new Date(now).toISOString(), snap.activation_id]);
-        d.db.run(`INSERT OR IGNORE INTO memberships (membership_id, tenant_id, user_id, role) VALUES (?, ?, ?, ?)`, [`membership_${snap.member_slug}`, d.identity.tenantId, userId, MEMBERSHIP_ROLE[local.role as Role]]);
+        if (!viaAccount) d.db.run(`UPDATE member_invitations SET status = 'approved', device_id = ?, decided_at = ? WHERE activation_id = ?`, [snap.device_id, new Date(now).toISOString(), snap.activation_id]);
+        d.db.run(`INSERT OR IGNORE INTO memberships (membership_id, tenant_id, user_id, role) VALUES (?, ?, ?, ?)`, [`membership_${snap.member_slug}`, d.identity.tenantId, userId, MEMBERSHIP_ROLE[role]]);
       });
       snapshots.delete(id);
       attentionCache = null;
-      d.audit("member.join_approve", "device", snap.device_id);
+      d.audit(viaAccount ? "member.device_approve" : "member.join_approve", "device", snap.device_id);
       return { ok: true, status: "approved" };
     },
 
@@ -688,7 +830,7 @@ export const membersApi = (d: MembersDeps) => {
 };
 
 /** 待激活模式下开放的内核方法（其余一律 not_activated）。第 14 批加“从备份恢复”。 */
-export const ONBOARDING_METHODS: ReadonlySet<string> = new Set(["kernel.status", "onboarding.status", "onboarding.redeem", "onboarding.check", "onboarding.reset", "onboarding.restore", "device.env_probe"]);
+export const ONBOARDING_METHODS: ReadonlySet<string> = new Set(["kernel.status", "onboarding.status", "onboarding.redeem", "onboarding.check", "onboarding.reset", "onboarding.restore", "device.env_probe", "account.register", "account.login", "account.reset_request", "account.reset_confirm"]);
 
 const JOIN_FAILED_FILE = "onboarding-failed.json";
 const PENDING_ACTIVATION_FILE = "activation.pending.json";

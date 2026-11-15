@@ -250,11 +250,11 @@ export interface StagedJoin {
  * 设备行与 device.json 用管理员签发的证书和入组时生成的设备密钥。证书须由该根签发、编号与成员是本机身份、公钥与暂存的私钥配对。
  * 账本先提交、再写密钥文件、最后删暂存（写密钥失败下次启动重做；幂等）。
  */
-export function applyStagedJoin(db: KernelDb, keysDir: string, identity: Identity, slugs: { firmSlug: string; userSlug: string }): { applied: boolean; rejected?: string } {
+export function applyStagedJoin(db: KernelDb, keysDir: string, identity: Identity, slugs: { firmSlug: string; userSlug: string; deviceId?: string }): { applied: boolean; rejected?: string } {
   const path = join(keysDir, "join-approved.json");
   if (!existsSync(path)) return { applied: false };
   const st = readSecretFile<StagedJoin>(path);
-  const deviceId = `dev_${slugs.firmSlug}_${slugs.userSlug}`;
+  const deviceId = slugs.deviceId ?? `dev_${slugs.firmSlug}_${slugs.userSlug}`;
   const vr = verifyDeviceCertificate(st.cert, st.root_public_key_pem);
   if (!vr.ok) return { applied: false, rejected: "cert_invalid" };
   if (st.cert.deviceId !== deviceId || st.cert.memberId !== identity.userId) return { applied: false, rejected: "identity_mismatch" };
@@ -333,10 +333,10 @@ export interface AppliedRecovery {
  * 2. 同一事务：临时密钥包裹、备份私钥解不开的 matter_keys 与 matter_ws_keys 改包裹给备份公钥；临时证书留档；devices 行换回；
  * 3. 账本提交之后写 device.json（写失败时下次启动重做，幂等），最后删除暂存文件。
  */
-export function applyStagedRecovery(db: KernelDb, keysDir: string, slugs: { firmSlug: string; userSlug: string }, rootPublicKeyPem: string): AppliedRecovery {
+export function applyStagedRecovery(db: KernelDb, keysDir: string, slugs: { firmSlug: string; userSlug: string; deviceId?: string }, rootPublicKeyPem: string): AppliedRecovery {
   const path = join(keysDir, STAGED_RECOVERY);
   if (!existsSync(path)) return { applied: false, rewrapped: 0, unreadable: 0 };
-  const deviceId = `dev_${slugs.firmSlug}_${slugs.userSlug}`;
+  const deviceId = slugs.deviceId ?? `dev_${slugs.firmSlug}_${slugs.userSlug}`;
   const reject = (reason: string): AppliedRecovery => {
     try {
       renameSync(path, join(keysDir, `recovery-staged.rejected-${Date.now()}.json`));
@@ -441,8 +441,8 @@ function certRoleOf(membershipRole: string | undefined, userSlug?: string): Devi
  * 当前主机设备（v0 确定性 device_id = dev_<firmSlug>_<userSlug>；一人一台设备）：
  * 首跑生成设备密钥（0600）→ 根私钥签发 1 年期设备证书 → devices upsert；之后直接装载。
  */
-export function ensureDevice(db: KernelDb, keysDir: string, identity: Identity, slugs: { firmSlug: string; userSlug: string }, opts: { promoteSole?: boolean } = {}): DeviceContext {
-  const deviceId = `dev_${slugs.firmSlug}_${slugs.userSlug}`;
+export function ensureDevice(db: KernelDb, keysDir: string, identity: Identity, slugs: { firmSlug: string; userSlug: string; deviceId?: string }, opts: { promoteSole?: boolean } = {}): DeviceContext {
+  const deviceId = slugs.deviceId ?? `dev_${slugs.firmSlug}_${slugs.userSlug}`;
 
   // G0 单机开发形态：首跑且仅 1 个 membership 时提升为 firm_admin（生产由管理控制台分配）
   // 经开通码激活的设备（第 13 批）不做此提升：角色只来自开通码 / 邀请码与管理员签发的证书

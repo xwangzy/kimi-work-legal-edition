@@ -6,6 +6,7 @@ import { downloadPlan } from "./lib/download.ts";
 import { GENERIC_FAILURE } from "./lib/errors.ts";
 import { ask } from "./lib/ask.ts";
 import type { KernelPreviewCard } from "./lib/accept-preview.ts";
+import type { AccountDevice, AccountSession } from "./lib/account.ts";
 
 declare global {
   interface Window {
@@ -640,47 +641,62 @@ export interface ReminderInput {
   audience: "me" | "team";
 }
 
-/** 打码的 Kimi 账号（昵称只留首字、手机只留尾号）。 */
-export interface KimiAccount {
-  nickname: string;
-  phone_tail: string | null;
-  level?: string | null;
-  bound_at?: string;
-}
-
 /**
- * 本所用量与上限（第 40 批：取消点数，一律为本月额度的比例 0–1，与 Kimi 会员额度同一表达）。
- * 个人份额 = 本所本月总额度 ÷ 席位数；成员名由内核在本机换上。
+ * 本所用量与上限（第 44 批 v2，与 Kimi 的额度呈现同一表达）：比例 0–1、剩余、单位（tokens 或元）、统计周期与重置时间、
+ * 5 小时频率窗口、本人用量（分母写明来源：个人上限或套餐每人额度）、按模型；管理员与合伙人另有用量数与按成员明细。
+ * 成员名由内核在本机换上。mode = local_dev 时只有 note。
  */
 export interface QuotaStatus {
   mode: "control_plane" | "local_dev";
   note?: string;
-  unit?: "percent";
-  period?: string;
-  /** 下次重置（北京时间下月 1 日 0 点）。 */
-  resets_at?: string;
-  /** 暂停原因：律所设的上限已到 / 本月额度用完（100%）。 */
-  paused?: "cap" | "allowance" | null;
-  used_ratio?: number;
-  in_flight_ratio?: number;
-  cap_pct?: number | null;
-  cap_set_at?: string | null;
-  boost_pct?: number;
-  seats?: number;
   plan?: { id: string; label: string };
-  own?: { used_ratio: number; firm_ratio: number; requests: number } | null;
-  history?: { period: string; used_ratio: number | null; boost_pct: number }[];
-  by_member?: { member_id: string | null; name: string | null; used_ratio: number; firm_ratio: number; requests: number; kimi: KimiAccount | null }[];
+  unit?: "tokens" | "cny";
+  unit_label?: string;
+  period?: { kind: "month" | "week"; key: string; start: string; resets_at: string };
+  firm?: {
+    used_ratio: number;
+    remaining_ratio: number;
+    in_flight_ratio: number;
+    /** 暂停原因：律所设的上限已到 / 本期额度用完 / 5 小时内用得太快。 */
+    paused: "cap" | "allowance" | "burst" | null;
+    cap_pct: number | null;
+    cap_set_at?: string | null;
+    boost_pct: number;
+    /** 本期从旧计量口径带过来的比例（迁移前的用量）；null = 没有。 */
+    legacy_used_ratio: number | null;
+    /** 用量数与总额度（单位见 unit）；成员看不到，为 null。 */
+    used: number | null;
+    total: number | null;
+    seats: number;
+    denominator?: string;
+  };
+  burst?: { hours: number; pct: number; used_ratio: number; resets_at: string | null } | null;
+  own?: { used_ratio: number; denominator: "account_limit" | "seat_quota"; enforced: boolean; used: number; total: number; requests: number; tokens: number; value_cny: number | null; estimated_rows: number } | null;
+  history?: { period: string; used_ratio: number | null; legacy: boolean }[];
+  models?: { alias: string; label?: string; used: number; share: number; requests: number }[];
+  by_member?: { uid: string | null; name: string | null; used: number; used_ratio_of_firm: number; requests: number }[];
   boosts?: { at: string; pct: number }[];
   unreconciled_leases?: number;
-  kimi?: { enabled: boolean; required: boolean; own: KimiAccount | null };
 }
 
-export interface KimiAccountStatus {
+/** 账号状态（第 44 批）：这台电脑上登录的是谁、是否要重新登录。 */
+export interface AccountStatus {
   mode: "control_plane" | "local_dev";
-  enabled: boolean;
-  required: boolean;
-  account: KimiAccount | null;
+  logged_in: boolean;
+  account: { email: string; name: string; role: string } | null;
+  /** 上次登录的账号（退出登录后仍记得，只有邮箱、姓名、角色；没有令牌）。 */
+  last_account?: { email: string; name: string; role: string } | null;
+  login_required: boolean;
+  reason: string | null;
+  message: string | null;
+}
+
+/** 账号详情（account.me）：本人、当前登录、名下的电脑、仍有效的登录。 */
+export interface AccountMe {
+  account: { aid: string; email: string; name: string; role: string; status: string; tid: string; org?: { slug: string; name: string }; device_limit: number; last_login_at?: string | null; created_at?: string };
+  session: AccountSession;
+  devices: AccountDevice[];
+  sessions: AccountSession[];
 }
 
 /** 中软侧操作记录（第 9 批 S14）：本机验过签名与哈希链后留存的记录。 */
@@ -693,7 +709,7 @@ export interface CpAuditRow {
   target: string | null;
   target_name: string | null;
   result: string;
-  /** 数值明细（上限点数、加量点数、席位数、续订天数）。 */
+  /** 数值明细（上限百分比、加量百分比、席位数、续订天数；第 39 批之前的旧记录另有旧计量的数）。 */
   detail?: Record<string, number>;
 }
 
@@ -1146,11 +1162,6 @@ export const api = {
   diagnosticsUploads: () => invoke<{ uploads: { upload_id: string; ticket: string | null; bytes: number; status: "pending" | "sent" | "failed" | "unknown"; error_code: string | null; created_at: string }[] }>("diagnostics.uploads"),
   diagnosticsUpload: (fileSha256: string) => invoke<{ ticket: string; expires_at: string | null; retention_days: number }>("diagnostics.upload", { file_sha256: fileSha256 }),
   quotaSetCap: (capPct: number | null) => invoke<{ cap_pct: number | null }>("quota.set_cap", { monthly_cap_pct: capPct }),
-  // Kimi 账号（第 40 批）：授权由 Kimi Work 服务代办；本机只显示验证码、打开授权页、轮询结果
-  kimiStatus: () => invoke<KimiAccountStatus>("account.kimi_status"),
-  kimiLoginStart: () => invoke<{ flow_id: string; user_code: string; verification_uri: string; verification_uri_complete: string; expires_at: string; interval: number }>("account.kimi_start"),
-  kimiLoginPoll: (flowId: string) => invoke<{ status: "pending" | "slow_down" | "expired" | "denied" | "bound"; account?: KimiAccount | null }>("account.kimi_poll", { flow_id: flowId }),
-  kimiUnbind: () => invoke<{ ok: true }>("account.kimi_unbind"),
   cpAudit: (o: { limit?: number; before_seq?: number } = {}) =>
     invoke<{ mode: string; fetched: { added: number; head: number; withheld: boolean } | null; fetch_error: string | null; records: CpAuditRow[] }>("control_plane.audit", o),
   /** 导出中软侧操作记录（原记录含哈希链，收件人可自行核验；只有代码与编号）。返回 null = 取消。 */
@@ -1332,6 +1343,23 @@ export const onboarding = {
   reset: () => invoke<any>("onboarding.reset"),
   /** 从备份恢复（第 14 批）：安装包形态传句柄；开发形态（无对话框）传路径。 */
   restore: (o: { file_handle?: string; folder_handle?: string; file?: string; dir?: string; code: string; legacy_ack?: boolean; older_ack?: boolean }) => invoke<any>("onboarding.restore", o),
+};
+
+/**
+ * 账号（第 44 批，主文 §2）：登录、注册、找回密码在待激活时也可用；其余要这台电脑已激活。
+ * 密码只经内核发给中软，渲染层不保存；登录凭据在内核里加密保存，界面拿不到。
+ */
+export const account = {
+  register: (o: { email: string; password: string; name: string; org_name?: string; code?: string }) => invoke<any>("account.register", o),
+  login: (email: string, password: string) => invoke<any>("account.login", { email, password }),
+  resetRequest: (email: string) => invoke<{ ok: boolean; channel: "email" | "admin"; message?: string }>("account.reset_request", { email }),
+  resetConfirm: (email: string, code: string, password: string) => invoke<{ ok: true }>("account.reset_confirm", { email, code, password }),
+  status: () => invoke<AccountStatus>("account.status"),
+  logout: () => invoke<{ ok: true }>("account.logout"),
+  me: () => invoke<AccountMe>("account.me"),
+  changePassword: (current: string, next: string) => invoke<{ ok: true; other_sessions_revoked: number }>("account.change_password", { current, next }),
+  revokeSession: (sid: string) => invoke<{ ok: true }>("account.revoke_session", { sid }),
+  unbindDevice: (deviceId: string, password: string) => invoke<{ ok: true }>("account.unbind_device", { device_id: deviceId, password }),
 };
 
 /** 恢复包与备份（第 14 批）：安装包形态经系统对话框拿句柄；开发形态（浏览器）没有对话框，界面让开发者填路径。 */

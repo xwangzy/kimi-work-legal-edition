@@ -25,10 +25,11 @@ const signWith = (k: OpsSigningKey, bytes: Uint8Array): string => signSyncWith(t
 
 /**
  * 权限：按接口授予。tenant.manage 开通与续订、tenant.terminate 终止订阅、activation.issue 发与作废创始开通码、
- * quota.manage 加量（含开通时附带的点数）、quota.cap 代设月度上限（只能调低）、device.revoke 吊销设备与席位、
- * support.read / support.delete 诊断包查看 / 删除、relay.reset 中继按事项重置、tenant.purge 中继与通知按租户整体删除。
+ * quota.manage 加量包（按套餐额度的百分比）、quota.cap 代设本期上限（只能调低）、device.revoke 吊销设备与席位、
+ * support.read / support.delete 诊断包查看 / 删除、relay.reset 中继按事项重置、tenant.purge 中继与通知按租户整体删除；
+ * 第 44 批：account.manage 账号（代建、停用、重置码、强制下线、个人上限）、route.manage API 路由与价目表、plan.manage 套餐与注册设置。
  */
-export const OPS_PERMISSIONS = ["tenant.read", "tenant.manage", "tenant.terminate", "activation.issue", "quota.manage", "quota.cap", "device.revoke", "support.read", "support.delete", "relay.reset", "tenant.purge"] as const;
+export const OPS_PERMISSIONS = ["tenant.read", "tenant.manage", "tenant.terminate", "activation.issue", "quota.manage", "quota.cap", "device.revoke", "support.read", "support.delete", "relay.reset", "tenant.purge", "account.manage", "route.manage", "plan.manage"] as const;
 export type OpsPermission = (typeof OPS_PERMISSIONS)[number];
 /** 同一人不能兼有的权限（双人复核未做之前的职责分离，D-106）：开通租户 + 发创始开通码 = 一个人就能开出并认领一个律所。 */
 export const OPS_PERMISSION_CONFLICTS: readonly (readonly [OpsPermission, OpsPermission])[] = [["tenant.manage", "activation.issue"]];

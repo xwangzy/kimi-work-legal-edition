@@ -129,6 +129,11 @@ export interface GatewayFeedBody {
    * share_relay：律所是否允许团队事项经共享中继同步（第 11 批 S11；中继服务按它二次核对）。
    */
   policies: { tid: string; l3a_standard_model: "deny" | "allow"; support_upload?: "deny" | "allow"; share_relay?: "deny" | "allow" }[];
+  /**
+   * 暂停的设备（第 44 批账号闸）：要求账号登录的律所里，没有有效会话（退出登录、会话过期）或账号已停用的设备。
+   * 不是吊销：重新登录即移出；网关对其席位令牌回 401 seat_session_inactive。旧网关忽略。
+   */
+  suspended_devices?: { tid: string; device_id: string }[];
 }
 
 /** 网关与检索服务对控制面订阅的只读视图（订阅器在云端服务一侧实现：services/control-plane 的 GatewayFeedSubscriber）。 */
@@ -143,6 +148,8 @@ export interface GatewayFeedView {
   supportUploadAllowed?(tid: string): boolean;
   /** 律所是否允许团队事项经共享中继同步（第 11 批 S11；没有实现 = 不允许）。 */
   shareRelayAllowed?(tid: string): boolean;
+  /** 设备是否因账号会话无效而暂停（第 44 批；没有实现 = 不暂停）。 */
+  suspendedDevice?(tid: string, deviceId: string): boolean;
   /** 按需刷新（单飞、限频）：遇到未知事项或级别不符时调用一次。 */
   refresh(): Promise<void>;
 }

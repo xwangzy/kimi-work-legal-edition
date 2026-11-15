@@ -133,7 +133,11 @@ export function MembersAdmin() {
             <tbody>
               {requests.map((r) => (
                 <tr key={r.id}>
-                  <td>{r.name ?? "（不是在这台电脑上邀请的）"}</td>
+                  <td>
+                    {r.name ?? (r.via === "account" ? (r.account_email ?? "本所成员") : "（不是在这台电脑上邀请的）")}
+                    {/* 第 44 批（D-186）：同一账号的新电脑——没有邀请可对，只能人工核对核对码 */}
+                    {r.via === "account" && <div className="muted">同一账号的新电脑{r.account_email && r.name ? ` · ${r.account_email}` : ""}</div>}
+                  </td>
                   <td>{ROLE_LABEL[r.role] ?? r.role}</td>
                   <td>{fmtTime(r.requested_at)}</td>
                   <td className="members-check">{r.check_code}</td>
@@ -142,8 +146,8 @@ export function MembersAdmin() {
                       <span className="activate-error">这份申请在传送中被改动过，不要批准；请拒绝并重新发邀请，同时告知 Kimi Work 客服</span>
                     ) : r.local_invite ? (
                       <span className="settings-choice">
-                        <ConfirmButton label="批准" danger={false} className="btn-primary btn-sm" question={`请先电话或当面联系${r.name ?? "对方"}，请他读出屏幕上的入组核对码，与这里逐位对照。号码一致吗？`} confirmLabel="已核对一致，批准" onConfirm={() => act(() => members.approve(r.id), `已批准${r.name ? ` ${r.name}` : ""}`)} />
-                        <ConfirmButton label="拒绝" question={`拒绝${r.name ? ` ${r.name} ` : ""}的申请？他需要新的邀请码才能再次申请。`} confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
+                        <ConfirmButton label="批准" danger={false} className="btn-primary btn-sm" question={r.via === "account" ? `这是${r.name ?? r.account_email ?? "本所成员"}的账号在一台新电脑上申请加入。请先电话或当面联系本人，请他读出新电脑屏幕上的 12 位入组核对码，与这里逐位对照。号码一致吗？` : `请先电话或当面联系${r.name ?? "对方"}，请他读出屏幕上的入组核对码，与这里逐位对照。号码一致吗？`} confirmLabel="已核对一致，批准" onConfirm={() => act(() => members.approve(r.id), `已批准${r.name ? ` ${r.name}` : ""}`)} />
+                        <ConfirmButton label="拒绝" question={r.via === "account" ? "拒绝这台新电脑的申请？对方可以重新登录后再申请。" : `拒绝${r.name ? ` ${r.name} ` : ""}的申请？他需要新的邀请码才能再次申请。`} confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
                       </span>
                     ) : (
                       <span className="muted">请在发出邀请的电脑上处理</span>

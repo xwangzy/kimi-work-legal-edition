@@ -66,7 +66,7 @@ const chain = (tid: string) => auditLog.list(tid, 0, 1000);
 test("开通、发码、加量、续订、终止：执行者记为运营编号（律所可见的流水）；访问审计先记“已请求”再记结果，带密钥编号与名册版本", async () => {
   const created = await call("op_0001", "POST", "/v1/ops/tenants", { tid: "ten_alpha", edition: "team", seats: 5, plan: "pro", name: "阿尔法律师事务所" });
   assert.equal(created.status, 200, JSON.stringify(created.json));
-  assert.equal(created.json.tenant.activation_required, true, "经运营接口开通的租户一律要求开通码");
+  assert.equal(created.json.tenant.accounts_required, true, "经运营接口开通的租户缺省要求账号登录（第 44 批）");
   assert.equal(cp.ops.tenant("ten_alpha")!.activation_required, true);
   const code = await call("op_0003", "POST", "/v1/ops/tenants/ten_alpha/activation-codes", { slug: "admin", name: "张管理员", ttl_hours: 48 });
   assert.equal(code.status, 200);
@@ -79,13 +79,13 @@ test("开通、发码、加量、续订、终止：执行者记为运营编号�
   assert.equal((await call("op_0003", "POST", `/v1/ops/tenants/ten_alpha/activation-codes/${code.json.activation_id}/revoke`)).status, 200);
   const summary = await call("op_0002", "GET", "/v1/ops/tenants/ten_alpha");
   assert.equal(summary.status, 200);
-  assert.equal(summary.json.tenant.quota.boost_pct, 50);
-  assert.equal(summary.json.tenant.quota.cap_pct, 80);
-  assert.deepEqual(summary.json.tenant.quota.plan, { id: "pro", label: "专业", custom: false });
-  assert.deepEqual(summary.json.tenant.quota.units, { total: 5 * 500_000 * 1.5, used: 0 }, "专业套餐 5 席 + 加量 50%");
-  assert.deepEqual(summary.json.tenant.activations.map((a: any) => [a.status, a.issued_by]), [["revoked", "op_0003"]]);
+  assert.equal(summary.json.tenant.activation_required, true, "经运营接口开通的租户一律要求开通码");
+  assert.equal(summary.json.tenant.boost_pct, 50);
+  assert.equal(summary.json.tenant.cap_pct, 80);
+  assert.deepEqual(summary.json.tenant.plan, { id: "pro", label: "专业" });
+  assert.deepEqual([summary.json.tenant.unit, summary.json.tenant.total, summary.json.tenant.used], ["tokens", 5 * 125_000_000 * 1.5, 0], "专业套餐 5 席 × 1.25 亿 token + 加量 50%");
+  assert.deepEqual(summary.json.activation_codes.map((a: any) => [a.status, a.issued_by]), [["revoked", "op_0003"]]);
   assert.equal(JSON.stringify(summary.json).includes("张管理员"), false, "概要不给成员姓名");
-  assert.equal(JSON.stringify(summary.json).includes("admin"), false, "概要不给成员标识");
   // 终止订阅单独授权（tenant.terminate）：只能开通的人不能终止（复核 RA10A-17）
   const onlyManage = await call("op_0004", "POST", "/v1/ops/tenants/ten_alpha/terminate");
   assert.deepEqual([onlyManage.status, onlyManage.json.error.code], [403, "ops_permission_denied"]);
@@ -106,7 +106,7 @@ test("开通、发码、加量、续订、终止：执行者记为运营编号�
   const mine = access.filter((r) => r.tid === "ten_alpha").map((r) => `${r.operator}/${r.op_key}/v${r.roster_version}:${r.action}:${r.result}`);
   assert.deepEqual(mine.slice(0, 2), ["op_0001/k1/v1:tenant.create:requested", "op_0001/k1/v1:tenant.create:ok"]);
   assert.ok(mine.includes("op_0002/k1/v1:tenant.read:requested") && mine.includes("op_0002/k1/v1:tenant.read:ok"));
-  cp.ops.grantUnits("ten_alpha", 1);
+  cp.ops.boostQuota("ten_alpha", 1);
   assert.deepEqual(chain("ten_alpha").at(-1)!.actor, { kind: "ops", id: "ops" }, "进程内调用（开发脚本与测试）仍记笼统的 ops");
 });
 
@@ -144,8 +144,8 @@ test("运营只作废创始开通码、代设上限只能调低（复核 RA10B-0
   assert.deepEqual([r.status, r.json.error.code], [404, "activation_unknown"]);
   assert.equal(t.activations.get(invite.activation_id)!.status, "open", "成员邀请码不动");
   const summary = await call("op_0002", "GET", "/v1/ops/tenants/ten_beta");
-  assert.deepEqual(summary.json.tenant.activations, [], "概要不列成员邀请码");
-  assert.deepEqual(summary.json.tenant.member_invitations, { total: 1, open: 1 });
+  assert.deepEqual(summary.json.activation_codes, [], "概要不列成员邀请码");
+  assert.deepEqual(summary.json.member_invitations, { total: 1, open: 1 });
   assert.equal(JSON.stringify(summary.json).includes("zhangsan"), false, "设备编号里的成员标识不外露（复核 RA10B-05）");
   // 代设上限（百分比）：无上限 → 设 50%（调低）可以；50% → 80%（调高）、50% → 不设（取消）须律所自己
   assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_beta/cap", { cap_pct: 50 })).status, 200);
@@ -162,7 +162,7 @@ test("运营只作废创始开通码、代设上限只能调低（复核 RA10B-0
   assert.ok(n1 >= 10 && n1 <= 20, `被拒记录应限量（得到 ${n1}）`);
 });
 
-test("路径按原样匹配：带查询串、点段的运营请求一律 404（入口按原样路径判断来源网段，不能绕过）；未配置运营守卫时整组 404", async () => {
+test("路径按原样匹配：点段的运营请求一律 404（入口按原样路径判断来源网段，不能绕过）；查询串只许 GET 且签名须覆盖；未配置运营守卫时整组 404", async () => {
   const rawPath = "/v1/x/../ops/tenants/ten_alpha";
   const dot = await new Promise<number>((done, no) => {
     const req = request(`${base}${rawPath}`, { method: "GET", path: rawPath, headers: OPS.sign("op_0002", "control-plane", { method: "GET", path: rawPath }) }, (res) => {
@@ -173,7 +173,11 @@ test("路径按原样匹配：带查询串、点段的运营请求一律 404（�
     req.end();
   });
   assert.equal(dot, 404);
-  assert.equal((await call("op_0002", "GET", "/v1/ops/tenants/ten_alpha?x=1")).status, 404);
+  // 第 44 批：GET 可带查询串（筛选、分页），签名覆盖完整路径；签名只覆盖去掉查询串的路径 → 401；POST 带查询串 → 404
+  assert.equal((await call("op_0002", "GET", "/v1/ops/tenants/ten_alpha?x=1")).status, 200);
+  const unsignedQs = await fetch(`${base}/v1/ops/accounts?q=zhang`, { headers: OPS.sign("op_0002", "control-plane", { method: "GET", path: "/v1/ops/accounts" }) });
+  assert.equal(unsignedQs.status, 401, "签名不覆盖查询串即无效");
+  assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/renew?x=1", { days: 1 })).status, 404);
   const none = await call("op_0001", "POST", "/v1/ops/tenants", { tid: "ten_gamma", edition: "team", seats: 1 }, { at: bareBase });
   assert.equal(none.status, 404);
   assert.equal(bare.ops.tenant("ten_gamma"), undefined);

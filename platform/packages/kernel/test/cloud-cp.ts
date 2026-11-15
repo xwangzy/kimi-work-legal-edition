@@ -7,7 +7,7 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { issueSeatToken } from "@zr-legal/seat-token";
 import { publicKeyMap, signDeviceRequest } from "@zr-legal/firm-trust";
-import { createControlPlane, devControlPlaneKeys, GatewayFeedSubscriber, type ControlPlane, type KimiAccountConfig } from "@zr-legal/control-plane";
+import { createControlPlane, devControlPlaneKeys, GatewayFeedSubscriber, type ControlPlane } from "@zr-legal/control-plane";
 import { createLegalGateway, DEFAULT_ROUTES, httpLedger, LeaseQuota, memoryMeter, MockProvider, type MeterRecord } from "@zr-legal/legal-gateway";
 import { createSearchService, MockSearchProvider, type SearchMeterRecord } from "@zr-legal/search-service";
 import { createSupportApi, type SupportAccessRecord } from "@zr-legal/support-api";
@@ -50,10 +50,10 @@ export interface CloudCp {
   close(): Promise<void>;
 }
 
-export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm"; seats?: number; kimiAccount?: { config: KimiAccountConfig } }): Promise<CloudCp> {
+export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm"; seats?: number }): Promise<CloudCp> {
   const keys = devControlPlaneKeys();
   const serviceSecret = `svc-${Math.random().toString(36).slice(2)}`;
-  const cp = createControlPlane({ keys, serviceSecret, ...(o.kimiAccount ? { kimiAccount: o.kimiAccount } : {}) });
+  const cp = createControlPlane({ keys, serviceSecret });
   let available = true;
   const handlers = cp.server.listeners("request") as ((req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => void)[];
   cp.server.removeAllListeners("request");
