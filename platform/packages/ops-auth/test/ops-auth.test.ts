@@ -322,11 +322,12 @@ test("门禁：云端服务源码里的每一条运营路径都被 OPS_PATH_RE �
       for (const { canon, index } of opsPathsIn(src)) {
         found.add(canon);
         assert.match(canon, OPS_PATH_RE, `${svc}/${f} 里的运营路径 ${canon} 没有被生产入口认出`);
-        // 路由匹配（这一行里有 exec / === / startsWith）之后 12 行内须经运营守卫，或位于只经 opsRoute 进入的 opsSpec 表里
+        // 路由匹配（这一行里有 exec / === / startsWith）之后 12 行内须经运营守卫，或位于只经 opsRoute 进入的 opsSpec 表里；
+        // 账号密码登录的登录、退出、改密码经守卫的 login / logout / changePassword（登录本身不带凭据：核密码、限频、锁定都在守卫里）
         const line = src.slice(0, index).split("\n").length;
         if (!/\.exec\(|===|startsWith/.test(srcLines[line - 1] ?? "")) continue;
         if (specViaRoute && index > specAt && index < routeAt) continue;
-        assert.match(srcLines.slice(line - 1, line + 12).join("\n"), /opsAuth\(|opsRoute\(|\.authorize\(/, `${svc}/${f}:${line} 的运营路由没有经运营守卫`);
+        assert.match(srcLines.slice(line - 1, line + 12).join("\n"), /opsAuth\(|opsRoute\(|\.authorize\(|opsGuard\.(?:login|logout|changePassword)\(/, `${svc}/${f}:${line} 的运营路由没有经运营守卫`);
       }
     }
   }

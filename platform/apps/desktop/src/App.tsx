@@ -27,6 +27,20 @@ import { updateBannerView } from "./lib/update-banner.ts";
 import { SearchPalette } from "./components/SearchPalette.tsx";
 import { AskHost } from "./components/AskHost.tsx";
 import { fmtDate } from "./lib/labels.ts";
+import { GuideTour } from "./components/GuideTour.tsx";
+import { guideSeen, guideSeenKey, markGuideSeen, shouldAutoOpenGuide } from "./lib/guide-steps.ts";
+
+/** 再看一遍上手指南（设置 · 通用里的按钮发这个事件）。 */
+export const OPEN_GUIDE = "kwl:guide";
+/** 指南最后一步“新建第一个事项”：首页收到后打开新建事项对话框。 */
+export const NEW_MATTER = "kwl:new-matter";
+const safeStorage = (): Storage | null => {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+};
 
 /** “明天提醒”记在这台电脑的本地偏好（v9.4）。 */
 const SNOOZE_KEY = "kwl.recovery.snooze_until";
@@ -110,7 +124,7 @@ export function nav(path: string): void {
 export function App() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
   // 首次启动激活（第 13 批）：这台电脑还没有激活时整个应用只显示激活页
-  const [boot, setBoot] = useState<{ onboarding: any; restoredAt?: string | null; login?: { reason: string | null; email: string } | null } | null>(null);
+  const [boot, setBoot] = useState<{ onboarding: any; restoredAt?: string | null; login?: { reason: string | null; email: string } | null; firm?: string | null; user?: string | null } | null>(null);
   // 取不到状态时不当作“已激活”（复核 B13-K01）：首次启动内核较慢，按退避重试（lib/boot-gate.ts）；约两分钟仍取不到才给出说明与“重试”
   const [bootFailed, setBootFailed] = useState(false);
   const loadBoot = () => {
@@ -119,7 +133,7 @@ export function App() {
     const tryOnce = () =>
       void api
         .kernelStatus()
-        .then((st: any) => setBoot({ onboarding: st?.onboarding ?? null, restoredAt: st?.restored_from_backup_at ?? null, login: needsLogin(st) ? { reason: st.account?.reason ?? null, email: st.account?.email ?? "" } : null }))
+        .then((st: any) => setBoot({ onboarding: st?.onboarding ?? null, restoredAt: st?.restored_from_backup_at ?? null, login: needsLogin(st) ? { reason: st.account?.reason ?? null, email: st.account?.email ?? "" } : null, firm: st?.firm ?? null, user: st?.user ?? null }))
         .catch(() => {
           attempt += 1;
           const delay = bootRetryDelay(attempt);
@@ -193,6 +207,41 @@ export function App() {
       off();
     };
   }, [boot]);
+  // 首次上手指南（2026-11）：没看过、在首页、还没有自己的事项时自动打开一次；设置 · 通用里可以再看
+  const [guide, setGuide] = useState<{ hasMatters: boolean } | null>(null);
+  const guideKey = boot ? guideSeenKey(boot.firm, boot.user) : null;
+  useEffect(() => {
+    if (!boot || boot.onboarding || !guideKey || guide) return;
+    if (guideSeen(safeStorage(), guideKey)) return;
+    if (route.page !== "home" || login) return;
+    let alive = true;
+    void api
+      .listMatters()
+      .then((r) => {
+        const own = r.matters.filter((m) => !m.is_sample).length;
+        if (alive && shouldAutoOpenGuide({ seen: false, onHome: true, ownMatters: own, loginRequired: !!login })) setGuide({ hasMatters: own > 0 });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [boot, guideKey, route.page, login]);
+  useEffect(() => {
+    const open = () => {
+      if (onboardingRef.current) return;
+      nav("/");
+      void api
+        .listMatters()
+        .then((r) => setGuide({ hasMatters: r.matters.some((m) => !m.is_sample) }))
+        .catch(() => setGuide({ hasMatters: true }));
+    };
+    window.addEventListener(OPEN_GUIDE, open);
+    return () => window.removeEventListener(OPEN_GUIDE, open);
+  }, []);
+  const finishGuide = () => {
+    if (guideKey) markGuideSeen(safeStorage(), guideKey);
+    setGuide(null);
+  };
   const clearRevokedPersonal = async () => {
     try {
       setRevokedNote((await members.offboardClearPersonal()).note);
@@ -353,6 +402,7 @@ export function App() {
         </ErrorBoundary>
       </div>
       {searching && <SearchPalette onClose={() => setSearching(false)} />}
+      {guide && route.page === "home" && <GuideTour hasMatters={guide.hasMatters} onFinish={finishGuide} onNewMatter={() => window.dispatchEvent(new Event(NEW_MATTER))} />}
       <AskHost />
     </div>
   );

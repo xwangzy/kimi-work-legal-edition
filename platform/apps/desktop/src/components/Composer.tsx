@@ -1,7 +1,9 @@
 /**
  * 任务输入框（第 03 篇 §4.1：输入框显示“当前事项 · 执行位置 · 运行模式”；`/` 法律方法、`@` 事项材料、`+` 导入）。
+ * 2026-11 对照 Kimi 首页重做版式：白色大圆角输入框（左下“+”导入、右下运行模式与圆形发送键）+ 下方灰色托盘（事项、方法、材料、我方立场，
+ * 对应 Kimi 的“选择项目 / 插件”托盘）+ 可选的上方提示条（对应 Kimi 的额度提示条，首页用来放“等你处理”）。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type RunPolicyView } from "../api.ts";
 import { Icon } from "./Icons.tsx";
 import { ModeSelector, type ModeChoice } from "./ModeSelector.tsx";
@@ -44,6 +46,8 @@ export function Composer(props: {
   onPickScenario?: (card: ScenarioCard) => void;
   /** 意图建议（UIUX P0-2）：根据描述建议一个业务场景，不自动切换。 */
   suggestion?: { title: string; gets: string; onUse: () => void; onDismiss: () => void } | null;
+  /** 输入框上方的提示条（Kimi 首页同款：贴在输入框顶边的灰色条）；没有要提示的事时不传。 */
+  notice?: ReactNode;
 }) {
   const { value, onChange } = props;
   const [menu, setMenu] = useState<"method" | "material" | "matter" | null>(null);
@@ -62,19 +66,9 @@ export function Composer(props: {
   const canSend = !props.busy && !!props.matterId && (value.goal.trim().length > 0 || value.scenario !== "a1.agent_task");
   const blockedReason = props.busy ? "正在发起…" : !props.matterId ? "先选事项" : "先写任务目标";
   return (
-    <div className="composer" ref={boxRef}>
-      {/* 事项上下文行（Z3 #12、M-4）：发起前一眼看到在哪个事项下工作；底栏不再放事项胶囊 */}
-      <div className="composer-context">
-        {props.matters ? (
-          <button className="ctx-matter" onClick={() => setMenu(menu === "matter" ? null : "matter")} title={matter ? matter.title : "选择事项"} aria-haspopup="listbox" aria-expanded={menu === "matter"}>
-            <Icon.folder /> 事项：<span className="ctx-title">{matter ? clipTitle(matter.title) : "选择事项"}</span> <Icon.down />
-          </button>
-        ) : (
-          <span className="ctx-matter ctx-static"><Icon.folder /> 事项：{props.matterId ? "本事项" : "未选择事项"}</span>
-        )}
-        <span className="spacer" />
-        {(matter?.stance ?? props.stance) ? <span className="ctx-stance muted">我方：{stanceLabel(matter?.stance ?? props.stance)}</span> : null}
-      </div>
+    <div className="composer-shell" ref={boxRef} data-tour="composer">
+      {props.notice && <div className="composer-notice">{props.notice}</div>}
+      <div className="composer">
       <textarea
         ref={textRef}
         autoFocus={props.autoFocus}
@@ -125,9 +119,8 @@ export function Composer(props: {
         </div>
       )}
       <div className="composer-bar">
-        <button className="tool" title="法律方法" onClick={() => setMenu(menu === "method" ? null : "method")}><Icon.slash /> <span className="tool-label">方法</span></button>
-        <button className="tool" title="事项材料" disabled={!props.matterId} onClick={() => setMenu(menu === "material" ? null : "material")}><Icon.at /> <span className="tool-label">材料</span></button>
-        <button className="tool" title="导入文件" disabled={!props.matterId} onClick={() => void pickMaterials(fileRef.current, props.onImport)}><Icon.attach /> <span className="tool-label">导入</span></button>
+        {/* Kimi 同款左下“+”：导入材料（Word、PDF、图片……）；方法与事项材料在下方托盘 */}
+        <button className="tool tool-plus" title={props.matterId ? "导入材料" : "先选事项，再导入材料"} aria-label="导入材料" disabled={!props.matterId} onClick={() => void pickMaterials(fileRef.current, props.onImport)}><Icon.plus /></button>
         <input
           ref={fileRef}
           type="file"
@@ -148,6 +141,25 @@ export function Composer(props: {
         <button className="send" disabled={!canSend} onClick={props.onSubmit} aria-label={canSend ? "发送" : `发送（${blockedReason}）`} title={canSend ? `发送（${SEND_KEY}）` : blockedReason}>
           <Icon.send />
         </button>
+      </div>
+      </div>
+      {/* 事项上下文（Z3 #12、M-4：发起前一眼看到在哪个事项下工作）放在输入框下方托盘（Kimi“选择项目”同位）；底栏不放事项胶囊 */}
+      <div className="composer-context">
+        {props.matters ? (
+          <button className="ctx-matter" onClick={() => setMenu(menu === "matter" ? null : "matter")} title={matter ? matter.title : "选择事项"} aria-haspopup="listbox" aria-expanded={menu === "matter"}>
+            <Icon.folder /> 事项：<span className="ctx-title">{matter ? clipTitle(matter.title) : "选择事项"}</span> <Icon.down />
+          </button>
+        ) : (
+          <span className="ctx-matter ctx-static"><Icon.folder /> 事项：{props.matterId ? "本事项" : "未选择事项"}</span>
+        )}
+        <button className="tray-btn" title="法律方法（也可以在输入框里打 /）" onClick={() => setMenu(menu === "method" ? null : "method")} aria-haspopup="listbox" aria-expanded={menu === "method"}>
+          <Icon.slash /> 方法
+        </button>
+        <button className="tray-btn" title="选用本事项的材料（也可以在输入框里打 @）" disabled={!props.matterId} onClick={() => setMenu(menu === "material" ? null : "material")} aria-haspopup="listbox" aria-expanded={menu === "material"}>
+          <Icon.at /> 材料
+        </button>
+        <span className="spacer" />
+        {(matter?.stance ?? props.stance) ? <span className="ctx-stance">我方：{stanceLabel(matter?.stance ?? props.stance)}</span> : null}
       </div>
 
       {menu === "method" && (
@@ -210,7 +222,7 @@ export function Composer(props: {
         </div>
       )}
       {menu === "matter" && props.matters && (
-        <div className="popover composer-menu composer-menu-top">
+        <div className="popover composer-menu">
           <div className="menu-title">事项</div>
           {props.matters.map((m) => (
             <button

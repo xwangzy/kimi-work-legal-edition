@@ -20,6 +20,7 @@ import {
   type OpsRequestParts,
   type OpsRosterBody,
   type SignedOpsRoster,
+  type OpsPasswordSessions,
 } from "./index.ts";
 
 export type DevOperator = { id: string; perms: OpsPermission[]; status?: OpsOperator["status"]; second_factor?: string };
@@ -65,7 +66,7 @@ export function devOpsRoster(operators: DevOperator[], o: { version?: number; de
   };
 }
 
-export function fileOpsGuard(o: { dir: string; audience: OpsAudience; roster: SignedOpsRoster; rosterKeys: ReadonlyMap<string, string | KeyObject>; deployment?: string; now?: () => number; onReject?: (r: OpsRejectRecord) => void }): OpsGuard {
+export function fileOpsGuard(o: { dir: string; audience: OpsAudience; roster: SignedOpsRoster; rosterKeys: ReadonlyMap<string, string | KeyObject>; deployment?: string; now?: () => number; onReject?: (r: OpsRejectRecord) => void; sessions?: OpsPasswordSessions }): OpsGuard {
   mkdirSync(o.dir, { recursive: true, mode: 0o700 });
   writeFileSync(`${o.dir}/roster.json`, JSON.stringify(o.roster), { mode: 0o600 });
   return createOpsGuard({
@@ -74,5 +75,6 @@ export function fileOpsGuard(o: { dir: string; audience: OpsAudience; roster: Si
     nonces: fileNonceStore(`${o.dir}/nonces.jsonl`),
     ...(o.now ? { now: o.now } : {}),
     ...(o.onReject ? { onReject: o.onReject } : {}),
+    ...(o.sessions ? { sessions: o.sessions } : {}),
   });
 }

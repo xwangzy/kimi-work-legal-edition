@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 import { notifyDataChanged } from "../lib/events.ts";
 import { api, recovery as recoveryApi, updates, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft } from "../api.ts";
 import { CONTENT_CHECK_FAILED, CONTENT_PANEL_NOTE, contentCheckLine, contentSourceLine, contentStaleLine } from "../lib/content-labels.ts";
-import { nav, type SettingsTab } from "../App.tsx";
+import { nav, OPEN_GUIDE, type SettingsTab } from "../App.tsx";
 import { displayVersion, fmtDate, fmtTime, groupDigits } from "../lib/labels.ts";
 import { backupTile, deviceSafetyTile } from "../lib/device-status.ts";
 import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
@@ -106,7 +106,10 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
   );
 }
 
-/** 示例事项（余项续复核 RC-B-13）：诉讼示例上线前已经放过非诉示例的电脑，在这里补放一次诉讼示例；放过（含已移除）就不再显示。 */
+/**
+ * 示例事项（余项续复核 RC-B-13）：诉讼示例上线前已经放过非诉示例的电脑，在这里补放一次诉讼示例；放过（含已移除）就不再显示。
+ * 2026-11：正式产品不放演示数据——内核没开演示开关（available === false）时整行不显示。
+ */
 function SampleRow() {
   const [offer, setOffer] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -114,7 +117,7 @@ function SampleRow() {
   useEffect(() => {
     api
       .sampleStatus()
-      .then((st) => setOffer(!st.litigation_offered && (st.installed || st.removed)))
+      .then((st) => setOffer(st.available !== false && !st.litigation_offered && (st.installed || st.removed)))
       .catch(() => setOffer(false));
   }, []);
   if (!offer && !msg) return null;
@@ -195,6 +198,12 @@ function GeneralTab({ version }: { version: string }) {
             <summary>怎么关闭</summary>
             在 Windows“设置 → 系统 → 通知”里关闭 Kimi Work 的通知。
           </details>
+        </SettingRow>
+        {/* 首次上手指南（2026-11）：五步认识事项、发起任务、复核成果、期限与问答 */}
+        <SettingRow label="上手指南" hint="用一分钟认识事项、发起任务、复核成果和期限提醒。">
+          <button className="btn-ghost btn-sm" onClick={() => window.dispatchEvent(new Event(OPEN_GUIDE))}>
+            再看一遍
+          </button>
         </SettingRow>
         <SampleRow />
         <SettingRow label="版本">{version}</SettingRow>

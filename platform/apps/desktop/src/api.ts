@@ -773,8 +773,9 @@ export const api = {
   // 事项
   listMatters: () => invoke<{ matters: Matter[] }>("matters.list"),
   /** 示例事项（v9.2 §4.4；Y4 §5 D-6）：首次使用放入一次；移除后不再放入。 */
-  installSample: (kind?: "litigation") => invoke<{ matter_id: string | null; matter_ids?: string[]; installed: boolean }>("samples.install", kind ? { kind } : {}),
-  sampleStatus: () => invoke<{ installed: boolean; removed: boolean; matter_ids: string[]; litigation_offered: boolean }>("samples.status", {}),
+  installSample: (kind?: "litigation") => invoke<{ matter_id: string | null; matter_ids?: string[]; installed: boolean; disabled?: boolean }>("samples.install", kind ? { kind } : {}),
+  /** available：内核是否开着演示开关（正式产品为 false，不放任何示例）。 */
+  sampleStatus: () => invoke<{ installed: boolean; removed: boolean; matter_ids: string[]; litigation_offered: boolean; available?: boolean }>("samples.status", {}),
   removeSample: (matterId: string) => invoke<{ removed: boolean }>("samples.remove", { matter_id: matterId }),
   createMatter: (body: Record<string, unknown>) =>
     invoke<{ matter: Matter; template_applied?: { template_id: string; todos: number; deadline: { date: string; steps: string[]; warnings: string[]; uncertain: boolean } | null; stance_mismatch?: boolean } }>("matters.create", body),

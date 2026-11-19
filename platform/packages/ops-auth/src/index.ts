@@ -18,6 +18,9 @@ import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, ran
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, statSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import { canonicalJson, signAlgOfPublicKey, signSyncWith, SoftwareSigner, verifyBytes, type SessionSigner } from "@zr-legal/keys";
+import { isOpsSessionToken, type OpsPasswordSessions, type OpsSessionInfo } from "./password.ts";
+
+export * from "./password.ts";
 
 /** 签名者：私钥 PEM（命令行与测试）、KeyObject，或签名者对象（将来的硬件令牌）；一律经 keys 包的签名者签（KP-02）。 */
 export type OpsSigningKey = string | KeyObject | SessionSigner;
@@ -427,10 +430,16 @@ export function signOpsRequest(p: OpsRequestParts & { deployment: string; audien
 export class OpsAuthError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string) {
+  /** 可以随错误返回给调用方的字段（密码规则、锁定剩余时间）；不含账号是否存在之类的信息。 */
+  readonly info: Record<string, unknown> | undefined;
+  /** 请求涉及的运营编号（只供服务内部访问审计；未经核验时只是自称或按登录名查到的，不得返回给调用方）。 */
+  readonly claimed: string | null;
+  constructor(status: number, code: string, info?: Record<string, unknown>, claimed: string | null = null) {
     super(code);
     this.status = status;
     this.code = code;
+    this.info = info;
+    this.claimed = claimed;
   }
 }
 
@@ -456,10 +465,33 @@ export interface OpsRejectRecord {
 
 export interface OpsAuthorized {
   operator: string;
+  /** 密钥编号；密码登录的会话固定为 "password"。 */
   kid: string;
   roster_version: number;
   /** 此人的全部权限（路由按请求内容另需的权限据此判断，例如开通时附带点数须 quota.manage）。 */
   perms: OpsPermission[];
+  /** 凭据方式：key = 每个请求用本人私钥签名；password = 账号密码登录后的会话。 */
+  via: "key" | "password";
+  /** 密码会话：会话编号前 8 位（访问审计用）、登录名、绝对到期时刻、是否须先改密码。 */
+  session?: string;
+  login?: string;
+  expires_at?: string;
+  idle_ms?: number;
+  must_change?: boolean;
+}
+
+/** 密码登录成功：令牌只在这里出现一次。 */
+export interface OpsLoginResult {
+  token: string;
+  operator: string;
+  login: string;
+  perms: OpsPermission[];
+  roster_version: number;
+  /** 会话编号前 8 位（访问审计用）。 */
+  session: string;
+  expires_at: string;
+  idle_ms: number;
+  must_change: boolean;
 }
 
 export interface OpsGuard {
@@ -469,6 +501,12 @@ export interface OpsGuard {
    * 对外的原因代码不区分“未登记、已吊销、签名不符”（都是 ops_auth_invalid，免得被用来枚举名册），细分原因只进被拒记录。
    */
   authorize(headers: Readonly<Record<string, string | string[] | undefined>>, req: OpsRequestParts, permission: OpsPermission | readonly OpsPermission[]): OpsAuthorized;
+  /** 密码登录（只在配了 sessions 的控制面守卫上有）：核登录名与密码、此人在册有效且没有要求双因素，开会话。失败抛 OpsAuthError。 */
+  login?(input: { login: unknown; password: unknown; source: string }): OpsLoginResult;
+  /** 退出：吊销请求所带的会话；没有有效会话返回 null（退出幂等）。 */
+  logout?(headers: Readonly<Record<string, string | string[] | undefined>>): { operator: string; session: string } | null;
+  /** 本人改密码（须带有效会话）：成功后此人其他会话全部吊销。失败抛 OpsAuthError。 */
+  changePassword?(headers: Readonly<Record<string, string | string[] | undefined>>, current: unknown, next: unknown): { operator: string; session: string; roster_version: number; other_sessions_revoked: number };
 }
 
 export function createOpsGuard(o: {
@@ -481,8 +519,11 @@ export function createOpsGuard(o: {
   onReject?: (r: OpsRejectRecord) => void;
   /** 未核验的被拒记录每分钟至多几条（缺省 60）。 */
   rejectLogPerMinute?: number;
+  /** 账号密码登录的会话（只给控制面：网页运营控制台只调控制面）；不给 = 只认私钥签名。 */
+  sessions?: OpsPasswordSessions;
 }): OpsGuard {
   if (!(OPS_AUDIENCES as readonly string[]).includes(o.audience)) throw new Error("运营受众不合规");
+  if (o.sessions && o.audience !== "control-plane") throw new Error("密码登录只给控制面守卫（网页运营控制台只调控制面）");
   const now = o.now ?? Date.now;
   const cap = o.rejectLogPerMinute ?? 60;
   let win = { minute: -1, n: 0, dropped: 0 };
@@ -494,7 +535,7 @@ export function createOpsGuard(o: {
       // 记录写不进去：请求本来就被拒
     }
   };
-  const reject = (status: number, external: string, detail: string, claimed: string | null, verified: boolean, req: OpsRequestParts, extra: { roster_reason?: string; roster_version?: number } = {}): never => {
+  const reject = (status: number, external: string, detail: string, claimed: string | null, verified: boolean, req: OpsRequestParts, extra: { roster_reason?: string; roster_version?: number } = {}, info?: Record<string, unknown>): never => {
     const minute = Math.floor(now() / 60_000);
     if (win.minute !== minute) {
       if (win.dropped > 0) log({ claimed: null, verified: false, reason: "ops_rejects_dropped", method: "", path: "", dropped: win.dropped });
@@ -504,11 +545,58 @@ export function createOpsGuard(o: {
     if (verified) log(rec);
     else if (++win.n <= cap) log(rec);
     else win.dropped += 1;
-    throw new OpsAuthError(status, external);
+    throw new OpsAuthError(status, external, info, claimed);
+  };
+  type Headers = Readonly<Record<string, string | string[] | undefined>>;
+  /** 密码会话令牌（Authorization: Bearer kwlops_…）；没有返回 null，格式不对返回空串。 */
+  const bearer = (headers: Headers): string | null => {
+    const v = headers["authorization"];
+    if (typeof v !== "string" || !/^Bearer\s+kwlops_/i.test(v)) return null;
+    const t = v.replace(/^Bearer\s+/i, "").trim();
+    return isOpsSessionToken(t) ? t : "";
+  };
+  /** 会话核验 + 名册核对（每个请求都按当前名册：吊销、改权限即时生效）。 */
+  const sessionWho = (token: string, req: OpsRequestParts): { info: OpsSessionInfo; person: OpsOperator; roster_version: number } => {
+    if (!o.sessions) return reject(401, "ops_auth_invalid", "ops_session_unsupported", null, false, req);
+    const v = o.sessions.verify(token);
+    if (!v.ok) return v.reason === "credentials_unavailable" ? reject(503, "ops_credentials_unavailable", "ops_credentials_unavailable", null, false, req) : reject(401, "ops_session_invalid", `ops_${v.reason}`, null, false, req);
+    const roster = o.roster.current();
+    if (!roster.ok) return reject(503, "ops_roster_unavailable", "ops_roster_unavailable", v.info.operator, true, req, { roster_reason: roster.reason });
+    const rv = { roster_version: roster.body.version };
+    const person = roster.body.operators.find((x) => x.id === v.info.operator);
+    if (!person || person.status !== "active") {
+      o.sessions.closeOperator(v.info.operator);
+      return reject(401, "ops_session_invalid", "ops_operator_unknown_or_revoked", v.info.operator, true, req, rv);
+    }
+    // 密码登录不做双因素：名册要求双因素的人一律不认（失败关闭，与私钥路径同一口径）
+    if (person.second_factor !== "none") {
+      o.sessions.closeOperator(v.info.operator);
+      return reject(401, "ops_session_invalid", "ops_second_factor_unavailable", v.info.operator, true, req, rv);
+    }
+    return { info: v.info, person, roster_version: roster.body.version };
   };
   return {
     audience: o.audience,
     authorize(headers, req, permission) {
+      const need: readonly OpsPermission[] = typeof permission === "string" ? [permission] : permission;
+      const token = bearer(headers);
+      if (token !== null) {
+        if (!token) return reject(401, "ops_session_invalid", "ops_session_malformed", null, false, req);
+        const w = sessionWho(token, req);
+        if (!need.every((p) => w.person.perms.includes(p))) return reject(403, "ops_permission_denied", "ops_permission_denied", w.info.operator, true, req, { roster_version: w.roster_version });
+        return {
+          operator: w.info.operator,
+          kid: "password",
+          roster_version: w.roster_version,
+          perms: [...w.person.perms],
+          via: "password",
+          session: w.info.sid.slice(0, 8),
+          login: w.info.login,
+          expires_at: w.info.expires_at,
+          idle_ms: w.info.idle_ms,
+          must_change: w.info.must_change,
+        };
+      }
       const h = (k: keyof OpsRequestHeaders): string | null => {
         const v = headers[k];
         return typeof v === "string" && v.length > 0 && v.length < 512 ? v : null;
@@ -539,10 +627,59 @@ export function createOpsGuard(o: {
         return reject(503, "ops_nonce_store_unavailable", "ops_nonce_store_unavailable", claimed, true, req, rv);
       }
       if (replayed) return reject(401, "ops_auth_replayed", "ops_auth_replayed", claimed, true, req, rv);
-      const need: readonly OpsPermission[] = typeof permission === "string" ? [permission] : permission;
       if (!need.every((p) => person.perms.includes(p))) return reject(403, "ops_permission_denied", "ops_permission_denied", claimed, true, req, rv);
-      return { operator: claimed, kid, roster_version: roster.body.version, perms: [...person.perms] };
+      return { operator: claimed, kid, roster_version: roster.body.version, perms: [...person.perms], via: "key" };
     },
+    ...(o.sessions
+      ? {
+          login(input: { login: unknown; password: unknown; source: string }): OpsLoginResult {
+            const sessions = o.sessions!;
+            const req = { method: "POST", path: "/v1/ops/login" };
+            const roster = o.roster.current();
+            if (!roster.ok) return reject(503, "ops_roster_unavailable", "ops_roster_unavailable", null, false, req, { roster_reason: roster.reason });
+            const a = sessions.attempt(input.login, input.password, String(input.source ?? "?"));
+            if (!a.ok) {
+              if (a.reason === "throttled") return reject(429, "ops_login_throttled", "ops_login_throttled", a.operator, false, req, {}, { retry_after_ms: a.retry_after_ms });
+              if (a.reason === "locked") return reject(429, "ops_login_locked", "ops_login_locked", a.operator, false, req, {}, { retry_after_ms: a.retry_after_ms });
+              if (a.reason === "credentials_unavailable") return reject(503, "ops_credentials_unavailable", "ops_credentials_unavailable", null, false, req);
+              return reject(401, "ops_login_invalid", `ops_login_${a.detail}`, a.operator, false, req);
+            }
+            const op = a.credential.operator;
+            const rv = { roster_version: roster.body.version };
+            const person = roster.body.operators.find((x) => x.id === op);
+            // 不在名册、已吊销、要求双因素：对外一样是“账号或密码不对”（细分原因只进被拒记录）
+            if (!person || person.status !== "active") return reject(401, "ops_login_invalid", "ops_operator_unknown_or_revoked", op, true, req, rv);
+            if (person.second_factor !== "none") return reject(401, "ops_login_invalid", "ops_second_factor_unavailable", op, true, req, rv);
+            const s = sessions.open(a.credential);
+            return { token: s.token, operator: op, login: s.info.login, perms: [...person.perms], roster_version: roster.body.version, session: s.info.sid.slice(0, 8), expires_at: s.info.expires_at, idle_ms: s.info.idle_ms, must_change: s.info.must_change };
+          },
+          logout(headers: Headers) {
+            const token = bearer(headers);
+            if (!token) return null;
+            const v = o.sessions!.verify(token);
+            if (!v.ok) return null;
+            o.sessions!.close(v.info.sid);
+            return { operator: v.info.operator, session: v.info.sid.slice(0, 8) };
+          },
+          changePassword(headers: Headers, current: unknown, next: unknown) {
+            const req = { method: "POST", path: "/v1/ops/password" };
+            const token = bearer(headers);
+            if (!token) return reject(401, "ops_session_invalid", token === null ? "ops_session_missing" : "ops_session_malformed", null, false, req);
+            const w = sessionWho(token, req);
+            const r = o.sessions!.changePassword(w.info.sid, current, next);
+            const op = w.info.operator;
+            const rv = { roster_version: w.roster_version };
+            if (!r.ok) {
+              if (r.reason === "weak") return reject(400, "ops_password_weak", "ops_password_weak", op, true, req, rv, { rules: r.rules });
+              if (r.reason === "current_wrong") return reject(400, "ops_password_current_wrong", "ops_password_current_wrong", op, true, req, rv);
+              if (r.reason === "locked") return reject(429, "ops_login_locked", "ops_password_locked", op, true, req, rv);
+              if (r.reason === "credentials_unavailable") return reject(503, "ops_credentials_unavailable", "ops_credentials_unavailable", op, true, req, rv);
+              return reject(401, "ops_session_invalid", "ops_session_invalid", op, true, req, rv);
+            }
+            return { operator: op, session: w.info.sid.slice(0, 8), roster_version: w.roster_version, other_sessions_revoked: r.other_sessions_revoked };
+          },
+        }
+      : {}),
   };
 }
 

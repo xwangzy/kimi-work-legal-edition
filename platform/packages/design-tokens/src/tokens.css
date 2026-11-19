@@ -138,6 +138,8 @@
   --shadow-xs: 0 1px 4px rgba(14, 18, 25, 0.04);
   --shadow-sm: 0 1px 6px rgba(14, 18, 25, 0.06);
   --shadow-input: 0 2px 10px rgba(14, 18, 25, 0.05);
+  /* 首页主输入框（Kimi 首页实测 0 5px 16px -4px，7% 黑） */
+  --shadow-composer: 0 5px 16px -4px rgba(14, 18, 25, 0.07);
   --shadow-md: 0 8px 24px rgba(16, 24, 40, 0.12);
   --shadow-lg: 0 24px 60px rgba(14, 18, 25, 0.25);
   /* 纸面（文书预览、审查工作台原文、评测文书）：深浅两套相同，保持纸面白 */
@@ -248,17 +250,20 @@
   --sp-6: 32px;
   --sp-7: 48px;
 
-  /* 圆角 5 级（Y4 V-3）：代号胶囊与标签 / 按钮、输入框、列表项 / 卡片 / 输入框主体与弹窗 / 胶囊 */
+  /* 圆角 6 级（Y4 V-3；2026-11 对齐 Kimi 首页加 --r-xl）：代号胶囊与标签 / 按钮、输入框、列表项 / 卡片与主区外框 / 弹窗 /
+     任务主输入框（Kimi 首页实测 24px）/ 胶囊 */
   --r-xs: 4px;
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 16px;
+  --r-xl: 24px;
   --r-full: 999px;
-  --radius-input: var(--r-lg);
+  --radius-input: var(--r-xl);
   --radius-card: var(--r-md);
 
-  /* 几何 */
-  --sidebar-width: 260px;
+  /* 几何（侧栏 240px：与 Kimi 首页实测一致；主区为嵌在侧栏底色上的白色圆角面板，四周留 --shell-gap） */
+  --sidebar-width: 240px;
+  --shell-gap: 6px;
   --preview-width: 45%;
 }
 
@@ -328,6 +333,7 @@
   --shadow-xs: 0 1px 4px rgba(0, 0, 0, 0.3);
   --shadow-sm: 0 1px 6px rgba(0, 0, 0, 0.35);
   --shadow-input: 0 2px 10px rgba(0, 0, 0, 0.3);
+  --shadow-composer: 0 5px 16px -4px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.6);
 

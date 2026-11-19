@@ -9,9 +9,9 @@ import { makeKernel, waitRun } from "./helpers.ts";
 process.env.ZR_INTERNAL_SECRET = process.env.ZR_INTERNAL_SECRET ?? "sample-matter-secret-0123456789";
 
 test("示例事项：放入一次、卡片定位、无出站；标为示例；移除后不再放入", { timeout: 120_000 }, async () => {
-  const tk = await makeKernel({}, "sample-firm");
+  const tk = await makeKernel({ ZR_DEMO_SAMPLES: "1" }, "sample-firm");
   try {
-    assert.deepEqual(await tk.inv("samples.status", {}), { installed: false, removed: false, matter_id: null, matter_ids: [], litigation_offered: false });
+    assert.deepEqual(await tk.inv("samples.status", {}), { installed: false, removed: false, matter_id: null, matter_ids: [], litigation_offered: false, available: true });
     const r = await tk.inv("samples.install", {});
     assert.equal(r.installed, true);
     const again = await tk.inv("samples.install", {});
@@ -50,7 +50,7 @@ test("示例事项：放入一次、卡片定位、无出站；标为示例；�
     const half = await tk.inv("samples.status", {});
     assert.deepEqual([half.installed, half.removed, half.matter_id], [true, true, litId], "移除一件，另一件还在");
     await tk.inv("samples.remove", { matter_id: litId });
-    assert.deepEqual(await tk.inv("samples.status", {}), { installed: false, removed: true, matter_id: null, matter_ids: [], litigation_offered: true });
+    assert.deepEqual(await tk.inv("samples.status", {}), { installed: false, removed: true, matter_id: null, matter_ids: [], litigation_offered: true, available: true });
     const after = await tk.inv("samples.install", {});
     assert.equal(after.installed, false, "移除后不再自动放入");
     assert.equal(after.matter_id, null);
@@ -61,7 +61,7 @@ test("示例事项：放入一次、卡片定位、无出站；标为示例；�
 });
 
 test("只放诉讼示例（余项续复核 RC-B-13）：已放过非诉示例的电脑可补放一次；放过后不再提示", { timeout: 120_000 }, async () => {
-  const tk = await makeKernel({}, "sample-lit-firm");
+  const tk = await makeKernel({ ZR_DEMO_SAMPLES: "1" }, "sample-lit-firm");
   try {
     // 模拟诉讼示例上线前的老电脑：只有非诉示例
     const { matter } = await tk.inv("matters.create", { title: "甲公司股权转让（示例）", stance: "受让方", consent_status: "not_required" });
@@ -78,6 +78,19 @@ test("只放诉讼示例（余项续复核 RC-B-13）：已放过非诉示例的
     const lit = await tk.inv("matters.get", { matter_id: r.matter_id });
     assert.equal(lit.documents.length, 4);
     assert.equal((await waitRun(tk.inv, lit.runs[0].run_id, 90_000)).run.status, "succeeded");
+  } finally {
+    await tk.kernel.close();
+  }
+});
+
+test("正式产品不放演示数据（2026-11）：没有演示开关时不放入任何示例事项，状态如实报告", { timeout: 60_000 }, async () => {
+  const tk = await makeKernel({}, "sample-off-firm");
+  try {
+    assert.equal((await tk.inv("kernel.status", {})).demo_samples, false, "首页据此不放示例");
+    assert.equal((await tk.inv("samples.status", {})).available, false);
+    assert.deepEqual(await tk.inv("samples.install", {}), { matter_id: null, matter_ids: [], installed: false, disabled: true });
+    assert.equal((await tk.inv("samples.install", { kind: "litigation" })).installed, false, "设置页补放诉讼示例同样不放");
+    assert.deepEqual((await tk.inv("matters.list", {})).matters, [], "一件事项都没有被放入");
   } finally {
     await tk.kernel.close();
   }

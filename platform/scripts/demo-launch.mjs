@@ -8,7 +8,8 @@
  * - API 密钥存放：macOS 钥匙串（服务名 kwl-demo-maas-key，与 ~/Library/Application Support/KimiWorkLegal-Demo/start-demo.mjs 同一约定）；
  *   docx 交付文件（`Base url:` / `Key:` / `Model id=` 三行）在钥匙串为空或密钥不一致时自动灌入更新。密钥只进云端子进程环境变量，不落盘、不打印。
  * - 运营身份（一次性生成，platform/output/demo-cloud/ops/，git 忽略）：安全管理员名册签名密钥 + 运营名册 + 运营 op_0001 私钥
- *   （演示用、无口令）。名册有效期至多 31 天，过期后运营接口 503：`node scripts/ops-cli.mjs roster renew --roster … --sign-key …
+ *   （演示用、无口令）+ 控制台账号 admin（op_0001）与演示密码（ops-cli password set 生成，存 ops/op_0001.password.txt，0600；
+ *   演示形态不要求首次改密码，每次拉起都打印账号与密码）。名册有效期至多 31 天，过期后运营接口 503：`node scripts/ops-cli.mjs roster renew --roster … --sign-key …
  *   --sign-kid sec-1 --out …` 重签即可。
  * - 控制面状态持久化（platform/output/demo-cloud/cp-state.json）：租户与律所登记跨重启保留；开发形态控制面签名密钥每次运行新生成，
  *   本脚本每次把新的公钥随环境变量交给桌面端（即文档所述“重启后客户端须重新取回签名文档”）。
@@ -122,6 +123,15 @@ if (!existsSync(doneMarker)) {
 } else {
   log("运营身份已存在，跳过生成");
 }
+// 控制台账号密码（第 45 批；已有演示目录也补上）：凭据库 = 控制面的 KWL_OPS_CREDENTIALS
+const credFile = join(opsDir, "ops-credentials.json");
+const demoPwFile = join(opsDir, "op_0001.password.txt");
+if (!existsSync(credFile) || !existsSync(demoPwFile)) {
+  const r = JSON.parse(opsCli(["password", "set", "--credentials", credFile, "--id", "op_0001", "--login", "admin", "--no-must-change"]).trim().split("\n").at(-1));
+  writeFileSync(demoPwFile, `${r.initial_password}\n`, { mode: 0o600 });
+  log("控制台账号已生成：admin（op_0001）");
+}
+const demoPassword = readFileSync(demoPwFile, "utf8").trim();
 
 /* ---------- ③ 云端 v0（控制面 + 网关 + 检索；真实上游） ---------- */
 const cloudEnv = {
@@ -135,6 +145,7 @@ const cloudEnv = {
   KWL_OPS_ROSTER: rosterFile,
   KWL_OPS_ROSTER_KEYS: rosterKeysFile,
   KWL_OPS_DEPLOYMENT: "dev",
+  KWL_OPS_CREDENTIALS: credFile,
 };
 const children = [];
 const cloud = spawn(process.execPath, [join(root, "scripts", "dev-cloud-v0.mjs")], { cwd: root, env: cloudEnv, stdio: ["ignore", "pipe", "inherit"] });
@@ -272,6 +283,8 @@ if (!noDesktop) {
     ZR_MODEL_PROVIDER: "upstream",
     ZR_INTERNAL_SECRET: process.env.ZR_INTERNAL_SECRET ?? randomBytes(24).toString("base64url"),
     ZR_BACKUP_TIMER: process.env.ZR_BACKUP_TIMER ?? "off",
+    // 演示示例事项（第 45 批 D-190）：正式安装包永远不放；客户演示缺省放入两件虚构示例，想按正式产品的样子演示时设 ZR_DEMO_SAMPLES=0
+    ZR_DEMO_SAMPLES: process.env.ZR_DEMO_SAMPLES ?? "1",
     KWL_DEV_WEB_PORT: String(webPort),
     ZR_DEV_BRIDGE_PORT: String(bridgePort),
     ...(dataDir ? { ZR_KERNEL_DATA_DIR: dataDir } : {}),
@@ -317,8 +330,9 @@ console.log(`
   控制面         ${zrEnv.ZR_CONTROL_PLANE_BASE}
 运营控制台（浏览器）
   地址           ${consoleUrl}
-  运营编号       op_0001    密钥编号 k1
-  私钥文件       ${opKeyFile}（无口令，直接选择即可）
+  账号           admin（运营编号 op_0001）
+  密码           ${demoPassword}（演示用；存于 ${demoPwFile}）
+  私钥登录       登录页“使用运营私钥登录”：${opKeyFile}（无口令；密钥编号 k1）
 桌面端
   Electron 窗口（律所标识 demo-firm，席位令牌经控制面签发${dataDir ? `；工作区 ${dataDir}` : ""}）
 日志与状态：${out}（git 已忽略）

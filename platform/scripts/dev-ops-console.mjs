@@ -6,7 +6,8 @@
  *   node scripts/dev-ops-console.mjs [--port 5480] [--empty]
  *
  * - 控制台与控制面同源（/v1/* 反向代理到进程内的控制面），不必配 CORS；静态页只发 dist/ 里的文件，CSP 与生产同口径；
- * - 运营私钥写到临时目录（启动时打印路径），在登录页拖进去即可（文件名里带运营编号与密钥编号，会自动填上）；
+ * - 登录：账号 + 密码（第 45 批）——admin（op_0001，可直接用）与 issuer（op_0002，首次登录须改密码，用来走一遍改密码流程），
+ *   密码每次启动随机生成并打印；运营私钥也写到临时目录（启动时打印路径），登录页“使用运营私钥登录”拖进去即可；
  * - 演示数据**只经控制面的真实运营接口写入**（用 op_0001 / op_0002 的私钥签名，与浏览器同一个 ops-sign.js）：开通律所、代建账号、
  *   套餐、上游（密钥用临时路由公钥在本机加密）、别名路由、价目、加量与上限、停用一个账号、发一个开通码。
  *   逐请求用量**不造**：控制面要求真实席位（设备登记后才有），没有真实设备时用量页显示空状态。
@@ -26,6 +27,7 @@ const EMPTY = args.includes("--empty");
 
 const { createControlPlane, devControlPlaneKeys, UsageBook } = await import("../services/control-plane/src/index.ts");
 const { devOpsRoster, fileOpsGuard } = await import("../packages/ops-auth/src/testing.ts");
+const { createOpsPasswordSessions, emptyOpsCredentials, generateOpsPassword, memoryOpsCredentialSource, setOpsCredential } = await import("../packages/ops-auth/src/index.ts");
 const { importOpsKey, signOpsRequest } = await import("../apps/ops-console/ops-sign.js");
 const { sealUpstreamKey, keyHint } = await import("../apps/ops-console/seal-key.js");
 
@@ -45,6 +47,11 @@ const OPS = devOpsRoster(
   { deployment: "dev" },
 );
 for (const id of ["op_0001", "op_0002"]) writeFileSync(join(dir, `${id}.k1.key.pem`), OPS.keyOf(id).privateKeyPem, { mode: 0o600 });
+// 控制台账号（只在本进程内存）：admin 直接可用；issuer 首次登录须改密码
+const PASSWORDS = { admin: generateOpsPassword(), issuer: generateOpsPassword() };
+let creds = setOpsCredential(emptyOpsCredentials(), { operator: "op_0001", login: "admin", password: PASSWORDS.admin, mustChange: false });
+creds = setOpsCredential(creds, { operator: "op_0002", login: "issuer", password: PASSWORDS.issuer, mustChange: true });
+const sessions = createOpsPasswordSessions({ credentials: memoryOpsCredentialSource(creds) });
 
 // ─── 临时网关路由密钥（P-256）：公钥进 config.json，编号 = SPKI 字节 sha256 前 16 位十六进制 ───
 const routingPair = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
@@ -55,7 +62,7 @@ const ROUTING_KID = createHash("sha256").update(spki).digest("hex").slice(0, 16)
 const cp = createControlPlane({
   keys: devControlPlaneKeys(),
   serviceSecret: "dev-ops-console-service-secret-000",
-  opsGuard: fileOpsGuard({ dir: join(dir, "guard"), audience: "control-plane", roster: OPS.roster, rosterKeys: OPS.rosterKeys }),
+  opsGuard: fileOpsGuard({ dir: join(dir, "guard"), audience: "control-plane", roster: OPS.roster, rosterKeys: OPS.rosterKeys, sessions }),
   opsAccessLog: () => {},
   opsInfo: { deployment: "dev", roster: () => OPS.roster.body },
   usageBook: new UsageBook({ dir: join(dir, "usage") }),
@@ -181,8 +188,10 @@ const server = createServer((req, res) => {
 });
 await new Promise((r) => server.listen(PORT, "127.0.0.1", () => r()));
 console.log(`运营控制台（本机开发）：${origin}`);
-console.log(`  运营私钥：${join(dir, "op_0001.k1.key.pem")}（op_0001，密钥编号 k1，无口令；除发开通码外的全部权限）`);
-console.log(`            ${join(dir, "op_0002.k1.key.pem")}（op_0002：只读 + 发开通码，与开通律所职责分离）`);
+console.log(`  账号密码：admin / ${PASSWORDS.admin}（op_0001：除发开通码外的全部权限）`);
+console.log(`            issuer / ${PASSWORDS.issuer}（op_0002：只读 + 发开通码；首次登录须改密码）`);
+console.log(`  运营私钥：${join(dir, "op_0001.k1.key.pem")}（op_0001，密钥编号 k1，无口令；登录页“使用运营私钥登录”）`);
+console.log(`            ${join(dir, "op_0002.k1.key.pem")}（op_0002）`);
 console.log(`  网关路由公钥编号：${ROUTING_KID}（临时生成，私钥只在本进程内存）`);
 console.log(`  控制面（进程内）：${cpBase}`);
 if (skipped.length) console.log(`  演示数据有 ${skipped.length} 项没写入（接口未就绪或被拒）：\n    ${skipped.join("\n    ")}`);

@@ -13,7 +13,8 @@
  * 用法：node scripts/stack-local.mjs --dir <目录> [--base-port 18400] [--upstream https://maas.jointpilot.com/v1] [--model kimi-k3.1-pro] [--tls]
  * --tls：与生产同一形态的传输——本机自建 CA（openssl）签各服务证书，签名服务只收控制面的客户端证书（mTLS + URI SAN 调用方核对），
  *        各服务只接受 HTTPS；client.env 另给 NODE_EXTRA_CA_CERTS 与各服务的 SPKI 钉住值（与 release.json 同一口径）。
- * 输出：<目录>/client.env（交给桌面端开发桥的变量）、<目录>/ops/op_0001.k1.key.pem（控制台登录用的运营私钥）、日志 <目录>/logs/*.log（遮盖密钥）。
+ * 输出：<目录>/client.env（交给桌面端开发桥的变量）、控制台账号（op_0001 登录名 admin、op_0002 登录名 issuer；初始密码首次生成时打印一次并存
+ *       <目录>/ops/initial-passwords.txt（0600），首次登录须改）、<目录>/ops/op_0001.k1.key.pem（私钥登录仍可用）、日志 <目录>/logs/*.log（遮盖密钥）。
  * 停：Ctrl-C（或 SIGTERM 本进程；子进程一并停）。
  */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -65,6 +66,18 @@ if (!existsSync(join(ops, "roster.json"))) {
   run("ops-cli.mjs", ["roster", "add", "--roster", join(ops, "roster.json"), "--id", "op_0002", "--perms", "tenant.read,activation.issue", "--pub", kg2.public_key, "--fingerprint", kg2.fingerprint, "--sign-key", join(ops, "offline", "sec-1.key.pem"), "--sign-kid", "sec-1", "--out", join(ops, "roster.json")]);
 }
 
+// ─── 2b. 控制台账号密码（与生产同一流程：安全管理员 ops-cli password set 发初始密码，首次登录须改）；凭据库即控制面 ops.credentials_file ───
+const credFile = join(ops, "credentials.json");
+const pwNote = join(ops, "initial-passwords.txt");
+if (!existsSync(credFile)) {
+  const issued = [];
+  for (const [id, login] of [["op_0001", "admin"], ["op_0002", "issuer"]]) {
+    const r = JSON.parse(run("ops-cli.mjs", ["password", "set", "--credentials", credFile, "--id", id, "--login", login, "--roster", join(ops, "roster.json"), "--keys", join(ops, "roster-keys.json")]).trim().split("\n").at(-1));
+    issued.push(`${login}（${id}）  ${r.initial_password}`);
+  }
+  writeFileSync(pwNote, `控制台初始密码（首次登录须改；改过之后这里的就失效了）\n${issued.join("\n")}\n`, { mode: 0o600 });
+}
+
 // ─── 2a. TLS（--tls）：本机 CA、服务证书、控制面调用签名服务的客户端证书 ───
 const tlsDir = join(dir, "tls");
 const ossl = (args) => {
@@ -113,7 +126,7 @@ const cfgs = {
     state_key_file: sec("cp-state.key"),
     code_pepper_file: sec("cp-code-pepper.key"),
     // 运营接口只许运维网段：生产入口拒绝把回环地址列进 allow_cidrs（非测试形态），所以 --tls 演练不开运营接口（运营与控制台在回环形态验）
-    ...(useTls ? {} : { ops: { deployment: "dev", roster_file: join(ops, "roster.json"), roster_keys_file: join(ops, "roster-keys.json"), allow_cidrs: ["127.0.0.1/32"], console_origins: [consoleOrigin] } }),
+    ...(useTls ? {} : { ops: { deployment: "dev", roster_file: join(ops, "roster.json"), roster_keys_file: join(ops, "roster-keys.json"), allow_cidrs: ["127.0.0.1/32"], console_origins: [consoleOrigin], credentials_file: credFile } }),
     routing: { bootstrap: { provider: { id: "maas", label: "中软 MaaS", vendor: "csi-maas", base_url: upstream }, models: { "legal/k3": model, "legal/k2.6": model } }, public_key_file: pub("routing-public.txt") },
   },
   gw: {
@@ -230,5 +243,6 @@ const envLines = [
   "ZR_MODEL_PROVIDER=upstream",
 ];
 writeFileSync(join(dir, "client.env"), `${envLines.join("\n")}\n`, { mode: 0o600 });
-console.log(`[stack] 云端已就绪：签名服务 ${P.signer}、控制面 ${P.cp}、网关 ${P.gw}、检索 ${P.search}、控制台 http://127.0.0.1:${P.console}/（运营私钥 ${join(ops, "op_0001.k1.key.pem")}）`);
+console.log(`[stack] 云端已就绪：签名服务 ${P.signer}、控制面 ${P.cp}、网关 ${P.gw}、检索 ${P.search}、控制台 http://127.0.0.1:${P.console}/`);
+if (!useTls) console.log(`[stack] 控制台账号：admin（op_0001）、issuer（op_0002）；初始密码见 ${pwNote}（首次登录须改）。私钥登录仍可用：${join(ops, "op_0001.k1.key.pem")}`);
 console.log(`[stack] 桌面端环境变量：${join(dir, "client.env")}`);

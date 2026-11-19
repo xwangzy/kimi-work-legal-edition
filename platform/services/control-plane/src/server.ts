@@ -57,7 +57,7 @@ import {
   type SessionRecord,
 } from "./accounts.ts";
 import { canonicalJson, verifyBytes, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
-import { OpsAuthError, type OpsAuthorized, type OpsGuard, type OpsPermission } from "@zr-legal/ops-auth";
+import { OpsAuthError, type OpsAuthorized, type OpsGuard, type OpsLoginResult, type OpsPermission } from "@zr-legal/ops-auth";
 import { MIN_SEAT_TTL_SECONDS } from "@zr-legal/seat-token";
 import { localSigner, SignerUnavailableError, type ControlPlaneKeys, type CpSigner, type EnvelopeKind, type SeatAudience } from "./signer.ts";
 import {
@@ -302,6 +302,9 @@ export interface CpOpsAccessRecord {
   target: string | null;
   /** requested（执行前）/ ok / rejected:<代码>。 */
   result: string;
+  /** 凭据方式（key = 私钥签名，password = 账号密码登录的会话）与密码会话编号前 8 位。 */
+  via?: "key" | "password";
+  session?: string;
 }
 
 export interface ControlPlaneOps {
@@ -2253,6 +2256,93 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     return out;
   };
   const OPS_AUTH_MESSAGE: Record<number, string> = { 401: "运营凭据无效、已吊销或已过期", 403: "没有这项运营权限", 503: "运营名册暂不可用（运营接口暂停，业务不受影响）" };
+  /** 账号密码登录相关的原因代码（对外不区分没有这个账号 / 密码错 / 已停用 / 不在名册）。 */
+  const OPS_AUTH_TEXT: Record<string, string> = {
+    ops_login_invalid: "账号或密码不对",
+    ops_login_throttled: "尝试过于频繁，请稍后再试",
+    ops_session_invalid: "登录已失效（超时、已退出或密码已被重置），请重新登录",
+    ops_password_current_wrong: "当前密码不正确",
+    ops_credentials_unavailable: "运营凭据库暂不可用（密码登录暂停），请联系安全管理员",
+  };
+  const opsAuthCp = (e: OpsAuthError): CpError => {
+    const info = e.info;
+    let msg = OPS_AUTH_TEXT[e.code] ?? OPS_AUTH_MESSAGE[e.status] ?? "运营凭据无效";
+    if (e.code === "ops_login_locked") msg = `尝试次数过多，已暂时锁定，请 ${Math.max(1, Math.ceil(Number(info?.retry_after_ms ?? 0) / 60_000))} 分钟后再试`;
+    if (e.code === "ops_password_weak") msg = `新密码需要：${Array.isArray(info?.rules) ? (info!.rules as string[]).join("、") : "至少 12 位，同时包含字母和数字"}`;
+    return new CpError(e.status, e.code, msg, info);
+  };
+  /** 登录、退出、改密码的内部访问审计（不记密码与令牌）；记不进去：登录不发会话、改密码之前不改。 */
+  const sessionAccess = (rec: { action: string; operator: string; roster_version: number; result: string; session?: string }) => opsAccess({ at: iso(), action: rec.action, operator: rec.operator, op_key: "password", roster_version: rec.roster_version, tid: null, target: null, result: rec.result, via: "password", ...(rec.session ? { session: rec.session } : {}) });
+  const sessionAccessQuiet = (rec: Parameters<typeof sessionAccess>[0]) => {
+    try {
+      sessionAccess(rec);
+    } catch {
+      // 失败的尝试本来就被拒了
+    }
+  };
+  /**
+   * 账号密码登录（网页运营控制台；凭据与会话在 ops-auth，身份与权限仍按运营名册）：
+   * - POST /v1/ops/login {login, password}：不带凭据（核登录名与密码、限频与锁定都在守卫里），成功返回会话令牌（只此一次）；
+   * - POST /v1/ops/logout：吊销所带会话（幂等）；GET /v1/ops/me：本人身份与权限（私钥签名与会话都认）；
+   * - POST /v1/ops/password {current, next}：本人改密码（须带会话），成功后此人其他会话全部吊销。
+   * 返回 true = 已处理。
+   */
+  const opsSessionRoute = (req: IncomingMessage, res: ServerResponse, method: string, path: string, p: string, raw: string): boolean => {
+    if (!o.opsGuard) return false;
+    if (method === "POST" && p === "/v1/ops/login") {
+      if (!o.opsGuard.login) throw new CpError(404, "not_found", "没有这条路由");
+      const b = parseJson(raw);
+      let r: OpsLoginResult;
+      try {
+        r = o.opsGuard.login({ login: b.login, password: b.password, source: sourceOf(req) });
+      } catch (e) {
+        if (!(e instanceof OpsAuthError)) throw e;
+        sessionAccessQuiet({ action: "ops.login", operator: e.claimed ?? "-", roster_version: 0, result: `rejected:${e.code}` });
+        throw opsAuthCp(e);
+      }
+      try {
+        sessionAccess({ action: "ops.login", operator: r.operator, roster_version: r.roster_version, result: "ok", session: r.session });
+      } catch {
+        o.opsGuard.logout?.({ authorization: `Bearer ${r.token}` });
+        throw new CpError(503, "ops_access_log_unavailable", "运营访问审计写不进去");
+      }
+      send(res, 200, { token: r.token, operator: r.operator, login: r.login, perms: r.perms, roster_version: r.roster_version, expires_at: r.expires_at, idle_ms: r.idle_ms, must_change: r.must_change });
+      return true;
+    }
+    if (method === "POST" && p === "/v1/ops/logout") {
+      const r = o.opsGuard.logout ? o.opsGuard.logout(req.headers) : null;
+      if (r) sessionAccessQuiet({ action: "ops.logout", operator: r.operator, roster_version: 0, result: "ok", session: r.session });
+      send(res, 200, { ok: true });
+      return true;
+    }
+    if (method === "GET" && p === "/v1/ops/me") {
+      let who: OpsAuthorized;
+      try {
+        who = o.opsGuard.authorize(req.headers, { method, path, body: raw }, []);
+      } catch (e) {
+        if (e instanceof OpsAuthError) throw opsAuthCp(e);
+        throw e;
+      }
+      send(res, 200, { operator: who.operator, via: who.via, kid: who.via === "key" ? who.kid : null, login: who.login ?? null, perms: who.perms, roster_version: who.roster_version, expires_at: who.expires_at ?? null, idle_ms: who.idle_ms ?? null, must_change: who.must_change === true, password_login: !!o.opsGuard.login });
+      return true;
+    }
+    if (method === "POST" && p === "/v1/ops/password") {
+      if (!o.opsGuard.changePassword) throw new CpError(404, "not_found", "没有这条路由");
+      const b = parseJson(raw);
+      let r: ReturnType<NonNullable<OpsGuard["changePassword"]>>;
+      try {
+        r = o.opsGuard.changePassword(req.headers, b.current, b.next);
+      } catch (e) {
+        if (!(e instanceof OpsAuthError)) throw e;
+        sessionAccessQuiet({ action: "ops.password_change", operator: e.claimed ?? "-", roster_version: 0, result: `rejected:${e.code}` });
+        throw opsAuthCp(e);
+      }
+      sessionAccessQuiet({ action: "ops.password_change", operator: r.operator, roster_version: r.roster_version, result: "ok", session: r.session });
+      send(res, 200, { ok: true, other_sessions_revoked: r.other_sessions_revoked });
+      return true;
+    }
+    return false;
+  };
   const opsRoute = (req: IncomingMessage, res: ServerResponse, method: string, path: string, p: string, raw: string): void => {
     if (!o.opsGuard) throw new CpError(404, "not_found", "没有这条路由");
     // 运营路径按请求行原样匹配（不认点段与编码）：生产入口按原样路径判断来源网段，规范化后才落到运营路由的写法一律不认。
@@ -2260,17 +2350,27 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const qi = path.indexOf("?");
     const pathOnly = qi < 0 ? path : path.slice(0, qi);
     if (pathOnly !== p || (qi >= 0 && method !== "GET")) throw new CpError(404, "not_found", "没有这条路由");
+    if (opsSessionRoute(req, res, method, path, p, raw)) return;
     const spec = opsSpec(method, p, new URLSearchParams(qi < 0 ? "" : path.slice(qi + 1)));
     if (!spec) throw new CpError(404, "not_found", "没有这条路由");
     let who: OpsAuthorized;
     try {
       who = o.opsGuard.authorize(req.headers, { method, path, body: raw }, spec.perm);
     } catch (e) {
-      if (e instanceof OpsAuthError) throw new CpError(e.status, e.code, OPS_AUTH_MESSAGE[e.status] ?? "运营凭据无效");
+      if (e instanceof OpsAuthError) throw opsAuthCp(e);
       throw e;
     }
     const b = method === "GET" ? {} : parseJson(raw);
-    const rec = { action: spec.action, operator: who.operator, op_key: who.kid, roster_version: who.roster_version, tid: spec.tid(b), target: spec.target(b) };
+    const rec = { action: spec.action, operator: who.operator, op_key: who.kid, roster_version: who.roster_version, tid: spec.tid(b), target: spec.target(b), ...(who.via === "password" ? { via: "password" as const, ...(who.session ? { session: who.session } : {}) } : {}) };
+    // 初始密码或被重置后：只能改密码、看本人身份、退出（其余运营接口一律 403）
+    if (who.must_change) {
+      try {
+        opsAccess({ at: iso(), ...rec, result: "rejected:password_change_required" });
+      } catch {
+        // 本来就拒绝
+      }
+      throw new CpError(403, "password_change_required", "首次登录（或密码被重置后）须先修改密码");
+    }
     // 先记“已请求”：记不进去即不执行（与支持服务同一口径；读操作只有这一处审计）
     try {
       opsAccess({ at: iso(), ...rec, result: "requested" });

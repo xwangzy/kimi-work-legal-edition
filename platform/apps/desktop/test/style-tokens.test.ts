@@ -1,7 +1,7 @@
 /**
  * 样式门禁（Y4 #30 V-1～V-4，代替 stylelint：不新增依赖，规则与令牌测试同源；复核 S8B-01/02/05/06/08/11 加固）：
  * - 组件样式（src 下一切 .css）不得出现颜色字面量：十六进制、rgb/hsl 及新式颜色函数、CSS 具名色（完整关键字表）；
- * - 字号只用 7 级令牌（或 inherit），圆角只用 5 级令牌（或 50%、0）；
+ * - 字号只用 7 级令牌（或 inherit），圆角只用 6 级令牌（或 50%、0）；
  * - 引用的每个令牌都已在 tokens.css 定义，不写回退值；组件样式不直接用基础色板 --p-*，也不另起令牌；
  * - 填充类令牌（--risk-high/--risk-mid/--accent/--status-*-solid）不作文字色；opacity < 1 只用于禁用态；
  * - 纸面：背景用纸面类令牌的规则同时写纸面文字色；纸面容器后代的规则不得用非纸面文字令牌；
@@ -123,7 +123,7 @@ test("组件样式没有颜色字面量：十六进制、rgb()/hsl() 与新式�
   }
 });
 
-test("字号只用 7 级令牌（Y4 V-1，不再允许 em/%）、圆角只用 5 级令牌（V-3）（附反向样本）", () => {
+test("字号只用 7 级令牌（Y4 V-1，不再允许 em/%）、圆角只用 6 级令牌（V-3）（附反向样本）", () => {
   assert.deepEqual(DECLS.filter(fontSizeProblem).map((d) => d.line), [], "字号");
   assert.deepEqual(DECLS.filter(radiusProblem).map((d) => d.line), [], "圆角");
   for (const bad of [{ prop: "font-size", value: "12.5px" }, { prop: "font-size", value: "0.92em" }, { prop: "font-size", value: "90%" }]) assert.ok(fontSizeProblem(bad), bad.value);

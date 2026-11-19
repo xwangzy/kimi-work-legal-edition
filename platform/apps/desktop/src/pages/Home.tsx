@@ -1,31 +1,54 @@
 /**
- * 首页（第 03 篇 §4.2；用户拍板按律师业务线组织；UIUX P0-2 / Demo 融合 §4.1–4.2）：
- * 输入框在上（描述任务即可，命中业务场景时给出建议、不自动切换）；下面按业务线（诉讼仲裁 / 非诉 / 企业法务）各 5 张场景卡，
- * 卡片写“给什么 → 得到什么”，点开是两段式开始面板。所有场景尚未通过法律质量门槛：卡片上不逐张标“试用”，场景区标题旁统一写一行（Z3 #16、V-a）。
+ * 首页（第 03 篇 §4.2；用户拍板按律师业务线组织；UIUX P0-2 / Demo 融合 §4.1–4.2）。
+ * 2026-11 对照 Kimi 首页重做版式：居中品牌字标 → 任务输入框（上方“等你处理”提示条、下方事项 / 方法 / 材料托盘）→ 业务线切换 +
+ * 场景胶囊（Kimi 能力胶囊同款；每线先列 6 个，其余“更多”）→ 今天（近期期限、继续工作）→ 页脚一行。
+ * 描述任务即可，命中业务场景时给出建议、不自动切换；点胶囊是两段式开始面板（“给什么 → 得到什么”的完整口径在面板里与悬停提示里）。
+ * 所有场景尚未通过法律质量门槛：胶囊上不逐张标“试用”，页脚统一写一行（Z3 #16、V-a）。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type Matter, type MaterialFile, type ReminderItem, type RunPolicyView } from "../api.ts";
-import { nav } from "../App.tsx";
+import { nav, NEW_MATTER } from "../App.tsx";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
 import { defaultChoice } from "../components/ModeSelector.tsx";
 import { NewMatterDialog } from "../components/NewMatter.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { ScenarioStart } from "../components/ScenarioStart.tsx";
 import { cardGets, cardGives, COMING_SOON, getsPlain, LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
+import { Icon } from "../components/Icons.tsx";
 import { fmtTime, runName } from "../lib/labels.ts";
 import { nextStepPill, type RunFacts } from "../lib/next-step.ts";
 import { backendDownText, importFailText } from "../lib/errors.ts";
 import { dueText, dueTone, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
 
 const LINE_KEY = "kwl.home.line";
-function savedLine(): BusinessLine {
+/** 首页场景区的四个页签：三条业务线 + 三线都常用的“通用”（v9.4 S1 §5.5）。 */
+type HomeTab = BusinessLine | "general";
+const HOME_TABS: HomeTab[] = ["litigation", "transactional", "inhouse", "general"];
+/** 每个页签先列几个胶囊（Kimi 首页一行约 7 个；多出的点“更多”）。 */
+const CHIP_LIMIT = 6;
+function savedLine(): HomeTab {
   try {
     const v = localStorage.getItem(LINE_KEY);
-    if (v === "litigation" || v === "transactional" || v === "inhouse") return v;
+    if (v === "litigation" || v === "transactional" || v === "inhouse" || v === "general") return v;
   } catch {
     // 无本地存储时用缺省
   }
   return "litigation";
+}
+
+/** 场景胶囊的图标：按场景名里的动作挑一个（Kimi 能力胶囊每个都带线性图标）。 */
+export function scenarioIcon(c: Pick<ScenarioCard, "title">): ReactNode {
+  const t = c.title;
+  if (/函|催告/.test(t)) return Icon.mail();
+  if (/测算|计算/.test(t)) return Icon.calc();
+  if (/审|核|比对|体检/.test(t)) return Icon.fileCheck();
+  if (/起草|申请|决议|董事会|代理词|对外版|文件/.test(t)) return Icon.pen();
+  if (/争点|分析|策略|评估|风险|质证|庭审/.test(t)) return Icon.scale();
+  if (/研究|问答|答复|检索|法规/.test(t)) return Icon.book();
+  if (/尽调|调查/.test(t)) return Icon.search();
+  if (/清单|纪要|案卷|整理/.test(t)) return Icon.folder();
+  if (/汇报|报告/.test(t)) return Icon.board();
+  return Icon.compass();
 }
 
 export function Home({ presetMatterId, startScenario }: { presetMatterId?: string | undefined; startScenario?: string | undefined }) {
@@ -53,14 +76,16 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   // 导入没成功的文件单列、红色（第 27 批，评审 U3-04：原来与成功的混在一段灰字里，英文报错直接上屏）
   const [failMsg, setFailMsg] = useState("");
   const [busy, setBusy] = useState(false);
-  const [line, setLine] = useState<BusinessLine>(savedLine);
+  const [line, setLine] = useState<HomeTab>(savedLine);
+  const [moreOpen, setMoreOpen] = useState(false);
   // 开始面板：事项在面板里可切换（Z3 评审 #1）；matterId 为 null 表示默认“新建事项”
   const [starting, setStarting] = useState<{ card: ScenarioCard; extra?: string; matterId: string | null } | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const suggested = value.scenario === "a1.agent_task" ? suggestScenario(value.goal) : null;
   const suggestion = suggested && suggested.id !== dismissed ? suggested : null;
-  const chooseLine = (l: BusinessLine) => {
+  const chooseLine = (l: HomeTab) => {
     setLine(l);
+    setMoreOpen(false);
     try {
       localStorage.setItem(LINE_KEY, l);
     } catch {
@@ -88,7 +113,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     const card = SCENARIOS.find((c) => c.id === startScenario);
     startedFrom.current = startScenario;
     if (card) {
-      setLine(card.line);
+      setLine(card.general ? "general" : card.line);
       openCard(card, undefined, presetMatterId);
     }
     window.history.replaceState(null, "", "#/");
@@ -101,13 +126,15 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
       .then((r) => {
         // 首页只用于发起任务：已结案（只读）的事项不在可选之列
         const open = r.matters.filter((m) => (m.lifecycle ?? "active") === "active");
-        // 第一次使用、还没有任何事项：放入一件虚构的示例事项（只放一次，移除后不再放入）
+        // 第一次使用、还没有任何事项：只有演示形态（内核开着演示开关）才放入虚构的示例事项；正式产品不放演示数据，
+        // 新律师由首次上手指南带着建第一个事项（2026-11）
         if (r.matters.length === 0 && !sampleTried.current) {
           sampleTried.current = true;
           void api
-            .installSample()
+            .kernelStatus()
+            .then((st: any) => (st?.demo_samples === true ? api.installSample() : null))
             .then((s) => {
-              if (s.installed) loadMatters();
+              if (s?.installed) loadMatters();
             })
             .catch(() => {});
         }
@@ -116,6 +143,12 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
         setMatterId((cur) => (cur && open.some((m) => m.matter_id === cur) ? cur : open[0]?.matter_id ?? null));
       })
       .catch(() => setMsg(backendDownText(import.meta.env.DEV)));
+  }, []);
+  // 上手指南最后一步“新建第一个事项”
+  useEffect(() => {
+    const on = () => setNewMatter(true);
+    window.addEventListener(NEW_MATTER, on);
+    return () => window.removeEventListener(NEW_MATTER, on);
   }, []);
   useEffect(() => {
     loadMatters();
@@ -220,69 +253,115 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     }
   };
 
-  return (
-    <main className="main">
-      <div className="main-narrow home">
-        <h1 className="hero-title">今天要处理什么？</h1>
-        <Composer
-          matters={matters}
-          matterId={matterId}
-          onMatterChange={(id) => {
-            matterChosen.current = true;
-            setMatterId(id);
-          }}
-          onNewMatter={() => setNewMatter(true)}
-          documents={docs}
-          policy={policy}
-          value={value}
-          onChange={setValue}
-          onImport={(f) => void importFiles(f)}
-          onSubmit={() => void submit()}
-          busy={busy}
-          onPickScenario={(c) => openCard(c, value.goal.replace(/\/$/, "").trim() || undefined)}
-          suggestion={
-            suggestion
-              ? {
-                  title: suggestion.title,
-                  gets: getsPlain(suggestion).join("、"),
-                  onUse: () => openCard(suggestion, value.goal, undefined, true),
-                  onDismiss: () => setDismissed(suggestion.id),
-                }
-              : null
-          }
-        />
-        {msg && <p className="muted home-msg" role="status" style={{ whiteSpace: "pre-line" }}>{msg}</p>}
-        {failMsg && <div className="banner banner-red home-msg" role="alert" style={{ whiteSpace: "pre-line" }}>{failMsg}</div>}
-        {matters.length === 0 && (
-          <div className="panel empty-panel">
-            <p>先建一个事项：案卷在这台电脑上处理与保存。建事项时写明我方立场、敏感程度和客户授权情况。</p>
-            <button className="btn-primary" onClick={() => setNewMatter(true)}>新建事项</button>
-          </div>
+  // 等你处理（Kimi 输入框上方提示条同位）：等你确认的任务、待复核的草稿
+  const notice =
+    waiting.length > 0 || pendingReview.length > 0 ? (
+      <>
+        <span className="act-dot act-wait" aria-hidden="true" />
+        {waiting.length > 0 && (
+          <button className="btn-link notice-strong" onClick={() => nav(`/run/${waiting[0]!.run_id}/${waiting[0]!.matter_id}`)}>
+            {waiting.length} 个任务等你确认或回答
+          </button>
         )}
+        {waiting.length > 0 && pendingReview.length > 0 && <span aria-hidden="true">·</span>}
+        {pendingReview.length > 0 && (
+          <button className="btn-link" onClick={() => nav(pendingReview.length === 1 ? `/review/${pendingReview[0].artifact_version_id}` : "/deliverables")}>
+            {pendingReview.length} 份草稿待你复核
+          </button>
+        )}
+      </>
+    ) : null;
+  const tabCards = (t: HomeTab) => (t === "general" ? SCENARIOS.filter((c) => c.general) : SCENARIOS.filter((c) => c.line === t && !c.general));
+  const cards = tabCards(line);
+  const shown = moreOpen ? cards : cards.slice(0, CHIP_LIMIT);
+  const showToday = deadlines.length > 0 || deadlinesFailed || recent.length > 0;
 
-        {/* 今天（v9.4 U1 #3）：首屏回答“今天要处理什么”——等你处理、近期期限、继续工作；三块都空时不显示 */}
-        {(waiting.length > 0 || pendingReview.length > 0 || deadlines.length > 0 || recent.length > 0) && (
-          <section className="today" aria-label="今天">
-            <div className="today-col">
-              <div className="today-h">等你处理</div>
-              {waiting.length === 0 && pendingReview.length === 0 ? (
-                <p className="today-empty">没有等你确认或复核的事。</p>
-              ) : (
-                <>
-                  {waiting.length > 0 && (
-                    <button className="today-row today-row-strong" onClick={() => nav(`/run/${waiting[0]!.run_id}/${waiting[0]!.matter_id}`)}>
-                      <span className="act-dot act-wait" aria-hidden="true" />
-                      {waiting.length} 个任务等你确认或回答
-                    </button>
-                  )}
-                  {pendingReview.length > 0 && (
-                    <button className="today-row" onClick={() => nav(pendingReview.length === 1 ? `/review/${pendingReview[0].artifact_version_id}` : "/deliverables")}>
-                      {pendingReview.length} 份草稿待你复核
-                    </button>
-                  )}
-                </>
-              )}
+  return (
+    <main className="main main-home">
+      <div className="home">
+        <div className="home-center">
+          {/* Kimi 首页同款：居中品牌字标 + 输入框 + 托盘 + 能力胶囊；首屏不放大块卡片 */}
+          <h1 className="home-wordmark" aria-label="Kimi Work 法律版">
+            <span className="brand-mark home-mark" aria-hidden="true">K</span>
+            <span>Kimi Work</span>
+            <span className="home-wordmark-tag">法律</span>
+          </h1>
+          <Composer
+            matters={matters}
+            matterId={matterId}
+            onMatterChange={(id) => {
+              matterChosen.current = true;
+              setMatterId(id);
+            }}
+            onNewMatter={() => setNewMatter(true)}
+            documents={docs}
+            policy={policy}
+            value={value}
+            onChange={setValue}
+            onImport={(f) => void importFiles(f)}
+            onSubmit={() => void submit()}
+            busy={busy}
+            notice={notice}
+            onPickScenario={(c) => openCard(c, value.goal.replace(/\/$/, "").trim() || undefined)}
+            suggestion={
+              suggestion
+                ? {
+                    title: suggestion.title,
+                    gets: getsPlain(suggestion).join("、"),
+                    onUse: () => openCard(suggestion, value.goal, undefined, true),
+                    onDismiss: () => setDismissed(suggestion.id),
+                  }
+                : null
+            }
+          />
+          {msg && <p className="muted home-msg" role="status" style={{ whiteSpace: "pre-line" }}>{msg}</p>}
+          {failMsg && <div className="banner banner-red home-msg" role="alert" style={{ whiteSpace: "pre-line" }}>{failMsg}</div>}
+          {mattersLoaded && matters.length === 0 && (
+            <p className="home-first">
+              还没有事项。案卷、材料和成果都归在事项里，只存在这台电脑上。
+              <button className="btn-link" onClick={() => setNewMatter(true)}>
+                新建第一个事项
+              </button>
+            </p>
+          )}
+
+          {/* 业务场景（Kimi 能力胶囊同款）：按业务线切换，每线先列 6 个，其余点“更多”；完整说明在开始面板与“方法与模板”页 */}
+          <section className="home-scenes" aria-label="从业务场景开始" data-tour="scenarios">
+            <div className="scene-tabs" role="tablist" aria-label="业务线">
+              {HOME_TABS.map((t) => (
+                <button key={t} role="tab" aria-selected={line === t} className={`scene-tab${line === t ? " active" : ""}`} onClick={() => chooseLine(t)}>
+                  {t === "general" ? "通用" : LINE_LABELS[t]}
+                </button>
+              ))}
             </div>
+            <div className="scene-chips">
+              {shown.map((c) => (
+                <button key={c.id} className="scene-chip" title={`得到：${cardGets(c)}\n需要：${cardGives(c)}`} aria-label={`${c.title}：给 ${c.gives}；得到 ${c.gets.join("、")}`} onClick={() => openCard(c)}>
+                  <span className="scene-chip-icon" aria-hidden="true">{scenarioIcon(c)}</span>
+                  {c.title}
+                </button>
+              ))}
+              {cards.length > CHIP_LIMIT && (
+                <button className="scene-chip scene-chip-more" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}>
+                  {moreOpen ? "收起" : `更多 ${cards.length - CHIP_LIMIT} 个`}
+                </button>
+              )}
+              <button className="scene-chip scene-chip-more" onClick={() => nav("/methods")}>
+                全部方法 →
+              </button>
+            </div>
+            {/* 即将推出（v9.4 第 20 批，S1 §5.1 第 4 条）：灰显、不能点，不挂到相近的方法上 */}
+            {line !== "general" && COMING_SOON.some((x) => x.line === line) && (
+              <div className="coming-row muted" aria-label="即将推出">
+                即将推出：{COMING_SOON.filter((x) => x.line === line).map((x) => x.title).join(" · ")}
+              </div>
+            )}
+          </section>
+        </div>
+
+        {/* 今天（v9.4 U1 #3）：近期期限、继续工作；“等你处理”已放到输入框上方提示条；都空时不显示 */}
+        {showToday && (
+          <section className="today" aria-label="今天">
             <div className="today-col">
               <div className="today-h">近期期限</div>
               {deadlinesFailed ? (
@@ -334,51 +413,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
             </div>
           </section>
         )}
-
-        <section className="lines">
-          <div className="section-title section-title-row">
-            从业务场景开始 <span className="muted section-note">全部场景试用中 · 结果须律师复核</span>
-          </div>
-          <div className="line-tabs" role="tablist" aria-label="业务线">
-            {(Object.keys(LINE_LABELS) as BusinessLine[]).map((l) => (
-              <button key={l} role="tab" aria-selected={line === l} className={`line-tab${line === l ? " active" : ""}`} onClick={() => chooseLine(l)}>
-                {LINE_LABELS[l]}
-              </button>
-            ))}
-          </div>
-          <div className="cards scenario-cards">
-            {SCENARIOS.filter((c) => c.line === line && !c.general).map((c) => (
-              <button key={c.id} className="card scenario-card" aria-label={`${c.title}：给 ${c.gives}；得到 ${c.gets.join("、")}`} onClick={() => openCard(c)}>
-                {/* v9.4 卡片减负：标题 → 交付件（不带扩展名与括注）→ 需要什么（一行、灰字）；完整口径在开始面板 */}
-                <div className="title">{c.title}</div>
-                <div className="sc-gets">{cardGets(c)}</div>
-                <div className="sc-gives">需要：{cardGives(c)}</div>
-              </button>
-            ))}
-          </div>
-          {/* 即将推出（v9.4 第 20 批，S1 §5.1 第 4 条）：灰显、不能点，不挂到相近的方法上 */}
-          {COMING_SOON.some((x) => x.line === line) && (
-            <div className="coming-row muted" aria-label="即将推出">
-              即将推出：{COMING_SOON.filter((x) => x.line === line).map((x) => x.title).join(" · ")}
-            </div>
-          )}
-          {/* 三条业务线都常用的四张（v9.4 S1 §5.5）：研究、文稿体检、函件、对外版——放在一行，不在每条线各复制一张 */}
-          <div className="general-row" aria-label="通用">
-            <span className="general-label">通用</span>
-            {SCENARIOS.filter((c) => c.general).map((c) => (
-              <button key={c.id} className="chip general-chip" title={`得到：${cardGets(c)}；需要：${cardGives(c)}`} onClick={() => openCard(c)}>
-                {c.title}
-              </button>
-            ))}
-            <span className="spacer" />
-            <button className="btn-link" onClick={() => nav("/methods")}>
-              全部方法 →
-            </button>
-          </div>
-        </section>
-        <p className="muted foot-note">
-          也可以直接在上面描述任务。更多方法见 <button className="btn-link" onClick={() => nav("/methods")}>方法与模板</button>。
-        </p>
+        {/* Kimi 首页页脚同位：一行灰字 */}
+        <p className="home-foot">全部场景试用中 · 结果须律师复核 · 案卷在这台电脑上处理，只把替换过代号的内容发给 AI</p>
       </div>
       {sheet && <RunSheet pending={sheet} onClose={() => setSheet(null)} />}
       {starting && (

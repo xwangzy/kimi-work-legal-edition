@@ -11,7 +11,7 @@ import { proposeDraft } from "../src/services/review-rules.ts";
 
 let tk: TestKernel;
 before(async () => {
-  tk = await makeKernel({}, "b23-firm");
+  tk = await makeKernel({ ZR_DEMO_SAMPLES: "1" }, "b23-firm");
 });
 after(async () => {
   await tk.kernel.close();

@@ -10,6 +10,10 @@
  *   至多 31 天），新名册部署到各服务的 ops.roster_file 即生效，不需要重启；`roster show` 核验并列出。
  *   名册签名密钥轮换：先把新公钥合并进公钥表并部署到各服务，再 `roster renew --keys <公钥表> --sign-key <新私钥> --sign-kid <新编号>`，
  *   全部服务换上新名册后立即从公钥表删掉旧编号。
+ * - 安全管理员（第 45 批，网页运营控制台的账号 + 密码登录）：`password set` 给名册里的人发登录名与初始密码（随机生成、只打印一次，
+ *   首次登录须改）；`password reset` 重置（已有登录即失效）；`password disable / enable` 停用或恢复；`password list` 列出（不含哈希）。
+ *   凭据库是控制面 ops.credentials_file（缺省 <data_dir>/control-plane/ops/credentials.json），改写后控制面自动重读、不需要重启。
+ *   身份与权限仍以名册为准：只用密码登录的人用 `roster add --password-only` 登记（不带公钥）。
  * - 审计：控制面 <data_dir>/control-plane/ops/access.jsonl；支持、中继、通知 <data_dir>/<角色>/access.jsonl；各服务 ops/rejects.jsonl
  *   （被拒的运营请求）与 ops/roster-history.jsonl（名册换版）；被入口按来源挡下的只在 obs/ 访问日志里；控制面写操作另进律所可见的运营审计流水。
  *
@@ -20,7 +24,13 @@
  *        --fingerprint <运营报来的指纹> --sign-key /secure/offline/sec-1.key.pem --sign-kid sec-1 --out ops-roster.json
  *   node scripts/ops-cli.mjs roster revoke --roster ops-roster.json --id op_0001 [--kid k1] --sign-key … --sign-kid sec-1 --out ops-roster.json
  *   node scripts/ops-cli.mjs roster renew --roster ops-roster.json --sign-key … --sign-kid sec-1 --out ops-roster.json [--days 30]
+ *   node scripts/ops-cli.mjs roster add --roster ops-roster.json --id op_0002 --perms tenant.read --password-only --sign-key … --sign-kid sec-1 --out ops-roster.json
  *   node scripts/ops-cli.mjs roster show --roster ops-roster.json --keys ops-roster-keys.json
+ *   node scripts/ops-cli.mjs password set --credentials ops-credentials.json --id op_0001 --login zhangsan [--password-env KWL_OPS_PW] [--no-must-change] \
+ *        [--roster ops-roster.json --keys ops-roster-keys.json]
+ *   node scripts/ops-cli.mjs password reset --credentials ops-credentials.json --id op_0001
+ *   node scripts/ops-cli.mjs password disable|enable --credentials ops-credentials.json --id op_0001
+ *   node scripts/ops-cli.mjs password list --credentials ops-credentials.json
  *   node scripts/ops-cli.mjs call --url https://cp.internal:8443 --deployment prod --aud control-plane --id op_0001 --kid k1 --key ~/.kwl-ops/op_0001.k1.key.pem \
  *        --method POST --path /v1/ops/tenants --body '{"tid":"ten_demo","edition":"team","seats":5}' [--ca ca.pem] [--passphrase-env KWL_OPS_PASS]
  *
@@ -206,9 +216,17 @@ if (cmd === "keygen" || cmd === "roster-keygen") {
         };
         if (sub === "add") {
           if (op) fail(`${id} 已在名册里（加密钥用 add-key，改权限用 perms）`);
-          const key = newKey();
-          body.operators.push({ id, status: "active", perms: perms(), keys: [key], second_factor: "none" });
-          changes.push(`add ${id} ${key.kid}`);
+          // 只用账号密码登录网页控制台的人：不带公钥（之后要用命令行再 add-key）
+          if (has("password-only")) {
+            if (flag("pub") !== undefined) fail("--password-only 与 --pub 不能同时给");
+            if (!oa.OPERATOR_ID_RE.test(id)) fail("--id 须为运营编号：op_ 加数字工号（例如 op_0001；不用姓名）");
+            body.operators.push({ id, status: "active", perms: perms(), keys: [], second_factor: "none" });
+            changes.push(`add ${id} password-only`);
+          } else {
+            const key = newKey();
+            body.operators.push({ id, status: "active", perms: perms(), keys: [key], second_factor: "none" });
+            changes.push(`add ${id} ${key.kid}`);
+          }
         } else if (!op) {
           fail(`名册里没有 ${id}`);
         } else if (op.status !== "active") {
@@ -257,6 +275,72 @@ if (cmd === "keygen" || cmd === "roster-keygen") {
     writeAtomic(out, `${JSON.stringify(signed, null, 2)}\n`, 0o644);
     console.log(JSON.stringify({ ok: true, deployment: body.deployment, version: body.version, expires_at: body.expires_at, changes, out }));
   } else fail("roster 子命令：init / add / add-key / perms / revoke / renew / show");
+} else if (cmd === "password") {
+  // ─── 账号 + 密码登录的凭据库（安全管理员维护；控制面 ops.credentials_file） ───
+  const file = need("credentials");
+  let doc;
+  try {
+    doc = oa.readOpsCredentialsFile(file);
+  } catch (e) {
+    fail(`${file}：${e instanceof Error ? e.message : "读不出"}`, 1);
+  }
+  const save = (next) => {
+    try {
+      oa.writeOpsCredentialsFile(file, next);
+    } catch (e) {
+      fail(e instanceof Error ? e.message : "凭据库写不进去", 1);
+    }
+  };
+  if (sub === "list") {
+    console.log(JSON.stringify({ ok: true, credentials: doc.credentials.map((c) => ({ operator: c.operator, login: c.login, must_change: c.must_change, disabled: c.disabled === true, updated_at: c.updated_at })) }, null, 2));
+  } else if (["set", "reset", "disable", "enable"].includes(sub)) {
+    const id = need("id");
+    if (!oa.OPERATOR_ID_RE.test(id)) fail("--id 须为运营编号：op_ 加数字工号（例如 op_0001）");
+    const cur = doc.credentials.find((c) => c.operator === id);
+    // 可选：核对此人在名册里且有效（身份与权限以名册为准；不在名册的人即使有密码也登不进）
+    let inRoster = null;
+    if (flag("roster")) {
+      const keys = new Map(Object.entries(readKeysFile(need("keys")) ?? fail("--keys 公钥表不存在")));
+      let rdoc;
+      try {
+        rdoc = JSON.parse(readFileSync(flag("roster"), "utf8"));
+      } catch {
+        fail(`${flag("roster")} 读不出或不是 JSON`);
+      }
+      const v = oa.verifyOpsRoster(rdoc, keys);
+      if (!v.ok) fail(`名册核验不通过：${v.reason}`, 1);
+      const op = v.body.operators.find((x) => x.id === id);
+      if (!op || op.status !== "active") fail(`${id} 不在名册里或已吊销：先由安全管理员 roster add`, 1);
+      if (op.second_factor !== "none") fail(`${id} 在名册里要求双因素，密码登录会被拒绝`, 1);
+      inRoster = true;
+    }
+    if (sub === "disable" || sub === "enable") {
+      if (!cur) fail(`${id} 没有登录凭据`);
+      save(oa.setOpsCredentialDisabled(doc, id, sub === "disable"));
+      console.log(JSON.stringify({ ok: true, operator: id, login: cur.login, disabled: sub === "disable", credentials: file }));
+    } else {
+      if (sub === "reset" && !cur) fail(`${id} 没有登录凭据：先用 password set --login 发初始密码`);
+      if (sub === "set" && !cur && flag("login") === undefined) fail("缺少 --login（新发的凭据须指定登录名）");
+      const envName = flag("password-env");
+      let password;
+      if (envName !== undefined) {
+        password = process.env[envName] ?? "";
+        const rules = oa.opsPasswordProblems(password, flag("login") ?? cur?.login);
+        if (rules.length) fail(`环境变量 ${envName} 里的密码不合规：${rules.join("、")}`);
+      } else password = oa.generateOpsPassword();
+      const mustChange = !has("no-must-change");
+      let next;
+      try {
+        next = oa.setOpsCredential(doc, { operator: id, ...(flag("login") !== undefined ? { login: flag("login") } : {}), password, mustChange });
+      } catch (e) {
+        fail(e instanceof Error ? e.message : "凭据不合规");
+      }
+      save(next);
+      const rec = next.credentials.find((c) => c.operator === id);
+      // 初始密码只在这里打印一次（自己给的密码不回显）：请当面或经安全渠道交给本人，首次登录须改
+      console.log(JSON.stringify({ ok: true, operator: id, login: rec.login, ...(envName === undefined ? { initial_password: password } : {}), must_change: mustChange, ...(inRoster ? { roster_checked: true } : {}), credentials: file }));
+    }
+  } else fail("password 子命令：set / reset / disable / enable / list");
 } else if (cmd === "call") {
   let url;
   try {
@@ -312,5 +396,5 @@ if (cmd === "keygen" || cmd === "roster-keygen") {
   if (body) req.write(body);
   req.end();
 } else {
-  fail("用法：keygen | roster-keygen | roster <init|add|add-key|perms|revoke|renew|show> | call（见文件头注释）");
+  fail("用法：keygen | roster-keygen | roster <init|add|add-key|perms|revoke|renew|show> | password <set|reset|disable|enable|list> | call（见文件头注释）");
 }

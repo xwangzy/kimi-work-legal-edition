@@ -2,8 +2,9 @@
  * 运营控制台（第 44 批重做；原第 37 批运营控制台、第 40 批额度台）：中软运营管理律所、账号、设备、模型路由、用量与计费的网页。
  *
  * - 同源静态页、原生 ES 模块、外置 CSS；部署只拷 dist/（scripts/build-ops-console.mjs 拼好，含 tokens.css）；
- * - 鉴权不变：运营私钥在本页内存里签名每个请求（ops-sign.js），控制面按运营名册逐人核验、按接口授权、先记访问审计再执行；
- * - 本页没有自己的后端、不存业务状态；只有主题、上次的运营编号与密钥编号（非机密）记在 localStorage；
+ * - 登录（第 45 批）：账号 + 密码为主（安全管理员发的登录名与初始密码，首次登录须先改）；会话令牌只在 sessionStorage，
+ *   关标签页即失效；运营私钥签名每个请求（ops-sign.js）保留为次要入口。两种方式控制面都按运营名册逐人核验、按接口授权、先记访问审计再执行；
+ * - 本页没有自己的后端、不存业务状态；只有主题、上次的登录名、运营编号与密钥编号（非机密）记在 localStorage；
  * - 页面按 hash 路由（#/tenants/ten_x?tab=usage），每页一个模块（pages/*.js）。
  */
 import * as api from "./api.js";
@@ -79,11 +80,24 @@ async function boot() {
   }
   document.title = `运营控制台 · ${cfg.label || cfg.deployment}`;
   $("#login-env").textContent = `${cfg.label || "部署"} · ${cfg.deployment} · ${new URL(cfg.control_plane_base).host}`;
-  api.onAuthLost((e) => logout(`${e.message}。请重新载入私钥。`));
+  api.onAuthLost((e) => {
+    const op = api.operator();
+    if (e.code === "password_change_required" && op?.via === "password") return showChange(null, "安全管理员重置了你的密码：请先设置新密码。");
+    logout(op?.via === "key" ? `${e.message}。请重新载入私钥。` : `${e.message}，请重新登录。`);
+  });
+  // 本标签页的账号密码会话（刷新页面不必重新登录）
+  const sess = api.recallSession();
+  if (sess) {
+    api.setOperator(sess);
+    const me = await verifyLogin().catch(() => null);
+    if (me) return me.must_change ? showChange(null) : enterApp();
+    api.setOperator(null);
+    api.forgetSession();
+  }
   const kept = await recallKey({ deployment: cfg.deployment, base: cfg.control_plane_base });
   if (kept) {
-    api.setOperator({ id: kept.operator, kid: kept.kid, key: kept.key });
-    const ok = await verifyLogin().catch(() => false);
+    api.setOperator({ via: "key", id: kept.operator, kid: kept.kid, key: kept.key });
+    const ok = await verifyLogin().catch(() => null);
     if (ok) return enterApp(kept.expires_at);
     api.setOperator(null);
     await forgetKey();
@@ -97,16 +111,172 @@ const keyInput = $("#keyfile");
 let keyText = null;
 let keyName = "";
 
-function showLogin(message) {
+const pwForm = $("#pw-form");
+const changeForm = $("#change-form");
+/** 登录页：账号密码为主；上次用私钥登录的（或带着私钥相关的提示）展开私钥一栏。 */
+function showLogin(message, o = {}) {
   $("#boot").hidden = true;
   $("#app").hidden = true;
   $("#login").hidden = false;
+  pwForm.hidden = false;
+  changeForm.hidden = true;
+  $("#key-alt").hidden = false;
   form.operator.value ||= ls.get("kwl-ops-operator") ?? "";
   form.kid.value ||= ls.get("kwl-ops-kid") ?? "k1";
-  $("#login-error").textContent = message ?? "";
+  pwForm.login.value ||= ls.get("kwl-ops-login") ?? "";
+  pwForm.password.value = "";
+  const viaKey = o.key ?? ls.get("kwl-ops-via") === "key";
+  $("#key-alt").open = viaKey;
+  $("#pw-error").textContent = viaKey ? "" : (message ?? "");
+  $("#login-error").textContent = viaKey ? (message ?? "") : "";
   $("#login-foot").textContent = "浏览器须支持 Ed25519（Chrome / Edge 137 以上、Firefox 129 以上、Safari 17 以上）。";
   markFile();
+  if (!viaKey) (pwForm.login.value ? pwForm.password : pwForm.login).focus();
 }
+
+// ─── 账号密码登录 ───────────────────────────────────────────────────
+pwForm.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const err = $("#pw-error");
+  err.textContent = "";
+  const login = pwForm.login.value.trim();
+  const password = pwForm.password.value;
+  if (!login) return void ((err.textContent = "请输入账号"), pwForm.login.focus());
+  if (!password) return void ((err.textContent = "请输入密码"), pwForm.password.focus());
+  const submit = $("#pw-submit");
+  submit.disabled = true;
+  submit.textContent = "正在登录…";
+  try {
+    const op = await api.passwordLogin(login, password);
+    api.setOperator(op);
+    api.saveSession(op);
+    ctx.perms = new Set(op.perms);
+    ls.set("kwl-ops-login", login);
+    ls.set("kwl-ops-via", "password");
+    pwForm.password.value = "";
+    if (op.must_change) showChange(password);
+    else enterApp();
+  } catch (e) {
+    api.setOperator(null);
+    err.textContent = e.message || String(e);
+    pwForm.password.select();
+  } finally {
+    submit.disabled = false;
+    submit.textContent = "登录";
+  }
+});
+
+// ─── 首次登录（或被重置后）：先改密码 ─────────────────────────────────
+/** 刚登录时当前密码就是刚输入的那个（只留在这个闭包里，改完即丢）；刷新后进来的要再输一次。 */
+let pendingCurrent = null;
+function showChange(current, why) {
+  pendingCurrent = current;
+  $("#boot").hidden = true;
+  $("#app").hidden = true;
+  $("#login").hidden = false;
+  pwForm.hidden = true;
+  $("#key-alt").hidden = true;
+  changeForm.hidden = false;
+  changeForm.reset();
+  changeForm.username.value = api.operator()?.login ?? "";
+  $("#change-current-field").hidden = current !== null;
+  $("#change-why").textContent = why ?? "当前是安全管理员发的初始密码，改好后才能使用控制台。";
+  $("#change-error").textContent = "";
+  (current !== null ? changeForm.next : changeForm.current).focus();
+}
+/** 新密码的本页预检（与控制面同一规则；以控制面结果为准）。 */
+function passwordHint(next, again, login) {
+  if (next.length < 12) return "新密码至少 12 位";
+  if (!/[A-Za-z]/.test(next) || !/[0-9]/.test(next)) return "新密码须同时包含字母和数字";
+  const name = String(login ?? "").split("@")[0];
+  if (name.length >= 3 && next.toLowerCase().includes(name.toLowerCase())) return "新密码不要包含登录名";
+  if (next !== again) return "两次输入的新密码不一致";
+  return null;
+}
+changeForm.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const err = $("#change-error");
+  err.textContent = "";
+  const current = pendingCurrent ?? changeForm.current.value;
+  const next = changeForm.next.value;
+  if (!current) return void ((err.textContent = "请输入当前密码"), changeForm.current.focus());
+  const bad = passwordHint(next, changeForm.again.value, api.operator()?.login);
+  if (bad) return void ((err.textContent = bad), changeForm.next.focus());
+  if (next === current) return void ((err.textContent = "新密码不能与当前密码相同"), changeForm.next.focus());
+  const submit = $("#change-submit");
+  submit.disabled = true;
+  try {
+    await api.post("/v1/ops/password", { current, next });
+    pendingCurrent = null;
+    changeForm.reset();
+    const op = api.operator();
+    op.must_change = false;
+    await verifyLogin().catch(() => null);
+    enterApp();
+    toast("密码已更新");
+  } catch (e) {
+    err.textContent = e.message || String(e);
+    if (e.code === "ops_password_current_wrong") {
+      pendingCurrent = null;
+      $("#change-current-field").hidden = false;
+      changeForm.current.value = "";
+      changeForm.current.focus();
+    }
+  } finally {
+    submit.disabled = false;
+  }
+});
+$("#change-cancel").addEventListener("click", () => logout());
+
+/** 顶栏“修改密码”（账号密码登录时）：本页弹框，值原样提交（不去首尾空白）。 */
+function changePasswordDialog() {
+  const d = $("#modal");
+  const err = h("p", { class: "form-error", role: "alert" });
+  const inp = (name, label, auto, hint) => {
+    const id = `cp-${name}`;
+    return h("div", { class: "field" }, h("label", { for: id }, label), h("input", { id, name, type: "password", autocomplete: auto }), hint ? h("small", { class: "hint" }, hint) : null);
+  };
+  const ok = h("button", { type: "submit", class: "btn primary" }, "保存");
+  const cancel = h("button", { type: "button", class: "btn", onclick: () => d.close() }, "取消");
+  const f = h(
+    "form",
+    { class: "modal-form", novalidate: true },
+    h("h2", { class: "modal-title" }, "修改密码"),
+    h("input", { type: "text", name: "username", autocomplete: "username", value: api.operator()?.login ?? "", hidden: true }),
+    inp("current", "当前密码", "current-password"),
+    inp("next", "新密码", "new-password", "至少 12 位，同时包含字母和数字，不含登录名。"),
+    inp("again", "再输入一次新密码", "new-password"),
+    h("p", { class: "modal-note" }, "保存后，你在其他浏览器或标签页的登录会全部退出。"),
+    err,
+    h("div", { class: "modal-actions" }, cancel, ok),
+  );
+  f.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    err.textContent = "";
+    const current = f.current.value;
+    const next = f.next.value;
+    if (!current) return void (err.textContent = "请输入当前密码");
+    const bad = passwordHint(next, f.again.value, api.operator()?.login);
+    if (bad) return void (err.textContent = bad);
+    if (next === current) return void (err.textContent = "新密码不能与当前密码相同");
+    ok.disabled = cancel.disabled = true;
+    try {
+      const r = await api.post("/v1/ops/password", { current, next });
+      d.close();
+      toast(r.other_sessions_revoked ? `密码已更新，另有 ${r.other_sessions_revoked} 处登录已退出` : "密码已更新");
+    } catch (e) {
+      err.textContent = e.message || String(e);
+      ok.disabled = cancel.disabled = false;
+    }
+  });
+  d.className = "modal";
+  clear(d, f);
+  d.onclose = null;
+  d.oncancel = null;
+  d.showModal();
+  f.current.focus();
+}
+$("#btn-passwd").addEventListener("click", changePasswordDialog);
 function markFile() {
   const drop = $("#drop");
   drop.classList.toggle("ready", !!keyText);
@@ -155,9 +325,18 @@ form.addEventListener("drop", (e) => {
   if (f) takeFile(f);
 });
 
-/** 用一次只读请求核对签名：系统页（顺带拿到本人权限）；没就绪就退到律所列表。 */
+/** 核对凭据并取本人身份与权限：/v1/ops/me（第 45 批）；老控制面没有时退到系统页、再退到律所列表。返回身份（含 must_change）。 */
 async function verifyLogin() {
   ctx.perms = null;
+  try {
+    const me = await api.get("/v1/ops/me");
+    ctx.perms = new Set(me.perms ?? []);
+    const op = api.operator();
+    if (op?.via === "password") Object.assign(op, { must_change: me.must_change === true, expires_at: me.expires_at ?? op.expires_at, login: me.login ?? op.login });
+    return me;
+  } catch (e) {
+    if (e.code !== "not_ready") throw e;
+  }
   try {
     const sys = await api.get("/v1/ops/system");
     const me = sys?.roster?.operators?.find((o) => o.id === api.operator().id);
@@ -191,10 +370,11 @@ form.addEventListener("submit", async (ev) => {
   submit.textContent = "正在核对…";
   try {
     const key = await importOpsKey(keyText, form.passphrase.value);
-    api.setOperator({ id, kid, key });
+    api.setOperator({ via: "key", id, kid, key });
     await verifyLogin();
     ls.set("kwl-ops-operator", id);
     ls.set("kwl-ops-kid", kid);
+    ls.set("kwl-ops-via", "key");
     let until = null;
     if ($("#remember").checked && (await rememberKey({ operator: id, kid, key, deployment: cfg.deployment, base: cfg.control_plane_base }))) until = Date.now() + 8 * 3600_000;
     keyText = null;
@@ -207,19 +387,23 @@ form.addEventListener("submit", async (ev) => {
     if (/口令/.test(e.message)) form.passphrase.select();
   } finally {
     submit.disabled = false;
-    submit.textContent = "进入控制台";
+    submit.textContent = "用私钥进入";
   }
 });
 
 async function logout(message) {
+  const op = api.operator();
+  await api.logoutSession();
+  api.forgetSession();
   api.setOperator(null);
+  pendingCurrent = null;
   ctx.perms = null;
   ctx.tenants = null;
   closeDrawer();
   if ($("#modal").open) $("#modal").close();
   await forgetKey();
   clear($("#content"));
-  showLogin(message);
+  showLogin(message, { key: op?.via === "key" });
 }
 $("#btn-logout").addEventListener("click", () => logout());
 
@@ -236,11 +420,18 @@ function enterApp(rememberedUntil) {
     h("span", { class: "deploy-id mono" }, cfg.deployment),
     cfg.demo ? badge("开发演示数据", "warn", "本机开发脚本造的演示数据（client_request_id 以 dev-demo- 开头），不是真实客户") : null,
   );
+  const pw = op.via === "password";
   clear(
     $("#who"),
-    h("span", { class: "avatar", "aria-hidden": "true" }, op.id.slice(-2)),
-    h("span", { class: "who-text" }, h("b", { class: "mono" }, op.id), h("small", {}, rememberedUntil ? `密钥 ${op.kid} · 记住至 ${fmt.clock(rememberedUntil).slice(0, 5)}` : `密钥 ${op.kid} · 仅本页内存`)),
+    h("span", { class: "avatar", "aria-hidden": "true" }, pw ? (op.login || op.id).slice(0, 2).toUpperCase() : op.id.slice(-2)),
+    h(
+      "span",
+      { class: "who-text" },
+      h("b", { class: pw ? null : "mono" }, pw ? op.login || op.id : op.id),
+      h("small", {}, pw ? `${op.id} · 账号密码登录${op.expires_at ? ` · 至 ${fmt.clock(Date.parse(op.expires_at)).slice(0, 5)}` : ""}` : rememberedUntil ? `密钥 ${op.kid} · 记住至 ${fmt.clock(rememberedUntil).slice(0, 5)}` : `密钥 ${op.kid} · 仅本页内存`),
+    ),
   );
+  $("#btn-passwd").hidden = !pw;
   clear($("#btn-refresh"), icon("refresh"));
   applyTheme();
   buildNav();

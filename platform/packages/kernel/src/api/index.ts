@@ -883,6 +883,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
 
     // ─── 示例事项（v9.2 §4.4；Y4 §5 D-6、#24）：虚构内容、本机生成、不联网；每台设备只自动放入一次，移除后不再放入 ───
+    // 2026-11：正式产品不放演示数据——只有演示开关（ZR_DEMO_SAMPLES=1，安装包形态永远没有）打开时才放入；已放入的照常可看、可移除
     "samples.status": (_p, id) => {
       // 非诉、诉讼两件示例（Z3 #27）：matter_id 为第一件还在的（兼容旧调用方），matter_ids 为全部还在的
       const rows = db.all<{ matter_id: string; removed_at: string | null }>(
@@ -890,9 +891,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         [id.tenantId],
       );
       const live = rows.filter((r) => !r.removed_at).map((r) => r.matter_id);
-      return { installed: live.length > 0, removed: rows.some((r) => !!r.removed_at), matter_id: live[0] ?? null, matter_ids: live, litigation_offered: litigationSampleOffered(id) };
+      return { installed: live.length > 0, removed: rows.some((r) => !!r.removed_at), matter_id: live[0] ?? null, matter_ids: live, litigation_offered: litigationSampleOffered(id), available: config.demoSamples };
     },
     "samples.install": async (p, id) => {
+      if (!config.demoSamples) return { matter_id: null, matter_ids: [], installed: false, disabled: true };
       // 只放诉讼示例（余项续复核 RC-B-13）：诉讼示例上线前已经放过非诉示例的电脑，从设置里补放一次
       if (p?.kind === "litigation") {
         if (litigationSampleOffered(id)) return { matter_id: null, matter_ids: [], installed: false };
@@ -2826,6 +2828,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         member_role: db.get<{ role: string }>(`SELECT role FROM memberships WHERE tenant_id = ? AND user_id = ?`, [id.tenantId, id.userId])?.role ?? null,
         model_routes: broker.routeAliases(),
         model_provider: config.env.ZR_MODEL_PROVIDER ?? "mock",
+        // 演示示例事项开关（首页据此决定是否放入示例；正式产品恒为 false）
+        demo_samples: config.demoSamples,
         endpoints_configured: endpoints,
         queue: queue.stats(),
         log_level: slog.currentLevel(),

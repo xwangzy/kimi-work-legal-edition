@@ -18,9 +18,9 @@
     <!-- 启动中 -->
     <div class="boot" id="boot" role="status">正在读取配置…</div>
 
-    <!-- 登录：载入运营私钥（私钥只在本页内存，不上传；“记住 8 小时”只存不可导出的密钥对象） -->
+    <!-- 登录：账号 + 密码为主（安全管理员发的登录名与初始密码，首次登录须改）；运营私钥登录收在下面作为次要入口 -->
     <main class="login" id="login" hidden>
-      <form class="login-card" id="login-form" autocomplete="off" novalidate>
+      <div class="login-card">
         <div class="login-brand">
           <span class="brand-mark" aria-hidden="true">K</span>
           <div>
@@ -28,37 +28,82 @@
             <p class="login-env" id="login-env">Kimi Work 法律版</p>
           </div>
         </div>
-        <p class="login-lead">每个请求都在本页用<b>你本人的运营私钥</b>签名后直连控制面。私钥不上传、不写盘，关页或退出即丢弃。</p>
 
-        <label class="drop" id="drop" tabindex="-1">
-          <input name="keyfile" id="keyfile" type="file" accept=".pem,.key,.txt" />
-          <span class="drop-icon" aria-hidden="true" id="drop-icon"></span>
-          <span class="drop-text" id="drop-text">把私钥文件拖到这里，或点击选择</span>
-          <small class="drop-sub" id="drop-sub">ops-cli keygen 生成的 .key.pem（PKCS#8，明文或口令加密）</small>
-        </label>
-
-        <div class="login-row">
+        <!-- ① 账号密码登录 -->
+        <form class="login-form" id="pw-form" autocomplete="on" novalidate>
           <div class="field">
-            <label for="op-id">运营编号</label>
-            <input id="op-id" name="operator" placeholder="op_0001" autocomplete="username" spellcheck="false" />
+            <label for="pw-login">账号</label>
+            <input id="pw-login" name="login" autocomplete="username" placeholder="登录名或运营编号" spellcheck="false" autocapitalize="off" />
           </div>
-          <div class="field narrow">
-            <label for="op-kid">密钥编号</label>
-            <input id="op-kid" name="kid" placeholder="k1" spellcheck="false" />
+          <div class="field">
+            <label for="pw-pass">密码</label>
+            <input id="pw-pass" name="password" type="password" autocomplete="current-password" />
           </div>
-        </div>
-        <div class="field" id="pass-field" hidden>
-          <label for="op-pass">私钥口令</label>
-          <input id="op-pass" name="passphrase" type="password" autocomplete="off" placeholder="这把私钥有口令保护" />
-        </div>
-        <label class="field-check">
-          <input type="checkbox" name="remember" id="remember" />
-          <span>本标签页内记住 8 小时<small>只把浏览器里不可导出的密钥对象存在本机；关掉标签页、点“退出”或到期即清除。公用电脑不要勾。</small></span>
-        </label>
-        <p class="form-error" id="login-error" role="alert"></p>
-        <button class="btn primary block" type="submit" id="login-submit">进入控制台</button>
-        <p class="login-foot" id="login-foot"></p>
-      </form>
+          <p class="form-error" id="pw-error" role="alert"></p>
+          <button class="btn primary block" type="submit" id="pw-submit">登录</button>
+          <p class="login-foot">账号由安全管理员开通；忘记密码请找安全管理员重置。30 分钟无操作或登录满 8 小时需重新登录，关闭标签页即退出。</p>
+        </form>
+
+        <!-- ② 首次登录（或密码被重置后）：先改密码 -->
+        <form class="login-form" id="change-form" autocomplete="on" novalidate hidden>
+          <div class="login-notice">
+            <b>请先设置你自己的密码</b>
+            <span id="change-why">当前是安全管理员发的初始密码，改好后才能使用控制台。</span>
+          </div>
+          <input type="text" name="username" id="change-user" autocomplete="username" hidden />
+          <div class="field" id="change-current-field">
+            <label for="change-current">当前密码</label>
+            <input id="change-current" name="current" type="password" autocomplete="current-password" />
+          </div>
+          <div class="field">
+            <label for="change-next">新密码</label>
+            <input id="change-next" name="next" type="password" autocomplete="new-password" />
+            <small class="hint">至少 12 位，同时包含字母和数字，不含登录名，不能与当前密码相同。</small>
+          </div>
+          <div class="field">
+            <label for="change-again">再输入一次新密码</label>
+            <input id="change-again" name="again" type="password" autocomplete="new-password" />
+          </div>
+          <p class="form-error" id="change-error" role="alert"></p>
+          <button class="btn primary block" type="submit" id="change-submit">保存新密码并进入</button>
+          <button class="link login-switch" type="button" id="change-cancel">退出登录</button>
+        </form>
+
+        <!-- ③ 运营私钥登录（命令行 ops-cli keygen 生成的密钥；私钥只在本页内存，不上传） -->
+        <details class="login-alt" id="key-alt">
+          <summary>使用运营私钥登录</summary>
+          <form class="login-form" id="login-form" autocomplete="off" novalidate>
+            <p class="login-lead">每个请求都在本页用<b>你本人的运营私钥</b>签名后直连控制面。私钥不上传、不写盘，关页或退出即丢弃。</p>
+            <label class="drop" id="drop" tabindex="-1">
+              <input name="keyfile" id="keyfile" type="file" accept=".pem,.key,.txt" />
+              <span class="drop-icon" aria-hidden="true" id="drop-icon"></span>
+              <span class="drop-text" id="drop-text">把私钥文件拖到这里，或点击选择</span>
+              <small class="drop-sub" id="drop-sub">ops-cli keygen 生成的 .key.pem（PKCS#8，明文或口令加密）</small>
+            </label>
+            <div class="login-row">
+              <div class="field">
+                <label for="op-id">运营编号</label>
+                <input id="op-id" name="operator" placeholder="op_0001" autocomplete="off" spellcheck="false" />
+              </div>
+              <div class="field narrow">
+                <label for="op-kid">密钥编号</label>
+                <input id="op-kid" name="kid" placeholder="k1" spellcheck="false" />
+              </div>
+            </div>
+            <div class="field" id="pass-field" hidden>
+              <label for="op-pass">私钥口令</label>
+              <input id="op-pass" name="passphrase" type="password" autocomplete="off" placeholder="这把私钥有口令保护" />
+            </div>
+            <label class="field-check">
+              <input type="checkbox" name="remember" id="remember" />
+              <span>本标签页内记住 8 小时<small>只把浏览器里不可导出的密钥对象存在本机；关掉标签页、点“退出”或到期即清除。公用电脑不要勾。</small></span>
+            </label>
+            <p class="form-error" id="login-error" role="alert"></p>
+            <button class="btn block" type="submit" id="login-submit">用私钥进入</button>
+            <p class="login-foot" id="login-foot"></p>
+          </form>
+        </details>
+      </div>
     </main>
 
     <!-- 主界面：左侧导航 + 顶栏 + 内容 -->
@@ -83,6 +128,7 @@
             <button type="button" class="icon-btn" id="btn-refresh" title="刷新本页（R）" aria-label="刷新本页"></button>
             <button type="button" class="icon-btn" id="btn-theme" title="主题" aria-label="切换主题"></button>
             <span class="who" id="who"></span>
+            <button type="button" class="btn sm" id="btn-passwd" hidden>修改密码</button>
             <button type="button" class="btn sm" id="btn-logout">退出</button>
           </div>
         </header>

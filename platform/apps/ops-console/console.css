@@ -120,7 +120,19 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width
 .login-env { color: var(--text-secondary); font-size: var(--fs-caption); }
 .login-lead { color: var(--text-label); font-size: var(--fs-caption); line-height: 1.7; }
 .login-row { display: grid; grid-template-columns: 1fr 120px; gap: var(--sp-3); }
-.login-foot { color: var(--text-secondary); font-size: var(--fs-meta); }
+.login-foot { color: var(--text-secondary); font-size: var(--fs-meta); line-height: 1.6; }
+.login-form { display: flex; flex-direction: column; gap: var(--sp-3); }
+.login-form[hidden] { display: none; }
+.login-notice { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-3); border-radius: var(--r-md); background: var(--status-warning-bg); border: 1px solid var(--status-warning-border); font-size: var(--fs-caption); line-height: 1.6; }
+.login-notice span { color: var(--text-label); }
+.login-switch { align-self: center; font-size: var(--fs-caption); color: var(--text-secondary); }
+.login-alt { border-top: 1px solid var(--border-subtle); padding-top: var(--sp-3); }
+.login-alt > summary { cursor: pointer; color: var(--text-secondary); font-size: var(--fs-caption); list-style: none; display: flex; align-items: center; gap: 6px; }
+.login-alt > summary::-webkit-details-marker { display: none; }
+.login-alt > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s; }
+.login-alt[open] > summary::before { transform: rotate(45deg); }
+.login-alt > summary:hover { color: var(--text-primary); }
+.login-alt[open] > .login-form { margin-top: var(--sp-3); }
 .brand-mark { width: 32px; height: 32px; border-radius: var(--r-sm); background: var(--btn-primary); color: var(--btn-primary-text); display: grid; place-items: center; font-weight: 600; font-size: var(--fs-md); flex: none; }
 .drop {
   position: relative; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: var(--sp-3); align-items: center;

@@ -63,7 +63,9 @@ if (withCp) {
     const oa = await import("../packages/ops-auth/src/index.ts");
     const { readFileSync: readRoster } = await import("node:fs");
     const rosterKeys = new Map(Object.entries(JSON.parse(readRoster(process.env.KWL_OPS_ROSTER_KEYS, "utf8"))));
-    cpOpsGuard = oa.createOpsGuard({ audience: "control-plane", roster: oa.fileRosterSource({ file: process.env.KWL_OPS_ROSTER, keys: rosterKeys, deployment: process.env.KWL_OPS_DEPLOYMENT ?? "dev" }), nonces: oa.memoryNonceStore() });
+    // 网页运营控制台的账号密码登录（第 45 批）：KWL_OPS_CREDENTIALS 指向凭据库（ops-cli password set 维护）；不给 = 只认私钥签名
+    const sessions = process.env.KWL_OPS_CREDENTIALS ? oa.createOpsPasswordSessions({ credentials: oa.fileOpsCredentialSource(process.env.KWL_OPS_CREDENTIALS) }) : undefined;
+    cpOpsGuard = oa.createOpsGuard({ audience: "control-plane", roster: oa.fileRosterSource({ file: process.env.KWL_OPS_ROSTER, keys: rosterKeys, deployment: process.env.KWL_OPS_DEPLOYMENT ?? "dev" }), nonces: oa.memoryNonceStore(), ...(sessions ? { sessions } : {}) });
   }
   cp = cpMod.createControlPlane({ keys: cpMod.devControlPlaneKeys(), serviceSecret, ...(stateStore ? { stateStore } : {}), ...(auditLog ? { auditLog } : {}), ...(cpOpsGuard ? { opsGuard: cpOpsGuard } : {}) });
   await new Promise((r) => cp.server.listen(Number(process.env.KWL_CP_PORT ?? 0), "127.0.0.1", r));

@@ -131,7 +131,7 @@ test("深色覆盖完整：浅色里每个颜色类语义令牌（除纸面类�
   assert.deepEqual([...dark.keys()].filter((k) => PAPER.test(k)), []);
 });
 
-test("字号 7 级、圆角 5 级（Y4 V-1、V-3；中文不用半像素）", () => {
+test("字号 7 级、圆角 6 级（Y4 V-1、V-3；2026-11 对齐 Kimi 首页主输入框加 24px；中文不用半像素）", () => {
   const fs = [...light].filter(([k, v]) => k.startsWith("--fs-") && !v.startsWith("var(")).map(([, v]) => v);
   assert.deepEqual(fs, ["12px", "13px", "14px", "15px", "16px", "20px", "28px"]);
   // 按用途的字号令牌（v9.4 第 20 批，U1 §3.6）只能是这 7 级的别名，不加新档
@@ -139,7 +139,7 @@ test("字号 7 级、圆角 5 级（Y4 V-1、V-3；中文不用半像素）", ()
   assert.ok(purpose.length >= 8);
   for (const [k, v] of purpose) assert.match(v, /^var\(--fs-(xs|sm|base|md|lg|xl|2xl)\)$/, k);
   const r = [...light].filter(([k]) => /^--r-/.test(k)).map(([, v]) => v);
-  assert.deepEqual(r, ["4px", "8px", "12px", "16px", "999px"]);
+  assert.deepEqual(r, ["4px", "8px", "12px", "16px", "24px", "999px"]);
 });
 
 test("深色下弹层比卡片亮一级（S8B-09：同色时只剩 1px 暗边区分层次）", () => {

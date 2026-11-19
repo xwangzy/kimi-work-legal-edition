@@ -27,7 +27,27 @@ const ITEMS: Item[] = [
 ];
 
 
+/** 侧栏收起（2026-11 对齐 Kimi：头部右侧的收起按钮；收起后点品牌标识展开）记在本机偏好。 */
+const COLLAPSE_KEY = "kwl.sidebar.collapsed";
+function savedCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function Sidebar({ route }: { route: Route }) {
+  const [collapsed, setCollapsed] = useState(savedCollapsed);
+  const toggleCollapsed = () =>
+    setCollapsed((c) => {
+      try {
+        localStorage.setItem(COLLAPSE_KEY, c ? "0" : "1");
+      } catch {
+        // 记不住也不影响本次
+      }
+      return !c;
+    });
   const [matters, setMatters] = useState<Matter[]>([]);
   const [pending, setPending] = useState(0);
   const [unreadReminders, setUnreadReminders] = useState(0);
@@ -82,22 +102,33 @@ export function Sidebar({ route }: { route: Route }) {
   const { title: footTitle, note: footNote, tone: footTone } = foot;
   const card = userCardText(me, { title: footTitle, note: footNote });
   const activeMatter = route.page === "matter" || route.page === "run" ? route.matterId : null;
-  // 任务执行态收为图标栏，给三栏（材料 | 进度 | 预览）让出宽度
-  const compact = route.page === "run";
+  // 任务执行态收为图标栏，给三栏（材料 | 进度 | 预览）让出宽度；律师也可以手动收起（Kimi 同款）
+  const forced = route.page === "run";
+  const compact = forced || collapsed;
   return (
-    <aside className={`sidebar${compact ? " compact" : ""}`}>
+    <aside className={`sidebar${compact ? " compact" : ""}`} data-tour="sidebar">
       <div className="brand">
-        <span className="brand-mark" aria-hidden="true">K</span>
-        <span>
-          Kimi Work
-          <small>法律行业发行版</small>
+        {compact && !forced ? (
+          <button className="brand-mark as-toggle" onClick={toggleCollapsed} title="展开侧栏" aria-label="展开侧栏">
+            K
+          </button>
+        ) : (
+          <span className="brand-mark" aria-hidden="true">K</span>
+        )}
+        <span className="brand-name">
+          Kimi Work <small>法律版</small>
         </span>
+        {!forced && (
+          <button className="sidebar-toggle" onClick={toggleCollapsed} title="收起侧栏" aria-label="收起侧栏">
+            {Icon.sidebar()}
+          </button>
+        )}
       </div>
       <nav className="nav">
         {ITEMS.map((it) => {
           const active = route.page === it.key || (it.key === "matters" && route.page === "matter") || (it.key === "deliverables" && route.page === "review");
           return (
-            <button key={it.key} className={`nav-item${active ? " active" : ""}`} onClick={() => nav(newTaskHref(it.href, route))} title={it.label}>
+            <button key={it.key} className={`nav-item${it.key === "home" ? " nav-new" : ""}${active ? " active" : ""}`} onClick={() => nav(newTaskHref(it.href, route))} title={it.label} data-tour={`nav-${it.key}`}>
               <span className="nav-icon">{it.icon()}</span>
               <span className="nav-label">{it.label}</span>
               {it.key === "deliverables" && pending > 0 && <span className="badge">{pending}</span>}
@@ -112,7 +143,14 @@ export function Sidebar({ route }: { route: Route }) {
         <span className="nav-label">搜索</span>
         <span className="nav-kbd muted">{/Mac/i.test(navigator.platform) ? "⌘K" : "Ctrl K"}</span>
       </button>
-      <div className="sidebar-section">最近事项</div>
+      <div className="sidebar-section">
+        最近事项
+        {matters.length > 0 && (
+          <button className="btn-link" onClick={() => nav("/matters")}>
+            全部
+          </button>
+        )}
+      </div>
       <div className="sidebar-list">
         {matters.length === 0 && <div className="sidebar-empty">还没有事项</div>}
         {matters.slice(0, 8).map((m) => (
@@ -138,7 +176,7 @@ export function Sidebar({ route }: { route: Route }) {
           </button>
         ))}
       </div>
-      <button className={`sidebar-foot${route.page === "connections" ? " active" : ""}`} onClick={() => nav(foot.href)} title={card.tooltip}>
+      <button className={`sidebar-foot${route.page === "connections" ? " active" : ""}`} onClick={() => nav(foot.href)} title={card.tooltip} data-tour="settings">
         <span className="user-avatar" aria-hidden="true">
           {card.avatar}
           {/* 侧栏收窄时只剩头像：状态点挂在头像右上角（复核 R15B-23） */}

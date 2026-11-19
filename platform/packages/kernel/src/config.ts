@@ -68,6 +68,11 @@ export interface KernelConfig {
    * 内核以占位工作区启动，只开放开通相关方法；不生成本所律所根、不与控制面同步。
    */
   onboarding: boolean;
+  /**
+   * 演示示例事项（2026-11 正式产品去掉演示数据）：只有显式设 ZR_DEMO_SAMPLES=1（开发与演示脚本）才允许放入虚构的示例事项；
+   * 安装包形态的内核环境按白名单构造、不带任何 ZR_* 变量（electron/release-config.cjs），因此正式产品永远不放演示数据。
+   */
+  demoSamples: boolean;
   env: NodeJS.ProcessEnv;
 }
 
@@ -411,6 +416,7 @@ export function loadConfig(opts: KernelOptions = {}): KernelConfig {
     dataRoot: root,
     activation,
     onboarding,
+    demoSamples: env.ZR_DEMO_SAMPLES === "1",
     env,
   };
 }

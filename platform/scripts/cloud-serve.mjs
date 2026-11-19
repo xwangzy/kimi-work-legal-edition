@@ -51,7 +51,9 @@
  *            "roster_keys_file": "/etc/kwl/ops-roster-keys.json", // 名册签名公钥 { kid: PEM }（只收公钥）
  *            "allow_cidrs": ["10.20.0.0/24"],                     // 运维网段（堡垒机出口）：来源不在其中的运营请求一律 404
  *            "min_roster_version": 12,                            // 可选：新实例或数据目录重建时的名册版本下限
- *            "console_origins": ["https://ops-console.kwl.internal"] } }  // 可选（第 37 批）：网页运营控制台的来源，只给它跨源读运营接口的回复（CORS）
+ *            "console_origins": ["https://ops-console.kwl.internal"],  // 可选（第 37 批）：网页运营控制台的来源，只给它跨源读运营接口的回复（CORS）
+ *            "password_login": true,                              // 控制面可选：网页控制台账号 + 密码登录（缺省开；false 只认私钥签名）
+ *            "credentials_file": "/etc/kwl/ops-credentials.json" } }   // 控制面可选：运营登录凭据库（ops-cli password set 维护；缺省 <data_dir>/control-plane/ops/credentials.json）
  *   // 控制面可选（第 44 批）：套餐目录与注册设置的初始值（首次启动导入状态；之后运营在控制台改）。额度单位 tokens 或 cny（价目表售价 × 实际 usage）
  *   "billing": { "plans": [ { "id": "standard", "label": "标准", "quota_unit": "tokens", "seat_quota": 50000000, "period": "month", "seat_price_cny": 399,
  *                             "burst": { "hours": 5, "pct": 25 }, "device_limit": 2, "alert_thresholds": [80, 100] }, ... ],
@@ -218,6 +220,19 @@ if (cfg.ops !== undefined) {
   }
   const opsDir = join(dataDir(cfg.role), "ops");
   mkdirSync(opsDir, { recursive: true, mode: 0o700 });
+  // 账号 + 密码登录（网页运营控制台）：只给控制面；身份与权限仍按名册，凭据库由安全管理员用 ops-cli password 维护，文件改写后自动重读
+  if (c.password_login !== undefined && typeof c.password_login !== "boolean") fail("ops.password_login 须为 true / false");
+  if (c.credentials_file !== undefined && (typeof c.credentials_file !== "string" || !c.credentials_file)) fail("ops.credentials_file 须为文件路径");
+  if (cfg.role !== "control-plane" && (c.password_login === true || c.credentials_file !== undefined)) fail("密码登录只开在控制面（网页运营控制台只调控制面）：其他服务不要配 ops.password_login / ops.credentials_file");
+  let opsSessions = null;
+  if (cfg.role === "control-plane" && c.password_login !== false) {
+    const credFile = c.credentials_file ?? join(opsDir, "credentials.json");
+    const creds = opsMod.fileOpsCredentialSource(credFile);
+    const st = creds.current();
+    if (!st.ok) console.error(`[cloud-serve] 运营凭据库 ${credFile} 读不出或不合规：密码登录暂停（私钥签名照常）`);
+    else if (st.doc.credentials.length === 0) console.error(`[cloud-serve] 运营凭据库为空（${credFile}）：先用 node scripts/ops-cli.mjs password set --credentials ${credFile} --id op_0001 --login <登录名> 发初始密码`);
+    opsSessions = opsMod.createOpsPasswordSessions({ credentials: creds });
+  }
   // 名册状态（缺失、签名不符、回滚、过期、版本记录损坏）不拒绝启动：业务照常，运营接口 503（复核 RA10A-03：回滚保护不能成为停服开关）
   const roster = (opsRosterSource = opsMod.fileRosterSource({ file: c.roster_file, keys: rosterKeys, deployment: c.deployment, seenFile: join(opsDir, "roster-seen.json"), historyFile: join(opsDir, "roster-history.jsonl"), ...(c.min_roster_version !== undefined ? { minVersion: c.min_roster_version } : {}) }));
   const first = roster.current();
@@ -231,6 +246,7 @@ if (cfg.ops !== undefined) {
     nonces: opsMod.fileNonceStore(join(opsDir, "nonces.jsonl")),
     // 被拒的运营请求：签名核验通过之后的一律记，未核验的每分钟至多 60 条（超出的补记条数）；claimed 未经核验
     onReject: (r) => appendFileSync(join(opsDir, "rejects.jsonl"), `${JSON.stringify(r)}\n`, { mode: 0o600 }),
+    ...(opsSessions ? { sessions: opsSessions } : {}),
   });
 }
 /** 运营路径（原样与规范化后任一命中即算）只放行运维网段来的请求。 */
@@ -729,7 +745,8 @@ const handle = obs.wrap((req, res) => {
     res.end('{"error":"not_found"}');
     return;
   }
-  // 运营控制台跨源（第 37 批）：来源在 console_origins 里才回允许头；预检由入口应答（运营守卫照常核验之后的真实请求）
+  // 运营控制台跨源（第 37 批）：来源在 console_origins 里才回允许头；预检由入口应答（运营守卫照常核验之后的真实请求）。
+  // 账号密码登录的会话令牌走 Authorization 头（不用 Cookie，不存在跨站请求伪造的会话）
   if (opsConsoleOrigins && opsMod.OPS_PATH_RE.test(String(req.url ?? "/").split("?")[0])) {
     const origin = typeof req.headers.origin === "string" ? req.headers.origin : "";
     if (opsConsoleOrigins.has(origin)) {
@@ -738,7 +755,7 @@ const handle = obs.wrap((req, res) => {
       if (req.method === "OPTIONS") {
         res.writeHead(204, {
           "access-control-allow-methods": "GET, POST, PUT, DELETE",
-          "access-control-allow-headers": "content-type, x-kwl-op, x-kwl-op-key, x-kwl-op-ts, x-kwl-op-nonce, x-kwl-op-sig",
+          "access-control-allow-headers": "content-type, authorization, x-kwl-op, x-kwl-op-key, x-kwl-op-ts, x-kwl-op-nonce, x-kwl-op-sig",
           "access-control-max-age": "600",
           "cache-control": "no-store",
         });
