@@ -25,6 +25,15 @@ if [ -d /var/www/kwl-console ]; then
   rm -rf /var/www/kwl-console.old; mv /var/www/kwl-console /var/www/kwl-console.old; mv /var/www/kwl-console.new /var/www/kwl-console
   chmod -R a+rX /var/www/kwl-console
 fi
+# systemd 单元与 nginx 配置随版本更新（域名与控制面来源取自现有配置）
+install -m 0644 deploy/systemd/kwl@.service /etc/systemd/system/kwl@.service && systemctl daemon-reload
+if [ -f /etc/nginx/sites-available/kwl-console.conf ] && command -v nginx >/dev/null; then
+  DOMAIN=$(awk '/server_name/ {gsub(";",""); print $2; exit}' /etc/nginx/sites-available/kwl-console.conf)
+  sed "s#https://cp.kwl.example.com:8443#$CP_ORIGIN#g" deploy/nginx/kwl-console-headers.conf > /etc/nginx/snippets/kwl-console-headers.conf
+  sed "s#console.kwl.example.com#$DOMAIN#g" deploy/nginx/kwl-console.conf > /etc/nginx/sites-available/kwl-console.conf
+  nginx -t || { echo "nginx 配置检查没过；回滚：sudo bash $APP/deploy/scripts/rollback.sh"; exit 1; }
+  systemctl reload nginx
+fi
 for role in cp-signer control-plane gateway search dist support notify relay; do
   systemctl is-enabled --quiet "kwl@$role" 2>/dev/null || continue
   echo "重启 kwl@$role"
