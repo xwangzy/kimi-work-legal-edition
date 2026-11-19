@@ -2,6 +2,12 @@
 # 回滚代码到上一版本（upgrade.sh 记的那个，或显式给提交）；--restore <备份文件> 同时恢复数据（会停全部服务、覆盖 /var/lib/kwl）。
 #   sudo bash deploy/scripts/rollback.sh [<提交>] [--restore /var/backups/kwl/kwl-YYYYmmdd-HHMMSS.tar.gz]
 set -euo pipefail
+# 脚本中途会 git checkout 换掉本文件，而 bash 是边读边执行的：先把自己拷到临时文件再从那里执行
+if [ -z "${KWL_SCRIPT_COPY:-}" ]; then
+  tmp=$(mktemp /tmp/kwl-$(basename "$0").XXXXXX)
+  cp "$0" "$tmp"
+  KWL_SCRIPT_COPY=1 exec bash "$tmp" "$@"
+fi
 APP=/opt/kwl/app
 TARGET=""
 RESTORE=""

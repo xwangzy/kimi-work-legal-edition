@@ -2,6 +2,12 @@
 # 升级到某个发布标签：先备份 → 切代码 → npm ci → 换控制台 → 按顺序重启并逐个健康检查。任何一步失败即停，并打印回滚命令。
 #   sudo bash deploy/scripts/upgrade.sh <标签或提交> [--cp-origin https://cp.kwl.example.com:8443]
 set -euo pipefail
+# 脚本中途会 git checkout 换掉本文件，而 bash 是边读边执行的：先把自己拷到临时文件再从那里执行
+if [ -z "${KWL_SCRIPT_COPY:-}" ]; then
+  tmp=$(mktemp /tmp/kwl-$(basename "$0").XXXXXX)
+  cp "$0" "$tmp"
+  KWL_SCRIPT_COPY=1 exec bash "$tmp" "$@"
+fi
 APP=/opt/kwl/app
 TARGET=${1:?用法：upgrade.sh <标签或提交> [--cp-origin <控制面来源>]}
 shift
