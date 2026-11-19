@@ -138,6 +138,12 @@ test("任务失败文案：429、5xx、兜底不再拼原始错误；网关 401 
   assert.match(agentFailureText(null, "503 这台电脑暂时没有取得 AI 使用授权（还没登录，或联网续期还没完成）：AI 请求没有发出"), /暂时没有取得 AI 使用授权.*重新运行/);
   assert.doesNotMatch(agentFailureText(null, "503 这台电脑暂时没有取得 AI 使用授权：AI 请求没有发出"), /连不上/);
   assert.match(agentFailureText(null, "401 席位令牌无效或已吊销 [kwl:seat_device_revoked]"), /授权已被收回/);
+  // 第 46 批真实验收：网关二次检查按事项摘要拒绝（刚确认依据就发起时摘要还没同步）——说清是事项依据的事，不说“连不上”
+  const basis = agentFailureText(null, "403 事项四项依据未齐备：不经网关推理 [kwl:basis_incomplete]");
+  assert.match(basis, /^这个事项的四项数据依据.*还没确认，或刚确认还没同步到中软/);
+  assert.doesNotMatch(basis, /连不上|403|kwl:/);
+  assert.match(agentFailureText(null, "403 该事项未选用标准端点（不经中软网关） [kwl:endpoint_not_permitted]"), /没有选用中软标准模型端点/);
+  assert.match(agentFailureText(null, "403 律所未放开敏感事项（L3a）经标准端点推理 [kwl:l3a_not_permitted]"), /数据级别不允许经中软标准端点推理/);
   // 402：闸门附上的代码优先；网关当前原文（不含旧正则里的关键词）也认得
   assert.match(agentFailureText(null, "402 本所 5 小时内的用量已达上限，请稍后再试 [kwl:quota_burst]"), /5 小时频率窗口已满/);
   assert.match(agentFailureText(null, "402 本所 5 小时内的用量已达上限，请稍后再试"), /5 小时频率窗口已满/);

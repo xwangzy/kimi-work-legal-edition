@@ -310,7 +310,10 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
     let summaryMissing = false;
     if (o.feed && !qa) {
       let sum = o.feed.matter(seat.tid, anon!);
-      if (!sum || LEVEL_RANK[level]! < LEVEL_RANK[sum.level]!) {
+      // 摘要可能是旧的：律师刚确认四项依据或改了端点就立即发起（客户端发起前已把新摘要推给控制面），本地订阅最多晚 15 秒——
+      // 凡按摘要要拒绝的情形，先即时刷新一次再判（订阅刷新自带单飞与 1 秒最小间隔，不会被请求放大；第 46 批真实验收发现）
+      const wouldReject = (x: typeof sum) => !x || LEVEL_RANK[level]! < LEVEL_RANK[x.level]! || x.endpoint !== "standard" || (!x.basis_complete && level !== "L0" && level !== "L1");
+      if (wouldReject(sum)) {
         await o.feed.refresh();
         sum = o.feed.matter(seat.tid, anon!);
       }

@@ -2221,6 +2221,10 @@ export function agentFailureText(reason: string | null, error: string | null): s
   if (has("seat_token_missing") || has("seat_unavailable") || (code ?? "").startsWith("seat_") || /\bseat_[a-z_]+\b|AI 使用授权/.test(err)) {
     return "这台电脑暂时没有取得 AI 使用授权（还没登录，或联网续期还没完成），任务没有完成：请确认已登录并联网，稍等一两分钟后点“重新运行”；已完成且可验证的部分保留";
   }
+  // 第 46 批真实验收：网关的二次检查拒绝（按事项匿名摘要）——是事项设置的问题，不是“连不上”
+  if (has("basis_incomplete", /四项依据未齐备/)) return "这个事项的四项数据依据（委托与保密授权、个人信息处理依据、转委托与次处理者）还没确认，或刚确认还没同步到中软：请在事项“概览”里确认依据，稍等十几秒后点“重新运行”；已完成且可验证的部分保留";
+  if (has("endpoint_not_permitted")) return "这个事项没有选用中软标准模型端点，AI 推理不经中软：请在事项设置里检查“模型端点”后点“重新运行”";
+  if (has("data_level_not_allowed") || has("data_level_mismatch") || has("l3a_not_permitted")) return "这个事项的数据级别不允许经中软标准端点推理（或律所未放开敏感事项）：请按事项的数据级别改用律所私有端点，或请律所管理员调整律所策略";
   if (has("client_outdated", /客户端版本过旧/)) return "客户端版本过旧，任务没有完成：请升级到最新版本后点“重新运行”；已完成且可验证的部分保留";
   // 限流（第 29 批 429 演练）：服务是通的，只是请求太多——说“繁忙”，不说“连不上”
   if (/\b429\b|rate.?limit|queue_timeout|排队超时/i.test(err)) return "AI 服务繁忙（请求太多被限流），任务没有完成；已完成且可验证的部分保留，可以过几分钟点“重新运行”";

@@ -19,6 +19,8 @@ describe("网关二次检查（控制面订阅）", () => {
   const matters = new Map<string, AnonMatterSummary>();
   let l3a = false;
   let refreshes = 0;
+  /** 刷新时要应用的新摘要（模拟控制面已收到客户端推送、本地订阅还没到下一轮） */
+  let onRefresh: (() => void) | null = null;
   const feed: GatewayFeedView = {
     ready: () => true,
     revokedDevice: (tid, d) => tid === "t1" && d === "lost-laptop",
@@ -27,6 +29,8 @@ describe("网关二次检查（控制面订阅）", () => {
     l3aStandardAllowed: () => l3a,
     refresh: async () => {
       refreshes += 1;
+      onRefresh?.();
+      onRefresh = null;
     },
   };
   const sum = (anon: string, o: Partial<AnonMatterSummary> = {}): AnonMatterSummary => ({ anon, level: "L2", endpoint: "standard", basis_complete: true, version: 1, updated_at: new Date().toISOString(), ...o });
@@ -73,6 +77,25 @@ describe("网关二次检查（控制面订阅）", () => {
     assert.equal(records.filter((r) => r.kind === "reserve").at(-1)?.reason, null);
     // 自报更严（摘要尚未更新到新的更严级别）：按更严的判
     assert.deepEqual(await chat("m-ok", "L3a"), { status: 403, code: "l3a_not_permitted" });
+  });
+
+  test("第 46 批：本地摘要是旧的（律师刚确认四项依据就发起）——拒绝前即时刷新一次订阅，拿到新摘要即放行；刷新后仍未齐备才拒绝", async () => {
+    matters.set("m-fresh", sum("m-fresh", { basis_complete: false }));
+    onRefresh = () => matters.set("m-fresh", sum("m-fresh", { basis_complete: true, version: 2 }));
+    const before = refreshes;
+    assert.equal((await chat("m-fresh", "L2")).status, 200, "刷新拿到新摘要后放行");
+    assert.equal(refreshes, before + 1);
+    // 端点刚改回标准端点：同样即时刷新
+    matters.set("m-ep", sum("m-ep", { endpoint: "private" }));
+    onRefresh = () => matters.set("m-ep", sum("m-ep", { version: 2 }));
+    assert.equal((await chat("m-ep", "L2")).status, 200);
+    // 刷新后仍未齐备：照常拒绝
+    matters.set("m-still", sum("m-still", { basis_complete: false }));
+    assert.deepEqual(await chat("m-still", "L2"), { status: 403, code: "basis_incomplete" });
+    // 摘要齐备的正常请求不触发刷新
+    const n = refreshes;
+    assert.equal((await chat("m-ok", "L2")).status, 200);
+    assert.equal(refreshes, n);
   });
 
   test("摘要尚未到达：按请求头自报检查并记“缺摘要”；未知事项先按需刷新一次；律所未放开时自报 L3a 照常拒绝（复核 S6-A07）", async () => {
