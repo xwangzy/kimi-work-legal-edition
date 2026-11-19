@@ -145,7 +145,7 @@ test("守卫：密码登录 → 会话令牌；每个请求按名册核权限（
   const ro = guard.login!({ login: "auditor", password: PW2, source: "10.0.0.1" });
   assert.equal(err(() => guard.authorize(bearer(ro.token), R, "tenant.manage")).code, "ops_permission_denied");
   // 篡改令牌、乱写令牌
-  assert.equal(err(() => guard.authorize(bearer(`${r.token.slice(0, -1)}A`), R, "tenant.read")).code, "ops_session_invalid");
+  assert.equal(err(() => guard.authorize(bearer(`${r.token.slice(0, -1)}${r.token.endsWith("A") ? "B" : "A"}`), R, "tenant.read")).code, "ops_session_invalid");
   assert.equal(err(() => guard.authorize({ authorization: "Bearer kwlops_xxx" }, R, "tenant.read")).code, "ops_session_invalid");
   // 私钥签名路径不受影响
   const signed = guard.authorize(k.sign("op_0002", "control-plane", R, now()), R, "tenant.read");
