@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-22",
+  "timezone": "Asia/Shanghai",
+  "scope": {
+    "homepage_presets": 36,
+    "workbench_presets": 59,
+    "market_records": 313,
+    "market_official_labels": 105,
+    "market_foundation_labels": 5,
+    "market_community_labels": 203,
+    "fixed_open_source_skills": 70,
+    "supplemental_official_visible_functions": 40,
+    "fixed_expert_workflows": 34,
+    "new_expert_acceptance_items": 68
+  },
+  "file": "00-完整手册.md",
+  "bytes": 606742,
+  "characters": 266832,
+  "sha256": "abf40981dac89cc06fe60dc65182fff97b4fe3abe5f1117f8a0ada01ae36bfb6",
+  "balanced_fences": true,
+  "broken_local_links": [],
+  "sources": [
+    "research/2026-10-22-智合AI复核/01-当日实测与设计裁决.md",
+    "research/2026-10-22-提示词独立复核.md",
+    "research/2026-10-22-补充40官方功能优化.md",
+    "research/2026-10-22-技能目录复核.md",
+    "research/2026-10-22-社区生态业务归并.md",
+    "research/legal_workflows.md",
+    "research/skills_mcp.md"
+  ],
+  "limitations": [
+    "社区内部指令未取得",
+    "补充40官方只有可见功能描述",
+    "未运行全部业务场景",
+    "未执行上游脚本",
+    "未测试真实MCP/API"
+  ]
+}

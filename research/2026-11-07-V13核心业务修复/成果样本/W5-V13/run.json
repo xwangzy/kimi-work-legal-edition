@@ -1,0 +1,96 @@
+{
+ "run": {
+  "run_id": "run_fce10605-6d72-4fe2-b61c-6ee7a9f3e066",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_fac4f53e-e72f-4da1-9af1-c5cae0acdb81",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "partial",
+  "status_version": 5,
+  "idempotency_key": "mat_fac4f53e-e72f-4da1-9af1-c5cae0acdb81-a1.agent_task-1794029507524",
+  "input_snapshot": {
+   "matter_id": "mat_fac4f53e-e72f-4da1-9af1-c5cae0acdb81",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_4af38355-d1ec-4ceb-a618-58cd52fbf30e",
+    "docv_8e7778ff-5e7b-4477-9878-fdf6df492c6b",
+    "docv_104b6b3f-df02-4689-98ac-cb781fb1fe3d",
+    "docv_23cf131b-f3aa-43be-8a6e-273459587067",
+    "docv_843f2c89-2523-40dc-a8ad-f8256f74fc3c",
+    "docv_89266a0c-0403-4339-be69-3d008468d649",
+    "docv_a93e64b2-13fe-4f75-852b-6d752a64bed3",
+    "docv_18c66274-df63-4acc-b19e-074f54c23ecc"
+   ],
+   "goal": "请逐份精读本事项的案卷材料，编目、按时间整理事实（每条附原文）并列出缺口。\n我们是佛山市顺德区恒彩包装印务有限公司的代理律师。恒彩准备起诉中山市悦厨电器有限公司，追讨彩盒加工款和逾期付款违约金，我方是原告（承揽人）。客户给了8份材料：加工合同、补充协议、送货明细与对账收款汇总表、对账确认函、催款函及EMS妥投记录、业务经理林振华与对方采购的微信记录、对方回函、林振华写的内部情况说明。请整理案卷，交付三样东西：一、事实时间线，每一条注明出自哪份材料；二、争议焦点，列明双方各自的主张、依据和现有证据；三、证据目录，写明证据名称、来源、证明目的、原件情况，页码先空着。Excel或Word都可以。材料之间对不上的地方，以及只有客户口头说法、没有书面证据的关键事实，请单独列出来，并给出补证建议。",
+   "estimate_id": "est_622acc6d-4b84-49ed-ad84-242d5eb56572",
+   "title": "整理案卷（精读版）",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "casefile-organize",
+   "skill_title": "案卷整理（目录与时间线）",
+   "skill_version": "1.0.1",
+   "skill_primary_output": "案卷总目录.xlsx",
+   "skills_sha256": "sUSOoUiH8MRK2usGoBAWN7Qdst_qplAZMMaWwcW8p8M"
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_622acc6d-4b84-49ed-ad84-242d5eb56572",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-07T05:31:47.527Z",
+  "updated_at": "2026-11-07T06:59:17.881Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_98135fa4-750f-4b79-b795-7bf957ec99a2",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案卷总目录-恒彩诉悦厨加工款.xlsx",
+   "sha256": "5c13b16661045b9aec2b616e288da43d817f6b44138d1c2e9419558834d3985b",
+   "created_at": "2026-11-07T06:58:54.442Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b89a8787-192d-4d24-9756-e9030da2859c",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争议焦点与证据目录-恒彩诉悦厨加工款.xlsx",
+   "sha256": "faa1f324943bfc6d00e8e86f9fee42427bf4b37d7a6012da4fb020a369c8f8af",
+   "created_at": "2026-11-07T06:58:54.460Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_f9c58b8e-f837-4f5e-9041-b4e18a546e9f",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "缺口清单-恒彩诉悦厨加工款.xlsx",
+   "sha256": "ea5fe0ab0bc34d9acea9b5afd90a22d589c020ecdeaab2b178f5ffe4f4107064",
+   "created_at": "2026-11-07T06:58:54.468Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

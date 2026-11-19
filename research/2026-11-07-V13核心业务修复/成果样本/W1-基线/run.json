@@ -1,0 +1,122 @@
+{
+ "run": {
+  "run_id": "run_32f05d71-f9eb-4c27-8de0-469aeb03b8ef",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_5d3d073d-01c6-4526-969a-9cff1021440e",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_5d3d073d-01c6-4526-969a-9cff1021440e-a1.agent_task-1794023329880",
+  "input_snapshot": {
+   "matter_id": "mat_5d3d073d-01c6-4526-969a-9cff1021440e",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_7ddeba89-0bff-43ce-b610-01c53aafc1e9",
+    "docv_246a5e0d-7373-4c63-b840-0838a572ac3a",
+    "docv_32cf3650-7ac8-48c8-8bdc-08b092e4bf5b",
+    "docv_d135564b-eac9-4e34-b0f9-f411681a4ec3"
+   ],
+   "goal": "请起草一份其他（通用辅助）合同，我方立场以事项为准；交易要点：我们是苏州澄锐智能装备有限公司的律师。澄锐（我方，买方）准备收购无锡衡川精密机械有限公司（卖方）的伺服压装生产线业务资产，包括生产设备、专利和软件著作权、存货、客户合同和客户资料；衡川的控股股东衡川控股集团有限公司作为保证人一起签约。附件四份：双方10月28日草签的商务条款清单、客户董事长周启明11月5日的指示邮件、卖方和保证人的工商及抵押登记信息、我方的资产与技术尽调摘要。请站在澄锐的立场，起草一份甲（买方）、乙（卖方）、丙（保证人）三方的《资产收购协议》正式稿，交付Word文件，要能直接发给对方。材料之间数字或日期对不上的、周总的指示和条款清单不一致的、需要客户拍板的事项，另外单独列一份清单给我，写明你在协议里按什么口径写的、为什么。",
+   "estimate_id": "est_a764ced4-28f7-449a-aa86-737fb2953541",
+   "title": "起草合同",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-draft",
+   "skill_title": "起草合同 · 试用",
+   "skill_version": "1.7.3",
+   "skill_primary_output": "合同草稿.docx",
+   "skills_sha256": "sUSOoUiH8MRK2usGoBAWN7Qdst_qplAZMMaWwcW8p8M",
+   "skill_args": {
+    "type": "其他（通用辅助）",
+    "points": "我们是苏州澄锐智能装备有限公司的律师。澄锐（我方，买方）准备收购无锡衡川精密机械有限公司（卖方）的伺服压装生产线业务资产，包括生产设备、专利和软件著作权、存货、客户合同和客户资料；衡川的控股股东衡川控股集团有限公司作为保证人一起签约。附件四份：双方10月28日草签的商务条款清单、客户董事长周启明11月5日的指示邮件、卖方和保证人的工商及抵押登记信息、我方的资产与技术尽调摘要。请站在澄锐的立场，起草一份甲（买方）、乙（卖方）、丙（保证人）三方的《资产收购协议》正式稿，交付Word文件，要能直接发给对方。材料之间数字或日期对不上的、周总的指示和条款清单不一致的、需要客户拍板的事项，另外单独列一份清"
+   }
+  },
+  "budget_points": 40,
+  "points_reserved": 40,
+  "points_charged": 40,
+  "estimate_id": "est_a764ced4-28f7-449a-aa86-737fb2953541",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-07T03:48:49.884Z",
+  "updated_at": "2026-11-07T04:23:21.694Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_315a794f-9cd9-4176-b492-a8457461fcf0",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "资产收购协议.docx",
+   "sha256": "adf10bbe6516845e53e8d81d34d35d18c9da9c39c94306f870211b5153e6be44",
+   "created_at": "2026-11-07T04:13:09.102Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_eb794888-118a-4ef7-b96c-c9f6a2b1ebc6",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-资产收购协议.docx",
+   "sha256": "fd2b2b4fd5d4adb2a572a766c0f7b4d0e57d6db29b4524647ab4d47131df39b3",
+   "created_at": "2026-11-07T04:18:39.814Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_f538ff3e-4320-4806-8bb0-8277eaf856cb",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "资产收购协议.docx",
+   "sha256": "ee1b60f12ccbf83001d5264066f6b6b56d803e453bba70a8b7d12a0da1928ca3",
+   "created_at": "2026-11-07T04:20:29.508Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2e2f3d8d-5291-4a42-834a-ad8efa961933",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-资产收购协议.docx",
+   "sha256": "1ff3f7e3dc94a02ba5de69ef9959d55e763deaf51aae88c796d039e6396da5fd",
+   "created_at": "2026-11-07T04:20:29.531Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_fa709126-661c-4da3-ba6f-3ecd993baee7",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-07.md",
+   "sha256": "bb4e13d73713020be41eea0b53f0aa62ab53fd31e8fb9a89bcbdc2a6ade922a7",
+   "created_at": "2026-11-07T04:23:21.694Z",
+   "title": "已完成。四份材料均已完整读取，无未读、识别不全或排除材料；已生成两份 Word ",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

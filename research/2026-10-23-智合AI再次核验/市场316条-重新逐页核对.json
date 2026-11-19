@@ -1,0 +1,4001 @@
+{
+  "date": "2026-10-23",
+  "method": "computer use读取14页全部可见卡片，不安装不执行；描述只保留长度与SHA256",
+  "pages": [
+    {
+      "page": 1,
+      "rows": 24,
+      "paging": "上一页\n第 1 / 14 页\n下一页\n共 316 条"
+    },
+    {
+      "page": 2,
+      "rows": 24,
+      "paging": "上一页\n第 2 / 14 页\n下一页\n共 316 条"
+    },
+    {
+      "page": 3,
+      "rows": 24,
+      "paging": "上一页\n第 3 / 14 页\n下一页\n共 316 条"
+    },
+    {
+      "page": 4,
+      "rows": 24,
+      "paging": "上一页\n第 4 / 14 页\n下一页\n共 316 条"
+    },
+    {
+      "page": 5,
+      "rows": 24,
+      "paging": "上一页\n第 5 / 14 页\n下一页\n共 316 条"
+    },
+    {
+      "page": 6,
+      "rows": 24,
+      "paging": "上一页\n第 6 / 14 页\n下一页\n共 316 条"
+    },
+    {
+      "page": 7,
+      "rows": 24,
+      "paging": "上一页\n第 7 / 14 页\n下一页\n共 316 条"
+    },
+    {
+      "page": 8,
+      "rows": 24,
+      "paging": "上一页\n第 8 / 14 页\n下一页\n共 316 条"
+    },
+    {
+      "page": 9,
+      "rows": 24,
+      "paging": "上一页\n第 9 / 14 页\n下一页\n共 316 条"
+    },
+    {
+      "page": 10,
+      "rows": 24,
+      "paging": "上一页\n第 10 / 14 页\n下一页\n共 316 条"
+    },
+    {
+      "page": 11,
+      "rows": 24,
+      "paging": "上一页\n第 11 / 14 页\n下一页\n共 316 条"
+    },
+    {
+      "page": 12,
+      "rows": 24,
+      "paging": "上一页\n第 12 / 14 页\n下一页\n共 316 条"
+    },
+    {
+      "page": 13,
+      "rows": 24,
+      "paging": "上一页\n第 13 / 14 页\n下一页\n共 316 条"
+    },
+    {
+      "page": 14,
+      "rows": 4,
+      "paging": "上一页\n第 14 / 14 页\n下一页\n共 316 条"
+    }
+  ],
+  "items": [
+    {
+      "page": 1,
+      "position": 1,
+      "title": "企业服务季全程协作",
+      "category": "💼\n律所经营与个人执业",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "author": "",
+      "descriptionCharacters": 185,
+      "descriptionSha256": "f2d1d8c36877dc7d194101621e410dda0efacc692fabd6df767997bdddaf75ee"
+    },
+    {
+      "page": 1,
+      "position": 2,
+      "title": "来华业务统筹",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "author": "",
+      "descriptionCharacters": 219,
+      "descriptionSha256": "0f3676335640a98bb43f5e234192753436a427f0391cf1b5873ed66b9665aad5"
+    },
+    {
+      "page": 1,
+      "position": 3,
+      "title": "外资准入研判",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "author": "",
+      "descriptionCharacters": 235,
+      "descriptionSha256": "8b0ebb3875e0cbdfa9ada0016fd50d08980edac7d9ee9502923965ba33eee8ba"
+    },
+    {
+      "page": 1,
+      "position": 4,
+      "title": "来华设立规划",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "author": "",
+      "descriptionCharacters": 241,
+      "descriptionSha256": "16ed9f1c23e299272c004dcaa62daa6f1306d56388b5657f3f1976514af553c2"
+    },
+    {
+      "page": 1,
+      "position": 5,
+      "title": "来华合同审查",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "author": "",
+      "descriptionCharacters": 263,
+      "descriptionSha256": "197095b690e4c50c98275bea13412d57bb97e1314ce354afe4bb3312d597a460"
+    },
+    {
+      "page": 1,
+      "position": 6,
+      "title": "中国知产布局",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "author": "",
+      "descriptionCharacters": 237,
+      "descriptionSha256": "49c59f34756b9c9ebb639203374278f2a1e262e20313e3c822a295d127e4c052"
+    },
+    {
+      "page": 1,
+      "position": 7,
+      "title": "来华用工规划",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "author": "",
+      "descriptionCharacters": 237,
+      "descriptionSha256": "6bdfc6d275206f713363106053a6bae29f1a59f05819de752ae5b6e80ff15357"
+    },
+    {
+      "page": 1,
+      "position": 8,
+      "title": "来华税关汇筹划",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "author": "",
+      "descriptionCharacters": 251,
+      "descriptionSha256": "7970e1915c673eb6c8e1d2e952adc5668bfffd5e79774bca7efa6d2863eb42da"
+    },
+    {
+      "page": 1,
+      "position": 9,
+      "title": "来华数据合规",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "author": "",
+      "descriptionCharacters": 274,
+      "descriptionSha256": "a993c9b1ce3957ceb019141eb7185be93d77ee2a8bdca918249a71e4f990e97b"
+    },
+    {
+      "page": 1,
+      "position": 10,
+      "title": "进博法律宣讲",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "官方",
+        "已开源 ↗",
+        "新品"
+      ],
+      "author": "",
+      "descriptionCharacters": 181,
+      "descriptionSha256": "fae8a3d85dbbbdfb91534797a91c80dd33600e89b7aaba954288d91b4ecc3440"
+    },
+    {
+      "page": 1,
+      "position": 11,
+      "title": "接案研判",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 194,
+      "descriptionSha256": "1532d781afa27c5184ce40d74829d1fa98e674c8618a2ea50c3c2bf3389c0a46"
+    },
+    {
+      "page": 1,
+      "position": 12,
+      "title": "对手背景调查",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 173,
+      "descriptionSha256": "e0967254e683dc6401598410178a0e1a3ebb9083a7f546861c6628596639d1f1"
+    },
+    {
+      "page": 1,
+      "position": 13,
+      "title": "结案交付与回访",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 143,
+      "descriptionSha256": "dd6b498339ab4c66400d4f5137ccb99ea62957a1678b359407aae02a60dd040e"
+    },
+    {
+      "page": 1,
+      "position": 14,
+      "title": "刑事辩护阶段与要点",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 160,
+      "descriptionSha256": "cb79cd8cd668498f6de0713947ebc3287bf44c57711bc97602a1f28288dbdef0"
+    },
+    {
+      "page": 1,
+      "position": 15,
+      "title": "股东权利救济路径",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 171,
+      "descriptionSha256": "90425e65f02a3135ea83b6af2e90f9fc5e004fd4f17ae90b04259eb693de11db"
+    },
+    {
+      "page": 1,
+      "position": 16,
+      "title": "结构图生成",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 154,
+      "descriptionSha256": "b61e98a8a329244e020b882a857628e83bc3a39e9ddd687ea070733f7b130e80"
+    },
+    {
+      "page": 1,
+      "position": 17,
+      "title": "文件脱敏",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 147,
+      "descriptionSha256": "4f115f1ec93814a5334fd8f4fdfbd68e44e297fe454009e75f7a96623709dcc6"
+    },
+    {
+      "page": 1,
+      "position": 18,
+      "title": "卷宗解析与编目",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 143,
+      "descriptionSha256": "3043e014919f8163750444700af5130dda9db98e97035e19bb081415f5163412"
+    },
+    {
+      "page": 1,
+      "position": 19,
+      "title": "法律意见通俗化",
+      "category": "文档处理",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 152,
+      "descriptionSha256": "867d63c8dfcc5ebb167e711a993783ea518db9db38df078c28725c73d3ad96f1"
+    },
+    {
+      "page": 1,
+      "position": 20,
+      "title": "法律文书排版",
+      "category": "文档处理",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 175,
+      "descriptionSha256": "67e6a3bc04434babb153250bb956fe4b8a26db7c4e0e04b89a9c30f1c91c3537"
+    },
+    {
+      "page": 1,
+      "position": 21,
+      "title": "法律翻译与术语一致",
+      "category": "翻译与润色",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 152,
+      "descriptionSha256": "5bceea13726fdce347d5821dcf14701339b99c4bf9447e1f899d22e2bd0c7418"
+    },
+    {
+      "page": 1,
+      "position": 22,
+      "title": "工作方案与报价",
+      "category": "报价与收费",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 146,
+      "descriptionSha256": "4bdb288084a31c049d1dc74eace2e5c23837d70c7bfead84d5dba5b3c7946684"
+    },
+    {
+      "page": 1,
+      "position": 23,
+      "title": "发票提取器",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "冯常明",
+      "descriptionCharacters": 209,
+      "descriptionSha256": "77cc952e8bba310de7626455157673ccae4f2468614316ee6f4274bf9b9b0d7d"
+    },
+    {
+      "page": 1,
+      "position": 24,
+      "title": "金额数字计算器（含利息、违约金、迟延利息、工伤赔偿、天数日期）",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "陈晚柒律师",
+      "descriptionCharacters": 805,
+      "descriptionSha256": "5fa535881ae011d171161e6b91cb227bcaf3d733ad7eabcd67005bdc73e490d4"
+    },
+    {
+      "page": 2,
+      "position": 1,
+      "title": "论证依据审查",
+      "category": "观点与学理研究",
+      "labels": [
+        "基础技能",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 362,
+      "descriptionSha256": "b0d3156d136cecaeef9447eead542b4078c890b1322076717a499e3722db5d42"
+    },
+    {
+      "page": 2,
+      "position": 2,
+      "title": "案例援引审查",
+      "category": "案例与类案检索",
+      "labels": [
+        "基础技能",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 312,
+      "descriptionSha256": "fe48ecf5930b96337e1bba1f9abde45a719db610b22cf76710d2cc60ca915106"
+    },
+    {
+      "page": 2,
+      "position": 3,
+      "title": "法条引用核验",
+      "category": "法规检索",
+      "labels": [
+        "基础技能",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 346,
+      "descriptionSha256": "fc9effdc9211ff07da013f1a74dc3d437d62de99c7ddad594bf3153884d7a703"
+    },
+    {
+      "page": 2,
+      "position": 4,
+      "title": "刑事案件咨询",
+      "category": "刑事辩护",
+      "labels": [
+        "社区"
+      ],
+      "author": "张明 上海中联（遵义）律师事务所",
+      "descriptionCharacters": 311,
+      "descriptionSha256": "c366689aef6ad521cf4b6ab583a3d08f98e8744d68b5a250822a222274f0e73e"
+    },
+    {
+      "page": 2,
+      "position": 5,
+      "title": "ProcessOn官方AI思维脑图生成",
+      "category": "知识管理",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 421,
+      "descriptionSha256": "f5f4ae792b86d6bb7e209717114bc28c89b677d73d4fcebdf57e2463e6a562d7"
+    },
+    {
+      "page": 2,
+      "position": 6,
+      "title": "常年法律顾问服务方案生成",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 108,
+      "descriptionSha256": "d3f20f988c41f8b5d7a1235b790b8036705afe4d166ce0a1bd72651171906420"
+    },
+    {
+      "page": 2,
+      "position": 7,
+      "title": "Excel 表格处理",
+      "category": "文档处理",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 310,
+      "descriptionSha256": "72011171536756a1734dae7f9ae5007fa4ce2dc92657b57672626ac6c4d7a737"
+    },
+    {
+      "page": 2,
+      "position": 8,
+      "title": "去AI味儿Skill",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 509,
+      "descriptionSha256": "02dcce8d2e83dcf1f8612184dd93f3d3693876b54fc8a8db2f73649700d15ac0"
+    },
+    {
+      "page": 2,
+      "position": 9,
+      "title": "中国大学学术论文排版",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 434,
+      "descriptionSha256": "8653b69c52516644c59782d1146bdd4fcef87ef2dd57468e8f73b66446056bb6"
+    },
+    {
+      "page": 2,
+      "position": 10,
+      "title": "中国党政机关公文排版",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 297,
+      "descriptionSha256": "c234dcedc16df36b38e1bcbe1157657aecbe3edebcd9050df68d46502d348ae1"
+    },
+    {
+      "page": 2,
+      "position": 11,
+      "title": "语音转文字",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 73,
+      "descriptionSha256": "e70db2367e7869ab72100a5ebacf22ba8d5242776f5fab0223041ca5a48bf01a"
+    },
+    {
+      "page": 2,
+      "position": 12,
+      "title": "律师费方案设计",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 73,
+      "descriptionSha256": "ac018ca693200325afc8ebf778984281042c2dc51553bab379c7181a89914be8"
+    },
+    {
+      "page": 2,
+      "position": 13,
+      "title": "ECharts 智能图表",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 106,
+      "descriptionSha256": "6f792666c9394a8cfb56d6630b128dfcf4513578b2467ff9b02ff37811d11102"
+    },
+    {
+      "page": 2,
+      "position": 14,
+      "title": "Mermaid 架构与流程图",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 120,
+      "descriptionSha256": "f2b0fb2af6dc6c42ecf9e9b42ced188d0e163271853d0e9ff70fd7138821d4aa"
+    },
+    {
+      "page": 2,
+      "position": 15,
+      "title": "PDF 文档处理",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 163,
+      "descriptionSha256": "2953452e31e31808fb4363bc86f6413bb0790c16486f87d5e92d9d9f81a5d29c"
+    },
+    {
+      "page": 2,
+      "position": 16,
+      "title": "技能创建与优化",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 106,
+      "descriptionSha256": "1464a53d87cb58016ec465e93768777935cb5cee1e9df78487d83561d409ef2f"
+    },
+    {
+      "page": 2,
+      "position": 17,
+      "title": "word脱敏",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 212,
+      "descriptionSha256": "91709d2a955931c4ea0293b792c50e54ac96c6958dba2a5b11e3da445bad5877"
+    },
+    {
+      "page": 2,
+      "position": 18,
+      "title": "PPT优化+演讲稿生成",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 48,
+      "descriptionSha256": "d7af074fa7232019520a8a056f61b8bd56cc64dead9bacc46969a5fcdc48d3eb"
+    },
+    {
+      "page": 2,
+      "position": 19,
+      "title": "Excel表格统计与计算分析",
+      "category": "数据与图表",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 460,
+      "descriptionSha256": "2891b6ac832e5a9c820e396ba7fb004bc8f50fa3733680ba40dde9649a666eee"
+    },
+    {
+      "page": 2,
+      "position": 20,
+      "title": "图表图片生成",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 135,
+      "descriptionSha256": "d7981c03c8a3ae6f2fa355618a90b17dc6cc460ee2dfe06f591198f3623deb77"
+    },
+    {
+      "page": 2,
+      "position": 21,
+      "title": "青年律师接待客户方法和话术",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 259,
+      "descriptionSha256": "864fe72c696779b6ed92b0c6e7b421e2715a781ee3d4ce14d02d5c822d4c94e2"
+    },
+    {
+      "page": 2,
+      "position": 22,
+      "title": "诉讼/非诉可视化-案件时间线",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 248,
+      "descriptionSha256": "592541a63eda2fa25b23c5c1ea5c97e56089172bfa84de87c7985389cedae07b"
+    },
+    {
+      "page": 2,
+      "position": 23,
+      "title": "商业计划方案",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "张城甜律师",
+      "descriptionCharacters": 186,
+      "descriptionSha256": "f5682887db3f3b91a7995d9505be4c5e20abc4bccfbcda447fc9a6aca37d4de7"
+    },
+    {
+      "page": 2,
+      "position": 24,
+      "title": "PPT设计与生成（MiniMax）",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 280,
+      "descriptionSha256": "c40afcddcb83ffa07a31a87c09b7d9e91d6fae40e58de56311f83d229f3b6ea9"
+    },
+    {
+      "page": 3,
+      "position": 1,
+      "title": "合同审查标准版",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "缪奇川",
+      "descriptionCharacters": 120,
+      "descriptionSha256": "8731db5d68b51dc221da2d1aa08c2db1ad1e3774b037b9d91efb5e6b767e5279"
+    },
+    {
+      "page": 3,
+      "position": 2,
+      "title": "Word 文档创作与修订",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 107,
+      "descriptionSha256": "ca5b1fca34a850d7541efbd647fec559208fdb6a444d076366aea5d05fec6eda"
+    },
+    {
+      "page": 3,
+      "position": 3,
+      "title": "html-to-pdf",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 298,
+      "descriptionSha256": "ba8921212542e55d5db5c65d2da02d3b6b96e9123bd5e934308a123abf489275"
+    },
+    {
+      "page": 3,
+      "position": 4,
+      "title": "HTML转PPT",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 766,
+      "descriptionSha256": "e6618ece418777bb0b4f8d84e03a021ff30f3c3083aee4b5c50f985967adda37"
+    },
+    {
+      "page": 3,
+      "position": 5,
+      "title": "PPT生成",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 257,
+      "descriptionSha256": "3e331d543371bc2819e4e4a18616e4c07442b954e422e9519bebea13b794cddf"
+    },
+    {
+      "page": 3,
+      "position": 6,
+      "title": "刑事案件阅卷四阶段",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "胖梅梅",
+      "descriptionCharacters": 9,
+      "descriptionSha256": "654516b0e895c2aeb6a3d570f7f736983ed564fa81ebd3d914da6c295a172393"
+    },
+    {
+      "page": 3,
+      "position": 7,
+      "title": "刑事律师自媒体运营专家",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "刘艳",
+      "descriptionCharacters": 61,
+      "descriptionSha256": "b9c60b35f1305ad6e24e5a3a129fd5efd05c57142d2440f2b470ba67fb2a5def"
+    },
+    {
+      "page": 3,
+      "position": 8,
+      "title": "短视频脚本创作",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "黄轶远13728721",
+      "descriptionCharacters": 113,
+      "descriptionSha256": "8ceaf82cc399f5429a0a6171416297fa7ebdb683bee7125df3078418f4cc2b75"
+    },
+    {
+      "page": 3,
+      "position": 9,
+      "title": "民事审判要件九步",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "张映律师",
+      "descriptionCharacters": 5,
+      "descriptionSha256": "477e14aa44b047c3ab522ee27590ba0cf29aad63f987c64d9d6fc1cdf5864af1"
+    },
+    {
+      "page": 3,
+      "position": 10,
+      "title": "施工合同交底生成",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "温悦",
+      "descriptionCharacters": 114,
+      "descriptionSha256": "9077bfd50d96ab7782deca2324213c500f60f578e05a22fb77a1d92be248c66f"
+    },
+    {
+      "page": 3,
+      "position": 11,
+      "title": "N+1离职补偿计算与谈判策略",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "牛晓峰",
+      "descriptionCharacters": 224,
+      "descriptionSha256": "44b8ad4e37d5a3a35a830d7156e7a8ffc4b10d688e739a87c08f4e6ddb7fac8d"
+    },
+    {
+      "page": 3,
+      "position": 12,
+      "title": "重庆地区工伤赔偿标准计算器",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "牛晓峰",
+      "descriptionCharacters": 268,
+      "descriptionSha256": "36c39a6b6f003484951a23d79b301f5bb39b1f2d35020fda2864f3d1f7d126b3"
+    },
+    {
+      "page": 3,
+      "position": 13,
+      "title": "IPO法律审核",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 168,
+      "descriptionSha256": "c0c46f9f94c7b0ac46a7e973a2f55c4e981fba0dfc4a011818ab5c7e8c04dba8"
+    },
+    {
+      "page": 3,
+      "position": 14,
+      "title": "交易文件与条款",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 187,
+      "descriptionSha256": "fe24007be15519e9116c40bd5c91762450c59f0d898c852f7c7a77bad8bc821a"
+    },
+    {
+      "page": 3,
+      "position": 15,
+      "title": "公司治理与股权架构",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 162,
+      "descriptionSha256": "22d3df79061104ca2ce9622263022ec0efef02fdf78c2d4bc350ab64005027fc"
+    },
+    {
+      "page": 3,
+      "position": 16,
+      "title": "尽调发现与法律意见",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 151,
+      "descriptionSha256": "1c2496ada0770947dc49d5904ae034fd8dc2a94ca538ae8a5dd3660c3454790a"
+    },
+    {
+      "page": 3,
+      "position": 17,
+      "title": "尽职调查清单",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 158,
+      "descriptionSha256": "ff2e2a05435578d2776e43aafe72728143ec8f81f67c1133acf0d70d56cbb8a0"
+    },
+    {
+      "page": 3,
+      "position": 18,
+      "title": "行政处罚裁量基准比对",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 165,
+      "descriptionSha256": "79e94eea7024a5e2e58146d862bec8f906b3eafb7e6cc14c1558535d0bf2d93a"
+    },
+    {
+      "page": 3,
+      "position": 19,
+      "title": "劳动人事合规",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 186,
+      "descriptionSha256": "ff5ade6028e399bcadbdab33d11260c38f67a1e936251ad9d6e9b0a237861686"
+    },
+    {
+      "page": 3,
+      "position": 20,
+      "title": "破产与债务重组",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 164,
+      "descriptionSha256": "07527bef9afe8d34f2a0b8ecad0e6c1dab23701c3b3905619cb12bab2ceb91de"
+    },
+    {
+      "page": 3,
+      "position": 21,
+      "title": "行政救济路径",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 179,
+      "descriptionSha256": "1121e98a8a7c1d62092e426de5cc8261d28d3f655afda260105ef1b0bcb536b0"
+    },
+    {
+      "page": 3,
+      "position": 22,
+      "title": "劳动争议处理",
+      "category": "案件评估与立案",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 184,
+      "descriptionSha256": "dda1a9651c1c49a99ca365dcbc65796c7f73c136b6f65b44ce734dc6b5c30f4f"
+    },
+    {
+      "page": 3,
+      "position": 23,
+      "title": "案件事实时间轴",
+      "category": "证据与质证",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 162,
+      "descriptionSha256": "2abebbf71c634cb3d798baf971ab16c463c868c6082f7c566a1565866e878209"
+    },
+    {
+      "page": 3,
+      "position": 24,
+      "title": "证据清单与举证责任",
+      "category": "证据与质证",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 170,
+      "descriptionSha256": "2217a618a5043425947730a5a3e611ef05c606964f727043fdee0c33c8491f2a"
+    },
+    {
+      "page": 4,
+      "position": 1,
+      "title": "诉讼时效分析",
+      "category": "案件评估与立案",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 161,
+      "descriptionSha256": "2332c37850576a8ef13ec17a03010fd39e8add6811de4c60a8d9cfbe281c7aa3"
+    },
+    {
+      "page": 4,
+      "position": 2,
+      "title": "管辖权分析",
+      "category": "案件评估与立案",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 172,
+      "descriptionSha256": "5feb3c894c07354a255c199d4f46186edf80842b09586960a17e362ae5221662"
+    },
+    {
+      "page": 4,
+      "position": 3,
+      "title": "执行方案与财产线索",
+      "category": "执行与保全",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 154,
+      "descriptionSha256": "cd5d1d516c77e96a1fd4e429388437c7d79817b229e0a424bd1dbc5e2a096962"
+    },
+    {
+      "page": 4,
+      "position": 4,
+      "title": "庭审提纲",
+      "category": "庭审准备",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 137,
+      "descriptionSha256": "5ecbcd289b6744cc51caa5473079d570801f7d0be3ff98fe50a7606c270d5d04"
+    },
+    {
+      "page": 4,
+      "position": 5,
+      "title": "上诉与再审申请",
+      "category": "诉讼文书起草",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 157,
+      "descriptionSha256": "2e8fc94f31be8d65e73f3f8f7ea5fc18c9fbf684455440df873395d8b91bec20"
+    },
+    {
+      "page": 4,
+      "position": 6,
+      "title": "代理词与辩护词",
+      "category": "诉讼文书起草",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 132,
+      "descriptionSha256": "c9b725a5b0e3bb0fcae382757f6c66f72aa45b7e877cc9a3df0ed068a15bed9f"
+    },
+    {
+      "page": 4,
+      "position": 7,
+      "title": "答辩状与反诉",
+      "category": "诉讼文书起草",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 136,
+      "descriptionSha256": "5baf07c581b7f525b0429af715ed7327721cfac31b5f9f5ff413e9b415bf21ec"
+    },
+    {
+      "page": 4,
+      "position": 8,
+      "title": "起诉状与仲裁申请",
+      "category": "诉讼文书起草",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 136,
+      "descriptionSha256": "c247171e3600bdc2074b4023e3ab66a4a5ae058b320d36ade4c617c76c885564"
+    },
+    {
+      "page": 4,
+      "position": 9,
+      "title": "争议焦点与胜败评估",
+      "category": "案件评估与立案",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 187,
+      "descriptionSha256": "18c31ddf74ca7b39920988bfc633f7c3a3577a265cbdab069bc3821408d12432"
+    },
+    {
+      "page": 4,
+      "position": 10,
+      "title": "质证意见",
+      "category": "证据与质证",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 154,
+      "descriptionSha256": "10204cdd245340011acbbc840d0b0ffc91e3979fa344531fa7412e3bb18d8ecb"
+    },
+    {
+      "page": 4,
+      "position": 11,
+      "title": "请求权基础分析",
+      "category": "案件评估与立案",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 190,
+      "descriptionSha256": "2cca9b1c4c01a0a2b293aae2958f56ff46416aafd8bfc3a539d579cb6fdbb294"
+    },
+    {
+      "page": 4,
+      "position": 12,
+      "title": "刑事量刑校准",
+      "category": "刑事辩护",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 211,
+      "descriptionSha256": "d26046f6103fd0631edb1ae425a4f8d82ee15338d74ab1b752c0483b3b453a2e"
+    },
+    {
+      "page": 4,
+      "position": 13,
+      "title": "数据合规评估",
+      "category": "数据与个人信息合规",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 274,
+      "descriptionSha256": "dee09d37444a260e1a830e7da9b4074245215397e5323b666e003a0f46b25ef0"
+    },
+    {
+      "page": 4,
+      "position": 14,
+      "title": "新规追踪",
+      "category": "立法与政策追踪",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 204,
+      "descriptionSha256": "17e834d37f43c825d6b62e849b6d6bd311e63c0a70008af3f34d5713aee06fba"
+    },
+    {
+      "page": 4,
+      "position": 15,
+      "title": "监管处罚画像",
+      "category": "案例与类案检索",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 201,
+      "descriptionSha256": "55a9f06c4af7b47f30a1b85fb94cf2f3cda69d8b6aafd5caf34ba90e43aa0d08"
+    },
+    {
+      "page": 4,
+      "position": 16,
+      "title": "合规义务矩阵",
+      "category": "行业专项合规",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 243,
+      "descriptionSha256": "e73f3bf1b891273082ce9a8915f318924bc67d25388740edf42334dcaa95f85f"
+    },
+    {
+      "page": 4,
+      "position": 17,
+      "title": "合同版本比对",
+      "category": "合同审查",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 199,
+      "descriptionSha256": "5a58efd40aef0a0f5fa0ad17082ca447e8d94be10a73785bb1b0f35824c7f000"
+    },
+    {
+      "page": 4,
+      "position": 18,
+      "title": "条款范本与修改建议",
+      "category": "合同起草",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 229,
+      "descriptionSha256": "60da1b8fe0f0265f904c4ec3d54ba6d1c297c04e20411df676d6397f0a3f7208"
+    },
+    {
+      "page": 4,
+      "position": 19,
+      "title": "合同审查",
+      "category": "合同审查",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 283,
+      "descriptionSha256": "097d947142ad9e1b244cc2a2b5fa9593e8696c6dbf4bda78882d04b6bec82eb3"
+    },
+    {
+      "page": 4,
+      "position": 20,
+      "title": "检索报告成稿",
+      "category": "案例与类案检索",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 192,
+      "descriptionSha256": "4ee6c03406da7147a18d0d57815ddbff4163bb95aefcd7312e19288b82e9464a"
+    },
+    {
+      "page": 4,
+      "position": 21,
+      "title": "法律适用冲突分析",
+      "category": "法规检索",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 227,
+      "descriptionSha256": "4b921d633151bf0f58398b273ffc69c28ab3794be7db51f82b177b750dbb8a63"
+    },
+    {
+      "page": 4,
+      "position": 22,
+      "title": "不利判例应对",
+      "category": "案例与类案检索",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 247,
+      "descriptionSha256": "f2891de3a86768646cc069521e761231927d283c939dfa78aea0a20977cc3805"
+    },
+    {
+      "page": 4,
+      "position": 23,
+      "title": "裁判尺度分析",
+      "category": "案例与类案检索",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 232,
+      "descriptionSha256": "fd215a05e0fda426fd4ac754cbb61b98409df21d075ca81f7a9f86f50153cb2e"
+    },
+    {
+      "page": 4,
+      "position": 24,
+      "title": "裁判规则提炼",
+      "category": "案例与类案检索",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 221,
+      "descriptionSha256": "6d0341769d020c55f7137d168b1552647edacc28df06bdbc77e196d8c2806210"
+    },
+    {
+      "page": 5,
+      "position": 1,
+      "title": "类案检索",
+      "category": "案例与类案检索",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 306,
+      "descriptionSha256": "9c60ef7115e5f82897679ceaa44b059be2590a52f93c98aaafd4ec21ac3390b8"
+    },
+    {
+      "page": 5,
+      "position": 2,
+      "title": "法律计算器",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 286,
+      "descriptionSha256": "06fceffe033a593d1435ad51021a156a2fa52654a1f9ba0c115e912d4c88ab38"
+    },
+    {
+      "page": 5,
+      "position": 3,
+      "title": "民商事代理词草拟",
+      "category": "诉讼文书起草",
+      "labels": [
+        "社区"
+      ],
+      "author": "十四行诗赞美",
+      "descriptionCharacters": 266,
+      "descriptionSha256": "e9eacc66e31ba61f49939d0b96a0045590fd1736fda93f998b321b4972e62638"
+    },
+    {
+      "page": 5,
+      "position": 4,
+      "title": "诉讼攻防全流程产品交付SKILL（终极优化版）",
+      "category": "庭审准备",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 104,
+      "descriptionSha256": "10875311078f0c6ec9ccac4820c7df9b885ab9fc3ef50f0d7c4d208846f98b1b"
+    },
+    {
+      "page": 5,
+      "position": 5,
+      "title": "智合AI搜案",
+      "category": "案例与类案检索",
+      "labels": [
+        "基础技能",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 256,
+      "descriptionSha256": "35e4b6b2bbbca6bc240a38563e09eea1eb19ed1a391277e1fa77a4cc682b36ba"
+    },
+    {
+      "page": 5,
+      "position": 6,
+      "title": "法律培训专家",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 424,
+      "descriptionSha256": "eef1366fd52a9f472151374d740168577c02aeb162b00f04af3c80eb0701aec2"
+    },
+    {
+      "page": 5,
+      "position": 7,
+      "title": "刑事辩护法律专家 · 优化版V2.0",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 287,
+      "descriptionSha256": "911eed7e1ad06429d687efc0a2c81f3570a9c037bc4367eb096540a7f660b990"
+    },
+    {
+      "page": 5,
+      "position": 8,
+      "title": "常年法律顾问年度服务报告 - 从零创建台账版",
+      "category": "法务运营与管理",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 101,
+      "descriptionSha256": "a5fe8c65f7fe3b8c62fc2c371cde04a5ecacb5700dcd7cfe00a34dca2bec688a"
+    },
+    {
+      "page": 5,
+      "position": 9,
+      "title": "常年法律顾问年度服务报告（双模式版）",
+      "category": "法务运营与管理",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 373,
+      "descriptionSha256": "8cb0e8d63936084f734394221acc61d0ef48b253fd756f8bda344a17d2ebba7c"
+    },
+    {
+      "page": 5,
+      "position": 10,
+      "title": "律师谈案全流程法律产品交付（升级优化版）",
+      "category": "案源与客户开发",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 374,
+      "descriptionSha256": "8b80167de59751af7574ec04c973062d245a5ad91954c2c707e838322bac575d"
+    },
+    {
+      "page": 5,
+      "position": 11,
+      "title": "常年法律顾问年度服务报告 - 数据加工版",
+      "category": "法务运营与管理",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 137,
+      "descriptionSha256": "492a31c81a6b56f2809f0125ef82ff0bc2b7da021b4d8bfef8edfaeae8ac3eb1"
+    },
+    {
+      "page": 5,
+      "position": 12,
+      "title": "行政案件全流程法律产品交付专家",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 308,
+      "descriptionSha256": "fe9f0a6a8d61b3a0f8a19ea6ff737d296b3ebfdd52cf35008a7232a5e5c34c70"
+    },
+    {
+      "page": 5,
+      "position": 13,
+      "title": "上市公告检索雷达（非诉必备）",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "陈晚柒律师",
+      "descriptionCharacters": 450,
+      "descriptionSha256": "12c10cf96e09f63868de006647a8e9cb979955ae6bbedb8cf3022685d96fc76d"
+    },
+    {
+      "page": 5,
+      "position": 14,
+      "title": "破产清算与重整全流程",
+      "category": "投融资与并购",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 55,
+      "descriptionSha256": "66e004dbd4b63a1b55525e5275f3b25f45e3398b66841936c35a44be28478aac"
+    },
+    {
+      "page": 5,
+      "position": 15,
+      "title": "法律技能介绍海报生成器",
+      "category": "品牌与内容营销",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 141,
+      "descriptionSha256": "2d0bd7a901aed31156f8d1baf0814362856f9bde3d9e604c0f694ea5f4a28103"
+    },
+    {
+      "page": 5,
+      "position": 16,
+      "title": "电商企业广告合规审核系统（优化版）",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 248,
+      "descriptionSha256": "79e2e1a12b28a3a3f830112dd8670cc016cf93cf37ad9da5816401e87ef69eb6"
+    },
+    {
+      "page": 5,
+      "position": 17,
+      "title": "海外法律法规研究",
+      "category": "域外法查明",
+      "labels": [
+        "社区"
+      ],
+      "author": "三太子过儿",
+      "descriptionCharacters": 326,
+      "descriptionSha256": "953290ab7c149be5c7649febc08ae1f8c4c40aeeac10aee2e0c1ea77f8031cd9"
+    },
+    {
+      "page": 5,
+      "position": 18,
+      "title": "诉讼策略报告",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "陈晚柒律师",
+      "descriptionCharacters": 289,
+      "descriptionSha256": "8f829361cf69455c8b16212d3f14d77f023355bfcd78ac6907fd59a86adbde7c"
+    },
+    {
+      "page": 5,
+      "position": 19,
+      "title": "当事人谈话笔录生成",
+      "category": "证据与质证",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 13,
+      "descriptionSha256": "d0d211718a0ee0c36cb63dd9c1d0b580dc7a4dbeb183d938d30d3a2bcee60a41"
+    },
+    {
+      "page": 5,
+      "position": 20,
+      "title": "保全申请助手",
+      "category": "执行与保全",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 72,
+      "descriptionSha256": "9c3e47549c3d586e5cb442c8c069e68a0934dc6e0ded12fc4037881fc9633e14"
+    },
+    {
+      "page": 5,
+      "position": 21,
+      "title": "诉讼策略大师",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 76,
+      "descriptionSha256": "28be5d469dcae626327bc86de012a87b9fe2b9e764034999aea77d7d5fac65a9"
+    },
+    {
+      "page": 5,
+      "position": 22,
+      "title": "调解/谈判策略分析大师",
+      "category": "仲裁与调解",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 86,
+      "descriptionSha256": "9619162f1361a25d6c8c5da2bf8ed8d593308a2eb24e640650643d03cea177f3"
+    },
+    {
+      "page": 5,
+      "position": 23,
+      "title": "交通事故纠纷全流程",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 79,
+      "descriptionSha256": "658aad6ee82abde7fe757bcb4ce67d9c76bd80e0909e704b84f61ab2172dd487"
+    },
+    {
+      "page": 5,
+      "position": 24,
+      "title": "医疗损害责任纠纷全流程",
+      "category": "案件评估与立案",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 70,
+      "descriptionSha256": "e3fc4a2e031be348300bbb4a4e848a005512d7e2ac71ad90a73affc682dea8b0"
+    },
+    {
+      "page": 6,
+      "position": 1,
+      "title": "重大疑难案件法律产品交付",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 119,
+      "descriptionSha256": "4e2b07df36f092e5ae541d26dd834f95fd4888385f67d798cd359934ebdd86e2"
+    },
+    {
+      "page": 6,
+      "position": 2,
+      "title": "诉讼可视化litigation-visualization",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "星河鹭起",
+      "descriptionCharacters": 117,
+      "descriptionSha256": "29f490e029a1cde401c0c466ee8a7cae4e4643658150aff14434ad5ab64df6c9"
+    },
+    {
+      "page": 6,
+      "position": 3,
+      "title": "企业税务合规全链条法律服务",
+      "category": "金融与监管合规",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 409,
+      "descriptionSha256": "10891b0ce8fff0c6ae7e0f49f00cd6550d11dcb6d106ee03476953820e441137"
+    },
+    {
+      "page": 6,
+      "position": 4,
+      "title": "破产重整与特殊资产法律专家",
+      "category": "投融资与并购",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 71,
+      "descriptionSha256": "f05f0e924388c466e60553e9dda23c950fb5fafe4ba064b76a30141813a2d3b3"
+    },
+    {
+      "page": 6,
+      "position": 5,
+      "title": "全流程民事案件办理助手",
+      "category": "诉讼文书起草",
+      "labels": [
+        "社区"
+      ],
+      "author": "李先禄",
+      "descriptionCharacters": 319,
+      "descriptionSha256": "ff378d4f29aba2cc4de5ef019ce216a122149b039d2f9e7696337e4ee5310726"
+    },
+    {
+      "page": 6,
+      "position": 6,
+      "title": "财富传承与家族信托法律服务方案",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 64,
+      "descriptionSha256": "3829d8ebe9082c866905c4837d48ed5106d184acf07115e4554401794e9ad8a8"
+    },
+    {
+      "page": 6,
+      "position": 7,
+      "title": "当事人庭前指导（深度问答版）",
+      "category": "庭审准备",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 62,
+      "descriptionSha256": "9c18b7a2d85d0c0230f833a3c7f55f02b6ed213fff94c89be893258d08ab6a2a"
+    },
+    {
+      "page": 6,
+      "position": 8,
+      "title": "文娱行业全流程法律服务",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 256,
+      "descriptionSha256": "3beb013175b18d1a494a82b2e56d297cffdd47238bfa0e76ccea5e7d251a7f7b"
+    },
+    {
+      "page": 6,
+      "position": 9,
+      "title": "模拟法庭",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 86,
+      "descriptionSha256": "ce8fc532488a8de334132f7eabc9a49fb8330b61e8e8bf559ea4adb4f1df3915"
+    },
+    {
+      "page": 6,
+      "position": 10,
+      "title": "法律人公众号运营专家",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 419,
+      "descriptionSha256": "f52e7f76da7ff75ff418075baf56fc9877429f2e69bfac90f6ae331979a1cdd7"
+    },
+    {
+      "page": 6,
+      "position": 11,
+      "title": "当事人庭前指导（简要交互版）",
+      "category": "庭审准备",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 62,
+      "descriptionSha256": "9c18b7a2d85d0c0230f833a3c7f55f02b6ed213fff94c89be893258d08ab6a2a"
+    },
+    {
+      "page": 6,
+      "position": 12,
+      "title": "律师函/法律意见书生成器",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 81,
+      "descriptionSha256": "3117ee082abb19e202dec7a8d493cac1f89f29b32bcd39b323d38cae1c69c4c1"
+    },
+    {
+      "page": 6,
+      "position": 13,
+      "title": "建设工程合同纠纷复杂问题解决【专业版】",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 36,
+      "descriptionSha256": "baf6b87de5ea36c967e1b67845c0e1beb976764b147b50b4f1faf9982619a0e8"
+    },
+    {
+      "page": 6,
+      "position": 14,
+      "title": "合同审查助手",
+      "category": "合同审查",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 365,
+      "descriptionSha256": "dc2dfcf9b09c35a3e717477f5437b866bedc08e7adaa87911525d881b71220ee"
+    },
+    {
+      "page": 6,
+      "position": 15,
+      "title": "执行案件全流程工具",
+      "category": "执行与保全",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 85,
+      "descriptionSha256": "f52f022cde22995a5fa2fbf48474c961de228928c07d6262a8a73fa8ea9dad6d"
+    },
+    {
+      "page": 6,
+      "position": 16,
+      "title": "浙江人身损害赔偿项目计算报告",
+      "category": "案件评估与立案",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 17,
+      "descriptionSha256": "421eece3601e18038fc2756581246f5c6168dd713008bb3523d198d634ac4308"
+    },
+    {
+      "page": 6,
+      "position": 17,
+      "title": "企业客户初次会谈法律体检报告",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 80,
+      "descriptionSha256": "5001ce0a07867303005a61d65621ee81c87064ed15a5e8d0e73cefee9bbfd075"
+    },
+    {
+      "page": 6,
+      "position": 18,
+      "title": "公司行政公文下发通过系统",
+      "category": "法务运营与管理",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 81,
+      "descriptionSha256": "c3590b5f28cb37bef10f011a50d87da3d0c219984aca870f26f6f4194a9a1cdf"
+    },
+    {
+      "page": 6,
+      "position": 19,
+      "title": "建设工程合同纠纷复杂问题解决",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 39,
+      "descriptionSha256": "82a544047917682414f404982c38a6ebc49c74f5ffbd28dfb68bac241c758d6c"
+    },
+    {
+      "page": 6,
+      "position": 20,
+      "title": "利息分段计算器",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 172,
+      "descriptionSha256": "f1046e315ab77270617d7c3e5bade62177e9391ef0ea84f67d49f3806dee4f58"
+    },
+    {
+      "page": 6,
+      "position": 21,
+      "title": "重大疑难案件法律产品交付",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 119,
+      "descriptionSha256": "4e2b07df36f092e5ae541d26dd834f95fd4888385f67d798cd359934ebdd86e2"
+    },
+    {
+      "page": 6,
+      "position": 22,
+      "title": "合同风险审查",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "Aries",
+      "descriptionCharacters": 87,
+      "descriptionSha256": "0700e834468031905582678438e4b1ebfe026843ff70e886d025932d1d9a0494"
+    },
+    {
+      "page": 6,
+      "position": 23,
+      "title": "法律人小红书运营专家",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 506,
+      "descriptionSha256": "e8d6d737bd70d797936ac28dddab5a8c477b38c4a1e7991fb0b247d89f31fa24"
+    },
+    {
+      "page": 6,
+      "position": 24,
+      "title": "诉讼案件复盘与办案小结",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 94,
+      "descriptionSha256": "7af9fd740dcb4523acbcfeb33154bb56b6c348131dcc25d13cbf8e69fa0a40bc"
+    },
+    {
+      "page": 7,
+      "position": 1,
+      "title": "合同红线审核",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "Aries",
+      "descriptionCharacters": 113,
+      "descriptionSha256": "842f389bfc4c05f614280d89a010412113f727fd058ea622cd4c93f314279fd7"
+    },
+    {
+      "page": 7,
+      "position": 2,
+      "title": "公司治理法律专家",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 83,
+      "descriptionSha256": "2afa02995b3e08c258470cc4249cbd2a239d079b9ad51888851af5ed91d9a005"
+    },
+    {
+      "page": 7,
+      "position": 3,
+      "title": "法律人视频号运营专家",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 407,
+      "descriptionSha256": "17931b9a59712227cb2e834e98872454a9fe0283a58a13d6c82d89cca94b9fb8"
+    },
+    {
+      "page": 7,
+      "position": 4,
+      "title": "律师费设计方案（谈案成交增强版）",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 12,
+      "descriptionSha256": "e5ca9c02a239a969fd4af4d3238ad1ee6e819a4505099171a5b49815c8d80bf8"
+    },
+    {
+      "page": 7,
+      "position": 5,
+      "title": "法律培训课程设计专家",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 116,
+      "descriptionSha256": "3612a15aaf97a79a3c672fc0b65e1b4e06ba9acdb6e705a8a1a1de80e5e0d2d2"
+    },
+    {
+      "page": 7,
+      "position": 6,
+      "title": "婚家律师谈案话术训练手册",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 28,
+      "descriptionSha256": "0624c935f3587935556aece0cafc723b6103a45f8d5fceab3263550622c15b75"
+    },
+    {
+      "page": 7,
+      "position": 7,
+      "title": "知识产权法律专家",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 322,
+      "descriptionSha256": "ef90ed81b033815b19e7e8c31a35d23441f703b67da8d59714efb652dfc0d404"
+    },
+    {
+      "page": 7,
+      "position": 8,
+      "title": "合同全生命周期管理法律专家",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 338,
+      "descriptionSha256": "32f6b4d5fa8992376ec09609029f9705e374111d6ae72ac23a9b3bea6f5fed17"
+    },
+    {
+      "page": 7,
+      "position": 9,
+      "title": "调解/谈判策略分析大师",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 86,
+      "descriptionSha256": "9619162f1361a25d6c8c5da2bf8ed8d593308a2eb24e640650643d03cea177f3"
+    },
+    {
+      "page": 7,
+      "position": 10,
+      "title": "金融不良资产处置法律专家",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 680,
+      "descriptionSha256": "08db9c987860c960ad448cd6ba65cd4483646ee857450257a284b7a09d1c80ef"
+    },
+    {
+      "page": 7,
+      "position": 11,
+      "title": "生成横向翻页网页 PPT",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 257,
+      "descriptionSha256": "3e331d543371bc2819e4e4a18616e4c07442b954e422e9519bebea13b794cddf"
+    },
+    {
+      "page": 7,
+      "position": 12,
+      "title": "一人公司全能运营助手",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 262,
+      "descriptionSha256": "ce295d04a24e4a3fc78a0d493f005fb865571a5fb1b58770146843057c72f405"
+    },
+    {
+      "page": 7,
+      "position": 13,
+      "title": "企业并购重组法务专家",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 304,
+      "descriptionSha256": "05974ef2b10fc2379014d8f323bef666865dd26ac52792baa5928abc03399b7e"
+    },
+    {
+      "page": 7,
+      "position": 14,
+      "title": "涉外法律实务全流程",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 60,
+      "descriptionSha256": "135ce264580c5d905facc52b23dd1addfc9dd9c4b18e5323efa4909f9a55d64b"
+    },
+    {
+      "page": 7,
+      "position": 15,
+      "title": "采购红线审核",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "Aries",
+      "descriptionCharacters": 79,
+      "descriptionSha256": "f2c4ab2f7eefb428dc6cecfb8d3fcd7d802b3fd6c40d65b93c96da749c5d4569"
+    },
+    {
+      "page": 7,
+      "position": 16,
+      "title": "反垄断与反不正当竞争法律专家",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 84,
+      "descriptionSha256": "4dfac293d781ac1bfa14c3eeebbe5b4307f1dd99b81bdcaa338814a774031849"
+    },
+    {
+      "page": 7,
+      "position": 17,
+      "title": "活动方案策划智能助手",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 106,
+      "descriptionSha256": "e990a4b57eb04c810f6234b5c3fc5b989ab04ea0f5f4ce4f407a46f4ad7be8b2"
+    },
+    {
+      "page": 7,
+      "position": 18,
+      "title": "保险合规与理赔争议专家",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 347,
+      "descriptionSha256": "e222448d9035fbab2e21551aa6f812d5908a334e77438878d47bbdb39712eb2f"
+    },
+    {
+      "page": 7,
+      "position": 19,
+      "title": "物流运输行业法律专家",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 106,
+      "descriptionSha256": "de6829a5c2c98c26a635218e0c00c7e045c90c204921569e5b990e3ef38937f2"
+    },
+    {
+      "page": 7,
+      "position": 20,
+      "title": "电商平台合规与经营法务专家",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 476,
+      "descriptionSha256": "6079fcb8cc120c9b7ba8117dd9f7a04ef53f2593d83f4bd7ab1fe38d4fc5251d"
+    },
+    {
+      "page": 7,
+      "position": 21,
+      "title": "互联网金融法律服务专家",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 102,
+      "descriptionSha256": "e84946f81b29134a3de44fec8c5a500add15848d5167a6cc8b0bad96382c6174"
+    },
+    {
+      "page": 7,
+      "position": 22,
+      "title": "海商海事法律专家",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 87,
+      "descriptionSha256": "f7ea14077838c9f60ca1999a35efcb9541f1f3f63f5e7707691050a1cf5c1399"
+    },
+    {
+      "page": 7,
+      "position": 23,
+      "title": "建设工程合同审查construction-contract-review",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "星河鹭起",
+      "descriptionCharacters": 497,
+      "descriptionSha256": "f0b7bbb0b7f126747881281a7a6331f45e8b36b4496b5c2651d36231cd1da5bb"
+    },
+    {
+      "page": 7,
+      "position": 24,
+      "title": "重庆人身损害赔偿项目计算报告",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 16,
+      "descriptionSha256": "4bfbbf9fe6ce33b47e51e8c809dec816c8bbd21a5f72d1d388e939487b768f32"
+    },
+    {
+      "page": 8,
+      "position": 1,
+      "title": "法律意见卡片生成器",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "社区"
+      ],
+      "author": "三太子过儿",
+      "descriptionCharacters": 224,
+      "descriptionSha256": "bfc5626987363c0ed0793ecba0e2ea80d394367b9e9104bcf60dd63beb583c8c"
+    },
+    {
+      "page": 8,
+      "position": 2,
+      "title": "律师会议纪要生成器",
+      "category": "会议与纪要",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 356,
+      "descriptionSha256": "0fd43ae9aa4b3a1fc373937be5c8e2dc1a0f136d04d87a0b3e86e1811a53e79b"
+    },
+    {
+      "page": 8,
+      "position": 3,
+      "title": "二审/再审诉讼逆转专家",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 340,
+      "descriptionSha256": "5dcea4565cf904b29785c1a2c8bcb39eeb6ed1c6db745082a34630e4373cb2f1"
+    },
+    {
+      "page": 8,
+      "position": 4,
+      "title": "刑事控告全流程法律专家",
+      "category": "刑事辩护",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 180,
+      "descriptionSha256": "9c09b8899526761b6990b00dfe5a78944acc5f02734bf24c81ca88980ae057ea"
+    },
+    {
+      "page": 8,
+      "position": 5,
+      "title": "法律公众号文章起草legal-wechat-article-drafting",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "社区"
+      ],
+      "author": "星河鹭起",
+      "descriptionCharacters": 114,
+      "descriptionSha256": "1d8ef0e746ef175ef95e3cde0ae29c7bc180af88e8c5e135dfa8115cd5342523"
+    },
+    {
+      "page": 8,
+      "position": 6,
+      "title": "商事仲裁全流程法律服务",
+      "category": "仲裁与调解",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 469,
+      "descriptionSha256": "c2ff53c616ef543b78d54e080f0891c29222cf64aafab73d9efac5cadd38682b"
+    },
+    {
+      "page": 8,
+      "position": 7,
+      "title": "裁判文书说理论证结构图示",
+      "category": "数据与图表",
+      "labels": [
+        "社区"
+      ],
+      "author": "星河鹭起",
+      "descriptionCharacters": 92,
+      "descriptionSha256": "ab84b730479dfc21dc4baa047d2d012fcb1f0857bae6b128537a706608e5d838"
+    },
+    {
+      "page": 8,
+      "position": 8,
+      "title": "解除协议审查",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "Aries",
+      "descriptionCharacters": 152,
+      "descriptionSha256": "35563c29725b9279aff9ebe972b0ea253e310de9ff9730bc0f07488dd2688268"
+    },
+    {
+      "page": 8,
+      "position": 9,
+      "title": "房地产法律诉讼可视化学习",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "星河鹭起",
+      "descriptionCharacters": 165,
+      "descriptionSha256": "b1e9f6249cfcec4395f36fd8acee44744e9fd5e0cf5d99ecbf19ccd290eb4f2d"
+    },
+    {
+      "page": 8,
+      "position": 10,
+      "title": "证券合规与监管法律专家",
+      "category": "金融与监管合规",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 964,
+      "descriptionSha256": "7b71880a4341b58e3ff1f05b3c9c31afd039d43fa8c5b471b6b339e45b8ffa32"
+    },
+    {
+      "page": 8,
+      "position": 11,
+      "title": "律所管理智能助手",
+      "category": "法务运营与管理",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 364,
+      "descriptionSha256": "0a36f1f1939e3cd6543de998f3002d84cdaccc137c2b886ce4ac2673086ad65b"
+    },
+    {
+      "page": 8,
+      "position": 12,
+      "title": "环境合规与ESG治理专家",
+      "category": "行业专项合规",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 588,
+      "descriptionSha256": "89025267425ba03354bc73e5c2fad55e5eb1b6cf94f892298ca8e1a47ef4790e"
+    },
+    {
+      "page": 8,
+      "position": 13,
+      "title": "外贸货款催收专家",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 663,
+      "descriptionSha256": "32c277ac66eb6fcb7e8e88efcc9c012763ddddd60e22342891f3bb8d67c49bac"
+    },
+    {
+      "page": 8,
+      "position": 14,
+      "title": "证据清单与证据合并生成器",
+      "category": "证据与质证",
+      "labels": [
+        "社区"
+      ],
+      "author": "Rio律师",
+      "descriptionCharacters": 304,
+      "descriptionSha256": "5612d5ee19014333da973b97783024157e0c503b5645f0c5ffddbffdfdec9060"
+    },
+    {
+      "page": 8,
+      "position": 15,
+      "title": "权威观点援引（高格局强硬反驳版）",
+      "category": "诉讼文书起草",
+      "labels": [
+        "社区"
+      ],
+      "author": "三太子过儿",
+      "descriptionCharacters": 297,
+      "descriptionSha256": "3f1f34a119aa652a637ce5131972456b0dfb4d0d740d326824d93a30d8ba6ac8"
+    },
+    {
+      "page": 8,
+      "position": 16,
+      "title": "案件事实梳理与时间线构建",
+      "category": "案件评估与立案",
+      "labels": [
+        "社区"
+      ],
+      "author": "三太子过儿",
+      "descriptionCharacters": 363,
+      "descriptionSha256": "5f22bd3d803f3de85dc306f0514182c6adcf30ecbfad0e4eaa6a80e6509e9554"
+    },
+    {
+      "page": 8,
+      "position": 17,
+      "title": "三阶层犯罪论体系标准化判定流程",
+      "category": "刑事辩护",
+      "labels": [
+        "社区"
+      ],
+      "author": "张映律师",
+      "descriptionCharacters": 6,
+      "descriptionSha256": "ab6010e815e550b64ee2fea9a89650bc728b1b26b4a7405bc09c5aa4f5186918"
+    },
+    {
+      "page": 8,
+      "position": 18,
+      "title": "工伤认定识别技能",
+      "category": "行业专项合规",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 395,
+      "descriptionSha256": "9f37f02e21ffa7f17fcaf3ef5244ba4e29271245524024f9a29f8a611dcc8eec"
+    },
+    {
+      "page": 8,
+      "position": 19,
+      "title": "案件事项占断",
+      "category": "游戏与谜题",
+      "labels": [
+        "社区"
+      ],
+      "author": "玄律大法师",
+      "descriptionCharacters": 93,
+      "descriptionSha256": "5d0ce60b6803afa01414376cbdab3ae785aa2195743a96a7c4977b3a37a1415d"
+    },
+    {
+      "page": 8,
+      "position": 20,
+      "title": "六爻起卦与卦象推演",
+      "category": "游戏与谜题",
+      "labels": [
+        "社区"
+      ],
+      "author": "玄律大法师",
+      "descriptionCharacters": 86,
+      "descriptionSha256": "0148cf476aa0a46a0d9f2b73e4b0ac57ce87c4aa76bfc8c229d2b43867bb00b3"
+    },
+    {
+      "page": 8,
+      "position": 21,
+      "title": "律师日课·今日运势",
+      "category": "放松与身心",
+      "labels": [
+        "社区"
+      ],
+      "author": "玄律大法师",
+      "descriptionCharacters": 89,
+      "descriptionSha256": "29a08d7e75ca3dc72bf94086427ada6cb89b2a7fe8a208ecf984395e3fc141cb"
+    },
+    {
+      "page": 8,
+      "position": 22,
+      "title": "择时择日·法律事务",
+      "category": "放松与身心",
+      "labels": [
+        "社区"
+      ],
+      "author": "玄律大法师",
+      "descriptionCharacters": 91,
+      "descriptionSha256": "e123e2ba7a62aa6b813a613cff72adcb4128ba663229e228182cd86c5ee04b76"
+    },
+    {
+      "page": 8,
+      "position": 23,
+      "title": "卦象到法律实务的映射",
+      "category": "放松与身心",
+      "labels": [
+        "社区"
+      ],
+      "author": "玄律大法师",
+      "descriptionCharacters": 83,
+      "descriptionSha256": "65314ca8d2d7c66392faa8b82e79e4c39332c358b3bb8bd3e4aa447c4eac431f"
+    },
+    {
+      "page": 8,
+      "position": 24,
+      "title": "近期运势·周月运",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "玄律大法师",
+      "descriptionCharacters": 99,
+      "descriptionSha256": "3a9bd2a6bdb895c01bd2335a1be0c3d06d2e25a45afdedf72e9d16dd28f7a6b4"
+    },
+    {
+      "page": 9,
+      "position": 1,
+      "title": "俄罗斯法律实务研究工具",
+      "category": "域外法查明",
+      "labels": [
+        "社区"
+      ],
+      "author": "三太子过儿",
+      "descriptionCharacters": 532,
+      "descriptionSha256": "9bc30e763e532252f3baf6b5e025e8bf0ca21da3db17392302d397f493c4830e"
+    },
+    {
+      "page": 9,
+      "position": 2,
+      "title": "企业普法培训",
+      "category": "法务运营与管理",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 146,
+      "descriptionSha256": "f887cc396df10cfb66d11ae6e45d0202291f02f2c89e1edb98f266e9300932da"
+    },
+    {
+      "page": 9,
+      "position": 3,
+      "title": "招投标应标",
+      "category": "案源与客户开发",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 134,
+      "descriptionSha256": "ca105be795d24ddfbaae291d5445e934aa8e7b44601d1e885129a46754eb24d8"
+    },
+    {
+      "page": 9,
+      "position": 4,
+      "title": "应诉应急响应",
+      "category": "纠纷与投诉处理",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 147,
+      "descriptionSha256": "4811782aa862f6b7264c44d9c08fb2f3d42be6bed091a846283c381a8ec95e97"
+    },
+    {
+      "page": 9,
+      "position": 5,
+      "title": "新业务法律评估",
+      "category": "法务运营与管理",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 159,
+      "descriptionSha256": "037c6a74d168245efe4d497d21e84635fbb4234344d79dd25ca3fe577a1fd82b"
+    },
+    {
+      "page": 9,
+      "position": 6,
+      "title": "监管检查与约谈应对",
+      "category": "金融与监管合规",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 149,
+      "descriptionSha256": "48a25a607acb8b38982ad5a4236ffc43c726e34c0fca18357d5abcdef12c917c"
+    },
+    {
+      "page": 9,
+      "position": 7,
+      "title": "案情分析报告制作",
+      "category": "案件评估与立案",
+      "labels": [
+        "社区"
+      ],
+      "author": "智AI_Liberty0272",
+      "descriptionCharacters": 9,
+      "descriptionSha256": "992d1d08dc3bb50072be49d77817d48dcbe3b4f54918ec6a83094aaae751ed42"
+    },
+    {
+      "page": 9,
+      "position": 8,
+      "title": "嵌入九步裁判校验逻辑的民商事案件律师办案全流程方案",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张映律师",
+      "descriptionCharacters": 90,
+      "descriptionSha256": "5cda5dafc57fcf322447f4e66c0afc7a53e568f7d1e0a8912c0b3763dc4c6f0f"
+    },
+    {
+      "page": 9,
+      "position": 9,
+      "title": "刑事案件分析与判断-刑法适用方法论",
+      "category": "刑事辩护",
+      "labels": [
+        "社区"
+      ],
+      "author": "胖梅梅",
+      "descriptionCharacters": 57,
+      "descriptionSha256": "841d61e8f36c42fc10fdbc3412cd3dbe899c299811328c3281d83f8bad5a35af"
+    },
+    {
+      "page": 9,
+      "position": 10,
+      "title": "解除或终止劳动合同风控技能",
+      "category": "劳动人事",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 223,
+      "descriptionSha256": "090c4c64851e8c886bb89ed794d81303de5d29b3a9c75e7e68c92411fcb02ac1"
+    },
+    {
+      "page": 9,
+      "position": 11,
+      "title": "调岗调薪风控技能",
+      "category": "劳动人事",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 230,
+      "descriptionSha256": "34f07cd79de8a0ec9b8c7b19450cca168033f77571ea160fbc5f2072725a5add"
+    },
+    {
+      "page": 9,
+      "position": 12,
+      "title": "股权转让税优技能",
+      "category": "金融与监管合规",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 237,
+      "descriptionSha256": "abe803cb80883267606fc977bd927b0f0b2ac11a804fcaf7b1cd67dd08e2d5ed"
+    },
+    {
+      "page": 9,
+      "position": 13,
+      "title": "制度合规审查标准化流程",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "张映律师",
+      "descriptionCharacters": 76,
+      "descriptionSha256": "4ea376d839be30712e4cce7a326acad6402399776dcb1e863b589f8491b0cc44"
+    },
+    {
+      "page": 9,
+      "position": 14,
+      "title": "税务优化方法思维技能",
+      "category": "金融与监管合规",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 185,
+      "descriptionSha256": "0c4fc6b3f2113b138cb4d1a146403a399dd4492598f8542ed3e7b738d94a3749"
+    },
+    {
+      "page": 9,
+      "position": 15,
+      "title": "增值税专项优化技能",
+      "category": "金融与监管合规",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 214,
+      "descriptionSha256": "0af1604e9cc38053c68c09952f548589788253dca075db03dd08f81e1a841e83"
+    },
+    {
+      "page": 9,
+      "position": 16,
+      "title": "日常经营税务优化技能",
+      "category": "金融与监管合规",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 228,
+      "descriptionSha256": "7d6a676971ca30c3066fa872103bd9074177a9c0395eccfe204c29938b5c3e72"
+    },
+    {
+      "page": 9,
+      "position": 17,
+      "title": "网文剧本法律服务专家",
+      "category": "知识产权",
+      "labels": [
+        "社区"
+      ],
+      "author": "三太子过儿",
+      "descriptionCharacters": 477,
+      "descriptionSha256": "8811b4472ec90be7d288cd22810932a6fd11da55a02cafbf607838f30c2bff51"
+    },
+    {
+      "page": 9,
+      "position": 18,
+      "title": "旅游纠纷咨询助手（C端游客版）",
+      "category": "纠纷与投诉处理",
+      "labels": [
+        "社区"
+      ],
+      "author": "三太子过儿",
+      "descriptionCharacters": 337,
+      "descriptionSha256": "7f9737140740d0219cf2f66504ca0c3170c5288153e56528ab722e76008854b7"
+    },
+    {
+      "page": 9,
+      "position": 19,
+      "title": "刑民交叉案件法律分析",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "刘艳",
+      "descriptionCharacters": 200,
+      "descriptionSha256": "2cde628cb53e9878213c9f8a87bdd3eaab5d996eddb119fb37d244b17e39d602"
+    },
+    {
+      "page": 9,
+      "position": 20,
+      "title": "法律可视化",
+      "category": "数据与图表",
+      "labels": [
+        "社区"
+      ],
+      "author": "杨卫薪律师",
+      "descriptionCharacters": 255,
+      "descriptionSha256": "5b6b78e4c0645278eac4b03516b968bbef817be89820c2c6da4038569767a542"
+    },
+    {
+      "page": 9,
+      "position": 21,
+      "title": "合同起草与审查助手",
+      "category": "合同审查",
+      "labels": [
+        "社区"
+      ],
+      "author": "杨卫薪律师",
+      "descriptionCharacters": 131,
+      "descriptionSha256": "e51758f57a196700613d858a71433e55640ebe96eb2a7eda851fb0ade7b86f42"
+    },
+    {
+      "page": 9,
+      "position": 22,
+      "title": "法院短信识别与文书下载",
+      "category": "文档处理",
+      "labels": [
+        "社区"
+      ],
+      "author": "杨卫薪律师",
+      "descriptionCharacters": 88,
+      "descriptionSha256": "d44e322d8788943489f5a8aae9db7fc9abad03757b0945d4b390b4a76392c00f"
+    },
+    {
+      "page": 9,
+      "position": 23,
+      "title": "民商事一审被告代理v3.3",
+      "category": "诉讼文书起草",
+      "labels": [
+        "社区"
+      ],
+      "author": "甘丽霞律师",
+      "descriptionCharacters": 311,
+      "descriptionSha256": "18c340b5f28cb17bc7d336598f23a9643f21a71a5a68134b30f9a0988147e5f2"
+    },
+    {
+      "page": 9,
+      "position": 24,
+      "title": "庭审提纲与争议焦点预判",
+      "category": "庭审准备",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 176,
+      "descriptionSha256": "71c90c33c6884b712aa33f6891d9c9ef0a21caca5a7d319fef084216ce5935c2"
+    },
+    {
+      "page": 10,
+      "position": 1,
+      "title": "金额/利息/期限精准计算器（法院增强版）",
+      "category": "诉讼文书起草",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 220,
+      "descriptionSha256": "672774045ea86132a962dbe656edec8e6fdd32ab3ddfb3502a51ebe360b4a199"
+    },
+    {
+      "page": 10,
+      "position": 2,
+      "title": "要件事实—证据对应",
+      "category": "证据与质证",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 203,
+      "descriptionSha256": "4516b7f7ee7c569a44799a12958ce2dcb9c81c017ec26d91f455edac9368cb59"
+    },
+    {
+      "page": 10,
+      "position": 3,
+      "title": "劳动争议举证质证攻防技能2.0",
+      "category": "证据与质证",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 251,
+      "descriptionSha256": "94e5b08700c8c112ad3279d71e61914e9e78c5e713bb79511756266b4b0f809c"
+    },
+    {
+      "page": 10,
+      "position": 4,
+      "title": "法条检索与效力核验器（含新旧法衔接对照手册）",
+      "category": "法规检索",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 205,
+      "descriptionSha256": "ef0f896a5041b2cf43b8ab740dbda6e0ac8f176ebf01d6174c3876357dc95408"
+    },
+    {
+      "page": 10,
+      "position": 5,
+      "title": "劳动争议/关系识别判断技能",
+      "category": "案件评估与立案",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 391,
+      "descriptionSha256": "62a8a1c1a35ca18338a2180c0585aba12a694fa6ee4af4eade97cda2de6720ec"
+    },
+    {
+      "page": 10,
+      "position": 6,
+      "title": "法官校准型类案检索与裁判尺度分析器",
+      "category": "案例与类案检索",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 215,
+      "descriptionSha256": "3d7d40c46f3e0b742f74c8a30e245861f8bba01802a70b1a31abeae1fdb60b18"
+    },
+    {
+      "page": 10,
+      "position": 7,
+      "title": "经济补偿与赔偿金核算技能",
+      "category": "劳动人事",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 292,
+      "descriptionSha256": "e4a68f873632c96065340d5b2bf5955639750879a73d40166deb355f7ed9eb83"
+    },
+    {
+      "page": 10,
+      "position": 8,
+      "title": "工伤事故处理及风险防控技能",
+      "category": "劳动人事",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 405,
+      "descriptionSha256": "db5903b79b8c062b3d9ce36cfcb0431e6ef06799764f4ca0b0dca239ed4e01ac"
+    },
+    {
+      "page": 10,
+      "position": 9,
+      "title": "裁判规则提炼与说理辅助",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 288,
+      "descriptionSha256": "85c8591ce9df76d3431f8dc67cdc394c1cd4ab11f4c75261105a5a95d51715dc"
+    },
+    {
+      "page": 10,
+      "position": 10,
+      "title": "建设工程风控流程方案（律师 + 造价师双视角）",
+      "category": "房地产与工程",
+      "labels": [
+        "社区"
+      ],
+      "author": "张映律师",
+      "descriptionCharacters": 48,
+      "descriptionSha256": "e7b83d0b304b83e3f1198a6d4783013d12d7d17a378a5e4ecad9997afbe27c7a"
+    },
+    {
+      "page": 10,
+      "position": 11,
+      "title": "工伤赔偿计算技能",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 456,
+      "descriptionSha256": "ad2fb6f6cbd258b5e2f02b41dbe659b4ff2afaf99e4e07943e78043f608df391"
+    },
+    {
+      "page": 10,
+      "position": 12,
+      "title": "仲裁时效全矩阵核查技能",
+      "category": "仲裁与调解",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 239,
+      "descriptionSha256": "197fdf19dd6e2261500b906c58fbea5488b8102c77d0a8f4e0a151fb346c636b"
+    },
+    {
+      "page": 10,
+      "position": 13,
+      "title": "法院裁判文书产出校验器",
+      "category": "⚖️\n诉讼仲裁",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 209,
+      "descriptionSha256": "289e5b1d432a46d1449e27f99d86a587003d803ad70c1d434d5194bd4496b0d6"
+    },
+    {
+      "page": 10,
+      "position": 14,
+      "title": "一裁终局攻防与裁诉衔接技能",
+      "category": "仲裁与调解",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 259,
+      "descriptionSha256": "113f9442711a97cca5092cec416087ac54628cdc477f477f4cd407a0c34b05f4"
+    },
+    {
+      "page": 10,
+      "position": 15,
+      "title": "社保缴纳争议解决技能",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 366,
+      "descriptionSha256": "e5ec4f682be69f1a9157abb8f1e2bd4880b25437fbc0edc3d3f7967f6fdf4c3e"
+    },
+    {
+      "page": 10,
+      "position": 16,
+      "title": "案件变成公众号文章",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "树先生",
+      "descriptionCharacters": 347,
+      "descriptionSha256": "ccf99dc3634028b53ad51b6d46cdfac135baa22deacce3d3402d9369aa3f84ad"
+    },
+    {
+      "page": 10,
+      "position": 17,
+      "title": "刑民行案件",
+      "category": "诉讼文书起草",
+      "labels": [
+        "社区"
+      ],
+      "author": "张映律师",
+      "descriptionCharacters": 269,
+      "descriptionSha256": "b17adda58a1034b54b31ed5b3bbcebd4e6ae728310510af9f86bf76c9338c869"
+    },
+    {
+      "page": 10,
+      "position": 18,
+      "title": "案由确定神器",
+      "category": "案件评估与立案",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 152,
+      "descriptionSha256": "0aeac1ac959ca120d2c8ebbb305cad2f708fc091604fd9dccfed8f095df9cd1a"
+    },
+    {
+      "page": 10,
+      "position": 19,
+      "title": "立案审查辅助器",
+      "category": "案件评估与立案",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 152,
+      "descriptionSha256": "537512c88ac83bb14486673a03d37c5bd700f4699c4b0a80f45358efd71b30f1"
+    },
+    {
+      "page": 10,
+      "position": 20,
+      "title": "庭前最终排查",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "三太子过儿",
+      "descriptionCharacters": 317,
+      "descriptionSha256": "2a4a47b85c6880ba9bfdc37893afd85dced27654f84d474676a9df2eedfd468b"
+    },
+    {
+      "page": 10,
+      "position": 21,
+      "title": "目标法院裁判画像研究",
+      "category": "案例与类案检索",
+      "labels": [
+        "社区"
+      ],
+      "author": "三太子过儿",
+      "descriptionCharacters": 323,
+      "descriptionSha256": "c115bbb27805b2b04a9dc4f328e95b0272851b72b2561f8a3bd20352ecbf31a6"
+    },
+    {
+      "page": 10,
+      "position": 22,
+      "title": "证券交易所业务指南与规则",
+      "category": "投融资与并购",
+      "labels": [
+        "社区"
+      ],
+      "author": "陈晚柒律师",
+      "descriptionCharacters": 465,
+      "descriptionSha256": "c38d2da15547cb717b4ada88f90a878fc33535f2f1760b4b458f0e8936130407"
+    },
+    {
+      "page": 10,
+      "position": 23,
+      "title": "怼人高手",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "张耀天律师",
+      "descriptionCharacters": 302,
+      "descriptionSha256": "ab23279828d84622aeb92a5e46a4aa4100797acc02a1f2d1296d94bc35bc8170"
+    },
+    {
+      "page": 10,
+      "position": 24,
+      "title": "案件倒推法律服务产品",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "树先生",
+      "descriptionCharacters": 584,
+      "descriptionSha256": "89c77f7fd347661d5d68522fda9c84cbe5ed510126b490c8bd58cf6ed7448751"
+    },
+    {
+      "page": 11,
+      "position": 1,
+      "title": "新闻媒体公益普法写作专家",
+      "category": "品牌与内容营销",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 303,
+      "descriptionSha256": "7feacd3f75c2f038f5c0770315393878018ee76e7654112a378904b99c6b8dac"
+    },
+    {
+      "page": 11,
+      "position": 2,
+      "title": "权威观点援引（坚定立论版）",
+      "category": "诉讼文书起草",
+      "labels": [
+        "社区"
+      ],
+      "author": "三太子过儿",
+      "descriptionCharacters": 327,
+      "descriptionSha256": "4e7293d14d0a216aa7e5345e47f8aa6530d9045c83a87fbdbde92e3b393febad"
+    },
+    {
+      "page": 11,
+      "position": 3,
+      "title": "顶级心理学家思维SKILL （客户关系维护）",
+      "category": "案源与客户开发",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 194,
+      "descriptionSha256": "be2270b93b96901c4b388851d874117a8bce55f031804d5237aa30d7f420bd60"
+    },
+    {
+      "page": 11,
+      "position": 4,
+      "title": "九型人格拓客神器（成交增强版 ）",
+      "category": "案源与客户开发",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 201,
+      "descriptionSha256": "647b3f56786fb1d5d1139e12aef69859b554ff2798ee24c7a001ce6fd224d2be"
+    },
+    {
+      "page": 11,
+      "position": 5,
+      "title": "民商事诉讼策略分析助手",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "张耀天律师",
+      "descriptionCharacters": 311,
+      "descriptionSha256": "1f5c4302fcf39753c94b9ce2ff823c50b7e2d23e4d9b8165f02cefb3b0810e22"
+    },
+    {
+      "page": 11,
+      "position": 6,
+      "title": "顶级商业领袖思维 SKILL",
+      "category": "创意写作",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 247,
+      "descriptionSha256": "cc907c0e5c0645f0839a58536e6deb225e6446d622353133794a1a81b62fed98"
+    },
+    {
+      "page": 11,
+      "position": 7,
+      "title": "顶级投资大师思维 SKILL",
+      "category": "创意写作",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 246,
+      "descriptionSha256": "d602a2586cde4804c29d3edfd2adfd4f219f890fe839d03c8201723cf71863bf"
+    },
+    {
+      "page": 11,
+      "position": 8,
+      "title": "中国杰出企业家商业思维",
+      "category": "品牌与内容营销",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 159,
+      "descriptionSha256": "54a52060e43569b0565d14de37e4bc34f8b41adcb5a4c176bf9b7cc6a38365ac"
+    },
+    {
+      "page": 11,
+      "position": 9,
+      "title": "律师个人IP定位与获客（配套模板库）",
+      "category": "案源与客户开发",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 185,
+      "descriptionSha256": "3b030cc7918adba70a44ef992c4576ce3b395092278509ad9e27dd2c5d8bd665"
+    },
+    {
+      "page": 11,
+      "position": 10,
+      "title": "律师朋友圈人设经营",
+      "category": "案源与客户开发",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 437,
+      "descriptionSha256": "7894995968b505e47c3bc000e602e7b970aba412cd923311c2e99699db88b13c"
+    },
+    {
+      "page": 11,
+      "position": 11,
+      "title": "律师短视频口播获客脚本",
+      "category": "案源与客户开发",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 375,
+      "descriptionSha256": "6fe4d925809c780ba0610447f977878e2fea72450bd907cf330633a65616c761"
+    },
+    {
+      "page": 11,
+      "position": 12,
+      "title": "法律咨询线索落地页设计",
+      "category": "案源与客户开发",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 273,
+      "descriptionSha256": "740d8c418fd2d4c71180178784bf9818bdbef4c99f33cd605cb80cc9bd128493"
+    },
+    {
+      "page": 11,
+      "position": 13,
+      "title": "诉讼可视化-超高水准美化",
+      "category": "庭审准备",
+      "labels": [
+        "社区",
+        "新品"
+      ],
+      "author": "缪奇川",
+      "descriptionCharacters": 1014,
+      "descriptionSha256": "9661a10e04a08019359fd7efba83cfc2bcdd780fa367a0999c0b8c387ecbab3e"
+    },
+    {
+      "page": 11,
+      "position": 14,
+      "title": "法律关系图大师",
+      "category": "案件评估与立案",
+      "labels": [
+        "社区",
+        "新品"
+      ],
+      "author": "缪奇川",
+      "descriptionCharacters": 199,
+      "descriptionSha256": "eca9158aa6fdec57f2d3d1edb80ba69124d391725402c8bbdb06ee499487e785"
+    },
+    {
+      "page": 11,
+      "position": 15,
+      "title": "原告律师庭前五件套交付",
+      "category": "案件评估与立案",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 194,
+      "descriptionSha256": "7f6ac8cc9c187a0294c7b63cd8d9df28cc5b45325ac65dda8ee22c370318713d"
+    },
+    {
+      "page": 11,
+      "position": 16,
+      "title": "模糊想法梳理你的思路",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "树先生",
+      "descriptionCharacters": 224,
+      "descriptionSha256": "e699eaa62369794b8e706f3fcfcfebb9c117a6f4b879da2970da809e8dba1c52"
+    },
+    {
+      "page": 11,
+      "position": 17,
+      "title": "庭审对抗图大师",
+      "category": "庭审准备",
+      "labels": [
+        "社区",
+        "新品"
+      ],
+      "author": "缪奇川",
+      "descriptionCharacters": 103,
+      "descriptionSha256": "28157667b25fe355919e043cbc93812fd3b16c0350c9648f5b42d298be4c304c"
+    },
+    {
+      "page": 11,
+      "position": 18,
+      "title": "时间轴大师",
+      "category": "庭审准备",
+      "labels": [
+        "社区",
+        "新品"
+      ],
+      "author": "缪奇川",
+      "descriptionCharacters": 937,
+      "descriptionSha256": "ef81352fdcb8a13f69bf862c5e24ea96ce742c166e2a1c5a377ba82185d1d32c"
+    },
+    {
+      "page": 11,
+      "position": 19,
+      "title": "企业尽职调查全流程法律产品交付（启信宝至尊版）",
+      "category": "尽职调查",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 397,
+      "descriptionSha256": "64df87b951bb81343bc1f607359879d11a1ac82d497bbfc917d1e2fe44c7b518"
+    },
+    {
+      "page": 11,
+      "position": 20,
+      "title": "婚姻家事律师全流程办案 Skill",
+      "category": "诉讼文书起草",
+      "labels": [
+        "社区"
+      ],
+      "author": "遵义杨衡",
+      "descriptionCharacters": 247,
+      "descriptionSha256": "998568ec8ea0eb268408b15f1e20a889cfae913647e5b35c17242046eec98de1"
+    },
+    {
+      "page": 11,
+      "position": 21,
+      "title": "启信宝-企业全景尽调报告",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 190,
+      "descriptionSha256": "e5e886bdae92d56562223793323d62113ca9404312aef64f817d5c18e7783140"
+    },
+    {
+      "page": 11,
+      "position": 22,
+      "title": "启信宝-合作前主体核验",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 196,
+      "descriptionSha256": "f51bdcdfba0faa38496e014d2df0da78be8ba75fee92a009671c6835f6e274bb"
+    },
+    {
+      "page": 11,
+      "position": 23,
+      "title": "刑事辩护2·证据审查",
+      "category": "刑事辩护",
+      "labels": [
+        "社区"
+      ],
+      "author": "胖梅梅",
+      "descriptionCharacters": 215,
+      "descriptionSha256": "431d078cdc4a07c1f92cad8fb52f7bea19fc32a6729aa08edc83e01534fb5c4b"
+    },
+    {
+      "page": 11,
+      "position": 24,
+      "title": "启信宝-司法与经营风险体检",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 174,
+      "descriptionSha256": "1232807a925743a83011c7665b1658fdfefa223009bf19d2297565faa8944c62"
+    },
+    {
+      "page": 12,
+      "position": 1,
+      "title": "启信宝-公司风险速查",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 176,
+      "descriptionSha256": "a7340911526231af881541a4823bb2329df4b293dae9f0e6f922220acb6d0a48"
+    },
+    {
+      "page": 12,
+      "position": 2,
+      "title": "启信宝-关联企业传导风险报告",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 209,
+      "descriptionSha256": "4d564cf1d4f4efa3beff9576eb426a79735ad3591542e8143dae80330d0e5c80"
+    },
+    {
+      "page": 12,
+      "position": 3,
+      "title": "启信宝-客户准入快速筛查",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 163,
+      "descriptionSha256": "94aed3e43f5e4821305ed8c1de822818088ce74d3c5d8bcc21b5c9ead1aabf21"
+    },
+    {
+      "page": 12,
+      "position": 4,
+      "title": "启信宝-重点区域企业检索与发现",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 217,
+      "descriptionSha256": "4e682cc468cf7226c19b8edf19d623c98a8aa68b9a57ab9605d0845a67d45699"
+    },
+    {
+      "page": 12,
+      "position": 5,
+      "title": "启信宝-企业优先级排序",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 215,
+      "descriptionSha256": "d3bc738169cc572334f31ae8d0c08ac5c07906e5339bbf8923c2507503a06ab7"
+    },
+    {
+      "page": 12,
+      "position": 6,
+      "title": "启信宝-前置准入核验",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 196,
+      "descriptionSha256": "9c51183bb6cbd2832b99f1a1350f243c796be38a51994cd54d44a73c66cb4e97"
+    },
+    {
+      "page": 12,
+      "position": 7,
+      "title": "启信宝-国内企业关联关系报告",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 195,
+      "descriptionSha256": "4221e2e7fd45c6d4536dab781e59a057099945e75cf3f0146938fff86d4cd5d0"
+    },
+    {
+      "page": 12,
+      "position": 8,
+      "title": "启信宝-招投标情报雷达",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 91,
+      "descriptionSha256": "bb058a5e696ddb3390fc061c3aebb7e9a93a1fb9b87e1da486746a81ddc9e706"
+    },
+    {
+      "page": 12,
+      "position": 9,
+      "title": "启信宝-多次关系寻源",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 106,
+      "descriptionSha256": "3e17f39ba74fc09b3047a7be2f48ec8d1463dc722df65116c5465d5136b5b5f0"
+    },
+    {
+      "page": 12,
+      "position": 10,
+      "title": "启信宝-负面舆情扫描",
+      "category": "",
+      "labels": [
+        "官方",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 233,
+      "descriptionSha256": "3f69723d23096716a85eade5e69cd697e1163729ca1a1fcdd8e408b427584de4"
+    },
+    {
+      "page": 12,
+      "position": 11,
+      "title": "交通事故纠纷处理skill",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 192,
+      "descriptionSha256": "87cf4031a522ba1e72b80fc216ce39864e21a1675a294ba3eec95a90079862f6"
+    },
+    {
+      "page": 12,
+      "position": 12,
+      "title": "大事记表大师",
+      "category": "庭审准备",
+      "labels": [
+        "社区",
+        "新品"
+      ],
+      "author": "缪奇川",
+      "descriptionCharacters": 110,
+      "descriptionSha256": "e4168a61234eb85e8df7df25d26fa0159602f327ae306c050463d61fe9c3e684"
+    },
+    {
+      "page": 12,
+      "position": 13,
+      "title": "法律服务翻译官（含10国语种）",
+      "category": "翻译与润色",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 475,
+      "descriptionSha256": "2f60b132ae338c3894363c17f2001c2d5bc7bdf79881e843b2b60341e1b2a2a3"
+    },
+    {
+      "page": 12,
+      "position": 14,
+      "title": "法律业务多语种语音交流",
+      "category": "翻译与润色",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 230,
+      "descriptionSha256": "e7e888cd8269f3a2977e1d7a447ecc17c46ec1c2d0be42d5dccf7638656f0ed3"
+    },
+    {
+      "page": 12,
+      "position": 15,
+      "title": "人身损害伤残鉴定技能",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 297,
+      "descriptionSha256": "848594727675edfa74119c8463a6a0f628bc5160b3b8778794c14a91e6309c5f"
+    },
+    {
+      "page": 12,
+      "position": 16,
+      "title": "双倍工资专项攻防技能",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 257,
+      "descriptionSha256": "1a29e0026f4ee4f3f9483067e3fc51fff3151c2e989de11c934910e11b3f1b10"
+    },
+    {
+      "page": 12,
+      "position": 17,
+      "title": "债务清收诊断",
+      "category": "案件评估与立案",
+      "labels": [
+        "社区"
+      ],
+      "author": "北京浩天律师事务所债务清收法律服务中心",
+      "descriptionCharacters": 159,
+      "descriptionSha256": "37432df4e6a9e47eb70eb9e1e052a0a5aa7a23acef50ce8dcd2c1f4f679162d2"
+    },
+    {
+      "page": 12,
+      "position": 18,
+      "title": "公司登记与税务法律风险防控",
+      "category": "公司治理",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 839,
+      "descriptionSha256": "ddf2e14bde6bd5aa080fda9a1c495560c325ba85c51d5be26298bddd98bb5e58"
+    },
+    {
+      "page": 12,
+      "position": 19,
+      "title": "刑事辩护-证据矛盾可视化",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "胖梅梅",
+      "descriptionCharacters": 264,
+      "descriptionSha256": "6b14309511c983be4ccb1592682efe9173033431131f511e5cc2edf00814bf25"
+    },
+    {
+      "page": 12,
+      "position": 20,
+      "title": "彩礼返还纠纷咨询",
+      "category": "案件评估与立案",
+      "labels": [
+        "社区"
+      ],
+      "author": "遵义胡青焱",
+      "descriptionCharacters": 198,
+      "descriptionSha256": "f9860d28db7a100a6857ca0591adee41e9e6799d5755af5548f481b43e620643"
+    },
+    {
+      "page": 12,
+      "position": 21,
+      "title": "合同审查（包含税务角度审查）",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "闵人杰律师",
+      "descriptionCharacters": 144,
+      "descriptionSha256": "d311f23267168dc2a01a4875114e3c0f9d2539edf775aeb9beeaeeced1d9a3da"
+    },
+    {
+      "page": 12,
+      "position": 22,
+      "title": "民间借贷处理技能",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 178,
+      "descriptionSha256": "103c4b072df415c54635f274a05e53b3f4324c5d72dfca3295e3ab7f3a41d501"
+    },
+    {
+      "page": 12,
+      "position": 23,
+      "title": "破产案件全角色辅助技能",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "泡泡",
+      "descriptionCharacters": 281,
+      "descriptionSha256": "f25ec26fba621dbf850806db512d4bff12f3a35dc748b31c2b8db4c3f38c6d93"
+    },
+    {
+      "page": 12,
+      "position": 24,
+      "title": "法律文书涉税风险与证据审查",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "闵人杰律师",
+      "descriptionCharacters": 62,
+      "descriptionSha256": "96e84d11c1137bb9c526d1f4f00c09cf39f5ebde43acdfd9001d5b0d365253e9"
+    },
+    {
+      "page": 13,
+      "position": 1,
+      "title": "浙企 AI 出海风控合规顾问（京衡律师）",
+      "category": "涉外与跨境",
+      "labels": [
+        "社区"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 228,
+      "descriptionSha256": "76df6ee6de58ef93835d4e7f20a1f84de343da38dfd32b8cc1f2f2d6d3082f8b"
+    },
+    {
+      "page": 13,
+      "position": 2,
+      "title": "财税实务技能-法律人视角",
+      "category": "🧰\n通用办公工具",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 298,
+      "descriptionSha256": "0d9c57533aeeaf3c632c98ceeb1d9631a8e79132d7e3211194899d1a1a4300bb"
+    },
+    {
+      "page": 13,
+      "position": 3,
+      "title": "医疗损害责任纠纷处理技能",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 294,
+      "descriptionSha256": "6b381bcd962831066041cd53430c86d30c44a154ea6089f3b429d4e712ef0acb"
+    },
+    {
+      "page": 13,
+      "position": 4,
+      "title": "采购反舞弊调查技能",
+      "category": "内部调查",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 379,
+      "descriptionSha256": "37613ad2cc9c624f54ffa9ef9fcd721c7f8f7b84ec9533cc757e0c0a68706cda"
+    },
+    {
+      "page": 13,
+      "position": 5,
+      "title": "企业法律风险内控技能",
+      "category": "法务运营与管理",
+      "labels": [
+        "社区",
+        "新品"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 754,
+      "descriptionSha256": "61c4e4ac5d0964f69934ab525e9a275d9c74b9531a1e9466f47610341481ed5a"
+    },
+    {
+      "page": 13,
+      "position": 6,
+      "title": "异常、疑点或疑似舞弊线索查找技能",
+      "category": "反腐败与内控",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 224,
+      "descriptionSha256": "eaf6fd3900d98ee369cfb79e69efe6e363434b615152a2d602855035c660ba47"
+    },
+    {
+      "page": 13,
+      "position": 7,
+      "title": "IPO-04-股权结构与历史沿革合规诊断",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "壹然",
+      "descriptionCharacters": 97,
+      "descriptionSha256": "eddb4dd9180e438b287a3cd1562c7ef55e55ba3afa9670c23495429546cbfaff"
+    },
+    {
+      "page": 13,
+      "position": 8,
+      "title": "人资内控查缺评估技能",
+      "category": "反腐败与内控",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 732,
+      "descriptionSha256": "090827b7bb1e511b782b91371e7704c5f558e66ac948f26e52daee8ea2e267a7"
+    },
+    {
+      "page": 13,
+      "position": 9,
+      "title": "IPO-05-财务规范性与收入确认合规诊断",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "壹然",
+      "descriptionCharacters": 97,
+      "descriptionSha256": "7cf887c1f9492602ce56bde5691f5f94c1be8ccfc6e29d189dd4037241d3baab"
+    },
+    {
+      "page": 13,
+      "position": 10,
+      "title": "IPO-06-税务合规与社保公积金整改",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "壹然",
+      "descriptionCharacters": 83,
+      "descriptionSha256": "4d2b5797cd5e73f6a142e2b09d646476cc7ab42e558f0b590532d6ed0e42b73a"
+    },
+    {
+      "page": 13,
+      "position": 11,
+      "title": "IPO-07-资产权属与土地房产合规诊断",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "壹然",
+      "descriptionCharacters": 86,
+      "descriptionSha256": "335d1aff0097ec439558c7427c5f0574f15afc52b0278280d005c590e1d7dbd5"
+    },
+    {
+      "page": 13,
+      "position": 12,
+      "title": "出门问问录音软件库链接",
+      "category": "",
+      "labels": [
+        "社区"
+      ],
+      "author": "闵人杰律师",
+      "descriptionCharacters": 284,
+      "descriptionSha256": "8c4b640bf694776f90af039d39afe534deb7113d541195646f8b332fe8a79160"
+    },
+    {
+      "page": 13,
+      "position": 13,
+      "title": "IPO-11-信息披露与招股书撰写合规",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "壹然",
+      "descriptionCharacters": 78,
+      "descriptionSha256": "0f0c3bb2eee5993560c00f6a8aefe402ee98d5016b10295eb4b12794c3c9a33f"
+    },
+    {
+      "page": 13,
+      "position": 14,
+      "title": "IPO-08-业务合规与资质许可诊断",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "壹然",
+      "descriptionCharacters": 72,
+      "descriptionSha256": "1ca17534aec52c738a43d01d1260e2b3531dc5a1523067e18e84c8169a0673ed"
+    },
+    {
+      "page": 13,
+      "position": 15,
+      "title": "IPO-12-中介机构选聘与协作效能评估",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "壹然",
+      "descriptionCharacters": 84,
+      "descriptionSha256": "9e46f7612c6275861a10858139c7493041a2b4757286590df45648bc61a7d4a2"
+    },
+    {
+      "page": 13,
+      "position": 16,
+      "title": "IPO-02-历史问题专项整改",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "壹然",
+      "descriptionCharacters": 246,
+      "descriptionSha256": "b9e283965735094ad5b205455bd469d2a6805d11fd4988c1f46da40a86154dee"
+    },
+    {
+      "page": 13,
+      "position": 17,
+      "title": "IPO-03-同业对标与赛道审核尺度研判",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "壹然",
+      "descriptionCharacters": 115,
+      "descriptionSha256": "e101c5dd80953fb0fe13ec851d0d3b3bd18b5c5948bbe9d9c053c283be910b3b"
+    },
+    {
+      "page": 13,
+      "position": 18,
+      "title": "IPO-09-关联交易与独立性合规诊断",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "壹然",
+      "descriptionCharacters": 79,
+      "descriptionSha256": "8d4a9293601ba7404cb0a11c724bc355daa3f0939e3522fe8ce6cb5eec227322"
+    },
+    {
+      "page": 13,
+      "position": 19,
+      "title": "IPO-10-募投项目合规性与可行性研判",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "壹然",
+      "descriptionCharacters": 83,
+      "descriptionSha256": "8c449ded6fa65169bca1a958837d0a744226e30c36d8118b358a3b306d2f9994"
+    },
+    {
+      "page": 13,
+      "position": 20,
+      "title": "IPO-13-上市前模拟问询与压力测试",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "壹然",
+      "descriptionCharacters": 68,
+      "descriptionSha256": "624add8ad9f64b1a41c25e6ca0af0c2dfcd65ec72858b62285f795228c440137"
+    },
+    {
+      "page": 13,
+      "position": 21,
+      "title": "IPO-01-IPO快速诊断",
+      "category": "📑\n交易与非诉",
+      "labels": [
+        "社区"
+      ],
+      "author": "壹然",
+      "descriptionCharacters": 177,
+      "descriptionSha256": "f3032719f36f593c41857f0d9867a8e9e35cc5172129c4b260cfe8a2be3c59f1"
+    },
+    {
+      "page": 13,
+      "position": 22,
+      "title": "民商事一审被告代理v4.0",
+      "category": "",
+      "labels": [
+        "社区",
+        "新品"
+      ],
+      "author": "甘丽霞律师",
+      "descriptionCharacters": 27,
+      "descriptionSha256": "5fa3fc3a9ba7259ff89130cec95e4f914294c1ec8f56ff8c06342b2c3cf5aed8"
+    },
+    {
+      "page": 13,
+      "position": 23,
+      "title": "舞弊专项审查技能",
+      "category": "反腐败与内控",
+      "labels": [
+        "社区"
+      ],
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "descriptionCharacters": 246,
+      "descriptionSha256": "3ea612abb532341af169fa7796602c502f99c9b5693ffe07fae000c746966210"
+    },
+    {
+      "page": 13,
+      "position": 24,
+      "title": "智合AI搜法",
+      "category": "法规检索",
+      "labels": [
+        "基础技能",
+        "已开源 ↗"
+      ],
+      "author": "",
+      "descriptionCharacters": 321,
+      "descriptionSha256": "30605bc3de3f8a76e1bc014025bf7a6a18aec27896df5c6dc7cc2a3361ba9d3a"
+    },
+    {
+      "page": 14,
+      "position": 1,
+      "title": "义乌厂房买卖税费测算",
+      "category": "数据与图表",
+      "labels": [
+        "社区",
+        "新品"
+      ],
+      "author": "骆定进律师",
+      "descriptionCharacters": 13,
+      "descriptionSha256": "db3b7edf0d23b202e043465f006444f6122631bfcfb847592289de1883cdc501"
+    },
+    {
+      "page": 14,
+      "position": 2,
+      "title": "上市公司公众号发文舆情监测与合规预检",
+      "category": "",
+      "labels": [
+        "社区",
+        "新品"
+      ],
+      "author": "张宸璐律师",
+      "descriptionCharacters": 607,
+      "descriptionSha256": "4a781a92ce96d792b1636cd760d158539d08545182449bc18b7cf760ae0997f7"
+    },
+    {
+      "page": 14,
+      "position": 3,
+      "title": "医药临床与研发数据合规",
+      "category": "",
+      "labels": [
+        "社区",
+        "新品"
+      ],
+      "author": "盧嘉亮拓泽",
+      "descriptionCharacters": 490,
+      "descriptionSha256": "f1288d309067e8f9bfd1bbf984cc081a1a7b0c4ba88787b706610d8eba90bd75"
+    },
+    {
+      "page": 14,
+      "position": 4,
+      "title": "医药广告营销合规审查",
+      "category": "",
+      "labels": [
+        "社区",
+        "新品"
+      ],
+      "author": "盧嘉亮拓泽",
+      "descriptionCharacters": 343,
+      "descriptionSha256": "9aa70902631fa08cc9b6773ade87c972bac322cd5e4d5ac930405a3f227cba55"
+    }
+  ]
+}

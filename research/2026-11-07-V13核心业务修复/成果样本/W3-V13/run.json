@@ -1,0 +1,107 @@
+{
+ "run": {
+  "run_id": "run_1918a1c2-f08e-4ef7-aec7-ce94f272d209",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_85ab47c5-9ec4-463e-b4d8-7c120449c1fe",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "partial",
+  "status_version": 5,
+  "idempotency_key": "mat_85ab47c5-9ec4-463e-b4d8-7c120449c1fe-a1.agent_task-1794029358980",
+  "input_snapshot": {
+   "matter_id": "mat_85ab47c5-9ec4-463e-b4d8-7c120449c1fe",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_291d378f-a3b8-4a12-9412-ee911b860444",
+    "docv_fc5a80cb-dc1f-49a0-b801-3d74de759fdb"
+   ],
+   "goal": "请审查这份服务 / 技术服务合同，我方立场以事项为准；重点关注：付款、交割 / 验收、违约责任、知识产权、保密、争议解决。\n我们是南京禾悦餐饮连锁管理有限公司的法律顾问。禾悦准备采购北京云帆智联科技有限公司的会员营销云平台，云帆发来了他们的格式文本《会员营销云平台订阅服务与数据处理协议（服务商提供稿）》。注意合同里云帆是甲方（服务商），我方禾悦是乙方（客户）。客户的商业目标、时间节点和底线见附件《客户背景说明》。请站在禾悦（乙方）的立场审查这份合同，交付两份Word文件：一、合同审查意见书，按风险高低排序，每条写明条款位置、问题、法律后果和修改建议，并结合客户的时间节点和三条底线给出谈判优先级（必须改、争取改、可以接受）；二、直接在云帆这份原件上修改的修订稿，我方的修改用修订痕迹呈现，让对方一眼看到改了什么。对方说格式文本一般不改，所以修改要有理有据、对方有可能接受，不要整篇重写，条款编号和表格保持原样。",
+   "estimate_id": "est_665f4750-f12f-475c-a92f-569b15a645c1",
+   "title": "审合同",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-review",
+   "skill_title": "合同审查（风险卡）· 试用（通用辅助）",
+   "skill_version": "1.10.1",
+   "skill_primary_output": "审查意见书（内部稿）.docx",
+   "skills_sha256": "sUSOoUiH8MRK2usGoBAWN7Qdst_qplAZMMaWwcW8p8M",
+   "skill_args": {
+    "type": "服务 / 技术服务",
+    "focus": "付款、交割 / 验收、违约责任、知识产权、保密、争议解决"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_665f4750-f12f-475c-a92f-569b15a645c1",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-07T05:29:18.983Z",
+  "updated_at": "2026-11-07T06:09:50.819Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_dfa807d9-b230-4f08-92b7-300490f03efa",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "审查意见书（内部稿）-会员营销云平台订阅服务与数据处理协议.docx",
+   "sha256": "d35dbd13e478668ec9c138397f6378970c6e14a0a03119418762e0861f3f0d0f",
+   "created_at": "2026-11-07T06:02:26.368Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_8bcc7712-85b8-4df9-9100-5db65fbc1f5a",
+   "kind": "revision_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "会员营销云平台订阅服务与数据处理协议（服务商提供稿）（修订稿）.docx",
+   "sha256": "3d8dbdfc84412eb3ed8599faa1f1f0f3baf0a1d4c9b6eb1a3149755090a61157",
+   "created_at": "2026-11-07T06:07:15.853Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_42e563d0-a453-44d3-814e-07a12b11ccaf",
+   "kind": "revision_clean",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "会员营销云平台订阅服务与数据处理协议（服务商提供稿）（清洁稿）.docx",
+   "sha256": "03f6fa463da4774315258a1eed08c72efef8992b902ae36fe6a6bcf97110fff6",
+   "created_at": "2026-11-07T06:07:15.861Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_229b92b2-5fe5-4b85-b3ef-31d579c58e35",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "会员营销云平台订阅服务与数据处理协议（服务商提供稿）（修改对照表）.docx",
+   "sha256": "0bc3e25ca070f8b6c264469e15c22d2a846874920408bb323b4cda2340001c62",
+   "created_at": "2026-11-07T06:07:15.863Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

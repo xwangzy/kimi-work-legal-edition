@@ -1,0 +1,105 @@
+{
+ "run": {
+  "run_id": "run_d6c493c5-6621-4369-938e-d6c00944e963",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_edbf1314-b72d-42c3-90fc-4ca364dc0b6c",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_edbf1314-b72d-42c3-90fc-4ca364dc0b6c-a1.agent_task-1794023434467",
+  "input_snapshot": {
+   "matter_id": "mat_edbf1314-b72d-42c3-90fc-4ca364dc0b6c",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_c30e8b2a-5e27-4c58-a097-e18daf99972f"
+   ],
+   "goal": "请按以下意见直接在原文上修改这份文书，给我修订稿和清洁稿：我们是甲方杭州栖木家居（存货人）。就在德舟发来的这版《仓储与配送服务合同》原件上改，出带修订痕迹的Word稿、清洁稿和修改对照表。只改下面这些地方，意见以外的实质内容不要动；因为增删条款引起的条号、援引条号要跟着改，并在对照表里单独列出来。你发现的其他问题列给我，不要自己改。意见如下（条号都按原件）：\n1. 页眉里的“（乙方提供稿）”改成“（甲方修改稿）”，合同编号不变。\n2. 第8.1款保证金从50万元降到20万元，大写一起改。\n3. 第7.2款付款期限从“收到发票后10日内”改成“收到发票后30日内”。\n4. 删除第4.2款（乙方可以把我们的货调拨到其他仓库那一款），整款删掉，不用另写替代条款。\n5. 第9.1款赔偿标准改成：按入库单记载的申报价值全额赔偿；入库单没有记载申报价值的，按我们能证明的采购成本赔偿。原来“50%”和“每托不超过3,000元”的限制都删掉。\n6. 在第九条后面单独新增一条“转委托与分包”，分三款：第一款，乙方不得把仓储服务转委托给第三方；配送服务可以分包给依法取得道路运输经营许可证的承运人，但要提前书面告诉我们承运人名单。第二款，乙方对分包承运人的行为承担与自己行为同等的责任，配送途中的货损按第9.1款赔偿。第三款，乙方擅自转委托仓储服务的，我们可以书面通知解除合同，乙方还要支付违约金10万元。\n7. 费率表第1项仓储费单价从每托每日3.50元降到3.00元；第6.2款按1,200托算的月度仓储费预估金额跟着改，大小写都要改。\n8. 第14.1款争议解决改成提交杭州仲裁委员会仲裁，不去法院。\n9. 第十一条最后加一款责任上限：乙方在本合同项下承担的违约金和赔偿金，每一合同年度累计不超过人民币300万元。这是德舟坚持要的，我们同意了。",
+   "estimate_id": "est_69245571-3e3c-4985-a4ca-6e3e714c9141",
+   "title": "按你的意见修改文书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "doc-revise",
+   "skill_title": "按你的意见修改文书 · 试用",
+   "skill_version": "1.3.4",
+   "skill_primary_output": "修订稿.docx",
+   "skills_sha256": "sUSOoUiH8MRK2usGoBAWN7Qdst_qplAZMMaWwcW8p8M",
+   "skill_args": {
+    "opinion": "我们是甲方杭州栖木家居（存货人）。就在德舟发来的这版《仓储与配送服务合同》原件上改，出带修订痕迹的Word稿、清洁稿和修改对照表。只改下面这些地方，意见以外的实质内容不要动；因为增删条款引起的条号、援引条号要跟着改，并在对照表里单独列出来。你发现的其他问题列给我，不要自己改。意见如下（条号都按原件）：\n1. 页眉里的“（乙方提供稿）”改成“（甲方修改稿）”，合同编号不变。\n2. 第8.1款保证金从50万元降到20万元，大写一起改。\n3. 第7.2款付款期限从“收到发票后10日内”改成“收到发票后30日内”。\n4. 删除第4.2款（乙方可以把我们的货调拨到其他仓库那一款），整款删掉，不用另写替代"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_69245571-3e3c-4985-a4ca-6e3e714c9141",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-07T03:50:34.470Z",
+  "updated_at": "2026-11-07T04:02:35.858Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_83636907-921e-4dc5-933f-2c5db76df029",
+   "kind": "revision_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "仓储与配送服务合同（德舟供应链提供稿）（修订稿）.docx",
+   "sha256": "76fe6ebb9f0896e7753c246553e3d70e21d2df7a6f3e6a500228618bee964ff1",
+   "created_at": "2026-11-07T04:00:20.741Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_162669be-91a6-4004-9f73-15d217d3dcf5",
+   "kind": "revision_clean",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "仓储与配送服务合同（德舟供应链提供稿）（清洁稿）.docx",
+   "sha256": "d0407d2f34b6ab70661001ed7f37b29de8bc3315195e06a6886058495c47033c",
+   "created_at": "2026-11-07T04:00:20.751Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2981ada7-c74b-4d1f-9bc3-7e3e963cffac",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "仓储与配送服务合同（德舟供应链提供稿）（修改对照表）.docx",
+   "sha256": "729c28470bf7c38a033896dc50d06b9d7aa851b9d79d6debbd7ae4a60d674fd2",
+   "created_at": "2026-11-07T04:00:20.753Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_3ffb0112-5107-440f-901e-2655e0893522",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-07.md",
+   "sha256": "bc676f376f226562bb0b45f811044ea766bb5a95cab32121c0c71ad2360d916b",
+   "created_at": "2026-11-07T04:02:35.857Z",
+   "title": "已完整读取并在《仓储与配送服务合同（德舟供应链提供稿）.docx》原件上完成修改",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

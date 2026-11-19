@@ -1,0 +1,295 @@
+{
+  "date": "2026-10-23",
+  "timezone": "Asia/Shanghai",
+  "method": "computer use via rendered UI; clicked and read; no tasks submitted",
+  "items": [
+    {
+      "id": "H01",
+      "group": "诉讼仲裁",
+      "topic": "民商事诉讼",
+      "title": "类案检索&诉讼策略分析",
+      "characters": 204,
+      "sha256": "dc36abb1aae658f20a4f36dea4a4091cf51bf8c112118258e334a2fd495aad44"
+    },
+    {
+      "id": "H02",
+      "group": "诉讼仲裁",
+      "topic": "民商事诉讼",
+      "title": "制作证据清单及质证意见",
+      "characters": 200,
+      "sha256": "027c463200dc748d0786e977af2d5d933d8616157288a1b113ecf234b4d5fa1b"
+    },
+    {
+      "id": "H03",
+      "group": "诉讼仲裁",
+      "topic": "民商事诉讼",
+      "title": "起草起诉状并计算违约金",
+      "characters": 260,
+      "sha256": "6a1fdb53db1b54403f28764a1cd6a001cbf9ee8d9ac96e4bf735280a6d1c7e2b"
+    },
+    {
+      "id": "H04",
+      "group": "诉讼仲裁",
+      "topic": "民商事诉讼",
+      "title": "诉讼攻防演练",
+      "characters": 213,
+      "sha256": "94bafae0813aaabc9161f0bd0986563ea3d3c8922e71e7614f06065b8ce9ba8b"
+    },
+    {
+      "id": "H05",
+      "group": "诉讼仲裁",
+      "topic": "刑事辩护",
+      "title": "拟定会见当事人提纲",
+      "characters": 192,
+      "sha256": "0cc2743850351ea0b3be28ba41edfae7cd6d0187f320441a360828ff32da1280"
+    },
+    {
+      "id": "H06",
+      "group": "诉讼仲裁",
+      "topic": "刑事辩护",
+      "title": "检索当地类案并给出量刑预期",
+      "characters": 212,
+      "sha256": "2ec6dbdc3ffe0f3e8f77e83a2b1b7dafd8654b388534b1debaee0e74dae5ea5d"
+    },
+    {
+      "id": "H07",
+      "group": "诉讼仲裁",
+      "topic": "刑事辩护",
+      "title": "梳理阅卷思路与挖掘辩点",
+      "characters": 197,
+      "sha256": "573276deed39de4aec4e829ee1a9435b29219ba8999f8b52d94fa3ca40b1cf18"
+    },
+    {
+      "id": "H08",
+      "group": "诉讼仲裁",
+      "topic": "刑事辩护",
+      "title": "按要求撰写辩护意见",
+      "characters": 236,
+      "sha256": "0543cf2b871bc329283203a13cde33b8f3fe46aff8361376032690c4785253b3"
+    },
+    {
+      "id": "H09",
+      "group": "诉讼仲裁",
+      "topic": "劳动争议",
+      "title": "劳动者请求项梳理与金额测算",
+      "characters": 293,
+      "sha256": "82dfdebb13b93a6fe3e97e739fa38930f5a62f3238f720049401406dd914a3e0"
+    },
+    {
+      "id": "H10",
+      "group": "诉讼仲裁",
+      "topic": "劳动争议",
+      "title": "检索当地类案与裁判尺度",
+      "characters": 196,
+      "sha256": "336584690e9581c31f74e98264a5591992dcdf9ee5947e6d67fb38189a64d366"
+    },
+    {
+      "id": "H11",
+      "group": "诉讼仲裁",
+      "topic": "劳动争议",
+      "title": "起草劳动仲裁申请书",
+      "characters": 330,
+      "sha256": "f91661edc6fe651d7e7125faebdcbcaa0902691106c9b3d683ebde911ddcb64c"
+    },
+    {
+      "id": "H12",
+      "group": "诉讼仲裁",
+      "topic": "劳动争议",
+      "title": "代表用人单位出具应诉方案",
+      "characters": 255,
+      "sha256": "28f2f556eb7392d1fc8da6517db2631b07f50e64f9b3760658c2e76fe3c83590"
+    },
+    {
+      "id": "H13",
+      "group": "非诉业务",
+      "topic": "投融资与并购",
+      "title": "尽职调查方案与访谈提纲",
+      "characters": 238,
+      "sha256": "3f083e44f6c3e7ef4b24012f7c5719ff05a673df4bc037010a44cbba8b274b94"
+    },
+    {
+      "id": "H14",
+      "group": "非诉业务",
+      "topic": "投融资与并购",
+      "title": "上市公司公告查询与问答",
+      "characters": 189,
+      "sha256": "27d6374c91cf907379aa48046204b2f9c65c9a7cf993b265175a4cc027898738"
+    },
+    {
+      "id": "H15",
+      "group": "非诉业务",
+      "topic": "投融资与并购",
+      "title": "投资文件方案与特殊权利条款设计",
+      "characters": 253,
+      "sha256": "5a6c1ffcdb8b123db9beaefe00d0f11b31b6bb09fbd197578065d4b24c5f89c8"
+    },
+    {
+      "id": "H16",
+      "group": "非诉业务",
+      "topic": "投融资与并购",
+      "title": "交易全流程时间线可视化",
+      "characters": 227,
+      "sha256": "491d5d1d17d4aca1a8a0412575c539fd51a763a594e6590db0f08c53808939a1"
+    },
+    {
+      "id": "H17",
+      "group": "非诉业务",
+      "topic": "银行保险与基金",
+      "title": "银行授信与增信审查",
+      "characters": 314,
+      "sha256": "fa1ecc1ca1b776d620a8960a4d152507ff221390b7549bc14ebdfb55268f70fe"
+    },
+    {
+      "id": "H18",
+      "group": "非诉业务",
+      "topic": "银行保险与基金",
+      "title": "保险产品条款与销售合规审查",
+      "characters": 300,
+      "sha256": "22a5085b68d1cdbc4d22e9a08eaa2410b4fe0262a1450d5e0fbeaccebfb637ea"
+    },
+    {
+      "id": "H19",
+      "group": "非诉业务",
+      "topic": "银行保险与基金",
+      "title": "私募基金设立与备案方案",
+      "characters": 274,
+      "sha256": "3807321266cafdb88efabe31fae1d62d6fa52e48ce971121634b224d98ca640a"
+    },
+    {
+      "id": "H20",
+      "group": "非诉业务",
+      "topic": "银行保险与基金",
+      "title": "代销资管产品的适当性管理",
+      "characters": 274,
+      "sha256": "1ace9179834361c555c2e072517a8cd82d63a59438ae54ba759e5ad8752e5662"
+    },
+    {
+      "id": "H21",
+      "group": "非诉业务",
+      "topic": "公司治理与业务合规",
+      "title": "关联交易与对外担保决策程序",
+      "characters": 249,
+      "sha256": "725e1bcfc7559ea3573e5f02408b754b34bf38d06f18b1af46866781541a1ef7"
+    },
+    {
+      "id": "H22",
+      "group": "非诉业务",
+      "topic": "公司治理与业务合规",
+      "title": "董监高履职风险",
+      "characters": 257,
+      "sha256": "0facefea5cf9c30d191e2a6a7fa0497d1f12a82c8a07291ea5a49ee517b49390"
+    },
+    {
+      "id": "H23",
+      "group": "非诉业务",
+      "topic": "公司治理与业务合规",
+      "title": "经营者集中申报判断",
+      "characters": 240,
+      "sha256": "fb39a206acf4860b9d3bd002300f90bc24423d36a33716aff0f57141f8077ef2"
+    },
+    {
+      "id": "H24",
+      "group": "非诉业务",
+      "topic": "公司治理与业务合规",
+      "title": "个人信息与数据合规审查",
+      "characters": 365,
+      "sha256": "fe6cf2b1faec1cb847e32e3bd6a976fe63ff019b76d05630887348a8a6ffbca7"
+    },
+    {
+      "id": "H25",
+      "group": "企业法务",
+      "topic": "合同全流程管理",
+      "title": "起草各类合同/协议",
+      "characters": 270,
+      "sha256": "1770f7d6ab5dea669195fcb5fcede9aa8171dc431049ade76d1a34386a6e294e"
+    },
+    {
+      "id": "H26",
+      "group": "企业法务",
+      "topic": "合同全流程管理",
+      "title": "合同/制度审查",
+      "characters": 291,
+      "sha256": "69a320923688f1b077544bc053f19227aed8119ca4bf055bbed8c59414713a2d"
+    },
+    {
+      "id": "H27",
+      "group": "企业法务",
+      "topic": "合同全流程管理",
+      "title": "履约风险排查及起草催告函",
+      "characters": 295,
+      "sha256": "56293f2a54b06eb03be96dc751534e4485e70b1c16f99b1d9143f530772ffed6"
+    },
+    {
+      "id": "H28",
+      "group": "企业法务",
+      "topic": "合同全流程管理",
+      "title": "设计生成合同台账Excel模板",
+      "characters": 269,
+      "sha256": "bb4b1dc0f1ff7f578d1198969b15915c44474b8e16bed21ede4f59ab4c7d8280"
+    },
+    {
+      "id": "H29",
+      "group": "企业法务",
+      "topic": "劳动税务合规",
+      "title": "违纪员工处理方案",
+      "characters": 313,
+      "sha256": "a5964252ea490efe08520a4e46817c4ba1f13ffdee3d01cc8100658176a72aec"
+    },
+    {
+      "id": "H30",
+      "group": "企业法务",
+      "topic": "劳动税务合规",
+      "title": "员工优化方案成本测算",
+      "characters": 319,
+      "sha256": "9e34f1fef8e704be0930f3f90c09812e7007c14436c0d169e89dbf8d06b77bd0"
+    },
+    {
+      "id": "H31",
+      "group": "企业法务",
+      "topic": "劳动税务合规",
+      "title": "劳动争议应诉准备",
+      "characters": 272,
+      "sha256": "db0d6d6d5f5db630391e5a8d207504fe72b802c91756ddc40ed3fa57c0099b41"
+    },
+    {
+      "id": "H32",
+      "group": "企业法务",
+      "topic": "劳动税务合规",
+      "title": "企业税务合规自查",
+      "characters": 315,
+      "sha256": "f9bb097fd99cd01119d49f0afd924d91fe81fe0d782634cae00b39083c7eaec5"
+    },
+    {
+      "id": "H33",
+      "group": "企业法务",
+      "topic": "监管合规与争议应对",
+      "title": "监管函复与投诉回应",
+      "characters": 291,
+      "sha256": "986f15d682df8c1ac49e17b8b73ef2a090f60d8a0c5db9be94cedd51531ae6cc"
+    },
+    {
+      "id": "H34",
+      "group": "企业法务",
+      "topic": "监管合规与争议应对",
+      "title": "业务方案合规风险评估",
+      "characters": 300,
+      "sha256": "281f06cccef70610d66da7fbe46a1a8737de3d38722d0b51ded1621150ac3c75"
+    },
+    {
+      "id": "H35",
+      "group": "企业法务",
+      "topic": "监管合规与争议应对",
+      "title": "商业纠纷谈判与解决方案",
+      "characters": 282,
+      "sha256": "54501b62a9c4f5eba865919694aae374d92c8c11c38feadef0146faafa236124"
+    },
+    {
+      "id": "H36",
+      "group": "企业法务",
+      "topic": "监管合规与争议应对",
+      "title": "汇报重大案件进展",
+      "characters": 376,
+      "sha256": "c05c09444c57b8ddf0c2af7b7bc6a87bafcba3d2642f4ad5030bc1bf77ea51e1"
+    }
+  ]
+}

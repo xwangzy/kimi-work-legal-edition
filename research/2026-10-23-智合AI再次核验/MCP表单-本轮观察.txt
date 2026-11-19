@@ -1,0 +1,111 @@
+- heading "新增 MCP 服务器" [level=3]
+- button "×"
+- generic: 名称 *
+- 'textbox "如: GitHub、内部文档检索"'
+- generic: 仅用于展示。系统会自动生成 server_id 作为工具前缀。
+- generic: URL *
+- textbox "https://your-mcp-server.example.com/mcp"
+- generic: MCP server 的 Streamable HTTP 端点。建议使用 https://；内网调试用 http:// 请勾选下方"允许 http"。
+- generic: 描述（可选）
+- textbox "这个 server 做什么的"
+- generic: 传输协议
+- combobox:
+  - option "Streamable HTTP（推荐，MCP 2025-03-26）" [selected]
+  - option "Legacy HTTP+SSE（旧版 2024-11-05）"
+- generic: 优先选 Streamable HTTP；只有老 server 才用 SSE。
+- generic: 鉴权方式
+- combobox:
+  - option "无（公开 server）" [selected]
+  - option "Bearer Token（静态密钥）"
+  - option "OAuth 2.1（动态授权，支持 DCR + PKCE + 自动 refresh）"
+- generic: "自定义请求头（可选，每行 Key: Value）"
+- 'textbox "X-Api-Key: xxx X-Tenant: my-tenant"':
+  - /placeholder: "X-Api-Key: xxx\nX-Tenant: my-tenant"
+- generic: Authorization 等敏感 header 会在列表中脱敏显示。
+- generic: 工具白名单（可选，逗号分隔）
+- textbox "留空 = 暴露 server 提供的全部工具"
+- generic: "填了之后只有名单内的工具会暴露给 AI。例如: list_issues, create_issue"
+- checkbox "在对话中启用" [checked]
+- generic: 在对话中启用
+- checkbox "允许 http:// 端点（非 https）"
+- generic: 允许 http:// 端点（非 https）
+- button "测试连接" [disabled]
+- button "取消"
+- button "添加"
+
+- heading "新增 MCP 服务器" [level=3]
+- button "×"
+- generic: 名称 *
+- 'textbox "如: GitHub、内部文档检索"'
+- generic: 仅用于展示。系统会自动生成 server_id 作为工具前缀。
+- generic: URL *
+- textbox "https://your-mcp-server.example.com/mcp"
+- generic: MCP server 的 Streamable HTTP 端点。建议使用 https://；内网调试用 http:// 请勾选下方"允许 http"。
+- generic: 描述（可选）
+- textbox "这个 server 做什么的"
+- generic: 传输协议
+- combobox:
+  - option "Streamable HTTP（推荐，MCP 2025-03-26）" [selected]
+  - option "Legacy HTTP+SSE（旧版 2024-11-05）"
+- generic: 优先选 Streamable HTTP；只有老 server 才用 SSE。
+- generic: 鉴权方式
+- combobox:
+  - option "无（公开 server）"
+  - option "Bearer Token（静态密钥）" [selected]
+  - option "OAuth 2.1（动态授权，支持 DCR + PKCE + 自动 refresh）"
+- generic: Bearer Token
+- 'textbox "用于 Authorization: Bearer ..."'
+- generic: 提交后会以加密形式保存，前端只显示前/后 4 位。
+- generic: "自定义请求头（可选，每行 Key: Value）"
+- 'textbox "X-Api-Key: xxx X-Tenant: my-tenant"':
+  - /placeholder: "X-Api-Key: xxx\nX-Tenant: my-tenant"
+- generic: Authorization 等敏感 header 会在列表中脱敏显示。
+- generic: 工具白名单（可选，逗号分隔）
+- textbox "留空 = 暴露 server 提供的全部工具"
+- generic: "填了之后只有名单内的工具会暴露给 AI。例如: list_issues, create_issue"
+- checkbox "在对话中启用" [checked]
+- generic: 在对话中启用
+- checkbox "允许 http:// 端点（非 https）"
+- generic: 允许 http:// 端点（非 https）
+- button "测试连接" [disabled]
+- button "取消"
+- button "添加"
+
+- heading "新增 MCP 服务器" [level=3]
+- button "×"
+- generic: 名称 *
+- 'textbox "如: GitHub、内部文档检索"'
+- generic: 仅用于展示。系统会自动生成 server_id 作为工具前缀。
+- generic: URL *
+- textbox "https://your-mcp-server.example.com/mcp"
+- generic: MCP server 的 Streamable HTTP 端点。建议使用 https://；内网调试用 http:// 请勾选下方"允许 http"。
+- generic: 描述（可选）
+- textbox "这个 server 做什么的"
+- generic: 传输协议
+- combobox:
+  - option "Streamable HTTP（推荐，MCP 2025-03-26）" [selected]
+  - option "Legacy HTTP+SSE（旧版 2024-11-05）"
+- generic: 优先选 Streamable HTTP；只有老 server 才用 SSE。
+- generic: 鉴权方式
+- combobox:
+  - option "无（公开 server）"
+  - option "Bearer Token（静态密钥）"
+  - option "OAuth 2.1（动态授权，支持 DCR + PKCE + 自动 refresh）" [selected]
+- text: 保存后在列表卡片上点“连接 / 授权”启动 OAuth。系统会自动从 server 的
+- code: /.well-known/oauth-authorization-server
+- text: 发现 endpoints， 并通过 DCR (Dynamic Client Registration) 注册一个 client_id。 如果 server 不支持 discovery 或 DCR，可在下方"高级"中手动填写。
+- button "展开 OAuth 高级配置（手动填 endpoints）"
+- generic: "自定义请求头（可选，每行 Key: Value）"
+- 'textbox "X-Api-Key: xxx X-Tenant: my-tenant"':
+  - /placeholder: "X-Api-Key: xxx\nX-Tenant: my-tenant"
+- generic: Authorization 等敏感 header 会在列表中脱敏显示。
+- generic: 工具白名单（可选，逗号分隔）
+- textbox "留空 = 暴露 server 提供的全部工具"
+- generic: "填了之后只有名单内的工具会暴露给 AI。例如: list_issues, create_issue"
+- checkbox "在对话中启用" [checked]
+- generic: 在对话中启用
+- checkbox "允许 http:// 端点（非 https）"
+- generic: 允许 http:// 端点（非 https）
+- button "测试连接" [disabled]
+- button "取消"
+- button "添加"

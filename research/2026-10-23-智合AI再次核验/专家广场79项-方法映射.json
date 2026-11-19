@@ -1,0 +1,2389 @@
+{
+  "date": "2026-10-23",
+  "timezone": "Asia/Shanghai",
+  "observation_source": "主代理computer use逐页读取专家广场公开介绍；本子任务未操作页面",
+  "scope": "79条展示记录的方法级语义整理；不证明79个独立底层能力，不提供隐藏提示词，不代表执行或法律质量验证",
+  "source_metadata_file": "专家广场79条-本轮目录.json",
+  "source_description_handling": "仅读临时公开描述用于原创摘要；输出保留字符数与SHA256，不全文转载原描述",
+  "legacy_source": "../2026-10-21-智合AI调研/06-官方34专家工作流逐项优化.md",
+  "coverage": {
+    "items": 79,
+    "pages": [
+      {
+        "page": 1,
+        "count": 20,
+        "paging": "上一页\n第 1 / 4 页\n下一页\n共 79 条"
+      },
+      {
+        "page": 2,
+        "count": 20,
+        "paging": "上一页\n第 2 / 4 页\n下一页\n共 79 条"
+      },
+      {
+        "page": 3,
+        "count": 20,
+        "paging": "上一页\n第 3 / 4 页\n下一页\n共 79 条"
+      },
+      {
+        "page": 4,
+        "count": 19,
+        "paging": "上一页\n第 4 / 4 页\n下一页\n共 79 条"
+      }
+    ],
+    "source_labels": {
+      "社区": 79
+    },
+    "execution_labels": {
+      "过程可见": 42,
+      "仅返回结果": 37
+    },
+    "corresponding_legacy_entries": 26,
+    "no_confirmed_legacy_correspondence": 53,
+    "entertainment_items": 2,
+    "legacy_wf_not_method_matched": [
+      "WF03",
+      "WF18",
+      "WF22",
+      "WF24",
+      "WF26",
+      "WF28",
+      "WF31",
+      "WF32"
+    ]
+  },
+  "matching_rule": "对应仅用于JohnHe显示名、规范化标题及已阅读任务语义与旧WF相符的26条；不同作者同名不合并。复用是设计建议，不是产品身份匹配。",
+  "items": [
+    {
+      "id": "E001",
+      "title": "诉讼策略专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 1,
+      "descriptionCharacters": 194,
+      "descriptionSha256": "ab81b2cc816931bdfa9d42dbedab3cd1d98c216feb78c53baa951d6c56f1965f",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "过程可见",
+      "summary_original": "将新纠纷转成诉前请求、程序、证据和策略问题；与单纯起草文书分流。",
+      "corresponding_wf": [
+        "WF27"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF27"
+      ],
+      "prompt_original": "请按【立场、目标、材料】核主体、地域与级别管辖、时效和紧急措施，再比较相关请求与抗辩的要件、证据及实现成本；主动查相反依据，给诉讼、谈判与执行情景，不把类案比例写成胜率。缺事实保留分支，不默认最不利事实。",
+      "deliverable_original": "方案对照、争点证据表和优先补证单。",
+      "acceptance_original": "主动检查不利材料，未发现或未取得时明示；各方案写成立与推翻条件。",
+      "independent_entertainment": false,
+      "business_text_characters": 183,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E002",
+      "title": "诉讼文书专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 2,
+      "descriptionCharacters": 193,
+      "descriptionSha256": "e3526dbd17ed8a2d065d813cfd42273aabce4babc149a60b8002f0829a0906a7",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "过程可见",
+      "summary_original": "组织各诉讼阶段的文书初稿和庭审材料，强调期限与引用核对。",
+      "corresponding_wf": [
+        "WF25"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF25"
+      ],
+      "prompt_original": "请起草【阶段、文书、受理机构】，按【送达与材料】先核程序和期限，再将请求、事实、证据、规则逐项连接。金额附复算表，缺项留明确占位；核主体、附件和格式，交待审稿，不把文稿生成或某期限届满一概写成不可补救。",
+      "deliverable_original": "可编辑草稿、证据附件索引、提交前缺口表。",
+      "acceptance_original": "诉请与附表一致，期限有起算事实；无回执不标已提交。",
+      "independent_entertainment": false,
+      "business_text_characters": 174,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E003",
+      "title": "合同审查专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 3,
+      "descriptionCharacters": 311,
+      "descriptionSha256": "abcece34d8b66b25fdee0de9d048841ef0bc91361baec14b43b54d976aa614c4",
+      "business_category": "C",
+      "business_category_title": "合同、公司治理、交易与资本项目",
+      "execution_label": "过程可见",
+      "summary_original": "围绕我方交易立场审合同，包含替代条款、谈判空间和回稿比较。",
+      "corresponding_wf": [
+        "WF08"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF08"
+      ],
+      "prompt_original": "请以【实际角色】审查【正文及附件】，还原履行流程，分开法律强制、机构标准与商业偏好；逐项给定位、风险情景、替换及退让文本，复核定义和附件联动。立场未知可先编目和中性缺件检查，仅阻断受立场影响的结论，不因表单缺项全部停工。",
+      "deliverable_original": "风险表、条款对照和未决商业参数。",
+      "acceptance_original": "有利但效力存疑条款也报告；未取得附件不得写全套审完。",
+      "independent_entertainment": false,
+      "business_text_characters": 181,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E004",
+      "title": "类案检索与分析专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 4,
+      "descriptionCharacters": 276,
+      "descriptionSha256": "f03e3e4a0b98c7c2275ddb263bfffedd7ea1454132efc6405d263699153faf3f",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "过程可见",
+      "summary_original": "将具体争点扩展为报告级类案研究，区分随手查案与正式研究成本。",
+      "corresponding_wf": [
+        "WF34"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF34"
+      ],
+      "prompt_original": "请围绕【争点、关键事实、地区和行为时间】做中性及正反检索，记录纳排、去重、全文与裁判链；区分当事人说法、法院理由和评论，比较关键差异。样本不足交个案对照；报告待审，不以多道自检承诺可直接附卷或预测本案结果。",
+      "deliverable_original": "检索记录、正反案例矩阵和适用分析稿。",
+      "acceptance_original": "每个规则可回原文；分母和未获全文范围明确。",
+      "independent_entertainment": false,
+      "business_text_characters": 172,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E005",
+      "title": "证据专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 5,
+      "descriptionCharacters": 168,
+      "descriptionSha256": "370edc939fa03f2d1d1ab2d143c7d981a9c5bdc5692b8061b645baf1309a0f7e",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "过程可见",
+      "summary_original": "整理事实时间线、举证责任、证据目录、质证与补强，属于通用证据工序。",
+      "corresponding_wf": [
+        "WF16"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF16"
+      ],
+      "prompt_original": "请就【待证问题】先拆事实命题，再将双方材料挂接，记录来源、页段、载体、时间和原件线索；截图核身份与上下文，不凭昵称或OCR判断真实性。逐证分析支持范围、反证与具体异议，关键不清项仅阻断相关命题，其余继续。",
+      "deliverable_original": "事实证据矩阵、目录、质证及补证表。",
+      "acceptance_original": "事件日与材料形成日分开；不得用文件名替正文或统一要求公证。",
+      "independent_entertainment": false,
+      "business_text_characters": 181,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E006",
+      "title": "庭前备战专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 6,
+      "descriptionCharacters": 148,
+      "descriptionSha256": "ded0a9175937099a6d3eb0db11635d4257b430322d972ab63be4cbd1c5fdddb5",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "过程可见",
+      "summary_original": "针对临近庭审集中编提纲、质证、发问和突发处置，复用案件底稿。",
+      "corresponding_wf": [
+        "WF30"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF30"
+      ],
+      "prompt_original": "请依据【开庭通知、书状和证据】按争点准备陈述、质证、发问及最强反方应对，先核真实举证和申请期限。每题给目的、证据位置、未知及处置，不为统一口径掩盖矛盾；调解授权单列，模拟回答不进入事实库。",
+      "deliverable_original": "庭前速查包、发问表、重点页码与突发清单。",
+      "acceptance_original": "每个决定性争点有正反回应；未知答案不能伪造为已知。",
+      "independent_entertainment": false,
+      "business_text_characters": 169,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E007",
+      "title": "法律文书校验专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 7,
+      "descriptionCharacters": 245,
+      "descriptionSha256": "88ad92477d7f4c49314b5256ca5039ed3c06dec792cecda0a159ab430642e2cd",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "过程可见",
+      "summary_original": "核对成稿中的法条、案例、论证支持及金额期间，以校验为主要任务。",
+      "corresponding_wf": [
+        "WF04"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF04"
+      ],
+      "prompt_original": "请校验【文稿版本、用途、行为时点】，逐断言检查来源存在、引述准确、命题支持及时间适用，再独立复算金额和期间。列原位置、问题、依据和建议，不擅改立场；接口失败保留可靠已完成项，未查到的不标通过。",
+      "deliverable_original": "分项校验表、差异及建议修订，不自动重写全文。",
+      "acceptance_original": "真实法条却不支持命题仍报错；覆盖率、失败与通过分别计数。",
+      "independent_entertainment": false,
+      "business_text_characters": 177,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E008",
+      "title": "劳动法专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 8,
+      "descriptionCharacters": 171,
+      "descriptionSha256": "078d408efbb930dfb3bd78931217b2cc1a2ac89a9189e5a6d7d549e1a03e9836",
+      "business_category": "D",
+      "business_category_title": "劳动用工、组织调整与社会保险",
+      "execution_label": "过程可见",
+      "summary_original": "涵盖争议与全周期用工合规，需先按身份和任务分流。",
+      "corresponding_wf": [
+        "WF21"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF21"
+      ],
+      "prompt_original": "请根据【企业或劳动者立场、地区、实际管理事实】分流争议或合规；逐项核请求性质、程序、期间、工资及举证，而非见劳动问题就固定套2N。制度核形成和实际适用，用工模式依真实管理判断，地方差异和缺资料分别保留。",
+      "deliverable_original": "请求或流程矩阵、条件化计算和证据缺口。",
+      "acceptance_original": "不把补偿赔偿和代通知项目机械相加；不以合同标签决定关系。",
+      "independent_entertainment": false,
+      "business_text_characters": 172,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E009",
+      "title": "劳动争议专家（企业方）",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 9,
+      "descriptionCharacters": 172,
+      "descriptionSha256": "f765d56271d90078cd2312c7b7101e52233d12a826da0150950311e9e9aca878",
+      "business_category": "D",
+      "business_category_title": "劳动用工、组织调整与社会保险",
+      "execution_label": "过程可见",
+      "summary_original": "专门从企业方处理劳动争议、程序证据、成本和解及后续整改。",
+      "corresponding_wf": [
+        "WF23"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF23"
+      ],
+      "prompt_original": "请对【员工请求与企业材料】逐项核责任和证据分配，检查具体解除理由、制度、程序和送达；缺证与实体缺陷分开，只寻找真实既存资料。按适当认定情景复算敞口，比较应诉、和解和整改，不把所有请求一律作举证倒置。",
+      "deliverable_original": "抗辩证据表、成本情景及整改行动。",
+      "acceptance_original": "不补造历史程序；每项金额有适用条件，人员处理留有权人决定。",
+      "independent_entertainment": false,
+      "business_text_characters": 172,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E010",
+      "title": "执行专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 10,
+      "descriptionCharacters": 147,
+      "descriptionSha256": "a77bb6b264579bf48fae4543ac3b446549d34475d1801ab23203ce89b24bffc9",
+      "business_category": "B",
+      "business_category_title": "债权实现、执行、破产与资产处置",
+      "execution_label": "过程可见",
+      "summary_original": "以生效裁判的执行前提、金额、财产线索和措施跟进为核心。",
+      "corresponding_wf": [
+        "WF14"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF14"
+      ],
+      "prompt_original": "请按【生效文书、履行和执行记录】核执行前提与期间，分列本金、一般利息、迟延履行部分和抵扣；对合法财产线索列对象、来源及调查申请。逐措施核条件，不把限高失信当任意施压套餐；款项不足给替代路径。",
+      "deliverable_original": "执行申请底稿、分段计算、财产线索和跟进表。",
+      "acceptance_original": "金额可复算；申请成功、处置完成和实际到账状态分开。",
+      "independent_entertainment": false,
+      "business_text_characters": 168,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E011",
+      "title": "合同纠纷办案专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 11,
+      "descriptionCharacters": 170,
+      "descriptionSha256": "dbe1760b522ec98a65dc907569570815fdcb7a6212ce95c68e2d64cfbe8aab9d",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "过程可见",
+      "summary_original": "针对已发生的合同履行争议组织请求、证据、计算与诉讼文书。",
+      "corresponding_wf": [
+        "WF07"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF07"
+      ],
+      "prompt_original": "请结合【合同、履行材料、立场及目标】比较继续履行、解除返还、损失等相关路径，核兼容或备位关系、管辖、时效及保全；把合同主张、可证损失和争议金额分列，不将违约金比例作为统一总价上限。",
+      "deliverable_original": "请求路径表、事实证据与计算底稿、诉状草案。",
+      "acceptance_original": "主张额不冒充必获额；退款、抵扣及重复请求可追溯。",
+      "independent_entertainment": false,
+      "business_text_characters": 163,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E012",
+      "title": "刑事辩护专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 12,
+      "descriptionCharacters": 141,
+      "descriptionSha256": "ca884f8e9f4ee4b928af3f6afe1fc4797b56a11855895bbc4dd94121858e33cd",
+      "business_category": "E",
+      "business_category_title": "刑事与行政程序",
+      "execution_label": "过程可见",
+      "summary_original": "按刑事阶段组织权利保障、会见阅卷、定性量刑和辩护工作。",
+      "corresponding_wf": [
+        "WF09"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF09"
+      ],
+      "prompt_original": "请按【程序文书、措施日期、阅卷范围】核阶段与紧急节点，再区分指控要件、证据问题及量刑情节。会见、认罪认罚等列合法权利与重大选择供本人和律师决定；不把拘留统一为固定窗口，不承诺取保或刑期，未阅卷不假定全案证据。",
+      "deliverable_original": "阶段行动、期限及证据问题表、辩护提纲。",
+      "acceptance_original": "家属陈述与卷宗分源；程序权利按法域和阶段核验。",
+      "independent_entertainment": false,
+      "business_text_characters": 173,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E013",
+      "title": "文书工程专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 13,
+      "descriptionCharacters": 167,
+      "descriptionSha256": "ec6d536fdf9819e38ade8acf1a5ef3275788bdc2c1b6059536e3816a5dfed226",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "过程可见",
+      "summary_original": "把已有内容和案卷制成目录、Word、图示、脱敏件及版本比较成果。",
+      "corresponding_wf": [
+        "WF13"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF13"
+      ],
+      "prompt_original": "请将【材料、用途和格式要求】制成文件包，先查缺页重复与OCR疑点，再排版和编号并渲染检查。图形附关系语义及来源；脱敏覆盖隐藏文本、属性、批注修订与图层，不仅视觉遮黑。真实编辑能力不足时交诚实标注的替代格式。",
+      "deliverable_original": "源稿、预览、目录与工程问题记录。",
+      "acceptance_original": "文件能打开、页序可读；脱敏字段提取不能恢复，未核格式不称可提交。",
+      "independent_entertainment": false,
+      "business_text_characters": 183,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E014",
+      "title": "刑事量刑校准专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 14,
+      "descriptionCharacters": 190,
+      "descriptionSha256": "1d156136923e79081e0bddd8572f85975d231fa25de92cc74e915a716d1ad81f",
+      "business_category": "E",
+      "business_category_title": "刑事与行政程序",
+      "execution_label": "过程可见",
+      "summary_original": "研究可比刑事裁判的刑罚分布与情节差异，公开说明不预测个案刑期。",
+      "corresponding_wf": [
+        "WF10"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF10"
+      ],
+      "prompt_original": "请按【罪名、金额争议、情节、地区和年份】设纳排并核全文及终局状态，区分单罪、分罪与执行刑；分组展示样本量、分布、异常和混杂因素。样本不足作个案比较，不把中位数当本案预期或组间差值当自首减刑因果。",
+      "deliverable_original": "样本矩阵、分布及量刑准备问题。",
+      "acceptance_original": "并罚未混入单罪分布；引文和分母可查，不输出个案刑期保证。",
+      "independent_entertainment": false,
+      "business_text_characters": 171,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E015",
+      "title": "建工房产全流程法务专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 1,
+      "position": 15,
+      "descriptionCharacters": 127,
+      "descriptionSha256": "9da010e2eece898f95200ad3dc5f00f30f721f5e0f652ae9b765ec4689bd81d7",
+      "business_category": "H",
+      "business_category_title": "建设工程、事故、医疗与家事",
+      "execution_label": "仅返回结果",
+      "summary_original": "将建工与房产多个阶段放在一个入口，需按项目、交易或纠纷分流。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF08",
+        "WF07",
+        "WF14"
+      ],
+      "prompt_original": "请针对【项目和阶段】还原招采、合同链、施工签证、验收结算或房产权属流程，逐项核金额和原始资料；争议另列实际施工、鉴定及付款条件，房屋交易与物业问题分别处理。选择所需专项，不假定八模块均适用或已运行。",
+      "deliverable_original": "项目时间线、工程量价差异、风险与文书草稿。",
+      "acceptance_original": "工程款、利息、质量扣款分项可算；证据不足不报精准回收额。",
+      "independent_entertainment": false,
+      "business_text_characters": 178,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E016",
+      "title": "股东纠纷办案专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 16,
+      "descriptionCharacters": 137,
+      "descriptionSha256": "979239e4682e951dc7abd132d4147c77e31724f0addb13233c6ffbb11654261e",
+      "business_category": "C",
+      "business_category_title": "合同、公司治理、交易与资本项目",
+      "execution_label": "过程可见",
+      "summary_original": "把查账、分红、退出等股东诉求转成权利路径和治理证据问题。",
+      "corresponding_wf": [
+        "WF33"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF33"
+      ],
+      "prompt_original": "请基于【公司类型、持股、行为日期和治理文件】区分股东自身权益与公司损失，比较知情、分配、退出、解散或代表诉讼的相关路径。逐项核主体、前置请求、例外及利益归属，按时点核规则，不把合伙人口语称呼自动当公司股东。",
+      "deliverable_original": "路径顺序、书面请求草案及证据缺口。",
+      "acceptance_original": "不同请求的前置程序分别核；不得用固定等待期套全部情形。",
+      "independent_entertainment": false,
+      "business_text_characters": 175,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E017",
+      "title": "尽调与交易专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 17,
+      "descriptionCharacters": 170,
+      "descriptionSha256": "e7c99a865760c339db5ae5076d9bdaf8fb03ffb0707303391e0caaba159528ca",
+      "business_category": "C",
+      "business_category_title": "合同、公司治理、交易与资本项目",
+      "execution_label": "过程可见",
+      "summary_original": "连接交易结构、尽调发现、保护条款及公司治理，适合作为交易总控。",
+      "corresponding_wf": [
+        "WF12"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF12"
+      ],
+      "prompt_original": "请按【代理方、结构、行业和阶段】设尽调范围与重要性，逐发现记事实来源、规则、影响及待核答复；对方保证不当已核事实。映射整改、交割条件、披露、赔偿和价款安排，说明残余风险与履行能力，不能可靠量化就列原因。",
+      "deliverable_original": "红旗报告、发现保护矩阵与条款草案。",
+      "acceptance_original": "关键条款挂发现ID；签署、批准和实际交割分别有完成证据。",
+      "independent_entertainment": false,
+      "business_text_characters": 177,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E018",
+      "title": "行政法专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 1,
+      "position": 18,
+      "descriptionCharacters": 139,
+      "descriptionSha256": "70de4e5c02419187154a8f5675abb109a1a79f45acb644b4fcc53d7301d1ebd0",
+      "business_category": "E",
+      "business_category_title": "刑事与行政程序",
+      "execution_label": "仅返回结果",
+      "summary_original": "整合行政行为评估、执法应对、复议诉讼与文书，不限于处罚。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF01",
+        "WF31"
+      ],
+      "prompt_original": "请就【行为、机关、目标和决定送达材料】先分型许可、处罚、强制或其他行为，核权限、复议前置、告知和各项期限；再分析事实程序、依据裁量与协调路径。不把程序瑕疵必然推为撤销，未明日期给分支。",
+      "deliverable_original": "救济比较、紧急动作、行政文书草稿。",
+      "acceptance_original": "复议与诉讼期限不混；听证与申辩不统一固定天数。",
+      "independent_entertainment": false,
+      "business_text_characters": 160,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E019",
+      "title": "客户沟通专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 19,
+      "descriptionCharacters": 143,
+      "descriptionSha256": "010dc808370f970e590d1bfc278ede0a88496c0019e999c20fff6cd94f5421a7",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "过程可见",
+      "summary_original": "分流客户易懂表达、服务范围报价与法律翻译，保留专业意见边界。",
+      "corresponding_wf": [
+        "WF05"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF05"
+      ],
+      "prompt_original": "请将【已审意见】转换为【受众和用途】的说明，突出结论条件、可选方案及客户需决定事项，不淡化争议。报价另列范围排除和变更；翻译核术语及准据语言，回核主体金额日期。披露范围不足先用脱敏稿，不自动外发。",
+      "deliverable_original": "沟通草稿、选项及报价假设或双语术语表。",
+      "acceptance_original": "简化后法律含义不变；译文不把异域概念强作等同。",
+      "independent_entertainment": false,
+      "business_text_characters": 170,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E020",
+      "title": "对手背景调查专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 1,
+      "position": 20,
+      "descriptionCharacters": 169,
+      "descriptionSha256": "b64fd6371705dc95f7de4930b645d0d11d3dd88f8218ae9b3f4d70fd750a8e50",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "过程可见",
+      "summary_original": "以合法公开记录研究相对方涉诉、执行和履行能力线索。",
+      "corresponding_wf": [
+        "WF29"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF29"
+      ],
+      "prompt_original": "请按【精确名称、信用代码和调查目的】先消歧，再逐条核原始记录、角色、时间和当前状态；区分涉诉、执行、失信、限高与破产信号，说明覆盖不足。更名、起诉量、历史终本不直接证明恶意或当前资不抵债。",
+      "deliverable_original": "公开记录表、可核线索和待补财务问题。",
+      "acceptance_original": "同名不串案，已撤销状态更新；未检出不写无风险或保证能回款。",
+      "independent_entertainment": false,
+      "business_text_characters": 166,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E021",
+      "title": "刑事辩护法律专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 2,
+      "position": 1,
+      "descriptionCharacters": 121,
+      "descriptionSha256": "e81e2b02a832e7cdfe1672f1f2d2a28049cb4ec7c4f480e91615a08190dd8ae4",
+      "business_category": "E",
+      "business_category_title": "刑事与行政程序",
+      "execution_label": "仅返回结果",
+      "summary_original": "社区介绍将定性、证据、庭审、数额和文书串成刑事全程服务。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF09",
+        "WF16",
+        "WF10"
+      ],
+      "prompt_original": "请按【阶段、身份、授权和卷宗范围】明确当前任务，先核紧急权利和程序，再分指控要件、支持反证、非法取证线索与金额争议。辩护和量刑备位意见分清前提；无卷宗只交会见核查计划，不凭全流程名称补齐事实。",
+      "deliverable_original": "阶段方案、证据争议、数额底稿和文书草稿。",
+      "acceptance_original": "未阅材料范围明确；不以模拟推演给有罪或刑期保证。",
+      "independent_entertainment": false,
+      "business_text_characters": 168,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E022",
+      "title": "接案研判专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 2,
+      "position": 2,
+      "descriptionCharacters": 169,
+      "descriptionSha256": "bd86a7311d63ac036e885a4adf22f12845c1c39fa6dbc3bed60148fc8629d766",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "过程可见",
+      "summary_original": "用于客户咨询信息有限时的承接初筛、关键提问和范围报价。",
+      "corresponding_wf": [
+        "WF19"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF19"
+      ],
+      "prompt_original": "请依据【客户原话和现有材料】整理主体关联、目标、紧急日期与必问缺口，供机构核利益冲突和承接；陈述与已见材料分列。给初步路径、弱点、优先补件及服务范围报价假设，不把未命中冲突当审核完成或自动接受委托。",
+      "deliverable_original": "谈案纪要、紧急事项、承接待核及报价草案。",
+      "acceptance_original": "信息不足保持初步性；报价不承诺胜诉，期限届满不一概判无救济。",
+      "independent_entertainment": false,
+      "business_text_characters": 176,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E023",
+      "title": "行政争议专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 2,
+      "position": 3,
+      "descriptionCharacters": 142,
+      "descriptionSha256": "9fff6937ee4a63e39a4c283d15c047eb6ed97955e04049bfefef7790f1bec706",
+      "business_category": "E",
+      "business_category_title": "刑事与行政程序",
+      "execution_label": "过程可见",
+      "summary_original": "侧重行政争议救济路线、起诉期间、程序与处罚裁量比较。",
+      "corresponding_wf": [
+        "WF01"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF01"
+      ],
+      "prompt_original": "请按【行政行为、诉求、告知和送达证据】分别核复议前置、申请及起诉期限与特殊规则；缺起算事实给分支。再以事实、权限、程序、依据和裁量组织攻防，比较同类处罚要核可比事实，不从样本差异直接断违法。",
+      "deliverable_original": "救济路径、期限复核及争点材料表。",
+      "acceptance_original": "未告知诉权与一般期限分开；停止执行需另核条件。",
+      "independent_entertainment": false,
+      "business_text_characters": 160,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E024",
+      "title": "强制执行与财产处置专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 2,
+      "position": 4,
+      "descriptionCharacters": 131,
+      "descriptionSha256": "34c1cdbdda89b52d8375251481fcf5a0507edbf1c430e8bb1d06827ba91055e1",
+      "business_category": "B",
+      "business_category_title": "债权实现、执行、破产与资产处置",
+      "execution_label": "仅返回结果",
+      "summary_original": "覆盖执行立案、查控、变现、异议和终本恢复等处置工序。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF14",
+        "WF15"
+      ],
+      "prompt_original": "请按【生效文书和执行记录】定位当前卡点，对财产线索、权利负担、处置方式和异议逐项核条件及证据；按抵扣和分段期间复算执行款，列调查申请与后续节点。终本只作程序状态，不等同绝对无财产。",
+      "deliverable_original": "处置路径、申请草稿、计算和跟进台账。",
+      "acceptance_original": "查到线索、查封、变现及分配到账分状态；不承诺措施必获支持。",
+      "independent_entertainment": false,
+      "business_text_characters": 163,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E025",
+      "title": "交通事故纠纷法律专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 2,
+      "position": 5,
+      "descriptionCharacters": 125,
+      "descriptionSha256": "27fe3194a06c56cba5d03a65b7bd2a14830ea58da5e263fa0a6bc3ef17fb6e68",
+      "business_category": "H",
+      "business_category_title": "建设工程、事故、医疗与家事",
+      "execution_label": "仅返回结果",
+      "summary_original": "覆盖事故认定、保险、鉴定、赔偿和调解诉讼，需将各层责任分开。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF27",
+        "WF16",
+        "WF07"
+      ],
+      "prompt_original": "请按【事故资料、伤情、保单和支付记录】区分事故认定、侵权责任、交强险与商业险，逐项核鉴定标准、地区年度数据及赔偿条件。工伤并行路径、已付抵扣和重复项目单列，不凭事故比例直接算全部赔付。",
+      "deliverable_original": "证据表、分层赔偿模型及协商诉讼方案。",
+      "acceptance_original": "责任资料不代替法律分析；各保险层次及未保项目可复算。",
+      "independent_entertainment": false,
+      "business_text_characters": 166,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E026",
+      "title": "尽职调查专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 2,
+      "position": 6,
+      "descriptionCharacters": 132,
+      "descriptionSha256": "3f889afd40c0f52f4a6918682eb41506a404f239853dbf8e4a79a5b0f2ba1a7f",
+      "business_category": "C",
+      "business_category_title": "合同、公司治理、交易与资本项目",
+      "execution_label": "仅返回结果",
+      "summary_original": "聚焦投融资或合作前的尽调计划、核查、风险评价与报告。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF12"
+      ],
+      "prompt_original": "请先确认【交易决策、范围、行业和重要性】，按问题生成资料和访谈清单，逐项核资料室及公开信息；发现分事实、评价、交易影响和待补，保留反证。风险不能量化时说明资料缺口，不以模型评分制造损失数字。",
+      "deliverable_original": "尽调计划、红旗发现、补问和决策矩阵。",
+      "acceptance_original": "每个资料要求支持具体判断；未覆盖范围明确，不冒充完成全审计。",
+      "independent_entertainment": false,
+      "business_text_characters": 169,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E027",
+      "title": "破产与债务重组专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 2,
+      "position": 7,
+      "descriptionCharacters": 136,
+      "descriptionSha256": "336105a5f507d85ea62ca09d64679e5d161ae96a33cd02bae079f10dd86a33d2",
+      "business_category": "B",
+      "business_category_title": "债权实现、执行、破产与资产处置",
+      "execution_label": "过程可见",
+      "summary_original": "围绕破产各角色的申报、担保、取回、撤销和清偿情景组织工作。",
+      "corresponding_wf": [
+        "WF02"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF02"
+      ],
+      "prompt_original": "请从【债权人、债务人或管理人】立场，核【受理通知、债权资产和担保】的期限及性质，分别分析申报、取回、担保实现和可撤销交易；按资产和债权情景测算，争议金额不作已确认额，重整和清算不只比表面清偿率。",
+      "deliverable_original": "申报底稿、权利路径、情景受偿和行动表。",
+      "acceptance_original": "取回权与各类优先项不硬排一条通用顺位；表决和经营决定独立。",
+      "independent_entertainment": false,
+      "business_text_characters": 174,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E028",
+      "title": "裁判文书说理论证结构图式专家",
+      "author": "星河鹭起",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 2,
+      "position": 8,
+      "descriptionCharacters": 1965,
+      "descriptionSha256": "c81c83d1884c716c1ffe5ba0b44091a9c72bcf2b6727c817b46f194f7ee512a9",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "仅返回结果",
+      "summary_original": "将民事请求、攻防、规范涵摄与证据评价转成结构图式。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF27",
+        "WF16",
+        "WF13"
+      ],
+      "prompt_original": "请以【诉辩和证据】建立请求—要件—事实—证据表，再画攻防及涵摄图；区分否认、抗辩、再反驳和法律效果，不把固定请求检索顺序当实体优先。证明标准按待证事项核，图边注明支持或假设；保留价值判断与薄弱论证。",
+      "deliverable_original": "可编辑结构数据、图式与论证缺口表。",
+      "acceptance_original": "图表来源一致；不模拟法院已形成心证或量化二审改判率。",
+      "independent_entertainment": false,
+      "business_text_characters": 167,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E029",
+      "title": "执行攻坚专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 2,
+      "position": 9,
+      "descriptionCharacters": 150,
+      "descriptionSha256": "4ec7a7fc463aaf69a183364576ba8364d28159ee25cdbc8e4d00d552dda77aaf",
+      "business_category": "B",
+      "business_category_title": "债权实现、执行、破产与资产处置",
+      "execution_label": "过程可见",
+      "summary_original": "以执行受阻为升级触发，关注财产转移、主体追加与替代程序。",
+      "corresponding_wf": [
+        "WF15"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF15"
+      ],
+      "prompt_original": "请复用【既有执行底稿】，针对【终本、主体变化或财产转移阻碍】提出新增核查，逐路径核追加、撤销、异议或转破产的法律条件和证据；不重做全部基础工作，不将出资瑕疵直接等同可追加。",
+      "deliverable_original": "卡点诊断、升级路径、条件证据与申请草稿。",
+      "acceptance_original": "每条路径有适用门槛及反论；未有财产证据不作回款承诺。",
+      "independent_entertainment": false,
+      "business_text_characters": 160,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E030",
+      "title": "行业合规官专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 2,
+      "position": 10,
+      "descriptionCharacters": 224,
+      "descriptionSha256": "5c0f230bd9c8b8598cedd64b0976ff89c08929ca5a148ef36a1e744e7da1de36",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "过程可见",
+      "summary_original": "将业务动作映射义务、监管样本、新规及整改，属于合规总框架。",
+      "corresponding_wf": [
+        "WF17"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF17"
+      ],
+      "prompt_original": "请按【企业、行业、地区及实际流程】列适用义务、触发条件、责任和证据，区分法律、平台合同和内部标准；处罚仅作风险线索，新规分草案、未施行和现行。按后果、暴露与控制缺口排序，并设计整改验收。",
+      "deliverable_original": "义务控制矩阵、差距与分期整改表。",
+      "acceptance_original": "同行受罚不推出本企业违法概率；制度完成不等于控制运行有效。",
+      "independent_entertainment": false,
+      "business_text_characters": 167,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E031",
+      "title": "民事案件分析",
+      "author": "张映律师",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 2,
+      "position": 11,
+      "descriptionCharacters": 17,
+      "descriptionSha256": "909954357c285c1993f319973613e3c14f94440c50f21043995dd7a823af64ed",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "过程可见",
+      "summary_original": "介绍仅说明从审判过程合规性提取信息，尚不能确认完整研判能力。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF04"
+      ],
+      "prompt_original": "请从【程序记录和目标】提取受理、送达、举证、庭审及裁判节点，逐项列材料位置、待核规则与疑点；区分记录缺失、实际程序问题和实体争议。无原始记录只交补件清单，发现程序瑕疵不自动推出裁判无效。",
+      "deliverable_original": "程序时间线、原文索引和待核问题。",
+      "acceptance_original": "不把简短介绍扩展成已具备全部民事分析能力；疑点与已证问题分列。",
+      "independent_entertainment": false,
+      "business_text_characters": 170,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E032",
+      "title": "合同审查专家",
+      "author": "内蒙古刘廷巍",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 2,
+      "position": 12,
+      "descriptionCharacters": 42,
+      "descriptionSha256": "8725ae4d5ba3aa71a3155ac41e604e974cbdd7de0fa6fa7cfe3afc67103b69f1",
+      "business_category": "C",
+      "business_category_title": "合同、公司治理、交易与资本项目",
+      "execution_label": "过程可见",
+      "summary_original": "同名社区作品侧重合法性、履行风险及意见书，与JohnHe条目独立。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF08"
+      ],
+      "prompt_original": "请根据【我方角色、真实交易、合同及附件】分析效力与履行风险，逐条给情景、依据、修改及待决参数；意见书说明审阅范围和成立条件。不能仅因合同表面合法就认定可实际履行，也不因同名继承其他作者的配置或核验。",
+      "deliverable_original": "条款风险、修改稿与限定范围的意见草案。",
+      "acceptance_original": "强制规则、争议与商业偏好分列；来源、作者对象不混并。",
+      "independent_entertainment": false,
+      "business_text_characters": 177,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E033",
+      "title": "企业税务合规专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 2,
+      "position": 13,
+      "descriptionCharacters": 127,
+      "descriptionSha256": "89b7b8cfd7683da98048537f80afdbfecc98abc0e2c11a249caf9d8010e83517",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "仅返回结果",
+      "summary_original": "覆盖企业税务日常合规、稽查与争议，介绍范围广于单项算税。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF17",
+        "WF31"
+      ],
+      "prompt_original": "请按【纳税主体、实际交易、税种和期间】核合同、账务、发票申报及支付，分别查行为时与整改时规则；区分漏项、口径争议和证据不足，优惠列适用及持续条件。稽查另核文书和期限，不凭发票或合同名称定税性。",
+      "deliverable_original": "税务问题矩阵、复算底稿及应对整改草案。",
+      "acceptance_original": "不同税种期间不混算；计税与会计税务专业复核分别记录。",
+      "independent_entertainment": false,
+      "business_text_characters": 169,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E034",
+      "title": "劳动用工风控专家",
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 2,
+      "position": 14,
+      "descriptionCharacters": 177,
+      "descriptionSha256": "da5ca847a9356369af5b4980daf13985973c06b048de67bf14766c89bcabc5ce",
+      "business_category": "D",
+      "business_category_title": "劳动用工、组织调整与社会保险",
+      "execution_label": "仅返回结果",
+      "summary_original": "从HR视角整合制度、解除、特殊保护、工伤及争议证据等风险。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF21",
+        "WF23"
+      ],
+      "prompt_original": "请按【人员事实、地区、管理目标和材料】先分关系、制度、支付、保护与程序，再评可行选项和逐人成本；医疗、工伤等专项证据不足列交接。既有程序缺陷只用真实材料核，不补造；风险等级说明原因而非给合法性分数。",
+      "deliverable_original": "用工风险与责任证据、选项成本和整改表。",
+      "acceptance_original": "特殊人员独立核查；不以最低成本代替合法条件和员工权益。",
+      "independent_entertainment": false,
+      "business_text_characters": 174,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E035",
+      "title": "破产重整与特殊资产处置专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 2,
+      "position": 15,
+      "descriptionCharacters": 135,
+      "descriptionSha256": "9bcffaa093fe47cc9c21cb10844aa2801d0b026e64cf3bbfd92fc866f1edccc0",
+      "business_category": "B",
+      "business_category_title": "债权实现、执行、破产与资产处置",
+      "execution_label": "仅返回结果",
+      "summary_original": "将破产重整、清算与特殊资产盘活放在同一专业入口。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF02",
+        "WF15"
+      ],
+      "prompt_original": "请按【主体角色、资产负担、程序阶段和经营数据】比较重整、和解、清算或资产交易的条件、资金和执行依赖；债权争议及担保范围分列，逐笔核交易可撤销风险。资产估值和回收均给情景，不能由法律模板保证盘活。",
+      "deliverable_original": "路线对照、资产债权表、节点和文书草案。",
+      "acceptance_original": "处置净收益扣成本并可复算；权利顺位按具体财产和程序核。",
+      "independent_entertainment": false,
+      "business_text_characters": 167,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E036",
+      "title": "合同全生命周期管理专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 2,
+      "position": 16,
+      "descriptionCharacters": 141,
+      "descriptionSha256": "7e347165af650e7ae3156ef2523935e2b7d2f140c68d5f607f57548ac80bb76c",
+      "business_category": "C",
+      "business_category_title": "合同、公司治理、交易与资本项目",
+      "execution_label": "仅返回结果",
+      "summary_original": "把磋商、签署、履约、变更与归档连为合同生命周期管理。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF08",
+        "WF18"
+      ],
+      "prompt_original": "请按【合同阶段和最终版本】分流起草审查、回稿或履约处理；风险回到条款，已签条款不得用建议稿假定替换。提取义务主体、条件、触发事件、期限及完成证据，变更联动台账；未知触发日只建相对节点。",
+      "deliverable_original": "合同家族、风险修订及履约变更台账。",
+      "acceptance_original": "审批版、签署版和履行证据分开；未有调度不称已提醒。",
+      "independent_entertainment": false,
+      "business_text_characters": 160,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E037",
+      "title": "资本市场与金融法律专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 2,
+      "position": 17,
+      "descriptionCharacters": 132,
+      "descriptionSha256": "a038ffed7c7e17e2de1f847578da4aae1a3f002f9d0853eafd16d80e7e869295",
+      "business_category": "C",
+      "business_category_title": "合同、公司治理、交易与资本项目",
+      "execution_label": "仅返回结果",
+      "summary_original": "覆盖投融资、银行、资管与证券，应先识别主体、产品和交易结构。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF12",
+        "WF17",
+        "WF20"
+      ],
+      "prompt_original": "请按【持牌主体、产品、市场、客户和时点】还原资金权利流，再分准入、适当性、增信、披露与交易文件；专项法规和工具缺失要明确。投融资与资管规则不混套，法律、税务、财务和商业判断分别交接。",
+      "deliverable_original": "结构与专项风险矩阵、文件清单和条件草稿。",
+      "acceptance_original": "不将泛金融名称当全牌照能力；风险敞口不冒充确定损失。",
+      "independent_entertainment": false,
+      "business_text_characters": 167,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E038",
+      "title": "张宸璐律师谈案助理",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 2,
+      "position": 18,
+      "descriptionCharacters": 205,
+      "descriptionSha256": "031684a717fc36ff638e79e86615e6889ff61f48d394a2184a5eb22836013f43",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "仅返回结果",
+      "summary_original": "用于特定律师团队的前端接待、信息初筛与转交，存在品牌和转化目的。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF19",
+        "WF05"
+      ],
+      "prompt_original": "请按【本团队身份、服务范围和客户自述】做中性接待，先识紧急期限及必要信息，再给初步分诊和材料清单；明确陈述未核，不假装已建立委托。邀请沟通说明用途，不制造焦虑或按猜测支付能力作法律结论，转交附完整摘要。",
+      "deliverable_original": "接待纪要、紧急问题、候选服务及交接卡。",
+      "acceptance_original": "不得冒用原作者律所身份或联系方式；客户可选择是否继续服务。",
+      "independent_entertainment": false,
+      "business_text_characters": 181,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E039",
+      "title": "结案交付专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 2,
+      "position": 19,
+      "descriptionCharacters": 137,
+      "descriptionSha256": "807c1f7799c54e6ab7313289094e390cd9c8172bcf950392a313d7ac0b5ed992",
+      "business_category": "A",
+      "business_category_title": "接案、诉讼策略、证据、文书与结案",
+      "execution_label": "过程可见",
+      "summary_original": "在案件阶段结束后组织客户说明、期限、执行、归档及复盘。",
+      "corresponding_wf": [
+        "WF06"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF06"
+      ],
+      "prompt_original": "请依【裁判、送达、履行和费用材料】对照原目标制作结案包，分清阶段服务完成、生效、救济和款项到位；每个期限核起算及例外，缺资料给分支。列原件返还、费用、未实现目标与后续责任，不因判决下达宣布全部办结。",
+      "deliverable_original": "客户说明、后续期限、交接签收与复盘。",
+      "acceptance_original": "执行期间届满不写成一律不能申请；原件和实际到账有证据。",
+      "independent_entertainment": false,
+      "business_text_characters": 171,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E040",
+      "title": "数据合规专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 2,
+      "position": 20,
+      "descriptionCharacters": 205,
+      "descriptionSha256": "e8a7f73c57e188641a023e5e9b6f1e07843f989b49ae2c062a71de4c1cae0f2c",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "过程可见",
+      "summary_original": "按实际处理活动组织个人信息、数据出境、权利响应与整改。",
+      "corresponding_wf": [
+        "WF11"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF11"
+      ],
+      "prompt_original": "请为【产品、主体、地区和时点】画数据流，逐活动核目的方式、角色、敏感性、规模及接收方；先核出境适用和豁免再比机制，不预设三选一。告知同意、合同和系统实际控制分别验证，政策文本不代替现场审计。",
+      "deliverable_original": "活动义务矩阵、重点评估、差距及整改证据。",
+      "acceptance_original": "SaaS不直接决定角色；无技术验证不宣称七类场景全部合规。",
+      "independent_entertainment": false,
+      "business_text_characters": 171,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E041",
+      "title": "工伤养老社保专家",
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 3,
+      "position": 1,
+      "descriptionCharacters": 231,
+      "descriptionSha256": "264fbb7736d84611f2c5d6938c3e8e08b6ec6efa0aa225bc7a13646521272202",
+      "business_category": "D",
+      "business_category_title": "劳动用工、组织调整与社会保险",
+      "execution_label": "过程可见",
+      "summary_original": "聚焦工伤、养老、参保待遇与跨地区历史问题，需加载地方和期间资料。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF21",
+        "WF17"
+      ],
+      "prompt_original": "请按【参保地、身份、缴费和事件资料】分流工伤认定鉴定、待遇、养老资格或补缴争议；分别核制度和历史期间，逐项列证明、申请路径和计算条件。跨地接续与视同年限缺档案时先给核查，不凭现行政策回算全部历史。",
+      "deliverable_original": "资格待核、材料期限、条件化待遇表。",
+      "acceptance_original": "待遇项目不机械叠加；估算与经办核定分开，未有缴费数据不报精确养老金。",
+      "independent_entertainment": false,
+      "business_text_characters": 181,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E042",
+      "title": "智合AI自媒体运营专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 2,
+      "descriptionCharacters": 162,
+      "descriptionSha256": "add54e055ebfc0ce78bad352779124792b037a628a6bbe68bb661c50ea5186c3",
+      "business_category": "I",
+      "business_category_title": "专业传播与经营内容",
+      "execution_label": "仅返回结果",
+      "summary_original": "为智合品牌面向不同法律受众生成多平台推广内容，属于经营传播。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF05"
+      ],
+      "prompt_original": "请基于【已证产品事实、品牌授权、受众和渠道】制作口播、长文或笔记，分开真实演示、宣传主张与试用限制；保留功能来源和核验日。热点未经核实不作案例，获客文案不夸大法律效果，换品牌须使用本方身份。",
+      "deliverable_original": "渠道稿、素材来源、发布前核对表。",
+      "acceptance_original": "未实测能力不写成已验证；不冒用智合品牌、用户证言或成功案例。",
+      "independent_entertainment": false,
+      "business_text_characters": 171,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E043",
+      "title": "不良资产处置全流程法务专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 3,
+      "descriptionCharacters": 128,
+      "descriptionSha256": "7cb4eb416b200676e801cdf979253762c1e9c760db79ab3c928eb6262393b383",
+      "business_category": "B",
+      "business_category_title": "债权实现、执行、破产与资产处置",
+      "execution_label": "仅返回结果",
+      "summary_original": "连接不良债权收购、资产包尽调、清收、转让和收益测算。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF12",
+        "WF15",
+        "WF02"
+      ],
+      "prompt_original": "请按【资产包、交易角色和目标】核债权链、交付、担保登记、期间、诉执及破产，抽样范围明确；分处置成本、时间、折扣与回收情景，不把面值当价值。权属或转让限制未明时列前置条件，逐包给补证与方案。",
+      "deliverable_original": "资产问题表、交易保护、处置情景和文书草案。",
+      "acceptance_original": "同笔债权不重复计；净回收可复算，无法证实资产不作确定可收。",
+      "independent_entertainment": false,
+      "business_text_characters": 170,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E044",
+      "title": "个体工商户日常法务专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 4,
+      "descriptionCharacters": 166,
+      "descriptionSha256": "0489a7f44825d713206ade05bb0ff79b43f2c66f79ba0f950f460f75716c0c7d",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "仅返回结果",
+      "summary_original": "面向个体经营者提供合同、用工、工商和小额纠纷的日常分诊。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF18",
+        "WF08",
+        "WF21"
+      ],
+      "prompt_original": "请依据【登记主体、真实业务、地区和问题】用通俗语言给当前可做动作，先分供货、租赁、用工或登记；经营者和公司责任不混同，实际用工不凭劳务标题定性。只问影响当前处理的缺项，模板参数留空，金额逐项有来源。",
+      "deliverable_original": "简明答复、合同或沟通草稿、材料动作卡。",
+      "acceptance_original": "普惠定位不等于适用标准降低；未办登记不称手续已完成。",
+      "independent_entertainment": false,
+      "business_text_characters": 172,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E045",
+      "title": "娱乐法专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 5,
+      "descriptionCharacters": 138,
+      "descriptionSha256": "75cf6e7609208607ebc7d68e26ede45de646c36efa9fb09e7bde9f1faa1bcfd9",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "仅返回结果",
+      "summary_original": "这里的娱乐法指影视、经纪、直播和IP等行业法律，不是占卜娱乐。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF17",
+        "WF08",
+        "WF12"
+      ],
+      "prompt_original": "请按【制作、经纪、直播或授权项目】核主体资质、权利链、使用范围、收益与内容，区分作品、表演、肖像及商业合作问题；逐项把风险落合同和运营动作，第三方许可缺失列前置。跨境或未成年人另作专项。",
+      "deliverable_original": "权利链、合同风险、内容及争议行动表。",
+      "acceptance_original": "不将签经纪合同当取得所有权利；收益测算与损失认定分开。",
+      "independent_entertainment": false,
+      "business_text_characters": 169,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E046",
+      "title": "股权激励专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 6,
+      "descriptionCharacters": 137,
+      "descriptionSha256": "2dc93987d0f8c1fcb84ae57e9a600e625cd809288f160929dce7fc13733aba85",
+      "business_category": "C",
+      "business_category_title": "合同、公司治理、交易与资本项目",
+      "execution_label": "仅返回结果",
+      "summary_original": "聚焦激励工具、实施程序、权益安排和退出争议，需连接税务与治理。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF12",
+        "WF33"
+      ],
+      "prompt_original": "请按【公司类型、受益人、股权结构和目标】比较真实股权、期权等适当工具，明确授予、归属、行权、离职回购及稀释；法税会计分别核，商业数字留授权参数。治理、出资和实施证据单列，不以签计划即认定已取得股权。",
+      "deliverable_original": "方案、情景成本、文件及实施依赖表。",
+      "acceptance_original": "完全摊薄口径可查；离职与交易竞业义务分型，不承诺必能回购。",
+      "independent_entertainment": false,
+      "business_text_characters": 176,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E047",
+      "title": "交通事故理赔专家 pro",
+      "author": "第三人称",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 3,
+      "position": 7,
+      "descriptionCharacters": 124,
+      "descriptionSha256": "ce834169aa9fa7af9e908d566497815ef85647aec04ae72a86b719329a3f7e1d",
+      "business_category": "H",
+      "business_category_title": "建设工程、事故、医疗与家事",
+      "execution_label": "过程可见",
+      "summary_original": "偏向律师人伤理赔实务，加入职务侵权、追偿与拒赔抗辩研究。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF27",
+        "WF16",
+        "WF14"
+      ],
+      "prompt_original": "请按【事故、雇佣、保险和伤情资料】分层分析侵权主体与保险责任，逐项目核地方年度标准、鉴定和已付；拒赔、追偿及职务行为列要件与反证，必要时衔接工伤。介绍所称经验不作为本案证据或能力已验证。",
+      "deliverable_original": "赔偿与保险分层表、证据和调解诉讼稿。",
+      "acceptance_original": "不按固定项目全加；诉请、保险可赔与实际已付分开。",
+      "independent_entertainment": false,
+      "business_text_characters": 163,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E048",
+      "title": "税务优化&合规专家",
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 3,
+      "position": 8,
+      "descriptionCharacters": 90,
+      "descriptionSha256": "1683cc0d97d92dfd69a61104aaf461ce56f01065a664b9c8035ac6e45730b461",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "过程可见",
+      "summary_original": "围绕合法税负方案比较及财税合规，不能把节税目标当既定结论。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF17",
+        "WF12"
+      ],
+      "prompt_original": "请基于【真实业务、主体、税种、期间及目的】比较合法方案的适用条件、交易实质、税负、实施成本和持续义务；社保等分别核，不靠换合同名称或虚构交易降低负担。优惠须有证据，未明口径交税务专业复核。",
+      "deliverable_original": "方案条件、可复算税负情景及实施清单。",
+      "acceptance_original": "不承诺最优或零风险；税负与现金流、会计收益不混算。",
+      "independent_entertainment": false,
+      "business_text_characters": 166,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E049",
+      "title": "电商直播合规法务专家（京衡律师）",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 9,
+      "descriptionCharacters": 168,
+      "descriptionSha256": "1a83fa71af9515f504e400ef4e23b03caa64bf9b353ae04c63475ebb126b9b28",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "仅返回结果",
+      "summary_original": "聚焦直播话术、一件代发、达人供应链与售后责任，需看真实链路。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF17",
+        "WF08",
+        "WF28"
+      ],
+      "prompt_original": "请按【商家、主播、平台、供应商及素材】还原下单付款、宣传、交货退货流程，区分平台规则和法律责任；完整审画面、小字、口播及证明，不只查词。代发和合作协议不能当然排除面向消费者的责任，给可用替换与流程控制。",
+      "deliverable_original": "素材定位风险、责任矩阵、合作及售后草稿。",
+      "acceptance_original": "免责声明不当然消除误导；供应链承诺与实证分开。",
+      "independent_entertainment": false,
+      "business_text_characters": 174,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E050",
+      "title": "保险合规与理赔争议专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 10,
+      "descriptionCharacters": 124,
+      "descriptionSha256": "0e54b2261c78c04ff1df193fe8ed3c71c0a65c93e2124ce1944b00e09b47a02c",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "仅返回结果",
+      "summary_original": "覆盖保险经营合规和多种理赔争议，首先需区分产品及当事人角色。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF17",
+        "WF08",
+        "WF27"
+      ],
+      "prompt_original": "请按【险种、角色、条款、投保告知及事故材料】核承保范围、期间、责任免除与实际说明记录，分开销售合规、保险责任、金额及追偿问题；不能只见签名判告知充分。争议用具体条款与证据分析，未齐保单不确定拒赔有效。",
+      "deliverable_original": "条款证据矩阵、损失复算和沟通诉讼草稿。",
+      "acceptance_original": "保险金额不直接等于应赔额；不同险种规则和免赔抵扣分别核。",
+      "independent_entertainment": false,
+      "business_text_characters": 177,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E051",
+      "title": "IPO法律专家",
+      "author": "JohnHe",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 3,
+      "position": 11,
+      "descriptionCharacters": 269,
+      "descriptionSha256": "860693ab65cd705e690f38d35c72fd8a56a08b9559e8521e9fc6e8887386d6c7",
+      "business_category": "C",
+      "business_category_title": "合同、公司治理、交易与资本项目",
+      "execution_label": "过程可见",
+      "summary_original": "面向IPO法律诊断、历史问题、整改与问询，公开介绍含独立运行限制。",
+      "corresponding_wf": [
+        "WF20"
+      ],
+      "correspondence_basis": "作者显示名、规范化标题和公开任务语义与旧WF相符；仅方法对应，不证明线上配置正文或对象ID相同",
+      "reuse_wf": [
+        "WF20"
+      ],
+      "prompt_original": "请按【发行人、市场板块、报告期和申报时间】锁适用规则，逐项列股权沿革、独立性、关联交易和规范运行的事实证据；区分条件影响、披露和整改。关键信息未确认列分支或待补，不用所谓最保守假设冒充事实；问询按问题核查回应。",
+      "deliverable_original": "问题矩阵、倒排整改与回复草稿。",
+      "acceptance_original": "整改有实证，报告期规则有版本；不预测过会或代财税顾问签结论。",
+      "independent_entertainment": false,
+      "business_text_characters": 183,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E052",
+      "title": "企业劳动合规专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 12,
+      "descriptionCharacters": 132,
+      "descriptionSha256": "678b220079e00fff16759f86beb2dda98344e69f33011d07cdf58596beb01572",
+      "business_category": "D",
+      "business_category_title": "劳动用工、组织调整与社会保险",
+      "execution_label": "仅返回结果",
+      "summary_original": "以企业招聘到离职的全周期合规为主，同时承接争议和监察应对。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF21",
+        "WF23",
+        "WF31"
+      ],
+      "prompt_original": "请按【企业地区、实际用工和目标阶段】建合同、制度、支付、管理、离职义务链，逐项核程序及留痕；已发生争议或监察单独分流并保留期限。整改面向真实流程，不倒签或补造历史程序，人员决定由有权人作。",
+      "deliverable_original": "全周期问题、制度合同草案及责任证据表。",
+      "acceptance_original": "签收、培训不自动替代制度程序；劳动与劳务按事实分型。",
+      "independent_entertainment": false,
+      "business_text_characters": 168,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E053",
+      "title": "中国企业品牌出海法务专家（京衡律师）",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 13,
+      "descriptionCharacters": 111,
+      "descriptionSha256": "f3ad47a7bcb1e8f5aefdc2cd205e06919b4adcbffabf7b0e7120fcf69b7ef288",
+      "business_category": "G",
+      "business_category_title": "涉外争议、物流与企业出海",
+      "execution_label": "仅返回结果",
+      "summary_original": "围绕品牌国际布局、跨境平台、供应链和数字贸易开展出海分流。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF17",
+        "WF12",
+        "WF11"
+      ],
+      "prompt_original": "请按【目的市场、产品、渠道、主体和流向】先列准入、品牌权利、平台合同、消费者、数据和税关事项，再分目的地规则核验。区分中国出海与当地经营义务，未取得当地法或指引原文时列交接，不以全球规划名义给统一结论。",
+      "deliverable_original": "市场问题树、合同升级、专项分工和进入条件。",
+      "acceptance_original": "商标注册不等于全渠道可售；法域、版本与未覆盖范围明确。",
+      "independent_entertainment": false,
+      "business_text_characters": 178,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E054",
+      "title": "企业并购重组法务专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 14,
+      "descriptionCharacters": 124,
+      "descriptionSha256": "f8476912865312310cec079252d3483b3238baf573a3d3bcd1a2c85ec9de5c4c",
+      "business_category": "C",
+      "business_category_title": "合同、公司治理、交易与资本项目",
+      "execution_label": "仅返回结果",
+      "summary_original": "覆盖并购、重组、分立和改制，应由具体结构决定程序与文件。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF12"
+      ],
+      "prompt_original": "请按【结构、主体、立场、时点和目标】核交易目的与资产负债承继，再将尽调、治理、职工、税务和许可事项设依赖；股权与资产交易分别分析。发现映射保护条款与交割证据，审批时间给条件和情景，不承诺按目标日完成。",
+      "deliverable_original": "结构对照、风险保护、关键路径和文件草案。",
+      "acceptance_original": "每项手续说明适用原因；对方保证不当已核实，交割不等于整合完成。",
+      "independent_entertainment": false,
+      "business_text_characters": 179,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E055",
+      "title": "刑事律师自媒体运营专家",
+      "author": "刘艳",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 3,
+      "position": 15,
+      "descriptionCharacters": 126,
+      "descriptionSha256": "1a68f48a8c2115e921e5e2b369665c7a8ea8e8d9b12c0139ee8b7b1aa7a9fcdb",
+      "business_category": "I",
+      "business_category_title": "专业传播与经营内容",
+      "execution_label": "过程可见",
+      "summary_original": "为刑事律师围绕经济犯罪等主题制作多平台内容，明确带获客目的。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF05"
+      ],
+      "prompt_original": "请按【平台、受众、已核主题和素材授权】设计故事或专业内容，分开真实公开案件和虚构情景，保护涉案人与家属信息；热点先核事实及法源，标题不承诺刑期或制造紧迫恐惧。只写本方真实经历，不假借客户见证。",
+      "deliverable_original": "选题、脚本、来源和发布审查表。",
+      "acceptance_original": "缩短后法律条件不丢；不得以秘密案情、关系暗示或虚假战绩促成交。",
+      "independent_entertainment": false,
+      "business_text_characters": 172,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E056",
+      "title": "用工合规内控专家",
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 16,
+      "descriptionCharacters": 65,
+      "descriptionSha256": "fd9ba1ade5a3052503514acd5c17fb7f032f7812df968d35d537f58025b54de9",
+      "business_category": "D",
+      "business_category_title": "劳动用工、组织调整与社会保险",
+      "execution_label": "仅返回结果",
+      "summary_original": "强调用工风险内控的设计与补漏，重点应落到责任、控制和运行证据。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF21",
+        "WF17",
+        "WF18"
+      ],
+      "prompt_original": "请将【招聘、合同、考勤、薪酬、离职流程】映射义务与关键控制，分设计缺陷、执行缺陷和缺证；明确岗位、例外升级、操作证据与抽查方法。制度文本仅是设计产物，需用真实样本验证，整改不能只靠员工签承诺。",
+      "deliverable_original": "用工内控矩阵、制度调整及验证计划。",
+      "acceptance_original": "每条控制可测试；无运行样本不报体系有效，法务与HR职责分开。",
+      "independent_entertainment": false,
+      "business_text_characters": 174,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E057",
+      "title": "互联网金融法律专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 17,
+      "descriptionCharacters": 133,
+      "descriptionSha256": "443b6a7fc5398ecbd151ec2100a7ec5edf2fb503890ad991cf4fe943ec9b5039",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "仅返回结果",
+      "summary_original": "面向网贷、消金、支付与线上理财等业态，核心是实质业务与准入分型。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF17",
+        "WF28",
+        "WF11"
+      ],
+      "prompt_original": "请按【主体、资金流、收费、产品和客户】核真实金融活动及许可，再分别审营销、合同、风控、消费者与数据；不因互联网平台或技术服务名称免除准入分析。历史停业或不适用业务不能沿旧模板推荐，专项能力不足列缺口。",
+      "deliverable_original": "业务准入树、义务风险、上线条件及文书草案。",
+      "acceptance_original": "不将不同牌照规则混套；合同存在不证明业务合法可开展。",
+      "independent_entertainment": false,
+      "business_text_characters": 179,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E058",
+      "title": "借贷纠纷处理专家",
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 3,
+      "position": 18,
+      "descriptionCharacters": 129,
+      "descriptionSha256": "c87be04519012f64c93208d2eda169b52b88c2f4822d46c5fe014c47de477d1b",
+      "business_category": "B",
+      "business_category_title": "债权实现、执行、破产与资产处置",
+      "execution_label": "过程可见",
+      "summary_original": "以借贷合意、交付、利息、担保到诉执回款的连续链为方法。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF07",
+        "WF14"
+      ],
+      "prompt_original": "请按【主体、资金用途、借据和逐笔流水】先核法律关系、交付、预扣及还款，再分适用利率、担保、时效和程序；金融借款与民间借贷不套统一上限。用分段算法说明抵充及争议，主张额与可证额分列，不凭借条当然认定已交付。",
+      "deliverable_original": "债权证据、复算表、请求和执行衔接草稿。",
+      "acceptance_original": "本金利息费用无重复；担保范围与期间分别有来源。",
+      "independent_entertainment": false,
+      "business_text_characters": 171,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E059",
+      "title": "知识产权专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 19,
+      "descriptionCharacters": 128,
+      "descriptionSha256": "d2120b86b69a8d07257fb13374d82a912d12e1a68fd0924788e7c3f5c4174186",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "仅返回结果",
+      "summary_original": "把专利、商标、著作权与商业秘密维权置于同一入口，需分别加载规则。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF17",
+        "WF27",
+        "WF16"
+      ],
+      "prompt_original": "请按【权利类型、权属链、被控行为和目标】核有效状态、授权范围及取得证据，再做对应侵权比较、抗辩与损失；技术问题、秘密性及保密措施需专业材料，不以文本相似率定侵权。行政、诉讼与谈判路径分列，证据依法固定。",
+      "deliverable_original": "权利证据、比较表、缺口和维权方案。",
+      "acceptance_original": "未有关键技术资料不假作比对；权利有效不等于侵权成立。",
+      "independent_entertainment": false,
+      "business_text_characters": 176,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E060",
+      "title": "反垄断与反不正当竞争合规专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 3,
+      "position": 20,
+      "descriptionCharacters": 141,
+      "descriptionSha256": "cc47e768b001cd57cb70a227fbc995d8fbf967b04f8d0de216e3905a30168a16",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "仅返回结果",
+      "summary_original": "整合反垄断与不正当竞争，涉及不同触发条件和行为分析框架。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF17",
+        "WF12"
+      ],
+      "prompt_original": "请先按【交易或经营行为、相关主体和市场事实】分流集中、协议、滥用或不正当竞争；申报门槛核控制与合并范围，行为分析核事实和例外，不以规模直接判支配。不同问题分别检索、建证据和控制，缺数据给条件分支。",
+      "deliverable_original": "适用树、测算或行为矩阵、整改升级清单。",
+      "acceptance_original": "门槛判断不等于实体批准；市场事实不足不编份额与违法概率。",
+      "independent_entertainment": false,
+      "business_text_characters": 173,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E061",
+      "title": "裁员风控专家",
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 4,
+      "position": 1,
+      "descriptionCharacters": 134,
+      "descriptionSha256": "f24f2bd530d06caa8a8e044fe4df4ce8a3a034f12292aa79e6baa4f9f5cbcc08",
+      "business_category": "D",
+      "business_category_title": "劳动用工、组织调整与社会保险",
+      "execution_label": "仅返回结果",
+      "summary_original": "专注组织减员与安置的法律条件、程序、保护及成本，不宜以降本先定路径。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF21",
+        "WF23"
+      ],
+      "prompt_original": "请按【调整原因、地区和逐人数据】比较协商、岗位调整及适当法定路径，先核适用条件、限制保护、真实证据和程序；不将法条号或N+1当通用方案。无逐人数据仅预算情景，列沟通、替代与救济，不替企业选择具体人员。",
+      "deliverable_original": "路径条件、逐人待核、成本模型和程序表。",
+      "acceptance_original": "保护人员独立复核；不补造绩效或程序，平均工龄不冒充逐人计算。",
+      "independent_entertainment": false,
+      "business_text_characters": 183,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E062",
+      "title": "证券合规与监管法律专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 4,
+      "position": 2,
+      "descriptionCharacters": 126,
+      "descriptionSha256": "e78f6e37e20eefe5e29ffd9a268823375aa9c135076a96799f319a855a745c12",
+      "business_category": "C",
+      "business_category_title": "合同、公司治理、交易与资本项目",
+      "execution_label": "仅返回结果",
+      "summary_original": "覆盖发行人和证券经营机构的证券合规及监管，须先分身份与市场。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF20",
+        "WF17",
+        "WF31"
+      ],
+      "prompt_original": "请按【主体、市场、行为和时点】分流披露、交易、发行或经营业务，核实际权限、信息状态与适用规则；监管文书另核回复期间。公开信息、内幕线索和商业预测分列，制度和实际执行分别验证，重大事项交具体负责人复核。",
+      "deliverable_original": "规则义务、风险定位、回复及整改草案。",
+      "acceptance_original": "不套一家交易所规则到全部市场；未公开信息不自动外发或补成公告。",
+      "independent_entertainment": false,
+      "business_text_characters": 179,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E063",
+      "title": "外贸货款催收专家（京衡律师）",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 4,
+      "position": 3,
+      "descriptionCharacters": 187,
+      "descriptionSha256": "bd640097ad518e086a0a139a206edb6e6e3dc5fba80d806fe26534d3fdaa0406",
+      "business_category": "B",
+      "business_category_title": "债权实现、执行、破产与资产处置",
+      "execution_label": "仅返回结果",
+      "summary_original": "围绕外贸欠款的证据、双语催告、路径与期间管理，强调低成本处置。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF07",
+        "WF29",
+        "WF14",
+        "WF05"
+      ],
+      "prompt_original": "请按【交易方、合同、交货付款和法域】核债权、争议条款、送达及履行能力，再比较催告、平台保险、诉讼仲裁和执行成本；双语函保留金额及权利边界。跨境时效、承认与执行需目的地核验，未经调度不称已持续监控。",
+      "deliverable_original": "债权证据、分级催告稿、成本路径和待核期限。",
+      "acceptance_original": "不违法骚扰或夸大后果；英文函与中文请求、币种一致。",
+      "independent_entertainment": false,
+      "business_text_characters": 175,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E064",
+      "title": "智合AI 数字法务",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 4,
+      "position": 4,
+      "descriptionCharacters": 215,
+      "descriptionSha256": "55a78381b9007f96951750f324df3d213b69b30834499c2b89ad870666e56088",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "仅返回结果",
+      "summary_original": "公开介绍是一体化企微数字法务入口并声称权限及律师兜底，运行未验证。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF18",
+        "WF08",
+        "WF21",
+        "WF14"
+      ],
+      "prompt_original": "请按【企业身份、事项、权限和服务范围】分诊合同、用工、债权或合规，建立责任人、材料、期限及完成证据；重大或越范围任务携底稿转专项。区分AI整理、专业复核与有权签发，律师兜底须有真实接单和状态，不默认已承接。",
+      "deliverable_original": "事项卡、分流、责任待办及复核交接。",
+      "acceptance_original": "企微常驻不证明法定权限或全业务覆盖；无调度回执不报闭环完成。",
+      "independent_entertainment": false,
+      "business_text_characters": 183,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E065",
+      "title": "医疗纠纷专家",
+      "author": "王律建智ᵃᵍᵉⁿᵗ",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 4,
+      "position": 5,
+      "descriptionCharacters": 452,
+      "descriptionSha256": "fbcf8601ee3d3ff7ca1bc4fe76a7756df3bc95e26eb23a35216314c27a51c0e4",
+      "business_category": "H",
+      "business_category_title": "建设工程、事故、医疗与家事",
+      "execution_label": "过程可见",
+      "summary_original": "介绍覆盖病历、鉴定、医疗责任与赔偿等，但专业资历和精确能力未核验。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF27",
+        "WF16",
+        "WF14"
+      ],
+      "prompt_original": "请按【患方或医方、病历原件日志、鉴定及损失】建诊疗时间线，区分临床疑点、法律过错、因果及损失；病历异常需核条件，不一概自动推责。原因力和医学判断交具资质专业人员，赔偿逐项查地区时期及抵扣，不固定全加十二项。",
+      "deliverable_original": "病历问题、鉴定质询、赔偿情景和诉讼草稿。",
+      "acceptance_original": "不从文献或模型直接判医疗过错、因果比例和个案胜率。",
+      "independent_entertainment": false,
+      "business_text_characters": 181,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E066",
+      "title": "行政诉讼答辩助手",
+      "author": "内蒙古刘廷巍",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 4,
+      "position": 6,
+      "descriptionCharacters": 15,
+      "descriptionSha256": "88cc36ce90d75e19ed285d34f53dfc6515514ed8ff7d31a3c96d327fc5fccc8e",
+      "business_category": "E",
+      "business_category_title": "刑事与行政程序",
+      "execution_label": "过程可见",
+      "summary_original": "专门从行政诉讼被告立场生成答辩，应以作出行为时资料为基础。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF01",
+        "WF25"
+      ],
+      "prompt_original": "请依据【被诉行为、起诉状、送达及行政案卷】核被告、诉求、答辩举证期限，再围绕权限、事实、程序、依据和裁量答辩；区分既有证据与诉后说明，不能补造行政程序或用新理由默换原决定依据。",
+      "deliverable_original": "答辩稿、行政证据与争点缺口表。",
+      "acceptance_original": "逐项回应诉求；程序与实体分开，补充证据是否合法另核。",
+      "independent_entertainment": false,
+      "business_text_characters": 158,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E067",
+      "title": "电商企业法律顾问法律专家（京衡律师）",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 4,
+      "position": 7,
+      "descriptionCharacters": 144,
+      "descriptionSha256": "a57c4172a3b3a15053580966b8530baff888cd23adcad8756eb9b5dc0d83fa69",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "仅返回结果",
+      "summary_original": "针对电商经营全链条，兼顾平台合同、营销知产、消费争议和处罚。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF17",
+        "WF18",
+        "WF08"
+      ],
+      "prompt_original": "请按【平台、商家、货源、渠道和产品】还原上架宣传、支付交付及售后，逐项列法律和平台合同义务、责任与证据；平台扣分封店另查规则版本及申诉，处罚不自动等于法律违法。营销和知产专项缺证明先标待核。",
+      "deliverable_original": "经营义务、合同规则、申诉或售后草案。",
+      "acceptance_original": "平台规则不冒充法律；店铺承诺、供应商责任与消费者请求分列。",
+      "independent_entertainment": false,
+      "business_text_characters": 172,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E068",
+      "title": "劳动用工合规管理专家",
+      "author": "userkrnnvz",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 4,
+      "position": 8,
+      "descriptionCharacters": 227,
+      "descriptionSha256": "8de634788aa67e9a3b439ffc23f5e7e0c01e53d453a67ff9c06bac3bd84c07ba",
+      "business_category": "D",
+      "business_category_title": "劳动用工、组织调整与社会保险",
+      "execution_label": "过程可见",
+      "summary_original": "聚焦企业全周期用工与管理表达；介绍中的姓名及从业年限不是已核资质。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF21",
+        "WF18"
+      ],
+      "prompt_original": "请用【本方真实身份和企业材料】从合同、制度、组织调整、秘密保护到社保和争议分流，逐问题给结论前提、条款来源、责任动作及待核地方差异。重大事实不足给分支，不扮演未经授权真人，也不把15年人设当质量证明。",
+      "deliverable_original": "管理层风险、整改和证据动作表。",
+      "acceptance_original": "立场、特殊保护及程序有材料；具体法条真实且支持命题。",
+      "independent_entertainment": false,
+      "business_text_characters": 174,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E069",
+      "title": "卜一卦",
+      "author": "玄律大法师",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 4,
+      "position": 9,
+      "descriptionCharacters": 80,
+      "descriptionSha256": "4c41e07a9292f67fded7419c187af35f7db7797a9e3748db6bd2cb7598342385",
+      "business_category": "J",
+      "business_category_title": "独立娱乐",
+      "execution_label": "过程可见",
+      "summary_original": "以卜卦叙事提供运势与案件事项占断，属于独立娱乐，不能证明法律结果。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [],
+      "prompt_original": "请以【虚构情境或非敏感心情】作轻松象征叙事，明确结果为娱乐和自我反思，不判断胜诉、刑期、法定期限或律师选择。遇真实法律问题只整理现实待核事项并指向相应业务方法，不要求上传真实案卷或个人隐私。",
+      "deliverable_original": "娱乐文本、可选反思问题及现实核查提醒。",
+      "acceptance_original": "不得用卦象决定起诉、和解、提交日或收费，不混入法律事实底稿。",
+      "independent_entertainment": true,
+      "business_text_characters": 177,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E070",
+      "title": "婚家家事与财富传承专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 4,
+      "position": 10,
+      "descriptionCharacters": 144,
+      "descriptionSha256": "fdc74ccea915ba4cf872cc49ef0b7008f63236ab6a3b37d3c4521f0399a1368c",
+      "business_category": "H",
+      "business_category_title": "建设工程、事故、医疗与家事",
+      "execution_label": "过程可见",
+      "summary_original": "将婚姻财产、离婚继承与家族传承放在同一入口，家庭目标及法域关键。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF27",
+        "WF12",
+        "WF08"
+      ],
+      "prompt_original": "请按【家庭关系、资产权属、目标和法域】分流财产、抚养、继承或传承规划，先核真实意思与保护需求；跨境身份和税务分别交接。分配先做逐人金额及总额闭合，草案说明形式生效待核，不把打印底稿当已有效遗嘱。",
+      "deliverable_original": "家庭资产关系、方案条件、协议底稿和缺口。",
+      "acceptance_original": "未成年人利益单列；继承人身份不替代被继承人税收身份。",
+      "independent_entertainment": false,
+      "business_text_characters": 175,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E071",
+      "title": "丝路法驿·中欧班列全链合规专家（京衡律师）",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 4,
+      "position": 11,
+      "descriptionCharacters": 382,
+      "descriptionSha256": "2bcc6ad65c12a3e6a279204db1a93d96edff3407190784454e24f4f3d7d05868",
+      "business_category": "G",
+      "business_category_title": "涉外争议、物流与企业出海",
+      "execution_label": "仅返回结果",
+      "summary_original": "介绍聚合班列运输、关务、联运、碳和保险等专题；资料覆盖数字未验证。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF17",
+        "WF08",
+        "WF31"
+      ],
+      "prompt_original": "请按【路线、货物、承运链、贸易术语和时点】核适用运输、海关、碳及制裁义务，再查合同与保险、事故索赔和期限。先确认所称资料和各国版本可访问，缺源列范围；逐事项说明适用条件，不用每句免责声明替代准确分析。",
+      "deliverable_original": "路线义务、责任链、材料和出险动作表。",
+      "acceptance_original": "不推定沿线规则统一或资料已全核；不冒用作者身份及服务联系方式。",
+      "independent_entertainment": false,
+      "business_text_characters": 182,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E072",
+      "title": "涉外争议法律专家（京衡律师）",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 4,
+      "position": 12,
+      "descriptionCharacters": 130,
+      "descriptionSha256": "059f57304676b8c1d2b27087562ded955cbb6a56cac7670b503182da95fe34a0",
+      "business_category": "G",
+      "business_category_title": "涉外争议、物流与企业出海",
+      "execution_label": "仅返回结果",
+      "summary_original": "将跨境交易结构与争议处理放在一处，关键是冲突法和实际救济。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF12",
+        "WF27",
+        "WF14"
+      ],
+      "prompt_original": "请按【各方所在地、合同法域、争议条款和财产】分清准据法、管辖或仲裁地、送达及承认执行，分别核相关法域与条约；跨境金额税费给情景。缺当地资料列专题交接，不以中文模板保证境外可执行。",
+      "deliverable_original": "法域问题图、路径成本、证据及文书草稿。",
+      "acceptance_original": "法院地法不直接等于合同准据法；翻译通顺不证明外国法已核。",
+      "independent_entertainment": false,
+      "business_text_characters": 165,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E073",
+      "title": "刑事辩护",
+      "author": "拉卡啦路",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 4,
+      "position": 13,
+      "descriptionCharacters": 4,
+      "descriptionSha256": "00481b8d85b50d51b0c1a617a0d05d93f0b97933f976f9e4a5095dab8311ae74",
+      "business_category": "E",
+      "business_category_title": "刑事与行政程序",
+      "execution_label": "过程可见",
+      "summary_original": "标题与介绍只有刑事辩护，无法确认阶段、工具或具体方法。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF09"
+      ],
+      "prompt_original": "请先说明【当前阶段、身份、法律文书和希望成果】，按已有材料整理紧急日期、指控问题及会见阅卷需求；范围明确后才选择对应刑事方法。没有卷宗时仅给核查和补件计划，不从简短标题推定具备全案分析或量刑能力。",
+      "deliverable_original": "范围卡、阶段材料和首轮行动。",
+      "acceptance_original": "未知能力明确；不许诺取保、无罪、刑期或已完成阅卷。",
+      "independent_entertainment": false,
+      "business_text_characters": 164,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E074",
+      "title": "塔罗占星师",
+      "author": "玄律大法师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 4,
+      "position": 14,
+      "descriptionCharacters": 83,
+      "descriptionSha256": "5571dc3dda18edd05cf9dd14f202c4e4580adb38d3d5b21212b8a4703bf72d26",
+      "business_category": "J",
+      "business_category_title": "独立娱乐",
+      "execution_label": "仅返回结果",
+      "summary_original": "以塔罗和占星形式开展运势叙事，属于独立娱乐，不参与法律判断。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [],
+      "prompt_original": "请围绕【不含客户资料的心情或虚构场景】进行象征性抽牌叙事，供放松和反思；不得把星象或牌面换算案件概率、投资判断或提交日期。真实法律忧虑另列证据、期限和专业核查问题，不自动作现实决定。",
+      "deliverable_original": "娱乐文本、反思题及现实事项清单。",
+      "acceptance_original": "不预测裁判或建议错过期限，不将结果存入案件事实或专业知识依据。",
+      "independent_entertainment": true,
+      "business_text_characters": 168,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E075",
+      "title": "郑英超・金融与 Web3 刑事合规智能助手",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 4,
+      "position": 15,
+      "descriptionCharacters": 161,
+      "descriptionSha256": "c74c5b96b3732f040b86f70f6f0d0bc5c166a029915aa402d2a1ef911f55d265",
+      "business_category": "E",
+      "business_category_title": "刑事与行政程序",
+      "execution_label": "仅返回结果",
+      "summary_original": "聚焦金融犯罪、Web3和企业危机；描述中的履历与品牌背书未独立核实。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF09",
+        "WF17",
+        "WF11"
+      ],
+      "prompt_original": "请按【业务实质、资金技术流、主体、法域及阶段】分合规评估、危机处置或辩护，分别核准入、资金、数据及指控要件；技术标签不能代替法律分型。合法保全资料与律师介入有具体动作，不冒用真人身份或承诺减损结果。",
+      "deliverable_original": "业务刑事风险、证据保全及阶段草稿。",
+      "acceptance_original": "代币或Web3称谓不直接定性合法违法；缺技术资料不补造运行机制。",
+      "independent_entertainment": false,
+      "business_text_characters": 182,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E076",
+      "title": "劳动用工管理专家",
+      "author": "朱志勇律师18031116033",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 4,
+      "position": 16,
+      "descriptionCharacters": 46,
+      "descriptionSha256": "ba91890001a88da27f60a33f88e6c00e5ea462ab069ab4d6f40f80041bbe310a",
+      "business_category": "D",
+      "business_category_title": "劳动用工、组织调整与社会保险",
+      "execution_label": "过程可见",
+      "summary_original": "从企业立场贯穿劳动合同磋商、履行、解除与交接，介绍未展开方法细节。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF21",
+        "WF23"
+      ],
+      "prompt_original": "请按【企业地区、人员关系、阶段和材料】核合同、管理事实、工资及程序，再给当阶段可行选择和留痕。解除先核依据、限制保护与真实证据，交接和结算独立，不把员工未交接当然当全部拒付理由。",
+      "deliverable_original": "阶段风险、合同或通知草稿、结算交接表。",
+      "acceptance_original": "不得补造记录；未详述能力标范围，企业立场不免除员工合法权益。",
+      "independent_entertainment": false,
+      "business_text_characters": 171,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E077",
+      "title": "环境合规与ESG治理专家",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "仅返回结果"
+      ],
+      "page": 4,
+      "position": 17,
+      "descriptionCharacters": 137,
+      "descriptionSha256": "e8cf16933c6568d6de921a5adbe6cec48161a036e0127021c8d360e1e80c606f",
+      "business_category": "F",
+      "business_category_title": "持续法务、专项与行业合规",
+      "execution_label": "仅返回结果",
+      "summary_original": "将环保义务与ESG治理并列，需区分法律强制、披露标准与自愿承诺。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF17",
+        "WF31"
+      ],
+      "prompt_original": "请按【企业设施、活动、地区和披露用途】核许可排放、监测及事件记录，再分环境义务、碳安排和适用ESG标准；指标边界、期间和证据明确。政策目标与现时强制分开，宣传词需可证，不把编报告当实际合规。",
+      "deliverable_original": "环境义务、数据缺口、控制整改及披露草案。",
+      "acceptance_original": "不同设施与范围不混算；环境损失和碳数字无依据不制造。",
+      "independent_entertainment": false,
+      "business_text_characters": 173,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E078",
+      "title": "IPO辅导专家",
+      "author": "壹然",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 4,
+      "position": 18,
+      "descriptionCharacters": 82,
+      "descriptionSha256": "7760a89dca5e798b81f856a2e7c41227f4f1891fe061ba9ead50de346b1b138f",
+      "business_category": "C",
+      "business_category_title": "合同、公司治理、交易与资本项目",
+      "execution_label": "过程可见",
+      "summary_original": "更偏企业内部IPO项目管理：诊断、中介选择、整改、问询和决策汇报。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF20",
+        "WF12"
+      ],
+      "prompt_original": "请按【拟申报市场、报告期、内部立项和资料】建里程碑与责任，诊断问题分条件、披露、整改及待证；中介选择写范围能力和分工，真实核查后再做模拟问询。风险级别有理由，内部计划不代监管辅导登记或审核结论。",
+      "deliverable_original": "项目图、问题整改台账和管理层决策稿。",
+      "acceptance_original": "整改结项有证据；不宣称固定问卷即可过会，财税结论交专业复核。",
+      "independent_entertainment": false,
+      "business_text_characters": 178,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    },
+    {
+      "id": "E079",
+      "title": "浙企 AI 出海风控合规顾问（京衡律师）",
+      "author": "张宸璐律师",
+      "labels": [
+        "社区",
+        "过程可见"
+      ],
+      "page": 4,
+      "position": 19,
+      "descriptionCharacters": 133,
+      "descriptionSha256": "374db34eb5eb3b1cb5e8f899d812dc6cc5a685f3d86a8eaa926799cafce9d621",
+      "business_category": "G",
+      "business_category_title": "涉外争议、物流与企业出海",
+      "execution_label": "过程可见",
+      "summary_original": "围绕浙江AI企业出海，介绍称依赖专项指引及多法域专题；内容未独立核读。",
+      "corresponding_wf": [],
+      "correspondence_basis": "没有确认与旧WF同一配置的证据；以下仅为依据业务语义的可复用方法建议",
+      "reuse_wf": [
+        "WF17",
+        "WF11",
+        "WF28"
+      ],
+      "prompt_original": "请按【模型用途、市场、主体、数据技术与供应链】核指引原文版本及各地正式来源，再分AI治理、算法、模型、知产、数据与出口制裁；区分浙江支持性材料和目的地强制规则。缺技术或当地源列专题交接，不给统一全球放行。",
+      "deliverable_original": "法域专题矩阵、证据及进入整改条件。",
+      "acceptance_original": "16法域等宣传数量不作覆盖保证；用途或市场变化触发复评。",
+      "independent_entertainment": false,
+      "business_text_characters": 182,
+      "evidence_status": "公开介绍由主代理computer use点读；本子任务静态审阅，未聘用、未取得私有配置、未运行验证"
+    }
+  ]
+}

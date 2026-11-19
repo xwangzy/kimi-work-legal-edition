@@ -1,0 +1,1415 @@
+{
+  "repository": "https://github.com/Decikingship/legal-agent-skills",
+  "commit": "83df6b13a60b2dfeaf30001c7894bcb45a59fcc4",
+  "retrieved_on": "2026-10-21",
+  "license": "MIT",
+  "count": 70,
+  "counts_by_category": {
+    "core": 6,
+    "litigation": 27,
+    "nonlitigation": 24,
+    "utility": 13
+  },
+  "items": [
+    {
+      "number": 1,
+      "id": "core-audit-case-citation",
+      "category": "core",
+      "name": "案例援引审查",
+      "description": "审查案例援引是否成立——案号是否真实、审级够不够、一审有没有被二审改判、引的观点是不是法院认定、是不是评析材料冒充裁判、适用的法律有没有已经修订。务必在用户提到\"帮我核一下引的案例\"\"这个案号是真的吗\"\"这个判决还能引吗\"\"对方引的判例站得住吗\"\"案例援引有没有问题\"\"这个一审被改判了没\"\"审核一下判例\"时使用本 skill；用户贴出含案号的文字（代理词、法律意见、类案检索报告、其他 AI 的输出）并要求检查、把关、审核时同样使用。用户是想找类似案例、了解法院怎么判，改用「智合AI搜案」——那是检索，本 skill 是审查，方向相反。任何生成类 skill 在输出含案例援引的文书前，都应先调用本 skill 过一遍。",
+      "source_path": "skills/core/core-audit-case-citation/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/core/core-audit-case-citation/SKILL.md",
+      "sha256": "2bc7cbf8a830062943e0222a42bb671ce8fa49b0237f68c8aa89540e05f4022e",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "待审文稿或案号、拟引用观点；仅核引证时不强求完整案情",
+      "output": "逐项真实性/观点归属/后续程序/法律版本核验表，关联原文",
+      "improvement": "删除“接口返回必然真实”和“同当事人改判即整体禁引”的自动结论",
+      "optimized_instruction": "1. 从文稿建立案号—论断—引文表，分别核对原始文书与数据库记录，不把接口命中当真实性保证。2. 对后续审程序建立原审案号、当事人、争点与裁判范围的案件链；同名主体只作候选。3. 逐段分辨诉称、查明、法院说理和评析，确认拟引观点是否被改判或保留。4. 相似度、结果码与法院层级仅供筛查，不能替代阅读。失败时列未取得全文/链路未核实，暂停相应结论。验收：每个“被推翻/可引用”结论均有同案关联和具体段落，不凭“改判”二字全盘删除。"
+    },
+    {
+      "number": 2,
+      "id": "core-claim-evidence-audit",
+      "category": "core",
+      "name": "论证依据审查",
+      "description": "审查文书里的每个结论有没有依据支撑、依据够不够支撑那个结论——查裸断言、空泛援引（\"根据相关法律法规\"）、绝对化表述（\"必然胜诉\"）、以偏概全、数值无出处、依据射程不足。务必在用户提到\"帮我审一下这份意见\"\"这个结论站得住吗\"\"论证有没有漏洞\"\"有没有说过头\"\"这份文书能发出去吗\"\"把把关\"\"审核一下逻辑\"\"结论有没有依据\"时使用本 skill；用户贴出法律意见、代理词、尽调报告、备忘录并要求检查、把关、review 时同样使用。用户是要核对法条真伪，改用 core-verify-statute-validity；核对案例援引，改用 core-audit-case-citation。三者分工：那两个查\"引用真不真\"，本 skill 查\"引用都真，但结论有没有超出它们能支撑的范围\"。任何对外交付物出门前都应过这一关。",
+      "source_path": "skills/core/core-claim-evidence-audit/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/core/core-claim-evidence-audit/SKILL.md",
+      "sha256": "862f05211a8237032d1d76593a7f37c3955c57818e364fe6b46f784b2bf04d01",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "待审文稿全文、交付对象、可用法源与事实材料",
+      "output": "论断—依据—支持范围矩阵、修订稿、未闭合问题",
+      "improvement": "从关键词抓错升级为逐项结论与证据关系核验",
+      "optimized_instruction": "1. 拆分可核验事实、法律规则、适用判断、数值结论和建议，为每项分配编号。2. 将依据映射到具体论断，检查条件、例外、量词和因果关系；不得因附近有法条就判有依据。3. 对关键结论补查相反材料，给出最强反例与可修订表述。4. 将“无依据”“有依据但射程不足”“存在争议”分别列示。原材料不可用时只完成文内结构审查，不宣称事实与法源已核实。验收：所有高影响结论均有对应依据或明确待核状态，删除绝对化表述后不损失原问题。"
+    },
+    {
+      "number": 3,
+      "id": "core-verify-statute-validity",
+      "category": "core",
+      "name": "法条引用核验",
+      "description": "核验法条引用是否属实——法规是否存在、是否现行有效、条文号是否正确、转述内容是否与原文相符、行为时是否应适用旧版。务必在用户提到\"帮我核对一下这些法条\"\"这条法律还有效吗\"\"引的法条对不对\"\"对方书状里引的法条\"\"这是不是编的\"\"核实法律依据\"\"查证法条\"\"法条核验\"\"看看有没有引错法\"时使用本 skill；用户贴出一段含法条引用的文字（代理词、法律意见、合同条款、他人书状、其他 AI 的输出）并要求检查、审核、把关时，同样使用。用户是想知道某个法律问题怎么规定、要找适用条文，改用「智合AI搜法」——那是检索，本 skill 是核验，方向相反：搜法是\"给我条文\"，本 skill 是\"这条你引对了吗\"。任何生成类 skill 在输出含法条引用的文书前，都应先调用本 skill 过一遍。",
+      "source_path": "skills/core/core-verify-statute-validity/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/core/core-verify-statute-validity/SKILL.md",
+      "sha256": "6c20f8e22fe0486344ac9cc0cd776867c478761b55c2946235dbb96aa43023be",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "含法条的文本或法规名条号、行为日、地域与核验日",
+      "output": "法规/条号/原文/版本/适用时间核验表",
+      "improvement": "效力与个案时间适用分开，排除草案和文件中引述旧法",
+      "optimized_instruction": "1. 抽取法规全称、文号、条款项和原稿实际主张，先区分正式规范、草案、政策、问答与引文。2. 分别查询研究日状态与事实发生日版本，核对施行、废止和过渡条款。3. 逐项比对原文与转述，字符相似度只标出疑点，不自动判假。4. 明确“现行有效”不能直接推出“适用于本案”。行为日缺失时先核存在性与当前版本，时间适用列待确认。验收：每个通过项同时保留官方来源、版本与支持段落；未找到表述为未核实，不称编造。"
+    },
+    {
+      "number": 4,
+      "id": "util-legal-calculator",
+      "category": "core",
+      "name": "法律计算器",
+      "description": "法律实务中的确定性计算——分段计息、经济补偿金与违法解除赔偿金、诉讼费与保全费、迟延履行期间加倍部分债务利息、诉讼期间起算与顺延。务必在用户提到\"算一下利息\"\"欠款利息怎么算\"\"经济补偿金多少\"\"N+1 怎么算\"\"2N 赔多少\"\"诉讼费多少钱\"\"保全费\"\"立案要交多少\"\"迟延履行金\"\"加倍利息\"\"上诉期到哪天\"\"举证期限\"\"期间怎么算\"\"赔偿金额测算\"时使用本 skill；用户给出金额、日期、工资、工作年限并要求算钱或算日子时同样使用。用户问的是\"该不该赔\"\"赔偿标准是什么规定\"，那是法律判断与检索，改用「智合AI搜法」；本 skill 只负责在规则确定后把数算对。",
+      "source_path": "skills/core/util-legal-calculator/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/core/util-legal-calculator/SKILL.md",
+      "sha256": "62f23f3632c4bd0e6382dba89bf76b82c8acdf16aa3b88ad757e899762798fe3",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "计算类型、本金/工资等参数、起止日、规则和利率来源",
+      "output": "公式、分段明细、舍入和计日口径、结果与情景比较",
+      "improvement": "以确认规则驱动计算，年度与月度期间不得一律换算固定天数",
+      "optimized_instruction": "1. 先列规则选择与全部参数，区分数值已知和法律判断待定；N/N+1/2N、利率与起算点不得静默默认。2. 对年/月期间使用公历对应日，对日数利息明确365/360等基数及首尾日。3. 分段记录本金变化、利率变化、付款抵扣顺序和舍入。4. 用独立路径复算关键合计，覆盖闰日、月底、节假日和分段边界。来源或参数缺失时交付计算模板与并列假设，不出单一确定金额。验收：第三人可用相同参数复算，重复运行数值一致。"
+    },
+    {
+      "number": 5,
+      "id": "zhihe-case-search",
+      "category": "core",
+      "name": "智合AI搜案",
+      "description": "检索中国司法案例与裁判文书，做类案检索、裁判规则提炼、裁判尺度统计、刑事量刑校准。务必在用户提到\"有没有类似判决\"\"法院一般怎么判\"\"这种案子判多少\"\"胜诉率高吗\"\"裁判尺度\"\"同案不同判\"\"类案检索\"\"判例\"\"查一下案例\"\"搜案\"\"这个案号是什么案子\"\"某某公司被起诉过吗\"\"量刑一般判几年\"时使用本技能；用户提供案号、当事人名称、或描述一段案情并想知道法院态度时同样使用。用户问的是法律条文怎么规定、某法规是否有效时，改用「智合AI搜法」；两者通常配合使用——先搜法定位条文，再用本技能检索援引该条文的裁判。",
+      "source_path": "skills/core/zhihe-case-search/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/core/zhihe-case-search/SKILL.md",
+      "sha256": "03ea280cfc4c01d09554afb08b002c91be21134071a5323ed34762b4cbdeeb52",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "检索目的、案号/主体或争点事实、法域地域、日期、立场",
+      "output": "可追溯案例候选、检索日志、来源与筛选理由",
+      "improvement": "基础检索返回候选，不混入未经校准的胜诉概率",
+      "optimized_instruction": "1. 先分案号定位、主体检索与争点检索，案号做标准化后精确核对，主体补曾用名及同名排除信息。2. 将事实、请求、争点分开构造正反查询，记录过滤条件和结果上限。3. 按事实可比性、法律版本和文书类型筛选，保留未适用过滤器和字段缺失说明。4. 回到法院说理引用，不把诉称或评论当裁判观点。不足时扩大同义词或标注覆盖缺口。验收：每项引用可定位、筛选可复现；样本构成不得写成本案胜诉率。"
+    },
+    {
+      "number": 6,
+      "id": "zhihe-law-search",
+      "category": "core",
+      "name": "智合AI搜法",
+      "description": "检索中国法律法规、司法解释、行政法规、部门规章、地方性法规的条文原文与效力状态，并可取该条文的释义评注。务必在用户提到\"查一下法律怎么规定\"\"有没有明文规定\"\"这条法条现在还有效吗\"\"XX法第几条\"\"司法解释怎么说\"\"地方有没有特别规定\"\"新出的规定是什么\"\"法条释义\"\"立法本意\"\"搜法\"\"法规检索\"\"查法条\"时使用本技能；用户输入法规名称或简称（如\"九民纪要\"\"个保法\"）、条文编号（如\"第120条\"）、文号（如\"法释〔2018〕10号\"）、或描述某个法律主题（如\"关于工伤认定的规定\"）时同样使用。用户要找的是法院怎么判、有没有类似判决时，改用「智合AI搜案」；两者通常需要配合使用——先用本技能定位条文，再用搜案检索援引该条文的裁判。",
+      "source_path": "skills/core/zhihe-law-search/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/core/zhihe-law-search/SKILL.md",
+      "sha256": "38b4ac3ade4540205fdaaed2cdcc77c70c942bb65b21c8a3dedfac8aabcec949",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "法律问题或法规名称条号、主体属性、地域、行为与研究日期",
+      "output": "法源清单、条文原文、版本与效力、覆盖缺口",
+      "improvement": "避免只检现行法和凭标题剔除所有复函/公告",
+      "optimized_instruction": "1. 把业务描述转为法律关系、主体、行为、例外与责任，再执行精确和语义双路检索。2. 补查上下位规范、地方规则及时间过渡，历史事实不能先排除旧法。3. 对公告、批复、指导意见按制定主体、内容和适用对象分类，不仅凭标题认定无效或剔除。4. 逐项标明规范效力、适用范围和解释材料性质。数据库失败时给出可执行检索式和已核官方来源，不冒称完整。验收：引用正文与原源一致，草案不列为现行义务。"
+    },
+    {
+      "number": 7,
+      "id": "lit-administrative-remedy",
+      "category": "litigation",
+      "name": "行政救济路径",
+      "description": "确定行政争议的救济路径与期限——复议前置判断、起诉期限计算、未告知诉权时的期限延长、复议与诉讼的选择。务必在用户提到\"行政处罚不服\"\"怎么告政府\"\"行政复议\"\"行政诉讼\"\"被罚了要申诉\"\"起诉期限\"\"复议前置\"\"行政强制\"\"征收补偿不服\"时使用本 skill；用户收到行政决定书要决定如何救济时同样使用。**行政案件被驳回起诉，多数是期限过了或路径走错。**",
+      "source_path": "skills/litigation/lit-administrative-remedy/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-administrative-remedy/SKILL.md",
+      "sha256": "3bde165e3c80707db5bb5ff34e9af0ccdf13ca049c1bffb05284a0dab65e8107",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "具体行政行为、作出与送达/知悉日、决定书、复议状态、目标",
+      "output": "路径树、前置条件、期限计算表、待核证据",
+      "improvement": "分开行政行为类型、前置程序与送达依据，不套统一期限",
+      "optimized_instruction": "1. 识别可诉行为及救济目标，区分行政处罚、强制、履职与其他行为，核适用特别法及当前规则。2. 分别判断复议前置、复议/诉讼可选路径、主体和管辖，不从行为名称直接推结论。3. 从原件提取送达、知悉及权利告知事实，按路径列起算依据、期间、最后日和证据。4. 比较成本、执行影响和可取得救济。日期或告知不明时列多情景并先提示待确认事项。验收：每条路线均有规则来源，预警日期与法定截止日分别展示。"
+    },
+    {
+      "number": 8,
+      "id": "lit-analyze-claim-basis",
+      "category": "litigation",
+      "name": "请求权基础分析",
+      "description": "确定案由与请求权基础——梳理法律关系、定位可主张的请求权、拆解构成要件、比较竞合请求权的优劣。务必在用户提到\"这个案子按什么案由立案\"\"该主张什么\"\"请求权基础\"\"能告什么\"\"按合同还是按侵权告\"\"构成要件\"\"这个诉请站得住吗\"\"案由怎么定\"时使用本 skill；用户描述一段事实并问能不能起诉、告什么时同样使用。案由与请求权基础错了，后面所有工作都白做——这是诉讼分析的第一步。",
+      "source_path": "skills/litigation/lit-analyze-claim-basis/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-analyze-claim-basis/SKILL.md",
+      "sha256": "22ad723addbd15c915c9ae04047eeea1afa84a6173d8465a8cca07f820034e68",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "事实、客户目标与立场、合同关系、证据",
+      "output": "法律关系图、候选请求权、要件/抗辩/证据矩阵",
+      "improvement": "区分请求权、案由、程序请求与客户商业目标",
+      "optimized_instruction": "1. 建立主体—行为—损害—履行关系，区分确认事实和客户单方陈述。2. 为每个目标列候选请求权、成立要件、阻却及消灭抗辩，排查竞合与重复受偿。3. 对照证据逐项标满足、争议、未知，不用案由名称代替构成要件。4. 比较可主张范围、举证成本、时效、执行和保全，再提出案由建议。关键事实缺失时保留多个路径并列补证任务。验收：每项诉请可回溯到具体法源和要件，未把客户目标等同当然可获支持的权利。"
+    },
+    {
+      "number": 9,
+      "id": "lit-analyze-judgment-divergence",
+      "category": "litigation",
+      "name": "裁判尺度分析",
+      "description": "分析同类争点下的裁判尺度差异——按法院层级、地域、年份分组统计结果分布，抽取判决中的数值尺度（调减比例、利率、期限）并按性质分类，标出上诉审改判情况。务必在用户提到\"同案不同判\"\"各地法院尺度一样吗\"\"这个比例一般判多少\"\"裁判尺度\"\"调减幅度是多少\"\"不同法院差异大吗\"\"历年变化\"\"有没有被改判的\"时使用本 skill。本 skill 吃 lit-search-similar-cases 的输出，不自己检索。**不提供以法官为维度的统计**——那是合规红线。",
+      "source_path": "skills/litigation/lit-analyze-judgment-divergence/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-analyze-judgment-divergence/SKILL.md",
+      "sha256": "2167e524e3dbc03d0cfb1d7c180d861e0cb116412943a18d46743a31fffd9fa8",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "去重后的类案数据、统一争点、可比维度、统计方案",
+      "output": "分层样本表、数值分布、差异解释与排除清单",
+      "improvement": "严格分母、裁判链去重及混杂因素，拒绝伪概率",
+      "optimized_instruction": "1. 先冻结检索范围、纳排标准和争点定义，对同案不同审级关联去重。2. 明确每张表的分母，分开支持结果、金额比例和缺失字段；罚金、损失、违约金等不能混算。3. 依地域、时间、法律版本和关键事实分层，记录小样本和检索选择偏差。4. 对差异提出可核验解释，不以法院层级或年份相关性推因果。字段不足则仅列个案比较。验收：总数与分组可对账，不提供法官画像，不把样本支持比例转换为个案胜率。"
+    },
+    {
+      "number": 10,
+      "id": "lit-analyze-jurisdiction",
+      "category": "litigation",
+      "name": "管辖权分析",
+      "description": "分析案件应由哪个法院管辖——专属管辖识别、协议管辖效力审查、特殊与一般地域管辖的可选连接点、级别管辖判断路径。务必在用户提到\"该去哪个法院起诉\"\"管辖法院\"\"能不能在我们这边告\"\"对方提管辖异议怎么办\"\"协议管辖有效吗\"\"约定的管辖条款算数吗\"\"要不要提管辖异议\"\"立案在哪\"时使用本 skill；用户准备起诉或收到起诉状要判断管辖时同样使用。",
+      "source_path": "skills/litigation/lit-analyze-jurisdiction/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-analyze-jurisdiction/SKILL.md",
+      "sha256": "a0bb32f5070c0dc13463a5b757ea0ce0ce91bdbaee51e6bc9bf7fba398b2d2fd",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "纠纷类型、主体住所、履行/侵权/不动产地、条款、金额和涉外信息",
+      "output": "管辖连接点表、候选法院/仲裁路径、异议时限",
+      "improvement": "级别与专门管辖动态核验，防止仅按金额选法院",
+      "optimized_instruction": "1. 先识别仲裁约定、专属管辖和专门法院，再核协议管辖效力及实际联系。2. 为每个连接点附事实来源，不把合同签署地、履行地或住所地凭空填入。3. 按受理时地域、争议类型、金额及涉外因素查现行级别标准，保留规则版本。4. 比较可选路径与管辖异议节点。条款或地址不明时输出条件性法院集合，不指定唯一法院。验收：每个推荐均满足必要连接点和级别依据，法院名称与受理范围有可验证来源。"
+    },
+    {
+      "number": 11,
+      "id": "lit-analyze-law-conflict",
+      "category": "litigation",
+      "name": "法律适用冲突分析",
+      "description": "分析涉案法条之间的适用冲突——新旧法、上下位法、特别法与一般法，并排出位阶时序表。务必在用户提到\"该适用哪个法\"\"新旧法怎么衔接\"\"这两条规定打架\"\"上位法下位法冲突\"\"行为发生时是旧法\"\"哪个规定优先\"\"司法解释能不能突破法律\"\"法律适用问题\"时使用本 skill；用户给出多个法条并问适用顺序时同样使用。用户只是要查某条法规的效力状态，用 core-verify-statute-validity；本 skill 处理的是**多条规范之间的关系**。",
+      "source_path": "skills/litigation/lit-analyze-law-conflict/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-analyze-law-conflict/SKILL.md",
+      "sha256": "2f57b824389c1c1b96931dbc1eb806b59b58fff2d6becdf9584ab0d159e0b212",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "法规条款、行为日、地域、争点与拟适用规则",
+      "output": "法源位阶时序表、冲突/非冲突分析、解决路径",
+      "improvement": "不得机械以“新法优于旧法/特别法优于一般法”一键裁断",
+      "optimized_instruction": "1. 先判断规范是否调整同一主体、行为与问题，区分真正冲突与并行义务。2. 核制定机关、效力层级、地域、施行与过渡条款，确认是否存在溯及与保留。3. 对新旧、一般特别、部门或地方之间关系分别使用适用规则，须由有权机关裁决的不能由模型替代。4. 用案件事实检验冲突影响，列可选论证及反对依据。资料不齐则保留争议。验收：每个取舍均解释前提与解决机制，不用单一排序值替代法律适用。"
+    },
+    {
+      "number": 12,
+      "id": "lit-analyze-limitation",
+      "category": "litigation",
+      "name": "诉讼时效分析",
+      "description": "计算诉讼时效是否届满——起算日认定、中断事由逐次重算、中止事由扣减、二十年最长保护期校验、剩余天数与紧急度。务必在用户提到\"过没过时效\"\"诉讼时效\"\"还能不能告\"\"时效什么时候到\"\"催告能不能中断时效\"\"对方说超过诉讼时效了\"\"三年时效\"\"时效抗辩\"时使用本 skill；用户接手陈年旧案、或被告方评估时效抗辩时同样使用。",
+      "source_path": "skills/litigation/lit-analyze-limitation/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-analyze-limitation/SKILL.md",
+      "sha256": "5e90bba429a682b355e7bfa00d9c4181b4e5bf06731e29f20e6c5f7f6a14b94e",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "请求权类型、知道/应知日、损害日、中断/中止事实证据、评估日",
+      "output": "逐次时间线、法定期间、情景截止日、紧急动作",
+      "improvement": "修正脚本将三年/四年等计算成365倍数的问题",
+      "optimized_instruction": "1. 先区分诉讼时效、除斥期间、程序期限和特殊请求权规则，再核起算事实。2. 以公历周年和适用期间法计算；对闰年、月末、休假日及过渡规则逐项处理，禁止年数乘365。3. 对每个催告、承诺或诉讼事件核送达与法律效果，中断与中止不能仅凭事件标签自动成立。4. 并列最早预警日和各事实假设下的法定截止日。证据不明时不下“仍在期内”结论。验收：日期可独立复算，评估日显式输入，事件改变能重算并说明受影响路径。"
+    },
+    {
+      "number": 13,
+      "id": "lit-assess-case-risk",
+      "category": "litigation",
+      "name": "争议焦点与胜败评估",
+      "description": "梳理案件争议焦点并评估胜败因素——列明双方分歧点、逐项评估我方优劣势、识别案件的胜负手与致命弱点、给出可执行的补强方案。务必在用户提到\"这个案子能赢吗\"\"胜算多大\"\"争议焦点是什么\"\"风险评估\"\"要不要接这个案子\"\"要不要和解\"\"案件分析\"\"我们的弱点在哪\"时使用本 skill；用户接案评估、向客户汇报案件前景、或考虑和解方案时同样使用。**不给胜诉率数字**——见边界。",
+      "source_path": "skills/litigation/lit-assess-case-risk/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-assess-case-risk/SKILL.md",
+      "sha256": "2a6c8373adde15012fbbe7f12448db9631ff905faeace5fec2692b52a297a9d0",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "双方主张、争点事实、证据、我方立场、客户真实目标",
+      "output": "争点风险矩阵、最佳反方论证、补强及和解方案",
+      "improvement": "将“胜败评估”变成条件性决策分析，避免主观百分比",
+      "optimized_instruction": "1. 将客户目标拆为胜诉、回款、时间、成本和关系，明确决策优先级。2. 按每个请求权要件列己方有利证据、对方最佳反驳、证据缺口和适用法争议。3. 分开实体、程序、执行与商业风险，提出最关键的反证和调查任务。4. 在不同关键事实成立时给情景结论，比较诉讼、和解与其他路径。不足时提供评估框架而非胜诉数字。验收：每项风险有触发条件和可执行动作，反方论证达到律师可实际采用的强度。"
+    },
+    {
+      "number": 14,
+      "id": "lit-bankruptcy",
+      "category": "litigation",
+      "name": "破产与债务重组",
+      "description": "破产程序中的债权人与债务人策略——申请条件与管辖、债权申报、重整清算和解的路径选择、别除权与取回权、撤销权与无效行为。务必在用户提到\"破产\"\"重整\"\"清算\"\"债权申报\"\"对方破产了\"\"申请破产\"\"预重整\"\"债务重组\"\"管理人\"\"破产撤销权\"时使用本 skill；用户作为债权人应对债务人破产、或作为债务人评估破产路径时同样使用。",
+      "source_path": "skills/litigation/lit-bankruptcy/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-bankruptcy/SKILL.md",
+      "sha256": "7adf0b44d10ea19123229c8e2d4361f78ea8ee6262aed590e8e373e2c1fa9cb3",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "债权人/债务人/管理人立场、程序阶段、债权担保与期限",
+      "output": "程序路径、债权分类、申报包、交易/财产风险与任务",
+      "improvement": "把申报、受理、表决与实际受偿严格分开",
+      "optimized_instruction": "1. 先核法院公告、受理状态、管理人和具体期限，不能从资不抵债推定已进入程序。2. 按本金、利息、担保、劳动或其他性质建立债权台账，并查证权利、争议与抵销。3. 比较清算、重整、和解及程序外方案，区分取回、别除和一般分配。4. 对可撤销行为等列事实与证据，不仅按交易时间自动认定。文件缺失时输出申报待补清单和风险预警。验收：申报金额可对账，阶段与法律效果准确，不承诺受偿率。"
+    },
+    {
+      "number": 15,
+      "id": "lit-build-evidence-list",
+      "category": "litigation",
+      "name": "证据清单与举证责任",
+      "description": "分配举证责任并编制证据清单——按谁主张谁举证及法定倒置规则确定责任方、按待证事实倒推所需证据、逐份标注三性风险与形式要件缺口。务必在用户提到\"证据清单\"\"举证责任\"\"该谁举证\"\"证据够不够\"\"要准备什么证据\"\"举证期限\"\"这个证据能用吗\"\"复印件行不行\"\"电子证据怎么固定\"时使用本 skill；用户准备开庭材料或评估证据充分性时同样使用。",
+      "source_path": "skills/litigation/lit-build-evidence-list/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-build-evidence-list/SKILL.md",
+      "sha256": "cad60f032afc11b37c3913b2532450e07c4649d767f50a59d1298369ec99822a",
+      "counts": {
+        "scripts": 1,
+        "assets": 1,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "待证事实、请求权要件、立场、原件和既有编号",
+      "output": "证据目录、举证责任与证据缺口矩阵",
+      "improvement": "证据清单与“证据真实/可采”结论分开",
+      "optimized_instruction": "1. 依据具体法源确定各要件的举证责任与特殊规则，避免全案一概倒置。2. 为每件材料建立原件哈希、版本、页码、形成与取得方式、拟证明事实。3. 分别标真实性核验、取得合法性、关联性、证明力和原件状态，不用三性套话。4. 将证据缺失、证据矛盾和证明不足转为取证任务，保留既有编号的映射。材料未提供时只列应收清单，不假称已审。验收：每项待证事实均有来源或缺口，每件证据对应明确证明对象。"
+    },
+    {
+      "number": 16,
+      "id": "lit-build-timeline",
+      "category": "litigation",
+      "name": "案件事实时间轴",
+      "description": "把案件事实按时间排列并暴露问题——找出无证据支撑的关键节点、不同证据间的时间冲突、可疑的时间空白、触发时效起算与中断的法律节点。务必在用户提到\"梳理一下时间线\"\"事实经过\"\"时间轴\"\"案件脉络\"\"事情是怎么发展的\"\"把事实理一理\"\"证据和事实对不上\"时使用本 skill；用户接手新案件做事实梳理、或准备开庭陈述时同样使用。",
+      "source_path": "skills/litigation/lit-build-timeline/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-build-timeline/SKILL.md",
+      "sha256": "9894aa75f3dd53b7b1056506e0f846b62b0e5149fbe32c7b5f95469b6f4a67fc",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "带来源的事件、日期精度、材料版本、时区",
+      "output": "事实时间线、冲突/空白、法律节点与来源锚点",
+      "improvement": "区分发生、知悉、记载、送达日期以及推测排序",
+      "optimized_instruction": "1. 对每个事件分别记录发生时间、记录时间、知悉时间和日期精度，原话与归纳分开。2. 按证据锚点建立事件链，日期不明时用区间，不自行补成具体日。3. 检查同一事件不同材料的冲突、长间隔和先后依赖；时间空白仅提示待调查，不能推定不利事实。4. 将潜在时效、履行和送达节点交对应模块复核。读取失败则列受影响事件。验收：每个关键节点可打开原页，冲突并列保留，排序确定性与事实确定性分别展示。"
+    },
+    {
+      "number": 17,
+      "id": "lit-case-closing",
+      "category": "litigation",
+      "name": "结案交付与回访",
+      "description": "案件结束时的收尾工作——给客户的结果说明、后续风险提示与时限提醒、执行或履行建议、卷宗归档清单、复盘与转介绍铺垫。务必在用户提到\"结案\"\"案子结束了\"\"判决下来了怎么跟客户说\"\"归档\"\"结案报告\"\"客户回访\"\"案件复盘\"\"判后答疑\"时使用本 skill；用户案件了结需要收尾时同样使用。",
+      "source_path": "skills/litigation/lit-case-closing/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-case-closing/SKILL.md",
+      "sha256": "15e320b2e5456b929c29f7f99ebb491164e8d337665d7f3fc78b6b9623d9c3d9",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 0
+      },
+      "input": "结案方式、文书/协议、送达日、客户目标、履行状态",
+      "output": "客户说明、期限交接、履行/执行清单、归档与复盘",
+      "improvement": "结案、裁判生效、履行完毕和归档不是同一状态",
+      "optimized_instruction": "1. 核结案文书、送达、生效和履行状态，判决、调解、和解与撤诉分别建清单。2. 对照客户目标说明已实现、未实现和仍存风险，金额与费用可对账。3. 明确上诉/履行/执行等后续节点、负责人和证据，不把程序结案当回款完成。4. 归档材料与权限，按授权单独准备回访内容；未经授权不联系客户或索取评价。日期不明时标待核。验收：交接含具体动作、时间依据与负责人，内部复盘不混入对外说明。"
+    },
+    {
+      "number": 18,
+      "id": "lit-case-intake",
+      "category": "litigation",
+      "name": "接案研判",
+      "description": "客户咨询现场的快速研判——红线核查（利益冲突、时效、刑民交叉、不当目的）、30分钟必问清单、初判框架与谈案表达要点。务必在用户提到\"客户来咨询\"\"要不要接这个案子\"\"谈案\"\"初步判断\"\"客户说了个情况\"\"见客户前准备\"\"接案\"\"这个案子能接吗\"时使用本 skill；律师面谈潜在客户或评估是否承接时同样使用。**这不是案件分析**——目标是在信息极少时判断能不能接、方向是什么、怎么报价。",
+      "source_path": "skills/litigation/lit-case-intake/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-case-intake/SKILL.md",
+      "sha256": "27fbd4abbc2b417a779769d8f5523ff06aab350f04e171d5f2f4f049ad6d8ad8",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 0
+      },
+      "input": "客户口述、案件类型、咨询目的、已给材料",
+      "output": "接案记录、冲突待查表、关键问题、初判及范围建议",
+      "improvement": "口述不升级为事实，利益冲突必须接可信客户系统核查",
+      "optimized_instruction": "1. 先记录主体、关联方和委托目的，按机构机制发起利益冲突核查，不能靠模型记忆宣告无冲突。2. 区分客户陈述、原件事实和律师初步判断，先识别紧迫期限与人身财产事项。3. 以目标、时间、交易/行为、对方主张和证据组织追问，只问影响下一步的缺口。4. 输出待取材料、可行路径和服务边界，不承诺结果。无法访问冲突系统则标未核。验收：每个初判附前提，重要期限有来源，咨询记录不会自动成为正式委托或法律意见。"
+    },
+    {
+      "number": 19,
+      "id": "lit-counter-adverse-precedent",
+      "category": "litigation",
+      "name": "不利判例应对",
+      "description": "针对不利判例做区分论证——先攻击判例本身（是否被改判、是否评析材料、是否调解结案），再攻击法律版本，最后做争议焦点/关键事实/法律关系/适用法律四层比对。务必在用户提到\"对方会拿什么判例\"\"这个判例对我不利怎么办\"\"怎么区分这个案子\"\"对方引的判例怎么反驳\"\"不利判例应对\"\"区分论证\"时使用本 skill；用户拿到对方书状中的判例并要求应对时同样使用。用户是要核验对方援引是否成立，用 core-audit-case-citation；本 skill 处理的是**援引成立情况下如何区分**。",
+      "source_path": "skills/litigation/lit-counter-adverse-precedent/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-counter-adverse-precedent/SKILL.md",
+      "sha256": "85443cca4c13f7f8eee0a11aa323ae06c5ef88c86776f1971534f81abfec63c1",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "不利案例原文/案号、本案四层要素、拟反驳论断",
+      "output": "引证核验、相似差异表、可成立区分与残余风险",
+      "improvement": "避免为了“应对”而牵强区分，保留真正不利结论",
+      "optimized_instruction": "1. 先核案例原文、程序链和观点归属，不把案例不利自动视为可攻击。2. 对争点、决定性事实、法律关系、法律版本逐层比对，只使用对裁判结果有意义的差异。3. 为每个区分列法源和反方反驳，并判断差异是否足以改变规则适用。4. 若确实无法区分，明确承认并提出补证、调整诉请或和解路径。无本案要素时只做引用核验，不虚构可比性。验收：每个区分能指向两案原文，保留不能化解的不利风险。"
+    },
+    {
+      "number": 20,
+      "id": "lit-criminal-defense",
+      "category": "litigation",
+      "name": "刑事辩护阶段与要点",
+      "description": "判断刑事案件当前阶段能做什么——期限倒排（含刑拘37天窗口）、本阶段可做的动作与优先级、辩护方向的取舍、取保候审与认罪认罚的决策。务必在用户提到\"人被抓了\"\"刑拘\"\"批捕\"\"取保候审\"\"认罪认罚\"\"会见\"\"审查起诉\"\"刑事辩护\"\"能不能取保\"\"判几年\"\"缓刑\"时使用本 skill；家属咨询或律师介入刑事案件时同样使用。",
+      "source_path": "skills/litigation/lit-criminal-defense/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-criminal-defense/SKILL.md",
+      "sha256": "dc25ded5b499da9cef71d006af6ad4935355c8bfe52ea5588c0f54a4ab35b4a0",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "阶段、强制措施及开始日、罪名、文书、已签文件和委托权限",
+      "output": "阶段期限表、可行动作、辩护方向与待调查事项",
+      "improvement": "不得把37天视为所有刑拘案件统一期限或安全窗口",
+      "optimized_instruction": "1. 先核实际程序阶段、办案机关、措施类型、文书和起止时间，分别查询通常与特殊期限依据。2. 把会见、阅卷、取保和证据申请等动作映射当前阶段及律师权限。3. 区分无罪、罪轻、证据、程序与量刑方向，认罪认罚须列事实、证据、后果和自愿性待确认。4. 期限无法确认时即时列取文书任务，不沿用“37天”模板倒算。未阅卷不作确定案情判断。验收：所有节点有对应措施与依据，不承诺取保或刑期，不替当事人作认罪决定。"
+    },
+    {
+      "number": 21,
+      "id": "lit-criminal-sentencing-calibration",
+      "category": "litigation",
+      "name": "刑事量刑校准",
+      "description": "输入罪名、涉案金额与情节，输出同类案件的实际量刑分布——刑期区间与中位数、罚金幅度、按自首坦白退赃谅解等情节分组、指控罪名与审定罪名的变化。务必在用户提到\"这个案子一般判几年\"\"量刑\"\"刑期大概多少\"\"判多重\"\"自首能减多少\"\"退赃有用吗\"\"涉案金额XX万判多少\"\"量刑参考\"\"同类案件判多少\"时使用本 skill；刑辩律师做量刑辩护准备、评估认罪认罚方案时同样使用。**这是同类案件的统计分布，不是对本案的量刑预测。**",
+      "source_path": "skills/litigation/lit-criminal-sentencing-calibration/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-criminal-sentencing-calibration/SKILL.md",
+      "sha256": "eebba6980519a5c61efc43b679847af40c2fa2cd4dcf9d0c5bf443237e968d78",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "标准罪名、可比事实、金额、地域、情节、法律版本",
+      "output": "样本筛选、分布与缺失表、差异说明及量刑论证线索",
+      "improvement": "同案刑罚去重并保留缺失，不把样本中位数当预测",
+      "optimized_instruction": "1. 冻结罪名、法律版本、金额档、共犯地位和关键情节的纳排标准。2. 对一二审关联去重，区分本罪刑、数罪并罚总刑、缓刑与罚金；缺刑期的样本单列。3. 分组展示样本量、范围、分位数及检索偏差，不因相关性断言某情节能减固定月数。4. 将结果作为寻找量刑论证的线索并回核原文。样本少或不可比时只作个案比较。验收：统计分母、排除与缺失可对账，不输出本案精确刑期或未经校准概率。"
+    },
+    {
+      "number": 22,
+      "id": "lit-cross-examination",
+      "category": "litigation",
+      "name": "质证意见",
+      "description": "对对方证据发表质证意见——逐份从真实性、合法性、关联性三性展开，指出形式瑕疵与证明力缺陷，并给出可直接宣读的质证表述。务必在用户提到\"质证意见\"\"对方的证据怎么质证\"\"三性\"\"证据有什么问题\"\"怎么反驳对方证据\"\"要不要认可这份证据\"\"证据交换\"时使用本 skill；用户收到对方证据清单准备开庭时同样使用。",
+      "source_path": "skills/litigation/lit-cross-examination/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-cross-examination/SKILL.md",
+      "sha256": "27cbe41497337fa83f3e75434b865cc9d6f6604d76157387fb4c301a6c164caf",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "对方证据原件/副本、证明目的、争点、反证、见原件情况",
+      "output": "逐证质证稿、事实冲突和内部调查表",
+      "improvement": "不默认三性全否；没有核验条件与事实为假应分开",
+      "optimized_instruction": "1. 对照每份证据的具体证明目的、来源和原件状态，先确认可认可与真正争议部分。2. 分别审查真实性基础、取得方式、关联性和证明力，明确“无法核实”“有相反证据”“不影响该事实”等不同判断。3. 将跨材料矛盾定位到页码与日期，提出可执行核验或调查申请。4. 生成可宣读意见与内部策略两份。只给目录无正文时不作内容真实性断言。验收：每项异议有事实理由及处理请求，合理认可不被模板删除，内部备注不混入提交稿。"
+    },
+    {
+      "number": 23,
+      "id": "lit-draft-appeal",
+      "category": "litigation",
+      "name": "上诉与再审申请",
+      "description": "起草上诉状或再审申请书——按法定事由组织理由、区分事实认定错误与法律适用错误、核对上诉期与再审期限。务必在用户提到\"上诉状\"\"要上诉\"\"一审判了不服\"\"再审申请\"\"申请再审\"\"抗诉\"\"上诉期\"\"判决书收到了不服\"时使用本 skill；用户收到判决要决定是否上诉时同样使用。**上诉期不可逆**——见工作流程第一步。",
+      "source_path": "skills/litigation/lit-draft-appeal/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-draft-appeal/SKILL.md",
+      "sha256": "a0894969989b1139ff4d90ca41ddaafa56f55dd9ce4ef240120245661b151eae",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "裁判全文、送达日、程序性质、不服部分、原审材料与新证据",
+      "output": "上诉/再审路径、期限、请求及文稿、证据变化表",
+      "improvement": "上诉、申请再审、申诉和抗诉路径不能混用",
+      "optimized_instruction": "1. 先核裁判性质、程序、送达凭证和适用期限，区分上诉与再审的条件、对象和受理路径。2. 按不服部分拆解事实、法律及程序错误，逐项映射原判具体段落和原审材料。3. 明确请求的范围与可执行结果，新增证据列形成/取得时间和未早提交原因。4. 再审按具体法定事由组织，不能复用一般不服叙述。期限证据缺失则优先提示核实并先完成理由框架。验收：请求与理由闭合，不能把“申请再审”等同已获再审。"
+    },
+    {
+      "number": 24,
+      "id": "lit-draft-argument",
+      "category": "litigation",
+      "name": "代理词与辩护词",
+      "description": "起草代理词或辩护词——围绕争议焦点组织论证、证据与事实的对应、法律依据与类案支撑、对方观点的预先回应。务必在用户提到\"写代理词\"\"辩护词\"\"代理意见\"\"庭后意见\"\"法庭辩论\"\"代理词怎么写\"\"结案陈词\"时使用本 skill；用户庭审前后需要提交书面意见时同样使用。",
+      "source_path": "skills/litigation/lit-draft-argument/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-draft-argument/SKILL.md",
+      "sha256": "0ccb8bc9a001e862c35c29b841532981cad242cc37979c4ab49fc6d5efc5d35c",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "争点、庭审记录、双方观点、质证结果、证据与法源",
+      "output": "争点式代理/辩护稿、反驳与引证映射、待核项",
+      "improvement": "不得以法官追问推定其心证或判决结论",
+      "optimized_instruction": "1. 核区分庭前、庭后以及民事、行政或刑事任务，按真实争点组织。2. 每个争点按规则、事实、证据、适用和结论闭环，并正面回应对方最强观点。3. 只引用已提供的庭审情况；法官提问仅记录待回应事项，不推测倾向。4. 完成法条、案例和论证支持三类核验，输出提交稿与内部论证底稿。材料不足时保留占位符，不编造庭审表述。验收：每项重要事实和引证可回溯，提交稿不含内部胜败判断及未经确认的承认。"
+    },
+    {
+      "number": 25,
+      "id": "lit-draft-complaint",
+      "category": "litigation",
+      "name": "起诉状与仲裁申请",
+      "description": "起草民事起诉状或仲裁申请书——诉讼请求的具体化与可执行性校验、事实与理由的证据对应、法律依据的准确援引。务必在用户提到\"写起诉状\"\"起草诉状\"\"仲裁申请书\"\"立案材料\"\"诉讼请求怎么写\"\"要告他\"\"准备起诉\"时使用本 skill；用户要提起诉讼或仲裁并需要文书时同样使用。",
+      "source_path": "skills/litigation/lit-draft-complaint/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-draft-complaint/SKILL.md",
+      "sha256": "82204141d142dad79d455ed91e89f5e5406c66ef027a155c36dba068ce6bed7f",
+      "counts": {
+        "scripts": 0,
+        "assets": 1,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "主体信息、请求权与具体请求、事实证据、管辖/仲裁条款",
+      "output": "起诉状/仲裁申请、请求计算表、证据与附件清单",
+      "improvement": "缺少非核心身份资料可占位，程序与请求矛盾需阻断",
+      "optimized_instruction": "1. 先核主体、诉权、仲裁约定、管辖和时效，不机械要求先补齐所有联系方式才整理事实。2. 将诉请写成对象、行为、金额/公式与截止口径，审查重复受偿和可执行性。3. 事实逐项映射证据编号，区分确认事实与待查陈述。4. 按适用机构现行表单生成文稿，并列附件与待补字段；缺核心请求基础时仅交框架。验收：请求、理由、计算与附件相互一致，身份号/案号不编造，文稿状态为待复核而非已提交。"
+    },
+    {
+      "number": 26,
+      "id": "lit-draft-defense",
+      "category": "litigation",
+      "name": "答辩状与反诉",
+      "description": "起草民事答辩状与反诉状——按程序抗辩、事实否认、法律抗辩三层组织答辩意见，评估反诉的可行性与策略价值。务必在用户提到\"写答辩状\"\"怎么答辩\"\"收到起诉状了\"\"要不要反诉\"\"反诉状\"\"被起诉了\"\"应诉\"\"管辖异议\"时使用本 skill；用户作为被告方准备应诉材料时同样使用。",
+      "source_path": "skills/litigation/lit-draft-defense/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-draft-defense/SKILL.md",
+      "sha256": "8f1676b8623622e38b2ae8b7c5965d9e6d36f8ed1cfb9aafe33c524b0225020c",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "起诉材料、送达日、己方事实证据、反诉可能、程序",
+      "output": "逐请求答辩、抗辩证据矩阵、反诉比较与文稿",
+      "improvement": "沉默、否认和承认分别管理，答辩不误触权利处分",
+      "optimized_instruction": "1. 从送达文书核程序阶段和各期限，区分答辩、管辖异议、举证和反诉节点。2. 对原告每项诉请拆要件，标己方承认、否认、未知和法律抗辩，不批量一概否认。3. 评估反诉主体、关联、管辖、时效、费用与目标，和独立起诉比较。4. 生成提交稿及内部策略，重要承认、抵销或处分先列律师确认。材料不足时采用条件表述。验收：逐诉请均有回应，期限来源可查，未把内部谈判底线写入答辩状。"
+    },
+    {
+      "number": 27,
+      "id": "lit-extract-judicial-rules",
+      "category": "litigation",
+      "name": "裁判规则提炼",
+      "description": "从一批判决的「本院认为」中提炼可援引的裁判规则，按表述聚类、统计每条规则的支持案例数与位阶构成、标出孤例。务必在用户提到\"提炼裁判规则\"\"这些案子法院的口径是什么\"\"归纳一下裁判观点\"\"法院普遍怎么说理\"\"裁判要旨总结\"\"从这批案例看出什么规则\"时使用本 skill；用户拿到一批类案后想知道法院的共同立场时同样使用。本 skill 吃 lit-search-similar-cases 的输出，**不自己检索**——要先有检索结果才能提炼。",
+      "source_path": "skills/litigation/lit-extract-judicial-rules/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-extract-judicial-rules/SKILL.md",
+      "sha256": "9dcdb5b8faf9925ab155858023fa7e2e230d94bfa3a3334472247e1a2fc9b393",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "已筛选案例全文与结构化结果、争点、聚类参数",
+      "output": "条件化规则、支持/反对案例、孤例与覆盖表",
+      "improvement": "聚类相似措辞不等同同一法律规则或主流观点",
+      "optimized_instruction": "1. 仅从法院说理提取规则候选，将适用前提、例外、结果拆开，诉称与评论单列。2. 按决定性事实、法条版本和争点聚类，而非仅依文本相似度。3. 对每条规则列支持与相反案例，关联审级去重并解释被改判影响。4. 将单例写成线索，数量多不自动命名为通说。缺全文则不提升为裁判规则。验收：每条归纳可被原文反向检验，例外未丢失，支持案例数与样本口径一致。"
+    },
+    {
+      "number": 28,
+      "id": "lit-labor-dispute",
+      "category": "litigation",
+      "name": "劳动争议处理",
+      "description": "劳动争议的请求项梳理与时效核查——按案件要素倒推应主张的全部请求项、标出可能漏掉的、分类计算仲裁时效（含劳动报酬的特殊规则）、一裁两审的路径衔接。务必在用户提到\"劳动争议\"\"被辞退了\"\"违法解除\"\"要仲裁\"\"劳动仲裁\"\"赔偿金怎么算\"\"2N\"\"加班费\"\"未签合同二倍工资\"\"年休假工资\"\"竞业限制\"时使用本 skill；用户作为劳动者或用人单位处理劳动纠纷时同样使用。",
+      "source_path": "skills/litigation/lit-labor-dispute/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-labor-dispute/SKILL.md",
+      "sha256": "9ef47ab0bb5c851f59fa3387f0ac7065999a389a109a3a8b4ffdf1fbfaa94be9",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "立场、用工/离职日、争议项、工资工时及所在地",
+      "output": "请求项、金额与时效分项、程序路线、证据任务",
+      "improvement": "不得用一套一年时效或N系数覆盖全部请求",
+      "optimized_instruction": "1. 确认劳动关系、用工主体、所在地和事实时间，区分劳动者与单位目标。2. 逐项识别工资、加班、解除、二倍工资、年休假等候选请求，分别核成立条件、时效和管辖路径。3. 以薪资、工时、制度及送达原件核算，补偿与赔偿先确认规则再计算。4. 将举证责任按具体事项分配，核地方现行口径与程序衔接。事实不齐则列情景金额与补证。验收：每项请求有独立依据和计算，不能把仲裁时效、诉讼期限与实体期间混为一项。"
+    },
+    {
+      "number": 29,
+      "id": "lit-opponent-background",
+      "category": "litigation",
+      "name": "对手背景调查",
+      "description": "起诉前调查对方的涉诉画像与履行能力——历史案件数量与案由分布、原告被告角色比例、执行案件与终本记录、失信与破产信号、诉讼偏好判断。务必在用户提到\"对方什么背景\"\"这家公司靠谱吗\"\"对方有没有被起诉过\"\"赢了能拿到钱吗\"\"履行能力\"\"要不要起诉他\"\"被执行人\"\"对方好不好打\"时使用本 skill；用户立案前评估诉讼价值或谈判前了解对手时同样使用。",
+      "source_path": "skills/litigation/lit-opponent-background/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-opponent-background/SKILL.md",
+      "sha256": "53059c3af0dbd8a5540ca6969deaaca6e2944bad820e82960d99ab712263eeef",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 0
+      },
+      "input": "准确主体名、统一代码/其他核验信息、曾用名、合法目的与范围",
+      "output": "身份匹配、涉诉与执行线索、来源时点和局限",
+      "improvement": "裁判数量与终本记录不能直接推出履行能力或主观偏好",
+      "optimized_instruction": "1. 先用可靠身份信息消除同名风险，分开公司、关联公司与自然人，禁止仅凭名称相近合并。2. 按获授权公开来源建立涉诉、执行与破产线索，记录访问时间和公开范围。3. 区分历史记录、当前状态和待核信号；诉讼数量不能证明资金实力、诚信或恶意。4. 对回款决策给出需补查资产及担保事项，不推测未公开财产。来源不全时保留缺口。验收：每项负面事实可定位且主体一致，不输出法官画像或不必要个人信息。"
+    },
+    {
+      "number": 30,
+      "id": "lit-plan-enforcement",
+      "category": "litigation",
+      "name": "执行方案与财产线索",
+      "description": "制定强制执行方案——财产线索的排查方向、执行措施的选择与顺序、执行异议与复议的应对、迟延履行金测算。务必在用户提到\"执行\"\"申请强制执行\"\"对方不履行判决\"\"财产线索\"\"查封冻结\"\"被执行人没财产\"\"执行异议\"\"失信名单\"\"限高\"\"终本\"时使用本 skill；用户拿到生效判决准备执行、或执行遇阻时同样使用。",
+      "source_path": "skills/litigation/lit-plan-enforcement/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-plan-enforcement/SKILL.md",
+      "sha256": "f2d6c35af40994280ae690e7ce82dce108326b3b3f64c1d8d460c30ff0f17cd9",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "法律文书、生效与履行期限、已履行、财产线索、保全情况",
+      "output": "执行标的、财产与措施矩阵、异议/替代路径",
+      "improvement": "计划性财产线索不包装成查到资产，不保证回款",
+      "optimized_instruction": "1. 核执行依据、生效/送达、履行期限和申请主体，分别确认是否已部分履行。2. 分开主债务、一般利息、迟延履行及费用，使用确认规则逐段计算。3. 将已知资产、待核线索和建议查询渠道分栏，说明权属、负担与可执行性。4. 比较措施顺序、异议与破产等替代路径，列负责人和期限。缺文件时仅列准备清单。验收：标的与文书及付款可对账，措施基于合法权限，无自动查封/冻结或回款承诺。"
+    },
+    {
+      "number": 31,
+      "id": "lit-prepare-hearing",
+      "category": "litigation",
+      "name": "庭审提纲",
+      "description": "准备庭审提纲与发问提纲——庭审各阶段的要点清单、对当事人与证人的发问设计、对方观点的预判与应对预案。务必在用户提到\"庭审提纲\"\"开庭准备\"\"怎么发问\"\"发问提纲\"\"庭审要点\"\"对方会问什么\"\"开庭要注意什么\"\"质证怎么说\"时使用本 skill；用户临近开庭做准备时同样使用。",
+      "source_path": "skills/litigation/lit-prepare-hearing/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-prepare-hearing/SKILL.md",
+      "sha256": "c6b6a5cb7e96c6680d024473dbf00981189b780fbcd32f4ebf6b2ecbd18cd220",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "案件事实、争点、证据、证人、真实庭审安排",
+      "output": "分阶段提纲、发问树、反方与突发预案",
+      "improvement": "问题必须服务待证要件，避免诱导编造证言",
+      "optimized_instruction": "1. 将争点、要件、证据和拟发问对象建立对应表，明确每个问题想证明什么。2. 设计开放、核实与追问分支，预设对方不同回答及可用反证，不暗示证人编造或统一口径。3. 按调查、质证、辩论和陈述整理便于现场使用的短句，记录证据原页。4. 预备新证据、不到庭和程序争议等合法响应。资料不足时仅做问题框架。验收：问题不超出材料支持，内部预案与宣读稿分开，反方最强论点有回应。"
+    },
+    {
+      "number": 32,
+      "id": "lit-search-similar-cases",
+      "category": "litigation",
+      "name": "类案检索",
+      "description": "出具符合《类案检索指导意见》格式的类案检索报告——把案件拆成争议焦点，每个焦点正反双向检索，按参照级别组织案例，统计裁判尺度，主动排查不利判例。务必在用户提到\"做个类案检索\"\"查一下类案\"\"同类案件法院怎么判\"\"这种案子一般判多少\"\"裁判尺度\"\"同案不同判\"\"类案检索报告\"\"要附卷的判例\"\"开庭前查查判例\"\"对方会拿什么判例\"时使用本 skill；用户描述一段案情并想知道法院在同类问题上的态度、要为诉讼准备判例支撑时同样使用。用户只是想找几个案例看看，用「智合AI搜案」即可；本 skill 是完整的报告级交付，成本更高。用户要核验已有案例援引对不对，改用 core-audit-case-citation。",
+      "source_path": "skills/litigation/lit-search-similar-cases/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-search-similar-cases/SKILL.md",
+      "sha256": "8363f5353c1021df1a5eec73475a5852a0a35fd305a4a5ebf080cdb65429020b",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 1,
+        "evals": 1
+      },
+      "input": "争点、本案事实、立场、地域、行为日、检索范围",
+      "output": "逐争点正反检索报告、可比性表、检索日志",
+      "improvement": "不能用裁判日期截断替代法律版本适用，更不等于全量案例",
+      "optimized_instruction": "1. 把各争点分成规则、关键事实与请求，制定正反查询及纳排标准。2. 检索不同层次来源，记录实际过滤器、分页和结果上限，缺失字段不假称已过滤。3. 逐案比对四层可比性，核法律版本与程序链，不一律按修法日删除其前后所有案件。4. 输出支持与不利规则、区分和覆盖说明，任何统计仅描述本次样本。失败则交可复用检索式与已核结果。验收：报告中每项“类案”有明确相似和差异，不将检索充分性夸大为穷尽。"
+    },
+    {
+      "number": 33,
+      "id": "lit-shareholder-dispute",
+      "category": "litigation",
+      "name": "股东权利救济路径",
+      "description": "把股东诉求翻译成具体诉请并核查前置程序——知情权、盈余分配、解散公司、股权回购、损害赔偿、股东代表诉讼六类路径的主体资格、前置程序、举证要点。务必在用户提到\"股东纠纷\"\"要查账\"\"不给我分红\"\"想退股\"\"散伙\"\"公司被掏空\"\"告我合伙人\"\"股东知情权\"\"解散公司\"\"代表诉讼\"时使用本 skill；用户作为股东主张权利或公司方应对时同样使用。",
+      "source_path": "skills/litigation/lit-shareholder-dispute/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/litigation/lit-shareholder-dispute/SKILL.md",
+      "sha256": "f875f5a4e1ccd98c34015c1dfa803b68a4f38712e885b7de702fcc7a01280083",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "目标、公司类型、持股/任职、章程、书面动作和日期",
+      "output": "主体资格、前置程序、请求路径、证据与顺序",
+      "improvement": "区分新旧公司法、直接与代表诉讼，门槛按具体权利核",
+      "optimized_instruction": "1. 把查账、分红、退出、解散等目标分别转为候选权利，先识别公司类型、实际身份和行为时间。2. 按每项请求核主体、持股/持有期、对象和前置程序，区分直接、代表及公司主张。3. 用章程、出资与书面请求证据核事实，不能套一个比例门槛。4. 比较诉讼顺序、保全、治理和谈判路径，确认新旧法及过渡适用。缺资料时列资格与前置待核项。验收：每条路径均有独立条件，不把持股证明自动等同所有诉权成立。"
+    },
+    {
+      "number": 34,
+      "id": "nonlit-admin-penalty-benchmark",
+      "category": "nonlitigation",
+      "name": "行政处罚裁量基准比对",
+      "description": "比对行政处罚是否符合裁量基准——处罚种类与幅度的合法性、从轻减轻不予处罚情节的适用、同案同罚的横向比较、程序合法性核查。务必在用户提到\"罚得太重了\"\"处罚畸重\"\"裁量基准\"\"同案不同罚\"\"能不能减轻处罚\"\"不予处罚\"\"首违不罚\"\"处罚程序有问题吗\"\"听证\"时使用本 skill；用户收到行政处罚决定要评估是否申辩或救济时同样使用。",
+      "source_path": "skills/nonlitigation/nonlit-admin-penalty-benchmark/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-admin-penalty-benchmark/SKILL.md",
+      "sha256": "7bbb98b834f1a546141a654e37c84ae3d27b9ac043c0e2fb99059144c854bda0",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "处罚决定、行为/处罚日、地域行业、情节证据和程序",
+      "output": "处罚/裁量依据、减免情节、程序缺口、救济线索",
+      "improvement": "裁量基准只是分析对象，不能替代上位法与特别规则",
+      "optimized_instruction": "1. 从原件拆违法事实、定性、处罚种类、幅度与程序，核行为时和处罚时的规则。2. 区分法定范围、裁量基准与具体情节，逐一核从轻、减轻、不予处罚的证据和适用前提。3. 同案比较控制地域、版本和决定性事实，不仅比较罚款数字。4. 将实体、程序及救济问题分别交付。基准或附件缺失时不判断“同案不同罚违法”。验收：每个差异有规范和事实支撑，建议与实际可用救济路径衔接。"
+    },
+    {
+      "number": 35,
+      "id": "nonlit-assess-china-data",
+      "category": "nonlitigation",
+      "name": "来华数据合规",
+      "description": "为律师评估外国企业在中国开展业务及向境外总部提供数据的合规路径，覆盖CRM、招聘与HR、云系统、客服和总部远程访问，输出数据流盘点、角色与分类分级、影响评估底稿、出境路径和证据任务。务必在用户提到“总部要看中国员工数据”“招聘资料能传回国外吗”“中国CRM部署境外云”“外国公司来华收集客户信息”“参展线索发回总部”“远程访问算不算出境”“员工豁免”“China data”“PIPIA”“cross-border data”时使用本技能。纯境内一般APP合规改用「数据合规评估」，已发生处罚改用「行政救济路径」，技术渗透测试或认证执行交相应机构。",
+      "source_path": "skills/nonlitigation/nonlit-assess-china-data/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-assess-china-data/SKILL.md",
+      "sha256": "6ea6eb6205116d55252f7ac056f289f540797c60da02d78e1eb4f354f94ca46e",
+      "counts": {
+        "scripts": 0,
+        "assets": 1,
+        "references": 1,
+        "evals": 1
+      },
+      "input": "项目主体角色、处理目的、字段人员、数据流、规模期间、既有措施",
+      "output": "数据流图、角色/分类、路径比对、评估证据与整改",
+      "improvement": "保持新版技能的事实台账和官方重核，补全远程访问与后续转移",
+      "optimized_instruction": "1. 按CRM、HR、云、客服等分别盘点目的、字段、人员、收集/存储/访问/转移地，不能以集团或合同名称推定角色。2. 核数据规模计数方法、重要/敏感数据线索、行业及届时地域规则，阈值必须带来源与版本。3. 将境内处理义务与出境路径分别判断，拆解总部远程访问和后续转移。4. 输出评估底稿、路径条件、证据任务与律师确认点。关键规模不明时只列备选路径。验收：每个路径与具体数据流对应，不宣称完成申报/备案或因豁免某路径而免除全部义务。"
+    },
+    {
+      "number": 36,
+      "id": "nonlit-assess-china-investment-access",
+      "category": "nonlitigation",
+      "name": "外资准入研判",
+      "description": "为承办律师拆解外国企业来华业务，逐项核验外资准入、行业许可、安全审查、经营者集中与投资项目程序，形成有依据的进入路径和前置任务。务必在用户提到“外企来中国做生意”“外资能不能做”“来华投资”“负面清单”“在自贸区开公司”“收购中国企业”“foreign investment”“market access”时使用本技能，即使没有说出外资准入。仅做设立材料、章程和登记时间表时使用「来华设立规划」；纯境内新业务评估使用「新业务法律评估」；数据出境专项使用「来华数据合规」。",
+      "source_path": "skills/nonlitigation/nonlit-assess-china-investment-access/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-assess-china-investment-access/SKILL.md",
+      "sha256": "4c69aa4fd1844c4aeb5c0df51214bd4cb488b3f1f256b700002daa58eb349201",
+      "counts": {
+        "scripts": 0,
+        "assets": 2,
+        "references": 1,
+        "evals": 1
+      },
+      "input": "投资者及控制链、实际业务收费、落地地、进入路径、日期",
+      "output": "业务拆解、准入/许可/审查路径、前置条件和来源台账",
+      "improvement": "业务实质而非公司名称决定研究路径，避免自动准入结论",
+      "optimized_instruction": "1. 逐项拆真实产品、服务、经营和收费方式，并核直接投资者、控制链、地域和计划时间。2. 分别研究外资准入、行业许可、交易及其他审查，不把某清单未限制等同无其他前置义务。3. 比较新设、合资、收购或经销路径的依赖、责任与待取证据。4. 为每个条件建立官方来源、适用范围和复核日期。事实不明时给分支路线，不填行业编码代替判断。验收：每项“可进入”有范围和条件，未把建议路线写成主管机关已批准。"
+    },
+    {
+      "number": 37,
+      "id": "nonlit-clause-benchmark",
+      "category": "nonlitigation",
+      "name": "条款范本与修改建议",
+      "description": "为合同风险点提供可直接替换的替代条款——按立场给出甲方版/乙方版/平衡版三套文本，并附避坑要点与谈判进退空间。务必在用户提到\"这条该怎么改\"\"有没有标准条款\"\"改成什么合适\"\"给个范本\"\"替代条款\"\"条款怎么写更稳\"\"对方能接受什么样的写法\"\"缺的条款怎么补\"时使用本 skill；用户看完审查意见问\"那怎么改\"时同样使用。用户是要审查合同找问题，用 nonlit-review-contract；本 skill 提供的是**改法**，通常紧接审查之后使用。",
+      "source_path": "skills/nonlitigation/nonlit-clause-benchmark/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-clause-benchmark/SKILL.md",
+      "sha256": "01d2670c581d8e7daa15e00731d6a1085cd10b12777df4edd811c4011c85ae90",
+      "counts": {
+        "scripts": 1,
+        "assets": 1,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "原条款/风险ID、真实业务、立场、底线与关联定义",
+      "output": "强势/平衡/底线条款及适用说明、关联修改",
+      "improvement": "范本不是法规或行业标准，替换须检查全合同联动",
+      "optimized_instruction": "1. 从风险与交易目的识别条款要解决的问题，补齐定义、主体、对象和条件。2. 按客户立场给理想、平衡及可接受底线版本，说明各自风险和谈判成本，不机械取甲/乙方片段。3. 检查与价款、责任上限、解除、争议及附件的交叉冲突，列需同步修改处。4. 区分法律必需、可谈事项和商业选择。事实不全时用显著占位符。验收：条款可执行且不会因替换生成未定义术语，任何“范本”均标适用前提和来源性质。"
+    },
+    {
+      "number": 38,
+      "id": "nonlit-compliance-obligation-matrix",
+      "category": "nonlitigation",
+      "name": "合规义务矩阵",
+      "description": "输入行业与业务动作，输出可落地的合规义务矩阵——义务事项、法律依据、监管机关、履行要求、违反后果、优先级，按业务动作而非法条顺序组织。务必在用户提到\"我们这个业务要合规做什么\"\"合规义务清单\"\"要办哪些证\"\"监管要求有哪些\"\"上线前要准备什么\"\"合规体检\"\"这个业务违规吗\"\"要承担什么义务\"\"合规梳理\"时使用本 skill；用户描述一项业务并问需要遵守什么、要准备什么时同样使用。用户只是想查某条具体法规，用「智合AI搜法」；本 skill 产出的是按业务动作组织的清单，成本高得多。",
+      "source_path": "skills/nonlitigation/nonlit-compliance-obligation-matrix/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-compliance-obligation-matrix/SKILL.md",
+      "sha256": "86179ebb1473c8b5a2eebdaa5fad928bf6b9d461fda1cc3d9c218fecda4b287a",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 1,
+        "evals": 1
+      },
+      "input": "法定主体身份、业务动作、地域、流程、制度证据",
+      "output": "义务—触发—责任人—材料—时限—状态矩阵",
+      "improvement": "义务、罚则、政策和内部最佳实践分栏",
+      "optimized_instruction": "1. 用真实业务动作与法定主体角色建立范围，分清实际经营主体和关联方。2. 从现行及相关历史法源提取义务的触发条件、履行内容、期限、监管机关及证据，罚则单独关联。3. 将法律义务、监管指引与机构自选控制分别标注，避免标题关键词一刀切。4. 按影响与依赖安排整改负责人、截止日和验收证据。未知状态标“待核”，不能按缺材料自动判违法。验收：每行均可定位法源及业务事实，矩阵可用于具体任务而非长法条摘录。"
+    },
+    {
+      "number": 39,
+      "id": "nonlit-corporate-governance",
+      "category": "nonlitigation",
+      "name": "公司治理与股权架构",
+      "description": "公司治理文件与股权架构设计——章程个性化条款、三会议事规则、控制权安排、股权激励平台、股东协议要点。务必在用户提到\"公司章程\"\"股东协议\"\"三会\"\"股东会决议\"\"控制权\"\"同股不同权\"\"股权架构\"\"持股平台\"\"股权激励\"\"创始人控制权\"\"董事会怎么设\"时使用本 skill；用户设立公司、调整股权结构或做治理文件时同样使用。",
+      "source_path": "skills/nonlitigation/nonlit-corporate-governance/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-corporate-governance/SKILL.md",
+      "sha256": "5d43991fad1c33cb609abeadf949443aecb0c6de76b3f802fec258a02d7db4a5",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "公司类型、股东控制与出资、目标、章程、融资/上市计划",
+      "output": "架构方案、治理权限表、个性化条款与实施依赖",
+      "improvement": "治理设计要核新旧法和既有权利，图示比例不能代替控制分析",
+      "optimized_instruction": "1. 先核公司现状、适用时间、股权与表决/协议控制、已签约束，区分事实持股与目标方案。2. 以控制、融资、激励和退出目标比较结构，逐项映射机关权限与法定强制要求。3. 检查章程、股东协议、议事规则和劳动/税务等接口，列冲突与先决条件。4. 给实施步骤、所需决议/登记及专业协作。资料缺失时只画候选方案。验收：各方案权利义务和依赖清晰，不把签协议等同完成变更或生效。"
+    },
+    {
+      "number": 40,
+      "id": "nonlit-data-compliance",
+      "category": "nonlitigation",
+      "name": "数据合规评估",
+      "description": "数据与个人信息合规专项——按收集告知同意、存储安全、共享委托、数据出境、自动化决策、个人权利响应、合规审计七类场景展开义务与检查项。务必在用户提到\"个人信息合规\"\"数据合规\"\"隐私政策\"\"个保法要求\"\"数据出境\"\"要不要做安全评估\"\"标准合同备案\"\"算法推荐合规\"\"用户数据能不能给第三方\"\"敏感个人信息\"\"未成年人信息\"时使用本 skill；用户问 APP、小程序、SaaS 的数据处理是否合规时同样使用。通用行业合规用 nonlit-compliance-obligation-matrix；本 skill 是数据领域的专项版本，内置场景模板。",
+      "source_path": "skills/nonlitigation/nonlit-data-compliance/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-data-compliance/SKILL.md",
+      "sha256": "598e2158ff2f9f0ba7ecc46cab5116d180b003236d5542872ad6a7dfc0e93c98",
+      "counts": {
+        "scripts": 1,
+        "assets": 1,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "真实目的、数据类型/规模、角色、场景、地域及措施",
+      "output": "场景义务清单、差距证据、整改与评估事项",
+      "improvement": "目的和角色先于条款清单，避免全场景机械套同意",
+      "optimized_instruction": "1. 按处理目的而非功能名建立活动记录，核角色、数据主体、字段与全链路。2. 对收集、存储、委托、共享、自动决策、出境及权利响应分别查适用依据和例外，不能一律套“取得同意”。3. 将法律条件、制度存在和实际执行证据分开评估，识别敏感/未成年人等特殊场景。4. 输出责任人、最小化措施、保留与删除证据和复核点。事实不明则列取证任务。验收：每项风险对应活动与义务，草拟隐私政策不被显示为已达成合规。"
+    },
+    {
+      "number": 41,
+      "id": "nonlit-dd-opinion",
+      "category": "nonlitigation",
+      "name": "尽调发现与法律意见",
+      "description": "把尽职调查的发现整理成法律意见书——问题分级、法律后果与量化影响、可行的解决方案、交易文件中的应对安排、核查受限事项的披露。务必在用户提到\"尽调报告\"\"法律意见书\"\"尽调发现怎么写\"\"这些问题严重吗\"\"要不要继续交易\"\"尽调结论\"\"问题清单\"时使用本 skill；用户完成尽调要出具书面意见时同样使用。",
+      "source_path": "skills/nonlitigation/nonlit-dd-opinion/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-dd-opinion/SKILL.md",
+      "sha256": "ec95eac9712bf5372181c4abe8a968ecd4be0347c26ff2c849bc3880c40bf821",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "尽调事实、来源、受限材料、交易结构、立场及风险偏好",
+      "output": "问题清单、条件化法律意见、量化影响、交易安排",
+      "improvement": "证据未取得不等于不存在，研究稿与最终意见分离",
+      "optimized_instruction": "1. 将每个发现与证据、日期、来源和核查范围绑定，区分已确认、对方陈述和无法核查。2. 按交易目标评估法律后果、可量化影响、可补救性与相互关联，不能仅按金额排序。3. 给整改、先决条件、陈述保证、赔偿/留置价款等替代安排及残余风险。4. 对受限核查单列其对结论的影响。关键资料不足时出有范围限制的发现报告。验收：任何无保留结论均具充分核验，交易措施对应真实发现且不互相冲突。"
+    },
+    {
+      "number": 42,
+      "id": "nonlit-draft-china-contracts",
+      "category": "nonlitigation",
+      "name": "来华合同审查",
+      "description": "为律师起草或审查外国企业在中国开展业务的中英文经销、采购、保密与技术许可合同，输出立场明确的条款修改、语言一致性检查、签署权核查及争议安排。务必在用户提到“来华经销合同”“外国公司在中国签约”“中英合同谁优先”“进口采购合同”“中国代理商协议”“NDA”“China distribution agreement”“license agreement”时使用本 skill，即使未说来华合同审查。纯国内一般合同改用「合同审查」，仅比较版本改用「合同版本比对」；知识产权布局与来华数据出境分别交「中国知产布局」「来华数据合规」。",
+      "source_path": "skills/nonlitigation/nonlit-draft-china-contracts/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-draft-china-contracts/SKILL.md",
+      "sha256": "b71927a94134449d4ce794dcfa6ec58ed50f077aa5fbfcf16526ba500623727e",
+      "counts": {
+        "scripts": 0,
+        "assets": 2,
+        "references": 1,
+        "evals": 1
+      },
+      "input": "项目ID、立场、主体履行地、合同附件/起草指令、日期、语言与争议条款",
+      "output": "双语条款、语言差异、授权/争议安排、谈判清单",
+      "improvement": "区分翻译、双语起草与法律适用，未约定优先语言不能默认",
+      "optimized_instruction": "1. 核签约主体、授权链、交易流和适用范围，区分现有条款与待决定商业事项。2. 分析中英文条款的法律效果、数字、义务对象与定义，不仅比词面。3. 对准据法、争议解决、语言优先和跨境执行给选项与条件，保留未决定状态。4. 提供立场化修订、谈判底线及关联附件变更。缺合同或关键授权时仅出审查/起草框架。验收：双语金额、期限、责任与例外一致，签署/生效状态由证据确认，不把草稿标为已签。"
+    },
+    {
+      "number": 43,
+      "id": "nonlit-due-diligence",
+      "category": "nonlitigation",
+      "name": "尽职调查清单",
+      "description": "按交易类型生成尽职调查清单——核查事项与红旗问题、行业特殊模块提示、资料清单与访谈提纲。务必在用户提到\"尽调\"\"尽职调查\"\"DD\"\"要收购一家公司\"\"投资前要查什么\"\"尽调清单\"\"资料清单\"\"法律核查\"时使用本 skill；用户准备开展或配合尽职调查时同样使用。尽调发现的整理与法律意见书改用「尽调发现与法律意见」。",
+      "source_path": "skills/nonlitigation/nonlit-due-diligence/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-due-diligence/SKILL.md",
+      "sha256": "55501e1b968fd836f62c44ac0973d84e41133f3b6e74ff0702d560f12697c9f9",
+      "counts": {
+        "scripts": 1,
+        "assets": 1,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "交易类型、行业、结构、规模、时间、买方关切与数据室",
+      "output": "分层尽调清单、资料请求、访谈、红旗与优先顺序",
+      "improvement": "清单跟随交易决定和材料覆盖，不追求无差别穷举",
+      "optimized_instruction": "1. 明确交易与客户决策，把通用、行业和交易结构特有模块分层。2. 每项核查同时写目的、材料、访谈对象、红旗、负责人和完成证据，不只列文件名。3. 区分必须先查与可后续补查，按时间预算优先处理影响成交或价格的问题。4. 对缺件、矛盾与受限访问建立跟踪，新增发现回写清单。行业事实不明则列待选模块而非宣称全面。验收：每个高优先项能映射交易风险，资料提供与实质核实两个状态分开。"
+    },
+    {
+      "number": 44,
+      "id": "nonlit-ipo-review",
+      "category": "nonlitigation",
+      "name": "IPO法律审核",
+      "description": "IPO 前的法律问题梳理与问询回复——主体资格、股权清晰、同业竞争与关联交易、独立性、规范运行、历史沿革瑕疵的整改路径与问询回复思路。务必在用户提到\"IPO\"\"上市\"\"发行上市\"\"问询回复\"\"股权清晰\"\"同业竞争\"\"关联交易\"\"独立性\"\"三会规范\"\"上市前整改\"\"申报材料\"时使用本 skill；用户筹备上市或回复交易所问询时同样使用。",
+      "source_path": "skills/nonlitigation/nonlit-ipo-review/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-ipo-review/SKILL.md",
+      "sha256": "83434a224394493e4162ab3385a814aa1cb0037d7b1670a73f3fc3a9fc1e1e51",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "拟申报主体/板块、报告期、沿革、关联方、问题与问询",
+      "output": "适用规则表、问题/证据/整改、回复框架及受限事项",
+      "improvement": "板块与审核规则动态核验，避免用通用清单作上市可行承诺",
+      "optimized_instruction": "1. 核申报市场、板块、报告期及当前审核规则，建立主体、股权和关联关系事实台账。2. 对每个发现区分法律合规、披露、会计及业务判断，核历史适用与整改状态。3. 问询逐问对应事实、证据、规则、核查程序与结论，不能生成未实施的律师核查。4. 给整改依赖及需财会/保荐等协作事项。关键原件不足时只交问题和核验计划。验收：回复中的“已查验”均有记录，整改证据闭环，不承诺过会、注册或监管认可。"
+    },
+    {
+      "number": 45,
+      "id": "nonlit-labor-compliance",
+      "category": "nonlitigation",
+      "name": "劳动人事合规",
+      "description": "用人单位的劳动用工合规——规章制度与员工手册的效力要件、用工模式选择、招聘到离职全流程的合规义务、常见高发风险点。务必在用户提到\"员工手册\"\"规章制度\"\"用工合规\"\"劳务派遣\"\"外包\"\"能不能开除\"\"调岗降薪\"\"竞业限制协议\"\"试用期\"\"不定时工时\"\"劳动合规体检\"时使用本 skill；用户作为用人单位方做制度建设或风险排查时同样使用。争议已发生的改用「劳动争议处理」。",
+      "source_path": "skills/nonlitigation/nonlit-labor-compliance/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-labor-compliance/SKILL.md",
+      "sha256": "9fee848e4c16cfee6ea4f5b9de3accec5f5002306f545c05ed561b95910d63bc",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "企业地点、用工模式、制度、流程、员工及执行证据",
+      "output": "全周期义务/差距、制度与程序、整改清单",
+      "improvement": "制度文本合规不等于民主程序与实施已完成",
+      "optimized_instruction": "1. 先核实际用工关系与管理方式，区分员工、派遣、外包和其他安排，不能只按合同标题定性。2. 按招聘、签约、工时薪酬、考核、处分和离职核当地现行规则与特殊人员。3. 对手册分别核内容、制定程序、公示告知、证据和实际执行一致性。4. 给可执行修订、程序补正和负责人，不以签收一张表替代全部程序。缺资料时列差距待核。验收：每项建议有事实和证据，制度草稿不会显示为已生效或已覆盖所有员工。"
+    },
+    {
+      "number": 46,
+      "id": "nonlit-litigation-response",
+      "category": "nonlitigation",
+      "name": "应诉应急响应",
+      "description": "企业收到起诉状、律师函、仲裁通知、行政处罚告知书后的头三天动作——法定时限倒排、证据冻结、口径统一、披露义务评估。务必在用户提到\"被起诉了\"\"收到起诉状\"\"收到律师函\"\"劳动仲裁通知\"\"被告了\"\"要应诉\"\"处罚告知书\"\"怎么办\"时使用本 skill；企业法务收到法律文书需要立即响应时同样使用。",
+      "source_path": "skills/nonlitigation/nonlit-litigation-response/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-litigation-response/SKILL.md",
+      "sha256": "9ad88a5f014803fccd93c2ddd6d61ae0f3651f37ce05403a69901fc322158de8",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "收到文书原件、送达证据、公司身份、保险与披露等",
+      "output": "0-72小时行动清单、真实期限表、资料保全与分工",
+      "improvement": "头三天为内部处置目标，不能混同各法定期限",
+      "optimized_instruction": "1. 核文书类型、机关、真实性、送达时间和程序阶段，分别计算真实答辩、异议、听证或其他期限。2. 将头三天作为内部响应排程，法定截止日独立保留来源与计算。3. 确定资料保全范围、禁销毁指令、内部沟通及授权窗口，评估保险通知和披露须取的事实。4. 输出对外口径草案与责任分工，未授权不发送。文书不全时优先取原件。验收：每个期限可溯源，证据保全有范围，内部策略不混入对外表态。"
+    },
+    {
+      "number": 47,
+      "id": "nonlit-new-business-review",
+      "category": "nonlitigation",
+      "name": "新业务法律评估",
+      "description": "把业务模式翻译成法律问题——按业务要素映射法律触点与红线、四层评估框架（能不能做/怎么合规/谁担责/怎么证明）、准入资质核查。务必在用户提到\"新业务能不能做\"\"新产品上线\"\"这个模式合规吗\"\"要办什么资质\"\"业务评估\"\"新项目法律风险\"\"能不能这么做\"时使用本 skill；企业法务评估业务部门提出的新模式时同样使用。",
+      "source_path": "skills/nonlitigation/nonlit-new-business-review/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-new-business-review/SKILL.md",
+      "sha256": "cac01e13e08ee78dc76568a540f47973382014e36c5a5c286dc3ec07b73618e5",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "真实业务流程、客户、收费、产品、数据/跨境、地域与上线日",
+      "output": "业务—法律触点、准入/责任/证明、路线比较",
+      "improvement": "不凭业务关键词直接宣告可做或禁止，覆盖实际资金和信息流",
+      "optimized_instruction": "1. 用主体、产品、用户、收费、资金、货物、信息和合作关系画出真实流程，明确未知事实。2. 按能否进入、如何运营、谁担责和如何证明四层查规则，区分许可与持续义务。3. 对高影响触点列法源、触发条件、反向解释和需监管确认事项，比较可行方案。4. 按上线门槛和可后补事项排序。事实不明时交分支模型和问题清单。验收：每项结论对应实际动作，行业名称或注册经营范围不能替代准入判断。"
+    },
+    {
+      "number": 48,
+      "id": "nonlit-new-rule-tracking",
+      "category": "nonlitigation",
+      "name": "新规追踪",
+      "description": "追踪指定业务领域的新出台法规，并回答变了什么、影响哪些业务、要改哪份文件，标出已发布未施行的整改窗口期。务必在用户提到\"最近有什么新规\"\"新法规出来了吗\"\"这个领域的监管变化\"\"新规影响\"\"要不要改制度\"\"合规更新\"\"政策变化\"\"即将实施的规定\"时使用本 skill；用户做定期合规更新或问某领域近期立法动态时同样使用。用户是要查现行有效的某条规定，用「智合AI搜法」；本 skill 关注的是**变化**。",
+      "source_path": "skills/nonlitigation/nonlit-new-rule-tracking/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-new-rule-tracking/SKILL.md",
+      "sha256": "1eaf3c062fd1ac6ac117b47612b284afc5bf3aca0fb7964d3654525f67020eb8",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "主题、地域、时间窗、官方来源、业务映射与既有制度",
+      "output": "新规/草案/施行状态、版本差异、影响与整改",
+      "improvement": "单次检索与持续监测分开，明确遗漏和失败状态",
+      "optimized_instruction": "1. 冻结检索时间窗、主体范围与官方渠道，分别收集正式发布、未施行、修订、废止和征求意见材料。2. 与旧版逐条对照，只把实际改变标为变化，区分新增义务与文字整理。3. 映射受影响业务、文件、负责人和整改窗口，记载出处及下次复核。4. 如需持续监测，另设频率与通知授权。来源不可用时报告空缺，不把未命中写成无新规。验收：每项变更有前后版本与具体动作，草案不列为已经生效的强制要求。"
+    },
+    {
+      "number": 49,
+      "id": "nonlit-orchestrate-china-business",
+      "category": "nonlitigation",
+      "name": "来华业务统筹",
+      "description": "把律师协助外国企业来中国经营的事项组织为有事实台账、依赖关系、负责人、核验记录和交付节点的项目。务必在用户提到“外国公司来中国”“外商来华落地”“来华开公司”“进博会后落地”“从参展到成交”“China market entry”“end-to-end China business”或要求统筹准入、设立、合同、知产、用工、税关汇、数据时使用本 skill；单项合同、数据或劳动任务改用对应专项技能，企业服务季整体活动运营改用其流程技能。",
+      "source_path": "skills/nonlitigation/nonlit-orchestrate-china-business/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-orchestrate-china-business/SKILL.md",
+      "sha256": "1bc29997a96ca2ceb726a4656699312f5415cd7dd4d656651498862ae9d3c404",
+      "counts": {
+        "scripts": 0,
+        "assets": 1,
+        "references": 2,
+        "evals": 1
+      },
+      "input": "委托范围与角色、实际业务控制链、城市/日期、跨境人员货款知产数据",
+      "output": "项目路线图、事实/来源台账、依赖、交接与签核",
+      "improvement": "保留新版强项，强化项目状态和跨专项冲突管理",
+      "optimized_instruction": "1. 建立统一项目ID、事实版本和主体角色，记录已确认、争议与未知，不用企业名称替代业务。2. 按准入、设立、合同、知产、用工、税关汇、数据分派任务，标负责人、依赖与最晚启动点。3. 合并各专项来源和条件，检测同一主体、交易日期、流向或假设冲突。4. 分开研究、律师复核、客户决定、实际办理及完成证据。专项失败时保留受影响路径并重排。验收：路线图中的“完成”有产物或凭证，任何审批/登记不由计划自动变成已获准。"
+    },
+    {
+      "number": 50,
+      "id": "nonlit-plan-china-employment",
+      "category": "nonlitigation",
+      "name": "来华用工规划",
+      "description": "为律师规划外国企业在中国雇佣本地员工、总部派驻及外籍团队落地，核查实际用工关系、劳动合同、规章制度民主程序与告知证据、社保、外包派遣及工作许可和居留路线，交接HR数据出境事项。务必在用户提到“外企中国招人”“来华派驻”“外国经理工作许可”“中国员工手册”“用外包先招销售”“China employment”“work permit”“HR出境”时使用本 skill；已发生劳动争议改用「劳动争议处理」，单纯境内制度体检改用「劳动人事合规」，来华数据出境交「来华数据合规」。",
+      "source_path": "skills/nonlitigation/nonlit-plan-china-employment/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-plan-china-employment/SKILL.md",
+      "sha256": "6eacca3ffeff1eff4fd19cf492ff52aab5689827751ae9e2f453d3f3048a9544",
+      "counts": {
+        "scripts": 0,
+        "assets": 2,
+        "references": 1,
+        "evals": 1
+      },
+      "input": "项目、用工主体/地点、人员岗位身份、开始日、真实管理薪社保与协议",
+      "output": "关系/路径比对、合同制度、证照与HR数据交接",
+      "improvement": "雇佣关系、工作许可、居留和数据流分别判定",
+      "optimized_instruction": "1. 按每个人实际招聘、指挥、考核、发薪和社保识别关系，分开本地雇佣、派驻、外包与派遣。2. 依地点、身份和日期查劳动、工时、社保与证件办理条件，不能因持某签证推定可工作。3. 审合同和制度内容及程序证据，HR数据交数据专项，不隐含豁免。4. 列办理依赖、负责人和候选开始日。资料缺失则暂列路径条件，不安排确定入职结论。验收：每人有独立事实与证照清单，许可、居留、合同签署和合法用工状态分别记录。"
+    },
+    {
+      "number": 51,
+      "id": "nonlit-plan-china-entity",
+      "category": "nonlitigation",
+      "name": "来华设立规划",
+      "description": "为律师将外国企业来华进入路径转化为主体选择、股权治理、外国文书、登记与信息报告及设立后义务计划，生成材料包和负责人/依赖清单。务必在用户提到“外国公司在中国注册公司”“外企落地”“设立外商投资企业”“合资公司”“外国文件怎么认证”“附加证明书”“外资登记”“China entity setup”“incorporation”时使用本技能，即使没有指定技能。外资能否进入某业务和行业许可用「外资准入研判」前置研判；仅修改现有章程用「公司治理与股权架构」；收购尽调用「尽职调查清单」。",
+      "source_path": "skills/nonlitigation/nonlit-plan-china-entity/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-plan-china-entity/SKILL.md",
+      "sha256": "70a133bcc980c368eb65a30dd22f4febf755e125265adecd9f4a15d6422500fc",
+      "counts": {
+        "scripts": 0,
+        "assets": 2,
+        "references": 1,
+        "evals": 1
+      },
+      "input": "项目、准入结论、投资控制链、地点、资本、目标日期、外国文书",
+      "output": "主体/治理比较、材料包、登记依赖、设立后义务",
+      "improvement": "设立完成不能由生成清单推定，外国文书认证路径依来源与接收机关",
+      "optimized_instruction": "1. 先核准入前提与未解决项，比较主体形式、控制、出资、治理和实际业务承载。2. 对外国文书记录来源国、签发/接收机关、用途和日期，核所需证明及翻译，不一律套公证认证。3. 将材料、签署授权、场地、前置许可与登记/报告节点建立依赖。4. 衔接印章、银行、税务、用工和持续义务，记录实际办理凭证。事实不足时只出备选路径。验收：每项“已设立/已备案”有证据，资本、权限与治理条款一致。"
+    },
+    {
+      "number": 52,
+      "id": "nonlit-plan-china-ip",
+      "category": "nonlitigation",
+      "name": "中国知产布局",
+      "description": "帮助律师为外国企业来华业务建立商标与中文名称、专利与FTO、软件和权属链、商业秘密、展前披露及维权准备计划，输出研究任务、材料与依法代理核查。务必在用户提到“来中国注册商标”“中文品牌名”“进博会展前专利”“中国专利布局”“自由实施”“FTO”“商业秘密”“China trademark”“China IP strategy”时使用本 skill，即使没有说中国知产布局。许可合同条款交「来华合同审查」，已经发生的侵权争议交诉讼技能，专业专利检索和申请代理由对应人员完成。",
+      "source_path": "skills/nonlitigation/nonlit-plan-china-ip/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-plan-china-ip/SKILL.md",
+      "sha256": "8c7a5ae2daed9ce0207793e5941b9bcdc863353715d31bee271f7733bd4698b4",
+      "counts": {
+        "scripts": 0,
+        "assets": 2,
+        "references": 1,
+        "evals": 1
+      },
+      "input": "项目、真实权利人、产品/标识/技术、公开/上线日、权属和既有申请",
+      "output": "知产权利图、检索申请/FTO/秘密计划及代理交接",
+      "improvement": "申请准备、FTO、可注册性和不侵权是不同交付物",
+      "optimized_instruction": "1. 区分商标、中文名、专利、软件、作品和秘密，核权利人、研发/外包/雇佣权属链。2. 对上线、展会与首次公开倒排期限，分别定义检索、申请准备、FTO研究及保密任务。3. 记录数据库范围、法律状态、地域与检索日，FTO需具体技术特征和有效权利分析，不能只比标题。4. 列依法代理及技术专业交接。材料不足时先出权利和公开风险清单。验收：不把检索无命中等同可注册或不侵权，申请、授权与实施自由各有独立状态。"
+    },
+    {
+      "number": 53,
+      "id": "nonlit-plan-china-tax-customs-fx",
+      "category": "nonlitigation",
+      "name": "来华税关汇筹划",
+      "description": "为律师组织外国企业进入中国的税务、海关与外汇协同工作，按主体及交易流、货流、款流和票据定位义务，生成证据清单、路线比较和跨专业交接包。务必在用户提到“来中国经营怎么纳税”“进口设备后销售”“总部向中国公司收费”“利润怎么汇回”“外资投入资金”“税收协定能不能用”“进博会样品转销售”“China tax”“customs”“foreign exchange”时使用本技能。境内普通税务计算、对外投资目的国税制研究或已发生行政争议不独立使用本技能；分别交接税务核算人员、对应目的国研究或「行政救济路径」。",
+      "source_path": "skills/nonlitigation/nonlit-plan-china-tax-customs-fx/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-plan-china-tax-customs-fx/SKILL.md",
+      "sha256": "d9df34032dd12889d746e9541c2f0f5da81657ed4ba9b536eb6c5c76a673b58e",
+      "counts": {
+        "scripts": 0,
+        "assets": 1,
+        "references": 1,
+        "evals": 1
+      },
+      "input": "主体关系、业务交易、货物流、款流票据、日期、项目状态",
+      "output": "四流核对、路线/证据、税关汇问题与专业交接",
+      "improvement": "跨专业任务只给有条件路线，禁止无依据确定税率和归类",
+      "optimized_instruction": "1. 分开主体、合同交易、货物和款项/票据流，核金额币种、贸易术语、实际履行及关联关系。2. 将税、海关、外汇议题分别建立事实与现行规则台账，协定/优惠先查主体和证据条件。3. 对商品归类、估价、税收居民和支付材料等列专业确认点与候选方案，禁止从公司类型推唯一税率。4. 交付负责人、文件和依赖，不把研究变为申报。关键参数缺失则列区间与资料请求。验收：四流可对账，每个数字可追溯，优惠/放行/汇出无承诺。"
+    },
+    {
+      "number": 54,
+      "id": "nonlit-regulatory-inspection",
+      "category": "nonlitigation",
+      "name": "监管检查与约谈应对",
+      "description": "处罚作出前的应对——现场检查的权利义务与笔录要点、调查询问的准备、陈述申辩与听证的期限、监管约谈的表态尺度。务必在用户提到\"监管来检查\"\"执法人员来了\"\"被约谈\"\"要做笔录\"\"调查询问\"\"处罚告知书\"\"陈述申辩\"\"申请听证\"\"责令改正\"时使用本 skill；企业面对现场检查、调查或约谈时同样使用。",
+      "source_path": "skills/nonlitigation/nonlit-regulatory-inspection/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-regulatory-inspection/SKILL.md",
+      "sha256": "b325d316554719af774abff0e0dcb59b683f635a50cb2905c38c96945f839c14",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "实际阶段、检查/告知文件、签收日、机关行业地域、事实",
+      "output": "阶段行动、权利/期限来源、笔录与材料、听证/申辩准备",
+      "improvement": "P0：修正统一“陈述申辩/听证3日”旧模板，分开法定期限与内部预警",
+      "optimized_instruction": "1. 核现场检查、调查、约谈、处罚告知或决定的真实阶段及机关权限，不混用流程。2. 分别查陈述申辩、听证及救济的适用规则、通知原文与计算方式；不得沿用统一3日，当前一般听证依第64、85条为告知后5个工作日内提出，不含法定节假日，仍须核具体适用和计日规则。3. 准备事实材料、笔录核对、授权口径与异议留痕，不编造配合或承诺。4. 内部更早预警单列。文书/日期缺失时先取原件。验收：每项截止日有独立来源与计算，过往错误期限不会因“保守”而保留。"
+    },
+    {
+      "number": 55,
+      "id": "nonlit-regulatory-penalty-scan",
+      "category": "nonlitigation",
+      "name": "监管处罚画像",
+      "description": "扫描同行业的监管处罚争议——因何被罚、罚多少、被诉后法院是否维持，输出行业处罚风险画像。务必在用户提到\"同行被罚过吗\"\"这种情况会被罚多少\"\"处罚案例\"\"监管在查什么\"\"罚款幅度\"\"被处罚了能不能告\"\"执法尺度\"\"行政处罚风险\"时使用本 skill；用户做合规体检想知道哪些义务监管最较真时同样使用。**本 skill 查的是裁判文书库里的处罚争议，不是处罚全貌**——绝大多数处罚未被起诉，不在库中。",
+      "source_path": "skills/nonlitigation/nonlit-regulatory-penalty-scan/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-regulatory-penalty-scan/SKILL.md",
+      "sha256": "b5f75253786380b378884c77494f1bf2d1a84045a0b1226a3edbeba5c2b54d40",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "具体违规/处罚/争点场景、行业地域、日期、所需来源",
+      "output": "处罚类型与情节表、裁判审查样本、缺口与防控",
+      "improvement": "行政诉讼样本不能代表全部行政处罚总体",
+      "optimized_instruction": "1. 明确研究对象是公开处罚决定、诉讼审查还是两者，记录各来源覆盖和时间。2. 按主体、行为、处罚依据、裁量、程序与结果抽取，关联同一处罚和多审级去重。3. 罚款统计分别控制情节与法源版本，不用诉讼样本反推执法总体概率。4. 把风险映射实际业务动作及控制证据，不从行业标签直接判违规。来源不足时出线索而非画像结论。验收：分母与数据缺失可对账，维持/撤销的对象和理由准确，不预测特定企业必然受罚。"
+    },
+    {
+      "number": 56,
+      "id": "nonlit-review-contract",
+      "category": "nonlitigation",
+      "name": "合同审查",
+      "description": "按指定立场（甲方/乙方/中立）审查合同，逐条给出风险等级、依据与可直接替换的修改文本，并检查必备条款缺失。务必在用户提到\"帮我看看这份合同\"\"审一下合同\"\"合同有什么风险\"\"这条款能签吗\"\"对方发来的合同\"\"帮我把把关\"\"合同审查\"\"条款有没有坑\"\"这么签对我们有利吗\"时使用本 skill；用户上传或粘贴合同文本并要求检查、把关、提意见时同样使用。用户是要起草新合同，用 nonlit-draft-contract；要比对两个版本的差异，用 util-contract-diff。**本 skill 不指定立场就不执行**——同一条款站甲方站乙方结论可能完全相反。",
+      "source_path": "skills/nonlitigation/nonlit-review-contract/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-review-contract/SKILL.md",
+      "sha256": "161f8dde0823d0a7e9050b7d41d21b7a27edd6392536f10e4f7eb3989727e598",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "合同完整版本附件、立场、交易/格式背景、日期与法域",
+      "output": "分级风险表、原文定位、替换条款、商业取舍和缺口",
+      "improvement": "拒绝把短异议期或金额比例直接自动定无效，法律与商业风险分开",
+      "optimized_instruction": "1. 确认真实当事人角色和交易目标；缺立场时先整理结构并问关键问题，不自动按最不利立场出意见。2. 通读主合同、定义、附件和修订，正则只做信号。3. 对法律风险核具体规则及适用前提，对商业风险说明损益和选择，不强配无关法条。4. 给可替换文本并检查全合同联动。资料不全时分范围交付。验收：每项风险有触发条件和原页；违约金不套合同总价30%上限，不将模板经验写成当然无效。"
+    },
+    {
+      "number": 57,
+      "id": "nonlit-transaction-documents",
+      "category": "nonlitigation",
+      "name": "交易文件与条款",
+      "description": "投融资与并购交易文件的起草与审查——TS、SPA、SHA 的核心条款，对赌与回购、优先权利、陈述保证与赔偿、交割先决条件的设计与风险。务必在用户提到\"投资协议\"\"增资协议\"\"股权转让协议\"\"TS\"\"term sheet\"\"SPA\"\"股东协议\"\"对赌\"\"业绩承诺\"\"回购条款\"\"优先清算权\"\"领售权\"\"反稀释\"时使用本 skill；用户参与投融资或并购交易需要文件时同样使用。",
+      "source_path": "skills/nonlitigation/nonlit-transaction-documents/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/nonlitigation/nonlit-transaction-documents/SKILL.md",
+      "sha256": "21da73bfcc457d4beb012c5381ec3a54957c8e2c1e83c376b054bfc9b95ef2bd",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "交易结构、立场、规模、商业条款、尽调、既有权利",
+      "output": "TS/SPA/SHA条款包、权利矩阵、交割清单与谈判事项",
+      "improvement": "不同文件约束性、主体与执行前提必须联动核验",
+      "optimized_instruction": "1. 绘出交易主体、股权、资金与交割步骤，区分已同意商业条款和待谈条件。2. 对TS、SPA、SHA分别核约束范围、权利义务、先决条件和存续条款，不能把一份文本当全套交易。3. 联动既有优先权、回购/对赌、陈述保证、赔偿与治理，查强制规则和可执行性。4. 建立签署、交割、登记及交割后事项清单。尽调缺口列条件或保护安排。验收：各文件主体、定义、金额与期限一致，不把签署视为已交割。"
+    },
+    {
+      "number": 58,
+      "id": "util-anonymize",
+      "category": "utility",
+      "name": "文件脱敏",
+      "description": "对法律文件做脱敏处理——身份证手机银行卡等强制脱敏、当事人名称的一致性替换、案号与公司名的待确认清单。务必在用户提到\"脱敏\"\"去标识\"\"隐去当事人信息\"\"要对外分享这个案例\"\"做培训材料\"\"投标要提供案例\"\"匿名化\"\"隐私处理\"时使用本 skill；用户要把真实案件材料用于外部场合时同样使用。",
+      "source_path": "skills/utility/util-anonymize/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/utility/util-anonymize/SKILL.md",
+      "sha256": "1c81b91f62b6bc0e9f4eb42353ac6f1fa0db9bf4907f831926c80a9ca2f63415",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "原件、用途、受众、实体映射和需保留字段",
+      "output": "脱敏副本、规则/残留检查、受控映射与限制",
+      "improvement": "文本替换不等于匿名化，处理元数据/批注/图片/OCR层",
+      "optimized_instruction": "1. 明确内部审阅、对外分享或公开用途，制定实体替换与需保留法律含义的规则。2. 同时扫描正文、页眉页脚、表格、批注、修订、元数据、超链接、图片和隐藏OCR层；不只跑正则。3. 对主体及别名一致替换，映射表单独受控保存，重新识别文档寻找残留。4. 生成副本与覆盖报告，区分去标识化和已验证匿名性。无法检查的对象明示阻断外发。验收：脱敏内容不可从文件隐藏层恢复，金额日期保留策略与用途一致，原件不覆盖。"
+    },
+    {
+      "number": 59,
+      "id": "util-bid-proposal",
+      "category": "utility",
+      "name": "招投标应标",
+      "description": "法律服务项目的应标准备——废标风险核查（资格、格式、实质性响应、报价、送达）、评分维度对照、业绩与团队呈现。务必在用户提到\"投标\"\"应标\"\"标书\"\"招标文件\"\"投标文件\"\"竞标\"\"废标\"\"评分标准\"\"资格预审\"时使用本 skill；律所参与法律服务采购项目时同样使用。",
+      "source_path": "skills/utility/util-bid-proposal/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/utility/util-bid-proposal/SKILL.md",
+      "sha256": "14a385983712e727d066212365f821330894b3a11b51e61838c21407b36a93ed",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "招标文件全文/补遗、项目、资格、评分、限价与已有材料",
+      "output": "逐条响应/偏离表、资格缺口、时间与文稿",
+      "improvement": "以最新招标文件及答疑为准，不编造业绩与团队履历",
+      "optimized_instruction": "1. 锁定招标文件、补遗和答疑版本，逐条提取资格、实质响应、格式、报价、密封/电子提交及截止要求。2. 将每条要求映射已备证据和责任人，分清废标条件、评分项与可澄清项。3. 按评分点组织真实业绩和团队材料，所有资质、案例和承诺须可证。4. 对报价、页码、签章和附件做交叉核对，只准备提交包。文件缺页时先列阻断项。验收：无漏响应、无虚构业绩，报价各表一致，提交动作与文稿生成分别记录。"
+    },
+    {
+      "number": 60,
+      "id": "util-case-file-index",
+      "category": "utility",
+      "name": "卷宗解析与编目",
+      "description": "扫描卷宗目录并编目——按文件名分类推定证据种类、检测重复件与体积异常、按案由检查关键材料缺失、生成证据目录。务必在用户提到\"卷宗\"\"材料太多了\"\"整理一下文件\"\"证据目录\"\"编目\"\"这堆扫描件\"\"接手案件的材料\"\"归档\"时使用本 skill；用户接手案件拿到一堆文件需要理清时同样使用。",
+      "source_path": "skills/utility/util-case-file-index/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/utility/util-case-file-index/SKILL.md",
+      "sha256": "61e025719720be0bdfb289d4ae4f5d39bc63c40ab644eb4d290d99d553231e63",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "授权目录/资产集、案由、已有编号与预期材料",
+      "output": "文件清单、去重/版本、内容分类、缺件待核表",
+      "improvement": "文件名推定必须标示，哈希去重与近似内容分开",
+      "optimized_instruction": "1. 建立原始文件清单和哈希，保留路径、版本、页数、解析状态和权限；文件名仅作初步分类。2. 读取允许内容后确认类型，对完全重复与近似版本分别标注，禁止自动删原件。3. 按任务需要核关键材料，未提供只写未见，不能推定不存在。4. 输出可回溯目录及既有证据编号映射，记录损坏/加密/缺页。不可读时降级为元数据编目。验收：总文件与成功/失败/重复数量对账，内容确认与名称推测有明显状态。"
+    },
+    {
+      "number": 61,
+      "id": "util-contract-diff",
+      "category": "utility",
+      "name": "合同版本比对",
+      "description": "比对合同两个版本的差异，并按立场判断每处改动对我方是变好还是变坏，区分实质变更与文字调整，单独标出新增与删除的条款。务必在用户提到\"对方回稿了\"\"帮我看看改了什么\"\"版本比对\"\"这次改动有什么影响\"\"对方动了哪些地方\"\"跟上一版有什么不同\"\"他们把哪条删了\"时使用本 skill；用户上传两个版本的合同并要求对比时同样使用。用户只有一个版本要审查，用 nonlit-review-contract。",
+      "source_path": "skills/utility/util-contract-diff/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/utility/util-contract-diff/SKILL.md",
+      "sha256": "9d6c0d90e0e543182f96bdd97ee15673564f501c7a081d114b3229ce237af0dd",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "基准与候选不可变版本、附件、修订接受策略、立场",
+      "output": "文本差异、条款映射、法律影响、关联修改",
+      "improvement": "必须捕捉删除、移动、否定词、数值和隐藏修订，不只相似段落",
+      "optimized_instruction": "1. 核版本方向、修订/批注读取策略与附件范围，保存原件。2. 先做字符、表格和结构差异，再建立拆分/合并/移动条款映射，新增删除独立列出。3. 对每个实质变化按立场说明权利义务、例外、金额、期限和救济影响，商业评价分开。4. 检查定义及交叉引用联动。无法匹配的片段标需人工对照，不显示全量通过。验收：每个变化同时可打开前后原文，文本无改但附件/定义改变的语义影响也被提示。"
+    },
+    {
+      "number": 62,
+      "id": "util-diagram",
+      "category": "utility",
+      "name": "结构图生成",
+      "description": "生成法律结构图——股权结构、交易结构、事实时间轴、法律关系图，输出 Mermaid 代码可直接渲染嵌入文书。务必在用户提到\"画个图\"\"结构图\"\"股权结构\"\"交易结构\"\"时间轴图\"\"法律关系图\"\"这个关系太复杂了\"\"可视化\"\"画出来看看\"时使用本 skill；用户描述多方关系或多层持股需要直观呈现时同样使用。",
+      "source_path": "skills/utility/util-diagram/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/utility/util-diagram/SKILL.md",
+      "sha256": "fb9551d90eed987bf4f0bfa2ce2b2f2db84a681102d7ae1e305e5bcd3d601ec1",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "带来源的主体关系、比例、日期、关系类型与用途",
+      "output": "可渲染结构图、数据表、来源和未知项",
+      "improvement": "持股、表决、控制、代持和假设边应使用不同语义",
+      "optimized_instruction": "1. 先建立节点与边的结构化表，区分法律主体、项目和人物，关系必须标类型、日期和来源。2. 股权、表决、协议控制、代持与交易流分别编码，未核实关系用不同线型并说明。3. 核比例合计、循环、方向及跨时点变化，不能自动补满未知股权。4. 生成Mermaid并实际检验语法和可读性，提供可编辑源表。缺资料时画部分图而非补造边。验收：图表与原始数据一致，布局不隐藏关键条件，关系图不会被称为已核验控制结论。"
+    },
+    {
+      "number": 63,
+      "id": "util-docx-format",
+      "category": "utility",
+      "name": "法律文书排版",
+      "description": "把 Markdown 或纯文本的法律文书排成符合提交规范的 Word 文档——法院文书、仲裁文书、法律意见书三套预置规范，正确处理中文字体、固定行距、首行缩进。务必在用户提到\"排版\"\"转成Word\"\"生成docx\"\"格式化文书\"\"按法院格式\"\"要打印提交\"\"文书格式不对\"\"字体设置\"时使用本 skill；用户完成文书内容需要输出正式文档时同样使用。",
+      "source_path": "skills/utility/util-docx-format/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/utility/util-docx-format/SKILL.md",
+      "sha256": "1383c609437784c64cecd38166348722127551c14fc9a87b265de4fd76ce9c93",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "已审内容、文书类型、受理机构当前样式、模板及导出要求",
+      "output": "DOCX、预览、编号/脚注/分页检查表",
+      "improvement": "排版成功必须检查实际渲染，不以默认三套模板代表全部提交规范",
+      "optimized_instruction": "1. 锁定内容与模板版本，先核法院/仲裁/客户的真实格式要求，默认样式只作候选。2. 保留标题层级、表格、编号、脚注、超链接、分页和待补字段，避免转换吞掉法律含义。3. 导出后渲染逐页查看字体、行距、页码、断表、脚注和遮挡，并和源内容比对。4. 失败时提供可编辑文本与具体格式缺口，不宣称可直接提交。验收：关键段落与引用无丢失，长表和中文字体可读，生成文件不等同已提交。"
+    },
+    {
+      "number": 64,
+      "id": "util-engagement-proposal",
+      "category": "utility",
+      "name": "工作方案与报价",
+      "description": "编制法律服务工作方案与报价书——工作范围与交付物、阶段划分与时间表、收费方式与预算、团队配置、不包含事项的界定。务必在用户提到\"报价\"\"工作方案\"\"服务方案\"\"收费\"\"律师费怎么算\"\"立项建议书\"\"投标文件\"\"客户要方案\"\"预算\"时使用本 skill；用户向客户提交服务方案或应标时同样使用。",
+      "source_path": "skills/utility/util-engagement-proposal/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/utility/util-engagement-proposal/SKILL.md",
+      "sha256": "c17f56136d30e7b3a781dd91aa5f4b100c4a44f8a039f5ca1fd232fa88143cb4",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "服务范围、客户目标、周期、预算、复杂度、团队真实信息",
+      "output": "范围/交付/阶段/依赖、报价假设、排除与变更机制",
+      "improvement": "研究稿、报价建议与正式委托承诺分别标识",
+      "optimized_instruction": "1. 将目标转成可验收交付物，明确输入依赖、轮次、期限、包含与排除事项。2. 按阶段估算真实团队工作量，分列费用、税费、第三方成本及不确定性，不编造市场价格或成员资历。3. 比较收费方式和预算情景，写出新增范围、延期与信息缺失的变更机制。4. 形成供律师确认的报价稿及谈判事项，未授权不发送或承诺。预算不明时给方案范围。验收：交付、工时、价格与边界可对账，客户决定与签约状态不被自动填为同意。"
+    },
+    {
+      "number": 65,
+      "id": "util-enterprise-service-season",
+      "category": "utility",
+      "name": "企业服务季全程协作",
+      "description": "帮助律师完成企业服务季，从了解企业、准备首次联系与顾问洽谈，到持续服务、客户跟进、续约报价和首月复盘。用户说“参加企业服务季”“帮我服务第一家企业”“用Skill中心做企业顾问”“继续活动任务”“把客户服务和续约串起来”或 enterprise service season 时使用；单项合同审查或法律问题交给相应专项技能，外国企业来华的多领域项目交给「来华业务统筹」。",
+      "source_path": "skills/utility/util-enterprise-service-season/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/utility/util-enterprise-service-season/SKILL.md",
+      "sha256": "08de1db8bd87875d0085e0a005cd0ae2eb30710c2caf34a34b3789bb1004346a",
+      "counts": {
+        "scripts": 0,
+        "assets": 1,
+        "references": 1,
+        "evals": 1
+      },
+      "input": "阶段/目标、已核主体、资料权限、现有项目任务、关系和服务期",
+      "output": "可恢复任务、首次联系/洽谈准备、服务交付与跟进/续约稿",
+      "improvement": "保留当前平台恢复机制，同时移除机构专属活动资格假设",
+      "optimized_instruction": "1. 先恢复已有项目、会话和任务，核主体、服务关系、期间与材料范围，避免重复建案。2. 分开企业了解、联系准备、顾问洽谈、真实服务、交付、跟进和续约，设置各阶段真实证据及律师决定点。3. 专项法律问题交相应技能，成果回写任务与来源，营销线索不替代委托事实。4. 生成联系/报价草稿前检查授权，未授权不联系客户。平台不可用时用本地台账恢复。验收：联系、同意、委托、交付、续约各状态有证据，不承诺获客或活动资格。"
+    },
+    {
+      "number": 66,
+      "id": "util-legal-training",
+      "category": "utility",
+      "name": "企业普法培训",
+      "description": "设计企业内部普法培训——按受众定深度与形式、围绕真实场景组织内容、每个知识点落到可执行动作、案例脱敏与留痕。务必在用户提到\"普法\"\"内训\"\"培训\"\"给员工讲讲\"\"合规宣导\"\"课件\"\"讲课\"\"培训材料\"\"员工手册宣讲\"时使用本 skill；律师为企业客户做培训、或企业法务做内部宣导时同样使用。",
+      "source_path": "skills/utility/util-legal-training/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/utility/util-legal-training/SKILL.md",
+      "sha256": "073f678d21714027a78ccd6cc73401a2a61a2d1148f28c1033d9558252567701",
+      "counts": {
+        "scripts": 1,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "受众职责、主题、时长、真实痛点、企业制度、语言",
+      "output": "课程、场景练习、行动清单、讲师稿与效果检查",
+      "improvement": "法规更新、案例脱敏和课后动作比通用讲义更重要",
+      "optimized_instruction": "1. 按受众需作的决定与常见错误确定学习目标，而非按法条目录排课。2. 用获授权真实或明确虚构场景组织问题、规则、动作和证据，案例先脱敏。3. 查证课程所用法律的法域/日期，并区分强制要求、公司制度与建议。4. 提供角色化行动卡、练习答案和后续负责部门，材料缺失用占位情景不伪造企业事件。验收：每个知识点对应可执行行为，课件和讲师稿一致，测验检验能否正确处理业务而非只背术语。"
+    },
+    {
+      "number": 67,
+      "id": "util-legal-translation",
+      "category": "utility",
+      "name": "法律翻译与术语一致",
+      "description": "法律文件的中英互译与术语一致性核查——高频易错术语对照、中国法特有概念的处理、同一文件内译法统一。务必在用户提到\"翻译\"\"英文版\"\"中英对照\"\"涉外合同\"\"foreign counsel\"\"翻成英文\"\"术语怎么译\"\"这个词英文是什么\"时使用本 skill；用户处理涉外法律文件或与境外律师沟通时同样使用。",
+      "source_path": "skills/utility/util-legal-translation/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/utility/util-legal-translation/SKILL.md",
+      "sha256": "dff6a42b03e6e3ab465516c5ed76871860c2e89aa4592954def3b678dfac577c",
+      "counts": {
+        "scripts": 0,
+        "assets": 1,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "原文与版本、方向、法域、文件类型、读者、术语表和语言优先",
+      "output": "对照译文、术语表、歧义/不可等值说明、数值核对",
+      "improvement": "翻译不得暗改权利义务，术语一致与法律等值分开",
+      "optimized_instruction": "1. 锁定原文和上下文，识别定义、义务主体、否定词、金额、日期和例外，先建术语表。2. 依适用法和读者选择表达，中国法特有概念无等值时说明而不硬套外法制度。3. 做双语逐条对应与数值/交叉引用核对，译文优化不得悄悄改变责任或承诺。4. 将歧义和法律效果差异列为译注/待决定，不擅定优先语言。缺原文时只译已给范围。验收：关键法律效果及条件保留，同词多义有理由，翻译与法律审查状态分别显示。"
+    },
+    {
+      "number": 68,
+      "id": "util-plain-language",
+      "category": "utility",
+      "name": "法律意见通俗化",
+      "description": "把法律意见改写成客户、业务部门或当事人能看懂的版本——保留结论准确性的前提下去掉法言法语、说清风险与选项、给出可执行的下一步。务必在用户提到\"客户看不懂\"\"给业务部门看的版本\"\"说人话\"\"通俗一点\"\"解释给当事人听\"\"简化一下\"\"换个说法\"时使用本 skill；用户要把专业意见转给非法律人士时同样使用。",
+      "source_path": "skills/utility/util-plain-language/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/utility/util-plain-language/SKILL.md",
+      "sha256": "ac23c4c8db9e1ee1c8be67d90f612caedfbf35a7c5e298de98584d118ff20865",
+      "counts": {
+        "scripts": 0,
+        "assets": 0,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "已审专业意见、受众、其决策、长度与敏感范围",
+      "output": "通俗版本、选择/动作、关键限定保留表",
+      "improvement": "简化不丢条件、例外、概率和待核状态，不改成确定承诺",
+      "optimized_instruction": "1. 提取原意见的结论、前提、争议、限制、选项和下一步，先标不可删要素。2. 按高管、经办或当事人重排内容，解释必要术语，并用具体动作和成本/时间条件表达。3. 对照原文检查否定、例外、金额与确定性，没有依据不能改为“肯定能”。4. 提供便于决策的短版与需展开的附件，敏感内部分析依目标范围处理。原意见矛盾时先列疑点不自行修正。验收：读者可理解下一步，所有实质限定仍在且能回溯专业版。"
+    },
+    {
+      "number": 69,
+      "id": "util-research-memo",
+      "category": "utility",
+      "name": "检索报告成稿",
+      "description": "把类案检索、规则提炼、尺度分析、法律冲突、不利判例应对的产出汇总成一份可直接附卷提交的类案检索报告或法律检索备忘录。务必在用户提到\"出个报告\"\"汇总成文\"\"整理成备忘录\"\"生成检索报告\"\"能附卷的文档\"\"给客户的版本\"\"把这些整理一下\"时使用本 skill。本 skill **不检索、不分析**，只做成稿——所有实质内容必须来自上游 skill 的产出，缺什么就在报告里注明缺什么。",
+      "source_path": "skills/utility/util-research-memo/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/utility/util-research-memo/SKILL.md",
+      "sha256": "c650dd538f41eb56e52d1a5c528de981f548121efc9c1e0c31e2fe37d5b3c253",
+      "counts": {
+        "scripts": 0,
+        "assets": 1,
+        "references": 0,
+        "evals": 1
+      },
+      "input": "类案及法源结果、其他已做分析、交付对象、立场、日期",
+      "output": "研究报告、引用/来源台账、方法与未开展章节",
+      "improvement": "成稿不能把未运行模块填成已完成，保持问题—结论—来源链",
+      "optimized_instruction": "1. 盘点实际已有产出和原始来源，区分已核、未核与未开展模块，不按目录自动补满。2. 按交付对象和具体问题组织规则、事实、适用、反向观点与建议，保留检索方法和范围。3. 统一引用、时间与法律版本，逐项核论断支持，不因前序模块标通过就免复核。4. 对未做尺度/冲突/不利案例分析如实列缺口，生成提交稿和底稿。来源缺失时暂停相关结论。验收：报告每项重要结论可追到原文，统计口径一致，内部策略不泄入附卷稿。"
+    },
+    {
+      "number": 70,
+      "id": "util-run-ciie-legal-demo",
+      "category": "utility",
+      "name": "进博法律宣讲",
+      "description": "为技能中心作为进博会参展商设计展前、展中、展后法律服务演示与宣讲，展示律师如何用官方来华经营技能、事实台账、来源核验和复核交付帮助外国企业。务必在用户提到“进博会参展”“进博会宣讲”“展位演示”“CIIE demo”“外国企业来华技能发布”“十五分钟宣讲”“开源活动展示”时使用本 skill；单纯法律内训改用企业普法培训，实际客户来华业务统筹改用来华业务统筹。",
+      "source_path": "skills/utility/util-run-ciie-legal-demo/SKILL.md",
+      "source_url": "https://github.com/Decikingship/legal-agent-skills/blob/83df6b13a60b2dfeaf30001c7894bcb45a59fcc4/skills/utility/util-run-ciie-legal-demo/SKILL.md",
+      "sha256": "c0ae725ddf9b7c045abebd873a938092e66e43abd8d6a6a37e569285b29ea451",
+      "counts": {
+        "scripts": 0,
+        "assets": 2,
+        "references": 2,
+        "evals": 1
+      },
+      "input": "届次与参展/宣讲已知状态、受众语言时长、核验入口、联网及线索场景",
+      "output": "展前/中/后计划、演示剧本、虚构数据、离线备选与跟进草稿",
+      "improvement": "活动计划不等于主办方认可；演示与真实法律服务、营销分别管理",
+      "optimized_instruction": "1. 核届次、资格、场地、时间、官方规则与真实入口，未确认内容保留占位，不能编造展位或排期。2. 选明确虚构企业展示事实台账、来源核验和律师复核，不带真实客户材料。3. 检查现场网络、语言、设备与离线演示，故障时展示预录/静态样例并说明。4. 线索收集、拍摄、联系和报价分别明确目的与授权，未授权不外联。验收：每个公开承诺有依据，演示状态与真实申报/委托分开，不暗示政府或展会为产品背书。"
+    }
+  ]
+}

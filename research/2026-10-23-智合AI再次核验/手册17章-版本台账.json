@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-23",
+  "url": "https://skill.zhiexa.com/user-guide",
+  "version": "v1.6",
+  "updated": "2026-10-23",
+  "chapters": [
+    {
+      "id": "quickstart",
+      "title": "完成你的第一个任务",
+      "characters": 716,
+      "sha256": "148edc535adbd39ccb82b0cb0d841d6b99e47ed6eaff826588ea1db5163be24b"
+    },
+    {
+      "id": "workspace",
+      "title": "认识你的工作台",
+      "characters": 505,
+      "sha256": "f5e13f7c1a7ab6069f3608226c101415b7b385415f768ff741b25be319234bee"
+    },
+    {
+      "id": "chat",
+      "title": "对话、模型与任务执行",
+      "characters": 1591,
+      "sha256": "115c1c05b423a996a62af520b1b24b4f3f698a6c0e1b9163a0f22854d8ac2d13"
+    },
+    {
+      "id": "files",
+      "title": "上传、预览与文档交付",
+      "characters": 816,
+      "sha256": "b3bab710ad2fc6471c372c6931a61ac7ee7a27a9e462246fc24936f048b38a86"
+    },
+    {
+      "id": "skills",
+      "title": "安装与使用 Skill",
+      "characters": 1114,
+      "sha256": "0d3b3481fb5feea4fbfad070e88db0ca2989aeb75b81a5d056b19e8cc45120bd"
+    },
+    {
+      "id": "official-skills",
+      "title": "把关键官方 Skill 用到具体工作里",
+      "characters": 4664,
+      "sha256": "490d74a7ac66a0191f7090b16e491ecf86adc8cb208a4b142a0339664e1ce25b"
+    },
+    {
+      "id": "experts",
+      "title": "专家与数字员工",
+      "characters": 497,
+      "sha256": "6b7d76431ea47e2ca10c5e6e7b5f0da773272840cac651870ac3b3629d97b9f8"
+    },
+    {
+      "id": "projects",
+      "title": "项目：把同一件事的资料与进展放在一起",
+      "characters": 814,
+      "sha256": "b4d83fc5eb0c5442601626ef41a4effcebaad49a0de339a0dba3173fcb878749"
+    },
+    {
+      "id": "memory",
+      "title": "个人记忆：让助手了解你的长期偏好",
+      "characters": 627,
+      "sha256": "11aa514ebbfbbf20ca026550b2fe3f02189218ef40340a4b0323bb6761198e3f"
+    },
+    {
+      "id": "connectors",
+      "title": "连接器与对外 MCP 服务",
+      "characters": 920,
+      "sha256": "9272aa37d4d585c17ce1275831c5035b22a6138b0f67c5cf4b5be643fada0388"
+    },
+    {
+      "id": "schedules",
+      "title": "定时任务：按约定时间执行并保留结果",
+      "characters": 1463,
+      "sha256": "e5ff148dbdda459aae009a4a2f9bc18d6007d1610ada77974d5b696acedf30c3"
+    },
+    {
+      "id": "teams",
+      "title": "团队：共用资源，分清任务与费用归属",
+      "characters": 730,
+      "sha256": "1828b1acabc9c9d62cc8aec104715954977b929718711029f30d3425446ae2cd"
+    },
+    {
+      "id": "billing",
+      "title": "积分、会员与账单",
+      "characters": 994,
+      "sha256": "c145e589c9a7d5ffcc22e9ceda8e7b48f2a510384e4631b2f339d070d7ca8fa4"
+    },
+    {
+      "id": "enterprise-season",
+      "title": "企业服务季与公开信息核查",
+      "characters": 889,
+      "sha256": "26176226aa25ee1efbff6a724604d42ce047c1f8a99038fc5225652a654df5aa"
+    },
+    {
+      "id": "directory",
+      "title": "找律师与律师中心",
+      "characters": 836,
+      "sha256": "6e6efb019421b4080fdc9d8b85db32df3df4d71c6cac244c49e7ef852b57938e"
+    },
+    {
+      "id": "account",
+      "title": "账户设置、隐私与多端使用",
+      "characters": 969,
+      "sha256": "28159c58af3a35ad92204f7c1c279745261245fc72519834cbd350460bad2806"
+    },
+    {
+      "id": "faq",
+      "title": "常见问题与故障反馈",
+      "characters": 484,
+      "sha256": "7426837d5cc2e62495454b2bf4ce7ebd2715d3a1838bfc92d406b99702a0b91d"
+    }
+  ]
+}

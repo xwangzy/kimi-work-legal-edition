@@ -1,0 +1,101 @@
+- button "返回列表":
+  - text: 返回列表
+- text: 新建 Skill
+- generic: 个人私有技能 · 仅你可用
+- button "保存并使用" [disabled]
+- generic: AI 助手 · 对话改技能
+- button "版本历史":
+  - text: 版本历史
+- button "目录":
+  - text: 目录
+- generic: ✦
+- paragraph: 描述你想要的技能，我可以帮你生成名称、触发条件和指令草稿；也可以随时让我调整任意部分。
+- textbox "一句话描述你想要的技能…"
+- button "技能包":
+  - text: 技能包
+- combobox "选择 AI 助手使用的模型":
+  - option "DeepSeek-V4.1-Flash" [selected]
+  - option "DeepSeek-V4-Pro正式版"
+  - option "DeepSeek-V4-Flash正式版"
+  - option "Qwen3.8 Max"
+  - option "Kimi K3"
+- generic: Enter 生成草稿
+- button [disabled]:
+- text: 目录
+- generic "预览技能":
+  - generic: 预览
+- generic "SKILL.md 主文件（元数据 + 指令）":
+  - generic: SKILL.md
+  - generic: 主文件 ●
+- button "新建文件":
+  - text: 新建文件
+- button "参考文件":
+  - text: 参考文件
+- generic: 预览
+- generic: 调试
+- generic: SKILL.md
+- generic "有未保存改动"
+- generic "调整展示内容的字号":
+  - button "缩小字号": A−
+  - button "100%"
+  - button "放大字号": A+
+- button "保存并使用":
+  - text: 保存并使用
+- generic: name 技能名称
+- textbox "如：contract-review"
+- generic: icon 技能图标（可选）
+- generic: "?"
+- button "上传图片"
+- generic: 图片优先于 emoji 显示；都不设则用名称首字母。支持 PNG / JPG / GIF / WebP，不超过 512 KB。
+- generic: emoji
+- button "⚡"
+- button "🔧"
+- button "🛠️"
+- button "⚙️"
+- button "🤖"
+- button "🧠"
+- button "💡"
+- button "🔍"
+- button "📄"
+- button "📝"
+- button "📋"
+- button "📑"
+- button "📊"
+- button "📈"
+- button "🗂️"
+- button "🗃️"
+- button "更多"
+- textbox "或粘贴任意 emoji / 一两个字"
+- generic: 配色
+- button "自动"
+- button "紫"
+- button "蓝"
+- button "青"
+- button "碧"
+- button "绿"
+- button "琥珀"
+- button "橙"
+- button "绯"
+- button "粉"
+- button "石墨"
+- generic: description 触发条件
+- textbox "告诉 AI 何时该用这个技能"
+- generic: category 分类
+- combobox:
+  - option "选择大类…" [selected]
+  - option "诉讼仲裁"
+  - option "交易与非诉"
+  - option "企业法务与合规"
+  - option "法律研究与检索"
+  - option "律所经营与个人执业"
+  - option "通用办公工具"
+  - option "娱乐与减压"
+- combobox [disabled]:
+  - option "请先选大类" [selected]
+- button "✨ 让 AI 帮我选"
+- text: instructions
+- generic: 指令内容 (Markdown)
+- button "instructions 指令内容 (Markdown) 预览": 编辑
+- button "预览"
+- 'textbox "支持 Markdown。例： ## 流程 1. 第一步 2. 第二步"':
+  - /placeholder: "支持 Markdown。例：\n\n## 流程\n1. 第一步\n2. 第二步"

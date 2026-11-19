@@ -1,0 +1,67 @@
+{
+  "result": "pass",
+  "md_files": 12,
+  "counts": {
+    "homepage": 36,
+    "workbench": 59,
+    "official_skills": 70,
+    "expert_workflows": 34,
+    "composite": 4,
+    "public_capabilities": 8
+  },
+  "master_bytes": 456090,
+  "master_characters": 204079,
+  "top_level_parts": 10,
+  "broken_relative_links": [],
+  "session_token_urls_found": 0,
+  "checks": {
+    "07-组合交付与公共能力提示词.md": {
+      "balanced_fences": true,
+      "bytes": 10938
+    },
+    "05-官方70技能逐项优化.md": {
+      "balanced_fences": true,
+      "bytes": 113094
+    },
+    "00-智合AI法律业务功能与提示词Skills-MCP完整手册.md": {
+      "balanced_fences": true,
+      "bytes": 456090
+    },
+    "01-现场观察与覆盖台账.md": {
+      "balanced_fences": true,
+      "bytes": 11813
+    },
+    "子研究-竞品业务逻辑.md": {
+      "balanced_fences": true,
+      "bytes": 26546
+    },
+    "06-官方34专家工作流逐项优化.md": {
+      "balanced_fences": true,
+      "bytes": 57464
+    },
+    "70项技能原文合辑.md": {
+      "balanced_fences": true,
+      "bytes": 577128
+    },
+    "子研究-法律业务全景.md": {
+      "balanced_fences": true,
+      "bytes": 56151
+    },
+    "04-首页36场景优化提示词.md": {
+      "balanced_fences": true,
+      "bytes": 60885
+    },
+    "子研究-Skills与MCP架构.md": {
+      "balanced_fences": true,
+      "bytes": 46113
+    },
+    "02-产品全景与重构方案.md": {
+      "balanced_fences": true,
+      "bytes": 23882
+    },
+    "03-Skill工作台59场景优化提示词.md": {
+      "balanced_fences": true,
+      "bytes": 44443
+    }
+  }
+}

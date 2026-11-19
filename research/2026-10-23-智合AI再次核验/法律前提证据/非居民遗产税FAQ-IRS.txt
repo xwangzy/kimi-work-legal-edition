@@ -1,0 +1,479 @@
+{
+"@context": "https://schema.org",
+"@graph": [
+{
+"name": "Frequently asked questions on estate taxes for nonresidents not citizens of the United States",
+"datePosted": "2019-09-16T14:38:02-0400"
+}
+]
+}
+window.a2a_config=window.a2a_config||{};a2a_config.callbacks=[];a2a_config.overlays=[];a2a_config.templates={};
+Frequently asked questions on estate taxes for nonresidents not citizens of the United States | Internal Revenue Service
+{"path":{"baseUrl":"\/","pathPrefix":"","currentPath":"node\/71226","currentPathIsAdmin":false,"isFront":false,"currentLanguage":"en"},"pluralDelimiter":"\u0003","suppressDeprecationErrors":true,"gtag":{"tagId":"","consentMode":false,"otherIds":[],"events":[],"additionalConfigInfo":[]},"ajaxPageState":{"libraries":"eJx1kuuSgyAMhV8I5ZGYIBGzBcKQ2G7ffrGts2vt_hHznVzmQGCauAXi4jKWVSwcY3ejEFENhKAM5W73n3FuXNR4ZhVtUJ2H1ojtzC2faUzsIQ2i90QlnnXKENHNaaVwFjOKdFlcoriomRYWLPZ5jB7nnYS2VkjjM3rBXuP31EnEdHNoJ86VCxaV8X3YMGy2XQYqp9y6VkdNDpkmgEKCOzbrcYErcRMT-FYSQ-jDy8Ul8Ji6vtNho8OLDrpgRoPfutHdwis0kTkmdArRxv55j0f4gu8jzKZCg9gNLbJ3-yXjWurqE8mCwWx2-mv3yyVPiXR720zFKXPqFh_6dMFAys3VtEYqf9bjs_wJPjKfC-AE25X6SPuBmeP92rlBxhu3y7uwLxMpDjOCru1cXLgMjw0daqO-p5sslGu_qK0uQ7XH0PEVe2XorQShTYuDSg5W5W0DEiraf7iRu_QW1oPgDxqFTvE","theme":"pup_irs_barrio","theme_token":"hE4YUlr7K-1DxKA0L0q7aH-7RDmTocmAvBnJ1uB0lhc"},"ajaxTrustedUrl":{"\/site-index-search":true},"gtm":{"tagId":null,"settings":{"data_layer":"dataLayer","include_environment":false},"tagIds":["GTM-KV978ZL"]},"dataLayer":{"defaultLang":"en","languages":{"en":{"id":"en","name":"English","direction":"ltr","weight":-10},"es":{"id":"es","name":"Spanish","direction":"ltr","weight":-9},"zh-hans":{"id":"zh-hans","name":"Chinese, Simplified","direction":"ltr","weight":-8},"zh-hant":{"id":"zh-hant","name":"Chinese, Traditional","direction":"ltr","weight":-7},"ko":{"id":"ko","name":"Korean","direction":"ltr","weight":-6},"ru":{"id":"ru","name":"Russian","direction":"ltr","weight":-5},"vi":{"id":"vi","name":"Vietnamese","direction":"ltr","weight":-4},"ht":{"id":"ht","name":"Haitian Creole","direction":"ltr","weight":-3}}},"data":{"extlink":{"extTarget":false,"extTargetAppendNewWindowLabel":"(opens in a new window)","extTargetNoOverride":false,"extNofollow":false,"extTitleNoOverride":false,"extNoreferrer":false,"extFollowNoOverride":false,"extClass":"ext","extLabel":"(link is external)","extImgClass":true,"extSubdomains":true,"extExclude":"","extInclude":"","extCssExclude":".paragraph--type--social-media-footer, .btn-primary, .btn-secondary","extCssInclude":"","extCssExplicit":"","extAlert":false,"extAlertText":"This link will take you to an external web site. We are not responsible for their content.","extHideIcons":false,"mailtoClass":"mailto","telClass":"","mailtoLabel":"(link sends email)","telLabel":"(link is a phone number)","extUseFontAwesome":true,"extIconPlacement":"append","extPreventOrphan":false,"extFaLinkClasses":"fa fa-external-link fa-external-link-alt","extFaMailtoClasses":"fa fa-envelope-o","extAdditionalLinkClasses":"","extAdditionalMailtoClasses":"","extAdditionalTelClasses":"","extFaTelClasses":"fa fa-phone","whitelistedDomains":[],"extExcludeNoreferrer":""}},"chosen":{"selector":"select:not(:hidden,[id*=\u0027edit-state\u0027],[id^=\u0022views-form-user-admin-people-page\u0022] #edit-action)","minimum_single":25,"minimum_multiple":20,"minimum_width":200,"use_relative_width":false,"options":{"disable_search":false,"disable_search_threshold":0,"allow_single_deselect":false,"add_helper_buttons":false,"search_contains":true,"placeholder_text_multiple":"Choose some option","placeholder_text_single":"Choose an option","no_results_text":"No results match","max_shown_results":null,"inherit_select_classes":true}},"search_api_autocomplete":{"pup_site_index_search":{"delay":600,"auto_submit":true,"min_length":3}},"accordion_menus":{"accordion_closed":{"main_mobile":"main_mobile"}},"ajax":[],"user":{"uid":0,"permissionsHash":"e9da02e5b7417a890b4132fa11d6d613c1b2cb82c70d51ba8112726ab1c5a870"}}
+Skip to main content
+An official website of the United States government
+Here's how you know
+Here's how you know
+Official websites use .gov
+A
+.gov
+website belongs to an official government organization in the United States.
+Secure .gov websites use HTTPS
+A
+lock
+(
+)
+or
+https://
+means you've safely connected to the .gov website. Share sensitive information only on official, secure websites.
+English
+Español
+中文 (简体)
+中文 (繁體)
+한국어
+Русский
+Tiếng Việt
+Kreyòl ayisyen
+Information Menu
+Help
+News
+Tax Pros
+Sign in
+Individual
+Business
+Tax Pro
+Access your tax information with an IRS account.
+Refunds
+Payments
+Tax records
+Create account
+Search
+Help Menu Mobile
+Sign in
+Individual
+Business
+Tax Pro
+Access your tax information with an IRS account.
+Refunds
+Payments
+Tax records
+Create account
+Menu
+Main navigation
+File
+Overview
+INFORMATION FOR…
+Individuals
+Business and self-employed
+Charities and nonprofits
+International filers
+Retirement
+Governments and tax-exempt bonds
+Indian Tribal Governments
+FILING FOR INDIVIDUALS
+How to file
+When to file
+Where to file
+Update your information
+POPULAR
+Tax record (transcript)
+Apply for an Employer ID Number (EIN)
+Amend return
+Identity Protection PIN (IP PIN)
+Pay
+Overview
+PAY BY
+Bank Account (Direct Pay)
+Payment Plan (Installment Agreement)
+Electronic Federal Tax Payment System (EFTPS)
+POPULAR
+Your Online Account
+Tax Withholding Estimator
+Estimated Taxes
+Penalties
+Refunds
+Overview
+About refunds
+Direct deposit
+Reduced refunds
+Where’s my amended return?
+Credits & Deductions
+Overview
+INFORMATION FOR...
+Individuals
+For you and your family
+Businesses & Self-Employed
+Standard mileage and other information
+POPULAR
+Earned Income Credit (EITC)
+Child Tax Credit
+Clean Energy and Vehicle Credits
+Standard Deduction
+Retirement Plans
+Forms
+Overview
+POPULAR FORMS & INSTRUCTIONS
+Form 1040
+Individual Income Tax Return
+Form 1040 Instructions
+Instructions for Form 1040
+Form W-9
+Request for Taxpayer Identification Number (TIN) and Certification
+Form 4506-T
+Request for Transcript of Tax Return
+Form W-4
+Employee's Withholding Certificate
+Form 941
+Employer's Quarterly Federal Tax Return
+Form W-2
+Wage and Tax Statement
+Form 9465
+Installment Agreement Request
+POPULAR FOR TAX PROS
+Form 1040-X
+Amended Individual Income Tax Return
+Form 2848
+Power of Attorney
+Form W-7
+Apply for an ITIN
+Circular 230
+Regulations Governing Practice before the IRS
+Report Fraud
+Overview
+Tax fraud and scams
+Identity theft
+Fake IRS email or message
+Tax return preparer misconduct
+Help for tax professionals
+Search
+Include Historical Content
+- Any -
+No
+Include Historical Content
+- Any -
+No
+Search
+File
+Overview
+INFORMATION FOR…
+Individuals
+Business and self-employed
+Charities and nonprofits
+International filers
+Retirement
+Governments and tax-exempt bonds
+Indian Tribal Governments
+FILING FOR INDIVIDUALS
+How to file
+When to file
+Where to file
+Update your information
+POPULAR
+Tax record (transcript)
+Apply for an Employer ID Number (EIN)
+Amend return
+Identity Protection PIN (IP PIN)
+Pay
+Overview
+PAY BY
+Bank Account (Direct Pay)
+Payment Plan (Installment Agreement)
+Electronic Federal Tax Payment System (EFTPS)
+POPULAR
+Your Online Account
+Tax Withholding Estimator
+Estimated Taxes
+Penalties
+Refunds
+Overview
+About refunds
+Direct deposit
+Reduced refunds
+Where’s my amended return?
+Credits & Deductions
+Overview
+INFORMATION FOR...
+Individuals
+Businesses & Self-Employed
+POPULAR
+Earned Income Credit (EITC)
+Child Tax Credit
+Clean Energy and Vehicle Credits
+Standard Deduction
+Retirement Plans
+Forms
+Overview
+POPULAR FORMS & INSTRUCTIONS
+Form 1040
+Form 1040 Instructions
+Form W-9
+Form 4506-T
+Form W-4
+Form 941
+Form W-2
+Form 9465
+POPULAR FOR TAX PROS
+Form 1040-X
+Form 2848
+Form W-7
+Circular 230
+Report Fraud
+Overview
+Tax fraud and scams
+Identity theft
+Fake IRS email or message
+Tax return preparer misconduct
+Help for tax professionals
+Main navigation
+File
+Pay
+Refunds
+Credits & Deductions
+Forms & Instructions
+Info Menu Mobile
+Charities & Nonprofits
+Help
+News
+Tax Pros
+Search
+Include Historical Content
+- Any -
+No
+Include Historical Content
+- Any -
+No
+Search
+Home
+File
+Businesses and self-employed
+Small business
+Frequently asked questions on estate taxes for nonresidents not citizens of the United States
+Frequently asked questions on estate taxes for nonresidents not citizens of the United States
+More In File
+Individuals
+Businesses and self-employed
+Business tax account
+Employer ID numbers
+Business taxes
+Business structures
+Operating a business
+Self-employed
+Small business
+Industries and professions
+Small business events
+Online learning
+Large business
+Charities and nonprofits
+International taxpayers
+Governmental liaisons
+Federal, state and local governments
+Indian tribal governments
+Tax exempt bonds
+Taxpayer identification numbers (TIN)
+Below are some of the more common questions and answers about Estate Tax issues for decedents who were nonresident and noncitizens of the United States at death. Please note: Whether a decedent was a nonresident of the United States for U.S. estate tax purposes is determined based on the decedent’s domicile at the time of death. See Estate Tax Regulation §20.0-1(b) and
+instructions to Form 706-NA
+PDF
+. If the answers to your questions cannot be found in these resources, we strongly recommend discussing your situation with a tax practitioner.
+Am I required to file a Form 706 or Form 706-NA? (updated Sept. 19, 2024)
+Form 706
+PDF
+must be filed by the executor of the estate of a U.S. citizen or resident whose gross estate plus adjusted taxable gifts is valued at more than the filing threshold for the year in which the decedent died. Form 706 must also be filed by an executor in order to elect to transfer the decedent’s Deceased Spousal Unused Exclusion (DSUE) amount to the surviving spouse, regardless of the size of the decedent’s gross estate. For information about the filing threshold or electing DSUE, see Instructions for Form 706.
+Form 706-NA
+PDF
+must be filed by the executor of the estate of a decedent who was neither domiciled in nor a citizen of the United States at death (a “nonresident not a citizen” decedent or NRNC) who, at death, owned certain assets situated in the United States. The executor of an NRNC decedent’s estate can generally transfer the decedent’s U.S.-situated assets without being required to file a federal estate tax return or pay a federal estate tax if those assets, valued at the time of death, together with the amount of the decedent’s adjusted taxable gifts, do not exceed $60,000. If the $60,000 filing threshold is exceeded, a Form 706-NA must be filed for the decedent’s estate.
+To properly complete Form 706-NA, in addition to the
+instructions to Form 706-NA
+PDF
+, the executor will also need to review Form 706 and the
+instructions to Form 706
+PDF
+.
+Also see
+How do I know which estate tax return to file?  Form 706 or Form 706-NA?
+Can a decedent who is a nonresident not a citizen of the United States elect portability of the deceased spousal unused exclusion (DSUE) amount to benefit a surviving spouse?
+The executor of an estate of a nonresident decedent who was not a citizen of the United States at the time of death cannot make a portability election.
+What is included in the U.S.-situated gross estate?
+The property includible in the U.S.-situated gross estate for a nonresident not a citizen includes only assets “situated” in the United States, such as:
+U.S. real estate,
+All tangible property located in the United States,
+Certain intangible property, such as U.S. marketable securities,
+Debt obligations of a U.S. person [or the United States (including a State or any political subdivision)],
+A U.S. trade or business, and bank accounts used in connection with a U.S. trade or business,
+Assets that at the time of transfer or at the date of death were U.S.-situated, and those assets become includible in the gross estate under Internal Revenue Code sections 2035 – 2038.
+For purposes of determining the U.S. situated “Gross Estate”, the total fair market value of all assets situated in the United States must be included.  The value of each asset is based on its fair market value at the time of the decedent’s death, which may not be equal to the price paid for it or what its value was when acquired. While the U.S.-situated Gross Estate will likely include non-probate as well as probate property, some property is treated as situated outside of the United States and is thus excludible, such as securities that generate portfolio interest, bank accounts not used in connection with a U.S. trade or business, and certain life insurance proceeds.
+What is "fair market value"?
+The
+fair market value
+is the price at which the property would change hands between a willing buyer and a willing seller, neither being under any compulsion to buy or to sell and both having reasonable knowledge of relevant facts. The fair market value of a particular item of property includible in the decedent's gross estate is not to be determined by a forced sale price. Nor is the fair market value of an item of property to be determined by the sale price of the item in a market other than that in which such item is most commonly sold to the public, taking into account the location of the item wherever appropriate. Estate Tax Regulation §20.2031-1(b).
+What is includible if the property is a 1/2 interest in a farm (or building) with a sibling (or friend or other)?
+How the 1/2 interest in the property was acquired, and how it is held and treated under state law will determine what is includible in the Gross Estate. Other considerations may be relevant in the context of nonresidents not citizens of the United States.  Many factors influence this answer, so you would need to talk with a tax or legal professional to make that determination.
+What deductions are available to reduce the U.S. estate tax for a nonresident not a citizen?
+For information on deductions, what documentation is required, and what portion is allowable, see the Instructions for Schedule B of Form 706-NA.  Deductible expenses generally include:
+Funeral expenses;
+Administration expenses of the estate;
+Claims against the estate;
+Unpaid mortgages and liens; and
+Uncompensated losses that were incurred during settlement of the estate and that arose from theft or from casualties, such as fires, storms, or shipwrecks.
+In addition to the above deductions, charitable contributions and the value of certain property passing to a surviving spouse who is a U.S. citizen may be deductible.  For information on the marital deduction where the surviving spouse is not a U.S. citizen as of the decedent’s date of death, see the Instructions for Schedule B of Form 706-NA.
+What other information do I need to include with the return?
+See
+Form 706-NA
+PDF
+and its
+instructions
+PDF
+and
+Publication 559, Survivors, Executors, and Administrators
+PDF
+. Among other items listed, include with the return:
+A copy of the death certificate
+A copy of the decedent's will and any relevant trusts
+A copy of each appraisal
+A copy of any document(s) relevant to litigation involving the estate
+A copy of U.S. gift tax returns filed by the decedent, if any
+Documentation of any unusual items shown on the return (for example, partially included assets, losses, or near date of death transfers).
+If any item submitted with the return is not in English, also include an English translation of the document.
+What other filings do I need to be aware of?
+Review the following:
+Form 8971
+PDF
+and
+instructions for Form 8971
+PDF
+, Information Regarding Beneficiaries Acquiring Property from a Decedent
+Form 8833, Treaty-Based Return Position Disclosure under Section 6114 or 7701(b)
+PDF
+Form 3520, Annual Return To Report Transactions With Foreign Trusts and Receipt of Certain Foreign Gifts
+PDF
+What if I do not have everything ready for filing by the due date?
+The estate's representative may request an extension of time to file for up to six months from the due date of the return. However, the correct amount of tax is still due by the due date and interest will be added to any amounts that are not paid by the due date.
+Do I have to talk to the IRS during an examination?
+If the decedent’s estate tax return is selected for audit, you do not have to be present during an IRS examination unless an IRS representative needs to ask specific questions. Although you may represent yourself during an examination, most executors prefer that a professional handle this phase of administration. They may delegate authority for this by signing a designation on the
+Form 706
+PDF
+itself, or executing
+Form 2848, Power of Attorney
+PDF
+.
+What if I disagree with the examination proposals?
+You have many rights and options to appeal if you disagree with any proposals made by the IRS. See
+Publication 1
+PDF
+and
+Publication 5
+PDF
+for an explanation of these options.
+What happens if the estate sells a United States real property interest?
+Generally, if a United States real property interest is sold by the estate of a nonresident not a citizen, the estate must report any gain or loss on the sale. The buyer of the U.S. real property interest is required to withhold 15% of the amount realized on the sale. There are some exceptions to this requirement. The buyer reports the amount withheld on Form 8288, U.S. Withholding Tax Return for Disposition by Foreign Persons of U.S. Real Property Interests, which must be filed by the 20th day after the transfer. To receive credit for this withholding, the estate must file Form 1040-NR, U.S. Nonresident Alien Income Tax Return, and attach Form 8288-A, Statement of Withholding on Dispositions by Foreign Persons of U.S. Real Property Interests. See
+Publication 515, Withholding of Tax on Nonresident Aliens and Foreign Entities
+, and
+Publication 519, U.S. Tax Guide for Aliens
+, for more information.
+What happens if I sell property that I have inherited?
+The sale of such property is usually considered the sale of a capital asset and may be subject to capital gains (or loss) treatment. However, IRC §1014 provides that the basis of property acquired from a decedent is its fair market value at the date of death, so there is usually little or no gain to account for if the sale occurs soon after the date of death. (Remember, the rules are different for determining the basis of property received as a lifetime gift). Refer to the
+FAQs on gift taxes for nonresidents not citizens of the United States
+.
+In a Form 706-NA, how do I claim a pro-rata unified credit pursuant to a treaty?
+Complete the entries for Lines 1 through 3 in Schedule B on the second page of the return. Attach Form 8833 to the return indicating that the return position is treaty-based. See Regulations section 301.6114-1 for details. Show your computation of the pro-rata unified credit in the statement, and enter that figure in the Tax Computation on Line 7 on the front page of the return. Attach to the Form 706-NA a copy of the return filed with the treaty partner. If no estate or inheritance tax return has been filed with the treaty partner, explain in your statement why no foreign return was due. If there was no foreign return, attach a copy of an inventory that sets forth the decedent’s assets and their values at the date of death, and explains how the figure shown on Line 3 of Schedule B was computed.
+In a Form 706-NA, how do I claim an exemption from U.S. estate tax pursuant to a treaty?
+In Schedule A of the return, list the estate’s U.S. assets, but show no values for those that are exempt from U.S. estate tax pursuant to a treaty. Attach Form 8833 to the return indicating that the return position is treaty-based. See Regulations section 301.6114-1 for details. Entries for the gross estate in the United States, the taxable estate, and the tax amounts, should be "0" if all of the decedent’s U.S. assets are exempt from U.S. estate tax pursuant to the applicable treaty. Attach to the Form 706-NA a copy of the return filed with the treaty partner. If no estate or inheritance tax return has been filed with the treaty partner, explain in your statement why no foreign return was due.
+How do I secure a transfer certificate (U.S. citizen)?
+Transfer certificate filing requirements for the estates of nonresident citizens of the United States
+How do I secure a transfer certificate (non-U.S. citizen)?
+Transfer certificate filing requirements for the estates of nonresidents not citizens of the United States
+Will my same-sex spouse be considered a surviving spouse for purposes of the marital deduction for estate tax purposes?
+For federal tax purposes, the terms “spouse,” “husband,” and “wife” includes individuals of the same sex who were lawfully married under the laws of a state whose laws authorize the marriage of two individuals of the same sex and who remain married.
+However, the terms “spouse,” “husband and wife,” “husband,” and “wife” do not include individuals (whether of the opposite sex or the same sex) who have entered into a registered domestic partnership, civil union, or other similar formal relationship recognized under state law that is not denominated as a marriage under the laws of that state, and the term “marriage” does not include such formal relationships.
+For information on the marital deduction for a surviving spouse, see Instructions for Form 706-NA, Schedule B.
+Revenue Ruling 2013-17
+, along with
+Frequently asked questions for same-sex couples
+and updated
+FAQs for registered domestic partners and individuals in civil unions
+, are available on IRS.gov. See also
+Publication 555, Community Property
+PDF
+.
+When can I expect an estate tax closing letter?
+Final regulations establishing a new user fee of $67 for persons requesting the issuance of IRS Letter 627, Estate Tax Closing Letter (ETCL), became effective October 28, 2021 (User Fee for Estate Tax Closing Letter (
+TD 9957
+)). For information on all estate tax closing letter requests, see
+Frequently asked questions on the Estate Tax Closing Letter
+.
+Is there an alternative to the estate tax closing letter?
+Yes.
+Notice 2017-12
+explains that an account transcript issued by the Internal Revenue Service (IRS) can be used in lieu of Letter 627, Estate Tax Closing Letter. The Transcript Delivery Service (TDS), which provides authorized practitioners the ability to view and print instant account transcripts for estate tax returns, is now available on IRS.gov. In addition, hardcopy account transcripts are available to authorized taxpayers or their representatives making valid requests via mail or facsimile using Form 4506-T, Request for Transcript of Tax Return. Please refer to
+Transcripts in lieu of estate tax closing letters
+for specific instructions on how to request an estate tax account transcript using TDS or by using Form 4506-T.
+Related international topics
+Estate tax for nonresidents not citizens of the United States
+Frequently asked questions on estate taxes for nonresidents not citizens of the United States
+Transfer certificate filing requirements for the estates of nonresidents not citizens of the United States
+Transfer certificate filing requirements for the estates of nonresident citizens of the United States
+Gift tax for nonresidents not citizens of the United States
+Estate & gift tax treaties (international)
+Related
+Estate and gift taxes
+Estate tax
+Frequently asked questions on estate taxes
+Information for executors
+Gift tax
+Frequently asked questions on gift taxes
+Filing estate and gift tax returns
+Modernized e-File (MeF) for gift taxes
+Transcripts in lieu of estate tax closing letters
+Frequently asked questions on the Estate Tax Closing Letter
+Penalties
+What's new — Estate and gift tax
+Publications
+Forms and publications: Estate and gift tax
+About Publication 559, Survivors, Executors and Administrators
+Page Last Reviewed or Updated: 20-Sep-2026
+Share
+Facebook
+Twitter
+Linkedin
+Print
+Footer Navigation
+Our Agency
+About IRS
+Careers
+Financial and Budget Reports
+Tax Statistics
+Help
+Find a Local Office
+Know Your Rights
+Taxpayer Bill of Rights
+Taxpayer Advocate Service
+Independent Office of Appeals
+Civil Rights
+FOIA
+No FEAR Act Data
+Reliance on Guidance
+Resolve an Issue
+IRS Notices and Letters
+Identity Theft
+Tax scams
+Tax Fraud
+Criminal Investigation
+Whistleblower Office
+Languages
+Español
+中文 (简体)
+中文 (繁體)
+한국어
+Pусский
+Tiếng Việt
+Kreyòl ayisyen
+English
+Related Sites
+U.S. Treasury
+Treasury Inspector General for Tax Administration
+USA.gov
+USAspending.gov
+Vote.gov
+Subfooter
+Privacy Policy
+Accessibility
+window.dataLayer = window.dataLayer || []; window.dataLayer.push({"entityLanguage":"en","entityCountry":"US","siteName":"Internal Revenue Service","entityLangcode":"en","entityVid":"6332986","entityCreated":"1568659082","entityStatus":"1","entityType":"node","entityBundle":"pup_article","entityId":"71226","entityTitle":"Frequently asked questions on estate taxes for nonresidents not citizens of the United States","primaryCategory":"businesses","subCategory1":"small-businesses-self-employed","subCategory2":"frequently-asked-questions-on-estate-taxes-for-nonresidents-not-citizens-of-the-united-states","Navigation":{"id":"17876","label":"Small business","bundle":"pup_navigation"},"field_pup_ot_guid":[],"field_pup_ot_unique_id":[],"field_pup_ot_url":[],"entityTaxonomy":{"pup_channels":{"2096":"Small Businesses \u0026 Self Employed"},"pup_navigation":{"17876":"Small business"},"pup_organization":{"14106":"SE:S"}},"userUid":0});

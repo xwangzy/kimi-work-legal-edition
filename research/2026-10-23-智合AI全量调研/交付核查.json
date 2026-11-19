@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-23",
+  "timezone": "Asia/Shanghai",
+  "file": "00-智合AI功能与法律业务提示词-Skills-MCP完整手册.md",
+  "bytes": 773080,
+  "characters": 346569,
+  "lines": 9791,
+  "sha256": "15a486fd075e7055381570d56af5edfb5c0b6149133312fcd2a6933bf99f9cf6",
+  "coverage": {
+    "homepage": 36,
+    "workbench": 59,
+    "market": 316,
+    "official_labels": 105,
+    "foundation_labels": 5,
+    "community_labels": 206,
+    "public_skills": 70,
+    "public_experts": 34,
+    "additional_official_methods": 40
+  },
+  "section_counts": {
+    "homepage_anchors": 36,
+    "workbench_anchors": 59,
+    "skills_anchors": 70,
+    "official_extra_anchors": 40,
+    "expert_anchors": 34,
+    "community_anchors": 206
+  },
+  "duplicate_anchors": [],
+  "broken_local_links": [],
+  "unmapped_market_records": [],
+  "balanced_backtick_fences": true,
+  "balanced_tilde_fences": true,
+  "business_modules": 81,
+  "community_quality": {
+    "cards": 206,
+    "prompt_blocks": 206,
+    "unique_prompts": 206,
+    "ids_contiguous": true,
+    "title_mismatches": [],
+    "unknown_reused_skill_ids": [],
+    "unknown_reused_business_modules": []
+  },
+  "sources": [
+    "research/2026-10-23-智合AI全量调研/01-当日观察与产品裁决.md",
+    "research/2026-10-23-智合AI全量调研/02-完整条目与优化对应索引.md",
+    "research/2026-10-23-智合AI全量调研/03-配置与MCP当日观察.md",
+    "research/2026-10-21-智合AI调研/02-产品全景与重构方案.md",
+    "research/2026-10-21-智合AI调研/子研究-法律业务全景.md",
+    "research/2026-10-21-智合AI调研/04-首页36场景优化提示词.md",
+    "research/2026-10-21-智合AI调研/03-Skill工作台59场景优化提示词.md",
+    "research/2026-10-21-智合AI调研/05-官方70技能逐项优化.md",
+    "research/2026-10-22-补充40官方功能优化.md",
+    "research/2026-10-21-智合AI调研/06-官方34专家工作流逐项优化.md",
+    "research/2026-10-22-技能目录复核.md",
+    "research/2026-10-21-智合AI调研/07-组合交付与公共能力提示词.md",
+    "research/2026-10-22-提示词独立复核.md",
+    "research/2026-10-23-智合AI全量调研/社区逐项优化-A.md",
+    "research/2026-10-23-智合AI全量调研/社区逐项优化-B.md",
+    "research/2026-10-23-智合AI全量调研/调研-Skills与MCP设计.md",
+    "research/2026-10-23-智合AI全量调研/调研-法律业务与竞品.md",
+    "research/2026-10-23-智合AI全量调研/独立复核-覆盖与提示词.md"
+  ],
+  "limits": [
+    "社区内部Skill正文未取得",
+    "316条未逐项运行",
+    "未连接真实MCP或检索API",
+    "未执行上游脚本",
+    "固定源码不代表今日线上最新版本"
+  ]
+}

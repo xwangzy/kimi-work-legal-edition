@@ -1,0 +1,98 @@
+{
+ "run": {
+  "run_id": "run_4f07d06f-b86a-4547-8a0d-ef0241f676c6",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_edbf1314-b72d-42c3-90fc-4ca364dc0b6c",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "run_daedf4b2-b6ca-4aa5-a5f2-700b87833553-followup-1794034912784",
+  "input_snapshot": {
+   "matter_id": "mat_edbf1314-b72d-42c3-90fc-4ca364dc0b6c",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_c30e8b2a-5e27-4c58-a097-e18daf99972f"
+   ],
+   "goal": "客户看了这一版，再改三处。请在上一轮修订稿的基础上继续修订（第一轮的修订痕迹全部保留），同时更新清洁稿和修改对照表：1. 第12.5款责任上限改为人民币5,000,000元，并写明乙方依第9.1款承担的货物毁损、灭失赔偿不计入、也不受该上限限制；2. 第十一条“保险”在第11.1款之后新增一款：乙方应在本合同签署后15日内向甲方提供保险单副本，并将甲方列为附加被保险人；保险合同变更或解除的，乙方应提前15日书面通知甲方。原第11.2款依次顺延，正文中援引该款的地方一并改；3. 费率表第4项配送费“上海市、江苏省、安徽省”的单价由260.00元改为240.00元。",
+   "estimate_id": "est_9ad18d12-3bff-4d0d-84a5-ae5e4f8d5c31",
+   "run_options": {
+    "mode": "default",
+    "plan_first": false,
+    "preauthorized": []
+   },
+   "followup_of": "run_daedf4b2-b6ca-4aa5-a5f2-700b87833553",
+   "continue_session_id": "session_a2a35e57-6335-497c-b10f-9da41c1efa54"
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_9ad18d12-3bff-4d0d-84a5-ae5e4f8d5c31",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-07T07:01:52.786Z",
+  "updated_at": "2026-11-07T07:09:31.795Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_98840aa1-d064-484f-a9af-b4dbca89ef1f",
+   "kind": "revision_draft",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "仓储与配送服务合同（德舟供应链提供稿）（修订稿）.docx",
+   "sha256": "46ad6882e749fda866dc085f832c87d37306f411bcc38a57be0c0c7868413751",
+   "created_at": "2026-11-07T07:08:30.372Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_6b46bf3a-1c05-4853-aba8-38b6c3d190f9",
+   "kind": "revision_clean",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "仓储与配送服务合同（德舟供应链提供稿）（清洁稿）.docx",
+   "sha256": "18c7afc5274be3bdc4e9da56e3244bbffe8fc66dd8f7b39ce48af1eb40dce096",
+   "created_at": "2026-11-07T07:08:30.378Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_11872d95-cec2-4fe1-aab1-811015751c09",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "仓储与配送服务合同（德舟供应链提供稿）（修改对照表）.docx",
+   "sha256": "667823f187500dc31807b77eb8375f5722acaf0bef2e5d3d749c828117cc134f",
+   "created_at": "2026-11-07T07:08:30.381Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_55aec486-2df7-4ed0-93c4-ef4274bc54dc",
+   "kind": "a1_agent_draft",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-07.md",
+   "sha256": "526a3ebf289259b19d1cdfcaad39f5547ef545f742b7d12278a1cc4b20aeec60",
+   "created_at": "2026-11-07T07:09:31.794Z",
+   "title": "已按您选择的合并生成方式完成：第一轮17处修改与本轮3项意见合并为19处写入，全",
+   "kind_version": 4,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}
