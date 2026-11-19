@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * 一键演示拉起（本地部署模拟）：真实 API（从 Word 交付文件读取，只进内存不落盘不打印）→ 云端 v0（控制面 + 法律模型网关 + 检索，
- * 网关直连真实上游）→ 网页运营控制台（apps/ops-console 静态页 + 同源 /v1 代理，免 CORS）→ Electron 桌面窗口。
+ * 网关直连真实上游）→ 网页运营控制台（apps/console 静态页 + 同源 /v1 代理，免 CORS）→ Electron 桌面窗口。
  *
  *   node scripts/demo-launch.mjs [--docx <path>] [--fresh] [--no-browser] [--no-desktop] [--console-port 8790]
  *
@@ -206,14 +206,14 @@ const bridgePort = Number(process.env.ZR_DEV_BRIDGE_PORT ?? (await pickPort(7720
 if (webPort !== 5173 || bridgePort !== 7720) log(`开发端口错开：vite :${webPort} / 开发桥 :${bridgePort}`);
 
 /* ---------- ④ 运营控制台静态页 + 同源 /v1 代理（免 CORS） ---------- */
-// 控制台按模块拆分后（第 44 批）部署只发 dist/（scripts/build-ops-console.mjs 打包，含 design-tokens 的 tokens.css）：
+// 控制台按模块拆分后（第 44 批）部署只发 dist/（scripts/build-console.mjs 打包，含 design-tokens 的 tokens.css）：
 // 有打包脚本就先打包再只发 dist/ 里的文件；没有（旧版单文件控制台）就发源目录。白名单之外一律 404，读文件失败不让进程崩
-const consoleSrc = join(root, "apps", "ops-console");
+const consoleSrc = join(root, "apps", "console");
 let consoleBase = consoleSrc;
-if (existsSync(join(root, "scripts", "build-ops-console.mjs"))) {
-  const { buildOpsConsole } = await import("./build-ops-console.mjs");
+if (existsSync(join(root, "scripts", "build-console.mjs"))) {
+  const { buildConsole } = await import("./build-console.mjs");
   consoleBase = join(consoleSrc, "dist");
-  buildOpsConsole(consoleBase);
+  buildConsole(consoleBase);
 }
 const walkConsole = (d) => readdirSync(d).flatMap((f) => (f === "dist" && d === consoleSrc ? [] : statSync(join(d, f)).isDirectory() ? walkConsole(join(d, f)) : [join(d, f)]));
 const consoleFiles = Object.fromEntries(walkConsole(consoleBase).map((f) => relative(consoleBase, f).split(sep).join("/")).filter((f) => /\.(html|js|css)$/.test(f)).map((f) => [`/${f}`, f]));

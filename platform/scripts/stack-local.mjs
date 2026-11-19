@@ -7,7 +7,7 @@
  * - 服务：`cloud-serve.mjs --config`（cp-signer、control-plane、gateway；`insecure_loopback_for_test` 只许 127.0.0.1——这是与生产唯一的差别：没有 TLS）；
  * - 上游密钥：只经文件描述符 3 交给网关进程（`upstream.api_key_file: /dev/fd/3`），不写盘、不进命令行与环境变量；
  *   来源依次为 `--key-file`、环境变量 KWL_MOONSHOT_API_KEY、macOS 钥匙串（KWL_EVAL_KEYCHAIN_ACCOUNT / _SERVICE，缺省 kwl-demo / kwl-demo-maas-key）；
- * - 运营控制台：同进程静态服务 `apps/ops-console/dist`（先 `node scripts/build-ops-console.mjs`），发严格 CSP，config.json 指向本栈控制面；
+ * - 运营控制台：同进程静态服务 `apps/console/dist`（先 `node scripts/build-console.mjs`），发严格 CSP，config.json 指向本栈控制面；
  * - 状态（账号、路由、账本、审计）都落在 --dir 里，重启保留。
  *
  * 用法：node scripts/stack-local.mjs --dir <目录> [--base-port 18400] [--upstream https://maas.jointpilot.com/v1] [--model kimi-k3.1-pro] [--tls]
@@ -202,8 +202,8 @@ await startRole("gw", true);
 await startRole("search", true);
 
 // ─── 6. 运营控制台（静态页 + 严格 CSP；先构建 dist） ───
-run("build-ops-console.mjs", []);
-const dist = join(root, "apps/ops-console/dist");
+run("build-console.mjs", []);
+const dist = join(root, "apps/console/dist");
 const consoleConfig = JSON.stringify({ control_plane_base: `${scheme}://127.0.0.1:${P.cp}`, deployment: "dev", label: "本机全链路栈", routing_public_key: readFileSync(pub("routing-public.txt"), "utf8").trim(), routing_key_id: readFileSync(pub("routing-key-id.txt"), "utf8").trim() });
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png" };
 const CSP = `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ${scheme}://127.0.0.1:${P.cp}; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;

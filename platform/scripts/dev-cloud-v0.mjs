@@ -14,7 +14,7 @@
  *   KWL_CP_AUDIT_FILE：运营审计流水落盘（JSON Lines，启动时验链）。
  * - KWL_SUPPORT_DIR=<目录>（第 9 批 S13）：同时拉起支持与诊断服务 v0（诊断包上传）。运营接口按人鉴权（v9.3 A-10，共享运营口令已停用）：
  *   给出 KWL_OPS_ROSTER=<运营名册> 与 KWL_OPS_ROSTER_KEYS=<名册签名公钥 JSON> 才开放（名册用 scripts/ops-cli.mjs 生成，部署标识 KWL_OPS_DEPLOYMENT，缺省 dev），否则运营路径 404。
- *   KWL_CONTROL_PLANE=1 时同名变量同时开控制面的 /v1/ops/…（受众 control-plane）——网页运营控制台（apps/ops-console）联调用；
+ *   KWL_CONTROL_PLANE=1 时同名变量同时开控制面的 /v1/ops/…（受众 control-plane）——网页运营控制台（apps/console）联调用；
  *   跨源访问由生产入口 cloud-serve 的 ops.console_origins 处理，本地演示用同源静态服务代理（scripts/demo-launch.mjs）。
  * - KWL_NOTIFY_DIR=<目录>（第 10 批 S9）：同时拉起通知与提醒服务 v0（期限提醒：只存触发时刻、接收设备与密文；凭据由控制面签发，须 KWL_CONTROL_PLANE=1）。
  * - KWL_ACTIVATION=1（第 13 批开通与成员入组；须 KWL_CONTROL_PLANE=1）：租户要求开通码，开发用创始开通码写进 <KWL_CLOUD_DIR>/founder-code.txt。

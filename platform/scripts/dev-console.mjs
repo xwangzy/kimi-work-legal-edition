@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * 运营控制台本机开发（第 44 批）：先打包 dist/（scripts/build-ops-console.mjs），再一条命令拉起“进程内控制面 + 控制台静态页”。
+ * 运营控制台本机开发（第 44 批）：先打包 dist/（scripts/build-console.mjs），再一条命令拉起“进程内控制面 + 控制台静态页”。
  * **只用于开发**：运营名册、运营私钥、网关路由密钥都是临时生成的；价格是示例价格；律所、账号是虚构的演示数据。
  *
- *   node scripts/dev-ops-console.mjs [--port 5480] [--empty]
+ *   node scripts/dev-console.mjs [--port 5480] [--empty]
  *
  * - 控制台与控制面同源（/v1/* 反向代理到进程内的控制面），不必配 CORS；静态页只发 dist/ 里的文件，CSP 与生产同口径；
  * - 登录：账号 + 密码（第 45 批）——admin（op_0001，可直接用）与 issuer（op_0002，首次登录须改密码，用来走一遍改密码流程），
@@ -19,7 +19,7 @@ import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
 import { extname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildOpsConsole } from "./build-ops-console.mjs";
+import { buildConsole } from "./build-console.mjs";
 
 const args = process.argv.slice(2);
 const PORT = Number(args[args.indexOf("--port") + 1]) || 5480;
@@ -28,12 +28,12 @@ const EMPTY = args.includes("--empty");
 const { createControlPlane, devControlPlaneKeys, UsageBook } = await import("../services/control-plane/src/index.ts");
 const { devOpsRoster, fileOpsGuard } = await import("../packages/ops-auth/src/testing.ts");
 const { createOpsPasswordSessions, emptyOpsCredentials, generateOpsPassword, memoryOpsCredentialSource, setOpsCredential } = await import("../packages/ops-auth/src/index.ts");
-const { importOpsKey, signOpsRequest } = await import("../apps/ops-console/ops-sign.js");
-const { sealUpstreamKey, keyHint } = await import("../apps/ops-console/seal-key.js");
+const { importOpsKey, signOpsRequest } = await import("../apps/console/ops-sign.js");
+const { sealUpstreamKey, keyHint } = await import("../apps/console/seal-key.js");
 
 // ─── 打包 ───
-const DIST = fileURLToPath(new URL("../apps/ops-console/dist", import.meta.url));
-buildOpsConsole(DIST);
+const DIST = fileURLToPath(new URL("../apps/console/dist", import.meta.url));
+buildConsole(DIST);
 
 // ─── 临时运营名册（含第 44 批新增的 account.manage / route.manage / plan.manage） ───
 const dir = mkdtempSync(join(tmpdir(), "kwl-ops-console-dev-"));
@@ -61,7 +61,7 @@ const ROUTING_KID = createHash("sha256").update(spki).digest("hex").slice(0, 16)
 
 const cp = createControlPlane({
   keys: devControlPlaneKeys(),
-  serviceSecret: "dev-ops-console-service-secret-000",
+  serviceSecret: "dev-console-service-secret-000",
   opsGuard: fileOpsGuard({ dir: join(dir, "guard"), audience: "control-plane", roster: OPS.roster, rosterKeys: OPS.rosterKeys, sessions }),
   opsAccessLog: () => {},
   opsInfo: { deployment: "dev", roster: () => OPS.roster.body },

@@ -1,11 +1,11 @@
 /**
  * 第 37 批：网页运营控制台与部署工具。
- * - 控制台的浏览器签名（apps/ops-console/ops-sign.js，WebCrypto）与控制面运营守卫逐字节兼容：明文与口令加密的 PKCS#8 私钥都能用；
+ * - 控制台的浏览器签名（apps/console/ops-sign.js，WebCrypto）与控制面运营守卫逐字节兼容：明文与口令加密的 PKCS#8 私钥都能用；
  * - 新增只读接口：租户列表、按租户用量（按席位只给席位编号，不给成员标识与姓名；律所设的上限只给“律所管理员”）；
  * - 生产入口的 ops.console_origins：只对列出的来源回 CORS 头与预检；配置不合规拒绝启动；运维网段以外照样 404；
  * - 部署工具：cloud-init-secrets 生成的密钥能直接拉起签名服务与控制面；make-release-config 生成的 release.json 过客户端校验；
  *   meter-report 按网关同一规则重算点数、按 requestId 去重。
- * 第 44 批：控制台重做为原生 ES 模块（app.js + api.js + ui.js + pages/*.js）与 dist 打包（scripts/build-ops-console.mjs）；
+ * 第 44 批：控制台重做为原生 ES 模块（app.js + api.js + ui.js + pages/*.js）与 dist 打包（scripts/build-console.mjs）；
  *   门禁不放松：CSP 原样、无内联脚本与样式、不引外部资源、不拼 HTML、动态样式只经 el.style.cssText、不用 window.confirm；
  *   样式只用 tokens.css 的语义令牌；上游密钥在浏览器里按主文 §3.2 加密；“记住 8 小时”只收不可导出的密钥对象。
  */
@@ -22,7 +22,7 @@ import { generateOpsKeyPair } from "@zr-legal/ops-auth";
 import { devOpsRoster, fileOpsGuard } from "@zr-legal/ops-auth/testing";
 import { createControlPlane, devControlPlaneKeys, type ControlPlane } from "../src/index.ts";
 // @ts-expect-error 浏览器模块（纯 JS，无类型声明）
-import { importOpsKey, signOpsRequest } from "../../../apps/ops-console/ops-sign.js";
+import { importOpsKey, signOpsRequest } from "../../../apps/console/ops-sign.js";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), "kwl-ops-console-"));
@@ -265,7 +265,7 @@ test("套餐与律所额度（第 44 批）：目录含试用套餐；改套餐�
 });
 
 // ─── 第 44 批：运营控制台重做后的门禁（静态页约束不放松）与浏览器侧密码学 ─────────────────
-const consoleDir = join(root, "apps/ops-console");
+const consoleDir = join(root, "apps/console");
 const CONSOLE_CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'none'; form-action 'none'";
 const consoleModules = () => [
   ...readdirSync(consoleDir).filter((f) => f.endsWith(".js")),
@@ -319,11 +319,11 @@ test("第 44 批控制台门禁：CSP 不变、无内联脚本与样式、不引
   assert.ok(own.every((v) => v!.startsWith("--console-")), `控制台自加的令牌须以 --console- 开头：${own.join(",")}`);
 });
 
-test("build-ops-console：dist 含 tokens.css（与桌面端同一份）、页面与全部模块；引用都在 dist 内", async () => {
+test("build-console：dist 含 tokens.css（与桌面端同一份）、页面与全部模块；引用都在 dist 内", async () => {
   // @ts-expect-error 构建脚本（纯 JS，无类型声明）
-  const { buildOpsConsole, verifyDist } = await import("../../../scripts/build-ops-console.mjs");
+  const { buildConsole, verifyDist } = await import("../../../scripts/build-console.mjs");
   const out = join(dir, "dist-check");
-  const files = buildOpsConsole(out).map((f: { path: string }) => f.path);
+  const files = buildConsole(out).map((f: { path: string }) => f.path);
   assert.deepEqual(files, ["config.example.json", "console.css", "index.html", "tokens.css", ...consoleModules()].sort());
   assert.ok(readFileSync(join(out, "tokens.css")).equals(readFileSync(join(root, "packages/design-tokens/src/tokens.css"))));
   assert.deepEqual(verifyDist(out), []);
@@ -333,7 +333,7 @@ test("build-ops-console：dist 含 tokens.css（与桌面端同一份）、页�
 
 test("上游密钥浏览器加密与主文 §3.2 一致：网关私钥能解开；换上游编号（aad / info）解不开；只出尾号", async () => {
   // @ts-expect-error 浏览器模块（纯 JS，无类型声明）
-  const { sealUpstreamKey, keyHint, SEAL_ALG } = await import("../../../apps/ops-console/seal-key.js");
+  const { sealUpstreamKey, keyHint, SEAL_ALG } = await import("../../../apps/console/seal-key.js");
   const { createDecipheriv, diffieHellman, hkdfSync } = await import("node:crypto");
   const pair = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
   const spki = pair.publicKey.export({ format: "der", type: "spki" }).toString("base64");
@@ -368,9 +368,9 @@ test("上游密钥浏览器加密与主文 §3.2 一致：网关私钥能解开�
 
 test("记住 8 小时只收不可导出的私钥对象；签名路径含查询串（URLSearchParams 生成一次，签名与请求共用）", async () => {
   // @ts-expect-error 浏览器模块（纯 JS，无类型声明）
-  const { rememberKey } = await import("../../../apps/ops-console/keystore.js");
+  const { rememberKey } = await import("../../../apps/console/keystore.js");
   // @ts-expect-error 浏览器模块（纯 JS，无类型声明）
-  const { qs } = await import("../../../apps/ops-console/api.js");
+  const { qs } = await import("../../../apps/console/api.js");
   const extractable = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as unknown as { privateKey: CryptoKey; publicKey: CryptoKey };
   await assert.rejects(rememberKey({ operator: "op_0001", kid: "k1", key: extractable.privateKey, deployment: "x", base: "https://cp" }), /不可导出/);
   const k = await importOpsKey(OPS.keyOf("op_0001").privateKeyPem);

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * 运营控制台打包（第 44 批）：把 apps/ops-console 的页面、ES 模块、样式与 packages/design-tokens 的 tokens.css 拼成
- * apps/ops-console/dist/（部署只拷这个目录，另由运维放 config.json）。无打包器：原样拷贝，再核对一遍——
+ * 运营控制台打包（第 44 批）：把 apps/console 的页面、ES 模块、样式与 packages/design-tokens 的 tokens.css 拼成
+ * apps/console/dist/（部署只拷这个目录，另由运维放 config.json）。无打包器：原样拷贝，再核对一遍——
  *   - index.html 引用的本地文件都在；每个模块的相对 import 都能解析到 dist 里的文件；
  *   - 没有外部地址（http/https 的 src、href、import、@import）；
  *   - tokens.css 与桌面端同一份（逐字节）。
  *
- *   node scripts/build-ops-console.mjs [--out <目录>]
+ *   node scripts/build-console.mjs [--out <目录>]
  */
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -14,7 +14,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-export const SRC = join(root, "apps/ops-console");
+export const SRC = join(root, "apps/console");
 export const TOKENS = join(root, "packages/design-tokens/src/tokens.css");
 const PAGE_FILES = ["index.html", "console.css", "config.example.json"];
 
@@ -63,8 +63,8 @@ function walk(d) {
   });
 }
 
-/** 打包到 out（缺省 apps/ops-console/dist）；返回 [{path, bytes, sha256}] */
-export function buildOpsConsole(out = join(SRC, "dist")) {
+/** 打包到 out（缺省 apps/console/dist）；返回 [{path, bytes, sha256}] */
+export function buildConsole(out = join(SRC, "dist")) {
   rmSync(out, { recursive: true, force: true });
   mkdirSync(join(out, "pages"), { recursive: true });
   const list = [...PAGE_FILES, ...sourceModules()];
@@ -82,7 +82,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const i = process.argv.indexOf("--out");
   const out = i > 0 ? resolve(process.argv[i + 1]) : join(SRC, "dist");
   try {
-    const files = buildOpsConsole(out);
+    const files = buildConsole(out);
     console.log(`运营控制台已打包：${out}`);
     for (const f of files) console.log(`  ${f.path.padEnd(22)} ${String(f.bytes).padStart(7)} B  ${f.sha256}`);
     console.log("部署：把整个目录拷到 Web 服务器，另放 config.json（见 config.example.json）。");
