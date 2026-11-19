@@ -17,7 +17,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ "$(id -u)" = 0 ] || { echo "请用 root（sudo）运行" >&2; exit 1; }
-[ -f "$APP/scripts/cloud-serve.mjs" ] || { echo "$APP 里没有本仓库代码：先 git clone 到 $APP" >&2; exit 1; }
+[ -f "$APP/scripts/cloud-serve.mjs" ] || { echo "$APP 里没有本仓库代码：先 git clone https://gitee.com/xcsi/kimi-work-legal-cloud.git $APP" >&2; exit 1; }
 
 # 1. Node ≥ 24.15
 command -v node >/dev/null || { echo "没有 node：先按部署手册第 2 节装 Node.js 24.15 以上" >&2; exit 1; }

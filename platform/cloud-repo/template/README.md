@@ -39,6 +39,10 @@ npm run dev:console           # 进程内控制面 + 控制台（开发数据）
 - [docs/客户端接入.md](docs/客户端接入.md)：Windows 客户端如何指向本云端、注册登录、设备授权、经网关调模型。
 - [CONTRACT.md](CONTRACT.md)：与客户端的接口契约与兼容规则。
 
+## 仓库地址
+
+https://gitee.com/xcsi/kimi-work-legal-cloud （发布以标签 `vX.Y.Z` 为准）
+
 ## 来源
 
 本仓库由客户端 monorepo 的 `platform/cloud-repo/export.mjs` 导出，`SOURCE.json` 记着源提交与每个文件的摘要。
