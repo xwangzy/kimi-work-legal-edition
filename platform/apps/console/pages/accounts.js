@@ -10,6 +10,8 @@ import {
   searchInput, segmented, selectEl, showSecret, toast, trendChart,
 } from "../ui.js";
 
+/** 客服动作（解锁启用、重置码、强制下线）：账号管理或账号客服任一即可（契约 §2.2） */
+const canSupport = () => can("account.manage") || can("account.support");
 const st = { q: "", tid: "", status: "", table: { sort: "last_login_at", asc: false } };
 
 export function render(page, r) {
@@ -118,7 +120,7 @@ export function openAccount(aid) {
         ? btn("启用", async () => {
             const ok = await confirmAction({ title: "启用账号", consequences: ["本人可再次登录；之前吊销的会话不恢复，须重新登录。"], confirmLabel: "启用", run: () => api.post(`${A}/enable`) });
             if (ok) (toast("已启用"), reload(), ctx.reload());
-          }, { disabled: !can("account.manage"), title: needs("account.manage") })
+          }, { disabled: !canSupport(), title: canSupport() ? undefined : needs("account.support") })
         : btn("停用…", async () => {
             const ok = await confirmAction({
               title: `停用 ${a.email}`,
@@ -135,7 +137,7 @@ export function openAccount(aid) {
       btn("发重置码", async () => {
         const r = await confirmAction({ title: "发密码重置码", consequences: ["生成一次性重置码（30 分钟）；本人凭码设新密码后，全部会话吊销、须重新登录。"], confirmLabel: "生成", run: () => api.post(`${A}/reset-code`) });
         if (r?.reset_code) await showSecret({ title: `重置码 · ${a.email}`, secret: r.reset_code, expiresAt: r.expires_at });
-      }, { disabled: !can("account.manage") || a.status === "disabled", title: needs("account.manage") }),
+      }, { disabled: !canSupport() || a.status === "disabled", title: canSupport() ? undefined : needs("account.support") }),
       btn("强制下线", async () => {
         const r = await confirmAction({
           title: "强制下线",
@@ -145,7 +147,7 @@ export function openAccount(aid) {
           run: () => api.post(`${A}/sessions/revoke`),
         });
         if (r) (toast(`已吊销 ${fmt.int(r.revoked)} 个会话`), reload());
-      }, { disabled: !can("account.manage"), title: needs("account.manage") }),
+      }, { disabled: !canSupport(), title: canSupport() ? undefined : needs("account.support") }),
       btn("个人上限", async () => {
         const r = await confirmAction({
           title: "个人上限",

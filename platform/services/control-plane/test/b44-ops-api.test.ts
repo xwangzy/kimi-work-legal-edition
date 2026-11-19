@@ -1,24 +1,18 @@
 /**
- * 第 44 批运营接口（运营签名 + 按接口授权）：账号代建 / 停用 / 重置码 / 个人上限、API 路由与价目、金额套餐计费、
+ * 第 44 批运营接口（第 46 批起：平台人员会话 + 角色权限）：账号代建 / 停用 / 重置码 / 个人上限、API 路由与价目、金额套餐计费、
  * 逐请求明细查询与导出（CSV 防公式注入）、账单、注册设置、告警确认、总览、系统。
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { createECDH, sign } from "node:crypto";
-import { mkdtempSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { devOpsRoster, fileOpsGuard, type DevOperator } from "@zr-legal/ops-auth/testing";
+import { devStaffOf, staffClient } from "./staff-fixture.ts";
 import { generateDeviceKeys, generateFirmRoot, issueDeviceCertificate } from "@zr-legal/keys";
 import { enrollProofBytes, signDeviceRequest } from "@zr-legal/firm-trust";
 import { accountDeviceId, createAuditLog, createControlPlane, devControlPlaneKeys, type ControlPlane } from "../src/index.ts";
 
-const PEOPLE: DevOperator[] = [
-  { id: "op_1001", perms: ["tenant.read", "tenant.manage", "account.manage", "route.manage", "plan.manage", "quota.manage", "quota.cap", "device.revoke"] },
-  { id: "op_1002", perms: ["tenant.read"] },
-];
-const OPS = devOpsRoster(PEOPLE);
+// op_1001：客户运营 + 系统管理员（路由、系统设置）；op_1002：只读
+const PEOPLE = { op_1001: ["operator", "sysadmin"], op_1002: ["viewer"] } as const;
 const SECRET = "b44-ops-test-service-secret-0123456789";
 const PW = "Lawyer2026secure";
 const KEY_ID = "a1b2c3d4e5f60718";
@@ -26,7 +20,7 @@ let cp: ControlPlane;
 let base = "";
 
 before(async () => {
-  cp = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: SECRET, auditLog: createAuditLog(), opsGuard: fileOpsGuard({ dir: mkdtempSync(join(tmpdir(), "kwl-b44-ops-")), audience: "control-plane", roster: OPS.roster, rosterKeys: OPS.rosterKeys }), routing: { bootstrap: { provider: { base_url: "https://maas.example.test/v1" } }, key_id: KEY_ID } });
+  cp = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: SECRET, auditLog: createAuditLog(), staffMfa: "optional", devStaff: devStaffOf({ op_1001: [...PEOPLE.op_1001], op_1002: [...PEOPLE.op_1002] }), routing: { bootstrap: { provider: { base_url: "https://maas.example.test/v1" } }, key_id: KEY_ID } });
   await new Promise<void>((r) => cp.server.listen(0, "127.0.0.1", () => r()));
   base = `http://127.0.0.1:${(cp.server.address() as AddressInfo).port}`;
 });
@@ -35,19 +29,7 @@ after(async () => {
   await new Promise<void>((r) => cp.server.close(() => r()));
 });
 
-const ops = async (who: string, method: string, path: string, body?: unknown) => {
-  const raw = body === undefined ? "" : JSON.stringify(body);
-  const headers = { ...OPS.sign(who, "control-plane", { method, path, body: raw }), ...(raw ? { "content-type": "application/json" } : {}) };
-  const r = await fetch(`${base}${path}`, { method, headers, ...(raw ? { body: raw } : {}) });
-  const text = await r.text();
-  let json: any = null;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = null;
-  }
-  return { status: r.status, json, text, type: r.headers.get("content-type") };
-};
+const ops = staffClient(() => base);
 const post = async (path: string, body: unknown, headers: Record<string, string> = {}) => {
   const r = await fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
   return { status: r.status, json: (await r.json()) as any };
@@ -62,8 +44,6 @@ const sealed = () => {
 /** 运营开通律所 → 发开通码 → 负责人凭码注册 → 创始开通 → 登记设备。 */
 async function opsFirm(tid: string, email: string, plan?: string) {
   assert.equal((await ops("op_1001", "POST", "/v1/ops/tenants", { tid, name: `${tid} 律所`, edition: "team", seats: 3, ...(plan ? { plan } : {}) })).status, 200);
-  const OPS2 = devOpsRoster([{ id: "op_1003", perms: ["activation.issue"] }]);
-  void OPS2;
   // 开通码由另一位运营发（职责分离）：这里用进程内能力（运营 HTTP 发码的鉴权另有 ops-routes 用例）
   const code = cp.ops.issueActivationCode(tid, { member: { slug: "boss" } });
   const reg = await post("/v1/auth/register", { email, password: PW, name: "王主任", code: code.code });
@@ -109,7 +89,7 @@ test("账号：运营代建（设置码只显示一次）→ 本人设密码登�
   const detail = await ops("op_1002", "GET", `/v1/ops/accounts/${aid}`);
   assert.equal(detail.json.sessions.length, 1);
   // 只读运营不能停用
-  assert.equal((await ops("op_1002", "POST", `/v1/ops/accounts/${aid}/disable`, { reason: "x" })).json.error.code, "ops_permission_denied");
+  assert.equal((await ops("op_1002", "POST", `/v1/ops/accounts/${aid}/disable`, { reason: "x" })).json.error.code, "perm_denied");
   const dis = await ops("op_1001", "POST", `/v1/ops/accounts/${aid}/disable`, { reason: "离职" });
   assert.deepEqual([dis.status, dis.json.sessions_revoked], [200, 1]);
   assert.equal((await post("/v1/auth/login", { email: "lawyer.li@accfirm.cn", password: PW })).json.error.code, "account_disabled");
@@ -136,7 +116,7 @@ test("API 路由：上游密钥只收控制台加密的密文（公钥编号须�
   assert.equal(v0.json.routing_key_id, KEY_ID);
   assert.equal(v0.json.providers[0].use_local_key, true);
   assert.equal(JSON.stringify(v0.json).includes("key_sealed"), false, "运营视图不回密文");
-  assert.equal((await ops("op_1002", "PUT", "/v1/ops/routing/providers/maas-b", { label: "备用", vendor: "csi-maas", base_url: "https://maas-b.example.test/v1" })).json.error.code, "ops_permission_denied");
+  assert.equal((await ops("op_1002", "PUT", "/v1/ops/routing/providers/maas-b", { label: "备用", vendor: "csi-maas", base_url: "https://maas-b.example.test/v1" })).json.error.code, "perm_denied");
   assert.equal((await ops("op_1001", "PUT", "/v1/ops/routing/providers/maas-b", { label: "备用", vendor: "csi-maas", base_url: "http://maas-b.example.test/v1" })).json.error.code, "provider_base_url_invalid");
   assert.equal((await ops("op_1001", "PUT", "/v1/ops/routing/providers/maas-b", { label: "备用", vendor: "csi-maas", base_url: "https://maas-b.example.test/v1", key_sealed: { ...sealed(), kid: "ffffffffffffffff" }, key_hint: "…abcd" })).json.error.code, "provider_key_kid_mismatch");
   const up = await ops("op_1001", "PUT", "/v1/ops/routing/providers/maas-b", { label: "备用", vendor: "csi-maas", base_url: "https://maas-b.example.test/v1", key_sealed: sealed(), key_hint: "…abcd", max_concurrency: 32 });
@@ -193,7 +173,7 @@ test("金额套餐：未定价 → 领租约 503；定价后按“未缓存输�
   const sum = await ops("op_1002", "GET", `/v1/ops/usage/summary?${new URLSearchParams({ group: "model" })}`);
   assert.ok(sum.json.rows.some((x: any) => x.key === "legal/k3" && x.tokens_in >= 500_000));
   const csvPath = `/v1/ops/usage/records.csv?${new URLSearchParams({ tid: f.tid })}`;
-  const rawCsv = await fetch(`${base}${csvPath}`, { headers: OPS.sign("op_1002", "control-plane", { method: "GET", path: csvPath, body: "" }) });
+  const rawCsv = await fetch(`${base}${csvPath}`, { headers: { authorization: `Bearer ${await ops.tokenOf("op_1002")}` } });
   assert.match(rawCsv.headers.get("content-type") ?? "", /text\/csv/);
   const bytes = Buffer.from(await rawCsv.arrayBuffer());
   assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf], "带 BOM（Excel 认 UTF-8）");
@@ -260,6 +240,6 @@ test("历史用量补录：升级前网关预写日志的 settle 行（真实 to
   const b1 = recs.json.records.find((x: any) => x.request_id === "kwlgw_old1");
   assert.deepEqual([b1.backfill, b1.uid, b1.usage.cached, b1.outcome], [true, f.memberId, 20_000, "ok"]);
   assert.equal(recs.json.records.find((x: any) => x.request_id === "kwlgw_old2").outcome, "timeout");
-  assert.equal((await ops("op_1002", "POST", "/v1/ops/usage/backfill", { tid: f.tid, rows: [] })).json.error.code, "ops_permission_denied", "补录须 plan.manage");
+  assert.equal((await ops("op_1002", "POST", "/v1/ops/usage/backfill", { tid: f.tid, rows: [] })).json.error.code, "perm_denied", "补录须 plan.manage");
   void month;
 });

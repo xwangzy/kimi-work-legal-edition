@@ -65,6 +65,22 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(s);
 }
 
+/**
+ * 网关错误体 {error:{code,message}} 的说明末尾附“[kwl:代码]”（第 46 批）：执行器据代码写律师话，原文只进诊断。
+ * 不是这种形状、已经附过、代码不像代码时原样返回。
+ */
+export function tagGatewayError(raw: Buffer): Buffer {
+  try {
+    const j = JSON.parse(raw.toString("utf8")) as { error?: { code?: unknown; message?: unknown } };
+    const e = j?.error;
+    if (!e || typeof e.code !== "string" || !/^[a-z0-9_]{1,60}$/.test(e.code) || typeof e.message !== "string" || e.message.includes("[kwl:")) return raw;
+    e.message = `${e.message} [kwl:${e.code}]`;
+    return Buffer.from(JSON.stringify(j), "utf8");
+  } catch {
+    return raw;
+  }
+}
+
 function sendError(res: ServerResponse, e: GateError): void {
   if (res.headersSent) {
     res.destroy();
@@ -341,10 +357,10 @@ export class EgressGateServer {
 
   private async authorize(req: IncomingMessage, matterId: string, purpose: GatePurpose): Promise<MatterEgressContext> {
     const token = bearer(req);
-    if (!token) throw new GateError(401, "token_missing", "缺少任务令牌");
+    if (!token) throw new GateError(401, "token_missing", "这次 AI 请求没有带上本任务的凭据，已拒绝发出：请重新运行任务");
     const r = await this.o.authority.authorize({ token, matterId, purpose });
-    if (!r.ok) throw new GateError(r.status, r.reason, `出站闸门拒绝：${r.reason}`);
-    if (r.ctx.matterId !== matterId) throw new GateError(403, "matter_mismatch", "出站闸门拒绝：令牌与事项不符");
+    if (!r.ok) throw new GateError(r.status, r.reason, "这次 AI 请求没有获准发出（任务已结束、已取消或凭据已过期）：请重新运行任务");
+    if (r.ctx.matterId !== matterId) throw new GateError(403, "matter_mismatch", "这次 AI 请求与所属事项不符，已拒绝发出");
     return r.ctx;
   }
 
@@ -420,8 +436,8 @@ export class EgressGateServer {
     const started = Date.now();
     const requestId = `kwlg_${randomUUID()}`;
     const ctx = await this.authorize(req, matterId, purpose);
-    if (purpose === "qa" && !ctx.qa) throw new GateError(403, "qa_context_required", "问答路由只接受问答令牌");
-    if (purpose === "model" && ctx.qa) throw new GateError(403, "qa_token_on_matter_route", "问答令牌不能用于事项路由");
+    if (purpose === "qa" && !ctx.qa) throw new GateError(403, "qa_context_required", "这条请求不是从问答发出的，问答通道已拒绝");
+    if (purpose === "model" && ctx.qa) throw new GateError(403, "qa_token_on_matter_route", "问答的凭据不能用于事项任务，已拒绝发出");
     const base = { requestId, tenantId: ctx.tenantId, matterId, runId: ctx.runId, purpose, policyVersion: ctx.policyVersion };
     const deny = (status: number, reason: string, message: string, extra: Partial<GateEgressRecord> = {}): never => {
       this.record({ ...base, destination: "none", destinationHost: null, outcome: "blocked", reason, chars: 0, segments: 0, tokenized: {}, media: [], upstreamStatus: null, durationMs: Date.now() - started, ...extra });
@@ -439,7 +455,7 @@ export class EgressGateServer {
     }
     if (!ctx.basisComplete && ctx.dataLevel !== "L0" && ctx.dataLevel !== "L1") deny(403, "basis_pending_no_egress", "事项四项依据未齐备：只运行不出站的本机能力");
     // 席位令牌由控制面签发、内核续期后经 IPC 下发（阶段 6）：未取得、已清除或已过期时不发出（不改走其他端点；复核 S6-A05、S6-B06）
-    if (ep === "standard" && this.o.upstreams.model && !seatUsable(this.o.upstreams.model.seatToken)) deny(503, "seat_unavailable", "席位令牌未取得或已过期（联网后自动续期）：模型请求未发出");
+    if (ep === "standard" && this.o.upstreams.model && !seatUsable(this.o.upstreams.model.seatToken)) deny(503, "seat_unavailable", "这台电脑暂时没有取得 AI 使用授权（还没登录，或联网续期还没完成）：AI 请求没有发出");
     const target = this.modelTarget(ctx, requestId);
     if (!target) deny(503, "model_upstream_unavailable", ep === "standard" ? "模型通道未配置" : `事项选定的模型端点（${ep}）未配置（不会切换到其他端点）`);
 
@@ -519,7 +535,7 @@ export class EgressGateServer {
       throw new GateError(502, "upstream_unreachable", "模型通道不可达（已排队或稍后重试）");
     }
     arm(idleMs, "stream_idle_timeout");
-    // 响应流原样返回（不还原、不改写）；用量只从内存中的响应尾部读取
+    // 成功的响应流原样返回（不还原、不改写）；法律网关的 4xx JSON 错误体只在说明末尾附错误代码（见下，第 46 批）；用量只从内存中的响应尾部读取。不转发 content-length（分块传输），改写后长度不会对不上
     const headers: Record<string, string> = {};
     for (const k of ["content-type", "x-request-id", "x-kwl-usage", "cache-control"]) {
       const v = upstreamRes.headers.get(k);
@@ -530,11 +546,31 @@ export class EgressGateServer {
     let ok = true;
     let tail = "";
     const dec = new TextDecoder();
+    // 第 46 批：法律模型网关的 4xx 错误体（小段 JSON）先收齐，把错误代码以“[kwl:代码]”附在说明末尾再交回——助手宿主只把“状态码 + 说明”
+    // 报给执行器，没有代码就只能靠中文原文猜原因（402 额度、401 登录）。只改说明文字，不改状态码与其余字段；成功的响应流照旧原样返回
+    let hold = t.kind === "legal_gateway" && upstreamRes.status >= 400 && upstreamRes.status < 500 && /json/i.test(upstreamRes.headers.get("content-type") ?? "");
+    const held: Uint8Array[] = [];
+    let heldBytes = 0;
     try {
       if (upstreamRes.body) {
         for await (const chunk of upstreamRes.body as unknown as AsyncIterable<Uint8Array>) {
           arm(idleMs, "stream_idle_timeout");
           tail = (tail + dec.decode(chunk, { stream: true })).slice(-65_536);
+          if (hold) {
+            held.push(chunk);
+            heldBytes += chunk.length;
+            if (heldBytes <= 65_536) continue;
+            // 超长的错误体不改写：已收的部分原样补发，之后照常转发
+            hold = false;
+            const raw = Buffer.concat(held);
+            held.length = 0;
+            if (!(await this.writeChunk(res, raw, ac.signal))) {
+              ok = false;
+              ac.abort();
+              break;
+            }
+            continue;
+          }
           if (!(await this.writeChunk(res, chunk, ac.signal))) {
             // 客户端已断开或任务已中止：停止读上游（退出迭代即取消上游流）
             ok = false;
@@ -542,6 +578,10 @@ export class EgressGateServer {
             break;
           }
         }
+      }
+      if (hold && ok && !(await this.writeChunk(res, tagGatewayError(Buffer.concat(held)), ac.signal))) {
+        ok = false;
+        ac.abort();
       }
     } catch {
       ok = false;
@@ -648,7 +688,7 @@ export class EgressGateServer {
     }
     if (!seatUsable(upstream.seatToken)) {
       this.record({ ...base, destination: "none", destinationHost: null, outcome: "blocked", reason: "seat_unavailable", chars: query.length, segments: 1, tokenized: {}, query: { original: query, sent: v.sent, decision: v.decision }, upstreamStatus: null, durationMs: Date.now() - started });
-      throw new GateError(503, "seat_unavailable", "席位令牌未取得或已过期（联网后自动续期）：检索未发出");
+      throw new GateError(503, "seat_unavailable", "这台电脑暂时没有取得 AI 使用授权（还没登录，或联网续期还没完成）：检索没有发出");
     }
     const tr = this.transport.search_service;
     if (tr.check.state === "invalid") {

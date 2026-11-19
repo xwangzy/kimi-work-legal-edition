@@ -1,26 +1,24 @@
 #!/usr/bin/env node
 /**
- * 一键演示拉起（本地部署模拟）：真实 API（从 Word 交付文件读取，只进内存不落盘不打印）→ 云端 v0（控制面 + 法律模型网关 + 检索，
- * 网关直连真实上游）→ 网页运营控制台（apps/console 静态页 + 同源 /v1 代理，免 CORS）→ Electron 桌面窗口。
+ * 一键演示拉起（本地部署模拟）：真实 API（从 Word 交付文件读取，只进内存不落盘不打印）→ 云端（scripts/stack-local.mjs：生产入口
+ * cloud-serve 拉起签名服务、控制面、网关、检索，网关直连真实上游）→ 统一云端控制台（stack-local 同进程发的静态页）→ Electron 桌面窗口。
  *
- *   node scripts/demo-launch.mjs [--docx <path>] [--fresh] [--no-browser] [--no-desktop] [--console-port 8790]
+ *   node scripts/demo-launch.mjs [--docx <path>] [--fresh] [--no-browser] [--no-desktop] [--base-port 18400]
  *
  * - API 密钥存放：macOS 钥匙串（服务名 kwl-demo-maas-key，与 ~/Library/Application Support/KimiWorkLegal-Demo/start-demo.mjs 同一约定）；
- *   docx 交付文件（`Base url:` / `Key:` / `Model id=` 三行）在钥匙串为空或密钥不一致时自动灌入更新。密钥只进云端子进程环境变量，不落盘、不打印。
- * - 运营身份（一次性生成，platform/output/demo-cloud/ops/，git 忽略）：安全管理员名册签名密钥 + 运营名册 + 运营 op_0001 私钥
- *   （演示用、无口令）+ 控制台账号 admin（op_0001）与演示密码（ops-cli password set 生成，存 ops/op_0001.password.txt，0600；
- *   演示形态不要求首次改密码，每次拉起都打印账号与密码）。名册有效期至多 31 天，过期后运营接口 503：`node scripts/ops-cli.mjs roster renew --roster … --sign-key …
- *   --sign-kid sec-1 --out …` 重签即可。
- * - 控制面状态持久化（platform/output/demo-cloud/cp-state.json）：租户与律所登记跨重启保留；开发形态控制面签名密钥每次运行新生成，
- *   本脚本每次把新的公钥随环境变量交给桌面端（即文档所述“重启后客户端须重新取回签名文档”）。
- * - --fresh：清空演示状态（控制面状态与云端数据目录；运营身份与桌面工作区不动）。
+ *   docx 交付文件（`Base url:` / `Key:` / `Model id=` 三行）在钥匙串为空或密钥不一致时自动灌入更新。密钥只经环境变量交给 stack-local，
+ *   stack-local 再只经文件描述符交给网关进程；不落盘、不打印。
+ * - 控制台账号（第 46 批）：不再用 ops-cli 名册与密码。stack-local 按契约 §2.4 用控制面写出的设置码设好系统管理员密码，
+ *   登录信息在 platform/output/demo-cloud/stack/console-login.txt（0600），本脚本每次拉起都打印；演示栈两步验证可选。
+ * - 状态都在 platform/output/demo-cloud/stack/（git 忽略），跨重启保留。
+ * - --fresh：清空演示状态（控制面与各服务数据、控制台登录信息；密钥与桌面工作区不动），下次拉起重新引导系统管理员。
  */
 import { execFileSync, spawn } from "node:child_process";
-import { createServer, request as httpRequest } from "node:http";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { homedir } from "node:os";
-import { join, relative, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -32,7 +30,8 @@ const flag = (n) => {
   return i >= 0 ? argv[i + 1] : undefined;
 };
 const docxPath = resolve(flag("docx") ?? join(homedir(), "Documents", "test.docx"));
-const consolePort = Number(flag("console-port") ?? 8790);
+const basePort = Number(flag("base-port") ?? 18400);
+const stackDir = join(out, "stack");
 const fresh = argv.includes("--fresh");
 const noBrowser = argv.includes("--no-browser");
 const noDesktop = argv.includes("--no-desktop");
@@ -46,11 +45,11 @@ if (!existsSync(docxPath)) fail(`找不到 API 交付文件：${docxPath}`);
 
 mkdirSync(out, { recursive: true });
 if (fresh) {
-  for (const p of ["cp-state.json", "cp-state.json.audit.jsonl", "cloud-data"]) {
-    const d = join(out, p);
+  for (const p of ["data", "console-login.txt", "console-dist"]) {
+    const d = join(stackDir, p);
     if (existsSync(d)) rmSync(d, { recursive: true, force: true });
   }
-  log("--fresh：已清空控制面状态与云端数据目录");
+  log("--fresh：已清空云端数据与控制台登录信息（下次拉起重新引导系统管理员）");
 }
 
 /* ---------- ① API 配置：密钥以 macOS 钥匙串为准（本机演示约定，服务名 kwl-demo-maas-key）；
@@ -101,93 +100,58 @@ if (!key) key = docx?.key;
 const api = { base: docx?.base ?? "https://maas.jointpilot.com/v1", model: docx?.model ?? "kimi-k3.1-pro", key };
 log(`API 配置：base=${api.base} model=${api.model} key=sk-…${api.key.slice(-4)}（sha256 ${fp(api.key)}；存于钥匙串 kwl-demo-maas-key）`);
 
-/* ---------- ② 运营身份（一次性；platform/output/demo-cloud/ops/，不入仓） ---------- */
-const opsCli = (args) => execFileSync(process.execPath, [join(root, "scripts", "ops-cli.mjs"), ...args], { cwd: root, encoding: "utf8" });
-const secKey = join(opsDir, "offline", "sec-1.key.pem");
-const rosterFile = join(opsDir, "ops-roster.json");
-const rosterKeysFile = join(opsDir, "ops-roster-keys.json");
-const opKeyFile = join(opsDir, "op", "op_0001.k1.key.pem");
-const doneMarker = join(opsDir, ".demo-setup-done");
-if (!existsSync(doneMarker)) {
-  if (!existsSync(rosterKeysFile)) {
-    opsCli(["roster-keygen", "--kid", "sec-1", "--out", join(opsDir, "offline"), "--keys-file", rosterKeysFile]);
-    log("运营名册签名密钥已生成（演示用；生产应离线保管）");
-  }
-  if (!existsSync(rosterFile)) opsCli(["roster", "init", "--deployment", "dev", "--sign-key", secKey, "--sign-kid", "sec-1", "--out", rosterFile]);
-  if (!existsSync(opKeyFile)) {
-    const kg = JSON.parse(opsCli(["keygen", "--id", "op_0001", "--kid", "k1", "--out", join(opsDir, "op")]));
-    opsCli(["roster", "add", "--roster", rosterFile, "--id", "op_0001", "--perms", "tenant.read,tenant.manage,quota.manage,quota.cap,tenant.terminate", "--pub", join(opsDir, "op", "op_0001.k1.pub.pem"), "--fingerprint", kg.fingerprint, "--sign-key", secKey, "--sign-kid", "sec-1", "--out", rosterFile]);
-    log(`运营身份已生成：op_0001 / k1（指纹 ${kg.fingerprint}）`);
-  }
-  writeFileSync(doneMarker, new Date().toISOString() + "\n", { mode: 0o600 });
-} else {
-  log("运营身份已存在，跳过生成");
-}
-// 控制台账号密码（第 45 批；已有演示目录也补上）：凭据库 = 控制面的 KWL_OPS_CREDENTIALS
-const credFile = join(opsDir, "ops-credentials.json");
-const demoPwFile = join(opsDir, "op_0001.password.txt");
-if (!existsSync(credFile) || !existsSync(demoPwFile)) {
-  const r = JSON.parse(opsCli(["password", "set", "--credentials", credFile, "--id", "op_0001", "--login", "admin", "--no-must-change"]).trim().split("\n").at(-1));
-  writeFileSync(demoPwFile, `${r.initial_password}\n`, { mode: 0o600 });
-  log("控制台账号已生成：admin（op_0001）");
-}
-const demoPassword = readFileSync(demoPwFile, "utf8").trim();
-
-/* ---------- ③ 云端 v0（控制面 + 网关 + 检索；真实上游） ---------- */
-const cloudEnv = {
-  ...process.env,
-  KWL_CONTROL_PLANE: "1",
-  KWL_CP_STATE_FILE: join(out, "cp-state.json"),
-  KWL_CLOUD_DIR: join(out, "cloud-data"),
-  KWL_MOONSHOT_API_KEY: api.key,
-  KWL_MOONSHOT_BASE: api.base,
-  KWL_UPSTREAM_K3: api.model,
-  KWL_OPS_ROSTER: rosterFile,
-  KWL_OPS_ROSTER_KEYS: rosterKeysFile,
-  KWL_OPS_DEPLOYMENT: "dev",
-  KWL_OPS_CREDENTIALS: credFile,
-};
+/* ---------- ②③ 云端（stack-local：生产入口 + 真实上游；控制台账号按契约 §2.4 引导） ---------- */
 const children = [];
-const cloud = spawn(process.execPath, [join(root, "scripts", "dev-cloud-v0.mjs")], { cwd: root, env: cloudEnv, stdio: ["ignore", "pipe", "inherit"] });
+const cloud = spawn(process.execPath, [join(root, "scripts", "stack-local.mjs"), "--dir", stackDir, "--base-port", String(basePort), "--upstream", api.base, "--model", api.model], {
+  cwd: root,
+  env: { ...process.env, KWL_MOONSHOT_API_KEY: api.key },
+  stdio: ["ignore", "pipe", "inherit"],
+});
 children.push(cloud);
-const zrEnv = {};
+let consoleUrl = null;
+let loginFile = null;
 let cloudReady = false;
 let cloudDead = null;
 let buf = "";
 cloud.stdout.setEncoding("utf8");
 cloud.stdout.on("data", (chunk) => {
-  process.stdout.write(`[cloud] ${chunk}`);
+  process.stdout.write(chunk.replace(/^/gm, "[cloud] ").replace(/\[cloud\] $/, ""));
   buf += chunk;
   const lines = buf.split("\n");
   buf = lines.pop() ?? "";
   for (const line of lines) {
-    const m = line.match(/^export ([A-Z_]+)=(.*)$/);
-    if (!m) continue;
-    let v = m[2].trim();
-    if (/^'.*'$/.test(v) || /^".*"$/.test(v)) v = v.slice(1, -1);
-    zrEnv[m[1]] = v;
+    const c = /控制台 (http:\/\/127\.0\.0\.1:\d+\/)/.exec(line);
+    if (c) consoleUrl = c[1];
+    const l = /^\[stack\] 控制台账号：(.+)$/.exec(line);
+    if (l) {
+      loginFile = l[1].trim();
+      cloudReady = true;
+    }
   }
-  if (buf.includes("云端 v0 已启动") || lines.some((l) => l.includes("云端 v0 已启动"))) cloudReady = true;
 });
 cloud.on("error", (e) => (cloudDead = e.message));
-cloud.on("exit", (c) => (cloudDead = `云端 v0 退出（code ${c}）`));
+cloud.on("exit", (c) => (cloudDead = `云端退出（code ${c}），日志见 ${join(stackDir, "logs")}`));
 await new Promise((res, rej) => {
-  const t = setTimeout(() => rej(new Error("云端 v0 启动超时（60 秒）")), 60_000);
+  const t = setTimeout(() => rej(new Error("云端启动超时（120 秒）")), 120_000);
   const poll = setInterval(() => {
-    if (cloudDead) {
+    if (cloudDead || cloudReady) {
       clearTimeout(t);
       clearInterval(poll);
-      return rej(new Error(cloudDead));
-    }
-    if (cloudReady) {
-      clearTimeout(t);
-      clearInterval(poll);
-      res();
+      return cloudDead ? rej(new Error(cloudDead)) : res();
     }
   }, 100);
 }).catch((e) => fail(e.message));
-if (!zrEnv.ZR_GATEWAY_BASE || !zrEnv.ZR_CONTROL_PLANE_BASE) fail("云端输出里缺 ZR_GATEWAY_BASE / ZR_CONTROL_PLANE_BASE");
-const cpUrl = new URL(zrEnv.ZR_CONTROL_PLANE_BASE);
+// 桌面端环境变量：stack-local 写的 client.env（控制面、网关、检索地址与公钥）
+const zrEnv = Object.fromEntries(
+  readFileSync(join(stackDir, "client.env"), "utf8")
+    .split("\n")
+    .map((l) => /^([A-Z_][A-Z0-9_]*)=(.*)$/.exec(l))
+    .filter(Boolean)
+    .map((m) => [m[1], m[2]]),
+);
+if (!zrEnv.ZR_GATEWAY_BASE || !zrEnv.ZR_CONTROL_PLANE_BASE) fail("client.env 里缺 ZR_GATEWAY_BASE / ZR_CONTROL_PLANE_BASE");
+const login = existsSync(loginFile ?? "") ? Object.fromEntries([...readFileSync(loginFile, "utf8").matchAll(/^(url|email|password):\s*(\S+)/gm)].map((m) => [m[1], m[2]])) : {};
+consoleUrl = consoleUrl ?? login.url ?? `http://127.0.0.1:${basePort + 3}/`;
 
 /* 开发端口占用时自动错开（KWL_DEV_WEB_PORT / ZR_DEV_BRIDGE_PORT 既有约定；如另一会话正占 5173/7720） */
 const isFree = (port) =>
@@ -205,68 +169,13 @@ const webPort = Number(flag("web-port") ?? process.env.KWL_DEV_WEB_PORT ?? (awai
 const bridgePort = Number(process.env.ZR_DEV_BRIDGE_PORT ?? (await pickPort(7720, [7721, 7722, 7723])));
 if (webPort !== 5173 || bridgePort !== 7720) log(`开发端口错开：vite :${webPort} / 开发桥 :${bridgePort}`);
 
-/* ---------- ④ 运营控制台静态页 + 同源 /v1 代理（免 CORS） ---------- */
-// 控制台按模块拆分后（第 44 批）部署只发 dist/（scripts/build-console.mjs 打包，含 design-tokens 的 tokens.css）：
-// 有打包脚本就先打包再只发 dist/ 里的文件；没有（旧版单文件控制台）就发源目录。白名单之外一律 404，读文件失败不让进程崩
-const consoleSrc = join(root, "apps", "console");
-let consoleBase = consoleSrc;
-if (existsSync(join(root, "scripts", "build-console.mjs"))) {
-  const { buildConsole } = await import("./build-console.mjs");
-  consoleBase = join(consoleSrc, "dist");
-  buildConsole(consoleBase);
-}
-const walkConsole = (d) => readdirSync(d).flatMap((f) => (f === "dist" && d === consoleSrc ? [] : statSync(join(d, f)).isDirectory() ? walkConsole(join(d, f)) : [join(d, f)]));
-const consoleFiles = Object.fromEntries(walkConsole(consoleBase).map((f) => relative(consoleBase, f).split(sep).join("/")).filter((f) => /\.(html|js|css)$/.test(f)).map((f) => [`/${f}`, f]));
-consoleFiles["/"] = "index.html";
-const types = { html: "text/html; charset=utf-8", js: "text/javascript; charset=utf-8", css: "text/css; charset=utf-8", json: "application/json; charset=utf-8" };
-const proxy = (req, res, pathname) => {
-  const up = httpRequest({ host: cpUrl.hostname, port: cpUrl.port, method: req.method, path: pathname, headers: { ...req.headers, host: cpUrl.host } }, (r) => {
-    const h = { ...r.headers };
-    delete h.connection;
-    delete h["transfer-encoding"];
-    res.writeHead(r.statusCode ?? 502, h);
-    r.pipe(res);
-  });
-  up.on("error", () => {
-    if (!res.headersSent) res.writeHead(502, { "content-type": "text/plain; charset=utf-8" });
-    res.end("control plane unreachable");
-  });
-  req.pipe(up);
-};
-const consoleSrv = createServer((req, res) => {
-  const u = new URL(req.url, `http://127.0.0.1:${consolePort}`);
-  if (u.pathname === "/config.json") {
-    const body = JSON.stringify({ control_plane_base: `http://127.0.0.1:${consolePort}`, deployment: "dev", point_price_cny: 0.001, label: "本地演示云端" });
-    res.writeHead(200, { "content-type": types.json, "cache-control": "no-store" });
-    return res.end(body);
-  }
-  if (u.pathname.startsWith("/v1/")) return proxy(req, res, u.pathname + u.search); // 路径原样转发（运营签名覆盖 method/path/body）
-  const f = consoleFiles[u.pathname];
-  if (!f) {
-    res.writeHead(404);
-    return res.end("not found");
-  }
-  let body;
-  try {
-    body = readFileSync(join(consoleBase, f));
-  } catch {
-    res.writeHead(404);
-    return res.end("not found");
-  }
-  res.writeHead(200, { "content-type": types[f.split(".").pop()], "cache-control": "no-store" });
-  res.end(body);
-});
-await new Promise((r) => consoleSrv.listen(consolePort, "127.0.0.1", r));
-const consoleUrl = `http://127.0.0.1:${consolePort}/`;
-log(`运营控制台已就绪：${consoleUrl}`);
-
-/* ---------- ⑤ 运营链路自检：ops-cli 签名调用 /v1/ops/tenants ---------- */
+/* ---------- ④⑤ 控制台已由 stack-local 发出；自检：GET /v1/meta（无鉴权） ---------- */
+log(`统一云端控制台已就绪：${consoleUrl}`);
 try {
-  const t = JSON.parse(execFileSync(process.execPath, [join(root, "scripts", "ops-cli.mjs"), "call", "--url", zrEnv.ZR_CONTROL_PLANE_BASE, "--deployment", "dev", "--aud", "control-plane", "--id", "op_0001", "--kid", "k1", "--key", opKeyFile, "--method", "GET", "--path", "/v1/ops/tenants"], { cwd: root, encoding: "utf8" }));
-  const list = (t.body?.tenants ?? []).map((x) => x.tid ?? x.id).join(", ");
-  log(`运营接口自检通过（/v1/ops/tenants → ${list || "（空）"}）`);
+  const m = await (await fetch(`${zrEnv.ZR_CONTROL_PLANE_BASE}/v1/meta`)).json();
+  log(`控制面自检通过（${m.api ?? "?"}，注册方式 ${m.registration ?? "?"}，平台人员两步验证 ${m.staff_mfa ?? "?"}）`);
 } catch (e) {
-  log(`运营接口自检失败（不影响其余部分）：${String(e.message).slice(0, 200)}`);
+  log(`控制面自检失败（不影响其余部分）：${String(e.message).slice(0, 200)}`);
 }
 
 /* ---------- ⑥ Electron 桌面（窗口化法律版；不启动开发桥——演示工作区库为页级加密，纯 Node 桥打不开） ---------- */
@@ -328,11 +237,11 @@ console.log(`
 云端（本机模拟部署，真实上游 ${api.base} · 模型 ${api.model}）
   法律模型网关   ${zrEnv.ZR_GATEWAY_BASE}
   控制面         ${zrEnv.ZR_CONTROL_PLANE_BASE}
-运营控制台（浏览器）
+统一云端控制台（浏览器）
   地址           ${consoleUrl}
-  账号           admin（运营编号 op_0001）
-  密码           ${demoPassword}（演示用；存于 ${demoPwFile}）
-  私钥登录       登录页“使用运营私钥登录”：${opKeyFile}（无口令；密钥编号 k1）
+  系统管理员     ${login.email ?? "（见登录信息文件）"}
+  密码           ${login.password ?? "（已改过或未引导：删掉登录信息文件并用 --fresh 重新引导）"}
+  登录信息       ${loginFile ?? join(stackDir, "console-login.txt")}（0600；两步验证本演示栈可选）
 桌面端
   Electron 窗口（律所标识 demo-firm，席位令牌经控制面签发${dataDir ? `；工作区 ${dataDir}` : ""}）
 日志与状态：${out}（git 已忽略）
@@ -350,7 +259,7 @@ const stop = () => {
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 cloud.on("exit", () => {
-  log("云端 v0 已退出");
+  log("云端已退出");
   stop();
 });
 await new Promise(() => {});

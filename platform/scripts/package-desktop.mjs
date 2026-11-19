@@ -18,6 +18,8 @@
  *
  * 用法：node scripts/package-desktop.mjs [--target win32-x64] [--sign dev|env|none] [--skip-build] [--dir] [--trial]
  *   --dir 只产出未打包目录（release/win-unpacked），便于检查内容。
+ *   --dev-build 开发 / 内部测试包：允许不带 electron/release.json（安装包只有本机能力）。不加此项时，用正式代码签名（--sign env）
+ *           且随包生产内容公钥的构建视为正式构建，缺 release.json 直接失败（第 46 批，主文 §5-6）
  *   --trial 试用构建（偏离 D-160，apps/desktop/electron/trial-mode.cjs）：安装包内置本机法律模型网关与封装的中软 MaaS 密钥，
  *           不接云端控制面；与 release.json 互斥。密钥从 KWL_TRIAL_KEY_FILE 指向的文件读取（只含密钥一行，不入库），
  *           上游 KWL_TRIAL_BASE（缺省 https://maas.jointpilot.com/v1）、型号 KWL_TRIAL_MODEL（缺省 kimi-k3.1-pro）、
@@ -46,6 +48,7 @@ const sign = arg("--sign", "none");
 const skipBuild = argv.includes("--skip-build");
 const dirOnly = argv.includes("--dir");
 const trialBuild = argv.includes("--trial");
+const devBuild = argv.includes("--dev-build");
 const [platform, arch] = target.split("-");
 const log = (m) => console.log(`[package-desktop] ${m}`);
 // node 直接以本进程的可执行文件运行（不经 shell）；只有 npm/npx 在 Windows 上是 .cmd，须经 shell——此时逐个参数加引号，
@@ -202,7 +205,7 @@ for (const d of ["migrations", "lawdb", "tool-manifest", "skills"]) {
 }
 // 安装包上游与钉住集（审计 S5）：发布流程放置 electron/release.json；缺失时安装包只有本机能力（控制面缺失即退出模式）
 if (existsSync(join(desktop, "electron/release.json"))) cpSync(join(desktop, "electron/release.json"), join(stage, "electron/release.json"));
-else log("提示：未找到 electron/release.json——安装包不含中软云上游（只能用本机能力），正式发布必须提供");
+else log("提示：未找到 electron/release.json——安装包不含中软云上游（只能用本机能力）；正式构建会在门禁处失败，开发或内部测试包请加 --dev-build");
 // K9-1：v5 SDK 宿主已退役——暂存目录里不得出现它的制品或 SDK 入口（防止旧的本地构建产物被带进安装包）
 for (const f of readdirSync(join(stage, "electron"))) if (/^agent-host/.test(f)) throw new Error(`暂存目录含已退役的 SDK 宿主制品：electron/${f}`);
 if (readFileSync(join(stage, "electron/kernel.bundle.cjs"), "utf8").includes("createKimiHarness")) throw new Error("内核制品含已退役的 SDK 宿主入口（createKimiHarness）：先重新构建内核");
@@ -221,6 +224,12 @@ if (trial) {
   log("试用构建：暂存目录未发现明文密钥");
 }
 log(`暂存完成 → ${stage}`);
+
+/** 正式构建缺 release.json 时的失败原因（不缺或不是正式构建时为 null）。纯函数（用例从源码取出单测：apps/desktop/test/b46-client-polish.test.ts）。 */
+function releaseMissingFailure(o) {
+  if (o.hasRelease || o.trial || o.devBuild || o.pubDev || o.sign === "dev" || o.sign === "none") return null;
+  return "正式构建缺少 apps/desktop/electron/release.json：先用 scripts/make-release-config.mjs --spec <规格文件> 生成（只含地址、钉住值与公钥，不含秘密），再重新打包；只做开发或内部测试包请加 --dev-build";
+}
 
 // 正式发布门禁（第 13 批，评审 Z4 P0-3）：放了 release.json 的安装包不得随包开发内容签名公钥、不得用测试代码签名证书——
 // 只有 release.json 明确写 "test_build": true（CI 与内部测试）才放行
@@ -241,6 +250,10 @@ log(`暂存完成 → ${stage}`);
     if (sign === "dev" || sign === "none") throw new Error(`正式发布（release.json 未标 test_build）不得用 --sign ${sign}：须用正式代码签名证书（--sign env）`);
   }
   if (pubDev) log("提示：随包的是开发内容签名公钥——本安装包只能用于测试");
+  // 第 46 批（主文 §5-6）：正式构建（非试用、非测试包）必须带 release.json——缺了打出来的安装包要求控制面却没有地址，律师登录只会看到
+  // “连不上中软服务”。测试包的判据：--dev-build、--sign dev|none，或随包开发内容公钥（CI 与本机开发打包都是这种）
+  const missing = releaseMissingFailure({ hasRelease: !!rel, trial: !!trial, devBuild, sign, pubDev });
+  if (missing) throw new Error(missing);
 }
 
 // ── 4. electron-builder ────────────────────────────────────────────────

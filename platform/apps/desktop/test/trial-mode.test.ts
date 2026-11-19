@@ -63,6 +63,7 @@ test("试用内核环境：回环网关与试用身份、不要求控制面、�
   assert.equal(env.ZR_GATEWAY_BASE, "http://127.0.0.1:17999/v1");
   assert.equal(env.ZR_SEAT_TOKEN, "zst1.x.y");
   assert.equal(env.ZR_FIRM_SLUG, "trial-firm");
+  assert.equal(env.ZR_TRIAL_BUILD, "1", "第 46 批：内核据此对试用客户写“试用版”");
   assert.equal(env.ZR_MODEL_PROVIDER, "upstream");
   assert.equal(env.ZR_AT_REST, "required");
   assert.equal(env.ZR_REQUIRE_CONTROL_PLANE, undefined);
@@ -78,6 +79,7 @@ test("试用内核环境：回环网关与试用身份、不要求控制面、�
   assert.equal(formal.ZR_REQUIRE_CONTROL_PLANE, "1");
   assert.equal(formal.ZR_UPSTREAM_TLS, "strict");
   assert.equal(formal.ZR_FIRM_SLUG, undefined);
+  assert.equal(formal.ZR_TRIAL_BUILD, undefined, "正式安装包不带试用标记（用户环境里的也被剔除）");
 });
 
 test("本机试用网关：经进程消息拿到密钥，回环监听；席位令牌验签后转发上游并带上密钥，无令牌 401", async () => {

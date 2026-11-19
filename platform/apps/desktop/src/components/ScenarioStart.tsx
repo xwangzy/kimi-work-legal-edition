@@ -15,6 +15,8 @@ import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { scenarioChoice } from "./ModeSelector.tsx";
 import { launchRun, prepareStart, RunSheet, type PendingStart } from "./RunSheet.tsx";
+import { StartHintBanner } from "./StartHint.tsx";
+import { startHintOf, type StartHint } from "../lib/start-block.ts";
 import { SendSummary } from "./SendSummary.tsx";
 import { SendPoints } from "./SendPoints.tsx";
 import { stanceLabel } from "../lib/labels.ts";
@@ -57,6 +59,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const [estErr, setEstErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [errHint, setErrHint] = useState<StartHint | null>(null);
   const [confirm, setConfirm] = useState<PendingStart | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const known = useRef(new Set(documents.map((d) => d.document_version_id)));
@@ -166,6 +169,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const start = async () => {
     setBusy(true);
     setErr("");
+    setErrHint(null);
     try {
       if (!matter) return;
       // 估价是去抖后才算的：刚改完选项就点开始，手里的估价还是改之前那组输入（第 29 批真实走查：刚选的“我方地位”没进任务说明）——不是按当前输入算的就重算
@@ -180,7 +184,10 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
       await launchRun(p);
       onClose();
     } catch (e) {
-      setErr((e as Error).message);
+      // 第 46 批：发起时按登录、额度拦下的，显示成可操作的提示
+      const h = startHintOf(e);
+      setErrHint(h);
+      setErr(h ? "" : (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -415,6 +422,8 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
             {estimate ? (
               <>
                 {estimate.estimate.points_display}
+                {/* 第 46 批：要重新登录、额度暂停时，开始前就说清原因与入口（不用等点了开始才知道） */}
+                {startHintOf(estimate.estimate.data_where?.start_hint) && <StartHintBanner hint={startHintOf(estimate.estimate.data_where?.start_hint)!} onAction={onClose} />}
               </>
             ) : estErr ? (
               <span className="ss-need">{estErr}</span>
@@ -458,6 +467,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
           </div>
         )}
         {sampleBlocked && <div className="banner banner-gray">示例事项只用来看效果，不能存审查要点：请在你自己的事项里整理。</div>}
+        {errHint && <StartHintBanner hint={errHint} onAction={onClose} />}
         {err && <div className="banner banner-red">{err}</div>}
         {/* 底部按钮贴底（第 26 批走查：1280×720 下“开始审查”在首屏之外，要先滚到底才看得到）；还不能开始时左边写缺什么 */}
         <div className="modal-actions modal-actions-sticky">

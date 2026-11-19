@@ -5,12 +5,14 @@
 export interface UserCardMe {
   name: string | null;
   firm: string | null;
+  /** 安装形态（第 46 批）：试用版没有律所名时写“试用版”，不写“开发形态”。 */
+  edition?: "trial" | "release" | "dev" | null;
 }
 
 export function userCardText(me: UserCardMe | null, foot: { title: string; note: string }): { name: string; firm: string | null; avatar: string; tooltip: string } {
   const status = foot.note ? `${foot.title}：${foot.note}` : foot.title;
   if (!me) return { name: "正在连接…", firm: null, avatar: "我", tooltip: `设置 · ${status}` };
-  return { name: me.name ?? "本机", firm: me.firm ?? "开发形态", avatar: (me.name ?? me.firm ?? "我").slice(0, 1), tooltip: `设置 · ${status}` };
+  return { name: me.name ?? "本机", firm: me.firm ?? (me.edition === "trial" ? "试用版" : "开发形态"), avatar: (me.name ?? me.firm ?? "我").slice(0, 1), tooltip: `设置 · ${status}` };
 }
 
 /**

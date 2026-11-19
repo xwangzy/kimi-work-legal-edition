@@ -3,23 +3,28 @@
  * 本机全链路栈（第 44 批验收用；不是生产部署）：用**生产入口与正式工具**在回环地址上拉起云端三件套，
  * 再给桌面端开发桥一份环境变量——律师端注册 / 登录 → 控制面账号 → 设备 → 席位令牌 → 网关动态路由 → 中软 MaaS → 用量账本 → 控制台。
  *
- * - 密钥：`cloud-init-secrets.mjs`（与生产同一工具）；运营名册：`ops-cli.mjs`（roster-keygen / keygen / roster init / add，与生产同一流程）；
+ * - 密钥：`cloud-init-secrets.mjs`（与生产同一工具）；
+ * - 控制台账号（第 46 批，契约 §2.4，与生产同一流程）：控制面配置 console.bootstrap_admin，首次启动把系统管理员的设置码写进
+ *   <data_dir>/control-plane/bootstrap-admin.txt；本脚本读出设置码、经 POST /v1/auth/password-reset/confirm 设好密码，
+ *   把登录信息写进 <目录>/console-login.txt（0600）。本机栈 console.staff_mfa = optional（生产缺省 required）。不再用 ops-cli 名册与密码；
  * - 服务：`cloud-serve.mjs --config`（cp-signer、control-plane、gateway；`insecure_loopback_for_test` 只许 127.0.0.1——这是与生产唯一的差别：没有 TLS）；
  * - 上游密钥：只经文件描述符 3 交给网关进程（`upstream.api_key_file: /dev/fd/3`），不写盘、不进命令行与环境变量；
  *   来源依次为 `--key-file`、环境变量 KWL_MOONSHOT_API_KEY、macOS 钥匙串（KWL_EVAL_KEYCHAIN_ACCOUNT / _SERVICE，缺省 kwl-demo / kwl-demo-maas-key）；
- * - 运营控制台：同进程静态服务 `apps/console/dist`（先 `node scripts/build-console.mjs`），发严格 CSP，config.json 指向本栈控制面；
+ * - 控制台：同进程静态服务 <目录>/console-dist（`build-console.mjs --control-plane <本栈控制面>` 打包，页内 CSP 只许连本栈控制面），
+ *   config.json 指向本栈控制面；控制面 console.origins 放行控制台来源（跨源、不带凭据）；
  * - 状态（账号、路由、账本、审计）都落在 --dir 里，重启保留。
  *
  * 用法：node scripts/stack-local.mjs --dir <目录> [--base-port 18400] [--upstream https://maas.jointpilot.com/v1] [--model kimi-k3.1-pro] [--tls]
  * --tls：与生产同一形态的传输——本机自建 CA（openssl）签各服务证书，签名服务只收控制面的客户端证书（mTLS + URI SAN 调用方核对），
  *        各服务只接受 HTTPS；client.env 另给 NODE_EXTRA_CA_CERTS 与各服务的 SPKI 钉住值（与 release.json 同一口径）。
- * 输出：<目录>/client.env（交给桌面端开发桥的变量）、控制台账号（op_0001 登录名 admin、op_0002 登录名 issuer；初始密码首次生成时打印一次并存
- *       <目录>/ops/initial-passwords.txt（0600），首次登录须改）、<目录>/ops/op_0001.k1.key.pem（私钥登录仍可用）、日志 <目录>/logs/*.log（遮盖密钥）。
+ * 输出：<目录>/client.env（交给桌面端开发桥的变量）、<目录>/console-login.txt（0600：控制台地址、系统管理员邮箱与密码；
+ *       改过密码后这里的就失效了）、日志 <目录>/logs/*.log（遮盖密钥）。最后一行打印 `[stack] 控制台账号：<文件>` 供 demo-launch 读取。
  * 停：Ctrl-C（或 SIGTERM 本进程；子进程一并停）。
  */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,30 +58,9 @@ if (!existsSync(init)) run("cloud-init-secrets.mjs", ["--env", "test", "--out", 
 const sec = (f) => join(init, "secrets", f);
 const pub = (f) => join(init, "public", f);
 
-// ─── 2. 运营名册（首次；与生产同一流程：安全管理员名册密钥 → 运营本人生成密钥 → 签发名册并加人） ───
-const ops = join(dir, "ops");
-if (!existsSync(join(ops, "roster.json"))) {
-  mkdirSync(ops, { recursive: true, mode: 0o700 });
-  run("ops-cli.mjs", ["roster-keygen", "--kid", "sec-1", "--out", join(ops, "offline"), "--keys-file", join(ops, "roster-keys.json")]);
-  const kg = JSON.parse(run("ops-cli.mjs", ["keygen", "--id", "op_0001", "--kid", "k1", "--out", ops]).trim().split("\n").at(-1));
-  run("ops-cli.mjs", ["roster", "init", "--deployment", "dev", "--sign-key", join(ops, "offline", "sec-1.key.pem"), "--sign-kid", "sec-1", "--out", join(ops, "roster.json")]);
-  run("ops-cli.mjs", ["roster", "add", "--roster", join(ops, "roster.json"), "--id", "op_0001", "--perms", "tenant.read,tenant.manage,tenant.terminate,quota.manage,quota.cap,device.revoke,account.manage,route.manage,plan.manage", "--pub", kg.public_key, "--fingerprint", kg.fingerprint, "--sign-key", join(ops, "offline", "sec-1.key.pem"), "--sign-kid", "sec-1", "--out", join(ops, "roster.json")]);
-  // 发开通码的人与开通律所的人须分开（D-106 职责分离）：另一位运营只有 activation.issue
-  const kg2 = JSON.parse(run("ops-cli.mjs", ["keygen", "--id", "op_0002", "--kid", "k1", "--out", ops]).trim().split("\n").at(-1));
-  run("ops-cli.mjs", ["roster", "add", "--roster", join(ops, "roster.json"), "--id", "op_0002", "--perms", "tenant.read,activation.issue", "--pub", kg2.public_key, "--fingerprint", kg2.fingerprint, "--sign-key", join(ops, "offline", "sec-1.key.pem"), "--sign-kid", "sec-1", "--out", join(ops, "roster.json")]);
-}
-
-// ─── 2b. 控制台账号密码（与生产同一流程：安全管理员 ops-cli password set 发初始密码，首次登录须改）；凭据库即控制面 ops.credentials_file ───
-const credFile = join(ops, "credentials.json");
-const pwNote = join(ops, "initial-passwords.txt");
-if (!existsSync(credFile)) {
-  const issued = [];
-  for (const [id, login] of [["op_0001", "admin"], ["op_0002", "issuer"]]) {
-    const r = JSON.parse(run("ops-cli.mjs", ["password", "set", "--credentials", credFile, "--id", id, "--login", login, "--roster", join(ops, "roster.json"), "--keys", join(ops, "roster-keys.json")]).trim().split("\n").at(-1));
-    issued.push(`${login}（${id}）  ${r.initial_password}`);
-  }
-  writeFileSync(pwNote, `控制台初始密码（首次登录须改；改过之后这里的就失效了）\n${issued.join("\n")}\n`, { mode: 0o600 });
-}
+// ─── 2. 控制台首个系统管理员（契约 §2.4）：控制面启动后经设置码设密码，见第 6 步 ───
+const ADMIN = { email: "admin@kwl-local.example", name: "系统管理员（本机栈）" };
+const loginFile = join(dir, "console-login.txt");
 
 // ─── 2a. TLS（--tls）：本机 CA、服务证书、控制面调用签名服务的客户端证书 ───
 const tlsDir = join(dir, "tls");
@@ -125,8 +109,9 @@ const cfgs = {
     signer: useTls ? { url: `https://127.0.0.1:${P.signer}`, client_cert_file: join(tlsDir, "cp-api-client.crt"), client_key_file: join(tlsDir, "cp-api-client.key"), ca_file: join(tlsDir, "ca.crt") } : { url: `http://127.0.0.1:${P.signer}` },
     state_key_file: sec("cp-state.key"),
     code_pepper_file: sec("cp-code-pepper.key"),
-    // 运营接口只许运维网段：生产入口拒绝把回环地址列进 allow_cidrs（非测试形态），所以 --tls 演练不开运营接口（运营与控制台在回环形态验）
-    ...(useTls ? {} : { ops: { deployment: "dev", roster_file: join(ops, "roster.json"), roster_keys_file: join(ops, "roster-keys.json"), allow_cidrs: ["127.0.0.1/32"], console_origins: [consoleOrigin], credentials_file: credFile } }),
+    // 平台运营接口只许运维网段：生产入口拒绝把回环地址列进 allow_cidrs（非测试形态），所以 --tls 演练不开运营接口（平台运营页在回环形态验）
+    ...(useTls ? {} : { ops: { deployment: "dev", allow_cidrs: ["127.0.0.1/32"] } }),
+    console: { origins: [consoleOrigin], bootstrap_admin: ADMIN, staff_mfa: "optional" },
     routing: { bootstrap: { provider: { id: "maas", label: "中软 MaaS", vendor: "csi-maas", base_url: upstream }, models: { "legal/k3": model, "legal/k2.6": model } }, public_key_file: pub("routing-public.txt") },
   },
   gw: {
@@ -201,12 +186,13 @@ await startRole("cp");
 await startRole("gw", true);
 await startRole("search", true);
 
-// ─── 6. 运营控制台（静态页 + 严格 CSP；先构建 dist） ───
-run("build-console.mjs", []);
-const dist = join(root, "apps/console/dist");
-const consoleConfig = JSON.stringify({ control_plane_base: `${scheme}://127.0.0.1:${P.cp}`, deployment: "dev", label: "本机全链路栈", routing_public_key: readFileSync(pub("routing-public.txt"), "utf8").trim(), routing_key_id: readFileSync(pub("routing-key-id.txt"), "utf8").trim() });
+// ─── 6. 控制台（静态页 + 严格 CSP；页内 CSP 只许连本栈控制面） ───
+const cpOrigin = `${scheme}://127.0.0.1:${P.cp}`;
+const dist = join(dir, "console-dist");
+run("build-console.mjs", ["--out", dist, "--control-plane", cpOrigin]);
+const consoleConfig = JSON.stringify({ control_plane_base: cpOrigin, deployment: "dev", label: "本机全链路栈" });
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png" };
-const CSP = `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ${scheme}://127.0.0.1:${P.cp}; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
+const CSP = `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ${cpOrigin}; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
 createServer((req, res) => {
   const u = new URL(req.url ?? "/", "http://x");
   const headers = { "content-security-policy": CSP, "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "cache-control": "no-store" };
@@ -223,6 +209,22 @@ createServer((req, res) => {
   res.writeHead(200, { ...headers, "content-type": TYPES[extname(f)] ?? "application/octet-stream" });
   res.end(readFileSync(f));
 }).listen(P.console, "127.0.0.1");
+
+// ─── 6b. 首个系统管理员：读 bootstrap-admin.txt 的设置码 → /v1/auth/password-reset/confirm 设密码 → 登录信息写 0600 文件 ───
+const bootFile = join(dir, "data", "cp", "control-plane", "bootstrap-admin.txt");
+let adminNote = existsSync(loginFile) ? "沿用已有登录信息" : "没有登录信息";
+for (let i = 0; i < 40 && !existsSync(bootFile) && !existsSync(loginFile); i++) await new Promise((r) => setTimeout(r, 250));
+if (existsSync(bootFile)) {
+  const text = readFileSync(bootFile, "utf8");
+  const email = /^email:\s*(\S+)/m.exec(text)?.[1];
+  const code = /^setup_code:\s*(\S+)/m.exec(text)?.[1];
+  if (!email || !code) throw new Error(`读不懂 ${bootFile}（缺 email 或 setup_code）`);
+  const password = `Local-${randomBytes(12).toString("base64url")}7`;
+  const r = await fetch(`${cpOrigin}/v1/auth/password-reset/confirm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, code, password }) });
+  if (!r.ok) throw new Error(`用设置码设系统管理员密码失败：HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+  writeFileSync(loginFile, `本机栈控制台（改过密码后这里的就失效了；删掉本文件并重启本栈会重新引导）\nurl: http://127.0.0.1:${P.console}/\nemail: ${email}\npassword: ${password}\n`, { mode: 0o600 });
+  adminNote = "已用设置码设好系统管理员密码";
+}
 
 // ─── 7. 交给桌面端的环境变量 ───
 const cpKeys = readFileSync(pub("cp-public-keys.json"), "utf8").trim();
@@ -244,5 +246,6 @@ const envLines = [
 ];
 writeFileSync(join(dir, "client.env"), `${envLines.join("\n")}\n`, { mode: 0o600 });
 console.log(`[stack] 云端已就绪：签名服务 ${P.signer}、控制面 ${P.cp}、网关 ${P.gw}、检索 ${P.search}、控制台 http://127.0.0.1:${P.console}/`);
-if (!useTls) console.log(`[stack] 控制台账号：admin（op_0001）、issuer（op_0002）；初始密码见 ${pwNote}（首次登录须改）。私钥登录仍可用：${join(ops, "op_0001.k1.key.pem")}`);
+console.log(`[stack] 控制台：系统管理员 ${ADMIN.email}（${adminNote}；两步验证本机栈可选）`);
+console.log(`[stack] 控制台账号：${loginFile}`);
 console.log(`[stack] 桌面端环境变量：${join(dir, "client.env")}`);

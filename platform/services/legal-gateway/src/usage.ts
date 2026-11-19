@@ -56,6 +56,8 @@ export interface UsageRecord {
   lease_id: string | null;
   /** 网关算 charge_units 用的价目版本（路由订阅的 prices.version；兜底时取租约应答的 price_version）：控制面按它重算。 */
   price_version: number | string | null;
+  /** 第 46 批：流式已转发部分内容后上游出错或超时——usage 为估算，不扣律师额度，控制面只记成本。 */
+  partial?: boolean;
 }
 
 /** 价目（元/百万 token；null = 未定价）。 */
@@ -192,5 +194,6 @@ export function cleanUsageRecord(r: UsageRecord): UsageRecord {
     finish_reason: s(r.finish_reason, 32),
     lease_id: s(r.lease_id, 96),
     price_version: typeof r.price_version === "number" && Number.isFinite(r.price_version) ? r.price_version : s(r.price_version, 64),
+    ...(r.partial === true ? { partial: true } : {}),
   };
 }

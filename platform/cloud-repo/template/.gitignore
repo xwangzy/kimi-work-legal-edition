@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.log
+.env
+.env.*
+!.env.example
+.data/
+*.tsbuildinfo
+coverage/
+# 控制台运行配置由运维放在 Web 根目录（样例见 deploy/console/config.example.json），不入库
+apps/console/config.json
+# 任何真实密钥、证书、口令文件都不入库（生成在服务器或密钥管理里）
+secrets/
+*.pem
+*.key
+!deploy/**/*.example.*

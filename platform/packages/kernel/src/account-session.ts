@@ -89,7 +89,102 @@ export function accountErrorText(code: string, fallback?: string): string {
     case "gate_unavailable":
     case "cp_unreachable":
       return "连不上中软服务，请检查网络后重试";
+    case "client_outdated":
+      return clientOutdatedText(fallback);
+    case "staff_client_forbidden":
+      return "这是中软平台人员账号，请在网页控制台登录";
     default:
       return fallback ?? "没有完成，请稍后重试；仍不行请联系客服";
+  }
+}
+
+/** 客户端版本过旧（控制面 426 client_outdated，主文 §2.5）：写出要升级到的版本；控制面没给版本号时不编造。 */
+export function clientOutdatedText(minVersion?: string | null): string {
+  const v = typeof minVersion === "string" && /^\d{1,4}\.\d{1,4}\.\d{1,6}(?:[-+][0-9A-Za-z.-]{1,32})?$/.test(minVersion) ? minVersion : null;
+  return v ? `客户端版本过旧，请升级到 ${v} 或以上` : "客户端版本过旧，请升级到最新版本";
+}
+
+/**
+ * 账号接口失败 → HTTP 状态、错误类别与律师话（第 46 批：待激活模式 onboarding.accountCall 与正常模式 account.* 共用这一处，口径不再分叉）。
+ * 控制面原话只在密码规则、锁定剩余时间这类场合采用；client_outdated 用控制面给出的最低版本号。原始代码只进 detail.reason 与日志。
+ */
+export function accountFailure(code: string, cpMessage?: string | null, extra?: { min_version?: string | null }): { status: number; fault: "validation" | "rate_limited" | "provider_unavailable"; text: string; reason: string } {
+  const c = /^[a-z0-9_]{1,60}$/.test(code) ? code : "error";
+  const status =
+    c === "auth_invalid" || c.startsWith("session_")
+      ? 401
+      : c === "account_locked"
+        ? 423
+        : c === "rate_limited"
+          ? 429
+          : c === "email_taken" || c === "member_taken"
+            ? 409
+            : c === "account_disabled" || c === "registration_closed" || c === "code_required" || c === "staff_client_forbidden"
+              ? 403
+              : c === "client_outdated"
+                ? 426
+                : c.startsWith("cp_") || c === "gate_unavailable"
+                  ? 502
+                  : 400;
+  const useCp = typeof cpMessage === "string" && cpMessage !== "" && (c === "password_weak" || c === "account_locked");
+  const text = c === "client_outdated" ? clientOutdatedText(extra?.min_version ?? null) : accountErrorText(c, useCp ? cpMessage! : undefined);
+  return { status, fault: status === 502 ? "provider_unavailable" : status === 429 ? "rate_limited" : "validation", text, reason: c };
+}
+
+/**
+ * 登录后这台电脑不能直接继续的状态（控制面 onboarding.state）→ 一句律师话（第 46 批：待激活模式与正常模式的登录共用）。
+ * admin = 登录的是律所管理员本人（批准新电脑、调高上限都要管理员在自己的电脑上做）。
+ */
+export function onboardingStateText(state: string, o: { admin?: boolean } = {}): string {
+  switch (state) {
+    case "device_limit":
+      return o.admin
+        ? "这个账号的电脑数已满：请先在已登录的电脑上（设置 → 账号与团队 → 我的电脑）解绑一台，或调高本所成员的电脑数上限"
+        : "这个账号的电脑数已满：请先在已登录的电脑上（设置 → 账号与团队 → 我的电脑）解绑一台，或请律所管理员调高上限";
+    case "device_mismatch":
+      return "这台电脑已登记为本所另一位成员：请用那位成员的账号登录";
+    case "waiting_founder":
+    case "needs_founder_setup":
+      return "你的律所还没有完成开通：请律所负责人先在自己的电脑上登录完成开通";
+    case "needs_device_join":
+      return "这个账号还没有登记这台电脑：请用这台电脑原来登录的账号；要换人使用，请律所管理员处理";
+    case "ready":
+      return "这台电脑已登记为你的电脑，但这里没有找到对应的本机资料：请用“从备份恢复”找回；没有备份的，请律所管理员停用这台电脑的旧登记后重新加入";
+    default:
+      return "这台电脑暂时不能用这个账号继续，请联系客服";
+  }
+}
+
+/**
+ * 非账号的控制面调用（用量、上限、律所策略、操作记录）失败 → 律师话（第 46 批：原来写“控制面：<代码>”）。
+ * 不认识的代码一律说“中软服务暂时不可用，请稍后重试”；原始代码只进日志与诊断。
+ */
+export function controlPlaneErrorText(code: string, o: { min_version?: string | null } = {}): string {
+  switch (code) {
+    case "no_seat":
+      return "你还没有席位：请律所管理员先分配席位";
+    case "rate_limited":
+      return "操作过于频繁，请稍后再试";
+    case "cap_invalid":
+      return "月度上限须为 1–100 的整数百分比";
+    case "cp_not_configured":
+    case "gate_unavailable":
+    case "cp_unreachable":
+      return "连不上中软服务，请检查网络后重试";
+    case "device_auth_stale":
+      return "这台电脑的时间与标准时间相差太多，中软服务拒绝了请求：请把系统时间设为自动同步后重试";
+    case "admin_required":
+    case "firm_role_required":
+      return "这项操作需要律所管理员在自己的电脑上完成";
+    case "device_revoked":
+      return "这台电脑已被律所停用，不能再使用中软服务";
+    case "license_expired":
+      return "律所订阅已到期，请联系中软续订";
+    case "client_outdated":
+      return clientOutdatedText(o.min_version ?? null);
+    case "staff_client_forbidden":
+      return "这是中软平台人员账号，请在网页控制台登录";
+    default:
+      return "中软服务暂时不可用，请稍后重试";
   }
 }

@@ -1,9 +1,9 @@
 /**
- * 用量的显示口径（第 40 批：取消点数，一律按百分比）。
+ * 用量的显示口径（第 40 批取消点数；第 46 批，主文 §5-4：任务层面也不再出由点数表折算的百分比）。
  *
  * - 本所与个人的月度用量由控制面按“本月额度的百分比”给出（用量与上限页）；
- * - 单个任务在内核里有一份**预留额度**（按任务类型的单任务上限预估，estimate.ts），它与网关计量不是同一把尺子——
- *   所以任务层面只说“约为这类任务上限的 x%”“已用本任务预留额度的 x%”，不折算成月度额度，也不出现点数。
+ * - 单个任务在内核里仍有一份**预留额度**（estimate.ts 的点数表，作安全阀：到了先停下来问律师），它与网关的真实计量不是同一把尺子，
+ *   所以不对律师出数：发起前只说“按实际用量计入本月额度”，能读到本月用量时补一句“本月已用 x%”；本机流程写“不调用 AI，不占用额度”。
  */
 
 /** 百分比文字：不到 1% 写“不到 1%”；其余取整。 */
@@ -13,18 +13,19 @@ export function pctText(ratio: number): string {
   return `${Math.round(p)}%`;
 }
 
-/** 发起前的预估（界面标签是“预计用量”）：“中等（约为这类任务上限的 50%）”；本机流程不占额度。 */
-export function estimateDisplay(points: number, cap: number, local = false): string {
-  if (local || points <= 0) return "不调用 AI，不占用额度";
-  if (!cap || cap <= 0) return "按实际用量计";
-  const r = Math.min(1, points / cap);
-  const size = r < 0.4 ? "较少" : r < 0.75 ? "中等" : "较大";
-  return `${size}（约为这类任务上限的 ${pctText(r)}）`;
+/**
+ * 发起前的预估（界面标签是“预计用量”）。monthUsedRatio = 缓存的用量视图里本所本期已用比例（没有或过时为 null）；
+ * term = 统计周期（本月 / 本周）。
+ */
+export function estimateDisplay(local: boolean, monthUsedRatio: number | null = null, term: "本月" | "本周" = "本月"): string {
+  if (local) return "不调用 AI，不占用额度";
+  const used = typeof monthUsedRatio === "number" && Number.isFinite(monthUsedRatio) && monthUsedRatio >= 0 ? `（${term}已用 ${pctText(Math.min(monthUsedRatio, 1))}）` : "";
+  return `按实际用量计入${term}额度${used}`;
 }
 
-/** 任务记录里的实际用量：“已用本任务预留额度的 45%”。 */
+/** 任务记录里的用量：用到 AI 的写“已按实际用量计入本所额度”，没用到的写“未占用额度”，本机流程写“不调用 AI，不占用额度”。 */
 export function chargedDisplay(charged: number, budget: number): string {
+  if (!budget || budget <= 0) return charged > 0 ? "已按实际用量计入本所额度" : "不调用 AI，不占用额度";
   if (charged <= 0) return "未占用额度";
-  if (!budget || budget <= 0) return "已计入本所本月用量";
-  return `已用本任务预留额度的 ${pctText(Math.min(1, charged / budget))}`;
+  return "已按实际用量计入本所额度";
 }

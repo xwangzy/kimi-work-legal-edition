@@ -318,7 +318,9 @@ test("门禁：云端服务源码里的每一条运营路径都被 OPS_PATH_RE �
       const specAt = src.indexOf("const opsSpec = ");
       const routeAt = src.indexOf("const opsRoute = ");
       const routeBody = routeAt >= 0 ? src.slice(routeAt, src.indexOf("\n  };\n", routeAt)) : "";
-      const specViaRoute = specAt >= 0 && routeAt > specAt && (src.match(/opsSpec\(/g) ?? []).length === 1 && /opsSpec\(/.test(routeBody) && routeBody.indexOf(".authorize(") >= 0 && routeBody.indexOf(".authorize(") < routeBody.indexOf("spec.run(");
+      // 第 46 批：控制面的 opsRoute 改为平台人员会话（anySession）→ 角色权限（perms.includes(spec.perm)），同样须在 spec.run 之前
+      const before = (needle: string) => routeBody.indexOf(needle) >= 0 && routeBody.indexOf(needle) < routeBody.indexOf("spec.run(");
+      const specViaRoute = specAt >= 0 && routeAt > specAt && (src.match(/opsSpec\(/g) ?? []).length === 1 && /opsSpec\(/.test(routeBody) && (before(".authorize(") || (before("anySession(") && before("perms.includes(spec.perm)")));
       for (const { canon, index } of opsPathsIn(src)) {
         found.add(canon);
         assert.match(canon, OPS_PATH_RE, `${svc}/${f} 里的运营路径 ${canon} 没有被生产入口认出`);
@@ -327,6 +329,8 @@ test("门禁：云端服务源码里的每一条运营路径都被 OPS_PATH_RE �
         const line = src.slice(0, index).split("\n").length;
         if (!/\.exec\(|===|startsWith/.test(srcLines[line - 1] ?? "")) continue;
         if (specViaRoute && index > specAt && index < routeAt) continue;
+        // opsRoute 自己里面、会话核验之后的路由（如 /v1/ops/me）
+        if (specViaRoute && routeBody.indexOf("anySession(") >= 0 && index > routeAt + routeBody.indexOf("anySession(") && index < routeAt + routeBody.length) continue;
         assert.match(srcLines.slice(line - 1, line + 12).join("\n"), /opsAuth\(|opsRoute\(|\.authorize\(|opsGuard\.(?:login|logout|changePassword)\(/, `${svc}/${f}:${line} 的运营路由没有经运营守卫`);
       }
     }

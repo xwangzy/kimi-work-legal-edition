@@ -87,6 +87,22 @@ describe("上游超时", () => {
     await new Promise((res) => setTimeout(res, 50));
     assert.equal(lastSettle().reason, "upstream_idle_timeout");
     assert.equal(budgets.get("t1"), before);
+    // 第 46 批（D-194）：已转发了“第一段”——上游已计 token；不扣律师额度，但带估算 usage 与 partial 交控制面记成本
+    const rec = lastSettle().record;
+    assert.equal(rec.outcome, "timeout");
+    assert.equal(rec.partial, true);
+    assert.equal(rec.usage_source, "estimated");
+    assert.ok(rec.usage.output > 0 && rec.usage.input > 0, "按已转发内容估算");
+    assert.equal(rec.charge_units, 0, "服务出错不计入律师用量");
+  });
+
+  test("收不到响应头的超时不标 partial、不带 usage（没有转发任何内容）", async () => {
+    provider.mode = "hang";
+    await chat(true);
+    const rec = lastSettle().record;
+    assert.equal(rec.partial, undefined);
+    assert.equal(rec.usage, null);
+    assert.equal(rec.usage_source, "none");
   });
 
   test("正常上游不受影响", async () => {

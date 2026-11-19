@@ -3,8 +3,10 @@
  * 最小运营命令行（v9.3 A-10“运营按人鉴权”；Y2 §3.12 S12 运营控制台的命令行最小版）。
  *
  * 三种人、三类命令（三权分立的研发侧；部署配置与数据目录须由不在名册里的系统管理员掌握，D-106）：
+ * 第 46 批起：控制面的运营接口改由控制台账号（邮箱 + 密码 + 两步验证 + 角色）鉴权，本工具的名册与私钥签名**只给 support / relay / notify**
+ * 的命令行运维接口用（不是登录）；`password` 子命令已停用（提示后非零退出）。
  * - 运营人员：`keygen` 在本人电脑生成自己的签名密钥（私钥 0600、不覆盖已有文件；可用 --passphrase-env 加密），把公钥与指纹交给安全管理员；
- *   `call` 用自己的私钥签请求，调控制面、支持、中继、通知的运营接口（须从运维网段发出）。
+ *   `call` 用自己的私钥签请求，调支持、中继、通知的运营接口（须从运维网段发出；控制面已不认私钥签名）。
  * - 安全管理员：`roster-keygen` 生成名册签名密钥（私钥离线保管，公钥合并进公钥表，部署到各服务的 ops.roster_keys_file）；
  *   `roster init` 新建名册（只此一次）；`roster add / add-key / perms / revoke / renew` 编辑并签发运营名册（每次版本加一、有效期重算，
  *   至多 31 天），新名册部署到各服务的 ops.roster_file 即生效，不需要重启；`roster show` 核验并列出。
@@ -276,71 +278,9 @@ if (cmd === "keygen" || cmd === "roster-keygen") {
     console.log(JSON.stringify({ ok: true, deployment: body.deployment, version: body.version, expires_at: body.expires_at, changes, out }));
   } else fail("roster 子命令：init / add / add-key / perms / revoke / renew / show");
 } else if (cmd === "password") {
-  // ─── 账号 + 密码登录的凭据库（安全管理员维护；控制面 ops.credentials_file） ───
-  const file = need("credentials");
-  let doc;
-  try {
-    doc = oa.readOpsCredentialsFile(file);
-  } catch (e) {
-    fail(`${file}：${e instanceof Error ? e.message : "读不出"}`, 1);
-  }
-  const save = (next) => {
-    try {
-      oa.writeOpsCredentialsFile(file, next);
-    } catch (e) {
-      fail(e instanceof Error ? e.message : "凭据库写不进去", 1);
-    }
-  };
-  if (sub === "list") {
-    console.log(JSON.stringify({ ok: true, credentials: doc.credentials.map((c) => ({ operator: c.operator, login: c.login, must_change: c.must_change, disabled: c.disabled === true, updated_at: c.updated_at })) }, null, 2));
-  } else if (["set", "reset", "disable", "enable"].includes(sub)) {
-    const id = need("id");
-    if (!oa.OPERATOR_ID_RE.test(id)) fail("--id 须为运营编号：op_ 加数字工号（例如 op_0001）");
-    const cur = doc.credentials.find((c) => c.operator === id);
-    // 可选：核对此人在名册里且有效（身份与权限以名册为准；不在名册的人即使有密码也登不进）
-    let inRoster = null;
-    if (flag("roster")) {
-      const keys = new Map(Object.entries(readKeysFile(need("keys")) ?? fail("--keys 公钥表不存在")));
-      let rdoc;
-      try {
-        rdoc = JSON.parse(readFileSync(flag("roster"), "utf8"));
-      } catch {
-        fail(`${flag("roster")} 读不出或不是 JSON`);
-      }
-      const v = oa.verifyOpsRoster(rdoc, keys);
-      if (!v.ok) fail(`名册核验不通过：${v.reason}`, 1);
-      const op = v.body.operators.find((x) => x.id === id);
-      if (!op || op.status !== "active") fail(`${id} 不在名册里或已吊销：先由安全管理员 roster add`, 1);
-      if (op.second_factor !== "none") fail(`${id} 在名册里要求双因素，密码登录会被拒绝`, 1);
-      inRoster = true;
-    }
-    if (sub === "disable" || sub === "enable") {
-      if (!cur) fail(`${id} 没有登录凭据`);
-      save(oa.setOpsCredentialDisabled(doc, id, sub === "disable"));
-      console.log(JSON.stringify({ ok: true, operator: id, login: cur.login, disabled: sub === "disable", credentials: file }));
-    } else {
-      if (sub === "reset" && !cur) fail(`${id} 没有登录凭据：先用 password set --login 发初始密码`);
-      if (sub === "set" && !cur && flag("login") === undefined) fail("缺少 --login（新发的凭据须指定登录名）");
-      const envName = flag("password-env");
-      let password;
-      if (envName !== undefined) {
-        password = process.env[envName] ?? "";
-        const rules = oa.opsPasswordProblems(password, flag("login") ?? cur?.login);
-        if (rules.length) fail(`环境变量 ${envName} 里的密码不合规：${rules.join("、")}`);
-      } else password = oa.generateOpsPassword();
-      const mustChange = !has("no-must-change");
-      let next;
-      try {
-        next = oa.setOpsCredential(doc, { operator: id, ...(flag("login") !== undefined ? { login: flag("login") } : {}), password, mustChange });
-      } catch (e) {
-        fail(e instanceof Error ? e.message : "凭据不合规");
-      }
-      save(next);
-      const rec = next.credentials.find((c) => c.operator === id);
-      // 初始密码只在这里打印一次（自己给的密码不回显）：请当面或经安全渠道交给本人，首次登录须改
-      console.log(JSON.stringify({ ok: true, operator: id, login: rec.login, ...(envName === undefined ? { initial_password: password } : {}), must_change: mustChange, ...(inRoster ? { roster_checked: true } : {}), credentials: file }));
-    }
-  } else fail("password 子命令：set / reset / disable / enable / list");
+  // 第 46 批：运营人员改为统一控制台账号（邮箱 + 密码 + 两步验证 + 角色），凭据文件不再用于登录
+  console.error("[ops-cli] password 子命令已停用：运营人员改为控制台账号（邮箱 + 密码 + 两步验证，系统管理员在控制台“人员与权限”里添加），见《部署手册》“首个系统管理员与人员”一节");
+  process.exit(2);
 } else if (cmd === "call") {
   let url;
   try {

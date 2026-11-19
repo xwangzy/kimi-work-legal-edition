@@ -342,11 +342,14 @@ test("复核页“你来核对”的条目不写工具名（第 28 批，工作�
 test("任务失败给律师看的话（第 28 批模型不可用演练）：通道不可达写“AI 服务暂时连不上”，不露内部原因码", async () => {
   const { agentFailureText } = await import("../src/executor/executor.ts");
   const t = agentFailureText("host_reported_failure", "502 模型通道不可达（已排队或稍后重试）");
-  assert.match(t, /^AI 服务暂时连不上（502 模型通道不可达/);
+  // 第 46 批：原始错误不再拼进括号（原文留在任务事件 agent.outcome 里）
+  assert.match(t, /^AI 服务暂时连不上，任务没有完成/);
+  assert.equal(t.includes("502"), false);
   assert.match(t, /重新运行/);
   assert.equal(t.includes("host_reported_failure"), false);
   assert.match(agentFailureText("host_reported_failure", "材料快照写入失败"), /^任务没有完成：材料快照写入失败/);
-  assert.match(agentFailureText("unknown_task", null), /^任务没有完成（unknown_task）/);
+  assert.match(agentFailureText("unknown_task", null), /^任务没有完成；可以点“重新运行”/);
+  assert.equal(agentFailureText("unknown_task", null).includes("unknown_task"), false, "第 46 批：英文原因码不给律师");
   // 第 29 批 429 演练：限流说“繁忙”，不说“连不上”
   assert.match(agentFailureText("host_reported_failure", "429 rate limit exceeded (drill)"), /^AI 服务繁忙（请求太多被限流/);
   // 第 29 批上游不回应演练：超时写明时限与下一步，不露原因码

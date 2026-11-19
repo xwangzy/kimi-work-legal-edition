@@ -51,6 +51,14 @@ export interface UsageRow {
   lease_id: string | null;
   /** 第 44 批迁移：由升级前的网关预写日志补录（token 数是上游当时给的真实值，金额按补录时的价目表算）。 */
   backfill?: true;
+  /**
+   * 第 46 批（契约 §4）：流式中途中断（超时 / 上游流错误）且已向客户端写出内容。不扣额度、不计售价（usage 记 null、charge 与 value_micro 为 0），
+   * 成本按网关估算的用量照算（cost_micro，对账“服务出错的已产生成本”）；估算用量放 partial_usage——旧版控制面读到这种行也不会把它算进额度。
+   */
+  partial?: true;
+  partial_usage?: UsageTokens;
+  /** 网关标注的重试（同一客户端请求编号的首个请求编号）；可选，只展示。 */
+  retry_of?: string;
 }
 
 export interface Agg {
@@ -140,6 +148,8 @@ export class UsageBook {
   private readonly byTenantDay = new Map<string, DayMap>();
   private readonly byMemberDay = new Map<string, DayMap>();
   private readonly byModelDay = new Map<string, DayMap>();
+  /** 成员 × 模型（键：租户 \0 成员 \0 别名）。 */
+  private readonly byMemberModelDay = new Map<string, DayMap>();
   /** 小时桶：tid → 小时序号 → {tokens, value}；成员同理（滚动窗口用，保留 8 天）。 */
   private readonly hourT = new Map<string, Map<number, { tokens: number; value: number }>>();
   private readonly hourM = new Map<string, Map<number, { tokens: number; value: number }>>();
@@ -205,6 +215,7 @@ export class UsageBook {
     bump(this.byTenantDay, r.tid, r.day, a);
     bump(this.byMemberDay, `${r.tid}\u0000${r.uid ?? ""}`, r.day, a);
     bump(this.byModelDay, `${r.tid}\u0000${r.alias ?? ""}`, r.day, a);
+    bump(this.byMemberModelDay, `${r.tid}\u0000${r.uid ?? ""}\u0000${r.alias ?? ""}`, r.day, a);
     const h = hourIndex(Date.parse(r.at));
     const tok = a.tokens_in + a.tokens_out;
     for (const [m, k] of [[this.hourT, r.tid], [this.hourM, `${r.tid}\u0000${r.uid ?? ""}`]] as const) {
@@ -267,6 +278,18 @@ export class UsageBook {
       const key = kind === "tenant" ? k : kind === "model" ? k.split("\u0000")[1]! : k;
       const s = this.sumMap(d, from, to);
       if (s.requests > 0) addAgg(out.get(key) ?? (out.set(key, emptyAgg()), out.get(key)!), s);
+    }
+    return out;
+  }
+
+  /** 某成员按模型汇总（键为别名）。 */
+  memberModels(tid: string, uid: string, from: string, to: string): Map<string, Agg> {
+    const out = new Map<string, Agg>();
+    const prefix = `${tid}\u0000${uid}\u0000`;
+    for (const [k, d] of this.byMemberModelDay) {
+      if (!k.startsWith(prefix)) continue;
+      const s = this.sumMap(d, from, to);
+      if (s.requests > 0) out.set(k.slice(prefix.length), s);
     }
     return out;
   }

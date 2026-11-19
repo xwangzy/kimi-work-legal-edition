@@ -8,7 +8,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, statSync, readFileSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -69,7 +69,7 @@ const rawGet = (port: number, path: string, headers: Record<string, string> = {}
 const once = (name: string) => (existsSync(join(dir, name)) ? join(dir, name) : write(name, randomBytes(32).toString("hex")));
 const lines = (p: string) => (existsSync(p) ? readFileSync(p, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
 
-test("运营按人鉴权端到端：命令行生成密钥与名册 → 生产入口按人核验 → 流水记运营编号；吊销即时、回滚运营接口 503 而业务照常；配置不对拒绝启动", { timeout: 180_000 }, async () => {
+test("运营鉴权端到端：命令行名册与私钥（support / relay / notify）按人核验、吊销即时、回滚 503；控制面改为控制台账号（引导首个系统管理员、角色、流水记人员编号）；配置不对拒绝启动", { timeout: 180_000 }, async () => {
   // ─── 安全管理员与三位运营人员各自生成密钥 ───
   const keysFile = join(dir, "pub", "ops-roster-keys.json");
   const sec = cli("roster-keygen", "--kid", "sec-1", "--out", join(dir, "sec"), "--keys-file", keysFile);
@@ -146,6 +146,8 @@ test("运营按人鉴权端到端：命令行生成密钥与名册 → 生产入
     ...(ops === undefined ? {} : { ops }),
   });
   const ops = { deployment: "e2e", roster_file: roster, roster_keys_file: keysFile, allow_cidrs: ["127.0.0.1/32"] };
+  /** 通知服务（第 46 批起运营名册与私钥签名只给 support / relay / notify）。 */
+  const nfCfg = (dataDir: string, o: unknown, cpUrl = "http://127.0.0.1:1") => ({ role: "notify", listen: { host: "127.0.0.1", port: 0 }, insecure_loopback_for_test: true, service_secret_file: secret, control_plane: { url: cpUrl, keys_file: cpKeysFile }, seat_keys_file: seatKeysFile, data_dir: join(dir, dataDir), ops: o });
   // 拒绝启动：共享运营口令配置、没有运营接口的角色配 ops、过宽网段、缺部署标识、名册签名公钥表里放私钥（复核 RA10A-01、RA10A-10）
   assert.match(runOnce({ ...cpCfg("r1", ops), ops_secret_file: write("ops-secret", randomBytes(32).toString("hex")) }).stderr, /ops_secret_file 已停用/);
   assert.match(runOnce({ role: "dist", listen: { host: "127.0.0.1", port: 0 }, insecure_loopback_for_test: true, ops }).stderr, /dist 没有运营接口/);
@@ -155,81 +157,98 @@ test("运营按人鉴权端到端：命令行生成密钥与名册 → 生产入
   // 生产形态（TLS，不是回环测试例外）：回环、链路本地地址不能列为运维网段（前置代理、边车多在这些地址上）
   const tlsCfg = (allow: string[]) => ({ ...cpCfg("r6", { ...ops, allow_cidrs: allow }), insecure_loopback_for_test: undefined, listen: { host: "0.0.0.0", port: 0 }, tls: { cert_file: write("fake.crt", "x"), key_file: write("fake.key", "x") } });
   for (const bad of [["127.0.0.1/32"], ["169.254.1.0/24"], ["10.20.0.0/24", "::1"]]) assert.match(runOnce(tlsCfg(bad)).stderr, /含回环、未指定或链路本地地址/, bad.join(","));
-  assert.match(runOnce(cpCfg("r3", { ...ops, deployment: undefined })).stderr, /ops\.deployment/);
+  assert.match(runOnce(nfCfg("r3", { ...ops, deployment: undefined })).stderr, /ops\.deployment/);
   const privKeys = write("priv-keys.json", JSON.stringify({ "sec-1": readFileSync(join(dir, "sec", "sec-1.key.pem"), "utf8") }));
-  assert.match(runOnce(cpCfg("r4", { ...ops, roster_keys_file: privKeys })).stderr, /不是公钥/);
-  assert.match(runOnce(cpCfg("r4", { ...ops, roster_keys_file: write("not-json", "{") })).stderr, /不是 JSON/);
+  assert.match(runOnce(nfCfg("r4", { ...ops, roster_keys_file: privKeys })).stderr, /不是公钥/);
+  assert.match(runOnce(nfCfg("r4", { ...ops, roster_keys_file: write("not-json", "{") })).stderr, /不是 JSON/);
+  assert.match(runOnce({ ...cpCfg("r7", ops), dev_staff: [{ email: "a@b.cn" }] }).stderr, /dev_staff 只给开发与测试/);
+
+  // ─── 控制面（第 46 批）：ops 里的名册与密码登录项只提示“已废弃”；首个系统管理员由 console.bootstrap_admin 引导，运营接口用控制台账号 ───
+  const ADMIN = "admin@csi.example.cn";
+  const cpOps = { ...ops, password_login: true };
+  const cp = await start({ ...cpCfg("cp", cpOps), console: { bootstrap_admin: { email: ADMIN, name: "系统管理员" }, staff_mfa: "optional" } });
+  assert.match(cp.out(), /ops\.roster_file 对控制面已废弃/);
+  assert.match(cp.out(), /ops\.password_login 对控制面已废弃/);
+  const url = `http://127.0.0.1:${cp.port}`;
+  const cpDir = join(dir, "cp", "control-plane");
+  const boot = readFileSync(join(cpDir, "bootstrap-admin.txt"), "utf8");
+  assert.equal(statSync(join(cpDir, "bootstrap-admin.txt")).mode & 0o777, 0o600);
+  assert.equal(cp.out().includes(/setup_code: (\S+)/.exec(boot)![1]!), false, "启动日志不含设置码");
+  const j = async (method: string, path: string, body?: unknown, token?: string) => {
+    const r = await fetch(`${url}${path}`, { method, headers: { ...(body === undefined ? {} : { "content-type": "application/json" }), ...(token ? { authorization: `Bearer ${token}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    return { status: r.status, json: (await r.json()) as any };
+  };
+  assert.equal((await j("POST", "/v1/auth/password-reset/confirm", { email: ADMIN, code: /setup_code: (\S+)/.exec(boot)![1], password: "Console2026secure" })).status, 200);
+  const login = await j("POST", "/v1/auth/login", { email: ADMIN, password: "Console2026secure", client: { platform: "web" } });
+  assert.equal(login.status, 200, JSON.stringify(login.json));
+  const tok = login.json.session_token as string;
+  const created = await j("POST", "/v1/ops/tenants", { tid: "ten_e2e", edition: "team", seats: 3, name: "端到端律师事务所" }, tok);
+  assert.deepEqual([created.status, created.json.error?.code], [403, "perm_denied"], "系统管理员没有开通权限（职责分离）");
+  assert.equal((await j("POST", "/v1/auth/reauth", { password: "Console2026secure" }, tok)).status, 200);
+  const opStaff = await j("POST", "/v1/ops/staff", { email: "op@csi.example.cn", name: "客户运营", roles: ["operator"] }, tok);
+  assert.equal(opStaff.status, 200, JSON.stringify(opStaff.json));
+  assert.equal((await j("POST", "/v1/auth/password-reset/confirm", { email: "op@csi.example.cn", code: opStaff.json.setup_code, password: "Operator2026secure" })).status, 200);
+  const opTok = (await j("POST", "/v1/auth/login", { email: "op@csi.example.cn", password: "Operator2026secure", client: { platform: "web" } })).json.session_token as string;
+  assert.equal((await j("POST", "/v1/ops/tenants", { tid: "ten_e2e", edition: "team", seats: 3, name: "端到端律师事务所" }, opTok)).status, 200);
+  const opAid = opStaff.json.staff.aid as string;
+  assert.deepEqual(lines(join(cpDir, "audit.jsonl")).filter((r) => r.tid === "ten_e2e").map((r) => [r.action, r.actor.id]), [["tenant.create", opAid]]);
+  const acc = lines(join(cpDir, "ops", "access.jsonl"));
+  assert.ok(acc.some((r) => r.operator === opAid && r.email === "op@csi.example.cn" && r.via === "session" && r.action === "tenant.create" && r.result === "ok"));
+  assert.equal(readFileSync(join(cpDir, "ops", "access.jsonl"), "utf8").includes(tok), false, "访问审计不记会话令牌");
+  // 控制面不再认私钥签名（命令行 call 只给 support / relay / notify）
+  const call = (id: string, method: string, path: string, body?: unknown, o: { aud?: string; at?: string } = {}) =>
+    cli("call", "--url", o.at ?? url, "--deployment", "e2e", "--aud", o.aud ?? "control-plane", "--id", id, "--kid", "k1", "--key", join(dir, id, `${id}.k1.key.pem`), "--method", method, "--path", path, ...(body === undefined ? [] : ["--body", JSON.stringify(body)]), ...(id === "op_0001" ? ["--passphrase-env", "KWL_E2E_PASS"] : []));
+  assert.equal(call("op_0002", "GET", "/v1/ops/tenants/ten_e2e").json.status, 401);
+  assert.equal(cli("call", "--url", url, "--deployment", "e2e", "--aud", "billing", "--id", "op_0002", "--kid", "k1", "--key", join(dir, "op_0002", "op_0002.k1.key.pem"), "--path", "/v1/ops/tenants/ten_e2e").status, 2, "--aud 写错直接报错");
+  assert.equal(cli("call", "--url", url, "--deployment", "e2e", "--aud", "control-plane", "--id", "op_0002", "--kid", "k1", "--key", join(dir, "op_0002", "op_0002.k1.key.pem"), "--method", "DELETE", "--path", "/v1/ops/x", "--body", "{}").status, 2, "DELETE 不带请求体");
+  assert.equal(cli("password", "set", "--credentials", join(dir, "creds.json"), "--id", "op_0001", "--login", "zhang").status, 2, "password 子命令已停用");
+  // 允许网段里发点段与绝对形式：入口认出是运营路径、放行，控制面按原样路径不认（404）
+  for (const p of ["/v1/x/../ops/tenants/ten_e2e", `http://127.0.0.1:${cp.port}/v1/ops/tenants/ten_e2e`]) assert.equal((await rawGet(cp.port, p, { authorization: `Bearer ${opTok}` })).status, 404, p);
+
+  // ─── 通知服务经生产入口挂运营守卫（复核 RA10B-12）：名册 + 私钥签名照旧 ───
+  const notify = await start(nfCfg("nf", ops, url));
+  const nurl = `http://127.0.0.1:${notify.port}`;
+  const purge = (id: string, aud = "notify") => call(id, "DELETE", "/v1/notify/ops/tenants/ten_e2e", undefined, { aud, at: nurl });
+  assert.equal(purge("op_0002").json.status, 403);
+  assert.equal(purge("op_0003", "control-plane").json.status, 401, "签给控制面的不能拿到通知服务用");
+  const purged = purge("op_0003");
+  assert.deepEqual([purged.json.status, purged.json.body], [200, { ok: true, removed: 0 }]);
+  assert.deepEqual(lines(join(dir, "nf", "notify", "access.jsonl")).map((r) => [r.action, r.operator, r.roster_version]), [["tenant_purge", "op_0003", 4]]);
+  // 吊销 op_0001（不重启即生效）：之前是“没有权限”，之后是“凭据无效”
+  assert.equal(purge("op_0001").json.body.error, "ops_permission_denied");
+  assert.equal(cli("roster", "revoke", "--roster", roster, "--id", "op_0001", ...signArgs, "--out", roster).status, 0);
+  assert.equal(cli("roster", "revoke", "--roster", roster, "--id", "op_0001", ...signArgs, "--out", roster).status, 2, "已吊销的不能再改（不覆盖吊销时刻）");
+  const gone = purge("op_0001");
+  assert.deepEqual([gone.json.status, gone.json.body.error], [401, "ops_auth_invalid"]);
+  // 回滚到 v4：运营接口 503；重启后业务照常启动、运营接口仍 503；换回新名册即恢复
+  const v5 = join(dir, "ops-roster-v5.json");
+  copyFileSync(roster, v5);
+  copyFileSync(v4, roster);
+  assert.equal(purge("op_0003").json.status, 503);
+  await stop(notify.proc);
+  const again = await start(nfCfg("nf", ops, url));
+  assert.match(again.out(), /运营名册不可用（roster_rollback）/, "重启后回滚保护仍在");
+  copyFileSync(v5, roster);
+  assert.equal(call("op_0003", "DELETE", "/v1/notify/ops/tenants/ten_e2e", undefined, { aud: "notify", at: `http://127.0.0.1:${again.port}` }).json.status, 200, "换回新名册即恢复");
+  await stop(again.proc);
   // 被改过的名册：业务照常启动，运营接口 503（复核 RA10A-03），错误日志记一条
   const tampered = JSON.parse(readFileSync(roster, "utf8"));
   tampered.body.operators[0].perms = ["tenant.read", "tenant.manage"];
-  const t5 = await start(cpCfg("r5", { ...ops, roster_file: write("tampered.json", JSON.stringify(tampered)) }));
+  const t5 = await start(nfCfg("r5", { ...ops, roster_file: write("tampered.json", JSON.stringify(tampered)) }, url));
   assert.match(t5.out(), /运营名册不可用（roster_signature_invalid）：运营接口暂停，业务照常/);
   assert.equal((await rawGet(t5.port, "/healthz")).status, 200);
   const errLog = readdirSync(join(dir, "r5", "obs")).find((f) => f.startsWith("error-"));
   assert.ok(errLog && lines(join(dir, "r5", "obs", errLog)).some((r) => r.kind === "ops_roster" && r.code === "roster_signature_invalid"));
   await stop(t5.proc);
 
-  const cp = await start(cpCfg("cp", ops));
-  const url = `http://127.0.0.1:${cp.port}`;
-  const call = (id: string, method: string, path: string, body?: unknown, o: { aud?: string; at?: string } = {}) =>
-    cli("call", "--url", o.at ?? url, "--deployment", "e2e", "--aud", o.aud ?? "control-plane", "--id", id, "--kid", "k1", "--key", join(dir, id, `${id}.k1.key.pem`), "--method", method, "--path", path, ...(body === undefined ? [] : ["--body", JSON.stringify(body)]), ...(id === "op_0001" ? ["--passphrase-env", "KWL_E2E_PASS"] : []));
-  const created = call("op_0001", "POST", "/v1/ops/tenants", { tid: "ten_e2e", edition: "team", seats: 3, name: "端到端律师事务所" });
-  assert.equal(created.json?.status, 200, JSON.stringify(created));
-  const code = call("op_0003", "POST", "/v1/ops/tenants/ten_e2e/activation-codes", { slug: "admin" });
-  assert.equal(code.json.status, 200);
-  assert.match(code.json.body.code, /\S{10,}/);
-  const denied = call("op_0002", "POST", "/v1/ops/tenants/ten_e2e/renew", { days: 10 });
-  assert.deepEqual([denied.status, denied.json.status, denied.json.body.error.code], [1, 403, "ops_permission_denied"]);
-  assert.equal(call("op_0002", "GET", "/v1/ops/tenants/ten_e2e").json.status, 200);
-  assert.equal(cli("call", "--url", url, "--deployment", "e2e", "--aud", "billing", "--id", "op_0002", "--kid", "k1", "--key", join(dir, "op_0002", "op_0002.k1.key.pem"), "--path", "/v1/ops/tenants/ten_e2e").status, 2, "--aud 写错直接报错");
-  assert.equal(cli("call", "--url", url, "--deployment", "e2e", "--aud", "control-plane", "--id", "op_0002", "--kid", "k1", "--key", join(dir, "op_0002", "op_0002.k1.key.pem"), "--method", "DELETE", "--path", "/v1/ops/x", "--body", "{}").status, 2, "DELETE 不带请求体");
-  const cpDir = join(dir, "cp", "control-plane");
-  assert.deepEqual(lines(join(cpDir, "audit.jsonl")).filter((r) => r.tid === "ten_e2e").map((r) => [r.action, r.actor.id]), [["tenant.create", "op_0001"], ["activation.issue", "op_0003"]]);
-  const acc = lines(join(cpDir, "ops", "access.jsonl"));
-  assert.ok(acc.some((r) => r.operator === "op_0002" && r.op_key === "k1" && r.roster_version === 4 && r.action === "tenant.read" && r.result === "ok"));
-  assert.ok(lines(join(cpDir, "ops", "rejects.jsonl")).some((r) => r.claimed === "op_0002" && r.reason === "ops_permission_denied" && r.verified === true));
-  assert.equal(readFileSync(join(cpDir, "ops", "access.jsonl"), "utf8").includes(code.json.body.code), false, "访问审计不记开通码");
-  assert.deepEqual(lines(join(cpDir, "ops", "roster-history.jsonl")).map((r) => [r.event, r.version]), [["roster_accepted", 4]]);
-  // 允许网段里发点段与绝对形式：入口认出是运营路径、放行，控制面按原样路径不认（404）
-  for (const p of ["/v1/x/../ops/tenants/ten_e2e", `http://127.0.0.1:${cp.port}/v1/ops/tenants/ten_e2e`]) assert.equal((await rawGet(cp.port, p)).status, 404, p);
-
-  // ─── 通知服务经生产入口挂运营守卫（复核 RA10B-12）───
-  const notify = await start({ role: "notify", listen: { host: "127.0.0.1", port: 0 }, insecure_loopback_for_test: true, service_secret_file: secret, control_plane: { url, keys_file: cpKeysFile }, seat_keys_file: seatKeysFile, data_dir: join(dir, "nf"), ops });
-  const nurl = `http://127.0.0.1:${notify.port}`;
-  assert.equal(call("op_0002", "DELETE", "/v1/notify/ops/tenants/ten_e2e", undefined, { aud: "notify", at: nurl }).json.status, 403);
-  assert.equal(call("op_0003", "DELETE", "/v1/notify/ops/tenants/ten_e2e", undefined, { aud: "control-plane", at: nurl }).json.status, 401, "签给控制面的不能拿到通知服务用");
-  const purged = call("op_0003", "DELETE", "/v1/notify/ops/tenants/ten_e2e", undefined, { aud: "notify", at: nurl });
-  assert.deepEqual([purged.json.status, purged.json.body], [200, { ok: true, removed: 0 }]);
-  assert.deepEqual(lines(join(dir, "nf", "notify", "access.jsonl")).map((r) => [r.action, r.operator, r.roster_version]), [["tenant_purge", "op_0003", 4]]);
-  await stop(notify.proc);
-
-  // ─── 吊销 op_0001（不重启即生效）───
-  assert.equal(cli("roster", "revoke", "--roster", roster, "--id", "op_0001", ...signArgs, "--out", roster).status, 0);
-  assert.equal(cli("roster", "revoke", "--roster", roster, "--id", "op_0001", ...signArgs, "--out", roster).status, 2, "已吊销的不能再改（不覆盖吊销时刻）");
-  const gone = call("op_0001", "GET", "/v1/ops/tenants/ten_e2e");
-  assert.deepEqual([gone.json.status, gone.json.body.error.code], [401, "ops_auth_invalid"]);
-  assert.equal(call("op_0002", "GET", "/v1/ops/tenants/ten_e2e").json.status, 200);
-  // 回滚到 v4（op_0001 仍有效的那一版）：运营接口 503；重启后业务照常启动、运营接口仍 503
-  const v5 = join(dir, "ops-roster-v5.json");
-  copyFileSync(roster, v5);
-  copyFileSync(v4, roster);
-  assert.deepEqual([call("op_0001", "GET", "/v1/ops/tenants/ten_e2e").json.status, call("op_0002", "GET", "/v1/ops/tenants/ten_e2e").json.status], [503, 503]);
-  await stop(cp.proc);
-  const again = await start(cpCfg("cp", ops));
-  assert.match(again.out(), /运营名册不可用（roster_rollback）/, "重启后回滚保护仍在");
-  assert.equal(call("op_0001", "GET", "/v1/ops/tenants/ten_e2e", undefined, { at: `http://127.0.0.1:${again.port}` }).json.status, 503);
-  copyFileSync(v5, roster);
-  assert.equal(call("op_0002", "GET", "/v1/ops/tenants/ten_e2e", undefined, { at: `http://127.0.0.1:${again.port}` }).json.status, 200, "换回新名册即恢复");
-  await stop(again.proc);
-
-  // ─── 运维网段以外的来源：运营路径在入口就 404（不进服务），其他路径照常 ───
+  // ─── 运维网段以外的来源：运营路径在入口就 404（不进服务）、平台人员登录 403；律师与其他路径照常 ───
   const far = await start(cpCfg("far", { ...ops, allow_cidrs: ["10.20.0.0/24", "fd00::/32"] }));
-  const r = call("op_0002", "GET", "/v1/ops/tenants/ten_e2e", undefined, { at: `http://127.0.0.1:${far.port}` });
-  assert.deepEqual([r.json.status, r.json.body], [404, { error: "not_found" }], "入口的 404（不是控制面的“租户未开通”）");
-  assert.equal(lines(join(dir, "far", "control-plane", "ops", "rejects.jsonl")).length, 0, "被入口挡下，没有进到运营守卫");
-  assert.equal(lines(join(dir, "far", "control-plane", "ops", "access.jsonl")).length, 0, "也没有进到控制面的运营路由");
+  const r = await rawGet(far.port, "/v1/ops/tenants/ten_e2e", { authorization: `Bearer ${opTok}` });
+  assert.deepEqual([r.status, r.body], [404, '{"error":"not_found"}'], "入口的 404（不是控制面的“租户未开通”）");
+  assert.equal(lines(join(dir, "far", "control-plane", "ops", "access.jsonl")).length, 0, "没有进到控制面的运营路由");
   assert.equal((await rawGet(far.port, `http://127.0.0.1:${far.port}/v1/ops/tenants/ten_e2e`)).body, '{"error":"not_found"}', "绝对形式同样在入口挡下");
   assert.equal((await rawGet(far.port, "/healthz")).status, 200);
+  assert.equal((await rawGet(far.port, "/v1/meta")).status, 200, "元信息不受运维网段限制");
   // 没有配置 ops 的控制面：运营路径一律 404
   const plain = await start(cpCfg("plain", undefined));
   assert.equal((await rawGet(plain.port, "/v1/ops/tenants/ten_e2e")).status, 404);
@@ -242,7 +261,7 @@ test("运营按人鉴权端到端：命令行生成密钥与名册 → 生产入
   assert.equal(rot.status, 0, rot.stderr);
   assert.equal(JSON.parse(readFileSync(roster, "utf8")).kid, "sec-2");
   assert.equal(cli("roster", "show", "--roster", roster, "--keys", keysFile).status, 0);
-  const rotated = await start(cpCfg("cp", ops));
-  assert.equal(call("op_0002", "GET", "/v1/ops/tenants/ten_e2e", undefined, { at: `http://127.0.0.1:${rotated.port}` }).json.status, 200);
-  assert.deepEqual(lines(join(cpDir, "ops", "roster-history.jsonl")).map((r) => r.event).slice(-2), ["roster_keys_changed", "roster_accepted"]);
+  const rotated = await start(nfCfg("nf", ops, url));
+  assert.equal(call("op_0003", "DELETE", "/v1/notify/ops/tenants/ten_e2e", undefined, { aud: "notify", at: `http://127.0.0.1:${rotated.port}` }).json.status, 200);
+  assert.deepEqual(lines(join(dir, "nf", "notify", "ops", "roster-history.jsonl")).map((r) => r.event).slice(-2), ["roster_keys_changed", "roster_accepted"]);
 });

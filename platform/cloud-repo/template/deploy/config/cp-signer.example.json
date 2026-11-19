@@ -1,0 +1,11 @@
+{
+  "role": "cp-signer",
+  "environment": "prod",
+  "init_ledger": true,
+  "listen": { "host": "127.0.0.1", "port": 9443 },
+  "tls": { "cert_file": "/etc/kwl/tls/signer.crt", "key_file": "/etc/kwl/tls/signer.key", "client_ca_file": "/etc/kwl/tls/internal-ca.crt" },
+  "allowed_callers": ["spiffe://kwl/prod/cp-api"],
+  "data_dir": "/var/lib/kwl",
+  "keys": "整段替换为 cloud-init-secrets 输出的 public/signer-keys.json 的内容",
+  "ledger_archive": { "kind": "s3", "endpoint": "https://obs.cn-north-4.myhuaweicloud.com", "bucket": "kwl-prod-signer-ledger", "region": "cn-north-4", "access_key_id_file": "/etc/kwl/secrets/ledger-ak", "secret_access_key_file": "/etc/kwl/secrets/ledger-sk", "kms_key_id": "<KMS 密钥编号>" }
+}

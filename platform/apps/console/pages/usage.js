@@ -197,7 +197,7 @@ function runRecords(box) {
           { key: "tenant_name", label: "律所", value: (r) => r.tenant_name ?? r.tid },
           { key: "email", label: "账号", value: (r) => r.email ?? r.uid ?? "" },
           { key: "alias", label: "模型", render: (r) => h("div", { class: "cell-2" }, mono(r.alias), h("small", {}, `${r.provider ?? "—"} · ${r.upstream_model ?? "—"}`)) },
-          { key: "outcome", label: "结果", render: (r) => h("span", { class: "badges" }, outcomeBadge(r.outcome), r.status && r.status !== 200 ? mono(String(r.status)) : null) },
+          { key: "outcome", label: "结果", render: (r) => h("span", { class: "badges" }, outcomeBadge(r.outcome), r.retry_of ? badge("重试", "info", `同一客户端请求的重试（首个请求 ${r.retry_of}）；每次都真实调用了上游，照常计费`) : null, r.partial ? badge("中断估算", "warn", "流中途中断：按已转发内容估算计费") : null, r.status && r.status !== 200 ? mono(String(r.status)) : null) },
           { key: "in", label: "输入", num: true, value: (r) => r.usage?.input ?? null, render: (r) => fmt.int(r.usage?.input) },
           { key: "cached", label: "缓存", num: true, value: (r) => r.usage?.cached ?? null, render: (r) => fmt.int(r.usage?.cached) },
           { key: "out", label: "输出", num: true, value: (r) => r.usage?.output ?? null, render: (r) => fmt.int(r.usage?.output) },
@@ -223,7 +223,6 @@ function openRecord(r) {
     body: h(
       "div",
       { class: "stack" },
-      r.client_request_id?.startsWith("dev-demo-") ? h("div", { class: "banner warn" }, "开发演示数据：本机开发脚本提交的记录。") : null,
       r.usage_source === "estimated" ? h("div", { class: "banner warn" }, "用量为估算：客户端断开且上游没给 usage，按已转发内容估算。") : null,
       r.outcome === "upstream_error" ? h("div", { class: "banner danger" }, "上游出错：不扣客户额度、成本记 0；上游可能仍计费，对账时单列。") : null,
       panel(
@@ -231,6 +230,8 @@ function openRecord(r) {
         facts([
           ["请求编号", mono(r.request_id)],
           ["客户端请求编号", mono(r.client_request_id ?? "—")],
+          ["重试", r.retry_of ? h("span", {}, "是，首个请求 ", mono(r.retry_of)) : "否"],
+          ["中断估算", r.partial ? "是：流中途中断，按已转发内容估算计费" : "否"],
           ["上游请求编号", mono(r.upstream_request_id ?? "—")],
           ["开始 / 结束", `${fmt.full(r.started_at)} → ${fmt.full(r.at)}`],
           ["周期", r.period ?? "—"],

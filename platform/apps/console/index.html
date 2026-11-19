@@ -3,11 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- 正式部署由 Web 服务器下发更严的 CSP（connect-src 只写控制面地址，见 docs/部署-云端控制台与桌面端对接.md）；这里是兜底 -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https: http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'none'; form-action 'none'" />
+    <!-- 兜底 CSP：scripts/build-console.mjs --control-plane <来源> 把 connect-src 收紧为 'self' + 控制面来源；正式部署另由 Web 服务器下发同口径的头 -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'none'" />
     <meta name="referrer" content="no-referrer" />
     <meta name="color-scheme" content="light dark" />
-    <title>运营控制台 · Kimi Work 法律版</title>
+    <title>控制台 · Kimi Work 法律版</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23191919'/%3E%3Cpath d='M7 21h18' stroke='%23167ffb' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M7 15h11' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
     <!-- 令牌与桌面端同一份（scripts/build-console.mjs 从 packages/design-tokens 拷入 dist/） -->
     <link rel="stylesheet" href="tokens.css" />
@@ -18,126 +18,43 @@
     <!-- 启动中 -->
     <div class="boot" id="boot" role="status">正在读取配置…</div>
 
-    <!-- 登录：账号 + 密码为主（安全管理员发的登录名与初始密码，首次登录须改）；运营私钥登录收在下面作为次要入口 -->
-    <main class="login" id="login" hidden>
-      <div class="login-card">
-        <div class="login-brand">
-          <span class="brand-mark" aria-hidden="true">K</span>
-          <div>
-            <h1>运营控制台</h1>
-            <p class="login-env" id="login-env">Kimi Work 法律版</p>
-          </div>
-        </div>
-
-        <!-- ① 账号密码登录 -->
-        <form class="login-form" id="pw-form" autocomplete="on" novalidate>
-          <div class="field">
-            <label for="pw-login">账号</label>
-            <input id="pw-login" name="login" autocomplete="username" placeholder="登录名或运营编号" spellcheck="false" autocapitalize="off" />
-          </div>
-          <div class="field">
-            <label for="pw-pass">密码</label>
-            <input id="pw-pass" name="password" type="password" autocomplete="current-password" />
-          </div>
-          <p class="form-error" id="pw-error" role="alert"></p>
-          <button class="btn primary block" type="submit" id="pw-submit">登录</button>
-          <p class="login-foot">账号由安全管理员开通；忘记密码请找安全管理员重置。30 分钟无操作或登录满 8 小时需重新登录，关闭标签页即退出。</p>
-        </form>
-
-        <!-- ② 首次登录（或密码被重置后）：先改密码 -->
-        <form class="login-form" id="change-form" autocomplete="on" novalidate hidden>
-          <div class="login-notice">
-            <b>请先设置你自己的密码</b>
-            <span id="change-why">当前是安全管理员发的初始密码，改好后才能使用控制台。</span>
-          </div>
-          <input type="text" name="username" id="change-user" autocomplete="username" hidden />
-          <div class="field" id="change-current-field">
-            <label for="change-current">当前密码</label>
-            <input id="change-current" name="current" type="password" autocomplete="current-password" />
-          </div>
-          <div class="field">
-            <label for="change-next">新密码</label>
-            <input id="change-next" name="next" type="password" autocomplete="new-password" />
-            <small class="hint">至少 12 位，同时包含字母和数字，不含登录名，不能与当前密码相同。</small>
-          </div>
-          <div class="field">
-            <label for="change-again">再输入一次新密码</label>
-            <input id="change-again" name="again" type="password" autocomplete="new-password" />
-          </div>
-          <p class="form-error" id="change-error" role="alert"></p>
-          <button class="btn primary block" type="submit" id="change-submit">保存新密码并进入</button>
-          <button class="link login-switch" type="button" id="change-cancel">退出登录</button>
-        </form>
-
-        <!-- ③ 运营私钥登录（命令行 ops-cli keygen 生成的密钥；私钥只在本页内存，不上传） -->
-        <details class="login-alt" id="key-alt">
-          <summary>使用运营私钥登录</summary>
-          <form class="login-form" id="login-form" autocomplete="off" novalidate>
-            <p class="login-lead">每个请求都在本页用<b>你本人的运营私钥</b>签名后直连控制面。私钥不上传、不写盘，关页或退出即丢弃。</p>
-            <label class="drop" id="drop" tabindex="-1">
-              <input name="keyfile" id="keyfile" type="file" accept=".pem,.key,.txt" />
-              <span class="drop-icon" aria-hidden="true" id="drop-icon"></span>
-              <span class="drop-text" id="drop-text">把私钥文件拖到这里，或点击选择</span>
-              <small class="drop-sub" id="drop-sub">ops-cli keygen 生成的 .key.pem（PKCS#8，明文或口令加密）</small>
-            </label>
-            <div class="login-row">
-              <div class="field">
-                <label for="op-id">运营编号</label>
-                <input id="op-id" name="operator" placeholder="op_0001" autocomplete="off" spellcheck="false" />
-              </div>
-              <div class="field narrow">
-                <label for="op-kid">密钥编号</label>
-                <input id="op-kid" name="kid" placeholder="k1" spellcheck="false" />
-              </div>
-            </div>
-            <div class="field" id="pass-field" hidden>
-              <label for="op-pass">私钥口令</label>
-              <input id="op-pass" name="passphrase" type="password" autocomplete="off" placeholder="这把私钥有口令保护" />
-            </div>
-            <label class="field-check">
-              <input type="checkbox" name="remember" id="remember" />
-              <span>本标签页内记住 8 小时<small>只把浏览器里不可导出的密钥对象存在本机；关掉标签页、点“退出”或到期即清除。公用电脑不要勾。</small></span>
-            </label>
-            <p class="form-error" id="login-error" role="alert"></p>
-            <button class="btn block" type="submit" id="login-submit">用私钥进入</button>
-            <p class="login-foot" id="login-foot"></p>
-          </form>
-        </details>
-      </div>
+    <!-- 登录页：律师、律所管理员、中软平台人员同一入口（auth.js 渲染卡片内容） -->
+    <main class="auth" id="auth" hidden>
+      <div class="auth-card" id="auth-card"></div>
     </main>
 
-    <!-- 主界面：左侧导航 + 顶栏 + 内容 -->
+    <!-- 主界面：暖灰侧栏 + 悬浮在 6px 间距里的白色圆角主区 -->
     <div class="app" id="app" hidden>
-      <aside class="sidebar" aria-label="导航">
+      <aside class="sidebar" id="sidebar" aria-label="导航">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true">K</span>
-          <div>
-            <b>运营控制台</b>
-            <small>Kimi Work 法律版</small>
+          <div class="brand-text">
+            <b>Kimi Work 法律版</b>
+            <small id="env"></small>
           </div>
         </div>
         <nav class="nav" id="nav"></nav>
         <div class="sidebar-foot" id="sidebar-foot"></div>
       </aside>
-      <div class="main-col">
+      <button type="button" class="scrim" id="scrim" aria-label="关闭导航"></button>
+      <div class="main">
         <header class="topbar">
-          <div class="deploy" id="deploy"></div>
-          <div class="gsearch" id="gsearch"></div>
+          <button type="button" class="icon-btn menu-btn" id="btn-menu" aria-label="打开导航"></button>
+          <div class="crumbs" id="crumbs"></div>
+          <div class="gsearch" id="gsearch" hidden></div>
           <div class="topbar-right">
             <span class="refreshed" id="refreshed" aria-live="polite"></span>
             <button type="button" class="icon-btn" id="btn-refresh" title="刷新本页（R）" aria-label="刷新本页"></button>
-            <button type="button" class="icon-btn" id="btn-theme" title="主题" aria-label="切换主题"></button>
-            <span class="who" id="who"></span>
-            <button type="button" class="btn sm" id="btn-passwd" hidden>修改密码</button>
-            <button type="button" class="btn sm" id="btn-logout">退出</button>
           </div>
         </header>
+        <div id="banner-slot"></div>
         <main class="content" id="content" tabindex="-1"></main>
       </div>
     </div>
 
     <dialog class="drawer" id="drawer" aria-label="详情"></dialog>
     <dialog class="modal" id="modal" aria-label="确认"></dialog>
+    <dialog class="modal" id="reauth" aria-label="复核身份"></dialog>
     <div class="toasts" id="toasts" aria-live="polite"></div>
   </body>
 </html>

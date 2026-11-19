@@ -568,7 +568,8 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         // 模型通道不可达（provider.*，第 28 批演练）：直说 AI 服务连不上，不写“任务会尽量继续”
         steps.push({ key: `${e.event_id}-l`, level: "lawyer", icon: "fail", title: p.retryable === true ? "AI 服务出了点问题，正在自动重试" : String(p.code ?? "").startsWith("provider.") ? (OWN_QUOTA_RE.test(String(p.message ?? "")) ? "AI 额度暂时用到限制，这一步暂停" : QUOTA_RE.test(String(p.message ?? "")) ? "AI 服务账户的余额或额度不足，这一步没有完成" : "AI 服务连不上，这一步没有完成") : "这一步没有完成，任务会尽量继续", at });
         // V16（审计第 8 条）：处理细节里只写出错代码，原始错误原文（常为英文）只进诊断信息
-        steps.push({ key: `${e.event_id}`, level: "detail", icon: "fail", title: "出错代码", at, detail: `${String(p.code ?? "") || "未知"}（可在 设置 → 备份与安全 导出诊断信息给客服）` });
+        // 第 46 批：执行页上不再出现“出错代码 provider.xxx”这类研发字样——写“出错详情已记录”，代码只进诊断信息
+        steps.push({ key: `${e.event_id}`, level: "detail", icon: "fail", title: "出错详情已记录", at, detail: "需要时可在 设置 → 备份与安全 导出诊断信息交给客服" });
         break;
       case "agent.cancel_unconfirmed":
         // 停止请求与强制停止都没有得到本机助手的确认（复核 B4-B07：原文案“已强制停止”与事实相反）

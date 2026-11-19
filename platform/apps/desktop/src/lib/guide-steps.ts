@@ -45,7 +45,8 @@ export const GUIDE_STEPS: readonly GuideStep[] = [
     key: "keep",
     title: "盯期限，随时问",
     body: "“期限提醒”帮你盯答辩期、上诉期等关键日期；“问答”随时查法条。左下角是账号、备份与设置。",
-    anchors: ["nav-reminders", "nav-chat"],
+    // 第 46 批：一并框出左下角的设置入口（说明里提到“左下角是账号、备份与设置”）
+    anchors: ["nav-reminders", "nav-chat", "settings"],
   },
 ];
 
@@ -57,12 +58,17 @@ export const GUIDE_VERSION = 1;
  * （FNV-1a 32 位；只用于区分，不可读出身份），与其他本机偏好键一样不含身份或案件信息（docs/privacy/residency.json 登记）。
  */
 export function guideSeenKey(firm: string | null | undefined, user: string | null | undefined): string {
+  return `kwl.guide.v${GUIDE_VERSION}.${accountDigest(firm, user)}`;
+}
+
+/** 律所 + 成员的 8 位摘要（FNV-1a 32 位）：本机偏好按账号分键用，不可读出身份。 */
+export function accountDigest(firm: string | null | undefined, user: string | null | undefined): string {
   let h = 0x811c9dc5;
   for (const ch of `${firm || "-"}/${user || "-"}`) {
     h ^= ch.codePointAt(0)!;
     h = Math.imul(h, 0x01000193) >>> 0;
   }
-  return `kwl.guide.v${GUIDE_VERSION}.${h.toString(16).padStart(8, "0")}`;
+  return h.toString(16).padStart(8, "0");
 }
 
 /** 本机偏好读写（localStorage；读写失败时按“没看过”，最多多看一次）。 */

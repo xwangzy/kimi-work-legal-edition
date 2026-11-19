@@ -1,0 +1,12 @@
+{
+  "$comment": "交给客户端团队的说明文件样例（客户端仓库 scripts/make-release-config.mjs --spec 读它）。不含机密：地址、备份公钥、公钥表。端口按部署手册单机布局；多机时可都用 443。",
+  "control_plane_base": "https://cp.kwl.example.com:8443",
+  "gateway_base": "https://gw.kwl.example.com:8444/v1",
+  "search_base": "https://search.kwl.example.com:8445/v1/search",
+  "control_plane_backup_pins": ["/secure/backup/cp.backup.pub.pem"],
+  "gateway_backup_pins": ["/secure/backup/gw.backup.pub.pem"],
+  "search_backup_pins": ["/secure/backup/search.backup.pub.pem"],
+  "cp_public_keys_file": "/secure/kwl-prod/public/cp-public-keys.json",
+  "seat_public_keys_file": "/secure/kwl-prod/public/seat-public-keys.json",
+  "test_build": false
+}

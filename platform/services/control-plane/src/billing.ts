@@ -140,10 +140,19 @@ export function validateSettings(raw: unknown, plans: PlanSpec[], prev: Registra
 /**
  * 配置 `billing` 段 → 目录（首次启动导入）。认两种写法：第 44 批的（带 quota_unit）与第 40 批的（seat_monthly_units，按 §4.6 翻译）。
  */
+/**
+ * 注册方式缺省（第 46 批，契约 §2.6）：未给 billing（开发与测试的进程内调用）仍为 open；给了 billing 段（生产入口一律给，缺省 {}）缺省 code——
+ * 凭开通码 / 邀请码注册，open 要运营显式打开。只影响新状态：读回的旧状态保持原值。
+ */
 export function catalogFromConfig(raw: unknown): Catalog {
   if (raw === undefined || raw === null) return structuredClone(DEFAULT_CATALOG);
   if (typeof raw !== "object") throw new Error("billing 须为对象");
   const b = raw as Record<string, any>;
+  const strict = { ...DEFAULT_CATALOG.settings, registration: "code" as const };
+  if (b.plans === undefined) {
+    const c = structuredClone(DEFAULT_CATALOG);
+    return { ...c, settings: validateSettings(b.registration ?? {}, c.plans, strict) };
+  }
   if (!Array.isArray(b.plans) || b.plans.length === 0 || b.plans.length > 20) throw new Error("billing.plans 须为 1–20 个套餐");
   const plans: PlanSpec[] = [];
   for (const [i, p] of b.plans.entries()) {
@@ -160,7 +169,7 @@ export function catalogFromConfig(raw: unknown): Catalog {
   const def = typeof b.default_plan === "string" ? b.default_plan : plans[0]!.id;
   if (!plans.some((p) => p.id === def)) throw new Error(`billing.default_plan 不在目录里：${def}`);
   if (!plans.some((p) => p.id === "trial")) plans.push(structuredClone(DEFAULT_CATALOG.plans.find((p) => p.id === "trial")!));
-  const settings = validateSettings(b.registration ?? {}, plans, DEFAULT_CATALOG.settings);
+  const settings = validateSettings(b.registration ?? {}, plans, strict);
   return { plans, default_plan: def, settings };
 }
 

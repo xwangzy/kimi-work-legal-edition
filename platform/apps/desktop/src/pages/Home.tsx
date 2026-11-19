@@ -11,6 +11,7 @@ import { nav, NEW_MATTER } from "../App.tsx";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
 import { defaultChoice } from "../components/ModeSelector.tsx";
 import { NewMatterDialog } from "../components/NewMatter.tsx";
+import { GuideChecklist } from "../components/GuideChecklist.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { ScenarioStart } from "../components/ScenarioStart.tsx";
 import { cardGets, cardGives, COMING_SOON, getsPlain, LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
@@ -316,6 +317,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
           />
           {msg && <p className="muted home-msg" role="status" style={{ whiteSpace: "pre-line" }}>{msg}</p>}
           {failMsg && <div className="banner banner-red home-msg" role="alert" style={{ whiteSpace: "pre-line" }}>{failMsg}</div>}
+          {/* 上手清单（第 46 批）：新律师第一次进首页时出现，四步按真实数据自动打勾，可收起 */}
+          {mattersLoaded && <GuideChecklist onNewMatter={() => setNewMatter(true)} />}
           {mattersLoaded && matters.length === 0 && (
             <p className="home-first">
               还没有事项。案卷、材料和成果都归在事项里，只存在这台电脑上。

@@ -42,3 +42,6 @@ output/
 
 # Kimi Code fork（嵌套仓库，不入库；按 third_party/PATCHES.md 从上游 tag + 补丁重建。复核 R2B-29：防临时符号链接被误提交）
 third_party/kimi-code
+
+# 真实走查用的测试合同（本机复制，不入库）
+apps/desktop/kwl-testdocs/

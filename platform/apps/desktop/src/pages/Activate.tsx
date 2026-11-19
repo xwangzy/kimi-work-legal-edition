@@ -734,7 +734,7 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
   return (
     <Frame>
       <h1 className="activate-title">{viaAccount ? "等待批准这台电脑" : "等待管理员批准"}</h1>
-      <p className="activate-lead">{waitApprovalLead({ firm: status.firm?.name ?? "律所", who, viaAccount })}</p>
+      <p className="activate-lead">{waitApprovalLead({ firm: status.firm?.name ?? "律所", who, viaAccount, admin: status.member?.role === "admin" })}</p>
       <div className="activate-checkcode" aria-label="入组核对码">
         {status.check_code}
       </div>

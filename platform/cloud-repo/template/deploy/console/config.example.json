@@ -1,0 +1,5 @@
+{
+  "control_plane_base": "https://cp.kwl.example.com:8443",
+  "deployment": "prod",
+  "label": "中软法律 AI 云端"
+}

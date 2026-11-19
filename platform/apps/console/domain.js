@@ -1,32 +1,76 @@
 /**
- * 运营控制台 · 业务词表与共用块（第 44 批）：状态与枚举的中文、告警列表、设备表与吊销、权限判断、路由跳转。
- * 字段名一律照《运营接口契约》（research/2026-11-14-V19云端账号路由计量/03-运营接口契约.md），不自创。
+ * 统一云端控制台 · 业务词表与共用块（第 44 批起；第 46 批加统一账号、平台角色与权限、三分区路由）：
+ * 状态与枚举的中文、告警列表、设备表与吊销、权限判断、路由跳转。
+ * 字段名照《运营接口契约》（research/2026-11-14-V19…/03-运营接口契约.md）与第 46 批契约 §3（research/2026-11-19-V20…/00-架构决策与接口契约.md），不自创。
  */
 import * as api from "./api.js";
 import { badge, btn, confirmAction, dataTable, dot, fmt, h, mono, toast } from "./ui.js";
 
 /** 全局上下文：app.js 登录后填入 */
 export const ctx = {
-  /** 当前运营的权限集合；null = 未知（系统页接口未就绪），交由控制面判定 */
+  /** 当前平台人员的权限集合；null = 未知（控制面没给），交由控制面判定（403 显示无权限空状态） */
   perms: null,
+  /** GET /v1/auth/me 的应答；kind = "member" | "staff" */
+  me: null,
+  kind: null,
+  /** 本人标识（审计里标“我”）：人员 stf_… 或成员 acc_…，以及邮箱 */
   operatorId: "",
+  operatorEmail: "",
   /** 律所列表缓存（下拉框用）：{tid, name}[] | null */
   tenants: null,
   openAccount: null,
   reload: () => {},
 };
 export const can = (perm) => !ctx.perms || ctx.perms.has(perm);
-export const needs = (perm) => (can(perm) ? undefined : `需要权限 ${perm}`);
+/** 任一权限即可（导航入口） */
+export const canAny = (perms) => !perms?.length || perms.some(can);
+export const PERM_LABEL = {
+  "tenant.read": "查看客户",
+  "tenant.manage": "管理客户",
+  "tenant.terminate": "终止客户",
+  "tenant.purge": "清除客户数据",
+  "quota.manage": "调整额度",
+  "quota.cap": "设置律所上限",
+  "plan.manage": "管理套餐",
+  "account.read": "查看账号",
+  "account.manage": "管理账号",
+  "account.support": "账号客服",
+  "device.revoke": "吊销设备",
+  "activation.issue": "签发开通码",
+  "usage.read": "查看用量",
+  "billing.read": "查看账单",
+  "route.read": "查看路由",
+  "route.manage": "管理路由",
+  "system.read": "查看系统",
+  "staff.manage": "管理人员",
+  "settings.manage": "管理设置",
+};
+export const needs = (perm) => (can(perm) ? undefined : `你的角色没有“${PERM_LABEL[perm] ?? perm}”权限`);
+/** 平台角色（GET /v1/ops/roles 未就绪时的兜底，与契约 §2.2 同表） */
+export const PLATFORM_ROLES = [
+  { id: "sysadmin", label: "系统管理员", description: "人员与权限、系统设置、模型路由、清除数据", perms: ["staff.manage", "settings.manage", "route.manage", "tenant.purge", "tenant.read", "account.read", "usage.read", "billing.read", "route.read", "system.read"] },
+  { id: "operator", label: "客户运营", description: "开通与管理律所、额度、套餐、账号、设备", perms: ["tenant.manage", "tenant.terminate", "quota.manage", "quota.cap", "plan.manage", "account.manage", "account.support", "device.revoke", "tenant.read", "account.read", "usage.read", "billing.read", "route.read"] },
+  { id: "issuer", label: "开通专员", description: "签发开通码（与客户运营互斥）", perms: ["activation.issue", "tenant.read", "account.read"] },
+  { id: "finance", label: "财务", description: "查看客户、用量与账单", perms: ["tenant.read", "usage.read", "billing.read"] },
+  { id: "support", label: "客服", description: "账号客服（解锁、重置码）与只读", perms: ["account.support", "tenant.read", "account.read", "usage.read"] },
+  { id: "viewer", label: "只读", description: "全部只读", perms: ["tenant.read", "account.read", "usage.read", "billing.read", "route.read", "system.read"] },
+];
+export const roleLabel = (id, roles = PLATFORM_ROLES) => roles.find((r) => r.id === id)?.label ?? id;
+/** 三分区：#/me/…、#/firm/…、#/ops/…；旧页面里的 go("tenants/…") 等不带分区的路径一律归平台运营 */
+export const SECTIONS = ["me", "firm", "ops"];
 export const go = (path) => {
-  const next = `#/${path}`;
+  const first = String(path).split(/[/?]/)[0];
+  const next = `#/${SECTIONS.includes(first) ? path : `ops/${path}`}`;
   if (location.hash === next) ctx.reload();
   else location.hash = next;
 };
 
 export const ROLE = { admin: "管理员", partner: "合伙人", lawyer: "律师", assistant: "助理" };
+export const isFirmManager = (role) => role === "admin" || role === "partner";
 export const TENANT_STATUS = { active: ["正常", "ok"], pending: ["待开通", "info"], expired: ["已到期", "warn"], terminated: ["已终止", "neutral"] };
-export const ACCOUNT_STATUS = { active: ["正常", "ok"], disabled: ["已停用", "danger"] };
+export const ACCOUNT_STATUS = { active: ["正常", "ok"], disabled: ["已停用", "danger"], pending: ["待设置密码", "info"] };
 export const CREATED_VIA = { self: "自助注册", founder_code: "开通码", invite_code: "邀请码", ops: "运营代建" };
+export const FIRM_DEVICE_FLAG = { stale_30d: ["30 天未报到", "warn"], old_client: ["版本过旧", "warn"], rejected_after_logout: ["退出后仍有请求被拒", "danger"] };
 export const DEVICE_FLAG = { stale: ["30 天未报到", "warn"], outdated: ["版本过旧", "warn"], suspended: ["暂停后仍有请求", "danger"] };
 export const PROVIDER_STATE = {
   up: ["正常", "ok"],
@@ -54,6 +98,7 @@ export const providerBadge = (health, enabled) => {
   return h("span", { class: "state-cell" }, dot(tone), t);
 };
 export const outcomeBadge = (o) => badge(...pick(OUTCOME, o));
+export const firmFlagBadge = (f) => badge(...pick(FIRM_DEVICE_FLAG, f));
 export const sourceBadge = (s) => (s === "upstream" ? null : badge(...pick(USAGE_SOURCE, s)));
 export const roleText = (r) => ROLE[r] ?? r ?? "—";
 
@@ -147,6 +192,8 @@ export function deviceTable(rows, { state, after, showTenant = true, empty } = {
 export function pageHead(title, sub, actions) {
   return h("header", { class: "page-head" }, h("div", { class: "page-titles" }, h("h1", {}, title), sub ? h("p", { class: "page-sub" }, sub) : null), actions ? h("div", { class: "page-actions" }, actions) : null);
 }
+/** 是不是本人（审计、人员表里标“我”） */
+export const isMe = (who) => !!who && (who === ctx.operatorId || (ctx.operatorEmail && String(who).toLowerCase() === ctx.operatorEmail.toLowerCase()));
 
 /** 律所下拉（账号、设备、用量页的筛选） */
 export async function tenantOptions() {

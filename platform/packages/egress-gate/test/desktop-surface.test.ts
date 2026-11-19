@@ -44,7 +44,8 @@ test("主进程：渲染会话网络层拦截非本机请求、拒绝权限、�
   assert.match(main, /if \(!fromAppMainFrame\(e\)\) return Promise\.resolve\(\{ ok: false/);
   assert.match(main, /frame !== e\.sender\.mainFrame/);
   assert.doesNotMatch(main, /url\.startsWith\("file:\/\/"\)/, "不得再按 file:// 前缀放行（UNC 主机即外连）");
-  assert.match(main, /const DEV_ORIGINS = \["http:\/\/127\.0\.0\.1:5173", "ws:\/\/127\.0\.0\.1:5173"\]/);
+  // 第 45 批起开发端口可经 KWL_DEV_WEB_PORT 改（缺省 5173），仍只放行本机回环
+  assert.match(main, /const DEV_ORIGINS = \[`http:\/\/127\.0\.0\.1:\$\{process\.env\.KWL_DEV_WEB_PORT \?\? 5173\}`, `ws:\/\/127\.0\.0\.1:\$\{process\.env\.KWL_DEV_WEB_PORT \?\? 5173\}`\]/);
 });
 
 test("地址策略（行为）：生产只放行应用协议 kwl://app/；任何 file:// 地址（含本包 dist、UNC 主机）、任意网址一律拦截；开发只多认 vite（复核 B4-A03）", () => {

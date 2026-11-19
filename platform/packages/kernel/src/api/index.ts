@@ -4,7 +4,8 @@
  * 所内节点都走这同一份方法表。签发已接入设备签名（§6.3）；审计事件入签名 hash 链（§6.4）；
  * 策略事件的签发人角色签名在同步阶段接入（当前经审计事件上链留痕）。
  */
-import { accountErrorText } from "../account-session.ts";
+import { accountErrorText, accountFailure, controlPlaneErrorText, onboardingStateText } from "../account-session.ts";
+import { launchCheck, QUOTA_VIEW_MAX_AGE_MS, type LaunchHint } from "../services/launch-check.ts";
 import { calcDeadline } from "../tools/tools/deadline.ts";
 import { localToday } from "../services/local-date.ts";
 import { createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
@@ -430,6 +431,8 @@ function artifactCitationsFor(db: KernelDb, blobs: BlobStore, lawdb: Lawdb, art:
 export function createApi(deps: ApiDeps): Record<string, Handler> {
   const { db, blobs, broker, egress, queue, config, lawdb, keyctx, ioMutex, ocrModelPaths, parseMock, parseWorker, localStats, revokeRun, tokens, gate } = deps;
   const MODE_RANK: Record<string, number> = { chat: 0, manual: 1, default: 2, auto: 3 };
+  /** 安装形态（第 46 批）：试用版安装包由主进程给 ZR_TRIAL_BUILD=1；正式安装包要求控制面；其余是开发形态。 */
+  const edition: "trial" | "release" | "dev" = config.env.ZR_TRIAL_BUILD === "1" ? "trial" : config.env.ZR_REQUIRE_CONTROL_PLANE === "1" ? "release" : "dev";
   const titleCache = new Map<string, string | null>();
   /** Markdown/文本成果的第一行标题（去掉 # 与强调符号，至多 40 字）；读不到或不是文本返回 null。 */
   const artifactTitle = (id: string, filename: string, uri: string): string | null => {
@@ -1432,6 +1435,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const exitMode = deps.governance?.exitMode() ?? null;
       const blockReason = modelBlockReason(matter);
       const busy = p.scenario === "a1.agent_task" ? liveAgentRunOf(db, matterId) : null;
+      // 第 46 批（主文 §5-1）：要重新登录、客户端过旧、额度暂停时不排队，直接说原因与办法（只看缓存的用量视图；过时则后台刷新、不拦）
+      const viaGateway = usesModel && matter.model_endpoint === "standard";
+      if (viaGateway) deps.controlPlane?.refreshQuotaIfStale(QUOTA_VIEW_MAX_AGE_MS / 2);
+      const launchHint = exitMode || blockReason ? null : launchHintOf(viaGateway);
       const busyMessage = busy ? `这个事项里还有一个任务在进行${busy.goal ? `（“${busy.goal}”）` : ""}。请等它完成，或在它的执行页取消后再开始；也可以先在其他事项里开始任务` : null;
       // 如实写明按原文发送的类别与上游留存口径（隐私安全增量评审 §3 P0-3：预览不能只说“替换了什么”）
       const plainNote =
@@ -1516,6 +1523,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
               : `将发送：${docIds.length ? `${docIds.length} 份文档中任务涉及的内容` : "任务说明与按需读取的材料内容"}→ ${endpointLabels[matter.model_endpoint] ?? matter.model_endpoint}；${pseudonymScope}；${plainNote}${searchNote}；${retentionNote}；每一次发送都记在本任务的“数据去向”里`,
         warning: exitMode
           ? exitMode.message
+          : launchHint
+            ? launchHint.message
           : busyMessage
             ? busyMessage
           : suspectsBlock
@@ -1526,14 +1535,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
               : `${blockReason}；可在事项头补录依据，或一键生成告知函`
             : null,
         // 开放任务在模型被拦截时无法运行；退出模式下任何新任务都不能发起：界面据此禁用“确认发起”
-        start_blocked: !!exitMode || !!busy || suspectsBlock || (usesModel && !!blockReason && p.scenario === "a1.agent_task"),
-        // 阻断原因的类别：界面据此给出对应的修复入口（只有 consent 才是“记录客户同意”）
-        block_kind: exitMode ? "exit_mode" : busy ? "busy" : usesModel && !!blockReason && p.scenario === "a1.agent_task" ? "consent" : suspectsBlock ? "suspects" : null,
+        start_blocked: !!exitMode || !!launchHint || !!busy || suspectsBlock || (usesModel && !!blockReason && p.scenario === "a1.agent_task"),
+        // 阻断原因的类别：界面据此给出对应的修复入口（只有 consent 才是“记录客户同意”；account / quota 给登录框或用量页入口）
+        block_kind: exitMode ? "exit_mode" : launchHint ? (launchHint.kind === "quota" ? "quota" : "account") : busy ? "busy" : usesModel && !!blockReason && p.scenario === "a1.agent_task" ? "consent" : suspectsBlock ? "suspects" : null,
+        ...(launchHint ? { start_hint: launchHint } : {}),
         ...(busy ? { busy_run_id: busy.run_id } : {}),
         caps: { per_request_chars: 200_000, per_task_chars: 1_000_000 },
       };
-      // 第 40 批：不再显示点数，改为“约为这类任务上限的百分比”（任务预留额度与月度额度不是同一把尺子，不折算）
-      return { estimate_id: estimateId, ...est, points_display: estimateDisplay(est.points, scenarioCap(p.scenario), est.local), data_where: dataWhere };
+      // 第 46 批（主文 §5-4）：不再出由点数表折算的百分比；按实际用量计入本月额度，能读到（不过时的）用量视图时补“本月已用 x%”
+      const qv = deps.controlPlane?.cachedQuota() ?? null;
+      const fresh = qv && Date.now() - qv.at <= QUOTA_VIEW_MAX_AGE_MS ? qv.view : null;
+      return { estimate_id: estimateId, ...est, points_display: estimateDisplay(!!est.local || !usesModel, fresh && viaGateway ? fresh.firm.used_ratio : null, fresh?.period.kind === "week" ? "本周" : "本月"), data_where: dataWhere };
     },
 
     "runs.start": async (p, id) => {
@@ -1544,6 +1556,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const exitMode = deps.governance?.exitMode();
       if (exitMode) throw new DomainError("exit_mode", exitMode.message, 403);
       if (!p?.estimate_id) throw validation("需要 estimate_id");
+      // 第 46 批（主文 §5-1）：要重新登录、客户端过旧、额度暂停 → 不排队，原因与办法放在 detail.start_hint（界面显示为可操作的提示）
+      {
+        const sc = estimates.get(String(p.estimate_id))?.scenario ?? "";
+        const hint = launchHintOf((sc === "s1.contract_review" || sc === "a1.agent_task") && matter.model_endpoint === "standard" && modelBlockReason(matter) === null);
+        if (hint) throw new DomainError("conflict", hint.message, 409, { reason: hint.code, start_hint: hint });
+      }
       // 网关二次检查需要该事项的匿名摘要（阶段 6）：发起前尽量送达（短超时；失败不阻断——摘要尚未到达的事项网关按请求头检查，D-34）
       if (deps.controlPlane) await deps.controlPlane.ensureSummary(matterId).catch(() => false);
       assertIdempotencyKey(String(p?.idempotency_key ?? ""));
@@ -1559,7 +1577,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const cap = scenarioCap(est.scenario);
       // 本机流程不计点（10-23 拍板）：预留与实扣都是 0，忽略界面带来的 budget_points
       const budgetCap = cap === 0 ? 0 : Number(p?.budget_points ?? est.points);
-      if (cap > 0 && (budgetCap <= 0 || budgetCap > cap)) throw validation(`budget_points 超出单任务上限 ${cap}`);
+      // 单任务预留只作安全阀，不对律师出数（第 46 批：原文“budget_points 超出单任务上限 N”）
+      if (cap > 0 && (budgetCap <= 0 || budgetCap > cap)) throw validation("这次任务的用量设置不对：请关闭确认卡，重新发起", { field: "budget_points" });
 
       // 幂等：同键同内容返回原任务（§15.2）
       const existing = db.get(`SELECT run_id, status, input_snapshot FROM runs WHERE tenant_id = ? AND idempotency_key = ?`, [id.tenantId, String(p.idempotency_key)]);
@@ -2691,6 +2710,41 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
 
     // 首页“等你处理 / 继续工作”（UIUX 增量评审 H-1）：本人能看到的事项里最近的任务（只给目标前 24 字与状态，不含正文）
+    // ─── 上手清单（第 46 批，主文 §5-5）：按“自己建的事项 / 自己导入的材料 / 自己发起的任务 / 这些任务的成果”判断四步做没做；示例事项不算 ───
+    "guide.progress": (_p, id) => {
+      const own = db.all<{ matter_id: string }>(
+        `SELECT matter_id FROM matters WHERE tenant_id = ? AND created_by = ? AND lifecycle <> 'purged'
+            AND matter_id NOT IN (SELECT matter_id FROM sample_matters WHERE removed_at IS NULL)
+          ORDER BY created_at DESC`,
+        [id.tenantId, id.userId],
+      );
+      const notSample = `matter_id NOT IN (SELECT matter_id FROM sample_matters WHERE removed_at IS NULL)`;
+      const docs = db.get<{ n: number; matter_id: string | null }>(
+        `SELECT COUNT(*) AS n, MAX(matter_id) AS matter_id FROM document_versions WHERE tenant_id = ? AND uploaded_by = ? AND ${notSample}`,
+        [id.tenantId, id.userId],
+      );
+      const runs = db.all<{ run_id: string; matter_id: string }>(
+        `SELECT run_id, matter_id FROM runs WHERE tenant_id = ? AND created_by = ? AND ${notSample} ORDER BY created_at DESC LIMIT 1`,
+        [id.tenantId, id.userId],
+      );
+      const runCount = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM runs WHERE tenant_id = ? AND created_by = ? AND ${notSample}`, [id.tenantId, id.userId])?.n ?? 0;
+      const art = db.get<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM artifact_versions a JOIN runs r ON r.run_id = a.run_id
+          WHERE a.tenant_id = ? AND r.created_by = ? AND a.status NOT IN ('superseded','withdrawn') AND a.${notSample}`,
+        [id.tenantId, id.userId],
+      )?.n ?? 0;
+      return {
+        firm: config.firmSlug,
+        user: config.userSlug,
+        own_matters: own.length,
+        materials: docs?.n ?? 0,
+        runs: runCount,
+        deliverables: art,
+        // “去做”直达用：最近一个自己的事项、最近一次自己发起的任务
+        latest_matter_id: own[0]?.matter_id ?? null,
+        latest_run: runs[0] ? { run_id: runs[0].run_id, matter_id: runs[0].matter_id } : null,
+      };
+    },
     "runs.list_recent": (p, id) => {
       // 全局搜索（Z3 §8.2 #31）一次取至多 100 条
       const limit = Math.max(1, Math.min(100, Number(p?.limit ?? 5) || 5));
@@ -2816,6 +2870,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         version: "v5.0.0-g0",
         // 安装包版本（主进程经 ZR_APP_VERSION 给出；开发形态为 null）与开通时的律所名称：律师层显示用（Z3 #20、#30）
         app_version: config.env.ZR_APP_VERSION ?? null,
+        // 第 46 批：安装形态（trial = 试用版安装包；release = 正式安装包；dev = 开发形态）——界面据此不对试用客户写“开发形态”
+        edition,
         firm_name: config.activation?.firm_name ?? null,
         workspace_dir: config.workspaceDir,
         firm: config.firmSlug,
@@ -3427,7 +3483,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       last_sync: deps.controlPlane?.lastSync ?? null,
     }),
     "control_plane.sync": async () => {
-      if (!deps.controlPlane || !deps.governance) return { mode: "local_dev", note: "未配置控制面（开发形态：律所策略取本机配置项，不检查许可）" };
+      if (!deps.controlPlane || !deps.governance) return { mode: "local_dev", edition, note: edition === "trial" ? "试用版：不连接中软服务" : "开发形态：律所策略取本机配置项，不检查许可" };
       // 手动同步：连同控制面拒绝过的待同步吊销一起重发（自动同步不重发；复核 S6-A22）
       const report = await deps.controlPlane.sync({ retryFailed: true });
       return { report, status: deps.governance.status() };
@@ -3473,7 +3529,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
     // ─── 用量与上限（第 9 批 S3）：本所本月用量、律所设的月度上限（硬停）；管理员与合伙人另看按成员明细 ───
     "quota.status": async (_p, id) => {
-      if (!deps.controlPlane) return { mode: "local_dev", note: "未配置控制面（开发形态：额度只在开发网关内存里）" };
+      if (!deps.controlPlane) return { mode: "local_dev", edition, note: edition === "trial" ? "试用版：不统计本所用量" : "开发形态：额度只在开发网关内存里" };
       const view = await cpCall(() => deps.controlPlane!.quota());
       // 成员编号换成本机成员名（控制面只知道有账号的成员的姓名）
       const names = new Map(db.all<{ user_id: string; display_name: string }>(`SELECT user_id, display_name FROM users WHERE tenant_id = ?`, [id.tenantId]).map((r) => [r.user_id, r.display_name]));
@@ -3499,14 +3555,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const s = deps.account?.session() ?? null;
       const problem = deps.account?.problem() ?? null;
       const last = deps.account?.last?.() ?? null;
-      return { mode: deps.controlPlane ? "control_plane" : "local_dev", logged_in: !!s && !problem, account: s ? { email: s.email, name: s.name, role: s.role } : null, last_account: last, login_required: !!problem, reason: problem, message: problem ? accountErrorText(problem) : null };
+      return { mode: deps.controlPlane ? "control_plane" : "local_dev", edition, logged_in: !!s && !problem, account: s ? { email: s.email, name: s.name, role: s.role } : null, last_account: last, login_required: !!problem, reason: problem, message: problem ? accountErrorText(problem) : null };
     },
     "account.login": async (p, id) => {
       const cp = requireCpAccount();
       const j = await accountCp(() => cp.account("POST", "/v1/auth/login", { email: p?.email, password: p?.password, client: clientInfo() }));
       const onb = (j.onboarding ?? {}) as Record<string, any>;
-      if (onb.state !== "ready") throw new DomainError("conflict", accountErrorText(onb.state === "device_mismatch" ? "device_mismatch" : "session_invalid"), 409, { reason: String(onb.state ?? "unknown") });
       const acc = (j.account ?? {}) as Record<string, any>;
+      // 第 46 批：非 ready 的状态用准确的原因（与待激活模式同一份文案），不再一律说“登录已失效”
+      if (onb.state !== "ready") throw new DomainError("conflict", onboardingStateText(String(onb.state ?? ""), { admin: acc.role === "admin" }), 409, { reason: /^[a-z_]{1,40}$/.test(String(onb.state ?? "")) ? String(onb.state) : "unknown" });
       if (acc.tid !== id.tenantId) throw new DomainError("conflict", accountErrorText("device_mismatch"), 409);
       deps.account!.save({ token: String(j.session_token), aid: String(acc.aid), email: String(acc.email), name: String(acc.name ?? ""), tid: id.tenantId, role: String(acc.role ?? "") });
       deps.account!.clearProblem();
@@ -4674,7 +4731,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     const role = db.get<{ role: string }>(`SELECT role FROM memberships WHERE tenant_id = ? AND user_id = ?`, [id.tenantId, id.userId])?.role;
     if (role !== "firm_admin") throw forbidden("需要律所管理员角色");
     if (keyctx.device.cert.role !== "admin") throw forbidden("本设备不是管理员设备（设备证书角色须为 admin）");
-    if (!deps.controlPlane) throw new DomainError("provider_unavailable", "未配置控制面：律所策略的起草、签名与发布不可用（开发形态取本机配置项）", 503);
+    if (!deps.controlPlane) throw new DomainError("provider_unavailable", edition === "trial" ? "试用版不提供律所策略的起草与发布" : "这台电脑没有连接中软服务：律所策略的起草、签名与发布不可用", 503);
   }
 
   /** 退出模式（第 02 篇 §10、§9.13）下不可用的动作：模型、同步、新任务与签发（复核 S6-A04、S6-B10）。 */
@@ -4689,29 +4746,38 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     if (exit) throw new DomainError("exit_mode", `${exit.message}（${what}不可用）`, 403);
   }
 
-  /** 控制面拒绝代码 → 律师看得懂的话（第 40 批）。 */
-  const CP_ERROR_TEXT: Readonly<Record<string, string>> = {
-    no_seat: "你还没有席位：请律所管理员先分配席位",
-    rate_limited: "操作过于频繁，请稍后再试",
-    cap_invalid: "月度上限须为 1–100 的整数百分比",
-  };
-  /** 控制面调用的错误换成人话（控制面不可达或拒绝）。 */
+  /**
+   * 控制面调用的错误换成人话（第 46 批：原来不认识的代码写“控制面：<代码>”）。按代码映射（account-session.ts controlPlaneErrorText），
+   * 不认识的一律“中软服务暂时不可用，请稍后重试”；原始代码只进日志与 detail.reason（诊断用）。要重新登录的另给原因码，界面据此出登录框。
+   */
   async function cpCall<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
     } catch (e) {
-      const msg = (e as Error)?.message ?? String(e);
-      // 百分比上限、席位等常见拒绝写成人话（其余照旧带代码）；要重新登录的另给原因码，界面据此出登录框
-      const human = CP_ERROR_TEXT[msg];
-      if (human) throw new DomainError("validation", human, 400);
-      if (/^session_|^account_disabled$/.test(msg)) throw new DomainError("validation", accountErrorText(msg), 401, { reason: msg });
-      throw new DomainError("provider_unavailable", `控制面：${msg}`, 502);
+      if (e instanceof DomainError) throw e;
+      const msg = String((e as Error)?.message ?? e);
+      // 本机核验类拒绝（草稿摘要不符、已过时、签名人核验不过等）由客户端直接写成中文说明：原样给出
+      if (!/^[a-z0-9_]{1,60}$/.test(msg) && /[\u4e00-\u9fff]/.test(msg) && !/[A-Za-z]{4,}/.test(msg)) throw new DomainError("provider_unavailable", msg.slice(0, 200), 502, { reason: "local_check" });
+      const code = /^[a-z0-9_]{1,60}$/.test(msg) ? msg : "other";
+      if (/^session_|^account_disabled$/.test(code)) throw new DomainError("validation", accountErrorText(code), 401, { reason: code });
+      if (code === "no_seat" || code === "cap_invalid") throw new DomainError("validation", controlPlaneErrorText(code), 400, { reason: code });
+      if (code === "rate_limited") throw new DomainError("rate_limited", controlPlaneErrorText(code), 429, { reason: code });
+      slog.event("KERNEL_ACCOUNT_CALL_FAILED", { reason: code }); // 控制面调用失败与账号接口共用这条事件（只记代码）
+      const text = controlPlaneErrorText(code, { min_version: deps.controlPlane?.clientOutdated()?.min_version ?? null });
+      const status = code === "client_outdated" ? 426 : code === "admin_required" || code === "firm_role_required" || code === "device_revoked" || code === "staff_client_forbidden" ? 403 : 502;
+      throw new DomainError(status === 502 ? "provider_unavailable" : "validation", text, status, { reason: code });
     }
+  }
+
+  /** 发起任务前的检查（第 46 批）：登录、客户端版本、缓存的用量视图。viaGateway = 这个任务经中软转发调用 AI。 */
+  function launchHintOf(viaGateway: boolean): LaunchHint | null {
+    if (!viaGateway || !deps.controlPlane) return null;
+    return launchCheck({ viaGateway, accountProblem: deps.account?.problem() ?? null, clientOutdated: deps.controlPlane.clientOutdated(), quota: deps.controlPlane.cachedQuota(), now: Date.now() });
   }
 
   /** 第 44 批账号接口：需要控制面与本机会话存放处（开发形态没有）。 */
   function requireCpAccount(): ControlPlaneClient {
-    if (!deps.controlPlane || !deps.account) throw validation("未配置中软服务（开发形态没有账号登录）");
+    if (!deps.controlPlane || !deps.account) throw validation(edition === "trial" ? "试用版不需要登录账号" : "这台电脑没有连接中软账号服务，不能登录：请联系律所 IT 或中软客服");
     return deps.controlPlane;
   }
   /** 账号接口的错误换成律师话（控制面的原话只在密码规则、锁定剩余时间这类场合采用）。 */
@@ -4719,11 +4785,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     try {
       return await fn();
     } catch (e) {
+      // 第 46 批：与待激活模式（onboarding.accountCall）共用一处映射（account-session.ts accountFailure）
       const code = String((e as { code?: unknown })?.code ?? (e as Error)?.message ?? "error");
       const cpMessage = (e as { cpMessage?: unknown })?.cpMessage;
-      const text = accountErrorText(code, typeof cpMessage === "string" && (code === "password_weak" || code === "account_locked") ? cpMessage : undefined);
-      const status = code === "auth_invalid" || code.startsWith("session_") ? 401 : code === "account_locked" ? 423 : code === "rate_limited" ? 429 : code.startsWith("cp_") || code === "gate_unavailable" ? 502 : 400;
-      throw new DomainError(status === 502 ? "provider_unavailable" : status === 429 ? "rate_limited" : "validation", text, status, { reason: code });
+      const minVersion = (e as { minVersion?: unknown })?.minVersion;
+      const f = accountFailure(code, typeof cpMessage === "string" ? cpMessage : null, { min_version: typeof minVersion === "string" ? minVersion : null });
+      throw new DomainError(f.fault, f.text, f.status, { reason: f.reason });
     }
   }
   function clientInfo(): { version: string | null; platform: string } {

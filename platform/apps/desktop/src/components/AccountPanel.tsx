@@ -273,7 +273,7 @@ export function AccountSection({ firm }: { firm: string | null }) {
     }
   };
   if (!st) return <SettingRow label="账号">{meErr ? <span className="activate-error">{meErr}</span> : <span className="muted">读取中…</span>}</SettingRow>;
-  if (st.mode !== "control_plane") return <SettingRow label="账号"><span className="muted">开发形态：不使用账号登录。</span></SettingRow>;
+  if (st.mode !== "control_plane") return <SettingRow label="账号"><span className="muted">{st.edition === "trial" ? "试用版：不需要登录账号。" : "开发形态：不使用账号登录。"}</span></SettingRow>;
   if (!st.logged_in) {
     return (
       <SettingRow label="账号" hint={st.login_required ? loginRequiredText(st.reason) : "这台电脑还没有登录账号。登录后才能使用 AI；本机的事项和文件照常可用。"}>

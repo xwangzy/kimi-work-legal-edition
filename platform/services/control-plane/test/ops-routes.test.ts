@@ -1,69 +1,56 @@
 /**
- * v9.3 A-10 运营按人鉴权：控制面运营接口（/v1/ops/…）的最小集。
- * 按人签名、按接口授权；写操作进律所可见的运营审计流水、执行者为运营编号；每个运营请求另记内部访问审计（先记后做，带名册版本）；
- * 共享口令、无权限、被吊销的人、路径变形一律拒绝，且都不在律所流水里留记录；复核 A/B 处置：开通附点数另须加量权限、
+ * 控制面运营接口（/v1/ops/…）的最小集；第 46 批起鉴权为平台人员会话 → 角色 → 权限 → 危险操作复核（契约 §2.2、§3.4）。
+ * 写操作进律所可见的运营审计流水、执行者为人员编号（stf_…）；每个运营请求另记内部访问审计（先记后做，带人员编号与邮箱）；
+ * 无会话、律师会话、无权限、未复核、网段外、路径变形一律拒绝，且都不在律所流水里留记录；复核 A/B 处置：
  * 运营只作废创始开通码、代设上限只能调低、被拒记录限量、概要不带成员标识。
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, renameSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { OpsRejectRecord } from "@zr-legal/ops-auth";
-import { devOpsRoster, fileOpsGuard, type DevOperator } from "@zr-legal/ops-auth/testing";
 import { createAuditLog, createControlPlane, devControlPlaneKeys, type ControlPlane, type CpOpsAccessRecord } from "../src/index.ts";
+import { call as rawCall, devStaffOf, STAFF_PW, staffEmail, staffToken } from "./staff-fixture.ts";
 
-const PEOPLE: DevOperator[] = [
-  { id: "op_0001", perms: ["tenant.read", "tenant.manage", "tenant.terminate", "quota.manage", "quota.cap", "device.revoke"] },
-  { id: "op_0002", perms: ["tenant.read"] },
-  { id: "op_0003", perms: ["activation.issue"] },
-  { id: "op_0004", perms: ["tenant.manage"] },
-];
-const OPS = devOpsRoster(PEOPLE);
-const opsDir = mkdtempSync(join(tmpdir(), "kwl-cp-ops-"));
-const rejects: OpsRejectRecord[] = [];
+// op_0001 / op_0004 客户运营（op_0004 登录后不复核）；op_0002 只读；op_0003 开通专员
+const PEOPLE = { op_0001: ["operator"], op_0002: ["viewer"], op_0003: ["issuer"], op_0004: ["operator"] } as const;
 const access: CpOpsAccessRecord[] = [];
 let accessBroken = false;
+let netOk = true;
 const auditLog = createAuditLog();
 let cp: ControlPlane;
-let bare: ControlPlane;
 let base = "";
-let bareBase = "";
+const tokens = new Map<string, string>();
+const aidOf = (who: string) => cp.ops.staff(staffEmail(who))!.aid;
 
 before(async () => {
   cp = createControlPlane({
     keys: devControlPlaneKeys(),
     serviceSecret: "ops-route-test-service-secret",
     auditLog,
-    opsGuard: fileOpsGuard({ dir: opsDir, audience: "control-plane", roster: OPS.roster, rosterKeys: OPS.rosterKeys, onReject: (r) => void rejects.push(r) }),
+    staffMfa: "optional",
+    devStaff: devStaffOf(Object.fromEntries(Object.entries(PEOPLE).map(([k, v]) => [k, [...v]]))),
+    staffSourceAllowed: () => netOk,
     opsAccessLog: (r) => {
       if (accessBroken) throw new Error("disk full");
       access.push(r);
     },
   });
-  bare = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: "ops-route-test-service-secret" });
-  for (const s of [cp.server, bare.server]) await new Promise<void>((r) => s.listen(0, "127.0.0.1", () => r()));
+  await new Promise<void>((r) => cp.server.listen(0, "127.0.0.1", () => r()));
   base = `http://127.0.0.1:${(cp.server.address() as AddressInfo).port}`;
-  bareBase = `http://127.0.0.1:${(bare.server.address() as AddressInfo).port}`;
+  for (const who of Object.keys(PEOPLE)) tokens.set(who, await staffToken(base, staffEmail(who), { reauth: who !== "op_0004" }));
 });
 after(async () => {
-  for (const s of [cp.server, bare.server]) {
-    s.closeAllConnections();
-    await new Promise<void>((r) => s.close(() => r()));
-  }
+  cp.server.closeAllConnections();
+  await new Promise<void>((r) => cp.server.close(() => r()));
 });
 
 const call = async (who: string, method: string, path: string, body?: unknown, o: { at?: string; headers?: Record<string, string> } = {}) => {
-  const raw = body === undefined ? "" : JSON.stringify(body);
-  const headers = { ...OPS.sign(who, "control-plane", { method, path, body: raw }), ...(raw ? { "content-type": "application/json" } : {}), ...(o.headers ?? {}) };
-  const r = await fetch(`${o.at ?? base}${path}`, { method, headers, ...(raw ? { body: raw } : {}) });
-  return { status: r.status, json: (await r.json()) as any };
+  const r = await rawCall(o.at ?? base, method, path, body, { authorization: `Bearer ${tokens.get(who)}`, ...(o.headers ?? {}) });
+  return { status: r.status, json: r.json };
 };
 const chain = (tid: string) => auditLog.list(tid, 0, 1000);
 
-test("开通、发码、加量、续订、终止：执行者记为运营编号（律所可见的流水）；访问审计先记“已请求”再记结果，带密钥编号与名册版本", async () => {
+test("开通、发码、加量、续订、终止：执行者记为人员编号（律所可见的流水）；访问审计先记“已请求”再记结果，带人员编号与邮箱；终止须复核", async () => {
   const created = await call("op_0001", "POST", "/v1/ops/tenants", { tid: "ten_alpha", edition: "team", seats: 5, plan: "pro", name: "阿尔法律师事务所" });
   assert.equal(created.status, 200, JSON.stringify(created.json));
   assert.equal(created.json.tenant.accounts_required, true, "经运营接口开通的租户缺省要求账号登录（第 44 批）");
@@ -71,10 +58,10 @@ test("开通、发码、加量、续订、终止：执行者记为运营编号�
   const code = await call("op_0003", "POST", "/v1/ops/tenants/ten_alpha/activation-codes", { slug: "admin", name: "张管理员", ttl_hours: 48 });
   assert.equal(code.status, 200);
   assert.match(code.json.code, /\S{10,}/);
-  assert.equal(cp.ops.tenant("ten_alpha")!.activations.get(code.json.activation_id)!.created_by, "op_0003", "发码者是具体的运营人员");
+  assert.equal(cp.ops.tenant("ten_alpha")!.activations.get(code.json.activation_id)!.created_by, aidOf("op_0003"), "发码者是具体的平台人员");
   assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/boost", { pct: 50 })).status, 200);
   assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/cap", { cap_pct: 80 })).status, 200);
-  assert.equal(cp.ops.tenant("ten_alpha")!.quota.cap_set_by, "op_0001", "代设上限记到运营编号（复核 RA10A-16）");
+  assert.equal(cp.ops.tenant("ten_alpha")!.quota.cap_set_by, aidOf("op_0001"), "代设上限记到人员编号（复核 RA10A-16）");
   assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/renew", { days: 30 })).status, 200);
   assert.equal((await call("op_0003", "POST", `/v1/ops/tenants/ten_alpha/activation-codes/${code.json.activation_id}/revoke`)).status, 200);
   const summary = await call("op_0002", "GET", "/v1/ops/tenants/ten_alpha");
@@ -84,52 +71,66 @@ test("开通、发码、加量、续订、终止：执行者记为运营编号�
   assert.equal(summary.json.tenant.cap_pct, 80);
   assert.deepEqual(summary.json.tenant.plan, { id: "pro", label: "专业" });
   assert.deepEqual([summary.json.tenant.unit, summary.json.tenant.total, summary.json.tenant.used], ["tokens", 5 * 125_000_000 * 1.5, 0], "专业套餐 5 席 × 1.25 亿 token + 加量 50%");
-  assert.deepEqual(summary.json.activation_codes.map((a: any) => [a.status, a.issued_by]), [["revoked", "op_0003"]]);
+  assert.deepEqual(summary.json.activation_codes.map((a: any) => [a.status, a.issued_by]), [["revoked", aidOf("op_0003")]]);
   assert.equal(JSON.stringify(summary.json).includes("张管理员"), false, "概要不给成员姓名");
-  // 终止订阅单独授权（tenant.terminate）：只能开通的人不能终止（复核 RA10A-17）
-  const onlyManage = await call("op_0004", "POST", "/v1/ops/tenants/ten_alpha/terminate");
-  assert.deepEqual([onlyManage.status, onlyManage.json.error.code], [403, "ops_permission_denied"]);
-  assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/terminate")).status, 200);
+  // 终止订阅是危险操作：本会话 10 分钟内没复核过 → 401 reauth_required；复核后可以
+  const noReauth = await call("op_0004", "POST", "/v1/ops/tenants/ten_alpha/terminate");
+  assert.deepEqual([noReauth.status, noReauth.json.error.code], [401, "reauth_required"]);
+  assert.equal(access.at(-1)!.result, "rejected:reauth_required");
+  assert.equal((await rawCall(base, "POST", "/v1/auth/reauth", { password: "Wrong2026password" }, { authorization: `Bearer ${tokens.get("op_0004")}` })).json.error.code, "reauth_invalid");
+  const re = await rawCall(base, "POST", "/v1/auth/reauth", { password: STAFF_PW }, { authorization: `Bearer ${tokens.get("op_0004")}` });
+  assert.equal(re.status, 200);
+  assert.ok(Date.parse(re.json.reauth_until) > Date.now() + 9 * 60_000);
+  assert.equal((await call("op_0004", "POST", "/v1/ops/tenants/ten_alpha/terminate")).status, 200);
   const recs = chain("ten_alpha");
+  const [a1, a3, a4] = [aidOf("op_0001"), aidOf("op_0003"), aidOf("op_0004")];
   assert.deepEqual(
     recs.map((r) => [r.action, r.actor.kind, r.actor.id, r.result]),
     [
-      ["tenant.create", "ops", "op_0001", "ok"],
-      ["activation.issue", "ops", "op_0003", "ok"],
-      ["quota.boost", "ops", "op_0001", "ok"],
-      ["quota.cap_set", "ops", "op_0001", "ok"],
-      ["license.renew", "ops", "op_0001", "ok"],
-      ["activation.revoke", "ops", "op_0003", "ok"],
-      ["license.terminate", "ops", "op_0001", "ok"],
+      ["tenant.create", "ops", a1, "ok"],
+      ["activation.issue", "ops", a3, "ok"],
+      ["quota.boost", "ops", a1, "ok"],
+      ["quota.cap_set", "ops", a1, "ok"],
+      ["license.renew", "ops", a1, "ok"],
+      ["activation.revoke", "ops", a3, "ok"],
+      ["license.terminate", "ops", a4, "ok"],
     ],
   );
-  const mine = access.filter((r) => r.tid === "ten_alpha").map((r) => `${r.operator}/${r.op_key}/v${r.roster_version}:${r.action}:${r.result}`);
-  assert.deepEqual(mine.slice(0, 2), ["op_0001/k1/v1:tenant.create:requested", "op_0001/k1/v1:tenant.create:ok"]);
-  assert.ok(mine.includes("op_0002/k1/v1:tenant.read:requested") && mine.includes("op_0002/k1/v1:tenant.read:ok"));
+  const mine = access.filter((r) => r.tid === "ten_alpha").map((r) => `${r.operator}/${r.email}/${r.via}:${r.action}:${r.result}`);
+  assert.deepEqual(mine.slice(0, 2), [`${a1}/${staffEmail("op_0001")}/session:tenant.create:requested`, `${a1}/${staffEmail("op_0001")}/session:tenant.create:ok`]);
+  assert.ok(mine.includes(`${aidOf("op_0002")}/${staffEmail("op_0002")}/session:tenant.read:ok`));
+  assert.equal(JSON.stringify(access).includes(STAFF_PW) || JSON.stringify(access).includes(tokens.get("op_0001")!), false, "访问审计不含密码与会话令牌");
   cp.ops.boostQuota("ten_alpha", 1);
   assert.deepEqual(chain("ten_alpha").at(-1)!.actor, { kind: "ops", id: "ops" }, "进程内调用（开发脚本与测试）仍记笼统的 ops");
 });
 
-test("权限按接口：只读的人不能加量、只能发码的人不能开通、开通时附带点数另须加量权限（复核 RA10B-07）；被拒的不进律所流水；共享口令与无签名一律 401", async () => {
+test("权限按角色：只读的人不能加量、开通专员不能开通（职责分离）；开通附点数拒绝；被拒的不进律所流水；没有会话、律师会话、旧的共享口令一律拒绝", async () => {
   const before = chain("ten_alpha").length;
   const ro = await call("op_0002", "POST", "/v1/ops/tenants/ten_alpha/boost", { pct: 1 });
-  assert.deepEqual([ro.status, ro.json.error.code], [403, "ops_permission_denied"]);
+  assert.deepEqual([ro.status, ro.json.error.code, ro.json.error.need], [403, "perm_denied", "quota.manage"]);
   const issuer = await call("op_0003", "POST", "/v1/ops/tenants", { tid: "ten_beta", edition: "team", seats: 1 });
-  assert.deepEqual([issuer.status, issuer.json.error.code], [403, "ops_permission_denied"]);
-  // 第 40 批取消点数：开通时附带点数一律拒绝（旧控制台不会误以为加了量）
+  assert.deepEqual([issuer.status, issuer.json.error.code], [403, "perm_denied"]);
+  assert.equal((await call("op_0003", "GET", "/v1/ops/tenants/ten_alpha/usage")).status, 403, "开通专员没有用量权限（读权限按域拆分）");
+  assert.equal((await call("op_0003", "GET", "/v1/ops/billing")).status, 403);
+  // 第 40 批取消点数：开通时附带点数一律拒绝
   const preload = await call("op_0004", "POST", "/v1/ops/tenants", { tid: "ten_beta", edition: "team", seats: 1, points: 1_000_000_000 });
   assert.deepEqual([preload.status, preload.json.error.code], [400, "points_removed"]);
   assert.equal(cp.ops.tenant("ten_beta"), undefined);
-  assert.equal((await call("op_0004", "POST", "/v1/ops/tenants", { tid: "ten_beta", edition: "team", seats: 1 })).status, 200, "不附点数可以开通");
-  const shared = await fetch(`${base}/v1/ops/tenants/ten_alpha/boost`, { method: "POST", headers: { authorization: "Bearer ops-secret-0123456789", "x-kwl-operator": "ops.zhang", "content-type": "application/json" }, body: '{"pct":1}' });
-  assert.deepEqual([shared.status, ((await shared.json()) as any).error.code], [401, "ops_auth_missing"]);
-  const tampered = await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/boost", { pct: 999 }, { headers: OPS.sign("op_0001", "control-plane", { method: "POST", path: "/v1/ops/tenants/ten_alpha/boost", body: '{"pct":1}' }) });
-  assert.deepEqual([tampered.status, tampered.json.error.code], [401, "ops_auth_invalid"]);
-  const cross = await fetch(`${base}/v1/ops/tenants/ten_alpha`, { headers: OPS.sign("op_0001", "support", { method: "GET", path: "/v1/ops/tenants/ten_alpha" }) });
-  assert.equal(cross.status, 401);
+  assert.equal((await call("op_0004", "POST", "/v1/ops/tenants", { tid: "ten_beta", edition: "team", seats: 1 })).status, 200, "不附点数可以开通（不是危险操作，不要求复核）");
+  const shared = await rawCall(base, "POST", "/v1/ops/tenants/ten_alpha/boost", { pct: 1 }, { authorization: "Bearer ops-secret-0123456789", "x-kwl-operator": "ops.zhang" });
+  assert.deepEqual([shared.status, shared.json.error.code], [401, "session_required"]);
+  const forged = await rawCall(base, "GET", "/v1/ops/tenants", undefined, { authorization: `Bearer kws1.ses_${"A".repeat(16)}.${"B".repeat(43)}` });
+  assert.deepEqual([forged.status, forged.json.error.code], [401, "session_invalid"]);
+  // 律师账号的会话不能调运营接口
+  cp.ops.createTenant({ tid: "ten_lawyer", edition: "team", seats: 2, name: "律师所" });
+  const c = cp.ops.issueActivationCode("ten_lawyer", { member: { slug: "boss" } });
+  const reg = await rawCall(base, "POST", "/v1/auth/register", { email: "boss@lawyer.cn", password: "Lawyer2026secure", name: "王", code: c.code, client: { platform: "web" } });
+  assert.equal(reg.status, 200, reg.text);
+  const member = await rawCall(base, "GET", "/v1/ops/tenants", undefined, { authorization: `Bearer ${reg.json.session_token}` });
+  assert.deepEqual([member.status, member.json.error.code], [403, "staff_required"]);
   assert.equal(chain("ten_alpha").length, before, "被拒的运营请求不撑大律所的流水");
-  assert.ok(rejects.some((r) => r.claimed === "op_0002" && r.reason === "ops_permission_denied" && r.verified && r.audience === "control-plane"));
-  // 未签名的畸形请求体：先鉴权，得到 401（不是 400 body_not_json；复核 RA10B-21）
+  assert.ok(access.some((r) => r.operator === aidOf("op_0002") && r.result === "rejected:perm_denied"), "被拒记录在内部访问审计里");
+  // 未带会话的畸形请求体：先鉴权，得到 401（不是 400 body_not_json；复核 RA10B-21）
   const junk = await fetch(`${base}/v1/ops/tenants`, { method: "POST", body: "{not json" });
   assert.equal(junk.status, 401);
 });
@@ -162,10 +163,10 @@ test("运营只作废创始开通码、代设上限只能调低（复核 RA10B-0
   assert.ok(n1 >= 10 && n1 <= 20, `被拒记录应限量（得到 ${n1}）`);
 });
 
-test("路径按原样匹配：点段的运营请求一律 404（入口按原样路径判断来源网段，不能绕过）；查询串只许 GET 且签名须覆盖；未配置运营守卫时整组 404", async () => {
+test("路径按原样匹配：点段的运营请求一律 404；查询串只许 GET；旧运营登录 410；运维网段外：运营接口与人员登录 403，律师与本所接口不受影响", async () => {
   const rawPath = "/v1/x/../ops/tenants/ten_alpha";
   const dot = await new Promise<number>((done, no) => {
-    const req = request(`${base}${rawPath}`, { method: "GET", path: rawPath, headers: OPS.sign("op_0002", "control-plane", { method: "GET", path: rawPath }) }, (res) => {
+    const req = request(`${base}${rawPath}`, { method: "GET", path: rawPath, headers: { authorization: `Bearer ${tokens.get("op_0002")}` } }, (res) => {
       res.resume();
       done(res.statusCode ?? 0);
     });
@@ -173,16 +174,33 @@ test("路径按原样匹配：点段的运营请求一律 404（入口按原样�
     req.end();
   });
   assert.equal(dot, 404);
-  // 第 44 批：GET 可带查询串（筛选、分页），签名覆盖完整路径；签名只覆盖去掉查询串的路径 → 401；POST 带查询串 → 404
   assert.equal((await call("op_0002", "GET", "/v1/ops/tenants/ten_alpha?x=1")).status, 200);
-  const unsignedQs = await fetch(`${base}/v1/ops/accounts?q=zhang`, { headers: OPS.sign("op_0002", "control-plane", { method: "GET", path: "/v1/ops/accounts" }) });
-  assert.equal(unsignedQs.status, 401, "签名不覆盖查询串即无效");
   assert.equal((await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/renew?x=1", { days: 1 })).status, 404);
-  const none = await call("op_0001", "POST", "/v1/ops/tenants", { tid: "ten_gamma", edition: "team", seats: 1 }, { at: bareBase });
-  assert.equal(none.status, 404);
+  for (const p of ["/v1/ops/login", "/v1/ops/logout", "/v1/ops/password"]) assert.equal((await rawCall(base, "POST", p, { login: "x", password: "y" })).json.error.code, "ops_login_removed", p);
+  const me = await call("op_0002", "GET", "/v1/ops/me");
+  assert.deepEqual([me.json.kind, me.json.account.email, me.json.account.roles], ["staff", staffEmail("op_0002"), ["viewer"]]);
+  netOk = false;
+  try {
+    const off = await call("op_0002", "GET", "/v1/ops/tenants");
+    assert.deepEqual([off.status, off.json.error.code], [403, "staff_network"]);
+    const login = await rawCall(base, "POST", "/v1/auth/login", { email: staffEmail("op_0002"), password: STAFF_PW, client: { platform: "web" } });
+    assert.deepEqual([login.status, login.json.error.code], [403, "staff_network"]);
+    const wrong = await rawCall(base, "POST", "/v1/auth/login", { email: staffEmail("op_0002"), password: "Wrong2026password", client: { platform: "web" } });
+    assert.deepEqual([wrong.status, wrong.json.error.code], [401, "auth_invalid"], "密码不对时不透露是不是平台人员");
+    // 本人接口、律师登录不受运维网段限制
+    assert.equal((await call("op_0002", "GET", "/v1/auth/me")).status, 200);
+    assert.equal((await rawCall(base, "POST", "/v1/auth/login", { email: "boss@lawyer.cn", password: "Lawyer2026secure", client: { platform: "web" } })).status, 200);
+  } finally {
+    netOk = true;
+  }
+  // 没给 devStaff / 引导的控制面：没有人员，运营接口只能 401（没有会话）
+  const bare = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: "x".repeat(32), opsGuard: {} });
+  await new Promise<void>((r) => bare.server.listen(0, "127.0.0.1", () => r()));
+  const bareBase = `http://127.0.0.1:${(bare.server.address() as AddressInfo).port}`;
+  assert.equal((await rawCall(bareBase, "POST", "/v1/ops/tenants", { tid: "ten_gamma", edition: "team", seats: 1 })).status, 401, "传了旧的 opsGuard 也不再认（只提示一次）");
   assert.equal(bare.ops.tenant("ten_gamma"), undefined);
-  // 守卫的受众须为控制面（复核 RA10A-15）
-  assert.throws(() => createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: "x".repeat(32), opsGuard: fileOpsGuard({ dir: mkdtempSync(join(tmpdir(), "kwl-cp-ops-x-")), audience: "support", roster: OPS.roster, rosterKeys: OPS.rosterKeys }) }), /受众须为 control-plane/);
+  bare.server.closeAllConnections();
+  await new Promise<void>((r) => bare.server.close(() => r()));
 });
 
 test("输入校验与已有租户；吊销设备与席位走运维包装；访问审计写不进去即不执行", async () => {
@@ -203,7 +221,7 @@ test("输入校验与已有租户；吊销设备与席位走运维包装；访�
   assert.deepEqual([seat.status, seat.json.error.code], [404, "seat_unknown"]);
   const dev = await call("op_0001", "POST", "/v1/ops/tenants/ten_alpha/devices/dev_alpha_x/revoke", {});
   assert.deepEqual([dev.status, dev.json.error.code], [400, "cert_required"], "尚未登记的设备须附证书（与运维操作同一口径）");
-  assert.deepEqual(chain("ten_alpha").at(-1)!.actor, { kind: "ops", id: "op_0001" });
+  assert.deepEqual(chain("ten_alpha").at(-1)!.actor, { kind: "ops", id: aidOf("op_0001") });
   assert.equal(chain("ten_alpha").at(-1)!.result, "rejected:cert_required");
   accessBroken = true;
   try {
@@ -215,22 +233,10 @@ test("输入校验与已有租户；吊销设备与席位走运维包装；访�
   }
 });
 
-test("按人吊销即时生效：新版本名册把 op_0001 标为吊销后其请求被拒，其他人照常；回滚到旧名册整组 503（提示名册不可用）", async () => {
-  const file = join(opsDir, "roster.json");
-  const put = (doc: unknown) => {
-    writeFileSync(`${file}.tmp`, JSON.stringify(doc));
-    renameSync(`${file}.tmp`, file);
-  };
-  put(OPS.resign(2, PEOPLE.map((p) => (p.id === "op_0001" ? { ...p, status: "revoked" as const } : p))));
-  const gone = await call("op_0001", "GET", "/v1/ops/tenants/ten_alpha");
-  assert.deepEqual([gone.status, gone.json.error.code], [401, "ops_auth_invalid"]);
-  assert.ok(rejects.some((r) => r.claimed === "op_0001" && r.reason === "ops_operator_unknown_or_revoked"), "细分原因只在被拒记录里");
-  const ok = await call("op_0002", "GET", "/v1/ops/tenants/ten_alpha");
-  assert.equal(ok.status, 200);
-  assert.equal(access.at(-1)!.roster_version, 2);
-  put(OPS.roster);
-  const rolled = await call("op_0002", "GET", "/v1/ops/tenants/ten_alpha");
-  assert.deepEqual([rolled.status, rolled.json.error.code], [503, "ops_roster_unavailable"]);
-  assert.match(rolled.json.error.message, /名册暂不可用/);
-  assert.equal(rejects.at(-1)!.roster_reason, "roster_rollback");
+test("停用人员即时生效：会话吊销、再登录被拒；启用后可以再登录", async () => {
+  cp.ops.staff(staffEmail("op_0002"))!.status = "disabled";
+  const r = await call("op_0002", "GET", "/v1/ops/tenants/ten_alpha");
+  assert.deepEqual([r.status, r.json.error.code], [403, "account_disabled"]);
+  cp.ops.staff(staffEmail("op_0002"))!.status = "active";
+  assert.equal((await call("op_0002", "GET", "/v1/ops/tenants/ten_alpha")).status, 200);
 });

@@ -1,0 +1,29 @@
+{
+  "name": "kimi-work-legal-cloud",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Kimi Work 法律行业发行版——云端：统一控制台、控制面（账号、设备、额度、路由、计费）、签名服务、法律模型网关、检索等。运行时只依赖 Node.js 内置模块。",
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "test": "node --test --test-concurrency=1 --test-reporter=spec \"packages/*/test/*.test.ts\" \"services/*/test/*.test.ts\"",
+    "typecheck": "tsc -b tsconfig.check.json",
+    "build:console": "node scripts/build-console.mjs",
+    "secrets:init": "node scripts/cloud-init-secrets.mjs",
+    "serve": "node scripts/cloud-serve.mjs",
+    "stack:local": "node scripts/stack-local.mjs",
+    "dev:console": "node scripts/dev-console.mjs",
+    "verify:source": "node scripts/verify-source.mjs",
+    "smoke": "node scripts/cloud-smoke.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "26.0.0",
+    "typescript": "7.0.2"
+  }
+}

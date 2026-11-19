@@ -133,9 +133,13 @@ export function needsLogin(st: { account?: { login_required?: boolean } | null; 
   return !!(st && (st.account?.login_required || st.login_required));
 }
 
-/** 账号新电脑等待批准时的说明（D-186：没有邀请可对，由已登录的另一台电脑或律所管理员人工核对）。 */
-export function waitApprovalLead(o: { firm: string; who: string; viaAccount: boolean }): string {
-  if (o.viaAccount) return `这个账号在「${o.firm}」已有登记的电脑。请在你已登录的另一台电脑（或请律所管理员）打开“设置 → 管理 → 成员”，批准这台电脑，并核对这 12 位数字。`;
+/**
+ * 账号新电脑等待批准时的说明（D-186：没有邀请可对，人工核对）。第 46 批：“设置 → 管理”只有律所管理员看得到、批准要用管理员电脑上的律所密钥，
+ * 所以非管理员只能请管理员在其电脑上批准；管理员本人保留原说法（在自己已登录的另一台电脑上批准）。
+ */
+export function waitApprovalLead(o: { firm: string; who: string; viaAccount: boolean; admin?: boolean }): string {
+  if (o.viaAccount && o.admin) return `这个账号在「${o.firm}」已有登记的电脑。请在你已登录的另一台电脑（或请律所管理员）打开“设置 → 管理 → 成员”，批准这台电脑，并核对这 12 位数字。`;
+  if (o.viaAccount) return `这个账号在「${o.firm}」已有登记的电脑。请律所管理员在其电脑上的“设置 → 管理 → 成员”里批准这台电脑，并与管理员核对这 12 位数字。`;
   return `已向「${o.firm}」申请加入${o.who ? `（${o.who}）` : ""}。请打电话或当面联系管理员，把下面的入组核对码读给他；管理员核对一致后批准，这里会自动进入。`;
 }
 

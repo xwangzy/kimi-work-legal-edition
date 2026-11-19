@@ -109,7 +109,8 @@ test("本机流程不计点：回稿比对、整理案卷、对外脱敏件预�
   assert.equal(d.run.points_reserved, 0);
   assert.equal(d.run.points_charged ?? 0, 0);
   const aiEst = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "s1.contract_review", document_version_ids: [doc.document_version_id] });
-  assert.match(aiEst.points_display, /^(较少|中等|较大)（约为这类任务上限的 \d+%）$/); // 第 40 批：按百分比
+  // 第 46 批（主文 §5-4）：不再出由点数表折算的百分比；开发形态没有用量视图，只写“按实际用量计入本月额度”
+  assert.equal(aiEst.points_display, "按实际用量计入本月额度");
 });
 
 test("被停用电脑的个人数据提示：没被停用时不提示", async () => {

@@ -1,0 +1,10 @@
+{
+  "role": "search",
+  "listen": { "host": "0.0.0.0", "port": 8445 },
+  "tls": { "cert_file": "/etc/kwl/tls/search.crt", "key_file": "/etc/kwl/tls/search.key" },
+  "service_secret_file": "/etc/kwl/secrets/service-secret",
+  "control_plane": { "url": "https://cp.kwl.example.com:8443", "keys_file": "/etc/kwl/public/cp-public-keys.json" },
+  "seat_keys_file": "/etc/kwl/public/seat-public-keys.json",
+  "data_dir": "/var/lib/kwl",
+  "upstream": { "base_url": "<检索上游，提供 /tools/search>", "api_key_file": "/etc/kwl/secrets/search-upstream.key" }
+}

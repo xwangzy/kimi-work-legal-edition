@@ -359,7 +359,9 @@ describe("网关动态路由与逐请求计量", () => {
     const rec = settles().at(-1)!.record;
     assert.equal(rec.attempts.length, 1);
     assert.equal(rec.outcome, "upstream_error");
-    assert.equal(rec.usage_source, "none");
+    // 第 46 批（D-194）：已转发了部分内容——带估算 usage 与 partial（控制面只记成本），仍不扣律师额度
+    assert.equal(rec.usage_source, "estimated");
+    assert.equal(rec.partial, true);
     assert.equal(rec.charge_units, 0);
     ups.p3!.mode = "ok";
   });

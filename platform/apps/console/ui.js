@@ -1,5 +1,5 @@
 /**
- * 运营控制台 · 界面小件（第 44 批重做）。
+ * 统一云端控制台 · 界面小件（第 44 批起；第 46 批加环形水位、额度卡、二维码、验证码输入、无权限空状态）。
  *
  * - h() / svg() 生成 DOM，**不拼 HTML 字符串**（不用 innerHTML 一类接口）：服务端回来的任何字段都只作为文本节点或属性值进入页面；
  * - CSP 为 style-src 'self'：不写 style 属性。动态宽度、位置一律经 cssVars() 写 el.style.cssText 的自定义属性（--w、--l），
@@ -182,7 +182,7 @@ export async function busy(b, fn) {
     if (b) b.disabled = false;
   }
 }
-export const errText = (e) => (e?.code && e?.code !== "network" && e?.code !== "not_ready" ? `${e.message}（${e.code}）` : String(e?.message ?? e));
+export const errText = (e) => (e?.code && !["network", "not_ready", "reauth_cancelled"].includes(e.code) && e.status >= 500 ? `${e.message}（${e.code}）` : String(e?.message ?? e));
 export const mono = (text, title) => h("span", { class: "mono", title: title ?? (typeof text === "string" ? text : undefined) }, text ?? "—");
 
 export function loadingBlock(text = "正在读取…") {
@@ -191,10 +191,18 @@ export function loadingBlock(text = "正在读取…") {
 export function emptyBlock(text, hint) {
   return h("div", { class: "state state-empty" }, h("b", {}, text), hint ? h("p", {}, hint) : null);
 }
-/** 错误块：404 + not_found = 接口未就绪；403 = 没权限；其余如实显示服务端说明。 */
+/** 错误块：404 + not_found = 接口未就绪；403 = 没有权限（空状态，不是报错）；其余如实显示服务端说明。 */
 export function errorBlock(e, retry) {
   const notReady = e?.code === "not_ready";
-  const title = notReady ? "接口未就绪" : e?.status === 403 ? "没有权限" : e?.code === "network" ? "连不上控制面" : "读取失败";
+  if (e?.status === 403)
+    return h(
+      "div",
+      { class: "state state-noperm", role: "status" },
+      h("span", { class: "state-icon", "aria-hidden": "true" }, icon("lock")),
+      h("b", {}, "没有权限查看"),
+      h("p", {}, `${e.message || "你的角色没有这项权限"}。需要的话请找系统管理员调整角色。`),
+    );
+  const title = notReady ? "接口未就绪" : e?.code === "network" ? "连不上控制面" : "读取失败";
   const detail = notReady
     ? `控制面还没有提供 ${e.method ?? "GET"} ${e.pathOnly ?? ""}（HTTP 404）。服务端接口就绪后点“重试”；本页不显示任何替代数据。`
     : errText(e);
@@ -559,7 +567,8 @@ export function confirmAction(o) {
 }
 
 /** 只显示一次的码（开通码、设置密码码、重置码） */
-export function showSecret({ title, secret, note, expiresAt }) {
+export function showSecret(o) {
+  const { title, secret, note, expiresAt } = o;
   const d = $("#modal");
   return new Promise((resolve) => {
     const close = () => d.open && d.close();
@@ -571,7 +580,7 @@ export function showSecret({ title, secret, note, expiresAt }) {
         { class: "modal-form" },
         h("h2", { class: "modal-title" }, title),
         h("div", { class: "secret-box" }, h("code", { class: "secret" }, secret), copyBtn(secret)),
-        h("p", { class: "modal-note warn" }, "只显示这一次：关掉后无法再查看。请当面或经安全渠道交给本人。"),
+        h("p", { class: "modal-note warn" }, o.warn ?? "只显示这一次：关掉后无法再查看。请当面或经安全渠道交给本人。"),
         note ? h("p", { class: "modal-note" }, note) : null,
         expiresAt ? h("p", { class: "modal-note" }, `有效期至 ${fmt.full(expiresAt)}（北京时间）`) : null,
         h("div", { class: "modal-actions" }, h("button", { type: "button", class: "btn primary", onclick: close }, "我已记下")),
@@ -717,6 +726,19 @@ export function periodBars(history) {
 
 // ─── 图标（线性，24 网格） ──────────────────────────────────────────
 const ICONS = {
+  home: ["M4 11l8-7 8 7", "M6 10v10h12V10", "M10 20v-5h4v5"],
+  shield: ["M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z", "M9 12l2 2 4-4"],
+  members: ["M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z", "M2.5 20c1-3.5 3.6-5 6.5-5s5.5 1.5 6.5 5", "M16 4.5a3.5 3.5 0 0 1 0 6.5", "M18 15c2 .6 3.2 2.2 3.5 5"],
+  staff: ["M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M4 21c1.2-3.6 4.3-5.5 8-5.5", "M17 14l1.2 2.4 2.6.4-1.9 1.8.5 2.6-2.4-1.3-2.4 1.3.5-2.6-1.9-1.8 2.6-.4z"],
+  lock: ["M6 11h12v9H6z", "M8.5 11V8a3.5 3.5 0 0 1 7 0v3"],
+  menu: ["M4 7h16", "M4 12h16", "M4 17h16"],
+  check: ["M5 12.5l4.5 4.5L19 7.5"],
+  copy: ["M9 9h11v11H9z", "M5 15H4V4h11v1"],
+  chevron: ["M9 6l6 6-6 6"],
+  sun: ["M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M12 2v2", "M12 20v2", "M4.9 4.9l1.4 1.4", "M17.7 17.7l1.4 1.4", "M2 12h2", "M20 12h2", "M4.9 19.1l1.4-1.4", "M17.7 6.3l1.4-1.4"],
+  monitor: ["M3 5h18v11H3z", "M8 20h8", "M12 16v4"],
+  laptop: ["M5 6h14v9H5z", "M3 18h18"],
+  building: ["M5 21V4h9v17", "M14 9h5v12", "M8 8h3", "M8 12h3", "M8 16h3", "M3 21h18"],
   overview: ["M4 13h6V4H4z", "M14 20h6v-9h-6z", "M4 20h6v-3H4z", "M14 7h6V4h-6z"],
   tenants: ["M4 20V8l8-4 8 4v12", "M9 20v-6h6v6", "M3 20h18"],
   accounts: ["M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"],
@@ -755,4 +777,104 @@ export function stat(label, value, sub, o = {}) {
 }
 export function panel(title, body, o = {}) {
   return h("section", { class: ["panel", o.class] }, title ? h("header", { class: "panel-head" }, h("h3", {}, title), o.sub ? h("span", { class: "panel-sub" }, o.sub) : null, o.actions ? h("div", { class: "panel-actions" }, o.actions) : null) : null, body);
+}
+
+// ─── 第 46 批：环形水位、额度卡（百分比四件套）、二维码、验证码输入 ───────────────
+/** 环形进度：ratio 0–1；tone 随阈值（≥80% 注意，≥100% 或暂停 = 满） */
+export function ring(o) {
+  const size = o.size ?? 88;
+  const sw = o.stroke ?? 8;
+  const r = (size - sw) / 2;
+  const c = 2 * Math.PI * r;
+  const ratio = isNum(o.ratio) ? clamp01(o.ratio) : null;
+  const limit = isNum(o.capPct) && o.capPct > 0 ? o.capPct / 100 : 1;
+  const tone = ratio === null ? "none" : o.paused || ratio >= limit ? "full" : ratio >= limit * 0.8 ? "high" : "ok";
+  const root = svg("svg", { class: `ring tone-${tone}`, width: size, height: size, viewBox: `0 0 ${size} ${size}`, role: "img", "aria-label": `${o.label ?? "已用"} ${ratio === null ? "未知" : fmt.pct(ratio)}` });
+  root.append(svg("circle", { class: "ring-track", cx: size / 2, cy: size / 2, r, "stroke-width": sw }));
+  if (ratio !== null && ratio > 0)
+    root.append(svg("circle", { class: "ring-fill", cx: size / 2, cy: size / 2, r, "stroke-width": sw, "stroke-dasharray": `${(c * ratio).toFixed(2)} ${c.toFixed(2)}`, transform: `rotate(-90 ${size / 2} ${size / 2})` }));
+  if (isNum(o.capPct) && o.capPct > 0 && o.capPct < 100) {
+    const a = (o.capPct / 100) * 2 * Math.PI - Math.PI / 2;
+    const x1 = size / 2 + (r - sw / 2 - 1) * Math.cos(a);
+    const y1 = size / 2 + (r - sw / 2 - 1) * Math.sin(a);
+    const x2 = size / 2 + (r + sw / 2 + 1) * Math.cos(a);
+    const y2 = size / 2 + (r + sw / 2 + 1) * Math.sin(a);
+    root.append(svg("line", { class: "ring-cap", x1: x1.toFixed(2), y1: y1.toFixed(2), x2: x2.toFixed(2), y2: y2.toFixed(2) }, svg("title", {}, `上限 ${o.capPct}%`)));
+  }
+  root.append(svg("text", { class: "ring-pct", x: size / 2, y: size / 2 + 5, "text-anchor": "middle" }, ratio === null ? "—" : fmt.pct(ratio)));
+  return root;
+}
+
+/**
+ * 额度卡：环 + 四件套（剩余、已用/总量与单位、重置时间、说明）。数字类型不互相换算：
+ * 配额百分比（ratio）、实际消耗（token）、计费金额（元）各写各的。
+ * @param {{title:string, ratio?:number|null, used?:number|null, total?:number|null, unit?:string, resetsAt?:string|null, capPct?:number|null,
+ *          paused?:string|null, note?:any, extra?:any, compact?:boolean}} o
+ */
+export function quotaCard(o) {
+  const r = isNum(o.ratio) ? Number(o.ratio) : isNum(o.used) && isNum(o.total) && Number(o.total) > 0 ? Number(o.used) / Number(o.total) : null;
+  const remain = r === null ? null : Math.max(0, 1 - r);
+  const unitText = o.unit === "cny" ? "元" : o.unit === "tokens" ? "token" : o.unit ? String(o.unit) : "—";
+  const pausedText = o.paused ? { cap: "已到本所上限", allowance: "本期额度用完", burst: "5 小时窗口用满", seat: "个人额度用完" }[o.paused] ?? "已暂停" : null;
+  const resets = fmt.resets(o.resetsAt);
+  return h(
+    "div",
+    { class: ["quota", o.compact && "compact"] },
+    ring({ ratio: r, capPct: o.capPct, paused: o.paused, size: o.compact ? 64 : 88, stroke: o.compact ? 6 : 8, label: o.title }),
+    h(
+      "div",
+      { class: "quota-body" },
+      h("div", { class: "quota-title" }, h("b", {}, o.title), pausedText ? badge(pausedText, "danger") : null),
+      h(
+        "dl",
+        { class: "quota-facts" },
+        h("dt", {}, "剩余"),
+        h("dd", { class: "num" }, remain === null ? "—" : fmt.pct(remain)),
+        h("dt", {}, "已用"),
+        h("dd", { class: "num" }, isNum(o.used) ? (isNum(o.total) ? `${fmt.amount(o.used, o.unit)} / ${fmt.amount(o.total, o.unit)}` : `${fmt.amount(o.used, o.unit)}（不设上限）`) : r === null ? "—" : `${fmt.pct(r)}（只给比例）`),
+        h("dt", {}, "重置"),
+        h("dd", {}, resets ? `${resets}（北京时间）` : "重置时间未知"),
+        h("dt", {}, "单位"),
+        h("dd", {}, o.capPct && o.capPct < 100 ? `${unitText} · 本所上限 ${o.capPct}%` : unitText),
+      ),
+      o.note ? h("p", { class: "quota-note" }, o.note) : null,
+      o.extra ?? null,
+    ),
+  );
+}
+
+/** 二维码（DOM 构造 SVG，不拼 HTML）；固定浅底深码（纸面令牌，深色模式也不反色） */
+export function qrElement(qr, { border = 4, label = "二维码" } = {}, pathOf) {
+  const n = qr.size + border * 2;
+  return svg("svg", { class: "qr", viewBox: `0 0 ${n} ${n}`, "shape-rendering": "crispEdges", role: "img", "aria-label": label }, svg("rect", { class: "qr-bg", width: n, height: n }), svg("path", { class: "qr-dots", d: pathOf(qr, border) }));
+}
+
+/** 6 位验证码输入（或恢复码）：数字键盘、一次性码自动填充、满 6 位回调 */
+export function otpInput({ name = "code", recovery = false, onFull } = {}) {
+  const i = h("input", {
+    name,
+    class: ["otp", recovery && "otp-recovery"],
+    type: "text",
+    inputmode: recovery ? "text" : "numeric",
+    autocomplete: recovery ? "off" : "one-time-code",
+    maxlength: recovery ? 24 : 6,
+    placeholder: recovery ? "xxxx-xxxx-xxxx" : "000000",
+    spellcheck: "false",
+    autocapitalize: "off",
+    "aria-label": recovery ? "恢复码" : "6 位验证码",
+  });
+  i.addEventListener("input", () => {
+    if (!recovery) i.value = i.value.replace(/\D+/g, "").slice(0, 6);
+    if (!recovery && i.value.length === 6) onFull?.(i.value);
+  });
+  return i;
+}
+/** 归一验证码：6 位数字照用；恢复码去空白与连字符、转小写 */
+export const normCode = (v, recovery) => (recovery ? String(v).replace(/[\s-]+/g, "").toLowerCase() : String(v).replace(/\D+/g, ""));
+
+/** 小节标题（页面内分组） */
+export const sectionTitle = (t, sub) => h("div", { class: "section-title" }, h("h2", {}, t), sub ? h("p", {}, sub) : null);
+/** “在管理员电脑上完成”的事项清单 */
+export function clientOnlyList(items) {
+  return h("ul", { class: "client-only" }, items.map(([t, d]) => h("li", {}, h("span", { class: "co-icon", "aria-hidden": "true" }, icon("laptop")), h("div", {}, h("b", {}, t), d ? h("small", {}, d) : null))));
 }

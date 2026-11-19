@@ -28,13 +28,14 @@ import { SearchPalette } from "./components/SearchPalette.tsx";
 import { AskHost } from "./components/AskHost.tsx";
 import { fmtDate } from "./lib/labels.ts";
 import { GuideTour } from "./components/GuideTour.tsx";
-import { guideSeen, guideSeenKey, markGuideSeen, shouldAutoOpenGuide } from "./lib/guide-steps.ts";
+import { guideSeenKey, markGuideSeen } from "./lib/guide-steps.ts";
 
 /** 再看一遍上手指南（设置 · 通用里的按钮发这个事件）。 */
 export const OPEN_GUIDE = "kwl:guide";
 /** 指南最后一步“新建第一个事项”：首页收到后打开新建事项对话框。 */
 export const NEW_MATTER = "kwl:new-matter";
-const safeStorage = (): Storage | null => {
+/** 本机偏好存储（读不到时为 null）；上手清单（components/GuideChecklist.tsx）经它记收起状态。 */
+export const safeStorage = (): Storage | null => {
   try {
     return window.localStorage;
   } catch {
@@ -179,7 +180,7 @@ export function App() {
       .catch(() => setRevokedPersonal(null));
   }, [boot]);
   // 登录失效（第 44 批，主文 §2.5）：内核报 login_required 或广播 account.login_required → 顶部横幅 + 就地登录；
-  // 主进程与开发桥目前不转发这条广播，所以另按 30 秒查一次（本机调用，不联网），退出登录时立即刷新
+  // 主进程（main.cjs）与开发桥（dev/bridge.ts）都转发这条广播；另按 30 秒查一次兜底（本机调用，不联网；广播在界面就绪前发出时也能补上），退出登录时立即刷新
   const [login, setLogin] = useState<{ reason: string | null; email: string } | null>(null);
   // 退出登录后内核不再留邮箱：记住这次打开期间最后看到的那个，就地登录时预先填好
   const lastEmail = useRef("");
@@ -207,25 +208,10 @@ export function App() {
       off();
     };
   }, [boot]);
-  // 首次上手指南（2026-11）：没看过、在首页、还没有自己的事项时自动打开一次；设置 · 通用里可以再看
+  // 首次上手（第 46 批，主文 §5-5）：首页的“上手清单”卡片是第一入口（components/GuideChecklist.tsx）；这里的聚光讲解不再自动弹出，
+  // 由清单上的“看看界面”与设置 · 通用里的“再看一遍”打开（OPEN_GUIDE）。看完记“看过了”（按律所与成员分键）
   const [guide, setGuide] = useState<{ hasMatters: boolean } | null>(null);
   const guideKey = boot ? guideSeenKey(boot.firm, boot.user) : null;
-  useEffect(() => {
-    if (!boot || boot.onboarding || !guideKey || guide) return;
-    if (guideSeen(safeStorage(), guideKey)) return;
-    if (route.page !== "home" || login) return;
-    let alive = true;
-    void api
-      .listMatters()
-      .then((r) => {
-        const own = r.matters.filter((m) => !m.is_sample).length;
-        if (alive && shouldAutoOpenGuide({ seen: false, onHome: true, ownMatters: own, loginRequired: !!login })) setGuide({ hasMatters: own > 0 });
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [boot, guideKey, route.page, login]);
   useEffect(() => {
     const open = () => {
       if (onboardingRef.current) return;

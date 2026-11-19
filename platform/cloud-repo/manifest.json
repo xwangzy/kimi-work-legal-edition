@@ -1,0 +1,76 @@
+{
+  "$comment": "独立云端仓库 kimi-work-legal-cloud 的导出清单（第 46 批，D-196）。include 为相对 platform/ 的目录或文件；exclude 为在 include 内要剔除的路径（前缀匹配）；template 目录原样覆盖到仓库根。导出脚本 platform/cloud-repo/export.mjs 校验：导出的源码不得引用清单以外的工作区包或路径。",
+  "repo": "kimi-work-legal-cloud",
+  "api": "kwl-cp/2",
+  "include": [
+    "apps/console",
+    "packages/firm-trust",
+    "packages/seat-token",
+    "packages/keys",
+    "packages/ops-auth",
+    "packages/blob-store",
+    "packages/design-tokens",
+    "services/control-plane",
+    "services/cp-signer",
+    "services/legal-gateway",
+    "services/search-service",
+    "services/support-api",
+    "services/notify-api",
+    "services/relay-api",
+    "services/dist-api",
+    "scripts/cloud-serve.mjs",
+    "scripts/cloud-init-secrets.mjs",
+    "scripts/build-console.mjs",
+    "scripts/dev-console.mjs",
+    "scripts/stack-local.mjs",
+    "scripts/cloud-smoke.mjs",
+    "scripts/ops-cli.mjs",
+    "scripts/usage-backfill.mjs",
+    "scripts/meter-report.mjs",
+    "scripts/lib/obs.mjs",
+    "scripts/lib/secret-strength.mjs"
+  ],
+  "exclude": [
+    "apps/console/dist",
+    "apps/console/config.json",
+    "packages/firm-trust/test/p256-device.test.ts",
+    "packages/keys/test/signer-surface.test.ts"
+  ],
+  "shared_contract_packages": {
+    "$comment": "两端共用、以 monorepo 为单一来源的契约包：客户端（packages/kernel）与云端都 import；改动须两端同时过用例。",
+    "packages": [
+      "firm-trust",
+      "seat-token",
+      "keys",
+      "design-tokens"
+    ]
+  },
+  "cloud_only_packages": [
+    "ops-auth",
+    "blob-store"
+  ],
+  "forbidden_imports": [
+    "@zr-legal/kernel",
+    "@zr-legal/egress-gate",
+    "@zr-legal/egress",
+    "@zr-legal/desktop",
+    "@zr-legal/docx-engine",
+    "@zr-legal/tokenizer",
+    "@zr-legal/pseudonym",
+    "@zr-legal/model-broker",
+    "@zr-legal/lawdb",
+    "@zr-legal/sync",
+    "@zr-legal/content-dist",
+    "@zr-legal/at-rest",
+    "@zr-legal/domain",
+    "@zr-legal/host-policy",
+    "@zr-legal/safe-log",
+    "@zr-legal/service-auth",
+    "@zr-legal/kap-host",
+    "@zr-legal/exec-wasm",
+    "@zr-legal/file-broker",
+    "@zr-legal/im-connectors",
+    "@zr-legal/parse-ocr",
+    "@zr-legal/firm-node"
+  ]
+}

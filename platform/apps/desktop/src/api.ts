@@ -648,6 +648,8 @@ export interface ReminderInput {
  */
 export interface QuotaStatus {
   mode: "control_plane" | "local_dev";
+  /** 安装形态（第 46 批）：trial = 试用版安装包。 */
+  edition?: "trial" | "release" | "dev";
   note?: string;
   plan?: { id: string; label: string };
   unit?: "tokens" | "cny";
@@ -682,6 +684,8 @@ export interface QuotaStatus {
 /** 账号状态（第 44 批）：这台电脑上登录的是谁、是否要重新登录。 */
 export interface AccountStatus {
   mode: "control_plane" | "local_dev";
+  /** 安装形态（第 46 批）：trial = 试用版安装包（不接中软账号服务）。 */
+  edition?: "trial" | "release" | "dev";
   logged_in: boolean;
   account: { email: string; name: string; role: string } | null;
   /** 上次登录的账号（退出登录后仍记得，只有邮箱、姓名、角色；没有令牌）。 */
@@ -842,7 +846,7 @@ export const api = {
 
   // 任务
   estimate: (matterId: string, body: { scenario: string; document_version_ids: string[]; goal?: string; topic_hint?: string } & Record<string, unknown>) =>
-    invoke<{ estimate_id: string; points: number; points_display: string; assumptions: string[]; data_where?: { preview: string; warning: string | null; start_blocked: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | null; busy_run_id?: string; send_summary?: SendSummaryView } }>("runs.estimate", { matter_id: matterId, ...body }),
+    invoke<{ estimate_id: string; points: number; points_display: string; assumptions: string[]; data_where?: { preview: string; warning: string | null; start_blocked: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | "account" | "quota" | null; busy_run_id?: string; send_summary?: SendSummaryView; start_hint?: { kind: "login" | "outdated" | "quota"; code: string; message: string; action: "login" | "usage" | null } } }>("runs.estimate", { matter_id: matterId, ...body }),
   /** 发送视图（v9.2 §3.4）：模型会看到的样子——令牌形态与代号位置，不含代号真值。 */
   sendPreview: (matterId: string, documentVersionId: string) => invoke<SendPreview>("materials.send_preview", { matter_id: matterId, document_version_id: documentVersionId }),
   /** 疑似未替换的姓名（只在本机界面显示）。 */
@@ -1109,6 +1113,9 @@ export const api = {
       deliverables: { artifact_version_id: string; matter_id: string; matter_title: string; kind: string; version: number; filename: string; title: string | null; created_at: string }[];
       truncated: { runs: boolean; deliverables: boolean };
     }>("search.titles", { q, labels }),
+  /** 上手清单（第 46 批）：自己建的事项、自己导入的材料、自己发起的任务与其成果的数目，以及“去做”直达的目标。 */
+  guideProgress: () =>
+    invoke<{ firm: string | null; user: string | null; own_matters: number; materials: number; runs: number; deliverables: number; latest_matter_id: string | null; latest_run: { run_id: string; matter_id: string } | null }>("guide.progress"),
   recentRuns: (limit = 5) =>
     invoke<{ runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; goal: string; title?: string | null; skill?: string | null }[]; waiting: { run_id: string; matter_id: string }[] }>("runs.list_recent", { limit }),
 

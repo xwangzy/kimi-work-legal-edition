@@ -742,7 +742,7 @@ function DiagnosticsTab({ caps, gate, devices, unresolved, onReconciled, im, rec
       .kernelStatus()
       .then((st: any) => {
         setLogLevel(typeof st?.log_level === "string" ? st.log_level : null);
-        setBuild([st?.app_version ? `安装包 ${st.app_version}` : "开发形态", st?.version ? `内核 ${st.version}` : ""].filter(Boolean).join(" · "));
+        setBuild([st?.app_version ? `${st?.edition === "trial" ? "试用版" : "安装包"} ${st.app_version}` : st?.edition === "trial" ? "试用版" : "开发形态", st?.version ? `内核 ${st.version}` : ""].filter(Boolean).join(" · "));
         setAppVersion(displayVersion(st?.app_version, st?.version));
       })
       .catch(() => setLogLevel(null));

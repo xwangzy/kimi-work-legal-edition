@@ -662,8 +662,20 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
       let source: UsageSource = "none";
       let u: UsageTokens | null = null;
       const estimated = (): UsageTokens => ({ input: est.input, cached: 0, output: Math.ceil(outChars / 2), reasoning: 0 });
+      // 第 46 批（D-194）：流式已向律师转发了内容、随后上游流出错或块间隔超时——上游已计了这部分 token。
+      // 不扣律师额度（“因软件或服务出错没做完的不计入用量”），但按已转发内容估算 usage、标 partial，控制面据此只记成本供与上游对账。
+      let partial = false;
+      const markPartial = () => {
+        if (!stream || outChars <= 0) return;
+        partial = true;
+        source = usage ? "upstream" : "estimated";
+        u = usage ?? estimated();
+      };
       if (!up) outcome = clientGone ? "client_gone" : failure?.timeout ? "timeout" : "upstream_error";
-      else if (streamError) outcome = "upstream_error";
+      else if (streamError) {
+        outcome = "upstream_error";
+        markPartial();
+      }
       else if (clientGone || blockedOut) {
         outcome = blockedOut ? "blocked" : "client_gone";
         if (usage) {
@@ -673,8 +685,10 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
           source = "estimated";
           u = estimated();
         }
-      } else if (timedOut) outcome = "timeout";
-      else {
+      } else if (timedOut) {
+        outcome = "timeout";
+        markPartial();
+      } else {
         outcome = "ok";
         if (usage) {
           source = "upstream";
@@ -684,8 +698,8 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
           u = estimated();
         }
       }
-      // 上游错误、超时：不扣（成本可能已由上游计费，控制面另记）
-      const charge = u && source !== "none" ? (unitsOf(hold.unit, u, priceItem) ?? 0) : 0;
+      // 上游错误、超时：不扣；流中途出错（partial）也不扣，只把估算 usage 交给控制面记成本
+      const charge = u && source !== "none" && !partial ? (unitsOf(hold.unit, u, priceItem) ?? 0) : 0;
       const served = chosen ?? lastTried;
       const record: UsageRecord = {
         request_id: requestId,
@@ -713,6 +727,7 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
         finish_reason: finishReason,
         lease_id: hold.leaseId ?? null,
         price_version: priceVersion ?? hold.priceVersion ?? null,
+        ...(partial ? { partial: true } : {}),
       };
       const reason = timedOut
         ? `upstream_${timedOut}_timeout`

@@ -2,11 +2,12 @@
  * 模型与路由：上游（地址、密钥尾号、健康、延迟、测试连接）、模型别名（目标与优先级、启停、默认）、价目表（版本历史）。
  * 接口：GET /v1/ops/routing；写（route.manage）PUT/DELETE providers/{id}、POST providers/{id}/probe、PUT/DELETE models/{alias}、PUT prices（契约 §5）。
  *
- * 上游密钥：在本页用网关路由公钥（config.json 的 routing_public_key + routing_key_id）加密成 key_sealed 再提交（seal-key.js，主文 §3.2），
- * 同时只提交“…”+ 末 4 位作 key_hint。明文不出页面；提交后立即清空输入框。没配公钥时密钥输入禁用并说明原因。
+ * 上游密钥：在本页用网关路由公钥加密成 key_sealed 再提交（seal-key.js，主文 §3.2），同时只提交“…”+ 末 4 位作 key_hint。
+ * 第 46 批：公钥取自 GET /v1/ops/routing 的 routing_key {kid, spki_b64, fingerprint}（不再读静态 config.json，审计 cloud §9-5），
+ * 页头显示本页按 SPKI 算出的指纹供与部署记录核对；控制面没给、导入失败或指纹不符时密钥输入禁用并说明原因。明文不出页面；提交后立即清空输入框。
  */
 import * as api from "../api.js";
-import { importRoutingKey, keyHint, sealUpstreamKey } from "../seal-key.js";
+import { checkRoutingKey, fingerprintText, keyHint, sealUpstreamKey } from "../seal-key.js";
 import { can, needs, pageHead, providerBadge } from "../domain.js";
 import { badge, btn, clear, confirmAction, dataTable, emptyBlock, facts, field, fmt, h, icon, load, mono, openDrawer, panel, readForm, tabBar, toast } from "../ui.js";
 
@@ -15,22 +16,9 @@ const BUILTIN = new Set(["legal/k3", "legal/k2.6"]);
 const PROVIDER_RE = /^[a-z][a-z0-9-]{1,31}$/;
 const ALIAS_RE = /^[a-z0-9][a-z0-9._/-]{1,47}$/;
 
-/** 网关路由公钥是否可用（缓存一次导入结果） */
+/** 网关路由公钥：每次读到路由时按 routing_key 核对一次（编辑上游时用同一结果） */
 let keyCheck = null;
-function routingKeyStatus() {
-  const cfg = api.config();
-  if (!keyCheck)
-    keyCheck = (async () => {
-      if (!cfg.routing_public_key) return { ok: false, reason: "控制台 config.json 没配 routing_public_key（网关路由公钥）：不能在浏览器里加密上游密钥，密钥输入已禁用。请运维按部署手册把 cloud-init-secrets 生成的公钥写进 config.json。" };
-      if (!cfg.routing_key_id) return { ok: false, reason: "控制台 config.json 没配 routing_key_id：网关无法判断用哪把私钥解开，密钥输入已禁用。" };
-      try {
-        return { ok: true, key: await importRoutingKey(cfg.routing_public_key), kid: cfg.routing_key_id };
-      } catch (e) {
-        return { ok: false, reason: `config.json 的 routing_public_key 不可用：${e.message}。密钥输入已禁用。` };
-      }
-    })();
-  return keyCheck;
-}
+const routingKeyStatus = () => keyCheck ?? Promise.resolve({ ok: false, reason: "还没读到路由：请刷新本页。" });
 
 export function render(page, r) {
   if (r.params.tab) st.tab = r.params.tab;
@@ -43,13 +31,18 @@ export function render(page, r) {
 }
 
 function draw(head, box, d, reload) {
-  const cfg = api.config();
-  const kidMismatch = d.routing_key_id && cfg.routing_key_id && d.routing_key_id !== cfg.routing_key_id;
+  keyCheck = checkRoutingKey(d.routing_key);
+  const fp = h("span", { class: "muted" }, " · 路由公钥核对中…");
+  const warn = h("div");
+  keyCheck.then((ks) => {
+    clear(fp, h("span", { class: "muted" }, " · 路由公钥 "), mono(ks.kid ?? d.routing_key?.kid ?? d.routing_key_id ?? "未登记"), ks.fingerprint ? h("span", { class: "muted", title: ks.fingerprint }, ` · 指纹 ${fingerprintText(ks.fingerprint)}`) : null, ks.ok ? badge("已核对", "ok", "本页按控制面给的公钥算出的 SHA-256 指纹；请与部署记录（cloud-init-secrets 输出）比对") : null);
+    if (!ks.ok) clear(warn, h("div", { class: "banner danger" }, ks.reason));
+  });
   clear(
     head,
     pageHead(
       "模型与路由",
-      h("span", { class: "sub-row" }, `路由版本 v${d.version ?? "—"}`, h("span", { class: "muted" }, ` · ${fmt.full(d.updated_at)} 由 ${d.updated_by ?? "—"} 更新`), h("span", { class: "muted" }, " · 路由密钥 "), mono(d.routing_key_id ?? "未登记")),
+      h("span", { class: "sub-row" }, `路由版本 v${d.version ?? "—"}`, h("span", { class: "muted" }, ` · ${fmt.full(d.updated_at)} 由 ${d.updated_by ?? "—"} 更新`), fp),
       btn("刷新健康", () => reload(), { icon: icon("refresh") }),
     ),
   );
@@ -62,7 +55,7 @@ function draw(head, box, d, reload) {
     else if (st.tab === "models") paneModels(pane, d, reload);
     else panePrices(pane, d, reload);
   };
-  clear(box, kidMismatch ? h("div", { class: "banner danger" }, `控制台配置的路由密钥编号（${cfg.routing_key_id}）与控制面登记的（${d.routing_key_id}）不一致：新提交的密钥网关可能解不开。请运维核对 config.json。`) : null, tabs, pane);
+  clear(box, warn, tabs, pane);
   drawTabs();
   drawPane();
 }
@@ -137,7 +130,7 @@ async function editProvider(p, d, reload) {
     { name: "id", label: "上游编号", value: p?.id ?? "", required: true, disabled: !isNew, placeholder: "csi-maas", hint: "小写字母开头，字母、数字、连字符，2–32 位；建好后不可改（密钥按编号绑定）" },
     { name: "label", label: "显示名", value: p?.label ?? "", required: true, maxlength: 40 },
     { name: "vendor", label: "厂商", value: p?.vendor ?? "", required: true, placeholder: "csi-maas", hint: "同一厂商的上游之间可互相切换；跨厂商要在别名上单独允许" },
-    { name: "base_url", label: "地址", value: p?.base_url ?? "", required: true, placeholder: "https://maas.example.com/v1", hint: "https，不带用户名口令；主机须在网关的 allow_hosts 白名单里" },
+    { name: "base_url", label: "地址", value: p?.base_url ?? "", required: true, placeholder: "https://maas.example.com/v1", hint: "https，不带用户名与密码；主机须在网关的 allow_hosts 白名单里" },
     { name: "max_concurrency", label: "每网关实例并发上限", type: "number", min: 1, max: 4096, value: p?.max_concurrency ?? 64 },
     { name: "header_timeout_ms", label: "首包超时（毫秒）", type: "number", min: 1000, max: 600000, value: p?.header_timeout_ms ?? "", hint: "空 = 网关缺省" },
     { name: "idle_timeout_ms", label: "流式空闲超时（毫秒）", type: "number", min: 1000, max: 600000, value: p?.idle_timeout_ms ?? "", hint: "空 = 网关缺省" },
@@ -156,7 +149,7 @@ async function editProvider(p, d, reload) {
       h("label", {}, "上游密钥"),
       keyInput,
       ks.ok
-        ? h("small", { class: "hint" }, `提交前在本页用网关路由公钥（${ks.kid}）加密，控制面只存密文与尾号，看不到明文；提交后输入框立即清空。`)
+        ? h("small", { class: "hint" }, `提交前在本页用网关路由公钥（${ks.kid}，指纹 ${fingerprintText(ks.fingerprint)}）加密，控制面只存密文与尾号，看不到明文；提交后输入框立即清空。`)
         : h("div", { class: "banner warn" }, ks.reason),
     ),
     p?.health ? panel("健康", facts([["状态", providerBadge(p.health, p.enabled)], ["延迟", fmt.ms(p.health.latency_ms)], ["最近成功", fmt.full(p.health.last_ok_at)], ["连续失败", fmt.int(p.health.consecutive_failures)], ["最近错误", p.health.last_error ?? "—"], ["最近探测", fmt.full(p.health.probed_at)], ["回报网关", p.health.holder ?? "—"], ["待探测", p.probe_requested_at ? fmt.full(p.probe_requested_at) : "—"]])) : null,
@@ -176,7 +169,7 @@ async function editProvider(p, d, reload) {
     } catch {
       return void (err.textContent = "地址不是合法网址");
     }
-    if (u.protocol !== "https:" || u.username || u.password) return void (err.textContent = "地址须为 https，且不带用户名口令");
+    if (u.protocol !== "https:" || u.username || u.password) return void (err.textContent = "地址须为 https，且不带用户名与密码");
     if (!v.label || !v.vendor) return void (err.textContent = "显示名与厂商必填");
     const plain = keyInput.value;
     if (isNew && !plain && ks.ok) return void (err.textContent = "新上游要输入密钥");

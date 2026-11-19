@@ -131,8 +131,5 @@ test("不可见字符（复核 B4-R13）：插在词中间的格式字符、变�
   assert.equal(foldForSafety("A​b"), "ab");
 });
 
-test("告知联动（复核 B4-R06）：计量落盘字段含内容安全时，《中软看得到什么》必须写明", () => {
-  const meter = readFileSync(new URL("../src/meter-file.ts", import.meta.url), "utf8");
-  const page = readFileSync(new URL("../../../apps/desktop/src/pages/Connections.tsx", import.meta.url), "utf8");
-  if (/"safety"/.test(meter)) assert.match(page, /内容安全检查命中的类别编号与次数/);
-});
+// 告知联动（复核 B4-R06：计量落盘字段含内容安全时，《中软看得到什么》必须写明）要同时读网关与桌面端源码，
+// 第 46 批拆独立云端仓库后挪到客户端一侧：apps/desktop/test/privacy-disclosure-link.test.ts。

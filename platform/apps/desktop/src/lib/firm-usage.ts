@@ -132,7 +132,7 @@ export function legacyNote(q: QuotaStatus): string | null {
 /** 律师在“账号与团队”看到的一句话。 */
 export function quotaLawyerLine(q: QuotaStatus | null): string {
   if (!q) return "读取中…";
-  if (q.mode !== "control_plane" || !q.firm) return "开发形态：不统计本所用量";
+  if (q.mode !== "control_plane" || !q.firm) return q.edition === "trial" ? "试用版：不统计本所用量" : "开发形态：不统计本所用量";
   const own = q.own && q.own.requests > 0 ? `你本期已用${q.own.denominator === "account_limit" ? "个人上限" : "每人额度"}的 ${fmtPct(q.own.used_ratio)}` : "你本期还没有用量";
   const firm = `本所已用 ${fmtPct(q.firm.used_ratio)}${q.firm.cap_pct ? `（上限 ${q.firm.cap_pct}%）` : ""}`;
   const tone = usageTone(q.firm);

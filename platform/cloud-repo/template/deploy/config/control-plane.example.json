@@ -1,0 +1,29 @@
+{
+  "role": "control-plane",
+  "listen": { "host": "0.0.0.0", "port": 8443 },
+  "tls": { "cert_file": "/etc/kwl/tls/cp.crt", "key_file": "/etc/kwl/tls/cp.key" },
+  "service_secret_file": "/etc/kwl/secrets/service-secret",
+  "data_dir": "/var/lib/kwl",
+  "signer": { "url": "https://cp-signer.internal:9443", "client_cert_file": "/etc/kwl/tls/cp-api-client.crt", "client_key_file": "/etc/kwl/tls/cp-api-client.key", "ca_file": "/etc/kwl/tls/internal-ca.crt", "servername": "cp-signer.internal" },
+  "state_key_file": "/etc/kwl/secrets/cp-state.key",
+  "code_pepper_file": "/etc/kwl/secrets/cp-code-pepper.key",
+  "ops": { "deployment": "prod", "allow_cidrs": ["10.20.0.0/24"] },
+  "console": {
+    "origins": ["https://console.kwl.example.com"],
+    "bootstrap_admin": { "email": "admin@csi.example.com", "name": "系统管理员" },
+    "staff_mfa": "required"
+  },
+  "clients": { "min_version": "0.9.0" },
+  "billing": {
+    "plans": [
+      { "id": "standard", "label": "标准", "quota_unit": "tokens", "seat_quota": 50000000, "period": "month", "seat_price_cny": null, "device_limit": 2, "alert_thresholds": [80, 100] },
+      { "id": "trial", "label": "试用", "quota_unit": "tokens", "seat_quota": 20000000, "period": "month", "burst": { "hours": 5, "pct": 50 }, "device_limit": 1 }
+    ],
+    "default_plan": "standard",
+    "registration": { "registration": "code", "trial_plan": "trial", "trial_days": 14, "trial_seats": 1, "default_device_limit": 2 }
+  },
+  "routing": {
+    "bootstrap": { "provider": { "id": "maas", "label": "中软 MaaS", "vendor": "csi-maas", "base_url": "https://maas.jointpilot.com/v1" }, "models": { "legal/k3": "kimi-k3.1-pro", "legal/k2.6": "kimi-k3.1-pro" } },
+    "public_key_file": "/etc/kwl/public/routing-public.txt"
+  }
+}

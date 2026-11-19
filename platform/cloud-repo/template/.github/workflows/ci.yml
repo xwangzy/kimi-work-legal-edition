@@ -1,0 +1,39 @@
+name: cloud-ci
+
+# 云端仓库的持续集成：Linux 上做类型检查、跑全部云端用例、打包控制台、用生产入口做冒烟。
+# 不需要任何真实密钥（冒烟用临时生成的密钥与一把假上游密钥，回环地址）。
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: 共享契约包与导出记录一致
+        run: node scripts/verify-source.mjs
+      - name: 安装（只有类型检查工具；运行时无第三方依赖）
+        run: npm ci --no-audit --no-fund
+      - name: 类型检查
+        run: npm run typecheck
+      - name: 云端用例
+        run: npm test
+      - name: 打包控制台
+        run: node scripts/build-console.mjs --out dist-console --control-plane https://cp.ci.invalid:8443
+      - name: 生产入口冒烟（cloud-init-secrets → 签名服务、控制面、网关、检索、控制台；回环地址、假上游密钥）
+        run: node scripts/cloud-smoke.mjs
+      - name: 仓库里没有真实密钥
+        run: |
+          if git grep -nE '(sk-[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)' -- ':!**/test/**' ':!**/*.test.ts'; then
+            echo "发现疑似密钥，停止"; exit 1
+          fi

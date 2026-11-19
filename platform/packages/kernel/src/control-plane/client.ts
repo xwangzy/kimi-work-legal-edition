@@ -138,9 +138,35 @@ export class ControlPlaneClient {
   private pushing: Promise<number> | null = null;
   /** 应用控制面文档的操作串行执行（同步与吊销即时同步；复核 S6-C07：交错时较旧的目录会在之后被判“回放”误报）。 */
   private lock: Promise<void> = Promise.resolve();
+  /** 最近一次取到并验过签的用量视图与取到的时刻（第 46 批：发起任务前按它判断额度是否暂停，不在发起时同步请求控制面）。 */
+  private quotaCache: { view: QuotaView; at: number } | null = null;
+  private quotaRefreshing: Promise<unknown> | null = null;
+  /** 控制面答复“客户端版本过旧”（426 client_outdated，主文 §2.5）：记下最低版本；之后签出席位令牌即清除。 */
+  private outdated: { min_version: string | null; at: number } | null = null;
 
   constructor(d: ControlPlaneClientDeps) {
     this.d = d;
+  }
+
+  /** 最近一次的用量视图（没有取到过为 null；调用方按 at 判断是否过时）。 */
+  cachedQuota(): { view: QuotaView; at: number } | null {
+    return this.quotaCache;
+  }
+
+  /** 缓存比 maxAgeMs 旧（或没有）时在后台取一次（单飞；失败不抛，不阻塞调用方）。 */
+  refreshQuotaIfStale(maxAgeMs: number): void {
+    const now = this.d.now?.() ?? Date.now();
+    if (this.quotaRefreshing || (this.quotaCache && now - this.quotaCache.at < maxAgeMs)) return;
+    this.quotaRefreshing = this.quota()
+      .catch(() => undefined)
+      .finally(() => {
+        this.quotaRefreshing = null;
+      });
+  }
+
+  /** 控制面最近答复过“客户端版本过旧”（null = 没有）。 */
+  clientOutdated(): { min_version: string | null; at: number } | null {
+    return this.outdated;
   }
 
   get lastSync(): SyncReport | null {
@@ -172,6 +198,11 @@ export class ControlPlaneClient {
       if (code === "device_auth_stale") this.clockAlert(json.server_time);
       // 第 44 批：会话无效、过期或账号停用 → 提示重新登录（席位令牌不再续期，网关按订阅暂停本设备）
       if (SESSION_PROBLEMS.has(code)) this.d.onSessionProblem?.(code);
+      // 第 46 批：客户端版本低于控制面要求（426）——记下最低版本，发起任务前与诊断据此提示升级
+      if (code === "client_outdated") {
+        const mv = (json.error as { min_version?: unknown } | undefined)?.min_version;
+        this.outdated = { min_version: typeof mv === "string" && mv.length <= 40 ? mv : null, at: this.d.now?.() ?? Date.now() };
+      }
       return { ok: false, error: code, status: r.status, ...(typeof (json.error as { message?: unknown } | undefined)?.message === "string" ? { message: String((json.error as { message: string }).message).slice(0, 200) } : {}) };
     }
     return { ok: true, status: r.status, json };
@@ -261,6 +292,7 @@ export class ControlPlaneClient {
           if (r.error === "seat_revoked") gov.seatRevokedByControlPlane();
           return r.error;
         }
+        if (typeof r.json.token === "string") this.outdated = null;
         return typeof r.json.token === "string" ? outcome(gov.applySeatToken(r.json.token)) : "seat_reply_invalid";
       });
       await step("summaries", async () => `pushed:${await this.pushSummaries()}`);
@@ -501,6 +533,7 @@ export class ControlPlaneClient {
     if (!r.ok) throw new Error(r.error);
     const v = this.d.gov.openSigned<QuotaView & { tid: string }>(r.json, "kwl-quota-view");
     if (!v || v.tid !== this.d.tenantId) throw new Error("quota_view_invalid");
+    this.quotaCache = { view: v, at: this.d.now?.() ?? Date.now() };
     return v;
   }
 
@@ -518,7 +551,7 @@ export class ControlPlaneClient {
   async account(method: "GET" | "POST", path: string, body?: unknown): Promise<Record<string, unknown>> {
     if (!/^\/v1\/auth\/[a-z0-9/_-]{2,80}$/.test(path)) throw new Error("account_path_invalid");
     const r = await this.call(method, path, method === "GET" ? undefined : (body ?? {}));
-    if (!r.ok) throw Object.assign(new Error(r.error), { code: r.error, cpMessage: r.message ?? null, status: r.status ?? null });
+    if (!r.ok) throw Object.assign(new Error(r.error), { code: r.error, cpMessage: r.message ?? null, status: r.status ?? null, ...(r.error === "client_outdated" ? { minVersion: this.outdated?.min_version ?? null } : {}) });
     return r.json;
   }
 

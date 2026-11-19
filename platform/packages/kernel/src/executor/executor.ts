@@ -2202,27 +2202,40 @@ async function runReviewStage(
 
 /**
  * 任务失败时给律师看的一句话（第 28 批模型不可用演练：原来写“Agent 任务未成功：host_reported_failure”）。
- * 模型通道不可达、限流一类写“AI 服务暂时连不上”，其余照写宿主给的原因；都提示可重新运行。纯函数。
+ * 第 46 批（主文 §5-2）：不再把原始错误拼进括号——原文留在任务事件 agent.outcome 的 error 字段里（诊断信息可导出），这里只给原因与办法；
+ * 网关的额度与登录拒绝按错误码匹配（出站闸门把网关错误体里的代码以“[kwl:代码]”附在说明末尾带给执行器），中文原文只作旧网关的兜底。纯函数。
  */
 export function agentFailureText(reason: string | null, error: string | null): string {
-  const err = (error ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+  const err = (error ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+  const code = /\[kwl:([a-z0-9_]{1,60})\]/.exec(err)?.[1] ?? null;
+  const has = (c: string, legacy?: RegExp) => code === c || new RegExp(`\\b${c}\\b`).test(err) || (!!legacy && legacy.test(err));
   // 第 44 批：本产品自己的额度规则（网关 402：频率窗口、本期额度、律所上限、个人额度、未定价）——不是连不上，说清原因与怎么办
-  if (/频率窗口|quota_burst/.test(err)) return "本所短时间内 AI 用量较多（5 小时频率窗口已满），任务暂停：几小时内窗口自动恢复后点“重新运行”即可，已完成的部分保留、不会重复计用量；常用这么多可请管理员调整套餐";
-  if (/个人额度|quota_seat_limit/.test(err)) return "你的个人 AI 额度已用完，任务暂停：请联系律所管理员调整你的个人上限；已完成的部分保留，处理好后点“重新运行”，不会重复计用量";
-  if (/律所设定的本期用量上限|quota_cap_reached/.test(err)) return "已到律所设定的本期 AI 用量上限，任务暂停：请律所管理员在“设置 → 管理 → 用量”调整上限；已完成的部分保留，处理好后点“重新运行”";
-  if (/本期 AI 额度已用完|quota_exhausted/.test(err)) return "本所本期 AI 额度已用完，任务暂停：下期自动重置，或请律所管理员联系中软加量；已完成的部分保留，处理好后点“重新运行”";
-  if (/还没有定价|price_unconfigured/.test(err)) return "这个 AI 模型还没有定价，按金额计的套餐暂不可用：请联系律所管理员或中软客服；已完成的部分保留";
+  if (has("quota_burst", /频率窗口|5 小时内的用量/)) return "本所短时间内 AI 用量较多（5 小时频率窗口已满），任务暂停：几小时内窗口自动恢复后点“重新运行”即可，已完成的部分保留、不会重复计用量；常用这么多可请管理员调整套餐";
+  if (has("quota_seat_limit", /个人额度|个人 AI 额度/)) return "你的个人 AI 额度已用完，任务暂停：请联系律所管理员调整你的个人上限；已完成的部分保留，处理好后点“重新运行”，不会重复计用量";
+  if (has("quota_cap_reached", /律所设定的(本期用量)?上限|律所设定的本期用量上限/)) return "已到律所设定的本期 AI 用量上限，任务暂停：请律所管理员在“设置 → 管理 → 用量”调整上限；已完成的部分保留，处理好后点“重新运行”";
+  if (has("quota_exhausted", /本期 AI 额度(已用完|不足)|AI 额度暂时不足/)) return "本所本期 AI 额度已用完，任务暂停：下期自动重置，或请律所管理员联系中软加量；已完成的部分保留，处理好后点“重新运行”";
+  if (has("price_unconfigured", /还没有定价/)) return "这个 AI 模型还没有定价，按金额计的套餐暂不可用：请联系律所管理员或中软客服；已完成的部分保留";
+  // 第 46 批：登录与 AI 使用授权（网关 401 seat_*、闸门 503 seat_unavailable）——单独说，不说成“连不上”
+  if (has("seat_session_inactive", /登录已失效/)) return "登录已失效，任务没有完成：请在页面顶部重新登录，然后点“重新运行”；已完成且可验证的部分保留";
+  if (has("seat_device_revoked") || has("seat_seat_revoked")) return "这台电脑的 AI 使用授权已被收回，任务没有完成：请联系律所管理员；已完成且可验证的部分保留";
+  if (has("seat_token_missing") || has("seat_unavailable") || (code ?? "").startsWith("seat_") || /\bseat_[a-z_]+\b|AI 使用授权/.test(err)) {
+    return "这台电脑暂时没有取得 AI 使用授权（还没登录，或联网续期还没完成），任务没有完成：请确认已登录并联网，稍等一两分钟后点“重新运行”；已完成且可验证的部分保留";
+  }
+  if (has("client_outdated", /客户端版本过旧/)) return "客户端版本过旧，任务没有完成：请升级到最新版本后点“重新运行”；已完成且可验证的部分保留";
   // 限流（第 29 批 429 演练）：服务是通的，只是请求太多——说“繁忙”，不说“连不上”
-  if (/\b429\b|rate.?limit|queue_timeout|排队超时/i.test(err)) return `AI 服务繁忙（请求太多被限流：${err}），任务没有完成；已完成且可验证的部分保留，可以过几分钟点“重新运行”`;
-  if (/通道不可达|不可达|ECONNREFUSED|ECONNRESET|ETIMEDOUT|\b50[234]\b|provider/i.test(err)) return `AI 服务暂时连不上（${err}），任务没有完成；已完成且可验证的部分保留，可以稍后点“重新运行”`;
+  if (/\b429\b|rate.?limit|queue_timeout|排队超时/i.test(err)) return "AI 服务繁忙（请求太多被限流），任务没有完成；已完成且可验证的部分保留，可以过几分钟点“重新运行”";
+  if (/通道不可达|不可达|ECONNREFUSED|ECONNRESET|ETIMEDOUT|\b50[234]\b|provider/i.test(err)) return "AI 服务暂时连不上，任务没有完成；已完成且可验证的部分保留，可以稍后点“重新运行”";
   // AI 服务账户欠费或额度用完（V16 第 41 批真实走查：全量回归发起后上游返回“403 预扣费额度失败, 用户剩余额度: ¥0.95…, 需要预扣费额度: ¥1.38…（request id: …）”，
   // 这句话原样显示给了律师）：不是律师能处理的事，说清是谁的事、怎么办；金额与请求编号不显示（留在任务事件与诊断信息里）
   // 本产品自己的月度额度提示（“本所本月 AI 额度已用完……”）已经是律师话，照原样走下面的分支
   if (!/本所/.test(err) && /额度不足|预扣费|余额不足|insufficient[_ ]?(?:quota|balance|credit)|quota[_ ]?exceeded|billing|欠费/i.test(err)) {
     return "AI 服务账户的余额或额度不足，任务没有完成：这要由律所管理员或 Kimi Work 客服处理（充值或调整额度），不是你这边的问题；已完成且可验证的部分保留，处理好后点“重新运行”即可，不会重复计用量";
   }
-  if (err && !/^[a-z_]+$/.test(err)) return `任务没有完成：${err}；可以点“重新运行”`;
-  return `任务没有完成（${reason ?? err ?? "原因未知"}）；可以点“重新运行”`;
+  // 宿主给出的是一句中文说明（不含英文报错、状态码）时照写；其余不把原文给律师（原文在诊断信息里）
+  const plain = err.replace(/\s*\[kwl:[a-z0-9_]{1,60}\]/g, "").trim();
+  if (plain && /[\u4e00-\u9fff]/.test(plain) && !/[A-Za-z]{4,}|\b\d{3}\b/.test(plain)) return `任务没有完成：${plain.slice(0, 120)}；可以点“重新运行”`;
+  void reason;
+  return "任务没有完成；可以点“重新运行”。仍不行请在 设置 → 备份与安全 导出诊断信息交给客服";
 }
 
 /**

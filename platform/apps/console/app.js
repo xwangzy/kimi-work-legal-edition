@@ -1,17 +1,27 @@
 /**
- * 运营控制台（第 44 批重做；原第 37 批运营控制台、第 40 批额度台）：中软运营管理律所、账号、设备、模型路由、用量与计费的网页。
+ * 统一云端控制台（第 46 批，D-192/D-193；原第 37/44 批运营控制台、第 40 批额度台）：一个登录页 + 按身份出现的三个分区——
+ *   我的      所有账号：概览（个人用量与本所额度水位、我的电脑、安全提示）、账号与安全、我的电脑（平台人员只有“账号与安全”）
+ *   本所      律所 admin / partner：概览、成员、电脑、用量、账单；只能在客户端做的事写明“在管理员电脑上完成”
+ *   平台运营  中软平台人员，按角色权限出现子页：总览、客户、账号、设备、模型与路由、用量、套餐与额度、计费、人员与权限、系统
  *
  * - 同源静态页、原生 ES 模块、外置 CSS；部署只拷 dist/（scripts/build-console.mjs 拼好，含 tokens.css）；
- * - 登录（第 45 批）：账号 + 密码为主（安全管理员发的登录名与初始密码，首次登录须先改）；会话令牌只在 sessionStorage，
- *   关标签页即失效；运营私钥签名每个请求（ops-sign.js）保留为次要入口。两种方式控制面都按运营名册逐人核验、按接口授权、先记访问审计再执行；
- * - 本页没有自己的后端、不存业务状态；只有主题、上次的登录名、运营编号与密钥编号（非机密）记在 localStorage；
- * - 页面按 hash 路由（#/tenants/ten_x?tab=usage），每页一个模块（pages/*.js）。
+ * - 会话令牌只由 api.js 放在标签页存储里，关标签页即失效；本页没有自己的后端、不存业务状态；
+ *   localStorage 只记主题（非机密）；
+ * - hash 路由：#/<分区>/<页>/<参数>?查询，例如 #/ops/tenants/ten_x?tab=usage、#/firm/members。
  */
 import * as api from "./api.js";
-import { forgetKey, recallKey, rememberKey } from "./keystore.js";
-import { importOpsKey, OPERATOR_ID_RE, OPS_KEY_ID_RE } from "./ops-sign.js";
-import { ctx, go } from "./domain.js";
-import { $, badge, clear, closeDrawer, fmt, h, icon, toast } from "./ui.js";
+import { initAuth, resetAuthWidth, setMeta, showEnroll, showLogin, showReset } from "./auth.js";
+import { reauthDialog } from "./mfa.js";
+import { canAny, ctx, go, isFirmManager, PLATFORM_ROLES, roleLabel, ROLE, SECTIONS } from "./domain.js";
+import { $, btn, clear, closeDrawer, errorBlock, fmt, h, icon, toast } from "./ui.js";
+import * as meOverview from "./pages/me-overview.js";
+import * as meSecurity from "./pages/me-security.js";
+import * as meDevices from "./pages/me-devices.js";
+import * as firmOverview from "./pages/firm-overview.js";
+import * as firmMembers from "./pages/firm-members.js";
+import * as firmDevices from "./pages/firm-devices.js";
+import * as firmUsage from "./pages/firm-usage.js";
+import * as firmBilling from "./pages/firm-billing.js";
 import * as overview from "./pages/overview.js";
 import * as tenants from "./pages/tenants.js";
 import * as accounts from "./pages/accounts.js";
@@ -20,20 +30,48 @@ import * as routing from "./pages/routing.js";
 import * as usage from "./pages/usage.js";
 import * as plans from "./pages/plans.js";
 import * as billing from "./pages/billing.js";
+import * as staff from "./pages/staff.js";
 import * as system from "./pages/system.js";
 
-const PAGES = [
-  ["overview", "总览", overview],
-  ["tenants", "客户", tenants],
-  ["accounts", "账号", accounts],
-  ["devices", "设备", devices],
-  ["routing", "模型与路由", routing],
-  ["usage", "用量", usage],
-  ["plans", "套餐与额度", plans],
-  ["billing", "计费", billing],
-  ["system", "系统", system],
+/** 导航：member = 只对成员账号；perms = 平台人员有其一即可 */
+export const NAV = [
+  {
+    id: "me",
+    label: "我的",
+    items: [
+      { id: "overview", label: "概览", icon: "home", mod: meOverview, member: true },
+      { id: "security", label: "账号与安全", icon: "shield", mod: meSecurity },
+      { id: "devices", label: "我的电脑", icon: "laptop", mod: meDevices, member: true },
+    ],
+  },
+  {
+    id: "firm",
+    label: "本所",
+    items: [
+      { id: "overview", label: "概览", icon: "building", mod: firmOverview },
+      { id: "members", label: "成员", icon: "members", mod: firmMembers },
+      { id: "devices", label: "电脑", icon: "devices", mod: firmDevices },
+      { id: "usage", label: "用量", icon: "usage", mod: firmUsage },
+      { id: "billing", label: "账单", icon: "billing", mod: firmBilling },
+    ],
+  },
+  {
+    id: "ops",
+    label: "平台运营",
+    items: [
+      { id: "overview", label: "总览", icon: "overview", mod: overview, perms: ["tenant.read"] },
+      { id: "tenants", label: "客户", icon: "tenants", mod: tenants, perms: ["tenant.read"] },
+      { id: "accounts", label: "账号", icon: "accounts", mod: accounts, perms: ["account.read", "account.support"] },
+      { id: "devices", label: "设备", icon: "devices", mod: devices, perms: ["tenant.read"] },
+      { id: "routing", label: "模型与路由", icon: "routing", mod: routing, perms: ["route.read", "route.manage"] },
+      { id: "usage", label: "用量", icon: "usage", mod: usage, perms: ["usage.read"] },
+      { id: "plans", label: "套餐与额度", icon: "plans", mod: plans, perms: ["tenant.read", "plan.manage", "settings.manage"] },
+      { id: "billing", label: "计费", icon: "billing", mod: billing, perms: ["billing.read"] },
+      { id: "staff", label: "人员与权限", icon: "staff", mod: staff, perms: ["staff.manage"] },
+      { id: "system", label: "系统", icon: "system", mod: system, perms: ["system.read"] },
+    ],
+  },
 ];
-const byId = Object.fromEntries(PAGES.map(([id, label, mod]) => [id, { id, label, mod }]));
 
 const ls = {
   get(k) {
@@ -55,19 +93,49 @@ const ls = {
 
 // ─── 主题：跟随系统 / 浅色 / 深色（tokens.css 的 :root[data-theme="dark"]） ───
 const media = matchMedia("(prefers-color-scheme: dark)");
-const THEMES = { system: "跟随系统", light: "浅色", dark: "深色" };
+export const THEMES = { system: "跟随系统", light: "浅色", dark: "深色" };
+const themePref = () => ls.get("kwl-console-theme") ?? "system";
 function applyTheme() {
-  const pref = ls.get("kwl-ops-theme") ?? "system";
-  const dark = pref === "dark" || (pref === "system" && media.matches);
-  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  const pref = themePref();
+  document.documentElement.dataset.theme = pref === "dark" || (pref === "system" && media.matches) ? "dark" : "light";
   const b = $("#btn-theme");
   if (b) {
     b.title = `主题：${THEMES[pref] ?? THEMES.system}（点击切换）`;
-    clear(b, icon("theme"));
+    clear(b, icon(document.documentElement.dataset.theme === "dark" ? "theme" : "sun"));
   }
 }
+ctx.themePref = themePref;
+ctx.setTheme = (pref) => {
+  ls.set("kwl-console-theme", pref === "system" ? null : pref);
+  applyTheme();
+};
 media.addEventListener("change", applyTheme);
 applyTheme();
+
+// ─── 身份 ──────────────────────────────────────────────────────────
+const kindOf = (me) => me?.kind ?? (Array.isArray(me?.account?.roles) ? "staff" : "member");
+function setMe(me) {
+  const kind = kindOf(me);
+  ctx.me = me;
+  ctx.kind = kind;
+  ctx.operatorId = me.account?.aid ?? "";
+  ctx.operatorEmail = me.account?.email ?? "";
+  ctx.firmRole = kind === "member" ? (me.firm?.role ?? me.account?.role ?? null) : null;
+  if (kind === "staff") {
+    const p = me.account?.perms;
+    ctx.perms = Array.isArray(p) ? new Set(p) : Array.isArray(me.account?.roles) ? new Set(me.account.roles.flatMap((r) => PLATFORM_ROLES.find((x) => x.id === r)?.perms ?? [])) : null;
+  } else ctx.perms = new Set();
+  ctx.tenants = null;
+}
+const sectionVisible = (s) => (s === "me" ? true : s === "firm" ? ctx.kind === "member" && isFirmManager(ctx.firmRole) : s === "ops" ? ctx.kind === "staff" : false);
+const itemVisible = (s, it) => sectionVisible(s) && (!it.member || ctx.kind === "member") && (s !== "ops" || canAny(it.perms));
+function landing() {
+  if (ctx.kind === "staff") {
+    const first = NAV[2].items.find((it) => itemVisible("ops", it));
+    return first ? `ops/${first.id}` : "me/security";
+  }
+  return "me/overview";
+}
 
 // ─── 启动 ──────────────────────────────────────────────────────────
 let cfg = null;
@@ -78,411 +146,165 @@ async function boot() {
     clear($("#boot"), h("div", { class: "state state-error" }, h("b", {}, "控制台配置有误"), h("p", {}, e.message)));
     return;
   }
-  document.title = `运营控制台 · ${cfg.label || cfg.deployment}`;
-  $("#login-env").textContent = `${cfg.label || "部署"} · ${cfg.deployment} · ${new URL(cfg.control_plane_base).host}`;
-  api.onAuthLost((e) => {
-    const op = api.operator();
-    if (e.code === "password_change_required" && op?.via === "password") return showChange(null, "安全管理员重置了你的密码：请先设置新密码。");
-    logout(op?.via === "key" ? `${e.message}。请重新载入私钥。` : `${e.message}，请重新登录。`);
+  document.title = `控制台 · ${cfg.label || cfg.deployment} · Kimi Work 法律版`;
+  api.setHooks({
+    onAuthLost: (e) => logout(e.message || "登录已失效，请重新登录"),
+    onReauth: () => reauthDialog({ mfa: !!ctx.me?.account?.mfa?.enabled, email: ctx.operatorEmail }),
+    onOutdated: (e) => outdated(e),
   });
-  // 本标签页的账号密码会话（刷新页面不必重新登录）
-  const sess = api.recallSession();
-  if (sess) {
-    api.setOperator(sess);
-    const me = await verifyLogin().catch(() => null);
-    if (me) return me.must_change ? showChange(null) : enterApp();
-    api.setOperator(null);
-    api.forgetSession();
-  }
-  const kept = await recallKey({ deployment: cfg.deployment, base: cfg.control_plane_base });
-  if (kept) {
-    api.setOperator({ via: "key", id: kept.operator, kid: kept.kid, key: kept.key });
-    const ok = await verifyLogin().catch(() => null);
-    if (ok) return enterApp(kept.expires_at);
-    api.setOperator(null);
-    await forgetKey();
-  }
+  initAuth({ onAuthed });
+  api.auth.meta().then(setMeta, () => setMeta(null));
+  if (api.recallSession()) return enter();
+  if (/^#\/setup\b/.test(location.hash)) return showReset({ setup: true });
   showLogin();
 }
 
-// ─── 登录 ──────────────────────────────────────────────────────────
-const form = $("#login-form");
-const keyInput = $("#keyfile");
-let keyText = null;
-let keyName = "";
-
-const pwForm = $("#pw-form");
-const changeForm = $("#change-form");
-/** 登录页：账号密码为主；上次用私钥登录的（或带着私钥相关的提示）展开私钥一栏。 */
-function showLogin(message, o = {}) {
-  $("#boot").hidden = true;
-  $("#app").hidden = true;
-  $("#login").hidden = false;
-  pwForm.hidden = false;
-  changeForm.hidden = true;
-  $("#key-alt").hidden = false;
-  form.operator.value ||= ls.get("kwl-ops-operator") ?? "";
-  form.kid.value ||= ls.get("kwl-ops-kid") ?? "k1";
-  pwForm.login.value ||= ls.get("kwl-ops-login") ?? "";
-  pwForm.password.value = "";
-  const viaKey = o.key ?? ls.get("kwl-ops-via") === "key";
-  $("#key-alt").open = viaKey;
-  $("#pw-error").textContent = viaKey ? "" : (message ?? "");
-  $("#login-error").textContent = viaKey ? (message ?? "") : "";
-  $("#login-foot").textContent = "浏览器须支持 Ed25519（Chrome / Edge 137 以上、Firefox 129 以上、Safari 17 以上）。";
-  markFile();
-  if (!viaKey) (pwForm.login.value ? pwForm.password : pwForm.login).focus();
+/** 登录 / 两步验证 / 注册得到会话 */
+async function onAuthed(r) {
+  if (!r?.session_token) throw new Error("控制面没有返回会话");
+  api.saveSession(r.session_token, { kind: r.session?.kind ?? null, email: r.account?.email ?? null });
+  await enter();
 }
-
-// ─── 账号密码登录 ───────────────────────────────────────────────────
-pwForm.addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  const err = $("#pw-error");
-  err.textContent = "";
-  const login = pwForm.login.value.trim();
-  const password = pwForm.password.value;
-  if (!login) return void ((err.textContent = "请输入账号"), pwForm.login.focus());
-  if (!password) return void ((err.textContent = "请输入密码"), pwForm.password.focus());
-  const submit = $("#pw-submit");
-  submit.disabled = true;
-  submit.textContent = "正在登录…";
+async function enter(afterEnroll = false) {
+  clear($("#boot"), h("span", { class: "spinner", "aria-hidden": "true" }), "正在进入…");
+  let me;
   try {
-    const op = await api.passwordLogin(login, password);
-    api.setOperator(op);
-    api.saveSession(op);
-    ctx.perms = new Set(op.perms);
-    ls.set("kwl-ops-login", login);
-    ls.set("kwl-ops-via", "password");
-    pwForm.password.value = "";
-    if (op.must_change) showChange(password);
-    else enterApp();
+    me = await api.auth.me();
   } catch (e) {
-    api.setOperator(null);
-    err.textContent = e.message || String(e);
-    pwForm.password.select();
-  } finally {
-    submit.disabled = false;
-    submit.textContent = "登录";
+    if (api.isSessionLost(e)) return void (api.forgetSession(), showLogin(e.message));
+    $("#auth").hidden = true;
+    $("#app").hidden = true;
+    $("#boot").hidden = false;
+    clear($("#boot"), errorBlock(e, () => enter()), btn("退出登录", () => logout()));
+    return;
   }
-});
-
-// ─── 首次登录（或被重置后）：先改密码 ─────────────────────────────────
-/** 刚登录时当前密码就是刚输入的那个（只留在这个闭包里，改完即丢）；刷新后进来的要再输一次。 */
-let pendingCurrent = null;
-function showChange(current, why) {
-  pendingCurrent = current;
-  $("#boot").hidden = true;
-  $("#app").hidden = true;
-  $("#login").hidden = false;
-  pwForm.hidden = true;
-  $("#key-alt").hidden = true;
-  changeForm.hidden = false;
-  changeForm.reset();
-  changeForm.username.value = api.operator()?.login ?? "";
-  $("#change-current-field").hidden = current !== null;
-  $("#change-why").textContent = why ?? "当前是安全管理员发的初始密码，改好后才能使用控制台。";
-  $("#change-error").textContent = "";
-  (current !== null ? changeForm.next : changeForm.current).focus();
+  const restricted = me.restricted ?? me.session?.restricted ?? null;
+  if (restricted === "mfa_enroll") {
+    if (afterEnroll) return logout("两步验证已启用：请重新登录。");
+    return showEnroll(me, { onDone: () => enter(true), onLogout: () => logout() });
+  }
+  resetAuthWidth();
+  setMe(me);
+  showApp();
 }
-/** 新密码的本页预检（与控制面同一规则；以控制面结果为准）。 */
-function passwordHint(next, again, login) {
-  if (next.length < 12) return "新密码至少 12 位";
-  if (!/[A-Za-z]/.test(next) || !/[0-9]/.test(next)) return "新密码须同时包含字母和数字";
-  const name = String(login ?? "").split("@")[0];
-  if (name.length >= 3 && next.toLowerCase().includes(name.toLowerCase())) return "新密码不要包含登录名";
-  if (next !== again) return "两次输入的新密码不一致";
-  return null;
-}
-changeForm.addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  const err = $("#change-error");
-  err.textContent = "";
-  const current = pendingCurrent ?? changeForm.current.value;
-  const next = changeForm.next.value;
-  if (!current) return void ((err.textContent = "请输入当前密码"), changeForm.current.focus());
-  const bad = passwordHint(next, changeForm.again.value, api.operator()?.login);
-  if (bad) return void ((err.textContent = bad), changeForm.next.focus());
-  if (next === current) return void ((err.textContent = "新密码不能与当前密码相同"), changeForm.next.focus());
-  const submit = $("#change-submit");
-  submit.disabled = true;
-  try {
-    await api.post("/v1/ops/password", { current, next });
-    pendingCurrent = null;
-    changeForm.reset();
-    const op = api.operator();
-    op.must_change = false;
-    await verifyLogin().catch(() => null);
-    enterApp();
-    toast("密码已更新");
-  } catch (e) {
-    err.textContent = e.message || String(e);
-    if (e.code === "ops_password_current_wrong") {
-      pendingCurrent = null;
-      $("#change-current-field").hidden = false;
-      changeForm.current.value = "";
-      changeForm.current.focus();
-    }
-  } finally {
-    submit.disabled = false;
-  }
-});
-$("#change-cancel").addEventListener("click", () => logout());
-
-/** 顶栏“修改密码”（账号密码登录时）：本页弹框，值原样提交（不去首尾空白）。 */
-function changePasswordDialog() {
-  const d = $("#modal");
-  const err = h("p", { class: "form-error", role: "alert" });
-  const inp = (name, label, auto, hint) => {
-    const id = `cp-${name}`;
-    return h("div", { class: "field" }, h("label", { for: id }, label), h("input", { id, name, type: "password", autocomplete: auto }), hint ? h("small", { class: "hint" }, hint) : null);
-  };
-  const ok = h("button", { type: "submit", class: "btn primary" }, "保存");
-  const cancel = h("button", { type: "button", class: "btn", onclick: () => d.close() }, "取消");
-  const f = h(
-    "form",
-    { class: "modal-form", novalidate: true },
-    h("h2", { class: "modal-title" }, "修改密码"),
-    h("input", { type: "text", name: "username", autocomplete: "username", value: api.operator()?.login ?? "", hidden: true }),
-    inp("current", "当前密码", "current-password"),
-    inp("next", "新密码", "new-password", "至少 12 位，同时包含字母和数字，不含登录名。"),
-    inp("again", "再输入一次新密码", "new-password"),
-    h("p", { class: "modal-note" }, "保存后，你在其他浏览器或标签页的登录会全部退出。"),
-    err,
-    h("div", { class: "modal-actions" }, cancel, ok),
-  );
-  f.addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    err.textContent = "";
-    const current = f.current.value;
-    const next = f.next.value;
-    if (!current) return void (err.textContent = "请输入当前密码");
-    const bad = passwordHint(next, f.again.value, api.operator()?.login);
-    if (bad) return void (err.textContent = bad);
-    if (next === current) return void (err.textContent = "新密码不能与当前密码相同");
-    ok.disabled = cancel.disabled = true;
-    try {
-      const r = await api.post("/v1/ops/password", { current, next });
-      d.close();
-      toast(r.other_sessions_revoked ? `密码已更新，另有 ${r.other_sessions_revoked} 处登录已退出` : "密码已更新");
-    } catch (e) {
-      err.textContent = e.message || String(e);
-      ok.disabled = cancel.disabled = false;
-    }
-  });
-  d.className = "modal";
-  clear(d, f);
-  d.onclose = null;
-  d.oncancel = null;
-  d.showModal();
-  f.current.focus();
-}
-$("#btn-passwd").addEventListener("click", changePasswordDialog);
-function markFile() {
-  const drop = $("#drop");
-  drop.classList.toggle("ready", !!keyText);
-  clear($("#drop-icon"), icon(keyText ? "key" : "file"));
-  $("#drop-text").textContent = keyText ? keyName : "把私钥文件拖到这里，或点击选择";
-  const encrypted = !!keyText && /BEGIN ENCRYPTED PRIVATE KEY/.test(keyText);
-  $("#drop-sub").textContent = keyText ? (encrypted ? "口令加密的私钥：请在下面输入口令" : "明文私钥 · 只在本页内存里使用") : "ops-cli keygen 生成的 .key.pem（PKCS#8，明文或口令加密）";
-  $("#pass-field").hidden = !encrypted;
-}
-async function takeFile(f) {
-  const err = $("#login-error");
-  err.textContent = "";
-  keyText = null;
-  keyName = "";
-  if (!f) return markFile();
-  if (f.size > 16_384) {
-    err.textContent = "这不像私钥文件（太大）";
-    return markFile();
-  }
-  const text = await f.text();
-  if (/BEGIN PUBLIC KEY/.test(text) && !/PRIVATE KEY/.test(text)) {
-    err.textContent = "这是公钥文件：请选本人的私钥文件";
-    return markFile();
-  }
-  if (!/BEGIN (ENCRYPTED )?PRIVATE KEY/.test(text)) {
-    err.textContent = "不是 PKCS#8 私钥文件（应以 BEGIN PRIVATE KEY 或 BEGIN ENCRYPTED PRIVATE KEY 开头）";
-    return markFile();
-  }
-  keyText = text;
-  keyName = f.name;
-  // 文件名形如 op_0001.k1.key.pem：顺手填上运营编号与密钥编号（只在为空或是默认值时）
-  const m = /(op_[0-9]{4,12})(?:[._-]([a-z0-9][a-z0-9-]{0,23}))?/.exec(f.name);
-  if (m && !form.operator.value) form.operator.value = m[1];
-  if (m?.[2] && m[2] !== "key" && (!form.kid.value || form.kid.value === "k1")) form.kid.value = m[2];
-  markFile();
-  (/BEGIN ENCRYPTED/.test(text) ? form.passphrase : form.operator.value ? $("#login-submit") : form.operator).focus();
-}
-keyInput.addEventListener("change", () => takeFile(keyInput.files?.[0]));
-// 整个卡片都能接住拖放
-for (const ev of ["dragenter", "dragover"]) form.addEventListener(ev, (e) => (e.preventDefault(), $("#drop").classList.add("over")));
-for (const ev of ["dragleave", "dragend"]) form.addEventListener(ev, (e) => (e.target === form || e.target === $("#drop")) && $("#drop").classList.remove("over"));
-form.addEventListener("drop", (e) => {
-  e.preventDefault();
-  $("#drop").classList.remove("over");
-  const f = e.dataTransfer?.files?.[0];
-  if (f) takeFile(f);
-});
-
-/** 核对凭据并取本人身份与权限：/v1/ops/me（第 45 批）；老控制面没有时退到系统页、再退到律所列表。返回身份（含 must_change）。 */
-async function verifyLogin() {
-  ctx.perms = null;
-  try {
-    const me = await api.get("/v1/ops/me");
-    ctx.perms = new Set(me.perms ?? []);
-    const op = api.operator();
-    if (op?.via === "password") Object.assign(op, { must_change: me.must_change === true, expires_at: me.expires_at ?? op.expires_at, login: me.login ?? op.login });
-    return me;
-  } catch (e) {
-    if (e.code !== "not_ready") throw e;
-  }
-  try {
-    const sys = await api.get("/v1/ops/system");
-    const me = sys?.roster?.operators?.find((o) => o.id === api.operator().id);
-    if (me) ctx.perms = new Set(me.perms ?? []);
-    return true;
-  } catch (e) {
-    if (e.status === 403 && e.code === "ops_permission_denied") return true;
-    if (e.code !== "not_ready") throw e;
-  }
-  try {
-    await api.get("/v1/ops/tenants");
-    return true;
-  } catch (e) {
-    if (e.status === 403 && e.code === "ops_permission_denied") return true;
-    if (e.code === "not_ready") throw Object.assign(new Error("控制面没有开运营接口：本页所在网段不在运维网段（ops.allow_cidrs）内，或控制面没配运营名册"), { code: "ops_closed" });
-    throw e;
-  }
-}
-
-form.addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-  const err = $("#login-error");
-  err.textContent = "";
-  const id = form.operator.value.trim();
-  const kid = form.kid.value.trim();
-  if (!keyText) return void (err.textContent = "请先选择私钥文件");
-  if (!OPERATOR_ID_RE.test(id)) return void (err.textContent = "运营编号须为 op_ 加 4–12 位数字工号，如 op_0001"), form.operator.focus();
-  if (!OPS_KEY_ID_RE.test(kid)) return void (err.textContent = "密钥编号只许小写字母、数字与连字符，如 k1"), form.kid.focus();
-  const submit = $("#login-submit");
-  submit.disabled = true;
-  submit.textContent = "正在核对…";
-  try {
-    const key = await importOpsKey(keyText, form.passphrase.value);
-    api.setOperator({ via: "key", id, kid, key });
-    await verifyLogin();
-    ls.set("kwl-ops-operator", id);
-    ls.set("kwl-ops-kid", kid);
-    ls.set("kwl-ops-via", "key");
-    let until = null;
-    if ($("#remember").checked && (await rememberKey({ operator: id, kid, key, deployment: cfg.deployment, base: cfg.control_plane_base }))) until = Date.now() + 8 * 3600_000;
-    keyText = null;
-    keyInput.value = "";
-    form.passphrase.value = "";
-    enterApp(until);
-  } catch (e) {
-    api.setOperator(null);
-    err.textContent = e.code === "network" ? e.message : e.message || String(e);
-    if (/口令/.test(e.message)) form.passphrase.select();
-  } finally {
-    submit.disabled = false;
-    submit.textContent = "用私钥进入";
-  }
-});
 
 async function logout(message) {
-  const op = api.operator();
-  await api.logoutSession();
-  api.forgetSession();
-  api.setOperator(null);
-  pendingCurrent = null;
+  await api.logout();
+  ctx.me = null;
   ctx.perms = null;
+  ctx.kind = null;
   ctx.tenants = null;
   closeDrawer();
-  if ($("#modal").open) $("#modal").close();
-  await forgetKey();
+  for (const d of ["#modal", "#reauth"]) if ($(d)?.open) $(d).close();
   clear($("#content"));
-  showLogin(message, { key: op?.via === "key" });
+  clear($("#toasts"));
+  clear($("#banner-slot"));
+  showLogin(message, message && /已退出/.test(message) ? "note" : "error");
 }
-$("#btn-logout").addEventListener("click", () => logout());
+
+function outdated(e) {
+  clear($("#banner-slot"), h("div", { class: "banner warn top" }, h("span", {}, e.message || "版本过旧"), e.min_version ? h("span", { class: "muted" }, `（最低 ${e.min_version}）`) : null, btn("刷新页面", () => location.reload(), { size: "sm" })));
+}
 
 // ─── 外壳 ──────────────────────────────────────────────────────────
-function enterApp(rememberedUntil) {
+function showApp() {
   $("#boot").hidden = true;
-  $("#login").hidden = true;
+  $("#auth").hidden = true;
   $("#app").hidden = false;
-  const op = api.operator();
-  ctx.operatorId = op.id;
-  clear(
-    $("#deploy"),
-    h("span", { class: "deploy-name" }, cfg.label || "部署"),
-    h("span", { class: "deploy-id mono" }, cfg.deployment),
-    cfg.demo ? badge("开发演示数据", "warn", "本机开发脚本造的演示数据（client_request_id 以 dev-demo- 开头），不是真实客户") : null,
-  );
-  const pw = op.via === "password";
-  clear(
-    $("#who"),
-    h("span", { class: "avatar", "aria-hidden": "true" }, pw ? (op.login || op.id).slice(0, 2).toUpperCase() : op.id.slice(-2)),
-    h(
-      "span",
-      { class: "who-text" },
-      h("b", { class: pw ? null : "mono" }, pw ? op.login || op.id : op.id),
-      h("small", {}, pw ? `${op.id} · 账号密码登录${op.expires_at ? ` · 至 ${fmt.clock(Date.parse(op.expires_at)).slice(0, 5)}` : ""}` : rememberedUntil ? `密钥 ${op.kid} · 记住至 ${fmt.clock(rememberedUntil).slice(0, 5)}` : `密钥 ${op.kid} · 仅本页内存`),
-    ),
-  );
-  $("#btn-passwd").hidden = !pw;
   clear($("#btn-refresh"), icon("refresh"));
-  applyTheme();
+  clear($("#btn-menu"), icon("menu"));
+  clear($("#env"), h("span", { class: "env-name" }, cfg.label || "部署"), h("span", { class: "env-id mono" }, cfg.deployment));
   buildNav();
+  buildUser();
   buildSearch();
-  clear($("#sidebar-foot"), h("small", {}, "控制面 "), h("span", { class: "mono small" }, new URL(cfg.control_plane_base).host));
-  if (!location.hash || location.hash === "#" || location.hash === "#/") location.hash = "#/overview";
+  applyTheme();
+  const want = location.hash.replace(/^#\/?/, "");
+  if (!want || want === "setup") location.hash = `#/${landing()}`;
   else route();
 }
 
 function buildNav() {
-  clear(
-    $("#nav"),
-    PAGES.map(([id, label]) => h("a", { href: `#/${id}`, class: "nav-item", dataset: { page: id } }, icon(id, "nav-icon"), h("span", { class: "nav-label" }, label), h("span", { class: "nav-badge", dataset: { badge: id }, hidden: true }))),
-  );
+  const nav = $("#nav");
+  clear(nav);
+  for (const s of NAV) {
+    if (!sectionVisible(s.id)) continue;
+    const items = s.items.filter((it) => itemVisible(s.id, it));
+    if (!items.length) continue;
+    nav.append(
+      h(
+        "div",
+        { class: "nav-section" },
+        h("div", { class: "nav-heading" }, s.label),
+        items.map((it) => h("a", { href: `#/${s.id}/${it.id}`, class: "nav-item", dataset: { page: `${s.id}/${it.id}` } }, icon(it.icon, "nav-icon"), h("span", { class: "nav-label" }, it.label), h("span", { class: "nav-badge", dataset: { badge: `${s.id}/${it.id}` }, hidden: true }))),
+      ),
+    );
+  }
 }
-/** 侧栏数字角标（总览有未确认告警时） */
-export function setNavBadge(id, n) {
-  const el = document.querySelector(`[data-badge="${id}"]`);
+/** 侧栏数字角标；不带分区的 id 归平台运营（旧页面 overview.js 调 setNavBadge("overview", n)） */
+ctx.setNavBadge = (id, n) => {
+  const el = document.querySelector(`[data-badge="${String(id).includes("/") ? id : `ops/${id}`}"]`);
   if (!el) return;
   el.hidden = !(n > 0);
   el.textContent = n > 99 ? "99+" : String(n ?? "");
-}
-ctx.setNavBadge = setNavBadge;
+};
 
-// ─── 全局搜索：邮箱 / 律所 / 请求编号 ─────────────────────────────────
+function buildUser() {
+  const a = ctx.me.account ?? {};
+  const sub =
+    ctx.kind === "staff"
+      ? (a.roles ?? []).map((r) => roleLabel(r)).join("、") || "平台人员"
+      : [ctx.me.firm?.name ?? a.org?.name, ROLE[ctx.firmRole] ?? ctx.firmRole].filter(Boolean).join(" · ");
+  const initials = String(a.name || a.email || "?").trim().slice(0, 1).toUpperCase();
+  clear(
+    $("#sidebar-foot"),
+    h(
+      "a",
+      { class: "user", href: "#/me/security", title: "账号与安全" },
+      h("span", { class: "avatar", "aria-hidden": "true" }, initials),
+      h("span", { class: "user-text" }, h("b", {}, a.name || a.email || "—"), h("small", {}, sub || a.email || "")),
+    ),
+    h("button", { type: "button", class: "icon-btn", id: "btn-theme", "aria-label": "切换主题", onclick: cycleTheme }),
+    h("button", { type: "button", class: "icon-btn", id: "btn-logout", "aria-label": "退出登录", title: "退出登录", onclick: () => logout("已退出") }, icon("logout")),
+  );
+}
+function cycleTheme() {
+  const order = ["system", "light", "dark"];
+  const next = order[(order.indexOf(themePref()) + 1) % order.length];
+  ctx.setTheme(next);
+  toast(`主题：${THEMES[next]}`, "info");
+}
+
+// ─── 全局搜索（平台人员）：邮箱 / 律所 / 请求编号 ───────────────────────
 function buildSearch() {
-  const input = h("input", { type: "search", class: "search", placeholder: "邮箱 / 律所 / 请求编号（/）", "aria-label": "全局搜索：邮箱、律所或请求编号", autocomplete: "off", spellcheck: "false" });
+  const box = $("#gsearch");
+  clear(box);
+  if (ctx.kind !== "staff" || !canAny(["account.read", "tenant.read", "usage.read"])) return void (box.hidden = true);
+  box.hidden = false;
+  const input = h("input", { type: "search", class: "search", placeholder: "搜索邮箱、律所、请求编号", "aria-label": "全局搜索：邮箱、律所或请求编号", autocomplete: "off", spellcheck: "false" });
   const menu = h("div", { class: "gs-menu", role: "listbox", hidden: true });
   let items = [];
   let sel = 0;
-  const guess = (q) => (q.includes("@") ? "account" : /^ten_/i.test(q) ? "tenant" : /^[A-Za-z0-9][A-Za-z0-9_.:-]{11,}$/.test(q) && !/^ten_|^acc_|^dev_/i.test(q) ? "request" : /[一-龥]/.test(q) ? "tenant" : "account");
+  const guess = (q) => (q.includes("@") ? "account" : /^ten_/i.test(q) ? "tenant" : /^[A-Za-z0-9][A-Za-z0-9_.:-]{11,}$/.test(q) && !/^ten_|^acc_|^dev_|^stf_/i.test(q) ? "request" : /[一-龥]/.test(q) ? "tenant" : "account");
   const run = (kind, q) => {
     menu.hidden = true;
     input.blur();
-    if (kind === "account") go(`accounts?q=${encodeURIComponent(q)}`);
-    else if (kind === "tenant") go(`tenants?q=${encodeURIComponent(q)}`);
-    else if (kind === "request") go(`usage?request_id=${encodeURIComponent(q)}&view=records`);
+    if (kind === "account") go(`ops/accounts?q=${encodeURIComponent(q)}`);
+    else if (kind === "tenant") go(`ops/tenants?q=${encodeURIComponent(q)}`);
+    else if (kind === "request") go(`ops/usage?request_id=${encodeURIComponent(q)}&view=records`);
   };
   const draw = () => {
     const q = input.value.trim();
     if (!q) return void (menu.hidden = true);
     const first = guess(q);
     const all = [
-      ["account", `在账号里搜“${q}”`, "邮箱或姓名"],
-      ["tenant", `在客户里搜“${q}”`, "律所名称或编号"],
-      ["request", `按请求编号查“${q}”`, "逐请求明细"],
-    ];
-    items = [all.find((x) => x[0] === first), ...all.filter((x) => x[0] !== first)];
+      ["account", `在账号里搜“${q}”`, "邮箱或姓名", "account.read"],
+      ["tenant", `在客户里搜“${q}”`, "律所名称或编号", "tenant.read"],
+      ["request", `按请求编号查“${q}”`, "逐请求明细", "usage.read"],
+    ].filter((x) => canAny([x[3]]));
+    items = [...all.filter((x) => x[0] === first), ...all.filter((x) => x[0] !== first)];
     sel = 0;
     clear(menu, items.map(([k, t, s], i) => h("button", { type: "button", role: "option", class: ["gs-item", i === sel && "active"], "aria-selected": i === sel ? "true" : "false", onmousedown: (e) => (e.preventDefault(), run(k, q)) }, h("span", {}, t), h("small", {}, s))));
-    menu.hidden = false;
+    menu.hidden = !items.length;
   };
   input.addEventListener("input", draw);
   input.addEventListener("focus", draw);
@@ -498,54 +320,63 @@ function buildSearch() {
       run(items[sel][0], input.value.trim());
     } else if (e.key === "Escape") menu.hidden = true;
   });
-  clear($("#gsearch"), icon("search", "gs-icon"), input, menu);
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "/" && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) && !$("#drawer").open && !$("#modal").open) {
-      e.preventDefault();
-      input.focus();
-    }
-  });
+  box.append(icon("search", "gs-icon"), input, h("kbd", { class: "gs-kbd", "aria-hidden": "true" }, "/"), menu);
 }
 
 // ─── 路由 ──────────────────────────────────────────────────────────
-function parseHash() {
-  const raw = location.hash.replace(/^#\/?/, "");
+export function parseHash(hash) {
+  const raw = String(hash).replace(/^#\/?/, "");
   const [path, query = ""] = raw.split("?");
-  const [page, ...rest] = path.split("/").map((s) => {
+  const parts = path.split("/").map((s) => {
     try {
       return decodeURIComponent(s);
     } catch {
       return s;
     }
   });
-  return { page: byId[page] ? page : "overview", arg: rest.join("/") || null, params: Object.fromEntries(new URLSearchParams(query)) };
+  let section = parts[0];
+  let rest = parts.slice(1);
+  if (!SECTIONS.includes(section)) {
+    rest = parts;
+    section = "ops";
+  }
+  return { section, page: rest[0] || "overview", arg: rest.slice(1).join("/") || null, params: Object.fromEntries(new URLSearchParams(query)) };
 }
 let renderSeq = 0;
 function route() {
-  if ($("#app").hidden || !api.operator()) return;
-  const r = parseHash();
-  const p = byId[r.page];
+  if ($("#app").hidden || !ctx.me) return;
+  const r = parseHash(location.hash);
+  const sec = NAV.find((s) => s.id === r.section);
+  const item = sec?.items.find((it) => it.id === r.page);
+  if (!item) return void (location.hash = `#/${landing()}`);
+  const key = `${r.section}/${r.page}`;
   for (const a of document.querySelectorAll(".nav-item")) {
-    const on = a.dataset.page === r.page;
+    const on = a.dataset.page === key;
     a.classList.toggle("active", on);
     if (on) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   }
+  clear($("#crumbs"), h("span", { class: "crumb-sec" }, sec.label), icon("chevron", "crumb-sep"), h("b", {}, item.label));
+  $("#app").classList.remove("nav-open");
   closeDrawer();
   const main = $("#content");
   const seq = ++renderSeq;
   clear(main);
-  const page = h("div", { class: `page page-${r.page}` });
+  const page = h("div", { class: `page page-${r.section}-${r.page}` });
   main.append(page);
   main.scrollTop = 0;
   ctx.reload = () => route();
+  if (!itemVisible(r.section, item)) {
+    page.append(errorBlock({ status: 403, message: r.section === "firm" ? "只有本所管理员或合伙人能查看“本所”" : r.section === "ops" ? "只有有相应角色的中软平台人员能查看" : "这一页不适用于你的账号" }));
+    return;
+  }
   try {
-    p.mod.render(page, r);
+    item.mod.render(page, { ...r, page: r.page });
   } catch (e) {
     page.append(h("div", { class: "state state-error" }, h("b", {}, "页面出错"), h("p", {}, String(e?.message ?? e))));
     console.error(e);
   }
-  if (seq === renderSeq) $("#refreshed").textContent = `上次刷新 ${fmt.clock()}`;
+  if (seq === renderSeq) $("#refreshed").textContent = `${fmt.clock().slice(0, 5)} 刷新`;
 }
 window.addEventListener("hashchange", route);
 $("#btn-refresh").addEventListener("click", () => {
@@ -553,17 +384,28 @@ $("#btn-refresh").addEventListener("click", () => {
   route();
   toast("已刷新");
 });
-$("#btn-theme").addEventListener("click", () => {
-  const order = ["system", "light", "dark"];
-  const cur = ls.get("kwl-ops-theme") ?? "system";
-  const next = order[(order.indexOf(cur) + 1) % order.length];
-  ls.set("kwl-ops-theme", next === "system" ? null : next);
-  applyTheme();
-  toast(`主题：${THEMES[next]}`, "info");
-});
+$("#btn-menu").addEventListener("click", () => $("#app").classList.toggle("nav-open"));
+$("#scrim").addEventListener("click", () => $("#app").classList.remove("nav-open"));
+const typing = (t) => t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement;
+const anyDialog = () => $("#drawer").open || $("#modal").open || $("#reauth").open;
 document.addEventListener("keydown", (e) => {
-  if (e.key.toLowerCase() === "r" && !e.metaKey && !e.ctrlKey && !e.altKey && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) && !$("#app").hidden && !$("#drawer").open && !$("#modal").open) route();
+  if ($("#app").hidden || typing(e.target) || anyDialog() || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "/") {
+    const i = $("#gsearch input");
+    if (i) (e.preventDefault(), i.focus());
+  } else if (e.key.toLowerCase() === "r") route();
+  else if (e.key === "Escape") $("#app").classList.remove("nav-open");
 });
 ctx.openAccount = (aid) => accounts.openAccount(aid);
+ctx.logout = (m) => logout(m);
+ctx.refreshMe = async () => {
+  try {
+    setMe(await api.auth.me());
+    buildUser();
+    applyTheme();
+  } catch {
+    /* 下次进入时再取 */
+  }
+};
 
 boot();

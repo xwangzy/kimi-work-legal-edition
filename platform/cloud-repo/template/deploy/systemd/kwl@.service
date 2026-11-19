@@ -1,0 +1,40 @@
+# Kimi Work 法律版云端：一个角色一个实例（kwl@cp-signer、kwl@control-plane、kwl@gateway、kwl@search…）
+# 安装：sudo install -m 0644 deploy/systemd/kwl@.service /etc/systemd/system/ && sudo systemctl daemon-reload
+# 配置：/etc/kwl/<角色>.json（样例见 deploy/config/）；代码：/opt/kwl/app（本仓库的发布标签）
+[Unit]
+Description=Kimi Work 法律版云端服务 %i
+After=network-online.target time-sync.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kwl
+Group=kwl
+WorkingDirectory=/opt/kwl/app
+# 内部 CA 签的证书（签名服务、开发/演练环境）：网关、检索经 HTTPS 订阅控制面时要认这个 CA；全用公共 CA 证书时可删这一行
+Environment=NODE_EXTRA_CA_CERTS=/etc/kwl/tls/internal-ca.crt
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node scripts/cloud-serve.mjs --config /etc/kwl/%i.json
+Restart=always
+RestartSec=3
+# 网关收到 SIGTERM 会做最终用量回报（至多 5 秒）
+TimeoutStopSec=20
+LimitNOFILE=65536
+# 加固：只可写数据目录；不提权；独立 /tmp
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/var/lib/kwl
+# 端口 < 1024 时才需要
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

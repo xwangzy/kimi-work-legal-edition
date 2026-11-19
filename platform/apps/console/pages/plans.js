@@ -149,28 +149,32 @@ function paneSettings(box) {
         { name: "trial_days", label: "试用天数", type: "number", min: 1, max: 365, value: s.trial_days },
         { name: "trial_seats", label: "试用席位", type: "number", min: 1, max: 50, value: s.trial_seats },
         { name: "default_device_limit", label: "缺省每账号设备数", type: "number", min: 1, max: 9, value: s.default_device_limit },
+        { name: "min_version", label: "客户端最低版本", value: s.clients?.min_version ?? s.min_client_version ?? "", placeholder: "如 1.8.0；空 = 不限", hint: "低于此版本的 Windows 客户端登录、注册与取席位令牌时被拒（426），并提示升级" },
       ];
       const err = h("p", { class: "form-error", role: "alert" });
-      const form = h("form", { class: "settings-form", novalidate: true }, specs.map(field), err, h("div", { class: "btn-row" }, h("button", { type: "submit", class: "btn primary", disabled: !can("plan.manage"), title: needs("plan.manage") }, "保存设置…")));
+      const cur = { ...s, min_version: s.clients?.min_version ?? s.min_client_version ?? "" };
+      const form = h("form", { class: "settings-form", novalidate: true }, specs.map(field), err, h("div", { class: "btn-row" }, h("button", { type: "submit", class: "btn primary", disabled: !can("settings.manage"), title: needs("settings.manage") }, "保存设置…")));
       form.addEventListener("submit", async (ev) => {
         ev.preventDefault();
         const v = readForm(form, specs);
-        const changes = Object.keys(v).filter((k) => String(v[k] ?? "") !== String(s[k] ?? ""));
+        const changes = Object.keys(v).filter((k) => String(v[k] ?? "") !== String(cur[k] ?? ""));
         if (!changes.length) return void (err.textContent = "没有改动");
+        if (v.min_version && !/^\d+\.\d+\.\d+$/.test(v.min_version)) return void (err.textContent = "客户端最低版本写成 x.y.z，如 1.8.0");
         const ok = await confirmAction({
           title: "保存注册设置",
           danger: v.registration === "open" && s.registration !== "open",
           consequences: [
-            v.registration !== s.registration ? { open: "任何人都能自助注册并开一个试用律所；", code: "只有持开通码或邀请码的人能注册；", closed: "客户端注册入口关闭，只能运营代建账号；" }[v.registration] : null,
+            v.registration !== s.registration ? { open: "任何人都能自助注册并开一个试用律所（没有邮箱验证，存在批量注册薅试用额度的风险）；", code: "只有持开通码或邀请码的人能注册；", closed: "客户端注册入口关闭，只能运营代建账号；" }[v.registration] : null,
+            changes.includes("min_version") ? (v.min_version ? `低于 ${v.min_version} 的客户端将无法登录与调用 AI，须先升级；` : "取消客户端最低版本限制；") : null,
             "已注册的账号与律所不受影响；试用参数只影响之后的自助注册。",
           ].filter(Boolean),
           confirmLabel: "保存",
-          run: () => api.put("/v1/ops/settings", Object.fromEntries(changes.map((k) => [k, v[k]]))),
+          run: () => api.put("/v1/ops/settings", Object.fromEntries(changes.map((k) => (k === "min_version" ? ["clients", { min_version: v.min_version || null }] : [k, v[k]])))),
         });
         if (ok) (toast("已保存设置"), reload());
       });
       box.append(
-        h("div", { class: "grid-2-1" }, panel("注册", form), panel("邮件通道", facts([["状态", s.mail?.configured ? badge("已配置", "ok") : badge("未配置", "warn")], ["发件地址", s.mail?.from ?? "—"]]), { sub: s.mail?.configured ? "忘记密码会真发 6 位验证码" : "忘记密码不会真发码：只能运营在“账号”里发一次性重置码" })),
+        h("div", { class: "grid-2-1" }, panel("注册与客户端", form, { sub: s.staff_mfa ? `平台人员两步验证：${s.staff_mfa === "required" ? "必须" : "可选（仅开发）"}（部署配置，只读）` : undefined }), panel("邮件通道", facts([["状态", s.mail?.configured ? badge("已配置", "ok") : badge("未配置", "warn")], ["发件地址", s.mail?.from ?? "—"]]), { sub: s.mail?.configured ? "忘记密码会真发 6 位验证码" : "忘记密码不会真发码：只能运营在“账号”里发一次性重置码" })),
       );
     }, "正在读取设置…");
   reload();

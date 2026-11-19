@@ -16,7 +16,8 @@ import type { MatterBasis, SendSummaryView } from "../api.ts";
 import { SendSummary } from "./SendSummary.tsx";
 import { SendPoints } from "./SendPoints.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
-import { afterConsentNotice, busyRunOfError } from "../lib/start-block.ts";
+import { afterConsentNotice, busyRunOfError, startHintOf, type StartHint } from "../lib/start-block.ts";
+import { StartHintBanner } from "./StartHint.tsx";
 
 export interface PendingStart {
   matter: Matter;
@@ -38,7 +39,7 @@ export interface PendingStart {
     points: number;
     points_display: string;
     assumptions: string[];
-    data_where?: { preview?: string; preview_rows?: { label: string; text: string }[]; bullets?: string[]; bullet_kinds?: string[]; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | null; busy_run_id?: string; send_summary?: SendSummaryView };
+    data_where?: { preview?: string; preview_rows?: { label: string; text: string }[]; bullets?: string[]; bullet_kinds?: string[]; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | "account" | "quota" | null; busy_run_id?: string; send_summary?: SendSummaryView; start_hint?: StartHint };
   };
 }
 
@@ -81,6 +82,8 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   const [err, setErr] = useState("");
   /** 发起时被拒（并发发起，409 带进行中任务编号；复核 B4-B13）：错误提示旁给出入口。 */
   const [errBusyRun, setErrBusyRun] = useState<string | null>(null);
+  /** 发起时内核按登录、额度拦下（第 46 批）：显示成可操作的提示，不当红色报错。 */
+  const [errHint, setErrHint] = useState<StartHint | null>(null);
   const [cur, setCur] = useState(pending);
   const { matter, value, estimate } = cur;
   const agent = value.scenario === "a1.agent_task";
@@ -90,6 +93,14 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   const busyRun = estimate.data_where?.block_kind === "busy" ? estimate.data_where.busy_run_id : undefined;
   // 敏感事项（L3a）：像姓名的文字核对完才能开始（v9.2 §3.3）；核对后重新估价
   const suspectsBlocked = blocked && estimate.data_where?.block_kind === "suspects";
+  // 要重新登录、额度暂停（第 46 批）：原因与入口
+  const hint = blocked ? startHintOf(estimate.data_where?.start_hint) : null;
+  const failed = (e: unknown) => {
+    const h = startHintOf(e);
+    setErrHint(h);
+    setErr(h ? "" : (e as Error).message);
+    setErrBusyRun(h ? null : busyRunOfError(e));
+  };
   const reestimate = async () => {
     setErr("");
     try {
@@ -116,8 +127,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
       }
       await doStart(fresh);
     } catch (e) {
-      setErr((e as Error).message);
-      setErrBusyRun(busyRunOfError(e));
+      failed(e);
     } finally {
       setBusy(false);
     }
@@ -125,12 +135,12 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   const start = async () => {
     setBusy(true);
     setErr("");
+    setErrHint(null);
     setErrBusyRun(null);
     try {
       await doStart(cur);
     } catch (e) {
-      setErr((e as Error).message);
-      setErrBusyRun(busyRunOfError(e));
+      failed(e);
     } finally {
       setBusy(false);
     }
@@ -195,7 +205,9 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
           <SendSummary matterId={matter.matter_id} summary={estimate.data_where.send_summary} documentIds={value.documentIds} goal={value.goal} mustReview={suspectsBlocked} onReviewed={() => void reestimate()} />
         )}
       </SendPoints>
-      {blocked && !consentBlocked ? (
+      {hint ? (
+        <StartHintBanner hint={hint} onAction={onClose} />
+      ) : blocked && !consentBlocked ? (
         <div className="banner banner-orange">
           {estimate.data_where?.warning ?? "现在不能开始这个任务。"}
           {busyRun && (
@@ -220,6 +232,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
       ) : (
         estimate.data_where?.warning && <div className="banner banner-orange">{estimate.data_where.warning}</div>
       )}
+      {errHint && <StartHintBanner hint={errHint} onAction={onClose} />}
       {err && (
         <div className="banner banner-red">
           {err}

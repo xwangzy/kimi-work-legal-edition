@@ -75,6 +75,16 @@ export interface QaDeps {
  * 读完一个流式回答（SSE data 负载，OpenAI 兼容）：逐段回调正文增量，返回全文。
  * 错误事件（如网关内容安全拦截）与没有结束标志就断开的流一律抛错——半截回答不当成回答。
  */
+/**
+ * 问答取不到回答时的说明（第 46 批）：闸门把网关错误代码以“[kwl:代码]”附在说明末尾——额度、登录类按代码说人话，其余照原话、去掉代码。纯函数。
+ */
+export function qaFailureText(message: string): string {
+  const code = /\[kwl:([a-z0-9_]{1,60})\]/.exec(message)?.[1] ?? "";
+  if (code.startsWith("quota_") || code === "price_unconfigured") return "本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 账号与团队 → 用量”查看，稍后再问或联系律所管理员";
+  if (code.startsWith("seat_") || /AI 使用授权/.test(message)) return "登录已失效或这台电脑暂时没有取得 AI 使用授权，这次没有取得回答：请重新登录（或联网稍等）后再问";
+  return message.replace(/\s*\[kwl:[a-z0-9_]{1,60}\]/g, "");
+}
+
 export async function collectStreamText(chunks: AsyncIterable<string>, onDelta?: (piece: string) => void): Promise<string> {
   let text = "";
   let finished = false;
@@ -375,7 +385,7 @@ export class QaChatService {
       });
     } catch (e) {
       partial?.stop();
-      this.addMessage(c.conversation_id, "notice", `未能取得回答：${(e as Error).message}`);
+      this.addMessage(c.conversation_id, "notice", `未能取得回答：${qaFailureText((e as Error).message)}`);
       return { conversation_id: c.conversation_id, messages: this.get(c.conversation_id, tenantId, userId) };
     }
     // 模型回答原样保存（令牌形态；显示时还原）；写不进去的记“未能取得回答”，不让回答悄悄丢掉

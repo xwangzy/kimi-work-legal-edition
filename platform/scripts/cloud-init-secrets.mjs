@@ -19,8 +19,8 @@
  *     seat-public-keys.json     通用席位公钥：网关、检索、分发的 seat_keys_file，release.json seat_keys
  *     seat-support|notify|relay-public-keys.json   各受众的席位公钥：支持、通知、中继的 seat_keys_file
  *     signer-keys.json          签名服务配置 keys 段（kid 与私钥文件路径，路径按 --mount 改写）
- *     routing-public.txt        网关路由公钥（SPKI DER 的 base64，一行）：控制台 config.json 的 routing_public_key
- *     routing-key-id.txt        路由密钥编号（公钥 SPKI 的 SHA-256 前 16 位十六进制）：控制台 config.json 的 routing_key_id
+ *     routing-public.txt        网关路由公钥（SPKI DER 的 base64，一行）：控制面 routing.public_key_file（控制台从控制面取，显示指纹供核对；第 46 批）
+ *     routing-key-id.txt        路由密钥编号（公钥 SPKI 的 SHA-256 前 16 位十六进制）：核对用（控制面从公钥文件自行算出）
  *
  * 用法：node scripts/cloud-init-secrets.mjs --env prod --out /secure/kwl-prod [--id 2611a] [--mount /run/secrets]
  * 已存在的目录不覆盖。生成后请把 secrets/ 放进密钥管理（KMS / 密钥管理服务挂载为只读文件），本机副本按公司规定销毁或离线保管。
@@ -94,7 +94,7 @@ console.log(`[cloud-init-secrets] 已生成 → ${outDir}（环境 ${env}，密�
   签名服务 cp-signer   secrets/cp-envelope.pem、seat*.pem（keys 段见 public/signer-keys.json）
   控制面 control-plane secrets/service-secret、cp-state.key、cp-code-pepper.key
   网关 / 检索 / 分发   secrets/service-secret；public/cp-public-keys.json、seat-public-keys.json；网关另加 secrets/routing-key.pem（routing.key_file）
-  运营控制台 config.json  routing_public_key = public/routing-public.txt，routing_key_id = ${routingKeyId}
+  控制面 routing         public/routing-public.txt（routing.public_key_file；控制台从控制面取用并显示指纹，编号 ${routingKeyId}）
   支持 support         secrets/service-secret、support-meter.key；public/cp-public-keys.json、seat-support-public-keys.json
   通知 / 中继          secrets/service-secret；public/cp-public-keys.json、seat-notify|relay-public-keys.json
   桌面端 release.json  public/cp-public-keys.json（control_plane_keys）、seat-public-keys.json（seat_keys）——scripts/make-release-config.mjs 读取

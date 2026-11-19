@@ -52,11 +52,16 @@ export interface SessionRecord {
   revoked_at: string | null;
   revoked_reason: string | null;
   client: { version: string | null; platform: string | null };
+  /** 平台人员（第 46 批）：未绑定两步验证、策略要求绑定时为 "mfa_enroll"（只能看本人、绑定、退出）。 */
+  restricted?: "mfa_enroll" | null;
+  /** 平台人员最近一次复核（密码 + 两步验证码）的有效期：危险操作要求在此之前。 */
+  reauth_until?: string | null;
 }
 
 /** 一次性码（设置密码 / 重置密码 / 邮件验证码）：只存 HMAC。 */
 export interface OneTimeCode {
   id: string;
+  /** 成员账号 acc_… 或平台人员 stf_…（同一张码表）。 */
   aid: string;
   purpose: "setup" | "reset" | "email_reset";
   mac: string;
@@ -180,13 +185,16 @@ export function sessionLive(s: SessionRecord, t: number): boolean {
   return !s.revoked_at && Date.parse(s.idle_expires_at) > t && Date.parse(s.abs_expires_at) > t;
 }
 
-export function locked(a: AccountRecord, t: number): number {
+/** 登录失败计数（成员账号与平台人员共用一套锁定规则）。 */
+export type FailureCounter = { failed: { count: number; first_at: string | null; locked_until: string | null } };
+
+export function locked(a: FailureCounter, t: number): number {
   const until = a.failed.locked_until ? Date.parse(a.failed.locked_until) : 0;
   return until > t ? Math.ceil((until - t) / 1000) : 0;
 }
 
 /** 登录失败记一次；同账号 15 分钟内 10 次锁 15 分钟。 */
-export function noteFailure(a: AccountRecord, t: number): void {
+export function noteFailure(a: FailureCounter, t: number): void {
   const first = a.failed.first_at ? Date.parse(a.failed.first_at) : 0;
   if (!first || t - first > LOCK_WINDOW_MS) a.failed = { count: 1, first_at: new Date(t).toISOString(), locked_until: null };
   else a.failed.count += 1;

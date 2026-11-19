@@ -37,7 +37,7 @@ import { activationFilePath, PENDING_WORKSPACE_SLUG, type ActivationFile, type K
 import { configureSecretSealing, generateJoinDeviceKeys, getFirmRootPrivateKey, keysDirOf, readSecretFile, writeStagedSecret, type FirmIdentityRow } from "../devices.ts";
 import type { KernelDb } from "../db.ts";
 import type { Identity } from "../identity.ts";
-import { accountErrorText, writeAccountSession } from "../account-session.ts";
+import { accountErrorText, accountFailure, onboardingStateText, writeAccountSession } from "../account-session.ts";
 
 type CpRelay = (req: { method: string; path: string; headers: Record<string, string>; body: string }) => Promise<{ ok: true; status: number; body: string } | { ok: false; reason: string }>;
 type SignedCall = (method: string, path: string, body?: unknown) => Promise<{ ok: true; status: number; json: Record<string, unknown> } | { ok: false; error: string; status?: number }>;
@@ -119,7 +119,7 @@ function cpErrorText(code: string): string {
   }
 }
 
-async function cpPost(relay: CpRelay, path: string, body: unknown): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string }> {
+async function cpPost(relay: CpRelay, path: string, body: unknown): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string; min_version?: string }> {
   const r = await relay({ method: "POST", path, headers: {}, body: JSON.stringify(body) });
   if (!r.ok) return { ok: false, code: r.reason.startsWith("cp_") ? "cp_unreachable" : r.reason };
   let json: Record<string, any> = {};
@@ -129,7 +129,14 @@ async function cpPost(relay: CpRelay, path: string, body: unknown): Promise<{ ok
     return { ok: false, code: "cp_reply_not_json" };
   }
   // 控制面的错误说明（中文、可直接显示；只用于账号接口里密码规则、锁定剩余时间这类需要原话的提示）
-  if (r.status >= 400) return { ok: false, code: String(json?.error?.code ?? `http_${r.status}`), ...(typeof json?.error?.message === "string" && json.error.message.length <= 200 ? { message: json.error.message } : {}) };
+  if (r.status >= 400)
+    return {
+      ok: false,
+      code: String(json?.error?.code ?? `http_${r.status}`),
+      ...(typeof json?.error?.message === "string" && json.error.message.length <= 200 ? { message: json.error.message } : {}),
+      // 第 46 批：客户端版本过旧（426）时控制面给出最低版本号
+      ...(typeof json?.error?.min_version === "string" && json.error.min_version.length <= 40 ? { min_version: json.error.min_version } : {}),
+    };
   return { ok: true, json };
 }
 
@@ -406,21 +413,18 @@ export class OnboardingService {
       const r = await this.submitJoin({ tid: account.tid, activation_id: c.activation_id, claim_secret: c.claim_secret, firmSlug, firmName, memberSlug, memberName, role }, viaInvite ? inviteSecret : null, deviceId);
       return { ...view, ...r };
     }
-    // 不能在这台电脑上继续的状态：如实告诉律师（会话已暂存，处理好后再登录即可）
-    const why: Record<string, string> = {
-      device_limit: "这个账号的电脑数已满：请先在已登录的电脑上（设置 → 账号与团队 → 我的电脑）解绑一台，或请管理员调高上限",
-      device_mismatch: "这台电脑已登记为另一位成员：请用那位成员的账号登录",
-      waiting_founder: "你的律所还没有完成开通：请律所负责人先在自己的电脑上登录完成开通",
-    };
-    return { ...view, next: "blocked", message: why[state] ?? "这台电脑暂时不能用这个账号继续，请联系客服", devices: Array.isArray(onb.devices) ? onb.devices : [] };
+    // 不能在这台电脑上继续的状态：如实告诉律师（处理好后再登录即可）。文案与正常模式的 account.login 同一份（account-session.ts，第 46 批）；
+    // ready（控制面认得这台电脑是该成员的设备，但本机没有对应工作区，例如重装后）也说清怎么办，不再落到“请联系客服”
+    return { ...view, next: "blocked", message: onboardingStateText(state, { admin: role === "admin" }), devices: Array.isArray(onb.devices) ? onb.devices : [] };
   }
 
   private async accountCall(path: string, body: unknown): Promise<Record<string, any>> {
     const r = await cpPost(this.d.relay, path, body);
     if (!r.ok) {
       slog.event("KERNEL_ACCOUNT_CALL_FAILED", { reason: /^[a-z_]{1,40}$/.test(r.code) ? r.code : "other" });
-      const status = r.code === "auth_invalid" || r.code.startsWith("session_") ? 401 : r.code === "account_locked" ? 423 : r.code === "rate_limited" ? 429 : r.code === "email_taken" || r.code === "member_taken" ? 409 : r.code === "account_disabled" || r.code === "registration_closed" || r.code === "code_required" ? 403 : r.code.startsWith("cp_") || r.code === "gate_unavailable" ? 502 : 400;
-      throw new DomainError(status === 502 ? "provider_unavailable" : status === 429 ? "rate_limited" : "validation", accountErrorText(r.code, r.message), status, { reason: r.code });
+      // 第 46 批：与正常模式的 account.* 共用一处映射（状态码、文案；控制面原话只用于密码规则与锁定时长）
+      const f = accountFailure(r.code, r.message ?? null, { min_version: r.min_version ?? null });
+      throw new DomainError(f.fault, f.text, f.status, { reason: f.reason });
     }
     return r.json;
   }

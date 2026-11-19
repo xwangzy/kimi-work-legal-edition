@@ -98,6 +98,8 @@ function trialExpired(config, now = new Date()) {
 function trialKernelEnv(gateway) {
   return {
     ZR_MODEL_PROVIDER: "upstream",
+    // 第 46 批：告诉内核这是试用版安装包（账号页、用量页写“试用版”，不写“开发形态”）
+    ZR_TRIAL_BUILD: "1",
     ZR_FIRM_SLUG: TRIAL_FIRM_SLUG,
     ZR_USER_SLUG: TRIAL_USER_SLUG,
     ...(gateway ? { ZR_GATEWAY_BASE: `http://127.0.0.1:${gateway.port}/v1`, ZR_SEAT_TOKEN: gateway.seatToken } : {}),

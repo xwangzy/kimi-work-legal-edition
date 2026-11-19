@@ -12,7 +12,7 @@
  * 控制面是“诚实时”的行为：发布放宽类策略与连接器时同样检查管理员签名门限。但律所侧**不依赖**控制面诚实——
  * 客户端按本机固定的律所根公钥与门限独立核验（packages/firm-trust；T17 演练）。
  * 设备请求一律设备签名（firm-trust/request-auth）；网关订阅用服务间凭据（G0：共享密钥；生产为 mTLS）。
- * 运营接口（v9.3 A-10，`/v1/ops/…`）：按人运营签名（`@zr-legal/ops-auth`：安全管理员签名的运营名册 + 每人自己的签名密钥），
+ * 运营接口（v9.3 A-10，`/v1/ops/…`；第 46 批改为平台人员统一账号：Bearer 会话 → 角色 → 权限 → 危险操作复核，契约 §2、§3.4），
  * 只开最小集——开通租户（一律要求开通码）、发与作废开通码、续订、终止、加量、代设上限、吊销设备与席位、租户概要；
  * 写操作照常进律所可见的运营审计流水，执行者为**运营编号**（不再是笼统的 "ops"）；每个运营请求另记内部访问审计。
  */
@@ -57,7 +57,11 @@ import {
   type SessionRecord,
 } from "./accounts.ts";
 import { canonicalJson, verifyBytes, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
-import { OpsAuthError, type OpsAuthorized, type OpsGuard, type OpsLoginResult, type OpsPermission } from "@zr-legal/ops-auth";
+import { DANGER_PERMISSIONS, permsOf, rolesProblem, rolesView, type CpPermission, type PlatformRole } from "./rbac.ts";
+import { compareVersion, isStaffId, MFA_PENDING_MS, MFA_TOKEN_MS, REAUTH_MS, SEMVER_RE, STAFF_SESSION_ABS_MS, STAFF_SESSION_IDLE_MS, staffView, type StaffMfaPolicy, type StaffRecord } from "./staff.ts";
+import { newRecoveryCodes, newTotpSecret, otpauthUri, recoveryMac, verifyTotp } from "./totp.ts";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { MIN_SEAT_TTL_SECONDS } from "@zr-legal/seat-token";
 import { localSigner, SignerUnavailableError, type ControlPlaneKeys, type CpSigner, type EnvelopeKind, type SeatAudience } from "./signer.ts";
 import {
@@ -272,8 +276,22 @@ export interface ControlPlaneOptions {
    * 重启后不变，码记录仍可核对）。
    */
   codePepper?: Uint8Array;
-  /** 运营按人鉴权（v9.3 A-10）：没有 = 运营接口不开放（`/v1/ops/…` 一律 404）；运维操作只能由进程内代码调用（开发与测试）。 */
-  opsGuard?: OpsGuard;
+  /** 已废弃（第 46 批）：控制面运营接口改由平台人员会话鉴权，传了也不用（启动时提示一次）。support / relay / notify 仍用 ops-auth 守卫。 */
+  opsGuard?: unknown;
+  /** 平台人员两步验证策略（console.staff_mfa）：required（生产缺省）| optional（开发）。 */
+  staffMfa?: StaffMfaPolicy;
+  /** 首个系统管理员（console.bootstrap_admin，契约 §2.4）：没有有效系统管理员时建档并把设置码写到 <dataDir>/bootstrap-admin.txt。 */
+  bootstrapAdmin?: { email: string; name: string };
+  /** 控制面数据目录（引导文件 bootstrap-admin.txt 与找回请求 admin-recovery.request 的位置）。 */
+  dataDir?: string;
+  /** 找回请求的检查间隔（缺省 10 秒；契约要求 30 秒内处理）。 */
+  adminRecoveryIntervalMs?: number;
+  /** 开发与测试：直接建好可登录的平台人员（生产入口拒绝这一项）。 */
+  devStaff?: { email: string; name: string; roles: PlatformRole[]; password: string }[];
+  /** 平台人员登录与运营接口的来源判定（生产入口按 ops.allow_cidrs）；不给 = 不限来源（开发与测试）。 */
+  staffSourceAllowed?: (remoteAddress: string) => boolean;
+  /** 客户端最低版本（clients.min_version）：首次启动导入状态，之后以状态里的为准（运营在控制台改）。 */
+  clients?: { min_version?: string | null };
   /** 运营访问审计（每个通过鉴权的运营请求：先记“已请求”、记不进去即不执行，执行后补记结果）；缺省不记（开发与测试）。 */
   opsAccessLog?: (r: CpOpsAccessRecord) => void;
   /** 配置文件里的 billing 段（首次启动导入套餐目录与注册设置；之后以状态里的为准，运营在控制台改）。 */
@@ -281,13 +299,13 @@ export interface ControlPlaneOptions {
   /** 用量账本（usage-ledger.ts）：未给出 = 只在内存（开发与测试）。 */
   usageBook?: UsageBook;
   /** API 路由（第 44 批）：首次启动导入的初始上游；网关路由公钥编号（控制台加密上游密钥用的那把，提交的密文须与之相符）。 */
-  routing?: { bootstrap?: Parameters<typeof bootstrapRouting>[1]; key_id?: string | null };
+  routing?: { bootstrap?: Parameters<typeof bootstrapRouting>[1]; key_id?: string | null; /** 网关路由公钥（P-256 SPKI，base64）：随 GET /v1/ops/routing 下发给控制台（第 46 批，不再读静态 config.json）。 */ public_key_spki?: string | null };
   /** 邮件通道（找回密码验证码）；没有 = 只能由运营发重置码。 */
   mailer?: { from: string; send(to: string, subject: string, text: string): Promise<void> };
   /** 服务版本（运营“系统”页显示）。 */
   serverVersion?: string;
-  /** 运营名册的只读信息（“系统”页显示；入口按名册来源给出）。 */
-  opsInfo?: { deployment: string; roster: () => { version: number; expires_at: string; operators: { id: string; perms: string[]; keys: { kid: string }[]; revoked_at?: string }[] } | null };
+  /** 部署信息（“系统”页显示）；roster 已不用于控制面（第 46 批），保留字段只为兼容旧调用。 */
+  opsInfo?: { deployment: string; roster?: () => unknown };
 }
 
 /** 控制面运营访问审计（中软内部，不进律所可见的流水）：只有运营编号、密钥编号、动作、租户与目标编号、结果。 */
@@ -302,9 +320,11 @@ export interface CpOpsAccessRecord {
   target: string | null;
   /** requested（执行前）/ ok / rejected:<代码>。 */
   result: string;
-  /** 凭据方式（key = 私钥签名，password = 账号密码登录的会话）与密码会话编号前 8 位。 */
-  via?: "key" | "password";
+  /** 凭据方式（key = 私钥签名，password = 第 45 批密码会话，session = 第 46 批平台人员会话）与会话编号前 12 位。 */
+  via?: "key" | "password" | "session";
   session?: string;
+  /** 平台人员邮箱（第 46 批：operator 为 stf_… 编号）。 */
+  email?: string;
 }
 
 export interface ControlPlaneOps {
@@ -337,6 +357,8 @@ export interface ControlPlaneOps {
   tenant(tid: string): TenantRecord | undefined;
   /** 账号（第 44 批）：按邮箱查（开发脚本与用例）。 */
   account(email: string): AccountRecord | undefined;
+  /** 平台人员（第 46 批）：按邮箱查（开发脚本与用例）。 */
+  staff(email: string): StaffRecord | undefined;
   /**
    * 用控制面自己的信封密钥签任意文档（演练“控制面被攻破”时攻击者同样能做到）。只有进程内签名者有：
    * 接独立签名服务（生产入口）时抛错——签名服务只签登记过的种类与合格的文档（A-8）。
@@ -355,6 +377,8 @@ export interface ControlPlane {
   publicKeys: { envelope: Record<string, string>; seat: Record<string, string>; seatFor(aud?: SeatAudience): Record<string, string> };
   /** 用量账本（第 44 批；用例与运维脚本读）。 */
   usageBook: UsageBook;
+  /** 立即检查一次首个管理员引导与找回请求（定时器也会做；用例直接调）。 */
+  adminTick(): void;
 }
 
 class CpError extends Error {
@@ -403,6 +427,16 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const accountByMember = new Map<string, string>();
   const sessions = new Map<string, SessionRecord>();
   const codes = new Map<string, OneTimeCode>();
+  // 第 46 批：平台人员（与账号共用会话表、一次性码表；邮箱跨两表唯一）、客户端最低版本
+  const staff = new Map<string, StaffRecord>();
+  const staffByEmail = new Map<string, string>();
+  const clientsDefault = { min_version: typeof o.clients?.min_version === "string" && SEMVER_RE.test(o.clients.min_version) ? o.clients.min_version : null };
+  if (o.clients?.min_version != null && clientsDefault.min_version === null) throw new Error("clients.min_version 须为 x.y.z");
+  let clients = { ...clientsDefault };
+  const staffMfa: StaffMfaPolicy = o.staffMfa ?? "required";
+  if (staffMfa !== "required" && staffMfa !== "optional") throw new Error("staffMfa 须为 required 或 optional");
+  if (o.opsGuard !== undefined) console.warn("[control-plane] opsGuard 已不用于控制面（第 46 批改为平台人员账号）：请改用 devStaff / bootstrapAdmin");
+  const emailTaken = (e: string) => accountByEmail.has(e) || staffByEmail.has(e);
   const catalogDefault = catalogFromConfig(o.billing);
   let catalog: Catalog = structuredClone(catalogDefault);
   let routing: RoutingState = bootstrapRouting(now(), o.routing?.bootstrap);
@@ -410,6 +444,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const book = o.usageBook ?? new UsageBook({ now });
   const startedAt = iso();
   const routingKeyId = o.routing?.key_id ?? null;
+  /** 网关路由公钥（第 46 批：随 GET /v1/ops/routing 下发；指纹 = SPKI 的 SHA-256，4 位一组，供人工核对）。 */
+  const routingKey = (() => {
+    const spki = o.routing?.public_key_spki;
+    if (!spki) return null;
+    const hex = createHash("sha256").update(Buffer.from(spki, "base64")).digest("hex");
+    return { kid: routingKeyId ?? hex.slice(0, 16), spki_b64: spki, fingerprint: hex.match(/.{4}/g)!.join(" ") };
+  })();
   const memberKey = (tid: string, uid: string) => `${tid}\u0000${uid}`;
   const indexAccount = (a: AccountRecord) => {
     accountByEmail.set(a.email, a.aid);
@@ -471,6 +512,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       catalog,
       routing,
       alerts,
+      staff: [...staff.values()],
+      clients,
     });
   const snapshot = (state = stateOnly()): string => JSON.stringify({ ...(JSON.parse(state) as object), nonces: [...nonces] });
   /** 由快照重建内存状态（启动读回与失败回滚共用）；null = 空状态。 */
@@ -481,13 +524,16 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     accountByMember.clear();
     sessions.clear();
     codes.clear();
+    staff.clear();
+    staffByEmail.clear();
+    clients = { ...clientsDefault };
     catalog = structuredClone(catalogDefault);
     routing = bootstrapRouting(now(), o.routing?.bootstrap);
     alerts = [];
     feedVersion = 1;
     if (withNonces) nonces.clear();
     if (raw === null) return;
-    const st = JSON.parse(raw) as { v: number; feedVersion: number; nonces?: [string, number][]; tenants: any[]; accounts?: AccountRecord[]; sessions?: SessionRecord[]; codes?: OneTimeCode[]; catalog?: Catalog; routing?: RoutingState; alerts?: AlertRecord[] };
+    const st = JSON.parse(raw) as { v: number; feedVersion: number; nonces?: [string, number][]; tenants: any[]; accounts?: AccountRecord[]; sessions?: SessionRecord[]; codes?: OneTimeCode[]; catalog?: Catalog; routing?: RoutingState; alerts?: AlertRecord[]; staff?: StaffRecord[]; clients?: { min_version: string | null } };
     // 第 44 批之前的状态没有这些：套餐从配置导入、路由按配置初始化、账号为空
     catalog = migrateCatalog(st.catalog, structuredClone(catalogDefault));
     routing = migrateRouting(st.routing, now(), o.routing?.bootstrap);
@@ -497,6 +543,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       indexAccount(a);
     }
     for (const x of st.sessions ?? []) sessions.set(x.sid, x);
+    // 第 46 批之前的状态没有人员与客户端版本：人员为空（由引导建首个系统管理员）、最低版本取配置
+    for (const x of st.staff ?? []) {
+      staff.set(x.aid, x);
+      staffByEmail.set(x.email, x.aid);
+    }
+    if (st.clients && (st.clients.min_version === null || (typeof st.clients.min_version === "string" && SEMVER_RE.test(st.clients.min_version)))) clients = { min_version: st.clients.min_version };
     for (const c of st.codes ?? []) codes.set(c.id, c);
     if (st.v !== 1) throw new Error(`控制面状态版本不认识：${st.v}`);
     feedVersion = st.feedVersion;
@@ -621,6 +673,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   if (codePepper.byteLength !== 32) throw new Error("开通码胡椒须为 32 字节");
   // 账号一次性码（设置密码、重置、邮件验证码）的 HMAC 密钥：由胡椒派生（与开通码 HMAC 分开用途）
   const accountPepper = Buffer.from(hkdfSync("sha256", codePepper, Buffer.alloc(0), "kwl-account-code/1", 32));
+  // 平台人员恢复码的 HMAC 密钥（第 46 批）：同样由胡椒派生、用途分开
+  const recoveryPepper = Buffer.from(hkdfSync("sha256", codePepper, Buffer.alloc(0), "kwl-staff-recovery/1", 32));
   /** 律所标识 = 租户编号去掉 ten_ 前缀（与内核 identity.ts 的 ten_<律所标识> 对应）；不合规的租户不能发开通码。 */
   const firmSlugOf = (tid: string): string | null => (/^ten_[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(tid) ? tid.slice(4) : null);
   const newRecordId = (prefix: string) => `${prefix}_${randomBytes(12).toString("base64url")}`;
@@ -905,6 +959,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const aid = accountByEmail.get(String(email).toLowerCase());
       return aid ? accounts.get(aid) : undefined;
     },
+    staff: (email) => {
+      const aid = staffByEmail.get(String(email).toLowerCase());
+      return aid ? staff.get(aid) : undefined;
+    },
     seal(kind, body) {
       if (!signer.sealSync) throw new Error("接独立签名服务时不能在进程内签任意文档（A-8）");
       return signer.sealSync(kind, body);
@@ -970,7 +1028,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           throw e;
         }
         // 路由代调时不在这里写盘（复核 S9A-03）：由路由的 send 统一按“审计 → 写盘 → 回复”执行，审计写不进去即整个操作回滚
-        if (k !== "tenant" && k !== "seal" && k !== "account" && !routeCall) {
+        if (k !== "tenant" && k !== "seal" && k !== "account" && k !== "staff" && !routeCall) {
           try {
             persistNow();
           } catch (e) {
@@ -1219,8 +1277,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const liveDev = new Set<string>();
     for (const x of sessions.values()) if (x.device_id && sessionLive(x, t0) && accounts.get(x.aid)?.status === "active") liveDev.add(`${accounts.get(x.aid)!.tid}\u0000${x.device_id}`);
     for (const t of tenants.values()) {
-      if (t.accounts_required !== true) continue;
-      for (const d of t.devices.values()) if (!d.revoked_at && d.cert.role !== "node" && !liveDev.has(`${t.tid}\u0000${d.cert.deviceId}`)) out.push({ tid: t.tid, device_id: d.cert.deviceId });
+      for (const d of t.devices.values()) {
+        if (d.revoked_at || d.cert.role === "node") continue;
+        // 第 46 批：账号被停用的成员，设备在任何律所都暂停（不只要求账号登录的律所；网关 15 秒内随订阅生效）
+        const acc = accountOfMember(t.tid, d.cert.memberId);
+        if (t.accounts_required === true ? !liveDev.has(`${t.tid}\u0000${d.cert.deviceId}`) : acc?.status === "disabled") out.push({ tid: t.tid, device_id: d.cert.deviceId });
+      }
     }
     return out;
   };
@@ -1238,7 +1300,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     alerts.unshift({ id: newId("alr"), at: iso(), acked_at: null, acked_by: null, ...a });
     if (alerts.length > 500) alerts.length = 500;
   };
-  const newSession = (a: AccountRecord, kind: SessionRecord["kind"], deviceId: string | null, client: unknown): { token: string; rec: SessionRecord } => {
+  const newSession = (a: { aid: string }, kind: SessionRecord["kind"], deviceId: string | null, client: unknown, extra: { restricted?: "mfa_enroll" | null } = {}): { token: string; rec: SessionRecord } => {
     const { sid, secret, token } = newSessionToken();
     const t0 = now();
     // 同一账号的会话至多 20 个（最旧的先失效）
@@ -1246,9 +1308,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     for (const x of mine.slice(0, Math.max(0, mine.length - 19))) Object.assign(x, { revoked_at: iso(t0), revoked_reason: "too_many_sessions" });
     // 同一台设备只留一个有效桌面会话（重新登录即替换）
     if (deviceId) for (const x of mine) if (x.device_id === deviceId && x.kind === "desktop") Object.assign(x, { revoked_at: iso(t0), revoked_reason: "replaced" });
-    const rec: SessionRecord = { sid, aid: a.aid, secret_hash: sha256Hex(secret), kind, device_id: deviceId, created_at: iso(t0), last_seen_at: iso(t0), idle_expires_at: iso(t0 + SESSION_IDLE_MS[kind]), abs_expires_at: iso(t0 + SESSION_ABS_MS[kind]), revoked_at: null, revoked_reason: null, client: clientInfo(client) };
+    const st = isStaffId(a.aid);
+    const rec: SessionRecord = { sid, aid: a.aid, secret_hash: sha256Hex(secret), kind, device_id: deviceId, created_at: iso(t0), last_seen_at: iso(t0), idle_expires_at: iso(t0 + (st ? STAFF_SESSION_IDLE_MS : SESSION_IDLE_MS[kind])), abs_expires_at: iso(t0 + (st ? STAFF_SESSION_ABS_MS : SESSION_ABS_MS[kind])), revoked_at: null, revoked_reason: null, client: clientInfo(client), ...(st ? { restricted: extra.restricted ?? null, reauth_until: null } : {}) };
     sessions.set(sid, rec);
-    feedVersion += 1;
+    // 人员会话与设备无关：不让网关订阅版本前进
+    if (!st) feedVersion += 1;
     return { token, rec };
   };
   /** 请求里的会话（桌面：x-kwl-session；网页：Authorization: Bearer）；required = 没有即 401。 */
@@ -1262,6 +1326,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const x = pt ? sessions.get(pt.sid) : undefined;
     if (!pt || !x || !sameHexStr(x.secret_hash, sha256Hex(pt.secret))) throw new AuthError(401, "session_invalid", "登录已失效，请重新登录");
     if (!sessionLive(x, now())) throw new AuthError(401, "session_expired", "登录已过期，请重新登录");
+    if (isStaffId(x.aid)) throw new AuthError(403, "member_only", "平台人员账号不能使用律师端功能");
     const a = accounts.get(x.aid);
     if (!a) throw new AuthError(401, "session_invalid", "登录已失效，请重新登录");
     if (a.status !== "active") throw new AuthError(403, "account_disabled", "账号已停用，请联系管理员");
@@ -1345,8 +1410,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
   const authResult = (a: AccountRecord, token: string, x: SessionRecord, onb: Onboarding) => ({
     ok: true,
+    kind: "member" as const,
     session_token: token,
-    session: { sid: x.sid, kind: x.kind, idle_expires_at: x.idle_expires_at },
+    session: { sid: x.sid, kind: x.kind, idle_expires_at: x.idle_expires_at, restricted: null },
     account: accountView(a, { org: orgOf(a.tid) }),
     onboarding: onb,
   });
@@ -1371,7 +1437,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     return `ten_${base}-${randomBytes(4).toString("hex")}`;
   };
-  const issueAccountCode = (a: AccountRecord, purpose: OneTimeCode["purpose"], ttlMs: number, by: string | null): { code: string; expires_at: string } => {
+  const issueAccountCode = (a: { aid: string }, purpose: OneTimeCode["purpose"], ttlMs: number, by: string | null): { code: string; expires_at: string } => {
     for (const c of codes.values()) if (c.aid === a.aid && c.purpose === purpose && !c.used_at) c.used_at = iso();
     const code = purpose === "email_reset" ? String(randomBytes(4).readUInt32BE() % 1_000_000).padStart(6, "0") : newOneTimeCode();
     const rec: OneTimeCode = { id: newId("otc"), aid: a.aid, purpose, mac: codeMac(accountPepper, purpose, a.aid, code), created_at: iso(), expires_at: iso(now() + ttlMs), attempts: 0, used_at: null, by };
@@ -1388,12 +1454,17 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const strOr = (v: unknown, re: RegExp): string | null => (typeof v === "string" && re.test(v) ? v : null);
   const rowOf = (t: TenantRecord, r: Record<string, any>, plan: PlanSpec): UsageRow => {
     if (!r || typeof r !== "object" || typeof r.request_id !== "string" || !REQ_ID_RE.test(r.request_id)) throw new QuotaError(400, "records_invalid", "用量记录缺少请求编号");
-    const usage = r.usage && typeof r.usage === "object" ? { input: nnInt(r.usage.input), cached: Math.min(nnInt(r.usage.cached), nnInt(r.usage.input)), output: nnInt(r.usage.output), reasoning: nnInt(r.usage.reasoning) } : null;
+    const usage0 = r.usage && typeof r.usage === "object" ? { input: nnInt(r.usage.input), cached: Math.min(nnInt(r.usage.cached), nnInt(r.usage.input)), output: nnInt(r.usage.output), reasoning: nnInt(r.usage.reasoning) } : null;
+    // 第 46 批（契约 §4）：流中途中断且已写出内容——不扣额度、不计售价，成本按估算照算（对账）；只认超时 / 上游错误两种结果
+    const partial = r.partial === true && usage0 !== null && (r.outcome === "timeout" || r.outcome === "upstream_error");
+    if (r.partial !== undefined && typeof r.partial !== "boolean") throw new QuotaError(400, "records_invalid", "partial 须为 true 或 false");
+    if (r.retry_of !== undefined && r.retry_of !== null && !(typeof r.retry_of === "string" && REQ_ID_RE.test(r.retry_of))) throw new QuotaError(400, "records_invalid", "retry_of 须为请求编号");
+    const usage = partial ? null : usage0;
     const atMs = Number.isFinite(Date.parse(r.at)) ? Math.min(Date.parse(r.at), now() + 60_000) : now();
     const uid = strOr(r.uid, /^[A-Za-z0-9_-]{1,160}$/);
     const alias = strOr(r.alias, /^[a-z0-9][a-z0-9._/-]{1,47}$/);
     const priceTable = priceTableOf(routing, r.price_version);
-    const money = usage ? chargeOf(alias ? priceTable.items[alias] : undefined, usage) : { value_micro: null, cost_micro: null };
+    const money = usage ? chargeOf(alias ? priceTable.items[alias] : undefined, usage) : partial ? { value_micro: 0, cost_micro: chargeOf(alias ? priceTable.items[alias] : undefined, usage0!).cost_micro } : { value_micro: null, cost_micro: null };
     const unit = plan.quota_unit;
     const charge = usage ? (unit === "tokens" ? usage.input + usage.output : (money.value_micro ?? 0)) : 0;
     const acc = uid ? accountOfMember(t.tid, uid) : undefined;
@@ -1428,6 +1499,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       attempts: Array.isArray(r.attempts) ? r.attempts.slice(0, 5).map((x: any) => ({ provider: strOr(x?.provider, /^[a-z][a-z0-9-]{1,31}$/), status: Number.isSafeInteger(x?.status) ? x.status : null, error: strOr(x?.error, /^[a-z0-9_:.-]{1,64}$/i), ms: Number.isSafeInteger(x?.ms) ? x.ms : null })) : [],
       finish_reason: strOr(r.finish_reason, /^[a-z_]{1,32}$/),
       lease_id: strOr(r.lease_id, /^ls_[0-9a-f]{24}$/),
+      ...(partial ? { partial: true as const, partial_usage: usage0! } : {}),
+      ...(typeof r.retry_of === "string" ? { retry_of: r.retry_of } : {}),
     };
   };
   /** 入账后的提醒：租户与成员跨过阈值、到上限、用完；成员 1 小时消耗异常。 */
@@ -1486,9 +1559,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     return Math.max(1, m.value_micro);
   };
 
-  // ─── 运营接口（v9.3 A-10）：按人运营签名 + 权限；写操作经运维包装（审计执行者 = 运营编号），另记内部访问审计 ───
-  // 守卫的受众须为控制面（复核 RA10A-15：配错时签给支持服务的请求不能在这里通过）
-  if (o.opsGuard && o.opsGuard.audience !== "control-plane") throw new Error("运营守卫的受众须为 control-plane");
+  // ─── 运营接口（v9.3 A-10；第 46 批改为平台人员会话 + 角色权限）：写操作经运维包装（审计执行者 = 人员编号），另记内部访问审计 ───
   const opsAccess = o.opsAccessLog ?? (() => {});
   const asOperator = <T>(id: string, fn: () => T): T => {
     opsActor = { kind: "ops", id };
@@ -1503,7 +1574,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     return v;
   };
   /** 发码者对外只给种类（复核 RA10B-05：管理员发的邀请码 created_by 是设备编号，其中有成员标识）。 */
-  const issuerKind = (by: string) => (by === "ops" || /^op_[0-9]+$/.test(by) ? by : by.startsWith("account:") ? "account" : "firm_admin");
+  const issuerKind = (by: string) => (by === "ops" || /^op_[0-9]+$/.test(by) || isStaffId(by) ? by : by.startsWith("account:") ? "account" : "firm_admin");
   const cny = (micro: number) => Math.round(micro / 100) / 10_000;
   const tenantStatus = (t: TenantRecord): "active" | "pending" | "expired" | "terminated" => {
     if (Date.parse(t.subscription_until) <= now()) return Date.parse(t.license.expires_at) <= Date.parse(t.license.issued_at) + 1 ? "terminated" : "expired";
@@ -1671,7 +1742,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     };
   };
   const alertView = (x: AlertRecord) => ({ ...x, tenant_name: x.tid ? (tenants.get(x.tid)?.name ?? x.tid.replace(/^ten_/, "")) : null, email: x.aid ? (accounts.get(x.aid)?.email ?? null) : null });
-  const usageRowView = (r: UsageRow) => ({ ...r, tenant_name: tenants.get(r.tid)?.name ?? r.tid.replace(/^ten_/, ""), email: r.aid ? (accounts.get(r.aid)?.email ?? null) : null, value_cny: r.value_micro === null ? null : cny(r.value_micro), cost_cny: r.cost_micro === null ? null : cny(r.cost_micro) });
+  /** 账本行的计费说明（用量明细与 CSV 显示）。 */
+  const billingNote = (r: UsageRow): string => (r.partial ? "服务出错（已产生成本，不计费）" : r.backfill ? "历史补录" : r.retry_of ? "重试" : "");
+  const usageRowView = (r: UsageRow) => ({ ...r, billing_note: billingNote(r), tenant_name: tenants.get(r.tid)?.name ?? r.tid.replace(/^ten_/, ""), email: r.aid ? (accounts.get(r.aid)?.email ?? null) : null, value_cny: r.value_micro === null ? null : cny(r.value_micro), cost_cny: r.cost_micro === null ? null : cny(r.cost_micro) });
   const dayParam = (qs: URLSearchParams, k: string, dflt: string): string => {
     const v = qs.get(k);
     if (v === null || v === "") return dflt;
@@ -1702,16 +1775,21 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   /** CSV 应答（运营接口里唯一不回 JSON 的）：路由返回这个形状，由 opsRoute 原样发出。 */
   type CsvOut = { __csv: string; filename: string };
   const planView = (p: PlanSpec) => ({ ...p, seat_quota_display: p.quota_unit === "tokens" ? `${p.seat_quota} tokens` : `¥${p.seat_quota}` });
+  /** 通过鉴权的平台人员（operator = 人员编号 stf_…，进律所可见的运营审计流水与内部访问审计）。 */
+  type StaffWho = { operator: string; email: string; perms: CpPermission[]; sid: string };
   type OpsSpec = {
-    perm: OpsPermission;
+    /** null = 任何已登录的平台人员都可以（如角色表）。 */
+    perm: CpPermission | null;
+    /** 危险操作：要求本会话 10 分钟内复核过（缺省按权限判定：DANGER_PERMISSIONS 的写操作）。 */
+    danger?: boolean;
     action: string;
     /** 租户与目标编号（内部访问审计用；开通时租户编号在请求体里）。 */
     tid: (b: Record<string, unknown>) => string | null;
     target: (b: Record<string, unknown>) => string | null;
-    run: (b: Record<string, unknown>, who: OpsAuthorized) => unknown;
+    run: (b: Record<string, unknown>, who: StaffWho) => unknown;
   };
   /** 账号写操作的律所审计（律所可见流水：执行者 = 运营编号，目标 = 账号编号，不记邮箱）。 */
-  const accountAudit = (a: AccountRecord, action: string, who: OpsAuthorized) => audit({ tid: a.tid, actor: { kind: "ops", id: who.operator }, action, target: a.aid, result: "ok" });
+  const accountAudit = (a: AccountRecord, action: string, who: StaffWho) => audit({ tid: a.tid, actor: { kind: "ops", id: who.operator }, action, target: a.aid, result: "ok" });
   const accountOf = (aid: string): AccountRecord => {
     const a = accounts.get(aid);
     if (!a) throw new CpError(404, "account_unknown", "没有这个账号");
@@ -1720,7 +1798,70 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   /** 运营路由只按方法与路径确定（先鉴权、后解析请求体；复核 RA10B-21）；GET 可带查询串。 */
   const opsSpec = (method: string, p: string, qs: URLSearchParams): OpsSpec | null => {
     const none = () => null;
-    const read = (action: string, run: () => unknown, perm: OpsPermission = "tenant.read"): OpsSpec => ({ perm, action, tid: none, target: none, run });
+    const read = (action: string, run: () => unknown, perm: CpPermission = "tenant.read"): OpsSpec => ({ perm, action, tid: none, target: none, run });
+    // ─── 平台人员与角色（第 46 批，契约 §3.4）：人员管理要 staff.manage，写操作要求复核 ───
+    if (method === "GET" && p === "/v1/ops/roles") return { perm: null, action: "roles.read", tid: none, target: none, run: () => ({ roles: rolesView(), mfa_policy: staffMfa }) };
+    if (method === "GET" && p === "/v1/ops/staff") return read("staff.list", () => ({ staff: [...staff.values()].sort((x, y) => x.created_at.localeCompare(y.created_at)).map(staffRow), mfa_policy: staffMfa }), "staff.manage");
+    if (method === "POST" && p === "/v1/ops/staff")
+      return {
+        perm: "staff.manage",
+        action: "staff.create",
+        tid: none,
+        target: none,
+        run: (b, who) => {
+          const email = normalizeEmail(b.email);
+          if (!email) throw new CpError(400, "email_invalid", "邮箱格式不对");
+          if (emailTaken(email)) throw new CpError(409, "email_taken", "这个邮箱已有账号（律师账号或平台人员）");
+          if (!validName(b.name)) throw new CpError(400, "name_invalid", "姓名须为 1–40 个字符");
+          const prob = rolesProblem(b.roles);
+          if (prob) throw new CpError(400, "roles_invalid", `角色${prob}`);
+          const x = newStaffRecord({ email, name: String(b.name), roles: b.roles as PlatformRole[], by: who.operator });
+          const c = issueAccountCode(x, "setup", 24 * 3600_000, who.operator);
+          return { ok: true, staff: staffRow(x), setup_code: formatOneTimeCode(c.code), expires_at: c.expires_at };
+        },
+      };
+    const sm = /^\/v1\/ops\/staff\/(stf_[A-Za-z0-9_-]{16})\/(roles|disable|enable|reset)$/.exec(p);
+    if (method === "POST" && sm) {
+      const aid = sm[1]!;
+      const act = sm[2]!;
+      const ws = (run: (x: StaffRecord, b: Record<string, unknown>, who: StaffWho) => unknown): OpsSpec => ({ perm: "staff.manage", action: `staff.${act}`, tid: none, target: () => aid, run: (b, who) => run(staffOf(aid), b, who) });
+      if (act === "roles")
+        return ws((x, b, who) => {
+          const prob = rolesProblem(b.roles);
+          if (prob) throw new CpError(400, "roles_invalid", `角色${prob}`);
+          const next = b.roles as PlatformRole[];
+          if (x.aid === who.operator && !next.includes("sysadmin") && x.roles.includes("sysadmin")) throw new CpError(409, "cannot_demote_self", "不能去掉自己的系统管理员角色：请另一位系统管理员操作");
+          if (x.status === "active" && x.roles.includes("sysadmin") && !next.includes("sysadmin") && activeSysadmins(x.aid).length === 0) throw new CpError(409, "last_sysadmin", "至少要保留一名有效的系统管理员");
+          x.roles = [...next];
+          return { ok: true, staff: staffRow(x) };
+        });
+      if (act === "disable")
+        return ws((x, b, who) => {
+          if (x.aid === who.operator) throw new CpError(409, "cannot_disable_self", "不能停用自己");
+          if (b.reason !== undefined && (typeof b.reason !== "string" || b.reason.length > 100)) throw new CpError(400, "reason_invalid", "原因至多 100 个字符");
+          if (x.status === "active" && x.roles.includes("sysadmin") && activeSysadmins(x.aid).length === 0) throw new CpError(409, "last_sysadmin", "至少要保留一名有效的系统管理员");
+          x.status = "disabled";
+          x.disabled_reason = typeof b.reason === "string" ? b.reason : null;
+          const n = revokeSessions((y) => y.aid === x.aid, "staff_disabled");
+          return { ok: true, sessions_revoked: n, staff: staffRow(x) };
+        });
+      if (act === "enable")
+        return ws((x) => {
+          x.status = "active";
+          x.disabled_reason = null;
+          x.failed = { count: 0, first_at: null, locked_until: null };
+          return { ok: true, staff: staffRow(x) };
+        });
+      return ws((x, b, who) => {
+        if (x.aid === who.operator) throw new CpError(409, "cannot_reset_self", "不能重置自己：请另一位系统管理员操作（自己改密码在“我的 → 安全”）");
+        if (b.reset_mfa !== undefined && typeof b.reset_mfa !== "boolean") throw new CpError(400, "reset_mfa_invalid", "reset_mfa 须为 true 或 false");
+        if (b.reset_mfa === true) x.mfa = { totp: null, pending: null, recovery: [] };
+        x.failed = { count: 0, first_at: null, locked_until: null };
+        const n = revokeSessions((y) => y.aid === x.aid, "staff_reset");
+        const c = issueAccountCode(x, x.pw ? "reset" : "setup", 24 * 3600_000, who.operator);
+        return { ok: true, setup_code: formatOneTimeCode(c.code), expires_at: c.expires_at, mfa_reset: b.reset_mfa === true, sessions_revoked: n, staff: staffRow(x) };
+      });
+    }
     // ─── 总览 ───
     if (method === "GET" && p === "/v1/ops/overview")
       return read("overview.read", () => {
@@ -1777,16 +1918,29 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           return { ok: true, plan: planView(next), default_plan: catalog.default_plan };
         },
       };
-    if (method === "GET" && p === "/v1/ops/settings") return read("settings.read", () => ({ ...catalog.settings, mail: { configured: !!o.mailer, from: o.mailer?.from ?? null } }));
+    const settingsView = () => ({ ...catalog.settings, mail: { configured: !!o.mailer, from: o.mailer?.from ?? null }, staff_mfa: staffMfa, clients: { min_version: clients.min_version } });
+    if (method === "GET" && p === "/v1/ops/settings") return read("settings.read", settingsView);
     if (method === "PUT" && p === "/v1/ops/settings")
       return {
-        perm: "plan.manage",
+        perm: "settings.manage",
         action: "settings.update",
         tid: none,
         target: none,
         run: (b) => {
-          catalog.settings = validateSettings(b, catalog.plans, catalog.settings);
-          return { ok: true, ...catalog.settings, mail: { configured: !!o.mailer, from: o.mailer?.from ?? null } };
+          // staff_mfa 只读（部署配置 console.staff_mfa）；clients.min_version 可改（x.y.z 或 null）
+          if ("staff_mfa" in b && b.staff_mfa !== staffMfa) throw new CpError(400, "staff_mfa_readonly", "两步验证策略由部署配置决定（console.staff_mfa），不能在控制台改");
+          let mv = clients.min_version;
+          if ("clients" in b) {
+            const c = (b.clients && typeof b.clients === "object" ? b.clients : {}) as Record<string, unknown>;
+            if ("min_version" in c) {
+              if (c.min_version !== null && !(typeof c.min_version === "string" && SEMVER_RE.test(c.min_version))) throw new CpError(400, "min_version_invalid", "客户端最低版本须为 x.y.z（如 0.9.0），不设请留空");
+              mv = c.min_version as string | null;
+            }
+          }
+          const { staff_mfa: _m, clients: _c, mail: _ml, ...rest } = b;
+          catalog.settings = validateSettings(rest, catalog.plans, catalog.settings);
+          clients = { min_version: mv };
+          return { ok: true, ...settingsView() };
         },
       };
     // ─── 告警 ───
@@ -1824,7 +1978,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const start = cursor ? Math.max(0, list.findIndex((a) => a.aid === cursor) + 1) : 0;
         const page = list.slice(start, start + lim);
         return { accounts: page.map(accountRow), next: start + lim < list.length ? page[page.length - 1]!.aid : null, total: list.length };
-      });
+      }, "account.read");
     if (method === "POST" && p === "/v1/ops/accounts")
       return {
         perm: "account.manage",
@@ -1836,7 +1990,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           if (!firmSlugOf(t.tid)) throw new CpError(400, "tid_not_activatable", "租户编号须为 ten_<律所标识>");
           const email = normalizeEmail(b.email);
           if (!email) throw new CpError(400, "email_invalid", "邮箱格式不对");
-          if (accountByEmail.has(email)) throw new CpError(409, "email_taken", "这个邮箱已有账号");
+          if (emailTaken(email)) throw new CpError(409, "email_taken", "这个邮箱已有账号");
           if (!validName(b.name)) throw new CpError(400, "name_invalid", "姓名须为 1–40 个字符");
           const role = b.role === undefined ? "lawyer" : b.role;
           if (role !== "admin" && role !== "partner" && role !== "lawyer" && role !== "assistant") throw new CpError(400, "role_invalid", "角色须为 admin / partner / lawyer / assistant");
@@ -1858,7 +2012,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const tidOf = () => accounts.get(aid)?.tid ?? null;
       if (method === "GET" && sub === "")
         return {
-          perm: "tenant.read",
+          perm: "account.read",
           action: "account.read",
           tid: tidOf,
           target: tgt,
@@ -1875,7 +2029,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           },
         };
       if (method !== "POST") return null;
-      const w = (action: string, run: (a: AccountRecord, b: Record<string, unknown>, who: OpsAuthorized) => unknown): OpsSpec => ({ perm: "account.manage", action, tid: tidOf, target: tgt, run: (b, who) => run(accountOf(aid), b, who) });
+      // 客服（account.support）能解锁启用、发重置码、强制下线；停用与个人上限要 account.manage
+      const w = (action: string, run: (a: AccountRecord, b: Record<string, unknown>, who: StaffWho) => unknown, perm: CpPermission = "account.manage"): OpsSpec => ({ perm, action, tid: tidOf, target: tgt, run: (b, who) => run(accountOf(aid), b, who) });
       if (sub === "disable")
         return w("account.disable", (a, b, who) => {
           if (b.reason !== undefined && (typeof b.reason !== "string" || b.reason.length > 100)) throw new CpError(400, "reason_invalid", "原因至多 100 个字符");
@@ -1894,19 +2049,19 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           feedVersion += 1;
           accountAudit(a, "account.enable", who);
           return { ok: true, account: accountRow(a) };
-        });
+        }, "account.support");
       if (sub === "reset-code")
         return w("account.reset_code", (a, _b, who) => {
           const c = issueAccountCode(a, a.pw ? "reset" : "setup", (a.pw ? 30 * 60_000 : 24 * 3600_000), who.operator);
           accountAudit(a, "account.reset_code", who);
           return { ok: true, reset_code: formatOneTimeCode(c.code), expires_at: c.expires_at, purpose: a.pw ? "reset" : "setup" };
-        });
+        }, "account.support");
       if (sub === "sessions/revoke")
         return w("account.sessions_revoke", (a, _b, who) => {
           const n = revokeSessions((x) => x.aid === a.aid, "ops_revoked");
           accountAudit(a, "account.sessions_revoke", who);
           return { ok: true, revoked: n };
-        });
+        }, "account.support");
       if (sub === "limits")
         return w("account.limits", (a, b, who) => {
           const t = tenantOf(a.tid);
@@ -1937,15 +2092,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         if (status === "revoked") list = list.filter((d) => d.revoked_at);
         if (flag) list = list.filter((d) => d.flags.includes(flag));
         return { devices: list.sort((x, y) => (y.last_seen_on ?? "").localeCompare(x.last_seen_on ?? "")).slice(0, 2000) };
-      });
+      }, "account.read");
     // ─── 模型与路由 ───
-    if (method === "GET" && p === "/v1/ops/routing") return read("routing.read", () => routingView(routing, routingKeyId));
+    if (method === "GET" && p === "/v1/ops/routing") return read("routing.read", () => ({ ...routingView(routing, routingKeyId), routing_key: routingKey }), "route.read");
     const rp = /^\/v1\/ops\/routing\/providers\/([a-z][a-z0-9-]{1,31})(\/probe)?$/.exec(p);
     if (rp) {
       const id = rp[1]!;
       if (method === "PUT" && !rp[2]) return { perm: "route.manage", action: "routing.provider_upsert", tid: none, target: () => id, run: (b, who) => ({ ok: true, created: upsertProvider(routing, id, b, now(), who.operator, routingKeyId), routing: routingView(routing, routingKeyId) }) };
       if (method === "DELETE" && !rp[2]) return { perm: "route.manage", action: "routing.provider_delete", tid: none, target: () => id, run: (_b, who) => (deleteProvider(routing, id, now(), who.operator), { ok: true, routing: routingView(routing, routingKeyId) }) };
-      if (method === "POST" && rp[2]) return { perm: "route.manage", action: "routing.probe", tid: none, target: () => id, run: () => ({ ok: true, probe_requested_at: requestProbe(routing, id, now()) }) };
+      if (method === "POST" && rp[2]) return { perm: "route.manage", danger: false, action: "routing.probe", tid: none, target: () => id, run: () => ({ ok: true, probe_requested_at: requestProbe(routing, id, now()) }) };
       return null;
     }
     const rm = /^\/v1\/ops\/routing\/models\/([^/]{1,160})$/.exec(p);
@@ -1994,7 +2149,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const sum = emptyAgg();
         for (const r of rows) addAgg(sum, { requests: r.requests, tokens_in: r.tokens_in, tokens_cached: r.tokens_cached, tokens_out: r.tokens_out, value_micro: Math.round(r.value_cny * 1e6), cost_micro: Math.round(r.cost_cny * 1e6), errors: r.errors, estimated: r.estimated, unpriced: r.unpriced, uncosted: 0 });
         return { from: f.from, to: f.to, group, rows, totals: out("total", "合计", sum) };
-      });
+      }, "usage.read");
     // 历史用量补录（主文 §4.6）：升级前网关预写日志里的 settle 行（有上游给的真实 token 数）→ 账本行，按请求编号去重；
     // clear_legacy = 运营确认已交齐全部网关实例本期的日志，清掉该律所本期“旧口径冻结比例”，改按补录的真实用量算
     if (method === "POST" && p === "/v1/ops/usage/backfill")
@@ -2034,7 +2189,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       return read("usage.records", () => {
         const r = book.query(usageQuery(qs, 200));
         return { records: r.rows.map(usageRowView), next: r.next };
-      });
+      }, "usage.read");
     if (method === "GET" && p === "/v1/ops/usage/records.csv")
       return read("usage.export", (): CsvOut => {
         const f = usageQuery(qs, 200);
@@ -2046,9 +2201,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           if (!r.next) break;
           cursor = r.next;
         }
-        const head = ["时间", "请求编号", "客户端请求编号", "上游请求编号", "律所", "账号", "成员", "设备", "模型别名", "上游", "上游型号", "结果", "状态码", "输入token", "缓存token", "输出token", "用量来源", "售价金额(元)", "成本(元)", "价目版本", "耗时(毫秒)", "尝试次数"];
-        return { __csv: csv(head, rows.map((r) => [r.at, r.request_id, r.client_request_id, r.upstream_request_id, tenants.get(r.tid)?.name ?? r.tid, r.aid ? (accounts.get(r.aid)?.email ?? r.aid) : "", r.uid, r.dev, r.alias, r.provider, r.upstream_model, r.outcome, r.status, r.usage?.input ?? "", r.usage?.cached ?? "", r.usage?.output ?? "", r.usage_source, r.value_micro === null ? "" : cny(r.value_micro), r.cost_micro === null ? "" : cny(r.cost_micro), r.price_version, r.latency_ms, r.attempts.length])), filename: `usage-${f.from}-${f.to}.csv` };
-      });
+        const head = ["时间", "请求编号", "客户端请求编号", "上游请求编号", "律所", "账号", "成员", "设备", "模型别名", "上游", "上游型号", "结果", "状态码", "输入token", "缓存token", "输出token", "用量来源", "售价金额(元)", "成本(元)", "价目版本", "耗时(毫秒)", "尝试次数", "计费说明", "估算token(不计费)", "重试自"];
+        return { __csv: csv(head, rows.map((r) => [r.at, r.request_id, r.client_request_id, r.upstream_request_id, tenants.get(r.tid)?.name ?? r.tid, r.aid ? (accounts.get(r.aid)?.email ?? r.aid) : "", r.uid, r.dev, r.alias, r.provider, r.upstream_model, r.outcome, r.status, r.usage?.input ?? "", r.usage?.cached ?? "", r.usage?.output ?? "", r.usage_source, r.value_micro === null ? "" : cny(r.value_micro), r.cost_micro === null ? "" : cny(r.cost_micro), r.price_version, r.latency_ms, r.attempts.length, billingNote(r), r.partial_usage ? r.partial_usage.input + r.partial_usage.output : "", r.retry_of ?? ""])), filename: `usage-${f.from}-${f.to}.csv` };
+      }, "usage.read");
     // ─── 计费 ───
     if (method === "GET" && (p === "/v1/ops/billing" || p === "/v1/ops/billing.csv")) {
       const month = qs.get("period") ?? periodBounds("month", now()).key;
@@ -2059,14 +2214,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const totals = { seat_fee_cny: add("seat_fee_cny"), boost_fee_cny: add("boost_fee_cny"), revenue_cny: add("revenue_cny"), value_cny: add("value_cny"), cost_cny: add("cost_cny"), margin_cny: add("margin_cny"), requests: add("requests"), tokens: add("tokens") };
         if (p.endsWith(".csv")) return { __csv: csv(["律所", "租户编号", "套餐", "席位", "席位单价(元)", "席位费(元)", "加量(%)", "加量费(元)", "应收(元)", "用量价值(元)", "成本(元)", "毛利(元)", "请求数", "token"], rows.map((r) => [r.name, r.tid, r.plan.label, r.seats, r.seat_price_cny, r.seat_fee_cny, r.boost_pct, r.boost_fee_cny, r.revenue_cny, r.value_cny, r.cost_cny, r.margin_cny, r.requests, r.tokens])), filename: `billing-${month}.csv` } satisfies CsvOut;
         return { period: month, priced: catalog.plans.some((x) => x.seat_price_cny !== null), rows, totals };
-      });
+      }, "billing.read");
     }
     // ─── 系统 ───
     if (method === "GET" && p === "/v1/ops/system")
       return read("system.read", () => {
-        const r = o.opsInfo?.roster() ?? null;
-        return { deployment: o.opsInfo?.deployment ?? null, server_version: o.serverVersion ?? null, started_at: startedAt, usage_book: { rows_loaded: book.size, load_errors: book.loadErrors }, roster: r ? { version: r.version, expires_at: r.expires_at, operators: r.operators.map((x) => ({ id: x.id, perms: x.perms, keys: x.keys.map((k) => k.kid), revoked: !!x.revoked_at })) } : null, client_versions: cpMetrics().client_versions, quota_counters: { ...quotaCounts } };
-      });
+        const all = [...staff.values()];
+        // 第 46 批：控制面不再读运营名册（名册只给 support / relay / notify）；“系统”页显示人员概况
+        return { deployment: o.opsInfo?.deployment ?? null, server_version: o.serverVersion ?? null, started_at: startedAt, usage_book: { rows_loaded: book.size, load_errors: book.loadErrors }, roster: null, staff: { total: all.length, active: all.filter((x) => x.status === "active").length, sysadmins: all.filter((x) => x.status === "active" && x.roles.includes("sysadmin")).length, mfa_enabled: all.filter((x) => x.mfa.totp).length, mfa_policy: staffMfa }, clients: { min_version: clients.min_version }, client_versions: cpMetrics().client_versions, quota_counters: { ...quotaCounts } };
+      }, "system.read");
     // ─── 客户（律所） ───
     if (method === "POST" && p === "/v1/ops/tenants")
       return {
@@ -2131,7 +2287,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           };
         },
       };
-    if (method === "GET" && rest === "usage") return { perm: "tenant.read", action: "tenant.usage", tid: at, target: none, run: () => ({ tid, issued_at: iso(), ...tenantUsage(tenantOf(tid)) }) };
+    if (method === "GET" && rest === "usage") return { perm: "usage.read", action: "tenant.usage", tid: at, target: none, run: () => ({ tid, issued_at: iso(), ...tenantUsage(tenantOf(tid)) }) };
     if (method !== "POST") return null;
     if (rest === "activation-codes")
       return {
@@ -2255,123 +2411,159 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     return out;
   };
-  const OPS_AUTH_MESSAGE: Record<number, string> = { 401: "运营凭据无效、已吊销或已过期", 403: "没有这项运营权限", 503: "运营名册暂不可用（运营接口暂停，业务不受影响）" };
-  /** 账号密码登录相关的原因代码（对外不区分没有这个账号 / 密码错 / 已停用 / 不在名册）。 */
-  const OPS_AUTH_TEXT: Record<string, string> = {
-    ops_login_invalid: "账号或密码不对",
-    ops_login_throttled: "尝试过于频繁，请稍后再试",
-    ops_session_invalid: "登录已失效（超时、已退出或密码已被重置），请重新登录",
-    ops_password_current_wrong: "当前密码不正确",
-    ops_credentials_unavailable: "运营凭据库暂不可用（密码登录暂停），请联系安全管理员",
-  };
-  const opsAuthCp = (e: OpsAuthError): CpError => {
-    const info = e.info;
-    let msg = OPS_AUTH_TEXT[e.code] ?? OPS_AUTH_MESSAGE[e.status] ?? "运营凭据无效";
-    if (e.code === "ops_login_locked") msg = `尝试次数过多，已暂时锁定，请 ${Math.max(1, Math.ceil(Number(info?.retry_after_ms ?? 0) / 60_000))} 分钟后再试`;
-    if (e.code === "ops_password_weak") msg = `新密码需要：${Array.isArray(info?.rules) ? (info!.rules as string[]).join("、") : "至少 12 位，同时包含字母和数字"}`;
-    return new CpError(e.status, e.code, msg, info);
-  };
-  /** 登录、退出、改密码的内部访问审计（不记密码与令牌）；记不进去：登录不发会话、改密码之前不改。 */
-  const sessionAccess = (rec: { action: string; operator: string; roster_version: number; result: string; session?: string }) => opsAccess({ at: iso(), action: rec.action, operator: rec.operator, op_key: "password", roster_version: rec.roster_version, tid: null, target: null, result: rec.result, via: "password", ...(rec.session ? { session: rec.session } : {}) });
-  const sessionAccessQuiet = (rec: Parameters<typeof sessionAccess>[0]) => {
+  // ─── 第 46 批：平台人员会话（契约 §2）；运营接口鉴权 = Bearer 会话 → 人员 → 角色权限 → 危险操作复核 → 先记访问审计再执行 ───
+  /** 平台人员的内部访问审计（中软内部，不进律所流水）：不记密码、验证码与令牌。 */
+  const staffAccess = (st: { aid: string; email: string } | null, action: string, result: string, sid?: string, target: string | null = null) =>
+    opsAccess({ at: iso(), action, operator: st?.aid ?? "-", ...(st ? { email: st.email } : {}), op_key: "session", roster_version: 0, tid: null, target, result, via: "session", ...(sid ? { session: sid.slice(0, 12) } : {}) });
+  const staffAccessQuiet = (...a: Parameters<typeof staffAccess>) => {
     try {
-      sessionAccess(rec);
+      staffAccess(...a);
     } catch {
-      // 失败的尝试本来就被拒了
+      // 失败的尝试本来就被拒了；成功的写不进去由调用方处理
     }
   };
-  /**
-   * 账号密码登录（网页运营控制台；凭据与会话在 ops-auth，身份与权限仍按运营名册）：
-   * - POST /v1/ops/login {login, password}：不带凭据（核登录名与密码、限频与锁定都在守卫里），成功返回会话令牌（只此一次）；
-   * - POST /v1/ops/logout：吊销所带会话（幂等）；GET /v1/ops/me：本人身份与权限（私钥签名与会话都认）；
-   * - POST /v1/ops/password {current, next}：本人改密码（须带会话），成功后此人其他会话全部吊销。
-   * 返回 true = 已处理。
-   */
-  const opsSessionRoute = (req: IncomingMessage, res: ServerResponse, method: string, path: string, p: string, raw: string): boolean => {
-    if (!o.opsGuard) return false;
-    if (method === "POST" && p === "/v1/ops/login") {
-      if (!o.opsGuard.login) throw new CpError(404, "not_found", "没有这条路由");
-      const b = parseJson(raw);
-      let r: OpsLoginResult;
-      try {
-        r = o.opsGuard.login({ login: b.login, password: b.password, source: sourceOf(req) });
-      } catch (e) {
-        if (!(e instanceof OpsAuthError)) throw e;
-        sessionAccessQuiet({ action: "ops.login", operator: e.claimed ?? "-", roster_version: 0, result: `rejected:${e.code}` });
-        throw opsAuthCp(e);
-      }
-      try {
-        sessionAccess({ action: "ops.login", operator: r.operator, roster_version: r.roster_version, result: "ok", session: r.session });
-      } catch {
-        o.opsGuard.logout?.({ authorization: `Bearer ${r.token}` });
-        throw new CpError(503, "ops_access_log_unavailable", "运营访问审计写不进去");
-      }
-      send(res, 200, { token: r.token, operator: r.operator, login: r.login, perms: r.perms, roster_version: r.roster_version, expires_at: r.expires_at, idle_ms: r.idle_ms, must_change: r.must_change });
-      return true;
+  /** 请求里的会话（成员或人员）。人员会话闲置 30 分钟：每分钟往后推一次。 */
+  const anySession = (req: IncomingMessage): { s: SessionRecord; a: AccountRecord | null; st: StaffRecord | null } => {
+    const h = req.headers["x-kwl-session"] ?? (typeof req.headers.authorization === "string" ? /^Bearer\s+(kws1\..+)$/i.exec(req.headers.authorization)?.[1] : undefined);
+    if (h === undefined) throw new AuthError(401, "session_required", "请先登录");
+    const pt = parseSessionToken(Array.isArray(h) ? h[0] : h);
+    const x = pt ? sessions.get(pt.sid) : undefined;
+    if (!pt || !x || !sameHexStr(x.secret_hash, sha256Hex(pt.secret))) throw new AuthError(401, "session_invalid", "登录已失效，请重新登录");
+    if (!isStaffId(x.aid)) {
+      const r = sessionOf(req, true)!;
+      return { s: r.s, a: r.a, st: null };
     }
-    if (method === "POST" && p === "/v1/ops/logout") {
-      const r = o.opsGuard.logout ? o.opsGuard.logout(req.headers) : null;
-      if (r) sessionAccessQuiet({ action: "ops.logout", operator: r.operator, roster_version: 0, result: "ok", session: r.session });
-      send(res, 200, { ok: true });
-      return true;
+    if (!sessionLive(x, now())) throw new AuthError(401, "session_expired", "登录已过期（闲置超过 30 分钟或已满 12 小时），请重新登录");
+    const st = staff.get(x.aid);
+    if (!st) throw new AuthError(401, "session_invalid", "登录已失效，请重新登录");
+    if (st.status !== "active") throw new AuthError(403, "account_disabled", "账号已停用，请联系系统管理员");
+    const t0 = now();
+    if (t0 - Date.parse(x.last_seen_at) > 60_000) {
+      x.last_seen_at = iso(t0);
+      x.idle_expires_at = iso(Math.min(t0 + STAFF_SESSION_IDLE_MS, Date.parse(x.abs_expires_at)));
     }
-    if (method === "GET" && p === "/v1/ops/me") {
-      let who: OpsAuthorized;
-      try {
-        who = o.opsGuard.authorize(req.headers, { method, path, body: raw }, []);
-      } catch (e) {
-        if (e instanceof OpsAuthError) throw opsAuthCp(e);
-        throw e;
-      }
-      send(res, 200, { operator: who.operator, via: who.via, kid: who.via === "key" ? who.kid : null, login: who.login ?? null, perms: who.perms, roster_version: who.roster_version, expires_at: who.expires_at ?? null, idle_ms: who.idle_ms ?? null, must_change: who.must_change === true, password_login: !!o.opsGuard.login });
-      return true;
-    }
-    if (method === "POST" && p === "/v1/ops/password") {
-      if (!o.opsGuard.changePassword) throw new CpError(404, "not_found", "没有这条路由");
-      const b = parseJson(raw);
-      let r: ReturnType<NonNullable<OpsGuard["changePassword"]>>;
-      try {
-        r = o.opsGuard.changePassword(req.headers, b.current, b.next);
-      } catch (e) {
-        if (!(e instanceof OpsAuthError)) throw e;
-        sessionAccessQuiet({ action: "ops.password_change", operator: e.claimed ?? "-", roster_version: 0, result: `rejected:${e.code}` });
-        throw opsAuthCp(e);
-      }
-      sessionAccessQuiet({ action: "ops.password_change", operator: r.operator, roster_version: r.roster_version, result: "ok", session: r.session });
-      send(res, 200, { ok: true, other_sessions_revoked: r.other_sessions_revoked });
-      return true;
-    }
-    return false;
+    return { s: x, a: null, st };
   };
+  const staffNetworkOk = (req: IncomingMessage): boolean => !o.staffSourceAllowed || o.staffSourceAllowed(sourceOf(req));
+  const staffRow = (x: StaffRecord) => ({ ...staffView(x, staffMfa), locked: locked(x, now()) > 0, sessions_active: liveSessionsOf(x.aid).length });
+  const activeSysadmins = (exceptAid?: string) => [...staff.values()].filter((x) => x.status === "active" && x.roles.includes("sysadmin") && x.aid !== exceptAid);
+  const newStaffRecord = (x: { email: string; name: string; roles: PlatformRole[]; by: string; pw?: ReturnType<typeof hashPassword> | null }): StaffRecord => {
+    const rec: StaffRecord = { aid: newId("stf"), email: x.email, name: x.name.trim(), roles: [...x.roles], status: "active", disabled_reason: null, pw: x.pw ?? null, pw_changed_at: x.pw ? iso() : null, created_at: iso(), created_by: x.by, last_login_at: null, failed: { count: 0, first_at: null, locked_until: null }, mfa: { totp: null, pending: null, recovery: [] } };
+    staff.set(rec.aid, rec);
+    staffByEmail.set(rec.email, rec.aid);
+    return rec;
+  };
+  const staffOf = (aid: string): StaffRecord => {
+    const x = staff.get(aid);
+    if (!x) throw new CpError(404, "staff_unknown", "没有这位平台人员");
+    return x;
+  };
+  /** 第二因素：6 位动态码（同一步不得重用）或 12 位恢复码（用过即删）。 */
+  const secondFactorOk = (st: StaffRecord, code: unknown): boolean => {
+    if (typeof code !== "string") return false;
+    const c = code.replace(/[\s-]/g, "").toUpperCase();
+    if (/^\d{6}$/.test(c)) {
+      if (!st.mfa.totp) return false;
+      const step = verifyTotp(st.mfa.totp.secret, c, now(), st.mfa.totp.last_step);
+      if (step === null) return false;
+      st.mfa.totp.last_step = step;
+      return true;
+    }
+    const rc = normalizeOneTimeCode(c);
+    if (!rc || rc.length !== 12) return false;
+    const mac = recoveryMac(recoveryPepper, st.aid, rc);
+    const i = st.mfa.recovery.findIndex((h) => sameHexStr(h, mac));
+    if (i < 0) return false;
+    st.mfa.recovery.splice(i, 1);
+    return true;
+  };
+  const staffSessionView = (x: SessionRecord, cur: string | null) => ({ ...sessionView(x, cur), restricted: x.restricted ?? null, reauth_until: x.reauth_until ?? null });
+  const staffAuthResult = (st: StaffRecord, token: string, x: SessionRecord) => ({
+    ok: true,
+    kind: "staff" as const,
+    session_token: token,
+    session: { sid: x.sid, kind: x.kind, idle_expires_at: x.idle_expires_at, restricted: x.restricted ?? null },
+    account: staffView(st, staffMfa),
+  });
+  /** 密码 + 第二因素都过了（或未绑定）：发会话。访问审计写不进去即不发。 */
+  const finishStaffLogin = (res: ServerResponse, st: StaffRecord, client: unknown, restricted: "mfa_enroll" | null) => {
+    st.failed = { count: 0, first_at: null, locked_until: null };
+    st.last_login_at = iso();
+    const { token, rec } = newSession(st, "web", null, client, { restricted });
+    try {
+      staffAccess(st, "staff.login", restricted ? "ok:restricted" : "ok", rec.sid);
+    } catch {
+      sessions.delete(rec.sid);
+      throw new CpError(503, "ops_access_log_unavailable", "访问审计写不进去，暂时不能登录");
+    }
+    return send(res, 200, staffAuthResult(st, token, rec));
+  };
+  /** 密码对了之后换会话的一次性票据（只存摘要；5 分钟；至多试 5 次；只在内存——重启即需重新输入密码）。 */
+  const mfaTickets = new Map<string, { aid: string; exp: number; tries: number; client: unknown }>();
+  const staffLogin = (req: IncomingMessage, res: ServerResponse, st: StaffRecord, b: Record<string, unknown>) => {
+    const lk = locked(st, now());
+    if (lk) throw new CpError(423, "account_locked", `密码错误次数过多，请 ${Math.ceil(lk / 60)} 分钟后再试`, { retry_after_s: lk });
+    if (!verifyPassword(b.password, st.pw)) {
+      noteFailure(st, now());
+      persistNow();
+      staffAccessQuiet(st, "staff.login", "rejected:auth_invalid");
+      throw new CpError(401, "auth_invalid", st.pw ? "邮箱或密码不正确" : "这个账号还没有设置密码：请用系统管理员给你的设置码设置密码");
+    }
+    // 人员专属的拒绝都在密码核对之后（不让人据此判断某个邮箱是不是平台人员）
+    if (st.status !== "active") throw new CpError(403, "account_disabled", "账号已停用，请联系系统管理员");
+    if (clientInfo(b.client).platform !== "web") throw new CpError(403, "staff_client_forbidden", "平台人员账号只能在网页控制台登录，不能登录桌面客户端");
+    if (!staffNetworkOk(req)) {
+      staffAccessQuiet(st, "staff.login", "rejected:staff_network");
+      throw new CpError(403, "staff_network", "平台人员只能从运维网段登录：请经堡垒机打开控制台");
+    }
+    if (st.mfa.totp) {
+      // 失败计数不在这里清零：要等第二因素也过了（否则知道密码的人可以无限试动态码）
+      const t0 = now();
+      for (const [k, v] of mfaTickets) if (v.exp <= t0) mfaTickets.delete(k);
+      const secret = randomBytes(32).toString("base64url");
+      mfaTickets.set(sha256Hex(secret), { aid: st.aid, exp: t0 + MFA_TOKEN_MS, tries: 0, client: b.client });
+      return sendRaw(res, 200, { ok: true, mfa_required: true, mfa_token: `kwm1.${secret}`, methods: ["totp", "recovery"], expires_at: iso(t0 + MFA_TOKEN_MS) });
+    }
+    return finishStaffLogin(res, st, b.client, staffMfa === "required" ? "mfa_enroll" : null);
+  };
+  const OPS_LOGIN_GONE = new Set(["/v1/ops/login", "/v1/ops/logout", "/v1/ops/password"]);
   const opsRoute = (req: IncomingMessage, res: ServerResponse, method: string, path: string, p: string, raw: string): void => {
-    if (!o.opsGuard) throw new CpError(404, "not_found", "没有这条路由");
-    // 运营路径按请求行原样匹配（不认点段与编码）：生产入口按原样路径判断来源网段，规范化后才落到运营路由的写法一律不认。
-    // 第 44 批：GET 可带查询串（筛选与分页）；签名覆盖完整路径（含查询串，原样）
+    // 运营路径按请求行原样匹配（不认点段与编码）：生产入口按原样路径判断来源网段，规范化后才落到运营路由的写法一律不认。GET 可带查询串
     const qi = path.indexOf("?");
     const pathOnly = qi < 0 ? path : path.slice(0, qi);
     if (pathOnly !== p || (qi >= 0 && method !== "GET")) throw new CpError(404, "not_found", "没有这条路由");
-    if (opsSessionRoute(req, res, method, path, p, raw)) return;
+    if (OPS_LOGIN_GONE.has(p)) throw new CpError(410, "ops_login_removed", "运营登录已并入统一账号：请在控制台用邮箱和密码登录");
+    if (!staffNetworkOk(req)) throw new CpError(403, "staff_network", "平台运营功能只对运维网段开放：请经堡垒机访问");
+    let cur: ReturnType<typeof anySession>;
+    try {
+      cur = anySession(req);
+    } catch (e) {
+      return authErr(e);
+    }
+    if (!cur.st) throw new CpError(403, "staff_required", "这是平台运营功能，律师账号不能使用");
+    const { s, st } = cur;
+    if (s.restricted === "mfa_enroll") throw new CpError(403, "mfa_enroll_required", "请先绑定两步验证（控制台“我的 → 安全”）");
+    const perms = permsOf(st.roles);
+    const who: StaffWho = { operator: st.aid, email: st.email, perms, sid: s.sid };
+    if (method === "GET" && p === "/v1/ops/me") return send(res, 200, { ok: true, kind: "staff", account: staffView(st, staffMfa), session: staffSessionView(s, s.sid), restricted: null });
     const spec = opsSpec(method, p, new URLSearchParams(qi < 0 ? "" : path.slice(qi + 1)));
     if (!spec) throw new CpError(404, "not_found", "没有这条路由");
-    let who: OpsAuthorized;
-    try {
-      who = o.opsGuard.authorize(req.headers, { method, path, body: raw }, spec.perm);
-    } catch (e) {
-      if (e instanceof OpsAuthError) throw opsAuthCp(e);
-      throw e;
-    }
-    const b = method === "GET" ? {} : parseJson(raw);
-    const rec = { action: spec.action, operator: who.operator, op_key: who.kid, roster_version: who.roster_version, tid: spec.tid(b), target: spec.target(b), ...(who.via === "password" ? { via: "password" as const, ...(who.session ? { session: who.session } : {}) } : {}) };
-    // 初始密码或被重置后：只能改密码、看本人身份、退出（其余运营接口一律 403）
-    if (who.must_change) {
+    const base = { action: spec.action, operator: st.aid, email: st.email, op_key: "session", roster_version: 0, via: "session" as const, session: s.sid.slice(0, 12) };
+    const reject = (code: string, err: CpError): never => {
       try {
-        opsAccess({ at: iso(), ...rec, result: "rejected:password_change_required" });
+        opsAccess({ at: iso(), ...base, tid: null, target: null, result: `rejected:${code}` });
       } catch {
         // 本来就拒绝
       }
-      throw new CpError(403, "password_change_required", "首次登录（或密码被重置后）须先修改密码");
-    }
-    // 先记“已请求”：记不进去即不执行（与支持服务同一口径；读操作只有这一处审计）
+      throw err;
+    };
+    // 先鉴权（权限、复核）后解析请求体（复核 RA10B-21）
+    if (spec.perm !== null && !perms.includes(spec.perm)) reject("perm_denied", new CpError(403, "perm_denied", "没有这项权限：请联系系统管理员调整你的角色", { need: spec.perm }));
+    const danger = spec.danger ?? (method !== "GET" && spec.perm !== null && DANGER_PERMISSIONS.has(spec.perm));
+    if (danger && !(s.reauth_until && Date.parse(s.reauth_until) > now())) reject("reauth_required", new CpError(401, "reauth_required", "这是敏感操作：请重新输入密码和两步验证码确认后再试"));
+    const b = method === "GET" ? {} : parseJson(raw);
+    const rec = { ...base, tid: spec.tid(b), target: spec.target(b) };
+    // 先记“已请求”：记不进去即不执行（读操作只有这一处审计）
     try {
       opsAccess({ at: iso(), ...rec, result: "requested" });
     } catch {
@@ -2379,12 +2571,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     let out: unknown;
     try {
-      out = asOperator(who.operator, () => spec.run(b, who));
+      out = asOperator(st.aid, () => spec.run(b, who));
     } catch (e) {
       try {
         opsAccess({ at: iso(), ...rec, result: `rejected:${e instanceof CpError || e instanceof QuotaError || e instanceof RoutingError || e instanceof PlanError ? e.code : "error"}` });
       } catch {
-        // 结果补记不进去：“已请求”一条已在，运营审计流水另有结果
+        // 结果补记不进去：“已请求”一条已在
       }
       throw e;
     }
@@ -2393,14 +2585,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     } catch {
       // 同上
     }
-    if (out && typeof out === "object" && "__csv" in (out as object)) {
-      const c = out as { __csv: string; filename: string };
-      persistNow();
-      res.writeHead(200, { "content-type": "text/csv; charset=utf-8", "content-length": Buffer.byteLength(c.__csv), "cache-control": "no-store", "content-disposition": `attachment; filename="${c.filename.replace(/[^A-Za-z0-9._-]/g, "_")}"` });
-      res.end(c.__csv);
-      return;
-    }
+    if (out && typeof out === "object" && "__csv" in (out as object)) return sendCsv(res, out as CsvOut);
     send(res, 200, out);
+  };
+  const sendCsv = (res: ServerResponse, c: CsvOut) => {
+    persistNow();
+    res.writeHead(200, { "content-type": "text/csv; charset=utf-8", "content-length": Buffer.byteLength(c.__csv), "cache-control": "no-store", "content-disposition": `attachment; filename="${c.filename.replace(/[^A-Za-z0-9._-]/g, "_")}"` });
+    res.end(c.__csv);
   };
 
   // ─── 第 44 批：账号接口（/v1/auth/*；不需要设备身份，已激活设备登录时可带设备签名把会话绑到本机） ───
@@ -2409,11 +2600,97 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     throw e;
   };
   const accountMark = (res: ServerResponse, a: AccountRecord, action: string) => auditCtx.set(res, { entry: { tid: a.tid, actor: { kind: "account", id: a.aid }, action, target: a.aid }, written: false });
+  /** 客户端最低版本（契约 §2.5）：桌面客户端带的版本低于它 → 426；网页与没报版本的不拦。 */
+  const minVersionGate = (client: unknown): void => {
+    const c = clientInfo(client);
+    if (!clients.min_version || c.platform === "web" || !c.version) return;
+    if (compareVersion(c.version, clients.min_version) < 0) throw new CpError(426, "client_outdated", `客户端版本过旧，请升级到 ${clients.min_version} 或以上`, { min_version: clients.min_version });
+  };
+  /** 平台人员的 /v1/auth/*（会话已核验）：本人、退出、改密码、吊销会话、两步验证、复核。受限会话只能看本人、绑定、退出。 */
+  const staffAuthRoute = (res: ServerResponse, method: string, p: string, raw: string, s: SessionRecord, st: StaffRecord): void => {
+    const RESTRICTED_OK = new Set(["GET /v1/auth/me", "POST /v1/auth/logout", "POST /v1/auth/mfa/totp/setup", "POST /v1/auth/mfa/totp/enable"]);
+    if (s.restricted === "mfa_enroll" && !RESTRICTED_OK.has(`${method} ${p}`)) throw new CpError(403, "mfa_enroll_required", "请先绑定两步验证（控制台“我的 → 安全”）");
+    const pwOk = (v: unknown): boolean => {
+      const lk = locked(st, now());
+      if (lk) throw new CpError(423, "account_locked", `尝试次数过多，请 ${Math.ceil(lk / 60)} 分钟后再试`, { retry_after_s: lk });
+      return verifyPassword(v, st.pw);
+    };
+    const failed = (code: string, message: string): never => {
+      noteFailure(st, now());
+      persistNow();
+      staffAccessQuiet(st, `staff.${p.slice("/v1/auth/".length).replace(/\//g, "_")}`, `rejected:${code}`, s.sid);
+      throw new CpError(401, code, message);
+    };
+    if (method === "GET" && p === "/v1/auth/me") return send(res, 200, { ok: true, kind: "staff", account: staffView(st, staffMfa), session: staffSessionView(s, s.sid), sessions: liveSessionsOf(st.aid).map((x) => staffSessionView(x, s.sid)), restricted: s.restricted ?? null });
+    if (method === "POST" && p === "/v1/auth/logout") {
+      revokeSessions((x) => x.sid === s.sid, "logout");
+      staffAccessQuiet(st, "staff.logout", "ok", s.sid);
+      return send(res, 200, { ok: true });
+    }
+    if (method === "POST" && p === "/v1/auth/password") {
+      const b = parseJson(raw);
+      if (!pwOk(b.current)) failed("auth_invalid", "当前密码不正确");
+      const probs = passwordProblems(b.next, st.email);
+      if (probs.length) throw new CpError(400, "password_weak", `密码需要：${probs.join("、")}`, { rules: probs });
+      st.pw = hashPassword(String(b.next));
+      st.pw_changed_at = iso();
+      const n = revokeSessions((x) => x.aid === st.aid && x.sid !== s.sid, "password_changed");
+      staffAccessQuiet(st, "staff.password_change", "ok", s.sid);
+      return send(res, 200, { ok: true, other_sessions_revoked: n });
+    }
+    const sr = /^\/v1\/auth\/sessions\/(ses_[A-Za-z0-9_-]{16})\/revoke$/.exec(p);
+    if (method === "POST" && sr) {
+      const x = sessions.get(sr[1]!);
+      if (!x || x.aid !== st.aid) throw new CpError(404, "session_unknown", "没有这个登录");
+      revokeSessions((y) => y.sid === x.sid, "user_revoked");
+      return send(res, 200, { ok: true });
+    }
+    if (method === "POST" && p === "/v1/auth/mfa/totp/setup") {
+      if (st.mfa.totp) throw new CpError(409, "mfa_already_enabled", "已绑定两步验证：要换手机请先解绑，或请系统管理员重置");
+      const secret = newTotpSecret();
+      st.mfa.pending = { secret, created_at: iso() };
+      return send(res, 200, { ok: true, secret, otpauth_uri: otpauthUri(secret, st.email), expires_at: iso(now() + MFA_PENDING_MS) });
+    }
+    if (method === "POST" && p === "/v1/auth/mfa/totp/enable") {
+      const b = parseJson(raw);
+      const pend = st.mfa.pending;
+      if (!pend || Date.parse(pend.created_at) + MFA_PENDING_MS <= now()) throw new CpError(409, "mfa_setup_required", "请先生成绑定二维码（15 分钟内有效）");
+      const step = verifyTotp(pend.secret, typeof b.code === "string" ? b.code.replace(/\s/g, "") : b.code, now(), null);
+      if (step === null) failed("mfa_invalid", "验证码不正确：请核对手机时间，输入当前显示的 6 位码");
+      const codes = newRecoveryCodes();
+      st.mfa = { totp: { secret: pend.secret, enabled_at: iso(), last_step: step }, pending: null, recovery: codes.map((c) => recoveryMac(recoveryPepper, st.aid, c)) };
+      // 绑定成功：本会话解除受限，并视为刚复核过（密码与动态码都刚验过）
+      s.restricted = null;
+      s.reauth_until = iso(now() + REAUTH_MS);
+      staffAccessQuiet(st, "staff.mfa_enable", "ok", s.sid);
+      return send(res, 200, { ok: true, recovery_codes: codes.map(formatOneTimeCode) });
+    }
+    if (method === "POST" && p === "/v1/auth/mfa/totp/disable") {
+      if (staffMfa === "required") throw new CpError(403, "mfa_required_by_policy", "按部署策略，平台人员必须启用两步验证，不能解绑（换手机请系统管理员重置）");
+      const b = parseJson(raw);
+      if (!st.mfa.totp) throw new CpError(409, "mfa_not_enabled", "还没有绑定两步验证");
+      if (!pwOk(b.password) || !secondFactorOk(st, b.code)) failed("auth_invalid", "密码或验证码不正确");
+      st.mfa = { totp: null, pending: null, recovery: [] };
+      staffAccessQuiet(st, "staff.mfa_disable", "ok", s.sid);
+      return send(res, 200, { ok: true });
+    }
+    if (method === "POST" && p === "/v1/auth/reauth") {
+      const b = parseJson(raw);
+      if (!pwOk(b.password) || (st.mfa.totp !== null && !secondFactorOk(st, b.code))) failed("reauth_invalid", st.mfa.totp ? "密码或验证码不正确" : "密码不正确");
+      st.failed = { count: 0, first_at: null, locked_until: null };
+      s.reauth_until = iso(now() + REAUTH_MS);
+      staffAccessQuiet(st, "staff.reauth", "ok", s.sid);
+      return send(res, 200, { ok: true, reauth_until: s.reauth_until });
+    }
+    if (/^\/v1\/auth\/devices\//.test(p)) throw new CpError(403, "member_only", "平台人员账号没有电脑可解绑");
+    throw new CpError(404, "not_found", "没有这条路由");
+  };
   const authRoute = async (req: IncomingMessage, res: ServerResponse, method: string, path: string, p: string, raw: string): Promise<void> => {
     const src = sourceOf(req);
     if (method === "POST" && p === "/v1/auth/register") {
       if (!authAllowed(src, "register", 10)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
       const b = parseJson(raw);
+      minVersionGate(b.client);
       const set = catalog.settings;
       if (set.registration === "closed") throw new CpError(403, "registration_closed", "暂不开放注册，请联系中软开通");
       const email = normalizeEmail(b.email);
@@ -2421,7 +2698,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (!validName(b.name)) throw new CpError(400, "name_invalid", "请填写姓名（1–40 个字符）");
       const probs = passwordProblems(b.password, email);
       if (probs.length) throw new CpError(400, "password_weak", `密码需要：${probs.join("、")}`, { rules: probs });
-      if (accountByEmail.has(email)) throw new CpError(409, "email_taken", "这个邮箱已注册，请直接登录（忘记密码可找回）");
+      if (emailTaken(email)) throw new CpError(409, "email_taken", "这个邮箱已注册，请直接登录（忘记密码可找回）");
       const name = String(b.name).trim();
       let t: TenantRecord;
       let role: AccountRecord["role"];
@@ -2476,7 +2753,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (method === "POST" && p === "/v1/auth/login") {
       if (!authAllowed(src, "login", 20)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
       const b = parseJson(raw);
+      minVersionGate(b.client);
       const email = normalizeEmail(b.email);
+      const stf = email ? staff.get(staffByEmail.get(email) ?? "") : undefined;
+      if (stf) return staffLogin(req, res, stf, b);
       const a = email ? accounts.get(accountByEmail.get(email) ?? "") : undefined;
       if (a) {
         const lk = locked(a, now());
@@ -2522,7 +2802,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (!authAllowed(src, "reset-confirm", 10)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
       const b = parseJson(raw);
       const email = normalizeEmail(b.email);
-      const a = email ? accounts.get(accountByEmail.get(email) ?? "") : undefined;
+      // 成员账号或平台人员（第 46 批：人员的设置码 / 重置码同一张码表）；停用的人员不能借此重新进来
+      const stf = email ? staff.get(staffByEmail.get(email) ?? "") : undefined;
+      const a: AccountRecord | StaffRecord | undefined = (email ? accounts.get(accountByEmail.get(email) ?? "") : undefined) ?? (stf && stf.status === "active" ? stf : undefined);
       const code = normalizeOneTimeCode(b.code);
       const fail = () => new CpError(400, "code_invalid", "验证码或重置码不正确或已过期");
       if (!a || !code) throw fail();
@@ -2540,23 +2822,72 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       a.failed = { count: 0, first_at: null, locked_until: null };
       hit.used_at = iso();
       revokeSessions((x) => x.aid === a.aid, "password_reset");
-      accountMark(res, a, hit.purpose === "setup" ? "account.password_setup" : "account.password_reset");
+      if (isStaffId(a.aid)) {
+        staffAccessQuiet(a as StaffRecord, hit.purpose === "setup" ? "staff.password_setup" : "staff.password_reset", "ok");
+        consumeBootstrapFile(a.email);
+        return send(res, 200, { ok: true, kind: "staff" });
+      }
+      accountMark(res, a as AccountRecord, hit.purpose === "setup" ? "account.password_setup" : "account.password_reset");
       return send(res, 200, { ok: true });
     }
-    // 以下要求会话
-    let me: { s: SessionRecord; a: AccountRecord };
+    // 平台人员第二步：密码对了之后用一次性票据 + 动态码（或恢复码）换会话
+    if (method === "POST" && p === "/v1/auth/mfa/verify") {
+      if (!authAllowed(src, "login", 20)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
+      const b = parseJson(raw);
+      const m = typeof b.mfa_token === "string" ? /^kwm1\.([A-Za-z0-9_-]{43})$/.exec(b.mfa_token) : null;
+      const key = m ? sha256Hex(m[1]!) : "";
+      const tk = m ? mfaTickets.get(key) : undefined;
+      const st = tk ? staff.get(tk.aid) : undefined;
+      if (!tk || tk.exp <= now() || !st || st.status !== "active") {
+        if (tk) mfaTickets.delete(key);
+        throw new CpError(401, "mfa_token_invalid", "登录已超时，请重新输入邮箱和密码");
+      }
+      const lk = locked(st, now());
+      if (lk) {
+        mfaTickets.delete(key);
+        throw new CpError(423, "account_locked", `尝试次数过多，请 ${Math.ceil(lk / 60)} 分钟后再试`, { retry_after_s: lk });
+      }
+      if (!staffNetworkOk(req)) throw new CpError(403, "staff_network", "平台人员只能从运维网段登录：请经堡垒机打开控制台");
+      if (!secondFactorOk(st, b.code)) {
+        noteFailure(st, now());
+        tk.tries += 1;
+        if (tk.tries >= 5) mfaTickets.delete(key);
+        persistNow();
+        staffAccessQuiet(st, "staff.login_mfa", "rejected:mfa_invalid");
+        throw new CpError(401, "mfa_invalid", "验证码不正确：请输入手机上的 6 位动态码，或一个 12 位恢复码");
+      }
+      mfaTickets.delete(key);
+      return finishStaffLogin(res, st, tk.client, null);
+    }
+    // 以下要求会话（成员账号或平台人员）
+    let cur: ReturnType<typeof anySession>;
     try {
-      me = sessionOf(req, true)!;
+      cur = anySession(req);
     } catch (e) {
       return authErr(e);
     }
-    const { s, a } = me;
+    if (cur.st) return staffAuthRoute(res, method, p, raw, cur.s, cur.st);
+    const s = cur.s;
+    const a = cur.a!;
+    if (p.startsWith("/v1/auth/mfa/")) throw new CpError(403, "mfa_staff_only", "两步验证目前只对平台人员开放");
+    if (method === "POST" && p === "/v1/auth/reauth") {
+      const b = parseJson(raw);
+      if (!verifyPassword(b.password, a.pw)) {
+        noteFailure(a, now());
+        persistNow();
+        throw new CpError(401, "reauth_invalid", "密码不正确");
+      }
+      s.reauth_until = iso(now() + REAUTH_MS);
+      return send(res, 200, { ok: true, reauth_until: s.reauth_until });
+    }
     if (method === "GET" && p === "/v1/auth/me") {
       const t = tenantOf(a.tid);
       const devs = accountDevices(a);
       const dev = s.device_id ? (t.devices.get(s.device_id) ?? null) : null;
       return sendRaw(res, 200, {
         ok: true,
+        kind: "member",
+        firm: { tid: t.tid, slug: t.tid.slice(4), name: t.name ?? t.tid.slice(4), role: a.role },
         account: { ...accountView(a, { org: orgOf(a.tid) }), device_limit: deviceLimitOf(a) },
         session: sessionView(s, s.sid),
         onboarding: dev && !dev.revoked_at ? { state: "ready", tid: t.tid, device_id: dev.cert.deviceId } : null,
@@ -2619,6 +2950,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
 
     if (p === "/v1/ops" || p.startsWith("/v1/ops/")) return opsRoute(req, res, method, path, p, raw);
     if (p.startsWith("/v1/auth/")) return authRoute(req, res, method, path, p, raw);
+    // 第 46 批：版本与策略（无鉴权）；成员网页接口
+    if (method === "GET" && p === "/v1/meta") return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration, staff_mfa: staffMfa });
+    if (p.startsWith("/v1/me/") || p.startsWith("/v1/firm/")) return memberRoute(req, res, method, p, url, raw);
 
     // ─── 开通：律所根公钥入组（G0：创始设备持根私钥签名证明；生产为开通流程） ───
     if (method === "POST" && p === "/v1/enroll") {
@@ -2920,6 +3254,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
       accountGate(req, t, dev);
+      // 客户端最低版本（契约 §2.5）：已登录的旧客户端在续期席位令牌时拿到 426
+      if (clients.min_version && dev.client_version && dev.client_version !== "legacy" && compareVersion(dev.client_version, clients.min_version) < 0) throw new CpError(426, "client_outdated", `客户端版本过旧，请升级到 ${clients.min_version} 或以上`, { min_version: clients.min_version });
       return send(res, 200, await seatToken(t, dev, seat.sid, seatTtl));
     }
     // 支持服务专用的短期凭据（第 9 批复核 S9B-03）：受众只有 "support"、15 分钟；网关、检索、分发拒收——诊断包上传不再把通用席位令牌交给支持域
@@ -3212,6 +3548,304 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     throw new CpError(404, "not_found", "没有这条路由");
   }
 
+  // ═══ 第 46 批：成员网页接口（契约 §3.2、§3.3）：/v1/me/*（成员本人）、/v1/firm/*（admin 读写、partner 只读，其余 403） ═══
+  const aggOut = (x: Agg) => ({ tokens_in: x.tokens_in, tokens_cached: x.tokens_cached, tokens_out: x.tokens_out, requests: x.requests, value_cny: x.requests && x.unpriced && !x.value_micro ? null : cny(x.value_micro), errors: x.errors });
+  const modelLabel = (alias: string) => routing.models.find((m) => m.alias === alias)?.label ?? alias;
+  const daysOf = (url: URL) => Math.min(90, Math.max(1, Number(url.searchParams.get("days") ?? "30") || 30));
+  const memberLabel = (t: TenantRecord, uid: string | null) => {
+    const acc = uid ? accountOfMember(t.tid, uid) : undefined;
+    return acc ? acc.name : uid ? uid.replace(`usr_${t.tid.slice(4)}_`, "") : "（未关联成员）";
+  };
+  const firmRecordView = (t: TenantRecord, r: UsageRow) => ({ at: r.at, request_id: r.request_id, member: memberLabel(t, r.uid), aid: r.aid, alias: r.alias, label: r.alias ? modelLabel(r.alias) : null, tokens_in: r.usage?.input ?? 0, tokens_cached: r.usage?.cached ?? 0, tokens_out: r.usage?.output ?? 0, value_cny: r.value_micro === null ? null : cny(r.value_micro), usage_source: r.usage_source, outcome: r.outcome, partial: r.partial === true, note: billingNote(r) });
+  const memberRoute = async (req: IncomingMessage, res: ServerResponse, method: string, p: string, url: URL, raw: string): Promise<void> => {
+    let me: { s: SessionRecord; a: AccountRecord };
+    try {
+      me = sessionOf(req, true)!;
+    } catch (e) {
+      return authErr(e);
+    }
+    const a = me.a;
+    const t = tenantOf(a.tid);
+    const { q, ctx } = qOf(t);
+    const unit = ctx.plan.quota_unit;
+    if (method === "GET" && p === "/v1/me/usage") {
+      const uid = uidOfAccount(a);
+      const agg = book.member(t.tid, uid, q.period_from, q.period_to);
+      const ml = memberLimitOf(ctx, uid);
+      const denom = ml.limit ?? seatQuotaUnits(ctx.plan);
+      const u = usedIn(unit, agg);
+      const view = quotaView(q, ctx, { detail: false, uid, sid: null, memberName: () => null });
+      const pb = periodBounds(ctx.plan.period, now());
+      const models = [...book.memberModels(t.tid, uid, q.period_from, q.period_to)];
+      const allTok = models.reduce((n, [, x]) => n + x.tokens_in + x.tokens_out, 0);
+      return send(res, 200, {
+        period: { key: q.period_key, start: pb.start, resets_at: pb.resets_at },
+        unit,
+        own: { used_ratio: ratio(u, denom), used: unitOut(unit, u), total: unitOut(unit, denom), denominator: ml.limit !== null ? ml.source : "seat_quota", enforced: ml.limit !== null, requests: agg.requests, value_cny: agg.requests && agg.unpriced && !agg.value_micro ? null : cny(agg.value_micro), estimated_share: agg.requests ? Math.round((agg.estimated / agg.requests) * 1000) / 1000 : 0 },
+        firm: { used_ratio: view.firm.used_ratio, remaining_ratio: view.firm.remaining_ratio, paused: view.firm.paused, cap_pct: view.firm.cap_pct },
+        burst: view.burst ? { hours: view.burst.hours, used_ratio: view.burst.used_ratio, resets_at: view.burst.resets_at } : null,
+        daily: lastDays(daysOf(url)).map((day) => ({ day, ...aggOut(book.member(t.tid, uid, day, day)) })),
+        by_model: models.map(([alias, x]) => ({ alias, label: modelLabel(alias), tokens: x.tokens_in + x.tokens_out, requests: x.requests, share: ratio(x.tokens_in + x.tokens_out, allTok) })).sort((x, y) => y.tokens - x.tokens),
+      });
+    }
+    if (!p.startsWith("/v1/firm/")) throw new CpError(404, "not_found", "没有这条路由");
+    const write = method !== "GET";
+    if (!(a.role === "admin" || (a.role === "partner" && !write))) throw new CpError(403, "firm_role_required", write ? "只有本所管理员可以做这项操作" : "只有本所管理员和合伙人可以查看本所管理信息");
+    const tAcc = [...accounts.values()].filter((x) => x.tid === t.tid).sort((x, y) => x.created_at.localeCompare(y.created_at));
+    const tot = totalsOf(q, ctx);
+    const mark = (action: string, target: string | null, detail?: Record<string, number>) => auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "account", id: a.aid }, action, target, ...(detail ? { detail } : {}) }, written: false });
+    const memberRow = (x: AccountRecord) => {
+      const ag = book.member(t.tid, uidOfAccount(x), q.period_from, q.period_to);
+      const u = usedIn(unit, ag);
+      return {
+        aid: x.aid,
+        email: x.email,
+        name: x.name,
+        role: x.role,
+        status: x.status,
+        disabled_reason: x.disabled_reason,
+        locked_s: locked(x, now()),
+        member_slug: x.member_slug,
+        last_login_at: x.last_login_at,
+        created_via: x.created_via,
+        has_password: x.pw !== null,
+        device_limit: deviceLimitOf(x),
+        device_limit_custom: x.device_limit,
+        quota_limit: x.quota_limit,
+        sessions_active: liveSessionsOf(x.aid).length,
+        devices: accountDevices(x).map((d) => ({ device_id: d.cert.deviceId, last_seen_at: d.client_seen_on ?? null, version: d.client_version ?? null, revoked: !!d.revoked_at })),
+        usage: { used: unitOut(unit, u), used_ratio_of_firm: ratio(u, tot.total), requests: ag.requests },
+      };
+    };
+    if (method === "GET" && p === "/v1/firm/overview") {
+      const plan = ctx.plan;
+      const view = quotaView(q, ctx, { detail: true, uid: null, sid: null, memberName: (uid) => accountOfMember(t.tid, uid)?.name ?? null });
+      const since7 = iso(now() - 7 * DAY_MS);
+      return send(res, 200, {
+        firm: { tid: t.tid, slug: t.tid.slice(4), name: t.name ?? t.tid.slice(4), status: tenantStatus(t), created_at: t.created_at, expires_at: t.subscription_until, accounts_required: t.accounts_required === true },
+        plan: { id: plan.id, label: plan.label, unit: plan.quota_unit, seat_quota: plan.seat_quota, period: plan.period, device_limit: plan.device_limit },
+        seats: { total: t.seats, used: [...t.seatsByUser.values()].filter((x) => !x.revoked_at).length },
+        quota: { unit: view.unit, period: view.period, ...view.firm, burst: view.burst, history: view.history, boosts: view.boosts ?? [] },
+        counts: { members: tAcc.length, active_7d: tAcc.filter((x) => x.last_login_at && x.last_login_at >= since7).length, devices: [...t.devices.values()].filter((d) => !d.revoked_at).length, pending_joins: [...t.joinRequests.values()].filter((j) => j.status === "pending").length },
+        alerts: alerts.filter((x) => x.tid === t.tid && !x.acked_at).slice(0, 50).map((x) => ({ id: x.id, at: x.at, kind: x.kind, level: x.level, pct: x.pct, message: x.message })),
+      });
+    }
+    if (method === "GET" && p === "/v1/firm/members") {
+      // 核对码只在管理员电脑上显示（由两端本机秘密算出，云端不知道）：这里不给提示
+      const pending = [...t.joinRequests.values()].filter((j) => j.status === "pending").map((j) => ({ id: j.id, member_name: t.activations.get(j.activation_id)?.member.name ?? j.member_slug, device_id: j.device_id, created_at: j.created_at, check_code_hint: null }));
+      return send(res, 200, { unit, members: tAcc.map(memberRow), pending_joins: pending });
+    }
+    const fm = /^\/v1\/firm\/members\/(acc_[A-Za-z0-9_-]{16})\/(disable|enable|sessions\/revoke|reset-code|limits)$/.exec(p);
+    if (method === "POST" && fm) {
+      const x = accounts.get(fm[1]!);
+      if (!x || x.tid !== t.tid) throw new CpError(404, "account_unknown", "本所没有这个成员");
+      const b = parseJson(raw);
+      const act = fm[2]!;
+      if (act === "disable") {
+        if (x.aid === a.aid) throw new CpError(409, "cannot_disable_self", "不能停用自己的账号");
+        if (b.reason !== undefined && (typeof b.reason !== "string" || b.reason.length > 100)) throw new CpError(400, "reason_invalid", "原因至多 100 个字符");
+        if (x.role === "admin" && x.status === "active" && !tAcc.some((y) => y.aid !== x.aid && y.role === "admin" && y.status === "active")) throw new CpError(409, "last_admin", "这是本所最后一名有效管理员，不能停用");
+        mark("account.disable", x.aid);
+        x.status = "disabled";
+        x.disabled_reason = typeof b.reason === "string" ? b.reason : null;
+        const n = revokeSessions((y) => y.aid === x.aid, "firm_admin_disabled");
+        // 停用的成员：设备进暂停名单，网关下一次订阅（≤ 15 秒）即拒绝
+        feedVersion += 1;
+        return send(res, 200, { ok: true, sessions_revoked: n, member: memberRow(x) });
+      }
+      if (act === "enable") {
+        mark("account.enable", x.aid);
+        x.status = "active";
+        x.disabled_reason = null;
+        x.failed = { count: 0, first_at: null, locked_until: null };
+        feedVersion += 1;
+        return send(res, 200, { ok: true, member: memberRow(x) });
+      }
+      if (act === "sessions/revoke") {
+        mark("account.sessions_revoke", x.aid);
+        const n = revokeSessions((y) => y.aid === x.aid, "firm_admin_revoked");
+        feedVersion += 1;
+        return send(res, 200, { ok: true, revoked: n });
+      }
+      if (act === "reset-code") {
+        // 第 46 批复核：管理员拿到另一位管理员的重置码就能接管对方账号（操作会记在对方名下）——管理员之间不互发，交中软客服按身份核验后发
+        if (x.role === "admin" && x.aid !== a.aid) throw new CpError(403, "admin_reset_by_support", "管理员的重置码要由中软客服核验身份后发放：请让对方在登录页点“忘记密码”，或联系中软客服");
+        mark("account.reset_code", x.aid);
+        const c = issueAccountCode(x, x.pw ? "reset" : "setup", x.pw ? 30 * 60_000 : 24 * 3600_000, `account:${a.aid}`);
+        return send(res, 200, { ok: true, code: formatOneTimeCode(c.code), expires_at: c.expires_at, purpose: x.pw ? "reset" : "setup" });
+      }
+      // limits
+      if ("quota_limit" in b) {
+        const v = b.quota_limit;
+        if (v !== null && !(typeof v === "number" && Number.isFinite(v) && v > 0 && (unit === "cny" || Number.isSafeInteger(v)))) throw new CpError(400, "quota_limit_invalid", unit === "tokens" ? "个人上限须为正整数 token，或不设（null）" : "个人上限须为正数（元），或不设（null）");
+        if (v !== null && (unit === "cny" ? Math.round((v as number) * 1_000_000) : (v as number)) > tot.total) throw new CpError(400, "quota_limit_too_large", `个人上限不能超过本所本期总额度（${unitOut(unit, tot.total)}${unit === "tokens" ? " tokens" : " 元"}）`);
+      }
+      if ("device_limit" in b && b.device_limit !== null && !(Number.isSafeInteger(b.device_limit) && (b.device_limit as number) >= 1 && (b.device_limit as number) <= MAX_DEVICES_PER_ACCOUNT)) throw new CpError(400, "device_limit_invalid", `设备数须为 1–${MAX_DEVICES_PER_ACCOUNT}，或按套餐（null）`);
+      mark("account.limits", x.aid);
+      if ("quota_limit" in b) x.quota_limit = b.quota_limit as number | null;
+      if ("device_limit" in b) x.device_limit = b.device_limit as number | null;
+      return send(res, 200, { ok: true, member: memberRow(x), unit });
+    }
+    if (method === "GET" && p === "/v1/firm/devices") {
+      const since = dayOf(now() - 30 * DAY_MS);
+      const susp = new Set(suspendedDevices().filter((d) => d.tid === t.tid).map((d) => d.device_id));
+      const list = [...t.devices.values()].map((d) => {
+        const acc = accountOfMember(t.tid, d.cert.memberId);
+        const flags: string[] = [];
+        if (!d.revoked_at && (!d.client_seen_on || d.client_seen_on < since)) flags.push("stale_30d");
+        if (!d.revoked_at && d.client_version && (d.client_version === "legacy" || (clients.min_version && compareVersion(d.client_version, clients.min_version) < 0))) flags.push("old_client");
+        if (!d.revoked_at && susp.has(d.cert.deviceId)) flags.push("rejected_after_logout");
+        const last = [...sessions.values()].filter((x) => x.device_id === d.cert.deviceId && !isStaffId(x.aid) && accounts.get(x.aid)?.tid === t.tid).sort((x, y) => y.last_seen_at.localeCompare(x.last_seen_at))[0];
+        return { device_id: d.cert.deviceId, member: memberLabel(t, d.cert.memberId), aid: acc?.aid ?? null, role: d.cert.role, platform: last?.client.platform ?? null, version: d.client_version ?? null, last_seen_at: d.client_seen_on ?? null, registered_at: d.registered_at, revoked: !!d.revoked_at, flags };
+      });
+      return send(res, 200, { devices: list.sort((x, y) => (y.last_seen_at ?? "").localeCompare(x.last_seen_at ?? "")) });
+    }
+    if (method === "GET" && p === "/v1/firm/usage/summary") {
+      const days = daysOf(url);
+      const from = dayOf(now() - (days - 1) * DAY_MS);
+      const to = dayOf(now());
+      const byModel = [...book.group("model", t.tid, from, to)];
+      const allTok = byModel.reduce((n, [, x]) => n + x.tokens_in + x.tokens_out, 0);
+      const sum = book.tenant(t.tid, from, to);
+      return send(res, 200, {
+        from,
+        to,
+        days,
+        unit,
+        daily: lastDays(days).map((day) => ({ day, ...aggOut(book.tenant(t.tid, day, day)) })),
+        by_member: [...book.group("member", t.tid, from, to)]
+          .map(([k, x]) => {
+            const uid = k.split("\u0000")[1] || null;
+            const acc = uid ? accountOfMember(t.tid, uid) : undefined;
+            return { aid: acc?.aid ?? null, name: memberLabel(t, uid), email: acc?.email ?? null, tokens: x.tokens_in + x.tokens_out, used_ratio_of_firm: ratio(usedIn(unit, x), tot.total), ...aggOut(x) };
+          })
+          .sort((x, y) => y.tokens - x.tokens),
+        by_model: byModel.map(([alias, x]) => ({ alias, label: modelLabel(alias), tokens: x.tokens_in + x.tokens_out, requests: x.requests, share: ratio(x.tokens_in + x.tokens_out, allTok) })).sort((x, y) => y.tokens - x.tokens),
+        totals: { tokens: sum.tokens_in + sum.tokens_out, ...aggOut(sum) },
+      });
+    }
+    if (method === "GET" && (p === "/v1/firm/usage/records" || p === "/v1/firm/usage/records.csv")) {
+      const f = { ...usageQuery(url.searchParams, 200), tid: t.tid };
+      if (p.endsWith(".csv")) {
+        const rows: UsageRow[] = [];
+        let cursor: string | undefined;
+        for (let i = 0; i < 500 && rows.length < 100_000; i++) {
+          const r = book.query({ ...f, limit: 200, ...(cursor ? { cursor } : {}) });
+          rows.push(...r.rows);
+          if (!r.next) break;
+          cursor = r.next;
+        }
+        const head = ["时间", "请求编号", "成员", "模型", "输入token", "缓存token", "输出token", "金额(元)", "用量来源", "结果", "计费说明"];
+        return sendCsv(res, { __csv: csv(head, rows.map((r) => { const v = firmRecordView(t, r); return [v.at, v.request_id, v.member, v.label ?? "", v.tokens_in, v.tokens_cached, v.tokens_out, v.value_cny ?? "", v.usage_source, v.outcome, v.note]; })), filename: `firm-usage-${f.from}-${f.to}.csv` });
+      }
+      const r = book.query(f);
+      return send(res, 200, { records: r.rows.map((x) => firmRecordView(t, x)), next: r.next });
+    }
+    if (method === "PUT" && p === "/v1/firm/cap") {
+      const b = parseJson(raw);
+      if (!("monthly_cap_pct" in b)) throw new CpError(400, "cap_invalid", "缺少月度上限（不设上限请传 null）");
+      mark("quota.cap_set", null);
+      // 与设备签名的 PUT /v1/quota/cap 写同一字段
+      quotaSetCap(q, ctx, b.monthly_cap_pct, `account:${a.aid}`);
+      const c = auditCtx.get(res);
+      if (c) c.entry.detail = t.quota.cap_pct === null ? { uncapped: 1 } : { cap_pct: t.quota.cap_pct };
+      return send(res, 200, { ok: true, cap_pct: t.quota.cap_pct });
+    }
+    if (method === "GET" && p === "/v1/firm/billing") {
+      const month = url.searchParams.get("period") ?? periodBounds("month", now()).key;
+      if (!/^\d{4}-\d{2}$/.test(month)) throw new CpError(400, "period_invalid", "period 须为 YYYY-MM");
+      // 本所账单：席位费、加量费、应收、用量价值；不含成本与毛利
+      const { cost_cny: _c, margin_cny: _m, ...bill } = billRow(t, month);
+      return send(res, 200, { period: month, ...bill });
+    }
+    throw new CpError(404, "not_found", "没有这条路由");
+  };
+
+  // ─── 第 46 批：首个系统管理员引导、找回请求、开发人员（契约 §2.4） ───
+  const bootstrapFile = o.dataDir ? join(o.dataDir, "bootstrap-admin.txt") : null;
+  const recoveryFile = o.dataDir ? join(o.dataDir, "admin-recovery.request") : null;
+  if (o.bootstrapAdmin && !o.dataDir) throw new Error("bootstrapAdmin 需要 dataDir（设置码写到 <dataDir>/bootstrap-admin.txt）");
+  /** 设置码写进 0600 文件（日志只写路径）：服务器 shell 即信任根。 */
+  const writeBootstrapFile = (x: StaffRecord, code: string, expires: string, why: string) => {
+    mkdirSync(o.dataDir!, { recursive: true, mode: 0o700 });
+    const tmp = `${bootstrapFile}.tmp`;
+    writeFileSync(tmp, `# Kimi Work 法律版控制台：${why}\n# 打开控制台 →“首次设置（用设置码设密码）”，填下面的邮箱与设置码；设好密码后本文件自动删除。\nemail: ${x.email}\nsetup_code: ${formatOneTimeCode(code)}\nexpires_at: ${expires}\n`, { mode: 0o600 });
+    chmodSync(tmp, 0o600);
+    renameSync(tmp, bootstrapFile!);
+    console.log(`[control-plane] ${why}：设置码已写入 ${bootstrapFile}（24 小时内有效）`);
+  };
+  /** 设置码用过（本人设好密码）即删引导文件。 */
+  const consumeBootstrapFile = (email: string) => {
+    if (!bootstrapFile || !existsSync(bootstrapFile)) return;
+    try {
+      if (readFileSync(bootstrapFile, "utf8").split("\n").includes(`email: ${email}`)) rmSync(bootstrapFile, { force: true });
+    } catch {
+      // 删不掉：设置码已用过，留着也无效
+    }
+  };
+  for (const d of o.devStaff ?? []) {
+    const email = normalizeEmail(d.email);
+    if (!email) throw new Error(`devStaff 邮箱不合法：${String(d.email).slice(0, 60)}`);
+    const prob = rolesProblem(d.roles);
+    if (prob) throw new Error(`devStaff ${email}：角色${prob}`);
+    if (emailTaken(email)) continue;
+    const probs = passwordProblems(d.password, email);
+    if (probs.length) throw new Error(`devStaff ${email} 的密码不合格：${probs.join("、")}`);
+    newStaffRecord({ email, name: d.name, roles: d.roles, by: "dev", pw: hashPassword(d.password) });
+  }
+  if (o.devStaff?.length) persistNow();
+  if (o.bootstrapAdmin) {
+    const email = normalizeEmail(o.bootstrapAdmin.email);
+    if (!email) throw new Error("console.bootstrap_admin.email 不是合法邮箱");
+    if (!validName(o.bootstrapAdmin.name)) throw new Error("console.bootstrap_admin.name 须为 1–40 个字符");
+    // 没有“设好密码的有效系统管理员”才引导（每次启动都检查：设置码丢了可重启再发）
+    if (!activeSysadmins().some((x) => x.pw !== null)) {
+      if (accountByEmail.has(email)) throw new Error("console.bootstrap_admin.email 已被律师账号使用：请换一个邮箱");
+      let x = staff.get(staffByEmail.get(email) ?? "");
+      if (!x) x = newStaffRecord({ email, name: o.bootstrapAdmin.name, roles: ["sysadmin"], by: "bootstrap" });
+      else Object.assign(x, { status: "active", disabled_reason: null, roles: x.roles.includes("sysadmin") ? x.roles : ["sysadmin"] });
+      const c = issueAccountCode(x, "setup", 24 * 3600_000, "bootstrap");
+      persistNow();
+      writeBootstrapFile(x, c.code, c.expires_at, "首个系统管理员");
+      staffAccessQuiet(x, "staff.bootstrap", "ok");
+    }
+  }
+  /** 找回请求：<dataDir>/admin-recovery.request（内容：系统管理员邮箱）→ 清两步验证、吊销会话、作废密码、发新设置码。 */
+  const adminTick = (): void => {
+    if (!recoveryFile || !existsSync(recoveryFile)) return;
+    let email: string | null = null;
+    try {
+      email = normalizeEmail(readFileSync(recoveryFile, "utf8").split("\n").map((l) => l.trim()).find((l) => l && !l.startsWith("#")) ?? "");
+    } catch {
+      email = null;
+    }
+    const x = email ? staff.get(staffByEmail.get(email) ?? "") : undefined;
+    if (!x || !x.roles.includes("sysadmin")) {
+      rmSync(recoveryFile, { force: true });
+      console.error("[control-plane] 找回请求无效：文件里的邮箱不是系统管理员（请求文件已删除）");
+      staffAccessQuiet(null, "staff.recovery", "rejected:not_sysadmin");
+      return;
+    }
+    Object.assign(x, { status: "active", disabled_reason: null, pw: null, pw_changed_at: iso(), failed: { count: 0, first_at: null, locked_until: null }, mfa: { totp: null, pending: null, recovery: [] } });
+    revokeSessions((y) => y.aid === x.aid, "admin_recovery");
+    const c = issueAccountCode(x, "setup", 24 * 3600_000, "recovery");
+    persistNow();
+    writeBootstrapFile(x, c.code, c.expires_at, "系统管理员找回");
+    rmSync(recoveryFile, { force: true });
+    staffAccessQuiet(x, "staff.recovery", "ok");
+  };
+  const recoveryTimer = recoveryFile
+    ? setInterval(() => {
+        try {
+          adminTick();
+        } catch (e) {
+          console.error(`[control-plane] 处理找回请求失败（${e instanceof CpError ? e.code : "error"}）：下个周期再试`);
+        }
+      }, o.adminRecoveryIntervalMs ?? 10_000)
+    : null;
+  recoveryTimer?.unref();
+  adminTick();
+
   const server = createServer((req, res) => {
     route(req, res).catch((e: unknown) => {
       // 出错的请求不留下任何状态改动（已改的内存回滚到上次写成的样子）；错误应答不再触发写盘
@@ -3238,7 +3872,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         }
       }
       if (res.headersSent) res.destroy();
-      else sendRaw(res, ce.status, { error: { code: ce.code, message: ce.message }, ...(ce.extra ?? {}) });
+      // 附加字段放进 error（契约 §3），也照旧放在顶层（已装客户端读顶层）
+      else sendRaw(res, ce.status, { error: { code: ce.code, message: ce.message, ...(ce.extra ?? {}) }, ...(ce.extra ?? {}) });
     });
   });
 
@@ -3247,6 +3882,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (nonceFlush) clearInterval(nonceFlush);
     clearInterval(onboardingSweep);
     clearInterval(suspendSweep);
+    if (recoveryTimer) clearInterval(recoveryTimer);
     if (!o.auditLog) auditLog.close();
     try {
       persistNow(true);
@@ -3262,6 +3898,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     metrics: () => cpMetrics(),
     publicKeys: { envelope: pk.envelope, seat: pk.seat, seatFor: (aud?: SeatAudience) => ({ [aud ? (pk.seat_audiences[aud] ?? pk.seat_general) : pk.seat_general]: pk.seat[aud ? (pk.seat_audiences[aud] ?? pk.seat_general) : pk.seat_general]! }) },
     usageBook: book,
+    adminTick,
   };
   function cpMetrics() {
     {
