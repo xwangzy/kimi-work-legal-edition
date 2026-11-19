@@ -385,7 +385,14 @@ input.otp.otp-recovery { font-size: var(--fs-lg); letter-spacing: 0.08em; }
 .tbl tfoot td { font-weight: 600; background: var(--bg-subtle); border-top: 1px solid var(--border-default); border-bottom: 0; }
 .tbl .empty-row td { text-align: center; color: var(--text-secondary); padding: var(--sp-6) var(--sp-4); }
 .tbl td.act { text-align: right; white-space: nowrap; width: 1%; }
-.tbl td.col-meter { min-width: 220px; max-width: 360px; }
+.tbl td.col-meter { min-width: 200px; max-width: 320px; white-space: normal; }
+/* 1280 宽笔记本：客户、设备、计费表在 1440 下刚好放下，1280 下最后一列（状态、吊销）被挤出可视区——收窄单元格左右留白 */
+@media (max-width: 1366px) {
+  .tbl th, .tbl td { padding-left: 6px; padding-right: 6px; }
+  .tbl th:first-child, .tbl td:first-child { padding-left: var(--sp-3); }
+  .tbl th:last-child, .tbl td:last-child { padding-right: var(--sp-3); }
+  .tbl td.col-meter .meter.compact .meter-sub { white-space: normal; }
+}
 .tbl .nowrap { white-space: nowrap; }
 .tbl td.trunc { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 1180px) { .tbl .opt { display: none; } }

@@ -28,7 +28,7 @@ import { TaskQueue } from "./queue.ts";
 import { createApi } from "./api/index.ts";
 import { resolveIdentity, taskTokenKey, type Identity } from "./identity.ts";
 import { applyStagedJoin, applyStagedRecovery, configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
-import { dropAccountSession, readAccountSession, writeAccountSession, type AccountSessionFile } from "./account-session.ts";
+import { accountErrorText, dropAccountSession, modelRejectionProblem, readAccountSession, writeAccountSession, type AccountSessionFile } from "./account-session.ts";
 import { activationInfo, dropActivationClaim, membersApi, OnboardingService, ONBOARDING_METHODS, readActivationClaim, reconcilePendingRestore, removePendingWorkspace, writeJoinFailure, writePendingActivation } from "./services/onboarding.ts";
 import { FirmGovernance, localDevPolicyBody, firmPolicyInputOf, type FirmPolicyInput } from "./control-plane/governance.ts";
 import { ControlPlaneClient } from "./control-plane/client.ts";
@@ -324,6 +324,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   // 第 44 批：账号会话（令牌在 keys/account-session.json，封装；只在内核与闸门之间流转）与“要重新登录”的原因
   let accountSession: AccountSessionFile | null = config.onboarding ? null : readAccountSession(keysDir);
   let accountProblem: string | null = null;
+  /** 上次重新登录成功（清掉 accountProblem）的时刻：刚登录后网关可能还按旧的暂停名单拒绝（见 SESSION_REJECTION_GRACE_MS）。 */
+  let accountClearedAt = Number.NEGATIVE_INFINITY;
   /** 退出登录后仍记住上次的邮箱与姓名（不含令牌）：重新登录框里预填。 */
   let lastAccount: { email: string; name: string; role: string } | null = accountSession ? { email: accountSession.email, name: accountSession.name, role: accountSession.role } : null;
   const accountDeps = {
@@ -341,10 +343,36 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     problem: () => accountProblem,
     clearProblem: () => {
       accountProblem = null;
+      accountClearedAt = Date.now();
     },
     setProblem: (code: string) => {
       accountProblem = code;
     },
+  };
+  /**
+   * 记下“要重新登录”（第 44 批同步口径；第 47 批起模型调用被网关确定地按身份拒绝时也走这里，不等下一次同步）：
+   * 原因写进同一个 accountProblem（kernel.status 的 account.login_required / reason、发起前检查的拦截都读它）；
+   * 第一次出问题时清掉本机席位令牌（AI 停用）；原因第一次出现或变了（如先“登录已失效”、同步后得知“账号已停用”）都广播
+   * account.login_required，界面出登录框。重新登录成功由 account.login 清掉原因。
+   */
+  const markAccountProblem = (code: string, source: "sync" | "model"): void => {
+    const prev = accountProblem;
+    if (prev === code) return;
+    accountProblem = code;
+    if (prev === null) governance.seatDroppedForSession("session");
+    const reason = /^[a-z_]{1,40}$/.test(code) ? code : "other";
+    slog.event("KERNEL_ACCOUNT_LOGIN_REQUIRED", { reason, source });
+    broadcastRef.current?.({ type: "account.login_required", reason: code, source, message: accountErrorText(code) });
+  };
+  /**
+   * 模型网关拒绝了内核发出的一次模型请求（问答、确定性工作流、独立复核：闸门 provider 的 onRejection；Agent 任务：执行器的失败回调）。
+   * 只有账号停用、登录失效这类确定的身份拒绝才切到“要重新登录”；额度、限流、5xx、网络错误不动登录状态（identityRejectionOf）。
+   * 只在接入控制面（有账号）时；本机开发形态没有账号。
+   */
+  const onModelRejection = (codeOrMessage: string | null | undefined): void => {
+    if (!controlPlane) return;
+    const code = modelRejectionProblem(codeOrMessage, Date.now() - accountClearedAt);
+    if (code) markAccountProblem(code, "model");
   };
   // 控制面客户端（只在配置了控制面时）：请求经闸门代发，内核本身不联网
   const controlPlane =
@@ -370,15 +398,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
           onEnrolled: () => dropActivationClaim(keysDir),
           // 第 44 批：控制面请求附账号会话；控制面说要重新登录 → 记原因、清掉本机席位令牌（AI 停用）、通知界面出登录框
           sessionToken: () => accountSession?.token ?? null,
-          onSessionProblem: (code) => {
-            const first = accountProblem === null;
-            accountProblem = code;
-            if (first) {
-              governance.seatDroppedForSession("session");
-              slog.event("KERNEL_ACCOUNT_LOGIN_REQUIRED", { reason: /^[a-z_]{1,40}$/.test(code) ? code : "other" });
-              broadcast({ type: "account.login_required", reason: code });
-            }
-          },
+          onSessionProblem: (code) => markAccountProblem(code, "sync"),
           // 退出模式下启动时暂停的任务：退出模式解除后（同步取得许可）入队（复核 S6-B34）
           onSynced: () => {
             if (governance.exitMode()) return;
@@ -397,7 +417,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       600,
     );
   };
-  const broker = new ModelBroker(store, egress, env, { gate: { socket: async () => (await gate.ensure()).socketPath, token: gateTokenFor } });
+  const broker = new ModelBroker(store, egress, env, { gate: { socket: async () => (await gate.ensure()).socketPath, token: gateTokenFor, onRejection: (r) => onModelRejection(r.code) } });
   resolveRouteForGate = (alias) => {
     try {
       return broker.resolveRoute(alias);
@@ -521,7 +541,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const reviewRetryWaitMs = env.ZR_REVIEW_RETRY_WAIT_MS !== undefined && /^\d+$/.test(env.ZR_REVIEW_RETRY_WAIT_MS) ? Number(env.ZR_REVIEW_RETRY_WAIT_MS) : undefined;
   const redlineLimitMs = msEnv(env.ZR_REDLINE_LIMIT_MS);
   const reviewEffort = env.ZR_REVIEW_EFFORT === "high" ? ("high" as const) : ("low" as const);
-  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf, independentReview, reviewLimitMs, reviewRetryWaitMs, reviewFixLimitMs, redlineLimitMs, reviewEffort, vouchKnownOnly: (rid: string, text: string) => gate.vouchKnownOnly(rid, text) };
+  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf, independentReview, reviewLimitMs, reviewRetryWaitMs, reviewFixLimitMs, redlineLimitMs, reviewEffort, vouchKnownOnly: (rid: string, text: string) => gate.vouchKnownOnly(rid, text), onAgentFailure: (error: string | null) => onModelRejection(error) };
   queue.register("legalRun", createLegalWorkflow(workflowDeps));
 
   const ocrModelPaths = {
@@ -536,13 +556,17 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const qaGate = createGateProvider({
     socket: async () => (await gate.ensure()).socketPath,
     token: (task) => mintTaskToken({ tid: task.tid, uid: task.uid, mid: "qa", ...(task.rid ? { rid: task.rid } : {}), jti: `qa_${randomUUID()}`, scope: ["qa:chat"] }, 300),
+    onRejection: (r) => onModelRejection(r.code),
   });
   const qa = new QaChatService({
     db,
     tokens,
     lawdb,
+    // 第 47 批：律师按次选模型（K3 / K2.6）；QaChatService 已按可选列表核过，这里只按别名取路由
+    routes: () => broker.routeAliases(),
+    defaultRoute: env.ZR_QA_ROUTE ?? "legal/k3",
     ask: async (input) => {
-      const route = broker.resolveRoute(env.ZR_QA_ROUTE ?? "legal/k3");
+      const route = broker.resolveRoute(input.route);
       const req = { model: route.alias, messages: input.messages, stream: true };
       if (route.provider === "mock") return collectStreamText((await mockProvider.chatStream(route, req)).chunks, input.onDelta);
       const meta = { nonce: randomUUID(), clientIdempotencyId: `qa_${randomUUID()}`, task: { tid: input.tenantId, uid: input.userId, mid: "qa", rid: input.conversationId }, routePrefix: `/q/${encodeURIComponent(input.conversationId)}` };

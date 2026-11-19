@@ -20,6 +20,11 @@ export interface GateTransport {
   socket(): Promise<string>;
   /** 本任务的闸门令牌（绑定尝试与纪元；scope model:chat）。 */
   token(task: GateTask): string;
+  /**
+   * 模型网关拒绝了这次请求（非 2xx，且不是本机闸门自己的拦截）时回调状态码与网关错误代码（第 47 批：内核据此在账号停用、
+   * 登录失效这类确定的身份拒绝上立即切到“要重新登录”，不等下一次控制面同步）。只读通知：回调抛错不影响原错误的抛出。
+   */
+  onRejection?(r: { status: number; code: string | null }): void;
 }
 
 export interface GateTask {
@@ -122,6 +127,12 @@ export function createGateProvider(t: GateTransport): GateProvider {
     if (err.type === "kwl_gate_denied" && (res.status === 401 || res.status === 403)) {
       throw new DomainError("egress_blocked", `出站闸门拦截：${err.message ?? err.code ?? res.status}`, 422, { code: err.code ?? null });
     }
+    const code = typeof err.code === "string" && /^[a-z0-9_]{1,60}$/.test(err.code) ? err.code : null;
+    try {
+      t.onRejection?.({ status: res.status, code });
+    } catch {
+      // 只读通知：不改变下面抛出的错误
+    }
     if (res.status === 429 || res.status >= 500) {
       throw new DomainError("provider_unavailable", `模型通道 ${res.status}（${err.message ?? "限流/故障"}；交编排层有界退避，不切换端点）`, 503, {
         status: res.status,
@@ -129,7 +140,8 @@ export function createGateProvider(t: GateTransport): GateProvider {
         code: err.code ?? null,
       });
     }
-    throw new DomainError("internal", `模型通道错误 ${res.status}：${(err.message ?? text).slice(0, 300)}`, 502);
+    // 第 47 批：4xx 也带上网关错误代码（与 429/5xx 同一字段），问答据此说清原因（说明里没有“[kwl:代码]”时也认得出）
+    throw new DomainError("internal", `模型通道错误 ${res.status}：${(err.message ?? text).slice(0, 300)}`, 502, { status: res.status, code });
   }
 
   return {

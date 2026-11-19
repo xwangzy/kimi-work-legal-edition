@@ -39,7 +39,7 @@ test("用户卡底部一行（v9.3 B-3 余项）：有入组申请等批准时�
   assert.deepEqual(sidebarFoot(ok), { title: "本机运行 · 防护正常", note: "", tone: "dot-ok", href: "/connections" });
   const joins = sidebarFoot({ ...ok, pendingJoins: 2 });
   assert.equal(joins.tone, "dot-warn");
-  assert.equal(joins.title, "有 2 位同事等你批准入组");
+  assert.equal(joins.title, "有 2 个入组申请等你批准");
   assert.equal(joins.href, "/connections/admin");
   const both = sidebarFoot({ ...ok, pendingJoins: 2, unresolved: 1 });
   assert.equal(both.title, "有联网记录需要核对");

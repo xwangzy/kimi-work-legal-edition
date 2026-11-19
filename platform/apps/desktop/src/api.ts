@@ -560,6 +560,35 @@ export interface ChatMessage {
   created_at: string;
   /** 回答里的引用离线核对结果（B-6）；没有引用时不带。 */
   citations?: import("./lib/qa-citations.ts").QaCitationsView;
+  /**
+   * 这条回答（或“未能取得回答”）实际用的模型别名（第 47 批），如 "legal/k2.6"；问题本身与第 47 批之前的旧记录为 null（界面不显示）。
+   * route_label 是律师看的名字（"K3" / "K2.6"），不认识的别名为 null。旧内核不带这两个字段。
+   */
+  route?: string | null;
+  route_label?: string | null;
+}
+
+/** 问答可选的模型（第 47 批；chat.models 与 kernel.status 的 model_choices）：只列本机模型路由配置了的。 */
+export interface ChatModelChoice {
+  /** 模型别名："legal/k3" | "legal/k2.6"。发送时原样作为 route 传回。 */
+  alias: string;
+  /** 律师看的名字："K3" | "K2.6"。 */
+  label: string;
+  /** 一句话说明，如“缺省，适合复杂问题”“更快、更省额度，复杂问题效果略弱”。 */
+  note: string;
+  /** 不选时用的就是它。 */
+  default: boolean;
+}
+
+/** 内核广播：要重新登录（第 44 批同步；第 47 批起模型请求被网关按身份拒绝时也立即广播）。 */
+export interface AccountLoginRequiredEvent {
+  type: "account.login_required";
+  /** 原因代码：account_disabled / session_invalid / session_expired / session_required / session_member_mismatch。 */
+  reason: string;
+  /** sync = 与控制面同步时得知；model = 问答或任务的模型请求被网关拒绝时得知（第 47 批）。旧内核不带。 */
+  source?: "sync" | "model";
+  /** 律师话（如“账号已停用，请联系律所管理员或中软客服”）。旧内核不带。 */
+  message?: string;
 }
 
 export interface Capabilities {
@@ -679,6 +708,8 @@ export interface QuotaStatus {
   by_member?: { uid: string | null; name: string | null; used: number; used_ratio_of_firm: number; requests: number }[];
   boosts?: { at: string; pct: number }[];
   unreconciled_leases?: number;
+  /** 本人的使用明细（第 47 批）：本期最近 20 条，新的在前；不含请求内容。旧控制面没有该字段。 */
+  own_recent?: { at: string; kind: "qa" | "task"; alias: string | null; label: string | null; tokens_in: number; tokens_cached: number; tokens_out: number; charge: number; unit: "tokens" | "cny"; value_cny: number | null; outcome: string; partial: boolean; estimated: boolean }[];
 }
 
 /** 账号状态（第 44 批）：这台电脑上登录的是谁、是否要重新登录。 */
@@ -1132,6 +1163,14 @@ export const api = {
   chatDelete: (conversationId: string) => invoke<{ ok: true }>("chat.delete", { conversation_id: conversationId }),
   /** stream_id：本次发送的一次性编号，回答生成中的部分内容以 chat.delta 广播推送（onKernelEvent）。 */
   chatSend: (body: { conversation_id?: string; text: string; stream_id?: string }) =>
+    invoke<{ conversation_id: string; messages: ChatMessage[]; blocked?: { reason: string; message: string; matters?: { matter_id: string; title: string }[] } }>("chat.send", body),
+  /** 问答可选的模型（第 47 批）：choices 只列本机配置了的；default 为不选时用的别名（没有可选模型时为 null）。 */
+  chatModels: () => invoke<{ choices: ChatModelChoice[]; default: string | null }>("chat.models"),
+  /**
+   * 带模型选择的发送（第 47 批）：route 为 ChatModelChoice.alias（"legal/k3" / "legal/k2.6"）；不给 = 缺省模型。
+   * 选了不可用的模型内核拒绝（validation，消息如“所选模型不可用：问答只能选 K3、K2.6”），不会悄悄换模型。
+   */
+  chatSendWithModel: (body: { conversation_id?: string; text: string; stream_id?: string; route?: string }) =>
     invoke<{ conversation_id: string; messages: ChatMessage[]; blocked?: { reason: string; message: string; matters?: { matter_id: string; title: string }[] } }>("chat.send", body),
 
   // 设备与连接

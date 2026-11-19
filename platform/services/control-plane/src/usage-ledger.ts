@@ -133,6 +133,8 @@ export interface UsageQuery {
   to?: string;
   tid?: string;
   aid?: string;
+  /** 成员编号（第 47 批：律师本人的使用明细）。 */
+  uid?: string;
   alias?: string;
   outcome?: string;
   request_id?: string;
@@ -298,7 +300,7 @@ export class UsageBook {
   query(q: UsageQuery): { rows: UsageRow[]; next: string | null } {
     const limit = Math.min(200, Math.max(1, q.limit ?? 50));
     const match = (r: UsageRow) =>
-      (!q.from || r.day >= q.from) && (!q.to || r.day <= q.to) && (!q.tid || r.tid === q.tid) && (!q.aid || r.aid === q.aid) && (!q.alias || r.alias === q.alias) && (!q.outcome || r.outcome === q.outcome) && (!q.request_id || r.request_id === q.request_id || r.client_request_id === q.request_id || r.upstream_request_id === q.request_id);
+      (!q.from || r.day >= q.from) && (!q.to || r.day <= q.to) && (!q.tid || r.tid === q.tid) && (!q.aid || r.aid === q.aid) && (!q.uid || r.uid === q.uid) && (!q.alias || r.alias === q.alias) && (!q.outcome || r.outcome === q.outcome) && (!q.request_id || r.request_id === q.request_id || r.client_request_id === q.request_id || r.upstream_request_id === q.request_id);
     const out: UsageRow[] = [];
     let i = q.cursor && /^\d{1,9}$/.test(q.cursor) ? Math.min(Number(q.cursor), this.rows.length) - 1 : this.rows.length - 1;
     for (; i >= 0 && out.length < limit; i--) if (match(this.rows[i]!)) out.push(this.rows[i]!);

@@ -163,7 +163,10 @@ export async function toError(r, method, path) {
   const err = json?.error;
   const code = err?.code ?? (typeof err === "string" ? err : null);
   if (r.status === 404 && (!code || code === "not_found")) return new ApiError(404, "not_ready", `接口未就绪：控制面还没有 ${method} ${pathOnly}`, { method, pathOnly });
-  const message = (typeof err?.message === "string" && err.message) || FALLBACK[code] || (r.status === 403 ? "没有权限" : `请求失败（HTTP ${r.status}）`);
+  const message =
+    (typeof err?.message === "string" && err.message) ||
+    FALLBACK[code] ||
+    (r.status === 403 ? "没有权限" : r.status >= 500 ? `控制面暂时出错（HTTP ${r.status}），请稍后重试；一直这样请联系平台运维` : `请求失败（HTTP ${r.status}）`);
   const { code: _c, message: _m, ...extra } = typeof err === "object" && err ? err : {};
   return new ApiError(r.status, code ?? `http_${r.status}`, message, { method, pathOnly, detail: err ?? null, ...extra, rules: json?.rules ?? extra.rules ?? null });
 }

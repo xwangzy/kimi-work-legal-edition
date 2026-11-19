@@ -96,13 +96,14 @@ test("上手指南：说明卡放在侧栏右侧 / 锚点下方 / 上方，放�
   assert.equal(unionRect([]), null);
 });
 
-test("首页（Kimi 版式）：字标、输入框上方提示条与下方托盘、业务线页签 + 场景胶囊、页脚一行", () => {
+test("首页（Kimi 版式；第 47 批）：字标、输入框上方提示条与下方托盘、推荐 + 业务线胶囊与场景列表、页脚一行", () => {
   const home = src("pages/Home.tsx");
   assert.match(home, /className="home-wordmark"/);
-  assert.match(home, /notice=\{notice\}/, "等你处理放到输入框上方提示条");
+  assert.match(home, /notice=\{notice\}/, "额度提示与等你处理放到输入框上方提示条");
   assert.match(home, /className="scene-chips"/);
+  assert.match(home, /className="scene-list"/);
   assert.match(home, /const CHIP_LIMIT = 6;/);
-  assert.match(home, /HOME_TABS: HomeTab\[\] = \["litigation", "transactional", "inhouse", "general"\]/);
+  assert.match(home, /HOME_TABS: HomeTab\[\] = \["recommended", "litigation", "transactional", "inhouse", "general"\]/);
   assert.match(home, /className="home-foot"/);
   assert.doesNotMatch(home, /className="cards scenario-cards"/, "首屏不再放大块卡片网格");
   const composer = src("components/Composer.tsx");
@@ -114,7 +115,7 @@ test("首页（Kimi 版式）：字标、输入框上方提示条与下方托盘
   assert.match(css, /\.scene-chip \{[^}]*border-radius: var\(--r-full\)[^}]*height: 36px|\.scene-chip \{[^}]*height: 36px[^}]*border-radius: var\(--r-full\)/);
 });
 
-test("侧栏（Kimi 版式）：新建任务为白底胶囊、可手动收起并记住、最近事项旁有“全部”", () => {
+test("侧栏（Kimi 版式）：新建任务胶囊、可手动收起并记住、事项分组旁有“全部”", () => {
   const sb = src("components/Sidebar.tsx");
   assert.match(sb, /nav-new/);
   assert.match(sb, /const COLLAPSE_KEY = "kwl\.sidebar\.collapsed";/);

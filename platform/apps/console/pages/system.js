@@ -72,7 +72,7 @@ function draw(box, s, mail, set) {
               ["注册方式", { open: badge("开放自助注册", "warn"), code: badge("凭码注册", "ok"), closed: badge("关闭", "neutral") }[set.registration] ?? "—"],
               ["客户端最低版本", mono(set.clients?.min_version ?? set.min_client_version ?? "不限")],
             ]),
-        { sub: "改动在“套餐与额度 → 注册与客户端”", actions: can("staff.manage") ? btn("人员与权限", () => go("ops/staff"), { size: "sm" }) : null },
+        { sub: "改动在“套餐与额度 → 注册设置”", actions: can("staff.manage") ? btn("人员与权限", () => go("ops/staff"), { size: "sm" }) : null },
       ),
       panel(
         "邮件通道",

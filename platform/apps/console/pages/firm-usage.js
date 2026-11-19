@@ -4,19 +4,24 @@
  * 接口：GET /v1/firm/usage/summary?days=；GET /v1/firm/usage/records?from&to&aid&alias&cursor；/records.csv 同参数（契约 §3.3）。
  */
 import * as api from "../api.js";
-import { outcomeBadge, pageHead, sourceBadge } from "../domain.js";
+import { ctx, outcomeBadge, pageHead, sourceBadge } from "../domain.js";
 import { badge, bjDay, btn, clear, dataTable, emptyBlock, errorBlock, field, fmt, h, hbars, icon, load, loadingBlock, mono, panel, readForm, segmented, stat, tabBar, toast, trendChart } from "../ui.js";
 
 const st = { view: "summary", days: 30, from: `${bjDay().slice(0, 7)}-01`, to: bjDay(), aid: "", alias: "", members: [], models: [] };
 const tokensOf = (r) => (Number(r.tokens_in) || 0) + (Number(r.tokens_out) || 0);
 
 export function render(page, r) {
-  if (r.params.view) st.view = r.params.view;
+  // 视图跟着地址走：点侧栏“用量”（不带 ?view）总是回到汇总，刷新页面也停在同一视图
+  st.view = r.params.view === "records" ? "records" : "summary";
   const tabs = h("div");
   const box = h("div", { class: "stack" });
   page.append(pageHead("本所用量", "逐请求只记用量，不含任何内容"), tabs, box);
   const draw = () => {
-    clear(tabs, tabBar([{ id: "summary", label: "汇总" }, { id: "records", label: "逐请求明细" }], st.view, (id) => ((st.view = id), draw())));
+    clear(tabs, tabBar([{ id: "summary", label: "汇总" }, { id: "records", label: "逐请求明细" }], st.view, (id) => {
+      const want = id === "records" ? "#/firm/usage?view=records" : "#/firm/usage";
+      if (location.hash === want) return;
+      location.hash = want;
+    }));
     if (st.view === "summary") summary(box);
     else records(box);
   };
@@ -31,6 +36,8 @@ function summary(box) {
     const t = d.totals ?? {};
     const daily = d.daily ?? [];
     st.members = (d.by_member ?? []).map((m) => [m.aid, m.name ?? m.email ?? m.aid]);
+    const allTokens = Number(t.tokens) || tokensOf(t);
+    const shareOf = (m) => (m.share !== undefined && m.share !== null ? m.share : allTokens > 0 ? (Number(m.tokens) || tokensOf(m)) / allTokens : null);
     st.models = (d.by_model ?? []).map((m) => [m.alias, m.label ?? m.alias]);
     body.append(
       h(
@@ -51,13 +58,20 @@ function summary(box) {
             rows: d.by_member ?? [],
             state: { sort: "tokens", asc: false },
             empty: "没有成员用量",
-            onRow: (m) => ((st.aid = m.aid), (st.view = "records"), (location.hash = "#/firm/usage?view=records")),
+            // 地址已是 ?view=records（先切到明细再切回汇总）时改 hash 不触发 hashchange：直接重绘，免得“点了没反应”
+            onRow: (m) => {
+              st.aid = m.aid;
+              st.view = "records";
+              if (location.hash === "#/firm/usage?view=records") ctx.reload?.();
+              else location.hash = "#/firm/usage?view=records";
+            },
             columns: [
               { key: "name", label: "成员", render: (m) => h("div", { class: "cell-2" }, h("b", {}, m.name ?? "—"), h("small", {}, m.email ?? "")) },
               { key: "requests", label: "请求", num: true, render: (m) => fmt.int(m.requests) },
               { key: "tokens", label: "token", num: true, value: (m) => Number(m.tokens ?? tokensOf(m)) || 0, render: (m) => h("span", { title: fmt.int(m.tokens ?? tokensOf(m)) }, fmt.tokens(m.tokens ?? tokensOf(m))) },
               { key: "value_cny", label: "金额", num: true, value: (m) => m.value_cny ?? null, render: (m) => fmt.cny(m.value_cny) },
-              { key: "share", label: "占比", num: true, render: (m) => fmt.pct(m.share) },
+              // 控制面 by_member 不带 share：用同一应答里的真实 token 算“占本所用量”（所选天数内），不另造数
+              { key: "share", label: "占本所用量", title: "所选天数内此人 token ÷ 全所 token", num: true, value: (m) => shareOf(m) ?? -1, render: (m) => fmt.pct(shareOf(m)) },
             ],
           }),
           { sub: "点一行看此人的明细" },
@@ -77,6 +91,10 @@ function records(box) {
   ];
   const form = h("form", { class: "filters", novalidate: true }, specs.map(field), h("div", { class: "filter-actions" }, h("button", { type: "submit", class: "btn primary" }, "查询"), btn("导出 CSV", async (ev) => {
     const b = ev.currentTarget;
+    // 按框里当前的条件导出（改了日期没点“查询”也不会导出旧范围）
+    const v = readForm(form, specs);
+    if (v.from > v.to) return void toast("起始日期晚于结束日期", "error");
+    Object.assign(st, v);
     b.disabled = true;
     try {
       await api.downloadCsv("/v1/firm/usage/records.csv", params(), `kwl-firm-usage-${st.from}_${st.to}.csv`);
@@ -89,6 +107,18 @@ function records(box) {
   }, { icon: icon("download") })));
   const list = h("div", { class: "stack-sm" });
   clear(box, form, list);
+  // 直接打开明细（没先看汇总）时成员下拉只有“全部成员”：补读一次成员名单
+  if (!st.members.length)
+    api.get("/v1/firm/members").then(
+      (d) => {
+        const ms = (Array.isArray(d) ? d : d.members ?? []).map((m) => [m.aid, m.name ?? m.email ?? m.aid]).filter(([aid]) => aid);
+        const sel = form.querySelector("select[name=aid]");
+        if (!ms.length || !sel || st.members.length) return;
+        st.members = ms;
+        for (const [v, l] of ms) sel.append(h("option", { value: v, selected: v === st.aid }, l));
+      },
+      () => {},
+    );
   const params = () => ({ from: st.from, to: st.to, aid: st.aid, alias: st.alias });
   let rows = [];
   let next = null;

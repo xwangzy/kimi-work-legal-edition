@@ -4,7 +4,7 @@
  */
 import * as api from "../api.js";
 import { alertList, ALERT_KIND, can, needs, pageHead } from "../domain.js";
-import { badge, btn, clear, confirmAction, dataTable, facts, field, fmt, h, icon, load, mono, openDrawer, panel, readForm, segmented, tabBar, toast } from "../ui.js";
+import { add, badge, btn, clear, confirmAction, dataTable, facts, field, fmt, h, icon, load, mono, openDrawer, panel, readForm, segmented, tabBar, toast } from "../ui.js";
 
 const st = { tab: "plans", alerts: "open", aKind: "", table: { sort: "id", asc: true } };
 const PLAN_RE = /^[a-z][a-z0-9-]{1,31}$/;
@@ -29,7 +29,8 @@ function panePlans(box) {
   const reload = () =>
     load(box, () => api.get("/v1/ops/plans"), (d) => {
       const plans = d.plans ?? [];
-      box.append(
+      add(
+        box,
         h("div", { class: "toolbar" }, h("p", { class: "muted small" }, "改套餐即刻影响在用这个套餐的律所（本期总额度按新的每席位额度重算）。旧套餐由“单位”折算为 token 额度的，请商务确认后再改。"), btn("新增套餐", () => editPlan(null, d, reload), { kind: "primary", icon: icon("plus"), disabled: !can("plan.manage"), title: needs("plan.manage") })),
         dataTable({
           state: st.table,

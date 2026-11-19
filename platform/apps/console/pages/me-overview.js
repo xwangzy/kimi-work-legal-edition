@@ -7,15 +7,23 @@ import * as api from "../api.js";
 import { ctx, go, pageHead, PAUSED, roleText } from "../domain.js";
 import { badge, clear, emptyBlock, fmt, h, hbars, icon, load, meter, panel, quotaCard, stat, trendChart } from "../ui.js";
 
-/** 个人额度的分母与是否限制（不同说法只出一句） */
+/** 个人额度的分母与是否限制（不同说法只出一句；分母名称与客户端 firm-usage.ts 的 ownDenominatorText 一致） */
 const ownNote = (own) =>
   own.denominator === "seat_quota"
-    ? "按每席位额度计，只作参考，不限制使用"
+    ? "按每人额度（套餐约定）计，仅作参考、不限制"
     : own.denominator === "account_limit"
       ? own.enforced === false
-        ? "按管理员设的个人上限计，只作参考"
-        : "按管理员设的个人上限计：到上限后暂停调用 AI，本机流程不受影响"
+        ? "按个人上限（管理员设置）计，仅作参考"
+        : "按个人上限（管理员设置）计：到上限后暂停调用 AI，本机流程不受影响"
       : null;
+/** 5 小时频率限制（客户端“用量”页同一说法） */
+const burstBlock = (b) =>
+  h(
+    "div",
+    { class: "burst" },
+    meter({ label: `${b.hours ?? 5} 小时频率限制`, ratio: b.used_ratio, resetsAt: b.resets_at, compact: true }),
+    h("small", { class: "muted" }, `任意 ${b.hours ?? 5} 小时内最多用本期额度的 ${b.pct ?? "—"}%${fmt.resets(b.resets_at) ? ` · ${fmt.resets(b.resets_at)} 起逐步恢复` : ""}`),
+  );
 
 export function render(page) {
   const me = ctx.me;
@@ -42,7 +50,7 @@ function draw(box, u) {
       panel(
         "我的用量",
         quotaCard({
-          title: "本期个人额度",
+          title: own.denominator === "account_limit" ? "本期个人上限" : "本期每人额度",
           ratio: own.used_ratio,
           used: own.used,
           total: own.total,
@@ -51,7 +59,7 @@ function draw(box, u) {
           paused: firm.paused === "seat" ? "seat" : null,
           note: ownNote(own),
         }),
-        { sub: u.period?.key ? `本期 ${u.period.key}` : undefined },
+        { sub: u.period ? fmt.period(u.period) : undefined },
       ),
       panel(
         "本所额度水位",
@@ -63,7 +71,7 @@ function draw(box, u) {
           capPct: firm.cap_pct,
           paused: firm.paused && firm.paused !== "seat" ? firm.paused : null,
           note: firm.paused ? `本所已暂停：${PAUSED[firm.paused] ?? firm.paused}，请联系律所管理员。` : "全所共用；律所管理员可设月度上限。",
-          extra: u.burst ? h("div", { class: "burst" }, h("small", { class: "muted" }, `${u.burst.hours ?? 5} 小时窗口（防短时集中用量）`), meter({ label: `${u.burst.hours ?? 5} 小时窗口`, ratio: u.burst.used_ratio, resetsAt: u.burst.resets_at, compact: true })) : null,
+          extra: u.burst ? burstBlock(u.burst) : null,
         }),
       ),
     ),
@@ -73,7 +81,8 @@ function draw(box, u) {
       stat("本期请求", fmt.int(own.requests), "调用 AI 的次数"),
       stat("实际消耗", `${fmt.tokens(tokens)} token`, `近 ${daily.length || 30} 日输入 + 输出`, { title: `${fmt.int(tokens)} token` }),
       stat("计费金额", fmt.cny(own.value_cny ?? cny), "按价目计的用量价值（元）"),
-      stat("占本所用量", own.estimated_share === undefined ? "—" : fmt.pct(own.estimated_share), "本期你的用量在全所中的占比"),
+      // 控制面 own.estimated_share = 本期按估算计入的请求数 ÷ 请求数（server.ts /v1/me/usage），不是“占本所用量”
+      stat("按估算计入", own.estimated_share === undefined ? "—" : fmt.pct(own.estimated_share), "本期中断或网关未回报、按估算计入的请求占比"),
     ),
     h(
       "div",

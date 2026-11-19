@@ -53,7 +53,7 @@
 ## 5. 主要字段
 
 - `AuthResult = {session_token, session:{sid,kind,idle_expires_at,restricted}, account:{aid,email,name,role,tid,org:{slug,name},device_limit}, onboarding:{state, firm, member, tid, device_id, claim, devices}}`，`state ∈ ready|needs_founder_setup|needs_device_join|device_limit|device_mismatch`。
-- 额度视图 `kwl-quota-view`：`firm{used_ratio,remaining_ratio,in_flight_ratio,paused,cap_pct,boost_pct,legacy_used_ratio}`、`burst{hours,pct,used_ratio,resets_at}`、`own{used_ratio,denominator,estimated_rows}`、`history[]`、`models[]`、`by_member[]`（管理员/合伙人）、`unreconciled_leases`。
+- 额度视图 `kwl-quota-view`：`firm{used_ratio,remaining_ratio,in_flight_ratio,paused,cap_pct,boost_pct,legacy_used_ratio}`、`burst{hours,pct,used_ratio,resets_at}`、`own{used_ratio,denominator,estimated_rows}`、`history[]`、`models[]`、`by_member[]`（管理员/合伙人）、`unreconciled_leases`、`own_recent[]`（v1.0.6 起，**新增字段、向后兼容**：本人本期最近 20 条使用明细 `{at, kind: "qa"|"task", alias, label, tokens_in, tokens_cached, tokens_out, charge, unit, value_cny, outcome, partial, estimated}`，不含请求内容与事项；旧客户端忽略）。
 - `PUT /v1/quota/cap` 体：`{monthly_cap_pct: 1–100 | null}`。
 
 ## 6. 模型网关

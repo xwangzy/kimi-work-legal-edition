@@ -1213,7 +1213,7 @@
       "localStorage"
     ],
     "keys": {
-      "kwl.home.line": "首页业务线偏好（诉讼/非诉/企业法务）；执行页“接着做”按它挑同一业务线的场景卡（只读）",
+      "kwl.home.line": "首页能力胶囊分组偏好（推荐/诉讼/非诉/企业法务/通用；第 47 批加“推荐”）；执行页“接着做”按它挑同一业务线的场景卡（只读，推荐与通用时不按业务线挑）",
       "kwl.update.later": "更新横幅“稍后”记住的版本号",
       "kwl.update.rejected-seen": "已知道未通过核验的版本号",
       "kwl.ui.theme": "设置 → 通用 → 外观（浅色/深色；跟随系统时不存）",
@@ -1222,7 +1222,10 @@
       "kwl.recovery.snooze_until": "首页与事项页的备份提醒点了“明天提醒”：记到哪一天（本地日期 YYYY-MM-DD）之前不显示；只对橙色提醒生效，备份失败、备份盘不对等红色提醒不能推迟；不含身份或案件信息（v9.4）",
       "kwl.sidebar.collapsed": "侧栏是否收起（\"1\" / \"0\"）；不含身份或案件信息（第 45 批，对齐 Kimi 首页）",
       "kwl.guide.v1.<8 位摘要>": "首次上手指南看过了（值为 \"1\"）；键尾是律所与成员标识的 FNV-1a 摘要，只用于同一台电脑上换人时各看各的，不写标识原文、不含案件信息（第 45 批；经 lib/guide-steps.ts 的读写函数，键由 guideSeenKey 生成）",
-      "kwl.checklist.v1.<8 位摘要>": "上手清单的显示状态（值为 \"shown\" 或 \"hidden\"）；键尾同上（律所与成员标识的 FNV-1a 摘要），不写标识原文、不含案件信息；完成与否由内核按本机真实数据判定、不存这里（第 46 批；经 lib/guide-checklist.ts 的读写函数）"
+      "kwl.checklist.v1.<8 位摘要>": "上手清单的显示状态（值为 \"shown\" 或 \"hidden\"）；键尾同上（律所与成员标识的 FNV-1a 摘要），不写标识原文、不含案件信息；完成与否由内核按本机真实数据判定、不存这里（第 46 批；经 lib/guide-checklist.ts 的读写函数）",
+      "kwl.sidebar.sections": "侧栏“事项”“任务”分组是否展开（第 47 批）",
+      "kwl.home.quota-dismissed": "首页额度提示条关掉时的周期与情形键（如 2026-11:firm-low，不含任何用量数；第 47 批）",
+      "kwl.chat.model": "问答上次选的模型别名（legal/k3 或 legal/k2.6；第 47 批）"
     },
     "files": [
       "apps/desktop/src/App.tsx",
@@ -1230,7 +1233,8 @@
       "apps/desktop/src/pages/Home.tsx",
       "apps/desktop/src/lib/ui-prefs.ts",
       "apps/desktop/src/pages/RunView.tsx",
-      "apps/desktop/src/pages/Activate.tsx"
+      "apps/desktop/src/pages/Activate.tsx",
+      "apps/desktop/src/pages/Chat.tsx"
     ]
   },
   "out_of_scope": {

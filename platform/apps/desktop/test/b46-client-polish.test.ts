@@ -23,7 +23,7 @@ test("发起前检查的提示：从估价结果或发起错误里取出，入�
   assert.equal(startHintOf(new Error("别的错误")), null);
   assert.equal(startHintOf({ start_hint: { kind: "x", message: "m" } }), null);
   assert.equal(startHintActionLabel(hint as never), "查看本所用量");
-  assert.deepEqual(startHintTarget(hint as never), { path: "/connections/account", anchor: "#sec-usage" });
+  assert.deepEqual(startHintTarget(hint as never), { path: "/connections/usage", anchor: "#sec-usage" });
   const login = startHintOf({ kind: "login", code: "session_expired", message: "登录已失效：请先在页面顶部重新登录，再开始任务", action: "login" })!;
   assert.equal(startHintActionLabel(login), "去登录");
   assert.deepEqual(startHintTarget(login), { path: null, anchor: ".login-banner input" });

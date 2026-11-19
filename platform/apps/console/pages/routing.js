@@ -9,7 +9,7 @@
 import * as api from "../api.js";
 import { checkRoutingKey, fingerprintText, keyHint, sealUpstreamKey } from "../seal-key.js";
 import { can, needs, pageHead, providerBadge } from "../domain.js";
-import { badge, btn, clear, confirmAction, dataTable, emptyBlock, facts, field, fmt, h, icon, load, mono, openDrawer, panel, readForm, tabBar, toast } from "../ui.js";
+import { add, badge, btn, clear, confirmAction, dataTable, emptyBlock, facts, field, fmt, h, icon, load, mono, openDrawer, panel, readForm, tabBar, toast } from "../ui.js";
 
 const st = { tab: "providers", pTable: { sort: "id", asc: true }, mTable: { sort: "alias", asc: true } };
 const BUILTIN = new Set(["legal/k3", "legal/k2.6"]);
@@ -339,7 +339,8 @@ function panePrices(pane, d, reload) {
   const aliases = [...new Set([...(d.models ?? []).map((m) => m.alias), ...Object.keys(prices.items ?? {})])];
   const rows = aliases.map((alias) => ({ alias, label: d.models?.find((m) => m.alias === alias)?.label ?? "", ...(prices.items?.[alias] ?? {}) }));
   const unpriced = rows.filter((r) => r.input === null || r.input === undefined || r.output === null || r.output === undefined);
-  pane.append(
+  add(
+    pane,
     unpriced.length ? h("div", { class: "banner warn" }, `${unpriced.map((r) => r.alias).join("、")} 未定价：用量价值与账单里这部分显示“未定价”，不估算。`) : null,
     panel(
       `价目表 v${prices.version ?? "—"}`,

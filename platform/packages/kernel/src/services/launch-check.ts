@@ -22,7 +22,7 @@ export interface LaunchHint {
   code: string;
   /** 给律师看的一句话：发生了什么 + 怎么办。 */
   message: string;
-  /** 界面上的入口：login = 页面顶部的登录框；usage = 设置 → 账号与团队 → 用量；null = 没有可点的入口。 */
+  /** 界面上的入口：login = 页面顶部的登录框；usage = 设置 → 套餐与用量；null = 没有可点的入口。 */
   action: "login" | "usage" | null;
 }
 

@@ -45,7 +45,8 @@ export function ModeSelector({ policy, value, onChange, allowChat = true }: { po
   const order: RunMode[] = ["chat", "manual", "default", "auto"];
   return (
     <div className="mode-selector" ref={ref}>
-      <button className="chip" onClick={() => setOpen(!open)} aria-haspopup="listbox" aria-expanded={open}>
+      <button className="chip" onClick={() => setOpen(!open)} aria-haspopup="listbox" aria-expanded={open} title="运行模式：AI 做到哪一步要先问你">
+        <Icon.shieldCheck />
         {modeChipLabel(value)}
         <Icon.down />
       </button>

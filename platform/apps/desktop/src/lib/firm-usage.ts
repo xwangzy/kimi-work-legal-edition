@@ -20,6 +20,19 @@ export function fmtPct(r: number | null | undefined): string {
 }
 
 /**
+ * 剩余比例 → 百分比（第 47 批）：往下取——已经用了一点就不写“剩余 100%”（原来 99.7% 四舍五入成 100%，与“已用 0.3%”自相矛盾）。
+ * 与网页控制台 ui.js 的 fmt.left 同一规则（用例 apps/desktop/test/b47-console-consistency.test.ts 逐值对照）。
+ */
+export function fmtLeft(r: number | null | undefined): string {
+  if (typeof r !== "number" || !Number.isFinite(r)) return "—";
+  // 先按千分之一个百分点规整（0.58 × 100 = 57.999…，直接往下取会成 57%）
+  const p = Math.round(r * 1e5) / 1e3;
+  if (p >= 100) return "100%";
+  if (p > 0 && p < 0.1) return "<0.1%";
+  return `${p < 10 ? (Math.floor(p * 10) / 10).toFixed(1).replace(/\.0$/, "") : Math.floor(p)}%`;
+}
+
+/**
  * 用量数 → 文字：tokens 过万写“万”、过亿写“亿”（保留一位小数）；元保留两位小数（不到 0.01 元写“不到 0.01 元”）。
  * label = 中软给的单位名（tokens 或元）。
  */
@@ -93,7 +106,7 @@ export function ratioTone(r: number | null | undefined): "ok" | "high" | "full" 
 export function remainingLine(q: QuotaStatus): string {
   const f = q.firm;
   if (!f) return "";
-  const rem = `剩余 ${fmtPct(f.remaining_ratio)}`;
+  const rem = `剩余 ${fmtLeft(f.remaining_ratio)}`;
   if (f.total === null || f.used === null) return rem;
   return `${rem}（约 ${fmtAmount(Math.max(0, f.total - f.used), q.unit, q.unit_label)}）`;
 }
@@ -129,7 +142,7 @@ export function legacyNote(q: QuotaStatus): string | null {
   return typeof l === "number" && l > 0 ? `本期含旧计量口径的用量 ${fmtPct(l)}（换用新计量之前的部分，按比例计入）。` : null;
 }
 
-/** 律师在“账号与团队”看到的一句话。 */
+/** 律师看到的一句话（本所与本人用量、重置时间、暂停原因）。 */
 export function quotaLawyerLine(q: QuotaStatus | null): string {
   if (!q) return "读取中…";
   if (q.mode !== "control_plane" || !q.firm) return q.edition === "trial" ? "试用版：不统计本所用量" : "开发形态：不统计本所用量";
@@ -314,4 +327,12 @@ export function diagSectionLabels(sections: readonly string[]): string[] {
 
 function shortId(id: string): string {
   return id.length > 18 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
+}
+
+/** 一条使用明细计入额度的说法：中断未扣、服务出错不计、估算的标出来；tokens 单位写 token 数，元单位写金额。 */
+export function recordChargeText(r: NonNullable<QuotaStatus["own_recent"]>[number]): string {
+  if (r.partial) return "中途中断，未计入";
+  if (r.outcome !== "ok" && r.charge === 0) return "未成功，未计入";
+  const v = r.unit === "cny" ? fmtAmount(r.charge / 1_000_000, "cny") : `${fmtCount(r.charge)} token`;
+  return r.estimated ? `${v}（估算）` : v;
 }

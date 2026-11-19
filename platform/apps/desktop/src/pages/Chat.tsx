@@ -7,15 +7,15 @@
  */
 import { scrollBehavior } from "../lib/ui-prefs.ts";
 import { useEffect, useRef, useState } from "react";
-import { api, onKernelEvent, type ChatMessage } from "../api.ts";
+import { api, onKernelEvent, type ChatMessage, type ChatModelChoice } from "../api.ts";
 import { nav } from "../App.tsx";
 import { Icon } from "../components/Icons.tsx";
 import { Markdown } from "../components/Markdown.tsx";
 import { QA_CITATION_KIND, qaCitationLine, type QaCitationsView } from "../lib/qa-citations.ts";
 import { fmtTime, fmtWhen } from "../lib/labels.ts";
+import { notifyDataChanged } from "../lib/events.ts";
 
 export function ChatPage({ conversationId }: { conversationId?: string | undefined }) {
-  const [list, setList] = useState<{ conversation_id: string; title: string; updated_at: string }[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -26,13 +26,38 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   /** 正在回答的问题与到目前为止的回答（流式）；conv 是发问时所在的会话（新问答为 undefined）。 */
   const [pending, setPending] = useState<{ question: string; draft: string; conv: string | undefined } | null>(null);
   const streamRef = useRef<string | null>(null);
+  // 问答模型（第 47 批，Kimi 输入框右下的模型选择）：选项来自内核（只列云端已配置的别名），记在本机偏好
+  const [models, setModels] = useState<ChatModelChoice[]>([]);
+  const [route, setRoute] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(MODEL_KEY);
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    void api
+      .chatModels()
+      .then((r) => {
+        setModels(r.choices);
+        // 记住的模型已不在可选之列（运营改了路由）：回到缺省
+        setRoute((cur) => (cur && r.choices.some((c) => c.alias === cur) ? cur : r.default));
+      })
+      .catch(() => setModels([]));
+  }, []);
+  const chooseModel = (alias: string) => {
+    setRoute(alias);
+    try {
+      localStorage.setItem(MODEL_KEY, alias);
+    } catch {
+      // 记不住只影响下次打开
+    }
+  };
   const convRef = useRef(conversationId);
   convRef.current = conversationId;
   const endRef = useRef<HTMLDivElement>(null);
-  const loadList = () => api.chatList().then((r) => setList(r.conversations)).catch((e) => setErr(e.message));
-  useEffect(() => {
-    void loadList();
-  }, []);
+  // 问答记录在侧栏 Chat 模式里（第 47 批，Kimi Work 同款）：发送、删除后通知侧栏刷新
+  const loadList = async () => notifyDataChanged();
   useEffect(
     () =>
       onKernelEvent((m) => {
@@ -74,7 +99,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
       return true;
     };
     try {
-      const r = await api.chatSend({ ...(from ? { conversation_id: from } : {}), text: t, stream_id: streamId });
+      const r = await api.chatSendWithModel({ ...(from ? { conversation_id: from } : {}), text: t, stream_id: streamId, ...(route ? { route } : {}) });
       // 等回答期间换了会话：不把结果放进别的会话；切回了这个会话的照常显示
       if (!settle() || (convRef.current !== from && convRef.current !== r.conversation_id)) {
         if (!r.blocked) void loadList();
@@ -112,16 +137,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   const answeringHere = !!pending && pending.conv === conversationId;
 
   return (
-    <div className="chat">
-      <aside className="chat-list">
-        <button className="btn-ghost chat-new" onClick={() => nav("/chat")}><Icon.plus /> 新问答</button>
-        {list.map((c) => (
-          <button key={c.conversation_id} className={`sidebar-link${c.conversation_id === conversationId ? " active" : ""}`} onClick={() => nav(`/chat/${c.conversation_id}`)} title={c.title}>
-            {c.title}
-          </button>
-        ))}
-        {list.length === 0 && <p className="muted">还没有问答。</p>}
-      </aside>
+    <div className={`chat${messages.length === 0 && !pending ? " chat-blank" : ""}`}>
       <main className="chat-main">
         {/* 一句话说清楚（Y4 C-1）；机制放进“了解更多” */}
         <div className="chat-notice">
@@ -167,7 +183,10 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
             <div key={m.message_id} className={`msg msg-${m.role}`}>
               {m.role === "assistant" ? <Markdown text={m.text} /> : <div className="msg-text">{m.text}</div>}
               {m.citations && <CitationCheck c={m.citations} />}
-              <div className="msg-meta" title={fmtTime(m.created_at)}>{fmtWhen(m.created_at)}</div>
+              <div className="msg-meta" title={fmtTime(m.created_at)}>
+                {m.role === "assistant" && m.route_label ? `${m.route_label} · ` : ""}
+                {fmtWhen(m.created_at)}
+              </div>
             </div>
           ))}
           {pending && pending.conv === conversationId && (
@@ -212,12 +231,56 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
           />
           <div className="composer-bar">
             <span className="spacer" />
+            {models.length > 1 ? <ModelPicker choices={models} value={route} onChange={chooseModel} /> : models.length === 1 ? <span className="model-label">{models[0]!.label}</span> : null}
             {/* 问答页回车发送，与任务输入框（Ctrl / ⌘ + 回车）不同：写明（余项续复核 RC-B-15） */}
             <span className="send-hint muted" aria-hidden="true">回车发送 · Shift + 回车换行</span>
             <button className="send" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="发送" title="发送（回车）"><Icon.send /></button>
           </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+const MODEL_KEY = "kwl.chat.model";
+
+/** 问答模型选择（真实可用：选项与校验都在内核，所选别名随问题发给网关计量）。 */
+function ModelPicker({ choices, value, onChange }: { choices: ChatModelChoice[]; value: string | null; onChange: (alias: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+  const cur = choices.find((c) => c.alias === value) ?? choices.find((c) => c.default) ?? choices[0]!;
+  return (
+    <div className="model-picker" ref={ref}>
+      <button className="model-label model-label-btn" onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open} title="选择回答用的模型">
+        {cur.label}
+        <Icon.down />
+      </button>
+      {open && (
+        <div className="popover model-popover" role="listbox" aria-label="问答模型">
+          {choices.map((c) => (
+            <button
+              key={c.alias}
+              role="option"
+              aria-selected={c.alias === cur.alias}
+              className={`mode-option${c.alias === cur.alias ? " selected" : ""}`}
+              onClick={() => {
+                onChange(c.alias);
+                setOpen(false);
+              }}
+            >
+              <span className="mode-name">{c.label}</span>
+              <span className="mode-hint">{c.note}</span>
+            </button>
+          ))}
+          <div className="mode-foot muted">都按实际用量计入本所额度；具体型号由律所的云端路由决定。</div>
+        </div>
+      )}
     </div>
   );
 }

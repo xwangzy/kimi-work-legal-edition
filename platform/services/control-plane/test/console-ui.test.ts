@@ -458,3 +458,42 @@ test("页面纯函数：密码预检、人员角色组合、安全提示", async
   assert.deepEqual(tips.map((t: string[]) => t[1]), ["还没有启用两步验证", "另有 1 处登录", "1 台电脑超过 30 天未报到"]);
   assert.deepEqual(securityTips({ account: {}, sessions: [{ current: true }], devices: [] }), []);
 });
+
+test("第 47 批走查：额度说法（重置时刻、周期）；5xx 不露合成错误码；页面不把 null 写成文字", async () => {
+  const { fmt, errText } = await mod("apps/console/ui.js");
+  const resets = "2026-11-30T16:00:00.000Z";
+  assert.equal(fmt.resets(resets), "12 月 1 日 0:00");
+  assert.equal(fmt.resetLine(resets), "将于 12 月 1 日 0:00 重置");
+  assert.equal(fmt.resetLine(null), "每期开始时重置");
+  assert.equal(fmt.period({ key: "2026-11", start: "2026-10-31T16:00:00.000Z", resets_at: resets }), "2026 年 11 月（11 月 1 日 – 11 月 30 日）");
+  // 与客户端（apps/desktop/src/lib/firm-usage.ts）逐值一致的对照在客户端一侧：apps/desktop/test/b47-console-consistency.test.ts（独立云端仓库里没有客户端代码）
+  // 500 无响应体：中文说明，不再出现“（http_500）”；控制面给了错误码的照常附上便于报障
+  const { toError } = await mod("apps/console/api.js");
+  const e500 = await toError(new Response("", { status: 500 }), "GET", "/v1/firm/overview");
+  assert.equal(e500.code, "http_500");
+  assert.match(errText(e500), /^控制面暂时出错（HTTP 500）/);
+  assert.doesNotMatch(errText(e500), /http_500/);
+  const e503 = await toError(new Response(JSON.stringify({ error: { code: "ledger_down", message: "账本暂时不可用" } }), { status: 503 }), "GET", "/x");
+  assert.equal(errText(e503), "账本暂时不可用（ledger_down）");
+  // 原生 el.append(null) 会把“null”写进页面（价目表顶部曾出现）：页面里的原生 append 顶层参数不得出现可能为 null 的条件式，改用 ui.js 的 add()
+  const bad: string[] = [];
+  for (const f of modules()) {
+    // 注释换成等长空白（保留行号），免得说明文字里的“el.append(null)”被当成代码
+    const s = readFileSync(join(consoleDir, f), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, " "))
+      .replace(/(^|[^:"'])\/\/[^\n]*/g, (c) => c.replace(/[^\n]/g, " "));
+    for (const m of s.matchAll(/[\w\])]\.append\(/g)) {
+      let i = m.index! + m[0].length;
+      let depth = 1;
+      let top = "";
+      while (depth && i < s.length) {
+        const c = s[i++]!;
+        if ("([{".includes(c)) depth++;
+        else if (")]}".includes(c)) depth--;
+        else if (depth === 1) top += c;
+      }
+      if (/\?[^:]*:\s*null\b|\bnull\s*$/.test(top.replace(/\s+/g, " ").trim())) bad.push(`${f}:${s.slice(0, m.index).split("\n").length}`);
+    }
+  }
+  assert.deepEqual(bad, []);
+});

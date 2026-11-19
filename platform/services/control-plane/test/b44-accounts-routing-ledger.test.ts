@@ -275,6 +275,17 @@ test("用量账本：按席位领租约；逐请求回报按请求编号去重�
   assert.equal(qv.models[0].alias, "legal/k3");
   assert.ok(qv.burst && qv.burst.hours === 5, "试用套餐有 5 小时频率窗口");
   assert.match(qv.period.resets_at, /T16:00:00\.000Z$/, "北京时间下月 1 日 0 点重置");
+  // 第 47 批：本人使用明细（最近在前；重发的同一请求只一行；只有时间、类型、模型、token、计入额度、结果，不含请求内容与事项）
+  assert.equal(qv.own_recent.length, 2, "重发不重复成行");
+  assert.deepEqual(
+    qv.own_recent.map((r: any) => [r.kind, r.alias, r.tokens_in, r.tokens_cached, r.tokens_out, r.charge, r.unit, r.outcome, r.partial, r.estimated]),
+    [
+      ["task", "legal/k3", 8_000, 1000, 2_000, 10_000, "tokens", "ok", false, false],
+      ["task", "legal/k3", 12_000, 1000, 3_000, 15_000, "tokens", "ok", false, false],
+    ],
+    "最近的在前",
+  );
+  assert.deepEqual(Object.keys(qv.own_recent[0]).sort(), ["alias", "at", "charge", "estimated", "kind", "label", "outcome", "partial", "tokens_cached", "tokens_in", "tokens_out", "unit", "value_cny"]);
   // 落盘：账本文件有 2 行；新实例读回后同一请求编号仍去重
   const month = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 7);
   const lines = readFileSync(join(dir, "usage", `${month}.jsonl`), "utf8").trim().split("\n").filter((x) => x.includes(f.tid));

@@ -26,6 +26,54 @@ export interface QaMessageView {
   created_at: string;
   /** 回答里的引用按本机法规库离线核对的结果（v9.3 第 15 批 B-6；评审 Z1 P1-5）；没有引用时不带。 */
   citations?: QaCitations;
+  /**
+   * 这条回答（或“未能取得回答”）实际用的模型别名（第 47 批：问答按次选模型），如 legal/k2.6；问题本身与第 47 批之前的旧记录为 null
+   * （界面不显示）。route_label 是律师看的名字（“K3”“K2.6”）；不认识的别名为 null。
+   */
+  route: string | null;
+  route_label: string | null;
+}
+
+/** 问答可选的模型（第 47 批）：label 是律师看的名字；note 一句话说适合什么；default = 不选时用它。 */
+export interface QaModelChoice {
+  alias: string;
+  label: string;
+  note: string;
+  default: boolean;
+}
+
+/** 问答允许律师选的别名（只此两个；子任务另有规则，不经这里）与其律师名。顺序即界面显示顺序。 */
+export const QA_MODEL_CATALOG: readonly { alias: string; label: string; note: string }[] = [
+  { alias: "legal/k3", label: "K3", note: "适合复杂问题" },
+  { alias: "legal/k2.6", label: "K2.6", note: "更快、更省额度，复杂问题效果略弱" },
+];
+
+/** 别名 → 律师名（“K3”“K2.6”）；不在目录里的别名为 null。 */
+export function qaRouteLabel(alias: string | null | undefined): string | null {
+  return QA_MODEL_CATALOG.find((m) => m.alias === alias)?.label ?? null;
+}
+
+/**
+ * 可选模型列表（第 47 批）：目录里、且模型路由实际配置了的别名；缺省那一个的说明前加“缺省，”。纯函数。
+ * configured = broker.routeAliases()；defaultRoute = ZR_QA_ROUTE ?? legal/k3。
+ */
+export function qaModelChoices(configured: readonly string[], defaultRoute: string): QaModelChoice[] {
+  return QA_MODEL_CATALOG.filter((m) => configured.includes(m.alias)).map((m) => ({
+    alias: m.alias,
+    label: m.label,
+    note: m.alias === defaultRoute ? `缺省，${m.note}` : m.note,
+    default: m.alias === defaultRoute,
+  }));
+}
+
+/**
+ * 取不到回答时的错误说明（第 47 批）：模型通道把网关错误代码放在错误的 detail.code 里（429/5xx 的说明里没有“[kwl:代码]”，
+ * 如 503 price_unconfigured）；说明里还没有代码时补在末尾，qaFailureText 才认得出。纯函数。
+ */
+export function qaErrorMessage(e: unknown): string {
+  const message = e instanceof Error ? e.message : String(e ?? "");
+  const code = (e as { detail?: { code?: unknown } } | null)?.detail?.code;
+  return typeof code === "string" && /^[a-z0-9_]{1,60}$/.test(code) && !message.includes("[kwl:") ? `${message} [kwl:${code}]` : message;
 }
 
 export interface QaCitations {
@@ -59,6 +107,8 @@ export interface QaAskInput {
   messages: { role: "system" | "user" | "assistant"; content: string }[];
   /** 流式回答的增量（令牌形态）。 */
   onDelta?: (piece: string) => void;
+  /** 本次用的模型别名（第 47 批：律师选的，或缺省 ZR_QA_ROUTE ?? legal/k3）。 */
+  route: string;
 }
 
 export interface QaDeps {
@@ -69,6 +119,10 @@ export interface QaDeps {
   lawdb?: Lawdb;
   /** 回答生成中的部分内容（已还原，到目前为止的全文）推给发起问题的界面；streamId 由界面给出。 */
   onPartial?: (streamId: string, text: string) => void;
+  /** 模型路由实际配置了的别名（broker.routeAliases()；第 47 批）：律师选的模型须在其中。不给时只认缺省别名。 */
+  routes?: () => readonly string[];
+  /** 不选模型时用的别名（index.ts：ZR_QA_ROUTE ?? legal/k3）；不给时 legal/k3。 */
+  defaultRoute?: string;
 }
 
 /**
@@ -78,9 +132,17 @@ export interface QaDeps {
 /**
  * 问答取不到回答时的说明（第 46 批）：闸门把网关错误代码以“[kwl:代码]”附在说明末尾——额度、登录类按代码说人话，其余照原话、去掉代码。纯函数。
  */
-export function qaFailureText(message: string): string {
+export function qaFailureText(message: string, route?: string | null): string {
   const code = /\[kwl:([a-z0-9_]{1,60})\]/.exec(message)?.[1] ?? "";
-  if (code.startsWith("quota_") || code === "price_unconfigured") return "本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 账号与团队 → 用量”查看，稍后再问或联系律所管理员";
+  // 第 47 批：所选模型本身用不了（未定价 503、没有路由或已停用 400、套餐不含 403、这个别名没有可用上游 503）——说清是“这个模型”的事，
+  // 不说成额度用完或连不上；选的不是 K3 时建议换 K3
+  if (code === "price_unconfigured" || code === "model_not_routed" || code === "model_disabled" || code === "model_not_allowed" || code === "upstream_unavailable") {
+    const label = qaRouteLabel(route);
+    const isK3 = route == null || route === "legal/k3";
+    const why = code === "model_not_allowed" ? `本所的套餐不含${label ? ` ${label}` : "这个模型"}` : `${label ? `${label} ` : ""}这个模型暂不可用`;
+    return isK3 ? `${why}，这次没有取得回答：请稍后再问，或联系律所管理员` : `${why}，这次没有取得回答：请换 K3 再问，或联系律所管理员`;
+  }
+  if (code.startsWith("quota_")) return "本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查看，稍后再问或联系律所管理员";
   if (code.startsWith("seat_") || /AI 使用授权/.test(message)) return "登录已失效或这台电脑暂时没有取得 AI 使用授权，这次没有取得回答：请重新登录（或联网稍等）后再问";
   // 第 46 批真实验收（停用演练）：律师看到过“模型通道错误 402：账号已停用”
   if (code === "account_disabled" || /账号已停用/.test(message)) return "你的账号已被停用，这次没有取得回答：请联系律所管理员或中软客服";
@@ -222,11 +284,13 @@ export class QaChatService {
     const c = this.conversation(conversationId, tenantId, userId);
     const table = this.table(c.conversation_id);
     return this.d.db
-      .all<QaMessageView>(`SELECT message_id, role, text, created_at FROM qa_messages WHERE conversation_id = ? ORDER BY seq`, [conversationId])
+      .all<Omit<QaMessageView, "route_label">>(`SELECT message_id, role, text, created_at, route FROM qa_messages WHERE conversation_id = ? ORDER BY seq`, [conversationId])
       .map((m) => {
         const text = restoreTokens(m.text, table).text;
         const citations = m.role === "assistant" ? this.citations(text) : null;
-        return citations ? { ...m, text, citations } : { ...m, text };
+        const route = m.role === "user" ? null : (m.route ?? null);
+        const base = { ...m, text, route, route_label: qaRouteLabel(route) };
+        return citations ? { ...base, citations } : base;
       });
   }
 
@@ -334,10 +398,32 @@ export class QaChatService {
     };
   }
 
-  async send(input: { conversationId?: string; text: string; streamId?: string }, tenantId: string, userId: string): Promise<{ conversation_id: string; messages: QaMessageView[]; blocked?: QaBlocked }> {
+  /** 可选模型（第 47 批）：kernel.status 的 model_choices 与 chat.models 用。 */
+  modelChoices(): QaModelChoice[] {
+    return qaModelChoices(this.d.routes?.() ?? [this.defaultRoute()], this.defaultRoute());
+  }
+
+  private defaultRoute(): string {
+    return this.d.defaultRoute ?? "legal/k3";
+  }
+
+  /**
+   * 律师选的模型（第 47 批）：不选（undefined / null / 空串）用缺省；选了就只认可选列表里的别名（K3、K2.6，且本机模型路由配置了），
+   * 不认识的拒绝并说明能选什么——不静默改用别的模型。
+   */
+  private pickRoute(route: unknown): string {
+    if (route === undefined || route === null || route === "") return this.defaultRoute();
+    const choices = this.modelChoices();
+    if (typeof route === "string" && choices.some((c) => c.alias === route)) return route;
+    const can = choices.map((c) => c.label).join("、");
+    throw Object.assign(new Error(can ? `所选模型不可用：问答只能选 ${can}` : "所选模型不可用：这台电脑没有配置可选的问答模型，请联系律所管理员"), { code: "validation" });
+  }
+
+  async send(input: { conversationId?: string; text: string; streamId?: string; route?: string | null }, tenantId: string, userId: string): Promise<{ conversation_id: string; messages: QaMessageView[]; blocked?: QaBlocked }> {
     const text = String(input.text ?? "").trim();
     if (!text) throw Object.assign(new Error("问题为空"), { code: "validation" });
     if (text.length > 8000) throw Object.assign(new Error("问题过长（无事项问答不处理案件材料；请在事项内处理）"), { code: "validation" });
+    const route = this.pickRoute(input.route);
     const blocked = this.check(text, tenantId, userId);
     if (blocked) {
       return { conversation_id: input.conversationId ?? "", messages: input.conversationId ? this.get(input.conversationId, tenantId, userId) : [], blocked };
@@ -357,14 +443,14 @@ export class QaChatService {
     if (this.answering.has(c.conversation_id)) throw Object.assign(new Error("上一问还在回答：等它答完再问"), { code: "conflict" });
     this.answering.add(c.conversation_id);
     try {
-      return await this.answer(c, text, input.streamId, tenantId, userId);
+      return await this.answer(c, text, input.streamId, tenantId, userId, route);
     } finally {
       this.answering.delete(c.conversation_id);
     }
   }
 
   /** 写入问题、取回答、写入回答或“未能取得回答”。序号写入时现取（复核 Q5-01）。 */
-  private async answer(c: ReturnType<QaChatService["conversation"]>, text: string, streamId: string | undefined, tenantId: string, userId: string): Promise<{ conversation_id: string; messages: QaMessageView[] }> {
+  private async answer(c: ReturnType<QaChatService["conversation"]>, text: string, streamId: string | undefined, tenantId: string, userId: string, route: string): Promise<{ conversation_id: string; messages: QaMessageView[] }> {
     const tz = this.tokenizer(c);
     const q = tz.tokenize(text);
     this.persist(c.conversation_id, q.entries);
@@ -389,28 +475,29 @@ export class QaChatService {
         userId,
         messages: [{ role: "system", content: QA_SYSTEM_PROMPT }, ...history.map((m) => ({ role: m.role, content: m.text }))],
         ...(partial ? { onDelta: partial.push } : {}),
+        route,
       });
     } catch (e) {
       partial?.stop();
-      this.addMessage(c.conversation_id, "notice", `未能取得回答：${qaFailureText((e as Error).message)}`);
+      this.addMessage(c.conversation_id, "notice", `未能取得回答：${qaFailureText(qaErrorMessage(e), route)}`, route);
       return { conversation_id: c.conversation_id, messages: this.get(c.conversation_id, tenantId, userId) };
     }
     // 模型回答原样保存（令牌形态；显示时还原）；写不进去的记“未能取得回答”，不让回答悄悄丢掉
     try {
-      this.addMessage(c.conversation_id, "assistant", answer);
+      this.addMessage(c.conversation_id, "assistant", answer, route);
     } catch (e) {
       partial?.stop();
-      this.addMessage(c.conversation_id, "notice", `未能取得回答：回答没有保存下来（${(e as Error).message}）`);
+      this.addMessage(c.conversation_id, "notice", `未能取得回答：回答没有保存下来（${(e as Error).message}）`, route);
       return { conversation_id: c.conversation_id, messages: this.get(c.conversation_id, tenantId, userId) };
     }
     partial?.finish();
     return { conversation_id: c.conversation_id, messages: this.get(c.conversation_id, tenantId, userId) };
   }
 
-  private addMessage(conversationId: string, role: "assistant" | "notice", text: string): void {
+  private addMessage(conversationId: string, role: "assistant" | "notice", text: string, route: string): void {
     this.d.db.tx(() => {
       const seq = (this.d.db.get<{ n: number }>(`SELECT COALESCE(MAX(seq), 0) AS n FROM qa_messages WHERE conversation_id = ?`, [conversationId])?.n ?? 0) + 1;
-      this.d.db.run(`INSERT INTO qa_messages (message_id, conversation_id, seq, role, text) VALUES (?,?,?,?,?)`, [newId("qaMessage"), conversationId, seq, role, text]);
+      this.d.db.run(`INSERT INTO qa_messages (message_id, conversation_id, seq, role, text, route) VALUES (?,?,?,?,?,?)`, [newId("qaMessage"), conversationId, seq, role, text, route]);
       this.d.db.run(`UPDATE qa_conversations SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE conversation_id = ?`, [conversationId]);
     });
   }

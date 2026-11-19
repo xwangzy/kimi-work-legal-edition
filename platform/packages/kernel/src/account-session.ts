@@ -48,6 +48,43 @@ export function dropAccountSession(keysDir: string): void {
 /** 控制面答复里表示“要重新登录”的错误代码。 */
 export const SESSION_PROBLEM_CODES: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch"]);
 
+/**
+ * 模型调用被法律模型网关**确定地**按身份拒绝 → 本机“要重新登录”的原因代码（第 47 批，第 46 批遗留 11）。
+ * 与控制面同步用同一口径（SESSION_PROBLEM_CODES 里的代码，写进同一个 accountProblem）：
+ * - account_disabled（控制面拒发额度租约 403，网关以 402 + 该代码转告）→ account_disabled；
+ * - seat_session_inactive（网关 401：控制面订阅把这台设备列为暂停——退出登录、会话过期、账号停用）→ session_invalid；
+ * - 网关若直接给出 session_* / account_disabled 代码，照用。
+ * 其余一律 null：额度（402 quota_*）、限流 429、5xx、网络错误、授权续期中（seat_unavailable）、席位或设备被收回（seat_*_revoked，
+ * 走席位收回的口径，不是重新登录能解决的）——这些都不改登录状态。
+ * 输入是网关错误代码，或带“[kwl:代码]”的错误说明；只认代码，不按中文说明猜。纯函数。
+ */
+export function identityRejectionOf(codeOrMessage: string | null | undefined): string | null {
+  const s = String(codeOrMessage ?? "");
+  const tagged = /\[kwl:([a-z0-9_]{1,60})\]/.exec(s)?.[1];
+  const codes = tagged ? [tagged] : (s.match(/(?<![a-z0-9_])(?:account_disabled|seat_session_inactive|session_(?:required|invalid|expired|member_mismatch))(?![a-z0-9_])/g) ?? []);
+  for (const c of codes) {
+    if (c === "seat_session_inactive") return "session_invalid";
+    if (SESSION_PROBLEM_CODES.has(c)) return c;
+  }
+  return null;
+}
+
+/**
+ * 刚重新登录后的宽限（毫秒）：网关的“暂停设备”名单来自控制面订阅（缺省每 30 秒刷新），重新登录后的头一段时间里网关可能还按旧名单
+ * 回 seat_session_inactive——这时不把律师再踢回登录框（否则登录→被拒→再登录来回打转）。account_disabled 是控制面当场核的，不设宽限。
+ */
+export const SESSION_REJECTION_GRACE_MS = 60_000;
+
+/**
+ * 模型请求被拒后要不要切到“要重新登录”（第 47 批）：identityRejectionOf 认出的身份拒绝；但 session_invalid（网关 seat_session_inactive）
+ * 在重新登录后 SESSION_REJECTION_GRACE_MS 内不算。msSinceLogin = 距本机上次重新登录成功的毫秒数（没有重新登录过传 Infinity）。纯函数。
+ */
+export function modelRejectionProblem(codeOrMessage: string | null | undefined, msSinceLogin: number): string | null {
+  const code = identityRejectionOf(codeOrMessage);
+  if (code === "session_invalid" && msSinceLogin < SESSION_REJECTION_GRACE_MS) return null;
+  return code;
+}
+
 /** 账号接口错误代码 → 律师看得懂的一句话。 */
 export function accountErrorText(code: string, fallback?: string): string {
   switch (code) {

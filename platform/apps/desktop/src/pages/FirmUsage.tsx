@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { api, type CpAuditRow, type QuotaStatus } from "../api.ts";
 import { fmtTime } from "../lib/labels.ts";
-import { atLabel, auditActionLabel, auditActorLabel, auditDetailLabel, auditFetchErrorText, auditResultLabel, auditTargetLabel, fmtAmount, fmtCount, fmtPct, legacyNote, modelLabel, ownDenominatorText, pausedText, periodLabel, periodRange, ratioTone, remainingLine, resetLabel, usageTone, warnText } from "../lib/firm-usage.ts";
+import { atLabel, recordChargeText, auditActionLabel, auditActorLabel, auditDetailLabel, auditFetchErrorText, auditResultLabel, auditTargetLabel, fmtAmount, fmtCount, fmtPct, legacyNote, modelLabel, ownDenominatorText, pausedText, periodLabel, periodRange, ratioTone, remainingLine, resetLabel, usageTone, warnText } from "../lib/firm-usage.ts";
 
 /** 月度上限的常用档位（本期总额度的百分比）。 */
 const CAP_PRESETS = [60, 70, 80, 90] as const;
@@ -27,7 +27,7 @@ function UsageBar(props: { ratio: number; inFlight?: number; capPct?: number | n
   );
 }
 
-/** admin：管理员（可改上限、看按成员）；律师在“账号与团队”看到的是同一面板去掉管理部分。 */
+/** admin：管理员（可改上限、看按成员）；律师在“设置 · 套餐与用量”看到的是同一面板去掉管理部分（第 47 批从“账号与团队”移出）。 */
 export function UsagePanel({ admin = false }: { admin?: boolean }) {
   const [q, setQ] = useState<QuotaStatus | null>(null);
   const [err, setErr] = useState("");
@@ -153,6 +153,44 @@ export function UsagePanel({ admin = false }: { admin?: boolean }) {
         )}
       </section>
 
+      {/* 使用明细（第 47 批，对照 Kimi“我的额度”下的最近使用明细）：本人本期最近 20 条，来自控制面账本（真实 usage），不含请求内容 */}
+      {q.own_recent && (
+        <>
+          <div className="section-title">我的使用明细（最近 20 条）</div>
+          {q.own_recent.length === 0 ? (
+            <p className="muted">本期还没有你的 AI 调用。</p>
+          ) : (
+            <table className="data usage-records">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>用在</th>
+                  <th>模型</th>
+                  <th className="num">输入（其中缓存）</th>
+                  <th className="num">输出</th>
+                  <th className="num">计入额度</th>
+                </tr>
+              </thead>
+              <tbody>
+                {q.own_recent.map((r, i) => (
+                  <tr key={`${r.at}-${i}`}>
+                    <td title={fmtTime(r.at)}>{fmtTime(r.at)}</td>
+                    <td>{r.kind === "qa" ? "问答" : "任务"}</td>
+                    <td>{r.label ?? (r.alias ? modelLabel(r.alias) : "—")}</td>
+                    <td className="num">
+                      {fmtCount(r.tokens_in)}
+                      {r.tokens_cached > 0 ? `（${fmtCount(r.tokens_cached)}）` : ""}
+                    </td>
+                    <td className="num">{fmtCount(r.tokens_out)}</td>
+                    <td className="num">{recordChargeText(r)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+
       <div className="section-title">按模型（{periodLabel(q.period)}）</div>
       {models.length === 0 ? (
         <p className="muted">本期还没有用量。发起第一个任务后，这里按模型显示用量占比。</p>
@@ -209,7 +247,7 @@ export function UsagePanel({ admin = false }: { admin?: boolean }) {
               <thead>
                 <tr>
                   <th>成员</th>
-                  <th>占本所用量</th>
+                  <th>占本所额度</th>
                   <th className="num">用量</th>
                   <th className="num">调用次数</th>
                 </tr>
@@ -220,7 +258,7 @@ export function UsagePanel({ admin = false }: { admin?: boolean }) {
                     <td>{m.name ?? "未登记的成员"}</td>
                     <td>
                       <div className="member-usage">
-                        <UsageBar size="sm" ratio={m.used_ratio_of_firm} tone="ok" label={`${m.name ?? "成员"}占本所用量`} />
+                        <UsageBar size="sm" ratio={m.used_ratio_of_firm} tone="ok" label={`${m.name ?? "成员"}占本所额度`} />
                         <span className="num">{fmtPct(m.used_ratio_of_firm)}</span>
                       </div>
                     </td>

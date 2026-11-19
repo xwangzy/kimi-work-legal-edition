@@ -6,8 +6,10 @@
  * 所有场景尚未通过法律质量门槛：胶囊上不逐张标“试用”，页脚统一写一行（Z3 #16、V-a）。
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { api, type Matter, type MaterialFile, type ReminderItem, type RunPolicyView } from "../api.ts";
-import { nav, NEW_MATTER } from "../App.tsx";
+import { api, type Matter, type MaterialFile, type QuotaStatus, type ReminderItem, type RunPolicyView } from "../api.ts";
+import { consumeNewMatterRequest, nav, NEW_MATTER } from "../App.tsx";
+import { quotaNotice } from "../lib/quota-notice.ts";
+import { recommendedCards } from "../lib/recommend.ts";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
 import { defaultChoice } from "../components/ModeSelector.tsx";
 import { NewMatterDialog } from "../components/NewMatter.tsx";
@@ -16,26 +18,38 @@ import { prepareStart, RunSheet, type PendingStart } from "../components/RunShee
 import { ScenarioStart } from "../components/ScenarioStart.tsx";
 import { cardGets, cardGives, COMING_SOON, getsPlain, LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
 import { Icon } from "../components/Icons.tsx";
-import { fmtTime, runName } from "../lib/labels.ts";
-import { nextStepPill, type RunFacts } from "../lib/next-step.ts";
 import { backendDownText, importFailText } from "../lib/errors.ts";
 import { dueText, dueTone, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
 
 const LINE_KEY = "kwl.home.line";
-/** 首页场景区的四个页签：三条业务线 + 三线都常用的“通用”（v9.4 S1 §5.5）。 */
-type HomeTab = BusinessLine | "general";
-const HOME_TABS: HomeTab[] = ["litigation", "transactional", "inhouse", "general"];
-/** 每个页签先列几个胶囊（Kimi 首页一行约 7 个；多出的点“更多”）。 */
+/** 额度提示条关掉后记住的键（同一周期同一情形不再提示；lib/quota-notice.ts）。 */
+const QUOTA_DISMISS_KEY = "kwl.home.quota-dismissed";
+/**
+ * 首页能力胶囊（第 47 批对照 Kimi 首页“推荐 / PPT / 专业研究 …”一行胶囊）：推荐 + 三条业务线 + 三线都常用的“通用”（v9.4 S1 §5.5）。
+ * 点胶囊在下方列出该组场景（标题 + 得到什么），点一行打开开始面板。
+ */
+type HomeTab = "recommended" | BusinessLine | "general";
+const HOME_TABS: HomeTab[] = ["recommended", "litigation", "transactional", "inhouse", "general"];
+const TAB_LABELS: Record<HomeTab, string> = { recommended: "推荐", litigation: "诉讼仲裁", transactional: "非诉交易", inhouse: "企业法务", general: "通用" };
+/** 每组先列几行（多出的点“更多”）。 */
 const CHIP_LIMIT = 6;
 function savedLine(): HomeTab {
   try {
     const v = localStorage.getItem(LINE_KEY);
-    if (v === "litigation" || v === "transactional" || v === "inhouse" || v === "general") return v;
+    if (v === "recommended" || v === "litigation" || v === "transactional" || v === "inhouse" || v === "general") return v;
   } catch {
     // 无本地存储时用缺省
   }
-  return "litigation";
+  return "recommended";
 }
+function tabIcon(t: HomeTab): ReactNode {
+  if (t === "recommended") return Icon.sparkle();
+  if (t === "litigation") return Icon.scale();
+  if (t === "transactional") return Icon.fileCheck();
+  if (t === "inhouse") return Icon.shield();
+  return Icon.compass();
+}
+
 
 /** 场景胶囊的图标：按场景名里的动作挑一个（Kimi 能力胶囊每个都带线性图标）。 */
 export function scenarioIcon(c: Pick<ScenarioCard, "title">): ReactNode {
@@ -59,13 +73,20 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   // docs 属于哪个事项（开始面板切换事项时据此判断新事项的材料是否已到）
   const [docsFor, setDocsFor] = useState<string | null>(null);
   const [mattersLoaded, setMattersLoaded] = useState(false);
-  // 继续工作：每个已完成任务的“下一步”事实（未处理意见、待复核成果、成果份数）
-  const [facts, setFacts] = useState<Record<string, RunFacts>>({});
   const [policy, setPolicy] = useState<RunPolicyView | null>(null);
   const [value, setValue] = useState<ComposerValue>({ goal: "", scenario: "a1.agent_task", documentIds: [], choice: defaultChoice(null) });
   const [pendingReview, setPendingReview] = useState<any[]>([]);
   // 等你处理 / 继续工作（UIUX 增量评审 H-1）
-  const [recent, setRecent] = useState<{ run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; goal: string }[]>([]);
+  const [recent, setRecent] = useState<{ run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; goal: string; skill?: string | null }[]>([]);
+  // 额度提示条（第 47 批，Kimi 输入框上方“月额度已不足 10%……”同位）
+  const [quota, setQuota] = useState<QuotaStatus | null>(null);
+  const [quotaDismissed, setQuotaDismissed] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(QUOTA_DISMISS_KEY);
+    } catch {
+      return null;
+    }
+  });
   const [waiting, setWaiting] = useState<{ run_id: string; matter_id: string }[]>([]);
   // 今天（v9.4 U1 #3）：近期期限也放到首页首屏
   const [deadlines, setDeadlines] = useState<ReminderItem[]>([]);
@@ -145,11 +166,18 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
       })
       .catch(() => setMsg(backendDownText(import.meta.env.DEV)));
   }, []);
-  // 上手指南最后一步“新建第一个事项”
+  // 上手指南最后一步“新建第一个事项”；侧栏“事项 +”（从别的页面过来时首页挂载后取走请求）
   useEffect(() => {
-    const on = () => setNewMatter(true);
+    const on = () => {
+      consumeNewMatterRequest();
+      setNewMatter(true);
+    };
     window.addEventListener(NEW_MATTER, on);
+    if (consumeNewMatterRequest()) setNewMatter(true);
     return () => window.removeEventListener(NEW_MATTER, on);
+  }, []);
+  useEffect(() => {
+    void api.quotaStatus().then(setQuota).catch(() => setQuota(null));
   }, []);
   useEffect(() => {
     loadMatters();
@@ -186,34 +214,6 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   useEffect(() => {
     if (matterId) loadMatter(matterId);
   }, [matterId, loadMatter]);
-  // “下一步”胶囊的事实：已完成的任务再取审查意见进度与本任务成果（本机内核，最多 5 个任务）
-  useEffect(() => {
-    const done = recent.filter((r) => r.status === "succeeded" || r.status === "partial");
-    if (done.length === 0) return;
-    let live = true;
-    void (async () => {
-      const arts = new Map<string, any[]>();
-      for (const mid of [...new Set(done.map((r) => r.matter_id))]) arts.set(mid, (await api.listArtifacts(mid).catch(() => ({ artifacts: [] as any[] }))).artifacts);
-      const out: Record<string, RunFacts> = {};
-      for (const r of done) {
-        const rc = await api.riskCards(r.matter_id, { run_id: r.run_id }).catch(() => null);
-        const mine = (arts.get(r.matter_id) ?? []).filter((a) => a.run_id === r.run_id);
-        out[r.run_id] = {
-          status: r.status,
-          openOpinions: rc ? Math.max(0, rc.progress.total - rc.progress.decided) : 0,
-          pendingReview: mine.filter((a) => a.status === "pending_review").length,
-          artifacts: mine.length,
-          drafts: mine.filter((a) => a.status === "draft").length,
-          approved: mine.filter((a) => a.status === "approved").length,
-        };
-      }
-      if (live) setFacts(out);
-    })();
-    return () => {
-      live = false;
-    };
-  }, [recent]);
-
   const submit = async () => {
     const matter = matters.find((m) => m.matter_id === matterId);
     if (!matter) return setNewMatter(true);
@@ -254,10 +254,21 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     }
   };
 
-  // 等你处理（Kimi 输入框上方提示条同位）：等你确认的任务、待复核的草稿
-  const notice =
+  // 输入框上方提示条（Kimi 同位）：额度提示（不足 10%、用完、到上限、放缓）在上；等你确认的任务、待复核的草稿在下
+  const qn = quotaNotice(quota);
+  const showQuota = qn && (qn.tone === "stop" || quotaDismissed !== qn.key);
+  const dismissQuota = () => {
+    if (!qn) return;
+    setQuotaDismissed(qn.key);
+    try {
+      localStorage.setItem(QUOTA_DISMISS_KEY, qn.key);
+    } catch {
+      // 记不住时只在本次打开期间生效
+    }
+  };
+  const waitingRow =
     waiting.length > 0 || pendingReview.length > 0 ? (
-      <>
+      <div className="notice-row">
         <span className="act-dot act-wait" aria-hidden="true" />
         {waiting.length > 0 && (
           <button className="btn-link notice-strong" onClick={() => nav(`/run/${waiting[0]!.run_id}/${waiting[0]!.matter_id}`)}>
@@ -270,21 +281,47 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
             {pendingReview.length} 份草稿待你复核
           </button>
         )}
+      </div>
+    ) : null;
+  const notice =
+    showQuota || waitingRow ? (
+      <>
+        {showQuota && qn && (
+          <div className={`notice-row notice-quota${qn.tone === "stop" ? " is-stop" : ""}`} role="status">
+            <span className="notice-icon" aria-hidden="true">{Icon.chart()}</span>
+            <span className="notice-text">{qn.text}</span>
+            <button className="btn-link" onClick={() => nav("/connections/usage")}>
+              查看用量
+            </button>
+            <span className="spacer" />
+            {qn.tone === "warn" && (
+              <button className="notice-x" onClick={dismissQuota} aria-label="关闭额度提示" title="本期不再提示">
+                <Icon.x />
+              </button>
+            )}
+          </div>
+        )}
+        {waitingRow}
       </>
     ) : null;
-  const tabCards = (t: HomeTab) => (t === "general" ? SCENARIOS.filter((c) => c.general) : SCENARIOS.filter((c) => c.line === t && !c.general));
+  const tabCards = (t: HomeTab) => (t === "recommended" ? recommendedCards(recent) : t === "general" ? SCENARIOS.filter((c) => c.general) : SCENARIOS.filter((c) => c.line === t && !c.general));
   const cards = tabCards(line);
   const shown = moreOpen ? cards : cards.slice(0, CHIP_LIMIT);
-  const showToday = deadlines.length > 0 || deadlinesFailed || recent.length > 0;
+  // 近期期限（v9.4 U1 #3）：有期限或读不出来时显示；“继续工作”已由侧栏“任务”分组承担（第 47 批）
+  const showToday = deadlines.length > 0 || deadlinesFailed;
 
   return (
     <main className="main main-home">
       <div className="home">
         <div className="home-center">
-          {/* Kimi 首页同款：居中品牌字标 + 输入框 + 托盘 + 能力胶囊；首屏不放大块卡片 */}
+          {/* Kimi Work 首页同款：居中粗体字标 + 右上黑色小标（Kimi 为“KIMI”+“WORK”，我方为“Kimi Work”+“法律”）+ 输入框 + 托盘 + 能力胶囊 */}
           <h1 className="home-wordmark" aria-label="Kimi Work 法律版">
-            <span className="brand-mark home-mark" aria-hidden="true">K</span>
-            <span>Kimi Work</span>
+            {/* 字宽按 textLength 定死（只调字距），各系统字体下宽度一致，右上小标不会离开字标 */}
+            <svg className="home-wordmark-svg" viewBox="0 0 236 52" role="presentation" aria-hidden="true">
+              <text x="0" y="44" fill="currentColor" fontSize="50" fontWeight="800" textLength="234" lengthAdjust="spacing" fontFamily="inherit">
+                Kimi Work
+              </text>
+            </svg>
             <span className="home-wordmark-tag">法律</span>
           </h1>
           <Composer
@@ -317,54 +354,47 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
           />
           {msg && <p className="muted home-msg" role="status" style={{ whiteSpace: "pre-line" }}>{msg}</p>}
           {failMsg && <div className="banner banner-red home-msg" role="alert" style={{ whiteSpace: "pre-line" }}>{failMsg}</div>}
-          {/* 上手清单（第 46 批）：新律师第一次进首页时出现，四步按真实数据自动打勾，可收起 */}
-          {mattersLoaded && <GuideChecklist onNewMatter={() => setNewMatter(true)} />}
-          {mattersLoaded && matters.length === 0 && (
-            <p className="home-first">
-              还没有事项。案卷、材料和成果都归在事项里，只存在这台电脑上。
-              <button className="btn-link" onClick={() => setNewMatter(true)}>
-                新建第一个事项
-              </button>
-            </p>
-          )}
-
-          {/* 业务场景（Kimi 能力胶囊同款）：按业务线切换，每线先列 6 个，其余点“更多”；完整说明在开始面板与“方法与模板”页 */}
+          {/* 能力胶囊（第 47 批对照 Kimi 首页一行胶囊）：推荐 + 三条业务线 + 通用；下方列出该组场景（标题 + 得到什么），点一行打开开始面板 */}
           <section className="home-scenes" aria-label="从业务场景开始" data-tour="scenarios">
-            <div className="scene-tabs" role="tablist" aria-label="业务线">
+            <div className="scene-chips" role="tablist" aria-label="场景分组">
               {HOME_TABS.map((t) => (
-                <button key={t} role="tab" aria-selected={line === t} className={`scene-tab${line === t ? " active" : ""}`} onClick={() => chooseLine(t)}>
-                  {t === "general" ? "通用" : LINE_LABELS[t]}
+                <button key={t} role="tab" aria-selected={line === t} className={`scene-chip${line === t ? " active" : ""}`} onClick={() => chooseLine(t)}>
+                  <span className="scene-chip-icon" aria-hidden="true">{tabIcon(t)}</span>
+                  {t === "recommended" || t === "general" ? TAB_LABELS[t] : LINE_LABELS[t]}
                 </button>
               ))}
-            </div>
-            <div className="scene-chips">
-              {shown.map((c) => (
-                <button key={c.id} className="scene-chip" title={`得到：${cardGets(c)}\n需要：${cardGives(c)}`} aria-label={`${c.title}：给 ${c.gives}；得到 ${c.gets.join("、")}`} onClick={() => openCard(c)}>
-                  <span className="scene-chip-icon" aria-hidden="true">{scenarioIcon(c)}</span>
-                  {c.title}
-                </button>
-              ))}
-              {cards.length > CHIP_LIMIT && (
-                <button className="scene-chip scene-chip-more" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}>
-                  {moreOpen ? "收起" : `更多 ${cards.length - CHIP_LIMIT} 个`}
-                </button>
-              )}
               <button className="scene-chip scene-chip-more" onClick={() => nav("/methods")}>
                 全部方法 →
               </button>
             </div>
-            {/* 即将推出（v9.4 第 20 批，S1 §5.1 第 4 条）：灰显、不能点，不挂到相近的方法上 */}
-            {line !== "general" && COMING_SOON.some((x) => x.line === line) && (
-              <div className="coming-row muted" aria-label="即将推出">
-                即将推出：{COMING_SOON.filter((x) => x.line === line).map((x) => x.title).join(" · ")}
-              </div>
-            )}
+            <div className="scene-list" role="tabpanel" aria-label={TAB_LABELS[line]}>
+              {shown.map((c) => (
+                <button key={c.id} className="scene-row" title={`需要：${cardGives(c)}`} aria-label={`${c.title}：给 ${c.gives}；得到 ${c.gets.join("、")}`} onClick={() => openCard(c)}>
+                  <span className="scene-row-icon" aria-hidden="true">{scenarioIcon(c)}</span>
+                  <span className="scene-row-title">{c.title}</span>
+                  <span className="scene-row-gets">得到：{cardGets(c)}</span>
+                </button>
+              ))}
+              {cards.length > CHIP_LIMIT && (
+                <button className="scene-row scene-row-more" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}>
+                  {moreOpen ? "收起" : `还有 ${cards.length - CHIP_LIMIT} 个场景`}
+                </button>
+              )}
+              {/* 即将推出（v9.4 第 20 批，S1 §5.1 第 4 条）：灰显、不能点，不挂到相近的方法上 */}
+              {line !== "general" && line !== "recommended" && COMING_SOON.some((x) => x.line === line) && (
+                <div className="coming-row muted" aria-label="即将推出">
+                  即将推出：{COMING_SOON.filter((x) => x.line === line).map((x) => x.title).join(" · ")}
+                </div>
+              )}
+            </div>
           </section>
+          {/* 上手清单（第 46 批；第 47 批收成一行）：新律师第一次进首页时出现，四步按真实数据自动打勾，可展开、可收起 */}
+          {mattersLoaded && <GuideChecklist onNewMatter={() => setNewMatter(true)} />}
         </div>
 
-        {/* 今天（v9.4 U1 #3）：近期期限、继续工作；“等你处理”已放到输入框上方提示条；都空时不显示 */}
+        {/* 近期期限（v9.4 U1 #3）：“等你处理”在输入框上方提示条，“继续工作”在侧栏“任务”分组；没有期限时不显示 */}
         {showToday && (
-          <section className="today" aria-label="今天">
+          <section className="today today-single" aria-label="近期期限">
             <div className="today-col">
               <div className="today-h">近期期限</div>
               {deadlinesFailed ? (
@@ -382,36 +412,6 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
                     <span className="today-text">{d.note || reminderKindLabel(d.kind)} · {d.matter_title}</span>
                   </button>
                 ))
-              )}
-            </div>
-            <div className="today-col">
-              <div className="today-h">
-                继续工作
-                {recent.length > 3 && matterId && (
-                  <button className="btn-link" onClick={() => nav(`/matter/${matterId}`)}>
-                    全部 →
-                  </button>
-                )}
-              </div>
-              {recent.length === 0 ? (
-                <p className="today-empty">还没有任务。</p>
-              ) : (
-                recent.slice(0, 3).map((r) => {
-                  const pill = nextStepPill(facts[r.run_id] ?? { status: r.status });
-                  return (
-                    <button key={r.run_id} className="today-row" onClick={() => nav(`/run/${r.run_id}/${r.matter_id}`)} title={`${r.matter_title} · ${fmtTime(r.updated_at)}`}>
-                      {/* 第 26 批（评审 U2-33）：多个事项同时在办时看得出是哪个案子 */}
-                      {/* 第 27 批（评审 U3-14）：状态胶囊与任务名同一行，事项名单独一行占满宽，不再被胶囊挤掉能区分案子的后半截 */}
-                      <span className="today-main">
-                        <span className="today-line">
-                          <span className="today-text">{runName(r)}</span>
-                          <span className={`pill ${pill.tone}`}>{pill.text}</span>
-                        </span>
-                        <small className="today-sub">{r.matter_title}</small>
-                      </span>
-                    </button>
-                  );
-                })
               )}
             </div>
           </section>

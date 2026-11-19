@@ -1384,8 +1384,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     return { activation_id: rec.id, claim_secret: secret };
   };
   type Onboarding = Record<string, unknown> & { state: string };
-  /** 登录后这台电脑该做什么（主文 §2.2 Onboarding）。dev = 已激活且请求带了有效设备签名的本机设备。 */
-  const onboardingOf = (a: AccountRecord, dev: DeviceRecord | null): Onboarding => {
+  /**
+   * 登录后这台电脑该做什么（主文 §2.2 Onboarding）。dev = 已激活且请求带了有效设备签名的本机设备。
+   * issueClaim = false（第 47 批：网页控制台的登录）：只报状态、不生成认领凭据——网页登录不是一台要入组的电脑，
+   * 生成新凭据会按“同一账号同一种类只留一份”把这个账号正在等批准的新电脑申请撤掉（真实走查：律师在网页控制台登录后，第二台电脑的申请从管理员那里消失）。
+   */
+  const onboardingOf = (a: AccountRecord, dev: DeviceRecord | null, issueClaim = true): Onboarding => {
     const t = tenantOf(a.tid);
     const firm = orgOf(t.tid);
     const member = { slug: a.member_slug, name: a.name, role: a.role };
@@ -1396,6 +1400,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (dev) return dev.cert.memberId === uidOfAccount(a) ? { state: "ready", ...base, device_id: dev.cert.deviceId } : { state: "device_mismatch", ...base };
     if (!t.root_public_key_pem) {
       if (a.role !== "admin") return { state: "waiting_founder", ...base };
+      if (!issueClaim) return { state: "needs_founder_setup", ...base };
       return { state: "needs_founder_setup", ...base, claim: { kind: "founder", tid: t.tid, firm, member, ...accountClaim(t, a, "founder") } };
     }
     if (live.length >= limit) return { state: "device_limit", ...base, devices: live.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null })) };
@@ -1406,6 +1411,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     while (used.has(n) && n <= MAX_DEVICES_PER_ACCOUNT) n += 1;
     if (n > MAX_DEVICES_PER_ACCOUNT) return { state: "device_limit", ...base, devices: [] };
     const deviceId = accountDeviceId(t.tid.slice(4), a.member_slug, n);
+    if (!issueClaim) return { state: "needs_device_join", ...base };
     return { state: "needs_device_join", ...base, device_id: deviceId, claim: { kind: "member", tid: t.tid, firm, member, ...accountClaim(t, a, "member", deviceId) } };
   };
   const authResult = (a: AccountRecord, token: string, x: SessionRecord, onb: Onboarding) => ({
@@ -2779,11 +2785,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const kind = clientInfo(b.client).platform === "web" ? "web" : "desktop";
       const { token, rec } = newSession(a, kind, null, b.client);
       const base = { tid: t.tid, firm: orgOf(t.tid), member: { slug, name, role }, devices_used: 0, device_limit: deviceLimitOf(a) };
+      // 网页注册（kind = web）不生成认领凭据：律师之后在客户端登录时才生成（第 47 批，同登录）
       const onb: Onboarding = claim
         ? claim.kind === "founder"
           ? { state: "needs_founder_setup", ...base, claim }
           : { state: "needs_device_join", ...base, device_id: expectedJoinDeviceId(t.tid.slice(4), slug), claim, via: "invite_code" }
-        : onboardingOf(a, null);
+        : onboardingOf(a, null, kind !== "web");
       accountMark(res, a, "account.register");
       return send(res, 200, authResult(a, token, rec, onb));
     }
@@ -2813,8 +2820,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (dev && (!tenants.get(a.tid)!.devices.has(dev.cert.deviceId) || dev.cert.memberId !== uidOfAccount(a))) throw new CpError(409, "device_mismatch", "这台电脑已登记为本所另一位成员（或另一家律所）：请用那位成员的账号登录");
       a.failed = { count: 0, first_at: null, locked_until: null };
       a.last_login_at = iso();
-      const onb = onboardingOf(a, dev);
       const kind = clientInfo(b.client).platform === "web" ? "web" : "desktop";
+      const onb = onboardingOf(a, dev, kind !== "web");
       const { token, rec } = newSession(a, kind, dev ? dev.cert.deviceId : null, b.client);
       accountMark(res, a, "account.login");
       return send(res, 200, authResult(a, token, rec, onb));
@@ -3339,7 +3346,23 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const view = quotaView(q, ctx, { detail, uid: dev.cert.memberId, sid: t.seatsByUser.get(dev.cert.memberId)?.sid ?? null, memberName: (uid) => accountOfMember(t.tid, uid)?.name ?? null });
       // 模型显示名取路由登记里的（运营改了路由，客户端跟着变）
       const models = view.models.map((m) => ({ ...m, label: routing.models.find((x) => x.alias === m.alias)?.label ?? m.alias }));
-      return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), plan: { id: plan.id, label: plan.label }, account: me ? { aid: me.aid, email: me.email, name: me.name } : null, accounts_required: t.accounts_required === true, ...view, models }));
+      // 本人的使用明细（第 47 批，对照 Kimi“我的额度”下的使用明细）：本期最近 20 条，只有本人的行；只给时间、问答或任务、模型、token、金额与结果，不含请求内容
+      const ownRecent = book.query({ tid: t.tid, uid: dev.cert.memberId, from: q.period_from, to: q.period_to, limit: 20 }).rows.map((r) => ({
+        at: r.at,
+        kind: r.qa ? ("qa" as const) : ("task" as const),
+        alias: r.alias,
+        label: r.alias ? (routing.models.find((x) => x.alias === r.alias)?.label ?? r.alias) : null,
+        tokens_in: r.usage?.input ?? 0,
+        tokens_cached: r.usage?.cached ?? 0,
+        tokens_out: r.usage?.output ?? 0,
+        charge: r.charge,
+        unit: r.unit,
+        value_cny: r.value_micro === null ? null : cny(r.value_micro),
+        outcome: r.outcome,
+        partial: r.partial === true,
+        estimated: r.usage_source === "estimated",
+      }));
+      return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), plan: { id: plan.id, label: plan.label }, account: me ? { aid: me.aid, email: me.email, name: me.name } : null, accounts_required: t.accounts_required === true, ...view, models, own_recent: ownRecent }));
     }
     if (method === "PUT" && p === "/v1/quota/cap") {
       mark("quota.cap_set");

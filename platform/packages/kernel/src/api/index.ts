@@ -2883,6 +2883,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         sync_configured: !!config.syncShareDir,
         member_role: db.get<{ role: string }>(`SELECT role FROM memberships WHERE tenant_id = ? AND user_id = ?`, [id.tenantId, id.userId])?.role ?? null,
         model_routes: broker.routeAliases(),
+        // 第 47 批：问答输入框的模型选择（K3 / K2.6；只列本机模型路由配置了的；default = 不选时用的）
+        model_choices: deps.qa?.modelChoices() ?? [],
         model_provider: config.env.ZR_MODEL_PROVIDER ?? "mock",
         // 演示示例事项开关（首页据此决定是否放入示例；正式产品恒为 false）
         demo_samples: config.demoSamples,

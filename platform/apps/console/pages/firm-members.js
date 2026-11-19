@@ -42,7 +42,7 @@ export function render(page) {
           { key: "status", label: "状态", render: (m) => h("span", { class: "badges" }, accountBadge({ ...m, locked: Number(m.locked_s) > 0 })) },
           { key: "last_login_at", label: "最近登录", value: (m) => m.last_login_at ?? "", render: (m) => h("span", { title: fmt.full(m.last_login_at) }, fmt.ago(m.last_login_at)) },
           { key: "devices", label: "电脑", num: true, value: (m) => (m.devices ?? []).filter((d) => !d.revoked).length, render: (m) => `${(m.devices ?? []).filter((d) => !d.revoked).length}${m.device_limit ? ` / ${m.device_limit}` : ""}` },
-          { key: "usage", label: "本期用量占全所", num: true, value: (m) => Number(m.usage?.used_ratio_of_firm) || 0, render: (m) => fmt.pct(m.usage?.used_ratio_of_firm) },
+          { key: "usage", label: "本期占本所额度", title: "本期用量 ÷ 本所本期总额度", num: true, value: (m) => Number(m.usage?.used_ratio_of_firm) || 0, render: (m) => fmt.pct(m.usage?.used_ratio_of_firm) },
           { key: "requests", label: "请求", num: true, value: (m) => Number(m.usage?.requests) || 0, render: (m) => fmt.int(m.usage?.requests) },
         ],
       }),
@@ -123,7 +123,7 @@ function openMember(m, reload) {
           ["登录锁定", Number(m.locked_s) > 0 ? `锁定中，约 ${Math.ceil(m.locked_s / 60)} 分钟后自动解除（启用即可立即解除）` : "无"],
           ["电脑数上限", m.device_limit ? `${m.device_limit} 台` : "按套餐缺省"],
           ["个人额度上限", m.quota_limit === null || m.quota_limit === undefined ? "不设" : fmt.num(m.quota_limit)],
-          ["本期用量", m.usage ? `${fmt.int(m.usage.requests)} 次请求 · 占全所 ${fmt.pct(m.usage.used_ratio_of_firm)}` : "—"],
+          ["本期用量", m.usage ? `${fmt.int(m.usage.requests)} 次请求 · 占本所本期额度 ${fmt.pct(m.usage.used_ratio_of_firm)}` : "—"],
         ]),
       ),
       panel(

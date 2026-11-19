@@ -79,6 +79,11 @@ export interface ExecutorDeps {
    * 闸门对逐字出现的这一段只替换已知名单。未配置时闸门照常识别（偏向多遮）。
    */
   vouchKnownOnly?: ((runId: string, text: string) => void) | undefined;
+  /**
+   * 助手任务失败时把原始错误交给内核（第 47 批；index.ts 接到账号状态）：助手宿主的模型请求被网关按身份拒绝
+   * （“[kwl:account_disabled]”“[kwl:seat_session_inactive]”）时内核立即切到“要重新登录”，不等下一次控制面同步。只读通知。
+   */
+  onAgentFailure?: ((error: string | null) => void) | undefined;
 }
 
 interface RunRow {
@@ -1336,6 +1341,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
     case "expired":
       throw new RunTerminal("expired", `Agent 任务过期（${poll.reason ?? "expired"}）`);
     default:
+      notifyAgentFailure(ctx.deps, poll.error);
       throw new DomainError("internal", agentFailureText(poll.reason, poll.error), 502);
   }
 
@@ -1531,6 +1537,7 @@ async function runRedlineStage(
     if (!poll || (poll.status !== "succeeded" && poll.status !== "partial")) {
       const status = poll ? String(poll.status) : "timed_out";
       const files = redlineFilesOf(db, runId, run.matter_id);
+      notifyAgentFailure(ctx.deps, poll?.error);
       appendEvent(ctx.deps, runId, attemptId, REDLINE_SEQ.outcome, "redline.outcome", { status, files: files.length, seconds, ...(poll?.reason ? { reason: poll.reason } : {}), ...(poll?.error ? { error: poll.error } : {}) });
       return { status, files, ...(poll?.error ? { error: poll.error } : {}) };
     }
@@ -2045,6 +2052,7 @@ async function runReviewStage(
       return { status: "timed_out", files: 0 };
     }
     if (poll.status !== "succeeded" && poll.status !== "partial") {
+      notifyAgentFailure(ctx.deps, poll.error);
       appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.fixOutcome, "review.fix_outcome", { status: poll.status, reason: poll.reason, error: poll.error });
       return { status: String(poll.status), files: 0, ...(poll.error ? { error: poll.error } : {}) };
     }
@@ -2198,6 +2206,16 @@ async function runReviewStage(
     return { remaining: [`独立复核提出 ${review.findings.length} 条意见，助手按意见改出了新版本（${revised.map((f) => `《${f.replace(/\.(docx|xlsx)$/i, "")}》`).join("")}），但修改没有全部完成（${why}），也没有写出“独立复核处理情况”：请以最新版本为准，按《独立复核意见》逐条核对哪些已改`], partial: true };
   }
   return { remaining: [`独立复核提出 ${review.findings.length} 条意见，交回助手修改没有完成（${why}）：文书是复核前的版本，请按《独立复核意见》逐条核对`], partial: true };
+}
+
+/** 助手某一段的原始错误交给内核（第 47 批：身份拒绝即切“要重新登录”）；没有错误不通知，回调抛错不影响任务。 */
+function notifyAgentFailure(deps: ExecutorDeps, error: string | null | undefined): void {
+  if (!error) return;
+  try {
+    deps.onAgentFailure?.(error);
+  } catch {
+    // 只读通知：不改变任务失败的处理
+  }
 }
 
 /**

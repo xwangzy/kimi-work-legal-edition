@@ -85,8 +85,9 @@ export const ALERT_KIND = { threshold: "跨过阈值", cap: "到上限", exhaust
 export const ALERT_LEVEL = { info: ["提示", "info"], warn: ["注意", "warn"], critical: ["严重", "danger"] };
 export const OUTCOME = { ok: ["成功", "ok"], client_gone: ["客户端断开", "warn"], upstream_error: ["上游出错", "danger"], timeout: ["超时", "danger"], blocked: ["已拦截", "neutral"] };
 export const USAGE_SOURCE = { upstream: ["上游回执", "ok"], drained: ["断开后读完", "info"], estimated: ["估算", "warn"], none: ["无用量", "neutral"] };
-export const PAUSED = { cap: "已到上限", allowance: "额度用完", burst: "5 小时窗口用满", seat: "个人额度用完" };
-export const DENOMINATOR = { account_limit: "分母：个人上限", seat_quota: "分母：每席位额度（参考，不限）" };
+export const PAUSED = { cap: "已到上限", allowance: "额度用完", burst: "5 小时频率限制已满", seat: "个人额度用完" };
+/** 个人用量的分母：与客户端 firm-usage.ts 的 ownDenominatorText 同一说法 */
+export const DENOMINATOR = { account_limit: "分母：个人上限（管理员设置）", seat_quota: "分母：每人额度（套餐约定，仅作参考、不限制）" };
 
 const pick = (map, k, fallback) => map[k] ?? [k ? String(k) : fallback ?? "—", "neutral"];
 export const tenantBadge = (s) => badge(...pick(TENANT_STATUS, s));

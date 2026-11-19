@@ -32,11 +32,12 @@ import { SettingRow } from "../components/SettingRow.tsx";
 
 const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
 
-/** 律师版五页的名称（V16 IA-1）；错误提示、恢复包横幅里的“设置 → …”写的是这些名字。 */
+/** 律师版六页的名称（V16 IA-1；第 47 批加“套餐与用量”）；错误提示、恢复包横幅里的“设置 → …”写的是这些名字。 */
 export const SETTINGS_TAB_LABELS: Record<Exclude<SettingsTab, "admin">, string> = {
   general: "通用",
   writing: "文书与写作",
   account: "账号与团队",
+  usage: "套餐与用量",
   backup: "备份与安全",
   visibility: "数据去向",
 };
@@ -88,6 +89,13 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
         {tab === "general" && <GeneralTab version={displayVersion(status?.app_version, status?.version)} />}
         {tab === "writing" && <WritingTab />}
         {tab === "account" && <AccountTab mySafety={mySafety} admin={isAdmin} />}
+        {/* 套餐与用量（第 47 批，对应 Kimi“设置 · 订阅 · 我的额度”）：律师看本所额度与本人用量；管理员另看用量数、按成员明细、设上限 */}
+        {tab === "usage" && (
+          <section className="panel device-section usage-page" aria-labelledby="sec-usage">
+            <h2 className="section-h h-section" id="sec-usage">套餐与用量</h2>
+            <UsagePanel admin={isAdmin} />
+          </section>
+        )}
         {tab === "backup" && <BackupTab caps={caps} gate={gate} />}
         {tab === "visibility" && (
           <>
@@ -502,12 +510,6 @@ function AccountTab({ mySafety, admin }: { mySafety: string | null; admin: boole
         {cp && cp.mode === "control_plane" && <AccountSection firm={firm?.firm?.name ?? null} />}
       </section>
       )}
-      {cp && cp.mode === "control_plane" && (
-        <section className="panel device-section" aria-labelledby="sec-usage">
-          <h2 className="section-h h-section" id="sec-usage">用量</h2>
-          <UsagePanel admin={false} />
-        </section>
-      )}
       <section className="panel device-section" aria-labelledby="sec-share">
         <h2 className="section-h h-section" id="sec-share">团队与离所</h2>
         {/* 单机使用（没加入律所）时不显示离所交接、本机核对码这类只在律所里才有的事（第 26 批，评审 U2-08） */}
@@ -686,7 +688,8 @@ function StatusTile({ tone, title, line, action }: { tone: "ok" | "warn" | "info
 function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[]; unresolved: any[]; onReconciled: () => void; im: any[]; recovery: any }) {
   // 子标签收敛（Z3 评审 #7.3、I2 遗留）：诊断与替换准确度测试是给律所 IT 与中软运维用的，收进“技术支持”
   // V16 IA-4：“技术支持”直接展开诊断首层；替换准确度测试升为独立二级标签“代号准确度”（进所评测是售前动作）
-  const [sub, setSub] = useState<"members" | "policy" | "usage" | "cp_audit" | "support" | "recall">("members");
+  // 用量与上限已移到设置的“套餐与用量”页（第 47 批），这里不再重复
+  const [sub, setSub] = useState<"members" | "policy" | "cp_audit" | "support" | "recall">("members");
   return (
     <div>
       <div className="tabs" role="tablist" aria-label="管理">
@@ -694,7 +697,6 @@ function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[];
           [
             ["members", "成员"],
             ["policy", "律所策略"],
-            ["usage", "用量"],
             ["cp_audit", "操作记录"],
             ["support", "技术支持"],
             ["recall", "代号准确度"],
@@ -707,7 +709,6 @@ function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[];
       </div>
       {sub === "members" && <MembersAdmin />}
       {sub === "policy" && <PolicyTab />}
-      {sub === "usage" && <UsagePanel admin />}
       {sub === "cp_audit" && <CpAuditPanel />}
       {sub === "support" && (
         <>

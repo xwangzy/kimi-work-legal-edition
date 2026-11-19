@@ -493,7 +493,15 @@ export class OnboardingService {
     if (!r.ok) return { ...this.status(), last_check: "unreachable", message: cpErrorText(r.code) };
     const status = String(r.json.status ?? "");
     if (status === "pending") return { ...this.status(), last_check: "pending" };
-    if (status === "rejected") return { ...this.status(), last_check: "rejected", message: "管理员没有批准这次申请（或申请已超过 7 天）。可以请管理员重新发邀请码后点“重新输入”" };
+    // 账号登录的新电脑没有邀请码可重发：申请失效（被拒、过期，或同一账号在另一台新电脑上又登录过而换了新申请）就重新登录（第 47 批真实走查）
+    if (status === "rejected" || (p.via_account && status === "withdrawn"))
+      return {
+        ...this.status(),
+        last_check: "rejected",
+        message: p.via_account
+          ? "这次申请已失效（管理员拒绝、超过 7 天，或这个账号在别的新电脑上又登录过）。请点“改用别的账号”重新登录，会生成新的申请和新的核对码"
+          : "管理员没有批准这次申请（或申请已超过 7 天）。可以请管理员重新发邀请码后点“重新输入”",
+      };
     if (status !== "approved") return { ...this.status(), last_check: "unknown" };
 
     const cert = r.json.cert as DeviceCertificate;
@@ -710,7 +718,10 @@ export const membersApi = (d: MembersDeps) => {
       const requests = (jr.json.join_requests as any[]).map((x) => {
         const { local, snap, verified } = checkJoin(x);
         if (verified) snapshots.set(snap.id, snap);
-        const memberName = snap.via === "account" ? (d.db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE tenant_id = ? AND user_id = ?`, [d.identity.tenantId, `usr_${d.config.firmSlug}_${snap.member_slug}`])?.display_name ?? null) : null;
+        // 账号新电脑：本机成员表的姓名；本机记的只是成员标识（创始管理员的旧记录）时，用控制面账号上的姓名（第 47 批真实走查：显示成了“admin”）
+        const localName = snap.via === "account" ? (d.db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE tenant_id = ? AND user_id = ?`, [d.identity.tenantId, `usr_${d.config.firmSlug}_${snap.member_slug}`])?.display_name ?? null) : null;
+        const accountName = typeof x.account?.name === "string" && x.account.name.trim() ? String(x.account.name).trim().slice(0, 40) : null;
+        const memberName = snap.via === "account" ? (localName && localName !== snap.member_slug ? localName : (accountName ?? localName)) : null;
         return {
           id: snap.id,
           name: local?.display_name ?? memberName,

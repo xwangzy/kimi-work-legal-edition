@@ -29,6 +29,7 @@ import { AskHost } from "./components/AskHost.tsx";
 import { fmtDate } from "./lib/labels.ts";
 import { GuideTour } from "./components/GuideTour.tsx";
 import { guideSeenKey, markGuideSeen } from "./lib/guide-steps.ts";
+import { newTaskHref } from "./lib/nav-target.ts";
 
 /** 再看一遍上手指南（设置 · 通用里的按钮发这个事件）。 */
 export const OPEN_GUIDE = "kwl:guide";
@@ -43,18 +44,36 @@ export const safeStorage = (): Storage | null => {
   }
 };
 
+/**
+ * 从侧栏“事项 +”等首页以外的地方新建事项（第 47 批）：先记下请求再回首页，首页挂载后取走并打开新建事项对话框；
+ * 已在首页时由 NEW_MATTER 事件直接打开。
+ */
+let newMatterRequested = false;
+export function requestNewMatter(): void {
+  newMatterRequested = true;
+  if (!/^#?\/?$/.test(window.location.hash)) nav("/");
+  window.dispatchEvent(new Event(NEW_MATTER));
+}
+export function consumeNewMatterRequest(): boolean {
+  const r = newMatterRequested;
+  newMatterRequested = false;
+  return r;
+}
+/** ⌘ / Ctrl + K（Kimi Work 同款“新建任务”）：首页收到后把光标放进任务输入框。 */
+export const FOCUS_COMPOSER = "kwl:focus-composer";
+
 /** “明天提醒”记在这台电脑的本地偏好（v9.4）。 */
 const SNOOZE_KEY = "kwl.recovery.snooze_until";
 
-/** 设置页的标签（V16 IA-1）：律师版五页（通用 / 文书与写作 / 账号与团队 / 备份与安全 / 数据去向）+ 管理员“管理”。 */
-export type SettingsTab = "general" | "writing" | "account" | "backup" | "visibility" | "admin";
+/** 设置页的标签（V16 IA-1；第 47 批加“套餐与用量”，对应 Kimi 设置里的“订阅 · 我的额度”）：律师版六页 + 管理员“管理”。 */
+export type SettingsTab = "general" | "writing" | "account" | "usage" | "backup" | "visibility" | "admin";
 
 /**
  * 设置子路径 → 标签（纯函数）。旧地址继续可用（V16）：device（原“本机与安全”）→ 备份与安全，
  * sources / data（原“资料来源”，已并入数据去向页底）→ 数据去向，policy → 管理；认不出的回到通用。
  */
 export function settingsTabOf(a: string | undefined): SettingsTab {
-  if (a === "general" || a === "writing" || a === "account" || a === "backup" || a === "visibility" || a === "admin") return a;
+  if (a === "general" || a === "writing" || a === "account" || a === "usage" || a === "backup" || a === "visibility" || a === "admin") return a;
   if (a === "device") return "backup";
   if (a === "sources" || a === "data") return "visibility";
   if (a === "policy") return "admin";
@@ -243,16 +262,28 @@ export function App() {
   }, []);
   // 后台服务状态（主进程在内核意外退出并自动恢复时广播）：顶部横幅提示，不弹窗打断
   const [kernelNotice, setKernelNotice] = useState<{ status: string; message?: string } | null>(null);
-  // 全局搜索（Z3 §8.2 #31）：Ctrl / ⌘ + K 打开；侧栏“搜索”按钮发 kwl:search 事件
+  // 快捷键（第 47 批对照 Kimi Work）：Ctrl / ⌘ + K = 新建任务（Chat 模式下 = 新建问答），Ctrl / ⌘ + F = 全局搜索（Z3 §8.2 #31）；
+  // 侧栏顶部的搜索按钮发 kwl:search 事件
   const [searching, setSearching] = useState(false);
-  // 开通向导里不开搜索（面板只在主界面渲染；否则在向导里按过 ⌘K，进主界面会自己弹出来）
+  // 开通向导里不响应（面板只在主界面渲染；否则在向导里按过快捷键，进主界面会自己弹出来）
   const onboardingRef = useRef(true);
   onboardingRef.current = boot === null || !!boot.onboarding;
+  const routeRef = useRef(route);
+  routeRef.current = route;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // macOS 只认 ⌘ + K（文本框里系统自带的 Ctrl + K 是删除到行尾）；其余系统认 Ctrl + K（余项续复核 RC-B-08）
+      // macOS 只认 ⌘（文本框里系统自带的 Ctrl + K 是删除到行尾）；其余系统认 Ctrl（余项续复核 RC-B-08）
       const mod = /Mac/i.test(navigator.platform) ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
-      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k" && !onboardingRef.current) {
+      if (!mod || e.shiftKey || e.altKey || onboardingRef.current) return;
+      const key = e.key.toLowerCase();
+      if (key === "k") {
+        e.preventDefault();
+        const r = routeRef.current;
+        if (r.page === "chat") return nav("/chat");
+        nav(newTaskHref("/", r));
+        // 首页挂载后把光标放进输入框（已在首页时立即生效）
+        setTimeout(() => window.dispatchEvent(new Event(FOCUS_COMPOSER)), 0);
+      } else if (key === "f") {
         e.preventDefault();
         setSearching(true);
       }
@@ -363,8 +394,9 @@ export function App() {
           </div>
         )}
         {reminder && route.page !== "welcome" && !reminderSnoozed(reminder, snoozedUntil, localDay()) && (reminder.everywhere ? route.page !== "run" && route.page !== "review" : route.page === "home" || route.page === "matters") && (
-          <div className={`banner ${reminder.tone === "red" ? "banner-red" : "banner-orange"}`}>
-            {reminder.text}{" "}
+          // 第 47 批：主区顶部居中的提示胶囊（Kimi 首页顶部胶囊同位），不再是整宽黄条
+          <div className={`top-notice ${reminder.tone === "red" ? "tone-red" : "tone-orange"}`} role="status">
+            <span className="top-notice-text">{reminder.text}</span>
             <button
               className="btn-link"
               onClick={() => {

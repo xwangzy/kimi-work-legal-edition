@@ -60,6 +60,8 @@ export function cssVars(el, vars) {
 }
 export const $ = (s, el = document) => el.querySelector(s);
 export const clear = (el, ...kids) => (el.replaceChildren(), append(el, kids), el);
+/** 追加子节点：跳过 null / undefined / 布尔（原生 el.append(null) 会把“null”当文本写进页面） */
+export const add = (el, ...kids) => (append(el, kids), el);
 
 // ─── 格式 ───────────────────────────────────────────────────────────
 const isNum = (n) => n !== null && n !== undefined && n !== "" && Number.isFinite(Number(n));
@@ -103,6 +105,17 @@ export const fmt = {
     const p = Number(r) * 100;
     if (p > 0 && p < 0.1) return "<0.1%";
     return `${p < 10 ? (Math.round(p * 10) / 10).toFixed(1).replace(/\.0$/, "") : Math.round(p)}%`;
+  },
+  /**
+   * 剩余比例 → 百分比（第 47 批，与客户端 fmtLeft 同一规则）：往下取，已经用了一点就不写“剩余 100%”（原来 99.7% 四舍五入成 100%，与“已用 0.3%”自相矛盾）
+   */
+  left(r) {
+    if (!isNum(r)) return "—";
+    // 先按千分之一个百分点规整（0.58 × 100 = 57.999…，直接往下取会成 57%）
+    const p = Math.round(Number(r) * 1e5) / 1e3;
+    if (p >= 100) return "100%";
+    if (p > 0 && p < 0.1) return "<0.1%";
+    return `${p < 10 ? (Math.floor(p * 10) / 10).toFixed(1).replace(/\.0$/, "") : Math.floor(p)}%`;
   },
   /** 额度单位下的量：tokens = 整数 token；cny = 元 */
   amount(v, unit) {
@@ -149,13 +162,27 @@ export const fmt = {
     if (s < 86400 * 45) return `${Math.floor(s / 86400)} 天前`;
     return fmt.date(iso);
   },
-  /** “12 月 1 日 00:00” */
+  /** “12 月 1 日 0:00”（北京时间；时不补零，与客户端 firm-usage.ts 的 atLabel 同一写法） */
   resets(iso) {
     const t = validTime(iso);
     if (t === null) return null;
     const p = parts(F_TIME, t);
-    return `${Number(p.month)} 月 ${Number(p.day)} 日 ${p.hour}:${p.minute}`;
+    return `${Number(p.month)} 月 ${Number(p.day)} 日 ${Number(p.hour) % 24}:${p.minute}`;
   },
+  /** 周期 {key:"2026-11", start, resets_at} → “2026 年 11 月（11 月 1 日 – 11 月 30 日）”（客户端 periodLabel + periodRange 的写法） */
+  period(p) {
+    if (!p) return null;
+    const m = /^(\d{4})-(\d{2})$/.exec(p.key ?? "");
+    const label = m ? `${m[1]} 年 ${Number(m[2])} 月` : p.kind === "week" ? "本周" : "本期";
+    const s = validTime(p.start);
+    const e = validTime(p.resets_at);
+    if (s === null || e === null) return label;
+    const a = parts(F_DATE, s);
+    const b = parts(F_DATE, e - 1);
+    return `${label}（${Number(a.month)} 月 ${Number(a.day)} 日 – ${Number(b.month)} 月 ${Number(b.day)} 日）`;
+  },
+  /** 重置时刻 → “将于 12 月 1 日 0:00 重置”（客户端 resetLabel 的写法；缺 = “每期开始时重置”） */
+  resetLine: (iso) => (validTime(iso) === null ? "每期开始时重置" : `将于 ${fmt.resets(iso)} 重置`),
   ms: (n) => (isNum(n) ? (Number(n) >= 1000 ? `${(Number(n) / 1000).toFixed(1)} s` : `${Math.round(Number(n))} ms`) : "—"),
 };
 /** 北京时间的“今天”“本月”等（YYYY-MM-DD / YYYY-MM） */
@@ -190,7 +217,8 @@ export async function busy(b, fn) {
     if (b) b.disabled = false;
   }
 }
-export const errText = (e) => (e?.code && !["network", "not_ready", "reauth_cancelled"].includes(e.code) && e.status >= 500 ? `${e.message}（${e.code}）` : String(e?.message ?? e));
+// 5xx 带上控制面的错误码便于报障；没有错误码（本页按 HTTP 状态合成的 http_500）时不再重复写一遍
+export const errText = (e) => (e?.code && !["network", "not_ready", "reauth_cancelled"].includes(e.code) && !/^http_\d+$/.test(e.code) && e.status >= 500 ? `${e.message}（${e.code}）` : String(e?.message ?? e));
 export const mono = (text, title) => h("span", { class: "mono", title: title ?? (typeof text === "string" ? text : undefined) }, text ?? "—");
 
 export function loadingBlock(text = "正在读取…") {
@@ -208,7 +236,8 @@ export function errorBlock(e, retry) {
       { class: "state state-noperm", role: "status" },
       h("span", { class: "state-icon", "aria-hidden": "true" }, icon("lock")),
       h("b", {}, "没有权限查看"),
-      h("p", {}, `${e.message || "你的角色没有这项权限"}。需要的话请找系统管理员调整角色。`),
+      // 控制面的说明已经指了去找谁（“请联系系统管理员”“只有本所管理员…”）时不再重复补一句
+      h("p", {}, ((m) => (/管理员/.test(m) ? `${m}。` : `${m}。需要的话请找系统管理员调整角色。`))(String(e.message || "你的角色没有这项权限").replace(/[。.]+$/, ""))),
     );
   const title = notReady ? "接口未就绪" : e?.code === "network" ? "连不上控制面" : "读取失败";
   const detail = notReady
@@ -278,23 +307,23 @@ export function meter(o) {
   const amounts = isNum(o.used) ? (isNum(o.total) ? `${fmt.amount(o.used, o.unit)} / ${fmt.amount(o.total, o.unit)}` : `${fmt.amount(o.used, o.unit)} · 不设上限`) : unit ? `单位 ${unit}` : null;
   const resets = o.resetText ? null : fmt.resets(o.resetsAt);
   const remain = r === null ? null : Math.max(0, 1 - r);
-  const pausedText = o.paused ? { cap: "已到上限", allowance: "额度用完", burst: "5 小时窗口用满", seat: "个人额度用完" }[o.paused] ?? "已暂停" : null;
+  const pausedText = o.paused ? { cap: "已到上限", allowance: "额度用完", burst: "5 小时频率限制已满", seat: "个人额度用完" }[o.paused] ?? "已暂停" : null;
   if (o.compact) {
     const short = isNum(o.used) && isNum(o.total) ? `${o.unit === "cny" ? fmt.cny(o.used, 0) : fmt.tokens(o.used)} / ${o.unit === "cny" ? fmt.cny(o.total, 0) : `${fmt.tokens(o.total)} token`}` : amounts;
     const rs = validTime(o.resetsAt) === null ? null : `${fmt.date(o.resetsAt).slice(5)} 重置`;
     return h(
       "div",
-      { class: "meter compact", title: [amounts, resets ? `${resets} 重置` : null].filter(Boolean).join(" · ") },
+      { class: "meter compact", title: [amounts, resets ? fmt.resetLine(o.resetsAt) : null].filter(Boolean).join(" · ") },
       h("div", { class: "meter-line" }, h("b", { class: `meter-pct tone-${tone}` }, r === null ? "—" : fmt.pct(r)), bar),
-      h("div", { class: "meter-sub" }, [pausedText ?? (remain === null ? null : `剩 ${fmt.pct(remain)}`), short, rs].filter(Boolean).join(" · ")),
+      h("div", { class: "meter-sub" }, [pausedText ?? (remain === null ? null : `剩 ${fmt.left(remain)}`), short, rs].filter(Boolean).join(" · ")),
     );
   }
   return h(
     "div",
     { class: "meter" },
-    h("div", { class: "meter-head" }, h("span", {}, o.label ?? "已用"), h("b", { class: `meter-pct tone-${tone}` }, r === null ? "—" : fmt.pct(r)), pausedText ? badge(pausedText, "danger") : null, h("span", { class: "meter-remain" }, remain === null ? "" : `剩余 ${fmt.pct(remain)}`)),
+    h("div", { class: "meter-head" }, h("span", {}, o.label ?? "已用"), h("b", { class: `meter-pct tone-${tone}` }, r === null ? "—" : fmt.pct(r)), pausedText ? badge(pausedText, "danger") : null, h("span", { class: "meter-remain" }, remain === null ? "" : `剩余 ${fmt.left(remain)}`)),
     bar,
-    h("div", { class: "meter-sub" }, [amounts, o.denominator ?? null, o.resetText ?? (resets ? `${resets} 重置` : "重置时间未知")].filter(Boolean).join(" · ")),
+    h("div", { class: "meter-sub" }, [amounts, o.denominator ?? null, o.resetText ?? fmt.resetLine(o.resetsAt)].filter(Boolean).join(" · ")),
   );
 }
 
@@ -823,8 +852,7 @@ export function quotaCard(o) {
   const r = isNum(o.ratio) ? Number(o.ratio) : isNum(o.used) && isNum(o.total) && Number(o.total) > 0 ? Number(o.used) / Number(o.total) : null;
   const remain = r === null ? null : Math.max(0, 1 - r);
   const unitText = o.unit === "cny" ? "元" : o.unit === "tokens" ? "token" : o.unit ? String(o.unit) : "—";
-  const pausedText = o.paused ? { cap: "已到本所上限", allowance: "本期额度用完", burst: "5 小时窗口用满", seat: "个人额度用完" }[o.paused] ?? "已暂停" : null;
-  const resets = fmt.resets(o.resetsAt);
+  const pausedText = o.paused ? { cap: "已到本所上限", allowance: "本期额度用完", burst: "5 小时频率限制已满", seat: "个人额度用完" }[o.paused] ?? "已暂停" : null;
   return h(
     "div",
     { class: ["quota", o.compact && "compact"] },
@@ -837,11 +865,11 @@ export function quotaCard(o) {
         "dl",
         { class: "quota-facts" },
         h("dt", {}, "剩余"),
-        h("dd", { class: "num" }, remain === null ? "—" : fmt.pct(remain)),
+        h("dd", { class: "num" }, remain === null ? "—" : fmt.left(remain)),
         h("dt", {}, "已用"),
-        h("dd", { class: "num" }, isNum(o.used) ? (isNum(o.total) ? `${fmt.amount(o.used, o.unit)} / ${fmt.amount(o.total, o.unit)}` : `${fmt.amount(o.used, o.unit)}（不设上限）`) : r === null ? "—" : `${fmt.pct(r)}（只给比例）`),
-        h("dt", {}, "重置"),
-        h("dd", {}, resets ? `${resets}（北京时间）` : "重置时间未知"),
+        h("dd", { class: "num" }, isNum(o.used) ? (isNum(o.total) ? `${fmt.amount(o.used, o.unit)} / ${fmt.amount(o.total, o.unit)}` : `${fmt.amount(o.used, o.unit)}（不设上限）`) : r === null ? "—" : fmt.pct(r)),
+        h("dt", {}, "本期"),
+        h("dd", {}, fmt.resetLine(o.resetsAt)),
         h("dt", {}, "单位"),
         h("dd", {}, o.capPct && o.capPct < 100 ? `${unitText} · 本所上限 ${o.capPct}%` : unitText),
       ),

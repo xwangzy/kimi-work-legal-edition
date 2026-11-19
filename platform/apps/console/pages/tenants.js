@@ -6,7 +6,7 @@
 import * as api from "../api.js";
 import { can, ctx, deviceTable, go, needs, pageHead, periodText, roleText, tenantBadge } from "../domain.js";
 import {
-  badge, btn, clear, confirmAction, copyBtn, dataTable, emptyBlock, facts, fmt, h, hbars, icon, load, matches, meter, mono, panel,
+  add, badge, btn, clear, confirmAction, copyBtn, dataTable, emptyBlock, facts, fmt, h, hbars, icon, load, matches, meter, mono, panel,
   periodBars, searchInput, segmented, showSecret, stat, tabBar, toast, trendChart,
 } from "../ui.js";
 
@@ -132,6 +132,17 @@ const TABS = [
   ["log", "操作记录"],
 ];
 
+/** 开通码状态（控制面：open / claimed / consumed / revoked；过期由 expires_at 判断）→ [中文, 色调]，不把英文状态码露给运营 */
+const actExpired = (a) => Number.isFinite(Date.parse(a.expires_at ?? "")) && Date.parse(a.expires_at) <= Date.now();
+function actStatus(a) {
+  if (a.status === "consumed" || a.status === "used") return ["已使用", "ok"];
+  if (a.status === "revoked") return ["已作废", "neutral"];
+  if (a.status === "expired" || actExpired(a)) return ["已过期", "neutral"];
+  if (a.status === "claimed") return ["已领取，待完成开通", "info"];
+  if (a.status === "open" || a.status === "pending") return ["待使用", "info"];
+  return ["状态未知", "neutral"];
+}
+
 function renderDetail(page, tid, params) {
   if (params.tab && TABS.some((t) => t[0] === params.tab)) st.tab = params.tab;
   const head = h("div");
@@ -146,7 +157,7 @@ function drawDetail(head, body, d, reload) {
   clear(
     head,
     pageHead(
-      h("span", { class: "title-row" }, t.name ?? t.tid, tenantBadge(t.status), t.paused ? badge(({ cap: "已到上限", allowance: "额度用完", burst: "5 小时窗口用满" })[t.paused] ?? "已暂停", "danger") : null),
+      h("span", { class: "title-row" }, t.name ?? t.tid, tenantBadge(t.status), t.paused ? badge(({ cap: "已到上限", allowance: "额度用完", burst: "5 小时频率限制已满" })[t.paused] ?? "已暂停", "danger") : null),
       h("span", { class: "sub-row" }, mono(t.tid), copyBtn(t.tid, "复制编号"), h("span", {}, `${t.plan?.label ?? "—"} · ${fmt.int(t.seats_used)}/${fmt.int(t.seats)} 席 · ${t.edition === "firm" ? "律所版" : "团队版"}`)),
     ),
   );
@@ -155,7 +166,7 @@ function drawDetail(head, body, d, reload) {
     clear(
       tabBox,
       tabBar(
-        TABS.map(([id, label]) => ({ id, label, count: id === "members" ? d.members?.length : id === "devices" ? d.devices?.length : undefined })),
+        TABS.filter(([id]) => id !== "log" || can("system.read")).map(([id, label]) => ({ id, label, count: id === "members" ? d.members?.length : id === "devices" ? d.devices?.length : undefined })),
         st.tab,
         (id) => ((st.tab = id), drawTabs(), drawPane()),
       ),
@@ -174,7 +185,8 @@ function drawDetail(head, body, d, reload) {
 function paneOverview(pane, d) {
   const t = d.tenant ?? {};
   const u = d.usage ?? {};
-  pane.append(
+  add(
+    pane,
     h(
       "div",
       { class: "grid-2" },
@@ -269,8 +281,9 @@ function paneDevices(pane, d, reload) {
 function paneUsage(pane, d) {
   const t = d.tenant ?? {};
   const u = d.usage;
-  if (!u) return pane.append(emptyBlock("控制面没有给出用量明细", "TenantUsage 字段缺失"));
-  pane.append(
+  if (!u) return pane.append(emptyBlock("暂时没有这家律所的用量明细", "控制面没有返回用量数据；稍后点右上角刷新再看"));
+  add(
+    pane,
     Number(u.unreconciled_leases) > 0 ? h("div", { class: "banner warn" }, `有 ${u.unreconciled_leases} 份网关租约到期未对账：网关可能掉线，这部分用量还没回报。`) : null,
     h(
       "div",
@@ -298,7 +311,7 @@ function paneUsage(pane, d) {
             { key: "email", label: "账号", value: (x) => x.email ?? x.uid, render: (x) => (x.aid ? h("button", { type: "button", class: "link", onclick: () => ctx.openAccount(x.aid) }, x.email ?? x.aid) : h("span", { class: "cell-2" }, mono(x.uid), h("small", {}, "未关联账号"))) },
             { key: "name", label: "姓名" },
             { key: "used", label: "用量", num: true, value: (x) => Number(x.used) || 0, render: (x) => fmt.amount(x.used, u.unit) },
-            { key: "used_ratio_of_firm", label: "占全所", num: true, value: (x) => Number(x.used_ratio_of_firm) || 0, render: (x) => fmt.pct(x.used_ratio_of_firm) },
+            { key: "used_ratio_of_firm", label: "占律所额度", title: "本期用量 ÷ 律所本期总额度", num: true, value: (x) => Number(x.used_ratio_of_firm) || 0, render: (x) => fmt.pct(x.used_ratio_of_firm) },
             { key: "own_ratio", label: "占个人额度", num: true, value: (x) => x.own_ratio ?? null, render: (x) => (x.own_ratio === null || x.own_ratio === undefined ? h("span", { class: "muted" }, "不单设") : fmt.pct(x.own_ratio)) },
             { key: "requests", label: "请求", num: true, value: (x) => Number(x.requests) || 0, render: (x) => fmt.int(x.requests) },
           ],
@@ -440,7 +453,7 @@ function paneOnboarding(pane, d, reload) {
           { key: "id", label: "编号", render: (a) => mono(a.id) },
           { key: "kind", label: "类型", value: (a) => ({ founder: "创始开通", member: "成员邀请" })[a.kind] ?? a.kind },
           { key: "member_slug", label: "成员", render: (a) => mono(a.member_slug ?? "—") },
-          { key: "status", label: "状态", class: "nowrap", render: (a) => badge(({ open: "待使用", pending: "待使用", used: "已使用", revoked: "已作废", expired: "已过期" })[a.status] ?? a.status, a.status === "open" || a.status === "pending" ? "info" : "neutral") },
+          { key: "status", label: "状态", class: "nowrap", value: (a) => actStatus(a)[0], render: (a) => badge(...actStatus(a)) },
           { key: "created_at", label: "发出", value: (a) => a.created_at ?? "", render: (a) => fmt.time(a.created_at) },
           { key: "expires_at", label: "有效至", value: (a) => a.expires_at ?? "", render: (a) => fmt.time(a.expires_at) },
           {
@@ -449,7 +462,7 @@ function paneOnboarding(pane, d, reload) {
             sortable: false,
             class: "act",
             render: (a) =>
-              (a.status === "open" || a.status === "pending") && a.kind === "founder"
+              ["open", "pending", "claimed"].includes(a.status) && !actExpired(a) && a.kind === "founder"
                 ? btn("作废", async () => {
                     const ok = await confirmAction({ title: "作废开通码", danger: true, consequences: ["这个码立即不能再用；已完成的开通不受影响。"], confirmLabel: "作废", run: () => api.post(`${T}/activation-codes/${api.seg(a.id)}/revoke`) });
                     if (ok) (toast("已作废"), reload());

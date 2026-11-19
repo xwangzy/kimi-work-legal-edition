@@ -121,14 +121,14 @@ test("V16 V-3：旧的 .btn 类已全部换成 .btn-ghost 并删除；提交动�
   assert.doesNotMatch(c, /30 位数字|目前没有网页控制台|核对无误，签名/);
 });
 
-test("V16 IA-1：设置五个分区；旧地址落到新分区；提示里的“设置 → …”用新名称", async () => {
+test("V16 IA-1：设置分区（第 47 批加“套餐与用量”）；旧地址落到新分区；提示里的“设置 → …”用新名称", async () => {
   const app = src("App.tsx");
-  assert.match(app, /export type SettingsTab = "general" \| "writing" \| "account" \| "backup" \| "visibility" \| "admin";/);
+  assert.match(app, /export type SettingsTab = "general" \| "writing" \| "account" \| "usage" \| "backup" \| "visibility" \| "admin";/);
   assert.match(app, /if \(a === "device"\) return "backup";/);
   assert.match(app, /if \(a === "sources" \|\| a === "data"\) return "visibility";/);
   assert.match(app, /nav\("\/connections\/backup"\)/);
   const c = src("pages/Connections.tsx");
-  for (const l of ["通用", "文书与写作", "账号与团队", "备份与安全", "数据去向"]) assert.match(c, new RegExp(`: "${l}",`), l);
+  for (const l of ["通用", "文书与写作", "账号与团队", "套餐与用量", "备份与安全", "数据去向"]) assert.match(c, new RegExp(`: "${l}",`), l);
   assert.doesNotMatch(c.slice(0, c.indexOf("function AdminTab(")).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""), /即将推出/, "设置不列“即将推出”");
   for (const f of ["lib/errors.ts", "components/MembersAdmin.tsx", "lib/offboarding.ts", "App.tsx"]) assert.doesNotMatch(src(f).replace(/\/\/.*$/gm, ""), /本机与安全(?!”）→)/, f);
   assert.match(src("lib/errors.ts"), /设置 → 备份与安全/);

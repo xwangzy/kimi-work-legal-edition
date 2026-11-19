@@ -1,7 +1,8 @@
 /**
  * 任务输入框（第 03 篇 §4.1：输入框显示“当前事项 · 执行位置 · 运行模式”；`/` 法律方法、`@` 事项材料、`+` 导入）。
  * 2026-11 对照 Kimi 首页重做版式：白色大圆角输入框（左下“+”导入、右下运行模式与圆形发送键）+ 下方灰色托盘（事项、方法、材料、我方立场，
- * 对应 Kimi 的“选择项目 / 插件”托盘）+ 可选的上方提示条（对应 Kimi 的额度提示条，首页用来放“等你处理”）。
+ * 对应 Kimi 的“选择项目 / 插件”托盘）+ 可选的上方提示条（对应 Kimi 的额度提示条：首页放额度提示与“等你处理”）。
+ * 第 47 批：运行模式移到“+”右边、右下显示模型（只读）、托盘没选事项时写“选择事项”。
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type RunPolicyView } from "../api.ts";
@@ -54,6 +55,12 @@ export function Composer(props: {
   const fileRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  // ⌘ / Ctrl + K（新建任务）：把光标放进输入框
+  useEffect(() => {
+    const focus = () => textRef.current?.focus();
+    window.addEventListener("kwl:focus-composer", focus);
+    return () => window.removeEventListener("kwl:focus-composer", focus);
+  }, []);
   useEffect(() => {
     if (!menu) return;
     const close = (e: MouseEvent) => {
@@ -132,9 +139,11 @@ export function Composer(props: {
             e.target.value = "";
           }}
         />
-        <span className="spacer" />
-        {/* 固定步骤的流程不适用运行模式（复核 S5-A07）；也不再显示研发用语胶囊（Z3 评审 3.1） */}
+        {/* 运行模式放在“+”右边（第 47 批，Kimi Work 输入框左下“默认”权限档位同位）；固定步骤的流程不适用运行模式（复核 S5-A07） */}
         {value.scenario === "a1.agent_task" && <ModeSelector policy={props.policy} value={value.choice} onChange={(choice) => onChange({ ...value, choice })} />}
+        <span className="spacer" />
+        {/* 模型（Kimi 输入框右下同位）：任务固定用 K3（子步骤用 K2.6），具体型号由律所的云端路由决定——只显示、不做假的下拉 */}
+        <span className="model-label" title="任务由 Kimi K3 处理（辅助步骤用 K2.6）；具体型号由律所的云端路由决定">K3</span>
         {/* 可以发送时提示快捷键（Z3 §8.2 #32）；不能发送时写原因（余项续复核 RC-B-15） */}
         {/* 只缺任务目标时不再写“先写任务目标”（占位符已经说了，U1 §1.2）；读屏标签与悬停仍说明原因 */}
         <span className="send-hint muted" aria-live="polite">{canSend ? `${SEND_KEY} 发送` : blockedReason === "先写任务目标" ? "" : blockedReason}</span>
@@ -147,13 +156,14 @@ export function Composer(props: {
       <div className="composer-context">
         {props.matters ? (
           <button className="ctx-matter" onClick={() => setMenu(menu === "matter" ? null : "matter")} title={matter ? matter.title : "选择事项"} aria-haspopup="listbox" aria-expanded={menu === "matter"}>
-            <Icon.folder /> 事项：<span className="ctx-title">{matter ? clipTitle(matter.title) : "选择事项"}</span> <Icon.down />
+            {/* Kimi“选择项目”同位：没选时就写“选择事项”，选了写事项名 */}
+            <Icon.folder /> {matter ? <span className="ctx-title">{clipTitle(matter.title)}</span> : "选择事项"} <Icon.down />
           </button>
         ) : (
           <span className="ctx-matter ctx-static"><Icon.folder /> 事项：{props.matterId ? "本事项" : "未选择事项"}</span>
         )}
         <button className="tray-btn" title="法律方法（也可以在输入框里打 /）" onClick={() => setMenu(menu === "method" ? null : "method")} aria-haspopup="listbox" aria-expanded={menu === "method"}>
-          <Icon.slash /> 方法
+          <Icon.plug /> 方法
         </button>
         <button className="tray-btn" title="选用本事项的材料（也可以在输入框里打 @）" disabled={!props.matterId} onClick={() => setMenu(menu === "material" ? null : "material")} aria-haspopup="listbox" aria-expanded={menu === "material"}>
           <Icon.at /> 材料

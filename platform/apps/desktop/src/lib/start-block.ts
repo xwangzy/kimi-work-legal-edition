@@ -42,9 +42,9 @@ export function startHintActionLabel(h: StartHint): string | null {
   return h.action === "login" ? "去登录" : h.action === "usage" ? "查看本所用量" : null;
 }
 
-/** 入口去哪：登录 = 页面顶部的登录框（不换页）；用量 = 设置 → 账号与团队 → 用量。 */
+/** 入口去哪：登录 = 页面顶部的登录框（不换页）；用量 = 设置 → 套餐与用量。 */
 export function startHintTarget(h: StartHint): { path: string | null; anchor: string } | null {
   if (h.action === "login") return { path: null, anchor: ".login-banner input" };
-  if (h.action === "usage") return { path: "/connections/account", anchor: "#sec-usage" };
+  if (h.action === "usage") return { path: "/connections/usage", anchor: "#sec-usage" };
   return null;
 }

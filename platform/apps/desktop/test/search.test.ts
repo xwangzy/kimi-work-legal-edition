@@ -39,9 +39,11 @@ test("给内核的标签含场景卡名与交付件名", () => {
   assert.match(l["scenario:s2.case_file"]!, /材料整理/, "任务表里的叫法也能搜到（走查发现）");
 });
 
-test("Ctrl / ⌘ + K 打开搜索（macOS 只认 ⌘、开通向导里不开）；侧栏有入口；组字时不当选择；Esc 不连带关掉底下的对话框", () => {
+test("Ctrl / ⌘ + F 打开搜索、Ctrl / ⌘ + K 新建任务（第 47 批对照 Kimi Work；macOS 只认 ⌘、开通向导里不开）；侧栏有入口；组字时不当选择；Esc 不连带关掉底下的对话框", () => {
   const app = readFileSync(fileURLToPath(new URL("../src/App.tsx", import.meta.url)), "utf8");
-  assert.match(app, /e\.key\.toLowerCase\(\) === "k" && !onboardingRef\.current/);
+  assert.match(app, /if \(!mod \|\| e\.shiftKey \|\| e\.altKey \|\| onboardingRef\.current\) return;/);
+  assert.match(app, /if \(key === "k"\) \{[\s\S]{0,260}nav\(newTaskHref\("\/", r\)\)/);
+  assert.match(app, /\} else if \(key === "f"\) \{\s*e\.preventDefault\(\);\s*setSearching\(true\);/);
   assert.match(app, /\/Mac\/i\.test\(navigator\.platform\) \? e\.metaKey && !e\.ctrlKey/);
   assert.match(app, /<SearchPalette/);
   assert.match(readFileSync(fileURLToPath(new URL("../src/components/Sidebar.tsx", import.meta.url)), "utf8"), /kwl:search/);

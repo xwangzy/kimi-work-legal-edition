@@ -1541,3 +1541,146 @@ table.data.deliverables tr.dl-proc .dl-proc-note { margin-left: var(--sp-3); }
 .usage-models li { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(80px, 160px) 52px auto; align-items: center; gap: 10px; font-size: var(--fs-body); }
 .usage-models .usage-meter.sm { max-width: none; }
 .usage-model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── 第 47 批：对照 Kimi Work 桌面端重做侧栏信息架构、用户菜单、首页提示条与能力胶囊 ── */
+/* 侧栏顶行：品牌 + 搜索 + 收起（Kimi 顶行是搜索与收起两个图标按钮） */
+.brand { gap: 8px; }
+.brand-name { overflow: hidden; }
+.brand .sidebar-toggle { width: 28px; height: 28px; }
+.brand .sidebar-toggle + .sidebar-toggle { margin-left: -6px; }
+/* Work / Chat 分段切换（Kimi Work 同款：浅灰托底、选中项白底轻阴影） */
+.mode-switch { display: flex; gap: 2px; padding: 3px; margin: 0 0 var(--sp-3); background: var(--bg-muted); border-radius: var(--r-md); flex: none; }
+.mode-tab { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-secondary); font-size: var(--fs-base); }
+.mode-tab .nav-icon { color: inherit; }
+.mode-tab .nav-label { flex: none; }
+.mode-tab:hover { color: var(--text-primary); }
+.mode-tab.active { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-xs); }
+.mode-tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+/* 新建任务：Kimi 为浅灰实底胶囊 + 右侧快捷键键帽（覆盖第 45 批的白底描边） */
+.nav-item.nav-new, .nav-item.nav-new.active { background: var(--bg-muted); border: 0; box-shadow: none; margin-bottom: var(--sp-2); }
+.nav-item.nav-new:hover { background: var(--bg-hover); border: 0; }
+.nav-kbd { display: inline-flex; gap: 3px; color: var(--text-secondary); }
+.nav-kbd kbd { font: inherit; font-size: var(--fs-xs); min-width: 20px; height: 20px; padding: 0 4px; display: inline-grid; place-items: center; border-radius: var(--r-xs); background: var(--bg-hover); color: var(--text-label); }
+/* 分组（Kimi“项目 ⌄”“任务 ⌄”）：标题可折叠，右侧放操作；整块在一个滚动区里 */
+.sidebar-scroll { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; margin-top: var(--sp-2); }
+.sidebar-scroll .sidebar-list { flex: none; overflow: visible; }
+.sidebar-scroll .sidebar-section { margin-top: var(--sp-2); padding: 0 var(--sp-1) 0 var(--sp-2); gap: var(--sp-1); }
+.side-sec-title { display: inline-flex; align-items: center; gap: 2px; border: 0; background: transparent; padding: 0; color: var(--text-secondary); font-size: var(--fs-body); }
+button.side-sec-title:hover { color: var(--text-primary); }
+.section-caret { display: inline-flex; transition: transform 0.15s ease; }
+.section-caret.closed { transform: rotate(-90deg); }
+.section-acts { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; visibility: hidden; }
+.sidebar-section:hover .section-acts, .sidebar-section:focus-within .section-acts { visibility: visible; }
+.section-act { border: 0; background: transparent; height: 26px; min-width: 26px; padding: 0 6px; border-radius: var(--r-sm); color: var(--text-secondary); display: inline-flex; align-items: center; justify-content: center; font-size: var(--fs-caption); }
+.section-act:hover { background: var(--bg-hover); color: var(--text-primary); }
+.section-act svg { width: 15px; height: 15px; }
+button.sidebar-empty { border: 0; background: transparent; text-align: left; cursor: pointer; }
+button.sidebar-empty:hover { color: var(--text-primary); }
+.sidebar-empty-text { padding: var(--sp-1) var(--sp-2); font-size: var(--fs-caption); color: var(--text-secondary); }
+.sidebar-more { border: 0; background: transparent; text-align: left; padding: 6px var(--sp-2); font-size: var(--fs-caption); color: var(--text-secondary); border-radius: var(--r-sm); }
+.sidebar-more:hover { background: var(--bg-hover); color: var(--text-primary); }
+/* 用户卡（Kimi：头像 + 姓名 + 黑色套餐标识）与用户菜单 */
+.user-wrap { position: relative; flex: none; }
+.user-wrap .sidebar-foot { width: 100%; }
+.user-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.user-name-row b { min-width: 0; }
+.plan-badge { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--r-xs); background: var(--btn-primary); color: var(--btn-primary-text); font-size: var(--fs-xs); font-weight: 500; line-height: 1; }
+/* 菜单与侧栏同宽（侧栏裁切溢出）；收窄的图标栏另给宽度并靠头像左缘展开 */
+.user-menu { left: 0; right: 0; bottom: calc(100% + 6px); padding: 6px; }
+.user-menu-head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2); }
+.user-menu-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.user-menu-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-menu-who small { color: var(--text-secondary); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-avatar-lg { flex: none; width: 36px; height: 36px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); font-weight: 600; }
+.menu-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 0 var(--sp-2); border: 0; background: transparent; border-radius: var(--r-sm); text-align: left; font-size: var(--fs-base); color: var(--text-primary); }
+.menu-row:hover { background: var(--bg-hover); }
+.menu-row .nav-icon svg { width: 17px; height: 17px; }
+.menu-row-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-row-go { display: inline-flex; color: var(--text-secondary); }
+.user-menu-status, .user-menu-usage { font-size: var(--fs-caption); color: var(--text-secondary); min-height: 30px; }
+.user-menu-status.warn { color: var(--status-warning-strong); }
+.user-menu-status .dot { margin: 0; }
+.menu-sep { height: 1px; background: var(--border-subtle); margin: 4px 6px; }
+.user-menu-confirm { padding: var(--sp-2); font-size: var(--fs-caption); color: var(--text-label); }
+.user-menu-confirm p { margin: 0 0 var(--sp-2); }
+.user-menu-confirm-acts { display: flex; gap: var(--sp-2); }
+.user-menu-err { color: var(--status-danger-text); margin: var(--sp-2) 0 0; }
+/* 收窄（图标栏）：Work / Chat 竖排为两个图标；分组与菜单文字隐藏 */
+.sidebar.compact .mode-switch { flex-direction: column; padding: 2px; width: 40px; }
+.sidebar.compact .mode-tab { width: 36px; height: 32px; padding: 0; }
+.sidebar.compact .mode-switch { gap: 2px; margin-bottom: var(--sp-2); }
+.sidebar.compact .mode-tab .nav-label, .sidebar.compact .sidebar-scroll, .sidebar.compact .brand .sidebar-toggle { display: none; }
+.sidebar.compact .user-wrap { margin-top: auto; }
+.sidebar.compact .user-menu { right: auto; width: 240px; }
+@media (max-width: 900px) {
+  .sidebar .mode-switch { flex-direction: column; padding: 2px; width: 40px; }
+  .sidebar .mode-tab { width: 36px; height: 32px; padding: 0; }
+  .sidebar .mode-tab .nav-label, .sidebar .sidebar-scroll, .sidebar .brand .sidebar-toggle { display: none; }
+  .sidebar .user-wrap { margin-top: auto; }
+  .sidebar .user-menu { right: auto; width: 240px; }
+}
+
+/* 主区顶部居中的提示胶囊（Kimi 首页顶部胶囊同位；恢复包、备份提醒） */
+.top-notice { align-self: center; display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 4px var(--sp-2); max-width: calc(100% - 32px); margin: var(--sp-3) auto 0; padding: 6px var(--sp-4); border-radius: var(--r-full); font-size: var(--fs-caption); line-height: 1.5; }
+.top-notice.tone-orange { background: var(--risk-mid-bg); color: var(--status-warning-strong); }
+.top-notice.tone-red { background: var(--risk-high-bg); color: var(--status-danger-strong); }
+.top-notice .btn-link { font-size: var(--fs-caption); }
+.top-notice .banner-later { color: var(--text-secondary); }
+
+/* 首页字标（Kimi Work：粗体字标 + 右上黑色小标） */
+.home-wordmark { gap: 6px; align-items: flex-start; margin-bottom: var(--sp-6); }
+/* 字标是图形（内联 SVG 文字，高 52px），不走正文字号 */
+.home-wordmark-svg { display: block; height: 52px; width: auto; color: var(--text-primary); overflow: visible; }
+.home-wordmark .home-wordmark-tag { margin-top: 2px; padding: 3px 8px; border-radius: var(--r-sm); background: var(--btn-primary); color: var(--btn-primary-text); font-size: var(--fs-caption); font-weight: 600; letter-spacing: 1px; line-height: 1.2; }
+/* 输入框上方提示条：多行（额度一行、等你处理一行） */
+.composer-notice { flex-direction: column; align-items: stretch; gap: 2px; }
+.notice-row { display: flex; align-items: center; gap: var(--sp-2); min-height: 26px; flex-wrap: wrap; }
+.notice-icon { display: inline-flex; color: var(--text-label); }
+.notice-icon svg { width: 15px; height: 15px; }
+.notice-quota .btn-link { text-decoration: underline; text-underline-offset: 2px; color: var(--text-label); }
+.notice-quota.is-stop { color: var(--status-danger-strong); }
+.notice-quota.is-stop .notice-icon { color: var(--status-danger-text); }
+.notice-x { border: 0; background: transparent; width: 24px; height: 24px; border-radius: var(--r-sm); display: inline-grid; place-items: center; color: var(--text-secondary); }
+.notice-x:hover { background: var(--bg-hover); color: var(--text-primary); }
+/* 输入框底栏：运行模式在“+”右边，模型名只读 */
+.composer-bar .mode-selector .chip { padding-left: 8px; }
+.composer-bar .mode-selector .chip svg:first-child { color: var(--text-label); }
+.composer-bar .mode-selector .mode-popover { left: 0; right: auto; top: calc(100% + 8px); }
+.model-label { font-size: var(--fs-body); color: var(--text-label); padding: 0 var(--sp-2); white-space: nowrap; cursor: default; }
+/* 能力胶囊（Kimi 首页一行胶囊）：选中项浅灰实底；下方场景列表 */
+.home-scenes .scene-chips { margin-bottom: var(--sp-3); }
+.scene-chip.active { background: var(--bg-active); border-color: var(--border-hover); color: var(--text-primary); font-weight: 500; }
+.scene-chip.active .scene-chip-icon { color: var(--text-primary); }
+.scene-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px var(--sp-2); }
+.scene-row { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 10px; align-items: center; text-align: left; border: 0; background: transparent; border-radius: var(--r-md); padding: 10px var(--sp-3); min-width: 0; }
+.scene-row:hover { background: var(--bg-hover-soft); }
+.scene-row:active { background: var(--bg-active); }
+.scene-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.scene-row-icon { grid-row: 1 / span 2; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-sm); background: var(--bg-muted); color: var(--text-label); }
+.scene-row-title { font-size: var(--fs-base); color: var(--text-primary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-row-gets { font-size: var(--fs-caption); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scene-row-more { grid-column: 1 / -1; display: block; text-align: center; color: var(--text-secondary); font-size: var(--fs-caption); padding: 6px; }
+.scene-list .coming-row { grid-column: 1 / -1; text-align: center; font-size: var(--fs-caption); padding-top: var(--sp-1); }
+@media (max-width: 760px) { .scene-list { grid-template-columns: minmax(0, 1fr); } }
+/* 上手清单收成一行 */
+.guide-checklist { margin-top: var(--sp-5); padding: 10px var(--sp-4); }
+.guide-checklist-head { flex-wrap: wrap; row-gap: 6px; }
+.guide-checklist-dots { display: inline-flex; gap: 3px; }
+.guide-dot { width: 14px; height: 4px; border-radius: var(--r-full); background: var(--bg-active); }
+.guide-dot.is-done { background: var(--status-success-text); }
+.guide-checklist-next { font-size: var(--fs-caption); color: var(--text-label); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.guide-checklist.is-expanded .guide-checklist-items { margin-top: var(--sp-2); }
+/* 近期期限一栏 */
+.home .today.today-single { grid-template-columns: minmax(0, 1fr); }
+
+/* 问答（Chat 模式）：记录在侧栏，主区居中一栏（Kimi Chat 同款），输入框沿用任务输入框的圆角与阴影 */
+.chat { justify-content: center; }
+.chat .chat-main { width: 100%; max-width: 800px; margin: 0 auto; padding: var(--sp-4) var(--sp-5) var(--sp-5); }
+.chat-blank .chat-messages { justify-content: center; }
+.chat-blank .chat-empty { margin-top: 0; }
+
+/* 问答模型选择（第 47 批） */
+.model-picker { position: relative; }
+.model-label-btn { display: inline-flex; align-items: center; gap: 2px; border: 0; background: transparent; height: 32px; border-radius: var(--r-full); padding: 0 10px; cursor: pointer; }
+.model-label-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.model-popover { right: 0; bottom: calc(100% + 8px); width: 280px; }

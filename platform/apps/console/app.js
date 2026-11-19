@@ -62,7 +62,8 @@ export const NAV = [
       { id: "overview", label: "总览", icon: "overview", mod: overview, perms: ["tenant.read"] },
       { id: "tenants", label: "客户", icon: "tenants", mod: tenants, perms: ["tenant.read"] },
       { id: "accounts", label: "账号", icon: "accounts", mod: accounts, perms: ["account.read", "account.support"] },
-      { id: "devices", label: "设备", icon: "devices", mod: devices, perms: ["tenant.read"] },
+      // GET /v1/ops/devices 控制面按“查看账号”（account.read）鉴权：只有“查看客户”的财务看得到菜单却永远 403
+      { id: "devices", label: "设备", icon: "devices", mod: devices, perms: ["account.read"] },
       { id: "routing", label: "模型与路由", icon: "routing", mod: routing, perms: ["route.read", "route.manage"] },
       { id: "usage", label: "用量", icon: "usage", mod: usage, perms: ["usage.read"] },
       { id: "plans", label: "套餐与额度", icon: "plans", mod: plans, perms: ["tenant.read", "plan.manage", "settings.manage"] },

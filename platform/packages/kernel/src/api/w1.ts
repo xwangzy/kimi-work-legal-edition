@@ -5,6 +5,7 @@
  *   runs.answer         律师回答 Agent 的提问（自由文本先令牌化：Agent 与模型上下文只见代号）
  *   egress.summary      数据去向卡
  *   chat.list / chat.get / chat.send   无事项问答（历史只在本机）
+ *   chat.models                        问答可选的模型（第 47 批：K3 / K2.6，只列本机模型路由配置了的）
  *   kernel.capabilities 设备页（执行域如实标注、唯一出口强度、能力账本）
  */
 import { DomainError, sha256Hex } from "@zr-legal/domain";
@@ -169,6 +170,11 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
       return summarizeEgress(d.db, run.run_id);
     },
 
+    // 第 47 批：问答可选的模型（与 kernel.status 的 model_choices 同一份）；send 时 route 不在其中即拒绝
+    "chat.models": () => {
+      const choices = d.qa?.modelChoices() ?? [];
+      return { choices, default: choices.find((c) => c.default)?.alias ?? null };
+    },
     "chat.list": (_p, id) => {
       if (!d.qa) return { conversations: [] };
       return { conversations: d.qa.list(id.tenantId, id.userId) };
@@ -201,8 +207,9 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
       try {
         // stream_id：界面生成的一次性编号，回答生成中的部分内容按它推送（chat.delta 广播）
         const streamId = typeof p?.stream_id === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(p.stream_id) ? p.stream_id : undefined;
+        // route（第 47 批）：律师这次选的模型别名（legal/k3、legal/k2.6）；不给用缺省；给了但不可选由 send 拒绝（validation）
         return await d.qa.send(
-          { ...(typeof p?.conversation_id === "string" && p.conversation_id ? { conversationId: p.conversation_id } : {}), text: String(p?.text ?? ""), ...(streamId ? { streamId } : {}) },
+          { ...(typeof p?.conversation_id === "string" && p.conversation_id ? { conversationId: p.conversation_id } : {}), text: String(p?.text ?? ""), ...(streamId ? { streamId } : {}), ...(p?.route !== undefined ? { route: p.route } : {}) },
           id.tenantId,
           id.userId,
         );

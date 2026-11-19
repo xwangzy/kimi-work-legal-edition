@@ -20,9 +20,9 @@ test("任务名：场景卡发起的用卡名；自由描述的用描述前 30 �
   assert.equal(runName({ goal: "一二三四五六七八九十一二三四五六七八九十一二", title: null }, 20), "一二三四五六七八九十一二三四五六七八九十…", "看板用 20 字");
 });
 
-test("任务名接到各处：执行页、首页继续工作、看板、事项 AI 记录、搜索、发起时把卡名交给内核", () => {
+test("任务名接到各处：执行页、侧栏“任务”分组（第 47 批接替首页“继续工作”）、看板、事项 AI 记录、搜索、发起时把卡名交给内核", () => {
   assert.match(read("../src/pages/RunView.tsx"), /function runTitle\(run: any\): string \{\s*return runName\(run\);/);
-  assert.match(read("../src/pages/Home.tsx"), /<span className="today-text">\{runName\(r\)\}<\/span>/);
+  assert.match(read("../src/components/Sidebar.tsx"), /\{runName\(r\)\}\s*<\/button>/);
   assert.match(read("../src/pages/Boards.tsx"), /\{runName\(r, 20\)\}/);
   assert.match(read("../src/pages/Matter.tsx"), /r\.title \? r\.title :/);
   assert.match(read("../src/lib/search.ts"), /title: x\.title \? x\.title :/);

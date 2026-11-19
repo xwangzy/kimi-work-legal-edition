@@ -17,7 +17,7 @@ export function userCardText(me: UserCardMe | null, foot: { title: string; note:
 
 /**
  * 用户卡底部那一行（状态点、一句话、点开去哪）。正常时“本机运行 · 防护正常”；出问题时变色并说明。
- * 有入组申请等这台电脑批准（v9.3 B-3 余项）：亮橙点、说“有 N 位同事等你批准入组”，点开直接到“管理 · 成员”；
+ * 有入组申请等这台电脑批准（v9.3 B-3 余项）：亮橙点、说“有 N 个入组申请等你批准”（第 47 批：申请也可能是自己账号的新电脑，不再说“同事”），点开直接到“管理 · 成员”；
  * 联网记录需要核对比它更要紧，排在前面。
  */
 export function sidebarFoot(s: { gate: boolean | null; unresolved: number; execOk: boolean | null; pendingJoins: number }): {
@@ -28,7 +28,7 @@ export function sidebarFoot(s: { gate: boolean | null; unresolved: number; execO
 } {
   if (s.gate === null) return { title: "正在启动…", note: "", tone: "dot-off", href: "/connections/backup" };
   if (s.unresolved > 0) return { title: "有联网记录需要核对", note: `${s.unresolved} 条因中断无法确认是否发出`, tone: "dot-warn", href: "/connections/backup" };
-  if (s.pendingJoins > 0) return { title: `有 ${s.pendingJoins} 位同事等你批准入组`, note: "", tone: "dot-warn", href: "/connections/admin" };
+  if (s.pendingJoins > 0) return { title: `有 ${s.pendingJoins} 个入组申请等你批准`, note: "", tone: "dot-warn", href: "/connections/admin" };
   if (s.execOk === false) return { title: "本机运行 · 代码分析暂不可用", note: "其余功能正常", tone: "dot-warn", href: "/connections/backup" };
   return { title: "本机运行 · 防护正常", note: "", tone: "dot-ok", href: "/connections" };
 }
