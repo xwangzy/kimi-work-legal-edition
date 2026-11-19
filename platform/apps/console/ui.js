@@ -131,6 +131,14 @@ export const fmt = {
   clock: (t) => F_CLOCK.format(t ?? Date.now()),
   /** 相对时间（最近报到、最近登录） */
   ago(iso, now = Date.now()) {
+    // 只精确到日的字段（如设备“最近报到”为北京时间日期 2026-11-19）：按日说，不按零点折算成“几小时前”
+    if (typeof iso === "string" && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+      const today = parts(F_FULL, now);
+      const d0 = Date.UTC(Number(today.year), Number(today.month) - 1, Number(today.day));
+      const [y, m, d] = iso.split("-").map(Number);
+      const days = Math.round((d0 - Date.UTC(y, m - 1, d)) / 86400000);
+      return days <= 0 ? "今天" : days === 1 ? "昨天" : days < 45 ? `${days} 天前` : iso;
+    }
     const t = validTime(iso);
     if (t === null) return "—";
     const s = Math.round((now - t) / 1000);

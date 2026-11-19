@@ -144,6 +144,8 @@ test("任务失败文案：429、5xx、兜底不再拼原始错误；网关 401 
   assert.doesNotMatch(basis, /连不上|403|kwl:/);
   assert.match(agentFailureText(null, "403 该事项未选用标准端点（不经中软网关） [kwl:endpoint_not_permitted]"), /没有选用中软标准模型端点/);
   assert.match(agentFailureText(null, "403 律所未放开敏感事项（L3a）经标准端点推理 [kwl:l3a_not_permitted]"), /数据级别不允许经中软标准端点推理/);
+  // 停用演练：账号停用不说“连不上”
+  assert.match(agentFailureText(null, "402 账号已停用 [kwl:account_disabled]"), /^你的账号已被停用，任务没有完成/);
   // 402：闸门附上的代码优先；网关当前原文（不含旧正则里的关键词）也认得
   assert.match(agentFailureText(null, "402 本所 5 小时内的用量已达上限，请稍后再试 [kwl:quota_burst]"), /5 小时频率窗口已满/);
   assert.match(agentFailureText(null, "402 本所 5 小时内的用量已达上限，请稍后再试"), /5 小时频率窗口已满/);
@@ -206,4 +208,8 @@ test("问答取不到回答：额度、登录类按闸门附上的代码说人�
   assert.match(qaFailureText("401 登录已失效，请重新登录 [kwl:seat_session_inactive]"), /^登录已失效或这台电脑暂时没有取得 AI 使用授权/);
   assert.equal(qaFailureText("模型通道不可达 [kwl:x_y]"), "模型通道不可达");
   assert.equal(qaFailureText("超时"), "超时");
+  // 停用演练（第 46 批真实验收）：原来显示“模型通道错误 402：账号已停用”
+  assert.equal(qaFailureText("模型通道错误 402：账号已停用 [kwl:account_disabled]"), "你的账号已被停用，这次没有取得回答：请联系律所管理员或中软客服");
+  assert.equal(qaFailureText("模型通道错误 503：服务维护中"), "服务维护中", "去掉“模型通道错误 4xx/5xx：”前缀");
+  assert.equal(qaFailureText("模型通道错误 500：Internal Server Error"), "AI 服务暂时不可用，这次没有取得回答：请稍后再问");
 });

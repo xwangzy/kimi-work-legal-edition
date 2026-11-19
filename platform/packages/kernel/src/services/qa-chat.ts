@@ -82,7 +82,14 @@ export function qaFailureText(message: string): string {
   const code = /\[kwl:([a-z0-9_]{1,60})\]/.exec(message)?.[1] ?? "";
   if (code.startsWith("quota_") || code === "price_unconfigured") return "本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 账号与团队 → 用量”查看，稍后再问或联系律所管理员";
   if (code.startsWith("seat_") || /AI 使用授权/.test(message)) return "登录已失效或这台电脑暂时没有取得 AI 使用授权，这次没有取得回答：请重新登录（或联网稍等）后再问";
-  return message.replace(/\s*\[kwl:[a-z0-9_]{1,60}\]/g, "");
+  // 第 46 批真实验收（停用演练）：律师看到过“模型通道错误 402：账号已停用”
+  if (code === "account_disabled" || /账号已停用/.test(message)) return "你的账号已被停用，这次没有取得回答：请联系律所管理员或中软客服";
+  if (code.startsWith("session_") || /登录已失效|登录已过期/.test(message)) return "登录已失效，这次没有取得回答：请重新登录后再问";
+  if (code === "client_outdated" || /客户端版本过旧/.test(message)) return "客户端版本过旧，这次没有取得回答：请升级到最新版本";
+  // 其余：去掉错误码与“模型通道错误 4xx：”这类前缀；剩下的是中文说明就照写，否则给通用说法（原文在诊断日志里）
+  const plain = message.replace(/\s*\[kwl:[a-z0-9_]{1,60}\]/g, "").replace(/^模型通道错误\s*\d{3}\s*[:：]\s*/, "").trim();
+  if (plain && /[\u4e00-\u9fff]/.test(plain) && !/[A-Za-z]{4,}|\b\d{3}\b/.test(plain)) return plain;
+  return "AI 服务暂时不可用，这次没有取得回答：请稍后再问";
 }
 
 export async function collectStreamText(chunks: AsyncIterable<string>, onDelta?: (piece: string) => void): Promise<string> {
