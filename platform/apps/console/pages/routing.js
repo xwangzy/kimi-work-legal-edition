@@ -42,7 +42,7 @@ function draw(head, box, d, reload) {
     head,
     pageHead(
       "模型与路由",
-      h("span", { class: "sub-row" }, `路由版本 v${d.version ?? "—"}`, h("span", { class: "muted" }, ` · ${fmt.full(d.updated_at)} 由 ${d.updated_by ?? "—"} 更新`), fp),
+      h("span", { class: "sub-row" }, `路由版本 v${d.version ?? "—"}`, h("span", { class: "muted" }, ` · ${fmt.full(d.updated_at)} 由 ${d.updated_by_label ?? d.updated_by ?? "—"} 更新`), fp),
       btn("刷新健康", () => reload(), { icon: icon("refresh") }),
     ),
   );

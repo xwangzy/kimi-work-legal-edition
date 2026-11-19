@@ -26,18 +26,20 @@ export function render(page) {
 
 function draw(box, ov, tenants) {
   const t = ov.totals ?? {};
+  // 后端按权限裁剪（第 46 批）：没有账单权限不给金额、没有用量权限不给请求与 token——对应卡片不画，不显示成 0
+  const hide = new Set(ov.hidden ?? []);
   const tokens = (Number(t.tokens_in) || 0) + (Number(t.tokens_out) || 0);
   const marginRate = Number(t.revenue_cny) > 0 && t.margin_cny !== null && t.margin_cny !== undefined ? Number(t.margin_cny) / Number(t.revenue_cny) : null;
   ctx.setNavBadge?.("overview", (ov.attention ?? []).length);
   const kpis = h(
     "div",
     { class: "kpis" },
-    stat("本期请求", fmt.int(t.requests), [`错误 ${fmt.int(t.errors)}`, t.estimated_rows ? `估算 ${fmt.int(t.estimated_rows)} 行` : null, t.unpriced_rows ? `未定价 ${fmt.int(t.unpriced_rows)} 行` : null].filter(Boolean).join(" · "), { tone: Number(t.errors) > 0 ? "warn" : undefined }),
-    stat("Token", fmt.tokens(tokens), `输入 ${fmt.tokens(t.tokens_in)}（缓存 ${fmt.tokens(t.tokens_cached)}）· 输出 ${fmt.tokens(t.tokens_out)}`, { title: `${fmt.int(tokens)} token` }),
-    stat("用量价值", fmt.cny(t.value_cny), "价目售价 × 实际用量"),
-    stat("模型成本", fmt.cny(t.cost_cny), "上游成本价 × 实际用量"),
-    stat("本期应收", fmt.cny(t.revenue_cny), "席位费 + 加量费"),
-    stat("毛利", fmt.cny(t.margin_cny), marginRate === null ? "应收 − 成本" : `毛利率 ${fmt.pct(marginRate)}`, { tone: Number(t.margin_cny) < 0 ? "danger" : undefined }),
+    hide.has("usage") ? null : stat("本期请求", fmt.int(t.requests), [`错误 ${fmt.int(t.errors)}`, t.estimated_rows ? `估算 ${fmt.int(t.estimated_rows)} 行` : null, t.unpriced_rows ? `未定价 ${fmt.int(t.unpriced_rows)} 行` : null].filter(Boolean).join(" · "), { tone: Number(t.errors) > 0 ? "warn" : undefined }),
+    hide.has("usage") ? null : stat("Token", fmt.tokens(tokens), `输入 ${fmt.tokens(t.tokens_in)}（缓存 ${fmt.tokens(t.tokens_cached)}）· 输出 ${fmt.tokens(t.tokens_out)}`, { title: `${fmt.int(tokens)} token` }),
+    hide.has("billing") ? null : stat("用量价值", fmt.cny(t.value_cny), "价目售价 × 实际用量"),
+    hide.has("billing") ? null : stat("模型成本", fmt.cny(t.cost_cny), "上游成本价 × 实际用量"),
+    hide.has("billing") ? null : stat("本期应收", fmt.cny(t.revenue_cny), "席位费 + 加量费"),
+    hide.has("billing") ? null : stat("毛利", fmt.cny(t.margin_cny), marginRate === null ? "应收 − 成本" : `毛利率 ${fmt.pct(marginRate)}`, { tone: Number(t.margin_cny) < 0 ? "danger" : undefined }),
   );
 
   // 趋势
@@ -50,18 +52,20 @@ function draw(box, ov, tenants) {
   };
   const trendBody = h("div");
   const drawTrend = () => clear(trendBody, daily.length ? trendChart({ labels, series: metricDefs[st.metric].series, format: metricDefs[st.metric].format, tick: (l) => l.slice(5), height: 200 }) : emptyBlock("这段时间没有用量"));
-  drawTrend();
+  if (hide.has("billing") && st.metric === "money") st.metric = "tokens";
+  if (hide.has("usage")) clear(trendBody, emptyBlock("需要“用量”查看权限", "请联系系统管理员调整角色"));
+  else drawTrend();
   const metricSeg = h("span");
   const drawSeg = () =>
     clear(
       metricSeg,
-      segmented([{ id: "tokens", label: "Token" }, { id: "requests", label: "请求" }, { id: "money", label: "金额" }], st.metric, (id) => {
+      segmented([{ id: "tokens", label: "Token" }, { id: "requests", label: "请求" }, ...(hide.has("billing") ? [] : [{ id: "money", label: "金额" }])], st.metric, (id) => {
         st.metric = id;
         drawSeg();
         drawTrend();
       }, "趋势指标"),
     );
-  drawSeg();
+  if (!hide.has("usage")) drawSeg();
 
   // 需要关注：告警 + 即将用完 + 上游异常
   const resetsAt = Date.parse(ov.period?.resets_at ?? "");
@@ -102,7 +106,7 @@ function draw(box, ov, tenants) {
       : h("p", { class: "muted small" }, silent.length ? `没有异常；${silent.length} 个上游还没有健康回报（网关没连上控制面，或刚登记）。` : "所有上游正常。"),
   );
 
-  const models = (ov.by_model ?? []).map((x) => ({ label: x.label ?? x.alias, value: Number(x.tokens) || 0, note: `${fmt.pct(x.share)} · ${fmt.int(x.requests)} 次 · ${fmt.cny(x.value_cny)}`, title: x.alias }));
+  const models = (ov.by_model ?? []).map((x) => ({ label: x.label ?? x.alias, value: Number(x.tokens) || 0, note: [fmt.pct(x.share), `${fmt.int(x.requests)} 次`, hide.has("billing") ? null : fmt.cny(x.value_cny)].filter(Boolean).join(" · "), title: x.alias }));
   const providers = ov.routing?.providers ?? [];
   const a = ov.accounts ?? {};
   const tn = ov.tenants ?? {};
@@ -121,7 +125,7 @@ function draw(box, ov, tenants) {
     h(
       "div",
       { class: "grid-3" },
-      panel("按模型", hbars(models, { format: (v) => `${fmt.tokens(v)} token`, empty: "本期还没有模型用量" })),
+      panel("按模型", hide.has("usage") ? emptyBlock("需要“用量”查看权限") : hbars(models, { format: (v) => `${fmt.tokens(v)} token`, empty: "本期还没有模型用量" })),
       panel(
         "上游健康",
         providers.length

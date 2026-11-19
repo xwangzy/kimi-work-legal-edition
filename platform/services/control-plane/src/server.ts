@@ -1864,39 +1864,66 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     // ─── 总览 ───
     if (method === "GET" && p === "/v1/ops/overview")
-      return read("overview.read", () => {
-        const days = Math.min(90, Math.max(7, Number(qs.get("days") ?? "30") || 30));
-        const from = dayOf(now() - (days - 1) * DAY_MS);
-        const to = dayOf(now());
-        const b = periodBounds("month", now());
-        const tot = book.daily(null, b.fromDay, b.toDay);
-        const sum = emptyAgg();
-        for (const a of tot.values()) addAgg(sum, a);
-        const revenue = [...tenants.values()].map((t) => billRow(t, b.key).revenue_cny).reduce<number | null>((s2, v) => (v === null ? s2 : (s2 ?? 0) + v), null);
-        const daily = book.daily(null, from, to);
-        const allAcc = [...accounts.values()];
-        const allDev = [...tenants.values()].flatMap((t) => [...t.devices.values()].filter((d) => !d.revoked_at).map((d) => deviceRow(t, d)));
-        const since7 = iso(now() - 7 * DAY_MS);
-        const byModel = new Map<string, Agg>();
-        for (const t of tenants.values()) for (const [alias, a] of book.group("model", t.tid, b.fromDay, b.toDay)) addAgg(byModel.get(alias) ?? (byModel.set(alias, emptyAgg()), byModel.get(alias)!), a);
-        const allTok = [...byModel.values()].reduce((s2, a) => s2 + a.tokens_in + a.tokens_out, 0);
-        return {
-          generated_at: iso(),
-          period: { kind: "month", key: b.key, start: b.start, resets_at: b.resets_at },
-          // 有用量却全部未定价：显示“未定价”（null），不显示 0
-          totals: { requests: sum.requests, tokens_in: sum.tokens_in, tokens_cached: sum.tokens_cached, tokens_out: sum.tokens_out, value_cny: sum.unpriced && !sum.value_micro ? null : cny(sum.value_micro), cost_cny: sum.uncosted && !sum.cost_micro ? null : cny(sum.cost_micro), revenue_cny: revenue, margin_cny: revenue === null || (sum.uncosted && !sum.cost_micro) ? null : Math.round((revenue - cny(sum.cost_micro)) * 100) / 100, errors: sum.errors, estimated_rows: sum.estimated, unpriced_rows: sum.unpriced },
-          accounts: { total: allAcc.length, active_7d: allAcc.filter((a) => a.last_login_at && a.last_login_at >= since7).length, new_7d: allAcc.filter((a) => a.created_at >= since7).length, disabled: allAcc.filter((a) => a.status === "disabled").length },
-          tenants: { total: tenants.size, active: [...tenants.values()].filter((t) => tenantStatus(t) === "active").length, pending: [...tenants.values()].filter((t) => tenantStatus(t) === "pending").length, expiring_30d: [...tenants.values()].filter((t) => Date.parse(t.subscription_until) > now() && Date.parse(t.subscription_until) < now() + 30 * DAY_MS).length },
-          devices: { total: allDev.length, active_7d: allDev.filter((d) => d.last_seen_on && d.last_seen_on >= dayOf(now() - 7 * DAY_MS)).length, flagged: allDev.filter((d) => d.flags.length > 0).length },
-          daily: lastDays(days).map((day) => {
-            const a = daily.get(day) ?? emptyAgg();
-            return { day, requests: a.requests, tokens: a.tokens_in + a.tokens_out, value_cny: cny(a.value_micro), cost_cny: cny(a.cost_micro), errors: a.errors };
-          }),
-          by_model: [...byModel].map(([alias, a]) => ({ alias, label: routing.models.find((m) => m.alias === alias)?.label ?? alias, requests: a.requests, tokens: a.tokens_in + a.tokens_out, value_cny: cny(a.value_micro), share: ratio(a.tokens_in + a.tokens_out, allTok) })).sort((x, y) => y.tokens - x.tokens),
-          attention: alerts.filter((x) => !x.acked_at).slice(0, 20).map(alertView),
-          routing: { version: routing.version, providers: routing.providers.map((x) => { const h = routingView(routing, routingKeyId).providers.find((y) => y.id === x.id)?.health; return { id: x.id, label: x.label, enabled: x.enabled, state: x.enabled ? (h?.state ?? "unknown") : "disabled", latency_ms: h?.latency_ms ?? null, updated_at: h?.updated_at ?? null }; }) },
-        };
-      });
+      return { ...read("overview.read", () => null), run: (_b, who) => overviewFor(who, qs) };
+    return opsSpecRest(method, p, qs);
+  };
+  /**
+   * 总览按权限裁剪（第 46 批复核）：总览只要求 tenant.read，开通专员、客服也看得到——金额（用量价值、成本、应收、毛利）只给有 billing.read 的，
+   * 请求与 token 只给有 usage.read 的；裁掉的字段整块不给（hidden 写明），控制台按 hidden 不画对应卡片，不显示成 0 或“未定价”。
+   */
+  const overviewFor = (who: StaffWho, qs: URLSearchParams) => {
+    const o = overviewAll(qs) as Record<string, unknown> & { totals: Record<string, unknown>; daily: Record<string, unknown>[]; by_model: Record<string, unknown>[] };
+    const hidden: string[] = [];
+    if (!who.perms.includes("billing.read")) {
+      hidden.push("billing");
+      for (const k of ["value_cny", "cost_cny", "revenue_cny", "margin_cny", "unpriced_rows"]) delete o.totals[k];
+      for (const d of o.daily) for (const k of ["value_cny", "cost_cny"]) delete d[k];
+      for (const m of o.by_model) delete m.value_cny;
+    }
+    if (!who.perms.includes("usage.read")) {
+      hidden.push("usage");
+      for (const k of ["requests", "tokens_in", "tokens_cached", "tokens_out", "errors", "estimated_rows"]) delete o.totals[k];
+      o.daily = [];
+      o.by_model = [];
+    }
+    return { ...o, hidden };
+  };
+  const overviewAll = (qs: URLSearchParams) => {
+    const days = Math.min(90, Math.max(7, Number(qs.get("days") ?? "30") || 30));
+    const from = dayOf(now() - (days - 1) * DAY_MS);
+    const to = dayOf(now());
+    const b = periodBounds("month", now());
+    const tot = book.daily(null, b.fromDay, b.toDay);
+    const sum = emptyAgg();
+    for (const a of tot.values()) addAgg(sum, a);
+    const revenue = [...tenants.values()].map((t) => billRow(t, b.key).revenue_cny).reduce<number | null>((s2, v) => (v === null ? s2 : (s2 ?? 0) + v), null);
+    const daily = book.daily(null, from, to);
+    const allAcc = [...accounts.values()];
+    const allDev = [...tenants.values()].flatMap((t) => [...t.devices.values()].filter((d) => !d.revoked_at).map((d) => deviceRow(t, d)));
+    const since7 = iso(now() - 7 * DAY_MS);
+    const byModel = new Map<string, Agg>();
+    for (const t of tenants.values()) for (const [alias, a] of book.group("model", t.tid, b.fromDay, b.toDay)) addAgg(byModel.get(alias) ?? (byModel.set(alias, emptyAgg()), byModel.get(alias)!), a);
+    const allTok = [...byModel.values()].reduce((s2, a) => s2 + a.tokens_in + a.tokens_out, 0);
+    return {
+      generated_at: iso(),
+      period: { kind: "month", key: b.key, start: b.start, resets_at: b.resets_at },
+      // 有用量却全部未定价：显示“未定价”（null），不显示 0
+      totals: { requests: sum.requests, tokens_in: sum.tokens_in, tokens_cached: sum.tokens_cached, tokens_out: sum.tokens_out, value_cny: sum.unpriced && !sum.value_micro ? null : cny(sum.value_micro), cost_cny: sum.uncosted && !sum.cost_micro ? null : cny(sum.cost_micro), revenue_cny: revenue, margin_cny: revenue === null || (sum.uncosted && !sum.cost_micro) ? null : Math.round((revenue - cny(sum.cost_micro)) * 100) / 100, errors: sum.errors, estimated_rows: sum.estimated, unpriced_rows: sum.unpriced },
+      accounts: { total: allAcc.length, active_7d: allAcc.filter((a) => a.last_login_at && a.last_login_at >= since7).length, new_7d: allAcc.filter((a) => a.created_at >= since7).length, disabled: allAcc.filter((a) => a.status === "disabled").length },
+      tenants: { total: tenants.size, active: [...tenants.values()].filter((t) => tenantStatus(t) === "active").length, pending: [...tenants.values()].filter((t) => tenantStatus(t) === "pending").length, expiring_30d: [...tenants.values()].filter((t) => Date.parse(t.subscription_until) > now() && Date.parse(t.subscription_until) < now() + 30 * DAY_MS).length },
+      devices: { total: allDev.length, active_7d: allDev.filter((d) => d.last_seen_on && d.last_seen_on >= dayOf(now() - 7 * DAY_MS)).length, flagged: allDev.filter((d) => d.flags.length > 0).length },
+      daily: lastDays(days).map((day) => {
+        const a = daily.get(day) ?? emptyAgg();
+        return { day, requests: a.requests, tokens: a.tokens_in + a.tokens_out, value_cny: cny(a.value_micro), cost_cny: cny(a.cost_micro), errors: a.errors };
+      }),
+      by_model: [...byModel].map(([alias, a]) => ({ alias, label: routing.models.find((m) => m.alias === alias)?.label ?? alias, requests: a.requests, tokens: a.tokens_in + a.tokens_out, value_cny: cny(a.value_micro), share: ratio(a.tokens_in + a.tokens_out, allTok) })).sort((x, y) => y.tokens - x.tokens),
+      attention: alerts.filter((x) => !x.acked_at).slice(0, 20).map(alertView),
+      routing: { version: routing.version, providers: routing.providers.map((x) => { const h = routingView(routing, routingKeyId).providers.find((y) => y.id === x.id)?.health; return { id: x.id, label: x.label, enabled: x.enabled, state: x.enabled ? (h?.state ?? "unknown") : "disabled", latency_ms: h?.latency_ms ?? null, updated_at: h?.updated_at ?? null }; }) },
+    };
+  };
+  const opsSpecRest = (method: string, p: string, qs: URLSearchParams): OpsSpec | null => {
+    const none = () => null;
+    const read = (action: string, run: () => unknown, perm: CpPermission = "tenant.read"): OpsSpec => ({ perm, action, tid: none, target: none, run });
     // ─── 套餐与注册设置 ───
     if (method === "GET" && p === "/v1/ops/plans") return read("plan.list", () => ({ plans: catalog.plans.map(planView), default_plan: catalog.default_plan }));
     const pl = /^\/v1\/ops\/plans\/([a-z0-9][a-z0-9-]{0,23})$/.exec(p);
@@ -2094,7 +2121,17 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         return { devices: list.sort((x, y) => (y.last_seen_on ?? "").localeCompare(x.last_seen_on ?? "")).slice(0, 2000) };
       }, "account.read");
     // ─── 模型与路由 ───
-    if (method === "GET" && p === "/v1/ops/routing") return read("routing.read", () => ({ ...routingView(routing, routingKeyId), routing_key: routingKey }), "route.read");
+    if (method === "GET" && p === "/v1/ops/routing")
+      return read(
+        "routing.read",
+        () => {
+          // 更新人显示为人员姓名与邮箱（不只给人员编号）；第 44 批的运营编号与系统导入照原样
+          const by = routing.updated_by;
+          const st = by ? staff.get(by) : undefined;
+          return { ...routingView(routing, routingKeyId), updated_by_label: st ? `${st.name}（${st.email}）` : by, routing_key: routingKey };
+        },
+        "route.read",
+      );
     const rp = /^\/v1\/ops\/routing\/providers\/([a-z][a-z0-9-]{1,31})(\/probe)?$/.exec(p);
     if (rp) {
       const id = rp[1]!;
