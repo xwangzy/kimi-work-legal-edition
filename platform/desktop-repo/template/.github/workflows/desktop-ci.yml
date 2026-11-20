@@ -1,5 +1,7 @@
 # 桌面客户端 CI（独立桌面仓库；由 monorepo 的 platform/desktop-repo/template/ 导出，改动请在 monorepo 改）。
-# - windows：Windows 关键用例 + NSIS 安装包（每次运行新建、仅供测试的自签名证书）+ 静默安装 + 安装后冒烟。
+# - windows-test：Windows 关键用例（与 windows-package 并行、互不阻断——第 52 批：monorepo 上 p1-kap-host、search-diff 两个文件在 Windows 上
+#                  早有失败，合在一个 job 里会让安装与冒烟永远跑不到；分开后各自如实报红/绿）。
+# - windows-package：NSIS 安装包（每次运行新建、仅供测试的自签名证书）+ 静默安装 + 安装后冒烟。
 #            冒烟须 ok 且 checks.children 四项（出站闸门、Agent 宿主、W 执行域、隔离解析进程）全为 ok——第 52 批起冒烟在安装包里
 #            逐个真拉起随包子进程（偏离 D-215：安装包里 fork 被拒、子进程全部拉不起来，旧冒烟照样通过）；再查残留进程与“结果文件已存在即退出码 3”。
 # - macos：只在手动触发时运行（私有仓库 macOS 分钟按 10 倍计费）：DMG（ad-hoc 签名）→ hdiutil 挂载 → 以 --kwl-smoke 启动 → 同样判定。
@@ -31,7 +33,7 @@ defaults:
     shell: bash
 
 jobs:
-  windows:
+  windows-test:
     if: github.event_name != 'workflow_dispatch' || inputs.platforms != 'macos'
     runs-on: windows-latest
     timeout-minutes: 120
@@ -72,6 +74,29 @@ jobs:
             packages/kernel/test/secret-files.test.ts packages/kernel/test/matter-lifecycle.test.ts \
             packages/kernel/test/b50-no-fork-in-app.test.ts packages/kernel/test/b52-child-selftest.test.ts \
             apps/desktop/test/*.test.ts
+
+  windows-package:
+    if: github.event_name != 'workflow_dispatch' || inputs.platforms != 'macos'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: 导出来源核对
+        run: node scripts/verify-source.mjs
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.8.1
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: 下载缓存（OCR 模型与 Windows 随包运行时；取出后仍按脚本里的摘要逐个核验）
+        uses: actions/cache@v4
+        with:
+          path: |
+            content/ocr-models
+            .cache/win-runtime
+          key: kwl-dl-win-${{ hashFiles('scripts/fetch-ocr-models.mjs', 'scripts/win-runtime.lock.json') }}
+      - run: npm ci
+      - run: npm run fetch:ocr-models
       - name: 仅供测试的代码签名证书（每次运行新建，30 天有效，不得用于对外发布）
         shell: pwsh
         run: |

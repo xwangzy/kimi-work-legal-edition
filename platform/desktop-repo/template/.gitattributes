@@ -1,0 +1,23 @@
+# 与 monorepo 根目录 .gitattributes 同一规则（第 52 批补进独立仓库模板）：各平台检出一律 LF。
+# Windows 上 Git 缺省 autocrlf=true 会把文本文件检出为 CRLF——SOURCE.json 按导出时的字节记 sha256，
+# 检出成 CRLF 后 verify-source 全部“不一致”（桌面仓库 Windows CI run 44780268075），build:skills 的 frontmatter 也会解析失败。
+* text=auto eol=lf
+
+# 二进制文件不做任何转换
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.zip binary
+*.7z binary
+*.gz binary
+*.exe binary
+*.dll binary
+*.node binary
+*.onnx binary
+*.docx binary
+*.xlsx binary
+*.pdf binary
+# 密钥材料保持字节原样
+*.pem binary
