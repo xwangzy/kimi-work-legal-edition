@@ -6,6 +6,7 @@
 import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { readSecretFile, writeStagedSecret } from "./devices.ts";
+import { cloudFailureText } from "./services/cloud-connection.ts";
 
 export interface AccountSessionFile {
   v: 1;
@@ -87,6 +88,9 @@ export function modelRejectionProblem(codeOrMessage: string | null | undefined, 
 
 /** 账号接口错误代码 → 律师看得懂的一句话。 */
 export function accountErrorText(code: string, fallback?: string): string {
+  // 第 52 批（IP 部署）：控制面通道的证书校验（cp_tls_*）与安装包连接配置（cp_upstream_*）单独说，不落到“请稍后重试”
+  const cloud = cloudFailureText(code);
+  if (cloud) return cloud;
   switch (code) {
     case "auth_invalid":
       return "邮箱或密码不正确";
@@ -125,6 +129,7 @@ export function accountErrorText(code: string, fallback?: string): string {
     case "cp_not_configured":
     case "gate_unavailable":
     case "cp_unreachable":
+    case "cp_timeout":
       return "连不上中软服务，请检查网络后重试";
     case "client_outdated":
       return clientOutdatedText(fallback);
@@ -197,6 +202,8 @@ export function onboardingStateText(state: string, o: { admin?: boolean } = {}):
  * 不认识的代码一律说“中软服务暂时不可用，请稍后重试”；原始代码只进日志与诊断。
  */
 export function controlPlaneErrorText(code: string, o: { min_version?: string | null } = {}): string {
+  const cloud = cloudFailureText(code);
+  if (cloud) return cloud;
   switch (code) {
     case "no_seat":
       return "你还没有席位：请律所管理员先分配席位";
@@ -207,6 +214,7 @@ export function controlPlaneErrorText(code: string, o: { min_version?: string | 
     case "cp_not_configured":
     case "gate_unavailable":
     case "cp_unreachable":
+    case "cp_timeout":
       return "连不上中软服务，请检查网络后重试";
     case "device_auth_stale":
       return "这台电脑的时间与标准时间相差太多，中软服务拒绝了请求：请把系统时间设为自动同步后重试";

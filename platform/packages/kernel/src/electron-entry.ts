@@ -93,6 +93,22 @@ port.on("message", async (raw) => {
     markRuntimeVerified();
     return;
   }
+  // 安装冒烟（第 52 批）：随包子进程逐个真拉起。只认主进程的专用消息（渲染进程的调用一律经主进程拼成 {id, method}，带不出 type），
+  // 不进内核方法表；回复沿用 {id, ok, result} 形态
+  if (type === "kernel.child_selftest") {
+    const id = (raw as { id?: unknown }).id;
+    if (typeof id !== "number") return;
+    if (!kernelRef) {
+      port.postMessage({ id, ok: false, error: { code: "kernel_starting", message: "后台服务正在启动，请稍候", httpStatus: 503 } });
+      return;
+    }
+    try {
+      port.postMessage({ id, ok: true, result: await kernelRef.childSelftest() });
+    } catch (e) {
+      port.postMessage({ id, ok: false, error: { code: "internal", message: "子进程自检出错", httpStatus: 500, detail: { err_name: (e as Error)?.name ?? "Error" } } });
+    }
+    return;
+  }
   // 主进程退出或安装更新前要求有序关闭（复核 B4-A13）：先关闭闸门、Agent 宿主等子进程与账本，再退出
   if (type === "kernel.shutdown") {
     if (closing) return;

@@ -33,6 +33,8 @@ export const TOOL_LABELS: Record<string, string> = {
 const QUOTA_RE = /额度不足|预扣费|余额不足|insufficient[_ ]?(?:quota|balance|credit)|quota[_ ]?exceeded|billing|欠费/i;
 /** 本产品自己的额度规则（第 44 批：频率窗口、本期额度、律所上限、个人额度）：说“暂停”，不说“连不上”。 */
 const OWN_QUOTA_RE = /频率窗口|额度已用完|用量上限|个人额度|quota_(?:burst|exhausted|cap_reached|seat_limit)/;
+/** 第 52 批（IP 部署）：连接云端的加密核对未通过（钉住不符、不受信任、地址不符）或安装包连接配置不完整——不说成“连不上”，请 IT 处理。 */
+const CLOUD_TLS_RE = /\[kwl:(?:[a-z]+_)?(?:tls_(?:pin_mismatch|verify_failed|name_mismatch)|upstream_(?:tls_required|pins_missing|pins_malformed))\]/;
 
 export function toolLabel(name: string): string {
   if (name.startsWith("mcp__legal__")) {
@@ -566,7 +568,7 @@ export function buildSteps(events: RunEvent[], skillTitles: Record<string, strin
         // 律师层只给一句可理解的说明（不显示英文错误与状态码）；原文进“处理细节”（UIUX 增量评审 P0-D）。
         // retryable 由内核保留（复核 B4-B21：此前被裁掉，“正在自动重试”永远不出现）
         // 模型通道不可达（provider.*，第 28 批演练）：直说 AI 服务连不上，不写“任务会尽量继续”
-        steps.push({ key: `${e.event_id}-l`, level: "lawyer", icon: "fail", title: p.retryable === true ? "AI 服务出了点问题，正在自动重试" : String(p.code ?? "").startsWith("provider.") ? (OWN_QUOTA_RE.test(String(p.message ?? "")) ? "AI 额度暂时用到限制，这一步暂停" : QUOTA_RE.test(String(p.message ?? "")) ? "AI 服务账户的余额或额度不足，这一步没有完成" : "AI 服务连不上，这一步没有完成") : "这一步没有完成，任务会尽量继续", at });
+        steps.push({ key: `${e.event_id}-l`, level: "lawyer", icon: "fail", title: p.retryable === true ? "AI 服务出了点问题，正在自动重试" : String(p.code ?? "").startsWith("provider.") ? (CLOUD_TLS_RE.test(String(p.message ?? "")) ? "连接云端的加密核对未通过，这一步没有发出：请联系律所 IT（设置 → 备份与安全 → 检测连接）" : OWN_QUOTA_RE.test(String(p.message ?? "")) ? "AI 额度暂时用到限制，这一步暂停" : QUOTA_RE.test(String(p.message ?? "")) ? "AI 服务账户的余额或额度不足，这一步没有完成" : "AI 服务连不上，这一步没有完成") : "这一步没有完成，任务会尽量继续", at });
         // V16（审计第 8 条）：处理细节里只写出错代码，原始错误原文（常为英文）只进诊断信息
         // 第 46 批：执行页上不再出现“出错代码 provider.xxx”这类研发字样——写“出错详情已记录”，代码只进诊断信息
         steps.push({ key: `${e.event_id}`, level: "detail", icon: "fail", title: "出错详情已记录", at, detail: "需要时可在 设置 → 备份与安全 导出诊断信息交给客服" });

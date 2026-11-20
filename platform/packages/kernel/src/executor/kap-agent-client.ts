@@ -69,6 +69,18 @@ export interface KapAgentOptions {
   atRest?: { mode: "required" | "optional"; keys: (matterId: string) => ZoneKeysWire };
 }
 
+/** Agent 宿主拉不起来的原因码（封闭枚举；按 ensureHost 的固定报错与系统错误码归类）。 */
+export function kapStartFailure(e: unknown): "gate_unavailable" | "runtime_missing" | "spawn_denied" | "init_timeout" | "exited_early" | "other" {
+  const msg = String((e as Error)?.message ?? "");
+  const code = String((e as { code?: unknown })?.code ?? "");
+  if (msg.includes("出站闸门")) return "gate_unavailable";
+  if (code === "ENOENT") return "runtime_missing";
+  if (code === "EACCES" || code === "EPERM") return "spawn_denied";
+  if (msg.includes("初始化超时")) return "init_timeout";
+  if (msg.includes("退出")) return "exited_early";
+  return "other";
+}
+
 /** 宿主的待决审批（run.approval_requested 载荷）。 */
 export type KapPendingApproval = Record<string, unknown> & { approval_id: string; object_hash: string; nonce: string; tool: string; reason: string };
 /** 宿主的待决提问（run.question 载荷）。 */
@@ -164,6 +176,11 @@ export interface KapAgentClient extends AgentClient {
   capabilities(): Promise<unknown[] | null>;
   /** 诊断与测试：宿主进程号（未运行为 null）。 */
   hostPid(): number | null;
+  /**
+   * 安装冒烟（第 52 批）：拉起（或复用）Agent 宿主并完成 init/ready 握手（闸门先就绪，与任务同一入口），再请宿主按执行域配置
+   * 真拉起一次 W 监督进程、跑完启动自检。只回结果码（"ok" 或原因码），不带路径与报错原文；不调用模型、不发网络请求。
+   */
+  selftest(timeoutMs?: number): Promise<{ kap: string; w: string }>;
 }
 
 export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
@@ -292,6 +309,11 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
           ready = null;
         }
       });
+      // 拉起失败（随包 Node 缺失、被杀软拦截：ENOENT/EACCES）在子进程对象上发 error：没有监听即成为内核的未捕获异常（第 52 批自检发现）
+      let startError: Error | null = null;
+      c.on("error", (e: Error) => {
+        startError ??= e;
+      });
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("kap-host 初始化超时")), 60_000);
         const onReady = (raw: unknown) => {
@@ -302,7 +324,17 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
             resolve();
           }
         };
+        // 握手前退出或拉起失败：立即失败（不再干等 60 秒初始化超时）
+        c.once("error", (e: Error) => {
+          clearTimeout(timer);
+          reject(e);
+        });
+        c.once("exit", (code) => {
+          clearTimeout(timer);
+          reject(startError ?? new Error(`kap-host 握手前退出（${code}）`));
+        });
         c.on("message", onReady);
+        if (!c.connected) return;
         c.send({
           t: "init",
           config: {
@@ -589,6 +621,30 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
     getTask: (taskId) => tasks.get(taskId),
     hostPid() {
       return child?.pid ?? null;
+    },
+    async selftest(timeoutMs = 120_000) {
+      // 宿主依赖闸门（闸门起不来即宿主不启动）：先单独确认闸门，免得把闸门的拉起失败记成宿主的
+      try {
+        await runtimeReady();
+        if (opts.gate) await opts.gate.socket();
+      } catch {
+        return { kap: "gate_unavailable", w: "host_unavailable" };
+      }
+      try {
+        await ensureHost();
+      } catch (e) {
+        return { kap: kapStartFailure(e), w: "host_unavailable" };
+      }
+      try {
+        const r = await call<{ w?: unknown }>("selftest", {}, timeoutMs);
+        const w = typeof r?.w === "string" && /^[a-z][a-z_]{0,39}$/.test(r.w) ? r.w : "other";
+        return { kap: "ok", w };
+      } catch (e) {
+        const code = String((e as { code?: unknown })?.code ?? "");
+        // 握手已通过：宿主随后退出算宿主失败；调用超时或旧宿主不认这个方法只算执行域自检未完成
+        if (code === "host_exited") return { kap: "exited_early", w: "host_unavailable" };
+        return { kap: "ok", w: code === "timeout" ? "timeout" : code === "not_found" ? "unsupported" : "other" };
+      }
     },
     async capabilities() {
       if (child?.connected && ready) {

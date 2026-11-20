@@ -51,3 +51,29 @@ test("冒烟结果：不覆盖已存在的文件；错误只保留登记的代�
   s.writeSmokeResult(g, { ok: false, error: "renderer_not_mounted" });
   assert.equal(JSON.parse(readFileSync(g, "utf8")).error, "renderer_not_mounted");
 });
+
+test("第 52 批：随包子进程自检结果只留四项结果码；第一项不是 ok 的报 child_<项>_failed（闸门优先）；写出时再清洗一次", () => {
+  const c = require("../electron/smoke-io.cjs") as {
+    sanitizeChildren(raw: unknown): Record<string, string>;
+    childrenFailure(children: Record<string, string> | null): string | null;
+    ERROR_CODES: Set<string>;
+    CHILD_CHECKS: string[];
+    SmokeFailure: new (code: string) => { smokeCode: string };
+  };
+  assert.deepEqual(c.CHILD_CHECKS, ["gate", "kap", "w", "parse"]);
+  assert.deepEqual(c.sanitizeChildren({ gate: "ok", parse: "ok", kap: "ok", w: "ok", extra: "x" }), { gate: "ok", kap: "ok", w: "ok", parse: "ok" });
+  assert.deepEqual(c.sanitizeChildren({ gate: "runtime_missing", parse: "C:\\Users\\某律师\\a.pdf", kap: 3 }), { gate: "runtime_missing", kap: "missing", w: "missing", parse: "missing" });
+  assert.deepEqual(c.sanitizeChildren(null), { gate: "missing", kap: "missing", w: "missing", parse: "missing" });
+  assert.equal(c.childrenFailure({ gate: "ok", kap: "ok", w: "ok", parse: "ok" }), null);
+  assert.equal(c.childrenFailure({ gate: "runtime_missing", kap: "gate_unavailable", w: "host_unavailable", parse: "spawn_failed" }), "child_gate_failed");
+  assert.equal(c.childrenFailure({ gate: "ok", kap: "ok", w: "node_digest", parse: "spawn_failed" }), "child_w_failed");
+  assert.equal(c.childrenFailure({ gate: "ok", kap: "ok", w: "ok", parse: "timeout" }), "child_parse_failed");
+  assert.equal(c.childrenFailure(null), "child_gate_failed");
+  for (const k of c.CHILD_CHECKS) assert.ok(c.ERROR_CODES.has(`child_${k}_failed`), `child_${k}_failed 已登记`);
+  assert.ok(c.ERROR_CODES.has("child_selftest_failed"));
+  assert.equal(new c.SmokeFailure("child_kap_failed").smokeCode, "child_kap_failed");
+  const dir = mkdtempSync(join(tmpdir(), "kwl-smoke-children-"));
+  const f = join(dir, "r.json");
+  s.writeSmokeResult(f, { ok: false, error: "child_parse_failed", checks: { children: { gate: "ok", kap: "ok", w: "ok", parse: "/Users/x/秘密.pdf" } } });
+  assert.deepEqual(JSON.parse(readFileSync(f, "utf8")).checks.children, { gate: "ok", kap: "ok", w: "ok", parse: "missing" });
+});

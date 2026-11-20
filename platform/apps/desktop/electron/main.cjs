@@ -15,7 +15,7 @@ const { quarantineUnreadable } = require("./unreadable-data.cjs");
 const { kernelChildEnv, loadReleaseConfig, applyEndpointProfile, OS_ENV_ALLOW } = require("./release-config.cjs");
 const trialMode = require("./trial-mode.cjs");
 const { initUpdater } = require("./updater.cjs");
-const { parseSmokeArg, writeSmokeResult, SmokeFailure } = require("./smoke-io.cjs");
+const { parseSmokeArg, writeSmokeResult, SmokeFailure, sanitizeChildren, childrenFailure } = require("./smoke-io.cjs");
 const { createIdentityRestart } = require("./identity-restart.cjs");
 const { createHandleStore, classifySaveTarget, resolveFileParams, acceptDroppedPath, insideAppData, safeSuggestedName, openableSaved, OPENABLE } = require("./file-dialogs.cjs");
 
@@ -173,7 +173,7 @@ function verifyRuntimeInBackground(manifest) {
 
 /**
  * 安装后冒烟（Windows CI 与 IT 部署核验）：`KWL_SMOKE=1 KimiWorkLegal.exe --kwl-smoke=<结果文件>`——启动后核验随包运行时、解封数据库主密钥、
- * 等内核就绪、调用 kernel.status、等界面真正渲染，把结果（不含任何事项内容与密钥，错误只写代码）写入一个新文件后退出；退出码 0 = 全部通过、
+ * 等内核就绪、调用 kernel.status、等界面真正渲染、逐个真拉起随包子进程（checks.children，第 52 批），把结果（不含任何事项内容与密钥，错误只写代码）写入一个新文件后退出；退出码 0 = 全部通过、
  * 2 = 已有实例在运行。入口与路径限制见 smoke-io.cjs（复核 B4-A08）。冒烟会在本账户真实数据目录上启动一次内核。
  */
 const smoke = (() => {
@@ -239,6 +239,21 @@ async function runSmoke(win) {
       throw new SmokeFailure("runtime");
     }
     result.checks.runtime_digests = app.isPackaged ? "ok" : "skipped";
+    // 随包子进程逐个真拉起（第 52 批；偏离 D-215 的验证缺口）：上面 kernel_status.egress_gate 只说明闸门对象存在——闸门按需拉起，
+    // 进程从未拉起也报 true。摘要核验通过后（内核此时已收到 kernel.runtime_verified）请内核经产品同一路径拉起闸门、解析进程、
+    // Agent 宿主与 W 执行域，任何一项不是 ok 即失败。只记结果码
+    const childReply = await Promise.race([
+      new Promise((resolve) => {
+        const id = ++rpcSeq;
+        pendingRpc.set(id, resolve);
+        kernel.postMessage({ type: "kernel.child_selftest", id });
+      }),
+      timeout(240_000, "子进程自检"),
+    ]).catch(() => null);
+    if (!childReply || childReply.ok !== true) throw new SmokeFailure("child_selftest_failed");
+    result.checks.children = sanitizeChildren(childReply.result);
+    const childFailed = childrenFailure(result.checks.children);
+    if (childFailed) throw new SmokeFailure(childFailed);
     result.checks.renderer_external_requests_blocked = rendererNet.blocked;
     result.ok = true;
   } catch (e) {
@@ -267,9 +282,20 @@ function releaseConfig() {
     releaseCached = loadReleaseConfig(path.join(__dirname, "release.json"));
     if (releaseCached.problems.length) slog.event("MAIN_RELEASE_CONFIG_PROBLEM", { count: releaseCached.problems.length });
     // 签名的云端地址配置（偏离 D-213）：release.json 带验签公钥时，读本机数据目录下的 cloud-endpoints.json；验不过即沿用随包地址
-    const ep = applyEndpointProfile(releaseCached, path.join(DATA_DIR, "cloud-endpoints.json"));
+    // 防回滚（D-217）：生效过的配置原样存在 cloud-endpoints.applied.json；更早的、同 seq 不同内容的、验不过的配置都不生效，继续用已生效的那份
+    const appliedFile = path.join(DATA_DIR, "cloud-endpoints.applied.json");
+    const ep = applyEndpointProfile(releaseCached, path.join(DATA_DIR, "cloud-endpoints.json"), appliedFile);
     if (ep.problems.length) slog.event("MAIN_ENDPOINT_PROFILE_PROBLEM", { count: ep.problems.length });
-    if (ep.applied) slog.event("MAIN_ENDPOINT_PROFILE_APPLIED", { seq: ep.applied.seq });
+    if (ep.applied) slog.event("MAIN_ENDPOINT_PROFILE_APPLIED", { seq: ep.applied.seq, source: ep.applied.source });
+    if (ep.persist) {
+      try {
+        const tmp = `${appliedFile}.tmp-${process.pid}`;
+        require("node:fs").writeFileSync(tmp, ep.persist, { mode: 0o600 });
+        require("node:fs").renameSync(tmp, appliedFile);
+      } catch {
+        slog.event("MAIN_ENDPOINT_PROFILE_PROBLEM", { count: 1 });
+      }
+    }
     releaseCached = ep.release;
   }
   return releaseCached;

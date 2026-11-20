@@ -33,6 +33,8 @@ npm run dev:desktop
 连接哪一套云端由 `release.json` 决定：先按 [docs/构建与云端接入.md](docs/构建与云端接入.md) 生成它，再打包。
 没有 `release.json` 的包只有本机能力（`--dev-build`），不能登录云端。
 
+CI（`.github/workflows/desktop-ci.yml`）：推送到 main 或 `v*` 标签时在 Windows 上跑关键用例、打测试证书签名的安装包、静默安装并冒烟（四个随包子进程须在安装包里真拉起来）；macOS DMG 只在手动触发时跑。见 [docs/构建与云端接入.md](docs/构建与云端接入.md) §8。
+
 ## 没有域名、只有公网 IP 时
 
 可以。客户端对 IP 地址与域名一视同仁：地址写 `https://<公网 IP>:8443` 等，证书须带该 IP 的 SAN。证书两种来源：

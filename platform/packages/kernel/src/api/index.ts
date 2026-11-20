@@ -5,6 +5,7 @@
  * 策略事件的签发人角色签名在同步阶段接入（当前经审计事件上链留痕）。
  */
 import { accountErrorText, accountFailure, controlPlaneErrorText, onboardingStateText } from "../account-session.ts";
+import { diagnoseView } from "../services/cloud-connection.ts";
 import { launchCheck, QUOTA_VIEW_MAX_AGE_MS, type LaunchHint } from "../services/launch-check.ts";
 import { calcDeadline } from "../tools/tools/deadline.ts";
 import { localToday } from "../services/local-date.ts";
@@ -2932,6 +2933,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         content_sha256: sk.contentSha256,
         skills: sk.skills.map((x) => ({ id: x.id, title: x.title, description: x.description, version: x.version, tier: x.tier, lines: x.lines })),
       };
+    },
+
+    // ─── 连接检测（第 52 批（IP 部署）；设置 → 备份与安全 → 检测连接）：给所内 IT 分清证书问题与断网 ───
+    // 闸门按与真实流量相同的钉住集与演示 CA 对各中软上游 GET /healthz（不带凭据、不放宽任何证书校验）；只回分类、主机与端口、耗时、钉住短前缀
+    "connection.diagnose": async (_p, _id) => {
+      if (!gate) return diagnoseView({ ok: false, reason: "gate_not_configured" });
+      return diagnoseView(await gate.probe());
     },
 
     "kernel.status": (_p, id) => {

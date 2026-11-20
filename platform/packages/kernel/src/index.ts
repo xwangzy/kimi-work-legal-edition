@@ -26,6 +26,8 @@ import { KernelDb } from "./db.ts";
 import { BlobStore } from "./blobs.ts";
 import { TaskQueue } from "./queue.ts";
 import { createApi } from "./api/index.ts";
+import { parseWithPipeline } from "./services/parse-pipeline.ts";
+import { runChildSelftest, type ChildSelftestResult } from "./services/child-selftest.ts";
 import { resolveIdentity, taskTokenKey, type Identity } from "./identity.ts";
 import { applyStagedJoin, applyStagedRecovery, configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
 import { accountErrorText, dropAccountSession, modelRejectionProblem, readAccountSession, writeAccountSession, type AccountSessionFile } from "./account-session.ts";
@@ -80,6 +82,11 @@ export interface Kernel {
   contentCheckScheduled: boolean;
   /** 撤权擦除（审计 S3 1-4）：清理本机律师已不是成员的事项的 Agent 数据与工作区密钥；返回处理的事项。同步后与启动时自动执行。 */
   purgeRevokedAgentData(): Promise<string[]>;
+  /**
+   * 随包子进程自检（第 52 批，安装冒烟用；偏离 D-215 的验证缺口）：经产品同一代码路径逐个真拉起出站闸门、隔离解析进程、Agent 宿主与 W 执行域，
+   * 只回结果码。不发网络请求、不调用模型。主进程经专用消息 kernel.child_selftest 调用，不在内核方法表里。
+   */
+  childSelftest(): Promise<ChildSelftestResult>;
   onBroadcast(cb: (msg: Record<string, unknown>) => void): void;
   close(): Promise<void>;
 }
@@ -1221,6 +1228,18 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     gate,
     contentCheckScheduled: contentTimer !== null,
     purgeRevokedAgentData: () => purgeLocalAgentData(false),
+    childSelftest: () =>
+      runChildSelftest({
+        gate,
+        kap: kapAgentClient,
+        // 与材料导入同一入口与同一解析进程配置（KWL_PARSE_NODE / KWL_PARSE_WORKER_ENTRY：安装包为随包运行时）
+        parse: (pdf, filename) =>
+          parseWithPipeline(pdf, filename, "application/pdf", {
+            ocrModelPaths,
+            mockOcr: env.ZR_PARSE_OCR_MOCK === "1",
+            worker: { execPath: env.KWL_PARSE_NODE || undefined, entry: env.KWL_PARSE_WORKER_ENTRY || undefined },
+          }),
+      }),
     async invoke(method: string, params: unknown = {}): Promise<unknown> {
       if (config.onboarding && !ONBOARDING_METHODS.has(method)) throw new DomainError("not_activated", "这台电脑还没有激活：请先输入中软给的开通码或律所发的邀请码", 409);
       const handler = api[method];

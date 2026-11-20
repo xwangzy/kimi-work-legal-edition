@@ -1,0 +1,230 @@
+# 桌面客户端 CI（独立桌面仓库；由 monorepo 的 platform/desktop-repo/template/ 导出，改动请在 monorepo 改）。
+# - windows：Windows 关键用例 + NSIS 安装包（每次运行新建、仅供测试的自签名证书）+ 静默安装 + 安装后冒烟。
+#            冒烟须 ok 且 checks.children 四项（出站闸门、Agent 宿主、W 执行域、隔离解析进程）全为 ok——第 52 批起冒烟在安装包里
+#            逐个真拉起随包子进程（偏离 D-215：安装包里 fork 被拒、子进程全部拉不起来，旧冒烟照样通过）；再查残留进程与“结果文件已存在即退出码 3”。
+# - macos：只在手动触发时运行（私有仓库 macOS 分钟按 10 倍计费）：DMG（ad-hoc 签名）→ hdiutil 挂载 → 以 --kwl-smoke 启动 → 同样判定。
+# 私有仓库 Windows 分钟按 2 倍计费：单 job 串行、只跑关键用例、npm 与下载缓存、同一分支新提交取消旧运行。
+# 正式发布另用中软 EV/OV 证书与硬件模块里的发布签名密钥（不在本工作流）；本工作流不做试用构建（不用 --trial）。
+name: desktop-ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "要跑的平台（macOS 按 10 倍计费，只在这里手动选）"
+        type: choice
+        options: [windows, macos, both]
+        default: windows
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  windows:
+    if: github.event_name != 'workflow_dispatch' || inputs.platforms != 'macos'
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      # 共享契约包（firm-trust、seat-token、keys、design-tokens）须与导出时一致：两端共用、只在 monorepo 改
+      - name: 导出来源核对
+        run: node scripts/verify-source.mjs
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.8.1
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: 下载缓存（OCR 模型与 Windows 随包运行时；取出后仍按脚本里的摘要逐个核验）
+        uses: actions/cache@v4
+        with:
+          path: |
+            content/ocr-models
+            .cache/win-runtime
+          key: kwl-dl-win-${{ hashFiles('scripts/fetch-ocr-models.mjs', 'scripts/win-runtime.lock.json') }}
+      - run: npm ci
+      - run: npm run fetch:ocr-models
+      # w-runtime-bundle 用例在 runner 上组随包运行时，要用 Windows 版 node.exe 与原生包（按锁文件核验）
+      - name: Windows 随包运行时（按锁文件核验）
+        run: node scripts/fetch-win-runtime.mjs
+      - run: npm run pretest
+      # runner 的 TEMP 是 C:\Users\RUNNER~1\...（8.3 短名）——文件 broker 拒绝短名分量，指到干净目录再跑（律所电脑不会有这种别名）。
+      # 逐文件运行：每个文件 10 分钟硬时限，超时连同子进程终止并在步骤摘要里点名，其余文件照常跑完
+      # 与 monorepo 的 Windows 关键用例同一思路，只列本仓库里有的文件（kap-a1、kap-gate 要起本机云端栈，留在 monorepo 跑；见 SOURCE.json）
+      - name: 关键用例（Windows）
+        timeout-minutes: 75
+        run: |
+          mkdir -p /c/kwl-tmp && export TEMP='C:\kwl-tmp' TMP='C:\kwl-tmp'
+          node scripts/run-tests-watchdog.mjs --file-timeout-min=10 --test-timeout-ms=300000 \
+            packages/exec-wasm/test/*.test.ts packages/file-broker/test/*.test.ts packages/at-rest/test/*.test.ts \
+            packages/kap-host/test/*.test.ts packages/egress-gate/test/*.test.ts \
+            packages/kernel/test/kap-cancel.test.ts packages/kernel/test/parse-ocr.test.ts \
+            packages/kernel/test/secret-files.test.ts packages/kernel/test/matter-lifecycle.test.ts \
+            packages/kernel/test/b50-no-fork-in-app.test.ts packages/kernel/test/b52-child-selftest.test.ts \
+            apps/desktop/test/*.test.ts
+      - name: 仅供测试的代码签名证书（每次运行新建，30 天有效，不得用于对外发布）
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=Kimi Work Legal DEV TEST ONLY, O=ChinaSoft International (DEV TEST ONLY)" -CertStoreLocation Cert:\CurrentUser\My -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddDays(30)
+          $pw = [guid]::NewGuid().ToString("N")
+          Write-Output "::add-mask::$pw"
+          $pfx = Join-Path $env:RUNNER_TEMP "dev-codesign.pfx"
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password (ConvertTo-SecureString $pw -AsPlainText -Force) | Out-Null
+          "CSC_LINK=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "CSC_KEY_PASSWORD=$pw" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      # 要连某套云端（试点 / 预发）的测试包：把 scripts/make-release-config.mjs 生成的 release.json（只有地址、钉住值与公钥，不含秘密）
+      # 整份放进仓库变量 KWL_RELEASE_JSON，且须标 "test_build": true（本工作流用测试证书与开发内容公钥）；没设即不带云端上游
+      - name: 内置云端上游（可选，仓库变量 KWL_RELEASE_JSON）
+        env:
+          KWL_RELEASE_JSON: ${{ vars.KWL_RELEASE_JSON }}
+        run: |
+          if [ -n "$KWL_RELEASE_JSON" ]; then
+            printf '%s' "$KWL_RELEASE_JSON" > apps/desktop/electron/release.json
+            node -e 'const j=require("./apps/desktop/electron/release.json");const r=require("./apps/desktop/electron/release-config.cjs").loadReleaseConfig("apps/desktop/electron/release.json");if(r.problems.length){console.error(r.problems.join("\n"));process.exit(1)}if(j.test_build!==true){console.error("CI 只做测试包：release.json 须标 \"test_build\": true");process.exit(1)}console.log("release.json 校验通过：", Object.keys(r.env).filter(k=>k.endsWith("_BASE")).join(" "))'
+          else
+            echo "未设 KWL_RELEASE_JSON：安装包不带云端上游"
+          fi
+      - name: 构建安装包（随包 Node 按锁文件核验；测试证书签名）
+        timeout-minutes: 30
+        run: node scripts/package-desktop.mjs --target win32-x64 --sign env
+      - name: 静默安装并冒烟（含随包子进程逐个真拉起）
+        shell: pwsh
+        timeout-minutes: 20
+        env:
+          KWL_SMOKE: "1"
+        run: |
+          $exe = Get-ChildItem apps/desktop/release/KimiWorkLegal-Setup-*.exe | Select-Object -First 1
+          if (-not $exe) { throw "没有产出安装包" }
+          $sig = Get-AuthenticodeSignature $exe.FullName
+          Write-Output "安装包签名：$($sig.Status) $($sig.SignerCertificate.Subject)"
+          # 自签名在 runner 上通常是 UnknownError（根不受信任）；断言签名者是本次的测试证书，而不是“未签名”
+          if (-not $sig.SignerCertificate -or $sig.SignerCertificate.Subject -notlike "*DEV TEST ONLY*") { throw "安装包没有用本次的测试证书签名" }
+          $p = Start-Process $exe.FullName -ArgumentList "/S" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "安装失败：$($p.ExitCode)" }
+          # electron-builder 按用户安装（oneClick:false）：%LOCALAPPDATA%\Programs\<executableName>
+          $installDir = Join-Path $env:LOCALAPPDATA "Programs\KimiWorkLegal"
+          $app = Join-Path $installDir "KimiWorkLegal.exe"
+          if (-not (Test-Path $app)) { throw "未找到已安装的程序：$app" }
+          # 随包 Node 不得被重签（signExts: !node.exe）：签名者须仍是 OpenJS Foundation，否则运行时摘要必然不符
+          $node = Join-Path $installDir "resources\runtime\node\node.exe"
+          $nodeSigner = (Get-AuthenticodeSignature $node).SignerCertificate.Subject
+          if ($nodeSigner -notlike "*OpenJS Foundation*") { throw "随包 node.exe 的签名者不是 OpenJS Foundation（被重签或被替换）" }
+          $out = Join-Path $env:RUNNER_TEMP "smoke.json"
+          if (Test-Path $out) { Remove-Item $out }
+          # 只等主进程（-Wait 会等整棵进程树）；内核及其子进程由应用有序关闭，随后断言没有残留
+          $r = Start-Process $app -ArgumentList "--kwl-smoke=$out" -PassThru
+          if (-not $r.WaitForExit(600000)) { $r.Kill(); throw "冒烟超时（10 分钟）" }
+          if (Test-Path $out) { Copy-Item $out apps/desktop/release/smoke.json }
+          node scripts/ci/check-smoke.mjs $out
+          $checked = $LASTEXITCODE
+          if ($checked -ne 0 -and (Test-Path "$out.kernel.log")) { Write-Output "=== 内核输出（尾 60 行，仅崩溃取证）==="; Get-Content "$out.kernel.log" -Tail 60 -Encoding utf8 }
+          if ($checked -ne 0) { throw "冒烟判定未通过" }
+          if ($r.ExitCode -ne 0) { throw "冒烟退出码不是 0：$($r.ExitCode)" }
+          Start-Sleep -Seconds 5
+          $left = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path -like "$installDir*" }
+          if ($left) { $left | Format-Table Id, ProcessName, Path | Out-String | Write-Output; throw "冒烟结束后仍有残留进程（会占用安装目录，更新覆盖失败）" }
+          # 结果文件已存在：应立即以 3 退出、不覆盖
+          $before = Get-FileHash $out
+          $again = Start-Process $app -ArgumentList "--kwl-smoke=$out" -PassThru
+          if (-not $again.WaitForExit(120000)) { $again.Kill(); throw "第二次冒烟未立即退出" }
+          if ($again.ExitCode -ne 3) { throw "结果文件已存在时冒烟应以 3 退出（实际 $($again.ExitCode)）" }
+          if ((Get-FileHash $out).Hash -ne $before.Hash) { throw "已存在的结果文件被覆盖" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kimi-work-legal-win-x64
+          path: |
+            apps/desktop/release/KimiWorkLegal-Setup-*.exe
+            apps/desktop/release/smoke.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  macos:
+    if: github.event_name == 'workflow_dispatch' && inputs.platforms != 'windows'
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.8.1
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: 下载缓存（OCR 模型与 macOS 随包 Node；取出后仍按摘要核验）
+        uses: actions/cache@v4
+        with:
+          path: |
+            content/ocr-models
+            .cache/mac-runtime
+          key: kwl-dl-mac-${{ hashFiles('scripts/fetch-ocr-models.mjs', 'scripts/mac-runtime.lock.json') }}
+      - run: npm ci
+      - run: npm run fetch:ocr-models
+      - name: 内置云端上游（可选，仓库变量 KWL_RELEASE_JSON；须标 test_build）
+        env:
+          KWL_RELEASE_JSON: ${{ vars.KWL_RELEASE_JSON }}
+        run: |
+          if [ -n "$KWL_RELEASE_JSON" ]; then
+            printf '%s' "$KWL_RELEASE_JSON" > apps/desktop/electron/release.json
+            node -e 'const j=require("./apps/desktop/electron/release.json");const r=require("./apps/desktop/electron/release-config.cjs").loadReleaseConfig("apps/desktop/electron/release.json");if(r.problems.length){console.error(r.problems.join("\n"));process.exit(1)}if(j.test_build!==true){console.error("CI 只做测试包：release.json 须标 \"test_build\": true");process.exit(1)}console.log("release.json 校验通过")'
+          else
+            echo "未设 KWL_RELEASE_JSON：安装包不带云端上游"
+          fi
+      - name: 构建 DMG（Apple 芯片；ad-hoc 签名，只供测试）
+        timeout-minutes: 30
+        run: node scripts/package-desktop.mjs --target darwin-arm64 --sign none
+      - name: 挂载 DMG 并冒烟（含随包子进程逐个真拉起）
+        timeout-minutes: 15
+        env:
+          KWL_SMOKE: "1"
+        run: |
+          set -u
+          dmg=$(ls apps/desktop/release/KimiWorkLegal-*-arm64.dmg | head -n 1)
+          mnt="$RUNNER_TEMP/kwl-dmg"
+          mkdir -p "$mnt"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg"
+          trap 'hdiutil detach "$mnt" -force >/dev/null 2>&1 || true' EXIT
+          appdir=$(find "$mnt" -maxdepth 1 -name "*.app" | head -n 1)
+          bin="$appdir/Contents/MacOS/KimiWorkLegal"
+          [ -x "$bin" ] || { echo "DMG 里没有可执行的 $bin"; exit 1; }
+          out="$RUNNER_TEMP/smoke.json"
+          rm -f "$out"
+          # 数据与主密钥包裹文件放进一个空目录（与部署文档里 IT 自检的用法一致）
+          data="$RUNNER_TEMP/kwl-data"
+          rm -rf "$data" && mkdir -p "$data"
+          "$bin" --user-data-dir="$data" --kwl-smoke="$out" &
+          pid=$!
+          for _ in $(seq 1 600); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          if kill -0 "$pid" 2>/dev/null; then kill -9 "$pid"; echo "冒烟超时（10 分钟）"; exit 1; fi
+          set +e; wait "$pid"; code=$?; set -e
+          [ -f "$out" ] && cp "$out" apps/desktop/release/smoke.json
+          if ! node scripts/ci/check-smoke.mjs "$out"; then
+            [ -f "$out.kernel.log" ] && { echo "=== 内核输出（尾 60 行，仅崩溃取证）==="; tail -n 60 "$out.kernel.log"; }
+            exit 1
+          fi
+          [ "$code" = "0" ] || { echo "冒烟退出码不是 0：$code"; exit 1; }
+          sleep 5
+          if pgrep -fl "$mnt/" ; then echo "冒烟结束后仍有残留进程"; exit 1; fi
+          # 结果文件已存在：应立即以 3 退出、不覆盖
+          before=$(shasum -a 256 "$out")
+          set +e; "$bin" --user-data-dir="$data" --kwl-smoke="$out"; again=$?; set -e
+          [ "$again" = "3" ] || { echo "结果文件已存在时冒烟应以 3 退出（实际 $again）"; exit 1; }
+          [ "$(shasum -a 256 "$out")" = "$before" ] || { echo "已存在的结果文件被覆盖"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kimi-work-legal-mac-arm64
+          path: |
+            apps/desktop/release/KimiWorkLegal-*-arm64.dmg
+            apps/desktop/release/smoke.json
+          if-no-files-found: ignore
+          retention-days: 7

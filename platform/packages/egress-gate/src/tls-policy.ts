@@ -46,8 +46,10 @@ export function upstreamFetch(o: { pins?: readonly string[] | null; caPem?: stri
         if (pins.length === 0) return undefined;
         const chain = chainPins(cert);
         if (chain.some((p) => pins.includes(p))) return undefined;
-        const e = new Error(`上游证书公钥与客户端内置的钉住集不符（${host}）`) as Error & { code?: string };
+        const e = new Error(`上游证书公钥与客户端内置的钉住集不符（${host}）`) as Error & { code?: string; presentedPins?: string[] };
         e.code = PIN_MISMATCH_CODE;
+        // 服务器实际出示的公钥摘要（公开信息）：只给连接检测取短前缀，便于 IT 对照是否换了密钥（probe.ts）
+        e.presentedPins = chain;
         return e;
       },
     },

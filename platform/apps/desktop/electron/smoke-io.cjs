@@ -20,8 +20,34 @@ const ERROR_CODES = new Set([
   "renderer_load_timeout",
   "renderer_not_mounted",
   "ui_boot_stuck",
+  // 第 52 批：随包子进程逐个真拉起（偏离 D-215 的验证缺口）
+  "child_selftest_failed",
+  "child_gate_failed",
+  "child_kap_failed",
+  "child_w_failed",
+  "child_parse_failed",
   "internal",
 ]);
+
+/** 随包子进程自检的各项（顺序即失败时报哪一项：闸门起不来，宿主与执行域必然跟着失败，报闸门）。 */
+const CHILD_CHECKS = ["gate", "kap", "w", "parse"];
+const CHILD_CODE = /^[a-z][a-z0-9_]{0,39}$/;
+
+/** 内核自检结果 → 冒烟结果里的 checks.children：只留四项，值只认 "ok" 或形如原因码的字符串，缺项记 missing。 */
+function sanitizeChildren(raw) {
+  const out = {};
+  for (const k of CHILD_CHECKS) {
+    const v = raw && typeof raw === "object" ? raw[k] : undefined;
+    out[k] = typeof v === "string" && CHILD_CODE.test(v) ? v : "missing";
+  }
+  return out;
+}
+
+/** 第一项不是 ok 的子进程对应的失败代码；全部 ok 返回 null。 */
+function childrenFailure(children) {
+  for (const k of CHILD_CHECKS) if (!children || children[k] !== "ok") return `child_${k}_failed`;
+  return null;
+}
 
 /**
  * 解析冒烟参数：{ requested: 命令行是否带了冒烟参数, out: 结果文件 | null, problem: 拒绝原因 | null }。
@@ -55,7 +81,8 @@ class SmokeFailure extends Error {
 function writeSmokeResult(file, result) {
   const safe = { ...result };
   if (safe.error !== undefined) safe.error = ERROR_CODES.has(safe.error) ? safe.error : "internal";
+  if (safe.checks && safe.checks.children !== undefined) safe.checks = { ...safe.checks, children: sanitizeChildren(safe.checks.children) };
   fs.writeFileSync(file, JSON.stringify(safe, null, 2), { flag: "wx" });
 }
 
-module.exports = { parseSmokeArg, writeSmokeResult, SmokeFailure, ERROR_CODES };
+module.exports = { parseSmokeArg, writeSmokeResult, SmokeFailure, ERROR_CODES, CHILD_CHECKS, sanitizeChildren, childrenFailure };

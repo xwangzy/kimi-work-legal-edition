@@ -21,7 +21,7 @@ import { configureTrustedRipgrep } from "../vendor/kap-embed/kap-embed.mjs";
 import { MatterKeyRing, type ZonePurpose } from "@zr-legal/at-rest";
 import { HostEgressDispatcher } from "./host-egress.ts";
 import { KapRuntime, RuntimeError, type MatterPolicy, type RequestOrigin, type StartRunRequest } from "./runtime.ts";
-import { wCoreFactory } from "./w-domain.ts";
+import { wCoreFactory, wSelftest, type WCoreFactoryOptions } from "./w-domain.ts";
 import { slog } from "@zr-legal/safe-log";
 
 export interface HostInitConfig {
@@ -59,6 +59,17 @@ export interface HostInitConfig {
   atRest?: "required" | "optional";
   /** 只供测试（上下文压缩验收）：缩小上下文窗口。安装包形态（atRest = required）一律忽略。 */
   testMaxContextSize?: number;
+}
+
+/** 执行域工厂的选项（init 与安装冒烟自检同一口径）。 */
+function wOptionsOf(c: HostInitConfig): WCoreFactoryOptions {
+  return {
+    ...(c.wNodePath ? { nodePath: c.wNodePath } : {}),
+    ...(c.wMaxConcurrent ? { maxConcurrent: c.wMaxConcurrent } : {}),
+    ...(c.wRuntimeDir ? { runtimeDir: c.wRuntimeDir } : {}),
+    ...(c.wNodeSha256 ? { nodeSha256: c.wNodeSha256 } : {}),
+    ...(c.wNodeVersion ? { nodeVersion: c.wNodeVersion } : {}),
+  };
 }
 
 export interface StartRunParams {
@@ -237,6 +248,11 @@ export async function startHost(): Promise<void> {
       return { ok: true };
     },
     capabilities: () => runtime!.capabilities(),
+    // 安装冒烟（第 52 批）：按本宿主的执行域配置真拉起一次 W 监督进程、跑完启动自检后关闭；只回结果码（不碰任何事项目录）
+    async selftest() {
+      if (config!.execDomain === "none") return { w: "disabled" };
+      return { w: await wSelftest(wOptionsOf(config!), join(config!.dataRoot, ".kwl-selftest")) };
+    },
   };
 
   process.on("message", (raw: unknown) => {
@@ -270,13 +286,7 @@ export async function startHost(): Promise<void> {
           ...(config.execDomain === "none"
             ? {}
             : {
-                execDomainFactory: wCoreFactory({
-                  ...(config.wNodePath ? { nodePath: config.wNodePath } : {}),
-                  ...(config.wMaxConcurrent ? { maxConcurrent: config.wMaxConcurrent } : {}),
-                  ...(config.wRuntimeDir ? { runtimeDir: config.wRuntimeDir } : {}),
-                  ...(config.wNodeSha256 ? { nodeSha256: config.wNodeSha256 } : {}),
-                  ...(config.wNodeVersion ? { nodeVersion: config.wNodeVersion } : {}),
-                }),
+                execDomainFactory: wCoreFactory(wOptionsOf(config)),
               }),
           searchConfigured: config.gateRoutes?.search ?? false,
           fetchConfigured: config.gateRoutes?.fetch ?? false,

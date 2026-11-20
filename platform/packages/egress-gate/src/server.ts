@@ -81,6 +81,14 @@ export function tagGatewayError(raw: Buffer): Buffer {
   }
 }
 
+/**
+ * 闸门自己的传输类拒绝（证书校验、钉住、安装包地址或钉住配置不合格）在说明末尾附“[kwl:代码]”（与网关错误体同一写法）：
+ * 助手宿主只把“状态码 + 说明”报给执行器，没有代码就只能说成“连不上”。只附在这几类上，其余闸门说明不变。
+ */
+function withCode(message: string, code: string): string {
+  return /^[a-z0-9_]{1,60}$/.test(code) ? `${message} [kwl:${code}]` : message;
+}
+
 function sendError(res: ServerResponse, e: GateError): void {
   if (res.headersSent) {
     res.destroy();
@@ -494,7 +502,10 @@ export class EgressGateServer {
     const t = target!;
     // 上游传输（审计 S5）：非回环必须 https、安装包形态中软网关必须带钉住集——不满足即不发出（不改走其他端点）
     const tr = this.transport[t.kind];
-    if (tr.check.state === "invalid") deny(503, tr.check.reason ?? "upstream_tls_required", "模型通道的地址不是受保护的加密连接（或缺少内置的证书钉住），请求未发出", { media, model });
+    if (tr.check.state === "invalid") {
+      const why = tr.check.reason ?? "upstream_tls_required";
+      deny(503, why, withCode("模型通道的地址不是受保护的加密连接（或缺少内置的证书钉住），请求未发出", why), { media, model });
+    }
     const outBody = t.prepare(report.body);
     const body = JSON.stringify(outBody);
     const fetchImpl = tr.fetch;
@@ -531,7 +542,8 @@ export class EgressGateServer {
       if (dog) clearTimeout(dog);
       const reason = stalled ?? transportFailureReason(e, ac.signal.aborted);
       this.record({ ...sentBase, phase: "end", outcome: "failed", reason, upstreamStatus: null, durationMs: Date.now() - started, usage: null });
-      if (reason === "tls_pin_mismatch" || reason === "tls_verify_failed") throw new GateError(502, reason, "模型通道的证书校验未通过（可能存在网络拦截），请求已中断、未发出内容");
+      // 第 52 批（第 50 批 IP 部署演练发现）：证书被换、IP 变了时律师原来只看到“AI 服务暂时不可用”——说明末尾附“[kwl:代码]”，问答与任务据代码说清是证书问题
+      if (reason === "tls_pin_mismatch" || reason === "tls_verify_failed") throw new GateError(502, reason, withCode("模型通道的证书校验未通过（可能存在网络拦截），请求已中断、未发出内容", reason));
       // 等不到响应头：回 504，引擎按可重试状态码重发
       if (stalled) throw new GateError(504, stalled, `模型通道 ${Math.round(firstByteMs / 1000)} 秒没有响应，已中断这次请求（会自动重试）`);
       throw new GateError(502, "upstream_unreachable", "模型通道不可达（已排队或稍后重试）");
@@ -696,7 +708,7 @@ export class EgressGateServer {
     if (tr.check.state === "invalid") {
       const reason = tr.check.reason ?? "upstream_tls_required";
       this.record({ ...base, destination: "none", destinationHost: null, outcome: "blocked", reason, chars: query.length, segments: 1, tokenized: {}, query: { original: query, sent: v.sent, decision: v.decision }, upstreamStatus: null, durationMs: Date.now() - started });
-      throw new GateError(503, reason, "检索服务的地址不是受保护的加密连接（或缺少内置的证书钉住）：检索未发出");
+      throw new GateError(503, reason, withCode("检索服务的地址不是受保护的加密连接（或缺少内置的证书钉住）：检索未发出", reason));
     }
     const fetchImpl = tr.fetch;
     let status: number | null = null;
@@ -718,7 +730,10 @@ export class EgressGateServer {
       res.writeHead(r.status, { "content-type": r.headers.get("content-type") ?? "application/json", "x-kwl-search-decision": v.decision });
       res.end(text);
     } catch (e) {
-      this.record({ ...base, phase: "end", destination: "search_service", destinationHost: hostOf(upstream.baseUrl), outcome: "failed", reason: transportFailureReason(e, ac.signal.aborted), chars: v.sent.length, segments: 1, tokenized: {}, query: { original: query, sent: v.sent, decision: v.decision }, upstreamStatus: status, durationMs: Date.now() - started });
+      const why = transportFailureReason(e, ac.signal.aborted);
+      this.record({ ...base, phase: "end", destination: "search_service", destinationHost: hostOf(upstream.baseUrl), outcome: "failed", reason: why, chars: v.sent.length, segments: 1, tokenized: {}, query: { original: query, sent: v.sent, decision: v.decision }, upstreamStatus: status, durationMs: Date.now() - started });
+      // 证书校验与钉住不符单独报（原来一律写成“不可达”，IT 分不清证书问题与断网）
+      if (why === "tls_pin_mismatch" || why === "tls_verify_failed") throw new GateError(502, why, withCode("检索服务的证书校验未通过（可能存在网络拦截），检索已中断、未发出", why));
       throw new GateError(502, "search_upstream_unreachable", "检索服务不可达");
     }
   }

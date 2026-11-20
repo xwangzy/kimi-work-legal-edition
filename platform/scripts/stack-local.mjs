@@ -164,6 +164,8 @@ const startRole = (name, withKey = false) =>
     const k = spawn(node, [join(root, "scripts/cloud-serve.mjs"), "--config", join(dir, "cfg", `${name}.json`)], { env, stdio: ["ignore", "pipe", "pipe", withKey ? "pipe" : "ignore"] });
     kids.push(k);
     if (withKey) {
+      // 子进程没读完就退出时这一端会 ECONNRESET / EPIPE：只记一行，退出原因由下面的 exit 处理给出（此前没有处理器，本进程直接崩溃、看不到子进程的错误）
+      k.stdio[3].on("error", (e) => log.write(`[stack] ${name} 密钥管道：${e.code ?? "error"}\n`));
       k.stdio[3].end(`${key}\n`);
     }
     let buf = "";

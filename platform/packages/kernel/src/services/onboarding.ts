@@ -38,6 +38,7 @@ import { configureSecretSealing, generateJoinDeviceKeys, getFirmRootPrivateKey, 
 import type { KernelDb } from "../db.ts";
 import type { Identity } from "../identity.ts";
 import { accountErrorText, accountFailure, onboardingStateText, writeAccountSession } from "../account-session.ts";
+import { cloudFailureText } from "./cloud-connection.ts";
 
 type CpRelay = (req: { method: string; path: string; headers: Record<string, string>; body: string }) => Promise<{ ok: true; status: number; body: string } | { ok: false; reason: string }>;
 type SignedCall = (method: string, path: string, body?: unknown) => Promise<{ ok: true; status: number; json: Record<string, unknown> } | { ok: false; error: string; status?: number }>;
@@ -97,6 +98,9 @@ function readJson<T>(path: string): T | null {
 
 /** 控制面应答里的错误代码 → 律师看得懂的一句话（不区分码错与过期，防枚举）。 */
 function cpErrorText(code: string): string {
+  // 第 52 批（IP 部署）：激活时控制面通道的证书校验与安装包连接配置单独说（原来一律并成“连不上中软服务”）
+  const cloud = cloudFailureText(code);
+  if (cloud) return cloud;
   switch (code) {
     case "code_invalid":
       return "开通码不正确或已失效，请向发码人重新获取";
@@ -121,7 +125,8 @@ function cpErrorText(code: string): string {
 
 async function cpPost(relay: CpRelay, path: string, body: unknown): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string; min_version?: string }> {
   const r = await relay({ method: "POST", path, headers: {}, body: JSON.stringify(body) });
-  if (!r.ok) return { ok: false, code: r.reason.startsWith("cp_") ? "cp_unreachable" : r.reason };
+  // 证书类、安装包配置类的代码原样保留（cp_tls_*、cp_upstream_*），其余通道错误并成 cp_unreachable
+  if (!r.ok) return { ok: false, code: r.reason.startsWith("cp_") && !cloudFailureText(r.reason) ? "cp_unreachable" : r.reason };
   let json: Record<string, any> = {};
   try {
     json = r.body ? JSON.parse(r.body) : {};

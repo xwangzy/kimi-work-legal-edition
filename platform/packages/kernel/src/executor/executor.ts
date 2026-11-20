@@ -40,6 +40,7 @@ import { runLineage } from "../services/artifact-lineage.ts";
 import { LIVE_ARTIFACT, reviveSuperseded, supersedeEarlierAttempts } from "../services/attempt-supersede.ts";
 import { scrubLocalPaths } from "../services/reply-local-paths.ts";
 import { REVIEW_KIND_OF_SKILL, fixPrompt, headerFooterText, labeledText, labeledTextWithRows, lawExcerptLines, lawRefsIn, parseFindings, workbookText, reportText, reviewMessages, reviewNote, revisionDiff, type FixTarget, type ReviewDoc, type ReviewFinding, type ReviewKind, followUpMessages, followUpSection, parseFollowUp, quoteHints, type FollowUpItem } from "../services/independent-review.ts";
+import { CLOUD_BUILD_TEXT, CLOUD_CERT_TEXT, cloudFailureKind } from "../services/cloud-connection.ts";
 
 export interface ExecutorDeps {
   db: KernelDb;
@@ -201,6 +202,12 @@ async function withBoundedRetry<T>(fn: () => Promise<T>, label: string): Promise
       lastErr = err;
       const code = (err as DomainError)?.code;
       if (code !== "provider_unavailable") throw err;
+      // 第 52 批（IP 部署）：证书校验未通过、安装包连接配置不完整——重试也一样，不重试；说明换成律师话（代码留在 detail.code，原文进诊断）
+      const gateCode = (err as DomainError & { detail?: { code?: unknown } })?.detail?.code;
+      const cloud = cloudFailureKind(typeof gateCode === "string" ? gateCode : (err as Error)?.message);
+      if (cloud === "cert" || cloud === "build") {
+        throw new DomainError("provider_unavailable", `这一步没有完成：${cloud === "cert" ? CLOUD_CERT_TEXT : CLOUD_BUILD_TEXT}`, 502, { ...((err as { detail?: Record<string, unknown> }).detail ?? {}), retryable: false });
+      }
       const delay = 500 * 2 ** attempt;
       slog.event("EXECUTOR_PROVIDER_RETRY", { step: label, attempt: attempt + 1, delay_ms: delay });
       await new Promise((r) => setTimeout(r, delay));
@@ -2227,6 +2234,10 @@ export function agentFailureText(reason: string | null, error: string | null): s
   const err = (error ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
   const code = /\[kwl:([a-z0-9_]{1,60})\]/.exec(err)?.[1] ?? null;
   const has = (c: string, legacy?: RegExp) => code === c || new RegExp(`\\b${c}\\b`).test(err) || (!!legacy && legacy.test(err));
+  // 第 52 批（第 50 批 IP 部署演练发现）：闸门的证书校验、钉住不符与安装包连接配置不完整（“[kwl:tls_*]”“[kwl:upstream_*]”）——原来落到“AI 服务暂时连不上”，IT 分不清
+  const cloud = cloudFailureKind(code);
+  if (cloud === "cert") return `任务没有完成：${CLOUD_CERT_TEXT}；已完成且可验证的部分保留，处理好后点“重新运行”`;
+  if (cloud === "build") return `任务没有完成：${CLOUD_BUILD_TEXT}；已完成且可验证的部分保留`;
   // 第 44 批：本产品自己的额度规则（网关 402：频率窗口、本期额度、律所上限、个人额度、未定价）——不是连不上，说清原因与怎么办
   if (has("quota_burst", /频率窗口|5 小时内的用量/)) return "本所短时间内 AI 用量较多（5 小时频率窗口已满），任务暂停：几小时内窗口自动恢复后点“重新运行”即可，已完成的部分保留、不会重复计用量；常用这么多可请管理员调整套餐";
   if (has("quota_seat_limit", /个人额度|个人 AI 额度/)) return "你的个人 AI 额度已用完，任务暂停：请联系律所管理员调整你的个人上限；已完成的部分保留，处理好后点“重新运行”，不会重复计用量";

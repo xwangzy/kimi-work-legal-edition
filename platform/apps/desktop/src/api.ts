@@ -1240,6 +1240,8 @@ export const api = {
   /** 渲染会话被主进程拦截的外部请求（只在桌面客户端有；web 开发返回 null）。 */
   rendererNet: async (): Promise<{ blocked: number; last: string[] } | null> => (window.zrKernel?.rendererNet ? window.zrKernel.rendererNet() : null),
   kernelStatus: () => invoke<any>("kernel.status"),
+  /** 连接检测（IP 部署第 50 批）：各云端服务的连通、证书核对结果与一句结论（文字由内核给出）。 */
+  connectionDiagnose: () => invoke<ConnectionDiagnosis>("connection.diagnose"),
   // 控制面与律所治理（阶段 6）：状态不含任何令牌；告警是控制面下发内容未通过本机核验的记录
   controlPlaneStatus: () => invoke<ControlPlaneStatus>("control_plane.status"),
   quotaStatus: () => invoke<QuotaStatus>("quota.status"),
@@ -1573,4 +1575,25 @@ export interface PendingCheck {
   count: number;
   text: string;
   target: { tab: "facts" } | { tab: "materials"; view: "table"; table_id: string } | { workbench: string | null } | { run_id: string } | { artifact_version_id: string };
+}
+
+/** 连接检测结果（内核 connection.diagnose；services/cloud-connection.ts diagnoseView）。钉住值只有短前缀。 */
+export interface ConnectionDiagnosis {
+  checked_at: string;
+  gate: "running" | "unavailable";
+  tone: "ok" | "warn" | "error";
+  conclusion: string;
+  rows: {
+    upstream: string;
+    name: string;
+    class: string;
+    label: string;
+    host: string | null;
+    port: number | null;
+    elapsed_ms: number;
+    detail: string | null;
+    pins: string[];
+    presented: string[];
+    cloud_ca: boolean;
+  }[];
 }

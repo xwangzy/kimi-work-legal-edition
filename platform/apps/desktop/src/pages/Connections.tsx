@@ -31,6 +31,7 @@ import { WritingPrefs } from "../components/WritingPrefs.tsx";
 import { Select } from "../components/Select.tsx";
 import { SettingRow } from "../components/SettingRow.tsx";
 import { Icon } from "../components/Icons.tsx";
+import { ConnectionCheck } from "../components/ConnectionCheck.tsx";
 
 const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
 
@@ -715,6 +716,9 @@ function BackupTab({ caps, gate }: { caps: Capabilities | null; gate: any }) {
         <h2 className="section-h h-section" id="sec-backup">备份与恢复</h2>
         <RecoveryBackup onChanged={() => void loadBackup()} />
       </section>
+
+      {/* 检测连接（IP 部署第 50 批）：逐项连一次云端服务，分清加密核对没通过与断网；文字由内核给出 */}
+      <ConnectionCheck />
 
       {/* 脱敏诊断包（v9.2 §3.6）：律师主动导出交给支持团队；内容白名单 + 导出前自证 + 设备签名。说明折叠，默认只一句 */}
       <section className="panel device-section diag-panel" aria-labelledby="sec-help">

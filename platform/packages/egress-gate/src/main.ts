@@ -8,10 +8,10 @@
  *
  * 协议（JSON 消息）：
  *   内核 → 闸门：{t:"init", config} | {t:"result", id, ok, result | error} | {t:"revoke", runId} | {t:"seat", token} | {t:"cp", id, req}
- *               | {t:"dist", id, path} | {t:"support", id, req} | {t:"notify", id, req} | {t:"relay", id, req} | {t:"shutdown"}
+ *               | {t:"dist", id, path} | {t:"support", id, req} | {t:"notify", id, req} | {t:"relay", id, req} | {t:"probe", id} | {t:"shutdown"}
  *   闸门 → 内核：{t:"ready"} | {t:"call", id, method:"authorize"|"approval", params} | {t:"record", rec} | {t:"tokens", matterId, entries}
  *               | {t:"cp_result", id, result} | {t:"dist_result", id, result} | {t:"support_result", id, result} | {t:"notify_result", id, result}
- *               | {t:"relay_result", id, result} | {t:"fatal", message}
+ *               | {t:"relay_result", id, result} | {t:"probe_result", id, result} | {t:"fatal", message}
  * 控制面通道（阶段 6，cp-relay.ts）：只有内核持有 IPC，故 Agent 宿主与执行域都不能借闸门访问控制面；目的地为 init 下发的固定地址。
  * 内容分发通道（第 8 批，dist-relay.ts）：同上，只许 GET 白名单路径，席位令牌由闸门附上。
  * 支持通道（第 9 批，support-relay.ts）：同上，只有“申请工单”与“上传诊断包”两种固定请求，摘要由闸门重算。
@@ -27,6 +27,7 @@ import { relaySupport, type SupportRelayRequest } from "./support-relay.ts";
 import { relayNotify, type NotifyRelayRequest } from "./notify-relay.ts";
 import { relayShare, type ShareRelayRequest } from "./share-relay.ts";
 import { checkUpstream, upstreamFetch, type TransportCheck } from "./tls-policy.ts";
+import { probeUpstreams } from "./probe.ts";
 import type { AuthorizeResult, GateAuthority, GateEgressRecord, GatePurpose, GateUpstreams } from "./types.ts";
 import type { SignedApproval } from "./approval.ts";
 import type { TokenEntry } from "@zr-legal/tokenizer";
@@ -54,6 +55,7 @@ type Msg =
   | { t: "support"; id: number; req: SupportRelayRequest }
   | { t: "notify"; id: number; req: NotifyRelayRequest }
   | { t: "relay"; id: number; req: ShareRelayRequest }
+  | { t: "probe"; id: number }
   | { t: "shutdown" };
 
 const send = (m: unknown): void => {
@@ -82,6 +84,8 @@ let relayTransport: TransportCheck | undefined;
 let relayFetch: typeof fetch | undefined;
 /** 当前席位令牌（与模型、检索同一张；内核续期后经 {t:"seat"} 更新）。 */
 let seatToken: string | null = null;
+/** init 下发的上游（连接检测按同一份地址、钉住集与演示 CA 新建连接；不含席位令牌以外的用途）。 */
+let initUpstreams: GateUpstreams | null = null;
 
 function ipcAuthority(timeoutMs: number): GateAuthority {
   return {
@@ -140,6 +144,7 @@ process.on("message", (raw: unknown) => {
       return;
     }
     socketPath = m.config.socketPath;
+    initUpstreams = m.config.upstreams;
     controlPlaneBase = m.config.upstreams.controlPlane?.baseUrl ?? null;
     const tls = m.config.upstreams.tls ?? { allowLoopbackHttp: true, requirePins: false };
     const cpPins = m.config.upstreams.controlPlane?.pins ?? [];
@@ -251,6 +256,19 @@ process.on("message", (raw: unknown) => {
       ...(relayTransport ? { transport: relayTransport } : {}),
       ...(relayFetch ? { fetchImpl: relayFetch } : {}),
     }).then((result) => send({ t: "relay_result", id, result }));
+    return;
+  }
+  // 连接检测（IP 部署第 50 批）：对各中软上游 GET /healthz，传输策略与真实流量相同（同一钉住集与演示 CA、证书校验不放宽），不带任何凭据
+  if (m?.t === "probe") {
+    const id = m.id;
+    if (!initUpstreams) {
+      send({ t: "probe_result", id, result: { ok: false, reason: "gate_not_initialized" } });
+      return;
+    }
+    void probeUpstreams(initUpstreams).then(
+      (items) => send({ t: "probe_result", id, result: { ok: true, items } }),
+      () => send({ t: "probe_result", id, result: { ok: false, reason: "probe_failed" } }),
+    );
     return;
   }
   if (m?.t === "shutdown") void shutdown(0);

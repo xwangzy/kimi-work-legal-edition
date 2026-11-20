@@ -18,6 +18,7 @@ import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { dataLevelOf } from "../egress/gate-host.ts";
 import type { Lawdb } from "@zr-legal/lawdb";
 import { checkArtifactCitations } from "./artifact-citations.ts";
+import { CLOUD_BUILD_TEXT, CLOUD_CERT_TEXT, cloudFailureKind } from "./cloud-connection.ts";
 
 export interface QaMessageView {
   message_id: string;
@@ -163,6 +164,12 @@ export interface QaDeps {
  */
 export function qaFailureText(message: string, route?: string | null): string {
   const code = /\[kwl:([a-z0-9_]{1,60})\]/.exec(message)?.[1] ?? "";
+  // 第 52 批（第 50 批 IP 部署演练发现）：证书被换时原来落到下面的通用说法（说明里带“模型通道 502”）——证书类、安装包配置类单独说，与“连不上”分开
+  const cloud = cloudFailureKind(code);
+  if (cloud === "cert") return CLOUD_CERT_TEXT;
+  if (cloud === "build") return CLOUD_BUILD_TEXT;
+  if (cloud === "unreachable") return "连不上云端 AI 服务，这次没有取得回答：请检查网络后再问；仍不行请联系律所 IT";
+  if (cloud === "timeout") return "云端 AI 服务长时间没有响应，这次没有取得回答：请稍后再问";
   // 第 47 批：所选模型本身用不了（未定价 503、没有路由或已停用 400、套餐不含 403、这个别名没有可用上游 503）——说清是“这个模型”的事，
   // 不说成额度用完或连不上；选的不是 K3 时建议换 K3
   if (code === "price_unconfigured" || code === "model_not_routed" || code === "model_disabled" || code === "model_not_allowed" || code === "upstream_unavailable") {

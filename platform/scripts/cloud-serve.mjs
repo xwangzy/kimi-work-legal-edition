@@ -89,6 +89,7 @@ import { createServer as createHttpServer } from "node:http";
 import { weakSecretReason } from "./lib/secret-strength.mjs";
 import { createObs } from "./lib/obs.mjs";
 import { controlPlaneFetch } from "./lib/cp-connect.mjs";
+import { readSecretFile } from "./lib/secret-file.mjs";
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const i = process.argv.indexOf("--config");
@@ -108,7 +109,7 @@ if (!ROLES.includes(cfg.role)) fail(`role 须为 ${ROLES.join(" / ")}`);
 const read = (f, what) => {
   if (typeof f !== "string" || !f) fail(`缺少 ${what}`);
   try {
-    return readFileSync(f, "utf8").trim();
+    return readSecretFile(f); // /dev/fd/<n> 按描述符读（Linux 上按路径打开 socketpair 报 ENXIO，见 lib/secret-file.mjs）
   } catch {
     fail(`${what} 读不出`);
   }

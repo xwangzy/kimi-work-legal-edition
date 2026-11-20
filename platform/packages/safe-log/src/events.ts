@@ -80,6 +80,8 @@ export const EVENTS = {
   GATE_RECORD_WRITE_FAILED: { level: "error", fields: { ...ERR } },
   // 闸门拉不起来（第 50 批）：只记封闭枚举的原因码；调用方照旧报 gate_unavailable
   KERNEL_GATE_START_FAILED: { level: "error", fields: { reason: ["closed", "runtime_digest", "runtime_missing", "spawn_denied", "start_timeout", "exited_early", "listen_failed", "tls_relaxed", "other"], ...ERR } },
+  // 第 52 批：随包子进程自检（安装冒烟逐个真拉起闸门、解析进程、Agent 宿主、W 执行域；值为 ok 或原因码）
+  KERNEL_CHILD_SELFTEST: { level: "info", fields: { gate: "ident", parse: "ident", kap: "ident", w: "ident" } },
   GATE_TOKEN_WRITE_FAILED: { level: "error", fields: { ...ERR } },
   METER_INSERT_FAILED: { level: "error", fields: { ...ERR } },
 
@@ -92,7 +94,8 @@ export const EVENTS = {
   MAIN_RELEASE_CONFIG_PROBLEM: { level: "error", fields: { count: "int" } },
   // 签名的云端地址配置（偏离 D-213）：验不过即沿用随包地址；生效时只记序号
   MAIN_ENDPOINT_PROFILE_PROBLEM: { level: "error", fields: { count: "int" } },
-  MAIN_ENDPOINT_PROFILE_APPLIED: { level: "info", fields: { seq: "int" } },
+  // 第 52 批（D-217 防回滚）：source = file（本次放进来的配置）/ applied（拒绝了更早或被改动的配置，继续用已生效的那份）
+  MAIN_ENDPOINT_PROFILE_APPLIED: { level: "info", fields: { seq: "int", source: ["file", "applied"] } },
   // Windows 试用构建（a9165e4，偏离 D-160）：主进程用了这四个事件码却没登记，运行时被日志器拒收（V13 第 38 批补登记，失败原因收成封闭枚举）
   MAIN_TRIAL_CONFIG_PROBLEM: { level: "error", fields: { count: "int" } },
   MAIN_TRIAL_GATEWAY_READY: { level: "info", fields: {} },

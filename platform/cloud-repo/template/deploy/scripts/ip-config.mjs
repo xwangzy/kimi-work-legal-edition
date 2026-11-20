@@ -10,13 +10,14 @@
  *   console.bootstrap_admin（给了才改）
  * - gateway.json、search.json：control_plane.url = https://<IP>:<控制面端口>；control_plane.connect_address = "127.0.0.1"
  *   （单机时连回环、证书仍按公网 IP 核对，避开云主机连不回自己公网 IP 的问题；多机部署加 --no-connect-address）
- * - 控制台 config.json：control_plane_base（文件不在时按样例新建）
+ * - 控制台 config.json：control_plane_base（文件不在时按样例新建）；已打包的 index.html 页内 CSP 的 connect-src 同步换成新控制面来源
  * 以后换成域名：把这几项改成域名地址、换证书即可，不用改代码（部署手册 4.6）。
  * 签名服务配置不涉及地址，按部署手册第 6 节另做。
  */
 import { chownSync, existsSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { isIPv4 } from "node:net";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const args = process.argv.slice(2);
 const one = (n) => {
@@ -107,4 +108,22 @@ if (consoleDir) {
   c.control_plane_base = cpUrl;
   save(f, c, 0o644);
   console.log(`[ip-config] ${f}：control_plane_base=${cpUrl}`);
+  // 页内 CSP（第 52 批）：控制台打包时把控制面来源写进 index.html 的 connect-src；只改 config.json 不改它，换 IP 后浏览器拦下全部接口请求、
+  // 控制台登录不了（11-20 换 IP 演练漏掉，11-21 浏览器实测发现）。用打包脚本同一个函数改写，与重新打包结果一致
+  const html = join(consoleDir, "index.html");
+  if (existsSync(html)) {
+    const { connectSrcFor, withConnectSrc, cspOf } = await import(pathToFileURL(join(app, "scripts/build-console.mjs")).href);
+    const before = readFileSync(html, "utf8");
+    const after = withConnectSrc(before, connectSrcFor(new URL(cpUrl).origin));
+    if (after !== before) {
+      const st = statSync(html);
+      const tmp = `${html}.tmp-${process.pid}`;
+      writeFileSync(tmp, after, { mode: 0o644 });
+      try {
+        chownSync(tmp, st.uid, st.gid);
+      } catch {}
+      renameSync(tmp, html);
+    }
+    console.log(`[ip-config] ${html}：页内 CSP ${/connect-src ([^;]*)/.exec(cspOf(after) ?? "")?.[0] ?? "?"}${after === before ? "（未变）" : ""}`);
+  }
 }

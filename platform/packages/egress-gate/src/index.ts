@@ -17,3 +17,4 @@ export { supportRelayAllowed, relaySupport, SUPPORT_MAX_UPLOAD_BYTES, type Suppo
 export { notifyRelayAllowed, relayNotify, type NotifyRelayRequest, type NotifyRelayResult, type NotifyTarget } from "./notify-relay.ts";
 export { shareRelayAllowed, relayShare, RELAY_CHUNK_MAX_BYTES, type ShareRelayRequest, type ShareRelayResult } from "./share-relay.ts";
 export { canonicalCredential, egressDigest, verifyApproval, type ApprovalCredential, type ApprovalExpectation, type ApprovalPurpose, type SignedApproval } from "./approval.ts";
+export { pinPrefix, probeFailureClass, probeOne, probeUpstreams, PROBE_UPSTREAMS, type ProbeClass, type ProbeItem, type ProbeUpstream } from "./probe.ts";

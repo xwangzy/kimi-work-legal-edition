@@ -19,7 +19,11 @@ const require = createRequire(import.meta.url);
 type Rel = { env: Record<string, string>; problems: string[]; endpointProfile: { keys: Record<string, string>; deployment: string; testBuild: boolean } | null };
 const { loadReleaseConfig, applyEndpointProfile } = require("../electron/release-config.cjs") as {
   loadReleaseConfig: (file: string) => Rel;
-  applyEndpointProfile: (r: Rel, file: string) => { release: Rel; applied: { seq: number; deployment: string } | null; problems: string[] };
+  applyEndpointProfile: (
+    r: Rel,
+    file: string,
+    appliedFile?: string,
+  ) => { release: Rel; applied: { seq: number; deployment: string; source: "file" | "applied" } | null; problems: string[]; persist: string | null };
 };
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
@@ -102,7 +106,7 @@ test("地址配置：签名有效、部署一致 → 地址与钉住改写；信
   assert.deepEqual(rel.problems, []);
   const r = applyEndpointProfile(rel, write("ep-ok.json", signDoc({ ...NEW, control_plane_keys: { evil: edPem() } })));
   assert.deepEqual(r.problems, []);
-  assert.deepEqual(r.applied, { seq: 2, deployment: "demo-ip" });
+  assert.deepEqual(r.applied, { seq: 2, deployment: "demo-ip", source: "file" });
   assert.equal(r.release.env.ZR_CONTROL_PLANE_BASE, "https://cp.kwl.example.cn");
   assert.equal(r.release.env.ZR_GATEWAY_PINS, `${P2},${P3}`);
   assert.equal(r.release.env.ZR_CONTROL_PLANE_KEYS, rel.env.ZR_CONTROL_PLANE_KEYS, "控制面公钥表只随安装包");
@@ -143,6 +147,82 @@ test("地址配置失败关闭：别的私钥签、改动内容、部署不符�
   rejects(signDoc({ ...NEW, gateway_base: "http://gw.kwl.example.cn/v1" }), /https/);
   rejects({ v: 2 }, /格式不对/);
   rejects("{not json", /无法解析/);
+});
+
+/** 主进程同一做法：生效且 seq 更大时把原文存为已生效记录。 */
+function boot(rel: Rel, file: string, appliedFile: string) {
+  const r = applyEndpointProfile(rel, file, appliedFile);
+  if (r.persist) writeFileSync(appliedFile, r.persist);
+  return r;
+}
+
+test("防回滚（D-217）：更早的合法配置、同 seq 不同内容、被改动的配置都不生效，继续用已生效的那份", () => {
+  const rel = relWith();
+  const applied = join(dir, `applied-${Math.random()}.json`);
+  const file = join(dir, `cur-${Math.random()}.json`);
+  const V2 = { ...NEW, seq: 2 };
+  const V3 = { ...NEW, seq: 3, gateway_base: "https://gw3.kwl.example.cn/v1" };
+  // seq 2 生效并记下
+  writeFileSync(file, JSON.stringify(signDoc(V2)));
+  const r2 = boot(rel, file, applied);
+  assert.deepEqual(r2.applied, { seq: 2, deployment: "demo-ip", source: "file" });
+  assert.ok(r2.persist, "首次生效要存记录");
+  // seq 3 生效、记录前进
+  writeFileSync(file, JSON.stringify(signDoc(V3)));
+  const r3 = boot(rel, file, applied);
+  assert.equal(r3.applied?.seq, 3);
+  assert.equal(r3.release.env.ZR_GATEWAY_BASE, "https://gw3.kwl.example.cn/v1");
+  // 同一份再启动：照常生效、不重写记录
+  const r3b = boot(rel, file, applied);
+  assert.equal(r3b.applied?.source, "file");
+  assert.equal(r3b.persist, null);
+  // 把 seq 2（发布方签过的合法旧配置）拷回来：拒绝，继续用 seq 3
+  writeFileSync(file, JSON.stringify(signDoc(V2)));
+  const back = boot(rel, file, applied);
+  assert.deepEqual(back.applied, { seq: 3, deployment: "demo-ip", source: "applied" });
+  assert.equal(back.release.env.ZR_GATEWAY_BASE, "https://gw3.kwl.example.cn/v1");
+  assert.match(back.problems.join("；"), /seq 2 小于已生效的 3/);
+  assert.equal(back.persist, null);
+  // 同 seq 不同内容：不生效
+  writeFileSync(file, JSON.stringify(signDoc({ ...V3, gateway_base: "https://other.kwl.example.cn/v1" })));
+  const same = boot(rel, file, applied);
+  assert.equal(same.applied?.source, "applied");
+  assert.equal(same.release.env.ZR_GATEWAY_BASE, "https://gw3.kwl.example.cn/v1");
+  assert.match(same.problems.join("；"), /seq 相同（3）而内容不同/);
+  // 被改动（签名验不过）：不回到随包地址，继续用已生效的那份
+  const t = signDoc(V3);
+  t.payload = Buffer.from(JSON.stringify({ ...V3, gateway_base: "https://evil.example/v1" })).toString("base64");
+  writeFileSync(file, JSON.stringify(t));
+  const bad = boot(rel, file, applied);
+  assert.equal(bad.applied?.source, "applied");
+  assert.equal(bad.release.env.ZR_GATEWAY_BASE, "https://gw3.kwl.example.cn/v1");
+  assert.match(bad.problems.join("；"), /签名无效/);
+  // 回到旧地址的正确做法：签一份 seq 更大的
+  writeFileSync(file, JSON.stringify(signDoc({ ...V2, seq: 4 })));
+  const r4 = boot(rel, file, applied);
+  assert.deepEqual(r4.applied, { seq: 4, deployment: "demo-ip", source: "file" });
+  assert.equal(r4.release.env.ZR_GATEWAY_BASE, "https://gw.kwl.example.cn/v1");
+});
+
+test("防回滚：删掉 cloud-endpoints.json 回到随包地址；记录保留，之后放进更早的照样拒绝；记录被改动即忽略", () => {
+  const rel = relWith();
+  const applied = join(dir, `applied-${Math.random()}.json`);
+  const file = join(dir, `cur-${Math.random()}.json`);
+  writeFileSync(file, JSON.stringify(signDoc({ ...NEW, seq: 5 })));
+  boot(rel, file, applied);
+  const gone = boot(rel, join(dir, "no-such-endpoints.json"), applied);
+  assert.equal(gone.applied, null);
+  assert.equal(gone.release.env.ZR_CONTROL_PLANE_BASE, `https://${IP}:8443`, "随包地址");
+  assert.deepEqual(gone.problems, []);
+  writeFileSync(file, JSON.stringify(signDoc({ ...NEW, seq: 4 })));
+  const older = boot(rel, file, applied);
+  assert.equal(older.applied?.seq, 5);
+  // 记录被改动：当没有，本次文件照常按自身验签生效并重写记录
+  writeFileSync(applied, JSON.stringify({ ...signDoc({ ...NEW, seq: 9 }), sig: Buffer.alloc(64).toString("base64") }));
+  const r = boot(rel, file, applied);
+  assert.deepEqual(r.applied, { seq: 4, deployment: "demo-ip", source: "file" });
+  assert.match(r.problems.join("；"), /已生效的地址配置记录签名无效/);
+  assert.ok(r.persist);
 });
 
 test("地址配置的私有 CA：只许测试构建；null 表示改回只认公共根", () => {

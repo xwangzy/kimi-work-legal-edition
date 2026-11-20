@@ -29,7 +29,8 @@
     "scripts/meter-report.mjs",
     "scripts/lib/obs.mjs",
     "scripts/lib/secret-strength.mjs",
-    "scripts/lib/cp-connect.mjs"
+    "scripts/lib/cp-connect.mjs",
+    "scripts/lib/secret-file.mjs"
   ],
   "exclude": [
     "apps/console/dist",

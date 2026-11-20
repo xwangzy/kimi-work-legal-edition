@@ -206,27 +206,30 @@ function loadReleaseConfig(file) {
  * { "kind": "kwl-endpoints", "deployment": "<与 release.json 一致>", "seq": 正整数, "issued_at": ISO 时间,
  *   "<上游>_base"/"<上游>_pins"...（控制面、网关、检索三项必须齐全）, 可选 "cloud_ca_pem"（字符串或 null；null 表示只认公共根） }。
  *
- * 规则（失败关闭：任何一项不合格整份不生效、沿用 release.json，并列出问题）：
+ * 规则（失败关闭：任何一项不合格整份不生效，并列出问题）：
  * - 只在安装包形态、release.json 带 endpoint_profile 时读取；签名必须由其中一把公钥验过，deployment 必须一致；
  * - 只能改地址、钉住集与私有 CA；控制面签名公钥表、席位公钥表、更新源与内容公钥**不可改**（信任锚只随安装包）；
  * - 私有 CA 同 release.json：只许测试/演示构建；
- * - 不防回滚到更早的合法签名配置（同账户恶意程序只能换回发布方签过的地址），见部署文档“地址切换”。
- * 返回 { release（合并后的副本）, applied: { seq, deployment } | null, problems }。
+ * - 防回滚（第 52 批，偏离 D-217）：生效过的配置原样存一份（appliedFile，缺省不存）。之后放进来的配置 seq **小于**已生效的、
+ *   或 seq 相同而内容不同、或验不过签名，都不生效，继续用已生效的那份（重新验签后）——把一份更早的合法配置拷回来不能把客户端带回旧地址；
+ *   要回到旧地址，签一份 seq 更大的新配置。cloud-endpoints.json 被删掉时回到随包地址（换新安装包、地址也随包变了时就是这么用的），
+ *   已生效记录保留，之后再放进更早的配置照样拒绝。同一账户下能改数据目录的恶意程序不在防护范围内（它也能删掉记录）。
+ * 返回 { release（合并后的副本）, applied: { seq, deployment, source: "file" | "applied" } | null, problems, persist（要存为已生效记录的原文，或 null） }。
  */
-function applyEndpointProfile(release, file) {
-  const out = { release, applied: null, problems: [] };
-  if (!release || !release.endpointProfile) return out;
-  let doc;
+function readEndpointDoc(file) {
   try {
-    doc = JSON.parse(fs.readFileSync(file, "utf8"));
+    const text = fs.readFileSync(file, "utf8");
+    if (text.length > 96 * 1024) return { missing: false, doc: null, text: null };
+    return { missing: false, doc: JSON.parse(text), text };
   } catch (e) {
-    if (!(e && e.code === "ENOENT")) out.problems.push("cloud-endpoints.json 无法解析");
-    return out;
+    return { missing: Boolean(e && e.code === "ENOENT"), doc: null, text: null };
   }
-  const ep = release.endpointProfile;
+}
+
+/** 验签并解析一份地址配置：成功返回 { p, payload }，否则 { problem }。 */
+function verifyEndpointDoc(ep, doc) {
   if (!doc || doc.v !== 1 || typeof doc.payload !== "string" || typeof doc.sig !== "string" || typeof doc.kid !== "string" || doc.payload.length > 64 * 1024) {
-    out.problems.push("cloud-endpoints.json 格式不对");
-    return out;
+    return { problem: "格式不对" };
   }
   const pem = Object.prototype.hasOwnProperty.call(ep.keys, doc.kid) ? ep.keys[doc.kid] : null;
   const body = Buffer.from(doc.payload, "base64");
@@ -236,21 +239,22 @@ function applyEndpointProfile(release, file) {
   } catch {
     ok = false;
   }
-  if (!ok) {
-    out.problems.push("cloud-endpoints.json 签名无效（不是发布方签的，或已被改动）");
-    return out;
-  }
+  if (!ok) return { problem: "签名无效（不是发布方签的，或已被改动）" };
   let p;
   try {
     p = JSON.parse(body.toString("utf8"));
   } catch {
-    out.problems.push("cloud-endpoints.json 内容无法解析");
-    return out;
+    return { problem: "内容无法解析" };
   }
   if (!p || p.kind !== "kwl-endpoints" || p.deployment !== ep.deployment || !Number.isInteger(p.seq) || p.seq < 1) {
-    out.problems.push("cloud-endpoints.json 不是本部署的地址配置（kind / deployment / seq 不符）");
-    return out;
+    return { problem: "不是本部署的地址配置（kind / deployment / seq 不符）" };
   }
+  return { p, payload: doc.payload };
+}
+
+/** 把验过签的配置合并进随包环境：返回 { env, problems }。 */
+function mergeEndpointPayload(release, p) {
+  const ep = release.endpointProfile;
   const env = { ...release.env };
   const problems = [];
   for (const [baseKey, pinsKey, envBase, envPins] of UPSTREAM_PAIRS) {
@@ -276,12 +280,49 @@ function applyEndpointProfile(release, file) {
       else env.ZR_CLOUD_CA_PEM = ca;
     }
   }
-  if (problems.length) {
-    out.problems.push(...problems.map((m) => `cloud-endpoints.json：${m}`));
+  return { env, problems };
+}
+
+function applyEndpointProfile(release, file, appliedFile) {
+  const out = { release, applied: null, problems: [], persist: null };
+  if (!release || !release.endpointProfile) return out;
+  const ep = release.endpointProfile;
+  const cur = readEndpointDoc(file);
+  // 没有地址配置文件：随包地址（已生效记录不动，之后再放进更早的配置照样拒绝）
+  if (cur.missing) return out;
+  // 已生效记录：验不过（换了安装包、部署标识变了、被改动）就当没有
+  let prev = null;
+  if (appliedFile) {
+    const a = readEndpointDoc(appliedFile);
+    if (!a.missing) {
+      const v = a.doc ? verifyEndpointDoc(ep, a.doc) : { problem: "无法解析" };
+      if (v.p) prev = { p: v.p, payload: v.payload };
+      else out.problems.push(`已生效的地址配置记录${v.problem}，已忽略`);
+    }
+  }
+  let pick = null;
+  const vc = cur.doc ? verifyEndpointDoc(ep, cur.doc) : { problem: "无法解析" };
+  if (!vc.p) {
+    out.problems.push(`cloud-endpoints.json ${vc.problem}`);
+    if (prev) pick = { ...prev, source: "applied" };
+  } else if (prev && vc.p.seq < prev.p.seq) {
+    out.problems.push(`cloud-endpoints.json 的 seq ${vc.p.seq} 小于已生效的 ${prev.p.seq}：拒绝回到更早的地址配置，继续用已生效的那份`);
+    pick = { ...prev, source: "applied" };
+  } else if (prev && vc.p.seq === prev.p.seq && vc.payload !== prev.payload) {
+    out.problems.push(`cloud-endpoints.json 与已生效的配置 seq 相同（${vc.p.seq}）而内容不同：不生效，继续用已生效的那份（新配置须用更大的 seq 签发）`);
+    pick = { ...prev, source: "applied" };
+  } else {
+    pick = { p: vc.p, payload: vc.payload, source: "file" };
+  }
+  if (!pick) return out;
+  const merged = mergeEndpointPayload(release, pick.p);
+  if (merged.problems.length) {
+    out.problems.push(...merged.problems.map((m) => `${pick.source === "file" ? "cloud-endpoints.json" : "已生效的地址配置记录"}：${m}`));
     return out;
   }
-  out.release = { ...release, env };
-  out.applied = { seq: p.seq, deployment: p.deployment };
+  out.release = { ...release, env: merged.env };
+  out.applied = { seq: pick.p.seq, deployment: pick.p.deployment, source: pick.source };
+  if (pick.source === "file" && (!prev || pick.p.seq > prev.p.seq)) out.persist = cur.text;
   return out;
 }
 

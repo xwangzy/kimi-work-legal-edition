@@ -19,7 +19,7 @@ import type { KernelDb } from "../db.ts";
 import { appendAuditEvent, type LedgerSigner } from "../ledger-signer.ts";
 import { canonicalJson, sha256B64 } from "@zr-legal/keys";
 import { errFields, slog } from "@zr-legal/safe-log";
-import { createGateAuthorizer, egressRowFromGate, startEgressGate, type GateHandle } from "./gate-host.ts";
+import { createGateAuthorizer, egressRowFromGate, startEgressGate, type GateHandle, type GateProbeResult } from "./gate-host.ts";
 import type { MatterTokenStore } from "./matter-tokens.ts";
 import type { EgressApprovalStore } from "../services/egress-approvals.ts";
 import type { FirmGovernance } from "../control-plane/governance.ts";
@@ -335,6 +335,20 @@ export class KernelGate {
       return { ok: false, reason: "gate_unavailable" };
     }
     return h.relay(req);
+  }
+
+  /**
+   * 连接检测（IP 部署第 50 批；设置 → 备份与安全 → 检测连接）：闸门按与真实流量相同的钉住集与演示 CA，对各中软上游 GET /healthz，
+   * 不带任何凭据；闸门拉不起来时返回 gate_unavailable。
+   */
+  async probe(): Promise<GateProbeResult> {
+    let h: GateHandle;
+    try {
+      h = await this.ensure();
+    } catch {
+      return { ok: false, reason: "gate_unavailable" };
+    }
+    return h.probe();
   }
 
   /**

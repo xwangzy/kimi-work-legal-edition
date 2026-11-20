@@ -13,7 +13,7 @@ import { verifyToken, type CapabilityClaims } from "@zr-legal/service-auth";
 import { newId } from "@zr-legal/domain";
 import { egressContentDigest } from "@zr-legal/egress";
 import type { PartyEntry, TokenEntry } from "@zr-legal/tokenizer";
-import type { AuthorizeResult, CpRelayRequest, CpRelayResult, DistRelayResult, SupportRelayRequest, SupportRelayResult, NotifyRelayRequest, NotifyRelayResult, ShareRelayRequest, ShareRelayResult, GateEgressRecord, GatePurpose, GateUpstreams, MatterEgressContext, SignedApproval } from "@zr-legal/egress-gate";
+import type { AuthorizeResult, CpRelayRequest, CpRelayResult, DistRelayResult, SupportRelayRequest, SupportRelayResult, NotifyRelayRequest, NotifyRelayResult, ShareRelayRequest, ShareRelayResult, GateEgressRecord, GatePurpose, GateUpstreams, MatterEgressContext, ProbeItem, SignedApproval } from "@zr-legal/egress-gate";
 import type { KernelDb } from "../db.ts";
 import { liveRunForClaims } from "../identity.ts";
 import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, spawnNodeChild, startParentHeartbeat, windowsSystemEnv } from "../executor/child-env.ts";
@@ -279,6 +279,8 @@ export function egressRowFromGate(rec: GateEgressRecord): Record<string, unknown
   return row;
 }
 
+export type GateProbeResult = { ok: true; items: ProbeItem[] } | { ok: false; reason: string };
+
 export interface GateHandle {
   readonly socketPath: string;
   /** 闸门进程仍在运行（退出后为 false：唯一出口不可用，模型与联网步骤排队；下次使用时由调用方重新拉起）。 */
@@ -296,6 +298,8 @@ export interface GateHandle {
   notify(req: NotifyRelayRequest, timeoutMs?: number): Promise<NotifyRelayResult>;
   /** 共享中继通道（第 11 批；只有查缺、上传块、登记段、取新段、取事项历史、取块六种固定请求；闸门退出即失败）。 */
   relay(req: ShareRelayRequest, timeoutMs?: number): Promise<ShareRelayResult>;
+  /** 连接检测（IP 部署第 50 批）：闸门对各中软上游 GET /healthz，同一钉住集与演示 CA，不带凭据；闸门退出即失败。 */
+  probe(timeoutMs?: number): Promise<GateProbeResult>;
   close(): Promise<void>;
   readonly process: ChildProcess;
 }
@@ -425,8 +429,26 @@ function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
       r && typeof r === "object" && (r.ok === true ? typeof r.status === "number" && typeof r.body === "string" && (r.body_b64 === undefined || typeof r.body_b64 === "string") : typeof r.reason === "string");
     p.resolve(shaped ? r : { ok: false, reason: "relay_bad_reply" });
   });
+  // 连接检测（IP 部署第 50 批）：结果按结构校验，形状不对按失败
+  let probeSeq = 1;
+  const probePending = new Map<number, { resolve: (r: GateProbeResult) => void; timer: NodeJS.Timeout }>();
+  child.on("message", (m: any) => {
+    if (m?.t !== "probe_result") return;
+    const p = probePending.get(Number(m.id));
+    if (!p) return;
+    probePending.delete(Number(m.id));
+    clearTimeout(p.timer);
+    const r = m.result as GateProbeResult | undefined;
+    const shaped = r && typeof r === "object" && (r.ok === true ? Array.isArray(r.items) && r.items.every((x) => x && typeof x.upstream === "string" && typeof x.class === "string") : typeof r.reason === "string");
+    p.resolve(shaped ? r : { ok: false, reason: "probe_bad_reply" });
+  });
   child.on("exit", (code, signal) => {
     alive = false;
+    for (const [, p] of probePending) {
+      clearTimeout(p.timer);
+      p.resolve({ ok: false, reason: "gate_exited" });
+    }
+    probePending.clear();
     slog.event("CHILD_EXIT", { proc: "gate", code: Number.isInteger(code) ? code! : undefined, signal: signal ?? undefined });
     for (const [, p] of cpPending) {
       clearTimeout(p.timer);
@@ -542,6 +564,18 @@ function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
             }, timeoutMs);
             relayPending.set(id, { resolve: res, timer });
             child.send({ t: "relay", id, req });
+          }),
+        // 各上游并发、单个 8 秒：留余量
+        probe: (timeoutMs = 20_000) =>
+          new Promise<GateProbeResult>((res) => {
+            if (!child.connected) return res({ ok: false, reason: "gate_exited" });
+            const id = probeSeq++;
+            const timer = setTimeout(() => {
+              probePending.delete(id);
+              res({ ok: false, reason: "probe_timeout" });
+            }, timeoutMs);
+            probePending.set(id, { resolve: res, timer });
+            child.send({ t: "probe", id });
           }),
         close: () =>
           new Promise<void>((r) => {
