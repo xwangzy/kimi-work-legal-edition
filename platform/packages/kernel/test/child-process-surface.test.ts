@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
@@ -24,7 +24,8 @@ function productSources(): string[] {
       } else if (/\.(ts|cjs|mjs)$/.test(name) && !/\.bundle\./.test(name) && !/\.d\.ts$/.test(name)) out.push(rel);
     }
   };
-  for (const top of ["packages", "services"]) {
+  // 独立桌面仓库（desktop-repo/export.mjs 导出）里没有 services/：只扫存在的目录，monorepo 里照旧全扫
+  for (const top of ["packages", "services"].filter((t) => existsSync(root + t))) {
     for (const pkg of readdirSync(root + top)) {
       try {
         if (statSync(`${root}${top}/${pkg}/src`).isDirectory()) walk(`${top}/${pkg}/src`);

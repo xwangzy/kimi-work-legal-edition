@@ -12,7 +12,7 @@ const { APP_INDEX_URL, handleAppProtocol, registerAppScheme } = require("./app-p
 const { resolveBundledRuntime, verifyRuntimeDigests } = require("./runtime-paths.cjs");
 const { adoptDbKey, loadOrCreateDbKey, purgeOldDumps } = require("./secret-store.cjs");
 const { quarantineUnreadable } = require("./unreadable-data.cjs");
-const { kernelChildEnv, loadReleaseConfig, OS_ENV_ALLOW } = require("./release-config.cjs");
+const { kernelChildEnv, loadReleaseConfig, applyEndpointProfile, OS_ENV_ALLOW } = require("./release-config.cjs");
 const trialMode = require("./trial-mode.cjs");
 const { initUpdater } = require("./updater.cjs");
 const { parseSmokeArg, writeSmokeResult, SmokeFailure } = require("./smoke-io.cjs");
@@ -31,7 +31,11 @@ const LOCAL_ROOT =
   process.platform === "win32" ? path.join(process.env.LOCALAPPDATA || path.join(require("node:os").homedir(), "AppData", "Local"), "KimiWorkLegal") : null;
 // 以点开头：律所标识（工作区目录名）只允许字母或数字开头，不会与之重名
 if (LOCAL_ROOT) app.setPath("userData", path.join(LOCAL_ROOT, ".electron"));
-const DATA_DIR = LOCAL_ROOT ?? path.join(app.getPath("appData"), "KimiWorkLegal");
+// 非 Windows（macOS DMG）：显式 --user-data-dir 启动时，本机数据根随之放进该目录（Chromium 惯例：一个用户数据目录即一份独立档案，
+// IT 验证与多档案隔离用）——否则数据根仍是系统应用数据目录，而主密钥包裹文件在新的 userData：新主密钥打不开旧数据，旧数据会被整体隔离。
+// Windows 不受影响（userData 固定在 %LOCALAPPDATA%\KimiWorkLegal\.electron，--user-data-dir 不生效）
+const DATA_DIR =
+  LOCAL_ROOT ?? path.join(app.commandLine.hasSwitch("user-data-dir") ? app.getPath("userData") : app.getPath("appData"), "KimiWorkLegal");
 const isDev = !app.isPackaged && process.env.ZR_DESKTOP_PROD !== "1";
 // 应用协议 kwl://app/ 的特权须在 ready 之前登记（复核 B4-A03）
 registerAppScheme(protocol);
@@ -219,10 +223,11 @@ async function runSmoke(win) {
     }
     if (mounted === 0) throw new SmokeFailure("renderer_not_mounted"); // 页面空白：脚本未能加载
     result.checks.renderer_mounted = "ok";
-    // 越过启动占位（复核 R2B-24 / B13-K01）：启动占位页也“有子节点”——要等到激活页或主界面之一真正出现
+    // 越过启动占位（复核 R2B-24 / B13-K01）：启动占位页也“有子节点”——要等到激活页或主界面之一真正出现。
+    // 第 46 批起未开通电脑的缺省激活页是“登录 / 注册”（.auth-seg，没有 .activate-title）：只认标题时全新安装的冒烟必报 ui_boot_stuck
     let booted = false;
     for (let i = 0; i < 240 && !booted; i++) {
-      booted = (await win.webContents.executeJavaScript("!!document.querySelector('.activate-title, .shell') && !document.querySelector('.activate[aria-busy=\"true\"]')").catch(() => false)) === true;
+      booted = (await win.webContents.executeJavaScript("!!document.querySelector('.activate-title, .auth-seg, .shell') && !document.querySelector('.activate[aria-busy=\"true\"]')").catch(() => false)) === true;
       if (!booted) await new Promise((r) => setTimeout(r, 250));
     }
     if (!booted) throw new SmokeFailure("ui_boot_stuck");
@@ -261,6 +266,11 @@ function releaseConfig() {
   if (app.isPackaged) {
     releaseCached = loadReleaseConfig(path.join(__dirname, "release.json"));
     if (releaseCached.problems.length) slog.event("MAIN_RELEASE_CONFIG_PROBLEM", { count: releaseCached.problems.length });
+    // 签名的云端地址配置（偏离 D-213）：release.json 带验签公钥时，读本机数据目录下的 cloud-endpoints.json；验不过即沿用随包地址
+    const ep = applyEndpointProfile(releaseCached, path.join(DATA_DIR, "cloud-endpoints.json"));
+    if (ep.problems.length) slog.event("MAIN_ENDPOINT_PROFILE_PROBLEM", { count: ep.problems.length });
+    if (ep.applied) slog.event("MAIN_ENDPOINT_PROFILE_APPLIED", { seq: ep.applied.seq });
+    releaseCached = ep.release;
   }
   return releaseCached;
 }

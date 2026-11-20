@@ -7,7 +7,7 @@
  * - tokens：闸门新识别的令牌条目写入事项令牌表（界面与文书引擎还原需要）；
  * - revoke：撤销任务时通知闸门中止该任务的在途上游请求。
  */
-import { fork, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { verifyToken, type CapabilityClaims } from "@zr-legal/service-auth";
 import { newId } from "@zr-legal/domain";
@@ -16,7 +16,7 @@ import type { PartyEntry, TokenEntry } from "@zr-legal/tokenizer";
 import type { AuthorizeResult, CpRelayRequest, CpRelayResult, DistRelayResult, SupportRelayRequest, SupportRelayResult, NotifyRelayRequest, NotifyRelayResult, ShareRelayRequest, ShareRelayResult, GateEgressRecord, GatePurpose, GateUpstreams, MatterEgressContext, SignedApproval } from "@zr-legal/egress-gate";
 import type { KernelDb } from "../db.ts";
 import { liveRunForClaims } from "../identity.ts";
-import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, startParentHeartbeat, windowsSystemEnv } from "../executor/child-env.ts";
+import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, spawnNodeChild, startParentHeartbeat, windowsSystemEnv } from "../executor/child-env.ts";
 import { errFields, relayChildStderr, slog } from "@zr-legal/safe-log";
 
 /**
@@ -325,7 +325,7 @@ export async function startEgressGate(o: StartGateOptions): Promise<GateHandle> 
 }
 
 function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
-  const child = fork(o.entryPath, [], { execPath: o.runtime ?? process.execPath, execArgv: [], stdio: ["ignore", "ignore", "pipe", "ipc"], env: { PATH: process.env.PATH ?? "", ...windowsSystemEnv(), ...parentHeartbeatEnv() }, ...HIDE_WINDOW });
+  const child = spawnNodeChild(o.entryPath, [], { execPath: o.runtime ?? process.execPath, execArgv: [], stdio: ["ignore", "ignore", "pipe", "ipc"], env: { PATH: process.env.PATH ?? "", ...windowsSystemEnv(), ...parentHeartbeatEnv() }, ...HIDE_WINDOW });
   startParentHeartbeat(child);
   // stderr 只认日志器 JSON 行（按登记表重新核验后写入本机日志），其余行只计数（v9.2 §3.6）
   relayChildStderr(child.stderr, "gate");

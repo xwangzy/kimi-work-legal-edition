@@ -28,7 +28,8 @@
     "scripts/usage-backfill.mjs",
     "scripts/meter-report.mjs",
     "scripts/lib/obs.mjs",
-    "scripts/lib/secret-strength.mjs"
+    "scripts/lib/secret-strength.mjs",
+    "scripts/lib/cp-connect.mjs"
   ],
   "exclude": [
     "apps/console/dist",

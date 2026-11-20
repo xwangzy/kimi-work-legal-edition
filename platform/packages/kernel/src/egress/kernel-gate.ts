@@ -18,6 +18,7 @@ import { recordUsage, type RouteDef } from "@zr-legal/model-broker";
 import type { KernelDb } from "../db.ts";
 import { appendAuditEvent, type LedgerSigner } from "../ledger-signer.ts";
 import { canonicalJson, sha256B64 } from "@zr-legal/keys";
+import { errFields, slog } from "@zr-legal/safe-log";
 import { createGateAuthorizer, egressRowFromGate, startEgressGate, type GateHandle } from "./gate-host.ts";
 import type { MatterTokenStore } from "./matter-tokens.ts";
 import type { EgressApprovalStore } from "../services/egress-approvals.ts";
@@ -101,6 +102,8 @@ export function gateUpstreamsFromEnv(env: NodeJS.ProcessEnv, cp?: { seatToken: s
     relay: env.ZR_RELAY_BASE && hasSeat ? { baseUrl: env.ZR_RELAY_BASE, ...pin(pinsFrom(env.ZR_RELAY_PINS)) } : null,
     // 传输策略（审计 S5）：安装包形态（ZR_UPSTREAM_TLS=strict）不允许回环 http，中软网关、检索与控制面必须带内置钉住集
     tls: env.ZR_UPSTREAM_TLS === "strict" ? { allowLoopbackHttp: false, requirePins: true } : { allowLoopbackHttp: true, requirePins: false },
+    // 中软云端私有 CA（偏离 D-212，演示/测试部署）：release-config.cjs 只在 test_build 时放行；只对中软上游生效，钉住照常必须命中
+    ...(env.ZR_CLOUD_CA_PEM?.includes("-----BEGIN CERTIFICATE-----") ? { cloudCaPem: env.ZR_CLOUD_CA_PEM } : {}),
   };
 }
 
@@ -119,6 +122,21 @@ export function upstreamTransport(u: GateUpstreams): Record<"model" | "byok" | "
     notify: c(u.notify?.baseUrl, u.notify?.pins, tls.requirePins),
     relay: c(u.relay?.baseUrl, u.relay?.pins, tls.requirePins),
   };
+}
+
+/** 闸门拉不起来的原因码（封闭枚举，只进日志）。 */
+export function gateStartFailure(e: unknown): "closed" | "runtime_digest" | "runtime_missing" | "spawn_denied" | "start_timeout" | "exited_early" | "listen_failed" | "tls_relaxed" | "other" {
+  const msg = String((e as Error)?.message ?? "");
+  const code = String((e as { code?: unknown })?.code ?? "");
+  if (msg.includes("出站闸门已关闭")) return "closed";
+  if (msg.includes("运行时摘要不符")) return "runtime_digest";
+  if (code === "ENOENT") return "runtime_missing";
+  if (code === "EACCES" || code === "EPERM") return "spawn_denied";
+  if (msg.includes("启动超时")) return "start_timeout";
+  if (msg.includes("监听失败")) return "listen_failed";
+  if (msg.includes("证书校验被关闭")) return "tls_relaxed";
+  if (msg.includes("退出") || msg.includes("exit")) return "exited_early";
+  return "other";
 }
 
 /** 可执行文件的实际路径：绝对路径原样；否则按 PATH 解析（与 child_process 的查找一致）。 */
@@ -319,8 +337,26 @@ export class KernelGate {
     return h.relay(req);
   }
 
-  /** 确保闸门进程在运行（单飞；退出后重新拉起）。 */
+  /**
+   * 确保闸门进程在运行（单飞；退出后重新拉起）。拉不起来时只记一个封闭枚举的原因码（不记路径与报错原文）——
+   * 调用方一律报 gate_unavailable，原因此前被吞掉，安装包上连“为什么连不上中软服务”都查不到（第 50 批 DMG 走查）。
+   */
   async ensure(): Promise<GateHandle> {
+    try {
+      return await this.ensureInner();
+    } catch (e) {
+      const reason = gateStartFailure(e);
+      const now = Date.now();
+      if (reason !== this.lastStartFailure.reason || now - this.lastStartFailure.at > 30_000) {
+        slog.event("KERNEL_GATE_START_FAILED", { reason, ...errFields(e) });
+        this.lastStartFailure = { reason, at: now };
+      }
+      throw e;
+    }
+  }
+  private lastStartFailure: { reason: string; at: number } = { reason: "", at: 0 };
+
+  private async ensureInner(): Promise<GateHandle> {
     if (this.closed) throw new Error("出站闸门已关闭");
     if (this.handle?.alive) return this.handle;
     if (this.starting) return this.starting;

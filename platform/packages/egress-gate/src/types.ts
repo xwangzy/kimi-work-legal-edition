@@ -181,4 +181,10 @@ export interface GateUpstreams {
    * 缺省 = 开发形态（允许回环 http、不强制钉住）；安装包形态由内核按 ZR_UPSTREAM_TLS=strict 下发。
    */
   tls?: { allowLoopbackHttp: boolean; requirePins: boolean };
+  /**
+   * 中软云端的私有 CA（PEM；演示/测试部署，偏离 D-212）：只对中软上游（网关、检索、控制面、分发、支持、通知、中继）生效，
+   * 且**替换**而非追加 Node 内置公共根证书——这些上游只认这把 CA；钉住集照常必须命中、主机名/IP 照常核对。
+   * 只来自标了 test_build 的 release.json 或签名的云端地址配置（release-config.cjs）；缺省 = 只认 Node 内置公共根。
+   */
+  cloudCaPem?: string | null;
 }

@@ -1,9 +1,11 @@
 /**
- * 生成应用图标（第 49 批）：build/icon.ico（Windows：exe、安装/卸载程序、快捷方式、任务栏）与 build/icon.png（1024，Linux 与开发形态）。
+ * 生成应用图标（第 49 批）：build/icon.ico（Windows：exe、安装/卸载程序、快捷方式、任务栏）与 build/icon.png（1024，Linux 与开发形态），
+ * 以及 build/icon.icns（macOS 应用包与 DMG；16～1024 共 10 个 PNG 条目）。
  *
  * 源文件：build/brand/Logomark_Light.svg（Kimi 官方 Logomark：黑色圆角方块 + 白色 K + 蓝点 #1783FF，原样拷贝，不改形状与比例）。
  * 每个尺寸都按目标像素直接从矢量栅格化（Skia 抗锯齿），不从大图缩小；小于 64 的帧再把“K + 蓝点”整体平移不足半像素，让竖笔落在整像素上。
  * 方块铺满（不留边）：留 1px 边会让 16px 的 K 更小更糊，见预览对照。
+ * macOS（icns）例外：按苹果 macOS 图标栅格四周各留 100/1024 的边（与程序坞里其他应用的图标等大），整体等比缩放，不改形状与比例。
  * 帧格式：小于 256 的帧写 32 位 BMP（DIB + AND 掩码，NSIS 与旧版资源接口都认），256 写 PNG 压缩帧（Vista 起的标准做法）。
  *
  * 用法（在 platform 目录）：node apps/desktop/scripts/build-icons.mjs
@@ -165,6 +167,41 @@ export function parseIco(buf) {
   return out;
 }
 
+// ── ICNS 编码（macOS）：'icns' + 总长，再接 [类型(4) + 条目长(4，含 8 字节头) + PNG] ×n ─────────────────────────────
+/** 条目类型与像素：icp4/icp5 为 16/32，ic11～ic14 为 @2x，ic07～ic10 为 128～1024（10.7 起各类型都接受 PNG 负载）。 */
+export const ICNS_TYPES = [["icp4", 16], ["icp5", 32], ["ic11", 32], ["ic12", 64], ["ic07", 128], ["ic13", 256], ["ic08", 256], ["ic14", 512], ["ic09", 512], ["ic10", 1024]];
+/** macOS 图标栅格的留边（1024 画布四周各 100）。 */
+export const ICNS_INSET = 100 / 1024;
+
+/** entries: [{ type, data }]（data 为 PNG） */
+export function encodeIcns(entries) {
+  const parts = entries.map(({ type, data }) => {
+    const h = Buffer.alloc(8);
+    h.write(type, 0, "latin1");
+    h.writeUInt32BE(data.length + 8, 4);
+    return Buffer.concat([h, data]);
+  });
+  const head = Buffer.alloc(8);
+  head.write("icns", 0, "latin1");
+  head.writeUInt32BE(8 + parts.reduce((n, p) => n + p.length, 0), 4);
+  return Buffer.concat([head, ...parts]);
+}
+
+/** 解析 ICNS（测试与自检用）：返回每个条目 { type, png, width, height } */
+export function parseIcns(buf) {
+  if (buf.toString("latin1", 0, 4) !== "icns" || buf.readUInt32BE(4) !== buf.length) throw new Error("不是 ICNS 文件");
+  const out = [];
+  for (let off = 8; off < buf.length; ) {
+    const type = buf.toString("latin1", off, off + 4), len = buf.readUInt32BE(off + 4);
+    if (len < 8 || off + len > buf.length) throw new Error(`ICNS 条目 ${type} 越界`);
+    const data = buf.subarray(off + 8, off + len);
+    const png = data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    out.push({ type, png, width: png ? data.readUInt32BE(16) : 0, height: png ? data.readUInt32BE(20) : 0 });
+    off += len;
+  }
+  return out;
+}
+
 export function buildIcons() {
   const svg = readFileSync(SOURCE_SVG, "utf8");
   const frames = ICO_SIZES.map((n) => {
@@ -174,11 +211,13 @@ export function buildIcons() {
   const ico = encodeIco(frames);
   writeFileSync(`${buildDir}icon.ico`, ico);
   writeFileSync(`${buildDir}icon.png`, renderSvg(svg, PNG_SIZE).toBuffer("image/png"));
-  return { ico: ico.length, sizes: ICO_SIZES };
+  const icns = encodeIcns(ICNS_TYPES.map(([type, n]) => ({ type, data: renderSvg(svg, n, { inset: n * ICNS_INSET, snap: true }).toBuffer("image/png") })));
+  writeFileSync(`${buildDir}icon.icns`, icns);
+  return { ico: ico.length, sizes: ICO_SIZES, icns: icns.length };
 }
 
 const isMain = import.meta.main ?? process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
   const r = buildIcons();
-  console.log(`[build-icons] → ${buildDir}icon.ico（${r.sizes.join("/")}，${r.ico} 字节）与 icon.png（${PNG_SIZE}×${PNG_SIZE}）`);
+  console.log(`[build-icons] → ${buildDir}icon.ico（${r.sizes.join("/")}，${r.ico} 字节）、icon.png（${PNG_SIZE}×${PNG_SIZE}）与 icon.icns（${r.icns} 字节）`);
 }

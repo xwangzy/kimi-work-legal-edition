@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,7 +22,8 @@ function sources(): { rel: string; text: string }[] {
       else if (/\.(ts|tsx|mjs|cjs)$/.test(n) && !/bundle|\.d\.ts$/.test(n)) out.push({ rel: relative(ROOT, p).split("\\").join("/"), text: readFileSync(p, "utf8") });
     }
   };
-  for (const d of ["packages", "services", "apps/firm-node/src", "apps/desktop/electron"]) walk(join(ROOT, d));
+  // 独立桌面仓库没有 services/ 与 apps/firm-node、独立云端仓库没有 apps/desktop：只扫存在的目录，monorepo 里照旧全扫
+  for (const d of ["packages", "services", "apps/firm-node/src", "apps/desktop/electron"]) if (existsSync(join(ROOT, d))) walk(join(ROOT, d));
   return out.filter((f) => f.rel.includes("/src/") || f.rel.startsWith("apps/desktop/electron/"));
 }
 
@@ -46,6 +47,7 @@ const RAW_ED25519_ALLOWED: Record<string, string> = {
   "packages/kernel/src/control-plane/client.ts": "开通证明（律所根私钥，根保持 Ed25519，偏离 D-69）",
   "services/control-plane/src/server.ts": "开通证明核验（律所根公钥）",
   "apps/desktop/electron/update-verify.cjs": "发布清单签名（发布密钥）",
+  "apps/desktop/electron/release-config.cjs": "签名的云端地址配置（发布方离线 Ed25519 密钥，keyTable 只收 Ed25519 公钥；偏离 D-213）",
 };
 
 test("KP-02 设备签名私钥只在密钥文件、恢复与签名者实现里出现；其余代码只拿签名者", () => {
@@ -65,5 +67,6 @@ test("KP-02 不经分派的 sign(null…)/verify(null…) 只在既定的 Ed2551
   const re = /\b(?:[A-Za-z_$][\w$]*\.)?[A-Za-z_$]*(?:[Ss]ign|[Vv]erify)\(\s*null\s*,/;
   const hits = sources().filter((f) => re.test(f.text)).map((f) => f.rel);
   assert.deepEqual(hits.filter((r) => !RAW_ED25519_ALLOWED[r]), [], "新增的未分派签名或验签");
-  for (const r of Object.keys(RAW_ED25519_ALLOWED)) assert.ok(hits.includes(r), `允许表过时（${r} 已不再直接调用）：请同步`);
+  // 独立仓库里另一端的文件不在：只核对存在的（monorepo 里全部存在，照旧全核）
+  for (const r of Object.keys(RAW_ED25519_ALLOWED)) if (existsSync(join(ROOT, r))) assert.ok(hits.includes(r), `允许表过时（${r} 已不再直接调用）：请同步`);
 });

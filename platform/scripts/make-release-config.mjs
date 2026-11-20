@@ -13,7 +13,7 @@
  *
  * 说明文件（JSON）：
  * {
- *   "control_plane_base": "https://cp.kwl.example.com",
+ *   "control_plane_base": "https://cp.kwl.example.com",                   // 没有域名时写 https://<公网 IP>:8443（证书须带该 IP 的 SAN）
  *   "gateway_base": "https://gw.kwl.example.com/v1",
  *   "search_base": "https://search.kwl.example.com/v1/search",
  *   "dist_base": "https://dist.kwl.example.com",          // 可选：法规库 / 方法模板在线更新
@@ -22,18 +22,19 @@
  *   "update_keys": ["<sign-update.mjs --print-public-key 的输出>"], "update_publishers": ["<正式代码签名证书主体 CN>"],
  *   "backup_pins": ["/secure/backup-tls-key.pub.pem", "sha256/…="],       // 所有主机共用的备份钉住；也可按主机写 "<名>_backup_pins"
  *   "pins": { "gateway": ["sha256/…="] },                                // --offline 或要额外钉住时按主机给
- *   "ca_file": "/etc/kwl/internal-ca.crt",                                // 可选：私有 CA
+ *   "cloud_ca_file": "/secure/demo-ca.crt",                               // 可选：中软云端私有 CA（只许 test_build；偏离 D-212）
+ *   "endpoint_profile_key_file": "/secure/endpoint-profile.pub.pem",      // 可选：签名的云端地址配置验签公钥（偏离 D-213）
+ *   "endpoint_deployment": "demo-ip", "endpoint_profile_kid": "ep-1",     // 与上一项同给
  *   "cp_public_keys_file": "/secure/kwl-prod/public/cp-public-keys.json",
  *   "seat_public_keys_file": "/secure/kwl-prod/public/seat-public-keys.json",
  *   "test_build": false                                                   // 内部测试包才写 true（正式发布门禁见 package-desktop.mjs）
  * }
  */
-import { createHash, createPublicKey, X509Certificate } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { connect } from "node:tls";
 import { fileURLToPath } from "node:url";
+import { collectPins, readCaBundle, UPSTREAMS } from "./lib/release-pins.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const require = createRequire(import.meta.url);
@@ -56,52 +57,17 @@ const fail = (m) => {
   process.exit(1);
 };
 
-const pinOfDer = (der) => `sha256/${createHash("sha256").update(der).digest("base64")}`;
-/** 备份钉住：sha256/… 原样；文件可以是公钥 PEM、证书 PEM（取其公钥）。 */
-function pinOf(x) {
-  if (/^sha256\/[A-Za-z0-9+/]{43}=$/.test(x)) return x;
-  const text = readFileSync(x, "utf8");
-  if (/PRIVATE KEY/.test(text)) fail(`${x} 是私钥：备份钉住只要公钥（openssl pkey -in key.pem -pubout）`);
-  const key = /BEGIN CERTIFICATE/.test(text) ? new X509Certificate(text).publicKey : createPublicKey(text);
-  return pinOfDer(key.export({ type: "spki", format: "der" }));
-}
-
-function leafPin(base) {
-  const u = new URL(base);
-  const ca = spec.ca_file ? readFileSync(spec.ca_file, "utf8") : undefined;
-  return new Promise((ok, no) => {
-    const s = connect({ host: u.hostname, port: Number(u.port || 443), servername: u.hostname, ...(ca ? { ca } : {}), minVersion: "TLSv1.2", timeout: 10_000 }, () => {
-      const cert = s.getPeerCertificate(false);
-      s.end();
-      if (!cert?.pubkey) return no(new Error("没有拿到证书"));
-      ok({ pin: pinOfDer(cert.pubkey), subject: cert.subject?.CN ?? "", until: cert.valid_to });
-    });
-    s.on("error", (e) => no(e));
-    s.on("timeout", () => (s.destroy(), no(new Error("连接超时"))));
-  });
-}
-
-const HOSTS = ["control_plane", "gateway", "search", "dist", "support", "notify", "relay", "update"];
+// 私有 CA（偏离 D-212，演示/测试部署）：cloud_ca_file（旧名 ca_file）——既用来在线取钉住时校验证书，也写进 release.json 的 cloud_ca_pem
+const caFile = spec.cloud_ca_file ?? spec.ca_file;
+const caPem = caFile ? readCaBundle(caFile, fail) : undefined;
+if (caPem && spec.test_build !== true) fail("cloud_ca_file 只用于演示/测试构建（test_build: true）；正式发布请用公共 CA 签发的证书（含 Let's Encrypt 的 IP 地址证书）");
 const release = {};
-for (const name of HOSTS) {
-  const base = spec[`${name}_base`];
-  if (base === undefined) continue;
-  if (typeof base !== "string" || !base.startsWith("https://")) fail(`${name}_base 必须是 https 地址`);
-  const pins = new Set((spec.pins?.[name] ?? []).map(pinOf));
-  if (!offline) {
-    try {
-      const r = await leafPin(base);
-      pins.add(r.pin);
-      console.log(`[make-release-config] ${name}：${new URL(base).host} 证书 CN=${r.subject}，到 ${r.until}，钉住 ${r.pin}`);
-    } catch (e) {
-      fail(`${name}：连不上 ${base}（${e.message}）。服务还没上线可用 --offline，并在 pins.${name} 里给出钉住值`);
-    }
-  }
-  for (const b of [...(spec.backup_pins ?? []), ...(spec[`${name}_backup_pins`] ?? [])]) pins.add(pinOf(b));
-  if (pins.size < 2) fail(`${name} 只有 ${pins.size} 个钉住值：至少要当前 + 备份两把（备份密钥对离线生成，证书续期时换用，见部署文档“证书与钉住”）`);
-  release[`${name}_base`] = base.replace(/\/+$/, "");
-  release[`${name}_pins`] = [...pins];
+const got = await collectPins(spec, { names: [...UPSTREAMS, "update"], offline, caPem, fail, log: (m) => console.log(`[make-release-config] ${m}`) });
+for (const [name, { base, pins }] of Object.entries(got)) {
+  release[`${name}_base`] = base;
+  release[`${name}_pins`] = pins;
 }
+if (caPem) release.cloud_ca_pem = caPem;
 for (const k of ["control_plane", "gateway", "search"]) if (!release[`${k}_base`]) fail(`缺少 ${k}_base（控制面、网关、检索三项必填）`);
 if (spec.cp_public_keys_file) release.control_plane_keys = JSON.parse(readFileSync(spec.cp_public_keys_file, "utf8"));
 if (spec.seat_public_keys_file) release.seat_keys = JSON.parse(readFileSync(spec.seat_public_keys_file, "utf8"));
@@ -114,6 +80,13 @@ if (release.update_base) {
 if (spec.dist_channel) release.dist_channel = spec.dist_channel;
 if (spec.content_keys) release.content_keys = spec.content_keys;
 if (spec.test_build === true) release.test_build = true;
+// 签名的云端地址配置（偏离 D-213）：给了验签公钥才启用（scripts/endpoint-profile.mjs --gen-key 生成；私钥离线保管）
+if (spec.endpoint_profile_key_file !== undefined) {
+  if (typeof spec.endpoint_deployment !== "string") fail("给了 endpoint_profile_key_file 就要写 endpoint_deployment（部署标识，小写字母数字与连字符）");
+  const pem = readFileSync(spec.endpoint_profile_key_file, "utf8");
+  if (/PRIVATE KEY/.test(pem)) fail("endpoint_profile_key_file 是私钥：release.json 只放公钥");
+  release.endpoint_profile = { deployment: spec.endpoint_deployment, keys: { [spec.endpoint_profile_kid ?? "ep-1"]: pem } };
+}
 
 // 用客户端同一份代码核对（失败关闭：有问题即不写）
 const tmp = `${out}.check-${process.pid}`;

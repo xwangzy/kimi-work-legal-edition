@@ -1,5 +1,5 @@
 /**
- * 桌面安装包构建（W4）：暂存应用目录 → 主进程打包 → electron-builder（Windows NSIS，按用户安装）。
+ * 桌面安装包构建（W4）：暂存应用目录 → 主进程打包 → electron-builder（Windows NSIS，按用户安装；macOS DMG，Apple 芯片）。
  *
  * 为什么暂存：内核、前端与 Agent 宿主都是单文件制品，安装包里只需要一个原生模块（better-sqlite3-multiple-ciphers，
  * N-API 预编译）；直接让 electron-builder 分析 npm 工作区会把整个仓库的依赖树打进去。暂存目录只放运行所需文件，
@@ -7,17 +7,19 @@
  *
  * 步骤：
  *   1. 内容构建（法规库、Agent 配置、工具清单、方法模板）与内核制品、前端（vite）
- *   2. 随包运行时 scripts/build-runtime.mjs --target <目标>（Windows 先运行 scripts/fetch-win-runtime.mjs）
+ *   2. 随包运行时 scripts/build-runtime.mjs --target <目标>（Windows 先运行 scripts/fetch-win-runtime.mjs，macOS 先运行 scripts/fetch-mac-runtime.mjs）
  *   3. 暂存 apps/desktop/.stage/app：package.json（只列原生模块）、dist/、electron/（主进程经 esbuild 打包含 electron-updater）
  *   4. electron-builder（配置 apps/desktop/electron-builder.yml，directories.app 指向暂存目录）
  *
  * 签名（--sign）：
  *   dev  用 scripts/dev-codesign.mjs 生成的**仅供测试**的自签名证书（.cache/dev-codesign/，不入库）；
  *   env  用 CSC_LINK / CSC_KEY_PASSWORD（正式证书，由发布流程注入）；
- *   none 不签名（缺省；SmartScreen 会拦截，只用于本机检查）。
+ *   none 不签名（缺省；SmartScreen 会拦截，只用于本机检查）。macOS 上为 ad-hoc 签名（codesign 身份 "-"），Gatekeeper 会拦截下载来的 DMG。
+ *   macOS 暂只支持 none：Developer ID 签名与公证未接入（scripts/lib/package-targets.mjs、docs/部署-云端控制台与桌面端对接.md §7.3b）。
  *
- * 用法：node scripts/package-desktop.mjs [--target win32-x64] [--sign dev|env|none] [--skip-build] [--dir] [--trial]
- *   --dir 只产出未打包目录（release/win-unpacked），便于检查内容。
+ * 用法：node scripts/package-desktop.mjs [--target win32-x64|darwin-arm64] [--sign dev|env|none] [--skip-build] [--dir] [--trial]
+ *   --target darwin-arm64 在 Apple 芯片的 Mac 上出 DMG（release/KimiWorkLegal-<版本>-arm64.dmg）；只能在 macOS 上构建。
+ *   --dir 只产出未打包目录（release/win-unpacked 或 release/mac-arm64），便于检查内容。
  *   --dev-build 开发 / 内部测试包：允许不带 electron/release.json（安装包只有本机能力）。不加此项时，用正式代码签名（--sign env）
  *           且随包生产内容公钥的构建视为正式构建，缺 release.json 直接失败（第 46 批，主文 §5-6）
  *   --trial 试用构建（偏离 D-160，apps/desktop/electron/trial-mode.cjs）：安装包内置本机法律模型网关与封装的中软 MaaS 密钥，
@@ -35,6 +37,7 @@ import { createRequire } from "node:module";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { electronBuilderArgs, packageTargetProblem } from "./lib/package-targets.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const desktop = join(root, "apps/desktop");
@@ -49,7 +52,7 @@ const skipBuild = argv.includes("--skip-build");
 const dirOnly = argv.includes("--dir");
 const trialBuild = argv.includes("--trial");
 const devBuild = argv.includes("--dev-build");
-const [platform, arch] = target.split("-");
+const [platform] = target.split("-");
 const log = (m) => console.log(`[package-desktop] ${m}`);
 // node 直接以本进程的可执行文件运行（不经 shell）；只有 npm/npx 在 Windows 上是 .cmd，须经 shell——此时逐个参数加引号，
 // 路径含空格（例如仓库根目录 “Kimi Work Legal”）时不被拆开（复核 B4-A18；DEP0190）
@@ -63,6 +66,8 @@ const run = (cmd, args, opts = {}) => {
 // 试用构建的输入先核对（构建要几分钟，别到最后才失败）；密钥只读进内存，不打印
 let trial = null;
 if (trialBuild) {
+  // 独立桌面仓库（desktop-repo/export.mjs）不带试用网关：它要把云端网关代码与 MaaS 密钥打进安装包，只在 monorepo 做（偏离 D-160、D-214）
+  if (!existsSync(join(desktop, "electron/trial-gateway.mjs"))) throw new Error("--trial 试用构建只能在 monorepo 里做（独立桌面仓库不含试用网关）；演示请用 release.json 接云端");
   if (existsSync(join(desktop, "electron/release.json"))) throw new Error("--trial 与 electron/release.json 互斥：试用构建不接云端，先移走 release.json");
   const keyFile = process.env.KWL_TRIAL_KEY_FILE;
   if (!keyFile || !existsSync(keyFile)) throw new Error("--trial 需要 KWL_TRIAL_KEY_FILE（只含中软 MaaS 密钥一行的文件）");
@@ -77,8 +82,11 @@ if (trialBuild) {
   trial = { apiKey, upstreamBase, model, expires };
 }
 
-// 暂只支持 win32-x64（复核 B4-A02）：锁文件只有 x64 的 Node 与原生包，electron-builder.yml 也写死 x64
-if (target !== "win32-x64") throw new Error(`暂只支持 win32-x64 安装包（得到 ${target}）`);
+// 只支持 win32-x64（复核 B4-A02：Windows 锁文件只有 x64 的 Node 与原生包）与 darwin-arm64（DMG，只能在 macOS 上以 ad-hoc 签名构建）
+{
+  const problem = packageTargetProblem({ target, sign, hostPlatform: process.platform });
+  if (problem) throw new Error(problem);
+}
 
 // ── 1. 内容与制品 ───────────────────────────────────────────────────────
 if (!skipBuild) {
@@ -88,10 +96,16 @@ if (!skipBuild) {
 if (!existsSync(join(desktop, "dist/index.html"))) throw new Error("缺少前端产物 apps/desktop/dist：先去掉 --skip-build 构建");
 
 // ── 2. 随包运行时 ──────────────────────────────────────────────────────
-const lock = JSON.parse(readFileSync(join(root, "scripts/win-runtime.lock.json"), "utf8"));
-// 随包 Node 或锁定的原生包 tarball 不在缓存里即重新获取（build-runtime 每次按锁文件复核 tarball 并重新解出，复核 B4-R15）
-const tarballMissing = Object.entries(lock.npm ?? {}).some(([name, ent]) => !existsSync(join(root, ".cache/win-runtime/npm", `${name.replace(/^@/, "").replace(/\//g, "-")}-${ent.version}.tgz`)));
-if (!existsSync(join(root, ".cache/win-runtime", `node-${lock.node.version}-${target}`, "node.exe")) || tarballMissing) run("node", ["scripts/fetch-win-runtime.mjs"]);
+if (platform === "win32") {
+  const lock = JSON.parse(readFileSync(join(root, "scripts/win-runtime.lock.json"), "utf8"));
+  // 随包 Node 或锁定的原生包 tarball 不在缓存里即重新获取（build-runtime 每次按锁文件复核 tarball 并重新解出，复核 B4-R15）
+  const tarballMissing = Object.entries(lock.npm ?? {}).some(([name, ent]) => !existsSync(join(root, ".cache/win-runtime/npm", `${name.replace(/^@/, "").replace(/\//g, "-")}-${ent.version}.tgz`)));
+  if (!existsSync(join(root, ".cache/win-runtime", `node-${lock.node.version}-${target}`, "node.exe")) || tarballMissing) run("node", ["scripts/fetch-win-runtime.mjs"]);
+} else {
+  // macOS：官方 Node 二进制（OpenJS 基金会签名）不在缓存里即下载核验；摘要由 build-runtime 按 mac-runtime.lock.json 复核
+  const lock = JSON.parse(readFileSync(join(root, "scripts/mac-runtime.lock.json"), "utf8"));
+  if (!existsSync(join(root, ".cache/mac-runtime", `node-${lock.node.version}-${target}`, "node"))) run("node", ["scripts/fetch-mac-runtime.mjs", "--target", target]);
+}
 run("node", ["scripts/build-runtime.mjs", "--target", target, "--out", join(desktop, "runtime")]);
 
 // ── 3. 暂存应用目录 ────────────────────────────────────────────────────
@@ -272,9 +286,7 @@ if (sign === "dev") {
   if (!env.CSC_LINK && !env.WIN_CSC_LINK) throw new Error("--sign env 需要 CSC_LINK（或 WIN_CSC_LINK）与 CSC_KEY_PASSWORD");
 } else throw new Error(`未知的 --sign ${sign}`);
 
-const builderArgs = ["electron-builder", "--win", `--${arch}`, "--config", "electron-builder.yml", "--publish", "never"];
-// 试用安装包另起文件名（与正式安装包、更新源上的文件区分）
-if (trial) builderArgs.push("-c.nsis.artifactName=KimiWorkLegal-Trial-Setup-${version}.${ext}");
-if (dirOnly) builderArgs.push("--dir");
+// 平台开关与 --dir；试用安装包另起文件名（与正式安装包、更新源上的文件区分）。见 scripts/lib/package-targets.mjs
+const builderArgs = electronBuilderArgs({ target, sign, trial: !!trial, dirOnly });
 run("npx", builderArgs, { cwd: desktop, env });
 log(`完成 → ${join(desktop, "release")}`);

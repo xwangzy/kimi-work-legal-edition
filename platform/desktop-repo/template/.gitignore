@@ -1,0 +1,42 @@
+node_modules/
+dist/
+out/
+*.log
+.env
+.env.*
+!.env.example
+.data/
+*.tsbuildinfo
+coverage/
+.cache/
+.DS_Store
+# 构建产物（scripts/build-kernel.mjs、build-runtime.mjs、package-desktop.mjs 生成）
+apps/desktop/electron/kernel.bundle.cjs
+apps/desktop/electron/parse-worker.bundle.cjs
+apps/desktop/electron/firm-node.bundle.mjs
+apps/desktop/electron/egress-gate.bundle.mjs
+apps/desktop/electron/migrations/
+apps/desktop/electron/lawdb/
+apps/desktop/electron/tool-manifest/
+apps/desktop/electron/skills/
+apps/desktop/runtime/
+apps/desktop/.stage/
+apps/desktop/release/
+apps/desktop/dev/.bridge-token
+content/keys/
+content/lawdb/dist/
+content/lawdb/test-fixtures/
+content/ocr-models/
+content/skills/dist/
+third_party/kimi-code/
+# 每个部署各自生成的发行配置（地址、钉住、公钥）：由 scripts/make-release-config.mjs 生成，不入库；样例见 docs/
+apps/desktop/electron/release.json
+apps/desktop/electron/trial.json
+release-spec*.json
+!release-spec.example.json
+# 任何私钥、口令、密钥文件都不入库（地址配置签名私钥、代码签名证书、上游密钥）
+secrets/
+*.key.pem
+*.p12
+*.pfx
+!packages/**/test/fixtures/*.key.pem

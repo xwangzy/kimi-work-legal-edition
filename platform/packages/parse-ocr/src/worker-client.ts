@@ -4,12 +4,28 @@
  * 进程崩毁自动重建重试；OCR 页预算触发计划内换进程续跑（§13 峰值内存控制——
  * 实证 ~70MB/页 的 WASM/OpenCV 递增随旧进程退出归还 OS）；汇总峰值 rss 供内存预算核验。
  */
-import { fork, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptions, type StdioOptions } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { DomainError } from "@zr-legal/domain";
 import { relayChildStderr } from "@zr-legal/safe-log";
 import type { OcrModelPaths } from "./models.ts";
+
+/**
+ * 以 IPC 通道拉起 Node 子进程——等价于 child_process.fork（偏离 D-215；与 packages/kernel/src/executor/child-env.ts 的 spawnNodeChild 同一实现，
+ * 本包不依赖内核所以各留一份）：安装包关闭了 Electron 的 runAsNode 熔断，Electron 44 在应用内一律拒绝 child_process.fork()，
+ * spawn + stdio 'ipc' 不受限制。用 Electron 自身当 Node 时照 fork 的做法带 ELECTRON_RUN_AS_NODE=1。
+ */
+function spawnNodeChild(entry: string, args: readonly string[], o: SpawnOptions & { execPath?: string; execArgv?: readonly string[] }): ChildProcess {
+  const { execPath = process.execPath, execArgv = [], ...rest } = o;
+  const stdio = (rest.stdio ?? ["pipe", "pipe", "pipe", "ipc"]) as StdioOptions;
+  if (!Array.isArray(stdio) || !stdio.includes("ipc")) throw new Error("spawnNodeChild 须带 IPC 通道（stdio 里的 'ipc'）");
+  const env: NodeJS.ProcessEnv = { ...(rest.env ?? process.env) };
+  if (execPath === process.execPath && (process.versions as { electron?: string }).electron) env.ELECTRON_RUN_AS_NODE = "1";
+  // windowsHide：从无控制台的桌面进程拉起随包 node.exe 不弹黑色控制台窗口（WR-2）
+  return spawn(execPath, [...execArgv, entry, ...args], { ...rest, env, stdio, windowsHide: true });
+}
+
 import type { PageQuality } from "./quality.ts";
 
 export interface ParsedPage extends PageQuality {
@@ -130,7 +146,7 @@ function runOnce(opts: ParseBatchOptions, startPage: number | undefined): Promis
   const entry = opts.workerEntry ?? defaultWorkerEntry();
   const pageTimeoutMs = opts.pageTimeoutMs ?? 30_000;
   return new Promise((resolve, reject) => {
-    const child: ChildProcess = fork(entry, [], {
+    const child: ChildProcess = spawnNodeChild(entry, [], {
       // stderr 不直通内核 stderr：原生库的警告可能带文件片段——只认日志器 JSON 行，其余计数（v9.2 §3.6）
       stdio: ["pipe", "pipe", "pipe", "ipc"],
       execArgv: [],

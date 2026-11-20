@@ -11,7 +11,7 @@
  */
 import type { ZoneKeysWire } from "../ws-keys.ts";
 import { MatterKeyRing, ZoneCodec } from "@zr-legal/at-rest";
-import { fork, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
@@ -19,7 +19,7 @@ import type { ToolManifest } from "@zr-legal/host-policy";
 import { mintTaskToken } from "../identity.ts";
 import type { AgentArtifact, AgentCancelOutcome, AgentClient, AgentTaskPoll } from "./agent-client.ts";
 import { diffWorkspace, snapshotWorkspace, type WorkspaceSnapshot } from "./workspace-artifacts.ts";
-import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, startParentHeartbeat, windowsSystemEnv } from "./child-env.ts";
+import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, spawnNodeChild, startParentHeartbeat, windowsSystemEnv } from "./child-env.ts";
 import { sanitizeProgress, type RunProgressView } from "./run-progress.ts";
 import { relayChildStderr, slog } from "@zr-legal/safe-log";
 
@@ -238,7 +238,7 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
       await runtimeReady();
       // 闸门先就绪（宿主的模型、检索、抓取只经闸门；闸门起不来即宿主不启动——失败关闭，不改为直连）
       const gateSocket = opts.gate ? await opts.gate.socket() : undefined;
-      const c = fork(opts.entryPath, [], {
+      const c = spawnNodeChild(opts.entryPath, [], {
         execPath: opts.runtime ?? process.execPath,
         execArgv: [],
         // 控制通道只有 IPC；stdout 丢弃，stderr 只用于诊断

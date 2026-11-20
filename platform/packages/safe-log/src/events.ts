@@ -78,6 +78,8 @@ export const EVENTS = {
   // 文书与表格修改工具的结果分布（V13 第 38 批；V16 第 41 批加表格逐格修改）：只记写入几处、各类定位失败几处，不记任何文字——用于查“改了很多次只写进几次”的原因
   TOOLS_DOCX_EDIT_OUTCOME: { level: "info", fields: { tool: ["docx_edit_draft", "docx_revise", "xlsx_edit_cells"], status: ["applied", "partial", "not_applied", "preview"], patches: "int", applied: "int", not_found: "int", ambiguous: "int", unknown_token: "int", other: "int" } },
   GATE_RECORD_WRITE_FAILED: { level: "error", fields: { ...ERR } },
+  // 闸门拉不起来（第 50 批）：只记封闭枚举的原因码；调用方照旧报 gate_unavailable
+  KERNEL_GATE_START_FAILED: { level: "error", fields: { reason: ["closed", "runtime_digest", "runtime_missing", "spawn_denied", "start_timeout", "exited_early", "listen_failed", "tls_relaxed", "other"], ...ERR } },
   GATE_TOKEN_WRITE_FAILED: { level: "error", fields: { ...ERR } },
   METER_INSERT_FAILED: { level: "error", fields: { ...ERR } },
 
@@ -88,6 +90,9 @@ export const EVENTS = {
   // —— Electron 主进程（经内核消息交内核） ——
   MAIN_DBKEY_DEV_PLAINTEXT: { level: "warn", fields: {} },
   MAIN_RELEASE_CONFIG_PROBLEM: { level: "error", fields: { count: "int" } },
+  // 签名的云端地址配置（偏离 D-213）：验不过即沿用随包地址；生效时只记序号
+  MAIN_ENDPOINT_PROFILE_PROBLEM: { level: "error", fields: { count: "int" } },
+  MAIN_ENDPOINT_PROFILE_APPLIED: { level: "info", fields: { seq: "int" } },
   // Windows 试用构建（a9165e4，偏离 D-160）：主进程用了这四个事件码却没登记，运行时被日志器拒收（V13 第 38 批补登记，失败原因收成封闭枚举）
   MAIN_TRIAL_CONFIG_PROBLEM: { level: "error", fields: { count: "int" } },
   MAIN_TRIAL_GATEWAY_READY: { level: "info", fields: {} },

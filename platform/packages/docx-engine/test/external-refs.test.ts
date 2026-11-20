@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sha256Hex } from "@zr-legal/domain";
@@ -269,6 +269,7 @@ test("P5 Office：产品源码只经 writeZip 写出 OOXML（writeRawZip 仅限 
       else if (/\.(ts|tsx|mjs|cjs|js)$/.test(name) && !/\.bundle\./.test(name) && readFileSync(p, "utf8").includes("writeRawZip")) hits.push(relative(root, p));
     }
   };
-  for (const top of ["packages", "services", "apps"]) walk(join(root, top));
+  // 独立桌面仓库里没有 services/：只扫存在的目录，monorepo 里照旧全扫
+  for (const top of ["packages", "services", "apps"]) if (existsSync(join(root, top))) walk(join(root, top));
   assert.deepEqual(hits.sort(), ["packages/docx-engine/src/zip.ts"], `writeRawZip 出现在：${hits.join(", ")}`);
 });

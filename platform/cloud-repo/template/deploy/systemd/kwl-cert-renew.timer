@@ -1,0 +1,11 @@
+# 每天两次检查续期（短期证书约 6 天有效、剩一半时续；一天两次留出连续失败的余量）。随机延迟避开整点洪峰。
+[Unit]
+Description=Kimi Work 法律版云端：服务证书续期定时器
+
+[Timer]
+OnCalendar=*-*-* 03,15:17:00
+RandomizedDelaySec=45min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

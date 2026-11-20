@@ -1,5 +1,5 @@
-# Windows 安装包（W4）。由 scripts/package-desktop.mjs 调用：先暂存应用目录（.stage/app），再运行本配置。
-# 手工构建：node scripts/package-desktop.mjs [--sign dev|env|none] [--dir]
+# Windows 安装包（W4）与 macOS DMG（Apple 芯片）。由 scripts/package-desktop.mjs 调用：先暂存应用目录（.stage/app），再运行本配置。
+# 手工构建：node scripts/package-desktop.mjs [--target win32-x64|darwin-arm64] [--sign dev|env|none] [--dir]
 appId: com.chinasoft.kimiwork.legal
 productName: Kimi Work 法律版
 executableName: KimiWorkLegal
@@ -81,6 +81,32 @@ nsis:
   # 卸载时保留本机案件数据（数据在 %LOCALAPPDATA%\KimiWorkLegal，不漫游；删除须律师在应用内按保留期规则操作）
   deleteAppDataOnUninstall: false
   differentialPackage: true
+# macOS（Apple 芯片）DMG：package-desktop.mjs --target darwin-arm64 --sign none 以 ad-hoc 身份（-c.mac.identity=-）签名，只用于本机与内部测试；
+# Developer ID 签名与公证尚未接入（docs/部署-云端控制台与桌面端对接.md §7.3b）。自动更新只在 Windows 开启（updater.cjs）
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+  category: public.app-category.productivity
+  # 由 apps/desktop/scripts/build-icons.mjs 从同一 Logomark 源 SVG 生成（按 macOS 图标栅格留边）
+  icon: build/icon.icns
+  # Electron 44 最低支持 macOS 12
+  minimumSystemVersion: "12.0"
+  hardenedRuntime: true
+  # 主程序与各 Helper 同一份权限：V8 JIT；关闭库校验（ad-hoc 签名没有团队标识，否则 Electron 框架与 asar.unpacked 里的原生模块装载不了）
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # 不重签（与 Windows 的 signExts 同理）：随包运行时（官方 Node 保留 OpenJS 基金会签名，原生模块保留原签名）与 asar.unpacked 的原生模块，
+  # 其摘要已锁定在 asar 内的运行时清单里，codesign 改写 Mach-O 会让主进程判“运行时损坏”；法规库不含可执行代码
+  signIgnore:
+    - "/Contents/Resources/runtime/"
+    - "/Contents/Resources/lawdb/"
+    - "/Contents/Resources/app\\.asar\\.unpacked/node_modules/better-sqlite3-multiple-ciphers/"
+  # 未接公证：不读 APPLE_ID 等环境变量去提交公证
+  notarize: false
+dmg:
+  # 文件名只用 ASCII（同 nsis.artifactName）
+  artifactName: KimiWorkLegal-${version}-${arch}.${ext}
 # 自动更新（W7）：通用 HTTPS 源；地址与钉住集以 release.json 为准（主进程 setFeedURL），此处只用于生成 latest.yml 与差分块
 publish:
   - provider: generic

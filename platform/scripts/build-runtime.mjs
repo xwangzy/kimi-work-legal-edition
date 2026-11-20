@@ -14,6 +14,7 @@
  * 用法：
  *   node scripts/build-runtime.mjs                       # 本机验证：用当前 node
  *   node scripts/build-runtime.mjs --target win32-x64    # 安装包：node 取 scripts/fetch-win-runtime.mjs 的下载缓存（已核验摘要）
+ *   node scripts/build-runtime.mjs --target darwin-arm64 # DMG：node 取 scripts/fetch-mac-runtime.mjs 的下载缓存（官方二进制，已核验摘要）
  *   选项：--out <dir>
  *
  * 不联网：Windows 的 node.exe 由 fetch-win-runtime.mjs 单独下载并按官方校验和与本仓库锁文件核验。
@@ -218,6 +219,15 @@ if (isWin) {
   nodeVersion = lock.node.version;
   if (!existsSync(nodeSrc)) throw new Error(`缺少 ${nodeSrc}：先运行 node scripts/fetch-win-runtime.mjs`);
   if (lock.node.exeSha256 && sha256(nodeSrc) !== lock.node.exeSha256) throw new Error(`摘要与锁文件不符：${nodeSrc}`);
+} else if (arg("--target") !== undefined && targetPlatform === "darwin") {
+  // macOS 安装包（DMG）：显式 --target darwin-* 时只认 scripts/fetch-mac-runtime.mjs 下载、按官方校验和与锁文件核验过的官方二进制
+  // （不取构建机当前的 node：可能是 Homebrew 动态链接的版本，拷到律师电脑上起不来）。不带 --target 的本机验证仍用当前 node
+  const lock = JSON.parse(readFileSync(join(root, "scripts/mac-runtime.lock.json"), "utf8"));
+  nodeSrc = join(root, ".cache/mac-runtime", `node-${lock.node.version}-${target}`, "node");
+  nodeVersion = lock.node.version;
+  if (!existsSync(nodeSrc)) throw new Error(`缺少 ${nodeSrc}：先运行 node scripts/fetch-mac-runtime.mjs --target ${target}`);
+  const want = lock.node[target]?.binSha256;
+  if (!want || sha256(nodeSrc) !== want) throw new Error(`摘要与锁文件不符（或锁文件未记录 ${target} 的 binSha256）：${nodeSrc}`);
 } else {
   nodeSrc = process.env.KWL_RUNTIME_NODE ?? process.execPath;
   nodeVersion = execFileSync(nodeSrc, ["--version"], { encoding: "utf8" }).trim();

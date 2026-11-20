@@ -12,12 +12,12 @@
  * 本模块无 Electron 依赖，可单测。
  */
 const fs = require("node:fs");
-const { createPublicKey } = require("node:crypto");
+const { createPublicKey, verify: edVerify, X509Certificate } = require("node:crypto");
 
 const PIN_RE = /^sha256\/[A-Za-z0-9+/]{43}=$/;
 
 /** 安装包形态从进程环境中剔除的配置项（上游、钉住、传输策略与开发形态的令牌/密钥）。白名单之外本就不传，此表留作说明与单测。 */
-const ROUTING_ENV = /^ZR_(?:GATEWAY_|SEARCH_|CONTROL_PLANE_|DIST_|SUPPORT_|NOTIFY_|RELAY_|CONTENT_KEYS|UPSTREAM_TLS|SEAT_TOKEN|BYOK_|MOONSHOT_|PRIVATE_|MODEL_PROVIDER|GATE_FETCH|FETCH_ALLOWLIST|FIRM_L3A|FIRM_SUPPORT_|FIRM_SHARE_RELAY)/;
+const ROUTING_ENV = /^ZR_(?:GATEWAY_|SEARCH_|CONTROL_PLANE_|DIST_|SUPPORT_|NOTIFY_|RELAY_|CLOUD_CA|CONTENT_KEYS|UPSTREAM_TLS|SEAT_TOKEN|BYOK_|MOONSHOT_|PRIVATE_|MODEL_PROVIDER|GATE_FETCH|FETCH_ALLOWLIST|FIRM_L3A|FIRM_SUPPORT_|FIRM_SHARE_RELAY)/;
 
 /**
  * 安装包形态内核环境的白名单（复核 B3-A02）：只保留操作系统与运行时正常工作所需的变量（大小写不敏感，Windows 环境变量名不区分大小写）。
@@ -49,6 +49,35 @@ function pinList(v) {
   if (out.length < 2 || out.length > 8 || !out.every((p) => PIN_RE.test(p))) return null;
   return out;
 }
+
+/**
+ * 中软云端私有 CA（偏离 D-212）：1～4 张 PEM 证书，每张都必须是 CA 证书（basicConstraints CA:TRUE）、不得夹带私钥、总长 ≤ 32 KB。
+ * 只用于演示/测试部署（没有域名、拿不到公共 CA 证书时）；闸门对中软上游只认这把 CA（替换公共根），钉住集照常必须命中。不合格返回 null。
+ */
+function caBundle(v) {
+  if (typeof v !== "string" || v.length > 32 * 1024 || /PRIVATE KEY/.test(v)) return null;
+  const blocks = v.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) ?? [];
+  if (blocks.length < 1 || blocks.length > 4) return null;
+  for (const b of blocks) {
+    try {
+      if (new X509Certificate(b).ca !== true) return null;
+    } catch {
+      return null;
+    }
+  }
+  return `${blocks.join("\n")}\n`;
+}
+
+/** 中软上游：地址 + 钉住集成对出现（签名的云端地址配置按这张表改写）。 */
+const UPSTREAM_PAIRS = [
+  ["gateway_base", "gateway_pins", "ZR_GATEWAY_BASE", "ZR_GATEWAY_PINS"],
+  ["search_base", "search_pins", "ZR_SEARCH_BASE", "ZR_SEARCH_PINS"],
+  ["control_plane_base", "control_plane_pins", "ZR_CONTROL_PLANE_BASE", "ZR_CONTROL_PLANE_PINS"],
+  ["dist_base", "dist_pins", "ZR_DIST_BASE", "ZR_DIST_PINS"],
+  ["support_base", "support_pins", "ZR_SUPPORT_BASE", "ZR_SUPPORT_PINS"],
+  ["notify_base", "notify_pins", "ZR_NOTIFY_BASE", "ZR_NOTIFY_PINS"],
+  ["relay_base", "relay_pins", "ZR_RELAY_BASE", "ZR_RELAY_PINS"],
+];
 
 /**
  * 读取 release.json → { env, problems }。缺文件不是错误（安装包未配置云端：只有本机能力，控制面缺失即退出模式）；
@@ -137,6 +166,13 @@ function loadReleaseConfig(file) {
   pair("notify_base", "notify_pins", "ZR_NOTIFY_BASE", "ZR_NOTIFY_PINS");
   // 共享中继（第 11 批 S11）：团队事项的密文同步；缺省不配置 = 团队事项只能经律所共享文件夹同步。律所是否使用另由律所策略决定
   pair("relay_base", "relay_pins", "ZR_RELAY_BASE", "ZR_RELAY_PINS");
+  // 中软云端私有 CA（偏离 D-212）：只许测试/演示构建（test_build: true）带；正式发布用公共 CA 证书（含 Let's Encrypt 的 IP 地址证书）
+  if (raw.cloud_ca_pem !== undefined) {
+    const ca = caBundle(raw.cloud_ca_pem);
+    if (raw.test_build !== true) problems.push("cloud_ca_pem 只用于演示/测试构建（test_build: true）；正式发布请用公共 CA 签发的证书");
+    else if (!ca) problems.push("cloud_ca_pem 须为 1～4 张 CA 证书 PEM（basicConstraints CA:TRUE，不含私钥）");
+    else env.ZR_CLOUD_CA_PEM = ca;
+  }
   // 自动更新（W7）：更新源地址、钉住集与发布签名公钥只认这里（主进程使用，不进内核环境）；三项缺一即不检查更新
   let update = null;
   if (raw.update_base !== undefined) {
@@ -152,7 +188,101 @@ function loadReleaseConfig(file) {
       update = { base, pins, keys, publishers, channel: raw.update_channel === "beta" ? "beta" : "latest" };
     }
   }
-  return { env, problems, update };
+  // 签名的云端地址配置（偏离 D-213）：release.json 带了验签公钥才启用；地址迁移（IP → 域名、换证书钉住）不必重装客户端
+  let endpointProfile = null;
+  if (raw.endpoint_profile !== undefined) {
+    const ep = raw.endpoint_profile;
+    const keys = ep && typeof ep === "object" ? keyTable(ep.keys, 1) : null;
+    const dep = ep && typeof ep.deployment === "string" && /^[a-z0-9][a-z0-9-]{0,47}$/.test(ep.deployment) ? ep.deployment : null;
+    if (!keys || !dep) problems.push("endpoint_profile 须为 { deployment: 小写标识, keys: { kid: Ed25519 公钥 PEM } }（1–8 把，只收公钥）");
+    else endpointProfile = { keys, deployment: dep, testBuild: raw.test_build === true };
+  }
+  return { env, problems, update, endpointProfile };
+}
+
+/**
+ * 签名的云端地址配置（偏离 D-213）：本机数据目录下的 cloud-endpoints.json，由发布方用离线 Ed25519 私钥签名（scripts/endpoint-profile.mjs）。
+ * 形如 { "v": 1, "kid": "<kid>", "payload": "<base64 的 JSON>", "sig": "<base64 签名>" }；payload 为
+ * { "kind": "kwl-endpoints", "deployment": "<与 release.json 一致>", "seq": 正整数, "issued_at": ISO 时间,
+ *   "<上游>_base"/"<上游>_pins"...（控制面、网关、检索三项必须齐全）, 可选 "cloud_ca_pem"（字符串或 null；null 表示只认公共根） }。
+ *
+ * 规则（失败关闭：任何一项不合格整份不生效、沿用 release.json，并列出问题）：
+ * - 只在安装包形态、release.json 带 endpoint_profile 时读取；签名必须由其中一把公钥验过，deployment 必须一致；
+ * - 只能改地址、钉住集与私有 CA；控制面签名公钥表、席位公钥表、更新源与内容公钥**不可改**（信任锚只随安装包）；
+ * - 私有 CA 同 release.json：只许测试/演示构建；
+ * - 不防回滚到更早的合法签名配置（同账户恶意程序只能换回发布方签过的地址），见部署文档“地址切换”。
+ * 返回 { release（合并后的副本）, applied: { seq, deployment } | null, problems }。
+ */
+function applyEndpointProfile(release, file) {
+  const out = { release, applied: null, problems: [] };
+  if (!release || !release.endpointProfile) return out;
+  let doc;
+  try {
+    doc = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (e) {
+    if (!(e && e.code === "ENOENT")) out.problems.push("cloud-endpoints.json 无法解析");
+    return out;
+  }
+  const ep = release.endpointProfile;
+  if (!doc || doc.v !== 1 || typeof doc.payload !== "string" || typeof doc.sig !== "string" || typeof doc.kid !== "string" || doc.payload.length > 64 * 1024) {
+    out.problems.push("cloud-endpoints.json 格式不对");
+    return out;
+  }
+  const pem = Object.prototype.hasOwnProperty.call(ep.keys, doc.kid) ? ep.keys[doc.kid] : null;
+  const body = Buffer.from(doc.payload, "base64");
+  let ok = false;
+  try {
+    ok = !!pem && edVerify(null, body, createPublicKey(pem), Buffer.from(doc.sig, "base64"));
+  } catch {
+    ok = false;
+  }
+  if (!ok) {
+    out.problems.push("cloud-endpoints.json 签名无效（不是发布方签的，或已被改动）");
+    return out;
+  }
+  let p;
+  try {
+    p = JSON.parse(body.toString("utf8"));
+  } catch {
+    out.problems.push("cloud-endpoints.json 内容无法解析");
+    return out;
+  }
+  if (!p || p.kind !== "kwl-endpoints" || p.deployment !== ep.deployment || !Number.isInteger(p.seq) || p.seq < 1) {
+    out.problems.push("cloud-endpoints.json 不是本部署的地址配置（kind / deployment / seq 不符）");
+    return out;
+  }
+  const env = { ...release.env };
+  const problems = [];
+  for (const [baseKey, pinsKey, envBase, envPins] of UPSTREAM_PAIRS) {
+    if (p[baseKey] === undefined) continue;
+    const base = httpsUrl(p[baseKey]);
+    const pins = pinList(p[pinsKey]);
+    if (!base) problems.push(`${baseKey} 必须是 https 地址`);
+    else if (!pins) problems.push(`${pinsKey} 须为至少两把 sha256/<base64> 钉住值`);
+    else {
+      env[envBase] = base;
+      env[envPins] = pins.join(",");
+    }
+  }
+  for (const k of ["control_plane_base", "gateway_base", "search_base"]) if (p[k] === undefined) problems.push(`缺少 ${k}（控制面、网关、检索三项须齐全）`);
+  // 安装包没配控制面公钥表：不能经地址配置启用控制面（信任锚不随地址配置下发）
+  if (env.ZR_CONTROL_PLANE_BASE && !env.ZR_CONTROL_PLANE_KEYS) problems.push("安装包没有控制面公钥表，不能经地址配置启用控制面");
+  if (p.cloud_ca_pem !== undefined) {
+    if (p.cloud_ca_pem === null) delete env.ZR_CLOUD_CA_PEM;
+    else if (!ep.testBuild) problems.push("cloud_ca_pem 只用于演示/测试构建（test_build: true）");
+    else {
+      const ca = caBundle(p.cloud_ca_pem);
+      if (!ca) problems.push("cloud_ca_pem 须为 1～4 张 CA 证书 PEM");
+      else env.ZR_CLOUD_CA_PEM = ca;
+    }
+  }
+  if (problems.length) {
+    out.problems.push(...problems.map((m) => `cloud-endpoints.json：${m}`));
+    return out;
+  }
+  out.release = { ...release, env };
+  out.applied = { seq: p.seq, deployment: p.deployment };
+  return out;
 }
 
 /** 安装包形态的内核环境：进程环境只取白名单里的系统变量，再叠加 release.json 与严格传输策略（其余由主进程逐项写定）。 */
@@ -195,4 +325,4 @@ function kernelChildEnv(o) {
   };
 }
 
-module.exports = { loadReleaseConfig, packagedKernelEnv, kernelChildEnv, ROUTING_ENV, OS_ENV_ALLOW };
+module.exports = { loadReleaseConfig, applyEndpointProfile, packagedKernelEnv, kernelChildEnv, ROUTING_ENV, OS_ENV_ALLOW };

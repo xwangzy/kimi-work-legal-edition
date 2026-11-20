@@ -18,6 +18,8 @@
  *   "service_secret_file": "...",                         // 服务间凭据（G1 改 mTLS）；至少 32 字节随机：64 位以上十六进制或 43 位以上 base64url
  *   "max_connections": 10000,                             // 可选：并发连接上限（缺省 10000）
  *   "control_plane": { "url": "https://cp...", "keys_file": "cp-public-keys.json" },   // 订阅吊销集（控制面以外的角色）
+ *   //   可选 "connect_address": "127.0.0.1"：只换 TCP 连接地址，证书仍按 url 的主机（公网 IP 的 IP SAN 或域名）完整校验；
+ *   //   用于纯公网 IP 部署且云主机连不回自己的公网 IP（回环 NAT）时，见 scripts/lib/cp-connect.mjs
  *   "seat_keys_file": "seat-public-keys.json",          // 席位令牌验签公钥（控制面以外的角色）
  *   "data_dir": "...",                                  // 分发、支持、通知、中继的存储根；控制面的状态与审计也放这里
  *   // 控制面（v9.3 A-8：控制面进程不持签名私钥，配了 envelope_key / seat_key 即拒绝启动；一律经签名服务）：
@@ -58,7 +60,7 @@
  *   "console": { "origins": ["https://console.kwl.example.com"],          // 控制台来源：只对 /v1/auth/* /v1/me/* /v1/firm/* /v1/meta /v1/ops/* 回 CORS（不带凭据）
  *                "bootstrap_admin": { "email": "admin@csi.example.com", "name": "系统管理员" },   // 没有有效系统管理员时建档，设置码写 <data_dir>/control-plane/bootstrap-admin.txt
  *                "staff_mfa": "required" },                              // 平台人员两步验证：required（缺省）| optional（只给开发环境）
- *   "clients": { "min_version": "0.9.0" },                                // 可选：客户端最低版本（首次启动导入状态，之后在控制台改）；低于它登录、注册、续期席位令牌回 426
+ *   "clients": { "min_version": "0.2.0" },                                // 可选：客户端最低版本（首次启动导入状态，之后在控制台改）；低于它登录、注册、续期席位令牌回 426
  *   "usage_dir": "/srv/kwl-shared/usage",                                 // 可选：用量账本目录（缺省 <data_dir>/control-plane/usage）；一主多备时须放共享存储
  *   // 找回全部系统管理员：有服务器 shell 的人写 <data_dir>/control-plane/admin-recovery.request（内容：系统管理员邮箱），30 秒内处理
  *   // 控制面可选（第 44 批）：套餐目录与注册设置的初始值（首次启动导入状态；之后运营在控制台改）。额度单位 tokens 或 cny（价目表售价 × 实际 usage）
@@ -76,7 +78,7 @@
  * 保留 `log_retention_days` 天（缺省 190）；/healthz 与 /readyz 由入口应答；指标另起监听 `metrics`：
  *   "metrics": { "host": "127.0.0.1", "port": 9464, "token_file": "..." }   // 监听回环以外的地址必须给令牌（至少 32 字节随机）
  */
-import { createHash, createPrivateKey, createPublicKey, hkdfSync, randomBytes } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, hkdfSync, randomBytes, X509Certificate } from "node:crypto";
 import { hostname } from "node:os";
 import { createServer as createHttpsServer } from "node:https";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
@@ -86,6 +88,7 @@ import { fileURLToPath } from "node:url";
 import { createServer as createHttpServer } from "node:http";
 import { weakSecretReason } from "./lib/secret-strength.mjs";
 import { createObs } from "./lib/obs.mjs";
+import { controlPlaneFetch } from "./lib/cp-connect.mjs";
 
 const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 const i = process.argv.indexOf("--config");
@@ -584,7 +587,10 @@ if (cfg.role === "cp-signer") {
   // 控制面以外的角色：必须订阅控制面吊销集（评审 Z4 P0-7）
   if (!cfg.control_plane?.url || !String(cfg.control_plane.url).startsWith(insecure ? "http" : "https://")) fail("必须配置 control_plane.url（https）以订阅吊销集");
   const cpMod = await import(join(root, "services/control-plane/src/index.ts"));
-  feed = new cpMod.GatewayFeedSubscriber({ url: `${String(cfg.control_plane.url).replace(/\/+$/, "")}/v1/feed/gateway`, serviceSecret: serviceSecret(), keys: pubMap(cfg.control_plane.keys_file, "control_plane.keys_file") });
+  // 调控制面的所有请求（吊销集、路由订阅、上游健康回报、额度账本）共用一个 fetch：配了 connect_address 时连到该地址、证书按 url 主机核对
+  const cpFetch = controlPlaneFetch(cfg.control_plane, fail);
+  const cpFetchOpt = cpFetch ? { fetchImpl: cpFetch } : {};
+  feed = new cpMod.GatewayFeedSubscriber({ url: `${String(cfg.control_plane.url).replace(/\/+$/, "")}/v1/feed/gateway`, serviceSecret: serviceSecret(), keys: pubMap(cfg.control_plane.keys_file, "control_plane.keys_file"), ...cpFetchOpt });
   // 首次必须取到并核验通过（refresh 失败不抛错，只是不更新 lastOk）：之前不对外服务
   await feed.refresh().catch(() => {});
   if (!feed.lastOk) fail("首次取不到控制面吊销集（控制面不可达或签名不符）");
@@ -660,19 +666,20 @@ if (cfg.role === "cp-signer") {
         fallback: localKey ? { baseUrl: localBase, apiKey: localKey, routes: fallbackRoutes } : null,
         localKey,
         allowHttp: insecure,
+        ...cpFetchOpt,
       });
       // 首次取不到不拒绝启动：用本机兜底（没有兜底则取到订阅前模型请求一律 503）
       await routing.refresh().catch(() => {});
       routing.start(15_000);
       health = new gw.UpstreamHealth({ breaker: true });
       health.startProbing(routing, 60_000);
-      health.startReporting({ url: `${cpBase}/v1/feed/routing-health`, serviceSecret: svcSecret, holder, view: routing, intervalMs: 15_000 });
+      health.startReporting({ url: `${cpBase}/v1/feed/routing-health`, serviceSecret: svcSecret, holder, view: routing, intervalMs: 15_000, ...cpFetchOpt });
     } else {
       if (!localKey) fail("网关只接真实上游：缺少 upstream.api_key_file（或配置 routing 段订阅路由）");
       provider = new gw.OpenAICompatProvider({ apiKey: localKey, baseUrl: localBase, name: "local" });
     }
     const meterFile = join(dataDir("gateway"), "meter.jsonl");
-    const quota = new gw.LeaseQuota({ ledger: gw.httpLedger({ baseUrl: cpBase, serviceSecret: svcSecret }), holder, outbox: { meterFile, ackFile: join(dataDir("gateway"), "meter.ack") } });
+    const quota = new gw.LeaseQuota({ ledger: gw.httpLedger({ baseUrl: cpBase, serviceSecret: svcSecret, ...cpFetchOpt }), holder, outbox: { meterFile, ackFile: join(dataDir("gateway"), "meter.ack") } });
     const contentSafety = cfg.content_safety_policy_file ? new gw.ContentSafety(JSON.parse(read(cfg.content_safety_policy_file, "content_safety_policy_file"))) : undefined;
     const gateway = gw.createLegalGateway({
       keys: seatKeys,
@@ -840,6 +847,24 @@ if (cfg.metrics) {
   await new Promise((ok, no) => {
     metricsServer.once("error", no);
     metricsServer.listen(mPort, mHost, ok);
+  });
+}
+// 证书热换：收到 SIGHUP（systemctl reload kwl@<角色>）重读 tls.cert_file / tls.key_file，新连接用新证书，已有连接（含流式回复）不断。
+// 纯公网 IP 部署的短期证书（约 6 天有效）每 3 天左右续一次，续期钩子发 reload 而不是重启。读不出、证书与私钥不配对时保留旧证书，只记错误。
+if (tls) {
+  process.on("SIGHUP", () => {
+    try {
+      const cert = readFileSync(cfg.tls.cert_file, "utf8").trim();
+      const key = readFileSync(cfg.tls.key_file, "utf8").trim();
+      if (!new X509Certificate(cert).checkPrivateKey(createPrivateKey(key))) throw Object.assign(new Error("mismatch"), { code: "cert_key_mismatch" });
+      server.setSecureContext({ ...tls, cert, key });
+      Object.assign(tls, { cert, key });
+      obs.setCertPem(cert);
+      console.log(`[cloud-serve] ${cfg.role} 已换用新证书（到 ${new X509Certificate(cert).validTo}）`);
+    } catch (e) {
+      obs.recordError("tls_reload", { code: e?.code ?? "unreadable" });
+      console.error(`[cloud-serve] ${cfg.role} 证书热换失败，仍用旧证书（${e?.code ?? "读不出或格式不对"}）`);
+    }
   });
 }
 console.log(`[cloud-serve] ${cfg.role} 已就绪（${tls ? "https" : "http 仅测试"} ${host}:${server.address().port}${metricsServer ? `；指标 ${metricsServer.address().port}` : ""}）`);

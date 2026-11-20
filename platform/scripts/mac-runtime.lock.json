@@ -1,0 +1,12 @@
+{
+  "note": "随包 macOS 运行时锁文件（DMG）。Node 版本须与 scripts/win-runtime.lock.json 相同；tarSha256 / binSha256 为空时，fetch-mac-runtime.mjs 以官方 SHASUMS256.txt 核验后写入（首次信任），此后每次下载与构建都必须与此一致；升级版本须同时清空对应摘要并经评审。",
+  "node": {
+    "version": "v26.8.1",
+    "shasumsUrl": "https://nodejs.org/dist/v26.8.1/SHASUMS256.txt",
+    "darwin-arm64": {
+      "tarUrl": "https://nodejs.org/dist/v26.8.1/node-v26.8.1-darwin-arm64.tar.gz",
+      "tarSha256": "6e577fd0d9db776db82306629e441a9dace416702622aebdd171c9dfaa41f4d2",
+      "binSha256": "ebd2d552c7bebde593dd0390530963ad28de56bccde6ce387cdbe55fb0b6fb8e"
+    }
+  }
+}

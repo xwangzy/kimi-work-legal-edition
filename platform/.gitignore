@@ -45,3 +45,6 @@ third_party/kimi-code
 
 # 真实走查用的测试合同（本机复制，不入库）
 apps/desktop/kwl-testdocs/
+
+# 每个部署各自生成的发行配置（地址、钉住、公钥；scripts/make-release-config.mjs 生成）：不入库，样例见 apps/desktop/electron/release.example.json
+apps/desktop/electron/release.json

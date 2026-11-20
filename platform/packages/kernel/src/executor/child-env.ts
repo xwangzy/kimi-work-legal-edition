@@ -6,7 +6,7 @@
  * - windowsHide：从无控制台的桌面进程拉起控制台程序（随包 node.exe）时，不加这一项 Windows 会为每个子进程弹出黑色控制台窗口。
  *   @types/node 的 ForkOptions 未声明该字段，但 fork 原样交给 spawn，运行时生效。
  */
-import type { ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptions, type StdioOptions } from "node:child_process";
 
 export function windowsSystemEnv(): Record<string, string> {
   if (process.platform !== "win32") return {};
@@ -17,6 +17,26 @@ export function windowsSystemEnv(): Record<string, string> {
     out.windir = root;
   }
   return out;
+}
+
+/**
+ * 以 IPC 通道拉起 Node 子进程——等价于 child_process.fork(entry, args, o)（偏离 D-215）。
+ *
+ * 安装包关闭了 Electron 的 runAsNode 熔断（复核 B3-A02），Electron 44 因此在应用内一律拒绝 child_process.fork()
+ * （“not supported when the runAsNode fuse is disabled”）：安装包里出站闸门、Agent 宿主、W 执行域、隔离解析进程全部拉不起来，
+ * 模型调用一律失败（第 50 批 DMG 走查发现；开发形态的 Electron 熔断未关，所以一直没暴露）。
+ * Node 的 fork 本身就是“以 execPath 运行 execArgv + 入口 + 参数，再在 stdio 里开 'ipc'”；直接 spawn 不受该熔断限制（已在同版本 Electron、
+ * 同样熔断的安装包里实测：fork 抛错，spawn + ipc 正常往返消息）。
+ * 用 Electron 自身当 Node（开发形态未指定随包 Node）时，fork 会自动带 ELECTRON_RUN_AS_NODE=1，这里照做。
+ */
+export function spawnNodeChild(entry: string, args: readonly string[], o: SpawnOptions & { execPath?: string; execArgv?: readonly string[] }): ChildProcess {
+  const { execPath = process.execPath, execArgv = [], ...rest } = o;
+  const stdio = (rest.stdio ?? ["pipe", "pipe", "pipe", "ipc"]) as StdioOptions;
+  if (!Array.isArray(stdio) || !stdio.includes("ipc")) throw new Error("spawnNodeChild 须带 IPC 通道（stdio 里的 'ipc'）");
+  const env: NodeJS.ProcessEnv = { ...(rest.env ?? process.env) };
+  if (execPath === process.execPath && (process.versions as { electron?: string }).electron) env.ELECTRON_RUN_AS_NODE = "1";
+  // windowsHide：从无控制台的桌面进程拉起随包 node.exe 不弹黑色控制台窗口（WR-2）
+  return spawn(execPath, [...execArgv, entry, ...args], { ...rest, env, stdio, windowsHide: true });
 }
 
 /** 合入 fork/spawn 选项：Windows 不弹控制台窗口。 */

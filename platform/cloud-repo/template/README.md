@@ -17,7 +17,7 @@
 | `packages/*` | 共用库；`firm-trust`、`seat-token`、`keys`、`design-tokens` 与 Windows 客户端共用 | — |
 | `scripts/cloud-serve.mjs` | 生产入口：一个进程一个角色，`--config /etc/kwl/<角色>.json` | systemd 的 ExecStart |
 | `scripts/cloud-init-secrets.mjs` | 一次生成全部密钥文件 | 首次部署 |
-| `deploy/` | systemd 单元、nginx 配置、各角色配置样例、安装/升级/备份/回滚脚本 | 照抄改域名 |
+| `deploy/` | systemd 单元、nginx 配置、各角色配置样例、安装/升级/备份/回滚脚本 | 照抄改域名；只有公网 IP 时用 `install.sh --public-ip`（部署手册 4.5） |
 | `docs/` | 部署手册、运维手册、客户端接入说明 | 先读 |
 
 运行时只依赖 Node.js（≥ 24.15，CI 用 26.8.1）的内置模块；`npm ci` 只为建立工作区链接和装类型检查工具，服务器上可以用 `npm ci --omit=dev`。

@@ -162,11 +162,13 @@ export class EgressGateServer {
       check: checkUpstream(baseUrl, { allowLoopbackHttp: tls.allowLoopbackHttp, pins: pins ?? [], requirePins }),
       fetch: o.fetchImpl ?? upstreamFetch({ pins: pins ?? [], caPem: caPem ?? null }),
     });
+    // 中软云端私有 CA（偏离 D-212）只给网关与检索（中软上游）；自带密钥与律所私有端点不受影响
+    const cloudCa = u.cloudCaPem ?? undefined;
     this.transport = {
-      legal_gateway: mk(u.model?.baseUrl, u.model?.pins, tls.requirePins),
+      legal_gateway: mk(u.model?.baseUrl, u.model?.pins, tls.requirePins, cloudCa),
       byok_model: mk(u.byok?.baseUrl, undefined, false),
       private_model: mk(u.private?.baseUrl, undefined, false, u.private?.caPem),
-      search_service: mk(u.search?.baseUrl, u.search?.pins, tls.requirePins),
+      search_service: mk(u.search?.baseUrl, u.search?.pins, tls.requirePins, cloudCa),
     };
     this.server = createServer((req, res) => {
       void this.handle(req, res).catch((e: unknown) => {

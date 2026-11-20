@@ -1,0 +1,11 @@
+# 纯公网 IP 部署的证书续期（由 kwl-cert-renew.timer 每天触发两次）。到期过半才真续（lego 按证书寿命与 ARI 判断），
+# 续了才装证书并 reload 控制面、网关、检索与 nginx（热换，不断连接）。失败时本单元记为 failed：journalctl -u kwl-cert-renew
+# 安装：deploy/scripts/tls-ip.sh 在 acme / demo-ca 模式下自动装；手工：sudo install -m 0644 deploy/systemd/kwl-cert-renew.* /etc/systemd/system/
+[Unit]
+Description=Kimi Work 法律版云端：服务证书续期（纯公网 IP）
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /opt/kwl/app/deploy/scripts/tls-ip.sh renew

@@ -11,10 +11,13 @@ Type=simple
 User=kwl
 Group=kwl
 WorkingDirectory=/opt/kwl/app
-# 内部 CA 签的证书（签名服务、开发/演练环境）：网关、检索经 HTTPS 订阅控制面时要认这个 CA；全用公共 CA 证书时可删这一行
+# 内部 CA 签的证书（签名服务、开发/演练环境）：网关、检索经 HTTPS 订阅控制面时要认这个 CA；全用公共 CA 证书时可删这一行。
+# 纯公网 IP 的演示 CA 模式由 tls-ip.sh 写附加配置 /etc/systemd/system/kwl@.service.d/kwl-extra-ca.conf 改指向“内部 CA + 演示 CA”合并文件
 Environment=NODE_EXTRA_CA_CERTS=/etc/kwl/tls/internal-ca.crt
 Environment=NODE_ENV=production
 ExecStart=/usr/bin/node scripts/cloud-serve.mjs --config /etc/kwl/%i.json
+# 证书热换：systemctl reload kwl@<角色> 让进程重读 tls.cert_file / key_file（新连接用新证书，已有连接不断）；纯公网 IP 部署的证书续期钩子用它
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=always
 RestartSec=3
 # 网关收到 SIGTERM 会做最终用量回报（至多 5 秒）

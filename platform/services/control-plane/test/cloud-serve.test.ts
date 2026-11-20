@@ -10,6 +10,7 @@ import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request } from "node:https";
+import { connect as tlsConnect } from "node:tls";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -123,7 +124,7 @@ test("拒绝启动：缺 TLS、缺吊销订阅、缺真实上游密钥、角色�
 });
 
 test("按配置起控制面与检索服务（HTTPS）：检索服务取到签名吊销集后就绪；未带席位令牌的请求被拒", { skip: !haveOpenssl && "本机没有 openssl", timeout: 90_000 }, async () => {
-  const r = spawnSync("openssl", ["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", join(dir, "tls.key"), "-out", join(dir, "tls.crt"), "-days", "1", "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1"], { encoding: "utf8" });
+  const r = spawnSync("openssl", ["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", join(dir, "tls.key"), "-out", join(dir, "tls.crt"), "-days", "1", "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1,IP:203.0.113.7"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   const ca = readFileSync(join(dir, "tls.crt"), "utf8");
   const pem = (k: { privateKey: { export(o: object): string | Buffer } }) => String(k.privateKey.export({ format: "pem", type: "pkcs8" }));
@@ -186,6 +187,44 @@ test("按配置起控制面与检索服务（HTTPS）：检索服务取到签名
   const audKeys = write("seat-keys-aud.json", JSON.stringify({ "seat-test-t1": String(seat1.publicKey.export({ format: "pem", type: "spki" })), "seat-notify-test-t1": String(generateKeyPairSync("ed25519").publicKey.export({ format: "pem", type: "spki" })) }));
   assert.match(spawnSync(process.execPath, [script, "--config", cfgFile("search-audkey.json", { ...base, seat_keys_file: audKeys })], { encoding: "utf8", env: { ...process.env, NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") }, timeout: 30_000 }).stderr, /seat-notify-test-t1 是“notify”受众的席位公钥，search 不能信任它/);
   const search = await start(base, { NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") });
+  // 纯公网 IP 部署（control_plane.connect_address）：url 写“公网 IP”（203.0.113.7 是文档保留地址，本机连不到），TCP 连回环，
+  // 证书按 url 里的 IP 核对（本证书 SAN 含 IP:203.0.113.7）→ 取到吊销集、就绪；换成证书里没有的 IP 照样拒绝启动
+  const tlsIp = { cert_file: write("tls-ip.crt", readFileSync(join(dir, "tls.crt"), "utf8")), key_file: write("tls-ip.key", readFileSync(join(dir, "tls.key"), "utf8")) };
+  const viaIp = { ...base, tls: tlsIp, log_dir: join(dir, "search-obs-ip"), metrics: undefined, control_plane: { url: `https://203.0.113.7:${cp.port}`, keys_file: cpKeys, connect_address: "127.0.0.1" } };
+  const searchIp = await start(viaIp, { NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") });
+  assert.equal((await httpsCall(searchIp.port, "GET", "/readyz", ca)).status, 200);
+  // 证书热换（SIGHUP = systemctl reload）：换新证书后新连接拿到新证书；私钥与证书不配对时保留旧证书
+  const served = () =>
+    new Promise<string>((ok, no) => {
+      const s = tlsConnect({ host: "127.0.0.1", port: searchIp.port, rejectUnauthorized: false }, () => {
+        const fp = s.getPeerCertificate().fingerprint256;
+        s.destroy();
+        ok(fp);
+      });
+      s.on("error", no);
+    });
+  const waitOut = async (re: RegExp) => {
+    for (let k = 0; k < 100 && !re.test(searchIp.out()); k++) await new Promise((r) => setTimeout(r, 50));
+    assert.match(searchIp.out(), re);
+  };
+  const fp1 = await served();
+  const r2 = spawnSync("openssl", ["req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", join(dir, "tls-ip2.key"), "-out", join(dir, "tls-ip2.crt"), "-days", "2", "-subj", "/CN=renewed", "-addext", "subjectAltName=IP:127.0.0.1,IP:203.0.113.7"], { encoding: "utf8" });
+  assert.equal(r2.status, 0, r2.stderr);
+  write("tls-ip.crt", readFileSync(join(dir, "tls-ip2.crt"), "utf8"));
+  write("tls-ip.key", readFileSync(join(dir, "tls-ip2.key"), "utf8"));
+  searchIp.proc.kill("SIGHUP");
+  await waitOut(/已换用新证书/);
+  const fp2 = await served();
+  assert.notEqual(fp2, fp1, "SIGHUP 后新连接用新证书");
+  write("tls-ip.key", readFileSync(join(dir, "tls.key"), "utf8"));
+  searchIp.proc.kill("SIGHUP");
+  await waitOut(/证书热换失败，仍用旧证书/);
+  assert.equal(await served(), fp2, "私钥不配对：保留上一张证书");
+  assert.equal((await httpsCall(searchIp.port, "GET", "/healthz", ca)).status, 200, "热换失败不影响服务");
+  searchIp.proc.kill("SIGTERM");
+  const ipEnv = { encoding: "utf8" as const, env: { ...process.env, NODE_EXTRA_CA_CERTS: join(dir, "tls.crt") }, timeout: 30_000 };
+  assert.match(spawnSync(process.execPath, [script, "--config", cfgFile("search-ip-mismatch.json", { ...viaIp, control_plane: { ...viaIp.control_plane, url: `https://198.51.100.9:${cp.port}` } })], ipEnv).stderr, /首次取不到控制面吊销集/);
+  assert.match(spawnSync(process.execPath, [script, "--config", cfgFile("search-ip-name.json", { ...viaIp, control_plane: { ...viaIp.control_plane, connect_address: "localhost" } })], ipEnv).stderr, /connect_address 须为 IP 字面量/);
   const res = await httpsGet(search.port, `/search?q=${encodeURIComponent("张三借款")}`, ca);
   assert.equal(res.status, 401, res.body);
   // 健康检查由入口应答；指标在单独的监听上、要令牌

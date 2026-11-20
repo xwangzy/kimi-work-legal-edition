@@ -70,13 +70,18 @@ export function createObs(o) {
   const role = String(o.role);
   if (o.dir) mkdirSync(o.dir, { recursive: true, mode: 0o700 });
   const retentionDays = Number.isInteger(o.retentionDays) && o.retentionDays > 0 ? o.retentionDays : 190;
-  const certExpiry = (() => {
+  const expiryOf = (pem) => {
     try {
-      return o.certPem ? Date.parse(new X509Certificate(o.certPem).validTo) : null;
+      return pem ? Date.parse(new X509Certificate(pem).validTo) : null;
     } catch {
       return null;
     }
-  })();
+  };
+  let certExpiry = expiryOf(o.certPem);
+  /** 证书热换后（cloud-serve 收到 SIGHUP）更新“服务证书剩余有效期”指标 */
+  const setCertPem = (pem) => {
+    certExpiry = expiryOf(pem);
+  };
   const counts = new Map(); // "2xx" → n
   const hist = BUCKETS.map(() => 0);
   let histInf = 0;
@@ -244,5 +249,5 @@ export function createObs(o) {
     res.end(metricsText());
   };
 
-  return { wrap, probe, recordError, metricsText, metricsHandler, prune };
+  return { wrap, probe, recordError, metricsText, metricsHandler, prune, setCertPem };
 }

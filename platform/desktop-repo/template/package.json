@@ -1,0 +1,38 @@
+{
+  "name": "kimi-work-legal-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Kimi Work 法律行业发行版——桌面客户端（Windows EXE / macOS DMG）：本机法律内核、出站闸门、Agent 宿主与界面。云端地址、证书钉住与公钥只认构建时写入的 release.json。",
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/desktop"
+  ],
+  "scripts": {
+    "build:kernel": "node scripts/build-kernel.mjs",
+    "build:lawdb": "node content/lawdb/build-lawdb.mjs && node content/lawdb/build-increment-sample.mjs",
+    "build:agent-profile": "node content/agent-profile/build-profile.mjs",
+    "build:tool-manifest": "node content/tool-manifest/build-lock.mjs",
+    "build:skills": "node content/skills/build-skills.mjs",
+    "build:runtime": "node scripts/build-runtime.mjs",
+    "fetch:ocr-models": "node scripts/fetch-ocr-models.mjs",
+    "pretest": "npm run build:lawdb && npm run build:agent-profile && npm run build:tool-manifest && npm run build:skills",
+    "test": "node --test --test-concurrency=1 --test-reporter=spec \"packages/*/test/*.test.ts\" \"apps/desktop/test/*.test.ts\"",
+    "typecheck": "tsc -b tsconfig.check.json",
+    "dev:desktop": "cd apps/desktop && npm run dev",
+    "dev:web": "cd apps/desktop && npm run dev:web",
+    "release:config": "node scripts/make-release-config.mjs",
+    "endpoint:profile": "node scripts/endpoint-profile.mjs",
+    "package:win": "node scripts/package-desktop.mjs --target win32-x64",
+    "package:mac": "node scripts/package-desktop.mjs --target darwin-arm64",
+    "verify:source": "node scripts/verify-source.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "26.0.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

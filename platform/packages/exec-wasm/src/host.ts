@@ -10,13 +10,29 @@
  * - W 进程意外退出：在途调用一律以 killed 结束；下次调用重新拉起并重新自检；
  * - 内存：进程常驻内存上限 2 GB（总内存 ≤ 8 GB 的设备 1 GB），由 W 内看门狗执行。
  */
-import { fork, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptions, type StdioOptions } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { accessSync, constants as FS_CONST, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { totalmem } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExecChunk, ExecRequest, ExecResult, SelftestResult, SupervisorMessage } from "./protocol.ts";
+
+/**
+ * 以 IPC 通道拉起 Node 子进程——等价于 child_process.fork（偏离 D-215；与 packages/kernel/src/executor/child-env.ts 的 spawnNodeChild 同一实现，
+ * 本包不依赖内核所以各留一份）：安装包关闭了 Electron 的 runAsNode 熔断，Electron 44 在应用内一律拒绝 child_process.fork()，
+ * spawn + stdio 'ipc' 不受限制。用 Electron 自身当 Node 时照 fork 的做法带 ELECTRON_RUN_AS_NODE=1。
+ */
+function spawnNodeChild(entry: string, args: readonly string[], o: SpawnOptions & { execPath?: string; execArgv?: readonly string[] }): ChildProcess {
+  const { execPath = process.execPath, execArgv = [], ...rest } = o;
+  const stdio = (rest.stdio ?? ["pipe", "pipe", "pipe", "ipc"]) as StdioOptions;
+  if (!Array.isArray(stdio) || !stdio.includes("ipc")) throw new Error("spawnNodeChild 须带 IPC 通道（stdio 里的 'ipc'）");
+  const env: NodeJS.ProcessEnv = { ...(rest.env ?? process.env) };
+  if (execPath === process.execPath && (process.versions as { electron?: string }).electron) env.ELECTRON_RUN_AS_NODE = "1";
+  // windowsHide：从无控制台的桌面进程拉起随包 node.exe 不弹黑色控制台窗口（WR-2）
+  return spawn(execPath, [...execArgv, entry, ...args], { ...rest, env, stdio, windowsHide: true });
+}
+
 
 /** 父进程心跳间隔（复核 B4-A13；W 监督进程按 KWL_PARENT_HEARTBEAT_MS 判断宿主是否还在）。 */
 const HEARTBEAT_MS = 2_000;
@@ -186,7 +202,7 @@ export class WSupervisor {
     }
     // 父进程心跳（复核 B4-A13）：W 监督进程据此判断宿主是否还在（Windows 上 ppid 与 kill(pid,0) 判不了）
     env.KWL_PARENT_HEARTBEAT_MS = String(HEARTBEAT_MS);
-    const child = fork(
+    const child = spawnNodeChild(
       this.paths.supervisorPath,
       [this.paths.jbEntry, String(this.opts.maxConcurrent ?? 2), String(this.opts.rssLimitMb ?? defaultRssLimitMb()), String(this.opts.hardTimerGraceMs ?? 15_000)],
       {
