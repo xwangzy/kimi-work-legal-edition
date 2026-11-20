@@ -11,6 +11,7 @@ import { fileTypeLabel, type FileEntry } from "../lib/deliverables.ts";
 import { ARTIFACT_STATUS_LABELS, AUDIENCE_LABELS, fmtTime, fmtWhen } from "../lib/labels.ts";
 import { Icon } from "./Icons.tsx";
 import "../styles-deliverables.css";
+import "../styles-motion.css";
 
 const STATUS_TONE: Record<string, string> = { draft: "pill-gray", pending_review: "pill-orange", approved: "pill-green", rejected: "pill-red", superseded: "pill-gray" };
 
@@ -37,6 +38,11 @@ export function StatusPill({ r, withVersion = true }: { r: { status: string; ver
   );
 }
 
+/** 复核状态（第 51 批）：带色点的文字，放在对齐的状态列里（成果列表用；胶囊 StatusPill 仍用于别处）。 */
+export function StatusText({ status }: { status: string }) {
+  return <span className={`dl-state dl-state-${status}`}>{ARTIFACT_STATUS_LABELS[status] ?? status}</span>;
+}
+
 /** 行首的文件类型（Word / Excel / 文本）：执行页完成区用的文字标签。 */
 export function FileTypeTag({ filename }: { filename: string }) {
   const t = fileTypeLabel(filename);
@@ -55,12 +61,13 @@ export function FileTypeIcon({ filename }: { filename: string }) {
 }
 
 /** 下载按钮：图标按钮，提示文字按下载下来的文件类型（Markdown 文本下载时转成 Word，见 download.ts）。 */
-function DownloadButton({ r, onDownload }: { r: ListRow; onDownload: (r: ListRow) => void }) {
+function DownloadButton({ r, onDownload, busy = false }: { r: ListRow; onDownload: (r: ListRow) => void; busy?: boolean }) {
   const plan = downloadPlan(r.filename);
   const title = /\.(md|markdown)$/i.test(r.filename) ? `${plan.label}（这份是文本，下载时转成 Word）` : plan.label;
+  // 下载要先还原代号、再写下载留痕：进行中换成小圆环并禁用，防止连点存出多份、记多条（第 51 批）
   return (
-    <button className="icon-btn dl-dl" title={title} aria-label={`${plan.label}：${r.display}`} onClick={() => onDownload(r)}>
-      {Icon.download()}
+    <button className="icon-btn dl-dl" title={busy ? "正在下载…" : title} aria-label={`${plan.label}：${r.display}`} aria-busy={busy} disabled={busy} onClick={() => onDownload(r)}>
+      {busy ? <span className="kwl-spin" aria-hidden="true" /> : Icon.download()}
     </button>
   );
 }
@@ -78,23 +85,28 @@ const openOnKey = (fn: () => void) => (e: KeyboardEvent) => {
  * 第 49 批：改为单行——左边类型方块 + 名称（同族文件的共同前缀淡化、差异加粗，见 nameParts）+ 状态；右边“第 N 版”（有旧版时可展开）、
  * 给谁、时间、悬停出现的“提交复核”、下载。原来的第二行说明与“版本记录（n）”合并进“第 N 版”，一份文件只占一行。
  */
-export function FileRows<T extends ListRow>({ entry, showStatus, onOpen, onDownload, onSubmit, busyId, parts }: { entry: FileEntry<T>; showStatus: boolean; onOpen: (r: T) => void; onDownload: (r: ListRow) => void; onSubmit?: (r: T) => void; busyId?: string | null; parts?: { head: string; tail: string } | undefined }) {
+export function FileRows<T extends ListRow>({ entry, showStatus, onOpen, onDownload, onSubmit, busyId, downloadingId, parts, primary = false }: { entry: FileEntry<T>; showStatus: boolean; onOpen: (r: T) => void; onDownload: (r: ListRow) => void; onSubmit?: (r: T) => void; busyId?: string | null; downloadingId?: string | null; parts?: { head: string; tail: string } | undefined; primary?: boolean }) {
   const [open, setOpen] = useState(false);
   const r = entry.latest;
   const head = parts?.head ?? "";
   const tail = parts ? parts.tail : r.display;
   return (
     <>
-      <div className="dl-row" role="listitem" tabIndex={0} title={r.filename} onClick={() => onOpen(r)} onKeyDown={openOnKey(() => onOpen(r))}>
+      <div className={`dl-row${primary ? " is-primary" : ""}`} role="listitem" tabIndex={0} title={r.filename} onClick={() => onOpen(r)} onKeyDown={openOnKey(() => onOpen(r))}>
         <FileTypeIcon filename={r.filename} />
         <div className="dl-row-main">
           <span className="dl-row-title">
             {head && <span className="dl-name-head">{head}</span>}
             {tail}
           </span>
-          {showStatus && <StatusPill r={r} withVersion={false} />}
           {entry.replaced && <span className="dl-row-note">后面的任务里有更新的版本</span>}
         </div>
+        {/* 状态列（第 51 批）：按流程某一段筛选时整列省掉（都一样），“全部”与事项页里显示 */}
+        {showStatus && (
+          <span className="dl-row-state">
+            <StatusText status={r.status} />
+          </span>
+        )}
         <div className="dl-row-side" onClick={(e) => e.stopPropagation()}>
           {entry.older.length > 0 ? (
             <button className="dl-ver" aria-expanded={open} title={`展开旧版本（${entry.older.length}）`} onClick={() => setOpen((v) => !v)}>
@@ -107,9 +119,18 @@ export function FileRows<T extends ListRow>({ entry, showStatus, onOpen, onDownl
           {r.audience && r.audience !== "internal" && <span className="dl-aud">给{AUDIENCE_LABELS[r.audience] ?? r.audience}</span>}
           <span className="dl-when" title={fmtTime(r.created_at)}>{fmtWhen(r.created_at)}</span>
           {onSubmit && r.status === "draft" && !entry.replaced && (
-            <button className="btn-ghost btn-sm dl-hover-action" disabled={busyId === r.artifact_version_id} onClick={() => onSubmit(r)}>提交复核</button>
+            <button className="btn-ghost btn-sm dl-hover-action" disabled={busyId === r.artifact_version_id} aria-busy={busyId === r.artifact_version_id} onClick={() => onSubmit(r)}>
+              {busyId === r.artifact_version_id ? (
+                <span className="btn-busy">
+                  <span className="kwl-spin" aria-hidden="true" />
+                  正在提交…
+                </span>
+              ) : (
+                "提交复核"
+              )}
+            </button>
           )}
-          <DownloadButton r={r} onDownload={onDownload} />
+          <DownloadButton r={r} onDownload={onDownload} busy={downloadingId === r.artifact_version_id} />
         </div>
       </div>
       {open &&
@@ -123,7 +144,7 @@ export function FileRows<T extends ListRow>({ entry, showStatus, onOpen, onDownl
             </div>
             <div className="dl-row-side">
               <span className="dl-when" title={fmtTime(o.created_at)}>{fmtWhen(o.created_at)}</span>
-              <DownloadButton r={o} onDownload={onDownload} />
+              <DownloadButton r={o} onDownload={onDownload} busy={downloadingId === o.artifact_version_id} />
             </div>
           </div>
         ))}

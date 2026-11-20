@@ -37,6 +37,8 @@ export function Composer(props: {
   onImport: (files: FileList | MaterialFile[]) => void;
   onSubmit: () => void;
   busy?: boolean;
+  /** 忙时“不能发送”的原因（第 51 批）：导入材料时写“正在导入材料…”，不再一律写“正在发起…”。 */
+  busyText?: string;
   placeholder?: string;
   /** 打开时把光标放进输入框（事项页点“发起任务”后展开）。 */
   autoFocus?: boolean;
@@ -71,7 +73,7 @@ export function Composer(props: {
   }, [menu]);
   const matter = props.matters?.find((m) => m.matter_id === props.matterId) ?? null;
   const canSend = !props.busy && !!props.matterId && (value.goal.trim().length > 0 || value.scenario !== "a1.agent_task");
-  const blockedReason = props.busy ? "正在发起…" : !props.matterId ? "先选事项" : "先写任务目标";
+  const blockedReason = props.busy ? (props.busyText ?? "正在发起…") : !props.matterId ? "先选事项" : "先写任务目标";
   return (
     <div className="composer-shell" ref={boxRef} data-tour="composer">
       {props.notice && <div className="composer-notice">{props.notice}</div>}

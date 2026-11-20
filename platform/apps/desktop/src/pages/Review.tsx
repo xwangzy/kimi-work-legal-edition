@@ -9,6 +9,12 @@ import { blankPagesText, partialPagesText } from "../lib/citation-review.ts";
 import { citationChecklist, citationNeeds, citationsAllowSign, factMarksSummary, previewCites, previewFactMarks, type ArtifactCitations, type CitationTicks, type FactMarkView } from "../lib/citation-review.ts";
 import { CitationClaims } from "../components/CitationClaims.tsx";
 import { Breadcrumb } from "../components/Breadcrumb.tsx";
+import { BusyLabel, ListSkeleton, LoadError, WaitBlock } from "../components/Loading.tsx";
+
+/** 正在进行的文件动作（第 51 批）：只让点下的那个按钮显示圆环，其余文件按钮一起禁用，防止连点出多份文件、多条下载留痕。 */
+type FileAction = "download" | "pdf" | "office" | "revise";
+/** 签发区的动作：签发、退回、提交复核各自显示“正在…”。 */
+type SignAction = "approved" | "rejected" | "submit";
 
 /** 成果状态 → 律师称呼。 */
 const STATUS_TEXT: Record<string, string> = {
@@ -67,7 +73,9 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState("");
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [signing, setSigning] = useState<SignAction | null>(null);
+  const busy = signing !== null;
+  const [fileDoing, setFileDoing] = useState<FileAction | null>(null);
   const [ack, setAck] = useState(false);
   // 材料缺口已告知客户（Astra M-2）：有没读到的材料时，签发须勾选，写进签发留痕
   const [gapsAck, setGapsAck] = useState(false);
@@ -84,8 +92,17 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   const [saveName, setSaveName] = useState<string | null>(null);
 
   const reload = useCallback(() => {
+    setErr("");
     api.completeness(artifactId).then(setData).catch((e) => setErr(e.message));
   }, [artifactId]);
+  /** 文件动作统一走这里：同一时间只跑一个，结束（成功、取消保存或失败）后恢复按钮。 */
+  const runFile = (k: FileAction, job: () => Promise<unknown>) => {
+    if (fileDoing) return;
+    setFileDoing(k);
+    void job()
+      .catch((e) => setErr((e as Error).message))
+      .finally(() => setFileDoing(null));
+  };
   useEffect(reload, [reload]);
   useEffect(() => {
     if (!data?.matter_id) return;
@@ -102,46 +119,43 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
       .catch(() => {});
   }, [data?.artifact_version_id, data?.matter_id]);
   const download = () =>
-    void api
-      .downloadArtifact(data.artifact_version_id, saveName ?? data.filename)
-      .then((saved) => {
+    runFile("download", () =>
+      api.downloadArtifact(data.artifact_version_id, saveName ?? data.filename).then((saved) => {
         if (!saved) return;
         setNote("已保存（真实名称已还原）。下载已留痕。");
         return api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" });
-      })
-      .catch((e) => setErr(e.message));
+      }),
+    );
   // 导出 PDF（第 29 批）：与“下载 Word”同一份文件；修订稿不导出（用清洁稿）
   const exportPdf = () =>
-    void api
-      .exportArtifactPdf(data.artifact_version_id)
-      .then((r) => {
+    runFile("pdf", () =>
+      api.exportArtifactPdf(data.artifact_version_id).then((r) => {
         if (!r) return;
         setNote(window.zrKernel?.exportPdf ? `已导出《${r.name ?? "PDF"}》（真实名称已还原）${r.opened ? "并打开" : ""}。下载已留痕。` : "已打开打印页：在打印对话框里选“存储为 PDF”。");
         return api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" });
-      })
-      .catch((e) => setErr(e.message));
+      }),
+    );
   // 在 Word / WPS 中打开（v9.4 第 21 批）：存到你选的位置后用系统默认程序打开那一份；给了一句话就复制到剪贴板，Ctrl+F 粘贴即可定位
   const openInOffice = (find?: string) =>
-    void api
-      .openArtifactInOffice(data.artifact_version_id, saveName ?? data.filename, find ? restoredPlain(find, tokenMap) : undefined)
-      .then((r) => {
+    runFile("office", () =>
+      api.openArtifactInOffice(data.artifact_version_id, saveName ?? data.filename, find ? restoredPlain(find, tokenMap) : undefined).then((r) => {
         if (!r.saved) return;
         const where = r.copied ? "那句话已复制，在 Word 里按 Ctrl+F（Mac 为 ⌘F）粘贴即可找到。" : "";
         setNote(r.opened ? `已保存并打开（真实名称已还原）。${where}下载已留痕。` : `已保存（真实名称已还原），请在保存的位置用 Word 打开。${where}下载已留痕。`);
         return api.deliver({ artifact_version_id: data.artifact_version_id, action: "download" });
-      })
-      .catch((e) => setErr(e.message));
+      }),
+    );
   // 多轮修订（V14 第 39 批）：把这份 Word 成果作为新材料，再在“按你的意见修改文书”里选它继续改（原件与成果都不变）
   const reviseFurther = () =>
-    void api
-      .artifactToMaterial(data.artifact_version_id)
-      .then((r) => {
+    runFile("revise", () =>
+      api.artifactToMaterial(data.artifact_version_id).then((r) => {
         setNote(`已把《${r.filename.replace(/\.docx$/i, "")}》作为新材料加入本事项，正在打开“按你的意见修改文书”。`);
         nav(`/start/doc-revise/${data.matter_id}`);
-      })
-      .catch((e) => setErr(e.message));
+      }),
+    );
   const submitForReview = async () => {
-    setBusy(true);
+    if (signing) return;
+    setSigning("submit");
     setErr("");
     try {
       await api.submitReview(data.artifact_version_id);
@@ -149,13 +163,16 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
     } catch (e) {
       setErr((e as Error).message);
     } finally {
-      setBusy(false);
+      setSigning(null);
     }
   };
 
   // 预览：Office 成果由内核渲染为白名单 HTML；文本成果取令牌形态原文；代号只在本机界面还原显示
+  // 预览开始载入的时刻：大 docx 渲染要几秒，等待块据此给已用时间（第 51 批）
+  const [previewSince, setPreviewSince] = useState<number | null>(null);
   useEffect(() => {
     if (!data) return;
+    setPreviewSince(Date.now());
     const office = /\.(docx|xlsx)$/i.test(data.filename);
     const load = office
       ? api.artifactHtml(artifactId).then((r) => r.html)
@@ -221,7 +238,8 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   const [cticks, setCticks] = useState<CitationTicks>({ cases: false, outside: false, unchecked: false, timing: false });
   const act = useCallback(
     async (decision: "approved" | "rejected") => {
-      setBusy(true);
+      if (signing) return;
+      setSigning(decision);
       setErr("");
       try {
         await api.approve(artifactId, {
@@ -246,10 +264,10 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
       } catch (e) {
         setErr((e as Error).message);
       } finally {
-        setBusy(false);
+        setSigning(null);
       }
     },
-    [artifactId, data, ack, checked, items.length, reload, cneeds, cticks, gapsAck, outlineOpen, outlineReason, placeholders.total, placeholdersAck],
+    [signing, artifactId, data, ack, checked, items.length, reload, cneeds, cticks, gapsAck, outlineOpen, outlineReason, placeholders.total, placeholdersAck],
   );
 
   const latest = !!data?.is_latest_version;
@@ -270,23 +288,23 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
               </button>
             )}
             {data && (
-              <button className="btn-ghost" onClick={download}>
-                {downloadPlan(data.filename).label}
+              <button className="btn-ghost" disabled={fileDoing !== null} aria-busy={fileDoing === "download"} onClick={download}>
+                <BusyLabel busy={fileDoing === "download"} busyText="正在保存…">{downloadPlan(data.filename).label}</BusyLabel>
               </button>
             )}
             {data && /\.docx$/i.test(data.filename) && data.kind !== "revision_draft" && (
-              <button className="btn-ghost" onClick={exportPdf} title="与“下载 Word”同一份文件，排版后存成 PDF（修订稿请用清洁稿导出）">
-                导出 PDF
+              <button className="btn-ghost" disabled={fileDoing !== null} aria-busy={fileDoing === "pdf"} onClick={exportPdf} title="与“下载 Word”同一份文件，排版后存成 PDF（修订稿请用清洁稿导出）">
+                <BusyLabel busy={fileDoing === "pdf"} busyText="正在导出…">导出 PDF</BusyLabel>
               </button>
             )}
             {data && /\.docx$/i.test(data.filename) && (
-              <button className="btn-ghost" onClick={reviseFurther} title="把这份 Word 作为新材料加入本事项，在它上面按你的意见继续修改（下一轮修订痕迹以它为底稿；原件与这份成果都不变）">
-                作为底稿继续修改
+              <button className="btn-ghost" disabled={fileDoing !== null} aria-busy={fileDoing === "revise"} onClick={reviseFurther} title="把这份 Word 作为新材料加入本事项，在它上面按你的意见继续修改（下一轮修订痕迹以它为底稿；原件与这份成果都不变）">
+                <BusyLabel busy={fileDoing === "revise"} busyText="正在加入材料…">作为底稿继续修改</BusyLabel>
               </button>
             )}
             {data && /\.(docx|xlsx)$/i.test(data.filename) && (
-              <button className="btn-ghost" onClick={() => openInOffice()} title="保存到你选的位置，再用 Word / WPS 打开那一份">
-                在 {/\.xlsx$/i.test(data.filename) ? "Excel" : "Word"} 中打开
+              <button className="btn-ghost" disabled={fileDoing !== null} aria-busy={fileDoing === "office"} onClick={() => openInOffice()} title="保存到你选的位置，再用 Word / WPS 打开那一份">
+                <BusyLabel busy={fileDoing === "office"} busyText="正在打开…">在 {/\.xlsx$/i.test(data.filename) ? "Excel" : "Word"} 中打开</BusyLabel>
               </button>
             )}
           </span>
@@ -296,12 +314,24 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
             {STATUS_TEXT[data.status] ?? "状态未知"} · 第 {data.version} 版{draft ? " · 提交复核后才能签发" : ""}
           </p>
         )}
-        {err && <div className="banner banner-red">{err}</div>}
+        {err && !data && <LoadError what="这份成果" message={err} onRetry={reload} />}
+        {err && data && <div className="banner banner-red">{err}</div>}
+        {/* 首屏占位（第 51 批）：左预览、右检查两栏的骨架，数据回来前保持最终版式，不只剩一个“…” */}
+        {!data && !err && (
+          <div className="review-cols">
+            <section className="review-preview" aria-label="成果预览">
+              <ListSkeleton rows={6} label="正在载入成果" />
+            </section>
+            <aside className="review-checks" aria-hidden="true">
+              <ListSkeleton rows={5} label="正在载入签发前检查" />
+            </aside>
+          </div>
+        )}
         {data && (
           <div className="review-cols">
             <section className="review-preview" aria-label="成果预览">
               {preview === null ? (
-                <div className="muted">正在加载预览…</div>
+                <WaitBlock variant="inline" title="正在载入预览…" since={previewSince} longHint="文件较大时排版要多等一会儿；也可以先下载后在 Word 里打开。" />
               ) : preview.text ? (
                 <SafePreview filename={data.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} {...(cites ? { cites } : {})} />
               ) : (
@@ -506,21 +536,21 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                 我已实质复核全部内容{openItems.length > 0 ? "与需要确认的事项" : ""}（点选不等于复核，系统会记录这次确认）
               </label>
               <div className="review-actions">
-                <button className="btn-ghost" disabled={busy || !pending} onClick={() => void act("rejected")}>
-                  退回
+                <button className="btn-ghost" disabled={busy || !pending} aria-busy={signing === "rejected"} onClick={() => void act("rejected")}>
+                  <BusyLabel busy={signing === "rejected"} busyText="正在退回…">退回</BusyLabel>
                 </button>
                 {draft ? (
-                  <button className="btn-primary" disabled={busy || !latest} onClick={() => void submitForReview()}>
-                    提交复核
+                  <button className="btn-primary" disabled={busy || !latest} aria-busy={signing === "submit"} onClick={() => void submitForReview()}>
+                    <BusyLabel busy={signing === "submit"} busyText="正在提交…">提交复核</BusyLabel>
                   </button>
                 ) : (
-                  <button className="btn-primary" disabled={busy || !pending || !ack || !latest || !citationsAllowSign(cneeds, cticks) || (gaps > 0 && !gapsAck) || (placeholders.total > 0 && !placeholdersAck) || (outlineOpen && [...outlineReason.replace(/\s+/g, " ").trim()].length < 4)} onClick={() => void act("approved")}>
-                    确认签发
+                  <button className="btn-primary" disabled={busy || !pending || !ack || !latest || !citationsAllowSign(cneeds, cticks) || (gaps > 0 && !gapsAck) || (placeholders.total > 0 && !placeholdersAck) || (outlineOpen && [...outlineReason.replace(/\s+/g, " ").trim()].length < 4)} aria-busy={signing === "approved"} onClick={() => void act("approved")}>
+                    <BusyLabel busy={signing === "approved"} busyText="正在签发…">确认签发</BusyLabel>
                   </button>
                 )}
                 <span className="spacer" />
-                <button className="btn-ghost" onClick={download} title="下载会记入事项记录">
-                  下载
+                <button className="btn-ghost" disabled={fileDoing !== null} aria-busy={fileDoing === "download"} onClick={download} title="下载会记入事项记录">
+                  <BusyLabel busy={fileDoing === "download"} busyText="正在保存…">下载</BusyLabel>
                 </button>
               </div>
               {/* 复核人署名（Astra M-2）：签发前显示本人，签发后显示签发人与时刻；复核完成不代表合同已签署或建议必然适用 */}

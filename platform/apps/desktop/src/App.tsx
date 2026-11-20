@@ -30,6 +30,9 @@ import { fmtDate } from "./lib/labels.ts";
 import { GuideTour } from "./components/GuideTour.tsx";
 import { guideSeenKey, markGuideSeen } from "./lib/guide-steps.ts";
 import { newTaskHref } from "./lib/nav-target.ts";
+import { useElapsed, WaitBlock } from "./components/Loading.tsx";
+import { BrandLockup } from "./components/Brand.tsx";
+import { waitLevel } from "./lib/waiting.ts";
 
 /** 再看一遍上手指南（设置 · 通用里的按钮发这个事件）。 */
 export const OPEN_GUIDE = "kwl:guide";
@@ -137,6 +140,23 @@ export function parseHash(hash: string): Route {
   }
 }
 
+/**
+ * 冷启动等待（第 51 批）：Kimi 蓝点 + “正在启动…” + 已用时间。原来只有一行静态字“第一次打开需要十几秒”，
+ * 等过了十几秒文案不变，像是卡住了；超过 30 秒改说“比平时慢、请不要关闭”，并说明启动不起来时这里会给“重试”（lib/boot-gate.ts 退避约两分钟后判失败）。
+ */
+function BootWait({ since }: { since: number }) {
+  const long = waitLevel(useElapsed(since)) === "long";
+  return (
+    <WaitBlock
+      variant="page"
+      title="正在启动…"
+      since={since}
+      {...(long ? {} : { hint: "第一次打开需要十几秒。" })}
+      longHint="这次启动比平时慢，请不要关闭应用；一直启动不起来时，这里会给出“重试”。"
+    />
+  );
+}
+
 export function nav(path: string): void {
   window.location.hash = path;
 }
@@ -147,8 +167,11 @@ export function App() {
   const [boot, setBoot] = useState<{ onboarding: any; restoredAt?: string | null; login?: { reason: string | null; email: string } | null; firm?: string | null; user?: string | null } | null>(null);
   // 取不到状态时不当作“已激活”（复核 B13-K01）：首次启动内核较慢，按退避重试（lib/boot-gate.ts）；约两分钟仍取不到才给出说明与“重试”
   const [bootFailed, setBootFailed] = useState(false);
+  // 启动等待从何时算起（第 51 批：冷启动显示真实已用时间）；点“重试”重新计时
+  const [bootSince, setBootSince] = useState(() => Date.now());
   const loadBoot = () => {
     setBootFailed(false);
+    setBootSince(Date.now());
     let attempt = 0;
     const tryOnce = () =>
       void api
@@ -334,11 +357,19 @@ export function App() {
     return (
       <div className="activate" aria-busy={!bootFailed}>
         <div className="activate-card">
+          {/* 第 51 批：启动页也是第一眼——与登录页同一品牌组合 */}
+          <div className="brand">
+            <BrandLockup />
+          </div>
           {/* 主进程的“后台服务已停止”在启动占位页也看得到（复核 R2B-25） */}
           {kernelNotice?.status === "stopped" && <p className="activate-error" role="alert">{kernelNotice.message}</p>}
-          <p className="muted" role="status">
-            {bootFailed ? "后台服务没有启动起来。可以点“重试”；仍不行请重新打开应用，或联系所内 IT 与客服。" : "正在启动…第一次打开需要十几秒。"}
-          </p>
+          {bootFailed ? (
+            <p className="muted" role="status">
+              后台服务没有启动起来。可以点“重试”；仍不行请重新打开应用，或联系所内 IT 与客服。
+            </p>
+          ) : (
+            <BootWait since={bootSince} />
+          )}
           {bootFailed && (
             <button className="btn-primary" onClick={loadBoot}>
               重试

@@ -22,6 +22,8 @@ export interface TaskGroupRow {
   run_scenario?: string | null;
   run_skill?: string | null;
   run_created_at?: string | null;
+  /** 这次任务的主交付物文件名（内核从任务快照取 skill_primary_output；第 51 批）。 */
+  run_primary?: string | null;
   created_at: string;
 }
 
@@ -29,8 +31,8 @@ export interface TaskGroupRow {
  * 一个事项里的交付件再按“一次任务”分组（Astra M-3）：同一任务生成的修订稿、意见书、清单成组列出；组按其中最新一份的先后排列，
  * 组名由调用方给（场景卡名称 + 开始时刻）。没有所属任务的（工作台直接生成、示例事项、手工登记）归入一组 run_id = null。纯函数。
  */
-export function groupByTask<T extends TaskGroupRow>(rows: T[]): { run_id: string | null; scenario: string | null; skill: string | null; started_at: string | null; rows: T[] }[] {
-  const out: { run_id: string | null; scenario: string | null; skill: string | null; started_at: string | null; rows: T[] }[] = [];
+export function groupByTask<T extends TaskGroupRow>(rows: T[]): { run_id: string | null; scenario: string | null; skill: string | null; started_at: string | null; primary_output: string | null; rows: T[] }[] {
+  const out: { run_id: string | null; scenario: string | null; skill: string | null; started_at: string | null; primary_output: string | null; rows: T[] }[] = [];
   const at = new Map<string, number>();
   for (const r of rows) {
     const k = r.run_id ?? "";
@@ -38,7 +40,7 @@ export function groupByTask<T extends TaskGroupRow>(rows: T[]): { run_id: string
     if (i === undefined) {
       i = out.length;
       at.set(k, i);
-      out.push({ run_id: r.run_id ?? null, scenario: r.run_scenario ?? null, skill: r.run_skill ?? null, started_at: r.run_created_at ?? null, rows: [] });
+      out.push({ run_id: r.run_id ?? null, scenario: r.run_scenario ?? null, skill: r.run_skill ?? null, started_at: r.run_created_at ?? null, primary_output: r.run_primary ?? null, rows: [] });
     }
     out[i]!.rows.push(r);
   }
@@ -53,10 +55,10 @@ export function taskGroupLabel(g: { run_id: string | null; scenario: string | nu
   return g.started_at ? `${name} · ${fmt(g.started_at)}` : name;
 }
 
-/** 任务组的主交付物（场景卡定义的文件名）；取不到返回 null，排序时按 文书 → 表格。 */
-export function taskPrimary(g: { run_id: string | null; scenario: string | null; skill: string | null }): string | null {
+/** 任务组的主交付物：任务快照里的 skill_primary_output 优先（与执行页同一来源，第 51 批），其次场景卡定义的文件名；取不到返回 null，排序时按 文书 → 表格。 */
+export function taskPrimary(g: { run_id: string | null; scenario: string | null; skill: string | null; primary_output?: string | null }): string | null {
   if (!g.run_id) return null;
-  return scenarioOfRun({ scenario: g.scenario, input_snapshot: { skill: g.skill } })?.primary ?? null;
+  return g.primary_output || (scenarioOfRun({ scenario: g.scenario, input_snapshot: { skill: g.skill } })?.primary ?? null);
 }
 
 /** 组头的份数：筛选后只显示一部分时写“本次 N 份，此处显示 M 份”（复核 RB16B-11）。 */
@@ -222,18 +224,42 @@ export function deliveryPackage<T extends PackageRow>(rows: readonly T[]): { rea
   return { ready, held };
 }
 
-/* ── 第 49 批：成果页“待处理 / 已签发 / 全部”、名称差异强调、页首摘要 ── */
+/* ── 第 51 批：成果页按“复核流程”筛选（草稿 → 待复核 → 已签发）、页首摘要 ── */
 
-/** 成果页的筛选（第 49 批）：律师的工作清单是“待处理”（草稿、待复核、退回），已签发是归档。 */
-export type DeliverableFilter = "todo" | "approved" | "all";
-/** 算“待处理”的状态：草稿（还没复核）、待复核（等人签发）、退回（要改）。 */
+/**
+ * 成果页的筛选（第 51 批，取代第 49 批的“待处理 / 已签发 / 全部”）：直接按复核流程的阶段分——
+ * AI 生成的草稿 → 提交后待复核 → 签发后可以对外；被退回的单列（只有出现时才显示）。页首的流程条就是筛选器，
+ * 律师一眼看到每个阶段压着几份、点哪段看哪段。“全部”另给一个入口。
+ */
+export type DeliverableFilter = "draft" | "pending_review" | "rejected" | "approved" | "all";
+
+/** 流程条的各段（顺序即复核流程；退回只在有退回的文件时出现）。 */
+export const REVIEW_STAGES: readonly { key: Exclude<DeliverableFilter, "all">; label: string; note: string }[] = [
+  { key: "draft", label: "草稿", note: "AI 生成，还没复核" },
+  { key: "pending_review", label: "待复核", note: "已提交，等签发" },
+  { key: "approved", label: "已签发", note: "可以对外" },
+  { key: "rejected", label: "已退回", note: "要修改后再提交" },
+];
+
+/** 算“等你处理”的状态：草稿（还没复核）、待复核（等人签发）、退回（要改）。 */
 export const TODO_STATUSES: ReadonlySet<string> = new Set(["draft", "pending_review", "rejected"]);
 
-/** 一份文件是否落在这个筛选里（按最新版状态；被后面任务取代的不算）。 */
+/** 一份文件是否落在这个筛选里（按最新版状态；被后面任务取代的不算，由调用方先排除）。 */
 export function inFilter(status: string, f: DeliverableFilter): boolean {
-  if (f === "all") return true;
-  if (f === "approved") return status === "approved";
-  return TODO_STATUSES.has(status);
+  return f === "all" || status === f;
+}
+
+/** 律师没点过筛选时停在哪一段：先是只差签发的（待复核），再是还没复核的草稿、被退回的；都没有就看全部。纯函数。 */
+export function defaultFilter(n: { pending_review: number; draft: number; rejected: number }): DeliverableFilter {
+  if (n.pending_review > 0) return "pending_review";
+  if (n.draft > 0) return "draft";
+  if (n.rejected > 0) return "rejected";
+  return "all";
+}
+
+/** 流程条显示哪几段：草稿、待复核、已签发三段常显（0 也显示，流程本身就是信息）；退回只在有时出现。 */
+export function visibleStages(n: { rejected: number }): typeof REVIEW_STAGES {
+  return REVIEW_STAGES.filter((s) => s.key !== "rejected" || n.rejected > 0);
 }
 
 /**

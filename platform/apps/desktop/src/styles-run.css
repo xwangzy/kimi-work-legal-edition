@@ -1,0 +1,110 @@
+/* 任务执行页（第 51 批精修）：时间线、过程面板、正在起草。后加载，覆盖 styles.css 里的同名规则；只用语义令牌。
+   设计取向：像“助手在汇报进展”，而不是日志列表——
+   · 时间线不再是一条贯穿全高的灰竖线 + 一串绿圈：每一步只在节点之间画短连线（节点上下各留 2px 空隙），做完的节点是浅灰底小勾（退后），
+     正在做的是 Kimi 蓝点呼吸（向前），等你确认的是橙色圈，失败是红色叉——同一种语言表达“现在轮到谁”；
+   · 标题与时间同一行，说明另起一行；处理细节层字更小更浅；
+   · 工作清单、进展说明、正在起草放在同一种浅底面板里，去掉左侧竖条和描边，靠留白分组；
+   · 新出现的步骤与面板轻轻浮起（kwl-rise），节点颜色 200ms 过渡；减少动效时全部静止。 */
+
+/* ── 时间线 ── */
+.timeline { margin: var(--sp-4) 0 0; padding: 0; border-left: 0; display: flex; flex-direction: column; }
+.timeline > .step, .timeline > .step-group { position: relative; }
+.timeline .step { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: var(--sp-3); padding: 6px 0; gap: 0 var(--sp-3); }
+.timeline > .step { animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }
+/* 节点之间的短连线：上半段（本步顶到节点上缘）+ 下半段（节点下缘到本步底），首尾各去掉一段 */
+.timeline > .step::before, .timeline > .step::after, .timeline > .step-group::before, .timeline > .step-group::after { content: ""; position: absolute; left: 9px; width: 1.5px; border-radius: var(--r-full); background: var(--border-subtle); }
+.timeline > .step::before, .timeline > .step-group::before { top: 0; height: 6px; }
+.timeline > .step::after, .timeline > .step-group::after { top: 28px; bottom: 0; }
+.timeline > :first-child::before { display: none; }
+.timeline > .step:last-child::after, .timeline > .step-group:last-child::after, .timeline > .step:has(+ .step-toggle)::after, .timeline > .step-group:has(+ .step-toggle)::after { display: none; }
+
+.step-dot { width: 18px; height: 18px; margin: 2px 0 0 1px; flex: none; border-radius: var(--r-full); display: grid; place-items: center; background: var(--bg-surface); border: 1.5px solid var(--border-default); color: var(--text-label); transition: background-color var(--motion-base) ease, border-color var(--motion-base) ease, color var(--motion-base) ease; }
+.step-dot svg { width: 10px; height: 10px; stroke-width: 2.6; }
+/* 做完：浅灰底小勾，退到背景里 */
+.step-ok > .step-dot, .step-ok > summary > .step-dot { border-color: transparent; background: var(--bg-muted); color: var(--text-label); }
+/* 失败：红底叉 */
+.step-fail > .step-dot, .step-fail > summary > .step-dot { border-color: transparent; background: var(--status-danger-bg); color: var(--status-danger-text); }
+/* 等待中的一般步骤：浅蓝圈 */
+.step-wait > .step-dot, .step-wait > summary > .step-dot { border-color: var(--accent-border); background: var(--accent-bg); }
+/* 正在做：Kimi 蓝点呼吸 */
+.step-active > .step-dot { border-color: transparent; background: var(--accent-bg); }
+.step-active > .step-dot .kwl-pulse { width: 7px; height: 7px; }
+/* 等你确认：橙色圈 + 实心点 */
+.step-you > .step-dot { border-color: var(--status-warning-solid); background: var(--status-warning-bg); }
+.step-you > .step-dot::after { content: ""; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-warning-solid); }
+.step-you .step-title { color: var(--text-primary); font-weight: 500; }
+.step-you-hint, .step-you:not(:has(.step-you-hint)) .step-title { color: var(--status-warning-text); }
+.step-you-hint { flex: none; font-size: var(--fs-xs); font-weight: 500; }
+/* 排队：虚线圈 */
+.step-queued > .step-dot { border-style: dashed; border-color: var(--border-hover); }
+
+.step-body { min-width: 0; }
+.step-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px var(--sp-2); min-width: 0; }
+.step-title { font-size: var(--fs-base); line-height: 1.6; color: var(--text-primary); overflow-wrap: anywhere; }
+.step-meta { flex: none; font-size: var(--fs-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.step-detail { margin-top: 2px; font-size: var(--fs-caption); line-height: 1.6; color: var(--text-label); }
+.step-active .step-title { color: var(--text-primary); }
+.step-queued .step-title { color: var(--text-secondary); }
+.step-elapsed { margin-left: auto; flex: none; font-size: var(--fs-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.step-retry .step-title { color: var(--status-warning-strong); }
+/* 处理细节层：小一号、浅一级 */
+.step-detail-level .step-title { font-size: var(--fs-caption); color: var(--text-label); }
+.step-detail-level > .step-dot { transform: scale(0.78); }
+.step-sub { padding-left: 0; margin-left: var(--sp-5); }
+.step-group > summary { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: var(--sp-3); padding: 6px 0; }
+.step-group > .step { margin-left: var(--sp-5); }
+.step-toggle { margin: var(--sp-1) 0 0 32px; font-size: var(--fs-caption); align-self: flex-start; }
+.timeline-skel .step { align-items: center; }
+.timeline-skel .kwl-skel-line { height: 10px; }
+
+/* 标题下的状态胶囊在读到任务前留出位置（不闪“排队中”） */
+.exec-sub-loading { min-height: 24px; }
+.exec-sub-loading::before { content: ""; width: 168px; height: 22px; border-radius: var(--r-full); background: var(--bg-muted); }
+
+/* ── 过程面板：工作清单 / 子任务 / 进展说明（同一种浅底面板，无竖条、无描边） ── */
+.progress-panel { margin: var(--sp-4) 0; padding: var(--sp-4); border: 0; border-radius: var(--r-lg); background: var(--bg-subtle); display: flex; flex-direction: column; gap: var(--sp-4); }
+.run-panel { animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }
+.progress-block .pane-title { margin: 0 0 4px; }
+.progress-head { display: flex; align-items: baseline; gap: var(--sp-2); }
+.progress-head-title { font-size: var(--fs-caption); font-weight: 600; color: var(--text-label); }
+.progress-count { font-size: var(--fs-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.progress-track { height: 3px; margin: var(--sp-2) 0 var(--sp-3); border-radius: var(--r-full); background: var(--bg-active); overflow: hidden; }
+.progress-track span { display: block; height: 100%; border-radius: var(--r-full); background: var(--accent); transition: width var(--motion-slow) var(--ease-standard); }
+.progress-panel .todo-list { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-body); }
+.progress-panel .todo-list li { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 10px; align-items: start; color: var(--text-primary); font-weight: 400; }
+.progress-panel .todo-mark { width: 16px; height: 16px; margin-top: 3px; border-radius: var(--r-full); border: 1.5px solid var(--border-hover); display: grid; place-items: center; color: inherit; transition: background-color var(--motion-base) ease, border-color var(--motion-base) ease; }
+.progress-panel .todo-mark svg { width: 9px; height: 9px; stroke-width: 3; }
+.progress-panel .todo-done .todo-mark { border-color: transparent; background: var(--status-success-bg); color: var(--status-success-text); }
+.progress-panel .todo-doing .todo-mark { border-color: transparent; background: var(--accent-bg); }
+.progress-panel .todo-doing .todo-mark .kwl-pulse { width: 6px; height: 6px; }
+.progress-panel .todo-done .todo-text { color: var(--text-secondary); }
+.progress-panel .todo-doing .todo-text { font-weight: 500; }
+.progress-notes { display: flex; flex-direction: column; gap: var(--sp-3); }
+.progress-note { font-size: var(--fs-body); line-height: 1.75; color: var(--text-primary); }
+.progress-note p { margin: 0; }
+.progress-note-head { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; font-size: var(--fs-xs); font-weight: 500; color: var(--text-secondary); }
+.progress-note-mark { width: 14px; height: 14px; }
+.progress-panel .sub-list { font-size: var(--fs-caption); }
+details.progress-panel { gap: var(--sp-2); }
+details.progress-panel > summary { cursor: pointer; }
+
+/* ── 正在起草：同一种面板；标题行蓝点 + 字数，正文限高、自动跟到底、底部淡出 ── */
+.live-draft { margin: var(--sp-4) 0; padding: var(--sp-3) var(--sp-4) 0; border: 0; border-radius: var(--r-lg); background: var(--bg-subtle); max-height: none; overflow: visible; display: flex; flex-direction: column; gap: var(--sp-2); }
+.live-draft-head { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-caption); color: var(--text-label); }
+.live-draft-title { font-weight: 600; }
+.live-draft-n { margin-left: auto; font-size: var(--fs-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.live-draft-body { max-height: 300px; overflow: auto; padding-bottom: var(--sp-4); font-size: var(--fs-body); line-height: 1.75; -webkit-mask-image: linear-gradient(to top, transparent 0, var(--bg-subtle) 28px); mask-image: linear-gradient(to top, transparent 0, var(--bg-subtle) 28px); }
+
+/* 任务说明：收起的一行更安静 */
+.goal-details > summary { font-size: var(--fs-caption); color: var(--text-secondary); }
+
+@media (prefers-reduced-motion: reduce) {
+  .timeline > .step, .run-panel { animation: none; }
+  .step-dot, .progress-track span, .progress-panel .todo-mark { transition: none; }
+}
+
+/* ── 等你确认的卡片（确认、提问、提纲）：去掉左侧 3px 竖条，改为整圈一色细边 + 轻阴影，浮起出现 ──
+   蓝色 = 助手在问你 / 请你确认计划与提纲；橙色 = 要你批准的操作。时间线末尾的橙色节点指向这里。 */
+.card-confirm { border: 1px solid var(--status-warning-border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }
+.card-plan, .card-question, .card-outline { border: 1px solid var(--accent-border); border-left-color: var(--accent-border); }
+@media (prefers-reduced-motion: reduce) { .card-confirm { animation: none; } }

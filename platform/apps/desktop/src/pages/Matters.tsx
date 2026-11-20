@@ -5,6 +5,7 @@ import { nav } from "../App.tsx";
 import { authorizationLine } from "../components/Consent.tsx";
 import { basisComplete } from "../components/MatterHeader.tsx";
 import { NewMatterDialog } from "../components/NewMatter.tsx";
+import { ListSkeleton, LoadError } from "../components/Loading.tsx";
 import { fmtRelative, fmtTime, LEVEL_LABELS, matterProgress } from "../lib/labels.ts";
 import { stanceLabel } from "../lib/labels.ts";
 
@@ -13,9 +14,12 @@ export function MattersPage() {
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState("");
-  useEffect(() => {
+  // 取数三态（第 51 批）：载入中给骨架、失败给重试，不把“没读到”显示成“没有事项”
+  const load = () => {
+    setErr("");
     api.listMatters().then((r) => setMatters(r.matters)).catch((e) => setErr(e.message));
-  }, []);
+  };
+  useEffect(load, []);
   // 示例事项置顶（Y4 §5 D-6）
   const list = (matters ?? []).filter((m) => !q || [m.title, m.client_name, m.counterparty].some((x) => x?.includes(q))).sort((a, b) => Number(!!b.is_sample) - Number(!!a.is_sample));
   return (
@@ -26,8 +30,9 @@ export function MattersPage() {
           <input className="search" placeholder="搜索事项、客户、相对方" value={q} onChange={(e) => setQ(e.target.value)} />
           <button className="btn-primary" onClick={() => setCreating(true)}>新建事项</button>
         </div>
-        {err && <div className="banner banner-red">{err}</div>}
-        {matters && list.length === 0 && <p className="muted">没有事项。</p>}
+        {err && !matters && <LoadError what="事项列表" message={err} onRetry={load} />}
+        {err && matters && <div className="banner banner-red">{err}</div>}
+        {matters && list.length === 0 && <p className="muted">{q ? "没有符合条件的事项。" : "没有事项。"}</p>}
         {/* 列以律师关心的“进展”和“最近活动”为主（v9.2 §4.4；Y4 M-1）；密级、依据、协作等系统属性收进悬停说明 */}
         <table className="data matters-table">
           <thead>
@@ -54,6 +59,7 @@ export function MattersPage() {
             })}
           </tbody>
         </table>
+        {!matters && !err && <ListSkeleton rows={6} label="正在载入事项" />}
       </div>
       {creating && (
         <NewMatterDialog

@@ -8,6 +8,8 @@
 import { useEffect, useRef, useState } from "react";
 import { recovery } from "../api.ts";
 import { fmtTime } from "../lib/labels.ts";
+import { WaitBlock } from "./Loading.tsx";
+import { countProgress } from "../lib/waiting.ts";
 
 interface Created {
   code: string;
@@ -151,7 +153,13 @@ export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
           </div>
         </li>
       </ol>
-      {running && <div className="muted" role="status">正在备份：{running.total ? `已处理 ${running.done} / ${running.total} 个文件` : "正在准备"}。可以继续工作，请不要拔出备份用的移动硬盘。</div>}
+      {/* 备份进行中（第 51 批统一等待块）：有总数才写“已处理 n/m 个文件”，没有就写“正在准备”，不画假进度 */}
+      {running && (
+        <WaitBlock
+          title={countProgress(running.done, running.total) ? `正在备份：已处理 ${countProgress(running.done, running.total)!.text} 个文件` : "正在准备备份…"}
+          hint="可以继续工作，请不要拔出备份用的移动硬盘。"
+        />
+      )}
       <p className="muted recovery-tip">恢复包和恢复码要分开放：例如恢复包放 U 盘，恢复码打印后锁进柜子。第一次备份要复制全部案卷，可能较慢。</p>
       {(st?.recent_packages?.length ?? 0) > 1 && (
         <p className="muted">

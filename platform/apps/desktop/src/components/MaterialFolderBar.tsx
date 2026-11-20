@@ -8,9 +8,12 @@ import { fmtTime, fmtWhen } from "../lib/labels.ts";
 import { syncResultText } from "../lib/material-folder.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
 import { Icon } from "./Icons.tsx";
+import { BusyLabel, WaitBlock } from "./Loading.tsx";
 
 export function MaterialFolderBar(p: { matterId: string; folder: MatterFolder | null; readOnly: boolean; disabled?: boolean; onChanged: () => void }) {
   const [busy, setBusy] = useState<"link" | "sync" | "unlink" | null>(null);
+  // 同步开始的时刻（第 51 批）：整卷复制、加密、抽字可能要几分钟，内核不报逐份进度，所以给真实的已用时间，不画假进度
+  const [since, setSince] = useState<number | null>(null);
   const [result, setResult] = useState<FolderSyncResult | null>(null);
   const [open, setOpen] = useState(false);
   const [err, setErr] = useState("");
@@ -22,6 +25,7 @@ export function MaterialFolderBar(p: { matterId: string; folder: MatterFolder | 
 
   const run = async (kind: "link" | "sync" | "unlink", fn: () => Promise<FolderSyncResult | null | { folder: null }>) => {
     setBusy(kind);
+    setSince(Date.now());
     setErr("");
     try {
       const r = await fn();
@@ -34,6 +38,7 @@ export function MaterialFolderBar(p: { matterId: string; folder: MatterFolder | 
       setErr((e as Error).message);
     } finally {
       setBusy(null);
+      setSince(null);
     }
   };
   const link = () => void run("link", () => api.linkFolder(p.matterId, devPath));
@@ -52,11 +57,11 @@ export function MaterialFolderBar(p: { matterId: string; folder: MatterFolder | 
               <span className="mf-name-text">{p.folder.name}</span>
             </span>
             <span className="mf-when" title={p.folder.synced_at ? fmtTime(p.folder.synced_at) : undefined}>
-              {busy === "sync" || busy === "link" ? "正在同步…" : p.folder.synced_at ? `上次同步 ${fmtWhen(p.folder.synced_at)}` : "还没有同步"}
+              {p.folder.synced_at ? `上次同步 ${fmtWhen(p.folder.synced_at)}` : "还没有同步"}
             </span>
             {!p.readOnly && (
-              <button className="btn-ghost btn-sm" disabled={off} onClick={sync}>
-                同步
+              <button className="btn-ghost btn-sm" disabled={off} aria-busy={busy === "sync"} onClick={sync}>
+                <BusyLabel busy={busy === "sync"} busyText="正在同步…">同步</BusyLabel>
               </button>
             )}
             <ConfirmButton label="取消关联" question="材料都会留在事项里" confirmLabel="取消关联" keepLabel="不了" danger={false} className="btn-link mf-unlink" disabled={off} onConfirm={unlink} />
@@ -69,13 +74,23 @@ export function MaterialFolderBar(p: { matterId: string; folder: MatterFolder | 
                 <input value={devPath} onChange={(e) => setDevPath(e.target.value)} placeholder="完整路径" />
               </label>
             )}
-            <button className="btn-ghost btn-sm" disabled={off} onClick={link}>
-              <Icon.folder />
-              {busy === "link" ? "正在关联并同步…" : "关联案卷文件夹"}
+            <button className="btn-ghost btn-sm" disabled={off} aria-busy={busy === "link"} onClick={link}>
+              <BusyLabel busy={busy === "link"} busyText="正在关联并同步…">
+                <Icon.folder />
+                关联案卷文件夹
+              </BusyLabel>
             </button>
           </>
         )}
       </div>
+      {(busy === "sync" || busy === "link") && (
+        <WaitBlock
+          title={busy === "link" ? "正在关联并同步案卷文件夹…" : "正在同步案卷文件夹…"}
+          hint="复制、加密新增和改过的文件，并读出其中的文字。"
+          since={since}
+          longHint="文件多或有扫描件时会久一些；同步完会在这里列出结果。"
+        />
+      )}
       <p className="mf-note">文件夹里的文件会复制并加密保存在这台电脑上；只有任务用到的内容才会替换代号后发给 AI。</p>
       {err && (
         <p className="mf-error" role="alert">

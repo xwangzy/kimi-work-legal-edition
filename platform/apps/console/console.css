@@ -131,7 +131,7 @@ input.otp.otp-recovery { font-size: var(--fs-lg); letter-spacing: 0.08em; }
 .auth-card { width: min(var(--console-auth-w), 100%); display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-6); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r-lg); box-shadow: var(--shadow-md); }
 .auth.wide .auth-card { width: min(var(--console-auth-wide-w), 100%); }
 .auth-brand { display: flex; gap: var(--sp-3); align-items: center; }
-.auth-brand b { display: block; font-size: var(--fs-md); }
+.auth-brand b { display: block; }
 .auth-brand small { display: block; color: var(--text-secondary); font-size: var(--fs-meta); }
 .auth-titles h1 { font-size: var(--fs-pagetitle); line-height: 1.35; }
 .auth-titles p { color: var(--text-secondary); font-size: var(--fs-caption); margin-top: 2px; overflow-wrap: anywhere; }
@@ -145,7 +145,14 @@ input.otp.otp-recovery { font-size: var(--fs-lg); letter-spacing: 0.08em; }
 .form-note:empty { display: none; }
 .next-step { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4); border-radius: var(--r-md); background: var(--accent-bg); border: 1px solid var(--accent-border); }
 .next-step ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
-.brand-mark { width: 32px; height: 32px; border-radius: var(--r-sm); background: var(--btn-primary); color: var(--btn-primary-text); display: grid; place-items: center; font-weight: 600; font-size: var(--fs-md); flex: none; }
+/* 品牌（第 51 批）：官方 Logomark，颜色取令牌 --brand-mark-*（浅色黑底白 K、深色白底黑 K，蓝点相同）；两行签名与律师端 .brand-lockup 同尺寸 */
+.brand-mark { width: 28px; height: 28px; display: block; flex: none; }
+.logo-mark-bg { fill: var(--brand-mark-bg); }
+.logo-mark-k { fill: var(--brand-mark-fg); }
+.logo-mark-dot { fill: var(--brand-mark-dot); }
+.brand-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.brand-text b { font-size: var(--fs-lg); font-weight: 600; line-height: 18px; letter-spacing: -0.02em; white-space: nowrap; }
+.brand-edition { font-size: var(--fs-xs); font-weight: 500; line-height: 15px; letter-spacing: 0.04em; color: var(--text-secondary); white-space: nowrap; }
 
 /* 两步验证绑定 */
 .enroll { display: flex; flex-direction: column; gap: var(--sp-4); }
@@ -197,10 +204,9 @@ input.otp.otp-recovery { font-size: var(--fs-lg); letter-spacing: 0.08em; }
 /* ── 外壳：暖灰侧栏 + 悬浮的白色主区 ── */
 .app { display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); height: 100%; }
 .sidebar { display: flex; flex-direction: column; padding: var(--sp-3) var(--sp-2) var(--sp-2); min-height: 0; background: var(--bg-sidebar); }
-.brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px var(--sp-4); }
-.brand-text { min-width: 0; }
-.brand b { display: block; font-size: var(--fs-md); white-space: nowrap; }
-.brand small { display: flex; gap: 6px; align-items: center; color: var(--text-secondary); font-size: var(--fs-meta); line-height: 1.4; white-space: nowrap; overflow: hidden; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px var(--sp-2); }
+.brand-env { display: flex; gap: 6px; align-items: center; margin: 0 8px var(--sp-4) 46px; color: var(--text-secondary); font-size: var(--fs-meta); line-height: 1.4; white-space: nowrap; overflow: hidden; }
+.brand-env:empty { display: none; }
 .env-id { background: var(--bg-active); padding: 0 5px; border-radius: var(--r-xs); color: var(--text-label); }
 .nav { display: flex; flex-direction: column; gap: var(--sp-3); flex: 1; overflow: auto; padding-bottom: var(--sp-3); }
 .nav-section { display: flex; flex-direction: column; gap: 1px; }

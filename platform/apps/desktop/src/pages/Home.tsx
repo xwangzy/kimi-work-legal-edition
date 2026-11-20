@@ -20,6 +20,8 @@ import { cardGets, cardGives, COMING_SOON, getsPlain, LINE_LABELS, SCENARIOS, su
 import { Icon } from "../components/Icons.tsx";
 import { backendDownText, importFailText } from "../lib/errors.ts";
 import { dueText, dueTone, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
+import { WaitBlock } from "../components/Loading.tsx";
+import { countProgress } from "../lib/waiting.ts";
 
 const LINE_KEY = "kwl.home.line";
 /** 额度提示条关掉后记住的键（同一周期同一情形不再提示；lib/quota-notice.ts）。 */
@@ -98,6 +100,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   // 导入没成功的文件单列、红色（第 27 批，评审 U3-04：原来与成功的混在一段灰字里，英文报错直接上屏）
   const [failMsg, setFailMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  // 正在导入材料（第 51 批）：逐份导入时的真实计数与当前文件名；原来只把发送键灰掉，提示还错写成“正在发起…”
+  const [importing, setImporting] = useState<{ done: number; total: number; name: string; since: number } | null>(null);
   const [line, setLine] = useState<HomeTab>(savedLine);
   const [moreOpen, setMoreOpen] = useState(false);
   // 开始面板：事项在面板里可切换（Z3 评审 #1）；matterId 为 null 表示默认“新建事项”
@@ -238,8 +242,11 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     const lines: string[] = [];
     const fails: string[] = [];
     setFailMsg("");
+    const list = Array.from(files);
+    const since = Date.now();
     try {
-      for (const f of Array.from(files)) {
+      for (const [i, f] of list.entries()) {
+        setImporting({ done: i, total: list.length, name: f.name, since });
         try {
           const r = await api.importMaterial(matterId, f);
           setValue((v) => ({ ...v, documentIds: [...v.documentIds, r.document_version_id] }));
@@ -253,6 +260,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
       loadMatter(matterId);
     } finally {
       setBusy(false);
+      setImporting(null);
     }
   };
 
@@ -341,6 +349,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
             onImport={(f) => void importFiles(f)}
             onSubmit={() => void submit()}
             busy={busy}
+            {...(importing ? { busyText: "正在导入材料…" } : {})}
             notice={notice}
             onPickScenario={(c) => openCard(c, value.goal.replace(/\/$/, "").trim() || undefined)}
             suggestion={
@@ -354,6 +363,14 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
                 : null
             }
           />
+          {importing && (
+            <WaitBlock
+              title={importing.total > 1 ? `正在导入第 ${countProgress(importing.done + 1, importing.total)?.text ?? ""} 份…` : "正在导入材料…"}
+              hint={importing.name}
+              since={importing.since}
+              longHint="扫描件、图片要先识别文字，会慢一些；导入完会在这里逐份列出结果。"
+            />
+          )}
           {msg && <p className="muted home-msg" role="status" style={{ whiteSpace: "pre-line" }}>{msg}</p>}
           {failMsg && <div className="banner banner-red home-msg" role="alert" style={{ whiteSpace: "pre-line" }}>{failMsg}</div>}
           {/* 能力胶囊（第 47 批对照 Kimi 首页一行胶囊）：推荐 + 三条业务线 + 通用；下方列出该组场景（标题 + 得到什么），点一行打开开始面板 */}

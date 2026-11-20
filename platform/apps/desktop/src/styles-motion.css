@@ -1,0 +1,73 @@
+/* 统一的等待反馈与状态动效（第 51 批）。组件见 components/Loading.tsx；只用语义令牌（门禁 test/style-tokens.test.ts）。
+   四级等待：
+   ① 即时（< 0.3 秒）：不出加载态，只给按下反馈；
+   ② 短（0.3～3 秒）：取数用骨架（形状接近真实内容，延迟 160ms 才出现，避免一闪而过）；按钮内换成小圆环 + “正在…”；
+   ③ 中（3～30 秒，AI 处理、读材料、生成文书）：Kimi 蓝点呼吸 + 阶段说明 + 已用时间（真实计时，不画假进度）；
+   ④ 长（> 30 秒或静默）：同一块里升级说明（为什么慢、可以离开、怎么停），不换成别的样式。
+   蓝点取自官方 Logomark 右上角的“气泡点”（左下角是直角），颜色用 --brand-mark-dot（两种外观都是 Kimi 蓝）。
+   系统要求减少动效时：呼吸、光晕、闪光、进入动画全部静止（styles.css 末尾的总开关之外，这里再逐个写明静止状态）。 */
+/* 动效令牌（--motion-* / --ease-*）在 packages/design-tokens/src/tokens.css */
+
+/* ── Kimi 蓝点：AI 正在处理（呼吸 + 一圈淡出的光晕） ── */
+.kwl-pulse { position: relative; display: inline-block; flex: none; width: 8px; height: 8px; border-radius: var(--r-full) var(--r-full) var(--r-full) var(--r-xs); background: var(--brand-mark-dot); vertical-align: middle; animation: kwl-breathe 1.8s ease-in-out infinite; }
+.kwl-pulse::after { content: ""; position: absolute; inset: 0; border-radius: var(--r-full) var(--r-full) var(--r-full) var(--r-xs); background: var(--brand-mark-dot); animation: kwl-halo 1.8s var(--ease-out-soft) infinite; }
+.kwl-pulse.md { width: 10px; height: 10px; }
+.kwl-pulse.lg { width: 12px; height: 12px; }
+.kwl-pulse.idle, .kwl-pulse.idle::after { animation: none; }
+.kwl-pulse.idle::after { display: none; }
+@keyframes kwl-breathe { 0%, 100% { transform: scale(0.86); } 50% { transform: scale(1); } }
+@keyframes kwl-halo { 0% { transform: scale(1); opacity: 0.45; } 70%, 100% { transform: scale(2.6); opacity: 0; } }
+
+/* ── 按钮内的小圆环：短等待（保存、下载、签发、开始） ── */
+.kwl-spin { display: inline-block; flex: none; width: 12px; height: 12px; border-radius: var(--r-full); border: 1.5px solid currentColor; border-right-color: transparent; vertical-align: -1px; animation: kwl-rotate 0.7s linear infinite; }
+@keyframes kwl-rotate { to { transform: rotate(360deg); } }
+.btn-busy { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+
+/* ── 骨架：短等待的取数占位（延迟出现，形状接近真实列表） ── */
+.kwl-skel { display: flex; flex-direction: column; gap: var(--sp-3); visibility: hidden; animation: kwl-show 0s linear 160ms forwards; }
+.kwl-skel-card { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-surface); padding: var(--sp-2) 0; }
+.kwl-skel-row { display: flex; align-items: center; gap: var(--sp-3); height: 44px; padding: 0 var(--sp-4); }
+.kwl-skel-box, .kwl-skel-line { flex: none; border-radius: var(--r-xs); background: linear-gradient(90deg, var(--bg-muted) 0%, var(--bg-active) 40%, var(--bg-muted) 80%); background-size: 240% 100%; animation: kwl-shimmer 1.4s ease-in-out infinite; }
+.kwl-skel-box { width: 24px; height: 24px; border-radius: var(--r-sm); }
+.kwl-skel-line { height: 10px; }
+.kwl-skel-head { width: 180px; height: 12px; margin: var(--sp-2) 0; }
+@keyframes kwl-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+@keyframes kwl-show { to { visibility: visible; } }
+
+/* ── 等待块：中长等待（AI 处理、读材料、生成文书、导入文件夹） ── */
+.kwl-wait { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); background: var(--bg-subtle); color: var(--text-secondary); font-size: var(--fs-body); }
+.kwl-wait .kwl-pulse { margin-top: 7px; }
+.kwl-wait-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.kwl-wait-title { color: var(--text-primary); font-weight: 500; }
+.kwl-wait-hint { font-size: var(--fs-caption); line-height: 1.55; }
+.kwl-wait-time { flex: none; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text-secondary); padding-top: 2px; }
+.kwl-wait.inline { padding: 0; background: transparent; }
+.kwl-wait.page { justify-content: center; padding: var(--sp-7) var(--sp-4); background: transparent; }
+
+/* ── 进入动画：新出现的步骤、卡片轻轻浮起（不改布局，只动位移与透明度） ── */
+.kwl-enter { animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }
+@keyframes kwl-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .kwl-pulse, .kwl-pulse::after, .kwl-spin, .kwl-skel-box, .kwl-skel-line, .kwl-enter { animation: none; }
+  .kwl-pulse::after { display: none; }
+  .kwl-skel { visibility: visible; }
+  /* 小圆环静止时仍要看得出“在进行”：保留缺口的静态圆环 */
+}
+
+/* ── 第 51 批 · 各页接入 ── */
+/* 问答：等回答时的蓝点放在状态行最左（替代原来的三点跳动；.chat-wait-head 已是 flex 居中） */
+.chat-wait-head .kwl-pulse { margin: 0 2px; }
+/* 问答：打开旧对话时的占位——一问一答两组气泡形状（问题靠右、回答靠左），不闪“新对话”欢迎页 */
+.chat-skel { padding: var(--sp-2) 0; }
+.chat-skel .kwl-skel-line { height: 12px; width: 64%; }
+.chat-skel .chat-skel-q { align-self: flex-end; width: 34%; height: 34px; border-radius: var(--r-md); }
+.chat-skel .chat-skel-q2 { width: 26%; margin-top: var(--sp-3); }
+.chat-skel .chat-skel-a { width: 72%; }
+.chat-skel .chat-skel-a2 { width: 52%; }
+/* 按钮里的圆环 + 文字不换行、不撑高按钮（签发、导出、开始、保存、同步） */
+button[aria-busy="true"] .btn-busy { white-space: nowrap; }
+/* 首页导入材料、案卷文件夹同步：等待块与上下内容留出间距 */
+.home-center .kwl-wait, .mf .kwl-wait { margin-top: var(--sp-2); }
+/* 签发页首屏骨架：右栏骨架不要卡片外框，贴近真实“签发前检查”的列表 */
+.review-checks .kwl-skel-card { border: none; background: transparent; }

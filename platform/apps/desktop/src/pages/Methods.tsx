@@ -8,6 +8,7 @@ import { api } from "../api.ts";
 import { cardGets, cardGives, COMING_SOON, LINE_LABELS, SCENARIOS, type BusinessLine } from "../lib/scenarios.ts";
 import { FirmTemplates } from "../components/FirmTemplates.tsx";
 import { methodName } from "../lib/labels.ts";
+import { ListSkeleton } from "../components/Loading.tsx";
 
 type Skill = { id: string; title: string; description: string; version: string; tier: string; lines: string[] };
 
@@ -89,7 +90,7 @@ export function MethodsPage() {
         <p className="muted">在任务里描述需求即可，助手会按合适的模板工作；也可以直接写“按《{cleanTitle(skills?.[0]?.title ?? "法律研究备忘录")}》的方法”。</p>
         {skillsNote && <div className="banner banner-orange">{skillsNote}</div>}
         {skills === null ? (
-          <p className="muted">载入中…</p>
+          <ListSkeleton rows={3} label="正在载入方法模板" />
         ) : (
           <div className="cards">
             {skills.map((s) => (

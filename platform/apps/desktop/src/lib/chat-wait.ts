@@ -15,15 +15,16 @@
  * - writing：已经在写正文（界面显示逐字出现的回答）。
  */
 
+import { fmtWait } from "./waiting.ts";
+
 export type ChatPhase = "waiting" | "thinking" | "writing";
 
-/** 1 分 12 秒 / 8 秒（不足 1 秒按 0 秒，负数按 0）。 */
+/**
+ * 1 分 12 秒 / 8 秒（不足 1 秒按 0 秒，负数按 0）。
+ * 第 51 批：全库只有一种已用时间写法，这里直接复用 waiting.ts 的 fmtWait；保留旧名，已有调用与用例不变。
+ */
 export function fmtElapsed(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  if (s < 60) return `${s} 秒`;
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return r === 0 ? `${m} 分钟` : `${m} 分 ${r} 秒`;
+  return fmtWait(ms);
 }
 
 /** 3,200 字（千分位；整数向下取整）。 */

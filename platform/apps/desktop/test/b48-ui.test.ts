@@ -39,13 +39,14 @@ test("开始前确认：只有 block_kind=consent 才出补记卡（L3b、不使
   const sheet = src("components/RunSheet.tsx");
   assert.match(sheet, /const consentBlocked = blocked && estimate\.data_where\?\.block_kind === "consent";/);
   assert.doesNotMatch(sheet, /\?\? "consent"\) === "consent"/, "缺省不再按“去记录同意”处理");
-  assert.match(sheet, /basis_source: "confirmed"/);
+  // 第 51 批（D-216）：补记改为逐案记录依据类型与出处（不再是一句“已取得客户同意”）
+  assert.match(sheet, /basis_source: record\.kind, basis_ref: record\.ref\.trim\(\)/);
   const nm = src("components/NewMatter.tsx");
-  assert.match(nm, /<AuthorizationField /);
-  assert.match(nm, /api\s*\.aiAuthorization\(\)/);
+  // 新建事项不再记录客户授权（第一次用 AI 时逐案记录），也不读律师的默认设置替事项记成“已取得”
+  assert.doesNotMatch(nm, /<AuthorizationField |api\s*\.aiAuthorization\(\)|basis_source/);
   assert.doesNotMatch(nm, /ConsentQuestion|客户明确不同意使用云端 AI/);
-  // “客户要求不上云”只在客户授权里选一处，敏感程度不再重复
-  assert.doesNotMatch(nm, /v: "strict"/);
+  // “客户要求不上云”只在“怎么处理”里选一处
+  assert.equal(nm.split('v: "strict"').length - 1, 1);
 });
 
 test("品牌：侧栏与登录页用官方 Logomark（路径不带颜色，颜色来自 --brand-mark-* 令牌）；“法律版”是从属层级", () => {
@@ -56,7 +57,8 @@ test("品牌：侧栏与登录页用官方 Logomark（路径不带颜色，颜�
   assert.match(src("pages/Activate.tsx"), /<BrandLockup edition="法律行业发行版" \/>/);
   const css = src("styles.css");
   assert.match(css, /\.logo-mark-dot \{ fill: var\(--brand-mark-dot\); \}/);
-  assert.match(css, /\.brand-edition \{[^}]*color: var\(--text-label\)/);
+  // 第 51 批：两行签名式组合，版本全称在第二行（次要灰）
+  assert.match(css, /\.brand-edition \{[^}]*color: var\(--text-secondary\)/);
   const tokens = readFileSync(new URL("../../../packages/design-tokens/src/tokens.css", import.meta.url), "utf8");
   assert.match(tokens, /--p-kimi-blue: #1783ff;/);
 });
@@ -67,10 +69,10 @@ test("三页：成果按任务卡片、提交复核悬停出现；数据去向�
   assert.match(dl, /placeholder="搜索文件或事项"/);
   assert.match(src("components/ArtifactRow.tsx"), /dl-hover-action/);
   const conn = src("pages/Connections.tsx");
-  // 第 49 批：去向图改为“数据 × 去处”对照表（口径逐条保留，见 b49-ui）
-  assert.match(conn, /<table className="dfx-table" aria-label="数据在哪、经过谁、留下什么">/);
-  assert.match(conn, /className="dfx-auth no-print"/);
-  assert.match(conn, /api\.setAiAuthorization\(!state\.engagement_terms\)/);
+  // 第 51 批：对照表改为“律所内 | 律所外”去向图（口径逐条保留，见 b49-ui）；客户授权设置移到页底、不打印、只用于预填
+  assert.match(conn, /<section className="dfm" aria-label="一次 AI 请求经过哪里、各处留下什么">/);
+  assert.match(conn, /className="dfm-authz no-print"/);
+  assert.match(conn, /api\.setAiAuthorization\(next\)/);
   // 口径保留：识别会遗漏、书面确认待签署、中软保存的用量字段
   assert.match(conn, /没有识别出的姓名会按原文发出/);
   assert.match(conn, /“不用于训练、不保留”的书面确认：待签署/);

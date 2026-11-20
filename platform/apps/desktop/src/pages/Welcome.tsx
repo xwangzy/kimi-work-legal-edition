@@ -8,15 +8,23 @@ import { api, recovery } from "../api.ts";
 import { RecoveryBackup } from "../components/RecoveryBackup.tsx";
 import { welcomeHeadline, welcomeSteps, type WelcomeStatus } from "../lib/welcome-steps.ts";
 import { nav } from "../App.tsx";
+import { ListSkeleton, LoadError } from "../components/Loading.tsx";
 
 export function WelcomePage() {
   const [st, setSt] = useState<WelcomeStatus | null>(null);
   const [who, setWho] = useState<{ firm: string; name: string | null } | null>(null);
-  const load = () =>
-    recovery
+  // 没读到备份状态（第 51 批）：原来失败后一直停在“正在读取…”；现在说清楚没读到并给重试，步骤照常列出（打勾以读到的为准）
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const load = () => {
+    setLoadErr(null);
+    return recovery
       .backupStatus()
       .then(setSt)
-      .catch(() => setSt(null));
+      .catch((e) => {
+        setSt(null);
+        setLoadErr((e as Error).message ?? "");
+      });
+  };
   useEffect(() => {
     void load();
     api
@@ -37,7 +45,7 @@ export function WelcomePage() {
           </p>
         )}
         <div className="panel">
-          <p>{st ? welcomeHeadline(steps) : "正在读取…"}</p>
+          {st ? <p>{welcomeHeadline(steps)}</p> : loadErr !== null ? <LoadError what="备份状态" message={loadErr} onRetry={() => void load()} /> : <ListSkeleton rows={1} label="正在载入备份状态" />}
           <ol className="welcome-steps">
             {steps.map((x) => (
               <li key={x.key} className={x.done ? "done" : ""}>

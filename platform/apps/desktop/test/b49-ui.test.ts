@@ -43,12 +43,11 @@ test("侧栏样式根因：不再用媒体查询另改侧栏；竖排 Work/Chat 
   assert.match(sb, /nav\("\/matters"\)\} title="全部事项"/);
 });
 
-test("成果：待处理 = 草稿 + 待复核 + 退回；页首一句话先说等你处理的是什么", async () => {
-  const { inFilter, deliverablesSummary } = await import("../src/lib/deliverables.ts");
-  assert.equal(inFilter("draft", "todo"), true);
-  assert.equal(inFilter("pending_review", "todo"), true);
-  assert.equal(inFilter("rejected", "todo"), true);
-  assert.equal(inFilter("approved", "todo"), false);
+test("成果：按复核流程筛选（第 51 批：草稿 → 待复核 → 已签发，退回单列）；页首一句话先说等你处理的是什么", async () => {
+  const { inFilter, deliverablesSummary, TODO_STATUSES } = await import("../src/lib/deliverables.ts");
+  assert.deepEqual([...TODO_STATUSES], ["draft", "pending_review", "rejected"]);
+  assert.equal(inFilter("draft", "draft"), true);
+  assert.equal(inFilter("pending_review", "draft"), false);
   assert.equal(inFilter("approved", "approved"), true);
   assert.equal(inFilter("superseded", "all"), true);
   assert.equal(deliverablesSummary({ pending_review: 2, draft: 4, rejected: 0, approved: 1 }), "2 份等你复核签发，4 份草稿还没复核");
@@ -73,9 +72,10 @@ test("成果：同族文件的共同前缀淡化、差异突出；名称不同�
 
 test("成果页接线：一个事项一张卡片、单行文件、第 N 版合并版本记录、计数为 0 不显示数字", () => {
   const page = src("pages/Deliverables.tsx");
-  assert.match(page, /\["todo", "待处理"\]/);
+  // 第 51 批：复核流程条即筛选器（每段写份数与含义）
+  assert.match(page, /className="dl-flow" role="tablist" aria-label="按复核流程筛选"/);
   assert.match(page, /className="dl-card"/);
-  assert.match(page, /\{count\(k\) > 0 && <span className="dl-tab-n">/);
+  assert.match(page, /<span className="dl-flow-n">/);
   assert.match(page, /nameParts\(t\.files\.map/);
   const row = src("components/ArtifactRow.tsx");
   assert.match(row, /className="dl-ver" aria-expanded=\{open\}/);
@@ -83,16 +83,18 @@ test("成果页接线：一个事项一张卡片、单行文件、第 N 版合�
   assert.match(row, /import "\.\.\/styles-deliverables\.css";/);
 });
 
-test("数据去向：对照表 + 可展开的说明行（打印时全部展开）；客户授权在最上面且不打印；口径逐条保留", () => {
+test("数据去向：去向图 + 可展开的说明行（打印时全部展开）；客户授权设置在页底且不打印；口径逐条保留", () => {
   const page = src("pages/Connections.tsx");
   const vis = page.slice(page.indexOf("function VisibilityTab"), page.indexOf("function sampleParts"));
-  assert.match(vis, /className="dfx-table"/);
-  assert.ok(vis.indexOf("<AuthorizationDefault />") < vis.indexOf('className="dfx-table"'), "客户授权在对照表之前");
+  assert.match(vis, /className="dfm-map"/);
+  // 第 51 批：客户授权是律师本人的设置、不是给客户看的披露——移出说明本身，放在“这台电脑能用的资料”之后
+  assert.doesNotMatch(vis, /AuthorizationDefault|AuthorizationSettings/);
+  assert.ok(page.indexOf("<SourcesTab ") < page.indexOf("<AuthorizationSettings />"));
   assert.match(vis, /addEventListener\("beforeprint"/);
   for (const phrase of ["案卷原件与全部成果", "代号与真实姓名的对照表", "只转发，不保存", "“不用于训练、不保留”的书面确认：待签署", "请求编号、模型、token 数、金额", "识别会遗漏", "客户可以拒绝", "不经中软的情形", "电脑账户", "未启用的功能", "按原文发送"]) {
     assert.ok(vis.includes(phrase), `口径保留：${phrase}`);
   }
-  assert.match(page, /className="dfx-auth no-print"/);
+  assert.match(page, /className="dfm-authz no-print"/);
 });
 
 test("全局搜索找材料：分组“材料”，点开交给事项页切到材料并筛出这份（只在内存里交接，5 秒内重挂载不丢）", async () => {
@@ -119,5 +121,6 @@ test("全局搜索找材料：分组“材料”，点开交给事项页切到�
 
 test("品牌：首页小标与侧栏字标、安装包名称一致为“法律版”", () => {
   assert.match(src("pages/Home.tsx"), /<span className="home-wordmark-tag">法律版<\/span>/);
-  assert.match(src("components/Brand.tsx"), /edition = "法律版"/);
+  // 第 51 批：侧栏是两行签名（第二行写版本全称“法律行业发行版”）；首页中央字标与安装包仍用简称“法律版”
+  assert.match(src("components/Brand.tsx"), /edition = "法律行业发行版"/);
 });

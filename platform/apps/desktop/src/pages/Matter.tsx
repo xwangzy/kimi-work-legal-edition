@@ -2,14 +2,16 @@
  * 事项页（第 03 篇 §4.4 事项头常显；材料、任务、看板、当事人词典、数据去向）。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, pickMaterials, type EgressRecord, type Matter, type MaterialFile, type MaterialTriage, type MatterBasis, type RunPolicyView } from "../api.ts";
+import { api, pickMaterials, type AiAuthorization, type EgressRecord, type Matter, type MaterialFile, type MaterialTriage, type MatterBasis, type RunPolicyView } from "../api.ts";
 import { triageSuggestion, triageText } from "../lib/material-triage.ts";
 import { nav } from "../App.tsx";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
 import { BasisEditor, basisComplete, MatterHeader } from "../components/MatterHeader.tsx";
-import { AuthorizationConfirm } from "../components/Consent.tsx";
-import { basisAfterConfirm, confirmNeeds } from "../lib/authorization.ts";
+import { AuthorizationRecord } from "../components/Consent.tsx";
+import { basisAfterConfirm, confirmNeeds, initialRecord, recordReady, type AuthRecord } from "../lib/authorization.ts";
 import { Modal } from "../components/Modal.tsx";
+import { WaitBlock } from "../components/Loading.tsx";
+import { countProgress } from "../lib/waiting.ts";
 import { defaultChoice } from "../components/ModeSelector.tsx";
 import { PartiesPanel } from "../components/Parties.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
@@ -143,6 +145,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
     }
   };
 
+  /** 正在添加第几份（第 51 批：逐份解析加密，扫描件要识别文字，可能要几十秒——给真实的 n/m、文件名与已用时间）。 */
+  const [adding, setAdding] = useState<{ i: number; total: number; name: string; since: number } | null>(null);
   const upload = async (files: FileList | MaterialFile[] | null, mode: "import" | "mount") => {
     if (!files || files.length === 0) return;
     setBusy(true);
@@ -152,7 +156,10 @@ export function MatterPage({ matterId }: { matterId: string }) {
     const fails: string[] = [];
     setFailMsg("");
     try {
-      for (const f of Array.from(files)) {
+      const list = Array.from(files);
+      const since = Date.now();
+      for (const [i, f] of list.entries()) {
+        setAdding({ i: i + 1, total: list.length, name: f.name, since });
         try {
           const r: any = mode === "import" ? await api.importMaterial(matterId, f) : await api.mountMaterial(matterId, f);
           const how = mode === "import" ? "已添加（加密保存一份副本，原文件不改动）" : "已关联（只读引用原文件，不复制）";
@@ -165,6 +172,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
       setFailMsg(fails.join("\n"));
       reload();
     } finally {
+      setAdding(null);
       setBusy(false);
     }
   };
@@ -352,6 +360,14 @@ export function MatterPage({ matterId }: { matterId: string }) {
             placeholder="在本事项内发起任务，例如：核验起诉状引用的法条是否现行有效"
           />
         </div>}
+        {adding && (
+          <WaitBlock
+            title={adding.total > 1 ? `正在添加第 ${countProgress(adding.i, adding.total)!.text} 份…` : "正在添加材料…"}
+            hint={adding.name}
+            longHint="扫描件和图片要先识别文字，页数多时会慢一些；识别在这台电脑上进行，不联网。"
+            since={adding.since}
+          />
+        )}
         {msg && <p className="muted" role="status" style={{ whiteSpace: "pre-line" }}>{msg}</p>}
         {failMsg && <div className="banner banner-red" role="alert" style={{ whiteSpace: "pre-line" }}>{failMsg}</div>}
         {/* 事项页标签（v9.4 U1 #9）：日常五个；当事人名单、数据去向记录、结案与删除收进“⋯” */}
@@ -544,13 +560,14 @@ export function MatterPage({ matterId }: { matterId: string }) {
       </div>
       {basisOpen && (
         <BasisDialog
+          matter={matter}
           basis={basis}
           endpoint={matter.model_endpoint}
           onClose={() => setBasisOpen(false)}
-          onSave={(b, viaConfirm) => {
+          onSave={(b, rec) => {
             setBasisOpen(false);
-            // 同意状态由内核按四项派生（不由界面直接改写——复核 S5-A09）；勾选确认记 basis_source=confirmed，逐项编辑记为逐项
-            void patch({ basis: b, ...(viaConfirm ? { basis_source: "confirmed" } : {}) }, basisComplete(b) ? "已记录客户授权：可以用 AI 和联网查询" : "还有授权待确认（已记录）：本事项暂时只能用不联网的本机功能");
+            // 同意状态由内核按四项派生（不由界面直接改写——复核 S5-A09）；按依据记录时带上类型与出处（第 51 批），逐项编辑记为逐项
+            void patch({ basis: b, ...(rec ? { basis_source: rec.kind, basis_ref: rec.ref.trim() } : {}) }, basisComplete(b) ? "已记录客户授权：可以用 AI 和联网查询" : "还有授权待确认（已记录）：本事项暂时只能用不联网的本机功能");
           }}
         />
       )}
@@ -560,35 +577,65 @@ export function MatterPage({ matterId }: { matterId: string }) {
 }
 
 /**
- * 记录客户授权（第 48 批）：有待确认项时与开始任务时同一种确认（一到两个勾选，四项收在“逐项记录”）；
+ * 记录客户授权（第 48 批；第 51 批与“开始前确认”同一个记录表单：依据类型 + 出处，敏感事项另勾单独同意，四项收在“逐项记录”）；
  * 已齐备时“调整”直接给四项编辑（撤回某一项、改成不适用等）。改动都有记录。
  */
-function BasisDialog({ basis, endpoint, onClose, onSave }: { basis: MatterBasis; endpoint: string; onClose: () => void; onSave: (b: MatterBasis, viaConfirm: boolean) => void }) {
+function BasisDialog({ matter, basis, endpoint, onClose, onSave }: { matter: Matter; basis: MatterBasis; endpoint: string; onClose: () => void; onSave: (b: MatterBasis, rec: AuthRecord | null) => void }) {
   const complete = basisComplete(basis);
   const [b, setB] = useState(basis);
-  const [general, setGeneral] = useState(false);
-  const [sensitive, setSensitive] = useState(false);
+  const [defaults, setDefaults] = useState<AiAuthorization | null>(null);
+  const [record, setRecord] = useState<AuthRecord>(() => initialRecord(null, matter));
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (complete) return;
+    api
+      .aiAuthorization()
+      .then((a) => {
+        setDefaults(a);
+        if (!touched) setRecord(initialRecord(a, matter));
+      })
+      .catch(() => setDefaults(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complete]);
   const [detail, setDetail] = useState<MatterBasis | null>(complete ? basis : null);
   const need = confirmNeeds(basis);
-  const ready = detail ? true : (!need.general || general) && (!need.sensitive || sensitive);
+  const ready = detail ? true : recordReady(record, need.sensitive);
   return (
     <Modal title={complete ? "客户授权" : "记录客户授权"} onClose={onClose} wide>
       {complete ? (
         <>
-          <p className="muted">四项分别记录；任一项改为“待确认”后，本事项只能用不需要联网的本机功能。改动都有记录。</p>
+          <p className="muted">
+            四项分别记录；任一项改为“待确认”后，本事项只能用不需要联网的本机功能。改动都有记录。
+            {matter.basis_ref ? ` 依据出处：${matter.basis_ref}` : ""}
+          </p>
           <BasisEditor basis={b} endpoint={endpoint} onChange={setB} />
         </>
       ) : (
-        <AuthorizationConfirm basis={basis} endpoint={endpoint} general={general} sensitive={sensitive} onGeneral={setGeneral} onSensitive={setSensitive} detail={detail} onDetail={setDetail} />
+        <AuthorizationRecord
+          matterTitle={matter.title}
+          clientName={matter.client_name}
+          value={record}
+          onChange={(v) => {
+            setTouched(true);
+            setRecord(v);
+          }}
+          sensitive={need.sensitive}
+          reconfirm={false}
+          processors={defaults?.subprocessors ?? null}
+          detail={detail}
+          onDetail={setDetail}
+          endpoint={endpoint}
+          basis={basis}
+        />
       )}
       <div className="modal-actions">
         <button className="btn-ghost" onClick={onClose}>取消</button>
         <button
           className="btn-primary"
           disabled={!ready}
-          onClick={() => (complete ? onSave(b, false) : detail ? onSave(detail, false) : onSave(basisAfterConfirm(basis, { general, sensitive }), true))}
+          onClick={() => (complete ? onSave(b, null) : detail ? onSave(detail, null) : onSave(basisAfterConfirm(basis, { general: true, sensitive: record.sensitive }), record))}
         >
-          {complete ? "保存" : "记录"}
+          {complete ? "保存" : "记录授权"}
         </button>
       </div>
     </Modal>

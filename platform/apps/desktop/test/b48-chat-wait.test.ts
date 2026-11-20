@@ -84,6 +84,7 @@ test("界面接线：Chat 页订阅 chat.progress、发送带 deep、开关记�
     assert.match(near, /thought_chars/);
     assert.doesNotMatch(near, /\.text\b/, "不转发任何文字内容");
   }
-  const css = src("../src/styles.css");
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[^}]*\.chat-wait-dots/s, "系统要求减少动效时动画静止");
+  // 第 51 批：等回答的动画点换成统一的 Kimi 蓝点（styles-motion.css），系统要求减少动效时同样静止
+  const css = src("../src/styles-motion.css");
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)[^}]*\.kwl-pulse/s, "系统要求减少动效时动画静止");
 });

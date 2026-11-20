@@ -78,8 +78,13 @@ export function radiusProblem(d: Pick<Decl, "prop" | "value">): boolean {
 export function fillAsTextProblem(d: Pick<Decl, "prop" | "value">): boolean {
   return d.prop === "color" && /var\(--(risk-high|risk-mid|risk-low|accent|status-[a-z]+-solid)\)/.test(d.value);
 }
-/** 降不透明度会改变实际对比度（S8B-06）：只许禁用态与纯装饰。 */
+/**
+ * 降不透明度会改变实际对比度（S8B-06）：只许禁用态与纯装饰。
+ * 第 51 批：@keyframes 的关键帧（from / to / 百分比）里的 opacity 是过渡途中的值、不是静止状态，不算降低对比度
+ * （进入动画从 0 淡到 1、等待光晕淡出）；静止规则里的 opacity < 1 仍然拦。
+ */
 export function opacityProblem(d: Pick<Decl, "selector" | "prop" | "value">): boolean {
+  if (/^(from|to|[\d.]+%)(\s*,\s*(from|to|[\d.]+%))*$/.test(d.selector.trim())) return false;
   return d.prop === "opacity" && Number(d.value) < 1 && !/:disabled/.test(d.selector);
 }
 const PAPER_BG = /var\(--(bg-paper|bg-preview|hl-[a-z]+|paper-mark-(person|partial|org|id|place|negative))\)/;
@@ -138,6 +143,10 @@ test("填充类令牌不作文字色（S8B-05）；opacity < 1 只用于禁用�
   assert.ok(!fillAsTextProblem({ prop: "border-color", value: "var(--risk-high)" }));
   assert.ok(opacityProblem({ selector: ".card-expired", prop: "opacity", value: "0.85" }));
   assert.ok(!opacityProblem({ selector: "button:disabled", prop: "opacity", value: "0.5" }));
+  // 关键帧里的过渡值不算（第 51 批）；但关键帧名字之外的静止规则照拦
+  assert.ok(!opacityProblem({ selector: "from", prop: "opacity", value: "0" }));
+  assert.ok(!opacityProblem({ selector: "0%, 100%", prop: "opacity", value: "0.4" }));
+  assert.ok(opacityProblem({ selector: ".kwl-fade", prop: "opacity", value: "0" }));
 });
 
 test("引用的令牌都已定义、不写回退值；组件样式不直接用基础色板、不另起令牌", () => {
