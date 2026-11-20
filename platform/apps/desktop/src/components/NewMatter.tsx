@@ -1,13 +1,14 @@
 /**
- * 新建事项（第 03 篇 §5 步骤 5：填写或确认四项依据；第 02 篇 §8.1：数据准入不是一个“已同意”勾选框，四项分别记录）。
- * 任一项“待确认”时，该事项只运行不出站的本机能力。
+ * 新建事项（第 03 篇 §5 步骤 5；第 02 篇 §8.1：四项依据分别记录，任一项“待确认”时该事项只运行不出站的本机能力）。
+ * 第 48 批（D-202）：客户授权不再每次三选一——律师在设置里声明过“委托合同含 AI 辅助条款”时只占一行，默认按此记录；
+ * 本案不同（尚未取得、客户要求不上云）时再展开。没声明过时给三个选项，选“已取得”可顺手设为以后的默认。
  */
 import { useEffect, useState } from "react";
 import { api, type Matter, type MatterBasis, type MatterTemplate } from "../api.ts";
 import { loadTemplates } from "./MatterSetup.tsx";
 import { LINE_LABELS } from "../lib/scenarios.ts";
 import { ENDPOINT_LABELS } from "../lib/labels.ts";
-import { ConsentQuestion, type ConsentAnswer } from "./Consent.tsx";
+import { AuthorizationField, basisForChoice, type AuthChoice } from "./Consent.tsx";
 import { Modal } from "./Modal.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 import { Select } from "./Select.tsx";
@@ -21,16 +22,27 @@ const STANCE_GROUPS: [string, string[]][] = [
   ["顾问", ["常年顾问", "其他"]],
 ];
 const STANCE_OPTIONS = STANCE_GROUPS.flatMap(([hint, list]) => list.map((s) => ({ value: s, label: s, hint })));
+// “客户要求不上云”（L3b）在“客户授权”里选（第 48 批），这里只分一般与敏感，避免同一件事两处设置互相矛盾
 const LEVELS = [
   { v: "normal", label: "一般", hint: "委托事项中的合同、函件、案卷、意见书" },
   { v: "high", label: "敏感", hint: "敏感个人信息、刑事卷宗等：公司名称也替换为代号，每条联网检索都要你确认" },
-  { v: "strict", label: "客户要求不上云", hint: "只在这台电脑上处理：不用 AI，不联网查询" },
 ];
 
 export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (m: Matter) => void }) {
   const [f, setF] = useState({ title: "", client_name: "", counterparty: "", stance: "原告", jurisdiction: "中国大陆", confidentiality: "normal", model_endpoint: "standard", analysis_as_of: "", stage: "", event_date: "", region: "" });
-  const [basis, setBasis] = useState<MatterBasis>({ engagement: "pending", personal_info: "pending", sensitive: "not_applicable", subprocessor: "pending" });
-  const [consent, setConsent] = useState<ConsentAnswer>("not_yet");
+  // 客户授权（第 48 批）：读律师本人的默认设置；读到“委托合同含 AI 条款”即默认“已取得”，否则默认“尚未取得”（保护性缺省）
+  const [engagementDefault, setEngagementDefault] = useState<boolean | null>(null);
+  const [choice, setChoice] = useState<AuthChoice>("pending");
+  const [remember, setRemember] = useState(false);
+  useEffect(() => {
+    void api
+      .aiAuthorization()
+      .then((a) => {
+        setEngagementDefault(a.engagement_terms);
+        if (a.engagement_terms) setChoice("authorized");
+      })
+      .catch(() => setEngagementDefault(false));
+  }, []);
   const [more, setMore] = useState(false);
   // 事项类型（v9.4 第 22 批，C1 #20）：选了就预置阶段、待办与常用方法；要起算日的（如收到起诉状之日）推出届满日
   const [templates, setTemplates] = useState<MatterTemplate[]>([]);
@@ -49,29 +61,31 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
   };
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => {
-    setF({ ...f, [k]: e.target.value });
-    // 敏感事项（L3a）：“敏感信息特别条件”缺省改为待确认（不默认“不适用”）
-    if (k === "confidentiality" && e.target.value === "high" && basis.sensitive === "not_applicable") setBasis({ ...basis, sensitive: "pending" });
-  };
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   const submit = async () => {
     if (!f.title.trim()) return setErr("请填写事项名称");
     const ep = eventDateProblem(f.event_date);
     if (ep) return setErr(`事件时点：${ep}`);
     setBusy(true);
     setErr("");
+    // 敏感事项（L3a）：“敏感信息特别条件”待确认（不随默认设置确认，开始任务前逐案确认）
+    const basis: MatterBasis = basisForChoice(choice, f.confidentiality === "high");
+    // 按委托合同条款记录：律师已声明，或这次勾选“以后默认”（先存设置，内核据此接受 engagement_terms）
+    const viaTerms = choice === "authorized" && (engagementDefault === true || remember);
     try {
+      if (choice === "authorized" && remember && !engagementDefault) await api.setAiAuthorization(true);
       const r = await api.createMatter({
         title: f.title.trim(),
         client_name: f.client_name.trim() || null,
         counterparty: f.counterparty.trim() || null,
         stance: f.stance,
         jurisdiction: f.jurisdiction,
-        // “客户明确不同意使用云端 AI”= 当事人限制（只在本机处理）
-        confidentiality: consent === "refused" ? "strict" : f.confidentiality,
+        // “客户要求不上云”= 当事人限制（只在本机处理，L3b）
+        confidentiality: choice === "local_only" ? "strict" : f.confidentiality,
         model_endpoint: f.model_endpoint,
         // 同意状态由内核按四项派生；转委托与次处理者在标准端点下不能“不适用”
         basis: { ...basis, subprocessor: basis.subprocessor === "not_applicable" && f.model_endpoint !== "private" && f.model_endpoint !== "none" ? "pending" : basis.subprocessor },
+        ...(choice === "authorized" ? { basis_source: viaTerms ? "engagement_terms" : "confirmed" } : {}),
         key_dates: f.analysis_as_of ? { analysis_as_of: f.analysis_as_of } : {},
         // 程序阶段、事件时点、地域（v9.4 S-08）：没填不传
         ...(f.stage ? { stage: f.stage } : {}),
@@ -134,14 +148,7 @@ export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; o
           <Select aria-label="当前阶段" value={f.stage} placeholder="不填" onChange={(v) => set("stage")({ target: { value: v } })} options={[{ value: "", label: "不填" }, ...stagesFor(f.stance, f.stage).map((s) => ({ value: s, label: STAGE_LABELS[s] }))]} />
         </label>
       </div>
-      <ConsentQuestion
-        answer={consent}
-        onAnswer={setConsent}
-        basis={basis}
-        onBasis={setBasis}
-        endpoint={f.model_endpoint}
-        sensitiveMatter={f.confidentiality === "high"}
-      />
+      <AuthorizationField engagementDefault={engagementDefault} choice={choice} onChoice={setChoice} remember={remember} onRemember={setRemember} sensitiveMatter={f.confidentiality === "high"} />
       <button type="button" className="btn-link" onClick={() => setMore((v) => !v)}>{more ? "收起更多设置" : "更多设置（事件时点、地域、敏感程度、使用哪种 AI、分析截止日）"}</button>
       {more && (
         <div className="form-grid">

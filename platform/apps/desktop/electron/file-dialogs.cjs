@@ -29,6 +29,8 @@ const OPEN_METHODS = new Map([
 const FOLDER_METHODS = new Map([
   ["backup.configure", "dir"],
   ["onboarding.restore", "dir"],
+  // 第 48 批：关联案卷文件夹（同步只带事项编号，内核按本机记下的位置读取）
+  ["materials.link_folder", "path"],
 ]);
 /** 写出类方法：保存句柄换成内核参数名。 */
 const SAVE_METHODS = new Map([

@@ -220,7 +220,9 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     setBusy(true);
     setMsg("");
     try {
-      const v = value.documentIds.length === 0 && value.scenario !== "a1.agent_task" ? { ...value, documentIds: docs.map((d) => d.document_version_id) } : value;
+      // 没勾材料 = 全部材料（第 48 批：不含被同一位置新版本取代的旧版本）
+      const old = new Set(docs.map((d) => (d as { supersedes?: string | null }).supersedes).filter((x): x is string => !!x));
+      const v = value.documentIds.length === 0 && value.scenario !== "a1.agent_task" ? { ...value, documentIds: docs.filter((d) => !old.has(d.document_version_id)).map((d) => d.document_version_id) } : value;
       setSheet(await prepareStart(matter, v, { docNames: docs.filter((d) => v.documentIds.includes(d.document_version_id)).map((d) => d.filename) }));
     } catch (e) {
       setMsg((e as Error).message);

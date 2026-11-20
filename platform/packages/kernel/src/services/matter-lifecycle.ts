@@ -266,10 +266,11 @@ export async function purgeMatter(
     // IM 意图（所内节点；载荷里写有事项编号的）
     d.db.run(`UPDATE im_intents SET payload = '{"redacted":true}', result = NULL WHERE instr(payload, ?) > 0 OR instr(COALESCE(result, ''), ?) > 0`, [matterId, matterId]);
     // 挂载材料登记的是律师电脑上的完整路径（常含当事人命名的目录与文件名；复核 C-A04）：一并清除
-    d.db.run(`UPDATE document_versions SET filename = '（已删除）', storage_uri = 'purged://' || document_version_id WHERE matter_id = ?`, [matterId]);
+    // 案卷文件夹（第 48 批）：材料在文件夹里的位置、关联文件夹的完整路径同样常含当事人名称
+    d.db.run(`UPDATE document_versions SET filename = '（已删除）', storage_uri = 'purged://' || document_version_id, rel_path = NULL WHERE matter_id = ?`, [matterId]);
     d.db.run(`UPDATE artifact_versions SET filename = '（已删除）', manifest = '{}', open_items = '[]' WHERE matter_id = ?`, [matterId]);
     d.db.run(
-      `UPDATE matters SET lifecycle = 'purged', purged_at = ?, title = ?, client_name = NULL, counterparty = NULL, basis = NULL, key_dates = '{}', event_date = NULL, region = NULL WHERE matter_id = ?`,
+      `UPDATE matters SET lifecycle = 'purged', purged_at = ?, title = ?, client_name = NULL, counterparty = NULL, basis = NULL, key_dates = '{}', event_date = NULL, region = NULL, folder_root = NULL, folder_linked_at = NULL, folder_synced_at = NULL WHERE matter_id = ?`,
       [now, `已删除的事项 ${matterId.slice(-8)}`, matterId],
     );
     input.audit(redactionDigest(d.db, matterId));

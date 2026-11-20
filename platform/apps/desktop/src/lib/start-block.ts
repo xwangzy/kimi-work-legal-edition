@@ -10,12 +10,12 @@ export function busyRunOfError(e: unknown): string | null {
   return x && x.code === "conflict" && typeof x.detail?.run_id === "string" ? x.detail.run_id : null;
 }
 
-/** 记录同意并重新估价后仍不能开始时的提示（按 block_kind；缺省按“依据待确认”，向后兼容）。 */
+/** 记录授权并重新估价后仍不能开始时的提示（按 block_kind；缺省按“依据待确认”，向后兼容）。 */
 export function afterConsentNotice(blockKind: string | null | undefined, sensitive: boolean): string {
   if ((blockKind ?? "consent") === "consent") {
-    return sensitive ? "已记录。本事项为敏感事项，还需在“逐项调整”中确认“敏感信息特别条件”。" : "已记录，但仍有待确认项，请展开“逐项调整”检查。";
+    return sensitive ? "已记录。本事项为敏感事项，还需在“逐项记录”中确认“敏感信息特别条件”。" : "已记录，但仍有待确认项，请打开“逐项记录”检查。";
   }
-  return "已记录客户同意。现在还不能开始，原因见上方。";
+  return "已记录客户授权。现在还不能开始，原因见上方。";
 }
 
 /**

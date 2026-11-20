@@ -1,6 +1,8 @@
 /**
  * 期限提醒（第 10 批 S9；v9 #51、K7）：收到的提醒 + 我设的提醒 + 设提醒表单。
  * 到时由本机提醒；配置了中软通知服务时，电脑关机也会送到本人的其他设备与事项成员——中软只知道提醒时间与接收设备，内容在本机加密。
+ * 第 48 批重做为“日程”：页首一句话说清最近的期限；送达方式收成一行；期限按今天 / 7 天内 / 以后排成日程行
+ * （左侧日期块 + 远近色条，期限类型与倒计时一眼可见，事项与提醒时刻作说明行），修改与撤销在悬停时出现；已过期与看过的提醒收在页底。
  */
 import { useEffect, useState } from "react";
 import { api, onKernelEvent, type Matter, type ReminderInboxItem, type ReminderInput, type ReminderItem } from "../api.ts";
@@ -10,6 +12,7 @@ import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 import { audienceText, bjToday, cloudStateText, daysUntil, defaultForm, dueText, dueTone, importCandidates, PERIOD_PRESETS, REMINDER_KINDS, reminderKindLabel, rejectReasonText, reminderLine, scheduleLine, dueBuckets, dueDateText, type DueBucketKey, type ImportCandidate } from "../lib/reminders.ts";
 import { Select } from "../components/Select.tsx";
+import { Icon } from "../components/Icons.tsx";
 
 const DAYS_CHOICES = [0, 1, 2, 3, 5, 7, 10, 14, 30];
 
@@ -102,11 +105,17 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
     }
     refreshThenSync();
   };
+  const upcoming = buckets.filter((b) => b.key !== "past");
+  const next = upcoming[0]?.items[0] ?? null;
+  const within7 = upcoming.filter((b) => b.key !== "later").reduce((n, b) => n + b.items.length, 0);
   return (
     <main className="main">
-      <div className="main-wide">
-        <div className="page-head">
-          <h1 className="page-title">期限提醒</h1>
+      <div className="main-wide rm-page">
+        <div className="rm-head">
+          <div>
+            <h1 className="page-title">期限提醒</h1>
+            {data && <p className="rm-sub">{agendaSummary(within7, next)}</p>}
+          </div>
           <div className="page-head-actions">
             <button className="btn-ghost" onClick={() => void openImport()}>
               从事项导入
@@ -116,57 +125,65 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
             </button>
           </div>
         </div>
-        {err && <div className="banner banner-red">{err}</div>}
         {data && (
-          <div className="muted reminders-note">
-            {/* Z3 #18 / 3.6：按是否连接各写一句，机制说明收进折叠 */}
-            <p>{reminderLine(data.cloud.configured)}</p>
-            <details>
+          <div className="rm-delivery">
+            {/* Z3 #18 / 3.6：按是否连接各写一句，机制说明收进折叠；第 48 批收成页首下的一行 */}
+            <span className={`rm-delivery-dot${data.cloud.configured ? " on" : ""}`} aria-hidden="true" />
+            <span>{reminderLine(data.cloud.configured)}</span>
+            <details className="rm-how">
               <summary>提醒是怎么送到的</summary>
-              {data.cloud.configured
-                ? "电脑关机时，由提醒服务送到你的其他设备（选了“事项成员”的也送到他们的设备）。服务方只知道提醒时间和接收设备，期限类型、事项和备注在这台电脑上加密，服务方看不到。"
-                : "只在这台电脑上提醒：关机或没打开 Kimi Work 时不会提醒。"}
-              {/* 复核 S10B-06：提醒只保存在建立它的电脑上 */}
-              {" 提醒保存在这台电脑上：换电脑要重新设置；这台电脑停用后，它设的提醒在其他设备上也不再响。"}
+              <div className="rm-how-pop">
+                {data.cloud.configured
+                  ? "电脑关机时，由提醒服务送到你的其他设备（选了“事项成员”的也送到他们的设备）。服务方只知道提醒时间和接收设备，期限类型、事项和备注在这台电脑上加密，服务方看不到。"
+                  : "只在这台电脑上提醒：关机或没打开 Kimi Work 时不会提醒。"}
+                {/* 复核 S10B-06：提醒只保存在建立它的电脑上 */}
+                {" 提醒保存在这台电脑上：换电脑要重新设置；这台电脑停用后，它设的提醒在其他设备上也不再响。"}
+              </div>
             </details>
-            {data.cloud.configured && data.cloud.last && !data.cloud.last.ok && <p>发到其他设备的提醒暂时没送出，稍后自动再试；这台电脑照常提醒。</p>}
           </div>
         )}
+        {err && <div className="banner banner-red">{err}</div>}
+        {data?.cloud.configured && data.cloud.last && !data.cloud.last.ok && <p className="rm-notice">发到其他设备的提醒暂时没送出，稍后自动再试；这台电脑照常提醒。</p>}
         {data && data.rejected.length > 0 && (
-          <p className="muted">
+          <p className="rm-notice">
             另有 {data.rejected.reduce((n, r) => n + r.count, 0)} 条别的设备送来的提醒因核对不通过没有显示（{[...new Set(data.rejected.map((r) => rejectReasonText(r.reason)))].join("；")}）。
           </p>
         )}
 
-        {/* 新到的提醒在最上面；看过的收到页底（第 27 批：没有新提醒时不再在页首占一节写“还没有到时的提醒”） */}
+        {/* 新到的提醒在最上面；看过的收到页底（第 27 批：没有新提醒时不占一节） */}
         {unread.length > 0 && (
-          <>
-            <div className="page-head reminder-section-head">
-              <div className="section-title">新提醒（{unread.length}）</div>
+          <section className="rm-inbox" aria-label="新到的提醒">
+            <div className="rm-inbox-head">
+              <span className="rm-inbox-title">
+                <span className="rm-inbox-icon" aria-hidden="true">{Icon.bell()}</span>新到的提醒（{unread.length}）
+              </span>
               {unread.length > 1 && (
                 <button className="btn-link" onClick={() => void markRead("all")}>
                   全部标为已读
                 </button>
               )}
             </div>
-            <div className="reminder-list">
-              {unread.map((i) => (
-                <InboxRow key={`${i.reminder_id}:${i.version}`} item={i} onRead={() => void markRead([i])} />
-              ))}
-            </div>
-          </>
+            {unread.map((i) => (
+              <InboxRow key={`${i.reminder_id}:${i.version}`} item={i} onRead={() => void markRead([i])} />
+            ))}
+          </section>
         )}
 
         {/* 按到期日看期限（第 27 批，评审 U2-36）：今天 / 7 天内 / 以后在前，已过期收起——律师按日程看，不按提醒来源看 */}
-        <div className="section-title">我设的期限</div>
         {data && data.reminders.length === 0 && (
-          <p className="muted">
-            还没有设提醒。可以在这里设，也可以{" "}
-            <button className="btn-link" onClick={() => void openImport()}>
-              从事项的开庭日、待办期限导入
-            </button>
-            。
-          </p>
+          <div className="rm-empty">
+            <span className="rm-empty-icon" aria-hidden="true">{Icon.calendar()}</span>
+            <div className="rm-empty-title">还没有设提醒</div>
+            <p className="rm-empty-text">开庭、举证、上诉等期限设好后，到时在这台电脑上提醒你。</p>
+            <div className="rm-empty-actions">
+              <button className="btn-ghost btn-sm" onClick={() => void openImport()}>
+                从事项的开庭日、待办期限导入
+              </button>
+              <button className="btn-primary btn-sm" onClick={() => setEditing({})}>
+                设提醒
+              </button>
+            </div>
+          </div>
         )}
         {importing && (
           <Modal title="从事项导入期限" onClose={() => setImporting(null)}>
@@ -191,24 +208,31 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
             </div>
           </Modal>
         )}
-        {data && data.reminders.length > 0 && buckets.every((b) => b.key === "past") && <p className="muted">没有还没到期的提醒。</p>}
-        {data && buckets.some((b) => b.key !== "past") && (
-          <ReminderTable groups={buckets.filter((b) => b.key !== "past")} cloudConfigured={data.cloud.configured} onEdit={(r) => setEditing({ reminder: r })} onRetry={retry} onCancel={cancel} />
-        )}
+        {data && data.reminders.length > 0 && upcoming.length === 0 && <p className="muted">没有还没到期的提醒。</p>}
+        {data &&
+          upcoming.map((b) => (
+            <section key={b.key} className="rm-bucket" aria-label={b.label}>
+              <div className="rm-bucket-h">
+                {b.label}
+                <span className="rm-bucket-n">{b.items.length}</span>
+              </div>
+              <ReminderList items={b.items} cloudConfigured={data.cloud.configured} onEdit={(r) => setEditing({ reminder: r })} onRetry={retry} onCancel={cancel} />
+            </section>
+          ))}
         {data &&
           buckets
             .filter((b) => b.key === "past")
             .map((b) => (
-              <details key={b.key} className="reminder-group">
+              <details key={b.key} className="rm-fold">
                 <summary>已过期（{b.items.length}）</summary>
-                <ReminderTable groups={[b]} cloudConfigured={data.cloud.configured} onEdit={(r) => setEditing({ reminder: r })} onRetry={retry} onCancel={cancel} />
+                <ReminderList items={b.items} cloudConfigured={data.cloud.configured} onEdit={(r) => setEditing({ reminder: r })} onRetry={retry} onCancel={cancel} />
               </details>
             ))}
 
         {read.length > 0 && (
-          <details className="reminder-group">
+          <details className="rm-fold">
             <summary>看过的提醒（{read.length}）</summary>
-            <div className="reminder-list">
+            <div className="rm-inbox rm-inbox-read">
               {read.map((i) => (
                 <InboxRow key={`${i.reminder_id}:${i.version}`} item={i} onRead={() => void markRead([i])} />
               ))}
@@ -235,108 +259,103 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
   );
 }
 
-/** 期限表（第 27 批：按到期日分组，一张表、组名作分组行，列与原来相同）。 */
-function ReminderTable({ groups, cloudConfigured, onEdit, onRetry, onCancel }: { groups: { key: DueBucketKey; label: string; items: ReminderItem[] }[]; cloudConfigured: boolean; onEdit: (r: ReminderItem) => void; onRetry: (id: string) => void; onCancel: (id: string) => Promise<void> }) {
-  // 没连提醒服务时每行“电脑关机时”都是同一句：不成列，页首已说一次（第 27 批，评审 U3-28 / 规则 5）
-  const showCloud = cloudConfigured;
-  const cols = showCloud ? 5 : 4;
+/** 页首一句话：7 天内几个期限、最近的是哪个（第 48 批）。 */
+function agendaSummary(within7: number, next: ReminderItem | null): string {
+  if (!next) return "没有临近的期限。";
+  const head = within7 > 0 ? `7 天内有 ${within7} 个期限` : "7 天内没有期限";
+  return `${head}；最近的是 ${dueDateText(next.due_date)} ${reminderKindLabel(next.kind)}（${dueText(next.due_date)}）。`;
+}
+
+/** 日期块：月、日、星期（北京时间的日历日）。 */
+function DateBlock({ due }: { due: string }) {
+  const [, m, d] = due.split("-").map(Number) as [number, number, number];
+  const wd = dueDateText(due).split(" ").at(-1) ?? "";
   return (
-    <table className="data reminder-table">
-      <thead>
-        <tr>
-          <th>期限</th>
-          <th>事项</th>
-          <th>提醒</th>
-          {showCloud && <th>电脑关机时</th>}
-          <th />
-        </tr>
-      </thead>
-      {groups.map((g) => (
-        <tbody key={g.key}>
-          {groups.length > 1 || g.key !== "past" ? (
-            <tr className={`reminder-bucket-row bucket-${g.key}`}>
-              <td colSpan={cols}>
-                {g.label}
-                <span className="muted">（{g.items.length}）</span>
-              </td>
-            </tr>
-          ) : null}
-          {g.items.map((r) => {
-            const cs = cloudStateText(r.cloud_state, cloudConfigured, { targets: r.cloud_targets, audience: r.audience });
-            // 已结案的事项、期限已过的提醒只能撤销（复核 S10B-08）
-            const editable = r.matter_lifecycle === "active" && daysUntil(r.due_date) >= 0;
-            return (
-              <tr key={r.reminder_id}>
-                <td>
-                  <div className="reminder-when" title={r.due_date}>
-                    <span className="nowrap">{dueDateText(r.due_date)} · {reminderKindLabel(r.kind)}</span>
-                    <span className={`pill ${dueTone(r.due_date) === "red" ? "pill-red" : dueTone(r.due_date) === "orange" ? "pill-orange" : "pill-gray"}`}>{dueText(r.due_date)}</span>
-                  </div>
-                  {r.note && <div className="muted reminder-note">{r.note}</div>}
-                </td>
-                <td>
-                  <button className="btn-link" onClick={() => nav(`/matter/${r.matter_id}`)}>
-                    {r.matter_title}
-                  </button>
-                </td>
-                <td>
-                  <div>{scheduleLine(r)}</div>
-                  {/* “只提醒我”是缺省，每行都写就成了噪音：只在也提醒事项成员时写（第 27 批，评审 U3-28） */}
-                  {r.audience !== "me" && <div className="muted">{audienceText(r.audience, r.collab_scope === "team")}</div>}
-                </td>
-                {showCloud && (
-                  <td className={cs.tone === "warn" ? "reminder-warn" : "muted"}>
-                    {cs.text}
+    <span className="rm-date" aria-hidden="true">
+      <span className="rm-date-m">{m}月</span>
+      <span className="rm-date-d">{d}</span>
+      <span className="rm-date-w">{wd}</span>
+    </span>
+  );
+}
+
+/** 一组期限（第 48 批日程行；列与原表格同样的信息：期限、事项、提醒时刻、电脑关机时、修改与撤销）。 */
+function ReminderList({ items, cloudConfigured, onEdit, onRetry, onCancel }: { items: ReminderItem[]; cloudConfigured: boolean; onEdit: (r: ReminderItem) => void; onRetry: (id: string) => void; onCancel: (id: string) => Promise<void> }) {
+  return (
+    <div className="rm-list" role="list">
+      {items.map((r) => {
+        // 没连提醒服务时每行“电脑关机时”都是同一句：不写，页首已说一次（第 27 批，评审 U3-28 / 规则 5）
+        const cs = cloudConfigured ? cloudStateText(r.cloud_state, cloudConfigured, { targets: r.cloud_targets, audience: r.audience }) : null;
+        // 已结案的事项、期限已过的提醒只能撤销（复核 S10B-08）
+        const editable = r.matter_lifecycle === "active" && daysUntil(r.due_date) >= 0;
+        const tone = daysUntil(r.due_date) < 0 ? "past" : dueTone(r.due_date);
+        return (
+          <div key={r.reminder_id} className={`rm-item rm-tone-${tone}`} role="listitem">
+            <DateBlock due={r.due_date} />
+            <div className="rm-main">
+              <div className="rm-title">
+                <span className="rm-kind">{reminderKindLabel(r.kind)}</span>
+                <span className={`rm-count rm-count-${tone}`} title={dueDateText(r.due_date)}>{dueText(r.due_date)}</span>
+              </div>
+              {r.note && <div className="rm-note">{r.note}</div>}
+              <div className="rm-meta">
+                <button className="btn-link rm-matter" onClick={() => nav(`/matter/${r.matter_id}`)}>
+                  {r.matter_title}
+                </button>
+                <span>{scheduleLine(r)}</span>
+                {/* “只提醒我”是缺省，每行都写就成了噪音：只在也提醒事项成员时写（第 27 批，评审 U3-28） */}
+                {r.audience !== "me" && <span>{audienceText(r.audience, r.collab_scope === "team")}</span>}
+                {cs && (
+                  <span className={cs.tone === "warn" ? "reminder-warn" : undefined}>
+                    电脑关机时：{cs.text}
                     {r.cloud_state === "failed" && (
                       <button className="btn-link" onClick={() => onRetry(r.reminder_id)}>
                         重试
                       </button>
                     )}
-                  </td>
+                  </span>
                 )}
-                <td>
-                  {/* 按钮放在格子里的一层 div 上：td 本身不设 flex（原来设了，单元格边框与行错位） */}
-                  <div className="reminder-actions">
-                    {editable && (
-                      <button className="btn-ghost" onClick={() => onEdit(r)}>
-                        修改
-                      </button>
-                    )}
-                    <ConfirmButton label="撤销" question="撤销后这条提醒不再响；已发到其他设备的也一并撤回。" confirmLabel="撤销提醒" onConfirm={() => onCancel(r.reminder_id)} />
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      ))}
-    </table>
+              </div>
+            </div>
+            <div className="rm-actions">
+              {editable && (
+                <button className="btn-ghost btn-sm" onClick={() => onEdit(r)}>
+                  修改
+                </button>
+              )}
+              <ConfirmButton label="撤销" question="撤销后这条提醒不再响；已发到其他设备的也一并撤回。" confirmLabel="撤销提醒" onConfirm={() => onCancel(r.reminder_id)} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
 function InboxRow({ item, onRead }: { item: ReminderInboxItem; onRead: () => void }) {
-  const tone = dueTone(item.due_date);
+  const tone = daysUntil(item.due_date) < 0 ? "past" : dueTone(item.due_date);
   return (
-    <div className={`panel reminder-card${item.read_at ? " read" : ""}`}>
-      <div className="reminder-card-main">
-        <div>
-          <strong>{reminderKindLabel(item.kind)}</strong> · <span title={item.due_date}>{dueDateText(item.due_date)}</span>{" "}
-          <span className={`pill ${tone === "red" ? "pill-red" : tone === "orange" ? "pill-orange" : "pill-gray"}`}>{dueText(item.due_date)}</span>
+    <div className={`rm-inbox-row${item.read_at ? " read" : ""}`}>
+      <div className="rm-main">
+        <div className="rm-title">
+          <span className="rm-kind">{reminderKindLabel(item.kind)}</span>
+          <span className="rm-inbox-date" title={item.due_date}>{dueDateText(item.due_date)}</span>
+          <span className={`rm-count rm-count-${tone}`}>{dueText(item.due_date)}</span>
         </div>
-        <div className="muted">
+        <div className="rm-meta">
           {item.matter_title ? (
-            <button className="btn-link" onClick={() => nav(`/matter/${item.matter_id}`)}>
+            <button className="btn-link rm-matter" onClick={() => nav(`/matter/${item.matter_id}`)}>
               {item.matter_title}
             </button>
           ) : (
-            "（这台电脑上没有这个事项）"
+            <span>（这台电脑上没有这个事项）</span>
           )}
-          {!item.from_me && ` · ${item.from_name ?? "事项成员"}设的提醒`}
+          {!item.from_me && <span>{item.from_name ?? "事项成员"}设的提醒</span>}
+          {item.note && <span>{item.note}</span>}
         </div>
-        {item.note && <div className="reminder-note">{item.note}</div>}
       </div>
       {!item.read_at && (
-        <button className="btn-ghost" onClick={onRead}>
+        <button className="btn-ghost btn-sm" onClick={onRead}>
           知道了
         </button>
       )}

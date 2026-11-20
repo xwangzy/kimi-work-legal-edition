@@ -152,7 +152,7 @@ test("三处共用一个分组函数；成果页计数按文件；执行页结�
   const read = (p: string) => readFileSync(new URL(`../src/${p}`, import.meta.url), "utf8");
   const page = read("pages/Deliverables.tsx");
   assert.equal(page.split("splitTaskFiles(").length - 1 >= 2, true, "全局成果页与事项成果页");
-  assert.match(page, /\{l\}（\{count\(k\)\}）/, "筛选计数按文件");
+  assert.match(page, /<span className="dl-tab-n">\{count\(k\)\}<\/span>/, "筛选计数按文件（第 48 批：计数是页签上的徽标）");
   assert.doesNotMatch(page, /rows\.filter\(\(r\) => r\.status === k\)\.length/);
   const rv = read("pages/RunView.tsx");
   assert.match(rv, /currentFiles\(artifacts, \{ primary: primaryName \}\)/);

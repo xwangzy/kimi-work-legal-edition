@@ -11,7 +11,7 @@ import { freeTaskWhat, usageNoteShort } from "../lib/sheet-text.ts";
 import type { ComposerValue } from "./Composer.tsx";
 import { SCENARIO_LABELS } from "../lib/labels.ts";
 import { Modal } from "./Modal.tsx";
-import { basisForConsent, ConsentQuestion, type ConsentAnswer } from "./Consent.tsx";
+import { AuthorizationConfirm, basisAfterConfirm, confirmNeeds } from "./Consent.tsx";
 import type { MatterBasis, SendSummaryView } from "../api.ts";
 import { SendSummary } from "./SendSummary.tsx";
 import { SendPoints } from "./SendPoints.tsx";
@@ -39,7 +39,7 @@ export interface PendingStart {
     points: number;
     points_display: string;
     assumptions: string[];
-    data_where?: { preview?: string; preview_rows?: { label: string; text: string }[]; bullets?: string[]; bullet_kinds?: string[]; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | "account" | "quota" | null; busy_run_id?: string; send_summary?: SendSummaryView; start_hint?: StartHint };
+    data_where?: { preview?: string; preview_rows?: { label: string; text: string }[]; bullets?: string[]; bullet_kinds?: string[]; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "policy" | "suspects" | "account" | "quota" | null; busy_run_id?: string; send_summary?: SendSummaryView; start_hint?: StartHint };
   };
 }
 
@@ -88,8 +88,9 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   const { matter, value, estimate } = cur;
   const agent = value.scenario === "a1.agent_task";
   const blocked = !!estimate.data_where?.start_blocked;
-  // 只有“依据待确认”可以原地修复；事项里另有进行中的任务、或处于退出模式时只说明原因并禁用开始
-  const consentBlocked = blocked && (estimate.data_where?.block_kind ?? "consent") === "consent";
+  // 只有“依据待确认”可以原地修复（第 48 批：内核把 L3b、不使用模型、席位失效等分成 policy，不再一律当成“去记录同意”）；
+  // 事项里另有进行中的任务、或处于退出模式时只说明原因并禁用开始
+  const consentBlocked = blocked && estimate.data_where?.block_kind === "consent";
   const busyRun = estimate.data_where?.block_kind === "busy" ? estimate.data_where.busy_run_id : undefined;
   // 敏感事项（L3a）：像姓名的文字核对完才能开始（v9.2 §3.3）；核对后重新估价
   const suspectsBlocked = blocked && estimate.data_where?.block_kind === "suspects";
@@ -109,15 +110,19 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
       setErr((e as Error).message);
     }
   };
-  // 依据未齐时原地修复（UIUX 评审 P0-1）：在这里回答“客户是否同意”，记录后重新预估再发起
+  // 依据未齐时原地补记（第 48 批）：一到两个勾选（已取得客户同意；敏感事项另勾单独同意），记录后重新预估再发起
   const sensitive = matter.confidentiality === "high";
-  const [consent, setConsent] = useState<ConsentAnswer>("consented");
-  const [basis, setBasis] = useState<MatterBasis>(() => basisForConsent("consented", sensitive));
+  const need = confirmNeeds(matter.basis);
+  const [okGeneral, setOkGeneral] = useState(false);
+  const [okSensitive, setOkSensitive] = useState(false);
+  const [detail, setDetail] = useState<MatterBasis | null>(null);
+  const canRecord = detail ? true : (!need.general || okGeneral) && (!need.sensitive || okSensitive);
   const recordConsentAndStart = async () => {
     setBusy(true);
     setErr("");
+    const basis: MatterBasis = detail ?? basisAfterConfirm(matter.basis, { general: okGeneral, sensitive: okSensitive });
     try {
-      await api.updateMatter(matter.matter_id, { basis });
+      await api.updateMatter(matter.matter_id, { basis, ...(detail ? {} : { basis_source: "confirmed" }) });
       notifyDataChanged();
       const fresh = await prepareStart({ ...matter, basis }, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}), ...(cur.reviewRules !== undefined ? { reviewRules: cur.reviewRules } : {}), ...(cur.docNames ? { docNames: cur.docNames } : {}) });
       setCur(fresh);
@@ -225,10 +230,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
           )}
         </div>
       ) : consentBlocked ? (
-        <div className="consent-fix">
-          <p>这个任务会用到 AI，请确认：</p>
-          <ConsentQuestion answer={consent} onAnswer={setConsent} basis={basis} onBasis={setBasis} endpoint={matter.model_endpoint} sensitiveMatter={sensitive} allowRefuse={false} />
-        </div>
+        <AuthorizationConfirm basis={matter.basis} endpoint={matter.model_endpoint} general={okGeneral} sensitive={okSensitive} onGeneral={setOkGeneral} onSensitive={setOkSensitive} detail={detail} onDetail={setDetail} />
       ) : (
         estimate.data_where?.warning && <div className="banner banner-orange">{estimate.data_where.warning}</div>
       )}
@@ -258,8 +260,8 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
             确认发起
           </button>
         ) : consentBlocked ? (
-          <button className="btn-primary" disabled={busy || consent !== "consented"} onClick={() => void recordConsentAndStart()}>
-            记录客户同意并开始
+          <button className="btn-primary" disabled={busy || !canRecord} onClick={() => void recordConsentAndStart()}>
+            记录并开始
           </button>
         ) : (
           <button className="btn-primary" disabled={busy} onClick={() => void start()}>

@@ -169,9 +169,10 @@ test("复核 B4-B13 发起被拦的提示与入口：409 带进行中任务编�
   assert.equal(busyRunOfError({ code: "conflict", message: "版本已变化" }), null);
   assert.equal(busyRunOfError({ code: "validation", detail: { run_id: "run_1" } }), null);
   assert.equal(busyRunOfError(null), null);
-  assert.match(afterConsentNotice(undefined, false), /逐项调整/);
+  assert.match(afterConsentNotice(undefined, false), /逐项记录/);
   assert.match(afterConsentNotice("consent", true), /敏感信息特别条件/);
-  for (const k of ["busy", "exit_mode"]) assert.doesNotMatch(afterConsentNotice(k, false), /逐项调整/, `${k} 不提示去逐项调整`);
+  // 第 48 批：L3b、不使用模型、席位失效等（policy）同样不提示去补记授权
+  for (const k of ["busy", "exit_mode", "policy"]) assert.doesNotMatch(afterConsentNotice(k, false), /逐项记录/, `${k} 不提示去逐项记录`);
 });
 
 test("事项列表（v9.2 §4.4；Y4 M-1）：相对时间与进展胶囊", async () => {

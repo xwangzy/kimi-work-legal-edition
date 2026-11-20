@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
+import { authorizationLine } from "../components/Consent.tsx";
 import { basisComplete } from "../components/MatterHeader.tsx";
 import { NewMatterDialog } from "../components/NewMatter.tsx";
 import { fmtRelative, fmtTime, LEVEL_LABELS, matterProgress } from "../lib/labels.ts";
@@ -36,7 +37,7 @@ export function MattersPage() {
             {list.map((m) => {
               const attrs = [
                 `保护：${m.data_level ? (LEVEL_LABELS[m.data_level] ?? m.data_level) : "—"}`,
-                `客户同意与依据：${m.consent_status === "refused" ? "当事人拒绝（记录）" : (m.basis_complete ?? basisComplete(m.basis)) ? "齐备" : "待确认"}`,
+                `客户授权：${authorizationLine({ ...m, basis_complete: m.basis_complete ?? basisComplete(m.basis) })}`,
                 `协作：${m.collab_scope === "team" ? "团队" : "个人"}`,
                 `创建：${fmtTime(m.created_at)}`,
               ].join("\n");

@@ -109,6 +109,7 @@ import { placeholdersOf } from "../services/placeholders.ts";
 import { artifactCitationBlock, artifactText, checkArtifactCitations, CITATIONS_CASES_CHECK_KEY, uncheckedCitations, withDecisions, type ArtifactCitationCheck, type CitationDecision } from "../services/artifact-citations.ts";
 import { rankTitles, type TitleCandidate } from "../services/title-search.ts";
 import { latestVersionOf, withFileVersions } from "../services/artifact-lineage.ts";
+import { createMatterFolderApi, folderViewOf } from "../services/matter-folder.ts";
 
 export interface ApiDeps {
   db: KernelDb;
@@ -523,6 +524,37 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     return null;
   }
 
+  /**
+   * 阻断原因的类别（第 48 批）：只有“四项依据待确认”能靠律师记录客户授权解决（consent）；
+   * 不使用模型、当事人拒绝或限制（L3b）、敏感事项未放开、席位令牌失效都不是“去确认同意”能解决的（policy）。
+   * 与 modelBlockReason 同一顺序：第一个命中的原因决定类别。
+   */
+  function modelBlockKind(matter: any): "consent" | "policy" | null {
+    const reason = modelBlockReason(matter);
+    if (!reason) return null;
+    return reason.startsWith("四项依据") ? "consent" : "policy";
+  }
+
+  /** 律师本人的 AI 辅助授权默认设置（迁移 0070）：委托合同是否含使用 AI 辅助与次处理者的条款。 */
+  function aiAuthorizationOf(tenantId: string, userId: string): { engagement_terms: boolean; updated_at: string | null } {
+    const r = db.get<{ engagement_terms: number; updated_at: string }>(`SELECT engagement_terms, updated_at FROM user_ai_authorization WHERE tenant_id = ? AND user_id = ?`, [tenantId, userId]);
+    return { engagement_terms: r?.engagement_terms === 1, updated_at: r?.updated_at ?? null };
+  }
+
+  /**
+   * 四项依据的记录方式（迁移 0070）：engagement_terms 只在律师本人开了默认设置时接受（失败关闭：不能凭界面一句话就记成“按委托合同”）；
+   * 只有委托/保密授权已确认时才有意义，否则记 NULL。
+   */
+  function basisSourceFrom(v: unknown, basisJson: string | null, id: { tenantId: string; userId: string }): string | null {
+    if (v === undefined || v === null || v === "") return null;
+    if (v !== "engagement_terms" && v !== "confirmed") throw validation("basis_source 须为 engagement_terms / confirmed");
+    if (!basisJson || parseBasis(basisJson)?.engagement !== "confirmed") return null;
+    if (v === "engagement_terms" && !aiAuthorizationOf(id.tenantId, id.userId).engagement_terms) {
+      throw validation("你还没有在设置里声明“委托合同含 AI 辅助条款”，不能按委托合同条款记录；请逐案确认客户同意");
+    }
+    return v;
+  }
+
   /** 统一解析入口：PDF/JPG/PNG 走隔离进程管线（持互斥锁，§4.5）；DOCX/TXT 维持 v0 粗解析。 */
   async function parseAny(buf: Buffer, filename: string, mime: string): Promise<{ text: string; pageCount: number | null; qualityFlags: string[]; parser: string; parserVersion: string; pages?: { pageNo: number; kind: string; quality: string; note?: string | undefined; charCount: number; meanScore?: number | undefined }[] }> {
     if (isPdf(filename, mime) || isImage(filename, mime)) {
@@ -778,6 +810,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (!Object.values(ConsentStatus).includes(consent)) throw validation(`consent_status 须为 ${Object.values(ConsentStatus).join("/")}`);
       if (body.confidentiality !== undefined && !["normal", "high", "strict"].includes(body.confidentiality)) throw validation("confidentiality 须为 normal / high / strict");
       const facts = matterFactsFrom(body);
+      // 四项依据的记录方式（第 48 批，D-202）：按委托合同条款（律师的默认设置）/ 逐案确认；当事人拒绝时不记
+      const basisSource = consent === "refused" ? null : basisSourceFrom(body.basis_source, basisJson, id);
       // 事项模板（v9.4 第 22 批，C1 #20）：先校验并算好届满日，失败即不创建；阶段没给时用模板的
       const plan = planTemplate(body.template_id, body.template_start, body.stance);
       if (plan && facts.stage === undefined && plan.template.stage) facts.stage = plan.template.stage;
@@ -787,8 +821,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       db.tx(() => {
         db.run(
           `INSERT INTO matters (matter_id, tenant_id, title, client_name, counterparty, stance, jurisdiction,
-                                key_dates, confidentiality, model_endpoint, collab_scope, consent_status, created_by, basis, stage, event_date, region, template_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                                key_dates, confidentiality, model_endpoint, collab_scope, consent_status, created_by, basis, stage, event_date, region, template_id, basis_source)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
             matterId,
             id.tenantId,
@@ -808,6 +842,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
             facts.event_date ?? null,
             facts.region ?? null,
             plan?.template.id ?? null,
+            basisSource,
           ],
         );
         db.run(
@@ -830,7 +865,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (scope === "team" && !config.legacyMemberRows) writeGenesis({ db, keyctx, tenantId: id.tenantId }, matterId, id.userId, matterKey);
         if (plan) todosAdded = applyTemplateTodos(db, plan, { tenant_id: id.tenantId, matter_id: matterId, created_by: id.userId });
       });
-      audit(db, id, "matter.create", "matter", matterId, plan ? sha256Hex(JSON.stringify({ template: plan.template.id, todos: todosAdded, deadline: !!plan.deadline })) : undefined, keyctx);
+      audit(db, id, "matter.create", "matter", matterId, plan || basisSource ? sha256Hex(JSON.stringify({ ...(plan ? { template: plan.template.id, todos: todosAdded, deadline: !!plan.deadline } : {}), ...(basisSource ? { basis_source: basisSource } : {}) })) : undefined, keyctx);
       // 事项匿名摘要（阶段 6；经控制面下发网关做二次检查，收敛 D-20）：只有匿名编号与数据级别、端点、依据是否齐备
       deps.governance?.enqueueSummary(matterId);
       void deps.controlPlane?.pushSummaries().catch(() => {});
@@ -845,7 +880,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "matters.list": (_p, id) => {
       const rows = db.all(
         `SELECT m.matter_id, m.title, m.client_name, m.counterparty, m.stance, m.jurisdiction, m.confidentiality,
-                m.model_endpoint, m.collab_scope, m.consent_status, m.basis, m.full_pseudonym, m.key_dates, m.status, m.created_at, m.stage, m.event_date, m.region,
+                m.model_endpoint, m.collab_scope, m.consent_status, m.basis, m.basis_source, m.full_pseudonym, m.key_dates, m.status, m.created_at, m.stage, m.event_date, m.region,
                 m.lifecycle, m.closed_at, m.retention_until, m.legal_hold, m.legal_hold_reason, m.purged_at
            FROM matters m JOIN matter_members mm ON mm.matter_id = m.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL
           WHERE m.tenant_id = ? AND m.status = 'active' AND (m.lifecycle <> 'purged' OR ? = 1) ORDER BY m.created_at DESC LIMIT 100`,
@@ -936,7 +971,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "matters.get": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       const docs = db.all(
-        `SELECT dv.document_version_id, dv.filename, dv.sha256, dv.size_bytes, dv.mime, dv.storage_mode, dv.created_at, dv.quarantined_at, dr.role
+        `SELECT dv.document_version_id, dv.filename, dv.sha256, dv.size_bytes, dv.mime, dv.storage_mode, dv.created_at, dv.quarantined_at, dv.rel_path, dv.supersedes, dr.role
            FROM document_versions dv LEFT JOIN document_roles dr ON dr.document_version_id = dv.document_version_id
           WHERE dv.matter_id = ? ORDER BY dv.created_at DESC`,
         [matter.matter_id],
@@ -950,7 +985,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       });
       const myRole = db.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matter.matter_id, id.userId])?.matter_role ?? null;
       const isSample = !!db.get(`SELECT 1 AS x FROM sample_matters WHERE matter_id = ? AND removed_at IS NULL`, [matter.matter_id]);
-      return { matter: { ...matterOut(matter), my_role: myRole, ...(isSample ? { is_sample: true } : {}) }, documents: docs, runs, run_policy: runPolicyView(matter.matter_id) };
+      // 案卷文件夹（第 48 批）：本机关联的文件夹（路径只在这台电脑）
+      return { matter: { ...matterOut(matter), my_role: myRole, ...(isSample ? { is_sample: true } : {}), folder: folderViewOf(matter) }, documents: docs, runs, run_policy: runPolicyView(matter.matter_id) };
     },
 
     "matters.update": (p, id) => {
@@ -982,10 +1018,14 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       // 四项依据（W1，收敛偏离 D-21；复核 S5-A09）：分项记录时 consent_status 只由四项派生（显式给出的同意状态不覆盖派生值）；
       // 当事人拒绝云端处理的记录保留——须律师核实后单独清除（consent_status: pending），不随补录四项而静默翻转
       const hasBasis = body.basis !== undefined ? body.basis !== null : !!parseBasis(matter.basis);
+      // 四项依据的记录方式（第 48 批，D-202）：本次更新结束时只写一次。规则：最终是“当事人拒绝”一律 NULL；
+      // 随四项一起改写时没给 basis_source 即逐项编辑（NULL）；只改端点把某项改回待确认、清除拒绝记录时都清为 NULL（须重新记录）
+      let basisSourceNext: { v: string | null } | null = null;
       if (body.basis !== undefined) {
         const bj = basisFrom(body.basis, String(body.model_endpoint ?? matter.model_endpoint));
         fields.push(`basis = ?`);
         values.push(bj);
+        basisSourceNext = { v: matter.consent_status === "refused" || body.consent_status === "refused" ? null : basisSourceFrom(body.basis_source, bj, id) };
         if (matter.consent_status !== "refused") {
           fields.push(`consent_status = ?`);
           values.push(bj && basisCompleteOf({ basis: bj }) ? "agreed" : "pending");
@@ -1004,6 +1044,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
             values.push("pending");
           }
           basisReopened = true;
+          basisSourceNext = { v: null };
         }
       }
       if (body.consent_status !== undefined && hasBasis) {
@@ -1015,7 +1056,14 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           // 清除拒绝记录后按（本次给出的或现有的）四项重新派生
           const bj = body.basis !== undefined ? basisFrom(body.basis, String(body.model_endpoint ?? matter.model_endpoint)) : matter.basis;
           body.consent_status = bj && basisCompleteOf({ basis: bj }) ? "agreed" : "pending";
+          // 记录方式按本次给出的重新核（律师的默认设置可能已经关了）；没给就清为 NULL
+          basisSourceNext = { v: body.basis !== undefined ? basisSourceFrom(body.basis_source, bj, id) : null };
         }
+        if (body.consent_status === "refused") basisSourceNext = { v: null };
+      }
+      if (basisSourceNext) {
+        fields.push(`basis_source = ?`);
+        values.push(basisSourceNext.v);
       }
       // 全部化名（第 02 篇 §8.3：L3a 强制；L2 可由事项负责人开启——机构名称也替换为代号）
       if (body.full_pseudonym !== undefined) {
@@ -1186,6 +1234,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       audit(db, id, "materials.mount", "document", result.document_version_id, sha256, keyctx);
       return { ...result, sha256, note: "挂载为只读引用：原件不复制、不修改；读取时复算 hash，变化即生成新文档版本" };
     },
+
+    // 案卷文件夹（第 48 批）：materials.link_folder / sync_folder / unlink_folder / search——每份文件照常走 materials.import
+    ...createMatterFolderApi({
+      db,
+      workspaceDir: config.workspaceDir,
+      ownDeviceId: keyctx.device.deviceId,
+      requireMatterAccess: (mid, id) => requireMatterAccess(db, mid, id),
+      requireMatterWriter: (mid, id, opts) => requireMatterWriter(db, mid, id, opts),
+      importFile: async (a, id) => (await api["materials.import"]!({ matter_id: a.matterId, path: a.path, filename: a.filename, mime: a.mime, sha256: a.sha256 }, id)) as { document_version_id: string },
+      audit: (id, action, kind, objectId, detailHash) => audit(db, id, action, kind, objectId, detailHash, keyctx),
+    }),
 
     /**
      * 重新解析（§8.1：低质量页可重扫、可人工纠正）——对既有文档版本重跑解析管线，
@@ -1537,7 +1596,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         // 开放任务在模型被拦截时无法运行；退出模式下任何新任务都不能发起：界面据此禁用“确认发起”
         start_blocked: !!exitMode || !!launchHint || !!busy || suspectsBlock || (usesModel && !!blockReason && p.scenario === "a1.agent_task"),
         // 阻断原因的类别：界面据此给出对应的修复入口（只有 consent 才是“记录客户同意”；account / quota 给登录框或用量页入口）
-        block_kind: exitMode ? "exit_mode" : launchHint ? (launchHint.kind === "quota" ? "quota" : "account") : busy ? "busy" : usesModel && !!blockReason && p.scenario === "a1.agent_task" ? "consent" : suspectsBlock ? "suspects" : null,
+        block_kind: exitMode ? "exit_mode" : launchHint ? (launchHint.kind === "quota" ? "quota" : "account") : busy ? "busy" : usesModel && !!blockReason && p.scenario === "a1.agent_task" ? modelBlockKind(matter) : suspectsBlock ? "suspects" : null,
         ...(launchHint ? { start_hint: launchHint } : {}),
         ...(busy ? { busy_run_id: busy.run_id } : {}),
         caps: { per_request_chars: 200_000, per_task_chars: 1_000_000 },
@@ -1698,7 +1757,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       // 放在请求参数校验（档位、预授权、模板、追问）之后：参数错先报参数错
       if (est.scenario === "a1.agent_task") {
         const br = modelBlockReason(matter);
-        if (br) throw validation(`${br}。开放任务离不开模型：补齐后才能发起`, { start_blocked: true });
+        if (br) throw validation(`${br}。开放任务离不开模型：补齐后才能发起`, { start_blocked: true, block_kind: modelBlockKind(matter) });
       }
       // 同一事项同时只运行一个 Agent 任务（宿主按事项划定执行域取消与路由，审查 S3-16）：发起前如实拒绝，不受理后再失败。
       // 放在幂等重放与参数、追问条件校验之后：更具体的原因先报
@@ -3274,6 +3333,20 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       return listRuleSets(db, matter.matter_id);
     },
     // 我的写作偏好（v9.4 第 22 批，C1 #29）：只存格式与文风，按律师本人存在本机
+    // AI 辅助授权的默认设置（第 48 批，D-202）：律师声明一次“委托合同含使用 AI 辅助及次处理者的条款”，新建事项默认按此记录
+    "ai_authorization.get": (_p, id) => aiAuthorizationOf(id.tenantId, id.userId),
+    "ai_authorization.set": (p, id) => {
+      if (typeof p?.engagement_terms !== "boolean") throw validation("engagement_terms 须为布尔值");
+      const at = new Date().toISOString();
+      db.run(
+        `INSERT INTO user_ai_authorization (tenant_id, user_id, engagement_terms, updated_at) VALUES (?,?,?,?)
+         ON CONFLICT(tenant_id, user_id) DO UPDATE SET engagement_terms = excluded.engagement_terms, updated_at = excluded.updated_at`,
+        [id.tenantId, id.userId, p.engagement_terms ? 1 : 0, at],
+      );
+      // 签名审计链：谁、何时声明或撤回（已建事项的记录不随之改写——撤回只影响之后新建的事项）
+      audit(db, id, "ai_authorization.set", "user", id.userId, sha256Hex(JSON.stringify({ engagement_terms: p.engagement_terms })), keyctx);
+      return aiAuthorizationOf(id.tenantId, id.userId);
+    },
     "writing_prefs.get": (_p, id) => getWritingPrefs(db, id.tenantId, id.userId),
     "writing_prefs.set": (p, id) => {
       const prefs = setWritingPrefs(db, id.tenantId, id.userId, (p ?? {}) as Record<string, unknown>, tokens ? (mid, text) => tokens.partiesIn(mid, text) : undefined);

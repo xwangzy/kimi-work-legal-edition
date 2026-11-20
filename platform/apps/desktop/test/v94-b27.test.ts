@@ -118,9 +118,10 @@ test("期限日写给人看：“10月28日 周三”，跨年加年份；没连
   assert.equal(dueDateText("2026-10-28", now), "10月28日 周三");
   assert.equal(dueDateText("2027-01-04", now), "2027年1月4日 周一");
   const page = read("../src/pages/Reminders.tsx");
-  assert.match(page, /\{showCloud && <th>电脑关机时<\/th>\}/);
+  // 第 48 批日程行：没连提醒服务时不写“电脑关机时”（cs 为 null）
+  assert.match(page, /const cs = cloudConfigured \? cloudStateText\(/);
   assert.match(page, /dueBuckets\(data\?\.reminders/);
-  assert.match(page, /新提醒（\{unread\.length\}）/);
+  assert.match(page, /新到的提醒（\{unread\.length\}）/);
   assert.match(page, /看过的提醒（\{read\.length\}）/);
 });
 
@@ -155,7 +156,7 @@ test("新卡：劳动仲裁申请书 / 答辩书（新方法 labor-arbitration-d
 
 test("视觉统一：一级框内边距一档、框内子块一档；样式表里没有 700 字重；b、strong 用 600", () => {
   const css = read("../src/styles.css");
-  for (const sel of [".panel", ".card", ".widget", ".status-tile", ".today-col", ".vis-col"]) {
+  for (const sel of [".panel", ".card", ".widget", ".status-tile", ".today-col", ".dfx-node"]) {
     const m = new RegExp(`^\\${sel} \\{[^}]*padding: ([^;]+);`, "m").exec(css);
     assert.equal(m?.[1], "var(--sp-4)", sel);
   }

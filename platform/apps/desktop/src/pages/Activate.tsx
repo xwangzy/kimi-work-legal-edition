@@ -7,6 +7,7 @@
  * 律师层不出现“证书、密钥、签名、令牌”等词；登录只把邮箱和密码发给中软核对，不上传任何案件材料。
  */
 import { useEffect, useRef, useState } from "react";
+import { BrandLockup } from "../components/Brand.tsx";
 import { account, api, onboarding, recovery } from "../api.ts";
 import { PasswordField } from "../components/PasswordField.tsx";
 import { setAsideAutoOpen, setAsideNotice } from "../lib/activate-text.ts";
@@ -108,13 +109,7 @@ function Frame({ children }: { children: React.ReactNode }) {
     <div className="activate">
       <div className="activate-card">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            K
-          </span>
-          <span>
-            Kimi Work
-            <small>法律行业发行版</small>
-          </span>
+          <BrandLockup edition="法律行业发行版" />
         </div>
         {children}
       </div>

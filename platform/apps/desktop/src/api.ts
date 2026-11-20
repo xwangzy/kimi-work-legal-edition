@@ -257,6 +257,8 @@ export interface Matter {
   template_id?: string | null;
   data_level?: "L0" | "L1" | "L2" | "L3a" | "L3b";
   basis?: MatterBasis;
+  /** 四项依据怎么记下的（第 48 批）：按委托合同条款（律师的默认设置）/ 律师在本事项确认 / 逐项或旧事项（null）。 */
+  basis_source?: "engagement_terms" | "confirmed" | null;
   /** 四项依据是否齐备（内核判定；当事人拒绝记录优先）。 */
   basis_complete?: boolean;
   full_pseudonym?: boolean;
@@ -270,7 +272,40 @@ export interface Matter {
   purge_eligible?: boolean;
   /** 本人在事项中的角色（matters.get）。 */
   my_role?: "owner" | "editor" | "viewer";
+  /** 这台电脑上关联的案卷文件夹（第 48 批，matters.get）；没关联为 null。 */
+  folder?: MatterFolder | null;
   created_at: string;
+}
+
+/** 案卷文件夹（第 48 批）：位置只在这台电脑。 */
+export interface MatterFolder {
+  name: string;
+  root: string;
+  linked_at: string | null;
+  synced_at: string | null;
+}
+/** 一次同步的结果（materials.link_folder / materials.sync_folder）。 */
+export interface FolderSyncResult {
+  folder: MatterFolder | null;
+  added: number;
+  updated: number;
+  unchanged: number;
+  skipped: { rel_path: string; reason: string }[];
+  skipped_total: number;
+  missing_on_disk: string[];
+  capped: boolean;
+  cap: number;
+  scanned: number;
+  synced_at: string;
+}
+/** 材料内搜索的一条结果（materials.search）。 */
+export interface MaterialSearchHit {
+  document_version_id: string;
+  filename: string;
+  rel_path: string | null;
+  hits: number;
+  name_match: boolean;
+  snippet: string | null;
 }
 
 /** 事项待办（v9.4 第 20 批，C1 §3.2）。 */
@@ -874,10 +909,31 @@ export const api = {
     if (!h) throw new KernelError(window.zrKernel?.fileHandleFor ? "这个文件不能引用（网络位置上的文件请先复制到本机）" : "引用原文件需要桌面客户端（web 调试请用添加）", "validation");
     return invoke("materials.mount", { matter_id: matterId, file_handle: h.handle, filename: file.name });
   },
+  /** 有没有选文件夹的系统对话框（桌面客户端有；web 开发形态没有，界面让开发者填路径）。 */
+  hasFolderDialog: () => !!window.zrKernel?.pickFolder,
+  /**
+   * 关联案卷文件夹（第 48 批）：桌面客户端弹系统对话框，只把一次性文件夹句柄交给主进程换成路径；取消返回 null。
+   * web 开发形态没有对话框，用开发者填写的路径（与“备份位置”同一做法，仅开发）。
+   */
+  linkFolder: async (matterId: string, devPath?: string): Promise<FolderSyncResult | null> => {
+    if (window.zrKernel?.pickFolder) {
+      const f = await window.zrKernel.pickFolder();
+      if (!f) return null;
+      return invoke<FolderSyncResult>("materials.link_folder", { matter_id: matterId, folder_handle: f.handle });
+    }
+    if (!devPath?.trim()) throw new KernelError("请先填写文件夹的完整位置（开发调试形态没有选择文件夹的对话框）", "validation");
+    return invoke<FolderSyncResult>("materials.link_folder", { matter_id: matterId, path: devPath.trim() });
+  },
+  /** 同步案卷文件夹：导入新增、改过的文件（内容相同的不重复导入；文件夹里删掉的只报告）。 */
+  syncFolder: (matterId: string) => invoke<FolderSyncResult>("materials.sync_folder", { matter_id: matterId }),
+  /** 取消关联：只清除这台电脑记下的位置，已导入的材料留在事项里。 */
+  unlinkFolder: (matterId: string) => invoke<{ folder: null }>("materials.unlink_folder", { matter_id: matterId }),
+  /** 在本事项材料里搜索（文件名、文件夹位置、解析文字；只在本机）。 */
+  searchMaterials: (matterId: string, q: string) => invoke<{ terms: string[]; hits: MaterialSearchHit[]; truncated: boolean }>("materials.search", { matter_id: matterId, q }),
 
   // 任务
   estimate: (matterId: string, body: { scenario: string; document_version_ids: string[]; goal?: string; topic_hint?: string } & Record<string, unknown>) =>
-    invoke<{ estimate_id: string; points: number; points_display: string; assumptions: string[]; data_where?: { preview: string; warning: string | null; start_blocked: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "suspects" | "account" | "quota" | null; busy_run_id?: string; send_summary?: SendSummaryView; start_hint?: { kind: "login" | "outdated" | "quota"; code: string; message: string; action: "login" | "usage" | null } } }>("runs.estimate", { matter_id: matterId, ...body }),
+    invoke<{ estimate_id: string; points: number; points_display: string; assumptions: string[]; data_where?: { preview: string; warning: string | null; start_blocked: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "policy" | "suspects" | "account" | "quota" | null; busy_run_id?: string; send_summary?: SendSummaryView; start_hint?: { kind: "login" | "outdated" | "quota"; code: string; message: string; action: "login" | "usage" | null } } }>("runs.estimate", { matter_id: matterId, ...body }),
   /** 发送视图（v9.2 §3.4）：模型会看到的样子——令牌形态与代号位置，不含代号真值。 */
   sendPreview: (matterId: string, documentVersionId: string) => invoke<SendPreview>("materials.send_preview", { matter_id: matterId, document_version_id: documentVersionId }),
   /** 疑似未替换的姓名（只在本机界面显示）。 */
@@ -965,6 +1021,9 @@ export const api = {
   docStyle: () => invoke<DocStyleView>("doc_style.get"),
   setDocStyle: (body: Partial<Pick<DocStyleView, "letterhead" | "letterhead_name" | "letterhead_lines" | "body" | "page_numbers" | "redline_author">>) => invoke<DocStyleView>("doc_style.set", body),
   writingPrefs: () => invoke<WritingPrefs>("writing_prefs.get"),
+  /** 客户授权的默认设置（第 48 批）：委托合同是否含使用 AI 辅助的条款；开了以后新建事项默认按此记录。 */
+  aiAuthorization: () => invoke<{ engagement_terms: boolean; updated_at: string | null }>("ai_authorization.get"),
+  setAiAuthorization: (engagementTerms: boolean) => invoke<{ engagement_terms: boolean; updated_at: string | null }>("ai_authorization.set", { engagement_terms: engagementTerms }),
   setWritingPrefs: (body: Partial<WritingPrefs>) => invoke<WritingPrefs>("writing_prefs.set", body),
   /** 上传律所 Word 模板：桌面客户端经系统对话框；开发形态退回文件输入框传字节。返回 null = 取消。 */
   setDocTemplate: async (fallback?: File | null): Promise<DocStyleView | null> => {

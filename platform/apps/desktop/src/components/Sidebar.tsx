@@ -10,6 +10,7 @@ import { newTaskHref } from "../lib/nav-target.ts";
 import { account, api, members, onKernelEvent, type Matter, type QuotaStatus } from "../api.ts";
 import { nav, OPEN_GUIDE, requestNewMatter, type Route } from "../App.tsx";
 import { Icon } from "./Icons.tsx";
+import { BrandLockup, KimiMark } from "./Brand.tsx";
 import { notifyAccountChanged } from "./AccountPanel.tsx";
 import { onDataChanged } from "../lib/events.ts";
 import { sidebarFoot, userCardText } from "../lib/user-card.ts";
@@ -170,15 +171,18 @@ export function Sidebar({ route }: { route: Route }) {
     <aside className={`sidebar${compact ? " compact" : ""}`} data-tour="sidebar">
       <div className="brand">
         {compact && !forced ? (
-          <button className="brand-mark as-toggle" onClick={toggleCollapsed} title="展开侧栏" aria-label="展开侧栏">
-            K
+          <button className="brand-mark-btn" onClick={toggleCollapsed} title="展开侧栏" aria-label="展开侧栏">
+            <KimiMark className="brand-logo" />
           </button>
+        ) : compact ? (
+          <span className="brand-mark-btn" role="img" aria-label="Kimi Work 法律版">
+            <KimiMark className="brand-logo" />
+          </span>
         ) : (
-          <span className="brand-mark" aria-hidden="true">K</span>
+          <span className="brand-name">
+            <BrandLockup />
+          </span>
         )}
-        <span className="brand-name">
-          Kimi Work <small>法律版</small>
-        </span>
         <button className="sidebar-toggle" onClick={() => window.dispatchEvent(new Event("kwl:search"))} title={`搜索事项、任务、成果（${MOD} F）`} aria-label="搜索">
           {Icon.search()}
         </button>

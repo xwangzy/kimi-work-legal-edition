@@ -57,6 +57,18 @@ function legacyFormat(lower: string, buf: Buffer): Unreadable | null {
   return null;
 }
 
+const legacyText = (f: { kind: string; to: string }): string => `这是${f.kind}格式，本机读不了：请用 Word、WPS 或 Excel 打开它，“另存为”${f.to}后再导入`;
+
+/**
+ * 按扩展名认出的旧版格式与 Outlook 邮件（第 48 批案卷文件夹）：同步时不读文件就能给出与导入时同一句说明；不是这些格式返回 null。
+ * 改了扩展名的旧格式、设了打开密码的文件要看文件头，仍由导入时的解析认出。
+ */
+export function legacyFormatNotice(filename: string): string | null {
+  const legacy = legacyFormat(filename.toLowerCase(), Buffer.alloc(0));
+  if (!legacy) return null;
+  return "message" in legacy ? legacy.message : legacyText(legacy);
+}
+
 /**
  * 纯文本解码（复核 B3-A07）：UTF-8（含 BOM）优先；UTF-16 按 BOM；不是合法 UTF-8 时按 GB18030 解（本地政府与企业导出的 TXT 常见）——
  * 否则乱码既让律师读不了，也让密级检测整份漏检。
@@ -80,7 +92,7 @@ export function parseDocument(filename: string, mime: string, buf: Buffer): Pars
   const legacy = legacyFormat(lower, buf);
   if (legacy && "message" in legacy) throw new DomainError("unsupported_file", legacy.message, 422, legacy.detail);
   if (legacy) {
-    throw new DomainError("unsupported_file", `这是${legacy.kind}格式，本机读不了：请用 Word、WPS 或 Excel 打开它，“另存为”${legacy.to}后再导入`, 422, { legacy_format: true });
+    throw new DomainError("unsupported_file", legacyText(legacy), 422, { legacy_format: true });
   }
   if (mime.startsWith("text/") || lower.endsWith(".txt") || lower.endsWith(".md") || lower.endsWith(".csv")) {
     const decoded = decodePlainText(buf);

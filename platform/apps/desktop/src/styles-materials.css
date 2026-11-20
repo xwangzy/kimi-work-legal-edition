@@ -1,0 +1,45 @@
+/* 事项页“材料”标签（第 48 批）：案卷文件夹条、材料内搜索、材料表里的文件夹位置。颜色、字号、圆角只用 tokens.css 的令牌。 */
+
+/* 案卷文件夹条 */
+.mf { margin: 0 0 var(--sp-3); }
+.mf-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); min-height: 30px; }
+.mf-bar .btn-ghost svg { vertical-align: -3px; margin-right: var(--sp-1); }
+.mf-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 360px; color: var(--text-primary); font-weight: 600; }
+.mf-name svg { flex: none; color: var(--text-secondary); }
+.mf-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mf-when { color: var(--text-secondary); font-size: var(--fs-caption); }
+.mf-unlink { font-size: var(--fs-caption); }
+.mf-bar .confirm-inline { font-size: var(--fs-caption); }
+.mf-dev { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-caption); color: var(--text-label); }
+.mf-dev input { width: 320px; }
+.mf-note { margin: var(--sp-1) 0 0; color: var(--text-secondary); font-size: var(--fs-caption); }
+.mf-error { margin: var(--sp-1) 0 0; color: var(--status-danger-text); font-size: var(--fs-caption); }
+.mf-result { margin: var(--sp-1) 0 0; color: var(--text-secondary); font-size: var(--fs-caption); }
+.mf-list { margin: var(--sp-1) 0 0; padding: var(--sp-2) var(--sp-3); list-style: none; background: var(--bg-subtle); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); max-height: 240px; overflow: auto; }
+.mf-list li { display: flex; flex-wrap: wrap; gap: 2px var(--sp-2); padding: 2px 0; }
+.mf-path { color: var(--text-primary); overflow-wrap: anywhere; }
+.mf-why { color: var(--text-secondary); }
+
+/* 材料内搜索 */
+.ms-box { display: flex; align-items: center; gap: var(--sp-2); margin: 0 0 var(--sp-2); padding: 0 var(--sp-2); border: 1px solid var(--border-default); border-radius: var(--r-sm); background: var(--bg-surface); color: var(--text-secondary); max-width: 520px; }
+.ms-box:focus-within { border-color: var(--focus-ring); box-shadow: 0 0 0 3px var(--focus-glow); }
+.ms-input { flex: 1; min-width: 0; border: 0; padding: 7px 0; background: transparent; color: var(--text-primary); font-size: var(--fs-body); outline: none; }
+.ms-input:focus-visible { box-shadow: none; }
+.ms-input::-webkit-search-cancel-button { display: none; }
+.ms-clear { display: inline-flex; align-items: center; justify-content: center; padding: 2px; border: 0; background: none; color: var(--text-secondary); border-radius: var(--r-xs); }
+.ms-clear:hover { background: var(--bg-hover); color: var(--text-primary); }
+.ms-status { margin: 0 0 var(--sp-2); color: var(--text-secondary); font-size: var(--fs-caption); }
+.ms-hits { margin: 0 0 var(--sp-3); }
+.ms-list { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); max-height: 320px; overflow: auto; }
+.ms-list li { padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--border-subtle); }
+.ms-list li:first-child { border-top: 0; }
+.ms-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px var(--sp-2); }
+.ms-file { color: var(--text-primary); font-weight: 600; overflow-wrap: anywhere; }
+.ms-dir, .ms-count { color: var(--text-secondary); font-size: var(--fs-caption); }
+.ms-snippet { margin: 2px 0 0; color: var(--text-secondary); font-size: var(--fs-caption); overflow-wrap: anywhere; }
+.ms-snippet mark { background: var(--status-warning-bg-soft); color: var(--text-primary); border-radius: var(--r-xs); padding: 0 1px; }
+.ms-empty { margin: var(--sp-2) 0; color: var(--text-secondary); font-size: var(--fs-caption); }
+
+/* 材料表：文件夹位置（目录部分）作文件名下的第二行 */
+.mat-dir { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: var(--fs-caption); }
+.mat-old { margin-left: var(--sp-1); }

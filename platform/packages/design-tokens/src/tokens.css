@@ -47,6 +47,8 @@
   --p-blue-500: #167ffb;
   --p-blue-600: #0a66d1;
   --p-blue-700: #175cd3;
+  /* Kimi 官方标识的蓝点（素材包 Logomark：#1783FF）；只用于品牌标识 */
+  --p-kimi-blue: #1783ff;
   --p-red-50: #fef3f2;
   --p-red-100: #fee4e2;
   --p-red-200: #fecdca;
@@ -173,6 +175,11 @@
   --btn-primary: var(--p-gray-900);
   --btn-primary-hover: var(--p-black);
   --btn-primary-text: var(--p-white);
+
+  /* 品牌标识（第 48 批：Kimi 官方素材包 Logomark）：浅色为黑底白 K、深色为白底黑 K，蓝点两套相同 */
+  --brand-mark-bg: var(--p-black);
+  --brand-mark-fg: var(--p-white);
+  --brand-mark-dot: var(--p-kimi-blue);
 
   /* 风险分级：红 / 橙 / 黄（各配浅底）；--risk-mid 是填充色，用作文字一律 --status-warning-text */
   --risk-high: var(--p-red-600);
@@ -340,6 +347,9 @@
   --btn-primary: #ecebe9;
   --btn-primary-hover: #ffffff;
   --btn-primary-text: #141312;
+  --brand-mark-bg: #ffffff;
+  --brand-mark-fg: #000000;
+  --brand-mark-dot: #1783ff;
   --risk-high: #f0645a;
   --risk-mid: #f5a02a;
   --risk-low: #fbb24c;

@@ -83,7 +83,8 @@ export function opacityProblem(d: Pick<Decl, "selector" | "prop" | "value">): bo
   return d.prop === "opacity" && Number(d.value) < 1 && !/:disabled/.test(d.selector);
 }
 const PAPER_BG = /var\(--(bg-paper|bg-preview|hl-[a-z]+|paper-mark-(person|partial|org|id|place|negative))\)/;
-const PAPER_CONTAINERS = [".wb-doc", ".ev-text", ".vis-sent", ".ev-quote"];
+// 第 48 批：数据去向的示例请求改为普通浅底（.dfx-sample，不是纸面），.vis-sent 已删
+const PAPER_CONTAINERS = [".wb-doc", ".ev-text", ".ev-quote"];
 /** 纸面底色的规则必须同规则写纸面文字色（S8B-01：评测页类别按钮曾因整类豁免而浅底浅字）；标注标签的 ::after 用标签令牌。 */
 export function paperInkProblem(r: { selector: string; body: string }): boolean {
   if (!/background/.test(r.body) || !PAPER_BG.test(r.body)) return false;

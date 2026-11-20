@@ -7,6 +7,8 @@ import { triageSuggestion, triageText } from "../lib/material-triage.ts";
 import { nav } from "../App.tsx";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
 import { BasisEditor, basisComplete, MatterHeader } from "../components/MatterHeader.tsx";
+import { AuthorizationConfirm } from "../components/Consent.tsx";
+import { basisAfterConfirm, confirmNeeds } from "../lib/authorization.ts";
 import { Modal } from "../components/Modal.tsx";
 import { defaultChoice } from "../components/ModeSelector.tsx";
 import { PartiesPanel } from "../components/Parties.tsx";
@@ -26,6 +28,10 @@ import { notifyDataChanged } from "../lib/events.ts";
 import { RolePills } from "../components/Select.tsx";
 import { Breadcrumb } from "../components/Breadcrumb.tsx";
 import { importFailText } from "../lib/errors.ts";
+import { MaterialFolderBar } from "../components/MaterialFolderBar.tsx";
+import { MaterialSearch } from "../components/MaterialSearch.tsx";
+import { filterDocsByName, relDir, supersededIds } from "../lib/material-folder.ts";
+import "../styles-materials.css";
 
 type Tab = "materials" | "facts" | "runs" | "board" | "deliverables" | "parties" | "egress" | "lifecycle";
 
@@ -200,7 +206,9 @@ export function MatterPage({ matterId }: { matterId: string }) {
     setBusy(true);
     setMsg("");
     try {
-      const v = value.documentIds.length === 0 && value.scenario !== "a1.agent_task" ? { ...value, documentIds: docs.filter((d) => !d.quarantined_at).map((d) => d.document_version_id) } : value;
+      // 没勾材料 = 用本事项的全部材料（第 48 批：不含被同一位置新版本取代的旧版本）
+      const old = supersededIds(docs);
+      const v = value.documentIds.length === 0 && value.scenario !== "a1.agent_task" ? { ...value, documentIds: docs.filter((d) => !d.quarantined_at && !old.has(d.document_version_id)).map((d) => d.document_version_id) } : value;
       setSheet(await prepareStart(matter, v, { docNames: docs.filter((d) => v.documentIds.includes(d.document_version_id)).map((d) => d.filename) }));
     } catch (e) {
       setMsg((e as Error).message);
@@ -402,15 +410,31 @@ export function MatterPage({ matterId }: { matterId: string }) {
               <input ref={importRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files, "import")} />
               <input ref={mountRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files, "mount")} />
             </div>}
+            {/* 案卷文件夹（第 48 批）：关联本机的一个文件夹，手动同步新增、改过的文件；位置只在这台电脑上 */}
+            {matView === "list" && <MaterialFolderBar matterId={matter.matter_id} folder={matter.folder ?? null} readOnly={closed} disabled={busy} onChanged={reload} />}
             {matView === "list" && docs.length > 0 && (
+              // 材料内搜索（第 48 批）：输入即按文件名筛选下面的表；回车或停顿片刻再到材料的文字里找
+              <MaterialSearch matterId={matter.matter_id}>
+                {(q) => {
+                  const shown = filterDocsByName(docs, q);
+                  const old = supersededIds(docs);
+                  return shown.length === 0 ? (
+                    <p className="ms-empty">没有文件名含“{q.trim()}”的材料</p>
+                  ) : (
               // 固定列宽（第 27 批，评审 U3-05）：1280 宽下“我方 / 对方 / 参考”曾逐字竖排折行；只有文件名列可以两行
               <table className="data mat-table">
                 <colgroup><col /><col className="c-role" /><col className="c-triage" /><col className="c-read" /><col className="c-review" /><col className="c-time" /></colgroup>
                 <thead><tr><th>文件</th><th>用途</th><th>初判</th><th>读取</th><th>审查意见</th><th>时间</th></tr></thead>
                 <tbody>
-                  {docs.map((d) => (
+                  {shown.map((d) => (
                     <tr key={d.document_version_id}>
-                      <td className="mat-name" title={`${d.filename}${d.storage_mode === "mount" ? "（只引用原文件，未复制）" : "（已加密保存副本）"}`}><span className="mat-name-text">{d.filename}</span>{d.storage_mode === "mount" && <span className="tag tag-gray">引用</span>}</td>
+                      <td className="mat-name" title={`${d.rel_path ?? d.filename}${d.storage_mode === "mount" ? "（只引用原文件，未复制）" : "（已加密保存副本）"}`}>
+                        <span className="mat-name-text">{d.filename}</span>
+                        {d.storage_mode === "mount" && <span className="tag tag-gray">引用</span>}
+                        {old.has(d.document_version_id) && <span className="tag tag-gray mat-old" title="文件夹里同一位置的文件已更新，这是之前的版本">旧版本</span>}
+                        {/* 文件夹里的位置（目录部分）作第二行 */}
+                        {relDir(d.rel_path) && <span className="mat-dir">{relDir(d.rel_path)}</span>}
+                      </td>
                       <td>
                         {/* 材料用途（Y4 §5 D-4）：我方 / 对方 / 参考，写进任务的材料清单 */}
                         <RolePills
@@ -456,6 +480,9 @@ export function MatterPage({ matterId }: { matterId: string }) {
                   ))}
                 </tbody>
               </table>
+                  );
+                }}
+              </MaterialSearch>
             )}
             {matView === "list" && review.get(null) && (
               <p className="muted">
@@ -512,10 +539,10 @@ export function MatterPage({ matterId }: { matterId: string }) {
           basis={basis}
           endpoint={matter.model_endpoint}
           onClose={() => setBasisOpen(false)}
-          onSave={(b) => {
+          onSave={(b, viaConfirm) => {
             setBasisOpen(false);
-            // 同意状态由内核按四项派生（不由界面直接改写——复核 S5-A09）
-            void patch({ basis: b }, basisComplete(b) ? "四项授权已齐：可以用 AI 和联网查询（已记录）" : "还有授权待确认（已记录）：本事项暂时只能用不联网的本机功能");
+            // 同意状态由内核按四项派生（不由界面直接改写——复核 S5-A09）；勾选确认记 basis_source=confirmed，逐项编辑记为逐项
+            void patch({ basis: b, ...(viaConfirm ? { basis_source: "confirmed" } : {}) }, basisComplete(b) ? "已记录客户授权：可以用 AI 和联网查询" : "还有授权待确认（已记录）：本事项暂时只能用不联网的本机功能");
           }}
         />
       )}
@@ -524,15 +551,37 @@ export function MatterPage({ matterId }: { matterId: string }) {
   );
 }
 
-function BasisDialog({ basis, endpoint, onClose, onSave }: { basis: MatterBasis; endpoint: string; onClose: () => void; onSave: (b: MatterBasis) => void }) {
+/**
+ * 记录客户授权（第 48 批）：有待确认项时与开始任务时同一种确认（一到两个勾选，四项收在“逐项记录”）；
+ * 已齐备时“调整”直接给四项编辑（撤回某一项、改成不适用等）。改动都有记录。
+ */
+function BasisDialog({ basis, endpoint, onClose, onSave }: { basis: MatterBasis; endpoint: string; onClose: () => void; onSave: (b: MatterBasis, viaConfirm: boolean) => void }) {
+  const complete = basisComplete(basis);
   const [b, setB] = useState(basis);
+  const [general, setGeneral] = useState(false);
+  const [sensitive, setSensitive] = useState(false);
+  const [detail, setDetail] = useState<MatterBasis | null>(complete ? basis : null);
+  const need = confirmNeeds(basis);
+  const ready = detail ? true : (!need.general || general) && (!need.sensitive || sensitive);
   return (
-    <Modal title="四项依据" onClose={onClose} wide>
-      <p className="muted">四项依据分别记录；任一项“待确认”时，本事项只能用不需要联网的本机功能。改动都有记录。</p>
-      <BasisEditor basis={b} endpoint={endpoint} onChange={setB} />
+    <Modal title={complete ? "客户授权" : "记录客户授权"} onClose={onClose} wide>
+      {complete ? (
+        <>
+          <p className="muted">四项分别记录；任一项改为“待确认”后，本事项只能用不需要联网的本机功能。改动都有记录。</p>
+          <BasisEditor basis={b} endpoint={endpoint} onChange={setB} />
+        </>
+      ) : (
+        <AuthorizationConfirm basis={basis} endpoint={endpoint} general={general} sensitive={sensitive} onGeneral={setGeneral} onSensitive={setSensitive} detail={detail} onDetail={setDetail} />
+      )}
       <div className="modal-actions">
         <button className="btn-ghost" onClick={onClose}>取消</button>
-        <button className="btn-primary" onClick={() => onSave(b)}>保存</button>
+        <button
+          className="btn-primary"
+          disabled={!ready}
+          onClick={() => (complete ? onSave(b, false) : detail ? onSave(detail, false) : onSave(basisAfterConfirm(basis, { general, sensitive }), true))}
+        >
+          {complete ? "保存" : "记录"}
+        </button>
       </div>
     </Modal>
   );

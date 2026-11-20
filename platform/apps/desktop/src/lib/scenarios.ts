@@ -1407,8 +1407,11 @@ export function sampleBannerText(m: { stance?: string | null } | null | undefine
  * V14 第 39 批真实走查 T2R2：针对一份文书的方法原写“只预选最近一份 Word”，却把列表反过来取，勾上的是最早那份——
  * 律师在成果页点“作为底稿继续修改”后，开始面板勾的是原件而不是刚加进来的上一轮清洁稿，直接开始就在原件上改了第二轮。
  */
-export function preselectDocs(card: Pick<ScenarioCard, "minMaterials" | "scenario" | "skill">, docs: readonly { document_version_id: string; filename: string }[]): string[] {
+export function preselectDocs(card: Pick<ScenarioCard, "minMaterials" | "scenario" | "skill">, all: readonly { document_version_id: string; filename: string; supersedes?: string | null }[]): string[] {
   if (card.minMaterials === 0) return [];
+  // 第 48 批：案卷文件夹同步后，同一文件的旧版本仍在材料里（标“旧版本”）——缺省只选最新版，旧版本要律师自己勾
+  const old = new Set(all.map((d) => d.supersedes).filter((x): x is string => typeof x === "string" && x.length > 0));
+  const docs = all.filter((d) => !old.has(d.document_version_id));
   // 回稿重审要按“上一稿、回稿”的顺序勾两份（第 31 批：原先全选，案卷里有第三份稿时顺序就不是律师心里那两份）
   if (card.scenario === "s1b.draft_compare" || card.skill === "redraft-review") return [];
   // 针对一份文书的方法（审合同、按意见修改、文稿体检）只预选最近一份 Word（第 31 批：后两张原先把案卷里的证据也全勾上）

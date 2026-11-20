@@ -7,6 +7,7 @@ import type { Matter, MatterBasis, RunPolicyView } from "../api.ts";
 import { BASIS_FIELDS, BASIS_VALUE_LABELS, ENDPOINT_LABELS } from "../lib/labels.ts";
 import { jurisdictionLabel, stanceLabel } from "../lib/labels.ts";
 import { Icon } from "./Icons.tsx";
+import { authorizationLine } from "./Consent.tsx";
 import { STAGE_LABELS, type Stage } from "../lib/matter-stage.ts";
 
 export function basisComplete(b: MatterBasis | undefined): boolean {
@@ -35,7 +36,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
     refused || level === "L3b"
       ? { icon: Icon.lock, label: "客户要求不上云 · 只用本机功能", tone: "pill-red" }
       : !complete
-        ? { icon: Icon.question, label: "AI 暂不可用：客户同意待确认", tone: "pill-orange" }
+        ? { icon: Icon.question, label: "AI 暂不可用：尚未记录客户授权", tone: "pill-orange" }
         : level === "L3a"
           ? { icon: Icon.shield, label: "敏感事项 · 全部化名 · 每条检索都要你确认", tone: "pill-blue" }
           : { icon: Icon.shield, label: `可用 AI · 姓名证件发送前换成代号${fullPseudonym ? " · 公司名称也换" : ""}`, tone: "pill-green" };
@@ -59,11 +60,11 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
           </summary>
           <div className="protect-pop" role="group" aria-label="本事项的保护状态">
             <div className="protect-line">
-              <span className="protect-k">客户同意</span>
-              <span>{refused ? "客户要求不上云（已记录）" : complete ? "已记录" : "客户同意还没记录：暂时只能用不联网的本机功能"}</span>
+              <span className="protect-k">客户授权</span>
+              <span>{refused ? "客户要求不上云（已记录）" : complete ? authorizationLine(matter) : "尚未记录：暂时只能用不联网的本机功能"}</span>
               {onEditBasis && !refused && (
                 <button className="btn-link" onClick={onEditBasis}>
-                  {complete ? "调整" : "去确认"}
+                  {complete ? "调整" : "记录授权"}
                 </button>
               )}
             </div>
@@ -109,9 +110,15 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
           )}
         </div>
       )}
-      {basis && !complete && !refused && (
-        <div className="mh-note">
-          {BASIS_FIELDS.filter((f) => basis[f.key] === "pending").map((f) => f.label).join("、")}待确认：确认前不会把材料发给 AI，也不会联网查询；只能用本机功能（读材料、比对、脱敏、核对法条）。
+      {basis && !complete && !refused && level !== "L3b" && (
+        // 第 48 批：一句话说结果，待确认的具体项放悬停提示；入口是“记录授权”（与开始任务时同一种确认），告知函为辅
+        <div className="mh-note" title={`待确认：${BASIS_FIELDS.filter((f) => basis[f.key] === "pending").map((f) => f.label).join("、")}`}>
+          {basis.engagement === "pending" ? "记录客户授权之前" : "这一项确认之前"}，不会把材料发给 AI，也不会联网查询，只能用本机功能（读材料、比对、核对法条）。
+          {onEditBasis && (
+            <button className="btn-link" onClick={onEditBasis}>
+              记录授权
+            </button>
+          )}
           {onConsentNotice && (
             <button className="btn-link" onClick={onConsentNotice}>
               生成告知函（草稿）

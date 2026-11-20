@@ -172,7 +172,8 @@ function collectRows(deps: SyncDeps, matterId: string, deviceId: string, lamport
   // users 先行（matter_members.user_id 外键依赖；身份行是公开元数据）
   for (const r of db.all(`SELECT * FROM users WHERE tenant_id = ?`, [tenantId])) push("users", (r as any).user_id, r as Record<string, unknown>);
   const matter = db.get(`SELECT * FROM matters WHERE matter_id = ?`, [matterId]);
-  if (matter) push("matters", matterId, matter as Record<string, unknown>);
+  // 只属于这台电脑的列（案卷文件夹的完整路径，第 48 批）不导出
+  if (matter) push("matters", matterId, withoutDeviceLocal("matters", matter as Record<string, unknown>));
   // 成员事件链每段全量附带（第 12 批；接收方先处理链、再处理其余行）
   for (const e of exportEventRows(deps, matterId)) push(MEMBER_EVENTS_TABLE, e.event_id, e as unknown as Record<string, unknown>);
   // 成员行每段都附带全部（第三轮复核 S11A-28：迟到加入的成员由此认出负责人与在册成员；原作者随行保留）
@@ -641,6 +642,8 @@ function applyRow(deps: SyncDeps, r: SyncRow, ctx: { conflicts: SyncImportResult
   if (["matters", "runs", "document_versions", "node_tasks", "scheduled_jobs"].includes(table)) {
     const pkCol = TABLE_PK[table];
     if (!pkCol) return false;
+    // 只属于本机的列（第 48 批：案卷文件夹的完整路径）一律不收：对端给的路径会让本机去读对端指定的位置
+    const row = withoutDeviceLocal(table, r.row as Record<string, unknown>) as any;
     const pk = String(row[pkCol]);
     const existing = db.get(`SELECT * FROM ${table} WHERE ${pkCol} = ?`, [row[pkCol]]);
     if (!existing) {
@@ -651,8 +654,8 @@ function applyRow(deps: SyncDeps, r: SyncRow, ctx: { conflicts: SyncImportResult
     }
     const origin = originOf(db, table, pk, keyctx.device.deviceId);
     if (origin.device !== r.src_device) {
-      // 回波免告警（应当-3：合法 A→B→A 回流行与本机逐字段一致时不记冲突，仅跳过）
-      if (canonicalJson(existing) === canonicalJson(row)) return false;
+      // 回波免告警（应当-3：合法 A→B→A 回流行与本机逐字段一致时不记冲突，仅跳过）；本机专属列不参与比对
+      if (canonicalJson(withoutDeviceLocal(table, existing as Record<string, unknown>)) === canonicalJson(row)) return false;
       ctx.warnings.push(`origin_conflict:${table}/${pk}（本机归属 ${origin.device}，入段来自 ${r.src_device}，已保留本机行）`);
       return false;
     }
@@ -674,6 +677,22 @@ function applyRow(deps: SyncDeps, r: SyncRow, ctx: { conflicts: SyncImportResult
 const LOCAL_AUTHORITATIVE: Readonly<Record<string, readonly string[]>> = {
   matters: ["lifecycle", "closed_at", "retention_until", "legal_hold", "legal_hold_reason", "purged_at"],
 };
+
+/**
+ * 只属于这台电脑的列（第 48 批）：既不导出，也不接收。案卷文件夹的完整路径是律师本机的位置（常含当事人名称），
+ * 对别的电脑没有意义；接收会让对端指定本机去读哪个位置。材料在文件夹里的相对位置（document_versions.rel_path）不在此列，照常同步。
+ */
+export const DEVICE_LOCAL_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  matters: ["folder_root", "folder_linked_at", "folder_synced_at"],
+};
+
+export function withoutDeviceLocal(table: string, row: Record<string, unknown>): Record<string, unknown> {
+  const cols = DEVICE_LOCAL_COLUMNS[table];
+  if (!cols || !cols.some((c) => c in row)) return row;
+  const out = { ...row };
+  for (const c of cols) delete out[c];
+  return out;
+}
 
 function applyArtifact(deps: SyncDeps, r: SyncRow, ctx: { conflicts: SyncImportResult["conflicts"]; warnings: string[]; matterId: string; segDeviceId: string; bodyRows: SyncRow[]; bootstrap: boolean }): boolean {
   const { db } = deps;

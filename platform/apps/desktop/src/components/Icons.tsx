@@ -56,4 +56,6 @@ export const Icon = {
   more: () => <Svg><circle cx="6" cy="12" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="18" cy="12" r="1.2" /></Svg>,
   right: () => <Svg><path d="M9.5 6l6 6-6 6" /></Svg>,
   task: () => <Svg><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M8.5 12l2.5 2.5 4.5-5" /></Svg>,
+  download: () => <Svg><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5" /><path d="M5 19.5h14" /></Svg>,
+  calendar: () => <Svg><rect x="4" y="5.5" width="16" height="14.5" rx="2" /><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4" /></Svg>,
 };
