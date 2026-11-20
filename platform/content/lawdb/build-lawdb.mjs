@@ -1,10 +1,12 @@
 /**
  * 法规库包构建流水线（方案 v5.0 第 4 篇 §9、第 5 篇 §2）：
  * sources/*.json（人工采集形态种子）→ 签名只读 SQLite 包（dist/lawdb.sqlite + lawdb.manifest.json）。
- * G0 交付的是流水线与结构 + 演示种子（如实标注），不是 100 部真实采集；
+ * 现状（2026-11-20）：36 部按官方发布文本采集并与第二官方来源比对；《律师法》2017 版第三十八条仍为演示种子，2026 修正本第四十一条依据修改决定推定（逐字全文待采集）；
  * 不自动化抓取国家法律法规数据库；商业源未签约前不得入库。
- * 另构建测试夹具包 test-fixtures/lawdb-renumber-demo.sqlite（随包种子 + 虚构的《律师法》2026 修正本与 38→41 条号迁移，
+ * 另构建测试夹具包 test-fixtures/lawdb-renumber-demo.sqlite（随包种子 + 夹具里演绎的《律师法》“2026 修正本”（68 条、演绎文本）与 38→41 条号迁移，
  * 只用于测试改号拦截机制；v9.4 第 19 批 S-07）——安装包与内容分发只取 dist/，夹具不随包。
+ * 2026-11-20 起随包种子已含真实的《律师法》2026 修正本（2026-08-28 修改决定，2026-09-01 施行，65 条，只收第四十一条）与 38→41 迁移：
+ * 夹具里同 lsv_id 的版本覆盖种子版本，条号迁移按（原版本, 新版本, 主题）去重——夹具包仍是演绎文本，与真实修正本无关。
  * 用法：npm run build:lawdb（根目录）。
  */
 import { dirname, join } from "node:path";
@@ -36,8 +38,14 @@ function withFixture(laws, overlay) {
     if (!old) throw new Error(`夹具叠加的版本不在种子里：${o.supersede.lsv_id}`);
     old.superseded = o.supersede.superseded;
     old.effectiveness = o.supersede.effectiveness;
-    law.versions.push(...o.add_versions);
-    law.renumbering = [...(law.renumbering ?? []), ...o.renumbering];
+    for (const nv of o.add_versions) {
+      const i = law.versions.findIndex((v) => v.lsv_id === nv.lsv_id);
+      if (i >= 0) law.versions[i] = nv;
+      else law.versions.push(nv);
+    }
+    const key = (r) => `${r.from_lsv_id}|${r.to_lsv_id}|${r.topic}`;
+    const seen = new Set((law.renumbering ?? []).map(key));
+    law.renumbering = [...(law.renumbering ?? []), ...o.renumbering.filter((r) => !seen.has(key(r)))];
   }
   return out;
 }
@@ -69,4 +77,4 @@ console.log(`[build:lawdb] 包版本: ${manifest.package_version} · ${st.laws_c
 console.log(`[build:lawdb] 内容表行数: ${JSON.stringify(summary)}`);
 console.log(`[build:lawdb] 节假日表: ${holidaysDoc.years.map((y) => y.year).join("、")} 年`);
 console.log(`[build:lawdb] 测试夹具（不随包）: ${fixtureFile} · 条号迁移 ${fixture.summary.renumbering ?? "?"} 组`);
-console.log(`[build:lawdb] 注意：G0 示例数据集（公报期号/页码为示例值；虚构的《律师法》2026 修正本只在测试夹具里）`);
+console.log(`[build:lawdb] 注意：官方采集版本未采集公报期号；《律师法》2017 版第三十八条为演示数据，2026 修正本第四十一条依据修改决定推定（逐字全文待采集）；测试夹具里的《律师法》“2026 修正本”是演绎文本`);

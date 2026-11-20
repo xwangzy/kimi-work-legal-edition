@@ -4,12 +4,17 @@
  * 点任何一行都进入这份文件的详情（左预览、右签发前检查）；每行可直接下载，草稿行可提交复核。
  * 第 48 批：去掉表头与三层表格行，改为“事项标题 → 每次任务一张卡片 → 文件行”；页首一句话 + 搜索 + 状态页签（计数是徽标）；
  * 行内操作收为下载图标与悬停出现的“提交复核”，一屏不再是几十个描边按钮。
+ * 第 49 批（信息架构再精简）：
+ * - 页首一句话说“等你处理的是什么”（如“2 份等你复核签发，4 份草稿还没复核”），不再是一句不变的规则；
+ * - 筛选按律师的工作方式分为“待处理（草稿、待复核、退回）/ 已签发 / 全部”，计数为 0 的不显示数字；
+ * - 一个事项一张卡片，卡片里按任务分段（任务名 · 时间 · 份数，入口悬停出现），去掉“事项一层计数 + 任务一层灰底标题栏”的双层标题；
+ * - 文件单行：同族文件共同前缀淡化、差异加粗；“第 N 版”合并原“版本记录（n）”。
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
 import { AUDIENCE_LABELS, fileListName, fmtWhen } from "../lib/labels.ts";
-import { deliveryPackage, fileCount, groupByTask, groupDeliverables, PACKAGE_REASON_TEXT, splitTaskFiles, taskCountText, taskGroupLabel, taskPrimary } from "../lib/deliverables.ts";
+import { deliverablesSummary, deliveryPackage, fileCount, groupByTask, groupDeliverables, inFilter, nameParts, PACKAGE_REASON_TEXT, splitTaskFiles, taskCountText, taskGroupLabel, taskPrimary, type DeliverableFilter } from "../lib/deliverables.ts";
 import { FileRows, ProcessRows } from "../components/ArtifactRow.tsx";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { Icon } from "../components/Icons.tsx";
@@ -17,7 +22,7 @@ import { Icon } from "../components/Icons.tsx";
 export function DeliverablesPage() {
   const [matters, setMatters] = useState<Matter[]>([]);
   const [rows, setRows] = useState<(any & { matter_title: string; display: string })[] | null>(null);
-  const [filter, setFilter] = useState<Filter>("pending_review");
+  const [filter, setFilter] = useState<Filter>("todo");
   const [query, setQuery] = useState("");
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
@@ -56,15 +61,16 @@ export function DeliverablesPage() {
       })),
     [visible],
   );
-  const count = (k: Filter) => groups.reduce((n, g) => n + g.tasks.reduce((m, t) => m + fileCount(t.split.files, k === "all" ? undefined : k), 0), 0);
-  // 律师没点过分组时，缺省停在第一个有文件的分组（待复核 → 草稿 → 已签发）
+  const byStatus = (st: string) => groups.reduce((n, g) => n + g.tasks.reduce((m, t) => m + fileCount(t.split.files, st), 0), 0);
+  const count = (k: Filter) => groups.reduce((n, g) => n + g.tasks.reduce((m, t) => m + t.split.files.filter((e) => !e.replaced && inFilter(e.latest.status, k)).length, 0), 0);
+  const summary = deliverablesSummary({ pending_review: byStatus("pending_review"), draft: byStatus("draft"), rejected: byStatus("rejected"), approved: byStatus("approved") });
+  // 律师没点过筛选时：有待处理的停在“待处理”，否则看“全部”
   useEffect(() => {
     if (touchedRef.current || !rows || rows.length === 0) return;
-    const first = (["pending_review", "draft", "approved"] as const).find((k) => count(k) > 0);
-    if (first) setFilter(first);
+    setFilter(count("todo") > 0 ? "todo" : "all");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groups]);
-  const pick = <E extends { latest: { status: string } }>(es: E[]) => es.filter((e) => filter === "all" || e.latest.status === filter);
+  const pick = <E extends { latest: { status: string } }>(es: E[]) => es.filter((e) => inFilter(e.latest.status, filter));
   const shownGroups = groups
     .map((g) => ({ ...g, tasks: g.tasks.map((t) => ({ ...t, files: pick(t.split.files), process: pick(t.split.process) })).filter((t) => t.files.length + t.process.length + (filter === "all" ? t.split.earlier.length : 0) > 0) }))
     .filter((g) => g.tasks.length > 0);
@@ -98,8 +104,11 @@ export function DeliverablesPage() {
         <div className="dl-head">
           <div>
             <h1 className="page-title">成果</h1>
-            {/* 第 48 批：页首只留一句；“版本记录”“过程文件”在列表里自己说明 */}
-            <p className="dl-sub">AI 生成的文件都是草稿，经你复核签发后才能对外。{matters.length > 50 ? "（只列最近 50 个事项）" : ""}</p>
+            {/* 第 49 批：页首一句话说等你处理的是什么；规则放在后面一小句 */}
+            <p className="dl-sub">
+              {rows === null ? "正在载入…" : <b className="dl-sub-lead">{summary}</b>}
+              <span className="dl-sub-rule">AI 生成的文件签发后才能对外{matters.length > 50 ? "（只列最近 50 个事项）" : ""}</span>
+            </p>
           </div>
           <label className="dl-search">
             <span className="dl-search-icon" aria-hidden="true">{Icon.search()}</span>
@@ -111,20 +120,20 @@ export function DeliverablesPage() {
             )}
           </label>
         </div>
-        <div className="dl-tabs" role="tablist" aria-label="按状态">
+        <div className="dl-seg" role="tablist" aria-label="按状态">
           {FILTERS.map(([k, l]) => (
             <button
               key={k}
               role="tab"
               aria-selected={filter === k}
-              className={`dl-tab${filter === k ? " on" : ""}`}
+              className={`dl-seg-btn${filter === k ? " on" : ""}`}
               onClick={() => {
                 touchedRef.current = true;
                 setFilter(k);
               }}
             >
               {l}
-              <span className="dl-tab-n">{count(k)}</span>
+              {count(k) > 0 && <span className="dl-tab-n">{count(k)}</span>}
             </button>
           ))}
         </div>
@@ -135,9 +144,9 @@ export function DeliverablesPage() {
           <div className="dl-empty">
             <span className="dl-empty-icon" aria-hidden="true">{Icon.fileCheck()}</span>
             <div className="dl-empty-title">{q ? `没有找到“${query.trim()}”` : EMPTY_TEXT[filter]}</div>
-            {!q && filter !== "draft" && filter !== "all" && count("draft") > 0 && (
-              <button className="btn-link" onClick={() => setFilter("draft")}>
-                草稿里有 {count("draft")} 份 →
+            {!q && filter !== "all" && count("all") > 0 && (
+              <button className="btn-link" onClick={() => setFilter("all")}>
+                看全部 {count("all")} 份 →
               </button>
             )}
           </div>
@@ -145,12 +154,13 @@ export function DeliverablesPage() {
         {shownGroups.map((g) => (
           <section key={g.matter_id} className="dl-matter" aria-label={g.matter_title}>
             <div className="dl-matter-head">
-              <button className="dl-matter-title" onClick={() => nav(`/matter/${g.matter_id}`)}>
+              <button className="dl-matter-title" onClick={() => nav(`/matter/${g.matter_id}`)} title="打开这个事项">
                 {g.matter_title}
+                <span className="dl-matter-go" aria-hidden="true">{Icon.right()}</span>
               </button>
-              <span className="dl-matter-n">{g.tasks.reduce((n, t) => n + fileCount(t.files), 0)} 份文件</span>
             </div>
-            {/* 事项下再按“一次任务”分组（Astra M-3）：这次要交给客户的那几份放在一张卡片里 */}
+            {/* 一个事项一张卡片，卡片里按“一次任务”分段（Astra M-3）：这次要交给客户的那几份在同一段 */}
+            <div className="dl-card">
             {g.tasks.map((t) => (
               <div key={t.run_id ?? "none"} className="dl-task">
                 <TaskHead
@@ -166,9 +176,12 @@ export function DeliverablesPage() {
                 </TaskHead>
                 {t.files.length > 0 && (
                   <div className="dl-rows" role="list">
-                    {t.files.map((e) => (
-                      <FileRows key={e.key} entry={e} showStatus={filter === "all"} onOpen={(r) => nav(`/review/${r.artifact_version_id}`)} onDownload={(r) => void download(r)} onSubmit={(r) => void submit(r)} busyId={busyId} />
-                    ))}
+                    {(() => {
+                      const parts = nameParts(t.files.map((e) => String(e.latest.display)));
+                      return t.files.map((e) => (
+                        <FileRows key={e.key} entry={e} parts={parts.get(String(e.latest.display))} showStatus={filter !== "approved" && e.latest.status !== "draft"} onOpen={(r) => nav(`/review/${r.artifact_version_id}`)} onDownload={(r) => void download(r)} onSubmit={(r) => void submit(r)} busyId={busyId} />
+                      ));
+                    })()}
                   </div>
                 )}
                 <ProcessRows entries={t.process} onDownload={(r) => void download(r)} />
@@ -176,6 +189,7 @@ export function DeliverablesPage() {
                 {filter === "all" && <ProcessRows entries={t.split.earlier} onDownload={(r) => void download(r)} earlier />}
               </div>
             ))}
+            </div>
           </section>
         ))}
       </div>
@@ -183,14 +197,13 @@ export function DeliverablesPage() {
   );
 }
 
-type Filter = "pending_review" | "draft" | "approved" | "all";
+type Filter = DeliverableFilter;
 const FILTERS: [Filter, string][] = [
-  ["pending_review", "待复核"],
-  ["draft", "草稿"],
+  ["todo", "待处理"],
   ["approved", "已签发"],
   ["all", "全部"],
 ];
-const EMPTY_TEXT: Record<Filter, string> = { pending_review: "没有待复核的文件", draft: "没有草稿", approved: "还没有签发的文件", all: "还没有任何成果。任务完成后，生成的文件会出现在这里" };
+const EMPTY_TEXT: Record<Filter, string> = { todo: "没有等你处理的文件", approved: "还没有签发的文件", all: "还没有任何成果。任务完成后，生成的文件会出现在这里" };
 
 /** 任务卡片的头：任务名 + 时间 + 份数，右侧放入口。taskGroupLabel 形如“起草起诉状 · 11月9日 21:46”。 */
 function TaskHead({ label, count, children }: { label: string; count: string | null; children?: ReactNode }) {
@@ -296,9 +309,12 @@ export function MatterDeliverables({ matterId }: { matterId: string }) {
             {/* V18 A2：每份文件一行（最新版），旧版在“版本记录”；答复摘要与复核意见收进“过程文件” */}
             {sp.files.length > 0 && (
               <div className="dl-rows" role="list">
-                {sp.files.map((e) => (
-                  <FileRows key={e.key} entry={e} showStatus onOpen={(r) => nav(`/review/${r.artifact_version_id}`)} onDownload={(r) => void download(r)} />
-                ))}
+                {(() => {
+                  const parts = nameParts(sp.files.map((e) => String(e.latest.display)));
+                  return sp.files.map((e) => (
+                    <FileRows key={e.key} entry={e} parts={parts.get(String(e.latest.display))} showStatus onOpen={(r) => nav(`/review/${r.artifact_version_id}`)} onDownload={(r) => void download(r)} />
+                  ));
+                })()}
               </div>
             )}
             <ProcessRows entries={sp.process} onDownload={(r) => void download(r)} />

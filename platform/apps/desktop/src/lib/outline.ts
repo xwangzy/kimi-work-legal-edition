@@ -104,8 +104,10 @@ export async function confirmAndAnswer(o: { decide: () => Promise<unknown>; answ
 }
 
 /** 依据的核验说法（律师层）：库外与拦截的写明，系统核过的不说成“律师认可”。 */
-export function basisStateText(b: Pick<OutlineBasisView, "check" | "article_text" | "demo">): string {
-  if (b.check === "intercepted") return "核对未通过（条号或法名不对，或法规库里没有）";
+export function basisStateText(b: Pick<OutlineBasisView, "check" | "article_text" | "demo"> & { matched?: string | null }): string {
+  // V23：法规库未收录（核验没匹配到法名，matched 为 null）与条号不对分开说——未收录不等于条文不存在
+  if (b.check === "intercepted" && b.matched === null) return "法规库未收录这部法规，系统没法核对：须你查官方文本";
+  if (b.check === "intercepted") return "核对未通过（条号不存在、已改号或该时点没有有效版本）";
   if (b.check === "unverified_offline" || b.check === "unchecked") return "未核实，须你查官方文本";
   const text = b.article_text ? "条文原文见下" : "法规库没有这条的原文";
   return `${b.check === "version_verified" ? "版本已核" : b.check === "source_verified" ? "来源已核" : "已核到条"} · 是否撑得住论点由你判断 · ${text}${b.demo ? "（演示数据，不得作为正式引用）" : ""}`;

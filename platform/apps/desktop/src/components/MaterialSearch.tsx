@@ -6,12 +6,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type MaterialSearchHit } from "../api.ts";
 import { highlightParts, queryTerms, relDir, shouldAutoSearch } from "../lib/material-folder.ts";
+import { takeMatterFocus } from "../lib/search.ts";
 import { Icon } from "./Icons.tsx";
 
 const DEBOUNCE_MS = 300;
 
 export function MaterialSearch(p: { matterId: string; children: (q: string) => ReactNode }) {
-  const [q, setQ] = useState("");
+  // 从全局搜索点中一份材料进来时（第 49 批），先用它的文件名筛出这份
+  const [q, setQ] = useState(() => takeMatterFocus(p.matterId) ?? "");
   const [hits, setHits] = useState<{ q: string; items: MaterialSearchHit[]; truncated: boolean } | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -48,10 +50,13 @@ export function MaterialSearch(p: { matterId: string; children: (q: string) => R
     },
     [],
   );
-  // 换事项时清空
+  // 换事项时清空（第一次挂载不动：输入框已按带进来的文件名初始化）
+  const lastMatter = useRef(p.matterId);
   useEffect(() => {
+    if (lastMatter.current === p.matterId) return;
+    lastMatter.current = p.matterId;
     seq.current++;
-    setQ("");
+    setQ(takeMatterFocus(p.matterId) ?? "");
     setHits(null);
     setErr("");
   }, [p.matterId]);

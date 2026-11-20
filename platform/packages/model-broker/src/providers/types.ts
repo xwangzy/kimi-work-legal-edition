@@ -19,6 +19,8 @@ export interface ChatRequest {
   reasoning_effort?: "low" | "high" | "max" | undefined;
   response_format?: Record<string, unknown> | undefined;
   temperature?: number | undefined;
+  /** 思考开关（只对 thinkingControl = "toggle" 的路由发出，见 gate.ts thinkingParams）。 */
+  thinking?: { type: "enabled" | "disabled" } | undefined;
   max_tokens?: number | undefined;
   tools?: unknown[] | undefined;
   tool_choice?: unknown;

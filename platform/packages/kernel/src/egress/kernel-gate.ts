@@ -527,7 +527,7 @@ export class KernelGate {
       supportsEffort: false,
       defaultEffort: null,
       allowedEfforts: [],
-      temperature: 1,
+      temperature: null,
       priceKey: "",
     };
     recordUsage(

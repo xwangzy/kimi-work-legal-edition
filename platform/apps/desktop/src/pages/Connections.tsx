@@ -8,7 +8,8 @@
  * “管理”是否显示只是界面安排，授权一律由内核按角色逐个方法核验。
  */
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import "../styles-dataflow.css";
 import { notifyDataChanged } from "../lib/events.ts";
 import { api, recovery as recoveryApi, updates, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft } from "../api.ts";
 import { CONTENT_CHECK_FAILED, CONTENT_PANEL_NOTE, contentCheckLine, contentSourceLine, contentStaleLine } from "../lib/content-labels.ts";
@@ -239,11 +240,15 @@ function WritingTab() {
 }
 
 /**
- * “数据去向”（第 48 批重做；前身为 UIUX 增量评审 §3.5 的三栏列表）：一张图回答“东西在哪、经过谁、留下什么”。
- * 自上而下：一句结论 → 去向图（这台电脑 → 中软 → Kimi 模型，每站只列三四条）→ 发出前替换了什么（现场生成的示例）
- * → 其他会联网的功能（只列本所已启用的）→ 需要知道的局限 → 客户授权（律师本人的默认设置，不打印）→ 未启用的功能（收起）。
- * 按本所实际启用的功能生成，可打印成 PDF 给客户；口径与旧版逐条对应（替换范围、中软保存的字段、待签署的书面确认、识别会遗漏）。
+ * “数据去向”（第 48 批重做；第 49 批再精简信息架构）：回答“东西在哪、经过谁、留下什么”，并可打印给客户。
+ * 第 49 批：
+ * - 唯一需要律师操作的“客户授权”放在最上面（一行 + 开关，说明点开；不打印）；
+ * - 三张满是要点的站点卡片改为一张“数据 × 去处”对照表：行是数据，列是这台电脑 → 中软 → Kimi 模型，格子里一句话
+ *   （加密保存 / 只转发 / 保存·不含内容 / 处理），同一件事只说一遍；
+ * - 替换规则、其他联网功能、需要知道的局限、未启用的功能收成可展开的行，每行先给一句摘要；打印时全部展开。
+ * 口径与第 48 批逐条对应（替换范围、中软保存的字段、待签署的书面确认、识别会遗漏），只改组织方式。
  */
+type FlowCell = { text: string; tone?: "keep" | "pass" | "meta" | "none" };
 function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: any[]; recovery: any; firm: string | null; syncOn: boolean }) {
   const [example, setExample] = useState<{ sent: string; replaced: number } | null>(null);
   const [relayUsed, setRelayUsed] = useState(false);
@@ -256,14 +261,43 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
     updates.status().then((u) => setUpdatesOn(!!u?.enabled)).catch(() => setUpdatesOn(false));
     api.contentStatus().then((c) => setContentOn(!!c?.configured)).catch(() => setContentOn(false));
   }, []);
+  // 打印给客户时，收起的说明全部展开（打印完恢复原样）
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let opened: HTMLDetailsElement[] = [];
+    const before = () => {
+      opened = [...(rootRef.current?.querySelectorAll("details.dfx-fold:not([open])") ?? [])] as HTMLDetailsElement[];
+      opened.forEach((d) => (d.open = true));
+    };
+    const after = () => {
+      opened.forEach((d) => (d.open = false));
+      opened = [];
+    };
+    window.addEventListener("beforeprint", before);
+    window.addEventListener("afterprint", after);
+    return () => {
+      window.removeEventListener("beforeprint", before);
+      window.removeEventListener("afterprint", after);
+    };
+  }, []);
   // 第 11 批 S11：团队共享经中软共享中继（本所策略开启且已配置）
   const relayOn = !!gate?.relay_configured && !!gate?.share_relay_allowed;
   const relayStored = relayOn || (!!gate?.relay_configured && relayUsed);
-  // 去向图三站（复核 S6A-02/03 的口径不变：替换了什么、哪些按原文、中软保存哪些字段）
-  const local = ["案卷原件与全部成果", "代号与真实姓名的对照表", "对话、问答与任务记录"];
-  const relayPass = ["发给 AI 的任务内容与问答的问题（已换成代号）", ...(gate?.search_configured ? ["联网检索的查询（默认去掉当事人名称）"] : [])];
-  const relayKeep = ["你的登录邮箱、姓名和登记的电脑，以及每次 AI 调用的用量（请求编号、模型、token 数、金额）；看不到内容", "匿名事项编号、调用记录与律所规则"];
-  const model = ["收到替换代号后的内容：机构名称（含客户名称）、案情、金额、日期按原文", "与月之暗面“不用于训练、不保留”的书面确认：待签署"];
+  // 对照表（复核 S6A-02/03 的口径不变：替换了什么、哪些按原文、中软保存哪些字段、待签署的书面确认）
+  const K = (text: string): FlowCell => ({ text, tone: "keep" });
+  const P = (text: string): FlowCell => ({ text, tone: "pass" });
+  const M = (text: string): FlowCell => ({ text, tone: "meta" });
+  const N: FlowCell = { text: "—", tone: "none" };
+  const rowsTable: { data: string; note?: string; cells: [FlowCell, FlowCell, FlowCell] }[] = [
+    { data: "案卷原件与全部成果", cells: [K("加密保存"), N, N] },
+    { data: "代号与真实姓名的对照表", cells: [K("加密保存"), N, N] },
+    { data: "对话、问答与任务记录", cells: [K("加密保存"), N, N] },
+    { data: "发给 AI 的任务内容与问答的问题", note: "已把姓名、证件号等换成代号", cells: [P("换成代号后发出"), P("只转发，不保存"), { text: "处理；与月之暗面“不用于训练、不保留”的书面确认：待签署" }] },
+    ...(gate?.search_configured ? [{ data: "联网检索的查询", note: "默认去掉当事人名称", cells: [P("发出"), P("转发给检索服务"), N] as [FlowCell, FlowCell, FlowCell] }] : []),
+    // 原句保留（第 44 批口径：用量单位就是 token，如实写出中软看得到的字段）
+    { data: "账号与用量记录", note: "你的登录邮箱、姓名和登记的电脑，以及每次 AI 调用的用量（请求编号、模型、token 数、金额）；看不到内容", cells: [N, M("保存（不含内容）"), N] },
+    { data: "匿名事项编号、调用记录与律所规则", cells: [N, M("保存"), N] },
+  ];
   // 其他会联网的功能（只列已启用的）：不经中软的直连，与经中软保存少量记录的
   const others: { name: string; line: string }[] = [
     ...(gate?.fetch === "local" ? [{ name: "打开公开网页", line: "网址由这台电脑直接发往该网站，不经中软" }] : []),
@@ -278,6 +312,14 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
     // 开关关闭后已上传的包仍保存至 7 天：只要配置了支持服务就列出（复核 S9B-04⑤）
     ...(gate?.support_configured ? [{ name: "问题报告", line: "只在你主动发送时上传，不含案件内容，保存 7 天" }] : []),
   ];
+  const limits: { name: string; line: string }[] = [
+    { name: "识别会遗漏", line: "识别依靠规则与当事人名单，可能遗漏：没有识别出的姓名会按原文发出。每个任务的“数据去向”里可以逐条查看实际发出的内容。" },
+    ...(gate?.search_configured ? [{ name: "联网检索", line: "默认去掉当事人名称再发出；含当事人名称的查询须经办律师逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）。" }] : []),
+    { name: "客户可以拒绝", line: "客户不希望使用云端 AI 的事项，律师可设为“客户要求不上云”：只在这台电脑上处理，不用云端 AI，也不联网查询。" },
+    { name: "不经中软的情形", line: "使用律所自己的 Kimi 账号或律所自建 AI 的事项，不经过中软。" },
+    // V16（审计第 24 条）：“加密保存的局限”整段在 管理 · 技术支持（给 IT）；律师版只留一句
+    { name: "电脑账户", line: "加密的钥匙跟你这台电脑的登录账户绑定，请不要和别人共用电脑账户。" },
+  ];
   const notEnabled = [
     ...(gate?.search_configured ? [] : ["联网检索"]),
     "法源与主体信息查询",
@@ -289,7 +331,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
     ...(recovery?.escrow ? [] : ["中软托管恢复"]),
   ];
   return (
-    <div className="dfx">
+    <div className="dfx dfx2" ref={rootRef}>
       <div className="dfx-head">
         <div>
           <h2 className="h-section dfx-title">数据去向说明</h2>
@@ -301,109 +343,113 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
           打印或另存为 PDF
         </button>
       </div>
+
+      <AuthorizationDefault />
+
       <p className="dfx-lead">
         案卷原件和全部成果只保存在这台电脑上，并且加密。需要 AI 时，发出去的内容会先把姓名、证件号、电话等换成代号；中软只转发，不保存内容。
       </p>
+
       {/* 律师层其他地方统一说“Kimi Work 服务 / 客服”；这一页是给客户看的披露，按实际运营方写，第一次出现时说清是谁（v9.4 U1 #6） */}
-      <ol className="dfx-flow" aria-label="数据去向">
-        <li className="dfx-node dfx-node-local">
-          <span className="dfx-node-icon" aria-hidden="true">{Icon.device()}</span>
-          <div className="dfx-node-title">这台电脑</div>
-          <div className="dfx-node-role">加密保存，只在这里</div>
-          <ul>{local.map((x) => <li key={x}>{x}</li>)}</ul>
-        </li>
-        <li className="dfx-link" aria-hidden="true">
-          <span className="dfx-link-label">换成代号后</span>
-          <span className="dfx-link-line" />
-        </li>
-        <li className="dfx-node">
-          <span className="dfx-node-icon" aria-hidden="true">{Icon.shield()}</span>
-          <div className="dfx-node-title">中软云端服务</div>
-          <div className="dfx-node-role">中软国际运营：只转发，不保存内容</div>
-          <div className="dfx-node-group">转发</div>
-          <ul>{relayPass.map((x) => <li key={x}>{x}</li>)}</ul>
-          <div className="dfx-node-group">只保存这些（不含内容）</div>
-          <ul>{relayKeep.map((x) => <li key={x}>{x}</li>)}</ul>
-        </li>
-        <li className="dfx-link" aria-hidden="true">
-          <span className="dfx-link-label">转发</span>
-          <span className="dfx-link-line" />
-        </li>
-        <li className="dfx-node">
-          <span className="dfx-node-icon" aria-hidden="true">{Icon.sparkle()}</span>
-          <div className="dfx-node-title">Kimi 模型</div>
-          <div className="dfx-node-role">月之暗面：处理替换后的内容</div>
-          <ul>{model.map((x) => <li key={x}>{x}</li>)}</ul>
-        </li>
-      </ol>
+      <div className="dfx-table-wrap">
+        <table className="dfx-table" aria-label="数据在哪、经过谁、留下什么">
+          <thead>
+            <tr>
+              <th scope="col" className="dfx-th-data">数据</th>
+              <th scope="col">
+                <span className="dfx-th-ico" aria-hidden="true">{Icon.device()}</span>这台电脑
+              </th>
+              <th scope="col">
+                <span className="dfx-th-arrow" aria-hidden="true">→</span>
+                <span className="dfx-th-ico" aria-hidden="true">{Icon.shield()}</span>中软云端服务
+                <small>中软国际运营</small>
+              </th>
+              <th scope="col">
+                <span className="dfx-th-arrow" aria-hidden="true">→</span>
+                <span className="dfx-th-ico" aria-hidden="true">{Icon.sparkle()}</span>Kimi 模型
+                <small>月之暗面</small>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rowsTable.map((r) => (
+              <tr key={r.data}>
+                <th scope="row">
+                  {r.data}
+                  {r.note && <small>{r.note}</small>}
+                </th>
+                {r.cells.map((c, i) => (
+                  <td key={i} className={`dfx-cell dfx-cell-${c.tone ?? "plain"}`}>
+                    {c.tone === "none" ? <span aria-label="不经过">—</span> : c.text}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-      <section className="dfx-sec" aria-labelledby="dfx-sample-h">
-        <h3 className="h-sub" id="dfx-sample-h">发出前替换了什么</h3>
-        <div className="dfx-sample">
-          <div className="dfx-sample-cap">一次 AI 请求实际发出的样子（示例句子与人物均为虚构，由这台电脑现场生成）</div>
-          <div className="dfx-sample-text">{example ? sampleParts(example.sent).map((p, i) => (p.token ? <span key={i} className="dfx-token">{p.text}</span> : <span key={i}>{p.text}</span>)) : "—"}</div>
-        </div>
-        <dl className="dfx-rules">
-          <div>
-            <dt>换成代号</dt>
-            <dd>自然人姓名、证件号、手机号、账号、住址</dd>
+      <div className="dfx-folds">
+        <details className="dfx-fold">
+          <summary>
+            <span className="dfx-fold-title">发出前替换了什么</span>
+            <span className="dfx-fold-sum">姓名、证件号、手机号、账号、住址换成代号；机构名称、案情、金额、日期按原文</span>
+          </summary>
+          <div className="dfx-fold-body">
+            <div className="dfx-sample">
+              <div className="dfx-sample-cap">一次 AI 请求实际发出的样子（示例句子与人物均为虚构，由这台电脑现场生成）</div>
+              <div className="dfx-sample-text">{example ? sampleParts(example.sent).map((p, i) => (p.token ? <span key={i} className="dfx-token">{p.text}</span> : <span key={i}>{p.text}</span>)) : "—"}</div>
+            </div>
+            <dl className="dfx-rules">
+              <div>
+                <dt>换成代号</dt>
+                <dd>自然人姓名、证件号、手机号、账号、住址</dd>
+              </div>
+              <div>
+                <dt>按原文发送</dt>
+                <dd>机构名称（含客户名称）、案情、金额、日期；可按事项开启“全部化名”，公司名称也换成代号</dd>
+              </div>
+            </dl>
           </div>
-          <div>
-            <dt>按原文发送</dt>
-            <dd>机构名称（含客户名称）、案情、金额、日期；可按事项开启“全部化名”，公司名称也换成代号</dd>
-          </div>
-        </dl>
-      </section>
-
-      {others.length > 0 && (
-        <section className="dfx-sec" aria-labelledby="dfx-others-h">
-          <h3 className="h-sub" id="dfx-others-h">其他会联网的功能</h3>
-          <ul className="dfx-list">
-            {others.map((o) => (
+        </details>
+        {others.length > 0 && (
+          <details className="dfx-fold">
+            <summary>
+              <span className="dfx-fold-title">其他会联网的功能</span>
+              <span className="dfx-fold-sum">{others.map((o) => o.name).join("、")}</span>
+            </summary>
+            <ul className="dfx-list dfx-fold-body">
+              {others.map((o) => (
+                <li key={o.name}>
+                  <b>{o.name}</b>
+                  <span>{o.line}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+        <details className="dfx-fold">
+          <summary>
+            <span className="dfx-fold-title">需要知道的</span>
+            <span className="dfx-fold-sum">{limits.map((o) => o.name).join("、")}</span>
+          </summary>
+          <ul className="dfx-list dfx-limits dfx-fold-body">
+            {limits.map((o) => (
               <li key={o.name}>
                 <b>{o.name}</b>
                 <span>{o.line}</span>
               </li>
             ))}
           </ul>
-        </section>
-      )}
-
-      <section className="dfx-sec" aria-labelledby="dfx-limits-h">
-        <h3 className="h-sub" id="dfx-limits-h">需要知道的</h3>
-        <ul className="dfx-list dfx-limits">
-          <li>
-            <b>识别会遗漏</b>
-            <span>识别依靠规则与当事人名单，可能遗漏：没有识别出的姓名会按原文发出。每个任务的“数据去向”里可以逐条查看实际发出的内容。</span>
-          </li>
-          {gate?.search_configured && (
-            <li>
-              <b>联网检索</b>
-              <span>默认去掉当事人名称再发出；含当事人名称的查询须经办律师逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）。</span>
-            </li>
-          )}
-          <li>
-            <b>客户可以拒绝</b>
-            <span>客户不希望使用云端 AI 的事项，律师可设为“客户要求不上云”：只在这台电脑上处理，不用云端 AI，也不联网查询。</span>
-          </li>
-          <li>
-            <b>不经中软的情形</b>
-            <span>使用律所自己的 Kimi 账号或律所自建 AI 的事项，不经过中软。</span>
-          </li>
-          {/* V16（审计第 24 条）：“加密保存的局限”整段在 管理 · 技术支持（给 IT）；律师版只留一句 */}
-          <li>
-            <b>电脑账户</b>
-            <span>加密的钥匙跟你这台电脑的登录账户绑定，请不要和别人共用电脑账户。</span>
-          </li>
-        </ul>
-      </section>
-
-      <AuthorizationDefault />
-
-      <details className="dfx-more">
-        <summary>未启用的功能（{notEnabled.length}）</summary>
-        <ul className="plain-list muted">{notEnabled.map((x) => <li key={x}>{x}：未启用</li>)}</ul>
-      </details>
+        </details>
+        <details className="dfx-fold">
+          <summary>
+            <span className="dfx-fold-title">未启用的功能</span>
+            <span className="dfx-fold-sum">{notEnabled.length} 项</span>
+          </summary>
+          <ul className="plain-list muted dfx-fold-body">{notEnabled.map((x) => <li key={x}>{x}：未启用</li>)}</ul>
+        </details>
+      </div>
     </div>
   );
 }
@@ -437,21 +483,26 @@ function AuthorizationDefault() {
     }
   };
   return (
-    <section className="dfx-sec dfx-auth no-print" aria-labelledby="dfx-auth-h">
+    <section className="dfx-auth no-print" aria-labelledby="dfx-auth-h">
       <div className="dfx-auth-row">
-        <div>
-          <h3 className="h-sub" id="dfx-auth-h">客户授权</h3>
-          <p className="dfx-auth-text">
-            使用 AI 前需要客户同意。你的委托合同如果已含使用 AI 辅助及次处理者（中软、月之暗面）的条款，打开后新建事项默认按此记录，不再逐案询问。
-            敏感事项的单独同意、“尚未取得”与“客户要求不上云”仍按事项处理；关闭只影响之后新建的事项。
-          </p>
+        <div className="dfx-auth-main">
+          <h3 className="dfx-auth-title" id="dfx-auth-h">
+            客户授权
+            <span className="dfx-auth-state">{state.engagement_terms ? "按委托合同条款记录" : "逐案确认"}</span>
+          </h3>
+          <div className="dfx-auth-text">
+            {state.engagement_terms
+              ? "你的委托合同已含使用 AI 辅助及次处理者的条款：新建事项默认按此记录，不再逐案询问。"
+              : "使用 AI 前需要客户同意。委托合同若已含使用 AI 辅助及次处理者（中软、月之暗面）的条款，可打开开关，新建事项默认按此记录。"}
+            <details className="dfx-auth-more">
+              <summary>怎么记录</summary>
+              敏感事项的单独同意、“尚未取得”与“客户要求不上云”仍按事项处理；关闭只影响之后新建的事项，已有事项的记录不变。声明与撤回都记入审计。
+            </details>
+          </div>
           {state.updated_at && <div className="dfx-auth-meta">上次修改：{fmtTime(state.updated_at)}（已记录）</div>}
           {err && <div className="banner banner-red">{err}</div>}
         </div>
-        <span className="switch-row">
-          <span className="dfx-auth-label">{state.engagement_terms ? "委托合同含 AI 条款" : "逐案确认"}</span>
-          <button role="switch" aria-checked={state.engagement_terms} aria-label="我的委托合同含使用 AI 辅助的条款" className="switch" disabled={busy} onClick={() => void toggle()} />
-        </span>
+        <button role="switch" aria-checked={state.engagement_terms} aria-label="我的委托合同含使用 AI 辅助的条款" className="switch" disabled={busy} onClick={() => void toggle()} />
       </div>
     </section>
   );

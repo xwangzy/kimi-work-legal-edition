@@ -49,7 +49,8 @@ win:
   target:
     - target: nsis
       arch: [x64]
-  icon: build/icon.png
+  # 应用图标（第 49 批）：Kimi 官方 Logomark 多尺寸 ico（16～256，scripts/build-icons.mjs 从 build/brand 下的源 SVG 生成）
+  icon: build/icon.ico
   requestedExecutionLevel: asInvoker
   # 随包 node.exe 保留 OpenJS 基金会的原签名、不重签（其摘要锁定在 asar 内的运行时清单里，重签会改变摘要）
   signExts: ["!node.exe", "!kwl-egress.exe", "!kwl-host.exe", "!kwl-parse.exe"]
@@ -69,6 +70,10 @@ nsis:
   createDesktopShortcut: always
   createStartMenuShortcut: true
   shortcutName: Kimi Work 法律版
+  # 安装程序、卸载程序与（一键安装形态的）进度条上方图标都用同一个 ico；路径先按 buildResources 找、找不到再按项目目录（apps/desktop）解析
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
   # 更新源与 CDN 上的文件名只用 ASCII（避免空格与中文在 URL 编码上出错）
   artifactName: KimiWorkLegal-Setup-${version}.${ext}
   language: "2052"

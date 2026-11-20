@@ -6,7 +6,8 @@
  * - 标题开头命中 > 词都在标题里 > 有词只在副标题里；都不命中时，再按“每个字都在标题里、并且按顺序出现”宽松匹配，排在最后
  *   （律师常连着输入“股权转让修订稿”）；同分按最近活动。
  */
-export type TitleKind = "matter" | "run" | "deliverable";
+/** material（第 49 批）：事项里的材料文件，按文件名与在案卷文件夹里的位置找（跨事项“找文件”，替代单独的本地工作空间）。 */
+export type TitleKind = "matter" | "run" | "deliverable" | "material";
 
 export interface TitleCandidate {
   kind: TitleKind;
@@ -48,7 +49,7 @@ export function scoreTitle(query: string, c: Pick<TitleCandidate, "title" | "sub
 export function rankTitles<T extends TitleCandidate>(query: string, items: readonly T[], limitPerKind = 6): Record<TitleKind, T[]> {
   const scored = items.map((it) => ({ it, s: scoreTitle(query, it) })).filter((x) => x.s > 0);
   scored.sort((a, b) => b.s - a.s || String(b.it.at ?? "").localeCompare(String(a.it.at ?? "")));
-  const out: Record<TitleKind, T[]> = { matter: [], run: [], deliverable: [] };
+  const out: Record<TitleKind, T[]> = { matter: [], run: [], deliverable: [], material: [] };
   for (const x of scored) if (out[x.it.kind].length < limitPerKind) out[x.it.kind].push(x.it);
   return out;
 }

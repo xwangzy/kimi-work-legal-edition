@@ -31,9 +31,15 @@ test("lawdb.status：版本/更新日/签名有效；加载留痕上链", async 
   assert.equal(st.laws_count, 37);
   assert.equal(st.versions_count, 38);
   assert.match(st.display, /法规库最后更新/);
-  // 覆盖范围如实说（第 13 批）：演示法规库不足 50 部 → sample，说明里直说多数引用无法自动核对
+  // 覆盖范围如实说（第 13 批）：不足 50 部 → sample，说明里直说库外引用无法自动核对；
+  // V23（2026-11-20 核验）：来源按登记说（36 部官方文本 + 1 部演示数据），不再统称“演示范围”，并写条文采集截至日
   assert.equal(st.coverage.level, "sample");
-  assert.match(st.display, /演示范围.*无法自动核对/);
+  // 夹具包里《律师法》2026 版是演绎文本（演示登记），故“另有 2 条为演示数据”
+  assert.match(st.display, /36 部按官方发布文本采集；另有 2 条为演示数据.*库外的引用无法自动核对/);
+  assert.doesNotMatch(st.display, /演示范围/);
+  assert.match(st.display, /条文采集截至 \d{4}-\d{2}-\d{2}/);
+  assert.match(st.source_coverage_note, /36 部（\d+ 条）按官方发布文本采集并与第二官方来源比对（采集截至 \d{4}-\d{2}-\d{2}），1 部（2 条）为演示数据/);
+  assert.doesNotMatch(st.source_coverage_note, /G0 演示种子/);
   const row = tk.kernel.db.get(`SELECT * FROM audit_events WHERE action = 'lawdb.load' AND object_id = ?`, [st.package_version]) as any;
   assert.ok(row, "lawdb.load 审计事件应落库");
   const onChain = tk.kernel.db.get(`SELECT 1 AS x FROM signed_events WHERE kind = 'audit_event' AND ref_id = ?`, [String(row.audit_event_id)]) as any;

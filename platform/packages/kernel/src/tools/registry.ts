@@ -163,7 +163,7 @@ export const TOOLS: readonly ToolDef[] = [
       const r = citationsVerify(ctx.lawdb, p);
       return {
         ...r,
-        note: "support_pending（支持待判）是正常结果：条文存在、适用版本现行有效，来源与版本已核；是否支持你的论点由你读 law.get_article 的原文判断后写明，不是核验失败。intercepted（拦截）才表示条号不存在、已改号或该时点无有效版本，不得照引；unverified_offline 是库外法源，写“法规库未收录”",
+        note: "support_pending（支持待判）是正常结果：条文存在、适用版本现行有效，来源与版本已核；是否支持你的论点由你读 law.get_article 的原文判断后写明，不是核验失败。intercepted（拦截）表示没有核过：reasons 以 unknown_source: 开头的是法规库未收录这部法规（不是条文不存在，写“法规库未收录”，须律师查官方文本）；其余（条号超出、已改号、该时点无有效版本）不得照引，renumbered 时按 suggestion 改引；unverified_offline 是案号等无法离线核验的引用",
       };
     },
   },

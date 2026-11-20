@@ -14,7 +14,7 @@ import { createPublicKey } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEMO_CONTRACT, importText, runScenario } from "./helpers.ts";
+import { DEMO_CONTRACT, importText, runScenario, decideAllCitations } from "./helpers.ts";
 import * as forgedHelpers from "../src/ledger-signer.ts";
 
 process.env.ZR_INTERNAL_SECRET = process.env.ZR_INTERNAL_SECRET ?? "device-recovery-test-secret-0123456789";
@@ -68,6 +68,9 @@ test("设备恢复完整场景：丢失 device.json → 临时密钥期间建事
     const art = d.artifacts.find((a: any) => a.kind === "s1_opinion");
     assert.ok(art, "临时密钥期间应产出成果");
     await inv("review.submit", { artifact_version_id: art.artifact_version_id });
+    // 第 49 批：随包法规库收录《律师法》2026 修正本后，示例合同引用的“第三十八条”（保密义务）已改号为第四十一条，
+    // 支持性不再自动通过——本用例测设备恢复，按签发必过项逐条确认引用（与其他测别的门禁的用例同一做法）
+    await decideAllCitations(inv, art.artifact_version_id);
     const ap = await inv("review.approve", {
       artifact_version_id: art.artifact_version_id,
       decision: "approved",

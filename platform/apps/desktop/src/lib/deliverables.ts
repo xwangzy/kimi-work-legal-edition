@@ -221,3 +221,60 @@ export function deliveryPackage<T extends PackageRow>(rows: readonly T[]): { rea
   }
   return { ready, held };
 }
+
+/* ── 第 49 批：成果页“待处理 / 已签发 / 全部”、名称差异强调、页首摘要 ── */
+
+/** 成果页的筛选（第 49 批）：律师的工作清单是“待处理”（草稿、待复核、退回），已签发是归档。 */
+export type DeliverableFilter = "todo" | "approved" | "all";
+/** 算“待处理”的状态：草稿（还没复核）、待复核（等人签发）、退回（要改）。 */
+export const TODO_STATUSES: ReadonlySet<string> = new Set(["draft", "pending_review", "rejected"]);
+
+/** 一份文件是否落在这个筛选里（按最新版状态；被后面任务取代的不算）。 */
+export function inFilter(status: string, f: DeliverableFilter): boolean {
+  if (f === "all") return true;
+  if (f === "approved") return status === "approved";
+  return TODO_STATUSES.has(status);
+}
+
+/**
+ * 页首一句话（第 49 批）：先说“等你处理的是什么”，再说规则；没有成果时说成果从哪来。
+ * 例：“2 份等你复核签发，4 份草稿还没复核” / “6 份草稿还没复核” / “都已签发，共 5 份”。
+ */
+export function deliverablesSummary(n: { pending_review: number; draft: number; rejected: number; approved: number }): string {
+  const parts: string[] = [];
+  if (n.pending_review > 0) parts.push(`${n.pending_review} 份等你复核签发`);
+  if (n.draft > 0) parts.push(`${n.draft} 份草稿还没复核`);
+  if (n.rejected > 0) parts.push(`${n.rejected} 份被退回待修改`);
+  if (parts.length > 0) return parts.join("，");
+  if (n.approved > 0) return `都已签发，共 ${n.approved} 份`;
+  return "还没有成果：任务完成后，生成的文件会出现在这里";
+}
+
+/** 名称里可以断开的位置（断在这些字符之前）：括号、连接符、间隔号、空格。 */
+const NAME_BREAK = /[（(【\[—\-·\s_]/;
+
+/** 两个名称的共同前缀，退到最后一个可断开处（断点字符留给差异部分）；不足 6 个字或会吃掉整名时为 0。 */
+function sharedHead(a: string, b: string): number {
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  for (let k = i; k >= 6; k--) {
+    if (NAME_BREAK.test(a[k] ?? "") && NAME_BREAK.test(b[k] ?? "") && k < a.length && k < b.length) return k;
+  }
+  return 0;
+}
+
+/**
+ * 同一次任务里常有几份文件共用一长串前缀（如“冷链智能分拣系统采购与实施合同（棠溪智能提供稿）（修订稿）/（清洁稿）/（修改对照表）”），
+ * 旁边还有名称完全不同的“审查意见书”“问题清单”。逐份找它与同组其他文件最长的共同前缀（断在括号、连接符处、≥ 6 个字、
+ * 留得下差异），把这段淡化、差异部分加粗：律师一眼看出几个版本的区别，又不丢原名（第 49 批）。没有同族文件的名称 head 为空。纯函数。
+ */
+export function nameParts(names: readonly string[]): Map<string, { head: string; tail: string }> {
+  const uniq = [...new Set(names)];
+  const out = new Map<string, { head: string; tail: string }>();
+  for (const n of uniq) {
+    let best = 0;
+    for (const m of uniq) if (m !== n) best = Math.max(best, sharedHead(n, m));
+    out.set(n, { head: n.slice(0, best), tail: n.slice(best) });
+  }
+  return out;
+}

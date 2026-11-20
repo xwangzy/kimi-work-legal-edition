@@ -51,14 +51,43 @@ export interface GateProvider {
   chatStream(route: RouteDef, req: ChatRequest, meta: GateMeta): Promise<ProviderStream>;
 }
 
-function gateBody(route: RouteDef, req: ChatRequest, stream: boolean): Record<string, unknown> {
+/** 路由的思考控制方式（老配置没写时按 supportsEffort 推断）。 */
+export function thinkingControlOf(route: RouteDef): "effort" | "toggle" | "none" {
+  return route.thinkingControl ?? (route.supportsEffort ? "effort" : "none");
+}
+
+/**
+ * 问答“深度思考”开关 → 上游参数（第 49 批，按 Kimi 官方《模型参数参考》与真实请求核对）：
+ * - K3 系列（effort）：始终思考，不支持 thinking；深度 = reasoning_effort "max"，快速 = "low"（仍会简短思考，界面如实显示“思考中”）；
+ * - K2.6（toggle）：深度 = thinking { type: "enabled" }，快速 = { type: "disabled" }（不思考直接答）；
+ * - 不可控的模型：不发任何思考参数（开关对它不起作用，界面据 QaModelChoice.thinking 不显示开关）。
+ * 温度一律不发（各模型固定值，传错即报错）。
+ */
+export function thinkingParams(route: RouteDef, deep: boolean): Pick<ChatRequest, "reasoning_effort"> & { thinking?: { type: "enabled" | "disabled" } } {
+  const c = thinkingControlOf(route);
+  if (c === "effort") return { reasoning_effort: deep ? "max" : "low" };
+  if (c === "toggle") return { thinking: { type: deep ? "enabled" : "disabled" } };
+  return {};
+}
+
+/**
+ * 发给闸门的请求体（导出供用例核对：哪些参数会随请求发出）。
+ * 只发模型支持的思考参数（第 49 批）：effort 路由丢弃 thinking、toggle 路由丢弃 reasoning_effort——调用方传错也不会把不支持的参数发到上游。
+ */
+export function gateBody(route: RouteDef, req: ChatRequest, stream: boolean): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: route.alias,
     messages: req.messages,
-    temperature: route.temperature, // 固定 1.0
     stream,
   };
-  if (route.supportsEffort && req.reasoning_effort) body.reasoning_effort = req.reasoning_effort;
+  // 温度：Kimi 各模型为固定值、传错即报错，路由配置为 null 时不发（第 49 批）
+  if (typeof route.temperature === "number") body.temperature = route.temperature;
+  const control = thinkingControlOf(route);
+  if (control === "effort" && route.supportsEffort && req.reasoning_effort) body.reasoning_effort = req.reasoning_effort;
+  if (control === "toggle") {
+    const t = req.thinking as { type?: unknown } | undefined;
+    if (t && typeof t === "object" && (t.type === "enabled" || t.type === "disabled")) body.thinking = { type: t.type };
+  }
   if (req.response_format) body.response_format = req.response_format;
   if (req.max_tokens) body.max_completion_tokens = req.max_tokens;
   if (req.tools) body.tools = req.tools;

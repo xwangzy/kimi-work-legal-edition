@@ -40,7 +40,7 @@ test("search.titles：全部事项都搜、已删除的不出现、命中才返�
   assert.deepEqual(r.matters.map((m: any) => m.title), ["顾问事项 000"]);
   const many = await tk.inv("search.titles", { q: "顾问事项", labels: {} });
   assert.equal(many.matters.length, 6, "每类至多 6 条");
-  assert.deepEqual(await tk.inv("search.titles", { q: "   " }), { matters: [], runs: [], deliverables: [], truncated: { runs: false, deliverables: false } });
+  assert.deepEqual(await tk.inv("search.titles", { q: "   " }), { matters: [], runs: [], deliverables: [], materials: [], truncated: { runs: false, deliverables: false, materials: false } });
   // 已删除的事项不出现
   const { matter } = await tk.inv("matters.create", { title: "将被删除的事项", stance: "委托人一方", consent_status: "agreed" });
   tk.kernel.db.run(`UPDATE matters SET lifecycle = 'purged' WHERE matter_id = ?`, [matter.matter_id]);
@@ -48,4 +48,26 @@ test("search.titles：全部事项都搜、已删除的不出现、命中才返�
   // 不写按事项的“取原文”审计
   const n = tk.kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_events WHERE action LIKE 'matter.tokens_restore%'`)!.n;
   assert.equal(n, 0);
+});
+
+test("search.titles 找材料（第 49 批，替代单独的本地工作空间）：跨事项按文件名找，只返回本人能看到的事项里的材料，副标题为事项名", { timeout: 60_000 }, async () => {
+  const k = await makeKernel({}, "title-search-materials");
+  try {
+    const { importText } = await import("./helpers.ts");
+    const newMatter = async (title: string) => ((await k.inv("matters.create", { title, stance: "原告", consent_status: "not_required", key_dates: { analysis_as_of: "2026-10-01" } })) as any).matter;
+    const a = await newMatter("幕墙分包欠款案");
+    const b = await newMatter("股权转让审查");
+    await importText(k.inv, a.matter_id, "分包合同-第三版.txt", "分包合同正文。");
+    await importText(k.inv, b.matter_id, "股权转让协议.txt", "协议正文。");
+    const r = (await k.inv("search.titles", { q: "分包合同" })) as any;
+    assert.equal(r.materials.length, 1);
+    assert.equal(r.materials[0].filename, "分包合同-第三版.txt");
+    assert.equal(r.materials[0].matter_id, a.matter_id);
+    assert.equal(r.materials[0].matter_title, "幕墙分包欠款案");
+    assert.equal(r.truncated.materials, false);
+    // 不命中的事项的材料不返回
+    assert.equal(((await k.inv("search.titles", { q: "股权转让协议" })) as any).materials[0].matter_id, b.matter_id);
+  } finally {
+    await k.kernel.close();
+  }
 });

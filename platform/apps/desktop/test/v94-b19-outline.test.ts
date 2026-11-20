@@ -40,6 +40,9 @@ test("确认题：题干含“论点”、选项以“已确认”开头；代�
 test("依据说法：系统核过的不说成你认可；拦截与未核实写明；演示数据标出", () => {
   assert.match(basisStateText({ check: "version_verified", article_text: "x", demo: false }), /是否撑得住论点由你判断 · 条文原文见下/);
   assert.match(basisStateText({ check: "intercepted", article_text: null, demo: false }), /核对未通过/);
+  // V23：法规库未收录（没匹配到法名）与条号不对分开说
+  assert.match(basisStateText({ check: "intercepted", article_text: null, demo: false, matched: null }), /法规库未收录这部法规，系统没法核对/);
+  assert.match(basisStateText({ check: "intercepted", article_text: null, demo: false, matched: "中华人民共和国民法典" }), /核对未通过（条号不存在、已改号或该时点没有有效版本）/);
   assert.match(basisStateText({ check: "unchecked", article_text: null, demo: false }), /须你查官方文本/);
   assert.match(basisStateText({ check: "support_pending", article_text: "x", demo: true }), /演示数据/);
 });

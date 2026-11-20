@@ -1225,7 +1225,8 @@
       "kwl.checklist.v1.<8 位摘要>": "上手清单的显示状态（值为 \"shown\" 或 \"hidden\"）；键尾同上（律所与成员标识的 FNV-1a 摘要），不写标识原文、不含案件信息；完成与否由内核按本机真实数据判定、不存这里（第 46 批；经 lib/guide-checklist.ts 的读写函数）",
       "kwl.sidebar.sections": "侧栏“事项”“任务”分组是否展开（第 47 批）",
       "kwl.home.quota-dismissed": "首页额度提示条关掉时的周期与情形键（如 2026-11:firm-low，不含任何用量数；第 47 批）",
-      "kwl.chat.model": "问答上次选的模型别名（legal/k3 或 legal/k2.6；第 47 批）"
+      "kwl.chat.model": "问答上次选的模型别名（legal/k3 或 legal/k2.6；第 47 批）",
+      "kwl.chat.deep": "问答“深度思考”开关上次的选择（1 / 0；第 48 批；不含问答内容）"
     },
     "files": [
       "apps/desktop/src/App.tsx",

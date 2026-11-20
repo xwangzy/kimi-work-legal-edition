@@ -14,6 +14,7 @@ import { Markdown } from "../components/Markdown.tsx";
 import { QA_CITATION_KIND, qaCitationLine, type QaCitationsView } from "../lib/qa-citations.ts";
 import { fmtTime, fmtWhen } from "../lib/labels.ts";
 import { notifyDataChanged } from "../lib/events.ts";
+import { chatWaitView, deepToggleTitle, fmtElapsed, type ChatPhase, type ThinkingControl } from "../lib/chat-wait.ts";
 
 export function ChatPage({ conversationId }: { conversationId?: string | undefined }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -24,8 +25,44 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   /** 删除这个问答：先问一句再删（删除后找不回来）。 */
   const [askDelete, setAskDelete] = useState(false);
   /** 正在回答的问题与到目前为止的回答（流式）；conv 是发问时所在的会话（新问答为 undefined）。 */
-  const [pending, setPending] = useState<{ question: string; draft: string; conv: string | undefined } | null>(null);
+  const [pending, setPending] = useState<{ question: string; draft: string; conv: string | undefined; startedAt: number; deep: boolean; control?: ThinkingControl | undefined; phase: ChatPhase; thoughtChars: number } | null>(null);
   const streamRef = useRef<string | null>(null);
+  // 深度思考开关（第 48 批）：关＝快速回答（通常十几秒），开＝先充分思考再答（常要 1～3 分钟）；记在本机偏好，没记过按内核缺省
+  const [deep, setDeep] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem(DEEP_KEY);
+      return v === "1";
+    } catch {
+      return false;
+    }
+  });
+  const deepChosen = useRef<boolean>(false);
+  useEffect(() => {
+    try {
+      deepChosen.current = localStorage.getItem(DEEP_KEY) !== null;
+    } catch {
+      deepChosen.current = false;
+    }
+  }, []);
+  const toggleDeep = () => {
+    const next = !deep;
+    deepChosen.current = true;
+    setDeep(next);
+    try {
+      localStorage.setItem(DEEP_KEY, next ? "1" : "0");
+    } catch {
+      // 记不住只影响下次打开
+    }
+  };
+  // 等待回答时每秒刷新一次已用时间
+  const [now, setNow] = useState(() => Date.now());
+  const waiting = pending !== null;
+  useEffect(() => {
+    if (!waiting) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [waiting]);
   // 问答模型（第 47 批，Kimi 输入框右下的模型选择）：选项来自内核（只列云端已配置的别名），记在本机偏好
   const [models, setModels] = useState<ChatModelChoice[]>([]);
   const [route, setRoute] = useState<string | null>(() => {
@@ -40,6 +77,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
       .chatModels()
       .then((r) => {
         setModels(r.choices);
+        // 律师没自己选过：开关跟内核缺省走
+        if (!deepChosen.current && typeof r.default_deep === "boolean") setDeep(r.default_deep);
         // 记住的模型已不在可选之列（运营改了路由）：回到缺省
         setRoute((cur) => (cur && r.choices.some((c) => c.alias === cur) ? cur : r.default));
       })
@@ -61,7 +100,11 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   useEffect(
     () =>
       onKernelEvent((m) => {
-        if (m?.type === "chat.delta" && m.stream_id === streamRef.current && typeof m.text === "string") setPending((p) => (p ? { ...p, draft: m.text } : p));
+        if (m?.type === "chat.delta" && m.stream_id === streamRef.current && typeof m.text === "string") setPending((p) => (p ? { ...p, draft: m.text, phase: "writing" } : p));
+        // 回答进度（第 48 批）：思考中（带思考字数）/ 撰写中
+        if (m?.type === "chat.progress" && m.stream_id === streamRef.current && (m.phase === "thinking" || m.phase === "writing")) {
+          setPending((p) => (p ? { ...p, phase: m.phase, thoughtChars: Number.isSafeInteger(m.thought_chars) ? m.thought_chars : p.thoughtChars } : p));
+        }
       }),
     [],
   );
@@ -91,7 +134,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
     setErr("");
     setBlocked(null);
     setText("");
-    setPending({ question: t, draft: "", conv: from });
+    setPending({ question: t, draft: "", conv: from, startedAt: Date.now(), deep, control: selectedModel?.thinking, phase: "waiting", thoughtChars: 0 });
     const settle = () => {
       if (streamRef.current !== streamId) return false;
       streamRef.current = null;
@@ -99,7 +142,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
       return true;
     };
     try {
-      const r = await api.chatSendWithModel({ ...(from ? { conversation_id: from } : {}), text: t, stream_id: streamId, ...(route ? { route } : {}) });
+      const r = await api.chatSendWithModel({ ...(from ? { conversation_id: from } : {}), text: t, stream_id: streamId, ...(route ? { route } : {}), deep });
       // 等回答期间换了会话：不把结果放进别的会话；切回了这个会话的照常显示
       if (!settle() || (convRef.current !== from && convRef.current !== r.conversation_id)) {
         if (!r.blocked) void loadList();
@@ -136,6 +179,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   };
   const answeringHere = !!pending && pending.conv === conversationId;
 
+  // 当前所选（或缺省）模型：深度思考开关的说明与显示取决于它（第 49 批）
+  const selectedModel = models.find((c) => c.alias === route) ?? models.find((c) => c.default) ?? null;
   return (
     <div className={`chat${messages.length === 0 && !pending ? " chat-blank" : ""}`}>
       <main className="chat-main">
@@ -198,7 +243,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
                 </div>
               )}
               <div className="msg msg-assistant" aria-live="polite" aria-busy="true">
-                {pending.draft ? <Markdown text={pending.draft} /> : <div className="msg-pending muted">正在回答…</div>}
+                {pending.draft && <Markdown text={pending.draft} />}
+                <ChatWait pending={pending} now={now} />
               </div>
             </>
           )}
@@ -231,6 +277,19 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
           />
           <div className="composer-bar">
             <span className="spacer" />
+            {/* 深度思考：开关实际控制什么随所选模型（K3 调推理强度、K2.6 开关思考）；模型不可控时不显示开关，免得点了不起作用 */}
+            {selectedModel?.thinking !== "none" && (
+              <button
+                type="button"
+                className={`deep-toggle${deep ? " on" : ""}`}
+                aria-pressed={deep}
+                onClick={toggleDeep}
+                title={deepToggleTitle(deep, selectedModel?.thinking, selectedModel?.label)}
+              >
+                <span className="deep-dot" aria-hidden="true" />
+                深度思考
+              </button>
+            )}
             {models.length > 1 ? <ModelPicker choices={models} value={route} onChange={chooseModel} /> : models.length === 1 ? <span className="model-label">{models[0]!.label}</span> : null}
             {/* 问答页回车发送，与任务输入框（Ctrl / ⌘ + 回车）不同：写明（余项续复核 RC-B-15） */}
             <span className="send-hint muted" aria-hidden="true">回车发送 · Shift + 回车换行</span>
@@ -243,6 +302,36 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
 }
 
 const MODEL_KEY = "kwl.chat.model";
+const DEEP_KEY = "kwl.chat.deep";
+
+/**
+ * 等回答时的状态（第 48 批）：动画点 + 一句话说明现在在做什么 + 已用时间 + 不定长进度条 + 补充说明。
+ * 回答已经开始逐字出现时只留一行“正在撰写回答… 已用时间”，不挡正文。
+ */
+function ChatWait({ pending, now }: { pending: { draft: string; startedAt: number; deep: boolean; control?: ThinkingControl | undefined; phase: ChatPhase; thoughtChars: number }; now: number }) {
+  const elapsedMs = Math.max(0, now - pending.startedAt);
+  const phase: ChatPhase = pending.draft ? "writing" : pending.phase;
+  const v = chatWaitView({ deep: pending.deep, phase, elapsedMs, thoughtChars: pending.thoughtChars, control: pending.control });
+  return (
+    <div className={`chat-wait${phase === "writing" ? " chat-wait-writing" : ""}`} role="status">
+      <div className="chat-wait-head">
+        <span className="chat-wait-dots" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        <span className="chat-wait-title">{v.title}</span>
+        <span className="chat-wait-time">已用时 {fmtElapsed(elapsedMs)}</span>
+      </div>
+      {v.bar && (
+        <div className="chat-wait-bar" aria-hidden="true">
+          <span />
+        </div>
+      )}
+      {v.hint && <div className="chat-wait-hint">{v.hint}</div>}
+    </div>
+  );
+}
 
 /** 问答模型选择（真实可用：选项与校验都在内核，所选别名随问题发给网关计量）。 */
 function ModelPicker({ choices, value, onChange }: { choices: ChatModelChoice[]; value: string | null; onChange: (alias: string) => void }) {

@@ -613,6 +613,8 @@ export interface ChatModelChoice {
   note: string;
   /** 不选时用的就是它。 */
   default: boolean;
+  /** 深度思考开关控制什么（第 49 批；旧内核没有）：effort = K3 始终思考、开关调推理强度；toggle = K2.6 开 / 关思考；none = 不可控。 */
+  thinking?: "effort" | "toggle" | "none";
 }
 
 /** 内核广播：要重新登录（第 44 批同步；第 47 批起模型请求被网关按身份拒绝时也立即广播）。 */
@@ -1201,7 +1203,9 @@ export const api = {
       matters: { matter_id: string; title: string; sub: string; last_at: string | null }[];
       runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; skill: string | null; goal: string; title?: string | null; updated_at: string }[];
       deliverables: { artifact_version_id: string; matter_id: string; matter_title: string; kind: string; version: number; filename: string; title: string | null; created_at: string }[];
-      truncated: { runs: boolean; deliverables: boolean };
+      /** 材料（第 49 批；旧内核没有）：各事项材料的最新版本，按文件名与文件夹位置匹配。 */
+      materials?: { document_version_id: string; matter_id: string; matter_title: string; filename: string; rel_path: string | null; created_at: string }[];
+      truncated: { runs: boolean; deliverables: boolean; materials?: boolean };
     }>("search.titles", { q, labels }),
   /** 上手清单（第 46 批）：自己建的事项、自己导入的材料、自己发起的任务与其成果的数目，以及“去做”直达的目标。 */
   guideProgress: () =>
@@ -1224,12 +1228,12 @@ export const api = {
   chatSend: (body: { conversation_id?: string; text: string; stream_id?: string }) =>
     invoke<{ conversation_id: string; messages: ChatMessage[]; blocked?: { reason: string; message: string; matters?: { matter_id: string; title: string }[] } }>("chat.send", body),
   /** 问答可选的模型（第 47 批）：choices 只列本机配置了的；default 为不选时用的别名（没有可选模型时为 null）。 */
-  chatModels: () => invoke<{ choices: ChatModelChoice[]; default: string | null }>("chat.models"),
+  chatModels: () => invoke<{ choices: ChatModelChoice[]; default: string | null; /** “深度思考”开关的缺省状态（第 48 批；旧内核没有这个字段）。 */ default_deep?: boolean }>("chat.models"),
   /**
    * 带模型选择的发送（第 47 批）：route 为 ChatModelChoice.alias（"legal/k3" / "legal/k2.6"）；不给 = 缺省模型。
    * 选了不可用的模型内核拒绝（validation，消息如“所选模型不可用：问答只能选 K3、K2.6”），不会悄悄换模型。
    */
-  chatSendWithModel: (body: { conversation_id?: string; text: string; stream_id?: string; route?: string }) =>
+  chatSendWithModel: (body: { conversation_id?: string; text: string; stream_id?: string; route?: string; /** 深度思考（第 48 批）：true 先充分思考再答，false 快速回答；不给按内核缺省。 */ deep?: boolean }) =>
     invoke<{ conversation_id: string; messages: ChatMessage[]; blocked?: { reason: string; message: string; matters?: { matter_id: string; title: string }[] } }>("chat.send", body),
 
   // 设备与连接

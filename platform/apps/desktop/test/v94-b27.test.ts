@@ -119,9 +119,11 @@ test("期限日写给人看：“10月28日 周三”，跨年加年份；没连
   assert.equal(dueDateText("2027-01-04", now), "2027年1月4日 周一");
   const page = read("../src/pages/Reminders.tsx");
   // 第 48 批日程行：没连提醒服务时不写“电脑关机时”（cs 为 null）
-  assert.match(page, /const cs = cloudConfigured \? cloudStateText\(/);
-  assert.match(page, /dueBuckets\(data\?\.reminders/);
-  assert.match(page, /新到的提醒（\{unread\.length\}）/);
+  assert.match(page, /const cs = r && cloudConfigured \? cloudStateText\(/);
+  // 第 49 批：我设的与收到的合成一份日程（agendaEntries），新到的就地标“新”，页首“全部标为已读”；看过的仍收在页底
+  assert.match(page, /agendaEntries\(data\?\.reminders \?\? \[\], data\?\.inbox \?\? \[\]\)/);
+  assert.match(page, /dueBuckets\(entries\)/);
+  assert.match(page, /\{unread\.length\} 条新提醒/);
   assert.match(page, /看过的提醒（\{read\.length\}）/);
 });
 

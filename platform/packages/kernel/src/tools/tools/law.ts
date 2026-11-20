@@ -214,7 +214,9 @@ export function lawGetArticle(lawdb: Lawdb, params: LawGetArticleParams): LawArt
     note:
       reliability === "demo_seed"
         ? "演示数据（reliability=demo_seed），不得作为正式引用；正式引用以官方公报文本为准"
-        : whole
+        : reliability === "inferred_from_amendment_decision"
+          ? "依据修改决定推定的条文（修正本逐字全文待采集，见 license_note）：正式引用前须对照官方文本；是否支持结论由律师比对判断"
+          : whole
           ? "该文件不分条，以上即全文（法规库采集原文）：引用时写文件名称与文号，不写条号；是否支持结论由律师比对判断"
           : "法规库采集原文；是否支持结论由律师比对判断（本工具不判支持）",
   };

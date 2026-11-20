@@ -26,9 +26,15 @@ const noParties = { partiesIn: () => [] } as any;
 
 test("可选模型：只列配置了的别名、缺省那一个说明前加“缺省，”；律师名 K3 / K2.6（纯函数）", () => {
   assert.deepEqual(qaModelChoices(["legal/k3", "legal/k2.6", "legal/other"], "legal/k3"), [
-    { alias: "legal/k3", label: "K3", note: "缺省，适合复杂问题", default: true },
-    { alias: "legal/k2.6", label: "K2.6", note: "更快、更省额度，复杂问题效果略弱", default: false },
+    // thinking（第 49 批）：不给 thinkingOf 时按“不可控”
+    { alias: "legal/k3", label: "K3", note: "缺省，适合复杂问题", default: true, thinking: "none" },
+    { alias: "legal/k2.6", label: "K2.6", note: "更快、更省额度，复杂问题效果略弱", default: false, thinking: "none" },
   ]);
+  // 给了 thinkingOf：K3 调推理强度、K2.6 开关思考
+  assert.deepEqual(
+    qaModelChoices(["legal/k3", "legal/k2.6"], "legal/k3", (a) => (a === "legal/k3" ? "effort" : "toggle")).map((c) => c.thinking),
+    ["effort", "toggle"],
+  );
   assert.deepEqual(
     qaModelChoices(["legal/k3"], "legal/k3").map((c) => c.alias),
     ["legal/k3"],

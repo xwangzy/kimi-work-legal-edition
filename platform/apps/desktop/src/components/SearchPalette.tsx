@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { nav } from "../App.tsx";
-import { searchGroups, searchLabels, SEARCH_KIND_LABEL, type SearchItem } from "../lib/search.ts";
+import { searchGroups, searchLabels, SEARCH_KIND_LABEL, type SearchItem, setMatterFocus } from "../lib/search.ts";
 
 export function SearchPalette({ onClose }: { onClose: () => void }) {
   const [q, setQ] = useState("");
@@ -45,6 +45,8 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
   const open = (it: SearchItem | undefined) => {
     if (!it) return;
     onClose();
+    // 材料：交给事项页切到“材料”并筛出这份（只在内存里交接）
+    if (it.focus) setMatterFocus(it.focus);
     nav(it.href);
   };
   return (
@@ -91,7 +93,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
               {g.items.map((it) => {
                 const i = flat.indexOf(it);
                 return (
-                  <button key={`${it.kind}${it.href}`} data-i={i} className={`search-row${i === sel ? " active" : ""}`} onMouseEnter={() => setSel(i)} onClick={() => open(it)}>
+                  <button key={`${it.kind}${it.href}${it.title}`} data-i={i} className={`search-row${i === sel ? " active" : ""}`} onMouseEnter={() => setSel(i)} onClick={() => open(it)}>
                     <b>{it.title}</b>
                     {it.sub && <span className="muted"> · {it.sub}</span>}
                   </button>
@@ -99,7 +101,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
               })}
             </div>
           ))}
-          {res && (res.truncated.runs || res.truncated.deliverables) && <p className="muted">任务或成果太多，只在最近的 3,000 个任务、5,000 份成果里找。</p>}
+          {res && (res.truncated.runs || res.truncated.deliverables || res.truncated.materials) && <p className="muted">任务、成果或材料太多，只在最近的 3,000 个任务、5,000 份成果、5,000 份材料里找。</p>}
         </div>
       </div>
     </div>

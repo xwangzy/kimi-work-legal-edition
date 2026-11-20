@@ -1,0 +1,29 @@
+模型 kimi-k3.1-pro 每组 3 次 上限 40.0s  2026-11-20 14:25:00
+A 不带思考 不带温度
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.6s 思考字数=566 首正文=12.0s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.6s 思考字数=759 首正文=17.1s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.5s 思考字数=1013 首正文=19.1s
+B 不带思考 温度1.0（现深度）
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.3s 思考字数=789 首正文=15.6s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.2s 思考字数=1146 首正文=20.9s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.3s 思考字数=828 首正文=13.9s
+C 思考enabled 温度1.0
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.3s 思考字数=846 首正文=16.1s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.7s 思考字数=637 首正文=12.3s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.3s 思考字数=782 首正文=13.9s
+D 思考enabled 不带温度
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.2s 思考字数=1676 首正文=32.6s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.2s 思考字数=1265 首正文=26.1s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.2s 思考字数=694 首正文=14.6s
+E 思考disabled 不带温度（现快速）
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=无 思考字数=0 首正文=1.8s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=无 思考字数=0 首正文=1.7s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=无 思考字数=0 首正文=1.8s
+F 思考disabled 温度0.6
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=无 思考字数=0 首正文=1.6s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=无 思考字数=0 首正文=1.4s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=无 思考字数=0 首正文=1.4s
+G 思考disabled 温度1.0
+   ✗ HTTP 400 invalid temperature: only 0.6 is allowed for this model
+   ✗ HTTP 400 invalid temperature: only 0.6 is allowed for this model
+   ✗ HTTP 400 invalid temperature: only 0.6 is allowed for this model

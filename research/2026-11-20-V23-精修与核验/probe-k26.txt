@@ -1,0 +1,22 @@
+模型 kimi-k2.6 每组 2 次 上限 40.0s  2026-11-20 14:26:47
+A 不带思考 不带温度
+   ✓ 后端model=kimi-k2.6 msh头=有 首思考=1.2s 思考字数=245 首正文=5.4s
+   ✓ 后端model=kimi-k2.6 msh头=有 首思考=1.0s 思考字数=139 首正文=3.1s
+B 不带思考 温度1.0（现深度）
+   ✓ 后端model=kimi-k2.6 msh头=有 首思考=8.1s 思考字数=377 首正文=14.3s
+   ✓ 后端model=kimi-k2.6 msh头=有 首思考=1.1s 思考字数=465 首正文=7.6s
+C 思考enabled 温度1.0
+   ✓ 后端model=kimi-k2.6 msh头=有 首思考=1.1s 思考字数=272 首正文=5.7s
+   ✓ 后端model=kimi-k2.6 msh头=有 首思考=1.2s 思考字数=248 首正文=5.1s
+D 思考enabled 不带温度
+   ✓ 后端model=kimi-k2.6 msh头=有 首思考=1.6s 思考字数=510 首正文=11.7s
+   ✗ HTTP 429 当前请求量较大，Kimi 服务暂时无法处理，请稍后重试 (request id: 202611200627157730497308268d9d6kgk3gtZA)
+E 思考disabled 不带温度（现快速）
+   ✓ 后端model=kimi-k2.6 msh头=有 首思考=无 思考字数=0 首正文=1.1s
+   ✓ 后端model=kimi-k2.6 msh头=有 首思考=无 思考字数=0 首正文=1.1s
+F 思考disabled 温度0.6
+   ✓ 后端model=kimi-k2.6 msh头=有 首思考=无 思考字数=0 首正文=1.6s
+   ✓ 后端model=kimi-k2.6 msh头=有 首思考=无 思考字数=0 首正文=1.1s
+G 思考disabled 温度1.0
+   ✗ HTTP 400 invalid temperature: only 0.6 is allowed for this model
+   ✗ HTTP 400 invalid temperature: only 0.6 is allowed for this model

@@ -31,6 +31,12 @@ const watchIdentity = (k: typeof kernel) =>
       for (const c of eventClients) c.write(line);
       return;
     }
+    // 回答进度（第 48 批）：与主进程同一形状，只带流编号、阶段与思考字数
+    if (m.type === "chat.progress" && typeof m.stream_id === "string" && (m.phase === "thinking" || m.phase === "writing") && Number.isSafeInteger(m.thought_chars) && (m.thought_chars as number) >= 0) {
+      const line = `${JSON.stringify({ type: "chat.progress", stream_id: m.stream_id, phase: m.phase, thought_chars: m.thought_chars })}\n`;
+      for (const c of eventClients) c.write(line);
+      return;
+    }
     // 登录已失效（第 44 批）：与主进程同一形状，只带原因代码
     if (m.type === "account.login_required" && typeof m.reason === "string" && /^[a-z_]{1,40}$/.test(m.reason)) {
       const line = `${JSON.stringify({ type: "account.login_required", reason: m.reason })}\n`;

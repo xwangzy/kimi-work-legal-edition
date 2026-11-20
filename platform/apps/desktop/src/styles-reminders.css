@@ -1,0 +1,86 @@
+/* 期限提醒（第 49 批信息架构精修；第 48 批日程的继任）。颜色、字号、圆角只用 tokens.css 的令牌（门禁 style-tokens.test.ts 扫 src 下全部 .css）。
+   页首：标题 + 一句摘要（旁边“N 条新提醒 · 全部标为已读”）+ 送达一行 → 今天 / 7 天内 / 以后三组日程 → 已过期、看过的提醒收在页底。
+   远近只用一种强信号：分组 + 倒计时文字颜色（不再叠左侧色条与胶囊底色）。 */
+
+.rm-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); margin-bottom: var(--sp-5); }
+.rm-head-text { min-width: 0; }
+.rm-head .page-title { margin: 0; }
+.rm-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-3); margin: var(--sp-1) 0 0; font-size: var(--fs-body); color: var(--text-strong); }
+.rm-sub-new { display: inline-flex; align-items: center; gap: 6px; color: var(--accent-text); }
+.rm-sub-new .btn-link { font-size: var(--fs-body); }
+
+/* 送达方式：一行，机制说明点开 */
+.rm-delivery { display: flex; align-items: center; flex-wrap: wrap; gap: 6px var(--sp-2); margin-top: var(--sp-2); font-size: var(--fs-caption); color: var(--text-secondary); }
+.rm-delivery-dot { width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-neutral-solid); }
+.rm-delivery-dot.on { background: var(--status-success-solid); }
+.rm-how { position: relative; }
+.rm-how > summary { cursor: pointer; color: var(--text-label); text-decoration: underline; text-decoration-color: var(--border-default); text-underline-offset: 3px; list-style: none; }
+.rm-how > summary::-webkit-details-marker { display: none; }
+.rm-how-pop { position: absolute; z-index: 20; top: 24px; left: 0; width: min(360px, 80vw); padding: var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-elevated); box-shadow: var(--shadow-md); color: var(--text-strong); font-size: var(--fs-caption); line-height: 1.7; }
+.rm-notice { margin: 0 0 var(--sp-3); font-size: var(--fs-caption); color: var(--text-secondary); }
+
+/* 分组 */
+.rm-bucket { margin-bottom: var(--sp-5); }
+.rm-bucket-h { display: flex; align-items: baseline; gap: 6px; margin: 0 0 var(--sp-2); font-size: var(--fs-caption); font-weight: 600; color: var(--text-label); }
+.rm-bucket-n { font-weight: 400; color: var(--text-secondary); }
+
+/* 日程行：日期列 | 类型 · 事由 / 事项 · 提醒规则 | 倒计时（悬停换成操作） */
+.rm-list { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-surface); overflow: hidden; }
+.rm-row { position: relative; display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); min-height: 56px; padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--border-subtle); }
+.rm-row:first-child { border-top: 0; }
+.rm-row:hover, .rm-row:focus-within { background: var(--bg-hover-soft); }
+.rm-date { display: flex; flex-direction: column; line-height: 1.35; }
+.rm-date-md { font-size: var(--fs-caption); font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.rm-date-w { font-size: var(--fs-meta); color: var(--text-secondary); }
+.rm-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rm-line1 { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.rm-kind { flex: none; font-size: var(--fs-body); font-weight: 600; color: var(--text-primary); }
+.rm-note { min-width: 0; font-size: var(--fs-body); color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rm-note::before { content: "· "; color: var(--text-secondary); }
+.rm-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-3); font-size: var(--fs-caption); color: var(--text-secondary); }
+.rm-matter { font-size: var(--fs-caption); color: var(--text-label); }
+.rm-matter:hover { color: var(--accent-text); }
+/* 新到的：类型前一个圆点（读屏另有文字） */
+.rm-new-dot { flex: none; width: 7px; height: 7px; border-radius: var(--r-full); background: var(--accent-text); }
+
+/* 右侧：倒计时文字（唯一的远近颜色）；悬停或键盘聚焦时换成操作。操作平时用 clip-path 整块裁掉（不用 visibility / display，
+   按钮仍在 Tab 顺序里，聚焦到时 :focus-within 让它出现；也不用降不透明度，门禁 S8B-06 只许禁用态降透明度） */
+.rm-side { position: relative; display: flex; align-items: center; justify-content: flex-end; min-width: 72px; }
+.rm-count { font-size: var(--fs-caption); font-weight: 500; white-space: nowrap; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.rm-count-red { color: var(--status-danger-text); }
+.rm-count-orange { color: var(--status-warning-text); }
+.rm-count-past { color: var(--text-secondary); font-weight: 400; }
+.rm-actions { position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 6px; padding-left: var(--sp-2); background: var(--bg-hover-soft); clip-path: inset(0 0 0 100%); pointer-events: none; }
+.rm-row:hover .rm-actions, .rm-row:focus-within .rm-actions { clip-path: none; pointer-events: auto; }
+.rm-actions > * { flex: none; white-space: nowrap; }
+/* 撤销的就地确认（ConfirmButton）比按钮长：在行内向左展开，问题文字可换行但不超过行宽的七成 */
+.rm-actions .confirm-inline { flex-wrap: nowrap; max-width: 70vw; }
+.rm-actions .confirm-q { white-space: normal; }
+.rm-row:hover .rm-count, .rm-row:focus-within .rm-count { visibility: hidden; }
+/* 没有悬停的触屏：操作常显在倒计时下方 */
+@media (hover: none) {
+  .rm-side { flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
+  .rm-actions { position: static; transform: none; clip-path: none; pointer-events: auto; background: transparent; padding: 0; }
+  .rm-row:hover .rm-count, .rm-row:focus-within .rm-count { visibility: visible; }
+}
+
+/* 空状态 */
+.rm-empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding: var(--sp-6) 0; text-align: center; }
+.rm-empty-icon { width: 44px; height: 44px; border-radius: var(--r-md); display: grid; place-items: center; background: var(--bg-muted); color: var(--text-label); }
+.rm-empty-icon svg { width: 22px; height: 22px; }
+.rm-empty-title { font-weight: 600; }
+.rm-empty-text { margin: 0; font-size: var(--fs-body); color: var(--text-secondary); }
+.rm-empty-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); }
+
+/* 页底收起：已过期、看过的提醒 */
+.rm-fold { margin-bottom: var(--sp-3); }
+.rm-fold > summary { cursor: pointer; margin: var(--sp-2) 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.rm-fold > summary:hover { color: var(--text-primary); }
+.rm-fold .rm-list { margin-top: var(--sp-2); }
+.rm-fold .rm-kind, .rm-fold .rm-date-md { font-weight: 500; color: var(--text-strong); }
+
+/* 窄窗口：页首按钮换行，日期列收窄 */
+@media (max-width: 900px) {
+  .rm-head { flex-wrap: wrap; }
+  .rm-row { grid-template-columns: 64px minmax(0, 1fr) auto; padding: var(--sp-2) var(--sp-3); }
+}

@@ -1,0 +1,63 @@
+/* 设置 · 数据去向（第 49 批）：客户授权一行 → 一句结论 → 数据 × 去处对照表 → 可展开的说明行（打印时全部展开）。
+   只用语义令牌（门禁 apps/desktop/test/style-tokens.test.ts）。 */
+.dfx2 { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 980px; }
+.dfx2 .dfx-lead { margin: 0; font-size: var(--fs-md); line-height: 1.7; color: var(--text-primary); max-width: 760px; }
+
+/* 客户授权：唯一要律师操作的设置，一行 + 开关 */
+.dfx-auth { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-subtle); padding: var(--sp-3) var(--sp-4); }
+.dfx-auth .dfx-auth-row { display: flex; align-items: flex-start; gap: var(--sp-4); }
+.dfx-auth-main { flex: 1; min-width: 0; }
+.dfx-auth-title { display: flex; align-items: center; gap: var(--sp-2); margin: 0 0 2px; font-size: var(--fs-body); font-weight: 600; }
+.dfx-auth-state { font-size: var(--fs-caption); font-weight: 400; color: var(--text-secondary); }
+.dfx-auth .dfx-auth-text { margin: 0; font-size: var(--fs-caption); color: var(--text-label); line-height: 1.6; }
+.dfx-auth-more { display: inline; margin-left: 4px; }
+.dfx-auth-more > summary { display: inline; cursor: pointer; color: var(--accent-text); list-style: none; }
+.dfx-auth-more > summary::-webkit-details-marker { display: none; }
+.dfx-auth-more[open] { display: block; margin: 4px 0 0; color: var(--text-secondary); }
+.dfx-auth-more[open] > summary { display: none; }
+.dfx-auth .switch { flex: none; margin-top: 2px; }
+
+/* 对照表：行是数据，列是去处；格子一句话，只用文字深浅与一个强调色区分 */
+.dfx-table-wrap { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); overflow-x: auto; background: var(--bg-surface); }
+.dfx-table { width: 100%; border-collapse: collapse; font-size: var(--fs-body); }
+.dfx-table th, .dfx-table td { padding: 10px var(--sp-4); text-align: left; vertical-align: top; border-top: 1px solid var(--border-subtle); }
+.dfx-table thead th { border-top: 0; background: var(--bg-subtle); font-weight: 600; white-space: nowrap; font-size: var(--fs-body); }
+.dfx-table thead th small { display: block; font-weight: 400; font-size: var(--fs-xs); color: var(--text-secondary); margin-left: 22px; }
+.dfx-th-data { width: 32%; color: var(--text-label); font-weight: 500; }
+.dfx-th-ico { display: inline-flex; vertical-align: -3px; margin-right: 6px; color: var(--text-label); }
+.dfx-th-ico svg { width: 16px; height: 16px; }
+.dfx-th-arrow { margin-right: 6px; color: var(--text-secondary); font-weight: 400; }
+.dfx-table tbody th { font-weight: 500; }
+.dfx-table tbody th small { display: block; font-weight: 400; font-size: var(--fs-caption); color: var(--text-secondary); }
+.dfx-cell { color: var(--text-primary); }
+.dfx-cell-keep { color: var(--status-success-text); font-weight: 500; }
+.dfx-cell-pass { color: var(--text-primary); }
+.dfx-cell-meta { color: var(--status-warning-text); }
+.dfx-cell-none { color: var(--text-secondary); }
+
+/* 可展开的说明行：先一句摘要，点开看细节 */
+.dfx-folds { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-surface); }
+.dfx-fold + .dfx-fold { border-top: 1px solid var(--border-subtle); }
+.dfx-fold > summary { display: flex; align-items: baseline; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); cursor: pointer; list-style: none; }
+.dfx-fold > summary::-webkit-details-marker { display: none; }
+.dfx-fold > summary::before { content: "›"; flex: none; width: 10px; color: var(--text-secondary); transition: transform 0.15s; }
+.dfx-fold[open] > summary::before { transform: rotate(90deg); }
+.dfx-fold > summary:hover { background: var(--bg-hover-soft); }
+.dfx-fold > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.dfx-fold-title { flex: none; font-weight: 500; }
+.dfx-fold-sum { min-width: 0; font-size: var(--fs-caption); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dfx-fold[open] .dfx-fold-sum { visibility: hidden; }
+.dfx-fold-body { margin: 0; padding: 0 var(--sp-4) var(--sp-4) calc(var(--sp-4) + 22px); }
+.dfx-fold .dfx-sample { margin-bottom: var(--sp-3); }
+.dfx-fold .dfx-list { list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); }
+.dfx-fold .dfx-list li { display: grid; grid-template-columns: 9em 1fr; gap: var(--sp-3); font-size: var(--fs-body); }
+.dfx-fold .dfx-list li span { color: var(--text-label); }
+@media (max-width: 900px) {
+  .dfx-fold .dfx-list li { grid-template-columns: 1fr; gap: 2px; }
+  .dfx-fold-sum { display: none; }
+}
+@media print {
+  .dfx-folds, .dfx-table-wrap { border-color: var(--border-default); }
+  .dfx-fold > summary::before { display: none; }
+  .dfx-fold-sum { display: none; }
+}

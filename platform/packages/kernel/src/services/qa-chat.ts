@@ -40,6 +40,11 @@ export interface QaModelChoice {
   label: string;
   note: string;
   default: boolean;
+  /**
+   * 这个模型的“深度思考”开关实际控制什么（第 49 批，按官方参数表）：
+   * effort = 始终思考，开关调推理强度（K3：深度 max / 快速 low）；toggle = 开关决定思考与否（K2.6）；none = 不可控（界面不显示开关）。
+   */
+  thinking: "effort" | "toggle" | "none";
 }
 
 /** 问答允许律师选的别名（只此两个；子任务另有规则，不经这里）与其律师名。顺序即界面显示顺序。 */
@@ -57,12 +62,13 @@ export function qaRouteLabel(alias: string | null | undefined): string | null {
  * 可选模型列表（第 47 批）：目录里、且模型路由实际配置了的别名；缺省那一个的说明前加“缺省，”。纯函数。
  * configured = broker.routeAliases()；defaultRoute = ZR_QA_ROUTE ?? legal/k3。
  */
-export function qaModelChoices(configured: readonly string[], defaultRoute: string): QaModelChoice[] {
+export function qaModelChoices(configured: readonly string[], defaultRoute: string, thinkingOf?: (alias: string) => QaModelChoice["thinking"]): QaModelChoice[] {
   return QA_MODEL_CATALOG.filter((m) => configured.includes(m.alias)).map((m) => ({
     alias: m.alias,
     label: m.label,
     note: m.alias === defaultRoute ? `缺省，${m.note}` : m.note,
     default: m.alias === defaultRoute,
+    thinking: thinkingOf?.(m.alias) ?? "none",
   }));
 }
 
@@ -99,6 +105,13 @@ export interface QaBlocked {
   matters?: { matter_id: string; title: string }[];
 }
 
+/** 问答进度（chat.progress 广播的内容）。 */
+export interface QaProgress {
+  phase: "thinking" | "writing";
+  /** 到目前为止收到的思考字数（只作“还在动”的信号）。 */
+  thought_chars: number;
+}
+
 export interface QaAskInput {
   conversationId: string;
   tenantId: string;
@@ -107,8 +120,15 @@ export interface QaAskInput {
   messages: { role: "system" | "user" | "assistant"; content: string }[];
   /** 流式回答的增量（令牌形态）。 */
   onDelta?: (piece: string) => void;
+  /** 模型“思考”阶段收到的增量字数（只给字数，不给思考内容）：界面据此显示“正在思考”。 */
+  onReasoning?: (chars: number) => void;
   /** 本次用的模型别名（第 47 批：律师选的，或缺省 ZR_QA_ROUTE ?? legal/k3）。 */
   route: string;
+  /**
+   * 深度思考（第 48 批；第 49 批按模型族映射）：K3 为推理强度 max / low（K3 始终思考），K2.6 为开 / 关思考。
+   * 提供方用 model-broker thinkingParams 换成上游参数。
+   */
+  deep: boolean;
 }
 
 export interface QaDeps {
@@ -119,8 +139,17 @@ export interface QaDeps {
   lawdb?: Lawdb;
   /** 回答生成中的部分内容（已还原，到目前为止的全文）推给发起问题的界面；streamId 由界面给出。 */
   onPartial?: (streamId: string, text: string) => void;
+  /**
+   * 回答进度（第 48 批）：模型在“思考”（thinking，附已收到的思考字数）还是已经在“撰写”（writing）。推给发起问题的界面显示等待状态；
+   * 只含阶段与字数，不含思考内容。
+   */
+  onProgress?: (streamId: string, p: QaProgress) => void;
+  /** 律师没选时用不用深度思考（缺省 false：快速回答；ZR_QA_THINKING=on 改为深度思考）。 */
+  defaultDeep?: boolean;
   /** 模型路由实际配置了的别名（broker.routeAliases()；第 47 批）：律师选的模型须在其中。不给时只认缺省别名。 */
   routes?: () => readonly string[];
+  /** 别名 → 思考控制方式（第 49 批；model-broker thinkingControlOf）。不给时按“不可控”。 */
+  thinkingOf?: (alias: string) => QaModelChoice["thinking"];
   /** 不选模型时用的别名（index.ts：ZR_QA_ROUTE ?? legal/k3）；不给时 legal/k3。 */
   defaultRoute?: string;
 }
@@ -154,7 +183,7 @@ export function qaFailureText(message: string, route?: string | null): string {
   return "AI 服务暂时不可用，这次没有取得回答：请稍后再问";
 }
 
-export async function collectStreamText(chunks: AsyncIterable<string>, onDelta?: (piece: string) => void): Promise<string> {
+export async function collectStreamText(chunks: AsyncIterable<string>, onDelta?: (piece: string) => void, onReasoning?: (chars: number) => void): Promise<string> {
   let text = "";
   let finished = false;
   for await (const payload of chunks) {
@@ -170,6 +199,9 @@ export async function collectStreamText(chunks: AsyncIterable<string>, onDelta?:
     }
     if (j?.error) throw new Error(String(j.error.message ?? j.error.code ?? "模型通道返回错误"));
     const choice = j?.choices?.[0];
+    // 推理型模型先发“思考”增量（reasoning_content）再发正文：思考内容不收、不显示，只把字数交给界面当“还在动”的信号
+    const thought = choice?.delta?.reasoning_content;
+    if (typeof thought === "string" && thought.length > 0) onReasoning?.(thought.length);
     const piece = choice?.delta?.content;
     if (typeof piece === "string" && piece.length > 0) {
       text += piece;
@@ -183,6 +215,8 @@ export async function collectStreamText(chunks: AsyncIterable<string>, onDelta?:
 
 /** 推给界面的部分回答每隔多久最多一次。 */
 const PARTIAL_INTERVAL_MS = 80;
+/** 思考进度每隔多久最多推一次（界面只用它显示“还在动”与字数，不必很密）。 */
+const PROGRESS_INTERVAL_MS = 1000;
 /** 代号最长约 17 个字符：末尾未闭合的“〔”在这个长度内先不推，免得界面闪一下代号。 */
 const OPEN_TOKEN_HOLD = 20;
 /**
@@ -398,9 +432,41 @@ export class QaChatService {
     };
   }
 
+  /**
+   * 回答进度的推送（第 48 批）：思考阶段每秒至多一次（附已收到的思考字数），第一段正文到来时推一次“撰写中”；
+   * 没有 streamId 或没有推送通道时为 null。只含阶段与字数。
+   */
+  private progressPublisher(streamId: string | undefined): { reasoning: (chars: number) => void; writing: () => void } | null {
+    const publish = this.d.onProgress;
+    if (!publish || !streamId) return null;
+    let thoughtChars = 0;
+    let last = 0;
+    let writing = false;
+    return {
+      reasoning: (chars) => {
+        thoughtChars += chars;
+        if (writing) return;
+        const now = Date.now();
+        if (last !== 0 && now - last < PROGRESS_INTERVAL_MS) return;
+        last = now;
+        publish(streamId, { phase: "thinking", thought_chars: thoughtChars });
+      },
+      writing: () => {
+        if (writing) return;
+        writing = true;
+        publish(streamId, { phase: "writing", thought_chars: thoughtChars });
+      },
+    };
+  }
+
+  /** 不选时用不用深度思考（chat.models 告诉界面开关的初始状态）。 */
+  defaultDeep(): boolean {
+    return this.d.defaultDeep === true;
+  }
+
   /** 可选模型（第 47 批）：kernel.status 的 model_choices 与 chat.models 用。 */
   modelChoices(): QaModelChoice[] {
-    return qaModelChoices(this.d.routes?.() ?? [this.defaultRoute()], this.defaultRoute());
+    return qaModelChoices(this.d.routes?.() ?? [this.defaultRoute()], this.defaultRoute(), this.d.thinkingOf);
   }
 
   private defaultRoute(): string {
@@ -419,7 +485,7 @@ export class QaChatService {
     throw Object.assign(new Error(can ? `所选模型不可用：问答只能选 ${can}` : "所选模型不可用：这台电脑没有配置可选的问答模型，请联系律所管理员"), { code: "validation" });
   }
 
-  async send(input: { conversationId?: string; text: string; streamId?: string; route?: string | null }, tenantId: string, userId: string): Promise<{ conversation_id: string; messages: QaMessageView[]; blocked?: QaBlocked }> {
+  async send(input: { conversationId?: string; text: string; streamId?: string; route?: string | null; deep?: boolean }, tenantId: string, userId: string): Promise<{ conversation_id: string; messages: QaMessageView[]; blocked?: QaBlocked }> {
     const text = String(input.text ?? "").trim();
     if (!text) throw Object.assign(new Error("问题为空"), { code: "validation" });
     if (text.length > 8000) throw Object.assign(new Error("问题过长（无事项问答不处理案件材料；请在事项内处理）"), { code: "validation" });
@@ -443,14 +509,14 @@ export class QaChatService {
     if (this.answering.has(c.conversation_id)) throw Object.assign(new Error("上一问还在回答：等它答完再问"), { code: "conflict" });
     this.answering.add(c.conversation_id);
     try {
-      return await this.answer(c, text, input.streamId, tenantId, userId, route);
+      return await this.answer(c, text, input.streamId, tenantId, userId, route, input.deep ?? this.defaultDeep());
     } finally {
       this.answering.delete(c.conversation_id);
     }
   }
 
   /** 写入问题、取回答、写入回答或“未能取得回答”。序号写入时现取（复核 Q5-01）。 */
-  private async answer(c: ReturnType<QaChatService["conversation"]>, text: string, streamId: string | undefined, tenantId: string, userId: string, route: string): Promise<{ conversation_id: string; messages: QaMessageView[] }> {
+  private async answer(c: ReturnType<QaChatService["conversation"]>, text: string, streamId: string | undefined, tenantId: string, userId: string, route: string, deep: boolean): Promise<{ conversation_id: string; messages: QaMessageView[] }> {
     const tz = this.tokenizer(c);
     const q = tz.tokenize(text);
     this.persist(c.conversation_id, q.entries);
@@ -467,6 +533,7 @@ export class QaChatService {
       )
       .reverse();
     const partial = this.partialPublisher(streamId, c.conversation_id);
+    const progress = this.progressPublisher(streamId);
     let answer: string;
     try {
       answer = await this.d.ask({
@@ -474,8 +541,17 @@ export class QaChatService {
         tenantId,
         userId,
         messages: [{ role: "system", content: QA_SYSTEM_PROMPT }, ...history.map((m) => ({ role: m.role, content: m.text }))],
-        ...(partial ? { onDelta: partial.push } : {}),
+        ...(partial || progress
+          ? {
+              onDelta: (piece: string) => {
+                progress?.writing();
+                partial?.push(piece);
+              },
+            }
+          : {}),
+        ...(progress ? { onReasoning: progress.reasoning } : {}),
         route,
+        deep,
       });
     } catch (e) {
       partial?.stop();

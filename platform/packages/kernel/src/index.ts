@@ -52,7 +52,7 @@ import { KernelGate } from "./egress/kernel-gate.ts";
 import { basisCompleteOf, dataLevelOf, GATE_KNOWN_ONLY_SCOPE } from "./egress/gate-host.ts";
 import { EgressApprovalStore } from "./services/egress-approvals.ts";
 import { screenSearchQuery } from "@zr-legal/egress-gate";
-import { createGateProvider, mockProvider } from "@zr-legal/model-broker";
+import { createGateProvider, mockProvider, thinkingParams, thinkingControlOf } from "@zr-legal/model-broker";
 import { collectStreamText, QaChatService } from "./services/qa-chat.ts";
 import { ReminderService } from "./services/reminders.ts";
 import { ShareRelaySync } from "./services/share-relay.ts";
@@ -564,15 +564,22 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     lawdb,
     // 第 47 批：律师按次选模型（K3 / K2.6）；QaChatService 已按可选列表核过，这里只按别名取路由
     routes: () => broker.routeAliases(),
+    thinkingOf: (alias) => thinkingControlOf(broker.resolveRoute(alias)),
     defaultRoute: env.ZR_QA_ROUTE ?? "legal/k3",
     ask: async (input) => {
       const route = broker.resolveRoute(input.route);
-      const req = { model: route.alias, messages: input.messages, stream: true };
-      if (route.provider === "mock") return collectStreamText((await mockProvider.chatStream(route, req)).chunks, input.onDelta);
+      // 深度思考开关 → 上游参数（第 49 批按官方参数表改）：K3 系列用 reasoning_effort（深度 max / 快速 low，K3 不支持 thinking 参数），
+      // K2.6 用 thinking.type（enabled / disabled）；温度不发。映射在 model-broker thinkingParams，出口由 gateBody 再按路由能力过滤一遍
+      const req = { model: route.alias, messages: input.messages, stream: true, ...thinkingParams(route, input.deep) };
+      if (route.provider === "mock") return collectStreamText((await mockProvider.chatStream(route, req)).chunks, input.onDelta, input.onReasoning);
       const meta = { nonce: randomUUID(), clientIdempotencyId: `qa_${randomUUID()}`, task: { tid: input.tenantId, uid: input.userId, mid: "qa", rid: input.conversationId }, routePrefix: `/q/${encodeURIComponent(input.conversationId)}` };
-      return collectStreamText((await qaGate.chatStream(route, req, meta)).chunks, input.onDelta);
+      return collectStreamText((await qaGate.chatStream(route, req, meta)).chunks, input.onDelta, input.onReasoning);
     },
     onPartial: (streamId, text) => broadcastRef.current?.({ type: "chat.delta", stream_id: streamId, text }),
+    // 回答进度（第 48 批）：思考中 / 撰写中，界面显示等待状态用；只含阶段与字数
+    onProgress: (streamId, p) => broadcastRef.current?.({ type: "chat.progress", stream_id: streamId, phase: p.phase, thought_chars: p.thought_chars }),
+    // 不选时用不用深度思考：缺省快速回答；ZR_QA_THINKING=on 恢复为深度思考
+    defaultDeep: env.ZR_QA_THINKING === "on",
   });
 
   /** 清理一个事项的本机 Agent 数据（关闭引擎、删除会话、事件日志、工作区与材料快照），再删除本机的事项工作区密钥。有进行中任务时抛错。 */

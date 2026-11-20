@@ -2686,7 +2686,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
      */
     "search.titles": (p, id) => {
       const q = String(p?.q ?? "").slice(0, 100);
-      const empty = { matters: [], runs: [], deliverables: [], truncated: { runs: false, deliverables: false } };
+      const empty = { matters: [], runs: [], deliverables: [], materials: [], truncated: { runs: false, deliverables: false, materials: false } };
       if (!q.trim()) return empty;
       const labels: Record<string, string> = p?.labels && typeof p.labels === "object" && !Array.isArray(p.labels) ? Object.fromEntries(Object.entries(p.labels as Record<string, unknown>).filter(([, v]) => typeof v === "string").slice(0, 500).map(([k, v]) => [k, String(v).slice(0, 40)])) : {};
       const restoreFor = (matterId: string, text: string) => (tokens && text.includes("〔") ? tokens.restore(matterId, text) : { text, restored: 0 });
@@ -2714,6 +2714,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           WHERE m.tenant_id = ? AND m.status = 'active' AND m.lifecycle <> 'purged' ORDER BY a.created_at DESC LIMIT ?`,
         [id.userId, id.tenantId, ART_CAP + 1],
       );
+      // 材料（第 49 批）：只认每份材料的最新版本（没有被后来的版本取代），按文件名与案卷文件夹里的相对位置找；只在本机内存里匹配
+      const MAT_CAP = 5000;
+      const mats = db.all<{ document_version_id: string; matter_id: string; filename: string; rel_path: string | null; created_at: string }>(
+        `SELECT d.document_version_id, d.matter_id, d.filename, d.rel_path, d.created_at
+           FROM document_versions d JOIN matter_members mm ON mm.matter_id = d.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL
+           JOIN matters m ON m.matter_id = d.matter_id
+          WHERE m.tenant_id = ? AND m.status = 'active' AND m.lifecycle <> 'purged'
+            AND NOT EXISTS (SELECT 1 FROM document_versions n WHERE n.supersedes = d.document_version_id)
+          ORDER BY d.created_at DESC LIMIT ?`,
+        [id.userId, id.tenantId, MAT_CAP + 1],
+      );
       // “第 n 版”按同一份文件（v9.4 第 25 批）：每个事项算一次
       const fileVer = new Map<string, number>();
       const byMatter = new Map<string, typeof arts>();
@@ -2735,6 +2746,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           const label = labels[`kind:${a.kind}`] ?? "";
           return { kind: "deliverable" as const, title: title ?? (label || a.filename), sub: titleOf.get(a.matter_id) ?? "", extra: `${label} ${a.filename}`, at: a.created_at, ref: { artifact_version_id: a.artifact_version_id, matter_id: a.matter_id, kind: a.kind, version: a.version, filename: a.filename, title } };
         }),
+        ...mats.slice(0, MAT_CAP).map((d) => ({ kind: "material" as const, title: d.filename, sub: titleOf.get(d.matter_id) ?? "", extra: d.rel_path ?? "", at: d.created_at, ref: { document_version_id: d.document_version_id, matter_id: d.matter_id, filename: d.filename, rel_path: d.rel_path } })),
       ];
       // 代号形态的标题先在内核里还原再匹配（只在内存里；命中的才返回）
       for (const c of cands) {
@@ -2764,7 +2776,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         matters: hit.matter.map((c) => ({ matter_id: c.ref.matter_id, title: c.title, sub: c.sub, last_at: c.at })),
         runs: runsOut,
         deliverables: delivOut,
-        truncated: { runs: runs.length > RUN_CAP, deliverables: arts.length > ART_CAP },
+        materials: hit.material.map((c) => ({ document_version_id: c.ref.document_version_id, matter_id: c.ref.matter_id, matter_title: c.sub, filename: c.ref.filename, rel_path: c.ref.rel_path ?? null, created_at: c.at })),
+        truncated: { runs: runs.length > RUN_CAP, deliverables: arts.length > ART_CAP, materials: mats.length > MAT_CAP },
       };
     },
 
@@ -4031,7 +4044,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const st = lawdb.status();
       // 覆盖范围如实说（第 13 批，评审 Z1）：收录不足 50 部即“演示范围”——多数引用无法自动核对，复核页要求逐条人工核对
       const level = st.laws_count < 50 ? "sample" : st.laws_count < 300 ? "partial" : "standard";
-      const scope = level === "sample" ? `目前只收录 ${st.laws_count} 部法律法规、${st.articles_count} 条正文（演示范围），多数引用无法自动核对` : `收录 ${st.laws_count} 部 / ${st.versions_count} 个版本`;
+      // V23（2026-11-20 核验）：来源按登记如实说——36 部已是官方发布文本，不再统称“演示范围”；全是演示数据时才这么写
+      const official = st.source_breakdown.find((b) => b.reliability === "official_text_collected");
+      const others = st.source_breakdown.filter((b) => b.reliability !== "official_text_collected");
+      const short: Record<string, string> = { demo_seed: "为演示数据", inferred_from_amendment_decision: "依据修改决定推定" };
+      const origin = official
+        ? `（${official.laws} 部按官方发布文本采集${others.length > 0 ? `；另有 ${others.map((b) => `${b.articles} 条${short[b.reliability] ?? `来源类别为 ${b.reliability || "未登记"}`}`).join("、")}` : ""}）`
+        : "（演示范围）";
+      const scope = level === "sample" ? `目前只收录 ${st.laws_count} 部法律法规、${st.articles_count} 条正文${origin}，库外的引用无法自动核对` : `收录 ${st.laws_count} 部 / ${st.versions_count} 个版本${official ? origin : ""}`;
+      const collected = official?.collected_until ? ` · 条文采集截至 ${official.collected_until}` : "";
       // 期限计算用的节假日表：随法规库签名分发的，还是应用内置的（v9.4 第 22 批，偏离 D-128 回归计划）
       const hs = holidaySource();
       const hy = hs.years_covered;
@@ -4040,7 +4061,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         ...st,
         coverage: { level, laws: st.laws_count, articles: st.articles_count },
         holidays,
-        display: `${scope} · 法规库最后更新 ${st.built_at.slice(0, 10)} · 签名有效 · ${holidays.text}`,
+        display: `${scope} · 法规库最后更新 ${st.built_at.slice(0, 10)}${collected} · 签名有效 · ${holidays.text}`,
       };
     },
 

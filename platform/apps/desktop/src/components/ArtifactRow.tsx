@@ -1,6 +1,6 @@
 /**
- * 成果行（V18 A2；第 48 批改为卡片里的列表行）：事项“成果”页与全局“成果”页共用。
- * 每份文件一行（最新版）：类型方块 + 名称 + 一行说明（版数、给谁、时间）；“版本记录（n）”展开旧版；
+ * 成果行（V18 A2；第 48 批改为卡片里的列表行；第 49 批改为单行）：事项“成果”页与全局“成果”页共用。
+ * 每份文件一行（最新版）：类型方块 + 名称 + 状态 | 第 N 版（可展开旧版）· 给谁 · 时间；
  * 提交复核与下载放在行尾，下载常显为图标按钮，提交复核在悬停或键盘聚焦时出现（整行点开就是预览与签发前检查，提交复核不是唯一入口）。
  * 每个任务卡片末尾一行可展开的“过程文件（n）”（答复摘要、独立复核意见）。旧版与过程文件不给“提交复核”。
  * 只改显示：提交复核、预览、下载都对着具体那一个版本（最新版或展开后的那一版）。
@@ -10,6 +10,7 @@ import { downloadPlan } from "../lib/download.ts";
 import { fileTypeLabel, type FileEntry } from "../lib/deliverables.ts";
 import { ARTIFACT_STATUS_LABELS, AUDIENCE_LABELS, fmtTime, fmtWhen } from "../lib/labels.ts";
 import { Icon } from "./Icons.tsx";
+import "../styles-deliverables.css";
 
 const STATUS_TONE: Record<string, string> = { draft: "pill-gray", pending_review: "pill-orange", approved: "pill-green", rejected: "pill-red", superseded: "pill-gray" };
 
@@ -64,15 +65,6 @@ function DownloadButton({ r, onDownload }: { r: ListRow; onDownload: (r: ListRow
   );
 }
 
-/** 一行的说明：版数、给谁、时间（按状态筛选时状态都一样，不再写；“全部”时状态胶囊在名称后）。 */
-function metaParts(r: ListRow, opts: { showAudience: boolean }): string[] {
-  return [
-    ...(r.version > 1 ? [`第 ${r.version} 版`] : []),
-    ...(opts.showAudience && r.audience && r.audience !== "internal" ? [`给${AUDIENCE_LABELS[r.audience] ?? r.audience}`] : []),
-    fmtWhen(r.created_at),
-  ];
-}
-
 const openOnKey = (fn: () => void) => (e: KeyboardEvent) => {
   if (e.target !== e.currentTarget) return;
   if (e.key === "Enter" || e.key === " ") {
@@ -83,30 +75,37 @@ const openOnKey = (fn: () => void) => (e: KeyboardEvent) => {
 
 /**
  * 一份文件：最新版一行 + 可展开的旧版。showStatus：是否在名称后显示状态胶囊（全局页按状态筛选时不显示）。
+ * 第 49 批：改为单行——左边类型方块 + 名称（同族文件的共同前缀淡化、差异加粗，见 nameParts）+ 状态；右边“第 N 版”（有旧版时可展开）、
+ * 给谁、时间、悬停出现的“提交复核”、下载。原来的第二行说明与“版本记录（n）”合并进“第 N 版”，一份文件只占一行。
  */
-export function FileRows<T extends ListRow>({ entry, showStatus, onOpen, onDownload, onSubmit, busyId }: { entry: FileEntry<T>; showStatus: boolean; onOpen: (r: T) => void; onDownload: (r: ListRow) => void; onSubmit?: (r: T) => void; busyId?: string | null }) {
+export function FileRows<T extends ListRow>({ entry, showStatus, onOpen, onDownload, onSubmit, busyId, parts }: { entry: FileEntry<T>; showStatus: boolean; onOpen: (r: T) => void; onDownload: (r: ListRow) => void; onSubmit?: (r: T) => void; busyId?: string | null; parts?: { head: string; tail: string } | undefined }) {
   const [open, setOpen] = useState(false);
   const r = entry.latest;
+  const head = parts?.head ?? "";
+  const tail = parts ? parts.tail : r.display;
   return (
     <>
       <div className="dl-row" role="listitem" tabIndex={0} title={r.filename} onClick={() => onOpen(r)} onKeyDown={openOnKey(() => onOpen(r))}>
         <FileTypeIcon filename={r.filename} />
         <div className="dl-row-main">
-          <div className="dl-row-name">
-            <span className="dl-row-title">{r.display}</span>
-            {showStatus && <StatusPill r={r} withVersion={false} />}
-          </div>
-          <div className="dl-row-meta" title={fmtTime(r.created_at)}>
-            {metaParts(r, { showAudience: true }).join(" · ")}
-            {entry.replaced ? " · 后面的任务里有更新的版本" : ""}
-          </div>
+          <span className="dl-row-title">
+            {head && <span className="dl-name-head">{head}</span>}
+            {tail}
+          </span>
+          {showStatus && <StatusPill r={r} withVersion={false} />}
+          {entry.replaced && <span className="dl-row-note">后面的任务里有更新的版本</span>}
         </div>
-        <div className="dl-row-actions" onClick={(e) => e.stopPropagation()}>
-          {entry.older.length > 0 && (
-            <button className="btn-link dl-ver-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-              版本记录（{entry.older.length}）
+        <div className="dl-row-side" onClick={(e) => e.stopPropagation()}>
+          {entry.older.length > 0 ? (
+            <button className="dl-ver" aria-expanded={open} title={`展开旧版本（${entry.older.length}）`} onClick={() => setOpen((v) => !v)}>
+              第 {r.version} 版
+              <span className="dl-ver-chev" aria-hidden="true">{Icon.down()}</span>
             </button>
-          )}
+          ) : r.version > 1 ? (
+            <span className="dl-ver-static">第 {r.version} 版</span>
+          ) : null}
+          {r.audience && r.audience !== "internal" && <span className="dl-aud">给{AUDIENCE_LABELS[r.audience] ?? r.audience}</span>}
+          <span className="dl-when" title={fmtTime(r.created_at)}>{fmtWhen(r.created_at)}</span>
           {onSubmit && r.status === "draft" && !entry.replaced && (
             <button className="btn-ghost btn-sm dl-hover-action" disabled={busyId === r.artifact_version_id} onClick={() => onSubmit(r)}>提交复核</button>
           )}
@@ -118,11 +117,12 @@ export function FileRows<T extends ListRow>({ entry, showStatus, onOpen, onDownl
           <div key={o.artifact_version_id} className="dl-row dl-row-sub" role="listitem" title={o.filename}>
             <span className="dl-sub-mark" aria-hidden="true" />
             <div className="dl-row-main">
-              <div className="dl-row-meta">
-                第 {o.version} 版 · {ARTIFACT_STATUS_LABELS[o.status] ?? o.status} · {fmtWhen(o.created_at)}
-              </div>
+              <span className="dl-row-meta">
+                第 {o.version} 版 · {ARTIFACT_STATUS_LABELS[o.status] ?? o.status}
+              </span>
             </div>
-            <div className="dl-row-actions">
+            <div className="dl-row-side">
+              <span className="dl-when" title={fmtTime(o.created_at)}>{fmtWhen(o.created_at)}</span>
               <DownloadButton r={o} onDownload={onDownload} />
             </div>
           </div>
@@ -142,7 +142,7 @@ export function ProcessRows<T extends ListRow>({ entries, onDownload, earlier = 
     <div className="dl-proc">
       <button className="dl-proc-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <span className="dl-proc-chev" aria-hidden="true">{Icon.chevron()}</span>
-        {earlier ? "上一次运行的文件" : "过程文件"}（{entries.length}）
+        {earlier ? "上一次运行的文件" : "过程文件"} {entries.length} 份
         <span className="dl-proc-note">{earlier ? "重新运行前那一次留下的，已被这一次取代，不算这次的成果" : "答复摘要与复核意见，留作记录，不用交出去"}</span>
       </button>
       {open && (
@@ -151,10 +151,10 @@ export function ProcessRows<T extends ListRow>({ entries, onDownload, earlier = 
             <div key={e.latest.artifact_version_id} className="dl-row dl-row-sub" role="listitem" title={e.latest.filename}>
               <FileTypeIcon filename={e.latest.filename} />
               <div className="dl-row-main">
-                <div className="dl-row-title">{e.latest.display}</div>
-                <div className="dl-row-meta">{fmtWhen(e.latest.created_at)}</div>
+                <span className="dl-row-title">{e.latest.display}</span>
               </div>
-              <div className="dl-row-actions">
+              <div className="dl-row-side">
+                <span className="dl-when" title={fmtTime(e.latest.created_at)}>{fmtWhen(e.latest.created_at)}</span>
                 <DownloadButton r={e.latest} onDownload={onDownload} />
               </div>
             </div>

@@ -1,0 +1,53 @@
+/* 成果列表（第 49 批）：页首一句话 + 分段筛选 + 一个事项一张卡片（按任务分段）+ 单行文件。
+   只用语义令牌（门禁 apps/desktop/test/style-tokens.test.ts）。后加载，覆盖 styles.css 里第 48 批的同名规则。 */
+.dl-head { align-items: flex-start; margin-bottom: var(--sp-4); }
+.dl-sub { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--sp-3); margin-top: 6px; }
+.dl-sub-lead { font-weight: 500; color: var(--text-primary); }
+.dl-sub-rule { font-size: var(--fs-caption); color: var(--text-secondary); }
+
+/* 分段筛选：待处理 / 已签发 / 全部（浅灰托底、选中白底，与 Work / Chat 切换同一语言） */
+.dl-seg { display: inline-flex; gap: 2px; padding: 3px; margin-bottom: var(--sp-5); background: var(--bg-muted); border-radius: var(--r-md); }
+.dl-seg-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-secondary); font-size: var(--fs-body); }
+.dl-seg-btn:hover { color: var(--text-primary); }
+.dl-seg-btn.on { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-xs); }
+.dl-seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.dl-seg-btn .dl-tab-n { background: transparent; color: var(--text-label); min-width: 0; padding: 0; height: auto; }
+.dl-seg-btn.on .dl-tab-n { background: transparent; color: var(--text-primary); }
+
+/* 事项：标题一行（悬停出箭头），下面一张卡片 */
+.dl-matter { margin-bottom: var(--sp-5); }
+.dl-matter-head { margin-bottom: var(--sp-2); }
+.dl-matter-title { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-body); }
+.dl-matter-go { display: inline-flex; visibility: hidden; color: var(--text-label); }
+.dl-matter-go svg { width: 14px; height: 14px; }
+.dl-matter-title:hover .dl-matter-go, .dl-matter-title:focus-visible .dl-matter-go { visibility: visible; }
+.dl-card { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-surface); overflow: hidden; }
+/* 任务段：不再是带灰底标题栏的独立卡片，段与段之间一条细线 */
+.dl-card .dl-task { border: 0; border-radius: 0; margin: 0; background: transparent; overflow: visible; }
+.dl-card .dl-task + .dl-task { border-top: 1px solid var(--border-subtle); }
+.dl-card .dl-task-head { background: transparent; border-bottom: 0; padding: var(--sp-3) var(--sp-4) 2px; }
+.dl-card .dl-task-name { font-size: var(--fs-caption); font-weight: 600; color: var(--text-label); }
+.dl-card .dl-task-meta { font-size: var(--fs-caption); }
+.dl-card .dl-task-actions { visibility: hidden; }
+.dl-card .dl-task:hover .dl-task-actions, .dl-card .dl-task:focus-within .dl-task-actions { visibility: visible; }
+
+/* 文件：单行 */
+.dl-row { min-height: 48px; padding: 6px var(--sp-4); }
+.dl-card .dl-row { border-top: 0; }
+.dl-card .dl-row + .dl-row { border-top: 1px solid var(--border-subtle); }
+.dl-row-main { display: flex; align-items: center; gap: var(--sp-2); }
+.dl-row-title { min-width: 0; flex: 0 1 auto; font-weight: 500; }
+.dl-name-head { font-weight: 400; color: var(--text-secondary); }
+.dl-row-note { flex: none; font-size: var(--fs-caption); color: var(--status-warning-text); }
+.dl-row-side { flex: none; display: inline-flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; cursor: default; }
+.dl-when { min-width: 72px; text-align: right; }
+.dl-aud { color: var(--text-label); }
+.dl-ver { display: inline-flex; align-items: center; gap: 2px; height: 24px; padding: 0 6px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-secondary); font-size: var(--fs-caption); }
+.dl-ver:hover, .dl-ver[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
+.dl-ver-chev { display: inline-flex; transition: transform 0.15s; }
+.dl-ver-chev svg { width: 12px; height: 12px; }
+.dl-ver[aria-expanded="true"] .dl-ver-chev { transform: rotate(180deg); }
+.dl-ver-static { padding: 0 6px; }
+.dl-row-sub .dl-row-meta { font-size: var(--fs-caption); }
+.dl-proc { border-top: 1px dashed var(--border-subtle); }
+.dl-proc-toggle { padding: 6px var(--sp-4); }

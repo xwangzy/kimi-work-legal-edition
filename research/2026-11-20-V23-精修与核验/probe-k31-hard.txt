@@ -1,0 +1,10 @@
+模型 kimi-k3.1-pro 每组 2 次 上限 240.0s  2026-11-20 14:31:04
+L 难题 effort=low
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=2.0s 思考字数=4114 首正文=87.8s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.9s 思考字数=3176 首正文=57.5s
+M 难题 effort缺省(max)
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.3s 思考字数=14629 首正文=>240s未出正文
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.5s 思考字数=10662 首正文=226.3s
+N 难题 thinking disabled（未文档化）
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=无 思考字数=0 首正文=2.0s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=无 思考字数=0 首正文=2.4s

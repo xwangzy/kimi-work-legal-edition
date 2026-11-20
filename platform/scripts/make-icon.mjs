@@ -1,38 +1,7 @@
 /**
- * 生成应用图标 apps/desktop/build/icon.png（512×512；electron-builder 由此生成 .ico）。
- * 与侧栏品牌标识一致：Kimi Work 强调色圆角方块 + 白色“K”，右下角法律版标记。
- * 用法：node scripts/make-icon.mjs
+ * 旧入口（第 49 批起改为转发）：应用图标改用 Kimi 官方 Logomark，由 apps/desktop/scripts/build-icons.mjs 从仓库内的
+ * apps/desktop/build/brand/Logomark_Light.svg 按各尺寸矢量渲染，生成 build/icon.ico（16～256 共 10 帧）与 build/icon.png（1024）。
+ * 原来这里画的是自绘的蓝底“K + 法”，直接运行会把新图标覆盖成旧图——所以只转发，不再自己画。
+ * 用法：node scripts/make-icon.mjs（等同于 node apps/desktop/scripts/build-icons.mjs）
  */
-import { createCanvas } from "@napi-rs/canvas";
-import { writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
-const out = fileURLToPath(new URL("../apps/desktop/build/icon.png", import.meta.url));
-const S = 512;
-const c = createCanvas(S, S);
-const g = c.getContext("2d");
-const r = 112;
-g.beginPath();
-g.moveTo(r, 0);
-g.arcTo(S, 0, S, S, r);
-g.arcTo(S, S, 0, S, r);
-g.arcTo(0, S, 0, 0, r);
-g.arcTo(0, 0, S, 0, r);
-g.closePath();
-g.fillStyle = "#167ffb";
-g.fill();
-g.fillStyle = "#ffffff";
-g.font = "bold 330px sans-serif";
-g.textAlign = "center";
-g.textBaseline = "middle";
-g.fillText("K", S / 2 - 8, S / 2 + 14);
-// 法律版标记：右下角天平点
-g.beginPath();
-g.arc(S - 118, S - 118, 54, 0, Math.PI * 2);
-g.fillStyle = "#0b1f3a";
-g.fill();
-g.fillStyle = "#ffffff";
-g.font = "bold 64px sans-serif";
-g.fillText("法", S - 118, S - 114);
-writeFileSync(out, c.toBuffer("image/png"));
-console.log(`[make-icon] → ${out}`);
+await import(new URL("../apps/desktop/scripts/build-icons.mjs", import.meta.url).href);

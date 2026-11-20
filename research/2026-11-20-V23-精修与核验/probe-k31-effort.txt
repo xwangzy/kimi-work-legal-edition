@@ -1,0 +1,17 @@
+模型 kimi-k3.1-pro 每组 3 次 上限 90.0s  2026-11-20 14:30:09
+H effort=low
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.6s 思考字数=101 首正文=4.5s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.7s 思考字数=172 首正文=4.9s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.6s 思考字数=185 首正文=6.1s
+I effort=high
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.2s 思考字数=266 首正文=5.3s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.4s 思考字数=802 首正文=17.0s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.7s 思考字数=465 首正文=11.5s
+J effort缺省(max)
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.8s 思考字数=778 首正文=15.9s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.4s 思考字数=318 首正文=8.2s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=1.2s 思考字数=423 首正文=10.9s
+K effort=low + thinking disabled（违规组合，看是否报错）
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=无 思考字数=0 首正文=1.4s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=无 思考字数=0 首正文=1.6s
+   ✓ 后端model=kimi-k3.1-pro msh头=有 首思考=无 思考字数=0 首正文=1.9s

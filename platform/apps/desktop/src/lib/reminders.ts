@@ -214,3 +214,45 @@ export function dueBuckets<T extends { due_date: string; cloud_state?: string }>
     })
     .filter((g) => g.items.length > 0);
 }
+
+/**
+ * 日程行（第 49 批）：把“我设的提醒”与“收到的提醒”合成一份日程，消除第 48 批“新到的提醒”块与日程列表重复列同一条的问题。
+ * - 我设的每条提醒一行；它的未读收件（同一 reminder_id，任意版本）记在 fresh 里，行内标“新”，“知道了”把这些版本标为已读；
+ * - 没有对应“我设的提醒”的未读收件（事项成员设的、别的设备送来的、已撤销的）单独成行（received），只能“知道了”；
+ * - 已读且没有对应行的收件只进页底“看过的提醒”（history），已读且有对应行的不再重复列。
+ * 内核的已读 / 未读语义不变：标为已读仍按 { reminder_id, version } 逐条提交。纯函数。
+ */
+export interface AgendaEntry<R, I> {
+  key: string;
+  due_date: string;
+  /** 用于 dueBuckets 过滤已撤销（只有我设的提醒有）。 */
+  cloud_state?: string;
+  reminder: R | null;
+  /** 没有对应“我设的提醒”时，收到的那一条（取最新版本）。 */
+  received: I | null;
+  /** 这一行的未读收件（标“新”；“知道了”提交这些）。 */
+  fresh: I[];
+}
+
+export function agendaEntries<
+  R extends { reminder_id: string; due_date: string; cloud_state: string },
+  I extends { reminder_id: string; version: number; due_date: string; read_at: string | null },
+>(reminders: readonly R[], inbox: readonly I[]): { entries: AgendaEntry<R, I>[]; history: I[]; unread: I[] } {
+  const mine = new Map(reminders.map((r) => [r.reminder_id, r]));
+  const unread = inbox.filter((i) => !i.read_at);
+  const freshBy = new Map<string, I[]>();
+  for (const i of unread) freshBy.set(i.reminder_id, [...(freshBy.get(i.reminder_id) ?? []), i]);
+  const entries: AgendaEntry<R, I>[] = reminders.map((r) => ({ key: r.reminder_id, due_date: r.due_date, cloud_state: r.cloud_state, reminder: r, received: null, fresh: freshBy.get(r.reminder_id) ?? [] }));
+  for (const [id, items] of freshBy) {
+    if (mine.has(id)) continue;
+    const latest = [...items].sort((a, b) => b.version - a.version)[0]!;
+    entries.push({ key: `in:${id}`, due_date: latest.due_date, reminder: null, received: latest, fresh: items });
+  }
+  const history = inbox.filter((i) => !!i.read_at && !mine.has(i.reminder_id));
+  return { entries, history, unread };
+}
+
+/** 倒计时文字的颜色档（与 dueTone 同档，另加已过期）：只用文字颜色表达远近，不再叠色条与底色。 */
+export function countTone(dueDate: string, now = Date.now()): "red" | "orange" | "plain" | "past" {
+  return daysUntil(dueDate, now) < 0 ? "past" : dueTone(dueDate, now);
+}

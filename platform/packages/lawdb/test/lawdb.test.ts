@@ -2,7 +2,8 @@
  * 法规库包（方案 v5.0 第 4 篇 §9、第 5 篇 §2）：签名验签拒载、名称归一、时点取版本、
  * 条号迁移、Source Registry 动作强制、增量包 apply 与 base 校验、重复构建确定性。
  * 依赖 content/lawdb/dist 产物与 test-fixtures 夹具（npm test 的 pretest 会先行构建）。
- * 随包法规库不含虚构版本（v9.4 第 19 批 S-07）；条号迁移用夹具（随包种子 + 虚构的《律师法》2026 修正本）测。
+ * 随包法规库不含夹具的演绎文本（v9.4 第 19 批 S-07）；条号迁移用夹具（随包种子 + 夹具演绎的《律师法》“2026 修正本”）测。
+ * V23（2026-11-20）：随包种子已含真实的《律师法》2026 修正本（只收第四十一条）与 38→41 迁移，夹具同 lsv_id 版本覆盖它。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -40,9 +41,25 @@ test("加载验签 ok：status 与签名内容一致、重复构建确定", () =
   assert.equal(st.signature_valid, true);
   // 第 34 批：9 部 137 条官方发布文本入库（《律师法》第三十八条仍为演示种子）；V10 第 36 批：9 部扩为全文、另收 6 部与 3 部司法解释全文（劳动争议解释（一）第三十二条不入库）；V13 第 38 批：再收专利法、反垄断法、劳动合同法实施条例、反不正当竞争法（2025 修订）、数据安全法 5 部 286 条；V16 第 41 批：第五批 12 部，补收诉讼费用交纳办法 56 条
   assert.equal(st.laws_count, 37);
-  assert.equal(st.versions_count, 37);
-  assert.equal(st.articles_count, 4017);
+  // V23（2026-11-20）：+《律师法》2026 修正本（只收第四十一条）、+ 劳动争议解释（一）第三十二条
+  assert.equal(st.versions_count, 38);
+  assert.equal(st.articles_count, 4019);
   assert.match(st.package_version, /^g0\./);
+  // V23（2026-11-20 核验）：覆盖说明按来源登记动态生成——36 部官方发布文本 4,017 条；《律师法》2017 版第三十八条为演示数据，
+  // 2026 修正本第四十一条依据修改决定推定；只收了部分条文的版本：律师法 2017（1/60）、律师法 2026（1/65）
+  assert.deepEqual(
+    st.source_breakdown.map((b) => [b.reliability, b.laws, b.articles]),
+    [
+      ["official_text_collected", 36, 4017],
+      ["demo_seed", 1, 1],
+      ["inferred_from_amendment_decision", 1, 1],
+    ],
+  );
+  assert.equal(st.source_breakdown[0]!.collected_until, "2026-11-10");
+  assert.equal(st.partial_versions, 2);
+  assert.match(st.source_coverage_note, /36 部（4017 条）按官方发布文本采集并与第二官方来源比对（采集截至 2026-11-10），1 部（1 条）为演示数据.*1 部（1 条）依据修改决定推定、修正本逐字全文待采集/);
+  assert.match(st.source_coverage_note, /2 个版本只收了部分条文/);
+  assert.doesNotMatch(st.source_coverage_note, /G0 演示种子/);
   db.close();
   // content hash 重算 = manifest 声明（确定性：同源同 hash；package_meta 的 built_at 不进签名）
   const raw = new Database(BASE, { readonly: true });
@@ -75,21 +92,33 @@ test("名称归一：书名号/空白/全半角不敏感", () => {
   assert.equal(normalizeLawName("《律师法》"), normalizeLawName("律师法"));
   const db = openLawdb(BASE, { expectedSignerPubPem: PUB });
   for (const q of ["律师法", "《律师法》", " 律师 法 ", "中华人民共和国律师法", "《中华人民共和国律师法》"]) {
-    assert.equal(db.findLawVersions(q).length, 1, `「${q}」应命中 1 个版本`);
+    // V23：随包《律师法》有 2017 修正本与 2026 修正本两个版本
+    assert.equal(db.findLawVersions(q).length, 2, `「${q}」应命中 2 个版本`);
   }
   assert.equal(db.findLawVersions("不存在的法").length, 0);
   db.close();
 });
 
-test("S-07 随包法规库不含虚构版本：《律师法》只有 2017 修正本且为现行，没有条号迁移，没有“演示演绎”文本", () => {
+test("S-07 随包法规库不含夹具的演绎文本；V23：《律师法》2017 修正本已被 2026 修正本取代（2026-09-01 施行），38→41 条号迁移，第四十一条正文同原第三十八条", () => {
   const db = openLawdb(BASE, { expectedSignerPubPem: PUB });
   const rows = db.findLawVersions("律师法");
-  assert.deepEqual(rows.map((r) => [r.lsv_id, r.effectiveness, r.superseded]), [["lsv_lawyers_2017", "valid", null]]);
-  assert.equal(versionAt(rows, "2026-10-01")!.lsv_id, "lsv_lawyers_2017");
+  assert.deepEqual(rows.map((r) => [r.lsv_id, r.effectiveness, r.superseded, r.total_articles]), [
+    ["lsv_lawyers_2017", "amended", "2026-09-01", 60],
+    ["lsv_lawyers_2026", "valid", null, 65],
+  ]);
+  assert.equal(versionAt(rows, "2026-08-31")!.lsv_id, "lsv_lawyers_2017");
+  assert.equal(versionAt(rows, "2026-10-01")!.lsv_id, "lsv_lawyers_2026");
+  assert.deepEqual(db.getRenumbering("law_lawyers", "lsv_lawyers_2017", "lsv_lawyers_2026", "保密义务").map((r) => [r.from_article, r.to_article]), [[38, 41]]);
+  // 修改决定未改原第三十八条：第四十一条正文 = 2017 修正本第三十八条（2012 年修改后的文字，不是夹具里的旧文）
+  assert.equal(db.getArticle("lsv_lawyers_2026", 41), db.getArticle("lsv_lawyers_2017", 38));
+  assert.match(db.getArticle("lsv_lawyers_2026", 41)!, /不愿泄露的有关情况和信息.*准备或者正在实施危害国家安全、公共安全以及严重危害他人人身安全的犯罪事实和信息除外/s);
+  assert.equal(db.getArticle("lsv_lawyers_2026", 38), null, "节选：2026 修正本只收第四十一条");
+  assert.equal(db.getSource(rows[1]!.source_license_id)?.reliability, "inferred_from_amendment_decision");
+  assert.match(String(db.licenseNoteOf(rows[1]!.source_license_id)), /推定：原第三十八条未修改、条序调整为第四十一条；修正本逐字全文待从国家法律法规数据库采集/);
   db.close();
   const raw = new Database(BASE, { readonly: true });
-  assert.equal((raw.prepare(`SELECT COUNT(*) AS c FROM renumbering`).get() as { c: number }).c, 0);
-  assert.equal((raw.prepare(`SELECT COUNT(*) AS c FROM law_versions WHERE gazette_issue LIKE '%演绎%' OR lsv_id = 'lsv_lawyers_2026'`).get() as { c: number }).c, 0);
+  assert.equal((raw.prepare(`SELECT COUNT(*) AS c FROM renumbering`).get() as { c: number }).c, 2);
+  assert.equal((raw.prepare(`SELECT COUNT(*) AS c FROM law_versions WHERE gazette_issue LIKE '%演绎%' OR total_articles = 68`).get() as { c: number }).c, 0);
   assert.equal((raw.prepare(`SELECT COUNT(*) AS c FROM articles WHERE text LIKE '%演绎%'`).get() as { c: number }).c, 0);
   assert.equal((raw.prepare(`SELECT COUNT(*) AS c FROM source_registry WHERE citation_requirement LIKE '%演绎%'`).get() as { c: number }).c, 0);
   raw.close();
@@ -199,11 +228,12 @@ test("增量伪造（dev 私钥真签名、声明的合并 hash 与真实合并�
   const raw = new Database(copy, { readonly: true });
   const n = (sql: string) => (raw.prepare(sql).get() as { c: number }).c;
   assert.equal(n(`SELECT COUNT(*) AS c FROM laws`), 37);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions`), 37);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM articles`), 4017);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM article_topics`), 169);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM renumbering`), 0);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM source_registry`), 5);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions`), 38);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM articles`), 4019);
+  // V23：+《律师法》2026 修正本主题 2 个、合读提示 52 个；+ 38→41 迁移 2 组；+ 来源登记 amendment-decision-inferred-2026-11
+  assert.equal(n(`SELECT COUNT(*) AS c FROM article_topics`), 223);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM renumbering`), 2);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM source_registry`), 6);
   // V10 第 36 批：随包种子已有仲裁法 2025 年修订本（law_arbitration 一行），增量补的 2017 年修正本不得残留
   assert.equal(n(`SELECT COUNT(*) AS c FROM laws WHERE law_id = 'law_arbitration'`), 1, "随包的仲裁法一行照旧");
   assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions WHERE lsv_id = 'lsv_arbitration_2017'`), 0);

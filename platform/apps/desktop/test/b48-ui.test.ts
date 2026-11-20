@@ -67,15 +67,18 @@ test("三页：成果按任务卡片、提交复核悬停出现；数据去向�
   assert.match(dl, /placeholder="搜索文件或事项"/);
   assert.match(src("components/ArtifactRow.tsx"), /dl-hover-action/);
   const conn = src("pages/Connections.tsx");
-  assert.match(conn, /<ol className="dfx-flow" aria-label="数据去向">/);
-  assert.match(conn, /className="dfx-sec dfx-auth no-print"/);
+  // 第 49 批：去向图改为“数据 × 去处”对照表（口径逐条保留，见 b49-ui）
+  assert.match(conn, /<table className="dfx-table" aria-label="数据在哪、经过谁、留下什么">/);
+  assert.match(conn, /className="dfx-auth no-print"/);
   assert.match(conn, /api\.setAiAuthorization\(!state\.engagement_terms\)/);
   // 口径保留：识别会遗漏、书面确认待签署、中软保存的用量字段
   assert.match(conn, /没有识别出的姓名会按原文发出/);
   assert.match(conn, /“不用于训练、不保留”的书面确认：待签署/);
   const rm = src("pages/Reminders.tsx");
   assert.match(rm, /function agendaSummary\(/);
-  assert.match(rm, /className=\{`rm-item rm-tone-\$\{tone\}`\}/);
+  // 第 49 批：远近只用倒计时文字颜色（不再有左侧色条 rm-tone-*），新到的就地标在日程行上
+  assert.match(rm, /className=\{`rm-count rm-count-\$\{tone\}`\}/);
+  assert.doesNotMatch(rm, /rm-tone-/);
 });
 
 test("案卷文件夹同步后的旧版本：开始任务时缺省不选（只选最新版），律师仍可自己勾", async () => {

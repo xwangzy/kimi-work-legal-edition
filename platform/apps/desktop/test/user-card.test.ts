@@ -27,9 +27,9 @@ test("样式：状态点 inline-block；头像上的状态点只在收窄（图�
   assert.match(css, /^\.dot \{ display: inline-block;/m);
   assert.match(css, /\.sidebar-foot \.avatar-dot \{ display: none; position: absolute;/);
   assert.match(css, /\.sidebar\.compact \.sidebar-foot \.avatar-dot \{ display: block; \}/);
-  const narrow = css.slice(css.indexOf("@media (max-width: 900px)"));
-  assert.match(narrow.slice(0, narrow.indexOf("\n}")), /\.sidebar \.sidebar-foot \.avatar-dot \{ display: block; \}/);
+  // 第 49 批：窄窗口不再另用媒体查询改侧栏，由组件按窗口宽度加 .compact（同一条规则覆盖图标栏与窄窗口）
   const src = readFileSync(fileURLToPath(new URL("../src/components/Sidebar.tsx", import.meta.url)), "utf8");
+  assert.match(src, /matchMedia\(NARROW_QUERY\)/);
   assert.match(src, /className=\{`dot avatar-dot \$\{footTone\}`\}/);
   assert.match(src, /title=\{card\.tooltip\}/);
 });

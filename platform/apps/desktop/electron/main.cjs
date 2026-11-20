@@ -538,6 +538,10 @@ async function startKernel() {
     if (msg && msg.type === "chat.delta" && typeof msg.stream_id === "string" && typeof msg.text === "string") {
       for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", { type: "chat.delta", stream_id: msg.stream_id, text: msg.text });
     }
+    // 问答的回答进度（第 48 批）：只转发流编号、阶段（思考中 / 撰写中）与已收到的思考字数，界面据此显示等待状态；不转发思考内容
+    if (msg && msg.type === "chat.progress" && typeof msg.stream_id === "string" && (msg.phase === "thinking" || msg.phase === "writing") && Number.isSafeInteger(msg.thought_chars) && msg.thought_chars >= 0) {
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", { type: "chat.progress", stream_id: msg.stream_id, phase: msg.phase, thought_chars: msg.thought_chars });
+    }
     // 登录已失效（第 44 批）：只转发原因代码（会话过期、账号停用等），界面据此出“请重新登录”
     if (msg && msg.type === "account.login_required" && typeof msg.reason === "string" && /^[a-z_]{1,40}$/.test(msg.reason)) {
       for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", { type: "account.login_required", reason: msg.reason });
@@ -916,7 +920,11 @@ function wireContentProtection(win) {
 }
 
 function createWindow() {
+  // 应用图标（第 49 批）：打包后 Windows 用 exe 资源里的图标（build/icon.ico）、macOS 由应用包决定；未打包的开发形态显式设窗口/程序坞图标
+  const devIcon = app.isPackaged ? null : path.join(__dirname, "../build", process.platform === "win32" ? "icon.ico" : "icon.png");
+  if (devIcon && process.platform === "darwin") app.dock?.setIcon(devIcon);
   const win = new BrowserWindow({
+    ...(devIcon && process.platform !== "darwin" ? { icon: devIcon } : {}),
     width: 1440,
     height: 900,
     minWidth: 1080,

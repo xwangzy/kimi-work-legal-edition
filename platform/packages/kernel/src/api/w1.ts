@@ -173,7 +173,8 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
     // 第 47 批：问答可选的模型（与 kernel.status 的 model_choices 同一份）；send 时 route 不在其中即拒绝
     "chat.models": () => {
       const choices = d.qa?.modelChoices() ?? [];
-      return { choices, default: choices.find((c) => c.default)?.alias ?? null };
+      // default_deep（第 48 批）：“深度思考”开关的缺省状态（缺省关＝快速回答；ZR_QA_THINKING=on 为开）
+      return { choices, default: choices.find((c) => c.default)?.alias ?? null, default_deep: d.qa?.defaultDeep() ?? false };
     },
     "chat.list": (_p, id) => {
       if (!d.qa) return { conversations: [] };
@@ -209,7 +210,7 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
         const streamId = typeof p?.stream_id === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(p.stream_id) ? p.stream_id : undefined;
         // route（第 47 批）：律师这次选的模型别名（legal/k3、legal/k2.6）；不给用缺省；给了但不可选由 send 拒绝（validation）
         return await d.qa.send(
-          { ...(typeof p?.conversation_id === "string" && p.conversation_id ? { conversationId: p.conversation_id } : {}), text: String(p?.text ?? ""), ...(streamId ? { streamId } : {}), ...(p?.route !== undefined ? { route: p.route } : {}) },
+          { ...(typeof p?.conversation_id === "string" && p.conversation_id ? { conversationId: p.conversation_id } : {}), text: String(p?.text ?? ""), ...(streamId ? { streamId } : {}), ...(p?.route !== undefined ? { route: p.route } : {}), ...(typeof p?.deep === "boolean" ? { deep: p.deep } : {}) },
           id.tenantId,
           id.userId,
         );

@@ -316,7 +316,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     <main className="main main-home">
       <div className="home">
         <div className="home-center">
-          {/* Kimi Work 首页同款：居中粗体字标 + 右上黑色小标（Kimi 为“KIMI”+“WORK”，我方为“Kimi Work”+“法律”）+ 输入框 + 托盘 + 能力胶囊 */}
+          {/* Kimi Work 首页同款：居中粗体字标 + 右上黑色小标（Kimi 为“KIMI”+“WORK”，我方为“Kimi Work”+“法律版”，与侧栏字标、安装包与快捷方式名称一致，第 49 批）+ 输入框 + 托盘 + 能力胶囊 */}
           <h1 className="home-wordmark" aria-label="Kimi Work 法律版">
             {/* 字宽按 textLength 定死（只调字距），各系统字体下宽度一致，右上小标不会离开字标 */}
             <svg className="home-wordmark-svg" viewBox="0 0 236 52" role="presentation" aria-hidden="true">
@@ -324,7 +324,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
                 Kimi Work
               </text>
             </svg>
-            <span className="home-wordmark-tag">法律</span>
+            <span className="home-wordmark-tag">法律版</span>
           </h1>
           <Composer
             matters={matters}

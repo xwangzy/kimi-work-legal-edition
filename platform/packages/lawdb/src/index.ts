@@ -247,7 +247,18 @@ export interface LawdbStatus {
   signer_key_id: string;
   signature_valid: true;
   source_coverage_note: string;
+  /** 按来源登记的可靠性分组（V23：口径由数据算出，不写死）：每组的法规部数、条数与最晚采集日。 */
+  source_breakdown: { reliability: string; laws: number; articles: number; collected_until: string | null }[];
+  /** 库内条数少于该版本官方总条数的版本数（只收了部分条文）。 */
+  partial_versions: number;
 }
+
+/** 来源可靠性的说法（与 source_registry.reliability 一致；未知值原样写出，不美化）。 */
+const RELIABILITY_LABEL: Record<string, string> = {
+  official_text_collected: "按官方发布文本采集并与第二官方来源比对",
+  demo_seed: "为演示数据、不得作为正式引用",
+  inferred_from_amendment_decision: "依据修改决定推定、修正本逐字全文待采集",
+};
 
 export class Lawdb {
   private readonly db: Db;
@@ -297,6 +308,21 @@ export class Lawdb {
     const versions = count(`SELECT COUNT(*) AS n FROM law_versions`);
     const articles = count(`SELECT COUNT(*) AS n FROM articles`);
     const renumbering = count(`SELECT COUNT(*) AS n FROM renumbering`);
+    // V23（2026-11-20 核验）：覆盖说明按来源登记动态生成——原文案写死“G0 演示种子”，与 36 部官方采集的登记不符
+    const breakdown = (
+      this.db
+        .prepare(
+          `SELECT COALESCE(s.reliability, '') AS reliability, COUNT(DISTINCT v.law_id) AS laws,
+             (SELECT COUNT(*) FROM articles a JOIN law_versions v2 ON v2.lsv_id = a.lsv_id LEFT JOIN source_registry s2 ON s2.source_license_id = v2.source_license_id
+               WHERE COALESCE(s2.reliability, '') = COALESCE(s.reliability, '')) AS articles,
+             MAX(v.collected_at) AS collected_until
+           FROM law_versions v LEFT JOIN source_registry s ON s.source_license_id = v.source_license_id
+           GROUP BY COALESCE(s.reliability, '') ORDER BY laws DESC, reliability`,
+        )
+        .all() as { reliability: string; laws: number; articles: number; collected_until: string | null }[]
+    ).map((r) => ({ ...r }));
+    const partial = count(`SELECT COUNT(*) AS n FROM law_versions v WHERE (SELECT COUNT(*) FROM articles a WHERE a.lsv_id = v.lsv_id) < v.total_articles`);
+    const parts = breakdown.map((b) => `${b.laws} 部（${b.articles} 条）${RELIABILITY_LABEL[b.reliability] ?? `来源类别为 ${b.reliability || "未登记"}`}${b.collected_until ? `（采集截至 ${b.collected_until}）` : ""}`);
     return {
       package_version: this.manifest.package_version,
       built_at: this.manifest.built_at,
@@ -305,8 +331,13 @@ export class Lawdb {
       articles_count: articles,
       signer_key_id: this.manifest.signer_key_id,
       signature_valid: true, // 加载即验签，能构造即有效
-      // 按实际内容动态生成（增量 apply 后随之正确）：不静态声称覆盖数
-      source_coverage_note: `当前包覆盖 ${laws} 部法律法规 / ${versions} 个版本 / 已采集正文 ${articles} 条 / 条号迁移 ${renumbering} 组（G0 演示种子；正文按渐进采集，条号存在 ≠ 正文已采集；首批官方公报人工采集为法律工程任务，商业源未签约不入库）`,
+      // 按实际内容与来源登记动态生成（增量 apply 后随之正确）：不静态声称覆盖数与来源
+      source_coverage_note:
+        `当前包覆盖 ${laws} 部法律法规 / ${versions} 个版本 / 已采集正文 ${articles} 条 / 条号迁移 ${renumbering} 组` +
+        `（${parts.join("，")}${partial > 0 ? `；${partial} 个版本只收了部分条文` : ""}；效力状态以采集时为准；` +
+        `库内没有的法规与条文按“库内没有”处理，不等于不存在；条号存在 ≠ 正文已采集；商业源未签约不入库）`,
+      source_breakdown: breakdown,
+      partial_versions: partial,
     };
   }
 

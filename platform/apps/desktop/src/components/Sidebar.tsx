@@ -16,6 +16,7 @@ import { onDataChanged } from "../lib/events.ts";
 import { sidebarFoot, userCardText } from "../lib/user-card.ts";
 import { planBadge, quotaMenuLine } from "../lib/quota-notice.ts";
 import { runName } from "../lib/labels.ts";
+import { NARROW_QUERY, sidebarState } from "../lib/sidebar-state.ts";
 
 interface Item {
   key: Route["page"];
@@ -50,6 +51,26 @@ function savedSections(): { matters: boolean; tasks: boolean } {
   } catch {
     return { matters: true, tasks: true };
   }
+}
+/** 窗口是否窄于 900px（侧栏自动收起）；随窗口缩放更新。 */
+function useNarrow(): boolean {
+  const query = (): boolean => {
+    try {
+      return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(NARROW_QUERY).matches;
+    } catch {
+      return false;
+    }
+  };
+  const [narrow, setNarrow] = useState(query);
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia(NARROW_QUERY);
+    const on = () => setNarrow(mq.matches);
+    on();
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, []);
+  return narrow;
 }
 const MOD = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform) ? "⌘" : "Ctrl";
 
@@ -163,35 +184,48 @@ export function Sidebar({ route }: { route: Route }) {
   const activeMatter = route.page === "matter" || route.page === "run" ? route.matterId : null;
   const activeRun = route.page === "run" ? route.runId : null;
   const activeChat = route.page === "chat" ? (route.conversationId ?? null) : null;
-  // 任务执行态收为图标栏，给三栏（材料 | 进度 | 预览）让出宽度；律师也可以手动收起（Kimi 同款）
+  // 收起状态只在这里算（第 49 批，lib/sidebar-state.ts 写明根因）：手动收起记偏好；执行态三栏页与窄窗口自动收起，
+  // 律师可临时展开，换页或窗口宽窄变化即复位
+  const narrow = useNarrow();
   const forced = route.page === "run";
-  const compact = forced || collapsed;
+  const [peek, setPeek] = useState(false);
+  useEffect(() => setPeek(false), [route.page, narrow]);
+  const { compact, auto } = sidebarState({ collapsedPref: collapsed, forced, narrow, peek });
+  const toggle = () => (auto ? setPeek((p) => !p) : toggleCollapsed());
   const badge = planBadge(quota);
   return (
     <aside className={`sidebar${compact ? " compact" : ""}`} data-tour="sidebar">
       <div className="brand">
-        {compact && !forced ? (
-          <button className="brand-mark-btn" onClick={toggleCollapsed} title="展开侧栏" aria-label="展开侧栏">
+        {compact ? (
+          // 收起：只留标识，兼作展开按钮；悬停时换成“展开”图标（Kimi 同款），让人知道点了会展开
+          <button className="brand-mark-btn" onClick={toggle} title="展开侧栏" aria-label="展开侧栏" aria-expanded={false}>
             <KimiMark className="brand-logo" />
+            <span className="brand-expand-ico" aria-hidden="true">
+              {Icon.sidebar()}
+            </span>
           </button>
-        ) : compact ? (
-          <span className="brand-mark-btn" role="img" aria-label="Kimi Work 法律版">
-            <KimiMark className="brand-logo" />
-          </span>
         ) : (
           <span className="brand-name">
             <BrandLockup />
           </span>
         )}
-        <button className="sidebar-toggle" onClick={() => window.dispatchEvent(new Event("kwl:search"))} title={`搜索事项、任务、成果（${MOD} F）`} aria-label="搜索">
-          {Icon.search()}
-        </button>
-        {!forced && (
-          <button className="sidebar-toggle" onClick={toggleCollapsed} title="收起侧栏" aria-label="收起侧栏">
-            {Icon.sidebar()}
-          </button>
+        {!compact && (
+          <>
+            <button className="sidebar-toggle" onClick={() => window.dispatchEvent(new Event("kwl:search"))} title={`搜索事项、任务、成果（${MOD} F）`} aria-label="搜索">
+              {Icon.search()}
+            </button>
+            <button className="sidebar-toggle" onClick={toggle} title="收起侧栏" aria-label="收起侧栏" aria-expanded={true}>
+              {Icon.sidebar()}
+            </button>
+          </>
         )}
       </div>
+      {/* 收起时搜索移到图标栏里（展开时在品牌行右侧），两种状态都能直接搜 */}
+      {compact && (
+        <button className="nav-item nav-rail-only nav-rail-search" onClick={() => window.dispatchEvent(new Event("kwl:search"))} title={`搜索事项、任务、成果（${MOD} F）`} aria-label="搜索">
+          <span className="nav-icon">{Icon.search()}</span>
+        </button>
+      )}
       {/* Work / Chat（Kimi Work 同款分段切换）：Work = 在事项里发起任务；Chat = 不读事项材料的法律问答 */}
       <div className="mode-switch" role="tablist" aria-label="工作模式">
         <button role="tab" aria-selected={mode === "work"} className={`mode-tab${mode === "work" ? " active" : ""}`} onClick={() => mode !== "work" && nav("/")} title="Work：在事项里发起任务">
@@ -225,6 +259,13 @@ export function Sidebar({ route }: { route: Route }) {
                 </button>
               );
             })}
+            {/* 收起时“事项”分组整块隐藏：给一个图标入口去全部事项（展开时由分组标题的“全部”承担），否则执行态里回不到事项列表 */}
+            {compact && (
+              <button className={`nav-item nav-rail-only${route.page === "matters" ? " active" : ""}`} onClick={() => nav("/matters")} title="全部事项" aria-label="全部事项">
+                <span className="nav-icon">{Icon.folder()}</span>
+                {waitingTotal > 0 && <span className="badge" aria-label={`${waitingTotal} 个任务等你确认`}>{waitingTotal}</span>}
+              </button>
+            )}
           </nav>
           <div className="sidebar-scroll">
             {/* 上手指南“先建事项”聚光这一组（标题 + 列表） */}

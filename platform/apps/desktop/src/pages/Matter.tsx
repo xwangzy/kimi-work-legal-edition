@@ -19,6 +19,7 @@ import { reasonLabel } from "../components/DataFlow.tsx";
 import { DEST_LABELS, fmtTime, fmtWhen, jurisdictionLabel, MODE_LABELS, parseFlagsText, RUN_STATUS_LABELS, SCENARIO_LABELS, stanceLabel } from "../lib/labels.ts";
 import { FactsPanel } from "../components/FactsPanel.tsx";
 import { decideMatterTab } from "../lib/matter-tab.ts";
+import { peekMatterFocus } from "../lib/search.ts";
 import { sampleBannerText } from "../lib/scenarios.ts";
 import { MatterBoard } from "./Boards.tsx";
 import { MatterDeliverables } from "./Deliverables.tsx";
@@ -72,6 +73,13 @@ export function MatterPage({ matterId }: { matterId: string }) {
     tabDecidedFor.current = next.decidedFor;
     if (next.tab) setTabRaw(next.tab);
   }, [matter?.matter_id, docs.length]);
+  // 从全局搜索点中一份材料进来（第 49 批）：切到“材料”列表；文件名由材料搜索框挂载时取走并筛出这份
+  useEffect(() => {
+    if (!matter?.matter_id || peekMatterFocus(matter.matter_id) === null) return;
+    setTab("materials");
+    setMatView("list");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matter?.matter_id]);
   const [value, setValue] = useState<ComposerValue>({ goal: "", scenario: "a1.agent_task", documentIds: [], choice: defaultChoice(null) });
   const [sheet, setSheet] = useState<PendingStart | null>(null);
   // 输入框不常驻（v9.4 第 20 批 G-09：1280×720 下标签内容起点 ≤ 260px）：标题行“发起任务”展开；写了字的不收起
