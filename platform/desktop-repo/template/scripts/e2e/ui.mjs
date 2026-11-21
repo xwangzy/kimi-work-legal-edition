@@ -240,15 +240,19 @@ const VERB = { "contract-review": "开始审查", pleading: "开始起草", "doc
 async function task(cardFile) {
   const card = JSON.parse(readFileSync(cardFile, "utf8"));
   const base = card.base ? resolve(card.base) : resolve(cardFile, "..");
+  const pick = async (startsWith) => {
+    await page.locator("[role=option]").filter({ hasText: new RegExp(`^\\s*${startsWith}`) }).first().click();
+    await sleep(300);
+  };
+  // KWL_MATTER_ID：沿用已建好、材料已导入的事项（中断后续跑用），跳过第 1、2 步
+  let matterId = process.env.KWL_MATTER_ID || "";
+  if (matterId) log("沿用已建事项：", matterId);
+  else {
   // 1. 新建事项（真实对话框）
   await go("#/matters");
   await btnExact("新建事项").click();
   const dlg = page.locator("[role=dialog]").last();
   await dlg.waitFor();
-  const pick = async (startsWith) => {
-    await page.locator("[role=option]").filter({ hasText: new RegExp(`^\\s*${startsWith}`) }).first().click();
-    await sleep(300);
-  };
   const m = card.matter;
   if (m.type) {
     await dlg.locator("button[type=button]").nth(0).click();
@@ -259,25 +263,35 @@ async function task(cardFile) {
   await dlg.locator('input[placeholder^="例如：甲公司股权转让"]').fill(m.title);
   if (m.client) await dlg.locator('input[placeholder^="委托人"]').fill(m.client);
   if (m.counter) await dlg.locator('input[placeholder^="多个以顿号"]').fill(m.counter);
-  await dlg.locator("input[type=radio]").first().check();
+  // 客户授权是分段按钮（role=radio，第 48 批 D-202），不是 <input type=radio>：本单材料是虚构案例，按“已取得”记录
+  await dlg.locator('[role=radiogroup][aria-label="客户是否同意使用 AI 辅助"] [role=radio]').filter({ hasText: /^\s*已取得\s*$/ }).click();
   if (m.asOf || m.region || m.eventDate) {
     await dlg.locator("button").filter({ hasText: "更多设置" }).first().click();
     if (m.eventDate) await dlg.locator('input[placeholder^="如 2023-05"]').fill(m.eventDate);
     if (m.region) await dlg.locator('input[placeholder^="如 上海市"]').fill(m.region);
-    if (m.asOf) await dlg.locator("input[type=date]").fill(m.asOf);
+    // 有模板起算日时对话框里还有一个日期框；分析截止日在“更多设置”里，排在最后
+    if (m.asOf) await dlg.locator("input[type=date]").last().fill(m.asOf);
   }
   await shot("10-新建事项");
   await dlg.locator("button").filter({ hasText: /^\s*创建事项\s*$/ }).click();
   await until(async () => /#\/matter\/mat_/.test(page.url()), 30000, 500, "事项创建");
-  const matterId = page.url().match(/mat_[0-9a-zA-Z_-]+/)[0];
+  matterId = page.url().match(/mat_[0-9a-zA-Z_-]+/)[0];
   log("事项已创建：", matterId);
   // 2. 加材料：给“选择文件”背后的真实文件输入框塞文件（与拖放同一路径：preload 经 webUtils 取路径交主进程登记）
   const files = card.files.map((f) => resolve(base, f));
   for (const f of files) if (!existsSync(f)) throw new Error(`材料不存在：${f}`);
-  await page.locator("main input[type=file]").first().setInputFiles(files);
+  // 经 CDP 的 DOM.setFileInputFiles 给真实磁盘路径（与系统“选择文件”对话框同效）：Playwright 经 connectOverCDP 的 setInputFiles
+  // 传的是内存里的文件内容，页面里的 File 没有磁盘路径，preload 的 webUtils.getPathForFile 取不到路径 → 客户端按设计拒收
+  const cdp = await page.context().newCDPSession(page);
+  const { root } = await cdp.send("DOM.getDocument", { depth: 0 });
+  const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector: "main input[type=file]" });
+  if (!nodeId) throw new Error("没有找到材料的文件输入框");
+  await cdp.send("DOM.setFileInputFiles", { nodeId, files });
+  await cdp.detach().catch(() => {});
   await until(async () => ((await page.locator("main").innerText()).match(/已添加/g) ?? []).length >= files.length, 180000, 1000, "材料加密导入");
   log(`材料已导入 ${files.length} 份`);
   await shot("11-材料已导入");
+  }
   // 3. 开始面板
   await go(`#/start/${card.id}/${matterId}`);
   const sp = page.locator("[role=dialog]").last();

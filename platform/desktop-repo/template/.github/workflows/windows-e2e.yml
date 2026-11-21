@@ -135,6 +135,15 @@ jobs:
           KWL_CODE: ${{ inputs.invite_code }}
           KWL_NAME: Windows验收律师
         run: node scripts/e2e/ui.mjs register
+      # 作业日志要等作业结束才能下载：入组核对码与“等待批准”截图立即作为构件传出，管理员在自己电脑上与之逐位比对后再批准
+      - name: 传出入组核对码（供管理员比对）
+        uses: actions/upload-artifact@v4
+        with:
+          name: enroll-check-code
+          path: |
+            C:\kwl-e2e\out\check-code.txt
+            C:\kwl-e2e\out\02-等待管理员批准.png
+          retention-days: 3
       - name: 等管理员批准并逐位比对本所识别码
         env:
           KWL_FIRM_CODE: ${{ inputs.firm_code }}
