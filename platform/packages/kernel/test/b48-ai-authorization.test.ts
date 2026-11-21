@@ -1,5 +1,6 @@
 /**
  * 第 48 批（D-202）：客户授权前移——律师本人的默认设置（委托合同含 AI 辅助条款）、四项依据的记录方式（basis_source）、
+ * （第 51 批 D-216 起：按委托合同条款记录须逐案写明出处，开关只用于预填常用出处——见 b51-authorization-evidence.test.ts）
  * 阻断原因分类（只有“四项依据待确认”能靠记录授权解决：consent；L3b、不使用模型、席位失效等是 policy）。
  * 闸门、宿主、网关按四项依据的判定口径不变（由既有 egress / w1 用例覆盖）。
  */
@@ -19,15 +20,21 @@ after(async () => {
   await tk.kernel.close();
 });
 
-test("默认设置：缺省关闭；按委托合同条款记录须先声明（失败关闭）；声明与撤回入审计；撤回不改写已建事项", async () => {
+test("默认设置：缺省关闭；按委托合同条款记录须有出处（失败关闭，第 51 批 D-216：开关只用于预填常用出处）；开关与撤回入审计；撤回不改写已建事项", async () => {
   const { inv } = tk;
-  assert.deepEqual(await inv("ai_authorization.get", {}), { engagement_terms: false, updated_at: null });
-  await assert.rejects(inv("matters.create", { title: "未声明", stance: "原告", basis: FULL, basis_source: "engagement_terms" }), /还没有在设置里声明/);
+  const initial = await inv("ai_authorization.get", {});
+  assert.equal(initial.engagement_terms, false);
+  assert.equal(initial.default_ref, null);
+  assert.equal(initial.updated_at, null);
+  // 没有出处、也没有可预填的常用出处：不能凭界面一句话就记成“按委托合同”
+  await assert.rejects(inv("matters.create", { title: "未声明", stance: "原告", basis: FULL, basis_source: "engagement_terms" }), /请写明授权依据的出处/);
   await assert.rejects(inv("ai_authorization.set", { engagement_terms: "yes" }), /布尔/);
   const on = await inv("ai_authorization.set", { engagement_terms: true });
   assert.equal(on.engagement_terms, true);
   assert.ok(on.updated_at);
-  const { matter } = await inv("matters.create", { title: "按委托合同", stance: "原告", basis: FULL, basis_source: "engagement_terms" });
+  // 开关打开但没存常用出处：仍须逐案写明出处（开关本身不再替事项记录）
+  await assert.rejects(inv("matters.create", { title: "只开开关", stance: "原告", basis: FULL, basis_source: "engagement_terms" }), /请写明授权依据的出处/);
+  const { matter } = await inv("matters.create", { title: "按委托合同", stance: "原告", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托代理合同 第 9 条" });
   assert.equal(matter.basis_source, "engagement_terms");
   assert.equal(matter.consent_status, "agreed");
   assert.equal(matter.basis_complete, true);
@@ -35,8 +42,8 @@ test("默认设置：缺省关闭；按委托合同条款记录须先声明（�
   await inv("ai_authorization.set", { engagement_terms: false });
   const again = await inv("matters.get", { matter_id: matter.matter_id });
   assert.equal(again.matter.basis_source, "engagement_terms");
-  await assert.rejects(inv("matters.create", { title: "撤回后", stance: "原告", basis: FULL, basis_source: "engagement_terms" }), /还没有在设置里声明/);
-  // 审计：声明与撤回各一条
+  await assert.rejects(inv("matters.create", { title: "撤回后", stance: "原告", basis: FULL, basis_source: "engagement_terms" }), /请写明授权依据的出处/);
+  // 审计：打开与撤回各一条
   const rows = tk.kernel.db.all<{ action: string }>(`SELECT action FROM audit_events WHERE action = 'ai_authorization.set'`, []);
   assert.equal(rows.length, 2);
 });

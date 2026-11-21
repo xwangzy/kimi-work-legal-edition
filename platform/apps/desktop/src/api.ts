@@ -221,6 +221,18 @@ export interface UpdateStatus {
 export type RunMode = "chat" | "manual" | "default" | "auto";
 export type Preauthorization = "search_generalized" | "fetch_allowlisted" | "connector_readonly";
 export type BasisValue = "confirmed" | "pending" | "not_applicable";
+/** AI 次处理者清单（内核常量，带版本；客户授权记录时一并留痕）。 */
+export interface AiSubprocessors {
+  version: string;
+  items: { name: string; role: string }[];
+}
+export interface AiAuthorization {
+  engagement_terms: boolean;
+  default_ref?: string | null;
+  updated_at: string | null;
+  subprocessors?: AiSubprocessors;
+}
+
 export interface MatterBasis {
   /** 委托/保密授权（客户是否同意使用 AI 与第三方服务）。 */
   engagement: BasisValue;
@@ -258,7 +270,14 @@ export interface Matter {
   data_level?: "L0" | "L1" | "L2" | "L3a" | "L3b";
   basis?: MatterBasis;
   /** 四项依据怎么记下的（第 48 批）：按委托合同条款（律师的默认设置）/ 律师在本事项确认 / 逐项或旧事项（null）。 */
-  basis_source?: "engagement_terms" | "confirmed" | null;
+  /** 四项依据怎么记下的（第 51 批，D-216）：委托合同中的 AI 条款 / 客户单独书面同意 / 旧记录（律师确认、逐项）。 */
+  basis_source?: "engagement_terms" | "separate_consent" | "confirmed" | null;
+  /** 授权依据的出处（合同名称或编号、条款号、签订日期，或书面同意的日期与方式）。 */
+  basis_ref?: string | null;
+  /** 记录时告知客户的 AI 次处理者清单版本；与当前版本不同时须重新确认。 */
+  basis_notice_version?: string | null;
+  /** 按旧的次处理者清单记录、须重新确认（内核派生）。 */
+  basis_reconfirm?: boolean;
   /** 四项依据是否齐备（内核判定；当事人拒绝记录优先）。 */
   basis_complete?: boolean;
   full_pseudonym?: boolean;
@@ -1024,8 +1043,12 @@ export const api = {
   setDocStyle: (body: Partial<Pick<DocStyleView, "letterhead" | "letterhead_name" | "letterhead_lines" | "body" | "page_numbers" | "redline_author">>) => invoke<DocStyleView>("doc_style.set", body),
   writingPrefs: () => invoke<WritingPrefs>("writing_prefs.get"),
   /** 客户授权的默认设置（第 48 批）：委托合同是否含使用 AI 辅助的条款；开了以后新建事项默认按此记录。 */
-  aiAuthorization: () => invoke<{ engagement_terms: boolean; updated_at: string | null }>("ai_authorization.get"),
-  setAiAuthorization: (engagementTerms: boolean) => invoke<{ engagement_terms: boolean; updated_at: string | null }>("ai_authorization.set", { engagement_terms: engagementTerms }),
+  aiAuthorization: () => invoke<AiAuthorization>("ai_authorization.get"),
+  /** 律师本人的授权设置（第 51 批）：engagement_terms = 用常用条款出处预填；default_ref = 常用的委托合同 AI 条款出处。 */
+  setAiAuthorization: (p: { engagement_terms?: boolean; default_ref?: string | null }) => invoke<AiAuthorization>("ai_authorization.set", p),
+  /** 首次使用 AI 的数据去向告知（第 51 批）：律师本人看过的版本。 */
+  aiNotice: () => invoke<{ version: string; acked_version: string | null; acked_at: string | null; needs_ack: boolean }>("ai_notice.get"),
+  ackAiNotice: (version: string) => invoke<{ version: string; acked_at: string }>("ai_notice.ack", { version }),
   setWritingPrefs: (body: Partial<WritingPrefs>) => invoke<WritingPrefs>("writing_prefs.set", body),
   /** 上传律所 Word 模板：桌面客户端经系统对话框；开发形态退回文件输入框传字节。返回 null = 取消。 */
   setDocTemplate: async (fallback?: File | null): Promise<DocStyleView | null> => {

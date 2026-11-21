@@ -16,6 +16,7 @@ import { Modal } from "./Modal.tsx";
 import { scenarioChoice } from "./ModeSelector.tsx";
 import { launchRun, prepareStart, RunSheet, type PendingStart } from "./RunSheet.tsx";
 import { StartHintBanner } from "./StartHint.tsx";
+import { BusyLabel, ListSkeleton } from "./Loading.tsx";
 import { startHintOf, type StartHint } from "../lib/start-block.ts";
 import { SendSummary } from "./SendSummary.tsx";
 import { SendPoints } from "./SendPoints.tsx";
@@ -167,6 +168,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   }, [ready, matter, value, opts, reestimateTick]);
 
   const start = async () => {
+    if (busy) return;
     setBusy(true);
     setErr("");
     setErrHint(null);
@@ -292,7 +294,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
           <div className="ss-hint">{card.gives}</div>
           {matter && (card.minMaterials > 0 || documents.length > 0) ? (
             <div className="ss-docs" role="group" aria-label="选择材料">
-              {!docsReady && <div className="muted">正在读取这个事项的材料…</div>}
+              {!docsReady && <ListSkeleton rows={3} label="正在载入这个事项的材料" />}
               {docsReady && documents.length === 0 && <div className="muted">本事项还没有材料。</div>}
               {documents.map((d) => {
                 const on = docIds.includes(d.document_version_id);
@@ -428,7 +430,9 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
             ) : estErr ? (
               <span className="ss-need">{estErr}</span>
             ) : ready ? (
-              <span className="muted">正在估算…</span>
+              <span className="muted" role="status">
+                <BusyLabel busy>正在估算…</BusyLabel>
+              </span>
             ) : (
               <span className="muted">{missing.length > 0 ? `请先填写：${missing.map((f) => f.label).join("、")}` : wordGap ? "请先选择要修改的 Word 文书" : needDocs > 0 ? "请先选择材料" : ""}</span>
             )}
@@ -480,9 +484,12 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
           )}
           <button className="btn-ghost" onClick={onClose}>取消</button>
           {/* 还不能开始时（例如疑似姓名待核对）不占主按钮：同屏的主动作是待办那一步（复核 S7B-01） */}
-          <button className={ready ? "btn-primary" : "btn-ghost"} disabled={busy || !ready} onClick={() => void start()}>
-            {/* 第 27 批（评审 U3-49）：点了还要再确认的（依据未齐、去向有提醒）写“下一步”，直接开始的写动词 */}
-            {estimate && (estimate.estimate.data_where?.start_blocked || estimate.estimate.data_where?.warning) ? "下一步：确认" : card.verb}
+          <button className={ready ? "btn-primary" : "btn-ghost"} disabled={busy || !ready} aria-busy={busy} onClick={() => void start()}>
+            {/* 第 27 批（评审 U3-49）：点了还要再确认的（依据未齐、去向有提醒）写“下一步”，直接开始的写动词；
+                第 51 批：点下后按钮内显示圆环与“正在开始…”，看得出点上了 */}
+            <BusyLabel busy={busy} busyText={estimate && (estimate.estimate.data_where?.start_blocked || estimate.estimate.data_where?.warning) ? "正在准备确认…" : "正在开始…"}>
+              {estimate && (estimate.estimate.data_where?.start_blocked || estimate.estimate.data_where?.warning) ? "下一步：确认" : card.verb}
+            </BusyLabel>
           </button>
         </div>
       </div>
@@ -532,7 +539,9 @@ function FactHints({ matter, hints, onSaved }: { matter: Matter; hints: ReturnTy
               ) : (
                 <>
                   <input aria-label={h.label} value={v} onChange={(e) => setV(e.target.value)} placeholder={h.field === "event_date" ? "2023-05 或 2023-05-06" : "如 上海市"} maxLength={h.field === "region" ? 20 : 10} size={14} />
-                  <button className="btn-ghost btn-sm" disabled={busy || !v.trim()} onClick={() => void save(h.field, v)}>保存</button>
+                  <button className="btn-ghost btn-sm" disabled={busy || !v.trim()} aria-busy={busy} onClick={() => void save(h.field, v)}>
+                    <BusyLabel busy={busy} busyText="正在保存…">保存</BusyLabel>
+                  </button>
                 </>
               )}
               <button className="btn-link" onClick={() => setOpen(null)}>取消</button>

@@ -1,0 +1,44 @@
+/* 客户授权逐案记录（第 51 批，components/Consent.tsx）与首次使用 AI 的告知（components/AiNotice.tsx）。只用语义令牌。
+   取向：一张安静的表单卡（不是警示橙框）——标题一句话说明这是什么记录，依据类型是两张可选卡片，出处是必填的一行，
+   “授权要覆盖什么”是只读的三行，敏感事项的单独同意单列。 */
+.authz-record { margin: var(--sp-3) 0 0; padding: var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: var(--bg-surface); display: flex; flex-direction: column; gap: var(--sp-3); animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }
+.authz-record-head h3 { margin: 0 0 4px; font-size: var(--fs-md); font-weight: 600; }
+.authz-record-head p { margin: 0; font-size: var(--fs-caption); line-height: 1.65; color: var(--text-label); }
+.authz-kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
+.authz-kind { display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-surface); text-align: left; transition: border-color var(--motion-fast) ease, background-color var(--motion-fast) ease; }
+.authz-kind:hover { border-color: var(--border-hover); }
+.authz-kind:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.authz-kind.on { border-color: var(--accent-border); background: var(--accent-bg); }
+.authz-kind-radio { flex: none; width: 16px; height: 16px; margin-top: 2px; border-radius: var(--r-full); border: 1.5px solid var(--border-strong); background: var(--bg-surface); display: grid; place-items: center; }
+.authz-kind.on .authz-kind-radio { border-color: var(--accent); }
+.authz-kind.on .authz-kind-radio::after { content: ""; width: 8px; height: 8px; border-radius: var(--r-full); background: var(--accent); }
+.authz-kind-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.authz-kind-text b { font-size: var(--fs-body); font-weight: 500; }
+.authz-kind-text small { font-size: var(--fs-xs); color: var(--text-secondary); }
+.authz-ref { display: flex; align-items: center; gap: var(--sp-3); }
+.authz-ref > span { flex: none; width: 3em; font-size: var(--fs-caption); color: var(--text-label); }
+.authz-ref input { flex: 1; min-width: 0; }
+.authz-scope { margin: 0; padding: var(--sp-3); border-radius: var(--r-md); background: var(--bg-subtle); display: flex; flex-direction: column; gap: 4px; }
+.authz-scope > div { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: var(--sp-2); font-size: var(--fs-caption); line-height: 1.6; }
+.authz-scope dt { color: var(--text-secondary); }
+.authz-scope dd { margin: 0; color: var(--text-primary); }
+.authz-sensitive { display: flex; gap: var(--sp-2); align-items: flex-start; padding: var(--sp-3); border: 1px solid var(--status-warning-border); border-radius: var(--r-md); background: var(--status-warning-bg-soft); cursor: pointer; font-size: var(--fs-body); }
+.authz-sensitive input { margin-top: 4px; }
+.authz-sensitive small { display: block; margin-top: 2px; font-size: var(--fs-caption); color: var(--text-secondary); }
+.authz-exits { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); margin-top: var(--sp-2); font-size: var(--fs-caption); color: var(--text-secondary); }
+.authz-exits .btn-link { font-size: var(--fs-caption); }
+@media (max-width: 720px) {
+  .authz-kinds { grid-template-columns: 1fr; }
+}
+
+/* 首次使用 AI 的告知 */
+.ai-notice { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 520px; }
+.ai-notice-lead { margin: 0; color: var(--text-label); }
+.ai-notice-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.ai-notice-points li { display: flex; gap: var(--sp-3); align-items: flex-start; font-size: var(--fs-body); line-height: 1.65; color: var(--text-label); }
+.ai-notice-points b { display: block; color: var(--text-primary); font-weight: 600; }
+.ai-notice-ico { flex: none; width: 32px; height: 32px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--bg-muted); color: var(--text-label); }
+.ai-notice-ico svg { width: 17px; height: 17px; }
+.ai-notice-ico.keep { background: var(--status-success-bg); color: var(--status-success-text); }
+.ai-notice-note { margin: 0; padding: var(--sp-3); border-radius: var(--r-md); background: var(--bg-subtle); font-size: var(--fs-caption); line-height: 1.65; color: var(--text-label); }
+.ai-notice-note .btn-link { margin-left: 4px; font-size: var(--fs-caption); }

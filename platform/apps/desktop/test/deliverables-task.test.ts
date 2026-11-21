@@ -30,7 +30,8 @@ test("交付件页与事项页都按任务分组；内核成果列表带任务�
   assert.equal(page.split("groupByTask(").length - 1, 2, "交付件页与事项页“交付件”标签");
   assert.match(page, /看这次任务/);
   const kernel = readFileSync(fileURLToPath(new URL("../../../packages/kernel/src/api/index.ts", import.meta.url)), "utf8");
-  assert.match(kernel, /r\.scenario AS run_scenario, json_extract\(.*'\$\.skill'\) AS run_skill, r\.created_at AS run_created_at/);
+  // 第 51 批：另带任务的主交付物（skill_primary_output），成果页据此把主文书排第一并加粗
+  assert.match(kernel, /r\.scenario AS run_scenario, json_extract\(.*'\$\.skill'\) AS run_skill, json_extract\(.*'\$\.skill_primary_output'\) AS run_primary, r\.created_at AS run_created_at/);
 });
 
 test("组头份数：筛选后只显示一部分时说清本次一共几份（复核 RB16B-11）", () => {

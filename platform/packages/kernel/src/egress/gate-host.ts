@@ -18,6 +18,7 @@ import type { KernelDb } from "../db.ts";
 import { liveRunForClaims } from "../identity.ts";
 import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, spawnNodeChild, startParentHeartbeat, windowsSystemEnv } from "../executor/child-env.ts";
 import { errFields, relayChildStderr, slog } from "@zr-legal/safe-log";
+import { basisNoticeStale } from "../services/ai-authorization.ts";
 
 /**
  * 独立复核请求的令牌附加 scope（V16 第 41 批）：闸门见到它，整个模型请求只替换已知名单。只有内核给自己发起的复核请求签发
@@ -149,12 +150,13 @@ export function createGateAuthorizer(d: GateAuthorizerDeps): (req: { token: stri
     const live = liveRunForClaims(d.db, claims, d.revoked);
     if (typeof live === "string") return { ok: false, status: 403, reason: live };
     if (live.matterId !== req.matterId) return { ok: false, status: 403, reason: "matter_mismatch" };
-    const m = d.db.get<{ tenant_id: string; client_name: string | null; counterparty: string | null; confidentiality: string; consent_status: string; basis: string | null; model_endpoint: string; policy_version: number; full_pseudonym: number; collab_scope: string }>(
-      `SELECT tenant_id, client_name, counterparty, confidentiality, consent_status, basis, model_endpoint, policy_version, full_pseudonym, collab_scope FROM matters WHERE matter_id = ?`,
+    const m = d.db.get<{ tenant_id: string; client_name: string | null; counterparty: string | null; confidentiality: string; consent_status: string; basis: string | null; basis_notice_version: string | null; model_endpoint: string; policy_version: number; full_pseudonym: number; collab_scope: string }>(
+      `SELECT tenant_id, client_name, counterparty, confidentiality, consent_status, basis, basis_notice_version, model_endpoint, policy_version, full_pseudonym, collab_scope FROM matters WHERE matter_id = ?`,
       [live.matterId],
     );
     if (!m) return { ok: false, status: 403, reason: "matter_unknown" };
-    const basisComplete = basisCompleteOf(m) && m.model_endpoint !== "none";
+    // 第 51 批（D-216）：按旧的 AI 次处理者清单记录的授权须重新确认，与内核 modelBlockReason 同一口径（版本为空的旧事项不拦）
+    const basisComplete = basisCompleteOf(m) && !basisNoticeStale(m) && m.model_endpoint !== "none";
     return {
       ok: true,
       ctx: {

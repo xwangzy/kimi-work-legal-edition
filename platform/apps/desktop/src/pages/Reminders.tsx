@@ -18,6 +18,8 @@ import { notifyDataChanged } from "../lib/events.ts";
 import { agendaEntries, audienceText, bjToday, cloudStateText, countTone, daysUntil, defaultForm, dueText, importCandidates, PERIOD_PRESETS, REMINDER_KINDS, reminderKindLabel, rejectReasonText, reminderLine, scheduleLine, dueBuckets, dueDateText, type AgendaEntry, type ImportCandidate } from "../lib/reminders.ts";
 import { Select } from "../components/Select.tsx";
 import { Icon } from "../components/Icons.tsx";
+import { BusyLabel, ListSkeleton, LoadError } from "../components/Loading.tsx";
+import { countProgress } from "../lib/waiting.ts";
 import "../styles-reminders.css";
 
 const DAYS_CHOICES = [0, 1, 2, 3, 5, 7, 10, 14, 30];
@@ -65,7 +67,13 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
   // 从事项导入（v9.4 第 20 批，V9.4 主文 §3.1“期限提醒：从事项关键日期一键导入”）：关键日期与待办期限，逐条勾选后创建
   const [importing, setImporting] = useState<(ImportCandidate & { pick: boolean })[] | null>(null);
   const [importBusy, setImportBusy] = useState(false);
+  // 汇总各事项日期要逐个读事项待办（最多 100 个），期间按钮显示“正在汇总…”、防连点（第 51 批）
+  const [gathering, setGathering] = useState(false);
+  // 逐条创建时的真实计数（第 51 批：有总量才给 n/m）
+  const [importDone, setImportDone] = useState(0);
   const openImport = async () => {
+    if (gathering) return;
+    setGathering(true);
     try {
       const ms = (await api.listMatters()).matters.filter((m) => (m.lifecycle ?? "active") === "active");
       const todos = new Map<string, { title: string; due_date?: string | null; status: string }[]>();
@@ -80,16 +88,20 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
       setImporting(importCandidates(ms, todos, existing, bjToday()).map((c) => ({ ...c, pick: true })));
     } catch (e) {
       setErr((e as Error).message);
+    } finally {
+      setGathering(false);
     }
   };
   const doImport = async () => {
     if (!importing) return;
     setImportBusy(true);
+    setImportDone(0);
     let n = 0;
     try {
       for (const c of importing.filter((x) => x.pick)) {
         await api.reminderCreate({ matter_id: c.matter_id, ...defaultForm(), kind: c.kind, due_date: c.due_date, note: c.label });
         n += 1;
+        setImportDone(n);
       }
       setImporting(null);
       refreshThenSync();
@@ -156,15 +168,18 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
             )}
           </div>
           <div className="page-head-actions">
-            <button className="btn-ghost" onClick={() => void openImport()}>
-              从事项导入
+            <button className="btn-ghost" disabled={gathering} aria-busy={gathering} onClick={() => void openImport()}>
+              <BusyLabel busy={gathering} busyText="正在汇总各事项日期…">从事项导入</BusyLabel>
             </button>
             <button className="btn-primary" onClick={() => setEditing({})}>
               设提醒
             </button>
           </div>
         </div>
-        {err && <div className="banner banner-red">{err}</div>}
+        {/* 取数三态（第 51 批）：首次没读到时说清楚“没读到”并给重试，不显示成“还没有设提醒”；载入中给形状接近日程的骨架 */}
+        {err && !data && <LoadError what="期限提醒" message={err} onRetry={() => void load()} />}
+        {err && data && <div className="banner banner-red">{err}</div>}
+        {!data && !err && <ListSkeleton rows={5} cards={2} label="正在载入期限提醒" />}
         {data?.cloud.configured && data.cloud.last && !data.cloud.last.ok && <p className="rm-notice">发到其他设备的提醒暂时没送出，稍后自动再试；这台电脑照常提醒。</p>}
         {data && data.rejected.length > 0 && (
           <p className="rm-notice">
@@ -179,8 +194,8 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
             <div className="rm-empty-title">还没有设提醒</div>
             <p className="rm-empty-text">开庭、举证、上诉等期限设好后，到时在这台电脑上提醒你。</p>
             <div className="rm-empty-actions">
-              <button className="btn-ghost btn-sm" onClick={() => void openImport()}>
-                从事项的开庭日、待办期限导入
+              <button className="btn-ghost btn-sm" disabled={gathering} aria-busy={gathering} onClick={() => void openImport()}>
+                <BusyLabel busy={gathering} busyText="正在汇总各事项日期…">从事项的开庭日、待办期限导入</BusyLabel>
               </button>
               <button className="btn-primary btn-sm" onClick={() => setEditing({})}>
                 设提醒
@@ -205,8 +220,10 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
             <p className="muted">按“提前 3 天、上午 9 点、只提醒我”创建，之后可以逐条修改。日期以事项里填的为准，请核对。</p>
             <div className="modal-actions">
               <button className="btn-ghost" onClick={() => setImporting(null)}>取消</button>
-              <button className="btn-primary" disabled={importBusy || !importing.some((x) => x.pick)} onClick={() => void doImport()}>
-                导入 {importing.filter((x) => x.pick).length} 条
+              <button className="btn-primary" disabled={importBusy || !importing.some((x) => x.pick)} aria-busy={importBusy} onClick={() => void doImport()}>
+                <BusyLabel busy={importBusy} busyText={`正在导入 ${countProgress(importDone, importing.filter((x) => x.pick).length)?.text ?? ""} 条…`}>
+                  导入 {importing.filter((x) => x.pick).length} 条
+                </BusyLabel>
               </button>
             </div>
           </Modal>
@@ -494,8 +511,8 @@ function ReminderForm({ reminder, matterId, onClose, onSaved }: { reminder?: Rem
         <button className="btn-ghost" onClick={onClose}>
           取消
         </button>
-        <button className="btn-primary" disabled={busy || !f.matter_id || !f.due_date} onClick={() => void save()}>
-          {busy ? "保存中…" : "保存"}
+        <button className="btn-primary" disabled={busy || !f.matter_id || !f.due_date} aria-busy={busy} onClick={() => void save()}>
+          <BusyLabel busy={busy} busyText="正在保存…">保存</BusyLabel>
         </button>
       </div>
     </Modal>

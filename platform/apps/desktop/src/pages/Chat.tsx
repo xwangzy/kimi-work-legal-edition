@@ -14,10 +14,21 @@ import { Markdown } from "../components/Markdown.tsx";
 import { QA_CITATION_KIND, qaCitationLine, type QaCitationsView } from "../lib/qa-citations.ts";
 import { fmtTime, fmtWhen } from "../lib/labels.ts";
 import { notifyDataChanged } from "../lib/events.ts";
-import { chatWaitView, deepToggleTitle, fmtElapsed, type ChatPhase, type ThinkingControl } from "../lib/chat-wait.ts";
+import { chatWaitView, deepToggleTitle, type ChatPhase, type ThinkingControl } from "../lib/chat-wait.ts";
+import { fmtWait } from "../lib/waiting.ts";
+import { ensureAiNotice } from "../lib/ai-notice.ts";
+import { KimiPulse, LoadError } from "../components/Loading.tsx";
 
 export function ChatPage({ conversationId }: { conversationId?: string | undefined }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  /**
+   * messages 属于哪个会话（第 51 批）：从侧栏点开旧对话时，在它的记录读回来之前不闪“新对话”欢迎页，
+   * 也不把上一个对话的消息留在新地址下——显示对话骨架（延迟 160ms 出现，快的话一闪都没有）。
+   */
+  const [msgConv, setMsgConv] = useState<string | undefined>(conversationId === undefined ? undefined : "");
+  /** 打开旧对话没读到：说清楚没读到并给重试（不显示成空对话）。 */
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [blocked, setBlocked] = useState<{ reason: string; message: string; matters?: { matter_id: string; title: string }[] } | null>(null);
@@ -111,13 +122,28 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   useEffect(() => {
     setBlocked(null);
     setAskDelete(false);
+    setLoadErr(null);
     // 换了会话：正在回答的那条只在它自己的会话里显示；切回来时接着显示（复核 Q5-06：原来清掉了，回答到了也不刷新）
     if (!conversationId) {
       setMessages([]);
+      setMsgConv(undefined);
       return;
     }
-    api.chatGet(conversationId).then((r) => setMessages(r.messages)).catch((e) => setErr(e.message));
-  }, [conversationId]);
+    let live = true;
+    api
+      .chatGet(conversationId)
+      .then((r) => {
+        if (!live) return;
+        setMessages(r.messages);
+        setMsgConv(conversationId);
+      })
+      .catch((e) => live && setLoadErr((e as Error).message ?? ""));
+    return () => {
+      live = false;
+    };
+  }, [conversationId, reloadKey]);
+  // 正在打开旧对话（记录还没读回来）：不显示欢迎页，也不显示别的对话的消息
+  const opening = !!conversationId && msgConv !== conversationId && loadErr === null;
   useEffect(() => {
     // 新版 Chromium 的 scrollIntoView 返回 Promise：不能作为 effect 的返回值
     void endRef.current?.scrollIntoView({ behavior: scrollBehavior() });
@@ -127,6 +153,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
     const t = text.trim();
     // 一次只问一个问题（复核 Q5-01：回车不看按钮是否灰着，回答生成中再回车会并发两问）
     if (!t || streamRef.current) return;
+    // 第一次用 AI 时先给律师本人看数据去向告知（第 51 批；看过一次即不再出现）
+    if (!(await ensureAiNotice(api.aiNotice, api.ackAiNotice))) return;
     const from = conversationId;
     const streamId = `qs_${crypto.randomUUID().replace(/-/g, "")}`;
     streamRef.current = streamId;
@@ -153,6 +181,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
         setText(t);
       } else {
         setMessages(r.messages);
+        setMsgConv(r.conversation_id);
         if (r.conversation_id !== from) nav(`/chat/${r.conversation_id}`);
         void loadList();
       }
@@ -182,7 +211,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   // 当前所选（或缺省）模型：深度思考开关的说明与显示取决于它（第 49 批）
   const selectedModel = models.find((c) => c.alias === route) ?? models.find((c) => c.default) ?? null;
   return (
-    <div className={`chat${messages.length === 0 && !pending ? " chat-blank" : ""}`}>
+    <div className={`chat${messages.length === 0 && !pending && !opening && loadErr === null ? " chat-blank" : ""}`}>
       <main className="chat-main">
         {/* 一句话说清楚（Y4 C-1）；机制放进“了解更多” */}
         <div className="chat-notice">
@@ -210,7 +239,9 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
           </div>
         )}
         <div className="chat-messages">
-          {messages.length === 0 && !blocked && !(pending && pending.conv === conversationId) && (
+          {opening && <ChatSkeleton />}
+          {loadErr !== null && <LoadError what="这个对话的记录" message={loadErr} onRetry={() => setReloadKey((k) => k + 1)} />}
+          {!opening && loadErr === null && messages.length === 0 && !blocked && !(pending && pending.conv === conversationId) && (
             <div className="chat-empty">
               <h2>法律问答</h2>
               <p className="muted">可以这样问（点一下填入）：</p>
@@ -224,7 +255,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
               </div>
             </div>
           )}
-          {messages.map((m) => (
+          {!opening && messages.map((m) => (
             <div key={m.message_id} className={`msg msg-${m.role}`}>
               {m.role === "assistant" ? <Markdown text={m.text} /> : <div className="msg-text">{m.text}</div>}
               {m.citations && <CitationCheck c={m.citations} />}
@@ -237,7 +268,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
           {pending && pending.conv === conversationId && (
             <>
               {/* 切走再切回来时问题已从本机记录载入：不再重复显示 */}
-              {messages.at(-1)?.role !== "user" && (
+              {(opening || messages.at(-1)?.role !== "user") && (
                 <div className="msg msg-user">
                   <div className="msg-text">{pending.question}</div>
                 </div>
@@ -305,8 +336,10 @@ const MODEL_KEY = "kwl.chat.model";
 const DEEP_KEY = "kwl.chat.deep";
 
 /**
- * 等回答时的状态（第 48 批）：动画点 + 一句话说明现在在做什么 + 已用时间 + 不定长进度条 + 补充说明。
+ * 等回答时的状态（第 48 批；第 51 批统一等待反馈）：Kimi 蓝点呼吸 + 一句话说明现在在做什么 + 已用时间 + 补充说明。
+ * 蓝点本身就是“还在动”的信号，不再叠一条不定长进度条（不画假进度，视觉也更干净）；已用时间用全库统一写法 fmtWait。
  * 回答已经开始逐字出现时只留一行“正在撰写回答… 已用时间”，不挡正文。
+ * 没有“停止回答”：内核问答接口（chat.send）目前没有取消或中止的方法，不在界面上做一个点了不起作用的按钮。
  */
 function ChatWait({ pending, now }: { pending: { draft: string; startedAt: number; deep: boolean; control?: ThinkingControl | undefined; phase: ChatPhase; thoughtChars: number }; now: number }) {
   const elapsedMs = Math.max(0, now - pending.startedAt);
@@ -315,20 +348,24 @@ function ChatWait({ pending, now }: { pending: { draft: string; startedAt: numbe
   return (
     <div className={`chat-wait${phase === "writing" ? " chat-wait-writing" : ""}`} role="status">
       <div className="chat-wait-head">
-        <span className="chat-wait-dots" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </span>
+        <KimiPulse size="md" />
         <span className="chat-wait-title">{v.title}</span>
-        <span className="chat-wait-time">已用时 {fmtElapsed(elapsedMs)}</span>
+        <span className="chat-wait-time">已用时 {fmtWait(elapsedMs)}</span>
       </div>
-      {v.bar && (
-        <div className="chat-wait-bar" aria-hidden="true">
-          <span />
-        </div>
-      )}
       {v.hint && <div className="chat-wait-hint">{v.hint}</div>}
+    </div>
+  );
+}
+
+/** 打开旧对话时的占位：一问一答两组气泡形状（第 51 批），读屏念“正在载入对话”。 */
+function ChatSkeleton() {
+  return (
+    <div className="kwl-skel chat-skel" role="status" aria-label="正在载入对话">
+      <span className="kwl-skel-line chat-skel-q" />
+      <span className="kwl-skel-line chat-skel-a" />
+      <span className="kwl-skel-line chat-skel-a2" />
+      <span className="kwl-skel-line chat-skel-q chat-skel-q2" />
+      <span className="kwl-skel-line chat-skel-a" />
     </div>
   );
 }

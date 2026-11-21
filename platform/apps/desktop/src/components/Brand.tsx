@@ -22,15 +22,21 @@ export function KimiMark({ className = "" }: { className?: string }) {
   );
 }
 
-/** 标识 + 名称 + 版本名。edition 缺省“法律版”；登录页用全称“法律行业发行版”。 */
-export function BrandLockup({ edition = "法律版", compact = false }: { edition?: string; compact?: boolean }) {
+/**
+ * 标识 + 名称 + 版本名（第 51 批重做）：两行签名式组合，取代“Kimi Work │ 法律版”一行拼接。
+ *  - 第一行是产品名“Kimi Work”（主层级：15px、600、略收字距）；
+ *  - 第二行是版本全称“法律行业发行版”（从属层级：12px、500、次要灰、放宽字距），与主名左对齐、上下两行合成一个文字块；
+ *  - 标识（官方 Logomark）高度与两行文字块等高（28px），视觉中心与文字块中心对齐，不再是“小方块 + 一行字”的拼接感。
+ * 240px 侧栏里放得下全称（不再截成“法律版”）；登录页、云端控制台用同一组合（控制台第二行写“法律版 · 云端控制台”）。
+ * 首页中央字标与安装包名称仍用简称“法律版”。
+ */
+export function BrandLockup({ edition = "法律行业发行版", compact = false }: { edition?: string; compact?: boolean }) {
   return (
     <span className={`brand-lockup${compact ? " compact" : ""}`} aria-label={`Kimi Work ${edition}`}>
       <KimiMark className="brand-logo" />
       {!compact && (
         <span className="brand-words" aria-hidden="true">
           <span className="brand-word">Kimi Work</span>
-          <span className="brand-divider" />
           <span className="brand-edition">{edition}</span>
         </span>
       )}

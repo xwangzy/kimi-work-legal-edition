@@ -1,46 +1,87 @@
-/* 成果列表（第 49 批）：页首一句话 + 分段筛选 + 一个事项一张卡片（按任务分段）+ 单行文件。
+/* 成果列表（第 51 批重做）：页首一句话 + 复核流程条（即筛选器）+ 一个事项一张卡片（按任务分段）+ 对齐列的单行文件。
    只用语义令牌（门禁 apps/desktop/test/style-tokens.test.ts）。后加载，覆盖 styles.css 里第 48 批的同名规则。 */
-.dl-head { align-items: flex-start; margin-bottom: var(--sp-4); }
+.dl-head { align-items: flex-start; margin-bottom: var(--sp-5); }
 .dl-sub { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--sp-3); margin-top: 6px; }
-.dl-sub-lead { font-weight: 500; color: var(--text-primary); }
-.dl-sub-rule { font-size: var(--fs-caption); color: var(--text-secondary); }
+.dl-sub-lead { font-weight: 500; color: var(--text-label); }
 
-/* 分段筛选：待处理 / 已签发 / 全部（浅灰托底、选中白底，与 Work / Chat 切换同一语言） */
-.dl-seg { display: inline-flex; gap: 2px; padding: 3px; margin-bottom: var(--sp-5); background: var(--bg-muted); border-radius: var(--r-md); }
-.dl-seg-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-secondary); font-size: var(--fs-body); }
-.dl-seg-btn:hover { color: var(--text-primary); }
-.dl-seg-btn.on { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-xs); }
-.dl-seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
-.dl-seg-btn .dl-tab-n { background: transparent; color: var(--text-label); min-width: 0; padding: 0; height: auto; }
-.dl-seg-btn.on .dl-tab-n { background: transparent; color: var(--text-primary); }
+/* 列表页正文限宽：名称与时间之间不拉出大片空白（宽屏下也保持一眼扫完一行） */
+.main-wide.dl-page { max-width: 1040px; }
 
-/* 事项：标题一行（悬停出箭头），下面一张卡片 */
-.dl-matter { margin-bottom: var(--sp-5); }
-.dl-matter-head { margin-bottom: var(--sp-2); }
-.dl-matter-title { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-body); }
-.dl-matter-go { display: inline-flex; visibility: hidden; color: var(--text-label); }
+/* ── 复核流程条：草稿 → 待复核 → 已签发（→ 已退回单列）· 全部 ──
+   每段一个数字 + 名称 + 一句话；选中段浅蓝底、蓝框（Kimi 选中语言）；段与段之间一个细箭头，说明这是先后关系而不是并列的标签。 */
+.dl-flow { display: flex; align-items: stretch; gap: var(--sp-1); margin-bottom: var(--sp-6); }
+.dl-flow-step { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); text-align: left; transition: border-color var(--motion-base) ease, background-color var(--motion-base) ease, box-shadow var(--motion-base) ease; }
+.dl-flow-step:hover { border-color: var(--border-default); box-shadow: var(--shadow-xs); }
+.dl-flow-step:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.dl-flow-step.on { border-color: var(--accent-border); background: var(--accent-bg); box-shadow: none; }
+.dl-flow-step.aside { flex: 0 1 200px; margin-left: var(--sp-3); }
+.dl-flow-n { flex: none; min-width: 28px; font-size: var(--fs-xl); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--text-primary); }
+.dl-flow-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dl-flow-label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-body); font-weight: 500; color: var(--text-primary); }
+.dl-flow-label::before { content: ""; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-neutral-solid); }
+.dl-flow-pending_review .dl-flow-label::before { background: var(--status-warning-solid); }
+.dl-flow-approved .dl-flow-label::before { background: var(--status-success-solid); }
+.dl-flow-rejected .dl-flow-label::before { background: var(--status-danger-solid); }
+.dl-flow-note { font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dl-flow-step.on .dl-flow-n { color: var(--accent-text); }
+.dl-flow-arrow { flex: none; display: grid; place-items: center; width: 16px; color: var(--border-hover); }
+.dl-flow-arrow svg { width: 14px; height: 14px; }
+.dl-flow-all { flex: none; align-self: center; margin-left: var(--sp-3); height: 32px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-full); background: transparent; color: var(--text-secondary); font-size: var(--fs-body); white-space: nowrap; }
+.dl-flow-all:hover { background: var(--bg-hover); color: var(--text-primary); }
+.dl-flow-all.on { background: var(--btn-primary); color: var(--btn-primary-text); }
+.dl-flow-all:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+@media (max-width: 860px) {
+  .dl-flow-note { display: none; }
+  .dl-flow-step { padding: var(--sp-2) var(--sp-3); }
+}
+
+/* ── 事项：标题一行（右侧“n 次任务 · m 份”），下面一张卡片 ── */
+.dl-matter { margin-bottom: var(--sp-6); }
+.dl-matter-head { display: flex; align-items: baseline; gap: var(--sp-3); margin: 0 2px var(--sp-2); }
+.dl-matter-title { display: inline-flex; align-items: center; gap: 4px; min-width: 0; font-size: var(--fs-md); font-weight: 600; }
+.dl-matter-meta { margin-left: auto; flex: none; font-size: var(--fs-caption); color: var(--text-secondary); }
+.dl-matter-go { display: inline-flex; color: var(--text-secondary); transform: translateX(-2px); transition: transform var(--motion-fast) ease, color var(--motion-fast) ease; }
 .dl-matter-go svg { width: 14px; height: 14px; }
-.dl-matter-title:hover .dl-matter-go, .dl-matter-title:focus-visible .dl-matter-go { visibility: visible; }
+.dl-matter-title:hover .dl-matter-go, .dl-matter-title:focus-visible .dl-matter-go { color: var(--accent-text); transform: none; }
 .dl-card { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-surface); overflow: hidden; }
-/* 任务段：不再是带灰底标题栏的独立卡片，段与段之间一条细线 */
-.dl-card .dl-task { border: 0; border-radius: 0; margin: 0; background: transparent; overflow: visible; }
+/* 任务段：段头是一条轻标签，段与段之间留白 + 细线 */
+.dl-card .dl-task { border: 0; border-radius: 0; margin: 0; background: transparent; overflow: visible; padding-bottom: var(--sp-1); }
 .dl-card .dl-task + .dl-task { border-top: 1px solid var(--border-subtle); }
-.dl-card .dl-task-head { background: transparent; border-bottom: 0; padding: var(--sp-3) var(--sp-4) 2px; }
+.dl-card .dl-task-head { background: transparent; border-bottom: 0; padding: var(--sp-3) var(--sp-4) var(--sp-1); }
 .dl-card .dl-task-name { font-size: var(--fs-caption); font-weight: 600; color: var(--text-label); }
-.dl-card .dl-task-meta { font-size: var(--fs-caption); }
+.dl-card .dl-task-meta { font-size: var(--fs-xs); color: var(--text-secondary); }
 .dl-card .dl-task-actions { visibility: hidden; }
 .dl-card .dl-task:hover .dl-task-actions, .dl-card .dl-task:focus-within .dl-task-actions { visibility: visible; }
 
-/* 文件：单行 */
-.dl-row { min-height: 48px; padding: 6px var(--sp-4); }
+/* ── 文件行：类型方块 | 名称 | 状态 | 版本 · 给谁 · 时间 | 操作；分隔线从名称起（不切过图标），整行可点 ── */
+.dl-row { position: relative; min-height: 46px; padding: 5px var(--sp-4); gap: var(--sp-3); border-top: 0; transition: background-color var(--motion-fast) ease; }
 .dl-card .dl-row { border-top: 0; }
-.dl-card .dl-row + .dl-row { border-top: 1px solid var(--border-subtle); }
+.dl-rows > .dl-row + .dl-row::before { content: ""; position: absolute; top: 0; left: 56px; right: var(--sp-4); border-top: 1px solid var(--border-subtle); }
+.dl-rows > .dl-row:hover + .dl-row::before, .dl-rows > .dl-row:hover::before { border-top-color: transparent; }
+.dl-rows > .dl-row { border-top: 0; }
+/* 事项页“成果”标签：每次任务一张卡片，头部与全局成果页同一种轻标签（不再是灰底标题栏） */
+.dl-in-matter .dl-task { padding-bottom: var(--sp-1); }
+.dl-in-matter .dl-task-head { background: transparent; border-bottom: 0; padding: var(--sp-3) var(--sp-4) var(--sp-1); }
+.dl-in-matter .dl-task-name { font-size: var(--fs-caption); font-weight: 600; color: var(--text-label); }
+.dl-in-matter .dl-task-meta { font-size: var(--fs-xs); }
+.dl-row:hover { background: var(--bg-hover-soft); }
+.dl-ficon { width: 26px; height: 26px; font-size: var(--fs-xs); }
 .dl-row-main { display: flex; align-items: center; gap: var(--sp-2); }
-.dl-row-title { min-width: 0; flex: 0 1 auto; font-weight: 500; }
+.dl-row-title { min-width: 0; flex: 0 1 auto; font-weight: 400; color: var(--text-primary); }
+.dl-row.is-primary .dl-row-title { font-weight: 600; }
 .dl-name-head { font-weight: 400; color: var(--text-secondary); }
 .dl-row-note { flex: none; font-size: var(--fs-caption); color: var(--status-warning-text); }
+.dl-row-state { flex: none; width: 64px; }
+.dl-state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; }
+.dl-state::before { content: ""; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-neutral-solid); }
+.dl-state-pending_review { color: var(--status-warning-text); }
+.dl-state-pending_review::before { background: var(--status-warning-solid); }
+.dl-state-approved { color: var(--status-success-text); }
+.dl-state-approved::before { background: var(--status-success-solid); }
+.dl-state-rejected { color: var(--status-danger-text); }
+.dl-state-rejected::before { background: var(--status-danger-solid); }
 .dl-row-side { flex: none; display: inline-flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; cursor: default; }
-.dl-when { min-width: 72px; text-align: right; }
+.dl-when { min-width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
 .dl-aud { color: var(--text-label); }
 .dl-ver { display: inline-flex; align-items: center; gap: 2px; height: 24px; padding: 0 6px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-secondary); font-size: var(--fs-caption); }
 .dl-ver:hover, .dl-ver[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
@@ -48,6 +89,11 @@
 .dl-ver-chev svg { width: 12px; height: 12px; }
 .dl-ver[aria-expanded="true"] .dl-ver-chev { transform: rotate(180deg); }
 .dl-ver-static { padding: 0 6px; }
+.dl-row-sub { background: var(--bg-subtle); }
 .dl-row-sub .dl-row-meta { font-size: var(--fs-caption); }
-.dl-proc { border-top: 1px dashed var(--border-subtle); }
+.icon-btn.dl-dl .kwl-spin { width: 14px; height: 14px; }
+.dl-proc { border-top: 1px dashed var(--border-subtle); margin-top: var(--sp-1); }
 .dl-proc-toggle { padding: 6px var(--sp-4); }
+
+/* 空状态 */
+.dl-empty { padding: var(--sp-7) 0; }

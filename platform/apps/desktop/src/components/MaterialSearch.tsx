@@ -8,6 +8,7 @@ import { api, type MaterialSearchHit } from "../api.ts";
 import { highlightParts, queryTerms, relDir, shouldAutoSearch } from "../lib/material-folder.ts";
 import { takeMatterFocus } from "../lib/search.ts";
 import { Icon } from "./Icons.tsx";
+import { BusyLabel } from "./Loading.tsx";
 
 const DEBOUNCE_MS = 300;
 
@@ -96,7 +97,11 @@ export function MaterialSearch(p: { matterId: string; children: (q: string) => R
           </button>
         )}
       </div>
-      {loading && <p className="ms-status">正在材料的文字里搜索…</p>}
+      {loading && (
+        <p className="ms-status" role="status">
+          <BusyLabel busy>正在搜索材料里的文字…</BusyLabel>
+        </p>
+      )}
       {err && (
         <p className="mf-error" role="alert">
           {err}

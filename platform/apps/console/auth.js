@@ -27,12 +27,19 @@ export function passwordHint(next, again, email) {
 }
 const PW_RULE = "至少 10 位，同时包含字母和数字，不含邮箱前缀。";
 
+/** 官方 Logomark（取 index.html 的模板，避免在脚本里重复一份路径）。 */
+function logomark() {
+  const t = document.getElementById("tpl-logomark");
+  return t ? t.content.firstElementChild.cloneNode(true) : null;
+}
+
 function shell(title, sub, ...body) {
   const cfg = api.config();
   const card = $("#auth-card");
   clear(
     card,
-    h("div", { class: "auth-brand" }, h("span", { class: "brand-mark", "aria-hidden": "true" }, "K"), h("div", {}, h("b", {}, "Kimi Work 法律版"), h("small", {}, cfg ? `云端控制台 · ${cfg.label || cfg.deployment}` : "云端控制台"))),
+    // 品牌（第 51 批）：官方 Logomark（index.html 里的模板）+ 两行签名，与律师端登录页同一组合
+    h("div", { class: "auth-brand" }, logomark(), h("div", { class: "brand-text" }, h("b", {}, "Kimi Work"), h("span", { class: "brand-edition" }, "法律版 · 云端控制台"), cfg ? h("small", {}, cfg.label || cfg.deployment) : null)),
     h("div", { class: "auth-titles" }, h("h1", {}, title), sub ? h("p", {}, sub) : null),
     ...body,
   );

@@ -265,6 +265,13 @@
   --r-lg: 16px;
   --r-xl: 24px;
   --r-full: 999px;
+
+  /* 动效（第 51 批，统一等待反馈与状态过渡；见 apps/desktop/src/styles-motion.css）：快 = 悬停与按下，标准 = 状态切换，慢 = 进入动画 */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --motion-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
   --radius-input: var(--r-xl);
   --radius-card: var(--r-md);
 

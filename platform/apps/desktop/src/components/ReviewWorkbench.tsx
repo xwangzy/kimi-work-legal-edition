@@ -16,6 +16,7 @@ import { CITE_STATE_LABELS } from "../lib/labels.ts";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { adoptedText, KIND_LABEL, kindOf, ladderRows, NATURE_LABEL, NATURE_PILL, natureOf, natureText, RELATION_LABEL, RULE_SOURCE_LABEL, type RiskNature } from "../lib/risk-ladder.ts";
 import { Select } from "./Select.tsx";
+import { BusyLabel, WaitBlock } from "./Loading.tsx";
 
 const SEVERITY: Record<RiskCard["severity"], { label: string; cls: string }> = {
   high: { label: "重大", cls: "sev-high" },
@@ -64,6 +65,11 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   const [active, setActive] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * 哪个重动作在跑（第 51 批）：工作台的写操作共用 busy，一起禁用防并发；但只有点下的那个按钮显示圆环与“正在…”，
+   * 律师看得出是“生成修订稿”还是“导出意见表”在跑。卡片上的决定很快，只禁用不换字。
+   */
+  const [doing, setDoing] = useState<"redline" | "export" | null>(null);
   const [msg, setMsg] = useState<{ tone: "ok" | "warn" | "err"; text: string; conflicts?: { card_id: string | null; detail?: string }[]; artifact?: string } | null>(null);
   const cardRefs = useRef(new Map<string, HTMLDivElement>());
   // 原文与卡片的悬停联动（W-3）
@@ -230,6 +236,8 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
   const redline = async (skip: string[] = []) => {
     if (!documentVersionId) return;
     setBusy(true);
+    // 跳过冲突项再生成时，冲突提示会先收起：圆环显示在工具栏的“生成修订稿”上
+    setDoing("redline");
     setMsg(null);
     try {
       const r = await api.buildRedline(matterId, documentVersionId, { audience, ...(runFilter ? { run_id: runFilter } : {}), ...(skip.length ? { skip_card_ids: skip } : {}) });
@@ -256,11 +264,13 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       setMsg({ tone: "err", text: (e as Error).message });
     } finally {
       setBusy(false);
+      setDoing(null);
     }
   };
 
   const exportTable = async () => {
     setBusy(true);
+    setDoing("export");
     setMsg(null);
     try {
       const r = await api.exportReviewTable(matterId, documentVersionId, { ...(runFilter ? { run_id: runFilter } : {}), format: tableFormat });
@@ -271,6 +281,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       setMsg({ tone: "err", text: (e as Error).message });
     } finally {
       setBusy(false);
+      setDoing(null);
     }
   };
 
@@ -414,8 +425,8 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                     { value: "docx", label: "意见表 Word" },
                   ]}
                 />
-                <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void exportTable()} title="条款、问题、类型、等级、规则、依据、建议与你的决定，一行一项">
-                  导出审查意见表
+                <button className="btn-ghost btn-sm" disabled={busy} aria-busy={doing === "export"} onClick={() => void exportTable()} title="条款、问题、类型、等级、规则、依据、建议与你的决定，一行一项">
+                  <BusyLabel busy={doing === "export"} busyText="正在导出…">导出审查意见表</BusyLabel>
                 </button>
               </span>
             )}
@@ -442,9 +453,11 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                   <Tip label={audience === "external" ? "对外版里有什么" : "内部版里有什么"} text={audienceNote} />
                 </span>
                 {redlineWhy && <span className="wb-why muted" title={redlineWhy.full}>{redlineWhy.short}</span>}
-                <button className="btn-primary btn-sm" disabled={busy || accepted === 0} onClick={() => void redline()} title={redlineWhy?.full}>
+                <button className="btn-primary btn-sm" disabled={busy || accepted === 0} aria-busy={doing === "redline"} onClick={() => void redline()} title={redlineWhy?.full}>
                   {/* 勾选“只看本次任务”时修订稿也只含本次任务的卡（复核 C-B06）：文案写明 */}
-                  生成修订稿{accepted > 0 ? `（${runFilter ? "本次任务 " : ""}${accepted} 项）` : ""}
+                  <BusyLabel busy={doing === "redline"} busyText="正在生成修订稿…">
+                    生成修订稿{accepted > 0 ? `（${runFilter ? "本次任务 " : ""}${accepted} 项）` : ""}
+                  </BusyLabel>
                 </button>
               </>
             )}
@@ -472,8 +485,8 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
                 })}
               </ul>
               <div className="banner-actions">
-                <button className="btn-ghost" disabled={busy} onClick={() => void redline(msg.conflicts!.map((c) => c.card_id).filter((x): x is string => !!x))}>
-                  跳过这 {msg.conflicts.length} 项，生成其余修订
+                <button className="btn-ghost" disabled={busy} aria-busy={doing === "redline"} onClick={() => void redline(msg.conflicts!.map((c) => c.card_id).filter((x): x is string => !!x))}>
+                  <BusyLabel busy={doing === "redline"} busyText="正在生成修订稿…">跳过这 {msg.conflicts.length} 项，生成其余修订</BusyLabel>
                 </button>
               </div>
             </>
@@ -483,7 +496,7 @@ export function ReviewWorkbench({ matterId, documentVersionId, runId, readOnly =
       <div className="wb-body">
         <section className="wb-doc" aria-label="合同原文">
           {!documentVersionId && <p className="muted">这些意见没有关联到具体合同（例如条款来自任务说明或聊天内容）：可以逐张决定，不参与修订稿。</p>}
-          {documentVersionId && !doc && <p className="muted">正在载入合同原文…</p>}
+          {documentVersionId && !doc && <WaitBlock variant="inline" title="正在载入合同原文…" />}
           {doc && preview && (
             <div className="wb-doc-view" role="group" aria-label="文档显示">
               <button aria-pressed={view === "original"} className={`wb-view-btn${view === "original" ? " active" : ""}`} onClick={() => setView("original")}>原文</button>

@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { api, type CpAuditRow, type QuotaStatus } from "../api.ts";
 import { fmtTime } from "../lib/labels.ts";
 import { atLabel, recordChargeText, auditActionLabel, auditActorLabel, auditDetailLabel, auditFetchErrorText, auditResultLabel, auditTargetLabel, fmtAmount, fmtCount, fmtPct, legacyNote, modelLabel, ownDenominatorText, pausedText, periodLabel, periodRange, ratioTone, remainingLine, resetLabel, usageTone, warnText } from "../lib/firm-usage.ts";
+import { BusyLabel, ListSkeleton, LoadError } from "../components/Loading.tsx";
 
 /** 月度上限的常用档位（本期总额度的百分比）。 */
 const CAP_PRESETS = [60, 70, 80, 90] as const;
@@ -58,8 +59,19 @@ export function UsagePanel({ admin = false }: { admin?: boolean }) {
       setBusy(false);
     }
   };
-  if (err) return <div className="banner banner-red">{err}</div>;
-  if (!q) return <p className="muted">读取中…</p>;
+  // 没读到用量（第 51 批）：说清楚没读到并给重试，不显示成“没有用量”
+  if (err)
+    return (
+      <LoadError
+        what="本所用量"
+        message={err}
+        onRetry={() => {
+          setErr("");
+          load();
+        }}
+      />
+    );
+  if (!q) return <ListSkeleton rows={3} label="正在载入本所用量" />;
   if (q.mode !== "control_plane" || !q.firm) return <p className="muted">{q.note ?? "未连接 Kimi Work 服务：不统计本所用量。"}</p>;
   const f = q.firm;
   const tone = usageTone(f);
@@ -341,15 +353,15 @@ export function CpAuditPanel() {
       {withheld && <div className="banner banner-red">中软那边的记录可能没给全，请联系中软核对。</div>}
       {msg && <div className="banner">{msg}</div>}
       <div className="inline-form">
-        <button className="btn-ghost btn-sm" disabled={busy} onClick={load}>
-          {busy ? "正在取回…" : "取回最新"}
+        <button className="btn-ghost btn-sm" disabled={busy} aria-busy={busy} onClick={load}>
+          <BusyLabel busy={busy} busyText="正在取回…">取回最新</BusyLabel>
         </button>
         <button className="btn-ghost btn-sm" disabled={busy || !rows?.length} onClick={() => void exportAll()}>
           导出全部
         </button>
       </div>
       {rows === null ? (
-        <p className="muted">读取中…</p>
+        <ListSkeleton rows={4} label="正在载入操作记录" />
       ) : rows.length === 0 ? (
         <p className="muted">本机还没有留存的记录。</p>
       ) : (

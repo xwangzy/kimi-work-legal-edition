@@ -152,7 +152,8 @@ test("三处共用一个分组函数；成果页计数按文件；执行页结�
   const read = (p: string) => readFileSync(new URL(`../src/${p}`, import.meta.url), "utf8");
   const page = read("pages/Deliverables.tsx");
   assert.equal(page.split("splitTaskFiles(").length - 1 >= 2, true, "全局成果页与事项成果页");
-  assert.match(page, /<span className="dl-tab-n">\{count\(k\)\}<\/span>/, "筛选计数按文件（第 48 批：计数是页签上的徽标）");
+  // 第 51 批：计数在复核流程条上（counts 由 count(k) 按文件算）
+  assert.match(page, /const count = \(k: Filter\) => groups\.reduce\(\(n, g\) => n \+ g\.tasks\.reduce\(\(m, t\) => m \+ t\.split\.files\.filter\(\(e\) => !e\.replaced/, "筛选计数按文件");
   assert.doesNotMatch(page, /rows\.filter\(\(r\) => r\.status === k\)\.length/);
   const rv = read("pages/RunView.tsx");
   assert.match(rv, /currentFiles\(artifacts, \{ primary: primaryName \}\)/);
@@ -161,7 +162,7 @@ test("三处共用一个分组函数；成果页计数按文件；执行页结�
   assert.match(rv, /aria-expanded=\{processOpen\}/);
   const row = read("components/ArtifactRow.tsx");
   // 旧版与过程文件不给“提交复核”：只有最新版那一行带 onSubmit
-  assert.equal(row.split(">提交复核<").length - 1, 1);
+  assert.equal(row.split('"提交复核"').length - 1, 1);
 });
 
 test("时间线：复核人回看——都已处理是一条完成步骤；有没落实的是一条未完成步骤，会进顶部“没做完的事”（V18 第 43 批）", async () => {

@@ -100,6 +100,8 @@ export function Sidebar({ route }: { route: Route }) {
     });
   const mode: "work" | "chat" = route.page === "chat" ? "chat" : "work";
   const [matters, setMatters] = useState<Matter[]>([]);
+  // 侧栏列表的读取状态（第 51 批）：没读到不能显示成“还没有事项 / 任务”（失败不是空）
+  const [listState, setListState] = useState<{ matters: "loading" | "ready" | "error"; runs: "loading" | "ready" | "error" }>({ matters: "loading", runs: "loading" });
   const [runs, setRuns] = useState<RecentRun[]>([]);
   const [waitingRuns, setWaitingRuns] = useState<Set<string>>(new Set());
   const [chats, setChats] = useState<{ conversation_id: string; title: string; updated_at: string }[]>([]);
@@ -136,14 +138,21 @@ export function Sidebar({ route }: { route: Route }) {
     document.title = waitingTotal > 0 ? `(${waitingTotal}) ${base}` : base;
   }, [waitingTotal]);
   useEffect(() => {
-    api.listMatters().then((r) => setMatters(r.matters.filter((m) => (m.lifecycle ?? "active") === "active"))).catch(() => {});
+    api
+      .listMatters()
+      .then((r) => {
+        setMatters(r.matters.filter((m) => (m.lifecycle ?? "active") === "active"));
+        setListState((s) => ({ ...s, matters: "ready" }));
+      })
+      .catch(() => setListState((s) => ({ ...s, matters: "error" })));
     api
       .recentRuns(8)
       .then((r) => {
         setRuns(r.runs);
         setWaitingRuns(new Set(r.waiting.map((w) => w.run_id)));
+        setListState((s) => ({ ...s, runs: "ready" }));
       })
-      .catch(() => {});
+      .catch(() => setListState((s) => ({ ...s, runs: "error" })));
     api.pending().then((r) => setPending(r.count)).catch(() => {});
     api.remindersUnread().then((r) => setUnreadReminders(r.unread)).catch(() => {});
     api
@@ -280,7 +289,8 @@ export function Sidebar({ route }: { route: Route }) {
             </SectionHead>
             {sections.matters && (
               <div className="sidebar-list">
-                {matters.length === 0 && (
+                {listState.matters === "error" && matters.length === 0 && <div className="sidebar-empty-text">没有读到事项，稍后会重新读取</div>}
+                {listState.matters === "ready" && matters.length === 0 && (
                   <button className="sidebar-empty" onClick={() => requestNewMatter()}>
                     还没有事项，新建一个
                   </button>
@@ -318,7 +328,8 @@ export function Sidebar({ route }: { route: Route }) {
             <SectionHead label="任务" open={sections.tasks} onToggle={() => toggleSection("tasks")} />
             {sections.tasks && (
               <div className="sidebar-list">
-                {runs.length === 0 && <div className="sidebar-empty-text">还没有任务</div>}
+                {listState.runs === "error" && runs.length === 0 && <div className="sidebar-empty-text">没有读到任务，稍后会重新读取</div>}
+                {listState.runs === "ready" && runs.length === 0 && <div className="sidebar-empty-text">还没有任务</div>}
                 {runs.map((r) => {
                   const wait = waitingRuns.has(r.run_id) || r.status === "waiting";
                   const live = !wait && (r.status === "running" || r.status === "queued");

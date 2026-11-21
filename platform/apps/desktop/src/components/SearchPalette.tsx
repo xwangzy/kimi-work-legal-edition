@@ -5,12 +5,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { nav } from "../App.tsx";
+import { ListSkeleton, LoadError } from "./Loading.tsx";
 import { searchGroups, searchLabels, SEARCH_KIND_LABEL, type SearchItem, setMatterFocus } from "../lib/search.ts";
 
 export function SearchPalette({ onClose }: { onClose: () => void }) {
   const [q, setQ] = useState("");
   const [res, setRes] = useState<Awaited<ReturnType<typeof api.searchTitles>> | null>(null);
   const [loading, setLoading] = useState(false);
+  // 搜索失败（第 51 批）：原来失败后结果区什么都不显示，像是“没有”；现在说清楚没搜到并给重试
+  const [err, setErr] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -19,23 +23,29 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!q.trim()) {
       setRes(null);
+      setErr(null);
       return;
     }
     let alive = true;
     setLoading(true);
+    setErr(null);
     // 打字停 200 毫秒再查
     const t = setTimeout(() => {
       api
         .searchTitles(q, labels)
         .then((r) => alive && setRes(r))
-        .catch(() => alive && setRes(null))
+        .catch((e) => {
+          if (!alive) return;
+          setRes(null);
+          setErr((e as Error).message ?? "");
+        })
         .finally(() => alive && setLoading(false));
     }, 200);
     return () => {
       alive = false;
       clearTimeout(t);
     };
-  }, [q, labels]);
+  }, [q, labels, retry]);
   const groups = useMemo(() => (res ? searchGroups(res) : []), [res]);
   const flat = groups.flatMap((g) => g.items);
   useEffect(() => setSel(0), [res]);
@@ -86,7 +96,8 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
         />
         <div className="search-results" ref={listRef}>
           {q.trim() && !loading && res && flat.length === 0 && <p className="muted">没有找到。</p>}
-          {loading && q.trim() && !res && <p className="muted">正在找…</p>}
+          {q.trim() && !loading && err !== null && <LoadError what="搜索结果" message={err} onRetry={() => setRetry((n) => n + 1)} />}
+          {loading && q.trim() && !res && <ListSkeleton rows={3} label="正在搜索" />}
           {groups.map((g) => (
             <div key={g.kind}>
               <div className="section-title">{SEARCH_KIND_LABEL[g.kind]}</div>

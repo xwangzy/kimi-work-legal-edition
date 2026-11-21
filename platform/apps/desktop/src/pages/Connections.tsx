@@ -8,10 +8,10 @@
  * “管理”是否显示只是界面安排，授权一律由内核按角色逐个方法核验。
  */
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import "../styles-dataflow.css";
 import { notifyDataChanged } from "../lib/events.ts";
-import { api, recovery as recoveryApi, updates, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft } from "../api.ts";
+import { api, recovery as recoveryApi, updates, type AiAuthorization, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft } from "../api.ts";
 import { CONTENT_CHECK_FAILED, CONTENT_PANEL_NOTE, contentCheckLine, contentSourceLine, contentStaleLine } from "../lib/content-labels.ts";
 import { nav, OPEN_GUIDE, type SettingsTab } from "../App.tsx";
 import { displayVersion, fmtDate, fmtTime, groupDigits } from "../lib/labels.ts";
@@ -32,6 +32,7 @@ import { Select } from "../components/Select.tsx";
 import { SettingRow } from "../components/SettingRow.tsx";
 import { Icon } from "../components/Icons.tsx";
 import { ConnectionCheck } from "../components/ConnectionCheck.tsx";
+import { BusyLabel } from "../components/Loading.tsx";
 
 const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
 
@@ -104,6 +105,7 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
           <>
             <VisibilityTab gate={gate} im={im} recovery={recovery} firm={status?.firm_name ?? null} syncOn={!!status?.sync_configured} />
             <SourcesTab gate={gate} lawdb={lawdb} im={im} onLawdbChanged={() => api.lawdbStatus().then(setLawdb).catch(() => {})} />
+            <AuthorizationSettings />
           </>
         )}
         {tab === "admin" &&
@@ -241,15 +243,16 @@ function WritingTab() {
 }
 
 /**
- * “数据去向”（第 48 批重做；第 49 批再精简信息架构）：回答“东西在哪、经过谁、留下什么”，并可打印给客户。
- * 第 49 批：
- * - 唯一需要律师操作的“客户授权”放在最上面（一行 + 开关，说明点开；不打印）；
- * - 三张满是要点的站点卡片改为一张“数据 × 去处”对照表：行是数据，列是这台电脑 → 中软 → Kimi 模型，格子里一句话
- *   （加密保存 / 只转发 / 保存·不含内容 / 处理），同一件事只说一遍；
- * - 替换规则、其他联网功能、需要知道的局限、未启用的功能收成可展开的行，每行先给一句摘要；打印时全部展开。
- * 口径与第 48 批逐条对应（替换范围、中软保存的字段、待签署的书面确认、识别会遗漏），只改组织方式。
+ * “数据去向”（第 48 批重做；第 49 批对照表；第 51 批再重做信息架构）：回答“东西在哪、经过谁、留下什么”，可打印给客户。
+ * 第 51 批（第 49 批的对照表有 21 格、12 格是“—”，读者要在表里横竖找；结论被埋在格子里）：
+ * - 先三句要点（案卷只在这台电脑 / 发出前换成代号 / 中转不留内容），读一行就知道结论；
+ * - 再一张“去向图”：以“律所内 | 律所外（云端）”为边界，三站（这台电脑 → 中软云端服务 → Kimi 模型）各写“留下什么”，
+ *   站与站之间写“经过的是什么”；同一件事只说一遍，没有空格子；示例请求（本机现场生成、代号高亮）挂在图下，说明“换成代号”长什么样；
+ * - 替换规则、其他联网功能、需要知道的局限、未启用的功能收成可展开的行（打印时全部展开）；
+ * - “客户授权”是律师本人的设置，不是给客户看的披露，移到页底（不打印），见 AuthorizationSettings。
+ * 口径与第 48、49 批逐条对应（替换范围、中软保存的字段、待签署的书面确认、识别会遗漏），只改组织方式。
  */
-type FlowCell = { text: string; tone?: "keep" | "pass" | "meta" | "none" };
+type Station = { kind: "local" | "relay" | "model"; icon: () => ReactNode; title: string; sub: string; groups: { label: string; tone: "keep" | "pass" | "meta" | "plain" | "warn"; items: { text: string; note?: string }[] }[] };
 function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: any[]; recovery: any; firm: string | null; syncOn: boolean }) {
   const [example, setExample] = useState<{ sent: string; replaced: number } | null>(null);
   const [relayUsed, setRelayUsed] = useState(false);
@@ -284,20 +287,36 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
   // 第 11 批 S11：团队共享经中软共享中继（本所策略开启且已配置）
   const relayOn = !!gate?.relay_configured && !!gate?.share_relay_allowed;
   const relayStored = relayOn || (!!gate?.relay_configured && relayUsed);
-  // 对照表（复核 S6A-02/03 的口径不变：替换了什么、哪些按原文、中软保存哪些字段、待签署的书面确认）
-  const K = (text: string): FlowCell => ({ text, tone: "keep" });
-  const P = (text: string): FlowCell => ({ text, tone: "pass" });
-  const M = (text: string): FlowCell => ({ text, tone: "meta" });
-  const N: FlowCell = { text: "—", tone: "none" };
-  const rowsTable: { data: string; note?: string; cells: [FlowCell, FlowCell, FlowCell] }[] = [
-    { data: "案卷原件与全部成果", cells: [K("加密保存"), N, N] },
-    { data: "代号与真实姓名的对照表", cells: [K("加密保存"), N, N] },
-    { data: "对话、问答与任务记录", cells: [K("加密保存"), N, N] },
-    { data: "发给 AI 的任务内容与问答的问题", note: "已把姓名、证件号等换成代号", cells: [P("换成代号后发出"), P("只转发，不保存"), { text: "处理；与月之暗面“不用于训练、不保留”的书面确认：待签署" }] },
-    ...(gate?.search_configured ? [{ data: "联网检索的查询", note: "默认去掉当事人名称", cells: [P("发出"), P("转发给检索服务"), N] as [FlowCell, FlowCell, FlowCell] }] : []),
-    // 原句保留（第 44 批口径：用量单位就是 token，如实写出中软看得到的字段）
-    { data: "账号与用量记录", note: "你的登录邮箱、姓名和登记的电脑，以及每次 AI 调用的用量（请求编号、模型、token 数、金额）；看不到内容", cells: [N, M("保存（不含内容）"), N] },
-    { data: "匿名事项编号、调用记录与律所规则", cells: [N, M("保存"), N] },
+  // 去向图三站（口径同第 49 批对照表：替换了什么、哪些按原文、中软保存哪些字段、待签署的书面确认）
+  const stations: Station[] = [
+    {
+      kind: "local",
+      icon: Icon.device,
+      title: "这台电脑",
+      sub: "律所内 · 只有你能打开",
+      groups: [{ label: "加密保存", tone: "keep", items: [{ text: "案卷原件与全部成果" }, { text: "代号与真实姓名的对照表" }, { text: "对话、问答与任务记录" }] }],
+    },
+    {
+      kind: "relay",
+      icon: Icon.shield,
+      title: "中软云端服务",
+      sub: "中软国际运营",
+      groups: [
+        { label: "只转发，不保存", tone: "pass", items: [{ text: "发给 AI 的任务内容与问答的问题", note: "已把姓名、证件号等换成代号" }, ...(gate?.search_configured ? [{ text: "联网检索的查询", note: "默认去掉当事人名称，转发给检索服务" }] : [])] },
+        // 原句保留（第 44 批口径：用量单位就是 token，如实写出中软看得到的字段）
+        { label: "保存（不含内容）", tone: "meta", items: [{ text: "账号与用量记录", note: "你的登录邮箱、姓名和登记的电脑，以及每次 AI 调用的用量（请求编号、模型、token 数、金额）；看不到内容" }, { text: "匿名事项编号、调用记录与律所规则" }] },
+      ],
+    },
+    {
+      kind: "model",
+      icon: Icon.sparkle,
+      title: "Kimi 模型",
+      sub: "月之暗面",
+      groups: [
+        { label: "处理", tone: "plain", items: [{ text: "换成代号后的任务内容与问题", note: "生成回答后返回这台电脑" }] },
+        { label: "书面确认", tone: "warn", items: [{ text: "与月之暗面“不用于训练、不保留”的书面确认：待签署" }] },
+      ],
+    },
   ];
   // 其他会联网的功能（只列已启用的）：不经中软的直连，与经中软保存少量记录的
   const others: { name: string; line: string }[] = [
@@ -332,7 +351,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
     ...(recovery?.escrow ? [] : ["中软托管恢复"]),
   ];
   return (
-    <div className="dfx dfx2" ref={rootRef}>
+    <div className="dfx dfm-page" ref={rootRef}>
       <div className="dfx-head">
         <div>
           <h2 className="h-section dfx-title">数据去向说明</h2>
@@ -345,50 +364,73 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
         </button>
       </div>
 
-      <AuthorizationDefault />
+      {/* 三句要点：读一行就知道结论 */}
+      <ul className="dfm-points" aria-label="要点">
+        <li>
+          <span className="dfm-point-ico dfm-tone-keep" aria-hidden="true">{Icon.lock()}</span>
+          <b>案卷只在这台电脑</b>
+          <span>原件、成果和代号对照表加密保存在本机，不上传到任何地方。</span>
+        </li>
+        <li>
+          <span className="dfm-point-ico" aria-hidden="true">{Icon.eye()}</span>
+          <b>发出前换成代号</b>
+          <span>需要 AI 时，先把姓名、证件号、电话等换成代号，再发出去。</span>
+        </li>
+        <li>
+          <span className="dfm-point-ico" aria-hidden="true">{Icon.shield()}</span>
+          <b>中转不留内容</b>
+          <span>中软只转发，不保存内容；只记录账号与用量。</span>
+        </li>
+      </ul>
 
-      <p className="dfx-lead">
-        案卷原件和全部成果只保存在这台电脑上，并且加密。需要 AI 时，发出去的内容会先把姓名、证件号、电话等换成代号；中软只转发，不保存内容。
-      </p>
-
-      {/* 律师层其他地方统一说“Kimi Work 服务 / 客服”；这一页是给客户看的披露，按实际运营方写，第一次出现时说清是谁（v9.4 U1 #6） */}
-      <div className="dfx-table-wrap">
-        <table className="dfx-table" aria-label="数据在哪、经过谁、留下什么">
-          <thead>
-            <tr>
-              <th scope="col" className="dfx-th-data">数据</th>
-              <th scope="col">
-                <span className="dfx-th-ico" aria-hidden="true">{Icon.device()}</span>这台电脑
-              </th>
-              <th scope="col">
-                <span className="dfx-th-arrow" aria-hidden="true">→</span>
-                <span className="dfx-th-ico" aria-hidden="true">{Icon.shield()}</span>中软云端服务
-                <small>中软国际运营</small>
-              </th>
-              <th scope="col">
-                <span className="dfx-th-arrow" aria-hidden="true">→</span>
-                <span className="dfx-th-ico" aria-hidden="true">{Icon.sparkle()}</span>Kimi 模型
-                <small>月之暗面</small>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rowsTable.map((r) => (
-              <tr key={r.data}>
-                <th scope="row">
-                  {r.data}
-                  {r.note && <small>{r.note}</small>}
-                </th>
-                {r.cells.map((c, i) => (
-                  <td key={i} className={`dfx-cell dfx-cell-${c.tone ?? "plain"}`}>
-                    {c.tone === "none" ? <span aria-label="不经过">—</span> : c.text}
-                  </td>
+      {/* 去向图（律所内 | 律所外）。律师层其他地方统一说“Kimi Work 服务 / 客服”；这一页是给客户看的披露，按实际运营方写（v9.4 U1 #6） */}
+      <section className="dfm" aria-label="一次 AI 请求经过哪里、各处留下什么">
+        <div className="dfm-zones" aria-hidden="true">
+          <span className="dfm-zone dfm-zone-in">律所内</span>
+          <span className="dfm-zone dfm-zone-out">律所外 · 云端</span>
+        </div>
+        <ol className="dfm-map">
+          {stations.map((st, i) => (
+            <Fragment key={st.kind}>
+              {i > 0 && (
+                <li className="dfm-link" aria-hidden="true">
+                  <span className="dfm-link-label">{i === 1 ? "换成代号后发出" : "只转发"}</span>
+                  <span className="dfm-link-line" />
+                </li>
+              )}
+              <li className={`dfm-station dfm-${st.kind}`}>
+                <div className="dfm-station-head">
+                  <span className="dfm-station-ico" aria-hidden="true">{st.icon()}</span>
+                  <span>
+                    <b className="dfm-station-title">{st.title}</b>
+                    <small className="dfm-station-sub">{st.sub}</small>
+                  </span>
+                </div>
+                {st.groups.map((g) => (
+                  <div key={g.label} className={`dfm-group dfm-tone-${g.tone}`}>
+                    <div className="dfm-group-label">{g.label}</div>
+                    <ul>
+                      {g.items.map((it) => (
+                        <li key={it.text}>
+                          {it.text}
+                          {it.note && <small>{it.note}</small>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+              </li>
+            </Fragment>
+          ))}
+        </ol>
+        {/* 示例请求：本机现场生成（示例句子与人物均为虚构），代号高亮——“换成代号”长什么样 */}
+        <div className="dfm-sample">
+          <div className="dfm-sample-cap">
+            一次 AI 请求实际发出的样子<span>（示例句子与人物均为虚构，由这台电脑现场生成）</span>
+          </div>
+          <div className="dfx-sample-text">{example ? sampleParts(example.sent).map((p, i) => (p.token ? <span key={i} className="dfx-token">{p.text}</span> : <span key={i}>{p.text}</span>)) : "—"}</div>
+        </div>
+      </section>
 
       <div className="dfx-folds">
         <details className="dfx-fold">
@@ -397,10 +439,6 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
             <span className="dfx-fold-sum">姓名、证件号、手机号、账号、住址换成代号；机构名称、案情、金额、日期按原文</span>
           </summary>
           <div className="dfx-fold-body">
-            <div className="dfx-sample">
-              <div className="dfx-sample-cap">一次 AI 请求实际发出的样子（示例句子与人物均为虚构，由这台电脑现场生成）</div>
-              <div className="dfx-sample-text">{example ? sampleParts(example.sent).map((p, i) => (p.token ? <span key={i} className="dfx-token">{p.text}</span> : <span key={i}>{p.text}</span>)) : "—"}</div>
-            </div>
             <dl className="dfx-rules">
               <div>
                 <dt>换成代号</dt>
@@ -461,49 +499,80 @@ function sampleParts(text: string): { text: string; token: boolean }[] {
 }
 
 /**
- * 客户授权的默认设置（第 48 批，D-202）：律师声明一次“委托合同含使用 AI 辅助的条款”，之后新建事项默认按此记录，不再逐案询问。
- * 这是律师本人的设置（不打印给客户）；撤回只影响之后新建的事项，已有事项的记录不变（声明与撤回都入审计）。
+ * 客户授权的记录方式（第 51 批，D-216；取代第 48 批“开关一开，新建事项默认按委托合同条款记录”）。
+ * 合规核验：律师点确认不等于客户授权；授权依据是每一份委托合同，不是律师的一次声明。所以：
+ * - 每个事项第一次用 AI 时，在“开始前确认”里逐案记录依据类型与出处（委托合同条款 / 客户书面同意），并留下当时告知的次处理者清单版本；
+ * - 这里只保存“常用的委托合同 AI 条款出处”，用来预填（一键确认），不会替任何事项自动记录。
+ * 律师本人的设置，不打印给客户；修改记入审计。
  */
-function AuthorizationDefault() {
-  const [state, setState] = useState<{ engagement_terms: boolean; updated_at: string | null } | null>(null);
+function AuthorizationSettings() {
+  const [state, setState] = useState<AiAuthorization | null>(null);
+  const [ref, setRef] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [saved, setSaved] = useState(false);
   useEffect(() => {
-    api.aiAuthorization().then(setState).catch(() => setState(null));
+    api
+      .aiAuthorization()
+      .then((a) => {
+        setState(a);
+        setRef(a.default_ref ?? "");
+      })
+      .catch(() => setState(null));
   }, []);
   if (!state) return null;
-  const toggle = async () => {
+  const on = state.engagement_terms;
+  const save = async (next: { engagement_terms?: boolean; default_ref?: string | null }) => {
     setBusy(true);
     setErr("");
+    setSaved(false);
     try {
-      setState(await api.setAiAuthorization(!state.engagement_terms));
+      const r = await api.setAiAuthorization(next);
+      setState(r);
+      setRef(r.default_ref ?? "");
+      setSaved(true);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
       setBusy(false);
     }
   };
+  const dirty = ref.trim() !== (state.default_ref ?? "");
+  const processors = state.subprocessors?.items ?? [];
   return (
-    <section className="dfx-auth no-print" aria-labelledby="dfx-auth-h">
-      <div className="dfx-auth-row">
-        <div className="dfx-auth-main">
-          <h3 className="dfx-auth-title" id="dfx-auth-h">
-            客户授权
-            <span className="dfx-auth-state">{state.engagement_terms ? "按委托合同条款记录" : "逐案确认"}</span>
-          </h3>
-          <div className="dfx-auth-text">
-            {state.engagement_terms
-              ? "你的委托合同已含使用 AI 辅助及次处理者的条款：新建事项默认按此记录，不再逐案询问。"
-              : "使用 AI 前需要客户同意。委托合同若已含使用 AI 辅助及次处理者（中软、月之暗面）的条款，可打开开关，新建事项默认按此记录。"}
-            <details className="dfx-auth-more">
-              <summary>怎么记录</summary>
-              敏感事项的单独同意、“尚未取得”与“客户要求不上云”仍按事项处理；关闭只影响之后新建的事项，已有事项的记录不变。声明与撤回都记入审计。
-            </details>
+    <section className="dfm-authz no-print" aria-labelledby="dfm-authz-h">
+      <h2 className="h-sub" id="dfm-authz-h">
+        客户授权怎么记录
+      </h2>
+      <p className="dfm-authz-lead">
+        每个事项第一次用 AI 时，“开始前确认”会请你记录这个案子的授权依据——委托合同里的 AI 条款，或客户的书面同意——并写明出处。记录随事项保存、写进事项日志；它是你核实过的依据，不代替客户本人的授权。
+      </p>
+      <div className="dfm-authz-card">
+        <div className="dfm-authz-row">
+          <div className="dfm-authz-main">
+            <b>用常用条款一键预填</b>
+            <span>你的委托合同模板已含 AI 辅助条款时打开：记录时预先选好“委托合同中的 AI 条款”并填好出处，你确认一下就行。不会替任何事项自动记录。</span>
           </div>
-          {state.updated_at && <div className="dfx-auth-meta">上次修改：{fmtTime(state.updated_at)}（已记录）</div>}
-          {err && <div className="banner banner-red">{err}</div>}
+          <button role="switch" aria-checked={on} aria-label="用常用条款一键预填" className="switch" disabled={busy} onClick={() => void save({ engagement_terms: !on })} />
         </div>
-        <button role="switch" aria-checked={state.engagement_terms} aria-label="我的委托合同含使用 AI 辅助的条款" className="switch" disabled={busy} onClick={() => void toggle()} />
+        {on && (
+          <label className="dfm-authz-ref">
+            <span>常用的条款出处</span>
+            <input value={ref} maxLength={200} placeholder="例如：委托代理合同（本所 2026 版）第 9 条“AI 辅助与次处理者”" onChange={(e) => setRef(e.target.value)} aria-label="常用的条款出处" />
+            <button className="btn-ghost btn-sm" disabled={busy || !dirty} aria-busy={busy} onClick={() => void save({ default_ref: ref.trim() || null })}>
+              <BusyLabel busy={busy} busyText="正在保存…">
+                保存
+              </BusyLabel>
+            </button>
+          </label>
+        )}
+        {processors.length > 0 && (
+          <div className="dfm-authz-meta">
+            条款里应告知客户的次处理者：{processors.map((p) => `${p.name}（${p.role}）`).join("、")}。清单有变化时，已记录的事项会在下次用 AI 前请你重新确认。
+          </div>
+        )}
+        {state.updated_at && <div className="dfm-authz-meta">上次修改：{fmtTime(state.updated_at)}（已记入审计）{saved ? " · 已保存" : ""}</div>}
+        {err && <div className="banner banner-red">{err}</div>}
       </div>
     </section>
   );
