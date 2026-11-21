@@ -20,7 +20,7 @@ let cp: ControlPlane;
 let base = "";
 
 before(async () => {
-  cp = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: SECRET, auditLog: createAuditLog(), staffMfa: "optional", devStaff: devStaffOf({ op_1001: [...PEOPLE.op_1001], op_1002: [...PEOPLE.op_1002] }), routing: { bootstrap: { provider: { base_url: "https://maas.example.test/v1" } }, key_id: KEY_ID } });
+  cp = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: SECRET, auditLog: createAuditLog(), devStaff: devStaffOf({ op_1001: [...PEOPLE.op_1001], op_1002: [...PEOPLE.op_1002] }), routing: { bootstrap: { provider: { base_url: "https://maas.example.test/v1" } }, key_id: KEY_ID } });
   await new Promise<void>((r) => cp.server.listen(0, "127.0.0.1", () => r()));
   base = `http://127.0.0.1:${(cp.server.address() as AddressInfo).port}`;
 });

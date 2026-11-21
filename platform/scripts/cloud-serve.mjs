@@ -47,19 +47,21 @@
  *   "meter_key_file": "...",
  *   "blob_store": { "kind": "s3", "endpoint": "https://obs.cn-north-4.myhuaweicloud.com", "bucket": "kwl-prod-support", "region": "cn-north-4", "prefix": "support",
  *                   "access_key_id_file": "...", "secret_access_key_file": "...", "kms_key_id": "...", "ca_file": "..." },   // 可选（A-11）：诊断包本体进对象存储，每个对象 SSE-KMS
- *   // 运营接口（控制面、支持、中继、通知可选；v9.3 A-10 按人鉴权，共享运营口令 ops_secret_file 已停用、配了即拒绝启动）：
- *   "ops": { "deployment": "prod",                              // 部署标识：名册与运营请求签名都绑定它
+ *   // 运营接口（v9.3 A-10 按人鉴权，共享运营口令 ops_secret_file 已停用、配了即拒绝启动）。D-218 起入口不按来源地址拦任何路径（没有运维网段）：
+ *   //   控制面的 /v1/ops/* 一律交给服务，由平台人员账号会话 + 角色权限鉴权（不需要配 ops 段）；支持、中继、通知的运营接口靠名册 + 私钥签名，
+ *   //   配了 ops 段才开（没配 = 功能没开，运营路径 404）
+ *   "ops": { "deployment": "prod",                              // 部署标识：名册与运营请求签名都绑定它（控制面可选，只用于“系统”页显示）
  *            "roster_file": "/etc/kwl/ops-roster.json",          // 安全管理员签名的运营名册（每人的签名公钥、权限、状态；换文件即生效，至多 31 天须重签）
  *            "roster_keys_file": "/etc/kwl/ops-roster-keys.json", // 名册签名公钥 { kid: PEM }（只收公钥）
- *            "allow_cidrs": ["10.20.0.0/24"],                     // 运维网段（堡垒机出口）：来源不在其中的运营请求一律 404
  *            "min_roster_version": 12,                            // 可选：新实例或数据目录重建时的名册版本下限
  *            "console_origins": ["https://ops-console.kwl.internal"] },  // support/relay/notify 可选：网页来源跨源读运营接口；控制面改用 console.origins（这一项仍认作别名）
- *   // 控制面的 ops（第 46 批）：只用 allow_cidrs（运维网段：/v1/ops/* 与平台人员登录）与 deployment；roster_file / roster_keys_file / min_roster_version /
- *   //   password_login / credentials_file 对控制面已废弃（出现只提示、不失败）——运营人员改为控制台账号 + 角色 + 两步验证
+ *   // 控制面的 ops（第 46 批）：只用 deployment；roster_file / roster_keys_file / min_roster_version / password_login / credentials_file 对控制面已废弃
+ *   //   （出现只提示、不失败）——运营人员改为控制台账号 + 角色。ops.allow_cidrs（运维网段）对所有角色已废弃（D-218），出现只提示“已忽略”、不失败
  *   // 控制面可选（第 46 批）：统一控制台
  *   "console": { "origins": ["https://console.kwl.example.com"],          // 控制台来源：只对 /v1/auth/* /v1/me/* /v1/firm/* /v1/meta /v1/ops/* 回 CORS（不带凭据）
- *                "bootstrap_admin": { "email": "admin@csi.example.com", "name": "系统管理员" },   // 没有有效系统管理员时建档，设置码写 <data_dir>/control-plane/bootstrap-admin.txt
- *                "staff_mfa": "required" },                              // 平台人员两步验证：required（缺省）| optional（只给开发环境）
+ *                "bootstrap_admin": { "email": "admin@csi.example.com", "name": "系统管理员" }    // 没有有效系统管理员时建档，设置码写 <data_dir>/control-plane/bootstrap-admin.txt
+ *              },   // console.staff_mfa（平台人员两步验证）已废弃（D-218）：出现只提示“已忽略”、不失败
+ *   // 控制台、登录入口与 /v1/ops/* 对任意来源开放；安全靠 TLS + 账号密码 + 角色权限 + 登录限流与锁定 + 危险操作密码复核 + 访问审计（均在服务端）
  *   "clients": { "min_version": "0.2.0" },                                // 可选：客户端最低版本（首次启动导入状态，之后在控制台改）；低于它登录、注册、续期席位令牌回 426
  *   "usage_dir": "/srv/kwl-shared/usage",                                 // 可选：用量账本目录（缺省 <data_dir>/control-plane/usage）；一主多备时须放共享存储
  *   // 找回全部系统管理员：有服务器 shell 的人写 <data_dir>/control-plane/admin-recovery.request（内容：系统管理员邮箱），30 秒内处理
@@ -71,7 +73,7 @@
  *   "routing": { "bootstrap": { "provider": { "id": "maas", "label": "中软 MaaS", "vendor": "csi-maas", "base_url": "https://maas.jointpilot.com/v1" },
  *                               "models": { "legal/k3": "kimi-k3.1-pro", "legal/k2.6": "kimi-k3.1-pro" } },
  *                "public_key_file": "/etc/kwl/routing-public.txt" },
- * 没有 ops：运营路径一律 404。名册版本记录、换版记录、随机数与被拒记录在 <data_dir>/<角色>/ops/；名册不可用时业务照常、运营接口 503。
+ * 支持、中继、通知没有 ops：运营路径一律 404（功能没开）。名册版本记录、换版记录、随机数与被拒记录在 <data_dir>/<角色>/ops/；名册不可用时业务照常、运营接口 503。
  * 全部密钥文件除格式外还核“是不是随机生成的”（scripts/lib/secret-strength.mjs：拒绝重复、递增、单一字符类、占位词）；服务间凭据同一要求。
  *
  * 可观测性（v9.3 A-9；scripts/lib/obs.mjs）：每个角色都写访问日志与错误日志（按白名单、不记内容，`log_dir` 缺省为 `<data_dir>/obs`，必须有其一），
@@ -82,7 +84,6 @@ import { createHash, createPrivateKey, createPublicKey, hkdfSync, randomBytes, X
 import { hostname } from "node:os";
 import { createServer as createHttpsServer } from "node:https";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
-import { BlockList, isIPv4, isIPv6 } from "node:net";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createHttpServer } from "node:http";
@@ -164,13 +165,12 @@ const secretFile = (f, what, kind) => {
 // 服务间凭据：至少 32 字节随机——64 位以上十六进制或 43 位以上 base64url
 const serviceSecret = () => secretFile(cfg.service_secret_file, "service_secret_file", "random32");
 
-// ─── 运营按人鉴权（v9.3 A-10）：安全管理员签名的运营名册 + 每人自己的签名密钥；只接受运维网段来的运营请求 ───
-if (cfg.ops_secret_file !== undefined) fail("ops_secret_file 已停用（v9.3 A-10 运营按人鉴权）：改为配置 ops.roster_file、ops.roster_keys_file、ops.allow_cidrs（见 docs/部署-云端生产入口.md）");
+// ─── 运营按人鉴权（v9.3 A-10）：控制面按平台人员账号会话 + 角色；支持、中继、通知按安全管理员签名的运营名册 + 每人自己的签名密钥。不看来源地址（D-218） ───
+if (cfg.ops_secret_file !== undefined) fail("ops_secret_file 已停用（v9.3 A-10 运营按人鉴权）：改为配置 ops.roster_file、ops.roster_keys_file（见 docs/部署-云端生产入口.md）");
 const OPS_AUDIENCE = { "control-plane": "control-plane", support: "support", relay: "relay", notify: "notify" };
 const opsMod = await import(join(root, "packages/ops-auth/src/index.ts"));
+/** 支持、中继、通知的运营鉴权（null = 没有配置 ops 段：运营功能没开，运营路径一律 404）。 */
 let opsGuard = null;
-/** 运维网段（null = 没有配置运营接口：运营路径一律 404）。 */
-let opsSources = null;
 /** 网页运营控制台的来源（ops.console_origins）：只对运营路径、只对这些来源回 CORS 头。 */
 let opsConsoleOrigins = null;
 /** 启动时名册不可用的原因（不拒绝启动，只让运营接口 503；可观测性建好后记一条错误日志）。 */
@@ -197,47 +197,21 @@ function parseOrigins(list, what) {
   }
   return out;
 }
-/** 运营网段的合理性（复核 RA10A-10）：前缀不短于 IPv4 /8、IPv6 /32，合计覆盖不超过一个 /8（/32）；生产形态不许回环、未指定与链路本地地址。 */
-const FORBIDDEN_V4 = [["127.0.0.0", 8], ["0.0.0.0", 8], ["169.254.0.0", 16]];
-const FORBIDDEN_V6 = [["::1", 128], ["::", 128], ["fe80::", 10]];
-/** 控制面（第 46 批）：运营接口由平台人员账号鉴权，不读名册；ops 段只取运维网段与部署标识。 */
+/** 控制面（第 46 批）：运营接口由平台人员账号鉴权，不读名册；ops 段只取部署标识（可选）。 */
 const cpRole = cfg.role === "control-plane";
 if (cfg.ops !== undefined) {
   if (!OPS_AUDIENCE[cfg.role]) fail(`${cfg.role} 没有运营接口，不要配置 ops`);
   const c = cfg.ops ?? {};
+  // D-218：取消 IP 白名单准入——老配置里的运维网段不拒绝启动，只提示已忽略（运营功能按账号 + 角色 / 名册 + 签名鉴权，不限来源）
+  if (c.allow_cidrs !== undefined) console.error("[cloud-serve] ops.allow_cidrs（运维网段）已废弃（D-218：取消 IP 白名单准入，运营接口按账号 + 角色 / 名册 + 签名鉴权、不限来源），已忽略");
   if (cpRole) {
-    for (const k of ["roster_file", "roster_keys_file", "min_roster_version", "password_login", "credentials_file"]) if (c[k] !== undefined) console.error(`[cloud-serve] ops.${k} 对控制面已废弃（第 46 批：运营人员改为控制台账号 + 角色 + 两步验证），已忽略`);
+    for (const k of ["roster_file", "roster_keys_file", "min_roster_version", "password_login", "credentials_file"]) if (c[k] !== undefined) console.error(`[cloud-serve] ops.${k} 对控制面已废弃（第 46 批：运营人员改为控制台账号 + 角色），已忽略`);
     if (c.deployment !== undefined && (typeof c.deployment !== "string" || !opsMod.OPS_DEPLOYMENT_RE.test(c.deployment))) fail("ops.deployment 须为部署标识（例如 prod）");
   } else {
     if (typeof c.roster_file !== "string" || !c.roster_file) fail("缺少 ops.roster_file（运营名册）");
     if (typeof c.deployment !== "string" || !opsMod.OPS_DEPLOYMENT_RE.test(c.deployment)) fail("缺少 ops.deployment（部署标识，例如 prod；名册与运营请求都绑定它）");
     if (c.min_roster_version !== undefined && !(Number.isSafeInteger(c.min_roster_version) && c.min_roster_version >= 1)) fail("ops.min_roster_version 须为正整数");
   }
-  if (!Array.isArray(c.allow_cidrs) || c.allow_cidrs.length === 0) fail("ops.allow_cidrs 须列出运维网段（堡垒机出口地址）");
-  opsSources = new BlockList();
-  const forbidden = new BlockList();
-  for (const [a, n] of FORBIDDEN_V4) forbidden.addSubnet(a, n, "ipv4");
-  for (const [a, n] of FORBIDDEN_V6) forbidden.addSubnet(a, n, "ipv6");
-  let cover4 = 0n;
-  let cover6 = 0n;
-  for (const x of c.allow_cidrs) {
-    const [addr, bits, extra] = String(x).split("/");
-    const v4 = isIPv4(addr ?? "");
-    if (!v4 && !isIPv6(addr ?? "")) fail(`ops.allow_cidrs 里的 ${x} 不是网段`);
-    const max = v4 ? 32 : 128;
-    const min = v4 ? 8 : 32;
-    const n = bits === undefined ? max : Number(bits);
-    // 不许“全部来源”及过宽的网段（含用两个 /1 拼出全部来源）：运营接口只对运维网段开放
-    if (extra !== undefined || !Number.isInteger(n) || n < min || n > max) fail(`ops.allow_cidrs 里的 ${x} 前缀长度不合法（${min}–${max}）`);
-    const one = new BlockList();
-    one.addSubnet(addr, n, v4 ? "ipv4" : "ipv6");
-    const hitsForbidden = forbidden.check(addr, v4 ? "ipv4" : "ipv6") || (v4 ? FORBIDDEN_V4 : FORBIDDEN_V6).some(([fa]) => one.check(fa, v4 ? "ipv4" : "ipv6"));
-    if (hitsForbidden && !insecure) fail(`ops.allow_cidrs 里的 ${x} 含回环、未指定或链路本地地址（前置代理、边车的地址都不得列入）`);
-    if (v4) cover4 += 1n << BigInt(32 - n);
-    else cover6 += 1n << BigInt(128 - n);
-    opsSources.addSubnet(addr, n, v4 ? "ipv4" : "ipv6");
-  }
-  if (cover4 > 1n << 24n || cover6 > 1n << 96n) fail("ops.allow_cidrs 合计覆盖过宽（IPv4 不超过一个 /8，IPv6 不超过一个 /32）");
   if (c.console_origins !== undefined) opsConsoleOrigins = parseOrigins(c.console_origins, "ops.console_origins");
   const opsDir = join(dataDir(cfg.role), "ops");
   mkdirSync(opsDir, { recursive: true, mode: 0o700 });
@@ -263,7 +237,7 @@ if (cfg.ops !== undefined && !cpRole) {
     onReject: (r) => appendFileSync(join(opsDir, "rejects.jsonl"), `${JSON.stringify(r)}\n`, { mode: 0o600 }),
   });
 }
-// ─── 统一控制台（第 46 批，控制面）：来源白名单、首个系统管理员、两步验证策略 ───
+// ─── 统一控制台（第 46 批，控制面）：来源白名单（只管 CORS，不是准入）、首个系统管理员 ───
 if (cfg.console !== undefined && !cpRole) fail("console 只用于控制面");
 if (cfg.dev_staff !== undefined || cfg.console?.dev_staff !== undefined) fail("dev_staff 只给开发与测试（进程内 devStaff），生产入口不接受：首个系统管理员请用 console.bootstrap_admin");
 const consoleCfg = cfg.console ?? {};
@@ -271,14 +245,18 @@ if (consoleCfg.origins !== undefined) {
   const extra = parseOrigins(consoleCfg.origins, "console.origins");
   opsConsoleOrigins = new Set([...(opsConsoleOrigins ?? []), ...extra]);
 }
-if (consoleCfg.staff_mfa !== undefined && consoleCfg.staff_mfa !== "required" && consoleCfg.staff_mfa !== "optional") fail("console.staff_mfa 须为 required 或 optional");
-if (consoleCfg.staff_mfa === "optional" && !insecure) console.error("[cloud-serve] console.staff_mfa = optional：平台人员可以不绑两步验证（只应在开发环境这样配）");
+// D-218：取消平台人员两步验证——老配置里的 staff_mfa 不拒绝启动，只提示已忽略
+if (consoleCfg.staff_mfa !== undefined) console.error("[cloud-serve] console.staff_mfa（平台人员两步验证）已废弃（D-218：平台人员登录只要账号密码，另有登录限流与锁定、危险操作密码复核），已忽略");
 if (consoleCfg.bootstrap_admin !== undefined && (typeof consoleCfg.bootstrap_admin?.email !== "string" || typeof consoleCfg.bootstrap_admin?.name !== "string")) fail("console.bootstrap_admin 须为 { email, name }");
 if (cfg.clients !== undefined && (typeof cfg.clients !== "object" || cfg.clients === null || (cfg.clients.min_version !== undefined && cfg.clients.min_version !== null && !/^\d{1,4}\.\d{1,4}\.\d{1,6}$/.test(String(cfg.clients.min_version))))) fail("clients.min_version 须为 x.y.z");
 /** 控制台跨源调用的路径（控制面）：账号、本人、本所、元信息与运营接口；设备签名接口、订阅、额度租约与健康检查不回 CORS。 */
 const CONSOLE_PATH_RE = cpRole ? /^\/v1\/(?:auth|me|firm|ops)(?:\/|$)|^\/v1\/meta$/ : opsMod.OPS_PATH_RE;
-/** 运营路径（原样与规范化后任一命中即算）只放行运维网段来的请求。 */
-const opsPathBlocked = (req) => {
+/**
+ * 运营功能没开（原样与规范化后任一路径命中运营路径即算）：控制面的 /v1/ops/* 一律交给服务（账号会话 + 角色鉴权）；
+ * 支持、中继、通知没配 ops 段、以及没有运营接口的角色，运营路径在入口即 404。D-218 起不看来源地址。
+ */
+const opsPathDisabled = (req) => {
+  if (cpRole || opsGuard) return false;
   const raw = String(req.url ?? "/").split("?")[0];
   let norm = raw;
   try {
@@ -286,19 +264,8 @@ const opsPathBlocked = (req) => {
   } catch {
     // 解析不了：按原样判
   }
-  if (!opsMod.OPS_PATH_RE.test(raw) && !opsMod.OPS_PATH_RE.test(norm)) return false;
-  return opsBlockedAddr(String(req.socket?.remoteAddress ?? ""));
+  return opsMod.OPS_PATH_RE.test(raw) || opsMod.OPS_PATH_RE.test(norm);
 };
-/** 来源地址不在运维网段（或没配运维网段）。 */
-function opsBlockedAddr(addr) {
-  if (!opsSources) return true;
-  let a = String(addr ?? "");
-  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(a);
-  if (mapped) a = mapped[1];
-  if (isIPv4(a)) return !opsSources.check(a, "ipv4");
-  if (isIPv6(a)) return !opsSources.check(a, "ipv6");
-  return true;
-}
 
 /** 对象存储配置（S3 兼容；每对象 SSE-KMS，kms_key_id 必填）：启动时列一次，连不上即拒绝启动。 */
 async function blobStoreFrom(bs, what, defaultPrefix) {
@@ -525,11 +492,9 @@ if (cfg.role === "cp-signer") {
     // 开通码 HMAC 的胡椒（复核 A-06/A-15）：与签名密钥分开，由 KMS 挂载；生产入口必填（按信封私钥派生会让信封密钥轮换时在途码全部失效）
     codePepper: Buffer.from(secretFile(cfg.code_pepper_file, "code_pepper_file", "hex32"), "hex"),
     auditLog: cpMod.createAuditLog({ file: join(dir, "audit.jsonl") }),
-    // 运营接口（第 46 批：平台人员会话 + 角色）：写操作照常进律所可见的运营审计流水（执行者为人员编号）；每个运营请求与人员登录另记内部访问审计
+    // 运营接口（第 46 批：平台人员会话 + 角色；D-218 起不限来源、不要两步验证）：写操作照常进律所可见的运营审计流水（执行者为人员编号）；
+    // 每个运营请求与人员登录另记内部访问审计
     opsAccessLog: (r) => opsMod.appendLineSynced(join(dir, "ops", "access.jsonl"), r),
-    // 运维网段（ops.allow_cidrs）：平台人员登录与 /v1/ops/* 只认这里来的；没配 ops = 平台人员不能登录（运营接口在入口即 404）
-    staffSourceAllowed: (addr) => !!opsSources && !opsBlockedAddr(addr),
-    staffMfa: consoleCfg.staff_mfa ?? "required",
     dataDir: dir,
     ...(consoleCfg.bootstrap_admin ? { bootstrapAdmin: { email: String(consoleCfg.bootstrap_admin.email), name: String(consoleCfg.bootstrap_admin.name) } } : {}),
     ...(cfg.clients?.min_version ? { clients: { min_version: String(cfg.clients.min_version) } } : {}),
@@ -787,8 +752,8 @@ for (const ev of ["uncaughtException", "unhandledRejection"]) {
 // 同一个请求处理函数挂到 HTTPS 服务上（服务模块不变；定时器随原服务对象的 close 事件清理）
 const handlers = svc.listeners("request");
 const handle = obs.wrap((req, res) => {
-  // 运营路径只对运维网段开放（A-10；堡垒机本身依赖云选型，D-106）：其他来源与未配置运营接口时一律 404，不进服务
-  if (opsPathBlocked(req)) {
+  // 运营功能没开（支持、中继、通知没配 ops 段，或该角色没有运营接口）：运营路径一律 404，不进服务。不按来源地址拦任何路径（D-218）
+  if (opsPathDisabled(req)) {
     res.writeHead(404, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
     res.end('{"error":"not_found"}');
     return;

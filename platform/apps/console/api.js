@@ -4,7 +4,7 @@
  * - 一套账号：律师、律所管理员、中软平台人员都用邮箱 + 密码登录 POST /v1/auth/login，得 kws1.… 会话令牌；
  *   令牌**只放 sessionStorage**（每个标签页一份，关掉即失效；绑定部署与控制面地址），每个请求 Authorization: Bearer；不用 Cookie；
  * - 401 session_*（失效、过期、未登录）→ onAuthLost 回登录页；
- *   401 reauth_required（危险操作要本会话 10 分钟内复核过）→ onReauth 弹复核框（密码 + 6 位码），复核成功后**自动重试原请求一次**；
+ *   401 reauth_required（危险操作要本会话 10 分钟内复核过）→ onReauth 弹复核框（密码），复核成功后**自动重试原请求一次**；
  *   426（client_outdated）→ onOutdated 显示升级提示；
  * - 错误归一为 ApiError {status, code, message}：控制面的 message 是可直接显示的中文；404 + not_found（或没有错误体）
  *   = 这条接口控制面还没有，记为 code "not_ready"，页面显示“接口未就绪”，**不造替代数据**；
@@ -27,13 +27,12 @@ const FALLBACK = {
   session_required: "请先登录",
   session_invalid: "登录已失效，请重新登录",
   session_expired: "登录已过期，请重新登录",
-  reauth_required: "这项操作需要先复核身份",
+  reauth_required: "这是敏感操作：请重新输入密码确认后再试",
+  reauth_invalid: "密码不正确",
   auth_invalid: "邮箱或密码不正确",
-  mfa_invalid: "验证码不正确",
   ops_permission_denied: "你的角色没有这项权限",
   permission_denied: "你的角色没有这项权限",
   firm_role_required: "只有本所管理员或合伙人能查看",
-  staff_network: "当前网络不在平台运营网段内：请在公司网络或堡垒机上登录",
   staff_client_forbidden: "平台人员账号只能在网页控制台登录",
   client_outdated: "版本过旧，请升级",
   rate_limited: "尝试过于频繁，请稍后再试",
@@ -235,7 +234,6 @@ const client = () => ({ platform: "web", version: CONSOLE_VERSION });
 export const auth = {
   meta: () => call("GET", "/v1/meta", undefined, { auth: false }),
   login: (email, password) => call("POST", "/v1/auth/login", { email, password, client: client() }, { auth: false }),
-  mfaVerify: (mfa_token, code) => call("POST", "/v1/auth/mfa/verify", { mfa_token, code }, { auth: false }),
   register: (b) => call("POST", "/v1/auth/register", { ...b, client: client() }, { auth: false }),
   resetRequest: (email) => call("POST", "/v1/auth/password-reset/request", { email }, { auth: false }),
   resetConfirm: (email, code, password) => call("POST", "/v1/auth/password-reset/confirm", { email, code, password }, { auth: false }),
@@ -244,10 +242,7 @@ export const auth = {
   password: (current, next) => post("/v1/auth/password", { current, next }),
   revokeSession: (sid) => post(`/v1/auth/sessions/${seg(sid)}/revoke`),
   unbindDevice: (id, password) => post(`/v1/auth/devices/${seg(id)}/unbind`, { password }),
-  totpSetup: () => post("/v1/auth/mfa/totp/setup", {}, { noReauth: true }),
-  totpEnable: (code) => post("/v1/auth/mfa/totp/enable", { code }, { noReauth: true }),
-  totpDisable: (password, code) => post("/v1/auth/mfa/totp/disable", { password, code }),
-  reauth: (password, code) => post("/v1/auth/reauth", code ? { password, code } : { password }, { noReauth: true }),
+  reauth: (password) => post("/v1/auth/reauth", { password }, { noReauth: true }),
 };
 
 /** 退出：吊销会话（尽力而为；失败也照常清掉本页凭据） */

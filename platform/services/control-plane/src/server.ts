@@ -58,8 +58,7 @@ import {
 } from "./accounts.ts";
 import { canonicalJson, verifyBytes, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
 import { DANGER_PERMISSIONS, permsOf, rolesProblem, rolesView, type CpPermission, type PlatformRole } from "./rbac.ts";
-import { compareVersion, isStaffId, MFA_PENDING_MS, MFA_TOKEN_MS, REAUTH_MS, SEMVER_RE, STAFF_SESSION_ABS_MS, STAFF_SESSION_IDLE_MS, staffView, type StaffMfaPolicy, type StaffRecord } from "./staff.ts";
-import { newRecoveryCodes, newTotpSecret, otpauthUri, recoveryMac, verifyTotp } from "./totp.ts";
+import { compareVersion, isStaffId, REAUTH_MS, SEMVER_RE, STAFF_SESSION_ABS_MS, STAFF_SESSION_IDLE_MS, staffView, type StaffRecord } from "./staff.ts";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { MIN_SEAT_TTL_SECONDS } from "@zr-legal/seat-token";
@@ -278,8 +277,8 @@ export interface ControlPlaneOptions {
   codePepper?: Uint8Array;
   /** 已废弃（第 46 批）：控制面运营接口改由平台人员会话鉴权，传了也不用（启动时提示一次）。support / relay / notify 仍用 ops-auth 守卫。 */
   opsGuard?: unknown;
-  /** 平台人员两步验证策略（console.staff_mfa）：required（生产缺省）| optional（开发）。 */
-  staffMfa?: StaffMfaPolicy;
+  /** 已废弃（第 53 批 D-218）：平台人员不再有两步验证，账号 + 密码即登录；传了也不用（启动时提示一次）。 */
+  staffMfa?: unknown;
   /** 首个系统管理员（console.bootstrap_admin，契约 §2.4）：没有有效系统管理员时建档并把设置码写到 <dataDir>/bootstrap-admin.txt。 */
   bootstrapAdmin?: { email: string; name: string };
   /** 控制面数据目录（引导文件 bootstrap-admin.txt 与找回请求 admin-recovery.request 的位置）。 */
@@ -288,8 +287,8 @@ export interface ControlPlaneOptions {
   adminRecoveryIntervalMs?: number;
   /** 开发与测试：直接建好可登录的平台人员（生产入口拒绝这一项）。 */
   devStaff?: { email: string; name: string; roles: PlatformRole[]; password: string }[];
-  /** 平台人员登录与运营接口的来源判定（生产入口按 ops.allow_cidrs）；不给 = 不限来源（开发与测试）。 */
-  staffSourceAllowed?: (remoteAddress: string) => boolean;
+  /** 已废弃（第 53 批 D-218）：平台人员登录与运营接口不再按来源 IP 限制（任意公网 IP 可访问，靠账号、角色、限流与锁定）；传了也不用。 */
+  staffSourceAllowed?: unknown;
   /** 客户端最低版本（clients.min_version）：首次启动导入状态，之后以状态里的为准（运营在控制台改）。 */
   clients?: { min_version?: string | null };
   /** 运营访问审计（每个通过鉴权的运营请求：先记“已请求”、记不进去即不执行，执行后补记结果）；缺省不记（开发与测试）。 */
@@ -322,6 +321,8 @@ export interface CpOpsAccessRecord {
   result: string;
   /** 凭据方式（key = 私钥签名，password = 第 45 批密码会话，session = 第 46 批平台人员会话）与会话编号前 12 位。 */
   via?: "key" | "password" | "session";
+  /** 平台人员登录的来源地址（第 53 批 D-218：登录不再限来源 IP，留痕供排查异常登录）。 */
+  source?: string;
   session?: string;
   /** 平台人员邮箱（第 46 批：operator 为 stf_… 编号）。 */
   email?: string;
@@ -433,8 +434,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const clientsDefault = { min_version: typeof o.clients?.min_version === "string" && SEMVER_RE.test(o.clients.min_version) ? o.clients.min_version : null };
   if (o.clients?.min_version != null && clientsDefault.min_version === null) throw new Error("clients.min_version 须为 x.y.z");
   let clients = { ...clientsDefault };
-  const staffMfa: StaffMfaPolicy = o.staffMfa ?? "required";
-  if (staffMfa !== "required" && staffMfa !== "optional") throw new Error("staffMfa 须为 required 或 optional");
+  if (o.staffMfa !== undefined) console.warn("[control-plane] staffMfa 已废弃（第 53 批取消平台人员两步验证）：已忽略");
+  if (o.staffSourceAllowed !== undefined) console.warn("[control-plane] staffSourceAllowed 已废弃（第 53 批取消来源 IP 限制）：已忽略");
   if (o.opsGuard !== undefined) console.warn("[control-plane] opsGuard 已不用于控制面（第 46 批改为平台人员账号）：请改用 devStaff / bootstrapAdmin");
   const emailTaken = (e: string) => accountByEmail.has(e) || staffByEmail.has(e);
   const catalogDefault = catalogFromConfig(o.billing);
@@ -542,9 +543,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       accounts.set(a.aid, a);
       indexAccount(a);
     }
-    for (const x of st.sessions ?? []) sessions.set(x.sid, x);
+    // 第 53 批（D-218）之前的会话可能带 restricted（“先绑定两步验证”的受限会话）：两步验证已取消，读回即去掉
+    for (const x of st.sessions ?? []) {
+      delete (x as { restricted?: unknown }).restricted;
+      sessions.set(x.sid, x);
+    }
     // 第 46 批之前的状态没有人员与客户端版本：人员为空（由引导建首个系统管理员）、最低版本取配置
+    // 第 53 批之前的人员记录带 mfa（TOTP 密钥与恢复码摘要）：两步验证已取消，读回即丢弃，下次落盘不再保存
     for (const x of st.staff ?? []) {
+      delete (x as { mfa?: unknown }).mfa;
       staff.set(x.aid, x);
       staffByEmail.set(x.email, x.aid);
     }
@@ -673,8 +680,6 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   if (codePepper.byteLength !== 32) throw new Error("开通码胡椒须为 32 字节");
   // 账号一次性码（设置密码、重置、邮件验证码）的 HMAC 密钥：由胡椒派生（与开通码 HMAC 分开用途）
   const accountPepper = Buffer.from(hkdfSync("sha256", codePepper, Buffer.alloc(0), "kwl-account-code/1", 32));
-  // 平台人员恢复码的 HMAC 密钥（第 46 批）：同样由胡椒派生、用途分开
-  const recoveryPepper = Buffer.from(hkdfSync("sha256", codePepper, Buffer.alloc(0), "kwl-staff-recovery/1", 32));
   /** 律所标识 = 租户编号去掉 ten_ 前缀（与内核 identity.ts 的 ten_<律所标识> 对应）；不合规的租户不能发开通码。 */
   const firmSlugOf = (tid: string): string | null => (/^ten_[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(tid) ? tid.slice(4) : null);
   const newRecordId = (prefix: string) => `${prefix}_${randomBytes(12).toString("base64url")}`;
@@ -1300,7 +1305,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     alerts.unshift({ id: newId("alr"), at: iso(), acked_at: null, acked_by: null, ...a });
     if (alerts.length > 500) alerts.length = 500;
   };
-  const newSession = (a: { aid: string }, kind: SessionRecord["kind"], deviceId: string | null, client: unknown, extra: { restricted?: "mfa_enroll" | null } = {}): { token: string; rec: SessionRecord } => {
+  const newSession = (a: { aid: string }, kind: SessionRecord["kind"], deviceId: string | null, client: unknown): { token: string; rec: SessionRecord } => {
     const { sid, secret, token } = newSessionToken();
     const t0 = now();
     // 同一账号的会话至多 20 个（最旧的先失效）
@@ -1309,7 +1314,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // 同一台设备只留一个有效桌面会话（重新登录即替换）
     if (deviceId) for (const x of mine) if (x.device_id === deviceId && x.kind === "desktop") Object.assign(x, { revoked_at: iso(t0), revoked_reason: "replaced" });
     const st = isStaffId(a.aid);
-    const rec: SessionRecord = { sid, aid: a.aid, secret_hash: sha256Hex(secret), kind, device_id: deviceId, created_at: iso(t0), last_seen_at: iso(t0), idle_expires_at: iso(t0 + (st ? STAFF_SESSION_IDLE_MS : SESSION_IDLE_MS[kind])), abs_expires_at: iso(t0 + (st ? STAFF_SESSION_ABS_MS : SESSION_ABS_MS[kind])), revoked_at: null, revoked_reason: null, client: clientInfo(client), ...(st ? { restricted: extra.restricted ?? null, reauth_until: null } : {}) };
+    const rec: SessionRecord = { sid, aid: a.aid, secret_hash: sha256Hex(secret), kind, device_id: deviceId, created_at: iso(t0), last_seen_at: iso(t0), idle_expires_at: iso(t0 + (st ? STAFF_SESSION_IDLE_MS : SESSION_IDLE_MS[kind])), abs_expires_at: iso(t0 + (st ? STAFF_SESSION_ABS_MS : SESSION_ABS_MS[kind])), revoked_at: null, revoked_reason: null, client: clientInfo(client), ...(st ? { reauth_until: null } : {}) };
     sessions.set(sid, rec);
     // 人员会话与设备无关：不让网关订阅版本前进
     if (!st) feedVersion += 1;
@@ -1418,7 +1423,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     ok: true,
     kind: "member" as const,
     session_token: token,
-    session: { sid: x.sid, kind: x.kind, idle_expires_at: x.idle_expires_at, restricted: null },
+    session: { sid: x.sid, kind: x.kind, idle_expires_at: x.idle_expires_at },
     account: accountView(a, { org: orgOf(a.tid) }),
     onboarding: onb,
   });
@@ -1806,8 +1811,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const none = () => null;
     const read = (action: string, run: () => unknown, perm: CpPermission = "tenant.read"): OpsSpec => ({ perm, action, tid: none, target: none, run });
     // ─── 平台人员与角色（第 46 批，契约 §3.4）：人员管理要 staff.manage，写操作要求复核 ───
-    if (method === "GET" && p === "/v1/ops/roles") return { perm: null, action: "roles.read", tid: none, target: none, run: () => ({ roles: rolesView(), mfa_policy: staffMfa }) };
-    if (method === "GET" && p === "/v1/ops/staff") return read("staff.list", () => ({ staff: [...staff.values()].sort((x, y) => x.created_at.localeCompare(y.created_at)).map(staffRow), mfa_policy: staffMfa }), "staff.manage");
+    if (method === "GET" && p === "/v1/ops/roles") return { perm: null, action: "roles.read", tid: none, target: none, run: () => ({ roles: rolesView() }) };
+    if (method === "GET" && p === "/v1/ops/staff") return read("staff.list", () => ({ staff: [...staff.values()].sort((x, y) => x.created_at.localeCompare(y.created_at)).map(staffRow) }), "staff.manage");
     if (method === "POST" && p === "/v1/ops/staff")
       return {
         perm: "staff.manage",
@@ -1860,12 +1865,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         });
       return ws((x, b, who) => {
         if (x.aid === who.operator) throw new CpError(409, "cannot_reset_self", "不能重置自己：请另一位系统管理员操作（自己改密码在“我的 → 安全”）");
-        if (b.reset_mfa !== undefined && typeof b.reset_mfa !== "boolean") throw new CpError(400, "reset_mfa_invalid", "reset_mfa 须为 true 或 false");
-        if (b.reset_mfa === true) x.mfa = { totp: null, pending: null, recovery: [] };
+        // 第 53 批起没有两步验证：旧控制台带来的 reset_mfa 忽略
         x.failed = { count: 0, first_at: null, locked_until: null };
         const n = revokeSessions((y) => y.aid === x.aid, "staff_reset");
         const c = issueAccountCode(x, x.pw ? "reset" : "setup", 24 * 3600_000, who.operator);
-        return { ok: true, setup_code: formatOneTimeCode(c.code), expires_at: c.expires_at, mfa_reset: b.reset_mfa === true, sessions_revoked: n, staff: staffRow(x) };
+        return { ok: true, setup_code: formatOneTimeCode(c.code), expires_at: c.expires_at, sessions_revoked: n, staff: staffRow(x) };
       });
     }
     // ─── 总览 ───
@@ -1951,7 +1955,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           return { ok: true, plan: planView(next), default_plan: catalog.default_plan };
         },
       };
-    const settingsView = () => ({ ...catalog.settings, mail: { configured: !!o.mailer, from: o.mailer?.from ?? null }, staff_mfa: staffMfa, clients: { min_version: clients.min_version } });
+    const settingsView = () => ({ ...catalog.settings, mail: { configured: !!o.mailer, from: o.mailer?.from ?? null }, clients: { min_version: clients.min_version } });
     if (method === "GET" && p === "/v1/ops/settings") return read("settings.read", settingsView);
     if (method === "PUT" && p === "/v1/ops/settings")
       return {
@@ -1960,8 +1964,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         tid: none,
         target: none,
         run: (b) => {
-          // staff_mfa 只读（部署配置 console.staff_mfa）；clients.min_version 可改（x.y.z 或 null）
-          if ("staff_mfa" in b && b.staff_mfa !== staffMfa) throw new CpError(400, "staff_mfa_readonly", "两步验证策略由部署配置决定（console.staff_mfa），不能在控制台改");
+          // clients.min_version 可改（x.y.z 或 null）；第 53 批起没有两步验证策略，旧控制台带来的 staff_mfa 忽略
           let mv = clients.min_version;
           if ("clients" in b) {
             const c = (b.clients && typeof b.clients === "object" ? b.clients : {}) as Record<string, unknown>;
@@ -2264,7 +2267,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       return read("system.read", () => {
         const all = [...staff.values()];
         // 第 46 批：控制面不再读运营名册（名册只给 support / relay / notify）；“系统”页显示人员概况
-        return { deployment: o.opsInfo?.deployment ?? null, server_version: o.serverVersion ?? null, started_at: startedAt, usage_book: { rows_loaded: book.size, load_errors: book.loadErrors }, roster: null, staff: { total: all.length, active: all.filter((x) => x.status === "active").length, sysadmins: all.filter((x) => x.status === "active" && x.roles.includes("sysadmin")).length, mfa_enabled: all.filter((x) => x.mfa.totp).length, mfa_policy: staffMfa }, clients: { min_version: clients.min_version }, client_versions: cpMetrics().client_versions, quota_counters: { ...quotaCounts } };
+        return { deployment: o.opsInfo?.deployment ?? null, server_version: o.serverVersion ?? null, started_at: startedAt, usage_book: { rows_loaded: book.size, load_errors: book.loadErrors }, roster: null, staff: { total: all.length, active: all.filter((x) => x.status === "active").length, sysadmins: all.filter((x) => x.status === "active" && x.roles.includes("sysadmin")).length }, clients: { min_version: clients.min_version }, client_versions: cpMetrics().client_versions, quota_counters: { ...quotaCounts } };
       }, "system.read");
     // ─── 客户（律所） ───
     if (method === "POST" && p === "/v1/ops/tenants")
@@ -2456,8 +2459,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
   // ─── 第 46 批：平台人员会话（契约 §2）；运营接口鉴权 = Bearer 会话 → 人员 → 角色权限 → 危险操作复核 → 先记访问审计再执行 ───
   /** 平台人员的内部访问审计（中软内部，不进律所流水）：不记密码、验证码与令牌。 */
-  const staffAccess = (st: { aid: string; email: string } | null, action: string, result: string, sid?: string, target: string | null = null) =>
-    opsAccess({ at: iso(), action, operator: st?.aid ?? "-", ...(st ? { email: st.email } : {}), op_key: "session", roster_version: 0, tid: null, target, result, via: "session", ...(sid ? { session: sid.slice(0, 12) } : {}) });
+  const staffAccess = (st: { aid: string; email: string } | null, action: string, result: string, sid?: string, target: string | null = null, source?: string) =>
+    opsAccess({ at: iso(), action, operator: st?.aid ?? "-", ...(st ? { email: st.email } : {}), op_key: "session", roster_version: 0, tid: null, target, result, via: "session", ...(sid ? { session: sid.slice(0, 12) } : {}), ...(source ? { source } : {}) });
   const staffAccessQuiet = (...a: Parameters<typeof staffAccess>) => {
     try {
       staffAccess(...a);
@@ -2487,11 +2490,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     return { s: x, a: null, st };
   };
-  const staffNetworkOk = (req: IncomingMessage): boolean => !o.staffSourceAllowed || o.staffSourceAllowed(sourceOf(req));
-  const staffRow = (x: StaffRecord) => ({ ...staffView(x, staffMfa), locked: locked(x, now()) > 0, sessions_active: liveSessionsOf(x.aid).length });
+  const staffRow = (x: StaffRecord) => ({ ...staffView(x), locked: locked(x, now()) > 0, sessions_active: liveSessionsOf(x.aid).length });
   const activeSysadmins = (exceptAid?: string) => [...staff.values()].filter((x) => x.status === "active" && x.roles.includes("sysadmin") && x.aid !== exceptAid);
   const newStaffRecord = (x: { email: string; name: string; roles: PlatformRole[]; by: string; pw?: ReturnType<typeof hashPassword> | null }): StaffRecord => {
-    const rec: StaffRecord = { aid: newId("stf"), email: x.email, name: x.name.trim(), roles: [...x.roles], status: "active", disabled_reason: null, pw: x.pw ?? null, pw_changed_at: x.pw ? iso() : null, created_at: iso(), created_by: x.by, last_login_at: null, failed: { count: 0, first_at: null, locked_until: null }, mfa: { totp: null, pending: null, recovery: [] } };
+    const rec: StaffRecord = { aid: newId("stf"), email: x.email, name: x.name.trim(), roles: [...x.roles], status: "active", disabled_reason: null, pw: x.pw ?? null, pw_changed_at: x.pw ? iso() : null, created_at: iso(), created_by: x.by, last_login_at: null, failed: { count: 0, first_at: null, locked_until: null } };
     staff.set(rec.aid, rec);
     staffByEmail.set(rec.email, rec.aid);
     return rec;
@@ -2501,73 +2503,43 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (!x) throw new CpError(404, "staff_unknown", "没有这位平台人员");
     return x;
   };
-  /** 第二因素：6 位动态码（同一步不得重用）或 12 位恢复码（用过即删）。 */
-  const secondFactorOk = (st: StaffRecord, code: unknown): boolean => {
-    if (typeof code !== "string") return false;
-    const c = code.replace(/[\s-]/g, "").toUpperCase();
-    if (/^\d{6}$/.test(c)) {
-      if (!st.mfa.totp) return false;
-      const step = verifyTotp(st.mfa.totp.secret, c, now(), st.mfa.totp.last_step);
-      if (step === null) return false;
-      st.mfa.totp.last_step = step;
-      return true;
-    }
-    const rc = normalizeOneTimeCode(c);
-    if (!rc || rc.length !== 12) return false;
-    const mac = recoveryMac(recoveryPepper, st.aid, rc);
-    const i = st.mfa.recovery.findIndex((h) => sameHexStr(h, mac));
-    if (i < 0) return false;
-    st.mfa.recovery.splice(i, 1);
-    return true;
-  };
-  const staffSessionView = (x: SessionRecord, cur: string | null) => ({ ...sessionView(x, cur), restricted: x.restricted ?? null, reauth_until: x.reauth_until ?? null });
+  const staffSessionView = (x: SessionRecord, cur: string | null) => ({ ...sessionView(x, cur), reauth_until: x.reauth_until ?? null });
   const staffAuthResult = (st: StaffRecord, token: string, x: SessionRecord) => ({
     ok: true,
     kind: "staff" as const,
     session_token: token,
-    session: { sid: x.sid, kind: x.kind, idle_expires_at: x.idle_expires_at, restricted: x.restricted ?? null },
-    account: staffView(st, staffMfa),
+    session: { sid: x.sid, kind: x.kind, idle_expires_at: x.idle_expires_at },
+    account: staffView(st),
   });
-  /** 密码 + 第二因素都过了（或未绑定）：发会话。访问审计写不进去即不发。 */
-  const finishStaffLogin = (res: ServerResponse, st: StaffRecord, client: unknown, restricted: "mfa_enroll" | null) => {
-    st.failed = { count: 0, first_at: null, locked_until: null };
-    st.last_login_at = iso();
-    const { token, rec } = newSession(st, "web", null, client, { restricted });
-    try {
-      staffAccess(st, "staff.login", restricted ? "ok:restricted" : "ok", rec.sid);
-    } catch {
-      sessions.delete(rec.sid);
-      throw new CpError(503, "ops_access_log_unavailable", "访问审计写不进去，暂时不能登录");
-    }
-    return send(res, 200, staffAuthResult(st, token, rec));
-  };
-  /** 密码对了之后换会话的一次性票据（只存摘要；5 分钟；至多试 5 次；只在内存——重启即需重新输入密码）。 */
-  const mfaTickets = new Map<string, { aid: string; exp: number; tries: number; client: unknown }>();
-  const staffLogin = (req: IncomingMessage, res: ServerResponse, st: StaffRecord, b: Record<string, unknown>) => {
+  /**
+   * 平台人员登录（第 53 批 D-218）：邮箱 + 密码正确即发会话——不再有两步验证、受限会话，也不按来源 IP 限制；
+   * 仍有：按来源每分钟限流（authRoute）、10 次错 / 15 分钟锁 15 分钟、停用即拒、只许网页、访问审计写不进去即不发会话。
+   */
+  const staffLogin = (res: ServerResponse, st: StaffRecord, b: Record<string, unknown>, src: string) => {
     const lk = locked(st, now());
-    if (lk) throw new CpError(423, "account_locked", `密码错误次数过多，请 ${Math.ceil(lk / 60)} 分钟后再试`, { retry_after_s: lk });
+    if (lk) {
+      staffAccessQuiet(st, "staff.login", "rejected:account_locked", undefined, null, src);
+      throw new CpError(423, "account_locked", `密码错误次数过多，请 ${Math.ceil(lk / 60)} 分钟后再试`, { retry_after_s: lk });
+    }
     if (!verifyPassword(b.password, st.pw)) {
       noteFailure(st, now());
       persistNow();
-      staffAccessQuiet(st, "staff.login", "rejected:auth_invalid");
+      staffAccessQuiet(st, "staff.login", "rejected:auth_invalid", undefined, null, src);
       throw new CpError(401, "auth_invalid", st.pw ? "邮箱或密码不正确" : "这个账号还没有设置密码：请用系统管理员给你的设置码设置密码");
     }
     // 人员专属的拒绝都在密码核对之后（不让人据此判断某个邮箱是不是平台人员）
     if (st.status !== "active") throw new CpError(403, "account_disabled", "账号已停用，请联系系统管理员");
     if (clientInfo(b.client).platform !== "web") throw new CpError(403, "staff_client_forbidden", "平台人员账号只能在网页控制台登录，不能登录桌面客户端");
-    if (!staffNetworkOk(req)) {
-      staffAccessQuiet(st, "staff.login", "rejected:staff_network");
-      throw new CpError(403, "staff_network", "平台人员只能从运维网段登录：请经堡垒机打开控制台");
+    st.failed = { count: 0, first_at: null, locked_until: null };
+    st.last_login_at = iso();
+    const { token, rec } = newSession(st, "web", null, b.client);
+    try {
+      staffAccess(st, "staff.login", "ok", rec.sid, null, src);
+    } catch {
+      sessions.delete(rec.sid);
+      throw new CpError(503, "ops_access_log_unavailable", "访问审计写不进去，暂时不能登录");
     }
-    if (st.mfa.totp) {
-      // 失败计数不在这里清零：要等第二因素也过了（否则知道密码的人可以无限试动态码）
-      const t0 = now();
-      for (const [k, v] of mfaTickets) if (v.exp <= t0) mfaTickets.delete(k);
-      const secret = randomBytes(32).toString("base64url");
-      mfaTickets.set(sha256Hex(secret), { aid: st.aid, exp: t0 + MFA_TOKEN_MS, tries: 0, client: b.client });
-      return sendRaw(res, 200, { ok: true, mfa_required: true, mfa_token: `kwm1.${secret}`, methods: ["totp", "recovery"], expires_at: iso(t0 + MFA_TOKEN_MS) });
-    }
-    return finishStaffLogin(res, st, b.client, staffMfa === "required" ? "mfa_enroll" : null);
+    return send(res, 200, staffAuthResult(st, token, rec));
   };
   const OPS_LOGIN_GONE = new Set(["/v1/ops/login", "/v1/ops/logout", "/v1/ops/password"]);
   const opsRoute = (req: IncomingMessage, res: ServerResponse, method: string, path: string, p: string, raw: string): void => {
@@ -2576,7 +2548,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const pathOnly = qi < 0 ? path : path.slice(0, qi);
     if (pathOnly !== p || (qi >= 0 && method !== "GET")) throw new CpError(404, "not_found", "没有这条路由");
     if (OPS_LOGIN_GONE.has(p)) throw new CpError(410, "ops_login_removed", "运营登录已并入统一账号：请在控制台用邮箱和密码登录");
-    if (!staffNetworkOk(req)) throw new CpError(403, "staff_network", "平台运营功能只对运维网段开放：请经堡垒机访问");
+    // 第 53 批（D-218）：不按来源 IP 限制——鉴权只看平台人员会话与角色权限
     let cur: ReturnType<typeof anySession>;
     try {
       cur = anySession(req);
@@ -2585,10 +2557,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     if (!cur.st) throw new CpError(403, "staff_required", "这是平台运营功能，律师账号不能使用");
     const { s, st } = cur;
-    if (s.restricted === "mfa_enroll") throw new CpError(403, "mfa_enroll_required", "请先绑定两步验证（控制台“我的 → 安全”）");
     const perms = permsOf(st.roles);
     const who: StaffWho = { operator: st.aid, email: st.email, perms, sid: s.sid };
-    if (method === "GET" && p === "/v1/ops/me") return send(res, 200, { ok: true, kind: "staff", account: staffView(st, staffMfa), session: staffSessionView(s, s.sid), restricted: null });
+    if (method === "GET" && p === "/v1/ops/me") return send(res, 200, { ok: true, kind: "staff", account: staffView(st), session: staffSessionView(s, s.sid) });
     const spec = opsSpec(method, p, new URLSearchParams(qi < 0 ? "" : path.slice(qi + 1)));
     if (!spec) throw new CpError(404, "not_found", "没有这条路由");
     const base = { action: spec.action, operator: st.aid, email: st.email, op_key: "session", roster_version: 0, via: "session" as const, session: s.sid.slice(0, 12) };
@@ -2603,7 +2574,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // 先鉴权（权限、复核）后解析请求体（复核 RA10B-21）
     if (spec.perm !== null && !perms.includes(spec.perm)) reject("perm_denied", new CpError(403, "perm_denied", "没有这项权限：请联系系统管理员调整你的角色", { need: spec.perm }));
     const danger = spec.danger ?? (method !== "GET" && spec.perm !== null && DANGER_PERMISSIONS.has(spec.perm));
-    if (danger && !(s.reauth_until && Date.parse(s.reauth_until) > now())) reject("reauth_required", new CpError(401, "reauth_required", "这是敏感操作：请重新输入密码和两步验证码确认后再试"));
+    if (danger && !(s.reauth_until && Date.parse(s.reauth_until) > now())) reject("reauth_required", new CpError(401, "reauth_required", "这是敏感操作：请重新输入密码确认后再试"));
     const b = method === "GET" ? {} : parseJson(raw);
     const rec = { ...base, tid: spec.tid(b), target: spec.target(b) };
     // 先记“已请求”：记不进去即不执行（读操作只有这一处审计）
@@ -2649,10 +2620,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (!clients.min_version || c.platform === "web" || !c.version) return;
     if (compareVersion(c.version, clients.min_version) < 0) throw new CpError(426, "client_outdated", `客户端版本过旧，请升级到 ${clients.min_version} 或以上`, { min_version: clients.min_version });
   };
-  /** 平台人员的 /v1/auth/*（会话已核验）：本人、退出、改密码、吊销会话、两步验证、复核。受限会话只能看本人、绑定、退出。 */
+  /** 平台人员的 /v1/auth/*（会话已核验）：本人、退出、改密码、吊销会话、复核（只要密码）。 */
   const staffAuthRoute = (res: ServerResponse, method: string, p: string, raw: string, s: SessionRecord, st: StaffRecord): void => {
-    const RESTRICTED_OK = new Set(["GET /v1/auth/me", "POST /v1/auth/logout", "POST /v1/auth/mfa/totp/setup", "POST /v1/auth/mfa/totp/enable"]);
-    if (s.restricted === "mfa_enroll" && !RESTRICTED_OK.has(`${method} ${p}`)) throw new CpError(403, "mfa_enroll_required", "请先绑定两步验证（控制台“我的 → 安全”）");
     const pwOk = (v: unknown): boolean => {
       const lk = locked(st, now());
       if (lk) throw new CpError(423, "account_locked", `尝试次数过多，请 ${Math.ceil(lk / 60)} 分钟后再试`, { retry_after_s: lk });
@@ -2664,7 +2633,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       staffAccessQuiet(st, `staff.${p.slice("/v1/auth/".length).replace(/\//g, "_")}`, `rejected:${code}`, s.sid);
       throw new CpError(401, code, message);
     };
-    if (method === "GET" && p === "/v1/auth/me") return send(res, 200, { ok: true, kind: "staff", account: staffView(st, staffMfa), session: staffSessionView(s, s.sid), sessions: liveSessionsOf(st.aid).map((x) => staffSessionView(x, s.sid)), restricted: s.restricted ?? null });
+    if (method === "GET" && p === "/v1/auth/me") return send(res, 200, { ok: true, kind: "staff", account: staffView(st), session: staffSessionView(s, s.sid), sessions: liveSessionsOf(st.aid).map((x) => staffSessionView(x, s.sid)) });
     if (method === "POST" && p === "/v1/auth/logout") {
       revokeSessions((x) => x.sid === s.sid, "logout");
       staffAccessQuiet(st, "staff.logout", "ok", s.sid);
@@ -2688,38 +2657,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       revokeSessions((y) => y.sid === x.sid, "user_revoked");
       return send(res, 200, { ok: true });
     }
-    if (method === "POST" && p === "/v1/auth/mfa/totp/setup") {
-      if (st.mfa.totp) throw new CpError(409, "mfa_already_enabled", "已绑定两步验证：要换手机请先解绑，或请系统管理员重置");
-      const secret = newTotpSecret();
-      st.mfa.pending = { secret, created_at: iso() };
-      return send(res, 200, { ok: true, secret, otpauth_uri: otpauthUri(secret, st.email), expires_at: iso(now() + MFA_PENDING_MS) });
-    }
-    if (method === "POST" && p === "/v1/auth/mfa/totp/enable") {
-      const b = parseJson(raw);
-      const pend = st.mfa.pending;
-      if (!pend || Date.parse(pend.created_at) + MFA_PENDING_MS <= now()) throw new CpError(409, "mfa_setup_required", "请先生成绑定二维码（15 分钟内有效）");
-      const step = verifyTotp(pend.secret, typeof b.code === "string" ? b.code.replace(/\s/g, "") : b.code, now(), null);
-      if (step === null) failed("mfa_invalid", "验证码不正确：请核对手机时间，输入当前显示的 6 位码");
-      const codes = newRecoveryCodes();
-      st.mfa = { totp: { secret: pend.secret, enabled_at: iso(), last_step: step }, pending: null, recovery: codes.map((c) => recoveryMac(recoveryPepper, st.aid, c)) };
-      // 绑定成功：本会话解除受限，并视为刚复核过（密码与动态码都刚验过）
-      s.restricted = null;
-      s.reauth_until = iso(now() + REAUTH_MS);
-      staffAccessQuiet(st, "staff.mfa_enable", "ok", s.sid);
-      return send(res, 200, { ok: true, recovery_codes: codes.map(formatOneTimeCode) });
-    }
-    if (method === "POST" && p === "/v1/auth/mfa/totp/disable") {
-      if (staffMfa === "required") throw new CpError(403, "mfa_required_by_policy", "按部署策略，平台人员必须启用两步验证，不能解绑（换手机请系统管理员重置）");
-      const b = parseJson(raw);
-      if (!st.mfa.totp) throw new CpError(409, "mfa_not_enabled", "还没有绑定两步验证");
-      if (!pwOk(b.password) || !secondFactorOk(st, b.code)) failed("auth_invalid", "密码或验证码不正确");
-      st.mfa = { totp: null, pending: null, recovery: [] };
-      staffAccessQuiet(st, "staff.mfa_disable", "ok", s.sid);
-      return send(res, 200, { ok: true });
-    }
     if (method === "POST" && p === "/v1/auth/reauth") {
       const b = parseJson(raw);
-      if (!pwOk(b.password) || (st.mfa.totp !== null && !secondFactorOk(st, b.code))) failed("reauth_invalid", st.mfa.totp ? "密码或验证码不正确" : "密码不正确");
+      if (!pwOk(b.password)) failed("reauth_invalid", "密码不正确");
       st.failed = { count: 0, first_at: null, locked_until: null };
       s.reauth_until = iso(now() + REAUTH_MS);
       staffAccessQuiet(st, "staff.reauth", "ok", s.sid);
@@ -2800,7 +2740,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       minVersionGate(b.client);
       const email = normalizeEmail(b.email);
       const stf = email ? staff.get(staffByEmail.get(email) ?? "") : undefined;
-      if (stf) return staffLogin(req, res, stf, b);
+      if (stf) return staffLogin(res, stf, b, src);
       const a = email ? accounts.get(accountByEmail.get(email) ?? "") : undefined;
       if (a) {
         const lk = locked(a, now());
@@ -2874,35 +2814,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       accountMark(res, a as AccountRecord, hit.purpose === "setup" ? "account.password_setup" : "account.password_reset");
       return send(res, 200, { ok: true });
     }
-    // 平台人员第二步：密码对了之后用一次性票据 + 动态码（或恢复码）换会话
-    if (method === "POST" && p === "/v1/auth/mfa/verify") {
-      if (!authAllowed(src, "login", 20)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
-      const b = parseJson(raw);
-      const m = typeof b.mfa_token === "string" ? /^kwm1\.([A-Za-z0-9_-]{43})$/.exec(b.mfa_token) : null;
-      const key = m ? sha256Hex(m[1]!) : "";
-      const tk = m ? mfaTickets.get(key) : undefined;
-      const st = tk ? staff.get(tk.aid) : undefined;
-      if (!tk || tk.exp <= now() || !st || st.status !== "active") {
-        if (tk) mfaTickets.delete(key);
-        throw new CpError(401, "mfa_token_invalid", "登录已超时，请重新输入邮箱和密码");
-      }
-      const lk = locked(st, now());
-      if (lk) {
-        mfaTickets.delete(key);
-        throw new CpError(423, "account_locked", `尝试次数过多，请 ${Math.ceil(lk / 60)} 分钟后再试`, { retry_after_s: lk });
-      }
-      if (!staffNetworkOk(req)) throw new CpError(403, "staff_network", "平台人员只能从运维网段登录：请经堡垒机打开控制台");
-      if (!secondFactorOk(st, b.code)) {
-        noteFailure(st, now());
-        tk.tries += 1;
-        if (tk.tries >= 5) mfaTickets.delete(key);
-        persistNow();
-        staffAccessQuiet(st, "staff.login_mfa", "rejected:mfa_invalid");
-        throw new CpError(401, "mfa_invalid", "验证码不正确：请输入手机上的 6 位动态码，或一个 12 位恢复码");
-      }
-      mfaTickets.delete(key);
-      return finishStaffLogin(res, st, tk.client, null);
-    }
+    // 第 53 批（D-218）取消平台人员两步验证：旧控制台的二次验证、绑定、解绑接口一律 410（不要求会话，免得旧页面卡在验证步）
+    if (p.startsWith("/v1/auth/mfa/")) throw new CpError(410, "mfa_removed", "两步验证已取消：用邮箱和密码登录即可");
     // 以下要求会话（成员账号或平台人员）
     let cur: ReturnType<typeof anySession>;
     try {
@@ -2913,7 +2826,6 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (cur.st) return staffAuthRoute(res, method, p, raw, cur.s, cur.st);
     const s = cur.s;
     const a = cur.a!;
-    if (p.startsWith("/v1/auth/mfa/")) throw new CpError(403, "mfa_staff_only", "两步验证目前只对平台人员开放");
     if (method === "POST" && p === "/v1/auth/reauth") {
       const b = parseJson(raw);
       if (!verifyPassword(b.password, a.pw)) {
@@ -2995,7 +2907,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (p === "/v1/ops" || p.startsWith("/v1/ops/")) return opsRoute(req, res, method, path, p, raw);
     if (p.startsWith("/v1/auth/")) return authRoute(req, res, method, path, p, raw);
     // 第 46 批：版本与策略（无鉴权）；成员网页接口
-    if (method === "GET" && p === "/v1/meta") return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration, staff_mfa: staffMfa });
+    if (method === "GET" && p === "/v1/meta") return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration });
     if (p.startsWith("/v1/me/") || p.startsWith("/v1/firm/")) return memberRoute(req, res, method, p, url, raw);
 
     // ─── 开通：律所根公钥入组（G0：创始设备持根私钥签名证明；生产为开通流程） ───
@@ -3870,7 +3782,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       staffAccessQuiet(x, "staff.bootstrap", "ok");
     }
   }
-  /** 找回请求：<dataDir>/admin-recovery.request（内容：系统管理员邮箱）→ 清两步验证、吊销会话、作废密码、发新设置码。 */
+  /** 找回请求：<dataDir>/admin-recovery.request（内容：系统管理员邮箱）→ 吊销会话、作废密码、解除锁定、发新设置码。 */
   const adminTick = (): void => {
     if (!recoveryFile || !existsSync(recoveryFile)) return;
     let email: string | null = null;
@@ -3886,7 +3798,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       staffAccessQuiet(null, "staff.recovery", "rejected:not_sysadmin");
       return;
     }
-    Object.assign(x, { status: "active", disabled_reason: null, pw: null, pw_changed_at: iso(), failed: { count: 0, first_at: null, locked_until: null }, mfa: { totp: null, pending: null, recovery: [] } });
+    Object.assign(x, { status: "active", disabled_reason: null, pw: null, pw_changed_at: iso(), failed: { count: 0, first_at: null, locked_until: null } });
     revokeSessions((y) => y.aid === x.aid, "admin_recovery");
     const c = issueAccountCode(x, "setup", 24 * 3600_000, "recovery");
     persistNow();

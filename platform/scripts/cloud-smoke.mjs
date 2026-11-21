@@ -2,7 +2,8 @@
 /**
  * 云端生产入口冒烟（第 46 批；云端仓库 CI 与部署前自检用）：用 stack-local（生产入口 cloud-serve + cloud-init-secrets，同一流程）
  * 在回环地址拉起签名服务、控制面、网关、检索与控制台，再逐项核对：
- *   健康检查 → /v1/meta 接口版本 → 首个系统管理员经设置码设好密码 → 统一账号登录 → 人员身份 → 平台运营接口 → 网关就绪 → 控制台页面与配置。
+ *   健康检查 → /v1/meta 接口版本 → 首个系统管理员经设置码设好密码 → 统一账号登录（账号密码即发会话，D-218 无两步验证）
+ *   → 登录入口不按来源拦 → 人员身份 → 平台运营接口 → 网关就绪 → 控制台页面与配置。
  * 不需要真实上游密钥：给网关一把形如 sk- 的假密钥、上游指向 .invalid（冒烟不发模型请求）。
  *
  *   node scripts/cloud-smoke.mjs [--base-port 18600] [--keep <目录>]
@@ -78,7 +79,8 @@ await check("控制面健康检查", async () => {
 await check("接口版本 /v1/meta", async () => {
   const m = await json(await fetch(`${cp}/v1/meta`));
   if (m.api !== "kwl-cp/2") throw new Error(`api = ${m.api}`);
-  return `${m.api}，注册策略 ${m.registration}，人员两步验证 ${m.staff_mfa}`;
+  if (m.staff_mfa !== undefined) throw new Error(`/v1/meta 仍返回 staff_mfa = ${m.staff_mfa}（D-218 已取消平台人员两步验证）`);
+  return `${m.api}，注册策略 ${m.registration}`;
 });
 await check("首个系统管理员（引导文件 → 设置码设密码）", async () => {
   if (!login.email || !login.password) throw new Error("console-login.txt 缺邮箱或密码");
@@ -87,10 +89,19 @@ await check("首个系统管理员（引导文件 → 设置码设密码）", as
 await check("统一账号登录（网页）", async () => {
   const r = await fetch(`${cp}/v1/auth/login`, { method: "POST", headers: { "content-type": "application/json", origin: `http://127.0.0.1:${P.console}` }, body: JSON.stringify({ email: login.email, password: login.password, client: { platform: "web", version: "1.0.0" } }) });
   const b = await json(r);
-  if (r.status !== 200 || !b.session_token) throw new Error(`HTTP ${r.status} ${b.error?.code ?? ""}`);
+  if (r.status !== 200 || !b.session_token) throw new Error(`HTTP ${r.status} ${b.error?.code ?? ""}${b.mfa_required ? "（仍要两步验证：D-218 已取消）" : ""}`);
   if (r.headers.get("access-control-allow-origin") !== `http://127.0.0.1:${P.console}`) throw new Error("没有给控制台来源回 CORS");
   token = b.session_token;
   return `会话 ${b.session.kind}${b.session.restricted ? `（受限：${b.session.restricted}）` : ""}`;
+});
+// D-218：取消 IP 白名单准入——任意来源都能打开登录入口（入口与服务都不按来源地址拦：没有 404 / 403 staff_network）；
+// CORS 仍只回 console.origins 列出的来源。冒烟只在回环上跑，这里用未列出的网页来源 + 空请求体（不计入登录失败锁定）核对
+await check("登录入口不按来源拦（未列出的来源也能到达，但不回 CORS）", async () => {
+  const r = await fetch(`${cp}/v1/auth/login`, { method: "POST", headers: { "content-type": "application/json", origin: "https://elsewhere.invalid" }, body: "{}" });
+  const b = await r.json().catch(() => ({}));
+  if (r.status === 404 || r.status === 403 || b.error?.code === "staff_network") throw new Error(`HTTP ${r.status} ${b.error?.code ?? ""}（登录入口仍按来源拦）`);
+  if (r.headers.get("access-control-allow-origin")) throw new Error("给未列出的来源回了 CORS");
+  return `HTTP ${r.status}${b.error?.code ? ` ${b.error.code}` : ""}`;
 });
 await check("人员身份 /v1/auth/me", async () => {
   const b = await json(await fetch(`${cp}/v1/auth/me`, { headers: { authorization: `Bearer ${token}` } }));

@@ -14,4 +14,3 @@ export * from "./accounts.ts";
 export * from "./usage-ledger.ts";
 export * from "./rbac.ts";
 export * from "./staff.ts";
-export * from "./totp.ts";

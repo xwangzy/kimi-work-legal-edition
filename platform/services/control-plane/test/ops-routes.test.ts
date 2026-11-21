@@ -15,7 +15,6 @@ import { call as rawCall, devStaffOf, STAFF_PW, staffEmail, staffToken } from ".
 const PEOPLE = { op_0001: ["operator"], op_0002: ["viewer"], op_0003: ["issuer"], op_0004: ["operator"] } as const;
 const access: CpOpsAccessRecord[] = [];
 let accessBroken = false;
-let netOk = true;
 const auditLog = createAuditLog();
 let cp: ControlPlane;
 let base = "";
@@ -27,9 +26,9 @@ before(async () => {
     keys: devControlPlaneKeys(),
     serviceSecret: "ops-route-test-service-secret",
     auditLog,
-    staffMfa: "optional",
     devStaff: devStaffOf(Object.fromEntries(Object.entries(PEOPLE).map(([k, v]) => [k, [...v]]))),
-    staffSourceAllowed: () => netOk,
+    // 第 53 批（D-218）起来源 IP 判定已废弃：传了“谁都不许”的旧判定也不再生效（只提示一次）
+    staffSourceAllowed: () => false,
     opsAccessLog: (r) => {
       if (accessBroken) throw new Error("disk full");
       access.push(r);
@@ -163,7 +162,7 @@ test("运营只作废创始开通码、代设上限只能调低（复核 RA10B-0
   assert.ok(n1 >= 10 && n1 <= 20, `被拒记录应限量（得到 ${n1}）`);
 });
 
-test("路径按原样匹配：点段的运营请求一律 404；查询串只许 GET；旧运营登录 410；运维网段外：运营接口与人员登录 403，律师与本所接口不受影响", async () => {
+test("路径按原样匹配：点段的运营请求一律 404；查询串只许 GET；旧运营登录 410；不按来源 IP 限制（旧的来源判定传了也不生效）；未登录 401、越权 403、律师 403", async () => {
   const rawPath = "/v1/x/../ops/tenants/ten_alpha";
   const dot = await new Promise<number>((done, no) => {
     const req = request(`${base}${rawPath}`, { method: "GET", path: rawPath, headers: { authorization: `Bearer ${tokens.get("op_0002")}` } }, (res) => {
@@ -179,20 +178,20 @@ test("路径按原样匹配：点段的运营请求一律 404；查询串只许 
   for (const p of ["/v1/ops/login", "/v1/ops/logout", "/v1/ops/password"]) assert.equal((await rawCall(base, "POST", p, { login: "x", password: "y" })).json.error.code, "ops_login_removed", p);
   const me = await call("op_0002", "GET", "/v1/ops/me");
   assert.deepEqual([me.json.kind, me.json.account.email, me.json.account.roles], ["staff", staffEmail("op_0002"), ["viewer"]]);
-  netOk = false;
-  try {
-    const off = await call("op_0002", "GET", "/v1/ops/tenants");
-    assert.deepEqual([off.status, off.json.error.code], [403, "staff_network"]);
-    const login = await rawCall(base, "POST", "/v1/auth/login", { email: staffEmail("op_0002"), password: STAFF_PW, client: { platform: "web" } });
-    assert.deepEqual([login.status, login.json.error.code], [403, "staff_network"]);
-    const wrong = await rawCall(base, "POST", "/v1/auth/login", { email: staffEmail("op_0002"), password: "Wrong2026password", client: { platform: "web" } });
-    assert.deepEqual([wrong.status, wrong.json.error.code], [401, "auth_invalid"], "密码不对时不透露是不是平台人员");
-    // 本人接口、律师登录不受运维网段限制
-    assert.equal((await call("op_0002", "GET", "/v1/auth/me")).status, 200);
-    assert.equal((await rawCall(base, "POST", "/v1/auth/login", { email: "boss@lawyer.cn", password: "Lawyer2026secure", client: { platform: "web" } })).status, 200);
-  } finally {
-    netOk = true;
-  }
+  // 不按来源 IP 限制（D-218）：上面传了“谁都不许”的旧来源判定，运营接口与平台人员登录照样可用；鉴权只看会话与角色
+  assert.equal((await call("op_0002", "GET", "/v1/ops/tenants")).status, 200);
+  const login = await rawCall(base, "POST", "/v1/auth/login", { email: staffEmail("op_0002"), password: STAFF_PW, client: { platform: "web" } });
+  assert.deepEqual([login.status, typeof login.json.session_token, "mfa_required" in login.json], [200, "string", false]);
+  const wrong = await rawCall(base, "POST", "/v1/auth/login", { email: staffEmail("op_0002"), password: "Wrong2026password", client: { platform: "web" } });
+  assert.deepEqual([wrong.status, wrong.json.error.code], [401, "auth_invalid"], "密码不对时不透露是不是平台人员");
+  // 未登录：运营接口 401；只读角色做写操作：403
+  assert.equal((await rawCall(base, "GET", "/v1/ops/tenants")).status, 401);
+  assert.equal((await call("op_0002", "POST", "/v1/ops/tenants/ten_alpha/renew", { days: 1 })).status, 403);
+  // 律师账号不能用运营接口
+  const lw = await rawCall(base, "POST", "/v1/auth/login", { email: "boss@lawyer.cn", password: "Lawyer2026secure", client: { platform: "web" } });
+  assert.equal(lw.status, 200);
+  const lwOps = await rawCall(base, "GET", "/v1/ops/tenants", undefined, { authorization: `Bearer ${lw.json.session_token}` });
+  assert.deepEqual([lwOps.status, lwOps.json.error.code], [403, "staff_required"]);
   // 没给 devStaff / 引导的控制面：没有人员，运营接口只能 401（没有会话）
   const bare = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: "x".repeat(32), opsGuard: {} });
   await new Promise<void>((r) => bare.server.listen(0, "127.0.0.1", () => r()));

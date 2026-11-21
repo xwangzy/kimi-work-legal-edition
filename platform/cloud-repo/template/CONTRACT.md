@@ -7,14 +7,14 @@
 
 | 项 | 现值 | 说明 |
 |---|---|---|
-| 接口版本 | `kwl-cp/2` | `GET /v1/meta` 返回 `{api, min_client_version, registration, staff_mfa}` |
+| 接口版本 | `kwl-cp/2` | `GET /v1/meta` 返回 `{api, min_client_version, registration}`（第 53 批 D-218 起不再有 `staff_mfa`：平台人员两步验证已取消；客户端从未读这一项） |
 | 客户端最低版本 | 控制面配置 `clients.min_version`（缺省不限） | 低于它的客户端登录、注册、取席位令牌得 426 `client_outdated`，客户端提示“请升级到 x.y.z 或以上” |
 | 共享契约包 | `packages/firm-trust`、`packages/seat-token`、`packages/keys`、`packages/design-tokens` | 两端共用同一份源码（来源 monorepo，见 `SOURCE.json`）；CI 的 `npm run verify:source` 确认这里没被单独改过 |
 
 **变更规则**
 1. 只加不改：新增接口、新增可选字段、新增错误码可以随时发；客户端对不认识的字段一律忽略。
 2. 改名、删字段、改语义、改签名格式 = 破坏性变更：先发能同时处理新旧两种的客户端，等 `clients.min_version` 抬到那一版之后，再在云端去掉旧的。
-3. 给客户端新增一个要调用的控制面路径，要同时改客户端的通道白名单（`egress-gate/src/cp-relay.ts`）与出站登记表并发新客户端；只给网页控制台用的接口（`/v1/ops/*`、`/v1/firm/*`、`/v1/me/*`、`/v1/auth/mfa/*`、`/v1/auth/reauth`）不受此限。
+3. 给客户端新增一个要调用的控制面路径，要同时改客户端的通道白名单（`egress-gate/src/cp-relay.ts`）与出站登记表并发新客户端；只给网页控制台用的接口（`/v1/ops/*`、`/v1/firm/*`、`/v1/me/*`、`/v1/auth/reauth`）不受此限；`/v1/auth/mfa/*` 自 D-218 起回 410 `mfa_removed`。这些接口对任意来源 IP 开放，由账号会话与角色权限鉴权（不再有运维网段）。
 
 ## 2. 客户端会调用的控制面路径（白名单，方法 GET/POST/PUT/DELETE）
 

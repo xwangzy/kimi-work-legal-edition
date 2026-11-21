@@ -11,7 +11,7 @@ import { call, devStaffOf, staffEmail, staffToken } from "./staff-fixture.ts";
 let cp: ControlPlane;
 let base = "";
 before(async () => {
-  cp = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: "ops-overview-perms-secret-000", staffMfa: "optional", devStaff: devStaffOf({ op_0101: ["finance"], op_0102: ["issuer"], op_0103: ["support"], op_0104: ["operator"] }), opsAccessLog: () => {} });
+  cp = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: "ops-overview-perms-secret-000", devStaff: devStaffOf({ op_0101: ["finance"], op_0102: ["issuer"], op_0103: ["support"], op_0104: ["operator"] }), opsAccessLog: () => {} });
   await new Promise<void>((r) => cp.server.listen(0, "127.0.0.1", () => r()));
   base = `http://127.0.0.1:${(cp.server.address() as AddressInfo).port}`;
 });

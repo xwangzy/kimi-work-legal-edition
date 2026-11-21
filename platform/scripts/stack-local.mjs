@@ -6,7 +6,7 @@
  * - 密钥：`cloud-init-secrets.mjs`（与生产同一工具）；
  * - 控制台账号（第 46 批，契约 §2.4，与生产同一流程）：控制面配置 console.bootstrap_admin，首次启动把系统管理员的设置码写进
  *   <data_dir>/control-plane/bootstrap-admin.txt；本脚本读出设置码、经 POST /v1/auth/password-reset/confirm 设好密码，
- *   把登录信息写进 <目录>/console-login.txt（0600）。本机栈 console.staff_mfa = optional（生产缺省 required）。不再用 ops-cli 名册与密码；
+ *   把登录信息写进 <目录>/console-login.txt（0600）。平台人员登录只要账号密码（D-218 取消两步验证），不再用 ops-cli 名册与密码；
  * - 服务：`cloud-serve.mjs --config`（cp-signer、control-plane、gateway；`insecure_loopback_for_test` 只许 127.0.0.1——这是与生产唯一的差别：没有 TLS）；
  * - 上游密钥：只经文件描述符 3 交给网关进程（`upstream.api_key_file: /dev/fd/3`），不写盘、不进命令行与环境变量；
  *   来源依次为 `--key-file`、环境变量 KWL_MOONSHOT_API_KEY、macOS 钥匙串（KWL_EVAL_KEYCHAIN_ACCOUNT / _SERVICE，缺省 kwl-demo / kwl-demo-maas-key）；
@@ -109,9 +109,9 @@ const cfgs = {
     signer: useTls ? { url: `https://127.0.0.1:${P.signer}`, client_cert_file: join(tlsDir, "cp-api-client.crt"), client_key_file: join(tlsDir, "cp-api-client.key"), ca_file: join(tlsDir, "ca.crt") } : { url: `http://127.0.0.1:${P.signer}` },
     state_key_file: sec("cp-state.key"),
     code_pepper_file: sec("cp-code-pepper.key"),
-    // 平台运营接口只许运维网段：生产入口拒绝把回环地址列进 allow_cidrs（非测试形态），所以 --tls 演练不开运营接口（平台运营页在回环形态验）
-    ...(useTls ? {} : { ops: { deployment: "dev", allow_cidrs: ["127.0.0.1/32"] } }),
-    console: { origins: [consoleOrigin], bootstrap_admin: ADMIN, staff_mfa: "optional" },
+    // 平台运营接口（/v1/ops/*）按平台人员账号会话 + 角色鉴权、不限来源（D-218 取消运维网段），回环与 --tls 两种形态都开；ops 段只给“系统”页的部署标识
+    ops: { deployment: "dev" },
+    console: { origins: [consoleOrigin], bootstrap_admin: ADMIN },
     routing: { bootstrap: { provider: { id: "maas", label: "中软 MaaS", vendor: "csi-maas", base_url: upstream }, models: { "legal/k3": model, "legal/k2.6": model } }, public_key_file: pub("routing-public.txt") },
   },
   gw: {
@@ -248,6 +248,6 @@ const envLines = [
 ];
 writeFileSync(join(dir, "client.env"), `${envLines.join("\n")}\n`, { mode: 0o600 });
 console.log(`[stack] 云端已就绪：签名服务 ${P.signer}、控制面 ${P.cp}、网关 ${P.gw}、检索 ${P.search}、控制台 http://127.0.0.1:${P.console}/`);
-console.log(`[stack] 控制台：系统管理员 ${ADMIN.email}（${adminNote}；两步验证本机栈可选）`);
+console.log(`[stack] 控制台：系统管理员 ${ADMIN.email}（${adminNote}）`);
 console.log(`[stack] 控制台账号：${loginFile}`);
 console.log(`[stack] 桌面端环境变量：${join(dir, "client.env")}`);

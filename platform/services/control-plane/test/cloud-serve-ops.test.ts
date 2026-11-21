@@ -2,7 +2,9 @@
  * v9.3 A-10 运营按人鉴权，经生产入口（scripts/cloud-serve.mjs）与最小运营命令行（scripts/ops-cli.mjs）端到端：
  * 安全管理员生成名册签名密钥、运营人员各自生成密钥 → 名册登记（只收公钥、核对指纹）→ 运营用自己的私钥开通租户、发开通码 →
  * 律所可见的流水记到运营编号；吊销即时生效、回滚旧名册运营接口 503（重启后仍不认，但业务照常启动）；
- * 共享运营口令配置、过宽网段、名册签名公钥表里放私钥一律拒绝启动；运维网段以外的来源在入口 404；通知服务经入口挂运营守卫。
+ * 共享运营口令配置、名册签名公钥表里放私钥一律拒绝启动；通知服务经入口挂运营守卫。
+ * D-218（取消 IP 白名单准入与平台人员两步验证）：带 ops.allow_cidrs / console.staff_mfa 的老配置照常启动、只提示“已废弃、已忽略”；
+ * 入口不再按来源地址拦——来源不在老网段里也能到达控制面运营接口；控制面没配 ops 段时 /v1/ops/* 照样交给服务；支持、中继、通知没配 ops 段时运营路径仍 404（功能没开）。
  */
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
@@ -145,18 +147,21 @@ test("运营鉴权端到端：命令行名册与私钥（support / relay / notif
     code_pepper_file: once(`pep-${dataDir}.key`),
     ...(ops === undefined ? {} : { ops }),
   });
-  const ops = { deployment: "e2e", roster_file: roster, roster_keys_file: keysFile, allow_cidrs: ["127.0.0.1/32"] };
+  const ops = { deployment: "e2e", roster_file: roster, roster_keys_file: keysFile };
+  /** D-218 之前的老配置：运维网段（故意不含本机回环来源 127.0.0.1）——现在只提示已忽略、不再按它拦。 */
+  const OLD_CIDRS = ["10.20.0.0/24", "fd00::/32"];
   /** 通知服务（第 46 批起运营名册与私钥签名只给 support / relay / notify）。 */
   const nfCfg = (dataDir: string, o: unknown, cpUrl = "http://127.0.0.1:1") => ({ role: "notify", listen: { host: "127.0.0.1", port: 0 }, insecure_loopback_for_test: true, service_secret_file: secret, control_plane: { url: cpUrl, keys_file: cpKeysFile }, seat_keys_file: seatKeysFile, data_dir: join(dir, dataDir), ops: o });
-  // 拒绝启动：共享运营口令配置、没有运营接口的角色配 ops、过宽网段、缺部署标识、名册签名公钥表里放私钥（复核 RA10A-01、RA10A-10）
+  // 拒绝启动：共享运营口令配置、没有运营接口的角色配 ops、缺部署标识、名册签名公钥表里放私钥（复核 RA10A-01）。网段校验（RA10A-10）随 D-218 取消
   assert.match(runOnce({ ...cpCfg("r1", ops), ops_secret_file: write("ops-secret", randomBytes(32).toString("hex")) }).stderr, /ops_secret_file 已停用/);
   assert.match(runOnce({ role: "dist", listen: { host: "127.0.0.1", port: 0 }, insecure_loopback_for_test: true, ops }).stderr, /dist 没有运营接口/);
-  for (const bad of [["0.0.0.0/0"], ["0.0.0.0/1", "128.0.0.0/1"], ["10.0.0.0/7"]]) assert.match(runOnce(cpCfg("r2", { ...ops, allow_cidrs: bad })).stderr, /前缀长度不合法/, bad.join(","));
-  assert.match(runOnce(cpCfg("r2", { ...ops, allow_cidrs: ["10.0.0.0/8", "11.0.0.0/8"] })).stderr, /合计覆盖过宽/);
-  assert.match(runOnce(cpCfg("r3", { ...ops, allow_cidrs: [] })).stderr, /运维网段/);
-  // 生产形态（TLS，不是回环测试例外）：回环、链路本地地址不能列为运维网段（前置代理、边车多在这些地址上）
+  // 老配置里的网段不论写成什么都不再是拒绝启动的理由：生产形态（TLS）下照样走到证书读取，失败原因是证书、不是网段
   const tlsCfg = (allow: string[]) => ({ ...cpCfg("r6", { ...ops, allow_cidrs: allow }), insecure_loopback_for_test: undefined, listen: { host: "0.0.0.0", port: 0 }, tls: { cert_file: write("fake.crt", "x"), key_file: write("fake.key", "x") } });
-  for (const bad of [["127.0.0.1/32"], ["169.254.1.0/24"], ["10.20.0.0/24", "::1"]]) assert.match(runOnce(tlsCfg(bad)).stderr, /含回环、未指定或链路本地地址/, bad.join(","));
+  for (const old of [["0.0.0.0/0"], ["127.0.0.1/32"], []]) {
+    const r = runOnce(tlsCfg(old));
+    assert.match(r.stderr, /ops\.allow_cidrs（运维网段）已废弃.*已忽略/, old.join(","));
+    assert.doesNotMatch(r.stderr, /前缀长度不合法|合计覆盖过宽|含回环、未指定或链路本地地址|须列出运维网段/, old.join(","));
+  }
   assert.match(runOnce(nfCfg("r3", { ...ops, deployment: undefined })).stderr, /ops\.deployment/);
   const privKeys = write("priv-keys.json", JSON.stringify({ "sec-1": readFileSync(join(dir, "sec", "sec-1.key.pem"), "utf8") }));
   assert.match(runOnce(nfCfg("r4", { ...ops, roster_keys_file: privKeys })).stderr, /不是公钥/);
@@ -164,11 +169,14 @@ test("运营鉴权端到端：命令行名册与私钥（support / relay / notif
   assert.match(runOnce({ ...cpCfg("r7", ops), dev_staff: [{ email: "a@b.cn" }] }).stderr, /dev_staff 只给开发与测试/);
 
   // ─── 控制面（第 46 批）：ops 里的名册与密码登录项只提示“已废弃”；首个系统管理员由 console.bootstrap_admin 引导，运营接口用控制台账号 ───
+  // D-218：老配置带运维网段（不含本机来源）与 staff_mfa = required——照常启动、只提示已忽略；下面本机来源的登录与运营请求都照常进控制面
   const ADMIN = "admin@csi.example.cn";
-  const cpOps = { ...ops, password_login: true };
-  const cp = await start({ ...cpCfg("cp", cpOps), console: { bootstrap_admin: { email: ADMIN, name: "系统管理员" }, staff_mfa: "optional" } });
+  const cpOps = { ...ops, password_login: true, allow_cidrs: OLD_CIDRS };
+  const cp = await start({ ...cpCfg("cp", cpOps), console: { bootstrap_admin: { email: ADMIN, name: "系统管理员" }, staff_mfa: "required" } });
   assert.match(cp.out(), /ops\.roster_file 对控制面已废弃/);
   assert.match(cp.out(), /ops\.password_login 对控制面已废弃/);
+  assert.match(cp.out(), /ops\.allow_cidrs（运维网段）已废弃.*已忽略/);
+  assert.match(cp.out(), /console\.staff_mfa（平台人员两步验证）已废弃.*已忽略/);
   const url = `http://127.0.0.1:${cp.port}`;
   const cpDir = join(dir, "cp", "control-plane");
   const boot = readFileSync(join(cpDir, "bootstrap-admin.txt"), "utf8");
@@ -181,6 +189,7 @@ test("运营鉴权端到端：命令行名册与私钥（support / relay / notif
   assert.equal((await j("POST", "/v1/auth/password-reset/confirm", { email: ADMIN, code: /setup_code: (\S+)/.exec(boot)![1], password: "Console2026secure" })).status, 200);
   const login = await j("POST", "/v1/auth/login", { email: ADMIN, password: "Console2026secure", client: { platform: "web" } });
   assert.equal(login.status, 200, JSON.stringify(login.json));
+  assert.equal(login.json.mfa_required, undefined, "账号密码对即发会话（D-218 取消两步验证）");
   const tok = login.json.session_token as string;
   const created = await j("POST", "/v1/ops/tenants", { tid: "ten_e2e", edition: "team", seats: 3, name: "端到端律师事务所" }, tok);
   assert.deepEqual([created.status, created.json.error?.code], [403, "perm_denied"], "系统管理员没有开通权限（职责分离）");
@@ -202,7 +211,7 @@ test("运营鉴权端到端：命令行名册与私钥（support / relay / notif
   assert.equal(cli("call", "--url", url, "--deployment", "e2e", "--aud", "billing", "--id", "op_0002", "--kid", "k1", "--key", join(dir, "op_0002", "op_0002.k1.key.pem"), "--path", "/v1/ops/tenants/ten_e2e").status, 2, "--aud 写错直接报错");
   assert.equal(cli("call", "--url", url, "--deployment", "e2e", "--aud", "control-plane", "--id", "op_0002", "--kid", "k1", "--key", join(dir, "op_0002", "op_0002.k1.key.pem"), "--method", "DELETE", "--path", "/v1/ops/x", "--body", "{}").status, 2, "DELETE 不带请求体");
   assert.equal(cli("password", "set", "--credentials", join(dir, "creds.json"), "--id", "op_0001", "--login", "zhang").status, 2, "password 子命令已停用");
-  // 允许网段里发点段与绝对形式：入口认出是运营路径、放行，控制面按原样路径不认（404）
+  // 点段与绝对形式：入口不再拦（不论来源），交给控制面，控制面按原样路径不认（404）
   for (const p of ["/v1/x/../ops/tenants/ten_e2e", `http://127.0.0.1:${cp.port}/v1/ops/tenants/ten_e2e`]) assert.equal((await rawGet(cp.port, p, { authorization: `Bearer ${opTok}` })).status, 404, p);
 
   // ─── 通知服务经生产入口挂运营守卫（复核 RA10B-12）：名册 + 私钥签名照旧 ───
@@ -241,17 +250,26 @@ test("运营鉴权端到端：命令行名册与私钥（support / relay / notif
   assert.ok(errLog && lines(join(dir, "r5", "obs", errLog)).some((r) => r.kind === "ops_roster" && r.code === "roster_signature_invalid"));
   await stop(t5.proc);
 
-  // ─── 运维网段以外的来源：运营路径在入口就 404（不进服务）、平台人员登录 403；律师与其他路径照常 ───
-  const far = await start(cpCfg("far", { ...ops, allow_cidrs: ["10.20.0.0/24", "fd00::/32"] }));
-  const r = await rawGet(far.port, "/v1/ops/tenants/ten_e2e", { authorization: `Bearer ${opTok}` });
-  assert.deepEqual([r.status, r.body], [404, '{"error":"not_found"}'], "入口的 404（不是控制面的“租户未开通”）");
-  assert.equal(lines(join(dir, "far", "control-plane", "ops", "access.jsonl")).length, 0, "没有进到控制面的运营路由");
-  assert.equal((await rawGet(far.port, `http://127.0.0.1:${far.port}/v1/ops/tenants/ten_e2e`)).body, '{"error":"not_found"}', "绝对形式同样在入口挡下");
-  assert.equal((await rawGet(far.port, "/healthz")).status, 200);
-  assert.equal((await rawGet(far.port, "/v1/meta")).status, 200, "元信息不受运维网段限制");
-  // 没有配置 ops 的控制面：运营路径一律 404
+  // ─── D-218：入口不按来源地址拦。本机来源（127.0.0.1）不在老配置的运维网段里，运营接口照样进控制面（按会话 + 角色鉴权） ───
+  const r = await rawGet(cp.port, "/v1/ops/tenants/ten_e2e", { authorization: `Bearer ${opTok}` });
+  assert.equal(r.status, 200, r.body);
+  assert.notEqual(r.body, '{"error":"not_found"}', "不是入口的 404");
+  assert.ok(lines(join(cpDir, "ops", "access.jsonl")).length > 0, "进到了控制面的运营路由（有访问审计）");
+  const noSession = await rawGet(cp.port, "/v1/ops/tenants/ten_e2e");
+  assert.equal(noSession.status, 401, "没有会话：控制面的 401，不是入口的 404");
+  assert.equal((await rawGet(cp.port, "/healthz")).status, 200);
+  const meta = await rawGet(cp.port, "/v1/meta");
+  assert.equal(meta.status, 200);
+  assert.equal(JSON.parse(meta.body).staff_mfa, undefined, "/v1/meta 不再返回 staff_mfa");
+  // 没有配置 ops 的控制面：/v1/ops/* 照样交给服务（平台运营只靠账号 + 角色，不需要 ops 段）
   const plain = await start(cpCfg("plain", undefined));
-  assert.equal((await rawGet(plain.port, "/v1/ops/tenants/ten_e2e")).status, 404);
+  const pr = await rawGet(plain.port, "/v1/ops/tenants/ten_e2e");
+  assert.equal(pr.status, 401, `没有会话：控制面的 401（不是入口 404）：${pr.body}`);
+  await stop(plain.proc);
+  // 通知服务没配 ops 段：运营功能没开，运营路径在入口 404（不是按来源地址）
+  const nfOff = await start(nfCfg("nf-off", undefined, url));
+  assert.deepEqual([(await rawGet(nfOff.port, "/v1/notify/ops/tenants/ten_e2e")).status, (await rawGet(nfOff.port, "/v1/notify/ops/tenants/ten_e2e")).body], [404, '{"error":"not_found"}']);
+  await stop(nfOff.proc);
 
   // ─── 名册签名密钥轮换（复核 RA10B-04）：新公钥合并进公钥表 → 用旧公钥核验现有名册、新密钥签发 → 服务（重启后读新公钥表）接受，换版记录里有一条公钥表变化 ───
   const sec2 = cli("roster-keygen", "--kid", "sec-2", "--out", join(dir, "sec2"), "--keys-file", keysFile);
@@ -261,7 +279,9 @@ test("运营鉴权端到端：命令行名册与私钥（support / relay / notif
   assert.equal(rot.status, 0, rot.stderr);
   assert.equal(JSON.parse(readFileSync(roster, "utf8")).kid, "sec-2");
   assert.equal(cli("roster", "show", "--roster", roster, "--keys", keysFile).status, 0);
-  const rotated = await start(nfCfg("nf", ops, url));
+  // 带老运维网段（不含本机来源）的通知服务：照常启动、只提示已忽略；本机来源的签名请求照样交给运营守卫
+  const rotated = await start(nfCfg("nf", { ...ops, allow_cidrs: OLD_CIDRS }, url));
+  assert.match(rotated.out(), /ops\.allow_cidrs（运维网段）已废弃.*已忽略/);
   assert.equal(call("op_0003", "DELETE", "/v1/notify/ops/tenants/ten_e2e", undefined, { aud: "notify", at: `http://127.0.0.1:${rotated.port}` }).json.status, 200);
   assert.deepEqual(lines(join(dir, "nf", "notify", "ops", "roster-history.jsonl")).map((r) => r.event).slice(-2), ["roster_keys_changed", "roster_accepted"]);
 });

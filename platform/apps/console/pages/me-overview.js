@@ -104,12 +104,10 @@ function devicesPanel(me) {
   );
 }
 
-/** 安全提示：只根据已知事实（两步验证、其他登录、久未报到的电脑、未设密码），不编造 */
+/** 安全提示：只根据已知事实（其他登录、久未报到的电脑、未设密码），不编造 */
 export function securityTips(me) {
   const a = me.account ?? {};
   const tips = [];
-  if (a.mfa && !a.mfa.enabled) tips.push(["warn", "还没有启用两步验证", "启用后，别人即使知道密码也登录不了。", "me/security"]);
-  if (a.mfa?.enabled && Number(a.mfa.recovery_left) <= 2) tips.push(["warn", `恢复码只剩 ${fmt.int(a.mfa.recovery_left)} 个`, "用完后手机丢失将无法登录，请重新生成。", "me/security"]);
   if (a.has_password === false) tips.push(["warn", "账号还没有设置密码", "请用管理员给的设置码设置密码。", null]);
   const others = (me.sessions ?? []).filter((s) => !s.current).length;
   if (others > 0) tips.push(["info", `另有 ${others} 处登录`, "不认识的登录请立即下线并修改密码。", "me/security"]);

@@ -3,10 +3,11 @@
 # 有域名：
 #   sudo bash deploy/scripts/install.sh --cp-origin https://cp.kwl.example.com:8443 [--console-domain console.kwl.example.com] [--no-console]
 # 只有公网 IPv4、没有域名（部署手册第 4 节“纯公网 IP”）：
-#   sudo bash deploy/scripts/install.sh --public-ip 203.0.113.10 --ops-cidr <你的公网出口>/32 [--tls acme|demo-ca|manual]
+#   sudo bash deploy/scripts/install.sh --public-ip 203.0.113.10 [--tls acme|demo-ca|manual]
 #        [--acme-server <ACME 目录地址>] [--acme-ca-file <PEM>] [--trust-ca-file <PEM>] [--acme-email <邮箱>]
 #        [--admin-email <首个系统管理员邮箱> --admin-name <姓名>] [--no-connect-address]
 #   --tls acme（缺省）：Let's Encrypt 短期 IP 证书（约 6 天，自动续）；demo-ca：本机演示 CA（只给内部测试包）；manual：证书自己放
+#   控制台、登录入口与平台运营接口对任意公网 IP 开放（D-218 取消运维网段）：--ops-cidr 已废弃，仍给出只提示“已忽略”
 # 做的事：建系统用户 kwl 与目录、核对 Node 版本、npm ci（只建工作区链接，运行时无第三方依赖）、
 #         打包控制台到 /var/www/kwl-console（保留已有 config.json）、装 systemd 单元与 nginx 配置。
 #         纯公网 IP 时另外：把地址填进 /etc/kwl/{control-plane,gateway,search}.json 与控制台 config.json、签证书、装续期定时器、打印钉住值。
@@ -18,7 +19,6 @@ CONSOLE_DOMAIN=""
 WITH_CONSOLE=1
 PUBLIC_IP=""
 TLS_MODE=""
-OPS_CIDRS=()
 IPCFG_ARGS=()
 TLS_ARGS=()
 while [ $# -gt 0 ]; do
@@ -28,7 +28,8 @@ while [ $# -gt 0 ]; do
     --no-console) WITH_CONSOLE=0; shift ;;
     --public-ip) PUBLIC_IP="$2"; shift 2 ;;
     --tls) TLS_MODE="$2"; shift 2 ;;
-    --ops-cidr) OPS_CIDRS+=("$2"); shift 2 ;;
+    # D-218：取消 IP 白名单准入（运维网段）——老命令里的 --ops-cidr 不报错，提示已忽略
+    --ops-cidr) echo "提示：--ops-cidr 已废弃、已忽略（D-218：控制台与平台运营不再按来源 IP 准入，靠 TLS + 账号密码 + 角色权限 + 登录限流与锁定）"; shift 2 ;;
     --admin-email|--admin-name) IPCFG_ARGS+=("$1" "$2"); shift 2 ;;
     --no-connect-address) IPCFG_ARGS+=("$1"); shift ;;
     --acme-server|--acme-ca-file|--trust-ca-file) TLS_ARGS+=("$1" "$2"); shift 2 ;;
@@ -53,19 +54,6 @@ if [ -n "$PUBLIC_IP" ]; then
   [ -n "$CP_ORIGIN" ] || CP_ORIGIN="https://$PUBLIC_IP:8443"
   TLS_MODE=${TLS_MODE:-acme}
   case "$TLS_MODE" in acme|demo-ca|manual) ;; *) echo "--tls 须为 acme / demo-ca / manual" >&2; exit 2 ;; esac
-  # 平台运营只对运维出口开放（ops.allow_cidrs）：公网部署时就是你自己电脑上网的公网出口地址
-  if [ ${#OPS_CIDRS[@]} -eq 0 ] && ! { [ -f /etc/kwl/control-plane.json ] && node -e 'const c=JSON.parse(require("fs").readFileSync("/etc/kwl/control-plane.json","utf8")).ops?.allow_cidrs??[];process.exit(c.length&&!(c.length===1&&c[0]==="10.20.0.0/24")?0:1)'; }; then
-    guess=${SSH_CLIENT%% *}
-    if [ -t 0 ]; then
-      echo "平台运营（控制台的平台人员登录、/v1/ops/*）只对一个网段开放。填你自己电脑上网的公网出口地址（在电脑上打开 https://ifconfig.me 查看），单个地址写 /32。"
-      read -r -p "运维出口网段${guess:+（当前 SSH 来源是 $guess，回车即用 $guess/32）}：" ans
-      ans=${ans:-${guess:+$guess/32}}
-      [ -n "$ans" ] || { echo "没有填运维出口网段" >&2; exit 2; }
-      OPS_CIDRS=("$ans")
-    else
-      echo "纯公网 IP 部署要给 --ops-cidr <你的公网出口>/32（平台运营只对它开放）${guess:+；当前 SSH 来源是 $guess}" >&2; exit 2
-    fi
-  fi
   [ "$TLS_MODE" != demo-ca ] || echo "提示：--tls demo-ca 的证书由本机演示 CA 签发，只有内置了这个 CA 的内部测试包能连（偏离 D-212）；对外试点用 --tls acme"
 fi
 
@@ -89,7 +77,6 @@ systemctl daemon-reload
 # 4.5 纯公网 IP：把地址填进各角色配置（已有配置只改与地址有关的几项）
 if [ -n "$PUBLIC_IP" ]; then
   args=(--app "$APP" --etc /etc/kwl --public-ip "$PUBLIC_IP")
-  for c in "${OPS_CIDRS[@]}"; do args+=(--ops-cidr "$c"); done
   [ "$WITH_CONSOLE" = 1 ] && install -d -m 0755 /var/www/kwl-console && args+=(--console-dir /var/www/kwl-console)
   node "$APP/deploy/scripts/ip-config.mjs" "${args[@]}" ${IPCFG_ARGS[@]+"${IPCFG_ARGS[@]}"}
   for r in control-plane gateway search; do chown root:kwl "/etc/kwl/$r.json"; chmod 0640 "/etc/kwl/$r.json"; done

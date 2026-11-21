@@ -7,11 +7,10 @@
   "signer": { "url": "https://cp-signer.internal:9443", "client_cert_file": "/etc/kwl/tls/cp-api-client.crt", "client_key_file": "/etc/kwl/tls/cp-api-client.key", "ca_file": "/etc/kwl/tls/internal-ca.crt", "servername": "cp-signer.internal" },
   "state_key_file": "/etc/kwl/secrets/cp-state.key",
   "code_pepper_file": "/etc/kwl/secrets/cp-code-pepper.key",
-  "ops": { "deployment": "prod", "allow_cidrs": ["10.20.0.0/24"] },
+  "ops": { "deployment": "prod" },
   "console": {
     "origins": ["https://console.kwl.example.com"],
-    "bootstrap_admin": { "email": "admin@csi.example.com", "name": "系统管理员" },
-    "staff_mfa": "required"
+    "bootstrap_admin": { "email": "admin@csi.example.com", "name": "系统管理员" }
   },
   "clients": { "min_version": "0.2.0" },
   "billing": {

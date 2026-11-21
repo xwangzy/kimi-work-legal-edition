@@ -1,5 +1,5 @@
 /**
- * 用例夹具（第 46 批）：平台人员用统一账号登录（开发形态 devStaff + 两步验证 optional），以 Bearer 会话调运营接口；
+ * 用例夹具（第 46 批）：平台人员用统一账号登录（开发形态 devStaff；第 53 批起邮箱 + 密码即登录），以 Bearer 会话调运营接口；
  * 登录后即复核一次（危险操作在 10 分钟内可直接做）。人员邮箱 = 编号去掉下划线 @csi.example.cn。
  */
 import type { PlatformRole } from "../src/rbac.ts";
@@ -21,7 +21,7 @@ export async function call(base: string, method: string, path: string, body?: un
   return { status: r.status, json, text, type: r.headers.get("content-type"), headers: r.headers };
 }
 
-/** 登录（未绑定两步验证、策略 optional）并复核，返回会话令牌。 */
+/** 登录并（缺省）用密码复核，返回会话令牌。 */
 export async function staffToken(base: string, email: string, o: { password?: string; reauth?: boolean } = {}): Promise<string> {
   const password = o.password ?? STAFF_PW;
   const r = await call(base, "POST", "/v1/auth/login", { email, password, client: { platform: "web" } });

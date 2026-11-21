@@ -10,8 +10,8 @@
  * - hash 路由：#/<分区>/<页>/<参数>?查询，例如 #/ops/tenants/ten_x?tab=usage、#/firm/members。
  */
 import * as api from "./api.js";
-import { initAuth, resetAuthWidth, setMeta, showEnroll, showLogin, showReset } from "./auth.js";
-import { reauthDialog } from "./mfa.js";
+import { initAuth, setMeta, showLogin, showReset } from "./auth.js";
+import { reauthDialog } from "./reauth.js";
 import { canAny, ctx, go, isFirmManager, PLATFORM_ROLES, roleLabel, ROLE, SECTIONS } from "./domain.js";
 import { $, btn, clear, closeDrawer, errorBlock, fmt, h, icon, toast } from "./ui.js";
 import * as meOverview from "./pages/me-overview.js";
@@ -150,7 +150,7 @@ async function boot() {
   document.title = `控制台 · ${cfg.label || cfg.deployment} · Kimi Work 法律版`;
   api.setHooks({
     onAuthLost: (e) => logout(e.message || "登录已失效，请重新登录"),
-    onReauth: () => reauthDialog({ mfa: !!ctx.me?.account?.mfa?.enabled, email: ctx.operatorEmail }),
+    onReauth: () => reauthDialog({ email: ctx.operatorEmail }),
     onOutdated: (e) => outdated(e),
   });
   initAuth({ onAuthed });
@@ -160,13 +160,13 @@ async function boot() {
   showLogin();
 }
 
-/** 登录 / 两步验证 / 注册得到会话 */
+/** 登录 / 注册得到会话 */
 async function onAuthed(r) {
   if (!r?.session_token) throw new Error("控制面没有返回会话");
   api.saveSession(r.session_token, { kind: r.session?.kind ?? null, email: r.account?.email ?? null });
   await enter();
 }
-async function enter(afterEnroll = false) {
+async function enter() {
   clear($("#boot"), h("span", { class: "spinner", "aria-hidden": "true" }), "正在进入…");
   let me;
   try {
@@ -179,12 +179,6 @@ async function enter(afterEnroll = false) {
     clear($("#boot"), errorBlock(e, () => enter()), btn("退出登录", () => logout()));
     return;
   }
-  const restricted = me.restricted ?? me.session?.restricted ?? null;
-  if (restricted === "mfa_enroll") {
-    if (afterEnroll) return logout("两步验证已启用：请重新登录。");
-    return showEnroll(me, { onDone: () => enter(true), onLogout: () => logout() });
-  }
-  resetAuthWidth();
   setMe(me);
   showApp();
 }

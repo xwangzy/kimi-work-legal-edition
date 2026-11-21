@@ -8,6 +8,9 @@ if [ -z "${KWL_SCRIPT_COPY:-}" ]; then
   cp "$0" "$tmp"
   KWL_SCRIPT_COPY=1 exec bash "$tmp" "$@"
 fi
+# 不改 /etc/kwl/*.json：D-218 废弃的 ops.allow_cidrs、console.staff_mfa 新版见到只提示“已忽略”、照常启动；
+# 升级时故意留着——只回滚代码（rollback.sh 不带 --restore）回到第 52 批及以前时，旧版控制面没有 allow_cidrs 会拒绝启动。
+# 确认不再回滚后，跑一次 ip-config.mjs（部署手册 4.7 换地址同一命令；有域名的部署手工删）即删掉这两项，见运维手册 5.1。
 APP=/opt/kwl/app
 TARGET=${1:?用法：upgrade.sh <标签或提交> [--cp-origin <控制面来源>]}
 shift

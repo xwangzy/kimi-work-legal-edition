@@ -1,7 +1,7 @@
 /**
  * 第 37 批：网页运营控制台与部署工具。
  * - 新增只读接口：租户列表、按租户用量（按席位只给席位编号，不给成员标识与姓名；律所设的上限只给“律所管理员”）；
- * - 生产入口的 ops.console_origins：只对列出的来源回 CORS 头与预检；配置不合规拒绝启动；运维网段以外照样 404；
+ * - 生产入口的 ops.console_origins：只对列出的来源回 CORS 头与预检；配置不合规拒绝启动（CORS 只管浏览器跨源，不是准入：D-218 起不按来源 IP 拦）；
  * - 部署工具：cloud-init-secrets 生成的密钥能直接拉起签名服务与控制面；
  *   meter-report 按网关同一规则重算点数、按 requestId 去重。
  * 第 46 批：控制台重做为统一云端控制台（apps/console），静态页门禁、打包、浏览器内加密与 QR 的用例在 console-ui.test.ts；
@@ -26,7 +26,7 @@ const kids: ChildProcess[] = [];
 
 before(async () => {
   // 第 46 批：控制面运营接口用平台人员会话（op_0001 客户运营、op_0003 开通专员）
-  cp = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: "ops-console-test-service-secret", staffMfa: "optional", devStaff: devStaffOf({ op_0001: ["operator"], op_0003: ["issuer"] }), opsAccessLog: () => {} });
+  cp = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: "ops-console-test-service-secret", devStaff: devStaffOf({ op_0001: ["operator"], op_0003: ["issuer"] }), opsAccessLog: () => {} });
   cp.ops.createTenant({ tid: "ten_console", edition: "team", seats: 3 });
   await new Promise<void>((r) => cp.server.listen(0, "127.0.0.1", () => r()));
   base = `http://127.0.0.1:${(cp.server.address() as AddressInfo).port}`;
@@ -115,8 +115,8 @@ test("cloud-init-secrets 的密钥直接拉起签名服务与控制面；console
     signer: { url: `http://127.0.0.1:${signer.port}` },
     state_key_file: sec("cp-state.key"),
     code_pepper_file: sec("cp-code-pepper.key"),
-    ops: { deployment: "test", allow_cidrs: ["127.0.0.1/32"], ...(o.alias === undefined ? {} : { console_origins: o.alias }) },
-    console: { bootstrap_admin: { email: ADMIN, name: "引导" }, staff_mfa: "optional", ...(o.origins === undefined ? {} : { origins: o.origins }) },
+    ops: { deployment: "test", ...(o.alias === undefined ? {} : { console_origins: o.alias }) },
+    console: { bootstrap_admin: { email: ADMIN, name: "引导" }, ...(o.origins === undefined ? {} : { origins: o.origins }) },
   });
   for (const bad of [["*"], ["https://ops.example/"], ["https://ops.example/console"], ["http://ops.example"], []]) {
     assert.match(spawnSync(process.execPath, [script, "--config", cfgFile(cpCfg({ origins: bad }, "bad"))], { encoding: "utf8", timeout: 30_000 }).stderr, /console\.origins/, `拒绝 ${JSON.stringify(bad)}`);
@@ -127,7 +127,7 @@ test("cloud-init-secrets 的密钥直接拉起签名服务与控制面；console
   const { port } = await start(cpCfg({ origins: [ORIGIN] }));
   const at = `http://127.0.0.1:${port}`;
   const pre = (path: string, origin = ORIGIN) => fetch(`${at}${path}`, { method: "OPTIONS", headers: { origin, "access-control-request-method": "POST", "access-control-request-headers": "authorization,content-type" } });
-  for (const path of ["/v1/auth/login", "/v1/auth/mfa/verify", "/v1/auth/me", "/v1/me/usage", "/v1/firm/overview", "/v1/meta", "/v1/ops/tenants"]) {
+  for (const path of ["/v1/auth/login", "/v1/auth/reauth", "/v1/auth/me", "/v1/me/usage", "/v1/firm/overview", "/v1/meta", "/v1/ops/tenants"]) {
     const r = await pre(path);
     assert.equal(r.status, 204, path);
     assert.equal(r.headers.get("access-control-allow-origin"), ORIGIN, path);

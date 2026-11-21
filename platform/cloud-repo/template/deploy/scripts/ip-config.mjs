@@ -2,12 +2,12 @@
 /**
  * 纯公网 IP 部署：把与地址有关的配置项填进 /etc/kwl/*.json 与控制台 config.json（install.sh --public-ip 调用；可重复执行）。
  *
- *   node deploy/scripts/ip-config.mjs --app /opt/kwl/app --etc /etc/kwl --public-ip <IPv4> [--ops-cidr <网段>]... \
+ *   node deploy/scripts/ip-config.mjs --app /opt/kwl/app --etc /etc/kwl --public-ip <IPv4> \
  *        [--admin-email <邮箱> --admin-name <姓名>] [--no-connect-address] [--console-dir /var/www/kwl-console]
  *
  * 改的只有这些（其余项保留现值；文件不在时从 deploy/config/*.example.json 起）：
- * - control-plane.json：console.origins 换成 https://<IP>（去掉样例域名，保留别的来源）；ops.allow_cidrs（给了 --ops-cidr 才改）；
- *   console.bootstrap_admin（给了才改）
+ * - control-plane.json：console.origins 换成 https://<IP>（去掉样例域名，保留别的来源）；console.bootstrap_admin（给了才改）；
+ *   删掉已废弃的 ops.allow_cidrs（运维网段）与 console.staff_mfa（两步验证）——D-218 取消了这两项，老部署换 IP / 升级时顺手清掉
  * - gateway.json、search.json：control_plane.url = https://<IP>:<控制面端口>；control_plane.connect_address = "127.0.0.1"
  *   （单机时连回环、证书仍按公网 IP 核对，避开云主机连不回自己公网 IP 的问题；多机部署加 --no-connect-address）
  * - 控制台 config.json：control_plane_base（文件不在时按样例新建）；已打包的 index.html 页内 CSP 的 connect-src 同步换成新控制面来源
@@ -24,7 +24,6 @@ const one = (n) => {
   const i = args.indexOf(`--${n}`);
   return i < 0 ? null : (args[i + 1] ?? "");
 };
-const many = (n) => args.flatMap((a, i) => (a === `--${n}` ? [args[i + 1] ?? ""] : []));
 const die = (m) => {
   console.error(`[ip-config] ${m}`);
   process.exit(2);
@@ -34,17 +33,8 @@ const etc = one("etc") ?? "/etc/kwl";
 const ip = one("public-ip");
 const consoleDir = one("console-dir");
 if (!ip || !isIPv4(ip)) die("--public-ip 须为 IPv4 地址（如 203.0.113.10）");
-const EXAMPLE_CIDR = "10.20.0.0/24";
-
-/** 运维出口网段：a.b.c.d/n，不许回环、不许 0.0.0.0/0 */
-function checkCidr(c) {
-  const m = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(c);
-  if (!m || !isIPv4(m[1]) || Number(m[2]) > 32) die(`--ops-cidr ${c} 不是 IPv4 网段（单个地址写 /32，如 203.0.113.5/32）`);
-  if (m[1].startsWith("127.")) die("--ops-cidr 不能是回环地址：控制面按来源地址放行平台运营，回环一律拒绝");
-  if (Number(m[2]) === 0) die("--ops-cidr 不能是 0.0.0.0/0：平台运营入口只对运维出口开放");
-  return c;
-}
-const opsCidrs = many("ops-cidr").map(checkCidr);
+// D-218：取消 IP 白名单准入（运维网段）——老命令里的 --ops-cidr 不报错，提示已忽略
+if (args.includes("--ops-cidr")) console.log("[ip-config] 提示：--ops-cidr 已废弃、已忽略（D-218：控制台与平台运营不再按来源 IP 准入，靠 TLS + 账号密码 + 角色权限 + 登录限流与锁定）");
 
 const load = (role) => {
   const f = join(etc, `${role}.json`);
@@ -75,15 +65,22 @@ const consoleOrigin = `https://${ip}`; // 浏览器来源不带 :443
 cp.cfg.console ??= {};
 const keep = (cp.cfg.console.origins ?? []).filter((o) => typeof o === "string" && !o.includes("kwl.example.com") && !/^https:\/\/\d{1,3}(\.\d{1,3}){3}$/.test(o));
 cp.cfg.console.origins = [consoleOrigin, ...keep];
-cp.cfg.ops ??= {};
-if (opsCidrs.length) cp.cfg.ops.allow_cidrs = opsCidrs;
-const cidrs = cp.cfg.ops.allow_cidrs ?? [];
-if (!cidrs.length || (cidrs.length === 1 && cidrs[0] === EXAMPLE_CIDR))
-  die("缺 --ops-cidr：平台运营（登录控制台的平台人员、/v1/ops/*）只对这个网段开放。纯公网 IP 部署时填你自己电脑上网的公网出口地址，如 203.0.113.5/32（可在电脑上打开 https://ifconfig.me 查看）");
+// D-218 废弃项：运维网段与平台人员两步验证（生产入口见到只提示“已忽略”；这里从配置里删掉，免得误以为还在生效）
+const dropped = [];
+if (cp.cfg.ops && typeof cp.cfg.ops === "object" && "allow_cidrs" in cp.cfg.ops) {
+  delete cp.cfg.ops.allow_cidrs;
+  dropped.push("ops.allow_cidrs");
+  if (Object.keys(cp.cfg.ops).length === 0) delete cp.cfg.ops;
+}
+if ("staff_mfa" in cp.cfg.console) {
+  delete cp.cfg.console.staff_mfa;
+  dropped.push("console.staff_mfa");
+}
 const adminEmail = one("admin-email");
 if (adminEmail) cp.cfg.console.bootstrap_admin = { email: adminEmail, name: one("admin-name") ?? cp.cfg.console.bootstrap_admin?.name ?? "系统管理员" };
 save(cp.file, cp.cfg);
-console.log(`[ip-config] ${cp.file}：console.origins=${JSON.stringify(cp.cfg.console.origins)}，ops.allow_cidrs=${JSON.stringify(cp.cfg.ops.allow_cidrs)}${cp.fresh ? "（从样例新建：其余必改项见部署手册第 6 节）" : ""}`);
+console.log(`[ip-config] ${cp.file}：console.origins=${JSON.stringify(cp.cfg.console.origins)}${cp.fresh ? "（从样例新建：其余必改项见部署手册第 6 节）" : ""}`);
+if (dropped.length) console.log(`[ip-config] ${cp.file}：删掉已废弃的 ${dropped.join("、")}（D-218：控制台与平台运营不再按来源 IP 准入、平台人员不再有两步验证）`);
 
 // 网关、检索
 for (const role of ["gateway", "search"]) {

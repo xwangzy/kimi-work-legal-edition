@@ -52,9 +52,7 @@ export interface SessionRecord {
   revoked_at: string | null;
   revoked_reason: string | null;
   client: { version: string | null; platform: string | null };
-  /** 平台人员（第 46 批）：未绑定两步验证、策略要求绑定时为 "mfa_enroll"（只能看本人、绑定、退出）。 */
-  restricted?: "mfa_enroll" | null;
-  /** 平台人员最近一次复核（密码 + 两步验证码）的有效期：危险操作要求在此之前。 */
+  /** 最近一次复核（重新输入密码）的有效期：危险操作要求在此之前。 */
   reauth_until?: string | null;
 }
 

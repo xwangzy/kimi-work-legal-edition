@@ -1,5 +1,5 @@
 /**
- * 统一云端控制台 · 界面小件（第 44 批起；第 46 批加环形水位、额度卡、二维码、验证码输入、无权限空状态）。
+ * 统一云端控制台 · 界面小件（第 44 批起；第 46 批加环形水位、额度卡、无权限空状态）。
  *
  * - h() / svg() 生成 DOM，**不拼 HTML 字符串**（不用 innerHTML 一类接口）：服务端回来的任何字段都只作为文本节点或属性值进入页面；
  * - CSP 为 style-src 'self'：不写 style 属性。动态宽度、位置一律经 cssVars() 写 el.style.cssText 的自定义属性（--w、--l），
@@ -816,7 +816,7 @@ export function panel(title, body, o = {}) {
   return h("section", { class: ["panel", o.class] }, title ? h("header", { class: "panel-head" }, h("h3", {}, title), o.sub ? h("span", { class: "panel-sub" }, o.sub) : null, o.actions ? h("div", { class: "panel-actions" }, o.actions) : null) : null, body);
 }
 
-// ─── 第 46 批：环形水位、额度卡（百分比四件套）、二维码、验证码输入 ───────────────
+// ─── 第 46 批：环形水位、额度卡（百分比四件套） ───────────────
 /** 环形进度：ratio 0–1；tone 随阈值（≥80% 注意，≥100% 或暂停 = 满） */
 export function ring(o) {
   const size = o.size ?? 88;
@@ -878,35 +878,6 @@ export function quotaCard(o) {
     ),
   );
 }
-
-/** 二维码（DOM 构造 SVG，不拼 HTML）；固定浅底深码（纸面令牌，深色模式也不反色） */
-export function qrElement(qr, { border = 4, label = "二维码" } = {}, pathOf) {
-  const n = qr.size + border * 2;
-  return svg("svg", { class: "qr", viewBox: `0 0 ${n} ${n}`, "shape-rendering": "crispEdges", role: "img", "aria-label": label }, svg("rect", { class: "qr-bg", width: n, height: n }), svg("path", { class: "qr-dots", d: pathOf(qr, border) }));
-}
-
-/** 6 位验证码输入（或恢复码）：数字键盘、一次性码自动填充、满 6 位回调 */
-export function otpInput({ name = "code", recovery = false, onFull } = {}) {
-  const i = h("input", {
-    name,
-    class: ["otp", recovery && "otp-recovery"],
-    type: "text",
-    inputmode: recovery ? "text" : "numeric",
-    autocomplete: recovery ? "off" : "one-time-code",
-    maxlength: recovery ? 24 : 6,
-    placeholder: recovery ? "xxxx-xxxx-xxxx" : "000000",
-    spellcheck: "false",
-    autocapitalize: "off",
-    "aria-label": recovery ? "恢复码" : "6 位验证码",
-  });
-  i.addEventListener("input", () => {
-    if (!recovery) i.value = i.value.replace(/\D+/g, "").slice(0, 6);
-    if (!recovery && i.value.length === 6) onFull?.(i.value);
-  });
-  return i;
-}
-/** 归一验证码：6 位数字照用；恢复码去空白与连字符、转小写 */
-export const normCode = (v, recovery) => (recovery ? String(v).replace(/[\s-]+/g, "").toLowerCase() : String(v).replace(/\D+/g, ""));
 
 /** 小节标题（页面内分组） */
 export const sectionTitle = (t, sub) => h("div", { class: "section-title" }, h("h2", {}, t), sub ? h("p", {}, sub) : null);

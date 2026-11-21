@@ -1,6 +1,6 @@
 /**
- * 系统：部署信息、身份与安全策略（两步验证、注册方式、客户端最低版本）、平台访问记录、客户端版本分布、邮件通道状态。
- * 接口：GET /v1/ops/system（system.read）、GET /v1/ops/settings（mail、staff_mfa、clients.min_version）。
+ * 系统：部署信息、身份与安全策略（注册方式、客户端最低版本）、平台访问记录、客户端版本分布、邮件通道状态。
+ * 接口：GET /v1/ops/system（system.read）、GET /v1/ops/settings（mail、clients.min_version）。
  * 第 46 批：运营名册不再用于控制台登录（统一账号，契约 §2.4），本页不再列名册；人员在“人员与权限”管理。
  */
 import * as api from "../api.js";
@@ -68,7 +68,6 @@ function draw(box, s, mail, set) {
         set === undefined
           ? h("p", { class: "muted small" }, "设置接口未就绪或无权查看，读不到策略。")
           : facts([
-              ["平台人员两步验证", set.staff_mfa === "required" ? badge("必须", "ok") : set.staff_mfa === "optional" ? badge("可选（仅开发）", "warn") : badge(String(set.staff_mfa ?? "未知"), "neutral")],
               ["注册方式", { open: badge("开放自助注册", "warn"), code: badge("凭码注册", "ok"), closed: badge("关闭", "neutral") }[set.registration] ?? "—"],
               ["客户端最低版本", mono(set.clients?.min_version ?? set.min_client_version ?? "不限")],
             ]),

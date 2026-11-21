@@ -3,17 +3,16 @@
  * 统一云端控制台本机开发（第 46 批）：先打包 dist/（scripts/build-console.mjs），再一条命令拉起“进程内控制面 + 控制台静态页”。
  * **只用于开发**：平台人员、律所、成员账号、套餐、上游都是本脚本经真实接口造的开发数据；价格是示例价格；网关路由密钥临时生成。
  *
- *   node scripts/dev-console.mjs [--port 5480] [--empty] [--mfa required]
+ *   node scripts/dev-console.mjs [--port 5480] [--empty]
  *
  * - 控制台与控制面同源（/v1/* 反向代理到进程内的控制面），不必配 CORS；静态页只发 dist/ 里的文件，CSP 与生产同口径；
- * - 平台人员用控制面的 devStaff 选项建（系统管理员、客户运营、财务），开发态两步验证缺省 optional（console.staff_mfa），
- *   密码每次启动随机生成并打印；不再有运营私钥与名册。--mfa required 按生产策略演练：首次登录进入“绑定两步验证”；
- *   本脚本写开发数据用到的人员由脚本自己绑定（打印 TOTP 密钥，可手动加进身份验证器），其余人员在浏览器里绑定；
+ * - 平台人员用控制面的 devStaff 选项建（系统管理员、客户运营、财务），与生产同口径：邮箱 + 密码即登录（D-218 起没有第二步验证），
+ *   密码每次启动随机生成并打印；不再有运营私钥与名册；危险操作的复核只要密码；
  * - 开发数据**只经控制面的真实接口写入**（客户运营与系统管理员的会话令牌，与浏览器同一条路）：开通律所、代建负责人账号
  *   （拿设置码经 /v1/auth/password-reset/confirm 设好密码，用来以律所管理员身份登录“本所”）、上游（密钥用临时路由公钥在本机加密）、
  *   别名路由、加量与上限、停用一个账号。逐请求用量不造：没有真实设备时用量页显示空状态。--empty 只建平台人员。
  */
-import { createHash, createHmac, generateKeyPairSync, randomBytes } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { tmpdir } from "node:os";
@@ -24,7 +23,6 @@ import { buildConsole } from "./build-console.mjs";
 const args = process.argv.slice(2);
 const PORT = Number(args[args.indexOf("--port") + 1]) || 5480;
 const EMPTY = args.includes("--empty");
-const MFA = args[args.indexOf("--mfa") + 1] === "required" && args.includes("--mfa") ? "required" : "optional";
 
 const { createControlPlane, devControlPlaneKeys, UsageBook } = await import("../services/control-plane/src/index.ts");
 const { sealUpstreamKey, keyHint } = await import("../apps/console/seal-key.js");
@@ -50,7 +48,6 @@ const ROUTING_KID = createHash("sha256").update(spki).digest("hex").slice(0, 16)
 const cp = createControlPlane({
   keys: devControlPlaneKeys(),
   serviceSecret: "dev-console-service-secret-000",
-  staffMfa: MFA,
   devStaff: STAFF,
   dataDir: join(dir, "cp"),
   opsAccessLog: () => {},
@@ -92,43 +89,19 @@ async function http(method, path, body, token) {
   return json;
 }
 const sessions = {};
-const totpSecrets = {};
-/** RFC 6238（SHA-1、6 位、30 秒）；同一步不重复用：等到下一步 */
-const lastStep = {};
-async function totp(email) {
-  const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  const bits = [...totpSecrets[email].replace(/=+$/, "").toUpperCase()].map((c) => A.indexOf(c).toString(2).padStart(5, "0")).join("");
-  const key = Buffer.from(bits.match(/.{8}/g).map((x) => parseInt(x, 2)));
-  let step = Math.floor(Date.now() / 30_000);
-  while (step <= (lastStep[email] ?? -1)) {
-    await new Promise((r) => setTimeout(r, 1000));
-    step = Math.floor(Date.now() / 30_000);
-  }
-  lastStep[email] = step;
-  const msg = Buffer.alloc(8);
-  msg.writeBigUInt64BE(BigInt(step));
-  const h = createHmac("sha1", key).update(msg).digest();
-  return String((h.readUInt32BE(h[h.length - 1] & 15) & 0x7fffffff) % 1_000_000).padStart(6, "0");
-}
 async function login(who) {
   const r = await http("POST", "/v1/auth/login", { email: who.email, password: who.password, client: { platform: "web", version: "dev" } });
-  if (!r.session_token) throw new Error(`${who.email} 登录没有拿到会话（${r.mfa_required ? "要求两步验证" : "未知"}）`);
-  if (r.session?.restricted === "mfa_enroll") {
-    // --mfa required：脚本自己绑定（与浏览器同一组接口），之后复核也带 6 位码
-    const s = await http("POST", "/v1/auth/mfa/totp/setup", {}, r.session_token);
-    totpSecrets[who.email] = s.secret;
-    await http("POST", "/v1/auth/mfa/totp/enable", { code: await totp(who.email) }, r.session_token);
-  }
+  if (!r.session_token) throw new Error(`${who.email} 登录没有拿到会话`);
   return r.session_token;
 }
-/** 危险操作要复核：遇 reauth_required 先 POST /v1/auth/reauth（开发态没绑 TOTP，只要密码）再重试一次 */
+/** 危险操作要复核：遇 reauth_required 先 POST /v1/auth/reauth（只要密码）再重试一次 */
 async function as(who, method, path, body) {
   sessions[who.email] ??= await login(who);
   try {
     return await http(method, path, body, sessions[who.email]);
   } catch (e) {
     if (e.code !== "reauth_required") throw e;
-    await http("POST", "/v1/auth/reauth", totpSecrets[who.email] ? { password: who.password, code: await totp(who.email) } : { password: who.password }, sessions[who.email]);
+    await http("POST", "/v1/auth/reauth", { password: who.password }, sessions[who.email]);
     return http(method, path, body, sessions[who.email]);
   }
 }
@@ -219,15 +192,15 @@ const server = createServer((req, res) => {
 });
 await new Promise((r) => server.listen(PORT, "127.0.0.1", () => r()));
 console.log(`统一云端控制台（本机开发）：${origin}`);
-console.log(`  平台人员（两步验证 ${MFA === "required" ? "必须：首次登录先绑定" : "可选"}；密码每次启动随机生成）：`);
-for (const s of STAFF) console.log(`    ${s.name.padEnd(12)} ${s.email} / ${s.password}${totpSecrets[s.email] ? `  TOTP 密钥 ${totpSecrets[s.email]}` : ""}`);
+console.log("  平台人员（邮箱 + 密码即登录；密码每次启动随机生成）：");
+for (const s of STAFF) console.log(`    ${s.name.padEnd(12)} ${s.email} / ${s.password}`);
 if (members.length) {
   console.log("  律所成员（网页“我的”“本所”）：");
   for (const m of members) console.log(`    ${m.firm} · ${m.name}（${m.role}） ${m.email} / ${m.password}`);
 }
 console.log(`  网关路由公钥编号：${ROUTING_KID}（临时生成，私钥只在本进程内存）`);
 console.log(`  控制面（进程内）：${cpBase}；数据目录 ${dir}`);
-console.log(`DEV_CONSOLE_JSON ${JSON.stringify({ origin, mfa: MFA, staff: STAFF.map((x) => ({ ...x, totp_secret: totpSecrets[x.email] ?? null })), members })}`);
+console.log(`DEV_CONSOLE_JSON ${JSON.stringify({ origin, staff: STAFF, members })}`);
 if (skipped.length) console.log(`  开发数据有 ${skipped.length} 项没写入（接口未就绪或被拒）：\n    ${skipped.join("\n    ")}`);
 const stop = () => {
   server.close();

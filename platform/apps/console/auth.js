@@ -1,17 +1,14 @@
 /**
- * 登录页（契约 §2、§3.1）：一个页面、五种视图——
- *   login     邮箱 + 密码（律师、律所管理员、中软平台人员同一入口）
- *   mfa       两步验证：6 位码或恢复码（POST /v1/auth/mfa/verify，mfa_token 5 分钟一次性）
+ * 登录页（契约 §2、§3.1）：一个页面、三种视图——
+ *   login     邮箱 + 密码（律师、律所管理员、中软平台人员同一入口；密码正确即进入，D-218 起平台人员不再有第二步）
  *   register  注册：开通码 / 邀请码（注册方式 code 时必填）；成功后若 onboarding 要在客户端完成开通或入组，给出下一步
  *   reset     设置或重置密码：邮箱验证码、管理员给的重置码、平台人员的设置码（首次设置也走这里）
- *   enroll    受限会话（restricted = "mfa_enroll"）：绑定两步验证，恢复码只显示一次
  * 本模块只管登录卡片；拿到会话后交给 app.js 的 onAuthed。
  */
 import * as api from "./api.js";
-import { enrollFlow } from "./mfa.js";
-import { $, btn, clear, errText, h, icon, normCode, otpInput } from "./ui.js";
+import { $, btn, clear, errText, h } from "./ui.js";
 
-const st = { meta: null, email: "", onAuthed: null, mfa: null };
+const st = { meta: null, email: "", onAuthed: null };
 
 export function initAuth({ onAuthed, meta }) {
   st.onAuthed = onAuthed;
@@ -80,7 +77,6 @@ export function showLogin(message, tone = "error") {
       try {
         const r = await api.auth.login(e, pw.value);
         pw.value = "";
-        if (r.mfa_required) return showMfa(r);
         await st.onAuthed(r);
       } catch (x) {
         err.textContent = errText(x);
@@ -97,49 +93,6 @@ export function showLogin(message, tone = "error") {
     h("p", { class: "auth-foot" }, "关闭标签页即退出；平台人员闲置 30 分钟或登录满 12 小时需重新登录。"),
   );
   (email.value ? pw : email).focus();
-}
-
-// ─── 两步验证 ───────────────────────────────────────────────────────
-function showMfa(r) {
-  st.mfa = { token: r.mfa_token, methods: r.methods ?? ["totp", "recovery"], at: Date.now() };
-  let recovery = false;
-  const err = h("p", { class: "form-error", role: "alert" });
-  const submit = h("button", { type: "submit", class: "btn primary block" }, "验证");
-  const slot = h("div", { class: "field" });
-  let code;
-  const drawCode = () => {
-    code = otpInput({ recovery, onFull: () => form.requestSubmit() });
-    code.id = "mfa-code";
-    clear(slot, h("label", { for: "mfa-code" }, recovery ? "恢复码" : "身份验证器里的 6 位码"), code, recovery ? h("small", { class: "hint" }, "每个恢复码只能用一次；用完请尽快在“账号与安全”里重新生成。") : null);
-    code.focus();
-  };
-  const toggle = linkTo("改用恢复码", () => {
-    recovery = !recovery;
-    toggle.textContent = recovery ? "改用 6 位码" : "改用恢复码";
-    drawCode();
-  });
-  const form = h("form", { class: "auth-form", novalidate: true }, slot, err, submit);
-  form.addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    err.textContent = "";
-    const c = normCode(code.value, recovery);
-    if (!recovery && c.length !== 6) return void ((err.textContent = "请输入 6 位数字"), code.focus());
-    if (recovery && c.length < 8) return void ((err.textContent = "请输入完整的恢复码"), code.focus());
-    if (Date.now() - st.mfa.at > 5 * 60_000) return showLogin("验证超时（5 分钟），请重新输入密码");
-    await submitting(submit, "正在验证…", async () => {
-      try {
-        const res = await api.auth.mfaVerify(st.mfa.token, c);
-        st.mfa = null;
-        await st.onAuthed(res);
-      } catch (x) {
-        if (x.code === "mfa_token_invalid" || x.code === "mfa_token_expired") return showLogin(`${x.message}，请重新登录`);
-        err.textContent = errText(x);
-        code.select();
-      }
-    });
-  });
-  shell("两步验证", `${st.email} · 打开身份验证器，输入当前显示的 6 位码。`, form, links(st.mfa.methods.includes("recovery") ? toggle : null, linkTo("返回登录", () => showLogin())));
-  drawCode();
 }
 
 // ─── 注册 ──────────────────────────────────────────────────────────
@@ -280,17 +233,3 @@ export function showReset(o = {}) {
   shell(o.setup ? "首次设置密码" : "设置或重置密码", o.setup ? "用一次性设置码为你的账号设置密码。" : "用邮箱验证码或管理员给的重置码设置新密码。", form, links(o.setup ? linkTo("忘记密码？用邮箱验证码", () => showReset({ email: email.value.trim() })) : linkTo("我有设置码", () => showReset({ email: email.value.trim(), setup: true })), linkTo("返回登录", () => showLogin())));
   (email.value ? code : email).focus();
 }
-
-// ─── 受限会话：先绑定两步验证 ─────────────────────────────────────────
-export function showEnroll(me, { onDone, onLogout }) {
-  const box = h("div", { class: "enroll-box" });
-  shell(
-    "绑定两步验证",
-    `${me?.account?.email ?? st.email} · 平台人员必须启用两步验证后才能使用控制台。`,
-    box,
-    links(h("button", { type: "button", class: "link", onclick: onLogout }, h("span", {}, icon("logout")), "退出登录")),
-  );
-  $("#auth").classList.add("wide");
-  enrollFlow(box, { onDone: (codes) => ($("#auth").classList.remove("wide"), onDone(codes)) });
-}
-export const resetAuthWidth = () => $("#auth").classList.remove("wide");

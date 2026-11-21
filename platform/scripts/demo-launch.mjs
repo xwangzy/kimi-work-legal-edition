@@ -9,7 +9,7 @@
  *   docx 交付文件（`Base url:` / `Key:` / `Model id=` 三行）在钥匙串为空或密钥不一致时自动灌入更新。密钥只经环境变量交给 stack-local，
  *   stack-local 再只经文件描述符交给网关进程；不落盘、不打印。
  * - 控制台账号（第 46 批）：不再用 ops-cli 名册与密码。stack-local 按契约 §2.4 用控制面写出的设置码设好系统管理员密码，
- *   登录信息在 platform/output/demo-cloud/stack/console-login.txt（0600），本脚本每次拉起都打印；演示栈两步验证可选。
+ *   登录信息在 platform/output/demo-cloud/stack/console-login.txt（0600），本脚本每次拉起都打印；平台人员登录只要账号密码。
  * - 状态都在 platform/output/demo-cloud/stack/（git 忽略），跨重启保留。
  * - --fresh：清空演示状态（控制面与各服务数据、控制台登录信息；密钥与桌面工作区不动），下次拉起重新引导系统管理员。
  */
@@ -173,7 +173,7 @@ if (webPort !== 5173 || bridgePort !== 7720) log(`开发端口错开：vite :${w
 log(`统一云端控制台已就绪：${consoleUrl}`);
 try {
   const m = await (await fetch(`${zrEnv.ZR_CONTROL_PLANE_BASE}/v1/meta`)).json();
-  log(`控制面自检通过（${m.api ?? "?"}，注册方式 ${m.registration ?? "?"}，平台人员两步验证 ${m.staff_mfa ?? "?"}）`);
+  log(`控制面自检通过（${m.api ?? "?"}，注册方式 ${m.registration ?? "?"}）`);
 } catch (e) {
   log(`控制面自检失败（不影响其余部分）：${String(e.message).slice(0, 200)}`);
 }
@@ -241,7 +241,7 @@ console.log(`
   地址           ${consoleUrl}
   系统管理员     ${login.email ?? "（见登录信息文件）"}
   密码           ${login.password ?? "（已改过或未引导：删掉登录信息文件并用 --fresh 重新引导）"}
-  登录信息       ${loginFile ?? join(stackDir, "console-login.txt")}（0600；两步验证本演示栈可选）
+  登录信息       ${loginFile ?? join(stackDir, "console-login.txt")}（0600）
 桌面端
   Electron 窗口（律所标识 demo-firm，席位令牌经控制面签发${dataDir ? `；工作区 ${dataDir}` : ""}）
 日志与状态：${out}（git 已忽略）

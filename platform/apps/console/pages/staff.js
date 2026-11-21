@@ -1,6 +1,6 @@
 /**
- * 平台运营 · 人员与权限（staff.manage，系统管理员）：中软平台人员、角色、状态、两步验证、最近登录；
- * 新建人员（得一次性设置码）、改角色、停用 / 启用、重置（发新设置码，可同时清除两步验证）。
+ * 平台运营 · 人员与权限（staff.manage，系统管理员）：中软平台人员、角色、状态、最近登录；
+ * 新建人员（得一次性设置码）、改角色、停用 / 启用、重置（发新设置码）。
  * 规则（契约 §2.2）：一人 1–3 个角色；客户运营与开通专员互斥；至少保留一名有效系统管理员；不能停用自己、不能去掉自己的系统管理员。
  * 写操作是危险操作：控制面要求 10 分钟内复核过（401 reauth_required → 复核框 → 自动重试）。
  * 接口：GET /v1/ops/staff、GET /v1/ops/roles、POST /v1/ops/staff、POST /v1/ops/staff/{aid}/roles|disable|enable|reset。
@@ -53,7 +53,6 @@ export function render(page) {
           { key: "name", label: "人员", render: (x) => h("div", { class: "cell-2" }, h("b", {}, x.name ?? "—", isMe(x.aid) ? badge("我", "accent") : null), h("small", {}, x.email)) },
           { key: "roles", label: "角色", sortable: false, render: (x) => roleBadges(x.roles) },
           { key: "status", label: "状态", render: (x) => badge(...(STATUS[x.status] ?? [x.status ?? "—", "neutral"])) },
-          { key: "mfa", label: "两步验证", value: (x) => (x.mfa?.enabled ? 1 : 0), render: (x) => (x.mfa?.enabled ? badge("已启用", "ok") : badge("未启用", "warn")) },
           { key: "last_login_at", label: "最近登录", value: (x) => x.last_login_at ?? "", render: (x) => h("span", { title: fmt.full(x.last_login_at) }, fmt.ago(x.last_login_at)) },
           { key: "created_at", label: "添加于", render: (x) => fmt.date(x.created_at) },
         ],
@@ -61,7 +60,7 @@ export function render(page) {
       panel("角色说明", h("div", { class: "role-grid" }, st.roles.map((r) => h("div", { class: "role-card" }, h("b", {}, r.label ?? r.id), h("p", {}, r.note ?? r.description ?? ""), h("div", { class: "badges wrap" }, (r.perms ?? []).map((p) => h("span", { class: "perm", title: p }, PERM_LABEL[p] ?? p)))))), { sub: "一人 1–3 个角色；客户运营与开通专员互斥" }),
     );
   };
-  page.append(pageHead("人员与权限", "中软平台人员都用邮箱 + 密码 + 两步验证登录；平台运营接口只对运维网段开放", btn("添加人员", () => createStaff(reload), { kind: "primary", icon: icon("plus") })), tools, box);
+  page.append(pageHead("人员与权限", "中软平台人员都用邮箱 + 密码登录", btn("添加人员", () => createStaff(reload), { kind: "primary", icon: icon("plus") })), tools, box);
   tools.append(searchInput({ placeholder: "姓名、邮箱、角色", value: st.q, onInput: (v) => ((st.q = v), draw()) }));
   reload();
 }
@@ -83,7 +82,7 @@ async function createStaff(reload) {
   ];
   const err = h("p", { class: "form-error", role: "alert" });
   const submit = h("button", { type: "submit", class: "btn primary" }, "添加并生成设置码");
-  const form = h("form", { class: "drawer-form", novalidate: true }, specs.map((f) => h("div", { class: "field" }, h("label", { for: `st-${f.name}` }, f.label), h("input", { id: `st-${f.name}`, name: f.name, type: f.type ?? "text", maxlength: f.maxlength, placeholder: f.placeholder, autocomplete: "off", spellcheck: "false" }))), roleChecks(["viewer"]), h("p", { class: "muted small" }, "添加后得到一次性设置码（24 小时内有效）：本人在登录页“首次设置密码”里用它设密码，登录后须绑定两步验证。"), err, h("div", { class: "drawer-foot" }, h("button", { type: "button", class: "btn", onclick: () => dr.close() }, "取消"), submit));
+  const form = h("form", { class: "drawer-form", novalidate: true }, specs.map((f) => h("div", { class: "field" }, h("label", { for: `st-${f.name}` }, f.label), h("input", { id: `st-${f.name}`, name: f.name, type: f.type ?? "text", maxlength: f.maxlength, placeholder: f.placeholder, autocomplete: "off", spellcheck: "false" }))), roleChecks(["viewer"]), h("p", { class: "muted small" }, "添加后得到一次性设置码（24 小时内有效）：本人在登录页“首次设置密码”里用它设密码。"), err, h("div", { class: "drawer-foot" }, h("button", { type: "button", class: "btn", onclick: () => dr.close() }, "取消"), submit));
   const dr = openDrawer({ title: "添加平台人员", body: form });
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -146,10 +145,9 @@ function openStaff(x, { reload, activeSysadmins }) {
     const r = await confirmAction({
       title: `重置 ${x.name ?? x.email}`,
       danger: true,
-      fields: [{ name: "reset_mfa", label: "同时清除两步验证（手机丢失时勾选；本人须重新绑定）", type: "checkbox", value: false }],
       consequences: ["生成新的一次性设置码（只显示一次，24 小时内有效），旧密码作废；", "此人的全部登录立即退出。"],
       confirmLabel: "重置并生成设置码",
-      run: (v) => api.post(`${S(x.aid)}/reset`, { reset_mfa: !!v.reset_mfa }),
+      run: () => api.post(`${S(x.aid)}/reset`, {}),
     });
     if (r?.setup_code) await showSecret({ title: `${x.name ?? x.email} 的新设置码`, secret: r.setup_code, expiresAt: r.expires_at, note: "请经安全渠道交给本人：在登录页“首次设置密码 / 我有设置码”里使用。" });
     if (r) (dr.close(), reload());
@@ -173,7 +171,6 @@ function openStaff(x, { reload, activeSysadmins }) {
         facts([
           ["编号", mono(x.aid)],
           ["角色", roleBadges(x.roles)],
-          ["两步验证", x.mfa?.enabled ? `已启用（剩余恢复码 ${fmt.int(x.mfa.recovery_left)} 个）` : "未启用"],
           ["添加于", `${fmt.full(x.created_at)}${x.created_by ? `（${x.created_by}）` : ""}`],
           ["最近登录", fmt.full(x.last_login_at)],
           x.disabled_reason ? ["停用原因", x.disabled_reason] : null,

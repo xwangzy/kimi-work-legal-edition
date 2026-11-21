@@ -175,7 +175,7 @@ function paneSettings(box) {
         if (ok) (toast("已保存设置"), reload());
       });
       box.append(
-        h("div", { class: "grid-2-1" }, panel("注册与客户端", form, { sub: s.staff_mfa ? `平台人员两步验证：${s.staff_mfa === "required" ? "必须" : "可选（仅开发）"}（部署配置，只读）` : undefined }), panel("邮件通道", facts([["状态", s.mail?.configured ? badge("已配置", "ok") : badge("未配置", "warn")], ["发件地址", s.mail?.from ?? "—"]]), { sub: s.mail?.configured ? "忘记密码会真发 6 位验证码" : "忘记密码不会真发码：只能运营在“账号”里发一次性重置码" })),
+        h("div", { class: "grid-2-1" }, panel("注册与客户端", form), panel("邮件通道", facts([["状态", s.mail?.configured ? badge("已配置", "ok") : badge("未配置", "warn")], ["发件地址", s.mail?.from ?? "—"]]), { sub: s.mail?.configured ? "忘记密码会真发 6 位验证码" : "忘记密码不会真发码：只能运营在“账号”里发一次性重置码" })),
       );
     }, "正在读取设置…");
   reload();

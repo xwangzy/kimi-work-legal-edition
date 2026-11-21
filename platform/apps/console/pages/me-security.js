@@ -1,17 +1,16 @@
 /**
- * 我的 · 账号与安全（成员与平台人员都有）：资料、改密码、两步验证（启用 / 停用 / 恢复码余量）、登录记录与下线、外观。
- * 接口：GET /v1/auth/me；POST /v1/auth/password、/sessions/{sid}/revoke、/mfa/totp/setup|enable|disable（契约 §3.1）。
+ * 我的 · 账号与安全（成员与平台人员都有）：资料、改密码、登录记录与下线、外观。
+ * 接口：GET /v1/auth/me；POST /v1/auth/password、/sessions/{sid}/revoke（契约 §3.1）。
  */
 import * as api from "../api.js";
-import { enrollFlow } from "../mfa.js";
 import { passwordHint } from "../auth.js";
 import { CREATED_VIA, ctx, pageHead, roleLabel, roleText } from "../domain.js";
-import { badge, btn, clear, closeDrawer, confirmAction, dataTable, errText, facts, fmt, h, load, mono, openDrawer, panel, segmented, toast } from "../ui.js";
+import { badge, btn, clear, closeDrawer, confirmAction, dataTable, errText, facts, fmt, h, load, mono, panel, segmented, toast } from "../ui.js";
 
 const KIND = { web: "网页", desktop: "Windows 客户端" };
 
 export function render(page) {
-  page.append(pageHead("账号与安全", "资料、密码、两步验证与登录记录"));
+  page.append(pageHead("账号与安全", "资料、密码与登录记录"));
   const box = h("div", { class: "stack" });
   page.append(box);
   load(box, () => api.auth.me(), (me) => {
@@ -43,7 +42,7 @@ function draw(box, me) {
       ),
       passwordPanel(a),
     ),
-    h("div", { class: "grid-2" }, mfaPanel(me, () => draw(box, ctx.me)), appearancePanel()),
+    h("div", { class: "grid-2" }, appearancePanel()),
     sessionsPanel(me, () => render.reloadBox?.()),
   );
   render.reloadBox = () => load(box, () => api.auth.me(), (m) => ((ctx.me = { ...ctx.me, ...m }), draw(box, ctx.me)), "正在读取账号…");
@@ -75,57 +74,6 @@ function passwordPanel(a) {
     }
   });
   return panel("修改密码", f, { sub: "保存后，你在其他地方的登录会全部退出" });
-}
-
-function mfaPanel(me, redraw) {
-  const m = me.account?.mfa;
-  if (!m)
-    return panel("两步验证", h("p", { class: "muted small" }, ctx.kind === "staff" ? "控制面没有返回两步验证状态（接口未就绪）。" : "成员账号暂未开放两步验证；律师工作所在的 Windows 客户端由律所密钥与设备证书保护。"));
-  const enable = () => {
-    const box = h("div");
-    const dr = openDrawer({ title: "启用两步验证", subtitle: "用手机上的身份验证器生成 6 位码", body: box });
-    enrollFlow(box, {
-      onCancel: () => dr.close(),
-      onDone: async () => {
-        dr.close();
-        toast("两步验证已启用");
-        await ctx.refreshMe?.();
-        redraw();
-      },
-    });
-  };
-  const disable = async () => {
-    const r = await confirmAction({
-      title: "停用两步验证",
-      danger: true,
-      consequences: ["之后只凭密码就能登录这个账号；", "现有恢复码全部作废；", "要再启用须重新扫码绑定。"],
-      fields: [
-        { name: "password", label: "密码", type: "password", required: true, autocomplete: "current-password" },
-        { name: "code", label: "身份验证器 6 位码", required: true, inputmode: "numeric", maxlength: 6 },
-      ],
-      confirmLabel: "停用",
-      run: (v) => api.auth.totpDisable(v.password, String(v.code).replace(/\D+/g, "")),
-    });
-    if (r) {
-      toast("已停用两步验证");
-      await ctx.refreshMe?.();
-      redraw();
-    }
-  };
-  return panel(
-    "两步验证",
-    h(
-      "div",
-      { class: "stack-sm" },
-      facts([
-        ["状态", m.enabled ? badge("已启用", "ok") : badge("未启用", "warn")],
-        ["策略", m.required ? "平台要求必须启用" : "可选"],
-        m.enabled ? ["剩余恢复码", h("span", { class: Number(m.recovery_left) <= 2 ? "tone-text-warn" : "" }, `${fmt.int(m.recovery_left)} 个`)] : null,
-      ]),
-      h("div", { class: "btn-row" }, m.enabled ? btn("停用", disable, { kind: "danger", disabled: !!m.required, title: m.required ? "平台要求必须启用，不能停用" : undefined }) : btn("启用两步验证", enable, { kind: "primary" })),
-    ),
-    { sub: "基于时间的 6 位码（TOTP）" },
-  );
 }
 
 function appearancePanel() {
