@@ -75,10 +75,19 @@ const inv = (method, params = {}) =>
     },
     [method, params],
   );
+// 页面重载、内核按新身份重启时，正在执行的页面脚本会报“Execution context was destroyed”等：这类瞬时错误照常轮询，不算失败
+// （第 54 批 Windows 运行 44917507144：入组批准后应用重启内核、页面重载，旧驱动在这里失败）
+const TRANSIENT = /Execution context was destroyed|Cannot find context|Target (page, context or browser )?closed|navigation|frame was detached|Protocol error/i;
 async function until(fn, ms, step = 1000, what = "条件") {
   const end = Date.now() + ms;
   for (;;) {
-    const v = await fn();
+    let v = null;
+    try {
+      v = await fn();
+    } catch (e) {
+      if (!TRANSIENT.test(String(e?.message ?? e))) throw e;
+      log("页面正在重载，稍后再看：", String(e?.message ?? e).slice(0, 80));
+    }
     if (v) return v;
     if (Date.now() > end) throw new Error(`等待超时：${what}`);
     await sleep(step);
