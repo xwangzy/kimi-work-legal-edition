@@ -168,7 +168,7 @@ export interface KapAgentClient extends AgentClient {
   decide(runId: string, approvalId: string, req: { decision: "approve" | "reject"; object_hash: string; nonce: string; scope: "once" | "task"; feedback?: string }, approver: { channel: string; userId: string }): Promise<void>;
   /** 律师回答提问。 */
   answer(runId: string, questionId: string, answers: Record<string, unknown>, origin: { channel: string; userId: string }, expectedStateVersion?: number): Promise<void>;
-  /** 律师在该运行中的作答（问—答，代号形态；内存）。 */
+  /** 律师在该运行中的作答（问—答，代号形态；本进程内的快路径；重启后以事项账本里 answer_lines 为准，见 executor 的 ledgerAnswers）。 */
   answered(runId: string): string[];
   /** 宿主运行的状态版本（界面作答时带回，乐观并发）。 */
   stateVersion(runId: string): Promise<number | null>;
@@ -193,6 +193,11 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
   const taskByRun = new Map<string, TaskState>();
   /** 律师在各运行中的作答（问—答，代号形态；内存，最多保留 200 个运行）：独立复核核对“律师已确认”的内容（V13 第 38 批 W6）。 */
   const answeredByRun = new Map<string, string[]>();
+  /**
+   * 作答与退回意见在宿主回发“已回答 / 已决定”事件时附到该事件载荷上（answer_lines，代号形态），随时间线镜像进事项账本（第 55 批 K2）：
+   * 内核重启后复核仍能从 run_events 取到律师此前的回答。键为 question_id / approval_id；宿主调用失败即撤回。
+   */
+  const pendingLines = new Map<string, string[]>();
 
   function onMessage(raw: unknown): void {
     const msg = raw as any;
@@ -376,7 +381,11 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
   }
 
   function onRunEvent(task: TaskState, e: { seq: number; type: string; payload: Record<string, any>; at: string }): void {
-    task.events.push({ seq: task.events.length + 1, type: `agent.${e.type.replace(/^run\./, "")}`, payload: e.payload, at: e.at });
+    const lineKey = e.type === "run.question_answered" ? `q:${String(e.payload?.question_id ?? "")}` : e.type === "run.approval_decided" ? `a:${String(e.payload?.approval_id ?? "")}` : null;
+    const attached = lineKey ? pendingLines.get(lineKey) : undefined;
+    if (lineKey && attached) pendingLines.delete(lineKey);
+    const payload = attached && attached.length > 0 ? { ...e.payload, answer_lines: attached } : e.payload;
+    task.events.push({ seq: task.events.length + 1, type: `agent.${e.type.replace(/^run\./, "")}`, payload, at: e.at });
     // 审批与提问（W1）：保存待决项，交给可信界面；决定与回答经内核 API 回到宿主
     switch (e.type) {
       case "run.approval_requested":
@@ -687,11 +696,18 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
       const t = taskByRun.get(runId);
       if (!t || !t.approvals.has(approvalId)) throw Object.assign(new Error("审批不存在或已处理"), { code: "not_found" });
       const card = t.approvals.get(approvalId);
-      await call("approve", { approval_id: approvalId, request: req, approver });
       // 退回计划时写的修改意见同样是律师的指示（已由内核令牌化）：与作答一并交给独立复核（V13 第 38 批）
       const fb = typeof req.feedback === "string" ? req.feedback.trim() : "";
-      if (req.decision === "reject" && fb && card?.tool === "ExitPlanMode") {
-        answeredByRun.set(runId, [...(answeredByRun.get(runId) ?? []), `律师退回计划时的修改意见：${fb.slice(0, 2000)}`].slice(-40));
+      const fbLine = req.decision === "reject" && fb && card?.tool === "ExitPlanMode" ? `律师退回计划时的修改意见：${fb.slice(0, 2000)}` : null;
+      if (fbLine) pendingLines.set(`a:${approvalId}`, [fbLine]);
+      try {
+        await call("approve", { approval_id: approvalId, request: req, approver });
+      } catch (err) {
+        pendingLines.delete(`a:${approvalId}`);
+        throw err;
+      }
+      if (fbLine) {
+        answeredByRun.set(runId, [...(answeredByRun.get(runId) ?? []), fbLine].slice(-40));
         if (answeredByRun.size > 200) answeredByRun.delete(answeredByRun.keys().next().value!);
       }
     },
@@ -701,8 +717,14 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
       // 乐观并发（第 04 篇 §3.3）：界面带回它看到的状态版本；未带（旧调用方）时取宿主当前版本
       const version = expectedStateVersion ?? (await call<{ state_version: number }>("events", { run_id: runId, after: 1e9, origin })).state_version;
       const asked = t.questions.get(questionId);
-      await call("answer", { run_id: runId, request: { question_id: questionId, answers, expected_state_version: version }, origin });
       const lines = questionAnswerLines(asked, answers);
+      if (lines.length > 0) pendingLines.set(`q:${questionId}`, lines);
+      try {
+        await call("answer", { run_id: runId, request: { question_id: questionId, answers, expected_state_version: version }, origin });
+      } catch (err) {
+        pendingLines.delete(`q:${questionId}`);
+        throw err;
+      }
       if (lines.length > 0) {
         answeredByRun.set(runId, [...(answeredByRun.get(runId) ?? []), ...lines].slice(-40));
         if (answeredByRun.size > 200) answeredByRun.delete(answeredByRun.keys().next().value!);

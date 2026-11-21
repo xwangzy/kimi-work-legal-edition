@@ -73,7 +73,16 @@ export const RUN_STATUS_LABELS: Record<string, string> = {
   expired: "已过期",
   timed_out: "已超时",
 };
-export const TERMINAL_STATUSES = ["succeeded", "partial", "failed", "cancelled", "expired", "timed_out", "reconciling"];
+/*
+ * 任务状态集合（第 55 批 K4；审计 B 2.3）：渲染层不引用 @zr-legal/domain（只 import 自己的 lib），这里保留一份，
+ * 由用例 apps/desktop/test/b55-run-states.test.ts 断言与 packages/domain/src/states.ts 的权威表逐项相等。
+ * - RUN_TERMINAL_STATUSES：终态（与 domain TERMINAL_RUN_STATUSES 相同，不含 reconciling）；
+ * - TERMINAL_STATUSES：不会再自动推进的状态（与 domain SETTLED_RUN_STATUSES 相同 = 终态 + reconciling）。
+ *   reconciling 是“需要你处理、未结束”：任务页据此停止快速轮询并显示核实卡，侧栏徽标显示“待核实”。
+ */
+export const RUN_TERMINAL_STATUSES: readonly string[] = ["succeeded", "partial", "failed", "cancelled", "expired", "timed_out"];
+export const RUN_NEEDS_LAWYER_STATUSES: readonly string[] = ["reconciling"];
+export const TERMINAL_STATUSES: readonly string[] = [...RUN_TERMINAL_STATUSES, ...RUN_NEEDS_LAWYER_STATUSES];
 
 export const SCENARIO_LABELS: Record<string, string> = {
   "s1.contract_review": "合同审查",

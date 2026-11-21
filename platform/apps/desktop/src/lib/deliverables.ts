@@ -304,3 +304,25 @@ export function nameParts(names: readonly string[]): Map<string, { head: string;
   }
   return out;
 }
+
+/**
+ * 一份文件在复核流程里走到哪一步（第 55 批：签发页页首的进度）。草稿 → 待复核 → 已签发三步；
+ * 被退回的显示成“草稿（已做）→ 已退回（当前）→ 已签发（未到）”；已有新版本的按它停下时的样子全部置灰。纯函数。
+ */
+export function reviewSteps(status: string): { key: string; label: string; state: "done" | "now" | "todo" }[] {
+  const order = ["draft", "pending_review", "approved"];
+  if (status === "rejected") {
+    return [
+      { key: "draft", label: "草稿", state: "done" },
+      { key: "rejected", label: "已退回", state: "now" },
+      { key: "approved", label: "已签发", state: "todo" },
+    ];
+  }
+  const at = order.indexOf(status);
+  return REVIEW_STAGES.filter((s) => s.key !== "rejected").map((s, i) => ({
+    key: s.key,
+    label: s.label,
+    // 已签发是终点：到了就算做完，不再是“当前”
+    state: at < 0 ? "todo" : i < at || (i === at && status === "approved") ? "done" : i === at ? "now" : "todo",
+  }));
+}

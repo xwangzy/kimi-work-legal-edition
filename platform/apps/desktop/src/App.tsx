@@ -357,10 +357,13 @@ export function App() {
     return (
       <div className="activate" aria-busy={!bootFailed}>
         <div className="activate-card">
-          {/* 第 51 批：启动页也是第一眼——与登录页同一品牌组合 */}
-          <div className="brand">
-            <BrandLockup />
-          </div>
+          {/* 第 51 批：启动页也是第一眼——与登录页同一品牌组合。第 55 批：正在启动时由等待块自己的标识（蓝点呼吸）担当，不再上下各放一个标识；
+              启动失败时才显示静态的品牌组合 */}
+          {bootFailed && (
+            <div className="brand">
+              <BrandLockup size="lg" />
+            </div>
+          )}
           {/* 主进程的“后台服务已停止”在启动占位页也看得到（复核 R2B-25） */}
           {kernelNotice?.status === "stopped" && <p className="activate-error" role="alert">{kernelNotice.message}</p>}
           {bootFailed ? (

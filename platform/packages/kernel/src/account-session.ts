@@ -197,6 +197,18 @@ export function onboardingStateText(state: string, o: { admin?: boolean } = {}):
   }
 }
 
+/** 席位令牌取不到时的发起阻断原因（第 55 批 K3；审计 B 5.3）：按最近一次同步“取席位令牌”那一步的结果码说清原因与办法。 */
+export const SEAT_NONE_REASON = "本所席位已用完或还没有给你分配席位：请联系律所管理员释放闲置席位或增购席位，分到席位后联网即可继续（经标准端点的推理与联网检索暂不可用）";
+export const SEAT_REVOKED_REASON = "你的席位已被律所收回：请联系律所管理员重新分配席位（经标准端点的推理与联网检索暂不可用）";
+export const SEAT_PENDING_REASON = "席位令牌未取得或已失效（联网后自动续期）：经标准端点的推理与联网检索暂不可用";
+
+/** seatStep：控制面同步报告里 steps.seat 的值（如 "no_seat"、"seat_revoked"、"cp_unreachable"；没同步过为 null）。纯函数。 */
+export function seatBlockReason(seatStep: string | null | undefined): string {
+  if (seatStep === "no_seat") return SEAT_NONE_REASON;
+  if (seatStep === "seat_revoked") return SEAT_REVOKED_REASON;
+  return SEAT_PENDING_REASON;
+}
+
 /**
  * 非账号的控制面调用（用量、上限、律所策略、操作记录）失败 → 律师话（第 46 批：原来写“控制面：<代码>”）。
  * 不认识的代码一律说“中软服务暂时不可用，请稍后重试”；原始代码只进日志与诊断。

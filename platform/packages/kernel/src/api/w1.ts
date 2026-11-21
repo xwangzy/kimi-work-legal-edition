@@ -8,7 +8,7 @@
  *   chat.models                        问答可选的模型（第 47 批：K3 / K2.6，只列本机模型路由配置了的）
  *   kernel.capabilities 设备页（执行域如实标注、唯一出口强度、能力账本）
  */
-import { DomainError, sha256Hex } from "@zr-legal/domain";
+import { DomainError, SETTLED_RUN_STATUSES as SETTLED_LIST, sha256Hex } from "@zr-legal/domain";
 import { screenSearchQuery } from "@zr-legal/egress-gate";
 import { approvalPolicyOf } from "../egress/gate-host.ts";
 import type { KernelDb } from "../db.ts";
@@ -43,7 +43,8 @@ const invalid = (msg: string) => new DomainError("validation", msg, 422);
  * 内核已判终态（或转人工对账）的任务：确认卡与提问不再呈现、不再受理（复核 B4-B07 取消竞态补强）——律师取消后到宿主收尾之间
  * （执行器轮询发现并取消宿主，约 1 秒）宿主内存里的卡片仍在，此时批准会让已取消任务的工具照常执行。
  */
-const SETTLED_RUN_STATUSES: ReadonlySet<string> = new Set(["succeeded", "partial", "failed", "cancelled", "expired", "timed_out", "reconciling"]);
+// 第 55 批 K4：取 @zr-legal/domain 的权威集合（终态 + 需要律师处理的 reconciling）
+const SETTLED_RUN_STATUSES: ReadonlySet<string> = new Set(SETTLED_LIST);
 
 export function createW1Api(d: W1Deps): Record<string, Handler> {
   const cardsFor = (runId: string, matterId: string) => {

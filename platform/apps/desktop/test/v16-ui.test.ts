@@ -71,7 +71,7 @@ test("V16 A4：按你的意见修改文书没有 Word 时不预选、说明原�
   assert.equal(wordDocGap(card("contract-review"), txt, []), null);
   assert.deepEqual(preselectDocs(card("casefile"), mixed), ["t", "w"]);
   const ui = src("components/ScenarioStart.tsx");
-  assert.match(ui, /!wordGap && missing\.length === 0/, "缺 Word 时开始按钮保持禁用");
+  assert.match(ui, /!wordGap && !noCase && missing\.length === 0/, "缺 Word 时开始按钮保持禁用");
   assert.match(ui, /\{wordGap && <div className="ss-need">\{wordGap\}<\/div>\}/);
 });
 

@@ -154,7 +154,7 @@ export function DeliverablesPage() {
                   {Icon.right()}
                 </span>
               )}
-              <button role="tab" aria-selected={filter === s.key} className={`dl-flow-step dl-flow-${s.key}${filter === s.key ? " on" : ""}${s.key === "rejected" ? " aside" : ""}`} onClick={() => choose(s.key)}>
+              <button role="tab" aria-selected={filter === s.key} className={`dl-flow-step dl-flow-${s.key}${filter === s.key ? " on" : ""}${s.key === "rejected" ? " aside" : ""}${rows !== null && counts[s.key] === 0 ? " zero" : ""}`} onClick={() => choose(s.key)}>
                 <span className="dl-flow-n">{rows === null ? "–" : counts[s.key]}</span>
                 <span className="dl-flow-text">
                   <span className="dl-flow-label">{s.label}</span>

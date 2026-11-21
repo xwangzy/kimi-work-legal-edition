@@ -42,15 +42,22 @@
 .kwl-wait-hint { font-size: var(--fs-caption); line-height: 1.55; }
 .kwl-wait-time { flex: none; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text-secondary); padding-top: 2px; }
 .kwl-wait.inline { padding: 0; background: transparent; }
-.kwl-wait.page { justify-content: center; padding: var(--sp-7) var(--sp-4); background: transparent; }
+.kwl-wait.page { flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-4); padding: var(--sp-7) var(--sp-4); background: transparent; text-align: center; }
+.kwl-wait.page .kwl-wait-main { flex: none; align-items: center; }
+.kwl-wait.page .kwl-wait-time { padding-top: 0; }
+/* 整页等待的标识（第 55 批）：官方 Logomark 44px，蓝点呼吸 + 光晕（光晕圆心对准蓝点：viewBox 180 里的 (139, 46)） */
+.kwl-mark-loader { position: relative; display: inline-block; width: 44px; height: 44px; }
+.kwl-mark-loader .logo-mark { width: 44px; height: 44px; }
+.kwl-mark-loader .logo-mark-dot { transform-box: fill-box; transform-origin: 40% 60%; animation: kwl-breathe 1.8s ease-in-out infinite; }
+.kwl-mark-halo { position: absolute; left: 31px; top: 8.5px; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--brand-mark-dot); animation: kwl-halo 1.8s var(--ease-out-soft) infinite; }
 
 /* ── 进入动画：新出现的步骤、卡片轻轻浮起（不改布局，只动位移与透明度） ── */
 .kwl-enter { animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }
 @keyframes kwl-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .kwl-pulse, .kwl-pulse::after, .kwl-spin, .kwl-skel-box, .kwl-skel-line, .kwl-enter { animation: none; }
-  .kwl-pulse::after { display: none; }
+  .kwl-pulse, .kwl-pulse::after, .kwl-spin, .kwl-skel-box, .kwl-skel-line, .kwl-enter, .kwl-mark-loader .logo-mark-dot, .kwl-mark-halo { animation: none; }
+  .kwl-pulse::after, .kwl-mark-halo { display: none; }
   .kwl-skel { visibility: visible; }
   /* 小圆环静止时仍要看得出“在进行”：保留缺口的静态圆环 */
 }

@@ -1,0 +1,43 @@
+/* 开始面板（第 55 批）：案情与材料、逐项请求、更多选项。沿用 styles.css 里 .ss-* 的骨架，这里只放新增与改写的部分。
+   三段不再是三只并排的描边盒子：段与段之间用留白 + 一条细线分开，段标题是小标题；输入控件是面板里唯一有边框的东西。 */
+.ss { gap: var(--sp-4); }
+.ss-sec { border: 0; border-radius: 0; padding: 0; gap: 10px; }
+.ss-sec + .ss-sec { padding-top: var(--sp-4); border-top: 1px solid var(--border-subtle); }
+.ss-sec > .ss-h { font-size: var(--fs-subtitle); font-weight: 600; }
+.ss-sec > .ss-hint { margin-top: -6px; line-height: 1.6; }
+
+/* 拖放区：一行高的虚线框；没有材料时高一些，是这一段的主角 */
+.ss-drop { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); min-height: 40px; margin-top: var(--sp-1); padding: var(--sp-2) var(--sp-3); border: 1px dashed var(--border-default); border-radius: var(--r-md); font-size: var(--fs-caption); color: var(--text-secondary); transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard); }
+.ss-drop-empty { min-height: 64px; margin-top: 0; background: var(--bg-subtle); }
+.ss-drop.over { border-color: var(--focus-ring); background: var(--accent-bg); color: var(--text-primary); }
+.ss-drop-icon { display: inline-flex; color: var(--text-label); }
+.ss-drop .ss-add { align-self: auto; padding: 0 0 0 2px; font-size: inherit; }
+
+/* 案情：标签一行（右侧一句小提示）+ 多行输入 + 说明 */
+.ss-brief { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-caption); }
+.ss-brief-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
+.ss-brief-head .ss-label { font-weight: 500; color: var(--text-primary); }
+.ss-brief-tip { font-size: var(--fs-xs); }
+.ss-brief textarea { width: 100%; min-height: 76px; resize: vertical; line-height: 1.7; font-size: var(--fs-body); }
+.ss-field-help { display: block; font-size: var(--fs-xs); line-height: 1.6; }
+.ss-control { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.ss-control > input, .ss-control > textarea { width: 100%; }
+
+/* 本事项已有的事实 */
+.ss-facts { display: flex; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-caption); line-height: 1.6; }
+.ss-facts-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--status-success-solid); transform: translateY(-1px); }
+
+/* 逐项请求：编号 + 输入框一行一项 */
+.ss-list { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ss-list-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 6px; }
+.ss-list-n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--bg-muted); color: var(--text-label); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.ss-list-row input { width: 100%; }
+.ss-list-x { width: 28px; height: 28px; padding: 0; align-items: center; justify-content: center; color: var(--text-secondary); }
+.ss-list-x svg { width: 15px; height: 15px; }
+.ss-list .ss-add { padding: 2px 0 0 28px; }
+
+/* 更多选项 */
+.ss-more { align-self: flex-start; display: inline-flex; align-items: center; gap: 2px; padding: 2px 0; font-size: var(--fs-caption); color: var(--text-label); }
+.ss-more svg { width: 14px; height: 14px; transition: transform var(--motion-fast) var(--ease-standard); }
+.ss-more.open svg { transform: rotate(90deg); }
+.ss-more .muted { font-weight: 400; }

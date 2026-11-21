@@ -9,6 +9,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { importBytes, makeKernel, waitRun, waitRunAnswering, type TestKernel } from "./helpers.ts";
 import { questionAnswerLines } from "../src/executor/kap-agent-client.ts";
+import { ledgerAnswers, mergeAnswerLines } from "../src/executor/executor.ts";
 import { startCloudV0, type CloudV0 } from "./cloud-v0.ts";
 import { parseFindings, fixPrompt, reviewMessages, reviewNote } from "../src/services/independent-review.ts";
 
@@ -504,6 +505,13 @@ test("律师在任务中的答复交给复核人（V13 W6：律师答了“180 �
     assert.equal(seen.review.length, 1);
     const user = String(msgs(seen.review[0]!).find((m) => m.role === "user")?.content ?? "");
     assert.ok(user.includes("【律师在任务中的答复】") && user.includes("问：价款是否含税？　答：含税"), user.slice(0, 600));
+    // 第 55 批 K2：作答随“已回答”事件落进事项账本；模拟内核重启（新的引擎客户端内存里没有作答），复核消息照样带上这条答复
+    const ev = tk.kernel.db.get<{ payload: string }>(`SELECT payload FROM run_events WHERE run_id = ? AND type = 'agent.question_answered'`, [run.run_id]);
+    assert.deepEqual(JSON.parse(ev!.payload).answer_lines, ["问：价款是否含税？　答：含税"]);
+    const afterRestart = mergeAnswerLines(ledgerAnswers(tk.kernel.db, [run.run_id]), []);
+    assert.deepEqual(afterRestart, ["问：价款是否含税？　答：含税"]);
+    const msg2 = reviewMessages({ ...base, answers: afterRestart })[1]!.content;
+    assert.ok(msg2.includes("【律师在任务中的答复】") && msg2.includes("问：价款是否含税？　答：含税"));
   } finally {
     cloud.model.script = null;
   }
@@ -567,6 +575,8 @@ test("律师退回计划时写的修改意见也交给复核人（V13 W6 复测�
     assert.equal(seen.review.length, 1);
     const user = String(msgs(seen.review[0]!).find((m) => m.role === "user")?.content ?? "");
     assert.ok(user.includes("律师退回计划时的修改意见：价款120万元按含税口径写"), user.slice(0, 800));
+    // 第 55 批 K2：退回意见同样落进账本（代号形态），重启后复核仍取得到
+    assert.deepEqual(ledgerAnswers(tk.kernel.db, [run.run_id]), ["律师退回计划时的修改意见：价款120万元按含税口径写"]);
   } finally {
     cloud.model.script = null;
   }

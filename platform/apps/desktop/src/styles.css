@@ -38,12 +38,19 @@ input:focus, select:focus, textarea:focus { border-color: var(--focus-ring); }
 .logo-mark-bg { fill: var(--brand-mark-bg); }
 .logo-mark-k { fill: var(--brand-mark-fg); }
 .logo-mark-dot { fill: var(--brand-mark-dot); }
-/* 第 51 批：两行签名式组合——标识 28px 与两行文字块等高；主名 15px/600 收字距，版本全称 12px/500 次要灰、放宽字距，两行左对齐 */
-.brand-lockup { display: inline-flex; align-items: center; gap: 10px; min-width: 0; color: var(--text-primary); }
-.brand-logo { width: 28px; height: 28px; }
-.brand-words { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-width: 0; }
-.brand-word { font-size: var(--fs-lg); font-weight: 600; line-height: 18px; letter-spacing: -0.02em; white-space: nowrap; }
-.brand-edition { font-size: var(--fs-xs); font-weight: 500; line-height: 15px; letter-spacing: 0.04em; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 第 55 批：一行组合——标识 26px + 粗体字标“Kimi Work”（15px/700，收字距）+ 黑底小标“法律版”（图形，17px 高），与首页中央字标同一套写法 */
+.brand-lockup { display: inline-flex; align-items: center; gap: 9px; min-width: 0; color: var(--text-primary); }
+.brand-logo { width: 26px; height: 26px; }
+.brand-words { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.brand-word { display: block; flex: none; height: 20px; width: auto; overflow: visible; }
+.brand-tag { display: block; flex: none; position: relative; top: -1px; }
+.brand-tag-bg { fill: var(--btn-primary); }
+.brand-tag-text { fill: var(--btn-primary-text); }
+.brand-lockup.brand-lg { gap: 12px; }
+.brand-lockup.brand-lg .brand-logo { width: 36px; height: 36px; }
+.brand-lockup.brand-lg .brand-word { height: 27px; }
+.brand-lockup.brand-lg .brand-words { gap: 8px; }
+.brand-lockup.brand-lg .brand-tag { width: auto; height: 20px; top: -2px; }
 .brand-mark-btn { flex: none; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: var(--r-sm); background: transparent; }
 button.brand-mark-btn:hover { background: var(--bg-hover); }
 button.brand-mark-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
@@ -1131,7 +1138,7 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .activate { min-height: 100vh; display: grid; place-items: center; background: var(--bg-sidebar); padding: 24px; }
 .activate-card { width: min(480px, 100%); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); padding: 28px 32px 24px; box-shadow: var(--shadow-xs); }
 .activate-card .brand { padding: 0 0 18px; height: auto; }
-.activate-card .brand-logo { width: 28px; height: 28px; }
+
 .activate-title { font-size: var(--fs-xl); font-weight: 600; margin: 0 0 8px; }
 .activate-lead { color: var(--text-secondary); font-size: var(--fs-base); line-height: 1.6; margin: 0 0 18px; }
 .activate-code { font-family: var(--font-mono); font-size: var(--fs-lg); letter-spacing: 0.06em; padding: 10px 12px; border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-main); color: var(--text-primary); }

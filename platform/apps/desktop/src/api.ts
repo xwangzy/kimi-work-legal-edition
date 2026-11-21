@@ -656,6 +656,14 @@ export interface Capabilities {
   customer_rows?: { feature: string; status: string; note: string }[];
 }
 
+/** 文字 → UTF-8 → base64（分块拼，长文字不撑爆调用栈）。 */
+export function utf8ToBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -920,6 +928,12 @@ export const api = {
     const data_base64 = await fileToBase64(file);
     return invoke("materials.import", { matter_id: matterId, data_base64, filename: file.name, mime: file.type || "application/octet-stream" });
   },
+  /**
+   * 律师直接写的文字存成一份材料（第 55 批：开始面板的案情说明）。文字本来就在界面里，按内容交给内核（与浏览器形态拖放文件同一个入口，
+   * 内核照常算哈希、解析、加密入库）；不经文件路径。
+   */
+  importMaterialText: (matterId: string, filename: string, text: string) =>
+    invoke<{ document_version_id: string; chars: number; sha256: string; note: string }>("materials.import", { matter_id: matterId, data_base64: utf8ToBase64(text), filename, mime: "text/plain" }),
   /** 材料用途（我方 / 对方 / 参考；null 清除）。 */
   setMaterialRole: (documentVersionId: string, role: "ours" | "theirs" | "reference" | null) => invoke<{ role: string | null }>("materials.set_role", { document_version_id: documentVersionId, role }),
   /** 把本事项的 Word 成果作为新材料（V14 第 39 批：在上一轮修订稿 / 清洁稿 / 起草稿上继续修改）。 */

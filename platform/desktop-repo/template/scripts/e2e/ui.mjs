@@ -329,8 +329,10 @@ async function task(cardFile) {
   await dlg.locator('input[placeholder^="例如：甲公司股权转让"]').fill(m.title);
   if (m.client) await dlg.locator('input[placeholder^="委托人"]').fill(m.client);
   if (m.counter) await dlg.locator('input[placeholder^="多个以顿号"]').fill(m.counter);
-  // 客户授权是分段按钮（role=radio，第 48 批 D-202），不是 <input type=radio>：本单材料是虚构案例，按“已取得”记录
-  await dlg.locator('[role=radiogroup][aria-label="客户是否同意使用 AI 辅助"] [role=radio]').filter({ hasText: /^\s*已取得\s*$/ }).click();
+  // 客户授权（第 48 批 D-202：新建事项时的分段按钮；第 51 批 D-216 起改为每个事项第一次用 AI 时在“开始前确认”里逐案记录，
+  // 新建事项不再问）：两种版本都认——有这组按钮就按“已取得”，没有就留到开始前确认那一步记录
+  const authz = dlg.locator('[role=radiogroup][aria-label="客户是否同意使用 AI 辅助"] [role=radio]').filter({ hasText: /^\s*已取得\s*$/ });
+  if (await authz.count()) await authz.click();
   if (m.asOf || m.region || m.eventDate) {
     await dlg.locator("button").filter({ hasText: "更多设置" }).first().click();
     if (m.eventDate) await dlg.locator('input[placeholder^="如 2023-05"]').fill(m.eventDate);
@@ -365,7 +367,8 @@ async function task(cardFile) {
   await sleep(1500);
   for (const c of await sp.locator("input[type=checkbox][aria-label]").all()) if (!(await c.isChecked())) await c.check();
   for (const [label, v] of Object.entries(card.fields ?? {})) {
-    const field = sp.locator("label.ss-field").filter({ has: page.locator(".ss-label", { hasText: label }) }).first();
+    // 第 55 批：字段外层由 <label> 改为 <div>（逐项请求一栏里有多个输入框与按钮）；两种都认
+    const field = sp.locator(".ss-field").filter({ has: page.locator(".ss-label", { hasText: label }) }).first();
     if (Array.isArray(v)) {
       for (const x of v) await field.locator("button").filter({ hasText: new RegExp(`^\\s*${x}\\s*$`) }).click();
     } else if (await field.locator("textarea, input:not([type=checkbox])").count()) {
@@ -380,10 +383,26 @@ async function task(cardFile) {
   await shot("12-开始面板");
   const verb = sp.locator("button").filter({ hasText: new RegExp(`^\\s*(${VERB[card.id] ?? "开始"}|下一步：确认)\\s*$`) }).first();
   await verb.click();
-  for (let i = 0; i < 6 && !/#\/run\//.test(page.url()); i++) {
+  for (let i = 0; i < 10 && !/#\/run\//.test(page.url()); i++) {
     await sleep(1500);
     const d2 = page.locator("[role=dialog]").last();
     if (await d2.count()) {
+      // 第 51 批 D-216：本事项第一次用 AI——记录客户授权的依据与出处（本单材料是虚构案例，按“委托合同中的 AI 条款”记录）
+      const record = d2.locator("button").filter({ hasText: /^\s*记录授权并开始\s*$/ }).first();
+      if (await record.count()) {
+        await d2.getByText("委托合同中的 AI 条款").first().click().catch(() => {});
+        const ref = d2.locator('input[aria-label="授权依据的出处"]').first();
+        if ((await ref.count()) && !(await ref.inputValue())) await ref.fill("委托代理合同（验收用虚构案例）第 9 条");
+        await shot("12b-记录客户授权");
+        await record.click().catch(() => {});
+        continue;
+      }
+      // 第 51 批：首次使用 AI 的告知（给律师本人，一次）
+      const notice = d2.locator("button").filter({ hasText: /^\s*我知道了，继续\s*$/ }).first();
+      if (await notice.count()) {
+        await notice.click().catch(() => {});
+        continue;
+      }
       const b = d2.locator("button").filter({ hasText: /^\s*(确认发起|开始)\s*$/ }).first();
       if (await b.count()) await b.click().catch(() => {});
     }

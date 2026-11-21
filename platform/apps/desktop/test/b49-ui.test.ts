@@ -121,6 +121,7 @@ test("全局搜索找材料：分组“材料”，点开交给事项页切到�
 
 test("品牌：首页小标与侧栏字标、安装包名称一致为“法律版”", () => {
   assert.match(src("pages/Home.tsx"), /<span className="home-wordmark-tag">法律版<\/span>/);
-  // 第 51 批：侧栏是两行签名（第二行写版本全称“法律行业发行版”）；首页中央字标与安装包仍用简称“法律版”
-  assert.match(src("components/Brand.tsx"), /edition = "法律行业发行版"/);
+  // 第 55 批：侧栏与首页中央字标同一套写法——粗体字标 + 黑底小标“法律版”（第 51 批的两行签名写的是全称，与首页不是一套）
+  assert.match(src("components/Brand.tsx"), /edition = "法律版"/);
+  assert.match(src("components/Brand.tsx"), /<EditionTag text=\{edition\} \/>/);
 });

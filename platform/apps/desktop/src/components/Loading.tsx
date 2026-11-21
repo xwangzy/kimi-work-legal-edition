@@ -9,7 +9,21 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { fmtWait, waitLevel } from "../lib/waiting.ts";
+import { KimiMark } from "./Brand.tsx";
 import "../styles-motion.css";
+
+/**
+ * 整页等待的标识（第 55 批）：官方 Logomark，右上角的蓝点在呼吸、带一圈淡出的光晕——冷启动、整页载入这种“第一眼”用它，
+ * 比一个 8px 的小蓝点更像这个产品自己在准备。只动蓝点（位移与透明度），标识本身不变形；减少动效时静止。
+ */
+export function KimiMarkLoader() {
+  return (
+    <span className="kwl-mark-loader" aria-hidden="true">
+      <KimiMark />
+      <span className="kwl-mark-halo" />
+    </span>
+  );
+}
 
 export function KimiPulse({ size = "sm", idle = false, label }: { size?: "sm" | "md" | "lg"; idle?: boolean; label?: string }) {
   return <span className={`kwl-pulse${size === "sm" ? "" : ` ${size}`}${idle ? " idle" : ""}`} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true} />;
@@ -68,7 +82,7 @@ export function WaitBlock({ title, hint, longHint, since, variant = "card", chil
   const level = waitLevel(elapsed);
   return (
     <div className={`kwl-wait${variant === "card" ? "" : ` ${variant}`}`} role="status" aria-live="polite">
-      <KimiPulse />
+      {variant === "page" ? <KimiMarkLoader /> : <KimiPulse />}
       <div className="kwl-wait-main">
         <span className="kwl-wait-title">{title}</span>
         {hint && <span className="kwl-wait-hint">{hint}</span>}

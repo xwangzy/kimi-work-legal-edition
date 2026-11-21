@@ -3,7 +3,7 @@ name: due-diligence
 description: >-
   法律尽职调查两阶段。阶段一（清单）：交易保护问题、红旗问题前置、分模块核查清单、可直接发对方的资料清单、访谈提纲。阶段二（发现）：把数据室材料、访谈纪要和律师导入的外部查询结果整理成尽调发现（事实、法律后果、对交易的影响、交易文件处理方案），核查受限事项单列，出内部报告。不出可签发的法律意见书。
 when_to_use: 股权收购、增资、资产收购等交易的法律尽调；阶段一在拿到交易简介后，阶段二在数据室材料与访谈纪要进入事项后。
-arguments: [stage, deal_type, focus]
+arguments: [stage, deal_type, focus, industry]
 kwl:
   id: due-diligence
   version: 1.4.0

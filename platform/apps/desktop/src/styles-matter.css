@@ -1,0 +1,115 @@
+/* 事项页与事项列表（第 55 批第二轮）。后加载，覆盖 styles.css 里的同名规则；只用语义令牌。
+   取向：事项页是律师的“大本营”——页首说清这是谁的案子、到了哪一步；概览只回答三件事：等我做什么、哪天到期、AI 做过什么。 */
+
+/* ── 事项头：去掉灰底描边盒子，改成标题下的一行说明 + 一行状态胶囊 ── */
+.matter-head { background: transparent; border: 0; border-radius: 0; padding: 0; gap: 10px; margin-bottom: var(--sp-1); }
+.matter-head .mh-row { gap: 4px 0; }
+.matter-head .mh-row:first-child .mh-field { display: inline-flex; align-items: baseline; font-size: var(--fs-body); }
+.matter-head .mh-row:first-child .mh-field + .mh-field::before { content: "·"; margin: 0 10px; color: var(--border-hover); }
+.matter-head .mh-k { color: var(--text-secondary); margin-right: 6px; }
+.matter-head .mh-v { font-weight: 500; color: var(--text-primary); }
+.matter-head .mh-row + .mh-row { gap: var(--sp-2); }
+
+/* ── 阶段条：一条轨道（与成果流程条、事实筛选同一种语言），当前阶段浮起；右侧是事件时点与地域 ── */
+.stage-strip { justify-content: space-between; margin: var(--sp-1) 0 var(--sp-4); }
+.stage-line { gap: 2px; padding: 3px; border-radius: var(--r-md); background: var(--bg-muted); flex-wrap: nowrap; }
+.stage-step { position: relative; border: 0; background: transparent; border-radius: var(--r-sm); height: 30px; padding: 0 var(--sp-4); font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; }
+.stage-step:hover:not(.on):not(:disabled) { background: transparent; color: var(--text-primary); }
+.stage-step.on { background: var(--bg-surface); color: var(--text-primary); font-weight: 600; box-shadow: var(--shadow-xs); border-color: transparent; }
+.stage-step:disabled { color: var(--text-secondary); }
+.stage-step:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.stage-line > :not(.stage-step) { margin-left: var(--sp-1); }
+.stage-facts { gap: var(--sp-1) var(--sp-4); }
+
+/* ── 概览的卡片：标题是小标题（不是灰色小字），行有悬停底、统一行高 ── */
+.board-2col { gap: var(--sp-4); }
+.board-col { gap: var(--sp-4); }
+.board-col .widget { padding: var(--sp-4) var(--sp-4) var(--sp-3); min-height: 0; }
+.board-col .widget-title { margin-bottom: var(--sp-2); font-size: var(--fs-body); font-weight: 600; color: var(--text-primary); }
+.board-col .todos { gap: 0; margin: 0 calc(-1 * var(--sp-2)); }
+.board-col .todo-row { min-height: 36px; padding: 0 var(--sp-2); border-radius: var(--r-sm); gap: var(--sp-3); }
+.board-col button.todo-row { width: 100%; border: 0; background: transparent; text-align: left; font: inherit; font-size: var(--fs-body); color: inherit; }
+.board-col .todo-row:hover { background: var(--bg-hover-soft); }
+.board-col button.todo-row:active { background: var(--bg-active); }
+.board-col button.todo-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+/* 系统推出的待办（等你确认、AI 已完成待你复核）：橙点 + 右侧“去处理 ›” */
+.todo-mark { flex: none; width: 7px; height: 7px; margin: 0 4px 0 5px; border-radius: 50%; background: var(--status-warning-solid); }
+.board-col .todo-go { display: inline-flex; align-items: center; gap: 2px; color: var(--text-secondary); font-size: var(--fs-xs); }
+.board-col .todo-go::after { content: "›"; font-size: var(--fs-body); line-height: 1; color: var(--border-hover); transition: transform var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.board-col button.todo-row:hover .todo-go { color: var(--accent-text); }
+.board-col button.todo-row:hover .todo-go::after { color: var(--accent-text); transform: translateX(2px); }
+.board-col .todo-derived:hover .todo-title { color: var(--text-primary); }
+.board-col .todos > .btn-link { margin: var(--sp-1) var(--sp-2) 0; font-size: var(--fs-caption); }
+.board-col .todos > p { margin: 0 var(--sp-2); }
+.board-col .todo-add { margin: var(--sp-2); }
+/* 最近 AI 记录：名称 | 状态（色点）| 时间 */
+.board-col .w-run { display: grid; grid-template-columns: minmax(0, 1fr) auto 76px; align-items: center; column-gap: var(--sp-4); width: calc(100% + 2 * var(--sp-2)); margin: 0 calc(-1 * var(--sp-2)); min-height: 36px; padding: 0 var(--sp-2); border-radius: var(--r-sm); }
+.board-col .w-run:hover { background: var(--bg-hover-soft); color: var(--text-primary); }
+.w-run-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w-run-status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-caption); color: var(--text-label); white-space: nowrap; }
+.w-run-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--status-neutral-solid); }
+.w-run-status.tone-warn::before { background: var(--status-warning-solid); }
+.w-run-status.tone-info::before { background: var(--accent); }
+.w-run-status.tone-ok::before { background: var(--status-success-solid); }
+.w-run-status.tone-danger::before { background: var(--status-danger-solid); }
+.w-run-time { font-size: var(--fs-xs); color: var(--text-secondary); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.board-col .w-row { min-height: 32px; align-items: center; gap: var(--sp-3); }
+.board-col .w-row b { font-weight: 500; white-space: nowrap; }
+
+/* ── 材料：显示方式是一条小轨道；拖放区收成一行高；用途三枚胶囊平时只留选中的那枚 ── */
+.wb-doc-view.mat-view { display: inline-flex; gap: 2px; padding: 3px; margin: 0 0 var(--sp-3); border-radius: var(--r-md); background: var(--bg-muted); color: inherit; }
+.mat-view .wb-view-btn { height: 28px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-secondary); font-size: var(--fs-caption); box-shadow: none; }
+.mat-view .wb-view-btn:hover { color: var(--text-primary); }
+.mat-view .wb-view-btn.active { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-xs); }
+.upload-zone { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 0 2px; min-height: 48px; padding: var(--sp-2) var(--sp-4); margin-bottom: var(--sp-3); border-width: 1px; border-radius: var(--r-md); font-size: var(--fs-caption); line-height: 1.7; background: var(--bg-subtle); }
+.upload-zone .btn-link { font-size: inherit; }
+.mat-table th { font-size: var(--fs-xs); font-weight: 500; color: var(--text-secondary); padding-top: var(--sp-2); padding-bottom: var(--sp-2); }
+.mat-table td { padding-top: 10px; padding-bottom: 10px; vertical-align: middle; }
+.mat-table tbody tr:hover { background: var(--bg-hover-soft); }
+.mat-table td.mat-name .mat-name-text { font-weight: 500; }
+/* 已标用途的行：没选中的两枚平时藏起来，鼠标移到这一行或键盘聚焦时出现（一屏十几行“我方 对方 参考”太吵） */
+.mat-table tr:not(:hover) .role-pills:has(.on):not(:focus-within) .role-pill:not(.on) { visibility: hidden; }
+
+/* ── 事项列表：列表行（事项名 + 一行客户与相对方 | 立场 | 进展 | 最近活动 | ›） ── */
+.mt-head { align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.mt-head .page-title { display: flex; align-items: baseline; gap: var(--sp-2); margin: 0; flex: 1; }
+.mt-count { font-size: var(--fs-caption); font-weight: 400; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.mt-search { flex: 0 1 300px; height: 36px; }
+.mt-search input::-webkit-search-cancel-button { appearance: none; }
+.mt-list { display: flex; flex-direction: column; border-top: 1px solid var(--border-subtle); }
+.mt-row { display: grid; grid-template-columns: 36px minmax(0, 1fr) 88px minmax(0, auto) 92px 16px; align-items: center; column-gap: var(--sp-4); width: 100%; min-height: 64px; padding: 10px var(--sp-3); border: 0; border-bottom: 1px solid var(--border-subtle); background: transparent; text-align: left; font: inherit; color: inherit; transition: background var(--motion-fast) var(--ease-standard); }
+.mt-row:hover { background: var(--bg-hover-soft); }
+.mt-row:active { background: var(--bg-active); }
+.mt-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.mt-icon { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: var(--r-sm); background: var(--bg-muted); color: var(--text-label); transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.mt-row:hover .mt-icon { background: var(--btn-primary); color: var(--btn-primary-text); }
+.mt-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mt-title { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.mt-name { font-size: var(--fs-md); font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-sub { font-size: var(--fs-caption); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-stance { font-size: var(--fs-caption); color: var(--text-label); white-space: nowrap; }
+.mt-prog { display: inline-flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.mt-when { font-size: var(--fs-caption); color: var(--text-secondary); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mt-go { display: inline-flex; color: var(--border-hover); transition: transform var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
+.mt-go svg { width: 14px; height: 14px; }
+.mt-row:hover .mt-go { color: var(--text-label); transform: translateX(2px); }
+.mt-empty { padding: var(--sp-7) 0; text-align: center; }
+@media (max-width: 860px) {
+  .mt-row { grid-template-columns: 36px minmax(0, 1fr) auto 16px; }
+  .mt-stance, .mt-when { display: none; }
+  .stage-line { flex-wrap: wrap; }
+}
+
+/* 材料工具栏：左边显示方式，右边案卷文件夹（说明小字跟在按钮下面、靠右） */
+.mat-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3) var(--sp-5); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.mat-toolbar .wb-doc-view.mat-view { margin: 0; }
+.mat-toolbar .mf { margin: 0 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; min-width: 0; }
+.mat-toolbar .mf-bar { justify-content: flex-end; }
+.mat-toolbar .mf-note { margin: 2px 0 0; font-size: var(--fs-xs); text-align: right; }
+.mat-toolbar .mf > .kwl-wait, .mat-toolbar .mf-list { align-self: stretch; }
+/* 阶段条里的“其他阶段”：轨道里的一个安静入口，不是一只带边框的下拉框 */
+.stage-line .select-trigger { height: 30px; min-height: 0; padding: 0 var(--sp-2) 0 var(--sp-3); border: 0; background: transparent; box-shadow: none; color: var(--text-secondary); font-size: var(--fs-caption); }
+.stage-line .select-trigger:hover { color: var(--text-primary); }
+/* 概览“期限”卡：临近的期限着色（三天内红、七天内橙） */
+.w-row b.due-red { color: var(--status-danger-text); }
+.w-row b.due-orange { color: var(--status-warning-text); }

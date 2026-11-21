@@ -74,7 +74,8 @@ test("场景卡指定的主交付物是方法列出的交付物；Word 主交付
 test("开始面板：点开始时手里的估价不是按当前输入算的就重算；确认事实为零的提示与 D-155 一致", () => {
   const src = readFileSync(join(SRC, "components", "ScenarioStart.tsx"), "utf8");
   const start = /const start = async \(\) => \{([\s\S]*?)\n  \};/.exec(src)?.[1] ?? "";
-  assert.ok(start.includes("prepareStart(matter, value, opts)"), "开始时可重算估价");
+  // 第 55 批：写了案情时先存成材料，再按带上它的输入重算（v 缺省就是 value）
+  assert.ok(start.includes("prepareStart(matter, v, opts)"), "开始时可重算估价");
   assert.doesNotMatch(start, /=\s*estimate\s*\?\?/, "不能不看输入就沿用去抖算出的估价");
   assert.match(start, /estimateFor\.current/, "按估价对应的输入判断是否过期");
   assert.match(src, /estimateFor\.current = \[matter, value, opts\]/, "估价落地时记下它对应的输入");

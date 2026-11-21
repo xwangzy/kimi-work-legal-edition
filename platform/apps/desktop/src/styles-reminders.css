@@ -84,3 +84,10 @@
   .rm-head { flex-wrap: wrap; }
   .rm-row { grid-template-columns: 64px minmax(0, 1fr) auto; padding: var(--sp-2) var(--sp-3); }
 }
+
+/* ── 第 55 批：日期做成一块小日历（浅底圆角，月日在上、周几在下），行高放开；倒计时是这一行的结论，字重加一档 ── */
+.rm-row { grid-template-columns: 64px minmax(0, 1fr) auto; gap: var(--sp-4); min-height: 68px; padding: var(--sp-3) var(--sp-4); }
+.rm-date { align-items: center; justify-content: center; width: 64px; height: 44px; border-radius: var(--r-sm); background: var(--bg-muted); line-height: 1.3; }
+.rm-date-md { font-size: var(--fs-caption); }
+.rm-main { gap: 4px; }
+.rm-kind { font-size: var(--fs-base); }

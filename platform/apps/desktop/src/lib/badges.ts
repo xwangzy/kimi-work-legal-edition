@@ -3,6 +3,8 @@
  * 运行状态（排队、恢复、预算暂停、等待律师、对账各有文案）、场景是否调用模型、事项端点、是否全部化名、
  * 宿主事件里在途的执行域与检索/抓取工具、闸门在途的模型请求（runs.get 的 inflight）。
  */
+import { RUN_TERMINAL_STATUSES } from "./labels.ts";
+
 export interface BadgeFacts {
   status: string;
   /** 运行场景（a1.agent_task / s1.contract_review 调用模型；s1b/s2/s6 只在本机）。 */
@@ -27,7 +29,8 @@ export interface Badge {
   title?: string;
 }
 
-const TERMINAL = ["succeeded", "partial", "failed", "cancelled", "timed_out", "expired"];
+// 终态（第 55 批 K4：与 labels.ts 同一份，后者由用例对照 @zr-legal/domain）；reconciling 不在内，下面单独出“待核实”
+const TERMINAL: readonly string[] = RUN_TERMINAL_STATUSES;
 const MODEL_SCENARIOS = new Set(["a1.agent_task", "s1.contract_review"]);
 
 function modelScope(endpoint: string | null, fullPseudonym: boolean): string {

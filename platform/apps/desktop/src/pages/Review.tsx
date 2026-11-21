@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../api.ts";
 import { nav } from "../App.tsx";
+import { Icon } from "../components/Icons.tsx";
 import { downloadPlan } from "../lib/download.ts";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
@@ -17,6 +18,9 @@ type FileAction = "download" | "pdf" | "office" | "revise";
 type SignAction = "approved" | "rejected" | "submit";
 
 /** 成果状态 → 律师称呼。 */
+import { reviewSteps } from "../lib/deliverables.ts";
+import "../styles-review.css";
+
 const STATUS_TEXT: Record<string, string> = {
   draft: "草稿",
   pending_review: "待你复核",
@@ -310,9 +314,20 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
           </span>
         </div>
         {data && (
-          <p className="muted">
-            {STATUS_TEXT[data.status] ?? "状态未知"} · 第 {data.version} 版{draft ? " · 提交复核后才能签发" : ""}
-          </p>
+          // 第 55 批：这份文件在“草稿 → 待复核 → 已签发”里走到哪一步（与成果页的流程条同一套阶段），原来只有一行灰字
+          <div className="rv-status">
+            <ol className="rv-stages" aria-label={`复核进度：${STATUS_TEXT[data.status] ?? "状态未知"}`}>
+              {reviewSteps(data.status).map((st) => (
+                <li key={st.key} className={`rv-stage rv-${st.state}`} aria-current={st.state === "now" ? "step" : undefined}>
+                  <span className="rv-stage-dot" aria-hidden="true">{st.state === "done" ? <Icon.check /> : null}</span>
+                  {st.label}
+                </li>
+              ))}
+            </ol>
+            <span className="rv-version">第 {data.version} 版</span>
+            {draft && <span className="rv-hint">提交复核后才能签发</span>}
+            {data.status === "superseded" && <span className="rv-hint">已有新版本，这一版只能查看</span>}
+          </div>
         )}
         {err && !data && <LoadError what="这份成果" message={err} onRetry={reload} />}
         {err && data && <div className="banner banner-red">{err}</div>}

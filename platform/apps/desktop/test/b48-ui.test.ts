@@ -54,11 +54,13 @@ test("品牌：侧栏与登录页用官方 Logomark（路径不带颜色，颜�
   assert.doesNotMatch(brand, /fill="#|#1783|#000|#fff/i, "颜色不写在路径上");
   assert.match(brand, /className="logo-mark-dot"/);
   assert.match(src("components/Sidebar.tsx"), /<BrandLockup \/>/);
-  assert.match(src("pages/Activate.tsx"), /<BrandLockup edition="法律行业发行版" \/>/);
+  // 第 55 批：登录页用大号组合（比例同侧栏）
+  assert.match(src("pages/Activate.tsx"), /<BrandLockup size="lg" \/>/);
   const css = src("styles.css");
   assert.match(css, /\.logo-mark-dot \{ fill: var\(--brand-mark-dot\); \}/);
-  // 第 51 批：两行签名式组合，版本全称在第二行（次要灰）
-  assert.match(css, /\.brand-edition \{[^}]*color: var\(--text-secondary\)/);
+  // 第 55 批：版本名是黑底小标（与首页中央字标的小标同一图形），不再是灰色小字
+  assert.match(css, /\.brand-tag-bg \{ fill: var\(--btn-primary\); \}/);
+  assert.match(css, /\.brand-tag-text \{ fill: var\(--btn-primary-text\); \}/);
   const tokens = readFileSync(new URL("../../../packages/design-tokens/src/tokens.css", import.meta.url), "utf8");
   assert.match(tokens, /--p-kimi-blue: #1783ff;/);
 });

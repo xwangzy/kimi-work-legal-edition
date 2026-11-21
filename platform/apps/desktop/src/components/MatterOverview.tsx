@@ -141,8 +141,9 @@ export function PendingChecks({ matter, onGo, onCount, hideEmpty }: { matter: Ma
     <div className="todos" role="list" aria-label="待核清单">
       {list.map((c, i) => (
         <button key={i} role="listitem" className="todo-row todo-derived" onClick={() => go(c.target)} disabled={!onGo && !("run_id" in c.target) && !("artifact_version_id" in c.target)}>
+          <span className="todo-mark" aria-hidden="true" />
           <span className="todo-title">{c.text}</span>
-          <span className="todo-meta">去处理</span>
+          <span className="todo-meta todo-go">去处理</span>
         </button>
       ))}
     </div>
@@ -206,8 +207,9 @@ export function MatterTodos({ matter, readOnly, othersCount = 0 }: { matter: Mat
             className="todo-row todo-derived"
             onClick={() => (d.artifact_version_id ? nav(`/review/${d.artifact_version_id}`) : d.run_id ? nav(`/run/${d.run_id}/${matter.matter_id}`) : undefined)}
           >
+            <span className="todo-mark" aria-hidden="true" />
             <span className="todo-title">{t.title}</span>
-            <span className="todo-meta">{t.who}</span>
+            <span className="todo-meta todo-go">{t.who}</span>
           </button>
         );
       })}

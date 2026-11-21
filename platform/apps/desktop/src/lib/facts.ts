@@ -21,3 +21,16 @@ export function factSourceText(f: Pick<FactRow, "document_version_id" | "anchor_
   if (f.anchor_status === "ambiguous") return `${name}（原文出现多处）`;
   return `${name}（没有找到原文，确认前请核对）`;
 }
+
+/**
+ * 按发生日期排（第 55 批：事实页是一条时间线）。日期不明的排在最后；同一天的按序号。不改原数组。
+ * 日期可能只到月或年（“2025-03”），按字符串比较即可（ISO 写法）。
+ */
+export function sortFactsByDate<T extends Pick<FactRow, "occurred_on"> & Partial<Pick<FactRow, "no">>>(facts: readonly T[]): T[] {
+  return [...facts].sort((a, b) => {
+    if (a.occurred_on && b.occurred_on) return a.occurred_on < b.occurred_on ? -1 : a.occurred_on > b.occurred_on ? 1 : (a.no ?? 0) - (b.no ?? 0);
+    if (a.occurred_on) return -1;
+    if (b.occurred_on) return 1;
+    return (a.no ?? 0) - (b.no ?? 0);
+  });
+}

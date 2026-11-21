@@ -6,12 +6,21 @@ import { useEffect, useState } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
 import { fmtRelative, RUN_STATUS_LABELS, runName } from "../lib/labels.ts";
-import { dueText, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
+import { dueText, dueTone, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
 import type { ReminderItem } from "../api.ts";
 import { MatterTodos, PendingChecks, StageStrip } from "../components/MatterOverview.tsx";
 import { ReviewRulesWidget, TemplateMethods } from "../components/MatterSetup.tsx";
 import { matterLine } from "../lib/scenarios.ts";
 import type { PendingCheck } from "../api.ts";
+
+/** 任务状态的色调（概览“最近 AI 记录”的色点）：等你的橙、在跑的蓝、做完的绿、没做成的红，其余灰。 */
+export function runTone(status: string): "warn" | "info" | "ok" | "danger" | "neutral" {
+  if (status.startsWith("waiting") || status === "reconciling") return "warn";
+  if (status === "running" || status === "queued") return "info";
+  if (status === "succeeded" || status === "partial") return "ok";
+  if (status === "failed" || status === "timed_out" || status === "expired") return "danger";
+  return "neutral";
+}
 
 export const MAX_BOARDS = 2;
 export const MAX_WIDGETS = 20;
@@ -64,8 +73,11 @@ export function MatterBoard({ matter, runs, onChanged, onGo }: { matter: Matter;
           {runs.length === 0 && <p className="muted">还没有 AI 记录。</p>}
           {runs.slice(0, 6).map((r) => (
             // 任务以目标前 20 字区分（Y4 B-2）；没有目标的显示场景名；时间用相对时间
-            <button key={r.run_id} className="w-link" onClick={() => nav(`/run/${r.run_id}/${matter.matter_id}`)}>
-              {runName(r, 20)} · {RUN_STATUS_LABELS[r.status] ?? "状态未知"} · {fmtRelative(r.created_at)}
+            // 第 55 批：名称、状态、时间分三段对齐（原来是一串“名称 · 状态 · 时间”的文字），状态带色点
+            <button key={r.run_id} className="w-link w-run" onClick={() => nav(`/run/${r.run_id}/${matter.matter_id}`)}>
+              <span className="w-run-name">{runName(r, 20)}</span>
+              <span className={`w-run-status tone-${runTone(r.status)}`}>{RUN_STATUS_LABELS[r.status] ?? "状态未知"}</span>
+              <span className="w-run-time">{fmtRelative(r.created_at)}</span>
             </button>
           ))}
         </Widget>
@@ -82,7 +94,8 @@ export function MatterBoard({ matter, runs, onChanged, onGo }: { matter: Matter;
         {reminders.slice(0, 3).map((r) => (
           <div key={r.reminder_id} className="w-row">
             <span>{r.note || reminderKindLabel(r.kind)}</span>
-            <b title={r.due_date}>{dueText(r.due_date)}</b>
+            {/* 第 55 批：临近的期限用与期限提醒页同一套颜色（三天内红、七天内橙） */}
+            <b title={r.due_date} className={dueTone(r.due_date) === "red" ? "due-red" : dueTone(r.due_date) === "orange" ? "due-orange" : undefined}>{dueText(r.due_date)}</b>
           </div>
         ))}
         {dates.length === 0 && reminders.length === 0 ? (

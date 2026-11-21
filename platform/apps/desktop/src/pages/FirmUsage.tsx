@@ -380,7 +380,7 @@ export function CpAuditPanel() {
               const res = auditResultLabel(r.result);
               return (
                 <tr key={r.seq}>
-                  <td className="num">{fmtTime(r.at)}</td>
+                  <td className="nowrap audit-at">{fmtTime(r.at)}</td>
                   <td>{auditActorLabel(r)}</td>
                   <td>
                     {auditActionLabel(r.action)}

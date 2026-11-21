@@ -123,8 +123,9 @@ test("执行页：读到任务前不显示“排队中”；正在做是蓝点 +
 
 test("品牌：两行签名式组合，官方 Logomark 与文字块等高；云端控制台用同一标识（不再是文字“K”）", () => {
   const css = src("styles.css");
-  assert.match(css, /\.brand-logo \{ width: 28px; height: 28px; \}/);
-  assert.match(css, /\.brand-words \{ display: flex; flex-direction: column;/);
+  // 第 55 批：改为一行组合（标识 26px + 字标 + 小标），见 b55-ui 用例
+  assert.match(css, /\.brand-logo \{ width: 26px; height: 26px; \}/);
+  assert.match(css, /\.brand-words \{ display: inline-flex; align-items: center;/);
   const consoleHtml = readFileSync(fileURLToPath(new URL("../../console/index.html", import.meta.url)), "utf8");
   assert.match(consoleHtml, /<svg class="logo-mark brand-mark" viewBox="0 0 180 180"/);
   assert.doesNotMatch(consoleHtml, /<span class="brand-mark" aria-hidden="true">K<\/span>/);

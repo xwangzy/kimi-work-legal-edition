@@ -3,7 +3,7 @@ name: redraft-review
 description: >-
   对方回稿时，用整稿比对找出相对我方上一稿的全部改动（含未留修订痕迹的静默改动），只重审被改动的条款及受其影响的定义和引用条款，跟踪我方上一轮修改是否被采纳，生成《变更清单》并把新问题提交为风险卡。律师说“对方回稿了、看看改了什么、有没有偷偷改”时使用；不用于首次审查（用 contract-review）。
 when_to_use: 事项中有我方发出的基线稿和对方回稿两份 DOCX，需要逐处识别改动并重审。
-arguments: [baseline, current]
+arguments: [baseline, current, focus]
 kwl:
   id: redraft-review
   version: 1.3.0
@@ -25,7 +25,7 @@ kwl:
 
 ## 2. 输入与前置检查
 1. 调用 `materials.list`，确定基线稿（我方最后发出的版本）与回稿（对方返回的版本）的 `document_version_id`。两份都必须是 DOCX；`$baseline`、`$current` 已指定的直接使用。
-2. 无法确定哪份是基线时，用提问工具一次问清（**不超过 3 问**），例如：哪一份是我方最后发出的版本？对方是否声明“已接受全部修订”？本轮重点关注哪些条款？
+2. 无法确定哪份是基线时（`$baseline`、`$current` 已给的不问），用提问工具一次问清（**不超过 3 问**；本轮关注 `$focus` 已给的不问），例如：哪一份是我方最后发出的版本？对方是否声明“已接受全部修订”？本轮重点关注哪些条款？
 3. 基线稿不是我方最后发出的版本（例如是更早的内部稿）时，比对结果会混入我方自己的改动——在清单首部写明基线来源。
 4. 用 `riskcards.list`（document_version_id = 上一轮被审的版本，即我方据以生成上一稿的那份文件；status = accepted、modified）取得我方上一轮已提出的修改，用于采纳跟踪——事项里有多轮卡时只取上一轮的，拿不准是哪一版时与第 2 条一并问；只跟踪 `changes_document` 为 true 的卡——`lawyer_status` 为 acknowledged 的卡是律师“知悉、不改动”，不是我方提出的修改，不得据此判对方“未采纳”；读不到时跳过跟踪并说明。
 5. **本事项审查要点（v1.1）**：任务说明里有【本事项审查要点 第 n 版】的，对方改动后与某条要点不符的，出卡 `kind: deviation`、`rule_source: firm_rule`、`rule_ref` 写“要点 n：条款”；触及“不可谈”的 `nature: must`、`needs_client_decision: true`。要点没写到的改动照常定性。

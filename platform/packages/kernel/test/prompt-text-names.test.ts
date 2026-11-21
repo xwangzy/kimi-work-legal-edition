@@ -82,6 +82,9 @@ test("内核写的提示词框架（事项口径、方法、审查要点、写�
     texts.push(agentFollowUpPrompt("再看一下违约金", method, true));
   }
   texts.push(agentGoalPrompt({ stance: "原告", jurisdiction: "内地民商事", asOf: "2026-10-23", facts: "", goal: "整理证据", methodLine: methodPromptLine(null, null), rulesBlock: "", prefsLine: "" }));
+  // 第 55 批 K1：【开工前已知】随提示词令牌化（空事项那句含“对方是谁”等固定词，不能被认成姓名）
+  texts.push(agentGoalPrompt({ stance: "原告", jurisdiction: "内地民商事", asOf: "2026-10-23", facts: "", goal: "起草起诉状", methodLine: methodPromptLine(null, null), rulesBlock: "", prefsLine: "", preflight: { selected: 0, matterMaterials: 0, confirmedFacts: 0, pendingFacts: 0 } }));
+  texts.push(agentGoalPrompt({ stance: "原告", jurisdiction: "内地民商事", asOf: "2026-10-23", facts: "", goal: "起草起诉状", methodLine: methodPromptLine(null, null), rulesBlock: "", prefsLine: "", preflight: { selected: 2, matterMaterials: 3, unreadable: 1, confirmedFacts: 1, pendingFacts: 2 } }));
   // V18 第 43 批续三：追问补勾材料时点名新增材料的一句（内核不再对它做代号替换，但出站闸门会复扫）
   texts.push(followUpAddedLine(["公司章程.txt", "股东名册.xlsx · 证据"]));
   assert.equal(followUpAddedLine([]), "");

@@ -109,7 +109,7 @@ function Frame({ children }: { children: React.ReactNode }) {
     <div className="activate">
       <div className="activate-card">
         <div className="brand">
-          <BrandLockup edition="法律行业发行版" />
+          <BrandLockup size="lg" />
         </div>
         {children}
       </div>

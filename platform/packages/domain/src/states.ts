@@ -69,6 +69,23 @@ export function isTerminalRun(status: string): boolean {
   return (TERMINAL_RUN_STATUSES as readonly string[]).includes(status);
 }
 
+/**
+ * 需要律师处理、尚未结束的状态（第 55 批 K4；审计 B 2.3）：reconciling（副作用结果不明，等律师逐条核实）不是终态，
+ * 但执行器不会再自动推进它——不自动拉起、不再受理确认与提问；律师核实后才迁到 failed（见 RUN_TRANSITIONS）。
+ */
+export const NEEDS_LAWYER_RUN_STATUSES: readonly RunStatus[] = ["reconciling"];
+
+export function needsLawyerRun(status: string): boolean {
+  return (NEEDS_LAWYER_RUN_STATUSES as readonly string[]).includes(status);
+}
+
+/** 不会再自动推进的状态 = 终态 + 需要律师处理（界面据此停止快速轮询、内核据此不再受理确认卡与提问）。 */
+export const SETTLED_RUN_STATUSES: readonly RunStatus[] = [...TERMINAL_RUN_STATUSES, ...NEEDS_LAWYER_RUN_STATUSES];
+
+export function isSettledRun(status: string): boolean {
+  return (SETTLED_RUN_STATUSES as readonly string[]).includes(status);
+}
+
 /** 允许的状态迁移。执行成功不等于可签发（§2.5）。 */
 export const RUN_TRANSITIONS: Readonly<Record<RunStatus, readonly RunStatus[]>> = {
   created: ["validating", "cancelled"],

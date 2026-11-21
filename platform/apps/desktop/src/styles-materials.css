@@ -43,3 +43,47 @@
 /* 材料表：文件夹位置（目录部分）作文件名下的第二行 */
 .mat-dir { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: var(--fs-caption); }
 .mat-old { margin-left: var(--sp-1); }
+
+/* 事实（第 55 批）：按日期排的时间线。左列日期等宽不折行，圆点 + 竖线成轴；右侧“确认”是主动作，“驳回”是文字按钮。 */
+.facts-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+.facts-tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--r-md); background: var(--bg-muted); }
+.facts-tab { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-secondary); font-size: var(--fs-caption); }
+.facts-tab:hover { color: var(--text-primary); }
+.facts-tab.on { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-xs); }
+.facts-tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.facts-tab-n { min-width: 18px; padding: 0 5px; border-radius: var(--r-full); background: var(--bg-surface); color: var(--text-label); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; line-height: 18px; text-align: center; }
+.facts-tab.on .facts-tab-n { background: var(--bg-muted); }
+.facts-bulk { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-caption); }
+.facts-note { margin: var(--sp-3) 0 var(--sp-2); font-size: var(--fs-caption); line-height: 1.6; }
+.facts-empty { padding: var(--sp-6) 0; text-align: center; font-size: var(--fs-body); }
+.facts-line { list-style: none; margin: 0; padding: 0; }
+.fact-row { position: relative; display: grid; grid-template-columns: 92px 14px minmax(0, 1fr) auto; column-gap: var(--sp-3); align-items: start; padding: 12px var(--sp-2) 12px 0; border-radius: var(--r-md); }
+.fact-row:hover { background: var(--bg-hover-soft); }
+.fact-date { padding-left: var(--sp-2); font-size: var(--fs-caption); line-height: 22px; color: var(--text-label); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* 时间轴：圆点居中在 14px 列里，竖线从上一行连到下一行 */
+.fact-dot { position: relative; z-index: 1; justify-self: center; width: 9px; height: 9px; margin-top: 7px; border-radius: 50%; border: 2px solid var(--border-hover); background: var(--bg-surface); }
+.fact-row::before { content: ""; position: absolute; left: 110.5px; top: 0; bottom: 0; width: 1px; background: var(--border-subtle); }
+.fact-row:first-child::before { top: 14px; }
+.fact-row:last-child::before { bottom: auto; height: 14px; }
+.fact-row:only-child::before { display: none; }
+.fact-confirmed .fact-dot { border-color: var(--status-success-solid); background: var(--status-success-solid); }
+.fact-rejected .fact-dot { border-style: dashed; }
+.fact-rejected .fact-text { color: var(--text-secondary); text-decoration: line-through; }
+.fact-body { min-width: 0; }
+.fact-text { font-size: var(--fs-body); line-height: 22px; color: var(--text-primary); overflow-wrap: anywhere; }
+.fact-meta { display: flex; flex-wrap: wrap; gap: 2px var(--sp-3); margin-top: 3px; font-size: var(--fs-xs); line-height: 1.6; color: var(--text-secondary); }
+.fact-amount { color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.fact-no { font-variant-numeric: tabular-nums; }
+.fact-actions { display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+.fact-confirm { display: inline-flex; align-items: center; gap: 4px; }
+.fact-confirm svg { width: 14px; height: 14px; }
+.fact-reject { color: var(--text-secondary); font-size: var(--fs-caption); }
+.fact-reject:hover { color: var(--status-danger-text); }
+@media (max-width: 860px) {
+  .fact-row { grid-template-columns: 14px minmax(0, 1fr); row-gap: 4px; padding-left: var(--sp-2); }
+  .fact-date { grid-column: 2; grid-row: 1; padding-left: 0; }
+  .fact-dot { grid-column: 1; grid-row: 1; }
+  .fact-body { grid-column: 2; }
+  .fact-actions { grid-column: 2; }
+  .fact-row::before { left: 14.5px; }
+}

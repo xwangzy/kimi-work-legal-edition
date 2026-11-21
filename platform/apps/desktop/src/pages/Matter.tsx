@@ -35,6 +35,7 @@ import { MaterialFolderBar } from "../components/MaterialFolderBar.tsx";
 import { MaterialSearch } from "../components/MaterialSearch.tsx";
 import { filterDocsByName, relDir, supersededIds } from "../lib/material-folder.ts";
 import "../styles-materials.css";
+import "../styles-matter.css";
 
 type Tab = "materials" | "facts" | "runs" | "board" | "deliverables" | "parties" | "egress" | "lifecycle";
 
@@ -411,12 +412,17 @@ export function MatterPage({ matterId }: { matterId: string }) {
         </div>
         {tab === "materials" && (
           <section>
-            {docs.length > 0 && (
-              <div className="wb-doc-view mat-view" role="group" aria-label="材料显示方式">
-                <button aria-pressed={matView === "list"} className={`wb-view-btn${matView === "list" ? " active" : ""}`} onClick={() => setMatView("list")}>列表</button>
-                <button aria-pressed={matView === "table"} className={`wb-view-btn${matView === "table" ? " active" : ""}`} onClick={() => setMatView("table")}>表格审阅</button>
-              </div>
-            )}
+            {/* 第 55 批：显示方式与案卷文件夹并成一行工具栏（原来显示方式、拖放区、文件夹、搜索四行叠在表格上面） */}
+            <div className="mat-toolbar">
+              {docs.length > 0 && (
+                <div className="wb-doc-view mat-view" role="group" aria-label="材料显示方式">
+                  <button aria-pressed={matView === "list"} className={`wb-view-btn${matView === "list" ? " active" : ""}`} onClick={() => setMatView("list")}>列表</button>
+                  <button aria-pressed={matView === "table"} className={`wb-view-btn${matView === "table" ? " active" : ""}`} onClick={() => setMatView("table")}>表格审阅</button>
+                </div>
+              )}
+              {/* 案卷文件夹（第 48 批）：关联本机的一个文件夹，手动同步新增、改过的文件；位置只在这台电脑上 */}
+              {matView === "list" && <MaterialFolderBar matterId={matter.matter_id} folder={matter.folder ?? null} readOnly={closed} disabled={busy} onChanged={reload} />}
+            </div>
             {matView === "table" && docs.length > 0 && <TableReview matterId={matter.matter_id} docs={docs} readOnly={closed} initialTable={tableFocus} onFill={(t) => void fillTable(t)} onAsk={(t, q) => void askTable(t, q)} onExported={() => void reload()} />}
             {matView === "list" && !closed && <div
               className="upload-zone"
@@ -434,8 +440,6 @@ export function MatterPage({ matterId }: { matterId: string }) {
               <input ref={importRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files, "import")} />
               <input ref={mountRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files, "mount")} />
             </div>}
-            {/* 案卷文件夹（第 48 批）：关联本机的一个文件夹，手动同步新增、改过的文件；位置只在这台电脑上 */}
-            {matView === "list" && <MaterialFolderBar matterId={matter.matter_id} folder={matter.folder ?? null} readOnly={closed} disabled={busy} onChanged={reload} />}
             {matView === "list" && docs.length > 0 && (
               // 材料内搜索（第 48 批）：输入即按文件名筛选下面的表；回车或停顿片刻再到材料的文字里找
               <MaterialSearch matterId={matter.matter_id}>

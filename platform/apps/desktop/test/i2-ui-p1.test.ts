@@ -55,7 +55,8 @@ test("#4 缺材料能否先开始：13 张卡里只有起草起诉状、律师�
   const partial = SCENARIOS.filter((c) => canStartPartial(c)).map((c) => c.id).sort();
   assert.deepEqual(partial, ["contract-draft", "demand-lit", "intake", "intake-lit", "labor-apply", "legal-opinion", "pleading"]);
   // 真正会出现“先开始”的（需要材料且允许先开始）只有访谈纪要；审合同两张卡都不允许
-  assert.deepEqual(SCENARIOS.filter((c) => canStartPartial(c) && c.minMaterials > 0).map((c) => c.id), ["intake-lit", "labor-apply", "intake"]);
+  // 第 55 批：两张访谈卡可以直接写访谈要点（minMaterials 改 0），不再靠“先开始，缺的稍后补”
+  assert.deepEqual(SCENARIOS.filter((c) => canStartPartial(c) && c.minMaterials > 0).map((c) => c.id), ["labor-apply"]);
   assert.equal(canStartPartial(card("contract-review")), false);
   assert.equal(canStartPartial(card("contract-review-inhouse")), false);
   // 确定性流程即使声明也不能先开始

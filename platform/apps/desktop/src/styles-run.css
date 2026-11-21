@@ -12,16 +12,28 @@
 .timeline .step { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: var(--sp-3); padding: 6px 0; gap: 0 var(--sp-3); }
 .timeline > .step { animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }
 /* 节点之间的短连线：上半段（本步顶到节点上缘）+ 下半段（节点下缘到本步底），首尾各去掉一段 */
-.timeline > .step::before, .timeline > .step::after, .timeline > .step-group::before, .timeline > .step-group::after { content: ""; position: absolute; left: 9px; width: 1.5px; border-radius: var(--r-full); background: var(--border-subtle); }
-.timeline > .step::before, .timeline > .step-group::before { top: 0; height: 6px; }
-.timeline > .step::after, .timeline > .step-group::after { top: 28px; bottom: 0; }
+/* 第 55 批：连线改成一条连续的细线（1px），从第一个节点的中心连到最后一个节点的中心；节点自带一圈底色把线“断开”。
+   原来是每个节点上下各一小段 1.5px 的短线，五六步排下来像一串被剪断的虚线。 */
+.timeline > .step::before, .timeline > .step::after, .timeline > .step-group::before, .timeline > .step-group::after { content: ""; position: absolute; left: 9.5px; width: 1px; background: var(--border-subtle); }
+.timeline > .step::before, .timeline > .step-group::before { top: 0; height: 17px; }
+.timeline > .step::after, .timeline > .step-group::after { top: 17px; bottom: 0; }
 .timeline > :first-child::before { display: none; }
 .timeline > .step:last-child::after, .timeline > .step-group:last-child::after, .timeline > .step:has(+ .step-toggle)::after, .timeline > .step-group:has(+ .step-toggle)::after { display: none; }
 
-.step-dot { width: 18px; height: 18px; margin: 2px 0 0 1px; flex: none; border-radius: var(--r-full); display: grid; place-items: center; background: var(--bg-surface); border: 1.5px solid var(--border-default); color: var(--text-label); transition: background-color var(--motion-base) ease, border-color var(--motion-base) ease, color var(--motion-base) ease; }
+.step-dot { position: relative; z-index: 1; box-shadow: 0 0 0 3px var(--bg-main); width: 18px; height: 18px; margin: 2px 0 0 1px; flex: none; border-radius: var(--r-full); display: grid; place-items: center; background: var(--bg-surface); border: 1.5px solid var(--border-default); color: var(--text-label); transition: background-color var(--motion-base) ease, border-color var(--motion-base) ease, color var(--motion-base) ease; }
 .step-dot svg { width: 10px; height: 10px; stroke-width: 2.6; }
-/* 做完：浅灰底小勾，退到背景里 */
-.step-ok > .step-dot, .step-ok > summary > .step-dot { border-color: transparent; background: var(--bg-muted); color: var(--text-label); }
+/* 做完：一个小圆点，退到背景里（第 55 批：原来每步一个灰底小勾，步骤一多仍是“一串图标”；做完是常态，不需要逐个打勾——
+   只有“正在做 / 等你确认 / 失败”这些要人注意的状态才用醒目的标记） */
+.step-ok > .step-dot, .step-ok > summary > .step-dot { width: 7px; height: 7px; margin: 7.5px 0 0 6.5px; border: 0; background: var(--border-hover); }
+.step-ok > .step-dot svg, .step-ok > summary > .step-dot svg { display: none; }
+.step-ok .step-title { color: var(--text-strong); }
+/* 折起来的一段：两个小点叠成“省略”的样子，标题是次要灰 */
+.step-fold > summary > .step-dot { background: var(--border-default); box-shadow: 0 0 0 3px var(--bg-main), 0 -6px 0 -1px var(--border-default), 0 6px 0 -1px var(--border-default); }
+.step-fold > summary .step-title { font-size: var(--fs-caption); color: var(--text-secondary); line-height: 22px; }
+.step-fold > summary:hover .step-title { color: var(--text-primary); }
+.step-fold-more { color: var(--accent-text); }
+.step-fold[open] .step-fold-more { display: none; }
+.step-fold[open] > .step { margin-left: 0; }
 /* 失败：红底叉 */
 .step-fail > .step-dot, .step-fail > summary > .step-dot { border-color: transparent; background: var(--status-danger-bg); color: var(--status-danger-text); }
 /* 等待中的一般步骤：浅蓝圈 */
@@ -51,6 +63,9 @@
 .step-detail-level .step-title { font-size: var(--fs-caption); color: var(--text-label); }
 .step-detail-level > .step-dot { transform: scale(0.78); }
 .step-sub { padding-left: 0; margin-left: var(--sp-5); }
+/* 成组的步骤（子任务、折起来的一段）本身是块：上面 .timeline .step 的两列网格只用于它的 summary 与里面的每一步
+   （第 55 批修：原来组本身也被排成“20px + 其余”两列，summary 挤在 20px 里，标题一字一行） */
+.timeline .step.step-group { display: block; padding: 0; }
 .step-group > summary { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: var(--sp-3); padding: 6px 0; }
 .step-group > .step { margin-left: var(--sp-5); }
 .step-toggle { margin: var(--sp-1) 0 0 32px; font-size: var(--fs-caption); align-self: flex-start; }
@@ -97,6 +112,26 @@ details.progress-panel > summary { cursor: pointer; }
 
 /* 任务说明：收起的一行更安静 */
 .goal-details > summary { font-size: var(--fs-caption); color: var(--text-secondary); }
+
+/* ── 任务说明（第 55 批）：折叠时一行预览，展开是键值摘要 ── */
+.goal-brief { margin: var(--sp-3) 0 0; border-radius: var(--r-md); background: transparent; transition: background var(--motion-fast) var(--ease-standard); }
+.goal-brief[open] { background: var(--bg-subtle); }
+.goal-brief > summary { display: flex; align-items: center; gap: 0; min-width: 0; height: 32px; padding: 0 var(--sp-2) 0 var(--sp-2); border-radius: var(--r-md); list-style: none; cursor: pointer; font-size: var(--fs-caption); color: var(--text-secondary); }
+.goal-brief > summary::-webkit-details-marker { display: none; }
+.goal-brief > summary:hover { background: var(--bg-hover-soft); }
+.goal-brief[open] > summary:hover { background: transparent; }
+.goal-brief > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.goal-brief-label { flex: none; margin-right: var(--sp-3); font-weight: 500; color: var(--text-label); }
+.goal-brief-preview { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goal-brief[open] .goal-brief-preview { visibility: hidden; }
+.goal-brief-body { margin: 0; padding: 2px var(--sp-4) var(--sp-3) 23px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-caption); line-height: 1.7; }
+.goal-brief-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); column-gap: var(--sp-3); }
+.goal-brief-row dt { color: var(--text-secondary); }
+.goal-brief-row dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; white-space: pre-wrap; }
+.goal-brief-plain { grid-template-columns: minmax(0, 1fr); }
+.goal-brief-plain dd { color: var(--text-strong); }
+.goal-brief-row ol { margin: 0; padding-left: 1.4em; }
+@media (max-width: 760px) { .goal-brief-row { grid-template-columns: minmax(0, 1fr); } }
 
 @media (prefers-reduced-motion: reduce) {
   .timeline > .step, .run-panel { animation: none; }

@@ -3,7 +3,7 @@ name: casefile-organize
 description: >-
   把事项内的案卷材料整理成可回链的工作底稿：先列材料覆盖清单，再把材料中的事实逐条（带逐字引文）提交到事实时间线，最后生成《案卷总目录》《事实时间线》（材料载明、律师确认、推论、待确认四类分列）和《缺口清单》。律师说“整理案卷、排个时间线、看看材料还缺什么”时使用；不用于请求权要件与证据对应（用 issue-evidence-matrix）。
 when_to_use: 事项中已有一批诉讼、仲裁或纠纷材料（首次整理或追加材料后增量整理）。
-arguments: [perspective]
+arguments: [perspective, case_type]
 kwl:
   id: casefile-organize
   version: 1.2.0

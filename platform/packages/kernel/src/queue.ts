@@ -16,6 +16,7 @@
  */
 import { hostname } from "node:os";
 import type { KernelDb } from "./db.ts";
+import { TERMINAL_RUN_STATUSES as DOMAIN_TERMINAL } from "@zr-legal/domain";
 import { errFields, slog } from "@zr-legal/safe-log";
 
 export const WORKER_ID = `${hostname()}:${process.pid}`;
@@ -33,8 +34,8 @@ interface QueuedRun {
   runId: string;
 }
 
-// v9 第 04 篇 §8：终态集合（与 @zr-legal/domain TERMINAL_RUN_STATUSES 一致）；reconciling 不是终态但须等人处理，不自动拉起
-const TERMINAL = new Set(["succeeded", "partial", "failed", "cancelled", "expired", "timed_out"]);
+// v9 第 04 篇 §8：终态集合（取 @zr-legal/domain 的权威表，第 55 批 K4）；reconciling 不是终态但须等人处理，不自动拉起
+const TERMINAL: ReadonlySet<string> = new Set(DOMAIN_TERMINAL);
 
 /**
  * 不调用模型的本机流程（回稿比对、对外脱敏、整理案卷）：几秒内做完，不占执行名额，也不排在 AI 任务后面。

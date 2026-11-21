@@ -3,7 +3,7 @@ name: client-advice
 description: >-
   就客户（企业法务、业务部门或个人客户）的具体问题起草《顾问答复》：结论先行，写明所依据的事实假设、法律依据（经核验）、限制条件、相反依据和需要客户补充或决定的事项。律师说“回复客户、写个法律意见、合规问答、帮我答一下这个问题”时使用；律师点名要《法律意见书》的，按第 5.2 节意见书体例出草稿（签署盖章走本所签发流程）。不用于需要深入研究的问题（先用 legal-research-memo），也不用于律师函（用 demand-letter）。
 when_to_use: 问题相对明确的答复；律师点名要正式《法律意见书》的出意见书体例的草稿，签发、盖章不由本方法做。
-arguments: [question]
+arguments: [question, addressee, background, purpose]
 kwl:
   id: client-advice
   version: 1.9.0
@@ -23,7 +23,7 @@ kwl:
 - 不适用：代替律师签发、盖章或出具（意见书只出草稿，签署栏留空）；涉及刑事责任判断时，只列出风险点并建议律师进一步研究；需要系统研究的问题（→ `legal-research-memo`）。
 
 ## 2. 输入与前置检查
-1. 把客户问题（`$question`）改写成一两句可回答的问题，必要时用提问工具请律师确认（一次问清，不超过 3 问）。
+1. 把客户问题（`$question`）改写成一两句可回答的问题，必要时用提问工具请律师确认（一次问清，不超过 3 问；致送对象 `$addressee`、背景 `$background` 与任务说明里已写明的不问）。
 2. 列出答复所依赖的事实假设：有事项事实的，用 `facts.list` 取 lawyer_status = confirmed 的事实；客户提供了材料的，先用 `materials.list` 确认材料与识别质量，再用 `materials.read_excerpt` 读取。关键事实缺失时先问，不要假设对客户有利的事实。
 3. 法域与时点取自事项口径。
 

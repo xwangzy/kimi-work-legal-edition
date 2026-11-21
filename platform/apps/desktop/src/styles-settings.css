@@ -1,0 +1,72 @@
+/* 设置页（第 55 批第二轮）。后加载，覆盖 styles.css 里的同名规则；只用语义令牌。
+   问题：通用、文书与写作、备份与安全这几页的内容铺满 1120px 宽——一行“字号 [标准 大 特大]”后面空出八百像素，标签与控件离得远，
+   读起来像一张没填满的表；分段按钮选中是整块黑底，一页里好几处黑块抢眼。
+   改法：表单类的页签把正文收到 860px；行距放开、标签列加宽；分段按钮改成轨道（选中浮起成白底，与成果流程条、事实筛选同一种语言）。 */
+
+/* 表单类页签限宽（数据去向、套餐与用量、管理有表格与图，各自定宽） */
+.set-page.set-general, .set-page.set-writing, .set-page.set-backup, .set-page.set-account { max-width: 860px; }
+.set-page > .page-title { margin-bottom: var(--sp-1); }
+.set-page > .tabs-line { margin: var(--sp-3) 0 var(--sp-5); gap: var(--sp-1); }
+.set-page > .tabs-line .tab { padding: 9px var(--sp-3); }
+
+/* 行：标签列 168px，行与行之间留足 */
+.set-page .panel { padding: var(--sp-2) var(--sp-5); }
+.set-page .panel.device-section { padding: var(--sp-5); }
+.set-page .device-row.setting-row { grid-template-columns: 168px minmax(0, 1fr); gap: var(--sp-5); padding: 18px 0; align-items: start; }
+.set-page .device-k { padding-top: 5px; }
+.set-page .setting-hint { font-size: var(--fs-caption); line-height: 1.6; }
+.set-page .setting-v { gap: var(--sp-2); padding-top: 5px; }
+.set-page .setting-v:has(> .seg:first-child), .set-page .setting-v:has(> .settings-grid:first-child) { padding-top: 0; }
+
+/* 分段按钮：轨道 + 浮起的选中项（全应用统一：成果流程条、事实筛选、阶段条、材料显示方式、这里的字号与外观） */
+.seg { border: 0; border-radius: var(--r-md); overflow: visible; padding: 3px; gap: 2px; background: var(--bg-muted); }
+.seg-btn { border: 0; border-right: 0; border-radius: var(--r-sm); background: transparent; height: 28px; padding: 0 var(--sp-3); color: var(--text-secondary); }
+.seg-btn:hover:not(.on):not(:disabled) { background: transparent; color: var(--text-primary); }
+.seg-btn.on { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-xs); }
+.seg-btn.on:disabled { background: var(--bg-surface); color: var(--text-secondary); box-shadow: none; }
+.seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.seg-lg .seg-btn { height: 30px; }
+
+/* 备份与安全：两块状态结论更轻（左侧一条状态色，不是整块描边）；各节之间留白一致 */
+.set-backup .device { display: flex; flex-direction: column; gap: var(--sp-4); }
+.set-backup .status-tiles { gap: var(--sp-4); }
+.set-backup .status-tile { padding: var(--sp-4) var(--sp-5); gap: 6px; }
+.set-backup .status-tile-title { font-size: var(--fs-md); }
+.set-backup .panel.device-section > p { margin: 0 0 var(--sp-3); color: var(--text-label); }
+.set-backup .panel.device-section .section-h { margin-bottom: var(--sp-2); }
+.set-backup .quiet-details { margin-top: var(--sp-3); font-size: var(--fs-caption); }
+
+/* ── 套餐与用量：去掉“卡片套卡片”（外层面板与重复的页签标题），本所额度与我的用量并排（原来两张卡叠在左半边，右半边空着） ── */
+.set-usage .usage-page.panel { border: 0; padding: 0; background: transparent; }
+.set-usage .usage-page > .section-h { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.set-usage .usage-panel { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+.set-usage .usage-panel > * { grid-column: 1 / -1; min-width: 0; }
+.set-usage .usage-panel > .usage-card { grid-column: auto; max-width: none; margin: 0; padding: var(--sp-5); border-radius: var(--r-lg); }
+.set-usage .usage-panel > .section-title { margin-top: var(--sp-4); }
+.set-usage .usage-models { max-width: 720px; }
+@media (max-width: 1000px) { .set-usage .usage-panel { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── 第 55 批第三轮（连真实控制面复评）：账号与团队、管理 ── */
+/* 邀请同事：按钮与输入框底边对齐、同高（原来按钮被拉到“标签 + 输入框”那么高） */
+.set-admin form.settings-choice { align-items: flex-end; gap: var(--sp-3); }
+.set-admin form.settings-choice > .field { margin: 0; }
+.set-admin form.settings-choice > button { height: 36px; align-self: flex-end; }
+/* 管理的二级页签与内容之间留出间距 */
+.set-admin .tabs[aria-label="管理"] { margin-bottom: var(--sp-4); gap: var(--sp-1); border-bottom: 1px solid var(--border-subtle); }
+.set-admin .panel { padding: var(--sp-4) var(--sp-5); }
+.set-admin .panel + .panel, .set-admin .panel + .section-title { margin-top: var(--sp-4); }
+.set-admin .section-title { margin-top: var(--sp-5); }
+.set-admin .device-row { grid-template-columns: 148px minmax(0, 1fr); gap: var(--sp-4); }
+.audit-at { font-variant-numeric: tabular-nums; }
+/* 起草律所策略：一行一项 */
+.pd-form { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); min-width: 0; }
+.pd-grid { margin-top: 0; align-self: stretch; grid-template-columns: 104px minmax(0, 1fr); }
+.pd-grid .sg-v { gap: var(--sp-2); }
+.pd-grid textarea { width: min(100%, 520px); }
+.pd-check { display: inline-flex; align-items: flex-start; gap: var(--sp-2); font-size: var(--fs-body); line-height: 22px; }
+.pd-check input { margin-top: 4px; }
+.pd-ttl { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); color: var(--text-label); }
+.pd-ttl input { width: 72px; }
+.pd-note { font-size: var(--fs-caption); }
+/* 账号与团队：我的电脑、登录记录两张小卡与正文同宽，右侧的操作或说明靠右 */
+.set-account .panel.device-section > .section-h { margin-bottom: var(--sp-1); }

@@ -683,3 +683,31 @@ export function reusedArtifacts(events: readonly RunEvent[]): { artifact_version
   }
   return out;
 }
+
+/** 时间线上的一段“已完成的步骤”（第 55 批）：折成一行，展开看逐步。 */
+export type FoldedItem = TimelineItem | { kind: "fold"; key: string; items: TimelineItem[] };
+
+/**
+ * 把连续做完的步骤折起来（第 55 批）：一单任务常有十几步“阅读材料、查法条版本、查看条文原文……”，全部摊开后“现在在做什么 / 等你定什么”
+ * 被挤到一屏之外。规则：连续做完的普通步骤里，去掉最前 head 个与最后 tail 个后中间至少还有 minFold 个，才把中间折成一行“已完成 N 步”
+ * （只折两三步省不了地方，反而多一次点击）；
+ * 失败的、等待中的、子任务组、联网步骤（律师要能直接看到实际发出了什么）不折，遇到它们这一段就结束。纯函数。
+ */
+export function foldDoneSteps(items: readonly TimelineItem[], head = 1, tail = 2, minFold = 4): FoldedItem[] {
+  const foldable = (it: TimelineItem) => it.kind === "step" && it.step.icon === "ok" && !NETWORK_TITLES.has(it.step.title);
+  const out: FoldedItem[] = [];
+  let i = 0;
+  while (i < items.length) {
+    let j = i;
+    while (j < items.length && foldable(items[j]!)) j++;
+    const run = items.slice(i, j);
+    if (run.length >= head + tail + minFold) {
+      const mid = run.slice(head, run.length - tail);
+      const first = mid[0]!;
+      out.push(...run.slice(0, head), { kind: "fold", key: `fold:${first.kind === "step" ? first.step.key : i}`, items: mid }, ...run.slice(run.length - tail));
+    } else out.push(...run);
+    if (j < items.length) out.push(items[j]!);
+    i = j + 1;
+  }
+  return out;
+}

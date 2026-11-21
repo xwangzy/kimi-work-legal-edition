@@ -2,8 +2,14 @@
  * 业务场景目录（用户拍板：首页按律师业务线组织——诉讼仲裁 / 非诉 / 企业法务；历史 Demo 融合方案 §4.2 首页 15 张卡、§4.4 保留字段；
  * UIUX 评审 P0-2 意图建议）。
  *
- * 场景是入口，方法是 Skill：同一方法在不同业务线用不同卡名与默认口径。每张卡写清“你给什么 → 你得到什么”，
- * 只保留事项头之外、本方法必需的 ≤ 3 个字段；其余由 Agent 在计划阶段追问。
+ * 场景是入口，方法是 Skill：同一方法在不同业务线用不同卡名与默认口径。每张卡写清“你给什么 → 你得到什么”。
+ *
+ * 开工前收什么（第 55 批改，原则取代“只留 ≤ 3 个字段，其余由 Agent 追问”）：原来起草起诉状只收“拟受理法院”，案情、诉讼请求、
+ * 当事人信息都没有入口，助手要先把空事项读一遍再回头问，律师白等几分钟（真实基线：空事项 2 分 10 秒后拿合同违约的条文去套著作权侵权案）。
+ *  1. 律师开工前就知道、又决定文书怎么写的，开始面板直接收：案情（没有材料时）、逐项请求、不可逆期限的起算日、只有律师能定的取舍；
+ *  2. 读完材料才知道的（材料之间的矛盾、合同里几种计息口径取哪种）才在任务中问，并且和论点确认并成一次；
+ *  3. 事项里已有的（立场、当事人名称、阶段、事件时点）不重复收；
+ *  4. 不给每张卡堆大表单：必填项与两三个高频项直接显示，其余收进“更多选项”。
  * 档位如实标注：所有场景都还没有通过法律质量门槛，统一为“试用”（结果是草稿，须律师复核）。
  */
 
@@ -14,8 +20,11 @@ export const LINE_LABELS: Record<BusinessLine, string> = { litigation: "诉讼�
 export interface ScenarioField {
   key: string;
   label: string;
-  /** long：多行文字（V10 第 36 批：律师贴进来的逐条修改意见、问题常有好几段，单行输入框看不全也不好改）。 */
-  kind: "select" | "text" | "long" | "date" | "multi";
+  /**
+   * long：多行文字（V10 第 36 批：律师贴进来的逐条修改意见、问题常有好几段，单行输入框看不全也不好改）。
+   * list：逐项填写（第 55 批：诉讼请求、仲裁请求一项一行，可增删；拼进任务说明时自动编号）。值是 string[]。
+   */
+  kind: "select" | "text" | "long" | "date" | "multi" | "list";
   options?: string[];
   /**
    * 选项 → 拼进任务说明的话（V16 F4）：没有这一项时直接拼选项原文；对应空串的选项让这一句整句省略（与空字段同一机制）。
@@ -25,6 +34,22 @@ export interface ScenarioField {
   required?: boolean;
   /** 选了某个选项时改用别的卡（第 26 批）：选项 → 卡 id 与一句说明；开始面板据此提示并给“改用”按钮。 */
   redirect?: Record<string, { card: string; text: string }>;
+  /** 只拼进任务说明、不作为方法参数（第 55 批）：长文字与逐项请求——方法参数每项至多 300 字，放进去会被截断，助手会看到一份完整、一份截断的同一段话。 */
+  goalOnly?: boolean;
+  /** 收进“更多选项”（第 55 批）：不是每次都要定的事；填过的自动展开。 */
+  more?: boolean;
+  /** 输入框下面的一句说明（第 55 批）：怎么填、不填会怎样。 */
+  help?: string;
+}
+
+/**
+ * 案情入口（第 55 批）：这张卡可以由律师直接写案情——没有材料也能开始。
+ * 写下的内容存成本事项的一份材料《案情说明（律师口述）日期.txt》（用途“我方”），助手按“律师陈述、待确认”对待，后面的任务可以接着用。
+ * 没有材料、事项里也没有事实时必须写（否则助手只能凭事项名称猜）；有材料时是可选的“材料里没有的情况”。
+ */
+export interface ScenarioBrief {
+  label: string;
+  placeholder: string;
 }
 
 export interface ScenarioCard {
@@ -45,6 +70,8 @@ export interface ScenarioCard {
   fields: ScenarioField[];
   /** 需要材料的最少份数（0 = 可无材料）。 */
   minMaterials: number;
+  /** 可以直接写案情（见 ScenarioBrief）。 */
+  brief?: ScenarioBrief;
   /**
    * 材料不齐时能否“先开始，缺的稍后补”（Z3 评审 #4）：只有起草类与整理访谈这几张卡可以；审合同等“没有材料就没法做”的卡不行。
    * 只对 Agent 场景生效（确定性流程须选够材料）。
@@ -139,6 +166,43 @@ export function guessContractType(filenames: readonly string[], matterTitle = ""
   return null;
 }
 
+/** 案情入口的几种写法（第 55 批）。 */
+const CASE_BRIEF: ScenarioBrief = { label: "案情经过", placeholder: "谁和谁、什么时候签了什么、我方做了什么、对方怎么违约、涉及多少钱、催过没有。想到哪写到哪，不用整理。" };
+const INTERVIEW_BRIEF: ScenarioBrief = { label: "访谈要点", placeholder: "客户说了什么：当事人是谁、发生了什么、想达到什么结果、手里有哪些材料、有没有马上到期的期限。" };
+const HEARING_BRIEF: ScenarioBrief = { label: "庭审要点", placeholder: "法庭归纳了哪些焦点、对方当庭说了什么、我方举了哪些证据、还有什么要庭后补充。没有笔录时写在这里。" };
+const AMOUNT_BRIEF: ScenarioBrief = { label: "本金与付款情况", placeholder: "本金多少、什么时候到期、已经付了几笔（日期与金额）、合同约定的利率或违约金怎么写的。" };
+
+/** 逐项请求（起诉状、仲裁申请书共用）：一项一行，金额没算好的写“待测算”。 */
+const claimsField = (label: string, sample: string, help = "一项一行；金额还没算好的写“待测算”，助手会按合同约定算出暂计金额。没想好可以不填，起草前会和论点一起请你确认。"): ScenarioField => ({
+  key: "claims",
+  label,
+  kind: "list",
+  goalOnly: true,
+  placeholder: sample,
+  help,
+});
+/** 劳动关系要素（劳动三张卡共用）：补偿金、赔偿金、二倍工资都按这几项算；不填的助手从材料里找，找不到再问。 */
+const LABOR_BASICS: ScenarioField[] = [
+  { key: "hired_on", label: "入职日期", kind: "date" },
+  { key: "left_on", label: "离职日期", kind: "date", help: "还在职的不填。" },
+  { key: "leave_type", label: "离职方式", kind: "select", options: ["被辞退", "协商解除", "主动辞职", "合同到期终止", "仍在职"] },
+  { key: "monthly_wage", label: "月工资", kind: "text", placeholder: "离职前十二个月的平均数，例如 12,000 元" },
+];
+const more = (f: ScenarioField): ScenarioField => ({ ...f, more: true });
+/** 发函名义（两张函件卡共用）。 */
+const SENDER: ScenarioField = { key: "sender", label: "发函名义", kind: "select", goalOnly: true, options: ["本所受委托发函", "当事人自己发函", "先问我"], more: true };
+
+/** 当事人信息（对外文书的首部）：事项里只有名称，住所、代码、法定代表人写在这里；不写的在文书里留【待填】。 */
+const PARTY_INFO: ScenarioField = {
+  key: "party_info",
+  label: "当事人信息",
+  kind: "long",
+  goalOnly: true,
+  more: true,
+  placeholder: "原告：名称、住所地、统一社会信用代码、法定代表人及职务\n被告：……（自然人写姓名、性别、出生日期、民族、住所、身份证号）",
+  help: "不填的项目在文书里留【待填】；姓名、证件号发给 AI 前会换成代号，导出时还原。",
+};
+
 export const SCENARIOS: ScenarioCard[] = [
   // ── 诉讼仲裁 ──
   {
@@ -175,8 +239,10 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "casefile-organize",
     verb: "开始精读",
-    goal: "请逐份精读本事项的案卷材料，编目、按时间整理事实（每条附原文）并列出缺口。时间线按“{perspective}”排列。",
-    fields: [{ key: "perspective", label: "时间线的视角（可空）", kind: "text", placeholder: "例如：按付款线索；按对方的履约行为" }],
+    goal: "请逐份精读本事项的案卷材料，编目、按时间整理事实（每条附原文）并列出缺口。时间线按“{perspective}”排列。案由或争议类型：{case_type}。",
+    fields: [
+      { key: "case_type", label: "案由 / 争议类型", kind: "select", options: ["买卖合同", "借款与担保", "建设工程", "股权与公司", "劳动争议", "侵权", "知识产权", "其他"] },
+      { key: "perspective", label: "时间线的视角（可空）", kind: "text", placeholder: "例如：按付款线索；按对方的履约行为" }],
     minMaterials: 1,
     steps: ["列出全部材料与读取情况", "逐份阅读、编目，标出提供方与形成日期", "事实一事一行、附逐字引文，交你在“事实”里确认", "生成目录、时间线与缺口清单"],
     intents: [["精读", "案卷"], ["整理", "事实", "引文"]],
@@ -190,10 +256,11 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "issue-evidence-matrix",
     verb: "开始分析",
-    goal: "请梳理争点与证据：拟主张或需应对的请求为{claims}；我方诉讼地位：{side}。有我确认过的事实时只用确认的事实；还没有确认的，用材料载明的事实并标【未确认】，评估写“初步判断”。不评估胜诉率。",
+    goal: "请梳理争点与证据：拟主张或需应对的请求为{claims}；我方诉讼地位：{side}；已知的对方抗辩：{defenses}。有我确认过的事实时只用确认的事实；还没有确认的，用材料载明的事实并标【未确认】，评估写“初步判断”。不评估胜诉率。",
     fields: [
       { key: "claims", label: "拟主张或需应对的请求", kind: "text", required: true, placeholder: "例如：支付货款 120 万元及逾期利息" },
       { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人"] },
+      { key: "defenses", label: "已知的对方抗辩", kind: "text", placeholder: "例如：已付清；质量有问题；超过诉讼时效", more: true },
     ],
     minMaterials: 0,
     steps: ["优先用你确认过的事实；还没确认的照常用材料载明的，标【未确认】、评估标“初步判断”", "按请求拆成要件，标出一般由哪一方举证", "把事实与证据挂到要件下，标出证据薄弱和没有证据的", "列出对方可能的抗辩和补证动作"],
@@ -204,7 +271,7 @@ export const SCENARIOS: ScenarioCard[] = [
     id: "case-analysis",
     line: "litigation",
     title: "案情分析与诉讼策略",
-    gives: "案卷材料或“整理案卷”的成果（证据目录、事实时间轴）",
+    gives: "案卷材料或“整理案卷”的成果（证据目录、事实时间轴）；新案只有口头案情时直接写案情",
     gets: ["案情分析备忘录（内部稿）.docx（争点、证据强弱、诉讼风险、下一步建议）"],
     scenario: "a1.agent_task",
     skill: "case-analysis",
@@ -214,7 +281,9 @@ export const SCENARIOS: ScenarioCard[] = [
       { key: "goal", label: "我方目标", kind: "text", required: true, placeholder: "例如：追回货款 120 万元及违约金" },
       { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人", "尚未起诉（我方拟起诉）", "尚未起诉（对方可能起诉）"] },
     ],
-    minMaterials: 1,
+    // 第 55 批：新案常常只有口头案情——没有材料时可以直接写案情（原来至少要一份材料才能开始）
+    minMaterials: 0,
+    brief: CASE_BRIEF,
     steps: ["读案卷材料与已整理的事实（没有确认的事实会标出）", "归纳争点，逐个写出双方证据的强弱和理由", "列出诉讼风险与等级（只做定性，不给胜诉率）", "按优先级给出下一步：补证、程序动作、文书、是否发函或协商"],
     // “诉讼风险”须同时说到案子本身（复核 RC-B-12：“审查这份合同的诉讼风险”是审合同；劳动争议走劳动仲裁应对）
     intents: [["案情", "分析"], ["诉讼策略"], ["怎么打"], ["案件", "诉讼", "风险"], ["起诉", "风险"], ["被诉", "风险"], ["案子", "风险"]],
@@ -238,6 +307,8 @@ export const SCENARIOS: ScenarioCard[] = [
       { key: "rate", label: "利率口径", kind: "select", options: ["按合同约定", "LPR 加点", "LPR 倍数（如上浮 50%）", "待确认（先问我）"] },
     ],
     minMaterials: 0,
+    // 第 55 批：“或直接告诉我本金与日期”原来没有地方写
+    brief: AMOUNT_BRIEF,
     steps: ["从合同中找出计息约定（找不到会先问你）", "按本金变动分段，每段由计算工具算出", "列出抵扣、互斥项与调整风险", "生成可复算的计算明细表"],
     intents: [["利息"], ["违约金", "计算"], ["违约金", "算"], ["测算"], ["欠款", "多少"]],
   },
@@ -245,16 +316,24 @@ export const SCENARIOS: ScenarioCard[] = [
     id: "pleading",
     line: "litigation",
     title: "起草起诉状",
-    gives: "已整理的事实与金额（建议先做“整理案卷”“金额测算”）",
+    gives: "合同、往来函件、付款凭证等证据；没有材料时直接写案情（做过“整理案卷”“金额测算”的，确认过的事实与金额会直接采用）",
     gets: ["民事起诉状（草稿）.docx", "证据目录.xlsx（附件）", "提交前核对清单（附件）"],
     scenario: "a1.agent_task",
     skill: "pleading-draft",
     allowPartial: true,
     verb: "开始起草",
-    goal: "请起草民事起诉状。拟受理法院：{court}。",
+    goal: "请起草民事起诉状。诉讼请求（按我列的顺序与取舍写）：{claims}。拟受理法院：{court}。管辖依据：{forum_basis}。财产保全：{preserve}。当事人信息：{party_info}。",
     // 第 35 批真实走查 R4：卡片自带的“补充要求”与面板通用的“补充要求（可选）”同名并列，律师写在哪栏都一样——只留通用栏
-    fields: [{ key: "court", label: "拟受理法院", kind: "text", placeholder: "可空，待确认" }],
+    // 第 55 批：补上案情、逐项诉讼请求、当事人信息、管辖依据与保全（原来只有“拟受理法院”一栏）
+    fields: [
+      claimsField("诉讼请求", "例如：判令被告支付货款 1,000,000 元"),
+      { key: "court", label: "拟受理法院", kind: "text", placeholder: "可空，待确认" },
+      { key: "forum_basis", label: "管辖依据", kind: "select", options: ["协议管辖", "被告住所地", "合同履行地", "不动产所在地（专属）", "待核"], more: true },
+      { key: "preserve", label: "财产保全", kind: "select", options: ["不申请", "同时申请", "先问我"], more: true },
+      PARTY_INFO,
+    ],
     minMaterials: 0,
+    brief: CASE_BRIEF,
     steps: ["确认过的事实与金额照写，未确认的正文用附条件或保守写法、列进提交前核对清单", "写出诉讼请求、事实与理由", "核对引用的法条", "列出提交前核对清单"],
     // 模板只做民商事起诉状（复核 B3-B24）：答辩状另有卡（defense），仲裁申请书不引到这里
     // 第 28 批：带“起草”的说法更具体——“根据时间线起草起诉状”不再被同分的“整理案卷”抢走
@@ -271,12 +350,15 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "defense-draft",
     verb: "开始起草",
-    goal: "请起草民事答辩状（一审）。收到起诉状副本的日期：{received_on}；被告在境内有无住所：{domicile}；总体意见：{stance}。我确认过的事实照写；材料载明但我还没确认的，正文照材料写并注明证据、或用附条件写法，待确认事项列进提交前核对清单（正文不留【待确认】）；非填不可、材料没有的写【待填】，不要推测。",
+    goal: "请起草民事答辩状（一审）。收到起诉状副本的日期：{received_on}；被告在境内有无住所：{domicile}；总体意见：{stance}。拟提的程序抗辩与反诉：{procedural}。我确认过的事实照写；材料载明但我还没确认的，正文照材料写并注明证据、或用附条件写法，待确认事项列进提交前核对清单（正文不留【待确认】）；非填不可、材料没有的写【待填】，不要推测。",
     fields: [
-      { key: "received_on", label: "收到起诉状副本的日期", kind: "date" },
-      // 被告在境内没有住所的，答辩期为三十日（复核 RB16B-13）
-      { key: "domicile", label: "被告在境内有无住所", kind: "select", options: ["有", "没有（答辩期三十日）"] },
+      // 第 55 批：收到日期改必填——答辩期、管辖权异议的期限都从这一天起算，过了不可补
+      { key: "received_on", label: "收到起诉状副本的日期", kind: "date", required: true, help: "答辩期与提管辖权异议的期限都从这一天起算。" },
       { key: "stance", label: "总体意见", kind: "select", options: ["全部不认可", "部分认可", "待确认（先问我）"] },
+      // 只有律师能定、又会写进对外文书的取舍：开始时定下，不留到任务中途问
+      { key: "procedural", label: "拟提的程序抗辩与反诉", kind: "multi", options: ["管辖权异议", "诉讼时效抗辩", "主体不适格", "反诉", "先问我"] },
+      // 被告在境内没有住所的，答辩期为三十日（复核 RB16B-13）
+      { key: "domicile", label: "被告在境内有无住所", kind: "select", options: ["有", "没有（答辩期三十日）"], more: true },
     ],
     minMaterials: 1,
     steps: ["读起诉状，拆出每项诉讼请求与主张的事实", "先提示：要提管辖权异议的，须在答辩期内、实体答辩之前提出", "逐项写出我方意见与理由（你确认过的事实照写，未确认的正文写得保守、列进核对清单）", "列出答辩期届满日、时效抗辩、反诉等核对项"],
@@ -294,13 +376,15 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "appeal-draft",
     verb: "开始起草",
-    goal: "请起草民事上诉状（不服一审{ruling}）。判决书或裁定书的送达日期：{served_on}；上诉范围：{scope}；上诉人在境内有无住所：{domicile}。我确认过的事实照写，材料载明但未确认的正文用附条件或保守写法、列进提交前核对清单（正文不留【待确认】），不预测二审结果。",
+    goal: "请起草民事上诉状（不服一审{ruling}）。判决书或裁定书的送达日期：{served_on}；上诉范围：{scope}；不服的判项：{disputed}；上诉请求：{appeal_claim}；上诉人在境内有无住所：{domicile}。我确认过的事实照写，材料载明但未确认的正文用附条件或保守写法、列进提交前核对清单（正文不留【待确认】），不预测二审结果。",
     fields: [
       { key: "ruling", label: "不服的是", kind: "select", options: ["判决", "裁定"], required: true },
-      { key: "served_on", label: "判决书或裁定书的送达日期", kind: "date" },
-      // 第 26 批（评审 S2-15）：境内无住所的上诉期三十日，与答辩状同写法
-      { key: "domicile", label: "上诉人在境内有无住所", kind: "select", options: ["有", "没有（上诉期三十日）"] },
+      // 第 55 批：送达日期改必填——上诉期（判决十五日、裁定十日）从这一天起算，过了不可补
+      { key: "served_on", label: "判决书或裁定书的送达日期", kind: "date", required: true, help: "上诉期从这一天起算：判决十五日，裁定十日。" },
       { key: "scope", label: "上诉范围", kind: "select", options: ["全部判项", "部分判项（先问我）"] },
+      { key: "disputed", label: "不服的判项", kind: "text", placeholder: "只对部分判项不服时写，例如：第二项违约金、第四项诉讼费负担" },
+      { key: "appeal_claim", label: "上诉请求", kind: "select", options: ["改判", "发回重审", "撤销原裁定", "先问我"] },
+      { key: "domicile", label: "上诉人在境内有无住所", kind: "select", options: ["有", "没有（上诉期三十日）"], more: true },
     ],
     minMaterials: 1,
     steps: ["读一审判决书，拆出查明的事实、本院认为与判决主文", "先列对照表：每处一审认定写我方意见与错在哪里", "上诉请求与判项逐项对应（你确认过的事实照写，未确认的正文写得保守、列进核对清单）", "上诉期届满日由期限工具计算，列入提交前核对清单"],
@@ -317,12 +401,14 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "arbitration-application",
     verb: "开始起草",
-    goal: "请起草商事仲裁申请书，先核对仲裁协议。仲裁机构：{institution}；仲裁请求：{claims}。我确认过的事实与金额照写，材料载明但未确认的正文用附条件或保守写法、列进提交前核对清单（正文不留【待确认】），仲裁规则与收费以我提供的机构文件为准。",
+    goal: "请起草商事仲裁申请书，先核对仲裁协议。仲裁机构：{institution}；仲裁请求（按我列的顺序与取舍写）：{claims}；当事人信息：{party_info}。我确认过的事实与金额照写，材料载明但未确认的正文用附条件或保守写法、列进提交前核对清单（正文不留【待确认】），仲裁规则与收费以我提供的机构文件为准。",
     fields: [
       { key: "institution", label: "仲裁机构", kind: "text", placeholder: "以合同约定为准，可空" },
-      { key: "claims", label: "仲裁请求", kind: "text", placeholder: "例如：支付货款 50 万元及逾期利息" },
+      claimsField("仲裁请求", "例如：裁决被申请人支付货款 500,000 元"),
+      PARTY_INFO,
     ],
     minMaterials: 1,
+    brief: CASE_BRIEF,
     steps: ["逐字摘出仲裁条款，核对仲裁意思、仲裁事项与选定的机构", "仲裁请求与金额逐项单列（未确认的列进提交前核对清单，确实算不出的留【金额待测算确认】）", "按时间顺序写事实与理由，每段注明证据", "列出提交前核对：机构规则与收费以你提供的文件为准"],
     intents: [["仲裁申请书"], ["申请", "仲裁"], ["提起", "仲裁"], ["商事仲裁"], ["起草", "仲裁申请书"]],
     // 劳动仲裁另有方法；收到仲裁申请、仲裁答辩、撤销或执行裁决都不是起草申请书
@@ -334,13 +420,14 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "litigation",
     title: "庭审提纲",
     gives: "诉辩文书、双方证据（缺答辩状或证据目录也能先做，会标明缺什么）",
-    gets: ["庭审提纲.docx（陈述要点、举证顺序、质证、发问、辩论要点）"],
+    gets: ["庭审提纲.docx（陈述要点、举证顺序、质证、发问、辩论要点）", "举证质证顺序表.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "hearing-outline",
     verb: "开始准备",
-    goal: "请准备开庭用的庭审提纲（陈述要点、举证质证顺序、发问提纲、辩论要点），事实分清“律师确认”与“材料记载”，不预测庭审结果。开庭日期：{hearing_on}；我方地位：{side}；争议焦点：{focus_points}。",
+    goal: "请准备开庭用的庭审提纲（陈述要点、举证质证顺序、发问提纲、辩论要点），事实分清“律师确认”与“材料记载”，不预测庭审结果。开庭日期：{hearing_on}；程序：{procedure}；我方地位：{side}；争议焦点：{focus_points}。",
     fields: [
       { key: "hearing_on", label: "开庭日期", kind: "date" },
+      { key: "procedure", label: "程序", kind: "select", options: ["一审开庭", "二审开庭", "证据交换 / 庭前会议", "仲裁开庭"] },
       { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人", "上诉人", "被上诉人"], required: true },
       { key: "focus_points", label: "争议焦点（可空）", kind: "text", placeholder: "用“；”隔开，例如：货款是否已付清；违约金是否过高" },
     ],
@@ -359,10 +446,12 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "preservation-application",
     verb: "开始起草",
-    goal: "请起草财产保全申请书：保全阶段为{stage}；请求保全数额：{amount}。财产线索与担保只用我提供的，不联网查询对方财产。",
+    goal: "请起草财产保全申请书：保全阶段为{stage}；请求保全数额：{amount}；担保方式：{guarantee}。财产线索：{assets}。财产线索与担保只用我提供的，不联网查询对方财产。",
     fields: [
       { key: "stage", label: "保全阶段", kind: "select", options: ["诉前（尚未起诉或申请仲裁）", "诉讼中", "仲裁中", "判决生效后、执行前"], required: true },
       { key: "amount", label: "请求保全数额", kind: "text", placeholder: "例如：50 万元；可空，先问我" },
+      { key: "assets", label: "财产线索", kind: "long", goalOnly: true, placeholder: "已掌握的对方账户、不动产、车辆、股权、应收账款等，一条一行；没有可空", help: "只用你写的和材料里的线索，不联网查对方财产。" },
+      { key: "guarantee", label: "担保方式", kind: "select", options: ["保险公司保函", "现金担保", "财产担保", "第三人保证", "待定"], more: true },
     ],
     minMaterials: 1,
     steps: ["确认保全阶段、受理法院与请求保全数额", "写需要保全的理由，只写有证据的事实", "逐项列你提供的财产线索与担保方式（不联网查询）", "列出担保要求、诉前保全三十日内起诉或申请仲裁、复议与赔偿责任"],
@@ -379,12 +468,14 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "enforcement-application",
     verb: "开始起草",
-    goal: "请起草强制执行申请书，并计算执行标的（金额由计算工具算出，算不了的标待算）。法律文书生效日期：{effective_on}；文书规定的履行期限最后一日：{due_on}；对方已履行情况：{paid}。",
+    goal: "请起草强制执行申请书，并计算执行标的（金额由计算工具算出，算不了的标待算）。法律文书生效日期：{effective_on}；文书规定的履行期限最后一日：{due_on}；对方已履行情况：{paid}。此前是否已保全：{preserved}。",
     fields: [
       { key: "effective_on", label: "法律文书生效日期", kind: "date" },
       // 第 26 批（评审 S2-17）：申请执行期间从履行期限最后一日起算（分期的从最后一期）
-      { key: "due_on", label: "履行期限最后一日（分期写最后一期）", kind: "date" },
+      // 第 55 批：改必填——申请执行的二年期间从这一天起算
+      { key: "due_on", label: "履行期限最后一日（分期写最后一期）", kind: "date", required: true, help: "申请执行的期间从这一天起算。" },
       { key: "paid", label: "对方已履行情况", kind: "text", placeholder: "例如：2026 年 5 月付过 10 万元；没有付过" },
+      { key: "preserved", label: "此前是否已保全", kind: "select", options: ["已保全", "没有", "不清楚"], more: true },
     ],
     minMaterials: 1,
     steps: ["逐项摘出判决主文或裁决的给付内容", "申请执行期间（二年）届满日由期限工具计算", "扣除已履行部分；迟延履行期间的利息写明公式，金额由计算工具算出", "列出执行法院、财产线索（你提供的）与提交材料"],
@@ -400,13 +491,15 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "cross-exam-opinion",
     verb: "开始起草",
-    goal: "请对对方证据逐项起草质证意见。我方诉讼地位：{side}；举证期限届满日：{proof_deadline}；开庭或证据交换日期：{hearing_on}。{extra}",
+    goal: "请对对方证据逐项起草质证意见。我方诉讼地位：{side}；举证期限届满日：{proof_deadline}；开庭或证据交换日期：{hearing_on}；争议焦点：{issues}；原件核对情况：{originals}。{extra}",
     fields: [
       // 质证对象是“对方”，开头不写死原告（复核 RB16B-14）；鉴定、证人出庭、调查取证申请以举证期限为准
       { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人"], required: true },
       { key: "proof_deadline", label: "举证期限届满日", kind: "date" },
       { key: "hearing_on", label: "开庭或证据交换日期", kind: "date" },
+      { key: "issues", label: "争议焦点", kind: "text", placeholder: "用“；”隔开，例如：货款是否已付清；违约金是否过高" },
       { key: "extra", label: "已知疑点", kind: "text", placeholder: "可选，例如：证据 3 的签章与合同不一致" },
+      { key: "originals", label: "原件核对情况", kind: "select", options: ["已核对原件", "只见过复印件", "还没见过"], more: true },
     ],
     minMaterials: 1,
     steps: ["逐份读对方证据，核对编号与页数", "逐份写真实性、合法性、关联性与证明目的意见", "列出需要核对原件、申请鉴定或补充反证的", "写成质证意见与意见表"],
@@ -421,9 +514,14 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "agency-statement",
     verb: "开始起草",
-    goal: "请起草代理词。法庭归纳的争议焦点：{focus_points}。事实以我确认过的与已质证的证据为准，未确认的正文用附条件或保守写法、列进提交前核对清单（正文不留【待确认】），不评估胜诉率。",
-    fields: [{ key: "focus_points", label: "争议焦点", kind: "text", required: true, placeholder: "用“；”隔开，例如：货款是否已付清；违约金是否过高" }],
+    goal: "请起草代理词。法庭归纳的争议焦点：{focus_points}。提交期限：{deadline}。事实以我确认过的与已质证的证据为准，未确认的正文用附条件或保守写法、列进提交前核对清单（正文不留【待确认】），不评估胜诉率。",
+    fields: [
+      { key: "focus_points", label: "争议焦点", kind: "text", required: true, placeholder: "用“；”隔开，例如：货款是否已付清；违约金是否过高" },
+      { key: "deadline", label: "提交期限", kind: "date", more: true },
+    ],
     minMaterials: 0,
+    // 第 55 批：没有庭审笔录时的“庭审要点”原来没有地方写
+    brief: HEARING_BRIEF,
     steps: ["按法庭归纳的焦点逐个论证", "证据只用已质证的，注明出处；你确认过的事实照写，未确认的正文写得保守、列进核对清单", "核对引用的法条；案例只用你提供的", "写成代理词与对照表"],
     intents: [["代理词"], ["代理意见"]],
   },
@@ -432,7 +530,7 @@ export const SCENARIOS: ScenarioCard[] = [
     id: "intake-lit",
     line: "litigation",
     title: "新案受理与访谈",
-    gives: "访谈记录或笔记、客户初步材料",
+    gives: "访谈记录或笔记、客户初步材料；只有电话里听到的情况时直接写访谈要点",
     gets: ["访谈纪要.docx", "材料收集清单.xlsx（附件）", "紧急期限与冲突待核清单.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "intake-notes",
@@ -440,7 +538,9 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始整理",
     goal: "请根据访谈记录整理访谈纪要与材料收集清单，并列出紧急期限与需要做利益冲突检索的主体；案件类型：{case_type}。",
     fields: [{ key: "case_type", label: "案件类型", kind: "select", options: ["买卖合同", "借款与担保", "建设工程", "股权与公司", "劳动争议", "侵权", "其他"] }],
-    minMaterials: 1,
+    // 第 55 批：接案时常常只有电话里听到的情况——可以直接写访谈要点
+    minMaterials: 0,
+    brief: INTERVIEW_BRIEF,
     steps: ["整理客户陈述的事实（一律标“客户陈述”）", "列出需要客户提供的材料", "找出可能紧急的期限（只列起算事实，不推算日期）", "列出全部主体，供本所做利益冲突检索（系统不判断有无冲突）"],
     intents: [["新案"], ["接案"], ["受理", "访谈"]],
   },
@@ -454,11 +554,13 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "procedure-check",
     verb: "开始核查",
-    goal: "请核查管辖与诉讼时效：拟主张的请求为{claims}；我方：{side}。",
+    goal: "请核查管辖与诉讼时效：拟主张的请求为{claims}；我方：{side}；标的额：{amount}；收到诉状或仲裁申请书的日期：{received_on}。",
     fields: [
       { key: "claims", label: "拟主张的请求", kind: "text", required: true, placeholder: "例如：支付货款 50 万元及逾期利息" },
       // 第 26 批（评审 S2 §3 第 9 条）：方法参数本来就有 side
       { key: "side", label: "我方", kind: "select", options: ["拟起诉", "已被诉"] },
+      { key: "amount", label: "标的额", kind: "text", placeholder: "定级别管辖要用，例如 120 万元" },
+      { key: "received_on", label: "收到诉状或申请书的日期", kind: "date", help: "已被诉时填：答辩期与管辖权异议的期限从这一天起算。", more: true },
     ],
     minMaterials: 1,
     steps: ["逐字摘出争议解决条款，核对协议管辖或仲裁条款是否有效", "列出法定连接点与候选法院或机构", "整理时效起算、中断的事实与证据", "期限届满日由期限工具计算；起算不明时只给分支"],
@@ -481,8 +583,11 @@ export const SCENARIOS: ScenarioCard[] = [
     args: { mode: "仲裁申请", side: "劳动者" },
     allowPartial: true,
     verb: "开始梳理",
-    goal: "请为劳动者梳理应主张的全部仲裁请求、时效与证据：{situation}。",
-    fields: [{ key: "situation", label: "基本情况", kind: "long", required: true, placeholder: "例如：2026 年 8 月被口头辞退，未签书面合同，有加班" }],
+    goal: "请为劳动者梳理应主张的全部仲裁请求、时效与证据：{situation}。入职日期：{hired_on}；离职日期：{left_on}；离职方式：{leave_type}；月工资：{monthly_wage}。",
+    fields: [
+      { key: "situation", label: "基本情况", kind: "long", required: true, placeholder: "例如：2026 年 8 月被口头辞退，未签书面合同，有加班" },
+      ...LABOR_BASICS.map(more),
+    ],
     minMaterials: 1,
     steps: ["按事实逐项核对应主张的请求，避免漏项", "时效分两类列出（劳动报酬与其他）", "按法定规则列举证责任与要补的证据", "测算金额并写明公式与基数（草稿，待复核）"],
     // 第 31 批（审查 B-15）：律师代理劳动者最常说“申请劳动仲裁”“员工被辞退要申请仲裁”，原先被引到用人单位的应诉卡
@@ -500,10 +605,11 @@ export const SCENARIOS: ScenarioCard[] = [
     skill: "labor-arbitration-draft",
     args: { doc_kind: "申请书" },
     verb: "开始起草",
-    goal: "请起草劳动仲裁申请书：我方为{side}；拟主张的请求：{claims}。",
+    goal: "请起草劳动仲裁申请书：我方为{side}；拟主张的请求：{claims}。入职日期：{hired_on}；离职日期：{left_on}；离职方式：{leave_type}；月工资：{monthly_wage}。",
     fields: [
       { key: "side", label: "我方是", kind: "select", options: ["劳动者", "用人单位"], required: true },
-      { key: "claims", label: "拟主张的请求（可空，会逐项核对漏项）", kind: "text", placeholder: "例如：违法解除赔偿金；未签合同二倍工资；加班费" },
+      claimsField("仲裁请求", "例如：支付违法解除劳动合同赔偿金", "一项一行；金额不用自己算，助手按入职日期、月工资和当地标准算出来。可以不填，会逐项核对有没有漏项。"),
+      ...LABOR_BASICS,
     ],
     minMaterials: 1,
     steps: ["先确认文书、立场与关键日期", "请求一次提全，逐项单列金额与口径", "论点与依据先交你确认再成文（事实未确认的照常写，正文写得保守，待确认的列进核对清单）", "生成申请书、证据目录与提交前核对清单"],
@@ -570,10 +676,11 @@ export const SCENARIOS: ScenarioCard[] = [
     primary: "法律意见书（草稿）.docx",
     allowPartial: true,
     verb: "开始起草",
-    goal: "请就以下问题出具正式的法律意见书（Word），签署栏留空：{question}。致送对象：{addressee}。",
+    goal: "请就以下问题出具正式的法律意见书（Word），签署栏留空：{question}。致送对象：{addressee}。用途：{purpose}。",
     fields: [
       { key: "question", label: "要回答的问题", kind: "long", required: true },
       { key: "addressee", label: "致送对象", kind: "text", placeholder: "例如：某公司董事会（可空）" },
+      { key: "purpose", label: "用途", kind: "select", options: ["内部决策参考", "对外出示", "监管或审计报送"], help: "对外出示的，限制条款与假设会写得更完整。" },
     ],
     minMaterials: 0,
     steps: ["读材料、明确每个问题", "检索并逐条核对法律依据（核对不了的标出来）", "先把论点与依据交你确认", "按意见书体例成文并自查"],
@@ -607,8 +714,11 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "doc-revise",
     verb: "开始修改",
-    goal: "请按以下意见直接在原文上修改这份文书，给我修订稿和清洁稿：{opinion}",
-    fields: [{ key: "opinion", label: "修改意见", kind: "long", placeholder: "例如：付款改为 3-4-3 分期；验收期改为 15 个工作日；争议解决改为我方所在地法院", required: true }],
+    goal: "修改范围：{scope}。请按以下意见直接在原文上修改这份文书，给我修订稿和清洁稿：{opinion}",
+    fields: [
+      { key: "opinion", label: "修改意见", kind: "long", placeholder: "例如：付款改为 3-4-3 分期；验收期改为 15 个工作日；争议解决改为我方所在地法院", required: true },
+      { key: "scope", label: "修改范围", kind: "select", options: ["只改意见点到的条款", "连带调整定义与互相引用的条款"] },
+    ],
     minMaterials: 1,
     steps: ["读原文，把你的意见拆成逐处修改（连同定义、互引、附件）", "在原件副本上逐处修改，保留原版式、编号与表格", "生成带修订痕迹的修订稿和接受全部修订的清洁稿", "系统按实际写入的修改生成修改对照表；你没提但发现的重大风险只提示、不擅自改"],
     intents: [["修改", "合同"], ["修改", "这份"], ["修订稿"], ["清洁稿"], ["清洁版"], ["修订痕迹"], ["按", "意见", "修改"], ["帮我", "改"]],
@@ -621,19 +731,23 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "litigation",
     general: true,
     title: "律师函 / 催告函",
-    gives: "合同与往来记录",
-    gets: ["函件草稿.docx", "依据与发送前核对.xlsx"],
+    gives: "合同与往来记录；没有材料时直接写案情",
+    gets: ["律师函或催告函（草稿）.docx", "依据与发送前核对.xlsx"],
     scenario: "a1.agent_task",
     skill: "demand-letter",
     allowPartial: true,
     verb: "开始起草",
     // 第 26 批（评审 S2-12）：字段键与方法参数 letter_type 一致（原来叫 purpose，方法收不到）；类型与方法的六类函件一致
-    goal: "请起草：{letter_type}；期限要求：{deadline}。",
+    // 第 55 批：补上案情、要求对方做什么、发函名义（原来没有事实入口，方法只能任务中途问“以谁的名义、要求什么”）
+    goal: "请起草：{letter_type}；要求对方：{demand}；期限要求：{deadline}；发函名义：{sender}。",
     fields: [
       { key: "letter_type", label: "函件类型", kind: "select", options: LETTER_TYPES, required: true },
+      { key: "demand", label: "要求对方做什么", kind: "text", goalOnly: true, placeholder: "例如：支付货款 1,000,000 元及逾期利息" },
       { key: "deadline", label: "期限要求", kind: "text", placeholder: "例如：收函后 7 日内" },
+      SENDER,
     ],
     minMaterials: 0,
+    brief: CASE_BRIEF,
     steps: ["从材料中整理事实与依据", "起草函件正文", "核对引用", "列出发送前核对（收件人、送达方式、期限）"],
     intents: [["律师函"], ["催告"], ["催款函"], ["解除通知"], ["保证人", "主张"], ["保证期间"]],
   },
@@ -647,11 +761,13 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "contract-review",
     verb: "开始审查",
-    goal: "请审查这份{type}合同，我方立场以事项为准；重点关注：{focus}。{redline}。",
+    goal: "请审查这份{type}合同，我方立场以事项为准；重点关注：{focus}。{redline}。交易背景：{background}。文本由谁提供：{paper}。",
     fields: [
       { key: "type", label: "合同类型", kind: "select", options: CONTRACT_TYPES, required: true },
       { key: "focus", label: "重点关注", kind: "multi", options: ["付款", "交割 / 验收", "违约责任", "知识产权", "保密", "争议解决"] },
       { key: "redline", label: "同时出一份建议修订稿", kind: "select", options: ["不用，先看审查意见", "要：按审查意见直接在原件上写修订"], goalText: { "不用，先看审查意见": "", "要：按审查意见直接在原件上写修订": "审查意见出完后，按必须修改与建议修改的意见在原件上写一份建议修订稿（修订痕迹）" } },
+      { key: "background", label: "交易背景", kind: "text", placeholder: "例如：对方强势、金额 300 万元、打算长期合作", help: "决定意见写得多激进。", more: true },
+      { key: "paper", label: "文本由谁提供", kind: "select", options: ["对方的格式文本", "我方范本", "双方共同起草", "不清楚"], more: true },
     ],
     minMaterials: 1,
     steps: ["通读合同、标出结构", "按我方立场逐条找出风险，引用原文", "给出修改建议与可退让方案，核对依据", "把每项意见放进审查工作台，由你逐项决定"],
@@ -666,7 +782,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "transactional",
     title: "对方回稿：比对与重审",
     gives: "我方上一稿 + 对方回稿（两份 Word）",
-    gets: ["变更清单.xlsx（含没标修订的静默改动、我方修改采纳情况）", "新问题进审查工作台", "回稿意见（草稿，需要时）"],
+    gets: ["变更清单.xlsx（含没标修订的静默改动、我方修改采纳情况）", "新问题进审查工作台", "回稿审查意见（内部稿）.docx（需要时）"],
     scenario: "a1.agent_task",
     skill: "redraft-review",
     verb: "开始重审",
@@ -750,11 +866,12 @@ export const SCENARIOS: ScenarioCard[] = [
     skill: "contract-draft",
     allowPartial: true,
     verb: "开始起草",
-    goal: "请起草一份{type}合同，我方立场以事项为准；交易要点：{points}。",
+    goal: "请起草一份{type}合同，我方立场以事项为准；交易要点：{points}。争议解决：{dispute}。",
     fields: [
       { key: "type", label: "合同类型", kind: "select", options: CONTRACT_TYPES, required: true },
       // V13 第 38 批真实走查 W1：律师把 323 字的委托说明贴进交易要点，单行框只看得到末尾一截（第 36 批其他卡的主栏已改多行，这张漏了）
       { key: "points", label: "交易要点", kind: "long", placeholder: "主体、标的、价款与支付、交付验收、期限……缺的会列为待定事项" },
+      { key: "dispute", label: "争议解决", kind: "select", options: ["我方所在地法院", "对方所在地法院", "仲裁", "待定"], more: true },
     ],
     minMaterials: 0,
     steps: ["确认交易要点，缺的列为“待定事项”，不编造", "有本所范本先用范本", "起草后做一致性检查（定义、金额大小写、日期、互引、附件）", "写起草说明：关键条款为什么这样写、对方可能怎么改"],
@@ -771,9 +888,10 @@ export const SCENARIOS: ScenarioCard[] = [
     skill: "due-diligence",
     args: { stage: "清单" },
     verb: "开始列清单",
-    goal: "请为这笔{deal_type}交易列出尽调清单、可直接发给对方的资料清单与访谈提纲；关注重点：{focus}。",
+    goal: "请为这笔{deal_type}交易列出尽调清单、可直接发给对方的资料清单与访谈提纲；目标公司行业：{industry}；关注重点：{focus}。",
     fields: [
       { key: "deal_type", label: "交易类型", kind: "select", options: ["股权收购", "增资", "资产收购", "其他"], required: true },
+      { key: "industry", label: "目标公司行业", kind: "text", placeholder: "例如：医疗器械（有特殊资质的行业会多列一组）" },
       { key: "focus", label: "关注重点", kind: "text", placeholder: "例如：出资是否实缴、核心资质、未决诉讼" },
     ],
     minMaterials: 0,
@@ -791,8 +909,12 @@ export const SCENARIOS: ScenarioCard[] = [
     args: { stage: "发现" },
     primary: "尽调报告（内部稿）.docx",
     verb: "开始整理",
-    goal: "请根据数据室材料、访谈纪要和导入的外部查询结果整理尽调发现与内部报告；交易类型：{deal_type}。",
-    fields: [{ key: "deal_type", label: "交易类型", kind: "select", options: ["股权收购", "增资", "资产收购", "其他"], required: true }],
+    goal: "请根据数据室材料、访谈纪要和导入的外部查询结果整理尽调发现与内部报告；交易类型：{deal_type}；目标公司行业：{industry}；关注重点：{focus}。",
+    fields: [
+      { key: "deal_type", label: "交易类型", kind: "select", options: ["股权收购", "增资", "资产收购", "其他"], required: true },
+      { key: "focus", label: "关注重点", kind: "text", placeholder: "例如：核心资质、重大合同的控制权变更条款、未决诉讼" },
+      { key: "industry", label: "目标公司行业", kind: "text", placeholder: "例如：医疗器械（有特殊资质的行业会多列一组）", more: true },
+    ],
     minMaterials: 1,
     steps: ["每个发现写四要素：事实与材料位置、法律后果、对交易的影响、处理方案", "处理方案落到交易文件条款（先决条件、陈述保证、特别赔偿、价款调整）", "“核查受限”的事项单独列出", "客户与目标公司的陈述标“陈述”，不写成已核实"],
     intents: [["尽调", "报告"], ["尽调", "发现"], ["尽职调查", "报告"]],
@@ -808,13 +930,15 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "corporate-resolutions",
     verb: "开始起草",
-    goal: "请起草{meeting}的文件（{company_type}）：开会的出会议通知、决议与签署页，书面决定不开会的只出决定与签署页；拟议事项：{matters}。以公司章程为准，没有章程的逐项标出待核，表决结果留空。",
+    goal: "请起草{meeting}的文件（{company_type}）：开会的出会议通知、决议与签署页，书面决定不开会的只出决定与签署页；拟议事项：{matters}。会议日期：{meeting_on}；召开方式：{meeting_mode}。以公司章程为准，没有章程的逐项标出待核，表决结果留空。",
     // 第 31 批：全体股东书面决定、一人公司股东决定不开会，主交付物是决定本身（原先恒为《会议通知》）
     primaryBy: { field: "meeting", map: { 全体股东书面决定: "决议（草稿）.docx", 一人公司股东决定: "决议（草稿）.docx" } },
     fields: [
       { key: "meeting", label: "会议", kind: "select", options: ["股东会", "临时股东会", "董事会", "临时董事会", "全体股东书面决定", "一人公司股东决定"], required: true },
       { key: "company_type", label: "公司类型", kind: "select", options: ["有限责任公司", "股份有限公司（非上市）"], required: true },
       { key: "matters", label: "拟议事项", kind: "text", required: true, placeholder: "例如：增资 500 万元；修改章程；选举董事" },
+      { key: "meeting_on", label: "会议日期", kind: "date", more: true },
+      { key: "meeting_mode", label: "召开方式", kind: "select", options: ["现场", "通讯（视频或电话）", "书面传签"], more: true },
     ],
     minMaterials: 0,
     steps: ["逐字摘出章程里召集、通知、表决的规定（章程优先）", "逐项判断普通决议还是特别决议、要不要回避", "起草会议通知、决议与签署页（出席与表决结果留空）", "列出召集与表决核对表和可能影响决议效力的情形"],
@@ -825,7 +949,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "transactional",
     title: "交割清单",
     gives: "已签署或定稿的交易文件（含附件、补充协议）",
-    gets: ["交割清单.xlsx（先决条件、交割文件、交割后义务，逐条附原文）"],
+    gets: ["交割清单.xlsx（先决条件、交割文件、交割后义务，逐条附原文）", "交割清单说明.docx（附件）"],
     scenario: "a1.agent_task",
     skill: "closing-checklist",
     verb: "开始整理",
@@ -840,7 +964,7 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "transactional",
     title: "交易法规研究",
     gives: "研究问题（可附交易文件）",
-    gets: ["研究备忘录.docx", "来源与引用核验表"],
+    gets: ["研究备忘录.docx", "来源目录.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "legal-research-memo",
     verb: "开始研究",
@@ -854,15 +978,16 @@ export const SCENARIOS: ScenarioCard[] = [
     id: "intake",
     line: "transactional",
     title: "访谈纪要与材料清单",
-    gives: "访谈录音转写或笔记",
-    gets: ["访谈纪要.docx", "材料收集清单.xlsx（附件）"],
+    gives: "访谈录音转写或笔记；没有成文记录时直接写访谈要点",
+    gets: ["访谈纪要.docx", "材料收集清单.xlsx（附件）", "紧急期限与冲突待核清单.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "intake-notes",
     allowPartial: true,
     verb: "开始整理",
     goal: "请根据访谈记录整理访谈纪要与材料收集清单；访谈对象：{who}。",
     fields: [{ key: "who", label: "访谈对象角色", kind: "text", placeholder: "例如：公司财务负责人" }],
-    minMaterials: 1,
+    minMaterials: 0,
+    brief: INTERVIEW_BRIEF,
     steps: ["整理访谈要点与待核实事项", "列出需要客户提供的材料", "生成纪要与清单"],
     intents: [["访谈"], ["纪要"], ["材料清单"]],
   },
@@ -872,15 +997,17 @@ export const SCENARIOS: ScenarioCard[] = [
     line: "inhouse",
     title: "合同审核",
     gives: "一份合同（Word 最佳）",
-    gets: ["审核意见书（内部稿）.docx", "逐条审核意见（审查工作台）", "带修订痕迹的修订稿与清洁稿（可在开始时选择同时出建议修订稿；也可在工作台逐条处理后生成）"],
+    gets: ["审查意见书（内部稿）.docx", "逐条审核意见（审查工作台）", "问题清单.xlsx（附件）", "带修订痕迹的修订稿与清洁稿（可在开始时选择同时出建议修订稿；也可在工作台逐条处理后生成）"],
     scenario: "a1.agent_task",
     skill: "contract-review",
     verb: "开始审核",
-    goal: "请从公司角度审核这份{type}合同；重点关注：{focus}。{redline}。",
+    goal: "请从公司角度审核这份{type}合同；重点关注：{focus}。{redline}。交易背景：{background}。文本由谁提供：{paper}。",
     fields: [
       { key: "type", label: "合同类型", kind: "select", options: CONTRACT_TYPES, required: true },
       { key: "focus", label: "重点关注", kind: "multi", options: ["付款", "验收", "违约责任", "知识产权", "保密", "数据合规"] },
       { key: "redline", label: "同时出一份建议修订稿", kind: "select", options: ["不用，先看审查意见", "要：按审查意见直接在原件上写修订"], goalText: { "不用，先看审查意见": "", "要：按审查意见直接在原件上写修订": "审查意见出完后，按必须修改与建议修改的意见在原件上写一份建议修订稿（修订痕迹）" } },
+      { key: "background", label: "交易背景", kind: "text", placeholder: "例如：对方强势、金额 300 万元、打算长期合作", help: "决定意见写得多激进。", more: true },
+      { key: "paper", label: "文本由谁提供", kind: "select", options: ["对方的格式文本", "我方范本", "双方共同起草", "不清楚"], more: true },
     ],
     minMaterials: 1,
     steps: ["通读合同", "从公司立场逐条找出风险", "给出修改建议并核对依据", "放进审查工作台由你决定"],
@@ -915,7 +1042,7 @@ export const SCENARIOS: ScenarioCard[] = [
     goal: "请答复以下问题：{question}。业务背景：{background}。",
     fields: [
       { key: "question", label: "问题", kind: "long", required: true },
-      { key: "background", label: "业务背景", kind: "text", placeholder: "可选" },
+      { key: "background", label: "业务背景", kind: "long", goalOnly: true, placeholder: "可选" },
     ],
     minMaterials: 0,
     steps: ["明确问题与前提", "检索并核对依据", "写出结论、假设与需客户确认的事项"],
@@ -927,15 +1054,17 @@ export const SCENARIOS: ScenarioCard[] = [
     title: "履约问题与催告函",
     gives: "合同与履约记录",
     // v9.4（S1 §0 第 6 条）：方法只出函件与依据核对，不出“风险提示”——卡上不承诺方法没有的东西
-    gets: ["函件草稿.docx（催告函、解除通知或保证责任主张，按你选的路径）", "依据与发送前核对.xlsx"],
+    gets: ["律师函或催告函（草稿）.docx（催告函、解除通知或保证责任主张，按你选的路径）", "依据与发送前核对.xlsx"],
     scenario: "a1.agent_task",
     skill: "demand-letter",
     verb: "开始处理",
-    goal: "请就以下履约问题梳理履约事实与依据，并起草函件：{issue}。函件类型：{letter_type}。",
+    goal: "请就以下履约问题梳理履约事实与依据，并起草函件：{issue}。函件类型：{letter_type}。要求对方：{demand}；发函名义：{sender}。",
     fields: [
       { key: "issue", label: "履约节点或违约事项", kind: "long", required: true },
       // 第 26 批（评审 S2-12）：可不选，方法会问
       { key: "letter_type", label: "函件类型", kind: "select", options: ["先帮我判断该走哪条路径", ...LETTER_TYPES] },
+      { key: "demand", label: "要求对方做什么", kind: "text", goalOnly: true, placeholder: "例如：十日内付清到期货款 80 万元" },
+      SENDER,
     ],
     minMaterials: 1,
     steps: ["对照合同条款梳理履约事实", "核对依据，列出发送前要确认的事项", "起草催告函（期限按合同或你给的写，不自行推算）"],
@@ -952,10 +1081,12 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "case-report",
     verb: "开始撰写",
-    goal: "请给客户写案件进展汇报，汇报对象：{audience}；截至：{as_of}。",
+    goal: "请给客户写案件进展汇报，汇报对象：{audience}；截至：{as_of}。材料之外的最新进展：{updates}。需要对方决定的事项：{pending}。",
     fields: [
       { key: "audience", label: "汇报对象", kind: "select", options: ["客户决策人", "客户管理层", "客户法务"], required: true },
       { key: "as_of", label: "截至日期", kind: "date" },
+      { key: "updates", label: "材料里没有的最新进展", kind: "long", goalOnly: true, placeholder: "例如：上周收到开庭传票，开庭日 12 月 9 日；对方代理人电话里提过愿意调解" },
+      { key: "pending", label: "需要对方决定的事", kind: "text", placeholder: "例如：是否接受分期付款的调解方案", more: true },
     ],
     minMaterials: 1,
     steps: ["整理到截至日的程序进展与关键事实（每条注明出处）", "列出主要风险、应对与金额口径", "写成一页报告与附表，需要客户决定的事单列"],
@@ -970,10 +1101,12 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "case-report",
     verb: "开始撰写",
-    goal: "请撰写案件进展汇报，汇报对象：{audience}；截至：{as_of}。",
+    goal: "请撰写案件进展汇报，汇报对象：{audience}；截至：{as_of}。材料之外的最新进展：{updates}。需要对方决定的事项：{pending}。",
     fields: [
       { key: "audience", label: "汇报对象", kind: "select", options: ["管理层", "董事会", "业务部门"], required: true },
       { key: "as_of", label: "截至日期", kind: "date" },
+      { key: "updates", label: "材料里没有的最新进展", kind: "long", goalOnly: true, placeholder: "例如：上周收到开庭传票，开庭日 12 月 9 日；对方代理人电话里提过愿意调解" },
+      { key: "pending", label: "需要对方决定的事", kind: "text", placeholder: "例如：是否接受分期付款的调解方案", more: true },
     ],
     minMaterials: 1,
     steps: ["整理程序进展与关键事实", "列出主要风险与已确认的金额口径", "写成一页汇报与附表"],
@@ -994,11 +1127,13 @@ export const SCENARIOS: ScenarioCard[] = [
     // 第 27 批（评审 S3-01/S3-17）：答辩期是十个工作日（办案规则第八十条），卡上直接写明
     // 第 41 批（V16 回归）：委托原话会被助手当成律师已定的口径，只给工作日一种日期、不给按日历日的保守日期；
     // 改为只写收到日期、请助手算届满日，按工作准则第 4 条并列各口径、最早届满的写在最前
-    goal: "请为劳动仲裁应诉做应对方案：员工请求为{claim}；收到仲裁申请书副本的日期：{received_on}；请算出答辩期届满日；开庭日：{hearing}。",
+    goal: "请为劳动仲裁应诉做应对方案：员工请求为{claim}；收到仲裁申请书副本的日期：{received_on}；请算出答辩期届满日；开庭日：{hearing}。入职日期：{hired_on}；离职日期：{left_on}；月工资：{monthly_wage}。",
     fields: [
       { key: "claim", label: "员工请求", kind: "text", required: true, placeholder: "一句话即可" },
-      { key: "received_on", label: "收到申请书副本的日期", kind: "date" },
+      // 第 55 批：改必填——答辩期、管辖异议、反申请都以这一天为限
+      { key: "received_on", label: "收到申请书副本的日期", kind: "date", required: true },
       { key: "hearing", label: "仲裁开庭日", kind: "date" },
+      ...LABOR_BASICS.filter((f) => f.key !== "leave_type").map(more),
     ],
     minMaterials: 1,
     steps: ["逐项回应员工请求，核对漏项", "时效分两类列出；举证责任按法定规则分配", "逐条查解除是否合法（理由、制度程序与公示、通知工会、送达）", "测算敞口并写明公式（草稿，待复核）"],
@@ -1040,8 +1175,11 @@ export const SCENARIOS: ScenarioCard[] = [
     // 第 31 批：方法 outputs 第一项是《劳动争议应对方案》；解除前评估要的是《解除风险评估》
     primary: "解除风险评估.docx",
     verb: "开始评估",
-    goal: "请评估拟解除这名员工的风险与程序：解除理由为{reason}。",
-    fields: [{ key: "reason", label: "解除理由", kind: "select", options: ["严重违反规章制度", "试用期间被证明不符合录用条件", "不能胜任工作", "医疗期满不能工作", "客观情况重大变化", "经济性裁员", "劳动合同期满终止（不续签）", "协商一致解除", "其他"], required: true }],
+    goal: "请评估拟解除这名员工的风险与程序：解除理由为{reason}。入职日期：{hired_on}；月工资：{monthly_wage}。",
+    fields: [
+      { key: "reason", label: "解除理由", kind: "select", options: ["严重违反规章制度", "试用期间被证明不符合录用条件", "不能胜任工作", "医疗期满不能工作", "客观情况重大变化", "经济性裁员", "劳动合同期满终止（不续签）", "协商一致解除", "其他"], required: true },
+      ...LABOR_BASICS.filter((f) => f.key === "hired_on" || f.key === "monthly_wage").map(more),
+    ],
     minMaterials: 1,
     steps: ["核对解除理由与法定依据是否对得上", "检查规章制度是否经民主程序并公示", "列出通知工会、送达等程序步骤", "列出合法与违法解除两种情景的敞口（不替公司定金额）"],
     intents: [["解除", "员工"], ["辞退"], ["开除", "员工"], ["解除劳动合同前"], ["解除劳动合同", "风险"], ["解除通知", "员工"]],
@@ -1058,9 +1196,10 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "policy-review",
     verb: "开始审查",
-    goal: "请审查这份{policy_type}：逐条看内容是否合法、是否与劳动合同冲突，并核对民主程序与公示材料；所在地：{place}。",
+    goal: "请审查这份{policy_type}：逐条看内容是否合法、是否与劳动合同冲突，并核对民主程序与公示材料；所在地：{place}。审查目的：{purpose}。",
     fields: [
       { key: "policy_type", label: "制度类型", kind: "select", options: ["员工手册", "考勤与工时制度", "薪酬与绩效制度", "奖惩与违纪处理制度", "休假制度", "其他规章制度"], required: true },
+      { key: "purpose", label: "审查目的", kind: "select", options: ["新制定", "修改现有制度", "例行体检", "拟据此处理或解除员工"] },
       { key: "place", label: "所在地", kind: "text", placeholder: "用于核对地方规定，例如：上海市" },
     ],
     minMaterials: 1,
@@ -1173,6 +1312,8 @@ export function skillArgsOf(card: Pick<ScenarioCard, "fields" | "args">, values:
     const s = (Array.isArray(v) ? v.join("、") : (v ?? "")).trim();
     // 选了“不用”这类空说法的选项（V16 F4）不作为方法参数
     if (f.goalText && f.goalText[s] === "") continue;
+    // 长文字与逐项请求只拼进任务说明（第 55 批）
+    if (f.goalOnly) continue;
     if (s && /^[a-z][a-z_]{0,31}$/.test(f.key)) out[f.key] = [...s].slice(0, 300).join("");
   }
   return out;
@@ -1205,7 +1346,48 @@ const PRIMARY_FIELDS = new Set(["question", "opinion", "situation", "issue"]);
 export function startPanelInitial(card: ScenarioCard, request: string | null | undefined): { values: Record<string, string>; extra: string } {
   const text = (request ?? "").trim();
   const q = card.fields.find((f) => PRIMARY_FIELDS.has(f.key) && f.required && (f.kind === "text" || f.kind === "long"));
-  return q && text ? { values: { [q.key]: text }, extra: "" } : { values: {}, extra: request ?? "" };
+  if (q && text) return { values: { [q.key]: text }, extra: "" };
+  // 第 55 批：整段话进了案情栏的（见 startPanelBrief），补充要求留空
+  return { values: {}, extra: startPanelBrief(card, request) ? "" : (request ?? "") };
+}
+
+/**
+ * 案情栏的初值（第 55 批）：可以直接写案情的卡，律师在输入框里写的长段话就是案情——原来进了标着“可选”的补充要求。
+ * 一两句的要求（不足 40 字）仍作补充要求；卡片有必填的“问题 / 意见”主栏时归主栏。
+ */
+export function startPanelBrief(card: ScenarioCard, request: string | null | undefined): string {
+  const text = (request ?? "").trim();
+  if (!card.brief || [...text].length < 40) return "";
+  if (card.fields.some((f) => PRIMARY_FIELDS.has(f.key) && f.required && (f.kind === "text" || f.kind === "long"))) return "";
+  return text;
+}
+
+/** 逐项请求拼成“1. …；2. …”（第 55 批）：去掉空行与每项末尾的标点；只有一项时不编号。纯函数。 */
+export function numbered(items: readonly string[]): string {
+  const rows = items.map((x) => x.trim().replace(/[。；;，,]+$/, "")).filter(Boolean);
+  return rows.length <= 1 ? (rows[0] ?? "") : rows.map((x, i) => `${i + 1}. ${x}`).join("；");
+}
+
+/** 案情说明存成材料时的文件名（第 55 批）：固定前缀，方法与工作准则按这个名字认它是“律师陈述”。 */
+export function briefFilename(day: string): string {
+  return `案情说明（律师口述）${day}.txt`;
+}
+/** 案情说明至少写这么多字才算数（几个字的“见附件”不算案情）。 */
+export const BRIEF_MIN_CHARS = 15;
+
+/**
+ * 这张卡现在缺不缺“案情”（第 55 批）：可以直接写案情的卡，在本事项没有材料、没有任何事实、律师也没写案情时不能开始——
+ * 否则助手只能凭事项名称猜。facts 为 null（还没读到）时不拦。纯函数。
+ */
+export function caseGap(card: Pick<ScenarioCard, "brief" | "scenario">, s: { matterDocs: number; facts: number | null; brief: string }): boolean {
+  if (!card.brief || card.scenario !== "a1.agent_task") return false;
+  return s.matterDocs === 0 && s.facts === 0 && [...s.brief.trim()].length < BRIEF_MIN_CHARS;
+}
+
+/** 任务说明里指向案情说明的一句（写了案情才有）。 */
+export function briefGoalLine(card: Pick<ScenarioCard, "brief">, brief: string, day: string): string {
+  if (!card.brief || !brief.trim()) return "";
+  return `${card.brief.label}见材料《${briefFilename(day)}》：这是我对情况的陈述，先读它；其中的事实按“待我确认”处理，不列进证据目录。`;
 }
 
 export function buildGoal(card: ScenarioCard, values: Record<string, string | string[]>, extra: string): string {
@@ -1215,17 +1397,25 @@ export function buildGoal(card: ScenarioCard, values: Record<string, string | st
       let empty = false;
       const filled = seg.replace(/\{(\w+)\}/g, (_m, k: string) => {
         const v = values[k];
-        const raw = Array.isArray(v) ? v.join("、") : (v ?? "").trim();
-        const map = card.fields.find((f) => f.key === k)?.goalText;
+        const field = card.fields.find((f) => f.key === k);
+        const raw = Array.isArray(v) ? (field?.kind === "list" ? numbered(v) : v.join("、")) : (v ?? "").trim();
+        const map = field?.goalText;
         const s = map && typeof v === "string" && v in map ? map[v]!.trim() : raw;
         if (!s) empty = true;
         return s;
       });
       // 填进来的话自己已带句末标点（第 35 批 R3：输入框里的问题预填进“问题”栏，任务说明成了“……法律意见书。。”）：不再叠模板的句号
       return empty ? "" : filled.replace(/([。！？!?；;.])\s*[。；]$/, "$1");
-    })
-    .join("");
-  return [out.trim(), extra.trim()].filter(Boolean).join("\n");
+    });
+  // 第 55 批：一句话末尾的几段没填、被整段省略时，把留下来的最后一段的“；”改回“。”
+  // （“…我方：原告；标的额：{amount}。”没填标的额时原来成了“…我方：原告；”，分号后面直接接下一句）
+  for (let i = 0; i < out.length; i++) {
+    if (out[i] !== "" || !parts[i]!.endsWith("。")) continue;
+    let j = i - 1;
+    while (j >= 0 && out[j] === "") j--;
+    if (j >= 0 && out[j]!.endsWith("；")) out[j] = `${out[j]!.slice(0, -1)}。`;
+  }
+  return [out.join("").trim(), extra.trim()].filter(Boolean).join("\n");
 }
 
 /**

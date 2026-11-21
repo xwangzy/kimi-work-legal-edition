@@ -10,6 +10,7 @@
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import "../styles-dataflow.css";
+import "../styles-settings.css";
 import { notifyDataChanged } from "../lib/events.ts";
 import { api, recovery as recoveryApi, updates, type AiAuthorization, type Capabilities, type ContentCheckResult, type ContentStatus, type ControlPlaneStatus, type PolicyDraft } from "../api.ts";
 import { CONTENT_CHECK_FAILED, CONTENT_PANEL_NOTE, contentCheckLine, contentSourceLine, contentStaleLine } from "../lib/content-labels.ts";
@@ -80,7 +81,8 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
   ];
   return (
     <main className="main">
-      <div className="main-wide">
+      {/* 第 55 批：表单类页签（通用、文书与写作、账号、备份）把正文收窄，见 styles-settings.css */}
+      <div className={`main-wide set-page set-${tab}`}>
         <h1 className="page-title h-page">设置</h1>
         <div className="tabs tabs-line" role="tablist" aria-label="设置">
           {tabs.map(([k, label]) => (
@@ -707,8 +709,11 @@ function AccountTab({ mySafety, admin }: { mySafety: string | null; admin: boole
         <h2 className="section-h h-section" id="sec-team">本所与账号</h2>
         {firm && (
           <SettingRow label="本所">
-            <b>{firm.firm?.name}</b>
-            {firm.member?.name ? ` · ${firm.member.name}` : ""}
+            {/* 第 55 批：名称与姓名放进同一个 span——右栏是纵向排列，原来“ · 姓名”这段文字单独落成一行，开头是一个孤零零的“·” */}
+            <span>
+              <b>{firm.firm?.name}</b>
+              {firm.member?.name ? ` · ${firm.member.name}` : ""}
+            </span>
             <details className="quiet-details">
               {/* 第 26 批（评审 U2-06）：“核对码”原来指三样东西——本所的这串改叫“本所识别码” */}
               <summary>本所识别码</summary>
@@ -1501,40 +1506,47 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
     <div className="panel">
       <div className="device-row">
         <div className="device-k">起草律所策略</div>
-        <div>
-          <label>
-            最高档位{" "}
-            <Select value={maxMode} onChange={setMaxMode} options={(["chat", "manual", "default", "auto"] as const).map((m) => ({ value: m, label: MODE_TEXT[m] ?? m }))} />
-          </label>{" "}
-          <label>
-            <input type="checkbox" checked={preSearch && maxMode === "auto"} disabled={maxMode !== "auto"} onChange={(e) => setPreSearch(e.target.checked)} /> “放手做”可以事先同意“去掉当事人名称后的检索”
-          </label>
-          <div>
-            <label>
-              官方网站之外，AI 还可以打开的网站（每行一个网址，例如 www.example.com）
-              <textarea value={extra} onChange={(e) => setExtra(e.target.value)} rows={2} />
-            </label>
+        {/* 第 55 批：一行一项（左标签、右控件）。原来标签、下拉、勾选、输入框挤在一段文字流里，互相错位；文字与逻辑没有改 */}
+        <div className="pd-form">
+          <div className="settings-grid pd-grid">
+            <span className="sg-k">最高档位</span>
+            <span className="sg-v sg-select">
+              <Select aria-label="最高档位" value={maxMode} onChange={setMaxMode} options={(["chat", "manual", "default", "auto"] as const).map((m) => ({ value: m, label: MODE_TEXT[m] ?? m }))} />
+              <label className={`pd-check${maxMode !== "auto" ? " sg-off" : ""}`}>
+                <input type="checkbox" checked={preSearch && maxMode === "auto"} disabled={maxMode !== "auto"} onChange={(e) => setPreSearch(e.target.checked)} /> “放手做”可以事先同意“去掉当事人名称后的检索”
+              </label>
+            </span>
+            <span className="sg-k sg-top">可打开的网站</span>
+            <span className="sg-v">
+              <textarea aria-label="官方网站之外，AI 还可以打开的网站" value={extra} onChange={(e) => setExtra(e.target.value)} rows={2} placeholder="www.example.com" />
+              <span className="sg-help">官方网站之外，AI 还可以打开的网站（每行一个网址，例如 www.example.com）</span>
+            </span>
+            <span className="sg-k">放宽项</span>
+            <span className="sg-v">
+              <label className="pd-check">
+                <input type="checkbox" checked={l3a} onChange={(e) => setL3a(e.target.checked)} /> 敏感事项可以用通用 AI 服务（强制全部化名）
+              </label>
+              <label className="pd-check">
+                <input type="checkbox" checked={support} onChange={(e) => setSupport(e.target.checked)} /> 律师可以把问题报告直接发给客服
+              </label>
+              <label className="pd-check">
+                <input type="checkbox" checked={relay} onChange={(e) => setRelay(e.target.checked)} /> 同事之间可以经中软同步团队事项（加密，中软打不开）
+              </label>
+              {relay && (
+                <span className="sg-help">
+                  开启后，团队事项会加密后经中软在同事电脑之间同步（中软打不开）；本机删除事项不会删除中软上的副本，关闭后已存的副本保留到律所停止使用。
+                </span>
+              )}
+            </span>
+            <span className="sg-k">有效期</span>
+            <span className="sg-v">
+              <span className="pd-ttl">
+                <input type="number" aria-label="有效期（天，≤ 30）" min={1} max={30} value={ttl} onChange={(e) => setTtl(Math.max(1, Math.min(30, Number(e.target.value) || 30)))} /> 天（≤ 30）
+              </span>
+            </span>
           </div>
-          <label>
-            <input type="checkbox" checked={l3a} onChange={(e) => setL3a(e.target.checked)} /> 敏感事项可以用通用 AI 服务（强制全部化名）
-          </label>{" "}
-          <label>
-            <input type="checkbox" checked={support} onChange={(e) => setSupport(e.target.checked)} /> 律师可以把问题报告直接发给客服
-          </label>{" "}
-          <label>
-            <input type="checkbox" checked={relay} onChange={(e) => setRelay(e.target.checked)} /> 同事之间可以经中软同步团队事项（加密，中软打不开）
-          </label>{" "}
-          {relay && (
-            <div className="muted">
-              开启后，团队事项会加密后经中软在同事电脑之间同步（中软打不开）；本机删除事项不会删除中软上的副本，关闭后已存的副本保留到律所停止使用。
-            </div>
-          )}
           {(support || relay) && <div className="banner banner-gray">勾选后，没更新软件的电脑会暂时按最严规则运行，直到更新。建议先让全所电脑更新到最新版。</div>}
-          <label>
-            有效期（天，≤ 30）{" "}
-            <input type="number" min={1} max={30} value={ttl} onChange={(e) => setTtl(Math.max(1, Math.min(30, Number(e.target.value) || 30)))} />
-          </label>
-          <div className="muted">放宽的规则须管理员各自在电脑上确认后才生效（团队版 1 人，律所版 2 人）。</div>
+          <div className="muted pd-note">放宽的规则须管理员各自在电脑上确认后才生效（团队版 1 人，律所版 2 人）。</div>
           <button
             className="btn-primary btn-sm"
             disabled={busy}

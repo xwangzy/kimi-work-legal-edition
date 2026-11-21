@@ -110,7 +110,8 @@ test("文书类方法都标了 requires_outline（起诉状、答辩状、代理
 
 test("劳动仲裁申请书与答辩书（评审 S3）：参数先问文书类型；答辩期按工作日算的参数形状在期间工具上走得通", async () => {
   assert.ok(manifest.skills.some((s) => s.id === "labor-arbitration-draft"), "方法包里有劳动仲裁文书方法");
-  assert.deepEqual(frontArgs("labor-arbitration-draft"), ["doc_kind", "side", "received_on", "claims"]);
+  // 第 55 批：追加劳动关系要素四项（入职日期、离职日期、离职方式、月工资）；文书类型仍排第一
+  assert.deepEqual(frontArgs("labor-arbitration-draft"), ["doc_kind", "side", "received_on", "claims", "hired_on", "left_on", "leave_type", "monthly_wage"]);
   const body = readFileSync(repo("content/skills/labor-arbitration-draft/SKILL.md"), "utf8");
   assert.match(body, /rule = workday/, "答辩期十日按工作日（办案规则第八十条）交期间工具");
   assert.match(body, /不收费/, "劳动争议仲裁不收费，核对清单不写仲裁费");

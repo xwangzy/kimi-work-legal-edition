@@ -97,3 +97,17 @@
 
 /* 空状态 */
 .dl-empty { padding: var(--sp-7) 0; }
+
+/* ── 第 55 批：流程条收成一条轨道 ──
+   原来是三张并排的描边卡片（中间夹箭头），三段一样重，0 份的阶段和有 6 份的阶段长得一样。现在是一条浅底轨道：
+   各段平铺在轨道里，选中的一段浮起成白底；没有文件的阶段数字退成次要灰；“全部”收进轨道右端。 */
+.dl-flow { gap: 0; padding: 4px; border-radius: var(--r-lg); background: var(--bg-subtle); }
+.dl-flow-step { border: 0; background: transparent; padding: 10px var(--sp-4); border-radius: var(--r-md); }
+.dl-flow-step:hover { box-shadow: none; background: var(--bg-hover); }
+.dl-flow-step.on, .dl-flow-step.on:hover { background: var(--bg-surface); box-shadow: var(--shadow-sm); }
+.dl-flow-step.on .dl-flow-n { color: var(--text-primary); }
+.dl-flow-step.zero .dl-flow-n { color: var(--text-secondary); font-weight: 500; }
+.dl-flow-step.zero .dl-flow-label { color: var(--text-label); }
+.dl-flow-step.aside { margin-left: 0; }
+.dl-flow-arrow { width: 20px; }
+.dl-flow-all { margin: 0 var(--sp-2) 0 var(--sp-3); }

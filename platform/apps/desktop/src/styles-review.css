@@ -1,0 +1,30 @@
+/* 签发页（第 55 批第二轮）。后加载，覆盖 styles.css 里的同名规则；只用语义令牌。
+   页首：这份文件在“草稿 → 待复核 → 已签发”里走到哪一步；右栏：系统核对结果用小圆标记（通过绿、没过红、说明灰），两节之间留白分开。 */
+
+.rv-status { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); margin: 0 0 var(--sp-4); font-size: var(--fs-caption); color: var(--text-secondary); }
+.rv-stages { display: inline-flex; align-items: center; list-style: none; margin: 0; padding: 0; }
+.rv-stage { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); white-space: nowrap; }
+/* 步与步之间一段短线 */
+.rv-stage + .rv-stage::before { content: ""; width: 28px; height: 1px; margin: 0 var(--sp-2); background: var(--border-default); }
+.rv-stage-dot { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--border-default); background: var(--bg-surface); }
+.rv-stage-dot svg { width: 10px; height: 10px; stroke-width: 2.6; }
+.rv-done { color: var(--text-label); }
+.rv-done .rv-stage-dot { border-color: transparent; background: var(--bg-muted); color: var(--text-label); }
+.rv-done + .rv-stage::before { background: var(--border-hover); }
+.rv-now { color: var(--text-primary); font-weight: 600; }
+.rv-now .rv-stage-dot { border-color: var(--status-warning-solid); background: var(--status-warning-bg); }
+.rv-now .rv-stage-dot::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--status-warning-solid); }
+.rv-version { padding-left: var(--sp-4); border-left: 1px solid var(--border-subtle); font-variant-numeric: tabular-nums; }
+.rv-hint { color: var(--text-secondary); }
+
+/* 右栏：签发前检查 */
+.review-checks { padding: var(--sp-5); border-radius: var(--r-lg); }
+.review-checks > .section-title { margin: 0 0 var(--sp-2); font-size: var(--fs-body); font-weight: 600; }
+.review-checks > .section-title ~ .section-title { margin-top: var(--sp-5); padding-top: var(--sp-5); border-top: 1px solid var(--border-subtle); }
+.check-list li { gap: 10px; padding: 5px 0; align-items: flex-start; }
+.check-mark { flex: 0 0 18px; width: 18px; height: 18px; margin-top: 2px; border-radius: 50%; display: inline-grid; place-items: center; font-size: var(--fs-xs); line-height: 1; background: var(--bg-muted); }
+.check-ok .check-mark { background: var(--status-success-bg); color: var(--status-success-text); }
+.check-bad .check-mark { background: var(--status-danger-bg); color: var(--status-danger-text); }
+.check-info .check-mark { background: transparent; color: var(--border-hover); }
+.review-actions { margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--border-subtle); }
+.review-signer { font-size: var(--fs-xs); line-height: 1.6; }

@@ -91,7 +91,12 @@ export interface AccountDevice {
 export function deviceLine(d: AccountDevice, now = Date.now()): { title: string; meta: string; state: { text: string; tone: "ok" | "gray" | "bad" } } {
   const n = deviceOrdinal(d.device_id);
   const title = `${d.current ? "这台电脑" : `第 ${n} 台电脑`}`;
-  const meta = [`${dayLabel(d.registered_at, now)}登记`, d.last_seen_on ? `最近使用 ${dayLabel(d.last_seen_on, now)}` : "", d.client_version ? `版本 ${d.client_version}` : ""].filter(Boolean).join(" · ");
+  // 第 55 批（真实控制面复评）：①“最近使用”是服务器按 UTC 记的日子，北京时间 0～8 点登记的电脑会显示成“登记 22 日 · 最近使用 21 日”——
+  // 不早于登记日（按北京时间的日子比）；②没有上报版本的客户端，服务器记占位值 legacy，不显示给律师看。
+  const regDay = d.registered_at && Number.isFinite(Date.parse(d.registered_at)) ? new Date(Date.parse(d.registered_at) + 8 * 3600_000).toISOString().slice(0, 10) : null;
+  const seen = d.last_seen_on && regDay && /^\d{4}-\d{2}-\d{2}$/.test(d.last_seen_on) && d.last_seen_on < regDay ? regDay : d.last_seen_on;
+  const version = d.client_version && d.client_version !== "legacy" ? d.client_version : null;
+  const meta = [`${dayLabel(d.registered_at, now)}登记`, seen ? `最近使用 ${dayLabel(seen, now)}` : "", version ? `版本 ${version}` : ""].filter(Boolean).join(" · ");
   const state = d.revoked_at ? { text: "已解绑", tone: "bad" as const } : d.session === "active" ? { text: "已登录", tone: "ok" as const } : { text: "未登录", tone: "gray" as const };
   return { title, meta, state };
 }

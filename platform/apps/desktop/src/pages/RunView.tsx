@@ -19,7 +19,7 @@ import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "
 import { followUpMaterialsText, nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
 import { currentBadges } from "../lib/badges.ts";
 import { engineHeartbeatMs, hasProgress, mergeProgress, phaseLine, progressActivityKey, progressTexts, retryStoppable, silenceMs, stallThresholdMs, progressView, type ProgressViewModel } from "../lib/progress.ts";
-import { buildSteps, groupSubtaskSteps, keyStepKeys, mergeRepeatSteps, problemSteps, processSummary, reusedArtifacts, sentByToolCall, toolLabel, type SentInfo, type Step } from "../lib/timeline.ts";
+import { buildSteps, foldDoneSteps, groupSubtaskSteps, keyStepKeys, mergeRepeatSteps, problemSteps, processSummary, reusedArtifacts, sentByToolCall, toolLabel, type SentInfo, type Step } from "../lib/timeline.ts";
 import { busyRunOfError } from "../lib/start-block.ts";
 import { methodLine, methodShort } from "../lib/run-method.ts";
 import { Select } from "../components/Select.tsx";
@@ -35,6 +35,7 @@ import { fmtWait } from "../lib/waiting.ts";
 // 滚动到新卡片：系统要求减少动效时直接跳到位（盘点：此前平滑滚动不受“减少动效”控制）
 import { scrollBehavior } from "../lib/ui-prefs.ts";
 import "../styles-run.css";
+import { goalPreview, goalRows } from "../lib/goal-brief.ts";
 import { OutlineConfirm } from "../components/OutlineConfirm.tsx";
 import { confirmAndAnswer, outlineAnswer, outlineQuestion, type OutlineView } from "../lib/outline.ts";
 
@@ -645,8 +646,21 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     <TimelineSkeleton />
   ) : (
     <div className="timeline">
-      {groupSubtaskSteps(steps).map((it) =>
-        it.kind === "step" ? (
+      {foldDoneSteps(groupSubtaskSteps(steps)).map((it) =>
+        it.kind === "fold" ? (
+          // 第 55 批：一长串做完的步骤折成一行（展开看逐步），把“现在在做什么 / 等你定什么”留在一屏之内
+          <details key={it.key} className="step step-ok step-group step-fold">
+            <summary>
+              <span className="step-dot" aria-hidden="true" />
+              <span className="step-body">
+                <span className="step-title">
+                  已完成 {it.items.length} 步<span className="step-fold-more"> · 展开</span>
+                </span>
+              </span>
+            </summary>
+            {it.items.map((x) => (x.kind === "step" ? <StepRow key={x.step.key} s={x.step} now={now} tokenMap={tokenMap} label={x.label} showTime={x.step.level === "detail" || keySteps.has(x.step.key)} /> : null))}
+          </details>
+        ) : it.kind === "step" ? (
           <StepRow key={it.step.key} s={it.step} now={now} tokenMap={tokenMap} label={it.label} showTime={it.step.level === "detail" || keySteps.has(it.step.key)} you={it.step.key === youKey ? pendingCount : 0} />
         ) : (
           // 子任务折叠（Y4 #33，复核 S7B-05）：同一子任务的步骤只显示一行，展开看逐步
@@ -997,10 +1011,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
         {/* 场景卡发起的任务（第 26 批）：标题是卡名，拼好的任务说明收进“任务说明”，要看再点开 */}
         {(run?.goal ?? run?.input_snapshot?.goal) &&
           (run?.input_snapshot?.title ? (
-            <details className="quiet-details goal-details">
-              <summary>任务说明</summary>
-              <div className="goal-bubble">{renderTokens(String(run.goal ?? run.input_snapshot.goal), tokenMap)}</div>
-            </details>
+            <GoalBrief goal={String(run.goal ?? run.input_snapshot.goal)} tokenMap={tokenMap} />
           ) : (
             String(run.goal ?? run.input_snapshot.goal).replace(/\s+/g, " ").trim().length > 30 && <div className="goal-bubble">{renderTokens(String(run.goal ?? run.input_snapshot.goal), tokenMap)}</div>
           ))}
@@ -1361,6 +1372,46 @@ function Citations({ ev }: { ev: RunEvent | undefined }) {
         </div>
       ))}
     </>
+  );
+}
+
+/**
+ * 任务说明（第 55 批）：折叠时一行——“任务说明”+ 第一句预览；展开是一张键值摘要（做什么、诉讼请求逐项、法院……），
+ * 取代原来点开才看得到的一只灰色气泡。排版规则见 lib/goal-brief.ts，不改任务说明的一个字。
+ */
+function GoalBrief({ goal, tokenMap }: { goal: string; tokenMap: Map<string, string | null> }) {
+  const rows = goalRows(goal);
+  return (
+    <details className="goal-brief">
+      <summary>
+        <span className="goal-brief-label">任务说明</span>
+        <span className="goal-brief-preview">{renderTokens(goalPreview(goal), tokenMap)}</span>
+      </summary>
+      <dl className="goal-brief-body">
+        {rows.map((r, i) =>
+          r.label ? (
+            <div key={i} className="goal-brief-row">
+              <dt>{r.label}</dt>
+              <dd>
+                {r.items ? (
+                  <ol>
+                    {r.items.map((x, j) => (
+                      <li key={j}>{renderTokens(x, tokenMap)}</li>
+                    ))}
+                  </ol>
+                ) : (
+                  renderTokens(r.text, tokenMap)
+                )}
+              </dd>
+            </div>
+          ) : (
+            <div key={i} className="goal-brief-row goal-brief-plain">
+              <dd>{renderTokens(r.text, tokenMap)}</dd>
+            </div>
+          ),
+        )}
+      </dl>
+    </details>
   );
 }
 

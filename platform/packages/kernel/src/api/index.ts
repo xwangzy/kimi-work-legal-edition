@@ -4,7 +4,7 @@
  * 所内节点都走这同一份方法表。签发已接入设备签名（§6.3）；审计事件入签名 hash 链（§6.4）；
  * 策略事件的签发人角色签名在同步阶段接入（当前经审计事件上链留痕）。
  */
-import { accountErrorText, accountFailure, controlPlaneErrorText, onboardingStateText } from "../account-session.ts";
+import { accountErrorText, accountFailure, controlPlaneErrorText, onboardingStateText, seatBlockReason } from "../account-session.ts";
 import { diagnoseView } from "../services/cloud-connection.ts";
 import { launchCheck, QUOTA_VIEW_MAX_AGE_MS, type LaunchHint } from "../services/launch-check.ts";
 import { calcDeadline } from "../tools/tools/deadline.ts";
@@ -525,7 +525,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     if (basisNoticeStale(matter)) return NOTICE_RECONFIRM_REASON;
     if (level === "L3a" && matter.model_endpoint === "standard" && !l3aAllowed) return "敏感事项（L3a）经标准端点推理须由律所管理员放开（或改用律所私有端点）";
     if (matter.model_endpoint === "standard" && deps.governance?.mode === "control_plane" && !deps.governance.seatToken()) {
-      return "席位令牌未取得或已失效（联网后自动续期）：经标准端点的推理与联网检索暂不可用";
+      // 第 55 批 K3：席位用完 / 被收回时说清找谁、做什么（原因码取最近一次同步“取席位令牌”那一步）
+      return seatBlockReason(deps.controlPlane?.lastSync?.steps?.seat ?? null);
     }
     return null;
   }
