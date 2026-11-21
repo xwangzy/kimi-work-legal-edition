@@ -19,7 +19,8 @@
  * macOS 上没有辅助功能权限时由人点“存储”（脚本等文件出现，最多 5 分钟）。
  */
 import { createRequire } from "node:module";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { inflateRawSync } from "node:zlib";
 import { basename, join, resolve } from "node:path";
@@ -166,29 +167,58 @@ async function login() {
 }
 
 async function awaitApproval(minutes = 45) {
-  const firm = await until(
+  // 两种入组：账号在新电脑登录（D-186）批准后先显示“本所识别码”请律师比对再打开；邀请码入组由管理员的批准核对段（邀请码本机秘密段的 HMAC）
+  // 认证，批准后直接打开——这时到“设置 · 账号与团队 · 本所识别码”取同一串数字比对（第 54 批真实走查：旧驱动只等前一种，邀请码入组会一直等到超时）
+  const want = (process.env.KWL_FIRM_CODE || "").replace(/\s+/g, "");
+  if (!want) throw new Error("没有给 KWL_FIRM_CODE：不能确认本所识别码，按产品要求不应继续");
+  let lastShot = 0;
+  let lastClick = 0;
+  const got = await until(
     async () => {
       const t = await text();
-      if (/已拒绝|被拒绝/.test(t)) throw new Error("入组申请被拒绝");
-      const fc = await page.locator('[aria-label="本所识别码"]').textContent().catch(() => null);
-      if (fc) return fc.trim();
-      // 每 30 秒点一次“现在查一下”（界面自己也每 10 秒查）
-      if (Date.now() % 30000 < 1500) await btnExact("现在查一下").click().catch(() => {});
+      if (/已拒绝|被拒绝|没有批准这次申请/.test(t)) throw new Error("入组申请被拒绝");
+      if (await page.locator('[aria-label="本所识别码"]').count()) return { via: "account", firm: (await page.locator('[aria-label="本所识别码"]').first().innerText()).trim() };
+      if (!(await page.locator('[aria-label="入组核对码"]').count()) && !/等待管理员批准|等待批准这台电脑|正在完成激活/.test(t) && /事项|问答|开通的最后一步/.test(t)) return { via: "invite" };
+      if (Date.now() - lastShot > 60000) {
+        lastShot = Date.now();
+        await shot("03-等待批准-现场");
+        writeFileSync(join(OUT, "waiting-text.txt"), t);
+      }
+      if (Date.now() - lastClick > 30000) {
+        lastClick = Date.now();
+        await btnExact("现在查一下").click({ timeout: 2000 }).catch(() => {});
+      }
       return null;
     },
     Number(minutes) * 60000,
     1500,
     "管理员批准",
   );
-  log("已批准；本所识别码：", firm);
-  await shot("03-已批准-本所识别码");
-  const want = (process.env.KWL_FIRM_CODE || "").replace(/\s+/g, "");
-  if (!want) throw new Error("没有给 KWL_FIRM_CODE：不能确认本所识别码，按产品要求不应继续");
-  if (firm.replace(/\s+/g, "") !== want) throw new Error(`本所识别码与管理员电脑上的不一致（${firm} ≠ ${want}）：按产品要求停止`);
-  log("本所识别码与管理员电脑逐位一致");
-  await btnExact("一致，打开").click();
-  await until(async () => /事项|问答/.test(await text()) && !/本所识别码/.test(await text()), 180000, 1500, "进入主界面");
+  if (got.via === "account") {
+    log("已批准（账号新电脑）；本所识别码：", got.firm);
+    await shot("03-已批准-本所识别码");
+    if (got.firm.replace(/\s+/g, "") !== want) throw new Error(`本所识别码与管理员电脑上的不一致（${got.firm}）：按产品要求停止`);
+    log("本所识别码与管理员电脑逐位一致");
+    await btnExact("一致，打开").click();
+    await until(async () => /事项|问答/.test(await text()) && !/本所识别码/.test(await text()), 180000, 1500, "进入主界面");
+  } else {
+    log("已批准（邀请码入组），已直接进入；到“设置 · 账号与团队”核对本所识别码");
+    const st = await until(async () => {
+      const r = await inv("kernel.status", {});
+      return r.ok && r.result?.activation?.firm_check_code ? r.result.activation : null;
+    }, 120000, 2000, "本机身份");
+    await go("#/connections/account");
+    await page.locator("summary", { hasText: "本所识别码" }).first().click().catch(() => {});
+    await sleep(800);
+    await shot("03-已批准-设置里的本所识别码");
+    const firm = String(st.firm_check_code);
+    log("本所识别码（这台电脑）：", firm, "；律所：", st.firm?.name, "；成员：", st.member?.name, st.member?.role);
+    if (firm.replace(/\s+/g, "") !== want) throw new Error(`本所识别码与管理员电脑上的不一致（${firm}）：按产品要求停止`);
+    log("本所识别码与管理员电脑逐位一致");
+  }
   await sleep(3000);
+  await go("#/");
+  await sleep(2000);
   await shot("04-入组后主界面");
   log("已进入：", (await text()).replace(/\s+/g, " ").slice(0, 120));
 }
@@ -438,7 +468,16 @@ async function exportAll() {
     const before = existsSync(target) ? statSync(target).mtimeMs : 0;
     await btn.click();
     log("已点“下载”，等系统保存对话框存到：", basename(target));
-    const ok = await until(async () => existsSync(target) && statSync(target).mtimeMs !== before && statSync(target).size > 0, 300000, 1000, `保存 ${a.filename}`).catch((e) => (log(String(e)), false));
+    // macOS 没有辅助功能权限时由人点“存储”：对话框缺省位置是“文稿”，存在那里也认，再复制进证据目录
+    const macDefault = process.platform === "darwin" ? join(homedir(), "Documents", basename(target)) : null;
+    const macBefore = macDefault && existsSync(macDefault) ? statSync(macDefault).mtimeMs : 0;
+    const fresh = (p, b) => existsSync(p) && statSync(p).mtimeMs !== b && statSync(p).size > 0;
+    const ok = await until(async () => fresh(target, before) || (macDefault && fresh(macDefault, macBefore)), 300000, 1000, `保存 ${a.filename}`).catch((e) => (log(String(e)), false));
+    if (ok && macDefault && !fresh(target, before)) {
+      await sleep(1500);
+      copyFileSync(macDefault, target);
+      log("已在“文稿”里存好，复制进证据目录：", basename(target));
+    }
     if (!ok) {
       results.push({ file: a.filename, saved: false });
       continue;

@@ -148,6 +148,25 @@ jobs:
         env:
           KWL_FIRM_CODE: ${{ inputs.firm_code }}
         run: node scripts/e2e/ui.mjs await-approval "${{ inputs.approval_wait_min }}"
+      # 第 54 批真实走查：作业被取消时后面的上传步骤可能来不及跑——批准后立即留现场截图与本机日志（只含登记过的事件码与类型化字段）并上传
+      - name: 批准后现场（截图与本机日志）
+        if: always()
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          node scripts/e2e/ui.mjs shot 05-批准后现场
+          $logs = Join-Path $env:KWL_E2E_OUT "app-logs"
+          New-Item -ItemType Directory -Force -Path $logs | Out-Null
+          Get-ChildItem (Join-Path $env:LOCALAPPDATA "KimiWorkLegal") -Recurse -Filter "kwl-*.jsonl" -ErrorAction SilentlyContinue | Copy-Item -Destination $logs -ErrorAction SilentlyContinue
+          Get-ChildItem $logs | Format-Table Name, Length | Out-String | Write-Output
+          exit 0
+      - name: 上传批准后现场
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-e2e-evidence-early
+          path: C:\kwl-e2e\out
+          retention-days: 14
       - name: 检测连接
         run: node scripts/e2e/ui.mjs diagnose expect-ok
       - name: 问答（真实模型）
@@ -161,9 +180,11 @@ jobs:
         run: node scripts/e2e/ui.mjs export
       - name: 套餐与用量
         if: always()
+        timeout-minutes: 5
         run: node scripts/e2e/ui.mjs usage || true
       - name: 断网演练（防火墙封住云端地址）
         if: always()
+        timeout-minutes: 15
         shell: pwsh
         run: |
           $before = Get-NetFirewallProfile | Select-Object Name, Enabled
@@ -183,8 +204,18 @@ jobs:
           Start-Sleep -Seconds 5
           node scripts/e2e/ui.mjs diagnose expect-ok
           if ($diag -ne 0) { throw "断网时检测连接没有如实报错" }
+      - name: 收集本机日志
+        if: always()
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          $logs = Join-Path $env:KWL_E2E_OUT "app-logs"
+          New-Item -ItemType Directory -Force -Path $logs | Out-Null
+          Get-ChildItem (Join-Path $env:LOCALAPPDATA "KimiWorkLegal") -Recurse -Filter "kwl-*.jsonl" -ErrorAction SilentlyContinue | Copy-Item -Destination $logs -Force -ErrorAction SilentlyContinue
+          exit 0
       - name: 关闭程序并核对无残留进程
         if: always()
+        timeout-minutes: 5
         shell: pwsh
         run: |
           $installDir = Join-Path $env:LOCALAPPDATA "Programs\KimiWorkLegal"
@@ -195,6 +226,7 @@ jobs:
           Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*win-save-dialog*" } | Stop-Process -Force -ErrorAction SilentlyContinue
       - name: 静默卸载并核对清理
         if: always()
+        timeout-minutes: 10
         shell: pwsh
         run: |
           $installDir = Join-Path $env:LOCALAPPDATA "Programs\KimiWorkLegal"
