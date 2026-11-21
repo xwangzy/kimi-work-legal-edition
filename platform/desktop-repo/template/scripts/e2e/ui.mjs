@@ -225,6 +225,14 @@ async function awaitApproval(minutes = 45) {
     if (firm.replace(/\s+/g, "") !== want) throw new Error(`本所识别码与管理员电脑上的不一致（${firm}）：按产品要求停止`);
     log("本所识别码与管理员电脑逐位一致");
   }
+  // 新电脑入组后要等首次同步取得席位令牌才能发起任务（第 54 批 Windows 运行 44918571693：入组约 20 秒就发起，开始前确认提示
+  // “席位令牌未取得或已失效（联网后自动续期）……补齐后才能发起”）；等到取得为止并记下用了多久
+  const seatT0 = Date.now();
+  await until(async () => {
+    const r = await inv("control_plane.status", {});
+    return r.ok && r.result?.seat?.has_token ? r.result : null;
+  }, 5 * 60000, 2000, "席位令牌");
+  log(`席位令牌已取得（入组进入后约 ${Math.round((Date.now() - seatT0) / 1000)} 秒）`);
   await sleep(3000);
   await go("#/");
   await sleep(2000);
