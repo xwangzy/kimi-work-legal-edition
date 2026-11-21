@@ -21,6 +21,9 @@ on:
       invite_code:
         description: "律所管理员在“设置 → 管理 → 成员”生成的邀请码（36 位，只能用一次）"
         required: true
+      member_name:
+        description: "注册时填的姓名：须与管理员发邀请时写的姓名完全一致（116 云端当前版本按注册名回成员姓名，两边不同会被判“在传送中被改动过”；云端修复见第 54 批）"
+        default: "Windows验收律师"
       firm_code:
         description: "管理员电脑“设置 → 账号与团队 → 本所识别码”（用于入组后逐位比对）"
         required: true
@@ -133,7 +136,7 @@ jobs:
       - name: 注册（邀请码；这台电脑是律师的新电脑）
         env:
           KWL_CODE: ${{ inputs.invite_code }}
-          KWL_NAME: Windows验收律师
+          KWL_NAME: ${{ inputs.member_name }}
         run: node scripts/e2e/ui.mjs register
       # 作业日志要等作业结束才能下载：入组核对码与“等待批准”截图立即作为构件传出，管理员在自己电脑上与之逐位比对后再批准
       - name: 传出入组核对码（供管理员比对）

@@ -2690,6 +2690,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       let slug: string;
       let via: AccountRecord["created_via"];
       let claim: Record<string, unknown> | null = null;
+      // 回给客户端的成员姓名（第 54 批真实联调）：凭成员邀请码注册时用管理员写在邀请上的姓名——新电脑把它算进入组申请的 HMAC，
+      // 管理员电脑按本机邀请记录的姓名核对；回成律师注册时自己填的名字，两边一不同，正当申请就显示“在传送中被改动过，不要批准”。
+      // 与“直接输入码”的兑换接口（/v1/activation/redeem 回 r.member.name）一致。账号本身的显示名仍是律师自己填的。
+      let memberName = name;
       const hasCode = typeof b.code === "string" && b.code.trim() !== "";
       if (hasCode) {
         // 开通码（20 位）或邀请码的控制面段（邀请码的本机核对段留在客户端，用于入组申请的 HMAC）
@@ -2712,7 +2716,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         r.claimed_at = iso();
         r.first_claimed_at = r.first_claimed_at ?? r.claimed_at;
         r.redeem_count = (r.redeem_count ?? 0) + 1;
-        claim = { kind: r.kind, tid: t.tid, activation_id: r.id, claim_secret: secret, firm: orgOf(t.tid), member: { slug, name, role } };
+        if (r.kind === "member" && r.member.name) memberName = r.member.name;
+        claim = { kind: r.kind, tid: t.tid, activation_id: r.id, claim_secret: secret, firm: orgOf(t.tid), member: { slug, name: memberName, role } };
       } else {
         if (set.registration === "code") throw new CpError(403, "code_required", "请输入律所发给你的开通码或邀请码");
         const orgName = typeof b.org_name === "string" && validDisplayName(b.org_name.trim()) ? b.org_name.trim() : `${name}的工作室`.slice(0, 40);
@@ -2726,7 +2731,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       indexAccount(a);
       const kind = clientInfo(b.client).platform === "web" ? "web" : "desktop";
       const { token, rec } = newSession(a, kind, null, b.client);
-      const base = { tid: t.tid, firm: orgOf(t.tid), member: { slug, name, role }, devices_used: 0, device_limit: deviceLimitOf(a) };
+      const base = { tid: t.tid, firm: orgOf(t.tid), member: { slug, name: memberName, role }, devices_used: 0, device_limit: deviceLimitOf(a) };
       // 网页注册（kind = web）不生成认领凭据：律师之后在客户端登录时才生成（第 47 批，同登录）
       const onb: Onboarding = claim
         ? claim.kind === "founder"
