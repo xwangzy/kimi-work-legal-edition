@@ -228,10 +228,17 @@ async function awaitApproval(minutes = 45) {
   // 新电脑入组后要等首次同步取得席位令牌才能发起任务（第 54 批 Windows 运行 44918571693：入组约 20 秒就发起，开始前确认提示
   // “席位令牌未取得或已失效（联网后自动续期）……补齐后才能发起”）；等到取得为止并记下用了多久
   const seatT0 = Date.now();
-  await until(async () => {
-    const r = await inv("control_plane.status", {});
-    return r.ok && r.result?.seat?.has_token ? r.result : null;
-  }, 5 * 60000, 2000, "席位令牌");
+  try {
+    await until(async () => {
+      const r = await inv("control_plane.status", {});
+      return r.ok && r.result?.seat?.has_token ? r.result : null;
+    }, 5 * 60000, 2000, "席位令牌");
+  } catch (e) {
+    // 取不到席位令牌：把同步各步结果留作证据（第 54 批：本所席位用完时新电脑登记成功但没有席位）
+    const st = await inv("control_plane.status", {});
+    writeFileSync(join(OUT, "control-plane-status.json"), JSON.stringify(st.ok ? { seat: st.result.seat, last_sync: st.result.last_sync, alerts: st.result.alerts } : st, null, 1));
+    throw e;
+  }
   log(`席位令牌已取得（入组进入后约 ${Math.round((Date.now() - seatT0) / 1000)} 秒）`);
   await sleep(3000);
   await go("#/");
