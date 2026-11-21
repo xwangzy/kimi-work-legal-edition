@@ -218,6 +218,7 @@ jobs:
         timeout-minutes: 3
         shell: pwsh
         run: |
+          Get-ChildItem ([Environment]::GetFolderPath("MyDocuments")) -ErrorAction SilentlyContinue | Format-Table Name, Length, LastWriteTime | Out-String | Out-File (Join-Path $env:KWL_E2E_OUT "documents-listing.txt") -Encoding utf8
           $logs = Join-Path $env:KWL_E2E_OUT "app-logs"
           New-Item -ItemType Directory -Force -Path $logs | Out-Null
           $root = Join-Path $env:LOCALAPPDATA "KimiWorkLegal"

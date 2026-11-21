@@ -230,6 +230,11 @@ async function diagnose(expect = "expect-ok") {
   log("检测连接：", d.conclusion, "| tone", d.tone, "| gate", d.gate);
   for (const s of d.rows ?? []) log("  ", s.name, `${s.host ?? ""}:${s.port ?? ""}`, "→", s.class, s.label, `${s.elapsed_ms}ms`, s.detail ?? "");
   writeFileSync(join(OUT, `diagnose-${expect}.json`), JSON.stringify(d, null, 1));
+  const cap = await inv("kernel.capabilities", {});
+  if (cap.ok) {
+    log("执行域：", cap.result.execution_domain?.label, "|", cap.result.execution_domain?.status);
+    writeFileSync(join(OUT, `capabilities-${expect}.json`), JSON.stringify({ execution_domain: cap.result.execution_domain, customer_rows: cap.result.customer_rows }, null, 1));
+  }
   await go("#/connections/general");
   await shot(`diagnose-${expect}`);
   const allOk = d.tone === "ok";
@@ -245,12 +250,17 @@ async function qa(question) {
   await page.locator('button[aria-label="发送"]').click();
   const started = Date.now();
   // 等回答写完：发送键恢复可用且主区域出现新内容、且不再有等待块
+  // 回答写完：问题之后出现了回答（或“未能取得回答”），且不再显示等待。不用“页面变长”判断——新问答会换成新会话，页面可能比之前短
+  // （第 54 批 Windows 断网演练：问题已如实回“连不上云端 AI 服务”，旧判据一直等到超时）
+  void before;
   await until(
     async () => {
       const t = await page.locator("main").innerText();
+      const i = t.lastIndexOf(question);
+      const after = i < 0 ? "" : t.slice(i + question.length).replace(/\s+/g, "");
       const busy = await page.locator('button[aria-label="发送"]').isDisabled().catch(() => true);
       const waiting = /正在思考|正在回答|正在写|已用时/.test(t.slice(-400));
-      return t.length > before.length + 40 && !waiting && (!busy || !(await ta.inputValue()));
+      return after.length > 20 && !waiting && (!busy || !(await ta.inputValue()));
     },
     Number(process.env.KWL_QA_TIMEOUT_MIN || 15) * 60000,
     2000,
@@ -477,15 +487,16 @@ async function exportAll() {
     const before = existsSync(target) ? statSync(target).mtimeMs : 0;
     await btn.click();
     log("已点“下载”，等系统保存对话框存到：", basename(target));
-    // macOS 没有辅助功能权限时由人点“存储”：对话框缺省位置是“文稿”，存在那里也认，再复制进证据目录
-    const macDefault = process.platform === "darwin" ? join(homedir(), "Documents", basename(target)) : null;
+    // 对话框缺省位置（Windows“文档”、macOS“文稿”，应用给的缺省文件名）也认，再复制进证据目录：macOS 没有辅助功能权限时由人点“存储”；
+    // Windows 由 win-save-dialog.ps1 直接按“保存”（第 54 批：往新式文件对话框的文件名框 WM_SETTEXT 不生效，文件仍存到缺省位置）
+    const macDefault = process.platform === "darwin" || process.platform === "win32" ? join(homedir(), "Documents", basename(target)) : null;
     const macBefore = macDefault && existsSync(macDefault) ? statSync(macDefault).mtimeMs : 0;
     const fresh = (p, b) => existsSync(p) && statSync(p).mtimeMs !== b && statSync(p).size > 0;
     const ok = await until(async () => fresh(target, before) || (macDefault && fresh(macDefault, macBefore)), 300000, 1000, `保存 ${a.filename}`).catch((e) => (log(String(e)), false));
     if (ok && macDefault && !fresh(target, before)) {
       await sleep(1500);
       copyFileSync(macDefault, target);
-      log("已在“文稿”里存好，复制进证据目录：", basename(target));
+      log("已存到对话框缺省位置（文档 / 文稿），复制进证据目录：", basename(target));
     }
     if (!ok) {
       results.push({ file: a.filename, saved: false });

@@ -1,7 +1,7 @@
 ﻿# 安装包真实联调（第 54 批）：常驻处理 Kimi Work 法律版弹出的系统“另存为”对话框。
 # 驱动脚本（scripts/e2e/ui.mjs export）点“下载”之前把目标路径写进 <证据目录>\next-save-path.txt；本脚本发现应用进程的“另存为”
-# 对话框（窗口类 #32770）后，用 Win32 消息把文件名框（Edit，控件号 1001）改成该路径（WM_SETTEXT）并按“保存”（按钮控件号 1，BM_CLICK；
-# 找不到按钮时给对话框发 WM_COMMAND IDOK）。不用 UI 自动化、不需要前台焦点——第 54 批 Windows 运行器实测：UI 自动化找不到
+# 对话框（窗口类 #32770，有文件名框 Edit 1001）后，用 Win32 消息直接按“保存”（按钮控件号 1，BM_CLICK；找不到按钮时给对话框发
+# WM_COMMAND IDOK），文件存到对话框缺省位置（“文档”+ 应用给的缺省文件名），驱动在那里取文件（往文件名框 WM_SETTEXT 不生效，已实测）。不用 UI 自动化、不需要前台焦点——第 54 批 Windows 运行器实测：UI 自动化找不到
 # 文件名框，SetFocus 报“Target element cannot receive focus”。只处理本应用进程的对话框；同一对话框最多试 5 次。
 # 用法（Windows PowerShell 5.1）：powershell -NoProfile -File win-save-dialog.ps1 -OutDir C:\kwl-e2e\out [-Minutes 240]
 param([Parameter(Mandatory = $true)][string]$OutDir, [int]$Minutes = 240)
@@ -37,10 +37,10 @@ public static class KwlWin {
     return found;
   }
   public static string Fill(IntPtr d, string path) {
-    const uint WM_SETTEXT = 0x000C, BM_CLICK = 0x00F5, WM_COMMAND = 0x0111;
+    const uint BM_CLICK = 0x00F5, WM_COMMAND = 0x0111;
+    // Do not touch the file name box (WM_SETTEXT is ignored by the new-style dialog); just press Save. path is for logging only.
     var edit = Child(d, "Edit", 1001);
     if (edit == IntPtr.Zero) return "no-edit";
-    SendMessage(edit, WM_SETTEXT, IntPtr.Zero, path);
     var btn = Child(d, "Button", 1);
     if (btn != IntPtr.Zero) { SendMessage(btn, BM_CLICK, IntPtr.Zero, IntPtr.Zero); return "clicked"; }
     PostMessage(d, WM_COMMAND, (IntPtr)1, IntPtr.Zero);
