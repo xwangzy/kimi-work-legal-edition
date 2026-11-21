@@ -201,8 +201,11 @@ jobs:
           Write-Output "封锁后 TCP 8443 可达：$($t.TcpTestSucceeded)"
           node scripts/e2e/ui.mjs diagnose expect-fail
           $diag = $LASTEXITCODE
+          # 断网时问答最多等 5 分钟（闸门模型通道首字节看门狗 180 秒），不论结果都截图（第 54 批：上一轮在这里一直等到步骤超时）
+          $env:KWL_QA_TIMEOUT_MIN = "5"
           node scripts/e2e/ui.mjs qa "断网时提问：请简述合同解除的法定事由。"
           node scripts/e2e/ui.mjs shot 20-断网时问答
+          Remove-Item Env:KWL_QA_TIMEOUT_MIN
           Remove-NetFirewallRule -DisplayName "kwl-e2e-block-cloud"
           foreach ($p in $before) { Set-NetFirewallProfile -Profile $p.Name -Enabled $p.Enabled }
           $t2 = Test-NetConnection $env:KWL_CLOUD_HOST -Port 8443 -WarningAction SilentlyContinue

@@ -252,7 +252,7 @@ async function qa(question) {
       const waiting = /正在思考|正在回答|正在写|已用时/.test(t.slice(-400));
       return t.length > before.length + 40 && !waiting && (!busy || !(await ta.inputValue()));
     },
-    15 * 60000,
+    Number(process.env.KWL_QA_TIMEOUT_MIN || 15) * 60000,
     2000,
     "问答回答",
   );
