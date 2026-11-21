@@ -414,7 +414,9 @@ test("第 53 批（D-218）之前的快照：人员记录里的 TOTP 密钥与�
     assert.equal(again.status, 200);
     const now = JSON.parse(fileStateStore(join(d, "state"), { key }).load()!);
     assert.equal(JSON.stringify(now).includes(SECRET_B32), false, "TOTP 密钥不再落盘");
-    assert.equal(now.staff.every((x: any) => !("mfa" in x)) && now.sessions.every((x: any) => !("restricted" in x)), true);
+    // 落盘只留一个不含密钥的空旧字段（给回滚到第 52 批的旧版读，不崩）；会话不再带 restricted
+    assert.deepEqual(now.staff.map((x: any) => x.mfa), [{ totp: null, pending: null, recovery: [] }]);
+    assert.equal(now.sessions.every((x: any) => !("restricted" in x)), true);
   } finally {
     b.server.closeAllConnections();
     await new Promise<void>((r) => b.server.close(() => r()));

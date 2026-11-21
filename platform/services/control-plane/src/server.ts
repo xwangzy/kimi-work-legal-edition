@@ -513,7 +513,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       catalog,
       routing,
       alerts,
-      staff: [...staff.values()],
+      // 第 53 批（D-218）起人员没有两步验证；落盘仍带一个空的旧字段（不含任何密钥）：rollback.sh 只回滚代码到第 52 批及以前时，
+      // 旧版读 st.mfa.totp 不会崩（旧版按它自己的 staff_mfa 策略处理）。读回时丢弃（applySnapshot）。
+      staff: [...staff.values()].map((x) => ({ ...x, mfa: { totp: null, pending: null, recovery: [] } })),
       clients,
     });
   const snapshot = (state = stateOnly()): string => JSON.stringify({ ...(JSON.parse(state) as object), nonces: [...nonces] });
