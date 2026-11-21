@@ -417,13 +417,16 @@ async function task(cardFile) {
   const run = (await inv("runs.get", { run_id: runId })).result;
   const arts = (await inv("artifacts.list", { matter_id: matterId })).result?.artifacts ?? [];
   const mine = arts.filter((a) => a.run_id === runId);
-  state.artifacts = mine.map((a) => ({ id: a.artifact_version_id, filename: a.filename, kind: a.kind, status: a.status }));
+  state.artifacts = mine.map((a) => ({ id: a.artifact_version_id, filename: a.filename, kind: a.kind, status: a.status, version: a.version, is_latest: a.is_latest }));
   state.run_status = run?.run?.status;
   state.run_minutes = Math.round((Date.now() - started) / 60000);
   saveState();
   log(`任务终态 ${run?.run?.status}，用时约 ${state.run_minutes} 分钟；成果 ${mine.length} 份：`);
   for (const a of state.artifacts) log("   ", a.kind, a.filename);
-  if (!/^(succeeded|completed)/.test(run?.run?.status ?? "")) throw new Error(`任务没有成功：${run?.run?.status}（${run?.run?.error ?? ""}）`);
+  // 部分完成（partial）是产品如实报告“还有没做完的地方”（复核回看发现必须改的意见没落到文件等，D-182）：成果已交付、照常导出核对，
+  // 但不记成成功——终态与“没做完的地方”原文写进证据（run-view.txt），由验收报告如实写明
+  if (/^partial/.test(run?.run?.status ?? "")) log("注意：任务终态是“部分完成”——成果照常导出核对，验收按部分完成记录（见 run-view.txt 的“还有没做完的地方”）");
+  else if (!/^(succeeded|completed)/.test(run?.run?.status ?? "")) throw new Error(`任务没有成功：${run?.run?.status}（${run?.run?.error ?? ""}）`);
 }
 
 /** 读 zip（docx/xlsx）里的一个条目：只用中央目录 + inflateRaw，不依赖第三方包。 */
@@ -459,7 +462,13 @@ async function exportAll() {
   const dir = join(OUT, "exports");
   mkdirSync(dir, { recursive: true });
   const results = [];
-  for (const a of state.artifacts.filter((x) => /\.(docx|xlsx)$/i.test(x.filename))) {
+  // 只导出每份成果的最新版本（任务过程中的旧版本在“成果”里另有，不逐个导出）
+  const latest = new Map();
+  for (const x of state.artifacts.filter((x) => /\.(docx|xlsx)$/i.test(x.filename))) {
+    const cur = latest.get(x.filename);
+    if (x.is_latest === true || !cur || (cur.is_latest !== true && (x.version ?? 0) > (cur.version ?? 0))) latest.set(x.filename, x);
+  }
+  for (const a of latest.values()) {
     await go(`#/review/${a.id}`);
     await sleep(2500);
     const btn = page.locator(".page-head-actions button").filter({ hasText: /^\s*下载/ }).first();
