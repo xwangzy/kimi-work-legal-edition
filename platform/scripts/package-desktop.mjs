@@ -249,12 +249,23 @@ if (trial) {
       const p = join(d, ent.name);
       if (ent.isSymbolicLink()) continue;
       if (ent.isDirectory()) scanHome(p);
-      else if (needles.some((n) => readFileSync(p).includes(n))) leaks.push(p.slice(desktop.length + 1));
+      else if (needles.some((n) => readFileSync(p).includes(n))) (upstreamPrebuiltPath(p.slice(desktop.length + 1)) ? upstream : leaks).push(p.slice(desktop.length + 1));
     }
   };
+  const upstream = [];
   for (const d of [stage, join(desktop, "runtime")]) scanHome(d);
   if (leaks.length) throw new Error(`安装包内容含构建机用户目录路径（${leaks.length} 个文件，例如 ${leaks.slice(0, 3).join("、")}）：先排除这些构建产物再打包`);
+  if (upstream.length) log(`上游预编译原生包里出现与本机同名的用户目录（${upstream.length} 个文件，上游构建机路径，按锁文件核验过，不是本次构建带入）：${upstream.slice(0, 2).join("、")}`);
   log("安装包内容未发现构建机用户目录路径");
+}
+
+/**
+ * 第 54 批（Windows 运行器实测）：@napi-rs/canvas-<平台> 是上游在 GitHub 运行器上预编译、按锁文件（package-lock / win-runtime.lock.json）
+ * integrity 核验过的原生包，里面带上游构建机的路径（C:\Users\runneradmin\.cargo\…、/Users/runner/…）。在同名账户的运行器上构建时会与
+ * 本机用户目录撞上——那不是本次构建带进去的，不算泄露。只豁免这一类，其余照旧失败。纯函数（用例从源码取出单测）。
+ */
+function upstreamPrebuiltPath(rel) {
+  return /(^|[\\/])node_modules[\\/]@napi-rs[\\/]canvas-[a-z0-9-]+[\\/]/.test(String(rel));
 }
 log(`暂存完成 → ${stage}`);
 

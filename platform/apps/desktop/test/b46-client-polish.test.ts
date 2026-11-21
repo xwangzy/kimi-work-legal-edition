@@ -135,3 +135,18 @@ test("打包：正式构建（非试用、非测试包）缺 release.json 直接
   assert.equal(gate({ ...formal, pubDev: true }), null, "CI 用测试证书 + 开发内容公钥：测试包");
   assert.match(script, /const missing = releaseMissingFailure\(\{ hasRelease: !!rel, trial: !!trial, devBuild, sign, pubDev \}\);\n\s*if \(missing\) throw new Error\(missing\);/);
 });
+
+test("打包：构建机用户目录扫描只豁免上游预编译的 @napi-rs/canvas-<平台> 包（第 54 批 Windows 运行器实测误报），其余照旧失败", () => {
+  const script = readFileSync(join(import.meta.dirname, "../../../scripts/package-desktop.mjs"), "utf8");
+  const body = /function upstreamPrebuiltPath\(rel\) \{([\s\S]*?)\n\}/.exec(script)?.[1];
+  assert.ok(body, "豁免判定函数在");
+  const exempt = new Function("rel", body!) as (rel: string) => boolean;
+  assert.equal(exempt("runtime\\parse\\node_modules\\@napi-rs\\canvas-win32-x64-msvc\\skia.win32-x64-msvc.node"), true, "Windows 运行器上报的那一个文件");
+  assert.equal(exempt("runtime/parse/node_modules/@napi-rs/canvas-darwin-arm64/skia.darwin-arm64.node"), true);
+  assert.equal(exempt("runtime/parse/node_modules/@napi-rs/canvas/index.js"), false, "主包是 JS，不豁免");
+  assert.equal(exempt("runtime/w/node_modules/node-liblzma/build/Release/node_lzma.node"), false, "本机从源码编译的原生插件不豁免");
+  assert.equal(exempt(".stage/app/electron/kernel.bundle.cjs"), false);
+  // 只有撞上的文件才走豁免判定，判定在扫描循环里
+  assert.match(script, /\(upstreamPrebuiltPath\(p\.slice\(desktop\.length \+ 1\)\) \? upstream : leaks\)\.push/);
+  assert.match(script, /if \(leaks\.length\) throw new Error\(`安装包内容含构建机用户目录路径/);
+});
