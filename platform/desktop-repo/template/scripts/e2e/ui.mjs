@@ -268,7 +268,9 @@ async function qa(question) {
       const i = t.lastIndexOf(question);
       const after = i < 0 ? "" : t.slice(i + question.length).replace(/\s+/g, "");
       const busy = await page.locator('button[aria-label="发送"]').isDisabled().catch(() => true);
-      const waiting = /正在思考|正在回答|正在写|已用时/.test(t.slice(-400));
+      // 回答还在生成：回答框带 aria-busy（流式正文很长时“正在撰写… 已用时”在正文上方，只看结尾会误判写完）
+      const streaming = (await page.locator('main [aria-busy="true"]').count()) > 0;
+      const waiting = streaming || /正在思考|正在回答|正在写|已用时/.test(t);
       return after.length > 20 && !waiting && (!busy || !(await ta.inputValue()));
     },
     Number(process.env.KWL_QA_TIMEOUT_MIN || 15) * 60000,
