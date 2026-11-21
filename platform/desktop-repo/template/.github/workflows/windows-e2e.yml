@@ -111,7 +111,7 @@ jobs:
           $app = Join-Path $installDir "KimiWorkLegal.exe"
           if (-not (Test-Path $app)) { throw "未找到已安装的程序：$app" }
           $uk = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall | Where-Object { (Get-ItemProperty $_.PSPath).DisplayName -like "Kimi Work*" } | Select-Object -First 1
-          if (-not $uk) { throw "控制面板“卸载程序”里没有登记" }
+          if (-not $uk) { throw "控制面板「卸载程序」里没有登记" }
           $u = Get-ItemProperty $uk.PSPath
           Write-Output "卸载登记：$($u.DisplayName) / $($u.Publisher) / $($u.DisplayVersion)"
           $desk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Kimi Work 法律版.lnk"
