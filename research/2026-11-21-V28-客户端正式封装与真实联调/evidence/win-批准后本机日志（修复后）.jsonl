@@ -1,0 +1,5 @@
+{"t":"2026-11-21T11:35:29Z","lvl":"warn","code":"KERNEL_PENDING_WORKSPACE_LEFT","proc":"kernel","f":{"reason":"perm"}}
+{"t":"2026-11-21T11:35:29Z","lvl":"info","code":"KERNEL_STARTED","proc":"kernel","f":{"engine":"kap","at_rest":"required","control_plane":"configured"}}
+{"t":"2026-11-21T11:35:29Z","lvl":"warn","code":"MAIN_KERNEL_EXITED","proc":"main","f":{"code":0}}
+{"t":"2026-11-21T11:35:29Z","lvl":"info","code":"MAIN_KERNEL_READY","proc":"main","f":{}}
+{"t":"2026-11-21T11:35:29Z","lvl":"info","code":"KERNEL_INDEX_EXCLUDE","proc":"kernel","f":{"outcome":"done"}}
