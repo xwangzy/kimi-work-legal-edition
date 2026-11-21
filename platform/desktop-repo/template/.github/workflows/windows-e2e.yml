@@ -1,0 +1,228 @@
+# Windows 安装包真实联调（第 54 批；由 monorepo 的 platform/desktop-repo/template/ 导出，改动请在 monorepo 改）。
+# 只能手动触发（私有仓库 Windows 分钟按 2 倍计费；任务要真实模型跑几十分钟）。整条链都是真的：
+#   在 Windows 运行器上原生构建 EXE（发行配置取自预发布里的 release.json，按摘要核对）→ 静默安装（按用户）→ 核对卸载登记与快捷方式
+#   → 以 --remote-debugging-port 启动已安装的程序 → 用律所管理员发的邀请码注册（这台运行器就是“律师的新电脑”）
+#   → 等管理员在自己电脑上核对入组核对码并批准 → 与管理员电脑上的本所识别码逐位比对 → 检测连接 → 问答（真实模型）
+#   → 合同审查 + 建议修订稿（真实模型、Agent 编排、本机法规库与检索）→ 经系统“另存为”对话框导出 Word/Excel 并核对修订痕迹
+#   → 套餐与用量页 → 防火墙封住云端地址演练断网（检测连接与问答都应如实报错）→ 解封恢复 → 关闭 → 静默卸载并核对清理
+#   → 证据（截图、日志、导出的成果）作为构件上传，安装包回传到同一预发布。
+# 不做的事：不注入模拟数据、不用 --trial、不在安装包里放任何密钥；律师账号密码在运行器上随机生成、只进屏蔽过的环境变量。
+name: windows-e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "预发布标签（其中有 release.json；构建出的 EXE 也回传到这里）"
+        required: true
+      release_json_sha256:
+        description: "release.json 的 sha256（核对后才构建）"
+        required: true
+      invite_code:
+        description: "律所管理员在“设置 → 管理 → 成员”生成的邀请码（36 位，只能用一次）"
+        required: true
+      firm_code:
+        description: "管理员电脑“设置 → 账号与团队 → 本所识别码”（用于入组后逐位比对）"
+        required: true
+      approval_wait_min:
+        description: "等管理员批准的分钟数"
+        default: "45"
+      run_task:
+        description: "跑合同审查任务（约 30～40 分钟真实模型）"
+        type: boolean
+        default: true
+      publish_exe:
+        description: "把构建出的 EXE 与摘要回传到预发布"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-e2e
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  KWL_E2E_OUT: C:\kwl-e2e\out
+  KWL_CDP_PORT: "9222"
+  PW_CORE: C:\kwl-e2e\pw
+
+jobs:
+  e2e:
+    runs-on: windows-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: 导出来源核对
+        run: node scripts/verify-source.mjs
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.8.1
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: 下载缓存（OCR 模型与 Windows 随包运行时；取出后仍按脚本里的摘要逐个核验）
+        uses: actions/cache@v4
+        with:
+          path: |
+            content/ocr-models
+            .cache/win-runtime
+          key: kwl-dl-win-${{ hashFiles('scripts/fetch-ocr-models.mjs', 'scripts/win-runtime.lock.json') }}
+      - run: npm ci
+      - run: npm run fetch:ocr-models
+      - name: 屏蔽一次性输入
+        shell: pwsh
+        run: |
+          Write-Output "::add-mask::${{ inputs.invite_code }}"
+          $pw = "Kwl" + [guid]::NewGuid().ToString("N").Substring(0, 16) + "Aa9"
+          Write-Output "::add-mask::$pw"
+          "KWL_PASSWORD=$pw" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "KWL_EMAIL=b54-win-${{ github.run_id }}@kwl-e2e.example" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          New-Item -ItemType Directory -Force -Path $env:KWL_E2E_OUT | Out-Null
+      - name: 发行配置（从预发布取 release.json 并核对摘要）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+          WANT: ${{ inputs.release_json_sha256 }}
+        run: |
+          gh release download "$TAG" -p release.json -D apps/desktop/electron --clobber
+          got=$(sha256sum apps/desktop/electron/release.json | cut -d' ' -f1)
+          [ "$got" = "$WANT" ] || { echo "release.json 摘要不符：$got"; exit 1; }
+          node -e 'const j=require("./apps/desktop/electron/release.json");const r=require("./apps/desktop/electron/release-config.cjs").loadReleaseConfig("apps/desktop/electron/release.json");if(r.problems.length){console.error(r.problems.join("\n"));process.exit(1)}if(j.test_build!==true){console.error("须标 test_build");process.exit(1)}const h=new URL(j.control_plane_base).hostname;require("fs").appendFileSync(process.env.GITHUB_ENV,`KWL_CLOUD_HOST=${h}\n`);console.log("release.json 校验通过，云端",h)'
+      - name: 构建 EXE（Windows 原生；随包 Node 按锁文件核验；不签名，同上一批对外安装包）
+        timeout-minutes: 40
+        run: node scripts/package-desktop.mjs --target win32-x64 --sign none
+      - name: 静默安装并核对卸载登记与快捷方式
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem apps/desktop/release/KimiWorkLegal-Setup-*.exe | Select-Object -First 1
+          if (-not $exe) { throw "没有产出安装包" }
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          Write-Output "安装包：$($exe.Name) $([math]::Round($exe.Length/1MB,1)) MB sha256 $hash"
+          $ver = (Get-Item $exe.FullName).VersionInfo
+          Write-Output "版本资源：$($ver.ProductName) $($ver.ProductVersion) / $($ver.CompanyName) / $($ver.LegalCopyright)"
+          $p = Start-Process $exe.FullName -ArgumentList "/S" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "安装失败：$($p.ExitCode)" }
+          $installDir = Join-Path $env:LOCALAPPDATA "Programs\KimiWorkLegal"
+          $app = Join-Path $installDir "KimiWorkLegal.exe"
+          if (-not (Test-Path $app)) { throw "未找到已安装的程序：$app" }
+          $uk = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall | Where-Object { (Get-ItemProperty $_.PSPath).DisplayName -like "Kimi Work*" } | Select-Object -First 1
+          if (-not $uk) { throw "控制面板“卸载程序”里没有登记" }
+          $u = Get-ItemProperty $uk.PSPath
+          Write-Output "卸载登记：$($u.DisplayName) / $($u.Publisher) / $($u.DisplayVersion)"
+          $desk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Kimi Work 法律版.lnk"
+          $start = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Kimi Work 法律版.lnk"
+          Write-Output "桌面快捷方式：$(Test-Path $desk)；开始菜单：$(Test-Path $start)"
+          if (-not (Test-Path $desk) -or -not (Test-Path $start)) { throw "快捷方式缺失" }
+          "KWL_APP=$app" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "KWL_SETUP=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "KWL_SETUP_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: 驱动工具（playwright-core，只连本机调试端口，不下载浏览器）
+        run: npm install --prefix "$PW_CORE" --no-save --no-audit --no-fund playwright-core@1.63.0
+      - name: 启动已安装的程序与保存对话框助手
+        shell: pwsh
+        run: |
+          Start-Process powershell -ArgumentList "-NoProfile","-ExecutionPolicy","Bypass","-File","scripts/e2e/win-save-dialog.ps1","-OutDir",$env:KWL_E2E_OUT -WindowStyle Hidden
+          Start-Process $env:KWL_APP -ArgumentList "--remote-debugging-port=$env:KWL_CDP_PORT"
+          node scripts/e2e/ui.mjs ready
+          node scripts/e2e/ui.mjs shot 00-首次启动
+      - name: 注册（邀请码；这台电脑是律师的新电脑）
+        env:
+          KWL_CODE: ${{ inputs.invite_code }}
+          KWL_NAME: Windows验收律师
+        run: node scripts/e2e/ui.mjs register
+      - name: 等管理员批准并逐位比对本所识别码
+        env:
+          KWL_FIRM_CODE: ${{ inputs.firm_code }}
+        run: node scripts/e2e/ui.mjs await-approval "${{ inputs.approval_wait_min }}"
+      - name: 检测连接
+        run: node scripts/e2e/ui.mjs diagnose expect-ok
+      - name: 问答（真实模型）
+        run: node scripts/e2e/ui.mjs qa "买卖合同约定的逾期交货违约金按每日万分之五计算、上限为合同价款的20%，卖方逾期40日，买方能否在主张违约金的同时解除合同？请给出法律依据。"
+      - name: 合同审查与建议修订稿（真实模型）
+        if: inputs.run_task
+        timeout-minutes: 90
+        run: node scripts/e2e/ui.mjs task scripts/e2e/cards/contract-review-D2.json
+      - name: 经系统“另存为”对话框导出成果
+        if: inputs.run_task
+        run: node scripts/e2e/ui.mjs export
+      - name: 套餐与用量
+        if: always()
+        run: node scripts/e2e/ui.mjs usage || true
+      - name: 断网演练（防火墙封住云端地址）
+        if: always()
+        shell: pwsh
+        run: |
+          $before = Get-NetFirewallProfile | Select-Object Name, Enabled
+          $before | Format-Table | Out-String | Write-Output
+          Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled True
+          New-NetFirewallRule -DisplayName "kwl-e2e-block-cloud" -Direction Outbound -RemoteAddress $env:KWL_CLOUD_HOST -Action Block | Out-Null
+          $t = Test-NetConnection $env:KWL_CLOUD_HOST -Port 8443 -WarningAction SilentlyContinue
+          Write-Output "封锁后 TCP 8443 可达：$($t.TcpTestSucceeded)"
+          node scripts/e2e/ui.mjs diagnose expect-fail
+          $diag = $LASTEXITCODE
+          node scripts/e2e/ui.mjs qa "断网时提问：请简述合同解除的法定事由。"
+          node scripts/e2e/ui.mjs shot 20-断网时问答
+          Remove-NetFirewallRule -DisplayName "kwl-e2e-block-cloud"
+          foreach ($p in $before) { Set-NetFirewallProfile -Profile $p.Name -Enabled $p.Enabled }
+          $t2 = Test-NetConnection $env:KWL_CLOUD_HOST -Port 8443 -WarningAction SilentlyContinue
+          Write-Output "解封后 TCP 8443 可达：$($t2.TcpTestSucceeded)"
+          Start-Sleep -Seconds 5
+          node scripts/e2e/ui.mjs diagnose expect-ok
+          if ($diag -ne 0) { throw "断网时检测连接没有如实报错" }
+      - name: 关闭程序并核对无残留进程
+        if: always()
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:LOCALAPPDATA "Programs\KimiWorkLegal"
+          Get-Process KimiWorkLegal -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() | Out-Null }
+          Start-Sleep -Seconds 15
+          $left = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path -like "$installDir*" }
+          if ($left) { $left | Format-Table Id, ProcessName, Path | Out-String | Write-Output; $left | Stop-Process -Force; Write-Output "::warning::关闭后仍有残留进程（已强制结束）" }
+          Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*win-save-dialog*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+      - name: 静默卸载并核对清理
+        if: always()
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:LOCALAPPDATA "Programs\KimiWorkLegal"
+          $uk = Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall | Where-Object { (Get-ItemProperty $_.PSPath).DisplayName -like "Kimi Work*" } | Select-Object -First 1
+          if (-not $uk) { throw "没有卸载登记" }
+          $u = Get-ItemProperty $uk.PSPath
+          $cmd = if ($u.QuietUninstallString) { $u.QuietUninstallString } else { "$($u.UninstallString) /S" }
+          Write-Output "卸载命令：$cmd"
+          $p = Start-Process cmd.exe -ArgumentList "/c", $cmd -Wait -PassThru
+          # NSIS 卸载程序会把自己复制到临时目录再运行，-Wait 会提前返回：等程序文件消失（至多 2 分钟）
+          for ($i = 0; $i -lt 60 -and (Test-Path (Join-Path $installDir "KimiWorkLegal.exe")); $i++) { Start-Sleep -Seconds 2 }
+          Start-Sleep -Seconds 5
+          $desk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Kimi Work 法律版.lnk"
+          $start = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Kimi Work 法律版.lnk"
+          $still = @{ "程序" = (Test-Path (Join-Path $installDir "KimiWorkLegal.exe")); "桌面快捷方式" = (Test-Path $desk); "开始菜单" = (Test-Path $start); "卸载登记" = [bool](Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall | Where-Object { (Get-ItemProperty $_.PSPath).DisplayName -like "Kimi Work*" }) }
+          $still.GetEnumerator() | ForEach-Object { Write-Output "卸载后仍在 $($_.Key)：$($_.Value)" }
+          Write-Output "本机案件数据目录（按设计保留，删除须在应用内按保留期规则操作）：$(Test-Path (Join-Path $env:LOCALAPPDATA 'KimiWorkLegal'))"
+          if ($still.Values -contains $true) { throw "卸载没有清理干净" }
+      - name: 回传安装包到预发布
+        if: success() && inputs.publish_exe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          f=$(ls apps/desktop/release/KimiWorkLegal-Setup-*.exe | head -1)
+          sha256sum "$f" | sed 's#apps/desktop/release/##' > apps/desktop/release/SHA256-windows.txt
+          gh release upload "${{ inputs.release_tag }}" "$f" apps/desktop/release/SHA256-windows.txt --clobber
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-e2e-evidence
+          path: |
+            C:\kwl-e2e\out
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-installer
+          path: apps/desktop/release/KimiWorkLegal-Setup-*.exe
+          if-no-files-found: ignore
+          retention-days: 14

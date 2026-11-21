@@ -138,6 +138,13 @@ test("任务失败文案：429、5xx、兜底不再拼原始错误；网关 401 
   assert.match(agentFailureText(null, "503 这台电脑暂时没有取得 AI 使用授权（还没登录，或联网续期还没完成）：AI 请求没有发出"), /暂时没有取得 AI 使用授权.*重新运行/);
   assert.doesNotMatch(agentFailureText(null, "503 这台电脑暂时没有取得 AI 使用授权：AI 请求没有发出"), /连不上/);
   assert.match(agentFailureText(null, "401 席位令牌无效或已吊销 [kwl:seat_device_revoked]"), /授权已被收回/);
+  // 第 54 批：控制面不发额度租约（网关 402 quota_denied）与内容安全拦截（422）——重新运行不会好，不能落到通用“可以点重新运行”
+  const denied = agentFailureText(null, "402 暂时无法为本所发放 AI 额度：请联系律所管理员 [kwl:quota_denied]");
+  assert.match(denied, /^本所暂时无法取得 AI 额度.*联系律所管理员/);
+  assert.doesNotMatch(denied, /^任务没有完成；可以点/);
+  const blocked = agentFailureText(null, "422 请求内容命中内容安全策略（x），已拒绝 [kwl:content_blocked_input]");
+  assert.match(blocked, /内容安全策略拦截.*重新运行仍会被拦/);
+  assert.match(agentFailureText(null, "402 本期额度已用完 [kwl:quota_exhausted]"), /^本所本期 AI 额度已用完/, "已有的具体额度码仍走原分支");
   // 第 46 批真实验收：网关二次检查按事项摘要拒绝（刚确认依据就发起时摘要还没同步）——说清是事项依据的事，不说“连不上”
   const basis = agentFailureText(null, "403 事项四项依据未齐备：不经网关推理 [kwl:basis_incomplete]");
   assert.match(basis, /^这个事项的四项数据依据.*还没确认，或刚确认还没同步到中软/);

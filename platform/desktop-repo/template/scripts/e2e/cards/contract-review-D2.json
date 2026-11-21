@@ -1,0 +1,11 @@
+{
+  "$comment": "第 54 批 Windows 安装包真实联调用的卡片：取自 monorepo eval/cards/cards16.json 的 v16-D2-review（虚构案例，材料在 ../fixtures/D2）。合同审查 + 建议修订稿（修订痕迹）+ 审查意见书；任务由真实模型执行。",
+  "id": "contract-review",
+  "base": "scripts/e2e/fixtures/D2",
+  "matter": { "type": "合同审查与谈判", "stance": "买方", "title": "澄屿冷链—冷链智能分拣系统采购合同审查", "client": "宁波澄屿冷链物流有限公司", "counter": "常州棠溪智能装备有限公司", "asOf": "2026-11-10" },
+  "files": ["冷链智能分拣系统采购与实施合同（棠溪智能提供稿）.docx", "我方交易背景与底线.txt"],
+  "fields": { "合同类型": "买卖", "同时出一份建议修订稿": "要：按审查意见直接在原件上写修订" },
+  "extra": "我方是买方（委托方）。《我方交易背景与底线》是客户的内部要求，其中如有与法律强制性规定冲突的请指出。",
+  "answers": [],
+  "timeout_min": 75
+}

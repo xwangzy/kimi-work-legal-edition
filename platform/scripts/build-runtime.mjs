@@ -141,7 +141,17 @@ function copyClosure(pkgName, fromDir, destNodeModules, seen = new Set()) {
   for (const d of Object.keys(pj.dependencies ?? {})) {
     if (!copyClosure(d, pkgDir, destNodeModules, seen)) throw new Error(`依赖缺失：${pkgName} → ${d}`);
   }
-  for (const d of Object.keys(pj.optionalDependencies ?? {})) copyClosure(d, pkgDir, destNodeModules, seen);
+  for (const d of Object.keys(pj.optionalDependencies ?? {})) {
+    // 第 54 批：可选的、在构建机上从源码编译的原生插件（有 binding.gyp，如 just-bash 的 node-liblzma、@mongodb-js/zstd）不随包——
+    // 编出的 .node 与 build/ 中间产物写着构建机的绝对路径（用户名、Homebrew、node-gyp 缓存），交叉构建时还是构建机平台的二进制；
+    // just-bash 对它们懒加载，缺失只让 xz/zstd 命令不可用，律师场景用不到
+    const optDir = findPackageDir(d, pkgDir);
+    if (optDir && existsSync(join(optDir, "binding.gyp"))) {
+      log(`W 运行时：不随包可选原生插件 ${d}（构建机编译产物）`);
+      continue;
+    }
+    copyClosure(d, pkgDir, destNodeModules, seen);
+  }
   return true;
 }
 const seen = new Set();

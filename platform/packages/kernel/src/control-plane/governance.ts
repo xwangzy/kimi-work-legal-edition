@@ -18,7 +18,7 @@
 import type { KeyObject } from "node:crypto";
 import { randomBytes } from "node:crypto";
 import { canonicalJson, sha256B64, verifyDeviceCertificate, type DeviceCertificate } from "@zr-legal/keys";
-import { verifySeatToken } from "@zr-legal/seat-token";
+import { SeatTokenError, verifySeatToken } from "@zr-legal/seat-token";
 import { OFFICIAL_SITE_BASELINE } from "@zr-legal/egress-gate";
 import {
   adminThresholdForEdition,
@@ -578,8 +578,11 @@ export class FirmGovernance {
       if (c.tid !== this.d.tenantId || c.dev !== this.d.deviceId || c.uid !== this.d.userId) return this.reject("seat", "seat_claims_mismatch", null, "席位令牌的租户、设备或成员与本机不符");
       exp = c.exp;
       sid = c.sid;
-    } catch {
-      return this.reject("seat", "seat_invalid", null, "席位令牌无效");
+    } catch (e) {
+      // 第 54 批：告警写明具体原因（错误码不变），现场能分清“安装包内置的席位公钥与云端不符”与过期、被改等
+      const why = e instanceof SeatTokenError ? e.reason : "unknown";
+      const hint = why === "unknown_key" ? "：签发密钥不在安装包内置的席位公钥里（安装包与云端不匹配，请换装与该云端配套的安装包）" : why === "expired" ? "：已过期（请检查本机时间）" : `（${why}）`;
+      return this.reject("seat", "seat_invalid", why, `席位令牌无效${hint}`);
     }
     this.saveDoc("seat", null, { token, exp, sid });
     for (const cb of this.seatListeners) cb(token);

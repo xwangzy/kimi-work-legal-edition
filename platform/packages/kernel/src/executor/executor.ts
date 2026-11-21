@@ -2244,6 +2244,10 @@ export function agentFailureText(reason: string | null, error: string | null): s
   if (has("quota_cap_reached", /律所设定的(本期用量)?上限|律所设定的本期用量上限/)) return "已到律所设定的本期 AI 用量上限，任务暂停：请律所管理员在“设置 → 管理 → 用量”调整上限；已完成的部分保留，处理好后点“重新运行”";
   if (has("quota_exhausted", /本期 AI 额度(已用完|不足)|AI 额度暂时不足/)) return "本所本期 AI 额度已用完，任务暂停：下期自动重置，或请律所管理员联系中软加量；已完成的部分保留，处理好后点“重新运行”";
   if (has("price_unconfigured", /还没有定价/)) return "这个 AI 模型还没有定价，按金额计的套餐暂不可用：请联系律所管理员或中软客服；已完成的部分保留";
+  // 第 54 批：其余额度拒绝（控制面不发额度租约时网关回 402 quota_denied 或透传控制面码）与问答同一口径——重新运行不会好，要管理员处理
+  if ((code ?? "").startsWith("quota_")) return "本所暂时无法取得 AI 额度，任务暂停：请联系律所管理员（检查律所许可、套餐与你的席位）；已完成的部分保留，处理好后点“重新运行”，不会重复计用量";
+  // 第 54 批：网关内容安全策略拦截（422 content_blocked_*）——同样的材料重新运行仍会被拦，说清原因
+  if ((code ?? "").startsWith("content_blocked")) return "发给 AI 的内容被云端内容安全策略拦截，任务没有完成：同样的材料重新运行仍会被拦，请调整所选材料或联系律所管理员；已完成且可验证的部分保留";
   // 第 46 批：登录与 AI 使用授权（网关 401 seat_*、闸门 503 seat_unavailable）——单独说，不说成“连不上”
   if (has("seat_session_inactive", /登录已失效/)) return "登录已失效，任务没有完成：请在页面顶部重新登录，然后点“重新运行”；已完成且可验证的部分保留";
   if (has("seat_device_revoked") || has("seat_seat_revoked")) return "这台电脑的 AI 使用授权已被收回，任务没有完成：请联系律所管理员；已完成且可验证的部分保留";

@@ -35,6 +35,7 @@ import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { electronBuilderArgs, packageTargetProblem } from "./lib/package-targets.mjs";
@@ -236,6 +237,24 @@ if (trial) {
   scan(stage);
   trial.apiKey = null;
   log("试用构建：暂存目录未发现明文密钥");
+}
+// 第 54 批：给客户的安装包里不得出现构建机的用户目录（曾随 W 运行时的源码编译原生插件带进 /Users/<构建者>/…）
+{
+  const home = homedir();
+  const needles = home && home.length > 3 ? [...new Set([home, home.split("\\").join("/")])].map((s) => Buffer.from(s, "utf8")) : [];
+  const leaks = [];
+  const scanHome = (d) => {
+    if (!existsSync(d)) return;
+    for (const ent of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, ent.name);
+      if (ent.isSymbolicLink()) continue;
+      if (ent.isDirectory()) scanHome(p);
+      else if (needles.some((n) => readFileSync(p).includes(n))) leaks.push(p.slice(desktop.length + 1));
+    }
+  };
+  for (const d of [stage, join(desktop, "runtime")]) scanHome(d);
+  if (leaks.length) throw new Error(`安装包内容含构建机用户目录路径（${leaks.length} 个文件，例如 ${leaks.slice(0, 3).join("、")}）：先排除这些构建产物再打包`);
+  log("安装包内容未发现构建机用户目录路径");
 }
 log(`暂存完成 → ${stage}`);
 
