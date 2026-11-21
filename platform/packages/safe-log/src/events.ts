@@ -49,6 +49,8 @@ export const EVENTS = {
   KERNEL_ONBOARDING_JOINED: { level: "info", fields: {} },
   KERNEL_ONBOARDING_CERT_REJECTED: { level: "warn", fields: {} },
   KERNEL_JOIN_STAGED_REJECTED: { level: "warn", fields: {} },
+  // 第 54 批：激活后删不掉待激活占位工作区（Windows 上有文件仍被占用）——不再让内核启动失败，下次启动再删
+  KERNEL_PENDING_WORKSPACE_LEFT: { level: "warn", fields: { reason: ["busy", "perm", "other"] } },
   /** 我方账号（第 44 批）：只记原因代码，不记邮箱、密码与令牌。 */
   KERNEL_ACCOUNT_CALL_FAILED: { level: "warn", fields: { reason: "ident" } },
   KERNEL_ACCOUNT_LOGIN_REQUIRED: { level: "warn", fields: { reason: "ident" } },

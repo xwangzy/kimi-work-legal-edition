@@ -921,6 +921,19 @@ export function dropActivationClaim(keysDir: string): void {
 }
 
 /** 激活后按真实身份启动：删除待激活占位工作区（只认这一个固定名字）。 */
-export function removePendingWorkspace(dataRoot: string): void {
-  rmSync(join(dataRoot, PENDING_WORKSPACE_SLUG), { recursive: true, force: true });
+/**
+ * 激活后删掉待激活占位工作区（只有空账本、日志与暂存）。第 54 批（Windows 安装包真实联调）：原来是裸 rmSync——Windows 上
+ * 占位区里还有文件被占用（刚关闭的账本被杀毒软件扫描、残留句柄等）时抛 EBUSY / EPERM，内核每次启动都在这里失败，
+ * 入组批准后“后台服务多次异常退出”，这台电脑始终登记不上。清理失败不能挡住启动：短暂重试，仍删不掉就记一条、下次启动再删。
+ * 返回是否已删干净。
+ */
+export function removePendingWorkspace(dataRoot: string, rm: typeof rmSync = rmSync): boolean {
+  try {
+    rm(join(dataRoot, PENDING_WORKSPACE_SLUG), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    return true;
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException)?.code;
+    slog.event("KERNEL_PENDING_WORKSPACE_LEFT", { reason: code === "EBUSY" ? "busy" : code === "EPERM" || code === "EACCES" ? "perm" : "other" });
+    return false;
+  }
 }
