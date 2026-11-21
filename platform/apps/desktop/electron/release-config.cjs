@@ -197,7 +197,8 @@ function loadReleaseConfig(file) {
     if (!keys || !dep) problems.push("endpoint_profile 须为 { deployment: 小写标识, keys: { kid: Ed25519 公钥 PEM } }（1–8 把，只收公钥）");
     else endpointProfile = { keys, deployment: dep, testBuild: raw.test_build === true };
   }
-  return { env, problems, update, endpointProfile };
+  // testBuild：内部测试/演示包（第 54 批：主进程据此决定是否开放 KWL_DIAG_KERNEL_LOG 取证通道；正式包恒为 false）
+  return { env, problems, update, endpointProfile, testBuild: raw.test_build === true };
 }
 
 /**

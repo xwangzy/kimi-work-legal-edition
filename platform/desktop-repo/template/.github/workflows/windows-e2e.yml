@@ -130,6 +130,8 @@ jobs:
         shell: pwsh
         run: |
           Start-Process powershell -ArgumentList "-NoProfile","-ExecutionPolicy","Bypass","-File","scripts/e2e/win-save-dialog.ps1","-OutDir",$env:KWL_E2E_OUT -WindowStyle Hidden
+          # 测试包取证通道（第 54 批）：内核原始输出与致命错误写到证据目录（正式包忽略这个变量）
+          $env:KWL_DIAG_KERNEL_LOG = Join-Path $env:KWL_E2E_OUT "kernel-diag.log"
           Start-Process $env:KWL_APP -ArgumentList "--remote-debugging-port=$env:KWL_CDP_PORT"
           node scripts/e2e/ui.mjs ready
           node scripts/e2e/ui.mjs shot 00-首次启动
@@ -160,7 +162,8 @@ jobs:
           node scripts/e2e/ui.mjs shot 05-批准后现场
           $logs = Join-Path $env:KWL_E2E_OUT "app-logs"
           New-Item -ItemType Directory -Force -Path $logs | Out-Null
-          Get-ChildItem (Join-Path $env:LOCALAPPDATA "KimiWorkLegal") -Recurse -Filter "kwl-*.jsonl" -ErrorAction SilentlyContinue | Copy-Item -Destination $logs -ErrorAction SilentlyContinue
+          $root = Join-Path $env:LOCALAPPDATA "KimiWorkLegal"
+          Get-ChildItem $root -Recurse -Filter "kwl-*.jsonl" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName -Destination (Join-Path $logs (($_.FullName.Substring($root.Length + 1)) -replace '[\\/]', '__')) -Force }
           Get-ChildItem $logs | Format-Table Name, Length | Out-String | Write-Output
           exit 0
       - name: 上传批准后现场
@@ -214,7 +217,8 @@ jobs:
         run: |
           $logs = Join-Path $env:KWL_E2E_OUT "app-logs"
           New-Item -ItemType Directory -Force -Path $logs | Out-Null
-          Get-ChildItem (Join-Path $env:LOCALAPPDATA "KimiWorkLegal") -Recurse -Filter "kwl-*.jsonl" -ErrorAction SilentlyContinue | Copy-Item -Destination $logs -Force -ErrorAction SilentlyContinue
+          $root = Join-Path $env:LOCALAPPDATA "KimiWorkLegal"
+          Get-ChildItem $root -Recurse -Filter "kwl-*.jsonl" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName -Destination (Join-Path $logs (($_.FullName.Substring($root.Length + 1)) -replace '[\\/]', '__')) -Force }
           exit 0
       - name: 关闭程序并核对无残留进程
         if: always()

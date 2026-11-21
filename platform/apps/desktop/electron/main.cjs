@@ -424,6 +424,21 @@ function startUpdater() {
 /** 内核意外退出后的自动恢复：退避 1、2、4、8、16 秒；2 分钟内超过 5 次即停止并提示（避免反复崩溃损坏数据）。 */
 const restart = { times: [], timer: null, quitting: false, runtimeEnv: null };
 
+/**
+ * 内核原始输出的取证位置：冒烟形态写结果文件旁的 <out>.kernel.log；第 54 批（Windows 安装包真实联调：入组批准后按新身份重启内核
+ * 反复崩溃，本机日志由内核写、内核死了就什么都没有）起，**测试包**（release.json test_build）在 IT / CI 用环境变量
+ * KWL_DIAG_KERNEL_LOG 指定的绝对路径追加同样内容。正式包、开发形态一律不开（错误文本可能含安装路径与用户名，绝不进用户数据根）。
+ */
+function kernelDiagFile() {
+  if (smoke.out) return `${smoke.out}.kernel.log`;
+  const f = process.env.KWL_DIAG_KERNEL_LOG;
+  if (!f || !path.isAbsolute(f) || !app.isPackaged) return null;
+  const rel = releaseConfig();
+  if (!rel || rel.testBuild !== true) return null;
+  if (insideAppData(f, [DATA_DIR, app.getPath("userData")])) return null;
+  return f;
+}
+
 async function startKernel() {
   const bundle = path.join(__dirname, "kernel.bundle.cjs");
   // 出站闸门（v9 第 04 篇 §5.1：独立进程、唯一出口；内核按需拉起）
@@ -500,9 +515,10 @@ async function startKernel() {
     });
   }
   const dumpKernelOutput = () => {
-    if (!smoke.out || kernelOutRing.length === 0) return;
+    const f = kernelDiagFile();
+    if (!f || kernelOutRing.length === 0) return;
     try {
-      require("node:fs").appendFileSync(`${smoke.out}.kernel.log`, kernelOutRing.join(""));
+      require("node:fs").appendFileSync(f, kernelOutRing.join(""));
     } catch {}
     kernelOutRing.length = 0;
   };
@@ -554,9 +570,9 @@ async function startKernel() {
       slog.event("MAIN_KERNEL_FATAL", {});
       dumpKernelOutput();
       // 致命错误文本进 .kernel.log（同一取证通道：可能含路径与用户名，只落 runner/IT 提供的临时位置；结果文件仍只写码）
-      if (smoke.out && typeof msg.message === "string") {
+      if (kernelDiagFile() && typeof msg.message === "string") {
         try {
-          require("node:fs").appendFileSync(`${smoke.out}.kernel.log`, `kernel.fatal: ${msg.message}\n`);
+          require("node:fs").appendFileSync(kernelDiagFile(), `kernel.fatal: ${msg.message}\n`);
         } catch {}
       }
       if (smoke.out) smoke.kernelFailed("kernel_fatal");
