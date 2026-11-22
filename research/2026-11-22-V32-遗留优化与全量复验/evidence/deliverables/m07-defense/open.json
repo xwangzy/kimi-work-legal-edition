@@ -1,0 +1,45 @@
+{
+ "stack": "g",
+ "model": null,
+ "tag": "m07-defense",
+ "run": "run_9bc82891-20bb-4f2c-aa11-c0507d6a33ca",
+ "status": "succeeded",
+ "open": {
+  "v1-提交前核对清单-禾丰诉锐川.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-民事答辩状.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-答辩要点与证据对照表-禾丰诉锐川.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-管辖权异议申请书.docx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-验收款及逾期付款违约金测算-锐川.xlsx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v2-提交前核对清单-禾丰诉锐川.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-答辩要点与证据对照表-禾丰诉锐川.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v3-答辩要点与证据对照表-禾丰诉锐川.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v4-答辩要点与证据对照表-禾丰诉锐川.xlsx": {
+   "opened": true,
+   "pages": 5
+  }
+ }
+}

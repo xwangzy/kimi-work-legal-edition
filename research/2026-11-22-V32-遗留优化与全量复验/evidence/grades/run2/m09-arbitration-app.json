@@ -1,0 +1,6 @@
+{"tag": "m09-arbitration-app", "card": "arbitration-app", "veto": [], "score": 23, "dims": [3, 2, 3, 3, 3, 3, 3, 3],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 39, "questions": 2,
+ "top_issues": ["申请书与证据目录把甬岚包装属合同第 6.1 条“关联公司”写成确定事实，材料无依据，且与核对清单“不作关联关系结论”矛盾", "保全未提示须经仲裁机构提交法院（仲裁法第 39 条）", "证据目录列入未确认的 2025-09-15 催款邮件"],
+ "prev_score": 24,
+ "product_defect": ["流程：独立复核“建议改”成立但只能等律师勾选，不进修改轮，对外文书里的无据定性留到交付", "系统用语进成果：核对清单写“事实3未采用”“不得由助手代签”"],
+ "known_defects_recurring": [], "new_defects": []}

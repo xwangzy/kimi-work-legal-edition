@@ -1,0 +1,25 @@
+{
+ "stack": "l",
+ "model": null,
+ "tag": "m12-enforcement",
+ "run": "run_4a45f3df-7f19-42fa-b6a0-41ce7a076940",
+ "status": "succeeded",
+ "open": {
+  "v1-强制执行申请书.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-执行标的计算表-澄泰案.xlsx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v1-申请执行核对清单-澄泰案.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-申请执行核对清单-澄泰案.xlsx": {
+   "opened": true,
+   "pages": 3
+  }
+ }
+}

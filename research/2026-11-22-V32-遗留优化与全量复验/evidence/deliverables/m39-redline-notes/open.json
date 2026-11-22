@@ -1,0 +1,33 @@
+{
+ "stack": "l",
+ "model": null,
+ "tag": "m39-redline-notes",
+ "run": "run_a1a38c55-3377-495b-bd5e-61eca926ee4d",
+ "status": "succeeded",
+ "open": {
+  "v1-修订说明（致客户）-会员数据平台技术服务合同.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-修订说明（致对方）-会员数据平台技术服务合同.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-谈判要点（内部）-会员数据平台技术服务合同.docx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v2-修订说明（致客户）-会员数据平台技术服务合同.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-谈判要点（内部）-会员数据平台技术服务合同.docx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v3-修订说明（致客户）-会员数据平台技术服务合同.docx": {
+   "opened": true,
+   "pages": 6
+  }
+ }
+}

@@ -1,0 +1,33 @@
+{
+ "stack": "l",
+ "model": null,
+ "tag": "m08-appeal",
+ "run": "run_0a403ebe-cb65-439f-8b36-20b4a3ba5d10",
+ "status": "succeeded",
+ "open": {
+  "v1-上诉理由与一审认定对照表-锐川买卖合同.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-提交前核对清单-锐川买卖合同上诉.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-改判金额与原判金额计算明细-锐川上诉.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-民事上诉状.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-上诉理由与一审认定对照表-锐川买卖合同.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-改判金额与原判金额计算明细-锐川上诉.xlsx": {
+   "opened": true,
+   "pages": 6
+  }
+ }
+}

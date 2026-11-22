@@ -1,0 +1,17 @@
+{
+ "stack": "l",
+ "model": null,
+ "tag": "m34-research-deal",
+ "run": "run_1ca32eb7-2a43-4c17-8dc1-90bf3bff7961",
+ "status": "succeeded",
+ "open": {
+  "v1-来源目录-目标公司与创始人连带回购.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-研究备忘录-目标公司与创始人连带回购.docx": {
+   "opened": true,
+   "pages": 8
+  }
+ }
+}

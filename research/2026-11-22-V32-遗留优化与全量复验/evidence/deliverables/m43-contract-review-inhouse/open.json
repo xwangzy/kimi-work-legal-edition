@@ -1,0 +1,25 @@
+{
+ "stack": "k",
+ "model": null,
+ "tag": "m43-contract-review-inhouse",
+ "run": "run_d3a9bcce-e60b-4dca-957c-b2be346b6cc5",
+ "status": "succeeded",
+ "open": {
+  "v1-审查意见书（内部稿）-智能立体仓储系统采购及安装合同.docx": {
+   "opened": true,
+   "pages": 11
+  },
+  "v1-问题清单-智能立体仓储系统采购及安装合同.xlsx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v2-审查意见书（内部稿）-智能立体仓储系统采购及安装合同.docx": {
+   "opened": true,
+   "pages": 12
+  },
+  "v2-问题清单-智能立体仓储系统采购及安装合同.xlsx": {
+   "opened": true,
+   "pages": 7
+  }
+ }
+}

@@ -1,0 +1,6 @@
+{"tag": "m22-demand-lit", "card": "demand-lit", "veto": [], "score": 21, "dims": [3, 2, 3, 2, 3, 3, 3, 2],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 18, "questions": 1,
+ "top_issues": ["回应质量异议未用售后记录两次实测原纸含水率 16.5%、15.8% 与验收合格事实", "未交代质保金 135,000 元尚未到期、届时另行主张，对账段并列写法有歧义", "违约金只写计至实际清偿之日，未写起算日"],
+ "prev_score": 20,
+ "product_defect": ["独立复核 0 条，未发现回应异议遗漏材料中最有利的含水率证据、质保金处理缺失（复核没拦住，上一轮同样）"],
+ "known_defects_recurring": [], "new_defects": []}

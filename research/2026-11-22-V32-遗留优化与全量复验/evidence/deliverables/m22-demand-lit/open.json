@@ -1,0 +1,25 @@
+{
+ "stack": "l",
+ "model": null,
+ "tag": "m22-demand-lit",
+ "run": "run_60efb24e-707a-4f69-b302-47de24350818",
+ "status": "succeeded",
+ "open": {
+  "v1-依据与发送前核对-禾丰设备款.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-律师函.docx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-金额测算-禾丰设备款-截至2026-11-09.xlsx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v2-依据与发送前核对-禾丰设备款.xlsx": {
+   "opened": true,
+   "pages": 4
+  }
+ }
+}

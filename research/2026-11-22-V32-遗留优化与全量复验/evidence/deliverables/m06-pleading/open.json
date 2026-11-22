@@ -1,0 +1,61 @@
+{
+ "stack": "k",
+ "model": null,
+ "tag": "m06-pleading",
+ "run": "run_e65dadd4-0ce5-40dd-a0b1-0f4274914981",
+ "status": "succeeded",
+ "open": {
+  "v1-保全财产线索与担保核对表-锐川诉禾丰设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-提交前核对清单-锐川诉禾丰设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-民事起诉状.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-计算明细-锐川诉禾丰设备买卖合同纠纷-截至2026-11-30.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-证据目录-锐川诉禾丰设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-财产保全申请书.docx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-保全财产线索与担保核对表-锐川诉禾丰设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-提交前核对清单-锐川诉禾丰设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-民事起诉状.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-计算明细-锐川诉禾丰设备买卖合同纠纷-截至2026-11-30.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-证据目录-锐川诉禾丰设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v3-保全财产线索与担保核对表-锐川诉禾丰设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v3-提交前核对清单-锐川诉禾丰设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 3
+  }
+ }
+}

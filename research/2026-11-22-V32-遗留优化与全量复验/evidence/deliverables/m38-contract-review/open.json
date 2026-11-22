@@ -1,0 +1,33 @@
+{
+ "stack": "l",
+ "model": null,
+ "tag": "m38-contract-review",
+ "run": "run_54a71bf8-065e-499c-bc67-35c5ce584307",
+ "status": "succeeded",
+ "open": {
+  "v1-审查意见书（内部稿）-会员数据平台技术服务合同.docx": {
+   "opened": true,
+   "pages": 14
+  },
+  "v1-问题清单-会员数据平台技术服务合同.xlsx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v2-审查意见书（内部稿）-会员数据平台技术服务合同.docx": {
+   "opened": true,
+   "pages": 14
+  },
+  "v2-问题清单-会员数据平台技术服务合同.xlsx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v3-审查意见书（内部稿）-会员数据平台技术服务合同.docx": {
+   "opened": true,
+   "pages": 14
+  },
+  "v3-问题清单-会员数据平台技术服务合同.xlsx": {
+   "opened": true,
+   "pages": 10
+  }
+ }
+}

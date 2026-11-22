@@ -1,0 +1,6 @@
+{"tag": "m15-intake-lit", "card": "intake-lit", "veto": [], "score": 23, "dims": [3, 3, 3, 3, 3, 2, 3, 3],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 22, "questions": 0,
+ "top_issues": ["交付清单写入产品内部环节名“由‘管辖与时效核查’复核”，复核已指出未改", "维修顺延只写“待核”，未推算约12-14的质保金支付节点", "以11-12维修确认作为验收起算的备选口径依据较弱"],
+ "prev_score": 22,
+ "product_defect": ["方法或模板把其他卡片（管辖与时效核查）的环节名写进交付清单，属流程用语外露", "独立复核的建议级意见（清理流程用语）不进入修改轮，已识别的用语问题留在最终交付件里"],
+ "known_defects_recurring": [], "new_defects": []}

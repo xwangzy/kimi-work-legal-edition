@@ -1,0 +1,21 @@
+{
+ "stack": "k",
+ "model": null,
+ "tag": "m21-citation-audit",
+ "run": "run_c4f23eef-9b36-494c-9a99-bbdf31534bde",
+ "status": "succeeded",
+ "open": {
+  "v1-引用核验表-10-内部备忘录（初步分析，律师助理草稿）.xlsx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v2-引用核验表-10-内部备忘录（初步分析，律师助理草稿）.xlsx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v3-引用核验表-10-内部备忘录（初步分析，律师助理草稿）.xlsx": {
+   "opened": true,
+   "pages": 7
+  }
+ }
+}

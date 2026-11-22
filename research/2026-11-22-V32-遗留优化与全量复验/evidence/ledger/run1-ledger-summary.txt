@@ -1,0 +1,42 @@
+账本 3 个；任务 16 个（调用过模型的 15 个）；状态 {"succeeded":12,"partial":4}
+工作时间：中位 27.3 分钟，p90 47.9 分钟，最大 49.3 分钟，合计 461.0 分钟
+  超过 30 分钟 6 个，超过 40 分钟 5 个；模型时延占 89.1%；独立复核加修改轮占 26.6%
+等律师：中位 1.5 分钟，p90 3.3 分钟，最大 3.6 分钟，合计 16.9 分钟
+模型调用次数：中位 20.0，p90 29.0，最大 39.0，合计 314.0
+工具调用次数：中位 58.0，p90 113.0，最大 135.0，合计 1020.0
+输出 token：中位 48253.0，p90 89067.0，最大 98280.0，合计 771873.0
+推理 token：中位 24399.0，p90 42777.0，最大 54478.0，合计 416862.0
+成本：中位 3.1 元，p90 6.5 元，最大 7.4 元，合计 53.0 元
+输出速度 31.3 token/秒；输入命中缓存 89.6%；每次调用输入上下文中位 94682、p90 173469
+只更新工作清单的往返 12 次，占模型时延 2.0%
+整份重出：文书重出 2 次以上的任务 2 个，表格 7 个
+
+按型号（账本记的是路由到的型号名；网关把它改写成哪个上游型号看各栈的 stacks.json）：
+  kimi-k3：15 个，工作时间中位 27.3 分钟，成本中位 3.1 元，31.3 token/秒
+
+模型时延花在哪（按一次模型调用之后发起的工具归因）：
+   21.2%    43 次  (无工具：答复或思考)
+    5.6%     5 次  docx_render_report
+    5.1%     3 次  TodoList+docx_render_report+xlsx_render_table
+    3.9%     6 次  xlsx_render_table
+    2.7%     8 次  facts_submit
+    2.3%     2 次  NotifyUser+TodoList+docx_render_report
+    2.2%    16 次  docx_edit_draft
+    2.1%    11 次  law_get_article
+    2.1%     9 次  xlsx_edit_cells
+    2.0%     9 次  NotifyUser+TodoList
+    2.0%    12 次  TodoList
+    1.9%     6 次  AskUserQuestion
+    1.6%     2 次  TodoList+docx_render_report
+    1.6%     8 次  TodoList+docx_edit_draft
+    1.4%     2 次  Bash+citations_verify+facts_submit+law_get_article
+
+工具调用次数：law_get_article 332，law_search 99，TodoList 97，calc_deadline 49，materials_read_excerpt 47，Read 45，docx_edit_draft 44，calc_labor 33，NotifyUser 32，xlsx_edit_cells 30，facts_submit 25，Bash 23，citations_verify 23，calc_ledger 20，facts_list 19，xlsx_render_table 18，Skill 16，docx_render_report 16，materials_list 14，AskUserQuestion 11，outline_get 7，calc_court_fee 6，outline_submit 5，calc_interest 4，WebSearch 2
+
+工具结果（状态摘要）：
+  xlsx.edit_cells：30 次，失败 0；状态 {"applied":24,"partial":3,"not_applied":3}；退回原因 {}；交付前检查 27 次、未通过 0 次 {}；系统自动清理 0 次；缩水提示 0 次
+  outline.submit：5 次，失败 0；状态 {"proposed":5}；退回原因 {}；交付前检查 0 次、未通过 0 次 {}；系统自动清理 0 次；缩水提示 0 次
+  outline.get：7 次，失败 0；状态 {"confirmed":7}；退回原因 {}；交付前检查 0 次、未通过 0 次 {}；系统自动清理 0 次；缩水提示 0 次
+  docx.render_report：16 次，失败 0；状态 {}；退回原因 {}；交付前检查 16 次、未通过 6 次 {"internal_term":9,"note_to_lawyer":1,"cross_ref":1}；系统自动清理 0 次；缩水提示 1 次
+  xlsx.render_table：18 次，失败 0；状态 {}；退回原因 {}；交付前检查 18 次、未通过 7 次 {"internal_term":20,"equation":2,"table_sum":3,"foreign_word":1}；系统自动清理 0 次；缩水提示 0 次
+  docx.edit_draft：44 次，失败 0；状态 {"partial":2,"applied":20,"preview":17,"not_applied":5}；退回原因 {"anchor_not_found":8,"anchor_ambiguous":4,"hint_mismatch":3}；交付前检查 20 次、未通过 3 次 {"internal_term":3}；系统自动清理 0 次；缩水提示 0 次

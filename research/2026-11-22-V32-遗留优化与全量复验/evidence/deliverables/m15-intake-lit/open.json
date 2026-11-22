@@ -1,0 +1,29 @@
+{
+ "stack": "k",
+ "model": null,
+ "tag": "m15-intake-lit",
+ "run": "run_dbb35c55-d7ac-4a91-863b-2ef6ea7de209",
+ "status": "succeeded",
+ "open": {
+  "v1-材料收集清单-锐川与禾丰设备买卖合同.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-紧急期限与冲突待核清单-锐川与禾丰设备买卖合同.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-访谈纪要-2026-10-28.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-紧急期限与冲突待核清单-锐川与禾丰设备买卖合同.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-访谈纪要-2026-10-28.docx": {
+   "opened": true,
+   "pages": 4
+  }
+ }
+}

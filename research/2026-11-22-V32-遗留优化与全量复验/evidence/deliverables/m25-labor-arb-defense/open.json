@@ -1,0 +1,37 @@
+{
+ "stack": "k",
+ "model": null,
+ "tag": "m25-labor-arb-defense",
+ "run": "run_7c141f05-137f-4c97-86fa-52b7e9a3babf",
+ "status": "succeeded",
+ "open": {
+  "v1-劳动仲裁应对与管理层决策要点.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-提交前核对清单-澜栖劳动仲裁.xlsx": {
+   "opened": true,
+   "pages": 11
+  },
+  "v1-证据目录-澜栖劳动仲裁.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-劳动仲裁应对与管理层决策要点.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-提交前核对清单-澜栖劳动仲裁.xlsx": {
+   "opened": true,
+   "pages": 11
+  }
+ }
+}

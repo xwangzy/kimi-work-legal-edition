@@ -1,0 +1,6 @@
+{"tag": "m21-citation-audit", "card": "citation-audit", "veto": [], "score": 22, "dims": [3, 2, 3, 3, 3, 2, 3, 3],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 16, "questions": 0,
+ "top_issues": ["质保金只建议把“已于”改“将于”，沿用了原稿不正确的 11-02 到期日", "合同法第158条因法规库不收旧法只能标“未核验／支持待判”", "“（待律师确认）”逐格重复、第195条全文多次重贴"],
+ "prev_score": 22,
+ "product_defect": ["法规库不收已废止的《合同法》等旧法，体检任务对旧法条无法取得原文对照（工具行为，上一轮已报）", "方法要求每条建议附“待律师确认”，结果逐格重复，表格冗长（方法规则）"],
+ "known_defects_recurring": [], "new_defects": []}

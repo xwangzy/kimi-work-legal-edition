@@ -1,0 +1,37 @@
+{
+ "stack": "g",
+ "model": null,
+ "tag": "m45-demand-inhouse",
+ "run": "run_3b21cd51-3fd6-45e6-8b6f-db9cc455864b",
+ "status": "succeeded",
+ "open": {
+  "v1-依据与发送前核对-裕丰包装订单.xlsx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v1-最后催告函.docx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-金额测算-裕丰包装订单违约金-截至2026-11-09.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v2-依据与发送前核对-裕丰包装订单.xlsx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v2-最后催告函.docx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-金额测算-裕丰包装订单违约金-截至2026-11-09.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v3-依据与发送前核对-裕丰包装订单.xlsx": {
+   "opened": true,
+   "pages": 7
+  }
+ }
+}

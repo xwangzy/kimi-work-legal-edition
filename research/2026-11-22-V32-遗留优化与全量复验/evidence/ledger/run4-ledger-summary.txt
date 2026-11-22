@@ -1,0 +1,37 @@
+账本 1 个；任务 1 个（调用过模型的 1 个）；状态 {"succeeded":1}
+工作时间：中位 14.7 分钟，p90 14.7 分钟，最大 14.7 分钟，合计 14.7 分钟
+  超过 30 分钟 0 个，超过 40 分钟 0 个；模型时延占 99.7%；独立复核加修改轮占 24.9%
+等律师：中位 0.0 分钟，p90 0.0 分钟，最大 0.0 分钟，合计 0.0 分钟
+模型调用次数：中位 15.0，p90 15.0，最大 15.0，合计 15.0
+工具调用次数：中位 35.0，p90 35.0，最大 35.0，合计 35.0
+输出 token：中位 32524.0，p90 32524.0，最大 32524.0，合计 32524.0
+推理 token：中位 19640.0，p90 19640.0，最大 19640.0，合计 19640.0
+成本：中位 2.0 元，p90 2.0 元，最大 2.0 元，合计 2.0 元
+输出速度 37.0 token/秒；输入命中缓存 87.2%；每次调用输入上下文中位 82216、p90 94541
+只更新工作清单的往返 0 次，占模型时延 0.0%
+整份重出：文书重出 2 次以上的任务 0 个，表格 0 个
+
+按型号（账本记的是路由到的型号名；网关把它改写成哪个上游型号看各栈的 stacks.json）：
+  kimi-k3：1 个，工作时间中位 14.7 分钟，成本中位 2.0 元，37.0 token/秒
+
+模型时延花在哪（按一次模型调用之后发起的工具归因）：
+   24.5%     1 次  TodoList+calc_court_fee+calc_deadline+calc_ledger+facts_submit+law_search
+   22.4%     4 次  (无工具：答复或思考)
+   19.9%     1 次  TodoList+docx_render_report+xlsx_render_table
+   12.3%     1 次  TodoList+docx_edit_draft+xlsx_edit_cells
+    4.7%     1 次  Read+docx_edit_draft
+    4.2%     1 次  Bash+citations_verify+law_get_article
+    3.5%     1 次  TodoList+docx_edit_draft
+    2.0%     1 次  Read+TodoList+facts_list
+    1.8%     1 次  docx_edit_draft
+    1.7%     1 次  Skill+materials_list
+    1.7%     1 次  NotifyUser
+    1.4%     1 次  docx_edit_draft+xlsx_edit_cells
+
+工具调用次数：TodoList 5，docx_edit_draft 5，Read 4，calc_deadline 3，calc_court_fee 2，law_search 2，law_get_article 2，xlsx_edit_cells 2，Skill 1，materials_list 1，facts_list 1，facts_submit 1，calc_ledger 1，citations_verify 1，Bash 1，docx_render_report 1，xlsx_render_table 1，NotifyUser 1
+
+工具结果（状态摘要）：
+  docx.render_report：1 次，失败 0；状态 {}；退回原因 {}；交付前检查 1 次、未通过 0 次 {}；系统自动清理 0 次；缩水提示 0 次
+  xlsx.render_table：1 次，失败 0；状态 {}；退回原因 {}；交付前检查 1 次、未通过 1 次 {"internal_term":3}；系统自动清理 0 次；缩水提示 0 次
+  xlsx.edit_cells：2 次，失败 0；状态 {"applied":2}；退回原因 {}；交付前检查 2 次、未通过 0 次 {}；系统自动清理 0 次；缩水提示 0 次
+  docx.edit_draft：5 次，失败 0；状态 {"partial":1,"not_applied":1,"applied":2,"preview":1}；退回原因 {"anchor_ambiguous":1,"occurrence_out_of_range":1}；交付前检查 2 次、未通过 0 次 {}；系统自动清理 0 次；缩水提示 0 次

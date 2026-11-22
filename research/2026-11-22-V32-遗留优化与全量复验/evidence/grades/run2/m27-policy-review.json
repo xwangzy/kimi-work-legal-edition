@@ -1,0 +1,6 @@
+{"tag": "m27-policy-review", "card": "policy-review", "veto": [], "score": 21, "dims": [3, 3, 3, 2, 3, 2, 3, 2],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 47, "questions": 2,
+ "top_issues": ["未写明程序补正前的违纪事实应以 2021 版为据", "对客户意见书仍有“不凭记忆补充／不凭记忆引用地方规定”等方法口径", "4.7 未规定部门负责人同意后人事否决的告知时点与效力"],
+ "prev_score": 20,
+ "product_defect": ["policy-review 方法里“不凭记忆引用地方规定”的口径原样进入对客户意见书（方法规则／系统用语进成果，上一轮已报，措辞变了仍在）", "每条依据后挂“原文已核”核验标签，对客户文书内部化（方法规则）"],
+ "known_defects_recurring": [], "new_defects": []}

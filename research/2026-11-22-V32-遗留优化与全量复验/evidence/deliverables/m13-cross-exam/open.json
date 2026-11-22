@@ -1,0 +1,21 @@
+{
+ "stack": "g",
+ "model": null,
+ "tag": "m13-cross-exam",
+ "run": "run_24d39a09-3aae-42e5-9285-a13ad819b38f",
+ "status": "succeeded",
+ "open": {
+  "v1-质证意见.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-质证意见表-禾丰诉锐川设备质量纠纷.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-质证意见表-禾丰诉锐川设备质量纠纷.xlsx": {
+   "opened": true,
+   "pages": 5
+  }
+ }
+}

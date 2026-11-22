@@ -1,0 +1,7 @@
+{"tag": "m47-compliance-qa", "card": "员工数据出境合规答复", "veto": [], "score": 22, "dims": [3, 3, 3, 3, 3, 2, 3, 2],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 21, "questions": 0,
+ "top_issues": ["标题沿用文件名式“顾问答复-OneHR员工个人信息跨境传输”，致送/出具部门/日期压在“一、问题”下，文末无落款", "结论“原计划可以有条件保留”与11-25前完成2,340人单独同意及制度民主程序的紧排期之间张力大", "HR 豁免路径下单独同意是否必需未提示不同理解"],
+ "prev_score": 21,
+ "product_defect": ["工具行为：报告渲染以文件名作标题，致送/出具部门/日期块放在第一个标题之下，文末不生成落款（上一轮已记）"],
+ "known_defects_recurring": ["docx_render_report 文件名作标题、首部错位、无落款（上一轮已记）"],
+ "new_defects": []}

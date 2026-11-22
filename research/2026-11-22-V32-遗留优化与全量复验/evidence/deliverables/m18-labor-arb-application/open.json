@@ -1,0 +1,29 @@
+{
+ "stack": "h",
+ "model": null,
+ "tag": "m18-labor-arb-application",
+ "run": "run_9b25225a-ade8-4af3-8b23-22be064daf6b",
+ "status": "succeeded",
+ "open": {
+  "v1-劳动仲裁申请书.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-提交前核对清单-劳动者违法解除争议.xlsx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v1-证据目录-劳动者违法解除争议.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-提交前核对清单-劳动者违法解除争议.xlsx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v3-提交前核对清单-劳动者违法解除争议.xlsx": {
+   "opened": true,
+   "pages": 10
+  }
+ }
+}

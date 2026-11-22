@@ -1,0 +1,21 @@
+{
+ "stack": "j",
+ "model": null,
+ "tag": "m20-research-lit",
+ "run": "run_2cecbea5-35ad-46dc-98d4-e2130cefe73d",
+ "status": "succeeded",
+ "open": {
+  "v1-来源目录-设备质量异议、到期货款与对账保留语.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-研究备忘录-设备质量异议、到期货款与对账保留语.docx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v2-研究备忘录-设备质量异议、到期货款与对账保留语.docx": {
+   "opened": true,
+   "pages": 7
+  }
+ }
+}

@@ -1,0 +1,45 @@
+{
+ "stack": "l",
+ "model": null,
+ "tag": "m26-labor-termination",
+ "run": "run_d05f3c6e-3c77-4da7-9cf0-eb0d0abcfa7c",
+ "status": "succeeded",
+ "open": {
+  "v1-劳动争议应对方案-严重违纪解除前评估.docx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v1-解除程序核对清单-严重违纪解除前评估.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-请求项与敞口表-严重违纪解除前评估.xlsx": {
+   "opened": true,
+   "pages": 13
+  },
+  "v2-劳动争议应对方案-严重违纪解除前评估.docx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v2-解除程序核对清单-严重违纪解除前评估.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-请求项与敞口表-严重违纪解除前评估.xlsx": {
+   "opened": true,
+   "pages": 13
+  },
+  "v3-劳动争议应对方案-严重违纪解除前评估.docx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v3-解除程序核对清单-严重违纪解除前评估.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v4-劳动争议应对方案-严重违纪解除前评估.docx": {
+   "opened": true,
+   "pages": 8
+  }
+ }
+}
