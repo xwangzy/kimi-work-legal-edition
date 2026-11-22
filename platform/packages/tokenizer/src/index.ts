@@ -20,12 +20,12 @@
  * - 令牌化降低风险，但不构成匿名化（第 02 篇 §8.3 末段）。
  */
 import { createHmac, hkdfSync } from "node:crypto";
-import { findNicknames, matchDictionary, matcherFor, nicknameSurname, recognizeNames, stillLooksLikeName, surnameOf } from "./names.ts";
+import { findNicknames, idHolderNames, matchDictionary, matcherFor, nicknameSurname, recognizeNames, stillLooksLikeName, surnameOf } from "./names.ts";
 import { deriveOrgAliases, isGenericAlias, softenBreaks } from "./variants.ts";
 import { findIdentifiers, foldWidth, normalizeValue, type Hit, type IdentifierOptions } from "./patterns.ts";
 
 export { idCardValid, luhnValid, findIdentifiers, foldWidth, normalizeValue, type IdentifierOptions } from "./patterns.ts";
-export { findNicknames, nicknameSurname, recognizeNames, stillLooksLikeName } from "./names.ts";
+export { findNicknames, idHolderNames, nicknameSurname, recognizeNames, stillLooksLikeName } from "./names.ts";
 export { suspectCounts, suspectedNames, type SuspectConfidence, type SuspectCue, type SuspectedName } from "./candidates.ts";
 export { deriveOrgAliases, extractDefinedAliases, foldText, foldWithMap, FOLD_VERSION, isGenericAlias, shapeFold, VariantMatcher } from "./variants.ts";
 
@@ -258,7 +258,8 @@ export class MatterTokenizer {
     const knownOnly = o.knownOnly === true;
     if (this.recognize && !knownOnly) {
       const masked = maskRanges(foldWidth(text), taken);
-      const found = [...recognizeNames(masked)].filter((n) => !dict.some((d) => d.value === n));
+      // 证件持有人（“李慧敏：340202…”）要看遮盖前的证件号，单独在原文上找（第 57 批，D-232）
+      const found = [...new Set([...recognizeNames(masked), ...idHolderNames(foldWidth(text))])].filter((n) => !dict.some((d) => d.value === n));
       for (const n of found) addSurname(surnames, nickAllowed, n);
       const names = found.filter((n) => nicknameSurname(n) === null);
       hits.push(...matchDictionary(text, names.map((value) => ({ value, category: "person" as const })), taken, "recognizer"));

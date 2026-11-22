@@ -9,6 +9,11 @@ export interface RevisionOp {
     originalText: string;
     occurrence?: number | undefined; // 默认 0（第一次出现）
     paragraphHint?: string | undefined; // 条款号提示（如 "7.1"），用于冲突时的人工定位
+    /**
+     * 已定位的段落（原件段落序号，与 mapParagraphs 一致；第 57 批）：调用方先用 locateAnchorInDocx 按全文次序、位置提示定好一处，
+     * 写入时只在这一段里按 occurrence（段内第几次，从 0 起）找锚点，不再全文比对、不再看 paragraphHint。
+     */
+    paragraphIndex?: number | undefined;
     /** 改页眉或页脚里的文字（V10 第 36 批）：在每个含锚点的页眉 / 页脚部件里写原生修订；缺省为正文。页眉页脚里不加批注。 */
     part?: "body" | "header" | "footer" | undefined;
   };

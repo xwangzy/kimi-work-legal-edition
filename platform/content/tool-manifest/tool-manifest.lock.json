@@ -175,7 +175,7 @@
     },
     {
       "name": "docx.edit_draft",
-      "version": "1",
+      "version": "2",
       "sideEffect": "write_draft",
       "resource": "matter_work",
       "purposes": [
@@ -353,7 +353,7 @@
     },
     {
       "name": "calc.labor",
-      "version": "1",
+      "version": "2",
       "sideEffect": "read",
       "resource": "pure",
       "purposes": [
@@ -363,7 +363,7 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "a637652ecd4c477d8a329359f76bb1c234e2e5783934ff0088aa2be8fd37858a"
+      "schemaHash": "59258dc69babd7b457cf849fb2ed531c2b9128f1dec48bbb7fc4e2f87bf4e5b6"
     },
     {
       "name": "calc.court_fee",
@@ -392,6 +392,20 @@
         "drafting"
       ],
       "schemaHash": "f766bf47c0e279fa9b0f5ec0b02ae38557bab5e32dae7c990cf9387dc55e9fb4"
+    },
+    {
+      "name": "calc.ledger",
+      "version": "1",
+      "sideEffect": "write_draft",
+      "resource": "matter_work",
+      "purposes": [
+        "legal_analysis",
+        "contract_review",
+        "case_file",
+        "legal_research",
+        "drafting"
+      ],
+      "schemaHash": "ef52b704a7744c42f7e9b2716a897fee106eda131929c546ac716b3f50746127"
     }
   ]
 }

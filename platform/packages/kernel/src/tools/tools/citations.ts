@@ -11,7 +11,7 @@
 import { CitationState, DomainError, type CitationState as CitationStateT } from "@zr-legal/domain";
 import { versionAt, type Lawdb } from "@zr-legal/lawdb";
 import { cnToInt, intToCn } from "./cn-numerals.ts";
-import { BARE_NAMES, LAW_ALIASES, lawNameCandidates } from "./law-names.ts";
+import { BARE_NAMES, LAW_ALIASES, lawNameCandidates, repealedInfo } from "./law-names.ts";
 
 export interface RawCitation {
   raw: string;
@@ -346,6 +346,9 @@ function verifyOne(lawdb: Lawdb, rc: RawCitation, asOf: string, topicHint: strin
     rows = lawdb.findLawVersions(name);
   }
   if (rows.length === 0) {
+    // 已废止的法律与司法解释（法规库不收废止文本）：分析时点在废止之后的，明确告知“已废止”，不与“库里没收”混在一起
+    const rep = repealedInfo(rc.law);
+    if (rep && asOf >= rep.on) base.reasons.push(`repealed:已于 ${rep.on} 废止（${rep.by}）`);
     base.reasons.push("unknown_source:注册库中不存在该法源，无法核实来源");
     return base;
   }

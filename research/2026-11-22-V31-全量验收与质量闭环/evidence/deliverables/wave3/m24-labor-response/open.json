@@ -1,0 +1,37 @@
+{
+ "stack": "f",
+ "model": null,
+ "tag": "m24-labor-response",
+ "run": "run_ed3a4dae-6057-4eaf-aef8-3cdd08bf02e1",
+ "status": "succeeded",
+ "open": {
+  "v1-举证责任与证据清单-算法工程师解除争议.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-劳动争议应对方案-算法工程师解除争议.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-请求项与敞口表-算法工程师解除争议.xlsx": {
+   "opened": true,
+   "pages": 12
+  },
+  "v2-劳动争议应对方案-算法工程师解除争议.docx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v2-请求项与敞口表-算法工程师解除争议.xlsx": {
+   "opened": true,
+   "pages": 12
+  },
+  "v3-劳动争议应对方案-算法工程师解除争议.docx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v3-请求项与敞口表-算法工程师解除争议.xlsx": {
+   "opened": true,
+   "pages": 12
+  }
+ }
+}

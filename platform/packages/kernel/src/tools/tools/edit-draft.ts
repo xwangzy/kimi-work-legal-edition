@@ -11,7 +11,7 @@
  * - 任一处找不到或有歧义：整体不写，逐条返回原因；改后对新版本重做交付前检查。
  */
 import { DomainError, sha256Hex } from "@zr-legal/domain";
-import { applyRevisionsToDocx, extractParagraphs, keepHouseMark, readZipText, sanitizeDocx, type RevisionOp } from "@zr-legal/docx-engine";
+import { applyRevisionsToDocx, extractParagraphs, keepHouseMark, locateAnchorInDocx, readZipText, sanitizeDocx, type AnchorLocation, type AnchorMatch, type RevisionOp } from "@zr-legal/docx-engine";
 import { findTokens } from "@zr-legal/tokenizer";
 import type { InvokeCtx } from "../registry.ts";
 import { registerToolArtifact } from "./review.ts";
@@ -23,7 +23,7 @@ import { latestOfLineage, sameFollowUpChain } from "../../services/artifact-line
 /** 结果分布留痕（V13 第 38 批）：只记计数，不记文字。 */
 function logOutcome(status: "applied" | "partial" | "not_applied" | "preview", patches: number, applied: number, conflicts: readonly { reason: Reason }[]): void {
   const n = (r: Reason) => conflicts.filter((c) => c.reason === r).length;
-  slog.event("TOOLS_DOCX_EDIT_OUTCOME", { tool: "docx_edit_draft", status, patches, applied, not_found: n("anchor_not_found") + n("anchor_empty"), ambiguous: n("anchor_ambiguous"), unknown_token: n("unknown_token"), other: n("overlap") + n("apply_failed") + n("quality_line") });
+  slog.event("TOOLS_DOCX_EDIT_OUTCOME", { tool: "docx_edit_draft", status, patches, applied, not_found: n("anchor_not_found") + n("anchor_empty"), ambiguous: n("anchor_ambiguous") + n("hint_mismatch") + n("occurrence_out_of_range"), unknown_token: n("unknown_token"), other: n("overlap") + n("apply_failed") + n("quality_line") });
 }
 
 export const EDIT_DRAFT_MAX_PATCHES = 100;
@@ -47,12 +47,14 @@ interface EditPatchInput {
   insert_after?: unknown;
 }
 
-type Reason = "anchor_empty" | "anchor_not_found" | "anchor_ambiguous" | "unknown_token" | "overlap" | "apply_failed" | "quality_line";
+type Reason = "anchor_empty" | "anchor_not_found" | "anchor_ambiguous" | "hint_mismatch" | "occurrence_out_of_range" | "unknown_token" | "overlap" | "apply_failed" | "quality_line";
 
 const FIX: Record<Reason, string> = {
   anchor_empty: "anchor 不能为空；新增段落用 insert_after，锚点写插入位置前一段里的原文",
   anchor_not_found: "草稿里找不到这段文字：逐字照抄这份文书里的原文（同一段落之内，含标点与代号）",
-  anchor_ambiguous: "这段文字在多个段落或表格格子出现：加 paragraph_hint——正文写所在条款号或该段里另一段独有的文字，表格里的格子写“行名｜列名”（如“付款安排｜严重度”，行名取该行第一格的文字），几张表的行名列名相同时前面再加表格前一段的条款号或标题（如“2.1｜合计｜金额（元）”）；或把锚点写长到唯一",
+  anchor_ambiguous: "这段文字在多个段落或表格格子出现（见 matches，按全文先后排，含表格格子）：要改哪一处就写 occurrence: 该处的序号；几处都要改的，每处各交一条。也可以加 paragraph_hint——正文写所在条款号或该段里另一段独有的文字，表格里的格子写“行名｜列名”（如“付款安排｜严重度”，行名取该行第一格的文字），几张表的行名列名相同时前面再加表格前一段的条款号或标题（如“2.1｜合计｜金额（元）”）；或把锚点写长到唯一",
+  hint_mismatch: "锚点在文书里出现的位置（见 matches）与你给的位置提示对不上，没有写入：先确认要改的是哪一处——提示所指的那一处若已改过，这一条不要再交；要改的就是 matches 里的那一处，去掉 paragraph_hint 或改成与它相符的提示后重交",
+  occurrence_out_of_range: "occurrence 是这段文字在全文里第几处出现（按先后，含表格格子，从 1 起），没有这一处：照 matches 里的序号写",
   unknown_token: "含有本事项不存在的代号：代号只能照抄材料或草稿里出现过的",
   overlap: "与另一条修改的原文重叠：合并成一条",
   apply_failed: "写入失败：通常是两条修改落在同一处，拆开或合并后重试",
@@ -170,26 +172,76 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
   const known = new Set(table.map((e) => e.token));
   const valueOf = new Map(table.map((e) => [e.token, e.value] as const));
 
-  const conflicts: { index: number; reason: Reason; fix: string; detail?: string }[] = [];
+  // 逐条明细（第 57 批真实走查：冲突序号从 0 起、没注明，模型按 1 起重交，重交的全是已写入的几处）：
+  // patch_no 是第几处（从 1 起，按提交的 patches 顺序），anchor 是该处提交的原文（截断）；index 是同一处从 0 起的旧编号，保留兼容
+  type Conflict = { patch_no: number; index: number; anchor: string; reason: Reason; fix: string; detail?: string; matches?: { occurrence: number; where: string; context: string }[] };
+  const conflicts: Conflict[] = [];
+  const clip = (s: string, n = 40) => ([...s].length > n ? `${[...s].slice(0, n).join("")}…` : s);
+  const push = (index: number, anchor: string, reason: Reason, extra: { fix?: string; detail?: string; matches?: AnchorMatch[] } = {}) =>
+    void conflicts.push({
+      patch_no: index + 1,
+      index,
+      anchor: clip(anchor),
+      reason,
+      fix: extra.fix ?? FIX[reason],
+      ...(extra.detail ? { detail: extra.detail } : {}),
+      ...(extra.matches && extra.matches.length > 0 ? { matches: extra.matches.slice(0, 10).map((m) => ({ occurrence: m.occurrence, where: m.where, context: m.context })) } : {}),
+    });
+  /** 定位不成时写给模型的改法：带上命中各处的位置，给出 occurrence 的具体写法。 */
+  const locateFix = (loc: Extract<AnchorLocation, { ok: false }>, occurrence: number | undefined, hint: string | undefined): string => {
+    const ms = loc.matches;
+    if (loc.reason === "ambiguous") {
+      const eg = ms[1] ?? ms[0]!;
+      return `${FIX.anchor_ambiguous}。例如改第 ${eg.occurrence} 处（${eg.where}）就写 occurrence: ${eg.occurrence}`;
+    }
+    if (loc.reason === "occurrence_out_of_range") return `这段文字全文共出现 ${ms.length} 处，没有第 ${occurrence} 处。${FIX.occurrence_out_of_range}`;
+    if (loc.reason === "hint_mismatch") {
+      const m = occurrence !== undefined ? ms[occurrence - 1] : ms[0];
+      const head = occurrence !== undefined ? `你指定的第 ${occurrence} 处在${m?.where ?? ""}` : `锚点只在${m?.where ?? ""}出现（${m?.context ?? ""}）`;
+      return `${head}，与你给的位置提示“${clip(hint ?? "", 30)}”不符。${FIX.hint_mismatch}`;
+    }
+    return FIX.anchor_not_found;
+  };
   const ops: RevisionOp[] = [];
+  /** 每条写入的修改：第几处（从 0 起）与定位到的原件段落（合并写入前查同段冲突用）。 */
+  const placed: { index: number; op: RevisionOp; match: AnchorMatch }[] = [];
   raw.forEach((x, index) => {
     const anchor = String(x?.anchor ?? "");
     // 质量说明（第 42 批）：新文字里独立成段的质量说明直接删掉；删完什么都不剩的这一条不写（否则“替换成空”会把锚点原文删掉）
     const scrub = scrubQualityLine(String(x?.proposed_text ?? ""));
     const proposed = scrub.text;
-    if (scrub.removed > 0 && proposed.trim() === "") return void conflicts.push({ index, reason: "quality_line", fix: FIX.quality_line });
-    if (!anchor) return void conflicts.push({ index, reason: "anchor_empty", fix: FIX.anchor_empty });
+    if (scrub.removed > 0 && proposed.trim() === "") return push(index, anchor, "quality_line");
+    if (!anchor) return push(index, anchor, "anchor_empty");
     // 新文字里的代号须是本事项的（导出时按令牌表还原；不认识的代号会原样留在文书里）
     const unknown = findTokens(proposed).filter((t) => !known.has(t) && !anchor.includes(t));
-    if (unknown.length > 0) return void conflicts.push({ index, reason: "unknown_token", fix: FIX.unknown_token, detail: [...new Set(unknown)].join("、") });
+    if (unknown.length > 0) return push(index, anchor, "unknown_token", { detail: [...new Set(unknown)].join("、") });
+    // occurrence（第 57 批）：全文（含表格格子）按先后第几处，从 1 起；0、负数、小数不猜，退回说明
+    const occurrence = x?.occurrence === undefined || x?.occurrence === null ? undefined : (x.occurrence as number);
+    if (occurrence !== undefined && (!Number.isInteger(occurrence) || occurrence < 1)) return push(index, anchor, "occurrence_out_of_range", { fix: `occurrence 写的是 ${String(x.occurrence)}。${FIX.occurrence_out_of_range}` });
+    const hint = typeof x?.paragraph_hint === "string" && x.paragraph_hint.trim() ? x.paragraph_hint : undefined;
+    // 先在整份草稿里定位（全文次序、位置提示；全文只有一处时也核对提示），定准一处再写入，写入时只在那一段里找
+    let text = anchor;
+    let loc = locateAnchorInDocx(buf, text, { occurrence, hint });
+    if (!loc.ok && loc.reason === "not_found") {
+      // 草稿里是原字、助手看到的回读里却是代号：令牌表后来学进的值（V14 第 39 批真实走查 A：法条“当事人一方明确表示”让“方明”进了令牌表，
+      // 助手早先写进草稿的“卖方明知”在回读里成了“卖〔自然人·…〕知”，照抄回读的锚点 9 次都定位不到）。锚点里的代号换回原字再找一次
+      const restored = findTokens(anchor).reduce((t, tok) => (valueOf.has(tok) ? t.split(tok).join(valueOf.get(tok)!) : t), anchor);
+      if (restored !== anchor) {
+        const again = locateAnchorInDocx(buf, restored, { occurrence, hint });
+        if (again.ok || again.reason !== "not_found") {
+          text = restored;
+          loc = again;
+        }
+      }
+    }
+    if (!loc.ok) {
+      const reason: Reason = loc.reason === "not_found" ? "anchor_not_found" : loc.reason === "ambiguous" ? "anchor_ambiguous" : loc.reason;
+      return push(index, anchor, reason, { fix: locateFix(loc, occurrence, hint), matches: loc.matches });
+    }
     const op: RevisionOp = {
       opId: `e${index}`,
-      anchor: {
-        originalText: anchor,
-        ...(Number.isInteger(x?.occurrence) && (x.occurrence as number) >= 0 ? { occurrence: x.occurrence as number } : {}),
-        ...(typeof x?.paragraph_hint === "string" && x.paragraph_hint ? { paragraphHint: x.paragraph_hint } : {}),
-      },
-      originalHash: sha256Hex(anchor),
+      anchor: { originalText: text, occurrence: loc.match.inParagraph, paragraphIndex: loc.match.paragraphIndex },
+      originalHash: sha256Hex(text),
       newText: proposed,
       ...(x?.insert_after === true ? { insertAfter: true } : {}),
       author: "AI 起草",
@@ -197,27 +249,28 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
     try {
       applyRevisionsToDocx(buf, { baselineHash: art.sha256, ops: [op] });
       ops.push(op);
+      placed.push({ index, op, match: loc.match });
     } catch (e) {
-      // 草稿里是原字、助手看到的回读里却是代号：令牌表后来学进的值（V14 第 39 批真实走查 A：法条“当事人一方明确表示”让“方明”进了令牌表，
-      // 助手早先写进草稿的“卖方明知”在回读里成了“卖〔自然人·…〕知”，照抄回读的锚点 9 次都定位不到）。锚点里的代号换回原字再找一次
-      const restored = findTokens(anchor).reduce((t, tok) => (valueOf.has(tok) ? t.split(tok).join(valueOf.get(tok)!) : t), anchor);
-      const retry = restored !== anchor && classify((e as Error).message) === "anchor_not_found" ? { ...op, anchor: { ...op.anchor, originalText: restored }, originalHash: sha256Hex(restored) } : null;
-      try {
-        if (!retry) throw e;
-        applyRevisionsToDocx(buf, { baselineHash: art.sha256, ops: [retry] });
-        ops.push(retry);
-      } catch (e2) {
-        const msg = (e2 as Error).message;
-        const reason = classify(msg);
-        conflicts.push({ index, reason, fix: FIX[reason], detail: msg.slice(0, 200) });
-      }
+      const msg = (e as Error).message;
+      const reason = classify(msg);
+      push(index, anchor, reason, { detail: msg.replace(/修订 e(\d+)/g, (_m, d: string) => `第 ${Number(d) + 1} 处修改`).slice(0, 200) });
     }
   });
+  // 同一段里同一锚点出现几次、又有别的修改落在这一段的：段内次序会被前面的修改打乱（前一处删掉后“第 2 次出现”就成了原来的第 3 次），
+  // 不冒险写错位置，退回请合并成一条
+  for (const p of placed) {
+    if (p.match.inParagraph === 0 || p.op.insertAfter) continue;
+    if (!placed.some((q) => q !== p && !q.op.insertAfter && q.match.paragraphIndex === p.match.paragraphIndex)) continue;
+    ops.splice(ops.indexOf(p.op), 1);
+    push(p.index, String(raw[p.index]?.anchor ?? ""), "overlap", { fix: "这段文字在同一段落里出现了几次，这一段又有别的修改：把这一段里的几处修改合并成一条（锚点写成包含这几处的一整句）后重交" });
+  }
+  conflicts.sort((a, b) => a.index - b.index);
+  const appliedNos = placed.filter((p) => ops.includes(p.op)).map((p) => p.index + 1);
   // 能定位的先写入、定位不到的逐条退回（V13 第 38 批取证：4 次正式调用里 2 次因 2 处中 1 处找不到而整体未写，另一处本可写入）。
   // 草稿是在最新版本上逐处增量修改，部分写入不丢已写的修改；一处都定位不到时照旧不写
   if (ops.length === 0) {
     logOutcome("not_applied", raw.length, 0, conflicts);
-    return { status: "not_applied" as const, written: false, conflicts, note: "没有写入任何修改：按逐条原因改正后重新提交" };
+    return { status: "not_applied" as const, written: false, conflicts, note: `没有写入任何修改：conflicts 里 patch_no 是你提交的 patches 中的第几处（从 1 起，按提交顺序），anchor 是那一处的原文；按逐条原因改正后重新提交${p.dry_run === true ? "（这是试写）" : ""}` };
   }
   let out: Buffer;
   try {
@@ -230,8 +283,19 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
     return { status: "not_applied" as const, written: false, conflicts: [{ index: 0, reason: "apply_failed" as const, fix: FIX.apply_failed, detail: (e as Error).message.slice(0, 200) }], note: "逐条都能定位，合并写入失败：通常是两条修改落在同一处，合并后重新提交" };
   }
   if (p.dry_run === true) {
-    logOutcome("preview", raw.length, ops.length, []);
-    return { status: "preview" as const, written: false, applied: ops.length, note: "试写通过，没有生成文件；去掉 dry_run 正式提交" };
+    logOutcome("preview", raw.length, ops.length, conflicts);
+    // 试写与正式写入返回同样的逐条明细（第 57 批真实走查：14 处试写通过 11 处，看不到是哪 3 处、为什么）
+    return {
+      status: "preview" as const,
+      written: false,
+      applied: ops.length,
+      applied_patch_nos: appliedNos,
+      ...(conflicts.length > 0 ? { conflicts } : {}),
+      note:
+        conflicts.length > 0
+          ? `试写：第 ${appliedNos.join("、")} 处能写入，另有 ${conflicts.length} 处写不进（见 conflicts：patch_no 是第几处，从 1 起，按你提交的 patches 顺序；anchor 是那一处的原文）。没有生成文件；改正这几处后，去掉 dry_run 正式提交`
+          : "试写全部通过，没有生成文件；去掉 dry_run 正式提交",
+    };
   }
   // 事实对照（V16 第 41 批）：内部文书改动后，文末系统附的“事实对照”按改后正文引用的序号重新生成（不重复追加；不再引用时整节去掉）
   let factSynced = false;
@@ -268,6 +332,7 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
   return {
     status: conflicts.length > 0 ? ("partial" as const) : ("applied" as const),
     applied: ops.length,
+    applied_patch_nos: appliedNos,
     ...(conflicts.length > 0 ? { conflicts } : {}),
     ...reg,
     edited_from: id,
@@ -277,7 +342,7 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
       : {}),
     note:
       conflicts.length > 0
-        ? `已在《${name}》上改好 ${ops.length} 处，登记为新版本；另有 ${conflicts.length} 处没有写入（见 conflicts 的序号与原因）：按原因改正后，用这次返回的 artifact_version_id 只重交这几处，已写入的不要重复提交`
+        ? `已在《${name}》上改好 ${ops.length} 处，登记为新版本；已写入第 ${appliedNos.join("、")} 处；另有 ${conflicts.length} 处没有写入（见 conflicts：patch_no 是你提交的 patches 中的第几处，从 1 起，按提交顺序；anchor 是那一处的原文）：按原因改正后，用这次返回的 artifact_version_id 只重交这几处，已写入的不要重复提交`
         : `已在《${name}》上改好 ${ops.length} 处，登记为同名文书的新版本（旧版本保留）。后续再改，用这次返回的 artifact_version_id`,
   };
 }

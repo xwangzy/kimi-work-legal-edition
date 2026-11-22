@@ -1,0 +1,33 @@
+{
+ "stack": "e",
+ "model": null,
+ "tag": "m46-case-report",
+ "run": "run_d4eb0c6d-42bf-4cdd-83ef-6de0a9219ad1",
+ "status": "succeeded",
+ "open": {
+  "v1-案件进展汇报-鸿岫经销合同纠纷-2026-11-09.docx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-进展与风险附表-鸿岫经销合同纠纷-2026-11-09.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v2-案件进展汇报-鸿岫经销合同纠纷-2026-11-09.docx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-进展与风险附表-鸿岫经销合同纠纷-2026-11-09.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v3-案件进展汇报-鸿岫经销合同纠纷-2026-11-09.docx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v3-进展与风险附表-鸿岫经销合同纠纷-2026-11-09.xlsx": {
+   "opened": true,
+   "pages": 6
+  }
+ }
+}

@@ -1,0 +1,29 @@
+{
+ "stack": "a",
+ "model": null,
+ "tag": "m29-dd-list",
+ "run": "run_0f6653e7-d9bf-4958-bdac-74954bd49c42",
+ "status": "succeeded",
+ "open": {
+  "v1-尽调清单-澜屹创投增资栖桐科技.xlsx": {
+   "opened": true,
+   "pages": 12
+  },
+  "v1-访谈提纲-澜屹创投增资栖桐科技.docx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-资料清单（致目标公司）-澜屹创投增资栖桐科技.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-尽调清单-澜屹创投增资栖桐科技.xlsx": {
+   "opened": true,
+   "pages": 12
+  },
+  "v2-访谈提纲-澜屹创投增资栖桐科技.docx": {
+   "opened": true,
+   "pages": 4
+  }
+ }
+}

@@ -10,6 +10,11 @@ import { escapeXml, unescapeXml } from "./textmap.ts";
 export interface SheetSpec {
   name: string;
   rows: (string | number | null)[][];
+  /**
+   * 公式（第 57 批）：键是单元格位置（"J5"），值是不带等号的公式（"SUM(J2:J4)"）。对应格子在 rows 里放算好的数（缓存值），
+   * Excel / WPS 打开时按公式重算，律师改了上游格子结果跟着变。只用于内核自己算出的表（calc.ledger 的《计算明细》），模型不能写公式。
+   */
+  formulas?: Record<string, string>;
 }
 
 const CT = (sheetCount: number) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -113,7 +118,8 @@ function sheetXml(spec: SheetSpec): Buffer {
       if (cell === null || cell === undefined || cell === "") return;
       const ref = `${colName(ci)}${ri + 1}`;
       const s = ri === 0 ? 1 : typeof cell === "number" ? numStyle(cell) : 2;
-      cells += typeof cell === "number" ? `<c r="${ref}" s="${s}"><v>${cell}</v></c>` : `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(String(cell))}</t></is></c>`;
+      const f = typeof cell === "number" ? spec.formulas?.[ref] : undefined;
+      cells += typeof cell === "number" ? `<c r="${ref}" s="${s}">${f ? `<f>${escapeXml(f)}</f>` : ""}<v>${cell}</v></c>` : `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(String(cell))}</t></is></c>`;
     });
     parts.push(Buffer.from(`<row r="${ri + 1}">${cells}</row>`, "utf8"));
   });
@@ -144,7 +150,7 @@ export function createXlsx(sheets: SheetSpec[]): Buffer {
   const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets
     .map((s, i) => `<sheet name="${escapeXml(s.name.slice(0, 31))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`)
-    .join("")}</sheets>${definedNamesXml(sheets)}</workbook>`;
+    .join("")}</sheets>${definedNamesXml(sheets)}${sheets.some((s) => s.formulas && Object.keys(s.formulas).length > 0) ? `<calcPr fullCalcOnLoad="1"/>` : ""}</workbook>`;
   const wbRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets
     .map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`)
@@ -169,7 +175,8 @@ function colIndex(letters: string): number {
 /**
  * 读回本文件 createXlsx 写出的工作簿（V16 第 41 批：xlsx.edit_cells 在已生成的表格上逐格修改，不再整份重出）。
  * 只认本写入器的写法：文字为 t="inlineStr"，数字为 <v>；按 r="B3" 的列字母定位，中间的空格补 null；表名从 xl/workbook.xml 读。
- * 不是本写入器写的（有 sharedStrings、公式、别的单元格类型、行号或格子位置对不上）一律返回 null——律师上传的 Excel 不在此列。
+ * 不是本写入器写的（有 sharedStrings、别的单元格类型、行号或格子位置对不上）一律返回 null——律师上传的 Excel 不在此列。
+ * 本写入器写的公式（数字格子里的 <f>）读回到 formulas。
  * 首行（表头）在 rows[0]；空串与 null 都读成 null（写入时两者都不写格子）。
  */
 export function readCreatedXlsx(buf: Buffer): SheetSpec[] | null {
@@ -191,7 +198,8 @@ export function readCreatedXlsx(buf: Buffer): SheetSpec[] | null {
     const xml = entries.get(`xl/worksheets/sheet${i + 1}.xml`)?.toString("utf8");
     if (!xml) return null;
     const data = /<sheetData>([\s\S]*)<\/sheetData>/.exec(xml)?.[1];
-    if (data === undefined || /<f[\s>]/.test(data)) return null;
+    if (data === undefined) return null;
+    const formulas: Record<string, string> = {};
     const rows: (string | number | null)[][] = [];
     // 每行按 <row r="n">…</row> 读；行号必须从 1 起连续（本写入器每行都写，空行写成空 <row>）
     const rowRe = /<row r="(\d+)">([\s\S]*?)<\/row>/g;
@@ -201,7 +209,7 @@ export function readCreatedXlsx(buf: Buffer): SheetSpec[] | null {
       if (Number(rm[1]) !== rows.length + 1) return null;
       const row: (string | number | null)[] = [];
       let rest = rm[2]!;
-      const cellRe = /^<c r="([A-Z]+)(\d+)" s="\d+"( t="inlineStr")?>(?:<v>([^<]*)<\/v>|<is><t xml:space="preserve">([^<]*)<\/t><\/is>)<\/c>/;
+      const cellRe = /^<c r="([A-Z]+)(\d+)" s="\d+"( t="inlineStr")?>(?:(?:<f>([^<]*)<\/f>)?<v>([^<]*)<\/v>|<is><t xml:space="preserve">([^<]*)<\/t><\/is>)<\/c>/;
       while (rest.length > 0) {
         const cm = cellRe.exec(rest);
         if (!cm || Number(cm[2]) !== rows.length + 1) return null;
@@ -209,21 +217,22 @@ export function readCreatedXlsx(buf: Buffer): SheetSpec[] | null {
         if (ci < row.length) return null;
         while (row.length < ci) row.push(null);
         if (cm[3]) {
-          if (cm[5] === undefined) return null;
-          const t = unescapeXml(cm[5]);
+          if (cm[6] === undefined || cm[4] !== undefined) return null;
+          const t = unescapeXml(cm[6]);
           row.push(t === "" ? null : t);
         } else {
-          if (cm[4] === undefined) return null;
-          const n = Number(cm[4]);
+          if (cm[5] === undefined) return null;
+          const n = Number(cm[5]);
           if (!Number.isFinite(n)) return null;
           row.push(n);
+          if (cm[4] !== undefined) formulas[`${cm[1]}${cm[2]}`] = unescapeXml(cm[4]);
         }
         rest = rest.slice(cm[0].length);
       }
       rows.push(row);
     }
     if (consumed !== data) return null;
-    out.push({ name: unescapeXml(m[1]!), rows });
+    out.push({ name: unescapeXml(m[1]!), rows, ...(Object.keys(formulas).length > 0 ? { formulas } : {}) });
   }
   return out;
 }

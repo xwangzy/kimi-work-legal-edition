@@ -1,0 +1,25 @@
+{
+ "stack": "b",
+ "model": null,
+ "tag": "m34-research-deal",
+ "run": "run_182b5980-aeb5-49ef-aae2-6dadc6237a64",
+ "status": "succeeded",
+ "open": {
+  "v1-来源目录-目标公司与创始人连带回购.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v1-研究备忘录-目标公司与创始人连带回购.docx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v2-来源目录-目标公司与创始人连带回购.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v2-研究备忘录-目标公司与创始人连带回购.docx": {
+   "opened": true,
+   "pages": 8
+  }
+ }
+}

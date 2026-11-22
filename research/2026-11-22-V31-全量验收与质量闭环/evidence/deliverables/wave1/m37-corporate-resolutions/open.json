@@ -1,0 +1,29 @@
+{
+ "stack": "b",
+ "model": null,
+ "tag": "m37-corporate-resolutions",
+ "run": "run_1ece6342-4e23-4aaa-acde-d1a73888c552",
+ "status": "succeeded",
+ "open": {
+  "v1-关于召开杭州栖桐智能科技有限公司临时股东会会议的通知.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-召集与表决核对表-临时股东会.xlsx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v1-杭州栖桐智能科技有限公司临时股东会决议.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-杭州栖桐智能科技有限公司临时股东会决议签署页.docx": {
+   "opened": true,
+   "pages": 1
+  },
+  "v2-召集与表决核对表-临时股东会.xlsx": {
+   "opened": true,
+   "pages": 9
+  }
+ }
+}

@@ -112,7 +112,9 @@ export function artifactText(filename: string, bytes: Buffer): string | "format"
  * 须律师人工核对、勾选后可签发的理由（复核 R15B-03、R15B-14）：法规库没收、款项与本机正文对不上（可能是正文排版）、
  * 适用时点没有有效版本（已废止的旧法按时间效力规定仍可正当引用）。条号超出总条数、已改号仍是定性错误。
  */
-const MANUAL_REASONS = ["unknown_source:", "paragraph_out_of_range:", "item_out_of_range:", "no_applicable_version:"];
+const MANUAL_REASONS = ["unknown_source:", "paragraph_out_of_range:", "item_out_of_range:", "no_applicable_version:", "repealed:"];
+/** “已废止”的提示句开头（交付前检查据此把它报回助手，见 deliverable-check.ts）。 */
+export const REPEALED_REASON_PREFIX = "这部法规";
 
 function classify(v: CitationVerdict): ArtifactCitationCheck["items"][number]["kind"] {
   if (v.state === CitationState.unverifiedOffline) return "case";
@@ -127,6 +129,8 @@ export function reasonText(v: Pick<CitationVerdict, "reasons" | "state" | "sugge
   if (v.state === CitationState.unverifiedOffline) return "案号系统离线没法核对：请到裁判文书网等官方来源逐个核对";
   if (codes.includes("article_out_of_range")) return "条号超出这部法规的总条数";
   if (codes.includes("renumbered")) return v.suggestion ? `适用的版本里这一条已改号：${v.suggestion.replace(/（[^（）]*施行版本）/, "")}` : "适用的版本里这一条已改号";
+  const repealed = v.reasons.find((r) => r.startsWith("repealed:"));
+  if (repealed) return `${REPEALED_REASON_PREFIX}${repealed.slice("repealed:".length)}：只有行为发生在废止之前、按时间效力规定仍适用旧法时才能引用，请核对；不能适用的改引现行规定`;
   if (codes.includes("unknown_source")) return "本机法规库没有收录这部法规，系统没法核对";
   if (codes.includes("no_applicable_version")) return "适用时点没有有效版本（可能已废止或尚未施行），请人工核对适用依据";
   if (codes.includes("paragraph_out_of_range")) return "条号核到了，但本机法规库里这一条没有这么多款（也可能是正文排版），请人工核对";

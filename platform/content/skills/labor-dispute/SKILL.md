@@ -6,12 +6,12 @@ when_to_use: 劳动仲裁应诉、代为申请劳动仲裁、用人单位拟解�
 arguments: [side, mode, situation, claim, received_on, hearing, reason, hired_on, left_on, leave_type, monthly_wage]
 kwl:
   id: labor-dispute
-  version: 1.5.0
+  version: 1.6.1
   lines: [企业法务, 诉讼仲裁]
   chain: labor
   tier: beta
   tools_required: [materials.list, materials.read_excerpt, facts.list, xlsx.render_table, docx.render_report]
-  tools_optional: [facts.submit, law.search, law.get_article, citations.verify, calc.interest, calc.deadline, calc.labor]
+  tools_optional: [facts.submit, law.search, law.get_article, citations.verify, calc.labor, calc.ledger, calc.interest, calc.deadline]
   outputs: [劳动争议应对方案.docx, 解除风险评估.docx, 请求项与敞口表.xlsx, 举证责任与证据清单.xlsx, 解除程序核对清单.xlsx]
   source_lineage: [upstream:legal-agent-skills@83df6b13:lit-labor-dispute, upstream:legal-agent-skills@83df6b13:expert-labor, upstream:legal-agent-skills@83df6b13:expert-labor-employer, upstream:legal-agent-skills@83df6b13:expert-labor-employee, spec:v9.4评审S1§6.1-5]
 ---
@@ -64,7 +64,11 @@ kwl:
    - 经济补偿：每满一年支付一个月工资，六个月以上不满一年按一年，不满六个月支付半个月；月工资为解除或终止前十二个月平均工资；**月工资高于当地上年度职工月平均工资三倍的，基数按三倍、且年限最高不超过十二年——十二年上限只在三倍封顶情形下适用**（劳动合同法第 47 条）。
    - 违法解除赔偿金为经济补偿标准的二倍，年限自用工之日起计算（劳动合同法第 87 条；实施条例第 25 条）。
    - 未签书面劳动合同二倍工资（第 82 条）、未休年休假工资（《职工带薪年休假条例》第 5 条：日工资收入的 300%，含已支付的正常工资部分——《企业职工带薪年休假实施办法》第 10 条，故差额通常为 200%）、加班费等按参考文件写公式。
-   - **经济补偿 N 与违法解除赔偿金 2N 用 `calc.labor` 计算**（入职日、解除日、前十二个月平均工资；当地上年度职工月平均工资与最低工资只用律师或材料给出的数，没有就不填），把它返回的过程（steps）写进交付件，提示（warnings）按工作准则第 4 条用自己的话写明对金额的影响；工资构成有争议的（是否计入年终奖、津贴，是否三倍封顶）各口径都算并列；工具不可用时才由受限命令行用 Python decimal 计算，写明公式、基数来源（文件 · 位置或“律师提供”）、期间与取整规则，标“手工计算，请复核”。2008 年以前的工作年限 `calc.labor` 不算，列入“待律师计算”。利息类用 `calc.interest`（LPR 倍数用 lpr_times）。入职或离职日只到月的，年限与金额给区间。
+   - **经济补偿 N、违法解除赔偿金 2N 与未休年休假工资用 `calc.labor` 计算**：N、2N 给入职日、劳动关系最后一日与月工资；**有逐月工资台账的，用 `wage_table`**：`months` 把台账逐月各项目原样抄一次（基本工资、津贴、绩效、加班费、年终奖、扣款各一项，扣款写负数），`include` 写本口径计入月工资的项目；工资构成有争议的（加班费、年终奖计不计入，扣款加不加回），**每个口径调用一次、台账不动、只改 `include`**，口径名称照 `include` 如实写（“剔除加班费、不加回旷工扣款”）；**不要自己把某个月的数剔除或加回后再传**（第二波真实复验：手工调整时把 8 月扣款加回了两次，赔偿金多算三千多元）。只有逐月合计数的才用 `monthly_wages_yuan`；只有一个平均数的写 `avg_monthly_wage_yuan`。未休年休假工资用 `kind: annual_leave`：月工资是支付前十二个月剔除加班工资后的月平均（同一份 `wage_table`，`include` 不含加班费）与 `unused_days`，`leave_multiple` 缺省 2（正常工资已发、另付 200%），主张全额 300% 的写 3。当地上年度职工月平均工资与最低工资只用律师或材料给出的数，没有就不填。把返回的过程（steps）写进交付件，提示（warnings）按工作准则第 4 条用自己的话写明对金额的影响。2008 年以前的工作年限 `calc.labor` 不算，列入“待律师计算”。入职或离职日只到月的，年限与金额给区间（两端各算一次）。
+   - **工资构成有争议的各口径并列**（是否计入年终奖、津贴、加班费，旷工等扣款是否加回，是否三倍封顶）：每个口径各给一组逐月数字、各调用一次，口径名称写明这组数字是怎么来的（如“台账应发（未加回扣款）”“台账应发＋加回旷工扣款”“剔除年终奖”），**名称必须与给进去的数字一致**，不把加回扣款后的数标成“台账应发”。
+   - 工资差额、二倍工资差额这类逐月相加的项目，各月金额作为 `calc.ledger` 的 `debts`（`rate` 写 none）交给它合计；欠付工资主张利息的同一次算出。加班费没有专门工具，按工作准则第 4 条手工计算并标“手工计算，请复核”。
+   - **各情景的合计**：把该情景各项金额（照抄上面的返回值）作为 `debts`、`rate` none 交给 `calc.ledger` 求和，或在表里由合计行给出、在文书里写出算式（“××＋××＝××”）；不心算合计。方案、表格与回报里的同一个数照抄同一个工具返回值，改一处时各处同一次改完。
+   - 工具不可用时按工作准则第 4 条手工计算，写明公式、基数来源（文件 · 位置或“律师提供”）、期间与取整规则，标“手工计算，请复核”。
    - 敞口表只列情景与金额，**不替客户定和解金额或底线**；律师或客户给了调解上限的，只写进内部方案的“下一步”，不进要发给对方的文件。
 6. **程序路径**：按 `references/procedure-paths.md` 写明仲裁前置、管辖、答辩与开庭节点、终局裁决的不对称救济（劳动争议调解仲裁法第 47—50 条）与非终局裁决的起诉期限；各期限的届满日口径同第 2 步。
 7. **地方口径待核清单**：年休假工资性质与时效、二倍工资起算与时效、加班费与经济补偿的工资基数、社保损失的受案范围、当地上年度职工月平均工资与最低工资标准、竞业限制补偿标准。**不凭记忆写地方规定**；律师提供地方文件后再按文件写。
@@ -81,8 +85,9 @@ kwl:
 | law.get_article | 取条文原文核对前提条件（可选） | law，article，as_of |
 | citations.verify | 核验所引条文 | citations[{law, article}]（本批要引的条文一次带齐），as_of |
 | calc.deadline | 时效、答辩、起诉、撤销申请等期限的届满日 | 起算事实日，期间，规则 |
-| calc.labor | 经济补偿 N、违法解除赔偿金 2N、代通知金 | 入职日、解除日、kind、前十二个月平均工资，当地平均工资与最低工资（律师给的） |
-| calc.interest | 利息类金额（可选） | 本金、期间、利率口径 |
+| calc.labor | 经济补偿 N、违法解除赔偿金 2N、代通知金、未休年休假工资 | kind（compensation · unlawful · annual_leave），入职日、劳动关系最后一日，wage_table（台账 + 计入项目）、monthly_wages_yuan（逐月合计）或 avg_monthly_wage_yuan，unused_days，当地平均工资与最低工资（律师给的） |
+| calc.ledger | 逐月工资差额、二倍工资差额的合计，欠薪利息，各情景合计 | scenarios[{name, as_of, debts, rate}] |
+| calc.interest | 单独一段利息（可选） | 本金、期间、利率口径 |
 | docx.render_report | 应对方案 / 解除风险评估 | title，sections |
 | xlsx.render_table | 各表 | title，sheets[{name, columns, rows}] |
 
@@ -116,7 +121,8 @@ kwl:
 - [ ] 举证责任按劳动争议解释（一）第 44、42 条与调解仲裁法第 6 条分配，写明我方要证明什么。
 - [ ] 涉及单方解除的，理由、依据条款、制度三要件、禁止解除情形、通知工会、送达逐项都有结论或“待确认”。
 - [ ] 经济补偿的三倍封顶与十二年上限只在月工资高于三倍时适用，没有对普通工资套用十二年上限。
-- [ ] 每个金额都写了公式、基数来源、期间与取整规则；手工计算的标“请复核”。
+- [ ] 每个金额都写了公式、基数来源、期间与取整规则；月平均工资由工具从逐月数字求出，没有自己加总；手工计算的标“请复核”。
+- [ ] 各工资口径的名称与给进工具的那组数字一致；方案、表格与回报里的同一个数来自同一个工具返回值，情景合计由工具或写出的算式给出。
 - [ ] 当地平均工资、最低工资与地方口径没有凭记忆写；已列入地方口径待核清单。
 - [ ] 事实已分“材料记载 / 律师确认 / 推论”；员工或客户单方陈述没有写成已查明事实。
 - [ ] 补证建议只针对真实既存的材料，没有建议倒签或补造任何记录与程序（按实际日期补订书面合同除外）。

@@ -1,0 +1,29 @@
+{
+ "stack": "c",
+ "model": null,
+ "tag": "m09-arbitration-app",
+ "run": "run_65dc0243-6826-4260-89c3-f6710d58c5b1",
+ "status": "succeeded",
+ "open": {
+  "v1-仲裁申请书.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-仲裁请求违约金计算明细-锐川与甬岚纸业设备买卖合同.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v1-提交前核对清单-锐川与甬岚纸业设备买卖合同仲裁.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-证据目录-锐川与甬岚纸业设备买卖合同仲裁.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-提交前核对清单-锐川与甬岚纸业设备买卖合同仲裁.xlsx": {
+   "opened": true,
+   "pages": 5
+  }
+ }
+}

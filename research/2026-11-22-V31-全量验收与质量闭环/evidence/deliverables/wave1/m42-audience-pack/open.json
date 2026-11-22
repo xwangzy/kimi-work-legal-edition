@@ -1,0 +1,17 @@
+{
+ "stack": "b",
+ "model": null,
+ "tag": "m42-audience-pack",
+ "run": "run_e41b736d-19e0-4531-8689-347dc0d36b5e",
+ "status": "succeeded",
+ "open": {
+  "v1-脱敏件-门店收银系统维保服务合同（签署版·含账户与联系人信息）.docx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-脱敏报告-2026-11-22.docx": {
+   "opened": true,
+   "pages": 1
+  }
+ }
+}

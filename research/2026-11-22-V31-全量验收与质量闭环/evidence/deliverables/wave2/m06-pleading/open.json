@@ -1,0 +1,33 @@
+{
+ "stack": "c",
+ "model": null,
+ "tag": "m06-pleading",
+ "run": "run_187de74c-795d-4fcd-b9b9-c45f2cbc2b51",
+ "status": "succeeded",
+ "open": {
+  "v1-提交前核对清单-锐川诉禾丰设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-民事起诉状.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-计算明细-锐川诉禾丰设备买卖合同纠纷-截至2026-11-30.xlsx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v1-证据目录-锐川诉禾丰设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-民事起诉状.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-计算明细-锐川诉禾丰设备买卖合同纠纷-截至2026-11-30.xlsx": {
+   "opened": true,
+   "pages": 7
+  }
+ }
+}

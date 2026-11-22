@@ -1,0 +1,6 @@
+{"tag": "m37-corporate-resolutions", "card": "corporate-resolutions", "veto": [], "score": 20, "dims": [3, 2, 3, 3, 2, 2, 3, 2],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 17, "questions": 0,
+ "top_issues": ["决议与通知正文夹带给律师的说明句（“不以多数表决代替”“不因转让无偿而免除关联回避程序”）", "选举范以宁、修改章程没有写以董事会扩员议案通过为前提，复核建议未采纳", "核对表把增资协议“丁一　沈拂柳”误判为原股东身份矛盾；优先认缴没写第227条按实缴比例"],
+ "prev_score": null,
+ "product_defect": ["界面/方法用语进成果：方法里的处理口径（不以多数表决代替、无偿不免除回避）被原样写进对外的股东会决议和会议通知", "复核没拦住：复核提出的议案联动意见只标“建议改”，流程直接跳过修改（review.skipped: suggestions_only），实质性的决议效力问题没进入修改轮"],
+ "known_defects_recurring": [], "new_defects": []}

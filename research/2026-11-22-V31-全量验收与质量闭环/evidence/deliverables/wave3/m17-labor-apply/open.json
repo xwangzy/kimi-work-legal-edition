@@ -1,0 +1,53 @@
+{
+ "stack": "e",
+ "model": null,
+ "tag": "m17-labor-apply",
+ "run": "run_b508b8c5-6828-4141-b3d9-99ff4fbd1d84",
+ "status": "succeeded",
+ "open": {
+  "v1-举证责任与证据清单-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-劳动争议应对方案-澜栖违法解除与竞业限制.docx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v1-请求项与敞口表-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v2-举证责任与证据清单-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-劳动争议应对方案-澜栖违法解除与竞业限制.docx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v2-请求项与敞口表-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v3-举证责任与证据清单-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v3-劳动争议应对方案-澜栖违法解除与竞业限制.docx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v3-请求项与敞口表-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v4-劳动争议应对方案-澜栖违法解除与竞业限制.docx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v4-请求项与敞口表-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 10
+  }
+ }
+}

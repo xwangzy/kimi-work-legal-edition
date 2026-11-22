@@ -10,6 +10,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EgressGateServer } from "../src/server.ts";
+import { extractUsage } from "../src/usage.ts";
 import type { AuthorizeResult, GateAuthority, GateEgressRecord, MatterEgressContext } from "../src/types.ts";
 import type { TokenEntry } from "@zr-legal/tokenizer";
 import { ipcPath } from "./ipc-path.ts";
@@ -262,4 +263,12 @@ describe("出站闸门服务", () => {
     await call(socket, "/m/m1/v1/chat/completions", { model: "kimi-k3", messages: [{ role: "user", content: "逐字引用第3.1条。" }, { role: "tool", tool_call_id: "c2", content: contract }] });
     assert.ok(model.bodies.at(-1)!.body.includes(contract), model.bodies.at(-1)!.body);
   });
+});
+
+test("流式用量：截断在 JSON 左括号的尾部仍读取完整用量事件，支持无空格的 data 字段", () => {
+  const usage = { prompt_tokens: 815, completion_tokens: 52, prompt_tokens_details: { cached_tokens: 256 }, completion_tokens_details: { reasoning_tokens: 13 } };
+  const expected = { input: 815, output: 52, cached: 256, cacheWrite: 0, reasoning: 13 };
+  const event = JSON.stringify({ choices: [], usage });
+  assert.deepEqual(extractUsage(`{"delta":{}}]}\n\ndata: ${event}\n\ndata: [DONE]\n`), expected);
+  assert.deepEqual(extractUsage(`data:${event}\r\n\r\ndata:[DONE]\r\n`), expected);
 });

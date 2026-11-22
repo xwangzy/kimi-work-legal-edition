@@ -6,7 +6,7 @@ when_to_use: 事项中有我方发出的基线稿和对方回稿两份 DOCX，�
 arguments: [baseline, current, focus]
 kwl:
   id: redraft-review
-  version: 1.3.0
+  version: 1.3.1
   lines: [非诉, 企业法务]
   chain: contract
   tier: beta
@@ -21,7 +21,7 @@ kwl:
 ## 1. 适用范围
 - **交付**：①《变更清单》.xlsx（全部改动，静默改动单独标出，含我方上一轮修改的采纳跟踪）；②对新问题提交的风险卡（审查工作台）；③可选《回稿审查意见（内部稿）》.docx。
 - **重审范围**：只重审被改动的条款，以及**受改动影响**的条款——被改动的定义所涉及的全部条款、被改动条款所引用或引用它的条款、编号变动导致互引失效的条款。未改动且不受影响的条款不重审；律师要求整稿重审时改用 `contract-review`。
-- **不适用**：首次审查（→ `contract-review`）；写修订说明（→ `contract-redline`）；生成修订稿（律师在工作台操作）。
+- **不适用**：首次审查（→ `contract-review`）；写修订说明（→ `contract-redline`）；在回稿上直接出修订稿（→ 按意见改用 `doc-revise`，整稿重审并出修订稿用 `contract-review`；也可由律师在审查工作台逐条采纳后生成）。
 
 ## 2. 输入与前置检查
 1. 调用 `materials.list`，确定基线稿（我方最后发出的版本）与回稿（对方返回的版本）的 `document_version_id`。两份都必须是 DOCX；方法参数 `baseline`、`current` 已指定的直接使用。

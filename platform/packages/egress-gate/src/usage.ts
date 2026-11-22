@@ -24,14 +24,16 @@ export function extractUsage(text: string): GateUsage | null {
     try {
       return pick(JSON.parse(trimmed));
     } catch {
-      return null;
+      // 截短的 SSE 尾部也可能从一个左括号开始，继续检查完整的事件行。
     }
   }
   let found: GateUsage | null = null;
   for (const line of text.split("\n")) {
-    if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trim();
+    if (payload === "[DONE]") continue;
     try {
-      found = pick(JSON.parse(line.slice(6))) ?? found;
+      found = pick(JSON.parse(payload)) ?? found;
     } catch {
       // 非 JSON 行（或尾部截断的首行）
     }

@@ -1,0 +1,29 @@
+{
+ "stack": "e",
+ "model": null,
+ "tag": "m10-hearing-outline",
+ "run": "run_763787fc-49b1-4eda-9e7d-f178280e1d28",
+ "status": "succeeded",
+ "open": {
+  "v1-举证质证顺序表-禾丰诉锐川买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-庭审提纲-禾丰诉锐川买卖合同纠纷.docx": {
+   "opened": true,
+   "pages": 12
+  },
+  "v2-举证质证顺序表-禾丰诉锐川买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-庭审提纲-禾丰诉锐川买卖合同纠纷.docx": {
+   "opened": true,
+   "pages": 11
+  },
+  "v3-庭审提纲-禾丰诉锐川买卖合同纠纷.docx": {
+   "opened": true,
+   "pages": 11
+  }
+ }
+}

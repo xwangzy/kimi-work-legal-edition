@@ -1419,6 +1419,12 @@ export function briefGoalLine(card: Pick<ScenarioCard, "brief">, brief: string, 
   return `${card.brief.label}见材料《${briefFilename(day)}》：这是我对情况的陈述，先读它；其中的事实按“待我确认”处理，不列进证据目录。`;
 }
 
+/**
+ * 企业法务线的读者口径（第 57 批全量验收，合同审核一单）：同一个审合同方法给律所和企业法务两条线用，企业法务写给本公司采购与分管领导的意见书里
+ * 出现“需客户决定”十余处、“本所覆盖规则”“不得直接发送客户或对方”，也没有致送对象和落款。方法是共用的，口径差别由发起任务的这一句交代。
+ */
+export const INHOUSE_READER_LINE = "读者是本公司的业务部门与管理层：按企业法务的口径写，称“我方”“公司”，需要别人拍板的写“需业务部门决定”或“需管理层决定”，不写“客户”“本所”“律师处理”；给业务部门或管理层看的文书留出致送对象、出具部门与日期。";
+
 export function buildGoal(card: ScenarioCard, values: Record<string, string | string[]>, extra: string): string {
   const parts = card.goal.split(/(?<=[。；])/);
   const out = parts
@@ -1444,7 +1450,7 @@ export function buildGoal(card: ScenarioCard, values: Record<string, string | st
     while (j >= 0 && out[j] === "") j--;
     if (j >= 0 && out[j]!.endsWith("；")) out[j] = `${out[j]!.slice(0, -1)}。`;
   }
-  return [out.join("").trim(), extra.trim()].filter(Boolean).join("\n");
+  return [out.join("").trim(), card.line === "inhouse" ? INHOUSE_READER_LINE : "", extra.trim()].filter(Boolean).join("\n");
 }
 
 /**

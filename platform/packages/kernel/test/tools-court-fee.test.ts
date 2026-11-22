@@ -60,3 +60,9 @@ test("工具登记：calc.court_fee 在法律工具名单与锁文件里；参�
   assert.throws(() => validateParams(t.inputSchema, { kind: "case_property", amount_yuan: 1, reductions: ["half"] }));
   assert.throws(() => validateParams(t.inputSchema, { kind: "case_property", amount_yuan: -1 }));
 });
+
+test("第 57 批：金额按十进制四舍五入到分（浮点尾差不把 x.xx5 舍掉）", async () => {
+  const { roundHalfUpCents } = await import("../src/tools/tools/court-fee.ts");
+  for (const [n, want] of [[1.005, 1.01], [2.675, 2.68], [6913.075, 6913.08], [13826.15 / 2, 6913.08], [0.1 + 0.2, 0.3], [-2.675, -2.68], [123456789.125, 123456789.13], [10.004, 10]] as const)
+    assert.equal(roundHalfUpCents(n), want, String(n));
+});

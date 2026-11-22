@@ -423,7 +423,7 @@ export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { na
  * 写出表格并登记为本任务的草稿成果（xlsx.render_table 与 xlsx.edit_cells 共用）：存文件、登记成果、版本缩水检查、交付前检查。
  * 同一任务里同名的表格串成同一份文件的各个版本。
  */
-function finishTable(ctx: InvokeCtx, title: string, specs0: SheetSpec[], tool: "xlsx.render_table" | "xlsx.edit_cells", extraManifest: Record<string, unknown> = {}) {
+export function finishTable(ctx: InvokeCtx, title: string, specs0: SheetSpec[], tool: "xlsx.render_table" | "xlsx.edit_cells" | "calc.ledger", extraManifest: Record<string, unknown> = {}) {
   // 事实对照（V16 第 41 批）：单元格里写了“事实 N”的，自动追加一张“事实对照”，只列被引用到的序号
   // 质量说明（第 42 批）：表格里独立成格的“通用辅助 · 未经本所质量验收”“草稿 · 待律师复核”由内核直接删掉（只剩行名的整行去掉）；表头行不删
   let cleaned = 0;
@@ -544,7 +544,7 @@ export function xlsxEditCells(
   // 每行补齐到表头列数（写入时末尾的空格不写，读回会短）
   const specs: SheetSpec[] = read.filter((sh) => !(autoFacts && sh.name === FACT_SHEET_NAME)).map((sh) => {
     const width = sh.rows[0]?.length ?? 0;
-    return { name: sh.name, rows: sh.rows.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? null)) };
+    return { name: sh.name, rows: sh.rows.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? null)), ...(sh.formulas ? { formulas: sh.formulas } : {}) };
   });
 
   const rejected: { op: CellOp; index: number; reason: string }[] = [];
@@ -555,6 +555,11 @@ export function xlsxEditCells(
     const n = String(name ?? "");
     const hit = specs.find((x) => x.name === n) ?? specs.find((x) => x.name === n.trim());
     if (!hit) rejected.push({ op, index, reason: `没有名为“${n}”的工作表；这份表格的工作表：${sheetNames()}` });
+    // 第 57 批：calc.ledger 算出来的工作表（带公式）不逐格改——改了一格，别的格子、别的工作表里的同一个数就对不上了
+    if (hit?.formulas && op !== "replace") {
+      rejected.push({ op, index, reason: `“${hit.name}”是 calc.ledger 算出来的工作表，数字不能逐格改：改参数后用同一个 title 重新调用 calc.ledger（成为这份表格的新版本）；只是换说法的用 replace` });
+      return null;
+    }
     return hit ?? null;
   };
   const dataRows = (sh: SheetSpec) => sh.rows.length - 1;

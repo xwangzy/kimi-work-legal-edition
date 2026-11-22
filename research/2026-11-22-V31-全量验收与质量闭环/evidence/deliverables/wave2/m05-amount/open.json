@@ -1,0 +1,17 @@
+{
+ "stack": "c",
+ "model": null,
+ "tag": "m05-amount",
+ "run": "run_71346b94-fac0-41e6-a8d7-44839f5f836e",
+ "status": "succeeded",
+ "open": {
+  "v1-计算明细-禾丰设备款-截至2026-11-30.xlsx": {
+   "opened": true,
+   "pages": 14
+  },
+  "v2-计算明细-禾丰设备款-截至2026-11-30.xlsx": {
+   "opened": true,
+   "pages": 14
+  }
+ }
+}

@@ -3,7 +3,7 @@
 // 按建议点下去只出修订稿与清洁稿，律师要的审查意见书不会出）
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SCENARIOS, startPanelInitial, suggestScenario } from "../src/lib/scenarios.ts";
+import { SCENARIOS, startPanelInitial, suggestScenario, INHOUSE_READER_LINE } from "../src/lib/scenarios.ts";
 
 const N3 =
   "请审查德隆发来的《设备采购及安装合同》，我方是买方恒川精密。结合采购部的背景说明，重点看价款与税、付款、交货与风险、验收、质保、违约责任和争议解决，出一份审查意见书，并给出建议的修改条款。";
@@ -53,8 +53,10 @@ test("预填的问题自带句号时任务说明不叠句号（真实走查 R3�
   const q = "客户问能否追究竞业限制违约责任？请出一份正式的法律意见书。";
   const goal = buildGoal(advice, startPanelInitial(advice, q).values, "");
   assert.ok(goal.includes("法律意见书。") && !goal.includes("。。"), goal);
-  assert.equal(buildGoal(advice, { question: "能否解除？" }, ""), "请答复以下问题：能否解除？", "问号结尾不再加句号");
-  assert.equal(buildGoal(advice, { question: "能否解除" }, ""), "请答复以下问题：能否解除。", "没有标点的照常补句号");
+  // 第 57 批：企业法务线的卡在任务说明后另起一行交代读者口径
+  const reader = advice.line === "inhouse" ? `\n${INHOUSE_READER_LINE}` : "";
+  assert.equal(buildGoal(advice, { question: "能否解除？" }, ""), `请答复以下问题：能否解除？${reader}`, "问号结尾不再加句号");
+  assert.equal(buildGoal(advice, { question: "能否解除" }, ""), `请答复以下问题：能否解除。${reader}`, "没有标点的照常补句号");
 });
 
 test("按意见修改文书：输入框里的修改意见预填进必填的“修改意见”栏（真实走查 R7：整段进了补充要求、开始按钮点不了）", () => {

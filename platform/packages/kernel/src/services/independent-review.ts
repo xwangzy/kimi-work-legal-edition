@@ -13,6 +13,7 @@ import type { Lawdb } from "@zr-legal/lawdb";
 import { sectionsOfDocx } from "../tools/tools/edit-draft.ts";
 import { scrubQualityLine } from "./deliverable-check.ts";
 import { citationsVerify, extractCitations } from "../tools/tools/citations.ts";
+import { LAW_ALIASES } from "../tools/tools/law-names.ts";
 import { cnToInt, intToCn } from "../tools/tools/cn-numerals.ts";
 
 export type ReviewKind = "draft" | "revise" | "opinion" | "pleading" | "review" | "letter" | "report" | "table" | "rules";
@@ -129,6 +130,8 @@ export interface ReviewFinding {
   must: boolean;
   /** 四级（D-223）。可缺省：第 56 批之前的检查点与手写的意见只有 must，按 findingLevel 补成 must / should。 */
   level?: ReviewLevel;
+  /** 内核金额勾稽查出的意见（D-229）带这个标识：修改后内核重跑同一项核对，标识还在就是没落实。模型提的意见没有。 */
+  machine_key?: string;
 }
 
 /** 意见的级别：有 level 用 level，没有的（旧检查点）按 must 落到“必须改”或“建议改”。纯函数。 */
@@ -235,8 +238,14 @@ function articleChain(rest: string): number[] {
   return out;
 }
 
+/** 法名与条号之间出现这些字样，说明条号属于以这部法命名的另一部文件（司法解释、实施条例、纪要等）。 */
+const OTHER_INSTRUMENT_RE = /解释|规定|纪要|批复|办法|条例|细则|意见|答复/;
+
 /** 法名后面紧跟的版本括注（“（2024-07-01施行）”“（2023年修订，2024-07-01施行）”）跳过，后面才是条号。纯函数。 */
 const afterVersionNote = (s: string): string => s.replace(/^\s*[（(][^（）()《》\n]{0,40}(?:年|修订|修正|施行|生效)[^（）()《》\n]{0,20}[）)]\s*/, "");
+
+/** 简称表里的全部名字（长的在前）：判断一处法名是不是更长法名的结尾。 */
+const LONGER_NAMES: readonly string[] = Object.keys(LAW_ALIASES).sort((a, b) => b.length - a.length);
 
 export function lawRefsIn(texts: readonly string[], o: { followBare?: boolean } = {}): LawRef[] {
   const out: LawRef[] = [];
@@ -254,6 +263,8 @@ export function lawRefsIn(texts: readonly string[], o: { followBare?: boolean } 
   // 文书自己起的简称（《办案规则》）：恰好是这批文字里另一部被引法名的结尾、且只对得上一部的，按那部法取
   const full = (law: string): string => {
     const n = law.replace(/^中华人民共和国/, "");
+    // 本身就是一部法的名字（仲裁法、合同法）不当作别的法的简称：否则同一份文书既引仲裁法又引劳动争议调解仲裁法时，前者被并到后者上
+    if (LAW_ALIASES[n]) return law;
     const longer = names.filter((x) => x !== n && x.endsWith(n));
     return n.length >= 3 && longer.length === 1 ? longer[0]! : law;
   };
@@ -270,9 +281,15 @@ export function lawRefsIn(texts: readonly string[], o: { followBare?: boolean } 
     const items: { at: number; law: string; article: number }[] = found.map((c) => ({ at: c.offset, law: c.law, article: c.article }));
     for (const name of names) {
       for (let at = text.indexOf(name); at >= 0; at = text.indexOf(name, at + name.length)) {
+        // 这一处其实是更长的法名的结尾（“调解仲裁法”里的“仲裁法”）：归那部更长的法，不在这里取
+        if (LONGER_NAMES.some((k) => k.length > name.length && k.endsWith(name) && text.slice(at + name.length - k.length, at + name.length) === k)) continue;
         let from = at + name.length;
         if (text[from] === "》") from += 1;
-        const arts = articleChain(afterVersionNote(text.slice(from, from + 240)));
+        const rest = afterVersionNote(text.slice(from, from + 240));
+        // 法名后面到“第”之间夹着“……解释 / 规定 / 纪要”的，是另一部文件（“民法典合同编通则解释第三十一条”不是民法典第三十一条）。
+        // 第 57 批全量验收（法规研究一单）：复核人拿到的“法条原文”把合同编通则解释第 31、55 条取成了民法典第 31、55 条，据此误报“无法核验”
+        if (OTHER_INSTRUMENT_RE.test(rest.slice(0, Math.max(0, rest.indexOf("第"))))) continue;
+        const arts = articleChain(rest);
         arts.forEach((article, i) => items.push({ at: at + i / 1000, law: name, article }));
       }
     }
@@ -290,6 +307,8 @@ export function lawRefsIn(texts: readonly string[], o: { followBare?: boolean } 
         const at = m.index ?? 0;
         if (spans.some(([a, b]) => at >= a && at < b)) continue;
         if (DOC_INTERNAL_BEFORE.test(text.slice(Math.max(0, at - 10), at))) continue;
+        // 条号前面紧挨着“……解释 / 规定 / 纪要”的，是那部文件的条号，不归到前面最近被引的法上
+        if (/(?:解释|规定|纪要|批复|办法|条例|细则|意见|答复)(?:[（(][^（）()]{0,8}[）)])?\s*$/.test(text.slice(Math.max(0, at - 14), at))) continue;
         const prev = found.filter((c) => c.offset < at).at(-1);
         const n = cnToInt(m[1]!.replace(/〇/g, "零").replace(/两/g, "二"));
         if (prev && n !== null) items.push({ at, law: prev.law, article: n });
@@ -481,6 +500,8 @@ const FOCUS: Record<ReviewKind, string> = {
     "2. 事实与理由：是否只写对我方有利且有证据支撑的事实；有没有替我方自认不利事实、沿用对方口径（起算日、基数）或承认对方主张。",
     "3. 法律依据与请求权基础是否对应；对方最可能的抗辩是否有回应；备位主张是否写到。",
     "4. 程序事项：管辖、时效或期间、答辩期、证据目录与证据是否对应。",
+    // 第 57 批（第 56 批真实验收，上诉状）：请求货款改判至 228,000 元，违约金请求却写“基数不变”仍按 152,000 元，复核零意见
+    "5. 请求之间是否自洽：请求增加、减少或改判本金（或其他作为计算基数的款项）的，以它为基数的利息、违约金请求与诉讼费负担有没有同步写明——基数跟着变，还是明确维持原基数并说明理由；前后请求互相打架或后一项请求把前一项的效果抵掉的，写出两处原文，列为必须改。",
   ].join("\n"),
   letter: [
     "1. 函件类型与法律效果：这是催告、主张权利、解除通知还是保证责任主张？函件标题、主张、要求与逾期后果是否自洽；律师在任务中选定了路径的（例如“先催告、期满未履行再解除”），函件与最终答复有没有写成另一条路径（例如写“我方已有权解除”“现通知解除”）。",
@@ -516,7 +537,9 @@ const FOCUS: Record<ReviewKind, string> = {
   rules: [
     "交付的是审查要点草稿（律师审定启用后，以后审这类合同时按它判“偏离”），每条写“要点 n｜条款｜我方标准｜可退让｜不可谈”；位置写“要点 n”。",
     "1. 出处：每一条的我方标准、可退让能否在范本或客户标准里找到写明的原文；范本没写的不应补，范本写明不属于合同条款的（如内部审批流程）不应收为要点。",
-    "2. 不可谈：只有范本写明不能接受、必须、红线的事项才写不可谈；把范本的一般立场写成不可谈、或范本写明的底线漏写的，列出来。",
+    // 第 57 批全量验收（企业法务线要点整理）：客户标准有“属性”一栏，某行标准写“不接受低于 100%”、属性栏是“—”；首稿没写成不可谈（对），
+    // 复核人按“有‘不接受’字样即底线”判必须补成不可谈，起草方照改，改错了，命中否决项
+    "2. 不可谈：只有范本写明不能接受、必须、红线的事项才写不可谈；把范本的一般立场写成不可谈、或范本写明的底线漏写的，列出来。范本或客户标准带“属性 / 可谈性 / 谈判空间”一栏的，以这一栏为准：栏里是“—”、空白或“可谈”的，即使标准栏的措辞是“不接受”“必须”，也只是我方标准，不是不可谈——不要要求把它补成不可谈。本所范本与客户标准对同一事项写法相反的（一个约定仲裁、一个不接受仲裁），哪一个作底线由律师定：草稿里单方面定成不可谈的，列出来。",
     "3. 覆盖：逐节对照范本，范本写明的立场是否都收进了要点；同一事项是否重复或互相矛盾。",
     "4. 范本本身前后矛盾、或低于客户在别处写明的底线的，是否在给律师的答复里提示（不替客户定）。",
   ].join("\n"),
@@ -534,11 +557,23 @@ const ROLE: Record<ReviewKind, string> = {
   rules: "下面是一位律师助理从本所范本、客户标准里整理出的审查要点草稿",
 };
 
+/**
+ * 分析截止日与实际运行日不同时的说明（第 57 批全量验收，回稿审查一单）：复核人只知道分析截止日，把变更清单里如实写的
+ * “比对时间：2026年11月22日”判成“没有依据、晚于分析截止日，必须改”；起草方有理有据不改，回看仍判未落实，一份完整的成果被记成部分完成。
+ * 两个日期相同（律师没有另设分析截止日的常态）时不加这一行。纯函数。
+ */
+export function runDateLines(asOf: string | undefined, today: string | undefined): string[] {
+  if (!asOf || !today || asOf === today) return [];
+  return [`【日期】事项的分析截止日是 ${asOf}，这些文件实际生成于 ${today}：期限是否届满、逾期天数按分析截止日判断；文件里如实写明的生成、比对、制表日期（${today}）是正常的，不算没有依据，不要就此提意见。`];
+}
+
 export function reviewMessages(p: {
   kind: ReviewKind;
   stance: string;
   jurisdiction: string;
   asOf: string;
+  /** 实际运行日（本机日期）：与分析截止日不同时告诉复核人两个日期各管什么（第 57 批）。 */
+  today?: string;
   goal: string;
   materials: readonly { filename: string; text: string }[];
   docs: readonly ReviewDoc[];
@@ -577,12 +612,16 @@ export function reviewMessages(p: {
     "1. “改法”写要改什么、改到什么程度、依据在材料哪里；不替起草人写成段的对外正文，不写【待填】，不把材料里没有的事实写成已经发生。",
     "2. 意见必须站在委托人一方：会削弱我方主张、让我方多承担义务或放弃权利的改法，不提；确有法律障碍必须提示的，写成“风险提示”，不定为“必须改”。",
     "3. 涉及金额、日期、期限的意见，写出取自哪份材料的哪个数和算式；自己没有逐项复算清楚的，标“建议复算”，不定为“必须改”。",
+    // 第 57 批真实复验（强制执行）：计算表按“履行期间最后一日的次日起算”算出加倍部分债务利息，复核人按司法解释“自届满之日起”的字面
+    // 判“少计一日，必须改回含届满当日”；起草方按方法不改，回看仍判未落实，任务被记成部分完成。口径之争不是算错
+    "3a. 计算表“参数与假设”里列为“计算口径（本表固定口径）”的各项（起算日是最后履行日的次日还是当日、截止日是否含当日、付款当日计不计、抵充顺序、舍入）和按它算出的数，出自确定性的计算工具，系统已另行复核算式并核对各文件里的同一金额：不要按你自己的口径重算后要求改数。你认为口径本身应当不同的（例如法条字面是“自届满之日起”），写明另一种读法、依据与由此产生的差额，列为“风险提示”交律师决定，不定为“必须改”；只有参数与材料不符（本金、付款日期、利率抄错，漏了一笔付款）才是“必须改”。",
     "4. “必须改”只用于：与委托或材料明显不符、法律依据错误、金额或期限错误、遗漏委托事项、会直接损害委托人的表述；其余用“建议改”。",
     // V16 第 41 批真实回归 m09、E7：复核人凭记忆把新仲裁法第二十七条（仲裁协议）判成“必须改为第二十五条”
     "5. 你查不了法规库，法律会修订、条号会变：对条号、条文内容的意见，只能以“文书引用的法条在本机法规库里的原文”一节为依据；这一节写了“无法核对”、没有附原文或没有列出的条文，写“建议核对原文”，不定为“必须改”，不凭记忆断定条号错误。",
   ].join("\n");
   const user = [
     `【事项口径】我方立场：${p.stance}；法域：${p.jurisdiction}；分析截止日：${p.asOf}`,
+    ...runDateLines(p.asOf, p.today),
     `【委托原话】\n${p.goal}`,
     ...(p.answers && p.answers.length > 0
       ? [
@@ -792,10 +831,11 @@ export const FOLLOW_UP_SYSTEM = [
 ].join("\n");
 
 /** 回看的提示（各部分均为代号形态）。 */
-export function followUpMessages(p: { findings: readonly ReviewFinding[]; handling: string; docs: readonly { filename: string; text: string }[]; hints: readonly string[]; laws?: readonly string[]; asOf?: string }): { role: "system" | "user"; content: string }[] {
+export function followUpMessages(p: { findings: readonly ReviewFinding[]; handling: string; docs: readonly { filename: string; text: string }[]; hints: readonly string[]; laws?: readonly string[]; asOf?: string; today?: string }): { role: "system" | "user"; content: string }[] {
   const lens = allocateDeliverables(p.docs.map((d) => d.text.length));
   const cutAt = (t: string, n: number) => (t.length > n ? `${t.slice(0, n)}\n……（以下从略）` : t);
   const user = [
+    ...runDateLines(p.asOf, p.today),
     "=== 你标为“必须改”的意见 ===",
     ...p.findings.map((f) => `【${f.no}】${[f.where, f.problem, f.basis, f.fix].filter(Boolean).join("｜")}`),
     "",

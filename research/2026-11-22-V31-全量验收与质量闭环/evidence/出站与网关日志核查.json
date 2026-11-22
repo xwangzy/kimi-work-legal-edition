@@ -1,0 +1,182 @@
+[
+  {
+    "wave": "v31-wave1",
+    "stack": "stack-a",
+    "egress": [
+      {
+        "destination_kind": "legal_gateway",
+        "destination_host": "127.0.0.1:18651",
+        "outcome": "sent",
+        "completed": 1,
+        "records": 245,
+        "chars": 48659316,
+        "replacements": 9797
+      },
+      {
+        "destination_kind": "search_service",
+        "destination_host": "127.0.0.1:18652",
+        "outcome": "sent",
+        "completed": 1,
+        "records": 1,
+        "chars": 24,
+        "replacements": 0
+      }
+    ],
+    "forbidden_meter_fields": {},
+    "meter_lines": 490,
+    "settlements_without_egress": 0
+  },
+  {
+    "wave": "v31-wave1",
+    "stack": "stack-b",
+    "egress": [
+      {
+        "destination_kind": "gate_blocked",
+        "destination_host": "（未外发）",
+        "outcome": "blocked",
+        "completed": 1,
+        "records": 1,
+        "chars": 52,
+        "replacements": 0
+      },
+      {
+        "destination_kind": "legal_gateway",
+        "destination_host": "127.0.0.1:18661",
+        "outcome": "failed",
+        "completed": 1,
+        "records": 1,
+        "chars": 5332,
+        "replacements": 0
+      },
+      {
+        "destination_kind": "legal_gateway",
+        "destination_host": "127.0.0.1:18661",
+        "outcome": "sent",
+        "completed": 1,
+        "records": 259,
+        "chars": 45749522,
+        "replacements": 3600
+      },
+      {
+        "destination_kind": "search_service",
+        "destination_host": "127.0.0.1:18662",
+        "outcome": "sent",
+        "completed": 1,
+        "records": 3,
+        "chars": 121,
+        "replacements": 0
+      }
+    ],
+    "forbidden_meter_fields": {},
+    "meter_lines": 520,
+    "settlements_without_egress": 0
+  },
+  {
+    "wave": "v31-wave2",
+    "stack": "stack-c",
+    "egress": [
+      {
+        "destination_kind": "legal_gateway",
+        "destination_host": "127.0.0.1:18671",
+        "outcome": "failed",
+        "completed": 1,
+        "records": 1,
+        "chars": 20316,
+        "replacements": 33
+      },
+      {
+        "destination_kind": "legal_gateway",
+        "destination_host": "127.0.0.1:18671",
+        "outcome": "sent",
+        "completed": 1,
+        "records": 226,
+        "chars": 42731545,
+        "replacements": 6723
+      }
+    ],
+    "forbidden_meter_fields": {},
+    "meter_lines": 454,
+    "settlements_without_egress": 0
+  },
+  {
+    "wave": "v31-wave2",
+    "stack": "stack-d",
+    "egress": [
+      {
+        "destination_kind": "legal_gateway",
+        "destination_host": "127.0.0.1:18681",
+        "outcome": "failed",
+        "completed": 1,
+        "records": 1,
+        "chars": 22990,
+        "replacements": 42
+      },
+      {
+        "destination_kind": "legal_gateway",
+        "destination_host": "127.0.0.1:18681",
+        "outcome": "sent",
+        "completed": 1,
+        "records": 249,
+        "chars": 53805486,
+        "replacements": 10462
+      }
+    ],
+    "forbidden_meter_fields": {},
+    "meter_lines": 500,
+    "settlements_without_egress": 0
+  },
+  {
+    "wave": "v31-wave3",
+    "stack": "stack-e",
+    "egress": [
+      {
+        "destination_kind": "legal_gateway",
+        "destination_host": "127.0.0.1:18691",
+        "outcome": "failed",
+        "completed": 1,
+        "records": 1,
+        "chars": 32716,
+        "replacements": 12
+      },
+      {
+        "destination_kind": "legal_gateway",
+        "destination_host": "127.0.0.1:18691",
+        "outcome": "sent",
+        "completed": 1,
+        "records": 232,
+        "chars": 49073242,
+        "replacements": 8264
+      },
+      {
+        "destination_kind": "search_service",
+        "destination_host": "127.0.0.1:18692",
+        "outcome": "sent",
+        "completed": 1,
+        "records": 2,
+        "chars": 85,
+        "replacements": 0
+      }
+    ],
+    "forbidden_meter_fields": {},
+    "meter_lines": 466,
+    "settlements_without_egress": 0
+  },
+  {
+    "wave": "v31-wave3",
+    "stack": "stack-f",
+    "egress": [
+      {
+        "destination_kind": "legal_gateway",
+        "destination_host": "127.0.0.1:18701",
+        "outcome": "sent",
+        "completed": 1,
+        "records": 110,
+        "chars": 20233230,
+        "replacements": 3392
+      }
+    ],
+    "forbidden_meter_fields": {},
+    "meter_lines": 220,
+    "settlements_without_egress": 0
+  }
+]

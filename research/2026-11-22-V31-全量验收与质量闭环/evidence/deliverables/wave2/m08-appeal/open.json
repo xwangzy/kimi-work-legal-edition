@@ -1,0 +1,45 @@
+{
+ "stack": "c",
+ "model": null,
+ "tag": "m08-appeal",
+ "run": "run_91ed9f88-2977-40aa-9f0d-d2280ff4bd75",
+ "status": "succeeded",
+ "open": {
+  "v1-上诉理由与一审认定对照表-锐川公司.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-原判与上诉改判口径违约金计算明细-锐川公司.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v1-提交前核对清单-锐川公司.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-民事上诉状.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-上诉理由与一审认定对照表-锐川公司.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-原判与上诉改判口径违约金计算明细-锐川公司.xlsx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v2-提交前核对清单-锐川公司.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-民事上诉状.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v3-提交前核对清单-锐川公司.xlsx": {
+   "opened": true,
+   "pages": 3
+  }
+ }
+}

@@ -1,0 +1,1669 @@
+[
+ {
+  "wave": "V30",
+  "tag": "m05-amount",
+  "run": "run_4e34b2a6-5c7b-42b6-ab59-fc90664d29b1",
+  "status": "succeeded",
+  "tools": {
+   "calc.interest": 6,
+   "calc.court_fee": 8,
+   "calc.deadline": 6,
+   "Bash": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 20,
+  "review": [
+   {
+    "findings": 2,
+    "must": 0,
+    "kind": "table"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "V30",
+  "tag": "m06-pleading",
+  "run": "run_2359d31c-a824-4d5a-9be2-a999423be833",
+  "status": "succeeded",
+  "tools": {
+   "calc.interest": 3,
+   "calc.court_fee": 3,
+   "calc.deadline": 10,
+   "docx.edit_draft": 2,
+   "xlsx.edit_cells": 4,
+   "xlsx.render_table": 4,
+   "docx.render_report": 2,
+   "citations.verify": 5
+  },
+  "other_tools": 64,
+  "review": [
+   {
+    "findings": 1,
+    "must": 1,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "V30",
+  "tag": "m38-contract-review",
+  "run": "run_ed386039-4ccb-41e5-ac8a-4126c1e50182",
+  "status": "succeeded",
+  "tools": {
+   "calc.interest": 1,
+   "calc.deadline": 4,
+   "Bash": 1,
+   "docx.edit_draft": 5,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 55,
+  "review": [
+   {
+    "findings": 4,
+    "must": 3,
+    "kind": "review"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "V30",
+  "tag": "m08-appeal",
+  "run": "run_44c8f34f-b3b2-45b1-acd0-7b01b7614bd9",
+  "status": "succeeded",
+  "tools": {
+   "calc.interest": 4,
+   "calc.court_fee": 2,
+   "calc.deadline": 1,
+   "Bash": 3,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 42,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "V30",
+  "tag": "m12-enforcement",
+  "run": "run_84daee14-2554-487f-9756-96e3c932eb46",
+  "status": "succeeded",
+  "tools": {
+   "calc.interest": 7,
+   "calc.court_fee": 2,
+   "calc.deadline": 3,
+   "Bash": 2,
+   "docx.edit_draft": 2,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 42,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "V30",
+  "tag": "m47-compliance-qa",
+  "run": "run_170e320f-eaa7-4437-a90e-e4cc0961ee4a",
+  "status": "succeeded",
+  "tools": {
+   "calc.deadline": 1,
+   "docx.edit_draft": 2,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 51,
+  "review": [
+   {
+    "findings": 1,
+    "must": 0,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "V30",
+  "tag": "m07-defense",
+  "run": "run_e302359f-aa9e-4246-8fcc-465433ee71f4",
+  "status": "succeeded",
+  "tools": {
+   "calc.interest": 2,
+   "calc.court_fee": 1,
+   "calc.deadline": 2,
+   "Bash": 2,
+   "docx.edit_draft": 1,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 48,
+  "review": [
+   {
+    "findings": 1,
+    "must": 1,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "V30",
+  "tag": "m09-arbitration-app",
+  "run": "run_6447b066-a1d8-4ad4-a31b-d4f89eca1ad9",
+  "status": "succeeded",
+  "tools": {
+   "calc.interest": 4,
+   "calc.deadline": 7,
+   "Bash": 1,
+   "docx.edit_draft": 2,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 36,
+  "review": [
+   {
+    "findings": 1,
+    "must": 1,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "V30",
+  "tag": "m48-legal-opinion",
+  "run": "run_1fb17c34-155a-42b7-954f-ed41728dcb10",
+  "status": "succeeded",
+  "tools": {
+   "calc.interest": 4,
+   "calc.deadline": 1,
+   "Bash": 3,
+   "docx.edit_draft": 3,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 57,
+  "review": [
+   {
+    "findings": 2,
+    "must": 2,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "V30",
+  "tag": "m24-labor-response",
+  "run": "run_e6e67a4d-fd94-4c27-a9f7-ca23d05fa47c",
+  "status": "partial",
+  "tools": {
+   "calc.labor": 11,
+   "calc.deadline": 6,
+   "Bash": 5,
+   "docx.edit_draft": 10,
+   "xlsx.edit_cells": 4,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 87,
+  "review": [
+   {
+    "findings": 5,
+    "must": 5,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": [
+   2,
+   4
+  ]
+ },
+ {
+  "wave": "V30",
+  "tag": "m14-agency",
+  "run": "run_dfe8de2d-6bf9-42de-83d2-6b3220ad4c42",
+  "status": "succeeded",
+  "tools": {
+   "calc.interest": 2,
+   "calc.deadline": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 36,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "V30",
+  "tag": "m47-review-apply",
+  "run": "run_f6682967-7c17-4ce0-a5d2-528b201851b2",
+  "status": "succeeded",
+  "tools": {
+   "docx.edit_draft": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 7,
+  "review": [],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m01-casefile",
+  "run": "run_3a652198-8803-4f57-a8a6-bb04adf4b430",
+  "status": "succeeded",
+  "tools": {},
+  "other_tools": 0,
+  "review": [],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m02-casefile-deep",
+  "run": "run_2c584d62-56a9-47dc-a9a8-67149a7690c0",
+  "status": "succeeded",
+  "tools": {
+   "calc.deadline": 23,
+   "Bash": 4,
+   "xlsx.edit_cells": 6,
+   "xlsx.render_table": 3,
+   "citations.verify": 1
+  },
+  "other_tools": 32,
+  "review": [
+   {
+    "findings": 2,
+    "must": 2,
+    "kind": "table"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave1",
+  "tag": "m03-issues",
+  "run": "run_c654c601-4a8a-4c71-a242-73e0c860e92c",
+  "status": "succeeded",
+  "tools": {
+   "calc.interest": 4,
+   "calc.deadline": 9,
+   "Bash": 1,
+   "xlsx.edit_cells": 3,
+   "xlsx.render_table": 2,
+   "citations.verify": 2
+  },
+  "other_tools": 51,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "table"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m10-hearing-outline",
+  "run": "run_3f525913-d9e9-4d00-9a8a-45cb6ae273a8",
+  "status": "partial",
+  "tools": {
+   "calc.deadline": 1,
+   "Bash": 1,
+   "docx.edit_draft": 5,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 60,
+  "review": [
+   {
+    "findings": 3,
+    "must": 1,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": [
+   1
+  ]
+ },
+ {
+  "wave": "wave1",
+  "tag": "m13-cross-exam",
+  "run": "run_6ac98064-d37c-40a7-9ad6-bdc1de28dcef",
+  "status": "succeeded",
+  "tools": {
+   "docx.edit_draft": 1,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 33,
+  "review": [
+   {
+    "findings": 2,
+    "must": 1,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave1",
+  "tag": "m16-procedure",
+  "run": "run_eaa6e8c5-8b6a-47ae-9463-607af37fbdec",
+  "status": "succeeded",
+  "tools": {
+   "calc.deadline": 24,
+   "Bash": 1,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 54,
+  "review": [
+   {
+    "findings": 3,
+    "must": 1,
+    "kind": "table"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave1",
+  "tag": "m20-research-lit",
+  "run": "run_df825433-f8be-49dd-a11b-da6f29a59c1c",
+  "status": "succeeded",
+  "tools": {
+   "docx.edit_draft": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 63,
+  "review": [
+   {
+    "findings": 1,
+    "must": 0,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m21-citation-audit",
+  "run": "run_c606ba0e-f6b5-4c01-a4dc-1cddd2f20b31",
+  "status": "succeeded",
+  "tools": {
+   "xlsx.render_table": 1,
+   "citations.verify": 4
+  },
+  "other_tools": 37,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "table"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m23-case-report-lit",
+  "run": "run_e58b3c0e-09d7-45f5-a620-77f418520d0b",
+  "status": "succeeded",
+  "tools": {
+   "calc.interest": 5,
+   "calc.court_fee": 2,
+   "calc.deadline": 2,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1
+  },
+  "other_tools": 10,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "report"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m27-policy-review",
+  "run": "run_4e5b21e8-49be-4c60-99c4-2a716fdf7be6",
+  "status": "succeeded",
+  "tools": {
+   "docx.edit_draft": 1,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 43,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m29-dd-list",
+  "run": "run_0f6653e7-d9bf-4958-bdac-74954bd49c42",
+  "status": "succeeded",
+  "tools": {
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 2,
+   "docx.render_report": 2
+  },
+  "other_tools": 13,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m30-dd-findings",
+  "run": "run_70965be5-8037-4307-885d-76e07f22e278",
+  "status": "succeeded",
+  "tools": {
+   "calc.deadline": 1,
+   "Bash": 1,
+   "docx.edit_draft": 1,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 3
+  },
+  "other_tools": 72,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m31-intake",
+  "run": "run_e5a3972c-974f-4e5e-8713-1cfd7d602e35",
+  "status": "succeeded",
+  "tools": {
+   "Bash": 2,
+   "docx.edit_draft": 4,
+   "xlsx.edit_cells": 4,
+   "xlsx.render_table": 3,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 20,
+  "review": [
+   {
+    "findings": 3,
+    "must": 2,
+    "kind": "table"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave1",
+  "tag": "m38-contract-review",
+  "run": "run_cc294c6a-d88a-4ef6-a0d3-4d39fa54dc4c",
+  "status": "succeeded",
+  "tools": {
+   "calc.interest": 2,
+   "calc.deadline": 2,
+   "Bash": 3,
+   "docx.edit_draft": 11,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 54,
+  "review": [
+   {
+    "findings": 8,
+    "must": 4,
+    "kind": "review"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave1",
+  "tag": "m32-redraft",
+  "run": "run_e75f0198-3bf6-41d3-bf52-c9b130e11c6a",
+  "status": "partial",
+  "tools": {
+   "Bash": 3,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 37,
+  "review": [
+   {
+    "findings": 6,
+    "must": 6,
+    "kind": "review"
+   }
+  ],
+  "followup_open": [
+   5
+  ]
+ },
+ {
+  "wave": "wave1",
+  "tag": "m33-redraft-local",
+  "run": "run_4126c628-8896-433f-91aa-12950da0449d",
+  "status": "succeeded",
+  "tools": {},
+  "other_tools": 0,
+  "review": [],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m34-research-deal",
+  "run": "run_182b5980-aeb5-49ef-aae2-6dadc6237a64",
+  "status": "succeeded",
+  "tools": {
+   "docx.edit_draft": 1,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 72,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m36-closing-checklist",
+  "run": "run_f500d0c3-a57b-4b70-89dd-dfcd9fac5850",
+  "status": "succeeded",
+  "tools": {
+   "calc.deadline": 12,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 1
+  },
+  "other_tools": 17,
+  "review": [
+   {
+    "findings": 1,
+    "must": 1,
+    "kind": "table"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m37-corporate-resolutions",
+  "run": "run_1ece6342-4e23-4aaa-acde-d1a73888c552",
+  "status": "succeeded",
+  "tools": {
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 3,
+   "citations.verify": 1
+  },
+  "other_tools": 33,
+  "review": [
+   {
+    "findings": 1,
+    "must": 0,
+    "kind": "draft"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m40-doc-revise",
+  "run": "run_99f68c88-cf82-47e3-9d55-ec17844947e5",
+  "status": "partial",
+  "tools": {
+   "citations.verify": 1
+  },
+  "other_tools": 25,
+  "review": [],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m41-rules-from-template",
+  "run": "run_5cf58e91-3908-44ee-ac3d-d40aa6b9a331",
+  "status": "partial",
+  "tools": {},
+  "other_tools": 19,
+  "review": [
+   {
+    "findings": 3,
+    "must": 1,
+    "kind": "rules"
+   }
+  ],
+  "followup_open": [
+   1
+  ]
+ },
+ {
+  "wave": "wave1",
+  "tag": "m39-redline-notes",
+  "run": "run_91486b0a-4912-43a6-ba89-d76e8fef1209",
+  "status": "partial",
+  "tools": {
+   "docx.render_report": 3,
+   "citations.verify": 1
+  },
+  "other_tools": 24,
+  "review": [],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m42-audience-pack",
+  "run": "run_e41b736d-19e0-4531-8689-347dc0d36b5e",
+  "status": "succeeded",
+  "tools": {},
+  "other_tools": 0,
+  "review": [],
+  "followup_open": null
+ },
+ {
+  "wave": "wave1",
+  "tag": "m43-contract-review-inhouse",
+  "run": "run_86404645-c3c0-49e7-bcd7-352d9953ef6f",
+  "status": "succeeded",
+  "tools": {
+   "Bash": 1,
+   "docx.edit_draft": 2,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 44,
+  "review": [
+   {
+    "findings": 1,
+    "must": 1,
+    "kind": "review"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave1",
+  "tag": "m44-rules-from-template-inhouse",
+  "run": "run_591197d7-e5a4-471b-a53e-fa2bf7755dcb",
+  "status": "succeeded",
+  "tools": {},
+  "other_tools": 15,
+  "review": [
+   {
+    "findings": 2,
+    "must": 2,
+    "kind": "rules"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave1",
+  "tag": "m46-case-report",
+  "run": "run_86984371-0483-4190-9f63-2942b0f4c4f3",
+  "status": "succeeded",
+  "tools": {
+   "Bash": 1,
+   "docx.edit_draft": 4,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1
+  },
+  "other_tools": 21,
+  "review": [
+   {
+    "findings": 3,
+    "must": 2,
+    "kind": "report"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave2",
+  "tag": "m05-amount",
+  "run": "run_8484b211-be7a-434f-84e7-90ae768cb75d",
+  "status": "failed",
+  "tools": {
+   "calc.deadline": 6,
+   "citations.verify": 1
+  },
+  "other_tools": 9,
+  "review": [],
+  "followup_open": null
+ },
+ {
+  "wave": "wave2",
+  "tag": "m07-defense",
+  "run": "run_60532f93-06b2-41b0-9777-e91f9b260dd2",
+  "status": "failed",
+  "tools": {},
+  "other_tools": 1,
+  "review": [],
+  "followup_open": null
+ },
+ {
+  "wave": "wave2",
+  "tag": "m08-appeal",
+  "run": "run_91ed9f88-2977-40aa-9f0d-d2280ff4bd75",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 2,
+   "calc.court_fee": 2,
+   "calc.deadline": 1,
+   "Bash": 3,
+   "docx.edit_draft": 2,
+   "xlsx.edit_cells": 3,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 3
+  },
+  "other_tools": 49,
+  "review": [
+   {
+    "findings": 3,
+    "must": 1,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave2",
+  "tag": "m12-enforcement",
+  "run": "run_9ab99bd3-b83a-42b5-8c23-ee64b3dbae1e",
+  "status": "partial",
+  "tools": {
+   "calc.ledger": 2,
+   "calc.court_fee": 4,
+   "calc.deadline": 4,
+   "docx.edit_draft": 2,
+   "xlsx.edit_cells": 3,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 3
+  },
+  "other_tools": 50,
+  "review": [
+   {
+    "findings": 1,
+    "must": 1,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": [
+   1
+  ]
+ },
+ {
+  "wave": "wave2",
+  "tag": "m24-labor-response",
+  "run": "run_ce7d3605-18a8-4567-8e22-3893ef587701",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 6,
+   "calc.labor": 14,
+   "calc.deadline": 9,
+   "Bash": 3,
+   "docx.edit_draft": 5,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 3,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 86,
+  "review": [
+   {
+    "findings": 3,
+    "must": 3,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave2",
+  "tag": "m05-amount",
+  "run": "run_71346b94-fac0-41e6-a8d7-44839f5f836e",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 2,
+   "calc.court_fee": 6,
+   "calc.deadline": 9,
+   "xlsx.edit_cells": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 22,
+  "review": [
+   {
+    "findings": 2,
+    "must": 1,
+    "kind": "table"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave2",
+  "tag": "m07-defense",
+  "run": "run_1a556bc3-0c58-41b8-8583-628e0f601dfc",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 1,
+   "calc.court_fee": 1,
+   "calc.deadline": 1,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 47,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave2",
+  "tag": "m06-pleading",
+  "run": "run_187de74c-795d-4fcd-b9b9-c45f2cbc2b51",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 1,
+   "calc.court_fee": 1,
+   "calc.deadline": 5,
+   "docx.edit_draft": 1,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 35,
+  "review": [
+   {
+    "findings": 1,
+    "must": 0,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave2",
+  "tag": "m09-arbitration-app",
+  "run": "run_65dc0243-6826-4260-89c3-f6710d58c5b1",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 1,
+   "calc.deadline": 6,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 36,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave2",
+  "tag": "m48-legal-opinion",
+  "run": "run_4d5f378c-5441-4594-b270-1f1c2c964a2e",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 3,
+   "calc.interest": 4,
+   "calc.deadline": 2,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 53,
+  "review": [
+   {
+    "findings": 1,
+    "must": 0,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave2",
+  "tag": "m11-preservation",
+  "run": "run_563712f4-de30-4d09-842e-8fbc06f11b24",
+  "status": "succeeded",
+  "tools": {
+   "calc.court_fee": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 36,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave2",
+  "tag": "m15-intake-lit",
+  "run": "run_1c46012c-c787-4154-9d59-e68c82cce937",
+  "status": "succeeded",
+  "tools": {
+   "calc.deadline": 14,
+   "Bash": 1,
+   "docx.edit_draft": 2,
+   "xlsx.render_table": 4,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 20,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "table"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave2",
+  "tag": "m17-labor-apply",
+  "run": "run_80734724-23b1-403b-8c1e-b7f39ac5c1c1",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 5,
+   "calc.labor": 10,
+   "calc.deadline": 9,
+   "Bash": 4,
+   "docx.edit_draft": 3,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 3,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 86,
+  "review": [
+   {
+    "findings": 1,
+    "must": 0,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave2",
+  "tag": "m18-labor-arb-application",
+  "run": "run_180caadf-7c75-4d3b-ac48-fd84be1c1a24",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 2,
+   "calc.labor": 5,
+   "calc.deadline": 5,
+   "Bash": 2,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 3
+  },
+  "other_tools": 58,
+  "review": [
+   {
+    "findings": 1,
+    "must": 0,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave2",
+  "tag": "m19-labor-arb-defense-lit",
+  "run": "run_7154ec3b-5a97-4783-9619-65f0a652a1af",
+  "status": "partial",
+  "tools": {
+   "calc.ledger": 1,
+   "calc.labor": 8,
+   "calc.deadline": 4,
+   "Bash": 2,
+   "docx.edit_draft": 3,
+   "xlsx.edit_cells": 3,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 74,
+  "review": [
+   {
+    "findings": 2,
+    "must": 1,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": [
+   1
+  ]
+ },
+ {
+  "wave": "wave2",
+  "tag": "m22-demand-lit",
+  "run": "run_15e7e086-bdb4-490b-9472-09f3f586da64",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 1,
+   "calc.deadline": 5,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 26,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "letter"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave2",
+  "tag": "m25-labor-arb-defense",
+  "run": "run_14727aa4-1e0a-436e-b5b6-304f01ef8e90",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 4,
+   "calc.labor": 9,
+   "calc.deadline": 5,
+   "Bash": 4,
+   "docx.edit_draft": 3,
+   "xlsx.edit_cells": 4,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 76,
+  "review": [
+   {
+    "findings": 1,
+    "must": 1,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave2",
+  "tag": "m26-labor-termination",
+  "run": "run_84e620f5-7b38-45f4-a7ca-61a1efa3c6d6",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 3,
+   "calc.labor": 17,
+   "calc.deadline": 6,
+   "Bash": 2,
+   "docx.edit_draft": 4,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 85,
+  "review": [
+   {
+    "findings": 2,
+    "must": 2,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave2",
+  "tag": "m28-suit-received",
+  "run": "run_56226f62-6908-4aef-ae9d-ea03cee8892d",
+  "status": "succeeded",
+  "tools": {
+   "calc.deadline": 7,
+   "Bash": 2,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 38,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "table"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave2",
+  "tag": "m45-demand-inhouse",
+  "run": "run_e2d7b163-1810-429e-bff9-900af78a4e70",
+  "status": "partial",
+  "tools": {
+   "calc.ledger": 6,
+   "calc.deadline": 8,
+   "Bash": 3,
+   "docx.edit_draft": 1,
+   "xlsx.edit_cells": 5,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 31,
+  "review": [
+   {
+    "findings": 2,
+    "must": 2,
+    "kind": "letter"
+   }
+  ],
+  "followup_open": [
+   1
+  ]
+ },
+ {
+  "wave": "wave3",
+  "tag": "m46-case-report",
+  "run": "run_d4eb0c6d-42bf-4cdd-83ef-6de0a9219ad1",
+  "status": "succeeded",
+  "tools": {
+   "calc.deadline": 2,
+   "docx.edit_draft": 3,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 1,
+   "docx.render_report": 2
+  },
+  "other_tools": 23,
+  "review": [
+   {
+    "findings": 3,
+    "must": 3,
+    "kind": "report"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave3",
+  "tag": "m17-labor-apply",
+  "run": "run_b508b8c5-6828-4141-b3d9-99ff4fbd1d84",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 2,
+   "calc.labor": 7,
+   "calc.deadline": 8,
+   "Bash": 1,
+   "docx.edit_draft": 5,
+   "xlsx.edit_cells": 5,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 88,
+  "review": [
+   {
+    "findings": 3,
+    "must": 1,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave3",
+  "tag": "m30-dd-findings",
+  "run": "run_ed453ae0-0932-49e9-9afe-48199d4051b8",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 1,
+   "calc.deadline": 1,
+   "Bash": 1,
+   "docx.edit_draft": 4,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 83,
+  "review": [
+   {
+    "findings": 4,
+    "must": 2,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave3",
+  "tag": "m16-procedure",
+  "run": "run_50e4ceb0-0559-40f4-ae01-b8bd991375d5",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 1,
+   "calc.deadline": 19,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 39,
+  "review": [
+   {
+    "findings": 2,
+    "must": 0,
+    "kind": "table"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave3",
+  "tag": "m03-issues",
+  "run": "run_04d9c159-48f2-4973-9c03-a89089cb8f6d",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 1,
+   "calc.interest": 2,
+   "calc.deadline": 20,
+   "Bash": 1,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 64,
+  "review": [
+   {
+    "findings": 3,
+    "must": 3,
+    "kind": "table"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave3",
+  "tag": "m04-case-analysis",
+  "run": "run_dbe6946f-fe6b-4210-8dc8-d84b62513931",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 1,
+   "calc.court_fee": 6,
+   "calc.deadline": 17,
+   "Bash": 1,
+   "docx.edit_draft": 4,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 2,
+   "citations.verify": 1
+  },
+  "other_tools": 55,
+  "review": [
+   {
+    "findings": 9,
+    "must": 7,
+    "machine": 6,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave3",
+  "tag": "m14-agency",
+  "run": "run_6b8858aa-fe33-4034-b82c-ebd67b03e892",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 1,
+   "calc.deadline": 2,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 31,
+  "review": [
+   {
+    "findings": 1,
+    "must": 0,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave3",
+  "tag": "m35-contract-draft",
+  "run": "run_1c1882cd-7284-4845-84b7-fdf09a9dc001",
+  "status": "succeeded",
+  "tools": {
+   "docx.edit_draft": 6,
+   "docx.render_report": 2,
+   "citations.verify": 1
+  },
+  "other_tools": 40,
+  "review": [
+   {
+    "findings": 1,
+    "must": 1,
+    "kind": "draft"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave3",
+  "tag": "m38-contract-review",
+  "run": "run_6bc5a844-3dc5-43be-9a11-e51e6f912fd4",
+  "status": "succeeded",
+  "tools": {
+   "calc.deadline": 2,
+   "Bash": 2,
+   "docx.edit_draft": 4,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 55,
+  "review": [
+   {
+    "findings": 2,
+    "must": 2,
+    "kind": "review"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave3",
+  "tag": "m47-compliance-qa",
+  "run": "run_42713c1b-57cb-4ba9-9e6e-d1fa0ec6d397",
+  "status": "succeeded",
+  "tools": {
+   "calc.deadline": 1,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 55,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave3",
+  "tag": "m10-hearing-outline",
+  "run": "run_763787fc-49b1-4eda-9e7d-f178280e1d28",
+  "status": "succeeded",
+  "tools": {
+   "calc.deadline": 1,
+   "docx.edit_draft": 7,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 54,
+  "review": [
+   {
+    "findings": 4,
+    "must": 1,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave3",
+  "tag": "m13-cross-exam",
+  "run": "run_73ca31b8-b36e-4349-a390-e7579b9782c6",
+  "status": "succeeded",
+  "tools": {
+   "calc.deadline": 2,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 1
+  },
+  "other_tools": 33,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave3",
+  "tag": "m24-labor-response",
+  "run": "run_ed3a4dae-6057-4eaf-aef8-3cdd08bf02e1",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 4,
+   "calc.labor": 9,
+   "calc.deadline": 6,
+   "Bash": 2,
+   "docx.edit_draft": 1,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 2,
+   "docx.render_report": 2,
+   "citations.verify": 1
+  },
+  "other_tools": 88,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "opinion"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave3",
+  "tag": "m31-intake",
+  "run": "run_b63a597d-77fa-4073-966d-23028b19b466",
+  "status": "succeeded",
+  "tools": {
+   "calc.deadline": 1,
+   "docx.edit_draft": 1,
+   "xlsx.render_table": 3,
+   "docx.render_report": 2,
+   "citations.verify": 1
+  },
+  "other_tools": 12,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "table"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave3",
+  "tag": "m18-labor-arb-application",
+  "run": "run_303d4028-708a-4b0e-a665-f5b017c124b4",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 2,
+   "calc.labor": 6,
+   "calc.deadline": 3,
+   "Bash": 1,
+   "docx.edit_draft": 2,
+   "xlsx.edit_cells": 2,
+   "xlsx.render_table": 2,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 48,
+  "review": [
+   {
+    "findings": 1,
+    "must": 1,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave3",
+  "tag": "m12-enforcement",
+  "run": "run_ae9ee2ef-3d66-4456-877c-24b9c1b89eb0",
+  "status": "succeeded",
+  "tools": {
+   "calc.ledger": 1,
+   "calc.interest": 1,
+   "calc.court_fee": 2,
+   "calc.deadline": 1,
+   "Bash": 1,
+   "docx.edit_draft": 1,
+   "xlsx.edit_cells": 1,
+   "xlsx.render_table": 1,
+   "docx.render_report": 1,
+   "citations.verify": 2
+  },
+  "other_tools": 35,
+  "review": [
+   {
+    "findings": 0,
+    "must": 0,
+    "kind": "pleading"
+   }
+  ],
+  "followup_open": null
+ },
+ {
+  "wave": "wave3",
+  "tag": "m41-rules-from-template",
+  "run": "run_3ff3c9f8-39ae-409e-a166-d87cd8ec3678",
+  "status": "succeeded",
+  "tools": {},
+  "other_tools": 18,
+  "review": [
+   {
+    "findings": 3,
+    "must": 3,
+    "kind": "rules"
+   }
+  ],
+  "followup_open": []
+ },
+ {
+  "wave": "wave3",
+  "tag": "m44-rules-from-template-inhouse",
+  "run": "run_1dbe54de-cd89-4517-ab33-964582640170",
+  "status": "succeeded",
+  "tools": {},
+  "other_tools": 20,
+  "review": [
+   {
+    "findings": 3,
+    "must": 2,
+    "kind": "rules"
+   }
+  ],
+  "followup_open": []
+ }
+]

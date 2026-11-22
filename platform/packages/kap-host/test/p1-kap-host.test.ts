@@ -45,6 +45,8 @@ const LAW_SCHEMA = { type: "object", properties: { law: { type: "string" }, as_o
 const LAW_MCP_ID = qualifyMcpToolName("legal", LAW_TOOL);
 let mcpSeen: { method: string; auth: string | undefined; params: any }[] = [];
 
+/** 宿主推给内核的进度快照里的重试信息（D-230 用例用）。 */
+const progressSeen: { runId: string; retry: { attempt: number; max: number; status_code: number | null } | null }[] = [];
 let base: string;
 let model: FakeModel;
 let runtime: KapRuntime;
@@ -106,6 +108,7 @@ before(async () => {
     ]),
     trustedRgPath: rg,
     logLevel: "silent",
+    onRunProgress: (runId, p) => progressSeen.push({ runId, retry: p.retry }),
   });
   egress = new HostEgressDispatcher({ modelSocket: model.socket, toolsSocket: ipcPath(base, "t.sock"), authority: runtime.authority });
   prevDispatcher = getGlobalDispatcher();
@@ -593,6 +596,21 @@ test("S2-01 目标模式在 G0 失败关闭：创建目标被宿主策略拒绝�
   await new Promise((x) => setTimeout(x, 800));
   assert.equal(afterTerminal, 0, "终态之后引擎没有续跑回合");
   assert.equal((await engine.kap.status(r.session_id)).busy, false, "会话不挂住");
+});
+
+test("D-230 上游限流：引擎按配置最多试 20 次（缺省 10 次约两分半即整单失败）；限流一次后重试成功，运行照常完成", { timeout: 60_000 }, async () => {
+  const { STEP_MAX_ATTEMPTS } = await import("../src/engine-config.ts");
+  assert.equal(STEP_MAX_ATTEMPTS, 20);
+  let n = 0;
+  model.setScript(() => (++n === 1 ? { status: 429, body: { error: { message: "rate limited" } } } : { text: "已完成。" }));
+  const r = await runtime.startRun({ matter_id: "m_ratelimit", goal: "RATE-PROBE 写一句话", mode: "default", plan_first: false }, DESKTOP);
+  const done = await waitStatus(r.run_id, (x) => TERMINAL.includes(x), 30_000);
+  assert.equal(done.status, "succeeded", JSON.stringify(done.events.map((e) => e.type)));
+  assert.ok(n >= 2, "限流后重试了");
+  await new Promise((x) => setTimeout(x, 400));
+  const retry = progressSeen.filter((x) => x.runId === r.run_id && x.retry).map((x) => x.retry!);
+  assert.ok(retry.length >= 1, `进度里有“正在重试”：${JSON.stringify(progressSeen.filter((x) => x.runId === r.run_id))}`);
+  assert.deepEqual([retry[0]!.max, retry[0]!.status_code], [STEP_MAX_ATTEMPTS, 429], "引擎采用了宿主给的次数上限");
 });
 
 test("S2-01 运行生命周期：派出后台子 Agent 后主回合结束，运行在后台任务完成前不判终态；完成后才收尾，终态之后没有被拒的出站请求", { timeout: 90_000 }, async () => {

@@ -7,6 +7,8 @@
  *
  * 只报能确定的问题（宁可漏报不误报），每条给出位置、原文片段与改法；纯函数（法规核验经传入的法规库离线完成）。
  */
+import { REPEALED_REASON_PREFIX } from "./artifact-citations.ts";
+import { blocksOfSections, equationIssues } from "./amount-check.ts";
 import type { Lawdb } from "@zr-legal/lawdb";
 import { isCourtFiling, isPartyDocument, isSignMarker } from "@zr-legal/docx-engine";
 import { cnToInt } from "../tools/tools/cn-numerals.ts";
@@ -20,7 +22,7 @@ export interface DeliverableSection {
   table?: { columns?: unknown[]; rows?: unknown[][] } | null;
 }
 
-export type DeliverableIssueKind = "internal_term" | "foreign_word" | "markdown" | "numbering" | "cross_ref" | "amount_words" | "citation" | "table_sum" | "note_to_lawyer";
+export type DeliverableIssueKind = "internal_term" | "foreign_word" | "markdown" | "numbering" | "cross_ref" | "amount_words" | "citation" | "table_sum" | "note_to_lawyer" | "equation";
 
 export interface DeliverableIssue {
   kind: DeliverableIssueKind;
@@ -67,7 +69,13 @@ const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   { re: /快照\s*\d{2,}|材料记载[，,]\s*待核实/g, fix: "改用律师的说法：写材料名称，未核实的写“材料显示……，尚待核实”" },
   { re: /\b[a-z]{2,}(?:_[a-z]{2,})+\b/g, fix: "删去工具参数名（如 amount_yuan），改写成中文说明" },
   { re: /演示数据|演示库|演示法规|SKILL\.md|rubric|quality=ok/gi, fix: "删去系统内部用语" },
-  { re: /(?:金额|计算|法律|文书|表格|检索|修订|费用|期限|期间|利息|测算|核验|法条)工具/g, fix: "改用律师的说法（如“经核算”“经法规库核验”）" },
+  // 第 57 批全量验收：任务提示里【开工前已知】的份数、条数被写进庭审提纲与研究备忘录（“本次指定材料为 0 份”“本事项现有律师确认事实 0 条”）；
+  // 引用核验的内部结论进了备忘录（“来源与适用版本已核，条文原文已对照”逐段挂）
+  { re: /本次指定(?:的)?材料(?:为|共)?\s*\d+\s*份|(?:本事项)?(?:现有)?(?:律师)?已?确认(?:的)?事实(?:为|共)?\s*(?:\d+\s*条|零)|待确认(?:的)?事实(?:为|共)?\s*\d+\s*条/g, fix: "删去这句：份数、条数是系统给你安排工作用的信息，不是案情；要说明事实尚未经律师确认的，直接写“以下事实出自材料，尚待确认”" },
+  // 第 57 批全量验收（尽调清单、接案记录、交割清单、企业法务审核）：界面动作、系统状态与方法里的填表指令进了成果
+  { re: /需补勾|补勾后|律师导入的|代号按材料原样保留|系统未做冲突判断|条文正文未采集|[（(][^（）()]{0,12}必填[）)]|工具结果|卡的类型|判断依据来源/g, fix: "改用律师的说法或删去：材料没有提供的写“尚未提供”，系统状态、界面操作与填表说明不写进文件（需要律师做什么，写在最终答复里）" },
+  { re: /来源与适用版本已核|条文原文已对照/g, fix: "改用律师的说法：需要说明核验情况的，在引用处写“原文已核”或在文末统一说明一次，不要逐段挂核验状态" },
+  { re: /(?:金额|计算|法律|文书|表格|检索|修订|费用|期限|期间|利息|测算|核验|法条)工具|由计算功能(?:核算|计算|算出)/g, fix: "改用律师的说法（如“经核算”“经法规库核验”）" },
   // 隐私代号的说明是写给助手的（V14 第 39 批独立评分：争点矩阵里出现“称呼与全名代号按任务说明通常指同一人”）
   // 上诉状核对清单（同批评分）：“住所代号、统一社会信用代码代号”“依据：律师任务说明；”
   // 法规研究备忘录（同批评分）：“已核验且支持命题”37 处、“任务事实”“任务给定的”——引用核验的内部结论与写给助手的说法
@@ -377,12 +385,20 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
   for (const i of headingNumberIssues(sections)) push(i);
   for (const i of crossRefIssues(sections, paras)) push(i);
   for (const i of tableSumIssues(sections)) push(i);
+  // 算式复核（第 57 批，D-229）：写出来的算式（“810,000×0.0005×22＝8,910”、整格算式与右邻的结果格）逐条复算，两边不等的当场报回助手
+  try {
+    for (const e of equationIssues(blocksOfSections(sections)).slice(0, 8)) push({ kind: "equation", where: e.where, text: e.text.slice(0, 60), fix: e.fix });
+  } catch {
+    // 复算本身出错不影响文书生成
+  }
 
   // 法条核验：条号超出范围、已改号、适用时点没有有效版本（编造或记错的条号）——与签发前的引用核验同一套判定
   if (opts.lawdb && opts.docx && opts.asOf) {
     try {
       const c = checkArtifactCitations(opts.lawdb, `${title}.docx`, opts.docx, opts.asOf);
       for (const it of c.items) if (it.kind === "wrong") push({ kind: "citation", where: "引用", text: it.raw.slice(0, 60), fix: `${it.reason ?? "条号或版本不对"}：用法规库查准后改正，查不准的删去条号` });
+      // 已废止的法律、司法解释（第 57 批）：不是条号错，但把废止的规定当现行依据写进文书是实质错误——当场报回助手
+      for (const it of c.items) if (it.kind === "outside" && it.reason?.startsWith(`${REPEALED_REASON_PREFIX}已于`)) push({ kind: "citation", where: "引用", text: it.raw.slice(0, 60), fix: `${it.reason}；仍要引用的，在文书里写明适用旧法的依据（行为发生时间与时间效力规定）` });
     } catch {
       // 核验失败不影响文书生成；签发前还会再核
     }
@@ -394,7 +410,7 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
     placeholders,
     issues,
     note: ok
-      ? "交付前检查未发现问题（只查工具用语、夹杂英文、条款编号、互引、大小写金额、表格合计、法条号，以及递交或发出的文书正文里给律师的标记这几类，不代替律师复核）"
+      ? "交付前检查未发现问题（只查工具用语、夹杂英文、条款编号、互引、大小写金额、表格合计、写出来的算式、法条号，以及递交或发出的文书正文里给律师的标记这几类，不代替律师复核）"
       : `交付前检查发现 ${issues.length} 处问题：Word 文书用 docx.edit_draft 在这份文书上逐处改正（不要整份重新生成），表格用 xlsx.edit_cells 在这份表格上逐格改正（不要整份重新生成）；确实不需要改的（如律师要求保留），在最终答复里说明理由`,
   };
 }

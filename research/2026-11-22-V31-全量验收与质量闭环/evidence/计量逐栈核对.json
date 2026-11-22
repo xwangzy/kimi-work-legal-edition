@@ -1,0 +1,430 @@
+[
+  {
+    "wave": "v31-wave1",
+    "stack": "stack-a",
+    "local_requests": 181,
+    "gateway_status": {
+      "200": 187,
+      "429": 58
+    },
+    "gateway": {
+      "input": 15318064,
+      "cached": 13671936,
+      "output": 458796,
+      "reasoning": 204935,
+      "charged": 15776860
+    },
+    "local": {
+      "input": 14870671,
+      "cached": 13270784,
+      "output": 446921,
+      "reasoning": 200070,
+      "estimated_microcny": 26821068
+    },
+    "charged_unmatched": [
+      {
+        "gateway_id": "kwlgw_1f5abc38-cfa1-4200-994b-882603da5f9a",
+        "client_id": "kwlg_7d6b7df8-19fe-4d40-be2b-f8de0712de64",
+        "at": "2026-11-22T04:41:54.039Z",
+        "run_id": "run_c654c601-4a8a-4c71-a242-73e0c860e92c",
+        "egress_completed": 1,
+        "usage": {
+          "input": 49066,
+          "cached": 45312,
+          "output": 992,
+          "reasoning": 33
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 76200
+      },
+      {
+        "gateway_id": "kwlgw_6e9947c2-0fba-4055-a978-10a941d1eeee",
+        "client_id": "kwlg_8f1d189a-8999-462e-8d78-141b598c2c27",
+        "at": "2026-11-22T04:42:13.247Z",
+        "run_id": "run_3f525913-d9e9-4d00-9a8a-45cb6ae273a8",
+        "egress_completed": 1,
+        "usage": {
+          "input": 42221,
+          "cached": 26368,
+          "output": 436,
+          "reasoning": 164
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 96756
+      },
+      {
+        "gateway_id": "kwlgw_a499ee0d-c2e6-411d-af29-9d7a4e6cc3fd",
+        "client_id": "kwlg_53d63df6-34fc-425c-b0d1-7b673cec4f29",
+        "at": "2026-11-22T05:01:53.169Z",
+        "run_id": "run_3f525913-d9e9-4d00-9a8a-45cb6ae273a8",
+        "egress_completed": 1,
+        "usage": {
+          "input": 118733,
+          "cached": 114432,
+          "output": 2020,
+          "reasoning": 1200
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 163956
+      },
+      {
+        "gateway_id": "kwlgw_c99d352d-02d3-4971-b05c-e563c3650c36",
+        "client_id": "kwlg_d6872d85-000b-447a-85c2-a04c61de92e5",
+        "at": "2026-11-22T05:09:33.989Z",
+        "run_id": "run_6ac98064-d37c-40a7-9ad6-bdc1de28dcef",
+        "egress_completed": 1,
+        "usage": {
+          "input": 74428,
+          "cached": 70912,
+          "output": 4390,
+          "reasoning": 1870
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 155216
+      },
+      {
+        "gateway_id": "kwlgw_0972d7b4-bf1f-4aca-9fd7-fcb1054e0116",
+        "client_id": "kwlg_48b4a08d-1e42-4c1b-b373-db7942171296",
+        "at": "2026-11-22T05:13:11.444Z",
+        "run_id": "run_eaa6e8c5-8b6a-47ae-9463-607af37fbdec",
+        "egress_completed": 1,
+        "usage": {
+          "input": 68537,
+          "cached": 54272,
+          "output": 2255,
+          "reasoning": 607
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 147412
+      },
+      {
+        "gateway_id": "kwlgw_763a0da8-34a8-486c-ae5a-7c0503ff25a0",
+        "client_id": "kwlg_28d1201c-bd9c-4414-91a6-be044ac1f26e",
+        "at": "2026-11-22T05:44:41.588Z",
+        "run_id": "run_70965be5-8037-4307-885d-76e07f22e278",
+        "egress_completed": 1,
+        "usage": {
+          "input": 94408,
+          "cached": 89856,
+          "output": 1782,
+          "reasoning": 991
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 136576
+      }
+    ],
+    "local_mismatches": [],
+    "duplicate_local": false,
+    "duplicate_gateway_ids": 0,
+    "error_charges": 0
+  },
+  {
+    "wave": "v31-wave1",
+    "stack": "stack-b",
+    "local_requests": 173,
+    "gateway_status": {
+      "200": 173,
+      "429": 87
+    },
+    "gateway": {
+      "input": 13591478,
+      "cached": 12325632,
+      "output": 374600,
+      "reasoning": 176209,
+      "charged": 13966078
+    },
+    "local": {
+      "input": 13591478,
+      "cached": 12325632,
+      "output": 374600,
+      "reasoning": 176209,
+      "estimated_microcny": 23382616
+    },
+    "charged_unmatched": [],
+    "local_mismatches": [],
+    "duplicate_local": false,
+    "duplicate_gateway_ids": 0,
+    "error_charges": 0
+  },
+  {
+    "wave": "v31-wave2",
+    "stack": "stack-c",
+    "local_requests": 164,
+    "gateway_status": {
+      "200": 167,
+      "429": 60
+    },
+    "gateway": {
+      "input": 14350373,
+      "cached": 12604928,
+      "output": 360679,
+      "reasoning": 186832,
+      "charged": 14711052
+    },
+    "local": {
+      "input": 14139510,
+      "cached": 12421888,
+      "output": 354902,
+      "reasoning": 184412,
+      "estimated_microcny": 24970808
+    },
+    "charged_unmatched": [
+      {
+        "gateway_id": "kwlgw_7eb33c76-896b-46e4-9cc8-885395641a9d",
+        "client_id": "kwlg_a03eb99d-1369-4b2f-a531-d8fc3ab7c53f",
+        "at": "2026-11-22T05:26:44.870Z",
+        "run_id": "run_ce7d3605-18a8-4567-8e22-3893ef587701",
+        "egress_completed": 1,
+        "usage": {
+          "input": 44360,
+          "cached": 28160,
+          "output": 598,
+          "reasoning": 385
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 102528
+      },
+      {
+        "gateway_id": "kwlgw_c5807663-a3e4-4156-bb4c-92afaeadad66",
+        "client_id": "kwlg_688894c6-7797-4745-911d-11c826cfc30f",
+        "at": "2026-11-22T05:31:19.224Z",
+        "run_id": "run_9ab99bd3-b83a-42b5-8c23-ee64b3dbae1e",
+        "egress_completed": 1,
+        "usage": {
+          "input": 104626,
+          "cached": 101888,
+          "output": 2214,
+          "reasoning": 356
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 148264
+      },
+      {
+        "gateway_id": "kwlgw_c978c118-b65f-478a-bb97-b27489a1ad00",
+        "client_id": "kwlg_ea9e5080-9d96-49f9-b9a6-f7c3fc744f51",
+        "at": "2026-11-22T06:31:05.222Z",
+        "run_id": "run_65dc0243-6826-4260-89c3-f6710d58c5b1",
+        "egress_completed": 1,
+        "usage": {
+          "input": 61877,
+          "cached": 52992,
+          "output": 2965,
+          "reasoning": 1679
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 135972
+      }
+    ],
+    "local_mismatches": [],
+    "duplicate_local": false,
+    "duplicate_gateway_ids": 0,
+    "error_charges": 0
+  },
+  {
+    "wave": "v31-wave2",
+    "stack": "stack-d",
+    "local_requests": 178,
+    "gateway_status": {
+      "200": 183,
+      "429": 67
+    },
+    "gateway": {
+      "input": 19165273,
+      "cached": 17337344,
+      "output": 433875,
+      "reasoning": 207653,
+      "charged": 19599148
+    },
+    "local": {
+      "input": 18524977,
+      "cached": 16743168,
+      "output": 412938,
+      "reasoning": 196845,
+      "estimated_microcny": 30477412
+    },
+    "charged_unmatched": [
+      {
+        "gateway_id": "kwlgw_238aa083-591e-4178-9466-e9224d5f980c",
+        "client_id": "kwlg_7336446c-d2ee-42d4-bb93-a3ac68403180",
+        "at": "2026-11-22T05:37:13.074Z",
+        "run_id": "run_1c46012c-c787-4154-9d59-e68c82cce937",
+        "egress_completed": 1,
+        "usage": {
+          "input": 108195,
+          "cached": 102912,
+          "output": 1231,
+          "reasoning": 924
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 143740
+      },
+      {
+        "gateway_id": "kwlgw_0966102c-9b11-46a7-894c-0d2b30b4539d",
+        "client_id": "kwlg_3b07d527-a072-43ec-9d96-6e9a1776cd2b",
+        "at": "2026-11-22T05:37:56.505Z",
+        "run_id": "run_80734724-23b1-403b-8c1e-b7f39ac5c1c1",
+        "egress_completed": 1,
+        "usage": {
+          "input": 141216,
+          "cached": 122112,
+          "output": 1458,
+          "reasoning": 652
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 221856
+      },
+      {
+        "gateway_id": "kwlgw_ac775a04-8b2a-4738-9577-527b998579b6",
+        "client_id": "kwlg_fc2856aa-7306-4413-9dbc-30ffc51d0248",
+        "at": "2026-11-22T06:35:25.818Z",
+        "run_id": "run_14727aa4-1e0a-436e-b5b6-304f01ef8e90",
+        "egress_completed": 1,
+        "usage": {
+          "input": 157094,
+          "cached": 142848,
+          "output": 9452,
+          "reasoning": 4301
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 351064
+      },
+      {
+        "gateway_id": "kwlgw_39774505-96b2-4355-984f-41d1a2344b04",
+        "client_id": "kwlg_2d0fd862-31b9-4fb4-a38d-c4e6f5fd26ef",
+        "at": "2026-11-22T06:40:14.373Z",
+        "run_id": "run_14727aa4-1e0a-436e-b5b6-304f01ef8e90",
+        "egress_completed": 1,
+        "usage": {
+          "input": 180321,
+          "cached": 176896,
+          "output": 2234,
+          "reasoning": 1425
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 226340
+      },
+      {
+        "gateway_id": "kwlgw_f5726c49-0ffd-41f2-9639-f1ef8647b0a5",
+        "client_id": "kwlg_97f8703f-e57c-4b1a-85c6-218860dee53c",
+        "at": "2026-11-22T07:00:48.910Z",
+        "run_id": "run_e2d7b163-1810-429e-bff9-900af78a4e70",
+        "egress_completed": 1,
+        "usage": {
+          "input": 53470,
+          "cached": 49408,
+          "output": 6562,
+          "reasoning": 3506
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 170648
+      }
+    ],
+    "local_mismatches": [],
+    "duplicate_local": false,
+    "duplicate_gateway_ids": 0,
+    "error_charges": 0
+  },
+  {
+    "wave": "v31-wave3",
+    "stack": "stack-e",
+    "local_requests": 220,
+    "gateway_status": {
+      "200": 222,
+      "429": 11
+    },
+    "gateway": {
+      "input": 21158793,
+      "cached": 19027456,
+      "output": 557745,
+      "reasoning": 257455,
+      "charged": 21716538
+    },
+    "local": {
+      "input": 20862785,
+      "cached": 18754816,
+      "output": 548009,
+      "reasoning": 254258,
+      "estimated_microcny": 35954836
+    },
+    "charged_unmatched": [
+      {
+        "gateway_id": "kwlgw_782d73df-70e6-4089-9de4-034e79356249",
+        "client_id": "kwlg_28c97134-f216-4705-8dc2-fbd63b471068",
+        "at": "2026-11-22T08:55:57.017Z",
+        "run_id": "run_6bc5a844-3dc5-43be-9a11-e51e6f912fd4",
+        "egress_completed": 1,
+        "usage": {
+          "input": 131012,
+          "cached": 121856,
+          "output": 3028,
+          "reasoning": 2779
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 206928
+      },
+      {
+        "gateway_id": "kwlgw_d920460e-8611-49b2-845e-f99f41b1dc00",
+        "client_id": "kwlg_5df2f70c-96e5-4ea8-9d67-582d12aa4353",
+        "at": "2026-11-22T09:34:39.550Z",
+        "run_id": "run_b508b8c5-6828-4141-b3d9-99ff4fbd1d84",
+        "egress_completed": 1,
+        "usage": {
+          "input": 164996,
+          "cached": 150784,
+          "output": 6708,
+          "reasoning": 418
+        },
+        "usage_source": "upstream",
+        "finish_reason": "tool_calls",
+        "estimated_microcny": 314960
+      }
+    ],
+    "local_mismatches": [],
+    "duplicate_local": false,
+    "duplicate_gateway_ids": 0,
+    "error_charges": 0
+  },
+  {
+    "wave": "v31-wave3",
+    "stack": "stack-f",
+    "local_requests": 92,
+    "gateway_status": {
+      "200": 92,
+      "429": 18
+    },
+    "gateway": {
+      "input": 7895922,
+      "cached": 6682880,
+      "output": 204842,
+      "reasoning": 96365,
+      "charged": 8100764
+    },
+    "local": {
+      "input": 7895922,
+      "cached": 6682880,
+      "output": 204842,
+      "reasoning": 96365,
+      "estimated_microcny": 14812520
+    },
+    "charged_unmatched": [],
+    "local_mismatches": [],
+    "duplicate_local": false,
+    "duplicate_gateway_ids": 0,
+    "error_charges": 0
+  }
+]

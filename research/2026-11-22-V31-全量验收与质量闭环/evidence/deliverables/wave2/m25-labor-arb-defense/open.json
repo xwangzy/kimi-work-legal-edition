@@ -1,0 +1,45 @@
+{
+ "stack": "d",
+ "model": null,
+ "tag": "m25-labor-arb-defense",
+ "run": "run_14727aa4-1e0a-436e-b5b6-304f01ef8e90",
+ "status": "succeeded",
+ "open": {
+  "v1-五项仲裁请求金额复核-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 14
+  },
+  "v1-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-提交前核对清单-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v1-证据目录-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-五项仲裁请求金额复核-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 14
+  },
+  "v2-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-提交前核对清单-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v3-五项仲裁请求金额复核-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 14
+  },
+  "v4-五项仲裁请求金额复核-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 14
+  }
+ }
+}

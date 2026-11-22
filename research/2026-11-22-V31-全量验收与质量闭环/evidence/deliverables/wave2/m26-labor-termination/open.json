@@ -1,0 +1,37 @@
+{
+ "stack": "d",
+ "model": null,
+ "tag": "m26-labor-termination",
+ "run": "run_84e620f5-7b38-45f4-a7ca-61a1efa3c6d6",
+ "status": "succeeded",
+ "open": {
+  "v1-劳动争议应对方案-上海澜栖智能科技有限公司拟解除风险评估.docx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v1-解除程序核对清单-上海澜栖智能科技有限公司.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-请求项与敞口表-上海澜栖智能科技有限公司.xlsx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v2-劳动争议应对方案-上海澜栖智能科技有限公司拟解除风险评估.docx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v2-请求项与敞口表-上海澜栖智能科技有限公司.xlsx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v3-劳动争议应对方案-上海澜栖智能科技有限公司拟解除风险评估.docx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v3-请求项与敞口表-上海澜栖智能科技有限公司.xlsx": {
+   "opened": true,
+   "pages": 10
+  }
+ }
+}

@@ -40,6 +40,8 @@ export const LEGAL_MCP_TOOLS = [
   "docx.edit_draft",
   // 2026-11-10 V16 第 41 批：在本任务已生成的表格上逐格修改（同名新版本；不再为改几处整份重出）
   "xlsx.edit_cells",
+  // 2026-11-22 第 57 批（D-228）：债权台账——分段计息、还款抵充与汇总一次算完，可直接成表（模型不再心算抵充与合计）
+  "calc.ledger",
 ] as const;
 
 export type LegalMcpToolName = (typeof LEGAL_MCP_TOOLS)[number];

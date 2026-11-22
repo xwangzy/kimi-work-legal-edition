@@ -1,0 +1,6 @@
+{"tag": "m21-citation-audit", "card": "citation-audit", "veto": [], "score": 22, "dims": [3, 2, 3, 3, 3, 2, 3, 3],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 11, "questions": 0,
+ "top_issues": ["把原稿“质保金11-02到期”当作“约定到期日”，没有识别出届满后10日付款及顺延", "列名“条文原文（三类语义失配必填）”带方法指令", "合同法第158条因法规库不收旧法只能标“未核验”"],
+ "prev_score": null,
+ "product_defect": ["核验表模板列名“条文原文（三类语义失配必填）”把方法指令带进交付物（界面或系统用语进成果）", "法规库不收已废止的《合同法》等旧法，体检任务对旧法条只能标“未核验”，无法给出原文对照（工具行为）"],
+ "known_defects_recurring": [], "new_defects": []}

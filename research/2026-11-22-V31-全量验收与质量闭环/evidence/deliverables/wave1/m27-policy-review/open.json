@@ -1,0 +1,25 @@
+{
+ "stack": "a",
+ "model": null,
+ "tag": "m27-policy-review",
+ "run": "run_4e5b21e8-49be-4c60-99c4-2a716fdf7be6",
+ "status": "succeeded",
+ "open": {
+  "v1-规章制度审查意见-员工手册（2023版）.docx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v1-逐条审查表-员工手册（2023版）.xlsx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v2-规章制度审查意见-员工手册（2023版）.docx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v2-逐条审查表-员工手册（2023版）.xlsx": {
+   "opened": true,
+   "pages": 8
+  }
+ }
+}

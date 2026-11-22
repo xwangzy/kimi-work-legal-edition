@@ -1,0 +1,29 @@
+{
+ "stack": "c",
+ "model": null,
+ "tag": "m07-defense",
+ "run": "run_1a556bc3-0c58-41b8-8583-628e0f601dfc",
+ "status": "succeeded",
+ "open": {
+  "v1-反诉金额测算-验收款.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-提交前核对清单-锐川买卖合同.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-民事答辩状.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-答辩要点与证据对照表-锐川买卖合同.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-答辩要点与证据对照表-锐川买卖合同.xlsx": {
+   "opened": true,
+   "pages": 3
+  }
+ }
+}

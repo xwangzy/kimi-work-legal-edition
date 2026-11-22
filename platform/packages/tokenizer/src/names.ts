@@ -16,7 +16,7 @@
  */
 import { surnameAt } from "./surnames.ts";
 import { shapeFold, softenSingleBreaks, VariantMatcher } from "./variants.ts";
-import type { Hit } from "./patterns.ts";
+import { idCardValid, type Hit } from "./patterns.ts";
 
 const CJK = /[一-龥]/;
 
@@ -130,6 +130,8 @@ const ROLE_CUES = [
 const HEADER_LABELS = new Set([
   "发件人", "发信人", "抄送", "抄送人", "密送", "记录人", "记录", "整理人", "参会人员", "参会人", "参会", "与会人员", "出席人员", "出席", "列席人员", "列席",
   "主持人", "主持", "审核人", "审批人", "批准人", "报告人", "汇报人", "对接人", "承办人", "联络人", "接待人", "送达人", "签收人", "拟稿人", "核稿人", "访谈对象", "受访人", "访谈人",
+  // 第 57 批全量验收（D-232）：劳动卡访谈记录“接待律师：许蔓 （本记录……）”没认出（“律师”只作姓名之后的称谓）
+  "接待律师", "承办律师", "经办律师", "主办律师", "代理律师", "值班律师",
 ]);
 ROLE_CUES.push(...HEADER_LABELS);
 
@@ -520,25 +522,47 @@ function skipSeparators(text: string, i: number): number {
  * （“其中李明，男”这种起点不清的不认，宁可交给二次检测提示）。
  */
 const HEADER_CUE = /[，,（(]\s?(?:[男女](?=[，,。；;、）)]|$)|身份证号?|公民身份号码|身份证件号码|联系电话|手机号?|电话)/g;
+/** 位置 k 之前紧挨着的一个姓名（姓氏 + 1–2 字名，起点在句首、标点、空白或功能字之后）；没有返回 null。 */
+function nameEndingAt(text: string, k: number, strong = false): string | null {
+  for (const len of [4, 3, 2]) {
+    const j = k - len;
+    if (j < 0) continue;
+    const before = j === 0 ? "" : text[j - 1]!;
+    if (before !== "" && !BOUNDARY.test(before) && !FUNCTION_BEFORE.has(before)) continue;
+    const s = surnameAt(text, j);
+    if (s === 0 || len - s < 1 || len - s > 2) continue;
+    if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
+    const given = text.slice(j + s, k);
+    if (!(givenOk(given) || (strong && strongGivenOk(given)))) continue;
+    if (COMMON_WORDS.has(text.slice(j, j + 2)) || (strong && !stillLooksLikeName(text.slice(j, k)))) continue;
+    return text.slice(j, k);
+  }
+  return null;
+}
 function headerNames(text: string, out: Set<string>): void {
   HEADER_CUE.lastIndex = 0;
   for (const m of text.matchAll(HEADER_CUE)) {
-    const k = m.index!;
-    for (const len of [4, 3, 2]) {
-      const j = k - len;
-      if (j < 0) continue;
-      const before = j === 0 ? "" : text[j - 1]!;
-      if (before !== "" && !BOUNDARY.test(before) && !FUNCTION_BEFORE.has(before)) continue;
-      const s = surnameAt(text, j);
-      if (s === 0 || len - s < 1 || len - s > 2) continue;
-      if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
-      const given = text.slice(j + s, k);
-      if (!givenOk(given)) continue;
-      if (COMMON_WORDS.has(text.slice(j, j + 2))) continue;
-      out.add(text.slice(j, k));
-      break;
-    }
+    const name = nameEndingAt(text, m.index!);
+    if (name) out.add(name);
   }
+}
+
+/**
+ * 证件持有人（第 57 批全量验收，法律意见书卡，D-232）：工商登记摘录“张宏伟：340202…　李慧敏：340202…”——冒号后直接跟一个校验位正确的
+ * 18 位身份证号，冒号前的就是自然人。原先只认“姓名，身份证号”，“李慧敏”在整份材料里没有别的强上下文，以真名发给了模型。
+ * 令牌化时证件号先被遮盖，所以这一条要在遮盖前的原文上找（MatterTokenizer.tokenize 调用）；只返回姓名，不改原文。
+ */
+const ID_HOLDER_CUE = /[：:]\s?(?=[1-9]\d{16}[\dXx](?![\dXx]))/g;
+export function idHolderNames(text: string): Set<string> {
+  const out = new Set<string>();
+  ID_HOLDER_CUE.lastIndex = 0;
+  for (const m of text.matchAll(ID_HOLDER_CUE)) {
+    const at = m.index! + m[0].length;
+    if (!idCardValid(text.slice(at, at + 18))) continue;
+    const name = nameEndingAt(text, m.index!, true);
+    if (name) out.add(name);
+  }
+  return out;
 }
 
 /** 以角色词或表头词开头（顿号列举到下一个角色时停下，由角色词那一支处理）。 */
@@ -693,7 +717,10 @@ export function recognizeNames(text: string): Set<string> {
     }
     // 函件与纪要表头只在冒号或空白之后读姓名（“记录显示”“主持召开”不是）
     if (HEADER_LABELS.has(m[0].replace(/[一二三四五六七八九十\d]+$/, "")) && !/[：:\s]/.test(text[m.index! + m[0].length] ?? "")) continue;
-    const strong = HEADER_LABELS.has(m[0].replace(/[一二三四五六七八九十\d]+$/, ""));
+    // 角色词与姓名之间写明了冒号（“法定代表人：顾承远，董事长”“委托代理人：许蔓，”）同样是强证据：名字里可以有一个常作名字用字的功能字。
+    // 第 57 批全量验收（D-232）：客户法定代表人“顾承远”的“承”在 STOP 里，18 张诉讼卡的材料只有“法定代表人：顾承远”这一种写法，一次都没认出，
+    // 以真名发给了模型。仍要求姓名右边是标点、空白或文末（readName 的 hard），“法定代表人：承担……”这类不受影响。
+    const strong = HEADER_LABELS.has(m[0].replace(/[一二三四五六七八九十\d]+$/, "")) || /[：:]/.test(text.slice(m.index! + m[0].length, j));
     // “当事人一方明确表示”（民法典第五百六十三条）：角色词后的“一”被当成序号（“证人一”），“方明”被认成姓名，学进事项令牌表后
     // 法条原文成了“当事人一〔自然人〕确表示”，助手起草的“卖方明知”在回读里也被换成代号、改不掉（V14 第 39 批真实走查 A）。
     // “一方、双方、对方……”里的“方”不作姓氏读，与称谓分支同一口径

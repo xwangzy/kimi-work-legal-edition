@@ -75,6 +75,8 @@ function argsFor(tool: string, skill: string): Record<string, unknown> {
       return { title: `${skill}-表`, sheets: [{ name: "清单", columns: ["序号", "事项"], rows: [[1, "示例"]] }] };
     case "calc.interest":
       return { principal_yuan: 100000, start_date: "2026-01-01", end_date: "2026-02-01", rate: { kind: "fixed", annual_pct: 6 } };
+    case "calc.ledger": // 第 57 批：金额测算改用债权台账（给 title 直接成表）
+      return { title: `${skill}-计算明细`, scenarios: [{ as_of: "2026-02-01", debts: [{ label: "货款", amount_yuan: 100000, due_date: "2025-12-31" }], payments: [{ date: "2026-01-15", amount_yuan: 20000 }], rate: { kind: "daily", per_10k: 5 } }] };
     case "citations.verify":
       return { text: "依据《民法典》第五百八十五条", as_of: "2026-10-01" };
     case "law.get_version":

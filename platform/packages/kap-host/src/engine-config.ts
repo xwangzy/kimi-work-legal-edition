@@ -70,6 +70,9 @@ function canonical(v: unknown): string {
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
+/** 一步模型请求遇到可重试错误（限流、网关错误）时最多试几次（含第一次）。 */
+export const STEP_MAX_ATTEMPTS = 20;
+
 export function buildEngineConfig(spec: EngineConfigSpec): EngineConfig {
   const disabled: string[] = [];
   const ctx = spec.testMaxContextSize && Number.isInteger(spec.testMaxContextSize) && spec.testMaxContextSize >= 4096 && spec.testMaxContextSize < 262144 ? spec.testMaxContextSize : 262144;
@@ -107,6 +110,10 @@ export function buildEngineConfig(spec: EngineConfigSpec): EngineConfig {
     secondary_model: { default_model: SECONDARY_MODEL, force: true },
     identity: { name: "Kimi Work 法律发行版助手", slug: "kimi-work-legal" },
     tools: { disabled },
+    // 上游限流的耐心（第 57 批，D-230）：引擎对 429 / 5xx 逐步退避重试（0.5 秒起翻倍、封顶 32 秒），缺省 10 次，合计约两分半就放弃、整单失败。
+    // 真实运行：两波并行时答辩状一单在第一步遇到限流，2 分 21 秒后失败；11-12 上游曾连续拒绝约 11 分钟。律师的任务一单二十多分钟，
+    // 多等几分钟远好过从头再来——放宽到 20 次（约 8 分钟），界面这段时间如实显示“正在重试”。
+    loop_control: { max_attempts_per_step: STEP_MAX_ATTEMPTS },
     // 联网检索与网页抓取（第 04 篇 §5.1 `/search`、`/fetch`；ZP-11）：只指向出站闸门；宿主出口按工具调用 ID 换上运行令牌，api_key 只是占位
     ...(spec.searchConfigured || spec.fetchConfigured
       ? {

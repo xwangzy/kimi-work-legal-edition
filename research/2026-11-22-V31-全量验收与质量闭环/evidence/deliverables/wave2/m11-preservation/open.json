@@ -1,0 +1,17 @@
+{
+ "stack": "c",
+ "model": null,
+ "tag": "m11-preservation",
+ "run": "run_563712f4-de30-4d09-842e-8fbc06f11b24",
+ "status": "succeeded",
+ "open": {
+  "v1-保全财产线索与担保核对表-锐川诉前保全.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v1-财产保全申请书.docx": {
+   "opened": true,
+   "pages": 3
+  }
+ }
+}

@@ -1,0 +1,21 @@
+{
+ "stack": "a",
+ "model": null,
+ "tag": "m23-case-report-lit",
+ "run": "run_e58b3c0e-09d7-45f5-a620-77f418520d0b",
+ "status": "succeeded",
+ "open": {
+  "v1-案件进展汇报-锐川诉恒岳买卖合同纠纷-2026-11-09.docx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-进展与风险附表-锐川诉恒岳买卖合同纠纷-2026-11-09.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-进展与风险附表-锐川诉恒岳买卖合同纠纷-2026-11-09.xlsx": {
+   "opened": true,
+   "pages": 5
+  }
+ }
+}

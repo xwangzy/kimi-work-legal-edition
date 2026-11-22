@@ -17,7 +17,12 @@ export interface CalcLaborParams {
   start_date: string;
   end_date: string;
   kind: "compensation" | "unlawful";
-  avg_monthly_wage_yuan: number;
+  /** 解除或终止前十二个月平均工资；与 monthly_wages_yuan 给一个。 */
+  avg_monthly_wage_yuan?: number;
+  /** 解除或终止前各月的应得工资（最多十二个月，工作不满十二个月的按实际月数）：给了就由工具求平均（第 57 批）。 */
+  monthly_wages_yuan?: number[];
+  /** 工资台账逐月各项目 + 本口径计入哪些项目：由工具按口径求和、求平均（工资构成有争议时用它，各口径只改 include）。 */
+  wage_table?: WageTable;
   local_avg_monthly_wage_yuan?: number;
   local_min_wage_yuan?: number;
   notice_in_lieu?: boolean;
@@ -41,7 +46,9 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const LCL_START = "2008-01-01";
 
 const valid = (d: string) => DAY.test(d) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
-const round2 = (n: number) => Math.round(n * 100 + Number.EPSILON) / 100;
+// 第 57 批全量验收：按十进制四舍五入到分。原先 Math.round(n * 100 + Number.EPSILON) 在 x.xx5 上约 4.6% 舍错（1.005→1.00、2.675→2.67），
+// 先按 15 位有效数字取整消掉浮点尾差再四舍五入
+const round2 = (n: number) => (Math.sign(n) * Math.round(Number((Math.abs(n) * 100).toPrecision(15)))) / 100;
 
 /** 日期加 n 个月：到期月没有对应日取月末（与期间计算同一口径）。 */
 function addMonths(d: string, n: number): string {
@@ -80,15 +87,125 @@ const money = (v: unknown, name: string, required = false): number | undefined =
   return v;
 };
 
+/**
+ * 月工资：直接给平均数，或给各月应得工资由这里求平均（第 57 批：第 56 批真实运行里十二个月合计与月均由模型在命令行手算，
+ * 把旷工扣款加回了两次，月均 35,162.36 / 35,438.22 / 35,771.55 三个数都不对，再传进本工具）。
+ */
+export interface WageTable {
+  /** 工资台账逐月原样抄录：每月各项目的金额（扣款写负数）。最多十二个月。 */
+  months: { month: string; items: Record<string, number> }[];
+  /** 本口径计入月工资的项目名（与台账项目名逐字一致）。不计入的不写——不要自己把数加回或剔除后改台账。 */
+  include: string[];
+}
+
+/**
+ * 按工资台账与“计入哪些项目”求月平均工资（第 57 批第二波真实复验，劳动者应对一单）：
+ * 给了 monthly_wages_yuan 之后，各口径的逐月数字仍由模型手工调整——“剔除加班费并加回扣款”那一组把 8 月写成 27,310.34（应为 24,000），
+ * 扣款被加回了两次，2N 多算 3,310.32 元，命中金额否决。同一份台账只抄一次，各口径只改 include，就不存在“调整后的数”。
+ */
+export function wageFromTable(t: WageTable): { wage: number; total: number; steps: string[] } {
+  if (!t || !Array.isArray(t.months) || t.months.length === 0 || t.months.length > 12) throw new DomainError("validation", "wage_table.months 须为 1～12 个月的工资台账", 422);
+  if (!Array.isArray(t.include) || t.include.length === 0) throw new DomainError("validation", "wage_table.include 须写明本口径计入月工资的项目名", 422);
+  const known = new Set<string>();
+  const seenMonth = new Set<string>();
+  for (const [i, m] of t.months.entries()) {
+    if (!m || typeof m.month !== "string" || !m.month.trim()) throw new DomainError("validation", `wage_table.months 第 ${i + 1} 项需要 month（如 2026-08）`, 422);
+    if (seenMonth.has(m.month)) throw new DomainError("validation", `wage_table.months 里 ${m.month} 出现了两次`, 422);
+    seenMonth.add(m.month);
+    if (!m.items || typeof m.items !== "object" || Array.isArray(m.items)) throw new DomainError("validation", `wage_table.months 第 ${i + 1} 项需要 items（项目名 → 金额）`, 422);
+    for (const [k, v] of Object.entries(m.items)) {
+      if (typeof v !== "number" || !Number.isFinite(v)) throw new DomainError("validation", `wage_table：${m.month} 的“${k}”须为数字（元；扣款写负数）`, 422);
+      known.add(k);
+    }
+  }
+  const unknown = t.include.filter((k) => !known.has(k));
+  if (unknown.length > 0) throw new DomainError("validation", `wage_table.include 里的${unknown.map((k) => `“${k}”`).join("、")}不在台账项目里；台账项目有：${[...known].join("、")}`, 422);
+  const include = new Set(t.include);
+  const cents = t.months.map((m) => Object.entries(m.items).reduce((n, [k, v]) => n + (include.has(k) ? Math.round(v * 100) : 0), 0));
+  const sum = cents.reduce((a, b) => a + b, 0);
+  if (sum < 0) throw new DomainError("validation", "wage_table：按 include 相加的工资合计为负数，请核对台账", 422);
+  const total = round2(sum / 100);
+  const wage = round2(sum / 100 / t.months.length);
+  const excluded = [...known].filter((k) => !include.has(k));
+  return {
+    wage,
+    total,
+    steps: [
+      `工资口径：计入 ${t.include.join("、")}${excluded.length > 0 ? `；不计入 ${excluded.join("、")}` : ""}`,
+      `月平均工资 = ${t.months.length} 个月（${t.months[0]!.month} 至 ${t.months.at(-1)!.month}）按上述口径的合计 ${total} 元 ÷ ${t.months.length} = ${wage} 元`,
+    ],
+  };
+}
+
+export function wageOf(p: { avg_monthly_wage_yuan?: number; monthly_wages_yuan?: number[]; wage_table?: WageTable }): { wage: number; steps: string[] } {
+  if (p.wage_table !== undefined) {
+    if (p.avg_monthly_wage_yuan !== undefined || p.monthly_wages_yuan !== undefined) throw new DomainError("validation", "wage_table、monthly_wages_yuan、avg_monthly_wage_yuan 只给一个", 422);
+    return wageFromTable(p.wage_table);
+  }
+  if (p.monthly_wages_yuan !== undefined) {
+    if (p.avg_monthly_wage_yuan !== undefined) throw new DomainError("validation", "avg_monthly_wage_yuan 与 monthly_wages_yuan 只给一个：给了各月工资就由工具求平均", 422);
+    const list = p.monthly_wages_yuan;
+    if (!Array.isArray(list) || list.length === 0 || list.length > 12) throw new DomainError("validation", "monthly_wages_yuan 须为 1～12 个月的应得工资（元）", 422);
+    const cents = list.map((v, i) => Math.round(money(v, `monthly_wages_yuan 第 ${i + 1} 个月`, true)! * 100));
+    const sum = cents.reduce((a, b) => a + b, 0);
+    const wage = round2(sum / 100 / list.length);
+    return { wage, steps: [`月平均工资 = ${list.length} 个月应得工资合计 ${round2(sum / 100)} 元 ÷ ${list.length} = ${wage} 元`] };
+  }
+  return { wage: money(p.avg_monthly_wage_yuan, "avg_monthly_wage_yuan（或 monthly_wages_yuan）", true)!, steps: [] };
+}
+
+export interface CalcAnnualLeaveParams {
+  kind: "annual_leave";
+  avg_monthly_wage_yuan?: number;
+  monthly_wages_yuan?: number[];
+  wage_table?: WageTable;
+  unused_days: number;
+  /** 2：只算差额（正常工资已发，另付 200%，缺省）；3：按 300% 全额。 */
+  leave_multiple?: 2 | 3;
+}
+
+export interface CalcAnnualLeaveResult {
+  daily_wage_yuan: number;
+  unused_days: number;
+  multiple: number;
+  compensation_yuan: number;
+  total_yuan: number;
+  steps: string[];
+  basis: string[];
+  warnings: string[];
+}
+
+/** 未休年休假工资报酬：日工资 = 月工资 ÷ 21.75（先取到分），再 × 未休天数 × 倍数——写出来的算式逐分可复算。 */
+export function calcAnnualLeave(p: CalcAnnualLeaveParams): CalcAnnualLeaveResult {
+  const w = wageOf(p);
+  const days = p.unused_days;
+  if (typeof days !== "number" || !Number.isFinite(days) || days <= 0 || days > 60 || Math.abs(days * 2 - Math.round(days * 2)) > 1e-9) throw new DomainError("validation", "unused_days（应休未休天数）须在 0～60 之间，可带半天", 422);
+  const multiple = p.leave_multiple ?? 2;
+  if (multiple !== 2 && multiple !== 3) throw new DomainError("validation", "leave_multiple 须为 2（差额 200%，正常工资已发）或 3（300% 全额）", 422);
+  const daily = round2(w.wage / 21.75);
+  const pay = round2(daily * days * multiple);
+  return {
+    daily_wage_yuan: daily,
+    unused_days: days,
+    multiple,
+    compensation_yuan: pay,
+    total_yuan: pay,
+    steps: [...w.steps, `日工资 = 月工资 ${w.wage} 元 ÷ 21.75 = ${daily} 元`, `未休年休假工资报酬 = ${daily} × ${days} 天 × ${multiple}00% = ${pay} 元${multiple === 2 ? "（正常工作期间的工资已发，另付 200%）" : "（按 300% 全额，含正常工作期间的工资）"}`],
+    basis: ["《职工带薪年休假条例》第五条", "《企业职工带薪年休假实施办法》第十条、第十一条"],
+    warnings: ["月工资应是前十二个月剔除加班工资后的月平均工资：给的数含加班费的请剔除后重算", "应休未休天数的折算、跨年度安排与仲裁时效各地口径不一，请律师核对"],
+  };
+}
+
 export function calcLabor(p: CalcLaborParams): CalcLaborResult {
   if (!valid(p.start_date ?? "") || !valid(p.end_date ?? "")) throw new DomainError("validation", "start_date、end_date 须为 YYYY-MM-DD", 422);
   if (p.end_date <= p.start_date) throw new DomainError("validation", "解除或终止日须晚于入职日", 422);
   if (p.kind !== "compensation" && p.kind !== "unlawful") throw new DomainError("validation", "kind 须为 compensation（经济补偿）或 unlawful（违法解除赔偿金）", 422);
-  const wage = money(p.avg_monthly_wage_yuan, "avg_monthly_wage_yuan", true)!;
+  const w = wageOf(p);
+  const wage = w.wage;
   const localAvg = money(p.local_avg_monthly_wage_yuan, "local_avg_monthly_wage_yuan");
   const minWage = money(p.local_min_wage_yuan, "local_min_wage_yuan");
   const lastMonth = money(p.last_month_wage_yuan, "last_month_wage_yuan");
-  const steps: string[] = [];
+  const steps: string[] = [...w.steps];
   const warnings: string[] = [];
   const basis = ["《中华人民共和国劳动合同法》第四十七条"];
 

@@ -1,0 +1,5 @@
+{"tag": "m33-redraft-local", "card": "redraft-local", "veto": [], "score": 23, "dims": [3, 3, 3, 3, 2, 3, 3, 3],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 0, "questions": 0,
+ "top_issues": ["差异表“原建议状态”“重新复核人”两列全空，没有说明", "没有写明新增11.3后原11.3顺延为11.4、删除4.1（三）后分项前移"], "prev_score": null,
+ "product_defect": ["事项没有审查卡时，差异表“原建议状态”“重新复核人”两列仍保留且全空，应隐藏或注明“本事项无审查卡”（工具行为）", "比对报告只给插入位置，不列出由增删引起的条款编号顺延（工具行为）"],
+ "known_defects_recurring": [], "new_defects": []}

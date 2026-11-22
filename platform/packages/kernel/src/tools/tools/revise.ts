@@ -300,6 +300,12 @@ export function docxRevise(ctx: InvokeCtx, p: { document_version_id?: unknown; p
   };
 }
 
+/** 退回明细里的锚点原文（截断到 40 字）。 */
+const clipAnchor = (v: unknown): string => {
+  const s = [...String(v ?? "")];
+  return s.length > 40 ? `${s.slice(0, 40).join("")}…` : s.join("");
+};
+
 function reviseOnce(
   ctx: InvokeCtx,
   q: { mid: string; rid: string; run: { created_by: string }; documentVersionId: string; raw: RevisePatchInput[]; dryRun: boolean },
@@ -366,7 +372,8 @@ function reviseOnce(
       reason: r.reason,
       written: false,
       // index 是第几条（从 1 起，与 label_notes、header_footer 的序号同一口径，补交时照写）；引擎报错里的“修订 p14”是从 0 起的内部编号，换成“第 15 条”
-      conflicts: r.conflicts.map((c) => ({ ...(c.index >= 0 ? { index: c.index + 1 } : {}), reason: c.reason, fix: FIX_HINT[c.reason], ...(c.detail ? { detail: c.detail.replace(/修订 p(\d+)/g, (_m, n: string) => `第 ${Number(n) + 1} 条修改`) } : {}) })),
+      // anchor（第 57 批）：被退回那一条的原文开头，不靠序号也认得出是哪一条
+      conflicts: r.conflicts.map((c) => ({ ...(c.index >= 0 ? { index: c.index + 1, anchor: clipAnchor(raw[c.index]?.anchor) } : {}), reason: c.reason, fix: FIX_HINT[c.reason], ...(c.detail ? { detail: c.detail.replace(/修订 p(\d+)/g, (_m, n: string) => `第 ${Number(n) + 1} 条修改`) } : {}) })),
       ...priorNote,
       ...(hfText.length > 0 ? { header_footer_text: hfText } : {}),
       note,

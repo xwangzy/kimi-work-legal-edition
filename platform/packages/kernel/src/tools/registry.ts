@@ -4,7 +4,7 @@
  * “平台对工具 schema 校验严格”（§4.1）——inputSchema 一律 additionalProperties:false。
  * 外发、签发、删除类工具根本不在注册表内（§6.2）。
  */
-import { calcLabor } from "./tools/labor.ts";
+import { calcAnnualLeave, calcLabor } from "./tools/labor.ts";
 import { calcCourtFee } from "./tools/court-fee.ts";
 import type { CapabilityClaims } from "@zr-legal/service-auth";
 import { DomainError } from "@zr-legal/domain";
@@ -19,6 +19,7 @@ import type { BlobStore } from "../blobs.ts";
 import { lawGetArticle, lawGetVersion, lawSearch } from "./tools/law.ts";
 import { citationsVerify } from "./tools/citations.ts";
 import { calcInterest } from "./tools/calc.ts";
+import { calcLedgerTool } from "./tools/ledger-table.ts";
 import { calcDeadline } from "./tools/deadline.ts";
 import { redactScan } from "./tools/redact.ts";
 import { materialsReadExcerpt } from "./tools/materials.ts";
@@ -63,6 +64,16 @@ export interface InvokeCtx {
 }
 
 const dateSchema = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" };
+/** calc.ledger 的利率口径（顶层与各笔债务共用）。 */
+const LEDGER_RATE_SCHEMA = {
+  oneOf: [
+    { type: "object", additionalProperties: false, required: ["kind", "per_10k"], properties: { kind: { const: "daily" }, per_10k: { type: "number", exclusiveMinimum: 0, maximum: 100 } } },
+    { type: "object", additionalProperties: false, required: ["kind", "annual_pct"], properties: { kind: { const: "fixed" }, annual_pct: { type: "number", exclusiveMinimum: 0, maximum: 100 } } },
+    { type: "object", additionalProperties: false, required: ["kind", "plus_bp"], properties: { kind: { const: "lpr_plus" }, lpr_term: { const: "1Y" }, plus_bp: { type: "number" } } },
+    { type: "object", additionalProperties: false, required: ["kind", "multiple"], properties: { kind: { const: "lpr_times" }, lpr_term: { const: "1Y" }, multiple: { type: "number", exclusiveMinimum: 0, maximum: 4 } } },
+    { type: "object", additionalProperties: false, required: ["kind"], properties: { kind: { const: "none" } } },
+  ],
+};
 /** docx.revise 的一条修改（patches 与补交 amend 里同一结构）。 */
 const REVISE_PATCH_SCHEMA = {
   type: "object",
@@ -211,6 +222,85 @@ export const TOOLS: readonly ToolDef[] = [
     invoke: (p) => calcInterest(p),
   },
   {
+    // 第 57 批（D-228）：第 56 批十三卡真实验收里的金额错误都出在“段与段之间”——抵充、余额、各口径合计由模型心算后手敲进表格
+    name: "calc.ledger",
+    title: "债权台账（分段计息、还款抵充、汇总）",
+    description:
+      "一次算完一笔或几笔欠款到某日为止的全部金额：本金随每笔付款变动自动分段计息（违约金、利息、资金占用费），每笔付款按抵充顺序逐笔冲抵，给出本金余额、已冲与未付的利息（违约金）、费用和未清偿合计；你只给事实与口径，不做任何加减乘除，也不用自己分段。" +
+      "scenarios 里每个口径独立计算（最多 4 个，有争议的口径各写一个并列）：as_of 暂计截止日（含当日，不要自己加一天）；debts 每笔款项写 label、amount_yuan，起算写 due_date（最后履行日，系统自次日起算）或 accrue_from（起算日，含当日）二选一，" +
+      "kind 缺省 principal（本金），cost 是实现债权的费用或应由对方负担的诉讼费，interest 是数额已经确定的利息或违约金；payments 逐笔写 date、amount_yuan；rate 写 daily（per_10k：日万分之五写 5）、fixed（annual_pct）、lpr_plus（plus_bp）或 lpr_times（multiple）。" +
+      "allocation 抵充顺序：cost_interest_principal（缺省，费用 → 利息 → 本金，没有约定时的法定顺序）、principal_only（付款只冲本金，违约金另行全额计——双方对账确认了本金余额或约定付款即还本时用）、principal_first。payment_day 缺省 not_counted（付款当日不计）。cap_yuan 是违约金或利息的约定上限。" +
+      "申请执行算迟延履行期间的加倍部分债务利息：加 doubled { due_date: 履行期间最后一日 }（系统自次日起按日万分之一点七五计，基数随清偿减少，清偿时排在判决确定的金钱债务之后）；哪几笔计入基数用各笔的 in_doubled_base 标注（缺省本金与费用计入、利息不计入）。" +
+      "给了 title 就把结果直接生成 Excel 计算表并登记为本任务成果（汇总、分段计算、付款与抵扣、参数与假设；数字由系统写入并带公式）：notes 逐行写参数的出处与确认状态（item、value、source、status），extra_sheets 可附加你自己写的表（如诉讼费预估）。" +
+      "返回各口径的 summary（一句话结论，可照抄进文书）、totals、segments、payments；文书和答复里用到的金额逐字照抄返回值。warnings 用自己的话向律师说明它影响哪个数。",
+    sideEffect: "write_draft",
+    resource: "matter_work",
+    version: "1",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["scenarios"],
+      properties: {
+        title: { type: "string" },
+        scenarios: {
+          type: "array",
+          minItems: 1,
+          maxItems: 4,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["as_of", "debts"],
+            properties: {
+              name: { type: "string" },
+              as_of: dateSchema,
+              debts: {
+                type: "array",
+                minItems: 1,
+                maxItems: 60,
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["label", "amount_yuan"],
+                  properties: {
+                    label: { type: "string" },
+                    amount_yuan: { type: "number", minimum: 0 },
+                    kind: { type: "string", enum: ["principal", "cost", "interest"] },
+                    due_date: dateSchema,
+                    accrue_from: dateSchema,
+                    rate: LEDGER_RATE_SCHEMA,
+                    in_doubled_base: { type: "boolean" },
+                  },
+                },
+              },
+              payments: {
+                type: "array",
+                maxItems: 200,
+                items: { type: "object", additionalProperties: false, required: ["date", "amount_yuan"], properties: { date: dateSchema, amount_yuan: { type: "number", exclusiveMinimum: 0 }, note: { type: "string" } } },
+              },
+              rate: LEDGER_RATE_SCHEMA,
+              year_days: { type: "integer", enum: [360, 365] },
+              payment_day: { type: "string", enum: ["not_counted", "counted"] },
+              allocation: { type: "string", enum: ["cost_interest_principal", "principal_only", "principal_first"] },
+              cap_yuan: { type: "number", minimum: 0 },
+              doubled: { type: "object", additionalProperties: false, properties: { due_date: dateSchema, accrue_from: dateSchema, per_10k: { type: "number", exclusiveMinimum: 0, maximum: 100 } } },
+            },
+          },
+        },
+        notes: {
+          type: "array",
+          maxItems: 200,
+          items: { type: "object", additionalProperties: false, required: ["item"], properties: { scenario: { type: "string" }, item: { type: "string" }, value: {}, source: { type: "string" }, status: { type: "string" } } },
+        },
+        extra_sheets: {
+          type: "array",
+          maxItems: 3,
+          items: { type: "object", additionalProperties: false, required: ["name", "columns", "rows"], properties: { name: { type: "string" }, columns: { type: "array", items: { type: "string" } }, rows: { type: "array", items: { type: "array", items: {} } } } },
+        },
+      },
+    },
+    invoke: (p, ctx) => calcLedgerTool(ctx, p),
+  },
+  {
     name: "calc.deadline",
     title: "期间计算（法定期间与工作日）",
     description:
@@ -243,26 +333,39 @@ export const TOOLS: readonly ToolDef[] = [
     title: "劳动经济补偿与赔偿金",
     description:
       "确定性计算解除或终止劳动合同的经济补偿 N（kind=compensation，劳动合同法第四十七条）或违法解除赔偿金 2N（kind=unlawful，第八十七条、实施条例第二十五条），逐步写出年限、基数、三倍封顶与代通知金。start_date 写入职日（用工之日），end_date 写劳动关系的最后一日（含当日）。" +
-      "月工资写解除前十二个月平均工资；当地上年度职工月平均工资、最低工资由律师或材料给出，不要凭记忆填；没给时结果带 warnings。2008 年以前的工作年限按当时规定另算，不在结果里。是否应当支付由律师判断，本工具只算数额；warnings 非空时须原样告知律师。",
+      "月工资三种给法（只给一种）：①有工资台账的写 wage_table——months 把台账逐月各项目原样抄一次（month 如 2026-08，items 写“项目名: 金额”，扣款写负数），include 写本口径计入月工资的项目名；工资构成有争议（加班费、年终奖计不计入，扣款加不加回）时每个口径调用一次、只改 include，不要自己把数剔除或加回后再传；②只有逐月合计数的写 monthly_wages_yuan；③只有一个平均数的写 avg_monthly_wage_yuan。当地上年度职工月平均工资、最低工资由律师或材料给出，不要凭记忆填；没给时结果带 warnings。2008 年以前的工作年限按当时规定另算，不在结果里。" +
+      "未休年休假工资报酬用 kind=annual_leave：给月工资（剔除加班工资后的月平均，同上两种给法）与 unused_days（应休未休天数），leave_multiple 缺省 2（正常工资已发，另付 200%）、全额 300% 写 3；这一类不需要 start_date、end_date。是否应当支付由律师判断，本工具只算数额；warnings 用自己的话向律师说明。",
     sideEffect: "read",
     resource: "pure",
-    version: "1",
+    version: "2",
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      required: ["start_date", "end_date", "kind", "avg_monthly_wage_yuan"],
+      required: ["kind"],
       properties: {
         start_date: dateSchema,
         end_date: dateSchema,
-        kind: { type: "string", enum: ["compensation", "unlawful"] },
+        kind: { type: "string", enum: ["compensation", "unlawful", "annual_leave"] },
         avg_monthly_wage_yuan: { type: "number", minimum: 0 },
+        monthly_wages_yuan: { type: "array", minItems: 1, maxItems: 12, items: { type: "number", minimum: 0 } },
+        wage_table: {
+          type: "object",
+          additionalProperties: false,
+          required: ["months", "include"],
+          properties: {
+            months: { type: "array", minItems: 1, maxItems: 12, items: { type: "object", additionalProperties: false, required: ["month", "items"], properties: { month: { type: "string" }, items: { type: "object", additionalProperties: { type: "number" } } } } },
+            include: { type: "array", minItems: 1, maxItems: 30, items: { type: "string" } },
+          },
+        },
+        unused_days: { type: "number", exclusiveMinimum: 0, maximum: 60 },
+        leave_multiple: { type: "integer", enum: [2, 3] },
         local_avg_monthly_wage_yuan: { type: "number", minimum: 0 },
         local_min_wage_yuan: { type: "number", minimum: 0 },
         notice_in_lieu: { type: "boolean" },
         last_month_wage_yuan: { type: "number", minimum: 0 },
       },
     },
-    invoke: (p) => calcLabor(p),
+    invoke: (p) => (p?.kind === "annual_leave" ? calcAnnualLeave(p) : calcLabor(p)),
   },
   {
     name: "calc.court_fee",
@@ -515,10 +618,11 @@ export const TOOLS: readonly ToolDef[] = [
       "在本任务里你已用 docx.render_report 生成的 Word 文书上逐处修改（交付前检查报出的问题、自查发现的措辞、条号、金额、遗漏的款项等），几秒完成，登记为同名文书的新版本（旧版本保留）：" +
       "artifact_version_id 写 docx.render_report（或上一次本工具）返回的编号；每处给出要改的原文（anchor，逐字照抄这份文书里的文字、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落，按换行分段）。" +
       "只改要改的地方，不要为改几处整份重新生成；整体结构要变（增删多条、重排章节）才用 docx.render_report 重出。律师上传的材料不能用本工具，用 docx.revise。" +
-      "能定位的各处先写入（status=partial），找不到或有歧义的逐条退回原因，改正后用新编号只重交这几处；改好后返回新版本的交付前检查 quality_check。",
+      "同一段文字在文书里出现几处（如同一金额既在某一格、又在另一格的算式里）：occurrence 写全文第几处（按先后，含表格格子，从 1 起），或 paragraph_hint 写位置（正文写条款号或该段独有的文字，表格格子写“行名｜列名”）；给了位置提示的，即使全文只有一处也要与提示相符才写。" +
+      "能定位的各处先写入（status=partial），找不到或有歧义的逐条退回：conflicts 每条的 patch_no 是你提交的 patches 中的第几处（从 1 起，按提交顺序），anchor 是那一处的原文，有歧义的列出各处的位置与上下文（matches）；applied_patch_nos 是已写入的几处。改正后用新编号只重交退回的几处；dry_run=true 试写返回同样的逐条明细。改好后返回新版本的交付前检查 quality_check。",
     sideEffect: "write_draft",
     resource: "matter_work",
-    version: "1",
+    version: "2",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -535,6 +639,7 @@ export const TOOLS: readonly ToolDef[] = [
             properties: {
               anchor: { type: "string" },
               proposed_text: { type: "string" },
+              // 下限留 0：写 0 的由工具退回并说明“从 1 起、按全文先后”，比参数校验报“小于下限”更能让模型改对
               occurrence: { type: "integer", minimum: 0 },
               paragraph_hint: { type: "string" },
               insert_after: { type: "boolean" },

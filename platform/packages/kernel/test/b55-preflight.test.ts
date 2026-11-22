@@ -5,14 +5,16 @@
  */
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { agentFollowUpPrompt, agentGoalPrompt, preflightLine, preflightOf, PREFLIGHT_EMPTY_RULE, PREFLIGHT_KNOWN_RULE, PREFLIGHT_PARTIES_RULE } from "../src/executor/executor.ts";
+import { agentFollowUpPrompt, agentGoalPrompt, preflightLine, preflightOf, PREFLIGHT_EMPTY_RULE, PREFLIGHT_KNOWN_RULE, PREFLIGHT_PARTIES_RULE, PREFLIGHT_UNSELECTED_RULE } from "../src/executor/executor.ts";
 import { importText, makeKernel, type TestKernel } from "./helpers.ts";
 
-const KNOWN = "任务说明与方法参数里律师已经写明的（法院、请求、日期、立场、金额口径等）不再问；";
+const KNOWN = "这一行的份数、条数是给你安排工作用的，不写进任何交付文件；任务说明与方法参数里律师已经写明的（法院、请求、日期、立场、金额口径等）不再问；";
+const UNSELECTED = "本事项还有材料这次没有勾选、你读不到：结论因为缺某类材料下不了时，在回报里写明“事项里还有未勾选的材料，补勾后可以继续”，不要写成“律师未提供”；";
 const EMPTY = "本事项没有材料、也没有确认过的事实：案情以任务说明为准，不必先查材料目录；任务说明里也没有案情的，第一步就用提问工具一次问清（纠纷类型、基本事实、请求、对方是谁），不要先起草。";
 
 test("固定句逐字", () => {
   assert.equal(PREFLIGHT_KNOWN_RULE, KNOWN);
+  assert.equal(PREFLIGHT_UNSELECTED_RULE, UNSELECTED);
   assert.equal(PREFLIGHT_EMPTY_RULE, EMPTY);
 });
 
@@ -23,7 +25,7 @@ test("三种情形逐字：空事项 / 有材料无确认事实 / 有确认事�
   );
   assert.equal(
     preflightLine({ selected: 2, matterMaterials: 3, unreadable: 1, confirmedFacts: 0, pendingFacts: 4 }),
-    `【开工前已知】本次指定材料 2 份；本事项共 3 份材料（其中读不出文字的 1 份）；本事项已确认事实 0 条、待确认 4 条。${KNOWN}\n`,
+    `【开工前已知】本次指定材料 2 份；本事项共 3 份材料（其中读不出文字的 1 份）；本事项已确认事实 0 条、待确认 4 条。${KNOWN}${UNSELECTED}\n`,
   );
   assert.equal(
     preflightLine({ selected: 0, matterMaterials: 0, confirmedFacts: 5, pendingFacts: 1 }),
@@ -94,7 +96,7 @@ test("preflightOf 从库里算：最新版本、读不出文字、确认与待�
   assert.deepEqual(pf, { selected: 1, matterMaterials: 2, unreadable: 1, confirmedFacts: 2, pendingFacts: 1 });
   assert.equal(
     preflightLine(pf),
-    `【开工前已知】本次指定材料 1 份；本事项共 2 份材料（其中读不出文字的 1 份）；本事项已确认事实 2 条、待确认 1 条。${KNOWN}\n`,
+    `【开工前已知】本次指定材料 1 份；本事项共 2 份材料（其中读不出文字的 1 份）；本事项已确认事实 2 条、待确认 1 条。${KNOWN}${UNSELECTED}\n`,
   );
 });
 

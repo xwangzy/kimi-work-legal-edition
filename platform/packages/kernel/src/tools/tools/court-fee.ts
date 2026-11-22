@@ -62,7 +62,10 @@ const PRESERVATION: readonly [number | null, number][] = [
   [null, 0.005],
 ];
 
-const round2 = (n: number) => Math.round(n * 100 + Number.EPSILON) / 100;
+// 第 57 批全量验收：按十进制四舍五入到分。原先 Math.round(n * 100 + Number.EPSILON) 在 x.xx5 上约 4.6% 舍错（1.005→1.00、2.675→2.67），
+// 先按 15 位有效数字取整消掉浮点尾差再四舍五入
+export const roundHalfUpCents = (n: number) => (Math.sign(n) * Math.round(Number((Math.abs(n) * 100).toPrecision(15)))) / 100;
+const round2 = roundHalfUpCents;
 const pct = (r: number) => `${Math.round(r * 10000) / 100}%`;
 const yuan = (n: number) => (n >= WAN && n % WAN === 0 ? `${n / WAN} 万元` : `${n} 元`);
 

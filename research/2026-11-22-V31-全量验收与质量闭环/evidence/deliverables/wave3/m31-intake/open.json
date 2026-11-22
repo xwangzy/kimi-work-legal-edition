@@ -1,0 +1,29 @@
+{
+ "stack": "f",
+ "model": null,
+ "tag": "m31-intake",
+ "run": "run_b63a597d-77fa-4073-966d-23028b19b466",
+ "status": "succeeded",
+ "open": {
+  "v1-材料收集清单-栖桐科技尽调.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-紧急期限与冲突待核清单-栖桐科技尽调.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-访谈纪要-2026-10-16.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-紧急期限与冲突待核清单-栖桐科技尽调.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-访谈纪要-2026-10-16.docx": {
+   "opened": true,
+   "pages": 4
+  }
+ }
+}

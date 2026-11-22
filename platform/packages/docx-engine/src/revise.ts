@@ -161,7 +161,12 @@ function applyOne(
   const paras = all.filter((p) => !/^<w:p\b[^>]*\skwl-ins="/.test(xml.slice(p.xmlStart, p.xmlStart + 200)));
   // 原件段落序号（去掉本次新插入的段落后的次序，与自动编号 labels 对齐）
   const origIndex = new Map(paras.map((p, i) => [p, i]));
-  const candidates = paras.filter((p) => findInParagraph(p, op.anchor.originalText, op.anchor.occurrence ?? 0) !== null);
+  // 已定位到段落的（第 57 批，docx.edit_draft 按全文次序与位置提示先定好一处）：只在那一段里找
+  const pinned = op.anchor.paragraphIndex;
+  const candidates =
+    pinned !== undefined
+      ? [paras[pinned]].filter((p): p is ParagraphMap => !!p && findInParagraph(p, op.anchor.originalText, op.anchor.occurrence ?? 0) !== null)
+      : paras.filter((p) => findInParagraph(p, op.anchor.originalText, op.anchor.occurrence ?? 0) !== null);
   let target = candidates[0];
   if (candidates.length > 1) {
     // 多处匹配：没有条款提示、或提示对不上 / 仍有多处时都按歧义拒写（第 34 批 D10：原先提示对不上时静默改第一处）
@@ -450,6 +455,79 @@ export function pickByHint(cands: readonly { label: string | null; text: string;
     if (hits.length > 1) return null;
   }
   return null;
+}
+
+/** 锚点在全文里的一处出现（第 57 批）：occurrence 是全文先后（正文段落与表格格子按文档次序）第几处，从 1 起。 */
+export interface AnchorMatch {
+  occurrence: number;
+  /** 原件段落序号（与 mapParagraphs 一致），写入时作 RevisionOp.anchor.paragraphIndex */
+  paragraphIndex: number;
+  /** 段内第几次出现（从 0 起），写入时作 RevisionOp.anchor.occurrence */
+  inParagraph: number;
+  /** 所在位置：“第 1 个表格第 3 行第 2 列（行名“月均工资”，列名“金额（元）”）”或“正文段落” */
+  where: string;
+  /** 前后各约 15 字的上下文，锚点用【】标出 */
+  context: string;
+}
+
+export type AnchorLocation =
+  | { ok: true; match: AnchorMatch; matches: AnchorMatch[] }
+  | { ok: false; reason: "not_found" | "ambiguous" | "hint_mismatch" | "occurrence_out_of_range"; matches: AnchorMatch[] };
+
+/**
+ * 在正文（含表格格子）里按全文次序定位锚点（第 57 批，docx.edit_draft 用；docx.revise 的定位口径不变）。
+ * 真实走查（劳动仲裁应对）：同一数字既在“月均”格、又在算式格“6×35,162.36×2”里，段内计数的 occurrence 消不了歧义；
+ * 全文只剩一处匹配时位置提示不看，直接改到了口径说明段。
+ * - occurrence（从 1 起）：全文第几处；同时给了提示的，提示须与这一处相符；
+ * - 只给提示：按 pickByHint（与写入时同一套规则）在各处里挑唯一一处；只有一处匹配时也要与提示相符，不符即退回；
+ * - 都不给：全文只有一处才定位，多处（含同一段里出现两次）即歧义。
+ */
+export function locateAnchorInDocx(docx: Buffer, text: string, opts: { occurrence?: number | undefined; hint?: string | undefined } = {}): AnchorLocation {
+  const files = readZipEntries(docx);
+  const xml = files.get("word/document.xml")?.toString("utf8") ?? "";
+  if (!text) return { ok: false, reason: "not_found", matches: [] };
+  const labels = paragraphListLabels(xml, files.get("word/numbering.xml")?.toString("utf8") ?? null, files.get("word/styles.xml")?.toString("utf8") ?? null);
+  const facts = hintContext(xml, labels);
+  const paras = mapParagraphs(xml);
+  const cells = paragraphCells(xml);
+  const clip = (s: string, n: number) => ([...s].length > n ? `${[...s].slice(0, n).join("")}…` : s);
+  const matches: AnchorMatch[] = [];
+  for (const p of paras) {
+    for (let k = 0; ; k++) {
+      const sp = findInParagraph(p, text, k);
+      if (!sp) break;
+      const c = cells[p.index];
+      const f = facts(p.index);
+      const rowName = (f?.row ?? "").split(" | ")[0]?.trim() ?? "";
+      const where = c
+        ? `第 ${c.table} 个表格第 ${c.row} 行第 ${c.col} 列（${c.row === 1 ? "表头行" : `行名“${clip(rowName, 12)}”`}${c.header && c.row > 1 ? `，列名“${clip(c.header, 12)}”` : ""}）`
+        : labels[p.index]
+          ? `正文编号 ${labels[p.index]} 的段落`
+          : "正文段落";
+      const pre = p.text.slice(Math.max(0, sp.start - 15), sp.start);
+      const post = p.text.slice(sp.end, sp.end + 15);
+      const context = `${sp.start > 15 ? "…" : ""}${pre}【${clip(text, 30)}】${post}${sp.end + 15 < p.text.length ? "…" : ""}`;
+      matches.push({ occurrence: matches.length + 1, paragraphIndex: p.index, inParagraph: k, where, context });
+    }
+  }
+  if (matches.length === 0) return { ok: false, reason: "not_found", matches };
+  const factOf = (m: AnchorMatch) => facts(m.paragraphIndex) ?? { label: null, text: paras[m.paragraphIndex]?.text ?? "", row: "", col: "", lead: "" };
+  const hint = opts.hint?.trim() ? opts.hint : undefined;
+  const fits = (m: AnchorMatch) => pickByHint([factOf(m)], hint!) !== null;
+  if (opts.occurrence !== undefined) {
+    const m = matches[opts.occurrence - 1];
+    if (!Number.isInteger(opts.occurrence) || opts.occurrence < 1 || !m) return { ok: false, reason: "occurrence_out_of_range", matches };
+    if (hint && !fits(m)) return { ok: false, reason: "hint_mismatch", matches };
+    return { ok: true, match: m, matches };
+  }
+  if (hint) {
+    if (matches.length === 1) return fits(matches[0]!) ? { ok: true, match: matches[0]!, matches } : { ok: false, reason: "hint_mismatch", matches };
+    const byPara = [...new Set(matches.map((m) => m.paragraphIndex))];
+    const picked = pickByHint(byPara.map((i) => factOf(matches.find((m) => m.paragraphIndex === i)!)), hint);
+    const inPicked = picked === null ? [] : matches.filter((m) => m.paragraphIndex === byPara[picked]);
+    return inPicked.length === 1 ? { ok: true, match: inPicked[0]!, matches } : { ok: false, reason: "ambiguous", matches };
+  }
+  return matches.length === 1 ? { ok: true, match: matches[0]!, matches } : { ok: false, reason: "ambiguous", matches };
 }
 
 /** XML 结构自检：标签逐一配对（忽略声明、注释、CDATA）。不成立抛错——整体停止写入、原件不动。 */

@@ -1,0 +1,21 @@
+{
+ "stack": "a",
+ "model": null,
+ "tag": "m20-research-lit",
+ "run": "run_df825433-f8be-49dd-a11b-da6f29a59c1c",
+ "status": "succeeded",
+ "open": {
+  "v1-来源目录-设备检验期间、质保期与价款抗辩.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-研究备忘录-设备检验期间、质保期与价款抗辩.docx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v2-研究备忘录-设备检验期间、质保期与价款抗辩.docx": {
+   "opened": true,
+   "pages": 10
+  }
+ }
+}

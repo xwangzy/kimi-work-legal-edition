@@ -62,7 +62,8 @@ function daysBetween(a: string, b: string): number {
 
 function round2(n: number): number {
   // 四舍五入到分（half-up，按绝对值）
-  return Math.sign(n) * Math.round(Math.abs(n) * 100 + Number.EPSILON) / 100;
+  // 第 57 批全量验收：先按 15 位有效数字取整消掉浮点尾差再四舍五入（原先 1.005→1.00、2.675→2.67，x.xx5 上约 4.6% 舍错）
+  return (Math.sign(n) * Math.round(Number((Math.abs(n) * 100).toPrecision(15)))) / 100;
 }
 
 function rateAt(spec: RateSpec, date: string): { annual_pct: number; lpr_effective: string | null } {
