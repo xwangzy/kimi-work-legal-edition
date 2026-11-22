@@ -24,12 +24,23 @@ function stamp(now) {
   return new Date(now).toISOString().replace(/\.\d{3}Z$/, "Z").replace(/:/g, "-");
 }
 
-const README = (at) =>
+/**
+ * 密钥解封失败的常见原因（第 59 批 116 真实联调）：原来不分平台一律写“重置 Windows 账户密码”。macOS 上数据库主密钥由钥匙串保护，
+ * 最常见的是覆盖安装后（未公证的测试包每次签名都不同）系统弹出钥匙串授权框、被点了“拒绝”——这时数据并没有坏，
+ * 退出后重新打开、点“始终允许”即可；不说清楚，律师会照着对话框点进“移到一边并恢复”。
+ */
+function unsealFailedCauses(platform = process.platform) {
+  if (platform === "darwin")
+    return "常见于：刚才系统询问能否使用钥匙串时点了“拒绝”或关掉了那个框——这时数据没有坏，请先退出，重新打开程序，在钥匙串授权框里输入本机登录密码并点“始终允许”；其次是钥匙串里的“Kimi Work 法律版 Safe Storage”被删除，或换了 Mac 用户、重装系统后还原了用户目录。";
+  return "常见于重置 Windows 账户密码、重装系统后还原用户目录。";
+}
+
+const README = (at, platform) =>
   [
     "Kimi Work 法律行业发行版 · 打不开的本机数据（已移到一边，没有删除）",
     "",
     `移动时刻：${at}`,
-    "原因：这台电脑上的数据库密钥无法解开（常见于重置 Windows 账户密码、重装系统后还原用户目录）。",
+    `原因：这台电脑上的数据库密钥无法解开（${unsealFailedCauses(platform).replace(/。$/, "")}）。`,
     "这里的案件数据仍是加密的，只有原来的密钥才能打开；但激活记录（activation.json 等）是明文，含律所名称与本人显示名。",
     "应用已改为从备份恢复。",
     "",
@@ -37,7 +48,7 @@ const README = (at) =>
     "",
   ].join("\r\n");
 
-function quarantineUnreadable({ dataDir, keyFile, now = Date.now() }) {
+function quarantineUnreadable({ dataDir, keyFile, now = Date.now(), platform = process.platform }) {
   const moved = [];
   const dir = path.join(dataDir, `${PREFIX}${stamp(now)}`);
   try {
@@ -51,7 +62,7 @@ function quarantineUnreadable({ dataDir, keyFile, now = Date.now() }) {
     moved.push(name);
   };
   try {
-    fs.writeFileSync(path.join(dir, "说明.txt"), README(new Date(now).toISOString()), { flag: "wx" });
+    fs.writeFileSync(path.join(dir, "说明.txt"), README(new Date(now).toISOString(), platform), { flag: "wx" });
     for (const f of RECORD_FILES) if (fs.existsSync(path.join(dataDir, f))) move(path.join(dataDir, f), f);
     for (const e of fs.readdirSync(dataDir, { withFileTypes: true })) {
       // 只移有账本或有密钥目录的工作区（含待激活占位工作区、只有入组暂存密钥的成员工作区——那些密钥按旧主密钥封装，复核 RB16A-14）；
@@ -82,4 +93,4 @@ function listSetAside(dataDir) {
   }
 }
 
-module.exports = { quarantineUnreadable, listSetAside, UNREADABLE_PREFIX: PREFIX };
+module.exports = { quarantineUnreadable, listSetAside, unsealFailedCauses, UNREADABLE_PREFIX: PREFIX };

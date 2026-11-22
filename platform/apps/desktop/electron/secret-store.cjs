@@ -43,7 +43,7 @@ async function loadOrCreateDbKey({ safeStorage, file, packaged }) {
     try {
       dec = await safeStorage.decryptStringAsync(wrapped);
     } catch (e) {
-      return { ok: false, code: "unseal_failed", message: "数据库密钥无法解封（Windows 账户的数据保护密钥可能已变化）" };
+      return { ok: false, code: "unseal_failed", message: process.platform === "darwin" ? "数据库密钥无法解封（钥匙串拒绝了访问，或钥匙串里的密钥已变化）" : "数据库密钥无法解封（Windows 账户的数据保护密钥可能已变化）" };
     }
     if (!dec || typeof dec.result !== "string" || dec.result.length < 32) return { ok: false, code: "unseal_failed", message: "数据库密钥内容无效" };
     if (dec.shouldReEncrypt) {

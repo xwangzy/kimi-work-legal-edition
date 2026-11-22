@@ -11,9 +11,10 @@ import { join } from "node:path";
 import { setAsideAutoOpen, setAsideNotice } from "../src/lib/activate-text.ts";
 
 const require = createRequire(import.meta.url);
-const { quarantineUnreadable, listSetAside } = require("../electron/unreadable-data.cjs") as {
-  quarantineUnreadable: (o: { dataDir: string; keyFile: string; now?: number }) => { ok: boolean; dir?: string; code?: string; moved: string[] };
+const { quarantineUnreadable, listSetAside, unsealFailedCauses } = require("../electron/unreadable-data.cjs") as {
+  quarantineUnreadable: (o: { dataDir: string; keyFile: string; now?: number; platform?: string }) => { ok: boolean; dir?: string; code?: string; moved: string[] };
   listSetAside: (dataDir: string) => string[];
+  unsealFailedCauses: (platform?: string) => string;
 };
 
 function layout() {
@@ -105,4 +106,22 @@ test("激活页只在刚移走（24 小时内）且没点过“返回”时自�
   assert.equal(setAsideAutoOpen(dir, t + 3600_000, dir), false, "点过返回的不再自动打开");
   assert.equal(setAsideAutoOpen(".unreadable-bad", t, null), false);
   assert.match(setAsideNotice(dir), /唯一的管理员/);
+});
+
+// 第 59 批（116 真实联调）：macOS 覆盖安装后钥匙串授权框被点“拒绝”→ 主密钥解封失败；对话框原来写“常见于重置 Windows 账户密码”，
+// 没告诉律师“数据没坏、退出重开点‘始终允许’即可”，结果照着对话框点进了“移到一边并恢复”。原因按平台写。
+test("解封失败的原因按平台写：macOS 先说钥匙串授权被拒绝、退出重开点“始终允许”；Windows 仍说账户密码与重装", () => {
+  const mac = unsealFailedCauses("darwin");
+  assert.match(mac, /钥匙串[\s\S]*拒绝[\s\S]*数据没有坏[\s\S]*退出[\s\S]*始终允许/);
+  assert.doesNotMatch(mac, /Windows/);
+  const win = unsealFailedCauses("win32");
+  assert.match(win, /Windows 账户密码/);
+  assert.doesNotMatch(win, /钥匙串/);
+  const dataDir = mkdtempSync(join(tmpdir(), "kwl-unread-mac-"));
+  mkdirSync(join(dataDir, "mac-firm", "keys"), { recursive: true });
+  const r = quarantineUnreadable({ dataDir, keyFile: join(dataDir, "no-key"), now: Date.parse("2026-11-22T15:59:57Z"), platform: "darwin" });
+  assert.equal(r.ok, true);
+  const readme = readFileSync(join(r.dir!, "说明.txt"), "utf8");
+  assert.match(readme, /钥匙串/);
+  assert.doesNotMatch(readme, /Windows/);
 });

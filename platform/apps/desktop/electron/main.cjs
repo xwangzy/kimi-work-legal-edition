@@ -11,7 +11,7 @@ const { createUrlPolicy } = require("./url-policy.cjs");
 const { APP_INDEX_URL, handleAppProtocol, registerAppScheme } = require("./app-protocol.cjs");
 const { resolveBundledRuntime, verifyRuntimeDigests } = require("./runtime-paths.cjs");
 const { adoptDbKey, loadOrCreateDbKey, purgeOldDumps } = require("./secret-store.cjs");
-const { quarantineUnreadable } = require("./unreadable-data.cjs");
+const { quarantineUnreadable, unsealFailedCauses } = require("./unreadable-data.cjs");
 const { kernelChildEnv, loadReleaseConfig, applyEndpointProfile, OS_ENV_ALLOW } = require("./release-config.cjs");
 const trialMode = require("./trial-mode.cjs");
 const { initUpdater } = require("./updater.cjs");
@@ -99,7 +99,7 @@ async function offerSetAsideAndRestore(keyResult) {
     title: "无法打开本机加密数据",
     message: "本机案件数据的密钥无法解开",
     detail:
-      "常见于重置 Windows 账户密码、重装系统后还原用户目录。应用没有做任何改动。\n\n" +
+      `${unsealFailedCauses()}应用没有做任何改动。\n\n` +
       "如果你有恢复包、恢复码和备份（设置 → 本机与安全 → 恢复与备份里生成的那些），可以选“用恢复包恢复”。拿不准时请先退出，联系所内 IT。\n\n" +
       `技术信息：${keyResult.code}`,
     buttons: ["退出", "用恢复包恢复…"],

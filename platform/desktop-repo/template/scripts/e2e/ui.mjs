@@ -6,7 +6,7 @@
  * 用法：node scripts/e2e/ui.mjs <阶段> [参数]
  *   环境：KWL_CDP_PORT（缺省 9222）、KWL_E2E_OUT（证据目录，缺省 ./e2e-out）、PW_CORE（playwright-core 所在目录，可选）
  *   ready                              等主窗口加载，打印当前页面
- *   register                           注册（KWL_EMAIL / KWL_PASSWORD / KWL_NAME / KWL_CODE）；凭邀请码的会停在“等待批准”，打印入组核对码
+ *   register                           注册（KWL_EMAIL / KWL_PASSWORD / KWL_NAME，凭码时加 KWL_CODE）；凭邀请码的会停在“等待批准”，打印入组核对码
  *   login                              登录（KWL_EMAIL / KWL_PASSWORD）
  *   await-approval [分钟]              等管理员批准；出现“本所识别码”后与 KWL_FIRM_CODE 逐位比对，一致才点“一致，打开”
  *   diagnose [expect-ok|expect-fail]   设置里的“检测连接”（connection.diagnose），打印各服务结论
@@ -114,7 +114,8 @@ async function ready() {
 
 async function register() {
   const { KWL_EMAIL: email, KWL_PASSWORD: pw, KWL_NAME: name, KWL_CODE: code } = process.env;
-  if (!email || !pw || !name || !code) throw new Error("register 需要 KWL_EMAIL / KWL_PASSWORD / KWL_NAME / KWL_CODE");
+  // KWL_CODE 可不给：云端 registration=open 时自助注册（自动开试用律所，本人为律所管理员；第 59 批 116 云端改为开放注册）
+  if (!email || !pw || !name) throw new Error("register 需要 KWL_EMAIL / KWL_PASSWORD / KWL_NAME（凭码注册再给 KWL_CODE）");
   await ready();
   await page.getByRole("tab", { name: "注册" }).click();
   await page.locator('input[type="email"]').fill(email);
@@ -122,7 +123,7 @@ async function register() {
   await page.locator('input[placeholder="同事和客户看到的名字"]').fill(name);
   const cb = page.locator("label.auth-check input[type=checkbox]");
   if (!(await cb.isChecked())) await cb.check();
-  await page.locator("input.activate-code").fill(code);
+  if (code) await page.locator("input.activate-code").fill(code);
   await shot("01-注册表单");
   await btnExact("注册并继续").click();
   const outcome = await until(
@@ -272,6 +273,14 @@ async function qa(question) {
   await ta.fill(question);
   const before = await page.locator("main").innerText();
   await page.locator('button[aria-label="发送"]').click();
+  // 第 51 批：第一次用 AI 先弹“开始用 AI 之前”的告知（给律师本人，一次）；点“我知道了，继续”后这次提问照常发出
+  // （第 59 批 macOS 新管理员第一次问答停在这个框上）
+  const notice = page.locator("[role=dialog] button").filter({ hasText: /^\s*我知道了，继续\s*$/ }).first();
+  if (await notice.waitFor({ timeout: 4000 }).then(() => true).catch(() => false)) {
+    await shot("qa-首次用AI告知");
+    await notice.click();
+    log("已确认“开始用 AI 之前”的告知");
+  }
   const started = Date.now();
   // 等回答写完：发送键恢复可用且主区域出现新内容、且不再有等待块
   // 回答写完：问题之后出现了回答（或“未能取得回答”），且不再显示等待。不用“页面变长”判断——新问答会换成新会话，页面可能比之前短
