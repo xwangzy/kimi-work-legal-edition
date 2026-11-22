@@ -42,10 +42,13 @@ test("律师法：2026-09-01 起按修正本核；带“保密义务”主题引
     assert.ok(!verdict(lawdb, "律师法", 62, AS_OF).reasons.some((r: string) => r.startsWith("article_out_of_range:")));
     const a41 = lawGetArticle(lawdb, { law: "律师法", article: 41, as_of: AS_OF }) as any;
     assert.equal(a41.found, true);
-    assert.equal(a41.reliability, "inferred_from_amendment_decision");
-    assert.match(a41.note, /依据修改决定推定.*正式引用前须对照官方文本/);
+    // V32：2026 修正本换成国家法律法规数据库官方 Word 全文（65 条），第四十一条文字与依据修改决定推定的一致
+    assert.equal(a41.reliability, "official_text_collected");
+    assert.doesNotMatch(a41.note, /推定/);
     assert.match(a41.text, /律师应当保守在执业活动中知悉的国家秘密、商业秘密/);
-    assert.equal((lawGetArticle(lawdb, { law: "律师法", article: 38, as_of: AS_OF }) as any).reason, "text_not_collected");
+    const a38 = lawGetArticle(lawdb, { law: "律师法", article: 38, as_of: AS_OF }) as any;
+    assert.equal(a38.found, true);
+    assert.notEqual(a38.text, a41.text, "修正本第三十八条是另一条（条序调整）");
   } finally {
     lawdb.close();
   }

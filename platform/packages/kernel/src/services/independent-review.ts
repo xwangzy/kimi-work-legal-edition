@@ -12,7 +12,7 @@ import { compareDocx, docxListLabels, extractParagraphs, paragraphCells, readCre
 import type { Lawdb } from "@zr-legal/lawdb";
 import { sectionsOfDocx } from "../tools/tools/edit-draft.ts";
 import { scrubQualityLine } from "./deliverable-check.ts";
-import { citationsVerify, extractCitations } from "../tools/tools/citations.ts";
+import { citationsVerify, extractCitations, joinCitationCells } from "../tools/tools/citations.ts";
 import { LAW_ALIASES } from "../tools/tools/law-names.ts";
 import { cnToInt, intToCn } from "../tools/tools/cn-numerals.ts";
 
@@ -247,7 +247,21 @@ const afterVersionNote = (s: string): string => s.replace(/^\s*[（(][^（）()�
 /** 简称表里的全部名字（长的在前）：判断一处法名是不是更长法名的结尾。 */
 const LONGER_NAMES: readonly string[] = Object.keys(LAW_ALIASES).sort((a, b) => b.length - a.length);
 
-export function lawRefsIn(texts: readonly string[], o: { followBare?: boolean } = {}): LawRef[] {
+/** 一段文字里是否提到了 law 以外的法规（书名号标题、简称表里的名字；合同等文件标题不算）。纯函数。 */
+function mentionsOtherLaw(gap: string, law: string): boolean {
+  const same = (x: string) => {
+    const a = x.replace(/^中华人民共和国/, "").replace(/[《》〈〉（）()]/g, "");
+    const b = law.replace(/^中华人民共和国/, "").replace(/[《》〈〉（）()]/g, "");
+    return a === b || LAW_ALIASES[a] === law || LAW_ALIASES[a] === LAW_ALIASES[b] && LAW_ALIASES[a] !== undefined;
+  };
+  for (const m of gap.matchAll(/《([^《》\n]{2,80})》/g)) if (!REVIEW_DOC_TITLE_RE.test(m[1]!) && !same(m[1]!)) return true;
+  const g = gap.replace(/[（()）]/g, "");
+  return LONGER_NAMES.some((k) => k.length >= 3 && g.includes(k) && !same(k) && !law.replace(/^中华人民共和国/, "").includes(k));
+}
+
+export function lawRefsIn(texts0: readonly string[], o: { followBare?: boolean } = {}): LawRef[] {
+  // 表格里法名与条号分在两格的，先接起来（第 58 批）
+  const texts = texts0.map((t) => (t ? joinCitationCells(t) : t));
   const out: LawRef[] = [];
   const seen = new Set<string>();
   const perText = texts.map((text) => {
@@ -298,7 +312,11 @@ export function lawRefsIn(texts: readonly string[], o: { followBare?: boolean } 
       const title = m[1]!;
       if (REVIEW_DOC_TITLE_RE.test(title.replace(/\s*[（(][^（）()]{1,30}[)）]\s*$/, ""))) continue;
       const at = m.index ?? 0;
-      const arts = articleChain(afterVersionNote(text.slice(at + m[0].length, at + m[0].length + 240)));
+      const rest = afterVersionNote(text.slice(at + m[0].length, at + m[0].length + 240));
+      // V32：“《民法典》合同编通则解释第六十五条”“《中华人民共和国民事诉讼法》的解释第九十条”——条号属于以这部法命名的另一部文件，
+      // 提取器认得出的已按那部文件取了；认不出的宁可不附，也不拿这部法同条号的原文凑（第 57 批全量验收：合同编通则解释第 64、65 条被取成民法典第 64、65 条）
+      if (OTHER_INSTRUMENT_RE.test(rest.slice(0, Math.max(0, rest.indexOf("第"))))) continue;
+      const arts = articleChain(rest);
       arts.forEach((article, i) => items.push({ at: at + i / 1000, law: title, article }));
     }
     if (o.followBare && found.length > 0) {
@@ -311,6 +329,8 @@ export function lawRefsIn(texts: readonly string[], o: { followBare?: boolean } 
         if (/(?:解释|规定|纪要|批复|办法|条例|细则|意见|答复)(?:[（(][^（）()]{0,8}[）)])?\s*$/.test(text.slice(Math.max(0, at - 14), at))) continue;
         const prev = found.filter((c) => c.offset < at).at(-1);
         const n = cnToInt(m[1]!.replace(/〇/g, "零").replace(/两/g, "二"));
+        // V32：前面最近被引的那部法与这个条号之间又提到了别的法规（书名号标题或简称），这个条号归谁说不准——不附原文，不拿别的法凑
+        if (prev && mentionsOtherLaw(text.slice(prev.offset + prev.raw.length, at), prev.law)) continue;
         if (prev && n !== null) items.push({ at, law: prev.law, article: n });
       }
     }
@@ -467,6 +487,14 @@ export function revisionDiff(original: Buffer, clean: Buffer, max = 120): string
   return lines;
 }
 
+/**
+ * 前提互斥（第 58 批 D-238）：同一天、同一笔钱、同一事实在同一情景或同一组请求里只能有一种定性。
+ * 第 57 批全量验收：劳动仲裁申请书按“已休年假”请求返还 8 月扣款，又按“未休 10 天”请求年休假工资，同三天重复主张 8,563.20 元（一票否决 V3）；
+ * 劳动仲裁应对的“较高口径”同时取“加回扣款”和“年休假 4 天”。这不是哪一类文书特有的错，意见、诉讼文书与表格三类清单都查。
+ */
+/** 需要材料之外的数据才能落实的意见（第 58 批真实复测：劳动仲裁申请书复核把“按当地上年度职工月平均工资核三倍封顶”列为必须改，起草方凭材料落实不了，任务只能记部分完成）。 */
+export const OUTSIDE_DATA_RULE = "需要材料之外的数据或查询才能落实的（当地统计数据、工商或司法外部查询、对方未提供的文件），只列“建议改”或风险提示并写明缺什么，不列必须改；";
+export const MUTUAL_EXCLUSION_ITEM = "前提是否互斥：同一天、同一笔钱、同一事实在同一情景（或同一组请求）里只能有一种定性——例如被认定旷工的年休假日，按“已休年假”就返还这几天的扣款、未休天数相应减少，按“未休”就不能同时请求返还这几天的扣款；同一笔款不在两项请求或两个口径里各算一次。同一情景混用互斥前提、或重复主张同一金额的，写出两处原文与多算的数（写出算式），列为必须改；产品向律师提问时推荐的选项本身导致重复的，同样列出。";
 const FOCUS: Record<ReviewKind, string> = {
   draft: [
     "1. 事实对照：把交付件里每个主体名称、法定代表人、证照号码、金额、比例、日期、期限、数量与材料逐项对照，列出不一致处与材料出处。",
@@ -494,20 +522,25 @@ const FOCUS: Record<ReviewKind, string> = {
     "5. 建议是否可执行：谁、在什么日期之前、做什么；法定期限是否算准并提示。结论是“不能、不可行”的，是否给了最接近委托人目的的合法替代路径及其条件。",
     "5a. 行为发生时间与现行法施行时间不在同一侧的，是否先判断了适用旧法还是新法（时间效力规定、过渡安排、批复）；对结论有决定性影响的依据如果只写“待核”而没有写出要点和两种情况下的结论，列为必须改。",
     "6. 法律依据：引用的法条是否与论点对应（适用条件与例外）；不确定的写“需核验”，不要编造法条。",
+    // 第 58 批（第 57 批全量验收 C2/C8：劳动者请求测算、劳动仲裁申请书 V3、劳动仲裁应对）：同三天既按已休年假返还扣款、又按未休年假主张工资
+    `7. ${MUTUAL_EXCLUSION_ITEM}`,
+    // 第 58 批根因复盘（尽调发现）：财务摘要附注写“无需要披露的或有事项”，另有 800 万元最高额保证，两轮成果与复核都没有把两处放在一起比
+    "8. 披露与事实勾稽：材料里的概括性说法（财务报表附注的或有事项与关联方披露、实收资本、目标公司或一方的书面声明与承诺、访谈里的“没有××”）与其他材料载明的具体事实（担保合同、诉讼与执行查询、关联交易合同与登记权利人、股东名册与出资凭证）是否矛盾；两处都在材料里、矛盾而交付件没有指出的，写出两处原文与出处，列为必须改。只有一边材料的不推断。",
   ].join("\n"),
   pleading: [
     "1. 当事人、诉讼请求、金额与材料逐项对照，请求金额能否由事实与证据复算出来（写出算式）。",
-    "2. 事实与理由：是否只写对我方有利且有证据支撑的事实；有没有替我方自认不利事实、沿用对方口径（起算日、基数）或承认对方主张。",
+    "2. 事实与理由：是否只写对我方有利且有证据支撑的事实；有没有替我方自认不利事实、沿用对方口径（起算日、基数）或承认对方主张。对外文书正文主动写出我方不利事实（律师告知的、当事人承认的）或对我方的内部评价、而不是回应对方已提出的主张的，写出原文，列为必须改（第 58 批：劳动仲裁申请书写明当事人承认未走审批，复核只列“建议改”，修改轮跳过）。",
     "3. 法律依据与请求权基础是否对应；对方最可能的抗辩是否有回应；备位主张是否写到。",
     "4. 程序事项：管辖、时效或期间、答辩期、证据目录与证据是否对应。",
     // 第 57 批（第 56 批真实验收，上诉状）：请求货款改判至 228,000 元，违约金请求却写“基数不变”仍按 152,000 元，复核零意见
     "5. 请求之间是否自洽：请求增加、减少或改判本金（或其他作为计算基数的款项）的，以它为基数的利息、违约金请求与诉讼费负担有没有同步写明——基数跟着变，还是明确维持原基数并说明理由；前后请求互相打架或后一项请求把前一项的效果抵掉的，写出两处原文，列为必须改。",
+    `6. ${MUTUAL_EXCLUSION_ITEM}`,
   ].join("\n"),
   letter: [
     "1. 函件类型与法律效果：这是催告、主张权利、解除通知还是保证责任主张？函件标题、主张、要求与逾期后果是否自洽；律师在任务中选定了路径的（例如“先催告、期满未履行再解除”），函件与最终答复有没有写成另一条路径（例如写“我方已有权解除”“现通知解除”）。",
-    "2. 权利是否已经产生：解除权、加速到期、保证责任等的前提（催告并给合理期限、约定事由成就、通知义务）材料能否证明；不能证明的，函件只能写附条件的表述。",
+    "2. 权利是否已经产生：解除权、加速到期、保证责任等的前提（催告并给合理期限、约定事由成就、通知义务）材料能否证明；不能证明的，函件只能写附条件的表述。对方有一种说得通的算法使解除条件尚未成就（逾期从哪天起算、质量不合格算不算未交付、催告期怎么起算）而函件径直宣告解除的，写出两种算法与各自的最早解除日，列为必须改（第 58 批：企业催告函按推荐项发出解除通知，复核只列为风险）；援引此前某份通知作为解除所需的催告的，核对那份通知是否写明了限期履行的内容，没有的不构成催告，列为必须改。",
     "3. 事实、金额、期限与材料逐项对照，金额能否复算（写出算式）；履行期限的起算与长度是否合理、是否算准。",
-    "4. 有没有替我方承认不利事实、放弃权利或作出超出授权的承诺；有没有可能被对方反用的表述（自认违约、确认对方抗辩）。",
+    "4. 有没有替我方承认不利事实、放弃权利或作出超出授权的承诺；有没有可能被对方反用的表述（自认违约、确认对方抗辩）——有的写出原文，列为必须改。",
     "5. 收件人与送达：主体全称、送达地址与合同约定的通知条款是否一致；是否需要同时发保证人或其他义务人。",
     "6. 法律依据是否与主张对应；不确定的写“需核验”，不要编造法条。",
   ].join("\n"),
@@ -533,6 +566,7 @@ const FOCUS: Record<ReviewKind, string> = {
     "4. 出处：每一行写的材料名、条款、日期、原句能否在材料里对上；材料里没有的事实被写成已查明的，列出来。",
     "5. 单元格里有没有内部提示或流程用语（工具名、内部编号、“手工计算，请复核”“未经本所质量验收”“审查工作台”、写给律师的话）；要发给客户、对方或法院的表尤其不能有。",
     "6. 覆盖面：委托里点名要查、要列的事项，是否每一项都有对应的行；表里的法律判断（管辖、时效、法条）是否与后面附的法条原文相符。",
+    `7. ${MUTUAL_EXCLUSION_ITEM}`,
   ].join("\n"),
   rules: [
     "交付的是审查要点草稿（律师审定启用后，以后审这类合同时按它判“偏离”），每条写“要点 n｜条款｜我方标准｜可退让｜不可谈”；位置写“要点 n”。",
@@ -542,6 +576,9 @@ const FOCUS: Record<ReviewKind, string> = {
     "2. 不可谈：只有范本写明不能接受、必须、红线的事项才写不可谈；把范本的一般立场写成不可谈、或范本写明的底线漏写的，列出来。范本或客户标准带“属性 / 可谈性 / 谈判空间”一栏的，以这一栏为准：栏里是“—”、空白或“可谈”的，即使标准栏的措辞是“不接受”“必须”，也只是我方标准，不是不可谈——不要要求把它补成不可谈。本所范本与客户标准对同一事项写法相反的（一个约定仲裁、一个不接受仲裁），哪一个作底线由律师定：草稿里单方面定成不可谈的，列出来。",
     "3. 覆盖：逐节对照范本，范本写明的立场是否都收进了要点；同一事项是否重复或互相矛盾。",
     "4. 范本本身前后矛盾、或低于客户在别处写明的底线的，是否在给律师的答复里提示（不替客户定）。",
+    // 第 58 批真实回归（企业法务整理审核标准）：复核人把“给业务部门或管理层看的文书留出致送对象、出具部门与日期”套到审查要点草稿上，
+    // 修改轮另出了一份 Word，回看看不到，判“未落实”、任务记部分完成
+    "5. 审查要点草稿不是文书：不要求致送对象、出具部门、日期、落款，也不要求另出 Word；内部审批流程、审批权限这类不属于合同条款的内容不应收为要点（只在答复里说明怎么处理）。",
   ].join("\n"),
 };
 
@@ -589,6 +626,8 @@ export function reviewMessages(p: {
   answers?: readonly string[];
   /** 文书引用的法条在本机法规库里的原文（lawExcerptLines 的各行，代号形态不涉及）。 */
   laws?: readonly string[];
+  /** 材料中引用的已废止规定（V32，见 services/material-repealed.ts）。 */
+  materialNotes?: readonly string[];
 }): { role: "system" | "user"; content: string }[] {
   // 全部交付件都进复核（V16 第 41 批：m37 七份公司文件只复核了四份），总量按主次分配；没给全的如实告诉复核人
   const alloc = allocateDeliverables(p.docs.map((d) => d.text.length));
@@ -616,6 +655,7 @@ export function reviewMessages(p: {
     // 判“少计一日，必须改回含届满当日”；起草方按方法不改，回看仍判未落实，任务被记成部分完成。口径之争不是算错
     "3a. 计算表“参数与假设”里列为“计算口径（本表固定口径）”的各项（起算日是最后履行日的次日还是当日、截止日是否含当日、付款当日计不计、抵充顺序、舍入）和按它算出的数，出自确定性的计算工具，系统已另行复核算式并核对各文件里的同一金额：不要按你自己的口径重算后要求改数。你认为口径本身应当不同的（例如法条字面是“自届满之日起”），写明另一种读法、依据与由此产生的差额，列为“风险提示”交律师决定，不定为“必须改”；只有参数与材料不符（本金、付款日期、利率抄错，漏了一笔付款）才是“必须改”。",
     "4. “必须改”只用于：与委托或材料明显不符、法律依据错误、金额或期限错误、遗漏委托事项、会直接损害委托人的表述；其余用“建议改”。",
+    `4a. ${OUTSIDE_DATA_RULE}计算工具生成的计算表里的固定行名与说明（“需要留意”“口径前提”等）起草方不能逐格改，要改的写成“调用时补写前提”或建议改。`,
     // V16 第 41 批真实回归 m09、E7：复核人凭记忆把新仲裁法第二十七条（仲裁协议）判成“必须改为第二十五条”
     "5. 你查不了法规库，法律会修订、条号会变：对条号、条文内容的意见，只能以“文书引用的法条在本机法规库里的原文”一节为依据；这一节写了“无法核对”、没有附原文或没有列出的条文，写“建议核对原文”，不定为“必须改”，不凭记忆断定条号错误。",
   ].join("\n");
@@ -649,6 +689,8 @@ export function reviewMessages(p: {
     ...(p.laws && p.laws.length > 0
       ? ["", `=== 文书引用的法条在本机法规库里的原文（按分析截止日 ${p.asOf} 适用的版本；系统从交付件文字里抽出后查库附上） ===`, ...p.laws]
       : ["", "=== 文书引用的法条在本机法规库里的原文 ===", "（交付件里没有认出“《法名》第N条”式的引用，本节为空：对条号与条文内容的意见一律写“建议核对原文”）"]),
+    // V32：材料（我方此前的文书、对方文书、旧合同）里引用的已废止规定——交付件没明引也要核：据此提出的主张须核对现行效力
+    ...(p.materialNotes && p.materialNotes.length > 0 ? ["", "=== 材料中引用的已废止规定（系统按法规清单识别；历史合同引旧法本身正常，要核的是交付件据此提出的主张有没有现行依据） ===", ...p.materialNotes] : []),
     // V18 第 43 批续四真实任务：复核人把答复末尾系统规定的质量说明（“通用辅助 · 未经本所质量验收”）和“已提交审查工作台”当成
     // “内部用语不能对外发出”，提了“必须改”——答复只给律师看、不对外。质量说明不交给复核人，并写明这份答复的性质
     ...(p.reply
@@ -873,7 +915,7 @@ const FOLLOW_UP_LABEL: Record<FollowUpVerdict, string> = { done: "已落实", ju
 /** 接在《独立复核意见》后面的“回看”一节（代号形态，随复核意见一起下载）。 */
 export function followUpSection(items: readonly FollowUpItem[]): string {
   const rows = items.map((i) => `| ${i.no} | ${FOLLOW_UP_LABEL[i.verdict]} | ${esc(i.note) || "—"} |`);
-  return `\n## 回看：必须改的意见是否落到了文件里\n\n修改之后，复核人只对照最新版文件又核对了一遍，不采信起草方的自述。标“未落实”的，请律师处理后再使用。\n\n| 序号 | 结论 | 说明 |\n|---|---|---|\n${rows.join("\n")}\n`;
+  return `\n## 回看：必须改的意见是否落到了文件里\n\n修改之后，复核人只对照最新版文件又核对了一遍，不采信起草方的自述。标“未落实”的，处理后再使用。\n\n| 序号 | 结论 | 说明 |\n|---|---|---|\n${rows.join("\n")}\n`;
 }
 
 /** 给律师看的复核意见（Markdown，代号形态；下载时还原真名）。 */

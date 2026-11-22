@@ -62,6 +62,21 @@ export function issueKey(i: AmountIssue): string {
   return i.kind === "equation" ? `eq|${i.filename ?? ""}|${i.text.replace(/\s+/g, "")}` : `orphan|${i.filename ?? ""}|${i.amount.toFixed(2)}`;
 }
 
+/**
+ * 修改轮新引入的不一致（第 58 批，V31 企业催告函一单：修改轮把违约金基数原额改成 0，回看只核对上一轮报过的几条，没发现）：
+ * 回看时在最新版上重跑核对，上一轮没有、这一轮出现的就是修改带进来的。纯函数；接到回看里由调用方决定按“必须改”交回还是列给律师。
+ */
+export function newIssuesSince(previousKeys: Iterable<string>, current: readonly AmountIssue[]): AmountIssue[] {
+  const before = new Set(previousKeys);
+  const seen = new Set<string>();
+  return current.filter((i) => {
+    const k = issueKey(i);
+    if (before.has(k) || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 const money = (n: number): string => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /**

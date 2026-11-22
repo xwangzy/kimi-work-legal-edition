@@ -150,7 +150,7 @@
     },
     {
       "name": "docx.render_report",
-      "version": "5",
+      "version": "6",
       "sideEffect": "write_draft",
       "resource": "matter_work",
       "purposes": [
@@ -159,7 +159,7 @@
         "legal_research",
         "case_file"
       ],
-      "schemaHash": "09892af976adec25a5f56db7fe59f99448da180a309e5a17bb09af72b44a6122"
+      "schemaHash": "b9b95b9430445af105a1a5d66e03a7a36f63b8096ffbefebdce326a4ade19617"
     },
     {
       "name": "docx.revise",
@@ -175,7 +175,7 @@
     },
     {
       "name": "docx.edit_draft",
-      "version": "2",
+      "version": "3",
       "sideEffect": "write_draft",
       "resource": "matter_work",
       "purposes": [
@@ -184,7 +184,7 @@
         "legal_research",
         "case_file"
       ],
-      "schemaHash": "698e1d8635788aae1afe820a059a0c0962a04c5c9200a3859df10ff912a214e7"
+      "schemaHash": "9712057f3ba8a96fbcab5b5498a411149e8cddcd39fb29ad865d542f0b7a2b54"
     },
     {
       "name": "redact.apply",
@@ -269,7 +269,7 @@
     },
     {
       "name": "xlsx.render_table",
-      "version": "1",
+      "version": "2",
       "sideEffect": "write_draft",
       "resource": "matter_work",
       "purposes": [
@@ -279,7 +279,7 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "476d6857457f4398954c577ea71cb14a548bc07f70a2a8b91322de0ac8346dc7"
+      "schemaHash": "9831f05b4a3bb3dffbb73b5b656881c1a4e54c4165ecf05ed71c6e99942301b0"
     },
     {
       "name": "xlsx.edit_cells",
@@ -353,7 +353,7 @@
     },
     {
       "name": "calc.labor",
-      "version": "2",
+      "version": "3",
       "sideEffect": "read",
       "resource": "pure",
       "purposes": [
@@ -363,7 +363,7 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "59258dc69babd7b457cf849fb2ed531c2b9128f1dec48bbb7fc4e2f87bf4e5b6"
+      "schemaHash": "a8749f45082d6dbe0d84a985065838c58cef2952a95896d451b17df2873bc77d"
     },
     {
       "name": "calc.court_fee",
@@ -405,7 +405,7 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "ef52b704a7744c42f7e9b2716a897fee106eda131929c546ac716b3f50746127"
+      "schemaHash": "36a2317be35902ff68778c839157ceb4c02cc6b01fa11c4ba17460718d29cd2c"
     }
   ]
 }

@@ -561,13 +561,22 @@ export function blocksOfSections(sections: readonly { heading?: string; paragrap
 }
 
 /** 由 readCreatedXlsx 的工作表转成表格行（首行作表头）。 */
-export function blocksOfSheets(sheets: readonly { name: string; rows: unknown[][] }[]): AmountBlocks {
+const colLetters = (i: number): string => {
+  let s = "";
+  for (let n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
+  return s;
+};
+const serialToIso = (n: number): string => new Date(Date.parse("1899-12-30T00:00:00Z") + Math.round(n) * 86_400_000).toISOString().slice(0, 10);
+
+export function blocksOfSheets(sheets: readonly { name: string; rows: unknown[][]; dates?: readonly string[] }[]): AmountBlocks {
   const rows: AmountRow[] = [];
   for (const sh of sheets) {
     const columns = (sh.rows[0] ?? []).map((c) => (c === null || c === undefined ? null : typeof c === "number" ? c : String(c)));
+    // 日期格（calc.ledger 的计算表，第 58 批）存的是日期序号：还原成“2026-11-30”，不当作金额出处
+    const dates = new Set(sh.dates ?? []);
     sh.rows.forEach((r, ri) => {
       if (ri === 0) return;
-      rows.push({ where: `${sh.name} 第 ${ri + 1} 行`, columns, cells: (r ?? []).map((c) => (c === null || c === undefined ? null : typeof c === "number" ? c : String(c))) });
+      rows.push({ where: `${sh.name} 第 ${ri + 1} 行`, columns, cells: (r ?? []).map((c, ci) => (c === null || c === undefined ? null : typeof c === "number" ? (dates.has(`${colLetters(ci)}${ri + 1}`) ? serialToIso(c) : c) : String(c))) });
     });
   }
   return { rows };

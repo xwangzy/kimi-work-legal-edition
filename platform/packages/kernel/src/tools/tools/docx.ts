@@ -124,9 +124,9 @@ function normalizeTables(sections: ReportSection[]): ReportSection[] {
   return out;
 }
 
-export function docxRenderReport(blobs: BlobStore, params: { title: string; sections: ReportSection[] }, matterId?: string) {
+export function docxRenderReport(blobs: BlobStore, params: { title: string; sections: ReportSection[]; layout?: string }, matterId?: string) {
   if (!params.title || !Array.isArray(params.sections)) throw new DomainError("validation", "需要 title 与 sections", 422);
-  const buf = createDocx(params.title, normalizeTables(params.sections));
+  const buf = createDocx(params.title, normalizeTables(params.sections), params.layout === "one_page" ? { compact: true } : {});
   return blobs.put(buf, matterId ?? null);
 }
 

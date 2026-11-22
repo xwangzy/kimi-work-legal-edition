@@ -2,7 +2,7 @@
  * 生成新 DOCX（意见书/报告/清洁稿模板）：带律所版式（house-style.ts：A4、字体字号、标题居中、页码、落款），Word/WPS 可开。
  * 函头与律所模板在下载 / 导出时按本机的“文书版式”设置套上（成果登记的字节不含函头）。
  */
-import { alignSignature, createStyledDocx, isPartyDocument, type DocBlock } from "./house-style.ts";
+import { alignSignature, createStyledDocx, DEFAULT_HOUSE_STYLE, isPartyDocument, type DocBlock } from "./house-style.ts";
 
 /** 节内表格（第 32 批：合同价款表、设备清单、证据目录等）：画在本节段落之后，首行为表头。 */
 export interface ReportTable {
@@ -46,8 +46,25 @@ export function isSubHeading(text: string): boolean {
   return t.length <= 40 && SUB_HEADING.test(t) && !/[。；;，,：:、！!？?]$/.test(t) && !/[。；;]/.test(t);
 }
 
-export function createDocx(title: string, sections: ReportSection[], o: { mark?: boolean } = {}): Buffer {
-  const shown = title.replace(DRAFT_SUFFIX, "");
+/**
+ * 印在文书首页的标题（第 58 批 D-249）：title 同时是文件名，方法里多写成“文书类型-事项简称-日期”（“案件进展汇报-鸿岫案-2026-11-09”），
+ * 原样印成标题像一个文件名（V31、V32 案件汇报卡评分“报告渲染以文件名作文书标题”）。文件名照旧；首页标题去掉日期段，
+ * 汇报、报告、备忘录、意见、说明、方案、提纲、清单、纪要、分析一类写成“类型（事项简称）”，诉状、申请书、函、通知、协议、合同等正式文书只印类型。
+ * 不是“甲-乙”写法的标题原样。纯函数。
+ */
+const DATE_SEG = /-(?:截至)?\d{4}(?:-\d{1,2}){0,2}(?:日)?$/;
+const REPORT_HEAD = /(?:汇报|报告|备忘录|意见|意见书|说明|方案|提纲|清单|纪要|分析|评估|对照表|摘要|要点)$/;
+export function documentHeading(title: string): string {
+  let t = title.trim();
+  for (let i = 0; i < 2 && DATE_SEG.test(t); i++) t = t.replace(DATE_SEG, "");
+  const parts = t.split(/-(?=\S)/).map((x) => x.trim()).filter(Boolean);
+  if (parts.length < 2 || !/[\u4e00-\u9fa5]/.test(parts[0]!) || parts[0]!.length < 2) return t || title.trim();
+  const [head, ...rest] = parts;
+  return REPORT_HEAD.test(head!) ? `${head}（${rest.join("、")}）` : head!;
+}
+
+export function createDocx(title: string, sections: ReportSection[], o: { mark?: boolean; compact?: boolean } = {}): Buffer {
+  const shown = documentHeading(title.replace(DRAFT_SUFFIX, ""));
   const blocks: DocBlock[] = shown ? [{ kind: "title", text: shown }] : [];
   const subHeadings = !isPartyDocument(shown);
   for (const s of sections) {
@@ -70,7 +87,8 @@ export function createDocx(title: string, sections: ReportSection[], o: { mark?:
     if (s.table) blocks.push({ kind: "table", rows: [s.table.columns, ...s.table.rows].map((r) => r.map((text) => [{ text }])) });
   }
   // 起诉状、律师函的落款（律所、律师、具状人、日期）右对齐，与 Markdown 导出同一规则；合同签署页另起一页、签署行不缩进（第 35 批）
-  return createStyledDocx(alignSignature(signaturePage(blocks)), undefined, null, o);
+  // 一页纸汇报（第 58 批）：宋体五号、单倍行距
+  return createStyledDocx(alignSignature(signaturePage(blocks)), o.compact ? { ...DEFAULT_HOUSE_STYLE, body: "song-wuhao-compact" } : undefined, null, { ...(o.mark !== undefined ? { mark: o.mark } : {}) });
 }
 
 /** 合同各方的签署行开头（“受让方：”“甲方（盖章）：”“转让方一：”）。 */

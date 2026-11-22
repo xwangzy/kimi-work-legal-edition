@@ -6,7 +6,7 @@
 import { DomainError } from "@zr-legal/domain";
 import { versionAt, type Lawdb, type LawVersionRow } from "@zr-legal/lawdb";
 import { cnToInt } from "./cn-numerals.ts";
-import { lawNameCandidates } from "./law-names.ts";
+import { LAW_ALIASES, lawNameCandidates } from "./law-names.ts";
 
 export interface LawGetVersionParams {
   law: string; // 法名或简称（名称归一：书名号/空白/全半角不敏感）
@@ -70,12 +70,31 @@ export function lawGetVersion(lawdb: Lawdb, params: LawGetVersionParams): LawVer
   return result;
 }
 
+/** 简称表的名字（长的在前）：检索前把律师常写、法规库别名里没有的简称（“民诉解释”“调解仲裁法”）换成全称。 */
+const ALIAS_KEYS = Object.keys(LAW_ALIASES).sort((a, b) => b.length - a.length);
+
+/**
+ * 检索词里的简称换成全称（V32）：按空白与逗号切词，词以简称开头、后面为空或紧接“第”的才换（“公司法定代表人”不换）；
+ * 换出来的全称由法规库按法名整体认、作过滤（见 Lawdb.searchArticles）。纯函数。
+ */
+export function expandLawAliases(q: string): string {
+  return q
+    .split(/([\s，,。；;:：]+)/)
+    .map((tok) => {
+      const t = tok.replace(/[《》〈〉]/g, "");
+      const key = ALIAS_KEYS.find((k) => t.startsWith(k) && (t.length === k.length || t[k.length] === "第"));
+      return key ? `${LAW_ALIASES[key]}${t.slice(key.length)}` : tok;
+    })
+    .join("");
+}
+
 export function lawSearch(lawdb: Lawdb, params: { query: string }) {
   const q = (params.query ?? "").trim();
   if (!q) throw new DomainError("validation", "law.search 需要 query", 422);
   const hits = lawdb.searchLaws(q);
-  // 条文检索（第 35 批）：按关键词在已收录的条文里找，法名之外也能按“竞业限制”“违法解除 赔偿金”定位到条
-  const articles = lawdb.searchArticles(q);
+  // 条文检索（第 35 批）：按关键词在已收录的条文里找，法名之外也能按“竞业限制”“违法解除 赔偿金”定位到条；
+  // V32：简称先换成全称（“民诉解释 举证责任”），法名后写了条号的那几条排在最前
+  const articles = lawdb.searchArticles(expandLawAliases(q));
   // 检索动作逐命中校验（§2.2「运行时每次检索……校验」；不足即停，不让模型补全未获授权内容）
   for (const lsv of new Set([...hits.map((h) => h.lsv_id), ...articles.map((a) => a.lsv_id)])) {
     const src = lawdb.sourceOfVersion(lsv);
@@ -194,7 +213,16 @@ export function lawGetArticle(lawdb: Lawdb, params: LawGetArticleParams): LawArt
   }
   const text = lawdb.getArticle(v.lsv_id, articleNo);
   if (text === null) {
-    return { found: false, reason: "text_not_collected", ...base, note: "条号存在，但法规库尚未采集该条正文：不提供文本，须律师查官方文本核对" };
+    // V32 法规目录：只登记了名称、施行日与总条数的规范，如实说“这一条存在，但正文没收”
+    const meta = lawdb.getSource(v.source_license_id)?.reliability === "official_metadata_only";
+    return {
+      found: false,
+      reason: "text_not_collected",
+      ...base,
+      note: meta
+        ? `这部规范在法规目录里只登记了名称、施行日与总条数（共 ${v.total_articles} 条，官方出处），没有收正文：第 ${articleNo} 条存在，内容须律师查官方文本核对，不要凭记忆写条文内容`
+        : "条号存在，但法规库尚未采集该条正文：不提供文本，须律师查官方文本核对",
+    };
   }
   // 引用原文与送入模型上下文两个动作都要来源授权（Source Registry §2.2；Lawdb.getArticle 注释：送模型前须 assertAction model）
   lawdb.assertAction(v.source_license_id, "quote");

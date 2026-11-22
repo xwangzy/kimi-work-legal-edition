@@ -32,6 +32,14 @@ export interface RevisionOp {
    */
   afterTable?: boolean | undefined;
   /**
+   * 与 insertAfter 同用（第 58 批 D-242）：新段落的段落样式（w:pStyle 的样式编号），不沿用锚点段落的样式。first 给第一行，rest 给其余各行
+   * （缺省同 first）。用于本产品生成的草稿：根因复盘里修改轮把整句正文插在一级标题之后、沿用成一级标题，又把补的“问题35”标题插成正文。
+   * 换样式时去掉锚点段落的自动编号与大纲级别（它们属于原样式）。律师上传的原件不传这一项，照旧沿用锚点格式。
+   */
+  insertStyles?: { first: string; rest?: string | undefined } | undefined;
+  /** 没给 insertStyles、锚点段落是这几种标题样式之一时，新段落改用 style（缺省视为正文）——“在标题之后插一段”插的是正文，不是又一个标题。 */
+  insertAfterHeading?: { headingStyles: readonly string[]; style: string } | undefined;
+  /**
    * 表格新增一行（V16 第 41 批）：锚点在表格某一行的任一格里，新行插在该行之后；newText 按“｜”“|”或制表符分成各格文字。
    * 新行照抄该行的单元格属性（列宽、合并、对齐）与文字格式，整行标为插入修订——拒绝修订即恢复原表。
    * 纵向合并的格子（如左侧的类别栏）在新行里续接合并、不写字：格数可以按整行给（合并格留空），也可以只给未合并的格。

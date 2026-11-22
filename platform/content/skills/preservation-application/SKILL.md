@@ -59,7 +59,7 @@ kwl:
 | facts.submit | 把材料载明、事实表里还没有的关键事实提交为待确认事实，供律师在论点卡上一并确认 | facts[{statement, quote, document_version_id, occurred_on, amount_yuan}] |
 | law.search / law.get_article | 请求依据 | query（不含当事人信息）；law + article + as_of |
 | citations.verify | 核验所引条文 | citations[{law, article}]（本批要引的条文一次带齐），as_of |
-| calc.ledger | 请求保全数额中的利息、违约金部分与合计（按律师口径） | scenarios[{name, as_of, debts, payments, rate, allocation}] |
+| calc.ledger | 请求保全数额中的利息、违约金部分与合计（按律师口径） | scenarios[{name, as_of, debts, payments, rate, accrual, allocation}] |
 | calc.deadline | 诉前保全后起诉或申请仲裁、执行前保全后申请执行的届满日（只进核对表） | 诉前：start（保全措施采取日），period {unit: day, n: 30}；执行前：start（法律文书指定的履行期间最后一日），period {unit: day, n: 5}；rule civil；起算口径由律师确认 |
 | outline.submit / outline.get | 起草前确认论点 | doc_kind，arguments |
 | docx.render_report | 申请书（财产信息可含表格） | title，sections[{heading, paragraphs, table?{columns, rows}}] |
@@ -102,6 +102,6 @@ kwl:
 - `docx.render_report` 因“论点与依据还在等律师确认”被拒：等律师确认后再调用；**不得**改用表格、`kwl-docx create`、工作区文件或最终回复代替文书、绕过确认。
 - 没有财产线索：申请书照常起草，财产部分写“【待律师提供财产线索】”，核对表列出需要的线索类型。
 - `facts.list` 不可用或关键事实未确认：**照常起草**，事实按第 2 节第 2 项的口径写（未确认的列进核对清单，正文不加标记），回报第一句写明哪些事实尚未经律师确认；只有律师选择“先不起草”才不出正文。
-- `calc.ledger` 不可用：利息部分用 `calc.interest` 逐段计算（它算头不算尾，“暂计至 X 日含当日”时截止日写 X 的下一日），合计按工作准则第 4 条手工计算、核对表标“手工计算，请复核”；仍算不了的写“【金额待测算确认】”。
+- `calc.ledger` 不可用：利息部分用 `calc.interest` 逐段计算（它算头不算尾，“暂计至 X 日含当日”时截止日写 X 的下一日），合计按工作准则第 4 条人工核算（表格加一列“计算方式”填“人工核算”，哪些数是人工核算的在最终答复里列明、请律师复核，交付件里不逐处写“手工计算，请复核”）；仍算不了的写“【金额待测算确认】”。
 - `xlsx.render_table` 不可用：财产线索作申请书附页，担保与程序要点写进最终答复。
 - 其余工具不可用或失败时，按工作准则第 5 条“工具不可用或失败时”一段处理。

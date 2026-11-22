@@ -15,6 +15,20 @@ export interface SheetSpec {
    * Excel / WPS 打开时按公式重算，律师改了上游格子结果跟着变。只用于内核自己算出的表（calc.ledger 的《计算明细》），模型不能写公式。
    */
   formulas?: Record<string, string>;
+  /**
+   * 日期格（第 58 批）：这些位置的数字是 Excel 日期序号（1900 日期系统，1899-12-30 为 0），按“yyyy-mm-dd”显示；
+   * 律师改了日期，引用它的日数、金额公式跟着重算。只用于内核自己算出的表。
+   */
+  dates?: string[];
+}
+
+/** ISO 日期（YYYY-MM-DD）转 Excel 日期序号。 */
+export function excelSerial(iso: string): number {
+  return Math.round((Date.parse(`${iso}T00:00:00Z`) - Date.parse("1899-12-30T00:00:00Z")) / 86_400_000);
+}
+/** Excel 日期序号转 ISO 日期。 */
+export function serialToIso(n: number): string {
+  return new Date(Date.parse("1899-12-30T00:00:00Z") + Math.round(n) * 86_400_000).toISOString().slice(0, 10);
 }
 
 const CT = (sheetCount: number) => `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -31,14 +45,15 @@ const ROOT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
 </Relationships>`;
 
-/** 样式：0 默认；1 表头；2 正文文字；3 整数（千分位）；4 小数（千分位两位）；5 小整数（序号、日数、年份，不加千分位）。 */
+/** 样式：0 默认；1 表头；2 正文文字；3 整数（千分位）；4 小数（千分位两位）；5 小整数（序号、日数、年份，不加千分位）；6 日期（yyyy-mm-dd）。 */
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy-mm-dd"/></numFmts>
 <fonts count="2"><font><sz val="10.5"/><name val="等线"/><family val="2"/><charset val="134"/></font><font><b/><sz val="10.5"/><name val="等线"/><family val="2"/><charset val="134"/></font></fonts>
 <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE7EEF7"/><bgColor indexed="64"/></patternFill></fill></fills>
 <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFBFBFBF"/></left><right style="thin"><color rgb="FFBFBFBF"/></right><top style="thin"><color rgb="FFBFBFBF"/></top><bottom style="thin"><color rgb="FFBFBFBF"/></bottom><diagonal/></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="4" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf></cellXfs>
+<cellXfs count="7"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="4" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf></cellXfs>
 <cellStyles count="1"><cellStyle name="常规" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
 
@@ -53,13 +68,13 @@ function textWidth(s: string): number {
 }
 
 /** 列宽：每列取前 500 行里最宽一行（多行文字取最长一行），加边距，限制在 6～60 之间；长文字靠换行。 */
-function colsXml(rows: SheetSpec["rows"]): string {
+function colsXml(rows: SheetSpec["rows"], dates?: ReadonlySet<string>): string {
   const widths: number[] = [];
-  for (const row of rows.slice(0, 500)) {
+  for (const [ri, row] of rows.slice(0, 500).entries()) {
     row.forEach((cell, ci) => {
       if (cell === null || cell === undefined || cell === "") return;
-      // 按单元格实际显示估宽：小整数不加千分位（与 numStyle 一致）
-      const text = typeof cell === "number" ? (numStyle(cell) === 5 ? String(cell) : cell.toLocaleString("en-US", { minimumFractionDigits: numStyle(cell) === 4 ? 2 : 0, maximumFractionDigits: 2 })) : String(cell);
+      // 按单元格实际显示估宽：小整数不加千分位（与 numStyle 一致）；日期按“2026-11-30”的宽度
+      const text = typeof cell === "number" && dates?.has(`${colName(ci)}${ri + 1}`) ? "2026-11-30" : typeof cell === "number" ? (numStyle(cell) === 5 ? String(cell) : cell.toLocaleString("en-US", { minimumFractionDigits: numStyle(cell) === 4 ? 2 : 0, maximumFractionDigits: 2 })) : String(cell);
       const w = Math.max(...text.split(/\r?\n/).map(textWidth));
       widths[ci] = Math.max(widths[ci] ?? 0, w);
     });
@@ -88,7 +103,7 @@ function sheetRange(spec: SheetSpec): { cols: number; rows: number } | null {
 
 /** 宽表横向打印（第 35 批，文档工程审查 E-01）：多于 5 列，或估算总列宽超过 A4 纵向可印宽度。 */
 function totalWidth(spec: SheetSpec): number {
-  return [...colsXml(spec.rows).matchAll(/width="([\d.]+)"/g)].reduce((n, m) => n + Number(m[1]), 0);
+  return [...colsXml(spec.rows, spec.dates ? new Set(spec.dates) : undefined).matchAll(/width="([\d.]+)"/g)].reduce((n, m) => n + Number(m[1]), 0);
 }
 
 function landscape(spec: SheetSpec): boolean {
@@ -107,17 +122,18 @@ export function printPagesWide(spec: SheetSpec): number {
 }
 
 function sheetXml(spec: SheetSpec): Buffer {
+  const dates = spec.dates && spec.dates.length > 0 ? new Set(spec.dates) : undefined;
   // 首行是表头时冻结（多于一行才冻结，单行表不冻）
   const freeze = spec.rows.length > 1 ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` : "";
   // 打印（第 35 批，文档工程审查 E-01：证据目录、问题清单打出来表头不重复、宽表被拆到几页）：缩到一页宽、高度不限
   const parts: Buffer[] = [Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>${freeze}${colsXml(spec.rows)}<sheetData>`, "utf8")];
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>${freeze}${colsXml(spec.rows, dates)}<sheetData>`, "utf8")];
   spec.rows.forEach((row, ri) => {
     let cells = "";
     row.forEach((cell, ci) => {
       if (cell === null || cell === undefined || cell === "") return;
       const ref = `${colName(ci)}${ri + 1}`;
-      const s = ri === 0 ? 1 : typeof cell === "number" ? numStyle(cell) : 2;
+      const s = ri === 0 ? 1 : typeof cell === "number" ? (dates?.has(ref) ? 6 : numStyle(cell)) : 2;
       const f = typeof cell === "number" ? spec.formulas?.[ref] : undefined;
       cells += typeof cell === "number" ? `<c r="${ref}" s="${s}">${f ? `<f>${escapeXml(f)}</f>` : ""}<v>${cell}</v></c>` : `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(String(cell))}</t></is></c>`;
     });
@@ -176,7 +192,7 @@ function colIndex(letters: string): number {
  * 读回本文件 createXlsx 写出的工作簿（V16 第 41 批：xlsx.edit_cells 在已生成的表格上逐格修改，不再整份重出）。
  * 只认本写入器的写法：文字为 t="inlineStr"，数字为 <v>；按 r="B3" 的列字母定位，中间的空格补 null；表名从 xl/workbook.xml 读。
  * 不是本写入器写的（有 sharedStrings、别的单元格类型、行号或格子位置对不上）一律返回 null——律师上传的 Excel 不在此列。
- * 本写入器写的公式（数字格子里的 <f>）读回到 formulas。
+ * 本写入器写的公式（数字格子里的 <f>）读回到 formulas，日期格（样式 6）读回到 dates。
  * 首行（表头）在 rows[0]；空串与 null 都读成 null（写入时两者都不写格子）。
  */
 export function readCreatedXlsx(buf: Buffer): SheetSpec[] | null {
@@ -200,6 +216,7 @@ export function readCreatedXlsx(buf: Buffer): SheetSpec[] | null {
     const data = /<sheetData>([\s\S]*)<\/sheetData>/.exec(xml)?.[1];
     if (data === undefined) return null;
     const formulas: Record<string, string> = {};
+    const dates: string[] = [];
     const rows: (string | number | null)[][] = [];
     // 每行按 <row r="n">…</row> 读；行号必须从 1 起连续（本写入器每行都写，空行写成空 <row>）
     const rowRe = /<row r="(\d+)">([\s\S]*?)<\/row>/g;
@@ -209,30 +226,31 @@ export function readCreatedXlsx(buf: Buffer): SheetSpec[] | null {
       if (Number(rm[1]) !== rows.length + 1) return null;
       const row: (string | number | null)[] = [];
       let rest = rm[2]!;
-      const cellRe = /^<c r="([A-Z]+)(\d+)" s="\d+"( t="inlineStr")?>(?:(?:<f>([^<]*)<\/f>)?<v>([^<]*)<\/v>|<is><t xml:space="preserve">([^<]*)<\/t><\/is>)<\/c>/;
+      const cellRe = /^<c r="([A-Z]+)(\d+)" s="(\d+)"( t="inlineStr")?>(?:(?:<f>([^<]*)<\/f>)?<v>([^<]*)<\/v>|<is><t xml:space="preserve">([^<]*)<\/t><\/is>)<\/c>/;
       while (rest.length > 0) {
         const cm = cellRe.exec(rest);
         if (!cm || Number(cm[2]) !== rows.length + 1) return null;
         const ci = colIndex(cm[1]!);
         if (ci < row.length) return null;
         while (row.length < ci) row.push(null);
-        if (cm[3]) {
-          if (cm[6] === undefined || cm[4] !== undefined) return null;
-          const t = unescapeXml(cm[6]);
+        if (cm[4]) {
+          if (cm[7] === undefined || cm[5] !== undefined) return null;
+          const t = unescapeXml(cm[7]);
           row.push(t === "" ? null : t);
         } else {
-          if (cm[5] === undefined) return null;
-          const n = Number(cm[5]);
+          if (cm[6] === undefined) return null;
+          const n = Number(cm[6]);
           if (!Number.isFinite(n)) return null;
           row.push(n);
-          if (cm[4] !== undefined) formulas[`${cm[1]}${cm[2]}`] = unescapeXml(cm[4]);
+          if (cm[5] !== undefined) formulas[`${cm[1]}${cm[2]}`] = unescapeXml(cm[5]);
+          if (cm[3] === "6") dates.push(`${cm[1]}${cm[2]}`);
         }
         rest = rest.slice(cm[0].length);
       }
       rows.push(row);
     }
     if (consumed !== data) return null;
-    out.push({ name: unescapeXml(m[1]!), rows, ...(Object.keys(formulas).length > 0 ? { formulas } : {}) });
+    out.push({ name: unescapeXml(m[1]!), rows, ...(Object.keys(formulas).length > 0 ? { formulas } : {}), ...(dates.length > 0 ? { dates } : {}) });
   }
   return out;
 }

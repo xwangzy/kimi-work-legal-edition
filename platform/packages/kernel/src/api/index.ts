@@ -4250,7 +4250,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const others = st.source_breakdown.filter((b) => b.reliability !== "official_text_collected");
       const short: Record<string, string> = { demo_seed: "为演示数据", inferred_from_amendment_decision: "依据修改决定推定" };
       const origin = official
-        ? `（${official.laws} 部按官方发布文本采集${others.length > 0 ? `；另有 ${others.map((b) => `${b.articles} 条${short[b.reliability] ?? `来源类别为 ${b.reliability || "未登记"}`}`).join("、")}` : ""}）`
+        ? `（${official.laws} 部按官方发布文本采集${others.length > 0 ? `；另有 ${others.map((b) => (b.reliability === "official_metadata_only" ? `${b.laws} 部只登记了目录（条数与施行日，未收正文）` : `${b.articles} 条${short[b.reliability] ?? `来源类别为 ${b.reliability || "未登记"}`}`)).join("、")}` : ""}）`
         : "（演示范围）";
       const scope = level === "sample" ? `目前只收录 ${st.laws_count} 部法律法规、${st.articles_count} 条正文${origin}，库外的引用无法自动核对` : `收录 ${st.laws_count} 部 / ${st.versions_count} 个版本${official ? origin : ""}`;
       const collected = official?.collected_until ? ` · 条文采集截至 ${official.collected_until}` : "";

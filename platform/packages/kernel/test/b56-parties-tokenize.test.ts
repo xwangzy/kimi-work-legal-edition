@@ -31,7 +31,8 @@ const TEXT = [
   "",
 ].join("\n");
 
-const SECRETS = ["91310115MA1H7K2X3Q", "张江路1288号（3幢）501室", "王建国", "021-58881234", "李秀英", "1985年3月2日", "110105198503021241", "建国路88号院(2号楼)1203室", "13912345678"];
+// 第 58 批（D-240）：住址只有道路门牌是真值（门牌之后的楼栋室号保留原文、不指向任何人）
+const SECRETS = ["91310115MA1H7K2X3Q", "张江路1288号", "王建国", "021-58881234", "李秀英", "1985年3月2日", "110105198503021241", "建国路88号院", "13912345678"];
 
 let tk: TestKernel | null = null;
 after(async () => {
@@ -53,8 +54,8 @@ test("当事人信息材料：发往模型的形态不含身份真值；机构�
   for (const s of SECRETS) assert.equal(sent.includes(s), false, `真值原文发出：${s}\n${sent}`);
   // 现状如实断言：机构名称在一般事项里原文发出；住址只换行政区划之后的部分
   assert.ok(sent.includes("一、我方（原告）：华诚贸易有限公司（单位）"), sent);
-  assert.match(sent, /^住所：上海市浦东新区〔地址·[0-9A-Z]{6}〕$/m);
-  assert.match(sent, /^住址：北京市朝阳区〔地址·[0-9A-Z]{6}〕$/m);
+  assert.match(sent, /^住所：上海市浦东新区〔地址·[0-9A-Z]{6}〕（3幢）501室$/m);
+  assert.match(sent, /^住址：北京市朝阳区〔地址·[0-9A-Z]{6}〕\(2号楼\)1203室$/m);
   assert.equal(store.restore(mid, before).text, `住所：上海市浦东新区${oldAddress}`, "已有成果中的旧地址代号照常还原");
   // 不是号码的事项原样（性别、职务）
   assert.ok(sent.includes("性别：女") && sent.includes("职务：执行董事"), sent);

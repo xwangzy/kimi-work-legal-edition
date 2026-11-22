@@ -40,7 +40,9 @@ test("同一份材料同一句里的同一日期只列一次；不同句子各�
 test("案卷总目录与证据目录按文件名编号排列（01、02、10），不按勾选先后", () => {
   for (const name of ["案卷总目录", "证据目录"]) {
     const t = sheetText(name);
-    const i1 = t.indexOf("01-合同.docx"), i2 = t.indexOf("02-验收单.docx"), i10 = t.indexOf("10-催款函.docx");
+    // 第 58 批复测：证据目录的证据名称去掉扩展名
+    const ext = name === "证据目录" ? "" : ".docx";
+    const i1 = t.indexOf(`01-合同${ext}`), i2 = t.indexOf(`02-验收单${ext}`), i10 = t.indexOf(`10-催款函${ext}`);
     assert.ok(i1 >= 0 && i1 < i2 && i2 < i10, `${name} 顺序不对`);
   }
 });
@@ -58,7 +60,7 @@ test("只有货币符号的小写金额摘得出；大写与小写对不上的�
   const text = (name: string) => [...readZipEntries(b.files.find((x) => x.filename.startsWith(name))!.bytes).entries()].filter(([k]) => /\.xml$/.test(k)).map(([, v]) => v.toString("utf8")).join("\n");
   const tl = text("事实时间轴");
   // 时间轴一句一行：这句只列一行，写明大小写对不上
-  assert.match(tl, /金额：455000 元（大写与小写不一致，见补证清单）/);
+  assert.match(tl, /金额：455,000 元（大写与小写不一致，见补证清单）/, "第 58 批复测：金额写千分位");
   const sup = text("补证清单").replace(/<[^>]+>/g, "");
   assert.match(sup, /《06-催款函\.docx》第 \d+–\d+ 字：大写“人民币肆拾伍万伍仟元整”（455000 元）与小写“¥445,000\.00”（445000 元）不一致/);
   assert.equal(/01-合同\.docx》第/.test(sup), false, "一致的大小写不报");

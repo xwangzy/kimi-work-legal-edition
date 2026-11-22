@@ -998,7 +998,7 @@ export function buildRedlineFromCards(
 // ─── 审查意见表（评审 C1 §2.2 第 8 条：很多律师交给客户的是这张表，不是修订稿） ───
 
 const KIND_LABEL: Readonly<Record<RiskCardKind, string>> = { risk: "风险", missing: "缺失", deviation: "偏离规则", consistency: "前后不一致" };
-const RULE_SOURCE_LABEL: Readonly<Record<RuleSource, string>> = { law: "法律强制", firm_rule: "本所或客户规则", general: "通用建议（须律师判断）" };
+const RULE_SOURCE_LABEL: Readonly<Record<RuleSource, string>> = { law: "法律强制", firm_rule: "本所或客户规则", general: "通用建议（无明确规则依据）" };
 const SEVERITY_LABEL: Readonly<Record<string, string>> = { high: "重大", mid: "一般", low: "提示" };
 const NATURE_LABEL: Readonly<Record<string, string>> = { must: "必须修改", should: "建议修改", negotiable: "可谈判" };
 const DECISION_LABEL: Readonly<Record<string, string>> = { proposed: "待处理", accepted: "接受", modified: "修改后接受", rejected: "不采纳" };

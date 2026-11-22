@@ -224,6 +224,20 @@ const ROLE_AFTER_FUNCTION = new RegExp(`^(?:${ROLE_CUES.join("|")}|[对双各一
 /** “对方、双方、甲方……”里的“方”是名词，不是姓氏（第 29 批：“微信中对方亦确认”认出“方亦”）。 */
 // 第 35 批：“转让方违反陈述与保证”“出租方迟延”“守约方依法”“发包方通过”里的“方”同样是名词（真实走查 R1、R2 的事项令牌表里登记了“方违反”“方迟延”“方依法”“方通过”）
 const PARTY_FANG_BEFORE = new Set([..."对双各一我他本甲乙丙丁买卖让租约包托资供需务可作"]);
+/** “让”只在“转让方 / 受让方 / 出让方”里是当事方称谓的一部分；“请让方明签字”“让方晓东确认”的“让”是动词，后面的“方”是姓（第 58 批 D-236）。 */
+const RANG_PARTY_BEFORE = new Set([..."转受出"]);
+/** text[j] 是当事方称谓里的“方”（“对方、双方、转让方……”），不作姓氏读。纯函数。 */
+function partyFangAt(text: string, j: number): boolean {
+  if (text[j] !== "方") return false;
+  const before = text[j - 1] ?? "";
+  if (!PARTY_FANG_BEFORE.has(before)) return false;
+  if (before === "让") return RANG_PARTY_BEFORE.has(text[j - 2] ?? "");
+  return true;
+}
+/** 紧挨在 j 之前的是一个以“方”结尾的当事方称谓（“转让方方明表示同意”里“方明”之前的“转让方”）：对姓名而言等同边界。纯函数。 */
+function partyLabelEndsAt(text: string, j: number): boolean {
+  return j >= 2 && partyFangAt(text, j - 1);
+}
 
 /** 姓名之后常见的字（动词、介词、助词）：姓名后紧跟它们，说明姓名到此为止。 */
 const NAME_DELIM = new Set([..."在于与和及等的向将已系为是因对同把被所曾自从经由以诉称签共均都也又还就并即则但而或认说表承确拒支付借欠归交收出购买卖租住现男女年月日作提要请不未没应可能会"]);
@@ -641,7 +655,8 @@ function titleParenNames(text: string, out: Set<string>): void {
       const j = k - len;
       if (j < 0) continue;
       const before = j === 0 ? "" : text[j - 1]!;
-      if (before !== "" && !BOUNDARY.test(before) && !FUNCTION_BEFORE.has(before)) continue;
+      // 当事方称谓之后直接写姓名再接言语动词（“转让方方明表示同意”“受让方方晓东签字确认”）：称谓等同边界（第 58 批 D-236）
+      if (before !== "" && !BOUNDARY.test(before) && !FUNCTION_BEFORE.has(before) && !partyLabelEndsAt(text, j)) continue;
       const s = surnameAt(text, j);
       if (s === 0 || len - s < 1 || len - s > 2) continue;
       if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
@@ -704,6 +719,9 @@ export function recognizeNames(text: string): Set<string> {
     if (j === m.index! + m[0].length && PARTY_LABELS.has(m[0])) continue;
     // 非诉讼角色词后直接接连词、介词（V13 第 38 批）：“负责人和期限”“财务负责人由锦漪委派”“员工和家属”不是姓名
     if (j === m.index! + m[0].length && CONJ_AFTER_ROLE.has(text[j] ?? "") && !LITIGATION_ROLES.has(m[0])) continue;
+    // 角色词后跟括注、括注后没有冒号就接连词（第 58 批真实复测：“站在受让方（目标公司）和投资方一边写”把“和投资”认成姓名，
+    // 起草说明里多出一个虚构的当事人“和投资、方一边”）：是并列，不是“角色（身份）姓名”。写明冒号的（“受让方（目标公司）：和平”）照常识别
+    if (j > m.index! + m[0].length && CONJ_AFTER_ROLE.has(text[j] ?? "") && !/[：:]/.test(text.slice(m.index! + m[0].length, j))) continue;
     // 非诉讼角色词后直接接“都＋动词”是副词（V14 第 39 批访谈纪要：“其他股东都缴齐了”把“都缴齐”列成自然人；法条“当事人都违反合同”）。
     // 有分隔的“证人：都明，”与诉讼文书“被告都晓峰辩称”照常识别
     if (j === m.index! + m[0].length && text[j] === "都" && CJK.test(text[j + 1] ?? "") && CJK.test(text[j + 2] ?? "") && !LITIGATION_ROLES.has(m[0])) continue;
@@ -724,7 +742,7 @@ export function recognizeNames(text: string): Set<string> {
     // “当事人一方明确表示”（民法典第五百六十三条）：角色词后的“一”被当成序号（“证人一”），“方明”被认成姓名，学进事项令牌表后
     // 法条原文成了“当事人一〔自然人〕确表示”，助手起草的“卖方明知”在回读里也被换成代号、改不掉（V14 第 39 批真实走查 A）。
     // “一方、双方、对方……”里的“方”不作姓氏读，与称谓分支同一口径
-    if (text[j] === "方" && PARTY_FANG_BEFORE.has(text[j - 1] ?? "")) continue;
+    if (partyFangAt(text, j)) continue;
     const name = readName(text, j, strong);
     if (name) {
       out.add(name);
@@ -750,7 +768,7 @@ export function recognizeNames(text: string): Set<string> {
       if (COMMON_WORDS.has(text.slice(j, j + 2)) || COMMON_WORDS.has(text.slice(j + 1, j + 3))) continue;
       // 较长候选的“姓氏”若其实是前一个词的功能字（“和王明律师”的“和”），放弃较长候选
       if (s === 1 && FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0) continue;
-      if (text[j] === "方" && PARTY_FANG_BEFORE.has(text[j - 1] ?? "")) continue;
+      if (partyFangAt(text, j)) continue;
       // 连词、情态字其实是前一个词的末字或词中连词（“向相应法域律师”“上传人和责任律师”）：前面紧挨着普通汉字时不认（V13 第 38 批）
       if (s === 1 && FUNCTION_SURNAMES.has(text[j]!) && j > 0 && CJK.test(text[j - 1]!) && !FUNCTION_BEFORE.has(text[j - 1]!)) continue;
       // “麻烦沈律师”（V14 第 39 批真实走查 A）：称谓前一个字本身是姓（“沈律师”是称呼），名字部分又没有常见名字用字——是“麻烦”+“沈律师”，不是三字名
@@ -766,13 +784,14 @@ export function recognizeNames(text: string): Set<string> {
       const j = k - len;
       if (j < 0) continue;
       const before = j === 0 ? "" : text[j - 1]!;
-      if (before !== "" && !BOUNDARY.test(before) && !FUNCTION_BEFORE.has(before)) continue;
+      // 当事方称谓之后直接写姓名再接言语动词（“转让方方明表示同意”“受让方方晓东签字确认”）：称谓等同边界（第 58 批 D-236）
+      if (before !== "" && !BOUNDARY.test(before) && !FUNCTION_BEFORE.has(before) && !partyLabelEndsAt(text, j)) continue;
       const s = surnameAt(text, j);
       if (s === 0 || len - s < 1 || len - s > 2) continue;
       if (FUNCTION_BEFORE.has(text[j]!) && surnameAt(text, j + 1) > 0 && s === 1) continue;
       // 言语动词前的“应事先（说明）”“由财务（确认）”“向贵方（确认）”：姓氏位置是连词、介词或情态词，只有这一条弱证据时不认（V13 第 38 批）
       if (s === 1 && FUNCTION_SURNAMES.has(text[j]!)) continue;
-      if (text[j] === "方" && PARTY_FANG_BEFORE.has(before)) continue;
+      if (partyFangAt(text, j)) continue;
       const given = text.slice(j + s, k);
       if (!givenOk(given, false)) continue;
       if (COMMON_WORDS.has(text.slice(j, j + 2))) continue;

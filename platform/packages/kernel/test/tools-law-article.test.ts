@@ -32,9 +32,10 @@ test("law.get_article: 库内条文返回原文，版本与 law.get_version 一�
   // 可信度标记原样返回：官方发布文本人工采集的不再提示“演示数据”；仍是演示种子的（《律师法》第三十八条）照旧提示不得引用
   assert.equal(r.reliability, "official_text_collected");
   assert.doesNotMatch(r.note ?? "", /演示数据/);
+  // V32：《律师法》两版换成国家法律法规数据库官方 Word 全文，第三十八条不再是演示数据
   const demo = lawGetArticle(lawdb, { law: "律师法", article: 38, as_of: "2025-01-01" });
-  assert.equal(demo.reliability, "demo_seed");
-  assert.match(demo.note, /演示数据/);
+  assert.equal(demo.reliability, "official_text_collected");
+  assert.doesNotMatch(demo.note, /演示数据/);
 });
 
 test("law.get_article: 条号写法——整数、数字串、第585条、第五百八十五条、带款项都解析到同一条", () => {
@@ -89,11 +90,12 @@ test("law.get_article: 库外、无适用版本、条号不存在——一律 fo
     { p: { law: "中华人民共和国证券法", article: 20, as_of: "2026-10-01" }, reason: "law_not_in_lawdb" },
     // V10 第 36 批：民法典、民诉法等 9 部已收全文；“条号存在但正文未采集”改用只收了第三十八条的《律师法》2017 年版
     { p: { law: "律师法", article: "第八十五条", as_of: "2026-08-31" }, reason: "article_not_exist" },
-    { p: { law: "律师法", article: "第十条", as_of: "2026-08-31" }, reason: "text_not_collected" },
+    // V32：《律师法》已收全文；“条号存在、正文未收”改用法规目录里只登记了条数的《网络数据安全管理条例》
+    { p: { law: "网络数据安全管理条例", article: "第十条", as_of: "2026-08-31" }, reason: "text_not_collected" },
     { p: { law: "某某不存在法", article: 1, as_of: "2026-10-01" }, reason: "law_not_in_lawdb" },
     { p: { law: "民法典", article: 585, as_of: "2020-06-01" }, reason: "no_applicable_version" },
     { p: { law: "民法典", article: 1261, as_of: "2026-10-01" }, reason: "article_not_exist" },
-    { p: { law: "律师法", article: 1, as_of: "2026-08-31" }, reason: "text_not_collected" },
+    { p: { law: "网络数据安全管理条例", article: 1, as_of: "2026-08-31" }, reason: "text_not_collected" },
   ] as const;
   for (const c of cases) {
     const r = lawGetArticle(lawdb, c.p);

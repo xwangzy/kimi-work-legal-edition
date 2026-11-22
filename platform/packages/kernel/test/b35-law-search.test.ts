@@ -26,7 +26,8 @@ test("按关键词检索条文：竞业限制、严重违反规章制度、违�
   const byName = lawSearch(db, { query: "劳动合同法" });
   assert.equal(byName.results[0]?.law_name, LCL, "只写法名：照旧按法名命中");
   assert.equal(byName.articles.length, 0);
-  const none = lawSearch(db, { query: "数据出境安全评估" });
+  // V32：《数据出境安全评估办法》已入库，原先的“查不到”样例换成库里确实没有的说法
+  const none = lawSearch(db, { query: "碳排放配额质押" });
   assert.equal(none.results.length + none.articles.length, 0);
   assert.match(none.note, /换更短的关键词/);
   assert.ok(lawSearch(db, { query: "竞业限制" }).articles.every((a) => a.snippet.length <= 104 && a.effectiveness === "valid"));

@@ -715,6 +715,14 @@ function insertParagraphsAfter(
     commentId = nextId();
     comments.push({ id: commentId, author: op.author, date, text: op.comment });
   }
+  // 指定了新段落样式的（第 58 批 D-242）：换掉 pStyle，去掉原样式带来的自动编号与大纲级别
+  const styledPpr = (ppr: string, style: string): string => `<w:pStyle w:val="${escapeXml(style)}"/>${removeElements(ppr, ["w:pStyle", "w:numPr", "w:outlineLvl"])}`;
+  const anchorStyle = /<w:pStyle w:val="([^"]+)"/.exec(basePpr)?.[1] ?? "";
+  const restyle = op.insertStyles ?? (op.insertAfterHeading && op.insertAfterHeading.headingStyles.includes(anchorStyle) ? { first: op.insertAfterHeading.style } : undefined);
+  const pprFor = (i: number): string => {
+    if (restyle) return styledPpr(basePpr, i === 0 ? restyle.first : (restyle.rest ?? restyle.first));
+    return heading && i === 0 ? headPpr : basePpr;
+  };
   const paras = lines.map((line, i) => {
     const markId = nextId();
     const insId = nextId();
@@ -724,8 +732,8 @@ function insertParagraphsAfter(
         ? `<w:commentRangeEnd w:id="${commentId}"/><w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id="${commentId}"/></w:r>`
         : "";
     return (
-      `<w:p><w:pPr>${heading && i === 0 ? headPpr : basePpr}<w:rPr><w:ins w:id="${markId}" w:author="${author}" w:date="${date}"/></w:rPr></w:pPr>${open}` +
-      `<w:ins w:id="${insId}" w:author="${author}" w:date="${date}" kwl-new="1"><w:r>${heading && i === 0 ? headRpr : rpr}${runContent(line)}</w:r></w:ins>${close}</w:p>`
+      `<w:p><w:pPr>${pprFor(i)}<w:rPr><w:ins w:id="${markId}" w:author="${author}" w:date="${date}"/></w:rPr></w:pPr>${open}` +
+      `<w:ins w:id="${insId}" w:author="${author}" w:date="${date}" kwl-new="1"><w:r>${restyle ? "" : heading && i === 0 ? headRpr : rpr}${runContent(line)}</w:r></w:ins>${close}</w:p>`
     );
   });
   if (place) {

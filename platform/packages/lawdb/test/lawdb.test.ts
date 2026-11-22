@@ -40,25 +40,30 @@ test("加载验签 ok：status 与签名内容一致、重复构建确定", () =
   const st = db.status();
   assert.equal(st.signature_valid, true);
   // 第 34 批：9 部 137 条官方发布文本入库（《律师法》第三十八条仍为演示种子）；V10 第 36 批：9 部扩为全文、另收 6 部与 3 部司法解释全文（劳动争议解释（一）第三十二条不入库）；V13 第 38 批：再收专利法、反垄断法、劳动合同法实施条例、反不正当竞争法（2025 修订）、数据安全法 5 部 286 条；V16 第 41 批：第五批 12 部，补收诉讼费用交纳办法 56 条
-  assert.equal(st.laws_count, 37);
-  // V23（2026-11-20）：+《律师法》2026 修正本（只收第四十一条）、+ 劳动争议解释（一）第三十二条
-  assert.equal(st.versions_count, 38);
-  assert.equal(st.articles_count, 4019);
+  // V32（2026-11-22）：+ 数据出境三部规章（47 条）、个人信息出境认证办法（19 条）全文；+ 法规目录《网络数据安全管理条例》（只登记 64 条、无正文）
+  // V32 追加：+ 九民纪要 130 条、法释〔2014〕8号 7 条
+  // V32 第三次追加：+ 财产保全规定（2016 原文本 + 2020 修正本，各 29 条）、技术合同解释 2020 修正本 47 条
+  assert.equal(st.laws_count, 46);
+  // V23（2026-11-20）：+《律师法》2026 修正本、+ 劳动争议解释（一）第三十二条；V32：+ 上述 9 部共 10 个版本
+  assert.equal(st.versions_count, 48);
+  // V32：《律师法》两版换成国家法律法规数据库官方 Word 全文（60 + 65 条）
+  assert.equal(st.articles_count, 4450);
   assert.match(st.package_version, /^g0\./);
-  // V23（2026-11-20 核验）：覆盖说明按来源登记动态生成——36 部官方发布文本 4,017 条；《律师法》2017 版第三十八条为演示数据，
-  // 2026 修正本第四十一条依据修改决定推定；只收了部分条文的版本：律师法 2017（1/60）、律师法 2026（1/65）
+  // 覆盖说明按来源登记动态生成——V32 起演示种子与依据决定推定的条文全部替换；只收了部分条文的版本只剩法规目录那一条
   assert.deepEqual(
     st.source_breakdown.map((b) => [b.reliability, b.laws, b.articles]),
     [
-      ["official_text_collected", 36, 4017],
-      ["demo_seed", 1, 1],
-      ["inferred_from_amendment_decision", 1, 1],
+      ["official_text_collected", 45, 4421],
+      // 财产保全规定 2020 修正本：原文本 + 修正决定第十二项（只改第六条）合成，未取得修正本逐字全文
+      ["inferred_from_amendment_decision", 1, 29],
+      ["official_metadata_only", 1, 0],
     ],
   );
-  assert.equal(st.source_breakdown[0]!.collected_until, "2026-11-10");
-  assert.equal(st.partial_versions, 2);
-  assert.match(st.source_coverage_note, /36 部（4017 条）按官方发布文本采集并与第二官方来源比对（采集截至 2026-11-10），1 部（1 条）为演示数据.*1 部（1 条）依据修改决定推定、修正本逐字全文待采集/);
-  assert.match(st.source_coverage_note, /2 个版本只收了部分条文/);
+  assert.equal(st.source_breakdown[0]!.collected_until, "2026-11-22");
+  assert.equal(st.partial_versions, 1);
+  assert.match(st.source_coverage_note, /45 部（4421 条）按官方发布文本采集并与第二官方来源比对（采集截至 2026-11-22），1 部（29 条）依据修改决定推定.*1 部（0 条）只登记了目录信息/);
+  assert.match(st.source_coverage_note, /1 个版本只收了部分条文/);
+  assert.doesNotMatch(st.source_coverage_note, /演示数据/);
   assert.doesNotMatch(st.source_coverage_note, /G0 演示种子/);
   db.close();
   // content hash 重算 = manifest 声明（确定性：同源同 hash；package_meta 的 built_at 不进签名）
@@ -112,9 +117,11 @@ test("S-07 随包法规库不含夹具的演绎文本；V23：《律师法》201
   // 修改决定未改原第三十八条：第四十一条正文 = 2017 修正本第三十八条（2012 年修改后的文字，不是夹具里的旧文）
   assert.equal(db.getArticle("lsv_lawyers_2026", 41), db.getArticle("lsv_lawyers_2017", 38));
   assert.match(db.getArticle("lsv_lawyers_2026", 41)!, /不愿泄露的有关情况和信息.*准备或者正在实施危害国家安全、公共安全以及严重危害他人人身安全的犯罪事实和信息除外/s);
-  assert.equal(db.getArticle("lsv_lawyers_2026", 38), null, "节选：2026 修正本只收第四十一条");
-  assert.equal(db.getSource(rows[1]!.source_license_id)?.reliability, "inferred_from_amendment_decision");
-  assert.match(String(db.licenseNoteOf(rows[1]!.source_license_id)), /推定：原第三十八条未修改、条序调整为第四十一条；修正本逐字全文待从国家法律法规数据库采集/);
+  // V32：2026 修正本换成国家法律法规数据库官方 Word 全文（65 条），与“2017 修正本 + 修改决定”逐条对照过
+  assert.match(db.getArticle("lsv_lawyers_2026", 62)!, /粤港澳大湾区律师执业考试/);
+  assert.equal(db.getArticle("lsv_lawyers_2026", 66), null);
+  assert.equal(db.getSource(rows[1]!.source_license_id)?.reliability, "official_text_collected");
+  assert.match(String(db.licenseNoteOf(rows[1]!.source_license_id)), /律师法 2017 修正本 60 条、2026 修正本 65 条取国家法律法规数据库官方 Word 文本/);
   db.close();
   const raw = new Database(BASE, { readonly: true });
   assert.equal((raw.prepare(`SELECT COUNT(*) AS c FROM renumbering`).get() as { c: number }).c, 2);
@@ -134,9 +141,10 @@ test("时点取版本（夹具）：2026-08-31→2017 版；2026-10-01→2026 �
   assert.deepEqual(rn.map((r) => [r.from_article, r.to_article]), [[38, 41]]);
   assert.equal(db.topicArticle("lsv_lawyers_2026", "保密义务"), 41);
   assert.equal(db.topicArticleInOtherVersion("law_lawyers", "lsv_lawyers_2026", "保密义务", 38)!.lsv_id, "lsv_lawyers_2017");
-  // 正文覆盖渐进：38 条已采集有正文；第 1 条存在（total_articles 内）但未采集 → null
+  // 正文覆盖渐进：2017 修正本已收全文（V32）；夹具里演绎的 2026 修正本只有第 41 条，第 1 条存在（total_articles 内）但未采集 → null
   assert.match(db.getArticle("lsv_lawyers_2017", 38)!, /保密/);
-  assert.equal(db.getArticle("lsv_lawyers_2017", 1), null);
+  assert.match(db.getArticle("lsv_lawyers_2017", 1)!, /为了完善律师制度/);
+  assert.equal(db.getArticle("lsv_lawyers_2026", 1), null);
   db.close();
 });
 
@@ -227,13 +235,14 @@ test("增量伪造（dev 私钥真签名、声明的合并 hash 与真实合并�
   // 回滚断言：逐表行数与关键内容未变、版本未变（用独立只读句柄复核文件真实状态）
   const raw = new Database(copy, { readonly: true });
   const n = (sql: string) => (raw.prepare(sql).get() as { c: number }).c;
-  assert.equal(n(`SELECT COUNT(*) AS c FROM laws`), 37);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions`), 38);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM articles`), 4019);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM laws`), 46);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions`), 48);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM articles`), 4450);
   // V23：+《律师法》2026 修正本主题 2 个、合读提示 52 个；+ 38→41 迁移 2 组；+ 来源登记 amendment-decision-inferred-2026-11
-  assert.equal(n(`SELECT COUNT(*) AS c FROM article_topics`), 223);
+  // V32：+ 数据出境两部规章与令第16号的合读提示 3 个、九民纪要每条一个“不是司法解释”提示 130 个；+ 来源登记 v32 两个
+  assert.equal(n(`SELECT COUNT(*) AS c FROM article_topics`), 356);
   assert.equal(n(`SELECT COUNT(*) AS c FROM renumbering`), 2);
-  assert.equal(n(`SELECT COUNT(*) AS c FROM source_registry`), 6);
+  assert.equal(n(`SELECT COUNT(*) AS c FROM source_registry`), 9);
   // V10 第 36 批：随包种子已有仲裁法 2025 年修订本（law_arbitration 一行），增量补的 2017 年修正本不得残留
   assert.equal(n(`SELECT COUNT(*) AS c FROM laws WHERE law_id = 'law_arbitration'`), 1, "随包的仲裁法一行照旧");
   assert.equal(n(`SELECT COUNT(*) AS c FROM law_versions WHERE lsv_id = 'lsv_arbitration_2017'`), 0);

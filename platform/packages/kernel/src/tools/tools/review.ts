@@ -21,6 +21,7 @@ import { fillCells, tableForAgent } from "../../services/review-tables.ts";
 import { acceptedText, changesDocument, listFacts, listRiskCards, submitFacts, submitRiskCards, riskCardProgress } from "../../services/review-cards.ts";
 import { latestOfLineage, runLineage, sameFollowUpChain } from "../../services/artifact-lineage.ts";
 import { checkDeliverable, factRefNos, qualityScrubNote, scrubQualityRows } from "../../services/deliverable-check.ts";
+import { calcOvertime, overtimeSheet, type CalcOvertimeParams } from "./labor-overtime.ts";
 import { FACT_COLUMNS, FACT_SHEET_NAME, factTableRows, unknownFactNote } from "../../services/fact-refs.ts";
 import { cellChars, shrinkCheck } from "../../services/version-shrink.ts";
 import { reviveSuperseded } from "../../services/attempt-supersede.ts";
@@ -241,6 +242,8 @@ export function rulesPropose(ctx: InvokeCtx, p: { title?: string; rules?: unknow
 }
 
 /** 认作“写明了底线”的原句用词：范本自己说了不能接受、不得、必须、红线之类才算。 */
+/** 明示的底线：立场词（不接受、必须）之外，要写明不可谈、红线、底线、不得退让一类（第 58 批）。 */
+const STRONG_RED_LINE = /不可谈|红线|底线|不得退让|不可退让|不作让步|不得让步|不予让步|一律不|严禁|禁止|否决|不允许任何|无论如何不|绝不/;
 const RED_LINE_WORDS = /不可谈|不得|不能|不接受|不予接受|不可接受|不同意|拒绝|禁止|严禁|必须|务必|红线|底线|一律不|否决|不允许|不可以/;
 
 /**
@@ -263,8 +266,17 @@ export function checkRedLineSources(ctx: Pick<InvokeCtx, "db" | "tokens">, matte
       [matterId],
     );
     const plain = rows.map((r) => r.content).join("\n");
-    view = squash(ctx.tokens ? ctx.tokens.tokenizer(matterId).tokenize(plain).text : plain);
+    const tokenized = ctx.tokens ? ctx.tokens.tokenizer(matterId).tokenize(plain).text : plain;
+    lines = tokenized.split("\n").map(squash);
+    view = squash(tokenized);
     return view;
+  };
+  let lines: string[] = [];
+  /** 引文所在的那一行（表格的一行、或一段）：属性栏写在同一行里。 */
+  const rowsWith = (quote: string): string[] => {
+    materialView();
+    const q = squash(quote);
+    return lines.filter((l) => l.includes(q));
   };
   const dropped: { no: number; topic: string; reason: string }[] = [];
   const out = rules.map((r: any, i: number) => {
@@ -281,6 +293,10 @@ export function checkRedLineSources(ctx: Pick<InvokeCtx, "db" | "tokens">, matte
     if ([...quote].length < 6) return drop("没有给出范本里写明这条底线的原句（red_line_quote）");
     if (!materialView().includes(squash(quote))) return drop("red_line_quote 不是范本里逐字出现的句子");
     if (!RED_LINE_WORDS.test(quote)) return drop("这句原文只写了我方的一般标准，没有写明不能接受或必须如此");
+    // 第 58 批真实回归（从范本整理审查要点，又一次命中 V8）：“不接受视为验收”“不接受自动续期”只是客户的标准立场，客户标准的属性栏是“—”、
+    // 本所范本同一事项还给了可退让——“不接受”“必须”这类立场词不足以认定为不可谈。要有“不可谈 / 红线 / 底线 / 不得退让 / 禁止 / 一律不”这类明示，
+    // 或引文带上写着“不可谈”的属性栏
+    if (!STRONG_RED_LINE.test(quote) && !rowsWith(quote).some((l) => STRONG_RED_LINE.test(l))) return drop("这句原文只用了“不接受 / 必须”这类立场词，没有标明不可谈、红线或底线：作为我方标准写入；客户标准有“属性 / 可谈性”一栏且该行写明不可谈的，把那一格一并引进 red_line_quote 再提交");
     return rest;
   });
   return { rules: out, dropped };
@@ -390,9 +406,11 @@ function normalizeCell(c: unknown): { value: string | number | null; lost: boole
   return { value: String(typeof c === "object" ? JSON.stringify(c) : c).slice(0, MAX_CELL), lost: false };
 }
 
-export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { name: string; columns: string[]; rows: unknown[][] }[] }) {
+export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { name: string; columns: string[]; rows: unknown[][] }[]; computed?: unknown }) {
   const sheets = Array.isArray(p.sheets) ? p.sheets : [];
-  if (sheets.length === 0 || sheets.length > MAX_SHEETS) throw new DomainError("validation", `sheets 须为 1–${MAX_SHEETS} 个`, 422);
+  // 第 58 批：加班费计算表由内核按 calc.labor 的同一算法写入（带公式），排在模型写的表之后
+  const computed = computedSheets(p.computed);
+  if (sheets.length + computed.length === 0 || sheets.length + computed.length > MAX_SHEETS) throw new DomainError("validation", `sheets 须为 1–${MAX_SHEETS} 个`, 422);
   // 长数字见 normalizeCell
   const lost: string[] = [];
   const usedNames = new Set<string>();
@@ -416,7 +434,25 @@ export function xlsxRenderTable(ctx: InvokeCtx, p: { title: string; sheets: { na
     return { name, rows: [cols, ...body] };
   });
   if (lost.length > 0) throw new DomainError("validation", `表格有误，未生成：${lost.slice(0, 8).join("、")}是超长的数字（身份证号、账号一类），按数字传已失真，请改成文字（加引号）后重新提交`, 422, { problems: lost });
-  return finishTable(ctx, String(p.title ?? ""), specs, "xlsx.render_table");
+  for (const sh of computed) {
+    let name = sh.name;
+    for (let k = 2; usedNames.has(name.toLowerCase()); k++) name = `${sh.name.slice(0, 31 - String(k).length - 2)}（${k}）`;
+    usedNames.add(name.toLowerCase());
+    specs.push({ ...sh, name });
+  }
+  return finishTable(ctx, String(p.title ?? ""), specs, "xlsx.render_table", computed.length > 0 ? { computed: true } : {});
+}
+
+/** xlsx.render_table 的 computed：按计算工具的同一算法生成带公式的工作表（目前只有 calc.labor 的加班费）。 */
+function computedSheets(v: unknown): SheetSpec[] {
+  if (v === undefined) return [];
+  if (!Array.isArray(v) || v.length > 4) throw new DomainError("validation", "computed 最多 4 项", 422);
+  return v.map((x, i) => {
+    const o = (x ?? {}) as { tool?: unknown; name?: unknown; params?: { kind?: unknown } };
+    if (o.tool !== "calc.labor" || !o.params || o.params.kind !== "overtime") throw new DomainError("validation", `computed 第 ${i + 1} 项：目前只支持 calc.labor 的加班费（params.kind 写 overtime）`, 422);
+    const name = typeof o.name === "string" && o.name.trim() ? o.name.trim() : "加班费计算";
+    return overtimeSheet(name, calcOvertime(o.params as CalcOvertimeParams));
+  });
 }
 
 /**
@@ -475,7 +511,7 @@ function withFactSheet(ctx: InvokeCtx, specs: SheetSpec[]): { specs: SheetSpec[]
   return {
     specs: [...specs, { name: FACT_SHEET_NAME, rows: [FACT_COLUMNS, ...t.rows] }],
     added: true,
-    note: `表格里引用了 ${nos.length} 个事实序号，系统已自动附上工作表“${FACT_SHEET_NAME}”（序号、事实陈述、发生日期、来源材料、律师是否已确认${t.omitted > 0 ? `；另有 ${t.omitted} 条超出上限未列` : ""}），读者离开产品也能对上——不要再手工做一张；之后用 xlsx.edit_cells 改表时这张会随引用自动更新${t.unknown.length > 0 ? `。${unknownFactNote(t.unknown)}` : ""}`,
+    note: `表格里引用了 ${nos.length} 个事实序号，系统已自动附上工作表“${FACT_SHEET_NAME}”（序号、事实陈述、发生日期、来源材料、是否已确认${t.omitted > 0 ? `；另有 ${t.omitted} 条超出上限未列` : ""}），读者离开产品也能对上——不要再手工做一张；之后用 xlsx.edit_cells 改表时这张会随引用自动更新${t.unknown.length > 0 ? `。${unknownFactNote(t.unknown)}` : ""}`,
   };
 }
 
@@ -544,7 +580,7 @@ export function xlsxEditCells(
   // 每行补齐到表头列数（写入时末尾的空格不写，读回会短）
   const specs: SheetSpec[] = read.filter((sh) => !(autoFacts && sh.name === FACT_SHEET_NAME)).map((sh) => {
     const width = sh.rows[0]?.length ?? 0;
-    return { name: sh.name, rows: sh.rows.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? null)), ...(sh.formulas ? { formulas: sh.formulas } : {}) };
+    return { name: sh.name, rows: sh.rows.map((r) => Array.from({ length: width }, (_, i) => r[i] ?? null)), ...(sh.formulas ? { formulas: sh.formulas } : {}), ...(sh.dates ? { dates: sh.dates } : {}) };
   });
 
   const rejected: { op: CellOp; index: number; reason: string }[] = [];

@@ -45,7 +45,17 @@ interface EditPatchInput {
   occurrence?: unknown;
   paragraph_hint?: unknown;
   insert_after?: unknown;
+  style?: unknown;
 }
+
+/** insert_after 新段落的样式（第 58 批 D-242）：本产品文书的样式编号。 */
+const INSERT_STYLE: Readonly<Record<string, { first: string; rest: string }>> = {
+  body: { first: "KwlBody", rest: "KwlBody" },
+  heading1: { first: "KwlHeading1", rest: "KwlBody" },
+  heading2: { first: "KwlHeading2", rest: "KwlBody" },
+  heading3: { first: "KwlHeading3", rest: "KwlBody" },
+};
+const KWL_HEADINGS = ["KwlTitle", "KwlHeading1", "KwlHeading2", "KwlHeading3"] as const;
 
 type Reason = "anchor_empty" | "anchor_not_found" | "anchor_ambiguous" | "hint_mismatch" | "occurrence_out_of_range" | "unknown_token" | "overlap" | "apply_failed" | "quality_line";
 
@@ -244,6 +254,9 @@ export function docxEditDraft(ctx: InvokeCtx, p: { artifact_version_id?: unknown
       originalHash: sha256Hex(text),
       newText: proposed,
       ...(x?.insert_after === true ? { insertAfter: true } : {}),
+      // 新段落样式：给了 style 的按它（标题样式只给第一行，其余各行是正文）；没给的，插在标题之后时按正文，插在正文之后沿用锚点段落
+      ...(x?.insert_after === true && typeof x?.style === "string" && INSERT_STYLE[x.style] ? { insertStyles: INSERT_STYLE[x.style] } : {}),
+      ...(x?.insert_after === true ? { insertAfterHeading: { headingStyles: KWL_HEADINGS, style: "KwlBody" } } : {}),
       author: "AI 起草",
     };
     try {

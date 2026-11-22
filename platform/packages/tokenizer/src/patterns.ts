@@ -221,6 +221,21 @@ export function adminPrefixLength(v: string): number {
 }
 
 /**
+ * 地址代号分层（第 58 批 D-240）：门牌之后的楼栋、单元、楼层、室号保留原文，只把“道路 + 门牌”（或小区名）换成代号。
+ * 根因复盘：庭审提纲、质证意见两卡漏掉“受托方与原告同址”（亚太路 1288 号 / 1288 号 3 幢）——两处地址被换成两个互不相关的代号，
+ * 模型和复核都不可能看出同一门牌。楼栋、室号脱离道路门牌不指向任何人，保留原文不泄露；同一门牌在一个事项里得到同一个代号。
+ * 返回末尾要保留原文的字数（0 = 不分层）。只截由楼栋类字段组成的整段后缀；去掉后缀剩下的部分仍须以门牌（号、弄、号院）或小区类名称结尾。纯函数。
+ */
+const ADDR_UNIT_TAIL = new RegExp(`(?:${ADDR_SPACE}(?:\\(${ADDR_SPACE}(?:${ADDR_SPACE}(?:\\d{1,5}|[一二三四五六七八九十]{1,3}|[A-Za-z])${ADDR_SPACE}(?:号楼|栋|幢|座|单元|楼|层|室|户)){1,6}${ADDR_SPACE}\\)|[-—]?(?:\\d{1,5}|[一二三四五六七八九十]{1,3}|[A-Za-z])${ADDR_SPACE}(?:号楼|栋|幢|座|单元|楼|层|室|户)|[-—]\\d{1,5}))+$`);
+const ADDR_CORE_END = /(?:\d{1,5}(?:号院|号|弄)(?:之\d{1,3})?|小区|花园|公寓|大厦|家园|苑|新村|山庄|华庭|府邸|社区|广场|院)$/;
+export function addressTailLength(v: string): number {
+  const m = ADDR_UNIT_TAIL.exec(v);
+  if (!m || m.index === 0) return 0;
+  const core = v.slice(0, m.index);
+  return core.length >= 3 && ADDR_CORE_END.test(core) ? v.length - m.index : 0;
+}
+
+/**
  * 全角 ASCII（U+FF01–U+FF5E）折成半角、全角空格折成空格：**逐个 UTF-16 码元一一对应、长度不变**，识别在折叠视图上进行，
  * 区间直接用于原文（文书与 OCR 输出里常见全角数字，`\d` 不认它们）。
  */
@@ -286,7 +301,8 @@ export function findIdentifiers(original: string, skip: readonly { start: number
     // 必须含行政区划或道路 + 门牌；过短的“3号楼”之类不算详细住址
     if (v.length < 6 || !ADDRESS_ADMIN.test(v)) continue;
     const keep = adminPrefixLength(v);
-    push("address", m.index! + cut + keep, v.slice(keep));
+    const body = v.slice(keep);
+    push("address", m.index! + cut + keep, body.slice(0, body.length - addressTailLength(body)));
   }
   // 无门牌的村、组地址
   VILLAGE_RE.lastIndex = 0;
@@ -309,7 +325,8 @@ export function findIdentifiers(original: string, skip: readonly { start: number
     const name = (m[1] ?? "").slice(lead.length).replace(/(?:小区|花园|公寓|大厦|家园|苑|新村|山庄|华庭|府邸|社区|广场)$/, "");
     if (name.length < 2 || COMPLEX_BAD.test(name) || !/[\u4e00-\u9fa5]/.test(name)) continue;
     const keep = adminPrefixLength(v);
-    push("address", m.index! + lead.length + keep, v.slice(keep));
+    const body = v.slice(keep);
+    push("address", m.index! + lead.length + keep, body.slice(0, body.length - addressTailLength(body)));
   }
   return hits.sort((a, b) => a.start - b.start);
 }

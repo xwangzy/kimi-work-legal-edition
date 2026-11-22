@@ -54,8 +54,9 @@ test("标准端点经出站闸门到法律模型网关：上游只见代号（�
   assert.ok(sent.includes("甲科技有限公司"), "机构名称默认保留");
   assert.match(sent, /〔自然人·[0-9A-Z]{6}〕/);
   assert.match(sent, /〔电话·[0-9A-Z]{6}〕/);
-  assert.match(sent, /住址：上海市浦东新区〔地址·[0-9A-Z]{6}〕。/);
-  assert.doesNotMatch(sent, /张江路|3幢|501室/);
+  // 第 58 批（D-240）：门牌之后的楼栋室号保留原文
+  assert.match(sent, /住址：上海市浦东新区〔地址·[0-9A-Z]{6}〕（3幢）501室。/);
+  assert.doesNotMatch(sent, /张江路|1288号/);
   // 去向记录（事项账本）
   const eg = await tk.inv("egress.records", { run_id: run.run_id });
   const rec = eg.records.find((r: any) => r.destination_kind === "legal_gateway");

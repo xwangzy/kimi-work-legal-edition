@@ -547,7 +547,9 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const reviewFixLimitMs = msEnv(env.ZR_REVIEW_FIX_LIMIT_MS);
   const reviewRetryWaitMs = env.ZR_REVIEW_RETRY_WAIT_MS !== undefined && /^\d+$/.test(env.ZR_REVIEW_RETRY_WAIT_MS) ? Number(env.ZR_REVIEW_RETRY_WAIT_MS) : undefined;
   const redlineLimitMs = msEnv(env.ZR_REDLINE_LIMIT_MS);
-  const reviewEffort = env.ZR_REVIEW_EFFORT === "high" ? ("high" as const) : ("low" as const);
+  // 第 58 批（D-235）：独立复核与回看缺省高强度推理（第 57 批两卡对照：high 都抓到评分认定的头号问题，low 都漏了；每单多约 1.5～5.5 分钟、0.1～0.15 元）。
+  // ZR_REVIEW_EFFORT=low 可调回低强度（例如额度紧张时）
+  const reviewEffort = env.ZR_REVIEW_EFFORT === "low" ? ("low" as const) : ("high" as const);
   const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf, independentReview, reviewLimitMs, reviewRetryWaitMs, reviewFixLimitMs, redlineLimitMs, reviewEffort, vouchKnownOnly: (rid: string, text: string) => gate.vouchKnownOnly(rid, text), onAgentFailure: (error: string | null) => onModelRejection(error) };
   queue.register("legalRun", createLegalWorkflow(workflowDeps));
 

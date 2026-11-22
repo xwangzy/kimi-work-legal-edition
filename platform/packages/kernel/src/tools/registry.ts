@@ -5,6 +5,7 @@
  * 外发、签发、删除类工具根本不在注册表内（§6.2）。
  */
 import { calcAnnualLeave, calcLabor } from "./tools/labor.ts";
+import { calcOvertime } from "./tools/labor-overtime.ts";
 import { calcCourtFee } from "./tools/court-fee.ts";
 import type { CapabilityClaims } from "@zr-legal/service-auth";
 import { DomainError } from "@zr-legal/domain";
@@ -74,6 +75,23 @@ const LEDGER_RATE_SCHEMA = {
     { type: "object", additionalProperties: false, required: ["kind"], properties: { kind: { const: "none" } } },
   ],
 };
+/** calc.labor 加班费的一个月（第 58 批）：小时照考勤原样逐月抄，基数由调用方声明。 */
+const OVERTIME_MONTH_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["month", "base_yuan"],
+  properties: {
+    month: { type: "string", pattern: "^\\d{4}-(0[1-9]|1[0-2])$" },
+    workday_hours: { type: "number", minimum: 0, maximum: 400 },
+    restday_hours: { type: "number", minimum: 0, maximum: 400 },
+    holiday_hours: { type: "number", minimum: 0, maximum: 400 },
+    base_yuan: { type: "number", exclusiveMinimum: 0 },
+    paid_yuan: { type: "number", minimum: 0 },
+    note: { type: "string" },
+  },
+};
+/** calc.ledger 的待核日期区间（第 58 批）：只知道最早、最晚的付款日或起算日。 */
+const LEDGER_DATE_RANGE_SCHEMA = { type: "object", additionalProperties: false, required: ["earliest", "latest"], properties: { earliest: dateSchema, latest: dateSchema, note: { type: "string" } } };
 /** docx.revise 的一条修改（patches 与补交 amend 里同一结构）。 */
 const REVISE_PATCH_SCHEMA = {
   type: "object",
@@ -226,13 +244,18 @@ export const TOOLS: readonly ToolDef[] = [
     name: "calc.ledger",
     title: "债权台账（分段计息、还款抵充、汇总）",
     description:
-      "一次算完一笔或几笔欠款到某日为止的全部金额：本金随每笔付款变动自动分段计息（违约金、利息、资金占用费），每笔付款按抵充顺序逐笔冲抵，给出本金余额、已冲与未付的利息（违约金）、费用和未清偿合计；你只给事实与口径，不做任何加减乘除，也不用自己分段。" +
-      "scenarios 里每个口径独立计算（最多 4 个，有争议的口径各写一个并列）：as_of 暂计截止日（含当日，不要自己加一天）；debts 每笔款项写 label、amount_yuan，起算写 due_date（最后履行日，系统自次日起算）或 accrue_from（起算日，含当日）二选一，" +
-      "kind 缺省 principal（本金），cost 是实现债权的费用或应由对方负担的诉讼费，interest 是数额已经确定的利息或违约金；payments 逐笔写 date、amount_yuan；rate 写 daily（per_10k：日万分之五写 5）、fixed（annual_pct）、lpr_plus（plus_bp）或 lpr_times（multiple）。" +
-      "allocation 抵充顺序：cost_interest_principal（缺省，费用 → 利息 → 本金，没有约定时的法定顺序）、principal_only（付款只冲本金，违约金另行全额计——双方对账确认了本金余额或约定付款即还本时用）、principal_first。payment_day 缺省 not_counted（付款当日不计）。cap_yuan 是违约金或利息的约定上限。" +
-      "申请执行算迟延履行期间的加倍部分债务利息：加 doubled { due_date: 履行期间最后一日 }（系统自次日起按日万分之一点七五计，基数随清偿减少，清偿时排在判决确定的金钱债务之后）；哪几笔计入基数用各笔的 in_doubled_base 标注（缺省本金与费用计入、利息不计入）。" +
-      "给了 title 就把结果直接生成 Excel 计算表并登记为本任务成果（汇总、分段计算、付款与抵扣、参数与假设；数字由系统写入并带公式）：notes 逐行写参数的出处与确认状态（item、value、source、status），extra_sheets 可附加你自己写的表（如诉讼费预估）。" +
-      "返回各口径的 summary（一句话结论，可照抄进文书）、totals、segments、payments；文书和答复里用到的金额逐字照抄返回值。warnings 用自己的话向律师说明它影响哪个数。",
+      "一次算完一笔或几笔欠款到某日为止的全部金额：本金随每笔付款变动自动分段计息或计违约金，每笔付款按抵充顺序逐笔冲抵，给出本金余额、已冲与未付的利息、违约金、费用和未清偿合计；你只给事实与口径，不做任何加减乘除，也不用自己分段（每笔款项只在自己的基数或利率变化时分段）。每个口径的 premise 写这个口径成立的前提（一句话），表里汇总页会单列一行“口径前提”——表是工具算出来的，之后不能逐格改，前提要在调用时写全。" +
+      "scenarios 里每个口径独立计算（最多 4 个，有争议的口径各写一个并列）：as_of 暂计截止日（含当日，不要自己加一天）；debts 每笔款项写 label、amount_yuan，起算写 due_date（最后履行日，系统自次日起算）或 accrue_from（起算日，含当日）二选一，计到某日为止的写 accrue_to（含当日，如逾期交货计到实际交付的前一日）。" +
+      "kind：principal（缺省，本金；按 rate 计得的是利息还是违约金用 accrual 写明——逾期付款违约金写 accrual: penalty，借款利息、资金占用费写 interest，可在口径上统一写）；penalty 是违约金的计算基数（如逾期交付货物的价款、迟延履行部分的价款），amount_yuan 填实际基数，基数本身不计入欠款合计、不参与抵充，只计出违约金；" +
+      "penalty_fixed 是数额已经确定的违约金；interest 是数额已经确定的利息；cost 是实现债权的费用或应由对方负担的诉讼费。cap_yuan 写在口径上是利息或违约金的总上限，写在某一笔上是这一笔的上限（各部分分别适用上限时逐笔写）。" +
+      "payments 逐笔写 date、amount_yuan；付款日或起算日只知道区间的，改写 date_range / due_date_range / accrue_from_range { earliest, latest }，系统按最早、最晚各算一个口径并列，并标出哪几段依赖待核日期——不要因为一个日期不明就放弃其他确定的期间。" +
+      "rate 写 daily（per_10k：日万分之五写 5）、fixed（annual_pct）、lpr_plus（plus_bp）或 lpr_times（multiple）。" +
+      "allocation 抵充顺序：cost_interest_principal（缺省，费用 → 利息 → 本金，没有约定时民法典第五百六十一条的顺序）、principal_only（付款只冲本金，利息、违约金另行全额计——双方对账确认了本金余额或约定付款即还本时用）、principal_first。" +
+      "违约金不当然适用第五百六十一条的“利息”顺序：缺省 penalty_order: after_principal（违约金排在本金之后、另行主张）；律师明确选择“违约金按利息顺序先冲”时写 as_interest（有争议的口径，答复里写明）。payment_day 缺省 not_counted（付款当日不计）。" +
+      "有违约金的口径可写 penalty_check：律师给出或材料载明的损失数额写 loss_yuan，或损失的计算标准写 loss_rate（如资金占用损失按一年期 LPR），系统按合同编通则解释第六十五条给出“损失 × 130%”的参照比较；都没有的只返回需要的证据，不要自己编损失数额。" +
+      "申请执行算迟延履行期间的加倍部分债务利息：加 doubled { due_date: 履行期间最后一日 }（系统自次日起按日万分之一点七五计，基数随清偿减少，清偿时排在判决确定的金钱债务之后）；哪几笔计入基数用各笔的 in_doubled_base 标注（缺省本金、费用、已确定的违约金计入，利息不计入）。" +
+      "给了 title 就把结果直接生成 Excel 计算表并登记为本任务成果（汇总、分段计算、付款与抵扣、参数与假设；数字由系统写入并带公式，日期是日期格）：notes 逐行写参数的出处与确认状态（item、value、source、status），extra_sheets 可附加你自己写的表（如诉讼费预估）。" +
+      "返回各口径的 summary（一句话结论，可照抄进文书）、totals、segments、payments、penalty_check、pending_dates；文书和答复里用到的金额逐字照抄返回值。warnings 用自己的话向律师说明它影响哪个数。",
     sideEffect: "write_draft",
     resource: "matter_work",
     version: "1",
@@ -252,6 +275,8 @@ export const TOOLS: readonly ToolDef[] = [
             required: ["as_of", "debts"],
             properties: {
               name: { type: "string" },
+              // 第 58 批：这个口径成立的前提，写进汇总表“口径前提”一行
+              premise: { type: "string", maxLength: 300 },
               as_of: dateSchema,
               debts: {
                 type: "array",
@@ -264,25 +289,33 @@ export const TOOLS: readonly ToolDef[] = [
                   properties: {
                     label: { type: "string" },
                     amount_yuan: { type: "number", minimum: 0 },
-                    kind: { type: "string", enum: ["principal", "cost", "interest"] },
+                    kind: { type: "string", enum: ["principal", "cost", "interest", "penalty", "penalty_fixed"] },
                     due_date: dateSchema,
                     accrue_from: dateSchema,
+                    due_date_range: LEDGER_DATE_RANGE_SCHEMA,
+                    accrue_from_range: LEDGER_DATE_RANGE_SCHEMA,
+                    accrue_to: dateSchema,
+                    accrual: { type: "string", enum: ["interest", "penalty"] },
                     rate: LEDGER_RATE_SCHEMA,
                     in_doubled_base: { type: "boolean" },
+                    cap_yuan: { type: "number", minimum: 0 },
                   },
                 },
               },
               payments: {
                 type: "array",
                 maxItems: 200,
-                items: { type: "object", additionalProperties: false, required: ["date", "amount_yuan"], properties: { date: dateSchema, amount_yuan: { type: "number", exclusiveMinimum: 0 }, note: { type: "string" } } },
+                items: { type: "object", additionalProperties: false, required: ["amount_yuan"], properties: { date: dateSchema, date_range: LEDGER_DATE_RANGE_SCHEMA, amount_yuan: { type: "number", exclusiveMinimum: 0 }, note: { type: "string" } } },
               },
               rate: LEDGER_RATE_SCHEMA,
               year_days: { type: "integer", enum: [360, 365] },
               payment_day: { type: "string", enum: ["not_counted", "counted"] },
               allocation: { type: "string", enum: ["cost_interest_principal", "principal_only", "principal_first"] },
+              accrual: { type: "string", enum: ["interest", "penalty"] },
+              penalty_order: { type: "string", enum: ["after_principal", "as_interest"] },
               cap_yuan: { type: "number", minimum: 0 },
-              doubled: { type: "object", additionalProperties: false, properties: { due_date: dateSchema, accrue_from: dateSchema, per_10k: { type: "number", exclusiveMinimum: 0, maximum: 100 } } },
+              penalty_check: { type: "object", additionalProperties: false, properties: { loss_yuan: { type: "number", minimum: 0 }, loss_rate: LEDGER_RATE_SCHEMA, loss_basis: { type: "string" } } },
+              doubled:{ type: "object", additionalProperties: false, properties: { due_date: dateSchema, accrue_from: dateSchema, per_10k: { type: "number", exclusiveMinimum: 0, maximum: 100 } } },
             },
           },
         },
@@ -334,10 +367,12 @@ export const TOOLS: readonly ToolDef[] = [
     description:
       "确定性计算解除或终止劳动合同的经济补偿 N（kind=compensation，劳动合同法第四十七条）或违法解除赔偿金 2N（kind=unlawful，第八十七条、实施条例第二十五条），逐步写出年限、基数、三倍封顶与代通知金。start_date 写入职日（用工之日），end_date 写劳动关系的最后一日（含当日）。" +
       "月工资三种给法（只给一种）：①有工资台账的写 wage_table——months 把台账逐月各项目原样抄一次（month 如 2026-08，items 写“项目名: 金额”，扣款写负数），include 写本口径计入月工资的项目名；工资构成有争议（加班费、年终奖计不计入，扣款加不加回）时每个口径调用一次、只改 include，不要自己把数剔除或加回后再传；②只有逐月合计数的写 monthly_wages_yuan；③只有一个平均数的写 avg_monthly_wage_yuan。当地上年度职工月平均工资、最低工资由律师或材料给出，不要凭记忆填；没给时结果带 warnings。2008 年以前的工作年限按当时规定另算，不在结果里。" +
-      "未休年休假工资报酬用 kind=annual_leave：给月工资（剔除加班工资后的月平均，同上两种给法）与 unused_days（应休未休天数），leave_multiple 缺省 2（正常工资已发，另付 200%）、全额 300% 写 3；这一类不需要 start_date、end_date。是否应当支付由律师判断，本工具只算数额；warnings 用自己的话向律师说明。",
+      "未休年休假工资报酬用 kind=annual_leave：给月工资（剔除加班工资后的月平均，同上两种给法）与 unused_days（应休未休天数），leave_multiple 缺省 2（正常工资已发，另付 200%）、全额 300% 写 3；这一类不需要 start_date、end_date。是否应当支付由律师判断，本工具只算数额；warnings 用自己的话向律师说明。" +
+      "加班费与加班费差额用 kind=overtime（第 58 批）：months 逐月写 month（YYYY-MM）、base_yuan（当月加班费计算基数，口径在 base_basis 写明）、workday_hours（工作日延长工作时间）、restday_hours（休息日加班又不能安排补休的；已安排补休的不填）、holiday_hours（法定休假日）、paid_yuan（当月已付加班费）——小时数照考勤或台账原样逐月抄，不要自己合计；" +
+      "divisor_days 缺省 21.75、hours_per_day 缺省 8，倍数缺省 150% / 200% / 300%（劳动法第四十四条，multiples 可改）。工具逐月算小时工资、各类加班费、应付、差额（已付超过应付的该月按 0 计）与合计。要成表的，把同一组参数放进 xlsx.render_table 的 computed（tool 写 calc.labor），表由内核写入并带公式，不要自己抄数。",
     sideEffect: "read",
     resource: "pure",
-    version: "2",
+    version: "3",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -345,7 +380,12 @@ export const TOOLS: readonly ToolDef[] = [
       properties: {
         start_date: dateSchema,
         end_date: dateSchema,
-        kind: { type: "string", enum: ["compensation", "unlawful", "annual_leave"] },
+        kind: { type: "string", enum: ["compensation", "unlawful", "annual_leave", "overtime"] },
+        months: { type: "array", minItems: 1, maxItems: 60, items: OVERTIME_MONTH_SCHEMA },
+        divisor_days: { type: "number", exclusiveMinimum: 0, maximum: 31 },
+        hours_per_day: { type: "number", exclusiveMinimum: 0, maximum: 24 },
+        multiples: { type: "object", additionalProperties: false, properties: { workday: { type: "number", exclusiveMinimum: 0, maximum: 10 }, restday: { type: "number", exclusiveMinimum: 0, maximum: 10 }, holiday: { type: "number", exclusiveMinimum: 0, maximum: 10 } } },
+        base_basis: { type: "string" },
         avg_monthly_wage_yuan: { type: "number", minimum: 0 },
         monthly_wages_yuan: { type: "array", minItems: 1, maxItems: 12, items: { type: "number", minimum: 0 } },
         wage_table: {
@@ -365,7 +405,7 @@ export const TOOLS: readonly ToolDef[] = [
         last_month_wage_yuan: { type: "number", minimum: 0 },
       },
     },
-    invoke: (p) => (p?.kind === "annual_leave" ? calcAnnualLeave(p) : calcLabor(p)),
+    invoke: (p) => (p?.kind === "annual_leave" ? calcAnnualLeave(p) : p?.kind === "overtime" ? calcOvertime(p) : calcLabor(p)),
   },
   {
     name: "calc.court_fee",
@@ -511,17 +551,20 @@ export const TOOLS: readonly ToolDef[] = [
       "每节可写 level 表示节标题层级（缺省 1）：按中文法律文书惯例，大节用 1（“一、”），大节下的小节用 2（“（一）”），再下一层用 3（“1.”）；小标题写成单独一节并标对层级，不要都写成 1 级。" +
       "返回的 quality_check 是交付前检查（工具用语或内部编号外露、正文夹杂英文、Markdown 符号、条款编号不连续、互引指向不存在的条款、大小写金额不一致、错误条号）：issues 不为空时用 docx.edit_draft 在这份文书上逐处改正（几秒完成），不要整份重新生成；确实不需要改的在最终答复里说明理由。" +
       "生成前先在心里把全文写完、自查一遍再一次提交；生成后的局部修改一律用 docx.edit_draft。" +
+      "律师要求“一页纸”的汇报用 layout: one_page（宋体五号、单倍行距），同时控制字数；" +
       "本任务有待律师确认的论点提纲（outline.submit）时拒绝生成，先等律师确认。",
     sideEffect: "write_draft",
     resource: "matter_work",
     // V18 首轮 B11：节标题层级 level（v5）
-    version: "5",
+    version: "6",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       required: ["title", "sections"],
       properties: {
         title: { type: "string" },
+        // 第 58 批：one_page 为“一页纸”汇报的紧凑版式（宋体五号、单倍行距）
+        layout: { type: "string", enum: ["standard", "one_page"] },
         sections: {
           type: "array",
           items: {
@@ -616,13 +659,13 @@ export const TOOLS: readonly ToolDef[] = [
     title: "修改本任务的文书草稿",
     description:
       "在本任务里你已用 docx.render_report 生成的 Word 文书上逐处修改（交付前检查报出的问题、自查发现的措辞、条号、金额、遗漏的款项等），几秒完成，登记为同名文书的新版本（旧版本保留）：" +
-      "artifact_version_id 写 docx.render_report（或上一次本工具）返回的编号；每处给出要改的原文（anchor，逐字照抄这份文书里的文字、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落，按换行分段）。" +
+      "artifact_version_id 写 docx.render_report（或上一次本工具）返回的编号；每处给出要改的原文（anchor，逐字照抄这份文书里的文字、同一段落之内）与新文字（proposed_text，空串为删除；insert_after=true 为在该段之后插入新段落，按换行分段；新段落的样式用 style 写：body 正文，heading1/heading2/heading3 为第一行作一、二、三级标题、其余各行正文——不写时插在标题之后的按正文，插在正文之后的沿用锚点段落；新增一节或一个问题的，锚点选它在文中应在位置的前一段（按条号、问题序号排好），不要都插到文末）。" +
       "只改要改的地方，不要为改几处整份重新生成；整体结构要变（增删多条、重排章节）才用 docx.render_report 重出。律师上传的材料不能用本工具，用 docx.revise。" +
       "同一段文字在文书里出现几处（如同一金额既在某一格、又在另一格的算式里）：occurrence 写全文第几处（按先后，含表格格子，从 1 起），或 paragraph_hint 写位置（正文写条款号或该段独有的文字，表格格子写“行名｜列名”）；给了位置提示的，即使全文只有一处也要与提示相符才写。" +
       "能定位的各处先写入（status=partial），找不到或有歧义的逐条退回：conflicts 每条的 patch_no 是你提交的 patches 中的第几处（从 1 起，按提交顺序），anchor 是那一处的原文，有歧义的列出各处的位置与上下文（matches）；applied_patch_nos 是已写入的几处。改正后用新编号只重交退回的几处；dry_run=true 试写返回同样的逐条明细。改好后返回新版本的交付前检查 quality_check。",
     sideEffect: "write_draft",
     resource: "matter_work",
-    version: "2",
+    version: "3",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -643,6 +686,8 @@ export const TOOLS: readonly ToolDef[] = [
               occurrence: { type: "integer", minimum: 0 },
               paragraph_hint: { type: "string" },
               insert_after: { type: "boolean" },
+              // 第 58 批（D-242）：插入的新段落用什么样式；不给时插在标题之后按正文、插在正文之后沿用锚点段落
+              style: { type: "string", enum: ["body", "heading1", "heading2", "heading3"] },
             },
           },
         },
@@ -676,7 +721,7 @@ export const TOOLS: readonly ToolDef[] = [
     name: "materials.list",
     title: "材料目录",
     description:
-      "列出本任务的材料：快照序号、解析版本、字数、页数与识别质量（partial/unreadable 表示有页未能识别，须在结论中说明未读取范围）；律师发起时勾选了材料的，本事项里没勾的只列文件名（not_provided），不能读取；" +
+      "列出本任务的材料：快照序号、解析版本、字数、页数与识别质量（partial/unreadable 表示有页未能识别，须在结论中写明哪几页没有读到，全部读到的不必说明）；律师发起时勾选了材料的，本事项里没勾的只列文件名（not_provided），不能读取；" +
       "另带系统按规则比出的金额不一致：amount_conflicts（这份材料里大写与小写金额对不上）、cross_material_conflicts（不同材料对同一天的付款写了不同金额），有的要列进交付件的矛盾或缺口、请律师核对原件。" +
       "这些是系统内部字段，交付件里用“序号”“能否读清”等律师的说法，不照抄字段名和取值。",
     sideEffect: "read",
@@ -944,16 +989,23 @@ export const TOOLS: readonly ToolDef[] = [
   {
     name: "xlsx.render_table",
     title: "生成表格（XLSX）",
-    description: "按列生成 Excel 表格（证据目录、时间线、问题清单、计算明细等），登记为本任务的草稿成果交律师审阅；每个表 1–40 列、最多 5,000 行；单元格为文字或数字。生成后的局部修改（含交付前检查 quality_check 报出的问题）用 xlsx.edit_cells，不要整份重新生成。",
+    description:
+      "按列生成 Excel 表格（证据目录、时间线、问题清单、计算明细等），登记为本任务的草稿成果交律师审阅；每个表 1–40 列、最多 5,000 行；单元格为文字或数字。生成后的局部修改（含交付前检查 quality_check 报出的问题）用 xlsx.edit_cells，不要整份重新生成。" +
+      "computed（第 58 批）：加班费计算表不要自己抄数——写 { tool: \"calc.labor\", name: 工作表名, params: 与调用 calc.labor kind=overtime 相同的参数 }，内核按同一算法算出并写成带公式的工作表，排在 sheets 之后（只有计算表时 sheets 写空数组）。",
     sideEffect: "write_draft",
     resource: "matter_work",
-    version: "1",
+    version: "2",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       required: ["title", "sheets"],
       properties: {
         title: { type: "string" },
+        computed: {
+          type: "array",
+          maxItems: 4,
+          items: { type: "object", additionalProperties: false, required: ["tool", "params"], properties: { tool: { type: "string", enum: ["calc.labor"] }, name: { type: "string" }, params: { type: "object" } } },
+        },
         sheets: {
           type: "array",
           items: {
@@ -1061,7 +1113,7 @@ function factSectionFor(ctx: InvokeCtx, p: { title?: unknown; sections?: unknown
     const t = factTableRows({ db: ctx.db, tokens: ctx.tokens }, ctx.claims.mid!, nos);
     // 引用的序号在事实清单里一个都对不上：不附空的对照，只告诉助手改正引用
     if (t.rows.length === 0) return { section: null, note: unknownFactNote(t.unknown) };
-    return { section: factSection(t.rows, t.omitted), note: `正文引用了 ${nos.length} 个事实序号，系统已在文末自动加了一节“${FACT_SHEET_NAME}”（序号、事实陈述、发生日期、来源材料、律师是否已确认），读者离开产品也能对上——不要再手工写一节；之后用 docx.edit_draft 改文书时这一节会随引用自动更新${t.unknown.length > 0 ? `。${unknownFactNote(t.unknown)}` : ""}` };
+    return { section: factSection(t.rows, t.omitted), note: `正文引用了 ${nos.length} 个事实序号，系统已在文末自动加了一节“${FACT_SHEET_NAME}”（序号、事实陈述、发生日期、来源材料、是否已确认），读者离开产品也能对上——不要再手工写一节；之后用 docx.edit_draft 改文书时这一节会随引用自动更新${t.unknown.length > 0 ? `。${unknownFactNote(t.unknown)}` : ""}` };
   } catch {
     return null;
   }
@@ -1079,7 +1131,9 @@ function deliverableQualityFor(ctx: InvokeCtx, p: { title?: unknown; sections?: 
       if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) asOf = v;
     } catch {}
     const sections = Array.isArray(p.sections) ? (p.sections as any[]) : [];
-    return checkDeliverable(String(p.title ?? ""), sections, { lawdb: ctx.lawdb, asOf, docx: ctx.blobs.read(storageUri) });
+    // V32：律师作为材料导入了官方文本的规范，库外也照常写条号（交付前检查不报“库外不写条号”）
+    const materialTitles = ctx.claims.mid ? ctx.db.all<{ filename: string }>(`SELECT filename FROM document_versions WHERE matter_id = ? AND quarantined_at IS NULL`, [ctx.claims.mid]).map((r) => r.filename) : [];
+    return checkDeliverable(String(p.title ?? ""), sections, { lawdb: ctx.lawdb, asOf, docx: ctx.blobs.read(storageUri), materialTitles });
   } catch {
     return null;
   }
@@ -1158,7 +1212,33 @@ export async function invokeTool(name: string, params: unknown, ctx: InvokeCtx):
   const tool = findTool(name);
   if (!tool) throw new DomainError("not_found", `工具 ${name} 不存在`, 404);
   validateParams(tool.inputSchema, params ?? {});
-  return tool.invoke(params, ctx);
+  const out = await tool.invoke(params, ctx);
+  rememberCalcResult(name, ctx, out);
+  return out;
+}
+
+/**
+ * 确定性计算工具的结果（第 58 批，复核 C4）：整单金额勾稽只认最新计算表与材料里的数，诉讼费、单段利息、劳动补偿这几个工具不出表，
+ * 文书里引用它们算出的数被当成“找不到出处”（V31 案情分析一单 6 个正确金额被标必须改）。工具结果按任务记在本进程内存里，
+ * 勾稽时并入出处；只记数字结构，进程重启后丢失（只影响误报，不影响漏报）。
+ */
+const CALC_RESULT_TOOLS = new Set(["calc.court_fee", "calc.interest", "calc.labor", "calc.ledger"]);
+const CALC_RESULTS = new Map<string, string[]>();
+function rememberCalcResult(name: string, ctx: InvokeCtx, out: unknown): void {
+  const rid = typeof ctx.claims?.rid === "string" ? ctx.claims.rid : null;
+  if (!rid || !CALC_RESULT_TOOLS.has(name)) return;
+  try {
+    const list = CALC_RESULTS.get(rid) ?? [];
+    if (list.length < 60) list.push(JSON.stringify(out).slice(0, 40_000));
+    CALC_RESULTS.set(rid, list);
+    if (CALC_RESULTS.size > 200) CALC_RESULTS.delete(CALC_RESULTS.keys().next().value!);
+  } catch {
+    // 结果序列化失败不影响工具本身
+  }
+}
+/** 本任务调用确定性计算工具得到的结果（JSON 文字，供金额勾稽当出处）。 */
+export function calcResultTexts(runIds: readonly string[]): string[] {
+  return runIds.flatMap((r) => CALC_RESULTS.get(r) ?? []);
 }
 
 /** 简易 JSON Schema 校验（v0：type/required/properties/additionalProperties/enum/const/minimum/pattern）。 */

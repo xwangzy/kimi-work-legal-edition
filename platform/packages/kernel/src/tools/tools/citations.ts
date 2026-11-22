@@ -11,7 +11,7 @@
 import { CitationState, DomainError, type CitationState as CitationStateT } from "@zr-legal/domain";
 import { versionAt, type Lawdb } from "@zr-legal/lawdb";
 import { cnToInt, intToCn } from "./cn-numerals.ts";
-import { BARE_NAMES, LAW_ALIASES, lawNameCandidates, repealedInfo } from "./law-names.ts";
+import { BARE_NAMES, INSTRUMENT_NAMES, LAW_ALIASES, lawNameCandidates, repealedInfo } from "./law-names.ts";
 
 export interface RawCitation {
   raw: string;
@@ -35,8 +35,10 @@ export interface RawCitation {
  */
 const NUM = "[零〇一二两三四五六七八九十百千\\d]{1,12}";
 const SMALL = "[一二三四五六七八九十\\d]{1,4}";
-// 数字两侧允许空白（“第 585 条”，复核 R15B-02）
-const REF = `第\\s*(${NUM})\\s*条(之[一二三四五六七八九十]{1,3})?(?:\\s*第\\s*(${SMALL})\\s*款)?(?:\\s*第\\s*(${SMALL})\\s*项|\\s*第?[（(](${SMALL})[)）]项)?`;
+// 数字两侧允许空白（“第 585 条”，复核 R15B-02）。
+// V32：条号可以是一串只在末尾写一个“条”的省略写法（“第六至八、十五条”“第六、七条”）——第 57 批全量验收合规问答一单：
+// 依据表写《个人信息出境标准合同办法》“第六至八、十五条”，提取器一条都没认出，不存在的第十五条直接进了交付件
+const REF = `第\\s*(${NUM})((?:\\s*(?:、|，|,|和|及|至|到|～|~|－|—)\\s*第?\\s*${NUM})*)\\s*条(之[一二三四五六七八九十]{1,3})?(?:\\s*第\\s*(${SMALL})\\s*款)?(?:\\s*第\\s*(${SMALL})\\s*项|\\s*第?[（(](${SMALL})[)）]项)?`;
 // 标题后紧跟的一个括注里可以有逗号、顿号（V18 第 43 批续四真实任务：成果写“《公司法》（2023年修订，2024-07-01施行）第三十四条”，
 // 逗号把编章段截断，整处引用提取不到——引用核验漏核、独立复核人拿不到法条原文而把已核对的引用判成“必须改”）；是不是版本括注仍由 partOk 判
 const PART = "((?:\\s*[（(][^（）()《》〈〉\\n]{0,40}[）)])?[^，。；：、,;:《》〈〉\\n]{0,40}?)";
@@ -77,7 +79,10 @@ function otherInstrument(t: string, start: number, title: string, part: string, 
   const p = part.replace(VERSION_NOTE_RE, "").replace(/\s+/g, "");
   if (!OTHER_INSTRUMENT_RE.test(p)) return undefined;
   if (bracketed) return /关于适用\s*$/.test(t.slice(Math.max(0, start - 8), start)) ? `最高人民法院关于适用《${LAW_ALIASES[title] ?? title}》${p}` : null;
-  return LAW_ALIASES[p] ?? LAW_ALIASES[`${title.replace(/^中华人民共和国/, "")}${p}`] ?? null;
+  // 简称表的键不带括号：“合同法解释（二）”按“合同法解释二”查
+  const k = p.replace(/[（()）]/g, "");
+  const short = title.replace(/^中华人民共和国/, "");
+  return LAW_ALIASES[p] ?? LAW_ALIASES[k] ?? LAW_ALIASES[`${short}${p}`] ?? LAW_ALIASES[`${short}${k}`] ?? null;
 }
 
 /** 标题里误写的嵌套书名号改成〈〉、全角数字改半角（都是等长替换，位置不变）：《最高人民法院关于适用《中华人民共和国民事诉讼法》的解释》。 */
@@ -102,12 +107,25 @@ function foldNestedTitles(text: string): string {
 }
 
 const smallInt = (s: string | undefined): number | null => (s ? cnToInt(s) : null);
+const toInt = (s: string): number | null => cnToInt(s.replace(/〇/g, "零").replace(/两/g, "二"));
 
-function refOf(m: RegExpMatchArray | RegExpExecArray, at: number): Omit<RawCitation, "raw" | "law" | "offset"> | null {
-  const articleText = m[at]!;
-  const article = cnToInt(articleText.replace(/〇/g, "零").replace(/两/g, "二"));
-  if (article === null) return null;
-  return { articleText, article, suffix: m[at + 1] ?? null, paragraph: smallInt(m[at + 2]), item: smallInt(m[at + 3] ?? m[at + 4]) };
+type Ref = Omit<RawCitation, "raw" | "law" | "offset">;
+
+/** 一处 REF 匹配里的各个条号：“第六至八、十五条”是第六、八、十五条（“至”只取两端，与“至第Y条”同一口径）；款项只跟最后一个条号。 */
+function refsOf(m: RegExpMatchArray | RegExpExecArray, at: number): Ref[] {
+  const first = toInt(m[at]!);
+  if (first === null) return [];
+  const listed = [...(m[at + 1] ?? "").matchAll(new RegExp(`第?\\s*(${NUM})`, "g"))].map((x) => ({ text: x[1]!, n: toInt(x[1]!) })).filter((x) => x.n !== null);
+  const all = [{ text: m[at]!, n: first }, ...listed] as { text: string; n: number }[];
+  const tail = { suffix: m[at + 2] ?? null, paragraph: smallInt(m[at + 3]), item: smallInt(m[at + 4] ?? m[at + 5]) };
+  return all.map((x, i) => (i === all.length - 1 ? { articleText: x.text, article: x.n, ...tail } : { articleText: x.text, article: x.n, suffix: null, paragraph: null, item: null }));
+}
+
+/** 一处引用（可能是省略写法的一串条号）逐条写进结果。 */
+function pushRefs(out: RawCitation[], base: { raw: string; law: string; offset: number }, m: RegExpMatchArray | RegExpExecArray, at: number): boolean {
+  const refs = refsOf(m, at);
+  for (const r of refs) out.push({ ...base, ...r });
+  return refs.length > 0;
 }
 
 /** 一处引用之后紧跟的“、第Y条 / 至第Y条”（同一部法）。 */
@@ -116,11 +134,14 @@ function followers(text: string, from: number, law: string, titleRaw: string, ou
   for (let i = 0; i < 50; i += 1) {
     const m = LIST_RE.exec(text.slice(pos, pos + 120));
     if (!m) return;
-    const r = refOf(m, 1);
-    if (r) out.push({ raw: `${titleRaw}${m[0].replace(/^\s*(?:、|，|,|和|及|以及|与|或者|或|至|到|—|－|-|～|~)\s*/, "")}`, law, offset: pos + m.index!, ...r });
+    pushRefs(out, { raw: `${titleRaw}${m[0].replace(/^\s*(?:、|，|,|和|及|以及|与|或者|或|至|到|—|－|-|～|~)\s*/, "")}`, law, offset: pos + m.index! }, m, 1);
     pos += m[0].length;
   }
 }
+
+/** 无书名号的司法解释、规章简称（INSTRUMENT_NAMES），末尾序号可写“（二）”或“二”。 */
+const INSTRUMENT_RE =
+  INSTRUMENT_NAMES.length > 0 ? new RegExp(`(${INSTRUMENT_NAMES.map((k) => k.replace(/([一二三四五六七八九十])$/, "[（(]?$1[)）]?")).join("|")})${PART}${REF}`, "g") : null;
 
 /** 逐个匹配；被判不通过的匹配只跳过一个字再找（复核 R15B-04：不吞掉后面的真引用）。 */
 function* scan(re: RegExp, text: string): Generator<RegExpExecArray, void, boolean | undefined> {
@@ -132,6 +153,15 @@ function* scan(re: RegExp, text: string): Generator<RegExpExecArray, void, boole
   }
 }
 
+/**
+ * 表格里法名与条号分在两格（“最高人民法院关于适用《中华人民共和国民法典》合同编通则若干问题的解释 | 第64条”，表格转成文字时以“ | ”连接）：
+ * 提取前把紧挨在条号前的格子分隔去掉，免得条号被归到名称里套着的《民法典》上（第 58 批真实复测：争点矩阵的依据表，
+ * 复核拿到的是民法典第 64、65 条的原文）。只在分隔符前是法规名称收尾（法、解释、规定、办法、条例、纪要、批复、意见、细则、规则、决定）时去掉。纯函数。
+ */
+export function joinCitationCells(text: string): string {
+  return text.replace(/((?:法|解释|规定|办法|条例|纪要|批复|意见|细则|规则|决定)(?:[（(][^（）()\n]{1,12}[)）])?》?)\s*[|｜]\s*(?=第[一二三四五六七八九十百千零〇两\d]+条)/g, "$1");
+}
+
 export function extractCitations(text: string): RawCitation[] {
   const t = foldNestedTitles(text);
   const out: RawCitation[] = [];
@@ -140,19 +170,19 @@ export function extractCitations(text: string): RawCitation[] {
   for (let it = titles.next(); !it.done; ) {
     const m = it.value;
     let ok = false;
-    if (partOk(m[2]!) && !isDocTitle(m[1]!)) {
-      const r = refOf(m, 3);
-      if (r) {
-        const start = m.index;
-        const end = start + m[0].length;
-        const other = otherInstrument(t, start, m[1]!, m[2]!, true);
-        if (other !== null) {
-          const law = other ?? m[1]!;
-          out.push({ raw: text.slice(start, end), law, offset: start, ...r });
-          covered.push([start, end]);
-          followers(t, end, law, `《${law}》`, out);
-          ok = true;
-        }
+    // 标题后面是“的解释”“若干问题的规定（三）”这类另一部文件名的（V32：前面紧挨“关于适用”的才认），不受编章名的限制
+    const otherFirst = isDocTitle(m[1]!) ? null : otherInstrument(t, m.index, m[1]!, m[2]!, true);
+    const partFine = partOk(m[2]!) || (typeof otherFirst === "string" && m[2]!.replace(/\s+/g, "").length <= 30);
+    if (partFine && !isDocTitle(m[1]!) && refsOf(m, 3).length > 0) {
+      const start = m.index;
+      const end = start + m[0].length;
+      const other = otherFirst;
+      if (other !== null) {
+        const law = other ?? m[1]!;
+        pushRefs(out, { raw: text.slice(start, end), law, offset: start }, m, 3);
+        covered.push([start, end]);
+        followers(t, end, law, `《${law}》`, out);
+        ok = true;
       }
     }
     it = titles.next(ok);
@@ -166,13 +196,12 @@ export function extractCitations(text: string): RawCitation[] {
       const start = m.index;
       let ok = false;
       if (!inTitle(start) && t[start - 1] !== "《" && t[start - 1] !== "〈" && partOk(m[2]!)) {
-        const r = refOf(m, 3);
-        if (r) {
+        if (refsOf(m, 3).length > 0) {
           const end = start + m[0].length;
           const other = otherInstrument(t, start, m[1]!, m[2]!, false);
           const law = other ?? `${m[1]!}`.replace(/^中华人民共和国/, "");
           if (other !== null) {
-            out.push({ raw: text.slice(start, end), law, offset: start, ...r });
+            pushRefs(out, { raw: text.slice(start, end), law, offset: start }, m, 3);
             covered.push([start, end]);
             followers(t, end, law, law, out);
             ok = true;
@@ -180,6 +209,26 @@ export function extractCitations(text: string): RawCitation[] {
         }
       }
       it = bare.next(ok);
+    }
+  }
+  // 无书名号的司法解释、规章简称（V32）：“合同编通则解释第六十五条”“民诉解释第九十条”“合同法解释（二）第二十四条”
+  if (INSTRUMENT_RE) {
+    const inst = scan(INSTRUMENT_RE, t);
+    for (let it = inst.next(); !it.done; ) {
+      const m = it.value;
+      const start = m.index;
+      let ok = false;
+      // 长名在前、从左往右扫：“民事诉讼证据规定”在“民”字处就按长名取了，里面的“证据规定”落在已取的范围里不再取
+      if (!inTitle(start) && !/[《〈]/.test(t[start - 1] ?? "") && partOk(m[2]!) && refsOf(m, 3).length > 0) {
+        const key = m[1]!.replace(/[（()）]/g, "");
+        const law = LAW_ALIASES[key] ?? key;
+        const end = start + m[0].length;
+        pushRefs(out, { raw: text.slice(start, end), law, offset: start }, m, 3);
+        covered.push([start, end]);
+        followers(t, end, law, law, out);
+        ok = true;
+      }
+      it = inst.next(ok);
     }
   }
   // “该法 / 同法第X条”：指在它之前最近提到的那部法（带不带条号都算；合同等文件标题不算）
@@ -190,8 +239,7 @@ export function extractCitations(text: string): RawCitation[] {
     const start = m.index ?? 0;
     const prev = mentions.filter((x) => x.at < start).sort((a, b) => b.at - a.at)[0];
     if (!prev) continue;
-    const r = refOf(m, 1);
-    if (r) out.push({ raw: text.slice(start, start + m[0].length), law: prev.law, offset: start, ...r });
+    pushRefs(out, { raw: text.slice(start, start + m[0].length), law: prev.law, offset: start }, m, 1);
   }
   return out.sort((a, b) => a.offset - b.offset);
 }
@@ -276,6 +324,11 @@ export interface CitationVerifyResult {
   registry_coverage: string;
 }
 
+/** 法规库查不到、却写了条号的引用该怎么改（V32；citations.verify 的 suggestion 与交付前检查共用）。 */
+// 第 58 批（主会话）：原先一律“不写条号”。九民纪要、部分部门规章等常被引用而库里没有，确知的条号删掉反而降低文书质量（交易研究卡评分：九民纪要只列名称、没有条目）。
+// 改为：记不准的删条号；确知且对结论重要的保留，最终答复里列明请律师核对原文。有总条数登记的（法规目录）照样按越界判错
+export const UNKNOWN_SOURCE_FIX = "法规库未收录该规范，条号系统核不了：记不准的删去条号，只写名称、发布机关与要点；确知且对结论重要的可以保留，但须在最终答复里列明这条依据请律师核对原文";
+
 export function citationsVerify(lawdb: Lawdb, params: CitationVerifyParams): CitationVerifyResult {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(params.as_of ?? "")) {
     throw new DomainError("validation", "citations.verify 需要 as_of(YYYY-MM-DD)", 422);
@@ -350,6 +403,8 @@ function verifyOne(lawdb: Lawdb, rc: RawCitation, asOf: string, topicHint: strin
     const rep = repealedInfo(rc.law);
     if (rep && asOf >= rep.on) base.reasons.push(`repealed:已于 ${rep.on} 废止（${rep.by}）`);
     base.reasons.push("unknown_source:注册库中不存在该法源，无法核实来源");
+    // V32（主会话根因复盘 m47/m46：提示里写了“库外规范不写条号”，模型没守）：确定性地告诉助手怎么改，交付前检查按它报“必须改”
+    if (!(rep && asOf >= rep.on)) base.suggestion = UNKNOWN_SOURCE_FIX;
     return base;
   }
   base.matched_law_name = rows[0]!.law_name;
@@ -363,7 +418,9 @@ function verifyOne(lawdb: Lawdb, rc: RawCitation, asOf: string, topicHint: strin
   // Source Registry 运行时强制（§2.2）：展示动作未授权即停（不让模型补全未获授权的全文）
   lawdb.assertAction(v.source_license_id, "display");
   if (rc.article < 1 || rc.article > v.total_articles) {
-    base.reasons.push(`article_out_of_range:第 ${rc.article} 条超出该版本总条数 ${v.total_articles}`);
+    // V32：写成律师能直接照着改的话（“该法共 13 条，没有第十五条”）；前缀 article_out_of_range: 不变（交付前检查、签发核对按它判“必须改”）
+    base.reasons.push(`article_out_of_range:第 ${rc.article} 条超出该版本总条数 ${v.total_articles}（《${v.law_name}》${v.effective} 起施行的版本共 ${v.total_articles} 条，没有第${intToCn(rc.article)}条）`);
+    base.suggestion = `《${v.law_name}》共 ${v.total_articles} 条，没有第${intToCn(rc.article)}条：用 law.get_article 查准条号后改正，查不准的删去条号`;
     return base;
   }
   // 改引核验：上下文主题在迁移映射中有登记，且条号与所引不一致 → 拦截并提示改引

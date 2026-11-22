@@ -100,7 +100,7 @@ test("给 title：直接成表登记为成果；表里的数与返回值相同�
     const sum = sheets[0]!;
     const row = (label: string) => sum.rows.find((x) => x[0] === label)!;
     assert.deepEqual(row("未清偿合计（元）").slice(1), [379_010, 383_078.26]);
-    assert.deepEqual(row("利息（违约金）未付（元）").slice(1), [69_010, 44_968.59]);
+    assert.deepEqual(row("利息未付（元）").slice(1), [69_010, 44_968.59]);
     assert.ok(Object.values(sum.formulas ?? {}).length >= 4, "汇总带公式");
     const seg2 = sheets[3]!;
     assert.deepEqual(seg2.rows.slice(1).map((x) => x[9]), [8_910, 19_199.67, 44_968.59, 73_078.26]);

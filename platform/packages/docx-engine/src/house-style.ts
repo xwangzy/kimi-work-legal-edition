@@ -33,7 +33,8 @@ export interface HouseStyle {
   /** 函头：律所名称与至多两行地址、电话（页眉）；null 不加。 */
   letterhead: { name: string; lines: string[] } | null;
   /** 正文字体与字号：宋体小四（缺省，意见书、备忘录）或仿宋三号（起诉状、律师函等）。 */
-  body: "song-xiaosi" | "fangsong-san";
+  /** compact（第 58 批）：宋体五号、单倍行距——“一页纸”汇报用，同样的字数排得下一页。 */
+  body: "song-xiaosi" | "fangsong-san" | "song-wuhao-compact";
   pageNumbers: boolean;
 }
 
@@ -90,6 +91,7 @@ const TEMPLATE_NAMES: Partial<Record<Role, string>> = { title: "title", h1: "hea
 const MARGINS = { top: 2098, bottom: 1984, left: 1587, right: 1474, header: 851, footer: 992 };
 
 function fonts(style: HouseStyle): { body: string; size: number; line: string; title: number; h1: number; h2: number; h3: number } {
+  if (style.body === "song-wuhao-compact") return { body: "宋体", size: 21, line: `<w:spacing w:line="264" w:lineRule="auto"/>`, title: 30, h1: 22, h2: 21, h3: 21 };
   return style.body === "fangsong-san"
     ? { body: "仿宋", size: 32, line: `<w:spacing w:line="560" w:lineRule="exact"/>`, title: 44, h1: 32, h2: 32, h3: 32 }
     : { body: "宋体", size: 24, line: `<w:spacing w:line="360" w:lineRule="auto"/>`, title: 36, h1: 28, h2: 24, h3: 24 };

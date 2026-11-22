@@ -7,7 +7,8 @@
  *
  * 只报能确定的问题（宁可漏报不误报），每条给出位置、原文片段与改法；纯函数（法规核验经传入的法规库离线完成）。
  */
-import { REPEALED_REASON_PREFIX } from "./artifact-citations.ts";
+import { REPEALED_REASON_PREFIX, UNKNOWN_SOURCE_REASON } from "./artifact-citations.ts";
+import { UNKNOWN_SOURCE_FIX } from "../tools/tools/citations.ts";
 import { blocksOfSections, equationIssues } from "./amount-check.ts";
 import type { Lawdb } from "@zr-legal/lawdb";
 import { isCourtFiling, isPartyDocument, isSignMarker } from "@zr-legal/docx-engine";
@@ -74,7 +75,13 @@ const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   { re: /本次指定(?:的)?材料(?:为|共)?\s*\d+\s*份|(?:本事项)?(?:现有)?(?:律师)?已?确认(?:的)?事实(?:为|共)?\s*(?:\d+\s*条|零)|待确认(?:的)?事实(?:为|共)?\s*\d+\s*条/g, fix: "删去这句：份数、条数是系统给你安排工作用的信息，不是案情；要说明事实尚未经律师确认的，直接写“以下事实出自材料，尚待确认”" },
   // 第 57 批全量验收（尽调清单、接案记录、交割清单、企业法务审核）：界面动作、系统状态与方法里的填表指令进了成果
   { re: /需补勾|补勾后|律师导入的|代号按材料原样保留|系统未做冲突判断|条文正文未采集|[（(][^（）()]{0,12}必填[）)]|工具结果|卡的类型|判断依据来源/g, fix: "改用律师的说法或删去：材料没有提供的写“尚未提供”，系统状态、界面操作与填表说明不写进文件（需要律师做什么，写在最终答复里）" },
-  { re: /来源与适用版本已核|条文原文已对照/g, fix: "改用律师的说法：需要说明核验情况的，在引用处写“原文已核”或在文末统一说明一次，不要逐段挂核验状态" },
+  // 第 58 批（根因复盘，法律意见书、尽调）：正式文书回避写代号，把签字人写成“同一自然人”、关键主体写成角色称呼，读者对不上是谁
+  // 第 58 批（庭审提纲）：解释代号的话（“受托方住所为原告同一代号地址的3幢”）——还原后读者看到的是“同一代号地址”
+  { re: /同一代号|代号地址|代号相同|相同代号|代号一致的(?:地址|主体|人)/g, fix: "直接写出地址或主体（照抄代号，导出时系统还原为原文），用“与原告住所为同一门牌”这类说法表达关系，不提“代号”" },
+  { re: /同一自然人|该自然人|某自然人|上述自然人/g, fix: "直接写这个人的姓名（材料里是代号的照抄代号，导出时系统还原为真名），不用“同一自然人”“该自然人”指代" },
+  // 第 58 批（C6）：方法正文原先要求逐处标的计算与核验状态（尽调报告 15 处“手工计算，请复核”、解除前评估“以下均为工具计算”“未读取范围不存在”、争点矩阵每格“基于未确认事实”）
+  { re: /工具计算|(?:以下|上述|均为|均系|系由?)工具(?:计算|算出|核算)|手工计算[，,、]?\s*请复核|未(?:能)?读取(?:的)?范围|基于未确认事实[：:]?/g, fix: "删去这类计算与核验状态的标注：交付件里写出算式与口径即可；人工核算的数、没有读到的页，在最终答复里列明请律师复核；事实未经确认的，在“事实状态”一列或说明里写一次" },
+  { re: /来源与适用版本已核|(?:条文)?(?:来源|原文)[、与和及](?:适用)?版本(?:及原文)?已核(?:验)?|(?:均)?已核对原文(?:并核验(?:适用)?版本)?|(?:条文)?原文已对照|已逐条对照原文|按固定对照组|条文内容支持(?:上述|本)/g, fix: "改用律师的说法：需要说明核验情况的，在引用处写“原文已核”或在文末统一说明一次，不要逐段挂核验状态" },
   { re: /(?:金额|计算|法律|文书|表格|检索|修订|费用|期限|期间|利息|测算|核验|法条)工具|由计算功能(?:核算|计算|算出)/g, fix: "改用律师的说法（如“经核算”“经法规库核验”）" },
   // 隐私代号的说明是写给助手的（V14 第 39 批独立评分：争点矩阵里出现“称呼与全名代号按任务说明通常指同一人”）
   // 上诉状核对清单（同批评分）：“住所代号、统一社会信用代码代号”“依据：律师任务说明；”
@@ -327,13 +334,25 @@ export function isInternalDocument(title: string): boolean {
   return /内部|备忘录|分析|评估|草稿|核对|清单|起草说明|说明|对照表|底稿|研究|提纲|纪要|测算|计算|矩阵|工作稿/.test(String(title ?? ""));
 }
 
-export function checkDeliverable(title: string, sections: readonly DeliverableSection[], opts: { lawdb?: Lawdb; asOf?: string; docx?: Buffer; table?: boolean } = {}): DeliverableCheck {
+/** 这处引用的规范是不是律师作为材料导入了官方文本（材料文件名里有这部规范的名称；书名号、空白不计）。纯函数。 */
+function inMaterials(raw: string, titles: readonly string[]): boolean {
+  const norm = (s: string) => s.replace(/[《》〈〉\s]/g, "").replace(/\.[A-Za-z0-9]{1,5}$/, "");
+  const name = norm(/《([^》]+)》/.exec(raw)?.[1] ?? raw.replace(/第[^第]*$/, ""));
+  return name.length >= 3 && titles.some((t) => norm(t).includes(name));
+}
+
+export function checkDeliverable(title: string, sections: readonly DeliverableSection[], opts: { lawdb?: Lawdb; asOf?: string; docx?: Buffer; table?: boolean; materialTitles?: readonly string[] } = {}): DeliverableCheck {
   const paras = flatten(title, sections);
   const issues: DeliverableIssue[] = [];
   const push = (i: DeliverableIssue) => {
-    if (issues.length < MAX_ISSUES && !issues.some((x) => x.kind === i.kind && x.text === i.text && x.where === i.where && x.fix === i.fix)) issues.push(i);
+    // 同一段里同一处文字被两条规则报出（第 58 批：“手工计算，请复核”既是计算状态标注、又是对外文书里写给律师的话）只报一次
+    const dup = (x: DeliverableIssue) => x.kind === i.kind && x.where === i.where && ((x.text === i.text && x.fix === i.fix) || (i.kind === "internal_term" && (x.text.includes(i.text) || i.text.includes(x.text))));
+    if (issues.length < MAX_ISSUES && !issues.some(dup)) issues.push(i);
   };
   const all = paras.map((p) => p.text).join("\n");
+  // 第 58 批（庭审提纲）：每条依据后面都缀“（已核验）”——核验状态是写给律师的过程信息，逐条挂降低可读性；文末统一说明一次即可
+  const verifiedTags = (all.match(/[（(]\s*(?:已核验|原文已核|已核对原文|已核)\s*[）)]|，已核验|；已核验/g) ?? []).length;
+  if (verifiedTags >= 4) push({ kind: "internal_term", where: "全文", text: `核验状态标注 ${verifiedTags} 处`, fix: "不要在每条依据后面挂“已核验”“原文已核”：引用照常写名称与条号，核验情况在文末或最终答复里统一说明一次" });
   const placeholders = {
     待填: (all.match(/【待填/g) ?? []).length,
     待确认: (all.match(/【[^】]{0,20}待确认/g) ?? []).length,
@@ -378,7 +397,11 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
     for (const p of paras) {
       FACT_REF_RE.lastIndex = 0;
       const m = FACT_REF_RE.exec(p.text);
-      if (m) push({ kind: "note_to_lawyer", where: p.where, text: snippet(p.text, m.index, m[0].length), fix: "“事实 N”是本产品事实页的序号，这份文书要交给客户、对方或法院，读者手里没有事实表：改成证据或材料的名称（文件名）与条款、日期（如“《对账确认函》（2026年3月5日）第2条”）" });
+      if (m) push({ kind: "note_to_lawyer", where: p.where, text: snippet(p.text, m.index, m[0].length), fix: "“事实 N”是本产品事实页的序号，这份文书要交给客户、对方或法院，读者手里没有事实表：改成证据名称或证据编号与条款、日期（如“证据3《对账确认函》（2026年3月5日）第2条”），不写上传文件的文件名" });
+      // 第 58 批（质证意见卡）：对外文书直接引用上传文件的文件名（“我方材料《02-送货单、验收单与现场服务确认单》”），编号前缀与扩展名是律所整理案卷用的
+      UPLOAD_NAME_RE.lastIndex = 0;
+      const u = UPLOAD_NAME_RE.exec(p.text);
+      if (u) push({ kind: "note_to_lawyer", where: p.where, text: snippet(p.text, u.index, u[0].length), fix: "对外文书里不写上传文件的文件名（编号前缀“02-”、扩展名“.docx”）：改成证据名称与证据编号（如“证据2《送货单》”），对方证据用对方证据目录里的编号" });
     }
   }
   for (const i of numberingIssues(sections)) push(i);
@@ -399,6 +422,9 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
       for (const it of c.items) if (it.kind === "wrong") push({ kind: "citation", where: "引用", text: it.raw.slice(0, 60), fix: `${it.reason ?? "条号或版本不对"}：用法规库查准后改正，查不准的删去条号` });
       // 已废止的法律、司法解释（第 57 批）：不是条号错，但把废止的规定当现行依据写进文书是实质错误——当场报回助手
       for (const it of c.items) if (it.kind === "outside" && it.reason?.startsWith(`${REPEALED_REASON_PREFIX}已于`)) push({ kind: "citation", where: "引用", text: it.raw.slice(0, 60), fix: `${it.reason}；仍要引用的，在文书里写明适用旧法的依据（行为发生时间与时间效力规定）` });
+      // V32（主会话根因复盘 m47/m46）：法规库查不到的规范却写了条号——系统核不了“有没有这一条”，模型凭记忆写的条号可能根本不存在
+      // （合规问答引《个人信息出境标准合同办法》“第十五条”，该办法只有十三条）。律师把这部规范的官方文本作为材料导入了的不报。
+      for (const it of c.items) if (it.kind === "outside" && it.reason === UNKNOWN_SOURCE_REASON && !inMaterials(it.raw, opts.materialTitles ?? [])) push({ kind: "citation", where: "引用", text: it.raw.slice(0, 60), fix: UNKNOWN_SOURCE_FIX });
     } catch {
       // 核验失败不影响文书生成；签发前还会再核
     }
@@ -423,6 +449,8 @@ const PARTY_INTERNAL_RE = /首稿方案|待客户确认|待对方(?:书面)?确�
  * 隐私代号的说法（“以代号记载”）原样进了意见书正文与递交法院的附件。律所对外文书里的“本所律师”是正常写法，不报。
  */
 // V10 真实走查 V3 律师评分：对外意见书里出现“本意见不写尚未核实的具体救济天数”“不以电子文本长度代替页数”这类写作说明——讲的是本文怎么写，不是对客户的意见
+/** 上传文件的文件名式引用：书名号里以“02-”“07_”这类编号开头，或带文件扩展名。 */
+const UPLOAD_NAME_RE = /《\s*\d{1,3}\s*[-—_．.]\s*[^》]{2,40}》|《[^》]{1,60}\.(?:docx?|pdf|xlsx?|txt|jpe?g|png)》/g;
 const OUTWARD_INTERNAL_RE = /请律师|律师(?:核对|复核)|经律师确认|手工计算|请复核|识别质量|代号(?:记载|形式|表示|替代)|以(?:合同)?代号|未经你确认|本(?:意见|文|函)(?:书)?不(?:写|列|作|对)[^。；]{0,12}(?:未核实|尚未核实|未采集|未收录)|不以电子文本|法规库(?:未收录|没有)|原文未(?:采集|收录)/;
 /** 对外文书：递交法院、仲裁机构的文书与律所出具给客户或对方的意见书、律师函；内部稿、备忘录、清单、说明不算。 */
 function isOutward(title: string): boolean {

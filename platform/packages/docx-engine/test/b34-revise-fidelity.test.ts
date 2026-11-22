@@ -231,8 +231,8 @@ test("交付的 Excel 不是“裸表”：首行表头加粗冻结、正文换�
   assert.match(sheet, /<c r="D2" s="2" t="inlineStr">/, "正文文字换行有边框");
   assert.match(sheet, /<col min="4" max="4" width="60" customWidth="1"\/>/, "长文字列封顶 60，靠换行");
   assert.match(sheet, /<col min="1" max="1" width="6" customWidth="1"\/>/, "短列不小于 6");
-  assert.match(styles, /<cellXfs count="6">/);
-  assert.equal((styles.match(/<xf numFmtId=/g) ?? []).length, 7, "cellStyleXfs 1 个 + cellXfs 6 个");
+  assert.match(styles, /<cellXfs count="7">/);
+  assert.equal((styles.match(/<xf numFmtId=/g) ?? []).length, 8, "cellStyleXfs 1 个 + cellXfs 7 个（第 58 批加日期格）");
   assert.doesNotMatch(files.get("xl/worksheets/sheet2.xml")!.toString("utf8"), /<cols>|<sheetViews>/, "空表不写列宽、不冻结");
 });
 

@@ -278,3 +278,20 @@ test("任务失败的说法：AI 服务账户余额或额度不足时，不把�
   assert.match(agentFailureText(null, "模型通道不可达"), /暂时连不上/);
   assert.match(agentFailureText(null, "文书工具返回了错误"), /^任务没有完成：文书工具返回了错误/);
 });
+
+test("审查要点：只有“不接受 / 必须”立场词、属性栏为“—”的，不写成不可谈；同一行属性栏写明不可谈的照常（第 58 批）", () => {
+  const template =
+    "客户合同审核标准\n事项 我方标准 属性\n" +
+    "验收 不接受视为验收，须书面验收合格 —\n" +
+    "续期 不接受自动续期 —\n" +
+    "数据 个人信息不得出境 不可谈\n";
+  const ctx = { db: { all: () => [{ content: template }] } } as any;
+  const r = checkRedLineSources(ctx, "mat_y", [
+    { topic: "验收", standard: "书面验收合格", red_line: "不接受视为验收", red_line_quote: "不接受视为验收，须书面验收合格" },
+    { topic: "续期", standard: "不自动续期", red_line: "不接受自动续期", red_line_quote: "不接受自动续期" },
+    { topic: "数据", standard: "个人信息境内存储", red_line: "个人信息不得出境", red_line_quote: "个人信息不得出境" },
+  ]);
+  assert.deepEqual(r.dropped.map((d) => d.no), [1, 2]);
+  assert.match(r.dropped[0]!.reason, /立场词/);
+  assert.equal((r.rules as any[])[2].red_line, "个人信息不得出境");
+});

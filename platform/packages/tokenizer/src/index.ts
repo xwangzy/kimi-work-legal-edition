@@ -340,6 +340,30 @@ export function nicknameLegend(entries: readonly TokenEntry[], texts: readonly s
   return lines.length > 0 ? `【代号说明】${lines.join("；")}。不要把这类称呼与全名代号写成“代号不一致”。\n` : "";
 }
 
+/**
+ * 关联线索说明（第 58 批 D-241）：本机按明文比对、只写代号的一句提示——同姓且名字只差一字的两位自然人（“沈立群 / 沈立芳”）。
+ * 根因复盘：庭审提纲、质证意见两卡漏掉“受托方法定代表人与原告法定代表人疑为亲属”，两人在发给模型的文字里是两个毫不相干的代号，
+ * 模型与复核都不可能看出“同姓近名”。这里只说“可能相关、待核”，不下结论；只列这次发出的文字里出现的代号，最多 6 条。
+ * 透露的只有“这两个代号同姓、名差一字”这一结构信息，不含任何一个字的原文。纯函数。
+ */
+export function relationLegend(entries: readonly TokenEntry[], texts: readonly string[]): string {
+  const present = new Set(texts.flatMap((t) => findTokens(t)));
+  const persons = [...new Map(entries.filter((e) => e.category === "person" && present.has(e.token) && nicknameSurname(e.value) === null).map((e) => [e.token, e])).values()];
+  const lines: string[] = [];
+  for (let i = 0; i < persons.length && lines.length < 6; i++) {
+    for (let j = i + 1; j < persons.length && lines.length < 6; j++) {
+      const a = persons[i]!.value.trim();
+      const b = persons[j]!.value.trim();
+      const s = surnameOf(a);
+      if (!s || s !== surnameOf(b) || a.length !== b.length || a.length < 3 || a === b) continue;
+      let diff = 0;
+      for (let k = s.length; k < a.length; k++) if (a[k] !== b[k]) diff++;
+      if (diff === 1) lines.push(`${persons[i]!.token}与${persons[j]!.token}同姓、名字只差一字`);
+    }
+  }
+  return lines.length > 0 ? `【关联线索】${lines.join("；")}（本机比对原文得出，可能是亲属或关联人，也可能只是巧合：涉及关联关系、利益冲突或证据真实性时作为待核线索写出，不作结论）。\n` : "";
+}
+
 /** 文本中的全部代号（去重，按出现顺序）。 */
 export function findTokens(text: string): string[] {
   const seen = new Set<string>();

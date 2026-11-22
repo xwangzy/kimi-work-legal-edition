@@ -223,6 +223,22 @@ export interface RenumberingRow {
   to_article: number;
 }
 
+/** 中文条号 → 整数（“九十一”“一百零五”“二十”；检索里认“民诉法解释第九十一条”用）。认不出的返回 null。 */
+function cnNumber(s: string): number | null {
+  const d: Record<string, number> = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+  const u: Record<string, number> = { 十: 10, 百: 100, 千: 1000 };
+  let total = 0;
+  let cur = 0;
+  for (const ch of s) {
+    if (ch in d) cur = d[ch]!;
+    else if (ch in u) {
+      total += (cur || 1) * u[ch]!;
+      cur = 0;
+    } else return null;
+  }
+  return total + cur || null;
+}
+
 /** 名称归一：去书名号《》与全部空白，全角英数字转半角（大小写不敏感）。 */
 export function normalizeLawName(name: string): string {
   let s = name.replace(/[《》\s]/g, "");
@@ -258,6 +274,8 @@ const RELIABILITY_LABEL: Record<string, string> = {
   official_text_collected: "按官方发布文本采集并与第二官方来源比对",
   demo_seed: "为演示数据、不得作为正式引用",
   inferred_from_amendment_decision: "依据修改决定推定、修正本逐字全文待采集",
+  // V32 法规目录：只登记名称、文号、施行日、效力与总条数（官方出处），不收正文——能核“有没有这一条”，不能核条文内容
+  official_metadata_only: "只登记了目录信息（名称、施行日、总条数，官方出处）、未收正文",
 };
 
 export class Lawdb {
@@ -387,23 +405,72 @@ export class Lawdb {
    * 关键词里的法名只作过滤。只返回现行（未失效）版本的条文，按得分、法名、条号排序，至多 limit 条。纯查询。
    */
   searchArticles(query: string, limit = 10): { law_name: string; lsv_id: string; article_no: number; effectiveness: string; effective: string; snippet: string; score: number }[] {
-    const terms = query.split(/[\s，,。；;、:：（）()《》“”"]+/).map((t) => t.trim()).filter((t) => t.length >= 2);
-    if (terms.length === 0) return [];
     const laws = this.db.prepare(`SELECT l.law_id, l.law_name, l.aliases_json FROM laws l`).all() as { law_id: string; law_name: string; aliases_json: string | null }[];
     const lawFilter = new Set<string>();
-    const textTerms: string[] = [];
-    for (const t of terms) {
+    // V32（第 57 批全量验收代理词一单：库里有民诉法解释第九十、九十一条，成果却写“法规库未收录”）：
+    // ① 查询里的法名整体认——全称里套的书名号与“（一）”不再把名字切碎（原先“最高人民法院关于适用《中华人民共和国民事诉讼法》的解释 举证责任”
+    //    被切成“中华人民共和国民事诉讼法”与“的解释”，过滤成了民事诉讼法本身，一条也查不到）；词以法名开头、后面为空或紧接“第”才算
+    //    （“公司法定代表人”不算公司法）；② 法名后面写了条号的（“民诉法解释第九十条”“第九十、九十一条”），那几条直接排在最前。
+    const names = laws
+      .flatMap((l) => [l.law_name, ...(JSON.parse(l.aliases_json ?? "[]") as string[])].map((x) => ({ law_id: l.law_id, n: normalizeLawName(x).replace(/[〈〉]/g, "") })))
+      .filter((x) => x.n.length >= 3)
+      .sort((a, b) => b.n.length - a.n.length);
+    const direct: { law_id: string; article_no: number }[] = [];
+    const loose: string[] = [];
+    let last: { n: string } | undefined;
+    for (const tok of query.split(/[\s，,。；;:：“”"]+/).filter(Boolean)) {
+      const t = normalizeLawName(tok).replace(/[〈〉]/g, "");
+      // 紧跟在法名后面、只写了条号的词（“民诉法解释第九十条 第九十一条”）归那部法
+      const onlyRef = last && /^第[零〇一二两三四五六七八九十百千\d、，,和及至到～~\-第]+条$/.test(t);
+      const hit = onlyRef ? last : names.find((x) => t.startsWith(x.n) && (t.length === x.n.length || t[x.n.length] === "第"));
+      if (!hit) {
+        loose.push(tok);
+        last = undefined;
+        continue;
+      }
+      last = hit;
+      for (const x of names) if (x.n === hit.n) lawFilter.add(x.law_id);
+      const rest = onlyRef ? t : t.slice(hit.n.length);
+      for (const m of rest.matchAll(/第([零〇一二两三四五六七八九十百千\d、，,和及至到～~\-第]+?)条/g)) {
+        for (const num of m[1]!.split(/[、，,和及至到～~\-第]+/).filter(Boolean)) {
+          const no = /^\d+$/.test(num) ? Number(num) : cnNumber(num);
+          if (no !== null && no >= 1) for (const x of names) if (x.n === hit.n && !direct.some((d) => d.law_id === x.law_id && d.article_no === no)) direct.push({ law_id: x.law_id, article_no: no });
+        }
+      }
+    }
+    const terms = loose.flatMap((x) => x.split(/[、（）()《》〈〉]+/)).map((t) => t.trim()).filter((t) => t.length >= 2);
+    for (const t of [...terms]) {
       const n = normalizeLawName(t);
       const hit = laws.filter((l) => [l.law_name, ...JSON.parse(l.aliases_json ?? "[]")].some((x: string) => normalizeLawName(x) === n || normalizeLawName(x).endsWith(n) && n.length >= 4 && /法|条例|规定|解释/.test(n)));
-      if (hit.length > 0) for (const h of hit) lawFilter.add(h.law_id);
-      else textTerms.push(t);
+      if (hit.length > 0) {
+        for (const h of hit) lawFilter.add(h.law_id);
+        terms.splice(terms.indexOf(t), 1);
+      }
     }
-    if (textTerms.length === 0) return [];
+    const textTerms = terms;
+    if (textTerms.length === 0 && direct.length === 0) return [];
     const rows = this.db
       .prepare(`SELECT a.lsv_id, a.article_no, a.text, v.effectiveness, v.effective, v.superseded, l.law_id, l.law_name FROM articles a JOIN law_versions v ON v.lsv_id = a.lsv_id JOIN laws l ON l.law_id = v.law_id`)
       .all() as { lsv_id: string; article_no: number; text: string; effectiveness: string; effective: string; superseded: string | null; law_id: string; law_name: string }[];
+    const pinned = rows
+      .filter((r) => !r.superseded && r.effectiveness === "valid" && direct.some((d) => d.law_id === r.law_id && d.article_no === r.article_no))
+      .sort((a, b) => direct.findIndex((d) => d.law_id === a.law_id && d.article_no === a.article_no) - direct.findIndex((d) => d.law_id === b.law_id && d.article_no === b.article_no))
+      .map((r) => ({ law_name: r.law_name, lsv_id: r.lsv_id, article_no: r.article_no, effectiveness: r.effectiveness, effective: r.effective, snippet: `${r.text.slice(0, 100)}${r.text.length > 100 ? "……" : ""}`, score: 99 }));
+    if (textTerms.length === 0) return pinned.slice(0, limit);
+    // ③ 中间夹了字的同一说法（“举证责任”与条文里的“举证证明责任”）：前后两半在条文里依次出现、相隔不超过 3 个字，按命中计
+    const gapped = (text: string, term: string): boolean => {
+      if (term.length < 4 || term.length > 8) return false;
+      const h = Math.floor(term.length / 2);
+      const a = term.slice(0, h);
+      const b = term.slice(h);
+      for (let i = text.indexOf(a); i >= 0; i = text.indexOf(a, i + 1)) {
+        const j = text.indexOf(b, i + a.length);
+        if (j >= 0 && j - (i + a.length) <= 3) return true;
+      }
+      return false;
+    };
     const covers = (text: string, term: string): boolean => {
-      if (text.includes(term)) return true;
+      if (text.includes(term) || gapped(text, term)) return true;
       if (term.length < 4) return false;
       const grams = Array.from({ length: term.length - 1 }, (_, i) => term.slice(i, i + 2));
       return grams.filter((g) => text.includes(g)).length / grams.length >= 0.6;
@@ -424,16 +491,17 @@ export class Lawdb {
       for (const t of matched) {
         const f = tf(r.text, t);
         const k = 1.2 * (0.25 + 0.75 * (r.text.length / avgLen));
-        rank += f > 0 ? idf(t) * ((f * 2.2) / (f + k)) : idf(t) * 0.5;
+        rank += f > 0 ? idf(t) * ((f * 2.2) / (f + k)) : gapped(r.text, t) ? idf(t) * 0.9 : idf(t) * 0.5;
       }
       const first = matched.map((t) => r.text.indexOf(t)).filter((i) => i >= 0).sort((a, b) => a - b)[0] ?? 0;
       const start = Math.max(0, first - 20);
       out.push({ law_name: r.law_name, lsv_id: r.lsv_id, article_no: r.article_no, effectiveness: r.effectiveness, effective: r.effective, snippet: `${start > 0 ? "……" : ""}${r.text.slice(start, start + 100)}${start + 100 < r.text.length ? "……" : ""}`, score: matched.length, rank });
     }
-    return out
+    const ranked = out
       .sort((a, b) => b.score - a.score || b.rank - a.rank || a.law_name.localeCompare(b.law_name) || a.article_no - b.article_no)
-      .slice(0, limit)
-      .map(({ rank: _rank, ...x }) => x);
+      .map(({ rank: _rank, ...x }) => x)
+      .filter((x) => !pinned.some((p) => p.lsv_id === x.lsv_id && p.article_no === x.article_no));
+    return [...pinned, ...ranked].slice(0, limit);
   }
 
   /**

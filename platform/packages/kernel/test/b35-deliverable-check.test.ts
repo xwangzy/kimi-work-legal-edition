@@ -175,7 +175,10 @@ test("对外文书（法律意见书、起诉状）正文里给律师的提示�
   assert.ok(complaint.issues.some((i) => i.kind === "internal_term" && i.text.includes("代号")), "隐私代号的说法不进递交法院的文书");
 
   const memo = checkDeliverable("研究备忘录-竞业限制", [{ heading: "", paragraphs: ["本备忘录中的金额为手工计算，请复核。"] }]);
-  assert.equal(memo.issues.filter((i) => i.kind === "internal_term").length, 0, "内部备忘录不查这一类");
+  // 第 58 批（AGENTS 第 4 条改口径）：内部稿也不逐处标“手工计算，请复核”——按计算状态标注报一次；对外文书那条“写给律师的话”仍不报内部稿
+  const memoHits = memo.issues.filter((i) => i.kind === "internal_term");
+  assert.equal(memoHits.length, 1, JSON.stringify(memo.issues));
+  assert.match(memoHits[0]!.fix, /删去这类计算与核验状态的标注/);
   const contract = checkDeliverable("设备采购合同", [{ heading: "第一条 标的", paragraphs: ["1.1 设备产品代号为DL-5X800。"] }]);
   assert.equal(contract.issues.filter((i) => i.kind === "internal_term").length, 0, "合同里的“产品代号”不是隐私代号的说法");
 });

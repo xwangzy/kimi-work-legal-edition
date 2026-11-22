@@ -67,7 +67,7 @@ test("认“事实 N”的各种写法；内部 / 对外文书的判断", () => 
   for (const t of ["案情分析备忘录", "争点分析", "法律意见书草稿", "起草说明与待定事项", "庭审提纲", "审查意见书（内部稿）"]) assert.equal(isInternalDocument(t), true, t);
   for (const t of ["民事起诉状", "律师函", "法律意见书", "案件进展汇报", "设备买卖合同"]) assert.equal(isInternalDocument(t), false, t);
   const outward = checkDeliverable("民事起诉状", [{ heading: "事实与理由", paragraphs: ["被告确认欠款（事实 4）。"] }]);
-  assert.ok(outward.issues.some((i) => i.kind === "note_to_lawyer" && /事实 4/.test(i.text) && /证据或材料的名称/.test(i.fix)), JSON.stringify(outward.issues));
+  assert.ok(outward.issues.some((i) => i.kind === "note_to_lawyer" && /事实 4/.test(i.text) && /证据名称或证据编号/.test(i.fix)), JSON.stringify(outward.issues));
   assert.equal(checkDeliverable("案情分析备忘录", [{ heading: "事实", paragraphs: ["被告确认欠款（事实 4）。"] }]).issues.some((i) => /事实/.test(i.text)), false, "内部文书不报");
   assert.equal(checkDeliverable("计算明细", [{ heading: "表", paragraphs: [], table: { columns: ["出处"], rows: [["事实 4"]] } }], { table: true }).issues.length, 0, "表格不报（自动附表）");
 });
@@ -78,7 +78,7 @@ test("表格：自动附“事实对照”、只列被引用的序号；助手�
     const t1 = await a.call("xlsx.render_table", { title: "争点—证据矩阵", sheets: [{ name: "要件矩阵", columns: ["要件", "出处"], rows: [["合同成立", "事实1"], ["欠款金额", "事实 3、4；事实 9"]] }] });
     let s = sheetsOf(t1.artifact_version_id);
     assert.deepEqual(s.map((x) => x.name), ["要件矩阵", "事实对照"]);
-    assert.deepEqual(s[1]!.rows[0], ["序号", "事实陈述", "发生日期", "来源材料", "律师是否已确认"]);
+    assert.deepEqual(s[1]!.rows[0], ["序号", "事实陈述", "发生日期", "来源材料", "是否已确认"]);
     assert.deepEqual(s[1]!.rows.slice(1).map((r) => [r[0], r[1], r[2] ?? null, r[4] ?? null]), [
       ["事实 1", "双方于2026年3月1日签订购销合同", "2026-03-01", "已确认"],
       ["事实 3", "被告于2026年4月1日部分付款", "2026-04-01", "待确认"],
@@ -137,7 +137,7 @@ test("Word：内部文书文末附“事实对照”一节，改后随引用重�
     const filing = await a.call("docx.render_report", { title: "民事起诉状", sections: [{ heading: "事实与理由", paragraphs: ["被告确认欠款（事实 4）。"] }] });
     assert.equal(parasOf(filing.artifact_version_id).includes("事实对照"), false);
     assert.equal(filing.fact_table, undefined);
-    assert.ok(filing.quality_check.issues.some((i: any) => /事实 4/.test(i.text) && /证据或材料的名称/.test(i.fix)), JSON.stringify(filing.quality_check.issues));
+    assert.ok(filing.quality_check.issues.some((i: any) => /事实 4/.test(i.text) && /证据名称或证据编号/.test(i.fix)), JSON.stringify(filing.quality_check.issues));
     // 没有引用的内部文书：不加
     const plain = await a.call("docx.render_report", { title: "研究备忘录", sections: [{ heading: "结论", paragraphs: ["可以主张违约金。"] }] });
     assert.equal(parasOf(plain.artifact_version_id).includes("事实对照"), false);
