@@ -17,6 +17,7 @@ const CONTRACT = [
   "借款合同（示例）",
   "出借人：孙悦，手机 13800138000，身份证号 11010519491231002X。",
   "借款人：甲科技有限公司。",
+  "住址：上海市浦东新区张江路1288号（3幢）501室。",
   "第三条 借款金额人民币伍万元，年利率 6%。",
 ].join("\n");
 
@@ -53,12 +54,14 @@ test("标准端点经出站闸门到法律模型网关：上游只见代号（�
   assert.ok(sent.includes("甲科技有限公司"), "机构名称默认保留");
   assert.match(sent, /〔自然人·[0-9A-Z]{6}〕/);
   assert.match(sent, /〔电话·[0-9A-Z]{6}〕/);
+  assert.match(sent, /住址：上海市浦东新区〔地址·[0-9A-Z]{6}〕。/);
+  assert.doesNotMatch(sent, /张江路|3幢|501室/);
   // 去向记录（事项账本）
   const eg = await tk.inv("egress.records", { run_id: run.run_id });
   const rec = eg.records.find((r: any) => r.destination_kind === "legal_gateway");
   assert.ok(rec, JSON.stringify(eg.records));
   assert.equal(rec.outcome, "sent");
-  assert.ok(rec.pseudonym_findings >= 3, `出站代号数如实：${rec.pseudonym_findings}`);
+  assert.ok(rec.pseudonym_findings >= 4, `出站代号数如实：${rec.pseudonym_findings}`);
   assert.match(rec.request_id, /^kwlg_/);
   // 用量：按闸门请求 ID 入账，broker 与闸门回送去重为一条
   const usage = tk.kernel.db.all<{ request_id: string }>(`SELECT request_id FROM usage_records WHERE run_id = ?`, [run.run_id]);

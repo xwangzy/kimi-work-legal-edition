@@ -1,0 +1,28 @@
+{
+  "tag": "m14-agency",
+  "card": "代理词",
+  "veto": [],
+  "score": 23,
+  "dims": [
+    3,
+    3,
+    2,
+    3,
+    3,
+    3,
+    3,
+    3
+  ],
+  "tier": "可交付",
+  "status": "已通过",
+  "open_ok": true,
+  "minutes": 17.7,
+  "questions": 2,
+  "top_issues": [
+    "减价举证责任在对照表未落实到已核的具体程序条款。"
+  ],
+  "prev_score": null,
+  "product_defect": [],
+  "known_defects_recurring": [],
+  "new_defects": []
+}

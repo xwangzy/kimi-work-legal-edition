@@ -1,0 +1,29 @@
+{
+  "tag": "m12-enforcement",
+  "card": "强制执行申请",
+  "veto": [],
+  "score": 19,
+  "dims": [
+    2,
+    3,
+    2,
+    2,
+    2,
+    3,
+    3,
+    2
+  ],
+  "tier": "需中度修改",
+  "status": "未通过",
+  "open_ok": true,
+  "minutes": 22.4,
+  "questions": 3,
+  "top_issues": [
+    "加倍部分利息首段从 1 月 15 日计 64 天，题库口径自 1 月 16 日为 63 天。按其余参数不变，该差额约 50.66 元。",
+    "未按两种不同抵充顺序分别测算，备选口径只调整了首段受理费。"
+  ],
+  "prev_score": null,
+  "product_defect": [],
+  "known_defects_recurring": [],
+  "new_defects": []
+}

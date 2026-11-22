@@ -1,0 +1,29 @@
+{
+  "tag": "m09-arbitration-app",
+  "card": "仲裁申请书",
+  "veto": [],
+  "score": 22,
+  "dims": [
+    3,
+    3,
+    3,
+    3,
+    2,
+    3,
+    3,
+    2
+  ],
+  "tier": "可交付",
+  "status": "已通过",
+  "open_ok": true,
+  "minutes": 18.2,
+  "questions": 2,
+  "top_issues": [
+    "Word 与 Excel 保守分段漏列付款当日 4 月 30 日，核对表的续计口径又跳过 11 月 9 日；交付前应选定一个连续区间口径。",
+    "首部 4 处【待填】均为双方代理人及其联系方式，开始前填写的两方身份事项全部带入。"
+  ],
+  "prev_score": null,
+  "product_defect": [],
+  "known_defects_recurring": [],
+  "new_defects": []
+}

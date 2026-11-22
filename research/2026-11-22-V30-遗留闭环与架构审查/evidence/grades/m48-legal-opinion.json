@@ -1,0 +1,29 @@
+{
+  "tag": "m48-legal-opinion",
+  "card": "法律意见书",
+  "veto": [],
+  "score": 22,
+  "dims": [
+    3,
+    3,
+    2,
+    3,
+    3,
+    3,
+    3,
+    2
+  ],
+  "tier": "可交付",
+  "status": "已通过",
+  "open_ok": true,
+  "minutes": 24.2,
+  "questions": 0,
+  "top_issues": [
+    "届满日正确，但正文‘自2026年6月10日起算’混同到期日与按次日起计的起点。",
+    "签章前需据原始放款和付息凭证重新确认计算基数。"
+  ],
+  "prev_score": null,
+  "product_defect": [],
+  "known_defects_recurring": [],
+  "new_defects": []
+}

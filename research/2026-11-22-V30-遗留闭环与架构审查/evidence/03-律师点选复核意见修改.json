@@ -1,0 +1,19 @@
+{
+  "parent": "run_170e320f-eaa7-4437-a90e-e4cc0961ee4a",
+  "child": "run_f6682967-7c17-4ce0-a5d2-528b201851b2",
+  "review_apply": true,
+  "terminal": "succeeded",
+  "review_events": [
+    {
+      "type": "review.skipped",
+      "kind": "opinion",
+      "reason": "review_apply"
+    }
+  ],
+  "open": {
+    "v3-顾问答复-OneHR员工个人信息跨境传输.docx": {
+      "opened": true,
+      "pages": 6
+    }
+  }
+}

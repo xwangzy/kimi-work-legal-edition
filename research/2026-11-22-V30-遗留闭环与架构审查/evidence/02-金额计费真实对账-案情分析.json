@@ -1,0 +1,167 @@
+{
+  "runId": "run_ba92adaa-a07c-4076-b85c-feed502e741d",
+  "status": "succeeded",
+  "month": "2026-11",
+  "task": {
+    "requests": 16,
+    "cached_requests": 15,
+    "input": 1438724,
+    "cached": 1288960,
+    "output": 45209,
+    "micro": 2611360
+  },
+  "tenant": {
+    "former_micro": 104912,
+    "ledger_micro": 2716272,
+    "quota_yuan": 2.7163,
+    "bill_yuan": 2.7163,
+    "bill_requests": 32,
+    "bill_tokens": 1493295
+  },
+  "rows": [
+    {
+      "client_id": "kwlg_4b06da91-6899-47c1-8fca-2718698404f6",
+      "request_id": "kwlgw_236c0922-69d8-4167-a964-d48d4357cb92",
+      "input": 42431,
+      "cached": 26112,
+      "output": 345,
+      "micro": 96908,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_9bc9df2a-ed87-47ff-a6bc-a4f302056bdb",
+      "request_id": "kwlgw_ff3f70c1-8640-403c-8fc0-edae48432a3d",
+      "input": 45531,
+      "cached": 26368,
+      "output": 235,
+      "micro": 106780,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_7a5112d9-197f-4aac-bc53-e5d1df7109ed",
+      "request_id": "kwlgw_732bb6f9-6df7-4190-b187-63060fadb014",
+      "input": 47743,
+      "cached": 45312,
+      "output": 984,
+      "micro": 70780,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_540cfc3b-2301-458d-bd45-6b0e1f9cae48",
+      "request_id": "kwlgw_30589766-deab-401e-8500-606885e0f37d",
+      "input": 56010,
+      "cached": 47616,
+      "output": 7987,
+      "micro": 208984,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_3f3c70b6-f121-4bfc-9731-79b25a9299d0",
+      "request_id": "kwlgw_c1ced782-bcfe-47ba-8fe5-7d9ed66ae1ce",
+      "input": 65848,
+      "cached": 55808,
+      "output": 4136,
+      "micro": 162144,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_b13003d1-a469-4ffb-a6b6-112103d65bee",
+      "request_id": "kwlgw_634b7fee-c326-483a-a892-cc9b4009bd32",
+      "input": 78343,
+      "cached": 65792,
+      "output": 1363,
+      "micro": 137804,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_133b2b21-f608-43ab-9fd0-c5a359d90daf",
+      "request_id": "kwlgw_8890b7c5-b611-497f-ba6a-9ab5eb8700f6",
+      "input": 86019,
+      "cached": 78336,
+      "output": 1443,
+      "micro": 132156,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_2de809c5-af57-4c28-82b1-dacf668960a7",
+      "request_id": "kwlgw_2015be22-2fdc-46af-80b9-a447ac4ae503",
+      "input": 97415,
+      "cached": 86016,
+      "output": 1421,
+      "micro": 154348,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_72e16416-563c-4ab5-9b6b-1b39c3a96de2",
+      "request_id": "kwlgw_5a929a0d-0030-41a3-a177-c67248ac053a",
+      "input": 109629,
+      "cached": 97280,
+      "output": 1198,
+      "micro": 165844,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_18b01d50-4b9f-4884-833d-357ae06bb071",
+      "request_id": "kwlgw_6fc1cda6-29ca-4fc8-a68d-9def77b2a2b7",
+      "input": 116381,
+      "cached": 109568,
+      "output": 4690,
+      "micro": 211860,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_d493762f-8d6a-4d4f-acb7-d58a43f61a67",
+      "request_id": "kwlgw_92e2dc78-bfe1-4643-b7bf-9c74bed2a14e",
+      "input": 125715,
+      "cached": 116224,
+      "output": 8391,
+      "micro": 288444,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_06787d5b-a81d-4ef0-bc92-8985071b2dfc",
+      "request_id": "kwlgw_395e9b8f-d0d5-4bee-8106-33823497c38e",
+      "input": 134641,
+      "cached": 125696,
+      "output": 2106,
+      "micro": 195172,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_bc4a8135-23ee-4574-8ae9-cee0d0f75a2c",
+      "request_id": "kwlgw_3c00472f-299e-479a-a834-6a58945db74e",
+      "input": 137023,
+      "cached": 134400,
+      "output": 310,
+      "micro": 149852,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_ea5c904c-9223-4618-98dc-b88e9c52fc2e",
+      "request_id": "kwlgw_56795cdf-f885-4581-9bed-940171e8a359",
+      "input": 137646,
+      "cached": 136960,
+      "output": 635,
+      "micro": 149864,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_313276f6-d365-4ae0-9aae-464bd0d6f787",
+      "request_id": "kwlgw_effc2a69-0709-4750-a350-537e13db658a",
+      "input": 138561,
+      "cached": 137472,
+      "output": 1445,
+      "micro": 164948,
+      "price_version": 2
+    },
+    {
+      "client_id": "kwlg_c046945f-54b3-475a-8f7b-a37fa4dbb428",
+      "request_id": "kwlgw_6d0e96a1-d6e6-4979-8b6e-43afea65ed57",
+      "input": 19788,
+      "cached": 0,
+      "output": 8520,
+      "micro": 215472,
+      "price_version": 2
+    }
+  ]
+}

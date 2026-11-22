@@ -1,5 +1,5 @@
 /**
- * D-224 当事人信息材料的令牌化与还原核对（只核对现有规则，不改判定）：
+ * D-224 / D-231 当事人信息材料的令牌化与还原核对（包括括号楼栋）：
  * 律师填写的《当事人信息（律师填写）.txt》经现有令牌化后（与 A1 材料快照同一个内核侧令牌化器），发往模型的形态里没有
  * 信用代码、身份证号、电话、自然人姓名、出生日期与住址门牌这些真值；机构名称在一般事项里按设计原文发出，住址的省市区保留原文。
  * 模型按代号写出的文书段落，经 export-restore 导出还原后真值回到 Word 里。
@@ -18,7 +18,7 @@ const TEXT = [
   "",
   "一、我方（原告）：华诚贸易有限公司（单位）",
   "统一社会信用代码：91310115MA1H7K2X3Q",
-  "住所：上海市浦东新区张江路1288号3幢501室",
+  "住所：上海市浦东新区张江路1288号（3幢）501室",
   "法定代表人：王建国，职务：执行董事",
   "联系电话：021-58881234",
   "",
@@ -26,12 +26,12 @@ const TEXT = [
   "性别：女",
   "出生日期：1985年3月2日",
   "身份证号：110105198503021241",
-  "住址：北京市朝阳区建国路88号院2号楼1203室",
+  "住址：北京市朝阳区建国路88号院(2号楼)1203室",
   "联系电话：13912345678",
   "",
 ].join("\n");
 
-const SECRETS = ["91310115MA1H7K2X3Q", "张江路1288号3幢501室", "王建国", "021-58881234", "李秀英", "1985年3月2日", "110105198503021241", "建国路88号院2号楼1203室", "13912345678"];
+const SECRETS = ["91310115MA1H7K2X3Q", "张江路1288号（3幢）501室", "王建国", "021-58881234", "李秀英", "1985年3月2日", "110105198503021241", "建国路88号院(2号楼)1203室", "13912345678"];
 
 let tk: TestKernel | null = null;
 after(async () => {
@@ -47,12 +47,15 @@ test("当事人信息材料：发往模型的形态不含身份真值；机构�
   assert.ok(doc.document_version_id);
 
   const store = new MatterTokenStore(tk.kernel.db);
+  const oldAddress = "张江路1288号";
+  const before = store.tokenize(mid, `住所：上海市浦东新区${oldAddress}`).text;
   const sent = store.tokenize(mid, TEXT).text;
   for (const s of SECRETS) assert.equal(sent.includes(s), false, `真值原文发出：${s}\n${sent}`);
   // 现状如实断言：机构名称在一般事项里原文发出；住址只换行政区划之后的部分
   assert.ok(sent.includes("一、我方（原告）：华诚贸易有限公司（单位）"), sent);
-  assert.ok(sent.includes("住所：上海市浦东新区〔地址·"), sent);
-  assert.ok(sent.includes("住址：北京市朝阳区〔地址·"), sent);
+  assert.match(sent, /^住所：上海市浦东新区〔地址·[0-9A-Z]{6}〕$/m);
+  assert.match(sent, /^住址：北京市朝阳区〔地址·[0-9A-Z]{6}〕$/m);
+  assert.equal(store.restore(mid, before).text, `住所：上海市浦东新区${oldAddress}`, "已有成果中的旧地址代号照常还原");
   // 不是号码的事项原样（性别、职务）
   assert.ok(sent.includes("性别：女") && sent.includes("职务：执行董事"), sent);
   const cats = new Set(findTokens(sent).map((t) => t.slice(1, t.indexOf("·"))));
@@ -71,6 +74,6 @@ test("当事人信息材料：发往模型的形态不含身份真值；机构�
   const text = (readZipText(out.bytes, "word/document.xml") ?? "").replace(/<[^>]+>/g, "");
   assert.equal(findTokens(text).length, 0, text);
   for (const s of SECRETS) assert.ok(text.includes(s), `导出后应有真值：${s}\n${text}`);
-  assert.ok(text.includes("原告：华诚贸易有限公司，统一社会信用代码：91310115MA1H7K2X3Q，住所：上海市浦东新区张江路1288号3幢501室，法定代表人：王建国，职务：执行董事，联系电话：021-58881234。"), text);
-  assert.ok(text.includes("被告：李秀英，女，1985年3月2日出生，公民身份号码110105198503021241，住北京市朝阳区建国路88号院2号楼1203室，联系电话13912345678。"), text);
+  assert.ok(text.includes("原告：华诚贸易有限公司，统一社会信用代码：91310115MA1H7K2X3Q，住所：上海市浦东新区张江路1288号（3幢）501室，法定代表人：王建国，职务：执行董事，联系电话：021-58881234。"), text);
+  assert.ok(text.includes("被告：李秀英，女，1985年3月2日出生，公民身份号码110105198503021241，住北京市朝阳区建国路88号院(2号楼)1203室，联系电话13912345678。"), text);
 });

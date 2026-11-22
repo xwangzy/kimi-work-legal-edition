@@ -6,7 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { findIdentifiers, adminPrefixLength } from "../src/patterns.ts";
-import { MatterTokenizer } from "../src/index.ts";
+import { MatterTokenizer, restoreTokens } from "../src/index.ts";
 
 const addr = (s: string) => findIdentifiers(s).filter((h) => h.category === "address").map((h) => h.value);
 
@@ -41,4 +41,24 @@ test("地址前的场所引导词（主要经营场所、注册地址、送达�
   assert.deepEqual(addr("注册地址：北京市海淀区上地十街10号7层"), ["上地十街10号7层"]);
   const r = new MatterTokenizer({ matterKey: randomBytes(32), parties: [], fullPseudonym: false } as any).tokenize("主要经营场所苏州工业园区星湖街328号");
   assert.ok(r.text.startsWith("主要经营场所苏州工业园区〔地址·"), r.text);
+});
+
+test("地址：全角、半角括号内的楼栋与其后的房号一起替换，原样还原", () => {
+  const cases = [
+    ["上海市浦东新区", "张江路1288号（3幢）501室"],
+    ["北京市朝阳区", "建国路88号院 ( ２ 号楼 ) 1203室"],
+    ["成都市锦江区", "翠湖华庭二期（三栋2单元）701室"],
+    ["杭州市西湖区", "文三路（90号A座）2层（501室）"],
+    ["", "翠湖花园（A座）501室"],
+  ];
+  for (const [kept, replaced] of cases) {
+    const text = `住址：${kept}${replaced}（仅供送达）。`;
+    assert.deepEqual(addr(text), [replaced], text);
+    const tokenizer = new MatterTokenizer({ matterKey: randomBytes(32), parties: [], table: [], fullPseudonym: false });
+    const result = tokenizer.tokenize(text);
+    assert.match(result.text, new RegExp(`^住址：${kept}〔地址·[0-9A-Z]{6}〕（仅供送达）。$`));
+    assert.deepEqual(restoreTokens(result.text, result.entries), { text, restored: 1, unknown: [] });
+  }
+  assert.deepEqual(addr("北京市朝阳区（另行通知）；附件（3栋）。"), []);
+  assert.deepEqual(addr("住所：北京市朝阳区建国路88号（工作日9时到访）。"), ["建国路88号"]);
 });

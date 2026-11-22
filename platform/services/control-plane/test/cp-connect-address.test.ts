@@ -26,11 +26,11 @@ const ossl = (...args: string[]) => {
   const r = spawnSync("openssl", args, { encoding: "utf8", cwd: dir });
   assert.equal(r.status, 0, r.stderr);
 };
-/** 测试 CA 签一张叶子证书：san 形如 "IP:203.0.113.7" */
+/** 测试 CA 签一张叶子证书。显式选 SHA-256 与命名曲线，避免 OpenSSL 和系统 LibreSSL 的默认值不同。 */
 function leaf(name: string, san: string): { cert: string; key: string } {
-  ossl("req", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", `${name}.key`, "-out", `${name}.csr`, "-subj", `/CN=${name}`);
+  ossl("req", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-pkeyopt", "ec_param_enc:named_curve", "-nodes", "-keyout", `${name}.key`, "-out", `${name}.csr`, "-subj", `/CN=${name}`);
   writeFileSync(join(dir, `${name}.ext`), `subjectAltName=${san}\nextendedKeyUsage=serverAuth\nbasicConstraints=critical,CA:FALSE\n`);
-  ossl("x509", "-req", "-in", `${name}.csr`, "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial", "-days", "1", "-out", `${name}.crt`, "-extfile", `${name}.ext`);
+  ossl("x509", "-req", "-sha256", "-in", `${name}.csr`, "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial", "-days", "1", "-out", `${name}.crt`, "-extfile", `${name}.ext`);
   return { cert: readFileSync(join(dir, `${name}.crt`), "utf8"), key: readFileSync(join(dir, `${name}.key`), "utf8") };
 }
 async function serve(tls: { cert: string; key: string }): Promise<number> {
@@ -57,7 +57,7 @@ let portOther = 0;
 let portDns = 0;
 before(async () => {
   if (!haveOpenssl) return;
-  ossl("req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", "ca.key", "-out", "ca.crt", "-days", "1", "-subj", "/CN=kwl test CA", "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign");
+  ossl("req", "-x509", "-sha256", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-pkeyopt", "ec_param_enc:named_curve", "-nodes", "-keyout", "ca.key", "-out", "ca.crt", "-days", "1", "-subj", "/CN=kwl test CA", "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign");
   ca = readFileSync(join(dir, "ca.crt"), "utf8");
   portIp = await serve(leaf("ip", `IP:${PUBLIC_IP}`));
   portOther = await serve(leaf("other", `IP:${OTHER_IP}`));

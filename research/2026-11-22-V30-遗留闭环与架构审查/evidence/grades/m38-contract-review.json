@@ -1,0 +1,29 @@
+{
+  "tag": "m38-contract-review",
+  "card": "审合同",
+  "veto": [],
+  "score": 21,
+  "dims": [
+    3,
+    3,
+    2,
+    2,
+    3,
+    2,
+    3,
+    3
+  ],
+  "tier": "可交付",
+  "status": "已通过",
+  "open_ok": true,
+  "minutes": 37.9,
+  "questions": 0,
+  "top_issues": [
+    "出境建议只写根据实际人数、类型及主体属性判断，没有把 380 万会员背景下的触发条件作为谈判前要核的情景。",
+    "续期提示少了 15% 涨价对应的两个金额，也未建议早于节假日发送通知。"
+  ],
+  "prev_score": null,
+  "product_defect": [],
+  "known_defects_recurring": [],
+  "new_defects": []
+}

@@ -1,0 +1,309 @@
+{
+ "stats": {
+  "cards": 13,
+  "pass": 8,
+  "mean": 20,
+  "veto": 2,
+  "score_at_least_20": 8,
+  "grader_said_pass": 8,
+  "mismatches": [],
+  "dim_means": [
+   2.923076923076923,
+   2.769230769230769,
+   2.1538461538461537,
+   2.5384615384615383,
+   2.1538461538461537,
+   2.6153846153846154,
+   2.923076923076923,
+   1.9230769230769231
+  ]
+ },
+ "rows": [
+  {
+   "tag": "m04-case-analysis",
+   "card": "案情分析",
+   "veto": "无",
+   "score": 21,
+   "dims": [
+    3,
+    3,
+    2,
+    3,
+    3,
+    2,
+    3,
+    2
+   ],
+   "pass": true,
+   "why": "",
+   "grader_status": "已通过",
+   "mismatch": false,
+   "prev": null,
+   "top": "质保金只测算整笔顺延或不顺延；如合同解释支持仅延 3 号机，另外两台的 90,000 元可单列为附条件方案。"
+  },
+  {
+   "tag": "m05-amount",
+   "card": "金额测算",
+   "veto": "V3",
+   "score": 17,
+   "dims": [
+    3,
+    2,
+    2,
+    2,
+    2,
+    3,
+    2,
+    1
+   ],
+   "pass": false,
+   "why": "否决 V3",
+   "grader_status": "未通过",
+   "mismatch": false,
+   "prev": null,
+   "top": "备选抵充口径重复把两笔已付违约金计入未清金额，均多列 28,109.67 元。"
+  },
+  {
+   "tag": "m06-pleading",
+   "card": "起诉状",
+   "veto": "无",
+   "score": 21,
+   "dims": [
+    3,
+    3,
+    2,
+    3,
+    2,
+    3,
+    3,
+    2
+   ],
+   "pass": true,
+   "why": "",
+   "grader_status": "已通过",
+   "mismatch": false,
+   "prev": null,
+   "top": "保全稿在未确认律师费实际发生时按 409,010 元请求，核对表有风险提示；提交前应选定暂计金额。"
+  },
+  {
+   "tag": "m07-defense",
+   "card": "答辩状",
+   "veto": "无",
+   "score": 18,
+   "dims": [
+    3,
+    2,
+    3,
+    2,
+    1,
+    3,
+    3,
+    1
+   ],
+   "pass": false,
+   "why": "总分 18 < 20",
+   "grader_status": "未通过",
+   "mismatch": false,
+   "prev": null,
+   "top": "《反诉测算》以 31 万从逾期首日计息，作为内部保守数也应注明只算最低余额，不应当作按款项变动计算的全部标的。"
+  },
+  {
+   "tag": "m08-appeal",
+   "card": "上诉状",
+   "veto": "无",
+   "score": 19,
+   "dims": [
+    3,
+    3,
+    2,
+    2,
+    1,
+    3,
+    3,
+    2
+   ],
+   "pass": false,
+   "why": "总分 19 < 20",
+   "grader_status": "未通过",
+   "mismatch": false,
+   "prev": null,
+   "top": "第二项请求写明“该项基数及起止期间不变”，即使货款改判至 228,000 元，仍只要求以 152,000 元计付违约金。"
+  },
+  {
+   "tag": "m09-arbitration-app",
+   "card": "仲裁申请书",
+   "veto": "无",
+   "score": 22,
+   "dims": [
+    3,
+    3,
+    3,
+    3,
+    2,
+    3,
+    3,
+    2
+   ],
+   "pass": true,
+   "why": "",
+   "grader_status": "已通过",
+   "mismatch": false,
+   "prev": null,
+   "top": "Word 与 Excel 保守分段漏列付款当日 4 月 30 日，核对表的续计口径又跳过 11 月 9 日；交付前应选定一个连续区间口径。"
+  },
+  {
+   "tag": "m12-enforcement",
+   "card": "强制执行申请",
+   "veto": "无",
+   "score": 19,
+   "dims": [
+    2,
+    3,
+    2,
+    2,
+    2,
+    3,
+    3,
+    2
+   ],
+   "pass": false,
+   "why": "总分 19 < 20",
+   "grader_status": "未通过",
+   "mismatch": false,
+   "prev": null,
+   "top": "加倍部分利息首段从 1 月 15 日计 64 天，题库口径自 1 月 16 日为 63 天。按其余参数不变，该差额约 50.66 元。"
+  },
+  {
+   "tag": "m14-agency",
+   "card": "代理词",
+   "veto": "无",
+   "score": 23,
+   "dims": [
+    3,
+    3,
+    2,
+    3,
+    3,
+    3,
+    3,
+    3
+   ],
+   "pass": true,
+   "why": "",
+   "grader_status": "已通过",
+   "mismatch": false,
+   "prev": null,
+   "top": "减价举证责任在对照表未落实到已核的具体程序条款。"
+  },
+  {
+   "tag": "m24-labor-response",
+   "card": "劳动仲裁应对",
+   "veto": "V3",
+   "score": 16,
+   "dims": [
+    3,
+    2,
+    2,
+    2,
+    1,
+    2,
+    3,
+    1
+   ],
+   "pass": false,
+   "why": "否决 V3",
+   "grader_status": "未通过",
+   "mismatch": false,
+   "prev": null,
+   "top": "工资口径表多行合计、月均、算式和结果不勾稽，影响违法解除赔偿金。"
+  },
+  {
+   "tag": "m35-contract-draft",
+   "card": "起草合同",
+   "veto": "无",
+   "score": 20,
+   "dims": [
+    3,
+    3,
+    2,
+    3,
+    2,
+    2,
+    3,
+    2
+   ],
+   "pass": true,
+   "why": "",
+   "grader_status": "已通过",
+   "mismatch": false,
+   "prev": null,
+   "top": "现有申请限制覆盖同一技术和后续改进，技术边界、效力和争议解决方式均需律师与客户定稿。"
+  },
+  {
+   "tag": "m38-contract-review",
+   "card": "审合同",
+   "veto": "无",
+   "score": 21,
+   "dims": [
+    3,
+    3,
+    2,
+    2,
+    3,
+    2,
+    3,
+    3
+   ],
+   "pass": true,
+   "why": "",
+   "grader_status": "已通过",
+   "mismatch": false,
+   "prev": null,
+   "top": "出境建议只写根据实际人数、类型及主体属性判断，没有把 380 万会员背景下的触发条件作为谈判前要核的情景。"
+  },
+  {
+   "tag": "m47-compliance-qa",
+   "card": "合规问答",
+   "veto": "无",
+   "score": 21,
+   "dims": [
+    3,
+    3,
+    2,
+    3,
+    3,
+    2,
+    3,
+    2
+   ],
+   "pass": true,
+   "why": "",
+   "grader_status": "已通过",
+   "mismatch": false,
+   "prev": null,
+   "top": "关键出境规章和备案条文的离线核验限制未随顾问答复交付。"
+  },
+  {
+   "tag": "m48-legal-opinion",
+   "card": "法律意见书",
+   "veto": "无",
+   "score": 22,
+   "dims": [
+    3,
+    3,
+    2,
+    3,
+    3,
+    3,
+    3,
+    2
+   ],
+   "pass": true,
+   "why": "",
+   "grader_status": "已通过",
+   "mismatch": false,
+   "prev": null,
+   "top": "届满日正确，但正文‘自2026年6月10日起算’混同到期日与按次日起计的起点。"
+  }
+ ]
+}

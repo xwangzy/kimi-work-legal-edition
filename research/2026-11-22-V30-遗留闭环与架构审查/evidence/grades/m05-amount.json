@@ -1,0 +1,1 @@
+{"tag":"m05-amount","card":"金额测算","veto":["V3"],"score":17,"dims":[3,2,2,2,2,3,2,1],"tier":"不可用","status":"未通过","open_ok":true,"minutes":12.1,"questions":0,"top_issues":["备选抵充口径重复把两笔已付违约金计入未清金额，均多列 28,109.67 元。"],"prev_score":null,"product_defect":["交付前检查未校验累计发生额、累计已付额和未付余额的勾稽。"],"known_defects_recurring":[],"new_defects":["金额表备选抵充汇总和已付分录不闭合。"]}

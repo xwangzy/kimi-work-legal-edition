@@ -233,12 +233,14 @@ test("mTLS：只认登记的调用方证书；别的证书 403、不带证书握
     const r = spawnSync("openssl", args, { cwd: dir, encoding: "utf8" });
     if (r.status !== 0) throw new Error(r.stderr);
   };
-  const ec = ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes"];
-  ossl(["req", "-x509", ...ec, "-keyout", "ca.key", "-out", "ca.crt", "-days", "1", "-subj", "/CN=kwl-test-ca"]);
+  // 系统 LibreSSL 与 OpenSSL 的签名和曲线编码缺省值不同，测试证书显式指定两项。
+  const ec = ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-pkeyopt", "ec_param_enc:named_curve", "-nodes"];
+  ossl(["req", "-x509", "-sha256", ...ec, "-keyout", "ca.key", "-out", "ca.crt", "-days", "1", "-subj", "/CN=kwl-test-ca",
+    "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign"]);
   const leaf = (name: string, ext: string) => {
     writeFileSync(join(dir, `${name}.ext`), ext);
     ossl(["req", ...ec, "-keyout", `${name}.key`, "-out", `${name}.csr`, "-subj", `/CN=${name}`]);
-    ossl(["x509", "-req", "-in", `${name}.csr`, "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial", "-out", `${name}.crt`, "-days", "1", "-extfile", `${name}.ext`]);
+    ossl(["x509", "-req", "-sha256", "-in", `${name}.csr`, "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial", "-out", `${name}.crt`, "-days", "1", "-extfile", `${name}.ext`]);
   };
   leaf("signer", "subjectAltName=IP:127.0.0.1,URI:spiffe://kwl/test/cp-signer\n");
   leaf("cpapi", "subjectAltName=URI:spiffe://kwl/test/cp-api\n");

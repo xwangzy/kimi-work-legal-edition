@@ -1,0 +1,1 @@
+{"tag":"m47-compliance-qa","card":"合规问答","veto":[],"score":21,"dims":[3,3,2,3,3,2,3,2],"tier":"可交付","status":"已通过","open_ok":true,"minutes":16.2,"questions":0,"top_issues":["关键出境规章和备案条文的离线核验限制未随顾问答复交付。"],"prev_score":null,"product_defect":["引用核验提示只在过程答复，交付正文未保留相同的核验限制。"],"known_defects_recurring":[],"new_defects":[]}

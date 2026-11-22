@@ -1,0 +1,1213 @@
+{
+  "m05-amount": {
+    "tag": "m05-amount",
+    "stack": "a",
+    "run_id": "run_4e34b2a6-5c7b-42b6-ab59-fc90664d29b1",
+    "matter_id": "mat_5af5f723-6e3b-494e-b036-9bf6beefbe57",
+    "terminal": "succeeded",
+    "terminal_reason": null,
+    "remaining": [],
+    "mins": 12.06,
+    "draft_min": 10.73,
+    "review_min": 1.31,
+    "fix_min": null,
+    "review_levels": {
+      "should": 2
+    },
+    "review_skip": "suggestions_only",
+    "fix_outcome": {},
+    "review_followup": {},
+    "question_cards": 0,
+    "questions": 0,
+    "approval_cards": 0,
+    "answers": [],
+    "usage": {
+      "calls": 12,
+      "input": 760228,
+      "cached": 638208,
+      "output": 22857
+    },
+    "tools": {
+      "Skill": 1,
+      "TodoList": 4,
+      "materials_list": 1,
+      "facts_list": 2,
+      "materials_read_excerpt": 4,
+      "NotifyUser": 1,
+      "facts_submit": 2,
+      "law_search": 1,
+      "calc_deadline": 6,
+      "calc_interest": 6,
+      "law_get_article": 4,
+      "citations_verify": 2,
+      "calc_court_fee": 8,
+      "xlsx_render_table": 1,
+      "docx_render_report": 1,
+      "Bash": 1
+    },
+    "skill": [
+      "amount-calc"
+    ],
+    "office": {
+      "v1-提交前核对清单-违约金与诉讼费.docx": {
+        "opened": true,
+        "pages": 2
+      },
+      "v1-计算明细-禾丰设备款-截至2026-11-30.xlsx": {
+        "opened": true,
+        "pages": 6
+      }
+    },
+    "expected_materials": 4,
+    "party_info": false,
+    "review_apply": null
+  },
+  "m06-pleading": {
+    "tag": "m06-pleading",
+    "stack": "a",
+    "run_id": "run_2359d31c-a824-4d5a-9be2-a999423be833",
+    "matter_id": "mat_043ca655-3f6f-4f20-82ae-f2afc155c73f",
+    "terminal": "succeeded",
+    "terminal_reason": null,
+    "remaining": [],
+    "mins": 29.47,
+    "draft_min": 15.34,
+    "review_min": 1.07,
+    "fix_min": 12.96,
+    "review_levels": {
+      "must": 1
+    },
+    "review_skip": null,
+    "fix_outcome": {
+      "status": "succeeded",
+      "files": 1,
+      "revised": 5,
+      "revised_files": [
+        "财产保全申请书.docx",
+        "保全财产线索与担保核对表-锐川诉禾丰.xlsx",
+        "证据目录-锐川诉禾丰.xlsx",
+        "提交前核对清单-锐川诉禾丰.xlsx",
+        "民事起诉状.docx"
+      ],
+      "must": 1,
+      "seconds": 778
+    },
+    "review_followup": {
+      "must": 1,
+      "done": 1,
+      "justified": 0,
+      "open": [],
+      "unknown": [],
+      "seconds": 5,
+      "request_id": "kwlg_d1083f5b-3895-4e9c-8c75-0b3c9652340a"
+    },
+    "question_cards": 2,
+    "questions": 5,
+    "approval_cards": 0,
+    "answers": [
+      "问：论点与依据已列在任务页，请确认后选择。确认时将按货款310,000元、违约金暂计69,010元、律师费30,000元及同时申请保全的口径起草。　答：已确认，按确认的论点起草",
+      "问：保全论点与依据已列在任务页，请确认后选择。　答：已确认，按确认的论点起草",
+      "问：本次财产保全按哪种程序路径起草？　答：诉中，与起诉同步提交",
+      "问：担保部分按哪种方式写？　答：按法院要求提供",
+      "问：现有材料没有具体财产信息，财产部分如何处理？　答：暂无，按待提供起草"
+    ],
+    "usage": {
+      "calls": 28,
+      "input": 3206102,
+      "cached": 2986240,
+      "output": 49294
+    },
+    "tools": {
+      "Skill": 3,
+      "materials_list": 2,
+      "TodoList": 9,
+      "facts_list": 2,
+      "Read": 10,
+      "law_search": 3,
+      "facts_submit": 3,
+      "calc_interest": 3,
+      "law_get_article": 23,
+      "calc_deadline": 10,
+      "calc_court_fee": 3,
+      "citations_verify": 5,
+      "outline_submit": 2,
+      "AskUserQuestion": 2,
+      "NotifyUser": 3,
+      "outline_get": 2,
+      "docx_render_report": 2,
+      "xlsx_render_table": 4,
+      "xlsx_edit_cells": 4,
+      "docx_edit_draft": 2
+    },
+    "skill": [
+      "pleading-draft",
+      "amount-calc",
+      "preservation-application"
+    ],
+    "office": {
+      "v1-保全财产线索与担保核对表-锐川诉禾丰.xlsx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v1-提交前核对清单-锐川诉禾丰.xlsx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v1-民事起诉状.docx": {
+        "opened": true,
+        "pages": 3
+      },
+      "v1-计算明细-锐川诉禾丰-截至2026-11-30.xlsx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v1-证据目录-锐川诉禾丰.xlsx": {
+        "opened": true,
+        "pages": 3
+      },
+      "v1-财产保全申请书.docx": {
+        "opened": true,
+        "pages": 2
+      },
+      "v2-提交前核对清单-锐川诉禾丰.xlsx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v2-民事起诉状.docx": {
+        "opened": true,
+        "pages": 3
+      },
+      "v2-计算明细-锐川诉禾丰-截至2026-11-30.xlsx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v2-证据目录-锐川诉禾丰.xlsx": {
+        "opened": true,
+        "pages": 3
+      },
+      "v3-提交前核对清单-锐川诉禾丰.xlsx": {
+        "opened": true,
+        "pages": 4
+      }
+    },
+    "expected_materials": 8,
+    "party_info": true,
+    "review_apply": null
+  },
+  "m38-contract-review": {
+    "tag": "m38-contract-review",
+    "stack": "a",
+    "run_id": "run_ed386039-4ccb-41e5-ac8a-4126c1e50182",
+    "matter_id": "mat_62cba811-2070-4b40-aaaf-6a82d1f744aa",
+    "terminal": "succeeded",
+    "terminal_reason": null,
+    "remaining": [],
+    "mins": 37.88,
+    "draft_min": 28.26,
+    "review_min": 2.88,
+    "fix_min": 6.51,
+    "review_levels": {
+      "must": 3,
+      "should": 1
+    },
+    "review_skip": null,
+    "fix_outcome": {
+      "status": "succeeded",
+      "files": 1,
+      "revised": 2,
+      "revised_files": [
+        "审查意见书（内部稿）-会员数据平台技术服务合同.docx",
+        "问题清单-会员数据平台技术服务合同.xlsx"
+      ],
+      "must": 3,
+      "seconds": 390
+    },
+    "review_followup": {
+      "must": 3,
+      "done": 2,
+      "justified": 1,
+      "open": [],
+      "unknown": [],
+      "seconds": 14,
+      "request_id": "kwlg_aa5e014c-7b5f-4279-a97a-923639a0644e"
+    },
+    "question_cards": 0,
+    "questions": 0,
+    "approval_cards": 0,
+    "answers": [],
+    "usage": {
+      "calls": 20,
+      "input": 2304621,
+      "cached": 2092288,
+      "output": 71990
+    },
+    "tools": {
+      "Skill": 1,
+      "TodoList": 9,
+      "materials_list": 1,
+      "riskcards_list": 2,
+      "Read": 4,
+      "Glob": 1,
+      "NotifyUser": 3,
+      "law_search": 8,
+      "calc_deadline": 4,
+      "law_get_article": 24,
+      "Bash": 1,
+      "calc_interest": 1,
+      "facts_submit": 1,
+      "citations_verify": 1,
+      "riskcards_submit": 1,
+      "docx_render_report": 1,
+      "xlsx_render_table": 1,
+      "docx_edit_draft": 5,
+      "xlsx_edit_cells": 1
+    },
+    "skill": [
+      "contract-review"
+    ],
+    "office": {
+      "v1-审查意见书（内部稿）-会员数据平台技术服务合同.docx": {
+        "opened": true,
+        "pages": 11
+      },
+      "v1-问题清单-会员数据平台技术服务合同.xlsx": {
+        "opened": true,
+        "pages": 8
+      },
+      "v2-审查意见书（内部稿）-会员数据平台技术服务合同.docx": {
+        "opened": true,
+        "pages": 11
+      },
+      "v2-问题清单-会员数据平台技术服务合同.xlsx": {
+        "opened": true,
+        "pages": 8
+      },
+      "v3-审查意见书（内部稿）-会员数据平台技术服务合同.docx": {
+        "opened": true,
+        "pages": 12
+      }
+    },
+    "expected_materials": 1,
+    "party_info": false,
+    "review_apply": null
+  },
+  "m08-appeal": {
+    "tag": "m08-appeal",
+    "stack": "a",
+    "run_id": "run_44c8f34f-b3b2-45b1-acd0-7b01b7614bd9",
+    "matter_id": "mat_0f9e0f18-26f5-443d-a6b4-b84d3b392a59",
+    "terminal": "succeeded",
+    "terminal_reason": null,
+    "remaining": [],
+    "mins": 18.0,
+    "draft_min": 16.62,
+    "review_min": 1.37,
+    "fix_min": null,
+    "review_levels": {},
+    "review_skip": null,
+    "fix_outcome": {},
+    "review_followup": {},
+    "question_cards": 1,
+    "questions": 3,
+    "approval_cards": 0,
+    "answers": [
+      "问：论点与依据已列在任务页，请确认后选择？　答：已确认，按确认的论点起草",
+      "问：二审是否有拟提交的新证据？　答：暂无新证据",
+      "问：是否已在2026年11月19日前提交上诉状或交邮？　答：请按事项的模拟分析基准日 2026 年 11 月 9 日起草，当时 11 月 19 日的届满日尚未到。材料没有实际提交或交邮凭证，核对清单列为待核，不写成已经提交或已超期。"
+    ],
+    "usage": {
+      "calls": 16,
+      "input": 1232736,
+      "cached": 1111808,
+      "output": 33854
+    },
+    "tools": {
+      "Skill": 1,
+      "TodoList": 5,
+      "materials_list": 1,
+      "facts_list": 2,
+      "calc_deadline": 1,
+      "materials_read_excerpt": 2,
+      "NotifyUser": 2,
+      "facts_submit": 1,
+      "law_search": 6,
+      "law_get_article": 19,
+      "calc_interest": 4,
+      "Bash": 3,
+      "citations_verify": 2,
+      "calc_court_fee": 2,
+      "outline_submit": 1,
+      "AskUserQuestion": 1,
+      "outline_get": 1,
+      "docx_render_report": 1,
+      "xlsx_render_table": 2
+    },
+    "skill": [
+      "appeal-draft"
+    ],
+    "office": {
+      "v1-上诉理由与一审认定对照表-锐川公司买卖合同纠纷.xlsx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v1-提交前核对清单-锐川公司买卖合同纠纷.xlsx": {
+        "opened": true,
+        "pages": 3
+      },
+      "v1-民事上诉状.docx": {
+        "opened": true,
+        "pages": 4
+      }
+    },
+    "expected_materials": 2,
+    "party_info": false,
+    "review_apply": null
+  },
+  "m12-enforcement": {
+    "tag": "m12-enforcement",
+    "stack": "a",
+    "run_id": "run_84daee14-2554-487f-9756-96e3c932eb46",
+    "matter_id": "mat_6dc0808d-4279-44f2-8f56-3140a8e3684b",
+    "terminal": "succeeded",
+    "terminal_reason": null,
+    "remaining": [],
+    "mins": 22.35,
+    "draft_min": 20.51,
+    "review_min": 1.83,
+    "fix_min": null,
+    "review_levels": {},
+    "review_skip": null,
+    "fix_outcome": {},
+    "review_followup": {},
+    "question_cards": 1,
+    "questions": 3,
+    "approval_cards": 0,
+    "answers": [
+      "问：论点与依据已列在任务页，请确认后选择。　答：已确认，按确认的论点起草",
+      "问：本次向哪个法院申请强制执行？　答：虎丘区人民法院（推荐）",
+      "问：申请书是否请求法院调查被执行人财产并控制已知线索？　答：调查并控制（推荐）"
+    ],
+    "usage": {
+      "calls": 20,
+      "input": 1673847,
+      "cached": 1552384,
+      "output": 34933
+    },
+    "tools": {
+      "Skill": 1,
+      "materials_list": 1,
+      "TodoList": 6,
+      "NotifyUser": 3,
+      "materials_read_excerpt": 2,
+      "facts_list": 3,
+      "facts_submit": 2,
+      "law_search": 3,
+      "calc_deadline": 3,
+      "law_get_article": 16,
+      "calc_interest": 7,
+      "citations_verify": 2,
+      "Bash": 2,
+      "calc_court_fee": 2,
+      "outline_get": 2,
+      "outline_submit": 2,
+      "AskUserQuestion": 1,
+      "docx_render_report": 1,
+      "xlsx_render_table": 2,
+      "docx_edit_draft": 2,
+      "xlsx_edit_cells": 2
+    },
+    "skill": [
+      "enforcement-application"
+    ],
+    "office": {
+      "v1-强制执行申请书.docx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v1-执行标的计算表-锐川申请执行澄泰案.xlsx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v1-申请执行核对清单-锐川申请执行澄泰案.xlsx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v2-强制执行申请书.docx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v2-申请执行核对清单-锐川申请执行澄泰案.xlsx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v3-强制执行申请书.docx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v3-申请执行核对清单-锐川申请执行澄泰案.xlsx": {
+        "opened": true,
+        "pages": 4
+      }
+    },
+    "expected_materials": 2,
+    "party_info": false,
+    "review_apply": null
+  },
+  "m47-compliance-qa": {
+    "tag": "m47-compliance-qa",
+    "stack": "b",
+    "run_id": "run_170e320f-eaa7-4437-a90e-e4cc0961ee4a",
+    "matter_id": "mat_7544fd6e-8dec-494b-bf31-0311d0890587",
+    "terminal": "succeeded",
+    "terminal_reason": null,
+    "remaining": [],
+    "mins": 16.16,
+    "draft_min": 14.18,
+    "review_min": 1.96,
+    "fix_min": null,
+    "review_levels": {
+      "should": 1
+    },
+    "review_skip": "suggestions_only",
+    "fix_outcome": {},
+    "review_followup": {},
+    "question_cards": 0,
+    "questions": 0,
+    "approval_cards": 0,
+    "answers": [],
+    "usage": {
+      "calls": 15,
+      "input": 1007878,
+      "cached": 907520,
+      "output": 26775
+    },
+    "tools": {
+      "Skill": 1,
+      "TodoList": 4,
+      "materials_list": 1,
+      "facts_list": 1,
+      "NotifyUser": 2,
+      "materials_read_excerpt": 1,
+      "facts_submit": 2,
+      "law_search": 11,
+      "law_get_version": 4,
+      "WebSearch": 3,
+      "law_get_article": 21,
+      "citations_verify": 1,
+      "calc_deadline": 1,
+      "docx_render_report": 1,
+      "docx_edit_draft": 2
+    },
+    "skill": [
+      "client-advice"
+    ],
+    "office": {
+      "v1-顾问答复-OneHR员工个人信息跨境传输.docx": {
+        "opened": true,
+        "pages": 6
+      },
+      "v2-顾问答复-OneHR员工个人信息跨境传输.docx": {
+        "opened": true,
+        "pages": 6
+      }
+    },
+    "expected_materials": 1,
+    "party_info": false,
+    "review_apply": null
+  },
+  "m07-defense": {
+    "tag": "m07-defense",
+    "stack": "b",
+    "run_id": "run_e302359f-aa9e-4246-8fcc-465433ee71f4",
+    "matter_id": "mat_4f7eb590-1c55-4b5a-8438-d7b665e31279",
+    "terminal": "succeeded",
+    "terminal_reason": null,
+    "remaining": [],
+    "mins": 30.28,
+    "draft_min": 21.5,
+    "review_min": 1.03,
+    "fix_min": 7.63,
+    "review_levels": {
+      "must": 1
+    },
+    "review_skip": null,
+    "fix_outcome": {
+      "status": "succeeded",
+      "files": 1,
+      "revised": 1,
+      "revised_files": [
+        "提交前核对清单-禾丰诉锐川设备买卖合同纠纷.xlsx"
+      ],
+      "must": 1,
+      "seconds": 458
+    },
+    "review_followup": {
+      "must": 1,
+      "done": 1,
+      "justified": 0,
+      "open": [],
+      "unknown": [],
+      "seconds": 6,
+      "request_id": "kwlg_9b9ece5e-5cd6-499e-81dc-312c21f32991"
+    },
+    "question_cards": 1,
+    "questions": 1,
+    "approval_cards": 0,
+    "answers": [
+      "问：论点与依据已列在任务页，请确认后选择　答：已确认，按确认的论点起草"
+    ],
+    "usage": {
+      "calls": 23,
+      "input": 2197312,
+      "cached": 1997568,
+      "output": 48673
+    },
+    "tools": {
+      "Skill": 1,
+      "TodoList": 9,
+      "materials_list": 2,
+      "facts_list": 3,
+      "NotifyUser": 3,
+      "materials_read_excerpt": 9,
+      "law_search": 4,
+      "calc_deadline": 2,
+      "calc_interest": 2,
+      "law_get_article": 10,
+      "facts_submit": 3,
+      "citations_verify": 1,
+      "calc_court_fee": 1,
+      "outline_submit": 1,
+      "AskUserQuestion": 1,
+      "outline_get": 1,
+      "docx_render_report": 1,
+      "xlsx_render_table": 2,
+      "xlsx_edit_cells": 2,
+      "Bash": 2,
+      "docx_edit_draft": 1,
+      "Glob": 1
+    },
+    "skill": [
+      "defense-draft"
+    ],
+    "office": {
+      "v1-提交前核对清单-禾丰诉锐川设备买卖合同纠纷.xlsx": {
+        "opened": true,
+        "pages": 5
+      },
+      "v1-民事答辩状.docx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v1-答辩要点与证据对照表-禾丰诉锐川设备买卖合同纠纷.xlsx": {
+        "opened": true,
+        "pages": 6
+      },
+      "v2-提交前核对清单-禾丰诉锐川设备买卖合同纠纷.xlsx": {
+        "opened": true,
+        "pages": 5
+      },
+      "v3-提交前核对清单-禾丰诉锐川设备买卖合同纠纷.xlsx": {
+        "opened": true,
+        "pages": 5
+      }
+    },
+    "expected_materials": 8,
+    "party_info": true,
+    "review_apply": null
+  },
+  "m09-arbitration-app": {
+    "tag": "m09-arbitration-app",
+    "stack": "b",
+    "run_id": "run_6447b066-a1d8-4ad4-a31b-d4f89eca1ad9",
+    "matter_id": "mat_3a6625fa-64fa-43cf-9cd7-3e3abf8a75ae",
+    "terminal": "succeeded",
+    "terminal_reason": null,
+    "remaining": [],
+    "mins": 18.18,
+    "draft_min": 15.54,
+    "review_min": 1.0,
+    "fix_min": 1.34,
+    "review_levels": {
+      "must": 1
+    },
+    "review_skip": null,
+    "fix_outcome": {
+      "status": "succeeded",
+      "files": 1,
+      "revised": 2,
+      "revised_files": [
+        "仲裁申请书.docx",
+        "提交前核对清单-锐川设备款仲裁.xlsx"
+      ],
+      "must": 1,
+      "seconds": 80
+    },
+    "review_followup": {
+      "must": 1,
+      "done": 1,
+      "justified": 0,
+      "open": [],
+      "unknown": [],
+      "seconds": 18,
+      "request_id": "kwlg_6fbdd4f2-c9f5-462b-9abb-82d871e00180"
+    },
+    "question_cards": 1,
+    "questions": 2,
+    "approval_cards": 0,
+    "answers": [
+      "问：论点与依据已列在任务页，请确认后选择。　答：已确认，按确认的论点起草",
+      "问：本次是否同时申请财产保全？　答：暂不确定，先出申请书"
+    ],
+    "usage": {
+      "calls": 21,
+      "input": 1692885,
+      "cached": 1564928,
+      "output": 33203
+    },
+    "tools": {
+      "Skill": 1,
+      "materials_list": 1,
+      "TodoList": 4,
+      "materials_read_excerpt": 4,
+      "facts_list": 2,
+      "law_search": 4,
+      "calc_interest": 4,
+      "calc_deadline": 7,
+      "facts_submit": 2,
+      "law_get_article": 14,
+      "Bash": 1,
+      "citations_verify": 1,
+      "outline_submit": 1,
+      "NotifyUser": 1,
+      "AskUserQuestion": 1,
+      "outline_get": 1,
+      "docx_render_report": 1,
+      "xlsx_render_table": 2,
+      "xlsx_edit_cells": 2,
+      "docx_edit_draft": 2
+    },
+    "skill": [
+      "arbitration-application"
+    ],
+    "office": {
+      "v1-仲裁申请书.docx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v1-提交前核对清单-锐川设备款仲裁.xlsx": {
+        "opened": true,
+        "pages": 7
+      },
+      "v1-证据目录-锐川设备款仲裁.xlsx": {
+        "opened": true,
+        "pages": 3
+      },
+      "v2-仲裁申请书.docx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v2-提交前核对清单-锐川设备款仲裁.xlsx": {
+        "opened": true,
+        "pages": 7
+      },
+      "v3-提交前核对清单-锐川设备款仲裁.xlsx": {
+        "opened": true,
+        "pages": 7
+      }
+    },
+    "expected_materials": 3,
+    "party_info": true,
+    "review_apply": null
+  },
+  "m48-legal-opinion": {
+    "tag": "m48-legal-opinion",
+    "stack": "b",
+    "run_id": "run_1fb17c34-155a-42b7-954f-ed41728dcb10",
+    "matter_id": "mat_ea997efc-7313-485e-a77b-1065d339a271",
+    "terminal": "succeeded",
+    "terminal_reason": null,
+    "remaining": [],
+    "mins": 24.22,
+    "draft_min": 19.67,
+    "review_min": 2.01,
+    "fix_min": 2.26,
+    "review_levels": {
+      "must": 2
+    },
+    "review_skip": null,
+    "fix_outcome": {
+      "status": "succeeded",
+      "files": 1,
+      "revised": 1,
+      "revised_files": [
+        "关于芜湖棣升物流有限公司保证责任相关事项的法律意见书（草稿）.docx"
+      ],
+      "must": 2,
+      "seconds": 135
+    },
+    "review_followup": {
+      "must": 2,
+      "done": 1,
+      "justified": 1,
+      "open": [],
+      "unknown": [],
+      "seconds": 17,
+      "request_id": "kwlg_0e424cfe-7686-448b-8684-f7d72a28b5f8"
+    },
+    "question_cards": 0,
+    "questions": 0,
+    "approval_cards": 0,
+    "answers": [],
+    "usage": {
+      "calls": 18,
+      "input": 1536676,
+      "cached": 1403392,
+      "output": 38409
+    },
+    "tools": {
+      "Skill": 2,
+      "TodoList": 9,
+      "NotifyUser": 4,
+      "materials_list": 1,
+      "facts_list": 1,
+      "materials_read_excerpt": 6,
+      "calc_deadline": 1,
+      "law_search": 3,
+      "calc_interest": 4,
+      "law_get_article": 30,
+      "facts_submit": 1,
+      "Bash": 3,
+      "citations_verify": 2,
+      "docx_render_report": 1,
+      "xlsx_render_table": 1,
+      "docx_edit_draft": 3
+    },
+    "skill": [
+      "client-advice",
+      "amount-calc"
+    ],
+    "office": {
+      "v1-关于芜湖棣升物流有限公司保证责任相关事项的法律意见书（草稿）.docx": {
+        "opened": true,
+        "pages": 9
+      },
+      "v1-计算明细-棣华借款及棣升保证责任-截至2026-11-10.xlsx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v2-关于芜湖棣升物流有限公司保证责任相关事项的法律意见书（草稿）.docx": {
+        "opened": true,
+        "pages": 9
+      }
+    },
+    "expected_materials": 6,
+    "party_info": false,
+    "review_apply": null
+  },
+  "m24-labor-response": {
+    "tag": "m24-labor-response",
+    "stack": "b",
+    "run_id": "run_e6e67a4d-fd94-4c27-a9f7-ca23d05fa47c",
+    "matter_id": "mat_cdc03016-896a-4bbd-b36c-dba75b704d4d",
+    "terminal": "partial",
+    "terminal_reason": null,
+    "remaining": [
+      "独立复核标为必须改的意见里，第 2、4 条没有落实到最新版文件：详见《独立复核意见》末尾的“回看”一节，处理后再使用"
+    ],
+    "mins": 38.25,
+    "draft_min": 29.84,
+    "review_min": 3.27,
+    "fix_min": 4.81,
+    "review_levels": {
+      "must": 5
+    },
+    "review_skip": null,
+    "fix_outcome": {
+      "status": "succeeded",
+      "files": 1,
+      "revised": 3,
+      "revised_files": [
+        "劳动争议应对方案-澜栖智能劳动仲裁.docx",
+        "请求项与敞口表-澜栖智能劳动仲裁.xlsx",
+        "举证责任与证据清单-澜栖智能劳动仲裁.xlsx"
+      ],
+      "must": 5,
+      "seconds": 289
+    },
+    "review_followup": {
+      "must": 5,
+      "done": 3,
+      "justified": 0,
+      "open": [
+        2,
+        4
+      ],
+      "unknown": [],
+      "seconds": 19,
+      "request_id": "kwlg_d3b87007-1fa5-483b-b8f1-2cb73dfd3ec6"
+    },
+    "question_cards": 1,
+    "questions": 4,
+    "approval_cards": 0,
+    "answers": [
+      "问：是否立即按真实日期向工会书面补正解除程序？　答：立即补正（推荐）",
+      "问：方案采用哪条应对与调解主线？　答：抗辩并同步调解（推荐）",
+      "问：竞业限制与50万元反申请按哪种路径写入方案？　答：仅列路径待定",
+      "问：上海上年度职工月平均工资和月最低工资是否有律师认可的数据可纳入测算？　答：暂缺按未封顶测算（推荐）"
+    ],
+    "usage": {
+      "calls": 31,
+      "input": 3793525,
+      "cached": 3576576,
+      "output": 70659
+    },
+    "tools": {
+      "Skill": 1,
+      "TodoList": 8,
+      "materials_list": 1,
+      "facts_list": 1,
+      "Read": 2,
+      "NotifyUser": 2,
+      "materials_read_excerpt": 7,
+      "law_search": 13,
+      "law_get_article": 47,
+      "calc_deadline": 6,
+      "Bash": 5,
+      "calc_labor": 11,
+      "citations_verify": 1,
+      "facts_submit": 2,
+      "AskUserQuestion": 1,
+      "docx_render_report": 1,
+      "xlsx_render_table": 2,
+      "docx_edit_draft": 10,
+      "xlsx_edit_cells": 4,
+      "Glob": 2
+    },
+    "skill": [
+      "labor-dispute"
+    ],
+    "office": {
+      "v1-举证责任与证据清单-澜栖智能劳动仲裁.xlsx": {
+        "opened": true,
+        "pages": 3
+      },
+      "v1-劳动争议应对方案-澜栖智能劳动仲裁.docx": {
+        "opened": true,
+        "pages": 7
+      },
+      "v1-请求项与敞口表-澜栖智能劳动仲裁.xlsx": {
+        "opened": true,
+        "pages": 8
+      },
+      "v2-举证责任与证据清单-澜栖智能劳动仲裁.xlsx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v2-劳动争议应对方案-澜栖智能劳动仲裁.docx": {
+        "opened": true,
+        "pages": 7
+      },
+      "v2-请求项与敞口表-澜栖智能劳动仲裁.xlsx": {
+        "opened": true,
+        "pages": 8
+      },
+      "v3-劳动争议应对方案-澜栖智能劳动仲裁.docx": {
+        "opened": true,
+        "pages": 7
+      },
+      "v3-请求项与敞口表-澜栖智能劳动仲裁.xlsx": {
+        "opened": true,
+        "pages": 8
+      },
+      "v4-劳动争议应对方案-澜栖智能劳动仲裁.docx": {
+        "opened": true,
+        "pages": 7
+      },
+      "v4-请求项与敞口表-澜栖智能劳动仲裁.xlsx": {
+        "opened": true,
+        "pages": 8
+      },
+      "v5-劳动争议应对方案-澜栖智能劳动仲裁.docx": {
+        "opened": true,
+        "pages": 7
+      }
+    },
+    "expected_materials": 7,
+    "party_info": false,
+    "review_apply": null
+  },
+  "m14-agency": {
+    "tag": "m14-agency",
+    "stack": "b",
+    "run_id": "run_dfe8de2d-6bf9-42de-83d2-6b3220ad4c42",
+    "matter_id": "mat_c5fd5d80-73a4-44c9-89e6-958e76d464d4",
+    "terminal": "succeeded",
+    "terminal_reason": null,
+    "remaining": [],
+    "mins": 17.69,
+    "draft_min": 17.0,
+    "review_min": 0.68,
+    "fix_min": null,
+    "review_levels": {},
+    "review_skip": null,
+    "fix_outcome": {},
+    "review_followup": {},
+    "question_cards": 1,
+    "questions": 2,
+    "approval_cards": 0,
+    "answers": [
+      "问：论点与依据已列在任务页，请确认后选择。论点引用的事实还没经你确认的，任务页的卡上逐条标着“未经你确认”，确认论点时可以一并确认。　答：已确认，按确认的论点起草",
+      "问：庭审后是否有诉讼请求变更、庭后补充证据或法庭要求补充说明的事项？　答：均无，按庭审情况起草（推荐）"
+    ],
+    "usage": {
+      "calls": 15,
+      "input": 1034361,
+      "cached": 928512,
+      "output": 28271
+    },
+    "tools": {
+      "Skill": 1,
+      "TodoList": 5,
+      "materials_list": 1,
+      "facts_list": 3,
+      "outline_get": 2,
+      "materials_read_excerpt": 3,
+      "law_search": 4,
+      "calc_interest": 2,
+      "law_get_article": 12,
+      "calc_deadline": 1,
+      "citations_verify": 2,
+      "facts_submit": 2,
+      "outline_submit": 2,
+      "AskUserQuestion": 1,
+      "docx_render_report": 1,
+      "xlsx_render_table": 1
+    },
+    "skill": [
+      "agency-statement"
+    ],
+    "office": {
+      "v1-争点与依据对照表-锐川诉恒岳.xlsx": {
+        "opened": true,
+        "pages": 6
+      },
+      "v1-代理词.docx": {
+        "opened": true,
+        "pages": 3
+      }
+    },
+    "expected_materials": 3,
+    "party_info": false,
+    "review_apply": null
+  },
+  "m47-review-apply": {
+    "tag": "m47-review-apply",
+    "stack": "b",
+    "run_id": "run_f6682967-7c17-4ce0-a5d2-528b201851b2",
+    "matter_id": "mat_7544fd6e-8dec-494b-bf31-0311d0890587",
+    "terminal": "succeeded",
+    "terminal_reason": null,
+    "remaining": [],
+    "mins": 2.53,
+    "draft_min": 2.53,
+    "review_min": null,
+    "fix_min": null,
+    "review_levels": {},
+    "review_skip": "review_apply",
+    "fix_outcome": {},
+    "review_followup": {},
+    "question_cards": 0,
+    "questions": 0,
+    "approval_cards": 0,
+    "answers": [],
+    "usage": {
+      "calls": 4,
+      "input": 417815,
+      "cached": 335360,
+      "output": 5070
+    },
+    "tools": {
+      "materials_read_excerpt": 1,
+      "law_get_article": 5,
+      "citations_verify": 1,
+      "NotifyUser": 1,
+      "docx_edit_draft": 1
+    },
+    "skill": [],
+    "office": {
+      "v3-顾问答复-OneHR员工个人信息跨境传输.docx": {
+        "opened": true,
+        "pages": 6
+      }
+    },
+    "expected_materials": 0,
+    "party_info": false,
+    "review_apply": true
+  },
+  "m04-case-analysis": {
+    "tag": "m04-case-analysis",
+    "stack": "cny",
+    "run_id": "run_ba92adaa-a07c-4076-b85c-feed502e741d",
+    "matter_id": "mat_3e47128e-2301-4276-bf2d-4dff3c74a92e",
+    "terminal": "succeeded",
+    "terminal_reason": null,
+    "remaining": [],
+    "mins": 23.1,
+    "draft_min": 16.9,
+    "review_min": 6.18,
+    "fix_min": null,
+    "review_levels": {
+      "should": 4
+    },
+    "review_skip": "suggestions_only",
+    "fix_outcome": {},
+    "review_followup": {},
+    "question_cards": 0,
+    "questions": 0,
+    "approval_cards": 0,
+    "answers": [],
+    "usage": {
+      "calls": 16,
+      "input": 1438724,
+      "cached": 1288960,
+      "output": 45209
+    },
+    "tools": {
+      "Skill": 1,
+      "materials_list": 1,
+      "facts_list": 2,
+      "TodoList": 3,
+      "materials_read_excerpt": 9,
+      "facts_submit": 2,
+      "calc_interest": 3,
+      "calc_deadline": 17,
+      "law_search": 6,
+      "calc_court_fee": 6,
+      "law_get_article": 26,
+      "NotifyUser": 1,
+      "citations_verify": 2,
+      "Bash": 1,
+      "docx_render_report": 1,
+      "xlsx_render_table": 1,
+      "docx_edit_draft": 1
+    },
+    "skill": [
+      "case-analysis"
+    ],
+    "office": {
+      "v1-争点与风险表-锐川诉禾丰设备款.xlsx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v1-案情分析备忘录（内部稿）-锐川诉禾丰设备款.docx": {
+        "opened": true,
+        "pages": 9
+      },
+      "v2-案情分析备忘录（内部稿）-锐川诉禾丰设备款.docx": {
+        "opened": true,
+        "pages": 9
+      }
+    },
+    "expected_materials": 9,
+    "party_info": false,
+    "review_apply": null
+  },
+  "m35-contract-draft": {
+    "tag": "m35-contract-draft",
+    "stack": "cny",
+    "run_id": "run_b9ec00a2-aa4c-4346-b02f-a339a758524f",
+    "matter_id": "mat_dc7a0d67-acf9-4154-81d7-40209585f4e9",
+    "terminal": "succeeded",
+    "terminal_reason": null,
+    "remaining": [],
+    "mins": 20.29,
+    "draft_min": 16.21,
+    "review_min": 1.47,
+    "fix_min": 2.5,
+    "review_levels": {
+      "must": 1,
+      "should": 1
+    },
+    "review_skip": null,
+    "fix_outcome": {
+      "status": "succeeded",
+      "files": 1,
+      "revised": 2,
+      "revised_files": [
+        "专利权转让协议.docx",
+        "起草说明与待定事项-专利权转让协议.docx"
+      ],
+      "must": 1,
+      "seconds": 150
+    },
+    "review_followup": {
+      "must": 1,
+      "done": 1,
+      "justified": 0,
+      "open": [],
+      "unknown": [],
+      "seconds": 6,
+      "request_id": "kwlg_8997aff4-5524-46f1-b879-0a39ff59d836"
+    },
+    "question_cards": 0,
+    "questions": 0,
+    "approval_cards": 0,
+    "answers": [],
+    "usage": {
+      "calls": 18,
+      "input": 1586569,
+      "cached": 1441280,
+      "output": 41132
+    },
+    "tools": {
+      "Skill": 1,
+      "materials_list": 1,
+      "Read": 2,
+      "TodoList": 9,
+      "NotifyUser": 3,
+      "law_search": 7,
+      "law_get_article": 19,
+      "calc_deadline": 1,
+      "citations_verify": 1,
+      "docx_render_report": 2,
+      "docx_edit_draft": 7,
+      "docx_compare": 2
+    },
+    "skill": [
+      "contract-draft"
+    ],
+    "office": {
+      "v1-专利权转让协议.docx": {
+        "opened": true,
+        "pages": 10
+      },
+      "v1-起草说明与待定事项-专利权转让协议.docx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v2-专利权转让协议.docx": {
+        "opened": true,
+        "pages": 10
+      },
+      "v2-起草说明与待定事项-专利权转让协议.docx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v3-专利权转让协议.docx": {
+        "opened": true,
+        "pages": 10
+      },
+      "v3-起草说明与待定事项-专利权转让协议.docx": {
+        "opened": true,
+        "pages": 4
+      },
+      "v4-专利权转让协议.docx": {
+        "opened": true,
+        "pages": 10
+      }
+    },
+    "expected_materials": 12,
+    "party_info": false,
+    "review_apply": null
+  }
+}

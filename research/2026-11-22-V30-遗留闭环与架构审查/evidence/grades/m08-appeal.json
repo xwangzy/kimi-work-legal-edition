@@ -1,0 +1,29 @@
+{
+  "tag": "m08-appeal",
+  "card": "上诉状",
+  "veto": [],
+  "score": 19,
+  "dims": [
+    3,
+    3,
+    2,
+    2,
+    1,
+    3,
+    3,
+    2
+  ],
+  "tier": "需中度修改",
+  "status": "未通过",
+  "open_ok": true,
+  "minutes": 18.0,
+  "questions": 3,
+  "top_issues": [
+    "第二项请求写明“该项基数及起止期间不变”，即使货款改判至 228,000 元，仍只要求以 152,000 元计付违约金。",
+    "实际核对期间时模型先以运行当日推定期限已过，经模拟时点提示后，清单将实际交邮或提交状态保留为待核。"
+  ],
+  "prev_score": null,
+  "product_defect": [],
+  "known_defects_recurring": [],
+  "new_defects": []
+}

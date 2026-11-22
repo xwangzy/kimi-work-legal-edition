@@ -1,0 +1,28 @@
+{
+  "tag": "m35-contract-draft",
+  "card": "起草合同",
+  "veto": [],
+  "score": 20,
+  "dims": [
+    3,
+    3,
+    2,
+    3,
+    2,
+    2,
+    3,
+    2
+  ],
+  "tier": "可交付",
+  "status": "已通过",
+  "open_ok": true,
+  "minutes": 20.3,
+  "questions": 0,
+  "top_issues": [
+    "现有申请限制覆盖同一技术和后续改进，技术边界、效力和争议解决方式均需律师与客户定稿。"
+  ],
+  "prev_score": null,
+  "product_defect": [],
+  "known_defects_recurring": [],
+  "new_defects": []
+}

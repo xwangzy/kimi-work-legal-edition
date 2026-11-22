@@ -1,0 +1,240 @@
+{
+  "m04-case-analysis": [
+    {
+      "filename": "v1-争点与风险表-锐川诉禾丰设备款.xlsx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "d46db6925c2a86c20af8a7b973ff62ceb31265928b137eb0bb9c84a7a5f3c9fa"
+    },
+    {
+      "filename": "v2-案情分析备忘录（内部稿）-锐川诉禾丰设备款.docx",
+      "opened": true,
+      "pages": 9,
+      "sha256": "c47f13f79e3f87281feb7bcb6219c7f72edabf567e856b506624827e265241f1"
+    }
+  ],
+  "m05-amount": [
+    {
+      "filename": "v1-提交前核对清单-违约金与诉讼费.docx",
+      "opened": true,
+      "pages": 2,
+      "sha256": "63fdab428d76271fa48f8913a6787334319ff61aa3bd8885a65a545cf3cd2269"
+    },
+    {
+      "filename": "v1-计算明细-禾丰设备款-截至2026-11-30.xlsx",
+      "opened": true,
+      "pages": 6,
+      "sha256": "9ed44fc356d4498460f9c27f5c1cdba533ee8a9a299a15978c4fbf8c143a5a8d"
+    }
+  ],
+  "m06-pleading": [
+    {
+      "filename": "v1-保全财产线索与担保核对表-锐川诉禾丰.xlsx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "1e16f631533586a1b69fc2bdf3bcf66190ba5775d03cc51e088c7bf2e197e66a"
+    },
+    {
+      "filename": "v3-提交前核对清单-锐川诉禾丰.xlsx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "7aff39812900f366f9e1b73d3c72a9825afa9a37cf0b506e0b147fe72f07691a"
+    },
+    {
+      "filename": "v2-民事起诉状.docx",
+      "opened": true,
+      "pages": 3,
+      "sha256": "06b2cba86b901642b0ea287d72b4581ff43f962bc28386b423e699a728fa752e"
+    },
+    {
+      "filename": "v2-计算明细-锐川诉禾丰-截至2026-11-30.xlsx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "7597e063caefe96e7b44cea757240c73046aff054f6993d8bf33b9607cf352e1"
+    },
+    {
+      "filename": "v2-证据目录-锐川诉禾丰.xlsx",
+      "opened": true,
+      "pages": 3,
+      "sha256": "9fc950a9d167d9f76f09c0ecbefc8a06cca86650cc0607cb1e0c597400c779f6"
+    },
+    {
+      "filename": "v1-财产保全申请书.docx",
+      "opened": true,
+      "pages": 2,
+      "sha256": "66324a73536df5c3b0c2b031d011b7e913d4adcfd7e35338bd8924b8b775a959"
+    }
+  ],
+  "m07-defense": [
+    {
+      "filename": "v3-提交前核对清单-禾丰诉锐川设备买卖合同纠纷.xlsx",
+      "opened": true,
+      "pages": 5,
+      "sha256": "30d2f99047759e99d52de4a1916e1416e4ee772f068dc09591bb97874ec9786b"
+    },
+    {
+      "filename": "v1-民事答辩状.docx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "70361f5c5d2356dcdf45684a7080ae2074d7be9e9ecc0e6f864cd53e66178d28"
+    },
+    {
+      "filename": "v1-答辩要点与证据对照表-禾丰诉锐川设备买卖合同纠纷.xlsx",
+      "opened": true,
+      "pages": 6,
+      "sha256": "f7f91581a3ea6a3b380ba2237e358927dab9e82c7341a7bcc4bc233a3b55cece"
+    }
+  ],
+  "m08-appeal": [
+    {
+      "filename": "v1-上诉理由与一审认定对照表-锐川公司买卖合同纠纷.xlsx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "86cbe020a58bfa0534695704ed96dc2f7e2a9d58a86759de027293098db46646"
+    },
+    {
+      "filename": "v1-提交前核对清单-锐川公司买卖合同纠纷.xlsx",
+      "opened": true,
+      "pages": 3,
+      "sha256": "daf54cc1214bc695f71ab88e4cef10db490402ed03cd340b31ec8057bccf187e"
+    },
+    {
+      "filename": "v1-民事上诉状.docx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "62f36e65c7c86c859f4ff890010e0dd3117423a17124178d1a6add50b31791e2"
+    }
+  ],
+  "m09-arbitration-app": [
+    {
+      "filename": "v2-仲裁申请书.docx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "f9ebce5f73f2f13699e4eda8fdf40e47de1d120d28aaa03584bc97ffc47e1fa5"
+    },
+    {
+      "filename": "v3-提交前核对清单-锐川设备款仲裁.xlsx",
+      "opened": true,
+      "pages": 7,
+      "sha256": "cc8f2fef20f1c13544b2f8766be8a1e02a789541d3c4f39628537789f57df93c"
+    },
+    {
+      "filename": "v1-证据目录-锐川设备款仲裁.xlsx",
+      "opened": true,
+      "pages": 3,
+      "sha256": "5fc6b2070757092cd38fa7f8be152b5a76dd181b3abaf5e87828ff93ff299be3"
+    }
+  ],
+  "m12-enforcement": [
+    {
+      "filename": "v3-强制执行申请书.docx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "d3c5ada3392a45becd7f1ceb31762c46167e32b8c918d46d041966252f043046"
+    },
+    {
+      "filename": "v1-执行标的计算表-锐川申请执行澄泰案.xlsx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "a1a5c2b738b433aebdbb8b1260a831efb5346a79376f828148e32f7295da4c98"
+    },
+    {
+      "filename": "v3-申请执行核对清单-锐川申请执行澄泰案.xlsx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "16b53a3d027b570878ef089add938600a211be84955b9ce7b6d5178507de74fb"
+    }
+  ],
+  "m14-agency": [
+    {
+      "filename": "v1-争点与依据对照表-锐川诉恒岳.xlsx",
+      "opened": true,
+      "pages": 6,
+      "sha256": "912db53197ce7faf80a7d066e9444fc31d3ccbd7cb2d4917b177d6f501f50b3a"
+    },
+    {
+      "filename": "v1-代理词.docx",
+      "opened": true,
+      "pages": 3,
+      "sha256": "5cba6cadd6b0ad6e58a96ce99c37cf6d9127368cbcc361039e607bb64bf66651"
+    }
+  ],
+  "m24-labor-response": [
+    {
+      "filename": "v2-举证责任与证据清单-澜栖智能劳动仲裁.xlsx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "004dca220653e2001d41df5f18f89679f0e4ab89ccdb3025bb2d88f8568c604d"
+    },
+    {
+      "filename": "v5-劳动争议应对方案-澜栖智能劳动仲裁.docx",
+      "opened": true,
+      "pages": 7,
+      "sha256": "84d2c1a497721a96264ca9947d833b35826a794b3c8e4c943e33aaaabffad342"
+    },
+    {
+      "filename": "v4-请求项与敞口表-澜栖智能劳动仲裁.xlsx",
+      "opened": true,
+      "pages": 8,
+      "sha256": "840ec5e398da953b6f2c6e4ce2c34b1f0445bd0af1d24d14425e23f9a39fd5e5"
+    }
+  ],
+  "m35-contract-draft": [
+    {
+      "filename": "v4-专利权转让协议.docx",
+      "opened": true,
+      "pages": 10,
+      "sha256": "db3a78995eeedbbbd8fbb2839cc407f3918b92c079d5d38d3d0f386e5a8d48a3"
+    },
+    {
+      "filename": "v3-起草说明与待定事项-专利权转让协议.docx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "37cbfe3698fd279f22dd47bbf7f7bef59acd6a3e31efaa32c3c4c6e27985ef5f"
+    }
+  ],
+  "m38-contract-review": [
+    {
+      "filename": "v3-审查意见书（内部稿）-会员数据平台技术服务合同.docx",
+      "opened": true,
+      "pages": 12,
+      "sha256": "19ca644a5f8ce724bf40ff81df1bb39601f449819c10f24251e5b4e2b4cbe0e7"
+    },
+    {
+      "filename": "v2-问题清单-会员数据平台技术服务合同.xlsx",
+      "opened": true,
+      "pages": 8,
+      "sha256": "dc4eab2e2f9f95671514734ca1ac08612c23ed2e43177bb26974ee3906b1d320"
+    }
+  ],
+  "m47-compliance-qa": [
+    {
+      "filename": "v2-顾问答复-OneHR员工个人信息跨境传输.docx",
+      "opened": true,
+      "pages": 6,
+      "sha256": "f15a890c3257c841178848ddbec9e4685ca2fb58c9a955ae3b27e3b9acdb51d1"
+    }
+  ],
+  "m47-review-apply": [
+    {
+      "filename": "v3-顾问答复-OneHR员工个人信息跨境传输.docx",
+      "opened": true,
+      "pages": 6,
+      "sha256": "d7de9fc70f0e33e2092b0f181291b25c461d834731d0ca7d59f4d411fb2c32ef"
+    }
+  ],
+  "m48-legal-opinion": [
+    {
+      "filename": "v2-关于芜湖棣升物流有限公司保证责任相关事项的法律意见书（草稿）.docx",
+      "opened": true,
+      "pages": 9,
+      "sha256": "3f241c89fa410d620ad5e4ecaa35cb8c06f274588444f43172a2dedd22c6a30e"
+    },
+    {
+      "filename": "v1-计算明细-棣华借款及棣升保证责任-截至2026-11-10.xlsx",
+      "opened": true,
+      "pages": 4,
+      "sha256": "822121e596a6c7a73ef4fd0969c08070a13db262395c38e0c6eb4ef5d6cc3ce3"
+    }
+  ]
+}
